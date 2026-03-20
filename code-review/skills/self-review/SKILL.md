@@ -60,8 +60,10 @@ CLAUDE.md・規約ファイルを自動収集: `CLAUDE.md`, `.github/CONTRIBUTIN
 | #7 | テストファイル変更時 | テストカバレッジ・品質分析 |
 | #8 | 型定義変更時 | 型設計・不変条件分析 |
 
-エージェントのプロンプト詳細は [../../references/agent-prompts.md](../../references/agent-prompts.md) を参照。
-スコアリング詳細は [../../references/scoring-guide.md](../../references/scoring-guide.md) を参照。
+エージェント起動前に、以下のファイルを Read ツールで読み込むこと:
+
+- `${CLAUDE_PLUGIN_ROOT}/references/agent-prompts.md` - エージェントのプロンプト詳細
+- `${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` - スコアリング詳細
 
 ### 4. Confidenceスコアリングとフィルタリング
 

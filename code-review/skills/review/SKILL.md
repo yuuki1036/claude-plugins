@@ -64,13 +64,14 @@ git diff "${BASE}..HEAD" --name-only
 | #7 | テストファイル変更時 | テストカバレッジ・品質分析 |
 | #8 | 型定義変更時 | 型設計・不変条件分析 |
 
-エージェントのプロンプト詳細は [../../references/agent-prompts.md](../../references/agent-prompts.md) を参照。
+エージェント起動前に、以下のファイルを Read ツールで読み込むこと:
+
+- `${CLAUDE_PLUGIN_ROOT}/references/agent-prompts.md` - エージェントのプロンプト詳細
+- `${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` - スコアリング詳細
 
 ### 5. Confidenceスコアリングとフィルタリング
 
 各指摘に0-100のconfidenceスコアを付与。≥80のみ報告。
-
-スコアリング詳細は [../../references/scoring-guide.md](../../references/scoring-guide.md) を参照。
 
 ### 6. レポート出力
 
