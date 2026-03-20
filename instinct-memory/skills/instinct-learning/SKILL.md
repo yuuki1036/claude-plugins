@@ -1,6 +1,6 @@
 ---
 name: instinct-learning
-description: セッション中の観察からパターンを学習し、auto memory の instinct として管理・昇格させるシステム。ユーザーの訂正・好み・繰り返しパターンを検知した時や、セッション開始時・終了時に使用する。
+description: ユーザーの訂正・好み・繰り返しパターンを instinct として記録・管理・昇格させるシステム。
 ---
 
 # Instinct Learning System
