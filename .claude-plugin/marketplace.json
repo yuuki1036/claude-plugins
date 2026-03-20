@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-plugins",
+  "description": "Custom Claude Code plugins by yuki",
+  "owner": {
+    "name": "yuki"
+  },
+  "plugins": [
+    {
+      "name": "instinct-memory",
+      "description": "セッション中の観察からパターンを学習し、auto memoryのinstinctとして管理・昇格させるシステム",
+      "version": "1.0.0",
+      "author": {
+        "name": "yuki"
+      },
+      "source": "./instinct-memory"
+    }
+  ]
+}
