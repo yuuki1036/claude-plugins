@@ -111,27 +111,27 @@ issues/ 内のファイルを走査し、Linear 上で Done / Canceled になっ
 ### プロジェクト doc 更新
 | プロジェクト | 前回更新 | ステータス |
 |-------------|---------|-----------|
-| idea-version-management | 2026-03-12 → 2026-03-15 | In Progress |
-| vue-maintenance | 2026-03-10 → 2026-03-15 | In Progress |
+| project-alpha | 2026-03-12 → 2026-03-15 | In Progress |
+| project-beta | 2026-03-10 → 2026-03-15 | In Progress |
 
 ### 関連 Issue テーブル更新
-- idea-version-management: 3件更新（CFP-500: In Progress, CFP-501: Done → 削除, CFP-502: 新規追加）
+- project-alpha: 3件更新（TEAM-500: In Progress, TEAM-501: Done → 削除, TEAM-502: 新規追加）
 
 ### completed Issue メンテナンス
 | Issue | 処理 | knowledge 切り出し | 削除提案 |
 |-------|------|-------------------|---------|
-| CFP-404 | 圧縮（358行→45行） | 世代チェック仕様 → knowledge/ | 削除可 |
-| CFP-578 | 重複削除 | 切り出し済み | 削除可 |
+| TEAM-404 | 圧縮（358行→45行） | 仕様ドキュメント → knowledge/ | 削除可 |
+| TEAM-578 | 重複削除 | 切り出し済み | 削除可 |
 
 ### Issue ステータス同期
 | Issue | ローカル | Linear | 提案 |
 |-------|---------|--------|------|
-| CFP-449 | in-progress | Done | → completed + メンテナンス |
+| TEAM-449 | in-progress | Done | → completed + メンテナンス |
 
 ### follow_up 解消
 | Issue | follow_up | Linear ステータス | 提案 |
 |-------|-----------|------------------|------|
-| CFP-449 | CFP-500 | Done | follow_up から削除 |
+| TEAM-449 | TEAM-500 | Done | follow_up から削除 |
 
 ### クリーンアップ
 （対象なし）

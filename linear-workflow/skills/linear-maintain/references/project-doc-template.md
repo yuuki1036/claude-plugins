@@ -20,7 +20,7 @@ last_updated: YYYY-MM-DD
 
 | Issue | タイトル | Linear | PR |
 |-------|---------|--------|-----|
-| CFP-XXX | タイトル | Done | #XX |
+| TEAM-XXX | タイトル | Done | #XX |
 
 ## 備考
 {共通コンポーネント、仕様メモ等}

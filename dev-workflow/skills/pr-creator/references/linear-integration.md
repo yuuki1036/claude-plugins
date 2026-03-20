@@ -5,14 +5,14 @@
 ブランチ名からパターン `[A-Z]+-[0-9]+` でIssue IDを抽出する。
 
 例:
-- `feat/CPL-123-add-login` → `CPL-123`
-- `fix/CPLFE-456` → `CPLFE-456`
+- `feat/TEAM-123-add-login` → `TEAM-123`
+- `fix/PROJ-456` → `PROJ-456`
 
 ## 情報取得
 
 ### Linear MCP
 ```
-mcp__linear__get_issue(issue_id: "CPL-123")
+mcp__linear__get_issue(issue_id: "TEAM-123")
 → タイトル、説明、ステータス等を取得
 ```
 

@@ -37,7 +37,7 @@ Linear Issue の情報を取得し、テンプレートに基づいて Issue フ
 
 1. **配置先の決定**
    - `.claude/linear/{slug}/issues/{ISSUE-ID}.md`
-   - slug は Issue ID のプレフィックス（チーム識別子）を小文字化する（例: `CFP-123` → `cfp`）
+   - slug は Issue ID のプレフィックス（チーム識別子）を小文字化する（例: `TEAM-123` → `team`）
 
 2. **frontmatter の記入**
    - `status: in-progress`

@@ -19,7 +19,7 @@ allowed-tools: Read, Write, Edit, Grep, Glob, Bash
 | コマンド | 動作 |
 |----------|------|
 | `/issue-maintain` | 現在のブランチに紐づく issue ファイルを整理 |
-| `/issue-maintain CFP-xxx` | 指定した issue ファイルを整理 |
+| `/issue-maintain TEAM-123` | 指定した issue ファイルを整理 |
 | `/issue-maintain --all` | 全 issue ファイルを整理（in-progress + completed の削除判定） |
 
 ---
@@ -130,7 +130,7 @@ Issue のタスクが全て完了した場合、以下を実行する：
 2. 別 Issue に引き継ぐ残タスクがあれば、フロントマターに `follow_up` を追加
    ```yaml
    follow_up:
-     - CFP-500           # Issue 起票済み
+     - TEAM-500           # Issue 起票済み
      - "xxx のバグ（未起票）"  # まだ Issue になっていない
    ```
 3. 更新履歴に完了を記録

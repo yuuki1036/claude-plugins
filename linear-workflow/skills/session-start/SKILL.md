@@ -17,7 +17,7 @@ allowed-tools: mcp__linear__get_issue, Read, Write, Glob, Grep, Bash
 
 1. `git branch --show-current` でカレントブランチ名を取得する（Bash）
 2. ブランチ名から Linear Issue ID を抽出する
-   - パターン例: `feat/CFP-12` → `CFP-12`、`build/EDH-345-update-node` → `EDH-345`
+   - パターン例: `feat/TEAM-12` → `TEAM-12`、`build/PROJ-345-update-node` → `PROJ-345`
    - 正規表現: `[A-Z]+-\d+` にマッチする部分を抽出
 3. Issue ID が抽出できない場合:
    - 「Issue なしの通常作業」としてユーザーに通知する
@@ -26,7 +26,7 @@ allowed-tools: mcp__linear__get_issue, Read, Write, Glob, Grep, Bash
 ### Phase 2: プロジェクトスラッグ特定
 
 1. Issue ID のプレフィックスを小文字化してスラッグとする
-   - 例: `CFP-12` → `cfp`、`EDH-345` → `edh`
+   - 例: `TEAM-12` → `team`、`PROJ-345` → `proj`
 
 ### Phase 3: 関連ファイル読み込み
 
