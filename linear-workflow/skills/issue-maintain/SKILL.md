@@ -1,13 +1,10 @@
 ---
 name: issue-maintain
 description: >
-  Issue ファイル（.claude/linear/*/issues/*.md）のセッション内容反映・品質整理・knowledge 切り出しを行う。
-  セッション終了前やタスクの区切り時に、作業内容を Issue ファイルに書き込み、
-  同時に品質整理（完了サブタスクの圧縮、重複除去、不採用アプローチの削除、
-  テンプレート準拠チェック）と汎用知見の knowledge/ 切り出しを実行する。
-  使用タイミング: ユーザーが「/issue-maintain」「Issue整理」「Issueファイルのメンテナンス」
-  「セッション終了前にIssue更新」「Issueファイル更新して」と言った時。
+  Issue ファイルのセッション内容反映・品質整理・knowledge 切り出しを行う。
+  トリガー: 「/issue-maintain」「Issue整理」「Issueファイルのメンテナンス」「セッション終了前にIssue更新」「Issueファイル更新して」
   引数: [Issue ID（省略時は現在のブランチから抽出、またはissues/配下の全ファイル対象）]
+allowed-tools: Read, Write, Edit, Grep, Glob
 ---
 
 # Issue Maintain

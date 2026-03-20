@@ -8,6 +8,7 @@ description: >
   使用タイミング: ユーザーが「/linear-maintain」「Linear同期」「ステータス更新」
   「プロジェクト整理」と言った時。
   引数: [プロジェクトスラッグ（省略時は .claude/linear/ 配下の全スラッグ対象）]
+allowed-tools: mcp__linear__list_issues, mcp__linear__list_projects, mcp__linear__get_issue, mcp__linear__get_project, mcp__linear__list_issue_statuses, Read, Write, Edit, Glob, Grep, Bash
 ---
 
 # Linear Maintain
