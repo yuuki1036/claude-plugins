@@ -23,17 +23,9 @@ allowed-tools:
 2. 未指定なら現在のブランチ名から推定を試みる（`git branch --show-current`）
 3. 推定できなければユーザーに確認する
 
-### Phase 2: プロジェクトの初期セットアップ
+### Phase 2: プロジェクトの存在確認
 
-`.claude/indie/{slug}/` が存在しない場合、以下を作成する:
-
-```
-.claude/indie/{slug}/
-  project.md        # プロジェクト概要（空テンプレート）
-  counter.txt       # Issue 番号カウンター（初期値: 1）
-  backlog.md        # バックログ一覧（空テンプレート）
-  issues/           # Issue ファイル格納ディレクトリ
-```
+`.claude/indie/{slug}/` が存在しない場合、`/init {slug}` の実行を案内して処理を中止する。
 
 ### Phase 3: Issue ID の生成
 

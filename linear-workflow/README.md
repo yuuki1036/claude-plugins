@@ -4,6 +4,13 @@ Linear MCP 連携のプロジェクト・Issue 管理ワークフロープラグ
 
 ## スキル一覧
 
+### init
+
+Linear プロジェクトの初期セットアップ。ディレクトリ構造を作成し、Linear MCP からプロジェクト情報を取得する。
+
+- トリガー: 「プロジェクト初期化」「init」「/init」
+- 引数: `[PROJECT-SLUG]`
+
 ### session-start
 
 セッション開始時の作業準備。ブランチ名から Linear Issue を特定し、関連ファイルを読み込む。
@@ -66,7 +73,7 @@ Claude Code で `list_projects` や `list_issues` などの Linear MCP ツール
 
 1. このプラグインをインストールする
 2. 上記の手順で Linear MCP を設定する
-3. `.claude/linear/{slug}/` 配下に Issue ファイルやプロジェクト doc を配置する
+3. `/init {slug}` でプロジェクトのディレクトリ構造を初期化する
 4. `/session-start` でセッション開始時に作業コンテキストを自動読み込み
 5. `/issue-create [ISSUE-ID]` で新規 Issue ファイルをテンプレートから作成
 6. `/linear-maintain` で Linear との同期を実行
