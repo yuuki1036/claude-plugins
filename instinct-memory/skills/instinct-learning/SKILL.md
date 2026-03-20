@@ -1,6 +1,13 @@
 ---
 name: instinct-learning
 description: ユーザーの訂正・好み・繰り返しパターンを instinct として記録・管理・昇格させるシステム。
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - AskUserQuestion
 ---
 
 # Instinct Learning System

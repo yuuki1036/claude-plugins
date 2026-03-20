@@ -1,6 +1,12 @@
 ---
 description: セッションからパターンを抽出し instinct として記録する
-allowed-tools: ["Read", "Write", "Edit", "Glob", "Grep", "AskUserQuestion"]
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - AskUserQuestion
 ---
 
 # Learn — パターン抽出

@@ -1,6 +1,8 @@
 ---
 description: 現在の instinct 一覧と confidence を表示する
-allowed-tools: ["Read", "Glob"]
+allowed-tools:
+  - Read
+  - Glob
 ---
 
 # Instinct Status — 一覧表示

@@ -1,7 +1,11 @@
 ---
 name: claude-code-setup
 description: コードベースを分析し、ユーザーレイヤーの既存設定を考慮した上でClaude Codeオートメーション（hooks, skills, MCP servers, subagents, plugins）を推奨する。ユーザーが「セットアップ推奨」「オートメーション推奨」「Claude Codeのセットアップ」「どんなhookを使うべき？」「自動化の提案」「recommend automations」と聞いた時に使用。
-allowed-tools: Read, Glob, Grep, Bash
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Bash
 ---
 
 # Claude Automation Recommender (User-Layer Aware)

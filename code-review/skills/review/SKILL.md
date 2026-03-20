@@ -8,6 +8,12 @@ description: |
   React/Next.jsプロジェクトではvercel-best-practicesの観点も自動追加。
   使用タイミング: ユーザーが「レビューして」「/review」「コードレビュー」と言った時。
   引数: [PR番号] (省略時は現在のブランチに紐づくPRを自動取得)
+allowed-tools:
+  - Bash
+  - Read
+  - Glob
+  - Grep
+  - mcp__github__pull_request_read
 ---
 
 # Review

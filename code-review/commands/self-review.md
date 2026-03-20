@@ -1,6 +1,10 @@
 ---
 description: "コミット前のセルフレビューを実行する（PR不要・ローカル完結）"
-allowed-tools: ["Bash", "Read", "Glob", "Grep"]
+allowed-tools:
+  - Bash
+  - Read
+  - Glob
+  - Grep
 argument-hint: "[--staged | base branch] (省略時はデフォルトブランチとの差分)"
 ---
 

@@ -1,6 +1,10 @@
 ---
 description: Issue ファイルの新規作成（テンプレート選択 + Linear MCP 連携）
-allowed-tools: mcp__linear__get_issue, Read, Write, Glob
+allowed-tools:
+  - mcp__linear__get_issue
+  - Read
+  - Write
+  - Glob
 argument-hint: "[ISSUE-ID]"
 ---
 
