@@ -50,6 +50,15 @@
         "name": "yuki"
       },
       "source": "./linear-workflow"
+    },
+    {
+      "name": "indie-workflow",
+      "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
+      "version": "1.0.0",
+      "author": {
+        "name": "yuki"
+      },
+      "source": "./indie-workflow"
     }
   ]
 }

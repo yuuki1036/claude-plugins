@@ -25,6 +25,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | dev-workflow | 2 | 2 | - | Git コミット・PR 作成の開発ワークフロー |
 | claude-meta | 1 | 2 | - | Claude Code 設定管理・CLAUDE.md 監査改善 |
 | linear-workflow | 4 | 4 | SessionStart | Linear MCP 連携の Issue/プロジェクト管理 |
+| indie-workflow | 5 | 5 | SessionStart | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 
 ## コマンド
 
