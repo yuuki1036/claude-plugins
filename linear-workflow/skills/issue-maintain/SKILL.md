@@ -4,7 +4,13 @@ description: >
   Issue ファイルのセッション内容反映・品質整理・knowledge 切り出し・completed 管理を行う。
   トリガー: 「/issue-maintain」「Issue整理」「Issueファイルのメンテナンス」「セッション終了前にIssue更新」「Issueファイル更新して」
   引数: [Issue ID（省略時は現在のブランチから抽出、またはissues/配下の全ファイル対象）]
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Bash
 ---
 
 # Issue メンテナンス

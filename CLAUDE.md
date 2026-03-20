@@ -24,7 +24,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | code-review | 2 | 2 | - | 並列エージェントによる PR レビュー / セルフレビュー |
 | dev-workflow | 2 | 2 | - | Git コミット・PR 作成の開発ワークフロー |
 | claude-meta | 1 | 2 | - | Claude Code 設定管理・CLAUDE.md 監査改善 |
-| linear-workflow | 4 | 4 | SessionStart | Linear MCP 連携の Issue/プロジェクト管理 |
+| linear-workflow | 5 | 5 | SessionStart | Linear MCP 連携の Issue/プロジェクト管理 |
+| indie-workflow | 6 | 6 | SessionStart | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 
 ## コマンド
 
@@ -52,7 +53,7 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 
 ## Gotchas
 
-- **marketplace.json の同期忘れ**: plugin.json の version/description を更新したら `.claude-plugin/marketplace.json` も必ず同期する。現状 linear-workflow で不一致が発生している
+- **marketplace.json の同期忘れ**: plugin.json の version/description を更新したら `.claude-plugin/marketplace.json` も必ず同期する
 - **hooks の stdin 消費**: hook スクリプトは必ず `cat > /dev/null` で stdin を消費してから処理を開始する。消費しないとハングする
 - **hooks の stdout**: hook スクリプトの stdout が Claude のコンテキストに注入される。条件付き注入は exit 0 で空出力にする
 

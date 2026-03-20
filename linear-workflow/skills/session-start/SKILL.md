@@ -4,7 +4,13 @@ description: >
   セッション開始時の作業準備。ブランチ名から Linear Issue を特定し、
   関連プロジェクト doc と Issue ファイルを読み込む。
   トリガー: 「作業開始」「セッション開始」「タスク開始」「今日の作業を始める」「コンテキスト読み込み」「/session-start」
-allowed-tools: mcp__linear__get_issue, Read, Write, Glob, Grep, Bash
+allowed-tools:
+  - mcp__linear__get_issue
+  - Read
+  - Write
+  - Glob
+  - Grep
+  - Bash
 ---
 
 # Session Start

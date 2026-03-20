@@ -1,6 +1,12 @@
 ---
 description: high confidence の instinct を MEMORY.md に昇格する
-allowed-tools: ["Read", "Write", "Edit", "Glob", "Grep", "AskUserQuestion"]
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - AskUserQuestion
 ---
 
 # Instinct Promote — MEMORY.md への昇格

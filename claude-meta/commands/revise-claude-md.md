@@ -1,6 +1,11 @@
 ---
 description: Update CLAUDE.md with learnings from this session
-allowed-tools: Read, Edit, Glob
+allowed-tools:
+  - Read
+  - Edit
+  - Glob
+  - Grep
+  - Bash
 ---
 
 Review this session for learnings about working with Claude Code in this codebase. Update CLAUDE.md with context that would help future Claude sessions be more effective.

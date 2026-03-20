@@ -6,6 +6,11 @@ description: |
   Confidence scoring (0-100) で偽陽性をフィルタリングし、≥80の指摘のみ報告。
   使用タイミング: ユーザーが「セルフレビュー」「/self-review」「自分の変更を確認」「コミット前にチェック」と言った時。
   引数: [base branch] (省略時は自動検出、不明なら確認)
+allowed-tools:
+  - Bash
+  - Read
+  - Glob
+  - Grep
 ---
 
 # Self Review
