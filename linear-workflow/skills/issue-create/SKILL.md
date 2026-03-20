@@ -3,7 +3,7 @@ name: issue-create
 description: >
   Issue ファイルの新規作成。タスクの性質に応じて bugfix / feature / investigation
   テンプレートを選択し、Linear MCP から情報を取得して Issue ファイルを生成する。
-  トリガー: 「Issue作成」「Issueファイル作成」「新しいタスク」「/issue-create」
+  トリガー: 「Issue作成」「Issueファイル作成」「新しいタスク」「Issueファイルを作って」「Linearの Issue をローカルに取り込む」「/issue-create」
 allowed-tools: mcp__linear__get_issue, Read, Write, Glob
 ---
 
