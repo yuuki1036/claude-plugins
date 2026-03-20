@@ -40,7 +40,9 @@ git log --oneline -10
 
 ステージング順: 設定/インポート → 型定義 → ユーティリティ → コア実装 → テスト(別コミット) → ドキュメント(別コミット)
 
-同一ファイル内に複数作業がある場合は `git add -p` でhunk単位分割。
+同一ファイル内に複数作業がある場合は、関連するファイルを `git add <file>` で個別にステージングする。
+全ファイルをまとめてステージングする場合は `git add .` を使用する。
+注意: `git add -p` は対話的操作のためClaude Codeでは使用不可。ファイル単位でのステージングで代替すること。
 
 分割の詳細パターンは [references/staging-patterns.md](references/staging-patterns.md) を参照。
 

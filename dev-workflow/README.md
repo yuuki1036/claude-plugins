@@ -10,7 +10,7 @@ Git操作とPR作成の開発ワークフロープラグイン。原子性重視
 
 - Protected branchの安全性チェック
 - 変更の自動分割判定（1コミット = 1作業単位）
-- `git add -p` によるhunk単位のステージング
+- ファイル単位での `git add <file>` によるステージング
 - Conventional Commits準拠の日本語コミットメッセージ生成
 
 ### pr-creator
@@ -26,3 +26,23 @@ Git操作とPR作成の開発ワークフロープラグイン。原子性重視
 
 - コミット作成: 「コミットして」「変更をコミット」と伝える
 - PR作成: 「PR作って」「プルリクエスト作成」と伝える
+
+## Linear MCP 連携（オプション）
+
+pr-creator スキルは Linear MCP と連携して、ブランチ名から Linear Issue の情報を自動取得できます。この連携は**オプション**であり、未設定でもブランチ名とコミット履歴からPR情報を生成します。
+
+Linear MCP を有効にするには、`.mcp.json` または Claude Code の設定に以下を追加してください：
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/linear-mcp-server"],
+      "env": {
+        "LINEAR_API_KEY": "<your-linear-api-key>"
+      }
+    }
+  }
+}
+```

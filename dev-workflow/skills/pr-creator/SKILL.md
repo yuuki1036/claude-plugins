@@ -32,6 +32,14 @@ git diff <base-branch>...HEAD
 - `mcp__linear__get_issue` でタイトル・説明を取得
 - `.claude/plans/{issueId}.md` があれば参照
 
+**Linear MCP が利用できない場合のフォールバック:**
+Linear MCP が未設定または接続エラーの場合は、以下の情報のみからPR情報を生成する：
+- ブランチ名（Issue IDやタスク名を抽出）
+- `git log <base-branch>..HEAD` のコミット履歴
+- `git diff <base-branch>...HEAD` の差分内容
+
+Linear連携なしでも基本的なPR作成は問題なく動作する。
+
 詳細は [references/linear-integration.md](references/linear-integration.md) を参照。
 
 ### 4. PR情報を生成
