@@ -72,13 +72,10 @@ Claude Code で `list_projects` や `list_issues` などの Linear MCP ツール
 6. `/linear-maintain` で Linear との同期を実行
 7. `/issue-maintain` で Issue ファイルの整理・knowledge 切り出しを実行
 
-## CLAUDE.md との連携
+## SessionStart hook
 
-このプラグインは CLAUDE.md の詳細手順を skill として提供する設計です。
-CLAUDE.md には以下のようなポインタを記載してください:
+`.claude/linear/` ディレクトリが存在するプロジェクトでは、セッション開始時にプロジェクト管理ルールが自動注入されます。
+これにより CLAUDE.md に管理ルールを手書きする必要がなくなります。
 
-```md
-## 作業開始時
-ブランチ名から Issue ID を抽出し、関連ファイルを読み込む。
-詳細は `/session-start` スキルを参照。
-```
+- ルール内容: `rules/project-rules.md`
+- 条件: `.claude/linear/` ディレクトリの存在
