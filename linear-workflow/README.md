@@ -1,33 +1,39 @@
 # linear-workflow
 
-Linear MCP 連携の Issue・プロジェクト管理プラグイン。Linear 上のステータス同期と Issue ファイルのメンテナンスを自動化する。
+Linear MCP 連携のプロジェクト・Issue 管理ワークフロープラグイン。
 
-## 含まれるスキル
+## スキル一覧
+
+### session-start
+
+セッション開始時の作業準備。ブランチ名から Linear Issue を特定し、関連ファイルを読み込む。
+
+- トリガー: 「作業開始」「セッション開始」「/session-start」
+
+### issue-create
+
+Issue ファイルの新規作成。bugfix / feature / investigation テンプレートから選択。
+
+- トリガー: 「Issue作成」「/issue-create」
+- 引数: `[ISSUE-ID]`
 
 ### linear-maintain
 
-Linear MCP と同期してローカルの管理ファイルを最新化するスキル。
+Linear MCP と同期してプロジェクト doc・Issue ステータスを最新化。completed Issue の自動メンテナンスも実行。
 
-- プロジェクト doc（`projects/*.md`）のステータス・Issue テーブル同期
-- Issue ファイルの `linear_status` 自動更新
-- 新規プロジェクトの検出・doc 作成提案
-- 不整合検出（Linear と手動ステータスの乖離）
-
-呼び出し: `/linear-maintain`、「Linear同期」、「ステータス更新」、「プロジェクト整理」
+- トリガー: 「Linear同期」「/linear-maintain」
+- 引数: `[プロジェクトスラッグ]`（省略時は全スラッグ）
 
 ### issue-maintain
 
-Issue ファイルのセッション内容反映・品質整理・knowledge 切り出しを行うスキル。
+Issue ファイルの品質整理・knowledge 切り出し・completed 管理。
 
-- セッション作業内容の Issue ファイルへの反映
-- 品質整理（完了サブタスクの圧縮、重複除去、テンプレート準拠チェック）
-- 汎用知見の `knowledge/` ディレクトリへの切り出し
-
-呼び出し: `/issue-maintain`、「Issue整理」、「Issueファイルのメンテナンス」
+- トリガー: 「Issue整理」「/issue-maintain」
+- 引数: `[Issue ID]`（省略時は現在のブランチから抽出）
 
 ## 前提条件
 
-- Linear MCP が設定済みであること（`list_issues`, `list_projects`, `get_issue`, `get_project` などのツールが利用可能）
+- Linear MCP が設定済みであること
 - `.claude/linear/{slug}/` ディレクトリ構造が存在すること
 
 ## Linear MCP の設定
@@ -61,4 +67,18 @@ Claude Code で `list_projects` や `list_issues` などの Linear MCP ツール
 1. このプラグインをインストールする
 2. 上記の手順で Linear MCP を設定する
 3. `.claude/linear/{slug}/` 配下に Issue ファイルやプロジェクト doc を配置する
-4. `/linear-maintain` で Linear との同期、`/issue-maintain` で Issue ファイルの整理を実行する
+4. `/session-start` でセッション開始時に作業コンテキストを自動読み込み
+5. `/issue-create [ISSUE-ID]` で新規 Issue ファイルをテンプレートから作成
+6. `/linear-maintain` で Linear との同期を実行
+7. `/issue-maintain` で Issue ファイルの整理・knowledge 切り出しを実行
+
+## CLAUDE.md との連携
+
+このプラグインは CLAUDE.md の詳細手順を skill として提供する設計です。
+CLAUDE.md には以下のようなポインタを記載してください:
+
+```md
+## 作業開始時
+ブランチ名から Issue ID を抽出し、関連ファイルを読み込む。
+詳細は `/session-start` スキルを参照。
+```
