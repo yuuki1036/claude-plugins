@@ -1,0 +1,94 @@
+---
+name: review
+description: |
+  最大8つの専門エージェントを並列起動してコードレビューする。
+  Confidence scoring (0-100) で偽陽性をフィルタリングし、≥80の指摘のみ報告。
+  常時6エージェント: CLAUDE.md準拠x2、バグ検出、git blame、サイレント失敗、コメント分析。
+  条件付き: テストファイル変更時にテスト分析、型定義変更時に型設計分析を追加。
+  React/Next.jsプロジェクトではvercel-best-practicesの観点も自動追加。
+  使用タイミング: ユーザーが「レビューして」「/review」「コードレビュー」と言った時。
+  引数: [PR番号] (省略時は現在のブランチに紐づくPRを自動取得)
+---
+
+# Review
+
+## 前提
+
+- 現在のブランチにPRが存在すること（PRがなければ終了）
+
+## 実行手順
+
+### 1. PRの取得と前提確認
+
+```bash
+# PR番号指定時
+gh pr checkout <PR番号>
+
+# PRメタ情報とbase branchを取得
+gh pr view --json number,title,url,author,state,headRefName,baseRefName,body
+gh pr view --json comments
+```
+
+PRが存在しない場合は「PRが見つかりません」と報告して終了。
+スキップ条件: closed、変更なしのPR
+
+### 2. 差分とコンテキストの収集
+
+```bash
+# PRから取得したbase branchとの差分
+BASE=$(gh pr view --json baseRefName -q .baseRefName)
+git diff "${BASE}..HEAD"
+git diff "${BASE}..HEAD" --name-only
+```
+
+並列で収集:
+- PR description と comments（レビュー文脈として活用）
+- CLAUDE.md・規約ファイル: `CLAUDE.md`, `.github/CONTRIBUTING.md`, `.eslintrc.*`, `prettier.config.*`
+
+### 3. 条件判定
+
+- **React/Next.js判定**: `package.json`に`react`/`next`が含まれる → Agent #3にvercel-best-practices観点を追加
+- **テストファイル判定**: diffにテストファイル(`.test.`, `.spec.`, `__tests__/`)が含まれる → Agent #7を起動
+- **型定義判定**: diffに`type `または`interface `の追加/変更が含まれる → Agent #8を起動
+
+### 4. エージェント並列レビュー
+
+| Agent | 起動条件 | 役割 |
+|-------|----------|------|
+| #1 | 常時 | CLAUDE.md準拠チェック (1/2) |
+| #2 | 常時 | CLAUDE.md準拠チェック (2/2) |
+| #3 | 常時 | バグ・ロジックエラー検出 |
+| #4 | 常時 | git blame/履歴コンテキスト分析 |
+| #5 | 常時 | サイレント失敗・エラーハンドリング分析 |
+| #6 | 常時 | コメント正確性・陳腐化分析 |
+| #7 | テストファイル変更時 | テストカバレッジ・品質分析 |
+| #8 | 型定義変更時 | 型設計・不変条件分析 |
+
+エージェントのプロンプト詳細は [../../references/agent-prompts.md](../../references/agent-prompts.md) を参照。
+
+### 5. Confidenceスコアリングとフィルタリング
+
+各指摘に0-100のconfidenceスコアを付与。≥80のみ報告。
+
+スコアリング詳細は [../../references/scoring-guide.md](../../references/scoring-guide.md) を参照。
+
+### 6. レポート出力
+
+```
+## レビュー結果
+
+**総合評価**: X/10点
+
+### 指摘事項 (confidence ≥80)
+
+1. [confidence: 95][バグ] Missing error handling...
+   ファイル: src/auth.ts:67-72
+
+2. [confidence: 85][サイレント失敗] Empty catch block...
+   ファイル: src/api.ts:23-25
+
+### 総括
+- 変更の目的と全体像
+- 影響範囲
+- 人間が最終確認すべき観点
+```

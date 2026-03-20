@@ -1,0 +1,8 @@
+{
+  "name": "linear-workflow",
+  "version": "1.0.0",
+  "description": "Linear MCP連携のIssue・プロジェクト管理。ステータス同期とIssueファイルのメンテナンス",
+  "author": {
+    "name": "yuki"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "code-review",
+  "version": "1.0.0",
+  "description": "並列エージェントによるコードレビューとセルフレビュー。Confidence scoringで偽陽性をフィルタリング",
+  "author": {
+    "name": "yuki"
+  }
+}
