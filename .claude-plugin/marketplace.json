@@ -50,6 +50,15 @@
         "name": "yuki"
       },
       "source": "./linear-workflow"
+    },
+    {
+      "name": "plugin-manager",
+      "description": "インストール済みプラグインの一括更新コマンド",
+      "version": "1.0.0",
+      "author": {
+        "name": "yuki"
+      },
+      "source": "./plugin-manager"
     }
   ]
 }

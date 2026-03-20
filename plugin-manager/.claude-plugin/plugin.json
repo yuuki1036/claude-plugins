@@ -1,0 +1,8 @@
+{
+  "name": "plugin-manager",
+  "version": "1.0.0",
+  "description": "インストール済みプラグインの一括更新コマンド",
+  "author": {
+    "name": "yuki"
+  }
+}
