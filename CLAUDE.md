@@ -13,8 +13,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
   hooks/                         # フック定義（hooks.json + scripts/）
   rules/                         # SessionStart 等で注入されるルール
   README.md
-  LICENSE                        # MIT License
 ```
+
+> LICENSE ファイルは不要（各プラグインに個別のライセンスファイルを置かない）
 
 ## プラグイン一覧
 
@@ -26,6 +27,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | claude-meta | 1 | 2 | - | Claude Code 設定管理・CLAUDE.md 監査改善 |
 | linear-workflow | 5 | 5 | SessionStart | Linear MCP 連携の Issue/プロジェクト管理 |
 | indie-workflow | 6 | 6 | SessionStart | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
+| plugin-manager | 1 | - | - | インストール済みプラグインの一括更新 |
 
 ## コマンド
 
@@ -60,6 +62,7 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 ## 品質チェック
 
 プラグインの新規作成・変更時は以下を実行:
+- `/quality-check` で全プラグインの品質バリデーション
 - `plugin-dev:plugin-validator` でバリデーション
 - `plugin-dev:skill-reviewer` でスキル品質レビュー
 
