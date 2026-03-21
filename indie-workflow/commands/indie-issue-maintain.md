@@ -10,4 +10,4 @@ allowed-tools:
 argument-hint: ""
 ---
 
-issue-maintain スキルを使って Issue ファイルのメンテナンスを実行してください。
+indie-issue-maintain スキルを使って Issue ファイルのメンテナンスを実行してください。

@@ -1,5 +1,5 @@
 ---
-description: セッション開始時の作業準備・放置 Issue 警告
+description: セッション開始。main ではダッシュボード、feature ブランチでは Issue コンテキスト読み込み
 allowed-tools:
   - Read
   - Write

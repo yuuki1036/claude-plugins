@@ -1,5 +1,5 @@
 ---
-description: プロジェクトの初期セットアップ
+description: 個人プロジェクトの初期セットアップ
 allowed-tools:
   - Read
   - Write

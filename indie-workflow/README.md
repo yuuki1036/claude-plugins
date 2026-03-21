@@ -12,7 +12,7 @@ Linear 等の外部ツールに依存せず、ローカルファイルのみで 
 claude plugin install indie-workflow@yuuki1036-claude-plugins
 ```
 
-プロジェクトで初めて使う場合は `/init` を実行してディレクトリを初期化する。
+プロジェクトで初めて使う場合は `/indie-init` を実行してディレクトリを初期化する。
 
 ## ディレクトリ構造
 
@@ -31,10 +31,10 @@ claude plugin install indie-workflow@yuuki1036-claude-plugins
 
 | スキル | 用途 | トリガー |
 |--------|------|----------|
-| init | プロジェクトの初期セットアップ | 新規プロジェクト開始時 |
-| session-start | セッション開始時の作業準備・放置警告 | 新しいセッション開始時 |
-| issue-create | Issue ファイルの新規作成 | 新規タスク開始時 |
-| issue-maintain | Issue ファイルの品質整理・knowledge 切り出し | セッション終了前 |
+| indie-init | プロジェクトの初期セットアップ | 新規プロジェクト開始時 |
+| indie-start | セッション開始時の作業準備・ダッシュボード・放置警告 | 新しいセッション開始時 |
+| indie-issue-create | Issue ファイルの新規作成 + ブランチ自動作成 + feature-dev 連携 | 新規タスク開始時 |
+| indie-issue-maintain | Issue ファイルの品質整理・knowledge 切り出し | セッション終了前 |
 | indie-maintain | 全プロジェクトの棚卸し・放置/debt 管理 | 定期的（週1程度） |
 | retrospective | 振り返り・見積もり精度分析 | 週次/月次 |
 
@@ -42,10 +42,10 @@ claude plugin install indie-workflow@yuuki1036-claude-plugins
 
 | コマンド | 引数 | 説明 |
 |---------|------|------|
-| `/init` | `[PROJECT-SLUG]` | プロジェクト初期セットアップ |
-| `/session-start` | - | セッション開始の作業準備 |
-| `/issue-create` | `[PROJECT-SLUG]` | Issue ファイル新規作成 |
-| `/issue-maintain` | - | Issue ファイルの整理 |
+| `/indie-init` | `[PROJECT-SLUG]` | プロジェクト初期セットアップ |
+| `/indie-start` | - | セッション開始の作業準備（main ブランチではダッシュボードモード） |
+| `/indie-issue-create` | `[PROJECT-SLUG]` | Issue ファイル新規作成（ブランチ自動作成 + feature-dev 連携） |
+| `/indie-issue-maintain` | - | Issue ファイルの整理 |
 | `/indie-maintain` | `[project-slug]` | プロジェクト棚卸し |
 | `/retrospective` | `[期間: 2w, 1m]` | 振り返り |
 

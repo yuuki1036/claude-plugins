@@ -1,9 +1,9 @@
 ---
-name: init
+name: indie-init
 description: >
   プロジェクトの初期セットアップ。ディレクトリ構造、project.md、
   backlog.md、counter.txt を作成する。
-  トリガー: 「プロジェクト初期化」「init」「セットアップ」「新しいプロジェクト」「/init」
+  トリガー: 「個人プロジェクト初期化」「indie init」「ローカルプロジェクトセットアップ」「/indie-init」
 allowed-tools:
   - Read
   - Write
@@ -96,5 +96,5 @@ created: {今日の日付}
 1. 作成されたファイル一覧を報告する
 2. プロジェクトの概要を確認する
 3. 次のアクションを案内する:
-   - `/issue-create {slug}` で最初の Issue を作成
+   - `/indie-issue-create {slug}` で最初の Issue を作成
    - `backlog.md` にアイデアを書き溜める

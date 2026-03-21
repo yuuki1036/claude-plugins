@@ -1,14 +1,15 @@
 ---
-name: issue-create
+name: indie-issue-create
 description: >
-  Issue ファイルの新規作成。タスクの性質に応じて bugfix / feature /
-  investigation / debt テンプレートを選択し、ローカルに Issue ファイルを生成する。
-  トリガー: 「Issue作成」「タスク作成」「新しいタスク」「起票」「/issue-create」
+  Issue ファイルの新規作成。テンプレート選択、ブランチ自動作成、feature-dev への接続まで
+  一貫サポート。
+  トリガー: 「タスク作成」「Issue起票」「新しいタスク」「/indie-issue-create」
 allowed-tools:
   - Read
   - Write
   - Glob
   - Bash
+  - Agent
 ---
 
 # Issue Create
@@ -25,7 +26,7 @@ allowed-tools:
 
 ### Phase 2: プロジェクトの存在確認
 
-`.claude/indie/{slug}/` が存在しない場合、`/init {slug}` の実行を案内して処理を中止する。
+`.claude/indie/{slug}/` が存在しない場合、`/indie-init {slug}` の実行を案内して処理を中止する。
 
 ### Phase 3: Issue ID の生成
 
@@ -46,7 +47,7 @@ allowed-tools:
 - 判断に迷う場合はユーザーに確認する
 - feature テンプレートの場合、スコープサイズ（small / medium / large）をユーザーに確認する
 - テンプレートは以下を Read で読み込む:
-  - `${CLAUDE_PLUGIN_ROOT}/skills/issue-create/references/{type}.md`
+  - `${CLAUDE_PLUGIN_ROOT}/skills/indie-issue-create/references/{type}.md`
 
 ### Phase 5: Issue 情報のヒアリング
 
@@ -81,8 +82,19 @@ allowed-tools:
 
 1. `counter.txt` の値をインクリメントして書き込む
 2. 作成したファイルの絶対パスを報告する
-3. ブランチ作成を提案する（`{type}/{slug}-{N}` 形式、例: `feature/myapp-3`）
-4. 次のアクションを案内する:
+3. **ブランチ自動作成**: ユーザーに確認後、`git checkout -b {type}/{SLUG-N}-{description}` を実行
+   - `description` はタイトルから kebab-case で自動生成（短く、英語）
+   - 例: `feat/MYAPP-3-add-auth`, `fix/BLOG-2-fix-typo`
+   - type マッピング: bugfix → `fix`, feature → `feat`, investigation → `investigate`, debt → `chore`
+4. **feature-dev 連携案内**:
+   ```
+   ### 次のステップ
+   Issue ファイルが作成され、ブランチに切り替わりました。
+
+   > `feature-dev` で実装計画を立てますか？
+   ```
+   ユーザーが承諾したら、feature-dev スキルの実行を提案（直接実行はしない。案内のみ）
+5. 次のアクションを案内する:
    - 計画の記入（feature の場合）
    - 調査の開始（investigation の場合）
    - 修正の着手（bugfix の場合）

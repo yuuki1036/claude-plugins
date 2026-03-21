@@ -4,7 +4,7 @@
 
 ## セッション開始時
 
-1. `/session-start` を実行して作業コンテキストを読み込む
+1. `/indie-start` を実行して作業コンテキストを読み込む
 2. ブランチ名から Issue ID を自動特定し、関連ファイルを読み込む
 
 ## ブランチ命名規則
@@ -18,7 +18,7 @@
 - プロジェクト概要: `.claude/indie/{project}/project.md`
 - 作業の進捗は Issue ファイルのチェックリストに反映する
 - `last_active` を作業のたびに更新する
-- セッション終了前に `/issue-maintain` で Issue ファイルを更新する
+- セッション終了前に `/indie-issue-maintain` で Issue ファイルを更新する
 
 ## スコープ管理
 
@@ -28,9 +28,9 @@
 
 ## 作業フロー
 
-1. セッション開始 → `/session-start`
-2. 新規 Issue 作成 → `/issue-create`
+1. セッション開始 → `/indie-start`
+2. 新規 Issue 作成 → `/indie-issue-create`
 3. 作業中の進捗更新 → Issue ファイルのチェックリストを更新
-4. セッション終了前 → `/issue-maintain` で Issue ファイルを整理
+4. セッション終了前 → `/indie-issue-maintain` で Issue ファイルを整理
 5. 定期的な棚卸し → `/indie-maintain` でプロジェクト全体を整理
 6. 振り返り → `/retrospective` で学びを抽出

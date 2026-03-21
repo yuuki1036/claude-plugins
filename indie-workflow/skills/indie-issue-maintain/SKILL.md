@@ -1,9 +1,9 @@
 ---
-name: issue-maintain
+name: indie-issue-maintain
 description: >
   Issue ファイルのセッション内容反映・品質整理・knowledge 切り出しを行う。
-  スコープ超過の警告も実施する。
-  トリガー: 「Issue整理」「Issue更新」「セッション終了前にIssue更新」「/issue-maintain」
+  スコープ超過警告も実施。
+  トリガー: 「Issue整理」「Issue更新」「セッション終了前にIssue更新」「/indie-issue-maintain」
 allowed-tools:
   - Read
   - Write
@@ -24,9 +24,9 @@ allowed-tools:
 
 | コマンド | 動作 |
 |----------|------|
-| `/issue-maintain` | 現在のブランチに紐づく issue ファイルを整理 |
-| `/issue-maintain ISSUE-123` | 指定した issue ファイルを整理 |
-| `/issue-maintain --all` | 全 issue ファイルを整理（in-progress + completed の削除判定） |
+| `/indie-issue-maintain` | 現在のブランチに紐づく issue ファイルを整理 |
+| `/indie-issue-maintain ISSUE-123` | 指定した issue ファイルを整理 |
+| `/indie-issue-maintain --all` | 全 issue ファイルを整理（in-progress + completed の削除判定） |
 
 ---
 
@@ -141,7 +141,7 @@ Issue ファイルがフロントマターの `type` に対応するテンプレ
 - 空のままのセクションは「（なし）」と記載して残す（テンプレート構造を維持）
 
 品質チェックの詳細は以下を参照:
-→ Read `${CLAUDE_PLUGIN_ROOT}/skills/issue-maintain/references/quality-checklist.md`
+→ Read `${CLAUDE_PLUGIN_ROOT}/skills/indie-issue-maintain/references/quality-checklist.md`
 
 ---
 

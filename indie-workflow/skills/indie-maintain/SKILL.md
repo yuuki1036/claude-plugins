@@ -64,7 +64,7 @@ allowed-tools:
 
 ### 5. completed Issue メンテナンス
 
-`issues/` 内の `status: completed` ファイルを走査し、**issue-maintain の処理フロー**に従って品質整理を行う。
+`issues/` 内の `status: completed` ファイルを走査し、**indie-issue-maintain の処理フロー**に従って品質整理を行う。
 
 #### メンテナンス処理
 
