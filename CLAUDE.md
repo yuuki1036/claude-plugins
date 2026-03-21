@@ -58,6 +58,14 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 - **marketplace.json の同期忘れ**: plugin.json の version/description を更新したら `.claude-plugin/marketplace.json` も必ず同期する
 - **hooks の stdin 消費**: hook スクリプトは必ず `cat > /dev/null` で stdin を消費してから処理を開始する。消費しないとハングする
 - **hooks の stdout**: hook スクリプトの stdout が Claude のコンテキストに注入される。条件付き注入は exit 0 で空出力にする
+- **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げる。上げないと使用側で更新が検知されない。pre-commit hook でブロックされる
+
+## バージョニング規約
+
+- MAJOR: 破壊的変更（スキル/コマンドの削除・リネーム）
+- MINOR: 機能追加（新スキル/コマンド、既存機能拡張）
+- PATCH: 修正（バグ修正、ドキュメント、リファクタ）
+- plugin.json と marketplace.json の version は必ず同期する
 
 ## 品質チェック
 

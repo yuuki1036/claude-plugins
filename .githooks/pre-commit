@@ -1,0 +1,44 @@
+#!/bin/bash
+# Pre-commit hook: プラグイン変更時のバージョンバンプ必須チェック
+
+staged_files=$(git diff --cached --name-only)
+
+if [ -z "$staged_files" ]; then
+  exit 0
+fi
+
+errors=()
+
+for plugin_json in */.claude-plugin/plugin.json; do
+  [ -f "$plugin_json" ] || continue
+  plugin_dir=$(echo "$plugin_json" | cut -d'/' -f1)
+
+  # プラグイン内の変更（plugin.json 自体は除外）
+  content_changes=$(echo "$staged_files" | grep "^${plugin_dir}/" | grep -v "^${plugin_dir}/.claude-plugin/plugin.json$")
+
+  if [ -n "$content_changes" ]; then
+    # plugin.json もステージされているか（= バージョンバンプされたか）
+    version_bumped=$(echo "$staged_files" | grep "^${plugin_dir}/.claude-plugin/plugin.json$")
+
+    if [ -z "$version_bumped" ]; then
+      errors+=("${plugin_dir}")
+    fi
+  fi
+done
+
+if [ ${#errors[@]} -gt 0 ]; then
+  echo "Version bump required:"
+  echo ""
+  for plugin in "${errors[@]}"; do
+    echo "  ${plugin}/.claude-plugin/plugin.json"
+    echo "  changed files:"
+    echo "$staged_files" | grep "^${plugin}/" | grep -v ".claude-plugin/plugin.json" | sed 's/^/    /'
+    echo ""
+  done
+  echo "  .claude-plugin/marketplace.json も同期すること"
+  echo ""
+  echo "  MAJOR: 破壊的変更（スキル/コマンドの削除・リネーム）"
+  echo "  MINOR: 機能追加（新スキル/コマンド、既存機能拡張）"
+  echo "  PATCH: 修正（バグ修正、ドキュメント、リファクタ）"
+  exit 1
+fi
