@@ -28,6 +28,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | linear-workflow | 5 | 5 | SessionStart | Linear MCP 連携の Issue/プロジェクト管理 |
 | indie-workflow | 6 | 6 | SessionStart | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 | plugin-manager | 1 | - | - | インストール済みプラグインの一括更新 |
+| plugin-feedback | 1 | 1 | - | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 
 ## コマンド
 

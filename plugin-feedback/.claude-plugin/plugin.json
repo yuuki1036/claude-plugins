@@ -1,0 +1,8 @@
+{
+  "name": "plugin-feedback",
+  "version": "1.0.0",
+  "description": "プラグインへの改善要望・バグ報告を GitHub Issue として作成。コマンドと自然言語の両方で起動",
+  "author": {
+    "name": "yuki"
+  }
+}
