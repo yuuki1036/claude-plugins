@@ -45,7 +45,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "author": {
         "name": "yuki"
       },
@@ -54,7 +54,7 @@
     {
       "name": "indie-workflow",
       "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "author": {
         "name": "yuki"
       },

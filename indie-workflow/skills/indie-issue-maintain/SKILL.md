@@ -155,10 +155,37 @@ Issue ファイルがフロントマターの `type` に対応するテンプレ
    - ライブラリ・フレームワーク固有のノウハウ
    - ドメインロジックの仕様整理
 2. **正確性の確認**: コードベースや関連 Issue と照合して内容が正しいか検証
-3. **切り出し実行**: `knowledge/{topic}.md` に格納し、元の Issue からはリンクで参照。フロントマターに `status: verified`（実装済み）または `status: planned`（設計案）を付与
-4. **ユーザー承認**: 切り出し内容と格納先をユーザーに提示し、承認を得る
+3. **tags の付与**: 既存 knowledge の tags を確認（`knowledge/index.md` または Grep）し、語彙を揃えた上で 3〜7個の tags を決定
+4. **切り出し実行**: `knowledge/{topic}.md` に格納し、元の Issue からはリンクで参照。フロントマターに `status`, `tags` を付与
+5. **ユーザー承認**: 切り出し内容と格納先をユーザーに提示し、承認を得る
+6. **index.md の更新**: 切り出し後、`knowledge/index.md` を更新する（後述）
 
-knowledge の status フロントマターや切り出し時の照合ルールの詳細は quality-checklist.md を参照。
+knowledge の status フロントマターや切り出し時の照合ルール、tags 付与ルールの詳細は quality-checklist.md を参照。
+
+---
+
+## knowledge/index.md の管理
+
+knowledge ファイルの切り出し・更新・削除を行った際は、`knowledge/index.md` を必ず同期する。
+
+### フォーマット
+
+```markdown
+# Knowledge Index
+
+| ファイル | tags | status | 概要 |
+|---------|------|--------|------|
+| api-patterns.md | api, rest, pagination | verified | REST API のページネーションパターン |
+| cache-strategy.md | cache, redis, ttl | planned | キャッシュ戦略の設計案 |
+```
+
+### 更新ルール
+
+1. knowledge ファイルの新規作成時: 行を追加
+2. knowledge ファイルの更新時: 該当行の tags・status・概要を更新
+3. knowledge ファイルの削除時: 該当行を削除
+4. 概要はファイルの最初の見出し直後の1文を使用する（30文字以内に要約）
+5. index.md 自体は knowledge ファイルとしてカウントしない
 
 ---
 
@@ -210,7 +237,7 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 4. テンプレート準拠チェック（セクション構成の確認）
 5. 各セクションを走査し、整理対象を特定
 6. 更新履歴のセッション単位統合を確認
-7. knowledge/ 切り出し候補を特定
+7. knowledge/ 切り出し候補を特定（tags の語彙を既存 index.md と照合）
 8. タスク完了時フローの適用判定（全タスク完了 → status 更新、follow_up 確認）
 9. 整理計画をユーザーに提示:
    - スコープ超過警告（該当する場合）
@@ -221,7 +248,8 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
    - テンプレート不足セクションの追加
    - completed ファイルの削除候補
 10. 承認を得てから実行
-11. 更新履歴にメンテナンス内容を記録
+11. knowledge/ 切り出しがあった場合、knowledge/index.md を更新
+12. 更新履歴にメンテナンス内容を記録
 ```
 
 ## 更新履歴への記録形式

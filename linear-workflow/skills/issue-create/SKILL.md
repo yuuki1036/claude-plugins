@@ -37,6 +37,28 @@ Linear Issue の情報を取得し、テンプレートに基づいて Issue フ
 - テンプレートは以下を Read で読み込む:
   - `${CLAUDE_PLUGIN_ROOT}/skills/issue-create/references/{type}.md`
 
+### Phase 2.5: 関連 Knowledge の検索
+
+Issue の情報が確定した段階で、既存の knowledge を検索する。
+
+1. `.claude/linear/{slug}/knowledge/index.md` の存在を確認（Read）
+2. **index.md が存在する場合:**
+   - index.md を Read で読み込む
+   - Issue のタイトル・説明からキーワードを抽出する
+   - index.md の tags 列とキーワードを照合し、関連する knowledge を特定する
+3. **index.md が存在しない場合:**
+   - `.claude/linear/{slug}/knowledge/*.md` を Glob で列挙する
+   - knowledge ファイルが存在すれば、各ファイルのフロントマター（tags）と照合する
+4. **関連 knowledge が見つかった場合:**
+   - ユーザーに提示する:
+     ```
+     関連する knowledge が見つかりました:
+     - `knowledge/{topic}.md` — {概要}（tags: {tags}）
+     参照しますか？
+     ```
+   - ユーザーが参照を希望した場合、Read で内容を表示する
+   - Issue ファイルの「備考」セクションに関連 knowledge へのリンクを記載する
+
 ### Phase 3: Issue ファイル生成
 
 1. **配置先の決定**

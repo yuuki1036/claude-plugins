@@ -48,6 +48,27 @@ allowed-tools:
    - 存在しない場合:
      - Phase 4 へ進む
 
+### Phase 3.5: 関連 Knowledge の検索
+
+Issue ファイルが存在し、内容を読み込めた場合に実行する。
+
+1. `.claude/linear/{slug}/knowledge/index.md` の存在を確認（Read）
+2. **index.md が存在する場合:**
+   - index.md を Read で読み込む
+   - Issue のタイトル・概要・タスク内容からキーワードを抽出する
+   - index.md の tags 列とキーワードを照合し、関連する knowledge を特定する
+   - 関連する knowledge ファイルがあれば Read で内容を読み込む
+3. **index.md が存在しない場合:**
+   - `.claude/linear/{slug}/knowledge/*.md` を Glob で列挙する
+   - knowledge ファイルが存在すれば、各ファイルのフロントマター（tags）と Issue のキーワードを照合する
+4. **報告:**
+   - 関連する knowledge が見つかった場合、Phase 5 の報告に含める:
+     ```
+     **関連 Knowledge:**
+     - `knowledge/{topic}.md` — {概要}（tags: {tags}）
+     ```
+   - knowledge が0件の場合は何も表示しない
+
 ### Phase 4: Issue ファイル新規作成
 
 Issue ファイルが存在しない場合:
@@ -64,6 +85,7 @@ Issue ファイルが存在しない場合:
 - **Issue 情報**: タイトル・ステータス
 - **未完了タスク一覧**: Issue ファイルのチェックリストから未完了項目を抽出（あれば）
 - **前回セッションからの継続ポイント**: 更新履歴の最新エントリや進行中の作業内容
+- **関連 Knowledge**: Phase 3.5 で見つかった関連 knowledge の一覧（あれば）
 - **読み込んだプロジェクト doc**: 読み込んだファイル名の一覧
 
 ### Phase 6: feature-dev 連携案内

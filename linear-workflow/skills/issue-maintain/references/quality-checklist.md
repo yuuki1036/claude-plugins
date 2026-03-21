@@ -80,27 +80,37 @@ follow_up:
 
 ### 6. knowledge の status フロントマター仕様
 
-knowledge ファイルのフロントマターには `status` を必須で記載する：
+knowledge ファイルのフロントマターには `status` と `tags` を必須で記載する：
 
-| status | 意味 | 追加フィールド |
-|--------|------|---------------|
-| `status: verified` | コードベースに実装済みの知見 | `verified: YYYY-MM-DD` を併記 |
-| `status: planned` | 未実装の設計案・移行計画 | なし |
+| フィールド | 必須 | 意味 |
+|-----------|------|------|
+| `source` | 必須 | 元の Issue ID や調査元 |
+| `status` | 必須 | `verified`（実装済み）または `planned`（設計案） |
+| `verified` | 条件付き | status: verified の場合のみ。検証日 `YYYY-MM-DD` |
+| `tags` | 必須 | 検索用キーワードのリスト（3〜7個目安） |
+
+**tags の付与ルール:**
+- 技術用語・ライブラリ名・パターン名を優先する（例: `react`, `pagination`, `caching`）
+- ドメイン用語も含める（例: `auth`, `billing`, `search`）
+- 抽象的すぎるタグは避ける（`code`, `fix` などは不可）
+- 既存 knowledge の tags と語彙を揃える（新規タグを追加する前に既存タグを確認）
 
 **フォーマット例:**
 
 ```yaml
 ---
-source: {元の Issue ID や調査元}
+source: TEAM-42
 status: verified
 verified: 2026-03-20
+tags: [react, memo, rendering, performance]
 ---
 ```
 
 ```yaml
 ---
-source: {元の Issue ID や調査元}
+source: TEAM-15
 status: planned
+tags: [cache, redis, ttl, session]
 ---
 ```
 
