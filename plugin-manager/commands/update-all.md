@@ -1,29 +1,49 @@
 ---
-description: インストール済みの全プラグインを一括更新する
+description: インストール済みの全プラグインをキャッシュ更新後に再インストールする
 user_invocable: true
-allowed-tools: Bash
+allowed-tools:
+  - Bash
 ---
 
 インストール済みの全プラグインを一括更新してください。
 
 ## 手順
 
-1. `claude plugin list` でインストール済みプラグインの一覧を取得
-2. 出力からプラグイン名（`name@marketplace` 形式）を抽出
-3. 各プラグインに対して `claude plugin update <name@marketplace>` を順次実行
-4. 結果をまとめて報告
+### Phase 1: マーケットプレイスキャッシュの最新化
 
-## 実行ルール
+`claude plugin list` を実行し、出力から `name@marketplace` 形式のマーケットプレイス名を抽出する。
+重複を除いた各マーケットプレイスに対して以下を実行する:
 
-- CLIの競合を避けるため順次実行（並列不可）
-- 更新完了後、以下のフォーマットで報告する：
+```bash
+claude plugin marketplace update <marketplace-name>
+```
+
+### Phase 2: インストール済みプラグイン一覧の取得
+
+`claude plugin list` を実行し、全プラグインの `name@marketplace` 形式の識別子を抽出する。
+
+### Phase 3: 各プラグインの再インストール
+
+CLIの競合を避けるため順次実行（並列不可）。
+各プラグインに対して以下を順番に実行する:
+
+```bash
+claude plugin uninstall <name@marketplace>
+claude plugin install <name@marketplace>
+```
+
+- uninstall または install が失敗した場合はエラーとして記録し、次のプラグインに進む
+
+### Phase 4: 結果の報告
+
+以下のフォーマットで報告する:
 
 ```
 ## プラグイン更新結果
 
 | プラグイン | 結果 | 備考 |
 |-----------|------|------|
-| name@marketplace | 更新済み / 最新 / エラー | バージョン等 |
+| name@marketplace | 更新済み / エラー | エラー詳細等 |
 
 反映にはClaude Codeの再起動が必要です。
 ```
