@@ -42,3 +42,36 @@ if [ ${#errors[@]} -gt 0 ]; then
   echo "  PATCH: 修正（バグ修正、ドキュメント、リファクタ）"
   exit 1
 fi
+
+# CHANGELOG.md チェック: バージョンバンプ時は CHANGELOG.md も更新必須
+changelog_errors=()
+
+for plugin_json in */.claude-plugin/plugin.json; do
+  [ -f "$plugin_json" ] || continue
+  plugin_dir=$(echo "$plugin_json" | cut -d'/' -f1)
+
+  # plugin.json がステージされている（= バージョンバンプあり）
+  version_bumped=$(echo "$staged_files" | grep "^${plugin_dir}/.claude-plugin/plugin.json$")
+
+  if [ -n "$version_bumped" ]; then
+    # CHANGELOG.md もステージされているか
+    changelog_updated=$(echo "$staged_files" | grep "^${plugin_dir}/CHANGELOG.md$")
+
+    if [ -z "$changelog_updated" ]; then
+      changelog_errors+=("${plugin_dir}")
+    fi
+  fi
+done
+
+if [ ${#changelog_errors[@]} -gt 0 ]; then
+  echo "CHANGELOG.md update required:"
+  echo ""
+  for plugin in "${changelog_errors[@]}"; do
+    echo "  ${plugin}/CHANGELOG.md"
+  done
+  echo ""
+  echo "  バージョンバンプ時は CHANGELOG.md も更新すること"
+  echo "  形式: Keep a Changelog (https://keepachangelog.com/ja/1.0.0/)"
+  echo "  feat → Added / fix → Fixed / refactor → Changed"
+  exit 1
+fi

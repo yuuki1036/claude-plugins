@@ -6,12 +6,14 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 
 ```
 .claude-plugin/marketplace.json  # マーケットプレイスマニフェスト
+.githooks/pre-commit             # バージョンバンプ・CHANGELOG 必須チェック
 {plugin-name}/                   # 各プラグイン（独立したディレクトリ）
   .claude-plugin/plugin.json     # プラグインマニフェスト
   commands/                      # スラッシュコマンド定義（YAML frontmatter + markdown）
   skills/                        # スキル定義（SKILL.md + references/）
   hooks/                         # フック定義（hooks.json + scripts/）
   rules/                         # SessionStart 等で注入されるルール
+  CHANGELOG.md                   # 変更履歴（Keep a Changelog 形式）
   README.md
 ```
 
@@ -29,6 +31,13 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | indie-workflow | 6 | 6 | SessionStart | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 | plugin-manager | 1 | - | - | インストール済みプラグインの一括更新 |
 | plugin-feedback | 1 | 1 | - | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
+
+## セットアップ
+
+```bash
+# pre-commit hook を有効化（初回のみ）
+git config core.hooksPath .githooks
+```
 
 ## コマンド
 
@@ -53,6 +62,13 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 - パス参照は `${CLAUDE_PLUGIN_ROOT}` を使用してポータブルにする
 - スキルの description にはトリガーフレーズを含める
 - commands/ と skills/ の allowed-tools は一致させる
+- plugin 開発は plugin-dev plugin を用いて必要に応じて agent team を使用する
+
+## CHANGELOG 規約
+
+- 各プラグインに `CHANGELOG.md` を配置（Keep a Changelog 形式）
+- バージョンバンプ時は CHANGELOG.md の更新必須（pre-commit hook で強制）
+- Conventional Commits type との対応: `feat` → Added / `fix` → Fixed / `refactor` → Changed / `chore` → 原則省略
 
 ## Gotchas
 
@@ -60,6 +76,7 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 - **hooks の stdin 消費**: hook スクリプトは必ず `cat > /dev/null` で stdin を消費してから処理を開始する。消費しないとハングする
 - **hooks の stdout**: hook スクリプトの stdout が Claude のコンテキストに注入される。条件付き注入は exit 0 で空出力にする
 - **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げる。上げないと使用側で更新が検知されない。pre-commit hook でブロックされる
+- **CHANGELOG 未更新**: バージョンバンプ時は CHANGELOG.md も更新必須。pre-commit hook でブロックされる
 
 ## バージョニング規約
 
