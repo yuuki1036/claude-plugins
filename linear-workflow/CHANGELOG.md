@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.6.0] - 2026-03-23
+
+### Added
+- session-start: ダッシュボードモードを追加（フル / スコープド）
+- session-start: Next Issue ピック機能を追加
+- session-start: allowed-tools に mcp__linear__list_issues を追加
+
 ## [1.5.0] - 2026-03-22
 
 ### Added
