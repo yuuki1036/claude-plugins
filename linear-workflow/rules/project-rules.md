@@ -21,6 +21,8 @@
 
 ## Linear MCP 連携
 
+- **Linear API は読み取り専用**: `get_issue`, `list_issues`, `get_project` 等の読み取りのみ使用する。`save_issue` 等の書き込み API は、ユーザーが「Linear の Issue を更新して」等と明示的に指示した場合のみ使用する
+- 「Issue 更新」「Issue 整理」はローカルの Issue ファイル（`.claude/linear/*/issues/*.md`）の更新を意味する。Linear API の更新ではない
 - `/linear-maintain` で Linear → ローカルの一方向同期を実行する（プロジェクト doc、Issue ステータスの取得・更新）
 - Linear 側のステータス変更は Linear UI で行う
 

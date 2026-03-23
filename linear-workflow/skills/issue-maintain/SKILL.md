@@ -2,7 +2,8 @@
 name: issue-maintain
 description: >
   Issue ファイルのセッション内容反映・品質整理・knowledge 切り出し・completed 管理を行う。
-  トリガー: 「/issue-maintain」「Issue整理」「Issueファイルのメンテナンス」「セッション終了前にIssue更新」「Issueファイル更新して」
+  トリガー: 「/issue-maintain」「Issue整理」「Issueファイルのメンテナンス」「セッション終了前にIssue更新」「Issueファイル更新して」「Issue更新」
+  注意: このスキルはローカルの Issue ファイル（.claude/linear/*/issues/*.md）のみを更新する。Linear API の Issue は更新しない。
   引数: [Issue ID（省略時は現在のブランチから抽出、またはissues/配下の全ファイル対象）]
 allowed-tools:
   - Read

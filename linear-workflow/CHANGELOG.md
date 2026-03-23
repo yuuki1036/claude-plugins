@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.1] - 2026-03-23
+
+### Fixed
+- Linear API の書き込み（save_issue 等）をユーザーの明示的な指示なしに実行しないようルールを追加
+- 「Issue更新」がローカル Issue ファイルの更新を意味することをスキル説明に明記
+
 ## [1.7.0] - 2026-03-23
 
 ### Added
