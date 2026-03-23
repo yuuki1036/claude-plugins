@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.1] - 2026-03-23
+
+### Fixed
+- marketplace update 前にローカルキャッシュを削除するステップを追加（古いキャッシュが残り install 時に反映されない問題を修正）
+
 ## [1.2.0] - 2026-03-22
 
 ### Changed

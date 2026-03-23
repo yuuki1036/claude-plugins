@@ -12,7 +12,15 @@ allowed-tools:
 ### Phase 1: マーケットプレイスキャッシュの最新化
 
 `claude plugin list` を実行し、出力から `name@marketplace` 形式のマーケットプレイス名を抽出する。
-重複を除いた各マーケットプレイスに対して以下を実行する:
+重複を除いた各マーケットプレイスに対して以下を順番に実行する:
+
+1. ローカルキャッシュを削除する（古いバージョンが残っていると install 時に反映されない）:
+
+```bash
+rm -rf ~/.claude/plugins/cache/<marketplace-name>
+```
+
+2. マーケットプレイスキャッシュをリモートから再取得する:
 
 ```bash
 claude plugin marketplace update <marketplace-name>
