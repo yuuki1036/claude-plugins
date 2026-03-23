@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.0] - 2026-03-23
+
+### Added
+- 結果テーブルに Before/After バージョンを表示（#6）
+- バージョンが変わらない場合は「変更なし」と表示
+
+### Fixed
+- uninstall スコープ不整合エラーに対する段階的フォールバック追加（#5）
+  - `--scope user` → `--scope project` → `installed_plugins.json` 手動削除の3段階
+
 ## [1.2.1] - 2026-03-23
 
 ### Fixed
