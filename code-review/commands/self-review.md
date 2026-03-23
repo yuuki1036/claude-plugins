@@ -5,6 +5,7 @@ allowed-tools:
   - Read
   - Glob
   - Grep
+  - AskUserQuestion
 argument-hint: "[--staged | base branch] (省略時はデフォルトブランチとの差分)"
 ---
 

@@ -11,6 +11,7 @@ allowed-tools:
   - Read
   - Glob
   - Grep
+  - AskUserQuestion
 ---
 
 # Self Review
@@ -94,3 +95,9 @@ CLAUDE.md・規約ファイルを自動収集: `CLAUDE.md`, `.github/CONTRIBUTIN
 - コミット前に修正すべき項目
 - 確認推奨の観点
 ```
+
+### 6. 修正方針の確認
+
+指摘事項が1件以上ある場合のみ実行する。指摘が0件なら「問題なし」で完了。
+
+`${CLAUDE_PLUGIN_ROOT}/rules/self-review-interaction.md` を Read で読み込み、そのルールに従って AskUserQuestion で修正方針を確認する。

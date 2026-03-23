@@ -14,7 +14,11 @@ if [ ! -d ".claude/linear" ]; then
 fi
 
 # ルールファイルを出力（stdout が Claude のコンテキストに入る）
-RULES_FILE="${CLAUDE_PLUGIN_ROOT}/rules/project-rules.md"
-if [ -f "$RULES_FILE" ]; then
-  cat "$RULES_FILE"
+RULES_DIR="${CLAUDE_PLUGIN_ROOT}/rules"
+if [ -f "${RULES_DIR}/project-rules.md" ]; then
+  cat "${RULES_DIR}/project-rules.md"
+fi
+if [ -f "${RULES_DIR}/issue-create-interaction.md" ]; then
+  echo ""
+  cat "${RULES_DIR}/issue-create-interaction.md"
 fi

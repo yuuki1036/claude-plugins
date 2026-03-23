@@ -10,6 +10,7 @@ allowed-tools:
   - Glob
   - Bash
   - Agent
+  - AskUserQuestion
 ---
 
 # Issue Create
@@ -44,8 +45,9 @@ allowed-tools:
 | investigation | 調査・分析 | 原因調査、パフォーマンス分析、技術選定 |
 | debt | 技術的負債の解消 | コード品質改善、依存関係更新、非推奨 API の移行 |
 
-- 判断に迷う場合はユーザーに確認する
-- feature テンプレートの場合、スコープサイズ（small / medium / large）をユーザーに確認する
+- 確信度が高い場合（obvious な bugfix / debt）は判断根拠を1文で示してそのまま進む
+- 判断に迷う場合は `rules/issue-create-interaction.md` のテンプレート選択ルールに従い、AskUserQuestion でユーザーに確認する
+- feature テンプレートの場合、`rules/issue-create-interaction.md` の scope_size 選択ルールに従い、AskUserQuestion でスコープサイズを確認する
 - テンプレートは以下を Read で読み込む:
   - `${CLAUDE_PLUGIN_ROOT}/skills/indie-issue-create/references/{type}.md`
 
@@ -108,14 +110,7 @@ Issue の内容が確定した段階で、既存の knowledge を検索する。
    - `description` はタイトルから kebab-case で自動生成（短く、英語）
    - 例: `feat/MYAPP-3-add-auth`, `fix/BLOG-2-fix-typo`
    - type マッピング: bugfix → `fix`, feature → `feat`, investigation → `investigate`, debt → `chore`
-4. **feature-dev 連携案内**:
-   ```
-   ### 次のステップ
-   Issue ファイルが作成され、ブランチに切り替わりました。
-
-   > `feature-dev` で実装計画を立てますか？
-   ```
-   ユーザーが承諾したら、feature-dev スキルの実行を提案（直接実行はしない。案内のみ）
+4. **feature-dev 連携確認**: `rules/issue-create-interaction.md` の feature-dev 連携ルールを参照
 5. 次のアクションを案内する:
    - 計画の記入（feature の場合）
    - 調査の開始（investigation の場合）

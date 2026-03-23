@@ -9,6 +9,7 @@ allowed-tools:
   - Read
   - Write
   - Glob
+  - AskUserQuestion
 ---
 
 # Issue Create
@@ -33,7 +34,8 @@ Linear Issue の情報を取得し、テンプレートに基づいて Issue フ
 | feature | 機能開発・リファクタ | 新機能追加、既存機能の改修、リファクタリング |
 | investigation | 調査・分析 | 原因調査、パフォーマンス分析、技術選定 |
 
-- 判断に迷う場合はユーザーに確認する
+- 確信度が高い場合（obvious な bugfix / investigation）は判断根拠を1文で示してそのまま進む
+- 判断に迷う場合は `rules/issue-create-interaction.md` のテンプレート選択ルールに従い、AskUserQuestion でユーザーに確認する
 - テンプレートは以下を Read で読み込む:
   - `${CLAUDE_PLUGIN_ROOT}/skills/issue-create/references/{type}.md`
 
@@ -85,14 +87,7 @@ Issue の情報が確定した段階で、既存の knowledge を検索する。
 ### Phase 4: 確認
 
 1. 作成したファイルの絶対パスを報告する
-2. **feature-dev 連携案内**:
-   ```
-   ### 次のステップ
-   Issue ファイルが作成されました。
-
-   > `feature-dev` で実装計画を立てますか？
-   ```
-   ユーザーが承諾したら、feature-dev スキルの実行を提案する（直接実行はしない。案内のみ）
+2. **feature-dev 連携確認**: `rules/issue-create-interaction.md` の feature-dev 連携ルールを参照
 3. 次のアクションを案内する:
    - 計画の記入（feature の場合）
    - 調査の開始（investigation の場合）

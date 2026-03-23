@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.5.0] - 2026-03-23
+
+### Added
+- indie-issue-create: テンプレート選択を AskUserQuestion による選択 UI に変更
+- indie-issue-create: scope_size 選択を AskUserQuestion による選択 UI に変更
+- indie-issue-create: feature-dev 連携案内を AskUserQuestion による選択 UI に変更
+- rules/issue-create-interaction.md を新規追加（SessionStart hook で注入）
+
 ## [1.4.0] - 2026-03-22
 
 ### Added

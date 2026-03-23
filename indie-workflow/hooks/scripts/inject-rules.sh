@@ -7,9 +7,13 @@ if [ ! -d ".claude/indie" ]; then
 fi
 
 # ルール注入
-RULES_FILE="${CLAUDE_PLUGIN_ROOT}/rules/project-rules.md"
-if [ -f "$RULES_FILE" ]; then
-  cat "$RULES_FILE"
+RULES_DIR="${CLAUDE_PLUGIN_ROOT}/rules"
+if [ -f "${RULES_DIR}/project-rules.md" ]; then
+  cat "${RULES_DIR}/project-rules.md"
+fi
+if [ -f "${RULES_DIR}/issue-create-interaction.md" ]; then
+  echo ""
+  cat "${RULES_DIR}/issue-create-interaction.md"
 fi
 
 # 放置 Issue 検知（7日以上 last_active が更新されていない in-progress Issue）

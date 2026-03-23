@@ -5,6 +5,7 @@ allowed-tools:
   - Read
   - Write
   - Glob
+  - AskUserQuestion
 argument-hint: "[ISSUE-ID]"
 ---
 

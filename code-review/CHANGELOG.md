@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.0] - 2026-03-23
+
+### Added
+- self-review: レポート出力後に修正方針選択ステップ（Phase 6）を追加
+- rules/self-review-interaction.md を新規追加
+
 ## [1.1.1] - 2026-03-23
 
 ### Fixed

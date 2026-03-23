@@ -6,6 +6,7 @@ allowed-tools:
   - Glob
   - Bash
   - Agent
+  - AskUserQuestion
 argument-hint: "[PROJECT-SLUG]"
 ---
 

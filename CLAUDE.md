@@ -13,6 +13,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
   skills/                        # スキル定義（SKILL.md + references/）
   hooks/                         # フック定義（hooks.json + scripts/）
   rules/                         # SessionStart 等で注入されるルール
+    project-rules.md             # プロジェクト全体の作業ルール（SessionStart hook で注入）
+    *-interaction.md             # スキル実行時の方針確認ルール（SessionStart hook で注入 or Read で参照）
   CHANGELOG.md                   # 変更履歴（Keep a Changelog 形式）
   README.md
 ```
@@ -62,6 +64,7 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 - パス参照は `${CLAUDE_PLUGIN_ROOT}` を使用してポータブルにする
 - スキルの description にはトリガーフレーズを `トリガー:` キーワードで含める（例: `トリガー: 「作業開始」「セッション開始」「/session-start」`）
 - commands/ と skills/ の allowed-tools は一致させる
+- 後から変えにくい判断を伴う方針確認は `AskUserQuestion` で選択 UI を提示する（rules/ に確認ルールを配置）
 - plugin 開発は plugin-dev plugin を用いて必要に応じて agent team を使用する
 
 ## CHANGELOG 規約
