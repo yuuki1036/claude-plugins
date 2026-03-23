@@ -9,7 +9,7 @@
     {
       "name": "instinct-memory",
       "description": "セッション中の観察からパターンを学習し、auto memoryのinstinctとして管理・昇格させるシステム",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "yuki"
       },
@@ -18,7 +18,7 @@
     {
       "name": "code-review",
       "description": "並列エージェントによるコードレビューとセルフレビュー。Confidence scoringで偽陽性をフィルタリング",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "yuki"
       },
@@ -27,7 +27,7 @@
     {
       "name": "dev-workflow",
       "description": "Git操作とPR作成の開発ワークフロー。原子性重視のコミットとLinear Issue連携PR作成",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "claude-meta",
       "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善、セッション学習の反映",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "author": {
         "name": "yuki"
       },
@@ -63,7 +63,7 @@
     {
       "name": "plugin-manager",
       "description": "インストール済みプラグインをキャッシュ更新後に再インストールする一括更新コマンド",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "author": {
         "name": "yuki"
       },

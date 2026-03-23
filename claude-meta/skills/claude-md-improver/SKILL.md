@@ -1,6 +1,10 @@
 ---
 name: claude-md-improver
-description: Audit and improve CLAUDE.md files in repositories. Use when user asks to check, audit, update, improve, or fix CLAUDE.md files. Scans for all CLAUDE.md files, evaluates quality against templates, outputs quality report, then makes targeted updates. Also use when the user mentions "CLAUDE.md maintenance" or "project memory optimization". CLAUDE.mdを監査、CLAUDE.mdを改善、CLAUDE.mdチェック、CLAUDE.mdの品質確認、CLAUDE.mdメンテナンス、プロジェクトメモリ最適化。
+description: >
+  Audit and improve CLAUDE.md files in repositories. Scans for all CLAUDE.md files,
+  evaluates quality against templates, outputs quality report, then makes targeted updates.
+  トリガー: 「CLAUDE.md監査」「CLAUDE.md改善」「CLAUDE.mdチェック」「CLAUDE.mdの品質確認」
+  「CLAUDE.mdメンテナンス」「プロジェクトメモリ最適化」「check CLAUDE.md」「audit CLAUDE.md」
 allowed-tools:
   - Read
   - Edit

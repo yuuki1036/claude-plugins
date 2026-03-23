@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.1.1] - 2026-03-23
+
+### Fixed
+- スキル description のトリガーフレーズを「トリガー:」形式に統一
+
 ## [1.1.0] - 2026-03-21
 
 ### Fixed

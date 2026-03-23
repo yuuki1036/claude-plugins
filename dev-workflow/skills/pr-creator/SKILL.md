@@ -4,7 +4,7 @@ description: |
   PRを作成し、差分とコミット履歴からdescriptionを自動生成する。
   ドラフトPRとして作成し、リポジトリのPRテンプレートがあれば自動準拠する。
   Linear Issue連携: ブランチ名からIssue IDを抽出し、タイトル・説明を取得する。
-  使用タイミング: ユーザーが「PR作って」「/pr-creator」「プルリクエスト作成」と言った時。
+  トリガー: ユーザーが「PR作って」「/pr-creator」「プルリクエスト作成」と言った時。
 allowed-tools:
   - Bash
   - Read

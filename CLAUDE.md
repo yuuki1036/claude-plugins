@@ -60,7 +60,7 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 - 各プラグインは独立して動作すること（プラグイン間の依存禁止）
 - プロジェクト固有の情報（社名、チーム名、実際の Issue ID 等）を含めない
 - パス参照は `${CLAUDE_PLUGIN_ROOT}` を使用してポータブルにする
-- スキルの description にはトリガーフレーズを含める
+- スキルの description にはトリガーフレーズを `トリガー:` キーワードで含める（例: `トリガー: 「作業開始」「セッション開始」「/session-start」`）
 - commands/ と skills/ の allowed-tools は一致させる
 - plugin 開発は plugin-dev plugin を用いて必要に応じて agent team を使用する
 

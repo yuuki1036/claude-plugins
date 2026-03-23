@@ -1,6 +1,6 @@
 {
   "name": "claude-meta",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善、セッション学習の反映",
   "author": {
     "name": "yuki"

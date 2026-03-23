@@ -1,6 +1,8 @@
 ---
 name: instinct-learning
-description: ユーザーの訂正・好み・繰り返しパターンを instinct として記録・管理・昇格させるシステム。
+description: >
+  ユーザーの訂正・好み・繰り返しパターンを instinct として記録・管理・昇格させるシステム。
+  トリガー: セッション開始時の instincts.md 読み込み、ユーザーの訂正・好み・繰り返しパターンの検知時
 allowed-tools:
   - Read
   - Write

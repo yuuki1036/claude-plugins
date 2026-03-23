@@ -3,7 +3,7 @@ name: git-commit-helper
 description: |
   Git専門エージェントによる原子性重視の高品質コミット作成。
   変更を分析し、論理的な作業単位に分割して、Conventional Commits準拠の日本語メッセージでコミットする。
-  使用タイミング: ユーザーが「コミットして」「/git-commit-helper」「変更をコミット」と言った時。
+  トリガー: ユーザーが「コミットして」「/git-commit-helper」「変更をコミット」と言った時。
   引数: --no-protect (Protected branchへの直接コミット許可), --with-push (コミット後に自動プッシュ)
 allowed-tools:
   - Bash
