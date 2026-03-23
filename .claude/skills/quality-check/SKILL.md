@@ -128,6 +128,18 @@ hook スクリプトが `hooks/scripts/` サブディレクトリ配下に配置
 - スキル数: `{plugin}/skills/*/SKILL.md` のディレクトリ数と一致するか
 - hooks: `{plugin}/hooks/hooks.json` が存在するか
 
+### 12. _requirements 整合性チェック（Warning）
+
+各プラグインの `plugin.json` に `_requirements` が定義されている場合:
+
+- 各要素に `name`, `type`, `required`, `description` が存在すること
+- `type` が `mcp_server` | `cli_tool` | `plugin` のいずれかであること
+- `required` が boolean であること
+- `name` と `description` が空でないこと
+- `_requirements` が定義されている場合、対応する `hooks/scripts/check-deps.sh` が存在すること
+- `check-deps.sh` が存在する場合、`cat > /dev/null` による stdin 消費が含まれていること
+- `check-deps.sh` 内のチェック対象が `_requirements` の宣言と一致していること（宣言されているのにチェックされていない、またはその逆がないこと）
+
 ---
 
 ## 実行フロー
@@ -174,6 +186,7 @@ hook スクリプトが `hooks/scripts/` サブディレクトリ配下に配置
 - [ ] トリガーフレーズ: {結果}
 - [ ] references 整合性: {結果}
 - [ ] CLAUDE.md 整合性: {結果}
+- [ ] _requirements 整合性: {結果}
 ```
 
 ---

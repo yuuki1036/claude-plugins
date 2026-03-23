@@ -26,13 +26,13 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | プラグイン | コマンド | スキル | hooks | 説明 |
 |-----------|---------|-------|-------|------|
 | instinct-memory | 3 | 1 | Stop | セッション中のパターン学習と auto memory 管理 |
-| code-review | 2 | 2 | - | 並列エージェントによる PR レビュー / セルフレビュー |
-| dev-workflow | 2 | 2 | - | Git コミット・PR 作成の開発ワークフロー |
+| code-review | 2 | 2 | SessionStart | 並列エージェントによる PR レビュー / セルフレビュー |
+| dev-workflow | 2 | 2 | SessionStart | Git コミット・PR 作成の開発ワークフロー |
 | claude-meta | 1 | 2 | - | Claude Code 設定管理・CLAUDE.md 監査改善 |
 | linear-workflow | 5 | 5 | SessionStart | Linear MCP 連携の Issue/プロジェクト管理 |
 | indie-workflow | 6 | 6 | SessionStart | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 | plugin-manager | 1 | - | - | インストール済みプラグインの一括更新 |
-| plugin-feedback | 1 | 1 | - | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
+| plugin-feedback | 1 | 1 | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 
 ## セットアップ
 
@@ -80,6 +80,7 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 - **hooks の stdout**: hook スクリプトの stdout が Claude のコンテキストに注入される。条件付き注入は exit 0 で空出力にする
 - **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げる。上げないと使用側で更新が検知されない。pre-commit hook でブロックされる
 - **CHANGELOG 未更新**: バージョンバンプ時は CHANGELOG.md も更新必須。pre-commit hook でブロックされる
+- **_requirements の同期忘れ**: プラグインの依存先が変わったら plugin.json の `_requirements` と `check-deps.sh` の両方を更新する
 
 ## バージョニング規約
 

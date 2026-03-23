@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.6.0] - 2026-03-23
+
+### Added
+- SessionStart hook で外部依存チェック（feature-dev プラグイン）を実行
+- plugin.json に `_requirements` フィールドを追加（依存メタデータ宣言）
+
 ## [1.5.0] - 2026-03-23
 
 ### Added

@@ -1,8 +1,12 @@
 {
   "name": "dev-workflow",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Git操作とPR作成の開発ワークフロー。原子性重視のコミットとLinear Issue連携PR作成",
   "author": {
     "name": "yuki"
-  }
+  },
+  "_requirements": [
+    { "name": "gh", "type": "cli_tool", "required": true, "description": "GitHub CLI" },
+    { "name": "linear", "type": "mcp_server", "required": false, "description": "Linear MCP サーバー（PR に Issue リンク付与時に使用）" }
+  ]
 }

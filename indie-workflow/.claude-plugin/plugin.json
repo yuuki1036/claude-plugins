@@ -1,8 +1,11 @@
 {
   "name": "indie-workflow",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
   "author": {
     "name": "yuki"
-  }
+  },
+  "_requirements": [
+    { "name": "feature-dev", "type": "plugin", "required": false, "description": "feature-dev プラグイン（実装計画策定に使用）" }
+  ]
 }
