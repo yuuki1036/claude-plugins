@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.0] - 2026-03-24
+
+### Added
+- session-start: Context Recovery Agent Team を追加（既存 Issue 再開時の深いコンテキスト復元）
+- session-start: Doc Resolver エージェント（親 Issue・関連 Issue・Knowledge 参照解決）
+- session-start: Code Context エージェント（ソースファイル参照解決 + Git 状態取得）
+- session-start: Linear Sync エージェント（Linear API 最新状態との差分検出）
+- session-start: allowed-tools に Agent, mcp__linear__list_comments を追加
+
 ## [1.8.0] - 2026-03-23
 
 ### Added

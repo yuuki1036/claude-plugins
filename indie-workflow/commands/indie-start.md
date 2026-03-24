@@ -1,6 +1,7 @@
 ---
 description: セッション開始。main ではダッシュボード、feature ブランチでは Issue コンテキスト読み込み
 allowed-tools:
+  - Agent
   - Read
   - Write
   - Glob

@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.0] - 2026-03-24
+
+### Added
+- indie-start: Context Recovery Agent Team を追加（既存 Issue 再開時の深いコンテキスト復元）
+- indie-start: Doc Resolver エージェント（関連 Issue・Knowledge 参照解決）
+- indie-start: Code Context エージェント（ソースファイル参照解決 + Git 状態取得）
+- indie-start: allowed-tools に Agent を追加
+
 ## [1.6.0] - 2026-03-23
 
 ### Added

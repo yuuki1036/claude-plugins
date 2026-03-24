@@ -8,8 +8,10 @@ description: >
   「コンテキスト読み込み」「Linear ダッシュボード」「プロジェクト状況確認」
   「子 Issue の進捗」「/session-start」
 allowed-tools:
+  - Agent
   - mcp__linear__get_issue
   - mcp__linear__list_issues
+  - mcp__linear__list_comments
   - Read
   - Write
   - Glob
@@ -170,7 +172,32 @@ Issue に子 Issue がない場合の通常作業フロー。
    - 存在しない場合:
      - Phase N4 へ進む
 
-### Phase N3.5: 関連 Knowledge の検索
+### Phase N3.5: Context Recovery Agent Team（並列起動）
+
+Issue ファイルが存在し、内容を読み込めた場合に実行する。
+Issue ファイルが存在しない場合（Phase N4 へ進む場合）はスキップする。
+
+エージェントプロンプトの詳細は `${CLAUDE_PLUGIN_ROOT}/skills/session-start/references/context-agents.md` を参照すること。
+
+**以下の3エージェントを並列起動する:**
+
+| Agent | 役割 | 入力 |
+|-------|------|------|
+| #1 Doc Resolver | 親 Issue・関連 Issue・Knowledge 直接参照を辿る | Issue ファイル内容、スラッグ |
+| #2 Code Context | Issue 内のソースファイル参照を辿る + Git 状態取得 | Issue ファイル内容 |
+| #3 Linear Sync | Linear API の最新状態との差分検出 | Issue ID、frontmatter 情報 |
+
+**起動手順:**
+
+1. `${CLAUDE_PLUGIN_ROOT}/skills/session-start/references/context-agents.md` を Read する
+2. 3つの Agent を**同時に**起動する（Agent ツールを3つ並列で呼び出す）
+   - 各エージェントのプロンプトに Issue ファイルの内容とメタ情報を含める
+3. 全エージェントの完了を待つ
+4. 各エージェントの結果を Phase N5 の報告に統合する
+
+**注意:** Agent #1 が Knowledge を解決するため、Phase N3.7 の keyword ベース検索と結果が重複する場合がある。重複は Phase N5 でマージする。
+
+### Phase N3.7: 関連 Knowledge の検索
 
 Issue ファイルが存在し、内容を読み込めた場合に実行する。
 
@@ -202,21 +229,28 @@ Issue ファイルが存在しない場合:
 
 ### Phase N5: 作業準備完了報告
 
-読み込んだ情報のサマリーをユーザーに報告する:
+Phase N3〜N3.7 で収集した全情報を統合し、ユーザーに報告する:
 
 - **Issue 情報**: タイトル・ステータス
 - **未完了タスク一覧**: Issue ファイルのチェックリストから未完了項目を抽出（あれば）
 - **前回セッションからの継続ポイント**: 更新履歴の最新エントリや進行中の作業内容
-- **関連 Knowledge**: Phase N3.5 で見つかった関連 knowledge の一覧（あれば）
+- **親 Issue コンテキスト**: Agent #1 の結果（親 Issue の背景・計画・スコープ外）（あれば）
+- **関連 Issue**: Agent #1 の結果（関連 Issue の概要一覧）（あれば）
+- **関連 Knowledge**: Agent #1 の直接参照結果 + Phase N3.7 の keyword 検索結果をマージ（あれば）
+- **参照ソースファイル**: Agent #2 の結果（読み込んだファイルの役割サマリー）（あれば）
+- **Git 状態**: Agent #2 の結果（コミット数・最新コミット・未コミット変更・変更規模）
+- **Linear 同期**: Agent #3 の結果（ステータス差分・新規コメント）（あれば）
 - **読み込んだプロジェクト doc**: 読み込んだファイル名の一覧
 
 ### Phase N6: feature-dev 連携案内
 
-Issue ファイルの「進捗」セクションがプレースホルダのまま（`- [ ] タスク` / `- [ ] 調査項目` など、具体的なタスクが定義されていない）の場合、feature-dev による実装計画の策定を案内する:
+Issue ファイルの状態と Git 状態に応じて案内を分岐する:
 
-```
-> `feature-dev` で実装計画を立てますか？
-```
+1. **進捗がプレースホルダ + コミット0件**（ブランチ作成直後）:
+   - 「`feature-dev` で実装計画を立てますか？」と案内する
+2. **進捗がプレースホルダ + コミット1件以上**（計画未記入のまま作業が進行）:
+   - 「コミットがありますが計画が未記入です。`/issue-maintain` で Issue ファイルを更新しますか？」と案内する
+3. **具体的なタスクが定義済み**:
+   - この案内をスキップする
 
-ユーザーが承諾したら、feature-dev スキルの実行を提案する（直接実行はしない。案内のみ）。
-既に具体的なタスクが定義されている場合はこの案内をスキップする。
+ユーザーが承諾したら、該当スキルの実行を提案する（直接実行はしない。案内のみ）。
