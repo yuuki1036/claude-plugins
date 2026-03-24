@@ -195,3 +195,45 @@ Issue ファイルの状態と Git 状態に応じて案内を分岐する:
    - この案内をスキップする
 
 ユーザーが承諾したら、該当スキルの実行を提案する（直接実行はしない。案内のみ）。
+
+---
+
+## セッションコンテキスト書き出し（Feature ブランチモード共通）
+
+### Phase CTX: session-context.md 書き出し
+
+Feature ブランチモードで Issue ファイルの読み込みに成功した場合に実行する。
+ダッシュボードモード（main/master）および Issue ファイルが存在しない場合はスキップする。
+
+1. 以下の情報を `.claude/session-context.md` に Write で書き出す:
+
+```yaml
+---
+branch: {現在のブランチ名}
+issue_id: {Issue ID}
+updated_at: {現在の ISO 8601 タイムスタンプ}
+source: indie-workflow
+---
+```
+
+2. YAML frontmatter の後に以下のセクションを追記する:
+
+```markdown
+# セッションコンテキスト
+
+## Issue サマリー
+{Issue ファイルの frontmatter（title, status, type）と概要セクションの要約}
+
+## 設計判断・スコープ外
+{Issue ファイルから「設計判断」「スコープ外」「方針」「意図的」に関する記述を抽出}
+{該当する記述がない場合はこのセクションを省略}
+
+## 関連プロジェクト
+{読み込んだプロジェクト doc の要約（プロジェクト名と概要のみ）}
+```
+
+3. このファイルは毎回上書きする（前回のセッションの内容は不要）
+
+**注意:**
+- `.claude/session-context.md` はセッション固有のファイルであり、git にコミットしない
+- Write ツールで `.claude/session-context.md` に書き出す

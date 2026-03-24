@@ -51,6 +51,15 @@ git diff "${BASE}..HEAD" --name-only
 - PR description と comments（レビュー文脈として活用）
 - CLAUDE.md・規約ファイル: `CLAUDE.md`, `.github/CONTRIBUTING.md`, `.eslintrc.*`, `prettier.config.*`
 
+### 2.5. セッションコンテキスト読み込み
+
+1. `.claude/session-context.md` の存在を確認する（Read）
+2. ファイルが存在する場合:
+   - frontmatter の `branch` と現在のブランチ名を比較する
+   - **一致**: コンテキストを有効とし、Step 4 の各エージェントプロンプトに追加する
+   - **不一致**: stale なコンテキストとして無視する（ログ出力のみ）
+3. ファイルが存在しない場合: 何もしない（従来通りの動作）
+
 ### 3. 条件判定
 
 - **React/Next.js判定**: `package.json`に`react`/`next`が含まれる → Agent #3にvercel-best-practices観点を追加

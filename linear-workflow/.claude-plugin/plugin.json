@@ -1,6 +1,6 @@
 {
   "name": "linear-workflow",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。",
   "author": {
     "name": "yuki"
