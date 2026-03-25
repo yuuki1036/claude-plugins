@@ -66,6 +66,23 @@ claude plugin install <name@marketplace>
 
 `claude plugin list` を実行し、各プラグインの更新後バージョン（After）を取得する。
 
+### Phase 4.5: 更新内容の取得
+
+Phase 4 で「更新済み」と判定されたプラグイン（Before ≠ After）に対して、CHANGELOG.md から更新内容を抽出する。
+
+1. キャッシュ内の CHANGELOG.md を読み込む:
+
+```bash
+cat ~/.claude/plugins/cache/<marketplace-name>/<plugin-name>/<After-version>/CHANGELOG.md
+```
+
+2. CHANGELOG.md から Before バージョンより新しいエントリを抽出する:
+   - `## [<After-version>]` から `## [<Before-version>]` の直前までを取得
+   - Before と After の間に複数バージョンがある場合は全て含める
+   - `### Added` / `### Fixed` / `### Changed` 等のサブセクションをそのまま保持
+
+3. CHANGELOG.md が存在しない場合や読み取りに失敗した場合は「CHANGELOG なし」として記録する
+
 ### Phase 5: 結果の報告
 
 以下のフォーマットで報告する:
@@ -73,11 +90,17 @@ claude plugin install <name@marketplace>
 ```
 ## プラグイン更新結果
 
-| プラグイン | Before | After | 結果 | 備考 |
-|-----------|--------|-------|------|------|
-| name@marketplace | 1.0.0 | 1.1.0 | 更新済み | |
-| name@marketplace | 1.0.0 | 1.0.0 | 変更なし | |
-| name@marketplace | 1.0.0 | - | エラー | エラー詳細 |
+| プラグイン | Before | After | 結果 |
+|-----------|--------|-------|------|
+| name@marketplace | 1.0.0 | 1.1.0 | 更新済み |
+| name@marketplace | 1.0.0 | 1.0.0 | 変更なし |
+| name@marketplace | 1.0.0 | - | エラー |
+
+### 更新内容
+
+#### name (1.0.0 → 1.1.0)
+- Added: 新機能の説明
+- Fixed: バグ修正の説明
 
 反映にはClaude Codeの再起動が必要です。
 ```
@@ -86,3 +109,6 @@ claude plugin install <name@marketplace>
 - Before と After のバージョンが異なる → **更新済み**
 - Before と After のバージョンが同じ → **変更なし**
 - install に失敗した → **エラー**（After は `-` と表示）
+
+「更新内容」セクションは更新済みプラグインが1つ以上ある場合のみ表示する。
+全プラグインが「変更なし」の場合はこのセクションを省略する。

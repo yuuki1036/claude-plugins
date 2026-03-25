@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.5.0] - 2026-03-25
+
+### Changed
+- review: diff 取得を `git diff` から `gh pr diff` に変更（ローカル状態に依存しない）
+- review: 全エージェントを `isolation: "worktree"` で起動（PR ブランチの正しい状態でファイルを読む）
+- review: diff-first 原則を追加（diff が真のソース、ファイル Read はコンテキスト確認のみ）
+- Agent #3: ファイル全文分析→依存先の仕様確認のみに限定
+
 ## [1.4.0] - 2026-03-24
 
 ### Added

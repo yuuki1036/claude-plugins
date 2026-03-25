@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.0] - 2026-03-25
+
+### Added
+- 更新済みプラグインの CHANGELOG エントリを結果レポートに表示
+
 ## [1.3.0] - 2026-03-23
 
 ### Added
