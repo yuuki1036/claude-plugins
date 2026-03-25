@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.8.1] - 2026-03-25
+
+### Changed
+- indie-start: Context Recovery Agent Team に model: opus を明示指定
+
 ## [1.8.0] - 2026-03-24
 
 ### Added
