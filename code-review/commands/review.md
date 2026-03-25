@@ -1,5 +1,5 @@
 ---
-description: "PRのコードレビューを実行する（専門エージェント並列起動）"
+description: "PRのコードレビューを実行する（2フェーズ構成・専門エージェント動的起動）"
 allowed-tools:
   - Bash
   - Read

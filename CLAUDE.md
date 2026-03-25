@@ -26,7 +26,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | プラグイン | コマンド | スキル | hooks | 説明 |
 |-----------|---------|-------|-------|------|
 | instinct-memory | 3 | 1 | Stop | セッション中のパターン学習と auto memory 管理 |
-| code-review | 2 | 2 | SessionStart | 並列エージェントによる PR レビュー / セルフレビュー |
+| code-review | 2 | 2 | SessionStart | 2フェーズ構成の並列エージェントコードレビュー / セルフレビュー |
 | dev-workflow | 2 | 2 | SessionStart | Git コミット・PR 作成の開発ワークフロー |
 | claude-meta | 1 | 2 | - | Claude Code 設定管理・CLAUDE.md 監査改善 |
 | linear-workflow | 6 | 6 | SessionStart | Linear MCP 連携の Issue/プロジェクト管理 |

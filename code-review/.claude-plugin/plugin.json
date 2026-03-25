@@ -1,7 +1,7 @@
 {
   "name": "code-review",
-  "version": "1.5.0",
-  "description": "並列エージェントによるコードレビューとセルフレビュー。Confidence scoringで偽陽性をフィルタリング",
+  "version": "2.0.0",
+  "description": "2フェーズ構成の並列エージェントコードレビュー。Phase 1コア + Phase 2専門エージェント動的起動。全エージェントopus",
   "author": {
     "name": "yuki"
   },

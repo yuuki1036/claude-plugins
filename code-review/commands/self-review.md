@@ -1,5 +1,5 @@
 ---
-description: "コミット前のセルフレビューを実行する（PR不要・ローカル完結）"
+description: "コミット前のセルフレビューを実行する（2フェーズ構成・PR不要・ローカル完結）"
 allowed-tools:
   - Bash
   - Read
