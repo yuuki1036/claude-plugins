@@ -19,6 +19,10 @@ Phase D1〜D4 の出力レイアウト定義。
 - [TEAM-123] {title} — In Progress
 - [TEAM-456] {title} — In Progress — 7日放置
 
+### Knowledge
+- team: 3件（最新: api-design-patterns.md）
+- proj: 1件（最新: deployment-notes.md）
+
 ### Next Issue 候補（優先度順）
 1. [TEAM-789] [Urgent] {title}
 2. [TEAM-790] [High] {title}

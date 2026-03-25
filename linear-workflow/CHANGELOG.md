@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.0] - 2026-03-25
+
+### Added
+- dashboard: 新規スキル/コマンドとして切り出し（フルダッシュボード + スコープドダッシュボード）
+- session-start: main ブランチ用 Quick Pick モード（軽量タスク選択）
+- session-start: 親 Issue 軽量サマリーモード（詳細は `/dashboard` に委譲）
+
+### Changed
+- session-start: ダッシュボード機能を `/dashboard` に分離し、session-start を軽量化
+- session-start: Context Recovery Agent Team に model: opus を明示指定
+
 ## [1.10.0] - 2026-03-24
 
 ### Added

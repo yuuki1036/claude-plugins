@@ -29,7 +29,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | code-review | 2 | 2 | SessionStart | 並列エージェントによる PR レビュー / セルフレビュー |
 | dev-workflow | 2 | 2 | SessionStart | Git コミット・PR 作成の開発ワークフロー |
 | claude-meta | 1 | 2 | - | Claude Code 設定管理・CLAUDE.md 監査改善 |
-| linear-workflow | 5 | 5 | SessionStart | Linear MCP 連携の Issue/プロジェクト管理 |
+| linear-workflow | 6 | 6 | SessionStart | Linear MCP 連携の Issue/プロジェクト管理 |
 | indie-workflow | 6 | 6 | SessionStart | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 | plugin-manager | 1 | - | - | インストール済みプラグインの一括更新 |
 | plugin-feedback | 1 | 1 | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
@@ -91,10 +91,8 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 
 ## 品質チェック
 
-プラグインの新規作成・変更時は以下を実行:
-- `/quality-check` で全プラグインの品質バリデーション
-- `plugin-dev:plugin-validator` でバリデーション
-- `plugin-dev:skill-reviewer` でスキル品質レビュー
+プラグインの新規作成・変更時は `/quality-check` で全プラグインの品質バリデーションを実行する。
+個別のスキル開発時は plugin-dev の agent team（plugin-validator, skill-reviewer）を活用する。
 
 ## ブランチ運用
 
