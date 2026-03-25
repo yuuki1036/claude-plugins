@@ -98,7 +98,6 @@ hook スクリプトが `hooks/scripts/` サブディレクトリ配下に配置
 |---------|------|
 | `.claude-plugin/plugin.json` | Critical |
 | `README.md` | Critical |
-| `LICENSE` | Critical |
 
 ### 8. スキル description トリガーフレーズチェック（Warning）
 

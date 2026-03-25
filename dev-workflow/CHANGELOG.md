@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.1] - 2026-03-25
+
+### Added
+- 同一ファイル内の hunk 分割ステージング手法を追加（git diff + パッチ編集 + git apply --cached）
+
 ## [1.2.0] - 2026-03-23
 
 ### Added
