@@ -8,6 +8,7 @@ description: >
   feature ブランチでは Context Recovery Agent Team で完全なコンテキスト復元を行う。
   トリガー: 「作業開始」「セッション開始」「タスク開始」「今日の作業を始める」
   「コンテキスト読み込み」「/session-start」
+effort: high
 allowed-tools:
   - Agent
   - mcp__linear__get_issue

@@ -4,6 +4,7 @@ description: >
   Issue ファイルのセッション内容反映・品質整理・knowledge 切り出しを行う。
   スコープ超過警告も実施。
   トリガー: 「Issue整理」「Issue更新」「セッション終了前にIssue更新」「/indie-issue-maintain」
+effort: medium
 allowed-tools:
   - Read
   - Write

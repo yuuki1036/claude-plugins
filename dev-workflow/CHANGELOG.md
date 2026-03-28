@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.0] - 2026-03-29
+
+### Added
+- 全スキルに effort frontmatter を追加（git-commit-helper/pr-creator: medium）
+- PreToolUse conditional hook: git push 前にセルフレビューを推奨
+
 ## [1.2.1] - 2026-03-25
 
 ### Added

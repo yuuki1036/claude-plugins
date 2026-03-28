@@ -1,6 +1,6 @@
 {
   "name": "dev-workflow",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Git操作とPR作成の開発ワークフロー。原子性重視のコミットとLinear Issue連携PR作成",
   "author": {
     "name": "yuki"

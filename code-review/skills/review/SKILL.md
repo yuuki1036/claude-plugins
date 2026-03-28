@@ -9,6 +9,7 @@ description: |
   React/Next.js プロジェクトでは vercel-best-practices の観点も自動追加。
   トリガー: ユーザーが「レビューして」「/review」「コードレビュー」と言った時。
   引数: [PR番号] (省略時は現在のブランチに紐づくPRを自動取得)
+effort: max
 allowed-tools:
   - Bash
   - Read

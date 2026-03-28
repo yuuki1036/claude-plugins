@@ -5,6 +5,7 @@ description: |
   ドラフトPRとして作成し、リポジトリのPRテンプレートがあれば自動準拠する。
   Linear Issue連携: ブランチ名からIssue IDを抽出し、タイトル・説明を取得する。
   トリガー: ユーザーが「PR作って」「/pr-creator」「プルリクエスト作成」と言った時。
+effort: medium
 allowed-tools:
   - Bash
   - Read

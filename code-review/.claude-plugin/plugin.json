@@ -1,11 +1,17 @@
 {
   "name": "code-review",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。探索→レビューの2段階で品質最大化。全エージェントopus",
   "author": {
     "name": "yuki"
   },
   "_requirements": [
     { "name": "github", "type": "mcp_server", "required": true, "description": "GitHub MCP サーバー" }
-  ]
+  ],
+  "userConfig": {
+    "review_confidence_threshold": {
+      "description": "レビュー指摘の最低 confidence スコア (デフォルト: 80)",
+      "sensitive": false
+    }
+  }
 }

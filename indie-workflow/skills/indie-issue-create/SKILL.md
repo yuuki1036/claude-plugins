@@ -4,6 +4,7 @@ description: >
   Issue ファイルの新規作成。テンプレート選択、ブランチ自動作成、feature-dev への接続まで
   一貫サポート。
   トリガー: 「タスク作成」「Issue起票」「新しいタスク」「/indie-issue-create」
+effort: medium
 allowed-tools:
   - Read
   - Write

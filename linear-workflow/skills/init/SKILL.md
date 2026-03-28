@@ -4,6 +4,7 @@ description: >
   Linear プロジェクトの初期セットアップ。ディレクトリ構造を作成し、
   Linear MCP からプロジェクト情報を取得してプロジェクト doc を生成する。
   トリガー: 「プロジェクト初期化」「init」「セットアップ」「新しいプロジェクト」「/init」
+effort: low
 allowed-tools:
   - mcp__linear__list_projects
   - mcp__linear__get_project

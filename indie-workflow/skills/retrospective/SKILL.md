@@ -4,6 +4,7 @@ description: >
   個人開発の振り返り。完了 Issue の分析、見積もり精度の確認、
   学びの抽出を行う。週次や月次の振り返りに使う。
   トリガー: 「振り返り」「ふりかえり」「retrospective」「レトロ」「/retrospective」
+effort: high
 allowed-tools:
   - Read
   - Write

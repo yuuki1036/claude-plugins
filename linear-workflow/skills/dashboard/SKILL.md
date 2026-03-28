@@ -6,6 +6,7 @@ description: >
   セッション中いつでも呼び出し可能。
   トリガー: 「ダッシュボード」「プロジェクト状況」「全体確認」「進捗確認」
   「子Issueの進捗」「エピック進捗」「状況を見せて」「/dashboard」
+effort: low
 allowed-tools:
   - mcp__linear__get_issue
   - mcp__linear__list_issues

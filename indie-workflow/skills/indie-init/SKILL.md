@@ -4,6 +4,7 @@ description: >
   プロジェクトの初期セットアップ。ディレクトリ構造、project.md、
   backlog.md、counter.txt を作成する。
   トリガー: 「個人プロジェクト初期化」「indie init」「ローカルプロジェクトセットアップ」「/indie-init」
+effort: low
 allowed-tools:
   - Read
   - Write

@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.0] - 2026-03-29
+
+### Added
+- 全スキルに effort frontmatter を追加（indie-start/retrospective: high, indie-init: low, 他: medium）
+- PostCompact hook: コンテキスト圧縮後にプロジェクトルールを再注入
+- agents/ ディレクトリ: Context Recovery Agent Team を独立エージェント定義ファイルとして抽出（doc-resolver, code-context）
+- plugin.json に agents フィールドを追加
+
 ## [1.8.1] - 2026-03-25
 
 ### Changed

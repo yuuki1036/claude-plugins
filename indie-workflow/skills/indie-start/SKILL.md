@@ -4,6 +4,7 @@ description: >
   セッション開始時の作業準備。main ブランチではダッシュボードモード（全プロジェクト状況表示）、
   feature ブランチでは Issue コンテキスト読み込み。
   トリガー: 「作業開始」「個人開発開始」「今日の作業」「/indie-start」
+effort: high
 allowed-tools:
   - Agent
   - Read

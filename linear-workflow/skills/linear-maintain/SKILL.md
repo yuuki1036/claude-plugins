@@ -4,6 +4,7 @@ description: >
   Linear MCP と同期してローカルの Issue/プロジェクト管理ファイルを最新化する。
   トリガー: 「/linear-maintain」「Linear同期」「Linearステータス同期」「プロジェクトdoc最新化」「プロジェクト整理」
   引数: [プロジェクトスラッグ（省略時は .claude/linear/ 配下の全スラッグ対象）]
+effort: medium
 allowed-tools:
   - mcp__linear__list_issues
   - mcp__linear__list_projects

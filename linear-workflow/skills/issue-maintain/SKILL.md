@@ -5,6 +5,7 @@ description: >
   トリガー: 「/issue-maintain」「Issue整理」「Issueファイルのメンテナンス」「セッション終了前にIssue更新」「Issueファイル更新して」「Issue更新」
   注意: このスキルはローカルの Issue ファイル（.claude/linear/*/issues/*.md）のみを更新する。Linear API の Issue は更新しない。
   引数: [Issue ID（省略時は現在のブランチから抽出、またはissues/配下の全ファイル対象）]
+effort: medium
 allowed-tools:
   - Read
   - Write

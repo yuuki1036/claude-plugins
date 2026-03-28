@@ -4,6 +4,7 @@ description: >
   全プロジェクトの棚卸し。放置 Issue の対処、技術的負債サマリー、
   frozen Issue の再評価、completed ファイルのクリーンアップを行う。
   トリガー: 「プロジェクト整理」「棚卸し」「メンテナンス」「/indie-maintain」
+effort: medium
 allowed-tools:
   - Read
   - Write

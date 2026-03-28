@@ -5,6 +5,7 @@ description: >
   evaluates quality against templates, outputs quality report, then makes targeted updates.
   トリガー: 「CLAUDE.md監査」「CLAUDE.md改善」「CLAUDE.mdチェック」「CLAUDE.mdの品質確認」
   「CLAUDE.mdメンテナンス」「プロジェクトメモリ最適化」「check CLAUDE.md」「audit CLAUDE.md」
+effort: high
 allowed-tools:
   - Read
   - Edit
