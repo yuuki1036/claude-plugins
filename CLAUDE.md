@@ -29,7 +29,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | instinct-memory | 3 | 1 | - | Stop, PostCompact | セッション中のパターン学習と auto memory 管理 |
 | code-review | 2 | 2 | - | SessionStart | Phase 0 トリアージ + 動的エージェント構成コードレビュー / セルフレビュー |
 | dev-workflow | 2 | 2 | - | SessionStart, PreToolUse | Git コミット・PR 作成の開発ワークフロー |
-| claude-meta | 1 | 2 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善 |
+| claude-meta | 2 | 3 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善・CCアップデート追従 |
 | linear-workflow | 6 | 6 | 3 | SessionStart, PostCompact | Linear MCP 連携の Issue/プロジェクト管理 |
 | indie-workflow | 6 | 6 | 2 | SessionStart, PostCompact | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 | plugin-manager | 1 | - | - | - | インストール済みプラグインの一括更新 |
