@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.1] - 2026-03-29
+
+### Fixed
+- plugin.json から無効な agents フィールドを削除し manifest バリデーションエラーを修正
+
 ## [1.9.0] - 2026-03-29
 
 ### Added

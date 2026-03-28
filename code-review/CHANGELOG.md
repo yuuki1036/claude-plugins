@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.2.1] - 2026-03-29
+
+### Fixed
+- userConfig.review_confidence_threshold に type/title を追加し manifest バリデーションエラーを修正
+
 ## [2.2.0] - 2026-03-29
 
 ### Added
