@@ -28,6 +28,15 @@ allowed-tools:
 
 ## チェック項目
 
+### 0. plugin.json スキーマバリデーション（Critical）
+
+`claude plugin validate {plugin-dir}` を各プラグインに対して実行し、スキーマエラーがないか確認。
+
+- CLI のビルトインバリデーターが plugin.json のスキーマ整合性を検証する
+- `_requirements` の "Unrecognized key" 警告は無視する（自前の拡張フィールドのため）
+- それ以外のエラーがあればインストール不可のため Critical
+- **このチェックで失敗したプラグインは後続チェックも実行するが、スキーマ修正が最優先**
+
 ### 1. marketplace.json 同期チェック（Critical）
 
 各プラグインの `{plugin}/.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` の対応エントリを比較:
@@ -155,13 +164,14 @@ hook スクリプトが `hooks/scripts/` サブディレクトリ配下に配置
 
 ```
 1. 対象プラグインの一覧を確定
-2. marketplace.json を Read で読み込み
-3. 各プラグインに対して並列で Agent を起動:
+2. チェック0: 全プラグインに `claude plugin validate` を実行（Bash で一括）
+3. marketplace.json を Read で読み込み
+4. 各プラグインに対して並列で Agent を起動:
    a. plugin.json を Read
    b. 全コマンド・全スキルの frontmatter を Read
    c. hooks スクリプトを Read
-   d. 上記チェック項目を順に実行
-4. 全結果を集約してレポート出力
+   d. チェック項目1〜13を順に実行
+5. チェック0の結果 + Agent の結果を集約してレポート出力
 ```
 
 **並列化**: 独立した3プラグイン程度ずつ Agent で並列チェック可能。ただしプラグイン数が少ない（6個）場合は直列でもよい。
@@ -182,6 +192,7 @@ hook スクリプトが `hooks/scripts/` サブディレクトリ配下に配置
 ### {plugin-name}
 
 #### Critical
+- [ ] スキーマバリデーション: {結果}
 - [ ] marketplace.json 同期: {結果}
 - [ ] allowed-tools 存在: {結果}
 - [ ] allowed-tools 一致: {結果}
