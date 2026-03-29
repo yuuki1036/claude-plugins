@@ -18,7 +18,3 @@ RULES_DIR="${CLAUDE_PLUGIN_ROOT}/rules"
 if [ -f "${RULES_DIR}/project-rules.md" ]; then
   cat "${RULES_DIR}/project-rules.md"
 fi
-if [ -f "${RULES_DIR}/issue-create-interaction.md" ]; then
-  echo ""
-  cat "${RULES_DIR}/issue-create-interaction.md"
-fi

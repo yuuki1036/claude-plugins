@@ -47,8 +47,21 @@ allowed-tools:
 | debt | 技術的負債の解消 | コード品質改善、依存関係更新、非推奨 API の移行 |
 
 - 確信度が高い場合（obvious な bugfix / debt）は判断根拠を1文で示してそのまま進む
-- 判断に迷う場合は `rules/issue-create-interaction.md` のテンプレート選択ルールに従い、AskUserQuestion でユーザーに確認する
-- feature テンプレートの場合、`rules/issue-create-interaction.md` の scope_size 選択ルールに従い、AskUserQuestion でスコープサイズを確認する
+- 判断に迷う場合は **AskUserQuestion** でテンプレートを確認する:
+  - question: 「{type} テンプレートを推奨します（{根拠1行}）。使用するテンプレートを選択してください」
+  - header: "テンプレート"
+  - options:
+    1. label: "bugfix" / description: "バグ修正・typo・設定変更など影響範囲が限定的"
+    2. label: "feature" / description: "新機能追加・既存機能の改修・リファクタリング"
+    3. label: "investigation" / description: "原因調査・パフォーマンス分析・技術選定"
+    4. label: "debt" / description: "コード品質改善・依存関係更新・非推奨 API の移行"
+- テンプレート選択の回答が feature だった場合、続けて **AskUserQuestion** でスコープサイズを確認する:
+  - question: "この feature の実装規模は？（タスク数上限と見積もり基準に使用）"
+  - header: "スコープ"
+  - options:
+    1. label: "small" / description: "3タスク以下（1-2日で完了）"
+    2. label: "medium" / description: "7タスク以下（数日〜1週間）"
+    3. label: "large" / description: "15タスク以下（1週間以上）"
 - テンプレートは以下を Read で読み込む:
   - `${CLAUDE_PLUGIN_ROOT}/skills/indie-issue-create/references/{type}.md`
 
@@ -107,11 +120,21 @@ Issue の内容が確定した段階で、既存の knowledge を検索する。
 
 1. `counter.txt` の値をインクリメントして書き込む
 2. 作成したファイルの絶対パスを報告する
-3. **ブランチ自動作成**: ユーザーに確認後、`git checkout -b {type}/{SLUG-N}-{description}` を実行
+3. **ブランチ自動作成**: **AskUserQuestion** で確認してから `git checkout -b {type}/{SLUG-N}-{description}` を実行する:
+   - question: "ブランチ `{type}/{SLUG-N}-{description}` を作成しますか？"
+   - header: "ブランチ"
+   - options:
+     1. label: "作成する" / description: "ブランチを作成してチェックアウト"
+     2. label: "スキップ" / description: "ブランチは自分で作る"
    - `description` はタイトルから kebab-case で自動生成（短く、英語）
    - 例: `feat/MYAPP-3-add-auth`, `fix/BLOG-2-fix-typo`
    - type マッピング: bugfix → `fix`, feature → `feat`, investigation → `investigate`, debt → `chore`
-4. **feature-dev 連携確認**: `rules/issue-create-interaction.md` の feature-dev 連携ルールを参照
+4. **feature-dev 連携確認**: **AskUserQuestion** で確認する:
+   - question: "feature-dev で実装計画を立てますか？（ブランチを切った直後が最もコンテキストがそろっています）"
+   - header: "feature-dev"
+   - options:
+     1. label: "はい" / description: "feature-dev で実装計画を立てる"
+     2. label: "いいえ" / description: "後で自分でやる"
 5. 次のアクションを案内する:
    - 計画の記入（feature の場合）
    - 調査の開始（investigation の場合）

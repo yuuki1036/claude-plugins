@@ -65,7 +65,7 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 - パス参照は `${CLAUDE_PLUGIN_ROOT}` を使用してポータブルにする
 - スキルの description にはトリガーフレーズを `トリガー:` キーワードで含める（例: `トリガー: 「作業開始」「セッション開始」「/session-start」`）
 - commands/ と skills/ の allowed-tools は一致させる（コマンドとスキルが同名でペアになっている場合のみ。独立したコマンドやスキルには適用されない）
-- 後から変えにくい判断を伴う方針確認は `AskUserQuestion` で選択 UI を提示する（rules/ に確認ルールを配置）
+- 後から変えにくい判断を伴う方針確認は `AskUserQuestion` で選択 UI を提示する（SKILL.md のワークフロー内に呼び出し仕様を直接記述する）
 - plugin 開発は plugin-dev plugin を用いて必要に応じて agent team を使用する
 
 ## CHANGELOG 規約

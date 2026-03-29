@@ -36,7 +36,13 @@ Linear Issue の情報を取得し、テンプレートに基づいて Issue フ
 | investigation | 調査・分析 | 原因調査、パフォーマンス分析、技術選定 |
 
 - 確信度が高い場合（obvious な bugfix / investigation）は判断根拠を1文で示してそのまま進む
-- 判断に迷う場合は `rules/issue-create-interaction.md` のテンプレート選択ルールに従い、AskUserQuestion でユーザーに確認する
+- 判断に迷う場合は **AskUserQuestion** でテンプレートを確認する:
+  - question: 「{type} テンプレートを推奨します（{根拠1行}）。使用するテンプレートを選択してください」
+  - header: "テンプレート"
+  - options:
+    1. label: "bugfix" / description: "バグ修正・設定変更など影響範囲が限定的"
+    2. label: "feature" / description: "新機能追加・既存機能の改修・リファクタリング"
+    3. label: "investigation" / description: "原因調査・パフォーマンス分析・技術選定"
 - テンプレートは以下を Read で読み込む:
   - `${CLAUDE_PLUGIN_ROOT}/skills/issue-create/references/{type}.md`
 
@@ -88,7 +94,12 @@ Issue の情報が確定した段階で、既存の knowledge を検索する。
 ### Phase 4: 確認
 
 1. 作成したファイルの絶対パスを報告する
-2. **feature-dev 連携確認**: `rules/issue-create-interaction.md` の feature-dev 連携ルールを参照
+2. **feature-dev 連携確認**（feature type の場合のみ）: **AskUserQuestion** で確認する:
+   - question: "feature-dev で実装計画を立てますか？（作業の流れを途切れさせずに次のフェーズに移れます）"
+   - header: "feature-dev"
+   - options:
+     1. label: "はい" / description: "feature-dev で実装計画を立てる"
+     2. label: "いいえ" / description: "後で自分でやる"
 3. 次のアクションを案内する:
    - 計画の記入（feature の場合）
    - 調査の開始（investigation の場合）

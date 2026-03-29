@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.0] - 2026-03-29
+
+### Changed
+- issue-create: AskUserQuestion の呼び出し仕様を SKILL.md に直接埋め込み（テンプレート選択・feature-dev 連携）
+
+### Removed
+- rules/issue-create-interaction.md を削除（間接参照では LLM が AskUserQuestion を呼ばない問題の修正）
+- inject-rules.sh から interaction.md の注入を削除
+
 ## [1.12.1] - 2026-03-29
 
 ### Fixed
