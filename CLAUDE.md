@@ -13,9 +13,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
   skills/                        # スキル定義（SKILL.md + references/）
   agents/                        # エージェント定義（frontmatter付き markdown）
   hooks/                         # フック定義（hooks.json + scripts/）
-  rules/                         # SessionStart 等で注入されるルール
+  rules/                         # SessionStart 等で注入されるルール（一部プラグインのみ）
     project-rules.md             # プロジェクト全体の作業ルール（SessionStart hook で注入）
-    *-interaction.md             # スキル実行時の方針確認ルール（SessionStart hook で注入 or Read で参照）
   CHANGELOG.md                   # 変更履歴（Keep a Changelog 形式）
   README.md
 ```
@@ -88,7 +87,6 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 - MAJOR: 破壊的変更（スキル/コマンドの削除・リネーム）
 - MINOR: 機能追加（新スキル/コマンド、既存機能拡張）
 - PATCH: 修正（バグ修正、ドキュメント、リファクタ）
-- plugin.json と marketplace.json の version は必ず同期する
 
 ## 品質チェック
 
