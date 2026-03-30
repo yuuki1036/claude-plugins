@@ -1,6 +1,6 @@
 # code-review
 
-Phase 0 トリアージ + 動的エージェント構成のコードレビュープラグイン。diff を分析して explorer（探索）→ reviewer（レビュー）を動的に構成し、対象コードの複雑さに応じて冗長化。全エージェント model: opus。Confidence scoring (0-100) で偽陽性をフィルタリングし、≥80 の指摘のみ報告。
+Phase 0 トリアージ + 動的エージェント構成のコードレビュープラグイン。diff を分析して explorer（探索）→ reviewer（レビュー）を動的に構成し、対象コードの複雑さに応じて冗長化。explorer: sonnet、reviewer: opus。Confidence scoring (0-100) で偽陽性をフィルタリングし、≥80 の指摘のみ報告。
 
 ## 含まれるスキル
 

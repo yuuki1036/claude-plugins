@@ -1,8 +1,8 @@
 ---
 name: code-context
 description: Issue ファイルで言及されたソースファイルの現状と Git ブランチの作業状態を収集する
-model: opus
-effort: high
+model: sonnet
+effort: medium
 tools: Read, Glob, Grep, Bash
 ---
 

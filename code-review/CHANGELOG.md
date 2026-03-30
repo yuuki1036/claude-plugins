@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.3.1] - 2026-03-30
+
+### Changed
+- explorer のモデルを opus → sonnet に変更（情報収集タスクの effort 最適化、reviewer は opus 維持）
+
 ## [2.3.0] - 2026-03-29
 
 ### Changed

@@ -1,8 +1,8 @@
 ---
 name: doc-resolver
 description: Issue ファイルの参照リンクを抽出し、関連ドキュメントを辿って読み込む
-model: opus
-effort: high
+model: sonnet
+effort: medium
 tools: Read, Glob, Grep
 ---
 

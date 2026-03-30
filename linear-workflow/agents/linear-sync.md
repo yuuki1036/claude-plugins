@@ -1,7 +1,7 @@
 ---
 name: linear-sync
 description: Linear API から最新情報を取得し、ローカル Issue ファイルとの差分を検出する
-model: opus
+model: sonnet
 effort: medium
 tools: Read, mcp__linear__get_issue, mcp__linear__list_comments
 ---

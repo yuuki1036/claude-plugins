@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.1] - 2026-03-30
+
+### Changed
+- doc-resolver, code-context, linear-sync エージェントのモデルを opus → sonnet に変更（情報収集タスクの effort 最適化）
+- doc-resolver, code-context の effort を high → medium に変更
+
 ## [1.13.0] - 2026-03-29
 
 ### Changed
