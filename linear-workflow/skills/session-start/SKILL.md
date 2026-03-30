@@ -32,6 +32,20 @@ allowed-tools:
 
 ## ワークフロー
 
+### Phase 0: Linear MCP 利用可能性チェック
+
+1. 軽量な Linear MCP 呼び出し（`mcp__linear__get_issue` など）を試みる
+2. ツールが見つからない・接続エラーの場合:
+   - **AskUserQuestion** で続行/中断を確認する:
+     - question: "Linear MCP が利用できません。MCP なしで続行するとローカルファイルの情報のみでセッションを開始します（Linear からの Issue 取得・同期は不可）。"
+     - header: "Linear MCP 未検出"
+     - options:
+       1. label: "続行" / description: "ローカルファイルのみでセッション開始する"
+       2. label: "中断" / description: "スキルを中断する"
+   - 「中断」選択時: スキルを終了する
+   - 「続行」選択時: Linear MCP を使う Phase（1.5, Q2, P1〜P2, N3.5 の Linear Sync Agent）をスキップし、ローカルファイルのみで進行する
+3. 正常に応答が返った場合: そのまま Phase 1 に進む
+
 ### Phase 1: ブランチ名から Issue ID 抽出 & モード判定
 
 1. `git branch --show-current` でカレントブランチ名を取得する（Bash）

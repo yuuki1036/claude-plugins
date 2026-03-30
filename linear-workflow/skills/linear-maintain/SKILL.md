@@ -34,6 +34,22 @@ Linear MCP と連携し、`.claude/linear/` 内のプロジェクト管理ファ
 
 ---
 
+## Phase 0: Linear MCP 利用可能性チェック
+
+1. 軽量な Linear MCP 呼び出し（`mcp__linear__list_projects` など）を試みる
+2. ツールが見つからない・接続エラーの場合:
+   - **AskUserQuestion** で続行/中断を確認する:
+     - question: "Linear MCP が利用できません。このスキルは Linear MCP との同期が主な機能のため、MCP なしでは大部分の処理を実行できません。"
+     - header: "Linear MCP 未検出"
+     - options:
+       1. label: "続行" / description: "ローカルファイルの整理のみ実行する（Linear 同期はスキップ）"
+       2. label: "中断" / description: "スキルを中断する"
+   - 「中断」選択時: スキルを終了する
+   - 「続行」選択時: Linear MCP を使う処理（プロジェクト doc 更新、関連 Issue テーブル更新、Issue ステータス同期）をスキップし、completed Issue の自動メンテナンスのみ実行する
+3. 正常に応答が返った場合: そのまま通常フローに進む
+
+---
+
 ## 処理内容
 
 ### 1. プロジェクト doc の更新

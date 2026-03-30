@@ -19,10 +19,24 @@ Linear Issue の情報を取得し、テンプレートに基づいて Issue フ
 
 ## ワークフロー
 
+### Phase 0: Linear MCP 利用可能性チェック
+
+1. Phase 1 の `get_issue` 呼び出しを試みる（Phase 1 と兼用）
+2. ツールが見つからない・接続エラーの場合:
+   - **AskUserQuestion** で続行/中断を確認する:
+     - question: "Linear MCP が利用できません。MCP なしで続行する場合、Issue 情報は手動入力になります。"
+     - header: "Linear MCP 未検出"
+     - options:
+       1. label: "続行" / description: "Issue 情報を手動入力して作成する"
+       2. label: "中断" / description: "スキルを中断する"
+   - 「中断」選択時: スキルを終了する
+   - 「続行」選択時: Phase 1 の手動入力フローに進む
+3. 正常に応答が返った場合: そのまま Phase 1 の通常フローに進む
+
 ### Phase 1: Issue 情報の取得
 
 1. Issue ID をユーザーから受け取る（session-start から渡される場合もある）
-2. Linear MCP `get_issue` でタイトル・説明・プロジェクト情報を取得する
+2. Linear MCP `get_issue` でタイトル・説明・プロジェクト情報を取得する（Phase 0 で取得済みの場合は再利用する）
 3. 取得できない場合はユーザーに手動入力を依頼する
 
 ### Phase 2: テンプレート選択

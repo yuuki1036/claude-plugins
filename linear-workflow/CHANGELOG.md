@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.14.0] - 2026-03-30
+
+### Added
+- 全 Linear MCP 使用スキル（init, dashboard, linear-maintain, issue-create, session-start）に Phase 0: MCP 利用可能性チェックを追加
+- MCP 未検出時に AskUserQuestion で「続行 / 中断」を提示し、ユーザーが選択できるように
+
 ## [1.13.1] - 2026-03-30
 
 ### Changed
