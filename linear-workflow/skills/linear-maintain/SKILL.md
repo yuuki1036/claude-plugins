@@ -60,7 +60,7 @@ Linear MCP と連携し、`.claude/linear/` 内のプロジェクト管理ファ
 - 概要・ステータスを最新化
 - **関連 Issue テーブルの更新**（後述）
 
-> **プロジェクト doc テンプレート**: `${CLAUDE_PLUGIN_ROOT}/skills/linear-maintain/references/project-doc-template.md` を Read で参照すること。
+> **プロジェクト doc テンプレート**: `${CLAUDE_SKILL_DIR}/references/project-doc-template.md` を Read で参照すること。
 
 ### 2. 関連 Issue テーブルの更新
 

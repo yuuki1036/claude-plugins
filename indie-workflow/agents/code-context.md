@@ -3,6 +3,7 @@ name: code-context
 description: Issue ファイルで言及されたソースファイルの現状と Git ブランチの作業状態を収集する
 model: sonnet
 effort: medium
+maxTurns: 15
 tools: Read, Glob, Grep, Bash
 ---
 

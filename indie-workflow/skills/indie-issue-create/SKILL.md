@@ -63,7 +63,7 @@ allowed-tools:
     2. label: "medium" / description: "7タスク以下（数日〜1週間）"
     3. label: "large" / description: "15タスク以下（1週間以上）"
 - テンプレートは以下を Read で読み込む:
-  - `${CLAUDE_PLUGIN_ROOT}/skills/indie-issue-create/references/{type}.md`
+  - `${CLAUDE_SKILL_DIR}/references/{type}.md`
 
 ### Phase 5: Issue 情報のヒアリング
 

@@ -44,7 +44,7 @@ Linear プロジェクトのダッシュボードを表示する。
 
 全チームの状況を俯瞰し、次に着手すべき Issue を提案する。
 
-出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/skills/dashboard/references/dashboard-full.md` を参照すること。
+出力フォーマットは `${CLAUDE_SKILL_DIR}/references/dashboard-full.md` を参照すること。
 
 ### Phase D1: 全プロジェクトスキャン
 
@@ -99,7 +99,7 @@ Linear プロジェクトのダッシュボードを表示する。
 
 親 Issue の進捗と子 Issue の状況を表示する。
 
-出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/skills/dashboard/references/dashboard-scoped.md` を参照すること。
+出力フォーマットは `${CLAUDE_SKILL_DIR}/references/dashboard-scoped.md` を参照すること。
 
 ### Phase S1: 親 Issue 情報取得
 

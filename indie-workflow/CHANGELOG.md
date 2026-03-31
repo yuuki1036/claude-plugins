@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.10.2] - 2026-03-31
+
+### Changed
+- SessionStart check-deps.sh に `once: true` 追加（セッション中1回のみ実行）
+- 全エージェント（code-context, doc-resolver）に `maxTurns: 15` 追加（暴走防止）
+- スキル内パス参照を `${CLAUDE_PLUGIN_ROOT}/skills/*/references/` → `${CLAUDE_SKILL_DIR}/references/` に最適化（6箇所）
+
 ## [1.10.1] - 2026-03-30
 
 ### Changed

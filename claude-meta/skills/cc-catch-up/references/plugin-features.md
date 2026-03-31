@@ -31,6 +31,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `Elicitation` | v2.1.76 | MCP エリシテーション要求時 | エリシテーション制御 | MCP 連携プラグイン |
 | `ElicitationResult` | v2.1.76 | エリシテーション応答後 | 応答処理 | MCP 連携プラグイン |
 | `TeammateIdle` | v2.1.84+ | チームメイトアイドル前 | タスク割り当て | マルチエージェント系 |
+| `PermissionDenied` | v2.1.88 | auto mode denial 後 | リトライ制御 | auto mode 活用プラグイン |
 
 ### 1.2 Hook Handler Types
 
@@ -57,6 +58,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 |------|-------|------|------------|
 | `updatedInput` | v2.1.85 | PreToolUse で入力パラメータを書き換え | 危険コマンドの安全化 |
 | `CLAUDE_ENV_FILE` | v2.1.78+ | SessionStart/CwdChanged/FileChanged で環境変数を永続化 | セッション変数の保持 |
+| `last_assistant_message` | v2.1.47 | Stop/SubagentStop で最終アシスタントレスポンス参照 | トランスクリプト解析不要の応答取得 |
 
 ---
 
@@ -78,7 +80,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `memory` | v2.1.80+ | `user`/`project`/`local` メモリスコープ | 永続的な学習 |
 | `mcpServers` | v2.1.80+ | エージェント固有 MCP サーバー | 特定 API 連携 |
 | `skills` | v2.1.80+ | プリロードスキル | スキル依存エージェント |
-| `initialPrompt` | v2.1.78+ | `--agent` 起動時の自動送信プロンプト | スタンドアロンエージェント |
+| `initialPrompt` | v2.1.83 | `--agent` 起動時の自動送信プロンプト | スタンドアロンエージェント |
 
 ---
 

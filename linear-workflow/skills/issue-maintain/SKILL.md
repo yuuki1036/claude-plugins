@@ -109,7 +109,7 @@ Issue ファイルがフロントマターの `type` に対応するテンプレ
 - 空のままのセクションは「（なし）」と記載して残す（テンプレート構造を維持）
 
 品質チェックの詳細は以下を参照:
-→ Read `${CLAUDE_PLUGIN_ROOT}/skills/issue-maintain/references/quality-checklist.md`
+→ Read `${CLAUDE_SKILL_DIR}/references/quality-checklist.md`
 
 ---
 

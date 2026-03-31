@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.3.2] - 2026-03-31
+
+### Changed
+- SessionStart check-deps.sh に `once: true` 追加（セッション中1回のみ実行）
+
 ## [2.3.1] - 2026-03-30
 
 ### Changed

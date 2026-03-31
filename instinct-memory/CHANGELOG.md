@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.1] - 2026-03-31
+
+### Changed
+- Stop hook（session-review.sh）に `async: true` 追加（セッション終了をブロックしない非同期実行）
+
 ## [1.2.0] - 2026-03-29
 
 ### Added

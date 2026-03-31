@@ -88,7 +88,7 @@ allowed-tools:
 
 ステータスサマリー（件数テーブル）と関連 Issue テーブルを最新化する。
 
-> **プロジェクト doc テンプレート**: `${CLAUDE_PLUGIN_ROOT}/skills/indie-maintain/references/project-doc-template.md` を Read で参照すること。
+> **プロジェクト doc テンプレート**: `${CLAUDE_SKILL_DIR}/references/project-doc-template.md` を Read で参照すること。
 
 ---
 

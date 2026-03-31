@@ -58,7 +58,7 @@ Linear Issue の情報を取得し、テンプレートに基づいて Issue フ
     2. label: "feature" / description: "新機能追加・既存機能の改修・リファクタリング"
     3. label: "investigation" / description: "原因調査・パフォーマンス分析・技術選定"
 - テンプレートは以下を Read で読み込む:
-  - `${CLAUDE_PLUGIN_ROOT}/skills/issue-create/references/{type}.md`
+  - `${CLAUDE_SKILL_DIR}/references/{type}.md`
 
 ### Phase 2.5: 関連 Knowledge の検索
 

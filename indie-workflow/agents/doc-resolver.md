@@ -3,6 +3,7 @@ name: doc-resolver
 description: Issue ファイルの参照リンクを抽出し、関連ドキュメントを辿って読み込む
 model: sonnet
 effort: medium
+maxTurns: 15
 tools: Read, Glob, Grep
 ---
 

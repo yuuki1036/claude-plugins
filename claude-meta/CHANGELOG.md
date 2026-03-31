@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.1] - 2026-03-31
+
+### Changed
+- plugin-features.md カタログ更新: PermissionDenied hook、last_assistant_message、initialPrompt バージョン修正
+
 ## [1.3.0] - 2026-03-29
 
 ### Added

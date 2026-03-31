@@ -3,6 +3,7 @@ name: linear-sync
 description: Linear API から最新情報を取得し、ローカル Issue ファイルとの差分を検出する
 model: sonnet
 effort: medium
+maxTurns: 15
 tools: Read, mcp__linear__get_issue, mcp__linear__list_comments
 ---
 
