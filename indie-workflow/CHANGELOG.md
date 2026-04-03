@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.0] - 2026-04-03
+
+### Added
+- indie-follow-up スキル/コマンドを新規追加（`/indie-follow-up new|list|promote`）
+- 開発中の follow-up タスクを低摩擦で記録し、後から Issue に昇格する仕組み
+- project-rules.md に follow-up 自動検知ルールを追加
+- indie-start: ダッシュボードモードに follow-up 件数表示を追加
+- indie-start: Feature ブランチモードに follow-up 通知を追加
+- indie-issue-maintain: タスク完了時に follow-up 棚卸し通知を追加
+- indie-maintain: Follow-up 棚卸しフェーズを追加（14日以上放置の警告）
+
 ## [1.10.2] - 2026-03-31
 
 ### Changed

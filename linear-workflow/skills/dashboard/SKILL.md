@@ -59,7 +59,18 @@ Linear プロジェクトのダッシュボードを表示する。
 2. 各 Issue ファイルを Read し、`status: in-progress` の Issue をプロジェクト別にリスト表示する
 3. `last_active` フィールドが7日以上前の Issue を警告付きで表示する
 
-### Phase D2.5: Knowledge サマリー
+### Phase D2.5: Follow-up サマリー
+
+1. `.claude/linear/*/follow-ups/*.md` を Glob で列挙する
+2. 各ファイルを Read し、`status: open` の follow-up をプロジェクト別に集計する
+3. 表示形式:
+   ```
+   **Follow-up:**
+   - {slug}: {N}件（最古: {created日}）
+   ```
+4. 全プロジェクトで0件の場合はこのセクションをスキップする
+
+### Phase D2.7: Knowledge サマリー
 
 1. `.claude/linear/*/knowledge/index.md` を Glob で列挙する
 2. 各 index.md を Read で読み込み、プロジェクト別の knowledge 件数を表示する

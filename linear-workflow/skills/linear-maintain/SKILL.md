@@ -89,7 +89,15 @@ Linear 上でプロジェクトが Done の場合：
 | 関連する `issues/` 内ファイル | 削除 |
 | `knowledge/` | **保持**（リポジトリの知見として永続的に有効） |
 
-### 5. completed Issue の自動メンテナンス
+### 5. Follow-up 棚卸し
+
+各プロジェクトの `.claude/linear/{slug}/follow-ups/*.md` を走査する:
+
+- `status: open` のものを列挙する
+- `created` から14日以上経過しているものを警告付きでハイライトする
+- 結果をレポートに含める（個別の対処確認はレポート後の一括承認で行う）
+
+### 6. completed Issue の自動メンテナンス
 
 issues/ 内のファイルを走査し、Linear 上で Done / Canceled になった Issue を検知したら、
 **issue-maintain 相当の処理を自動実行**する。
@@ -127,8 +135,11 @@ issues/ 内のファイルを走査し、Linear 上で Done / Canceled になっ
    b. Done / Canceled を検知 → status を更新
    c. completed / canceled ファイルに issue-maintain の処理フローを実行
    d. in-progress ファイルの follow_up 解消チェック
-5. 結果レポートをユーザーに提示
-6. 承認を得てから実行
+5. follow-ups/ 内の全ファイルを走査
+   a. status: open の follow-up を列挙
+   b. 14日以上経過のものを警告付きでマーク
+6. 結果レポートをユーザーに提示
+7. 承認を得てから実行
 ```
 
 ## 出力レポート形式
@@ -160,6 +171,11 @@ issues/ 内のファイルを走査し、Linear 上で Done / Canceled になっ
 | Issue | follow_up | Linear ステータス | 提案 |
 |-------|-----------|------------------|------|
 | TEAM-449 | TEAM-500 | Done | follow_up から削除 |
+
+### Follow-up 棚卸し
+| ファイル | タイトル | type | priority | source | 作成日 | 経過日数 |
+|--------|---------|------|----------|--------|--------|---------|
+| 20260320-fix-null.md | null チェック漏れ | bug | high | TEAM-123 | 2026-03-20 | 14日 ⚠️ |
 
 ### クリーンアップ
 （対象なし）

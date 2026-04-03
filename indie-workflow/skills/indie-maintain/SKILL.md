@@ -77,14 +77,26 @@ allowed-tools:
 
 **承認フロー**: completed Issue メンテナンスの結果は他の変更と合わせてレポートに含め、**一括でユーザー承認を得る**。
 
-### 6. backlog.md 整理
+### 6. Follow-up 棚卸し
+
+各プロジェクトの `.claude/indie/{slug}/follow-ups/*.md` を走査する:
+
+- `status: open` のものを列挙する
+- `created` から14日以上経過しているものを警告付きでハイライトする
+- 各 follow-up について対処を確認（AskUserQuestion）:
+  - **昇格**: `/indie-follow-up promote` を実行
+  - **backlog 移動**: `status` を `backlog` に更新し、`backlog.md` に追記
+  - **削除**: `status` を `dismissed` に更新
+- 結果をレポートに含める
+
+### 7. backlog.md 整理
 
 各プロジェクトの `backlog.md` を確認し、Issue ファイルに昇格すべき項目がないかユーザーに提示する。
 
 - 優先度や緊急性が高そうな項目をハイライト
 - 昇格する場合は Issue ファイルを作成し、backlog.md から削除
 
-### 7. project.md 更新
+### 8. project.md 更新
 
 ステータスサマリー（件数テーブル）と関連 Issue テーブルを最新化する。
 
@@ -102,8 +114,9 @@ allowed-tools:
    c. frozen Issue（30日以上凍結）を検出
    d. debt Issue を収集
    e. completed Issue にメンテナンス処理を実行
-   f. backlog.md を確認
-   g. project.md のステータスサマリー・関連 Issue テーブルを更新
+   f. follow-ups/ 内の open ファイルを走査し、14日以上経過のものを警告付きでマーク
+   g. backlog.md を確認
+   h. project.md のステータスサマリー・関連 Issue テーブルを更新
 3. 結果レポートをユーザーに提示
 4. 承認を得てから実行
 ```
@@ -132,6 +145,11 @@ allowed-tools:
 ### completed Issue メンテナンス
 | Issue | 処理 | knowledge 切り出し | 削除提案 |
 |-------|------|-------------------|---------|
+
+### Follow-up 棚卸し
+| ファイル | タイトル | type | priority | source | 作成日 | 経過日数 |
+|--------|---------|------|----------|--------|--------|---------|
+| 20260320-fix-null.md | null チェック漏れ | bug | high | MYAPP-3 | 2026-03-20 | 14日 ⚠️ |
 
 ### backlog.md 確認
 | プロジェクト | 昇格候補 |

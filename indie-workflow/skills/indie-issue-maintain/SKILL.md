@@ -203,6 +203,12 @@ Issue のタスクが全て完了した場合、以下を実行する：
    ```
 3. 更新履歴に完了を記録
 4. 汎用知見があれば `.claude/indie/{slug}/knowledge/` に切り出し
+5. follow-up ファイルの棚卸し:
+   - `.claude/indie/{slug}/follow-ups/*.md` を Glob で確認
+   - `status: open` のファイルがあれば件数を通知:
+     「open な follow-up が {N}件あります。`/indie-follow-up list` で確認できます」
+   - frontmatter の `follow_up` リストに未起票の文字列がある場合:
+     「以下の未起票 follow-up を follow-up ファイルとして記録しますか？」と提案
 
 ---
 

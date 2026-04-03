@@ -29,8 +29,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | code-review | 2 | 2 | - | SessionStart | Phase 0 トリアージ + 動的エージェント構成コードレビュー / セルフレビュー |
 | dev-workflow | 2 | 2 | - | SessionStart, PreToolUse | Git コミット・PR 作成の開発ワークフロー |
 | claude-meta | 2 | 3 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善・CCアップデート追従 |
-| linear-workflow | 6 | 6 | 3 | SessionStart, PostCompact | Linear MCP 連携の Issue/プロジェクト管理 |
-| indie-workflow | 6 | 6 | 2 | SessionStart, PostCompact | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
+| linear-workflow | 7 | 7 | 3 | SessionStart, PostCompact | Linear MCP 連携の Issue/プロジェクト管理 |
+| indie-workflow | 7 | 7 | 2 | SessionStart, PostCompact | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 | plugin-manager | 1 | - | - | - | インストール済みプラグインの一括更新 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 

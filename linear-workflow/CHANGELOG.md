@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.15.0] - 2026-04-03
+
+### Added
+- follow-up スキル/コマンドを新規追加（`/follow-up new|list|promote`）
+- 開発中の follow-up タスクを低摩擦で記録し、後から Issue に昇格する仕組み
+- project-rules.md に follow-up 自動検知ルールを追加
+- session-start: Quick Pick モードに follow-up 件数表示を追加
+- dashboard: Phase D2.5 Follow-up サマリーを追加
+- issue-maintain: タスク完了時に follow-up 棚卸し通知を追加
+- linear-maintain: Follow-up 棚卸しフェーズを追加（14日以上放置の警告）
+
 ## [1.14.1] - 2026-03-31
 
 ### Changed
