@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.2] - 2026-04-04
+
+### Fixed
+- claude-md-improver スキルの description を 250 文字以内に短縮（v2.1.86 の上限対応）
+
+### Changed
+- plugin-features.md カタログ更新: SessionEnd, SubagentStart/Stop, PermissionRequest, bin/, git-subdir, description 上限, disableSkillShellExecution, defer, MCP tool result persistence 等を追記
+
 ## [1.3.1] - 2026-03-31
 
 ### Changed

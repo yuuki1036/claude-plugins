@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.3.3] - 2026-04-04
+
+### Fixed
+- review/self-review スキルの description を 250 文字以内に短縮（v2.1.86 の上限対応）
+
 ## [2.3.2] - 2026-03-31
 
 ### Changed

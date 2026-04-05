@@ -1,14 +1,10 @@
 ---
 name: review
-description: |
+description: >
   Phase 0 トリアージ + 動的エージェント構成の PR コードレビュー。
-  Phase 0 で diff を分析し、explorer（探索）→ reviewer（レビュー）を動的に構成。
-  対象コードの複雑さに応じて同一観点の reviewer を冗長化し、複数視点のマージで確度を向上。
-  explorer: model: sonnet（情報収集）、reviewer: model: opus（品質最大化）。
-  Confidence scoring (0-100) で偽陽性をフィルタリングし、≥80 の指摘のみ報告。
-  React/Next.js プロジェクトでは vercel-best-practices の観点も自動追加。
-  トリガー: ユーザーが「レビューして」「/review」「コードレビュー」と言った時。
-  引数: [PR番号] (省略時は現在のブランチに紐づくPRを自動取得)
+  diff → explorer(sonnet) → reviewer(opus) を動的構成、Confidence ≥80 の指摘のみ報告。
+  トリガー: 「レビューして」「/review」「コードレビュー」
+  引数: [PR番号] (省略時は現在ブランチのPRを自動取得)
 effort: max
 allowed-tools:
   - Bash

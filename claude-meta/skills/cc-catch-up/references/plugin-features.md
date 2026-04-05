@@ -31,7 +31,11 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `Elicitation` | v2.1.76 | MCP エリシテーション要求時 | エリシテーション制御 | MCP 連携プラグイン |
 | `ElicitationResult` | v2.1.76 | エリシテーション応答後 | 応答処理 | MCP 連携プラグイン |
 | `TeammateIdle` | v2.1.84+ | チームメイトアイドル前 | タスク割り当て | マルチエージェント系 |
-| `PermissionDenied` | v2.1.88 | auto mode denial 後 | リトライ制御 | auto mode 活用プラグイン |
+| `PermissionDenied` | v2.1.89 | auto mode denial 後 | リトライ制御 | auto mode 活用プラグイン |
+| `SessionEnd` | v2.1.74+ | セッション終了時 | クリーンアップ処理 | セッション終了時の後処理が必要なプラグイン |
+| `SubagentStart` | v2.0.43 | サブエージェント起動時 | 初期化処理 | エージェントチーム構成時 |
+| `SubagentStop` | v1.0.41+ | サブエージェント停止時 | 完了時処理 | エージェント完了後のクリーンアップ |
+| `PermissionRequest` | v2.0.45+ | 権限リクエスト時 | カスタム承認フロー | 承認フロー制御プラグイン |
 
 ### 1.2 Hook Handler Types
 
@@ -59,6 +63,9 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `updatedInput` | v2.1.85 | PreToolUse で入力パラメータを書き換え | 危険コマンドの安全化 |
 | `CLAUDE_ENV_FILE` | v2.1.78+ | SessionStart/CwdChanged/FileChanged で環境変数を永続化 | セッション変数の保持 |
 | `last_assistant_message` | v2.1.47 | Stop/SubagentStop で最終アシスタントレスポンス参照 | トランスクリプト解析不要の応答取得 |
+| `permissionDecision: "defer"` | v2.1.89 | PreToolUse で判断を保留し `-p --resume` で再評価 | ヘッドレス CI/CD パイプライン |
+| AskUserQuestion 自動回答 | v2.1.85 | PreToolUse で `updatedInput` + `permissionDecision: "allow"` | ヘッドレス環境での自動応答 |
+| 大容量出力のディスク保存 | v2.1.89 | 50K 文字超の hook 出力はファイルに保存 | 大量データ返却フック |
 
 ---
 
@@ -81,6 +88,8 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `mcpServers` | v2.1.80+ | エージェント固有 MCP サーバー | 特定 API 連携 |
 | `skills` | v2.1.80+ | プリロードスキル | スキル依存エージェント |
 | `initialPrompt` | v2.1.83 | `--agent` 起動時の自動送信プロンプト | スタンドアロンエージェント |
+| `permissionMode` | v2.0.43 | エージェントの権限モード指定 | エージェントの自律度制御 |
+| `hooks` | v2.1.0 | エージェント固有フック定義（Stop → SubagentStop 自動変換） | エージェント固有の後処理 |
 
 ---
 
@@ -100,7 +109,14 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `hooks` | v2.1.80+ | スキルスコープのフック | スキル実行中のみ有効なフック |
 | `shell` | v2.1.84 | `bash` / `powershell` 指定 | クロスプラットフォーム |
 
-### 3.2 Skill Variables
+### 3.2 Skill 制約
+
+| 制約 | Since | 説明 | 適用シグナル |
+|------|-------|------|------------|
+| description 250 文字上限 | v2.1.86 | description が 250 文字でキャップ | トリガーフレーズを優先的に含める |
+| `disableSkillShellExecution` | v2.1.91 | インラインシェル実行を無効化する設定 | セキュリティ要件の厳しい環境 |
+
+### 3.3 Skill Variables
 
 | 変数 | Since | 説明 | 適用シグナル |
 |------|-------|------|------------|
@@ -137,6 +153,9 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `userConfig` | v2.1.69+ | ユーザー設定項目 | カスタマイズ可能なプラグイン |
 | `channels` | v2.1.80+ | MCP メッセージチャンネル | リアルタイム通知 |
 | `_requirements` | 慣習 | 依存情報（非公式） | 外部依存があるプラグイン |
+| `bin/` | v2.1.91 | CLI ツール同梱ディレクトリ | Bash から直接呼び出せるツール配布 |
+| `source: 'settings'` | v2.1.80 | settings.json 内インライン定義 | git 不要のプラグイン定義 |
+| `git-subdir` | v2.1.84 | git リポジトリのサブディレクトリ指定 | モノレポ内プラグイン参照 |
 
 ### 5.1 userConfig
 
@@ -167,6 +186,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | ツール説明 2KB 上限 | v2.1.84 | MCP ツール説明のサイズ制限 | MCP ツール提供プラグイン |
 | サーバー重複排除 | v2.1.84 | ローカル/リモート設定の自動重複排除 | MCP 設定管理 |
 | `CLAUDE_CODE_MCP_SERVER_NAME` | v2.1.85 | MCP サーバー名の環境変数 | MCP スクリプト内参照 |
+| Tool result persistence | v2.1.91 | `_meta["anthropic/maxResultSizeChars"]` で最大 500K 保持 | 大規模 MCP 結果のトランケート防止 |
 
 ---
 
@@ -191,3 +211,4 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` | v2.1.78+ | サブプロセスから認証情報除去 | セキュリティ考慮 |
 | `CLAUDE_STREAM_IDLE_TIMEOUT_MS` | v2.1.80+ | ストリーミングタイムアウト | 長時間処理 |
 | `CLAUDE_CODE_DISABLE_CRON` | v2.1.71+ | スケジュール無効化 | Cron 制御 |
+| `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS` | v2.1.78 | 組み込みコミット/PR 指示を除去 | dev-workflow 等との競合防止 |

@@ -1,13 +1,9 @@
 ---
 name: session-start
 description: >
-  セッション開始時の作業準備。ブランチ名から Linear Issue を特定し、
-  関連プロジェクト doc と Issue ファイルを読み込む。
-  main ブランチでは Quick Pick で素早くタスク選択、
-  親 Issue ブランチでは軽量サマリー表示、
-  feature ブランチでは Context Recovery Agent Team で完全なコンテキスト復元を行う。
-  トリガー: 「作業開始」「セッション開始」「タスク開始」「今日の作業を始める」
-  「コンテキスト読み込み」「/session-start」
+  セッション開始時の作業準備。ブランチ名から Linear Issue を特定し、関連ファイルを読み込む。
+  main: Quick Pick、親 Issue: 軽量サマリー、feature: Context Recovery Agent Team。
+  トリガー: 「作業開始」「セッション開始」「タスク開始」「コンテキスト読み込み」「/session-start」
 effort: high
 allowed-tools:
   - Agent
