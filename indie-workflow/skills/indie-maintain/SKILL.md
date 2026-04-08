@@ -29,6 +29,21 @@ allowed-tools:
 
 ---
 
+## Phase 0: スキャンモード選択
+
+**AskUserQuestion** でスキャンモードを選択する:
+
+- question: "メンテナンスのスキャンモードを選択してください。"
+- header: "スキャンモード"
+- options:
+  1. label: "通常" / description: "プロジェクトサマリー + 放置検知 + completed メンテナンス"
+  2. label: "フルスキャン" / description: "通常 + 全 Issue（in-progress 含む）の品質整理"
+
+- **通常**: 既存の処理フロー（1〜8）をそのまま実行
+- **フルスキャン**: 処理 1〜4 を実行後、5 を拡張して全 Issue に indie-issue-maintain の全処理フローを適用し、6〜8 を実行
+
+---
+
 ## 処理内容
 
 ### 1. プロジェクトサマリー生成
@@ -63,11 +78,11 @@ allowed-tools:
 - 作成日（`created`）からの経過日数を算出
 - 経過日数の長い順にソート
 
-### 5. completed Issue メンテナンス
+### 5. Issue メンテナンス
+
+#### 5a. completed Issue メンテナンス（通常・フルスキャン共通）
 
 `issues/` 内の `status: completed` ファイルを走査し、**indie-issue-maintain の処理フロー**に従って品質整理を行う。
-
-#### メンテナンス処理
 
 - Issue ファイルの圧縮（冗長な記録の整理）
 - knowledge への切り出し（再利用可能な知見の抽出）
@@ -75,7 +90,25 @@ allowed-tools:
 
 **メンテナンス済みの判定**: 更新履歴に `メンテナンス:` で始まるエントリがあればスキップ。
 
-**承認フロー**: completed Issue メンテナンスの結果は他の変更と合わせてレポートに含め、**一括でユーザー承認を得る**。
+#### 5b. 全 Issue 品質整理（フルスキャンのみ）
+
+`status: in-progress` の全 Issue ファイルに対して、**indie-issue-maintain の全処理フロー**を適用する。
+
+##### 対象
+- `status: in-progress` の全 Issue（5a で処理済みのものは除く）
+
+##### 処理内容（indie-issue-maintain SKILL.md の全ステップを適用）
+1. last_active を今日の日付に更新
+2. スコープ超過チェック
+3. テンプレート準拠チェック
+4. 各セクション走査・整理対象の特定（削除/圧縮/統合）
+5. 更新履歴のセッション単位統合
+6. knowledge/ 切り出し候補の特定
+
+##### knowledge 重複排除
+複数 Issue から同一トピックの knowledge が候補に上がった場合、マージして1つの knowledge ファイルにする。全 Issue の候補を収集してから index.md と照合する。
+
+**承認フロー**: Issue メンテナンスの結果は他の変更と合わせてレポートに含め、**一括でユーザー承認を得る**。個別の Issue ごとに承認は求めない。
 
 ### 6. Follow-up 棚卸し
 
@@ -108,17 +141,20 @@ allowed-tools:
 
 ```
 1. .claude/indie/ 内の全プロジェクトを列挙（slug 指定時はそれだけ）
-2. 各プロジェクトについて:
+2. スキャンモードを選択（通常 / フルスキャン）
+3. 各プロジェクトについて:
    a. issues/ 内の全ファイルを走査しステータス集計
    b. 放置 Issue（in-progress + 7日以上未更新）を検出
    c. frozen Issue（30日以上凍結）を検出
    d. debt Issue を収集
    e. completed Issue にメンテナンス処理を実行
-   f. follow-ups/ 内の open ファイルを走査し、14日以上経過のものを警告付きでマーク
-   g. backlog.md を確認
-   h. project.md のステータスサマリー・関連 Issue テーブルを更新
-3. 結果レポートをユーザーに提示
-4. 承認を得てから実行
+   f. [フルスキャン] in-progress Issue に indie-issue-maintain の全処理フローを実行
+   g. follow-ups/ 内の open ファイルを走査し、14日以上経過のものを警告付きでマーク
+   h. backlog.md を確認
+   i. project.md のステータスサマリー・関連 Issue テーブルを更新
+4. [フルスキャン] knowledge 切り出し候補の重複排除
+5. 結果レポートをユーザーに提示
+6. 承認を得てから実行
 ```
 
 ## 出力レポート形式
@@ -145,6 +181,12 @@ allowed-tools:
 ### completed Issue メンテナンス
 | Issue | 処理 | knowledge 切り出し | 削除提案 |
 |-------|------|-------------------|---------|
+
+### Issue 品質整理（フルスキャンのみ）
+| Issue | スコープ | テンプレート | 圧縮 | knowledge | 警告 |
+|-------|---------|------------|------|----------|------|
+| MYAPP-5 | OK | 不足: 調査結果 | 3箇所 | - | - |
+| MYAPP-7 | 超過 ⚠️ | OK | 1箇所 | キャッシュ戦略 | スコープ超過 |
 
 ### Follow-up 棚卸し
 | ファイル | タイトル | type | priority | source | 作成日 | 経過日数 |

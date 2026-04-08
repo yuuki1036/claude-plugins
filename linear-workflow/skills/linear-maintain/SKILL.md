@@ -50,6 +50,21 @@ Linear MCP と連携し、`.claude/linear/` 内のプロジェクト管理ファ
 
 ---
 
+## Phase 0.5: スキャンモード選択
+
+**AskUserQuestion** でスキャンモードを選択する:
+
+- question: "メンテナンスのスキャンモードを選択してください。"
+- header: "スキャンモード"
+- options:
+  1. label: "通常" / description: "プロジェクト同期 + completed Issue メンテナンス"
+  2. label: "フルスキャン" / description: "通常 + 全 Issue（in-progress 含む）の品質整理"
+
+- **通常**: 既存の処理フロー（1〜6a）をそのまま実行
+- **フルスキャン**: 処理 1〜5 を実行後、6a に加えて 6b で全 Issue に issue-maintain の全処理フローを適用
+
+---
+
 ## 処理内容
 
 ### 1. プロジェクト doc の更新
@@ -97,12 +112,14 @@ Linear 上でプロジェクトが Done の場合：
 - `created` から14日以上経過しているものを警告付きでハイライトする
 - 結果をレポートに含める（個別の対処確認はレポート後の一括承認で行う）
 
-### 6. completed Issue の自動メンテナンス
+### 6. Issue メンテナンス
+
+#### 6a. completed Issue の自動メンテナンス（通常・フルスキャン共通）
 
 issues/ 内のファイルを走査し、Linear 上で Done / Canceled になった Issue を検知したら、
 **issue-maintain 相当の処理を自動実行**する。
 
-#### 検知条件
+##### 検知条件
 
 | ローカル status | Linear ステータス | アクション |
 |----------------|------------------|-----------|
@@ -112,11 +129,27 @@ issues/ 内のファイルを走査し、Linear 上で Done / Canceled になっ
 
 **メンテナンス済みの判定**: 更新履歴に `メンテナンス:` で始まるエントリがあればスキップ。
 
-#### メンテナンス処理
+#### 6b. 全 Issue 品質整理（フルスキャンのみ）
+
+`status: in-progress` の全 Issue ファイルに対して、**issue-maintain の全処理フロー**を適用する。
+
+##### 対象
+- `status: in-progress` の全 Issue（6a で処理済みのものは除く）
+
+##### 処理内容（issue-maintain SKILL.md の全ステップを適用）
+1. テンプレート準拠チェック
+2. 各セクション走査・整理対象の特定（削除/圧縮/統合）
+3. 更新履歴のセッション単位統合
+4. knowledge/ 切り出し候補の特定
+
+##### knowledge 重複排除
+複数 Issue から同一トピックの knowledge が候補に上がった場合、マージして1つの knowledge ファイルにする。全 Issue の候補を収集してから index.md と照合する。
+
+#### メンテナンス処理（6a・6b 共通）
 
 検知した各 Issue ファイルに対して、**issue-maintain の処理フロー**（整理対象の判定、圧縮、knowledge 切り出し、completed ファイルの削除）に従って処理する。詳細は issue-maintain SKILL.md を参照。
 
-**承認フロー**: completed Issue メンテナンスの結果は他の変更と合わせてレポートに含め、**一括でユーザー承認を得る**。個別の Issue ごとに承認は求めない。
+**承認フロー**: Issue メンテナンスの結果は他の変更と合わせてレポートに含め、**一括でユーザー承認を得る**。個別の Issue ごとに承認は求めない。
 
 ---
 
@@ -124,22 +157,25 @@ issues/ 内のファイルを走査し、Linear 上で Done / Canceled になっ
 
 ```
 1. .claude/linear/ 内の全チームを列挙
-2. 各チームの projects/ 内のプロジェクト doc を列挙
-3. 各プロジェクトについて:
+2. スキャンモードを選択（通常 / フルスキャン）
+3. 各チームの projects/ 内のプロジェクト doc を列挙
+4. 各プロジェクトについて:
    a. Linear MCP でプロジェクト情報を取得
    b. プロジェクトが Done → クリーンアップ候補としてマーク
    c. プロジェクトが Active → プロジェクト doc を更新
    d. 関連 Issue テーブルを更新
-4. issues/ 内の全ファイルを走査
+5. issues/ 内の全ファイルを走査
    a. Linear MCP でステータスを確認
    b. Done / Canceled を検知 → status を更新
    c. completed / canceled ファイルに issue-maintain の処理フローを実行
    d. in-progress ファイルの follow_up 解消チェック
-5. follow-ups/ 内の全ファイルを走査
+   e. [フルスキャン] in-progress ファイルに issue-maintain の全処理フローを実行
+6. follow-ups/ 内の全ファイルを走査
    a. status: open の follow-up を列挙
    b. 14日以上経過のものを警告付きでマーク
-6. 結果レポートをユーザーに提示
-7. 承認を得てから実行
+7. [フルスキャン] knowledge 切り出し候補の重複排除
+8. 結果レポートをユーザーに提示
+9. 承認を得てから実行
 ```
 
 ## 出力レポート形式
@@ -161,6 +197,12 @@ issues/ 内のファイルを走査し、Linear 上で Done / Canceled になっ
 |-------|------|-------------------|---------|
 | TEAM-404 | 圧縮（358行→45行） | 仕様ドキュメント → knowledge/ | 削除可 |
 | TEAM-578 | 重複削除 | 切り出し済み | 削除可 |
+
+### Issue 品質整理（フルスキャンのみ）
+| Issue | テンプレート | 圧縮 | knowledge | 警告 |
+|-------|------------|------|----------|------|
+| TEAM-501 | 不足: 調査結果 | 3箇所 | - | - |
+| TEAM-502 | OK | 1箇所 | API パターン | - |
 
 ### Issue ステータス同期
 | Issue | ローカル | Linear | 提案 |

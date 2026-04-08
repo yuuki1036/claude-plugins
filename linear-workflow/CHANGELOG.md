@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.16.0] - 2026-04-08
+
+### Added
+- linear-maintain: スキャンモード選択機能を追加（通常 / フルスキャン）
+- フルスキャンモード: in-progress 含む全 Issue に issue-maintain の全処理フローを一括適用
+- knowledge 重複排除ロジック（複数 Issue からの同一トピック候補をマージ）
+- レポートに「Issue 品質整理」セクションを追加
+
 ## [1.15.1] - 2026-04-04
 
 ### Fixed
