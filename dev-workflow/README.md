@@ -31,6 +31,14 @@ Git操作とPR作成の開発ワークフロープラグイン。原子性重視
 
 pr-creator スキルは Linear MCP と連携して、ブランチ名から Linear Issue の情報を自動取得できます。この連携は**オプション**であり、未設定でもブランチ名とコミット履歴からPR情報を生成します。
 
+## 環境変数
+
+| 変数 | 説明 |
+|------|------|
+| `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS` | Claude 組み込みの git commit/PR 指示を無効化。dev-workflow の独自指示との競合を防止する |
+
+## Linear MCP 連携の設定
+
 Linear MCP を有効にするには、`.mcp.json` または Claude Code の設定に以下を追加してください：
 
 ```json

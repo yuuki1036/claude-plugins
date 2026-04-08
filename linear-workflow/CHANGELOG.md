@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.17.0] - 2026-04-08
+
+### Added
+- UserPromptSubmit hook: feature ブランチから Issue タイトルを取得しセッション名に自動設定
+- FileChanged hook: `.claude/linear/*/issues/*.md` の外部変更を検知して通知
+
 ## [1.16.0] - 2026-04-08
 
 ### Added

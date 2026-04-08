@@ -36,6 +36,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `SubagentStart` | v2.0.43 | サブエージェント起動時 | 初期化処理 | エージェントチーム構成時 |
 | `SubagentStop` | v1.0.41+ | サブエージェント停止時 | 完了時処理 | エージェント完了後のクリーンアップ |
 | `PermissionRequest` | v2.0.45+ | 権限リクエスト時 | カスタム承認フロー | 承認フロー制御プラグイン |
+| `UserPromptSubmit` | v2.1.69+ | ユーザープロンプト送信時 | プロンプト前処理、セッションタイトル設定 | セッション初期化、入力バリデーション |
 
 ### 1.2 Hook Handler Types
 
@@ -55,6 +56,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `async` | v2.1.76+ | バックグラウンド非同期実行 | ブロック不要な通知/ログ系 |
 | `matcher` | v2.1.83 | FileChanged イベントのファイル名パターン | 特定ファイル監視 |
 | `timeout` | 初期 | タイムアウト(ms) | 外部コマンド実行 |
+| `model` | v2.1.92 | prompt タイプ hook の評価モデル指定 | hook 判定の精度調整 |
 
 ### 1.4 Hook Capabilities
 
@@ -66,6 +68,8 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `permissionDecision: "defer"` | v2.1.89 | PreToolUse で判断を保留し `-p --resume` で再評価 | ヘッドレス CI/CD パイプライン |
 | AskUserQuestion 自動回答 | v2.1.85 | PreToolUse で `updatedInput` + `permissionDecision: "allow"` | ヘッドレス環境での自動応答 |
 | 大容量出力のディスク保存 | v2.1.89 | 50K 文字超の hook 出力はファイルに保存 | 大量データ返却フック |
+| `sessionTitle` | v2.1.94 | UserPromptSubmit で `hookSpecificOutput.sessionTitle` を返すとセッション名を設定 | セッション自動命名 |
+| `agent_id` / `agent_type` | v2.1.69 | hook 入力にエージェント識別情報を付与 | エージェント別の条件分岐 |
 
 ---
 
@@ -99,7 +103,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 
 | フィールド | Since | 説明 | 適用シグナル |
 |-----------|-------|------|------------|
-| `name` | 初期 | スキル名 | 必須 |
+| `name` | v2.1.94 | スキル呼び出し名（ディレクトリ名の代わりに安定した名前を指定） | プラグインスキルの安定命名 |
 | `description` | 初期 | 説明（トリガーフレーズ含む） | 必須 |
 | `effort` | v2.1.80 | エフォートレベル | タスク複雑度設定 |
 | `allowed-tools` | 初期 | 使用可能ツール | 最小権限 |
@@ -138,6 +142,8 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `allowed-tools` | 初期 | 使用可能ツール | 最小権限 |
 | `argument-hint` | 初期 | 引数ヒント表示 | 引数付きコマンド |
 | `shell` | v2.1.84 | シェル指定 | クロスプラットフォーム |
+| `effort` | v2.1.84 | モデル effort レベルのオーバーライド | コマンド呼び出し時の思考深度制御 |
+| `keep-coding-instructions` | v2.1.94 | 出力スタイルの制御 | コマンド出力のフォーマット指定 |
 
 ---
 
@@ -163,7 +169,9 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 {
   "userConfig": {
     "key_name": {
+      "title": "表示タイトル",
       "description": "説明",
+      "type": "string",
       "required": true,
       "sensitive": false,
       "default": "値"
@@ -172,6 +180,8 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 }
 ```
 
+- `title`: 必須。設定 UI に表示される名前
+- `type`: 必須。`"string"` | `"number"` | `"boolean"` | `"directory"` | `"file"`
 - `sensitive: true` でキーチェーン保存（API キー等）
 - `${user_config.KEY}` でスキル/コマンド内から参照
 

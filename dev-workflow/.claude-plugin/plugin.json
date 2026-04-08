@@ -1,9 +1,18 @@
 {
   "name": "dev-workflow",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Git操作とPR作成の開発ワークフロー。原子性重視のコミットとLinear Issue連携PR作成",
   "author": {
     "name": "yuki"
+  },
+  "userConfig": {
+    "commit_language": {
+      "title": "Commit Language",
+      "description": "コミットメッセージの言語 (ja/en)",
+      "type": "string",
+      "required": false,
+      "default": "ja"
+    }
   },
   "_requirements": [
     { "name": "gh", "type": "cli_tool", "required": true, "description": "GitHub CLI" },

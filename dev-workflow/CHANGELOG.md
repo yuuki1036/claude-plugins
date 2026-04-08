@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.0] - 2026-04-08
+
+### Added
+- `userConfig` でコミットメッセージ言語を設定可能に（`commit_language`: ja/en、デフォルト: ja）
+- README に `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS` 環境変数の案内を追加
+
 ## [1.3.1] - 2026-03-31
 
 ### Changed

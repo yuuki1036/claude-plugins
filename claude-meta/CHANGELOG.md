@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.3] - 2026-04-08
+
+### Changed
+- plugin-features.md カタログ更新: UserPromptSubmit イベント、sessionTitle、hook model パラメータ、スキル name フロントマター、コマンド effort/keep-coding-instructions を追記
+
 ## [1.3.2] - 2026-04-04
 
 ### Fixed
