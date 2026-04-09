@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.0] - 2026-04-09
+
+### Added
+- knowledge スキル/コマンドを新規追加（`/knowledge [search <kw> | related]`）
+- inject-rules.sh: SessionStart/PostCompact で knowledge/index.md をコンテキストに自動注入
+- FileChanged hook: knowledge ファイルの変更を検知して通知
+- project-rules.md に knowledge 活用ガイドを追加
+
 ## [1.17.0] - 2026-04-08
 
 ### Added

@@ -58,6 +58,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": ".claude/linear/*/knowledge/*.md",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-knowledge-change.sh",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }

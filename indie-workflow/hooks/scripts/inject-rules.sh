@@ -11,6 +11,20 @@ RULES_DIR="${CLAUDE_PLUGIN_ROOT}/rules"
 if [ -f "${RULES_DIR}/project-rules.md" ]; then
   cat "${RULES_DIR}/project-rules.md"
 fi
+
+# Knowledge インデックス注入
+for index_file in .claude/indie/*/knowledge/index.md; do
+  [ -f "$index_file" ] || continue
+  slug=$(echo "$index_file" | sed 's|.claude/indie/\(.*\)/knowledge/index.md|\1|')
+  echo ""
+  echo "---"
+  echo "## Knowledge（${slug}）"
+  echo ""
+  echo "以下の知見が蓄積されている。実装時に関連する knowledge があれば Read して活用すること。"
+  echo ""
+  cat "$index_file"
+done
+
 # 放置 Issue 検知（7日以上 last_active が更新されていない in-progress Issue）
 echo ""
 echo "---"
