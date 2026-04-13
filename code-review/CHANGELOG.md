@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.4.0] - 2026-04-13
+
+### Added
+- review: EnterWorktree/ExitWorktree による worktree 分離実行（レビュー中の並行作業を可能に）
+
+### Changed
+- review: `gh pr checkout` を worktree 内で実行するよう変更（作業ブランチへの影響を排除）
+
 ## [2.3.3] - 2026-04-04
 
 ### Fixed

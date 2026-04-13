@@ -5,6 +5,8 @@ allowed-tools:
   - Read
   - Glob
   - Grep
+  - EnterWorktree
+  - ExitWorktree
   - mcp__github__pull_request_read
 argument-hint: "[PR番号] (省略時は現在のブランチのPRを自動取得)"
 ---
