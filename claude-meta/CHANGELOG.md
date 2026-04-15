@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.4] - 2026-04-15
+
+### Changed
+- plugin-features.md カタログ更新: PreCompact hook（v2.1.105）、monitors manifest key（v2.1.105）、description cap 250→1536（v2.1.105）、/reload-plugins スキル反映ノート追加
+- catch-up-state.json 初期作成（v2.1.109 時点）
+
 ## [1.3.3] - 2026-04-08
 
 ### Changed
