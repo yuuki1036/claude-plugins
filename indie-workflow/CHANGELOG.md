@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.0] - 2026-04-17
+
+### Added
+- retrospective Phase 2: 前回 retro との比較（最新 1 件の Try を今回の Good/Problem と照合）(#15)
+- retrospective Phase 2: 反復テーマ検出（knowledge tags 集計で 2 件以上のタグを警告）(#16)
+- retrospective テンプレートに「反復警告」「前回比較」セクションを追加
+
 ## [1.17.0] - 2026-04-17
 
 ### Changed
