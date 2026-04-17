@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.15.0] - 2026-04-17
+
+### Added
+- indie-issue-create: Phase 5.4 コードベース現状確認ステップを追加（起票前に既存実装を Glob/Grep で確認し、実装済みなら AskUserQuestion で続行確認）(#11)
+- indie-issue-create references/feature.md: 即クローズケースの書き方（結論・スコープ外・備考）を例示 (#14)
+- indie-issue-maintain: 即クローズパターン検出（completed && created == last_active && [x]タスク 0 件）と経緯セクション補完提案 (#14)
+
 ## [1.14.0] - 2026-04-09
 
 ### Added

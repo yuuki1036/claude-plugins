@@ -9,6 +9,7 @@ allowed-tools:
   - Read
   - Write
   - Glob
+  - Grep
   - Bash
   - Agent
   - AskUserQuestion
@@ -70,6 +71,29 @@ allowed-tools:
 1. ユーザーにタイトルを確認する
 2. ユーザーに概要（説明）を確認する
 3. 既にユーザーが説明している場合はそれを使い、重複して聞かない
+
+### Phase 5.4: コードベース現状確認
+
+Issue の内容が確定した段階で、対象コードの現状を軽く確認し「すでに実装済みの機能に対する Issue 起票」を防ぐ。
+
+1. **キーワード抽出**: Issue のタイトル・概要から具体的な対象を示すキーワードを抽出する
+   - 例: 「Home ページ実装」→ `Home`, `HeroSection`, `page.tsx`
+   - 例: 「ユーザー認証の追加」→ `auth`, `login`, `signIn`
+2. **コードベースの確認**:
+   - Glob でファイルパスの存在確認（例: `src/app/**/page.tsx`, `**/*Auth*.{ts,tsx}`）
+   - Grep でキーワードの実装有無を確認（例: `HeroSection`, `signIn(`）
+3. **判定と提示**:
+   - 確認結果が空 or 関連薄: そのまま Phase 5.5 へ進む
+   - **既存実装が見つかった場合**: ヒット箇所（ファイルパス + 1行サマリー）をユーザーに提示し、**AskUserQuestion** で確認する:
+     - question: 「該当機能がすでに実装されている可能性があります。Issue 起票を続けますか？」
+     - header: "起票判断"
+     - options:
+       1. label: "続行" / description: "別の観点での Issue として起票する"
+       2. label: "スコープ変更" / description: "タイトル・概要を調整してから起票する"
+       3. label: "中止" / description: "Issue 起票を取りやめる"
+4. **軽量運用**:
+   - 確認は 3〜5 回以内の Glob/Grep に留める（全網羅ではない）
+   - bugfix / investigation / debt は対象コードが明確なことが多いので、この Phase はスキップしてよい（feature 時に特に有効）
 
 ### Phase 5.5: 関連 Knowledge の検索
 
