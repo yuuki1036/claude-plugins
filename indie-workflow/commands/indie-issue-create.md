@@ -4,6 +4,7 @@ allowed-tools:
   - Read
   - Write
   - Glob
+  - Grep
   - Bash
   - Agent
   - AskUserQuestion

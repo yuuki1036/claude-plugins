@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.17.0] - 2026-04-17
+
+### Changed
+- indie-issue-maintain スコープ超過チェックを強化: 閾値（small 5+, medium 8+, large 16+）で膨張を検知し、AskUserQuestion で scope_size 更新 / タスク分割 / 現状維持を選択可能に。警告は整理計画の冒頭で最優先表示 (#13)
+- indie-issue-create / indie-issue-maintain の allowed-tools を同期（Grep / AskUserQuestion 追加）
+
 ## [1.16.0] - 2026-04-17
 
 ### Changed
