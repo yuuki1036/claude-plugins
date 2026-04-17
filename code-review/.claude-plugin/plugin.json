@@ -1,6 +1,6 @@
 {
   "name": "code-review",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。探索→レビューの2段階で品質最大化。explorer: sonnet、reviewer: opus",
   "author": {
     "name": "yuki"

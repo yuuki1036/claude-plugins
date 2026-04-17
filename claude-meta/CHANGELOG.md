@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.5] - 2026-04-17
+
+### Added
+- improvement-patterns: P-11 「Opus 4.7 向け effort 調整 (`max` → `xhigh`)」パターンを追加
+
 ## [1.3.4] - 2026-04-15
 
 ### Changed

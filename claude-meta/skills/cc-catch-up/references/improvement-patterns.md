@@ -321,6 +321,34 @@ allowed-tools: Agent, Read, Glob, Grep, ...
 }
 ```
 
+### P-11: Opus 4.7 向け effort 調整 (`max` → `xhigh`)
+
+Opus 4.7 では `xhigh` が新設され、コーディング・エージェント用途の推奨設定となった。`max` は overthinking の傾向があり、diminishing returns が出やすい。
+
+**Before** (Opus 4.6 までの設定):
+```yaml
+---
+name: review
+description: コードレビュースキル
+effort: max
+---
+```
+
+**After** (Opus 4.7 向け):
+```yaml
+---
+name: review
+description: コードレビュースキル
+effort: xhigh
+---
+```
+
+判定基準:
+- **コーディング / エージェント系** → `xhigh`（新しい推奨デフォルト）
+- **intelligence-sensitive な軽作業** → `high`（従来維持）
+- **max 継続が妥当な場面** → 明確に精度>コストで、overthinking が許容されるケースのみ
+- **`low` / `medium`** → Opus 4.7 は厳密に effort を守るので複雑タスクには under-thinking リスクあり。迷ったら `high` に上げる
+
 ---
 
 ## 優先度判定ガイド

@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.4.1] - 2026-04-17
+
+### Changed
+- review/self-review の skill frontmatter effort を `max` → `xhigh` に変更（Opus 4.7 のコーディング向け新推奨設定）
+- reviewer subagent の起動を `effort: max` 明示指定に変更（深い推論を優先、偽陽性は Confidence ≥80 フィルタで除去）
+- effort 設計意図を SKILL.md に明文化（orchestrator: xhigh、reviewer: max の役割分担）
+
 ## [2.4.0] - 2026-04-13
 
 ### Added

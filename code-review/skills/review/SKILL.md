@@ -5,7 +5,7 @@ description: >
   diff → explorer(sonnet) → reviewer(opus) を動的構成、Confidence ≥80 の指摘のみ報告。
   トリガー: 「レビューして」「/review」「コードレビュー」
   引数: [PR番号] (省略時は現在ブランチのPRを自動取得)
-effort: max
+effort: xhigh
 allowed-tools:
   - Bash
   - Read
@@ -104,13 +104,15 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 
 `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` を Read で読み込む。
 
-Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する:
+Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effort: max` で並列起動する:
 - 各 reviewer に Phase 0 が決定した focus（と冗長ペアの場合は angle）を指示として渡す
 - reviewer-prompts.md の該当する Focus テンプレートと共通指示をプロンプトに含める
 - **explorer 結果の選択的注入**: 構成テーブルの「explorer 依存」列に記載された explorer の結果を、該当する reviewer のプロンプトに `## Explorer 結果` セクションとして注入する
 - セッションコンテキストが有効な場合、reviewer-prompts.md のセッションコンテキスト注入テンプレートに従い全 reviewer に注入する
 - `gh pr diff` の出力を各 reviewer に渡す
 - 全エージェントを `isolation: "worktree"` で起動する
+
+**effort 設計意図**: reviewer は `max` で深い推論を優先（overthinking による偽陽性は Confidence ≥80 フィルタで刈り取る）。オーケストレーター（skill frontmatter）は `xhigh` で Opus 4.7 のコーディング向け推奨設定。
 
 **diff-first 原則:** 各エージェントには `gh pr diff` の出力を渡す。エージェントのファイル Read は共通ユーティリティの仕様確認など、diff だけでは判断できない文脈把握に限定する。ただし、変更箇所を含む関数の全体確認は積極的に行うこと。
 
