@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.16.0] - 2026-04-17
+
+### Changed
+- indie-start ダッシュボード Phase D2: 未昇格 follow-up を件名・滞留日数付きで表示（最新 5 件）、合計 5 件超で棚卸し警告を表示 (#12)
+
 ## [1.15.0] - 2026-04-17
 
 ### Added
