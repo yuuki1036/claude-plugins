@@ -75,3 +75,12 @@ if [ ${#changelog_errors[@]} -gt 0 ]; then
   echo "  feat → Added / fix → Fixed / refactor → Changed"
   exit 1
 fi
+
+# SSoT 同期チェック: plugin.json ↔ marketplace.json / _requirements ↔ check-deps.sh
+if [ -x .claude-plugin/scripts/validate-ssot.sh ]; then
+  if ! bash .claude-plugin/scripts/validate-ssot.sh; then
+    echo ""
+    echo "  plugin.json が SSoT。派生物 (marketplace.json / check-deps.sh) を同期してください"
+    exit 1
+  fi
+fi

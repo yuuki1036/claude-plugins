@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Claude Code Plugin Manifest",
+  "description": "SSoT: このスキーマは {plugin-name}/.claude-plugin/plugin.json の検証に用いる。marketplace.json / check-deps.sh はここから派生する",
+  "type": "object",
+  "required": ["name", "version", "description", "author"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "プラグイン識別子。ディレクトリ名と一致させる"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic Versioning (MAJOR.MINOR.PATCH)"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "marketplace.json と同期必須"
+    },
+    "author": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" }
+      }
+    },
+    "_requirements": {
+      "type": "array",
+      "description": "外部依存の宣言。hooks/scripts/check-deps.sh と同期必須",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "required", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["mcp_server", "cli_tool", "plugin"]
+          },
+          "required": { "type": "boolean" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "userConfig": {
+      "type": "object",
+      "description": "ユーザー設定可能なオプション",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["title", "description", "type"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "type": { "type": "string", "enum": ["string", "number", "boolean"] },
+          "required": { "type": "boolean" },
+          "default": {},
+          "sensitive": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
