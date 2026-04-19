@@ -1,0 +1,14 @@
+plugin: linear-workflow
+cases:
+  - id: dashboard-ja
+    prompt: Linearのダッシュボード見せて
+    expected_skill: linear-workflow:dashboard
+    k: 3
+  - id: issue-create-ja
+    prompt: Linear Issue をローカルに取り込んで
+    expected_skill: linear-workflow:issue-create
+    k: 3
+  - id: session-start-ja
+    prompt: このブランチの作業を開始する
+    expected_skill: linear-workflow:session-start
+    k: 3

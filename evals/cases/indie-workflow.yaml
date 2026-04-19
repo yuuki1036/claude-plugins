@@ -1,0 +1,14 @@
+plugin: indie-workflow
+cases:
+  - id: indie-start-ja
+    prompt: 今日の個人開発を開始する
+    expected_skill: indie-workflow:indie-start
+    k: 3
+  - id: indie-issue-create-ja
+    prompt: 新しいタスクを起票して
+    expected_skill: indie-workflow:indie-issue-create
+    k: 3
+  - id: retrospective-ja
+    prompt: 今月の個人開発を振り返る
+    expected_skill: indie-workflow:retrospective
+    k: 3

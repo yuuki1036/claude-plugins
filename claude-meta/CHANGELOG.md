@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.0] - 2026-04-19
+
+### Added
+- `eval-runner` スキル追加。`evals/` 配下の YAML ケースを実行し、トリガーフレーズ → 期待スキル起動の回帰テストを pass^k 基準で検証する（#18）
+
 ## [1.3.7] - 2026-04-19
 
 ### Changed

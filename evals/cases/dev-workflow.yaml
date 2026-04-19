@@ -1,0 +1,14 @@
+plugin: dev-workflow
+cases:
+  - id: commit-ja
+    prompt: コミットして
+    expected_skill: dev-workflow:git-commit-helper
+    k: 3
+  - id: pr-ja
+    prompt: PR作って
+    expected_skill: dev-workflow:pr-creator
+    k: 3
+  - id: ui-verify-ja
+    prompt: UIの動作確認して
+    expected_skill: dev-workflow:ui-verify
+    k: 3

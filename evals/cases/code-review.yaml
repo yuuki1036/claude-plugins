@@ -1,0 +1,10 @@
+plugin: code-review
+cases:
+  - id: review-ja
+    prompt: このPRをレビューして
+    expected_skill: code-review:review
+    k: 3
+  - id: self-review-ja
+    prompt: コミット前にセルフレビューして
+    expected_skill: code-review:self-review
+    k: 3

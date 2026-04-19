@@ -1,0 +1,14 @@
+plugin: claude-meta
+cases:
+  - id: catch-up-ja
+    prompt: Claude Codeの最新アップデートをキャッチアップして
+    expected_skill: claude-meta:cc-catch-up
+    k: 3
+  - id: claude-md-audit-ja
+    prompt: CLAUDE.mdを監査して
+    expected_skill: claude-meta:claude-md-improver
+    k: 3
+  - id: setup-recommend-ja
+    prompt: Claude Codeのセットアップを提案して
+    expected_skill: claude-meta:claude-code-setup
+    k: 3

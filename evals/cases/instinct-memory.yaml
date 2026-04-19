@@ -1,0 +1,6 @@
+plugin: instinct-memory
+cases:
+  - id: instinct-learning-promotion
+    prompt: この訂正をinstinctとして記録して
+    expected_skill: instinct-memory:instinct-learning
+    k: 3
