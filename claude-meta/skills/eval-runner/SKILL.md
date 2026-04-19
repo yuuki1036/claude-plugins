@@ -94,6 +94,27 @@ cases:
     k: 3
 ```
 
+### Gotcha: 同名の command + skill ペア
+
+同じプラグイン内に `commands/foo.md` と `skills/bar/SKILL.md` の両方があり、
+自然言語トリガーがどちらにも解釈されうる場合、Claude は **command 名で応答する
+傾向が強い**（例: 「コミットして」→ `dev-workflow:commit` が返り、
+`dev-workflow:git-commit-helper` ではない）。
+
+実害はないので、ケース側で両方を許容する inline list 形式で書く:
+
+```yaml
+  - id: commit-ja
+    prompt: コミットして
+    expected_skill: [dev-workflow:git-commit-helper, dev-workflow:commit]
+    k: 3
+```
+
+該当パターン:
+- `dev-workflow:commit` ↔ `dev-workflow:git-commit-helper`
+- `instinct-memory:learn` ↔ `instinct-memory:instinct-learning`
+- `plugin-feedback:feedback` ↔ `plugin-feedback:feedback-issue`
+
 ## 注意事項
 
 - **副作用なし**: runner はスキルを実際に実行しない。プロンプトを変形し「どのスキルを呼ぶか」を JSON で応答させるだけ

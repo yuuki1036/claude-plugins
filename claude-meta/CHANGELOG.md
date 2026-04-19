@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.2] - 2026-04-19
+
+### Changed
+- eval-runner スキルに「同名の command + skill ペア」の gotcha と inline list による両名義許容パターンを追記（knowledge 切り出し）
+
 ## [1.4.1] - 2026-04-19
 
 ### Changed
