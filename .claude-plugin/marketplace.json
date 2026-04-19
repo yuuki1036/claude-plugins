@@ -27,7 +27,7 @@
     {
       "name": "dev-workflow",
       "description": "Git操作・PR作成・UI動作確認の開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化",
-      "version": "1.7.0",
+      "version": "1.7.1",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。",
-      "version": "1.18.0",
+      "version": "1.18.1",
       "author": {
         "name": "yuki"
       },
@@ -54,7 +54,7 @@
     {
       "name": "indie-workflow",
       "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
-      "version": "1.18.0",
+      "version": "1.18.1",
       "author": {
         "name": "yuki"
       },
