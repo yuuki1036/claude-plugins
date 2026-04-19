@@ -1,6 +1,6 @@
 {
   "name": "instinct-memory",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "セッション中の観察からパターンを学習し、auto memoryのinstinctとして管理・昇格させるシステム",
   "author": {
     "name": "yuki"

@@ -6,6 +6,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 
 ```
 .claude-plugin/marketplace.json  # マーケットプレイスマニフェスト
+.claude-plugin/lib/safe-hook.sh  # hook 共通ラッパー（正本）
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG 必須チェック
 {plugin-name}/                   # 各プラグイン（独立したディレクトリ）
   .claude-plugin/plugin.json     # プラグインマニフェスト
@@ -13,6 +14,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
   skills/                        # スキル定義（SKILL.md + references/）
   agents/                        # エージェント定義（frontmatter付き markdown）
   hooks/                         # フック定義（hooks.json + scripts/）
+    lib/safe-hook.sh             # 正本の byte-identical 複製（hook 持ちプラグインのみ）
   rules/                         # SessionStart 等で注入されるルール（一部プラグインのみ）
     project-rules.md             # プロジェクト全体の作業ルール（SessionStart hook で注入）
   CHANGELOG.md                   # 変更履歴（Keep a Changelog 形式）
@@ -76,8 +78,9 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 ## Gotchas
 
 - **marketplace.json の同期忘れ**: plugin.json の version/description を更新したら `.claude-plugin/marketplace.json` も必ず同期する
-- **hooks の stdin 消費**: hook スクリプトは必ず `cat > /dev/null` で stdin を消費してから処理を開始する。消費しないとハングする
-- **hooks の stdout**: hook スクリプトの stdout が Claude のコンテキストに注入される。条件付き注入は exit 0 で空出力にする
+- **hooks の stdin 消費**: hook スクリプトは必ず stdin を消費してから処理を開始する。消費しないとハングする。`safe-hook.sh` の `safe_hook_init` が自動で消費するため、全 hook は `source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"` 経由で書く
+- **hooks の stdout**: hook スクリプトの stdout が Claude のコンテキストに注入される。条件付き注入は `safe_hook_error <category>` で silent exit 0（Validation/Dependency/Auth/NotFound はサイレント、Unexpected のみ stderr に通知）
+- **safe-hook.sh の同期**: 正本は `.claude-plugin/lib/safe-hook.sh`。各プラグインの `hooks/lib/safe-hook.sh` は byte-identical な複製。`/quality-check` で同期を検証する（不一致は Critical）
 - **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げる。上げないと使用側で更新が検知されない。pre-commit hook でブロックされる
 - **CHANGELOG 未更新**: バージョンバンプ時は CHANGELOG.md も更新必須。pre-commit hook でブロックされる
 - **_requirements の同期忘れ**: プラグインの依存先が変わったら plugin.json の `_requirements` と `check-deps.sh` の両方を更新する

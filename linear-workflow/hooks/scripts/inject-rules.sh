@@ -3,14 +3,11 @@
 # .claude/linear/ ディレクトリが存在するプロジェクトでのみ
 # プロジェクト管理ルールと Knowledge インデックスを Claude のコンテキストに注入する
 
-set -euo pipefail
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
+safe_hook_init "linear-workflow:inject-rules"
 
-# stdin から hook 入力を読む（消費する必要がある）
-cat > /dev/null
-
-# .claude/linear/ が存在しない場合は何も出力しない
 if [ ! -d ".claude/linear" ]; then
-  exit 0
+  safe_hook_error NotFound ".claude/linear directory missing"
 fi
 
 # ルールファイルを出力（stdout が Claude のコンテキストに入る）

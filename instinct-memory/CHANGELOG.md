@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.2] - 2026-04-19
+
+### Changed
+- hook スクリプトを `safe-hook.sh` 共通ラッパー経由に移行（stdin 消費・エラー分類・名前付きログの統一） (#21)
+
 ## [1.2.1] - 2026-03-31
 
 ### Changed

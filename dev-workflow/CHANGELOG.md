@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.2] - 2026-04-19
+
+### Changed
+- hook スクリプト全般を `safe-hook.sh` 共通ラッパー経由に移行（check-deps / detect-web-project / ui-change-reminder / ui-verify-gate） (#21)
+
 ## [1.7.1] - 2026-04-19
 
 ### Fixed

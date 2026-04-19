@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 # post-compact.sh — PostCompact hook
 # コンテキスト圧縮後に instincts を再注入する
-# 長いセッションでコンテキスト圧縮されると instincts の情報が失われるため
 
-set -euo pipefail
-
-# stdin から hook 入力を読む（消費する必要がある）
-cat > /dev/null
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
+safe_hook_init "instinct-memory:post-compact"
 
 # instincts.md が存在する場合のみ注入
 INSTINCTS_DIR=""
@@ -18,7 +15,7 @@ for dir in .claude/projects/*/memory; do
 done
 
 if [ -z "$INSTINCTS_DIR" ]; then
-  exit 0
+  safe_hook_error NotFound "instincts.md not found under .claude/projects/*/memory"
 fi
 
 cat <<'EOF'

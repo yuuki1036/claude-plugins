@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-set -euo pipefail
-cat > /dev/null
+# inject-rules.sh — SessionStart / PostCompact hook
+# .claude/indie/ ディレクトリが存在するプロジェクトでのみルール注入
+
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
+safe_hook_init "indie-workflow:inject-rules"
 
 if [ ! -d ".claude/indie" ]; then
-  exit 0
+  safe_hook_error NotFound ".claude/indie directory missing"
 fi
 
 # ルール注入

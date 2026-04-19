@@ -3,8 +3,8 @@
 # package.json に Web フレームワーク依存があれば ui-verify 連携を有効化
 # （.claude/.ui-verify-enabled フラグを管理）
 
-set -euo pipefail
-cat > /dev/null
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
+safe_hook_init "dev-workflow:detect-web-project"
 
 STATE_DIR=".claude"
 ENABLED_FLAG="${STATE_DIR}/.ui-verify-enabled"
@@ -12,7 +12,7 @@ ENABLED_FLAG="${STATE_DIR}/.ui-verify-enabled"
 # package.json がなければ無効化
 if [[ ! -f package.json ]]; then
   rm -f "$ENABLED_FLAG" 2>/dev/null || true
-  exit 0
+  safe_hook_error NotFound "package.json missing — ui-verify disabled"
 fi
 
 # Web フレームワーク検出

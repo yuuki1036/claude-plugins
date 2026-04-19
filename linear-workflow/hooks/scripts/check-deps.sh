@@ -2,8 +2,8 @@
 # check-deps.sh — SessionStart hook
 # 外部依存（MCP サーバー、プラグイン、CLI ツール）の存在チェック
 
-set -euo pipefail
-cat > /dev/null
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
+safe_hook_init "linear-workflow:check-deps"
 
 warnings=""
 errors=""
