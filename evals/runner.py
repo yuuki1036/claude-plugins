@@ -48,8 +48,14 @@ class Case:
     plugin: str
     id: str
     prompt: str
-    expected_skill: str
+    expected_skill: str | list[str]
     k: int = 3
+
+    @property
+    def expected_list(self) -> list[str]:
+        if isinstance(self.expected_skill, list):
+            return self.expected_skill
+        return [self.expected_skill]
 
 
 @dataclass
@@ -67,13 +73,14 @@ class CaseResult:
     def _matches(self, observed: str | None) -> bool:
         if observed is None:
             return False
-        expected = self.case.expected_skill
-        # suffix match: "plugin:skill" == "skill" も許容
-        if observed == expected:
-            return True
-        exp_tail = expected.split(":", 1)[-1]
         obs_tail = observed.split(":", 1)[-1]
-        return exp_tail == obs_tail
+        for expected in self.case.expected_list:
+            if observed == expected:
+                return True
+            exp_tail = expected.split(":", 1)[-1]
+            if exp_tail == obs_tail:
+                return True
+        return False
 
 
 def parse_cases(paths: list[Path]) -> list[Case]:
@@ -82,7 +89,7 @@ def parse_cases(paths: list[Path]) -> list[Case]:
         data = load_yaml(path)
         plugin = data.get("plugin") or path.stem
         for raw in data.get("cases", []):
-            cases.append(
+                cases.append(
                 Case(
                     plugin=plugin,
                     id=raw["id"],
@@ -148,6 +155,9 @@ def _coerce(val: str):
         return ""
     if val.startswith(('"', "'")) and val.endswith(val[0]):
         return val[1:-1]
+    if val.startswith("[") and val.endswith("]"):
+        inner = val[1:-1]
+        return [_coerce(item) for item in inner.split(",") if item.strip()]
     if val.isdigit():
         return int(val)
     return val

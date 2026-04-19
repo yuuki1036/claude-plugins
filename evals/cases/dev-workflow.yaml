@@ -2,7 +2,7 @@ plugin: dev-workflow
 cases:
   - id: commit-ja
     prompt: コミットして
-    expected_skill: dev-workflow:git-commit-helper
+    expected_skill: [dev-workflow:git-commit-helper, dev-workflow:commit]
     k: 3
   - id: pr-ja
     prompt: PR作って

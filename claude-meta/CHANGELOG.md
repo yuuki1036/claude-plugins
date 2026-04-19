@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.1] - 2026-04-19
+
+### Changed
+- `eval-runner`: `expected_skill` が inline list `[a, b]` を受け付けるように拡張。command と skill のどちらに解決されても PASS と判定可能に
+- eval-runner の allowed-tools から未使用の `Glob` を除去（Bash / Read / AskUserQuestion の 3 件に）
+
 ## [1.4.0] - 2026-04-19
 
 ### Added

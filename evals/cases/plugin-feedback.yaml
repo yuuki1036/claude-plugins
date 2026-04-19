@@ -2,5 +2,5 @@ plugin: plugin-feedback
 cases:
   - id: feedback-issue-ja
     prompt: このプラグインへの改善要望をIssueにして
-    expected_skill: plugin-feedback:feedback-issue
+    expected_skill: [plugin-feedback:feedback-issue, plugin-feedback:feedback]
     k: 3

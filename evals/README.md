@@ -35,7 +35,7 @@ cases:
 | `plugin` | 対象プラグイン名 |
 | `id` | ケース識別子（ファイル内で一意） |
 | `prompt` | ユーザー入力のシミュレーション |
-| `expected_skill` | 期待する呼び出し先（`plugin:skill` 形式） |
+| `expected_skill` | 期待する呼び出し先（`plugin:skill` 形式）。command と skill のどちらにも解決しうる場合は `[plugin:skill-a, plugin:skill-b]` の inline list で列挙可 |
 | `k` | pass^k の k（デフォルト 3）。連続 k 回成功で PASS |
 
 ## 使い方
