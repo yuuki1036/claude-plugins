@@ -12,6 +12,7 @@ allowed-tools:
   - mcp__linear__list_issues
   - Read
   - Glob
+  - AskUserQuestion
 ---
 
 # Dashboard

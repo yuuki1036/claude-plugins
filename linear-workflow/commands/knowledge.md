@@ -4,6 +4,8 @@ allowed-tools:
   - Read
   - Glob
   - Grep
+  - Bash
+  - AskUserQuestion
 argument-hint: "[search KEYWORD | related]"
 ---
 

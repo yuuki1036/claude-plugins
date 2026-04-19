@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.1] - 2026-04-19
+
+### Fixed
+- `dashboard` スキル/コマンドの `allowed-tools` に `AskUserQuestion` を追加（本文で使用しているが未宣言だった）
+- `knowledge` スキル/コマンドの `allowed-tools` に `AskUserQuestion` と `Bash` を追加（`git branch --show-current` と選択 UI のため）
+
 ## [1.18.0] - 2026-04-09
 
 ### Added
