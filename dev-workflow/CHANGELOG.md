@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.1] - 2026-04-19
+
+### Fixed
+- `git-commit-helper` スキルおよび `/commit` コマンドの `allowed-tools` に `AskUserQuestion` を追加（本文で使用しているが未宣言だったため実行時拒否の可能性があった）
+- `check-deps.sh` に `chrome-devtools` MCP と `node` CLI のチェックを追加（`_requirements` との不整合を解消）
+
 ## [1.7.0] - 2026-04-19
 
 ### Added

@@ -38,6 +38,8 @@ check_cli() {
 # --- チェック実行 ---
 check_cli "gh" "true" "GitHub CLI"
 check_mcp "linear" "false" "Linear MCP サーバー"
+check_mcp "chrome-devtools" "false" "chrome-devtools MCP サーバー（ui-verify で使用）"
+check_cli "node" "false" "Node.js（chrome-devtools-mcp を npx 起動するため）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then
