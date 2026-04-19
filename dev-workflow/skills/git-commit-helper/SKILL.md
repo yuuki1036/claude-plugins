@@ -61,6 +61,24 @@ git log --oneline -10
 - en: 英語の命令形で記述（Add, Fix, Refactor 等）
 - リポジトリの直近のコミットスタイルに合わせる
 
+### 4.5 UI 変更時の自動確認（条件付き）
+
+以下すべてを満たす場合のみ実行する:
+
+- `.claude/.ui-verify-enabled` が存在（SessionStart の detect-web-project.sh が設定）
+- 変更差分に UI 拡張子ファイル（tsx/jsx/vue/svelte/css/scss/html/astro/mdx）が含まれる
+- `.claude/.ui-verify-pending` が存在 OR `.claude/screenshots/` に直近5分以内の snap がない
+- ユーザー引数に `--no-ui-verify` が含まれない
+
+手順:
+
+1. ユーザーに「UI 変更を検知したので snap を撮る？」と `AskUserQuestion` で確認（選択肢: 撮る / スキップ / 撤回）
+2. 「撮る」選択時は ui-verify スキルを呼び出して `snap` モードを実行、保存先は `.claude/screenshots/commit-$(date +%s)/`
+3. snap 完了後に `rm -f .claude/.ui-verify-pending` でフラグクリア
+4. 「スキップ」なら `rm -f .claude/.ui-verify-pending` でフラグのみクリアしてコミット続行
+
+この分岐をスキップした場合でも、PreToolUse gate hook が `git commit` 実行時に reminder を出す点に注意する。
+
 ### 5. フック対応とプッシュ
 
 - pre-commitフック失敗時: 原因を修正し、**新しいコミットを作成**（amendしない）

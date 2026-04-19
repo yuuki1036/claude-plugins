@@ -2,6 +2,33 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.0] - 2026-04-19
+
+### Added
+- `hooks/scripts/upload-screenshots.sh` を追加。`.claude/screenshots/` 内の画像を GitHub Release（`cc-screenshots` タグ）に一括アップロードし public URL を返す
+- `git-commit-helper` スキルに UI 統合セクション追加。UI 差分時に ui-verify snap を対話的に実行し `.claude/.ui-verify-pending` をクリア
+- `pr-creator` スキルに Screenshots 添付セクション追加。UI PR で最新 snap を upload-screenshots.sh で GitHub Release にアップロード後、PR body に `## Screenshots` テーブルを自動埋め込み
+- PR Screenshots のフォールバック対応（gh 未認証・アップロード失敗時はローカルパス記載）
+
+## [1.6.0] - 2026-04-19
+
+### Added
+- SessionStart hook に `detect-web-project.sh` を追加。Web フレームワーク依存を検出してプロジェクト単位で ui-verify 連携を有効化（`.claude/.ui-verify-enabled` フラグ）
+- PostToolUse hook（Edit/Write/MultiEdit）に `ui-change-reminder.sh` を追加。UI 関連ファイル（tsx/jsx/vue/svelte/css/scss/html/astro/mdx）の変更時に ui-verify 利用を促すリマインダーを注入
+- PreToolUse hook の `git commit` 前 gate を追加。UI 変更後に動作確認が記録されていない場合に reminder を表示
+- ui-verify スキル実行後の後処理に `.claude/.ui-verify-pending` フラグクリアを追加
+
+### Changed
+- Web プロジェクト以外では UI 自動化 hook が一切発火しない設計（非 Web プロジェクトでのノイズゼロ）
+
+## [1.5.0] - 2026-04-18
+
+### Added
+- `ui-verify` スキルを追加。chrome-devtools MCP を使った Web UI の動作確認・スタイル調整・スクリーンショット取得を自動化（verify / tune / snap の3モード）
+- `/ui-verify` スラッシュコマンドを追加
+- `.mcp.json` で chrome-devtools-mcp を同梱配布（プラグインインストールで自動的に MCP サーバーが有効化）
+- plugin.json の `_requirements` に chrome-devtools MCP と node を追加
+
 ## [1.4.0] - 2026-04-08
 
 ### Added

@@ -56,6 +56,42 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 
 Description生成の詳細は [references/description-guide.md](references/description-guide.md) を参照。
 
+### 4.5 Screenshots 添付（UI PR のみ）
+
+以下すべてを満たす場合のみ実行する:
+
+- `.claude/.ui-verify-enabled` が存在
+- PR 差分（`git diff <base>...HEAD --name-only`）に UI 拡張子ファイル（tsx/jsx/vue/svelte/css/scss/html/astro/mdx）が含まれる
+- `gh` が認証済み
+- ユーザー引数に `--no-screenshots` が含まれない
+
+手順:
+
+1. `.claude/screenshots/` 内の最新 snap ディレクトリを特定。見つからなければ ui-verify スキルを `snap` モードで起動して新規撮影
+
+   ```bash
+   # ui-verify が作る snap-* / git-commit-helper が作る commit-* の両方を対象
+   LATEST=$(ls -1dt .claude/screenshots/{snap,commit}-* 2>/dev/null | head -1)
+   ```
+2. `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/upload-screenshots.sh <dir>` を実行して画像を GitHub Release (`cc-screenshots` タグ) にアップロード
+3. 標準出力の `<filename><TAB><url>` を解析
+4. PR body に以下を追記（テンプレート既存セクションの末尾 or 新規 `## Screenshots` として）:
+
+   ```markdown
+   ## Screenshots
+
+   | viewport | preview |
+   |----------|---------|
+   | mobile   | ![mobile](<url>) |
+   | desktop  | ![desktop](<url>) |
+   ```
+
+   viewport 名はファイル名から推定（`mobile.png` / `desktop.png` 等）。不明なものは `<name> | ![<name>](<url>)` 形式。
+
+**アップロード失敗時のフォールバック:**
+- `gh` 未認証、ネットワークエラー、権限なし等で失敗したら `## Screenshots` セクションに「ローカルパス: `.claude/screenshots/...`」のみ記載し、ユーザーに手動でドラッグ&ドロップを促す注記を入れる
+- PR 作成自体は継続する
+
 ### 5. PRを作成
 
 ```bash
@@ -70,3 +106,5 @@ gh pr create --draft --title "<title>" --body "<description>"
 - 常にドラフトPRとして作成
 - テンプレートのセクションは空欄にせず必ず内容を埋める
 - AI署名（Generated with等）は付けない
+- Screenshots は `cc-screenshots` release にアップロードする専用運用。他の release と混ぜない
+- 機密情報（ログイン画面、社内 URL、実データ等）が写っていないか撮影前に確認する。アップロードは public release なので漏洩リスクあり

@@ -26,8 +26,8 @@
     },
     {
       "name": "dev-workflow",
-      "description": "Git操作とPR作成の開発ワークフロー。原子性重視のコミットとLinear Issue連携PR作成",
-      "version": "1.4.0",
+      "description": "Git操作・PR作成・UI動作確認の開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化",
+      "version": "1.7.0",
       "author": {
         "name": "yuki"
       },

@@ -9,6 +9,24 @@
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-deps.sh",
             "timeout": 5,
             "once": true
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/detect-web-project.sh",
+            "timeout": 5,
+            "once": true
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ui-change-reminder.sh",
+            "timeout": 5
           }
         ]
       }
@@ -21,6 +39,12 @@
             "type": "command",
             "if": "Bash(git push *)",
             "command": "echo 'push 前にセルフレビュー（/self-review）の実行を検討してください'",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ui-verify-gate.sh",
             "timeout": 5
           }
         ]

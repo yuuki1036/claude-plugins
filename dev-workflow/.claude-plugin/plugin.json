@@ -1,7 +1,7 @@
 {
   "name": "dev-workflow",
-  "version": "1.4.0",
-  "description": "Git操作とPR作成の開発ワークフロー。原子性重視のコミットとLinear Issue連携PR作成",
+  "version": "1.7.0",
+  "description": "Git操作・PR作成・UI動作確認の開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化",
   "author": {
     "name": "yuki"
   },
@@ -16,6 +16,8 @@
   },
   "_requirements": [
     { "name": "gh", "type": "cli_tool", "required": true, "description": "GitHub CLI" },
-    { "name": "linear", "type": "mcp_server", "required": false, "description": "Linear MCP サーバー（PR に Issue リンク付与時に使用）" }
+    { "name": "linear", "type": "mcp_server", "required": false, "description": "Linear MCP サーバー（PR に Issue リンク付与時に使用）" },
+    { "name": "chrome-devtools", "type": "mcp_server", "required": false, "description": "chrome-devtools MCP（ui-verify スキルで使用、.mcp.json で同梱配布）" },
+    { "name": "node", "type": "cli_tool", "required": false, "description": "chrome-devtools-mcp を npx 起動するため（ui-verify 利用時）" }
   ]
 }
