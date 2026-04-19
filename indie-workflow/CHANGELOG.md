@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.1] - 2026-04-19
+
+### Fixed
+- `knowledge` スキル/コマンドの `allowed-tools` に `AskUserQuestion` と `Bash` を追加（本文で使用しているが未宣言だった）
+- `indie-maintain` スキル/コマンドの `allowed-tools` に `AskUserQuestion` を追加（Phase 0/6 の選択 UI で使用）
+
 ## [1.18.0] - 2026-04-17
 
 ### Added

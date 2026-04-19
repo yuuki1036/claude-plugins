@@ -7,6 +7,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - AskUserQuestion
 argument-hint: "[project-slug]"
 ---
 
