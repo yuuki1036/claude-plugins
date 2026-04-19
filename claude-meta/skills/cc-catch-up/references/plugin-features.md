@@ -5,6 +5,8 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 
 > **メンテナンス**: CC の新バージョンリリース時にこのファイルを更新する。
 > キャッチアップ実行時に新機能が発見された場合、Phase 7 でこのカタログにも追記する。
+>
+> **カバー範囲**: v2.1.114（2026-04-19 時点）。v2.1.106 以降は主にバグ修正で plugin-authoring 面の新サーフェスは少ない。
 
 ---
 
@@ -83,7 +85,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `name` | 初期 | エージェント名 | 必須 |
 | `description` | 初期 | 説明 | 必須 |
 | `model` | 初期 | モデル指定 | タスク複雑度に応じた選択 |
-| `effort` | v2.1.80 | エフォートレベル | タスク複雑度に応じた設定 |
+| `effort` | v2.1.80 | エフォートレベル（`low`/`medium`/`high`/`xhigh`/`max`）。`xhigh` は Opus 4.7 専用で v2.1.111 追加 | タスク複雑度に応じた設定 |
 | `tools` | 初期 | 使用可能ツール | 最小権限原則 |
 | `disallowedTools` | v2.1.80+ | 拒否ツールリスト | ツールの明示的ブロック |
 | `maxTurns` | v2.1.78+ | 最大ターン数 | 暴走防止 |
@@ -106,7 +108,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 |-----------|-------|------|------------|
 | `name` | v2.1.94 | スキル呼び出し名（ディレクトリ名の代わりに安定した名前を指定） | プラグインスキルの安定命名 |
 | `description` | 初期 | 説明（トリガーフレーズ含む） | 必須 |
-| `effort` | v2.1.80 | エフォートレベル | タスク複雑度設定 |
+| `effort` | v2.1.80 | エフォートレベル（`low`/`medium`/`high`/`xhigh`/`max`）。`xhigh` は Opus 4.7 専用で v2.1.111 追加 | タスク複雑度設定 |
 | `allowed-tools` | 初期 | 使用可能ツール | 最小権限 |
 | `paths` | v2.1.84 | glob パターンで自動アクティベーション | ファイルタイプ依存スキル |
 | `context` | v2.1.80+ | `fork` でサブエージェント分離実行 | メインコンテキスト保護 |
@@ -143,7 +145,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `allowed-tools` | 初期 | 使用可能ツール | 最小権限 |
 | `argument-hint` | 初期 | 引数ヒント表示 | 引数付きコマンド |
 | `shell` | v2.1.84 | シェル指定 | クロスプラットフォーム |
-| `effort` | v2.1.84 | モデル effort レベルのオーバーライド | コマンド呼び出し時の思考深度制御 |
+| `effort` | v2.1.84 | モデル effort レベルのオーバーライド（`xhigh` は v2.1.111 から Opus 4.7 で使用可能） | コマンド呼び出し時の思考深度制御 |
 | `keep-coding-instructions` | v2.1.94 | 出力スタイルの制御 | コマンド出力のフォーマット指定 |
 
 ---
@@ -213,6 +215,10 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | Cron (`CronCreate` 等) | v2.1.71 | スケジュールタスク | 定期実行 |
 | LSP サーバー (.lsp.json) | v2.1.80+ | 言語サーバー提供 | コード補完・診断プラグイン |
 | `settings.json` 同梱 | v2.1.50 | プラグインに設定ファイルを同梱 | エージェント設定の配布 |
+| `plugin_errors` in stream-json | v2.1.111 | `--output-format stream-json` の init event に依存未解決プラグインの情報を含む | CI/CD 診断、ヘッドレス実行時のデバッグ |
+| Built-in slash via Skill tool | v2.1.108 | `/init`, `/review`, `/security-review` をモデルが Skill tool 経由で起動可能 | 組込コマンドとの名前重複時は独自価値を明示 |
+| subagent stall fail | v2.1.113 | サブエージェントが 10 分ストールすると無応答ではなく明示的エラーで失敗 | 長時間実行エージェントの安全性自動強化 |
+| plugin install range-conflict | v2.1.113 | 既存プラグインと依存バージョンが衝突すると `range-conflict` 報告 | プラグイン依存宣言の精度向上 |
 
 ---
 
@@ -224,3 +230,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `CLAUDE_STREAM_IDLE_TIMEOUT_MS` | v2.1.80+ | ストリーミングタイムアウト | 長時間処理 |
 | `CLAUDE_CODE_DISABLE_CRON` | v2.1.71+ | スケジュール無効化 | Cron 制御 |
 | `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS` | v2.1.78 | 組み込みコミット/PR 指示を除去 | dev-workflow 等との競合防止 |
+| `ENABLE_PROMPT_CACHING_1H` | v2.1.108 | API key / Bedrock / Vertex / Foundry で 1 時間プロンプトキャッシュを有効化 | 長時間セッションのコスト最適化 |
+| `FORCE_PROMPT_CACHING_5M` | v2.1.108 | プロンプトキャッシュを 5 分 TTL に固定 | 短時間セッションのキャッシュ制御 |
+| `OTEL_LOG_RAW_API_BODIES` | v2.1.111 | OpenTelemetry に API リクエスト/レスポンスの raw body を出力 | プラグインの API 呼び出しデバッグ |
+| `CLAUDE_CODE_USE_POWERSHELL_TOOL` | v2.1.111 | Linux/macOS で PowerShell tool を有効化（`pwsh` 必須） | クロスプラットフォーム Bash 代替 |

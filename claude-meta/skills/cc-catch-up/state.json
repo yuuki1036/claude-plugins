@@ -1,0 +1,21 @@
+{
+  "lastCatchUpVersion": "2.1.114",
+  "lastCatchUpDate": "2026-04-19",
+  "appliedFeatures": [
+    "xhigh-effort-opus-4-7",
+    "plugin-errors-stream-json",
+    "prompt-caching-env-vars",
+    "otel-log-raw-api-bodies",
+    "powershell-tool-env-var",
+    "builtin-slash-via-skill-tool",
+    "subagent-stall-fail",
+    "plugin-install-range-conflict"
+  ],
+  "skippedFeatures": [
+    "sandbox-network-denied-domains",
+    "tui-fullscreen-mode",
+    "ultrareview-builtin",
+    "less-permission-prompts-builtin"
+  ],
+  "notes": "v1.3.4 の初回 state は PLUGIN_DATA に置いていたため消失。v1.3.7 で repo 管理に移行（git tracked）。"
+}

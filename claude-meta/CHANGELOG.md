@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.7] - 2026-04-19
+
+### Changed
+- cc-catch-up の state ファイルを `${CLAUDE_PLUGIN_DATA}/catch-up-state.json` から `${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/state.json` へ移動。git 管理下に置くことでマシン間/再インストール時の履歴消失を防ぐ
+- SKILL.md の Phase 0 / Phase 7 のパス参照を更新
+
+## [1.3.6] - 2026-04-19
+
+### Changed
+- plugin-features.md カタログ更新: v2.1.106-v2.1.114 の新機能を反映
+  - `xhigh` effort レベル（v2.1.111、Opus 4.7 専用）を Agent/Skill/Command フロントマター説明に追記
+  - Runtime & CLI セクションに `plugin_errors` in stream-json (v2.1.111)、Built-in slash via Skill tool (v2.1.108)、subagent stall fail (v2.1.113)、plugin install range-conflict (v2.1.113) を追加
+  - 環境変数セクションに `ENABLE_PROMPT_CACHING_1H` / `FORCE_PROMPT_CACHING_5M` (v2.1.108)、`OTEL_LOG_RAW_API_BODIES` (v2.1.111)、`CLAUDE_CODE_USE_POWERSHELL_TOOL` (v2.1.111) を追加
+  - カバー範囲を v2.1.114 に更新
+
 ## [1.3.5] - 2026-04-17
 
 ### Added
