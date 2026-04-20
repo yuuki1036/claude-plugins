@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.3] - 2026-04-20
+
+### Changed
+- ui-verify: allowed-tools を 28 → 15 に削減（Permission Pruning）。本文で使用されていない chrome-devtools MCP ツール（select_page / list_pages / close_page / get_console_message / get_network_request / emulate / fill_form / type_text / evaluate_script / handle_dialog）と未使用 Write / Glob / Grep を除去 (#28)
+
 ## [1.7.2] - 2026-04-19
 
 ### Changed
