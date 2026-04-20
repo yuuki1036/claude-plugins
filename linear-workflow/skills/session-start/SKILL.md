@@ -9,7 +9,6 @@ allowed-tools:
   - Agent
   - mcp__linear__get_issue
   - mcp__linear__list_issues
-  - mcp__linear__list_comments
   - Read
   - Write
   - Glob

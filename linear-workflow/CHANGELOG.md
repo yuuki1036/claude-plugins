@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.3] - 2026-04-20
+
+### Changed
+- Permission Pruning に基づく allowed-tools 削減 (#28)
+  - `session-start`: 9 → 8（`mcp__linear__list_comments` を除去。該当処理は Agent subagent 側で完結）
+  - `linear-maintain`: 11 → 10（`Write` を除去。既存ファイル更新のみで新規作成なし）
+  - `linear-maintain`: 本文に `get_issue` / `list_issue_statuses` の明示参照を追加（14b 検証のため）
+
 ## [1.18.2] - 2026-04-19
 
 ### Changed

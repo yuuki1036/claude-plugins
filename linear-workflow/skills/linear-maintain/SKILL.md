@@ -12,7 +12,6 @@ allowed-tools:
   - mcp__linear__get_project
   - mcp__linear__list_issue_statuses
   - Read
-  - Write
   - Edit
   - Glob
   - Grep
@@ -87,7 +86,7 @@ Linear MCP `list_issues` でプロジェクト内の Issue 一覧を取得し、
 
 ### 3. Issue ステータス同期
 
-`issues/` 内の `in-progress` ファイルを走査し、ステータスの整合性を確認する：
+`issues/` 内の `in-progress` ファイルを走査し、Linear MCP `get_issue` と `list_issue_statuses` を用いて、各 Issue の Linear 上ステータスとの整合性を確認する：
 
 | ローカル状態 | 判定 | アクション |
 |-------------|------|-----------|
@@ -116,7 +115,7 @@ Linear 上でプロジェクトが Done の場合：
 
 #### 6a. completed Issue の自動メンテナンス（通常・フルスキャン共通）
 
-issues/ 内のファイルを走査し、Linear 上で Done / Canceled になった Issue を検知したら、
+issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得したステータスを確認し、Done / Canceled になった Issue を検知したら、
 **issue-maintain 相当の処理を自動実行**する。
 
 ##### 検知条件
