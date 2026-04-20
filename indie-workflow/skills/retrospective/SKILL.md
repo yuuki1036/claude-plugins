@@ -9,7 +9,6 @@ allowed-tools:
   - Read
   - Write
   - Glob
-  - Grep
   - Bash
 ---
 

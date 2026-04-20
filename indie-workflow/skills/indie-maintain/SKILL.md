@@ -49,7 +49,7 @@ allowed-tools:
 
 ### 1. プロジェクトサマリー生成
 
-`.claude/indie/` 内の全プロジェクトについて、`issues/` 内のファイルを走査し、ステータス別の Issue 件数を集計する。
+`.claude/indie/` 内の全プロジェクトについて、Glob で `issues/*.md` を列挙、各ファイルを Read し、ステータス別の Issue 件数を集計して project.md を Edit で更新する。
 
 - 各 Issue ファイルの frontmatter `status` を読み取り（`backlog` / `in-progress` / `frozen` / `completed`）
 - frontmatter `type: debt` の Issue は debt としてもカウント
@@ -85,11 +85,11 @@ allowed-tools:
 
 `issues/` 内の `status: completed` ファイルを走査し、**indie-issue-maintain の処理フロー**に従って品質整理を行う。
 
-- Issue ファイルの圧縮（冗長な記録の整理）
-- knowledge への切り出し（再利用可能な知見の抽出）
-- 整理済みファイルの削除提案
+- Issue ファイルの圧縮（Edit で冗長な記録を整理）
+- knowledge への切り出し（Write で再利用可能な知見を新規ファイルに抽出）
+- 整理済みファイルの削除提案（Bash `rm` で削除）
 
-**メンテナンス済みの判定**: 更新履歴に `メンテナンス:` で始まるエントリがあればスキップ。
+**メンテナンス済みの判定**: 更新履歴に `メンテナンス:` で始まるエントリがあれば（Grep で検出）スキップ。
 
 #### 5b. 全 Issue 品質整理（フルスキャンのみ）
 

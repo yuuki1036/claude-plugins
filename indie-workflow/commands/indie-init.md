@@ -1,10 +1,8 @@
 ---
 description: 個人プロジェクトの初期セットアップ
 allowed-tools:
-  - Read
   - Write
   - Glob
-  - Bash
 argument-hint: "[PROJECT-SLUG]"
 ---
 

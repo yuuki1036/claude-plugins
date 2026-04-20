@@ -6,10 +6,8 @@ description: >
   トリガー: 「個人プロジェクト初期化」「indie init」「ローカルプロジェクトセットアップ」「/indie-init」
 effort: low
 allowed-tools:
-  - Read
   - Write
   - Glob
-  - Bash
 ---
 
 # Init

@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.3] - 2026-04-20
+
+### Changed
+- Permission Pruning に基づく allowed-tools 削減 (#28)
+  - `indie-init`: 4 → 2（Read, Bash を除去。テンプレートはインラインで Write のみで完結）
+  - `indie-issue-create`: 7 → 6（Agent を除去。並列起動の記述なし）
+  - `indie-issue-maintain`: 7 → 6（Bash を除去。シェルコマンド未使用）
+  - `retrospective`: 5 → 4（Grep を除去。本文で未使用）
+  - `indie-maintain`: 本文に Glob / Grep / Edit / Write / Bash の明示参照を追加（14b PASS）
+  - `indie-start`: Phase F3.7 に Grep の明示参照を追加
+
 ## [1.18.2] - 2026-04-19
 
 ### Changed

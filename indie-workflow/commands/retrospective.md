@@ -4,7 +4,6 @@ allowed-tools:
   - Read
   - Write
   - Glob
-  - Grep
   - Bash
 argument-hint: "[期間: 2w, 1m, etc.]"
 ---
