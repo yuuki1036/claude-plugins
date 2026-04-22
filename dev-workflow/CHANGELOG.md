@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.4] - 2026-04-22
+
+### Changed
+- git-commit-helper スキルに「Generator として動作する」設計原則セクションを追加。品質判定は code-review:self-review を別コンテキストで実行する推奨フローを明示 (#27)
+
 ## [1.7.3] - 2026-04-20
 
 ### Changed

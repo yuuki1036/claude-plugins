@@ -16,6 +16,14 @@ allowed-tools:
 
 # Git Commit Helper
 
+## 設計原則: Generator として動作する
+
+このスキルは変更を生成・コミットする Generator 側を担う。コミット前の品質判定（バグ・セキュリティ・規約違反）は Evaluator 側である `code-review:self-review` を **別コンテキスト** で呼び出して行うことを推奨する。
+
+- 推奨フロー: 実装 → `/self-review` → 修正 → `/git-commit-helper`
+- 理由: 同一コンテキストで生成と判定を行うと confirmation bias で見落としが増える
+- 自身では品質判定をしない（UI 変更時の snap のみ Step 4.5 で扱う）
+
 ## 実行手順
 
 ### 1. 安全性チェック
