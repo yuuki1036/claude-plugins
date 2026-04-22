@@ -13,6 +13,8 @@ allowed-tools:
 
 現在のセッションを振り返り、instinct として記録すべきパターンを抽出する。
 
+このコマンドは Generator として動作する。抽出結果の昇格判定（Evaluator）は別コマンド `/instinct-promote` を別コンテキストで起動して行うこと（confirmation bias 回避）。
+
 ## 手順
 
 ### Step 1: セッション振り返り

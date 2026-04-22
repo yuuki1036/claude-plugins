@@ -13,6 +13,8 @@ allowed-tools:
 
 instincts.md 内の high confidence パターンを MEMORY.md に昇格する。
 
+このコマンドは Evaluator として動作する。抽出（Generator）は `/learn` が担う。本コマンドは instincts.md の内容だけを根拠に判定し、抽出時の主観を引き継がない（confirmation bias 回避）。
+
 ## 手順
 
 ### Step 1: 昇格候補の特定

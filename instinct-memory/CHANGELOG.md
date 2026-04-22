@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.3] - 2026-04-22
+
+### Changed
+- instinct-learning スキルおよび learn / instinct-promote コマンドに「Generator / Evaluator 分離」設計原則を明記。パターン抽出と MEMORY.md 昇格判定を別コンテキストで実行する意図を明示 (#27)
+
 ## [1.2.2] - 2026-04-19
 
 ### Changed

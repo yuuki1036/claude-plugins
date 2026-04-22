@@ -17,6 +17,15 @@ allowed-tools:
 
 セッション中の観察からパターンを学習し、auto memory で管理するシステム。
 
+## 設計原則: learn と instinct-promote のコンテキスト分離
+
+パターン抽出（Generator）と MEMORY.md への昇格判定（Evaluator）は **別コマンド・別コンテキスト** で実行する:
+
+- `/learn` (Generator): セッションを振り返って instincts.md にパターンを追加する
+- `/instinct-promote` (Evaluator): instincts.md を独立したコンテキストで読み直し、重複・具体性・吸収判定をかけて MEMORY.md に昇格する
+
+同一コンテキストで抽出と昇格を連続で行うと、抽出時の「残したい」バイアスが昇格判定を歪める。明示的にコマンドを分けることで、Evaluator は instincts.md に書かれた結果だけを根拠に判断できる。
+
 ## いつ使うか
 
 - セッション開始時（instincts.md の読み込みと認識）
