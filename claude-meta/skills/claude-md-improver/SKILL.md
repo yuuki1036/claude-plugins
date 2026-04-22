@@ -55,6 +55,9 @@ For each CLAUDE.md file, evaluate against quality criteria. See [references/qual
 | Conciseness | Medium | No verbose explanations or obvious info? |
 | Currency | High | Does it reflect current codebase state? |
 | Actionability | High | Are instructions executable, not vague? |
+| Skill coordination | High | Are installed skills referenced with explicit invocation guidance? |
+
+> **Why skill coordination matters:** Vercel の eval では Skill が 56% 未呼出。description マッチだけでは不十分で、CLAUDE.md に「このタスクでは X スキルを使う」と明示することで呼び出し率が改善する。自動生成 AGENTS.md は -3%、人間作成は +4% という結果もあり、人間レビュー誘導型の診断が重要。
 
 **Quality Scores:**
 - **A (90-100)**: Comprehensive, current, actionable
@@ -84,18 +87,56 @@ Format:
 
 | Criterion | Score | Notes |
 |-----------|-------|-------|
-| Commands/workflows | X/20 | ... |
-| Architecture clarity | X/20 | ... |
+| Commands/workflows | X/15 | ... |
+| Architecture clarity | X/15 | ... |
 | Non-obvious patterns | X/15 | ... |
 | Conciseness | X/15 | ... |
 | Currency | X/15 | ... |
-| Actionability | X/15 | ... |
+| Actionability | X/10 | ... |
+| Skill coordination | X/15 | ... |
 
 **Issues:**
 - [List specific problems]
 
 **Recommended additions:**
 - [List what should be added]
+
+### Skill Invocation Guidance Audit
+
+**Purpose:** CLAUDE.md 単体で skill 呼び出しを後押しできているか、診断のみ行う（自動挿入せず、人間レビュー前提）。
+
+**Discovery Sources:**
+
+```bash
+# インストール済み skill の列挙
+find .claude/plugins -name "SKILL.md" -path "*/skills/*" 2>/dev/null
+find ~/.claude/plugins -name "SKILL.md" -path "*/skills/*" 2>/dev/null
+# marketplace.json / plugin.json から plugin 名を参照し `{plugin}:{skill}` 形式で整理
+```
+
+**Diagnostic Output Format:**
+
+```
+#### Skill Invocation Guidance
+
+**Installed skills (sample):**
+- `{plugin-name}:{skill-name}` — {description から抜粋}
+
+**CLAUDE.md references:**
+- [x] `{skill-name}` が CLAUDE.md から参照されている（セクション: {場所}）
+- [ ] `{skill-name}` は未参照 — トリガー: {主要トリガーフレーズ}
+
+**Invocation guidance strength:**
+- 明示的な「このタスクでは X スキルを使う」指示: {N 件}
+- タスク→スキル対応表の有無: {あり|なし}
+- 重要制約の skill 側への委譲指示: {あり|なし}
+
+**Recommendations (human review required):**
+- 頻出タスクと skill トリガーが重なる場合のみ、CLAUDE.md に明示呼び出しガイドを追加することを**提案**する
+- 断定的に「追加すべき」とは書かず、ユーザーが採否を判断できる形で列挙する
+```
+
+**Critical:** Skill Invocation Guidance の追加提案は、必ず Phase 4 の承認フローに乗せる。自動挿入は禁止（人間レビューが精度を上げる）。
 
 #### 2. ./packages/api/CLAUDE.md (Package-specific)
 ...
@@ -158,6 +199,8 @@ See [references/templates.md](references/templates.md) for CLAUDE.md templates b
 4. **Missing environment setup**: Required env vars or config
 5. **Broken test commands**: Test scripts that have changed
 6. **Undocumented gotchas**: Non-obvious patterns not captured
+7. **Missing skill invocation guidance**: インストール済み skill が CLAUDE.md から参照されていない、または「このタスクでは X を使う」という明示ガイドが欠落している
+8. **Auto-generated boilerplate**: 人間レビューを経ていない自動生成風の記述（一般論の羅列、プロジェクト固有性の欠如）
 
 ## User Tips to Share
 
@@ -186,3 +229,4 @@ When presenting recommendations, remind users:
 - Testing (commands, patterns)
 - Gotchas (quirks, common mistakes)
 - Workflow (when to do what)
+- Skill Coordination (インストール済み skill の呼び出しガイド — 頻出タスクとの対応表)

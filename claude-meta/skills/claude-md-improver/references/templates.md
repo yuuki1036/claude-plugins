@@ -88,6 +88,22 @@ Setup:
 - <common mistake to avoid>
 ```
 
+### Skill Coordination
+
+頻出タスクと対応する skill を明示し、Claude の呼び出し率を高める。候補を列挙したあと、人間レビューで取捨選択すること（自動生成は逆効果）。
+
+```markdown
+## Skill Coordination
+
+- **<頻出タスク>**: `{plugin-name}:{skill-name}` を使う
+- **<別のタスク>**: `{plugin-name}:{skill-name}` を使う
+```
+
+**記入ルール:**
+- 1 プロジェクトで常用する skill に絞る（全 skill を列挙しない）
+- skill 名は `{plugin}:{skill}` 形式で統一
+- 「使うかもしれない」程度なら書かない（ノイズ増加で逆効果）
+
 ---
 
 ## Template: Project Root (Minimal)

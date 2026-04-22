@@ -32,7 +32,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | instinct-memory | 3 | 1 | - | Stop, PostCompact | セッション中のパターン学習と auto memory 管理 |
 | code-review | 2 | 2 | - | SessionStart | Phase 0 トリアージ + 動的エージェント構成コードレビュー / セルフレビュー |
 | dev-workflow | 3 | 3 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認の開発ワークフロー（chrome-devtools MCP 同梱） |
-| claude-meta | 2 | 4 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善・CCアップデート追従・eval 回帰テスト |
+| claude-meta | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善・CCアップデート追従・eval 回帰テスト・新コンポーネント追加前判断 |
 | linear-workflow | 8 | 8 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | Linear MCP 連携の Issue/プロジェクト管理 |
 | indie-workflow | 8 | 8 | 2 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 | plugin-manager | 1 | - | - | - | インストール済みプラグインの一括更新 |
@@ -70,6 +70,7 @@ claude plugin install {plugin-name}@yuuki1036-claude-plugins
 - commands/ と skills/ の allowed-tools は一致させる（コマンドとスキルが同名でペアになっている場合のみ。独立したコマンドやスキルには適用されない）
 - 後から変えにくい判断を伴う方針確認は `AskUserQuestion` で選択 UI を提示する（SKILL.md のワークフロー内に呼び出し仕様を直接記述する）
 - plugin 開発は plugin-dev plugin を用いて必要に応じて agent team を使用する
+- 新 skill / agent / hook / command を追加する前は `claude-meta:component-addition-advisor` で退路確保（既存拡張で解けないか）を判定する
 
 ## ルール配置の意思決定（決定的 hook > LLM 判定）
 

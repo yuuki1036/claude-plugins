@@ -41,6 +41,25 @@ Mocking: Factory functions in `tests/factories/` (not inline mocks)
 - Redis connection requires `?family=0` suffix for IPv6
 ```
 
+### 6. Skill Invocation Guidance
+
+「このタスクでは X skill を使う」を明示する。Vercel eval で Skill 56% 未呼出だった問題への直接対処。
+
+```markdown
+## Skill Coordination
+
+- **Issue 作業開始時**: `linear-workflow:session-start` を使う
+- **コミット前レビュー**: `code-review:self-review` を使う
+- **PR 作成**: `dev-workflow:pr-creator` を使う
+```
+
+**判断基準:**
+- 頻出タスクと skill トリガーが重なる場合のみ追加
+- 1 回限りの特殊タスクは書かない（ノイズになる）
+- skill 名は `{plugin}:{skill}` 形式で揺らぎを減らす
+
+**Critical — 自動挿入禁止:** claude-md-improver は候補提示のみ行う。採否はユーザー判断（自動生成 AGENTS.md は -3% / 人間作成は +4% の eval 結果より）。
+
 ## What NOT to Add
 
 - **Obvious code info**: class names that are self-explanatory
@@ -68,3 +87,5 @@ Mocking: Factory functions in `tests/factories/` (not inline mocks)
 - [ ] File paths are accurate
 - [ ] Would a new Claude session find this helpful?
 - [ ] Is this the most concise way to express the info?
+- [ ] Skill invocation guidance は候補提示のみか（断定していないか）
+- [ ] `{plugin}:{skill}` 形式で skill 名を正確に記載しているか

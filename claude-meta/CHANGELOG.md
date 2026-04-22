@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.6.0] - 2026-04-22
+
+### Added
+- `component-addition-advisor` skill 追加（#24）: 新 skill / agent / hook / command 追加前の「退路確保」判断をガイド
+  - 既存拡張で解けないかを最初に検証、ブロッカー発生時のみ新規追加する判断フロー
+  - `_requirements` にフォールバック手順 / blocker 理由を記録する規約
+  - AskUserQuestion で既存拡張 vs 新規追加を対話的に選択
+- `claude-md-improver`: Skill Coordination 監査項目追加（#23）
+  - スコアリングルーブリック再配分（Commands/Architecture 20→15、Actionability 15→10、新規 Skill Coordination 15 点）
+  - Phase 3 レポートに「Skill Invocation Guidance Audit」セクション追加（診断のみ、自動挿入禁止）
+  - `references/templates.md` に「Skill Coordination」セクションのテンプレート追加
+  - Vercel eval 知見（Skill 56% 未呼出、人間作成 +4% / 自動生成 -3%）を反映
+
+### Changed
+- CLAUDE.md: プラグイン開発ルールに `component-addition-advisor` 参照を追加
+
 ## [1.5.0] - 2026-04-22
 
 ### Added
