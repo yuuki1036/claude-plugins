@@ -1,6 +1,8 @@
 {
   "lastCatchUpVersion": "2.1.114",
+  "lastCatchUpModel": "claude-opus-4-7",
   "lastCatchUpDate": "2026-04-19",
+  "lastPruningDate": null,
   "appliedFeatures": [
     "xhigh-effort-opus-4-7",
     "plugin-errors-stream-json",
@@ -17,5 +19,7 @@
     "ultrareview-builtin",
     "less-permission-prompts-builtin"
   ],
-  "notes": "v1.3.4 の初回 state は PLUGIN_DATA に置いていたため消失。v1.3.7 で repo 管理に移行（git tracked）。"
+  "prunedConstraints": [],
+  "preservedConstraints": [],
+  "notes": "v1.3.4 の初回 state は PLUGIN_DATA に置いていたため消失。v1.3.7 で repo 管理に移行（git tracked）。v1.5.0 で剪定モード用フィールド追加（lastCatchUpModel / lastPruningDate / prunedConstraints / preservedConstraints）。"
 }

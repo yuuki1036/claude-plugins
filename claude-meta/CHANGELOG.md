@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.5.0] - 2026-04-22
+
+### Added
+- `cc-catch-up`: モデル世代ごとの hook/skill 剪定レビュー機能（#22）
+  - Phase 0 にモデル世代変更検知を追加し、検知時に「剪定モード」を推奨
+  - 新 Phase P（剪定モード）: C-1〜C-5 カテゴリで候補抽出 → レポート → AskUserQuestion で対話的に削除/hook化/保留/保持を選択
+  - `references/pruning-heuristics.md` 追加: 剪定カテゴリ定義、判定フロー、レポート形式、対話仕様
+  - `state.json` に `lastCatchUpModel` / `lastPruningDate` / `prunedConstraints` / `preservedConstraints` フィールド追加
+
 ## [1.4.2] - 2026-04-19
 
 ### Changed
