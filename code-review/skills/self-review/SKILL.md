@@ -21,6 +21,16 @@ allowed-tools:
 - PR 不要。ローカルのみで完結
 - コミット前・PR 作成前の品質ゲートとして使用
 
+## 設計原則: Generator と分離された Evaluator
+
+self-review は `dev-workflow:git-commit-helper`（Generator: 変更を生成・コミットする側）から独立した Evaluator として機能する。同一コンテキストで生成と判定を行うと confirmation bias で見落としが増えるため、以下のフローを推奨する:
+
+1. 実装・変更 → `/self-review` （別コンテキストで起動）
+2. 指摘事項を修正
+3. `/git-commit-helper` でコミット
+
+Phase 0 の explorer/reviewer 並列起動も同じ思想で、reviewer は explorer の結果を「独立した観点として」受け取る（自分で diff を再探索させない）。
+
 ## 実行手順
 
 ### 1. diff 収集とコンテキスト準備
@@ -94,6 +104,8 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 
 全 explorer の完了を待ち、結果を収集する。
 
+**部分失敗耐性:** 個別 explorer が失敗しても全体を中止しない。失敗した explorer の type / focus / エラー要旨を `missing_coverage` リストに記録し、残った explorer の結果で続行する。該当 focus に依存する reviewer には、Step 4 で「探索結果なし（失敗理由）」を明示して渡す。
+
 ### 4. レビューフェーズ（reviewer 並列起動）
 
 `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` を Read で読み込む。
@@ -112,6 +124,10 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 全 reviewer の完了を待ち、結果を収集する。
 
+**部分失敗耐性:** 個別 reviewer が失敗しても成功した reviewer の結果で合成継続する。失敗した reviewer の focus / angle / エラー要旨を `missing_coverage` リストに追記する。
+
+**最小保証の閾値:** Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促す。それ以外は欠損観点を明示しつつ Step 5 に進む。
+
 ### 5. Confidence スコアリングとフィルタリング
 
 全 reviewer の指摘を統合し、`${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` を Read で読み込んでスコアリングを実施する。
@@ -121,11 +137,13 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 ### 6. レポート出力
 
+`missing_coverage` リストが空でない場合は「⚠️ 欠損観点」セクションを追加する（空なら省略）。
+
 ```
 ## セルフレビュー結果
 
 **総合評価**: X/10 点
-**レビュー構成**: Phase 0 (triage) → 探索 (N agents) → レビュー (M agents)
+**レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
 
 ### 指摘事項 (confidence ≥ 80)
 
@@ -134,6 +152,10 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 2. [confidence: 82][セキュリティ] Hardcoded secret...
    ファイル: src/config.ts:15
+
+### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
+- reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
+- explorer-<focus>: timeout → 依存していた reviewer-<focus> には探索結果なしで実行
 
 ### 総括
 - 変更の概要

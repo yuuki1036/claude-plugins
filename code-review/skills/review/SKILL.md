@@ -100,6 +100,8 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 
 全 explorer の完了を待ち、結果を収集する。
 
+**部分失敗耐性:** 個別 explorer が失敗しても全体を中止しない。失敗した explorer の type / focus / エラー要旨を `missing_coverage` リストに記録し、残った explorer の結果で続行する。該当 focus に依存する reviewer には、Step 5 で「探索結果なし（失敗理由）」を明示して渡す。
+
 ### 5. レビューフェーズ（reviewer 並列起動）
 
 `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` を Read で読み込む。
@@ -118,6 +120,10 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 全 reviewer の完了を待ち、結果を収集する。
 
+**部分失敗耐性:** 個別 reviewer が失敗しても成功した reviewer の結果で合成継続する。失敗した reviewer の focus / angle / エラー要旨を `missing_coverage` リストに追記する。
+
+**最小保証の閾値:** Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促してから ExitWorktree する。それ以外は欠損観点を明示しつつ Step 6 に進む。
+
 ### 6. Confidence スコアリングとフィルタリング
 
 全 reviewer の指摘を統合し、`${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` を Read で読み込んでスコアリングを実施する。
@@ -127,11 +133,13 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 ### 7. レポート出力
 
+`missing_coverage` リストが空でない場合は「⚠️ 欠損観点」セクションを追加する（空なら省略）。
+
 ```
 ## レビュー結果
 
 **総合評価**: X/10 点
-**レビュー構成**: Phase 0 (triage) → 探索 (N agents) → レビュー (M agents)
+**レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
 
 ### 指摘事項 (confidence ≥ 80)
 
@@ -140,6 +148,10 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 2. [confidence: 85][セキュリティ] SQL injection risk...
    ファイル: src/api.ts:23-25
+
+### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
+- reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
+- explorer-<focus>: timeout → 依存していた reviewer-<focus> には探索結果なしで実行
 
 ### 総括
 - 変更の目的と全体像
