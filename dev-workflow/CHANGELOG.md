@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.8.0] - 2026-04-23
+
+### Added
+- opt-in の TDD Phase Gate hook を追加（`hooks/scripts/tdd-phase-gate.sh`）。`.claude/.tdd-phase-gate-enabled` 有効化時に PreToolUse (Edit|Write|MultiEdit) で実装ファイルに対応するテストファイルの存在をチェックし、Red phase 逸脱を警告（ブロックなし）(#26)
+- README に「TDD Phase Gate（opt-in）」セクションを追加し有効化/無効化方法と検知ロジックを記載
+
 ## [1.7.4] - 2026-04-22
 
 ### Changed

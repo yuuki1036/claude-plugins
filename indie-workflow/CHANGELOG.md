@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.0] - 2026-04-23
+
+### Added
+- scope_size 超過のリアルタイム警告 hook を追加（`hooks/scripts/check-scope-size.sh`）。PostToolUse (Edit|Write|MultiEdit) で `.claude/indie/*/issues/*.md` の進捗チェックリスト数をカウントし、scope_size 上限（small:3 / medium:7 / large:15）を超過したら警告を注入。セッション末の `/indie-issue-maintain` 膨張閾値（5/8/16）とは別軸のリアルタイム初動通知 (#30)
+
 ## [1.18.3] - 2026-04-20
 
 ### Changed
