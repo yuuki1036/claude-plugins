@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.6.1] - 2026-04-23
+
+### Changed
+- `cc-catch-up/state.json` を v2.1.117 に更新。v2.1.115-117 の新機能は本 marketplace に即時適用可能な差分なしと判断し、skipped に記録（agent main-thread `mcpServers`/`hooks:`、Pro/Max default effort `high`、plugin install deps 自動補完ほか）
+
 ## [1.6.0] - 2026-04-22
 
 ### Added

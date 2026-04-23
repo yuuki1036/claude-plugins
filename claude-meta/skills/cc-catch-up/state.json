@@ -1,7 +1,7 @@
 {
-  "lastCatchUpVersion": "2.1.114",
+  "lastCatchUpVersion": "2.1.117",
   "lastCatchUpModel": "claude-opus-4-7",
-  "lastCatchUpDate": "2026-04-19",
+  "lastCatchUpDate": "2026-04-23",
   "lastPruningDate": null,
   "appliedFeatures": [
     "xhigh-effort-opus-4-7",
@@ -17,9 +17,15 @@
     "sandbox-network-denied-domains",
     "tui-fullscreen-mode",
     "ultrareview-builtin",
-    "less-permission-prompts-builtin"
+    "less-permission-prompts-builtin",
+    "agent-mcpservers-main-thread",
+    "agent-hooks-main-thread",
+    "promax-default-effort-high",
+    "plugin-install-deps-autoresolve",
+    "otel-command-name-effort-attrs",
+    "blocked-marketplaces-managed-settings"
   ],
   "prunedConstraints": [],
   "preservedConstraints": [],
-  "notes": "v1.3.4 の初回 state は PLUGIN_DATA に置いていたため消失。v1.3.7 で repo 管理に移行（git tracked）。v1.5.0 で剪定モード用フィールド追加（lastCatchUpModel / lastPruningDate / prunedConstraints / preservedConstraints）。"
+  "notes": "v1.3.4 の初回 state は PLUGIN_DATA に置いていたため消失。v1.3.7 で repo 管理に移行（git tracked）。v1.5.0 で剪定モード用フィールド追加（lastCatchUpModel / lastPruningDate / prunedConstraints / preservedConstraints）。v2.1.115-117 の新機能は本 marketplace の構成（Task tool 経由 subagent、明示的 effort 指定）に即時適用可能な差分なしと判断、skipped に記録。"
 }
