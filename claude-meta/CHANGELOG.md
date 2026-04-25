@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.6.2] - 2026-04-25
+
+### Changed
+- `cc-catch-up` Phase 3: プラグインスキャンの 5 エージェント起動を imperative 化（Opus 4.7 対応）。「同一メッセージ内で並列起動、逐次起動は禁止」を明示
+- `cc-catch-up` Phase 4: Gap 分析に段階的思考誘導を追加（「この Phase は設計判断を含むため段階的に検討」＋各改善提案の根拠を 1 文で書けるか確認ステップ）
+
 ## [1.6.1] - 2026-04-23
 
 ### Changed

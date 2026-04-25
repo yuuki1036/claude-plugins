@@ -20,6 +20,12 @@ SKILL.md から `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` として
 
 **報告閾値: confidence >= 80 のみ報告すること**
 
+**境界値（75-85）に近い指摘、および他 reviewer の指摘と矛盾する場合は、段階的に検討してから数値を確定すること:**
+
+1. diff の意図（コミットメッセージ・PR 説明・session-context）と指摘が矛盾していないか
+2. 既存コードの問題を誤って新規問題として報告していないか
+3. 証拠（ファイル Read・explorer 結果）が confidence を裏付けているか
+
 ### 除外対象（報告しない）
 - 今回の変更で導入されたものではない既存の問題
 - linter が検出するもの（ESLint, Prettier 等）

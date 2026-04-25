@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.8.1] - 2026-04-25
+
+### Changed
+- `git-commit-helper` コミット分割判定に段階的思考誘導を追加（Opus 4.7 対応）。分割単位決定前に `git diff` 全体の俯瞰・依存関係把握・論理的作業単位の identify を経由するステップを明記
+
 ## [1.8.0] - 2026-04-23
 
 ### Added

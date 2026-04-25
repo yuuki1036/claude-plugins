@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.4] - 2026-04-25
+
+### Changed
+- `session-start` Phase N3.5: Context Recovery Agent Team の起動指示を imperative 化（Opus 4.7 対応）。「同一メッセージ内で 3 エージェントを並列起動（逐次起動は禁止）」を明示し、各エージェントの入力も箇条書きで明示化
+
 ## [1.18.3] - 2026-04-20
 
 ### Changed
