@@ -3,16 +3,27 @@
 #
 # 目的:
 #   プラグイン関連ファイルを変更して実装を終えたタイミングで、
-#   validate-ssot.sh と claude plugin validate を自動実行して
-#   SSoT 同期違反・スキーマ違反を早期に検知する。
+#   機械的に検証可能な品質チェックを実行して早期に違反を検知する。
+#
+# 実行するチェック:
+#   1. validate-ssot.sh
+#      - plugin.json / marketplace.json / hooks.json のスキーマ準拠
+#      - marketplace.json と plugin.json の name/version/description 同期
+#      - _requirements と check-deps.sh の一致
+#   2. validate_plugin_quality.py
+#      - allowed-tools の存在と command <-> skill ペア一致
+#      - hooks.json で参照されるスクリプトの safe_hook_init 呼び出し
+#      - safe-hook.sh canonical と replica の byte-identical
+#      - SKILL.md の ${CLAUDE_PLUGIN_ROOT}/... 参照の実在
+#      - SKILL.md description の「トリガー:」存在
+#   3. claude plugin validate
+#      - plugin.json の CLI スキーマバリデーション（_requirements 警告は除外）
 #
 # トリガー条件:
 #   working tree に以下のパターンの変更がある場合のみチェック実行
 #     - */plugin.json
 #     - .claude-plugin/marketplace.json
-#     - */skills/**
-#     - */commands/**
-#     - */hooks/**
+#     - */skills/** / */commands/** / */hooks/** / */references/**
 #     - */CHANGELOG.md
 #
 # 出力:
@@ -37,7 +48,7 @@ if [ -z "$CHANGED" ]; then
   exit 0
 fi
 
-if ! echo "$CHANGED" | grep -qE '(\.claude-plugin/.*\.json|/skills/|/commands/|/hooks/|/CHANGELOG\.md|marketplace\.json)'; then
+if ! echo "$CHANGED" | grep -qE '(\.claude-plugin/.*\.json|/skills/|/commands/|/hooks/|/references/|/CHANGELOG\.md|marketplace\.json)'; then
   exit 0
 fi
 
@@ -45,10 +56,17 @@ ISSUES=""
 
 # 1. SSoT 同期チェック
 if ! SSOT_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/validate-ssot.sh" 2>&1)"; then
-  ISSUES="${ISSUES}[SSoT] ${SSOT_OUT}\n"
+  ISSUES="${ISSUES}${SSOT_OUT}\n"
 fi
 
-# 2. claude plugin validate（_requirements 警告は仕様により除外）
+# 2. プラグイン品質チェック（決定的検証項目）
+if command -v python3 >/dev/null 2>&1; then
+  if ! PQ_OUT="$(python3 "$REPO_ROOT/.claude-plugin/scripts/validate_plugin_quality.py" 2>&1)"; then
+    ISSUES="${ISSUES}${PQ_OUT}\n"
+  fi
+fi
+
+# 3. claude plugin validate（_requirements 警告は仕様により除外）
 if command -v claude >/dev/null 2>&1; then
   while IFS= read -r plugin_dir; do
     [ -z "$plugin_dir" ] && continue
