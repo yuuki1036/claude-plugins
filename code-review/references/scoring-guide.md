@@ -21,12 +21,14 @@
 - linterが検出するもの（ESLint, Prettier等）
 - lint ignoreコメント付きのコード
 - 些末なnitpick（スペース、改行等）
+- **PR の行単位 review comment で既に指摘されている内容のうち、diff で修正済みのもの**（review skill のみ。再指摘しない）
 
 ### スコア加算ルール
 
 - CLAUDE.md に明示的に記載あり: +20
 - 複数エージェントが同一指摘を検出: +15
 - git blame で過去に同様の修正あり: +15
+- **指摘冒頭に `[re-flag: @<既指摘者>]` タグあり**（PR 行単位 review comment で既指摘 かつ diff で未修正、review skill のみ）: +15
 - セキュリティ関連: +10
 - 同一観点の冗長ペアが合意（独立した視点からの裏付け）: +10
 - explorer の発見と一致する指摘（探索結果で裏付けあり）: +10
@@ -42,3 +44,6 @@
 - セッションコンテキストの「スコープ外」に該当する指摘: -50
 - 同一観点の冗長ペアで片方のみ検出（確信度が下がる）: -5
 - reviewer-pattern-consistency のスタイル的指摘: -15
+- **指摘冒頭に `[intent-conflict]` タグあり**（PR 説明の意図と矛盾、spec-compliance の仕様違反判定は対象外、review skill のみ）: -20
+- **指摘冒頭に `[resolved: @<同意者>]` タグあり**（PR 会話で LGTM/resolved 等の同意あり、review skill のみ）: -30
+- **指摘冒頭に `[scope:out]` タグあり**（PR 説明で「このPRではやらない」「別 PR」と明記された範囲、review skill のみ）: -50

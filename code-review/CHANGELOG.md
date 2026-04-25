@@ -2,6 +2,28 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.6.0] - 2026-04-24
+
+### Added
+- review スキルに PR 会話コンテキストの reviewer プロンプト注入を追加
+  - `gh api repos/{owner}/{repo}/pulls/<PR>/comments` で行単位レビューコメントを取得
+  - `gh pr view --json reviews` でレビューサマリを取得
+  - PR 説明・issue コメントと合わせて PR コンテキストブロックとして構造化（SKILL.md Step 2.5）
+- reviewer-prompts.md に「PR コンテキスト注入テンプレート」(#2.5) を追加
+  - 検出ルールはタグベース: `[re-flag: @<user>]` / `[resolved: @<user>]` / `[intent-conflict]` / `[scope:out]`
+  - 重複指摘の回避（既指摘かつ diff で修正済みは出力除外）
+  - 著者意図の尊重（PR 説明のスコープ・意図と照合）
+- scoring-guide.md にタグベースの加減算ルールを追加（正本）
+  - `[re-flag: ...]`: +15（既指摘かつ diff で未修正の押し戻し）
+  - `[intent-conflict]`: -20（spec-compliance の仕様違反は対象外）
+  - `[resolved: ...]`: -30（PR 会話で LGTM/resolved）
+  - `[scope:out]`: -50（PR 説明で明示されたスコープ外）
+  - 行単位 review comment で既指摘 かつ diff で修正済み: 報告対象外
+- triage-guide.md の Stage 1 に PR コンテキストによる観点追加・冗長化ロジックを追記（review skill のみ）
+
+### Changed
+- scoring-guide.md と reviewer-prompts.md の責務分離を明確化: reviewer は検出・タグ付けに集中、confidence 数値の加減算は scoring-guide.md を正本として Step 6 で適用
+
 ## [2.5.0] - 2026-04-22
 
 ### Added

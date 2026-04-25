@@ -16,6 +16,7 @@ Phase 0 実行前に以下の情報を収集する:
 |---|---|---|
 | diff 全文 | `git diff` / `gh pr diff` | Yes |
 | 変更ファイルリスト + 各ファイルの行数 | `--name-only` + `wc -l` | Yes |
+| PR コンテキストブロック（review skill のみ） | SKILL.md Step 2.5 で構築（説明・issue コメント・レビューサマリ・行単位 review comment） | review skill で PR ありの場合 |
 | CLAUDE.md | プロジェクトルートから読み込み | 存在する場合 |
 | session-context.md | 存在チェック + ブランチ一致チェック | 存在する場合 |
 | Issue/knowledge ファイルの有無 | ファイル存在チェック | 存在する場合 |
@@ -60,6 +61,16 @@ diff パターンマッチで各観点の必要性を判定する。
 ### React/Next.js 判定
 
 `package.json` に `react` / `next` が含まれる場合、bug-detection に **vercel-best-practices** 観点を追加する。
+
+### PR コンテキストによる観点追加・冗長化（review skill のみ）
+
+SKILL.md Step 2.5 で構築した PR コンテキストブロックの内容も判定シグナルとして使う:
+
+- PR 説明に「セキュリティ修正」「認可」「脆弱性」等の言及 → security 観点を追加
+- PR 説明に「パフォーマンス改善」「最適化」「N+1」等の言及 → performance 観点を追加・冗長化
+- PR 説明に「マイグレーション」「スキーマ変更」等の言及 → migration 観点を追加
+- 行単位 review comment で特定観点（認可・エラーハンドリング等）が議論されている → 該当 reviewer を追加または冗長化
+- 行単位 review comment が多数（10+）ある複雑な PR → reviewer を 1-2 体追加（押し戻しの重要性を踏まえた独立検証）
 
 ## 4. Stage 2: 体数・フォーカス決定
 

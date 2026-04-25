@@ -35,8 +35,12 @@ allowed-tools:
 gh pr checkout <PR番号>
 
 # PR メタ情報と base branch を取得
-gh pr view --json number,title,url,author,state,headRefName,baseRefName,body
-gh pr view --json comments
+gh pr view <PR番号> --json number,title,url,author,state,headRefName,baseRefName,body
+
+# PR 会話コンテキスト（Step 2.5 で PR コンテキストブロックに構造化）
+gh pr view <PR番号> --json comments       # issue comments（PR 全体への議論）
+gh pr view <PR番号> --json reviews         # レビューサマリ（APPROVED/CHANGES_REQUESTED/body）
+gh api "repos/{owner}/{repo}/pulls/<PR番号>/comments" --paginate  # 行単位 review comments
 ```
 
 PR が存在しない場合は「PR が見つかりません」と報告して **ExitWorktree** で抜けて終了。
@@ -53,12 +57,43 @@ gh pr diff <PR番号> --name-only
 ```
 
 **コンテキスト収集（並列で実行）:**
-- PR description と comments（レビュー文脈として活用）
+- PR 会話データ（Step 1 で取得、2.5 で構造化）
 - CLAUDE.md・規約ファイル: `CLAUDE.md`, `.github/CONTRIBUTING.md`, `.eslintrc.*`, `prettier.config.*`
 - `.claude/session-context.md` の存在確認（存在する場合、frontmatter の `branch` と現在のブランチ名を比較。一致すれば有効）
 - Issue/knowledge ファイルの探索
 - プロジェクト特性シグナル（`package.json` の存在確認と主要依存の確認）
 - 変更ファイルの行数: `wc -l <changed_files>`
+
+### 2.5. PR コンテキストブロックの構築
+
+Step 1 で取得した PR 会話データ（description / issue comments / reviews / 行単位 review comments）を以下の構造にまとめる。このブロックは Phase 0 のタイプ判定と **全 reviewer のプロンプト注入** の両方に使用する。
+
+```
+## PR コンテキスト
+
+### PR 情報
+- #<番号> <タイトル>
+- 著者: @<author>
+- Base → Head: <base> → <head>
+
+### PR 説明（著者が明示したスコープ・意図）
+<body 全文。空なら「（空）」>
+
+### Issue コメント（PR 全体への議論）
+- [@user, YYYY-MM-DD] body
+- ...
+
+### レビューサマリ
+- [@reviewer, STATE, YYYY-MM-DD] body
+- ...
+
+### 行単位レビューコメント（過去の指摘）
+- [@reviewer, path:line] body
+  - 返信: [@user] body  # in_reply_to_id で辿れる返信を列挙
+- ...
+```
+
+データが無い項目は「（なし）」と明示する（reviewer が項目の有無を判別できるようにする）。
 
 ### 3. Phase 0: トリアージ
 
@@ -73,7 +108,7 @@ diff の特性を分析し、必要なエージェントタイプを判定する
 - **reviewer**: 常に必要。diff パターンマッチでどの観点が必要かを判定
 - **spec-compliance**: session-context / Issue / knowledge が存在するか
 
-PR description と comments の内容もタイプ判定の参考にする（例: 「セキュリティ修正」と記載されていれば security reviewer を追加）。
+Step 2.5 の PR コンテキストブロック（説明・issue コメント・レビューサマリ・行単位コメント）もタイプ判定の参考にする（例: 説明に「セキュリティ修正」、行単位コメントで認可周りが議論されている → security reviewer を追加）。
 
 #### 3.2 Stage 2: 体数・フォーカス・冗長度決定
 
@@ -110,6 +145,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - 各 reviewer に Phase 0 が決定した focus（と冗長ペアの場合は angle）を指示として渡す
 - reviewer-prompts.md の該当する Focus テンプレートと共通指示をプロンプトに含める
 - **explorer 結果の選択的注入**: 構成テーブルの「explorer 依存」列に記載された explorer の結果を、該当する reviewer のプロンプトに `## Explorer 結果` セクションとして注入する
+- **PR コンテキスト注入**: Step 2.5 で構築した PR コンテキストブロックを、reviewer-prompts.md の「PR コンテキスト注入テンプレート」(#2.5) に従い全 reviewer のプロンプトに注入する（重複指摘の回避と著者意図の尊重ルールはテンプレート内に明記）
 - セッションコンテキストが有効な場合、reviewer-prompts.md のセッションコンテキスト注入テンプレートに従い全 reviewer に注入する
 - `gh pr diff` の出力を各 reviewer に渡す
 - 全エージェントを `isolation: "worktree"` で起動する
@@ -129,7 +165,9 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 全 reviewer の指摘を統合し、`${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` を Read で読み込んでスコアリングを実施する。
 
 - 各指摘のベーススコア（reviewer が付与した confidence）に加算・減算ルールを適用
+- PR コンテキストタグ（`[re-flag: ...]` / `[resolved: ...]` / `[intent-conflict]` / `[scope:out]`）が付いた指摘は scoring-guide.md の該当ルールで加減算
 - confidence ≥ 80 のみ報告
+- 出力時はタグ（`[re-flag: @user]` 等）を指摘文冒頭にそのまま残す（ユーザーが既指摘との関連を把握できるようにする）
 
 ### 7. レポート出力
 
@@ -146,7 +184,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 1. [confidence: 95][バグ] Missing error handling...
    ファイル: src/auth.ts:67-72
 
-2. [confidence: 85][セキュリティ] SQL injection risk...
+2. [confidence: 90][セキュリティ][re-flag: @reviewer-1] SQL injection risk（2026-04-22 に既指摘、diff で未修正）
    ファイル: src/api.ts:23-25
 
 ### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
