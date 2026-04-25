@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.20.0] - 2026-04-25
+
+### Added
+- `doc-resolver` agent に親 Issue 読み込みロジックを追加。frontmatter の `parent:` を辿って親 Issue の「概要」「計画」「スコープ外」「全体進捗」を収集し、`indie-start` Phase F6 の報告に含める（linear-workflow と同等パターン）
+- Issue frontmatter に `parent:` / `related_knowledge:` / `feature_dev_plan:` フィールドを追加（全4テンプレート、任意フィールドのため既存 Issue ファイルは未記入のまま動作）
+- `indie-issue-create` Phase 7 の feature-dev 連携を upfront 化。「はい」選択時に Issue メタデータ + Phase 5.4 コードベース調査結果 + Phase 5.5 関連 knowledge を feature-dev に明示的に引き継ぐ prompt テンプレートを定義
+
+### Changed
+- `indie-start` Phase F3.5 の Context Recovery Agent Team 起動指示を imperative 化（Opus 4.7 対応）。「同一メッセージ内で 2 エージェント並列起動（逐次起動は禁止）」を明示
+- `indie-start` Phase F6 の報告項目に「親 Issue コンテキスト」を追加
+
 ## [1.19.0] - 2026-04-23
 
 ### Added

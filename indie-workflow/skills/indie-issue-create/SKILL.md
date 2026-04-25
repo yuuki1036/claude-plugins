@@ -158,6 +158,28 @@ Issue の内容が確定した段階で、既存の knowledge を検索する。
    - options:
      1. label: "はい" / description: "feature-dev で実装計画を立てる"
      2. label: "いいえ" / description: "後で自分でやる"
+
+   **「はい」選択時の upfront 引き継ぎ**（Phase 5.4-5.5 の調査結果を feature-dev 側で再走査させないため、以下を必ず prompt に含めて呼び出す）:
+
+   ```
+   /feature-dev {ISSUE-ID}: {タイトル}
+
+   ## Issue コンテキスト
+   - Issue ファイル: `.claude/indie/{slug}/issues/{ISSUE-ID}.md`
+   - type: {type}, scope_size: {scope_size}
+   - 概要: {Phase 5 で収集した概要}
+
+   ## Phase 5.4 コードベース調査結果
+   - 確認済みファイル: {パス一覧}
+   - 既存実装の有無: {あれば該当箇所のサマリー}
+
+   ## Phase 5.5 関連 Knowledge
+   - {参照済み knowledge ファイル名と tags}
+
+   上記の context を前提に、実装計画を策定してください。
+   ```
+
+   feature-dev 実行後、`feature_dev_plan:` frontmatter に生成された計画ファイルのパスを記載することをユーザーに案内する（手動更新、または `/indie-issue-maintain` で反映）。
 5. 次のアクションを案内する:
    - 計画の記入（feature の場合）
    - 調査の開始（investigation の場合）

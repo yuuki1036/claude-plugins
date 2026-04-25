@@ -5,6 +5,7 @@ type: investigation          # 必須。値: bugfix / feature / investigation
 created: YYYY-MM-DD          # 必須
 project: {project-name}      # 任意。Linear プロジェクト名
 parent: {ISSUE-ID}           # 任意。親 Issue
+related_knowledge: []        # 任意。Phase 2.5 で参照した knowledge ファイル名の配列
 ---
 # {ISSUE-ID}: {タイトル}
 

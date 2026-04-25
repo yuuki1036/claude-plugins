@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.0] - 2026-04-25
+
+### Added
+- Issue frontmatter に `related_knowledge:` / `feature_dev_plan:` フィールドを追加（feature / bugfix / investigation の 3 テンプレート、`feature_dev_plan:` は feature のみ）。Phase 2.5 で参照した knowledge と feature-dev が生成した計画ファイルへの逆リンクを保持する
+- `issue-create` Phase 4 の feature-dev 連携を upfront 化。「はい」選択時に Issue メタデータ + Linear URL + Phase 2.5 関連 knowledge + 親 Issue サマリーを feature-dev に明示的に引き継ぐ prompt テンプレートを定義（Opus 4.7 の upfront specification 原則に整合）
+
 ## [1.18.4] - 2026-04-25
 
 ### Changed

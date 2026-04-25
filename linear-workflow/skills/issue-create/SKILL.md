@@ -114,6 +114,28 @@ Issue の情報が確定した段階で、既存の knowledge を検索する。
    - options:
      1. label: "はい" / description: "feature-dev で実装計画を立てる"
      2. label: "いいえ" / description: "後で自分でやる"
+
+   **「はい」選択時の upfront 引き継ぎ**（Phase 2.5 の調査結果を feature-dev 側で再走査させないため、以下を必ず prompt に含めて呼び出す）:
+
+   ```
+   /feature-dev {ISSUE-ID}: {タイトル}
+
+   ## Issue コンテキスト
+   - Issue ファイル: `.claude/linear/{slug}/issues/{ISSUE-ID}.md`
+   - type: {type}
+   - Linear URL: {Linear の URL（get_issue から取得）}
+   - 概要: {Linear description の要約}
+
+   ## Phase 2.5 関連 Knowledge
+   - {参照済み knowledge ファイル名と tags}
+
+   ## 親 Issue（frontmatter の parent: に値がある場合）
+   - [{PARENT-ID}] {タイトル} — 背景・計画のサマリー
+
+   上記の context を前提に、実装計画を策定してください。
+   ```
+
+   feature-dev 実行後、`feature_dev_plan:` frontmatter に生成された計画ファイルのパスを記載することをユーザーに案内する（手動更新、または `/issue-maintain` で反映）。
 3. 次のアクションを案内する:
    - 計画の記入（feature の場合）
    - 調査の開始（investigation の場合）

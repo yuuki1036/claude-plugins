@@ -6,6 +6,8 @@ scope_size: {size}           # 必須。値: small / medium / large
 created: YYYY-MM-DD          # 必須
 last_active: YYYY-MM-DD      # 必須
 pr: ""
+parent: {ISSUE-ID}           # 任意。親 Issue（子 Issue の場合）
+related_knowledge: []        # 任意。Phase 5.5 で参照した knowledge ファイル名の配列
 ---
 # {ISSUE-ID}: {タイトル}
 

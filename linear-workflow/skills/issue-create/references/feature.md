@@ -6,6 +6,8 @@ created: YYYY-MM-DD          # 必須
 project: {project-name}      # 任意。Linear プロジェクト名
 pr: "#{number}"              # 任意。PR 作成後に記載
 parent: {ISSUE-ID}           # 任意。親 Issue
+related_knowledge: []        # 任意。Phase 2.5 で参照した knowledge ファイル名の配列
+feature_dev_plan: ""         # 任意。feature-dev で生成した計画ファイルのパス
 ---
 # {ISSUE-ID}: {タイトル}
 
