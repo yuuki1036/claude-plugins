@@ -405,7 +405,11 @@ Let the workflow guide you through all 7 phases.
 
 ## Author
 
-Sid Bidasaria (sbidasaria@anthropic.com)
+yuki (yuuki1036-claude-plugins)
+
+## Origin
+
+claude-plugins-official/feature-dev からフォークした内製版。元著者・元バージョンの情報は `CHANGELOG.md` を参照。
 
 ## Version
 
