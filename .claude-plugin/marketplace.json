@@ -81,7 +81,7 @@
     {
       "name": "feature-dev",
       "description": "コードベース理解・アーキテクチャ設計・品質レビューを 7 phase で進める機能開発ワークフロー。code-explorer / code-architect / code-reviewer の 3 agent を内包",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": {
         "name": "yuki"
       },
