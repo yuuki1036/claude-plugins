@@ -37,6 +37,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | indie-workflow | 8 | 8 | 2 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 | plugin-manager | 1 | - | - | - | インストール済みプラグインの一括更新 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
+| feature-dev | 1 | - | 3 | - | 7 phase 機能開発ワークフロー（code-explorer / code-architect / code-reviewer 同梱）。claude-plugins-official からフォーク |
 
 ## セットアップ
 
