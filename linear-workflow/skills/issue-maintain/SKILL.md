@@ -117,18 +117,26 @@ Issue ファイルがフロントマターの `type` に対応するテンプレ
 
 整理中に汎用性のある知見を発見した場合、knowledge/ への切り出しまで実行する：
 
-1. **候補の特定**: 特定の Issue に閉じない、再利用可能な知見を特定
+1. **破壊的変更パターンの検出（最優先）**: Issue 本文・進捗・更新履歴から以下キーワードを Grep ベースで走査する：
+   - 「破壊的変更 / breaking change」「rename された / renamed to」「deprecated / 非推奨」
+   - バージョン跨ぎ表記（例: `v\d+ ?→ ?v\d+`）「dead element / 空振り / lint は通るが」
+   - 「衝突する / conflict with / 配列順序」「実機テストで判明 / ランタイムで発覚」
+   - 検出時は **必ず** y/n で切り出し提案する（通常の判断基準より優先）
+   - 提案 tags は quality-checklist.md §5.1 の対応表から選び、ユーザーに提示
+2. **候補の特定**: 特定の Issue に閉じない、再利用可能な知見を特定
    - アーキテクチャの分析結果
    - パフォーマンス調査の発見
    - ライブラリ・フレームワーク固有のノウハウ
    - ドメインロジックの仕様整理
-2. **正確性の確認**: コードベースや関連 Issue と照合して内容が正しいか検証
-3. **tags の付与**: 既存 knowledge の tags を確認（`knowledge/index.md` または Grep）し、語彙を揃えた上で 3〜7個の tags を決定
-4. **切り出し実行**: `knowledge/{topic}.md` に格納し、元の Issue からはリンクで参照。フロントマターに `status`, `tags` を付与
-5. **ユーザー承認**: 切り出し内容と格納先をユーザーに提示し、承認を得る
-6. **index.md の更新**: 切り出し後、`knowledge/index.md` を更新する（後述）
+3. **正確性の確認**: コードベースや関連 Issue と照合して内容が正しいか検証
+4. **tags の付与**: 既存 knowledge の tags を確認（`knowledge/index.md` または Grep）し、語彙を揃えた上で 3〜7個の tags を決定
+5. **切り出し実行**: `knowledge/{topic}.md` に格納し、元の Issue からはリンクで参照。フロントマターに `status`, `updated`（当日日付）, `tags` を付与
+6. **ユーザー承認**: 切り出し内容と格納先をユーザーに提示し、承認を得る
+7. **index.md の更新**: 切り出し後、`knowledge/index.md` を更新する（後述）
 
-knowledge の status フロントマターや切り出し時の照合ルール、tags 付与ルールの詳細は quality-checklist.md を参照。
+knowledge の status フロントマターや切り出し時の照合ルール、tags 付与ルール、破壊的変更パターン検出キーワード一覧の詳細は quality-checklist.md を参照。
+
+**既存 knowledge 編集時の注意:** frontmatter の `updated` を当日の日付に書き換える（鮮度判定に使用される）。
 
 ---
 
@@ -214,18 +222,19 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 2. テンプレート準拠チェック（セクション構成の確認）
 3. 各セクションを走査し、整理対象を特定
 4. 更新履歴のセッション単位統合を確認
-5. knowledge/ 切り出し候補を特定（tags の語彙を既存 index.md と照合）
-6. タスク完了時フローの適用判定（全タスク完了 → status 更新、follow_up 確認）
-7. 整理計画をユーザーに提示:
+5. 破壊的変更パターン検出（quality-checklist.md §5.1 のキーワードを Grep）
+6. knowledge/ 切り出し候補を特定（5 の検出結果 + 通常基準。tags の語彙を既存 index.md と照合）
+7. タスク完了時フローの適用判定（全タスク完了 → status 更新、follow_up 確認）
+8. 整理計画をユーザーに提示:
    - 削除するもの
    - 圧縮するもの
    - 統合する更新履歴
-   - knowledge/ 切り出し候補（照合結果を含む）
+   - knowledge/ 切り出し候補（破壊的変更検出は 🔴 マーカー付きで先頭表示、tags 候補を併記）
    - テンプレート不足セクションの追加
    - completed ファイルの削除候補
-8. 承認を得てから実行
-9. knowledge/ 切り出しがあった場合、knowledge/index.md を更新
-10. 更新履歴にメンテナンス内容を記録
+9. 承認を得てから実行（既存 knowledge を編集した場合は frontmatter `updated` を当日日付に更新）
+10. knowledge/ 切り出しがあった場合、knowledge/index.md を更新
+11. 更新履歴にメンテナンス内容を記録
 ```
 
 ## 更新履歴への記録形式

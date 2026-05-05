@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.20.0] - 2026-05-05
+
+### Added
+- `issue-maintain` の knowledge 切り出しに**破壊的変更パターン検出**を追加 (#31 A)。Issue 本文・進捗・更新履歴から「破壊的変更 / breaking change」「rename された / renamed to」「deprecated / 非推奨」「v\d+ → v\d+」「dead element / 空振り / lint は通るが」「衝突する / 配列順序」「実機テストで判明 / ランタイムで発覚」を Grep ベースで検出し、tags 候補（`library-compat`, `breaking-change`, `migration`, `gotcha`, `runtime-only`, `static-check-blind-spot` など）と共に y/n 提案する。ライブラリのバージョン跨ぎや実機検知バグといった再利用価値の高い知見の取りこぼしを防ぐ
+- `quality-checklist.md` §5.1「破壊的変更パターンの自動検出」を新規追加（検出キーワード一覧、tags 対応表、ユーザー提示フォーマット）
+- knowledge frontmatter に `updated: YYYY-MM-DD` フィールドを必須化 (#31 B 前提)。新規切り出し時は当日、編集時は必ず書き換える運用ルールを `quality-checklist.md` §6 に明記
+- `session-start` Phase N3.7 に**鮮度判定（stale チェック）**を追加 (#31 B)。関連 knowledge の `updated` フィールドを読み取り、60 日以上経過していれば `⚠️ stale?` マーカーを付与して報告する。古い knowledge に引きずられて誤った設計を採るリスクを下げる（自動除外はせず、最終判断はユーザー）
+
+### Changed
+- `issue-maintain` SKILL.md の knowledge 切り出しフローを 6 ステップ → 7 ステップに拡張（破壊的変更検出を最優先ステップとして追加）。処理フローも 10 → 11 ステップに更新
+- `quality-checklist.md` §6 の knowledge frontmatter 仕様に `updated` フィールドを追加。既存ファイルに `updated` がない場合は次回編集時に追加するルールに統一（遡及修正は不要）
+
 ## [1.19.0] - 2026-04-25
 
 ### Added
