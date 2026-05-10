@@ -1,0 +1,26 @@
+plugin: notebooklm-workflow
+cases:
+  - id: add-source-ja
+    prompt: NotebookLM にこのURLを追加して
+    expected_skill: [notebooklm-workflow:notebook-source-adder, notebooklm-workflow:notebook-add-source]
+    k: 3
+  - id: add-source-keyword-ja
+    prompt: ノートに資料を投入したい
+    expected_skill: [notebooklm-workflow:notebook-source-adder, notebooklm-workflow:notebook-add-source]
+    k: 3
+  - id: add-source-slash
+    prompt: /notebook-add-source
+    expected_skill: [notebooklm-workflow:notebook-source-adder, notebooklm-workflow:notebook-add-source]
+    k: 3
+  - id: query-ja
+    prompt: NotebookLM のノートに質問したい
+    expected_skill: [notebooklm-workflow:notebook-query-assistant, notebooklm-workflow:notebook-query]
+    k: 3
+  - id: summarize-ja
+    prompt: NotebookLM のノートを要約して
+    expected_skill: [notebooklm-workflow:notebook-query-assistant, notebooklm-workflow:notebook-query]
+    k: 3
+  - id: query-slash
+    prompt: /notebook-query
+    expected_skill: [notebooklm-workflow:notebook-query-assistant, notebooklm-workflow:notebook-query]
+    k: 3

@@ -1,0 +1,12 @@
+{
+  "name": "notebooklm-workflow",
+  "version": "0.1.0",
+  "description": "NotebookLM 連携ワークフロー。URL/PDF/YouTube/Drive のソース追加と既存ノートへの Q&A・要約取得を自然言語で操作（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱）",
+  "author": {
+    "name": "yuki"
+  },
+  "_requirements": [
+    { "name": "nlm", "type": "cli_tool", "required": true, "description": "notebooklm-mcp-cli（pip install notebooklm-mcp-cli。nlm login で Google 認証）" },
+    { "name": "notebooklm-mcp", "type": "mcp_server", "required": true, "description": "NotebookLM MCP サーバー（.mcp.json で同梱配布、notebooklm-mcp バイナリで起動）" }
+  ]
+}
