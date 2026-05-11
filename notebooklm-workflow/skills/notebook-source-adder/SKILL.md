@@ -9,8 +9,8 @@ effort: low
 allowed-tools:
   - Bash
   - AskUserQuestion
-  - mcp__notebooklm-mcp__notebook_list
-  - mcp__notebooklm-mcp__source_add
+  - mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_list
+  - mcp__plugin_notebooklm-workflow_notebooklm-mcp__source_add
 ---
 
 # notebook-source-adder
@@ -36,7 +36,7 @@ NotebookLM のノートにソース（URL / YouTube / Google Drive / PDF）を�
 
 ノートが指定されていない場合：
 
-1. `mcp__notebooklm-mcp__notebook_list` でノート一覧を取得
+1. `mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_list` でノート一覧を取得
 2. 候補が複数ある場合は AskUserQuestion で選択 UI を提示（ノート名・最終更新日を表示）
 3. 候補が 1 件の場合はそのまま採用
 4. 候補が 0 件の場合は「先に NotebookLM でノートを作成してください」と案内して終了
@@ -45,7 +45,7 @@ NotebookLM のノートにソース（URL / YouTube / Google Drive / PDF）を�
 
 ### Step 3: ソース追加
 
-`mcp__notebooklm-mcp__source_add` を呼ぶ。
+`mcp__plugin_notebooklm-workflow_notebooklm-mcp__source_add` を呼ぶ。
 
 ソースタイプ別の挙動・入力形式の差は `references/source-types.md` を参照。
 
@@ -69,7 +69,7 @@ NotebookLM への認証が失敗しました。以下を実行して再ログイ
 
 ### MCP 未起動
 
-`mcp__notebooklm-mcp__*` tool が見つからない場合は SessionStart 時の依存チェック（[ERROR] メッセージ）を再確認するよう案内する。`pip install notebooklm-mcp-cli` 未実行の可能性が高い。
+`mcp__plugin_notebooklm-workflow_notebooklm-mcp__*` tool が見つからない場合は SessionStart 時の依存チェック（[ERROR] メッセージ）を再確認するよう案内する。`pip install notebooklm-mcp-cli` 未実行の可能性が高い。
 
 ## 絶対厳守ルール
 

@@ -3,8 +3,8 @@ description: "NotebookLM の既存ノートに質問・要約を実行"
 allowed-tools:
   - Bash
   - AskUserQuestion
-  - mcp__notebooklm-mcp__notebook_list
-  - mcp__notebooklm-mcp__notebook_query
+  - mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_list
+  - mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_query
 ---
 
 notebook-query-assistant スキルを使用して、NotebookLM ノートに対する Q&A・要約を実行してください。

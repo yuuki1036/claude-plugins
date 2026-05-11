@@ -3,8 +3,8 @@ description: "NotebookLM のノートに URL / PDF / YouTube / Google Drive の�
 allowed-tools:
   - Bash
   - AskUserQuestion
-  - mcp__notebooklm-mcp__notebook_list
-  - mcp__notebooklm-mcp__source_add
+  - mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_list
+  - mcp__plugin_notebooklm-workflow_notebooklm-mcp__source_add
 ---
 
 notebook-source-adder スキルを使用して、NotebookLM のノートにソースを追加してください。

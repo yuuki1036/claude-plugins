@@ -9,8 +9,8 @@ effort: low
 allowed-tools:
   - Bash
   - AskUserQuestion
-  - mcp__notebooklm-mcp__notebook_list
-  - mcp__notebooklm-mcp__notebook_query
+  - mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_list
+  - mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_query
 ---
 
 # notebook-query-assistant
@@ -40,14 +40,14 @@ NotebookLM のノートに対して Q&A や要約を実行するスキル。
 
 ノートが指定されていない場合：
 
-1. `mcp__notebooklm-mcp__notebook_list` でノート一覧を取得
+1. `mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_list` でノート一覧を取得
 2. AskUserQuestion で選択 UI を提示（ノート名・最終更新日を併記）
 3. 候補が 1 件の場合はそのまま採用
 4. 候補が 0 件の場合は「先にノートを作成・ソース追加してください」と案内して終了
 
 ### Step 3: クエリ実行
 
-`mcp__notebooklm-mcp__notebook_query` を呼ぶ。
+`mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_query` を呼ぶ。
 
 ### Step 4: 応答提示とフォローアップ
 
@@ -73,7 +73,7 @@ NotebookLM への認証が失敗しました。以下を実行して再ログイ
 
 ### MCP 未起動
 
-`mcp__notebooklm-mcp__*` tool が見つからない場合は SessionStart の依存チェック（[ERROR]）を確認するよう案内する。
+`mcp__plugin_notebooklm-workflow_notebooklm-mcp__*` tool が見つからない場合は SessionStart の依存チェック（[ERROR]）を確認するよう案内する。
 
 ## 絶対厳守ルール
 

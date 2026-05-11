@@ -1,6 +1,6 @@
 {
   "name": "notebooklm-workflow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "NotebookLM 連携ワークフロー。URL/PDF/YouTube/Drive のソース追加と既存ノートへの Q&A・要約取得を自然言語で操作（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱）",
   "author": {
     "name": "yuki"

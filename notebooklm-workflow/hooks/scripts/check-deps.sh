@@ -11,7 +11,7 @@ errors=""
 check_mcp() {
   local name="$1" required="$2" desc="$3"
   local found=false
-  for cfg in "$HOME/.claude/mcp.json" ".mcp.json"; do
+  for cfg in "$HOME/.claude/mcp.json" ".mcp.json" "${CLAUDE_PLUGIN_ROOT}/.mcp.json"; do
     if [ -f "$cfg" ] && grep -q "\"${name}\"" "$cfg" 2>/dev/null; then
       found=true
       break
