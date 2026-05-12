@@ -4,11 +4,28 @@ cases:
     prompt: コミットして
     expected_skill: [dev-workflow:git-commit-helper, dev-workflow:commit]
     k: 3
+    graders:
+      - type: behavior
+        name: latency_budget
+        max_latency_ms: 60000
+
   - id: pr-ja
     prompt: PR作って
     expected_skill: dev-workflow:pr-creator
     k: 3
+    graders:
+      - type: text
+        name: has_json_marker
+        pattern: '"skill"\s*:'
+
   - id: ui-verify-ja
     prompt: UIの動作確認して
     expected_skill: dev-workflow:ui-verify
     k: 3
+
+  # hold-out: 改訂サイクル中は実行されない（--only-tag holdout で実行）
+  - id: commit-paraphrase-ja
+    prompt: 今の変更をまとめて記録しておいて
+    expected_skill: [dev-workflow:git-commit-helper, dev-workflow:commit]
+    k: 3
+    tags: [holdout]
