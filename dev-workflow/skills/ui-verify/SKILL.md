@@ -38,6 +38,8 @@ Web UI の動作確認・スタイル調整・スクリーンショット取得�
 
 引数が無ければ対話的にモードを確認する。URL/path 省略時は後述の自動検出ロジックで決める。
 
+`snap` モードは追加引数 `--viewports=...` を受け付ける（デフォルトは desktop 1 枚）。詳細は後述「snap モード」参照。
+
 ## 実行手順
 
 ### Step 1: 対象プロジェクトの Web 判定
@@ -110,28 +112,60 @@ lsof -nP -iTCP:${DEV_PORT} -sTCP:LISTEN 2>/dev/null
 
 #### snap モード
 
-複数 viewport × 状態でスクリーンショット一括収集。
+スクリーンショット一括収集。**デフォルトは desktop 1 枚のみ**。複数 viewport が必要な PR タイプの場合のみ opt-in する。
 
-**デフォルト viewport:**
-- mobile: 375×812 (iPhone 13 相当)
+**デフォルト viewport:** desktop 1440×900 のみ（1 枚）
+
+**opt-in 引数:**
+
+| 引数 | 撮影対象 |
+|------|---------|
+| なし（デフォルト） | desktop のみ |
+| `--viewports=mobile,desktop` | 指定した viewport |
+| `--viewports=mobile,tablet,desktop` | 3 viewport 全部 |
+| `--viewports=light,dark` | テーマ切り替え（後述「テーマ撮影」参照） |
+
+**プリセット viewport サイズ:**
+- mobile: 375×812（iPhone 13 相当）
 - tablet: 768×1024
 - desktop: 1440×900
 
+**PR タイプ別ガイドライン:**
+
+`pr-creator` / `git-commit-helper` から呼ばれた時、PR の性質に応じて以下を目安に viewport を選択する。撮影目的は「証跡」「レビュー補助」「レスポンシブ検証」のいずれかに分類できる。
+
+| PR タイプ | 推奨枚数 | viewport |
+|-----------|---------|---------|
+| 検証 PR (probe / spike / stage1 / compat) | 0–1 | desktop のみ、または省略 |
+| リファクタ（UI 変更なし） | 0 | — |
+| UI 新機能 | 1–3 | desktop + 必要なら mobile |
+| レイアウト / レスポンシブ変更 | 2–3 | desktop + mobile (+ tablet if breakpoint) |
+| Theme / Token 変更 | 2 | light + dark |
+| バグ修正（UI レンダリング） | 1–2 | 修正対象の viewport |
+
+PR タイプ判定はブランチ名・コミットメッセージ・差分から推定する。判別不能な場合はユーザーに確認。
+
 **手順:**
 1. 出力ディレクトリ作成: `.claude/screenshots/snap-{timestamp}/`
-2. 各 viewport で `resize_page` → `take_screenshot` → 保存
+2. 引数で指定された viewport（無ければ desktop のみ）について `resize_page` → `take_screenshot` → 保存
 3. ユーザーが特定の state (hover, focus, open-modal等) を指定した場合、`hover` / `click` 後に追加撮影
 4. 最後に保存済みファイル一覧を報告
+
+**テーマ撮影:**
+
+`--viewports=light,dark` 指定時は viewport を desktop 固定にし、テーマトグルを操作して 2 枚撮影する。テーマ切り替え方法はプロジェクト固有のため、`prefers-color-scheme` の `emulate` または UI 上のトグルボタン操作のいずれかをユーザーに確認する。
 
 ### Step 4: 撮影結果の後処理
 
 - `.claude/screenshots/` が存在しなければ作成（`mkdir -p`）
 - `.claude/screenshots/.gitignore` に `*` を書いて git 追跡を防ぐ（初回のみ）
 - 結果を報告する際は保存パスを file_path:line_number 形式ではなくプレーンパスで提示
-- **pending flag のクリア**: PostToolUse hook が UI 変更検知時に作成する `.claude/.ui-verify-pending` を削除する（verify / tune / snap のいずれも実行完了時点で削除）。これにより commit 前の gate hook が黙る。
+- **pending flag の更新**: PostToolUse hook が UI 変更検知時に作成する `.claude/.ui-verify-pending` を `verified-snap` ステータスで上書きする（verify / tune / snap のいずれも実行完了時点）。これにより commit 前の gate hook が黙る。
   ```bash
-  rm -f .claude/.ui-verify-pending
+  mkdir -p .claude
+  printf 'verified-snap\n%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .claude/.ui-verify-pending
   ```
+  pending flag は 3 値仕様（`unverified` / `verified-local` / `verified-snap`）。詳細は `git-commit-helper/SKILL.md` Step 4.5「pending flag 3 値仕様」を参照。
 
 ## MCP Tool の使い方
 

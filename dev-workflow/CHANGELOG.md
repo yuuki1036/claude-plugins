@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.0] - 2026-05-12
+
+### Changed
+- **`ui-verify` snap モードのデフォルトを desktop 1 枚に変更** (#32 最優先 1)。従来は mobile/tablet/desktop の 3 viewport 一括撮影だったが、検証 PR で過剰だったため。複数 viewport が必要な場合は `--viewports=mobile,desktop` 等の opt-in 引数で指定する
+- **PR タイプ別ガイドラインを `ui-verify` SKILL.md に追加** (#32 最優先 2)。検証 PR / リファクタ / UI 新機能 / レイアウト変更 / Theme 変更 / バグ修正の 6 タイプについて推奨枚数・viewport を明示
+- **`git-commit-helper` Step 4.5 AskUserQuestion を 4 択化** (#32 次優先 3)。「撮る / スキップ」二択を「desktop 1 枚 / 複数 viewport / ローカル目視済み / スキップ」の 4 択に拡張
+- **`.claude/.ui-verify-pending` を 3 値仕様に拡張** (#32 次優先 3)。`unverified` / `verified-local` / `verified-snap` の 3 値で verify 状態を表現する。`ui-change-reminder.sh` は `unverified` を書き込み、`ui-verify-gate.sh` は `verified-*` の場合 reminder をスキップ、ui-verify スキルは `verified-snap` で上書き
+- **`pr-creator` に PR タイプ判定ロジックを追加** (#32 最優先 2)。ブランチ名・コミット message・差分シグナル（`@media`, breakpoint utility, `theme` トークン等）から PR タイプを推定し、`ui-verify` の `--viewports=...` 引数を組み立てて撮影枚数を最適化
+- **`pr-creator` Screenshots の 1 枚レイアウトを追加**。1 枚のみの場合は table 形式ではなく単独画像で添付する
+
+### Added
+- **`git-commit-helper` probe / spike fast path** (#32 次優先 4)。ブランチ名に `probe|spike|stage1|compat|verify|poc|experiment` を含む場合、AskUserQuestion の default 選択肢を「ローカル目視済み」に倒す（撮影せずに verified-local としてマーク）
+- **`pr-creator` 機密 UI チェックリスト** (#32 🟢 6)。`cc-screenshots` release は public のため、ログイン画面 / 顧客データ / 社内 URL / 機密 UI / 環境変数値が撮影に含まれていないかを撮影前にチェック。判定不能時は AskUserQuestion で「アップロード / ローカルパスのみ / Screenshots 省略」の 3 択
+- `pr-creator` SKILL.md / `commands/pr.md` の allowed-tools に `AskUserQuestion` を追加（機密チェック・撮影方針確認のため）
+
 ## [1.8.1] - 2026-04-25
 
 ### Changed

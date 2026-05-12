@@ -5,6 +5,7 @@ allowed-tools:
   - Read
   - Glob
   - Grep
+  - AskUserQuestion
   - mcp__linear__get_issue
 ---
 

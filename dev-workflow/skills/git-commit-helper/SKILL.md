@@ -87,12 +87,50 @@ git log --oneline -10
 - `.claude/.ui-verify-pending` が存在 OR `.claude/screenshots/` に直近5分以内の snap がない
 - ユーザー引数に `--no-ui-verify` が含まれない
 
-手順:
+#### probe / spike fast path（撮影スキップを default に）
 
-1. ユーザーに「UI 変更を検知したので snap を撮る？」と `AskUserQuestion` で確認（選択肢: 撮る / スキップ / 撤回）
-2. 「撮る」選択時は ui-verify スキルを呼び出して `snap` モードを実行、保存先は `.claude/screenshots/commit-$(date +%s)/`
-3. snap 完了後に `rm -f .claude/.ui-verify-pending` でフラグクリア
-4. 「スキップ」なら `rm -f .claude/.ui-verify-pending` でフラグのみクリアしてコミット続行
+ブランチ名に以下のキーワードが含まれる場合は「PR 性質的に撮影不要 / 1 枚で十分」と判定し、`AskUserQuestion` の **default 選択肢を「ローカル目視済み」に倒す**。本人が必要だと思ったら明示的に「desktop 1 枚」を選択できる。
+
+- `probe` / `spike` / `stage1` / `compat` / `verify` / `poc` / `experiment`
+
+判定: `git branch --show-current | grep -iE '(probe|spike|stage1|compat|verify|poc|experiment)'`
+
+#### AskUserQuestion 多段化（4 択）
+
+「撮る / スキップ」の二択ではなく以下の 4 択で確認する:
+
+- question: "UI 変更を検知。snap を撮る？"
+- header: "snap"
+- options:
+  1. label: "desktop 1 枚" / description: "標準。証跡として 1 枚だけ撮影（推奨）"
+  2. label: "複数 viewport" / description: "レスポンシブ・レイアウト変更時。mobile/tablet/desktop を opt-in"
+  3. label: "ローカル目視済み" / description: "既に手元で確認済み。撮影せず verified-local としてマーク"
+  4. label: "スキップ" / description: "撮影せず unverified のまま続行（reminder hook は黙らない可能性あり）"
+
+probe fast path 該当時はオプション 3「ローカル目視済み」を default にする。それ以外は 1「desktop 1 枚」を default にする。
+
+#### 選択別の動作
+
+| 選択 | ui-verify 呼び出し | pending flag 操作 |
+|------|------------------|------------------|
+| desktop 1 枚 | `snap` モード（引数なし＝デフォルト desktop 1 枚） | `verified-snap` を書き込み |
+| 複数 viewport | `snap --viewports=mobile,desktop` 等（追加で viewport をユーザーに確認） | `verified-snap` を書き込み |
+| ローカル目視済み | 呼び出さない | `verified-local` を書き込み |
+| スキップ | 呼び出さない | `unverified` を書き込み（または削除） |
+
+保存先（撮影時）: `.claude/screenshots/commit-$(date +%s)/`
+
+#### pending flag 3 値仕様
+
+`.claude/.ui-verify-pending` の内容を以下の 3 値で管理する（旧仕様の「存在 / 非存在」から拡張）:
+
+| 値 | 意味 |
+|----|------|
+| `unverified` | 未確認。reminder hook が PR 作成時に「撮影推奨」を出す |
+| `verified-local` | ローカル目視済み。reminder hook はスキップ |
+| `verified-snap` | snap 撮影済み。reminder hook はスキップ |
+
+`ui-change-reminder.sh` が UI 変更を検知した時の初期値は `unverified`。git-commit-helper / ui-verify がユーザー選択に応じて上書きする。
 
 この分岐をスキップした場合でも、PreToolUse gate hook が `git commit` 実行時に reminder を出す点に注意する。
 

@@ -36,9 +36,13 @@ if ! echo "$FILE_PATH" | grep -qiE '\.(tsx|jsx|vue|svelte|css|scss|sass|less|htm
   safe_hook_error Validation "not a UI file: $FILE_PATH"
 fi
 
-# pending flag を立てる（タイムスタンプを記録）
+# pending flag を立てる（3 値仕様: unverified | verified-local | verified-snap）
+# 既存値が verified-* なら上書きしない（後続の編集は未確認扱いに戻すべき判断もあるが、
+# 1 セッション中の小修正で毎回 verified を消すと UX が悪いため、初回のみ書き込む）
 mkdir -p "$STATE_DIR"
-date -u +%Y-%m-%dT%H:%M:%SZ > "$PENDING_FLAG"
+if [[ ! -f "$PENDING_FLAG" ]]; then
+  printf 'unverified\n%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$PENDING_FLAG"
+fi
 
 # reminder 注入（短め）
 BASENAME=$(basename "$FILE_PATH")
