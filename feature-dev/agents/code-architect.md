@@ -51,5 +51,6 @@ Deliver a decisive, complete architecture blueprint that provides everything nee
 - **Data Flow**: Complete flow from entry points through transformations to outputs
 - **Build Sequence**: Phased implementation steps as a checklist
 - **Critical Details**: Error handling, state management, testing, performance, and security considerations
+- **Runtime Smoke Test Targets**: Concrete URLs / routes / entry points that Phase 5.5 should hit. Required when the design touches DB clients, env-var wiring, middleware, proxy / lazy-init, or adds new routes. Format each target as `METHOD path — expected behavior (e.g. 200 OK, redirects to /login)`. If no runtime surface is touched (pure type / lint / build-time change), explicitly state `Runtime Smoke Test Targets: none (static-only change)` so Phase 5.5 can skip with justification.
 
 Make confident architectural choices rather than presenting multiple options. Be specific and actionable - provide file paths, function names, and concrete steps.

@@ -8,6 +8,7 @@ allowed-tools:
   - Grep
   - TodoWrite
   - AskUserQuestion
+  - Skill
 ---
 
 # Feature Development
@@ -124,6 +125,77 @@ If the user says "whatever you think is best", provide your recommendation and g
 4. Follow codebase conventions strictly
 5. Write clean, well-documented code
 6. Update todos as you progress
+
+---
+
+## Phase 5.5: Runtime Smoke Test
+
+**Goal**: Catch runtime initialization bugs that static checks (tsc / lint / build) cannot detect, before reaching Quality Review.
+
+**Why this phase exists**: Past incidents (e.g. Prisma v7 adapter requirement) showed bugs that pass all static checks but fail on first request — proxy lazy-init, env var loading, middleware misconfiguration, DB client initialization. Catching these before Phase 6 prevents "review passes but deploy blocks" loops.
+
+### Step 1: Deterministic Detection (gate check)
+
+Run the following Bash check to decide whether smoke test is **required** or **optional**:
+
+```bash
+# Detect runtime-sensitive changes in the working tree
+git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-changed-files.txt
+git diff HEAD 2>/dev/null > /tmp/feature-dev-diff.txt
+
+REQUIRED_REASONS=()
+
+# Pattern 1: DB client / ORM initialization
+grep -qE "(PrismaClient|createClient|drizzle\(|new Sequelize|mongoose\.connect|TypeORM)" /tmp/feature-dev-diff.txt && \
+  REQUIRED_REASONS+=("DB client / ORM 初期化変更")
+
+# Pattern 2: Environment variable wiring
+grep -qE "(process\.env\.|import\.meta\.env\.|getEnv\()" /tmp/feature-dev-diff.txt && \
+  REQUIRED_REASONS+=("環境変数依存の追加・変更")
+
+# Pattern 3: Middleware / proxy / lazy-init
+grep -qE "(middleware|Proxy\(|defineProxy|lazy\(|createServer|app\.use)" /tmp/feature-dev-diff.txt && \
+  REQUIRED_REASONS+=("middleware / proxy / lazy-init 変更")
+
+# Pattern 4: New route files (Next.js / SvelteKit / Remix / generic routes)
+grep -qE "(pages/.*\.(tsx?|jsx?)$|app/.*/(page|route)\.(tsx?|jsx?)$|routes/.*\.(ts|js)$)" /tmp/feature-dev-changed-files.txt && \
+  REQUIRED_REASONS+=("新規 route の追加・変更")
+
+if [ ${#REQUIRED_REASONS[@]} -gt 0 ]; then
+  echo "REQUIRED: smoke test 必須"
+  printf '  - %s\n' "${REQUIRED_REASONS[@]}"
+else
+  echo "OPTIONAL: 静的変換のみの変更。skip 候補だがユーザ判断"
+fi
+```
+
+### Step 2: User Confirmation
+
+Present the detection result with `AskUserQuestion`:
+
+- **If REQUIRED**: Ask "smoke test を実行しますか？" with options `[実行する (推奨) / skip して Phase 6 へ]`. Strongly recommend execution.
+- **If OPTIONAL**: Ask "静的変換のみの変更でした。smoke test を実行しますか？" with options `[skip (推奨) / 実行する]`.
+
+### Step 3: Execute via dev-workflow:ui-verify
+
+If the user chose to execute:
+
+1. Identify smoke test targets from the architect's `Runtime Smoke Test Targets` output (Phase 4). Fall back to "all newly added or modified routes" detected in Step 1 if not specified.
+2. Invoke the `dev-workflow:ui-verify` skill via the Skill tool with:
+   - Target routes / URLs to access
+   - Pass criteria: **console error 0, network 4xx/5xx 0**
+3. If chrome-devtools MCP is unavailable (the dev-workflow SessionStart hook warns when unset), fall back to manual verification:
+   - Print the dev server start command and target URLs
+   - Ask the user to manually verify and report back
+   - Do NOT hard-fail; record as "manual check pending"
+
+### Step 4: Triage Findings
+
+- **Pass (no errors)**: Proceed to Phase 6
+- **Fail (errors detected)**: Present findings, do NOT proceed to Phase 6 until the user decides:
+  - Fix now → return to Phase 5
+  - Acknowledge and proceed → record as a known issue and continue to Phase 6
+- **Skipped / manual pending**: Note in the Phase 7 summary, proceed to Phase 6
 
 ---
 

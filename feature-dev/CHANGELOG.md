@@ -5,6 +5,23 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-12
+
+### Added
+
+- **Phase 5.5: Runtime Smoke Test** を Phase 5 (Implementation) と Phase 6 (Quality Review) の間に追加。tsc / lint / build では検知できない runtime 初期化バグ（Prisma client 初期化、env var 読み込み、middleware 設定ミス、proxy lazy-init 等）を Quality Review 前に検出する
+  - Step 1: 決定的検出 — `git diff` から DB client / env var / middleware / 新規 route のパターンを grep し、smoke test が必須か任意かを判定（CLAUDE.md「決定的検証 > LLM 判定」方針に整合）
+  - Step 2: `AskUserQuestion` で実行可否を確認（REQUIRED 時は実行推奨、OPTIONAL 時は skip 推奨）
+  - Step 3: 既存の `dev-workflow:ui-verify` skill を呼び出して dev server 起動 + console error / network 4xx-5xx を検査（component-addition-advisor の「退路確保」原則に従い新 agent 追加せず既存資産を再利用）
+  - Step 4: 失敗時は Phase 6 に進ませず修正を促す。chrome-devtools MCP 未設定時は手動確認にフォールバック（hard fail しない）
+- `code-architect` agent の出力フォーマットに **Runtime Smoke Test Targets** セクションを追加。Phase 5.5 が叩く URL / route を architect 段階で明示。runtime surface に触れない変更では `none (static-only change)` を明示してスキップ判断を支援
+- `commands/feature-dev.md` の `allowed-tools` に `Skill` を追加（`dev-workflow:ui-verify` 呼び出しのため）
+
+### Notes
+
+- Issue #29 の Prisma v7 adapter 必須化のような「全静的チェックを通過したのに初回 runtime アクセスで死ぬ」事故を構造的に予防する
+- description を「7 phase」→「8 phase」に更新
+
 ## [1.1.1] - 2026-05-01
 
 ### Changed

@@ -4,7 +4,7 @@ A comprehensive, structured workflow for feature development with specialized ag
 
 ## Overview
 
-The Feature Development Plugin provides a systematic 7-phase approach to building new features. Instead of jumping straight into code, it guides you through understanding the codebase, asking clarifying questions, designing architecture, and ensuring quality—resulting in better-designed features that integrate seamlessly with your existing code.
+The Feature Development Plugin provides a systematic 8-phase approach to building new features. Instead of jumping straight into code, it guides you through understanding the codebase, asking clarifying questions, designing architecture, runtime-verifying the implementation, and ensuring quality—resulting in better-designed features that integrate seamlessly with your existing code.
 
 ## Philosophy
 
@@ -32,7 +32,7 @@ Or simply:
 
 The command will guide you through the entire process interactively.
 
-## The 7-Phase Workflow
+## The 8-Phase Workflow
 
 ### Phase 1: Discovery
 
@@ -172,6 +172,22 @@ Which approach would you like to use?
 - Follows patterns discovered in Phase 2
 - Uses architecture designed in Phase 4
 - Continuously tracks progress
+
+### Phase 5.5: Runtime Smoke Test
+
+**Goal**: Catch runtime initialization bugs that static checks (tsc / lint / build) cannot detect
+
+**What happens:**
+- Deterministic detection of runtime-sensitive changes via `git diff` (DB clients, env vars, middleware, new routes)
+- Required vs optional gate based on detection result
+- Invokes `dev-workflow:ui-verify` skill to start the dev server and hit target routes
+- Checks for console errors and network 4xx / 5xx responses
+- Falls back to manual verification when chrome-devtools MCP is unavailable
+- Blocks Phase 6 if errors are detected until the user decides how to proceed
+
+**Why this matters:**
+- Catches Prisma client initialization failures, env var loading issues, middleware misconfiguration, and proxy lazy-init bugs that pass all static checks
+- Prevents the "review passes but deploy blocks" loop documented in Issue #29
 
 ### Phase 6: Quality Review
 
@@ -413,4 +429,4 @@ claude-plugins-official/feature-dev からフォークした内製版。元著�
 
 ## Version
 
-1.0.0
+1.2.0
