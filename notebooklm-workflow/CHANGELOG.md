@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-05-12
+
+### Changed
+
+- `.mcp.json` の notebooklm-mcp に `alwaysLoad: true` を追加（Claude Code v2.1.121 新機能）。SessionStart 時に MCP サーバーを即時ロードし、初回 tool 呼び出しのレイテンシを削減する。NotebookLM への問い合わせ・ソース追加が「最初の 1 回だけ遅い」体験を改善
+
 ## [0.1.1] - 2026-05-11
 
 ### Fixed

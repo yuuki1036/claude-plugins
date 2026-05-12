@@ -55,6 +55,13 @@ claude plugin install /path/to/claude-plugins/{plugin-name}
 
 # マーケットプレイスからインストール
 claude plugin install {plugin-name}@yuuki1036-claude-plugins
+
+# プラグインのリリースタグ作成（v2.1.118+）
+# plugin.json の version と git tag を整合チェックして release tag を作成
+claude plugin tag {plugin-name}
+
+# 孤立した自動インストール依存の掃除（v2.1.121+）
+claude plugin prune
 ```
 
 ## コミット規約
