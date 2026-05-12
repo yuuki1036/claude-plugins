@@ -6,6 +6,7 @@ allowed-tools:
   - Edit
   - Grep
   - Glob
+  - Bash
   - AskUserQuestion
 argument-hint: ""
 ---

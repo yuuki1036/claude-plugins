@@ -11,6 +11,7 @@ allowed-tools:
   - Edit
   - Grep
   - Glob
+  - Bash
   - AskUserQuestion
 ---
 
@@ -221,21 +222,103 @@ Issue 起票後、実装せずに即クローズされた Issue を検出し、�
 
 Issue のタスクが全て完了した場合、以下を実行する：
 
-1. フロントマターの `status` を `completed` に更新
-2. 別 Issue に引き継ぐ残タスクがあれば、フロントマターに `follow_up` を追加
+1. **レビュー実施状況の確認（レビューガード）** — 詳細は次節「レビューガード」参照。未実施が疑われる場合は `/self-review` 起動を提案する
+2. フロントマターの `status` を `completed` に更新
+3. 別 Issue に引き継ぐ残タスクがあれば、フロントマターに `follow_up` を追加
    ```yaml
    follow_up:
      - ISSUE-500           # Issue 起票済み
      - "xxx のバグ（未起票）"  # まだ Issue になっていない
    ```
-3. 更新履歴に完了を記録
-4. 汎用知見があれば `.claude/indie/{slug}/knowledge/` に切り出し
-5. follow-up ファイルの棚卸し:
+4. 更新履歴に完了を記録
+5. 汎用知見があれば `.claude/indie/{slug}/knowledge/` に切り出し
+6. follow-up ファイルの棚卸し:
    - `.claude/indie/{slug}/follow-ups/*.md` を Glob で確認
    - `status: open` のファイルがあれば件数を通知:
      「open な follow-up が {N}件あります。`/indie-follow-up list` で確認できます」
    - frontmatter の `follow_up` リストに未起票の文字列がある場合:
      「以下の未起票 follow-up を follow-up ファイルとして記録しますか？」と提案
+
+---
+
+## レビューガード（完了マーク前の品質確認）
+
+`/indie-issue-maintain` で Issue を `completed` に遷移させる前、または完了サブタスクが 3 件以上ある時に、コードレビューが実施されたかを確認する。feature-dev 経由を通らず `/indie-issue-maintain` だけで完了マークするケースで、レビュー素通りを防ぐ品質ガード。
+
+### 検出ロジック
+
+以下を満たすときに「レビュー未実施の疑い」と判定する:
+
+1. **遷移条件**: 以下のいずれか
+   - status が `in-progress` → `completed` に遷移する
+   - 完了サブタスク `[x]` の合計が 3 件以上
+2. **未実施シグナル**: Issue 本文（特に更新履歴・進捗）に以下のキーワードが**含まれていない**
+   - `self-review` / `セルフレビュー` / `/self-review`
+   - `code-review` / `/review` / `コードレビュー実施`
+   - `code-reviewer` agent / `reviewer agent`
+3. 例外: type が `investigation`（実装を伴わない調査 Issue）の場合はスキップ
+
+### 提示フォーマット
+
+AskUserQuestion で以下を提示する:
+
+- question: "コードレビュー未実施の可能性があります。`/self-review` を起動しますか？"
+- header: "レビュー実施"
+- options:
+  1. label: "`/self-review` を起動" / description: "セルフレビューを実行してから完了マーク"
+  2. label: "レビュー済み" / description: "更新履歴に記録して完了マーク（説明文を入力）"
+  3. label: "スキップ" / description: "レビューせずに完了マーク（推奨されません）"
+
+「レビュー済み」選択時は更新履歴に `| YYYY-MM-DD | レビュー実施: {説明} |` を追記する。
+「`/self-review` を起動」選択時は本スキルを中断し、ユーザーに `/self-review` 起動を促す。
+
+### 注意事項
+
+- 検出は機械的に行い、最終判断はユーザーに委ねる
+- 完了済みサブタスクが 3 件未満かつ status 遷移がない場合は本ガードを発火させない
+- レビュー実施キーワードを検出した時点でガードはスキップする
+
+---
+
+## スコープ外差分検出（follow-up 自動提示）
+
+Issue ファイルの「スコープ外」「後続 Issue 候補」「やらないこと」セクションへの**前回コミット以降の追加行**を検出し、`/indie-follow-up new` 候補として一括提示する。
+
+### 検出ロジック
+
+1. `git log -1 --format=%H -- {issue-file-path}` で直近コミットの hash を取得（Bash）
+   - 未コミットファイル（新規 Issue）の場合は本ステップをスキップ
+2. `git diff {hash}..HEAD -- {issue-file-path}` で前回コミット以降の差分を取得（Bash）
+3. 差分から以下条件のセクション内の追加行（`+` 始まり、`+++` を除く）を抽出:
+   - 見出しが「スコープ外」「後続 Issue 候補」「やらないこと」を含むセクション
+   - 抽出単位: 箇条書き行（`- ` で始まる行）
+4. 抽出した行をユーザーへの提示用に整形
+
+### 提示フォーマット
+
+検出が 1 件以上の場合のみ、AskUserQuestion で提示:
+
+```
+スコープ外 / 後続 Issue 候補 から N 件の follow-up 候補を検出:
+1. {1 件目の要約}
+2. {2 件目の要約}
+...
+```
+
+- question: "上記の follow-up 候補を `/indie-follow-up new` で記録しますか？"
+- header: "Follow-up 候補"
+- options:
+  1. label: "一括記録" / description: "全件を follow-up ファイルとして記録"
+  2. label: "個別選択" / description: "1 件ずつ記録するか確認"
+  3. label: "スキップ" / description: "follow-up 化せず Issue ファイルにのみ残す"
+
+「一括記録」「個別選択」を選んだ場合は、対応する follow-up ファイルを生成する（indie-follow-up スキルの Phase N5 と同じ手順）。
+
+### 注意事項
+
+- 既存の follow-up 検知（会話中シグナル）とは独立。Issue ファイル更新タイミングでの差分検出という別軸
+- 検出対象セクションが Issue ファイルに無い場合はスキップ
+- 未コミットの新規 Issue ファイルの場合もスキップ
 
 ---
 
@@ -273,19 +356,24 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 6. 各セクションを走査し、整理対象を特定
 7. 更新履歴のセッション単位統合を確認
 8. knowledge/ 切り出し候補を特定（tags の語彙を既存 index.md と照合）
-9. タスク完了時フローの適用判定（全タスク完了 → status 更新、follow_up 確認）
-10. 整理計画をユーザーに提示:
+9. スコープ外差分検出（git diff で「スコープ外」「後続 Issue 候補」セクションの追加行を抽出）
+10. タスク完了時フローの適用判定:
+    - レビュー実施状況を確認（レビューガード節を参照）
+    - 全タスク完了 → status 更新、follow_up 確認
+11. 整理計画をユーザーに提示:
     - スコープ超過警告（該当する場合）
     - 即クローズパターン時の経緯セクション補完提案（該当する場合）
     - 削除するもの
     - 圧縮するもの
     - 統合する更新履歴
     - knowledge/ 切り出し候補（照合結果を含む）
+    - スコープ外差分から検出した follow-up 候補
+    - レビュー未実施の警告（該当する場合）
     - テンプレート不足セクションの追加
     - completed ファイルの削除候補
-11. 承認を得てから実行
-12. knowledge/ 切り出しがあった場合、knowledge/index.md を更新
-13. 更新履歴にメンテナンス内容を記録
+12. 承認を得てから実行
+13. knowledge/ 切り出しがあった場合、knowledge/index.md を更新
+14. 更新履歴にメンテナンス内容を記録
 ```
 
 ## 更新履歴への記録形式

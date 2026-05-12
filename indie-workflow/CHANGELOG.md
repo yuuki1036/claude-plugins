@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.21.0] - 2026-05-12
+
+### Added
+- `indie-issue-maintain` に**レビューガード**を追加 (#31 C 同等)。Issue を `in-progress` → `completed` に遷移させる時、または完了サブタスク `[x]` が 3 件以上ある時に、本文・更新履歴に `self-review` / `code-review` 等のキーワードが含まれていない場合は `/self-review` 起動を提案する。feature-dev を経由しないケースでのレビュー素通り防止。type が `investigation` の Issue は実装を伴わないためスキップ
+- `indie-issue-maintain` に**スコープ外差分検出**を追加 (#31 D 同等)。`git diff` で「スコープ外」「後続 Issue 候補」「やらないこと」セクションの追加箇条書き行を検出し、`/indie-follow-up new` 候補として一括 / 個別 / スキップの 3 択で提示する
+- `quality-checklist.md` §10「レビューガード」と §11「スコープ外差分検出」を新規追加（発火条件、検出キーワード、選択肢、注意事項）
+
+### Changed
+- `indie-issue-maintain` SKILL.md の処理フローを 13 → 14 ステップに拡張（スコープ外差分検出ステップを knowledge 切り出し直後に追加、タスク完了時フローにレビューガード適用判定を追記）
+- `indie-issue-maintain` SKILL.md / `commands/indie-issue-maintain.md` の allowed-tools に `Bash` を追加（git log / git diff でスコープ外差分を検出するため）
+
 ## [1.20.0] - 2026-04-25
 
 ### Added

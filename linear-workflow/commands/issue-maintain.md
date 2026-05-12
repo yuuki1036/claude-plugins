@@ -7,6 +7,7 @@ allowed-tools:
   - Grep
   - Glob
   - Bash
+  - AskUserQuestion
 ---
 
 issue-maintain スキルを使って Issue ファイルのメンテナンスを実行してください。
