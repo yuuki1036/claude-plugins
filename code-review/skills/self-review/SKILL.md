@@ -9,8 +9,6 @@ effort: xhigh
 allowed-tools:
   - Bash
   - Read
-  - Glob
-  - Grep
   - AskUserQuestion
 ---
 

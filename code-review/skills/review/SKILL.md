@@ -9,11 +9,8 @@ effort: xhigh
 allowed-tools:
   - Bash
   - Read
-  - Glob
-  - Grep
   - EnterWorktree
   - ExitWorktree
-  - mcp__github__pull_request_read
 ---
 
 # Review
@@ -36,15 +33,20 @@ gh pr checkout <PR番号>
 
 # PR メタ情報と base branch を取得
 gh pr view <PR番号> --json number,title,url,author,state,headRefName,baseRefName,body
-
-# PR 会話コンテキスト（Step 2.5 で PR コンテキストブロックに構造化）
-gh pr view <PR番号> --json comments       # issue comments（PR 全体への議論）
-gh pr view <PR番号> --json reviews         # レビューサマリ（APPROVED/CHANGES_REQUESTED/body）
-gh api "repos/{owner}/{repo}/pulls/<PR番号>/comments" --paginate  # 行単位 review comments
 ```
 
 PR が存在しない場合は「PR が見つかりません」と報告して **ExitWorktree** で抜けて終了。
 スキップ条件: closed、変更なしの PR
+
+**【必須】PR 会話コンテキストの取得**:
+
+以下のスクリプトを **必ず実行** し、出力を Step 2.5 でそのまま PR コンテキストブロックとして使用する。LLM が個別 `gh` コマンドを組み立てて取得するのは **禁止**（取りこぼし防止のため）。
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-pr-context.sh" <PR番号>
+```
+
+スクリプトは PR 説明 / issue コメント / レビューサマリ / 行単位 review コメント（返信チェーン込み）を構造化 markdown で出力する。スクリプトが失敗した場合は ExitWorktree して、失敗理由をユーザーに報告し終了（PR コンテキスト無しでは re-flag 判定ができないため、レビュー継続は許可しない）。
 
 ### 2. diff とコンテキストの収集
 
@@ -57,7 +59,7 @@ gh pr diff <PR番号> --name-only
 ```
 
 **コンテキスト収集（並列で実行）:**
-- PR 会話データ（Step 1 で取得、2.5 で構造化）
+- PR 会話データ（Step 1 の fetch-pr-context.sh 出力をそのまま使用）
 - CLAUDE.md・規約ファイル: `CLAUDE.md`, `.github/CONTRIBUTING.md`, `.eslintrc.*`, `prettier.config.*`
 - `.claude/session-context.md` の存在確認（存在する場合、frontmatter の `branch` と現在のブランチ名を比較。一致すれば有効）
 - Issue/knowledge ファイルの探索
@@ -66,7 +68,9 @@ gh pr diff <PR番号> --name-only
 
 ### 2.5. PR コンテキストブロックの構築
 
-Step 1 で取得した PR 会話データ（description / issue comments / reviews / 行単位 review comments）を以下の構造にまとめる。このブロックは Phase 0 のタイプ判定と **全 reviewer のプロンプト注入** の両方に使用する。
+Step 1 の `fetch-pr-context.sh` 出力をそのまま「PR コンテキストブロック」として保持する（LLM による再構築・要約・編集は **禁止**：再現性と取りこぼし防止のため）。このブロックは Phase 0 のタイプ判定と **全 reviewer のプロンプト注入** の両方に使用する。
+
+スクリプト出力の構造（参考）:
 
 ```
 ## PR コンテキスト
@@ -75,6 +79,8 @@ Step 1 で取得した PR 会話データ（description / issue comments / revie
 - #<番号> <タイトル>
 - 著者: @<author>
 - Base → Head: <base> → <head>
+- State: <state>
+- URL: <url>
 
 ### PR 説明（著者が明示したスコープ・意図）
 <body 全文。空なら「（空）」>
@@ -88,12 +94,12 @@ Step 1 で取得した PR 会話データ（description / issue comments / revie
 - ...
 
 ### 行単位レビューコメント（過去の指摘）
-- [@reviewer, path:line] body
-  - 返信: [@user] body  # in_reply_to_id で辿れる返信を列挙
+- [#id] [@reviewer, path:line] body
+  - 返信 [#親id への返信] [@user] body
 - ...
 ```
 
-データが無い項目は「（なし）」と明示する（reviewer が項目の有無を判別できるようにする）。
+データが無い項目は `fetch-pr-context.sh` が「（なし）」を出力する。
 
 ### 3. Phase 0: トリアージ
 

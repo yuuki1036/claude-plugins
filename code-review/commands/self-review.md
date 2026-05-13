@@ -3,8 +3,6 @@ description: "コミット前のセルフレビューを実行する（2フェ�
 allowed-tools:
   - Bash
   - Read
-  - Glob
-  - Grep
   - AskUserQuestion
 argument-hint: "[--staged | base branch] (省略時はデフォルトブランチとの差分)"
 ---

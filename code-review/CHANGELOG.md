@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.6.2] - 2026-05-13
+
+### Added
+- `code-review/scripts/fetch-pr-context.sh` を追加。PR メタ・issue コメント・レビューサマリ・行単位 review コメント（返信チェーン込み）を一括取得し、SKILL.md Step 2.5 の構造化フォーマットで markdown 出力する
+
+### Changed
+- review SKILL.md Step 1 を更新: PR 会話コンテキスト取得を `fetch-pr-context.sh` の **必須実行** に変更。LLM が個別 `gh` コマンドで組み立てる方式を禁止し、PR コメントの取りこぼしを防止
+- review SKILL.md Step 2.5 を更新: スクリプト出力をそのまま PR コンテキストブロックとして使用するよう簡略化（LLM による再構築・要約・編集を禁止）
+
+### Fixed
+- review スキルで PR コメント取得がスキップされるケースを解消（取得手順をスクリプトに集約することで決定的に取得保証）
+
+### Removed
+- review / self-review の allowed-tools から未使用ツールを削除（Permission Pruning 原則に基づく最小化）
+  - review: `Glob`, `Grep`, `mcp__github__pull_request_read`
+  - self-review: `Glob`, `Grep`
+  - 対応する commands/*.md の allowed-tools も同期
+
 ## [2.6.1] - 2026-04-25
 
 ### Changed

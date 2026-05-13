@@ -3,11 +3,8 @@ description: "PRのコードレビューを実行する（2フェーズ構成・
 allowed-tools:
   - Bash
   - Read
-  - Glob
-  - Grep
   - EnterWorktree
   - ExitWorktree
-  - mcp__github__pull_request_read
 argument-hint: "[PR番号] (省略時は現在のブランチのPRを自動取得)"
 ---
 
