@@ -38,6 +38,20 @@ Web UI の動作確認・スタイル調整・スクリーンショット取得�
 
 引数が無ければ対話的にモードを確認する。URL/path 省略時は後述の自動検出ロジックで決める。
 
+### E2E への昇格（webapp-testing への委譲）
+
+`verify` の smoke test を越えた **複数ステップの E2E シナリオ** が必要な場合（ログイン→操作→離脱、フォーム送信から DB 反映確認まで等）、本 skill では行わず、公式 skill `webapp-testing`（`~/.claude/plugins/marketplaces/anthropic-agent-skills/skills/webapp-testing/`）を呼び出す。
+
+判定基準:
+
+| 状況 | 採用 skill |
+|---|---|
+| 単一ページの console/network エラー検知、主要要素の描画確認 | `ui-verify`（verify モード）|
+| 複数ページを跨ぐシナリオ、認証フロー、データ永続化を含むテスト | `webapp-testing` |
+| 既にプロジェクトに Playwright が導入されている | `webapp-testing` |
+
+切り替え時は `chrome-devtools` MCP の代わりに Playwright を使うため、ブラウザの状態管理（storageState、ファイル分割）に強くなる。
+
 `snap` モードは追加引数 `--viewports=...` を受け付ける（デフォルトは desktop 1 枚）。詳細は後述「snap モード」参照。
 
 ## 実行手順

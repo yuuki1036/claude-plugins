@@ -3,15 +3,10 @@
 Skillsはワークフロー、参照資料、ベストプラクティスをパッケージ化したもの。
 `.claude/skills/<name>/SKILL.md` に作成。`/skill-name` でユーザーが呼び出し可能。
 
-## 公式プラグイン経由で利用可能なスキル
+## 公式 skill は別ファイル
 
-| コードベースシグナル | スキル | プラグイン |
-|-------------------|--------|----------|
-| プラグイン開発 | skill-development | plugin-dev |
-| Gitコミット | commit | commit-commands |
-| React/Vue/Angular | frontend-design | frontend-design |
-| オートメーションルール | writing-rules | hookify |
-| 機能開発 | feature-dev | feature-dev |
+Anthropic / Vercel 公式が同梱・配布している skill のインベントリは [official-skills.md](official-skills.md) を参照。
+本ファイルはコードベース固有の **カスタムスキル** 作成パターンに絞る。
 
 ## カスタムスキルのパターン
 

@@ -57,10 +57,16 @@ diff パターンマッチで各観点の必要性を判定する。
 | cross-cutting | 共通モジュール（`utils/`, `helpers/`, `shared/`, `common/`, `lib/`）の変更 |
 | pattern-consistency | 変更ファイル数 >= 10 |
 | spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する |
+| ui-quality | フロントエンド変更（`.tsx`/`.jsx`/`.vue`/`.svelte`/`components/`/`pages/`/`app/`）、または diff に `aria-`/`role=`/`<img`/`<button`/`tabindex`/`onClick`/`onKeyDown` 等のアクセシビリティ・インタラクション関連の変更がある |
 
 ### React/Next.js 判定
 
 `package.json` に `react` / `next` が含まれる場合、bug-detection に **vercel-best-practices** 観点を追加する。
+さらに UI 変更を検出した場合は ui-quality 観点も併用し、内部で公式 skill `web-design-guidelines`（`~/.agents/skills/web-design-guidelines/SKILL.md`）のチェックリストに準拠させる。
+
+### 外部ライブラリ最新仕様の参照
+
+diff に外部ライブラリ（React, Next.js, Prisma, Vue, FastAPI 等）の API 利用変更が含まれ、その API の廃止・推奨パターン変更が指摘の核心となる場合、reviewer に公式 skill `context7` を経由した最新仕様確認を許可する（モデル学習データの cutoff を越える破壊的変更の誤判定を避けるため）。詳細は `reviewer-prompts.md` の共通指示を参照。
 
 ### PR コンテキストによる観点追加・冗長化（review skill のみ）
 

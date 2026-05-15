@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.2] - 2026-05-15
+
+### Changed
+- `ui-verify` SKILL.md に「E2E への昇格（webapp-testing 委譲）」セクションを追加。複数ページ跨ぎシナリオ / 認証フロー / データ永続化テスト / 既存 Playwright プロジェクトでは公式 skill `webapp-testing`（`~/.claude/plugins/marketplaces/anthropic-agent-skills/skills/webapp-testing/`）を採用する判定基準を明示。`ui-verify` は単一ページ smoke test に責務を絞る
+
 ## [1.9.1] - 2026-05-15
 
 ### Changed

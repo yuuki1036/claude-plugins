@@ -18,7 +18,7 @@
     {
       "name": "code-review",
       "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。探索→レビューの2段階で品質最大化。explorer: sonnet、reviewer: opus",
-      "version": "2.7.0",
+      "version": "2.8.0",
       "author": {
         "name": "yuki"
       },
@@ -27,7 +27,7 @@
     {
       "name": "dev-workflow",
       "description": "Git操作・PR作成・UI動作確認の開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化",
-      "version": "1.9.1",
+      "version": "1.9.2",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "claude-meta",
       "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善、CCアップデート追従、セッション学習の反映",
-      "version": "1.7.0",
+      "version": "1.8.0",
       "author": {
         "name": "yuki"
       },

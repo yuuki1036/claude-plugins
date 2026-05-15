@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.8.0] - 2026-05-15
+
+### Added
+- `claude-code-setup/references/official-skills.md` を新規作成。Anthropic / Vercel 公式 skill 22 件 + Claude Code ハーネス組み込み 8 件のインベントリと、コードベース検出シグナル ↔ skill マッピング、レコメンド意思決定フローを提供
+- `claude-code-setup` SKILL.md Phase 2 / 3 に「公式 skill レコメンド」セクションを追加。新規スキル提案より公式同等品の利用を優先する判定フローを導入（保守責任を Anthropic / Vercel に委譲）
+
+### Changed
+- `claude-code-setup/references/skills-reference.md` の古い「公式プラグイン経由で利用可能なスキル」表を削除し、`official-skills.md` への誘導に置換。本ファイルはカスタムスキル作成パターンに絞った
+- `claude-code-setup/references/plugins-reference.md` を最新化。古い公式プラグイン情報（pr-review-toolkit / code-simplifier / security-guidance 等の参照）を anthropic-agent-skills marketplace 中心の構成に更新
+
 ## [1.7.0] - 2026-05-15
 
 ### Added

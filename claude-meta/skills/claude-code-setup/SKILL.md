@@ -147,11 +147,22 @@ ls -la src/ app/ lib/ tests/ components/ pages/ api/ 2>/dev/null
 #### カテゴリ別推奨の生成
 
 参照ファイルを活用:
+- [references/official-skills.md](references/official-skills.md) - **公式 skill インベントリ（最優先で参照）**
 - [references/mcp-servers.md](references/mcp-servers.md) - MCP詳細パターン
-- [references/skills-reference.md](references/skills-reference.md) - スキル詳細
+- [references/skills-reference.md](references/skills-reference.md) - スキル詳細（公式以外のパターン）
 - [references/hooks-patterns.md](references/hooks-patterns.md) - Hook設定パターン
 - [references/subagent-templates.md](references/subagent-templates.md) - サブエージェントテンプレート
 - [references/plugins-reference.md](references/plugins-reference.md) - プラグイン一覧
+
+#### 公式 skill レコメンドの優先
+
+新規スキル作成を推奨する前に **必ず `official-skills.md` を確認** すること。公式が同等の skill を既に提供している場合、自作ではなく公式利用を推奨する（保守責任を Anthropic / Vercel に委譲できるため）。
+
+具体的な判定:
+
+1. コードベースの検出シグナル（フレームワーク、ライブラリ、ファイルパターン）を `official-skills.md` の「レコメンド意思決定フロー」と照合
+2. マッチする公式 skill があれば「公式 skill 推奨」セクションで提示
+3. 公式 skill が無い、または公式 skill を補完する独自要件がある場合のみ新規スキル作成を推奨
 
 ### Phase 3: 推奨レポートの出力
 
@@ -180,6 +191,16 @@ ls -la src/ app/ lib/ tests/ components/ pages/ api/ 2>/dev/null
 | Skill | [既存skill名] | ~/.claude/skills/ |
 | Plugin | [既存plugin名] | ~/.claude/settings.json |
 | Agent | [既存agent名] | ~/.claude/agents/ |
+
+---
+
+### 公式 skill 推奨（official-skills.md 由来）
+
+検出されたコードベース特性に対し、Anthropic / Vercel 公式の skill から優先的に推奨します（保守責任を公式に委譲できるため、自作より優先）。
+
+| skill | 検出シグナル | 利用方法 |
+|---|---|---|
+| [skill名] | [マッチした特徴] | [既に有効 / `/plugin install ...` / `~/.agents/skills/` 配下に存在 等] |
 
 ---
 
