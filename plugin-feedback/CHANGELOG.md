@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.3] - 2026-05-15
+
+### Changed
+- `hooks/hooks.json` を `args[]` exec 形式へ移行（CC 2.1.139+）
+- `safe-hook.sh` に `safe_hook_emit_bell` / `safe_hook_emit_window_title` を追加（CC 2.1.141+ terminalSequence 対応）
+
 ## [1.2.2] - 2026-04-19
 
 ### Changed

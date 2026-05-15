@@ -12,8 +12,6 @@ allowed-tools:
   - Read
   - Write
   - Edit
-  - Glob
-  - Grep
   - Bash
   - AskUserQuestion
   - Agent
@@ -38,7 +36,11 @@ Claude Code の最新リリースからプラグイン開発に関連する新�
 4. 前回のキャッチアップバージョンとの差分範囲を特定
 5. **モデル世代変更の検知**: `state.json.lastCatchUpModel` と現在のモデル family を比較
    - 異なる場合、または `lastPruningDate` から 90 日以上経過している場合は **剪定モードを推奨** として提示
-6. AskUserQuestion でモードを選択:
+6. **effort 適応の既定値**: 現在の effort = `${CLAUDE_EFFORT}`
+   - `low` / `medium`: 既定モードを **差分キャッチアップ** にし、提案数を High 優先度のみに絞る
+   - `high`: 既定モードを **差分キャッチアップ**、Medium まで含める
+   - `xhigh` / `max`: 既定モードを **キャッチアップ + 剪定**、Low まで含めて深掘り
+7. AskUserQuestion でモードを選択（上記既定値を Recommended として提示）:
    - **差分キャッチアップ**: 前回バージョン以降の新機能のみ（Phase 1-7）
    - **フルスキャン**: 全機能カタログに対してプラグインを評価（Phase 1-7）
    - **剪定モード**: 不要になった制約の棚卸しのみ（Phase P → Phase 7）

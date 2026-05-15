@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-05-15
+
+### Changed
+
+- `hooks/hooks.json` を `args[]` exec 形式へ移行（CC 2.1.139+）
+- `safe-hook.sh` に `safe_hook_emit_bell` / `safe_hook_emit_window_title` を追加（CC 2.1.141+ terminalSequence 対応）
+
 ## [0.2.0] - 2026-05-12
 
 ### Changed

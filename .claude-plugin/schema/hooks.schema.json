@@ -20,12 +20,40 @@
                 "type": "object",
                 "required": ["type"],
                 "properties": {
-                  "type": { "type": "string", "enum": ["command", "prompt"] },
+                  "type": {
+                    "type": "string",
+                    "enum": ["command", "prompt", "mcp_tool"]
+                  },
                   "command": { "type": "string" },
+                  "args": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "v2.1.139+: exec 形式。command を executable のみとし、引数をシェル解釈なしで渡す"
+                  },
                   "prompt": { "type": "string" },
+                  "server": {
+                    "type": "string",
+                    "description": "type=mcp_tool: 接続済み MCP サーバー名"
+                  },
+                  "tool": {
+                    "type": "string",
+                    "description": "type=mcp_tool: 呼び出す tool 名"
+                  },
+                  "input": {
+                    "type": "object",
+                    "description": "type=mcp_tool: tool 入力。値は ${path} で hook JSON input から展開可"
+                  },
                   "timeout": { "type": "number", "minimum": 0 },
                   "once": { "type": "boolean" },
-                  "if": { "type": "string" }
+                  "if": { "type": "string" },
+                  "async": {
+                    "type": "boolean",
+                    "description": "true でバックグラウンド実行、Claude をブロックしない"
+                  },
+                  "asyncRewake": {
+                    "type": "boolean",
+                    "description": "true でバックグラウンド実行、exit code 2 で Claude を wake。async を含意"
+                  }
                 }
               }
             }
@@ -38,6 +66,7 @@
           "SessionEnd",
           "PreToolUse",
           "PostToolUse",
+          "PostToolUseFailure",
           "Stop",
           "SubagentStop",
           "UserPromptSubmit",

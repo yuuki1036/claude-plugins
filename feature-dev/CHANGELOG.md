@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-15
+
+### Added
+
+- `feature-dev` command に `${CLAUDE_EFFORT}` 適応分岐を追加（CC 2.1.120+）。実行時 effort に応じて 8-phase flow を圧縮・展開（low/medium: 4-phase 圧縮、high: 既定、xhigh/max: 多重 explorer + 二重 reviewer）
+
 ## [1.2.0] - 2026-05-12
 
 ### Added

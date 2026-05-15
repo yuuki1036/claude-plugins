@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.0] - 2026-05-15
+
+### Added
+- `cc-catch-up` Phase 0 に `${CLAUDE_EFFORT}` 適応分岐を追加（CC 2.1.120+）。実行時 effort に応じて既定モードと提案優先度の絞り込みを自動調整（low/medium: High のみ、high: Medium まで、xhigh/max: Low まで深掘り）
+
+### Removed
+- `cc-catch-up` の allowed-tools から未使用ツールを削除（Permission Pruning 原則）: `Glob`, `Grep`（本文で直接参照なし、Agent 経由のスキャンで利用するため不要）
+
 ## [1.6.2] - 2026-04-25
 
 ### Changed

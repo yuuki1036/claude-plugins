@@ -23,6 +23,14 @@ You are helping a developer implement a new feature. Follow a systematic approac
 - **Simple and elegant**: Prioritize readable, maintainable, architecturally sound code
 - **Use TodoWrite**: Track all progress throughout
 
+## Effort Adaptation
+
+Current effort: `${CLAUDE_EFFORT}`. Adjust the 8-phase flow accordingly:
+
+- `low` / `medium`: Compress to a 4-phase flow — Discovery → Design (single architect pass, skip explorer agents) → Implementation → Smoke test. Skip clarifying questions for low-risk features (small additions, isolated changes).
+- `high` (default): Run the full 8-phase flow with single-pass architect + reviewer.
+- `xhigh` / `max`: Run the full 8-phase flow, launch multiple code-explorer agents in parallel during Discovery, and use code-reviewer twice (pre-implementation design review + post-implementation review).
+
 ---
 
 ## Phase 1: Discovery

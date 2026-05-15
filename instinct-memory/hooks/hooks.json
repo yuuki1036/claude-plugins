@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-review.sh",
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-review.sh"],
             "timeout": 10,
             "async": true
           }
@@ -19,7 +20,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/post-compact.sh",
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/post-compact.sh"],
             "timeout": 5
           }
         ]

@@ -18,6 +18,7 @@ allowed-tools:
 ## 前提
 
 - 現在のブランチに PR が存在すること（PR がなければ終了）
+- 実行時 effort = `${CLAUDE_EFFORT}` を Phase 3 / 4 の reviewer 構成に反映する（後述の Phase 3 / 4 を参照）
 
 ## 実行手順
 
@@ -123,6 +124,11 @@ Step 2.5 の PR コンテキストブロック（説明・issue コメント・�
 - reviewer: 必要な観点数 × 対象コードの複雑さに応じた冗長度（上限 10 体）
 - 冗長ペアには異なる angle（分析の切り口）を割り当てる
 - 最小保証: reviewer-bugs + reviewer-claude-md の 2 体は常に起動
+
+**effort 適応の上限調整**: 現在の effort = `${CLAUDE_EFFORT}` に応じて上記上限を調整する:
+- `low` / `medium`: explorer 上限 2 体、reviewer 上限 4 体（最小保証は維持）。深掘りより速度優先
+- `high`（既定）: 上記の上限をそのまま採用
+- `xhigh` / `max`: explorer 上限 6 体、reviewer 上限 10 体を full に使い、冗長ペアを積極投入
 
 #### 3.3 構成テーブル出力
 

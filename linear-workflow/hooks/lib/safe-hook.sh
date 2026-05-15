@@ -94,6 +94,23 @@ safe_hook_log() {
   __safe_hook_log Info "$*"
 }
 
+# v2.1.141+: terminalSequence で端末ベルを鳴らす（OSC/BEL JSON 出力）
+# Usage: safe_hook_emit_bell
+# 注意: terminalSequence 出力は単独で行うこと。safe_hook_emit と混在不可
+safe_hook_emit_bell() {
+  printf '{"terminalSequence":"\\u0007"}\n'
+}
+
+# v2.1.141+: terminalSequence でウィンドウタイトルを更新（OSC 2）
+# Usage: safe_hook_emit_window_title "Claude: review session"
+# 注意: title に " や \ は含めないこと（JSON エスケープ簡素化のため除去）
+safe_hook_emit_window_title() {
+  local title="${1:-Claude Code}"
+  title="${title//\\/}"
+  title="${title//\"/}"
+  printf '{"terminalSequence":"\\u001b]2;%s\\u0007"}\n' "$title"
+}
+
 # 内部: 名前付き stderr ログ
 __safe_hook_log() {
   local level="$1" msg="$2"
