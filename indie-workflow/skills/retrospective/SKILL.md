@@ -32,12 +32,36 @@ Good / Problem / Try の振り返りフレームで対話的に学びを抽出�
 
 ## Phase 1: データ収集
 
+### Source 1: Event Bus（優先、軽量）
+
+`.claude/events.jsonl` が存在する場合、まず Event Bus から完了 Issue を収集する。`on-issue-change.sh` hook が status: completed への遷移を即時記録しているため、ファイル更新日のヒューリスティックより信頼度が高い。
+
+```bash
+# 直近 200 件の issue:completed イベントを取得
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null
+event_bus_tail "issue:completed" 200
+```
+
+各行は JSON Lines 形式: `{"ts":"<ISO8601>","plugin":"...","event":"issue:completed","payload":{"issue_id":"...","slug":"...","file":"..."}}`
+
+- 期間フィルタ: `ts` を指定期間と比較
+- dedup: 同じ `issue_id` + `slug` の組合せが複数イベントある場合、最新の ts を採用（同 Issue で status が toggle した想定）
+- payload の `file` を直接 Read することで、Issue ファイルの詳細（type / scope_size / 完了タスク数）を取得
+
+### Source 2: Issue ファイル走査（fallback / 補完）
+
+events.jsonl が存在しない、または直近のイベントが期間より古い場合（hook 導入前の Issue を含めたい場合）は以下にフォールバックする。
+
 1. `.claude/indie/` 内の全プロジェクトディレクトリを走査
 2. 指定期間（デフォルト: 過去2週間）の **completed** Issue を収集
    - `更新履歴` の最新日付、または フロントマターの `last_active` で期間判定
    - フロントマターの `status: completed` で完了判定
 3. 同期間の **canceled** Issue も収集
    - フロントマターの `status: canceled` で判定
+
+### Source 統合
+
+両 Source から取得した Issue を `slug + issue_id` で dedup する。Event Bus 側で取得できた Issue は file 経由で詳細を Read し、ファイル走査側のヒューリスティック判定をスキップしてよい（より高速）。canceled は Event Bus には現状流れないため、Source 2 のロジックで補う。
 
 ### 期間の解釈
 
@@ -163,16 +187,17 @@ Good / Problem / Try の振り返りフレームで対話的に学びを抽出�
 
 ```
 1. 引数から期間を解釈（デフォルト: 2w）
-2. .claude/indie/ 内の全プロジェクトを走査
-3. 期間内の completed / canceled Issue を収集
-4. Phase 2 の各指標（1〜7）を算出
+2. .claude/events.jsonl の issue:completed を期間フィルタで収集（Source 1）
+3. .claude/indie/ 内の全プロジェクトを走査して期間内の completed/canceled Issue を収集（Source 2、Event Bus に無い分の補完 + canceled 対応）
+4. Source 1 と Source 2 を slug+issue_id で dedup・統合
+5. Phase 2 の各指標（1〜7）を算出
    - 前回 retro との比較（6）: retrospectives/ を Glob で列挙し最新 1 件と照合
    - 反復テーマ検出（7）: 期間中の knowledge の tags を集計
-5. 分析結果をユーザーに提示（反復警告・前回比較を冒頭で目立たせる）
-6. Phase 3 の振り返りフレーム（Good → Problem → Try の順に対話）
-7. テンプレートに沿ってレポートを生成
-8. レポート内容をユーザーに提示し、承認を得る
-9. .claude/indie/retrospectives/YYYY-MM-DD.md に保存
+6. 分析結果をユーザーに提示（反復警告・前回比較を冒頭で目立たせる）
+7. Phase 3 の振り返りフレーム（Good → Problem → Try の順に対話）
+8. テンプレートに沿ってレポートを生成
+9. レポート内容をユーザーに提示し、承認を得る
+10. .claude/indie/retrospectives/YYYY-MM-DD.md に保存
 ```
 
 ---

@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.23.0] - 2026-05-18
+
+### Added
+- `skills/retrospective/SKILL.md` の Phase 1 を Event Bus subscriber 化 (#34)。`.claude/events.jsonl` の `issue:completed` を優先入力源として使い、`event_bus_tail "issue:completed" 200` で直近の完了イベントを期間フィルタで収集。payload の `file` 経由で Issue ファイルの詳細を Read する
+- 既存の「`.claude/indie/` 走査」は **Source 2** として残し、Event Bus に流れていない古い Issue や canceled の補完に使用する。events.jsonl が空でもフォールバックで動くため後方互換
+
+### Notes
+- v1.22.0 で発行を始めた `issue:completed` イベントの最初の subscriber 統合。instinct-memory の learning prompt は「Issue 完了直後」、retrospective は「週次・月次の集計」と粒度を分けて責務分離
+
 ## [1.22.0] - 2026-05-18
 
 ### Added
