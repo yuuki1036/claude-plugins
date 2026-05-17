@@ -123,3 +123,79 @@ __safe_hook_trap() {
   echo "[${SAFE_HOOK_NAME}:Unexpected] exit ${exit_code} at line ${line}" >&2 || true
   exit 0
 }
+
+# ============================================================
+# Event Bus（v2026-05-18+）
+# ============================================================
+#
+# Claude Code の hook を Pub/Sub Message Bus として運用するための
+# 軽量イベント発行・読み出し API。
+#
+# 永続化: $CLAUDE_PROJECT_DIR/.claude/events.jsonl（プロジェクトローカル、
+#         gitignored）。1 行 = 1 イベントの JSON Lines 形式。
+#
+# 利用例 (publisher):
+#   event_bus_publish "issue:completed" '{"issue_id":"PROJ-123"}'
+#
+# 利用例 (subscriber):
+#   event_bus_tail "issue:completed" 5   # 直近 5 件
+#
+# イベント命名規約:
+#   <domain>:<verb-past>  例: issue:completed / feature:implemented / commit:created
+#   プラグインプレフィックスは付けない（subscriber が publisher を意識しない設計）
+#
+# JSON 形式:
+#   {"ts":"<ISO8601>","plugin":"<safe_hook_name>","event":"<name>","payload":<obj>}
+
+__EVENT_BUS_LOG=""
+
+__event_bus_init_log() {
+  local project_dir="${CLAUDE_PROJECT_DIR:-$PWD}"
+  __EVENT_BUS_LOG="${project_dir}/.claude/events.jsonl"
+  mkdir -p "$(dirname "$__EVENT_BUS_LOG")" 2>/dev/null || true
+}
+
+# イベントを発行する
+# Usage: event_bus_publish <event-name> <json-payload>
+# 例: event_bus_publish "issue:completed" '{"issue_id":"PROJ-123"}'
+event_bus_publish() {
+  local event_name="${1:-}"
+  local payload="${2:-{\}}"
+  if [ -z "$event_name" ]; then
+    __safe_hook_log Validation "event_bus_publish called with empty event name"
+    return 1
+  fi
+  __event_bus_init_log
+  local ts plugin
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  plugin="${SAFE_HOOK_NAME:-unknown}"
+  # JSON エスケープを最小限に（payload は信頼前提、特殊文字は呼び出し側で除去）
+  printf '{"ts":"%s","plugin":"%s","event":"%s","payload":%s}\n' \
+    "$ts" "$plugin" "$event_name" "$payload" >> "$__EVENT_BUS_LOG" 2>/dev/null || \
+    __safe_hook_log Unexpected "event_bus_publish: failed to write to $__EVENT_BUS_LOG"
+}
+
+# 直近 N 件のイベントを取得する（オプションで event 名フィルタ）
+# Usage: event_bus_tail [event-name] [N]
+# 例: event_bus_tail "issue:completed" 5
+# 例: event_bus_tail "" 20  # 全イベント直近 20 件
+event_bus_tail() {
+  local filter="${1:-}"
+  local n="${2:-10}"
+  __event_bus_init_log
+  if [ ! -f "$__EVENT_BUS_LOG" ]; then
+    return 0
+  fi
+  if [ -z "$filter" ]; then
+    tail -n "$n" "$__EVENT_BUS_LOG"
+  else
+    grep -F "\"event\":\"$filter\"" "$__EVENT_BUS_LOG" | tail -n "$n"
+  fi
+}
+
+# イベントログを空にする（テスト用・再起動時用）
+# Usage: event_bus_clear
+event_bus_clear() {
+  __event_bus_init_log
+  : > "$__EVENT_BUS_LOG" 2>/dev/null || true
+}

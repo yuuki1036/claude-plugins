@@ -1,2 +1,4 @@
 .DS_Store
 .claude/session-context.md
+.claude/events.jsonl
+.claude/.instinct-memory-cursor

@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.0] - 2026-05-18
+
+### Added
+- **Event Bus subscriber**: `hooks/scripts/session-review.sh` (Stop hook) で `.claude/events.jsonl` の `issue:completed` イベントを購読。前回チェック以降の未消費イベントがあれば、各 Issue ID を含めた学習プロンプト（`reference` / `feedback` / `project` メモリ分類のガイド付き）を発行する
+  - **Cursor によるデドゥープ**: `.claude/.instinct-memory-cursor` に最終消費 timestamp を記録。同じイベントを次セッションで再通知しない
+  - **Pub/Sub 閉ループ完成**: linear-workflow / indie-workflow の publisher（v1.22.0）と組み合わせて、Issue completed → 学習プロンプトの全自動連携が成立
+  - Classmethod「Claude Code マルチエージェントオーケストレーションパターン」記事の Message Bus パターンを、ローカル file-based pub/sub で完結させる PoC subscriber
+
+## [1.3.2] - 2026-05-18
+
+### Changed
+- `hooks/lib/safe-hook.sh` を v2026-05-18+ に同期。`event_bus_publish` / `event_bus_tail` / `event_bus_clear` API を取得（正本由来、内部ライブラリ拡張）。将来 `issue:completed` / `feature:implemented` イベントを subscribe して learning prompt に繋げる土台として整備
+
 ## [1.3.1] - 2026-05-15
 
 ### Changed

@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.8.1] - 2026-05-18
+
+### Changed
+- `commands/catch-up.md` の `allowed-tools` から `Glob` / `Grep` を削除（10 → 8 ツール）。これらは Phase 3 / P.1 の subagent (Agent ツール経由) 内部で使用されるため、親 command レベルでは不要。`skills/cc-catch-up/SKILL.md` の 8 ツールと一致させ、CLAUDE.md ルール「command/skill の allowed-tools 一致」に整合。Permission Pruning 原則に従い宣言ツールを必要最小限に絞ることで Claude の判定精度を上げる
+
 ## [1.8.0] - 2026-05-15
 
 ### Added

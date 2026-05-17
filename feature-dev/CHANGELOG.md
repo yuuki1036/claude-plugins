@@ -5,6 +5,48 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-05-17
+
+### Added
+
+- **Phase 6 Generator-Verifier ループ** を Step 3 として追加。reviewer が confidence ≥ 90 で出した致命指摘を自動的に Phase 5 Fix Mode に差し戻して修正、再 review、収束まで（または予算切れまで）反復する
+  - Classmethod「Claude Code マルチエージェントオーケストレーションパターン」記事の Generator-Verifier パターンを「reviewer の confidence スコア」という客観基準で gate して実装
+  - **effort 別ループ予算**: `low` = 0（skip）/ `medium` = 1 / `high` = 2 / `xhigh` = 3 / `max` = 3 iteration
+  - **Regression 検知**: `fingerprint = file:line:focus` を `/tmp/feature-dev-loop-state.json` に蓄積し、連続 2 iteration で同一 fingerprint が残存したら自動 fix 不能と判定してループを break、ユーザに引き渡し（無限ループ防止）
+  - **修正不能時の逃げ道**: メインスレッドが Edit で直接修正できない場合、`code-architect` を `delta-proposal` focus で起動して設計レベルの delta を取得（1 iteration 消費）
+  - **再 review の選択性**: critical 指摘を出した reviewer focus のみを re-launch、他は再実行しない（コスト削減）
+- **Phase 5 Fix Mode** を追加。Phase 6 ループから起動された場合、Phase 4 で選んだ architect 設計を維持しつつ reviewer 指摘の file:line のみピンポイント修正（スコープ拡大禁止）
+- **Phase 7 G-V loop summary**: ループ実行履歴を `/tmp/feature-dev-loop-state.json` から読み取り、iteration 数 / termination reason / auto-fixed count / persisting issues を最終サマリに含める
+- `references/triage-guide.md` に Section 10「Generator-Verifier ループ予算」を追加。effort 別 max_iterations / confidence 閾値 / regression 検知 / 終了条件 / fix の責務分離 / Phase 5 Fix Mode 仕様を一元的に定義
+
+### Notes
+
+- v1.4.0 の Phase 1.7 動的トリアージ（Orchestrator-Subagent パターンの拡張）と組み合わせて、Classmethod 記事の 2 つのパターン（Orchestrator-Subagent + Generator-Verifier）のハイブリッド構成が feature-dev でも完成。code-review プラグインが先行実装した思想を機能開発側にも展開
+- `low` / `medium` effort では従来通り「critical 指摘もユーザ判断」を維持しつつ、`high` 以上で自動 fix が有効化される段階的設計
+
+## [1.4.0] - 2026-05-17
+
+### Added
+
+- **Phase 1.7: Triage（動的エージェント構成決定）** を Phase 1.5 と Phase 2 の間に追加。code-review プラグインの Phase 0 トリアージパターンを移植・3 種 agent（explorer / architect / reviewer）に拡張
+  - メインコンテキストで feature 要件・Issue context・プロジェクト特性（`package.json` / CLAUDE.md）を分析し、explorer / architect / reviewer の体数・focus・angle を動的決定
+  - Stage 1: タイプ判定（bugfix / extension / new-feature / refactor / migration / cross-cutting）と各 agent の必要観点判定
+  - Stage 2: 体数・focus・冗長度決定。effort 別上限（low/medium/high/xhigh/max）に従いキャップ
+  - Phase 6 で **mini-triage 再判定**：Phase 1.7 暫定構成を実装後の diff ベースで refine（try-catch 追加で error-handling 追加、認証関連変更で security 昇格 等）
+- `references/triage-guide.md` 新規作成。Phase 1.7 のロジック・体数ルール・effort 適応・フォールバック構成・最小保証を定義
+- Phase 2 / 4 / 6 を「Phase 1.7 構成テーブルに従う」形式に書き換え。固定 2-3 体起動から動的体数へ移行
+- Phase 2 / 4 に **partial failure tolerance** 追加。個別 agent 失敗時も成功した結果で続行、`missing_coverage` リストに記録
+
+### Changed
+
+- `Effort Adaptation` セクションを再構成。低レベルな「何 phase 圧縮するか」記述から、triage-guide.md Section 5 の effort 別上限テーブルへのポインタに変更
+- Phase 1.5 の「Skip Phase 2」directive を「Phase 1.7 への信号送信」に変更（Phase 1.7 が 0 explorer 判定すれば結果的に Phase 2 skip）
+
+### Notes
+
+- Classmethod「Claude Code マルチエージェントオーケストレーションパターン」記事の `Orchestrator-Subagent` パターンに「動的トリアージ」と「mini Generator-Verifier ループ準備」を組み合わせた構成。code-review が達成済みのパターンを feature-dev に展開し、プラグイン横断で同じオーケストレーション思想を確立する第一歩
+- explorer の固定 2-3 体起動 → 0-6 体動的化により、単純 bugfix では Phase 2 完全 skip で 30 秒〜1 分短縮、複雑な refactor では 5-6 体起動で多角的検証
+
 ## [1.3.0] - 2026-05-15
 
 ### Added

@@ -37,7 +37,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | indie-workflow | 8 | 8 | 2 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | 個人開発向けローカル Issue 管理（linear-workflow と排他） |
 | plugin-manager | 1 | - | - | - | インストール済みプラグインの一括更新 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
-| feature-dev | 1 | - | 3 | - | 8 phase 機能開発ワークフロー（runtime smoke test 含む。code-explorer / code-architect / code-reviewer 同梱）。claude-plugins-official からフォーク |
+| feature-dev | 1 | - | 3 | - | 8 phase 機能開発ワークフロー（Phase 1.7 動的トリアージ + Phase 6 G-V 自動 fix ループ + runtime smoke test 含む。code-explorer / code-architect / code-reviewer 同梱）。claude-plugins-official からフォーク |
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱） |
 
 ## セットアップ
@@ -127,6 +127,69 @@ CLAUDE.md に書いたルールが守られていない事象が以下いずれ�
 - 文脈依存で例外が多い（「基本は X、ただし Y のときは Z」）
 - 違反してもリカバリが容易
 - 判定に自然言語理解が必要
+
+## Event Bus 規約（Hook = Message Bus）
+
+Claude Code の hook を **Pub/Sub Message Bus** として運用するための軽量規約。Classmethod「Claude Code マルチエージェントオーケストレーションパターン」記事の Message Bus パターンをローカル実装したもの。
+
+### 永続化
+
+- イベントログ: `.claude/events.jsonl`（プロジェクトローカル、gitignored、JSON Lines 形式）
+- 1 行 = 1 イベント: `{"ts":"<ISO8601>","plugin":"<name>","event":"<name>","payload":<obj>}`
+
+### API（`safe-hook.sh` に含まれる）
+
+```bash
+# 発行
+event_bus_publish "<event-name>" '<json-payload>'
+
+# 直近 N 件取得（オプションで event 名フィルタ）
+event_bus_tail "<event-name>" 10
+event_bus_tail "" 20  # 全イベント
+
+# ログクリア（テスト用）
+event_bus_clear
+```
+
+### イベント命名規約
+
+`<domain>:<verb-past>` の snake_case。プラグインプレフィックスは **付けない**（subscriber が publisher を意識しない疎結合設計）。
+
+| イベント | 発火タイミング | publisher | 主な subscriber |
+|---|---|---|---|
+| `issue:completed` | Issue ファイルの status が completed に遷移 | linear-workflow / indie-workflow | **instinct-memory**（実装済）, retrospective（将来） |
+| `feature:implemented` | feature-dev Phase 7 完了（将来） | feature-dev | instinct-memory（将来） |
+| `commit:created` | git commit 成功（将来） | dev-workflow | - |
+| `review:completed` | code-review Phase 6 完了（将来） | code-review | - |
+
+### Publisher の責務
+
+- 自プラグインの hook 内で `event_bus_publish` を呼ぶ
+- payload は最小限の JSON（issue_id / file path / 識別子のみ。本文は含めない）
+- 副作用がある場合は payload に冪等性キーを含める
+
+### Subscriber の責務
+
+- `event_bus_tail` で読み出し、自前で dedup（ts + event 名 + payload のハッシュ等）
+- イベントログのフォーマットが将来変わる可能性があるので JSON Lines パーサ前提で実装
+- Hook 内での重い処理は禁止（必要なら別 skill / agent に委譲）
+
+### デバッグ
+
+```bash
+# 直近 10 件
+tail -n 10 .claude/events.jsonl
+
+# 特定イベントを追う
+grep '"event":"issue:completed"' .claude/events.jsonl | jq .
+```
+
+### 設計判断: なぜ JSON Lines + ファイル？
+
+- Claude Code はローカル CLI なので EventBridge / Redis Pub/Sub は過剰
+- 記事の「デバッグ困難」リスクは `tail` / `grep` でカバー
+- セッション跨ぎで参照可能（git にコミットしないが project-local には残る）
+- 全プラグインに既に配布されている `safe-hook.sh` に乗せられるので追加配布物なし
 
 ## CHANGELOG 規約
 

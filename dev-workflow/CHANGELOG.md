@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.3] - 2026-05-18
+
+### Changed
+- `hooks/lib/safe-hook.sh` を v2026-05-18+ に同期。`event_bus_publish` / `event_bus_tail` / `event_bus_clear` API を取得（正本由来、内部ライブラリ拡張）。将来 `commit:created` / `pr:created` イベント発行用の土台として整備
+
 ## [1.9.2] - 2026-05-15
 
 ### Changed

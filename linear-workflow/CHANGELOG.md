@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.22.0] - 2026-05-18
+
+### Added
+- `hooks/scripts/on-issue-change.sh` を Event Bus パターンに対応。FileChanged hook payload から変更ファイルを抽出し、`.claude/linear/*/issues/*.md` に `status: completed` が立った瞬間に `issue:completed` イベントを Event Bus（`.claude/events.jsonl`）に発行する
+- `hooks/lib/safe-hook.sh` を v2026-05-18+ に同期。`event_bus_publish` / `event_bus_tail` / `event_bus_clear` API を取得（正本 `.claude-plugin/lib/safe-hook.sh` 由来）
+
+### Notes
+- Classmethod「Claude Code マルチエージェントオーケストレーションパターン」記事の Message Bus パターンをローカル実装する PoC publisher。将来 `retrospective` / `instinct-memory` 等の subscriber を追加できる土台
+
 ## [1.21.1] - 2026-05-15
 
 ### Changed

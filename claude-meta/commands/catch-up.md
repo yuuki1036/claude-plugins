@@ -6,8 +6,6 @@ allowed-tools:
   - Read
   - Write
   - Edit
-  - Glob
-  - Grep
   - Bash
   - AskUserQuestion
   - Agent
