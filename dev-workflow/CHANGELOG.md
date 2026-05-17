@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.10.0] - 2026-05-18
+
+### Added
+- `hooks/scripts/on-commit.sh`（PostToolUse Bash matcher）を追加 (#33)。`git commit *` が成功した直後に `commit:created` イベントを Event Bus へ発行する。payload は `{"sha":"<short>","type":"<conventional commit type>","files":<count>}`。`--amend` / `--dry-run` / `--help` 系は除外、git リポジトリ外は no-op
+- `hooks/hooks.json` の `PostToolUse` に `Bash` matcher + `if: "Bash(git commit *)"` 条件を追加し、上記スクリプトを駆動
+
 ## [1.9.3] - 2026-05-18
 
 ### Changed

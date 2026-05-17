@@ -445,5 +445,19 @@ This file is referenced in Phase 7 summary.
    - Read `/tmp/feature-dev-loop-state.json`
    - Report: iteration count, termination reason, auto-fixed issue count, persisting issues
    - If `termination_reason: "regression"` or `"budget"`, surface the persisting fingerprints prominently — they need human attention
+4. **Event Bus publish (`feature:implemented`)**:
+   - 完了直前に Bash で `feature:implemented` イベントを `.claude/events.jsonl` へ追記する。subscriber がいなくても無害（fire-and-forget）
+   - feature-dev は hooks/lib を持たないため、ここでは safe-hook.sh を経由せず JSON Lines を直接書き込む（規約に従い 1 行 1 イベント）
+   - payload は最小限の JSON: `{"feature":"<short description>","files_changed":<count>,"phases_completed":[...]}`
+   - `feature` は 80 文字以内・ダブルクオート/バックスラッシュ/改行は除去。`files_changed` は今セッションで触ったファイル数（git diff の `--name-only` を `wc -l`）。`phases_completed` は実際に走った phase 番号の JSON 配列
+   - 実行コマンド例（`<...>` を Phase 7 のサマリ情報で埋めてから走らせる）:
+     ```bash
+     mkdir -p .claude
+     ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+     printf '{"ts":"%s","plugin":"feature-dev","event":"feature:implemented","payload":%s}\n' \
+       "$ts" '{"feature":"<sanitized desc>","files_changed":<n>,"phases_completed":["1","2","..."]}' \
+       >> .claude/events.jsonl
+     ```
+   - 失敗しても Phase 7 全体は成功扱い（イベント送信は best-effort）
 
 ---

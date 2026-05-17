@@ -157,10 +157,10 @@ event_bus_clear
 
 | イベント | 発火タイミング | publisher | 主な subscriber |
 |---|---|---|---|
-| `issue:completed` | Issue ファイルの status が completed に遷移 | linear-workflow / indie-workflow | **instinct-memory**（実装済）, retrospective（将来） |
-| `feature:implemented` | feature-dev Phase 7 完了（将来） | feature-dev | instinct-memory（将来） |
-| `commit:created` | git commit 成功（将来） | dev-workflow | - |
-| `review:completed` | code-review Phase 6 完了（将来） | code-review | - |
+| `issue:completed` | Issue ファイルの status が completed に遷移 | linear-workflow / indie-workflow | **instinct-memory**（実装済）, **indie-workflow:retrospective**（実装済） |
+| `feature:implemented` | feature-dev Phase 7 完了 | **feature-dev**（実装済） | instinct-memory（将来） |
+| `commit:created` | git commit 成功（PostToolUse Bash matcher で検知） | **dev-workflow**（実装済） | - |
+| `review:completed` | code-review Step 7（レポート出力後） | **code-review**（実装済） | - |
 
 ### Publisher の責務
 

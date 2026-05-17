@@ -32,6 +32,18 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-commit.sh"],
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PreToolUse": [

@@ -5,6 +5,14 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-05-18
+
+### Added
+
+- **Phase 7 で `feature:implemented` イベントを発行** (#33)。`.claude/events.jsonl` に JSON Lines 1 行を直接追記する fire-and-forget publisher。payload は `{"feature":"<desc>","files_changed":<n>,"phases_completed":[...]}`
+  - feature-dev は hooks/lib を持たないため、Classmethod 記事の Message Bus パターンに沿ったまま safe-hook.sh を経由せず Phase 7 内の Bash で直接書き込む方式を採用
+  - subscriber がいなくても無害（既存挙動を一切変えない）。失敗しても Phase 7 全体は成功扱い
+
 ## [1.5.0] - 2026-05-17
 
 ### Added

@@ -209,4 +209,20 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - 人間が最終確認すべき観点
 ```
 
-レポート出力後、**ExitWorktree** で worktree から抜ける。
+レポート出力後、以下の順で締める。
+
+1. **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
+
+   ```bash
+   source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
+     SAFE_HOOK_NAME="code-review:review" event_bus_publish "review:completed" \
+     "{\"pr\":\"<number>\",\"critical_count\":<n>,\"warning_count\":<n>,\"missing_coverage\":[<json-array of focus names>]}"
+   ```
+
+   payload 規約:
+   - `pr` は PR 番号の文字列（Step 1 で取得済み）。PR 番号取得に失敗した場合は `"local"` とする
+   - `critical_count` / `warning_count` は数値
+   - `missing_coverage` は文字列配列（reviewer focus 名）。空なら `[]`
+   - 失敗してもレポート自体は成功扱い（best-effort）
+
+2. **ExitWorktree** で worktree から抜ける。
