@@ -154,6 +154,119 @@ for viewport in [mobile, tablet, desktop]:
   take_screenshot(.claude/screenshots/snap-{ts}/{viewport}.png, fullPage=true)
 ```
 
+## 認証突破ガイド
+
+chrome-devtools-mcp は既定で独立した headless Chrome を起動するため、普段のブラウザのログイン状態は引き継がれない。プロジェクト固有の認証（SSO / OAuth / form login / Cookie session / Bearer）を突破する手段を、推奨度順に列挙する。
+
+### 大原則：id/pass をファイル化しない
+
+`.env` 等に平文で credentials を置くと AI のコンテキストに流出する経路ができる（Read で読まれる / `take_screenshot` に入力済み画面が映る / hook stdout 経由）。**ログイン済みプロファイルを使い回す**運用にすれば、AI は id/pass に一切触れない。どうしてもファイル化が必要な場合は macOS Keychain (`security find-generic-password`) で間接化する。
+
+### パターン 1: 専用プロファイル + `--browserUrl`（鉄板）
+
+認証専用の Chrome を別 user-data-dir で先に起動し、一度だけ手動ログイン。MCP は CDP で attach するだけ。SSO / OAuth / form login すべてに対応。
+
+```bash
+# ~/.zshrc にエイリアスを定義
+alias chrome-debug='/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.chrome-debug-profile" \
+  --no-first-run --no-default-browser-check'
+```
+
+初回のみ手動ログイン:
+
+```bash
+killall -9 "Google Chrome"  # 普段の Chrome を停止
+chrome-debug                # → 各サービスへログイン作業
+curl -s http://127.0.0.1:9222/json/version  # 疎通確認
+```
+
+プロジェクトの `.mcp.json` で MCP を attach 接続にする:
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest", "--browserUrl=http://127.0.0.1:9222"]
+    }
+  }
+}
+```
+
+⚠️ **Chrome 136+**: デフォルトプロファイルでは `--remote-debugging-port` が無視される。**専用 `--user-data-dir` 必須**。
+
+### パターン 2: `--userDataDir` を MCP に直接渡す（最も省力）
+
+Chrome を別途起動せず、MCP に永続プロファイルパスだけ伝える。初回起動時に開く Chrome で手動ログイン → 次回以降は Cookie が残るので自動。
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest",
+               "--userDataDir=/Users/<you>/.chrome-mcp-profile"]
+    }
+  }
+}
+```
+
+`--isolated=false`（既定）で永続化される。プロジェクトごとに別パスを指定すれば認証コンテキストを分離できる。
+
+### パターン 3: `--autoConnect`（Chrome 146+ のみ）
+
+普段使いの Chrome に自動接続する新方式。`--user-data-dir` 不要で Google アカウントログイン状態もそのまま使える。
+
+```json
+"args": ["-y", "chrome-devtools-mcp@latest", "--autoConnect"]
+```
+
+Chrome 146 未満では使えない。バージョン確認は `/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version`。
+
+### パターン 4: `--wsHeaders` で Bearer トークン注入
+
+リモート CDP / browserless / Chrome-as-a-Service など、Authorization ヘッダーで認証する経路向け。
+
+```json
+"args": [
+  "chrome-devtools-mcp@latest",
+  "--wsEndpoint=ws://127.0.0.1:9222/devtools/browser/<id>",
+  "--wsHeaders={\"Authorization\":\"Bearer ${TOKEN}\"}"
+]
+```
+
+`${TOKEN}` は direnv + Keychain で間接展開するのが安全:
+
+```bash
+# 一度だけ Keychain に登録
+security add-generic-password -a "$USER" -s chrome-debug-token -w "ey..."
+
+# .envrc (gitignored)
+export TOKEN=$(security find-generic-password -s chrome-debug-token -w)
+```
+
+`--wsHeaders` は **`--wsEndpoint` 専用**で `--browserUrl` とは併用不可。
+
+### Basic 認証の注意
+
+- URL 埋め込み（`https://user:pass@host`）は Chrome 64+ で無効化済み。**使えない**
+- Bearer 系トークンならパターン 4 が使える
+- Basic 認証ダイアログ自体を自動入力する公式オプションは無い。`page.authenticate()` 相当を呼ぶ手段が chrome-devtools-mcp の expose API には無いので、専用プロファイル方式（パターン 1/2）で「一度手動入力 → 認証情報を Chrome に保存」運用が現実解
+
+### 採用フロー
+
+```
+プロジェクト固有の認証あり？
+  └─ Yes
+       │
+       ├─ Chrome 146+ で普段の Chrome に依存して良い → パターン 3 (--autoConnect)
+       ├─ MCP 起動だけで完結させたい → パターン 2 (--userDataDir)
+       ├─ SSO / OAuth で社内ツール多数 → パターン 1 (--browserUrl + 専用プロファイル)
+       └─ Bearer ヘッダー認証 → パターン 4 (--wsHeaders + Keychain)
+```
+
 ## Gotchas
 
 - **stdin/stdout**: MCP server 側で管理されるので気にしなくて良い
@@ -161,4 +274,6 @@ for viewport in [mobile, tablet, desktop]:
 - **filePath は絶対パス**: 相対パスだと MCP server の CWD 基準になり意図しない場所に保存される
 - **Chrome 起動**: 初回呼び出し時に chrome-devtools-mcp が headless Chrome を起動する。少し時間がかかる
 - **HMR 待ち**: `wait_for` で特定テキストを待つのが確実。sleep は不確実
-- **認証が必要なページ**: chrome-devtools-mcp は独立した Chrome インスタンスなので、ブラウザのログイン状態は引き継がない。テスト用アカウントでのログインフローを組むか、Cookie を事前注入する
+- **認証**: 上記「認証突破ガイド」セクションを参照。`.env` への平文 credentials 保存は避け、専用プロファイルか Keychain 経由で扱う
+- **Chrome 136+ のセキュリティ変更**: デフォルトプロファイルでは `--remote-debugging-port` が遮断される。`--browserUrl` を使うなら専用 `--user-data-dir` 必須
+- **`--wsHeaders` の併用制約**: `--wsEndpoint` 専用。`--browserUrl` とは同時指定不可

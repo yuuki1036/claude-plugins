@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.0] - 2026-05-18
+
+### Added
+- `skills/ui-verify/references/chrome-devtools-cheatsheet.md` に「認証突破ガイド」セクションを追加。プロジェクト固有の認証（SSO / OAuth / form login / Cookie session / Bearer）に対する 4 パターン（`--browserUrl` + 専用プロファイル / `--userDataDir` / `--autoConnect` (Chrome 146+) / `--wsHeaders`）の `.mcp.json` 設定例と採用フローを明示
+- Chrome 136+ で remote-debugging-port にデフォルトプロファイル attach 不可になった挙動変化を Gotchas に追記
+- 「`.env` 等への平文 credentials 保存はせず、ログイン済みプロファイルを使い回す or macOS Keychain (`security find-generic-password`) で間接化する」原則を明文化
+
 ## [1.10.0] - 2026-05-18
 
 ### Added
