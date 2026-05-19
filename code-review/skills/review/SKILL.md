@@ -11,6 +11,7 @@ allowed-tools:
   - Read
   - EnterWorktree
   - ExitWorktree
+  - AskUserQuestion
 ---
 
 # Review
@@ -211,7 +212,50 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 レポート出力後、以下の順で締める。
 
-1. **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
+1. **返答ドラフト生成（任意）**: 指摘が **1 件以上** ある場合のみ実行。指摘 0 件ならこのステップ全体をスキップして 2 に進む。
+
+   レポート全文を出力した直後に **AskUserQuestion** で返答ドラフトの要否を確認する:
+
+   - question: "投稿後の返答ドラフトを生成しますか？（投稿は行わず、コピペ可能な文面のみ出力します）"
+   - header: "返答ドラフト"
+   - multiSelect: false
+   - options:
+     1. label: "不要" / description: "ドラフトは生成しない（既定）"
+     2. label: "重要のみ" / description: "confidence ≥ 90 の指摘についてドラフト生成"
+     3. label: "全件" / description: "全指摘についてドラフト生成"
+     4. label: "個別選択" / description: "対象の指摘番号を入力する"
+
+   「不要」が選ばれた場合はこのステップを終了し 2 に進む。それ以外の選択肢では以下を実行:
+
+   - `${CLAUDE_PLUGIN_ROOT}/references/reply-tone-guide.md` を Read で読み込む
+   - 「個別選択」の場合は AskUserQuestion で「対象の指摘番号（例: 1,3,5）」を free-text 入力させる
+   - 対象指摘ごとに以下を判定してパターンを選ぶ:
+     - 著者対応 commit が PR にある → 解決度（完全/部分/未対応）に応じて 2.1〜2.5 のパターン
+     - 著者対応 commit がない → 2.4 / 2.5 のパターン
+     - `[re-flag: @user]` タグ付き → 2.5 「再指摘の追補」
+     - レビュアー視点（自分発信の指摘）→ 2.6
+   - 各指摘について 1〜3 文のドラフトを reply-tone-guide.md の規約に従って生成する
+   - **投稿は行わない**。ドラフト出力のみ。ユーザーが GitHub UI で手動投稿する
+
+   出力フォーマット:
+   ```
+   ## 返答ドラフト（投稿は手動で行ってください）
+
+   ### 指摘 #1 への返答
+   対象: src/auth.ts:67-72 / @reviewer-a
+   パターン: 完全対応（2.1）
+
+   > ご指摘ありがとうございます。
+   > src/auth.ts:67 で null チェックを追加しました（{commit-sha}）。
+   > 意図と合っているかご確認いただけると助かります。
+
+   ### 指摘 #2 への返答
+   ...
+   ```
+
+   生成中に reply-tone-guide.md に明示のないトーン判断が必要になった場合は、ドラフト末尾に `（補足: {判断点} はガイドに明示なし。ユーザー確認推奨）` を添える。
+
+2. **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
 
    ```bash
    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
@@ -225,4 +269,4 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
    - `missing_coverage` は文字列配列（reviewer focus 名）。空なら `[]`
    - 失敗してもレポート自体は成功扱い（best-effort）
 
-2. **ExitWorktree** で worktree から抜ける。
+3. **ExitWorktree** で worktree から抜ける。

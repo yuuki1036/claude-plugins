@@ -1,7 +1,7 @@
 {
   "name": "code-review",
-  "version": "2.9.0",
-  "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。探索→レビューの2段階で品質最大化。explorer: sonnet、reviewer: opus",
+  "version": "2.10.0",
+  "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。探索→レビューの2段階で品質最大化。explorer: sonnet、reviewer: opus。レビュー後の返答ドラフト生成（tone-guide 準拠）対応",
   "author": {
     "name": "yuki"
   },

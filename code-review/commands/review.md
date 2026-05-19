@@ -5,6 +5,7 @@ allowed-tools:
   - Read
   - EnterWorktree
   - ExitWorktree
+  - AskUserQuestion
 argument-hint: "[PR番号] (省略時は現在のブランチのPRを自動取得)"
 ---
 
