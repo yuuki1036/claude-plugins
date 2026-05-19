@@ -9,8 +9,6 @@ effort: medium
 allowed-tools:
   - Bash
   - Read
-  - Glob
-  - Grep
   - AskUserQuestion
   - mcp__linear__get_issue
 ---
@@ -52,10 +50,12 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 
 ### 4. PR情報を生成
 
-- **タイトル**: Linear Issueがあればそのタイトルを使用。なければ変更の要約（50文字以内）
-- **Description**: テンプレートまたはデフォルトフォーマットに従う
+- タイトル: Linear Issue があればそのタイトルを使う。なければ変更の要約（50 文字以内）
+- Description: 本文はレビュアー（人間）が読むためのもの。末尾に `<details><summary>詳細情報</summary>...</details>` を置いて、AI やレビュー bot が参照する補足情報を畳む
 
-Description生成の詳細は [references/description-guide.md](references/description-guide.md) を参照。
+リポジトリに PR テンプレートがあれば本文はそれに従い、ない場合は概要 / 変更点 / レビューしてほしいところ / 動作確認 / Screenshots / 備考 の構成を使う。
+
+本文の書き方は [references/description-guide.md](references/description-guide.md) に従う。読みやすさを最優先にし、箇条書きの乱発・太字の乱用・絵文字といった AI 特有の文体を避ける。
 
 ### 4.5 Screenshots 添付（UI PR のみ）
 
@@ -146,7 +146,10 @@ gh pr create --draft --title "<title>" --body "<description>"
 ## 厳守ルール
 
 - 常にドラフトPRとして作成
-- テンプレートのセクションは空欄にせず必ず内容を埋める
-- AI署名（Generated with等）は付けない
+- テンプレートのセクションは空欄にせず内容を埋める。書くことがなければセクションごと削除する
+- AI 署名（Generated with 等）は付けない
+- 本文は人間向け、末尾の `<details>` 折りたたみは AI 向けの補足情報。レビュアーが行動を変える情報を折りたたみに隠さない
+- 文体は体言止め・常体に統一する。敬体（です・ます）は使わない。コミットメッセージの文体と揃える
+- 箇条書きの乱発、太字の乱用、装飾絵文字（✅ ❌ 🤖 など）といった AI 特有の文体を避ける
 - Screenshots は `cc-screenshots` release にアップロードする専用運用。他の release と混ぜない
 - 機密情報（ログイン画面、社内 URL、実データ等）が写っていないか撮影前に確認する。アップロードは public release なので漏洩リスクあり

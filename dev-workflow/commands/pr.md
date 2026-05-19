@@ -3,8 +3,6 @@ description: "差分とコミット履歴からPRを自動作成する"
 allowed-tools:
   - Bash
   - Read
-  - Glob
-  - Grep
   - AskUserQuestion
   - mcp__linear__get_issue
 ---

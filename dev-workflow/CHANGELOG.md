@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.12.0] - 2026-05-19
+
+### Added
+- `skills/pr-creator/references/description-guide.md` を全面リライト。PR description の本文を人間向けに保ち、末尾の `<details>` 折りたたみを AI やレビュー bot 向けの補足情報置き場として使う構成に変更
+- 人間向け本文の書き方を散文中心で記述。各セクション（概要 / 変更点 / レビューしてほしいところ / 動作確認 / 備考）について良い例と避けたい例を添えた
+- 折りたたみに入れてよいもの・本文に残すものの判断指針、PR 規模ごとの省略目安、ありがちな書き方の失敗、`<details>` タグ利用時の Markdown の注意点を追加
+
+### Changed
+- `skills/pr-creator/SKILL.md` step 4 を更新。本文の読みやすさを最優先にする方針と、AI 特有の文体（箇条書きの乱発、太字の乱用、装飾絵文字）を避けることを明記
+- 厳守ルールに「文体は体言止め・常体に統一」「AI 特有の文体を避ける」「行動を変える情報を折りたたみに隠さない」を追加
+- `skills/pr-creator/SKILL.md` と `commands/pr.md` の `allowed-tools` から実利用のない `Glob` と `Grep` を削除。Permission Pruning（過剰な権限宣言は判断精度を下げる）の観点で整理
+
 ## [1.11.0] - 2026-05-18
 
 ### Added
