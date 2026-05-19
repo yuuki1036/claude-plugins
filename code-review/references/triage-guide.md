@@ -31,7 +31,7 @@ Phase 0 実行前に以下の情報を収集する:
 - 変更ファイルに500行超のファイルがある
 - 3関数以上に跨がる変更
 - if-else/switch への条件追加がある
-- 共通モジュール（`utils/`, `shared/`, `lib/`, `common/`, `helpers/`）の変更
+- **共通モジュール（`utils/`, `shared/`, `lib/`, `common/`, `helpers/`, `core/`）の変更** — **行数や関数数に関わらず必ず explorer 1 体（shared-module-impact）を起動**（v2.12.0 で緩和: 小規模変更でも依存元への波及を見落とさないため）
 - 複数ファイル間でデータが流れる変更パターン
 
 上記いずれにも該当しない場合、explorer はスキップする。
@@ -67,6 +67,23 @@ diff パターンマッチで各観点の必要性を判定する。
 ### 外部ライブラリ最新仕様の参照
 
 diff に外部ライブラリ（React, Next.js, Prisma, Vue, FastAPI 等）の API 利用変更が含まれ、その API の廃止・推奨パターン変更が指摘の核心となる場合、reviewer に公式 skill `context7` を経由した最新仕様確認を許可する（モデル学習データの cutoff を越える破壊的変更の誤判定を避けるため）。詳細は `reviewer-prompts.md` の共通指示を参照。
+
+### Red-flag pattern による specialist 自動起動（v2.12.0 追加）
+
+diff に以下の **危険パターン** が検出された場合、対応する specialist reviewer を **自動的に追加起動** する（行数・PR コンテキストに関わらず、Phase 0 で必ず起動）。検出ミスの構造的対策。
+
+| パターン（diff 内文字列マッチ） | 起動する specialist | severity 目安 |
+|---|---|---|
+| `eval(`, `new Function(`, `vm.runIn`, `child_process`, `exec(`, `execSync`, `subprocess.run`, `os.system`, `` shell=True `` | **specialist-injection**（コード/コマンドインジェクション） | 大半 BLOCKER |
+| `fs.unlink`, `fs.rm`, `rmSync`, `rm -rf`, `DROP TABLE`, `TRUNCATE`, `DELETE FROM .* WHERE` （WHERE 句なしの DELETE/UPDATE 含む）, `db.collection(...).drop()` | **specialist-destructive-op**（破壊的操作の意図確認） | BLOCKER または CRITICAL |
+| `password =`, `secret =`, `api_key =`, `apiKey =`, `private_key`, `BEGIN PRIVATE KEY`, `Bearer .+`, `Authorization:` （ハードコード）, `console.log(.*password)`, `console.log(.*token)` | **specialist-secret-handling**（シークレット漏洩） | BLOCKER |
+| `JSON.parse(.*req\.`, `parseInt(.*req\.`, `RegExp(.*user`, ユーザー入力の正規表現直接利用 | **specialist-input-validation**（信頼境界） | CRITICAL または BLOCKER |
+
+**判定の原則**:
+- 文字列マッチは false positive を伴うが、specialist の役割は「人間判断を促す」ことなので積極的に起動して問題ない
+- specialist は対応する Focus テンプレート（reviewer-prompts.md `## 5. Specialist テンプレート`）を使用
+- specialist の指摘は **大半が BLOCKER または CRITICAL** になるため、低 confidence でも報告マトリクスで人間に届く
+- specialist は上限 6 体（reviewer 上限 10 体とは別枠、specialist 起動で reviewer 枠を圧迫しない）
 
 ### PR コンテキストによる観点追加・冗長化（review skill のみ）
 
@@ -170,3 +187,51 @@ Phase 0 が明確な判断を下せない場合のデフォルト構成:
 - **最小保証**: reviewer-bugs + reviewer-claude-md の2体は Phase 0 の判断に関わらず常に起動
 - **explorer 上限**: 6体
 - **reviewer 上限**: 10体
+- **specialist 上限**: 6体（reviewer 枠とは別カウント、red-flag pattern 検出時のみ起動）
+
+## 8. 動的ラウンド（Phase 5.5 / 5.6 / v2.12.0 追加）
+
+### Phase 5.5: Adaptive deepening (追加 explorer ラウンド)
+
+**起動条件**: 全 reviewer 完了後、reviewer の出力に `unmet_information` フィールドが 1 件以上ある場合のみ起動
+
+**目的**: reviewer が「この観点を確定するには追加の context が必要」と自覚した領域に対して、追加 explorer を 1 round だけ走らせ、該当 reviewer のみ再実行する適応的深掘り
+
+**動作**:
+1. `unmet_information` を集約し、対象ファイル/フォーカスごとに追加 explorer を起動
+2. 追加 explorer は `re-explore` フォーカス（explorer-prompts.md 参照）で起動
+3. 該当 reviewer のみ再起動（他は再実行しない、コスト抑制）
+4. 結果を初回 reviewer 結果と統合（重複指摘は dedup）
+
+**上限**: 1 round のみ（多段化禁止）。追加 explorer 上限 3 体、再起動 reviewer 上限 3 体
+
+### Phase 5.6: Meta-reviewer round
+
+**起動条件**: Phase 5.5 完了後、フィルタリング前の指摘に **BLOCKER または CRITICAL** が 1 件以上ある場合のみ起動
+
+**目的**: 高 severity 指摘が出た = 高リスク変更と判定し、別 reviewer に「ここまでの結果を踏まえて、他の reviewer が見落としている観点はないか」を問うメタレビュー
+
+**動作**:
+1. meta-reviewer agent (reviewer-prompts.md `## 6. Meta-reviewer テンプレート`) を 1 体起動
+2. 入力: 全 reviewer の指摘リスト（フィルタ前）、diff、explorer 結果
+3. 出力: 追加指摘（あれば。なくても OK）
+4. meta-reviewer の指摘も通常のスコアリング・フィルタリング対象に含める
+
+**上限**: 1 round のみ。meta-reviewer 1 体のみ
+
+### effort 適応
+
+| effort | Phase 5.5 (adaptive deepening) | Phase 5.6 (meta-reviewer) |
+|---|---|---|
+| low | スキップ | スキップ |
+| medium | スキップ | スキップ |
+| high (default) | unmet_information があれば起動 | スキップ |
+| xhigh | 起動 | 起動 |
+| max | 起動 | 起動 |
+
+### userConfig による無効化
+
+- `enable_adaptive_rounds: false` → Phase 5.5 を強制スキップ
+- `enable_meta_reviewer: false` → Phase 5.6 を強制スキップ
+
+両方デフォルト true。トークンコスト・レイテンシが気になる場合は false にする。

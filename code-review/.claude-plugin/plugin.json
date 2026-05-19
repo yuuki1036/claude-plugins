@@ -1,7 +1,7 @@
 {
   "name": "code-review",
-  "version": "2.10.0",
-  "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。探索→レビューの2段階で品質最大化。explorer: sonnet、reviewer: opus。レビュー後の返答ドラフト生成（tone-guide 準拠）対応",
+  "version": "2.12.0",
+  "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応",
   "author": {
     "name": "yuki"
   },
@@ -11,8 +11,26 @@
   "userConfig": {
     "review_confidence_threshold": {
       "title": "Review Confidence Threshold",
-      "description": "レビュー指摘の最低 confidence スコア (デフォルト: 80)",
+      "description": "CRITICAL severity 以下の最低 confidence スコア (デフォルト: 80、後方互換のため残置)",
       "type": "number",
+      "sensitive": false
+    },
+    "review_severity_threshold": {
+      "title": "Review Severity Threshold",
+      "description": "報告対象の最低 severity (BLOCKER / CRITICAL / MAJOR / MINOR、デフォルト: MAJOR)",
+      "type": "string",
+      "sensitive": false
+    },
+    "enable_adaptive_rounds": {
+      "title": "Enable Adaptive Deepening Round",
+      "description": "reviewer の unmet_information をトリガーに追加 explorer ラウンドを実行するか (デフォルト: true)。false にするとトークンコストとレイテンシを抑制",
+      "type": "boolean",
+      "sensitive": false
+    },
+    "enable_meta_reviewer": {
+      "title": "Enable Meta-reviewer Round",
+      "description": "BLOCKER または CRITICAL 検出時に meta-reviewer ラウンドを実行するか (デフォルト: true、effort xhigh/max のみ動作)",
+      "type": "boolean",
       "sensitive": false
     }
   }

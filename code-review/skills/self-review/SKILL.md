@@ -2,7 +2,7 @@
 name: self-review
 description: >
   Phase 0 トリアージ + 動的エージェント構成のセルフレビュー。
-  diff → explorer(sonnet) → reviewer(opus) を動的構成、Confidence ≥80 の指摘のみ報告。
+  diff → explorer(sonnet) → reviewer(opus) を動的構成、severity×confidence マトリクスでフィルタ。
   トリガー: 「セルフレビュー」「/self-review」「自分の変更を確認」「コミット前にチェック」
   引数: [base branch] (省略時は自動検出)
 effort: xhigh
@@ -126,12 +126,65 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 **最小保証の閾値:** Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促す。それ以外は欠損観点を明示しつつ Step 5 に進む。
 
-### 5. Confidence スコアリングとフィルタリング
+### 4.5 Adaptive deepening: 追加 explorer ラウンド（v2.12.0 / 動的）
+
+**スキップ条件**（いずれか満たせばこのフェーズ全体をスキップして Step 4.6 へ）:
+- userConfig `enable_adaptive_rounds` が `false`
+- 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
+- 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
+
+**実行する場合**:
+
+1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
+2. 集約結果から **最大 3 件** の追加探索ターゲットを選ぶ（BLOCKER 候補に関わる unmet を優先）
+3. `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md` の `re-explore` テンプレートで追加 explorer を `model: sonnet` で並列起動する
+   - 各 explorer に対応する unmet_information を指示として渡す
+   - `isolation: "worktree"` は使用しない（self-review は未コミット変更を含むため）
+4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`, `effort: max` で再起動
+   - 初回指摘 + 追加 explorer 結果を context として渡し、「初回 confidence を再評価せよ」と指示
+   - 再起動 reviewer の出力は初回出力を置換
+5. レポートに「Round 2 trigger: <reason>」を記録（Step 6 で出力）
+
+**失敗時**: 追加 explorer / 再起動 reviewer が失敗した場合は初回結果のままで続行（best-effort）
+
+### 4.6 Meta-reviewer ラウンド（v2.12.0 / 動的）
+
+**スキップ条件**（いずれか満たせばスキップして Step 5 へ）:
+- userConfig `enable_meta_reviewer` が `false`
+- 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
+- Step 4.5 後の全指摘（フィルタリング前）に **BLOCKER も CRITICAL も 1 件もない**
+
+**実行する場合**:
+
+1. `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` の `## 6. Meta-reviewer テンプレート` を使用
+2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動
+   - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
+   - `isolation: "worktree"` は使用しない
+3. meta-reviewer の出力（追加指摘）を既存指摘に統合
+   - 重複は dedup（同一ファイル ±5 行 + 類似内容）
+   - meta-reviewer の指摘も通常のスコアリング・フィルタリング対象
+
+**失敗時**: meta-reviewer が失敗した場合は missing_coverage に `meta-reviewer: <failure reason>` を追記して続行
+
+### 5. スコアリングとフィルタリング（2軸: confidence × severity）
 
 全 reviewer の指摘を統合し、`${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` を Read で読み込んでスコアリングを実施する。
 
-- 各指摘のベーススコア（reviewer が付与した confidence）に加算・減算ルールを適用
-- confidence ≥ 80 のみ報告
+1. **各指摘の base confidence と severity を取得**
+   - reviewer 出力の `[confidence: XX]` と `[severity: BLOCKER|CRITICAL|MAJOR|MINOR]` をパース
+   - severity が欠落している指摘は **CRITICAL とみなす**（後方互換 / 安全側デフォルト）
+2. **confidence への加算・減算ルールを適用**して 0-100 にクランプ
+3. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（self-review では PR タグは通常出ない）
+4. **報告マトリクスでフィルタ**:
+
+   | severity \ confidence | <60 | 60-79 | 80-94 | 95+ |
+   |---|:---:|:---:|:---:|:---:|
+   | BLOCKER | skip | 報告 | 報告 | 報告 |
+   | CRITICAL | skip | skip | 報告 | 報告 |
+   | MAJOR | skip | skip | skip | 報告 |
+   | MINOR | skip | skip | skip | 報告 |
+
+5. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外
 
 ### 6. レポート出力
 
@@ -142,14 +195,24 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
+**動的ラウンド**: Round 2 探索 N 体起動 / Meta-reviewer {実行 | スキップ理由}
+**指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 
-### 指摘事項 (confidence ≥ 80)
+### 🚨 BLOCKER 指摘
 
-1. [confidence: 95][バグ] Missing null check...
-   ファイル: src/utils.ts:42
-
-2. [confidence: 82][セキュリティ] Hardcoded secret...
+1. [confidence: 70][severity: BLOCKER][セキュリティ] Hardcoded secret の疑い
    ファイル: src/config.ts:15
+   影響: コミット時にシークレット漏洩
+
+### ⚠️ CRITICAL 指摘
+
+2. [confidence: 95][severity: CRITICAL][バグ] Missing null check
+   ファイル: src/utils.ts:42
+   影響: 特定入力で関数が落ちる
+
+### 📋 MAJOR 指摘
+
+3. [confidence: 95][severity: MAJOR][設計] ...
 
 ### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
 - reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
@@ -157,7 +220,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 ### 総括
 - 変更の概要
-- コミット前に修正すべき項目
+- コミット前に修正すべき項目（特に BLOCKER）
 - 確認推奨の観点
 ```
 
@@ -170,10 +233,10 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - header: "修正方針"
 - options:
   1. label: "すべて修正" / description: "指摘事項をすべて今すぐ修正する"
-  2. label: "重要のみ" / description: "confidence >= 90 の指摘だけ修正する"
+  2. label: "BLOCKER/CRITICAL のみ" / description: "severity BLOCKER または CRITICAL の指摘だけ修正する"
   3. label: "このまま" / description: "修正はせず、このままコミットする"
 
 各選択肢の後処理:
 - **すべて修正**: 全指摘を一覧化し、ファイルごとにまとめて修正を実施する
-- **重要のみ**: confidence >= 90 の指摘のみ再表示し、ファイルごとにまとめて修正を実施する
-- **このまま**: 完了
+- **BLOCKER/CRITICAL のみ**: 該当 severity の指摘のみ再表示し、ファイルごとにまとめて修正を実施する
+- **このまま**: 完了（BLOCKER 指摘が 1 件以上残っている場合は「BLOCKER 指摘を残したままコミットしますか？」と AskUserQuestion で再確認する）

@@ -2,7 +2,7 @@
 name: review
 description: >
   Phase 0 トリアージ + 動的エージェント構成の PR コードレビュー。
-  diff → explorer(sonnet) → reviewer(opus) を動的構成、Confidence ≥80 の指摘のみ報告。
+  diff → explorer(sonnet) → reviewer(opus) を動的構成、severity×confidence マトリクスでフィルタ。
   トリガー: 「レビューして」「/review」「コードレビュー」
   引数: [PR番号] (省略時は現在ブランチのPRを自動取得)
 effort: xhigh
@@ -173,14 +173,69 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 **最小保証の閾値:** Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促してから ExitWorktree する。それ以外は欠損観点を明示しつつ Step 6 に進む。
 
-### 6. Confidence スコアリングとフィルタリング
+### 5.5 Adaptive deepening: 追加 explorer ラウンド（v2.12.0 / 動的）
+
+**スキップ条件**（いずれか満たせばこのフェーズ全体をスキップして Step 5.6 へ）:
+- userConfig `enable_adaptive_rounds` が `false`
+- 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
+- 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
+
+**実行する場合**:
+
+1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
+2. 集約結果から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
+3. `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md` の `re-explore` テンプレートで追加 explorer を `model: sonnet` で並列起動する
+   - 各 explorer に対応する unmet_information（focus, target, why, related_finding）を指示として渡す
+   - `isolation: "worktree"` で起動（PR ブランチ）
+4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`, `effort: max` で再起動する
+   - 再起動 reviewer には初回指摘 + 追加 explorer 結果を context として渡し、「初回 confidence を再評価せよ」と指示
+   - 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
+5. レポートに「Round 2 trigger: <reason>」を記録（Step 7 で出力）
+
+**失敗時**: 追加 explorer / 再起動 reviewer が失敗した場合は初回結果のままで続行（missing_coverage には追記しない、Round 2 は best-effort）
+
+### 5.6 Meta-reviewer ラウンド（v2.12.0 / 動的）
+
+**スキップ条件**（いずれか満たせばスキップして Step 6 へ）:
+- userConfig `enable_meta_reviewer` が `false`
+- 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
+- Step 5.5 後の全指摘（フィルタリング前）に **BLOCKER も CRITICAL も 1 件もない**
+
+**実行する場合**:
+
+1. `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` の `## 6. Meta-reviewer テンプレート` を使用
+2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動
+   - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
+   - `isolation: "worktree"` で起動
+3. meta-reviewer の出力（追加指摘）を既存指摘に統合
+   - 重複は dedup（同一ファイル ±5 行 + 類似内容）
+   - meta-reviewer の指摘も通常のスコアリング・フィルタリング対象
+
+**失敗時**: meta-reviewer が失敗した場合は missing_coverage に `meta-reviewer: <failure reason>` を追記して続行
+
+### 6. スコアリングとフィルタリング（2軸: confidence × severity）
 
 全 reviewer の指摘を統合し、`${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` を Read で読み込んでスコアリングを実施する。
 
-- 各指摘のベーススコア（reviewer が付与した confidence）に加算・減算ルールを適用
-- PR コンテキストタグ（`[re-flag: ...]` / `[resolved: ...]` / `[intent-conflict]` / `[scope:out]`）が付いた指摘は scoring-guide.md の該当ルールで加減算
-- confidence ≥ 80 のみ報告
-- 出力時はタグ（`[re-flag: @user]` 等）を指摘文冒頭にそのまま残す（ユーザーが既指摘との関連を把握できるようにする）
+1. **各指摘の base confidence と severity を取得**
+   - reviewer 出力の `[confidence: XX]` と `[severity: BLOCKER|CRITICAL|MAJOR|MINOR]` をパース
+   - severity が欠落している指摘は **CRITICAL とみなす**（後方互換 / 安全側デフォルト）
+2. **confidence への加算・減算ルールを適用**
+   - PR コンテキストタグ（`[re-flag: ...]` / `[resolved: ...]` / `[intent-conflict]` / `[scope:out]`）の加減算
+   - 複数エージェント検出 / explorer 裏付け / セッションコンテキスト等の加減算
+   - 最終 confidence を 0-100 にクランプ
+3. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる
+4. **報告マトリクスでフィルタ**:
+
+   | severity \ confidence | <60 | 60-79 | 80-94 | 95+ |
+   |---|:---:|:---:|:---:|:---:|
+   | BLOCKER | skip | 報告 | 報告 | 報告 |
+   | CRITICAL | skip | skip | 報告 | 報告 |
+   | MAJOR | skip | skip | skip | 報告 |
+   | MINOR | skip | skip | skip | 報告 |
+
+5. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外
+6. **出力**: タグ（`[re-flag: @user]` 等）と severity ラベルを指摘文冒頭にそのまま残す
 
 ### 7. レポート出力
 
@@ -191,14 +246,28 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
+**動的ラウンド**: Round 2 探索 N 体起動 / Meta-reviewer {実行 | スキップ理由}
+**指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 
-### 指摘事項 (confidence ≥ 80)
+### 🚨 BLOCKER 指摘
 
-1. [confidence: 95][バグ] Missing error handling...
-   ファイル: src/auth.ts:67-72
-
-2. [confidence: 90][セキュリティ][re-flag: @reviewer-1] SQL injection risk（2026-04-22 に既指摘、diff で未修正）
+1. [confidence: 65][severity: BLOCKER][セキュリティ] 潜在的な SQL injection の疑い
    ファイル: src/api.ts:23-25
+   影響: 攻撃成立時に DB 全体の漏洩・破壊
+   修正案: parameterized query への変更
+
+### ⚠️ CRITICAL 指摘
+
+2. [confidence: 95][severity: CRITICAL][バグ] Missing error handling
+   ファイル: src/auth.ts:67-72
+   影響: 認証失敗時に null 参照で落ちる
+
+3. [confidence: 90][severity: CRITICAL][re-flag: @reviewer-1] xxx（2026-04-22 に既指摘、diff で未修正）
+   ファイル: src/api.ts:30-35
+
+### 📋 MAJOR 指摘
+
+4. [confidence: 95][severity: MAJOR][設計] ...
 
 ### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
 - reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
@@ -207,8 +276,10 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 ### 総括
 - 変更の目的と全体像
 - 影響範囲
-- 人間が最終確認すべき観点
+- 人間が最終確認すべき観点（特に BLOCKER の低 confidence 指摘）
 ```
+
+**重要**: BLOCKER は confidence が低くても報告される設計。「疑わしい」段階で人間判断を促す目的なので、必ず「影響」フィールドで重大度の根拠を示すこと。
 
 レポート出力後、以下の順で締める。
 
@@ -221,7 +292,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
    - multiSelect: false
    - options:
      1. label: "不要" / description: "ドラフトは生成しない（既定）"
-     2. label: "重要のみ" / description: "confidence ≥ 90 の指摘についてドラフト生成"
+     2. label: "重要のみ" / description: "severity BLOCKER または CRITICAL の指摘についてドラフト生成"
      3. label: "全件" / description: "全指摘についてドラフト生成"
      4. label: "個別選択" / description: "対象の指摘番号を入力する"
 
@@ -260,13 +331,14 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
    ```bash
    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
      SAFE_HOOK_NAME="code-review:review" event_bus_publish "review:completed" \
-     "{\"pr\":\"<number>\",\"critical_count\":<n>,\"warning_count\":<n>,\"missing_coverage\":[<json-array of focus names>]}"
+     "{\"pr\":\"<number>\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>]}"
    ```
 
    payload 規約:
    - `pr` は PR 番号の文字列（Step 1 で取得済み）。PR 番号取得に失敗した場合は `"local"` とする
-   - `critical_count` / `warning_count` は数値
+   - `blocker_count` / `critical_count` / `major_count` / `minor_count` は数値（severity 別件数）
    - `missing_coverage` は文字列配列（reviewer focus 名）。空なら `[]`
    - 失敗してもレポート自体は成功扱い（best-effort）
+   - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）
 
 3. **ExitWorktree** で worktree から抜ける。

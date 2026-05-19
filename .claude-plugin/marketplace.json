@@ -17,8 +17,8 @@
     },
     {
       "name": "code-review",
-      "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。探索→レビューの2段階で品質最大化。explorer: sonnet、reviewer: opus。レビュー後の返答ドラフト生成（tone-guide 準拠）対応",
-      "version": "2.10.0",
+      "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応",
+      "version": "2.12.0",
       "author": {
         "name": "yuki"
       },
