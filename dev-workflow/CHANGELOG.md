@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.0] - 2026-05-21
+
+### Changed
+- `skills/pr-creator/SKILL.md` 厳守ルールを刷新。「PR title に Issue ID prefix を含めない」「PR 本文にローカルパスを出力しない」「概要は `What / Why / Outcome` の三要素を満たす（実装手段 How は変更点セクションに書く）」を追加。箇条書きルールを「乱発を避ける、並列性のある情報には使ってよい」に緩和
+- `skills/pr-creator/SKILL.md` Step 4 で description 生成方針に三要素（What / Why / Outcome）の定義を明記。title は Linear Issue のタイトル本文のみ使用（Issue ID prefix を含めない）に変更
+- `skills/pr-creator/SKILL.md` Step 4.5 Screenshots アップロード失敗時のフォールバックを修正。`## Screenshots` セクションごと PR 本文から省略し、ユーザーには口頭で手動添付を案内する（従来は本文にローカルパスを記載していたが、GitHub からクリックできないため削除）
+- `skills/pr-creator/references/description-guide.md` を全面改訂。「大事にしたいこと」「概要」セクションに三要素（What / Why / Outcome）を明示し良い例も更新。実装手段（How）は概要に書かず変更点セクションに任せる方針を明記。文体ガイドの箇条書き縛りを「2 項目でも並列なら箇条書き可」「並列変更・確認手順・レビュー観点には箇条書きが自然」と柔軟化。末尾折りたたみのテンプレ例からローカルパス参照を除去し、Linear URL や PR リンクなど GitHub から辿れるものに置換。失敗例にローカルパス出力のケースを追加
+- `skills/pr-creator/references/linear-integration.md` を改訂。「タイトル生成」で Issue ID prefix（`TEAM-123:` 等）を含めない方針を明示。「タスク詳細ファイル」セクションで `.claude/plans/...` は Claude の参考用であり PR 本文に出力しないことを明示
+
 ## [1.12.0] - 2026-05-19
 
 ### Added

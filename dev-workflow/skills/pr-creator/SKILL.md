@@ -36,7 +36,7 @@ git diff <base-branch>...HEAD
 
 ブランチ名からIssue ID（`[A-Z]+-[0-9]+`パターン）を抽出し：
 - `mcp__linear__get_issue` でタイトル・説明を取得
-- `.claude/plans/{issueId}.md` があれば参照
+- `.claude/plans/{issueId}.md` があれば Claude が読んで description 生成の参考にする。ローカルパス自体は PR 本文に出力しない（レビュアーからクリックできないため）
 
 **Linear MCP が利用できない場合のフォールバック:**
 Linear MCP が未設定または接続エラーの場合は、以下の情報のみからPR情報を生成する：
@@ -50,12 +50,19 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 
 ### 4. PR情報を生成
 
-- タイトル: Linear Issue があればそのタイトルを使う。なければ変更の要約（50 文字以内）
-- Description: 本文はレビュアー（人間）が読むためのもの。末尾に `<details><summary>詳細情報</summary>...</details>` を置いて、AI やレビュー bot が参照する補足情報を畳む
+- タイトル: Linear Issue があればそのタイトル本文のみを使う（Issue ID prefix の `TEAM-123:` 等は含めない）。なければ変更の要約（50 文字以内）
+- Description: 人間レビュアーが読んで `What / Why / Outcome` の三要素が即座に分かること。末尾に `<details><summary>詳細情報</summary>...</details>` を置いて、AI やレビュー bot が参照する補足情報を畳む
+
+三要素の定義:
+- **What**: 変更の対象 / スコープ（どのコード・機能・領域を触ったか）
+- **Why**: 動機 / 背景（何が問題・状況だったか、なぜ変える必要があったか）
+- **Outcome**: 結果 / 効果（何が変わって、ユーザーやコードベースから見てどう違うか）
+
+実装の手段（How）は「変更点」セクションに書く。概要で How まで踏み込むと冗長化するので、概要では Outcome（結果・効果）だけに留める。
 
 リポジトリに PR テンプレートがあれば本文はそれに従い、ない場合は概要 / 変更点 / レビューしてほしいところ / 動作確認 / Screenshots / 備考 の構成を使う。
 
-本文の書き方は [references/description-guide.md](references/description-guide.md) に従う。読みやすさを最優先にし、箇条書きの乱発・太字の乱用・絵文字といった AI 特有の文体を避ける。
+本文の書き方は [references/description-guide.md](references/description-guide.md) に従う。
 
 ### 4.5 Screenshots 添付（UI PR のみ）
 
@@ -112,7 +119,8 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
    viewport 名はファイル名から推定（`mobile.png` / `desktop.png` 等）。不明なものは `<name> | ![<name>](<url>)` 形式。
 
 **アップロード失敗時のフォールバック:**
-- `gh` 未認証、ネットワークエラー、権限なし等で失敗したら `## Screenshots` セクションに「ローカルパス: `.claude/screenshots/...`」のみ記載し、ユーザーに手動でドラッグ&ドロップを促す注記を入れる
+- `gh` 未認証、ネットワークエラー、権限なし等で失敗した場合、`## Screenshots` セクションは PR 本文に含めない（ローカルパスは PR 本文に書かない方針）
+- ユーザーに「PR 作成後に画像をドラッグ&ドロップで手動添付してください」と口頭で案内する
 - PR 作成自体は継続する
 
 #### 機密 UI チェックリスト（撮影前必須）
@@ -131,7 +139,7 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 - header: "機密チェック"
 - options:
   1. label: "問題なし、アップロード" / description: "撮影内容を確認済み"
-  2. label: "アップロードせずローカルパスのみ" / description: "PR body にはローカルパスのみ記載、PR レビュー時に手動添付"
+  2. label: "アップロードせずスキップ" / description: "Screenshots セクションを PR 本文から省略し、手動添付をユーザーに口頭案内"
   3. label: "Screenshots を省略" / description: "PR body から Screenshots セクション自体を削除"
 
 ### 5. PRを作成
@@ -150,6 +158,10 @@ gh pr create --draft --title "<title>" --body "<description>"
 - AI 署名（Generated with 等）は付けない
 - 本文は人間向け、末尾の `<details>` 折りたたみは AI 向けの補足情報。レビュアーが行動を変える情報を折りたたみに隠さない
 - 文体は体言止め・常体に統一する。敬体（です・ます）は使わない。コミットメッセージの文体と揃える
-- 箇条書きの乱発、太字の乱用、装飾絵文字（✅ ❌ 🤖 など）といった AI 特有の文体を避ける
+- 箇条書きの乱発を避ける（並列性のない情報を無理に箇条書きにしない）。並列の手順 / 変更項目 / 動作確認ケースが複数ある場合は箇条書きで OK
+- 太字の乱用と装飾絵文字（✅ ❌ 🤖 など）は避ける
+- 概要は `What / Why / Outcome` の三要素（変更対象 / 動機 / 結果）を満たすこと。実装手段（How）は「変更点」セクションに書く
+- PR title に Issue ID prefix（`TEAM-123:` 等）を含めない。Issue ID は PR 本文側にリンク・参照として記載する
+- PR 本文（本文・`<details>` 折りたたみ問わず）にローカルパス（`.claude/plans/...` / `.claude/screenshots/...` 等）を出力しない。GitHub からクリックできないため
 - Screenshots は `cc-screenshots` release にアップロードする専用運用。他の release と混ぜない
 - 機密情報（ログイン画面、社内 URL、実データ等）が写っていないか撮影前に確認する。アップロードは public release なので漏洩リスクあり
