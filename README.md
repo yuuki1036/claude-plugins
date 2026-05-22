@@ -1,9 +1,9 @@
 # claude-plugins
 
-yuki が日々の開発で使っている Claude Code 用プラグインのマーケットプレイス。Issue 管理・コードレビュー・コミット/PR 自動化・UI 動作確認・NotebookLM 連携など、Claude Code をエージェント開発環境としてフル活用するための一式が揃う。
+Claude Code 用プラグインの個人用マーケットプレイス。10 プラグインで Issue 管理から PR レビューまでをカバーする。Linear / 個人開発の両対応、Conventional Commits 準拠のコミット、Phase 0 トリアージ付きコードレビュー、chrome-devtools MCP による UI 動作確認、NotebookLM 連携など。
 
-- 対象: Claude Code 本体（プラグイン機構が有効なバージョン）
-- 言語: プラグイン本体・スキル説明・コマンドは日本語前提
+- 対象: Claude Code
+- 言語: プラグイン本体・スキル説明・コマンドは日本語
 
 ## 目次
 
@@ -12,14 +12,16 @@ yuki が日々の開発で使っている Claude Code 用プラグインのマ�
   - [B. ローカルディレクトリから](#b-ローカルディレクトリから)
   - [C. Microsoft APM 経由（lockfile・ガバナンス重視）](#c-microsoft-apm-経由lockfileガバナンス重視)
 - [プラグイン一覧](#プラグイン一覧)
+- [1 セッションの典型フロー](#1-セッションの典型フロー)
 - [各プラグインの入口](#各プラグインの入口)
 - [更新](#更新)
 - [フィードバック / バグ報告](#フィードバック--バグ報告)
 - [開発者向け情報](#開発者向け情報)
+- [ライセンス](#ライセンス)
 
 ## インストール
 
-3 通りの導入方法がある。普段使いは **A**、ハック / 開発は **B**、ロックファイルやセキュリティガバナンスを効かせたい場合は **C** を選ぶ。
+普段使いは **A**、開発時は **B**、APM を使う場合は **C**。
 
 ### A. Claude Code 標準（推奨）
 
@@ -58,7 +60,8 @@ claude plugin install ./dev-workflow
 
 `.claude-plugin/plugin.json` を更新したら手動で再インストールが必要。
 
-### C. Microsoft APM 経由（lockfile・ガバナンス重視）
+<details>
+<summary><b>C. Microsoft APM 経由（lockfile・ガバナンス重視）</b></summary>
 
 [Microsoft APM (Agent Package Manager)](https://github.com/microsoft/apm) は AI エージェント向けの汎用パッケージマネージャ。このリポジトリは Claude Code 標準形式の `marketplace.json` をそのまま公開しているので、APM から **書き換えなし** で利用できる。
 
@@ -90,6 +93,8 @@ plugins:
 ```
 
 その後 `apm install` で `apm.lock.yaml` が生成され、`.claude/` 配下に展開される。
+
+</details>
 
 ## プラグイン一覧
 
@@ -130,6 +135,20 @@ plugins:
 |---|---|
 | [`notebooklm-workflow`](./notebooklm-workflow) | NotebookLM への URL/PDF/YouTube/Drive ソース追加と Q&A。`notebooklm-mcp-cli` を `.mcp.json` で同梱 |
 
+## 1 セッションの典型フロー
+
+Linear で管理している Issue を 1 つ実装するときのコマンド遷移例。
+
+```text
+/session-start    # ブランチから Issue 特定、関連ファイル読み込み (linear-workflow)
+/feature-dev      # 探索 → 設計 → 実装の 8 phase ワークフロー (feature-dev)
+/self-review      # コミット前に Phase 0 トリアージ付きでセルフレビュー (code-review)
+/commit           # Conventional Commits 準拠の原子性コミット (dev-workflow)
+/pr               # 差分とコミット履歴から PR description 自動生成 (dev-workflow)
+```
+
+個人開発（Linear なし）は `linear-workflow` の代わりに `indie-workflow` を使う。`/indie-start` → `/indie-issue-create` → 以下同様。
+
 ## 各プラグインの入口
 
 インストール後にまず叩くコマンド / 呼ぶスキル。
@@ -169,3 +188,7 @@ plugins:
 ## 開発者向け情報
 
 このリポジトリでプラグインを開発・改修する場合は [`CLAUDE.md`](./CLAUDE.md) を参照。pre-commit による SSoT 同期検証、バージョンバンプ強制、CHANGELOG 強制、`/quality-check` による品質チェックなどが整備されている。
+
+## ライセンス
+
+[MIT License](./LICENSE) で公開。各プラグインも同ライセンスに従う。
