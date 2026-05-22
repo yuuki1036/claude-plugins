@@ -399,7 +399,7 @@ Repeat the following until a termination condition fires:
 9. Return to step 1.
 
 **Reviewer launch in re-review**:
-- Same `model: opus`, `effort: max` settings as the initial Step 2 launch
+- Same `model: opus` and dynamic effort (`${CLAUDE_EFFORT}`) settings as the initial Step 2 launch
 - Pass the updated diff (`git diff HEAD`) and the list of file:line that were just edited
 
 #### Step 3.3: Loop termination logging

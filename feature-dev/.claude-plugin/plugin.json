@@ -1,6 +1,6 @@
 {
   "name": "feature-dev",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.7 動的トリアージで explorer/architect/reviewer 体数を最適化、Phase 6 で confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect / code-reviewer の 3 agent を内包",
   "author": {
     "name": "yuki"

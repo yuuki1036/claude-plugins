@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.1] - 2026-05-22
+
+### Changed
+- `.mcp.json` の chrome-devtools サーバに `alwaysLoad: true` を追加 (CC v2.1.121+)。ToolSearch deferral をスキップしてプラグイン有効時に chrome-devtools ツール群を常時利用可能にする。ui-verify 起動時のツールロード往復を削減
+
 ## [1.13.0] - 2026-05-21
 
 ### Changed

@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-05-22
+
+### Changed
+- `commands/feature-dev.md` Step 3.2 の re-review launch 設定記述を修正。`effort: max` ハードコード表記を Step 2 の動的 effort (`${CLAUDE_EFFORT}`) と整合する表現に変更。Step 2 自体は元々動的展開で max ハードコードはしておらず、再 review 時の記述ミスを是正
+
 ## [1.6.0] - 2026-05-18
 
 ### Added
