@@ -45,6 +45,8 @@ find . -name "CLAUDE.md" -o -name ".claude.md" -o -name ".claude.local.md" 2>/de
 
 For each CLAUDE.md file, evaluate against quality criteria. See [references/quality-criteria.md](references/quality-criteria.md) for detailed rubrics.
 
+**補助観点として Diátaxis レンズを適用**（スコア外の構造診断）。詳細は [references/diataxis-framework.md](references/diataxis-framework.md) を参照。100 行超の CLAUDE.md に対してのみ適用し、セクション単位で「Tutorial / How-to / Reference / Explanation」のどのタイプかを分類して混在・Why 欠落・順序喪失を検出する。スコアには加算せず、Phase 3 の Quality Report に "Structural Observations" として併記する。
+
 **Quick Assessment Checklist:**
 
 | Criterion | Weight | Check |
@@ -100,6 +102,12 @@ Format:
 
 **Recommended additions:**
 - [List what should be added]
+
+**Structural Observations (Diátaxis lens, 100 行超のみ):**
+- セクション別タイプ分類（Reference / How-to / Explanation / Tutorial）
+- 混在しているセクション・Why 欠落・順序喪失の指摘
+- 分割提案（断定せず「読みやすくなる可能性」として提示）
+- 詳細フォーマットは [references/diataxis-framework.md](references/diataxis-framework.md) の「提案フォーマット」を参照
 
 ### Skill Invocation Guidance Audit
 

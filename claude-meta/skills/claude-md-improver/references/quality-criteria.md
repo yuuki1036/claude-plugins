@@ -138,6 +138,10 @@ CLAUDE.md 単体で Claude の skill 呼び出しを後押しできているか�
 - **インストール済みの主要 skill が 1 つも命名参照されていない**（例: `linear-workflow:session-start` を常用しているのに CLAUDE.md に出てこない）
 - **自動生成風のボイラープレート**（一般論の羅列・プロジェクト固有の判断が見えない）
 - **タスク→skill 対応表が欠落**しており、Claude が類推でしか呼び出せない
+- **Diátaxis 観点の構造問題**（補助診断 — 詳細は [diataxis-framework.md](diataxis-framework.md)）:
+  - Gotchas / 規約に "Why" が無く Reference 列挙のみ（再発防止に弱い）
+  - Setup / Workflow が表形式に押し込まれて順序が消えている
+  - 1 セクション内で 3 タイプ以上（How-to + Reference + Explanation + …）が混在し読みづらい
 
 ## Skill Coordination 判定のヒント
 

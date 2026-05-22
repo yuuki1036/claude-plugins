@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.0] - 2026-05-22
+
+### Added
+- `claude-md-improver/references/diataxis-framework.md` を新規作成。Diátaxis（Tutorial / How-to / Reference / Explanation）を CLAUDE.md セクションにマップする補助診断レンズを提供。スコアには加算せず、Phase 3 の Quality Report に "Structural Observations" として併記する位置づけ
+- `claude-md-improver/SKILL.md` Phase 2 に Diátaxis 補助観点の適用ガイドを追加（100 行超の CLAUDE.md のみ対象、混在・Why 欠落・順序喪失を検出）
+- `claude-md-improver/references/quality-criteria.md` Red Flags に Diátaxis 観点（Gotchas の Why 欠落 / Setup の順序喪失 / 1 セクション内 3 タイプ以上混在）を追加
+- `claude-md-improver/references/templates.md` の各セクション見出しに Diátaxis タイプ注記を追加（Commands=Reference, Architecture=Reference+Explanation, Gotchas=Explanation+Reference, Skill Coordination=How-to）。Gotchas テンプレに "Why:" 列を追加し再発防止を強化
+
 ## [1.8.1] - 2026-05-18
 
 ### Changed
