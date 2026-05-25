@@ -39,11 +39,12 @@ allowed-tools:
 
 ```
 .claude/indie/{slug}/
-  project.md         # プロジェクト概要
-  counter.txt        # Issue 番号カウンター（初期値: 1）
-  backlog.md         # バックログ一覧
-  issues/            # Issue ファイル格納ディレクトリ（.gitkeep で作成）
-  knowledge/         # 知見格納ディレクトリ（.gitkeep で作成）
+  project.md            # プロジェクト概要
+  counter.txt           # Issue 番号カウンター（初期値: 1）
+  backlog.md            # バックログ一覧
+  issues/               # Issue ファイル格納ディレクトリ（.gitkeep で作成）
+  knowledge/            # 知見格納ディレクトリ（個別知見 = source、.gitkeep で作成）
+    concepts/           # 概念ページ（横断統合 = concept、.gitkeep で作成）
 ```
 
 1. **counter.txt**
@@ -87,8 +88,8 @@ created: {今日の日付}
 -
 ```
 
-4. **issues/.gitkeep** と **knowledge/.gitkeep**
-   - 空ファイルを作成してディレクトリを確保する
+4. **issues/.gitkeep** と **knowledge/.gitkeep** と **knowledge/concepts/.gitkeep**
+   - 空ファイルを Write で作成してディレクトリを確保する（`knowledge/concepts/.gitkeep` で概念ページ用ディレクトリも保持する）
 
 ### Phase 5: 完了報告と次のアクション案内
 

@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.23.0] - 2026-05-25
+
+### Added
+- **概念ページ（concept）と wikilink** を knowledge に導入。複数の個別知見（source）を `[[name]]` で横断統合する `knowledge/concepts/*.md`（`kind: concept`）を追加し、繋いで初めて見える構造を蓄積できるようにした
+- **`knowledge-lint` スキル / コマンドを新設**。broken wikilink・index 不整合（stale / 未登録）・orphan concept・isolated source・tags 表記ゆれ・重複概念の 7 項目を検出し、機械的に直せるもの（index 同期・確定 broken link 張替）を承認制で修正する。意味の統合は提案に留める
+- `issue-maintain` に**概念ページへの波及（concept 統合）**を追加。source 切り出し後、同テーマの source が 2 件以上あれば concept の新規作成 / 既存 concept への `[[ ]]` 追加を提案する
+- `knowledge` スキルを concept 対応に拡張（一覧の concept/source 分離、検索・関連の `concepts/` 走査、関連表示の `[[ ]]` 1 ホップ辿り）
+- `quality-checklist.md` §6 frontmatter 表に `kind` を追加、§6.1「概念ページ（concept）と wikilink」を新設
+- FileChanged hook に `.claude/linear/*/knowledge/concepts/*.md` matcher を追加（concept ファイルの外部変更検知）
+- `init` の生成ディレクトリに `knowledge/concepts/` を追加
+
+### Changed
+- `issue-maintain` 処理フローを 12 → 13 ステップに拡張（概念ページ波及判定を追加）
+
 ## [1.22.0] - 2026-05-18
 
 ### Added

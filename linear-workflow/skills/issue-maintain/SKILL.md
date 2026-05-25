@@ -163,6 +163,63 @@ knowledge ファイルの切り出し・更新・削除を行った際は、`kno
 3. knowledge ファイルの削除時: 該当行を削除
 4. 概要はファイルの最初の見出し直後の1文を使用する（30文字以内に要約）
 5. index.md 自体は knowledge ファイルとしてカウントしない
+6. concept（`knowledge/concepts/*.md`）はファイル列をパス付き（`concepts/{slug}.md`）で記載する
+
+---
+
+## 概念ページへの波及（concept 統合）
+
+source（個別知見）を切り出した後、複数の source を横断する知見が見えてきたら **概念ページ（concept）** に統合する。これが knowledge の価値の本体になる（個別知見の寄せ集めではなく、繋いで初めて見える構造を残す）。kind / wikilink の定義は `knowledge` スキルの SKILL.md を参照。
+
+### 波及の判断
+
+切り出した／更新した source の tags・トピックを既存 knowledge と照合し、次を判定する:
+
+1. **既存 concept に該当あり**（`knowledge/concepts/*.md` に関連する概念ページがある）:
+   - その concept の「関連ソース」に `[[新しい source]]` を追加する
+   - 「横断的知見」を読み返し、新しい source で補強・修正できる点があれば追記する（矛盾を見つけたら明記する）
+   - concept の frontmatter `updated` を当日日付に更新する
+2. **新規 concept の候補**（同じテーマを扱う source が 2 件以上あり、まだ概念ページが無い）:
+   - 新規 concept ページの作成を提案する（下記テンプレート）
+3. **該当なし**（単発の知見）:
+   - source のままにする（無理に concept 化しない）
+
+### concept ページのテンプレート
+
+`knowledge/concepts/{concept-slug}.md` に作成する:
+
+```markdown
+---
+kind: concept
+status: verified | planned
+verified: YYYY-MM-DD
+updated: YYYY-MM-DD
+tags: [...]
+---
+
+# {概念名}
+
+## 概要
+{この概念が何か。1〜2 文}
+
+## 横断的知見
+{複数 source を跨いで見えてくる構造・共通パターン・矛盾。concept の核}
+
+## 未解決の問い
+{この概念について残っている疑問・検証したい点}
+
+## 関連ソース
+- [[source-a]] — {このソースから得た観点}
+- [[source-b]] — {このソースから得た観点}
+```
+
+- 「横断的知見」が薄い（単一 source の要約に留まる）なら concept にせず source のままにする
+- 関連ソースは `[[name]]`（拡張子なし basename）で参照する
+- concept も index.md に登録する（ファイル列は `concepts/{slug}.md`）
+
+### 承認
+
+concept の作成・更新も他の整理と同様、内容をユーザーに提示し承認を得てから実行する。波及で既存 concept を編集した場合は `updated` を当日日付に更新する。
 
 ---
 
@@ -308,22 +365,24 @@ Issue ファイルの「スコープ外」「後続 Issue 候補」「やらな�
 4. 更新履歴のセッション単位統合を確認
 5. 破壊的変更パターン検出（quality-checklist.md §5.1 のキーワードを Grep）
 6. knowledge/ 切り出し候補を特定（5 の検出結果 + 通常基準。tags の語彙を既存 index.md と照合）
-7. スコープ外差分検出（git diff で「スコープ外」「後続 Issue 候補」セクションの追加行を抽出）
-8. タスク完了時フローの適用判定:
+7. 概念ページ波及の判定（切り出し候補・更新 source の tags を既存 concept / source と照合し、新規 concept 作成 or 既存 concept への `[[ ]]` 追加を判断）
+8. スコープ外差分検出（git diff で「スコープ外」「後続 Issue 候補」セクションの追加行を抽出）
+9. タスク完了時フローの適用判定:
    - レビュー実施状況を確認（レビューガード節を参照）
    - 全タスク完了 → status 更新、follow_up 確認
-9. 整理計画をユーザーに提示:
-   - 削除するもの
-   - 圧縮するもの
-   - 統合する更新履歴
-   - knowledge/ 切り出し候補（破壊的変更検出は 🔴 マーカー付きで先頭表示、tags 候補を併記）
-   - スコープ外差分から検出した follow-up 候補
-   - レビュー未実施の警告（該当する場合）
-   - テンプレート不足セクションの追加
-   - completed ファイルの削除候補
-10. 承認を得てから実行（既存 knowledge を編集した場合は frontmatter `updated` を当日日付に更新）
-11. knowledge/ 切り出しがあった場合、knowledge/index.md を更新
-12. 更新履歴にメンテナンス内容を記録
+10. 整理計画をユーザーに提示:
+    - 削除するもの
+    - 圧縮するもの
+    - 統合する更新履歴
+    - knowledge/ 切り出し候補（破壊的変更検出は 🔴 マーカー付きで先頭表示、tags 候補を併記）
+    - 概念ページ（concept）への波及候補（新規作成 / 既存 concept への `[[ ]]` 追加）
+    - スコープ外差分から検出した follow-up 候補
+    - レビュー未実施の警告（該当する場合）
+    - テンプレート不足セクションの追加
+    - completed ファイルの削除候補
+11. 承認を得てから実行（既存 knowledge / concept を編集した場合は frontmatter `updated` を当日日付に更新）
+12. knowledge/ 切り出し・concept 波及があった場合、knowledge/index.md を更新（concept はパス付きで登録）
+13. 更新履歴にメンテナンス内容を記録
 ```
 
 ## 更新履歴への記録形式

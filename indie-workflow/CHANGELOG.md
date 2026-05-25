@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.24.0] - 2026-05-25
+
+### Added
+- **概念ページ（concept）と wikilink** を knowledge に導入。複数の個別知見（source）を `[[name]]` で横断統合する `knowledge/concepts/*.md`（`kind: concept`）を追加
+- **`knowledge-lint` スキル / コマンドを新設**。broken wikilink・index 不整合・orphan concept・isolated source・tags 表記ゆれ・重複概念の 7 項目を検出し、機械的に直せるものを承認制で修正する
+- `indie-issue-maintain` に**概念ページへの波及（concept 統合）**を追加。source 切り出し後、同テーマの source が 2 件以上あれば concept の新規作成 / 既存 concept への `[[ ]]` 追加を提案する
+- `retrospective` に**概念ページ化の提案（Phase 2.5）**を追加。反復テーマ（複数 source に跨る共通タグ）を concept 統合の候補として提示し、承認時はドラフトを作成する
+- `knowledge` スキルを concept 対応に拡張（一覧の concept/source 分離、検索・関連の `concepts/` 走査、関連表示の `[[ ]]` 1 ホップ辿り）
+- `quality-checklist.md` §8 frontmatter 表に `kind` を追加、§8.1「概念ページ（concept）と wikilink」を新設
+- FileChanged hook に `.claude/indie/*/knowledge/concepts/*.md` matcher を追加
+- `indie-init` の生成ディレクトリに `knowledge/concepts/` を追加
+
+### Changed
+- `indie-issue-maintain` 処理フローに概念ページ波及判定を追加
+- `retrospective` 処理フローに概念ページ化提案ステップ（Phase 2.5）を追加
+
 ## [1.23.0] - 2026-05-18
 
 ### Added

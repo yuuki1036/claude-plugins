@@ -124,6 +124,7 @@ knowledge ファイルのフロントマターには `status` と `tags` を必�
 
 | フィールド | 必須 | 意味 |
 |-----------|------|------|
+| `kind` | 任意 | `source`（個別知見、省略時のデフォルト）または `concept`（横断統合の概念ページ） |
 | `source` | 必須 | 元の Issue ID や調査元 |
 | `status` | 必須 | `verified`（実装済み）または `planned`（設計案） |
 | `verified` | 条件付き | status: verified の場合のみ。検証日 `YYYY-MM-DD` |
@@ -163,6 +164,32 @@ tags: [cache, redis, ttl, session]
 - 既存 knowledge を編集した場合: **必ず** `updated` を編集日に書き換える（鮮度判定の根拠になるため）
 - frontmatter 以外の本文修正のみでも更新する（typo 修正等の極小変更は任意）
 - 既存ファイルに `updated` がない場合は、次回編集時に追加する（遡及修正は不要）
+
+### 6.1 概念ページ（concept）と wikilink
+
+knowledge は 2 種類ある。
+
+| kind | 配置 | 役割 |
+|------|------|------|
+| `source`（省略時デフォルト） | `knowledge/{slug}.md` | 個別知見。1 つの Issue / 調査から切り出した単一トピック |
+| `concept` | `knowledge/concepts/{slug}.md` | 概念ページ。複数 source を横断統合した知見（共通パターン・矛盾・全体構造） |
+
+**concept ページの必須セクション:**
+
+- 概要 / 横断的知見 / 未解決の問い / 関連ソース
+- 「横断的知見」が concept の核。単一 source の要約に留まるなら concept にせず source のままにする
+- 「関連ソース」は統合元の source を `[[name]] — 観点` の形で列挙する
+
+**wikilink 記法:**
+
+- knowledge 同士は `[[name]]`（拡張子なしの basename）でリンクする
+- 解決対象は `knowledge/` 配下（`concepts/` を含む）の `.md` の basename
+- 例: `[[api-patterns]]` → `knowledge/api-patterns.md`、`[[data-fetching]]` → `knowledge/concepts/data-fetching.md`
+- リンク切れ・孤立・表記ゆれ・重複概念は `/knowledge-lint` で検出する
+
+**concept の作り方（波及）:**
+
+source を切り出した後、同じテーマの source が 2 件以上あれば concept への統合を検討する。既存 concept があれば「関連ソース」に `[[新 source]]` を追加し「横断的知見」を更新する。詳細は issue-maintain スキルの「概念ページへの波及」節を参照。
 
 ### 7. knowledge 切り出し時の照合ルール
 

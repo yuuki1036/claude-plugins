@@ -23,6 +23,30 @@ allowed-tools:
 - `search <keyword>` → tags/内容でキーワード検索
 - `related` → 現在の Issue に関連する knowledge を表示
 
+> 健全性チェック（broken link / orphan / 表記ゆれ / 重複概念の検出と修正）は別スキル `/knowledge-lint` で実行する。
+
+---
+
+## knowledge の種類（source / concept）
+
+knowledge は 2 種類ある。frontmatter の `kind` で区別する。
+
+| kind | 配置 | 役割 |
+|------|------|------|
+| `source`（省略時のデフォルト） | `knowledge/*.md` | 個別知見。1 つの Issue / 調査から切り出した単一トピックの知見 |
+| `concept` | `knowledge/concepts/*.md` | 概念ページ。複数の source を横断して統合した知見（共通パターン・矛盾・全体構造） |
+
+`kind` が無いファイルは `source` として扱う（後方互換）。概念ページの本質は「複数ソースを繋いで初めて見える構造」を蓄積することにある。
+
+## wikilink 記法
+
+knowledge 同士は `[[name]]` 記法でリンクする（`name` は拡張子なしの basename）。
+
+- 解決対象: `.claude/indie/{slug}/knowledge/` 配下（`concepts/` を含む）の `.md` ファイルの basename
+- 例: `[[api-patterns]]` は `knowledge/api-patterns.md` を、`[[data-fetching]]` は `knowledge/concepts/data-fetching.md` を指す
+- concept ページの「関連ソース」セクションで、統合元の source を `[[name]] — 観点` の形で列挙する
+- リンク切れ・孤立は `/knowledge-lint` が検出する
+
 ---
 
 ## Phase 0: プロジェクト特定
@@ -44,11 +68,12 @@ allowed-tools:
 
 1. `knowledge/index.md` の存在を確認（Read）
 2. **index.md が存在する場合:**
-   - テーブル全体を表示する
+   - テーブル全体を表示する（concept 行と source 行を分けて見せる）
 3. **index.md が存在しない場合:**
-   - `.claude/indie/{slug}/knowledge/*.md` を Glob で列挙
-   - 各ファイルのフロントマター（tags, status, source）を Read して一覧化
-4. knowledge が0件の場合:
+   - `.claude/indie/{slug}/knowledge/**/*.md` を Glob で列挙（`concepts/` 配下も含む。`index.md` は除外）
+   - 各ファイルのフロントマター（kind, tags, status, source）を Read して一覧化
+4. **概念ページ（concept）を先に、個別知見（source）を後に**表示する。concept は横断的に俯瞰するエントリポイントになるため上位に置く
+5. knowledge が0件の場合:
    - 「このプロジェクトにはまだ knowledge がありません。`/indie-issue-maintain` で知見を切り出せます。」と表示
 
 ---
@@ -61,10 +86,11 @@ allowed-tools:
    - 概要列でもキーワードを照合する
    - ヒットした knowledge ファイルを Read して内容を表示する
 3. **index.md がない場合:**
-   - `.claude/indie/{slug}/knowledge/*.md` を Glob で列挙
+   - `.claude/indie/{slug}/knowledge/**/*.md` を Glob で列挙（`concepts/` 配下も含む）
    - 各ファイルを Grep でキーワード検索する
    - ヒットしたファイルを Read して内容を表示する
-4. **ヒットなしの場合:**
+4. **概念ページへの誘導**: ヒットした source を `[[name]]` で参照している concept があれば、「関連する概念ページ」として併記する（個別知見から横断知見へ辿れるようにする）
+5. **ヒットなしの場合:**
    - 「'{keyword}' に関連する knowledge は見つかりませんでした」と表示
    - 全 tags を一覧表示して「これらのタグで再検索できます」と案内
 
@@ -79,7 +105,8 @@ allowed-tools:
 3. モード B と同じロジックでキーワード検索を実行する
 4. さらに、Issue の「変更ファイル」セクションに記載されたファイルパスからもキーワードを抽出:
    - ディレクトリ名・ファイル名をキーワードとして追加
-5. ヒットした knowledge を表示する
+5. **wikilink を 1 ホップ辿る**: ヒットした knowledge 本文の `[[name]]` 参照先を解決し、関連 knowledge として併せて提示する（concept ↔ source の繋がりを 1 段階展開する）
+6. ヒットした knowledge を表示する（concept を優先的に上位に置く）
 
 ---
 
@@ -90,12 +117,18 @@ allowed-tools:
 ```
 ## Knowledge 一覧（{slug}）
 
+### 概念ページ（横断統合）
+| ファイル | tags | status | 概要 |
+|---------|------|--------|------|
+| concepts/data-fetching.md | data-fetching, cache, pagination | verified | データ取得戦略の横断知見 |
+
+### 個別知見
 | ファイル | tags | status | 概要 |
 |---------|------|--------|------|
 | api-patterns.md | api, rest, pagination | verified | REST API のページネーションパターン |
 
-{N}件の knowledge が蓄積されています。
-`/knowledge search <keyword>` で検索できます。
+concept {M}件 / source {N}件。
+`/knowledge search <keyword>` で検索、`/knowledge-lint` で健全性チェックができます。
 ```
 
 ### 検索結果

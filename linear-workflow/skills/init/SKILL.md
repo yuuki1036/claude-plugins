@@ -65,12 +65,13 @@ Linear プロジェクトの初期セットアップを行い、ディレクト�
 
 ```
 .claude/linear/{slug}/
-├── projects/          # プロジェクト doc 格納ディレクトリ
-├── issues/            # Issue ファイル格納ディレクトリ
-└── knowledge/         # 知見格納ディレクトリ
+├── projects/            # プロジェクト doc 格納ディレクトリ
+├── issues/              # Issue ファイル格納ディレクトリ
+└── knowledge/           # 知見格納ディレクトリ（個別知見 = source）
+    └── concepts/        # 概念ページ（横断統合 = concept）
 ```
 
-2. 各ディレクトリに `.gitkeep` を配置して空ディレクトリを保持する
+2. 各ディレクトリ（`knowledge/concepts/` を含む）に `.gitkeep` を配置して空ディレクトリを保持する
 
 ### Phase 5: プロジェクト doc の生成
 

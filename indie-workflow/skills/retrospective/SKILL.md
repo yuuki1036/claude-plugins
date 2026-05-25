@@ -18,6 +18,7 @@ allowed-tools:
 
 `.claude/indie/` 内のプロジェクトデータを分析し、指定期間の振り返りレポートを生成する。
 完了実績・作業期間・スコープ精度・knowledge 切り出し・技術的負債の増減を定量的に把握し、
+反復テーマからは概念ページ（concept）への統合を提案する。
 Good / Problem / Try の振り返りフレームで対話的に学びを抽出する。
 
 ## コマンド
@@ -139,22 +140,55 @@ events.jsonl が存在しない、または直近のイベントが期間より�
 
 キーワード照合は単純な部分一致でよい（完全な NLP は不要）。
 
-### 7. 反復テーマの検出
+### 7. 反復テーマの検出と概念ページ化
 
-期間中に作成された `.claude/indie/*/knowledge/*.md` のフロントマター `tags:` を集計する。
+期間中に作成された source（`.claude/indie/*/knowledge/*.md`、`concepts/` 配下は除く）のフロントマター `tags:` を集計する。
 
-- 同じタグが 2 件以上の knowledge に現れた場合、反復テーマとして警告
+- 同じタグが 2 件以上の source に現れた場合、反復テーマとして警告
 - `tags` がない knowledge は集計対象外
+- **既存 concept の照合**: その反復タグを扱う概念ページ（`knowledge/concepts/*.md`）が既にあるか確認する
 - 警告フォーマット:
   ```
   🔁 反復警告
-    - タグ「{tag}」が {N} 件の knowledge に現れています:
+    - タグ「{tag}」が {N} 件の source に現れています:
       - {knowledge-file-1.md}
       - {knowledge-file-2.md}
-    - 共通の根本原因がある可能性があります。別途深掘りを検討してください。
+    - 横断する共通パターン・根本原因がある可能性があります。
+    - {既存 concept があれば「→ 概念ページ concepts/{xxx}.md が関連します」を併記}
   ```
 
+反復テーマは「複数 source を横断する共通テーマ」であり、概念ページ（concept）に統合する最有力候補。Phase 2.5 で concept 化を提案する。
+
 閾値（デフォルト 2 件）は SKILL.md のこの定義に従う。
+
+---
+
+## Phase 2.5: 概念ページ化の提案
+
+反復テーマ（Phase 2 の指標 7）で検出した「横断する共通タグ」は、複数 source を繋いで初めて見える知見＝概念ページ（concept）の素材になる。要約の寄せ集めではなく「繋げる」ことが knowledge の価値の本体であり、retrospective はその俯瞰的な発見の場として機能する。
+
+### 提案ロジック
+
+反復タグごとに次を判定して提案する:
+
+1. **既存 concept がある**: その concept に未統合の source があれば、`/indie-issue-maintain` の波及フロー（「関連ソース」への `[[ ]]` 追加・「横断的知見」更新）を案内する
+2. **既存 concept が無い & 該当 source が 2 件以上**: 新規概念ページの作成を **AskUserQuestion** で提案する
+   - question: "反復テーマ「{tag}」を概念ページ（concept）に統合しますか？"
+   - header: "概念ページ化"
+   - options:
+     1. label: "ドラフト作成" / description: "concepts/{tag}.md のドラフトを作り、関連 source を [[ ]] で繋ぐ"
+     2. label: "あとで" / description: "提案だけ残してレポートに記録"
+     3. label: "不要" / description: "概念ページ化しない"
+
+### ドラフト作成
+
+「ドラフト作成」が選ばれた場合、`.claude/indie/{slug}/knowledge/concepts/{concept-slug}.md` を作成する:
+
+- セクション構成・frontmatter（`kind: concept`）は indie-issue-maintain スキルの「概念ページへの波及」節のテンプレートに従う
+- 「関連ソース」に反復タグを持つ source を `[[name]] — 観点` で列挙する
+- 「横断的知見」は反復 source を読んで共通パターン・矛盾を埋める。埋められない部分は「未解決の問い」に回す
+- 作成後 `knowledge/index.md` を更新する（ファイル列は `concepts/{slug}.md`）
+- 作成前に内容をユーザーに提示し承認を得る
 
 ---
 
@@ -192,12 +226,13 @@ events.jsonl が存在しない、または直近のイベントが期間より�
 4. Source 1 と Source 2 を slug+issue_id で dedup・統合
 5. Phase 2 の各指標（1〜7）を算出
    - 前回 retro との比較（6）: retrospectives/ を Glob で列挙し最新 1 件と照合
-   - 反復テーマ検出（7）: 期間中の knowledge の tags を集計
+   - 反復テーマ検出（7）: 期間中の source の tags を集計（`concepts/` は除外）
 6. 分析結果をユーザーに提示（反復警告・前回比較を冒頭で目立たせる）
-7. Phase 3 の振り返りフレーム（Good → Problem → Try の順に対話）
-8. テンプレートに沿ってレポートを生成
-9. レポート内容をユーザーに提示し、承認を得る
-10. .claude/indie/retrospectives/YYYY-MM-DD.md に保存
+7. Phase 2.5 概念ページ化の提案（反復テーマを concept に統合するか。承認時はドラフト作成 + index.md 更新）
+8. Phase 3 の振り返りフレーム（Good → Problem → Try の順に対話）
+9. テンプレートに沿ってレポートを生成
+10. レポート内容をユーザーに提示し、承認を得る
+11. .claude/indie/retrospectives/YYYY-MM-DD.md に保存
 ```
 
 ---
