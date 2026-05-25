@@ -7,7 +7,7 @@
 ### コマンドで明示的に起動
 
 ```
-/feedback instinct-memory 学習の自動検知精度を上げてほしい
+/feedback dev-workflow コミットメッセージの粒度を調整したい
 /feedback
 ```
 

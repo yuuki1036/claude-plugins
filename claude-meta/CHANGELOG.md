@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.1] - 2026-05-25
+
+### Changed
+- `eval-runner/SKILL.md` の command↔skill 曖昧性パターン例から `instinct-memory` 関連を削除（instinct-memory プラグイン廃止に伴う参照除去）
+
 ## [1.9.0] - 2026-05-22
 
 ### Added

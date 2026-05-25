@@ -29,7 +29,6 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 
 | プラグイン | コマンド | スキル | agents | hooks | 説明 |
 |-----------|---------|-------|--------|-------|------|
-| instinct-memory | 3 | 1 | - | Stop, PostCompact | セッション中のパターン学習と auto memory 管理 |
 | code-review | 2 | 2 | - | SessionStart | Phase 0 トリアージ + 動的エージェント構成コードレビュー / セルフレビュー |
 | dev-workflow | 3 | 3 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認の開発ワークフロー（chrome-devtools MCP 同梱） |
 | claude-meta | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善・CCアップデート追従・eval 回帰テスト・新コンポーネント追加前判断 |
@@ -157,8 +156,8 @@ event_bus_clear
 
 | イベント | 発火タイミング | publisher | 主な subscriber |
 |---|---|---|---|
-| `issue:completed` | Issue ファイルの status が completed に遷移 | linear-workflow / indie-workflow | **instinct-memory**（実装済）, **indie-workflow:retrospective**（実装済） |
-| `feature:implemented` | feature-dev Phase 7 完了 | **feature-dev**（実装済） | instinct-memory（将来） |
+| `issue:completed` | Issue ファイルの status が completed に遷移 | linear-workflow / indie-workflow | **indie-workflow:retrospective**（実装済） |
+| `feature:implemented` | feature-dev Phase 7 完了 | **feature-dev**（実装済） | - |
 | `commit:created` | git commit 成功（PostToolUse Bash matcher で検知） | **dev-workflow**（実装済） | - |
 | `review:completed` | code-review Step 7（レポート出力後） | **code-review**（実装済） | - |
 

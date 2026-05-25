@@ -120,12 +120,6 @@ plugins:
 | [`plugin-manager`](./plugin-manager) | インストール済みプラグインを一括更新 |
 | [`plugin-feedback`](./plugin-feedback) | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 
-### 学習 / メモリ
-
-| プラグイン | 用途 |
-|---|---|
-| [`instinct-memory`](./instinct-memory) | セッション中の訂正・好みパターンを instinct として記録、確信度の高いものを auto memory に昇格 |
-
 ### 外部サービス連携
 
 | プラグイン | 用途 |
@@ -160,7 +154,6 @@ Linear で管理している Issue を 1 つ実装するときのコマンド遷
 | `claude-meta` | `/catch-up` で CC 最新機能を確認 / 「CLAUDE.md 監査」で品質チェック |
 | `plugin-manager` | `/update-all` で全プラグイン一括更新 |
 | `plugin-feedback` | `/feedback` で改善要望を GitHub Issue 化 |
-| `instinct-memory` | 自動で動く（セッション開始時 / Stop / PostCompact）。手動で `/learn`、`/instinct-status`、`/instinct-promote` |
 | `notebooklm-workflow` | `/notebook-add-source <url>` でソース追加 / `/notebook-query <question>` で質問。`nlm login` で事前認証 |
 
 > linear-workflow と indie-workflow は **同時に有効化しない**。両方有効だとスキル選択が衝突する。

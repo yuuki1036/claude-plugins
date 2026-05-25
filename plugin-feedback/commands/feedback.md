@@ -23,7 +23,6 @@ allowed-tools:
 
 1. `$ARGUMENTS` にプラグイン名が含まれていればそれを使う
 2. 未指定なら、以下のプラグイン一覧から選択を促す:
-   - instinct-memory
    - code-review
    - dev-workflow
    - claude-meta

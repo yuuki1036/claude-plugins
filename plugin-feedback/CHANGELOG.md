@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.5] - 2026-05-25
+
+### Changed
+- 対象プラグイン一覧（`commands/feedback.md`）と README の使用例から instinct-memory を除去（instinct-memory プラグイン廃止に伴う参照除去）
+
 ## [1.2.4] - 2026-05-18
 
 ### Changed

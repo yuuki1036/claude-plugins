@@ -7,15 +7,6 @@
   },
   "plugins": [
     {
-      "name": "instinct-memory",
-      "description": "セッション中の観察からパターンを学習し、auto memoryのinstinctとして管理・昇格させるシステム",
-      "version": "1.4.0",
-      "author": {
-        "name": "yuki"
-      },
-      "source": "./instinct-memory"
-    },
-    {
       "name": "code-review",
       "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応",
       "version": "2.13.0",
@@ -36,7 +27,7 @@
     {
       "name": "claude-meta",
       "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善、CCアップデート追従、セッション学習の反映",
-      "version": "1.9.0",
+      "version": "1.9.1",
       "author": {
         "name": "yuki"
       },
@@ -72,7 +63,7 @@
     {
       "name": "plugin-feedback",
       "description": "プラグインへの改善要望・バグ報告を GitHub Issue として作成。コマンドと自然言語の両方で起動",
-      "version": "1.2.4",
+      "version": "1.2.5",
       "author": {
         "name": "yuki"
       },

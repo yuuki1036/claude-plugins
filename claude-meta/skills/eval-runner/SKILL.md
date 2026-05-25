@@ -112,7 +112,6 @@ cases:
 
 該当パターン:
 - `dev-workflow:commit` ↔ `dev-workflow:git-commit-helper`
-- `instinct-memory:learn` ↔ `instinct-memory:instinct-learning`
 - `plugin-feedback:feedback` ↔ `plugin-feedback:feedback-issue`
 
 ## 注意事項
