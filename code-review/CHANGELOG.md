@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.13.0] - 2026-05-25
+
+### Added
+- `self-review` skill に `--focus <観点>` / `--exclude <観点1,観点2>` 引数を追加（GitHub issue #40）。同一セッションで既に reviewer agent を走らせた後の再実行時に、既検証の観点を再報告しないようレビュー対象を絞り込み・除外できる
+  - `--focus`: Phase 0 で該当観点の reviewer のみ構成（最小保証も focus に含まれない限り起動しない）
+  - `--exclude`: 該当観点の reviewer を構成から外す
+  - reviewer プロンプトに `review focus:` / `already verified (do not re-report):` を注入
+- `commands/self-review.md` の `argument-hint` と本文に `--focus` / `--exclude` を反映
+
 ## [2.12.0] - 2026-05-19
 
 ### Added

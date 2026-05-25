@@ -4,7 +4,7 @@ description: >
   Phase 0 トリアージ + 動的エージェント構成のセルフレビュー。
   diff → explorer(sonnet) → reviewer(opus) を動的構成、severity×confidence マトリクスでフィルタ。
   トリガー: 「セルフレビュー」「/self-review」「自分の変更を確認」「コミット前にチェック」
-  引数: [base branch] (省略時は自動検出)
+  引数: [base branch] [--staged] [--focus <観点>] [--exclude <観点1,観点2>] (省略時は自動検出)
 effort: xhigh
 allowed-tools:
   - Bash
@@ -57,6 +57,22 @@ wc -l <changed_files>
 変更がなければ終了。
 
 `--staged` 引数が指定されている場合は `git diff --cached` のみを対象とし、未ステージの変更は除外する。
+
+**`--focus` / `--exclude`（同一セッションでの重複レビュー回避）:**
+
+同一セッションで既に reviewer agent を走らせた後（コミット前並列レビュー等）に self-review を再実行する場合、既検証の観点を再報告しないよう以下の引数でスコープを制御する:
+
+- `--focus <観点>`: レビュー対象を特定の観点に絞る（例: `--focus "comment-conciseness"`, `--focus "type-safety"`）。複数指定はカンマ区切り
+- `--exclude <観点1,観点2>`: 既に他 agent でカバー済みの観点をスキップする
+
+適用先:
+- **Phase 0 (Step 2)**: `--focus` 指定時は該当観点の reviewer のみ構成する（最小保証の reviewer-bugs / reviewer-claude-md も `--focus` に含まれない限り起動しない）。`--exclude` 指定時は該当観点の reviewer を構成から外す
+- **reviewer 起動時 (Step 4)**: 各 reviewer プロンプトに以下を注入する
+
+  ```
+  review focus: {{ focus or "全件" }}
+  already verified (do not re-report): {{ exclude or "none" }}
+  ```
 
 **コンテキスト収集（並列で実行）:**
 - CLAUDE.md・規約ファイル: `CLAUDE.md`, `.github/CONTRIBUTING.md`, `.eslintrc.*`, `prettier.config.*`

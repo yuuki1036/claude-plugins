@@ -4,10 +4,11 @@ allowed-tools:
   - Bash
   - Read
   - AskUserQuestion
-argument-hint: "[--staged | base branch] (省略時はデフォルトブランチとの差分)"
+argument-hint: "[--staged | base branch] [--focus <観点>] [--exclude <観点1,観点2>] (省略時はデフォルトブランチとの差分)"
 ---
 
 self-review スキルを使用して、現在の変更のセルフレビューを実行してください。
 
 引数に `--staged` が指定されている場合は、ステージ済みの変更のみを対象にしてください。
 引数にブランチ名が指定されている場合は、それをbase branchとして使用してください。
+引数に `--focus <観点>` / `--exclude <観点1,観点2>` が指定されている場合は、レビュー対象観点を絞り込み・除外してください（同一セッションで既検証の観点を再報告しないため）。
