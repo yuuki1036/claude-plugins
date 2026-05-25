@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.14.0] - 2026-05-25
+
+### Added
+- `skills/pr-creator/SKILL.md` に Step 4.9「PR body の最終検証（gitignored パス検出）」を追加。`gh pr create` 直前に regex + `git check-ignore` で `.claude/` 等の gitignored パスを検出し、含まれていれば PR を作成せず除去を促す fail-fast 機構（GitHub issue #39）
+- `skills/pr-creator/SKILL.md` Step 5 に「gh pr create / edit が失敗した場合のフォールバック」を追加。Projects (classic) 廃止に起因する `projectCards` GraphQL エラーで gh CLI が exit 1 する場合に github MCP（`create_pull_request` / `update_pull_request`）へフォールバックする手順を明記（GitHub issue #41）
+- `skills/pr-creator/SKILL.md` / `commands/pr.md` の `allowed-tools` に `mcp__github__create_pull_request` / `mcp__github__update_pull_request` を追加（上記フォールバック用）
+- `skills/ui-verify/SKILL.md` Step 2 に「dev server ライフサイクル（セッション中は保持する）」セクションを追加。タスク完了ごとの停止・再起動を禁止し、HMR 断・認証再ハンドシェイク・port 競合ループを防ぐ。絶対厳守ルールにも保持方針を明記（GitHub issue #38）
+
 ## [1.13.1] - 2026-05-22
 
 ### Changed

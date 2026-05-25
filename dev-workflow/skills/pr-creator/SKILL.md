@@ -11,6 +11,8 @@ allowed-tools:
   - Read
   - AskUserQuestion
   - mcp__linear__get_issue
+  - mcp__github__create_pull_request
+  - mcp__github__update_pull_request
 ---
 
 # PR Creator
@@ -142,6 +144,25 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
   2. label: "アップロードせずスキップ" / description: "Screenshots セクションを PR 本文から省略し、手動添付をユーザーに口頭案内"
   3. label: "Screenshots を省略" / description: "PR body から Screenshots セクション自体を削除"
 
+### 4.9 PR body の最終検証（gitignored パス検出）
+
+`gh pr create` を実行する直前に、生成した body から gitignored パスを検出して fail-fast する。一度 PR が public になると内部パス参照は外部から見えてしまうため、文書ルール（厳守ルール参照）だけでなく機械チェックで橋渡しする。
+
+```bash
+# $pr_body に生成済みの PR 本文が入っている前提
+# 1) 代表的な gitignore 対象パスの即時検出（regex）
+violations=$(printf '%s\n' "$pr_body" | grep -E '(\.claude/|\.next/|node_modules/|dist/|build/|coverage/|\.env)' || true)
+
+# 2) リポジトリ固有の gitignore も尊重（動的判定）
+while read -r path; do
+  [ -n "$path" ] && git check-ignore -q "$path" 2>/dev/null && violations="${violations}"$'\n'"gitignored: $path"
+done < <(printf '%s\n' "$pr_body" | grep -oE '[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+')
+
+[ -n "$violations" ] && { echo "PR body に gitignored パスが含まれています:"; printf '%s\n' "$violations"; }
+```
+
+検出された場合は **PR を作成せず**、該当箇所を body から除去（または GitHub からクリック可能な URL に置換）してから再検証する。除去後に違反 0 件になったことを確認してから Step 5 に進む。
+
 ### 5. PRを作成
 
 ```bash
@@ -150,6 +171,26 @@ gh pr create --draft --title "<title>" --body "<description>"
 ```
 
 作成後はURLを表示する。
+
+#### gh pr create / edit が失敗した場合のフォールバック
+
+`gh pr create` / `gh pr edit` が以下の Projects (classic) 廃止エラーで exit 1 になることがある（Projects classic を使っていないリポでも、gh CLI が PR mutation 時に `projectCards` を取得するため発生する）:
+
+```
+GraphQL: Projects (classic) is being deprecated in favor of the new Projects experience ... (repository.pullRequest.projectCards)
+```
+
+この場合は github MCP にフォールバックする（GraphQL の `projectCards` field を触らないため deprecation の影響を受けない）:
+
+```
+# 新規作成
+mcp__github__create_pull_request({ owner, repo, head, base, title, body, draft: true })
+
+# body 更新
+mcp__github__update_pull_request({ owner, repo, pullNumber, body })
+```
+
+github MCP が未設定の場合は、PR を最小 body で作成し、本文はユーザーに手動更新を案内する。gh CLI 側にパッチが入って `projectCards` 取得を回避するようになれば、このフォールバックは不要になる。
 
 ## 厳守ルール
 

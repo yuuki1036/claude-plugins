@@ -94,6 +94,20 @@ lsof -nP -iTCP:${DEV_PORT} -sTCP:LISTEN 2>/dev/null
 - 必要な環境変数が未設定なら起動せず、ユーザーに状況を伝える
 - ログイン画面が出る場合は認証済みセッションの使い回しをユーザーに相談
 
+#### dev server ライフサイクル（セッション中は保持する）
+
+dev server はセッション開始時に **1 回だけ** 起動し、以後は **保持** する。タスク完了ごとに停止・再起動しない。再起動を繰り返すと HMR WebSocket 断（`ERR_CONNECTION_REFUSED`）、認証セッションの再ハンドシェイク、ユーザーが並行で開いている server との二重起動衝突、port 競合解消ループ（1 サイクル ~10s）が発生する。
+
+- 起動前: `lsof -nP -iTCP:${DEV_PORT} -sTCP:LISTEN` が空なら起動。応答があれば **そのまま使う**（止めない・再起動しない）
+- コード変更は **HMR** で反映する。手動 reload が要るときは `navigate_page` の reload を使い、server プロセスは触らない
+- ターン途中で再検証が必要になっても、起動中の server をそのまま使い回す
+- `TaskStop`（server 停止）するのは以下のみ:
+  1. ユーザーが明示的に「dev server 止めて」と言ったとき
+  2. セッション終了時（PR 作成完了などの最終出口）
+- 例外的に restart してよいのは、Tailwind v4 + Turbopack で「新規 utility class の初出が HMR に乗らない」等、HMR で反映できない既知の事情があるときだけ
+
+E2E への昇格（`webapp-testing` / Playwright）時も、Playwright の `webServer.reuseExistingServer: true` 相当で起動中 server を再利用する方針に揃える。
+
 ### Step 3: モード別の実行
 
 #### verify モード
@@ -188,6 +202,7 @@ chrome-devtools MCP のツール一覧と典型的な呼び出しパターンは
 ## 絶対厳守ルール
 
 - dev server の勝手な起動禁止。必ずユーザー確認を取る
+- 一度起動した dev server をタスク完了ごとに停止・再起動しない。セッション中は保持する（詳細は Step 2「dev server ライフサイクル」）
 - 認証情報やシークレットを screenshot に含めないよう、撮影前にログアウト状態 or masked 状態を確認
 - 本番環境 URL に対する `verify` 実行時は書き込み系操作（フォーム送信等）を行わない
 - `.claude/screenshots/` 以外への screenshot 保存禁止（プロジェクトに不要ファイルを残さない）

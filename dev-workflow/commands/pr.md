@@ -5,6 +5,8 @@ allowed-tools:
   - Read
   - AskUserQuestion
   - mcp__linear__get_issue
+  - mcp__github__create_pull_request
+  - mcp__github__update_pull_request
 ---
 
 pr-creator スキルを使用して、現在のブランチの差分とコミット履歴からドラフトPRを作成してください。
