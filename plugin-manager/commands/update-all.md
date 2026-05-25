@@ -1,17 +1,33 @@
 ---
-description: インストール済みの全プラグインを最新版に一括アップデートする
+description: 自作プラグインを最新版に一括アップデートする（--all で全プラグイン対象）
 user_invocable: true
+argument-hint: "[--all]"
 allowed-tools:
   - Bash
 ---
 
-インストール済みの全プラグインを一括更新してください。
+インストール済みプラグインを一括更新してください。
+
+引数 `$ARGUMENTS`:
+- 引数なし（デフォルト）: **自作プラグインのみ**更新
+- `--all`: インストール済みの全プラグインを更新
 
 ## 手順
 
+### Phase 0: 更新対象スコープの判定
+
+`claude plugin list` を実行する（この出力は Phase 1 / Phase 2 でも再利用する）。
+
+1. 出力から plugin-manager 自身の識別子 `plugin-manager@<marketplace>` を探し、`@` 以降を **「自作マーケットプレイス名」** として記録する（このコマンドが属するマーケットプレイス = 自作の出所とみなす。特定の名前をハードコードしない）。
+2. 引数 `$ARGUMENTS` を確認する:
+   - `--all` を含む → インストール済みの全プラグインを対象（従来挙動）
+   - 含まない（デフォルト）→ 自作マーケットプレイスに属するプラグインのみを対象
+3. 以降の全 Phase は、ここで絞り込んだ **対象プラグイン** に対してのみ実行する。
+4. 対象スコープを冒頭で一言報告する（例: `自作プラグイン（@yuuki1036-claude-plugins）7件を対象に更新します。全件対象にする場合は /update-all --all`）。
+
 ### Phase 1: マーケットプレイスキャッシュの最新化
 
-`claude plugin list` を実行し、出力から `name@marketplace` 形式のマーケットプレイス名（`@` 以降の部分）を抽出する。
+Phase 0 で記録した対象プラグインの `name@marketplace` から、マーケットプレイス名（`@` 以降の部分）を抽出する。
 重複を除いた各マーケットプレイスに対して以下を順番に実行する:
 
 1. ローカルキャッシュを削除する（古いバージョンが残っていると install 時に反映されない）:
@@ -26,9 +42,9 @@ rm -rf ~/.claude/plugins/cache/<marketplace-name>
 claude plugin marketplace update <marketplace-name>
 ```
 
-### Phase 2: インストール済みプラグイン一覧とバージョンの記録
+### Phase 2: 対象プラグイン一覧とバージョンの記録
 
-Phase 1 で実行した `claude plugin list` の出力を再利用し、全プラグインの以下の情報を記録する:
+Phase 0 で実行した `claude plugin list` の出力を再利用し、Phase 0 で絞り込んだ **対象プラグイン** の以下の情報を記録する:
 
 - `name@marketplace` 形式の識別子
 - 現在のバージョン（Before バージョンとして保持する）
