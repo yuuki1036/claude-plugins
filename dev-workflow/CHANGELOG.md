@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.15.0] - 2026-05-26
+
+### Added
+- `skills/pr-creator/references/description-guide.md` に「変更の粒度を小さく保つ（Small CL）」セクションを追加（Google Engineering Practices の small-cls 由来）。単一目的・行数目安（~100 快適 / ~400 要注意 / 1000 超は過大）・リファクタと機能変更の分離・revert 可能性・許容される例外を明文化
+- `skills/pr-creator/SKILL.md` Step 2 に diff の規模把握（`--shortstat`）と、目安超過時（400 行超 または 10 ファイル超）にレポート末尾へ分割検討の advisory を添える手順を追加。PR 作成自体は止めない non-blocking な扱い
+
 ## [1.14.0] - 2026-05-25
 
 ### Added

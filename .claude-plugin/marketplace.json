@@ -9,7 +9,7 @@
     {
       "name": "code-review",
       "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応",
-      "version": "2.13.0",
+      "version": "2.14.0",
       "author": {
         "name": "yuki"
       },
@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git操作・PR作成・UI動作確認の開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化",
-      "version": "1.14.0",
+      "version": "1.15.0",
       "author": {
         "name": "yuki"
       },

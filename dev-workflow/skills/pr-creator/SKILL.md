@@ -32,7 +32,10 @@ git branch -vv
 git remote show origin | grep "HEAD branch"
 git log <base-branch>..HEAD --oneline
 git diff <base-branch>...HEAD
+git diff <base-branch>...HEAD --shortstat
 ```
+
+diff のファイル数・行数を把握する。目安（400 行超 または 10 ファイル超）を大きく超える場合は、PR 作成は継続しつつ Step 5 のレポート末尾に分割検討の advisory を一言添える。判断基準は [references/description-guide.md](references/description-guide.md) の「変更の粒度を小さく保つ（Small CL）」を参照。
 
 ### 3. Linear Issue連携（該当する場合）
 
