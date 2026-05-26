@@ -1,9 +1,9 @@
 ---
 name: knowledge-lint
 description: >
-  knowledge の健全性をチェックする。broken wikilink・孤立知見・index 不整合・
-  tags 表記ゆれ・重複概念を検出し、機械的に直せるものは承認制で修正する。
-  トリガー: 「knowledge lint」「ナレッジ点検」「リンク切れチェック」「knowledge 健全性」「/knowledge-lint」
+  knowledge の健全性を点検・修復する（lint）。検索・参照ではなくグラフの保守が目的。
+  broken wikilink・孤立 / 重複ページ・index 不整合・tags 表記ゆれを検出し、機械的に直せるものは承認制で修正する。
+  トリガー: 「knowledge lint」「ナレッジ点検」「リンク切れチェック」「リンク切れ」「孤立した知見」「knowledge の健全性」「knowledge を整理」「/knowledge-lint」
 effort: medium
 allowed-tools:
   - Read

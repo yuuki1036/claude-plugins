@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.23.1] - 2026-05-26
+
+### Changed
+- `knowledge` / `knowledge-lint` の description を「検索・参照（読み取り専用）」と「点検・修復（lint）」に分離し、トリガー精度を改善。`knowledge` の単独トリガー「knowledge」を外して検索文脈に限定、`knowledge-lint` に「リンク切れ」「孤立した知見」「knowledge を整理」を追加。eval（pass^k=3）で knowledge-lint を狙うプロンプトが検索用 knowledge に誤誘導される問題（2/6 → 6/6）を解消
+
 ## [1.23.0] - 2026-05-25
 
 ### Added

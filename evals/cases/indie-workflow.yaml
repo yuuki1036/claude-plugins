@@ -12,3 +12,18 @@ cases:
     prompt: 今月の個人開発を振り返る
     expected_skill: indie-workflow:retrospective
     k: 3
+  - id: knowledge-lint-ja
+    prompt: knowledge のリンク切れと孤立ページをチェックして
+    expected_skill: indie-workflow:knowledge-lint
+    k: 3
+    tags: [knowledge]
+  - id: knowledge-lint-natural
+    prompt: ナレッジの健全性を点検したい
+    expected_skill: indie-workflow:knowledge-lint
+    k: 3
+    tags: [knowledge]
+  - id: knowledge-search-ja
+    prompt: 過去に似た問題を解決した知見はある？
+    expected_skill: indie-workflow:knowledge
+    k: 3
+    tags: [knowledge]
