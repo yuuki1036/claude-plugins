@@ -8,6 +8,7 @@ cases:
     prompt: Linear Issue をローカルに取り込んで
     expected_skill: linear-workflow:issue-create
     k: 3
+    tags: [issue-design]
   - id: session-start-ja
     prompt: このブランチの作業を開始する
     expected_skill: linear-workflow:session-start
@@ -27,3 +28,13 @@ cases:
     expected_skill: linear-workflow:knowledge
     k: 3
     tags: [knowledge]
+  - id: issue-design-ja
+    prompt: この Issue を 9 セクション構造で設計し直したい
+    expected_skill: linear-workflow:issue-design
+    k: 3
+    tags: [issue-design]
+  - id: issue-design-natural
+    prompt: 決定事項と open な判断ポイントを切り分けて Issue を設計し直したい
+    expected_skill: linear-workflow:issue-design
+    k: 3
+    tags: [issue-design]

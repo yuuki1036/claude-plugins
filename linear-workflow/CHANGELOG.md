@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.24.0] - 2026-05-26
+
+### Added
+- **`issue-design` スキル / コマンドを新設**。Issue 本文を 9 セクションテンプレ（Why / 成果物 / 対応内容 / 完了条件 / 依存・ブロッカー / 決定事項 / 判断ポイント(open) / 参考資料 / スコープ外）と設計判断ルール（決定 vs open の境界、現時点の方向性マーカー、後続の双方向記述、確定タイミング明示）に沿って設計・構造化・リライトする。新規起票（`issue-create`）・品質チェック（`issue-maintain`）と責務分離し、トリガーは規範・設計系に限定して create との誤起動を回避
+- `references/template-9sections.md`（9 セクション定義・コピペ雛形）/ `references/design-rules.md`（設計判断ルール）を普遍 references として追加。両者は indie-workflow と byte-identical で共有する正本
+- `references/linear-syntax.md`（collapsible `+++` / `<issue id>` リンク / インライン pros/cons）を Linear 固有 references として追加
+
 ## [1.23.1] - 2026-05-26
 
 ### Changed

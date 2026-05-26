@@ -30,6 +30,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CANONICAL_SAFE_HOOK = ROOT / ".claude-plugin" / "lib" / "safe-hook.sh"
 
+# 両プラグインで byte-identical であるべき共有 references（(canonical, replica) のペア）.
+# issue-design の普遍部分（9 セクションテンプレ / 設計判断ルール）は linear / indie で同一内容を共有する.
+SHARED_REFERENCES = [
+    (
+        ROOT / "linear-workflow" / "skills" / "issue-design" / "references" / "template-9sections.md",
+        ROOT / "indie-workflow" / "skills" / "issue-design" / "references" / "template-9sections.md",
+    ),
+    (
+        ROOT / "linear-workflow" / "skills" / "issue-design" / "references" / "design-rules.md",
+        ROOT / "indie-workflow" / "skills" / "issue-design" / "references" / "design-rules.md",
+    ),
+]
+
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 REF_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\s)`'\"]+)")
 
@@ -149,6 +162,22 @@ def check_safe_hook_sync(plugin_dir: Path, errors: list[str]) -> None:
         errors.append(f"[safe-hook-sync:{name}] diverged from canonical: {replica.relative_to(ROOT)}")
 
 
+def check_shared_references_sync(errors: list[str]) -> None:
+    """両プラグインで共有する references が byte-identical かを検証する（plugin 跨ぎ）."""
+    for canonical, replica in SHARED_REFERENCES:
+        if not canonical.is_file():
+            errors.append(f"[shared-ref-sync] canonical missing: {canonical.relative_to(ROOT)}")
+            continue
+        if not replica.is_file():
+            errors.append(f"[shared-ref-sync] replica missing: {replica.relative_to(ROOT)}")
+            continue
+        if canonical.read_bytes() != replica.read_bytes():
+            errors.append(
+                f"[shared-ref-sync] diverged: {replica.relative_to(ROOT)} "
+                f"!= {canonical.relative_to(ROOT)}"
+            )
+
+
 def check_references(plugin_dir: Path, errors: list[str]) -> None:
     name = plugin_dir.name
     for skill_md in sorted((plugin_dir / "skills").glob("*/SKILL.md")):
@@ -204,6 +233,8 @@ def main() -> int:
             continue
         for check in CHECKS:
             check(plugin_dir, errors)
+
+    check_shared_references_sync(errors)
 
     if errors:
         print("Plugin quality validation failed:", file=sys.stderr)
