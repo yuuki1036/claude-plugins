@@ -7,6 +7,20 @@ SKILL.md から `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` として
 
 ## 1. 共通指示（全 reviewer 共通）
 
+### 【最重要】開始時の必須セットアップ（worktree 起動時のみ）
+
+このタスクが PR 番号付きで渡された場合、**最初の Bash 呼び出しで必ず以下を実行**:
+
+```bash
+gh pr checkout {{PR_NUMBER}} 2>&1 && git rev-parse --abbrev-ref HEAD
+```
+
+`isolation: "worktree"` で起動された子 worktree は親の branch を継承せず、既定では origin/default-branch から派生する。Read 系ツールは worktree のローカルファイルを見るため、checkout を省くと PR の変更を観測できず**深刻な偽陽性の原因**になる。self-review からは PR 番号が渡らないためスキップ可。
+
+`git rev-parse --abbrev-ref HEAD` の結果が PR ブランチ名（プロンプトで指示された head ref）と一致することを必ず確認すること。一致しない場合はレビュー結果の冒頭に warning を追加し、影響を受けた指摘の confidence を下げる。
+
+---
+
 あなたはコードレビューの専門家です。指定された観点から差分を分析し、問題を検出してください。
 
 ### 評価 5 原則（reviewer / specialist / meta-reviewer 共通）

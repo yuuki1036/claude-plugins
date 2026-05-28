@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "code-review",
-      "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。評価 5 原則と AGENTS.md 階層動的選択、result_grid event payload、guardrail-bypass specialist を追加",
-      "version": "2.15.0",
+      "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。worktree branch 継承バグ修正 (agent prompt への PR_NUMBER 注入)、PR 種別分岐ルール (doc-review / dba / supply-chain / skip) と Issue ファイル必読フローを追加",
+      "version": "2.16.0",
       "author": {
         "name": "yuki"
       },
@@ -17,8 +17,8 @@
     },
     {
       "name": "dev-workflow",
-      "description": "Git操作・PR作成・UI動作確認の開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化",
-      "version": "1.15.0",
+      "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離",
+      "version": "1.16.0",
       "author": {
         "name": "yuki"
       },

@@ -22,6 +22,50 @@ Phase 0 実行前に以下の情報を収集する:
 | Issue/knowledge ファイルの有無 | ファイル存在チェック | 存在する場合 |
 | プロジェクト特性シグナル | `package.json` の主要依存 | 存在する場合 |
 
+## 2.5. PR 種別分岐ルール（Stage 0 / Stage 1 の前段）
+
+Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成から PR 種別を判定** し、レビュー構成を絞り込む。doc-only / migration / lockfile / generated code 等の特殊 PR では、通常の reviewer 群を全部当てると空振り・即興構成に陥り skill のスキャフォールドを実質無視することになる（GitHub issue #43）。
+
+### 判定手順
+
+1. `gh pr diff <PR番号> --name-only` で変更ファイル一覧を取得
+2. 拡張子・パスパターンで分類し、以下の表に従ってモードを決定
+3. 該当モードがあれば本表の「推奨 agent 構成」を Stage 2 の上限・最小保証より優先して採用
+4. 「default-mode」になった場合のみ通常の Stage 1 / Stage 2 に進む
+
+### PR 種別分岐ルール表
+
+| シグナル（Phase 0 観測） | モード | 推奨 agent 構成 |
+|---|---|---|
+| `*.md` 比率 ≥ 80% | `doc-review-mode` | リンク健全性 / SQL・コード片の安全性 / 構造整合性に絞った 1〜2 reviewer。bug-detection の最小保証は **doc 文脈に読み替え** （リンク切れ・誤情報を bug 相当として扱う） |
+| SQL migration ファイル含む（`*/migrations/*.sql`, `prisma/migrations/`, `db/migrate/` 等） | `dba-mode` | migration reviewer 必須 + specialist-destructive-op。idempotency / lock 影響 / rollback 可能性 / 既存データへの影響に特化 |
+| lockfile（`package-lock.json` / `yarn.lock` / `pnpm-lock.yaml` / `Cargo.lock` / `Gemfile.lock` / `poetry.lock` 等）主体（ロックファイルが全変更行数の 70% 以上） | `supply-chain-mode` | dependency reviewer 1 体に絞る。diff の CVE 観点 / 追加された未知パッケージ / postinstall 危険性に集中、ロック内部のハッシュ差分は読まない |
+| Vendor / generated code 主体（`vendor/`, `node_modules/`, `*.pb.go`, `*.gen.ts`, `dist/`, `build/`, OpenAPI/GraphQL 自動生成ファイル等が 80% 以上） | `skip-mode` | レビューを基本スキップ。AskUserQuestion で「生成物のため通常レビュー対象外。続行しますか？」を確認し、`spec-compliance` のみ起動して仕様整合性のみ検証 |
+| 上記いずれでもない | `default-mode` | 通常の Stage 1 / Stage 2 トリアージへ |
+
+### 適用モードの透明性
+
+決定したモードは Phase 0 構成テーブル出力に必ず含めること（SKILL.md Step 3.3 / 7）:
+
+```
+## Phase 0 トリアージ結果
+
+### 適用モード
+- mode: doc-review-mode
+- 理由: 変更ファイル 12 件中 11 件が `*.md`（91.7%）
+- スキャフォールドの一部スキップ: bug-detection / claude-md-compliance の最小保証は doc 文脈に読み替え
+```
+
+レポート冒頭 (TL;DR) にも `[mode: doc-review, agents: [doc-reviewer]]` のような 1 行ヘッダを表示し、レビュー判断のコンテキストをユーザーに伝える。
+
+### モード判定の判定基準（曖昧ケース）
+
+- ファイル比率は **変更ファイル数** で測る（行数比率ではない、巨大 lockfile に引っ張られすぎないため）
+- 複数モードに該当する場合は **より厳しい絞り込み** を優先（`skip-mode` > `dba-mode` > `doc-review-mode` > `supply-chain-mode` > `default-mode`）
+- モード判定で迷う場合は `default-mode` にフォールバック（保守的に振る舞う）
+
+---
+
 ## 3. Stage 1: タイプ判定
 
 ### explorer の必要性判定

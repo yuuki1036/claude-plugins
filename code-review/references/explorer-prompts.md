@@ -7,6 +7,20 @@ explorer は事実収集に特化し、問題の判定（バグかどうか等�
 
 ## 共通指示（全 explorer 共通）
 
+### 【最重要】開始時の必須セットアップ（worktree 起動時のみ）
+
+このタスクが PR 番号付きで渡された場合、**最初の Bash 呼び出しで必ず以下を実行**:
+
+```bash
+gh pr checkout {{PR_NUMBER}} 2>&1 && git rev-parse --abbrev-ref HEAD
+```
+
+`isolation: "worktree"` で起動された子 worktree は親の branch を継承せず、既定では origin/default-branch から派生する。Read 系ツールは worktree のローカルファイルを見るため、checkout を省くと PR の変更を観測できず**深刻な偽陽性の原因**になる。self-review からは PR 番号が渡らないためスキップ可。
+
+`git rev-parse --abbrev-ref HEAD` の結果が PR ブランチ名（プロンプトで指示された head ref）になっていることを確認してから探索を開始すること。一致しない場合はエラー要旨を出力フォーマットの「reviewer への注意事項」に記録し、reviewer に warning として伝える。
+
+---
+
 あなたはコードベース探索の専門家です。指定されたフォーカス領域のコードを読み、構造的な事実を収集してください。
 
 ### 重要な原則

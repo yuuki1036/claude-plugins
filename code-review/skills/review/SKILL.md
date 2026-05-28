@@ -50,6 +50,28 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-pr-context.sh" <PR番号>
 
 スクリプトは PR 説明 / issue コメント / レビューサマリ / 行単位 review コメント（返信チェーン込み）を構造化 markdown で出力する。スクリプトが失敗した場合は ExitWorktree して、失敗理由をユーザーに報告し終了（PR コンテキスト無しでは re-flag 判定ができないため、レビュー継続は許可しない）。
 
+**【任意】Issue ファイル必読フロー（linear-workflow / indie-workflow 併用時）**:
+
+PR head / base branch 名から Issue ID を抽出し、ローカルの Issue ファイルがあれば agent prompt に同梱する。仕様・受入条件・設計判断を踏まえた spec-compliance 判定の精度が上がる（GitHub issue #43）。
+
+```bash
+# 1. branch 名から [A-Z]+-\d+ パターンで Issue ID を抽出
+HEAD_REF=$(gh pr view <PR番号> --json headRefName -q .headRefName)
+BASE_REF=$(gh pr view <PR番号> --json baseRefName -q .baseRefName)
+ISSUE_IDS=$(echo "$HEAD_REF $BASE_REF" | grep -oE '[A-Z]+-[0-9]+' | sort -u)
+
+# 2. ローカル Issue ファイル探索（linear-workflow / indie-workflow 双方）
+for ID in $ISSUE_IDS; do
+  find .claude/linear -name "*.md" 2>/dev/null | xargs grep -l "$ID" 2>/dev/null
+  find .claude/indie -name "*.md" 2>/dev/null | xargs grep -l "$ID" 2>/dev/null
+done | sort -u
+```
+
+- ヒットしたファイルを Read で読み込み、内容を spec-compliance reviewer の prompt に `## Issue ファイル` セクションとして同梱する（reviewer-prompts.md の `## 2. セッションコンテキスト注入テンプレート` と同じ要領）
+- Issue 本文内に「親 Issue: [FOO-1234](...)」「Parent: FOO-1234」のような親リンクがあれば **1 段だけ追跡** （深い再帰は禁止：トークン爆発防止）
+- Issue ID が抽出できない / ファイルが存在しない場合は本フローをスキップ（best-effort）
+- `.claude/linear/` と `.claude/indie/` 双方が無いリポジトリでは Glob が空配列を返すだけで no-op（後方互換）
+
 ### 2. diff とコンテキストの収集
 
 **重要:** diff は `gh pr diff` で GitHub 上の正しい差分を取得する。ローカルの `git diff` は使用しない。
@@ -109,6 +131,12 @@ Step 1 の `fetch-pr-context.sh` 出力をそのまま「PR コンテキスト�
 
 **Phase 0 はメインコンテキストで実行する（Agent ツールは使わない）。**
 
+#### 3.0 Stage 0: PR 種別分岐（先行判定）
+
+triage-guide.md `## 2.5 PR 種別分岐ルール` を **Stage 1 より先に** 適用する。`gh pr diff <PR番号> --name-only` の結果からモード（`doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode` / `default-mode`）を判定し、`default-mode` 以外の場合は推奨 agent 構成を Stage 2 の上限・最小保証より優先して採用する（GitHub issue #43）。
+
+決定したモードと根拠は Step 3.3 の構成テーブルおよび Step 7 のレポート冒頭に必ず含める。
+
 #### 3.1 Stage 1: タイプ判定
 
 diff の特性を分析し、必要なエージェントタイプを判定する:
@@ -145,6 +173,12 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 - 各 explorer に Phase 0 が決定した focus と対象ファイル・関数を指示として渡す
 - explorer-prompts.md の該当する Focus テンプレートをプロンプトに含める
 - 全エージェントを `isolation: "worktree"` で起動する（PR ブランチの状態でファイルを読むため）
+- **PR 番号注入（必須）**: agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRefName>`」を必ず明記し、explorer-prompts.md 共通指示の `{{PR_NUMBER}}` プレースホルダを実数値に置換する。`isolation: "worktree"` の子 worktree は親 branch を継承しないため、checkout 指示を欠かすと origin/default-branch を見て偽陽性を量産する（GitHub issue #56）
+
+  ```bash
+  # PR_NUMBER は Step 1 で取得済み（gh pr view --json number -q .number で再取得可能）
+  PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null || echo "<番号>")
+  ```
 
 全 explorer の完了を待ち、結果を収集する。
 
@@ -180,6 +214,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - セッションコンテキストが有効な場合、reviewer-prompts.md のセッションコンテキスト注入テンプレートに従い全 reviewer に注入する
 - `gh pr diff` の出力を各 reviewer に渡す
 - 全エージェントを `isolation: "worktree"` で起動する
+- **PR 番号注入（必須）**: agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRefName>`」を必ず明記し、reviewer-prompts.md 共通指示の `{{PR_NUMBER}}` プレースホルダを実数値に置換する。`isolation: "worktree"` の子 worktree は親 branch を継承せず origin/default-branch から派生するため、checkout 指示を欠かすと PR の変更を観測できず偽陽性を量産する（GitHub issue #56）
 
 **effort 設計意図**: reviewer は `max` で深い推論を優先（overthinking による偽陽性は Confidence ≥80 フィルタで刈り取る）。オーケストレーター（skill frontmatter）は `xhigh` で Opus 4.7 のコーディング向け推奨設定。
 
@@ -205,9 +240,11 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 3. `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md` の `re-explore` テンプレートで追加 explorer を `model: sonnet` で並列起動する
    - 各 explorer に対応する unmet_information（focus, target, why, related_finding）を指示として渡す
    - `isolation: "worktree"` で起動（PR ブランチ）
+   - **PR 番号注入（必須）**: Step 4 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
 4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`, `effort: max` で再起動する
    - 再起動 reviewer には初回指摘 + 追加 explorer 結果を context として渡し、「初回 confidence を再評価せよ」と指示
    - 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
+   - **PR 番号注入（必須）**: Step 5 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
 5. レポートに「Round 2 trigger: <reason>」を記録（Step 7 で出力）
 
 **失敗時**: 追加 explorer / 再起動 reviewer が失敗した場合は初回結果のままで続行（missing_coverage には追記しない、Round 2 は best-effort）
@@ -225,6 +262,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動
    - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
    - `isolation: "worktree"` で起動
+   - **PR 番号注入（必須）**: Step 5 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
 3. meta-reviewer の出力（追加指摘）を既存指摘に統合
    - 重複は dedup（同一ファイル ±5 行 + 類似内容）
    - meta-reviewer の指摘も通常のスコアリング・フィルタリング対象
@@ -261,6 +299,8 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 
 ```
 ## レビュー結果
+
+**[mode: {doc-review|dba|supply-chain|skip|default}, agents: [<focus 名のリスト>]]**
 
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
