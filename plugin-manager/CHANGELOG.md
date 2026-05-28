@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.6.0] - 2026-05-28
+
+### Added
+- SessionStart hook `check-missing-plugins.sh` を追加（#44）。`install_ratio` が閾値（既定 0.8）以上の marketplace について、未インストールプラグインを軽く通知する
+- 設定ファイル `~/.claude/plugin-manager/config.json` で `notify_cooldown_days` / `install_ratio_threshold` / `ignore_plugins` / `ignore_marketplaces` を調整可能
+- 通知 state `~/.claude/plugin-manager/state.json` で cooldown 管理（同一プラグインの再通知最短間隔、既定 7 日）
+
 ## [1.5.0] - 2026-05-25
 
 ### Added

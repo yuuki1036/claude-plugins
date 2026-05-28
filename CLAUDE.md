@@ -34,7 +34,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | claude-meta | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善・CCアップデート追従・eval 回帰テスト・新コンポーネント追加前判断 |
 | linear-workflow | 10 | 10 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | Linear MCP 連携の Issue/プロジェクト管理（knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計） |
 | indie-workflow | 10 | 10 | 2 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | 個人開発向けローカル Issue 管理（linear-workflow と排他。knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計） |
-| plugin-manager | 1 | - | - | - | インストール済みプラグインの一括更新 |
+| plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + ほぼ全部 install しているマーケットプレイスの後発追加取りこぼし通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 | feature-dev | 1 | - | 3 | - | 8 phase 機能開発ワークフロー（Phase 1.7 動的トリアージ + Phase 6 G-V 自動 fix ループ + runtime smoke test 含む。code-explorer / code-architect / code-reviewer 同梱）。claude-plugins-official からフォーク |
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱） |
