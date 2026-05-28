@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.16.0] - 2026-05-28
+
+### Added
+- `worktree-setup` skill: git worktree ベースの並列開発環境セットアップ。3 状態マトリクス（main / worktree-ready / worktree-unconfigured）で分岐し、`GIT_DIR != GIT_COMMON_DIR` + env マーカー（`envs/.backend.env.worktree`）で冪等判定。DB 名 / port を worktree 名から動的割当。references に state-matrix / env-templates / port-allocation / db-naming を同梱（#50）
+- `worktree-teardown` skill: worktree 破棄時の cleanup チェックリスト（プロセス停止 / DB drop / port 解放 / env 削除 / uncommitted 確認 / git worktree remove）を順次確認し、teardown 漏れ（DB drop 失敗・port leak）を WARNING で検知（#50）
+
+### Changed
+- `ui-verify` SKILL.md の「dev server ライフサイクル」セクションを issue #38 の構造に揃えて補強。セッション中の dev server 保持を明文化、検出ロジックを `lsof -i :$DEV_PORT -t` ベースで提示、検証ごとの再起動による HMR 断絶・認証再ハンドシェイク・port 競合ループ（1 セッションで 4 回再起動の実例）を防止（#38）
+
 ## [1.15.0] - 2026-05-26
 
 ### Added
