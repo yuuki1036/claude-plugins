@@ -120,6 +120,22 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 
 **部分失敗耐性:** 個別 explorer が失敗しても全体を中止しない。失敗した explorer の type / focus / エラー要旨を `missing_coverage` リストに記録し、残った explorer の結果で続行する。該当 focus に依存する reviewer には、Step 4 で「探索結果なし（失敗理由）」を明示して渡す。
 
+### 3.9 AGENTS.md 階層動的選択（reviewer 起動前）
+
+変更ファイルパスから対応する `{dir}/AGENTS.md` を Glob で発見し、該当層だけを reviewer プロンプトに同梱する。リポジトリ全体の AGENTS.md / CLAUDE.md を毎回フルロードせず、変更があった層のみ拾うことで reviewer 入力 token を典型 30〜50% 削減する。
+
+```bash
+git diff "${BASE}..HEAD" --name-only | xargs -n1 dirname 2>/dev/null | sort -u | while read dir; do
+  while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+    [ -f "$dir/AGENTS.md" ] && echo "$dir/AGENTS.md"
+    [ -f "$dir/CLAUDE.md" ] && echo "$dir/CLAUDE.md"
+    dir=$(dirname "$dir")
+  done
+done | sort -u
+```
+
+ヒットしたファイルのみ Read で読み込み、各 reviewer のプロンプトに `## 該当層の AGENTS.md / CLAUDE.md` セクションとして注入する。AGENTS.md が無いリポジトリでは no-op（後方互換）。
+
 ### 4. レビューフェーズ（reviewer 並列起動）
 
 `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` を Read で読み込む。

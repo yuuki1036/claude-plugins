@@ -78,6 +78,7 @@ diff に以下の **危険パターン** が検出された場合、対応する
 | `fs.unlink`, `fs.rm`, `rmSync`, `rm -rf`, `DROP TABLE`, `TRUNCATE`, `DELETE FROM .* WHERE` （WHERE 句なしの DELETE/UPDATE 含む）, `db.collection(...).drop()` | **specialist-destructive-op**（破壊的操作の意図確認） | BLOCKER または CRITICAL |
 | `password =`, `secret =`, `api_key =`, `apiKey =`, `private_key`, `BEGIN PRIVATE KEY`, `Bearer .+`, `Authorization:` （ハードコード）, `console.log(.*password)`, `console.log(.*token)` | **specialist-secret-handling**（シークレット漏洩） | BLOCKER |
 | `JSON.parse(.*req\.`, `parseInt(.*req\.`, `RegExp(.*user`, ユーザー入力の正規表現直接利用 | **specialist-input-validation**（信頼境界） | CRITICAL または BLOCKER |
+| **ガードレール骨抜き** — lint / hook / static check 設定ファイル（`.golangci.yml`, `.eslintrc*`, `lefthook.yml`, `pre-commit*`, `redocly.yaml`, `tsconfig.json`, `ruff.toml`, `.rubocop.yml` 等）からの **ルール削除・無効化・severity 降格（error→warn）・適用範囲縮小**、または `--no-verify` / `--no-gpg-sign` / `disable_*` フラグの新規追加 | **specialist-guardrail-bypass**（骨抜き検出） | **BLOCKER 固定**（commit body に明示的 justify がない限り） |
 
 **判定の原則**:
 - 文字列マッチは false positive を伴うが、specialist の役割は「人間判断を促す」ことなので積極的に起動して問題ない

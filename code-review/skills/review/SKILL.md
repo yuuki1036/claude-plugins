@@ -150,6 +150,24 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 
 **部分失敗耐性:** 個別 explorer が失敗しても全体を中止しない。失敗した explorer の type / focus / エラー要旨を `missing_coverage` リストに記録し、残った explorer の結果で続行する。該当 focus に依存する reviewer には、Step 5 で「探索結果なし（失敗理由）」を明示して渡す。
 
+### 4.9 AGENTS.md 階層動的選択（reviewer 起動前）
+
+変更ファイルパスから対応する `{dir}/AGENTS.md` を Glob で発見し、該当層だけを reviewer プロンプトに同梱する。リポジトリ全体の AGENTS.md / CLAUDE.md を毎回フルロードせず、変更があった層のみ拾うことで reviewer 入力 token を典型 30〜50% 削減する。
+
+```bash
+# 変更ファイルから親ディレクトリを抽出
+git diff <base>...HEAD --name-only | xargs -n1 dirname 2>/dev/null | sort -u | while read dir; do
+  # 当該ディレクトリから root まで遡って AGENTS.md / CLAUDE.md を探索
+  while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+    [ -f "$dir/AGENTS.md" ] && echo "$dir/AGENTS.md"
+    [ -f "$dir/CLAUDE.md" ] && echo "$dir/CLAUDE.md"
+    dir=$(dirname "$dir")
+  done
+done | sort -u
+```
+
+ヒットしたファイルのみ Read で読み込み、各 reviewer のプロンプトに `## 該当層の AGENTS.md / CLAUDE.md` セクションとして注入する。AGENTS.md が無いリポジトリでは Glob が空配列を返すだけで no-op（後方互換）。
+
 ### 5. レビューフェーズ（reviewer 並列起動）
 
 `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` を Read で読み込む。
@@ -337,14 +355,20 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
    ```bash
    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
      SAFE_HOOK_NAME="code-review:review" event_bus_publish "review:completed" \
-     "{\"pr\":\"<number>\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>]}"
+     "{\"pr\":\"<number>\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>}}"
    ```
 
    payload 規約:
    - `pr` は PR 番号の文字列（Step 1 で取得済み）。PR 番号取得に失敗した場合は `"local"` とする
    - `blocker_count` / `critical_count` / `major_count` / `minor_count` は数値（severity 別件数）
    - `missing_coverage` は文字列配列（reviewer focus 名）。空なら `[]`
+   - `result_grid` は 5 値の集計オブジェクト（後段 hook / PR コメント自動投稿の dispatch 用）:
+     - `high`: BLOCKER または CRITICAL 件数（即対応必要）
+     - `medium`: MAJOR 件数（PR ブロックはしないが対応推奨）
+     - `low`: MINOR 件数（nitpick / 提案）
+     - `skip`: severity スコープ外でフィルタされた件数
+     - `error`: reviewer / explorer が失敗した件数（`missing_coverage` の length と一致）
    - 失敗してもレポート自体は成功扱い（best-effort）
-   - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）
+   - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` は新規フィールド追加なので旧 subscriber 影響なし
 
 3. **ExitWorktree** で worktree から抜ける。

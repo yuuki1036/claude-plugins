@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "code-review",
-      "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応",
-      "version": "2.14.0",
+      "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。評価 5 原則と AGENTS.md 階層動的選択、result_grid event payload、guardrail-bypass specialist を追加",
+      "version": "2.15.0",
       "author": {
         "name": "yuki"
       },
@@ -26,8 +26,8 @@
     },
     {
       "name": "claude-meta",
-      "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善、CCアップデート追従、セッション学習の反映",
-      "version": "1.9.1",
+      "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善（骨抜き禁止/三段防御/階層 AGENTS.md/優先度規約/静的検査優先の 6 パターン強化）、CCアップデート追従、セッション学習の反映",
+      "version": "1.10.0",
       "author": {
         "name": "yuki"
       },
@@ -86,6 +86,15 @@
         "name": "yuki"
       },
       "source": "./notebooklm-workflow"
+    },
+    {
+      "name": "guardrail-protect",
+      "description": "lint/hook/static check 設定の骨抜きと git commit --no-verify を PreToolUse hook で機械的にブロック（opt-in 設定）",
+      "version": "0.1.0",
+      "author": {
+        "name": "yuki"
+      },
+      "source": "./guardrail-protect"
     }
   ]
 }

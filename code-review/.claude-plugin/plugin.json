@@ -1,7 +1,7 @@
 {
   "name": "code-review",
-  "version": "2.14.0",
-  "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応",
+  "version": "2.15.0",
+  "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。評価 5 原則と AGENTS.md 階層動的選択、result_grid event payload、guardrail-bypass specialist を追加",
   "author": {
     "name": "yuki"
   },

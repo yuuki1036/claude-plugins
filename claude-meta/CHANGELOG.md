@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.10.0] - 2026-05-28
+
+### Added
+- `claude-md-improver` に **運用パターン 6 セクション診断** を追加（GitHub issue #55）。ガードレール骨抜き禁止 / 三段防御 / AGENTS.md 階層 / `@AGENTS.md` 1 行参照 / ドキュメント優先度規約 / 静的検査優先の充足度を診断して suggest
+- `claude-md-improver` Phase 1.5 に **階層化判定 AskUserQuestion** を追加。小規模プロジェクトに過剰設計を suggest しないための分岐
+- `claude-md-improver` Phase 2 のチェックリストに 4 項目追加（Guardrail anti-bypass / Three-tier defense / Priority resolution / Static check preference）
+- `claude-md-improver` Phase 3 に **三段防御チェックリスト**（CLAUDE.md / Skill / Hook の 3 層充足度表）と **静的検査化候補抽出**（CLAUDE.md の「禁止」行から linter 化候補を抽出する自己問い）を追加
+- references 新規 4 ファイル: `meta-rules.md`（骨抜き禁止 + 静的検査優先）、`three-tier-defense.md`（規範→推奨手順→機械強制の 3 層パターン）、`hierarchical-agents-md.md`（階層化のしきい値と AskUserQuestion テンプレート）、`priority-template.md`（ドキュメント優先度 3 要素テンプレ）
+- `claude-md-improver` allowed-tools に `AskUserQuestion` を追加（Phase 1.5 で利用）
+
 ## [1.9.1] - 2026-05-25
 
 ### Changed

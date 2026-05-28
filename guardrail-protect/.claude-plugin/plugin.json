@@ -1,0 +1,8 @@
+{
+  "name": "guardrail-protect",
+  "version": "0.1.0",
+  "description": "lint/hook/static check 設定の骨抜きと git commit --no-verify を PreToolUse hook で機械的にブロック（opt-in 設定）",
+  "author": {
+    "name": "yuki"
+  }
+}

@@ -11,6 +11,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - AskUserQuestion
 ---
 
 # CLAUDE.md Improver
@@ -41,6 +42,26 @@ find . -name "CLAUDE.md" -o -name ".claude.md" -o -name ".claude.local.md" 2>/de
 
 **Note:** Claude auto-discovers CLAUDE.md files in parent directories, making monorepo setups work automatically.
 
+### Phase 1.5: 階層化判定（AskUserQuestion）
+
+Phase 2 の評価に入る前に、プロジェクトの規模に応じた構成方針をユーザーに確認する。階層化が必要ない小規模プロジェクトに過剰設計を suggest しないための分岐。
+
+詳細は [references/hierarchical-agents-md.md](references/hierarchical-agents-md.md) を参照。
+
+**AskUserQuestion 仕様:**
+
+```
+question: "root 以外に backend/frontend 等の階層別 AGENTS.md / CLAUDE.md を持つ規模ですか？"
+header: "階層化判定"
+options:
+  1. label: "単一構成（root のみ）" / description: "300 行以下、機能領域 2 以下、単一スタック。階層化なしで進める"
+  2. label: "機能領域別に階層化" / description: "backend / frontend / infrastructure 等の領域別に AGENTS.md を分割"
+  3. label: "monorepo packages 別に階層化" / description: "packages/{name}/AGENTS.md で package 単位に分割"
+  4. label: "判定不能・相談" / description: "現状を見せて improver の suggest を聞きたい"
+```
+
+選択結果は Phase 3 の suggest 内容（階層化 template 利用の可否）に反映する。
+
 ### Phase 2: Quality Assessment
 
 For each CLAUDE.md file, evaluate against quality criteria. See [references/quality-criteria.md](references/quality-criteria.md) for detailed rubrics.
@@ -58,6 +79,10 @@ For each CLAUDE.md file, evaluate against quality criteria. See [references/qual
 | Currency | High | Does it reflect current codebase state? |
 | Actionability | High | Are instructions executable, not vague? |
 | Skill coordination | High | Are installed skills referenced with explicit invocation guidance? |
+| Guardrail anti-bypass | High | Are lint/hook/static-check guardrails protected by an explicit "no weakening" meta-rule? See [references/meta-rules.md](references/meta-rules.md) |
+| Three-tier defense | High | Are critical rules duplicated across CLAUDE.md / skill / hook layers? See [references/three-tier-defense.md](references/three-tier-defense.md) |
+| Priority resolution | Medium | Is there an explicit document priority order with non-negotiable lines? See [references/priority-template.md](references/priority-template.md) |
+| Static check preference | Medium | Are "○○ 禁止" rules candidates for linter / ast-grep rather than prose? See [references/meta-rules.md](references/meta-rules.md) section 2 |
 
 > **Why skill coordination matters:** Vercel の eval では Skill が 56% 未呼出。description マッチだけでは不十分で、CLAUDE.md に「このタスクでは X スキルを使う」と明示することで呼び出し率が改善する。自動生成 AGENTS.md は -3%、人間作成は +4% という結果もあり、人間レビュー誘導型の診断が重要。
 
@@ -102,6 +127,47 @@ Format:
 
 **Recommended additions:**
 - [List what should be added]
+
+**運用パターン充足度（6 セクション）:**
+
+以下 6 パターンの有無を診断し、欠けているものを suggest する（自動挿入は禁止、Phase 4 の承認フローに乗せる）。
+
+| パターン | 状態 | reference |
+|----------|------|-----------|
+| 1. ガードレール骨抜き禁止メタルール | ✓ / ✗ | [meta-rules.md](references/meta-rules.md) §1 |
+| 2. 三段防御（CLAUDE.md → skill → hook） | ✓ / ✗ / 部分 | [three-tier-defense.md](references/three-tier-defense.md) |
+| 3. AGENTS.md 階層化（規模に応じて） | ✓ / ✗ / 単一構成で OK | [hierarchical-agents-md.md](references/hierarchical-agents-md.md) |
+| 4. CLAUDE.md = `@AGENTS.md` 1 行参照運用 | ✓ / ✗ | OpenAI Codex / Devin 互換性確保 |
+| 5. ドキュメント優先度規約 | ✓ / ✗ | [priority-template.md](references/priority-template.md) |
+| 6. 静的検査優先原則（"○○禁止" の linter 化候補抽出） | ✓ / ✗ | [meta-rules.md](references/meta-rules.md) §2 |
+
+### 三段防御チェックリスト（重要規約ごと）
+
+CLAUDE.md の重要規約を抽出し、CLAUDE.md / skill / hook の 3 層充足度を表で出力する。詳細は [references/three-tier-defense.md](references/three-tier-defense.md) を参照。
+
+```
+| 規約 | CLAUDE.md | Skill | Hook |
+|------|-----------|-------|------|
+| --no-verify 禁止 | ✓ | ? | ? |
+| .env 編集禁止 | ✓ | ? | ? |
+| main 直接コミット禁止 | ✓ | ? | ? |
+```
+
+`?` または `✗` の層について「該当層への実装を提案します」と suggest する。
+
+### 静的検査化候補の抽出
+
+CLAUDE.md から「禁止」「不可」「使わない」「避ける」を含む行を Grep し、以下の自己問いを実行する:
+
+```bash
+grep -nE '(禁止|不可|使わない|避ける|してはいけない|してはならない)' CLAUDE.md
+```
+
+各候補に対して improver は問う:
+
+> 「これは linter / ast-grep / 型検査ルールに落とせますか？」
+
+落とせる場合は静的検査化を suggest し、CLAUDE.md には Why（背景・例外運用）のみ残すことを提案する。
 
 **Structural Observations (Diátaxis lens, 100 行超のみ):**
 - セクション別タイプ分類（Reference / How-to / Explanation / Tutorial）
