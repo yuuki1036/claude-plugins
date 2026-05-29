@@ -39,6 +39,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | feature-dev | 1 | - | 2 | SessionStart | 8 phase 機能開発ワークフロー（Phase 1.7 動的トリアージ + Phase 6 G-V 自動 fix ループ + runtime smoke test 含む。code-explorer / code-architect 同梱。Phase 6 は code-review:self-review に委譲、code-review 未インストール時 fail-fast）。claude-plugins-official からフォーク |
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱） |
 | guardrail-protect | - | - | - | PreToolUse | lint/hook/static check 設定の骨抜き編集と git commit --no-verify を機械的にブロック（opt-in 設定） |
+| doc-freshness | 1 | 1 | - | - | last-validated / phase frontmatter による doc 鮮度機械強制（Phase 1: command + skill のみ、hook は将来追加） |
 
 ## セットアップ
 

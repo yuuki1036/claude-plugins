@@ -1,0 +1,8 @@
+{
+  "name": "doc-freshness",
+  "version": "0.1.0",
+  "description": "ドキュメント鮮度の機械強制。last-validated / phase frontmatter による stale 検出、行数ガード、internal link 検証、新規 doc grace period 対応",
+  "author": {
+    "name": "yuki"
+  }
+}

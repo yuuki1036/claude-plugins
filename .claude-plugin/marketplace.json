@@ -95,6 +95,15 @@
         "name": "yuki"
       },
       "source": "./guardrail-protect"
+    },
+    {
+      "name": "doc-freshness",
+      "description": "ドキュメント鮮度の機械強制。last-validated / phase frontmatter による stale 検出、行数ガード、internal link 検証、新規 doc grace period 対応",
+      "version": "0.1.0",
+      "author": {
+        "name": "yuki"
+      },
+      "source": "./doc-freshness"
     }
   ]
 }
