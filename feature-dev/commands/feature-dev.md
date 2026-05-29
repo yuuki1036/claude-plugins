@@ -251,6 +251,36 @@ Phase 5 has two modes — check the invocation context:
 
 **Why this phase exists**: Past incidents (e.g. Prisma v7 adapter requirement) showed bugs that pass all static checks but fail on first request — proxy lazy-init, env var loading, middleware misconfiguration, DB client initialization. Catching these before Phase 6 prevents "review passes but deploy blocks" loops.
 
+### Step 0: Self-lock guard (PostToolUse 自己再帰防止)
+
+**目的**: 将来 feature-dev に PostToolUse hook が入って Phase 5.5 を自動トリガーする構成になった場合、Phase 5.5 内の Edit / Bash が再度 PostToolUse を発火させ、無限ループに陥る可能性がある。TTL ベースの self-lock を持つことで、同一プロジェクトで短期間に Phase 5.5 が重複起動するのを防ぐ。
+
+**現状の振る舞い**: command 経由の手動実行ではループは発生しないが、PostToolUse hook を将来導入する際に lock 機構が無いと事故るため、template を先に入れる。lock が active な場合は Phase 5.5 全体を skip して Phase 6 へ進む（hook 経由起動の場合は `exit 0` 相当でハーネス側が早期復帰）。
+
+```bash
+TARGET_PATH=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+HASH=$(echo "$TARGET_PATH" | shasum | cut -c1-12)
+LOCK=/tmp/feature-dev-${HASH}.lock
+TTL=600
+
+if [ -f "$LOCK" ]; then
+  # macOS BSD: stat -f %m / Linux GNU: stat -c %Y の dual path で portability 確保
+  MTIME=$(stat -f %m "$LOCK" 2>/dev/null || stat -c %Y "$LOCK" 2>/dev/null || echo 0)
+  AGE=$(($(date +%s) - MTIME))
+  if [ "$AGE" -lt "$TTL" ]; then
+    echo "[self-lock] active (age=${AGE}s < ttl=${TTL}s), skipping Phase 5.5"
+    # command 内実行時は Phase 6 へ進む / hook 経由起動時は ハーネスが exit 0 として扱う
+    SKIP_PHASE_5_5=1
+  fi
+fi
+
+if [ -z "$SKIP_PHASE_5_5" ]; then
+  touch "$LOCK"   # 新規取得 or TTL 切れ → 取り直し
+fi
+```
+
+`SKIP_PHASE_5_5` が `1` の場合は Step 1〜4 を skip して **Phase 6** へ進む。
+
 ### Step 1: Deterministic Detection (gate check)
 
 Run the following Bash check to decide whether smoke test is **required** or **optional**:

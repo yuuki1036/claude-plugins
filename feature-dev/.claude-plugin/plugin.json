@@ -1,7 +1,7 @@
 {
   "name": "feature-dev",
-  "version": "2.0.1",
-  "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 6 は code-review:self-review に --embed 付きで委譲し AskUserQuestion 操作を削減、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
+  "version": "2.1.0",
+  "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.5 に self-lock template (将来の PostToolUse 自己再帰防止)、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
   "_requirements": [
     {
       "name": "code-review",

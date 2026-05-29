@@ -5,6 +5,21 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-05-29
+
+### Added
+
+- **Phase 5.5 Step 0: Self-lock guard** を追加（GitHub issue #58）。TTL 600s の lock file (`/tmp/feature-dev-${HASH}.lock`) で同一プロジェクトでの Phase 5.5 重複起動を防止する template
+  - 目的: 将来 feature-dev に PostToolUse hook が入って Phase 5.5 を自動トリガーする構成になった場合、Phase 5.5 内の Edit / Bash が再度 PostToolUse を発火させて無限ループに陥る事故を構造的に予防
+  - 実装: `git rev-parse --show-toplevel` (失敗時 pwd fallback) の sha1 を 12 文字 cut してハッシュ化し lock path を決定
+  - 互換性: macOS BSD `stat -f %m` / Linux GNU `stat -c %Y` の dual path で `stat` 呼び出しを portability 確保。両方失敗時は `echo 0` で安全側
+  - active 時の挙動: `SKIP_PHASE_5_5=1` フラグを立てて Step 1〜4 を skip し、Phase 6 へ進む（hook 経由起動時はハーネス側が早期復帰として扱う）
+  - TTL 切れ時は `touch` で lock を取り直し
+
+### Notes
+
+- 現状の command 経由手動実行ではループは発生しないが、doc-freshness (#48) / failure-journal (#47) など今後の評価系 hook 連携時の事故防止 template を先に入れる方針
+
 ## [2.0.1] - 2026-05-29
 
 ### Changed
