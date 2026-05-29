@@ -1,7 +1,15 @@
 {
   "name": "feature-dev",
-  "version": "1.6.1",
-  "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.7 動的トリアージで explorer/architect/reviewer 体数を最適化、Phase 6 で confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect / code-reviewer の 3 agent を内包",
+  "version": "2.0.0",
+  "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 6 は code-review:self-review に委譲して品質基準を一本化、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
+  "_requirements": [
+    {
+      "name": "code-review",
+      "type": "plugin",
+      "required": false,
+      "description": "Phase 6 品質レビュー委譲先。未インストール時は Phase 6 が動作しない（fail-fast）"
+    }
+  ],
   "author": {
     "name": "yuki"
   }

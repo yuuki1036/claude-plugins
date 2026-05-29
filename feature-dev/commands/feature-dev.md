@@ -229,7 +229,7 @@ Phase 5 has two modes — check the invocation context:
 
 ### Fix Mode
 
-**Triggered by**: Phase 6 Step 3 G-V loop with a list of `confidence ≥ 90` issues.
+**Triggered by**: Phase 6 Step 3 G-V loop with a list of auto-fix target issues (`BLOCKER` any-confidence OR `CRITICAL && confidence ≥ 90` from `code-review:self-review` output).
 
 **Constraints**:
 - **Scope is strictly limited** to the reviewer-flagged file:line locations
@@ -318,44 +318,86 @@ If the user chose to execute:
 
 ## Phase 6: Quality Review
 
-**Goal**: Ensure code is simple, DRY, elegant, easy to read, and functionally correct
+**Goal**: `code-review:self-review` skill に委譲して品質ゲートを通し、致命指摘を Generator-Verifier ループで自動 fix する
 
-### Step 1: Mini-triage (diff-based re-judgment)
+**設計判断**: v2.0.0 で feature-dev 内蔵の `code-reviewer` agent を廃止し、`code-review` plugin の `self-review` skill に品質基準を一本化した。理由は (a) 同リポジトリ内で reviewer ロジックが二重化していた DRY 違反、(b) `code-review` の 2 軸スコアリング × 15 観点 × specialist × meta-reviewer 構造の方が遥かに堅牢だから。`code-review` plugin は `_requirements` で `required: false` 宣言（claude-plugins 規約で plugin 間の強制依存を避ける）だが、Phase 6 では fail-fast する。
 
-Phase 1.7 produced a **provisional** reviewer configuration without seeing the implementation diff. Now that the diff exists, refine the configuration:
+### Step 0: Existence Check (code-review plugin)
+
+Phase 6 は `code-review:self-review` skill に依存する。冒頭で plugin の存在を確認し、未インストール時は **fail-fast** する:
 
 ```bash
-# Capture the implementation diff
+if ! grep -q '"code-review@' "$HOME/.claude/settings.json" 2>/dev/null; then
+  echo "❌ Phase 6 は code-review plugin に依存します。先にインストール:"
+  echo "   claude plugin install code-review@yuuki1036-claude-plugins"
+  echo ""
+  echo "Phase 5 までの成果物は維持されています。インストール後、Phase 6 から再開してください。"
+  exit 1
+fi
+```
+
+ユーザーに「インストールして再開 / Phase 6 を skip して Phase 7 へ / abandon」を `AskUserQuestion` で確認するのも可。SessionStart hook (`hooks/scripts/check-deps.sh`) が事前に warning を出しているはずだが、ここで再確認することでセッション中盤のインストールにも対応する。
+
+### Step 1: Mini-triage (diff-based focus list)
+
+Phase 1.7 は **provisional** な reviewer focus list を出している。実装後の diff を読んで focus を refine し、self-review に渡す `--focus` 引数を確定する。
+
+```bash
+# Capture the implementation diff (Phase 5.5 でも同じファイルを使う前提)
 git diff HEAD 2>/dev/null > /tmp/feature-dev-final-diff.txt
 git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-final-files.txt
 ```
 
-Apply diff-based pattern matching (mirroring `code-review`'s Phase 0 logic):
+Apply diff-based pattern matching:
 
-- try-catch / catch ブロック追加 → add `error-handling` reviewer
-- テストファイル（`.test.` / `.spec.` / `__tests__/`）変更 → add `test-quality` reviewer
-- 型定義（`type` / `interface` / `enum`）追加 → add `type-design` reviewer
-- 認証・暗号関連ファイル変更 → upgrade `security` reviewer (add or duplicate with auth angle)
-- DB / migration ファイル変更 → add `migration-safety` reviewer
-- フロントエンド変更 → add `ui-quality` reviewer
+- try-catch / catch ブロック追加 → add `error-handling`
+- テストファイル（`.test.` / `.spec.` / `__tests__/`）変更 → add `test-quality`
+- 型定義（`type` / `interface` / `enum`）追加 → add `type-design`
+- 認証・暗号関連ファイル変更 → upgrade `security`
+- DB / migration ファイル変更 → add `migration-safety`
+- フロントエンド変更 → add `ui-quality`
 
-Merge the diff-derived focuses with the Phase 1.7 provisional list, then cap by the current effort upper bound (`triage-guide.md` Section 5).
+Merge with the Phase 1.7 provisional list, then cap by the current effort upper bound (`triage-guide.md` Section 5).
 
-**Minimum guarantee**: `bug-detection` + `claude-md-compliance` (when CLAUDE.md exists) always run.
+**Minimum guarantee**: `bug-detection` + `claude-md-compliance` (when CLAUDE.md exists) を必ず含める。
 
-### Step 2: Launch reviewers (initial pass)
+最終 focus list を `,` 区切りで整形（例: `bug-detection,claude-md-compliance,security,type-design`）。
 
-Launch the finalized N code-reviewer agents in parallel (single message, multiple Agent tool calls). Each reviewer receives:
-- Its assigned `focus` (and `angle` if part of a redundant pair)
-- The full diff (`/tmp/feature-dev-final-diff.txt`)
-- Relevant CLAUDE.md content if `claude-md-compliance` focus
-- Phase 4 architect output as context (the chosen design)
+### Step 2: Invoke code-review:self-review
 
-**Partial failure tolerance**: Continue with successful reviewers. The minimum guarantee (bug-detection) must succeed; if it fails, retry once before failing.
+`Skill` tool で `code-review:self-review` を呼ぶ。引数:
+
+- `--focus <comma-separated focus list from Step 1>`
+- base branch は省略（self-review が `git remote show origin | grep "HEAD branch"` で自動検出）
+- 未コミット diff は self-review 側で `git diff` / `git diff --cached` を併用して取得
+
+self-review 内部の動き（詳細は `${CLAUDE_PLUGIN_ROOT}/../code-review/skills/self-review/SKILL.md` 参照）:
+
+- Phase 0 triage で reviewer 体数を `${CLAUDE_EFFORT}` 連動で決定（feature-dev の effort をそのまま継承）
+- Phase 3/4 で explorer + reviewer 並列起動
+- Phase 4.5 adaptive deepening（reviewer が unmet_information を申告した場合、追加 explorer 最大 3 体 + 再起動 reviewer 最大 3 体）
+- Phase 4.6 meta-reviewer ラウンド（BLOCKER/CRITICAL 検出時、`${CLAUDE_EFFORT}` が xhigh/max のとき動作）
+- Phase 5 で **2 軸スコアリング** (confidence 0-100 × severity BLOCKER/CRITICAL/MAJOR/MINOR)
+- Phase 6 でレポート出力（severity 別グループ、欠損観点、総括）
+
+**Phase 7 の AskUserQuestion について**: self-review は終端で「修正方針の確認」を AskUserQuestion で聞いてくる。feature-dev からの呼び出し時は **「skip — feature-dev 側で集約します」相当の選択肢** を選んで findings を返してもらう。これは現状ユーザー操作が必要だが、将来的に self-review 側で embed mode 引数を追加する想定（別 Issue）。
+
+**Partial failure tolerance**: self-review 自体が失敗した場合は warning を出して Step 3 を skip し、Step 4 で「Phase 6 not executed」状態をユーザー提示する。
 
 ### Step 3: Generator-Verifier Loop (automatic critical-issue fix)
 
-The reviewer's `confidence ≥ 90` indicates a high-certainty critical issue. Such issues are auto-fixed via a bounded loop. See `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` Section 10 for the loop budget rules.
+self-review の出力（severity × confidence）を以下マッピングで auto-fix トリガーに変換する:
+
+| self-review 出力 | feature-dev 扱い |
+|---|---|
+| `BLOCKER` (any confidence) | **auto-fix 対象**（最高優先度） |
+| `CRITICAL && confidence ≥ 90` | **auto-fix 対象** |
+| `CRITICAL && confidence < 90` | 報告のみ（Step 4 で提示） |
+| `MAJOR` / `MINOR` (any confidence) | 報告のみ |
+
+**Rationale**: BLOCKER は security/data-loss class なので confidence を問わず即修正。CRITICAL は従来の confidence ≥ 90 閾値を維持して誤検知を防ぐ。
+
+詳細なループ予算ルールは `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` Section 10 を参照。
 
 #### Step 3.1: Initialize loop state
 
@@ -386,25 +428,23 @@ EOF
 
 Repeat the following until a termination condition fires:
 
-1. **Filter**: From the latest reviewer output, extract issues with `confidence ≥ 90`. If 0 issues, **terminate with success** → Step 4.
-2. **Fingerprint**: For each critical issue, compute `fingerprint = "file:line:focus"`. Append to the current iteration's `fingerprints` array.
-3. **Regression check**: If the current iteration's `fingerprints` overlap with the previous iteration's `fingerprints` by ≥ 1 entry (= same issue persisted), **terminate with "regression detected"** → Step 4 with a warning.
-4. **Budget check**: If `current_iteration >= max_iterations`, **terminate with "budget exhausted"** → Step 4 with a warning.
-5. **Notify user**: Print a single-line update — e.g. `🔄 Iteration {N+1}/{max}: auto-fixing {K} critical issues...`
+1. **Filter**: self-review 出力から上記マッピングで auto-fix 対象を抽出。0 件なら **terminate with success** → Step 4。
+2. **Fingerprint**: 各 issue から `fingerprint = "file:line:focus"` を算出し、current iteration の `fingerprints` 配列に append。
+3. **Regression check**: 現 iteration の `fingerprints` と前 iteration の `fingerprints` が 1 件以上 overlap したら **terminate with "regression detected"** → Step 4。
+4. **Budget check**: `current_iteration >= max_iterations` なら **terminate with "budget exhausted"** → Step 4。
+5. **Notify user**: 1 行 update — `🔄 Iteration {N+1}/{max}: auto-fixing {K} critical issues...`
 6. **Fix** (Phase 5 Fix Mode):
-   - For each critical issue, read the flagged file:line and apply the reviewer's suggested fix via Edit
-   - If a fix requires design-level changes, launch `code-architect` with focus `delta-proposal` (consumes 1 iteration)
-7. **Re-review**: Re-launch ONLY the reviewer focuses that flagged critical issues. Other reviewers from Step 2 are not re-run.
-8. **Update loop state**: Increment `current_iteration`, append the new iteration entry with fingerprints.
-9. Return to step 1.
-
-**Reviewer launch in re-review**:
-- Same `model: opus` and dynamic effort (`${CLAUDE_EFFORT}`) settings as the initial Step 2 launch
-- Pass the updated diff (`git diff HEAD`) and the list of file:line that were just edited
+   - 各 issue について flagged file:line を読み、self-review が提示した suggested fix を Edit で適用
+   - 設計レベル変更が必要なら `code-architect` を `delta-proposal` focus で起動（1 iteration 消費）
+7. **Re-review**: `Skill code-review:self-review` を再呼び出し。引数:
+   - `--focus <persisting issue の focus 集合>`
+   - `--exclude <既に解決した focus 集合>` で重複検査をスキップ可
+8. **Update loop state**: `current_iteration` をインクリメントし、新 iteration エントリを append。
+9. Return to step 1。
 
 #### Step 3.3: Loop termination logging
 
-When the loop exits, append a summary to the loop state file:
+ループ終了時に loop state file へ集約を append:
 
 ```json
 {
@@ -415,18 +455,19 @@ When the loop exits, append a summary to the loop state file:
 }
 ```
 
-This file is referenced in Phase 7 summary.
+このファイルは Phase 7 summary で参照される。
 
 ### Step 4: Consolidate and present
 
-1. Consolidate the **latest** reviewer findings (post-loop); report all confidence ≥ 80
-2. Tag each issue with `[auto-fixed]` if it was resolved during Step 3, `[persisting]` if it remains after the loop
-3. Identify highest severity issues that you recommend fixing manually
-4. **Present findings to user and ask what they want to do**:
-   - If Step 3 terminated with `success`: confirm and proceed to Phase 7
-   - If terminated with `regression` / `budget`: present the persisting critical issues with an explanation, ask user (fix manually now / acknowledge and proceed / abandon)
-   - If Step 3 was skipped (`low` effort): present all critical issues for user decision
-5. Address issues based on user decision
+1. **集約**: self-review の最終出力（post-loop）を読み、全ての BLOCKER / CRITICAL / MAJOR / MINOR を列挙
+2. **タグ付け**: Step 3 で解決したものは `[auto-fixed]`、ループ後も残ったものは `[persisting]`
+3. **Recommend**: 手動修正を推奨する高 severity issue を identify
+4. **Present findings and ask**:
+   - Step 3 が `success` で終了: 確認のみで Phase 7 へ
+   - Step 3 が `regression` / `budget` で終了: persisting critical issues を提示し、ユーザーに（手動修正 / 受け入れて続行 / abandon）を聞く
+   - Step 3 が skip（`low` effort）: 全 critical を提示してユーザー判断
+   - self-review が失敗: warning を提示し、ユーザー判断（リトライ / skip / abandon）
+5. ユーザー判断に従って対応
 
 ---
 

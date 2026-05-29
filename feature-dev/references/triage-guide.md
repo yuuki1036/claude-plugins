@@ -243,8 +243,8 @@ Phase 1.7 が明確な判断を下せない場合のデフォルト構成（effo
 
 ## 10. Generator-Verifier ループ予算（Phase 6 自動 fix）
 
-Phase 6 reviewer が **confidence ≥ 90 の致命指摘** を出した場合、Phase 5 (Implementation) に自動差し戻して修正を試行する。
-記事の Generator-Verifier パターンの応用で、「reviewer の確度スコア」という客観基準を gate として使う。
+v2.0.0 で Phase 6 のレビューは `code-review:self-review` skill に委譲されたため、トリガー判定は self-review の **severity × confidence 2 軸出力** に基づく。
+Phase 5 (Implementation) に自動差し戻して修正を試行する点は変わらない。
 
 ### effort 別ループ予算
 
@@ -256,13 +256,16 @@ Phase 6 reviewer が **confidence ≥ 90 の致命指摘** を出した場合、
 | `xhigh` | 3 | 最大 3 回まで自動 fix |
 | `max` | 3 | 最大 3 回（深掘り優先） |
 
-### Confidence 閾値
+### Auto-fix トリガー（severity × confidence マッピング）
 
-| 閾値 | 動作 |
+| self-review 出力 | feature-dev 扱い |
 |---|---|
-| `≥ 90` | **自動 fix 対象**（高確度の致命指摘） |
-| `80-89` | ユーザに提示し判断を仰ぐ（自動 fix しない） |
-| `< 80` | 報告対象外（reviewer の confidence フィルタで除外済） |
+| `BLOCKER` (any confidence) | **auto-fix 対象**（最高優先度。security/data-loss class なので confidence を問わず即修正） |
+| `CRITICAL && confidence ≥ 90` | **auto-fix 対象**（従来の高 confidence 閾値を維持して誤検知防止） |
+| `CRITICAL && confidence < 90` | 報告のみ（Step 4 でユーザー判断） |
+| `MAJOR` / `MINOR` (any confidence) | 報告のみ |
+
+self-review 内部の confidence しきい値（BLOCKER は 60+、CRITICAL は 80+ で報告される）は v2.0.0 では尊重し、feature-dev 側で再フィルタしない。
 
 ### Regression 検知
 
@@ -292,7 +295,7 @@ fingerprint は `file:line:focus` のタプル。**同一 fingerprint が連続 
 
 以下のいずれかでループを終了し Step 4（Final consolidation）へ進む:
 
-1. confidence ≥ 90 の指摘が 0 件になった（成功）
+1. auto-fix 対象（`BLOCKER` または `CRITICAL && conf ≥ 90`）が 0 件になった（成功）
 2. `current_iteration == max_iterations` に到達（予算切れ）
 3. Regression 検知（同一 fingerprint が連続 2 回残存）
 4. メインスレッドが「修正不能」と判断（複雑すぎる、設計再考が必要等）

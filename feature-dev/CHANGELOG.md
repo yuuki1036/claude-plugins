@@ -5,6 +5,47 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-05-28
+
+### ⚠️ BREAKING CHANGES
+
+- **`code-reviewer` agent を削除し、Phase 6 を `code-review:self-review` skill 呼び出しに置換** (#52)。同一リポジトリ内で reviewer ロジックが二重化していた DRY 違反を解消し、品質基準を `code-review` plugin の 2 軸スコアリング × 15 観点 × specialist × meta-reviewer 構造に一本化
+  - **MIGRATION**: `code-review` plugin が **事実上の必須依存** になった。`plugin.json` の `_requirements` では `required: false`（プラグイン間の強制依存は claude-plugins 規約で避けるため）だが、未インストール環境では Phase 6 が **fail-fast** で停止する。先に `claude plugin install code-review@yuuki1036-claude-plugins` を実行
+  - SessionStart hook (`hooks/scripts/check-deps.sh`) で code-review 未インストール時に強い warning を表示
+  - 削除ファイル: `agents/code-reviewer.md`
+  - 追加ファイル: `hooks/hooks.json`, `hooks/scripts/check-deps.sh`, `hooks/lib/safe-hook.sh`
+  - 内蔵 agent: 3 → 2（code-explorer / code-architect のみ）
+
+### Changed
+
+- **Phase 6 Step 2 を self-review 呼び出しに変更**: 従来 N 体の `code-reviewer` agent を並列起動していた箇所を `Skill code-review:self-review --focus <list>` 1 回の呼び出しに集約。self-review 内部で Phase 0 triage → Phase 3/4 並列 reviewer → Phase 4.5 adaptive deepening → Phase 4.6 meta-reviewer → Phase 5 2 軸スコアリングが走る
+- **Phase 6 Step 3 G-V loop の auto-fix トリガーを再定義**: 従来 `confidence ≥ 90` 単独判定だったところを、self-review の severity × confidence 出力に合わせて以下にマップ
+  - `BLOCKER` (any confidence) → auto-fix 対象（最高優先度）
+  - `CRITICAL && confidence ≥ 90` → auto-fix 対象（従来閾値を維持）
+  - `CRITICAL && confidence < 90` / `MAJOR` / `MINOR` → 報告のみ
+  - **Rationale**: BLOCKER は security/data-loss class なので confidence を問わず即修正。CRITICAL は誤検知防止のため従来の高 confidence 閾値を維持
+- **Phase 6 Step 3.2 re-review** を `Skill code-review:self-review --focus <persisting> --exclude <resolved>` に変更。`--exclude` で既に解決した観点をスキップしてコスト削減
+- **README.md の Agents セクションから `code-reviewer` 記述を削除**、Phase 6 説明を self-review 呼び出しベースに更新
+
+### Migration Guide
+
+#### v1.x → v2.0.0
+
+**必須対応**:
+1. `code-review` plugin を install: `claude plugin install code-review@yuuki1036-claude-plugins`
+   - 未インストール時、SessionStart hook が warning を出す
+   - Phase 6 冒頭で existence check し、未インストール時は fail-fast（Phase 5 までは正常動作）
+2. Phase 6 の挙動が変わることを確認:
+   - 従来: N 体 reviewer 並列起動 → confidence ≥ 90 で auto-fix
+   - v2.0.0: self-review 1 回呼び出し → BLOCKER 全部 + (CRITICAL && conf ≥ 90) で auto-fix
+
+**カスタムシナリオへの影響**:
+- 手動で `code-reviewer` agent を呼んでいたコード（`Agent` tool subagent_type）は動作しなくなる → 代わりに `Skill code-review:self-review` を呼ぶ
+- feature-dev の Phase 6 出力フォーマットが変わる（confidence のみ → severity × confidence）。下流で出力を parse している自動化があれば修正必要
+
+**既知の制約**:
+- self-review skill は Phase 7 で AskUserQuestion (修正方針確認) を出す設計。feature-dev からの呼び出し時は **「skip — feature-dev 側で集約します」相当の選択肢** を選んで findings を返してもらう必要あり。将来的に self-review 側へ embed mode 引数を追加する想定（別 Issue で議論）
+
 ## [1.6.1] - 2026-05-22
 
 ### Changed

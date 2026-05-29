@@ -191,34 +191,30 @@ Which approach would you like to use?
 
 ### Phase 6: Quality Review
 
-**Goal**: Ensure code is simple, DRY, elegant, and functionally correct
+**Goal**: `code-review:self-review` skill に委譲して品質ゲートを通し、致命指摘を Generator-Verifier ループで自動 fix
 
 **What happens:**
-- Launches 3 `code-reviewer` agents in parallel with different focuses:
-  - **Simplicity/DRY/Elegance**: Code quality and maintainability
-  - **Bugs/Correctness**: Functional correctness and logic errors
-  - **Conventions/Abstractions**: Project standards and patterns
-- Consolidates findings
-- Identifies highest severity issues
-- **Presents findings and asks what you want to do**:
-  - Fix now
-  - Fix later
-  - Proceed as-is
-- Addresses issues based on your decision
+- Diff ベースの mini-triage で reviewer focus list を確定（bug-detection / security / type-design / ui-quality 等）
+- `Skill code-review:self-review --focus <list>` を 1 回呼び出し
+- self-review 内部で Phase 0 triage → 並列 reviewer → adaptive deepening → meta-reviewer → 2 軸スコアリング (confidence × severity) が走る
+- 出力を以下マッピングで auto-fix トリガーに変換:
+  - `BLOCKER` (any confidence) → auto-fix
+  - `CRITICAL && confidence ≥ 90` → auto-fix
+  - その他 → 報告のみ
+- effort 別 max_iterations で G-V loop（regression 検知 + budget 終了条件）
+- 集約結果を `[auto-fixed]` / `[persisting]` タグ付きで提示
+
+**Required**: `code-review` plugin (`required: true` in `_requirements`)。未インストール環境では Phase 6 が動作しない。
 
 **Example output:**
 ```
-Code Review Results:
+Code Review Results (via code-review:self-review):
 
-High Priority Issues:
-1. Missing error handling in OAuth callback (src/auth/oauth.ts:67)
-2. Memory leak: OAuth state not cleaned up (src/auth/oauth.ts:89)
+[auto-fixed] BLOCKER (conf 95) - SQL injection in oauth.ts:67
+[persisting] CRITICAL (conf 88) - Race condition risk in oauth.ts:120 (below auto-fix threshold)
+[reported]   MAJOR (conf 75) - Token refresh logic could be simplified
 
-Medium Priority:
-1. Could simplify token refresh logic (src/auth/oauth.ts:120)
-2. Consider extracting OAuth config validation
-
-All tests pass. Code follows project conventions.
+G-V loop: 2/3 iterations, terminated with success, auto-fixed 1.
 
 What would you like to do?
 ```
@@ -308,25 +304,7 @@ Suggested next steps:
 - Implementation map with specific files
 - Build sequence with phases
 
-### `code-reviewer`
-
-**Purpose**: Reviews code for bugs, quality issues, and project conventions
-
-**Focus areas:**
-- Project guideline compliance (CLAUDE.md)
-- Bug detection
-- Code quality issues
-- Confidence-based filtering (only reports high-confidence issues ≥80)
-
-**When triggered:**
-- Automatically in Phase 6
-- Can be invoked manually after writing code
-
-**Output:**
-- Critical issues (confidence 75-100)
-- Important issues (confidence 50-74)
-- Specific fixes with file:line references
-- Project guideline references
+> **Note**: v2.0.0 で `code-reviewer` agent は削除。Phase 6 のレビューは `code-review:self-review` skill に委譲され、2 軸スコアリング × 15 観点 × specialist × meta-reviewer 構造で品質基準が一本化された。詳細は `code-review` plugin の README 参照。
 
 ## Usage Patterns
 
@@ -351,7 +329,7 @@ Let the workflow guide you through all 7 phases.
 
 **Review code:**
 ```
-"Launch code-reviewer to check my recent changes"
+"Run code-review:self-review on my recent changes"
 ```
 
 ## Best Practices
