@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.17.0] - 2026-05-29
+
+### Added
+- **PostToolUse 自動 lint チェーン**（#53）。`hooks/scripts/post-format-lint.sh` が Edit|Write|MultiEdit で発火し、`fmt-fix → lint-fix → check` の 3 段を実行。fix 段は黙って直し、check 段で残った違反だけを `decision:"block"` で Claude に返す。**opt-in**（`.claude/dev-workflow.json` の `lint.enabled=true` 時のみ動作、未設定は完全 dormant）
+- `hooks/lib/json-block.sh`: `emit_block_json` 共通フォーマッタ。block 出力 JSON を一元化し、check 出力は `head -20` + 総行数注記で context 浪費を防止
+- `hooks/lib/path-guard.sh`: `path_guard_is_excluded`（node_modules / dist / build / vendor / lock 等を早期除外）と `path_guard_ext`（拡張子抽出）
+- `references/lint-config.md`: `.claude/dev-workflow.json` の lint 設定スキーマ・3 段チェーン・既知の制約を明記
+
+### Changed
+- `skills/pr-creator/SKILL.md` の厳守ルールに **本文量の bullet 上限を数値化**（概要 1〜2 文 / 変更点 1〜5 bullet / レビューポイント 1〜3 件）を追加。質的記述だけだと冗長化するため数値で制限（#53）
+
+### Notes
+- #53 の「agent-neutral hook 化」は既に exec 形式 + bash 外出し済みのため対応不要（破壊的移行なし）。「worktree-setup / teardown skill」は v1.16.0 で実装済み。Codex 互換テンプレ配布は実需要が出るまで見送り
+
 ## [1.16.0] - 2026-05-28
 
 ### Added

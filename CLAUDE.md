@@ -41,6 +41,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | guardrail-protect | - | - | - | PreToolUse | lint/hook/static check 設定の骨抜き編集と git commit --no-verify を機械的にブロック（opt-in 設定） |
 | doc-freshness | 1 | 1 | - | - | last-validated / phase frontmatter による doc 鮮度機械強制（Phase 1: command + skill のみ、hook は将来追加） |
 | bdd-spec | 1 | 1 | - | - | BDD spec 駆動の scaffold（user story dir + epic/spec 2ファイル + 階層化 + 同値分割表）。Phase 1: create のみ、evaluate は将来追加 |
+| adr-keeper | 1 | 1 | - | - | 設計判断 (ADR) を append-only 蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法セクション必須 + supersede 時の新規作成/旧 ADR 2箇所更新を機械化（doc-freshness と frontmatter 互換で鮮度 lint を委譲） |
+| failure-journal | 2 | 2 | - | SessionStart | 再発失敗の fingerprint 集計。JSON Lines journal に append、30日×3回閾値超で retro 還流提案、failure:logged を event bus に publish（indie-workflow:retrospective と責務分離） |
 
 ## セットアップ
 

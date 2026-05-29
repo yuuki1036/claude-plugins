@@ -17,8 +17,8 @@
     },
     {
       "name": "dev-workflow",
-      "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離",
-      "version": "1.16.0",
+      "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離、PostToolUse 自動 lint チェーン(fmt-fix→lint-fix→check、opt-in)、PR 本文の bullet 上限数値化",
+      "version": "1.17.0",
       "author": {
         "name": "yuki"
       },
@@ -113,6 +113,24 @@
         "name": "yuki"
       },
       "source": "./bdd-spec"
+    },
+    {
+      "name": "adr-keeper",
+      "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 2箇所更新を機械化",
+      "version": "0.1.0",
+      "author": {
+        "name": "yuki"
+      },
+      "source": "./adr-keeper"
+    },
+    {
+      "name": "failure-journal",
+      "description": "再発する失敗を JSON Lines に append し、30日×3回閾値超えのパターンを retro で抽出して AGENTS.md/hook/skill へ還流。SessionStart で journal 初期化、failure:logged を event bus に publish",
+      "version": "0.1.0",
+      "author": {
+        "name": "yuki"
+      },
+      "source": "./failure-journal"
     }
   ]
 }
