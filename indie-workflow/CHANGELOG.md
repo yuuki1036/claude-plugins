@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.27.1] - 2026-05-29
+
+### Changed
+- **剪定 (Opus 4.7→4.8)**: `rules/project-rules.md` の「Agent Team の活用」を緩和。「大きなタスクを単一エージェントで処理することを禁止する」という強い禁止表現を「単一エージェントで抱え込まず…分割することを推奨する」に変更。Opus 4.8 は並列 tool/agent 起動を自然にデフォルト採用するため、旧モデル向けの並列化リマインダ（C-1 Model-Behavior Guard）を強制から推奨に降格（cc-catch-up Phase P 剪定レビュー）
+
 ## [1.27.0] - 2026-05-29
 
 ### Added

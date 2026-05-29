@@ -216,7 +216,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - 全エージェントを `isolation: "worktree"` で起動する
 - **PR 番号注入（必須）**: agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRefName>`」を必ず明記し、reviewer-prompts.md 共通指示の `{{PR_NUMBER}}` プレースホルダを実数値に置換する。`isolation: "worktree"` の子 worktree は親 branch を継承せず origin/default-branch から派生するため、checkout 指示を欠かすと PR の変更を観測できず偽陽性を量産する（GitHub issue #56）
 
-**effort 設計意図**: reviewer は `max` で深い推論を優先（overthinking による偽陽性は Confidence ≥80 フィルタで刈り取る）。オーケストレーター（skill frontmatter）は `xhigh` で Opus 4.7 のコーディング向け推奨設定。
+**effort 設計意図**: reviewer は `max` で深い推論を優先（overthinking による偽陽性は Confidence ≥80 フィルタで刈り取る）。オーケストレーター（skill frontmatter）は `xhigh`。Opus 4.8 は `high` が既定 effort のため、demanding task 向けに一段引き上げた設定。
 
 **diff-first 原則:** 各エージェントには `gh pr diff` の出力を渡す。エージェントのファイル Read は共通ユーティリティの仕様確認など、diff だけでは判断できない文脈把握に限定する。ただし、変更箇所を含む関数の全体確認は積極的に行うこと。
 
