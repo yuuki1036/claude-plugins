@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.26.0] - 2026-05-29
+
+### Added
+- **Shared State 規約に準拠した frontmatter を `session-context.md` と follow-up ファイルに付与** (#35)。`shared_state_type` / `producer` / `consumers` / `schema_version` / `last_updated` を必須化し、cross-plugin で読み書きされる永続ファイルの producer-consumer 関係を明示化
+- `indie-start` の Phase CTX で `.claude/session-context.md` 書き出し時に `shared_state_type: session` / `producer: indie-workflow` / `consumers: [code-review, feature-dev, dev-workflow]` を付与
+- `indie-follow-up` の N5（ファイル生成）で `shared_state_type: follow-up` / `producer: indie-workflow` を付与
+- consumer 側は frontmatter 不在のファイルも読める後方互換を維持（既存ファイルは段階移行）
+
+### Notes
+- Classmethod「Claude Code マルチエージェントオーケストレーションパターン」記事の Shared State パターンを軽量実装。flat な `.claude/shared/` への移行は slug-scoped 構造との衝突回避のため見送り、配置はそのままで frontmatter のみで producer/consumer を明示するアプローチを採用
+- 規約定義は `CLAUDE.md` の「Shared State 規約」セクションを参照
+
 ## [1.25.0] - 2026-05-26
 
 ### Added

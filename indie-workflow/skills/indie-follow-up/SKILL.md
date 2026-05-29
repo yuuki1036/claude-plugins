@@ -45,6 +45,11 @@ follow-up ファイルは `.claude/indie/{slug}/follow-ups/` に配置する。
 
 ```yaml
 ---
+shared_state_type: follow-up
+producer: indie-workflow
+consumers: [indie-workflow]
+schema_version: 1
+last_updated: {ISO 8601}
 title: "タイトル"
 status: open              # open / promoted / backlog / dismissed
 type: bug                 # bug / feature / debt / investigation / idea
@@ -53,6 +58,8 @@ source_issue: MYAPP-3     # 元 Issue（必須）
 created: YYYY-MM-DD
 ---
 ```
+
+> Shared State 規約（CLAUDE.md 参照）に従い、shared_state_type / producer / consumers / schema_version / last_updated を付与する。consumers は dashboard / indie-issue-maintain など同 plugin 内の skill から参照される想定（plugin 名で記述）。既存ファイルは frontmatter 不在のままでも読める後方互換を保つ。
 
 ### 本文構造
 

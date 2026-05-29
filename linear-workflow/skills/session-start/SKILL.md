@@ -259,12 +259,17 @@ Quick Pick モード、親 Issue 軽量サマリーモード、および Issue �
 
 ```yaml
 ---
+shared_state_type: session
+producer: linear-workflow
+consumers: [code-review, feature-dev, dev-workflow]
+schema_version: 1
+last_updated: {現在の ISO 8601 タイムスタンプ}
 branch: {現在のブランチ名}
 issue_id: {Issue ID}
-updated_at: {現在の ISO 8601 タイムスタンプ}
-source: linear-workflow
 ---
 ```
+
+> Shared State 規約（CLAUDE.md 参照）に従い、producer / consumers / schema_version / last_updated を付与する。consumer 側プラグインは frontmatter 不在のファイルも読めるが、新規書き出しは必ず付与する。
 
 2. YAML frontmatter の後に以下のセクションを追記する:
 
