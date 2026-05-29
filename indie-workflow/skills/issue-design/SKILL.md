@@ -14,6 +14,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - Skill
   - AskUserQuestion
 ---
 
@@ -55,6 +56,29 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
    - question: 「Issue を新規起票しますか、既存の設計・リライトをしますか？」
    - options: 「新規起票（indie-issue-create に切替）」/「設計・リライト（このまま続行）」
    - 「新規起票」選択時は indie-issue-create に案内して終了する
+
+### Phase 0.5: BDD bilayer モード（bdd-spec 連携・opt-in）
+
+`bdd-spec` plugin が同居している場合、Issue を **human 層（9 セクション散文・背景・設計判断）と AI 層（BDD `spec.md` の Feature / Scenario / Examples）の二重化（bilayer）** で設計できる。AI ハーネスには AI 層だけ Read させる運用（AGENTS.md / CLAUDE.md 側で制御）を想定し、このスキルは **生成のみ**を担う。bdd-spec 未インストール時は本フェーズは完全に dormant（従来の単一ファイル設計）。
+
+1. bdd-spec のインストールを判定する（check-deps.sh と同じ方式）:
+   ```bash
+   if grep -q '"bdd-spec@' "$HOME/.claude/settings.json" 2>/dev/null; then BDD_BILAYER=1; else BDD_BILAYER=0; fi
+   ```
+   - `BDD_BILAYER=0` → 本フェーズを skip し、従来の単一ファイル設計のまま Phase 1 へ
+2. `BDD_BILAYER=1` のとき **AskUserQuestion** で確認:
+   - question: 「bdd-spec が利用可能です。Issue を human 層（9 セクション）+ AI 層（BDD spec.md）の bilayer で設計しますか？」
+   - header: 「bilayer 設計」
+   - options:
+     1. label: 「bilayer (推奨)」/ description: 「9 セクション本文（human 正本）に加え bdd-spec:create-spec で spec.md（AI 用 BDD）を生成」
+     2. label: 「従来通り」/ description: 「9 セクション単一ファイルのみ。spec.md は生成しない」
+   - 「従来通り」選択 → dormant（Phase 1 へ）
+3. 「bilayer」を選んだ場合、Phase 1〜4 で 9 セクション本文（human 正本）を設計・反映したうえで、**AI 層を生成**する:
+   - `Skill` tool で `bdd-spec:create-spec` を呼ぶ。非対話 API（bdd-spec v0.1.0 で安定化）に従い引数で渡す:
+     - `role=<Issue から得た役割>` / `want=<実現したいこと>` / `why=<背景、不明なら省略>` / `shortPath=<true/false 省略可>`
+   - 引数で全要素が埋まっていれば bdd-spec 側は AskUserQuestion を発火せず非対話実行する
+   - 生成された `spec.md` のパスを Issue 本文の「成果物」または「参考資料」に相対パスのファイルリンクで記録する（human 層 → AI 層のポインタ）
+4. fallback: bdd-spec:create-spec が失敗（version 不整合・内部エラー等）したら warning を出し、9 セクション本文のみで完了する（後方互換 100%）
 
 ### Phase 1: 9 セクション構造で設計
 

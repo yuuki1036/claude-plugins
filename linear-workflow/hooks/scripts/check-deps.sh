@@ -44,6 +44,7 @@ check_plugin() {
 # --- チェック実行 ---
 check_mcp "linear" "true" "Linear MCP サーバー"
 check_plugin "feature-dev" "false" "feature-dev プラグイン"
+check_plugin "bdd-spec" "false" "bdd-spec プラグイン（issue-design bilayer モード）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then

@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.27.0] - 2026-05-29
+
+### Added
+- **knowledge-lint に freshness 検査（項目 8: stale knowledge）を追加** (#54)。`last-validated` / `phase` の任意 frontmatter を検証し、phase 別 stale 判定（current 90日 / target 180日、superseded は対象外）を行う。fallback chain（`last-validated` → `verified` / `phase` → `status` 推定）で既存 knowledge も判定可能。未記入は warn / info に留め error にしない（transitional period）
+- **knowledge-lint に glossary 用語重複検査（項目 9）を追加** (#54)。`kind: concept` + `subkind: glossary` ページ間で同一用語が複数定義される用語 SSoT 単一性違反を検出（提案のみ）。テーブル記法 / 見出し記法の 2 記法から用語エントリを抽出。既存の tags 表記ゆれ（項目 6）・重複概念（項目 7）とは対象フィールド・粒度が異なり衝突しない
+- `knowledge` SKILL / `indie-issue-maintain` の `quality-checklist.md` の frontmatter スキーマに `last-validated` / `phase` / `subkind` を任意フィールドとして追記
+- **issue-design に BDD bilayer モード（Phase 0.5）を追加** (#54 段階B)。`bdd-spec` plugin が同居する場合のみ active。human 層（9 セクション散文）+ AI 層（bdd-spec の `spec.md`）の二重化を opt-in で選択でき、`Skill bdd-spec:create-spec` を非対話 API（role/want/why/shortPath）で呼んで spec.md を生成。未インストール時は完全 dormant（後方互換 100%）。feature-dev Phase 1.3 と同じ連携パターン
+- `_requirements` と `check-deps.sh` に `bdd-spec`（optional）を追加
+- **indie-issue-maintain に Event Bus subscribe（セッションシグナル取り込み）を追加** (#54 段階C)。`.claude/events.jsonl` から `commit:created`（dev-workflow publish）・`review:completed`（code-review publish）を読み、対象 Issue に未反映の commit / レビューを反映候補として提示。Hook ではなく skill 内軽量読み出しで実装（Event Bus 規約準拠、dedup は subscriber 責務）
+
+### Notes
+- GitHub Issue #54 を段階A（freshness + glossary）/ 段階B（bilayer 連携）/ 段階C（event subscribe）に分割して実装。bdd-spec が既にカバーする user story dir / 用語 SSoT は bdd-spec 側に委譲
+- **doc-freshness との住み分け**: knowledge-lint は鮮度の最小コア（`last-validated` / `phase` 検証 + stale 判定）のみ担当。行数ガード・Markdown 相対リンク検証・superseded 参照追跡は doc-freshness プラグインに委譲。閾値の外部設定は段階Aでは持たずデフォルト固定
+- 段階B の bilayer は AI ハーネスの Read 制御（AI 層のみ読ませる）を AGENTS.md / CLAUDE.md 運用に委ね、plugin は spec.md 生成のみ担う
+
 ## [1.26.0] - 2026-05-29
 
 ### Added

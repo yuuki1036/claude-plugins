@@ -32,6 +32,26 @@ allowed-tools:
 
 ---
 
+## セッションシグナルの取り込み（event bus subscribe）
+
+`.claude/events.jsonl`（Event Bus ログ）から、対象 Issue に関連する `commit:created`（dev-workflow が publish）・`review:completed`（code-review が publish）を読み取り、Issue 本文に未反映の作業がないかを突き合わせる。Hook ではなく本スキル実行時の軽量読み出しとして行う（重い処理はしない）。
+
+1. ログの存在確認: `.claude/events.jsonl` が無ければ本節をスキップ
+2. 直近イベントの読み出し（Bash）:
+   ```bash
+   [ -f .claude/events.jsonl ] && tail -n 100 .claude/events.jsonl \
+     | grep -E '"event":"(commit:created|review:completed)"' || true
+   ```
+3. 各イベントの payload（`issue_id` / `pr` / commit hash / file path 等）を対象 Issue と照合:
+   - `commit:created` … 対象 Issue 関連の commit があるのに「変更ファイル」「更新履歴」へ未記載 → 反映候補として提示
+   - `review:completed` … 対象 Issue のレビュー完了が更新履歴に未記録 → レビューガードの「レビュー済み」記録候補として提示（本文キーワード検出を補完する第二のシグナル源）
+4. dedup: 更新履歴に既に該当 PR / commit / レビューが記録済みのイベントは再提示しない（Event Bus 規約の subscriber 責務）。payload に冪等性キーが無い場合は `ts` + event 名で重複排除する
+5. 取り込んだシグナルは整理計画（処理フロー Step 10）に統合して提示する
+
+> Event Bus 規約の詳細はリポジトリ CLAUDE.md「Event Bus 規約」を参照。publisher（dev-workflow / code-review）が既に publish しているイベントを subscribe する疎結合設計で、subscriber は publisher を意識しない。
+
+---
+
 ## 整理対象
 
 ### 削除してよいもの
@@ -406,6 +426,7 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 
 ```
 1. 対象 issue ファイルを読み込み
+1.5 セッションシグナルの取り込み（events.jsonl から commit:created / review:completed を読み、対象 Issue と照合。未反映の commit / レビューを反映候補に）
 2. last_active を今日の日付に更新
 3. スコープ超過チェック（scope_size vs 実タスク数）
 4. テンプレート準拠チェック（セクション構成の確認）

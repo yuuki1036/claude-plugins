@@ -109,6 +109,11 @@ knowledge ファイルのフロントマターには `status` と `tags` を必�
 | `status` | 必須 | `verified`（実装済み）または `planned`（設計案） |
 | `verified` | 条件付き | status: verified の場合のみ。検証日 `YYYY-MM-DD` |
 | `tags` | 必須 | 検索用キーワードのリスト（3〜7個目安） |
+| `last-validated` | 任意 | 内容検証日 `YYYY-MM-DD`。記入時は `/knowledge-lint` stale 判定の第一基準（未記入時は `verified` を fallback）。doc-freshness プラグインと共通スキーマ |
+| `phase` | 任意 | `current` / `target` / `superseded`。未記入時は `status` から推定（`verified`→current / `planned`→target） |
+| `subkind` | 任意 | `concept` のサブ分類。`glossary` を付けると用語 SSoT ページとして glossary 重複検査（knowledge-lint 項目 9）の対象になる |
+
+**transitional period**: `last-validated` / `phase` / `subkind` は任意。未記入でも error にならず、`/knowledge-lint` では warn / info に留まる。既存の `verified` / `status` はそのまま維持する。
 
 **tags の付与ルール:**
 - 技術用語・ライブラリ名・パターン名を優先する（例: `react`, `pagination`, `caching`）
@@ -123,6 +128,8 @@ knowledge ファイルのフロントマターには `status` と `tags` を必�
 source: MYAPP-42
 status: verified
 verified: 2026-03-20
+last-validated: 2026-03-20   # 任意。鮮度判定の第一基準
+phase: current               # 任意。未記入なら status から推定
 tags: [react, memo, rendering, performance]
 ---
 ```

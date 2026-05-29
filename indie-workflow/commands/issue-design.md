@@ -6,6 +6,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - Skill
   - AskUserQuestion
 argument-hint: "[ISSUE-ID | リライト対象]"
 ---

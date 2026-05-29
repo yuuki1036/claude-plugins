@@ -39,6 +39,10 @@ knowledge は 2 種類ある。frontmatter の `kind` で区別する。
 
 `kind` が無いファイルは `source` として扱う（後方互換）。概念ページの本質は「複数ソースを繋いで初めて見える構造」を蓄積することにある。
 
+`concept` には任意のサブ分類 `subkind: glossary` を付けられる。用語の SSoT（単一定義ページ）として扱われ、複数 glossary 間で同一用語が重複定義されていないかを `/knowledge-lint`（項目 9）が検出する。
+
+鮮度フィールド `last-validated`（検証日 `YYYY-MM-DD`）と `phase`（`current` / `target` / `superseded`）も任意で付けられる。記入すると `/knowledge-lint`（項目 8）の stale 判定に使われる（未記入なら既存 `updated` / `verified` を fallback に使う。doc-freshness プラグインと共通スキーマ）。
+
 ## wikilink 記法
 
 knowledge 同士は `[[name]]` 記法でリンクする（`name` は拡張子なしの basename）。
