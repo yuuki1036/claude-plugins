@@ -368,6 +368,7 @@ Merge with the Phase 1.7 provisional list, then cap by the current effort upper 
 `Skill` tool で `code-review:self-review` を呼ぶ。引数:
 
 - `--focus <comma-separated focus list from Step 1>`
+- `--embed`（**必須**: feature-dev は自前で findings を集約するため、self-review 終端の修正方針確認 AskUserQuestion を skip させる）
 - base branch は省略（self-review が `git remote show origin | grep "HEAD branch"` で自動検出）
 - 未コミット diff は self-review 側で `git diff` / `git diff --cached` を併用して取得
 
@@ -379,8 +380,9 @@ self-review 内部の動き（詳細は `${CLAUDE_PLUGIN_ROOT}/../code-review/sk
 - Phase 4.6 meta-reviewer ラウンド（BLOCKER/CRITICAL 検出時、`${CLAUDE_EFFORT}` が xhigh/max のとき動作）
 - Phase 5 で **2 軸スコアリング** (confidence 0-100 × severity BLOCKER/CRITICAL/MAJOR/MINOR)
 - Phase 6 でレポート出力（severity 別グループ、欠損観点、総括）
+- Phase 7 は `--embed` 指定により skip（末尾 marker `[embed-mode: findings-only, no-prompt]` を確認）
 
-**Phase 7 の AskUserQuestion について**: self-review は終端で「修正方針の確認」を AskUserQuestion で聞いてくる。feature-dev からの呼び出し時は **「skip — feature-dev 側で集約します」相当の選択肢** を選んで findings を返してもらう。これは現状ユーザー操作が必要だが、将来的に self-review 側で embed mode 引数を追加する想定（別 Issue）。
+**embed mode の利点**: ユーザー操作が 1 回減り、findings をそのまま Step 3 の G-V loop と Step 4 の集約処理に流せる。`--embed` 未対応の旧 code-review (< 2.17.0) では Step 7 の AskUserQuestion がそのまま出るため、code-review plugin の version 確認を Step 0 で済ませている前提。
 
 **Partial failure tolerance**: self-review 自体が失敗した場合は warning を出して Step 3 を skip し、Step 4 で「Phase 6 not executed」状態をユーザー提示する。
 
@@ -439,6 +441,7 @@ Repeat the following until a termination condition fires:
 7. **Re-review**: `Skill code-review:self-review` を再呼び出し。引数:
    - `--focus <persisting issue の focus 集合>`
    - `--exclude <既に解決した focus 集合>` で重複検査をスキップ可
+   - `--embed`（loop 中も AskUserQuestion を skip させる）
 8. **Update loop state**: `current_iteration` をインクリメントし、新 iteration エントリを append。
 9. Return to step 1。
 

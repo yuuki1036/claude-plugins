@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.17.0] - 2026-05-29
+
+### Added
+- `self-review` skill に **`--embed` フラグ** を追加（GitHub issue #57）。他 plugin（feature-dev Phase 6 等）からプログラム的に呼び出される場合に、Step 7 の修正方針確認 AskUserQuestion を skip して findings をそのまま return するモード
+  - `commands/self-review.md` の `argument-hint` と本文に `--embed` を反映
+  - SKILL.md Step 1 の引数解説に embed mode の return 仕様（Step 6 レポート + 末尾 marker `[embed-mode: findings-only, no-prompt]`）を明文化
+  - SKILL.md Step 7 冒頭に embed mode 分岐を追加（指定時は本ステップを skip）
+  - 後方互換: `--embed` 未指定の `/self-review` 単独実行は従来通り Step 7 まで完走
+
+### Notes
+- 動機: feature-dev v2.0.0 (#52, commit 655987d) で Phase 6 が self-review 呼び出しに変わった際、self-review の Phase 7 AskUserQuestion がユーザー操作を 1 回追加してしまう UX 負債が残っていた。本変更で feature-dev / 将来の linear-workflow / indie-workflow 等が同じ汎用 IF で findings を集約できる
+
 ## [2.16.0] - 2026-05-28
 
 ### Fixed

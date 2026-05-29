@@ -5,6 +5,18 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-05-29
+
+### Changed
+
+- **Phase 6 Step 2** の `Skill code-review:self-review` 呼び出しに **`--embed`** 引数を必須化（GitHub issue #57）。code-review v2.17.0 の embed mode に乗り換えることで、self-review 終端の修正方針確認 AskUserQuestion を skip し、ユーザー操作を 1 回削減。findings は従来通り feature-dev Step 4 の集約処理に流す
+- **Phase 6 Step 3.2** の Generator-Verifier ループ内 re-review 呼び出しにも `--embed` を追加。loop 中の各 iteration で AskUserQuestion が発火しないことを保証
+- v2.0.0 の Migration Guide に記載した「Phase 7 の AskUserQuestion で skip 相当を選ぶ」workaround は本リリースで不要になる（既知の制約解消）
+
+### Notes
+
+- code-review v2.17.0 以上を前提とする（embed mode 未対応の旧バージョンでは workaround が必要）。SessionStart hook (`check-deps.sh`) は plugin の存在のみ確認しており version までは見ていないため、ユーザー側で `claude plugin install code-review@yuuki1036-claude-plugins` で最新化する必要がある
+
 ## [2.0.0] - 2026-05-28
 
 ### ⚠️ BREAKING CHANGES

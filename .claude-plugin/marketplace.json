@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "code-review",
-      "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。worktree branch 継承バグ修正 (agent prompt への PR_NUMBER 注入)、PR 種別分岐ルール (doc-review / dba / supply-chain / skip) と Issue ファイル必読フローを追加",
-      "version": "2.16.0",
+      "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。self-review に --embed フラグ追加 (他 plugin からの呼び出し時に Phase 7 AskUserQuestion を skip)、worktree branch 継承バグ修正、PR 種別分岐ルールと Issue ファイル必読フロー",
+      "version": "2.17.0",
       "author": {
         "name": "yuki"
       },
@@ -71,8 +71,8 @@
     },
     {
       "name": "feature-dev",
-      "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 6 は code-review:self-review に委譲して品質基準を一本化、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
-      "version": "2.0.0",
+      "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 6 は code-review:self-review に --embed 付きで委譲し AskUserQuestion 操作を削減、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
+      "version": "2.0.1",
       "author": {
         "name": "yuki"
       },

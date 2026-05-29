@@ -4,7 +4,7 @@ description: >
   Phase 0 トリアージ + 動的エージェント構成のセルフレビュー。
   diff → explorer(sonnet) → reviewer(opus) を動的構成、severity×confidence マトリクスでフィルタ。
   トリガー: 「セルフレビュー」「/self-review」「自分の変更を確認」「コミット前にチェック」
-  引数: [base branch] [--staged] [--focus <観点>] [--exclude <観点1,観点2>] (省略時は自動検出)
+  引数: [base branch] [--staged] [--focus <観点>] [--exclude <観点1,観点2>] [--embed] (省略時は自動検出)
 effort: xhigh
 allowed-tools:
   - Bash
@@ -57,6 +57,16 @@ wc -l <changed_files>
 変更がなければ終了。
 
 `--staged` 引数が指定されている場合は `git diff --cached` のみを対象とし、未ステージの変更は除外する。
+
+**`--embed`（他 plugin からの呼び出し）:**
+
+`--embed` 引数が指定されている場合は、本 skill が他 plugin（例: feature-dev Phase 6）からプログラム的に呼び出されたと判断する。Step 7 の修正方針確認 AskUserQuestion を skip し、Step 6 のレポートをそのまま return する。呼び出し元側で findings を集約・後処理する前提。
+
+embed mode 時の return 仕様:
+- Step 6 のレポート全文（severity 別にグルーピングされた指摘リスト、欠損観点、総括）を出力
+- 末尾に `[embed-mode: findings-only, no-prompt]` の 1 行 marker を出して呼び出し元の parse を容易にする
+- AskUserQuestion は呼ばない（呼び出し元の UX を阻害しない）
+- 後方互換: `--embed` 指定なしの呼び出し（`/self-review` 単独実行等）は従来通り Step 7 まで完走
 
 **`--focus` / `--exclude`（同一セッションでの重複レビュー回避）:**
 
@@ -257,6 +267,8 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 ```
 
 ### 7. 修正方針の確認
+
+**embed mode skip**: 引数で `--embed` が指定されている場合は本ステップ全体を skip する。Step 6 のレポート末尾に `[embed-mode: findings-only, no-prompt]` の 1 行 marker を追加して完了。AskUserQuestion を呼ばないことで呼び出し元 plugin の UX を阻害しない。
 
 指摘事項が 1 件以上ある場合のみ実行する。指摘が 0 件なら「問題なし」で完了。
 
