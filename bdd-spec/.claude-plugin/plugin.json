@@ -1,0 +1,8 @@
+{
+  "name": "bdd-spec",
+  "version": "0.1.0",
+  "description": "BDD spec 駆動の scaffold プラグイン。user story dir + epic.md / spec.md 2ファイル粒度 + BDD 階層化（all_spec / common_spec / spec / Examples）+ 同値分割表テンプレを生成",
+  "author": {
+    "name": "yuki"
+  }
+}

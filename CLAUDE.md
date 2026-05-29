@@ -40,6 +40,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱） |
 | guardrail-protect | - | - | - | PreToolUse | lint/hook/static check 設定の骨抜き編集と git commit --no-verify を機械的にブロック（opt-in 設定） |
 | doc-freshness | 1 | 1 | - | - | last-validated / phase frontmatter による doc 鮮度機械強制（Phase 1: command + skill のみ、hook は将来追加） |
+| bdd-spec | 1 | 1 | - | - | BDD spec 駆動の scaffold（user story dir + epic/spec 2ファイル + 階層化 + 同値分割表）。Phase 1: create のみ、evaluate は将来追加 |
 
 ## セットアップ
 
