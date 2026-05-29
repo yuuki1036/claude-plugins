@@ -5,6 +5,27 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-05-29
+
+### Added
+
+- **Phase 1.3 BDD Spec Creation** (#59)。`bdd-spec` plugin が同居する前提で、Phase 1 直後に BDD `spec.md` を architect 入力契約として生成するフェーズを追加
+  - bdd-spec の `Skill bdd-spec:create-spec` を非対話 API (引数 `role` / `want` / `why` / `shortPath`) で呼び出し、生成された spec.md パスを `BDD_SPEC_PATH` として保持
+  - Phase 4 architect prompt に `BDD spec path: <path>` を渡し、各 architect が冒頭で Read して Feature / Scenario / Examples / 同値分割表 / トレーサビリティ表を **authoritative requirements** として扱う
+  - 「曖昧な Issue から実装が暴走する」失敗パターンを構造的に潰す（Phase 6 self-review の評価基準も spec が真実）
+- `agents/code-architect.md` に **BDD Spec Injection** セクションを追加。spec 構造（epic/spec/all_spec/common_spec）の読み方、トレーサビリティ保持ルール、conflict resolution を明示
+- `.claude-plugin/plugin.json` の `_requirements` に bdd-spec を optional 依存として追加
+- `hooks/scripts/check-deps.sh` で bdd-spec の未インストール時 warning を出力
+
+### Changed
+
+- `feature-dev/commands/feature-dev.md` Phase 4 で BDD_SPEC_PATH が設定されている場合は各 architect prompt に注入する指示を追加
+
+### Notes
+
+- bdd-spec 未インストール時は Phase 1.3 を完全 skip し、既存の Issue 解釈フロー（Phase 1.5 linear/indie handoff）に fallback。**後方互換性 100%**
+- bdd-spec API は v0.1.0 で安定化済み（#49）。引数で全要素が埋まっていれば非対話実行されるため feature-dev embed 用途に適合
+
 ## [2.1.0] - 2026-05-29
 
 ### Added

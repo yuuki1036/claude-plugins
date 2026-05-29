@@ -1,13 +1,19 @@
 {
   "name": "feature-dev",
-  "version": "2.1.0",
-  "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.5 に self-lock template (将来の PostToolUse 自己再帰防止)、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
+  "version": "2.2.0",
+  "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec plugin から BDD spec.md を生成し architect の入力契約に使用、Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.5 に self-lock template、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
   "_requirements": [
     {
       "name": "code-review",
       "type": "plugin",
       "required": false,
       "description": "Phase 6 品質レビュー委譲先。未インストール時は Phase 6 が動作しない（fail-fast）"
+    },
+    {
+      "name": "bdd-spec",
+      "type": "plugin",
+      "required": false,
+      "description": "Phase 1.3 BDD spec 入力契約。インストール時のみ create-spec を呼び spec.md を architect 入力に使用、未インストール時は既存 Issue 解釈フローに fallback"
     }
   ],
   "author": {

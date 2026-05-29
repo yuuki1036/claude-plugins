@@ -52,6 +52,74 @@ Initial request: $ARGUMENTS
 
 ---
 
+## Phase 1.3: BDD Spec Creation (bdd-spec plugin handoff)
+
+**Goal**: If `bdd-spec` plugin is installed, create a BDD `spec.md` (Feature / Scenario / Examples) as the authoritative requirements for downstream phases, then pass its path forward.
+
+**Why this phase exists**: 「曖昧な Issue から実装が暴走する」失敗パターンを構造的に潰すため、Phase 4 architect が **spec.md を真実として読む** 構造に切り替える。bdd-spec 未インストール時は何もしない（後方互換）。
+
+### Step 1: Detect bdd-spec plugin
+
+```bash
+# settings.json 経由でインストール確認（check-deps.sh と同じ判定）
+if grep -q '"bdd-spec@' "$HOME/.claude/settings.json" 2>/dev/null; then
+  BDD_SPEC_AVAILABLE=1
+else
+  BDD_SPEC_AVAILABLE=0
+fi
+```
+
+- `BDD_SPEC_AVAILABLE=0` → **Phase 1.3 を skip して Phase 1.5 へ**。fallback として既存の Issue 解釈フローがそのまま動く
+- `BDD_SPEC_AVAILABLE=1` → 次の Step へ
+
+### Step 2: Check existing spec
+
+ユーザーが既に spec.md を持っている場合は再生成しない:
+
+1. `$ARGUMENTS` に `spec=<path>` が含まれていればそれを採用（Phase 4 へそのまま渡す）
+2. 引数から user story の要素（`role` / `want` / `why`）が推測可能なら次の Step へ
+3. 推測できない場合は Phase 1 で集めた discovery 情報から要素を抽出してユーザーに確認
+
+### Step 3: Propose create-spec invocation
+
+`AskUserQuestion` で確認:
+
+- question: "bdd-spec plugin が利用可能です。BDD spec.md を Phase 4 architect の入力として生成しますか？"
+- header: "BDD spec 生成"
+- options:
+  1. label: "生成する (推奨)" / description: "bdd-spec:create-spec を呼んで spec.md を作成。architect は spec を真実として読む"
+  2. label: "skip" / description: "BDD spec を生成せず既存の Issue 解釈フローで進む"
+
+### Step 4: Invoke bdd-spec:create-spec
+
+ユーザーが「生成する」を選んだら `Skill` tool で `bdd-spec:create-spec` を呼ぶ。
+
+**非対話 API（bdd-spec v0.1.0 で安定化）に従い引数で値を渡す**:
+
+- `role=<discovery で得た role>`
+- `want=<discovery で得た want>`
+- `why=<discovery で得た why、不明なら省略>`
+- `shortPath=<true / false>` (省略時は bdd-spec 側設定に従う)
+
+引数で全要素が埋まっていれば bdd-spec 側は AskUserQuestion を発火せず非対話実行する。
+
+**Skill 呼び出し後**:
+- 生成された spec.md のパス（`features/{dirname}/spec.md`）を `BDD_SPEC_PATH` 変数に保持
+- Phase 1.7 トリアージへの signal: spec.md 完備 → explorer count を控えめに（spec の Scenario が要件を明確化しているため）
+
+### Step 5: Fallback handling
+
+- bdd-spec:create-spec が失敗（例: bdd-spec plugin の version 不整合、内部エラー）→ warning を出して fallback。Phase 1.5 以降は既存フローで継続
+- ユーザーが skip を選択 → そのまま Phase 1.5 へ
+
+### Output
+
+- `BDD_SPEC_PATH=<path>` または `BDD_SPEC_PATH=""`（未生成）
+- Phase 4 architect prompt の "BDD Spec Injection" に `BDD_SPEC_PATH` を渡す
+- Phase 1.7 トリアージで Issue context completeness の判定材料に使う
+
+---
+
 ## Phase 1.5: Issue Context Detection (linear-workflow / indie-workflow handoff)
 
 **Goal**: Detect upfront Issue context handed off by linear-workflow / indie-workflow and skip redundant discovery.
@@ -195,6 +263,11 @@ If the user says "whatever you think is best", provide your recommendation and g
    - `pragmatic-balance`: speed + quality tradeoff explicitly weighed
    - `migration-strategy`: phased migration steps with rollback points (migration tasks only)
    - `delta-proposal`: when Issue context provides existing `feature_dev_plan:` — propose deltas only, do not redesign
+
+   **BDD spec injection**: Phase 1.3 で `BDD_SPEC_PATH` が設定された場合、各 architect の prompt に以下を追加する:
+   - `BDD spec path: <BDD_SPEC_PATH>` — architect は冒頭でこのファイルを Read し、Feature / Scenario / Examples / 同値分割表を **authoritative requirements** として扱う
+   - 設計は spec.md の AC ↔ Scenario マッピングを保つこと（架空の Scenario を増やさない、削らない）
+   - 詳細は `agents/code-architect.md` の "BDD Spec Injection" セクション
 
 2. Review all approaches and form your opinion on which fits best for this specific task
 3. Present to user: brief summary of each approach, trade-offs comparison, **your recommendation with reasoning**, concrete implementation differences

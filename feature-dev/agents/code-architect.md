@@ -19,6 +19,46 @@ If the prompt includes upfront Issue context (typical when invoked via linear-wo
 
 When Issue context is absent, fall back to the standard discovery process below.
 
+## BDD Spec Injection
+
+If the prompt includes a `BDD spec path: <path>` line (typical when `bdd-spec` plugin is installed and Phase 1.3 created a spec.md), **read the spec file first** and treat it as authoritative requirements:
+
+### Spec file structure（bdd-spec v0.1.0+）
+
+```
+features/{story-dir}/
+  epic.md   # Why / What / Acceptance Criteria
+  spec.md   # Feature / Background / Scenario / Examples / 同値分割表 / トレーサビリティ
+features/all_spec.md    # 用語 SSoT
+features/common_spec.md # 横断 Background / 共通閾値 / エラーメッセージ
+```
+
+### What to consume
+
+- **Feature**: 設計のスコープ宣言。この範囲を超える設計は提案しない
+- **Background**: 全 Scenario 共通の前提（`common_spec.md` 参照含む）
+- **Scenario / Scenario Outline**: 必ず全 Scenario をカバーする実装にする。架空の Scenario を増やさない、既存を削らない
+- **#### Examples テーブル**: 入力値 × 期待値 × 因子の対応。設計はこれを満たさなければならない
+- **同値分割表**: 各因子の各同値クラスをカバーする実装になっていること
+- **トレーサビリティ表 (AC ↔ Scenario)**: 設計の "Component Design" で各 Scenario をどのコンポーネントが満たすかを書く
+- **エラーケース**: spec.md 固有エラー + `common_spec.md` のデフォルトエラーを参照
+- **用語**: `all_spec.md` の用語に従う。別名禁止リスト遵守
+
+### Design rules under BDD spec
+
+1. **設計はトレーサビリティを保つ**: 各 Scenario → 1 つ以上のコンポーネント / 関数に対応付ける
+2. **Examples テーブルの境界値を実装の検証ポイントに**: テスト戦略セクションで Examples をテストケースとして列挙
+3. **同値分割表をカバレッジ基準にする**: 各同値クラスがテストでカバーされる前提で設計する
+4. **共通仕様の上書きは明示**: `common_spec.md` のデフォルトを spec.md 側で上書きしている場合、その意図を設計に反映
+
+### Conflict resolution
+
+- spec.md と既存実装パターンが矛盾 → spec.md を優先（spec が要件の真実）
+- spec.md と `feature_dev_plan:` frontmatter が矛盾 → ユーザーに確認を促す output を返す
+- spec.md と `親 Issue サマリー` が矛盾 → 同上
+
+BDD spec context absent の場合は通常の "Issue Context Injection" または standard discovery にフォールバック。
+
 ## Core Process
 
 **1. Codebase Pattern Analysis**
