@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.6] - 2026-06-01
+
+### Changed
+
+- `skills/feedback-issue/SKILL.md` Step 2 に **AskUserQuestion の inline 呼び出し仕様**を追記（allowed-tools 最小性 #14b の規約準拠）。Issue 種別（enhancement / bug / question）判定を素のプロンプトから選択 UI に変更し、宣言済みツールと実装を一致させる
+
 ## [1.2.5] - 2026-05-25
 
 ### Changed

@@ -1,6 +1,6 @@
 {
   "name": "adr-keeper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 2箇所更新を機械化",
   "author": {
     "name": "yuki"

@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.1.1] - 2026-06-01
+
+### Changed
+
+- `skills/adr/SKILL.md` Phase 3 に **AskUserQuestion の inline 呼び出し仕様**を追記（allowed-tools 最小性 #14b の規約準拠）。ADR の status（accepted / proposed）確定を素のプロンプトから選択 UI に変更し、宣言済みツールと実装を一致させる
+
 ## [0.1.0] - 2026-05-29
 
 ### Added

@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-06-01
+
+### Changed
+
+- `agents/code-explorer.md` / `agents/code-architect.md` の `tools` から未使用の `WebFetch` / `WebSearch` / `TodoWrite` を削除（allowed-tools 最小性 #14b）。両 agent は既存コードベースの解析・設計に閉じており外部 web 参照・タスク管理を使わない。Permission Pruning 原則に従いツール宣言を最小化（`Glob` / `Grep` / `LS` / `Read` のみ）
+
 ## [2.2.0] - 2026-05-29
 
 ### Added

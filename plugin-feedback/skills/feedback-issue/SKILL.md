@@ -49,7 +49,13 @@ GitHub Issue として起票しますか？
 ### Step 2: 情報の整理
 
 1. 対象プラグインを特定する（会話コンテキストから推定 or ユーザーに確認）
-2. 種別を判定する（enhancement / bug / question）
+2. 種別を判定する。会話文脈で自明ならそれを使い、曖昧なら **AskUserQuestion** で確認する:
+   - question: "このフィードバックの種別はどれですか？"
+   - header: "Issue 種別"
+   - options:
+     1. label: "enhancement" / description: "改善要望・機能追加（label: enhancement）"
+     2. label: "bug" / description: "不具合・期待通り動かない（label: bug）"
+     3. label: "question" / description: "質問・使い方の不明点（label: question）"
 3. 会話コンテキストから要望内容を要約する
 4. 不足情報があればヒアリングする
 

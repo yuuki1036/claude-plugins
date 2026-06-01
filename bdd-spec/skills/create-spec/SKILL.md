@@ -13,7 +13,6 @@ allowed-tools:
   - Edit
   - Glob
   - Grep
-  - Bash
   - AskUserQuestion
 ---
 

@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.1.1] - 2026-06-01
+
+### Changed
+
+- `skills/create-spec/SKILL.md` と `commands/bdd-spec-create.md` の `allowed-tools` から未使用の `Bash` を削除（allowed-tools 最小性 #14b）。scaffold は Read/Write/Edit/Glob で完結し、ディレクトリ作成は Write が親 dir を生成するため Bash 不要
+
 ## [0.1.0] - 2026-05-29
 
 ### Added

@@ -83,15 +83,21 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
 2. **kebab タイトル生成**: `<title>` を小文字 kebab-case に変換（日本語タイトルは romaji 化せず、英語の要約 slug をユーザー意図から作る。語間はハイフン）
 3. **ファイル名**: `<timestamp>-<kebab-title>.md`（保存先 `.claude/adr/`）
 4. **id**: frontmatter の `id` は `<timestamp>` をそのまま使う（命名規約は `references/naming.md`）
-5. `references/template.md` を Read し、以下を置換して Write:
+5. **status 確定**: 会話文脈から決定済み（accepted）か検討中（proposed）かが自明ならそれを使う。曖昧なら **AskUserQuestion** で確認する:
+   - question: "この ADR は決定済みですか、まだ検討中（提案）ですか？"
+   - header: "ADR status"
+   - options:
+     1. label: "accepted（決定済み）" / description: "既に採用が決まった判断を記録する（既定。phase: current）"
+     2. label: "proposed（提案）" / description: "まだ決定していない案を記録する（phase: current のまま、後で accepted に更新）"
+6. `references/template.md` を Read し、以下を置換して Write:
    - `{ID}` → `<timestamp>`
    - `{TITLE}` → `<title>`（原文ママ）
-   - `{STATUS}` → `accepted`（記録される時点で決定済みのため既定 accepted）
+   - `{STATUS}` → 上記で確定した `accepted` / `proposed`
    - `{PHASE}` → `current`
    - `{TODAY}` → `date +%Y-%m-%d` の結果
    - `{SUPERSEDES}` → `[]`
    - `{SUPERSEDED_BY}` → `null`
-6. **適用方法 (Enforcement) セクションは必ず埋めるよう促す**: 「この決定を lint / test / hook で機械強制できないか」を検討した結果を本文に残す（できない場合はその理由）
+7. **適用方法 (Enforcement) セクションは必ず埋めるよう促す**: 「この決定を lint / test / hook で機械強制できないか」を検討した結果を本文に残す（できない場合はその理由）
 
 ---
 
