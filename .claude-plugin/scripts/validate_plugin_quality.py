@@ -3,9 +3,9 @@
 
 /quality-check skill の検査項目のうち、機械的に検証可能なものを実行する.
 validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements、hooks.json）
-は対象外. LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性 等）もスキップ.
+は対象外. 純粋に LLM 判定が必要な項目（CLAUDE.md 品質 等）はスキップ.
 
-検査項目:
+検査項目（errors = 違反, exit 1）:
   - allowed-tools 存在: 全 SKILL.md に allowed-tools が定義されているか
   - allowed-tools 一致: command <-> skill ペアの allowed-tools が完全一致か
   - hooks 安全性: hook スクリプトが safe_hook_init を呼んでいるか
@@ -13,11 +13,17 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - references 参照整合性: SKILL.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
 
+検査項目（warnings = 助言, exit code に影響しない）:
+  - allowed-tools 最小性 (#14b): frontmatter 宣言ツールが本文で未言及（未使用候補）.
+    Read/Write/Edit/Glob/Grep/Bash や MCP ツールは日本語表現・記述的言及の偽陽性が
+    あるため『要確認』に留め, LLM/人手の最終判断を残す (#14b の偽陽性除外規約に準拠).
+
 実行: python3 validate_plugin_quality.py [plugin_dir ...]
   引数無し: 全プラグイン
   引数あり: 指定プラグインディレクトリのみ
 
-Exit code: 0 (pass) / 1 (違反あり)
+Exit code: 0 (pass / warning のみ) / 1 (errors あり)
+  warnings (allowed-tools 最小性) は exit code に影響しない（助言のみ）.
 """
 
 from __future__ import annotations
@@ -209,6 +215,77 @@ def check_trigger_phrases(plugin_dir: Path, errors: list[str]) -> None:
             )
 
 
+# 未使用検出で『要確認』に留めるツール（日本語のファイル操作表現で間接言及されうる）.
+SOFT_FILE_TOOLS = {"Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "NotebookEdit", "NotebookRead", "LS"}
+
+# Bash を『使用』とみなすシェルコマンドの痕跡（fence 言語 / コマンド置換 / 代表的コマンド先頭）.
+SHELL_FENCE_RE = re.compile(r"```(?:bash|sh|shell|zsh|console)\b", re.IGNORECASE)
+SHELL_HINT_RE = re.compile(
+    r"\$\(|(?<![\w/])(?:git|python3?|npm|npx|bash|cd|grep|find|cat|echo|jq|yq|sed|awk|diff|md5|sha256sum)\s"
+)
+
+
+def _tool_mentioned(body: str, tool: str) -> bool:
+    """本文に tool 名が単語境界でリテラル出現するか."""
+    return re.search(r"(?<![A-Za-z0-9_])" + re.escape(tool) + r"(?![A-Za-z0-9_])", body) is not None
+
+
+def check_allowed_tools_minimality(plugin_dir: Path, warnings: list[str]) -> None:
+    """#14b 未使用ツール検出. frontmatter 宣言ツールが本文で未言及なら候補として warning.
+
+    対象は SKILL.md と agents/*.md のみ. commands/*.md は除外する:
+    本リポジトリは「command と skill の allowed-tools を一致させる」ルールを課しており
+    （check_allowed_tools_pair で検証）, コマンドのツールは本文の必要性ではなくペア一致で
+    決まる. コマンド本文は skill へ委譲するスタブが多く, 本文ベースの未使用判定は
+    構造的に偽陽性になるため対象外とする.
+
+    偽陽性除外（#14b 規約）:
+      - Bash: 本文にシェルコマンドの痕跡があれば使用とみなす.
+      - Read/Write/Edit/Glob/Grep 等のファイル操作系: 日本語表現の可能性があるため『要確認』.
+      - MCP ツール (mcp__... / __ を含む): 記述的言及の可能性があるため『要確認』.
+      - その他（Agent / Task / WebFetch / WebSearch / TodoWrite / AskUserQuestion 等）: 『未使用候補』.
+    いずれも errors ではなく warnings（exit code 非影響）.
+    """
+    name = plugin_dir.name
+    targets: list[Path] = []
+    targets += sorted((plugin_dir / "skills").glob("*/SKILL.md"))
+    targets += sorted((plugin_dir / "agents").glob("*.md"))
+    for md in targets:
+        fm = parse_frontmatter(md)
+        if fm is None:
+            continue
+        tools = parse_tools(fm)
+        if not tools:
+            continue
+        body = FRONTMATTER_RE.sub("", read_text(md), count=1)
+        rel = md.relative_to(ROOT)
+        for tool in tools:
+            if " " in tool:
+                # 散文的な tools 宣言（"All tools except ..." 等）のトークンは対象外.
+                continue
+            if _tool_mentioned(body, tool):
+                continue
+            if tool == "Bash":
+                if SHELL_FENCE_RE.search(body) or SHELL_HINT_RE.search(body):
+                    continue
+                # シェル痕跡が無くても rm/mv 等の操作が日本語（「削除」等）で記述される
+                # ことがあるため断定せず『要確認』に留める.
+                warnings.append(
+                    f"[minimality:{name}] 要確認 'Bash'（本文にシェルコマンドの痕跡なし。"
+                    f"ファイル削除/移動が日本語で記述されている可能性—人手確認）: {rel}"
+                )
+            elif tool in SOFT_FILE_TOOLS:
+                warnings.append(
+                    f"[minimality:{name}] 要確認 '{tool}'（本文に直接言及なし。日本語のファイル操作表現の可能性—人手確認）: {rel}"
+                )
+            elif "__" in tool or tool.startswith("mcp"):
+                warnings.append(
+                    f"[minimality:{name}] 要確認 '{tool}'（MCP ツール—記述的言及の可能性、人手確認）: {rel}"
+                )
+            else:
+                warnings.append(f"[minimality:{name}] 未使用候補 '{tool}'（frontmatter 宣言だが本文に言及なし）: {rel}")
+
+
 CHECKS = [
     check_allowed_tools_exists,
     check_allowed_tools_pair,
@@ -228,13 +305,25 @@ def resolve_plugins(args: list[str]) -> list[Path]:
 def main() -> int:
     plugins = resolve_plugins(sys.argv[1:])
     errors: list[str] = []
+    warnings: list[str] = []
     for plugin_dir in plugins:
         if not (plugin_dir / ".claude-plugin" / "plugin.json").is_file():
             continue
         for check in CHECKS:
             check(plugin_dir, errors)
+        check_allowed_tools_minimality(plugin_dir, warnings)
 
     check_shared_references_sync(errors)
+
+    if warnings:
+        # 助言（非ブロッキング）. errors と分離して常に出力する.
+        print("Plugin quality warnings (allowed-tools 最小性 / 非ブロッキング):", file=sys.stderr)
+        print("", file=sys.stderr)
+        for w in warnings:
+            print(f"  - {w}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print(f"  total: {len(warnings)} warning(s)", file=sys.stderr)
+        print("", file=sys.stderr)
 
     if errors:
         print("Plugin quality validation failed:", file=sys.stderr)
@@ -245,7 +334,7 @@ def main() -> int:
         print(f"  total: {len(errors)} issue(s)", file=sys.stderr)
         return 1
 
-    print(f"Plugin quality validation passed ({len(plugins)} plugins)")
+    print(f"Plugin quality validation passed ({len(plugins)} plugins, {len(warnings)} warning(s))")
     return 0
 
 
