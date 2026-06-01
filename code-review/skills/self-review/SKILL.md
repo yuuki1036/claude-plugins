@@ -62,11 +62,12 @@ wc -l <changed_files>
 
 `--embed` 引数が指定されている場合は、本 skill が他 plugin（例: feature-dev Phase 6）からプログラム的に呼び出されたと判断する。Step 7 の修正方針確認 AskUserQuestion を skip し、Step 6 のレポートをそのまま return する。呼び出し元側で findings を集約・後処理する前提。
 
-embed mode 時の return 仕様:
+embed mode 時の return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON）:
 - Step 6 のレポート全文（severity 別にグルーピングされた指摘リスト、欠損観点、総括）を出力
-- 末尾に `[embed-mode: findings-only, no-prompt]` の 1 行 marker を出して呼び出し元の parse を容易にする
+- **その直後に Step 6.5 の構造化 findings JSON ブロックを出力**（`<!-- FINDINGS_JSON_START -->` / `<!-- FINDINGS_JSON_END -->` で囲む）。呼び出し元はこの JSON を決定的にパースして findings を集約する（markdown の正規表現パースに依存させない）
+- 末尾に `[embed-mode: findings-only, no-prompt]` の 1 行 marker を出す（JSON ブロックの**後ろ**）
 - AskUserQuestion は呼ばない（呼び出し元の UX を阻害しない）
-- 後方互換: `--embed` 指定なしの呼び出し（`/self-review` 単独実行等）は従来通り Step 7 まで完走
+- 後方互換: `--embed` 指定なしの呼び出し（`/self-review` 単独実行等）は従来通り Step 7 まで完走し、JSON ブロックは出力しない
 
 **`--focus` / `--exclude`（同一セッションでの重複レビュー回避）:**
 
@@ -266,9 +267,62 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - 確認推奨の観点
 ```
 
+### 6.5. 構造化 findings JSON（embed mode のみ）
+
+**`--embed` が指定されている場合のみ**、Step 6 の markdown レポート直後に機械可読な findings ブロックを出力する（非 embed 実行では出力しない）。呼び出し元（feature-dev Phase 6 等）はこの JSON を決定的にパースし、markdown の正規表現パースに依存しない。
+
+出力フォーマット（マーカーで厳密に囲む。前後に余計な文字を入れない）:
+
+~~~
+<!-- FINDINGS_JSON_START -->
+```json
+{
+  "schema_version": 1,
+  "summary": {"score": 7, "blocker": 1, "critical": 2, "major": 1, "minor": 0},
+  "findings": [
+    {
+      "id": 1,
+      "severity": "BLOCKER",
+      "confidence": 70,
+      "focus": "security",
+      "file": "src/config.ts",
+      "line": 15,
+      "title": "Hardcoded secret の疑い",
+      "impact": "コミット時にシークレット漏洩",
+      "suggested_fix": "process.env.X 経由に置換する"
+    }
+  ],
+  "missing_coverage": ["reviewer-security: timeout で未検査"]
+}
+```
+<!-- FINDINGS_JSON_END -->
+~~~
+
+フィールド契約（**schema_version: 1**。変更時は bump して consumer に通知）:
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `schema_version` | int | yes | 契約バージョン。フィールド追加/変更時に bump |
+| `summary.score` | int | yes | 総合評価 (0-10) |
+| `summary.{blocker,critical,major,minor}` | int | yes | severity 別件数（Step 6 報告マトリクス通過後の件数） |
+| `findings[].id` | int | yes | Step 6 の連番と一致させる |
+| `findings[].severity` | enum | yes | `BLOCKER` \| `CRITICAL` \| `MAJOR` \| `MINOR`（Step 5 でスコアリング後の最終値） |
+| `findings[].confidence` | int | yes | 0-100（Step 5 で加減算後の最終値） |
+| `findings[].focus` | string | yes | **発生元 reviewer の安定 focus キー**（`bug-detection` / `security` / `claude-md-compliance` / `error-handling` / `spec-compliance` / `performance` 等。triage-guide の focus 語彙）。表示用の日本語カテゴリ（`[セキュリティ]` 等）ではなく、**この英語キーを使う**。呼び出し元の fingerprint (`file:line:focus`) と `--focus` / `--exclude` の語彙に揃える |
+| `findings[].file` | string | yes | リポジトリ相対パス |
+| `findings[].line` | int | yes | 主たる行番号（範囲なら開始行） |
+| `findings[].title` | string | yes | 1 行要約 |
+| `findings[].impact` | string | no | 影響説明 |
+| `findings[].suggested_fix` | string | no | 修正方針（呼び出し元の auto-fix が利用。不明なら省略可） |
+| `missing_coverage` | string[] | yes | 欠損観点（空配列可） |
+
+- **findings は Step 6 で報告された指摘と 1:1**（報告マトリクスで skip されたものは含めない）。`id` は Step 6 のレポート連番に一致させる
+- JSON として valid であること（末尾カンマ禁止、ダブルクオート、改行は文字列内で `\n`）
+- このブロックの**後**に `[embed-mode: findings-only, no-prompt]` marker を置く
+
 ### 7. 修正方針の確認
 
-**embed mode skip**: 引数で `--embed` が指定されている場合は本ステップ全体を skip する。Step 6 のレポート末尾に `[embed-mode: findings-only, no-prompt]` の 1 行 marker を追加して完了。AskUserQuestion を呼ばないことで呼び出し元 plugin の UX を阻害しない。
+**embed mode skip**: 引数で `--embed` が指定されている場合は本ステップ全体を skip する。Step 6 の markdown レポート → **Step 6.5 の構造化 JSON ブロック** → `[embed-mode: findings-only, no-prompt]` の 1 行 marker、の順で出力して完了。AskUserQuestion を呼ばないことで呼び出し元 plugin の UX を阻害しない。
 
 指摘事項が 1 件以上ある場合のみ実行する。指摘が 0 件なら「問題なし」で完了。
 

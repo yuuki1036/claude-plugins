@@ -1,6 +1,6 @@
 {
   "name": "code-review",
-  "version": "2.17.1",
+  "version": "2.18.0",
   "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。self-review に --embed フラグ追加 (他 plugin からの呼び出し時に Phase 7 AskUserQuestion を skip)、worktree branch 継承バグ修正、PR 種別分岐ルールと Issue ファイル必読フロー",
   "author": {
     "name": "yuki"

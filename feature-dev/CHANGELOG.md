@@ -5,6 +5,13 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-06-01
+
+### Changed
+- **Phase 6 が self-review の構造化 findings JSON を消費（dual format、code-review ≥ 2.18.0）**。Step 3 / Step 4 はまず `<!-- FINDINGS_JSON_START -->` 〜 END の JSON ブロックを決定的にパースして findings（`severity` / `confidence` / `focus` / `file` / `line` / `suggested_fix`）を取得し、markdown 正規表現パースへの依存を解消。fingerprint (`file:line:focus`) も JSON の安定 focus キーから算出
+  - JSON ブロックが無い旧 code-review (< 2.18.0) では従来の markdown 正規表現パースにフォールバック（後方互換）
+  - 消費する schema 契約は self-review SKILL.md 「6.5」が SSoT（`schema_version: 1`）
+
 ## [2.2.1] - 2026-06-01
 
 ### Changed

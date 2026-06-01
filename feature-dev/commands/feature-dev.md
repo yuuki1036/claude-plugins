@@ -483,9 +483,17 @@ self-review 内部の動き（詳細は `${CLAUDE_PLUGIN_ROOT}/../code-review/sk
 - Phase 4.6 meta-reviewer ラウンド（BLOCKER/CRITICAL 検出時、`${CLAUDE_EFFORT}` が xhigh/max のとき動作）
 - Phase 5 で **2 軸スコアリング** (confidence 0-100 × severity BLOCKER/CRITICAL/MAJOR/MINOR)
 - Phase 6 でレポート出力（severity 別グループ、欠損観点、総括）
+- Phase 6.5（**code-review ≥ 2.18.0**）で `--embed` 時に **構造化 findings JSON ブロック**を markdown レポート直後に出力（`<!-- FINDINGS_JSON_START -->` / `<!-- FINDINGS_JSON_END -->` で囲む）
 - Phase 7 は `--embed` 指定により skip（末尾 marker `[embed-mode: findings-only, no-prompt]` を確認）
 
 **embed mode の利点**: ユーザー操作が 1 回減り、findings をそのまま Step 3 の G-V loop と Step 4 の集約処理に流せる。`--embed` 未対応の旧 code-review (< 2.17.0) では Step 7 の AskUserQuestion がそのまま出るため、code-review plugin の version 確認を Step 0 で済ませている前提。
+
+**構造化 findings の消費（dual format）**: Step 3 / Step 4 は self-review 出力を次の優先順で解釈する:
+
+1. **`<!-- FINDINGS_JSON_START -->` 〜 `<!-- FINDINGS_JSON_END -->` の JSON ブロックがあれば、それを決定的にパース**して `findings[]` を取得する（`severity` / `confidence` / `focus` / `file` / `line` / `suggested_fix`）。markdown の正規表現パースに依存しない
+2. **JSON ブロックが無い場合**（code-review < 2.18.0）は従来通り markdown レポートの `[confidence: XX][severity: YY]` と `ファイル: path:line` を正規表現パースする（後方互換フォールバック）
+
+消費する schema 契約は self-review SKILL.md 「6.5. 構造化 findings JSON」が SSoT（`schema_version: 1`）。`schema_version` が未知の上位値だった場合は warning を出しつつ既知フィールドのみ読む。
 
 **Partial failure tolerance**: self-review 自体が失敗した場合は warning を出して Step 3 を skip し、Step 4 で「Phase 6 not executed」状態をユーザー提示する。
 
@@ -533,13 +541,13 @@ EOF
 
 Repeat the following until a termination condition fires:
 
-1. **Filter**: self-review 出力から上記マッピングで auto-fix 対象を抽出。0 件なら **terminate with success** → Step 4。
-2. **Fingerprint**: 各 issue から `fingerprint = "file:line:focus"` を算出し、current iteration の `fingerprints` 配列に append。
+1. **Filter**: self-review 出力から auto-fix 対象を抽出。**まず構造化 findings JSON ブロック（`<!-- FINDINGS_JSON_START -->` 〜 END）を決定的にパースし `findings[]` を得る**。JSON が無ければ markdown を正規表現フォールバックでパース（dual format、Step 2 参照）。得た findings に上記マッピング（BLOCKER any / CRITICAL ≥90）を適用。0 件なら **terminate with success** → Step 4。
+2. **Fingerprint**: 各 issue から `fingerprint = "{file}:{line}:{focus}"` を算出し、current iteration の `fingerprints` 配列に append。`file` / `line` / `focus` は JSON findings の同名フィールドを使う（focus は安定 focus キー。markdown フォールバック時は `ファイル: path:line` と `[カテゴリ]` から抽出）。
 3. **Regression check**: 現 iteration の `fingerprints` と前 iteration の `fingerprints` が 1 件以上 overlap したら **terminate with "regression detected"** → Step 4。
 4. **Budget check**: `current_iteration >= max_iterations` なら **terminate with "budget exhausted"** → Step 4。
 5. **Notify user**: 1 行 update — `🔄 Iteration {N+1}/{max}: auto-fixing {K} critical issues...`
 6. **Fix** (Phase 5 Fix Mode):
-   - 各 issue について flagged file:line を読み、self-review が提示した suggested fix を Edit で適用
+   - 各 issue について flagged file:line を読み、JSON findings の `suggested_fix`（無ければ markdown の影響説明から推定）を Edit で適用
    - 設計レベル変更が必要なら `code-architect` を `delta-proposal` focus で起動（1 iteration 消費）
 7. **Re-review**: `Skill code-review:self-review` を再呼び出し。引数:
    - `--focus <persisting issue の focus 集合>`
