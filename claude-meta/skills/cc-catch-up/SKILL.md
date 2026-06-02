@@ -71,25 +71,24 @@ Claude Code の最新リリースからプラグイン開発に関連する新�
 
 抽出基準: `references/plugin-features.md` のカテゴリ構造に照合し、既知の機能は差分のみ、未知の機能は新規としてマーク。
 
-### Phase 3: プラグインスキャン
+### Phase 3: プラグインスキャン（決定的 pre-pass）
 
-**必須**: 以下 5 つのスキャンを**同一メッセージ内で並列起動する**（Agent tool call を 5 つ、1 つのレスポンスに含める）。Phase 1-2（Changelog 分析）とも並列実行可能。逐次起動は禁止:
+frontmatter / manifest / hooks の**生抽出は LLM ではなく決定的スクリプトで行う**（決定的 hook > LLM 判定。grep/jq で機械的に取れるものに Agent fan-out を使わない）:
 
-1. `plugin.json` — マニフェストフィールドの使用状況
-2. `hooks/hooks.json` — 使用中のフックイベント・ハンドラタイプ・条件フィールド
-3. `skills/*/SKILL.md` — スキルフロントマターの使用フィールド
-4. `agents/*.md` — エージェントフロントマターの使用フィールド
-5. `commands/*.md` — コマンドフロントマターの使用フィールド
-
-各プラグインの **機能使用プロファイル** を構築:
-
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/scan-frontmatter.sh" . > /tmp/cc-profiles.json
 ```
-{plugin-name}:
-  hooks: [SessionStart, PreToolUse(if条件あり), ...]
-  agents: [doc-resolver(effort,model), ...]
-  skills: [session-start(effort,paths未使用), ...]
-  manifest: [userConfig使用, channels未使用, ...]
-```
+
+出力は全プラグインの **機能使用プロファイル** JSON 配列。各要素のフィールド:
+
+- `plugin` — プラグイン名
+- `manifest_keys` — `plugin.json` トップレベルキー（`userConfig` / `_requirements` / `channels` 等の使用有無）
+- `hooks` — `{events: [...], handler_types: [...], has_condition: bool}`（不使用なら `null`）
+- `skills` / `agents` / `commands` — `[{name|file, frontmatter_keys: [...]}]`（各 frontmatter のトップレベルキー）
+
+このプロファイルを Phase 4 の Gap 分析にそのまま入力する。**Agent は判断・要約層に限定**する: frontmatter に現れない使用実態（hook 発火条件の意味、skill 本文での `${...}` 変数利用、agents の効果的な model 選択等）で文脈判断が要る場合**のみ**、該当プラグインに絞って Agent を起動する。全プラグイン一律の 5 並列 fan-out は行わない（生抽出が pre-pass で済むため）。
+
+> Phase 1-2（Changelog 分析）は本 pre-pass と並列に進めてよい（独立）。
 
 ### Phase 4: Gap 分析
 
@@ -219,11 +218,22 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 }
 ```
 
+**書き込み後は必ず決定的バリデータで schema 準拠を確認する**（structure drift を機械的に弾く）:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/validate-state.py"
+```
+
+exit 1（schema 違反）の場合は state.json を修正してから完了とする。スキーマ自体（フィールド追加等）を変える場合は `references/state-schema.json` を先に更新し、バリデータが追従することを確認する。
+
 ## Reference Files
 
 - **`${CLAUDE_SKILL_DIR}/references/plugin-features.md`** — CC のプラグイン関連機能カタログ（カテゴリ別・バージョン付き）。フルスキャン時のベースライン、および changelog 解析時の分類基準として使用
 - **`${CLAUDE_SKILL_DIR}/references/improvement-patterns.md`** — 機能→改善のデシジョンツリーと before/after パターン集。Gap 分析（Phase 4）の判定ロジックとして使用
 - **`${CLAUDE_SKILL_DIR}/references/pruning-heuristics.md`** — モデル世代ごとの制約棚卸し基準（C-1〜C-5 カテゴリ、判定フロー、レポート/対話仕様）。Phase P（剪定モード）で使用
+- **`${CLAUDE_SKILL_DIR}/references/state-schema.json`** — state.json の JSON Schema（draft-07）。run 間差分照合に使う状態構造の single source。Phase 7 の書き込み後に `scripts/validate-state.py` が照合
+- **`${CLAUDE_SKILL_DIR}/scripts/validate-state.py`** — state.json を state-schema.json に照合する決定的バリデータ（標準ライブラリのみ）。Phase 7 末尾で実行
+- **`${CLAUDE_SKILL_DIR}/scripts/scan-frontmatter.sh`** — 全プラグインの manifest/hooks/skills/agents/commands の使用フィールドを grep/jq で機械抽出する Phase 3 の決定的 pre-pass（jq 依存）
 
 ## 注意事項
 

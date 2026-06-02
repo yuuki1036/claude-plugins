@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.0] - 2026-06-02
+
+### Added
+- `cc-catch-up` に **state.json の JSON Schema 化 + 決定的バリデータ** を追加（Workflow 監査 2026-06-01 の rollout Step3-A）。`references/state-schema.json`（draft-07、run 間差分照合に使う状態構造の single source）と `scripts/validate-state.py`（標準ライブラリのみ・外部 jsonschema 非依存。type / required / enum / pattern / additionalProperties / anyOf のサブセットを照合）を新規追加。Phase 7 の state.json 書き込み後に実行して structure drift を機械的に弾く
+- `cc-catch-up` Phase 3 の frontmatter 生抽出を **決定的 pre-pass 化**。`scripts/scan-frontmatter.sh`（grep / jq）が全プラグインの manifest / hooks / skills / agents / commands の使用フィールドを機械抽出し、Agent fan-out を判断・要約層に限定（全プラグイン一律の 5 並列 fan-out を廃止し「決定的 hook > LLM 判定」に整合）
+- SKILL.md の Phase 3 / Phase 7 / Reference Files を上記スクリプト前提に更新
+
+### Notes
+- Workflow ランタイム導入は見送り。state.json は既に構造化され差分照合が成立済みで、実行モデル変更（本リポジトリは Workflow 前提プラグインゼロ）の不可逆コストに見合う増分便益なしと判断。schema lint + grep/jq pre-pass の決定的強化のみ採用
+
 ## [1.10.0] - 2026-05-28
 
 ### Added
