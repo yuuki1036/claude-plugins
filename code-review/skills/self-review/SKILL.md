@@ -267,6 +267,25 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - 確認推奨の観点
 ```
 
+### 6.4. Event Bus publish（`review:completed` / 計測用）
+
+レポート出力後、集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**embed / 非 embed の両モードで実行する**（LLM 駆動 fan-out の「観点取りこぼし」「severity/confidence のパース安定性」を後から定量化するための計測データを蓄積する目的。review skill と同じ `review:completed` イベントで集計を揃える）。
+
+副作用のみで標準出力にレポート文字を足さないため、embed mode の出力フォーマット（Step 6.5 の JSON ブロック → marker の順序）には影響しない。self-review は PR を持たないため `pr` は `"local"` 固定とする。
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
+  SAFE_HOOK_NAME="code-review:self-review" event_bus_publish "review:completed" \
+  "{\"pr\":\"local\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>}}"
+```
+
+payload 規約（review skill と同一。subscriber が publisher を区別せず集計できるよう揃える）:
+- `pr`: self-review は常に `"local"`
+- `blocker_count` / `critical_count` / `major_count` / `minor_count`: severity 別件数（Step 6 報告マトリクス通過後）
+- `missing_coverage`: 欠損観点の focus 名配列（空なら `[]`）
+- `result_grid`: `high`=BLOCKER+CRITICAL / `medium`=MAJOR / `low`=MINOR / `skip`=severity フィルタ除外件数 / `error`=Agent 失敗数（`missing_coverage` の length と一致）
+- 失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を `code-review:self-review` に上書きして publisher を識別する
+
 ### 6.5. 構造化 findings JSON（embed mode のみ）
 
 **`--embed` が指定されている場合のみ**、Step 6 の markdown レポート直後に機械可読な findings ブロックを出力する（非 embed 実行では出力しない）。呼び出し元（feature-dev Phase 6 等）はこの JSON を決定的にパースし、markdown の正規表現パースに依存しない。
