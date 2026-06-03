@@ -17,7 +17,7 @@ You are helping a developer implement a new feature. Follow a systematic approac
 
 ## Core Principles
 
-- **Ask clarifying questions**: Identify all ambiguities, edge cases, and underspecified behaviors. Ask specific, concrete questions rather than making assumptions. Wait for user answers before proceeding with implementation. Ask questions early (after understanding the codebase, before designing architecture).
+- **Grill, don't list**: Identify all ambiguities, edge cases, and underspecified behaviors, then resolve them as a grill (Phase 3) — self-answer what the codebase answers, ask the rest one at a time in dependency order, each with a recommended answer. Don't dump a flat question list. Grill early (after understanding the codebase, before designing architecture). See `${CLAUDE_PLUGIN_ROOT}/references/grill-protocol.md`.
 - **Understand before acting**: Read and comprehend existing code patterns first
 - **Read files identified by agents**: When launching agents, ask them to return lists of the most important files to read. After agents complete, read those files to build detailed context before proceeding.
 - **Simple and elegant**: Prioritize readable, maintainable, architecturally sound code
@@ -236,19 +236,39 @@ Subsequent phases consume this table directly.
 
 ---
 
-## Phase 3: Clarifying Questions
+## Phase 3: Clarifying Questions (Grill)
 
-**Goal**: Fill in gaps and resolve all ambiguities before designing
+**Goal**: Fill in gaps and resolve all ambiguities before designing — by **grilling**, not by dumping a flat question list
 
 **CRITICAL**: This is one of the most important phases. DO NOT SKIP.
 
-**Actions**:
-1. Review the codebase findings and original feature request
-2. Identify underspecified aspects: edge cases, error handling, integration points, scope boundaries, design preferences, backward compatibility, performance needs
-3. **Present all questions to the user in a clear, organized list**
-4. **Wait for answers before proceeding to architecture design**
+**Why grill instead of a list**: A flat list forces the user to answer everything at once — including questions the codebase already answers — and hides the dependency order between decisions. The grill protocol resolves the design tree one branch at a time, self-answering what the code can answer and recommending an answer for the rest. Full protocol: `${CLAUDE_PLUGIN_ROOT}/references/grill-protocol.md`.
 
-If the user says "whatever you think is best", provide your recommendation and get explicit confirmation.
+### Step 1: Enumerate candidate ambiguities
+
+Review the Phase 2 codebase findings + original request. List every underspecified aspect: edge cases, error handling, integration points, scope boundaries, design preferences, backward compatibility, performance needs.
+
+### Step 2: Self-resolve from the codebase (grill principle ①)
+
+For each candidate, ask "can this be answered by what we already know?" — Phase 2 explorer findings, a quick `Grep` / `Glob`, the BDD spec (Phase 1.3), or the Issue context (Phase 1.5). If yes, **resolve it yourself, drop it from the list, and record it as a 確定した前提** to surface in Step 5. Do NOT ask the user something the code already answers.
+
+### Step 3: Order by design-tree dependency
+
+Sort the remaining questions so that **upstream decisions come first** — those that constrain or eliminate downstream questions (e.g. "replace vs augment existing auth?" gates a dozen follow-ups).
+
+### Step 4: Grill one at a time (grill principles ②③)
+
+For each remaining question, in dependency order:
+
+1. Ask it with `AskUserQuestion` — **one question per call** — with a **recommended answer as the first option suffixed `(Recommended)`** plus a one-line rationale.
+2. After the answer, re-evaluate the remaining questions: a prior answer may resolve, reshape, or reveal a downstream branch. Collapse resolved ones; insert newly-revealed ones.
+3. If the user says "whatever you think is best", take the recommended option and continue.
+
+Stop when no open branch remains. **Proportionality**: if only 1-2 questions remain and the direction is obvious, batch them into a single `AskUserQuestion` rather than grilling serially (avoid over-questioning).
+
+### Step 5: Confirm the design contract
+
+Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2, (b) every user decision from Step 4. This is the implicit contract the Phase 4 architects must honor.
 
 ---
 

@@ -5,6 +5,15 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-06-03
+
+### Changed
+- **Phase 3 (Clarifying Questions) を grill 化**。一括の質問リスト提示を、design tree を 1 分岐ずつ潰す grill プロトコルに置き換えた（Matt Pocock "grill-me" / Brooks『The Design of Design』に由来）。Step 1 候補列挙 → Step 2 コードで答えられる問いは Phase 2 explorer 結果 / Grep / BDD spec / Issue context で自己解決して質問から落とす → Step 3 依存順ソート → Step 4 `AskUserQuestion` で 1 問ずつ・推奨案を先頭に `(Recommended)` 付きで確認 → Step 5 確定した前提 + ユーザー決定を design contract として集約。proportionality（残り 1〜2 問は圧縮）で過剰質問を抑制
+- Core Principles の "Ask clarifying questions" を "Grill, don't list" に改訂
+
+### Added
+- `references/grill-protocol.md` を追加（grill 3 原則の正本: ①コードで答えられる問いは聞かない ②1 問ずつ依存順 ③各問いに推奨回答。over-question 抑制の proportionality ルール込み）
+
 ## [2.3.0] - 2026-06-01
 
 ### Changed

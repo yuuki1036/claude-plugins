@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.28.0] - 2026-06-03
+
+### Added
+- **issue-design の open 仕分けに grill プロセス（design-rules.md ルール5）を追加**。Phase 2 で open を独断列挙して終えず、コミット前に 1 つずつ詰める: ①既存 ADR / 他 Issue / コードで決着済みかを `Grep` / `knowledge` /（adr-keeper があれば）`adr` で自己確認し決着済みは決定事項へ移す ②残った open を依存順に `AskUserQuestion` で 1 問ずつ・「現時点の方向性」を推奨案として `(Recommended)` 付きで確認 ③「おまかせ」は推奨で確定。open が 1〜2 個かつ方向性明確なら圧縮（過剰質問抑制）。Matt Pocock "grill-me" / Brooks『The Design of Design』の design tree に由来
+- `references/design-rules.md` に「ルール5: open は grill で詰める」を追加（linear/indie byte-identical 複製）。まとめを 3 点 → 4 点に更新
+
 ## [1.27.0] - 2026-06-03
 
 ### Added

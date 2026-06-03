@@ -32,11 +32,11 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | code-review | 2 | 2 | - | SessionStart | Phase 0 トリアージ + 動的エージェント構成コードレビュー / セルフレビュー |
 | dev-workflow | 3 | 3 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認の開発ワークフロー（chrome-devtools MCP 同梱） |
 | claude-meta | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善・CCアップデート追従・eval 回帰テスト・新コンポーネント追加前判断 |
-| linear-workflow | 10 | 10 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | Linear MCP 連携の Issue/プロジェクト管理（knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計） |
-| indie-workflow | 10 | 10 | 2 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | 個人開発向けローカル Issue 管理（linear-workflow と排他。knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計） |
+| linear-workflow | 10 | 10 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | Linear MCP 連携の Issue/プロジェクト管理（knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計 + open を grill で詰める） |
+| indie-workflow | 10 | 10 | 2 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | 個人開発向けローカル Issue 管理（linear-workflow と排他。knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計 + open を grill で詰める） |
 | plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + ほぼ全部 install しているマーケットプレイスの後発追加取りこぼし通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
-| feature-dev | 1 | - | 2 | SessionStart | 8 phase 機能開発ワークフロー（Phase 1.3 で bdd-spec から spec.md 生成 + Phase 1.7 動的トリアージ + Phase 6 G-V 自動 fix ループ + runtime smoke test 含む。code-explorer / code-architect 同梱。Phase 6 は code-review:self-review に委譲、code-review 未インストール時 fail-fast）。claude-plugins-official からフォーク |
+| feature-dev | 1 | - | 2 | SessionStart | 8 phase 機能開発ワークフロー（Phase 1.3 で bdd-spec から spec.md 生成 + Phase 1.7 動的トリアージ + Phase 3 clarifying を grill 化（1問ずつ・推奨つき・コードで答えられる問いは自己解決）+ Phase 6 G-V 自動 fix ループ + runtime smoke test 含む。code-explorer / code-architect 同梱。Phase 6 は code-review:self-review に委譲、code-review 未インストール時 fail-fast）。claude-plugins-official からフォーク |
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱） |
 | guardrail-protect | - | - | - | PreToolUse | lint/hook/static check 設定の骨抜き編集と git commit --no-verify を機械的にブロック（opt-in 設定） |
 | doc-freshness | 1 | 1 | - | - | last-validated / phase frontmatter による doc 鮮度機械強制（Phase 1: command + skill のみ、hook は将来追加） |

@@ -89,14 +89,19 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
 
 ### Phase 2: 決定 vs open の仕分け
 
-1. `references/design-rules.md` を Read する
+1. `references/design-rules.md` を Read する（ルール1〜5）
 2. 確定事項を「決定事項」、未確定を「判断ポイント (open)」に振り分ける
    - 仕分けの問い: 「今ここで根拠を書き切れるか？」YES→決定 / NO→open
 3. 各 open には必ず以下を添える:
    - `(a)(b)(c)` の選択肢 + pros/cons
    - **現時点の方向性**（有力案 + 理由）
    - **確定タイミング**（いつ・どこで確定するか）
-4. 依存は **双方向**（先行 + 後続）で書き、Issue が孤立しないようにする
+4. **open を grill で詰める（design-rules.md ルール5）**: open を独断列挙で終えず、コミット前に 1 つずつ詰める:
+   1. **自己解決**: 各 open について「既存 ADR / 他 Issue / コードで決着済みでは？」を `Grep` / `Skill` の `knowledge` /（adr-keeper があれば）`adr` で確認する。決着済みなら open から決定事項へ移す（ユーザーに聞かない）
+   2. **1 問ずつ確認**: 残った open を依存順（先行 open が後続の選択肢を変える順）に並べ、**AskUserQuestion で 1 問ずつ**確認する。各質問は「現時点の方向性」を推奨案として先頭に置き `(Recommended)` を付ける
+   3. ユーザーが「おまかせ」なら推奨案で確定する。前の回答で後続 open が解消・変形したら畳み直す
+   - **過剰質問を避ける**: open が 1〜2 個かつ方向性が明確なら、grill を 1 回の提示にまとめてよい
+5. 依存は **双方向**（先行 + 後続）で書き、Issue が孤立しないようにする
 
 ### Phase 3: ローカル Markdown 記法の適用
 

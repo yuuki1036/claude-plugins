@@ -36,7 +36,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。",
-      "version": "1.27.0",
+      "version": "1.28.0",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "indie-workflow",
       "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
-      "version": "1.28.0",
+      "version": "1.29.0",
       "author": {
         "name": "yuki"
       },
@@ -72,7 +72,7 @@
     {
       "name": "feature-dev",
       "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec plugin から BDD spec.md を生成し architect の入力契約に使用、Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.5 に self-lock template、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
-      "version": "2.3.0",
+      "version": "2.4.0",
       "author": {
         "name": "yuki"
       },
