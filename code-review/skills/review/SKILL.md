@@ -4,7 +4,7 @@ description: >
   Phase 0 トリアージ + 動的エージェント構成の PR コードレビュー。
   diff → explorer(sonnet) → reviewer(opus) を動的構成、severity×confidence マトリクスでフィルタ。
   トリガー: 「レビューして」「/review」「コードレビュー」
-  引数: [PR番号] (省略時は現在ブランチのPRを自動取得)
+  引数: [PR番号] [--emergency] (省略時は現在ブランチのPRを自動取得。--emergency は本番ホットフィックス向けの最小構成レビュー)
 effort: xhigh
 allowed-tools:
   - Bash
@@ -132,6 +132,8 @@ Step 1 の `fetch-pr-context.sh` 出力をそのまま「PR コンテキスト�
 **Phase 0 はメインコンテキストで実行する（Agent ツールは使わない）。**
 
 #### 3.0 Stage 0: PR 種別分岐（先行判定）
+
+**緊急モード先行判定**: 引数に `--emergency` が含まれる場合、triage-guide.md `## 2.5` の「緊急レビューモード」に従い最小構成（reviewer-bugs + reviewer-security のみ、explorer / 冗長ペア / Phase 5.5 / 5.6 をスキップ）を採用する。この判定は以下の PR 種別分岐より優先する。decided したモードは `emergency` として Step 3.3 / Step 7 に記録し、Step 7 レポート冒頭に必須バナーを出す。
 
 triage-guide.md `## 2.5 PR 種別分岐ルール` を **Stage 1 より先に** 適用する。`gh pr diff <PR番号> --name-only` の結果からモード（`doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode` / `default-mode`）を判定し、`default-mode` 以外の場合は推奨 agent 構成を Stage 2 の上限・最小保証より優先して採用する（GitHub issue #43）。
 
@@ -300,7 +302,9 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 ```
 ## レビュー結果
 
-**[mode: {doc-review|dba|supply-chain|skip|default}, agents: [<focus 名のリスト>]]**
+{emergency モード時のみ先頭に: **⚠️ 緊急レビュー（最小構成）: マージ後に通常の /review を必ず実施すること**}
+
+**[mode: {emergency|doc-review|dba|supply-chain|skip|default}, agents: [<focus 名のリスト>]]**
 
 **総合判定**: {Approve | Approve with nits | Needs work}（scoring-guide.md「レビュー結論（総合判定）」の表に従って決定）
 **総合評価**: X/10 点

@@ -64,6 +64,17 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 - 複数モードに該当する場合は **より厳しい絞り込み** を優先（`skip-mode` > `dba-mode` > `doc-review-mode` > `supply-chain-mode` > `default-mode`）
 - モード判定で迷う場合は `default-mode` にフォールバック（保守的に振る舞う）
 
+### 緊急レビューモード（`--emergency` 引数 / review skill のみ）
+
+`--emergency` 引数が渡された場合（本番障害のホットフィックス等）、Google eng-practices "Emergencies" に従い **速度優先の最小構成** でレビューする。diff シグナルからの自動判定ではなく、人間が明示的に宣言する点が他モードと異なる（他のモード判定より優先する）。
+
+- **起動**: reviewer-bugs + reviewer-security の最小 2 体のみ（specialist は red-flag 検出時のみ通常通り起動 — 緊急時こそインジェクション・破壊的操作の混入が危険なため）
+- **スキップ**: explorer / 冗長ペア / Phase 5.5 (adaptive deepening) / Phase 5.6 (meta-reviewer)。速度と正しさのトレードオフをスコープ縮小で取る
+- **レビューは省略しない**: 構成を絞るだけで「無レビュー」にはしない
+- **レポート冒頭に必須バナー**: `⚠️ 緊急レビュー（最小構成）: マージ後に通常の /review を必ず実施すること`
+- **緊急の定義**（eng-practices）: ロールバック回避 / 本番ユーザー影響のバグ修正 / 重大セキュリティ穴 / 法的緊急 等の **小さな** 変更に限る。soft deadline・疲労・タイムゾーンは緊急ではない（その場合は通常レビュー）
+- mode 表記は `[mode: emergency, agents: [bug-detection, security]]`
+
 ---
 
 ## 3. Stage 1: タイプ判定
