@@ -1,6 +1,6 @@
 {
   "name": "plugin-manager",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "インストール済みプラグインの一括更新と、ほぼ全部 install しているマーケットプレイスの後発追加プラグイン取りこぼし通知（SessionStart hook）",
   "author": {
     "name": "yuki"

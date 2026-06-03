@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.0] - 2026-06-03
+
+### Added
+- `update-all` 実行時に「未インストールの自作プラグイン」を検出・警告する Phase 4.7 を追加（#63）。自作マーケットプレイスに登録済みだが未インストールのプラグインを `name@marketplace` 単位で報告し、`claude plugin install` コマンドを併記する
+- SessionStart hook（`check-missing-plugins.sh`）と挙動を揃え、`config.json` の `ignore_plugins` / `ignore_marketplaces` を尊重（cooldown / install_ratio 閾値は明示実行のため適用しない）
+- 警告のみで自動インストールはしない（`update-all`=更新 / `install`=新規導入 の責務分離を維持）
+
 ## [1.6.0] - 2026-05-28
 
 ### Added

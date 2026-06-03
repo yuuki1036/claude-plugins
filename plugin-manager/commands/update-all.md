@@ -99,6 +99,46 @@ cat ~/.claude/plugins/cache/<marketplace-name>/<plugin-name>/<After-version>/CHA
 
 3. CHANGELOG.md が存在しない場合や読み取りに失敗した場合は「CHANGELOG なし」として記録する
 
+### Phase 4.7: 未インストールの自作プラグイン検出
+
+自作マーケットプレイスに登録済みだが未インストールのプラグインを検出する（後から追加された自作プラグインの取りこぼし防止）。デフォルトスコープ・`--all` のどちらでも、検出対象は **Phase 0 で記録した自作マーケットプレイス** に限定する（他マーケットプレイスは対象外）。
+
+1. Phase 0 で記録した自作マーケットプレイス名に対応する `marketplace.json` を特定し、登録済み全プラグインの `name@marketplace` 一覧を取得する。
+2. インストール済み一覧（`installed_plugins.json` の keys）と突き合わせ、差分（＝登録済みだが未インストール）を抽出する。
+3. SessionStart hook と挙動を揃えるため、`~/.claude/plugin-manager/config.json` の `ignore_plugins` / `ignore_marketplaces` を尊重して除外する（cooldown / install_ratio 閾値は update-all では適用しない＝明示実行なので毎回検出する）。
+
+```bash
+MP_NAME="<Phase 0 で記録した自作マーケットプレイス名>"
+
+# 真実の marketplace.json は marketplaces/ 配下（cache/ ではない）
+MP_JSON=""
+for f in ~/.claude/plugins/marketplaces/*/.claude-plugin/marketplace.json; do
+  [ "$(jq -r '.name // empty' "$f" 2>/dev/null)" = "$MP_NAME" ] && MP_JSON="$f" && break
+done
+
+INSTALLED_FILE=~/.claude/plugins/installed_plugins.json
+CONFIG_FILE=~/.claude/plugin-manager/config.json
+
+if [ -n "$MP_JSON" ] && [ -f "$INSTALLED_FILE" ]; then
+  ignore_plugins_json='[]'; ignore_marketplaces_json='[]'
+  if [ -f "$CONFIG_FILE" ]; then
+    ignore_plugins_json=$(jq -c '.ignore_plugins // []' "$CONFIG_FILE" 2>/dev/null || echo '[]')
+    ignore_marketplaces_json=$(jq -c '.ignore_marketplaces // []' "$CONFIG_FILE" 2>/dev/null || echo '[]')
+  fi
+  if [ "$(jq -nr --argjson ig "$ignore_marketplaces_json" --arg p "$MP_NAME" '$ig|map(.==$p)|any')" != "true" ]; then
+    registered=$(jq -r --arg mp "$MP_NAME" '.plugins[]?.name | "\(.)@\($mp)"' "$MP_JSON" 2>/dev/null | sort -u)
+    installed=$(jq -r '.plugins // {} | keys[]' "$INSTALLED_FILE" 2>/dev/null | sort -u)
+    comm -23 <(printf '%s\n' "$registered") <(printf '%s\n' "$installed") | while IFS= read -r p; do
+      [ -z "$p" ] && continue
+      [ "$(jq -nr --argjson ig "$ignore_plugins_json" --arg p "$p" '$ig|map(.==$p)|any')" = "true" ] && continue
+      echo "$p"
+    done
+  fi
+fi
+```
+
+4. 抽出結果（未インストールの `name@marketplace` 一覧）を Phase 5 の報告に渡す。`marketplace.json` が見つからない場合は検出をスキップする（警告のみ・更新処理は止めない）。
+
 ### Phase 5: 結果の報告
 
 以下のフォーマットで報告する:
@@ -118,6 +158,19 @@ cat ~/.claude/plugins/cache/<marketplace-name>/<plugin-name>/<After-version>/CHA
 - Added: 新機能の説明
 - Fixed: バグ修正の説明
 
+### 未インストールの自作プラグイン
+
+自作マーケットプレイスに登録済みだが未インストールのプラグインがあります（`update-all` は更新専用のため自動導入はしません）:
+
+- name@marketplace
+- name@marketplace
+
+導入する場合:
+
+    claude plugin install <name>@<marketplace>
+
+抑止: ~/.claude/plugin-manager/config.json の ignore_plugins / ignore_marketplaces
+
 反映にはClaude Codeの再起動が必要です。
 ```
 
@@ -128,3 +181,5 @@ cat ~/.claude/plugins/cache/<marketplace-name>/<plugin-name>/<After-version>/CHA
 
 「更新内容」セクションは更新済みプラグインが1つ以上ある場合のみ表示する。
 全プラグインが「変更なし」の場合はこのセクションを省略する。
+
+「未インストールの自作プラグイン」セクションは Phase 4.7 で検出が1件以上ある場合のみ表示する。0件の場合は省略する（更新のみが成果物）。
