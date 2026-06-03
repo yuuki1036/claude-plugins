@@ -6,6 +6,7 @@ allowed-tools:
   - Glob
   - Grep
   - AskUserQuestion
+  - Skill
 ---
 
 git-commit-helper スキルを使用して、現在の変更を分析し、適切な単位に分割してコミットを作成してください。

@@ -10,6 +10,7 @@ allowed-tools:
   - Bash
   - Read
   - AskUserQuestion
+  - Skill
   - mcp__linear__get_issue
   - mcp__github__create_pull_request
   - mcp__github__update_pull_request
@@ -68,6 +69,23 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 リポジトリに PR テンプレートがあれば本文はそれに従い、ない場合は概要 / 変更点 / レビューしてほしいところ / 動作確認 / Screenshots / 備考 の構成を使う。
 
 本文の書き方は [references/description-guide.md](references/description-guide.md) に従う。
+
+### 4.3 writing-polish 連携（PR 本文添削・opt-in）
+
+`writing-polish` plugin が同居していれば、生成した PR 本文(description)をユーザー提示（`gh pr create`）の直前に writing-polish へ渡して推敲できる（冗長削減・曖昧語の具体化・トーン統一・AI っぽさ除去）。未インストール時は本ステップを完全に skip し、従来どおり提示する（dormant・後方互換 100%）。
+
+1. インストール判定（check-deps.sh と同方式）:
+   ```bash
+   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
+     WRITING_POLISH=1
+   else
+     WRITING_POLISH=0
+   fi
+   ```
+   `WRITING_POLISH=0` → 本ステップを skip。
+2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を呼ぶ。`--embed` を必ず付け、`--tone pr` を伝え、生成した PR 本文(description)を渡す。
+3. 返ってきた推敲済みテキストを description の代わりに使う。ただし **本スキルの厳守ルール（体言止め・常体に統一、敬体禁止、AI 署名禁止、装飾絵文字禁止、ローカルパス出力禁止、PR テンプレートのセクション構造は変更しない＝文面のみ推敲）を満たすこと**。満たさない結果は破棄し元案を使う。変更があれば「何を変えたか」を一言添える。
+4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で従来どおり完了する。
 
 ### 4.5 Screenshots 添付（UI PR のみ）
 

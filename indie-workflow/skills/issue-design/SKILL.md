@@ -107,6 +107,25 @@ indie-workflow の Issue は `.claude/indie/{slug}/issues/*.md` のローカル 
 3. open の pros/cons はインライン圧縮形式（`— Pros: … / Cons: …`）で書く
 4. 重複表現を除去して一望性を高める
 
+### Phase 3.5: writing-polish 連携（本文添削・opt-in）
+
+`writing-polish` plugin が同居していれば、Phase 1〜3 で設計した 9 セクション本文の散文部分をユーザー提示（Phase 4）の直前に writing-polish へ渡して推敲できる（冗長削減・曖昧語の具体化・トーン統一・AI っぽさ除去）。未インストール時は本 Phase を完全に skip し従来どおり提示する（dormant・後方互換 100%）。
+
+1. インストール判定（check-deps.sh と同方式）:
+   ```bash
+   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
+     WRITING_POLISH=1
+   else
+     WRITING_POLISH=0
+   fi
+   ```
+   `WRITING_POLISH=0` → 本 Phase を skip。
+2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。
+3. 返ってきた推敲済みテキストを本文の代わりに使う。ただし **9 セクション構造・`<details>` collapsible・相対パス Issue リンクは変更しない（各セクション内の散文のみ推敲）。構造を壊す結果は破棄し元案を使う**。変更があれば何を変えたか一言添える。
+4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で従来どおり完了する。
+
+> 対象は human 層の散文。bdd-spec bilayer で生成する AI 層 spec.md は添削対象外。
+
 ### Phase 4: ユーザー承認 → 反映
 
 1. 設計した本文をユーザーに提示する

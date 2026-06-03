@@ -17,8 +17,8 @@
     },
     {
       "name": "dev-workflow",
-      "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離、PostToolUse 自動 lint チェーン(fmt-fix→lint-fix→check、opt-in)、PR 本文の bullet 上限数値化",
-      "version": "1.17.0",
+      "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離、PostToolUse 自動 lint チェーン(fmt-fix→lint-fix→check、opt-in)、PR 本文の bullet 上限数値化、writing-polish soft 連携(opt-in)",
+      "version": "1.18.0",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。",
-      "version": "1.26.1",
+      "version": "1.27.0",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "indie-workflow",
       "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
-      "version": "1.27.1",
+      "version": "1.28.0",
       "author": {
         "name": "yuki"
       },
@@ -131,6 +131,15 @@
         "name": "yuki"
       },
       "source": "./failure-journal"
+    },
+    {
+      "name": "writing-polish",
+      "description": "文章を語句レベルで推敲・添削する汎用スキル。最小差分の diff 提示 → 採否フローで冗長削り・曖昧語の具体化・トーン統一・AI っぽさ除去・用語一貫性を行う。校正ルールは textlint(preset-ja-technical-writing/japanese/ai-writing/JTF-style) と Vale 由来のカテゴリを tone-guide 正本に内蔵、日英両対応。過剰修正(over-correction)抑制を中核原則に据える。他プラグインから --embed で soft 委譲可能（pr-creator/git-commit-helper/issue-design が dormant 連携）",
+      "version": "0.1.0",
+      "author": {
+        "name": "yuki"
+      },
+      "source": "./writing-polish"
     }
   ]
 }

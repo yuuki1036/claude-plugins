@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.28.0] - 2026-06-03
+
+### Added
+- **issue-design に writing-polish soft 連携（Phase 3.5・--embed 委譲・opt-in・未導入時 dormant）を追加**。`writing-polish` plugin 同居時のみ active。Phase 1〜3 で設計した 9 セクション本文の散文部分を Phase 4 提示直前に `Skill writing-polish:writing-polish` へ `--embed --tone issue` で渡して推敲（冗長削減・曖昧語の具体化・トーン統一・AI っぽさ除去）。9 セクション構造・`<details>` collapsible・相対パス Issue リンクは保持し、構造を壊す結果は破棄。未インストール時は完全 skip（後方互換 100%）、呼び出し失敗時は warning を出して添削前本文で完了する fallback 付き。bdd-spec bilayer の AI 層 spec.md は添削対象外
+
 ## [1.27.1] - 2026-05-29
 
 ### Changed

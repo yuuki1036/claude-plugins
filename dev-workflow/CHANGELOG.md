@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.0] - 2026-06-03
+
+### Added
+- `pr-creator` / `git-commit-helper` に **writing-polish soft 連携**（opt-in）を追加。`pr-creator` Step 4.3 で PR 本文(description)を、`git-commit-helper` Step 4.2 でコミットメッセージ description を、ユーザー提示/コミット実行の直前に `writing-polish:writing-polish` へ `--embed` 委譲して推敲する（`--tone pr` / `--tone commit`）。`$HOME/.claude/settings.json` の `"writing-polish@` 有無で判定し、未導入時は本ステップを完全に skip して従来動作を維持（dormant・後方互換 100%）。推敲結果が各スキルの厳守ルール（PR テンプレート構造 / `<type>(<scope>):` prefix / AI 署名禁止 等）に違反する場合は破棄し元案を使う
+- `pr-creator` / `git-commit-helper` の SKILL.md および対応 command（`commands/pr.md` / `commands/commit.md`）の `allowed-tools` に `Skill` を追加（上記委譲呼び出し用）
+
 ## [1.17.0] - 2026-05-29
 
 ### Added

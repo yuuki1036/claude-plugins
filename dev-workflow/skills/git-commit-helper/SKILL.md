@@ -12,6 +12,7 @@ allowed-tools:
   - Glob
   - Grep
   - AskUserQuestion
+  - Skill
 ---
 
 # Git Commit Helper
@@ -77,6 +78,23 @@ git log --oneline -10
 - ja: 日本語で記述。追加→「を追加」、修正→「を修正」、リファクタ→「を整理/最適化」
 - en: 英語の命令形で記述（Add, Fix, Refactor 等）
 - リポジトリの直近のコミットスタイルに合わせる
+
+#### 4.2 writing-polish 連携（コミットメッセージ添削・opt-in）
+
+`writing-polish` plugin が同居していれば、生成したコミットメッセージの description 部分をコミット実行の直前に writing-polish へ渡して推敲できる（冗長削減・曖昧語の具体化・トーン統一・AI っぽさ除去）。未インストール時は本ステップを完全に skip し、従来どおりコミットする（dormant・後方互換 100%）。1 行 subject が十分簡潔なら skip してよい。
+
+1. インストール判定（check-deps.sh と同方式）:
+   ```bash
+   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
+     WRITING_POLISH=1
+   else
+     WRITING_POLISH=0
+   fi
+   ```
+   `WRITING_POLISH=0` → 本ステップを skip。
+2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を呼ぶ。`--embed` を必ず付け、`--tone commit` を伝え、生成したコミットメッセージの description 部分を渡す。
+3. 返ってきた推敲済みテキストを description の代わりに使う。ただし **`<type>(<scope>):` prefix 構造と言語設定は変更しない（description 文面のみ推敲）。絶対厳守ルール（AI・ツール関連の記述/Co-Authored-By/Generated with 禁止）を維持。違反する結果は破棄**。変更があれば「何を変えたか」を一言添える。
+4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で従来どおり完了する。
 
 ### 4.5 UI 変更時の自動確認（条件付き）
 
