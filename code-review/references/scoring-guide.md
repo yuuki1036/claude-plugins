@@ -115,12 +115,21 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - **指摘冒頭に `[resolved: @<同意者>]` タグあり**（PR 会話で LGTM/resolved 等の同意あり、review skill のみ）: **-30**
 - **指摘冒頭に `[scope:out]` タグあり**（PR 説明で「このPRではやらない」「別 PR」と明記された範囲、review skill のみ）: **-50**
 
+### 上限クランプ: 好みベース指摘の抑制（principles over personal preference）
+
+各指摘に **CLAUDE.md / style guide / 計測データ / file:line で示せる具体的な不具合** のいずれの根拠も無く、reviewer 個人のスタイル選好に過ぎない場合は **confidence を 40 で上限クランプ**する（報告マトリクス上 MINOR/MAJOR は 95+ でないと出ないため、実質的に自動除外される）。
+
+- 目的: LLM レビュー最大の弱点である「根拠なき好みベースの偽陽性」を機械的に刈り取る（Google eng-practices "The Standard": 技術的事実とデータは意見・個人的好みに優先する）
+- 同等に有効な代替実装が複数あり、純粋に好みが割れるだけのケースは著者の選択を尊重し、このクランプを適用する
+- 規約違反・実害の証拠を伴う指摘はクランプ対象外（通常のスコアリングを行う）
+
 ### 適用順序
 
 1. reviewer が付与した base confidence を取得
 2. 上記の加算・減算をすべて適用（独立に加算、最後に合算）
-3. 0-100 にクランプ
-4. severity と組み合わせて報告マトリクスでフィルタ
+3. **好みベース上限クランプ**: 根拠が個人的好みのみの指摘は confidence を `min(値, 40)` に制限
+4. 0-100 にクランプ
+5. severity と組み合わせて報告マトリクスでフィルタ
 
 ---
 
@@ -144,3 +153,22 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 - `review_severity_threshold` (string, default: "MAJOR"): 報告対象の最低 severity。`BLOCKER` / `CRITICAL` / `MAJOR` / `MINOR` のいずれか
 
 `review_severity_threshold = "CRITICAL"` を設定すると MAJOR 以下を完全に除外（厳しめ運用）。`"MINOR"` にすると全 severity を報告（緩め運用）。デフォルトの `"MAJOR"` は上記マトリクス通り。
+
+---
+
+## レビュー結論（総合判定）
+
+Google eng-practices "The Standard of Code Review" の **継続的改善（continuous improvement）** 原則を採用する: **変更がシステム全体のコード健全性を確実に向上させるなら、完璧でなくとも Approve を優先する**。完璧な CL は存在せず「より良いコード」があるだけ。MINOR / nit の積み残しを理由に承認を保留しない。
+
+報告マトリクス通過後（＝実際にレポートに出る）の指摘から、総合判定を **決定的に** 導出する:
+
+| 残存指摘 | 総合判定 | 意味 |
+|---|---|---|
+| BLOCKER または CRITICAL が 1 件以上 | **Needs work** | コード健全性を損なう。マージ前に対応必須 |
+| BLOCKER/CRITICAL なし・MAJOR が 1 件以上 | **Approve with nits** | 健全性は向上している。MAJOR は追跡 Issue / TODO を添えて対応推奨 |
+| MINOR のみ残存 | **Approve with nits** | 著者裁量で対応（LGTM with comments）。nit を理由にブロックしない |
+| 報告指摘ゼロ | **Approve** | — |
+
+- レポート冒頭の `総合判定` 行はこの表に従い決定する。`総合評価 X/10 点` は併記してよいが、**承認可否の一次情報は総合判定**とする
+- `result_grid`（event payload）との対応: `high>0` → Needs work / `high=0 && (medium>0 || low>0)` → Approve with nits / すべて 0 → Approve
+- self-review でも同じ判定軸を用いる（コミット前のゲートとして「このままコミットしてよいか」の指針になる）
