@@ -1,0 +1,21 @@
+---
+description: 文章を語句レベルで推敲・添削する（冗長削り・曖昧語の具体化・トーン統一・AI っぽさ除去）。差分提示 → 採否フロー
+argument-hint: "[text | ファイルパス | 省略時は直近の生成テキスト] [--embed] [--tone <種別>] [--aggressive]"
+allowed-tools:
+  - Read
+  - Edit
+  - AskUserQuestion
+---
+
+`writing-polish` スキルを実行して、文章を推敲・添削する。
+
+対象: $ARGUMENTS
+
+校正手順とルールは `writing-polish` skill（`skills/writing-polish/SKILL.md` と `references/tone-guide.md`）に従う。
+
+- 引数がテキストならそれを、ファイルパスなら読み込んだ内容を、省略なら直近の自分の生成テキストを対象にする。
+- `--embed` 指定時は採否確認を出さず推敲結果のみ返す（他プラグインからの呼び出し用）。
+- `--tone <種別>` で文書種別（commit / pr / issue / rfc / review 等）を明示できる。
+- `--aggressive` で任意の言い換え提案まで広く出す。
+
+中核原則（最小差分・過剰修正の抑制・原文の声の保持・構造の不変更）を必ず守る。
