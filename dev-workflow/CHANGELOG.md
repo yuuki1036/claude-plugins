@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.0] - 2026-06-03
+
+### Added
+- `git-commit-helper` の `staging-patterns.md` に **subject 行（description）の品質規約** を追加（Google eng-practices "Writing good CL descriptions"）。subject はそれ単体で変更内容が分かる完結文にする原則と、`fix: バグ修正` / `fix: build` / `chore: 対応` / `refactor: いろいろ整理` / `docs: 修正` などの曖昧 subject 禁止例カタログ（改善例つき）を明文化。git log / version history に単独で残る subject の検索性を高める
+
 ## [1.18.1] - 2026-06-03
 
 ### Changed

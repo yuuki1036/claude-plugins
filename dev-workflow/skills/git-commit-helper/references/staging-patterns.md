@@ -48,6 +48,26 @@ git diff --cached <file>
 - リネームに伴う全ファイルのimport修正 → 1コミット
 - 1つのバグの原因と影響箇所の修正 → 1コミット
 
+## subject 行（description）の品質規約
+
+subject は **それ単体で「何を変えたか」が分かる完結した一文** にする（git log / version control history に単独で残るため、本文を読まなくても変更が追えること）。Google eng-practices "Writing good CL descriptions" 由来。
+
+### 禁止例（情報量が不足する曖昧 subject）
+
+| 禁止 subject | 何が問題か | 改善例 |
+|---|---|---|
+| `fix: バグ修正` / `fix: bug` | どのバグか不明 | `fix: ログイン時のトークン期限切れで500が返る不具合を修正` |
+| `fix: build` | 何の build を何のために | `fix: TypeScript 5.4 の型エラーで CI build が落ちる問題を解消` |
+| `chore: 対応` / `update` | 何をどうしたか皆無 | `chore: ESLint を v9 にアップグレード` |
+| `refactor: いろいろ整理` | 範囲・意図が不明 | `refactor: 認証ロジックを auth-service に切り出し` |
+| `docs: 修正` | どの doc の何か | `docs: README のセットアップ手順に hook 有効化を追記` |
+
+### 原則
+
+- 「この subject だけ見て、半年後の自分や他人が変更内容を理解できるか？」を自問する
+- type と scope で機械的に分類できるからこそ、description は **具体的な対象と意図** を書く（`修正` / `対応` / `update` 単体で終わらせない）
+- 詳細な背景・理由は body に書く（subject は要約に徹する）
+
 ## Conventional Commits Type一覧
 
 | Type | 用途 |
