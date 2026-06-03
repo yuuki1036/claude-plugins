@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.1] - 2026-06-03
+
+### Changed
+- `git-commit-helper` の分割判定（Step 2）に **コミット粒度と PR 粒度の 2 層モデル** を明記。コミットは原子分割（実装コミットとテストコミットを分ける）しつつ、レビュー単位（PR）の中では実装とテストを揃え、テストだけを別 PR に切り出さない self-contained 原則を追記（Google eng-practices "Small CLs: include related test code"）。`git-commit-helper`（「実装とテストを必ず分割」）と `pr-creator`（「テストだけ別 PR に切り出さない」）の見かけ上の不整合を解消
+
 ## [1.18.0] - 2026-06-03
 
 ### Added
