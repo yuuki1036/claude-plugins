@@ -1,7 +1,7 @@
 {
   "name": "code-review",
-  "version": "2.21.0",
-  "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。self-review に --embed フラグ追加 (他 plugin からの呼び出し時に Phase 7 AskUserQuestion を skip)、worktree branch 継承バグ修正、PR 種別分岐ルールと Issue ファイル必読フロー。総合判定 (Approve / Approve with nits / Needs work) と Nit:/Optional:/FYI prefix、好みベース指摘の confidence クランプ、--emergency 最小構成レビュー、Fix the code 修正指針 (Google eng-practices 由来)",
+  "version": "2.22.0",
+  "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。self-review に --embed フラグ追加 (他 plugin からの呼び出し時に Phase 7 AskUserQuestion を skip)、worktree branch 継承バグ修正、PR 種別分岐ルールと Issue ファイル必読フロー。総合判定 (Approve / Approve with nits / Needs work) と Nit:/Optional:/FYI prefix、好みベース指摘の confidence クランプ、--emergency 最小構成レビュー、Fix the code 修正指針 (Google eng-practices 由来)。ui-quality に Chrome Modern Web Guidance ベースの modern-web-checklist を同梱 (Baseline ゲート + 自前実装→ネイティブ API 観点、外部 skill 参照のローカル化)",
   "author": {
     "name": "yuki"
   },

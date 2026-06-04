@@ -117,7 +117,7 @@ diff パターンマッチで各観点の必要性を判定する。
 ### React/Next.js 判定
 
 `package.json` に `react` / `next` が含まれる場合、bug-detection に **vercel-best-practices** 観点を追加する。
-さらに UI 変更を検出した場合は ui-quality 観点も併用し、内部で公式 skill `web-design-guidelines`（`~/.agents/skills/web-design-guidelines/SKILL.md`）のチェックリストに準拠させる。
+さらに UI 変更を検出した場合は ui-quality 観点も併用し、内部で同梱 reference `${CLAUDE_PLUGIN_ROOT}/references/modern-web-checklist.md`（Chrome Modern Web Guidance を Baseline ベースで照合可能にしたチェックリスト）に準拠させる。
 
 ### 外部ライブラリ最新仕様の参照
 
