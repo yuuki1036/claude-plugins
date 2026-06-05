@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.20.0] - 2026-06-05
+
+### Added
+- `pr-creator` の Step 4.9 PR body 検証に **ローカル限定ドキュメント参照の advisory 検出**（非 fail-fast）を追加。既存の gitignored パス検出（regex + `git check-ignore`）はパス文字列前提のため、「knowledge に詳細」「設計メモ参照」のようなパスを伴わない自然言語の誘導をすり抜けていた。レビュアーが開けないローカルドキュメント（`.claude/` 配下の knowledge / plans / issues 等）への言及語を拾い、要点のインライン要約を促す warning を出す。一般語としての `knowledge` / `plan` での誤検知を避けるため PR 作成は止めない advisory に留めた
+
+### Changed
+- `pr-creator` の厳守ルールと `description-guide.md`（「情報の集め方」「ありがちな書き方の失敗」）に、**パス文字列の有無に関わらずローカル限定ドキュメントを本文参照しない**原則を明記。参照させるのではなく必要な情報を本文へインライン要約する方針を追記
+
 ## [1.19.1] - 2026-06-05
 
 ### Fixed

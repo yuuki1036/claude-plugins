@@ -17,8 +17,8 @@
     },
     {
       "name": "dev-workflow",
-      "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離、PostToolUse 自動 lint チェーン(fmt-fix→lint-fix→check、opt-in)、PR 本文の bullet 上限数値化、writing-polish soft 連携(opt-in)、commit subject 品質規約(曖昧 subject 禁止例カタログ、Google eng-practices 由来)",
-      "version": "1.19.1",
+      "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離、PostToolUse 自動 lint チェーン(fmt-fix→lint-fix→check、opt-in)、PR 本文の bullet 上限数値化、writing-polish soft 連携(opt-in)、commit subject 品質規約(曖昧 subject 禁止例カタログ、Google eng-practices 由来)、PR 本文のローカル限定ドキュメント参照防止(パス無し自然言語言及の advisory 検出)",
+      "version": "1.20.0",
       "author": {
         "name": "yuki"
       },

@@ -180,9 +180,17 @@ while read -r path; do
 done < <(printf '%s\n' "$pr_body" | grep -oE '[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+')
 
 [ -n "$violations" ] && { echo "PR body に gitignored パスが含まれています:"; printf '%s\n' "$violations"; }
+
+# 3) パス文字列を伴わないローカル限定ドキュメント参照の検出（advisory・非 fail-fast）
+#    「knowledge に詳細」「設計メモ参照」のように regex (1)(2) をすり抜ける自然言語の言及を拾う。
+#    誤検知が出やすい（一般語としての knowledge / plan を含む）ため warning のみで PR は止めない。
+soft=$(printf '%s\n' "$pr_body" | grep -nE '(knowledge|設計メモ|実装メモ|作業メモ|ローカル(の)?(メモ|ノート|ドキュメント|ファイル)|plans?/|issues?/).{0,12}(参照|に詳細|を参照|参考|see|詳しくは)' || true)
+[ -n "$soft" ] && { echo "[advisory] レビュアーが開けないローカル限定ドキュメントへの言及かもしれません。要点を本文にインライン要約できないか確認してください:"; printf '%s\n' "$soft"; }
 ```
 
-検出された場合は **PR を作成せず**、該当箇所を body から除去（または GitHub からクリック可能な URL に置換）してから再検証する。除去後に違反 0 件になったことを確認してから Step 5 に進む。
+regex (1)(2) で検出された場合は **PR を作成せず**、該当箇所を body から除去（または GitHub からクリック可能な URL に置換）してから再検証する。除去後に違反 0 件になったことを確認してから Step 5 に進む。
+
+(3) の advisory は PR 作成を止めない。ヒットした箇所が本当にローカル限定ドキュメントへの参照なら、参照させるのではなく要点を本文へ書き写してから進む。一般語としての `knowledge` / `plan`（外部リンク付き・社内 wiki 等のクリック可能リソースを含む）であれば無視してよい。
 
 ### 5. PRを作成
 
@@ -226,5 +234,6 @@ github MCP が未設定の場合は、PR を最小 body で作成し、本文は
 - 本文量の上限を数値で守る（質的記述だけだと冗長化するため数値で制限）: **概要は 1〜2 文 / 「変更点」は 1〜5 bullet / 「レビューしてほしいところ」は 1〜3 件**。上限を超える場合は情報を圧縮するか PR 分割を検討する。Screenshots 節は frontend（UI 拡張子）変更を含む場合のみ追加する（Step 4.5 の判定に従う）
 - PR title に Issue ID prefix（`TEAM-123:` 等）を含めない。Issue ID は PR 本文側にリンク・参照として記載する
 - PR 本文（本文・`<details>` 折りたたみ問わず）にローカルパス（`.claude/plans/...` / `.claude/screenshots/...` 等）を出力しない。GitHub からクリックできないため
+- レビュアーがアクセスできないローカル限定ドキュメント（`.claude/` 配下の knowledge / plans / issues 等）は、**パス文字列の有無に関わらず**本文で参照しない。「knowledge に詳細」「設計メモ参照」のような自然言語の言及も含む。必要な情報は本文へインライン要約する（参照させるのではなく要点を書き写す）
 - Screenshots は `cc-screenshots` release にアップロードする専用運用。他の release と混ぜない
 - 機密情報（ログイン画面、社内 URL、実データ等）が写っていないか撮影前に確認する。アップロードは public release なので漏洩リスクあり
