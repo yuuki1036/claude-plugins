@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.21.0] - 2026-06-08
+
+### Added
+- `pr-creator` に **Step 4.7「概要の三要素セルフチェック」** を追加。`gh pr create` の前に概要が What / Why / Outcome を各々明示しているか自己点検し、欠けていれば `git diff` / コミット履歴 / Linear Issue から補って書き直す（埋まらなければ `AskUserQuestion`）。brevity 優先で 3 要素が暗黙化される事故を生成後に機械的に拾う
+
+### Changed
+- `pr-creator` の Step 4 と厳守ルールに **字数制約（1〜2 文）と三要素の両立** を明記。「概要は 1〜2 文」という上限が「概要は What/Why/Outcome の 3 要素を満たす」要件と運用上ぶつかり、エージェントが brevity を優先して Why / Outcome を暗黙化・省略し What 中心の 1 文に畳む事象（複数回再発）への対応。1〜2 文に収めつつ 3 要素を各々明示する両立を必須化し、3 要素が収まらない場合は概要が長いのではなく PR が大きすぎるサインとして分割を促す
+- `description-guide.md`「概要」セクションに **brevity と三要素の両立** の小節を追加。3 要素を 1〜2 文に畳むテンプレ（`〜で〜できなかった(Why)ので、〜を〜して修正し(What)、〜になる(Outcome)`）と、字数を優先して Why / Outcome を省略した避けたい例 / 3 要素を明示した良い例を併記
+
 ## [1.20.0] - 2026-06-05
 
 ### Added
