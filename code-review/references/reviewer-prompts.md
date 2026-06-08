@@ -12,12 +12,20 @@ SKILL.md から `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` として
 このタスクが PR 番号付きで渡された場合、**最初の Bash 呼び出しで必ず以下を実行**:
 
 ```bash
-gh pr checkout {{PR_NUMBER}} 2>&1 && git rev-parse --abbrev-ref HEAD
+# 既に対象 PR の HEAD を指していれば checkout をスキップ（親 review worktree が
+# 既に checkout 済みのとき、子 worktree で再 checkout すると
+# "already checked out at <親worktree>" で失敗するため。GitHub issue #69）
+if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "{{HEAD_REF}}" ]; then
+  echo "already on {{HEAD_REF}}, checkout skip"
+else
+  gh pr checkout {{PR_NUMBER}} 2>&1 || echo "checkout failed: HEAD 検証で続行可否を判断する"
+fi
+git rev-parse --abbrev-ref HEAD
 ```
 
 `isolation: "worktree"` で起動された子 worktree は親の branch を継承せず、既定では origin/default-branch から派生する。Read 系ツールは worktree のローカルファイルを見るため、checkout を省くと PR の変更を観測できず**深刻な偽陽性の原因**になる。self-review からは PR 番号が渡らないためスキップ可。
 
-`git rev-parse --abbrev-ref HEAD` の結果が PR ブランチ名（プロンプトで指示された head ref）と一致することを必ず確認すること。一致しない場合はレビュー結果の冒頭に warning を追加し、影響を受けた指摘の confidence を下げる。
+`{{HEAD_REF}}` はオーケストレーターが prompt 冒頭に明記する対象 head ref に置換される。`git rev-parse --abbrev-ref HEAD` の結果が PR ブランチ名（プロンプトで指示された head ref）と一致することを必ず確認すること。checkout に失敗し、かつ HEAD も head ref と一致しない場合はレビュー結果の冒頭に warning を追加し、影響を受けた指摘の confidence を下げる。
 
 ---
 
@@ -84,6 +92,19 @@ Step 6 で `scoring-guide.md` の報告マトリクスに従いフィルタさ�
 1. diff の意図（コミットメッセージ・PR 説明・session-context）と指摘が矛盾していないか
 2. 既存コードの問題を誤って新規問題として報告していないか
 3. 証拠（ファイル Read・explorer 結果）が confidence を裏付けているか
+
+### 退行（regression）指摘の invariant 検算（GitHub issue #69）
+
+「旧コードでは X だった → 変更で X が失われた → 退行」という指摘を出す前に、その **X が一貫して守られている不変条件（invariant）か、特定経路の偶発的な副作用か** を必ず検算する。検算を怠ると severity を過大評価する（単一経路の旧挙動を invariant とみなしてしまう）。
+
+検算手順:
+
+1. 失われたと判断した挙動 X を **隣接コード経路**（同じファイルの類似関数・兄弟ハンドラ・同種イベント処理）でも確認する。Read / Grep で他経路の該当ロジックを実際に読む
+2. X が隣接経路でも **一貫して強制されている** なら invariant とみなし、退行として通常どおり severity を付与する
+3. X が隣接経路では **強制されていない**（守っているのは特定経路だけ）なら、それは invariant ではなく **incidental（偶発的副作用）** と判断する。`$router.go(0)` や全体再描画の巻き添えなど、別処理の副次効果で偶然 X が成立していたケースが典型
+4. incidental と判断した退行指摘は **confidence を下げ（証拠不十分扱い）、severity を 1 段階下げる**（例: CRITICAL → MAJOR）。指摘理由に「隣接経路 <function> では同 invariant 未強制のため incidental と判断」と明記する
+
+判断に必要な隣接経路を自分で確認しきれない場合は、退行指摘を `## unmet_information` に回して追加探索を求める（断定で高 severity を出さない）。
 
 ### 除外対象（報告しない）
 - 今回の変更で導入されたものではない既存の問題

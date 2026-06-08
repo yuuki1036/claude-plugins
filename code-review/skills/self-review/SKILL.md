@@ -91,6 +91,30 @@ embed mode 時の return 仕様（**dual format**: 人間可読 markdown ＋ 機
 - Issue/knowledge ファイルの探索
 - プロジェクト特性シグナル（`package.json` の存在確認と主要依存の確認）
 
+### 1.5 Vault 照合（過去の指摘・落とし穴の retrieval / 任意・後方互換）
+
+レビュー局面は蓄積された知見が最も効く高 ROI な発火点。変更ファイルに関連する過去のレビュー指摘・落とし穴を vault から引いて reviewer に注入する（GitHub issue #68。feature-dev Phase 1.6 Vault Recall と同一の retrieval 基盤を呼ぶ対の改善）。
+
+**利用可否の検出（未導入なら skip / 後方互換）**:
+
+```bash
+# kvault コマンド または /vault-recall skill のいずれかが使えれば実行
+command -v kvault >/dev/null 2>&1 && echo "kvault: available"
+```
+
+`kvault` も `/vault-recall` skill も使えない環境では本ステップ全体を skip する（vault 未導入リポジトリでは no-op）。
+
+**照合手順**:
+
+1. Step 1 で収集した変更ファイルのパス・主要な識別子（関数名・型名・コンポーネント名）・技術語をクエリ語にする
+2. 代表的なクエリを 1〜3 個 `kvault recall "<query>"` で実行する（`/vault-recall` skill が使える場合はそちら経由でも可）。出力は `results[]`（`similarity` / `title` / `excerpt` / `path` / `tags`）の JSON
+3. 各結果の `similarity` と、上位ヒットと下位ヒットの **gap**（スコア差）で関連度を判断する。上位が明確に分離して高 similarity（目安: 上位 `similarity` ≥ 50 かつ次点との gap が明確）なら関連ありとみなす。全体が低 similarity で団子状なら関連なしと判断して注入しない（ノイズ注入を避ける）
+4. 関連ありと判断した知見（`title` + `excerpt` + `path`）を Step 4 の各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する
+
+**注意**:
+- `--embed` 呼び出し（feature-dev Phase 6 等）でも本ステップは動作する（呼び出し元が retrieval 基盤を共有する前提）
+- vault 照合は best-effort。`kvault` 実行が失敗・タイムアウトしても `missing_coverage` には記録せず skip して続行する（レビュー本体をブロックしない）
+
 ### 2. Phase 0: トリアージ
 
 `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。
@@ -156,6 +180,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - reviewer-prompts.md の該当する Focus テンプレートと共通指示をプロンプトに含める
 - **explorer 結果の選択的注入**: 構成テーブルの「explorer 依存」列に記載された explorer の結果を、該当する reviewer のプロンプトに `## Explorer 結果` セクションとして注入する
 - セッションコンテキストが有効な場合、reviewer-prompts.md のセッションコンテキスト注入テンプレートに従い全 reviewer に注入する
+- **Vault 注入**: Step 1.5 で関連ありと判断した知見があれば、各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する。reviewer には「過去に同種コードで指摘された観点を優先的に確認せよ。ただし現在の diff に該当しなければ無視してよい」と添える
 - diff 全文を各 reviewer に渡す
 - `isolation: "worktree"` は使用しない
 
@@ -164,6 +189,13 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 **diff-first 原則:** 各エージェントには diff の出力を渡す。エージェントのファイル Read は共通ユーティリティの仕様確認など、diff だけでは判断できない文脈把握に限定する。ただし、変更箇所を含む関数の全体確認は積極的に行うこと。
 
 全 reviewer の完了を待ち、結果を収集する。
+
+**出力形式の検証と auto-retry（GitHub issue #69）:** 各 reviewer の出力が「レビュー結果」として妥当か機械的に検証する。以下のいずれも欠く出力は **非レビュー出力**（空応答・system-reminder / skill 案内の断片・tool_use ゼロでの早期終了等）とみなす:
+
+- `### レビュー結果` 見出し（または `#### 指摘事項` / `#### 総括` のいずれか）
+- 指摘が 1 件以上ある場合、`[confidence: XX]` と `[severity: ...]` タグを含む行が存在する
+
+非レビュー出力を検出した reviewer は、**同一プロンプトで 1 回だけ auto-retry** する（複数同時検出時はまとめて並列 retry）。retry 出力も非レビュー出力なら、その reviewer の focus / angle を `missing_coverage` に「非レビュー出力（auto-retry 後も形式不正）」として記録して続行する（欠損観点として扱い、フィルタを素通りさせない）。「指摘ゼロ」を明示的に報告した妥当な出力（`### レビュー結果` を持ち問題なしと結論）は非レビュー出力ではないため retry 対象にしない。
 
 **部分失敗耐性:** 個別 reviewer が失敗しても成功した reviewer の結果で合成継続する。失敗した reviewer の focus / angle / エラー要旨を `missing_coverage` リストに追記する。
 
@@ -208,6 +240,17 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
    - meta-reviewer の指摘も通常のスコアリング・フィルタリング対象
 
 **失敗時**: meta-reviewer が失敗した場合は missing_coverage に `meta-reviewer: <failure reason>` を追記して続行
+
+### 4.7 観点カバレッジ・セルフチェック（メインコンテキスト / 常時実行）
+
+Step 5 の直前に、**メインコンテキストで**（Agent は使わない・低コスト）起動 focus の妥当性を 1 回検査する。観点漏れは高 severity 指摘が無くても起こりうるため、meta-reviewer (4.6) の起動有無・effort・severity に依存せず **常時実行** する（GitHub issue #69）。
+
+1. `triage-guide.md` の「reviewer の観点判定」表の各条件を、実際の diff シグナル（変更ファイルパス・diff 内文字列）に対して **メインコンテキストで再評価** する
+2. **「条件を満たすのに起動されなかった focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在）
+3. 検出した観点漏れは `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として追記する
+4. effort が `high` 以上 かつ 追加 1 体で補える観点なら、その focus の reviewer を 1 体だけ追加起動して結果を Step 5 に合流させてよい（任意・best-effort）
+
+**スキップ条件**: `--focus` / `--exclude` 指定時は意図的にスコープを絞り込んでいるため、その範囲外の観点漏れは missing_coverage に記録するのみで追加起動はしない。
 
 ### 5. スコアリングとフィルタリング（2軸: confidence × severity）
 

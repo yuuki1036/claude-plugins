@@ -138,6 +138,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 severity は基本的に reviewer の判定を尊重するが、以下の場合のみ Step 6 で調整する:
 
 - **タグ `[scope:out]` または `[resolved: ...]` が付いた指摘**: severity を 1 段階下げる（BLOCKER → CRITICAL、CRITICAL → MAJOR、MAJOR → MINOR、MINOR → そのまま）
+- **退行指摘で invariant が incidental と検算された場合**（reviewer-prompts.md「退行指摘の invariant 検算」: 隣接経路で同 invariant が未強制と確認）: severity を 1 段階下げる。reviewer が検算済みで既に下げている場合は二重適用しない（指摘理由の「incidental と判断」記載で判別）
 - **複数 reviewer が同一指摘を BLOCKER と判定**: severity を BLOCKER のまま維持（混乱を防ぐ）
 - それ以外: reviewer の判定をそのまま使用
 
