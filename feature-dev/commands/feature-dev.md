@@ -132,13 +132,76 @@ fi
 
 **Actions when detected**:
 
-1. Notify the user: "Linear/Indie からの upfront 引き継ぎを検出しました。Discovery と Codebase Exploration はスキップし、引き継ぎ context を起点に Phase 3 へ進みます。"
+1. Notify the user: "Linear/Indie からの upfront 引き継ぎを検出しました。Discovery と Codebase Exploration（Phase 2 探索）はスキップしますが、Phase 1.6 (Vault Recall) → Phase 1.7 (Triage) は通過し、引き継ぎ context を起点に Phase 3 へ進みます。"（引き継ぎ context が揃っているケースこそ横断知見が効くため、detected 経路でも Phase 1.6 は skip しない）
 2. Read the Issue file to extract: title, summary, parent issue summary, related knowledge, existing `feature_dev_plan:`.
 3. **If `feature_dev_plan:` already exists**: Treat it as a baseline. Propose deltas rather than redesigning from scratch. Confirm with user whether to reuse or revise.
 4. Signal Phase 1.7 that **Issue context is complete** (Phase 1.7 will likely assign 0 explorers, effectively skipping Phase 2). If the Issue context is sparse or contradicts the user's request, signal `partial` so Phase 1.7 can still launch 1-2 explorers for validation.
 5. Pass the Issue context verbatim into Phase 4 architect prompts (the architect's "Issue Context Injection" section will consume it).
 
-**Actions when NOT detected**: Proceed normally to Phase 1.7.
+**Actions when NOT detected**: Proceed normally to Phase 1.6.
+
+---
+
+## Phase 1.6: Vault Recall (knowledge vault retrieval handoff)
+
+**Goal**: 過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を knowledge vault から recall し、Phase 4 architect の入力に注入する。
+
+**Why this phase exists**: Opus は recall 系の tool 呼び出しを省略しがち。設計着手の直前に **必須ステップ** として埋め込むことで「引き忘れ」を構造的に防ぐ。注入された知見は authoritative ではなく **advisory（参考情報）** で、現コードベースのパターンと矛盾する場合は現コードベースを優先する。
+
+### Step 1: Detect kvault availability（外部 CLI 依存の存在確認）
+
+**Phase 1.3 (BDD Spec) の detect→skip パターンを踏襲**。ただし依存先は plugin ではなく **feature-dev の外にある外部 app (`kvault` CLI)** なので、CLI 本体と vault ディレクトリの **二段で存在確認** する。いずれか欠けたら skip し、後方互換を壊さない。
+
+```bash
+# kvault は feature-dev plugin 外の外部 app。CLI 本体 + vault dir の両方が揃って初めて利用可能とみなす
+VAULT_ROOT="${KNOWLEDGE_VAULT_ROOT:-$HOME/Projects/knowleadge}"
+if command -v kvault >/dev/null 2>&1 && [ -d "$VAULT_ROOT" ]; then
+  VAULT_AVAILABLE=1
+else
+  VAULT_AVAILABLE=0
+fi
+```
+
+- `VAULT_AVAILABLE=0` → **Phase 1.6 を skip して Phase 1.7 へ**。skip 理由を 1 行で notify（`kvault` 未導入 / vault dir 不在 のどちらか）。注入なしでも既存フローはそのまま動く（後方互換）
+- `VAULT_AVAILABLE=1` → 次の Step へ
+
+### Step 2: Build a keyword query（自然文ではなくキーワード寄せ）
+
+Phase 1 discovery + Phase 1.5 Issue context から、設計判断に効きそうな **名詞・技術語を空白区切りで並べる**。
+
+**運用知見（必読）**: vault の embedding は **JP の自然文クエリに弱い実測がある**。文章ではなく「`Prisma 初期化 マイグレーション ロールバック`」のような **キーワード列** にする。フレームワーク名・モジュール名・課題ドメイン語を優先する。
+
+### Step 3: Execute recall
+
+```bash
+# stderr（HF token warning / weights loading progress）は捨て、stdout の JSON のみ取得する
+kvault recall "<キーワード列>" --top 5 --min-sim 0 2>/dev/null
+```
+
+出力は JSON: `{ "query", "count", "results": [ { "path", "title", "similarity", "tags", "excerpt" }, ... ] }`。`--min-sim 0` で足切りせず top 5 を全件取得する（足切りは次の Step で rank ベースに行う）。
+
+### Step 4: Relevance judgment（rank + gap、絶対閾値で切らない）
+
+**運用知見（必読）**: `similarity` の絶対値は **クエリによって水準が変わる**（あるクエリでは 1 位が 60、別クエリでは 1 位が 35 のように）。だから **絶対閾値で足切りしない**。
+
+判断は **rank + 1 位からの similarity gap** で行う:
+
+- 1 位を基準に、後続の similarity が **大きく gap を開けて落ちたところ** を関連の切れ目とみなす
+- gap が開かず緩やかに下がるだけなら top 全件を関連候補として残す
+- 1 位ですら excerpt が明らかに無関係（別ドメイン）なら 0 件として扱ってよい
+
+関連ありと判断した知見の `path` / `title` / `excerpt` を保持する。
+
+### Step 5: Hand to Phase 4
+
+- 関連知見を `VAULT_KNOWLEDGE` として保持（各エントリ: `path` + `title` + `excerpt` の 1〜2 行要約）
+- 関連 0 件なら `VAULT_KNOWLEDGE=""`（注入なし）として Phase 1.7 へ
+- Phase 4 architect prompt の "Vault Knowledge Injection" に `VAULT_KNOWLEDGE` を渡す
+
+### Output
+
+- `VAULT_KNOWLEDGE=<関連知見の要約>` または `VAULT_KNOWLEDGE=""`（未取得 / 関連なし / skip）
+- Phase 1.7 へ進む
 
 ---
 
@@ -288,6 +351,12 @@ Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2
    - `BDD spec path: <BDD_SPEC_PATH>` — architect は冒頭でこのファイルを Read し、Feature / Scenario / Examples / 同値分割表を **authoritative requirements** として扱う
    - 設計は spec.md の AC ↔ Scenario マッピングを保つこと（架空の Scenario を増やさない、削らない）
    - 詳細は `agents/code-architect.md` の "BDD Spec Injection" セクション
+
+   **Vault knowledge injection**: Phase 1.6 で `VAULT_KNOWLEDGE` が非空の場合、各 architect の prompt に以下を追加する:
+   - `Vault Knowledge:` ブロックとして関連知見（`path` / `title` / `excerpt`）を列挙する
+   - これは **別プロジェクト横断の参考知見 (advisory)** であり、BDD spec のような authoritative requirement ではない。現コードベースのパターンと矛盾する場合は **現コードベースを優先** する
+   - 関連する過去の落とし穴があれば設計の Critical Details に反映させ、採用した知見は出典 (`title`) を明記させる
+   - 詳細は `agents/code-architect.md` の "Vault Knowledge Injection" セクション
 
 2. Review all approaches and form your opinion on which fits best for this specific task
 3. Present to user: brief summary of each approach, trade-offs comparison, **your recommendation with reasoning**, concrete implementation differences

@@ -5,6 +5,16 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-06-08
+
+### Added
+- **Phase 1.6 Vault Recall** (#67)。Phase 1.5 (Issue Context Detection) と Phase 1.7 (Triage) の間に、knowledge vault から横断知見（落とし穴・設計判断・移行ノウハウ）を recall して Phase 4 architect に注入するフェーズを追加。Opus が recall 系 tool を省略しがちな問題に対し、設計着手直前の必須ステップとして構造強制する
+  - **外部 CLI 依存の二段存在確認**: `kvault` は feature-dev plugin 外の外部 app のため、CLI 本体（`command -v kvault`）と vault ディレクトリ（`KNOWLEDGE_VAULT_ROOT` 既定 `$HOME/Projects/knowleadge`）の両方が揃ったときのみ有効化。いずれか欠けたら skip し後方互換を壊さない（Phase 1.3 BDD spec の detect→skip パターンを踏襲）
+  - **運用知見を明記**: クエリは自然文ではなくキーワード寄せ（JP embedding は自然文に弱い実測あり）、関連判断は `similarity` の絶対閾値ではなく rank + 1 位からの gap で行う（similarity の絶対水準はクエリ依存で変動するため）
+  - recall は `kvault recall "<キーワード列>" --top 5 --min-sim 0`、stderr（HF warning / weights loading）を捨てて stdout の JSON `results[]` のみ消費
+- `agents/code-architect.md` に **Vault Knowledge Injection** セクションを追加。注入知見は **advisory（参考情報）** であり authoritative ではないことを明示。優先順位は **BDD spec > 現コードベースのパターン > vault knowledge**、矛盾時は現コードベース優先。採用した知見は `title` を Critical Details に出典明記させる
+- Phase 4 architect prompt に "Vault knowledge injection" の注入手順を追加
+
 ## [2.4.0] - 2026-06-03
 
 ### Changed

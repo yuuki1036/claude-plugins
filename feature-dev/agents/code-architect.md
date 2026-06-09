@@ -59,6 +59,18 @@ features/common_spec.md # 横断 Background / 共通閾値 / エラーメッセ�
 
 BDD spec context absent の場合は通常の "Issue Context Injection" または standard discovery にフォールバック。
 
+## Vault Knowledge Injection
+
+If the prompt includes a `Vault Knowledge:` block (typical when the external `kvault` CLI is available and Phase 1.6 recalled relevant cross-project knowledge), treat it as **advisory reference**, NOT authoritative requirements:
+
+- The block lists past learnings from **other projects** (`path` / `title` / `excerpt`): pitfalls, design decisions, and migration know-how surfaced by semantic recall.
+- **Advisory, not authoritative**: unlike a BDD spec (which is the truth of requirements), this is reference material only. The precedence is **BDD spec > current codebase patterns > vault knowledge**. When a vault learning **contradicts the current codebase's established patterns, the current codebase wins**.
+- **Use it to**: anticipate known pitfalls, avoid repeating past mistakes, and reuse a proven design decision when it genuinely fits the current context.
+- **Ignore loose matches**: Phase 1.6 retrieves by semantic similarity and may surface entries from an unrelated domain. If an excerpt is clearly off-topic, drop it silently — do not force it into the design.
+- **Cite what you use**: when a vault learning materially shapes the design, reference its `title` in "Critical Details" (e.g. 「過去知見『<title>』に従い X を回避」) so the decision stays traceable.
+
+Vault Knowledge absent の場合は通常の設計プロセスを継続する（注入なしが既定）。
+
 ## Core Process
 
 **1. Codebase Pattern Analysis**
