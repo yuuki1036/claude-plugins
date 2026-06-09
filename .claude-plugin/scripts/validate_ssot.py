@@ -125,10 +125,15 @@ def check_requirements_vs_check_deps(manifests: dict[str, dict], errors: list[st
     for name, m in manifests.items():
         reqs = m.get("_requirements", [])
         check_deps = ROOT / name / "hooks" / "scripts" / "check-deps.sh"
+        has_hooks = (ROOT / name / "hooks").is_dir()
+        # check-deps.sh は hook が呼び出す前提のスクリプト。hooks/ を持たないプラグインは
+        # 任意依存（required:false 等）を _requirements に宣言しても check-deps.sh を必要としない
+        # （未導入時は実行側でフォールバックする設計）。hooks/ がある場合のみ存在を必須にする。
         if reqs and not check_deps.exists():
-            errors.append(
-                f"[deps:{name}] _requirements declared but hooks/scripts/check-deps.sh missing"
-            )
+            if has_hooks:
+                errors.append(
+                    f"[deps:{name}] _requirements declared but hooks/scripts/check-deps.sh missing"
+                )
             continue
         if not reqs and check_deps.exists():
             text = check_deps.read_text(encoding="utf-8")
