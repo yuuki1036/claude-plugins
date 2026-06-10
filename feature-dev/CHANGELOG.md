@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-06-10
+
+### Changed
+- **code-architect agent を `model: opus` → `model: fable` に変更**。Phase 4 で実装 blueprint を一度に設計し後続フェーズに伝播する単一・高レバレッジの設計判断スロットに、Opus 上位ティアの Fable 5（claude-fable-5）を割り当て、知能上限を設計判断に集中させる。書き捨てが伝播する判断のため誤りのコストが高く、単一インスタンスで出力単価 2 倍（$50/1M）が bounded。並列起動する code-explorer (sonnet) は据え置き
+
 ## [2.5.0] - 2026-06-08
 
 ### Added

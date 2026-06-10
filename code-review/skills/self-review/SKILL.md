@@ -232,7 +232,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 **実行する場合**:
 
 1. `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` の `## 6. Meta-reviewer テンプレート` を使用
-2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動
+2. meta-reviewer agent を 1 体、`model: fable`, `effort: max` で起動
    - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
    - `isolation: "worktree"` は使用しない
 3. meta-reviewer の出力（追加指摘）を既存指摘に統合

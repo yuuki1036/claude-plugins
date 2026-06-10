@@ -268,7 +268,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 **実行する場合**:
 
 1. `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` の `## 6. Meta-reviewer テンプレート` を使用
-2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動
+2. meta-reviewer agent を 1 体、`model: fable`, `effort: max` で起動
    - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
    - `isolation: "worktree"` で起動
    - **PR 番号注入（必須）**: Step 5 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
