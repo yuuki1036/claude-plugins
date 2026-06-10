@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.25.0] - 2026-06-10
+
+### Added
+- **事実主張のツール接地（claim grounding）**（GitHub issue #71）。`reviewer-prompts.md` 共通指示に「事実主張のツール接地」を追加。指摘の load-bearing な事実主張を confidence 確定前に検証可能性で 3 分類（① repo 検証可 → `file:line` 引用必須 / ② 正本 doc 検証可 → spec・PR・Issue・ADR の典拠引用必須 / ③ repo 検証不能 = DB・本番状態・外部数値・運用設定 → 事実として断定禁止）。③ を根拠にする指摘は「要確認（典拠=X）」と明示し confidence ≤75 + `[unverified: ...]` タグを付け、単独根拠で severity を上げない。「内部的に一貫しているが実態と異なる」主張が整合性レビューを素通りする罠も明記
+- **scoring の未検証クランプ**（GitHub issue #71）。`scoring-guide.md` に「上限クランプ: 未検証の外部状態主張」を追加。`[unverified: ...]` タグ付き指摘は confidence を `min(値, 75)` に機械クランプ（BLOCKER 級の疑いのみ報告マトリクスを通過、CRITICAL 以下の未検証断定は自動除外）。好みベースクランプ（min 40）と両該当時は低い方を採用。適用順序に未検証クランプのステップを挿入
+- **findings 反映段の over-correction ガード**（GitHub issue #71）。`self-review` Step 7 に「訂正の伝播前ガード」を追加。findings をコード/文書本文に反映する前に load-bearing な事実主張を一次ソースで再確認（repo 確認可は Read/Grep で現物確認、repo 確認不能は「要確認」マーカー保持）、暫定入力（「〜かも」）を確定として複数箇所へ伝播しない、訂正は 1 箇所先行確認 → 確証後に展開、複数観点の独立一致は高信頼として扱う。`review` Step 7 の返答ドラフト生成にも未検証主張の断定抑止（`[unverified]` の不確実性を返答に引き継ぐ）を追記
+
 ## [2.24.0] - 2026-06-10
 
 ### Changed
