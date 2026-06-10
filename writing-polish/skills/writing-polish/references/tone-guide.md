@@ -17,6 +17,29 @@ writing-polish が文章を推敲・添削するときに参照する校正ル�
 
 ---
 
+## textlint / Vale 委譲境界（決定的検証 > LLM 判定）
+
+判定は LLM が散文ルールを読んで行うが、観点には「機械的に確実なもの」と「文脈判断が要るもの」がある。決定的に拾えるものは linter に委譲する前提で設計し、LLM は文脈判断に集中する（リポジトリ方針「決定的 hook > LLM 判定」と整合）。将来 textlint/Vale を実行委譲する場合の棲み分け指針でもある。
+
+**linter に委譲できる（決定的・誤検知が少ない）**
+- 表記・スペース・記号（半角カナ / 機種依存文字 / 括弧対応 / 文末記号統一）
+- 文法系（ですます/である混在 / ら抜き / 二重否定 / 助詞連続 / 同一語連続）
+- 確実な冗長構文（「〜を行う」→「〜する」, `ja-no-redundant-expression` dict5/6, allows 付きで安全）
+- しきい値（文長 / 読点過剰 / 連続漢字）
+- 差別的表現ブラックリスト（alex 系）
+
+**LLM が担う（文脈・行為主体・自然さの判断が必須）**
+- 名詞化の良性/悪性判定（given-new 結束は温存、動作隠蔽のみ直す）
+- 衒学語 → 平易語の文脈依存の言い換え（カテゴリ 7）
+- ヘッジが「逃げ」か「正当な留保」か
+- 翻訳調・AI っぽさの density 判断（1 個では問題なく、密度で判断する）
+
+> textlint（日本語）は `references/linter-integration.md` の手順で**実行委譲する**（導入済み環境）。Vale（英語）は未実行（将来同型で追加）。**未導入の環境では、linter に委譲した観点も LLM が判定する**（決定性・再現性は劣るが検出は試みる）。導入済みなら linter の決定的判定を優先し、LLM はそれに乗らない指摘に集中する。
+
+出典: リポジトリ CLAUDE.md「ルール配置の意思決定（決定的 hook > LLM 判定）」, textlint-ja 各 preset, Vale `vale.sh`
+
+---
+
 ## 最上位メタルール: 文書種別で文体を使い分ける
 
 文体（敬体/常体）は**文書の種別ごとに選び、1 文書内では混在させない**。これが他のすべてのルールに優先する。
@@ -77,8 +100,11 @@ writing-polish が文章を推敲・添削するときに参照する校正ル�
 - **hype 表現**を避ける。「劇的に」「圧倒的に」「シームレスに」等の中身のない誇張。
 - **重複した前置き**を削る。「まず最初に」→「まず」、「あらかじめ事前に」→「事前に」。
 - **絵文字・装飾記号を使わない**（✅❌🤖 等を含む）。ユーザーが明示的に求めた場合のみ例外。
+- **対句の濫用（negative parallelism）**を避ける。「〜ではなく、〜だ」「単なる X ではなく Y」を多用しない（1 回は修辞、連発は AI tell）。
+- **三点強迫**を避ける。必要のない第 3 要素まで強迫的に並べない（「高速・堅牢・柔軟」のような埋め草）。
+- **総括の宣言**を避ける。「結論として」「まとめると」と明示しなくても結論が伝わる構成にする。
 
-出典: textlint `preset-ai-writing`（`no-ai-list-formatting` / `no-ai-emphasis-patterns` / `no-ai-hype-expressions` / `ai-tech-writing-guideline`）, リポジトリ規約・グローバル設定（絵文字回避）
+出典: textlint `preset-ai-writing`（`no-ai-list-formatting` / `no-ai-emphasis-patterns` / `no-ai-hype-expressions` / `ai-tech-writing-guideline`）, リポジトリ規約・グローバル設定（絵文字回避）, Wikipedia「Signs of AI writing」(https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
 
 ## カテゴリ 5: 用語と正確性
 
@@ -97,6 +123,30 @@ writing-polish が文章を推敲・添削するときに参照する校正ル�
 - Google / Microsoft style guide の基本姿勢: **簡潔・能動態・二人称（you）・現在形**、長い名詞句の分解。
 
 出典: Vale `vale.sh/docs/styles`, `developers.google.com/style`, `learn.microsoft.com/style-guide`
+
+## カテゴリ 7: 平易性 / 過剰抽象（over-abstraction）
+
+カテゴリ 4 が「構造」を、カテゴリ 5 が「測定可能性」を見るのに対し、ここは**語彙の抽象度**を見る。内容は正しいが過度に抽象的・衒学的で、平易語で書けるのにもったいぶった表現を、読者の認知負荷が下がる方向へ開く。
+
+**発火条件（構造的に絞る。単独の語の存在では発火させない）**
+- **具体例が並ぶ文脈の抽象漢語**: 具体的事象（落とし穴・不整合・固定値など）が列挙される文脈で、それを束ねる語が過度に抽象的なとき。
+  - 例: 「非自明な意味論」→「コードを読むだけでは分からない挙動 / 落とし穴」
+- **動作を隠す名詞化（軽動詞構文）**: サ変名詞 + 形式動詞で動作主体が埋もれるとき。
+  - 例: 「最適化を図る」→「最適化する」、「検討を行う」→「検討する」、「〜の実現」→「〜する」
+- **借り物の荘厳さ（prestige metaphor）**: 具体的関係を説明する代わりに荘厳な比喩語でごまかすとき（tapestry / landscape / realm、和文なら「世界観」「文脈」の安易な多用）。
+- **density 判定**: 一文に抽象名詞が 3 つ以上積み上がり、具体動詞・具体名詞が乏しいとき。
+
+**言い換える / 残すの判断（over-correction 回避。満たさないものは保全する）**
+平易化は「専門用語を抜く」ことではない。次のいずれかに当たる語は**残す**。
+1. 読者がその語彙を共有している（その分野で平易語より短く正確）
+2. 精度が要求され、正確な等価語がない
+3. 平易語に置換すると曖昧さが生じる
+
+AI 頻出の抽象語（「実現」「対応」「サポート」、英 delve / leverage / utilize 等）は**人間も使う**（AI linguistic imprinting）ため、単語の存在を証拠にしない。density・共起・文脈で判断する。これらは**例示であり辞書ではない**（カテゴリ 1 末尾注記と同じ扱い）。
+
+**冪等の停止条件**: 一度平易化した語をさらに平易化しない。原文がすでに具体的なら推敲不要とする。
+
+出典: plainlanguage.gov「avoid jargon ≠ remove necessary terms」(https://digital.gov/guides/plain-language/principles/avoid-jargon), nominalization / zombie nouns（H. Sword, TED-Ed: https://ed.ted.com/lessons/beware-of-nominalizations-aka-zombie-nouns-helen-sword）, concreteness effect（具体語の想起・処理速度優位: https://pmc.ncbi.nlm.nih.gov/articles/PMC6687846/）, AI 過剰語彙（excess vocabulary: https://arxiv.org/html/2406.07016v1）, textlint `ja-no-redundant-expression` dict5/6（確実な構文のみ委譲: https://github.com/textlint-ja/textlint-rule-ja-no-redundant-expression）
 
 ---
 
@@ -120,6 +170,6 @@ writing-polish が文章を推敲・添削するときに参照する校正ル�
 2. 文書種別の文体に合わせる
 3. 意味を変えない範囲で冗長・曖昧を削る
 4. トーン・AI っぽさを整える
-5. 「気の利いた言い換え」は最後。確信が持てる場合のみ、任意提案として出す
+5. 平易化（カテゴリ 7）・「気の利いた言い換え」は最後。確信が持てる場合のみ、任意提案として出す（high/xhigh/max effort 限定）
 
 > 不確実な修正を多数出すより、**明確に改善する少数の修正**を出す。妥当な修正ほど複数の観点で一貫して支持されやすい（過剰修正研究の知見。本リサーチでは関連 arXiv 番号の実在を確認できなかったため一般原則として記す）。

@@ -13,6 +13,7 @@ allowed-tools:
   - Read
   - Edit
   - AskUserQuestion
+  - Bash
 ---
 
 # Writing Polish
@@ -43,9 +44,32 @@ allowed-tools:
 
 `references/tone-guide.md` を読み、対象テキストに該当する指摘を**カテゴリ単位**で集める。
 
-- カテゴリ 1 冗長・密度 / 2 曖昧さ / 3 トーン・姿勢 / 4 AI っぽさ / 5 用語・正確性 / 6 英語（対象が英語のとき）
+- カテゴリ 1 冗長・密度 / 2 曖昧さ / 3 トーン・姿勢 / 4 AI っぽさ / 5 用語・正確性 / 6 英語（対象が英語のとき）/ 7 平易性・過剰抽象
 - RFC / 設計ドキュメントは厳密層（文長・読点・係り受け）を強めに、PR/Issue/コミット/レビューは汎用層を中心に当てる。
 - **確信の持てる指摘を優先**する。不確実な「気の利いた言い換え」は任意提案として最後に回す（tone-guide 適用優先順位 5）。
+
+## 2.5 linter による決定的チェック（任意・textlint 導入時）
+
+決定的に拾える観点（表記・文法・二重否定・助詞連続・確実な冗長構文「〜を行う→する」・文長/読点しきい値）は linter に委譲する。
+
+- まず存在チェックする。
+
+```bash
+command -v textlint >/dev/null 2>&1
+```
+
+- **導入済みなら**対象テキストを textlint にかけ、JSON 結果の各 `ruleId` を tone-guide カテゴリにマップして候補に統合する。
+
+```bash
+printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
+  --config "${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/textlintrc.json" \
+  --format json
+```
+
+- **未導入なら skip** して LLM 判定のみで続行する（fail させない）。
+- 詳細手順と `ruleId` → カテゴリのマッピング表は `${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/linter-integration.md` を参照する。
+- linter 指摘も**最小差分・採否フロー・over-correction 抑制**に乗せる。機械判定でも文脈で不要なら採用しない。
+- 拡張余地: 現在は textlint（日本語）。他 linter は `linter-integration.md` の手順で追加可能。
 
 ## 3. 差分提示（最小差分・根拠つき）
 
@@ -95,8 +119,8 @@ allowed-tools:
 
 `${CLAUDE_EFFORT}` に応じて精査の深さを変える。
 
-- **low / medium**: 確信度の高い指摘（カテゴリ 1〜4）に絞り、まとめて提示する。速度優先。
-- **high / xhigh / max**: カテゴリ 5〜6 と係り受け・代替言い換えまで精査する。重要箇所は複数の言い換え案を出し、tone-guide の「複数観点で一貫して支持される修正」を優先採用する。
+- **low / medium**: 確信度の高い指摘（カテゴリ 1〜4。ただし構文 tell＝negative parallelism・三点強迫・総括宣言は除く）に絞り、まとめて提示する。速度優先。linter チェック（ステップ 2.5）は決定的で軽いため low/medium でも実行してよい（導入済みの場合）。
+- **high / xhigh / max**: カテゴリ 5〜7 と構文 tell、係り受け・代替言い換えまで精査する。カテゴリ 7（平易性・過剰抽象）はこの層でのみ発火させ、over-correction リスクを浅い effort で暴発させない。重要箇所は複数の言い換え案を出し、tone-guide の「複数観点で一貫して支持される修正」を優先採用する。
 
 `--aggressive` 指定時は effort に関わらず、任意提案（気の利いた言い換え）まで含めて広く出す。ただし中核原則 1〜5 は維持する。
 

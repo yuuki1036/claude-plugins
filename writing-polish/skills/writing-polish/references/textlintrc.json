@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "preset-ja-technical-writing": {
+      "sentence-length": { "max": 100 },
+      "max-ten": { "max": 3 },
+      "max-kanji-continuous-len": { "max": 6 },
+      "no-double-negative-ja": true,
+      "no-doubled-joshi": { "min_interval": 1 },
+      "no-mix-dearu-desumasu": true
+    },
+    "ja-no-redundant-expression": true
+  }
+}

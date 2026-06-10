@@ -1,8 +1,16 @@
 {
   "name": "writing-polish",
-  "version": "0.1.0",
-  "description": "文章を語句レベルで推敲・添削する汎用スキル。最小差分の diff 提示 → 採否フローで冗長削り・曖昧語の具体化・トーン統一・AI っぽさ除去・用語一貫性を行う。校正ルールは textlint(preset-ja-technical-writing/japanese/ai-writing/JTF-style) と Vale 由来のカテゴリを tone-guide 正本に内蔵、日英両対応。過剰修正(over-correction)抑制を中核原則に据える。他プラグインから --embed で soft 委譲可能（pr-creator/git-commit-helper/issue-design が dormant 連携）",
+  "version": "0.3.0",
+  "description": "文章を語句レベルで推敲・添削する汎用スキル。最小差分の diff 提示 → 採否フローで冗長削り・曖昧語の具体化・トーン統一・AI っぽさ除去・用語一貫性・過剰抽象/衒学語の平易化を行う。校正ルールは textlint(preset-ja-technical-writing/japanese/ai-writing/JTF-style) と Vale 由来のカテゴリを tone-guide 正本に内蔵、日英両対応。語彙の抽象度を見るカテゴリ7(平易性/over-abstraction)・negative parallelism 等の構文 tell・textlint/Vale 委譲境界を明文化。textlint 導入時は日本語の決定的チェックを併用(未導入時は LLM 判定にフォールバック、required:false)。過剰修正(over-correction)抑制を中核原則に据える。他プラグインから --embed で soft 委譲可能(pr-creator/git-commit-helper/issue-design が dormant 連携)",
   "author": {
     "name": "yuki"
-  }
+  },
+  "_requirements": [
+    {
+      "name": "textlint",
+      "type": "cli_tool",
+      "required": false,
+      "description": "日本語文章の決定的チェック（表記・文法・冗長構文・しきい値）に使用。未導入時は LLM 判定にフォールバックするため必須ではない。導入: npm i -g textlint textlint-rule-preset-ja-technical-writing textlint-rule-ja-no-redundant-expression"
+    }
+  ]
 }

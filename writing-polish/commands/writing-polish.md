@@ -5,6 +5,7 @@ allowed-tools:
   - Read
   - Edit
   - AskUserQuestion
+  - Bash
 ---
 
 `writing-polish` スキルを実行して、文章を推敲・添削する。
