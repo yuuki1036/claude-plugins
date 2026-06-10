@@ -1,0 +1,35 @@
+plugin: design-doc
+# トリガー回帰 + 隣接プラグイン（issue-design / adr-keeper / bdd-spec）への誤発火防止。
+# 「設計」単独語はトリガーにしない方針（SKILL.md description 参照）の検証を含む。
+cases:
+  # --- トリガー回帰（スキル選択） ---
+  - id: design-doc-trigger-ja
+    prompt: この機能の設計書作って
+    expected_skill: design-doc:design-doc
+    k: 3
+  - id: design-doc-trigger-en
+    prompt: design doc を書きたい
+    expected_skill: design-doc:design-doc
+    k: 3
+  - id: design-doc-trigger-design-only
+    prompt: 実装せず設計だけ詰めたい
+    expected_skill: design-doc:design-doc
+    k: 3
+  - id: design-doc-trigger-rfc
+    prompt: この変更の RFC 書きたい
+    expected_skill: design-doc:design-doc
+    k: 3
+
+  # --- 誤発火防止（隣接スキルに正しくルーティングされるか） ---
+  - id: design-doc-nofire-issue-design
+    prompt: この Issue を設計し直して
+    expected_skill: indie-workflow:issue-design
+    k: 3
+  - id: design-doc-nofire-adr
+    prompt: さっきの設計判断を記録しておいて
+    expected_skill: adr-keeper:adr
+    k: 3
+  - id: design-doc-nofire-bdd-spec
+    prompt: この機能の BDD spec 作って
+    expected_skill: bdd-spec:create-spec
+    k: 3
