@@ -1,0 +1,14 @@
+# Changelog
+
+## [0.1.0] - 2026-06-11
+
+### Added
+
+- `design-doc` スキル + `/design-doc` コマンド（new / list / supersede / export）
+- grill 3 原則による前提確定（grill-protocol.md は feature-dev 正本の byte-identical 複製）
+- 代替案トレードオフ比較 → 採用案を `.claude/designs/<YYYYMMDD>-<slug>.md` に永続化
+- 実装ブリッジ (Implementation Bridge) セクション必須化（死に文書化防止）
+- supersede 機械化（新規作成 + 旧 doc 4 箇所更新 + 相互参照検証、adr-keeper と同機構）
+- doc-freshness 互換 frontmatter（last-validated / phase: target→current→superseded）
+- dormant 連携: bdd-spec（spec.md を WHAT 入力に）/ adr-keeper（[→ADR候補] 切り出し）/ writing-polish（散文推敲）
+- export 非対話 API（他プラグインからの doc 化、feature-dev 連携想定）

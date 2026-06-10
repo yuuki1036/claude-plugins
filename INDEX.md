@@ -2,8 +2,8 @@
 
 Claude Code プラグインのマーケットプレイスリポジトリ。各プラグインは独立して動作する（プラグイン間依存なし）。
 
-- 生成日: 2026-06-10
-- プラグイン数: 15
+- 生成日: 2026-06-11
+- プラグイン数: 16
 - マニフェスト: `.claude-plugin/marketplace.json`（各 `plugin.json` から派生・SSoT 検証あり）
 
 > 詳細な運用規約・設計判断は [CLAUDE.md](CLAUDE.md) を参照。本ファイルは各プラグインのコンポーネント構成の早見表。
@@ -16,6 +16,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [bdd-spec](#bdd-spec) | 0.1.1 | 1 | 1 | - | - | - | BDD spec 駆動の user story scaffold |
 | [claude-meta](#claude-meta) | 1.11.0 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.25.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [design-doc](#design-doc) | 0.1.0 | 1 | 1 | - | - | - | 技術設計書を実装に入らず作成・永続化 |
 | [dev-workflow](#dev-workflow) | 1.21.0 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
 | [doc-freshness](#doc-freshness) | 0.1.0 | 1 | 1 | - | - | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.1.0 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
@@ -55,6 +56,12 @@ Phase 0 トリアージ + 動的エージェント構成のコードレビュー
 - **skills**: `review`, `self-review`
 - **hooks**: SessionStart
 - **publishes**: `review:completed`（Event Bus）
+
+### design-doc
+技術設計書 (design doc) を実装に入らず作成・永続化。grill で前提確定 → 代替案トレードオフ比較 → 採用案を `.claude/designs/<YYYYMMDD>-<slug>.md` に保存。実装ブリッジ必須化 + supersede 機械化で死に文書化を防ぐ。doc-freshness と frontmatter 互換。export 非対話 API で他プラグインから doc 化可能。
+- **commands**: `design-doc`
+- **skills**: `design-doc`
+- **soft 連携**: bdd-spec（WHAT 入力）/ adr-keeper（[→ADR候補] 切り出し）/ writing-polish（散文推敲）が dormant
 
 ### dev-workflow
 Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットアップ。原子性重視コミット、Linear Issue 連携 PR、chrome-devtools MCP による UI 自動化、PostToolUse 自動 lint チェーン（opt-in）。
