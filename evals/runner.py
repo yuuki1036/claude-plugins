@@ -74,6 +74,9 @@ class Case:
     k: int = 3
     tags: list[str] = field(default_factory=list)
     graders: list[dict] = field(default_factory=list)
+    # skill_json: PROMPT_WRAPPER で包みスキル選択 JSON を要求（デフォルト）
+    # none:       prompt をそのまま実行（判定校正ケース用。expected_skill とは併用不可）
+    wrapper: str = "skill_json"
 
     @property
     def expected_list(self) -> list[str]:
@@ -224,6 +227,15 @@ def parse_cases(paths: list[Path]) -> list[Case]:
         data = load_yaml(path)
         plugin = data.get("plugin") or path.stem
         for raw in data.get("cases", []):
+            wrapper = raw.get("wrapper", "skill_json")
+            if wrapper not in {"skill_json", "none"}:
+                raise ValueError(
+                    f"wrapper must be skill_json|none, got {wrapper!r} (case={raw['id']})"
+                )
+            if wrapper == "none" and raw.get("expected_skill") is not None:
+                raise ValueError(
+                    f"wrapper: none は expected_skill と併用できません (case={raw['id']})"
+                )
             cases.append(
                 Case(
                     plugin=plugin,
@@ -233,6 +245,7 @@ def parse_cases(paths: list[Path]) -> list[Case]:
                     k=int(raw.get("k", 3)),
                     tags=list(raw.get("tags", []) or []),
                     graders=list(raw.get("graders", []) or []),
+                    wrapper=wrapper,
                 )
             )
     return cases
@@ -332,7 +345,10 @@ def run_case(
 ) -> CaseResult:
     graders = build_graders(case)
     result = CaseResult(case=case, model=model or "default")
-    prompt = PROMPT_WRAPPER.format(user_prompt=case.prompt)
+    if case.wrapper == "none":
+        prompt = case.prompt
+    else:
+        prompt = PROMPT_WRAPPER.format(user_prompt=case.prompt)
     for attempt in range(case.k):
         if dry_run:
             fake_skill = case.expected_list[0] if case.expected_list else None
@@ -507,6 +523,10 @@ def render_report(results: list[CaseResult], models: list[str]) -> str:
                     for g in gs:
                         mark = "ok" if g.passed else "FAIL"
                         lines.append(f"        - [{mark}] {g.name}: {g.detail}")
+                    # 失敗 attempt は stdout 抜粋を出してデバッグ可能にする
+                    if not all(g.passed for g in gs) and a.stdout:
+                        snippet = a.stdout.strip().replace("\n", " ⏎ ")[:300]
+                        lines.append(f"        - stdout: {snippet!r}")
     return "\n".join(lines) + "\n"
 
 

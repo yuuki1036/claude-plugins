@@ -50,6 +50,7 @@ cases:
 | `k` | - | pass^k の k（デフォルト 3）。連続 k 回成功で PASS |
 | `tags` | - | タグ（hold-out フィルタに使用） |
 | `graders` | - | 追加 grader（後述） |
+| `wrapper` | - | `skill_json`（デフォルト）はスキル選択 JSON を要求するラッパーで包む。`none` は prompt をそのまま実行する（判定校正ケース用。`expected_skill` と併用不可） |
 
 ### Grader タイプ
 
@@ -133,6 +134,10 @@ python3 evals/runner.py --exclude-tag holdout,slow
 
 副作用を避けるためツールは実行させず、判断のみを問う設計。自然なスキル起動と
 完全一致ではないが、description/トリガーフレーズ設計の回帰検出には十分。
+
+`wrapper: none` のケースはラッパーを使わず prompt を直接実行し、text / behavior grader
+のみで評価する。スキル選択ではなく「ルールに従った判定が正しく fire / no-fire するか」を
+校正するケース（例: writing-polish カテゴリ7）に使う。
 
 ## レポート構造
 
