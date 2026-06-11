@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.30.0] - 2026-06-11
+
+### Added
+- **issue-design に design doc への昇格判断を追加（design-doc 連携・opt-in）**。Phase 2 の open 仕分けで、タスク 1 件を超えた設計判断（複数 Issue にまたがる方式選定、Issue 本文で持ちきれないトレードオフ比較）を検知したら、design-doc プラグインへの切り出しを AskUserQuestion で提案する。切り出した doc のパスを「参考資料」にリンクし、該当 open は「確定タイミング: design doc で確定」に書き換える。未インストール時は従来どおり Issue 内 grill に dormant（後方互換 100%）
+- `_requirements` / `check-deps.sh` に design-doc（required: false）を追加
+
 ## [1.29.0] - 2026-06-03
 
 ### Added

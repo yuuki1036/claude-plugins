@@ -25,6 +25,7 @@ check_plugin() {
 # --- チェック実行 ---
 check_plugin "feature-dev" "false" "feature-dev プラグイン"
 check_plugin "bdd-spec" "false" "bdd-spec プラグイン（issue-design bilayer モード）"
+check_plugin "design-doc" "false" "design-doc プラグイン（issue-design の design doc 昇格）"
 
 # --- 結果出力 ---
 if [ -n "$warnings" ]; then

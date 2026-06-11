@@ -366,6 +366,34 @@ Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2
 
 ---
 
+## Phase 4.5: Design Doc Export (design-doc plugin handoff)
+
+**Goal**: Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を design doc として `.claude/designs/` に永続化する
+
+**Why this phase exists**: architect 出力（代替案トレードオフ比較・採用案 blueprint）はセッション終了で消える。design doc 化しておくと、後続の同領域開発の参照元・実装後の as-built 記録（`phase: target → current`）として再利用できる。design-doc 未インストール時は何もしない（後方互換）。
+
+**Actions**:
+
+1. design-doc plugin の存在を判定:
+   ```bash
+   if grep -q '"design-doc@' "$HOME/.claude/settings.json" 2>/dev/null; then DESIGN_DOC=1; else DESIGN_DOC=0; fi
+   ```
+   `DESIGN_DOC=0` → 本 Phase を skip して Phase 5 へ
+2. `DESIGN_DOC=1` のとき **AskUserQuestion** で確認:
+   - question: "採用した設計を design doc として永続化しますか？"
+   - header: "design doc"
+   - options:
+     1. label: "永続化する (Recommended)" / description: "採用案 + 代替案比較を .claude/designs/ に export（後続開発の参照元・実装後の as-built 記録になる）"
+     2. label: "skip" / description: "doc 化せず実装に進む（architect 出力はセッション限り）"
+3. 「永続化する」選択時、`Skill` tool で `design-doc:design-doc` を **export 非対話 API**（design-doc v0.1.0 で安定化）で呼ぶ:
+   - `mode=export` / `title=<feature の要約タイトル>` / `content=<採用案 blueprint + 全 architect 案のトレードオフ比較 + Phase 3 grill で確定した前提>`
+   - `spec=<BDD_SPEC_PATH>`（Phase 1.3 で設定済みなら）/ `issue=<Issue ファイルパス>`（Phase 1.5 で検出済みなら）
+   - 引数が全て埋まっていれば design-doc 側は AskUserQuestion を発火しない（非対話実行）
+4. 生成された doc パスを `DESIGN_DOC_PATH` として保持し、Phase 7 のサマリに含める
+5. fallback: 呼び出し失敗時は warning を出して Phase 5 へ続行する（doc 化は任意機能。実装フローを止めない）
+
+---
+
 ## Phase 5: Implementation
 
 **Goal**: Build the feature (Normal Mode) or apply targeted fixes (Fix Mode)
@@ -685,6 +713,7 @@ Repeat the following until a termination condition fires:
    - Key decisions made
    - Files modified
    - Suggested next steps
+   - **Design doc follow-up** (Phase 4.5 で `DESIGN_DOC_PATH` がある場合のみ): 実装が完了したので、doc の frontmatter を `phase: target → current` に更新するよう案内する（実装と設計が乖離した箇所があれば doc への追記 or supersede も）。更新は design-doc プラグイン側の運用（ユーザー操作）に委ねる
 3. **G-V loop summary** (if Step 3 of Phase 6 ran):
    - Read `/tmp/feature-dev-loop-state.json`
    - Report: iteration count, termination reason, auto-fixed issue count, persisting issues

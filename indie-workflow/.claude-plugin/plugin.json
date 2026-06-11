@@ -1,12 +1,13 @@
 {
   "name": "indie-workflow",
-  "version": "1.29.0",
+  "version": "1.30.0",
   "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
   "author": {
     "name": "yuki"
   },
   "_requirements": [
     { "name": "feature-dev", "type": "plugin", "required": false, "description": "feature-dev プラグイン（実装計画策定に使用）" },
-    { "name": "bdd-spec", "type": "plugin", "required": false, "description": "bdd-spec プラグイン（issue-design の bilayer モードで spec.md 生成に使用。未インストール時は単一ファイル設計に dormant）" }
+    { "name": "bdd-spec", "type": "plugin", "required": false, "description": "bdd-spec プラグイン（issue-design の bilayer モードで spec.md 生成に使用。未インストール時は単一ファイル設計に dormant）" },
+    { "name": "design-doc", "type": "plugin", "required": false, "description": "design-doc プラグイン（issue-design でタスク単位を超えた open を design doc に昇格。未インストール時は Issue 内 grill に dormant）" }
   ]
 }

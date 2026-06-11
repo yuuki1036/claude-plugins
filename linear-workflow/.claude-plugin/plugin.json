@@ -1,6 +1,6 @@
 {
   "name": "linear-workflow",
-  "version": "1.28.1",
+  "version": "1.29.0",
   "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。",
   "author": {
     "name": "yuki"
@@ -8,6 +8,7 @@
   "_requirements": [
     { "name": "linear", "type": "mcp_server", "required": true, "description": "Linear MCP サーバー" },
     { "name": "feature-dev", "type": "plugin", "required": false, "description": "feature-dev プラグイン（実装計画策定に使用）" },
-    { "name": "bdd-spec", "type": "plugin", "required": false, "description": "bdd-spec プラグイン（issue-design の bilayer モードで spec.md 生成に使用。未インストール時は単一ファイル設計に dormant）" }
+    { "name": "bdd-spec", "type": "plugin", "required": false, "description": "bdd-spec プラグイン（issue-design の bilayer モードで spec.md 生成に使用。未インストール時は単一ファイル設計に dormant）" },
+    { "name": "design-doc", "type": "plugin", "required": false, "description": "design-doc プラグイン（issue-design でタスク単位を超えた open を design doc に昇格。未インストール時は Issue 内 grill に dormant）" }
   ]
 }

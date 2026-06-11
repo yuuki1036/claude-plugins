@@ -5,6 +5,13 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-06-11
+
+### Added
+- **Phase 4.5: Design Doc Export（design-doc plugin handoff）**。Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を、design-doc plugin の export 非対話 API（`mode=export`）で `.claude/designs/` に永続化する opt-in ステップ。`spec=`（Phase 1.3）/ `issue=`（Phase 1.5）を frontmatter に転記。未インストール時は完全 skip（dormant・後方互換 100%）、呼び出し失敗時も warning のみで実装フローを止めない
+- Phase 7 サマリに design doc follow-up を追加（export 済みの場合、実装完了に伴う `phase: target → current` 更新を案内）
+- `_requirements` / `check-deps.sh` に design-doc（required: false）を追加
+
 ## [2.6.0] - 2026-06-10
 
 ### Changed

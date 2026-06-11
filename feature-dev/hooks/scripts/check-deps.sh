@@ -26,6 +26,7 @@ check_plugin() {
 # --- チェック実行 ---
 check_plugin "code-review" "false" "code-review プラグイン（Phase 6 品質レビュー委譲先）"
 check_plugin "bdd-spec" "false" "bdd-spec プラグイン（Phase 1.3 BDD spec 入力契約。未インストール時は既存 Issue 解釈フローに fallback）"
+check_plugin "design-doc" "false" "design-doc プラグイン（Phase 4.5 design doc export。未インストール時は skip）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then

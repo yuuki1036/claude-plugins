@@ -62,7 +62,7 @@ tags: []
 
 ## export 非対話 API（他プラグインからの呼び出し）
 
-`Skill design-doc:design-doc` に `mode=export title=... content=...` を渡すと、grill / 設計フェーズを skip して doc 化のみ実行する（AskUserQuestion 不発火）。feature-dev Phase 4 の architect 出力（揮発するトレードオフ比較）の永続化先を想定。
+`Skill design-doc:design-doc` に `mode=export title=... content=...` を渡すと、grill / 設計フェーズを skip して doc 化のみ実行する（AskUserQuestion 不発火）。feature-dev v2.7.0+ の Phase 4.5 がこの API で architect 出力（揮発するトレードオフ比較）を永続化する。indie-workflow v1.30.0+ / linear-workflow v1.29.0+ の issue-design は、タスク単位を超えた open の昇格先として design-doc（new モード）を呼ぶ。
 
 ## 設計判断
 

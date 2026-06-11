@@ -103,6 +103,19 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
    3. ユーザーが「おまかせ」なら推奨案で確定する。前の回答で後続 open が解消・変形したら畳み直す
    - **過剰質問を避ける**: open が 1〜2 個かつ方向性が明確なら、grill を 1 回の提示にまとめてよい
 5. 依存は **双方向**（先行 + 後続）で書き、Issue が孤立しないようにする
+6. **design doc への昇格判断（design-doc 連携・opt-in）**: open がタスク 1 件の作業設計を超えている兆候があれば、設計部分の design doc 切り出しを提案する。兆候の例:
+   - 複数 Issue にまたがる方式選定（アーキテクチャ・データフロー・移行戦略）が open に含まれる
+   - 選択肢の比較（トレードオフ表が要る規模）が Issue 本文では持ちきれない
+   1. インストール判定（check-deps.sh と同方式）:
+      ```bash
+      if grep -q '"design-doc@' "$HOME/.claude/settings.json" 2>/dev/null; then DESIGN_DOC=1; else DESIGN_DOC=0; fi
+      ```
+      `DESIGN_DOC=0` または兆候なし → 何もしない（従来どおり grill で詰める）
+   2. `DESIGN_DOC=1` かつ兆候あり → **AskUserQuestion** で確認:
+      - question: 「この open はタスク単位を超えた設計判断を含みます。design doc に切り出しますか？」
+      - options: 「design doc に切り出す (Recommended)」/「Issue 内で grill を続ける」
+   3. 切り出す場合: `design-doc:design-doc` スキル（new）で設計を詰め、生成された doc のリポジトリ内パス（`.claude/designs/<id>.md`）を Issue の「参考資料」に記録する。該当 open は「確定タイミング: design doc <id> で確定」に書き換える（Issue 側に議論を重複させない）
+   4. fallback: design-doc 呼び出しが失敗したら warning を出し、従来どおり Issue 内の grill で続行する
 
 ### Phase 3: Linear 記法の適用
 

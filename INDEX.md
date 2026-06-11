@@ -20,10 +20,10 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [dev-workflow](#dev-workflow) | 1.21.0 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
 | [doc-freshness](#doc-freshness) | 0.1.0 | 1 | 1 | - | - | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.1.0 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
-| [feature-dev](#feature-dev) | 2.6.0 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
+| [feature-dev](#feature-dev) | 2.7.0 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.1.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
-| [indie-workflow](#indie-workflow) | 1.29.0 | 10 | 10 | 2 | 5 events | - | 個人開発向けローカル Issue 管理 |
-| [linear-workflow](#linear-workflow) | 1.28.1 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
+| [indie-workflow](#indie-workflow) | 1.30.0 | 10 | 10 | 2 | 5 events | - | 個人開発向けローカル Issue 管理 |
+| [linear-workflow](#linear-workflow) | 1.29.0 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.3 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.6 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.7.0 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
@@ -85,7 +85,7 @@ Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットア
 - **publishes**: `failure:logged`（Event Bus）
 
 ### feature-dev
-コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec から spec.md 生成、Phase 6 は code-review:self-review に `--embed` 委譲。
+コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec から spec.md 生成、Phase 4.5 で採用設計を design-doc に export（dormant）、Phase 6 は code-review:self-review に `--embed` 委譲。
 - **commands**: `feature-dev`
 - **agents**: `code-explorer`, `code-architect`
 - **hooks**: SessionStart

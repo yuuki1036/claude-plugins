@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1] - 2026-06-11
+
+### Changed
+
+- README の export API 説明を「想定」から実呼び出し元（feature-dev v2.7.0+ Phase 4.5 / indie・linear issue-design の昇格導線）に更新
+
 ## [0.2.0] - 2026-06-11
 
 ### Added
