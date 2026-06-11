@@ -41,5 +41,7 @@ cases:
     k: 3
   - id: design-doc-nofire-bdd-spec
     prompt: この機能の BDD spec 作って
-    expected_skill: bdd-spec:create-spec
+    # スキル名 + コマンド名の両方を許容（dev-workflow の git-commit-helper/commit と同じ前例。
+    # bdd-spec はコマンド名 bdd-spec-create がスキル名 create-spec と非対称で、どちらも実在する呼び出し名）
+    expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
     k: 3
