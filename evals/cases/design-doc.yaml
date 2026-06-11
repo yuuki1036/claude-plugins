@@ -20,6 +20,16 @@ cases:
     expected_skill: design-doc:design-doc
     k: 3
 
+  # --- design-review トリガー回帰 ---
+  - id: design-review-trigger-ja
+    prompt: この設計書をレビューして
+    expected_skill: design-doc:design-review
+    k: 3
+  - id: design-review-trigger-hole
+    prompt: 実装前に設計案の穴を見つけてほしい
+    expected_skill: design-doc:design-review
+    k: 3
+
   # --- 誤発火防止（隣接スキルに正しくルーティングされるか） ---
   - id: design-doc-nofire-issue-design
     prompt: この Issue を設計し直して
