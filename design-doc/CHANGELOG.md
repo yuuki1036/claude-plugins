@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0] - 2026-06-11
+
+### Added
+
+- `design-review` スキル + `/design-review` コマンド（design doc の複数視点静的レビュー）
+- `design-reviewer` agent（minimal / clean / pragmatic / risk の 1 視点を担当、evidence-first で findings を返す）
+- 視点定義の正本 `references/review-perspectives.md`（effort 別構成: low/medium → メイン 2 視点 / high → agent ×3 / xhigh,max → agent ×4、`--focus` で単一視点指定）
+- findings の doc 反映フロー（open 追記 / 設計判断ログ追記 / 本文修正 + last-validated 更新、採否は AskUserQuestion）
+
 ## [0.1.0] - 2026-06-11
 
 ### Added

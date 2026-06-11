@@ -44,7 +44,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | adr-keeper | 1 | 1 | - | - | 設計判断 (ADR) を append-only 蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法セクション必須 + supersede 時の新規作成/旧 ADR 2箇所更新を機械化（doc-freshness と frontmatter 互換で鮮度 lint を委譲） |
 | failure-journal | 2 | 2 | - | SessionStart | 再発失敗の fingerprint 集計。JSON Lines journal に append、30日×3回閾値超で retro 還流提案、failure:logged を event bus に publish（indie-workflow:retrospective と責務分離） |
 | writing-polish | 1 | 1 | - | - | 文章を語句レベルで推敲・添削する汎用スキル。最小差分 diff → 採否フロー、過剰修正(over-correction)抑制を中核原則化。校正ルール正本(tone-guide)に textlint 4 preset + Vale を統合、日英両対応。pr-creator/git-commit-helper/issue-design が --embed で soft 委譲（dormant 連携） |
-| design-doc | 1 | 1 | - | - | 技術設計書 (design doc) を実装に入らず作成・永続化（grill で前提確定 → 代替案比較 → .claude/designs/ に保存。実装ブリッジ必須 + supersede 機械化で死に文書化を防ぐ。bdd-spec/adr-keeper/writing-polish と dormant 連携、doc-freshness に鮮度 lint を委譲。export 非対話 API で他プラグインから doc 化可能） |
+| design-doc | 2 | 2 | 1 | - | 技術設計書 (design doc) を実装に入らず作成・永続化（grill で前提確定 → 代替案比較 → .claude/designs/ に保存。実装ブリッジ必須 + supersede 機械化で死に文書化を防ぐ。bdd-spec/adr-keeper/writing-polish と dormant 連携、doc-freshness に鮮度 lint を委譲。export 非対話 API で他プラグインから doc 化可能。design-review で 4 視点 agent の静的レビューを単体実行） |
 
 ## セットアップ
 

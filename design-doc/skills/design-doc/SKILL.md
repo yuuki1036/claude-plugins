@@ -164,6 +164,7 @@ allowed-tools:
   status: draft / phase: target
 
 次のアクション:
+- 実装前のレビュー: /design-review <id>（複数視点の静的レビューで draft → approved の判断材料に）
 - 実装に進む場合: /feature-dev <要約> spec=<spec パス（あれば）>
 - 未解決事項 (open) の確定タイミング: <一覧>
 - ADR 未切り出しの [→ADR候補]: <残があれば一覧>

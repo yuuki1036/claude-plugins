@@ -9,9 +9,16 @@
 /design-doc list                        # 一覧表示（id 降順）
 /design-doc supersede <old-id> <title>  # 方式転換（旧 doc は superseded として残す）
 /design-doc export title=... content=... # 他プラグイン連携用の非対話書き出し
+/design-review [doc-id] [--focus <視点>] # 複数視点の静的レビュー（実装前の品質ゲート）
 ```
 
-自然言語でも起動する: 「設計書作って」「実装せず設計だけ詰めたい」「design doc を supersede」など。
+自然言語でも起動する: 「設計書作って」「実装せず設計だけ詰めたい」「設計書をレビュー」など。
+
+### design-review（v0.2.0+）
+
+design doc を minimal（過剰設計）/ clean（構造・責務）/ pragmatic（実装可能性）/ risk（障害モード）の 4 視点で静的レビューする。doc の前提はコードベースと突き合わせて裏取りし（evidence-first）、severity 付き findings を集約 → 採用分を doc に反映（open 追記・設計判断ログ追記・本文修正）する。
+
+視点構成は実行時 effort で変わる: low/medium → メインコンテキストで 2 視点（minimal + risk）、high → design-reviewer agent ×3 並列、xhigh/max → ×4 並列。`--focus` で単一視点に絞れる。
 
 ## 成果物
 
@@ -59,8 +66,9 @@ tags: []
 
 ## 設計判断
 
-- **hook は持たない（Phase 1）**: superseded doc への Edit 警告等の hook は需要が顕在化してから（component-addition-advisor の退路確保原則）
-- **agent は持たない（Phase 1）**: 複数視点の設計レビュー（design-review スキル + reviewer agent）は Phase 2 で追加予定。広範な探索が必要なら feature-dev を案内する
+- **hook は持たない**: superseded doc への Edit 警告等の hook は需要が顕在化してから（component-addition-advisor の退路確保原則）
+- **作成時は agent を使わない**: design-doc スキルの設計フェーズは単一コンテキストの軽量版。多視点が必要になるのはレビュー時で、そこは design-review が担う。広範な探索が必要なら feature-dev を案内する
+- **レビューは再設計ではない**: design-reviewer は findings を返すだけで代替設計を書かない（Generator と Evaluator の分離）
 - **ファイル名は日付精度 + slug**: ADR の秒精度と違い、design doc は機能名で参照される面記録なので可読 slug を主キーにする
 - **`phase: target` の間は生きた文書**: append-only 原則が禁じるのは supersede 時の旧 doc 削除であって日常の編集ではない。方式転換だけ supersede にする（基準は `references/naming.md`）
 - **grill-protocol.md は feature-dev 正本の byte-identical 複製**: プラグイン間依存禁止のため（safe-hook.sh と同じ運用）
@@ -70,4 +78,7 @@ tags: []
 | 種別 | 名前 | 説明 |
 |------|------|------|
 | コマンド | `/design-doc` | new / list / supersede / export |
+| コマンド | `/design-review` | doc の複数視点静的レビュー |
 | スキル | `design-doc` | grill → 代替案比較 → 永続化 → ADR 切り出しのロジック |
+| スキル | `design-review` | 視点トリアージ → 並列レビュー → findings 集約 → doc 反映 |
+| エージェント | `design-reviewer` | 1 視点担当の静的レビュアー（evidence-first、read-only） |
