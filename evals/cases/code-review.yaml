@@ -8,3 +8,12 @@ cases:
     prompt: コミット前にセルフレビューして
     expected_skill: code-review:self-review
     k: 3
+  # review <-> self-review の弁別境界（「コミット前」は self、「PR」は review）
+  - id: self-review-precommit-ja
+    prompt: コミット前に確認したい
+    expected_skill: code-review:self-review
+    k: 3
+  - id: review-pr-ja
+    prompt: この PR をレビューして
+    expected_skill: code-review:review
+    k: 3

@@ -23,6 +23,16 @@ cases:
     expected_skill: dev-workflow:ui-verify
     k: 3
 
+  # worktree setup <-> teardown の逆発火防止
+  - id: worktree-setup-ja
+    prompt: worktree 作成して
+    expected_skill: dev-workflow:worktree-setup
+    k: 3
+  - id: worktree-teardown-ja
+    prompt: worktree を破棄して
+    expected_skill: dev-workflow:worktree-teardown
+    k: 3
+
   # hold-out: 改訂サイクル中は実行されない（--only-tag holdout で実行）
   - id: commit-paraphrase-ja
     prompt: 今の変更をまとめて記録しておいて

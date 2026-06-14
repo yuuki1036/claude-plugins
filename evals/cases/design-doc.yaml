@@ -29,6 +29,10 @@ cases:
     prompt: 実装前に設計案の穴を見つけてほしい
     expected_skill: design-doc:design-review
     k: 3
+  - id: design-review-trigger-bare
+    prompt: 設計をレビューして
+    expected_skill: design-doc:design-review
+    k: 3
 
   # --- 誤発火防止（隣接スキルに正しくルーティングされるか） ---
   - id: design-doc-nofire-issue-design
@@ -38,6 +42,11 @@ cases:
   - id: design-doc-nofire-adr
     prompt: さっきの設計判断を記録しておいて
     expected_skill: adr-keeper:adr
+    k: 3
+  # design-review <-> code-review の弁別（「コード」のレビューは code-review へ）
+  - id: design-review-nofire-code-review
+    prompt: コードをレビューして
+    expected_skill: code-review:review
     k: 3
   - id: design-doc-nofire-bdd-spec
     prompt: この機能の BDD spec 作って

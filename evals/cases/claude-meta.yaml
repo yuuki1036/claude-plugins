@@ -12,3 +12,12 @@ cases:
     prompt: Claude Codeのセットアップを提案して
     expected_skill: claude-meta:claude-code-setup
     k: 3
+  # 未カバー skill の回帰
+  - id: component-addition-advisor-ja
+    prompt: 新しい skill 追加していい？
+    expected_skill: claude-meta:component-addition-advisor
+    k: 3
+  - id: eval-runner-ja
+    prompt: eval 実行して
+    expected_skill: claude-meta:eval-runner
+    k: 3
