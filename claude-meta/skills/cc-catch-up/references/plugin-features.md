@@ -6,7 +6,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 > **メンテナンス**: CC の新バージョンリリース時にこのファイルを更新する。
 > キャッチアップ実行時に新機能が発見された場合、Phase 7 でこのカタログにも追記する。
 >
-> **カバー範囲**: v2.1.114（2026-04-19 時点）。v2.1.106 以降は主にバグ修正で plugin-authoring 面の新サーフェスは少ない。
+> **カバー範囲**: v2.1.163（2026-06-15 時点）。
 
 ---
 
@@ -73,6 +73,9 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | 大容量出力のディスク保存 | v2.1.89 | 50K 文字超の hook 出力はファイルに保存 | 大量データ返却フック |
 | `sessionTitle` | v2.1.94 | UserPromptSubmit で `hookSpecificOutput.sessionTitle` を返すとセッション名を設定 | セッション自動命名 |
 | `agent_id` / `agent_type` | v2.1.69 | hook 入力にエージェント識別情報を付与 | エージェント別の条件分岐 |
+| `args[]` exec 形式 | v2.1.139 | `command: "bash", args: ["<path>"]` でシェル解釈を経ず直接 spawn。新規 hook は `command: "bash <path>"` より推奨 | 全 hook 定義（安全・高速） |
+| `terminalSequence` helpers | v2.1.141 | `safe_hook_emit_bell` / `safe_hook_emit_window_title` で端末ベル・ウィンドウタイトルを JSON 出力で送る（plain text の `safe_hook_emit` とは混在不可） | 長時間処理の完了通知・警告アラート |
+| `hookSpecificOutput.additionalContext` | v2.1.163 | Stop hook 等で stderr（ユーザー向け）と並行して Claude のコンテキストへ注入する | 警告を Claude に確実に届けたいフック |
 
 ---
 
@@ -132,6 +135,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `${CLAUDE_PLUGIN_DATA}` | v2.1.78 | プラグイン永続データディレクトリ | 状態保存・キャッシュ |
 | `${CLAUDE_SESSION_ID}` | v2.1.69+ | 現在のセッション ID | セッション追跡 |
 | `$ARGUMENTS` / `$N` | v2.1.69+ | コマンド引数 | 引数付きコマンド |
+| `${CLAUDE_EFFORT}` | v2.1.120 | SKILL.md / コマンド本文で実行時 effort（low/medium/high/xhigh/max）に展開。frontmatter の `effort:` は既定値の宣言、本文の `${CLAUDE_EFFORT}` は実行時値 | effort 別に処理を分岐させる適応スキル（例: low/medium → 速度優先、xhigh/max → 多重 agent） |
 
 ---
 

@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.1] - 2026-06-15
+
+### Changed
+- README を全 command（catch-up / revise-claude-md）/ skill（cc-catch-up / claude-code-setup / claude-md-improver / component-addition-advisor / eval-runner）構成に同期し、Version 行を撤去（plugin.json を SSoT 化）
+- cc-catch-up カタログ（`plugin-features.md`）を CC v2.1.163 までの新 hook 機能に追随。args[] exec 形式（v2.1.139）/ terminalSequence helpers（v2.1.141）/ `${CLAUDE_EFFORT}` skill 適応分岐（v2.1.120）/ additionalContext での Stop hook 注入（v2.1.163）を追記し、カバー範囲を v2.1.163 に更新
+
 ## [1.11.0] - 2026-06-02
 
 ### Added
