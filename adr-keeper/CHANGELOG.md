@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.1.2] - 2026-06-15
+
+### Changed
+
+- `skills/adr/SKILL.md` Phase 4 に **supersede 実行前の最終確認 (AskUserQuestion)** を追加。旧 ADR の id / title / 現 status を提示してから実行し、誤った old-id 指定による別 ADR の巻き込みを防ぐ（後戻りしにくい破壊的操作の安全ガード）
+
 ## [0.1.1] - 2026-06-01
 
 ### Changed

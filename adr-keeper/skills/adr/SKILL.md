@@ -106,15 +106,22 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
 旧 ADR を新 ADR で置き換える。「新規作成 + 既存 2 箇所更新」を機械的に踏ませて漏れを防ぐのが核心。
 
 1. **旧 ADR 特定**: `.claude/adr/*<old-id>*.md` を Glob。見つからなければ error として中止
-2. **新 ADR 作成**（Phase 3 と同手順）。ただし frontmatter の `supersedes` に `<old-id>` を入れる:
+2. **最終確認（AskUserQuestion）**: supersede は旧 ADR を superseded に落とす後戻りしにくい操作。誤った old-id 指定による別 ADR の巻き込みを防ぐため、特定した旧 ADR の id / title / 現 status を提示して実行可否を確認する:
+   - question: 「ADR-<old-id>「<title>」（現 status: <status>）を superseded にして新 ADR で置き換えますか？」
+   - header: 「supersede 確認」
+   - options:
+     1. label: 「supersede 実行 (Recommended)」 / description: 「旧 ADR を superseded に更新し、新 ADR を作成する」
+     2. label: 「中止」 / description: 「何も変更しない（旧 ADR はそのまま残す）」
+   - 「中止」が選ばれたら一切変更せず終了する
+3. **新 ADR 作成**（Phase 3 と同手順）。ただし frontmatter の `supersedes` に `<old-id>` を入れる:
    - `{SUPERSEDES}` → `["<old-id>"]`
-3. **旧 ADR を Edit**（4 箇所）:
+4. **旧 ADR を Edit**（4 箇所）:
    - `status:` → `superseded`
    - `phase:` → `superseded`
    - `superseded-by:` → `<new-id>`（新 ADR の timestamp）
    - `last-validated:` → 本日（`date +%Y-%m-%d`）
-4. **両方を Read で確認**: 新 ADR の `supersedes` と旧 ADR の `superseded-by` が相互参照になっていることを検証
-5. 結果を報告（例: 「旧 ADR-20260520T091500 を superseded、新 ADR-20260529T143012 を作成」）
+5. **両方を Read で確認**: 新 ADR の `supersedes` と旧 ADR の `superseded-by` が相互参照になっていることを検証
+6. 結果を報告（例: 「旧 ADR-20260520T091500 を superseded、新 ADR-20260529T143012 を作成」）
 
 > supersede は append-only 原則を守る: 旧 ADR は **削除しない**。履歴として残し、phase/status のみ更新する。
 
