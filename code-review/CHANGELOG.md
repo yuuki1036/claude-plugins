@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.25.1] - 2026-06-15
+
+### Changed
+- README の confidence 説明を severity × confidence 2 軸マトリクスに更新、主要引数（--emergency / base branch / --staged / --focus / --exclude / --embed）を記載、Version 行を撤去
+
 ## [2.25.0] - 2026-06-10
 
 ### Added
