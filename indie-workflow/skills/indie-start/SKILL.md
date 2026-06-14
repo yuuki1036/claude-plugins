@@ -234,7 +234,7 @@ Feature ブランチモードで Issue ファイルの読み込みに成功し�
 ---
 shared_state_type: session
 producer: indie-workflow
-consumers: [code-review, feature-dev, dev-workflow]
+consumers: [code-review]
 schema_version: 1
 last_updated: {現在の ISO 8601 タイムスタンプ}
 branch: {現在のブランチ名}

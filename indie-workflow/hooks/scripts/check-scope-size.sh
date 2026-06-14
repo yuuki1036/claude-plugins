@@ -58,4 +58,4 @@ if [[ "$COUNT" -le "$LIMIT" ]]; then
 fi
 
 # 警告注入（Issue ID 付きで文脈を残す）
-safe_hook_emit "[scope-size] ${ISSUE_ID:-$(basename "$FILE_PATH")}: タスク ${COUNT} 件が scope_size=${SCOPE_SIZE} の上限 ${LIMIT} を超過しました。別 Issue 切り出しか scope_size 引き上げを検討してください（/indie-issue-maintain で整理可能）。"
+safe_hook_emit_context "PostToolUse" "[scope-size] ${ISSUE_ID:-$(basename "$FILE_PATH")}: タスク ${COUNT} 件が scope_size=${SCOPE_SIZE} の上限 ${LIMIT} を超過しました。別 Issue 切り出しか scope_size 引き上げを検討してください（/indie-issue-maintain で整理可能）。"

@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.31.0] - 2026-06-15
+
+### Added
+- **failure-journal の `failure:logged` イベントを retrospective が subscribe**。Phase 1 のデータ収集に「Source 3: failure:logged（再発失敗、任意）」を追加し、`event_bus_tail "failure:logged" 200` で取得して期間フィルタする（events.jsonl / イベントが無い場合は graceful に skip。failure-journal 未導入でも壊れない）。Phase 2 に指標 8「再発失敗パターン」を追加し、期間内の failure:logged を tag 別集計して 3 回以上再発した tag を振り返りの素材として提示する。規約還流提案は `failure-journal:retro` の責務として委ね、retrospective 側は重複しない（提示のみ）
+
+### Changed
+- 共通 skill（knowledge / knowledge-lint / issue-design）の description 冒頭に作用範囲「ローカル (.claude/indie) プロジェクトの」を明記し、linear-workflow との同時インストール時のトリガー衝突を解消（対応する commands/ の description も同期）
+- session shared_state frontmatter 雛形（indie-start）の `consumers` を実態に合わせて `[code-review]` に修正（feature-dev / dev-workflow は session-context.md を読む実装が無いため削除）
+- FileChanged hook（on-issue-change.sh / on-knowledge-change.sh）と PostToolUse の scope 超過警告（check-scope-size.sh）の Claude 向け通知を `safe_hook_emit` から `safe_hook_emit_context`（additionalContext, CC 2.1.163+）へ置き換え、到達保証を向上（stderr ログ / event_bus_publish はそのまま維持）
+
 ## [1.30.0] - 2026-06-11
 
 ### Added

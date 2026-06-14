@@ -60,6 +60,22 @@ events.jsonl が存在しない、または直近のイベントが期間より�
 3. 同期間の **canceled** Issue も収集
    - フロントマターの `status: canceled` で判定
 
+### Source 3: failure:logged（再発失敗、任意）
+
+failure-journal プラグインが publish する `failure:logged` イベントを振り返りの素材として取り込む。failure-journal 未導入でも壊れないよう graceful に扱う。
+
+```bash
+# 直近 200 件の failure:logged イベントを取得（events.jsonl / イベントが無ければ空を返す）
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null
+event_bus_tail "failure:logged" 200
+```
+
+各行は JSON Lines 形式: `{"ts":"<ISO8601>","plugin":"failure-journal","event":"failure:logged","payload":{"tag":"...","...":"..."}}`
+
+- 期間フィルタ: `ts` を指定期間と比較
+- `.claude/events.jsonl` が無い / `failure:logged` イベントが 0 件の場合は何も取得できないので、この Source 全体を **graceful に skip** する（failure-journal 未導入の前提で動く）
+- payload の `tag`（kebab-case の現象タグ）を Phase 2 の「再発失敗パターン」集計に渡す
+
 ### Source 統合
 
 両 Source から取得した Issue を `slug + issue_id` で dedup する。Event Bus 側で取得できた Issue は file 経由で詳細を Read し、ファイル走査側のヒューリスティック判定をスキップしてよい（より高速）。canceled は Event Bus には現状流れないため、Source 2 のロジックで補う。
@@ -161,6 +177,20 @@ events.jsonl が存在しない、または直近のイベントが期間より�
 
 閾値（デフォルト 2 件）は SKILL.md のこの定義に従う。
 
+### 8. 再発失敗パターン（任意・failure:logged）
+
+Phase 1 の Source 3 で取得した `failure:logged` イベントを集計する（取得できなかった場合はこの指標全体を skip）。
+
+- 期間内の `failure:logged` を payload の `tag` 別に件数集計する
+- 同一 `tag` が **3 回以上**再発しているものを「再発失敗パターン」として振り返りで取り上げる
+- 報告フォーマット例:
+  ```
+  ⚠️ 再発失敗パターン
+    - タグ「{tag}」が期間内に {N} 回記録されています
+  ```
+
+**責務の境界**: retrospective は再発失敗を**振り返りの素材として提示するだけ**にとどめる。「この失敗を CLAUDE.md / hook / skill のどこに反映すべきか」という規約還流の提案は `failure-journal:retro` の責務であり、ここでは行わない（重複を避ける）。3 回以上のパターンを見つけたら `failure-journal:retro` の実行を案内するに留める。
+
 ---
 
 ## Phase 2.5: 概念ページ化の提案
@@ -223,16 +253,18 @@ events.jsonl が存在しない、または直近のイベントが期間より�
 1. 引数から期間を解釈（デフォルト: 2w）
 2. .claude/events.jsonl の issue:completed を期間フィルタで収集（Source 1）
 3. .claude/indie/ 内の全プロジェクトを走査して期間内の completed/canceled Issue を収集（Source 2、Event Bus に無い分の補完 + canceled 対応）
-4. Source 1 と Source 2 を slug+issue_id で dedup・統合
-5. Phase 2 の各指標（1〜7）を算出
+4. .claude/events.jsonl の failure:logged を期間フィルタで収集（Source 3、任意。events.jsonl / イベントが無ければ skip）
+5. Source 1 と Source 2 を slug+issue_id で dedup・統合
+6. Phase 2 の各指標（1〜8）を算出
    - 前回 retro との比較（6）: retrospectives/ を Glob で列挙し最新 1 件と照合
    - 反復テーマ検出（7）: 期間中の source の tags を集計（`concepts/` は除外）
-6. 分析結果をユーザーに提示（反復警告・前回比較を冒頭で目立たせる）
-7. Phase 2.5 概念ページ化の提案（反復テーマを concept に統合するか。承認時はドラフト作成 + index.md 更新）
-8. Phase 3 の振り返りフレーム（Good → Problem → Try の順に対話）
-9. テンプレートに沿ってレポートを生成
-10. レポート内容をユーザーに提示し、承認を得る
-11. .claude/indie/retrospectives/YYYY-MM-DD.md に保存
+   - 再発失敗パターン（8）: Source 3 の failure:logged を tag 別集計（3 回以上のみ取り上げ。取得不可なら skip）
+7. 分析結果をユーザーに提示（反復警告・再発失敗・前回比較を冒頭で目立たせる）
+8. Phase 2.5 概念ページ化の提案（反復テーマを concept に統合するか。承認時はドラフト作成 + index.md 更新）
+9. Phase 3 の振り返りフレーム（Good → Problem → Try の順に対話）
+10. テンプレートに沿ってレポートを生成
+11. レポート内容をユーザーに提示し、承認を得る
+12. .claude/indie/retrospectives/YYYY-MM-DD.md に保存
 ```
 
 ---

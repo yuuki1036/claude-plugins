@@ -1,7 +1,7 @@
 ---
 name: issue-design
 description: >
-  Issue documentation の書き方ガイド。9 セクションテンプレと設計判断ルール（決定 vs open の
+  ローカル (.claude/indie) プロジェクトの Issue documentation の書き方ガイド。9 セクションテンプレと設計判断ルール（決定 vs open の
   境界、現時点の方向性マーカー、後続の双方向記述、確定タイミング明示）に沿って、Issue 本文を
   設計・構造化・リライトする。新規 Issue の起票は indie-issue-create、
   作成済み Issue の整理・圧縮・品質チェックは indie-issue-maintain に任せる

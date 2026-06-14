@@ -1,5 +1,5 @@
 ---
-description: "Issue 本文を 9 セクションテンプレと設計判断ルールに沿って設計・構造化・リライトする"
+description: "ローカル (.claude/indie) プロジェクトの Issue 本文を 9 セクションテンプレと設計判断ルールに沿って設計・構造化・リライトする"
 allowed-tools:
   - Read
   - Write
