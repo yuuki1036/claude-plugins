@@ -164,9 +164,10 @@ event_bus_clear
 | イベント | 発火タイミング | publisher | 主な subscriber |
 |---|---|---|---|
 | `issue:completed` | Issue ファイルの status が completed に遷移 | linear-workflow / indie-workflow | **indie-workflow:retrospective**（実装済） |
-| `feature:implemented` | feature-dev Phase 7 完了 | **feature-dev**（実装済） | - |
-| `commit:created` | git commit 成功（PostToolUse Bash matcher で検知） | **dev-workflow**（実装済） | - |
-| `review:completed` | code-review Step 7（レポート出力後） | **code-review**（実装済） | - |
+| `feature:implemented` | feature-dev Phase 7 完了 | **feature-dev**（実装済） | -（fire-and-forget） |
+| `commit:created` | git commit 成功（PostToolUse Bash matcher で検知） | **dev-workflow**（実装済） | **linear-workflow / indie-workflow:issue-maintain**（実装済） |
+| `review:completed` | code-review Step 7（レポート出力後） | **code-review**（実装済） | **linear-workflow / indie-workflow:issue-maintain**（実装済） |
+| `failure:logged` | 再発しうる失敗を journal に記録 | **failure-journal**（実装済） | **indie-workflow:retrospective**（実装済） |
 
 ### Publisher の責務
 
@@ -281,7 +282,7 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 
 **自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/references/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
 
-- `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh
+- `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期（INDEX の version 列・記載漏れ・余分行、CLAUDE.md の一覧表記載漏れ）
 - `validate_plugin_quality.py`: allowed-tools 存在・command↔skill ペア一致 / hooks.json 参照スクリプトの safe_hook_init / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ存在 / allowed-tools 最小性 #14b（SKILL.md・agents の未使用ツール検出、非ブロッキング warning。commands はペア一致ルールのため対象外）
 - `claude plugin validate`: CLI スキーマ（`_requirements` 警告は除外）
 

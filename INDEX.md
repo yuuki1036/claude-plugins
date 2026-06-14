@@ -12,21 +12,21 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 
 | プラグイン | version | cmd | skill | agent | hooks | mcp | 概要 |
 |-----------|---------|----:|------:|-------|-------|-----|------|
-| [adr-keeper](#adr-keeper) | 0.1.1 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
+| [adr-keeper](#adr-keeper) | 0.1.2 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.1.1 | 1 | 1 | - | - | - | BDD spec 駆動の user story scaffold |
-| [claude-meta](#claude-meta) | 1.11.0 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.25.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
-| [design-doc](#design-doc) | 0.2.0 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
-| [dev-workflow](#dev-workflow) | 1.21.0 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
+| [claude-meta](#claude-meta) | 1.11.1 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
+| [code-review](#code-review) | 2.25.1 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [design-doc](#design-doc) | 0.2.2 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
+| [dev-workflow](#dev-workflow) | 1.21.1 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
 | [doc-freshness](#doc-freshness) | 0.1.0 | 1 | 1 | - | - | - | frontmatter による doc 鮮度機械強制 |
-| [failure-journal](#failure-journal) | 0.1.0 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
-| [feature-dev](#feature-dev) | 2.7.0 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
-| [guardrail-protect](#guardrail-protect) | 0.1.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
-| [indie-workflow](#indie-workflow) | 1.30.0 | 10 | 10 | 2 | 5 events | - | 個人開発向けローカル Issue 管理 |
-| [linear-workflow](#linear-workflow) | 1.29.0 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
-| [notebooklm-workflow](#notebooklm-workflow) | 0.2.3 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
-| [plugin-feedback](#plugin-feedback) | 1.2.6 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
-| [plugin-manager](#plugin-manager) | 1.7.0 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
+| [failure-journal](#failure-journal) | 0.1.1 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
+| [feature-dev](#feature-dev) | 2.7.1 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
+| [guardrail-protect](#guardrail-protect) | 0.1.1 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
+| [indie-workflow](#indie-workflow) | 1.31.0 | 10 | 10 | 2 | 5 events | - | 個人開発向けローカル Issue 管理 |
+| [linear-workflow](#linear-workflow) | 1.30.0 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
+| [notebooklm-workflow](#notebooklm-workflow) | 0.2.4 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
+| [plugin-feedback](#plugin-feedback) | 1.2.7 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
+| [plugin-manager](#plugin-manager) | 1.7.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
 | [writing-polish](#writing-polish) | 0.3.1 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
 排他関係: `indie-workflow` と `linear-workflow` は同系統（ローカル / Linear）で排他利用想定。
@@ -155,10 +155,10 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 | イベント | publisher | 主な subscriber |
 |---|---|---|
 | `issue:completed` | linear-workflow / indie-workflow | indie-workflow:retrospective |
-| `feature:implemented` | feature-dev | - |
-| `commit:created` | dev-workflow | - |
-| `review:completed` | code-review | - |
-| `failure:logged` | failure-journal | - |
+| `feature:implemented` | feature-dev | -（fire-and-forget） |
+| `commit:created` | dev-workflow | linear / indie:issue-maintain |
+| `review:completed` | code-review | linear / indie:issue-maintain |
+| `failure:logged` | failure-journal | indie:retrospective |
 
 ### Shared State（frontmatter で producer/consumer 明示）
 

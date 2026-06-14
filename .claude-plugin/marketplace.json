@@ -9,7 +9,7 @@
     {
       "name": "code-review",
       "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。self-review に --embed フラグ追加 (他 plugin からの呼び出し時に Phase 7 AskUserQuestion を skip)、worktree branch 継承バグ修正、PR 種別分岐ルールと Issue ファイル必読フロー。総合判定 (Approve / Approve with nits / Needs work) と Nit:/Optional:/FYI prefix、好みベース指摘の confidence クランプ、--emergency 最小構成レビュー、Fix the code 修正指針 (Google eng-practices 由来)。ui-quality に Chrome Modern Web Guidance ベースの modern-web-checklist を同梱 (Baseline ゲート + 自前実装→ネイティブ API 観点、外部 skill 参照のローカル化)。reviewer 非レビュー出力の auto-retry と観点カバレッジ常時セルフチェック、退行指摘の invariant 検算、EnterWorktree 二重 checkout 回避、self-review の Vault 照合 (kvault recall で過去指摘を reviewer に注入)。事実主張のツール接地 (claim grounding: 検証可能性3分類 + repo検証不能な外部状態の断定抑止と [unverified] confidence クランプ) と findings 反映段の over-correction ガード (一次ソース再確認・暫定入力の非伝播・1箇所先行確認、issue #71)",
-      "version": "2.25.0",
+      "version": "2.25.1",
       "author": {
         "name": "yuki"
       },
@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離、PostToolUse 自動 lint チェーン(fmt-fix→lint-fix→check、opt-in)、PR 本文の bullet 上限数値化、writing-polish soft 連携(opt-in)、commit subject 品質規約(曖昧 subject 禁止例カタログ、Google eng-practices 由来)、PR 本文のローカル限定ドキュメント参照防止(パス無し自然言語言及の advisory 検出)、PR 概要の What/Why/Outcome を字数制約で省略しない両立明記+生成後セルフチェック(Step 4.7)",
-      "version": "1.21.0",
+      "version": "1.21.1",
       "author": {
         "name": "yuki"
       },
@@ -27,7 +27,7 @@
     {
       "name": "claude-meta",
       "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善（骨抜き禁止/三段防御/階層 AGENTS.md/優先度規約/静的検査優先の 6 パターン強化）、CCアップデート追従、セッション学習の反映",
-      "version": "1.11.0",
+      "version": "1.11.1",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。",
-      "version": "1.29.0",
+      "version": "1.30.0",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "indie-workflow",
       "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
-      "version": "1.30.0",
+      "version": "1.31.0",
       "author": {
         "name": "yuki"
       },
@@ -54,7 +54,7 @@
     {
       "name": "plugin-manager",
       "description": "インストール済みプラグインの一括更新と、ほぼ全部 install しているマーケットプレイスの後発追加プラグイン取りこぼし通知（SessionStart hook）",
-      "version": "1.7.0",
+      "version": "1.7.1",
       "author": {
         "name": "yuki"
       },
@@ -63,7 +63,7 @@
     {
       "name": "plugin-feedback",
       "description": "プラグインへの改善要望・バグ報告を GitHub Issue として作成。コマンドと自然言語の両方で起動",
-      "version": "1.2.6",
+      "version": "1.2.7",
       "author": {
         "name": "yuki"
       },
@@ -72,7 +72,7 @@
     {
       "name": "feature-dev",
       "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec plugin から BDD spec.md を生成し architect の入力契約に使用、Phase 1.6 で kvault（外部 CLI、未導入時 skip）から横断知見を recall し architect に advisory 注入、Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.5 に self-lock template、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
-      "version": "2.7.0",
+      "version": "2.7.1",
       "author": {
         "name": "yuki"
       },
@@ -81,7 +81,7 @@
     {
       "name": "notebooklm-workflow",
       "description": "NotebookLM 連携ワークフロー。URL/PDF/YouTube/Drive のソース追加と既存ノートへの Q&A・要約取得を自然言語で操作（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱）",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "author": {
         "name": "yuki"
       },
@@ -90,7 +90,7 @@
     {
       "name": "guardrail-protect",
       "description": "lint/hook/static check 設定の骨抜きと git commit --no-verify を PreToolUse hook で機械的にブロック（opt-in 設定）",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "yuki"
       },
@@ -117,7 +117,7 @@
     {
       "name": "adr-keeper",
       "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 2箇所更新を機械化",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "author": {
         "name": "yuki"
       },
@@ -126,7 +126,7 @@
     {
       "name": "failure-journal",
       "description": "再発する失敗を JSON Lines に append し、30日×3回閾値超えのパターンを retro で抽出して AGENTS.md/hook/skill へ還流。SessionStart で journal 初期化、failure:logged を event bus に publish",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "yuki"
       },
@@ -144,7 +144,7 @@
     {
       "name": "design-doc",
       "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "author": {
         "name": "yuki"
       },
