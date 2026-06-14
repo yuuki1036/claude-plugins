@@ -111,6 +111,31 @@ safe_hook_emit_window_title() {
   printf '{"terminalSequence":"\\u001b]2;%s\\u0007"}\n' "$title"
 }
 
+# v2.1.163+: additionalContext で Claude にコンテキストを注入する（block しない）
+# Usage: safe_hook_emit_context <hook-event-name> <message>
+# 例: safe_hook_emit_context "PostToolUse" "scope が大きすぎます。Issue 分割を検討してください"
+# 注意:
+#   - additionalContext は単独 JSON 出力。safe_hook_emit / terminalSequence と混在不可
+#   - JSON エンコードは python3 → jq に委譲。どちらも無ければ最小エスケープでフォールバック
+#   - message が空なら何も出力しない（呼び出し側の条件分岐を簡素化）
+#   - plain stdout（safe_hook_emit）より Claude への到達保証が高い。FileChanged /
+#     PostToolUse 等で「確実に届けたい」通知に使う
+safe_hook_emit_context() {
+  local event="${1:-PostToolUse}" msg="${2:-}"
+  if [ -z "$msg" ]; then
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$msg" | EVENT="$event" python3 -c 'import json,os,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":os.environ.get("EVENT","PostToolUse"),"additionalContext":sys.stdin.read()}}))'
+  elif command -v jq >/dev/null 2>&1; then
+    printf '%s' "$msg" | jq -Rsc --arg e "$event" '{hookSpecificOutput:{hookEventName:$e,additionalContext:.}}'
+  else
+    local m="$msg"
+    m="${m//\\/\\\\}"; m="${m//\"/\\\"}"; m="${m//$'\n'/\\n}"
+    printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' "$event" "$m"
+  fi
+}
+
 # 内部: 名前付き stderr ログ
 __safe_hook_log() {
   local level="$1" msg="$2"

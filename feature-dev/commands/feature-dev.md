@@ -285,15 +285,15 @@ Subsequent phases consume this table directly.
    - A request to return 5-10 key files to read
 
    **Focus templates**:
-   - `similar-features`: "Find features similar to [feature] and trace through their implementation comprehensively"
-   - `architecture-mapping`: "Map the architecture and abstractions for [feature area], tracing through the code comprehensively"
+   - `similar-features`: "Find features similar to [feature] and trace through their implementation"
+   - `architecture-mapping`: "Map the architecture and abstractions for [feature area], tracing through the code"
    - `shared-modules`: "Identify shared modules (`utils/`, `lib/`, `helpers/`) that this feature will touch and document their consumers"
    - `history-context`: "Use git log to understand how [area] evolved and surface prior decisions / abandoned approaches"
    - `dependency-trace`: "Trace upstream/downstream dependencies of [target module] across the codebase"
    - `layer-mapping`: "Map the UI / API / data layer separately for [feature area]"
 
 2. Once the agents return, read all files identified by agents to build deep understanding
-3. Present comprehensive summary of findings and patterns discovered
+3. Present a summary of findings and patterns discovered
 
 **Partial failure tolerance**: If individual explorers fail, continue with the remaining results. Record failed explorers in a `missing_coverage` list to surface in Phase 7.
 
@@ -592,7 +592,7 @@ Merge with the Phase 1.7 provisional list, then cap by the current effort upper 
 - base branch は省略（self-review が `git remote show origin | grep "HEAD branch"` で自動検出）
 - 未コミット diff は self-review 側で `git diff` / `git diff --cached` を併用して取得
 
-self-review 内部の動き（詳細は `${CLAUDE_PLUGIN_ROOT}/../code-review/skills/self-review/SKILL.md` 参照）:
+self-review 内部の動き（詳細は `code-review:self-review` skill の SKILL.md 参照）:
 
 - Phase 0 triage で reviewer 体数を `${CLAUDE_EFFORT}` 連動で決定（feature-dev の effort をそのまま継承）
 - Phase 3/4 で explorer + reviewer 並列起動

@@ -5,6 +5,16 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 2026-06-15
+
+### Changed
+- README を 8 phase 実態に同期。本文が「7 phase」表記のままで Phase 1.3 / 1.5 / 1.6 / 1.7 / 4.5（bdd-spec / design-doc 連携・Vault Recall・動的トリアージ）等の中核機能が未記載だったのを、現行の plugin.json（v2.7.0 以降）・commands・agents の実態に合わせて全面改稿。dormant 連携（bdd-spec / design-doc / kvault は未導入時 skip）と Phase 6 の code-review fail-fast を明記
+- 煽り表現を除去。README 本文と references/triage-guide.md の「フル活用」、README / commands / agents の英語煽り語（comprehensive / thorough）を誇張のない表現に置換
+- README 末尾の Version 行を撤去（plugin.json が version の SSoT のため二重管理を解消）
+
+### Fixed
+- 隣接プラグイン code-review へのパス直参照を skill 名参照に置換（プラグイン間依存禁止規約に準拠）。`commands/feature-dev.md` の `${CLAUDE_PLUGIN_ROOT}/../code-review/skills/self-review/SKILL.md` という相対パス直参照を「`code-review:self-review` skill の SKILL.md 参照」に変更。cache 配置で壊れうる隣接プラグインへの相対パス依存を解消
+
 ## [2.7.0] - 2026-06-11
 
 ### Added

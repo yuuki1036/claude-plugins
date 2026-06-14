@@ -156,7 +156,7 @@ architect / reviewer に公式 skill `context7` を経由した最新仕様確�
 | `medium` | 2 | 1 | 2 | 軽量だが explorer は許可 |
 | `high`（既定） | 3 | 2 | 3 | 標準構成 |
 | `xhigh` | 5 | 3 | 6 | 多角的検証・冗長ペア導入 |
-| `max` | 6 | 3 | 8 | 上限フル活用、深掘り優先 |
+| `max` | 6 | 3 | 8 | 上限まで使い、深掘り優先 |
 
 ## 6. Phase 6 開始時の reviewer 再判定（mini-triage）
 

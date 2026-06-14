@@ -38,7 +38,7 @@ Provide a complete understanding of how a specific feature works by tracing its 
 
 ## Output Guidance
 
-Provide a comprehensive analysis that helps developers understand the feature deeply enough to modify or extend it. Include:
+Provide an analysis that helps developers understand the feature deeply enough to modify or extend it. Include:
 
 - Entry points with file:line references
 - Step-by-step execution flow with data transformations

@@ -1,401 +1,194 @@
 # Feature Development Plugin
 
-A comprehensive, structured workflow for feature development with specialized agents for codebase exploration, architecture design, and quality review.
+コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。専用 agent（code-explorer / code-architect）を内包し、bdd-spec / design-doc / code-review の各プラグインと連携する。
 
 ## Overview
 
-The Feature Development Plugin provides a systematic 8-phase approach to building new features. Instead of jumping straight into code, it guides you through understanding the codebase, asking clarifying questions, designing architecture, runtime-verifying the implementation, and ensuring quality—resulting in better-designed features that integrate seamlessly with your existing code.
+`/feature-dev` コマンドで起動する 8 phase のワークフロー。いきなりコードを書き始めるのではなく、コードベース理解 → 要件の grill → アーキテクチャ設計 → 実装 → runtime 検証 → 品質レビューの順で進めることで、既存コードに馴染む設計を作る。
+
+各 phase は `${CLAUDE_EFFORT}`（実行時 effort）と feature の特性に応じて動的に構成される。Phase 1.7 のトリアージが explorer / architect / reviewer の体数と focus を決め、低 effort では phase を圧縮し、高 effort では多角的に検証する。
 
 ## Philosophy
 
-Building features requires more than just writing code. You need to:
-- **Understand the codebase** before making changes
-- **Ask questions** to clarify ambiguous requirements
-- **Design thoughtfully** before implementing
-- **Review for quality** after building
+機能を作るにはコードを書く以上のことが要る。
 
-This plugin embeds these practices into a structured workflow that runs automatically when you use the `/feature-dev` command.
+- **理解してから動く**: 変更前に既存のパターンを読んで把握する
+- **曖昧さを潰す**: 要件の曖昧点を grill（1 問ずつ依存順）で解決する
+- **設計してから実装する**: 複数案を比較してから 1 案にコミットする
+- **品質を検証する**: 実装後に runtime smoke test とレビューゲートを通す
+
+これらを構造化したワークフローに埋め込み、`/feature-dev` で自動的に走らせる。
 
 ## Command: `/feature-dev`
 
-Launches a guided feature development workflow with 7 distinct phases.
+8 phase の機能開発ワークフローを起動する。
 
-**Usage:**
 ```bash
 /feature-dev Add user authentication with OAuth
 ```
 
-Or simply:
+引数なしでも起動でき、対話的に要件を詰めていく。
+
 ```bash
 /feature-dev
 ```
 
-The command will guide you through the entire process interactively.
+## Phase 構成
 
-## The 8-Phase Workflow
+| Phase | 名前 | 役割 |
+|---|---|---|
+| 1 | Discovery | 何を作るかを把握する |
+| 1.3 | BDD Spec Creation | bdd-spec 連携。spec.md を architect の入力契約として生成（dormant） |
+| 1.5 | Issue Context Detection | linear-workflow / indie-workflow からの引き継ぎ context を検出 |
+| 1.6 | Vault Recall | 外部 kvault CLI から横断知見を recall し architect に advisory 注入（dormant） |
+| 1.7 | Triage | explorer / architect / reviewer の体数・focus を動的決定 |
+| 2 | Codebase Exploration | code-explorer で既存コードとパターンを把握 |
+| 3 | Clarifying Questions (Grill) | 曖昧点を 1 問ずつ依存順で解決 |
+| 4 | Architecture Design | code-architect で複数案を設計・比較 |
+| 4.5 | Design Doc Export | design-doc 連携。採用案 + 代替案比較を永続化（dormant） |
+| 5 | Implementation | 採用案に沿って実装（Normal Mode / Fix Mode） |
+| 5.5 | Runtime Smoke Test | 静的チェックで取れない runtime 初期化バグを検出 |
+| 6 | Quality Review | code-review:self-review に委譲 + 致命指摘を自動 fix |
+| 7 | Summary | 成果のサマリ + イベント発行 |
+
+> Phase 1.3 / 1.6 / 4.5 は連携先プラグイン（または外部 CLI）が無ければ完全に skip される dormant な連携。後方互換を壊さない。
 
 ### Phase 1: Discovery
 
-**Goal**: Understand what needs to be built
+何を作るかを把握する。feature が不明確なら「解決したい問題」「機能の振る舞い」「制約・要件」を聞き、理解をまとめて確認する。
 
-**What happens:**
-- Clarifies the feature request if it's unclear
-- Asks what problem you're solving
-- Identifies constraints and requirements
-- Summarizes understanding and confirms with you
+### Phase 1.3: BDD Spec Creation（bdd-spec 連携 / dormant）
 
-**Example:**
-```
-You: /feature-dev Add caching
-Claude: Let me understand what you need...
-        - What should be cached? (API responses, computed values, etc.)
-        - What are your performance requirements?
-        - Do you have a preferred caching solution?
-```
+`bdd-spec` プラグインがインストールされている場合のみ、Phase 1 直後に BDD `spec.md`（Feature / Scenario / Examples / 同値分割表）を生成し、Phase 4 architect の **authoritative requirements** として使う。`bdd-spec:create-spec` を非対話 API（`role` / `want` / `why` / `shortPath`）で呼ぶ。未インストール時は skip し、既存の Issue 解釈フローに fallback する。
+
+### Phase 1.5: Issue Context Detection（linear / indie 連携）
+
+`Issue ファイル:` パスや `feature_dev_plan:` frontmatter を検出すると、linear-workflow / indie-workflow からの引き継ぎ context を読み込む。Issue context が完備なら Phase 1.7 に「explorer 0 体」を信号して Phase 2 を実質 skip し、context を Phase 4 architect に直接渡す。
+
+### Phase 1.6: Vault Recall（外部 kvault CLI 連携 / dormant）
+
+外部 app の `kvault` CLI と vault ディレクトリが揃っている場合のみ、過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を recall し、Phase 4 architect に **advisory（参考情報）** として注入する。注入知見は authoritative ではなく、現コードベースのパターンと矛盾する場合は現コードベースを優先する。CLI / vault dir のいずれかが欠けたら skip する。
+
+### Phase 1.7: Triage（動的エージェント構成決定）
+
+feature の特性（種別・スコープ・リスク因子）× `${CLAUDE_EFFORT}` を分析し、後続 phase で起動する explorer / architect / reviewer の体数・focus・冗長度を決める。メインコンテキストで実行し（Agent tool は使わない）、構成テーブルを出力する。後続 phase はこのテーブルを直接参照する。
+
+最小保証: architect ≥ 1、reviewer ≥ 1（bug-detection 必須）、explorer は 0 可（Issue context 完備時）。
 
 ### Phase 2: Codebase Exploration
 
-**Goal**: Understand relevant existing code and patterns
+Phase 1.7 が指定した N 体の `code-explorer` agent を並列起動する。各 agent は割り当てられた focus（similar-features / architecture-mapping / shared-modules / history-context / dependency-trace / layer-mapping）と対象スコープを受け取り、読むべき主要ファイル 5-10 件を返す。agent 完了後、特定されたファイルを読んで理解を深める。
 
-**What happens:**
-- Launches 2-3 `code-explorer` agents in parallel
-- Each agent explores different aspects (similar features, architecture, UI patterns)
-- Agents return comprehensive analyses with key files to read
-- Claude reads all identified files to build deep understanding
-- Presents comprehensive summary of findings
+個別 explorer が失敗しても残りの結果で続行し、失敗分は `missing_coverage` として Phase 7 で報告する。Phase 1.7 が 0 explorer と判定した場合はこの phase を skip する。
 
-**Agents launched:**
-- "Find features similar to [feature] and trace implementation"
-- "Map the architecture and abstractions for [area]"
-- "Analyze current implementation of [related feature]"
+### Phase 3: Clarifying Questions（Grill）
 
-**Example output:**
-```
-Found similar features:
-- User authentication (src/auth/): Uses JWT tokens, middleware pattern
-- Session management (src/session/): Redis-backed, 24hr expiry
-- API security (src/api/middleware/): Rate limiting, CORS
+曖昧点を **フラットな質問リストではなく grill** で潰す。`references/grill-protocol.md` が正本。
 
-Key files to understand:
-- src/auth/AuthService.ts:45 - Core authentication logic
-- src/middleware/authMiddleware.ts:12 - Request authentication
-- src/config/security.ts:8 - Security configuration
-```
+1. 候補となる曖昧点を列挙
+2. コードで答えられる問い（Phase 2 explorer 結果 / Grep / BDD spec / Issue context）は自己解決し、質問から落とす
+3. 残りを design tree の依存順にソート（上流の決定を先に）
+4. `AskUserQuestion` で 1 問ずつ確認。各問いに推奨案を先頭に `(Recommended)` 付きで提示
+5. 確定した前提 + ユーザー決定を design contract として集約
 
-### Phase 3: Clarifying Questions
-
-**Goal**: Fill in gaps and resolve all ambiguities
-
-**What happens:**
-- Reviews codebase findings and feature request
-- Identifies underspecified aspects:
-  - Edge cases
-  - Error handling
-  - Integration points
-  - Backward compatibility
-  - Performance needs
-- Presents all questions in an organized list
-- **Waits for your answers before proceeding**
-
-**Example:**
-```
-Before designing the architecture, I need to clarify:
-
-1. OAuth provider: Which OAuth providers? (Google, GitHub, custom?)
-2. User data: Store OAuth tokens or just user profile?
-3. Existing auth: Replace current auth or add alongside?
-4. Sessions: Integrate with existing session management?
-5. Error handling: How to handle OAuth failures?
-```
-
-**Critical**: This phase ensures nothing is ambiguous before design begins.
+残り 1-2 問で方向が明らかな場合は 1 回の質問にまとめる（過剰質問の抑制）。
 
 ### Phase 4: Architecture Design
 
-**Goal**: Design multiple implementation approaches
+Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する。各 agent は focus（minimal-changes / clean-architecture / pragmatic-balance / migration-strategy / delta-proposal）を受け取る。Phase 1.3 の `BDD_SPEC_PATH` があれば各 architect に注入し、spec を真実として読ませる。Phase 1.6 の `VAULT_KNOWLEDGE` があれば advisory として注入する。
 
-**What happens:**
-- Launches 2-3 `code-architect` agents with different focuses:
-  - **Minimal changes**: Smallest change, maximum reuse
-  - **Clean architecture**: Maintainability, elegant abstractions
-  - **Pragmatic balance**: Speed + quality
-- Reviews all approaches
-- Forms opinion on which fits best for this task
-- Presents comparison with trade-offs and recommendation
-- **Asks which approach you prefer**
+全案をレビューして推奨案を形成し、各案のトレードオフ比較 + 推奨理由をユーザーに提示し、どの案で進めるかを聞く。全 architect 失敗時は `minimal-changes` focus で単体起動して fallback する。
 
-**Example output:**
-```
-I've designed 3 approaches:
+### Phase 4.5: Design Doc Export（design-doc 連携 / dormant）
 
-Approach 1: Minimal Changes
-- Extend existing AuthService with OAuth methods
-- Add new OAuth routes to existing auth router
-- Minimal refactoring required
-Pros: Fast, low risk
-Cons: Couples OAuth to existing auth, harder to test
-
-Approach 2: Clean Architecture
-- New OAuthService with dedicated interface
-- Separate OAuth router and middleware
-- Refactor AuthService to use common interface
-Pros: Clean separation, testable, maintainable
-Cons: More files, more refactoring
-
-Approach 3: Pragmatic Balance
-- New OAuthProvider abstraction
-- Integrate into existing AuthService
-- Minimal refactoring, good boundaries
-Pros: Balanced complexity and cleanliness
-Cons: Some coupling remains
-
-Recommendation: Approach 3 - gives you clean boundaries without
-excessive refactoring, and fits your existing architecture well.
-
-Which approach would you like to use?
-```
+`design-doc` プラグインがインストールされている場合のみ、Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を `.claude/designs/` に永続化する opt-in ステップ。`design-doc:design-doc` を export 非対話 API（`mode=export`）で呼び、`spec=`（Phase 1.3）/ `issue=`（Phase 1.5）を frontmatter に転記する。後続の同領域開発の参照元・実装後の as-built 記録として再利用できる。未インストール時は skip、呼び出し失敗時も warning のみで実装フローを止めない。
 
 ### Phase 5: Implementation
 
-**Goal**: Build the feature
+2 つのモードを持つ。
 
-**What happens:**
-- **Waits for explicit approval** before starting
-- Reads all relevant files identified in previous phases
-- Implements following chosen architecture
-- Follows codebase conventions strictly
-- Writes clean, well-documented code
-- Updates todos as progress is made
-
-**Notes:**
-- Implementation only starts after you approve
-- Follows patterns discovered in Phase 2
-- Uses architecture designed in Phase 4
-- Continuously tracks progress
+- **Normal Mode**: Phase 4 完了から起動。ユーザー承認を待ってから、採用したアーキテクチャに沿って実装する。既存コードの規約に従う。
+- **Fix Mode**: Phase 6 の Generator-Verifier ループから起動。reviewer が指摘した file:line だけをピンポイント修正する（スコープ拡大・無関係なリファクタ禁止、Phase 4 の設計を維持）。
 
 ### Phase 5.5: Runtime Smoke Test
 
-**Goal**: Catch runtime initialization bugs that static checks (tsc / lint / build) cannot detect
+tsc / lint / build では検知できない runtime 初期化バグ（DB client 初期化、env var 読み込み、middleware 設定ミス、proxy lazy-init 等）を Quality Review 前に検出する。
 
-**What happens:**
-- Deterministic detection of runtime-sensitive changes via `git diff` (DB clients, env vars, middleware, new routes)
-- Required vs optional gate based on detection result
-- Invokes `dev-workflow:ui-verify` skill to start the dev server and hit target routes
-- Checks for console errors and network 4xx / 5xx responses
-- Falls back to manual verification when chrome-devtools MCP is unavailable
-- Blocks Phase 6 if errors are detected until the user decides how to proceed
+- Step 0: TTL ベースの self-lock guard（将来 PostToolUse hook を導入した際の重複起動・無限ループ予防 template）
+- Step 1: `git diff` から DB client / env var / middleware / 新規 route のパターンを grep し、smoke test が必須か任意かを決定的に判定
+- Step 2: `AskUserQuestion` で実行可否を確認
+- Step 3: `dev-workflow:ui-verify` skill を呼んで dev server 起動 + console error / network 4xx-5xx を検査。chrome-devtools MCP 未設定時は手動確認に fallback（hard fail しない）
+- Step 4: エラー検出時は Phase 6 に進ませず、ユーザー判断（今修正 / 受け入れて続行）を仰ぐ
 
-**Why this matters:**
-- Catches Prisma client initialization failures, env var loading issues, middleware misconfiguration, and proxy lazy-init bugs that pass all static checks
-- Prevents the "review passes but deploy blocks" loop documented in Issue #29
+「全静的チェックを通過したのに初回 runtime アクセスで死ぬ」事故（Issue #29）を構造的に予防する。
 
 ### Phase 6: Quality Review
 
-**Goal**: `code-review:self-review` skill に委譲して品質ゲートを通し、致命指摘を Generator-Verifier ループで自動 fix
+`code-review:self-review` skill に委譲して品質ゲートを通し、致命指摘を Generator-Verifier ループで自動 fix する。v2.0.0 で feature-dev 内蔵の `code-reviewer` agent を廃止し、品質基準を code-review プラグインに一本化した（DRY 違反の解消 + 2 軸スコアリング × 多観点 × specialist × meta-reviewer 構造への統一）。
 
-**What happens:**
-- Diff ベースの mini-triage で reviewer focus list を確定（bug-detection / security / type-design / ui-quality 等）
-- `Skill code-review:self-review --focus <list>` を 1 回呼び出し
-- self-review 内部で Phase 0 triage → 並列 reviewer → adaptive deepening → meta-reviewer → 2 軸スコアリング (confidence × severity) が走る
-- 出力を以下マッピングで auto-fix トリガーに変換:
-  - `BLOCKER` (any confidence) → auto-fix
-  - `CRITICAL && confidence ≥ 90` → auto-fix
-  - その他 → 報告のみ
-- effort 別 max_iterations で G-V loop（regression 検知 + budget 終了条件）
-- 集約結果を `[auto-fixed]` / `[persisting]` タグ付きで提示
-
-**Required**: `code-review` plugin (`required: true` in `_requirements`)。未インストール環境では Phase 6 が動作しない。
-
-**Example output:**
-```
-Code Review Results (via code-review:self-review):
-
-[auto-fixed] BLOCKER (conf 95) - SQL injection in oauth.ts:67
-[persisting] CRITICAL (conf 88) - Race condition risk in oauth.ts:120 (below auto-fix threshold)
-[reported]   MAJOR (conf 75) - Token refresh logic could be simplified
-
-G-V loop: 2/3 iterations, terminated with success, auto-fixed 1.
-
-What would you like to do?
-```
+- Step 0: code-review プラグインの存在確認。未インストール時は **fail-fast**（Phase 5 までの成果物は維持。`_requirements` では `required: false` 宣言だが Phase 6 では事実上必須）
+- Step 1: 実装 diff を読んで reviewer focus list を refine（mini-triage）
+- Step 2: `Skill code-review:self-review --focus <list> --embed` を 1 回呼ぶ（`--embed` で self-review 終端の AskUserQuestion を skip）。出力は構造化 findings JSON ブロックを優先パース、無ければ markdown フォールバック（dual format）
+- Step 3: Generator-Verifier ループ。`BLOCKER`（any confidence）/ `CRITICAL && confidence ≥ 90` を auto-fix 対象とし、effort 別 max_iterations で fix → 再 review を反復。regression 検知（同一 fingerprint）/ budget で終了
+- Step 4: 集約結果を `[auto-fixed]` / `[persisting]` タグ付きで提示し、残課題はユーザー判断
 
 ### Phase 7: Summary
 
-**Goal**: Document what was accomplished
-
-**What happens:**
-- Marks all todos complete
-- Summarizes:
-  - What was built
-  - Key decisions made
-  - Files modified
-  - Suggested next steps
-
-**Example:**
-```
-Feature Complete: OAuth Authentication
-
-What was built:
-- OAuth provider abstraction supporting Google and GitHub
-- OAuth routes and middleware integrated with existing auth
-- Token refresh and session integration
-- Error handling for all OAuth flows
-
-Key decisions:
-- Used pragmatic approach with OAuthProvider abstraction
-- Integrated with existing session management
-- Added OAuth state to prevent CSRF
-
-Files modified:
-- src/auth/OAuthProvider.ts (new)
-- src/auth/AuthService.ts
-- src/routes/auth.ts
-- src/middleware/authMiddleware.ts
-
-Suggested next steps:
-- Add tests for OAuth flows
-- Add more OAuth providers (Microsoft, Apple)
-- Update documentation
-```
+全 todo を完了にし、成果（作ったもの / 主要な決定 / 変更ファイル / 次の一手）をまとめる。Phase 4.5 で design doc を export した場合は `phase: target → current` 更新を案内する。Phase 6 で G-V ループが走った場合は iteration 数 / termination reason / auto-fixed count / persisting issues を報告する。最後に `.claude/events.jsonl` へ `feature:implemented` イベントを fire-and-forget で追記する。
 
 ## Agents
 
-### `code-explorer`
+### `code-explorer`（model: sonnet）
 
-**Purpose**: Deeply analyzes existing codebase features by tracing execution paths
+既存のコードベース機能を、実行パスを entry point からデータ保存まで追跡し、抽象層・パターン・依存関係をマッピングして分析する。Phase 2 で並列起動される。出力は entry point の file:line 参照、ステップごとの実行フロー、主要コンポーネントの責務、アーキテクチャの知見、読むべき必須ファイルのリスト。
 
-**Focus areas:**
-- Entry points and call chains
-- Data flow and transformations
-- Architecture layers and patterns
-- Dependencies and integrations
-- Implementation details
+### `code-architect`（model: fable）
 
-**When triggered:**
-- Automatically in Phase 2
-- Can be invoked manually when exploring code
+既存パターンを分析し、実装 blueprint を設計する。Phase 4 で起動される。BDD Spec Injection / Issue Context Injection / Vault Knowledge Injection / Hook-First Rule Placement の各セクションを持つ。出力は発見したパターン、アーキテクチャ決定と根拠、コンポーネント設計、実装マップ、データフロー、build sequence、critical details、Runtime Smoke Test Targets（Phase 5.5 が叩く URL / route）。
 
-**Output:**
-- Entry points with file:line references
-- Step-by-step execution flow
-- Key components and responsibilities
-- Architecture insights
-- List of essential files to read
-
-### `code-architect`
-
-**Purpose**: Designs feature architectures and implementation blueprints
-
-**Focus areas:**
-- Codebase pattern analysis
-- Architecture decisions
-- Component design
-- Implementation roadmap
-- Data flow and build sequence
-
-**When triggered:**
-- Automatically in Phase 4
-- Can be invoked manually for architecture design
-
-**Output:**
-- Patterns and conventions found
-- Architecture decision with rationale
-- Complete component design
-- Implementation map with specific files
-- Build sequence with phases
-
-> **Note**: v2.0.0 で `code-reviewer` agent は削除。Phase 6 のレビューは `code-review:self-review` skill に委譲され、2 軸スコアリング × 15 観点 × specialist × meta-reviewer 構造で品質基準が一本化された。詳細は `code-review` plugin の README 参照。
+> v2.0.0 で `code-reviewer` agent は削除。Phase 6 のレビューは `code-review:self-review` skill に委譲され、品質基準が一本化された。詳細は code-review プラグインの README 参照。
 
 ## Usage Patterns
 
-### Full workflow (recommended for new features):
+### フルワークフロー（新機能向け推奨）
+
 ```bash
 /feature-dev Add rate limiting to API endpoints
 ```
 
-Let the workflow guide you through all 7 phases.
+8 phase に沿って進める。
 
-### Manual agent invocation:
+### Agent の手動起動
 
-**Explore a feature:**
-```
-"Launch code-explorer to trace how authentication works"
-```
-
-**Design architecture:**
-```
-"Launch code-architect to design the caching layer"
-```
-
-**Review code:**
-```
-"Run code-review:self-review on my recent changes"
-```
-
-## Best Practices
-
-1. **Use the full workflow for complex features**: The 7 phases ensure thorough planning
-2. **Answer clarifying questions thoughtfully**: Phase 3 prevents future confusion
-3. **Choose architecture deliberately**: Phase 4 gives you options for a reason
-4. **Don't skip code review**: Phase 6 catches issues before they reach production
-5. **Read the suggested files**: Phase 2 identifies key files—read them to understand context
+- コードの追跡: 「code-explorer で認証の動きを追って」
+- 設計: 「code-architect でキャッシュ層を設計して」
+- レビュー: `code-review:self-review` skill を直接呼ぶ
 
 ## When to Use This Plugin
 
-**Use for:**
-- New features that touch multiple files
-- Features requiring architectural decisions
-- Complex integrations with existing code
-- Features where requirements are somewhat unclear
+**使う:**
+- 複数ファイルに触れる新機能
+- アーキテクチャ判断が必要な機能
+- 既存コードとの統合が複雑な機能
+- 要件がやや不明確な機能
 
-**Don't use for:**
-- Single-line bug fixes
-- Trivial changes
-- Well-defined, simple tasks
-- Urgent hotfixes
+**使わない:**
+- 1 行のバグ修正
+- 些細な変更
+- 定義が明確で単純なタスク
+- 緊急のホットフィックス
 
 ## Requirements
 
-- Claude Code installed
-- Git repository (for code review)
-- Project with existing codebase (workflow assumes existing code to learn from)
+- Claude Code
+- Git リポジトリ（品質レビュー・diff 検出に必要）
+- 既存コードベースのあるプロジェクト（探索 phase が既存コードからの学習を前提とする）
 
-## Troubleshooting
+連携プラグイン（いずれも optional。`_requirements` 参照）:
 
-### Agents take too long
-
-**Issue**: Code exploration or architecture agents are slow
-
-**Solution**:
-- This is normal for large codebases
-- Agents run in parallel when possible
-- The thoroughness pays off in better understanding
-
-### Too many clarifying questions
-
-**Issue**: Phase 3 asks too many questions
-
-**Solution**:
-- Be more specific in your initial feature request
-- Provide context about constraints upfront
-- Say "whatever you think is best" if truly no preference
-
-### Architecture options overwhelming
-
-**Issue**: Too many architecture options in Phase 4
-
-**Solution**:
-- Trust the recommendation—it's based on codebase analysis
-- If still unsure, ask for more explanation
-- Pick the pragmatic option when in doubt
-
-## Tips
-
-- **Be specific in your feature request**: More detail = fewer clarifying questions
-- **Trust the process**: Each phase builds on the previous one
-- **Review agent outputs**: Agents provide valuable insights about your codebase
-- **Don't skip phases**: Each phase serves a purpose
-- **Use for learning**: The exploration phase teaches you about your own codebase
+- `code-review`（Phase 6 委譲先。未インストール時は Phase 6 が fail-fast）
+- `bdd-spec`（Phase 1.3 入力契約。未インストール時は skip）
+- `design-doc`（Phase 4.5 export 先。未インストール時は skip）
 
 ## Author
 
@@ -404,7 +197,3 @@ yuki (yuuki1036-claude-plugins)
 ## Origin
 
 claude-plugins-official/feature-dev からフォークした内製版。元著者・元バージョンの情報は `CHANGELOG.md` を参照。
-
-## Version
-
-1.2.0
