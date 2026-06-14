@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.21.1] - 2026-06-15
+
+### Changed
+- README を全 command / skill（ui-verify / worktree-setup / worktree-teardown 含む）構成に同期、Version 行を撤去
+
 ## [1.21.0] - 2026-06-08
 
 ### Added
