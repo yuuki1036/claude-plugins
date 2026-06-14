@@ -28,7 +28,9 @@
 #
 # 出力:
 #   - エラーなし: silent exit 0
-#   - エラーあり: stderr に要修正項目を通知（exit 0、Stop はブロックしない）
+#   - エラーあり: stderr に要修正項目を通知（ユーザー向け）+ stdout に
+#     hookSpecificOutput.additionalContext で Claude にも注入（CC 2.1.163）。
+#     いずれも exit 0 で Stop はブロックしない。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -80,6 +82,7 @@ if command -v claude >/dev/null 2>&1; then
 fi
 
 if [ -n "$ISSUES" ]; then
+  # stderr: ユーザー向け通知（端末に表示）
   {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "⚠️  auto-quality-check: 修正が必要な問題があります"
@@ -88,6 +91,17 @@ if [ -n "$ISSUES" ]; then
     echo ""
     echo "詳細確認は /quality-check を実行してください"
   } >&2
+
+  # stdout: Claude 向けに additionalContext で注入（CC 2.1.163, Stop hook）
+  # Claude がその場で品質問題（SSoT drift / バージョンバンプ忘れ等）を修復できるようにする。
+  # JSON 文字列エスケープは確実なエンコーダ（python3 → jq）に委譲。
+  # どちらも無い環境では additionalContext は出さず stderr 通知のみ（後方互換）。
+  MESSAGE="$(printf "%b" "auto-quality-check が修正の必要な品質問題を検出しました。以下を修正するか /quality-check で詳細を確認してください:\n${ISSUES}")"
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$MESSAGE" | python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":sys.stdin.read()}}))'
+  elif command -v jq >/dev/null 2>&1; then
+    printf '%s' "$MESSAGE" | jq -Rsc '{hookSpecificOutput:{hookEventName:"Stop",additionalContext:.}}'
+  fi
 fi
 
 exit 0
