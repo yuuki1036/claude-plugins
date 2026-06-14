@@ -10,7 +10,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - allowed-tools 一致: command <-> skill ペアの allowed-tools が完全一致か
   - hooks 安全性: hook スクリプトが safe_hook_init を呼んでいるか
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
-  - references 参照整合性: SKILL.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
+  - references 参照整合性: SKILL.md / commands/*.md / agents/*.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
 
 検査項目（warnings = 助言, exit code に影響しない）:
@@ -185,9 +185,18 @@ def check_shared_references_sync(errors: list[str]) -> None:
 
 
 def check_references(plugin_dir: Path, errors: list[str]) -> None:
+    """${CLAUDE_PLUGIN_ROOT}/... の参照切れを検査する.
+
+    対象: skills/*/SKILL.md, commands/*.md, agents/*.md.
+    どのファイル種別でも同一規則（参照パスがプラグイン配下に実在するか）を適用する.
+    """
     name = plugin_dir.name
-    for skill_md in sorted((plugin_dir / "skills").glob("*/SKILL.md")):
-        text = read_text(skill_md)
+    targets: list[Path] = []
+    targets += sorted((plugin_dir / "skills").glob("*/SKILL.md"))
+    targets += sorted((plugin_dir / "commands").glob("*.md"))
+    targets += sorted((plugin_dir / "agents").glob("*.md"))
+    for md in targets:
+        text = read_text(md)
         seen: set[str] = set()
         for m in REF_RE.finditer(text):
             ref = m.group(1).rstrip(".,);")
@@ -198,7 +207,7 @@ def check_references(plugin_dir: Path, errors: list[str]) -> None:
             if not target.exists():
                 errors.append(
                     f"[refs:{name}] missing reference ${{CLAUDE_PLUGIN_ROOT}}{ref} "
-                    f"(in {skill_md.relative_to(ROOT)})"
+                    f"(in {md.relative_to(ROOT)})"
                 )
 
 

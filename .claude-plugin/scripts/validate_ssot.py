@@ -8,6 +8,8 @@ plugin.json を SSoT として、marketplace.json / check-deps.sh / hooks.json �
   2. marketplace.json の plugins[*] と各 plugin.json の name/version/description 一致
   3. plugin.json の _requirements と hooks/scripts/check-deps.sh の登場名一致
   4. source ディレクトリと plugin.json の存在一致
+  5. INDEX.md / CLAUDE.md のプラグイン記載が plugin.json と整合
+     (INDEX.md は一覧表の version 列・記載漏れ・余分行、CLAUDE.md は一覧表への記載漏れ)
 
 Exit code: 0 (pass) / 1 (違反あり) / 2 (実行環境エラー)
 """
@@ -185,6 +187,47 @@ def check_hooks_json(errors: list[str]) -> None:
                         )
 
 
+def check_docs_sync(manifests: dict[str, dict], errors: list[str]) -> None:
+    """INDEX.md / CLAUDE.md のプラグイン記載が plugin.json と整合するか検証する.
+
+    ドキュメントは plugin.json から派生する情報（プラグイン一覧・version）を持つため、
+    marketplace.json と同様に SSoT との同期を機械検証する。実装変更時のドキュメント
+    追従漏れ（新規プラグインの一覧追記忘れ、version 列の陳腐化）を検出する。
+    """
+    plugin_names = set(manifests)
+
+    # INDEX.md: 一覧表 `| [name](#name) | version | ...` の version 列を照合する
+    index_path = ROOT / "INDEX.md"
+    if index_path.exists():
+        text = index_path.read_text(encoding="utf-8")
+        found: dict[str, str] = {}
+        row_re = re.compile(
+            r"^\|\s*\[([a-z][a-z0-9-]*)\]\([^)]*\)\s*\|\s*(\d+\.\d+\.\d+)\s*\|",
+            re.MULTILINE,
+        )
+        for mt in row_re.finditer(text):
+            found[mt.group(1)] = mt.group(2)
+        for name in sorted(plugin_names):
+            if name not in found:
+                errors.append(f"[docs:INDEX.md] plugin missing from 一覧表: {name}")
+            elif found[name] != manifests[name].get("version"):
+                errors.append(
+                    f"[docs:INDEX.md] {name} version mismatch: "
+                    f"INDEX='{found[name]}' plugin.json='{manifests[name].get('version')}'"
+                )
+        for name in sorted(set(found) - plugin_names):
+            errors.append(f"[docs:INDEX.md] 一覧表 lists unknown plugin: {name}")
+
+    # CLAUDE.md: 一覧表セル `| name |` の存在のみ照合する（version 列は持たない）
+    claude_path = ROOT / "CLAUDE.md"
+    if claude_path.exists():
+        text = claude_path.read_text(encoding="utf-8")
+        for name in sorted(plugin_names):
+            cell_re = re.compile(rf"^\|\s*{re.escape(name)}\s*\|", re.MULTILINE)
+            if not cell_re.search(text):
+                errors.append(f"[docs:CLAUDE.md] plugin missing from 一覧表: {name}")
+
+
 def main() -> int:
     errors: list[str] = []
     manifests = collect_plugin_manifests()
@@ -204,6 +247,7 @@ def main() -> int:
     check_marketplace_sync(manifests, errors)
     check_requirements_vs_check_deps(manifests, errors)
     check_hooks_json(errors)
+    check_docs_sync(manifests, errors)
 
     if errors:
         print("SSoT validation failed:", file=sys.stderr)
