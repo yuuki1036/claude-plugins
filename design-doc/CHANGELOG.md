@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2] - 2026-06-15
+
+### Changed
+
+- supersede フローに **実行前の最終確認 (AskUserQuestion)** を追加。旧 doc の id / title / 現 status を提示してから実行し、誤った old-id 指定による別 doc の巻き込みを防ぐ（新規作成フローの既存 doc 検出時の確認とあった非対称を解消）
+
 ## [0.2.1] - 2026-06-11
 
 ### Changed

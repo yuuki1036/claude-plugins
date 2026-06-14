@@ -186,14 +186,21 @@ allowed-tools:
 方式転換時に旧 doc を新 doc で置き換える。「新規作成 + 旧 doc 更新 + 相互参照確認」を機械的に踏ませる（adr-keeper Phase 4 と同じ機構）。
 
 1. **旧 doc 特定**: `.claude/designs/*<old-id>*.md` を Glob。見つからなければ error として中止
-2. **新 doc 作成**（Phase 1〜5 の通常フロー。軽量に済ませてよいが grill の自己解決と実装ブリッジは省略しない）。frontmatter の `supersedes` に `["<old-id>"]` を入れる
-3. **旧 doc を Edit**（4 箇所）:
+2. **最終確認（AskUserQuestion）**: supersede は旧 doc を superseded に落とす後戻りしにくい操作。誤った old-id 指定による別 doc の巻き込みを防ぐため、特定した旧 doc の id / title / 現 status を提示して実行可否を確認する（Phase 1 の既存 doc 検出時の確認と対称にする）:
+   - question: 「design doc <old-id>「<title>」（現 status: <status>）を superseded にして新 doc で置き換えますか？」
+   - header: 「supersede 確認」
+   - options:
+     1. label: 「supersede 実行 (Recommended)」 / description: 「旧 doc を superseded に更新し、新 doc を作成する」
+     2. label: 「中止」 / description: 「何も変更しない（旧 doc はそのまま残す）」
+   - 「中止」が選ばれたら一切変更せず終了する
+3. **新 doc 作成**（Phase 1〜5 の通常フロー。軽量に済ませてよいが grill の自己解決と実装ブリッジは省略しない）。frontmatter の `supersedes` に `["<old-id>"]` を入れる
+4. **旧 doc を Edit**（4 箇所）:
    - `status:` → `superseded`
    - `phase:` → `superseded`
    - `superseded-by:` → `<new-id>`
    - `last-validated:` → 本日（`date +%Y-%m-%d`）
-4. **両方を Read で確認**: 新 doc の `supersedes` と旧 doc の `superseded-by` が相互参照になっていることを検証
-5. 旧 doc は**削除しない**（append-only 原則: 履歴として残し status / phase のみ更新）
+5. **両方を Read で確認**: 新 doc の `supersedes` と旧 doc の `superseded-by` が相互参照になっていることを検証
+6. 旧 doc は**削除しない**（append-only 原則: 履歴として残し status / phase のみ更新）
 
 > 改訂（同一方式のまま詳細化・追記）なら supersede せず既存 doc を Edit して `last-validated` を更新する。境界は `references/naming.md`。
 
