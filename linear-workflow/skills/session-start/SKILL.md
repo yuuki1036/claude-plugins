@@ -261,7 +261,7 @@ Quick Pick モード、親 Issue 軽量サマリーモード、および Issue �
 ---
 shared_state_type: session
 producer: linear-workflow
-consumers: [code-review, feature-dev, dev-workflow]
+consumers: [code-review]
 schema_version: 1
 last_updated: {現在の ISO 8601 タイムスタンプ}
 branch: {現在のブランチ名}

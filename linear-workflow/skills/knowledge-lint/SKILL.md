@@ -1,7 +1,7 @@
 ---
 name: knowledge-lint
 description: >
-  knowledge の健全性を点検・修復する（lint）。検索・参照ではなくグラフの保守が目的。
+  Linear 連携プロジェクトの knowledge の健全性を点検・修復する（lint）。検索・参照ではなくグラフの保守が目的。
   broken wikilink・孤立 / 重複ページ・index 不整合・tags 表記ゆれ・doc 鮮度（stale）・glossary 用語重複を検出し、機械的に直せるものは承認制で修正する。
   トリガー: 「knowledge lint」「ナレッジ点検」「リンク切れチェック」「リンク切れ」「孤立した知見」「knowledge の健全性」「knowledge を整理」「knowledge の鮮度」「stale な知見」「/knowledge-lint」
 effort: medium

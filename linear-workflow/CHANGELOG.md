@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.30.0] - 2026-06-15
+
+### Changed
+- **共通 skill の description に作用範囲を明記（トリガー衝突解消）**。linear-workflow と indie-workflow は排他だが両方インストール可能なため、共通 skill（knowledge / knowledge-lint / issue-design）の description 冒頭に「Linear 連携プロジェクトの」という弁別語を追加し、スキル選択の弁別性を高めた。command 側の同名コマンドの description も command↔skill ペア一致規約に従って揃えた（既存トリガーフレーズは維持）
+- **session shared_state の consumers 宣言を実態に修正**。session-start の `.claude/session-context.md` 雛形 frontmatter の `consumers` を `[code-review, feature-dev, dev-workflow]` から、実際に読み出す実装がある `[code-review]` のみに修正
+- **FileChanged 通知を additionalContext 化**。on-issue-change.sh / on-knowledge-change.sh の FileChanged hook で Claude に届けたい指示を plain stdout（`safe_hook_emit`）から `safe_hook_emit_context "FileChanged" ...`（v2.1.163+ の `hookSpecificOutput.additionalContext`）に置き換え、到達保証を高めた。stderr ログ・`event_bus_publish` は従来どおり維持
+
 ## [1.29.0] - 2026-06-11
 
 ### Added

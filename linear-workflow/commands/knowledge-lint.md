@@ -1,5 +1,5 @@
 ---
-description: "knowledge の健全性をチェックする（broken link / 孤立知見 / index 不整合 / tags 表記ゆれ / 重複概念）"
+description: "Linear 連携プロジェクトの knowledge の健全性をチェックする（broken link / 孤立知見 / index 不整合 / tags 表記ゆれ / 重複概念）"
 allowed-tools:
   - Read
   - Glob

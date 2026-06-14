@@ -20,4 +20,4 @@ if [ -n "$file_path" ] && [ -f "$file_path" ]; then
   fi
 fi
 
-safe_hook_emit "Issue ファイルが外部で変更されました。最新の内容を Read して確認してください。"
+safe_hook_emit_context "FileChanged" "Issue ファイルが外部で変更されました。最新の内容を Read して確認してください。"

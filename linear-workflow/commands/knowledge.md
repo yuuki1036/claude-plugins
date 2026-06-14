@@ -1,5 +1,5 @@
 ---
-description: "プロジェクトの蓄積された知見を検索・参照する（引数なし: 一覧、search kw: 検索、related: 関連表示）"
+description: "Linear 連携プロジェクトの蓄積された知見を検索・参照する（引数なし: 一覧、search kw: 検索、related: 関連表示）"
 allowed-tools:
   - Read
   - Glob
