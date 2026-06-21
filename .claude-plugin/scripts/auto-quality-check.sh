@@ -73,7 +73,10 @@ if command -v claude >/dev/null 2>&1; then
   while IFS= read -r plugin_dir; do
     [ -z "$plugin_dir" ] && continue
     VAL_OUT="$(claude plugin validate "$plugin_dir" 2>&1 || true)"
-    FILTERED="$(echo "$VAL_OUT" | grep -E '^\s*❯' | grep -v 'Unrecognized key: "_requirements"' || true)"
+    # _requirements は SSoT 用の独自フィールド。CLI スキーマ警告は仕様により除外する。
+    # CC のバージョンで警告文言が変わる（旧: 'Unrecognized key: "_requirements"' /
+    # 新: '_requirements: Unknown field ...'）ため、文言ではなく _requirements の有無で除外する。
+    FILTERED="$(echo "$VAL_OUT" | grep -E '^\s*❯' | grep -v '_requirements' || true)"
     if [ -n "$FILTERED" ]; then
       name="$(basename "$plugin_dir")"
       ISSUES="${ISSUES}[schema:${name}] ${FILTERED}\n"
