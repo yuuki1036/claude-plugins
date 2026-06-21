@@ -5,6 +5,13 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.4.0] - 2026-06-21
+
+### Changed
+
+- textlint 未導入時に silent skip せず、skip 前に一度ユーザーへ確認するフローを追加（GitHub Issue #72）: `AskUserQuestion` で「導入する／LLM 判定のみで続行」を提示し、決定的レイヤーが落ちたまま推敲が走ったことに気づけるようにした。導入案内に mise/nvm 環境向けの PATH/shim 注意（`mise reshim`、install 直後も `command -v textlint` が false なら shim 未解決を疑う）を併記
+- 確認の煩わしさ対策として退路を 3 つ用意: embed モード（`--embed`）は終端 prompt を出さない原則を優先して silent フォールバック、環境変数 `WRITING_POLISH_SKIP_LINTER_PROMPT` で恒久 opt-out、同一セッションで「LLM のみで続行」を選んだら再確認しない。SKILL.md Step 2.5 と `references/linter-integration.md`（「未導入時の確認フロー」節）、plugin.json の `_requirements` 説明を更新
+
 ## [0.3.1] - 2026-06-10
 
 ### Changed

@@ -27,7 +27,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.4 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.7 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.7.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
-| [writing-polish](#writing-polish) | 0.3.1 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
+| [writing-polish](#writing-polish) | 0.4.0 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
 排他関係: `indie-workflow` と `linear-workflow` は同系統（ローカル / Linear）で排他利用想定。
 

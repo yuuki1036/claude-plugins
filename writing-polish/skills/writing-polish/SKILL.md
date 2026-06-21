@@ -66,8 +66,14 @@ printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
   --format json
 ```
 
-- **未導入なら skip** して LLM 判定のみで続行する（fail させない）。
-- 詳細手順と `ruleId` → カテゴリのマッピング表は `${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/linter-integration.md` を参照する。
+- **未導入なら**、silent に skip せず一度だけユーザーへ確認する（通知なしに決定的レイヤーが落ちたまま推敲が走るのを防ぐ）。`AskUserQuestion` で「導入する」／「LLM 判定のみで続行」を提示し、導入コマンドと mise/nvm 環境向けの PATH/shim 注意を併記する。
+  - 「導入する」→ 導入コマンドと注意を案内する。今回の推敲は LLM フォールバックで続行し（install 完了はブロックして待たない）、次回実行から決定的チェックが効く。
+  - 「LLM 判定のみで続行」→ skip して LLM 判定のみで続行する（fail させない）。
+- 以下のいずれかでは確認を出さず即 skip する（退路確保）:
+  - **embed モード（`--embed`）**: 終端 prompt を出さない原則を優先し、silent に LLM フォールバックする（採否は呼び出し元が集約するため）。
+  - 環境変数 `WRITING_POLISH_SKIP_LINTER_PROMPT` が設定されている（「毎回聞かれるのは煩わしい」向けの恒久 opt-out）。
+  - 同一セッションで既に「LLM のみで続行」を選んでいる（セッション内は再確認しない）。
+- 確認フローの詳細・導入コマンド・mise/nvm 注意、`ruleId` → カテゴリのマッピング表は `${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/linter-integration.md` を参照する。
 - linter 指摘も**最小差分・採否フロー・over-correction 抑制**に乗せる。機械判定でも文脈で不要なら採用しない。
 - 拡張余地: 現在は textlint（日本語）。他 linter は `linter-integration.md` の手順で追加可能。
 
