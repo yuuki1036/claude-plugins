@@ -5,6 +5,17 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.5.0] - 2026-06-22
+
+### Added
+
+- 提示・採否 UX の正本 `references/presentation-guide.md` を新設（tone-guide が「何を直すか」、presentation-guide が「どう見せて採否させるか」の SSOT として責務分離）。人間が採否しやすい提示を規定: 冒頭サマリ行（件数・カテゴリ内訳・字数/最長文インパクト）、確信度ラベル `[確実]`/`[任意]` の 2 群分離、意味が動きうる修正の `[要確認]` フラグ、理由を内部語彙でなく読み手目線の効能で書く規約、「あえて直さなかった箇所」の保全明示、リスク昇順の採否選択肢、冪等到達の可視化、連続変更のインライン囲み `〔原文 → 修正〕`。設計原則「提示は軽く、情報は厚く」で行頭マーカーを 2 軸（確信度＋要確認）に制限し、出自(textlint)・測定値・想定読者・認知効果は理由文に溶かしてマーカー乱立を防ぐ
+
+### Changed
+
+- tone-guide: 文書種別表に「想定読者」列を追加（理由文の主語に使う根拠）、「適用の優先順位」に確信度（確実/任意）の判定軸を SSOT 化、カテゴリ 2 に誤読シナリオの言語化、カテゴリ 5/7 に認知効果ラベル運用（concreteness effect 等）、アンチパターン 2 の保全を「提示でも明示」に拡張
+- SKILL.md のステップ 3（差分提示）・ステップ 4（採否フロー）・embed 返却・effort 連動を presentation-guide 参照に更新。`references/linter-integration.md` に textlint 由来指摘の出自を理由文へ非対称表記で残す節を追加
+
 ## [0.4.0] - 2026-06-21
 
 ### Changed

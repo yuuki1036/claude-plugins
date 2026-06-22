@@ -12,7 +12,7 @@ allowed-tools:
 
 対象: $ARGUMENTS
 
-校正手順とルールは `writing-polish` skill（`skills/writing-polish/SKILL.md` と `references/tone-guide.md`）に従う。
+校正手順とルールは `writing-polish` skill に従う（`skills/writing-polish/SKILL.md`、校正ルールの正本は `references/tone-guide.md`、提示・採否 UX の正本は `references/presentation-guide.md`）。
 
 - 引数がテキストならそれを、ファイルパスなら読み込んだ内容を、省略なら直近の自分の生成テキストを対象にする。
 - `--embed` 指定時は採否確認を出さず推敲結果のみ返す（他プラグインからの呼び出し用）。

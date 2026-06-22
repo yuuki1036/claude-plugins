@@ -14,6 +14,8 @@
 
 すべて**最小差分の diff 提示 → 採否フロー**で返す。全文を勝手に書き換えない。
 
+提示は人間が採否しやすいよう設計している: 冒頭に件数・字数インパクトのサマリ行、各修正に `[確実]`/`[任意]` の確信度ラベル（意味が動きうる修正は `[要確認]`）、理由は内部語彙でなく読み手目線の効能で記述、「あえて直さなかった箇所」を明示して過剰修正していないことを示す。記法の正本は `skills/writing-polish/references/presentation-guide.md`。
+
 ## 使い方
 
 ```
@@ -41,7 +43,9 @@
 
 ## 校正ルールの正本
 
-`skills/writing-polish/references/tone-guide.md` が校正ルールの SSOT。textlint の `preset-ja-technical-writing` / `preset-japanese` / `preset-ai-writing` / `preset-JTF-style` と Vale の 11 チェックタイプ、Google / Microsoft style guide を統合したカテゴリ分類を持つ。
+`skills/writing-polish/references/tone-guide.md` が校正ルール（何を直すか）の SSOT。textlint の `preset-ja-technical-writing` / `preset-japanese` / `preset-ai-writing` / `preset-JTF-style` と Vale の 11 チェックタイプ、Google / Microsoft style guide を統合したカテゴリ分類を持つ。
+
+`skills/writing-polish/references/presentation-guide.md` が提示・採否 UX（どう見せて採否させるか）の SSOT。確信度ラベル・サマリ行・保全明示・採否選択肢の記法を規定し、「提示は軽く、情報は厚く」を設計原則とする。
 
 ## 他プラグインとの連携（soft 委譲）
 
