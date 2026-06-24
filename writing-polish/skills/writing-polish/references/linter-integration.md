@@ -45,6 +45,35 @@ printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
 
 同梱 config は `references/textlintrc.json`。preset 本体・ルールはユーザーの textlint global install 側に存在する前提で、この config を `--config` で指して使う。
 
+### ルール解決失敗の検出（導入済みだがルールパッケージ欠落）
+
+`command -v textlint` は通るが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が global install されていないと、textlint はルール解決に失敗し、JSON を返さず stderr にエラーを出して終了する。黙ってフォールバックすると決定的チェックが落ちたことに気づけないので、検出して一度だけ警告する（「未導入時の確認フロー」と同じ思想で、textlint 本体はあるがルールが欠けるケースをカバーする）。
+
+判定は **stdout が valid JSON かどうか**で分岐する（exit code は lint 指摘ありでも非 0 になるため単独では使えない）。
+
+```bash
+err=$(mktemp)
+out=$(printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
+  --config "${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/textlintrc.json" \
+  --format json 2>"$err")
+if printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' >/dev/null 2>&1; then
+  :  # 正常: $out を「出力の読み方」に従ってマップする
+elif grep -qiE 'could not find|failed to load|cannot find module' "$err"; then
+  :  # ルールパッケージ未解決 → 下記の警告を出して LLM フォールバック
+fi
+rm -f "$err"
+```
+
+未解決時の警告（一度だけ出し、その後は LLM フォールバックで続行する。fail させない）:
+
+> textlint は導入済みですが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が未解決です。決定的チェックの一部が効いていません。`npm i -g @textlint-ja/textlint-rule-preset-ai-writing` で導入してください（mise 環境は install 後に `mise reshim`）。今回は LLM 判定で続行します。
+
+警告を出さず silent フォールバックする退路（「未導入時の確認フロー」と共通）:
+
+- embed モード（`--embed`）
+- 環境変数 `WRITING_POLISH_SKIP_LINTER_PROMPT` が設定済み
+- 同一セッションで既にこの警告を出した（セッション内は再警告しない）
+
 ### 出力の読み方
 
 出力は JSON。形は次のとおり。
@@ -66,6 +95,12 @@ printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
 | `no-doubled-joshi` | カテゴリ 1〜2（読みにくさ） |
 | `no-mix-dearu-desumasu` | 文体メタルール |
 | `ja-no-redundant-expression` | カテゴリ 1（冗長構文「〜を行う→する」） |
+| `no-ai-list-formatting` | カテゴリ 4（AIっぽさ・装飾絵文字/機械的リスト） |
+| `no-ai-emphasis-patterns` | カテゴリ 4（AIっぽさ・過剰強調） |
+| `no-ai-hype-expressions` | カテゴリ 4（AIっぽさ・hype 表現） |
+| `ai-tech-writing-guideline` | カテゴリ 1/5（冗長・態・明瞭・一貫性） |
+
+> `@textlint-ja/preset-ai-writing`（5 ルール）は装飾絵文字・リスト項目の機械的な太字+区切り・過剰強調・hype を決定的に拾う。tone-guide カテゴリ 4 の記号 tell のうち機械化できる分をここに委譲し、LLM は preset が拾えない情感ダッシュ「──」連発・中黒「・」3 項並列の density 判断に集中する。文中の `──`・`A・B・C` まで決定的に拾いたい場合は prh ルール（辞書同梱）で将来拡張できる（現状は LLM 判定）。表の ruleId は preset プレフィックス（`@textlint-ja/preset-ai-writing/`）を省いた表記。
 
 ### 重要: 機械判定を盲従しない
 
@@ -78,7 +113,7 @@ textlint が決定的に拾った指摘は、提示の理由文に「textlint �
 ### 導入方法
 
 ```bash
-npm i -g textlint textlint-rule-preset-ja-technical-writing textlint-rule-ja-no-redundant-expression
+npm i -g textlint textlint-rule-preset-ja-technical-writing textlint-rule-ja-no-redundant-expression @textlint-ja/textlint-rule-preset-ai-writing
 ```
 
 **mise / nvm 等で node を管理している環境への注意**: global install 後も `command -v textlint` が false のままになることがある。これは shim/PATH の解決が済んでいないため。

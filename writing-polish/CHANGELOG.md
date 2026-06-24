@@ -5,6 +5,19 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.6.0] - 2026-06-24
+
+### Added
+
+- tone-guide カテゴリ 5（用語と正確性）に **行為主体を消す無生物主語（false agency）** の検出を追加。「データが示す」「設計が物語る」のように主張・意志を伴う動詞の主語が無生物で、誰の主張か（出典・責任）が消える AI 生成 tell を、能動/受動の態とは別軸（主語の意味カテゴリ）で判定する。慣用化した擬人表現・一人称を省く文書種別（PR description 等）では保全し、固定対訳にはしない（外部スキル stop-ai-slop-jp の False agency 観点を既存設計言語に翻訳して取り込み）
+- tone-guide カテゴリ 2（曖昧さの除去）に **反証不能な締め** の検出を追加。「重要だ」「本質的だ」で文・段落を閉じ後続に具体・固有名・数値が続かない＝反証できない主張を、曖昧「語」から曖昧「主張」へ一段上げて拾う。原文に無い立場は注入せず「主張がぼやけている」と指摘 or 削る案に留める over-correction ガード付き
+- textlint `@textlint-ja/preset-ai-writing` を同梱 config（`references/textlintrc.json`）で有効化。装飾絵文字・リスト項目の機械的な太字+区切り・過剰強調・hype 表現を決定的に拾い、tone-guide カテゴリ 4 が出典に挙げていたが config 未設定だった不整合を解消。`_requirements` の導入コマンドと `linter-integration.md` の ruleId 対応表・導入手順を同期
+- **ルール解決失敗の検出**を追加（`references/linter-integration.md`「ルール解決失敗の検出」, SKILL.md Step 2.5）。textlint 本体は導入済みでも config が参照するルールパッケージ（preset-ai-writing 等）が未解決だと textlint は JSON を返さず落ちるため、stdout が valid JSON でなく stderr にルール解決エラーが出たケースを検出し、欠落パッケージの導入コマンドを一度警告して LLM フォールバックする（embed / `WRITING_POLISH_SKIP_LINTER_PROMPT` / セッション内既出は silent）
+
+### Changed
+
+- tone-guide カテゴリ 4（AIっぽさ）に **情感記号の濫用**（全角ダッシュ「──」多用・心情語の「」囲み・中黒 3 項並列）を LLM 観点として追加。preset-ai-writing で決定的に拾える分は委譲境界へ明記し、preset が拾えない `──`/中黒の density 判断は LLM が担う棲み分けを明文化
+
 ## [0.5.0] - 2026-06-22
 
 ### Added

@@ -8,6 +8,7 @@
       "no-doubled-joshi": { "min_interval": 1 },
       "no-mix-dearu-desumasu": true
     },
-    "ja-no-redundant-expression": true
+    "ja-no-redundant-expression": true,
+    "@textlint-ja/preset-ai-writing": true
   }
 }
