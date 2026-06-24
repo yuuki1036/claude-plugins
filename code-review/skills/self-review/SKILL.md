@@ -252,6 +252,27 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 
 **スキップ条件**: `--focus` / `--exclude` 指定時は意図的にスコープを絞り込んでいるため、その範囲外の観点漏れは missing_coverage に記録するのみで追加起動はしない。
 
+### 4.8 反証レイヤー（adversarial verification / 動的）
+
+観点カバレッジ self-check の後・スコアリングの前に、reviewer の指摘を独立エージェントが反証する。偽陽性を先回りして摘出するフェーズ（`${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` `## 9 反証レイヤー`）。meta-reviewer (4.6) が見落とし（false negative）を足す係なのに対し、本フェーズは偽陽性を独立に潰す鏡像。
+
+**スキップ条件**（いずれか満たせばスキップして Step 5 へ）:
+- userConfig `enable_adversarial_verify` が `false`
+- 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
+- `--focus` / `--exclude` でスコープを絞り込んでいる（既検証の再評価を避ける）
+- 反証対象（triage-guide.md `## 9` のゲート）に合致する指摘が 0 件
+
+**実行する場合**:
+
+1. triage-guide.md `## 9 反証レイヤー` の選定ルールで対象指摘を選ぶ（high: 非対称ゾーン BLOCKER 60-94 / CRITICAL 80-94、xhigh/max: 報告ゾーン全体 + MAJOR）。**specialist 由来の指摘は全 effort で除外**
+2. 対象指摘ごとに `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` `## 7 Adversarial-verify テンプレート` で反証エージェントを `model: opus`, `effort: max` で並列起動する（`isolation: "worktree"` は使用しない＝未コミット変更を含むため）
+   - 指摘の主張（severity / confidence / file:line / 内容）のみ渡し、**reviewer の理由文は渡さない**（アンカリング防止）
+   - `pre-existing` / `intended` 鮮度の git 判定（`git show <base>:<file>` / `git blame`）を反証エージェントに許可する
+3. 各 verdict（refuted / confirmed / uncertain / severity-inflated）を収集し、Step 5 のスコアリングに渡す
+4. レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 6 で出力）
+
+**失敗時**: 反証エージェントが失敗した指摘は verdict なし（= 反証スキップ）として元の confidence / severity のまま続行する（best-effort）
+
 ### 5. スコアリングとフィルタリング（2軸: confidence × severity）
 
 全 reviewer の指摘を統合し、`${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` を Read で読み込んでスコアリングを実施する。
@@ -259,9 +280,13 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 1. **各指摘の base confidence と severity を取得**
    - reviewer 出力の `[confidence: XX]` と `[severity: BLOCKER|CRITICAL|MAJOR|MINOR]` をパース
    - severity が欠落している指摘は **CRITICAL とみなす**（後方互換 / 安全側デフォルト）
-2. **confidence への加算・減算ルールを適用**して 0-100 にクランプ
-3. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（self-review では PR タグは通常出ない）
-4. **報告マトリクスでフィルタ**:
+2. **反証 verdict の反映**（Phase 4.8 が動いた場合のみ。scoring-guide.md `## 反証レイヤーの verdict 反映` に従う）
+   - **BLOCKER / CRITICAL の `refuted` は confidence / severity を据え置き**、指摘本文先頭に `⚠️ 反証メモ: <軸>（<根拠 file:line>、要確認）` を付与（**報告から消さない**）
+   - **MAJOR / MINOR の `refuted`** は confidence −40（取り下げ理由を付録に記録）、`confirmed` は既存「複数エージェント +15」の発火源（二重計上しない）、`uncertain` は −10
+   - verdict が無い指摘（対象外・反証失敗）は no-op
+3. **confidence への加算・減算ルールを適用**して 0-100 にクランプ
+4. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（self-review では PR タグは通常出ない。反証 `severity-inflated` もこのルールに統合し二重降格しない）
+5. **報告マトリクスでフィルタ**:
 
    | severity \ confidence | <60 | 60-79 | 80-94 | 95+ |
    |---|:---:|:---:|:---:|:---:|
@@ -270,7 +295,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
    | MAJOR | skip | skip | skip | 報告 |
    | MINOR | skip | skip | skip | 報告 |
 
-5. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外
+6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外
 
 ### 6. レポート出力
 
@@ -282,8 +307,9 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 **総合判定**: {Approve | Approve with nits | Needs work}（scoring-guide.md「レビュー結論（総合判定）」の表に従う。コミット前ゲートとして「このままコミットしてよいか」の指針）
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
-**動的ラウンド**: Round 2 探索 N 体起動 / Meta-reviewer {実行 | スキップ理由}
+**動的ラウンド**: Round 2 探索 N 体起動 / Meta-reviewer {実行 | スキップ理由} / 反証 {対象 N 件 | スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
+**反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{反証スキップ時はこの行を省略}
 
 ### 🚨 BLOCKER 指摘
 
@@ -305,6 +331,13 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 - reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
 - explorer-<focus>: timeout → 依存していた reviewer-<focus> には探索結果なしで実行
 
+### 🔁 反証で取り下げた指摘（参考・人間が覆せる）
+{反証レイヤーが MAJOR/MINOR を refuted で取り下げた場合のみ。0 件なら省略}
+- [取り下げ前: confidence XX / severity MAJOR] xxx の指摘
+  ファイル: path/to/file:行番号
+  取り下げ理由: <軸>（反証根拠 file:line）
+  ※ 反証が誤りと思えばこの指摘は有効。再評価してよい
+
 ### 総括
 - 変更の概要
 - コミット前に修正すべき項目（特に BLOCKER）
@@ -320,7 +353,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
   SAFE_HOOK_NAME="code-review:self-review" event_bus_publish "review:completed" \
-  "{\"pr\":\"local\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>}}"
+  "{\"pr\":\"local\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>}}"
 ```
 
 payload 規約（review skill と同一。subscriber が publisher を区別せず集計できるよう揃える）:
@@ -328,6 +361,7 @@ payload 規約（review skill と同一。subscriber が publisher を区別せ�
 - `blocker_count` / `critical_count` / `major_count` / `minor_count`: severity 別件数（Step 6 報告マトリクス通過後）
 - `missing_coverage`: 欠損観点の focus 名配列（空なら `[]`）
 - `result_grid`: `high`=BLOCKER+CRITICAL / `medium`=MAJOR / `low`=MINOR / `skip`=severity フィルタ除外件数 / `error`=Agent 失敗数（`missing_coverage` の length と一致）
+- `adversarial_verify`: 反証レイヤー（Phase 4.8）の verdict 集計（`confirmed` / `refuted` / `uncertain` / `contested`=高 severity の係争件数）。反証スキップ時は全 0。**review skill と同一フィールド名**（subscriber が publisher を区別せず偽却下率を集計できるよう揃える）
 - 失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を `code-review:self-review` に上書きして publisher を識別する
 
 ### 6.5. 構造化 findings JSON（embed mode のみ）
@@ -380,6 +414,7 @@ payload 規約（review skill と同一。subscriber が publisher を区別せ�
 | `missing_coverage` | string[] | yes | 欠損観点（空配列可） |
 
 - **findings は Step 6 で報告された指摘と 1:1**（報告マトリクスで skip されたものは含めない）。`id` は Step 6 のレポート連番に一致させる
+- **反証レイヤー（Phase 4.8）の効果は `severity` / `confidence` に反映済み**（Step 5 で verdict 反映を適用してから報告するため、JSON には最終値が入る）。`refuted` で取り下げた MAJOR/MINOR は findings に含まれない。**係争中の BLOCKER/CRITICAL は通常通り findings に残り、`title` または `impact` に `⚠️ 反証メモ:` を含める**（schema_version は据え置き 1。新フィールドは追加しない＝consumer 後方互換）
 - JSON として valid であること（末尾カンマ禁止、ダブルクオート、改行は文字列内で `\n`）
 - このブロックの**後**に `[embed-mode: findings-only, no-prompt]` marker を置く
 

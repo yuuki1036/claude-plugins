@@ -291,3 +291,44 @@ Phase 0 が明確な判断を下せない場合のデフォルト構成:
 - `enable_meta_reviewer: false` → Phase 5.6 を強制スキップ
 
 両方デフォルト true。トークンコスト・レイテンシが気になる場合は false にする。
+
+## 9. 反証レイヤー（Phase 5.8 / 4.8 / 動的）
+
+reviewer の指摘を独立エージェントが反証し、偽陽性の prominence を下げるフェーズ。**観点カバレッジ self-check の後・scoring の前**に挿入する（review=Phase 5.8 / self-review=Phase 4.8）。meta-reviewer が「見落とし（false negative）」を足す係なのに対し、反証レイヤーは「偽陽性（false positive）を独立に潰す」鏡像の係。
+
+### 対象指摘の選定（非対称ゾーン優先 + specialist 除外）
+
+「詰めると取り下がる」のは **不確実だが報告される非対称ゾーン**。そこを狙い撃ちして既定パスのコストを抑える。
+
+| effort | 反証対象（報告マトリクス通過見込みの指摘のうち） | 反証体数 |
+|---|---|---|
+| low / medium | スキップ | 0 |
+| high（既定） | 非対称ゾーンのみ: BLOCKER 60-94 / CRITICAL 80-94 | 指摘ごと 1 体 |
+| xhigh / max | 上記 + BLOCKER/CRITICAL 95+ + MAJOR | 指摘ごと 1 体 |
+
+**除外（全 effort 共通）**:
+
+- **specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**。これらは「断定できなくても BLOCKER + 低 confidence で人間判断を促す」前提（`## 5 Specialist テンプレート` / reviewer-prompts.md）であり、誤反証で人間の警戒度を下げる代償が非対称に大きい
+- 95+ の高確証指摘は high では対象外（取り下がりにくい層）
+
+### 動作
+
+1. 上表のゲートで対象指摘を選ぶ
+2. 対象指摘ごとに反証エージェント（reviewer-prompts.md `## 7 Adversarial-verify テンプレート`）を `model: opus`, `effort: max` で起動。指摘の主張のみ渡し reviewer 推論は渡さない
+3. `pre-existing` / `intended` の鮮度は LLM 前に `git show <base>:<file>` / `git blame` で機械判定
+4. verdict を scoring（scoring-guide.md `## 反証レイヤーの verdict 反映`）に渡す。**高 severity は消さず注記**、MAJOR/MINOR のみ取り下げ可（理由は付録に記録）
+5. 初版は 1 指摘 1 体（パネルは将来拡張）
+
+### effort 適応（5.5/5.6 とは別ゲート）
+
+| effort | 反証レイヤー |
+|---|---|
+| low / medium | スキップ |
+| high (default) | 非対称ゾーンのみ起動 |
+| xhigh / max | 報告ゾーン全体 + MAJOR まで起動 |
+
+> adaptive(5.5) は high で起動・meta-reviewer(5.6) は xhigh+ のみ。反証レイヤーは「非対称ゾーンを high から狙う」独自ゲートで、5.6 とは起動条件が異なる。
+
+### userConfig による無効化
+
+- `enable_adversarial_verify: false` → 反証レイヤーを強制スキップ（デフォルト true）。誤却下が多い・コストを抑えたい場合に false

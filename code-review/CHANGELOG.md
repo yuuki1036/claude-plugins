@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.26.0] - 2026-06-23
+
+### Added
+- **反証レイヤー（adversarial verification / Phase 5.8 / self-review Phase 4.8）**。reviewer が出した指摘を、それを形成していない独立エージェントが報告前に反証する工程を追加。観点カバレッジ self-check の後・スコアリングの前に挿入。meta-reviewer（見落とし＝false negative を足す係）の鏡像で、偽陽性（false positive）を独立に潰す。人間が「これ本当？」と詰めて取り下がる指摘を先回りして摘出する
+  - **対象選定（triage-guide.md `## 9`）**: 「詰めると取り下がる」非対称ゾーン（BLOCKER 60-94 / CRITICAL 80-94）を high 既定で狙い撃ち、xhigh/max で報告ゾーン全体 + MAJOR に拡大。**security specialist 由来（injection / secret-handling / destructive-op / input-validation / guardrail-bypass）は全 effort で対象外**（誤反証で人間の警戒度を下げる代償が非対称）
+  - **反証エージェント（reviewer-prompts.md `## 7`）**: reviewer の推論を渡さず（アンカリング防止）コードを独立に読み直す。両方向に file:line 証拠を要求し、「たぶん大丈夫 / おそらく問題」は uncertain 止まり。反証軸は独立性が効くもの（unreachable / pre-validated / misread / pre-existing / intended）に限定し、既存自己検算（invariant 検算 / `[unverified]` クランプ）と重複する軸は再利用。`pre-existing` / `intended` 鮮度は LLM 前に `git show <base>` / `git blame` で機械判定
+  - **verdict→scoring 統合（scoring-guide.md `## 反証レイヤーの verdict 反映`）**: 適用順序の冒頭で機械適用。**高 severity（BLOCKER/CRITICAL）の `refuted` は confidence/severity を据え置き本文に `⚠️ 反証メモ:` を付すのみ＝報告から消さない**（false-negative の構造的防止をプロンプトでなく手順で保証）。MAJOR/MINOR の `refuted` のみ confidence −40 で取り下げ（理由をレポート付録に記録、人間が覆せる）。`confirmed` は既存「複数エージェント +15」の発火源として扱い二重計上を排他。`severity-inflated` は既存 severity 調整ルールに統合し二重降格しない
+  - **計測**: `review:completed` payload に `adversarial_verify`（confirmed / refuted / uncertain / contested 件数）を review / self-review 両 publisher で追加。後から偽却下率を計測して verdict→delta を調整
+  - **userConfig `enable_adversarial_verify`**（デフォルト true、effort high 以上で動作）。`enable_meta_reviewer` と同型運用で無効化可能
+  - レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」サマリ行と「🔁 反証で取り下げた指摘」付録を追加。embed JSON は schema_version 据え置き（反証効果は severity/confidence に反映済み、係争指摘は `title`/`impact` に反証メモ）
+
 ## [2.25.1] - 2026-06-15
 
 ### Changed

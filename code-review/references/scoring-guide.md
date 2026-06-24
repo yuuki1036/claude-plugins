@@ -93,7 +93,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 ### 加算
 
 - CLAUDE.md に明示的に記載あり: **+20**
-- 複数エージェントが同一指摘を検出: **+15**
+- 複数エージェントが同一指摘を検出: **+15**（反証レイヤーの `confirmed` verdict もこの発火源として扱う。同時成立でも +15 は一度だけ＝二重計上しない）
 - git blame で過去に同様の修正あり: **+15**
 - **指摘冒頭に `[re-flag: @<既指摘者>]` タグあり**（review skill のみ、PR 行単位 review comment で既指摘 かつ diff で未修正）: **+15**
 - セキュリティ関連: **+10**
@@ -134,11 +134,12 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 ### 適用順序
 
 1. reviewer が付与した base confidence を取得
-2. 上記の加算・減算をすべて適用（独立に加算、最後に合算）
-3. **未検証クランプ**: `[unverified: ...]` タグ付きの指摘は confidence を `min(値, 75)` に制限
-4. **好みベース上限クランプ**: 根拠が個人的好みのみの指摘は confidence を `min(値, 40)` に制限（両クランプ該当時はこちらが優先）
-5. 0-100 にクランプ
-6. severity と組み合わせて報告マトリクスでフィルタ
+2. **反証 verdict の反映**（反証レイヤー = Phase 5.8/4.8 が動いた場合のみ。下記「反証レイヤーの verdict 反映」を参照）。**高 severity の `refuted` はここで delta を適用せず注記のみ付与**して以降に進む。verdict が無い指摘は no-op
+3. 上記の加算・減算をすべて適用（独立に加算、最後に合算）
+4. **未検証クランプ**: `[unverified: ...]` タグ付きの指摘は confidence を `min(値, 75)` に制限
+5. **好みベース上限クランプ**: 根拠が個人的好みのみの指摘は confidence を `min(値, 40)` に制限（両クランプ該当時はこちらが優先）
+6. 0-100 にクランプ
+7. severity と組み合わせて報告マトリクスでフィルタ
 
 ---
 
@@ -152,6 +153,34 @@ severity は基本的に reviewer の判定を尊重するが、以下の場合�
 - それ以外: reviewer の判定をそのまま使用
 
 severity の頻繁な上書きは reviewer のキャリブレーションを崩すため、原則として最小限の調整に留める。
+
+---
+
+## 反証レイヤーの verdict 反映（Phase 5.8 / 4.8）
+
+反証レイヤー（review=Phase 5.8 / self-review=Phase 4.8）が動いた場合、対象指摘には独立反証エージェントの **verdict** が付く。Step 6 オーケストレーターは適用順序の冒頭（手順 2）でこれを **機械適用** する（reviewer 判断は介入させない）。**プロンプトではなくこの手順で「高 severity を消さない」を構造的に保証する**のが本機構の核。
+
+### verdict → 操作の対応
+
+| verdict | severity | 操作 |
+|---|---|---|
+| `refuted`（file:line 反証根拠あり） | **BLOCKER / CRITICAL** | **delta を適用しない。** 指摘本文の先頭に `⚠️ 反証メモ: <軸>（<根拠 file:line>、要確認）` を付与（= 係争中）。confidence / severity は据え置き → 報告マトリクス境界を跨がない |
+| `refuted`（file:line 反証根拠あり） | **MAJOR / MINOR** | confidence **−40**（実質マトリクス外）。ただし **取り下げ理由を必ず付録に記録**（誤却下を人間が覆せる経路を残す。理由には軸名と反証 file:line を含める） |
+| `confirmed`（独立にパス再現） | 全 severity | 既存「複数エージェント同一指摘 +15」の **発火源として扱う**。反証 confirm と複数エージェント検出が同時成立しても **+15 は一度だけ**（二重計上の排他） |
+| `uncertain`（具体根拠なし） | 全 severity | confidence **−10** + 本文に `（反証: 未確定）` を付記。**単独では何も落とせない**（怠惰な却下で本物を殺さないため） |
+| `severity-inflated`（影響過大の根拠あり） | 全 severity | **既存「severity 調整ルール（軽微）」の一項目として** severity を 1 段階下げる。退行 invariant 検算で既に下げている場合は二重適用しない（既存の排他条件を流用） |
+
+### 不変条件（機械保証）
+
+- **高 severity（BLOCKER / CRITICAL）の指摘は反証レイヤーで報告から消えない。** refuted でも confidence/severity を据え置き、本文に反証メモを付すのみ。最終判断は人間に残す（false-negative の構造的防止）
+- **security specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**（triage-guide.md `## 9` のゲートで除外）。万一 verdict が付いても confidence / severity は据え置き、反証メモも付さない（誤反証の代償が非対称に大きい）
+- 係争メモは `[...]` タグ語彙を増やさず本文の `⚠️ 反証メモ:` で表す（reviewer 自己申告タグ `[scope:out]` 等はオーケストレーターでなく reviewer が付与する系統。producer を記法で区別する）
+- verdict が付いていない指摘（反証レイヤー未起動・対象外・反証失敗）は本ステップを no-op として素通りする（後方互換）
+
+### パネル運用時の集計（max effort で 1 指摘を複数体反証する場合・将来拡張）
+
+- `refuted` 成立は **過半数かつ全員が file:line 反証根拠を提示** した時のみ。票割れ・棄権（uncertain 混在）は uncertain 扱いとし delta を合算しない
+- 初版は全 effort で 1 指摘 1 体運用（パネルは event bus 計測後に拡張判断）
 
 ---
 
