@@ -52,7 +52,8 @@ check_plugin() {
 check_mcp "linear" "true" "Linear MCP サーバー"
 check_plugin "feature-dev" "false" "feature-dev プラグイン"
 check_plugin "bdd-spec" "false" "bdd-spec プラグイン（issue-design bilayer モード）"
-check_plugin "design-doc" "false" "design-doc プラグイン（issue-design の design doc 昇格）"
+check_plugin "design-doc" "false" "design-doc プラグイン（issue-design の design doc 昇格 / issue-create の spec 選択）"
+check_plugin "adr-keeper" "false" "adr-keeper プラグイン（issue-create の spec 選択で ADR 記録）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then

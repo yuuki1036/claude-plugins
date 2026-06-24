@@ -1,13 +1,14 @@
 {
   "name": "indie-workflow",
-  "version": "1.31.0",
+  "version": "1.32.0",
   "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
   "author": {
     "name": "yuki"
   },
   "_requirements": [
     { "name": "feature-dev", "type": "plugin", "required": false, "description": "feature-dev プラグイン（実装計画策定に使用）" },
-    { "name": "bdd-spec", "type": "plugin", "required": false, "description": "bdd-spec プラグイン（issue-design の bilayer モードで spec.md 生成に使用。未インストール時は単一ファイル設計に dormant）" },
-    { "name": "design-doc", "type": "plugin", "required": false, "description": "design-doc プラグイン（issue-design でタスク単位を超えた open を design doc に昇格。未インストール時は Issue 内 grill に dormant）" }
+    { "name": "bdd-spec", "type": "plugin", "required": false, "description": "bdd-spec プラグイン（issue-design の bilayer / indie-issue-create の spec 選択で spec.md 生成に使用。未インストール時は dormant）" },
+    { "name": "design-doc", "type": "plugin", "required": false, "description": "design-doc プラグイン（issue-design の design doc 昇格 / indie-issue-create の spec 選択で使用。未インストール時は dormant）" },
+    { "name": "adr-keeper", "type": "plugin", "required": false, "description": "adr-keeper プラグイン（indie-issue-create の spec 選択で単一の設計判断を ADR 記録。未インストール時は spec 選択肢から除外）" }
   ]
 }

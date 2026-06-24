@@ -11,6 +11,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - Skill
   - AskUserQuestion
 ---
 
@@ -185,3 +186,45 @@ Issue の内容が確定した段階で、既存の knowledge を検索する。
    - 調査の開始（investigation の場合）
    - 修正の着手（bugfix の場合）
    - 対応方針の検討（debt の場合）
+
+### Phase 8: spec 選択（着手前の仕様化ルーティング）
+
+実装に入る前に「どの仕様 (spec) を先に書くか」を判定する。仕様系プラグイン（bdd-spec / design-doc / adr-keeper）が 1 つも入っていなければ完全に skip（dormant・後方互換 100%）。feature-dev に引き継ぐ場合（Phase 7 で「はい」）は WHAT/HOW を feature-dev が内部 Phase で生成するため、この Phase には実質到達しない（自分で実装する経路でのみ働く）。
+
+1. **dormant 判定**（check-deps.sh / issue-design Phase 0.5 と同方式）:
+   ```bash
+   SPEC_BDD=0; SPEC_DD=0; SPEC_ADR=0
+   grep -q '"bdd-spec@'   "$HOME/.claude/settings.json" 2>/dev/null && SPEC_BDD=1
+   grep -q '"design-doc@' "$HOME/.claude/settings.json" 2>/dev/null && SPEC_DD=1
+   grep -q '"adr-keeper@' "$HOME/.claude/settings.json" 2>/dev/null && SPEC_ADR=1
+   ```
+   - 3 つとも 0（いずれの spec プラグインも未導入）→ 本 Phase を skip
+
+2. **自動推奨（判定表）**: type と Issue の性質から推奨を 1 つ決める。WHAT / HOW / WHY は排他ではない（大きめの feature は bdd-spec で WHAT を固めてから design-doc で HOW、のように併用してよい）。推奨が未導入の spec を指す場合（例: design-doc 推奨だが `SPEC_DD=0`）は導入済みの次点か「不要」にフォールバックする。
+
+   | シグナル | 推奨 | 軸 / 出力先 |
+   |---|---|---|
+   | ユーザー可視な振る舞い・受け入れ条件が中心（新機能・仕様変更） | **bdd-spec** | WHAT — Scenario/Examples を `features/` に |
+   | 技術方式の選定・代替案比較・複数 Issue/コンポーネントに波及 | **design-doc** | HOW — トレードオフ比較を `.claude/designs/` に永続化 |
+   | 単一の重要な設計判断（ライブラリ・方針）を理由ごと残す | **adr-keeper** | WHY — 決定を `.claude/adr/` に append-only |
+   | 影響範囲が限定的な修正・typo・設定変更（bugfix） | **不要** | 仕様化コストが見合わない → 直接実装 |
+   | 原因調査・分析（investigation） | **不要**（結論で方針が決まれば adr） | 調査は Issue 本文で十分 |
+   | 技術的負債の解消（debt） | **不要**（移行方式が大きいなら design-doc） | 小さな改善は直接着手、大きな移行は HOW を design-doc に |
+
+3. **提示（自動推奨 → 低確信時のみ質問）**:
+   - **確信度が高い**（bugfix / debt → 不要、明確な新機能 → bdd-spec 等）: 推奨と根拠を 1 文で示してそのまま進む（「不要」なら何も起動しない）
+   - **迷う**: **AskUserQuestion** で確認する（**導入済みの spec のみ** option 化、推奨を先頭に `(推奨)`、「不要」を必ず含める）:
+     - question: 「着手前に仕様を書きますか？{推奨} を推奨します（{根拠1行}）」
+     - header: "spec 選択"
+     - options（導入済みのもののみ提示。例）:
+       1. label: "bdd-spec (推奨)" / description: "振る舞い仕様 (WHAT) を Scenario で先に固める"
+       2. label: "design-doc" / description: "技術設計 (HOW)・代替案比較を永続化"
+       3. label: "adr-keeper" / description: "単一の設計判断 (WHY) を記録"
+       4. label: "不要" / description: "仕様化せず直接実装に入る"
+
+4. **委譲（dormant・失敗時 fallback）**: 選択された spec skill を `Skill` tool で起動する:
+   - bdd-spec → `bdd-spec:create-spec`（Issue から role/want/why を渡せれば非対話 API、不足なら通常起動）
+   - design-doc → `design-doc:design-doc`（new モードで代替案比較を grill）
+   - adr-keeper → `adr-keeper:adr`（new モード。export 非対話 API は無いので通常起動。生成された ADR パスを Issue の「参考資料」に記録）
+   - 「不要」→ 起動せず完了
+   - fallback: 起動失敗時は warning を出し、Issue ファイルのまま完了する（spec 化は任意機能・フローを止めない）

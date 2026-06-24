@@ -5,6 +5,8 @@ allowed-tools:
   - Read
   - Write
   - Glob
+  - Bash
+  - Skill
   - AskUserQuestion
 argument-hint: "[ISSUE-ID]"
 ---

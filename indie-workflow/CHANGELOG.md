@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.32.0] - 2026-06-24
+
+### Added
+- **indie-issue-create に spec 選択フェーズ（仕様化ルーティング）を追加（Phase 8・opt-in）**。Issue 作成・ブランチ作成後、実装着手前に「どの仕様を先に書くか」を type と Issue の性質から自動推奨し、確信度が高ければ根拠 1 文で進み、迷うときだけ AskUserQuestion で確認する（自動推奨 → 低確信時のみ手動）。WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / 不要 の 4 択（debt は「不要 or 移行が大きいなら design-doc」）で、**導入済みの spec プラグインのみ選択肢化**し、選択を `Skill` tool で委譲する。仕様系プラグインが 1 つも無ければ完全に skip（dormant・後方互換 100%）、feature-dev 引き継ぎ経路は WHAT/HOW を feature-dev が内部生成するため到達しない。dormant 判定・`(Recommended)`・fallback は issue-design Phase 0.5 と同じパターン。indie-start Phase F7 に着手時の spec 案内（案内のみ）を追記
+- `indie-issue-create` の allowed-tools に `Skill` を追加（command 側も同期）。`_requirements` / `check-deps.sh` に adr-keeper（required: false）を追加し、bdd-spec / design-doc の用途記述に indie-issue-create spec 選択を追記
+
 ## [1.31.0] - 2026-06-15
 
 ### Added
