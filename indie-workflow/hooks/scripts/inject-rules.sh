@@ -9,6 +9,12 @@ if [ ! -d ".claude/indie" ]; then
   safe_hook_error NotFound ".claude/indie directory missing"
 fi
 
+# 排他チェック: linear-workflow も有効ならトリガー衝突を警告（settings.json を読むだけ／プラグイン依存なし）
+if grep -q '"linear-workflow@' "$HOME/.claude/settings.json" 2>/dev/null; then
+  echo "⚠️ **プラグイン排他警告**: indie-workflow と linear-workflow が同時に有効です。同名スキル（作業開始 / 知見 / プロジェクト整理 等）のトリガーが衝突しスキル選択が不安定になります。どちらか一方を無効化してください（ローカル管理=indie / Linear 連携=linear）。"
+  echo ""
+fi
+
 # ルール注入
 RULES_DIR="${CLAUDE_PLUGIN_ROOT}/rules"
 if [ -f "${RULES_DIR}/project-rules.md" ]; then

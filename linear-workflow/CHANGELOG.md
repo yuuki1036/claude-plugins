@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.31.2] - 2026-06-25
+
+### Added
+- `hooks/scripts/inject-rules.sh`（SessionStart/PostCompact）に indie-workflow 共存検知を追加。両プラグインが同時に有効な場合、同名スキル（作業開始 / 知見 / プロジェクト整理 等）のトリガー衝突を警告する（settings.json を読むだけでプラグイン間依存はなし。排他運用を機械的にリマインド）
+
 ## [1.31.1] - 2026-06-25
 
 ### Fixed
