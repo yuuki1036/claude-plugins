@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.27.0] - 2026-06-24
+
+### Added
+- **doc-substance 観点（ドキュメント内容妥当性）**。review 系スキルが docs を含む PR を整合性（リンク / 構造 / コード片安全性）だけでレビューし、書かれた内容の本質的な妥当性を見ていなかった問題に対応。`comment-accuracy` の「主張⇔コード一致」を doc ファイル本文へ一般化した観点を追加（`reviewer-prompts.md` `## 3` Focus テンプレート）
+  - **検出対象**: ground-truth 正確性（主張がコードと食い違う、code:line 裏取り）/ 規範の正しさ（規約 doc の指示で動かない・既存ルールと矛盾）/ 論理的健全性（自己矛盾）/ 有用性（曖昧・hand-wavy）/ 意味の陳腐化（リンク切れでなく内容の陳腐化）。表現・語句・トーンは対象外（writing-polish の責務）
+  - **重要度ゲート（triage-guide.md）**: 起動を「変更ファイル数比率」でなく **doc の意味的重要度**で判定。`doc-review-mode`（`*.md` ≥ 80%）に doc-substance を追加し整合性のみから「整合性 + 内容妥当性」へ。混在 PR（`*.md` < 80%）は観点判定表に `doc-substance` 行を追加（高価値 doc パス〔CLAUDE.md / AGENTS.md / CONTRIBUTING / README / .claude/adr / .claude/designs〕の prose 変更 OR 実質 prose ≥10 行）。ファイル数では小さいが意味的に重要な doc（ADR 1 件 / CLAUDE.md 1 行）の取りこぼしを防ぐ
+  - **effort 別起動制御**: low=skip / medium=高価値 doc のみ / high+=全面（反証レイヤーが効かない effort では起動自体を抑制し偽陽性の素通りを防ぐ）
+  - **grounding**: 専用 explorer を必須化せず既存の条件付き起動に乗せ、読み取り対象を **diff 変更 doc が参照するコード ∩ リポジトリ実在パス**に限定（信頼できない doc 本文に任意パスを選ばせない）
+  - **scoring（scoring-guide.md）**: 裏取り報酬は新規 +15 を作らず既存「explorer 裏付け +10」に統合。根拠なしの論理 / 有用性指摘は既存 ≤40 クランプで除外（doc-substance の MAJOR は既定 effort で反証対象外のためクランプが主たる抑制機構）。裏取りできた内容誤りは CRITICAL 昇格、ただし `git blame` で doc 変更とコード変更の前後関係を検算しコードが doc より古い場合は昇格しない（doc 先取り・コード未追従での誤昇格と高 severity 非削除不変条件への直撃を防ぐ）
+  - **反証レイヤー統合**: doc-substance の裏取り CRITICAL は既存 Phase 5.8/4.8 の反証対象に自動的に含まれる（specialist でないため）。反証軸に doc 向け読み替え（misread / pre-validated / intended / pre-existing は git blame でコードと doc のどちらが現在の正かを判定）を追加
+  - **dormant 連携**: 決定系 doc（ADR / design doc）は `design-doc` 導入時のみ design-review の minimal / risk チェックリストを内挿（settings.json grep 判定、未導入時は内製代替、スキル間呼び出し非依存）。境界は doc-freshness（frontmatter / link）/ writing-polish（語句）/ doc-substance（本文の主張）で機械的に分離
+
 ## [2.26.0] - 2026-06-23
 
 ### Added

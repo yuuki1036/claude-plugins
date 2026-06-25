@@ -37,7 +37,7 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 
 | シグナル（Phase 0 観測） | モード | 推奨 agent 構成 |
 |---|---|---|
-| `*.md` 比率 ≥ 80% | `doc-review-mode` | リンク健全性 / SQL・コード片の安全性 / 構造整合性に絞った 1〜2 reviewer。bug-detection の最小保証は **doc 文脈に読み替え** （リンク切れ・誤情報を bug 相当として扱う） |
+| `*.md` 比率 ≥ 80% | `doc-review-mode` | **整合性 reviewer**（リンク健全性 / SQL・コード片の安全性 / 構造整合性）は必須。さらに **doc-substance reviewer**（内容妥当性）を下記「doc-substance の起動（重要度ゲート）」の条件を満たす場合のみ追加（typo・整形だけの doc PR には付けない）。1〜2 体。bug-detection の最小保証は **doc 文脈に読み替え** （リンク切れ・誤情報を bug 相当として扱う） |
 | SQL migration ファイル含む（`*/migrations/*.sql`, `prisma/migrations/`, `db/migrate/` 等） | `dba-mode` | migration reviewer 必須 + specialist-destructive-op。idempotency / lock 影響 / rollback 可能性 / 既存データへの影響に特化 |
 | lockfile（`package-lock.json` / `yarn.lock` / `pnpm-lock.yaml` / `Cargo.lock` / `Gemfile.lock` / `poetry.lock` 等）主体（ロックファイルが全変更行数の 70% 以上） | `supply-chain-mode` | dependency reviewer 1 体に絞る。diff の CVE 観点 / 追加された未知パッケージ / postinstall 危険性に集中、ロック内部のハッシュ差分は読まない |
 | Vendor / generated code 主体（`vendor/`, `node_modules/`, `*.pb.go`, `*.gen.ts`, `dist/`, `build/`, OpenAPI/GraphQL 自動生成ファイル等が 80% 以上） | `skip-mode` | レビューを基本スキップ。AskUserQuestion で「生成物のため通常レビュー対象外。続行しますか？」を確認し、`spec-compliance` のみ起動して仕様整合性のみ検証 |
@@ -53,6 +53,7 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 ### 適用モード
 - mode: doc-review-mode
 - 理由: 変更ファイル 12 件中 11 件が `*.md`（91.7%）
+- 起動観点: 整合性（リンク/構造/コード片安全性）+ doc-substance（内容妥当性）
 - スキャフォールドの一部スキップ: bug-detection / claude-md-compliance の最小保証は doc 文脈に読み替え
 ```
 
@@ -113,6 +114,34 @@ diff パターンマッチで各観点の必要性を判定する。
 | pattern-consistency | 変更ファイル数 >= 10 |
 | spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する |
 | ui-quality | フロントエンド変更（`.tsx`/`.jsx`/`.vue`/`.svelte`/`components/`/`pages/`/`app/`）、または diff に `aria-`/`role=`/`<img`/`<button`/`tabindex`/`onClick`/`onKeyDown` 等のアクセシビリティ・インタラクション関連の変更がある |
+| doc-substance | **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む、**または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）。混在 PR（`*.md` < 80%）で doc 内容が無観点で素通りするのを防ぐ。詳細・effort 制御は下記「doc-substance の起動（重要度ゲート）」 |
+
+### doc-substance の起動（重要度ゲート）
+
+doc の内容妥当性（主張のコード整合・論理・規範・有用性・意味の陳腐化）を見る `doc-substance` 観点は、**変更ファイル数比率ではなく doc の意味的重要度**で起動する。ファイル数では小さいが意味的に重要な doc（CLAUDE.md 1 行 / ADR 1 件）を取りこぼさないため。
+
+**起動条件（経路によらず共通）**: 次のいずれかを満たすとき起動する。満たさない doc 変更（typo 修正・整形・frontmatter のみ・link-only）には付けない。
+- **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む
+- **または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）
+
+この条件を 2 つの起動経路の両方に適用する:
+
+1. **doc-review-mode 経路**（`*.md` ≥ 80%）: 整合性 reviewer は必須。doc-substance は上記条件を満たす場合のみ追加（typo・整形だけの doc PR では整合性 reviewer のみ）
+2. **混在 PR 経路**（`*.md` < 80%、default-mode）: 上の観点判定表の `doc-substance` 行（条件は上記と同一）で起動
+
+**effort 別の起動制御**（反証レイヤーが効かない effort では偽陽性が素通りするため、起動自体を絞る）:
+
+| 実行時 effort = `${CLAUDE_EFFORT}` | doc-substance 起動 |
+|---|---|
+| `low` | skip（反証も効かないため抑制） |
+| `medium` | 高価値 doc パスを含む PR のみ |
+| `high`（既定）/ `xhigh` / `max` | 重要度ゲート全面 |
+
+**grounding（裏取り）**: 「主張がコードと食い違う」を検証するため対象コードを読む。専用 explorer は必須化せず、既存の explorer 条件付き起動判定（本節「explorer の必要性判定」）に乗せ、対象コードが大きい / 分散する場合のみ起動する。単一ファイルの主張は reviewer 自身の Read で裏取りする（small PR フォールバック 0 体と非衝突）。explorer が読む対象は **diff で変更された doc が参照するコード ∩ リポジトリ実在パス**に限定し、doc 本文（＝レビュー対象＝信頼できない入力）の任意パス記述を鵜呑みにしない。
+
+**design-review への soft 委譲（dormant）**: 決定系 doc（`.claude/adr/**` / `.claude/designs/**`）は `design-doc` プラグイン導入時のみ、doc-substance プロンプトに design-review の minimal / risk チェックリストを内挿して借りる。判定は `grep -q '"design-doc@' "$HOME/.claude/settings.json"`。未導入なら doc-substance が内製で代替する（スキル間呼び出しには依存しない）。
+
+**境界**: frontmatter / link の鮮度は `doc-freshness`、語句・トーンは `writing-polish`、doc 本文の主張の真偽・論理は doc-substance。表現の好みは reviewer が自己削除せず低 confidence で申告し、scoring の ≤40 クランプが機械的に除外する（scoring-guide.md）。
 
 ### React/Next.js 判定
 

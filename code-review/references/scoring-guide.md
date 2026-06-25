@@ -98,7 +98,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - **指摘冒頭に `[re-flag: @<既指摘者>]` タグあり**（review skill のみ、PR 行単位 review comment で既指摘 かつ diff で未修正）: **+15**
 - セキュリティ関連: **+10**
 - 同一観点の冗長ペアが合意（独立した視点からの裏付け）: **+10**
-- explorer の発見と一致する指摘（探索結果で裏付けあり）: **+10**
+- explorer の発見と一致する指摘（探索結果で裏付けあり）: **+10**（doc-substance の「主張がコードと食い違う」指摘を grounding explorer / reviewer が code:line で裏取りした場合もこの発火源。doc-substance 専用の新規加点は作らない）
 - reviewer-security の CRITICAL/BLOCKER 判定: **+10**
 - reviewer-migration のデータ損失判定: **+10**
 
@@ -122,6 +122,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - 目的: LLM レビュー最大の弱点である「根拠なき好みベースの偽陽性」を機械的に刈り取る（Google eng-practices "The Standard": 技術的事実とデータは意見・個人的好みに優先する）
 - 同等に有効な代替実装が複数あり、純粋に好みが割れるだけのケースは著者の選択を尊重し、このクランプを適用する
 - 規約違反・実害の証拠を伴う指摘はクランプ対象外（通常のスコアリングを行う）
+- **doc-substance の主観抑制もこのクランプで行う**: doc の論理 / 有用性指摘で根拠（code:line または内部矛盾の doc:line ×2）を示せないものは「表現の好み」とみなしてクランプする。doc-substance の MAJOR は既定 effort で反証レイヤー対象外（triage-guide.md `## 9` のゲートは BLOCKER 60-94 / CRITICAL 80-94 限定）のため、このクランプが MAJOR ノイズの主たる抑制機構になる
 
 ### 上限クランプ: 未検証の外部状態主張（claim grounding / GitHub issue #71）
 
@@ -150,6 +151,11 @@ severity は基本的に reviewer の判定を尊重するが、以下の場合�
 - **タグ `[scope:out]` または `[resolved: ...]` が付いた指摘**: severity を 1 段階下げる（BLOCKER → CRITICAL、CRITICAL → MAJOR、MAJOR → MINOR、MINOR → そのまま）
 - **退行指摘で invariant が incidental と検算された場合**（reviewer-prompts.md「退行指摘の invariant 検算」: 隣接経路で同 invariant が未強制と確認）: severity を 1 段階下げる。reviewer が検算済みで既に下げている場合は二重適用しない（指摘理由の「incidental と判断」記載で判別）
 - **複数 reviewer が同一指摘を BLOCKER と判定**: severity を BLOCKER のまま維持（混乱を防ぐ）
+- **doc-substance の裏取り済み内容誤りの CRITICAL 昇格（grounding ガード付き）**: doc の主張とコードが code:line で矛盾し裏取りできた指摘は CRITICAL に昇格する。**ただし昇格は、矛盾の相手が「doc が実際に参照する・実在する・現行の」コード経路である場合に限る**。次のいずれかでは昇格させず MAJOR に留める / 取り下げる:
+  - (a) 矛盾の相手が doc の参照しない別経路や stale なパス（grounding 誤読。例: doc は `src/api` を指すのに未参照の `src/legacy` と突き合わせている）
+  - (b) この PR が当該参照先コードを doc と整合する形で**同時変更済み**（`git blame` で doc 行と当該コード行が同一 PR の同時変更＝実矛盾なし。見かけの矛盾は (a) の別経路由来）
+  - (c) doc が当該挙動を「将来 / 計画中 / 既知の制約」と明示（intended）
+  - **コードが doc より古いこと自体は昇格を妨げない**（安定した既存コードに対する doc の誤記は正当な CRITICAL 内容誤り。新しい doc 変更が古い安定コードと矛盾するのは典型的な「doc が間違っている」ケース）。昇格後は「高 severity 非削除」不変条件で反証 refuted でも残るため、入口で (a)-(c) を絞る
 - それ以外: reviewer の判定をそのまま使用
 
 severity の頻繁な上書きは reviewer のキャリブレーションを崩すため、原則として最小限の調整に留める。

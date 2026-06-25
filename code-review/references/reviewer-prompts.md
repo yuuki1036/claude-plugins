@@ -385,6 +385,37 @@ CLAUDE.md に明示的に記載のあるルール違反は confidence >= 80。
 - MINOR: 古い参照・冗長コメント・自明な what コメント
 ```
 
+### doc-substance（ドキュメント内容妥当性分析）
+
+`comment-accuracy` の「主張⇔コード一致」を **doc ファイル本文**へ一般化した観点。doc を「テキスト」ではなく「現実への主張の束」として検証する。起動条件・effort 制御・grounding 制限は triage-guide.md `### doc-substance の起動（重要度ゲート）` を参照。
+
+```
+## 観点: ドキュメント内容妥当性分析
+
+対象は doc ファイル本文（README / API doc / CLAUDE.md / AGENTS.md / ADR / design doc / 手順書 / 解説）。
+レビューするのは「内容が正しいか・筋が通っているか・有用か」であって、表現・言い回し・冗長性ではない。
+
+検出対象:
+- ground-truth 正確性: doc の技術的主張が実コードと食い違う（code:line で矛盾を提示できるもの）
+- 規範の正しさ: 規約 doc の指示通りで動かない / 既存ルールと直接矛盾（別 doc:line で提示できるもの）
+- 論理的健全性: 自己矛盾・非論理（内部矛盾の出典を doc:line ×2 で提示できるもの）
+- 有用性: 曖昧・hand-wavy・行動に移せない記述
+- 意味の陳腐化: 内容がコード現状と食い違う（リンク切れではなく主張の陳腐化）
+
+**裏取り必須**: 「主張がコードと食い違う」指摘は対象コードを Read して code:line を提示する
+（grounding explorer の探索結果がある場合はそれを使う）。提示できない指摘は根拠なしとして
+低 confidence で申告する（Step 6 で ≤40 クランプされ実質除外される）。
+
+**自己削除はしない**: 「これは writing-polish/doc-freshness の領分」と自分で観点を落とさない
+（reviewer-prompts.md 冒頭の自己交渉禁止原則）。表現の好みは「報告しない」のではなく
+「根拠なし＝低 confidence」として申告し、機械的なクランプに除外を委ねる。
+
+**severity 目安**（2 軸）:
+- CRITICAL: 裏取りできた内容誤り（doc の主張 vs コードが code:line で矛盾。Step 6 で git blame ガード後に昇格）
+- MAJOR: 裏取りできない論理破綻・規範の誤り・有用性の重大欠落（根拠の出典は示せる）
+- MINOR: 軽微な有用性・曖昧さ
+```
+
 ### test-quality（テスト品質分析）
 
 現行 #7 から移行。
@@ -929,6 +960,12 @@ reviewer が出した **特定の 1 指摘** を、それを形成していな�
    - pre-existing: base に元から存在し、この diff で導入されていない。`git show <base>:<file>` や `git blame <file>` で確認。**ただし diff が周辺の前提を変えて潜在問題を顕在化させた場合は pre-existing としない**
    - intended: コメント / テスト / spec が意図的だと示す。**その根拠コメント/テストが当該 diff で touch されているか、`git blame` で diff より新しいかを確認**（diff より古い stale コメントを額面通り信じない）
 3. 逆に、指摘を **裏付ける** 証拠（問題が新規導入で再現する経路）が見つかったら confirmed とする。裏付けにも file:line とパス再現が必須
+
+**doc-substance 指摘の反証（対象が「doc の主張 vs コードが矛盾」の場合）**: 軸はそのまま読み替える。
+- misread: reviewer が doc の主張範囲を読み違えている（doc は条件付き / 別文脈と断っている）
+- pre-validated: 別 doc / コードで主張が正しく補足されている
+- intended: doc が「将来 / 簡略化 / 既知の制約」と明示している
+- pre-existing: **`git blame` で当該コードが doc 変更より新しい**＝doc が古いのでなくコードが先行（doc 側が陳腐）、または矛盾が base から既存。コードと doc のどちらが「現在の正」かを git の前後関係で判定する（コードを無条件に唯一の真実としない）
 
 ### verdict（必ず 1 つ）
 - `refuted`: 上記いずれかの軸で **file:line の具体反証根拠** を提示できた場合のみ。軸名と根拠を明記
