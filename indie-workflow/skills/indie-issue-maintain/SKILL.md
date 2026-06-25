@@ -42,9 +42,9 @@ allowed-tools:
    [ -f .claude/events.jsonl ] && tail -n 100 .claude/events.jsonl \
      | grep -E '"event":"(commit:created|review:completed)"' || true
    ```
-3. 各イベントの payload（`issue_id` / `pr` / commit hash / file path 等）を対象 Issue と照合:
-   - `commit:created` … 対象 Issue 関連の commit があるのに「変更ファイル」「更新履歴」へ未記載 → 反映候補として提示
-   - `review:completed` … 対象 Issue のレビュー完了が更新履歴に未記録 → レビューガードの「レビュー済み」記録候補として提示（本文キーワード検出を補完する第二のシグナル源）
+3. 各イベントの payload を現在の Issue（ブランチ/セッションから特定済み）と突き合わせる。**payload に `issue_id` は含まれない**ため、payload の識別子から関連性を導出する:
+   - `commit:created`（payload: `sha` / `type` / `files`〔件数〕）… `sha` が現在の Issue ブランチに含まれるか git で確認（例: `git branch --contains <sha>`、または現ブランチの `git log` に該当）。含まれ、かつ「変更ファイル」「更新履歴」へ未記載なら反映候補として提示
+   - `review:completed`（payload: `pr` / 件数）… `pr`（PR 番号文字列、ローカルは `"local"`）が現在の Issue のブランチ/PR と一致するか照合。一致し、かつレビュー完了が更新履歴に未記録なら「レビュー済み」記録候補として提示（本文キーワード検出を補完する第二のシグナル源）
 4. dedup: 更新履歴に既に該当 PR / commit / レビューが記録済みのイベントは再提示しない（Event Bus 規約の subscriber 責務）。payload に冪等性キーが無い場合は `ts` + event 名で重複排除する
 5. 取り込んだシグナルは整理計画（処理フロー Step 10）に統合して提示する
 
@@ -288,7 +288,7 @@ Issue 起票後、実装せずに即クローズされた Issue を検出し、�
 
 **検出時の処理**:
 1. 本文に「結論」「スコープ外」「備考」セクションが揃っているか確認
-2. 不足セクションがあれば、`references/feature.md` の「即クローズケースの書き方」の構造での補完をユーザーに提案
+2. 不足セクションがあれば、`${CLAUDE_SKILL_DIR}/../indie-issue-create/references/feature.md` の「即クローズケースの書き方」の構造での補完をユーザーに提案
 3. キャンセル理由が `projects doc` の備考に記録されているか確認（無ければ記録を促す）
 
 即クローズは `canceled` ではなく `completed` のまま残す運用（なぜクローズしたかの経緯を残すため）。

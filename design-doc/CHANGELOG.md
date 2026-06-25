@@ -1,5 +1,12 @@
 # Changelog
 
+形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
+
+## [0.2.3] - 2026-06-25
+
+### Changed
+- CHANGELOG.md 冒頭に Keep a Changelog 宣言行を追加（他プラグインと形式統一）
+
 ## [0.2.2] - 2026-06-15
 
 ### Changed

@@ -39,7 +39,9 @@ for issue_file in .claude/indie/*/issues/*.md; do
   [ "$status" = "in-progress" ] || continue
   last=$(head -20 "$issue_file" | grep -m1 '^last_active:' | sed 's/last_active: *//')
   [ -n "$last" ] || continue
-  days_ago=$(( ($(date +%s) - $(date -j -f "%Y-%m-%d" "$last" +%s 2>/dev/null || echo 0)) / 86400 ))
+  last_epoch=$(date -j -f "%Y-%m-%d" "$last" +%s 2>/dev/null || date -d "$last" +%s 2>/dev/null || echo 0)
+  [ "$last_epoch" -eq 0 ] && continue  # パース不能な last_active は stale 判定をスキップ（Linux/macOS 両対応・誤検知防止）
+  days_ago=$(( ($(date +%s) - last_epoch) / 86400 ))
   if [ "$days_ago" -ge 7 ]; then
     id=$(head -20 "$issue_file" | grep -m1 '^id:' | sed 's/id: *//')
     echo "- **${id}**: ${days_ago}日間未更新"

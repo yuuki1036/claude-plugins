@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.31.1] - 2026-06-25
+
+### Fixed
+- `issue-maintain` の Event Bus subscriber 手順が payload に存在しない `issue_id` / `file path` 前提で書かれていたのを、実 payload（`commit:created`=sha/type/files、`review:completed`=pr）から関連性を導出する記述に修正
+- `init` のトリガーフレーズ「セットアップ」「init」が claude-code-setup / worktree-setup / 組込 `/init` と語幹衝突していたのを Linear 領域語で限定
+- `issue-design` の bdd-spec 委譲キャプションの version 直書き（v0.1.0）を撤去
+
+### Notes
+- トリガーフレーズ変更のため `evals/runner.py` での回帰確認を推奨
+
 ## [1.31.0] - 2026-06-24
 
 ### Added

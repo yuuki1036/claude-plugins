@@ -94,7 +94,7 @@ fi
 
 ユーザーが「生成する」を選んだら `Skill` tool で `bdd-spec:create-spec` を呼ぶ。
 
-**非対話 API（bdd-spec v0.1.0 で安定化）に従い引数で値を渡す**:
+**非対話 API（bdd-spec の安定保証セクション参照）に従い引数で値を渡す**:
 
 - `role=<discovery で得た role>`
 - `want=<discovery で得た want>`
@@ -385,7 +385,7 @@ Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2
    - options:
      1. label: "永続化する (Recommended)" / description: "採用案 + 代替案比較を .claude/designs/ に export（後続開発の参照元・実装後の as-built 記録になる）"
      2. label: "skip" / description: "doc 化せず実装に進む（architect 出力はセッション限り）"
-3. 「永続化する」選択時、`Skill` tool で `design-doc:design-doc` を **export 非対話 API**（design-doc v0.1.0 で安定化）で呼ぶ:
+3. 「永続化する」選択時、`Skill` tool で `design-doc:design-doc` を **export 非対話 API**（design-doc の export API 安定保証セクション参照）で呼ぶ:
    - `mode=export` / `title=<feature の要約タイトル>` / `content=<採用案 blueprint + 全 architect 案のトレードオフ比較 + Phase 3 grill で確定した前提>`
    - `spec=<BDD_SPEC_PATH>`（Phase 1.3 で設定済みなら）/ `issue=<Issue ファイルパス>`（Phase 1.5 で検出済みなら）
    - 引数が全て埋まっていれば design-doc 側は AskUserQuestion を発火しない（非対話実行）

@@ -75,7 +75,7 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
      2. label: 「従来通り」/ description: 「9 セクション単一ファイルのみ。spec.md は生成しない」
    - 「従来通り」選択 → dormant（Phase 1 へ）
 3. 「bilayer」を選んだ場合、Phase 1〜4 で 9 セクション本文（human 正本）を設計・反映したうえで、**AI 層を生成**する:
-   - `Skill` tool で `bdd-spec:create-spec` を呼ぶ。非対話 API（bdd-spec v0.1.0 で安定化）に従い引数で渡す:
+   - `Skill` tool で `bdd-spec:create-spec` を呼ぶ。非対話 API（bdd-spec の安定保証セクション参照）に従い引数で渡す:
      - `role=<Issue から得た役割>` / `want=<実現したいこと>` / `why=<背景、不明なら省略>` / `shortPath=<true/false 省略可>`
    - 引数で全要素が埋まっていれば bdd-spec 側は AskUserQuestion を発火せず非対話実行する
    - 生成された `spec.md` のパスを Issue 本文の「成果物」または「参考資料」にファイルリンクで記録する（human 層 → AI 層のポインタ）

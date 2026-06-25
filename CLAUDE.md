@@ -224,7 +224,7 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 |---|---|---|---|---|
 | `session` | `.claude/session-context.md` | linear-workflow / indie-workflow | code-review / feature-dev / dev-workflow | セッション単位（gitignored） |
 | `follow-up` | `.claude/{linear\|indie}/{slug}/follow-ups/*.md` | linear-workflow / indie-workflow | dashboard / issue-maintain | 永続（committed） |
-| `knowledge` | `.claude/{linear\|indie}/{slug}/knowledge/**/*.md` | linear-workflow / indie-workflow | knowledge / knowledge-lint / session-start (related mode) | 永続（committed） |
+| `knowledge` | `.claude/{linear\|indie}/{slug}/knowledge/**/*.md` | linear-workflow / indie-workflow | knowledge / knowledge-lint / session-start (related mode) | 永続（committed）。knowledge は共通契約フィールドではなくドメイン固有 frontmatter（kind/status/verified/updated/tags）で代替し、consumer 側も契約フィールド（shared_state_type 等）を読まない |
 | `event-cache` | （予約。events.jsonl の集計結果キャッシュ用） | - | - | - |
 
 ### Producer の責務

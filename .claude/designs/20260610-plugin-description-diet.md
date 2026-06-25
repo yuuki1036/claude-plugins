@@ -1,4 +1,20 @@
+---
+id: 20260610-plugin-description-diet
+title: plugin description のダイエットと再発防止
+status: approved
+phase: target
+last-validated: 2026-06-25
+supersedes: []
+superseded-by: null
+issue: null
+spec: null
+adrs: []
+tags: [plugin-description, ssot, quality-check, hook]
+---
+
 # 設計: plugin description のダイエットと再発防止
+
+> 2026-06-25 リポジトリ root 直置きの孤立メモ（`design-description-diet.md`）を `.claude/designs/` 配下へ移管し design-doc frontmatter を付与（doc-freshness 管理下に入れるため）。実装は未着手（phase: target）。なお code-review は doc-substance 観点追加（2.27.0）で description がさらに伸びており、本設計の必要性は増している。
 
 - 作成日: 2026-06-10
 - ステータス: 設計確定（実装未着手）
@@ -13,7 +29,7 @@ description は `plugin.json` と `.claude-plugin/marketplace.json` の **2 箇�
 ## 2. 現状診断（2026-06-10 計測）
 
 ```
-915字  code-review     ← 突出（リリースノート状態）
+915字  code-review     ← 突出（リリースノート状態。2.27.0 でさらに増）
 481字  writing-polish  ┐
 434字  feature-dev     ├ 長い（要ダイエット）
 412字  dev-workflow    ┘
@@ -82,3 +98,9 @@ Phase 3 が本体。CLAUDE.md の「CLAUDE.md → Hook 昇格」の判断基準�
 
 - この設計で実装に進むか、ADR（`/adr`）に判断を記録してから進むかは未確定
 - ADR 化する場合のタイトル例: 「plugin description は 160 字以内（warning 強制）」
+
+## 実装ブリッジ (Implementation Bridge)
+
+1. 実装着手の単位: Phase 1（リライト ×4）→ Phase 2（bump + CHANGELOG + marketplace 同期）→ Phase 3（`validate_plugin_quality.py` に 160 字 warning 追加 + auto-quality-check 発火確認）
+2. 検証方法: `validate-ssot.sh` 同期 OK + `validate_plugin_quality.py` で長い description に warning が出ること（Phase 3 後）
+3. 実装完了時: 本 doc の `phase: target → current`、`last-validated` 更新。160 字ルールを ADR 化するなら adr-keeper へ

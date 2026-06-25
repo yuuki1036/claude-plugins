@@ -44,7 +44,7 @@ if ! git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 0
 fi
 
-CHANGED="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | awk '{print $NF}')"
+CHANGED="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | cut -c4-)"
 
 if [ -z "$CHANGED" ]; then
   exit 0

@@ -42,8 +42,8 @@ SUBJECT=$(git log -1 --format=%s 2>/dev/null || true)
 TYPE=$(printf '%s' "$SUBJECT" | grep -oE '^(feat|fix|refactor|chore|docs|test|perf|ci|build|style|revert)' | head -1)
 [ -z "$TYPE" ] && TYPE="other"
 
-# 変更ファイル数（git show --name-only は空行 + 各ファイル名で出力されるので 0 でない行を数える）
-FILES_COUNT=$(git show --name-only --format= HEAD 2>/dev/null | grep -cvE '^$' || echo 0)
+# 変更ファイル数（diff-tree -m --first-parent でマージコミットでも第一親との差分を数える）
+FILES_COUNT=$(git diff-tree --no-commit-id --name-only -r -m --first-parent HEAD 2>/dev/null | grep -cvE '^$' || echo 0)
 FILES_COUNT=$(printf '%s' "$FILES_COUNT" | tr -d '[:space:]')
 [ -z "$FILES_COUNT" ] && FILES_COUNT=0
 

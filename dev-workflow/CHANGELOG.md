@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.21.2] - 2026-06-25
+
+### Fixed
+- `hooks/scripts/on-commit.sh` の変更ファイル数カウントがマージコミットで 0 になっていたのを、`git diff-tree -m --first-parent` で第一親との差分を数えるよう修正（`commit:created` payload の `files` 精度向上）
+
 ## [1.21.1] - 2026-06-15
 
 ### Changed

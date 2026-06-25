@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2] - 2026-06-25
+
+### Fixed
+- bdd-spec / design-doc への委譲キャプションの version 直書き（v0.1.0）を撤去し「安定保証セクション参照」に抽象化（実 API は追従済みだが version 表記が stale だった）
+
 ## [2.7.1] - 2026-06-15
 
 ### Changed

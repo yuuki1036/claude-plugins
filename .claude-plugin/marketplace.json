@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離、PostToolUse 自動 lint チェーン(fmt-fix→lint-fix→check、opt-in)、PR 本文の bullet 上限数値化、writing-polish soft 連携(opt-in)、commit subject 品質規約(曖昧 subject 禁止例カタログ、Google eng-practices 由来)、PR 本文のローカル限定ドキュメント参照防止(パス無し自然言語言及の advisory 検出)、PR 概要の What/Why/Outcome を字数制約で省略しない両立明記+生成後セルフチェック(Step 4.7)",
-      "version": "1.21.1",
+      "version": "1.21.2",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。",
-      "version": "1.31.0",
+      "version": "1.31.1",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "indie-workflow",
       "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。",
-      "version": "1.32.0",
+      "version": "1.32.1",
       "author": {
         "name": "yuki"
       },
@@ -72,7 +72,7 @@
     {
       "name": "feature-dev",
       "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec plugin から BDD spec.md を生成し architect の入力契約に使用、Phase 1.6 で kvault（外部 CLI、未導入時 skip）から横断知見を recall し architect に advisory 注入、Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.5 に self-lock template、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
-      "version": "2.7.1",
+      "version": "2.7.2",
       "author": {
         "name": "yuki"
       },
@@ -144,7 +144,7 @@
     {
       "name": "design-doc",
       "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "author": {
         "name": "yuki"
       },

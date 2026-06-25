@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.32.1] - 2026-06-25
+
+### Fixed
+- `hooks/scripts/inject-rules.sh` の stale Issue 判定が `date -j`（BSD/macOS 専用）依存で、Linux では全 in-progress Issue を「7日以上未更新」と誤検知していたのを修正。GNU date フォールバック（`date -d`）を追加し、パース不能な `last_active` は判定スキップ
+- `indie-issue-maintain` の Event Bus subscriber 手順が payload に存在しない `issue_id` / `file path` 前提で書かれていたのを、実 payload（`commit:created`=sha/type/files、`review:completed`=pr）から関連性を導出する記述に修正
+- `indie-issue-maintain` が参照する `references/feature.md` のパスが解決不能だったのを、実在する `indie-issue-create` 側への相対パスに修正
+- `issue-design` の bdd-spec 委譲キャプションの version 直書き（v0.1.0）を撤去
+
 ## [1.32.0] - 2026-06-24
 
 ### Added
