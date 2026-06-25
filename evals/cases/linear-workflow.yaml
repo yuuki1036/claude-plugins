@@ -4,6 +4,10 @@ cases:
     prompt: Linearのダッシュボード見せて
     expected_skill: linear-workflow:dashboard
     k: 3
+  - id: init-ja
+    prompt: Linear プロジェクトを初期化して
+    expected_skill: linear-workflow:init
+    k: 3
   - id: issue-create-ja
     prompt: Linear Issue をローカルに取り込んで
     expected_skill: linear-workflow:issue-create
