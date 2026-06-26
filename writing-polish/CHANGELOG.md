@@ -5,6 +5,14 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.6.1] - 2026-06-26
+
+### Fixed
+
+- **textlint v15 のルール解決失敗を検出できず警告が出ない問題を修正**（GitHub issue #73）。config が参照する `@textlint-ja/preset-ai-writing` 等が未インストールだと textlint v15 は全ルールを黙って drop し、stdout に `== No rules found, textlint hasn't done anything ==`（非 JSON）を出して **stderr は空・exit 1** になる。従来の検出は「①stdout が valid JSON ②stderr 文字列マッチ（`could not find` 等）」の 2 分岐だったため、この失敗形はどちらにも当たらず素通りし、決定的チェックが落ちたまま silent に LLM フォールバックしていた（preset 1 つの欠落で全決定的チェックが無効化される）
+  - 検出を **「stdout が valid JSON でなければ＝ルール解決失敗」に一本化**し、stderr 文字列依存を撤廃（`references/linter-integration.md`「ルール解決失敗の検出」の bash 分岐を `elif grep ... stderr` → `else` に変更、SKILL.md step 2.5 の判定記述も同期）。`--format json` 成功時は指摘ゼロでも `[]` 相当の JSON を返すため、JSON でなければ失敗と決定的に判定できる
+  - textlint v15.7.1 で失敗形（stdout `No rules found`・stderr 空・exit 1）を実機再現し、修正後の `else` 分岐が確実に警告を発火することを確認
+
 ## [0.6.0] - 2026-06-24
 
 ### Added

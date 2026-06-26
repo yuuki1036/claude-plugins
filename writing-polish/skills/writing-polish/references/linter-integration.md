@@ -47,9 +47,9 @@ printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
 
 ### ルール解決失敗の検出（導入済みだがルールパッケージ欠落）
 
-`command -v textlint` は通るが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が global install されていないと、textlint はルール解決に失敗し、JSON を返さず stderr にエラーを出して終了する。黙ってフォールバックすると決定的チェックが落ちたことに気づけないので、検出して一度だけ警告する（「未導入時の確認フロー」と同じ思想で、textlint 本体はあるがルールが欠けるケースをカバーする）。
+`command -v textlint` は通るが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が global install されていないと、textlint はルール解決に失敗し JSON を返さない。**失敗形は複数ある**: 旧来はルール解決エラーを stderr に出すが、**textlint v15 は欠落時に全ルールを黙って drop し、stdout に `== No rules found, textlint hasn't done anything ==`（非 JSON）を出して stderr は空**になる（1 ルールでも解決不能だと全ルールが drop されるため、preset 1 つの欠落で全決定的チェックが無効化される）。黙ってフォールバックすると決定的チェックが落ちたことに気づけないので、検出して一度だけ警告する（「未導入時の確認フロー」と同じ思想で、textlint 本体はあるがルールが欠けるケースをカバーする）。
 
-判定は **stdout が valid JSON かどうか**で分岐する（exit code は lint 指摘ありでも非 0 になるため単独では使えない）。
+判定は **stdout が valid JSON かどうかに一本化**する（exit code は lint 指摘ありでも非 0 になるため単独では使えず、stderr 文字列マッチは v15 の `No rules found` 失敗形〔stderr 空〕を取りこぼすため使わない）。`--format json` 成功時は必ず JSON（指摘ゼロでも `[]` 相当）を返すので、**JSON でなければ＝ルール解決失敗**と決定的に判定できる。
 
 ```bash
 err=$(mktemp)
@@ -58,8 +58,14 @@ out=$(printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
   --format json 2>"$err")
 if printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' >/dev/null 2>&1; then
   :  # 正常: $out を「出力の読み方」に従ってマップする
-elif grep -qiE 'could not find|failed to load|cannot find module' "$err"; then
-  :  # ルールパッケージ未解決 → 下記の警告を出して LLM フォールバック
+else
+  # stdout が valid JSON でない＝ルール解決失敗等で決定的チェックが効いていない。
+  # stderr 文字列に依存せず「JSON でない＝失敗」で一括検出する（v15 はルール欠落時 stdout に
+  # "== No rules found, textlint hasn't done anything ==" を出し stderr が空になるため、
+  # 旧来の stderr マッチ方式だと素通りしていた）。
+  # 下記の警告を一度だけ出して LLM フォールバック（fail させない）。
+  # $err / stdout の "No rules found" は原因切り分けの手掛かりに使ってよい（判定の gate にはしない）。
+  :
 fi
 rm -f "$err"
 ```

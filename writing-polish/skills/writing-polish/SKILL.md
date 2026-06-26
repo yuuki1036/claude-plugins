@@ -67,7 +67,7 @@ printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
 ```
 
   - 実行結果の **stdout が valid JSON なら**正常。指摘をマップする。
-  - **stdout が JSON でなく stderr にルール解決エラー（`Could not find` / `Failed to load rule` 等）が出たら**、textlint 本体はあるが config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が未導入。決定的チェックの一部が効いていないので**警告を一度出して** LLM フォールバックする（fail させない）。判定手順・警告文・導入コマンド・退路は `references/linter-integration.md`「ルール解決失敗の検出」を参照する。
+  - **stdout が valid JSON でなければ**（ルール解決失敗。stderr のエラー文字列だけでなく、textlint v15 が欠落時に出す `== No rules found ==`＝stdout 非 JSON・stderr 空も含む）、textlint 本体はあるが config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が未解決で決定的チェックの一部が効いていない。**警告を一度出して** LLM フォールバックする（fail させない）。判定は **JSON 妥当性に一本化**する（stderr 文字列マッチは v15 の失敗形を取りこぼす）。判定手順・警告文・導入コマンド・退路は `references/linter-integration.md`「ルール解決失敗の検出」を参照する。
 
 - **未導入なら**、silent に skip せず一度だけユーザーへ確認する（通知なしに決定的レイヤーが落ちたまま推敲が走るのを防ぐ）。`AskUserQuestion` で「導入する」／「LLM 判定のみで続行」を提示し、導入コマンドと mise/nvm 環境向けの PATH/shim 注意を併記する。
   - 「導入する」→ 導入コマンドと注意を案内する。今回の推敲は LLM フォールバックで続行し（install 完了はブロックして待たない）、次回実行から決定的チェックが効く。
