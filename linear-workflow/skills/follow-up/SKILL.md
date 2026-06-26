@@ -13,6 +13,7 @@ allowed-tools:
   - Edit
   - Glob
   - Bash
+  - Skill
   - AskUserQuestion
 ---
 
@@ -141,6 +142,19 @@ created: YYYY-MM-DD
 2. 同名ファイルの衝突チェック: Glob で `.claude/linear/{slug}/follow-ups/{YYYYMMDD}-{kebab-slug}*.md` を確認
 3. 衝突がある場合はサフィックスを付加
 4. frontmatter + 本文を生成
+4.5. **writing-polish 連携（本文添削・必須）**: 生成した本文をユーザー提示（N5-5）／ファイル確定（N5-6）の直前に writing-polish へ渡して推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+   1. インストール判定（check-deps.sh と同方式）:
+      ```bash
+      if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
+        WRITING_POLISH=1
+      else
+        WRITING_POLISH=0
+      fi
+      ```
+      `WRITING_POLISH=0` → 本ステップを skip。
+   2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。
+   3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **frontmatter・見出し構造は変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
+   4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で完了する。
 5. ユーザーに内容を提示して承認を得る
 6. Write でファイルを書き込む
 

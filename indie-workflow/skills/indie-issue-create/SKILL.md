@@ -136,9 +136,27 @@ Issue の内容が確定した段階で、既存の knowledge を検索する。
    - ユーザーから得た情報を「概要」セクションに反映する
    - プレースホルダはそのまま残し、ユーザーが後から埋められるようにする
 
-4. **ユーザー承認**
-   - 生成した Issue ファイルの内容をユーザーに提示する
+4. **writing-polish 推敲 → ユーザー承認**
+   - 提示前に Phase 6.5（writing-polish 連携）を実行し、本文を推敲済みにする
+   - 推敲済みの Issue ファイル内容をユーザーに提示する
    - 承認を得てからファイルを書き込む
+
+### Phase 6.5: writing-polish 連携（本文添削・必須）
+
+Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー提示・書き込み）の前に writing-polish へ渡して推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+
+1. インストール判定（check-deps.sh と同方式）:
+   ```bash
+   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
+     WRITING_POLISH=1
+   else
+     WRITING_POLISH=0
+   fi
+   ```
+   `WRITING_POLISH=0` → 本 Phase を skip。
+2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。
+3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **9 セクション構造（テンプレートの見出し階層）・frontmatter・プレースホルダ・相対パスリンクは変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
+4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で完了する。
 
 ### Phase 7: 後処理
 

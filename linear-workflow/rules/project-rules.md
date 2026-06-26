@@ -72,3 +72,11 @@ type: {推定タイプ}
 5. セッション終了前 → `/issue-maintain` で Issue ファイルを整理
 6. follow-up の確認 → `/follow-up list` で一覧、`/follow-up promote` で Issue 昇格
 7. 定期的な同期 → `/linear-maintain` でプロジェクト doc を最新化
+
+## 文章の推敲（writing-polish 必須）
+
+issue 作業中に生成・更新する**全ての自然言語テキスト**は、確定（ファイル書き込み・ユーザー提示・コミット）の前に writing-polish を通すこと。対象は Issue / knowledge / follow-up といった `.claude/linear/` 配下の管理ファイルだけでなく、**コードコメント・README・設計ドキュメント等あらゆる散文を含む**（gitignore 対象かどうかは問わない）。
+
+- `writing-polish` プラグインがインストールされていれば**必須**。未インストール時のみ skip（プラグイン独立性のため）。
+- 呼び出しは `Skill` tool で `writing-polish:writing-polish` を `--embed` 付きで実行し、文書種別に応じて `--tone`（issue/pr/commit/rfc/review）を選ぶ。
+- 構造（コード構文・見出し階層・テンプレート・frontmatter）を壊す推敲結果は破棄し元案を使う。

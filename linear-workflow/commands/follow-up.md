@@ -8,6 +8,7 @@ allowed-tools:
   - Edit
   - Glob
   - Bash
+  - Skill
   - AskUserQuestion
 argument-hint: "[new|list|promote [FILE]]"
 ---

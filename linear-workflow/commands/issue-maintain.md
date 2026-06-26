@@ -7,6 +7,7 @@ allowed-tools:
   - Grep
   - Glob
   - Bash
+  - Skill
   - AskUserQuestion
 ---
 

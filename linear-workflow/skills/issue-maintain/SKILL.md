@@ -13,6 +13,7 @@ allowed-tools:
   - Grep
   - Glob
   - Bash
+  - Skill
   - AskUserQuestion
 ---
 
@@ -376,6 +377,25 @@ Issue ファイルの「スコープ外」「後続 Issue 候補」「やらな�
 
 ---
 
+## writing-polish 連携（本文添削・必須）
+
+整理した Issue 本文と、切り出した knowledge ページの散文を、整理計画のユーザー提示（処理フロー Step 10）／ファイル確定（Step 11）の直前に writing-polish へ渡して推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+
+1. インストール判定（check-deps.sh と同方式）:
+   ```bash
+   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
+     WRITING_POLISH=1
+   else
+     WRITING_POLISH=0
+   fi
+   ```
+   `WRITING_POLISH=0` → 本節を skip。
+2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼ぶ。**Issue 本文の散文 + 切り出した knowledge ページの散文の両方**を推敲する。
+3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **frontmatter・wikilink（`[[ ]]`）・見出し階層・テンプレート構造（9 セクション・必須セクション）は変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
+4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で完了する。
+
+---
+
 ## 処理フロー
 
 ```
@@ -391,6 +411,7 @@ Issue ファイルの「スコープ外」「後続 Issue 候補」「やらな�
 9. タスク完了時フローの適用判定:
    - レビュー実施状況を確認（レビューガード節を参照）
    - 全タスク完了 → status 更新、follow_up 確認
+9.5 writing-polish 連携（Issue 本文 + 切り出し knowledge の散文を推敲。frontmatter / wikilink / 見出し階層 / テンプレート構造は変更しない。「writing-polish 連携」節を参照）
 10. 整理計画をユーザーに提示:
     - 削除するもの
     - 圧縮するもの

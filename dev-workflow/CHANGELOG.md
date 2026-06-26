@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.23.0] - 2026-06-26
+
+### Changed
+- pr-creator Step 4.3 の writing-polish 連携を opt-in → 必須に強化（インストール時は PR 本文をユーザー提示前に必ず推敲。未インストール時のみ skip）
+
 ## [1.22.0] - 2026-06-26
 
 ### Changed

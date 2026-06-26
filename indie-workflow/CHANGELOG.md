@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.33.0] - 2026-06-26
+
+### Added
+- issue 作業の全散文成果物（indie-issue-create / issue-design / indie-issue-maintain・indie-follow-up・retrospective・knowledge 切り出し）に writing-polish embed 連携を必須化。各 skill の本文確定・ユーザー提示の直前に `Skill` tool で `writing-polish:writing-polish` を `--embed --tone {issue|review}` で通す（`writing-polish` 未インストール時のみ skip。frontmatter / 見出し階層 / wikilink / テンプレート構造は保全）。indie-issue-maintain・indie-follow-up・retrospective の allowed-tools に `Skill` を追加（command 側も同期）
+- `rules/project-rules.md` に「文章の推敲（writing-polish 必須）」セクションを追加し、`.claude/indie/` 配下の管理ファイルだけでなくコードコメント・README・設計ドキュメント等あらゆる散文を確定前推敲の対象とする広域ルールを明文化
+
+### Changed
+- `issue-design` の Phase 3.5 writing-polish 連携を opt-in から必須に強化（`writing-polish` がインストールされていれば必ず通し、未インストール時のみ skip）
+
 ## [1.32.2] - 2026-06-25
 
 ### Added

@@ -10,6 +10,7 @@ allowed-tools:
   - Write
   - Glob
   - Bash
+  - Skill
 ---
 
 # 振り返り（Retrospective）
@@ -236,6 +237,25 @@ Phase 1 の Source 3 で取得した `failure:logged` イベントを集計す�
 
 ---
 
+## Phase 3.5: writing-polish 連携（本文添削・必須）
+
+生成した振り返りレポートの散文を、ファイル保存（Phase 4）の直前に writing-polish へ渡して推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+
+1. インストール判定（check-deps.sh と同方式）:
+   ```bash
+   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
+     WRITING_POLISH=1
+   else
+     WRITING_POLISH=0
+   fi
+   ```
+   `WRITING_POLISH=0` → 本 Phase を skip。
+2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed` で呼び（振り返りレポートは確立した tone 種別がないため tone は省略し、writing-polish の文書種別自動判定に委ねる）、レポートの散文部分を渡す。
+3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **Good / Problem / Try 等の見出し構造・統計表（指標テーブル）・反復警告フォーマットは変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
+4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で完了する。
+
+---
+
 ## Phase 4: レポート保存
 
 振り返り結果を `.claude/indie/retrospectives/YYYY-MM-DD.md` に保存する。
@@ -263,6 +283,7 @@ Phase 1 の Source 3 で取得した `failure:logged` イベントを集計す�
 8. Phase 2.5 概念ページ化の提案（反復テーマを concept に統合するか。承認時はドラフト作成 + index.md 更新）
 9. Phase 3 の振り返りフレーム（Good → Problem → Try の順に対話）
 10. テンプレートに沿ってレポートを生成
+10.5 Phase 3.5 writing-polish 連携（保存直前にレポート散文を推敲。tone は省略し自動判定。見出し構造・統計表は保全）
 11. レポート内容をユーザーに提示し、承認を得る
 12. .claude/indie/retrospectives/YYYY-MM-DD.md に保存
 ```

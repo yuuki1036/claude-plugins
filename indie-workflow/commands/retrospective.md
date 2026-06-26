@@ -5,6 +5,7 @@ allowed-tools:
   - Write
   - Glob
   - Bash
+  - Skill
 argument-hint: "[期間: 2w, 1m, etc.]"
 ---
 

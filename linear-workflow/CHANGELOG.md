@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.32.0] - 2026-06-26
+
+### Added
+- issue 作業の全散文成果物（issue-create / issue-design / issue-maintain・follow-up・knowledge 切り出し）に writing-polish embed 連携を必須化。`writing-polish` がインストールされていれば確定前に必ず `--embed --tone issue` で推敲を通す（未インストール時のみ skip。構造を壊す結果は破棄）。`Skill` を issue-maintain / follow-up の allowed-tools（command 側も同期）に追加
+- `rules/project-rules.md` に「文章の推敲（writing-polish 必須）」セクションを追加し、`.claude/linear/` 配下の管理ファイルだけでなくコードコメント・README・設計ドキュメント等あらゆる散文を対象化（gitignore 対象かどうかは問わない）
+
+### Changed
+- `issue-design` の Phase 3.5（writing-polish 連携）を opt-in → 必須に強化
+
 ## [1.31.2] - 2026-06-25
 
 ### Added

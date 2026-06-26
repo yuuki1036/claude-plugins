@@ -84,6 +84,23 @@ Issue の情報が確定した段階で、既存の knowledge を検索する。
    - ユーザーが参照を希望した場合、Read で内容を表示する
    - Issue ファイルの「備考」セクションに関連 knowledge へのリンクを記載する
 
+### Phase 2.7: writing-polish 連携（本文添削・必須）
+
+生成した Issue 本文をユーザー提示（Phase 3 の承認）の直前に writing-polish へ渡して推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+
+1. インストール判定（check-deps.sh と同方式）:
+   ```bash
+   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
+     WRITING_POLISH=1
+   else
+     WRITING_POLISH=0
+   fi
+   ```
+   `WRITING_POLISH=0` → 本 Phase を skip。
+2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。
+3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **9 セクション構造・frontmatter・Linear collapsible（`+++`）・Issue リンクは変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
+4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で完了する。
+
 ### Phase 3: Issue ファイル生成
 
 1. **配置先の決定**
