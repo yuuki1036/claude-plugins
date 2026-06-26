@@ -405,51 +405,78 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 レポート出力後、以下の順で締める。
 
-1. **返答ドラフト生成（任意）**: 指摘が **1 件以上** ある場合のみ実行。指摘 0 件ならこのステップ全体をスキップして 2 に進む。
+1. **指摘の精査（必要性ゲート / 任意）**: 報告マトリクス通過後の指摘が **1 件以上** ある場合のみ実行（指摘 0 件、または `--emergency` 時はスキップして 2 へ）。
 
-   レポート全文を出力した直後に **AskUserQuestion** で返答ドラフトの要否を確認する:
+   Step 6（severity×confidence の機械フィルタ）と Phase 5.8 反証レイヤー（正しさ＝偽陽性の独立検証）が「閾値を超えるか」「事実として正しいか」を判定するのに対し、本ステップは **第 3 軸＝必要性（signal/noise）** を人間に委ねる。「正しい指摘ではあるが、本当に著者の対応に値するか」を問う（Google eng-practices "The Standard": コード健全性を向上させるなら nit でブロックしない／technical fact は preference に優先）。settled な設計判断の蒸し返しや既存コード由来の nit は**反証では refuted にならない**（事実は正しい）が、必要性軸では取り下げ対象になる。
 
-   - question: "投稿後の返答ドラフトを生成しますか？（投稿は行わず、コピペ可能な文面のみ出力します）"
-   - header: "返答ドラフト"
+   レポート全文を出力した直後に **AskUserQuestion**（返答ドラフトより先）で精査の要否を確認する:
+
+   - question: "報告された指摘を精査しますか？（各指摘が本当に著者の対応に値するか＝必要性を観点に取り下げ・降格を再評価します。返答ドラフトはこの後に確認します）"
+   - header: "指摘の精査"
+   - multiSelect: false
+   - options:
+     1. label: "精査する（推奨）" / description: "純粋な好み・settled な蒸し返し・実害極小の nit・既存コード由来を再評価し取り下げ／降格を提案"
+     2. label: "そのまま" / description: "再評価せず現状の指摘を確定する"
+
+   「そのまま」なら 2 へ。「精査する」なら **メインコンテキストで**（Agent 不使用）各指摘を 3 分類する。判定には必ず根拠（カテゴリ + file:line / PR コンテキスト典拠）を添える:
+
+   - **取り下げ（withdraw）** — 正しくても対応に値しない: 純粋な好み（CLAUDE.md / style guide / 計測 / 具体的不具合の根拠なし、≤40 クランプを擦り抜けた残滓）/ settled な設計判断の蒸し返し（session-context / Issue / PR 説明で確定済み）/ 実害極小の MINOR nitpick / 既存コード由来（この diff 非導入）
+   - **降格（downgrade）** — 内容は妥当だが severity 過大: 1 段階下げ + `Optional:` / `Nit:` 化
+   - **残存（keep）** — 実害・リスク・規約違反の根拠を伴い著者が知るべき。**BLOCKER / CRITICAL は降格はあっても取り下げない**（既存コード由来であっても残存させ `既存コード由来` の文脈を付記する。取り下げの「既存コード由来」は MAJOR 以下に限る。反証レイヤーの「高 severity 非削除」不変条件と整合）
+
+   取り下げ・降格は **理由を明示し人間が覆せる形**で提示する（破棄しない）。精査後、`## 精査結果`（取り下げ N / 降格 M / 残存 K ＋ 取り下げた指摘の一覧と理由）を出力し、**残存 + 降格を反映した調整後レポートを再出力**する（総合判定・severity 別件数を残存指摘で再導出）。以降の返答ドラフト・publish は精査後（post）の確定値を使う。
+
+2. **投稿コメントのドラフト生成（任意）**: 精査後に残存／降格した指摘が **1 件以上** ある、**または** 総合判定が **Approve / Approve with nits** の場合に実行（どちらにも該当しなければスキップして 3 へ）。生成する全文面は `reply-tone-guide.md` `## 0 必須ルール`（Claude 署名 / 作成者・他レビュアーへの敬意 / 簡潔さ / 良い点を 1 文）を**厳守**する。
+
+   レポート出力直後に **AskUserQuestion** で要否を確認する（options は状態に応じて提示する）:
+
+   - question: "投稿用コメントのドラフトを生成しますか？（投稿は行わず、コピペ可能な文面のみ出力します）"
+   - header: "コメントドラフト"
    - multiSelect: false
    - options:
      1. label: "不要" / description: "ドラフトは生成しない（既定）"
-     2. label: "重要のみ" / description: "severity BLOCKER または CRITICAL の指摘についてドラフト生成"
-     3. label: "全件" / description: "全指摘についてドラフト生成"
-     4. label: "個別選択" / description: "対象の指摘番号を入力する"
+     2. label: "承認コメント" / description: "簡潔な承認 + 良い点 1 文 + 署名"（**総合判定が Approve / Approve with nits のときのみ提示**）
+     3. label: "重要指摘のみ" / description: "severity BLOCKER / CRITICAL の返答ドラフト"（残存指摘があるときのみ）
+     4. label: "全件" / description: "全残存指摘 ＋ 該当すれば承認コメント"（残存指摘があるときのみ）
+     5. label: "個別選択" / description: "対象の指摘番号を入力する"（残存指摘があるときのみ）
 
-   「不要」が選ばれた場合はこのステップを終了し 2 に進む。それ以外の選択肢では以下を実行:
+   「不要」なら 3 へ。それ以外は以下を実行:
 
    - `${CLAUDE_PLUGIN_ROOT}/references/reply-tone-guide.md` を Read で読み込む
-   - 「個別選択」の場合は AskUserQuestion で「対象の指摘番号（例: 1,3,5）」を free-text 入力させる
-   - 対象指摘ごとに以下を判定してパターンを選ぶ:
-     - 著者対応 commit が PR にある → 解決度（完全/部分/未対応）に応じて 2.1〜2.5 のパターン
-     - 著者対応 commit がない → 2.4 / 2.5 のパターン
-     - `[re-flag: @user]` タグ付き → 2.5 「再指摘の追補」
+   - **承認コメント**（総合判定 Approve / Approve with nits、かつ「承認コメント」または「全件」選択時）: reply-tone-guide.md `### 2.7 承認メッセージ` のテンプレで生成。良い点は「良かった点」セクションから **1 文に圧縮**（file:line 添え）。Needs work では生成しない。**承認メッセージ本文で触れた nit は指摘返答ドラフトと重複させない**（全体コメントは要点のみ・詳細は inline スレッド側へ。reply-tone-guide 2.7「nits は詳述しない」と整合）
+   - **指摘への返答**（残存指摘が対象。「個別選択」なら AskUserQuestion で「対象の指摘番号（例: 1,3,5）」を free-text 入力）: 対象指摘ごとにパターンを選ぶ
+     - 著者対応 commit が PR にある → 解決度（完全/部分/未対応）に応じて 2.1〜2.5
+     - 著者対応 commit がない → 2.4 / 2.5
+     - `[re-flag: @user]` タグ付き → 2.5「再指摘の追補」
      - レビュアー視点（自分発信の指摘）→ 2.6
-   - 各指摘について 1〜3 文のドラフトを reply-tone-guide.md の規約に従って生成する
+     - 1〜3 文で生成（長文化させない）
+   - **各文面の末尾に署名 `— Claude Code によるレビュー` を付す**（reply-tone-guide.md 0.1）
    - **未検証主張の断定抑止（over-correction 防止 / GitHub issue #71）**: ドラフトに load-bearing な事実主張を書く場合、typo 級でない限り **断定で書かない**。repo で確認できる主張は `file:line` を、正本 doc で確認できる主張は典拠を添える。repo/正本で裏が取れない外部状態（DB/本番/運用設定）は「要確認（典拠=X）」とし、元の reviewer 指摘が `[unverified: ...]` 付きならその不確実性を返答にも引き継ぐ（確定済みであるかのように書かない）
    - **投稿は行わない**。ドラフト出力のみ。ユーザーが GitHub UI で手動投稿する
 
    出力フォーマット:
    ```
-   ## 返答ドラフト（投稿は手動で行ってください）
+   ## 投稿コメントドラフト（投稿は手動で行ってください）
+
+   ### 承認コメント（PR 全体コメント）
+   > レビューしました。大筋問題なく、Approve とさせてください。
+   > src/parser.ts:40-58 の境界値テストが手厚く、回帰検知が効きそうです。
+   > 細かい点として変数名の統一がありますが、対応は任意で問題ありません（src/api.ts:12）。
+   > — Claude Code によるレビュー
 
    ### 指摘 #1 への返答
-   対象: src/auth.ts:67-72 / @reviewer-a
+   対象: src/auth.ts:67-72 / @reviewer-a さん
    パターン: 完全対応（2.1）
 
    > ご指摘ありがとうございます。
    > src/auth.ts:67 で null チェックを追加しました（{commit-sha}）。
    > 意図と合っているかご確認いただけると助かります。
-
-   ### 指摘 #2 への返答
-   ...
+   > — Claude Code によるレビュー
    ```
 
    生成中に reply-tone-guide.md に明示のないトーン判断が必要になった場合は、ドラフト末尾に `（補足: {判断点} はガイドに明示なし。ユーザー確認推奨）` を添える。
 
-2. **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
+3. **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**指摘の精査を行った場合は精査後（post）の確定件数を使う**（取り下げ・降格を反映）。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
 
    ```bash
    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
@@ -471,4 +498,4 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
    - 失敗してもレポート自体は成功扱い（best-effort）
    - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` は新規フィールド追加なので旧 subscriber 影響なし
 
-3. **ExitWorktree** で worktree から抜ける。
+4. **ExitWorktree** で worktree から抜ける。
