@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.22.0] - 2026-06-26
+
+### Changed
+- **スクリーンショットのホスト先を GitHub Release から専用ブランチに変更**（`hooks/scripts/upload-screenshots.sh`）。従来は `gh release create cc-screenshots --prerelease` で画像をホストしていたが、**GitHub Release は必ず git tag を伴う**ため `cc-screenshots` タグが生成され、リリース運用の tag 一覧・`claude plugin tag` と混ざる問題があった
+  - tag を一切作らず、Contents API（`gh api -X PUT repos/{repo}/contents/...`）で専用ブランチ `cc-screenshots`（orphan・リポジトリソースを含まない）に画像を push し、`raw.githubusercontent.com` の URL を返す方式に変更
+  - branch が無ければ orphan branch を初回自動作成（idempotent）。同名ファイルは既存 sha を引いて上書き
+  - 出力契約（`<filename><TAB><url>`）は据え置きのため `pr-creator` 側の利用は非破壊。第2引数を `[release-tag]` から `[branch]` にリネーム（デフォルト `cc-screenshots`）
+  - `pr-creator` SKILL の Screenshots 添付セクション・機密チェックリストの文言を release → ブランチに更新。raw URL は **public repo でのみ** PR 上に描画される旨を明記（private repo では release download URL と同様に認証が要りインライン描画されない＝従来同等）
+  - 既存のアップロード失敗フォールバック（手動ドラッグ&ドロップ案内）は据え置き
+
 ## [1.21.2] - 2026-06-25
 
 ### Fixed

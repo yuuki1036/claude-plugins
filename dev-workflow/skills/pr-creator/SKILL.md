@@ -122,7 +122,7 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
    LATEST=$(ls -1dt .claude/screenshots/{snap,commit}-* 2>/dev/null | head -1)
    ```
 2. **撮影内容の機密チェック**（次節「機密 UI チェックリスト」を実施）。問題があれば中止
-3. `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/upload-screenshots.sh <dir>` を実行して画像を GitHub Release (`cc-screenshots` タグ) にアップロード
+3. `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/upload-screenshots.sh <dir>` を実行して画像を専用ブランチ (`cc-screenshots`) に Contents API でアップロード（**GitHub Release / tag は作らない** — tag はリリース運用に予約。raw URL は public repo でのみ PR 上に描画される）
 4. 標準出力の `<filename><TAB><url>` を解析
 5. PR body に以下を追記（テンプレート既存セクションの末尾 or 新規 `## Screenshots` として）。**1 枚のみの場合は table ではなく単独画像で添付する**:
 
@@ -150,7 +150,7 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 
 #### 機密 UI チェックリスト（撮影前必須）
 
-`cc-screenshots` release は public release のため、アップロードした画像は誰でも閲覧可能。以下のいずれかに該当する撮影は **アップロードしない**:
+`cc-screenshots` ブランチは public repo では誰でも閲覧可能（raw URL が公開される）。以下のいずれかに該当する撮影は **アップロードしない**:
 
 - ログイン画面・認証画面（OAuth プロバイダ名・社内 SSO ボタン等のメタ情報を含む）
 - 顧客データ・実名ユーザー情報・実メールアドレス・実電話番号
@@ -160,7 +160,7 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 
 判定不能な場合は AskUserQuestion でユーザーに確認:
 
-- question: "撮影内容に機密情報は含まれていない？（public release にアップロード）"
+- question: "撮影内容に機密情報は含まれていない？（public ブランチにアップロード）"
 - header: "機密チェック"
 - options:
   1. label: "問題なし、アップロード" / description: "撮影内容を確認済み"
@@ -250,5 +250,5 @@ github MCP が未設定の場合は、PR を最小 body で作成し、本文は
 - PR title に Issue ID prefix（`TEAM-123:` 等）を含めない。Issue ID は PR 本文側にリンク・参照として記載する
 - PR 本文（本文・`<details>` 折りたたみ問わず）にローカルパス（`.claude/plans/...` / `.claude/screenshots/...` 等）を出力しない。GitHub からクリックできないため
 - レビュアーがアクセスできないローカル限定ドキュメント（`.claude/` 配下の knowledge / plans / issues 等）は、**パス文字列の有無に関わらず**本文で参照しない。「knowledge に詳細」「設計メモ参照」のような自然言語の言及も含む。必要な情報は本文へインライン要約する（参照させるのではなく要点を書き写す）
-- Screenshots は `cc-screenshots` release にアップロードする専用運用。他の release と混ぜない
-- 機密情報（ログイン画面、社内 URL、実データ等）が写っていないか撮影前に確認する。アップロードは public release なので漏洩リスクあり
+- Screenshots は `cc-screenshots` 専用ブランチに Contents API でアップロードする運用。**GitHub Release / tag は作らない**（tag はリリース運用に予約）
+- 機密情報（ログイン画面、社内 URL、実データ等）が写っていないか撮影前に確認する。public repo では raw URL が公開されるので漏洩リスクあり

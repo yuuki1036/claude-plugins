@@ -17,7 +17,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [claude-meta](#claude-meta) | 1.11.1 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.29.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.2.3 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
-| [dev-workflow](#dev-workflow) | 1.21.2 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
+| [dev-workflow](#dev-workflow) | 1.22.0 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
 | [doc-freshness](#doc-freshness) | 0.1.0 | 1 | 1 | - | - | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.1.1 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.7.2 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
