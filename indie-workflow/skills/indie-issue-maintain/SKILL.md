@@ -390,7 +390,7 @@ Issue ファイルの「スコープ外」「後続 Issue 候補」「やらな�
   2. label: "個別選択" / description: "1 件ずつ記録するか確認"
   3. label: "スキップ" / description: "follow-up 化せず Issue ファイルにのみ残す"
 
-「一括記録」「個別選択」を選んだ場合は、対応する follow-up ファイルを生成する（indie-follow-up スキルの Phase N5 と同じ手順）。
+「一括記録」「個別選択」を選んだ場合は、対応する follow-up ファイルを生成する（indie-follow-up スキルの Phase N4 と同じ手順）。
 
 ### 注意事項
 

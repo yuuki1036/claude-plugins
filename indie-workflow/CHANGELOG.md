@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.33.1] - 2026-06-26
+
+### Fixed
+- `indie-issue-maintain` の follow-up 一括/個別記録時の参照を `indie-follow-up` の Phase N5（完了報告）から Phase N4（ファイル生成）に修正（ファイル生成手順を指すべき箇所が誤って完了報告フェーズを指していた既存の参照ズレ）
+
 ## [1.33.0] - 2026-06-26
 
 ### Added
