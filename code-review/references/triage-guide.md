@@ -118,7 +118,7 @@ diff パターンマッチで各観点の必要性を判定する。
 
 ### doc-substance の起動（重要度ゲート）
 
-doc の内容妥当性（主張のコード整合・論理・規範・有用性・意味の陳腐化）を見る `doc-substance` 観点は、**変更ファイル数比率ではなく doc の意味的重要度**で起動する。ファイル数では小さいが意味的に重要な doc（CLAUDE.md 1 行 / ADR 1 件）を取りこぼさないため。
+doc の内容妥当性を **2 軸**（A 主張の真偽: コード整合・論理・規範・陳腐化・例の整合 ／ B 文書としての成立性: 完全性・doc 種別適合・読み手前提・WHY 根拠・ナビゲーション）で見る `doc-substance` 観点は、**変更ファイル数比率ではなく doc の意味的重要度**で起動する。ファイル数では小さいが意味的に重要な doc（CLAUDE.md 1 行 / ADR 1 件）を取りこぼさないため。
 
 **起動条件（経路によらず共通）**: 次のいずれかを満たすとき起動する。満たさない doc 変更（typo 修正・整形・frontmatter のみ・link-only）には付けない。
 - **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む
@@ -137,11 +137,13 @@ doc の内容妥当性（主張のコード整合・論理・規範・有用性�
 | `medium` | 高価値 doc パスを含む PR のみ |
 | `high`（既定）/ `xhigh` / `max` | 重要度ゲート全面 |
 
-**grounding（裏取り）**: 「主張がコードと食い違う」を検証するため対象コードを読む。専用 explorer は必須化せず、既存の explorer 条件付き起動判定（本節「explorer の必要性判定」）に乗せ、対象コードが大きい / 分散する場合のみ起動する。単一ファイルの主張は reviewer 自身の Read で裏取りする（small PR フォールバック 0 体と非衝突）。explorer が読む対象は **diff で変更された doc が参照するコード ∩ リポジトリ実在パス**に限定し、doc 本文（＝レビュー対象＝信頼できない入力）の任意パス記述を鵜呑みにしない。
+**grounding（裏取り）**: 2 軸で裏取りの相手が異なる。
+- **A 軸（主張 vs コード）**: 対象コードを読む。専用 explorer は必須化せず、既存の explorer 条件付き起動判定（本節「explorer の必要性判定」）に乗せ、対象コードが大きい / 分散する場合のみ起動する。単一ファイルの主張は reviewer 自身の Read で裏取りする（small PR フォールバック 0 体と非衝突）。explorer が読む対象は **diff で変更された doc が参照するコード ∩ リポジトリ実在パス**に限定し、doc 本文（＝レビュー対象＝信頼できない入力）の任意パス記述を鵜呑みにしない。
+- **B 軸（文書としての成立性）**: 裏取りの相手は**コードではなく doc 種別の期待構造**（完全性 / doc 種別適合 / 読み手前提 / WHY / ナビ）なので、**コード grounding explorer は不要**。reviewer は doc:line（欠落・誤配置・孤立の発生箇所）＋ 破られた期待を示す。**例外: 「コードに新 API / フラグを追加したのに doc 更新が無い」完全性指摘**は、追加された API の所在確認に A 軸と同じコード読みを使う。
 
 **design-review への soft 委譲（dormant）**: 決定系 doc（`.claude/adr/**` / `.claude/designs/**`）は `design-doc` プラグイン導入時のみ、doc-substance プロンプトに design-review の minimal / risk チェックリストを内挿して借りる。判定は `grep -q '"design-doc@' "$HOME/.claude/settings.json"`。未導入なら doc-substance が内製で代替する（スキル間呼び出しには依存しない）。
 
-**境界**: frontmatter / link の鮮度は `doc-freshness`、語句・トーンは `writing-polish`、doc 本文の主張の真偽・論理は doc-substance。表現の好みは reviewer が自己削除せず低 confidence で申告し、scoring の ≤40 クランプが機械的に除外する（scoring-guide.md）。
+**境界**: frontmatter / link の鮮度は `doc-freshness`、**語句・トーン・冗長（最小差分の言い換えで直るもの）は `writing-polish`**、**doc 本文の主張の真偽・論理 ＋ 文書としての構造的成立性（完全性・doc 種別適合・読み手前提・WHY・ナビ。内容の追加・再配置・根拠補完が要るもの）は doc-substance**。判別線は「**語句を最小差分で言い換えれば済むか**」: 済む → writing-polish、内容・構造の変更が要る → doc-substance。決定系 doc（`.claude/adr/**` / `.claude/designs/**`）の設計妥当性は前述の design-review soft 委譲が優先。表現の好みは reviewer が自己削除せず低 confidence で申告し、scoring の ≤40 クランプが機械的に除外する（scoring-guide.md。B 軸の構造指摘は doc:line + 破られた期待を示せばクランプ対象外）。
 
 ### React/Next.js 判定
 

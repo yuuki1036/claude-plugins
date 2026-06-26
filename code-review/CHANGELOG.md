@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.28.0] - 2026-06-26
+
+### Added
+- **doc-substance を 2 軸に拡張（文書としての成立性 = B 軸を追加）**。従来の doc-substance は `comment-accuracy` の「主張⇔コード一致」を doc 本文へ一般化したもので、**「書かれた主張が正しいか」（A 軸）だけ**を見ており、「**書かれるべきことが書かれ、読み手が目的を達成できる構造か**」という文書としての構造的妥当性が素通りしていた（完全性・doc 種別適合・読み手前提・WHY 根拠・ナビゲーションがどのツールにも担当されない gap だった）。Diátaxis / Write the Docs の functional quality 観点を取り込み、prose polish（語句・トーン）では捕まらない構造欠陥を検出可能にした
+  - **B 軸の検出対象（reviewer-prompts.md `doc-substance`）**: 完全性（missing content: 手順の前提・成功条件・失敗時挙動の欠落、パラメータ網羅、**コードに追加された新 API / フラグに対応する doc の不在**、ユースケース例の不在）/ doc 種別適合（how-to に理論混入・reference に手順混入・design doc に代替案比較なし・ADR に context/帰結なし）/ 読み手前提・順序（prerequisite 後出し・対象読者/前提環境の不明示）/ 判断根拠 WHY（規約・閾値・制約に「なぜ」がない）/ ナビゲーション（新規ページ・ADR の index/上位リンクからの孤立）。A 軸にも「例の整合（コード例 vs 現行 API、code:line）」を追加
+  - **2 軸で裏取りの相手が違う**: A 軸は code:line（内部矛盾は doc:line ×2）、**B 軸は doc:line（欠落・誤配置・孤立の発生箇所）＋ 破られた期待（doc 種別の契約 / その doc が宣言する対象読者・スコープ / 手順が参照する未記載の前提）**。B 軸はコード照合不要（triage-guide.md grounding 節に分岐を追加。新 API 追加に対する doc 不在の完全性指摘のみ A 軸同様コードを読む）
+  - **scoring の好みクランプを 2 軸対応に修正（最重要 / load-bearing）**: 従来は「code:line または doc:line ×2 で裏取りできない doc 指摘は表現の好みとみなし ≤40 クランプ」だったため、**code:line で裏取りできない B 軸（完全性・doc 種別適合等）が生まれた瞬間に好み扱いで除外されていた**。`scoring-guide.md` の doc-substance クランプ条項を 2 軸に分け、**B 軸は doc:line + 破られた期待を示せていればクランプ対象外**に。逆に「語句を最小差分で言い換えれば済む」だけの指摘（writing-polish の領分）は B 軸を騙ってもクランプ
+  - **prose polish との分界**: 判別線は「**語句を最小差分で言い換えれば済むか**」。済む → writing-polish、内容の追加・再配置・根拠補完・例修正が要る → doc-substance（triage-guide.md 境界記述に明示）。decided 系 doc（`.claude/adr/**` / `.claude/designs/**`）は既存の design-review soft 委譲が優先
+  - **反証レイヤー統合**: `reviewer-prompts.md` `## 7` の doc-substance 反証ブロックに **B 軸の読み替え**を追加（pre-validated=欠落情報が別箇所に実在 / intended=明示的スコープ外 / misread=doc 種別の誤判定 / pre-existing=base から既存。ただし新 API 追加に対する doc 不在は diff が生んだ乖離なので pre-existing としない）。review skill は effort=xhigh 既定のため B 軸 MAJOR も Phase 5.8 で独立検証され、クランプ（一次抑制）＋ 反証（偽陽性摘出）の二段構えになる
+  - **severity 目安**: B 軸の致命欠落（手順書の必須 prerequisite/step 欠落で読者が実行不能・コード例が現行 API と食い違い動かない）= CRITICAL、doc 種別不適合・WHY 欠如・完全性の重大欠落・孤立 doc = MAJOR
+
 ## [2.27.0] - 2026-06-24
 
 ### Added
