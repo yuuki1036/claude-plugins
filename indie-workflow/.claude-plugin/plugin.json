@@ -1,7 +1,7 @@
 {
   "name": "indie-workflow",
-  "version": "1.34.1",
-  "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
+  "version": "1.35.0",
+  "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。AI が多観点スキャンで課題を発見し issue を自動起票（indie-issue-discover）。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
   "author": {
     "name": "yuki"
   },

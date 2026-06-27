@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.35.0] - 2026-06-27
+
+### Added
+- `indie-issue-discover` スキル / コマンドを追加。プロジェクトを多観点（バグ兆候・未実装スタブ・FE 改善余地・テスト欠落・既存シグナル集約）でスキャンし、取り組むべき課題を AI が能動的に発見して indie issue を自動起票する。「次に何をやるか」を人間が考える負担を AI に移譲するのが狙い
+  - 「起動＝実行確定」maintain 系に準拠。止まらずスキャン → 自動起票 → 実行後レポートまで進める（AskUserQuestion で止めない）
+  - 暴走防止の三点セット: 起票上限 N（既定 5・`${CLAUDE_EFFORT}` で可変）/ `status: backlog` で起票（放置検知の誤爆防止 + 着手判断を人に残す）/ 既存 issue・backlog との重複除外
+  - 起票は `indie-issue-create` のテンプレート・採番・writing-polish 連携を再利用、再発失敗の集計は failure-journal の `failure:logged` イベントを再利用（重複実装しない）。実装着手は feature-dev に接続
+  - スキャン対象＝起票先＝起動したリポジトリ（クロスリポジトリ起票はしない）
+
 ## [1.34.1] - 2026-06-27
 
 ### Fixed

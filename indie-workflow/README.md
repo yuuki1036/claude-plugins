@@ -36,6 +36,7 @@ claude plugin install indie-workflow@yuuki1036-claude-plugins
 | indie-issue-create | Issue ファイルの新規作成 + ブランチ自動作成 + feature-dev 連携 | 新規タスク開始時 |
 | indie-issue-maintain | Issue ファイルの品質整理・knowledge 切り出し | セッション終了前 |
 | indie-maintain | 全プロジェクトの棚卸し・放置/debt 管理 | 定期的（週1程度） |
+| indie-issue-discover | AI が課題を多観点で発見して issue を自動起票 | 「次に何やる？」を AI に任せたい時 |
 | retrospective | 振り返り・見積もり精度分析 | 週次/月次 |
 
 ## コマンド
@@ -47,6 +48,7 @@ claude plugin install indie-workflow@yuuki1036-claude-plugins
 | `/indie-issue-create` | `[PROJECT-SLUG]` | Issue ファイル新規作成（ブランチ自動作成 + feature-dev 連携） |
 | `/indie-issue-maintain` | - | Issue ファイルの整理 |
 | `/indie-maintain` | `[project-slug]` | プロジェクト棚卸し |
+| `/indie-issue-discover` | `[PROJECT-SLUG]` | 課題を多観点で発見して issue を自動起票 |
 | `/retrospective` | `[期間: 2w, 1m]` | 振り返り |
 
 ## Issue テンプレート
