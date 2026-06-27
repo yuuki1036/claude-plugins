@@ -6,6 +6,7 @@ allowed-tools:
   - Grep
   - Bash
   - Agent
+  - Skill
 argument-hint: "[plugin-name]"
 ---
 

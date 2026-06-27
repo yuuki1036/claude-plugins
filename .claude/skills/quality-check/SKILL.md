@@ -11,6 +11,7 @@ allowed-tools:
   - Grep
   - Bash
   - Agent
+  - Skill
 ---
 
 # プラグイン品質チェック
@@ -213,6 +214,28 @@ hook 共通ラッパーの正本と複製が byte-identical であることを�
 
 **不一致は hook の挙動が予測不能になるため Critical。** 正本を修正したら全複製を同期する。
 
+### 16. 変更差分のセルフレビュー（条件付き）
+
+静的整合性チェック（項目 0〜15）は frontmatter・同期・構造を検証するが、**変更したコード/スクリプトの実質的な品質（バグ・退行・設計判断・サイレント失敗）は別軸**。working tree に変更がある場合は `code-review:self-review` を呼んで差分をレビューし、結果を本レポートに統合する。
+
+**実行条件**:
+
+1. `git status --porcelain` で working tree に変更（未コミット / ステージ済み）があるか確認
+2. 変更が無ければ本チェックは skip（レビュー対象なし）
+3. `code-review` プラグインの有無を判定（後方互換・プラグイン独立性のため）:
+   ```bash
+   if grep -q '"code-review@' "$HOME/.claude/settings.json" 2>/dev/null; then HAS_REVIEW=1; else HAS_REVIEW=0; fi
+   ```
+   `HAS_REVIEW=0` の場合は warning（「code-review 未インストールのためセルフレビューを skip」）を出して skip する
+
+**実行方法**:
+
+- `Skill` tool で `code-review:self-review` を起動する（引数なし＝ベースブランチ自動検出。静的チェックの後に実行し、結果が出揃ってからレポートを集約する）
+- self-review は diff ベースの読み取り専用レビュー。severity × confidence でフィルタした指摘のみ返る
+- 返ってきた指摘を本レポートの「セルフレビュー」節に転記する。**Critical / High の指摘があれば quality-check 全体の判定も「要対処」**とする（静的チェックが全 PASS でも、コード品質の指摘が残れば PASS としない）
+
+> このチェックは静的バリデーションではなくランタイムのコードレビュー委譲。self-review 自体は読み取り専用なので、quality-check の「読み取り専用」原則と整合する。
+
 ---
 
 ## 実行フロー
@@ -226,7 +249,9 @@ hook 共通ラッパーの正本と複製が byte-identical であることを�
    b. 全コマンド・全スキルの frontmatter を Read
    c. hooks スクリプトを Read
    d. チェック項目1〜13を順に実行
-5. チェック0の結果 + Agent の結果を集約してレポート出力
+5. チェック16: working tree に変更があり code-review がインストール済みなら
+   `code-review:self-review` を起動して差分をレビュー（変更なし or 未インストールなら skip）
+6. チェック0〜15 + Agent + セルフレビューの結果を集約してレポート出力
 ```
 
 **並列化**: 独立した3プラグイン程度ずつ Agent で並列チェック可能。ただしプラグイン数が少ない（6個）場合は直列でもよい。
@@ -266,13 +291,28 @@ hook 共通ラッパーの正本と複製が byte-identical であることを�
 - [ ] allowed-tools 最小性（件数 / 未使用）: {結果}
 ```
 
+### セルフレビュー（チェック16・working tree に変更がある場合）
+
+```md
+## セルフレビュー（code-review:self-review）
+
+対象: working tree の差分（{変更ファイル数} files）
+
+| Severity | Confidence | ファイル:行 | 指摘 |
+|----------|-----------|------------|------|
+| High | 90 | foo/bar.sh:42 | {要約} |
+
+→ Critical / High が 1 件以上あれば全体判定は「要対処」
+（変更なし: 「セルフレビュー: 対象なし（skip）」 / code-review 未インストール: 「skip（warning）」）
+```
+
 ---
 
 ## 注意事項
 
-- このスキルは**読み取り専用**。問題を検出して報告するだけで、自動修正はしない
+- このスキルは**読み取り専用**。問題を検出して報告するだけで、自動修正はしない（委譲する self-review も diff ベースの読み取り専用）
 - 修正が必要な場合は、レポートの各項目に対して個別に対処を案内する
-- Critical 指摘が0件で初めて「PASS」とする
+- 静的チェックの Critical 指摘が0件、**かつ**セルフレビュー（実行された場合）に Critical / High 指摘が0件で初めて「PASS」とする
 
 ---
 
