@@ -8,7 +8,6 @@ allowed-tools:
   - Glob
   - Bash
   - Skill
-  - AskUserQuestion
 ---
 
 issue-maintain スキルを使って Issue ファイルのメンテナンスを実行してください。

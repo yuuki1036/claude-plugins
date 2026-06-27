@@ -33,34 +33,15 @@ Linear MCP と連携し、`.claude/linear/` 内のプロジェクト管理ファ
 
 ---
 
+## 実行ポリシー（起動＝実行確定）
+
+このスキルは**起動した時点で実行確定**とみなす。実行可否やスキャンモードを起動時に問い直さない（AskUserQuestion で止まらない／ストレスフリー設計）。常に**フルスキャン**（処理 1〜5 + 6a + 6b で全 Issue に issue-maintain の全処理フローを適用）を実行し、結果は最終レポートにまとめて報告する。
+
 ## Phase 0: Linear MCP 利用可能性チェック
 
 1. 軽量な Linear MCP 呼び出し（`mcp__linear__list_projects` など）を試みる
-2. ツールが見つからない・接続エラーの場合:
-   - **AskUserQuestion** で続行/中断を確認する:
-     - question: "Linear MCP が利用できません。このスキルは Linear MCP との同期が主な機能のため、MCP なしでは大部分の処理を実行できません。"
-     - header: "Linear MCP 未検出"
-     - options:
-       1. label: "続行" / description: "ローカルファイルの整理のみ実行する（Linear 同期はスキップ）"
-       2. label: "中断" / description: "スキルを中断する"
-   - 「中断」選択時: スキルを終了する
-   - 「続行」選択時: Linear MCP を使う処理（プロジェクト doc 更新、関連 Issue テーブル更新、Issue ステータス同期）をスキップし、completed Issue の自動メンテナンスのみ実行する
+2. ツールが見つからない・接続エラーの場合: **Linear 同期がこのスキルの主機能であり MCP 抜きでは意味がないため、フォールバックせず中断する**。`「Linear MCP が利用できないため中断しました。MCP 接続を確認してから再実行してください」`と一言出して終了する（AskUserQuestion で続行可否を問い直さない＝起動時に止めない方針と整合）
 3. 正常に応答が返った場合: そのまま通常フローに進む
-
----
-
-## Phase 0.5: スキャンモード選択
-
-**AskUserQuestion** でスキャンモードを選択する:
-
-- question: "メンテナンスのスキャンモードを選択してください。"
-- header: "スキャンモード"
-- options:
-  1. label: "通常" / description: "プロジェクト同期 + completed Issue メンテナンス"
-  2. label: "フルスキャン" / description: "通常 + 全 Issue（in-progress 含む）の品質整理"
-
-- **通常**: 既存の処理フロー（1〜6a）をそのまま実行
-- **フルスキャン**: 処理 1〜5 を実行後、6a に加えて 6b で全 Issue に issue-maintain の全処理フローを適用
 
 ---
 
@@ -109,11 +90,11 @@ Linear 上でプロジェクトが Done の場合：
 
 - `status: open` のものを列挙する
 - `created` から14日以上経過しているものを警告付きでハイライトする
-- 結果をレポートに含める（個別の対処確認はレポート後の一括承認で行う）
+- 結果をレポートに含める（個別の対処確認はせず、実行後レポートで一括報告する）
 
 ### 6. Issue メンテナンス
 
-#### 6a. completed Issue の自動メンテナンス（通常・フルスキャン共通）
+#### 6a. completed Issue の自動メンテナンス
 
 issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得したステータスを確認し、Done / Canceled になった Issue を検知したら、
 **issue-maintain 相当の処理を自動実行**する。
@@ -128,7 +109,7 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
 
 **メンテナンス済みの判定**: 更新履歴に `メンテナンス:` で始まるエントリがあればスキップ。
 
-#### 6b. 全 Issue 品質整理（フルスキャンのみ）
+#### 6b. 全 Issue 品質整理
 
 `status: in-progress` の全 Issue ファイルに対して、**issue-maintain の全処理フロー**を適用する。
 
@@ -148,33 +129,31 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
 
 検知した各 Issue ファイルに対して、**issue-maintain の処理フロー**（整理対象の判定、圧縮、knowledge 切り出し、completed ファイルの削除）に従って処理する。詳細は issue-maintain SKILL.md を参照。
 
-**承認フロー**: Issue メンテナンスの結果は他の変更と合わせてレポートに含め、**一括でユーザー承認を得る**。個別の Issue ごとに承認は求めない。
+**実行フロー**: 起動＝実行確定のため、Issue メンテナンスは承認待ちせず実行し切る。実施内容（status 更新・圧縮・knowledge 切り出し・削除）は最終レポートにまとめて報告する。Issue ファイルは git 管理下のため、不要な変更は git で復元できる。
 
 ---
 
 ## 処理フロー
 
 ```
-1. .claude/linear/ 内の全チームを列挙
-2. スキャンモードを選択（通常 / フルスキャン）
-3. 各チームの projects/ 内のプロジェクト doc を列挙
-4. 各プロジェクトについて:
+1. .claude/linear/ 内の全チームを列挙（常時フルスキャン）
+2. 各チームの projects/ 内のプロジェクト doc を列挙
+3. 各プロジェクトについて:
    a. Linear MCP でプロジェクト情報を取得
    b. プロジェクトが Done → クリーンアップ候補としてマーク
    c. プロジェクトが Active → プロジェクト doc を更新
    d. 関連 Issue テーブルを更新
-5. issues/ 内の全ファイルを走査
+4. issues/ 内の全ファイルを走査
    a. Linear MCP でステータスを確認
    b. Done / Canceled を検知 → status を更新
    c. completed / canceled ファイルに issue-maintain の処理フローを実行
    d. in-progress ファイルの follow_up 解消チェック
-   e. [フルスキャン] in-progress ファイルに issue-maintain の全処理フローを実行
-6. follow-ups/ 内の全ファイルを走査
+   e. in-progress ファイルに issue-maintain の全処理フローを実行
+5. follow-ups/ 内の全ファイルを走査
    a. status: open の follow-up を列挙
    b. 14日以上経過のものを警告付きでマーク
-7. [フルスキャン] knowledge 切り出し候補の重複排除
-8. 結果レポートをユーザーに提示
-9. 承認を得てから実行
+6. knowledge 切り出し候補の重複排除
+7. すべて実行し切り、結果レポートをユーザーに報告
 ```
 
 ## 出力レポート形式
@@ -197,7 +176,7 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
 | TEAM-404 | 圧縮（358行→45行） | 仕様ドキュメント → knowledge/ | 削除可 |
 | TEAM-578 | 重複削除 | 切り出し済み | 削除可 |
 
-### Issue 品質整理（フルスキャンのみ）
+### Issue 品質整理
 | Issue | テンプレート | 圧縮 | knowledge | 警告 |
 |-------|------------|------|----------|------|
 | TEAM-501 | 不足: 調査結果 | 3箇所 | - | - |
@@ -226,6 +205,7 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
 
 ## 注意事項
 
-- 全ての変更はレポート提示後、**ユーザーの承認を得てから実行**する
+- 起動＝実行確定。承認待ちで止まらず実行し切り、**実行後にレポートで報告**する（AskUserQuestion で問い直さない）
+- Issue ファイルは git 管理下のため、不要な変更は git で復元できる
 - Linear API のレート制限に注意（大量の Issue がある場合はバッチ処理）
 - knowledge/ は**いかなる場合も自動削除しない**

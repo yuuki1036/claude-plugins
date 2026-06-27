@@ -12,7 +12,6 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
-  - AskUserQuestion
 ---
 
 # Indie メンテナンス
@@ -30,18 +29,11 @@ allowed-tools:
 
 ---
 
-## Phase 0: スキャンモード選択
+## 実行ポリシー（起動＝実行確定）
 
-**AskUserQuestion** でスキャンモードを選択する:
+このスキルは**起動した時点で実行確定**とみなす。実行可否やスキャンモードを起動時に問い直さない（AskUserQuestion で止まらない／ストレスフリー設計）。常に**フルスキャン**（処理 1〜4 + 5a/5b で全 Issue に indie-issue-maintain の全処理フローを適用 + 6〜8）を実行する。
 
-- question: "メンテナンスのスキャンモードを選択してください。"
-- header: "スキャンモード"
-- options:
-  1. label: "通常" / description: "プロジェクトサマリー + 放置検知 + completed メンテナンス"
-  2. label: "フルスキャン" / description: "通常 + 全 Issue（in-progress 含む）の品質整理"
-
-- **通常**: 既存の処理フロー（1〜8）をそのまま実行
-- **フルスキャン**: 処理 1〜4 を実行後、5 を拡張して全 Issue に indie-issue-maintain の全処理フローを適用し、6〜8 を実行
+判断が要る検出（放置 Issue・frozen Issue・follow-up の対処）は、**AskUserQuestion で止めずに最終レポートへ列挙**し、ユーザーがチャットで対処を指示できるようにする。ファイル更新（status 更新・圧縮・knowledge 切り出し・削除）は承認待ちせず実行し切り、結果をレポートで報告する。Issue ファイルは git 管理下のため、不要な変更は git で復元できる。
 
 ---
 
@@ -59,18 +51,13 @@ allowed-tools:
 
 `status: in-progress` の Issue のうち、`last_active` が **7日以上前** のものを検出する。
 
-- 検出した Issue をユーザーに提示し、以下の対処を確認:
-  - **継続**: `last_active` を今日に更新して作業を続行
-  - **凍結**: `status: frozen` に変更、`frozen_date` を記録
-  - **破棄**: `status: canceled` に変更
+- 検出した Issue を**最終レポートに列挙**する（経過日数つき）。継続 / 凍結（`status: frozen` + `frozen_date`）/ 破棄（`status: canceled`）の判断はユーザーがチャットで指示する。AskUserQuestion で止めない
 
 ### 3. frozen Issue 再評価
 
 `status: frozen` の Issue のうち、`frozen_date` が **30日以上前** のものを検出する。
 
-- 検出した Issue をユーザーに提示し、以下の対処を確認:
-  - **再開**: `status: in-progress` に変更、`last_active` を今日に更新
-  - **破棄**: `status: canceled` に変更
+- 検出した Issue を**最終レポートに列挙**する（凍結日数つき）。再開（`status: in-progress` + `last_active` 更新）/ 破棄（`status: canceled`）の判断はユーザーがチャットで指示する。AskUserQuestion で止めない
 
 ### 4. debt サマリー
 
@@ -81,7 +68,7 @@ allowed-tools:
 
 ### 5. Issue メンテナンス
 
-#### 5a. completed Issue メンテナンス（通常・フルスキャン共通）
+#### 5a. completed Issue メンテナンス
 
 `issues/` 内の `status: completed` ファイルを走査し、**indie-issue-maintain の処理フロー**に従って品質整理を行う。
 
@@ -91,7 +78,7 @@ allowed-tools:
 
 **メンテナンス済みの判定**: 更新履歴に `メンテナンス:` で始まるエントリがあれば（Grep で検出）スキップ。
 
-#### 5b. 全 Issue 品質整理（フルスキャンのみ）
+#### 5b. 全 Issue 品質整理
 
 `status: in-progress` の全 Issue ファイルに対して、**indie-issue-maintain の全処理フロー**を適用する。
 
@@ -109,7 +96,7 @@ allowed-tools:
 ##### knowledge 重複排除
 複数 Issue から同一トピックの knowledge が候補に上がった場合、マージして1つの knowledge ファイルにする。全 Issue の候補を収集してから index.md と照合する。
 
-**承認フロー**: Issue メンテナンスの結果は他の変更と合わせてレポートに含め、**一括でユーザー承認を得る**。個別の Issue ごとに承認は求めない。
+**実行フロー**: 起動＝実行確定のため、Issue メンテナンスは承認待ちせず実行し切る。実施内容は最終レポートにまとめて報告する。
 
 ### 6. Follow-up 棚卸し
 
@@ -117,11 +104,7 @@ allowed-tools:
 
 - `status: open` のものを列挙する
 - `created` から14日以上経過しているものを警告付きでハイライトする
-- 各 follow-up について対処を確認（AskUserQuestion）:
-  - **昇格**: `/indie-follow-up promote` を実行
-  - **backlog 移動**: `status` を `backlog` に更新し、`backlog.md` に追記
-  - **削除**: `status` を `dismissed` に更新
-- 結果をレポートに含める
+- 検出した follow-up を**最終レポートに列挙**する。対処（昇格 `/indie-follow-up promote` / backlog 移動 / 削除 `dismissed`）はユーザーがチャットで指示する。AskUserQuestion で止めない
 
 ### 7. backlog.md 整理
 
@@ -141,21 +124,19 @@ allowed-tools:
 ## 処理フロー
 
 ```
-1. .claude/indie/ 内の全プロジェクトを列挙（slug 指定時はそれだけ）
-2. スキャンモードを選択（通常 / フルスキャン）
-3. 各プロジェクトについて:
+1. .claude/indie/ 内の全プロジェクトを列挙（slug 指定時はそれだけ／常時フルスキャン）
+2. 各プロジェクトについて:
    a. issues/ 内の全ファイルを走査しステータス集計
-   b. 放置 Issue（in-progress + 7日以上未更新）を検出
-   c. frozen Issue（30日以上凍結）を検出
+   b. 放置 Issue（in-progress + 7日以上未更新）を検出 → レポートに列挙
+   c. frozen Issue（30日以上凍結）を検出 → レポートに列挙
    d. debt Issue を収集
    e. completed Issue にメンテナンス処理を実行
-   f. [フルスキャン] in-progress Issue に indie-issue-maintain の全処理フローを実行
-   g. follow-ups/ 内の open ファイルを走査し、14日以上経過のものを警告付きでマーク
+   f. in-progress Issue に indie-issue-maintain の全処理フローを実行
+   g. follow-ups/ 内の open ファイルを走査し、14日以上経過のものを警告付きでマーク → レポートに列挙
    h. backlog.md を確認
    i. project.md のステータスサマリー・関連 Issue テーブルを更新
-4. [フルスキャン] knowledge 切り出し候補の重複排除
-5. 結果レポートをユーザーに提示
-6. 承認を得てから実行
+3. knowledge 切り出し候補の重複排除
+4. すべて実行し切り、結果レポートをユーザーに報告
 ```
 
 ## 出力レポート形式
@@ -183,7 +164,7 @@ allowed-tools:
 | Issue | 処理 | knowledge 切り出し | 削除提案 |
 |-------|------|-------------------|---------|
 
-### Issue 品質整理（フルスキャンのみ）
+### Issue 品質整理
 | Issue | スコープ | テンプレート | 圧縮 | knowledge | 警告 |
 |-------|---------|------------|------|----------|------|
 | MYAPP-5 | OK | 不足: 調査結果 | 3箇所 | - | - |
@@ -207,6 +188,8 @@ allowed-tools:
 
 ## 注意事項
 
-- 全ての変更はレポート提示後、**ユーザーの承認を得てから実行**する
+- 起動＝実行確定。承認待ちで止まらず実行し切り、**実行後にレポートで報告**する（AskUserQuestion で問い直さない）
+- 判断が要る検出（放置 / frozen / follow-up の対処）はレポートに列挙し、ユーザーがチャットで指示する
+- Issue ファイルは git 管理下のため、不要な変更は git で復元できる
 - knowledge/ は**いかなる場合も自動削除しない**
 - `last_active` の更新は Issue ファイルの frontmatter を直接編集する

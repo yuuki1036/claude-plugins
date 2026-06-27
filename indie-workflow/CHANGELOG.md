@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.0] - 2026-06-27
+
+### Changed
+- maintain 系スキル（`indie-maintain` / `indie-issue-maintain`）の実行前 AskUserQuestion を全廃し「起動＝実行確定」に統一。ユーザーが起動した時点で実行意思は確定しているとみなし、選択 UI で ChatTool を奪わず止まらず最後まで実行する（ストレスフリー設計）
+  - `indie-maintain`: 起動時のスキャンモード選択を撤去し、**常時フルスキャン**で実行。放置 Issue・frozen Issue・follow-up の対処は AskUserQuestion で止めず最終レポートに列挙し、判断はユーザーがチャットで指示。承認待ちを廃し実行後レポートで一括報告
+  - `indie-issue-maintain`: スコープ超過警告・レビューガードを非ブロッキング化（レポート列挙に留める）、削除候補・knowledge/concept 切り出し・整理計画の事前承認を撤去し実行後報告に変更。スコープ外 follow-up 候補は副作用回避のため自動記録せずレポート列挙に留める
+  - `indie-maintain` / `indie-issue-maintain` の allowed-tools から `AskUserQuestion` を除去（command 側も同期）
+- Issue ファイルは git 管理下のため、無確認実行でも不要な変更は git で復元できる旨を各注意事項に明記
+
 ## [1.33.1] - 2026-06-26
 
 ### Fixed
