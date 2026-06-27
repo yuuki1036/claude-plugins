@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.33.1] - 2026-06-27
+
+### Fixed
+- `inject-rules.sh` の排他警告を `.claude/indie` ディレクトリ同居判定に変更（#74）。従来の `grep '"indie-workflow@' settings.json` はキー存在のみを見ており、無効化（`":false"`）でも文字列が残って誤検知し、project-scoped 有効化を取りこぼしていた。実際にトリガー衝突しうるのは両ワークフローのデータが同一プロジェクトに同居する時だけなので、ディレクトリ存在を唯一のシグナルにした
+
 ## [1.33.0] - 2026-06-27
 
 ### Changed

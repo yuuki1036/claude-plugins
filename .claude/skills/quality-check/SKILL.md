@@ -222,11 +222,14 @@ hook 共通ラッパーの正本と複製が byte-identical であることを�
 
 1. `git status --porcelain` で working tree に変更（未コミット / ステージ済み）があるか確認
 2. 変更が無ければ本チェックは skip（レビュー対象なし）
-3. `code-review` プラグインの有無を判定（後方互換・プラグイン独立性のため）:
+3. `code-review` プラグインの有効性を判定（後方互換・プラグイン独立性のため）。**キー存在だけを見ると無効化（`":false"`）でも文字列が残り誤検知し、project-scoped 有効化を取りこぼす**（#74 と同根）。グローバル + プロジェクトローカルの settings を見て、`":true"` を明示マッチする:
    ```bash
-   if grep -q '"code-review@' "$HOME/.claude/settings.json" 2>/dev/null; then HAS_REVIEW=1; else HAS_REVIEW=0; fi
+   HAS_REVIEW=0
+   for f in "$HOME/.claude/settings.json" "$PWD/.claude/settings.json" "$PWD/.claude/settings.local.json"; do
+     grep -Eq '"code-review@[^"]*"[[:space:]]*:[[:space:]]*true' "$f" 2>/dev/null && HAS_REVIEW=1
+   done
    ```
-   `HAS_REVIEW=0` の場合は warning（「code-review 未インストールのためセルフレビューを skip」）を出して skip する
+   `HAS_REVIEW=0` の場合は warning（「code-review 未インストール / 無効のためセルフレビューを skip」）を出して skip する
 
 **実行方法**:
 
