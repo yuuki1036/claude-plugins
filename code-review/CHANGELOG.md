@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.30.0] - 2026-06-28
+
+### Added
+- **self-review に `--save [path]` フラグを追加**。レビュー結果の markdown レポート全文をファイルに保存する。コミット・PR を経由せず手元にレビュー履歴を残す用途。path 省略時は `.claude/reviews/self-review-{YYYYMMDD-HHMM}.md`（code-review は汎用配布物のためプロジェクト固有でない汎用パスをデフォルトにする）。`--embed` 同時指定時は呼び出し元が出力を集約する前提のため保存しない。保存失敗はレビュー本体をブロックしない best-effort（Step 6.6）
+
 ## [2.29.0] - 2026-06-26
 
 ### Added
