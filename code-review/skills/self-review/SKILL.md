@@ -4,12 +4,11 @@ description: >
   Phase 0 トリアージ + 動的エージェント構成のセルフレビュー。
   diff → explorer(sonnet) → reviewer(opus) を動的構成、severity×confidence マトリクスでフィルタ。
   トリガー: 「セルフレビュー」「/self-review」「自分の変更を確認」「コミット前にチェック」
-  引数: [base branch] [--staged] [--focus <観点>] [--exclude <観点1,観点2>] [--embed] [--save [path]] (省略時は自動検出)
+  引数: [base branch] [--staged] [--focus <観点>] [--exclude <観点1,観点2>] [--embed] (省略時は自動検出)
 effort: xhigh
 allowed-tools:
   - Bash
   - Read
-  - Write
   - AskUserQuestion
 ---
 
@@ -69,14 +68,6 @@ embed mode 時の return 仕様（**dual format**: 人間可読 markdown ＋ 機
 - 末尾に `[embed-mode: findings-only, no-prompt]` の 1 行 marker を出す（JSON ブロックの**後ろ**）
 - AskUserQuestion は呼ばない（呼び出し元の UX を阻害しない）
 - 後方互換: `--embed` 指定なしの呼び出し（`/self-review` 単独実行等）は従来通り Step 7 まで完走し、JSON ブロックは出力しない
-
-**`--save [path]`（レビュー結果のローカル保存）:**
-
-`--save` が指定された場合、Step 6 の markdown レポート全文をファイルに保存する（コミット・PR を経由せずローカルにレビュー履歴を残す用途）。保存の実処理は Step 6.6 で行う。
-
-- 保存先: `--save <path>` で path を明示した場合はそのパス。省略時（`--save` 単独）は `.claude/reviews/self-review-{YYYYMMDD-HHMM}.md`
-- code-review は汎用配布物なので、特定プロジェクト固有のパスではなく汎用の `.claude/reviews/` をデフォルトにする（プロジェクト非依存）
-- `--embed` と同時指定された場合は **embed を優先し保存しない**（呼び出し元が出力を集約する前提のため）
 
 **`--focus` / `--exclude`（同一セッションでの重複レビュー回避）:**
 
@@ -426,23 +417,6 @@ payload 規約（review skill と同一。subscriber が publisher を区別せ�
 - **反証レイヤー（Phase 4.8）の効果は `severity` / `confidence` に反映済み**（Step 5 で verdict 反映を適用してから報告するため、JSON には最終値が入る）。`refuted` で取り下げた MAJOR/MINOR は findings に含まれない。**係争中の BLOCKER/CRITICAL は通常通り findings に残り、`title` または `impact` に `⚠️ 反証メモ:` を含める**（schema_version は据え置き 1。新フィールドは追加しない＝consumer 後方互換）
 - JSON として valid であること（末尾カンマ禁止、ダブルクオート、改行は文字列内で `\n`）
 - このブロックの**後**に `[embed-mode: findings-only, no-prompt]` marker を置く
-
-### 6.6. レポートのファイル保存（`--save` 指定時のみ）
-
-`--save` 引数が指定されている場合のみ、Step 6 の markdown レポート全文をファイルに保存する。`--save` 未指定なら本ステップ全体を skip する（後方互換）。
-
-**embed mode skip**: `--embed` が指定されている場合は `--save` の有無に関わらず本ステップを skip する（呼び出し元が出力を集約する前提）。
-
-**保存手順**:
-
-1. 保存先パスを決定する
-   - `--save <path>` で path を明示した場合はそのパス
-   - `--save` 単独（path 省略）の場合は `.claude/reviews/self-review-{YYYYMMDD-HHMM}.md`。タイムスタンプは `date +%Y%m%d-%H%M` で取得する
-2. 保存先ディレクトリが無ければ作成する（`mkdir -p` で親ディレクトリを用意）
-3. **Step 6 の markdown レポート全文**を Write でファイルに書き出す。embed mode 専用の構造化 JSON ブロック（Step 6.5）や marker は**含めない**（人が読み返すためのレポート本文のみ）
-4. 保存完了後、チャットのレポート末尾に保存先を 1 行示す（例: `📄 レビュー結果を保存: .claude/reviews/self-review-20260628-1430.md`）
-
-**best-effort**: 保存に失敗（権限エラー・ディスク等）してもレビュー本体は成功扱いとし、失敗した旨を 1 行警告して Step 7 へ続行する（保存はレビュー結果の付随的永続化であり、レビューそのものをブロックしない）。
 
 ### 7. 修正方針の確認
 
