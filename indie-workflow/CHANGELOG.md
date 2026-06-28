@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.35.1] - 2026-06-28
+
+### Fixed
+- `indie-issue-create` のテンプレート 4 ファイル（bugfix / feature / investigation / debt）の `status` コメントの値列挙を `indie-maintain` の正式定義（`backlog` / `in-progress` / `frozen` / `completed` / `canceled`）に揃えた。従来は `in-progress / completed / canceled` のみで `backlog` / `frozen` が欠落しており、`indie-issue-discover` が起票する `status: backlog` や `indie-maintain` が扱う `frozen` がテンプレ上は未定義の状態だった
+
 ## [1.35.0] - 2026-06-27
 
 ### Added

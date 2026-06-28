@@ -1,5 +1,5 @@
 ---
-status: in-progress          # 必須。値: in-progress / completed / canceled
+status: in-progress          # 必須。値: backlog / in-progress / frozen / completed / canceled
 id: {ISSUE-ID}               # 必須。例: MYAPP-3
 type: debt                   # 必須。値: bugfix / feature / investigation / debt
 scope_size: small            # 必須。値: small / medium / large
