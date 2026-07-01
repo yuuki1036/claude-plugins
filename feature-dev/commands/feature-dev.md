@@ -435,6 +435,49 @@ Phase 5 has two modes — check the invocation context:
 
 ---
 
+## Phase 5.3: 静的オラクルゲート（fail-closed / 決定的検証）
+
+**Goal**: runtime smoke test（Phase 5.5）と LLM レビュー（Phase 6 = 多体 agent）に進む**手前**で、型チェック・lint・テストという**決定的オラクル**を変更範囲に絞って走らせ、機械的に落とせる欠陥をここで潰す。
+
+**Why this phase exists**: Phase 5.5 は *runtime* smoke test、Phase 6 は *LLM* レビューで、型/テストを exit code で判定する決定的ゲートがパイプラインに無かった。型エラー・テスト赤はサーバ起動（5.5）や multi-agent レビュー（6）に投げるより先に、最も安いオラクルで落とすのが Clearwing 原則 8（外部オラクル + fail-closed）。ルート CLAUDE.md「コスト×精度パイプライン設計指針」参照。最安オラクルを先頭に置くため Phase 5.5 より前に配置し、Phase 5.5 が skip される静的変更でも必ず通す。
+
+### Step 1: オラクル検出（無ければ graceful skip）
+
+```bash
+git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-changed-files.txt
+ORACLE_TC=""; ORACLE_LINT=""; ORACLE_TEST=""
+if [ -f package.json ]; then
+  grep -q '"typecheck"' package.json && ORACLE_TC="npm run typecheck"
+  [ -z "$ORACLE_TC" ] && grep -q '"tsc"' package.json && ORACLE_TC="npm run tsc"
+  grep -q '"lint"' package.json && ORACLE_LINT="npm run lint"
+  grep -q '"test"' package.json && ORACLE_TEST="npm test"
+  # npm init 既定のプレースホルダ（"test": "echo ... exit 1"）は実テストではないので除外（恒常赤の誤爆防止）
+  grep -Eq '"test"[[:space:]]*:[[:space:]]*"echo' package.json && ORACLE_TEST=""
+fi
+# 他エコシステムのフォールバック（存在するもののみ採用）
+[ -z "$ORACLE_TC" ] && [ -f tsconfig.json ] && command -v npx >/dev/null && ORACLE_TC="npx tsc --noEmit"
+[ -z "$ORACLE_TEST" ] && [ -f Cargo.toml ] && ORACLE_TEST="cargo test"
+[ -z "$ORACLE_TEST" ] && [ -f go.mod ] && ORACLE_TEST="go test ./..."
+[ -z "$ORACLE_TC" ] && [ -f pyproject.toml ] && command -v mypy >/dev/null && ORACLE_TC="mypy ."
+```
+
+### Step 2: 実行（変更範囲に絞る。全ビルド/全テストは重いので避ける）
+
+- 型チェック・lint は常時実行（安い）。テストは effort に応じて出し分ける（`triage-guide.md` の effort 予算に接続）:
+  - `low` / `medium`: 型チェック（+ lint）のみ。テストは Phase 5.5 と Phase 6 に委ねる
+  - `high` 以上: 型チェック + lint + テスト。テストは可能なら**変更ファイルに関連するもののみ**（例: jest なら `npx jest --findRelatedTests $(cat /tmp/feature-dev-changed-files.txt)`、他は最小スコープ）
+- 各コマンドの exit code を記録する。
+
+### Step 3: 判定（fail-closed）
+
+- **全て緑（exit 0）**: Phase 5.5 へ進む。この結果は Phase 6 の focus 判定でも「静的検証済み」として扱ってよい。
+- **いずれか赤（exit≠0）**: Phase 5.5 / Phase 6 へ**進まず**、エラー出力を Phase 5 Fix Mode に渡して決定的に修正 → 本ゲートを再実行。
+- **オラクル不在（検出ゼロ）**: gate できないので Phase 5.5 へ進むが、Phase 7 summary に「静的オラクル無し（型/テスト未検証）」と明記する（fail-open は「検証手段が無い」ときだけ許容。曖昧・実行エラー時は赤扱いで保留に倒す）。
+
+**暴走ガード**: 本ゲート ↔ Fix Mode の往復は**最大 2 回**まで。2 回修正しても赤が残る場合はループを止め、`AskUserQuestion` で「手動修正して再開 / 承知の上で Phase 5.5 へ進む / abandon」をユーザーに委ねる（同一エラーの無限往復を防ぐ）。`low` effort では本ゲート自体を skip 可（速度優先。ただし skip した旨は summary に残す）。
+
+---
+
 ## Phase 5.5: Runtime Smoke Test
 
 **Goal**: Catch runtime initialization bugs that static checks (tsc / lint / build) cannot detect, before reaching Quality Review.

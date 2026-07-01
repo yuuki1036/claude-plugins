@@ -79,17 +79,18 @@ allowed-tools:
 ## Phase 4: findings 集約
 
 1. 全視点の findings を回収する。agent が失敗した視点は「欠損視点」として明記する（黙って欠落させない）
-2. **dedup**: 同一セクション・同根の指摘は 1 件に統合（視点名は併記）
-3. severity（BLOCKER / MAJOR / MINOR）× セクションで整理し、レポートとして提示する:
+2. **dedup**: 同一セクション・同根の指摘は 1 件に統合（視点名は併記）。複数視点が独立に同じ指摘を挙げた場合は confidence を引き上げてよい
+3. **confidence フィルタ**: confidence < 50 の finding は MINOR に降格する（未検証・確信の薄い指摘を BLOCKER/MAJOR で提示しない＝過剰指摘の抑制）。ただし BLOCKER は消さず注記で残す（fail-closed: 重大リスクの見落としコスト > 偽陽性コスト）
+4. severity（BLOCKER / MAJOR / MINOR）× セクションで整理し、レポートとして提示する:
 
 ```
 ## Design Review: <doc title>
 
 視点: <実行した視点> / 欠損: <あれば>
 
-| severity | section | title | 視点 |
-|---|---|---|---|
-| BLOCKER | 採用案 | ... | pragmatic |
+| severity | conf | section | title | 視点 | 反証 |
+|---|---|---|---|---|---|
+| BLOCKER | 85 | 採用案 | ... | pragmatic | 支持 |
 
 ### 詳細
 （finding ごとに evidence と suggestion）
@@ -97,6 +98,25 @@ allowed-tools:
 ### 裏取りされた前提
 （Verified premises の集約）
 ```
+
+（「反証」列は Phase 4.5 を実行した場合のみ。未実行なら列ごと省略する）
+
+## Phase 4.5: 反証（敵対的独立検証・high 以上）
+
+**Goal**: 集約後の findings（特に BLOCKER / MAJOR）を、レビュー視点とは別の独立 agent に**反証**させ、過剰指摘（偽陽性）を落とす。設計レビューは偽陽性コストが高い（ユーザーが不要な再設計に引きずられる）ため、Clearwing 原則 7（敵対的独立検証）を適用する。
+
+**実行条件（effort 傾斜）**: `${CLAUDE_EFFORT}` が `high` 以上のときのみ実行。`low` / `medium` は skip（コスト優先）。BLOCKER / MAJOR の finding が 1 件も無ければ skip。
+
+**手順**:
+
+1. BLOCKER / MAJOR の finding を対象に、`Agent`（`design-reviewer`、`model: opus`）を 1 体起動する。**元 reviewer の suggestion / rationale は渡さず**、finding の `section` と `evidence`（file:line）と「この指摘は本当に妥当か？ 反論を組め」という中立な問いだけを渡す（アンカリング防止）。
+2. agent は doc とコードを独立に読み直し、各 finding を **支持 / 反証 / 保留** で返す（根拠は file:line か doc 引用）。
+3. 判定を集約表の「反証」列に反映する:
+   - **反証**（別 agent が明確に否定）→ その finding は severity を 1 段下げるか、レポートで「反証あり」と明示し Phase 5 の反映候補から外す
+   - **保留 / 支持** → 据え置き
+   - **BLOCKER は反証されても消さず**、「反証あり（要判断）」と注記して残す（fail-closed）
+
+**暴走ガード**: 反証 agent は 1 体・1 ラウンドまで（多段化しない）。
 
 ## Phase 5: doc への反映
 
@@ -143,9 +163,10 @@ status 更新（draft → approved）はユーザーが判断する。BLOCKER �
 2. Phase 1: doc + 関連成果物（spec / ADR / Issue）読み込み
 3. Phase 2: 視点トリアージ（${CLAUDE_EFFORT} / --focus）
 4. Phase 3: レビュー実行（agent 並列 or メインコンテキスト）
-5. Phase 4: findings 集約（dedup → severity × セクション表）
-6. Phase 5: 採用 finding を doc に反映 + last-validated 更新
-7. Phase 6: 完了報告（approved 遷移の提案）
+5. Phase 4: findings 集約（dedup → confidence フィルタ → severity × セクション表）
+6. Phase 4.5: 反証（high 以上・BLOCKER/MAJOR を独立 agent で敵対的検証）
+7. Phase 5: 採用 finding を doc に反映 + last-validated 更新
+8. Phase 6: 完了報告（approved 遷移の提案）
 ```
 
 ---

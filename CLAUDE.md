@@ -33,7 +33,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | dev-workflow | 3 | 5 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認の開発ワークフロー（chrome-devtools MCP 同梱。worktree-setup / worktree-teardown で並列開発環境の構築・破棄もサポート。pr-creator は PR 本文をユーザー提示前に writing-polish で必須推敲（インストール時）） |
 | claude-meta | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善・CCアップデート追従・eval 回帰テスト・新コンポーネント追加前判断 |
 | linear-workflow | 10 | 10 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | Linear MCP 連携の Issue/プロジェクト管理（knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計 + open を grill で詰める。issue-create で着手前 spec 選択（WHAT/HOW/WHY を bdd-spec/design-doc/adr に dormant ルーティング）。issue/knowledge/follow-up 等の全散文成果物を確定前に writing-polish で必須推敲（インストール時）、code コメント・docs を含む広域ルールは project-rules.md に注入） |
-| indie-workflow | 11 | 11 | 2 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | 個人開発向けローカル Issue 管理（linear-workflow と排他。knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計 + open を grill で詰める。indie-issue-create で着手前 spec 選択（WHAT/HOW/WHY を bdd-spec/design-doc/adr に dormant ルーティング）。indie-issue-discover で AI が多観点スキャン（バグ兆候・未実装・FE 改善・テスト欠落・既存シグナル）して課題を発見し issue を自動起票（起票上限・status:backlog・重複除外で暴走防止、起票は indie-issue-create 再利用）。issue/knowledge/follow-up/retrospective 等の全散文成果物を確定前に writing-polish で必須推敲（インストール時）、code コメント・docs を含む広域ルールは project-rules.md に注入） |
+| indie-workflow | 11 | 11 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | 個人開発向けローカル Issue 管理（linear-workflow と排他。knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計 + open を grill で詰める。indie-issue-create で着手前 spec 選択（WHAT/HOW/WHY を bdd-spec/design-doc/adr に dormant ルーティング）。indie-issue-discover で AI が多観点スキャン（バグ兆候・未実装・FE 改善・テスト欠落・既存シグナル）して課題を発見し issue を自動起票（起票上限・status:backlog・重複除外で暴走防止、起票は indie-issue-create 再利用。起票候補は Phase 4.5 で外部オラクル + 独立検証 agent discover-verifier により誤検知を起票前に落とす=fail-closed）。issue/knowledge/follow-up/retrospective 等の全散文成果物を確定前に writing-polish で必須推敲（インストール時）、code コメント・docs を含む広域ルールは project-rules.md に注入） |
 | plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + ほぼ全部 install しているマーケットプレイスの後発追加取りこぼし通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 | feature-dev | 1 | - | 2 | SessionStart | 8 phase 機能開発ワークフロー（Phase 1.3 で bdd-spec から spec.md 生成 + Phase 1.7 動的トリアージ + Phase 3 clarifying を grill 化（1問ずつ・推奨つき・コードで答えられる問いは自己解決）+ Phase 4.5 で採用設計を design-doc に export（dormant）+ Phase 6 G-V 自動 fix ループ + runtime smoke test 含む。code-explorer / code-architect 同梱。Phase 6 は code-review:self-review に委譲、code-review 未インストール時 fail-fast）。claude-plugins-official からフォーク |
@@ -134,6 +134,53 @@ CLAUDE.md に書いたルールが守られていない事象が以下いずれ�
 - 文脈依存で例外が多い（「基本は X、ただし Y のときは Z」）
 - 違反してもリカバリが容易
 - 判定に自然言語理解が必要
+
+## コスト×精度パイプライン設計指針（多段 agent スキル/コマンド）
+
+コスト（トークン・レイテンシ）と精度（偽陽性・偽陰性）を両立する多段 agent パイプラインを設計するときの共通指針。code-review / feature-dev / indie-issue-discover / failure-journal が独立に体現しているパターンを一般化したもの（元ネタ: Zenn「LLMエージェントのコスト×精度両立戦略：Clearwing に学ぶ設計原則」）。
+
+新しい深掘り系スキル・コマンド・agent team を設計するときは、以下 10 原則のうち **どれを採用し・どれをあえて捨てたか** を SKILL.md に一言残す。全部入れる必要はない（対象規模に合わせる）。核心は「**弱いモデルの失敗モードをワークフローで囲い込む**」＝賢いモデル購買より先に「どこで絞り・どこで検証し・どこで止めるか」を設計すること。
+
+| # | 原則 | 一言 | 正本 / 参考実装 |
+|---|------|------|----------------|
+| 1 | ファネル | 安価な絞り込み（diff/scope/grep/AST/トリアージ）を先頭に置き、高コスト検証は通過分にだけ適用 | `code-review/references/triage-guide.md` |
+| 2 | 2 軸スコア化 | 結論には confidence(0-100) と severity を独立フィールドで付与し、報告閾値をマトリクスで決める | `code-review/references/scoring-guide.md` |
+| 3 | 段階予算 | `${CLAUDE_EFFORT}` → (agent 数 / 反復回数 / 起票数) をマッピング。low は速度優先・high 以上で多重化 | `feature-dev/references/triage-guide.md` |
+| 4 | モデルルーティング | 探索=弱モデル / 判断・検証・独立検証=強モデル / 統合・メタレビュー=別系統モデル（下表） | 本節の下表 |
+| 5 | 暴走ガード | 予算上限・最大反復・同一 fingerprint 再試行抑制の三点セットを PoC 段階から装備 | `indie-workflow/skills/indie-issue-discover` |
+| 6 | 証拠ラダー | 単発の指摘は蓄積し、閾値超で下流の高コスト処理や規約/hook に昇格させる | `failure-journal` |
+| 7 | 敵対的独立検証 | 高リスク結論は別モデル・別コンテキストで反証。**発見者の推論を検証者に見せない**（迎合防止） | `code-review` 反証レイヤー |
+| 8 | 外部オラクル + fail-closed | 型/テスト/コンパイル/実行の**機械判定**で客観検証し、LLM に投げる前に落とす。曖昧・エラー時は保守側（不可/保留）に倒す | — |
+| 9 | 構造化受け渡し | agent 間は最小 JSON（識別子・file:line）のみ渡してコンテキスト膨張を防ぐ | Event Bus / Shared State 規約 |
+| 10 | 確信度フィールド化 | 不確実な主張は「未検証」タグで明示し、フィルタで自動除外。断定で高 severity を作らない | `code-review/references/scoring-guide.md` |
+
+### モデルルーティング規約（原則 4）
+
+agent / サブタスクのロールに応じて既定モデルを出し分ける。「**後から変えにくい判断を伴う結論には強モデル、絞り込み探索には弱モデル**」が原則。自動プローブはせず人手のルーティング表でハードコードする。
+
+| ロール | 既定モデル | 理由 |
+|--------|-----------|------|
+| 探索・収集・機械的サマリ（read-only fan-out。code-context / explorer 等） | `sonnet` | 事実収集は弱モデルで足り、体数を稼げる |
+| 判断・検証・レビュー（load-bearing な結論。reviewer 等） | `opus` + effort 引き上げ | 誤判定コストが高い段は精度優先 |
+| 敵対的独立検証（発見者と別コンテキストで反証。code-review 反証 / discover-verifier / design-review 反証） | `opus` | 検証は精度が命なので強モデル。独立性は「発見者の推論を渡さない」+ 別コンテキストで担保する（モデルを弱める必要はない） |
+| 統合・メタレビュー・設計 blueprint（meta-reviewer / architect 等） | `fable` | 別系統モデルで相関を切り、判定の偏りを平す |
+
+- agent frontmatter か skill 本文で **明示指定**する（親からの継承任せにしない。指定漏れは `validate_plugin_quality.py` の warning で拾えるようにするのが望ましい）。
+- 1 呼び出し内は単一モデル。ステージ間での切り替えは可。
+
+### 外部オラクル + fail-closed（原則 8）の勘所
+
+「正解を機械判定できる手段」を 1 つ持つかがパイプライン精度の上限を決める。**LLM レビューの手前に安いオラクルを差し込む**のが最も費用対効果が高い。
+
+- コード領域: 型チェック（`tsc --noEmit` 等）・テスト・lint・ビルド・実行結果。**変更範囲・対象ファイルに絞って**実行する（全ビルド/全テストは重い）。
+- 検出できない・実行不能なら結果を破棄せず「疑いのまま保留（backlog / 人手送り）」に倒す（fail-closed）。誤 OK 判定コストが高いドメインほど効く。
+- 検証プラグイン（code-review 等）が未インストールなら品質ゲートは skip せず **fail-fast**（feature-dev Phase 6 が採用）。
+
+### あえて入れない（このリポジトリでの判断）
+
+- **70/25/5 の予算配分＋繰越**: Claude Code は直列トークン予算でなく並列 agent＋体数上限モデル。effort→体数マッピングで十分。繰越は管理コストに見合わない。
+- **finding schema の全面統一**: 共通化はコア 3 点（severity 語彙 / confidence 0-100 / evidence 必須）に留め、報告マトリクスは scoring-guide.md を soft 参照。ドメイン粒度を壊さない。
+- **暴走ガード・モデルルーティングの hook 強制**: effort やループ回数は LLM の文脈判断で決まり決定的検証できない。意思決定フロー②に従い CLAUDE.md 規約止まりが正解。
 
 ## Event Bus 規約（Hook = Message Bus）
 

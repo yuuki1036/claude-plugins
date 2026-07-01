@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-07-01
+
+### Added
+- Phase 5.3「静的オラクルゲート」を新設。runtime smoke test（Phase 5.5）と LLM 品質レビュー（Phase 6）の**手前**で、型チェック / lint / テストという決定的オラクルを変更範囲に絞って実行し、exit≠0 なら Phase 5 Fix Mode に差し戻す（fail-closed）。型/テストを exit code で判定する決定的ゲートがパイプラインに一つも無く、機械的に落とせる欠陥まで multi-agent レビューに投げていた穴を塞ぐ。オラクルはプロジェクトの package.json scripts / tsconfig / Cargo.toml / go.mod / pyproject を検出（不在時は graceful skip、fail-open は summary に明記）、テスト実行は effort 連動（low/medium は型チェックのみ、high 以上で関連テスト）、ゲート↔Fix の往復は最大 2 回の暴走ガード付き。ルート CLAUDE.md「コスト×精度パイプライン設計指針」（Clearwing 原則 8: 外部オラクル + fail-closed）に準拠
+
 ## [2.7.2] - 2026-06-25
 
 ### Fixed

@@ -1,6 +1,7 @@
 ---
 name: design-reviewer
-description: Reviews a design doc from a single assigned perspective (minimal / clean / pragmatic / risk), verifying claims against the actual codebase and returning structured findings with severity and evidence. Spawned in parallel by the design-review skill, one agent per perspective.
+description: Reviews a design doc from a single assigned perspective (minimal / clean / pragmatic / risk), verifying claims against the actual codebase and returning structured findings with severity, confidence, and evidence. Spawned in parallel by the design-review skill, one agent per perspective.
+model: opus
 tools: Glob, Grep, Read
 color: blue
 ---
@@ -40,6 +41,7 @@ Return ONLY this structure (it is parsed by the design-review skill, not shown v
 ### Findings
 
 - severity: <BLOCKER|MAJOR|MINOR>
+  confidence: <0-100。この指摘が正しいと考える確信度>
   section: <doc 内のセクション名>
   title: <指摘の一行要約>
   evidence: <根拠。コード由来なら file:line、doc 内矛盾なら該当箇所の引用>
@@ -60,6 +62,6 @@ Return ONLY this structure (it is parsed by the design-review skill, not shown v
 
 ## Rules
 
-- Evidence-first: 根拠を示せない指摘は出さない。推測には「未検証」と明記し severity を MINOR に落とす
+- Evidence-first: 根拠を示せない指摘は出さない。推測には「未検証」と明記し severity を MINOR に落とし、confidence も低く付ける（目安 50 未満）。コードで裏取りできた前提由来の指摘は confidence を高く付けてよい
 - 件数を稼がない: 同根の指摘は 1 件にまとめる。lens 外の指摘は捨てる
 - 代替設計を書き始めない: 「もっと単純な案がある」は suggestion で方向だけ示す（設計し直すのは本体スキルとユーザーの仕事）

@@ -44,8 +44,8 @@
     },
     {
       "name": "indie-workflow",
-      "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。AI が多観点スキャンで課題を発見し issue を自動起票（indie-issue-discover）。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.35.1",
+      "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。AI が多観点スキャンで課題を発見し issue を自動起票（indie-issue-discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
+      "version": "1.36.0",
       "author": {
         "name": "yuki"
       },
@@ -71,8 +71,8 @@
     },
     {
       "name": "feature-dev",
-      "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec plugin から BDD spec.md を生成し architect の入力契約に使用、Phase 1.6 で kvault（外部 CLI、未導入時 skip）から横断知見を recall し architect に advisory 注入、Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.5 に self-lock template、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
-      "version": "2.7.2",
+      "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec plugin から BDD spec.md を生成し architect の入力契約に使用、Phase 1.6 で kvault（外部 CLI、未導入時 skip）から横断知見を recall し architect に advisory 注入、Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.3 で型/テスト/lint の決定的オラクルゲート（fail-closed で高コストレビュー前に機械的欠陥を落とす）、Phase 5.5 に self-lock template、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
+      "version": "2.8.0",
       "author": {
         "name": "yuki"
       },
@@ -143,8 +143,8 @@
     },
     {
       "name": "design-doc",
-      "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱",
-      "version": "0.2.3",
+      "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱（confidence フィルタ + high 以上で敵対的反証 phase）",
+      "version": "0.3.0",
       "author": {
         "name": "yuki"
       },

@@ -73,6 +73,8 @@ ls -d .claude/indie/*/ 2>/dev/null
 
 対象プロジェクトのコードと管理ファイルを以下の観点でスキャンし、課題候補を抽出する。FE（フロントエンド）アプリのバグ・未実装機能を重視する。並列時は観点ごとに `Agent`（Explore）を起動して候補を集約する。
 
+> **モデルルーティング（Clearwing 原則 4）**: スキャン（候補列挙＝ランカー役）は安いモデルで足りるので、並列 `Agent` は `model: sonnet` を明示する。誤検知の最後の砦である Phase 4.5 の独立検証（深掘り役）は強モデルを使う。ルート CLAUDE.md「モデルルーティング規約」参照。
+
 **観点 A — バグ・不具合の兆候（コード）**
 - `TODO` / `FIXME` / `HACK` / `XXX` / `BUG` コメント（`grep -rn`）
 - 握りつぶし: 空 `catch {}`、`catch (e) {}` で何もしない、`.catch(() => {})`
@@ -107,8 +109,11 @@ ls -d .claude/indie/*/ 2>/dev/null
 ```
 { title, type(bugfix|feature|debt|investigation), description,
   evidence: ["path:line", ...], impact(high|medium|low),
-  effort(small|medium|large), rationale }
+  effort(small|medium|large), rationale,
+  evidence_level(suspected|static-confirmed|verified) }
 ```
+
+`evidence_level` は証拠強度（Clearwing の証拠ラダー）。スキャン直後は全候補 `suspected`（grep ヒット等の一次シグナルのみ）。Phase 4.5 の検証を通過すると `static-confirmed`（型/テスト/lint で機械裏取り）や `verified`（独立検証 agent が実在と判定）へ昇格する。ルート CLAUDE.md「コスト×精度パイプライン設計指針」参照。
 
 ### Phase 4: 正規化・重複排除・優先度付け
 
@@ -116,11 +121,56 @@ ls -d .claude/indie/*/ 2>/dev/null
 2. **backlog 重複除外**: `backlog.md` に既出の項目を除外
 3. **候補マージ**: 同一箇所を指す候補を 1 件に統合
 4. **優先度スコア**: `impact 重み ÷ effort` を基本に、type 重み（bugfix・未実装 > debt > investigation）で調整
-5. **分類**: 上位 N 件を「起票」、残りを「backlog 蓄積」に振り分け
+5. **分類**: 上位 N 件を「起票候補」、残りを「backlog 蓄積」に振り分け（起票は Phase 4.5 検証通過が前提）
 
 候補が 0 件なら、その旨をレポートして終了（健全なら issue を捏造しない）。
 
-### Phase 5: 自動起票（上位 N 件）
+### Phase 4.5: 独立検証（起票候補のみ・fail-closed）
+
+**Goal**: 起票候補（上位 N 件）**だけ**を対象に、発見者とは別コンテキストで検証し、誤検知（存在しないバグ・意図的な実装・既に対処済みの箇所）を**起票前に**落とす。discover の唯一の構造的弱点は「発見者＝起票者の一気通貫」で「それっぽい嘘」を潰せないこと。ここを塞ぐのが Clearwing 原則 7（敵対的独立検証）+ 8（外部オラクル + fail-closed）。
+
+**対象の限定（コスト暴走防止）**: 検証は**起票候補（上位 N 件）に限定**する。backlog 蓄積分は検証しない（傾斜予算配分。全候補を検証するとコスト爆発する）。effort による出し分け:
+
+| effort | 検証対象 | 独立検証 agent |
+|--------|---------|---------------|
+| low / medium | 上位 1〜2 件のみ（外部オラクルは全候補、agent は上位のみ） | 省略可（オラクルのみで可） |
+| high | 起票候補 N 件すべて | 各候補に 1 体 |
+| xhigh / max | 起票候補 N 件すべて | 各候補に 1 体 + 曖昧判定は再検証 |
+
+**Step 1: 外部オラクルによる裏取り（決定的・安い）**
+
+対象プロジェクトに検証コマンドがあれば、候補 evidence の**対象ファイルに絞って**実行する（全ビルド/全テストは重いので避ける）。
+
+```bash
+ORACLE_TC=""; ORACLE_LINT=""
+if [ -f package.json ]; then
+  grep -q '"typecheck"' package.json && ORACLE_TC="npm run typecheck"
+  grep -q '"lint"' package.json && ORACLE_LINT="npm run lint"
+fi
+[ -z "$ORACLE_TC" ] && [ -f tsconfig.json ] && command -v npx >/dev/null && ORACLE_TC="npx tsc --noEmit"
+```
+
+- 型/lint が候補の `path` を**赤で指摘**したら `evidence_level = static-confirmed` に昇格（バグの兆候が機械的に裏取りされた）。
+- コマンド不在・実行不能なら昇格させず `suspected` のまま（fail-open は「検証手段が無い」ときだけ。捏造で昇格させない）。
+
+**Step 2: 敵対的独立検証（agent・迎合防止）**
+
+起票候補ごとに `Agent`（`discover-verifier`、`model: opus`）を起動する。**発見者の `rationale` は渡さない**（思い込み伝播を遮断）。渡すのは `evidence`（`path:line`）と `type` と中立な問いだけ。agent は自分でコードを読み直し、4 軸を YES/NO + 確信度(0-100) で返す:
+
+- **REAL**: その箇所に実際に問題があるか（例: 空 catch が本当に握りつぶしか）
+- **NOT-INTENDED**: 意図的な実装でないか（コメント・命名・設計から意図的と読めないか）
+- **NOT-HANDLED**: 別の場所で既に対処・実装済みでないか（対応するハンドラ/テスト/バリデーションが他にないか）
+- **IMPACTFUL**: 実利用パスに影響するか（dead code / 到達不能でないか）
+
+**Step 3: 判定（fail-closed）**
+
+- 4 軸すべて YES（確信度が閾値以上、目安 60+）→ `evidence_level = verified`。**起票する**。
+- いずれかが NO、または確信度が低い → **起票しない**（`backlog.md` へ降格）。曖昧・agent 失敗時も起票せず backlog に倒す（誤起票コスト > 取りこぼしコスト）。
+- 検証を省略した候補（low/medium で agent 未起動）は `suspected` のまま起票してよいが、本文の自動起票注記に「未検証」と明示する。
+
+**暴走ガード**: 独立検証 agent は候補 1 件につき 1 体・1 ラウンドまで（多段化しない）。agent 内の探索は「対象ファイルの Read + 周辺 Grep 数回」に留める指示を渡す。
+
+### Phase 5: 自動起票（起票候補のうち検証通過分）
 
 各候補について、**1 件ずつ直列に**起票する（複数件をまとめて採番・書き込みしない）。
 
@@ -139,8 +189,8 @@ ls -d .claude/indie/*/ 2>/dev/null
    - 「概要」/「Why」: 課題の背景と、なぜ取り組むべきか
    - 「調査結果」/「対応内容」: スキャンで分かった現状と対応の方向性（断定しすぎない）
    - 「完了条件」: 客観的に判定可能なチェック項目
-   - 「参考資料」: **evidence を `path:line` で必ず残す**（人が裏取りできるように）
-   - 本文冒頭に `> 🤖 このIssueは indie-issue-discover が自動起票しました（要レビュー）` の注記を 1 行入れる
+   - 「参考資料」: **evidence を `path:line` で必ず残す**（人が裏取りできるように）。Phase 4.5 で `static-confirmed` / `verified` に昇格した候補は、その根拠（型/lint が赤 / 独立検証 agent の 4 軸判定）も 1 行添える
+   - 本文冒頭に `> 🤖 このIssueは indie-issue-discover が自動起票しました（要レビュー・証拠強度: {evidence_level}）` の注記を 1 行入れる（`suspected` のまま起票した場合は「未検証」と明示）
    - AI が埋めきれない論点は「要確認」マーカーを残す（捏造しない）
    - 「進捗」は空のチェックリスト
 6. issue ファイルを Write: `.claude/indie/{slug}/issues/{ISSUE-ID}.md`（counter は step 2 で確定済みなので、ここでは触らない）
@@ -172,9 +222,12 @@ ls -d .claude/indie/*/ 2>/dev/null
 ## indie-issue-discover レポート（{slug}）
 
 ### 起票した Issue（{N} 件）
-| ID | タイトル | type | scope | 優先度 | 根拠（evidence） |
-|----|---------|------|-------|--------|-----------------|
-| MYAPP-7 | ... | bugfix | small | high | src/api.ts:42 空 catch |
+| ID | タイトル | type | scope | 優先度 | 証拠強度 | 根拠（evidence） |
+|----|---------|------|-------|--------|---------|-----------------|
+| MYAPP-7 | ... | bugfix | small | high | verified | src/api.ts:42 空 catch |
+
+### 検証で起票見送り（{K} 件）
+- {title} — 見送り理由（例: 独立検証で「意図的な実装」と判定 / 型チェック緑）→ backlog へ
 
 ### backlog に蓄積（{M} 件）
 - {title}（{type}, {impact}）— {evidence}
@@ -194,6 +247,7 @@ ls -d .claude/indie/*/ 2>/dev/null
 ## 注意事項
 
 - **起動＝実行確定**: スキャン〜起票を確認で止めない。判断材料（evidence）はレポートに必ず添える
-- **偽陽性は前提**: 静的スキャンは誤検知しうる。だから `status: backlog` + evidence 明示 + git 復元可能の三重で安全側に倒す。人はレポートを見て backlog から取捨選択できる
+- **偽陽性は前提だが起票前に絞る**: 静的スキャンは誤検知しうる。起票候補は Phase 4.5 の独立検証（外部オラクル + 敵対的 agent）で裏取りし、通らなければ起票せず backlog に降格する（fail-closed）。加えて起票分も `status: backlog` + evidence 明示 + git 復元可能の三重で安全側に倒す。人はレポートを見て取捨選択できる
+- **検証は起票候補に限定**: Phase 4.5 の検証は上位 N 件のみ。backlog 蓄積分まで検証するとコストが爆発する（傾斜予算配分）。発見（安いスキャン）と検証（高い深掘り）を段で分け、後者を通過分だけに集中させる
 - **issue を捏造しない**: 候補 0 件ならそう報告する。健全なコードに無理やり課題を作らない
 - **既存ロジックの再利用**: テンプレート・採番・推敲は indie-issue-create を、再発失敗の集計は failure-journal の event を再利用する（重複実装しない）

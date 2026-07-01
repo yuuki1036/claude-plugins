@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.36.0] - 2026-07-01
+
+### Added
+- `indie-issue-discover` に **Phase 4.5「独立検証」**を新設し、誤検知起票を起票前に落とすようにした（Clearwing 原則 7 + 8）。起票候補（上位 N 件）だけを対象に、(1) 外部オラクル（型チェック / lint を候補ファイルに絞って実行し、赤なら証拠強度を昇格）と (2) 敵対的独立検証（新 agent `discover-verifier` を `model: opus` で起動。**発見者の rationale を渡さず** evidence だけ渡して REAL / NOT-INTENDED / NOT-HANDLED / IMPACTFUL の 4 軸で判定）を実施。4 軸すべて YES かつ確信度 ≥60 のときだけ起票し、それ以外・曖昧・agent 失敗時は起票せず backlog に降格する（fail-closed）。検証は上位 N 件限定・effort 傾斜（low/medium は上位のみ、high 以上は全 N 件）でコスト暴走を防ぐ
+- 候補スキーマに `evidence_level`（suspected / static-confirmed / verified）を追加し、優先度・起票可否・自動起票注記に反映（証拠ラダー）
+- 新 agent `discover-verifier`（Read/Grep、model: opus）を追加
+
+### Changed
+- Phase 3 のスキャン `Agent`（Explore）に `model: sonnet` 明示を推奨（モデルルーティング: 探索=安モデル / 検証=強モデル。ルート CLAUDE.md「コスト×精度パイプライン設計指針」準拠）
+- Phase 7 レポートに「証拠強度」列と「検証で起票見送り」セクションを追加
+
 ## [1.35.1] - 2026-06-28
 
 ### Fixed

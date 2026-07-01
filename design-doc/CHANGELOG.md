@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.0] - 2026-07-01
+
+### Added
+- `design-review` に **Phase 4.5「反証（敵対的独立検証）」**を新設（`high` effort 以上）。集約後の BLOCKER / MAJOR finding を、元 reviewer の suggestion / rationale を渡さず独立 agent に反証させ、過剰指摘（偽陽性）を落とす（Clearwing 原則 7）。反証された finding は severity を下げるかレポートで明示、BLOCKER は fail-closed で消さず「反証あり（要判断）」注記。反証 agent は 1 体・1 ラウンドの暴走ガード付き
+- `design-reviewer` agent の finding schema に `confidence: 0-100` を追加。Phase 4 集約で confidence < 50 を MINOR 降格（過剰指摘の抑制。BLOCKER は例外で残す）。複数視点が独立に同じ指摘を挙げたら confidence 引き上げ
+
+### Changed
+- `design-reviewer` agent に `model: opus` を明示（従来は親から継承＝指定漏れ。モデルルーティング規約: レビュー役は強モデル。ルート CLAUDE.md「コスト×精度パイプライン設計指針」準拠）
+- Phase 4 集約表に confidence 列・反証列を追加
+
 ## [0.2.3] - 2026-06-25
 
 ### Changed
