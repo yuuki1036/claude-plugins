@@ -220,6 +220,8 @@ find ~/.claude/plugins -name "SKILL.md" -path "*/skills/*" 2>/dev/null
 
 After outputting the quality report, ask user for confirmation before updating.
 
+追加内容の判断基準（What TO Add / What NOT to Add のカテゴリ別サンプルと Validation Checklist）は [references/update-guidelines.md](references/update-guidelines.md) を参照する。
+
 **Update Guidelines (Critical):**
 
 1. **Propose targeted additions only** - Focus on genuinely useful info:

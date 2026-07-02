@@ -24,17 +24,17 @@ Claude Code の最新リリースからプラグイン開発に関連する新�
 ## 前提
 
 - 作業ディレクトリがプラグインリポジトリ（marketplace 構成）であること
-- `${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/state.json` で前回キャッチアップ状態を追跡
+- `${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json` で前回キャッチアップ状態を追跡（以降 **state file** と呼ぶ）。プラグイン本体ディレクトリには置かない（marketplace 更新でキャッシュごと消えるのを防ぎ、個人の実行状態を git commit しないため）
 
 ## ワークフロー
 
 ### Phase 0: スコープ決定
 
-1. `${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/state.json` を読み込む（存在しなければ初回）
+1. state file（`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json`）を読み込む（存在しなければ初回。親ディレクトリが無ければ `mkdir -p` で作成）
 2. 現在の Claude Code バージョンを取得: `claude --version` (Bash)
 3. 現在のモデル family ID を取得（環境変数 or `claude config` から。失敗時はユーザーに確認）
 4. 前回のキャッチアップバージョンとの差分範囲を特定
-5. **モデル世代変更の検知**: `state.json.lastCatchUpModel` と現在のモデル family を比較
+5. **モデル世代変更の検知**: state file の `lastCatchUpModel` と現在のモデル family を比較
    - 異なる場合、または `lastPruningDate` から 90 日以上経過している場合は **剪定モードを推奨** として提示
 6. **effort 適応の既定値**: 現在の effort = `${CLAUDE_EFFORT}`
    - `low` / `medium`: 既定モードを **差分キャッチアップ** にし、提案数を High 優先度のみに絞る
@@ -147,7 +147,7 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 
 **トリガー**: Phase 0 で「剪定モード」または「キャッチアップ + 剪定」が選択された場合。
 
-**参照**: `${CLAUDE_SKILL_DIR}/references/pruning-heuristics.md`（剪定カテゴリ C-1〜C-5、判定フロー、レポート形式、対話フロー）
+**参照**: `${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/pruning-heuristics.md`（剪定カテゴリ C-1〜C-5、判定フロー、レポート形式、対話フロー）
 
 #### P.1: 剪定候補スキャン
 
@@ -158,7 +158,7 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 3. `agents/*.md` — C-1、C-4（retired model ID）候補
 4. `rules/*.md` / `CLAUDE.md` — C-1、C-3（組み込み置換可能）、C-5 候補
 
-**除外**: `state.json.preservedConstraints` にマークされた項目はスキップ
+**除外**: state file の `preservedConstraints` にマークされた項目はスキップ
 
 #### P.2: カテゴリ分類と優先度付与
 
@@ -194,12 +194,12 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 2. 影響プラグインの `plugin.json` バージョンバンプ（PATCH 相当）
 3. 各 `CHANGELOG.md` に `### Removed` セクションで記録
 4. `.claude-plugin/marketplace.json` 同期
-5. `state.json.prunedConstraints` / `preservedConstraints` に追記
+5. state file の `prunedConstraints` / `preservedConstraints` に追記
 6. 剪定後は `/quality-check` と eval-runner 実行を案内
 
 ### Phase 7: 状態更新
 
-キャッチアップ完了後、`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/state.json` を更新:
+キャッチアップ完了後、state file（`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json`）を更新:
 
 ```json
 {
@@ -218,22 +218,23 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 }
 ```
 
-**書き込み後は必ず決定的バリデータで schema 準拠を確認する**（structure drift を機械的に弾く）:
+**書き込み後は必ず決定的バリデータで schema 準拠を確認する**（structure drift を機械的に弾く）。バリデータは state file パスを引数で受け取れる（引数省略時は `${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json` を既定で解決）:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/validate-state.py"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/validate-state.py" \
+  "${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json"
 ```
 
-exit 1（schema 違反）の場合は state.json を修正してから完了とする。スキーマ自体（フィールド追加等）を変える場合は `references/state-schema.json` を先に更新し、バリデータが追従することを確認する。
+exit 1（schema 違反）の場合は state file を修正してから完了とする。スキーマ自体（フィールド追加等）を変える場合は `${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/state-schema.json` を先に更新し、バリデータが追従することを確認する。
 
 ## Reference Files
 
-- **`${CLAUDE_SKILL_DIR}/references/plugin-features.md`** — CC のプラグイン関連機能カタログ（カテゴリ別・バージョン付き）。フルスキャン時のベースライン、および changelog 解析時の分類基準として使用
-- **`${CLAUDE_SKILL_DIR}/references/improvement-patterns.md`** — 機能→改善のデシジョンツリーと before/after パターン集。Gap 分析（Phase 4）の判定ロジックとして使用
-- **`${CLAUDE_SKILL_DIR}/references/pruning-heuristics.md`** — モデル世代ごとの制約棚卸し基準（C-1〜C-5 カテゴリ、判定フロー、レポート/対話仕様）。Phase P（剪定モード）で使用
-- **`${CLAUDE_SKILL_DIR}/references/state-schema.json`** — state.json の JSON Schema（draft-07）。run 間差分照合に使う状態構造の single source。Phase 7 の書き込み後に `scripts/validate-state.py` が照合
-- **`${CLAUDE_SKILL_DIR}/scripts/validate-state.py`** — state.json を state-schema.json に照合する決定的バリデータ（標準ライブラリのみ）。Phase 7 末尾で実行
-- **`${CLAUDE_SKILL_DIR}/scripts/scan-frontmatter.sh`** — 全プラグインの manifest/hooks/skills/agents/commands の使用フィールドを grep/jq で機械抽出する Phase 3 の決定的 pre-pass（jq 依存）
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/plugin-features.md`** — CC のプラグイン関連機能カタログ（カテゴリ別・バージョン付き）。フルスキャン時のベースライン、および changelog 解析時の分類基準として使用
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/improvement-patterns.md`** — 機能→改善のデシジョンツリーと before/after パターン集。Gap 分析（Phase 4）の判定ロジックとして使用
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/pruning-heuristics.md`** — モデル世代ごとの制約棚卸し基準（C-1〜C-5 カテゴリ、判定フロー、レポート/対話仕様）。Phase P（剪定モード）で使用
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/state-schema.json`** — state file の JSON Schema（draft-07）。run 間差分照合に使う状態構造の single source。Phase 7 の書き込み後に `scripts/validate-state.py` が照合。schema はプラグイン同梱（state file 本体はプロジェクト/ユーザー配下）
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/validate-state.py`** — state file を state-schema.json に照合する決定的バリデータ（標準ライブラリのみ）。Phase 7 末尾で実行。引数省略時は `${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json` を既定で解決
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/scan-frontmatter.sh`** — 全プラグインの manifest/hooks/skills/agents/commands の使用フィールドを grep/jq で機械抽出する Phase 3 の決定的 pre-pass（jq 依存）
 
 ## 注意事項
 

@@ -1,5 +1,5 @@
 ---
-description: Update CLAUDE.md with learnings from this session
+description: このセッションの学びを CLAUDE.md に反映する
 allowed-tools:
   - Read
   - Edit
@@ -8,52 +8,55 @@ allowed-tools:
   - Bash
 ---
 
-Review this session for learnings about working with Claude Code in this codebase. Update CLAUDE.md with context that would help future Claude sessions be more effective.
+このセッションでの、このコードベースにおける Claude Code の作業に関する学びを振り返り、今後の Claude セッションがより効果的に動けるようなコンテキストを CLAUDE.md に反映する。
 
-## Step 1: Reflect
+## Step 1: 振り返り
 
-What context was missing that would have helped Claude work more effectively?
-- Bash commands that were used or discovered
-- Code style patterns followed
-- Testing approaches that worked
-- Environment/configuration quirks
-- Warnings or gotchas encountered
+より効果的に作業するために不足していたコンテキストは何か。
 
-## Step 2: Find CLAUDE.md Files
+- 使用・発見した Bash コマンド
+- 従ったコードスタイルのパターン
+- 有効だったテスト手法
+- 環境・設定の癖
+- 遭遇した警告・落とし穴（gotcha）
+
+## Step 2: CLAUDE.md ファイルの探索
 
 ```bash
 find . -name "CLAUDE.md" -o -name ".claude.local.md" 2>/dev/null | head -20
 ```
 
-Decide where each addition belongs:
-- `CLAUDE.md` - Team-shared (checked into git)
-- `.claude.local.md` - Personal/local only (gitignored)
+各追加内容をどこに置くか決める。
 
-## Step 3: Draft Additions
+- `CLAUDE.md` — チーム共有（git にコミット）
+- `.claude.local.md` — 個人・ローカル専用（gitignore 対象）
 
-**Keep it concise** - one line per concept. CLAUDE.md is part of the prompt, so brevity matters.
+## Step 3: 追加内容の下書き
 
-Format: `<command or pattern>` - `<brief description>`
+**簡潔に保つ** — 1 概念 1 行。CLAUDE.md はプロンプトの一部なので、簡潔さが重要。
 
-Avoid:
-- Verbose explanations
-- Obvious information
-- One-off fixes unlikely to recur
+フォーマット: `<コマンドまたはパターン>` - `<短い説明>`
 
-## Step 4: Show Proposed Changes
+避けるべきもの:
 
-For each addition:
+- 冗長な説明
+- 自明な情報
+- 再発しそうにない一度きりの修正
+
+## Step 4: 変更案の提示
+
+各追加内容について以下の形式で提示する。
 
 ```
-### Update: ./CLAUDE.md
+### 更新: ./CLAUDE.md
 
-**Why:** [one-line reason]
+**理由:** [一行の理由]
 
 \`\`\`diff
-+ [the addition - keep it brief]
++ [追加内容 — 簡潔に]
 \`\`\`
 ```
 
-## Step 5: Apply with Approval
+## Step 5: 承認を得て適用
 
-Ask if the user wants to apply the changes. Only edit files they approve.
+ユーザーに変更を適用してよいか確認する。承認されたファイルのみ編集する。

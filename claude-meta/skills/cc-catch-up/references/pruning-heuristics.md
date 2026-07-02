@@ -12,10 +12,10 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
 
 以下のいずれかで Phase P を起動する:
 
-1. **モデル世代アップデート検知**: `state.json.lastCatchUpModel` と現在のモデルファミリが異なる
+1. **モデル世代アップデート検知**: state file の `lastCatchUpModel` と現在のモデルファミリが異なる
    - 例: `claude-opus-4-6` → `claude-opus-4-7`、`claude-sonnet-4-5` → `claude-sonnet-4-6`
 2. **ユーザー明示**: Phase 0 の AskUserQuestion で「剪定モード」を選択
-3. **定期実行**: 前回剪定から 90 日以上経過（`state.json.lastPruningDate`）
+3. **定期実行**: 前回剪定から 90 日以上経過（state file の `lastPruningDate`）
 
 ---
 
@@ -151,13 +151,13 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
    ```
 2. multi-select ではなく **1 件ずつ** 確認（誤爆防止）
 3. 候補が 10 件超の場合は優先度 High のみ個別確認、Medium/Low は「全件まとめて削除 / 全件保留」の 2 択
-4. 「保持」を選んだものは `state.json.preservedConstraints` に記録し、以降の剪定候補から除外
+4. 「保持」を選んだものは state file の `preservedConstraints` に記録し、以降の剪定候補から除外
 
 ---
 
-## state.json 拡張
+## state file 拡張
 
-剪定モードは以下のフィールドを使用/更新する:
+剪定モードは state file（`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json`）の以下のフィールドを使用/更新する:
 
 ```json
 {
@@ -192,4 +192,4 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
 - **モデルがまだ学習途上のサーフェスは剪定しない**: 新機能/新 API は挙動が安定するまで保守的に保持
 - **剪定後は必ず `/quality-check` と eval-runner を実行**: 退行検知
 - **ロールバック容易性**: git 管理下なので commit 単位で巻き戻せる。剪定 commit は 1 件 1 ファイルに分けると安全
-- **剪定された制約が復活する場合**: `state.json.prunedConstraints` から削除し、再度提案対象に戻す
+- **剪定された制約が復活する場合**: state file の `prunedConstraints` から削除し、再度提案対象に戻す

@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.2] - 2026-07-02
+
+### Fixed
+- `cc-catch-up` の state.json をプラグイン本体ディレクトリ（`skills/cc-catch-up/state.json`）から `${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json` に移設。marketplace 更新でキャッシュごと消える問題と、個人の実行状態が git commit される問題を解消。リポジトリにコミット済みの `state.json` を削除（schema は `references/state-schema.json` に残置）。SKILL.md / README / `pruning-heuristics.md` のパス参照を新パスに更新し、`validate-state.py` の既定 state パスも環境変数ベースに変更
+- `cc-catch-up/SKILL.md` のパス変数を `${CLAUDE_PLUGIN_ROOT}` 基準に統一（`${CLAUDE_SKILL_DIR}` → `${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/`）
+- `claude-md-improver/SKILL.md` の Phase 4 から孤立していた `references/update-guidelines.md` への参照を追加
+- `commands/revise-claude-md.md` を日本語化（fork 由来の英語を他 command / skill と統一）
+
+### Changed
+- plugin.json の description に `eval-runner`（eval 回帰テスト）と `component-addition-advisor`（新コンポーネント追加前判断）を反映（5 skill を網羅）
+
 ## [1.11.1] - 2026-06-15
 
 ### Changed
