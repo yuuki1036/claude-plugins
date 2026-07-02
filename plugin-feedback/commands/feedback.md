@@ -22,14 +22,16 @@ allowed-tools:
 ### Phase 2: 対象プラグインの特定
 
 1. `$ARGUMENTS` にプラグイン名が含まれていればそれを使う
-2. 未指定なら、以下のプラグイン一覧から選択を促す:
-   - code-review
-   - dev-workflow
-   - claude-meta
-   - linear-workflow
-   - indie-workflow
-   - plugin-manager
-   - plugin-feedback
+2. 未指定なら、プラグイン一覧を **動的取得** して選択を促す（一覧をハードコードしない。更新忘れを構造的に防ぐ）:
+
+   ```bash
+   # インストール済みプラグインから feedback マーケットプレイス（plugin-feedback が属する marketplace）のものを列挙
+   MP_NAME=$(claude plugin list 2>/dev/null | grep -oE 'plugin-feedback@[^ )]+' | head -1 | cut -d'@' -f2)
+   claude plugin list 2>/dev/null | grep -oE "[a-z0-9-]+@${MP_NAME}" | sort -u
+   ```
+
+   - `claude plugin list` が使えない環境では、feedback マーケットプレイスの `marketplace.json`（`~/.claude/plugins/marketplaces/*/.claude-plugin/marketplace.json` のうち `.name` が `MP_NAME` のもの）の `.plugins[].name` を参照する
+   - どちらも取得できない場合のみ、ユーザーに対象プラグイン名を直接尋ねる
 
 ### Phase 3: 種別の特定
 
@@ -51,7 +53,9 @@ allowed-tools:
 
 ### Phase 5: プレビューと承認
 
-以下のフォーマットで Issue プレビューを提示し、ユーザーの承認を得る:
+Issue 本文は `feedback-issue` スキルの `references/issue-template.md`（正本）の種別別テンプレート（enhancement / bug / question）に従って組み立てる。本文フォーマットをここに重複定義しない（乖離防止）。
+
+以下のヘッダを添えて Issue プレビューを提示し、ユーザーの承認を得る:
 
 ```
 ## Issue プレビュー
@@ -61,23 +65,7 @@ allowed-tools:
 **ラベル**: {label}
 
 **本文**:
-## 対象プラグイン
-{plugin-name}
-
-## 種別
-{enhancement / bug / question}
-
-## 説明
-{詳細}
-
-## 期待する動作
-{改善後のイメージ（enhancement/bug の場合）}
-
-## 現在の動作
-{現状の動作（bug の場合）}
-
----
-_このIssueは plugin-feedback により作成されました_
+{references/issue-template.md の種別別テンプレートで組み立てた本文}
 ```
 
 ### Phase 6: Issue 作成
@@ -93,6 +81,7 @@ gh issue create \
 ```
 
 - ラベルが存在しない場合は `--label` を省略する
+- `--repo yuuki1036/claude-plugins` は意図的な固定値（フィードバック先はユーザーの CWD に関係なく常にマーケットプレイス本体リポジトリ。marketplace.json には repo URL フィールドが無いため導出不可）
 - 作成された Issue URL を報告する
 
 ### Phase 7: 報告

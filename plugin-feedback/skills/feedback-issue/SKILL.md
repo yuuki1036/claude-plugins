@@ -69,6 +69,8 @@ Issue の内容をプレビュー表示し、ユーザー承認を得る。
 
 ### Step 5: Issue 作成
 
+本文は `references/issue-template.md`（正本）の種別別テンプレートに従って組み立てる。
+
 ```bash
 gh issue create \
   --repo yuuki1036/claude-plugins \
@@ -76,6 +78,9 @@ gh issue create \
   --label "{label}" \
   --body "{body}"
 ```
+
+- ラベルが存在しない場合は `--label` を省略する
+- `--repo yuuki1036/claude-plugins` は意図的な固定値（フィードバック先はユーザーの CWD に関係なく常にマーケットプレイス本体リポジトリ）
 
 ### Step 6: 報告
 

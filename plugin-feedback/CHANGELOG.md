@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.8] - 2026-07-02
+
+### Changed
+
+- `commands/feedback.md` Phase 2 の対象プラグイン一覧ハードコード（7 件で化石化）を廃止し、`claude plugin list` / `marketplace.json` からの動的取得に変更（一覧更新忘れの構造的解消）
+- Issue 本文テンプレを `references/issue-template.md`（正本）に一本化。`commands/feedback.md` Phase 5 の重複本文定義を参照指示に置き換え（プレビューの「## 種別」セクションと references の乖離を解消）
+
+### Fixed
+
+- `skills/feedback-issue/SKILL.md` Step 5 にラベル不存在時の `--label` 省略フォールバックを追記（command のみに存在していた挙動を skill にも反映）
+- `commands/feedback.md` / `skills/feedback-issue/SKILL.md` に `--repo yuuki1036/claude-plugins` 固定値の意図（CWD 非依存で常にマーケットプレイス本体を指す）を明記
+
 ## [1.2.7] - 2026-06-15
 
 ### Changed
