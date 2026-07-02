@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.37.0] - 2026-07-02
+
+### Added
+- **linear-workflow から `updated` 鮮度フィールド機構を移植**（双子 drift 解消）。knowledge の frontmatter に `updated`（最終更新日）を必須フィールドとして追加し、切り出し時は当日・編集時は必ず書き換える運用ルールを明文化（`indie-issue-maintain` SKILL.md / `references/quality-checklist.md §8`）。`indie-start` Phase F3.7 に stale 判定を追加し、`updated` が 60 日を超えた関連 knowledge に `⚠️ stale?` マーカーを付けて古い知見への引きずられを防ぐ。stale 判定の fallback chain を `knowledge-lint` の正本（`last-validated → updated → verified`）に統一（`knowledge` SKILL.md / `quality-checklist.md` の記述が `last-validated → verified` で `updated` を欠いていた矛盾を解消）
+- **破壊的変更パターン検出を移植**。`indie-issue-maintain` の knowledge 切り出し手順の最優先ステップとして、破壊的変更 / API rename / 非推奨化 / バージョン跨ぎ移行 / 実機検知バグ / 衝突 / 仕様変更のキーワード検出を追加（`quality-checklist.md §7.1` にキーワード表・推奨 tags 対応表・🔴 報告フォーマット）。取りこぼしやすい高再利用価値の知見を通常基準より優先して切り出す。処理フローに検出ステップ（7.5）を追加
+- **レビューガードの検出キーワード一覧を移植**（`quality-checklist.md §10`）。従来は「本文にキーワードが含まれていない」とだけ書かれ判定基準が曖昧だったのを、セルフレビュー / PR レビュー / Agent 起動のカテゴリ別キーワード表で明示
+- **feature-dev 引き継ぎ prompt に「親 Issue」セクションを移植**。`indie-issue-create` Phase 7 の upfront 引き継ぎテンプレに、frontmatter の `parent:` がある場合の親 Issue サマリー引き継ぎ行を追加（linear-workflow と同等）
+- `indie-init` / `project-doc-template.md` に **タイプ別サマリー**表を新設（feature / bugfix / investigation / debt を集計）
+- `quality-checklist.md` のオプションフィールドに `frozen_date: YYYY-MM-DD` を定義（`indie-maintain` の frozen 再評価が参照するが未定義だった）
+
+### Changed
+- **concept frontmatter スキーマを統一**。概念ページの frontmatter を `kind / source / status / verified / updated / tags` に揃え（`updated` を追加）、波及で既存 concept を編集したら `updated` を当日日付に更新する運用を明記（`indie-issue-maintain` SKILL.md / `quality-checklist.md §8.1`）
+- **project.md ステータスサマリーから type の `debt` を分離**。`indie-init` / `indie-maintain`（SKILL.md の処理内容・出力レポート）/ `project-doc-template.md` のステータスサマリーを status 5 値（`backlog` / `in-progress` / `frozen` / `completed` / `canceled`）に揃え、`debt`（type）はタイプ別サマリーに分離
+- `quality-checklist.md §4` の frontmatter `status` 列挙を `in-progress | completed` から正式 5 値に修正し、`scope_size` を feature テンプレ必須フィールドとして明記（テンプレは必須なのに checklist がオプション扱いだった矛盾を解消）
+- **採番順序ルールを 3 スキルで統一**。`indie-issue-create`（Phase 3）・`indie-follow-up`（Phase P5）を discover と同じ「採番先確定（先に `counter.txt` を +1 して Write）」方式に揃え、中断時の ID 重複・上書きを防ぐ
+- `check-deps.sh` を linear 版の errors / warnings 分離構造に揃え、`required=true` 分岐が `warnings` に `[ERROR]` を混ぜないようにした（将来 required 依存を追加した際に正しく分離される）
+
+### Fixed
+- `retrospective` の allowed-tools に `AskUserQuestion` を追加（Phase 2.5 の概念ページ化提案・Phase 3 の振り返りフレームで使用しているが未宣言だった。command 側も同期）
+- `indie-issue-discover` Phase 5 の手順番号が `1,2,3,4,4,6` と重複・欠番していたのを `1〜6` に振り直し
+- `inject-rules.sh` の放置 Issue 検知を、検出 0 件のときはセクションごと省略するよう変更（従来は 0 件でも「## 放置 Issue 検知 / (なし)」を毎回注入していた）。あわせて、`status:` 等の行を欠く不正な issue ファイルがあると `set -euo pipefail` 下で grep の exit 1 が代入に伝播しフック全体がサイレント終了していた潜在バグを修正（`status`/`last_active`/`id` 抽出に `|| true` を付与）
+- `commands/indie-issue-discover.md` の余分な `name:` frontmatter を削除し、`argument-hint: "[PROJECT-SLUG]"` を追加
+- `README.md` を実態に更新（スキル表 7 → 11 件、コマンド表 7 → 11 件、ディレクトリ構造に follow-ups/ ・knowledge/concepts/ ・retrospectives/ を追加、リポジトリ方針に反する MIT ライセンス表記を削除）
+
 ## [1.36.0] - 2026-07-01
 
 ### Added

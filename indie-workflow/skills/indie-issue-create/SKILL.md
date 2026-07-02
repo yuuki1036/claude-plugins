@@ -31,10 +31,11 @@ allowed-tools:
 
 `.claude/indie/{slug}/` が存在しない場合、`/indie-init {slug}` の実行を案内して処理を中止する。
 
-### Phase 3: Issue ID の生成
+### Phase 3: Issue ID の生成（採番先確定）
 
 1. `.claude/indie/{slug}/counter.txt` を Read で読み取る
 2. `{SLUG大文字}-{番号}` 形式で Issue ID を生成する（例: `MYAPP-3`）
+3. **先に `counter.txt` を +1 して Write（採番を確定）**。issue ファイル Write より前に確定することで、途中中断時に同じ番号が再採番されてファイルを上書きするのを防ぐ（discover / follow-up と同一方式）
 
 ### Phase 4: テンプレート選択
 
@@ -160,9 +161,8 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
 
 ### Phase 7: 後処理
 
-1. `counter.txt` の値をインクリメントして書き込む
-2. 作成したファイルの絶対パスを報告する
-3. **ブランチ自動作成**: **AskUserQuestion** で確認してから `git checkout -b {type}/{SLUG-N}-{description}` を実行する:
+1. 作成したファイルの絶対パスを報告する（採番は Phase 3 で確定済みのため、ここでは `counter.txt` を触らない）
+2. **ブランチ自動作成**: **AskUserQuestion** で確認してから `git checkout -b {type}/{SLUG-N}-{description}` を実行する:
    - question: "ブランチ `{type}/{SLUG-N}-{description}` を作成しますか？"
    - header: "ブランチ"
    - options:
@@ -171,7 +171,7 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
    - `description` はタイトルから kebab-case で自動生成（短く、英語）
    - 例: `feat/MYAPP-3-add-auth`, `fix/BLOG-2-fix-typo`
    - type マッピング: bugfix → `fix`, feature → `feat`, investigation → `investigate`, debt → `chore`
-4. **feature-dev 連携確認**: **AskUserQuestion** で確認する:
+3. **feature-dev 連携確認**: **AskUserQuestion** で確認する:
    - question: "feature-dev で実装計画を立てますか？（ブランチを切った直後が最もコンテキストがそろっています）"
    - header: "feature-dev"
    - options:
@@ -195,11 +195,14 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
    ## Phase 5.5 関連 Knowledge
    - {参照済み knowledge ファイル名と tags}
 
+   ## 親 Issue（frontmatter の parent: に値がある場合）
+   - [{PARENT-ID}] {タイトル} — 背景・計画のサマリー
+
    上記の context を前提に、実装計画を策定してください。
    ```
 
    feature-dev 実行後、`feature_dev_plan:` frontmatter に生成された計画ファイルのパスを記載することをユーザーに案内する（手動更新、または `/indie-issue-maintain` で反映）。
-5. 次のアクションを案内する:
+4. 次のアクションを案内する:
    - 計画の記入（feature の場合）
    - 調査の開始（investigation の場合）
    - 修正の着手（bugfix の場合）

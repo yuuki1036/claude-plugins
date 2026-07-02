@@ -209,11 +209,11 @@ created: YYYY-MM-DD
 
 1. `.claude/indie/{slug}/counter.txt` を Read し、現在の番号を取得する
 2. Issue ID を生成: `{SLUG大文字}-{番号}`
-3. P3 で選択したテンプレート（`${CLAUDE_SKILL_DIR}/../indie-issue-create/references/{type}.md`）を Read する
-4. follow-up の「内容」を概要セクション、「対応メモ」を計画セクションに反映して Issue ファイルを生成
-5. 配置先: `.claude/indie/{slug}/issues/{ISSUE-ID}.md`
-6. ユーザーに Issue ファイル内容を提示し、承認を得てから Write
-7. counter.txt をインクリメントして Write
+3. **先に `counter.txt` を +1 して Write（採番を確定）**。issue ファイル Write より前に確定することで、途中中断時に同じ番号が再採番されてファイルを上書きするのを防ぐ（indie-issue-create / discover と同一方式）
+4. P3 で選択したテンプレート（`${CLAUDE_SKILL_DIR}/../indie-issue-create/references/{type}.md`）を Read する
+5. follow-up の「内容」を概要セクション、「対応メモ」を計画セクションに反映して Issue ファイルを生成
+6. 配置先: `.claude/indie/{slug}/issues/{ISSUE-ID}.md`
+7. ユーザーに Issue ファイル内容を提示し、承認を得てから Write（counter は step 3 で確定済みのため、ここでは触らない）
 8. ブランチ作成を AskUserQuestion で確認:
    - question: "ブランチ `{type-prefix}/{ISSUE-ID}-{kebab-title}` を作成しますか？"
    - header: "ブランチ作成"

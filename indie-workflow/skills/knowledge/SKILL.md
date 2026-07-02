@@ -41,7 +41,7 @@ knowledge は 2 種類ある。frontmatter の `kind` で区別する。
 
 `concept` には任意のサブ分類 `subkind: glossary` を付けられる。用語の SSoT（単一定義ページ）として扱われ、複数 glossary 間で同一用語が重複定義されていないかを `/knowledge-lint`（項目 9）が検出する。
 
-鮮度フィールド `last-validated`（検証日 `YYYY-MM-DD`）と `phase`（`current` / `target` / `superseded`）も任意で付けられる。記入すると `/knowledge-lint`（項目 8）の stale 判定に使われる（未記入なら既存 `verified` を fallback に使う。doc-freshness プラグインと共通スキーマ）。
+鮮度フィールド `last-validated`（検証日 `YYYY-MM-DD`）と `phase`（`current` / `target` / `superseded`）も任意で付けられる。記入すると `/knowledge-lint`（項目 8）の stale 判定に使われる（未記入なら `updated` → `verified` の順で fallback する。doc-freshness プラグインと共通スキーマ）。
 
 ## wikilink 記法
 

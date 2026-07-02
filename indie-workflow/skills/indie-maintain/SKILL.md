@@ -41,10 +41,10 @@ allowed-tools:
 
 ### 1. プロジェクトサマリー生成
 
-`.claude/indie/` 内の全プロジェクトについて、Glob で `issues/*.md` を列挙、各ファイルを Read し、ステータス別の Issue 件数を集計して project.md を Edit で更新する。
+`.claude/indie/` 内の全プロジェクトについて、Glob で `issues/*.md` を列挙、各ファイルを Read し、ステータス別・タイプ別の Issue 件数を集計して project.md を Edit で更新する。
 
-- 各 Issue ファイルの frontmatter `status` を読み取り（`backlog` / `in-progress` / `frozen` / `completed`）
-- frontmatter `type: debt` の Issue は debt としてもカウント
+- 各 Issue ファイルの frontmatter `status` を読み取り、ステータスサマリー（`backlog` / `in-progress` / `frozen` / `completed` / `canceled` の 5 値）に集計する
+- frontmatter `type`（`feature` / `bugfix` / `investigation` / `debt`）はタイプ別サマリーに別集計する。`debt` は type であって status ではないため、ステータスサマリーには混ぜない
 - 集計結果を各プロジェクトの `project.md` に反映
 
 ### 2. 放置 Issue 棚卸し
@@ -144,9 +144,13 @@ allowed-tools:
 ```md
 ## Indie Maintain レポート
 
-### プロジェクトサマリー
-| プロジェクト | backlog | in-progress | frozen | debt | completed |
-|-------------|---------|-------------|--------|------|-----------|
+### プロジェクトサマリー（ステータス別）
+| プロジェクト | backlog | in-progress | frozen | completed | canceled |
+|-------------|---------|-------------|--------|-----------|----------|
+
+### タイプ別サマリー
+| プロジェクト | feature | bugfix | investigation | debt |
+|-------------|---------|--------|---------------|------|
 
 ### 放置 Issue (7日以上未更新)
 | Issue | 最終更新 | 経過日数 |

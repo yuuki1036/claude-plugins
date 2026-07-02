@@ -178,18 +178,26 @@ Issue ファイルがフロントマターの `type` に対応するテンプレ
 
 整理中に汎用性のある知見を発見した場合、knowledge/ への切り出しまで実行する：
 
-1. **候補の特定**: 特定の Issue に閉じない、再利用可能な知見を特定
+1. **破壊的変更パターンの検出（最優先）**: Issue 本文・進捗・更新履歴から以下キーワードを Grep ベースで走査する：
+   - 「破壊的変更 / breaking change」「rename された / renamed to」「deprecated / 非推奨」
+   - バージョン跨ぎ表記（例: `v\d+ ?→ ?v\d+`）「dead element / 空振り / lint は通るが」
+   - 「衝突する / conflict with / 配列順序」「実機テストで判明 / ランタイムで発覚」
+   - 検出時は通常の判断基準より優先して切り出しまで実行する（起動＝実行確定のため止めて確認しない）
+   - 付与 tags は quality-checklist.md §7.1 の対応表から選ぶ
+2. **候補の特定**: 特定の Issue に閉じない、再利用可能な知見を特定
    - アーキテクチャの分析結果
    - パフォーマンス調査の発見
    - ライブラリ・フレームワーク固有のノウハウ
    - ドメインロジックの仕様整理
-2. **正確性の確認**: コードベースや関連 Issue と照合して内容が正しいか検証
-3. **tags の付与**: 既存 knowledge の tags を確認（`knowledge/index.md` または Grep）し、語彙を揃えた上で 3〜7個の tags を決定
-4. **切り出し実行**: `knowledge/{topic}.md` に格納し、元の Issue からはリンクで参照。フロントマターに `status`, `tags` を付与
-5. **切り出しの報告**: 切り出した内容と格納先は最終レポートに列挙する（承認待ちで止めない）
-6. **index.md の更新**: 切り出し後、`knowledge/index.md` を更新する（後述）
+3. **正確性の確認**: コードベースや関連 Issue と照合して内容が正しいか検証
+4. **tags の付与**: 既存 knowledge の tags を確認（`knowledge/index.md` または Grep）し、語彙を揃えた上で 3〜7個の tags を決定
+5. **切り出し実行**: `knowledge/{topic}.md` に格納し、元の Issue からはリンクで参照。フロントマターに `status`, `updated`（当日日付）, `tags` を付与
+6. **切り出しの報告**: 切り出した内容と格納先は最終レポートに列挙する（破壊的変更検出は 🔴 マーカー付きで先頭表示、tags を併記。承認待ちで止めない）
+7. **index.md の更新**: 切り出し後、`knowledge/index.md` を更新する（後述）
 
-knowledge の status フロントマターや切り出し時の照合ルール、tags 付与ルール、概念ページ（concept）と wikilink の仕様の詳細は quality-checklist.md を参照。
+knowledge の status フロントマターや切り出し時の照合ルール、tags 付与ルール、破壊的変更パターン検出キーワード一覧、概念ページ（concept）と wikilink の仕様の詳細は quality-checklist.md を参照。
+
+**既存 knowledge 編集時の注意:** frontmatter の `updated` を当日の日付に書き換える（鮮度判定に使用される）。
 
 ---
 
@@ -230,6 +238,7 @@ source（個別知見）を切り出した後、複数の source を横断する
 1. **既存 concept に該当あり**（`knowledge/concepts/*.md` に関連する概念ページがある）:
    - その concept の「関連ソース」に `[[新しい source]]` を追加する
    - 「横断的知見」を読み返し、新しい source で補強・修正できる点があれば追記する（矛盾を見つけたら明記する）
+   - concept の frontmatter `updated` を当日日付に更新する
 2. **新規 concept の候補**（同じテーマを扱う source が 2 件以上あり、まだ概念ページが無い）:
    - 新規 concept ページの作成を提案する（下記テンプレート）
 3. **該当なし**（単発の知見）:
@@ -245,6 +254,7 @@ kind: concept
 source: {統合元 Issue ID（複数可）}
 status: verified | planned
 verified: YYYY-MM-DD
+updated: YYYY-MM-DD
 tags: [...]
 ---
 
@@ -267,11 +277,11 @@ tags: [...]
 - 「横断的知見」が薄い（単一 source の要約に留まる）なら concept にせず source のままにする
 - 関連ソースは `[[name]]`（拡張子なし basename）で参照する
 - concept も index.md に登録する（ファイル列は `concepts/{slug}.md`）
-- frontmatter は source と同じく `kind` / `source` / `status` / `verified`（verified 時のみ）/ `tags`。`kind: concept` を足すのが source との差分
+- frontmatter は source と同じく `kind` / `source` / `status` / `verified`（verified 時のみ）/ `updated` / `tags`。`kind: concept` を足すのが source との差分
 
 ### 報告
 
-concept の作成・更新も他の整理と同様、承認待ちで止めず実行し、内容と格納先は最終レポートに列挙する。
+concept の作成・更新も他の整理と同様、承認待ちで止めず実行し、内容と格納先は最終レポートに列挙する。波及で既存 concept を編集した場合は `updated` を当日日付に更新する。
 
 ---
 
@@ -440,7 +450,8 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 5. 即クローズパターン検出（completed && created == last_active && [x]タスク 0 件）
 6. 各セクションを走査し、整理対象を特定
 7. 更新履歴のセッション単位統合を確認
-8. knowledge/ 切り出し候補を特定（tags の語彙を既存 index.md と照合）
+7.5 破壊的変更パターン検出（quality-checklist.md §7.1 のキーワードを Grep）
+8. knowledge/ 切り出し候補を特定（7.5 の検出結果 + 通常基準。tags の語彙を既存 index.md と照合）
 9. 概念ページ波及の判定（切り出し候補・更新 source の tags を既存 concept / source と照合し、新規 concept 作成 or 既存 concept への `[[ ]]` 追加を判断）
 10. スコープ外差分検出（git diff で「スコープ外」「後続 Issue 候補」セクションの追加行を抽出）
 11. タスク完了時フローの適用判定:
@@ -456,7 +467,7 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
     - 削除したもの（git 管理下のため復元可能）
     - 圧縮したもの
     - 統合した更新履歴
-    - knowledge/ 切り出し（照合結果を含む）
+    - knowledge/ 切り出し（破壊的変更検出は 🔴 マーカー付きで先頭表示、tags を併記。照合結果を含む）
     - 概念ページ（concept）への波及（新規作成 / 既存 concept への `[[ ]]` 追加）
     - スコープ外差分から検出した follow-up 候補（記録は未実行。ユーザーが判断）
     - レビュー未実施の警告（該当する場合。非ブロッキング）

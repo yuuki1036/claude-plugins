@@ -6,6 +6,7 @@ allowed-tools:
   - Glob
   - Bash
   - Skill
+  - AskUserQuestion
 argument-hint: "[期間: 2w, 1m, etc.]"
 ---
 

@@ -160,13 +160,24 @@ Issue ファイルが存在し、内容を読み込めた場合に実行する�
 3. **index.md が存在しない場合:**
    - `.claude/indie/{slug}/knowledge/*.md` を Glob で列挙する
    - Grep でファイル本文からキーワードと一致する箇所を検索し、各ファイルのフロントマター（tags）と Issue のキーワードを照合する
-4. **報告:**
+4. **鮮度判定（stale チェック）:**
+   - 関連する各 knowledge ファイルの frontmatter から `updated` フィールドを読み取る
+   - 当日との差分を計算し、**60 日以上経過** している場合は `⚠️ stale?` マーカーを付与する
+   - `updated` フィールドが存在しないファイルは、stale 判定をスキップ（マーカーなしで通常表示）
+5. **報告:**
    - 関連する knowledge が見つかった場合、Phase F6 の報告に含める:
      ```
      **関連 Knowledge:**
-     - `knowledge/{topic}.md` — {概要}（tags: {tags}）
+     - `knowledge/{topic}.md` — {概要}（tags: {tags}, updated: 2026-04-30）
+     - `knowledge/{stale-topic}.md` — {概要}（tags: {tags}, updated: 2026-01-15）⚠️ stale?
+     - `knowledge/{legacy-topic}.md` — {概要}（tags: {tags}）
      ```
+     - `updated` あり & 60 日以内: `updated: YYYY-MM-DD` を併記
+     - `updated` あり & 60 日超過: `updated: YYYY-MM-DD` + `⚠️ stale?` マーカー
+     - `updated` なし: 従来通り tags のみ表示
    - knowledge が0件の場合は何も表示しない
+
+**stale 判定の意図:** 古い knowledge に引きずられて誤った設計を採るリスクを減らす。ユーザーに「これは古い情報の可能性がある」シグナルを出すのみで、自動的に除外はしない（最終判断はユーザー）。
 
 ### Phase F4: Issue ファイル新規作成
 

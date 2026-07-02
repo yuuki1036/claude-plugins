@@ -185,7 +185,7 @@ fi
    - `scope_size`: **全 type で付与する**（bugfix/investigation/debt も省略しない。テンプレ同梱の既定値を下回らせず、`check-scope-size` のリアルタイム警告を有効に保つため）。effort から導出: `small→small / medium→medium / large→large`（bugfix の既定は small）
    - `pr: ""`
    - テンプレートの任意フィールド（`parent` / `related_knowledge` / `feature_dev_plan` 等）は空のまま残す
-4. **本文**: テンプレート構造に沿って埋める
+5. **本文**: テンプレート構造に沿って埋める
    - 「概要」/「Why」: 課題の背景と、なぜ取り組むべきか
    - 「調査結果」/「対応内容」: スキャンで分かった現状と対応の方向性（断定しすぎない）
    - 「完了条件」: 客観的に判定可能なチェック項目

@@ -37,25 +37,28 @@ for index_file in .claude/indie/*/knowledge/index.md; do
 done
 
 # 放置 Issue 検知（7日以上 last_active が更新されていない in-progress Issue）
-echo ""
-echo "---"
-echo "## 放置 Issue 検知"
-found=0
+# 検出 0 件のときはセクションごと省略する（ノイズ注入を避ける）
+stale_issues=""
 for issue_file in .claude/indie/*/issues/*.md; do
   [ -f "$issue_file" ] || continue
-  status=$(head -20 "$issue_file" | grep -m1 '^status:' | sed 's/status: *//')
+  # grep はマッチ 0 件で exit 1 を返す。set -euo pipefail 下で代入に伝播すると
+  # ERR trap が発火しフック全体がサイレント終了するため、|| true で握る
+  # （status: 行を欠く不正な issue ファイル 1 つで放置 Issue 検知が丸ごと落ちるのを防ぐ）
+  status=$(head -20 "$issue_file" | grep -m1 '^status:' | sed 's/status: *//' || true)
   [ "$status" = "in-progress" ] || continue
-  last=$(head -20 "$issue_file" | grep -m1 '^last_active:' | sed 's/last_active: *//')
+  last=$(head -20 "$issue_file" | grep -m1 '^last_active:' | sed 's/last_active: *//' || true)
   [ -n "$last" ] || continue
   last_epoch=$(date -j -f "%Y-%m-%d" "$last" +%s 2>/dev/null || date -d "$last" +%s 2>/dev/null || echo 0)
   [ "$last_epoch" -eq 0 ] && continue  # パース不能な last_active は stale 判定をスキップ（Linux/macOS 両対応・誤検知防止）
   days_ago=$(( ($(date +%s) - last_epoch) / 86400 ))
   if [ "$days_ago" -ge 7 ]; then
-    id=$(head -20 "$issue_file" | grep -m1 '^id:' | sed 's/id: *//')
-    echo "- **${id}**: ${days_ago}日間未更新"
-    found=1
+    id=$(head -20 "$issue_file" | grep -m1 '^id:' | sed 's/id: *//' || true)
+    stale_issues="${stale_issues}\n- **${id}**: ${days_ago}日間未更新"
   fi
 done
-if [ "$found" -eq 0 ]; then
-  echo "(なし)"
+if [ -n "$stale_issues" ]; then
+  echo ""
+  echo "---"
+  echo "## 放置 Issue 検知"
+  echo -e "$stale_issues"
 fi

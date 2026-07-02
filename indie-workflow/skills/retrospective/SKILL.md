@@ -11,6 +11,7 @@ allowed-tools:
   - Glob
   - Bash
   - Skill
+  - AskUserQuestion
 ---
 
 # 振り返り（Retrospective）

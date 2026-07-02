@@ -68,8 +68,16 @@ created: {今日の日付}
 | backlog | 0 |
 | in-progress | 0 |
 | frozen | 0 |
-| debt | 0 |
 | completed | 0 |
+| canceled | 0 |
+
+## タイプ別サマリー
+| タイプ | 件数 |
+|--------|------|
+| feature | 0 |
+| bugfix | 0 |
+| investigation | 0 |
+| debt | 0 |
 
 ## 関連 Issue
 | ID | タイトル | ステータス | タイプ |

@@ -38,18 +38,22 @@
 #### フロントマター必須フィールド
 ```yaml
 ---
-status: in-progress | completed
+status: backlog | in-progress | frozen | completed | canceled
 id: {ISSUE-ID}
 type: bugfix | feature | investigation | debt
 created: YYYY-MM-DD
 last_active: YYYY-MM-DD
+scope_size: small | medium | large   # feature テンプレでは必須（他 type は任意）
 ---
 ```
+
+- `status` の値は `indie-maintain` の正式定義（`backlog` / `in-progress` / `frozen` / `completed` / `canceled`）に揃える。`debt` は type であって status ではない（混同しない）
+- `scope_size` は feature テンプレートでは必須。bugfix / investigation / debt では任意だが、付与するとスコープ超過チェック（§6）が有効になる
 
 #### オプションフィールド
 ```yaml
 project: {プロジェクト名}
-scope_size: small | medium | large
+frozen_date: YYYY-MM-DD   # status: frozen のとき必須。frozen からの経過日数判定（indie-maintain の frozen 再評価）に使用
 pr: #{PR番号}
 follow_up:
   - {後続Issue}
@@ -98,6 +102,42 @@ follow_up:
 - 一時的な回避策
 - まだ検証されていない仮説
 
+### 7.1 破壊的変更パターンの自動検出（最重要）
+
+Issue 本文・進捗・更新履歴・会話ログから以下キーワードを検出した場合、knowledge 切り出し候補として **必ず** 切り出しまで実行する（起動＝実行確定のため止めて確認しない）。
+将来再利用価値が高く取りこぼしやすいため、通常の判断基準より優先する。
+
+**検出キーワード（日本語 / 英語）:**
+
+| カテゴリ | キーワード例 |
+|---------|-------------|
+| 破壊的変更 | 「破壊的変更」「breaking change」「BREAKING CHANGE」 |
+| API rename | 「rename された」「renamed to」「名前が変わった」「→ 名称変更」 |
+| 非推奨化 | 「deprecated」「非推奨」「廃止された」 |
+| バージョン跨ぎ移行 | `v\d+ ?→ ?v\d+`、「v5 → v6」「Prisma 6 → 7」「Next.js 14 → 15」等 |
+| 実機検知バグ | 「dead element」「機能していない」「空振り」「lint は通るが」「実機テストで判明」「ランタイムで発覚」 |
+| 衝突パターン | 「衝突する」「conflict with」「競合する」「順序バグ」「配列順序」 |
+| 仕様変更 | 「adapter 必須」「規約が変わった」「ファイル規約が rename」 |
+
+**tags 候補（検出時に提案）:**
+
+| キーワードカテゴリ | 推奨 tags |
+|------------------|----------|
+| 破壊的変更 / バージョン跨ぎ | `library-compat`, `breaking-change`, `migration` |
+| API rename / 非推奨化 | `library-compat`, `deprecation`, `api-change` |
+| 実機検知バグ / 衝突 | `gotcha`, `runtime-only`, `static-check-blind-spot` |
+| 仕様変更 | `library-compat`, `convention-change` |
+
+**報告フォーマット（レポートに🔴マーカー付きで先頭表示）:**
+
+```
+🔴 破壊的変更パターンを検出しました（{Issue 内の該当箇所}）。
+   knowledge/{topic-slug}.md に切り出しました。
+   付与 tags: [library-compat, breaking-change, migration]
+```
+
+検出は機械的に行う。起動＝実行確定のため切り出しまで実行し、内容と格納先はレポートに列挙する。
+
 ### 8. knowledge の status フロントマター仕様
 
 knowledge ファイルのフロントマターには `status` と `tags` を必須で記載する：
@@ -108,12 +148,13 @@ knowledge ファイルのフロントマターには `status` と `tags` を必�
 | `source` | 必須 | 元の Issue ID や調査元 |
 | `status` | 必須 | `verified`（実装済み）または `planned`（設計案） |
 | `verified` | 条件付き | status: verified の場合のみ。検証日 `YYYY-MM-DD` |
+| `updated` | 必須 | 最終更新日 `YYYY-MM-DD`。新規切り出し時は当日、編集時は必ず更新する |
 | `tags` | 必須 | 検索用キーワードのリスト（3〜7個目安） |
-| `last-validated` | 任意 | 内容検証日 `YYYY-MM-DD`。記入時は `/knowledge-lint` stale 判定の第一基準（未記入時は `verified` を fallback）。doc-freshness プラグインと共通スキーマ |
+| `last-validated` | 任意 | 内容検証日 `YYYY-MM-DD`。記入時は `/knowledge-lint` stale 判定の第一基準（未記入時は `updated` → `verified` の順で fallback）。doc-freshness プラグインと共通スキーマ |
 | `phase` | 任意 | `current` / `target` / `superseded`。未記入時は `status` から推定（`verified`→current / `planned`→target） |
 | `subkind` | 任意 | `concept` のサブ分類。`glossary` を付けると用語 SSoT ページとして glossary 重複検査（knowledge-lint 項目 9）の対象になる |
 
-**transitional period**: `last-validated` / `phase` / `subkind` は任意。未記入でも error にならず、`/knowledge-lint` では warn / info に留まる。既存の `verified` / `status` はそのまま維持する。
+**transitional period**: `last-validated` / `phase` / `subkind` は任意。未記入でも error にならず、`/knowledge-lint` では warn / info に留まる。既存の `verified` / `updated` / `status` はそのまま維持する。
 
 **tags の付与ルール:**
 - 技術用語・ライブラリ名・パターン名を優先する（例: `react`, `pagination`, `caching`）
@@ -128,6 +169,7 @@ knowledge ファイルのフロントマターには `status` と `tags` を必�
 source: MYAPP-42
 status: verified
 verified: 2026-03-20
+updated: 2026-03-20
 last-validated: 2026-03-20   # 任意。鮮度判定の第一基準
 phase: current               # 任意。未記入なら status から推定
 tags: [react, memo, rendering, performance]
@@ -138,9 +180,17 @@ tags: [react, memo, rendering, performance]
 ---
 source: MYAPP-15
 status: planned
+updated: 2026-04-15
 tags: [cache, redis, ttl, session]
 ---
 ```
+
+**`updated` 運用ルール:**
+
+- 新規切り出し時: 当日の日付を記載
+- 既存 knowledge を編集した場合: **必ず** `updated` を編集日に書き換える（鮮度判定の根拠になるため）
+- frontmatter 以外の本文修正のみでも更新する（typo 修正等の極小変更は任意）
+- 既存ファイルに `updated` がない場合は、次回編集時に追加する（遡及修正は不要）
 
 ### 8.1 概念ページ（concept）と wikilink
 
@@ -159,7 +209,8 @@ knowledge は 2 種類ある。
 
 **concept ページの frontmatter:**
 
-- source と同じ `source` / `status` / `verified`（verified 時のみ）/ `tags` に `kind: concept` を足すだけ
+- source と同じ `kind` / `source` / `status` / `verified`（verified 時のみ）/ `updated` / `tags`。`kind: concept` を足すのが source との差分
+- `updated` は source と同様に必須（波及で既存 concept を編集したら当日日付に更新する）
 - フォーマット例:
 
 ```yaml
@@ -168,6 +219,7 @@ kind: concept
 source: MYAPP-42, MYAPP-58
 status: verified
 verified: 2026-03-20
+updated: 2026-03-20
 tags: [data-fetching, cache, pagination]
 ---
 ```
@@ -213,7 +265,15 @@ source を切り出した後、同じテーマの source が 2 件以上あれ�
 | レビュー済み | 更新履歴に `\| YYYY-MM-DD \| レビュー実施: {説明} \|` を追記して継続 |
 | スキップ | レビューせずに完了マーク（推奨されない旨を表示） |
 
-検出は機械的に行い、最終判断はユーザーに委ねる。
+**検出キーワード一覧:**
+
+| カテゴリ | キーワード |
+|---------|----------|
+| セルフレビュー | `self-review`, `セルフレビュー`, `/self-review` |
+| PR レビュー | `code-review`, `/review`, `コードレビュー実施` |
+| Agent 起動 | `code-reviewer`, `reviewer agent` |
+
+上記いずれかのキーワードが Issue 本文（特に更新履歴・進捗）に含まれていればレビュー実施済みとみなしガードをスキップする。検出は機械的に行い、最終判断はユーザーに委ねる。
 
 ### 11. スコープ外差分検出（follow-up 自動提示）
 

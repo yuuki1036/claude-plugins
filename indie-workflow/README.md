@@ -18,14 +18,21 @@ claude plugin install indie-workflow@yuuki1036-claude-plugins
 
 ```
 .claude/indie/{project}/
-├── project.md         # プロジェクト概要
-├── counter.txt        # 次の Issue 番号
-├── backlog.md         # 軽量アイデアリスト
+├── project.md              # プロジェクト概要
+├── counter.txt             # 次の Issue 番号
+├── backlog.md              # 軽量アイデアリスト
 ├── issues/
-│   └── {PROJECT-N}.md # Issue ファイル
+│   └── {PROJECT-N}.md      # Issue ファイル
+├── follow-ups/
+│   └── {YYYYMMDD}-{slug}.md # 開発中に切り出した follow-up メモ
 └── knowledge/
-    └── {topic}.md     # 切り出した知見
+    ├── index.md            # 知見インデックス
+    ├── {topic}.md          # 個別知見（source）
+    └── concepts/
+        └── {concept}.md    # 概念ページ（横断統合 = concept）
 ```
+
+> 振り返りレポートは `.claude/indie/retrospectives/YYYY-MM-DD.md` に保存される（プロジェクト横断）。
 
 ## スキル
 
@@ -37,6 +44,10 @@ claude plugin install indie-workflow@yuuki1036-claude-plugins
 | indie-issue-maintain | Issue ファイルの品質整理・knowledge 切り出し | セッション終了前 |
 | indie-maintain | 全プロジェクトの棚卸し・放置/debt 管理 | 定期的（週1程度） |
 | indie-issue-discover | AI が課題を多観点で発見して issue を自動起票 | 「次に何やる？」を AI に任せたい時 |
+| indie-follow-up | follow-up タスクの記録・一覧・Issue 昇格 | 開発中に別タスクを思いついた時 |
+| issue-design | Issue 本文を 9 セクションテンプレで設計・構造化・リライト | Issue 本文を設計・整形したい時 |
+| knowledge | 蓄積した知見の検索・参照（読み取り専用） | 過去の知見を探したい時 |
+| knowledge-lint | knowledge グラフの健全性チェック（broken link / 孤立 / 鮮度） | knowledge を点検・修復したい時 |
 | retrospective | 振り返り・見積もり精度分析 | 週次/月次 |
 
 ## コマンド
@@ -49,6 +60,10 @@ claude plugin install indie-workflow@yuuki1036-claude-plugins
 | `/indie-issue-maintain` | - | Issue ファイルの整理 |
 | `/indie-maintain` | `[project-slug]` | プロジェクト棚卸し |
 | `/indie-issue-discover` | `[PROJECT-SLUG]` | 課題を多観点で発見して issue を自動起票 |
+| `/indie-follow-up` | `[new\|list\|promote [FILE]]` | follow-up の記録・一覧・Issue 昇格 |
+| `/issue-design` | `[ISSUE-ID \| リライト対象]` | Issue 本文の設計・構造化・リライト |
+| `/knowledge` | `[search KEYWORD \| related]` | 知見の検索・参照 |
+| `/knowledge-lint` | `[slug]` | knowledge グラフの点検・修復 |
 | `/retrospective` | `[期間: 2w, 1m]` | 振り返り |
 
 ## Issue テンプレート
@@ -93,7 +108,3 @@ claude plugin install indie-workflow@yuuki1036-claude-plugins
 ```
 
 例: `feat/MYAPP-3-add-auth`, `fix/BLOG-2-typo`
-
-## ライセンス
-
-MIT

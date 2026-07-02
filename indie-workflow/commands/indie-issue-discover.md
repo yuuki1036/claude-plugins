@@ -1,5 +1,4 @@
 ---
-name: indie-issue-discover
 description: AI が課題を発見して issue を自動起票
 allowed-tools:
   - Read
@@ -9,6 +8,7 @@ allowed-tools:
   - Bash
   - Skill
   - Agent
+argument-hint: "[PROJECT-SLUG]"
 ---
 
 ユーザーの「課題を見つけて」「issue を自動で作って」「やることを洗い出して」リクエストに応じて、プロジェクトを多観点でスキャンし、取り組むべき課題を発見して indie issue を自動起票する。

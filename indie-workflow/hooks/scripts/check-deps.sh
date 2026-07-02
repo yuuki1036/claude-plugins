@@ -6,6 +6,7 @@ source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "indie-workflow:check-deps"
 
 warnings=""
+errors=""
 
 check_plugin() {
   local name="$1" required="$2" desc="$3"
@@ -15,7 +16,7 @@ check_plugin() {
   fi
   if [ "$found" = false ]; then
     if [ "$required" = "true" ]; then
-      warnings="${warnings}\n- [ERROR] ${desc}（${name}）がインストールされていません"
+      errors="${errors}\n- [ERROR] ${desc}（${name}）がインストールされていません"
     else
       warnings="${warnings}\n- [WARN] ${desc}（${name}）が未インストールです（オプション）"
     fi
@@ -30,8 +31,9 @@ check_plugin "adr-keeper" "false" "adr-keeper プラグイン（indie-issue-crea
 check_plugin "writing-polish" "false" "writing-polish プラグイン（散文成果物の確定前 embed 推敲）"
 
 # --- 結果出力 ---
-if [ -n "$warnings" ]; then
+if [ -n "$errors" ] || [ -n "$warnings" ]; then
   echo "## 依存チェック (indie-workflow)"
-  echo -e "$warnings"
+  [ -n "$errors" ] && echo -e "$errors"
+  [ -n "$warnings" ] && echo -e "$warnings"
   echo ""
 fi
