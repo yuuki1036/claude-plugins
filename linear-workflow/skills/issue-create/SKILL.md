@@ -50,8 +50,9 @@ Linear Issue の情報を取得し、テンプレートに基づいて Issue フ
 | bugfix | 小規模な修正 | バグ修正、typo、設定変更など影響範囲が限定的 |
 | feature | 機能開発・リファクタ | 新機能追加、既存機能の改修、リファクタリング |
 | investigation | 調査・分析 | 原因調査、パフォーマンス分析、技術選定 |
+| debt | 技術的負債の解消 | コード品質改善、依存関係更新、非推奨 API の移行 |
 
-- 確信度が高い場合（obvious な bugfix / investigation）は判断根拠を1文で示してそのまま進む
+- 確信度が高い場合（obvious な bugfix / investigation / debt）は判断根拠を1文で示してそのまま進む
 - 判断に迷う場合は **AskUserQuestion** でテンプレートを確認する:
   - question: 「{type} テンプレートを推奨します（{根拠1行}）。使用するテンプレートを選択してください」
   - header: "テンプレート"
@@ -59,8 +60,33 @@ Linear Issue の情報を取得し、テンプレートに基づいて Issue フ
     1. label: "bugfix" / description: "バグ修正・設定変更など影響範囲が限定的"
     2. label: "feature" / description: "新機能追加・既存機能の改修・リファクタリング"
     3. label: "investigation" / description: "原因調査・パフォーマンス分析・技術選定"
+    4. label: "debt" / description: "コード品質改善・依存関係更新・非推奨 API の移行"
 - テンプレートは以下を Read で読み込む:
   - `${CLAUDE_SKILL_DIR}/references/{type}.md`
+
+### Phase 2.4: コードベース現状確認（手動入力起票時）
+
+Phase 0 で Linear MCP 未検出のまま「続行」した手動入力起票経路では、Linear 側で重複がチェックされないため、対象コードの現状を軽く確認し「すでに実装済みの機能に対する Issue 起票」を防ぐ。**MCP から取得できた通常経路ではこの Phase をスキップしてよい**（Linear 側で重複が管理されるため）。
+
+1. **キーワード抽出**: Issue のタイトル・概要から具体的な対象を示すキーワードを抽出する
+   - 例: 「Home ページ実装」→ `Home`, `HeroSection`, `page.tsx`
+   - 例: 「ユーザー認証の追加」→ `auth`, `login`, `signIn`
+2. **コードベースの確認**:
+   - Glob でファイルパスの存在確認（例: `src/app/**/page.tsx`, `**/*Auth*.{ts,tsx}`）
+   - Grep でキーワードの実装有無を確認（例: `HeroSection`, `signIn(`）
+   - あわせて `.claude/linear/{slug}/issues/*.md` を Glob/Grep で走査し、同一トピックの既存 Issue が無いかも確認する
+3. **判定と提示**:
+   - 確認結果が空 or 関連薄: そのまま Phase 2.5 へ進む
+   - **既存実装・既存 Issue が見つかった場合**: ヒット箇所（ファイルパス + 1行サマリー）をユーザーに提示し、**AskUserQuestion** で確認する:
+     - question: 「該当機能がすでに実装済み、または既存 Issue が存在する可能性があります。Issue 起票を続けますか？」
+     - header: "起票判断"
+     - options:
+       1. label: "続行" / description: "別の観点での Issue として起票する"
+       2. label: "スコープ変更" / description: "タイトル・概要を調整してから起票する"
+       3. label: "中止" / description: "Issue 起票を取りやめる"
+4. **軽量運用**:
+   - 確認は 3〜5 回以内の Glob/Grep に留める（全網羅ではない）
+   - bugfix / investigation / debt は対象コードが明確なことが多いので、この Phase はスキップしてよい（feature 時に特に有効）
 
 ### Phase 2.5: 関連 Knowledge の検索
 
@@ -112,6 +138,7 @@ Issue の情報が確定した段階で、既存の knowledge を検索する。
    - `linear: {ISSUE-ID}`
    - `type: {選択したtype}`
    - `created: {今日の日付}`
+   - `last_active: {今日の日付}`
    - `pr: ` (空欄)
    - Linear のプロジェクト情報があれば `project:` も記入
 
@@ -159,6 +186,7 @@ Issue の情報が確定した段階で、既存の knowledge を検索する。
    - 計画の記入（feature の場合）
    - 調査の開始（investigation の場合）
    - 修正の着手（bugfix の場合）
+   - 対応方針の検討（debt の場合）
 
 ### Phase 5: spec 選択（着手前の仕様化ルーティング）
 
@@ -182,9 +210,10 @@ Issue の情報が確定した段階で、既存の knowledge を検索する。
    | 単一の重要な設計判断（ライブラリ・方針）を理由ごと残す | **adr-keeper** | WHY — 決定を `.claude/adr/` に append-only |
    | 影響範囲が限定的な修正・typo・設定変更（bugfix） | **不要** | 仕様化コストが見合わない → 直接実装 |
    | 原因調査・分析（investigation） | **不要**（結論で方針が決まれば adr） | 調査は Issue 本文で十分 |
+   | 技術的負債の解消（debt） | **不要**（移行方式が大きいなら design-doc） | 小さな改善は直接着手、大きな移行は HOW を design-doc に |
 
 3. **提示（自動推奨 → 低確信時のみ質問）**:
-   - **確信度が高い**（bugfix → 不要、明確な新機能 → bdd-spec 等）: 推奨と根拠を 1 文で示してそのまま進む（「不要」なら何も起動しない）
+   - **確信度が高い**（bugfix / debt → 不要、明確な新機能 → bdd-spec 等）: 推奨と根拠を 1 文で示してそのまま進む（「不要」なら何も起動しない）
    - **迷う**: **AskUserQuestion** で確認する（**導入済みの spec のみ** option 化、推奨を先頭に `(推奨)`、「不要」を必ず含める）:
      - question: 「着手前に仕様を書きますか？{推奨} を推奨します（{根拠1行}）」
      - header: "spec 選択"

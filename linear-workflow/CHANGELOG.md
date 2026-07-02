@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.0] - 2026-07-02
+
+### Added
+- indie-workflow に先行実装されていた機能を移植し双子間 drift を解消:
+  - **debt テンプレート**（`issue-create/references/debt.md`）と type ルーティング。follow-up の `debt → bugfix` ワークアラウンドを廃止
+  - **Phase 2.4 コードベース現状確認**（手動入力起票時の重複起票防止。Glob/Grep で既存実装・既存 Issue を確認）
+  - **即クローズパターンの検出**（`issue-maintain`。起票即クローズ Issue の経緯保全）
+  - **feature-dev 引き継ぎの親 Issue セクション**（`issue-create`）
+
+### Fixed
+- **`last_active` 死にフィールドを解消**: dashboard の放置警告・context-agents が参照するのに誰も書いていなかった。テンプレ必須フィールド化 + `issue-maintain` の整理時に更新する仕組みを追加
+- `doc-resolver` agent と `session-start/references/context-agents.md` に indie 側の改善を反映（`parent:` 空値スキップ / 関連 Issue 抽出で parent 参照済み ID 除外 / `related_knowledge:` 配列読み込み）
+- concept frontmatter に `source` を追加し `kind/source/status/verified/updated/tags` に統一（SKILL.md テンプレと quality-checklist §6 の乖離を解消）
+- `quality-checklist` §4 のフロントマター必須フィールドを実テンプレに同期（status に `canceled`、type に `debt`、`last_active` を追加）
+- `linear-maintain` の allowed-tools に `Write` を追加（knowledge 切り出し＝新規ファイル作成に必要。skill/command 両方）
+- `session-start` の allowed-tools に `Skill` を追加（Phase N4 で issue-create スキルを実行するため。skill/command 両方）
+- `follow-up` frontmatter の `consumers` を `[linear-workflow]` に修正（排他運用の indie-workflow を除去）
+
 ## [1.33.1] - 2026-06-27
 
 ### Fixed

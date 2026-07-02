@@ -53,6 +53,21 @@ allowed-tools:
 
 ---
 
+## last_active の更新
+
+整理実行時にフロントマターの `last_active` を今日の日付に更新する。`last_active` は dashboard の放置警告・context-agents の作業状態把握が参照する鮮度フィールドで、整理タイミングで書き換えないと死にフィールド化する。
+
+```yaml
+---
+last_active: 2026-03-20
+---
+```
+
+- `last_active` フィールドが存在しない場合は追加する（遡及修正は不要。次回整理時に付与すればよい）
+- 日付形式は `YYYY-MM-DD`
+
+---
+
 ## 整理対象
 
 ### 削除してよいもの
@@ -122,6 +137,7 @@ Issue ファイルがフロントマターの `type` に対応するテンプレ
 | bugfix | 概要, 進捗, 変更ファイル, 更新履歴 |
 | feature | 概要, 計画, 進捗, 変更ファイル, 更新履歴 |
 | investigation | 概要, 調査結果, 根本原因, 提案, 関連ファイル, 更新履歴 |
+| debt | 概要, 影響範囲, 放置リスク, 対応方針, 進捗, 変更ファイル, 更新履歴 |
 
 **feature の推奨セクション**（省略可、必要に応じて追加）:
 - 調査結果、スコープ外、備考
@@ -211,6 +227,7 @@ source（個別知見）を切り出した後、複数の source を横断する
 ```markdown
 ---
 kind: concept
+source: {代表的な元 Issue ID または統合元}
 status: verified | planned
 verified: YYYY-MM-DD
 updated: YYYY-MM-DD

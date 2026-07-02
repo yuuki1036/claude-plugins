@@ -12,6 +12,7 @@ allowed-tools:
   - mcp__linear__get_project
   - mcp__linear__list_issue_statuses
   - Read
+  - Write
   - Edit
   - Glob
   - Grep

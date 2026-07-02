@@ -50,7 +50,7 @@ follow-up ファイルは `.claude/linear/{slug}/follow-ups/` に配置する。
 ---
 shared_state_type: follow-up
 producer: linear-workflow
-consumers: [linear-workflow, indie-workflow]
+consumers: [linear-workflow]
 schema_version: 1
 last_updated: {ISO 8601}
 title: "タイトル"

@@ -1,32 +1,33 @@
 ---
 status: in-progress          # 必須。値: in-progress / completed / canceled
 linear: {ISSUE-ID}           # 必須
-type: investigation          # 必須。値: bugfix / feature / investigation
+type: debt                   # 必須。値: bugfix / feature / investigation / debt
 created: YYYY-MM-DD          # 必須
 last_active: YYYY-MM-DD      # 必須。最終作業日（issue-maintain が整理時に更新）
 project: {project-name}      # 任意。Linear プロジェクト名
+pr: "#{number}"              # 任意。PR 作成後に記載
 parent: {ISSUE-ID}           # 任意。親 Issue
 related_knowledge: []        # 任意。Phase 2.5 で参照した knowledge ファイル名の配列
 ---
 # {ISSUE-ID}: {タイトル}
 
 ## 概要
-{調査の目的・背景}
+{何が負債か、なぜ発生したか}
 
-## 調査結果
-{発見事項を構造化して記載}
+## 影響範囲
+{どのコード/機能に影響するか}
 
-## 根本原因
-{特定できた場合}
+## 放置リスク
+{放置するとどうなるか。低/中/高}
 
-## 提案
-{調査結果に基づくアクション案}
-
-## 関連ファイル
-{調査で特定した重要ファイル}
+## 対応方針
+{どう解消するか}
 
 ## 進捗
-- [ ] 調査項目
+- [ ] タスク
+
+## 変更ファイル
+（実装後に記載）
 
 ## 更新履歴
 | 日付 | 内容 |

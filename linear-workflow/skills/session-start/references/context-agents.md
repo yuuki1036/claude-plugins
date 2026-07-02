@@ -34,9 +34,11 @@ frontmatter の `parent:` フィールドを確認する。
 - 「概要」「計画」「スコープ外」セクションを抽出する
 - 親 Issue の進捗セクションから全体の進行状況を把握する
 
+値がない（または空）場合はこのステップをスキップする。
+
 ### 2. 関連 Issue の読み込み
 
-Issue 本文中の `[A-Z]+-\d+` パターン（自身の Issue ID を除く）を抽出する。
+Issue 本文中の `[A-Z]+-\d+` パターン（自身の Issue ID と `parent:` で参照済みの ID を除く）を抽出する。
 各 Issue ID について:
 - `.claude/linear/{slug}/issues/{RELATED-ID}.md` の存在を確認（Glob）
 - 存在する場合は「概要」セクションのみ Read する
@@ -47,6 +49,7 @@ Issue 本文中の `[A-Z]+-\d+` パターン（自身の Issue ID を除く）�
 Issue 本文中の以下のパターンを抽出する:
 - `knowledge/xxx.md` への明示的な参照
 - バッククォート内のファイルパスで knowledge ディレクトリを含むもの
+- frontmatter の `related_knowledge:` 配列に列挙されたファイル名
 
 該当ファイルがあれば Read する。
 

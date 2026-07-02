@@ -7,6 +7,7 @@ description: >
 effort: high
 allowed-tools:
   - Agent
+  - Skill
   - mcp__linear__get_issue
   - mcp__linear__list_issues
   - Read
@@ -215,7 +216,7 @@ Issue ファイルが存在しない場合:
 
 1. `issue-create` スキルを使った新規作成をユーザーに提案する
    - 「Issue ファイルが見つかりません。`issue-create` スキルで新規作成しますか？」と確認
-2. ユーザーの承認を得てから `issue-create` スキルを実行する
+2. ユーザーの承認を得てから **Skill ツール**で `issue-create` スキルを実行する
 3. ユーザーが不要と判断した場合はスキップして Phase N5 へ
 
 ### Phase N5: 作業準備完了報告

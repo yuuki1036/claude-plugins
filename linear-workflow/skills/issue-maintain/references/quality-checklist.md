@@ -38,10 +38,11 @@
 #### フロントマター必須フィールド
 ```yaml
 ---
-status: in-progress | completed
+status: in-progress | completed | canceled
 linear: {ISSUE-ID}
-type: bugfix | feature | investigation
+type: bugfix | feature | investigation | debt
 created: YYYY-MM-DD
+last_active: YYYY-MM-DD
 ---
 ```
 
