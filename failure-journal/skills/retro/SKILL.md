@@ -9,7 +9,6 @@ effort: medium
 allowed-tools:
   - Read
   - Bash
-  - Grep
   - AskUserQuestion
 ---
 

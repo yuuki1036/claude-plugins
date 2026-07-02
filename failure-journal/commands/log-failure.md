@@ -20,7 +20,7 @@ log-failure スキルを使って、再発しうる失敗を journal に記録�
 
 1. Phase 0: journal パス確認（`.claude/failure-journal/journal.jsonl`）
 2. Phase 1: 再発性判定（「同じ状況で再発しうるか」の単一基準）
-3. Phase 2: tag 生成・検証（kebab-case / 20 文字以内 / 固有名詞禁止 / 現象主体）
+3. Phase 2: tag 生成・検証（kebab-case / 30 文字以内 / 固有名詞禁止 / 現象主体）
 4. Phase 3: append（Bash + jq、valid JSON 保証・append-only）
 5. Phase 4: `failure:logged` event publish
 6. Phase 5: 完了報告

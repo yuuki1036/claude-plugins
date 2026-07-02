@@ -2,7 +2,7 @@
 name: log-failure
 description: >
   再発しうる失敗を journal (JSON Lines) に append する。
-  判断軸は「同じ状況で再発しうるか」の単一基準。tag は kebab-case 20 文字以内・固有名詞禁止・現象主体で抽象化。
+  判断軸は「同じ状況で再発しうるか」の単一基準。tag は kebab-case 30 文字以内・固有名詞禁止・現象主体で抽象化。
   append-only（既存行の編集禁止）で valid JSON を保証し、append 後に failure:logged event を publish する。
   トリガー: 「失敗を記録」「log-failure」「再発しそうな失敗」「journal に追記」
   「また同じミスした」「failure journal」「/log-failure」
@@ -50,7 +50,7 @@ allowed-tools:
 | 規約 | 内容 |
 |---|---|
 | 形式 | kebab-case（小文字 + ハイフン） |
-| 長さ | 20 文字以内 |
+| 長さ | 30 文字以内 |
 | 固有名詞禁止 | ファイル名・関数名・Issue ID・人名など含めない |
 | 現象主体 | 「何をしくじったか」を抽象化（例: `spec-skipped-without-rationale`） |
 
@@ -86,11 +86,14 @@ jq -nc \
 Event Bus 規約に従い、publisher 責務として `failure:logged` を publish する。`safe-hook.sh` を source して `event_bus_publish` API を使う:
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null \
-  && event_bus_publish "failure:logged" "$(jq -nc --arg t "$tag" '{tag:$t}')"
+if source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null; then
+  SAFE_HOOK_NAME="failure-journal"
+  event_bus_publish "failure:logged" "$(jq -nc --arg t "$tag" '{tag:$t}')"
+fi
 ```
 
 - payload は **tag のみ**（本文・現象説明は含めない）
+- source 直後に `SAFE_HOOK_NAME="failure-journal"` を設定してから publish する。設定しないと `event_bus_publish` が `"plugin":"unknown"` を書き込む（`safe_hook_init` は stdin を cat してハングし得るので skill 内 Bash では呼ばない）
 - source に失敗しても append 自体は成功扱いとする（event は best-effort）
 
 ---

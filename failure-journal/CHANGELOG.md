@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.1.2] - 2026-07-02
+
+### Fixed
+
+- log-failure の `failure:logged` publish スニペットが `SAFE_HOOK_NAME` 未設定で `"plugin":"unknown"` を書いていた問題を修正（source 直後に `SAFE_HOOK_NAME="failure-journal"` を設定するよう `skills/log-failure/SKILL.md` / `references/journal-schema.md` を修正）
+- `hooks/scripts/session-start-init.sh` の journal ディレクトリ基準を Event Bus 正本と揃え、相対パス `.claude/failure-journal` を `${CLAUDE_PROJECT_DIR:-$PWD}/.claude/failure-journal` に変更
+- `README.md` の「並行 install 可能」と「混ぜると壊れる」が矛盾していた編集残骸を修正
+
+### Changed
+
+- tag 長さ規約を「20 文字以内」から「30 文字以内」に緩和し、正準例 `spec-skipped-without-rationale`（30 字）と整合させた。`journal-schema.md` の自己矛盾（修正例が 20 字超で「※20字超なら更に短縮」と自己言及）も解消（`SKILL.md` / `README.md` / `commands/log-failure.md` / `references/journal-schema.md`）
+- retro の allowed-tools から未使用の `Grep` を削除（`skills/retro/SKILL.md` / `commands/retro.md` のペア一致）
+
 ## [0.1.1] - 2026-06-15
 
 ### Changed

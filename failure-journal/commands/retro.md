@@ -4,7 +4,6 @@ user_invocable: true
 allowed-tools:
   - Read
   - Bash
-  - Grep
   - AskUserQuestion
 ---
 

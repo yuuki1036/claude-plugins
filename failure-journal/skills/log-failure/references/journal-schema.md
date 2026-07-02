@@ -29,7 +29,7 @@ failure-journal の永続フォーマット定義。
 | 規約 | 内容 | 違反例 → 修正例 |
 |---|---|---|
 | kebab-case | 小文字 + ハイフン区切り | `SpecSkipped` → `spec-skipped` |
-| 20 文字以内 | 長い場合は抽象化して短縮 | `spec-md-was-skipped-without-any-rationale` → `spec-skipped-without-rationale`(※20字超なら更に短縮) |
+| 30 文字以内 | 長い場合は抽象化して短縮 | `spec-md-was-skipped-without-any-rationale` → `spec-skipped-without-rationale` |
 | 固有名詞禁止 | ファイル名・関数名・Issue ID・人名を含めない | `foo-ts-type-error` → `type-error-untracked` |
 | 現象主体 | 「何をしくじったか」を抽象化 | `forgot` → `version-bump-omitted` |
 
@@ -56,6 +56,10 @@ jq -nc \
 append 成功後、`failure:logged` event を publish する（payload は tag のみ）:
 
 ```bash
-source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null \
-  && event_bus_publish "failure:logged" "$(jq -nc --arg t "$tag" '{tag:$t}')"
+if source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null; then
+  SAFE_HOOK_NAME="failure-journal"
+  event_bus_publish "failure:logged" "$(jq -nc --arg t "$tag" '{tag:$t}')"
+fi
 ```
+
+> `SAFE_HOOK_NAME` を設定せずに `event_bus_publish` すると `"plugin":"unknown"` が書かれる。source 直後に必ず `SAFE_HOOK_NAME="failure-journal"` を設定する（`safe_hook_init` は stdin を cat するので skill 内 Bash では呼ばない）。
