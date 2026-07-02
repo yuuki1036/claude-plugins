@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "code-review",
-      "description": "Phase 0トリアージ + 動的エージェント構成コードレビュー。confidence × severity 2軸スコアリング、red-flag pattern による specialist 自動起動、unmet_information トリガーの追加 explorer ラウンド、高 severity 検出時の meta-reviewer ラウンド対応。self-review に --embed フラグ追加 (他 plugin からの呼び出し時に Phase 7 AskUserQuestion を skip)、worktree branch 継承バグ修正、PR 種別分岐ルールと Issue ファイル必読フロー。総合判定 (Approve / Approve with nits / Needs work) と Nit:/Optional:/FYI prefix、好みベース指摘の confidence クランプ、--emergency 最小構成レビュー、Fix the code 修正指針 (Google eng-practices 由来)。ui-quality に Chrome Modern Web Guidance ベースの modern-web-checklist を同梱 (Baseline ゲート + 自前実装→ネイティブ API 観点、外部 skill 参照のローカル化)。reviewer 非レビュー出力の auto-retry と観点カバレッジ常時セルフチェック、退行指摘の invariant 検算、EnterWorktree 二重 checkout 回避、self-review の Vault 照合 (kvault recall で過去指摘を reviewer に注入)。事実主張のツール接地 (claim grounding: 検証可能性3分類 + repo検証不能な外部状態の断定抑止と [unverified] confidence クランプ) と findings 反映段の over-correction ガード (一次ソース再確認・暫定入力の非伝播・1箇所先行確認、issue #71)。反証レイヤー (Phase 5.8/4.8: reviewer 指摘を独立エージェントが反証し偽陽性を先回り摘出。高 severity は消さず係争注記、MAJOR以下のみ取り下げ、pre-existing/intended は git 判定、security specialist は対象外、verdict を既存スコアリングに統合、enable_adversarial_verify で制御)。doc-substance 観点 (docs の内容妥当性: 主張のコード裏取り・論理健全性・規範の正しさ・有用性・意味の陳腐化を comment-accuracy の射程拡張として検証。変更ファイル数比率でなく doc 重要度で起動する重要度ゲート + effort 別起動制御、grounding explorer の対象を diff 参照コード ∩ 実在パスに限定、裏取り済み内容誤りは git blame ガード付きで CRITICAL 昇格、根拠なし論理/有用性は ≤40 クランプ、決定系 doc は design-review へ dormant soft 委譲)。doc-substance を 2 軸に拡張 (A 主張の真偽 + B 文書としての成立性: 完全性〔書かれるべき情報の欠落・新 API に対応する doc 不在〕・doc 種別適合〔Diátaxis〕・読み手前提/順序・判断根拠 WHY・ナビゲーション)。B 軸は code:line でなく doc:line + 破られた期待 (doc 種別の契約 / 宣言された対象読者・スコープ) で裏取りし好みクランプ対象外、prose は writing-polish と「最小差分 reword か否か」で分界、反証レイヤーに B 軸読み替え (pre-validated/intended/misread/pre-existing) を追加。返答ドラフト前に指摘の精査ゲート (Step 7: 必要性=signal/noise の第3軸を人間に委ね、settled な蒸し返し・実害極小 nit・既存コード由来を取り下げ/降格。反証=正しさ・Step6=閾値と直交、高 severity 非削除、post 件数を publish に反映) を追加。投稿コメントのトーン徹底 (reply-tone-guide 必須ルール: Claude 署名 [絵文字なし]・PR作成者/他レビュアーへの敬意・簡潔さ・良い点を1文で称賛) と承認メッセージ 2.7 を新設、返答ドラフトを Approve 系の承認コメント生成にも拡張",
-      "version": "2.29.0",
+      "description": "Phase 0 トリアージ + 動的エージェント構成の PR コードレビュー / セルフレビュー。confidence × severity の 2 軸スコアリングで報告閾値をマトリクス制御し、diff パターンから explorer(sonnet) → reviewer(opus) を動的構成する。red-flag specialist 自動起動、adaptive deepening（追加 explorer ラウンド）、高 severity 検出時の meta-reviewer(fable) ラウンド、反証レイヤー（reviewer 指摘を独立 opus が反証し偽陽性を先回り摘出、高 severity は消さず係争注記）を備える。doc-substance 観点で docs の内容妥当性も検証。self-review は --embed で他プラグイン（feature-dev Phase 6 等）から委譲可能。review:completed を Event Bus に publish。",
+      "version": "2.29.1",
       "author": {
         "name": "yuki"
       },
@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離、PostToolUse 自動 lint チェーン(fmt-fix→lint-fix→check、opt-in)、PR 本文の bullet 上限数値化、writing-polish 連携(PR 本文を提示前に必須推敲)、commit subject 品質規約(曖昧 subject 禁止例カタログ、Google eng-practices 由来)、PR 本文のローカル限定ドキュメント参照防止(パス無し自然言語言及の advisory 検出)、PR 概要の What/Why/Outcome を字数制約で省略しない両立明記+生成後セルフチェック(Step 4.7)",
-      "version": "1.23.0",
+      "version": "1.23.1",
       "author": {
         "name": "yuki"
       },
@@ -26,8 +26,8 @@
     },
     {
       "name": "claude-meta",
-      "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善（骨抜き禁止/三段防御/階層 AGENTS.md/優先度規約/静的検査優先の 6 パターン強化）、CCアップデート追従、セッション学習の反映",
-      "version": "1.11.1",
+      "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善（骨抜き禁止/三段防御/階層 AGENTS.md/優先度規約/静的検査優先の 6 パターン強化）、CCアップデート追従、セッション学習の反映、eval 回帰テスト（トリガーフレーズ → 期待スキル起動を pass^k で検証）、新コンポーネント追加前判断（skill/agent/hook/command 追加前の退路確保）",
+      "version": "1.11.2",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.33.1",
+      "version": "1.34.0",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "indie-workflow",
       "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。AI が多観点スキャンで課題を発見し issue を自動起票（indie-issue-discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.36.0",
+      "version": "1.37.0",
       "author": {
         "name": "yuki"
       },
@@ -54,7 +54,7 @@
     {
       "name": "plugin-manager",
       "description": "インストール済みプラグインの一括更新と、ほぼ全部 install しているマーケットプレイスの後発追加プラグイン取りこぼし通知（SessionStart hook）",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "author": {
         "name": "yuki"
       },
@@ -63,7 +63,7 @@
     {
       "name": "plugin-feedback",
       "description": "プラグインへの改善要望・バグ報告を GitHub Issue として作成。コマンドと自然言語の両方で起動",
-      "version": "1.2.7",
+      "version": "1.2.8",
       "author": {
         "name": "yuki"
       },
@@ -72,7 +72,7 @@
     {
       "name": "feature-dev",
       "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec plugin から BDD spec.md を生成し architect の入力契約に使用、Phase 1.6 で kvault（外部 CLI、未導入時 skip）から横断知見を recall し architect に advisory 注入、Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.3 で型/テスト/lint の決定的オラクルゲート（fail-closed で高コストレビュー前に機械的欠陥を落とす）、Phase 5.5 に self-lock template、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
-      "version": "2.8.0",
+      "version": "2.8.1",
       "author": {
         "name": "yuki"
       },
@@ -81,7 +81,7 @@
     {
       "name": "notebooklm-workflow",
       "description": "NotebookLM 連携ワークフロー。URL/PDF/YouTube/Drive のソース追加と既存ノートへの Q&A・要約取得を自然言語で操作（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱）",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "author": {
         "name": "yuki"
       },
@@ -89,8 +89,8 @@
     },
     {
       "name": "guardrail-protect",
-      "description": "lint/hook/static check 設定の骨抜きと git commit --no-verify を PreToolUse hook で機械的にブロック（opt-in 設定）",
-      "version": "0.1.1",
+      "description": "git commit の hook 迂回（--no-verify/-n・git 省略形・-c core.hooksPath 上書き・変数間接・sh -c スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロックする PreToolUse hook。config 自己保護・fail-loud（jq/perl 不在時に無言で無効化しない）付き",
+      "version": "0.2.0",
       "author": {
         "name": "yuki"
       },
@@ -98,8 +98,8 @@
     },
     {
       "name": "doc-freshness",
-      "description": "ドキュメント鮮度の機械強制。last-validated / phase frontmatter による stale 検出、行数ガード、internal link 検証、新規 doc grace period 対応",
-      "version": "0.1.0",
+      "description": "ドキュメント鮮度の機械強制。last-validated / phase frontmatter による stale 検出、行数ガード、internal link 検証、新規 doc grace period 対応。.claude/adr・.claude/designs も走査し append_only: true で append-only 履歴文書の stale 判定を免除",
+      "version": "0.2.0",
       "author": {
         "name": "yuki"
       },
@@ -108,7 +108,7 @@
     {
       "name": "bdd-spec",
       "description": "BDD spec 駆動の scaffold プラグイン。user story dir + epic.md / spec.md 2ファイル粒度 + BDD 階層化（all_spec / common_spec / spec / Examples）+ 同値分割表テンプレを生成",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "author": {
         "name": "yuki"
       },
@@ -116,8 +116,8 @@
     },
     {
       "name": "adr-keeper",
-      "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 2箇所更新を機械化",
-      "version": "0.1.2",
+      "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除",
+      "version": "0.2.0",
       "author": {
         "name": "yuki"
       },
@@ -126,7 +126,7 @@
     {
       "name": "failure-journal",
       "description": "再発する失敗を JSON Lines に append し、30日×3回閾値超えのパターンを retro で抽出して AGENTS.md/hook/skill へ還流。SessionStart で journal 初期化、failure:logged を event bus に publish",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "author": {
         "name": "yuki"
       },
@@ -135,7 +135,7 @@
     {
       "name": "writing-polish",
       "description": "文章を語句レベルで推敲・添削する汎用スキル。最小差分の diff 提示 → 採否フローで冗長削り・曖昧語の具体化・トーン統一・AI っぽさ除去・用語一貫性・過剰抽象/衒学語の平易化を行う。校正ルールは textlint(preset-ja-technical-writing/japanese/ai-writing/JTF-style) と Vale 由来のカテゴリを tone-guide 正本に内蔵、日英両対応。語彙の抽象度を見るカテゴリ7(平易性/over-abstraction)・negative parallelism 等の構文 tell・textlint/Vale 委譲境界を明文化。カテゴリ5に行為主体隠蔽(false agency: モノ主語の人間動詞)、カテゴリ2に反証不能な主張の検出、カテゴリ4に情感記号の濫用を追加(いずれも固定辞書化せず構造/densityで判定)。textlint preset-ai-writing を同梱 config で有効化し装飾絵文字/機械的リスト/過剰強調/hype を決定的に委譲。textlint 導入時は日本語の決定的チェックを併用(未導入時は LLM 判定にフォールバック、required:false)。過剰修正(over-correction)抑制を中核原則に据える。提示は確信度ラベル([確実]/[任意]/[要確認])・冒頭サマリ行・効能で書く理由・保全の明示で人間が採否しやすく設計(presentation-guide が提示 UX の正本)。他プラグインから --embed で soft 委譲可能(pr-creator/git-commit-helper/issue-design が dormant 連携)",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "author": {
         "name": "yuki"
       },
@@ -144,7 +144,7 @@
     {
       "name": "design-doc",
       "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱（confidence フィルタ + high 以上で敵対的反証 phase）",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "author": {
         "name": "yuki"
       },

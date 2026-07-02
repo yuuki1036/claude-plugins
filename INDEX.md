@@ -12,22 +12,22 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 
 | プラグイン | version | cmd | skill | agent | hooks | mcp | 概要 |
 |-----------|---------|----:|------:|-------|-------|-----|------|
-| [adr-keeper](#adr-keeper) | 0.1.2 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
-| [bdd-spec](#bdd-spec) | 0.1.1 | 1 | 1 | - | - | - | BDD spec 駆動の user story scaffold |
-| [claude-meta](#claude-meta) | 1.11.1 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.29.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
-| [design-doc](#design-doc) | 0.3.0 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
-| [dev-workflow](#dev-workflow) | 1.23.0 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
-| [doc-freshness](#doc-freshness) | 0.1.0 | 1 | 1 | - | - | - | frontmatter による doc 鮮度機械強制 |
-| [failure-journal](#failure-journal) | 0.1.1 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
-| [feature-dev](#feature-dev) | 2.8.0 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
-| [guardrail-protect](#guardrail-protect) | 0.1.1 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
-| [indie-workflow](#indie-workflow) | 1.36.0 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
-| [linear-workflow](#linear-workflow) | 1.33.1 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
-| [notebooklm-workflow](#notebooklm-workflow) | 0.2.4 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
-| [plugin-feedback](#plugin-feedback) | 1.2.7 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
-| [plugin-manager](#plugin-manager) | 1.7.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
-| [writing-polish](#writing-polish) | 0.6.1 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
+| [adr-keeper](#adr-keeper) | 0.2.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
+| [bdd-spec](#bdd-spec) | 0.1.2 | 1 | 1 | - | - | - | BDD spec 駆動の user story scaffold |
+| [claude-meta](#claude-meta) | 1.11.2 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
+| [code-review](#code-review) | 2.29.1 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [design-doc](#design-doc) | 0.4.0 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
+| [dev-workflow](#dev-workflow) | 1.23.1 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
+| [doc-freshness](#doc-freshness) | 0.2.0 | 1 | 1 | - | - | - | frontmatter による doc 鮮度機械強制 |
+| [failure-journal](#failure-journal) | 0.1.2 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
+| [feature-dev](#feature-dev) | 2.8.1 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
+| [guardrail-protect](#guardrail-protect) | 0.2.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
+| [indie-workflow](#indie-workflow) | 1.37.0 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
+| [linear-workflow](#linear-workflow) | 1.34.0 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
+| [notebooklm-workflow](#notebooklm-workflow) | 0.2.5 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
+| [plugin-feedback](#plugin-feedback) | 1.2.8 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
+| [plugin-manager](#plugin-manager) | 1.7.2 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
+| [writing-polish](#writing-polish) | 0.6.2 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
 排他関係: `indie-workflow` と `linear-workflow` は同系統（ローカル / Linear）で排他利用想定。両方有効時は両者の SessionStart hook が同名スキルのトリガー衝突を警告する。
 
@@ -36,7 +36,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 ## 各プラグイン詳細
 
 ### adr-keeper
-設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法 (Enforcement) セクション必須。supersede 時は新規作成 + 旧 ADR 2 箇所更新を機械化。doc-freshness と frontmatter 互換。
+設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法 (Enforcement) セクション必須。supersede 時は新規作成 + 旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。
 - **commands**: `adr`
 - **skills**: `adr`
 
@@ -93,7 +93,7 @@ Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットア
 - **依存**: code-review（Phase 6、未インストール時 fail-fast）
 
 ### guardrail-protect
-lint/hook/static check 設定の骨抜き編集と `git commit --no-verify` を PreToolUse hook で機械ブロック（opt-in 設定）。
+`git commit` の hook 迂回（`--no-verify`/`-n`・git 省略形・`-c core.hooksPath` 上書き・変数間接・`sh -c` スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック。config 自己保護・fail-loud（jq/perl 不在時に無言で無効化しない）付き。
 - **hooks**: PreToolUse
 
 ### indie-workflow

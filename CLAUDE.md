@@ -38,10 +38,10 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 | feature-dev | 1 | - | 2 | SessionStart | 8 phase 機能開発ワークフロー（Phase 1.3 で bdd-spec から spec.md 生成 + Phase 1.7 動的トリアージ + Phase 3 clarifying を grill 化（1問ずつ・推奨つき・コードで答えられる問いは自己解決）+ Phase 4.5 で採用設計を design-doc に export（dormant）+ Phase 6 G-V 自動 fix ループ + runtime smoke test 含む。code-explorer / code-architect 同梱。Phase 6 は code-review:self-review に委譲、code-review 未インストール時 fail-fast）。claude-plugins-official からフォーク |
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱） |
-| guardrail-protect | - | - | - | PreToolUse | lint/hook/static check 設定の骨抜き編集と git commit --no-verify を機械的にブロック（opt-in 設定） |
+| guardrail-protect | - | - | - | PreToolUse | git commit の hook 迂回（--no-verify/-n・git 省略形・-c core.hooksPath・変数間接・sh -c スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック（config 自己保護・fail-loud 付き） |
 | doc-freshness | 1 | 1 | - | - | last-validated / phase frontmatter による doc 鮮度機械強制（Phase 1: command + skill のみ、hook は将来追加） |
 | bdd-spec | 1 | 1 | - | - | BDD spec 駆動の scaffold（user story dir + epic/spec 2ファイル + 階層化 + 同値分割表）。Phase 1: create のみ、evaluate は将来追加 |
-| adr-keeper | 1 | 1 | - | - | 設計判断 (ADR) を append-only 蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法セクション必須 + supersede 時の新規作成/旧 ADR 2箇所更新を機械化（doc-freshness と frontmatter 互換で鮮度 lint を委譲） |
+| adr-keeper | 1 | 1 | - | - | 設計判断 (ADR) を append-only 蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法セクション必須 + supersede 時の新規作成/旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化（append_only frontmatter で doc-freshness の stale 判定を免除し鮮度 lint を委譲） |
 | failure-journal | 2 | 2 | - | SessionStart | 再発失敗の fingerprint 集計。JSON Lines journal に append、30日×3回閾値超で retro 還流提案、failure:logged を event bus に publish（indie-workflow:retrospective と責務分離） |
 | writing-polish | 1 | 1 | - | - | 文章を語句レベルで推敲・添削する汎用スキル。最小差分 diff → 採否フロー、過剰修正(over-correction)抑制を中核原則化。校正ルール正本(tone-guide)に textlint 4 preset + Vale を統合、提示正本(presentation-guide)で確信度ラベル[確実]/[任意]/[要確認]・サマリ行・保全明示の採否 UX を規定（提示は軽く情報は厚く）、日英両対応。pr-creator/git-commit-helper/issue-design が --embed で soft 委譲（dormant 連携） |
 | design-doc | 2 | 2 | 1 | - | 技術設計書 (design doc) を実装に入らず作成・永続化（grill で前提確定 → 代替案比較 → .claude/designs/ に保存。実装ブリッジ必須 + supersede 機械化で死に文書化を防ぐ。bdd-spec/adr-keeper/writing-polish と dormant 連携、doc-freshness に鮮度 lint を委譲。export 非対話 API で他プラグインから doc 化可能。design-review で 4 視点 agent の静的レビューを単体実行） |
