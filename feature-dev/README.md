@@ -47,6 +47,7 @@
 | 4 | Architecture Design | code-architect で複数案を設計・比較 |
 | 4.5 | Design Doc Export | design-doc 連携。採用案 + 代替案比較を永続化（dormant） |
 | 5 | Implementation | 採用案に沿って実装（Normal Mode / Fix Mode） |
+| 5.3 | 静的オラクルゲート | 型チェック / lint / テストを変更範囲に絞って実行し、機械的欠陥を fail-closed で落とす |
 | 5.5 | Runtime Smoke Test | 静的チェックで取れない runtime 初期化バグを検出 |
 | 6 | Quality Review | code-review:self-review に委譲 + 致命指摘を自動 fix |
 | 7 | Summary | 成果のサマリ + イベント発行 |
@@ -109,6 +110,10 @@ Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する�
 
 - **Normal Mode**: Phase 4 完了から起動。ユーザー承認を待ってから、採用したアーキテクチャに沿って実装する。既存コードの規約に従う。
 - **Fix Mode**: Phase 6 の Generator-Verifier ループから起動。reviewer が指摘した file:line だけをピンポイント修正する（スコープ拡大・無関係なリファクタ禁止、Phase 4 の設計を維持）。
+
+### Phase 5.3: 静的オラクルゲート（fail-closed / 決定的検証）
+
+runtime smoke test（Phase 5.5）と LLM 品質レビュー（Phase 6）の**手前**で、型チェック / lint / テストという決定的オラクルを変更範囲に絞って実行し、機械的に落とせる欠陥をここで潰す。プロジェクトの package.json scripts / tsconfig / Cargo.toml / go.mod / pyproject を検出（不在時は graceful skip、fail-open は summary に明記）。テスト実行は effort 連動（low/medium は型チェックのみ、high 以上で関連テスト）で、exit≠0 なら Phase 5 Fix Mode に差し戻す。ゲート↔Fix の往復は最大 2 回の暴走ガード付き。ルート CLAUDE.md「コスト×精度パイプライン設計指針」（Clearwing 原則 8: 外部オラクル + fail-closed）に準拠。
 
 ### Phase 5.5: Runtime Smoke Test
 

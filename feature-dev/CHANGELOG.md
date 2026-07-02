@@ -5,6 +5,19 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.1] - 2026-07-02
+
+### Fixed
+- **command の allowed-tools に `Agent` / `Edit` / `Write` を追加**。Phase 2 / 4 の explorer / architect 並列起動（Agent）と Phase 5 の実装本体（Edit / Write）に必須のツールが宣言されていなかった
+- **「feature-dev は hooks/lib を持たない」記述の矛盾を修正**。実際は `hooks/lib/safe-hook.sh` を同梱しているため、Phase 7 の `feature:implemented` publish を JSON Lines 直書きから `event_bus_publish` 経由に統一（規約準拠、`SAFE_HOOK_NAME="feature-dev"` で publisher 識別）
+- **check-deps.sh の未インストール警告文を連携先ごとに出し分け**。従来は bdd-spec / design-doc にも一律「Phase 6 は fail-fast」と表示していたのを、bdd-spec は「Phase 1.3 fallback」、design-doc は「Phase 4.5 skip」に修正（fail-fast は code-review のみ）
+- **code-review の version 確認記述を実装に合わせて修正**。Phase 6 Step 0 は存在チェックのみで version ゲートは張らないため、「version 確認済み前提」の記述を「存在チェックのみ・旧版は markdown フォールバックで吸収」に修正
+- **kvault vault 既定パスの個人環境パスハードコードを撤去**。`VAULT_ROOT="${KNOWLEDGE_VAULT_ROOT:-$HOME/Projects/knowleadge}"`（typo 込み個人ディレクトリ）を廃止し、`KNOWLEDGE_VAULT_ROOT` 未設定なら Phase 1.6 を skip する形に変更
+
+### Added
+- **README の Phase 表・prose に Phase 5.3（静的オラクルゲート）を追記**。v2.8.0 で追加された phase が README に未記載だった
+- **kvault を `_requirements` に宣言**。Phase 1.6 Vault Recall で使う任意の外部 CLI を `cli_tool` / `required: false` として宣言し、`hooks/scripts/check-deps.sh` に `check_cli "kvault"` を追加（未導入時は skip、後方互換）
+
 ## [2.8.0] - 2026-07-01
 
 ### Added

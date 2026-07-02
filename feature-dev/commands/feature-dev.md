@@ -4,8 +4,11 @@ argument-hint: Optional feature description
 allowed-tools:
   - Bash
   - Read
+  - Edit
+  - Write
   - Glob
   - Grep
+  - Agent
   - TodoWrite
   - AskUserQuestion
   - Skill
@@ -153,16 +156,17 @@ fi
 **Phase 1.3 (BDD Spec) の detect→skip パターンを踏襲**。ただし依存先は plugin ではなく **feature-dev の外にある外部 app (`kvault` CLI)** なので、CLI 本体と vault ディレクトリの **二段で存在確認** する。いずれか欠けたら skip し、後方互換を壊さない。
 
 ```bash
-# kvault は feature-dev plugin 外の外部 app。CLI 本体 + vault dir の両方が揃って初めて利用可能とみなす
-VAULT_ROOT="${KNOWLEDGE_VAULT_ROOT:-$HOME/Projects/knowleadge}"
-if command -v kvault >/dev/null 2>&1 && [ -d "$VAULT_ROOT" ]; then
+# kvault は feature-dev plugin 外の外部 app。CLI 本体 + vault dir の両方が揃って初めて利用可能とみなす。
+# vault の場所は環境変数 KNOWLEDGE_VAULT_ROOT で明示的に指定する（個人環境パスをハードコードしない）。
+# 未設定なら Phase 1.6 全体を skip する。
+if [ -n "$KNOWLEDGE_VAULT_ROOT" ] && command -v kvault >/dev/null 2>&1 && [ -d "$KNOWLEDGE_VAULT_ROOT" ]; then
   VAULT_AVAILABLE=1
 else
   VAULT_AVAILABLE=0
 fi
 ```
 
-- `VAULT_AVAILABLE=0` → **Phase 1.6 を skip して Phase 1.7 へ**。skip 理由を 1 行で notify（`kvault` 未導入 / vault dir 不在 のどちらか）。注入なしでも既存フローはそのまま動く（後方互換）
+- `VAULT_AVAILABLE=0` → **Phase 1.6 を skip して Phase 1.7 へ**。skip 理由を 1 行で notify（`KNOWLEDGE_VAULT_ROOT` 未設定 / `kvault` 未導入 / vault dir 不在 のいずれか）。注入なしでも既存フローはそのまま動く（後方互換）
 - `VAULT_AVAILABLE=1` → 次の Step へ
 
 ### Step 2: Build a keyword query（自然文ではなくキーワード寄せ）
@@ -646,7 +650,7 @@ self-review 内部の動き（詳細は `code-review:self-review` skill の SKIL
 - Phase 6.5（**code-review ≥ 2.18.0**）で `--embed` 時に **構造化 findings JSON ブロック**を markdown レポート直後に出力（`<!-- FINDINGS_JSON_START -->` / `<!-- FINDINGS_JSON_END -->` で囲む）
 - Phase 7 は `--embed` 指定により skip（末尾 marker `[embed-mode: findings-only, no-prompt]` を確認）
 
-**embed mode の利点**: ユーザー操作が 1 回減り、findings をそのまま Step 3 の G-V loop と Step 4 の集約処理に流せる。`--embed` 未対応の旧 code-review (< 2.17.0) では Step 7 の AskUserQuestion がそのまま出るため、code-review plugin の version 確認を Step 0 で済ませている前提。
+**embed mode の利点**: ユーザー操作が 1 回減り、findings をそのまま Step 3 の G-V loop と Step 4 の集約処理に流せる。`--embed` 未対応の旧 code-review (< 2.17.0) では Step 7 の AskUserQuestion がそのまま出るが、Step 0 は **存在チェックのみ**で version は確認していない。旧版が混在しうる前提で、JSON ブロック不在時は markdown フォールバックへ、AskUserQuestion 出力時はそれを findings 提示として吸収する（version ゲートは張らない）。
 
 **構造化 findings の消費（dual format）**: Step 3 / Step 4 は self-review 出力を次の優先順で解釈する:
 
@@ -762,17 +766,15 @@ Repeat the following until a termination condition fires:
    - Report: iteration count, termination reason, auto-fixed issue count, persisting issues
    - If `termination_reason: "regression"` or `"budget"`, surface the persisting fingerprints prominently — they need human attention
 4. **Event Bus publish (`feature:implemented`)**:
-   - 完了直前に Bash で `feature:implemented` イベントを `.claude/events.jsonl` へ追記する。subscriber がいなくても無害（fire-and-forget）
-   - feature-dev は hooks/lib を持たないため、ここでは safe-hook.sh を経由せず JSON Lines を直接書き込む（規約に従い 1 行 1 イベント）
+   - 完了直前に `feature:implemented` イベントを `.claude/events.jsonl` へ追記する。subscriber がいなくても無害（fire-and-forget）
+   - feature-dev は `hooks/lib/safe-hook.sh` を同梱しているため、`event_bus_publish` 経由で追記する（規約どおり 1 行 1 イベント）。`SAFE_HOOK_NAME` を `feature-dev` に上書きして publisher を識別する
    - payload は最小限の JSON: `{"feature":"<short description>","files_changed":<count>,"phases_completed":[...]}`
    - `feature` は 80 文字以内・ダブルクオート/バックスラッシュ/改行は除去。`files_changed` は今セッションで触ったファイル数（git diff の `--name-only` を `wc -l`）。`phases_completed` は実際に走った phase 番号の JSON 配列
    - 実行コマンド例（`<...>` を Phase 7 のサマリ情報で埋めてから走らせる）:
      ```bash
-     mkdir -p .claude
-     ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-     printf '{"ts":"%s","plugin":"feature-dev","event":"feature:implemented","payload":%s}\n' \
-       "$ts" '{"feature":"<sanitized desc>","files_changed":<n>,"phases_completed":["1","2","..."]}' \
-       >> .claude/events.jsonl
+     source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
+       SAFE_HOOK_NAME="feature-dev" event_bus_publish "feature:implemented" \
+       '{"feature":"<sanitized desc>","files_changed":<n>,"phases_completed":["1","2","..."]}'
      ```
    - 失敗しても Phase 7 全体は成功扱い（イベント送信は best-effort）
 
