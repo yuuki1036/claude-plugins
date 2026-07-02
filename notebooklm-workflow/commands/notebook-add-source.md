@@ -1,5 +1,6 @@
 ---
 description: "NotebookLM のノートに URL / PDF / YouTube / Google Drive のソースを追加"
+argument-hint: "[ノート名] <source-url-or-path>"
 allowed-tools:
   - Bash
   - AskUserQuestion

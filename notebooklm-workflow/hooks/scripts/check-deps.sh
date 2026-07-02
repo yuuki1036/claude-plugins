@@ -10,23 +10,20 @@ errors=""
 
 check_mcp() {
   local name="$1" required="$2" desc="$3"
-  local found=false
-  # user スコープ（claude mcp add -s user → ~/.claude.json の .mcpServers）を jq で厳密確認
-  if command -v jq >/dev/null 2>&1 && [ -f "$HOME/.claude.json" ] \
-     && jq -e --arg n "$name" '(.mcpServers // {}) | has($n)' "$HOME/.claude.json" >/dev/null 2>&1; then
-    found=true
+  # MCP サーバーの設定（.mcp.json）は同梱配布で常に存在するため、設定の有無を見ても
+  # 実効性がない（found が必ず true になり ERROR 分岐が発火しない dead check）。
+  # 同梱 .mcp.json の command は MCP サーバーバイナリ名そのもの（notebooklm-mcp）なので、
+  # バイナリが PATH 上に実在するか（＝実際に起動できるか）を検査する。
+  local bin="$name"
+  if command -v jq >/dev/null 2>&1 && [ -f "${CLAUDE_PLUGIN_ROOT}/.mcp.json" ]; then
+    # 同梱 .mcp.json から起動コマンド名を引く（name とズレる将来変更にも追従）
+    local cmd
+    cmd=$(jq -r --arg n "$name" '(.mcpServers[$n].command) // empty' "${CLAUDE_PLUGIN_ROOT}/.mcp.json" 2>/dev/null)
+    [ -n "$cmd" ] && bin="$cmd"
   fi
-  if [ "$found" = false ]; then
-    for cfg in "$HOME/.claude/mcp.json" ".mcp.json" "${CLAUDE_PLUGIN_ROOT}/.mcp.json"; do
-      if [ -f "$cfg" ] && grep -q "\"${name}\"" "$cfg" 2>/dev/null; then
-        found=true
-        break
-      fi
-    done
-  fi
-  if [ "$found" = false ]; then
+  if ! command -v "$bin" >/dev/null 2>&1; then
     if [ "$required" = "true" ]; then
-      errors="${errors}\n- [ERROR] ${desc}（${name}）が設定されていません"
+      errors="${errors}\n- [ERROR] ${desc}（${name}）が起動できません（${bin} バイナリが PATH 上に見つかりません）"
     else
       warnings="${warnings}\n- [WARN] ${desc}（${name}）が未設定です（オプション）"
     fi

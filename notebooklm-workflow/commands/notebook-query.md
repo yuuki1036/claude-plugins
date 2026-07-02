@@ -1,5 +1,6 @@
 ---
 description: "NotebookLM の既存ノートに質問・要約を実行"
+argument-hint: "[ノート名] <質問文 | --summarize>"
 allowed-tools:
   - Bash
   - AskUserQuestion

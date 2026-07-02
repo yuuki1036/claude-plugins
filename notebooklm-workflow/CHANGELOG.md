@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-07-02
+
+### Fixed
+
+- `hooks/scripts/check-deps.sh` の `check_mcp` が同梱 `.mcp.json` を検査対象に含めていたため `found` が常に true になり、MCP サーバー未導入でも ERROR が発火しない dead check だった問題を修正。設定ファイルの grep をやめ、同梱 `.mcp.json` の `command`（＝MCP サーバーバイナリ名 `notebooklm-mcp`）が PATH 上に実在するかを `command -v` で検査する実効チェックに変更（`_requirements` ↔ `check_mcp "notebooklm-mcp"` の形式同期は維持）
+- `README.md` セットアップ手順の「プロジェクトルートにチェックアウトされた状態で」という誤記を修正（同梱 `.mcp.json` はプラグインインストールで有効になる）
+
+### Changed
+
+- `references/source-types.md` の `source_add` 呼び出し例を現行 notebooklm-mcp シグネチャに更新（`source_add(source_type=url|text|drive|file, url=/text=/document_id=/file_path=...)`）。旧位置引数例・「ローカルパス対応は実装次第」の記述を廃し、file/text/drive/複数 URL/`wait` を追記
+- `commands/notebook-add-source.md` / `commands/notebook-query.md` に `argument-hint` を追加
+
 ## [0.2.4] - 2026-06-15
 
 ### Changed
