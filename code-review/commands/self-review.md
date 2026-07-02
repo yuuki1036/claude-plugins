@@ -3,6 +3,7 @@ description: "コミット前のセルフレビューを実行する（2フェ�
 allowed-tools:
   - Bash
   - Read
+  - Agent
   - AskUserQuestion
 argument-hint: "[--staged | base branch] [--focus <観点>] [--exclude <観点1,観点2>] [--embed] (省略時はデフォルトブランチとの差分)"
 ---

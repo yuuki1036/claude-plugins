@@ -30,8 +30,19 @@ check_mcp() {
   fi
 }
 
+check_cli() {
+  local name="$1" required="$2" desc="$3"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    if [ "$required" = "true" ]; then
+      errors="${errors}\n- [ERROR] ${desc}（${name}）がインストールされていません"
+    fi
+  fi
+}
+
 # --- チェック実行 ---
 check_mcp "github" "true" "GitHub MCP サーバー"
+# kvault は self-review Step 1.5 の Vault 照合で使う任意の外部 CLI（未導入時は skip）
+check_cli "kvault" "false" "knowledge vault CLI（self-review Vault 照合。未導入時は skip）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ]; then

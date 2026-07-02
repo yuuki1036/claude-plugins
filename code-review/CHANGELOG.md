@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.29.1] - 2026-07-02
+
+### Fixed
+- **allowed-tools に `Agent` 未宣言を修正**。review / self-review の各 SKILL.md とペアの command（`commands/review.md` / `commands/self-review.md`）は explorer / reviewer / meta-reviewer / 反証エージェントを並列起動するのが核心なのに `Agent` を allowed-tools に宣言していなかった。4 ファイルすべてに追加
+- **`/review` command の argument-hint に `--emergency` を追記**。skill 側では受け付けているが command のヒントに載っていなかった
+- **AGENTS.md 階層選択の実装不一致を修正**。review Step 4.9 / self-review Step 3.9 の「Glob で発見」記述を、直後のコード例（`git diff | dirname` の bash ループ）に合わせて「Bash で探索」に修正
+
+### Changed
+- **plugin.json の description を圧縮**。変更履歴が約 3000 字堆積していたのを、機能を端的に説明する数行に圧縮（履歴は CHANGELOG が正本）
+
+### Added
+- **コスト×精度 10 原則の採用/不採用を SKILL.md に明記**。review / self-review に採用原則（1 ファネル / 2 二軸スコア / 3 段階予算 / 4 モデルルーティング / 7 敵対的独立検証）と捨てた判断（5/6/8）の宣言行を追加（ルート CLAUDE.md 指針に準拠）
+- **kvault を `_requirements` に宣言**。self-review Step 1.5 の Vault 照合で使う任意の外部 CLI を `cli_tool` / `required: false` として宣言し、`hooks/scripts/check-deps.sh` に `check_cli "kvault"` を追加（未導入時は skip、後方互換）
+
 ## [2.29.0] - 2026-06-26
 
 ### Added

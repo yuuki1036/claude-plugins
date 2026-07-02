@@ -9,6 +9,7 @@ effort: xhigh
 allowed-tools:
   - Bash
   - Read
+  - Agent
   - EnterWorktree
   - ExitWorktree
   - AskUserQuestion
@@ -20,6 +21,10 @@ allowed-tools:
 
 - 現在のブランチに PR が存在すること（PR がなければ終了）
 - 実行時 effort = `${CLAUDE_EFFORT}` を Phase 3 / 4 の reviewer 構成に反映する（後述の Phase 3 / 4 を参照）
+
+## コスト×精度パイプライン設計（採用/不採用）
+
+ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 1（ファネル = Phase 0 triage で高コスト reviewer を通過分に絞る）/ 2（2 軸スコア化 = confidence × severity マトリクス）/ 3（段階予算 = `${CLAUDE_EFFORT}` → explorer/reviewer 体数）/ 4（モデルルーティング = explorer:sonnet / reviewer:opus / meta:fable / 反証:opus）/ 7（敵対的独立検証 = Phase 5.8 反証レイヤー）**。**捨てた**: 5（暴走ガード）は反復・起票を持たない単発レビューのため不要、6（証拠ラダー）は指摘蓄積・昇格の責務を failure-journal に委ね、8（外部オラクル）は PR diff レビューが対象で型/テスト実行は feature-dev Phase 5.3 の役割と分離した。
 
 ## 実行手順
 
@@ -188,7 +193,7 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 
 ### 4.9 AGENTS.md 階層動的選択（reviewer 起動前）
 
-変更ファイルパスから対応する `{dir}/AGENTS.md` を Glob で発見し、該当層だけを reviewer プロンプトに同梱する。リポジトリ全体の AGENTS.md / CLAUDE.md を毎回フルロードせず、変更があった層のみ拾うことで reviewer 入力 token を典型 30〜50% 削減する。
+変更ファイルパスから対応する `{dir}/AGENTS.md` を Bash で探索し、該当層だけを reviewer プロンプトに同梱する。リポジトリ全体の AGENTS.md / CLAUDE.md を毎回フルロードせず、変更があった層のみ拾うことで reviewer 入力 token を典型 30〜50% 削減する。
 
 ```bash
 # 変更ファイルから親ディレクトリを抽出
@@ -202,7 +207,7 @@ git diff <base>...HEAD --name-only | xargs -n1 dirname 2>/dev/null | sort -u | w
 done | sort -u
 ```
 
-ヒットしたファイルのみ Read で読み込み、各 reviewer のプロンプトに `## 該当層の AGENTS.md / CLAUDE.md` セクションとして注入する。AGENTS.md が無いリポジトリでは Glob が空配列を返すだけで no-op（後方互換）。
+ヒットしたファイルのみ Read で読み込み、各 reviewer のプロンプトに `## 該当層の AGENTS.md / CLAUDE.md` セクションとして注入する。AGENTS.md が無いリポジトリでは探索結果が空になるだけで no-op（後方互換）。
 
 ### 5. レビューフェーズ（reviewer 並列起動）
 

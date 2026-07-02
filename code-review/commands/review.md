@@ -3,10 +3,11 @@ description: "PRのコードレビューを実行する（2フェーズ構成・
 allowed-tools:
   - Bash
   - Read
+  - Agent
   - EnterWorktree
   - ExitWorktree
   - AskUserQuestion
-argument-hint: "[PR番号] (省略時は現在のブランチのPRを自動取得)"
+argument-hint: "[PR番号] [--emergency] (省略時は現在のブランチのPRを自動取得。--emergency は本番ホットフィックス向けの最小構成レビュー)"
 ---
 
 review スキルを使用して、指定されたPR（または現在のブランチに紐づくPR）のコードレビューを実行してください。
