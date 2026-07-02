@@ -40,6 +40,12 @@ check_plugin "design-doc" "false" "design-doc プラグイン（Phase 4.5 design
 # kvault は Phase 1.6 Vault Recall で使う任意の外部 CLI（未導入時は skip）
 check_cli "kvault" "false" "knowledge vault CLI（Phase 1.6 Vault Recall。未導入時は skip）"
 
+# kvault はあるのに KNOWLEDGE_VAULT_ROOT 未設定 → Phase 1.6 が黙って skip される（設定漏れの気づき）。
+# 環境変数は ~/.zshenv に書く必要がある（.zshrc は非対話 shell で読まれず hook / spawn shell に効かない）。
+if command -v kvault >/dev/null 2>&1 && [ -z "${KNOWLEDGE_VAULT_ROOT:-}" ]; then
+  warnings="${warnings}\n- [WARN] kvault CLI はありますが KNOWLEDGE_VAULT_ROOT が未設定のため Phase 1.6 (Vault Recall) は skip されます。\`~/.zshenv\` に \`export KNOWLEDGE_VAULT_ROOT=<vault パス>\` を設定してください（\`.zshrc\` は非対話 shell で読まれず効きません）"
+fi
+
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then
   echo "## 依存チェック (feature-dev)"

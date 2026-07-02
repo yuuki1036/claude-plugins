@@ -72,7 +72,7 @@
     {
       "name": "feature-dev",
       "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec plugin から BDD spec.md を生成し architect の入力契約に使用、Phase 1.6 で kvault（外部 CLI、未導入時 skip）から横断知見を recall し architect に advisory 注入、Phase 1.7 動的トリアージで explorer/architect 体数を最適化、Phase 5.3 で型/テスト/lint の決定的オラクルゲート（fail-closed で高コストレビュー前に機械的欠陥を落とす）、Phase 5.5 に self-lock template、Phase 6 は code-review:self-review に --embed 付きで委譲、confidence ≥90 致命指摘を Generator-Verifier ループで自動 fix。code-explorer / code-architect の 2 agent を内包",
-      "version": "2.8.1",
+      "version": "2.9.0",
       "author": {
         "name": "yuki"
       },

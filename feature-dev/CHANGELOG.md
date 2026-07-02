@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-07-02
+
+### Added
+- **check-deps.sh に「kvault はあるが `KNOWLEDGE_VAULT_ROOT` 未設定」検知を追加**。kvault CLI が PATH にあるのに環境変数が未設定だと Phase 1.6 (Vault Recall) が黙って skip される設定漏れを、SessionStart hook で 1 行 warning として気づかせる。あわせて「`~/.zshenv` に書く（`.zshrc` は非対話 shell で読まれず hook / spawn shell に効かない）」という設定先の落とし穴も明示する（従来の `check_cli "kvault"` は未導入しか検知できず、この設定漏れを取りこぼしていた）
+
 ## [2.8.1] - 2026-07-02
 
 ### Fixed
