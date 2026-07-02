@@ -1,6 +1,6 @@
 {
   "name": "design-doc",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱（confidence フィルタ + high 以上で敵対的反証 phase）",
   "_requirements": [
     {
@@ -20,6 +20,12 @@
       "type": "plugin",
       "required": false,
       "description": "doc 散文の推敲（--embed）。未インストール時は推敲なしで提示"
+    },
+    {
+      "name": "doc-freshness",
+      "type": "plugin",
+      "required": false,
+      "description": "design doc の鮮度 lint（last-validated / phase stale 判定）を委譲。frontmatter 互換。未インストール時は鮮度 lint なしで動作"
     }
   ],
   "author": {

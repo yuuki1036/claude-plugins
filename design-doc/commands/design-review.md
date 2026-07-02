@@ -26,6 +26,7 @@ allowed-tools:
 2. Phase 1: doc + 関連成果物（spec / ADR / Issue）読み込み
 3. Phase 2: 視点トリアージ（effort: low/medium → メイン 2 視点 / high → agent ×3 / xhigh,max → agent ×4）
 4. Phase 3: design-reviewer agent 並列レビュー（またはメインコンテキスト）
-5. Phase 4: findings 集約（dedup → severity × セクション表）
-6. Phase 5: 採用 finding を doc に反映 + last-validated 更新
-7. Phase 6: 完了報告
+5. Phase 4: findings 集約（dedup → confidence フィルタ（<50 は MINOR 降格、BLOCKER は残す）→ severity × セクション表）
+6. Phase 4.5: 反証（high 以上・BLOCKER/MAJOR を独立 design-reviewer agent で敵対的検証。反証された finding は severity を下げるか明示、BLOCKER は fail-closed で残す）
+7. Phase 5: 採用 finding を doc に反映 + last-validated 更新
+8. Phase 6: 完了報告

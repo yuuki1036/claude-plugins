@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.0] - 2026-07-02
+
+### Added
+- `design-reviewer` agent に **verification mode（反証）の入出力契約**を明記。従来は perspective（minimal/clean/pragmatic/risk）モードの契約しか無く、design-review Phase 4.5 が渡す「perspective なし・中立プロンプト・支持/反証/保留 で返す」反証モードが agent 定義に未対応だった。2 モード（perspective / verification）を明示し、それぞれの Input contract / Output format / Rules を定義。description も 2 モード対応に更新
+- `plugin.json` `_requirements` に `doc-freshness`（`required: false`）を宣言。design doc の鮮度 lint を委譲する soft 依存を明示（他の soft 依存 bdd-spec/adr-keeper/writing-polish は宣言済みだった。hooks 非所持プラグインのため check-deps.sh は不要）
+
+### Changed
+- **export の指定方法を `mode=export` に一本化**（Phase 0 サブコマンド表・`commands/design-doc.md`）。呼び出し元の feature-dev / issue-design が `mode=export` を渡すのに対し、Phase 0 表は先頭語 `export` 形式を併記していた齟齬を解消。先頭語 `export ...` も後方互換で受理する旨を明記
+- **Phase 6 の ADR 相互リンク追記を「Write/Edit は `.claude/designs/` のみ」規律の明示的な例外として許可**。切り出した ADR ファイル（`.claude/adr/*.md`）の「関連」該当行のみ Edit してよいと SKILL 本文・注意事項に追記（規律文との矛盾を解消）
+- `commands/design-review.md` の処理フローを skill 実装（Phase 4.5 反証 + confidence フィルタ）に同期。design-review Phase 3 / 4.5 に agent 起動モード（perspective / verification）を明示
+- README の design-review 節に **confidence フィルタ + 反証 phase（v0.3.0+）** の説明を追記
+
 ## [0.3.0] - 2026-07-01
 
 ### Added

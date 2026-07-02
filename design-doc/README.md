@@ -20,6 +20,8 @@ design doc を minimal（過剰設計）/ clean（構造・責務）/ pragmatic�
 
 視点構成は実行時 effort で変わる: low/medium → メインコンテキストで 2 視点（minimal + risk）、high → design-reviewer agent ×3 並列、xhigh/max → ×4 並列。`--focus` で単一視点に絞れる。
 
+**confidence フィルタ + 反証 phase（v0.3.0+）**: 集約時に confidence < 50 の finding は MINOR に降格して過剰指摘を抑える（BLOCKER は fail-closed で残す）。effort が high 以上のときは Phase 4.5 で、集約後の BLOCKER / MAJOR を **独立した design-reviewer agent（verification mode）** に反証させる。元 reviewer の suggestion / rationale を渡さず（アンカリング防止）、doc とコードだけを根拠に **支持 / 反証 / 保留** を判定させ、偽陽性を落とす（Clearwing 原則 7「敵対的独立検証」）。反証 agent は 1 体・1 ラウンドの暴走ガード付き。
+
 ## 成果物
 
 `.claude/designs/<YYYYMMDD>-<kebab-slug>.md`（committed 前提）

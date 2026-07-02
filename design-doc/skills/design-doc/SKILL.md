@@ -55,12 +55,14 @@ allowed-tools:
    design doc は **committed 前提**（プロジェクトローカルに永続化）
 2. 引数を解析してモードに振り分ける:
 
-| サブコマンド | 引数 | 遷移先 |
+| サブコマンド / モード | 引数 | 遷移先 |
 |---|---|---|
 | `new`（または未指定） | `[title]` | Phase 1 |
 | `list` | - | list フロー |
 | `supersede` | `<old-id> <new-title>` | supersede フロー |
-| `export` | `title=... content=...`（下記 API 契約） | export フロー |
+| `mode=export` | `title=... content=...`（下記 API 契約） | export フロー |
+
+> export は他プラグイン連携用の**非対話 API** で、`mode=export` を正のキーとする（呼び出し元の feature-dev / issue-design は `mode=export` を渡す）。先頭語 `export`（`export title=...`）で来た場合も同じフローに振り分けて受理する（後方互換）。
 
 ---
 
@@ -139,7 +141,7 @@ allowed-tools:
    `WRITING_POLISH=1` なら `Skill` tool で `writing-polish:writing-polish` を `--embed --tone rfc` で呼び、散文部分のみ推敲する。**frontmatter・セクション構造・表・コードブロックは変更しない。構造を壊す結果は破棄して元案を使う**。失敗時は warning を出し推敲前の本文で続行
 6. 本文をユーザーに提示し、承認を得てから Write する
 
-> **Write / Edit の対象は `.claude/designs/` 配下のみ**。このスキルはソースコード・設定ファイルを編集しない（設計専用の規律）。
+> **Write / Edit の対象は原則 `.claude/designs/` 配下のみ**。このスキルはソースコード・設定ファイルを編集しない（設計専用の規律）。**例外**: Phase 6 の ADR 相互リンク追記時のみ、切り出した ADR ファイル（`.claude/adr/*.md`）の「関連」セクションの該当行を Edit してよい（doc ↔ ADR の相互参照を成立させるため）。それ以外の ADR 本文編集はしない。
 
 ---
 
@@ -246,7 +248,7 @@ allowed-tools:
 
 - **日付は必ず Bash で取得**: `date +%Y%m%d` / `date +%Y-%m-%d` を実行する。擬似日付を作らない
 - **実装ブリッジ必須**: design doc の死に方は「書いたが実装に接続されず腐る」。実装への接続情報と完了時の phase 遷移手順を必ず残す（書けない場合は理由 + 確定タイミング）
-- **コードを編集しない**: Write / Edit の対象は `.claude/designs/` 配下のみ。実装は feature-dev の領分
+- **コードを編集しない**: Write / Edit の対象は原則 `.claude/designs/` 配下のみ。実装は feature-dev の領分。唯一の例外は Phase 6 の ADR 相互リンク追記（`.claude/adr/*.md` の「関連」該当行のみ Edit）
 - **doc-freshness との住み分け**: 本スキルは作成・命名・supersede 整合のみ担当。鮮度 lint は doc-freshness が `.claude/designs/` を走査して担う。frontmatter（`last-validated` / `phase`）は doc-freshness 互換
 - **status と phase は別次元**: `status` は合意状態（draft → approved → superseded）、`phase` はライフサイクル（target = 未実装 → current = 実装済 → superseded）。設計中の塩漬けは `phase: target` の stale 閾値（15 日）で doc-freshness が検出する
 - **grill-protocol.md は複製**: 正本は feature-dev の `references/grill-protocol.md`。プラグイン間依存禁止のため byte-identical に複製している（safe-hook.sh と同じ運用）。正本が更新されたら同期する

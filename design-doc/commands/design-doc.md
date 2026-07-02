@@ -20,7 +20,7 @@ allowed-tools:
 - `new [title]`（または未指定） → 新規 design doc を作成（grill → 代替案比較 → 永続化）
 - `list` → `.claude/designs/*.md` を一覧表示（id 降順）
 - `supersede <old-id> <new-title>` → 新 doc を作成し、旧 doc を superseded に更新
-- `export title=... content=...` → 他プラグイン連携用の非対話書き出し（grill / 設計フェーズを skip）
+- `mode=export title=... content=...` → 他プラグイン連携用の非対話書き出し（grill / 設計フェーズを skip。先頭語 `export ...` でも受理）
 
 ## 実行
 
