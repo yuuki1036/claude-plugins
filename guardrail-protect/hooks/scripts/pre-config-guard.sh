@@ -20,20 +20,37 @@
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "guardrail-protect:pre-config-guard"
 
-command -v jq >/dev/null 2>&1 || safe_hook_error Dependency "jq not installed"
+# fail-loud: jq が無いとガードが機能しない。silent skip せず stderr に通知する
+command -v jq >/dev/null 2>&1 || safe_hook_error Unexpected "jq not installed; config guard cannot function"
+
+input=$(safe_hook_input)
+tool_name=$(jq -r '.tool_name // empty' <<< "$input" 2>/dev/null)
+target_path=$(jq -r '.tool_input.file_path // empty' <<< "$input" 2>/dev/null)
+
+[ -z "$target_path" ] && safe_hook_error Validation "no file_path in tool_input"
+
+target_basename=$(basename "$target_path")
+
+# 自己保護: guardrail-protect.json 自体は常に保護対象（config を編集して
+# basename を外す 2 段階バイパスを塞ぐ）。解除は Claude 外で人間が行う運用。
+if [ "$target_basename" = "guardrail-protect.json" ]; then
+  cat >&2 <<EOF
+[guardrail-protect] Refusing to edit the guardrail config itself: guardrail-protect.json
+
+This file defines which files are protected. Editing it via Claude would allow
+disabling the guardrail in-session (remove a basename, then edit the target).
+Change it outside Claude (a human edit) if protection scope genuinely needs to change.
+
+Tool: ${tool_name}
+Path: ${target_path}
+EOF
+  exit 2
+fi
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 CONFIG_FILE="${PROJECT_DIR}/.claude/guardrail-protect.json"
 
 [ -f "$CONFIG_FILE" ] || safe_hook_error NotFound "no project config: $CONFIG_FILE"
-
-input=$(safe_hook_input)
-tool_name=$(jq -r '.tool_name // empty' <<< "$input")
-target_path=$(jq -r '.tool_input.file_path // empty' <<< "$input")
-
-[ -z "$target_path" ] && safe_hook_error Validation "no file_path in tool_input"
-
-target_basename=$(basename "$target_path")
 
 protected_basenames=$(jq -r '.protected_basenames[]? // empty' "$CONFIG_FILE" 2>/dev/null)
 [ -z "$protected_basenames" ] && exit 0

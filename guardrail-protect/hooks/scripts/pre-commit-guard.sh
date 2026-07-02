@@ -1,44 +1,52 @@
 #!/usr/bin/env bash
 # pre-commit-guard.sh
 #
-# Bash で git commit を実行する際、--no-verify / -n フラグの使用を検出して
-# exit 2 でブロックする。commit message 内の文字列（heredoc body / quoted
-# string）は剥がしてから検査するため、justify を書きたいケースは誤検知しない。
+# Bash で git commit を実行する際、git hook を迂回するフラグ／設定を検出して
+# exit 2 でブロックする。検出対象:
+#   - --no-verify / その git 省略形（--no-ver, --no-veri, ...）
+#   - -n を含む短フラグクラスタ（-n, -nm, -anm ...）
+#   - `git -c core.hooksPath=...` によるインライン hooksPath 上書き
+#   - 変数間接（f=--no-verify; git commit $f）
+#   - `bash -c '...'` / `sh -c "..."` 等のクォート内スクリプト
 #
-# 検出ロジック:
-#   1. heredoc (<<'EOF' .. EOF, <<EOF .. EOF) のボディを除去
-#   2. シングルクォート / ダブルクォート文字列を除去
-#   3. 残ったコマンド本体に対して --no-verify / -n を境界マッチ
+# commit message / justify 説明は quoted string / heredoc body を剥がしてから
+# 検査するため誤検知しない。複合コマンド（`git commit -m x && git log -n 5`）は
+# git commit セグメントだけを対象にするため、他コマンドの -n を誤爆しない。
+#
+# fail-loud: jq / perl が無い場合は silent skip せず Unexpected として stderr に
+# 通知する（ガードが黙って無効化されるのを防ぐ）。
 
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "guardrail-protect:pre-commit-guard"
+
+command -v jq   >/dev/null 2>&1 || safe_hook_error Unexpected "jq not installed; guard cannot inspect command"
+command -v perl >/dev/null 2>&1 || safe_hook_error Unexpected "perl not installed; guard cannot inspect command"
 
 input=$(safe_hook_input)
 tool_name=$(jq -r '.tool_name // empty' <<< "$input" 2>/dev/null)
 cmd=$(jq -r '.tool_input.command // empty' <<< "$input" 2>/dev/null)
 
-[ -z "$cmd" ] && safe_hook_error Validation "no command in tool_input"
+[ -z "$cmd" ] && exit 0
 
-# git commit でないなら no-op
+# 安価な事前フィルタ: git commit 迂回か guardrail-protect.json 改変に関係しなければ即 return
 case "$cmd" in
-  *"git commit"*) ;;
+  *git*commit*|*guardrail-protect.json*) ;;
   *) exit 0 ;;
 esac
 
-# heredoc body を剥がす（<<'TAG' ... TAG / <<TAG ... TAG / <<-TAG ... TAG）
-stripped=$(perl -0777 -pe "s/<<-?\\s*['\"]?(\w+)['\"]?\\s*\n.*?\n\\1//gs" <<< "$cmd")
+# 検出ロジックは別ファイルの perl に委譲（bash 3.2 は $() 内 heredoc の
+# quote 追跡でバグるため、インライン heredoc ではなく独立スクリプトにする）。
+# bypass を検出したら理由文字列を stdout に出し、それ以外は何も出さない
+# （perl は常に exit 0＝set -e を踏まない）。
+detection=$(printf '%s' "$cmd" | perl "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/detect-commit-bypass.pl")
 
-# シングルクォート / ダブルクォート文字列を剥がす
-stripped=$(perl -pe "s/'([^'\\\\]|\\\\.)*'//g; s/\"([^\"\\\\]|\\\\.)*\"//g" <<< "$stripped")
-
-# --no-verify / -n フラグの境界マッチ
-# (^| ) で前境界、( |$) で後境界。-n は -m と区別するため厳密マッチ
-if grep -qE '(^| )(--no-verify|-n)( |$)' <<< "$stripped"; then
+if [ -n "$detection" ]; then
   cat >&2 <<EOF
 [guardrail-protect] Refusing to bypass git hooks
 
-Detected: --no-verify or -n flag in git commit command.
-Bypassing pre-commit / commit-msg hooks weakens the project's quality guardrails.
+Detected: ${detection}
+Bypassing pre-commit / commit-msg hooks (or overriding core.hooksPath) weakens
+the project's quality guardrails.
 
 If hooks fail, fix the underlying issue rather than bypassing.
 If bypass is genuinely required:
@@ -46,8 +54,7 @@ If bypass is genuinely required:
   2. Temporarily disable this hook via Claude Code permissions, NOT --no-verify
   3. Document the bypass in CHANGELOG / commit log
 
-Tool: $tool_name
-Stripped command: $stripped
+Tool: ${tool_name}
 EOF
   exit 2
 fi

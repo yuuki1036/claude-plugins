@@ -10,11 +10,25 @@ AI agent が「赤を消すために linter を緩める」「hook がうるさ�
 
 `Edit|Write|MultiEdit` ツールでの編集対象 basename が `protected_basenames` に含まれていれば `exit 2` でブロックする。
 
-### 2. `--no-verify` ブロック (Bash on git commit)
+### 2. git hook 迂回ブロック (Bash on git commit)
 
-`git commit` 実行時、`--no-verify` / `-n` フラグの使用を `exit 2` でブロックする。
+`git commit` 実行時、git hook を迂回する以下のパターンを `exit 2` でブロックする（常時有効・opt-in 不要）:
 
-検出ロジックは heredoc body / quoted string を剥がしてから境界マッチするため、commit message 内に `--no-verify` という文字列を含むだけのケース（justify 説明など）は誤検知しない。
+- `--no-verify` / `-n` と、その **git 省略形**（`--no-ver`, `--no-veri`, ...）
+- **`-n` を含む短フラグクラスタ**（`-nm`, `-anm` など、結合フラグ。`-m` 等の値を取る短オプションで打ち切るため `-amend` タイポや `-am` は誤爆しない）
+- **引用符付きフラグ**（`git commit '--no-verify'`, `$'-n'`）
+- **`core.hooksPath` 上書き**: `git -c core.hooksPath=...`（裸・引用符付き）と `GIT_CONFIG_KEY_*=core.hooksPath` 等の **env 変数**経由
+- **`bash -c '...'` / `sh -xc "..."` / `eval "..."` 等に埋め込まれたスクリプト**（再帰解析）
+- **バックスラッシュ改行継続**で分割された迂回
+
+検出器（`detect-commit-bypass.pl`）はコマンドを**シェル準拠でトークン化**（引用符を除去）し、pipeline/list セグメントに分割して **git commit セグメントだけ**を git の引数モデルで検査する。そのため:
+
+- commit message / justify 説明に `--no-verify` や `core.hooksPath` の文字列を含むだけのケースは誤検知しない（`-m` の値としてスキップ）
+- 複合コマンドの他コマンドの `-n`（例: `git commit -m x && git log -n 5`）は誤爆しない
+
+`guardrail-protect.json` 自体を Bash（リダイレクト / `sed -i` / `tee` / `cp` / `mv` / `rm` 等）で改変する試みもブロックする（Edit/Write 経路は `pre-config-guard.sh` の自己保護でカバー）。
+
+`jq` / `perl` が無い環境では**無言で無効化せず** stderr に通知する（fail-loud）。
 
 ## opt-in セットアップ
 
@@ -54,14 +68,16 @@ AI agent が「赤を消すために linter を緩める」「hook がうるさ�
 → "Refusing to edit guardrail config file: .golangci.yml" で exit 2
 ```
 
-### `--no-verify` ブロックのテスト
+### git hook 迂回ブロックのテスト
 
 ```
-git commit --no-verify -m "msg"
-→ "Refusing to bypass git hooks" で exit 2
+git commit --no-verify -m "msg"          → exit 2（--no-verify flag）
+git commit -nm "msg"                      → exit 2（-n short flag）
+git -c core.hooksPath=/dev/null commit    → exit 2（core.hooksPath override）
+bash -c 'git commit -n'                   → exit 2（-c スクリプト内も検査）
 
-git commit -m 'fix: explain --no-verify ban'
-→ PASS（commit message 内の文字列は剥がしてから検査）
+git commit -m 'fix: explain --no-verify ban'   → PASS（message 内の文字列は剥がす）
+git commit -m "fix" && git log -n 5            → PASS（他コマンドの -n は誤爆しない）
 ```
 
 ## 例外運用（commit body での justify）
@@ -88,9 +104,13 @@ git commit -m 'fix: explain --no-verify ban'
 
 ## 制限事項
 
-- basename マッチのみ（パス全体ではない）。同名ファイルがリポジトリ内に複数ある場合は全て対象になる
+- 保護対象 (`protected_basenames`) は basename マッチのみ（パス全体ではない）。同名ファイルがリポジトリ内に複数ある場合は全て対象になる
 - `MultiEdit` での編集も `tool_input.file_path` を見るのでブロックされる
-- `Bash` 経由の `sed` / `awk` / リダイレクトでの編集はブロックできない（matcher の対象外）。これは意図的な制限（Bash の編集系コマンドを全部マッチさせると誤爆が爆発するため）
+- **保護対象 config への `Bash` 経由の編集**（`sed` / `awk` / リダイレクト等）はブロックしない（matcher の対象外）。これは意図的な制限（Bash の編集系コマンドを全部マッチさせると誤爆が爆発するため）。**ただし `guardrail-protect.json` 自体への Bash 書き込み**（リダイレクト / `sed -i` / `tee` / `cp` / `mv` / `rm`）は自己保護として検出しブロックする
+- git hook 迂回の検出は `git commit` コマンド自体に埋め込まれたパターンが対象。以下の**別コマンドによる無効化**は検出しない（既知の穴。必要なら該当ファイル/コマンドを permissions 側で塞ぐ）:
+  - `git config core.hooksPath ...`（commit と別コマンドで hooksPath を変更）
+  - `rm .git/hooks/*` / `chmod -x .git/hooks/*`（hook スクリプトの削除・無効化）
+- **config 自己保護**: `guardrail-protect.json` 自体は Edit/Write/MultiEdit（`pre-config-guard.sh`）と Bash 書き込み（`detect-commit-bypass.pl`）の両経路で常にブロック対象。保護スコープを変える場合は Claude 外で人間が編集する
 
 ## CHANGELOG
 

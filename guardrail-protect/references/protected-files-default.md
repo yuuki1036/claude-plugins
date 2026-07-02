@@ -21,21 +21,21 @@
     ".rubocop.yml",
     ".rubocop.yaml",
     "ruff.toml",
-    "pyproject.toml",
     ".flake8",
     ".pylintrc",
     "lefthook.yml",
     "lefthook.yaml",
     "pre-commit-config.yaml",
     ".pre-commit-config.yaml",
-    ".husky",
     "redocly.yaml",
-    "redocly.yml",
-    "tsconfig.json",
-    "tsconfig.base.json"
+    "redocly.yml"
   ]
 }
 ```
+
+> **basename マッチの注意**:
+> - `.husky` は**ディレクトリ**なので basename マッチではヒットしない。実際に編集されるのは `.husky/pre-commit`（basename は `pre-commit`）。husky を守りたいなら `pre-commit` / `commit-msg` 等の hook スクリプト basename を列挙する（ただし他ツールと衝突しうる汎用名なので誤爆に注意）。
+> - `pyproject.toml` / `tsconfig.json` は lint/型設定以外（依存追加・path alias 追加など）でも日常的に編集されるため、保護すると正当な編集までブロックされる。linter/型セクションだけを守りたい意図と basename 保護の粒度が合わない点を理解した上で opt-in する（上のデフォルト例からは外してある）。
 
 ## カテゴリ別
 

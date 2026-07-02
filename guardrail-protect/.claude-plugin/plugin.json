@@ -1,7 +1,7 @@
 {
   "name": "guardrail-protect",
-  "version": "0.1.1",
-  "description": "lint/hook/static check 設定の骨抜きと git commit --no-verify を PreToolUse hook で機械的にブロック（opt-in 設定）",
+  "version": "0.2.0",
+  "description": "git commit の hook 迂回（--no-verify/-n・git 省略形・-c core.hooksPath 上書き・変数間接・sh -c スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロックする PreToolUse hook。config 自己保護・fail-loud（jq/perl 不在時に無言で無効化しない）付き",
   "author": {
     "name": "yuki"
   }
