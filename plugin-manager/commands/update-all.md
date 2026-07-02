@@ -126,7 +126,7 @@ if [ -n "$MP_JSON" ] && [ -f "$INSTALLED_FILE" ]; then
     ignore_marketplaces_json=$(jq -c '.ignore_marketplaces // []' "$CONFIG_FILE" 2>/dev/null || echo '[]')
   fi
   if [ "$(jq -nr --argjson ig "$ignore_marketplaces_json" --arg p "$MP_NAME" '$ig|map(.==$p)|any')" != "true" ]; then
-    registered=$(jq -r --arg mp "$MP_NAME" '.plugins[]?.name | "\(.)@\($mp)"' "$MP_JSON" 2>/dev/null | sort -u)
+    registered=$(jq -r --arg mp "$MP_NAME" '.plugins[]?.name // empty | "\(.)@\($mp)"' "$MP_JSON" 2>/dev/null | sort -u)
     installed=$(jq -r '.plugins // {} | keys[]' "$INSTALLED_FILE" 2>/dev/null | sort -u)
     comm -23 <(printf '%s\n' "$registered") <(printf '%s\n' "$installed") | while IFS= read -r p; do
       [ -z "$p" ] && continue

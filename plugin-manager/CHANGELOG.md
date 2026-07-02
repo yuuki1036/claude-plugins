@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.2] - 2026-07-02
+
+### Fixed
+
+- `commands/update-all.md` Phase 4.7 の jq フィルタに `// empty` null ガードを追加（`name` 欠落時に `null@marketplace` を生成していた問題を修正。hook 側 `check-missing-plugins.sh` と表現を統一）
+- SessionStart hook `check-missing-plugins.sh` の timeout を 5 秒から 10 秒に引き上げ（marketplace × plugin ごとの jq 多重 spawn で marketplace 数が多い環境の 5 秒到達を回避）
+
+### Changed
+
+- `README.md` を現行実装（v1.5.0 のデフォルト=自作のみ / `--all` で全件、v1.6.0 の SessionStart 通知 hook、`~/.claude/plugin-manager/config.json` 設定）に更新（2 バージョン遅れの解消）
+
 ## [1.7.1] - 2026-06-15
 
 ### Changed
