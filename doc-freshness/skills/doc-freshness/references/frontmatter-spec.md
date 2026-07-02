@@ -39,11 +39,13 @@ last-validated: 2026-05-29
 phase: current
 owner: team-platform        # 任意: 責任主体
 supersedes: ./old-spec.md   # 任意: 廃止した旧 doc への参照
+append_only: true           # 任意: append-only 履歴文書（stale 判定を免除）
 ---
 ```
 
 - `owner` — レポート時に表示される（責任不明の stale doc を放置しないため）
 - `supersedes` — `phase: current` への遷移時に、旧 doc を `superseded` に変える運用補助
+- `append_only` — `true` のとき **stale 判定（Phase 3）を免除**する。ADR（`.claude/adr/`）のように「決定時点の記録を append-only で残す」文書は作成後に内容が変わらないのが正常挙動で、`phase: current` の stale 閾値を当てると作成直後から恒常 stale になるため。免除は stale 判定のみで、frontmatter スキーマ・link・superseded 参照は通常どおり検証する。付与するのは adr-keeper のテンプレ（accepted ADR）。design doc は `phase: target → current` で鮮度を測る生きた文書なので付けない
 
 ## 運用ルール
 

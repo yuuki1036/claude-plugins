@@ -12,6 +12,8 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - Edit
+  - Write
   - AskUserQuestion
 ---
 
@@ -44,27 +46,48 @@ allowed-tools:
 
 1. 引数があれば単一ファイルとして処理（後段の Phase 2〜6 を直接適用）
 2. 引数なしならプロジェクト全体走査:
-   - `**/*.md` を Glob（`.git/` / `node_modules/` / プラグイン外を除外）
+   - `**/*.md` を Glob
+   - **dot ディレクトリ配下の doc を明示追加**: Glob の `**` は既定で dot ディレクトリ（`.claude/` 等）を拾わないため、以下を個別に Glob して対象に加える:
+     - `.claude/adr/**/*.md`（adr-keeper が鮮度 lint を委譲する ADR）
+     - `.claude/designs/**/*.md`（design-doc が鮮度 lint を委譲する design doc）
    - `CLAUDE.md` / `AGENTS.md` はリポジトリ root + 各サブディレクトリ両方を対象
-3. **新規ファイル grace period 判定**: 各ファイルの作成日時を Bash で取得し、`gracePeriodDays` 以内なら以降のチェックを **info** 扱いにスキップ
+   - **除外**: 以下は走査対象から外す:
+     - `.git/` / `node_modules/` / `dist/` / `build/` / `vendor/` 配下（生成物・依存ライブラリ）
+     - `.claude/adr/` / `.claude/designs/` を除く `.claude/` 配下（session-context.md 等の gitignored な運用ファイル。frontmatter を前提にしない）
+     - **プラグイン外を除外** = プロジェクトのソースツリー外（`$HOME/.claude/` 配下にインストールされたプラグイン本体の doc 等）は対象にしない。走査は常に**カレントプロジェクト root 配下**に限定する
+3. **新規ファイル grace period 判定**: 各ファイルの作成日時を Bash で取得し、`gracePeriodDays` 以内なら重大度を緩める:
+   - stale（Phase 3）/ 行数（Phase 4）/ link（Phase 5）/ superseded 参照（Phase 6）の検出 → **info** に降格（新規 doc の整備途中を error にしない）
+   - **frontmatter 欠落（Phase 2）のみ warn**（scaffold 直後でも frontmatter 付与忘れは気づけるようにする）。grace period 外に出たら error に昇格する
    ```bash
-   # macOS / Linux 両対応の作成日時取得（厳密な birth time は非対応 fs もあるので mtime fallback）
-   stat -f '%B' "$f" 2>/dev/null || stat -c '%W' "$f" 2>/dev/null || stat -f '%m' "$f" 2>/dev/null || stat -c '%Y' "$f"
+   # macOS / Linux 両対応の作成日時取得。
+   # macOS(BSD stat): %B が birth time。Linux(GNU stat): %W が birth time だが
+   # ext4 等 birth time 非対応 fs は 0 を返すため、0 のときは mtime(%Y) にフォールバックする。
+   created=$(stat -f '%B' "$f" 2>/dev/null)          # macOS: birth time
+   if [ -z "$created" ]; then
+     created=$(stat -c '%W' "$f" 2>/dev/null)        # Linux: birth time（未対応 fs は 0）
+     if [ -z "$created" ] || [ "$created" = "0" ]; then
+       created=$(stat -c '%Y' "$f")                  # Linux fallback: mtime
+     fi
+   fi
    ```
 
 ---
 
-## Phase 2: frontmatter 検証（error）
+## Phase 2: frontmatter 検証
 
 各ファイル先頭の YAML frontmatter を Read で取得し、以下を検証する。
 
 | 項目 | 判定 | 重大度 |
 |---|---|---|
-| frontmatter 自体が無い | grace period 外なら error | 🔴 |
-| `last-validated` キー欠落 | error | 🔴 |
+| frontmatter 自体が無い | grace period 内は warn、grace period 外は error | 🟡/🔴 |
+| `last-validated` キー欠落 | grace period 内は warn、grace period 外は error | 🟡/🔴 |
 | `last-validated` が `YYYY-MM-DD` 形式でない | error | 🔴 |
-| `phase` キー欠落 | error | 🔴 |
+| `phase` キー欠落 | grace period 内は warn、grace period 外は error | 🟡/🔴 |
 | `phase` が `current` / `target` / `superseded` 以外 | error | 🔴 |
+
+> grace period 内/外の重大度は 3 箇所（このスキル・Phase 1 の grace period 判定・`references/frontmatter-spec.md`）で **grace period 内 = warn / grace period 外 = error** に統一している。
+
+**append_only マーカーの収集**: `append_only: true` を持つファイルは Phase 3（stale 判定）を免除する（下記）。Phase 2 でこのフラグを収集しておく。
 
 詳細は `references/frontmatter-spec.md` を参照。
 
@@ -91,6 +114,15 @@ age_days=$(( (now - ts) / 86400 ))
 | `current` | 5 日 | 🔴 error |
 | `target` | 15 日 | 🔴 error |
 | `superseded` | 判定対象外 | - |
+
+### append-only な履歴文書の stale 免除（error 化しない）
+
+**`append_only: true` を frontmatter に持つファイルは phase に関わらず stale 判定を免除する**（Phase 2 で収集済み）。
+
+- 理由: ADR（`.claude/adr/`）のように「決定した時点の記録を append-only で残す」文書は、作成後に内容が変わらないのが正常挙動。`phase: current` の stale 閾値（5 日）を当てると、作成 5 日後から恒常的に stale error になり委譲が破綻する。
+- 免除するのは **Phase 3 の stale 判定のみ**。frontmatter スキーマ（Phase 2）・link（Phase 5）・superseded 参照（Phase 6）は通常どおり検証する。
+- レポートでは「append-only（stale 免除）」として info 表示する（黙って skip しない）。
+- **付与側の責務**: このマーカーは adr-keeper のテンプレが accepted ADR に `append_only: true` を付ける。design-doc は `phase: target → current` の遷移で鮮度を測る「生きた文書」なので付けない（下記「設計判断」）。
 
 ---
 
@@ -143,6 +175,7 @@ active doc（`phase: current` / `target`）の本文中に、`superseded` ファ
 | internal link | 1 | 0 | 0 |
 | superseded 参照 | 0 | 0 | 0 |
 | grace period | 0 | 0 | 3 |
+| append-only (stale 免除) | 0 | 0 | 4 |
 
 ### 詳細
 
@@ -151,6 +184,7 @@ active doc（`phase: current` / `target`）の本文中に、`superseded` ファ
 🔴 broken link: CLAUDE.md → ./missing.md
 🟡 行数超過 (44 > 40): CLAUDE.md
 ℹ️ grace period 中（新規 doc）: src/feature-x/README.md
+ℹ️ append-only（stale 免除）: .claude/adr/20260529143012-api-versioning-strategy.md
 ```
 
 - error が 1 件以上 → 終了ステータス相当の警告を末尾に表示
@@ -192,7 +226,8 @@ active doc（`phase: current` / `target`）の本文中に、`superseded` ファ
 
 ## 注意事項
 
-- **読み取り中心、副作用は AskUserQuestion 承認後のみ**: Phase 7 まではすべて read-only
+- **読み取り中心、副作用は AskUserQuestion 承認後のみ**: Phase 7 まではすべて read-only。Phase 8 の自動修正（frontmatter 一括追加 / last-validated 更新）だけが Edit / Write を使う。それ以外の書き込みはしない
 - **knowledge-lint との責務分離**: broken wikilink (`[[name]]` 記法) と orphan は knowledge-lint の責務。doc-freshness は frontmatter / Markdown link / 行数ガードに専念
 - **PreToolUse hook は採用しない**: 新規 doc 作成時に last-validated 不在で即 error になる failure mode を回避（Phase 2 として hook 連動を検討する場合は PostToolUse のみ）
 - **fs の birth time 非対応**: 一部 fs（ext4 など）は作成日時を返さないため、mtime にフォールバックする。grace period 判定が緩めになるが安全側
+- **append-only 免除は stale 判定のみ**: `append_only: true` は「作成後に内容が固定される履歴文書」（ADR 等）を stale error から守るためのマーカー。frontmatter スキーマ・link・superseded 参照は通常どおり検証する。design doc は `phase: target → current` で鮮度を測る生きた文書なので付けない（住み分けは付与側プラグインの責務）
