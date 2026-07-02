@@ -4,9 +4,11 @@
 
 `{PLACEHOLDER}` 形式は scaffold 時に置換される。
 
+> 外側のテンプレ全体は **チルダフェンス (`~~~`)** で囲んでいる。内側に ```` ```gherkin ```` のバッククォートフェンスがネストするため、外側もバッククォートだと CommonMark で早期に閉じてしまう。チルダフェンスで境界を明確にしている。
+
 ---
 
-```markdown
+~~~markdown
 ---
 last-validated: {CREATED_DATE}
 phase: current
@@ -117,7 +119,7 @@ Scenario Outline: {タイトル}
 
 - 依存フィーチャー: {他 spec への参照}
 - 後続フィーチャー: {このフィーチャー完了後の別 spec}
-```
+~~~
 
 ---
 

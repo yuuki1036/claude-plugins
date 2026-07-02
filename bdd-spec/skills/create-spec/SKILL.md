@@ -12,7 +12,7 @@ allowed-tools:
   - Write
   - Edit
   - Glob
-  - Grep
+  - Bash
   - AskUserQuestion
 ---
 
@@ -95,12 +95,18 @@ BDD spec 駆動 (Behavior Driven Development) の user story を scaffold する
 
 ## Phase 4: epic.md 生成
 
+まず **本日の日付を Bash で取得**する（擬似日付を作らない。姉妹プラグイン adr-keeper / design-doc と同じ規律）:
+
+```bash
+date +%Y-%m-%d   # {CREATED_DATE} 用。epic.md / spec.md の last-validated に入れる
+```
+
 `references/epic-template.md` を読み込み、以下のプレースホルダーを置換して Write:
 
 - `{ROLE}` → `{role}`
 - `{WANT}` → `{want}`
 - `{WHY}` → `{why}`
-- `{CREATED_DATE}` → `YYYY-MM-DD`
+- `{CREATED_DATE}` → 上記 `date +%Y-%m-%d` の結果
 
 書き出し先: `{featuresDir}/{dirname}/epic.md`
 
@@ -110,11 +116,14 @@ BDD spec 駆動 (Behavior Driven Development) の user story を scaffold する
 
 `references/spec-template.md` を読み込み、以下を反映:
 
+- `{CREATED_DATE}` → Phase 4 で取得した `date +%Y-%m-%d` の結果（frontmatter の `last-validated`）
 - `Feature:` 行は `{want}` から自動生成（例: `Feature: 契約書を一括承認する`）
 - `Background:` は `common_spec.md` への参照
 - `Scenario:` / `#### Examples` / 同値分割表は **空の骨格**として scaffold（ユーザーが後で埋める）
 
 書き出し先: `{featuresDir}/{dirname}/spec.md`
+
+> **doc-freshness との関係（scaffold 直後の stale 回避）**: epic.md / spec.md は `phase: current` で開始する。scaffold 直後は本文が未記入だが、doc-freshness の **grace period**（新規 doc 保護、デフォルト 7 日）が作成日から効くため、その間に `last-validated` を埋めれば stale error にならない。spec は「埋めて育てる生きた文書」なので ADR のような `append_only` 免除は付けない（grace period 経過後に未記入のまま放置されれば stale として検出されるのは正しい挙動）。
 
 ---
 
@@ -158,7 +167,7 @@ BDD spec 駆動 (Behavior Driven Development) の user story を scaffold する
 2. Phase 1: {role} / {want} / {why} ヒアリング
 3. Phase 2: dir 名決定 + 衝突チェック
 4. Phase 3: all_spec.md / common_spec.md 初期化（必要なら）
-5. Phase 4: epic.md 生成
+5. Phase 4: 日付取得（date +%Y-%m-%d）→ epic.md 生成
 6. Phase 5: spec.md 生成
 7. Phase 6: 用語整合チェック
 8. Phase 7: 完了報告
@@ -187,7 +196,7 @@ BDD spec 駆動 (Behavior Driven Development) の user story を scaffold する
 
 ## 注意事項
 
-- **読み取り中心、書き出しは Phase 4-6**: scaffold が主目的、評価は対象外（Phase 2 で `evaluate-spec` 追加予定）
+- **読み取り中心、書き出しは Phase 4-6**: scaffold が主目的、評価は対象外（評価系 `bdd-spec-evaluate` は本プラグインの**将来リリース (Phase 2)** で別途検討。ここでの Phase 2 はプラグインのロードマップ段階を指し、上記の処理フローの Phase 2「dir 名決定」とは無関係）
 - **既存ファイル上書きは Phase 2 で明示承認**: epic.md / spec.md を勝手に上書きしない
 - **用語整合は提案のみ**: 自動置換すると意図しないリネームを起こすため、ユーザー判断に委ねる
 - **shortPath の trade-off**: 日本語フルパスは `ls` で機能カタログになる利点 vs Windows MAX_PATH / CI 互換性。`shortPath: true` で運用する場合は dir 名と user story 文を spec.md 冒頭に併記する規約

@@ -2,7 +2,9 @@
 
 `{featuresDir}/common_spec.md` のテンプレート。横断 Background / 権限 / 閾値 / エラーメッセージのデフォルトを定義する。
 
-```markdown
+> 外側のテンプレ全体は **チルダフェンス (`~~~`)** で囲む。内側に ```` ```gherkin ```` のバッククォートフェンスがネストするため（spec-template.md と同じ理由）。
+
+~~~markdown
 ---
 last-validated: {CREATED_DATE}
 phase: current
@@ -103,7 +105,7 @@ And API rate limit に達していない
 
 - 「とりあえず 100」と書くと、後で変更要求が来た時に根拠不明で議論が止まる
 - 業界規格（OWASP, NIST）やビジネス制約を明示することで、変更時の意思決定が早くなる
-```
+~~~
 
 ## 運用ルール
 

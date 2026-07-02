@@ -71,7 +71,7 @@ features/
 ## 既存 plugin との関係
 
 - `feature-dev` から `Skill bdd-spec:create-spec` 呼び出しを前提に API を安定化（Phase 1 仕様確定済）
-- 既存の評価系 skill（spec-evaluator など）とは責務分離（本 plugin は **scaffold + 静的構文レビュー**に絞り、動的検証は対象外）
+- **現状のスコープは scaffold のみ**（`bdd-spec-create`）。静的構文レビュー / 網羅性検証は未実装で、`bdd-spec-evaluate` として**将来リリース (Phase 2) で追加予定**。動的検証（実際に Scenario を実行する）はスコープ外
 
 ## 構成
 
