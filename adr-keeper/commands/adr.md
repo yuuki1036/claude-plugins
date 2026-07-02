@@ -28,5 +28,5 @@ allowed-tools:
 2. Phase 1: サブコマンド判定（list / new / supersede）
 3. Phase 2 (list): frontmatter を解析して id / title / status / phase / last-validated の表を id 降順で表示
 4. Phase 3 (new): Bash で `date +%Y%m%d%H%M%S` → kebab タイトル生成 → template から Write
-5. Phase 4 (supersede): 新 ADR 作成 + 旧 ADR 2 箇所更新 + 両方を Read で確認
+5. Phase 4 (supersede): 新 ADR 作成 + 旧 ADR 4 フィールド更新（status / phase / superseded-by / last-validated）+ 両方を Read で確認
 6. Phase 5: 完了報告

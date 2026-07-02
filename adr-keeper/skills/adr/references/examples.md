@@ -14,6 +14,7 @@ phase: current
 last-validated: 2026-05-29
 supersedes: []
 superseded-by: null
+append_only: true
 tags: [api, versioning]
 ---
 
@@ -69,6 +70,7 @@ phase: current
 last-validated: 2026-05-20
 supersedes: []
 superseded-by: null
+append_only: true
 tags: [process, review]
 ---
 

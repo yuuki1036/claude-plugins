@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.2.0] - 2026-07-02
+
+### Added
+- **テンプレに `append_only: true` frontmatter を追加**。ADR は決定時点の記録を append-only で残す履歴文書のため、doc-freshness v0.2.0+ にこのマーカーで stale 判定を免除させる。`phase: current` の stale 閾値（5 日）を当てると作成 5 日後から恒常 stale error になり鮮度 lint 委譲が破綻していた構図を解消（`references/template.md` / `references/examples.md` の記入例にも反映）
+- `plugin.json` `_requirements` に `doc-freshness`（`required: false`）を宣言。ADR の鮮度 lint を委譲する soft 依存を明示（hooks 非所持プラグインのため check-deps.sh は不要）
+- `references/template.md` の「## 関連」に **design doc 行**を追加（design-doc Phase 6 が ADR 側に元 doc パスを相互リンクする想定と整合）
+
+### Changed
+- supersede 時の旧 ADR 更新の記述を「2 箇所更新」→「4 フィールド更新（status / phase / superseded-by / last-validated）」に統一（SKILL.md 複数箇所・commands/adr.md・plugin.json description。実手順は当初から 4 フィールドで、記述だけが古い「2 箇所」のままだった不整合を修正）
+- `SKILL.md` の ADR id 例を T 区切り（`20260529T143012`）から `references/naming.md` 正の T なし（`20260529143012`）に修正
+
 ## [0.1.2] - 2026-06-15
 
 ### Changed

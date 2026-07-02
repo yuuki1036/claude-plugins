@@ -14,6 +14,8 @@
 | `{SUPERSEDES}` | 置き換える ADR の id 配列 | 通常 `[]`、supersede 時 `["<old-id>"]` |
 | `{SUPERSEDED_BY}` | この ADR を置き換えた ADR の id | 通常 `null` |
 
+> `append_only: true` は固定値（プレースホルダなし）。ADR は決定時点の記録を append-only で残す履歴文書のため、doc-freshness の stale 判定を免除させるマーカーを常に付ける（`phase: current` の stale 閾値で作成直後から恒常 stale になるのを防ぐ）。
+
 ---
 
 ## テンプレ本体（ここから下を書き出す）
@@ -26,6 +28,7 @@ phase: {PHASE}
 last-validated: {TODAY}
 supersedes: {SUPERSEDES}
 superseded-by: {SUPERSEDED_BY}
+append_only: true
 tags: []
 ---
 
@@ -66,8 +69,9 @@ tags: []
 
 ## 関連
 
-<!-- 関連 ADR / Issue / knowledge へのリンク。wikilink [[...]] も可 -->
+<!-- 関連 ADR / Issue / design doc / knowledge へのリンク。wikilink [[...]] も可 -->
 - 関連 ADR:
 - 関連 Issue:
+- 関連 design doc: <!-- この判断を切り出した元 design doc（.claude/designs/<id>.md）。design-doc Phase 6 が相互リンクとして記録する -->
 - 関連 knowledge:
 ```

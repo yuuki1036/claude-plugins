@@ -27,11 +27,12 @@ phase: current            # current | target | superseded
 last-validated: 2026-05-29
 supersedes: []            # この ADR が置き換える ADR の id 配列
 superseded-by: null       # この ADR を置き換えた ADR の id（superseded 時のみ）
+append_only: true         # append-only 履歴文書として doc-freshness の stale 判定を免除
 tags: []
 ---
 ```
 
-`last-validated` / `phase` は doc-freshness と互換。
+`last-validated` / `phase` は doc-freshness と互換。`append_only: true` は ADR が append-only 履歴文書であることを示し、doc-freshness に stale 判定を免除させる（`phase: current` の閾値で作成直後から恒常 stale になるのを防ぐ）。
 
 ## 本文セクション（必須）
 
@@ -42,7 +43,7 @@ tags: []
 5. `## 影響 (Consequences)`（良い影響・悪い影響・トレードオフ）
 6. `## 適用方法 (Enforcement)` ← **必須**。lint / test / hook で機械強制できないかを必ず検討して残す欄。死に文書化の予防が目的
 7. `## 検討した代替案`
-8. `## 関連`（関連 ADR / Issue / knowledge へのリンク・wikilink）
+8. `## 関連`（関連 ADR / Issue / design doc / knowledge へのリンク・wikilink。design-doc から切り出された ADR は元 design doc へ相互リンクする）
 
 ## サブコマンド挙動
 
@@ -54,7 +55,7 @@ tags: []
 
 ## doc-freshness との住み分け
 
-adr-keeper は ADR の **作成・命名・supersede 整合**のみ担当する。鮮度 lint（`last-validated` の stale 判定）は **doc-freshness** が `.claude/adr/` を走査して担う。両者は frontmatter（`last-validated` / `phase`）を共通化しているので連携できる。
+adr-keeper は ADR の **作成・命名・supersede 整合**のみ担当する。鮮度 lint（`last-validated` の stale 判定）は **doc-freshness** が `.claude/adr/` を走査して担う。両者は frontmatter（`last-validated` / `phase`）を共通化しているので連携できる。ADR は append-only 履歴文書なので、テンプレが付ける `append_only: true` により doc-freshness の stale 判定は免除される（frontmatter スキーマ・link 検証は通常どおり）。
 
 | 担当 | adr-keeper | doc-freshness |
 |---|---|---|

@@ -1,7 +1,15 @@
 {
   "name": "adr-keeper",
-  "version": "0.1.2",
-  "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 2箇所更新を機械化",
+  "version": "0.2.0",
+  "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除",
+  "_requirements": [
+    {
+      "name": "doc-freshness",
+      "type": "plugin",
+      "required": false,
+      "description": "ADR の鮮度 lint（last-validated stale 判定）を委譲。テンプレの append_only: true で stale 免除。未インストール時は鮮度 lint なしで動作"
+    }
+  ],
   "author": {
     "name": "yuki"
   }

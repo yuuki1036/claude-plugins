@@ -3,7 +3,7 @@ name: adr
 description: >
   Architecture Decision Record (ADR) を append-only で蓄積し、設計判断の WHY を記録する。
   YYYYMMDDhhmmss 秒精度のファイル名で命名し、適用方法 (Enforcement) セクションを必須化して死に文書化を防ぐ。
-  supersede 時は新規作成 + 旧 ADR の 2 箇所更新を機械的に踏ませて整合漏れを防ぐ。
+  supersede 時は新規作成 + 旧 ADR の 4 フィールド更新（status / phase / superseded-by / last-validated）を機械的に踏ませて整合漏れを防ぐ。
   トリガー: 「ADR作成」「設計判断記録」「アーキテクチャ決定記録」「ADR supersede」「ADR一覧」
   「決定の理由を残す」「/adr」「architecture decision record」
 effort: medium
@@ -66,9 +66,11 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
 
 | id | title | status | phase | last-validated |
 |----|-------|--------|-------|----------------|
-| 20260529T143012 | API バージョニング方針 | accepted | current | 2026-05-29 |
-| 20260520T091500 | 認証方式の選定 | superseded | superseded | 2026-05-29 |
+| 20260529143012 | API バージョニング方針 | accepted | current | 2026-05-29 |
+| 20260520091500 | 認証方式の選定 | superseded | superseded | 2026-05-29 |
 ```
+
+> id は `YYYYMMDDhhmmss`（T 区切りなし）。ファイル名の timestamp と同一値にする（`references/naming.md`）。
 
 > title は `# ADR-<id>: <title>` の見出しから取得してもよい（frontmatter に title が無い場合）。
 
@@ -97,13 +99,14 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
    - `{TODAY}` → `date +%Y-%m-%d` の結果
    - `{SUPERSEDES}` → `[]`
    - `{SUPERSEDED_BY}` → `null`
+   - `append_only: true` はテンプレの固定値（置換不要）。doc-freshness に stale 判定を免除させるマーカーとして必ず残す
 7. **適用方法 (Enforcement) セクションは必ず埋めるよう促す**: 「この決定を lint / test / hook で機械強制できないか」を検討した結果を本文に残す（できない場合はその理由）
 
 ---
 
 ## Phase 4: supersede（置き換え）
 
-旧 ADR を新 ADR で置き換える。「新規作成 + 既存 2 箇所更新」を機械的に踏ませて漏れを防ぐのが核心。
+旧 ADR を新 ADR で置き換える。「新規作成 + 旧 ADR の 4 フィールド更新（status / phase / superseded-by / last-validated）」を機械的に踏ませて漏れを防ぐのが核心。
 
 1. **旧 ADR 特定**: `.claude/adr/*<old-id>*.md` を Glob。見つからなければ error として中止
 2. **最終確認（AskUserQuestion）**: supersede は旧 ADR を superseded に落とす後戻りしにくい操作。誤った old-id 指定による別 ADR の巻き込みを防ぐため、特定した旧 ADR の id / title / 現 status を提示して実行可否を確認する:
@@ -121,7 +124,7 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
    - `superseded-by:` → `<new-id>`（新 ADR の timestamp）
    - `last-validated:` → 本日（`date +%Y-%m-%d`）
 5. **両方を Read で確認**: 新 ADR の `supersedes` と旧 ADR の `superseded-by` が相互参照になっていることを検証
-6. 結果を報告（例: 「旧 ADR-20260520T091500 を superseded、新 ADR-20260529T143012 を作成」）
+6. 結果を報告（例: 「旧 ADR-20260520091500 を superseded、新 ADR-20260529143012 を作成」）
 
 > supersede は append-only 原則を守る: 旧 ADR は **削除しない**。履歴として残し、phase/status のみ更新する。
 
@@ -153,7 +156,7 @@ supersede 時は旧 ADR の更新結果も併記する。
 2. Phase 1: サブコマンド判定（list / new / supersede）
 3. Phase 2: list → frontmatter 解析 → id 降順の表
 4. Phase 3: new → date +%Y%m%d%H%M%S → kebab → template Write
-5. Phase 4: supersede → 新 ADR 作成 + 旧 ADR 2 箇所更新 + 相互参照確認
+5. Phase 4: supersede → 新 ADR 作成 + 旧 ADR 4 フィールド更新 + 相互参照確認
 6. Phase 5: 完了報告
 ```
 
@@ -164,5 +167,5 @@ supersede 時は旧 ADR の更新結果も併記する。
 - **タイムスタンプは必ず Bash で取得**: Claude が擬似乱数 / 時刻を作らず `date +%Y%m%d%H%M%S` を実行する。秒精度でファイル名衝突を回避（`references/naming.md`）
 - **適用方法 (Enforcement) セクション必須**: ADR の死に文書化を防ぐため、「lint / test / hook で機械強制できないか」を必ず検討させる欄を設ける。決定的検証で守れる決定はそちらに昇格させる
 - **append-only 原則**: supersede 時も旧 ADR を削除しない。status / phase を `superseded` に更新して履歴として残す
-- **doc-freshness との住み分け**: adr-keeper は ADR の作成・命名・supersede 整合のみ担当。鮮度 lint（last-validated stale 判定）は doc-freshness が `.claude/adr/` を走査して担う。frontmatter（`last-validated` / `phase`）を共通化しているので連携可能
+- **doc-freshness との住み分け**: adr-keeper は ADR の作成・命名・supersede 整合のみ担当。鮮度 lint（last-validated stale 判定）は doc-freshness が `.claude/adr/` を走査して担う。frontmatter（`last-validated` / `phase`）を共通化しているので連携可能。ただし ADR は append-only 履歴文書のため `phase: current` の stale 閾値（5 日）を当てると作成直後から恒常 stale になる。これを避けるためテンプレに `append_only: true` を付け、doc-freshness 側で stale 判定を免除させる（doc-freshness v0.2.0+）
 - **status と phase の対応**: `accepted` → `phase: current`、`superseded` → `phase: superseded`。`proposed`（未決定）も許容するが、ADR は通常「決定済み」を記録するため既定は `accepted`
