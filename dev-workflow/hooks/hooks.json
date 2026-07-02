@@ -59,8 +59,8 @@
           {
             "type": "command",
             "if": "Bash(git push *)",
-            "command": "echo",
-            "args": ["push 前にセルフレビュー（/self-review）の実行を検討してください"],
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/push-reminder.sh"],
             "timeout": 5
           },
           {

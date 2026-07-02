@@ -8,9 +8,6 @@ effort: medium
 allowed-tools:
   - Bash
   - Read
-  - Edit
-  - Glob
-  - Grep
 ---
 
 # worktree-teardown

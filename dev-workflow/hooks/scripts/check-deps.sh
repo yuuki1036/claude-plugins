@@ -17,7 +17,8 @@ check_mcp() {
     found=true
   fi
   if [ "$found" = false ]; then
-    for cfg in "$HOME/.claude/mcp.json" ".mcp.json"; do
+    # 同梱 .mcp.json（本プラグインが alwaysLoad で配布する MCP）も探索対象に含める
+    for cfg in "$HOME/.claude/mcp.json" ".mcp.json" "${CLAUDE_PLUGIN_ROOT}/.mcp.json"; do
       if [ -f "$cfg" ] && grep -q "\"${name}\"" "$cfg" 2>/dev/null; then
         found=true
         break
@@ -42,11 +43,25 @@ check_cli() {
   fi
 }
 
+check_plugin() {
+  local name="$1" required="$2" desc="$3"
+  # settings.json の enabled plugins（"name@marketplace" 形式）を確認
+  if [ -f "$HOME/.claude/settings.json" ] && grep -q "\"${name}@" "$HOME/.claude/settings.json" 2>/dev/null; then
+    return 0
+  fi
+  if [ "$required" = "true" ]; then
+    errors="${errors}\n- [ERROR] ${desc}（${name}）がインストールされていません"
+  else
+    warnings="${warnings}\n- [WARN] ${desc}（${name}）が未インストールです（オプション）"
+  fi
+}
+
 # --- チェック実行 ---
 check_cli "gh" "true" "GitHub CLI"
 check_mcp "linear" "false" "Linear MCP サーバー"
 check_mcp "chrome-devtools" "false" "chrome-devtools MCP サーバー（ui-verify で使用）"
 check_cli "node" "false" "Node.js（chrome-devtools-mcp を npx 起動するため）"
+check_plugin "writing-polish" "false" "writing-polish プラグイン（PR 本文・コミットメッセージの提示前推敲。未インストール時は skip）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then

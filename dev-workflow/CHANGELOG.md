@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.23.1] - 2026-07-02
+
+### Fixed
+- git push reminder hook を インライン `echo` から safe-hook 経由スクリプト（`hooks/scripts/push-reminder.sh`）に置き換え。stdin を消費し `additionalContext`（`safe_hook_emit_context`）で reminder を注入する形に統一（PreToolUse の plain stdout は Claude への到達保証が弱いため）
+- `hooks/scripts/check-deps.sh` の chrome-devtools MCP チェックが同梱 `.mcp.json`（`${CLAUDE_PLUGIN_ROOT}/.mcp.json`、alwaysLoad 配布）を検知できず常時 WARN していた問題を修正。`check_mcp` の探索対象に同梱 `.mcp.json` を追加
+- `git-commit-helper` の description から「Git専門エージェント」の含意を除去（実装はメインコンテキストで完結し Agent を起動しない）
+
+### Changed
+- writing-polish 連携を `_requirements`（`type: plugin, required: false`）と `check-deps.sh`（`check_plugin "writing-polish"`）に宣言。未インストール時は SessionStart で WARN、pr-creator / git-commit-helper の推敲連携は skip（従来通り）
+- `worktree-setup` / `worktree-teardown` の allowed-tools を実使用（Bash / Read のみ）に最小化。本文で未使用の Write / Edit / Glob / Grep を削除（処理はすべて Bash コマンド経由）
+
 ## [1.23.0] - 2026-06-26
 
 ### Changed
