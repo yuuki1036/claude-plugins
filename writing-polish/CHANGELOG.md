@@ -5,6 +5,12 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.6.2] - 2026-07-02
+
+### Fixed
+- `tone-guide.md` の textlint 委譲境界を同梱 config の実態に整合。同梱 `textlintrc.json` が実際に有効化するのは `preset-ja-technical-writing` / `ja-no-redundant-expression` / `preset-ai-writing` のみで、表記系（`preset-japanese`）・敬体常体統一（`preset-JTF-style`）・差別語（alex）は同梱外。各観点に ✅/⚠️ を付し、⚠️ の観点は config を拡張しない限り LLM が判定を続ける旨を明記（従来は「導入済みなら LLM は linter に乗らない指摘に集中」の記述で、同梱外の観点が linter からも LLM からも漏れる恐れがあった）
+- `commands/writing-polish.md` の frontmatter に `user_invocable: true` を追加（doc/spec 系 command の表記統一）
+
 ## [0.6.1] - 2026-06-26
 
 ### Fixed

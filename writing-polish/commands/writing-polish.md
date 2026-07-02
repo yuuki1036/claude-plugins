@@ -1,5 +1,6 @@
 ---
 description: 文章を語句レベルで推敲・添削する（冗長削り・曖昧語の具体化・トーン統一・AI っぽさ除去）。差分提示 → 採否フロー
+user_invocable: true
 argument-hint: "[text | ファイルパス | 省略時は直近の生成テキスト] [--embed] [--tone <種別>] [--aggressive]"
 allowed-tools:
   - Read
