@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.31.0] - 2026-07-03
+
+### Added
+- **high-risk コードでの recall 補強 Tier2（explorer/reviewer プロンプト・GitHub issue #75）**。段階投入の 2 段目として層跨ぎバグの捕捉手段を追加:
+  - **value-flow-trace explorer focus を新設**（`explorer-prompts.md`）。1 つの値が schema→domain→DB / FE→BE をどう通るかを入口から末端まで辿り、前提がズレる境界を判定せず可視化して bug reviewer に集約注入する。`triage-guide.md` の explorer 判定（層跨ぎの値フロー）に dispatch 導線を追加
+  - **explorer 出力に「要注意シグナル」欄を追加**（`explorer-prompts.md`）。判定禁止のまま suspicion を落とさず reviewer に運ぶ
+  - **bug-detection に「敵対的入力逆算」を追加**（`reviewer-prompts.md`）。受理入力の端点（`''` / 0 / null / 最大長 / 部分入力）を末端の DB 制約まで前進させて素通り経路を探す（#1 直撃）
+  - **claude-md-compliance に「帰結接続の義務化」を追加**（`reviewer-prompts.md`）。パターンの有無でなく共有機構が実際に呼ばれ帰結を生むかまで見る（#7 直撃）
+- Tier1（冷や読み skeptic + surface-aware 閾値）は未実装。設計は `.claude/designs/20260703-code-review-recall-high-risk-surface.md`
+
 ## [2.30.0] - 2026-07-03
 
 ### Added

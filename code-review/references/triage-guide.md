@@ -88,7 +88,7 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 - 3関数以上に跨がる変更
 - if-else/switch への条件追加がある
 - **共通モジュール（`utils/`, `shared/`, `lib/`, `common/`, `helpers/`, `core/`）の変更** — **行数や関数数に関わらず必ず explorer 1 体（shared-module-impact）を起動**（v2.12.0 で緩和: 小規模変更でも依存元への波及を見落とさないため）
-- 複数ファイル間でデータが流れる変更パターン
+- 複数ファイル間でデータが流れる変更パターン（schema→domain→DB / FE→BE のような層跨ぎの値フローを含む場合は explorer に `value-flow-trace` focus を優先割り当てする）
 
 上記いずれにも該当しない場合、explorer はスキップする。
 
