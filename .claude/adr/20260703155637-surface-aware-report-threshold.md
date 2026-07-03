@@ -1,10 +1,10 @@
 ---
 id: 20260703155637
-status: accepted
-phase: current
+status: superseded
+phase: superseded
 last-validated: 2026-07-03
 supersedes: []
-superseded-by: null
+superseded-by: 20260703204045
 append_only: true
 tags: [code-review, scoring, recall, precision, high-risk-surface]
 ---
@@ -13,7 +13,7 @@ tags: [code-review, scoring, recall, precision, high-risk-surface]
 
 ## ステータス
 
-accepted（2026-07-03）
+superseded（2026-07-03）→ [ADR-20260703204045](20260703204045-surface-aware-report-threshold.md)。決定（surface-aware 閾値）は不変だが、Enforcement が「既存 red-flag 正規表現で surface 判定できる」旧前提に依拠していたのを F2 で訂正（通常 INSERT/UPDATE・D1-High は新規実装が要る）したため改訂版に差し替え。
 
 ## コンテキスト / 背景
 

@@ -1,14 +1,14 @@
 ---
 id: 20260703-code-review-recall-high-risk-surface
 title: code-review の high-risk surface における recall 補強（冷や読み skeptic + surface-aware 閾値）
-status: draft
-phase: target
+status: accepted
+phase: current
 last-validated: 2026-07-03
 supersedes: []
 superseded-by: null
 issue: null
 spec: null
-adrs: [20260703155637]
+adrs: [20260703204045]
 tags: [code-review, recall, false-negative, high-risk-surface, scoring, triage]
 ---
 
@@ -38,7 +38,7 @@ xhigh フルパイプライン（explorer 5 + reviewer 10 + 反証 3）で high-
 ## 確定した前提
 
 - **meta-reviewer（Phase 5.6）は非独立**: `reviewer-prompts.md §6`。全 reviewer の指摘（フィルタ前）+ diff + explorer 結果を注入され「他に見落としは?」と問う係。model=fable。起動条件は「BLOCKER/CRITICAL あり **かつ** effort=xhigh/max」（`triage-guide.md §8`）。→ fleet 共通の盲点があると meta も引きずる（迎合リスク）。#1 のような fleet 全員が見落とす層跨ぎバグには構造的に弱い。
-- **反証レイヤー（Phase 5.8 / 4.8）は独立**: `triage-guide.md §9` / `reviewer-prompts.md §7`。指摘の主張のみ渡し reviewer 推論は渡さない。model=opus, effort=max。「偽陽性を独立に潰す」係。今回の skeptic はこの鏡像として設計する。
+- **反証レイヤー（実装後 Phase 5.9 / 4.9。design 時は 5.8 / 4.8）は独立**: `triage-guide.md §9` / `reviewer-prompts.md §7`。指摘の主張のみ渡し reviewer 推論は渡さない。model=opus, effort=max。「偽陽性を独立に潰す」係。今回の skeptic はこの鏡像として設計する。
 - **報告マトリクスは全方向 precision 寄せ**: `scoring-guide.md §報告マトリクス`。CRITICAL は confidence 80+、MAJOR は 95+ で報告。surface 別の可変は無い。
 - **surface 検出の足場は「部分的」にしか無い**（design-review F2 で訂正）: red-flag pattern（`triage-guide.md §157`）は `DROP TABLE` / `TRUNCATE` / `DELETE FROM .* WHERE` など**破壊的操作のみ**が対象で、#1 の対象である通常の `INSERT` / `UPDATE`（DB 書込）は specialist 自動起動対象に**含まれない**。`INSERT`/`UPDATE` は performance 観点の起動条件（`triage-guide.md §108`）に文字列マッチとしてあるだけで surface 判定の足場ではない。「PR 自己申告 D1-High」の検出はコードベースに**存在しない**（grep で 0 件）。→ surface 判定は「既存の再利用で足りる」のではなく、**(1) performance 観点の INSERT/UPDATE 正規表現を surface 判定に転用 + (2) D1-High 検出を PR コンテキスト検出（`reviewer-prompts.md §2.5`）に新規追加**が要る。この新規実装コストを Tier1（Issue C）に織り込む。ADR-20260703155637 の Enforcement / 代替案却下理由も同じ前提に依拠しているため連動して見直す（open 参照）。
 - **観点カバレッジ self-check は常時実行**（`review/SKILL.md` Step 直前・メインコンテキスト・Agent 不使用）。meta-reviewer の厳しいゲートを補うため既に severity 非依存で走る。skeptic はこれと別レイヤー（self-check は focus 漏れ検査、skeptic は独立再レビュー）。
@@ -57,12 +57,12 @@ xhigh フルパイプライン（explorer 5 + reviewer 10 + 反証 3）で high-
 Phase 5.5 adaptive deepening (explorer 再)         … 既存
 Phase 5.6 meta-reviewer        … 非独立・findings 注入・FN を足す（既存, ゲート変更）
 Phase 5.7 観点カバレッジ self-check … 常時・メインコンテキスト（既存, 位置不変）
-Phase 5.x 冷や読み skeptic     … 独立・findings 非注入・FN を足す（新設）★本設計
-Phase 5.8 反証レイヤー          … 独立・主張のみ注入・FP を潰す（既存）
+Phase 5.8 冷や読み skeptic     … 独立・findings 非注入・FN を足す（新設）★本設計
+Phase 5.9 反証レイヤー          … 独立・主張のみ注入・FP を潰す（既存, design 時は 5.8）
 Step 6    機械フィルタ（報告マトリクス, surface-aware 閾値）★本設計
 ```
 
-（上図の番号は現状把握用。skeptic の 5.x と self-check(5.7)・反証(5.8) の最終的な番号割り当ては実装時にリナンバリングする。self-review 側も同様に 4.x。）
+（上図は実装後の確定番号。design 時は skeptic を Phase 5.x（未確定）、反証を 5.8 と表記していたが、実装時に skeptic=5.8 / 反証=5.9 へリナンバリングした（self-review 側も 4.8 / 4.9）。）
 
 skeptic の作法（反証レイヤーと対称）:
 
@@ -94,7 +94,7 @@ skeptic の作法（反証レイヤーと対称）:
 - CRITICAL: confidence 80 → **70**
 - MAJOR: confidence 95 → **85**
 - BLOCKER / MINOR は変更なし。
-- **効かせる箇所を一点に特定**（design-review F5）: surface-aware 閾値は `scoring-guide.md` の適用順序の**手順 7（報告マトリクスのフィルタ）でのみ**、surface フラグ付き指摘に緩和後の閾値を適用する。手順 2〜6（反証 verdict 反映＝高 severity 非削除 / 加減算 / `[unverified] min75` / `≤40 好みクランプ`）と Phase 5.8 の specialist 反証除外は**不変**。これら precision 機構は適用順序上バラバラの位置にあるため「全部の後段」と並置せず、緩和は手順 7 の一点に限定する。
+- **効かせる箇所を一点に特定**（design-review F5）: surface-aware 閾値は `scoring-guide.md` の適用順序の**手順 7（報告マトリクスのフィルタ）でのみ**、surface フラグ付き指摘に緩和後の閾値を適用する。手順 2〜6（反証 verdict 反映＝高 severity 非削除 / 加減算 / `[unverified] min75` / `≤40 好みクランプ`）と Phase 5.9 の specialist 反証除外は**不変**。これら precision 機構は適用順序上バラバラの位置にあるため「全部の後段」と並置せず、緩和は手順 7 の一点に限定する。
 
 ### Tier2（プロンプト追記・新 agent 定義不要）
 
@@ -145,6 +145,28 @@ skeptic の作法（反証レイヤーと対称）:
 - [→ADR候補→ADR-20260703155637] high-risk surface に限り precision と recall を非対称に扱う（報告閾値を surface 単位で可変にする）。全 surface 一律緩和は noise を招くため surface-aware に限定するという判断は scoring 全体の設計哲学に効く。→ ADR-20260703155637 に切り出し済み。
 - [local] surface 判定は既存足場を最大限流用しつつ、不足分（通常 INSERT/UPDATE・D1-High）は新規実装する。専用の重い detector は作らず performance 観点の正規表現転用 + PR コンテキスト検出への D1-High 追加で最小実装する（design-review F2 で「完全な再利用」から訂正）。
 - [local] 投入順は Tier3（プロンプトのみ）→ Tier2 → Tier1。`review:completed` の adversarial_verify 集計で偽却下率を計測してから重い Tier1 へ。
+
+## 実装状況 (2026-07-03 / code-review v2.32.0)
+
+Tier3（v2.30.0）→ Tier2（v2.31.0）→ **Tier1（v2.32.0）** で 3 段すべて実装完了。Tier1 で以下を追加し、frontmatter を `phase: target → current` に更新した。
+
+- **冷や読み skeptic ラウンド**（review=Phase 5.8 / self-review=Phase 4.8）: `reviewer-prompts.md` §8 テンプレート + `triage-guide.md` §8.5 起動ゲート + 両 SKILL.md に Phase 挿入。反証レイヤーは Phase 5.9 / 4.9 にリナンバリング（`references/` `skills/` の全番号参照を更新）。
+- **surface-aware 報告閾値**: `scoring-guide.md` 報告マトリクスに subsection 追加 + 適用順序 手順 7 に分岐。
+- **surface 判定**: `triage-guide.md` §8.5（INSERT/UPDATE 正規表現転用 + ORM 書込 API + reviewer フラグ保険）+ `reviewer-prompts.md` §2.5 に D1-High 検出。
+- **F4 例外ゲート**: `triage-guide.md` §9 に surface 緩和帯（CRITICAL 70-79 / MAJOR 85-94）を high でも反証対象に含める例外を追加。
+- **userConfig** `enable_recall_skeptic`（既定 true）追加 + version bump + marketplace 同期 + CHANGELOG。
+- **ADR supersede**: ADR-20260703155637 → [ADR-20260703204045](../adr/20260703204045-surface-aware-report-threshold.md)（Enforcement を「新規実装で担保」に訂正、下記 open 参照）。
+
+open の確定（実装時に採用した方向）:
+
+- **surface 判定粒度**: (b)+(c) 併用（正規表現転用 + D1-High + reviewer `[surface:high-risk]` フラグ保険）で確定。
+- **effort=high での skeptic 起動**: (ii) xhigh/max 起点の fail-safe で確定。high 昇格は `review:completed` 頻度計測後に検討（未計測）。
+- **F4 吸収ギャップ**: (a) triage §9 の例外ゲートで確定。
+- **ADR Enforcement 見直し**: supersede 実施済み。
+
+残タスク（fixture 検証は未実施）:
+- #1（層跨ぎ値フロー）/ #7（帰結接続欠落）の再現 fixture による recall/precision 回帰は**未実施**（#75 が外部 repo 由来のため合成 fixture が必要）。次セッションで最小 fixture を起こして Tier1 の実効を測る。
+- high での skeptic 起動昇格判断は計測基盤（issue #61 の review:completed 集計）に相乗り予定。
 
 ## 未解決事項 (open)
 
