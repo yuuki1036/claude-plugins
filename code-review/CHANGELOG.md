@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.32.0] - 2026-07-03
+
+### Added
+- **high-risk コードでの recall 補強 Tier1（冷や読み skeptic + surface-aware 閾値・GitHub issue #75）**。段階投入（Tier3→2→1）の最終段。トリアージが絞り込んだ結果 fleet 全員が同じ盲点（層跨ぎ値フロー）を共有して high-risk バグを見落とす false negative を、recall 側の独立レイヤーで救済する:
+  - **冷や読み skeptic ラウンドを新設**（review=Phase 5.8 / self-review=Phase 4.8）。high-risk surface を含む変更に限り、findings も reviewer 推論も渡さない独立 skeptic を `model: opus` で 1 体起動し、fleet 共通盲点を冷や読みで破る。反証レイヤー（false-positive 潰し）の鏡像＝ false-negative hunter。テンプレートに敵対的入力逆算の核を内挿し独立性に「破り方」を持たせる（`reviewer-prompts.md` `## 8`、`triage-guide.md` `## 8.5`）
+  - **surface-aware 報告閾値を追加**（`scoring-guide.md`、ADR-20260703155637）。high-risk surface（DB 書込 / 金銭・数量 / 認可、または PR 自己申告 D1-High）に限り CRITICAL 80→70 / MAJOR 95→85 に緩め、recall を非対称補正。precision の本丸（≤40 好みクランプ・高 severity 非削除・specialist 反証除外）は不変で、緩和は適用順序 手順 7 の一点のみ
+  - **surface 判定ロジック**: performance 観点の INSERT/UPDATE 正規表現を surface 判定に転用 + ORM 書込 API + D1-High 検出（`reviewer-prompts.md` `## 2.5`）。ORM 抽象越えの偽陰性は reviewer の `[surface:high-risk]` フラグを保険に OR 判定
+  - **F4 吸収整合**: surface-aware で新規報告化する CRITICAL 70-79 / MAJOR 85-94 帯を high でも反証レイヤーの対象に含める例外ゲートを追加（`triage-guide.md` `## 9`）
+  - **反証レイヤーを Phase 5.9 / 4.9 にリナンバリング**（skeptic を 5.8/4.8 に挿入したため）。userConfig に `enable_recall_skeptic`（既定 true、effort xhigh/max で動作）を追加。skeptic 失敗時は `missing_coverage` に記録し起動条件を満たしたのに未実行だった事実をレポートに必ず出す
+- 設計は design doc `.claude/designs/20260703-code-review-recall-high-risk-surface.md`（Tier1 完了で phase: current）
+
 ## [2.31.0] - 2026-07-03
 
 ### Added

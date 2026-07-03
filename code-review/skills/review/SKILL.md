@@ -24,7 +24,7 @@ allowed-tools:
 
 ## コスト×精度パイプライン設計（採用/不採用）
 
-ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 1（ファネル = Phase 0 triage で高コスト reviewer を通過分に絞る）/ 2（2 軸スコア化 = confidence × severity マトリクス）/ 3（段階予算 = `${CLAUDE_EFFORT}` → explorer/reviewer 体数）/ 4（モデルルーティング = explorer:sonnet / reviewer:opus / meta:fable / 反証:opus）/ 7（敵対的独立検証 = Phase 5.8 反証レイヤー）**。**捨てた**: 5（暴走ガード）は反復・起票を持たない単発レビューのため不要、6（証拠ラダー）は指摘蓄積・昇格の責務を failure-journal に委ね、8（外部オラクル）は PR diff レビューが対象で型/テスト実行は feature-dev Phase 5.3 の役割と分離した。
+ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 1（ファネル = Phase 0 triage で高コスト reviewer を通過分に絞る）/ 2（2 軸スコア化 = confidence × severity マトリクス）/ 3（段階予算 = `${CLAUDE_EFFORT}` → explorer/reviewer 体数）/ 4（モデルルーティング = explorer:sonnet / reviewer:opus / meta:fable / 反証:opus）/ 7（敵対的独立検証 = Phase 5.9 反証レイヤー、recall 側は Phase 5.8 冷や読み skeptic）**。**捨てた**: 5（暴走ガード）は反復・起票を持たない単発レビューのため不要、6（証拠ラダー）は指摘蓄積・昇格の責務を failure-journal に委ね、8（外部オラクル）は PR diff レビューが対象で型/テスト実行は feature-dev Phase 5.3 の役割と分離した。
 
 ## 実行手順
 
@@ -294,9 +294,29 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 **スキップ条件**: `--emergency`（緊急モード）または `skip-mode`（生成物 PR）では構成が意図的に最小化されているため本チェックをスキップする。
 
-### 5.8 反証レイヤー（adversarial verification / 動的）
+### 5.8 冷や読み skeptic ラウンド（recall 補強 / 動的）
 
-観点カバレッジ self-check の後・スコアリングの前に、reviewer の指摘を独立エージェントが反証する。偽陽性を人間が詰める前に先回りして摘出するフェーズ（`${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` `## 9 反証レイヤー`）。meta-reviewer (5.6) が見落とし（false negative）を足す係なのに対し、本フェーズは偽陽性（false positive）を独立に潰す鏡像。
+観点カバレッジ self-check の後・反証レイヤーの前に、**high-risk surface を含む変更に限り**、他 reviewer の findings も推論も渡さない独立 skeptic を 1 体起動し、fleet 共通の盲点（層跨ぎ値フロー等）を冷や読みで探す（`${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` `## 8.5 冷や読み skeptic ラウンド`）。反証レイヤー(5.9)が偽陽性を潰す係なのに対し、本フェーズは見落とし（false negative）を独立読み直しで足す係。meta-reviewer(5.6)が findings 注入で非独立なため fleet 共通盲点を引きずるのを、独立性で補う。
+
+**スキップ条件**（いずれか満たせばスキップして 5.9 へ）:
+- userConfig `enable_recall_skeptic` が `false`
+- 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**（high 既定は当面スキップ。`review:completed` の頻度計測後に high 昇格を検討＝既存 5.6/5.9 と対称の fail-safe）
+- `--emergency`（緊急モード）または `skip-mode`（生成物 PR）
+- high-risk surface（triage-guide.md `## 8.5` の surface 判定）を含まない
+
+**実行する場合**:
+
+1. **surface 判定**: 変更 diff に対し triage-guide.md `## 8.5` の判定を行う。DB 書込（`INSERT`/`UPDATE`/`DELETE` の生 SQL または ORM 書込 API `.create(`/`.update(`/`.save(`/`.upsert(` 等）/ 金銭・数量 numeric 演算 / 認可・認証、いずれかの正規表現ヒット、**または** reviewer が `[surface:high-risk]` フラグを返した（PR 自己申告 D1-High 含む）場合に high-risk surface と判定
+2. `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` の `## 8 冷や読み skeptic テンプレート` を使用し、skeptic agent を **1 体**、`model: opus`, `effort: max`, `isolation: "worktree"` で起動
+   - **findings / reviewer の推論は渡さない**（独立性の核）。diff と最小 focus、base ref のみ渡す
+   - **PR 番号注入（必須）**: Step 5 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
+3. skeptic の指摘（`[recall-skeptic]` タグ付き）を既存指摘に統合。重複は dedup（同一ファイル ±5 行 + 類似内容）。skeptic の指摘も通常のスコアリング・報告マトリクス・**反証レイヤー(5.9)の対象**に含める
+
+**失敗時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に `recall-skeptic: <failure reason>` を追記して続行する。**起動条件（high-risk surface）を満たしたのに未実行だった事実は Step 7 レポートに必ず出す**（silent 失敗で偽の安心を防ぐ）。
+
+### 5.9 反証レイヤー（adversarial verification / 動的）
+
+冷や読み skeptic の後・スコアリングの前に、reviewer の指摘を独立エージェントが反証する。偽陽性を人間が詰める前に先回りして摘出するフェーズ（`${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` `## 9 反証レイヤー`）。meta-reviewer (5.6) / skeptic (5.8) が見落とし（false negative）を足す係なのに対し、本フェーズは偽陽性（false positive）を独立に潰す鏡像。skeptic が足した指摘も本レイヤーの対象。
 
 **スキップ条件**（いずれか満たせばスキップして Step 6 へ）:
 - userConfig `enable_adversarial_verify` が `false`
@@ -323,7 +343,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 1. **各指摘の base confidence と severity を取得**
    - reviewer 出力の `[confidence: XX]` と `[severity: BLOCKER|CRITICAL|MAJOR|MINOR]` をパース
    - severity が欠落している指摘は **CRITICAL とみなす**（後方互換 / 安全側デフォルト）
-2. **反証 verdict の反映**（Phase 5.8 が動いた場合のみ。scoring-guide.md `## 反証レイヤーの verdict 反映` に従う）
+2. **反証 verdict の反映**（Phase 5.9 が動いた場合のみ。scoring-guide.md `## 反証レイヤーの verdict 反映` に従う）
    - **BLOCKER / CRITICAL の `refuted` は confidence / severity を据え置き**、指摘本文先頭に `⚠️ 反証メモ: <軸>（<根拠 file:line>、要確認）` を付与（**報告から消さない**）
    - **MAJOR / MINOR の `refuted`** は confidence −40（取り下げ理由を付録に記録）
    - `confirmed` は既存「複数エージェント +15」の発火源（二重計上しない）、`uncertain` は −10
@@ -412,7 +432,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 1. **指摘の精査（必要性ゲート / 任意）**: 報告マトリクス通過後の指摘が **1 件以上** ある場合のみ実行（指摘 0 件、または `--emergency` 時はスキップして 2 へ）。
 
-   Step 6（severity×confidence の機械フィルタ）と Phase 5.8 反証レイヤー（正しさ＝偽陽性の独立検証）が「閾値を超えるか」「事実として正しいか」を判定するのに対し、本ステップは **第 3 軸＝必要性（signal/noise）** を人間に委ねる。「正しい指摘ではあるが、本当に著者の対応に値するか」を問う（Google eng-practices "The Standard": コード健全性を向上させるなら nit でブロックしない／technical fact は preference に優先）。settled な設計判断の蒸し返しや既存コード由来の nit は**反証では refuted にならない**（事実は正しい）が、必要性軸では取り下げ対象になる。
+   Step 6（severity×confidence の機械フィルタ）と Phase 5.9 反証レイヤー（正しさ＝偽陽性の独立検証）が「閾値を超えるか」「事実として正しいか」を判定するのに対し、本ステップは **第 3 軸＝必要性（signal/noise）** を人間に委ねる。「正しい指摘ではあるが、本当に著者の対応に値するか」を問う（Google eng-practices "The Standard": コード健全性を向上させるなら nit でブロックしない／technical fact は preference に優先）。settled な設計判断の蒸し返しや既存コード由来の nit は**反証では refuted にならない**（事実は正しい）が、必要性軸では取り下げ対象になる。
 
    レポート全文を出力した直後に **AskUserQuestion**（返答ドラフトより先）で精査の要否を確認する:
 
@@ -499,7 +519,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
      - `low`: MINOR 件数（nitpick / 提案）
      - `skip`: severity スコープ外でフィルタされた件数
      - `error`: reviewer / explorer が失敗した件数（`missing_coverage` の length と一致）
-   - `adversarial_verify` は反証レイヤー（Phase 5.8）の verdict 集計（`confirmed` / `refuted` / `uncertain` / `contested`=高 severity の係争件数）。反証スキップ時は全 0。**review / self-review 両 publisher で同一フィールド名を揃える**（後から偽却下率を計測するため）
+   - `adversarial_verify` は反証レイヤー（Phase 5.9）の verdict 集計（`confirmed` / `refuted` / `uncertain` / `contested`=高 severity の係争件数）。反証スキップ時は全 0。**review / self-review 両 publisher で同一フィールド名を揃える**（後から偽却下率を計測するため）
    - 失敗してもレポート自体は成功扱い（best-effort）
    - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` は新規フィールド追加なので旧 subscriber 影響なし
 

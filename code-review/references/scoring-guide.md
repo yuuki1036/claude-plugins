@@ -69,6 +69,21 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 - **MAJOR は confidence 95+ で報告**: 確信度が低いと「正しい判断」と区別できないノイズになりがち
 - **MINOR は confidence 95+ で報告**: ほぼ確実な時のみ。それ以下は nitpick として除外
 
+### surface-aware 閾値（high-risk surface に限る recall 補正 / ADR-20260703155637）
+
+**high-risk surface**（DB 書込 / 金銭・数量計算 / 認可・認証、または PR 自己申告 D1-High。判定は triage-guide.md `## 8.5` の surface 判定）を含む指摘に限り、報告閾値を非対称に緩める:
+
+| severity | 通常 surface | high-risk surface |
+|---|:---:|:---:|
+| **BLOCKER** | 60+ | 60+（変更なし） |
+| **CRITICAL** | 80+ | **70+** |
+| **MAJOR** | 95+ | **85+** |
+| **MINOR** | 95+ | 95+（変更なし） |
+
+- **目的**: high-risk surface では CRITICAL 見落としのコストが nit 偽陽性のコストを大きく上回るため、その層に限って recall を優先する（見落としコストが偽陽性コストを上回る層の非対称扱い）。低リスク surface の noise は据え置く
+- **効かせる箇所は適用順序の手順 7 の一点のみ**（下記「適用順序」参照）。precision の本丸（手順 2〜6 = 反証 verdict 反映 / 加減算 / `[unverified] min75` / `≤40 好みクランプ`）と Phase 5.9 の specialist 反証除外は**不変**。緩和は報告マトリクスのフィルタ段でのみ適用する
+- **緩和帯の反証吸収**: high-risk surface で新規報告化する CRITICAL 70-79 / MAJOR 85-94 は、effort=high でも反証レイヤー（Phase 5.9）の対象に含める（triage-guide.md `## 9` の high-risk surface 例外ゲート）。緩めた recall を独立反証が吸収する二段構えを保つ
+
 ### severity が付与されていない指摘の扱い（後方互換）
 
 reviewer が severity を付与しなかった場合は **CRITICAL とみなして** 従来の confidence ≥ 80 フィルタを適用する（過剰報告は避ける一方、見落としは避ける安全側のデフォルト）。Phase A 完了直後の移行期間中は両方式が混在する可能性がある。
@@ -125,7 +140,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - **doc-substance の主観抑制もこのクランプで行う（2 軸で扱いを分ける）**:
   - **A 軸（主張の真偽）**: doc の論理 / 有用性 / 内容誤り指摘で根拠（code:line または内部矛盾の doc:line ×2）を示せないものは「表現の好み」とみなしてクランプする
   - **B 軸（文書としての成立性 — 完全性 / doc 種別適合 / 読み手前提 / WHY 根拠 / ナビ）**: **doc:line（欠落・誤配置・孤立の発生箇所）＋ 破られた期待（doc 種別の契約 / その doc が宣言する対象読者・スコープ / 手順が参照する未記載の前提）を示せていればクランプしない**。裏取りの相手がコードではなく doc 種別の期待構造であるため、code:line が無いことだけを理由に「好み」とみなさない（reviewer-prompts.md `doc-substance` の grounding 規則を参照）。逆に「**語句を最小差分で言い換えれば済む**」だけの指摘（writing-polish の領分）は B 軸を騙っていてもクランプする
-  - doc-substance の MAJOR は既定 effort（high）では反証レイヤー対象外（triage-guide.md `## 9` のゲートは BLOCKER 60-94 / CRITICAL 80-94 限定）だが、review skill は effort=xhigh 既定のため B 軸 MAJOR も反証レイヤー（Phase 5.8、xhigh/max で MAJOR まで拡大）で独立検証される。「最小差分 reword か否か」のクランプが B 軸ノイズの一次抑制、反証レイヤーが構造指摘の偽陽性摘出という二段構えになる
+  - doc-substance の MAJOR は既定 effort（high）では反証レイヤー対象外（triage-guide.md `## 9` のゲートは BLOCKER 60-94 / CRITICAL 80-94 限定）だが、review skill は effort=xhigh 既定のため B 軸 MAJOR も反証レイヤー（Phase 5.9、xhigh/max で MAJOR まで拡大）で独立検証される。「最小差分 reword か否か」のクランプが B 軸ノイズの一次抑制、反証レイヤーが構造指摘の偽陽性摘出という二段構えになる
 
 ### 上限クランプ: 未検証の外部状態主張（claim grounding / GitHub issue #71）
 
@@ -138,12 +153,12 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 ### 適用順序
 
 1. reviewer が付与した base confidence を取得
-2. **反証 verdict の反映**（反証レイヤー = Phase 5.8/4.8 が動いた場合のみ。下記「反証レイヤーの verdict 反映」を参照）。**高 severity の `refuted` はここで delta を適用せず注記のみ付与**して以降に進む。verdict が無い指摘は no-op
+2. **反証 verdict の反映**（反証レイヤー = Phase 5.9/4.9 が動いた場合のみ。下記「反証レイヤーの verdict 反映」を参照）。**高 severity の `refuted` はここで delta を適用せず注記のみ付与**して以降に進む。verdict が無い指摘は no-op
 3. 上記の加算・減算をすべて適用（独立に加算、最後に合算）
 4. **未検証クランプ**: `[unverified: ...]` タグ付きの指摘は confidence を `min(値, 75)` に制限
 5. **好みベース上限クランプ**: 根拠が個人的好みのみの指摘は confidence を `min(値, 40)` に制限（両クランプ該当時はこちらが優先）
 6. 0-100 にクランプ
-7. severity と組み合わせて報告マトリクスでフィルタ
+7. severity と組み合わせて報告マトリクスでフィルタ。**このとき high-risk surface フラグ付きの指摘には surface-aware 閾値（CRITICAL 70+ / MAJOR 85+）を適用する**（surface 判定は triage-guide.md `## 8.5`。手順 2〜6 の precision 機構は不変で、緩和はこの手順 7 の一点のみ）
 
 ---
 
@@ -165,9 +180,9 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 
 ---
 
-## 反証レイヤーの verdict 反映（Phase 5.8 / 4.8）
+## 反証レイヤーの verdict 反映（Phase 5.9 / 4.9）
 
-反証レイヤー（review=Phase 5.8 / self-review=Phase 4.8）が動いた場合、対象指摘には独立反証エージェントの **verdict** が付く。Step 6 オーケストレーターは適用順序の冒頭（手順 2）でこれを **機械適用** する（reviewer 判断は介入させない）。**プロンプトではなくこの手順で「高 severity を消さない」を構造的に保証する**のが本機構の核。
+反証レイヤー（review=Phase 5.9 / self-review=Phase 4.9）が動いた場合、対象指摘には独立反証エージェントの **verdict** が付く。Step 6 オーケストレーターは適用順序の冒頭（手順 2）でこれを **機械適用** する（reviewer 判断は介入させない）。**プロンプトではなくこの手順で「高 severity を消さない」を構造的に保証する**のが本機構の核。
 
 ### verdict → 操作の対応
 
@@ -199,6 +214,7 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 
 - `review_confidence_threshold` (number, default: 80): CRITICAL 以下の最低 confidence（後方互換のため残置）
 - `review_severity_threshold` (string, default: "MAJOR"): 報告対象の最低 severity。`BLOCKER` / `CRITICAL` / `MAJOR` / `MINOR` のいずれか
+- `enable_recall_skeptic` (bool, default: true): 冷や読み skeptic ラウンド（Phase 5.8 / 4.8）の有効化。`false` で強制スキップ。high-risk surface でも起動しなくなり、surface-aware 閾値は据え置き（surface-aware 閾値自体はこの config で無効化しない＝閾値と skeptic 起動は別機構）
 
 `review_severity_threshold = "CRITICAL"` を設定すると MAJOR 以下を完全に除外（厳しめ運用）。`"MINOR"` にすると全 severity を報告（緩め運用）。デフォルトの `"MAJOR"` は上記マトリクス通り。
 

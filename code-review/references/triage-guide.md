@@ -323,9 +323,48 @@ Phase 0 が明確な判断を下せない場合のデフォルト構成:
 
 両方デフォルト true。トークンコスト・レイテンシが気になる場合は false にする。
 
-## 9. 反証レイヤー（Phase 5.8 / 4.8 / 動的）
+## 8.5. 冷や読み skeptic ラウンド（Phase 5.8 / 4.8 / recall 補強）
 
-reviewer の指摘を独立エージェントが反証し、偽陽性の prominence を下げるフェーズ。**観点カバレッジ self-check の後・scoring の前**に挿入する（review=Phase 5.8 / self-review=Phase 4.8）。meta-reviewer が「見落とし（false negative）」を足す係なのに対し、反証レイヤーは「偽陽性（false positive）を独立に潰す」鏡像の係。
+high-risk surface を含む変更に限り、事前所見と無関係に **findings 非注入の独立 skeptic を 1 体**起動し、fleet 共通の盲点（層跨ぎ値フロー等）を冷や読みで破る recall 補強フェーズ。反証レイヤー（false-positive 潰し）の鏡像＝ false-negative hunter として、**観点カバレッジ self-check の後・反証レイヤーの前**に挿入する（review=Phase 5.8 / self-review=Phase 4.8）。meta-reviewer（Phase 5.6）が findings 注入で非独立なため fleet 共通盲点を引きずるのに対し、skeptic は独立読み直しで盲点を破る。
+
+### high-risk surface 判定
+
+以下のいずれかを含む変更を high-risk surface とみなす（事前所見・severity と無関係に判定）:
+
+1. **DB 書込**: `INSERT` / `UPDATE` / `DELETE` を含む生 SQL、または ORM の書込 API（`.create(` / `.update(` / `.save(` / `.insert(` / `.upsert(` 等）。performance 観点の起動条件（`## 3` の `INSERT|UPDATE` 正規表現）を surface 判定に転用する
+2. **金銭・数量計算**: `amount` / `price` / `balance` / `quantity` / `stock` / 通貨・丸め・課金に関わる numeric 演算
+3. **認可・認証**: 権限チェック / セッション / トークン / ロール判定に関わる変更
+4. **PR 自己申告 D1-High**: PR 本文・ラベルで著者が「高リスク」「D1-High」「要注意」と申告した変更（reviewer-prompts.md `## 2.5` の D1-High 検出で拾う。review skill のみ）
+
+**偽陰性の保険**: 正規表現は ORM 抽象の深い経由（動的メソッド・ラッパー越しの書込）を取り逃しうる。reviewer はコード読解で high-risk surface に触れると判断したら `[surface:high-risk]` を申告する（`reviewer-prompts.md ## 1 共通指示` の「high-risk surface フラグ」で全 reviewer に指示。PR 自己申告 `## 2.5` とは独立経路）。オーケストレーターは **正規表現ヒット ∨ reviewer フラグ ∨ PR 自己申告 D1-High で OR 判定**する。surface 偽陰性は recall 補強が丸ごと不発になるため、網羅は正規表現に依存しきらない。
+
+### 起動ゲート（暴走ガード）
+
+- **effort 適応**: **xhigh / max 起点**で起動。low / medium はスキップ。high（既定）は当面スキップし、`review:completed` の頻度計測後に昇格を検討する（既存 5.6/5.8 と対称の fail-safe。今回の見落としは xhigh で発生したため xhigh を直せば当面の再発を防げる）
+- **上限**: **PR あたり skeptic 1 体・1 round のみ**（per-surface 起動ではない）。skeptic の指摘も通常の scoring・報告マトリクス・反証レイヤーの対象
+- **surface 非該当ならスキップ**: high-risk surface を含まない変更では起動しない（noise 爆発を避け high-risk に限定）
+
+### model / 作法（反証レイヤーと対称）
+
+| 項目 | 冷や読み skeptic | 反証レイヤー（既存） |
+|---|---|---|
+| 係 | false-negative を足す | false-positive を潰す |
+| findings 注入 | **非注入（独立）** | 主張のみ |
+| focus 分割 | 無し（generalist 一頭） | 指摘単位 |
+| 契約注入 | 薄め（冷や読み） | 通常 |
+| model | **opus**（独立検証は強モデル: ルーティング表） | opus |
+| 起動ゲート | high-risk surface（事前所見・severe 非依存） | 非対称ゾーン |
+
+skeptic テンプレートは reviewer-prompts.md `## 8 冷や読み skeptic テンプレート`。findings / reviewer 推論は渡さず、diff と最小 focus のみ渡す。#1（層跨ぎ値フロー）を独立でも捕捉できるよう、敵対的入力逆算の核（受理入力の端点を末端の永続層制約まで前進させる）をテンプレートに内挿し、独立性に「破り方」を持たせる。
+
+### userConfig / 失敗時
+
+- **userConfig**: `enable_recall_skeptic: false` で強制スキップ（既定 true）。計測前の暴走はこの config と effort での明示スキップで即時停止できる
+- **失敗時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に `recall-skeptic: <failure reason>` を追記して best-effort 続行する。**起動条件（high-risk surface）を満たしたのに未実行だった事実はレポートに必ず出す**（silent 失敗で「守ったつもり」の偽の安心を防ぐ）
+
+## 9. 反証レイヤー（Phase 5.9 / 4.9 / 動的）
+
+reviewer の指摘を独立エージェントが反証し、偽陽性の prominence を下げるフェーズ。**冷や読み skeptic の後・scoring の前**に挿入する（review=Phase 5.9 / self-review=Phase 4.9）。meta-reviewer / skeptic が「見落とし（false negative）」を足す係なのに対し、反証レイヤーは「偽陽性（false positive）を独立に潰す」鏡像の係。skeptic が足した指摘も本レイヤーの反証対象に含める。
 
 ### 対象指摘の選定（非対称ゾーン優先 + specialist 除外）
 
@@ -341,6 +380,10 @@ reviewer の指摘を独立エージェントが反証し、偽陽性の promine
 
 - **specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**。これらは「断定できなくても BLOCKER + 低 confidence で人間判断を促す」前提（`## 5 Specialist テンプレート` / reviewer-prompts.md）であり、誤反証で人間の警戒度を下げる代償が非対称に大きい
 - 95+ の高確証指摘は high では対象外（取り下がりにくい層）
+
+**high-risk surface 例外ゲート（surface-aware 閾値との吸収整合 / F4）**:
+
+surface-aware 報告閾値（scoring-guide.md `## 報告マトリクス`）が high-risk surface に限り CRITICAL 80→70 / MAJOR 95→85 に緩めることで**新規に報告化する CRITICAL 70-79 / MAJOR 85-94 帯**は、上表の high ゲート（BLOCKER 60-94 / CRITICAL 80-94）の対象外に落ちる。これを放置すると「recall で緩めた指摘が反証の二段構えを素通りする」ため、**high-risk surface の指摘に限り high でもこの帯を反証対象に含める**（CRITICAL 70-79 / MAJOR 85-94 を high の非対称ゾーンに追加）。surface 非該当の変更では従来ゲートのまま（noise を増やさない）。緩めた recall を反証レイヤーが independently 吸収する二段構えを high でも成立させる。
 
 ### 動作
 

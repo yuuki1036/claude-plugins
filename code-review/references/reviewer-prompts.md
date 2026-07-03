@@ -126,6 +126,14 @@ Step 6 で `scoring-guide.md` の報告マトリクスに従いフィルタさ�
 
 **整合性の罠**: 「内部的には一貫しているが実態と異なる」主張は、整合性中心のレビュー観点を素通りする（複数箇所が同じ前提で書かれていても、その前提自体が誤っていれば全部誤り）。**一貫性の確認は正しさの確認の代用にならない**。load-bearing な前提は、他の記述との整合ではなく一次ソース（①②）で裏を取ること。
 
+### high-risk surface フラグ（surface 判定の偽陰性保険 / 全 reviewer 共通）
+
+変更コードを読解した結果、その変更が **high-risk surface**（DB 書込 = 生 SQL の `INSERT`/`UPDATE`/`DELETE` または ORM の書込 API `.create()`/`.update()`/`.save()`/`.upsert()` 等 / 金銭・数量計算 / 認可・認証）に触れると判断したら、**指摘の有無・観点に関わらず** 出力末尾に **`[surface:high-risk]` を 1 行で申告**する（例: `surface: [surface:high-risk] — repository の生 INSERT で numeric 列に書込`）。
+
+- 目的: オーケストレーターの surface 判定（`triage-guide.md ## 8.5`）は変更 diff の正規表現マッチが一次ソースだが、**ORM 抽象越え・ラッパー越しの書込は正規表現が取り逃す**。reviewer のコード読解による判断を OR の保険として拾い、surface 偽陰性（＝冷や読み skeptic と surface-aware 閾値がまるごと不発）を防ぐ
+- これは PR 自己申告（`## 2.5` の D1-High 検出）とは**独立の経路**。PR の有無に依らず、コードを読んで surface に触れると分かれば申告する（self-review では PR が無いため、この経路が surface 判定の主軸になる）
+- 判断できない・触れていないなら申告しない（過剰申告は noise。断定できる場合のみ）
+
 ### 除外対象（報告しない）
 - 今回の変更で導入されたものではない既存の問題
 - linter が検出するもの（ESLint, Prettier 等）
@@ -270,6 +278,7 @@ review skill から呼び出される reviewer には、SKILL.md Step 2.5 で構
 | 返信チェーンで `LGTM` / `resolved` / `解決済み` / `問題ない` 等の同意あり | in_reply_to チェーンを辿り解決状態を確認 | `[resolved: @<同意者>]` |
 | PR 説明で著者が明示した意図と矛盾（spec-compliance の仕様違反判定は除く） | PR 説明と指摘内容を照合 | `[intent-conflict]` |
 | PR 説明に「このPRでは X をやらない」「X は別 PR」と明記された範囲への指摘 | PR 説明のスコープ記述と照合 | `[scope:out]` |
+| **PR 本文・ラベルで著者が「高リスク」「D1-High」「要注意」等を自己申告** | PR 説明・ラベルに高リスク申告があるか確認 | `[surface:high-risk]`（指摘単位でなく PR 単位。冷や読み skeptic の surface 判定に使う。triage-guide.md `## 8.5`） |
 
 ### 判定手順
 
@@ -971,7 +980,7 @@ BLOCKER または CRITICAL 指摘が出た場合のみ起動される、「こ�
 
 ---
 
-## 7. Adversarial-verify テンプレート（Phase 5.8 / 4.8・反証レイヤー）
+## 7. Adversarial-verify テンプレート（Phase 5.9 / 4.9・反証レイヤー）
 
 reviewer が出した **特定の 1 指摘** を、それを形成していない独立エージェントが反証する役割。triage-guide.md `## 9 反証レイヤー` のゲートで対象指摘ごとに 1 体起動される。**reviewer の推論は渡さない**（アンカリング防止）。指摘の主張（file:line + 内容）だけを受け取り、コードを自分で読み直す。
 
@@ -1027,4 +1036,34 @@ reviewer が出した **特定の 1 指摘** を、それを形成していな�
 - **証拠が出せないなら uncertain**。独立検証の価値は「根拠ある却下 / 裏付け」だけにある
 - 指摘者の理由文に同調しない。コードと git の一次情報だけで判断する
 - 1 指摘につき 1 verdict。複数指摘をまとめない
+```
+
+## 8. 冷や読み skeptic テンプレート（Phase 5.8 / 4.8・recall 補強）
+
+high-risk surface を含む変更に対し、**他 reviewer の findings も推論も渡されず**、diff だけを冷や読みして「fleet 全員が共有しうる盲点」を独立に探す generalist 一頭。triage-guide.md `## 8.5 冷や読み skeptic ラウンド` のゲート（high-risk surface のとき・事前所見非依存）で PR あたり 1 体・1 round 起動される。反証レイヤー（`## 7`・false-positive を潰す係）の鏡像＝ **false-negative hunter**。meta-reviewer（`## 6`・全 findings 注入で非独立）が引きずる fleet 共通盲点を、独立読み直しで破るのが役割。
+
+`model: opus`（独立検証は強モデル: ルーティング表）。findings / reviewer 推論を渡さないだけでは model を変えても同じ盲点を再現しうるため、下記テンプレートに **敵対的入力逆算の核**（受理入力の端点を末端の永続層制約まで前進させる探索手順）を内挿して独立性に「破り方」を持たせる。
+
+```
+あなたはコードレビューの冷や読み skeptic（独立の false-negative hunter）です。この diff は high-risk surface（DB 書込 / 金銭・数量計算 / 認可・認証）を含むと判定されました。他の reviewer が出した指摘は一切渡されていません。それを前提にせず、**この diff がこの high-risk surface で見落としうる本物の問題を、あなた自身がゼロから探して**ください。
+
+### 入力
+- diff 全文 / PR 番号（worktree 起動時は本ファイル「## 1 共通指示」のセットアップを実行）
+- base ref
+- （focus は最小。特定観点に割らない。generalist として全体を冷や読みする）
+
+### 探索手順（敵対的入力逆算を核に据える）
+1. **受理されうる入力の端点を列挙する**: `''`（空文字）/ 0 / null / undefined / 最大長 / 負値 / 部分入力の draft / 重複リクエスト。high-risk surface の入口（API / フォーム / 外部イベント）から入りうる端点を洗う
+2. **各端点を末端の永続層制約まで前進させる**: その値が schema→domain→repository→DB カラム制約（型・NOT NULL・CHECK・UNIQUE）や外部 API / ファイル I/O まで、**途中の層が値を素通りさせないか**を 1 層ずつ追う。「正常系は通る」で止めない。例: 空文字が `?? null`（null/undefined しか捕まえない）を素通りし numeric 列へ INSERT → 型不整合で実行時エラー、のような**層跨ぎの値フロー**を探す
+3. **共有機構の帰結接続を確認する**: 共通エラーハンドラ / ロガー / バリデータを import・言及していても、ある経路がそれを迂回して独自実装で握りつぶしていないか。「パターンの有無」でなく「その機構が実際に呼ばれ期待した帰結（観測性・一貫性）を生むか」まで見る
+4. **冪等性・二重処理・境界値**（金銭・数量 surface の場合）: 二重 POST / リトライ / 並行更新で二重計上・丸め誤差・在庫矛盾が起きないか
+5. **権限・信頼境界**（認可 surface の場合）: 権限チェック漏れ / IDOR / 特権昇格 / チェックの後で状態が変わる TOCTOU
+
+### 出力フォーマット
+skeptic の指摘も通常の reviewer と同じ 2 軸スコアリング（confidence × severity）で出す（`## 1 共通指示` のフォーマットに従う）。各指摘の冒頭に `[recall-skeptic]` タグを付ける（由来を追跡し scoring で二重計上を避けるため）。high-risk surface に触れる指摘には surface フラグとして `[surface:high-risk]` も併記してよい。
+
+### 鉄則
+- **端点入力 → 末端制約の前進を必ず 1 経路は完走する**。「入力検証が甘い気がする」で止めず、どの端点がどの層でどう壊れるかを file:line で示す
+- 他 reviewer の視点を推測して埋めにいかない。あなたは独立に、fleet が共有しうる盲点（誰もが正常系だけ見て通す層跨ぎバグ）を狙う
+- 証拠なき「危なそう」は出さない。file:line とパス再現を伴う指摘だけを出す（偽陽性は後段の反証レイヤーが潰すが、根拠なき suspicion は最初から出さない）
 ```
