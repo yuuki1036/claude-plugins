@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.30.0] - 2026-07-03
+
+### Added
+- **high-risk コードでの recall 補強 Tier3（プロンプトのみ・GitHub issue #75）**。実レビューで xhigh フルパイプラインが high-risk な DB 書込 PR の実バグ（空文字が numeric 列へ INSERT → 500）を見落とした事例を受け、段階投入（Tier3→2→1）の先行分として reviewer プロンプトを補強:
+  - **CRITICAL 以上に「発現シナリオ / テスト未検知理由」を必須化**（`reviewer-prompts.md` 出力フォーマット）。端点の具体値と既存テストが捕まえられない理由を書けなければ severity 過大評価を疑う自己較正欄
+  - **spec-compliance に「契約の前提を呼び出し側で実地検証せよ」を昇格**（既存の「整合性の罠」注記を focus プロンプトへ）。宣言と整合の確認を正しさの確認の代用にしない
+  - **comment-accuracy に「メッセージ時制 × 制御フロー照合」を追加**。ログ/エラーメッセージの主張する事後状態とコードが実際に到達する状態のズレを検出
+- 設計は design doc `.claude/designs/20260703-code-review-recall-high-risk-surface.md`（Tier1/2 は未実装。ADR-20260703155637 で surface-aware 報告閾値の判断を記録）
+
 ## [2.29.1] - 2026-07-02
 
 ### Fixed
