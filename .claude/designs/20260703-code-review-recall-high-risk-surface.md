@@ -164,9 +164,9 @@ open の確定（実装時に採用した方向）:
 - **F4 吸収ギャップ**: (a) triage §9 の例外ゲートで確定。
 - **ADR Enforcement 見直し**: supersede 実施済み。
 
-残タスク（fixture 検証は未実施）:
-- #1（層跨ぎ値フロー）/ #7（帰結接続欠落）の再現 fixture による recall/precision 回帰は**未実施**（#75 が外部 repo 由来のため合成 fixture が必要）。次セッションで最小 fixture を起こして Tier1 の実効を測る。
-- high での skeptic 起動昇格判断は計測基盤（issue #61 の review:completed 集計）に相乗り予定。
+残タスク:
+- **回帰 fixture は作成済み**（2026-07-04）: `evals/fixtures/recall/` に合成 fixture 3 本（01=#1 層跨ぎ値フロー recall / 07=#7 帰結接続 recall / 90=副単位ゲート precision 対照群）+ `expected.yaml`（判定ルール: recall は k=3 中 2 回以上、precision は 0 回厳格）+ `setup.sh`（temp repo 構築 + surface 判定の決定的発火チェック）+ runbook README。setup 検証済み（01=HIT raw-sql+money / 07=MISS が正解 / 90=HIT money）。スモーク 1 本実施（`evals/reports/recall-20260704-smoke.md`）: fixture 01 のバグは CRITICAL で検出可能と確認。ただし headless plan mode では skill が起動せず素の単騎レビューになるため、**k=3 の本計測は対話モードで skill 起動（Phase 0 表）を確認して実施する（未了）**。
+- high での skeptic 起動昇格判断は計測基盤（issue #61 の review:completed 集計）に相乗り予定。前提として review:completed payload への `recall_skeptic` 集計フィールド追加が必要（未実装）。
 
 ## 未解決事項 (open)
 

@@ -1,0 +1,72 @@
+# high-risk recall 補強（Tier1-3, GitHub issue #75）の回帰 fixture 期待値
+#
+# 判定ルール:
+#   - recall fixture (01, 07): k=3 実行のうち 2 回以上で期待指摘が報告されれば PASS
+#     （LLM の非決定性を吸収。3/3 を要求すると flaky になる）
+#   - precision fixture (90): k=3 実行のうち 1 回でも false_positive_patterns に
+#     合致する CRITICAL/MAJOR が報告されたら FAIL（厳格。誤検出の復活は設計目的に反する）
+#   - 実行 effort: xhigh（self-review skill frontmatter の既定。skeptic 起動条件）
+#
+# 照合は人手（半自動 runbook）。severity / 指摘対象ファイル / キーワードで判定する。
+
+fixtures:
+  - id: 01-value-flow-insert
+    kind: recall
+    reproduces: "GitHub issue #75 #1（層跨ぎ値フロー）"
+    surface: high-risk # 生 INSERT を含む → surface 判定が発火するはず
+    expect:
+      severity_at_least: CRITICAL
+      target_files_any:
+        - src/domain.ts # toDraftRecord の `?? null` が核心
+        - src/schema.ts
+        - src/repository.ts
+      must_mention_any:
+        - "空文字"
+        - "''"
+        - "?? null"
+        - "nullish"
+        - "numeric"
+        - "22P02"
+      rationale: >
+        validateDraft が amount='' を許容 → toDraftRecord の `input.amount ?? null` は
+        null/undefined しか捕まえないため '' が素通り → expense_drafts.amount (NUMERIC) へ
+        生 INSERT → 22P02。AppError でないため rethrow され 500。
+        空欄を含む下書き保存が常に失敗する。
+    skeptic_should_fire: true # xhigh + 生 INSERT で Phase 4.8 skeptic が起動するはず
+
+  - id: 07-handler-bypass
+    kind: recall
+    reproduces: "GitHub issue #75 #7（帰結接続の欠落）"
+    surface: none # DB 書込・金・認可を含まない → skeptic は起動しなくてよい
+    expect:
+      severity_at_least: MAJOR
+      target_files_any:
+        - src/actions/syncProfile.ts
+      must_mention_any:
+        - "withActionErrorHandler"
+        - "errorMapping"
+        - "迂回"
+        - "ログ"
+        - "観測"
+      rationale: >
+        syncProfile が独自 try/catch でエラー変換し withActionErrorHandler / errorMapping を
+        迂回している。CLAUDE.md は「全 action は無条件で包む」を規定。instanceof AppError の
+        パターン一致で「準拠」に見えるが、SERVICE_UNAVAILABLE の error 級ログが消える
+        観測性の欠落が帰結。パターンの有無でなく帰結まで接続できるかを測る。
+    skeptic_should_fire: false
+
+  - id: 90-precision-minor-unit
+    kind: precision
+    reproduces: "既知の誤検出パターン（副単位ゲート）の対照群"
+    surface: high-risk # 金銭計算 → surface-aware 閾値（CRITICAL 70+ / MAJOR 85+）が適用される
+    expect:
+      false_positive_patterns:
+        - "JPY.*換算.*漏れ"
+        - "二重.*換算"
+        - "minorUnitDigits.*0.*バグ"
+        - "早期 return.*不整合"
+      max_severity_reported: MINOR # 副単位ゲートへの CRITICAL/MAJOR 指摘が出たら FAIL
+      rationale: >
+        minorUnitDigits === 0 の早期 return は 10^0 = 1 と数学的に等価な意図的分岐で、
+        テストが round-trip を検証済み。surface-aware 緩和（金銭 surface で閾値 -10/-15）で
+        この種の好みベース・誤読指摘が報告に復活しないことを確認する precision 回帰。
