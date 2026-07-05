@@ -343,6 +343,23 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 - **effort 適応**: **xhigh / max 起点**で起動。low / medium はスキップ。high（既定）は当面スキップし、`review:completed` の頻度計測後に昇格を検討する（既存 5.6/5.8 と対称の fail-safe。今回の見落としは xhigh で発生したため xhigh を直せば当面の再発を防げる）
 - **上限**: **PR あたり skeptic 1 体・1 round のみ**（per-surface 起動ではない）。skeptic の指摘も通常の scoring・報告マトリクス・反証レイヤーの対象
 - **surface 非該当ならスキップ**: high-risk surface を含まない変更では起動しない（noise 爆発を避け high-risk に限定）
+- **計測（skip 時も surface 判定は記録する）**: effort / userConfig でスキップした場合も、正規表現部分の surface 判定（diff への grep で安価）だけは必ず実施し、`review:completed` payload の `recall_skeptic` に記録する（SKILL.md Step 7 / Step 6 の payload 規約参照）
+
+### high 昇格の判断基準（計測後）
+
+effort=high での起動昇格は、`review:completed` の `recall_skeptic` 集計で判断する:
+
+```bash
+# surface=true なのに effort ゲートで skeptic が走らなかった件数（昇格の需要）
+grep '"event":"review:completed"' .claude/events.jsonl | \
+  jq -s '[.[] | select(.payload.recall_skeptic.surface == true and .payload.recall_skeptic.skip_reason == "effort")] | length'
+
+# skeptic の価値率（fired のうち findings_added > 0 の割合。昇格の価値）
+grep '"event":"review:completed"' .claude/events.jsonl | \
+  jq -s '[.[] | select(.payload.recall_skeptic.fired == true)] | if length == 0 then "no data" else ([.[] | select(.payload.recall_skeptic.findings_added > 0)] | length) / length end'
+```
+
+目安（厳密な閾値でなく判断材料）: 直近 30 日で `skip_reason="effort"` の surface ヒットが**継続的に発生**し（≒ high 実行でも high-risk 変更を日常的にレビューしている）、かつ xhigh 実績の価値率（findings_added > 0 率）が**明確に非ゼロ**なら、high 昇格のコスト（opus 1 体/PR）に見合うとみなして effort 適応表の high を「起動」に変更する。逆に xhigh でほぼ findings_added=0 が続くなら、skeptic の縮小（Tier2 で足りる判定）を先に検討する。
 
 ### model / 作法（反証レイヤーと対称）
 

@@ -377,7 +377,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 ```bash
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
   SAFE_HOOK_NAME="code-review:self-review" event_bus_publish "review:completed" \
-  "{\"pr\":\"local\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>}}"
+  "{\"pr\":\"local\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>}}"
 ```
 
 payload 規約（review skill と同一。subscriber が publisher を区別せず集計できるよう揃える）:
@@ -386,6 +386,11 @@ payload 規約（review skill と同一。subscriber が publisher を区別せ�
 - `missing_coverage`: 欠損観点の focus 名配列（空なら `[]`）
 - `result_grid`: `high`=BLOCKER+CRITICAL / `medium`=MAJOR / `low`=MINOR / `skip`=severity フィルタ除外件数 / `error`=Agent 失敗数（`missing_coverage` の length と一致）
 - `adversarial_verify`: 反証レイヤー（Phase 4.9）の verdict 集計（`confirmed` / `refuted` / `uncertain` / `contested`=高 severity の係争件数）。反証スキップ時は全 0。**review skill と同一フィールド名**（subscriber が publisher を区別せず偽却下率を集計できるよう揃える）
+- `recall_skeptic`: 冷や読み skeptic（Phase 4.8）の実行記録（review skill と同一フィールド名）。skeptic の high 昇格判断の計測データ:
+  - `surface`: high-risk surface 判定の結果（bool）。**Phase 4.8 が effort / userConfig でスキップされた場合も、正規表現部分の surface 判定（triage-guide.md `## 8.5`。diff への grep で安価）だけは payload 構築時に必ず実施して記録する**
+  - `fired`: skeptic agent が実際に起動したか（bool）
+  - `skip_reason`: `fired=false` のときの理由。`"effort"` / `"config"` / `"no-surface"` / `"scope"`（`--focus`/`--exclude` 指定）のいずれか。`fired=true` なら `null`
+  - `findings_added`: skeptic 由来（`[recall-skeptic]` タグ）の指摘のうち報告マトリクスを通過した件数
 - 失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を `code-review:self-review` に上書きして publisher を識別する
 
 ### 6.5. 構造化 findings JSON（embed mode のみ）

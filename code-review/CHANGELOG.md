@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.33.0] - 2026-07-05
+
+### Added
+- **`review:completed` payload に `recall_skeptic` 実行記録を追加**（`surface` / `fired` / `skip_reason` / `findings_added`）。冷や読み skeptic（Phase 5.8/4.8）を effort=high へ昇格するかの計測基盤:
+  - skeptic が effort / userConfig でスキップされた場合も**正規表現部分の surface 判定だけは必ず実施して記録**する（「surface=true なのに effort ゲートで走らなかった頻度」が昇格判断の核心メトリクスのため）
+  - `triage-guide.md` §8.5 に「high 昇格の判断基準」を追記（events.jsonl の jq 集計 2 本 + 判断の目安）
+  - review / self-review 両 publisher で同一フィールド名（subscriber が publisher を区別せず集計可能）。新規フィールド追加のみで旧 subscriber への影響なし
+
 ## [2.32.0] - 2026-07-03
 
 ### Added

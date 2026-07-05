@@ -166,7 +166,7 @@ open の確定（実装時に採用した方向）:
 
 残タスク:
 - **回帰 fixture は作成済み**（2026-07-04）: `evals/fixtures/recall/` に合成 fixture 3 本（01=#1 層跨ぎ値フロー recall / 07=#7 帰結接続 recall / 90=副単位ゲート precision 対照群）+ `expected.yaml`（判定ルール: recall は k=3 中 2 回以上、precision は 0 回厳格）+ `setup.sh`（temp repo 構築 + surface 判定の決定的発火チェック）+ runbook README。setup 検証済み（01=HIT raw-sql+money / 07=MISS が正解 / 90=HIT money）。スモーク 1 本実施（`evals/reports/recall-20260704-smoke.md`）: fixture 01 のバグは CRITICAL で検出可能と確認。ただし headless plan mode では skill が起動せず素の単騎レビューになるため、**k=3 の本計測は対話モードで skill 起動（Phase 0 表）を確認して実施する（未了）**。
-- high での skeptic 起動昇格判断は計測基盤（issue #61 の review:completed 集計）に相乗り予定。前提として review:completed payload への `recall_skeptic` 集計フィールド追加が必要（未実装）。
+- high での skeptic 起動昇格判断: 前提だった `recall_skeptic` payload フィールド（surface / fired / skip_reason / findings_added）は **v2.33.0 で実装済み**（2026-07-05）。skip 時も正規表現 surface 判定を必ず記録する。昇格の判断基準と jq 集計手順は `triage-guide.md` §8.5「high 昇格の判断基準」に記載。あとは xhigh 運用で events を貯めて集計するだけ（データ蓄積待ち）。
 
 ## 未解決事項 (open)
 
