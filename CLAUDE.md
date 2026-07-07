@@ -82,11 +82,14 @@ claude plugin prune
 - プロジェクト固有の情報（社名、チーム名、実際の Issue ID 等）を含めない
 - パス参照は `${CLAUDE_PLUGIN_ROOT}` を使用してポータブルにする
 - スキルの description にはトリガーフレーズを `トリガー:` キーワードで含める（例: `トリガー: 「作業開始」「セッション開始」「/session-start」`）
-- commands/ と skills/ の allowed-tools は一致させる（コマンドとスキルが同名でペアになっている場合のみ。独立したコマンドやスキルには適用されない）
+- commands/ と skills/ の allowed-tools は一致させる（コマンドとスキルがペアになっている場合のみ。独立したコマンドやスキルには適用されない。別名ペア（`commit`↔`git-commit-helper` 等）は `validate_plugin_quality.py` の `COMMAND_SKILL_ALIASES` に登録して検証対象に含める — 新しい別名ペアを作ったら対応表への追加も必須）
 - 後から変えにくい判断を伴う方針確認は `AskUserQuestion` で選択 UI を提示する（SKILL.md のワークフロー内に呼び出し仕様を直接記述する）
   - **例外（起動＝実行確定なスキル）**: ユーザーがコマンド起動した時点で実行意思が確定しているメンテナンス系スキル（maintain 系等）では、起動時の実行可否確認・モード選択や実行中の承認を `AskUserQuestion` で問い直さない。選択 UI で通常のチャット入力が奪われる UX コストを避けるため、止まらず最後まで実行し**結果は実行後レポートで報告**する。判断が要る検出（削除・status 遷移等）は AskUserQuestion で止めず**レポートに列挙してチャットで指示**を受ける。前提は「操作対象が git 管理下で復元可能」かつ「実行後に全件レポートで可視化される」こと。この前提を満たさない不可逆操作（外部送信・本番影響等）は従来どおり `AskUserQuestion` で確認する
 - plugin 開発は plugin-dev plugin を用いて必要に応じて agent team を使用する
 - 新 skill / agent / hook / command を追加する前は `claude-meta:component-addition-advisor` で退路確保（既存拡張で解けないか）を判定する
+- **深掘り系スキルには `${CLAUDE_EFFORT}` 実行時分岐を必須とする**。深掘り系 = 走査・分析・レビュー・多段 agent など「かける深さで結果の質が変わる」スキル（maintain / discover / review / retrospective / design 系）。単純 CRUD・scaffold・単発記録系（init / follow-up / log-failure 等）には不要
+- **linear-workflow / indie-workflow はミラー規約**: 共通機能（issue-create / issue-maintain / issue-design / follow-up / knowledge / knowledge-lint / maintain / session-start 系）は片方を変更したら必ず他方にも対称に反映する。**意図的な非対称**は次の 2 つのみ: `indie-issue-discover` と `retrospective`（いずれも「次に何をやるか・何を学んだか」を一人で回す個人開発特化の機能として indie のみに実装。linear 側への展開は必要が顕在化してから判断）。これ以外の片側だけの機能・改善は取り残しとみなす
+- **プラグイン内部 doc（SKILL.md / references/ / README）には doc-freshness frontmatter を付けない**: これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理されており、`last-validated`（current=5 日閾値）を付けると恒常 stale 化して逆効果。doc-freshness の対象はプロジェクト側の doc（CLAUDE.md / `.claude/adr/` / `.claude/designs/` 等）
 
 ## ルール配置の意思決定（決定的 hook > LLM 判定）
 
