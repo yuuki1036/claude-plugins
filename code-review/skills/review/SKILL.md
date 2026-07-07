@@ -28,6 +28,9 @@ allowed-tools:
 
 ## 実行手順
 
+実行フェーズの共通詳細（PR 番号注入・部分失敗耐性・auto-retry・動的ラウンドの実行手順）の正本:
+→ Read `${CLAUDE_PLUGIN_ROOT}/references/orchestration-guide.md`（以下「orchestration-guide」）
+
 ### 0. Worktree への移動
 
 **EnterWorktree** ツールで worktree に移動する。作業ブランチを汚さず、レビュー中も並行作業を可能にする。
@@ -57,25 +60,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-pr-context.sh" <PR番号>
 
 **【任意】Issue ファイル必読フロー（linear-workflow / indie-workflow 併用時）**:
 
-PR head / base branch 名から Issue ID を抽出し、ローカルの Issue ファイルがあれば agent prompt に同梱する。仕様・受入条件・設計判断を踏まえた spec-compliance 判定の精度が上がる（GitHub issue #43）。
+PR head / base branch 名から Issue ID を抽出し、ローカルの Issue ファイルがあれば spec-compliance reviewer の prompt に同梱する。仕様・受入条件・設計判断を踏まえた判定の精度が上がる（GitHub issue #43）。
 
-```bash
-# 1. branch 名から [A-Z]+-\d+ パターンで Issue ID を抽出
-HEAD_REF=$(gh pr view <PR番号> --json headRefName -q .headRefName)
-BASE_REF=$(gh pr view <PR番号> --json baseRefName -q .baseRefName)
-ISSUE_IDS=$(echo "$HEAD_REF $BASE_REF" | grep -oE '[A-Z]+-[0-9]+' | sort -u)
-
-# 2. ローカル Issue ファイル探索（linear-workflow / indie-workflow 双方）
-for ID in $ISSUE_IDS; do
-  find .claude/linear -name "*.md" 2>/dev/null | xargs grep -l "$ID" 2>/dev/null
-  find .claude/indie -name "*.md" 2>/dev/null | xargs grep -l "$ID" 2>/dev/null
-done | sort -u
-```
-
-- ヒットしたファイルを Read で読み込み、内容を spec-compliance reviewer の prompt に `## Issue ファイル` セクションとして同梱する（reviewer-prompts.md の `## 2. セッションコンテキスト注入テンプレート` と同じ要領）
-- Issue 本文内に「親 Issue: [FOO-1234](...)」「Parent: FOO-1234」のような親リンクがあれば **1 段だけ追跡** （深い再帰は禁止：トークン爆発防止）
-- Issue ID が抽出できない / ファイルが存在しない場合は本フローをスキップ（best-effort）
-- `.claude/linear/` と `.claude/indie/` 双方が無いリポジトリでは Glob が空配列を返すだけで no-op（後方互換）
+抽出・探索の bash 手順・親 Issue の 1 段追跡・スキップ条件（best-effort / 後方互換）の詳細:
+→ orchestration-guide `## 2`
 
 ### 2. diff とコンテキストの収集
 
@@ -99,36 +87,7 @@ gh pr diff <PR番号> --name-only
 
 Step 1 の `fetch-pr-context.sh` 出力をそのまま「PR コンテキストブロック」として保持する（LLM による再構築・要約・編集は **禁止**：再現性と取りこぼし防止のため）。このブロックは Phase 0 のタイプ判定と **全 reviewer のプロンプト注入** の両方に使用する。
 
-スクリプト出力の構造（参考）:
-
-```
-## PR コンテキスト
-
-### PR 情報
-- #<番号> <タイトル>
-- 著者: @<author>
-- Base → Head: <base> → <head>
-- State: <state>
-- URL: <url>
-
-### PR 説明（著者が明示したスコープ・意図）
-<body 全文。空なら「（空）」>
-
-### Issue コメント（PR 全体への議論）
-- [@user, YYYY-MM-DD] body
-- ...
-
-### レビューサマリ
-- [@reviewer, STATE, YYYY-MM-DD] body
-- ...
-
-### 行単位レビューコメント（過去の指摘）
-- [#id] [@reviewer, path:line] body
-  - 返信 [#親id への返信] [@user] body
-- ...
-```
-
-データが無い項目は `fetch-pr-context.sh` が「（なし）」を出力する。
+スクリプト出力の構造（参考）: → orchestration-guide `## 3`
 
 ### 3. Phase 0: トリアージ
 
@@ -180,34 +139,17 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 - 各 explorer に Phase 0 が決定した focus と対象ファイル・関数を指示として渡す
 - explorer-prompts.md の該当する Focus テンプレートをプロンプトに含める
 - 全エージェントを `isolation: "worktree"` で起動する（PR ブランチの状態でファイルを読むため）
-- **PR 番号注入（必須）**: agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRefName>`」を必ず明記し、explorer-prompts.md 共通指示の `{{PR_NUMBER}}` と `{{HEAD_REF}}` プレースホルダを実数値に置換する。`isolation: "worktree"` の子 worktree は親 branch を継承しないため、checkout 指示を欠かすと origin/default-branch を見て偽陽性を量産する（GitHub issue #56）。`{{HEAD_REF}}` 注入により、EnterWorktree 済みの親 worktree と二重 checkout になるケースを子 worktree 側でスキップできる（GitHub issue #69）
-
-  ```bash
-  # PR_NUMBER は Step 1 で取得済み（gh pr view --json number -q .number で再取得可能）
-  PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null || echo "<番号>")
-  ```
+- **PR 番号注入（必須）**: orchestration-guide `## 1` に従う（欠かすと偽陽性を量産する。GitHub issue #56 / #69）
 
 全 explorer の完了を待ち、結果を収集する。
 
-**部分失敗耐性:** 個別 explorer が失敗しても全体を中止しない。失敗した explorer の type / focus / エラー要旨を `missing_coverage` リストに記録し、残った explorer の結果で続行する。該当 focus に依存する reviewer には、Step 5 で「探索結果なし（失敗理由）」を明示して渡す。
+**部分失敗耐性:** orchestration-guide `## 5` に従う（個別失敗で全体を中止せず `missing_coverage` に記録して続行）。
 
 ### 4.9 AGENTS.md 階層動的選択（reviewer 起動前）
 
-変更ファイルパスから対応する `{dir}/AGENTS.md` を Bash で探索し、該当層だけを reviewer プロンプトに同梱する。リポジトリ全体の AGENTS.md / CLAUDE.md を毎回フルロードせず、変更があった層のみ拾うことで reviewer 入力 token を典型 30〜50% 削減する。
+変更ファイルパスから対応する `{dir}/AGENTS.md` を Bash で探索し、該当層だけを reviewer プロンプトに同梱する（reviewer 入力 token を典型 30〜50% 削減）。
 
-```bash
-# 変更ファイルから親ディレクトリを抽出
-git diff <base>...HEAD --name-only | xargs -n1 dirname 2>/dev/null | sort -u | while read dir; do
-  # 当該ディレクトリから root まで遡って AGENTS.md / CLAUDE.md を探索
-  while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
-    [ -f "$dir/AGENTS.md" ] && echo "$dir/AGENTS.md"
-    [ -f "$dir/CLAUDE.md" ] && echo "$dir/CLAUDE.md"
-    dir=$(dirname "$dir")
-  done
-done | sort -u
-```
-
-ヒットしたファイルのみ Read で読み込み、各 reviewer のプロンプトに `## 該当層の AGENTS.md / CLAUDE.md` セクションとして注入する。AGENTS.md が無いリポジトリでは探索結果が空になるだけで no-op（後方互換）。
+探索 bash・注入セクション名・no-op 条件（後方互換）の詳細: → orchestration-guide `## 4`
 
 ### 5. レビューフェーズ（reviewer 並列起動）
 
@@ -221,24 +163,13 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - セッションコンテキストが有効な場合、reviewer-prompts.md のセッションコンテキスト注入テンプレートに従い全 reviewer に注入する
 - `gh pr diff` の出力を各 reviewer に渡す
 - 全エージェントを `isolation: "worktree"` で起動する
-- **PR 番号注入（必須）**: agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRefName>`」を必ず明記し、reviewer-prompts.md 共通指示の `{{PR_NUMBER}}` と `{{HEAD_REF}}` プレースホルダを実数値に置換する。`isolation: "worktree"` の子 worktree は親 branch を継承せず origin/default-branch から派生するため、checkout 指示を欠かすと PR の変更を観測できず偽陽性を量産する（GitHub issue #56）。`{{HEAD_REF}}` 注入により、EnterWorktree 済みの親 worktree と二重 checkout になるケースを子 worktree 側でスキップできる（GitHub issue #69）
-
-**effort 設計意図**: reviewer は `max` で深い推論を優先（overthinking による偽陽性は Confidence ≥80 フィルタで刈り取る）。オーケストレーター（skill frontmatter）は `xhigh`。Opus 4.8 は `high` が既定 effort のため、demanding task 向けに一段引き上げた設定。
-
-**diff-first 原則:** 各エージェントには `gh pr diff` の出力を渡す。エージェントのファイル Read は共通ユーティリティの仕様確認など、diff だけでは判断できない文脈把握に限定する。ただし、変更箇所を含む関数の全体確認は積極的に行うこと。
+- **PR 番号注入（必須）**: orchestration-guide `## 1` に従う
 
 全 reviewer の完了を待ち、結果を収集する。
 
-**出力形式の検証と auto-retry（GitHub issue #69）:** 各 reviewer の出力が「レビュー結果」として妥当か機械的に検証する。以下のいずれも欠く出力は **非レビュー出力**（空応答・system-reminder / skill 案内の断片・tool_use ゼロでの早期終了等）とみなす:
+reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出力形式の検証と auto-retry・部分失敗耐性・最小保証の閾値）: → orchestration-guide `## 5`
 
-- `### レビュー結果` 見出し（または `#### 指摘事項` / `#### 総括` のいずれか）
-- 指摘が 1 件以上ある場合、`[confidence: XX]` と `[severity: ...]` タグを含む行が存在する
-
-非レビュー出力を検出した reviewer は、**同一プロンプトで 1 回だけ auto-retry** する（複数同時検出時はまとめて並列 retry）。retry 出力も非レビュー出力なら、その reviewer の focus / angle を `missing_coverage` に「非レビュー出力（auto-retry 後も形式不正）」として記録して続行する（欠損観点として扱い、フィルタを素通りさせない）。「指摘ゼロ」を明示的に報告した妥当な出力（`### レビュー結果` を持ち問題なしと結論）は非レビュー出力ではないため retry 対象にしない。
-
-**部分失敗耐性:** 個別 reviewer が失敗しても成功した reviewer の結果で合成継続する。失敗した reviewer の focus / angle / エラー要旨を `missing_coverage` リストに追記する。
-
-**最小保証の閾値:** Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促してから ExitWorktree する。それ以外は欠損観点を明示しつつ Step 6 に進む。
+**最小保証の閾値のみ抜粋**: Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促してから ExitWorktree する。それ以外は欠損観点を明示しつつ Step 6 に進む。
 
 ### 5.5 Adaptive deepening: 追加 explorer ラウンド（v2.12.0 / 動的）
 
@@ -247,21 +178,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
 - 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
 
-**実行する場合**:
-
-1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
-2. 集約結果から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
-3. `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md` の `re-explore` テンプレートで追加 explorer を `model: sonnet` で並列起動する
-   - 各 explorer に対応する unmet_information（focus, target, why, related_finding）を指示として渡す
-   - `isolation: "worktree"` で起動（PR ブランチ）
-   - **PR 番号注入（必須）**: Step 4 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
-4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`, `effort: max` で再起動する
-   - 再起動 reviewer には初回指摘 + 追加 explorer 結果を context として渡し、「初回 confidence を再評価せよ」と指示
-   - 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
-   - **PR 番号注入（必須）**: Step 5 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
-5. レポートに「Round 2 trigger: <reason>」を記録（Step 7 で出力）
-
-**失敗時**: 追加 explorer / 再起動 reviewer が失敗した場合は初回結果のままで続行（missing_coverage には追記しない、Round 2 は best-effort）
+**実行する場合**: orchestration-guide `## 6` の手順に従う（unmet_information 集約 → 追加 explorer 最大 3 体 → 該当 reviewer 再起動 → 初回出力を置換。失敗時は初回結果のまま続行の best-effort）。レポートに「Round 2 trigger: <reason>」を記録（Step 7 で出力）。
 
 ### 5.6 Meta-reviewer ラウンド（v2.12.0 / 動的）
 
@@ -270,27 +187,13 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
 - Step 5.5 後の全指摘（フィルタリング前）に **BLOCKER も CRITICAL も 1 件もない**
 
-**実行する場合**:
-
-1. `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` の `## 6. Meta-reviewer テンプレート` を使用
-2. meta-reviewer agent を 1 体、`model: fable`, `effort: max` で起動
-   - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
-   - `isolation: "worktree"` で起動
-   - **PR 番号注入（必須）**: Step 5 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
-3. meta-reviewer の出力（追加指摘）を既存指摘に統合
-   - 重複は dedup（同一ファイル ±5 行 + 類似内容）
-   - meta-reviewer の指摘も通常のスコアリング・フィルタリング対象
-
-**失敗時**: meta-reviewer が失敗した場合は missing_coverage に `meta-reviewer: <failure reason>` を追記して続行
+**実行する場合**: orchestration-guide `## 7` の手順に従う（meta-reviewer を 1 体 `model: fable`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。
 
 ### 5.7 観点カバレッジ・セルフチェック（メインコンテキスト / 常時実行）
 
 Step 6 の直前に、**メインコンテキストで**（Agent は使わない・低コスト）起動 focus の妥当性を 1 回検査する。観点漏れは高 severity 指摘が無くても起こりうるため、meta-reviewer (5.6) の起動有無・effort・severity に依存せず **常時実行** する（meta-reviewer は起動条件が「effort=xhigh/max かつ BLOCKER/CRITICAL あり」と厳しく、観点漏れを取りこぼすため。GitHub issue #69）。
 
-1. `triage-guide.md` の「reviewer の観点判定」表の各条件を、実際の diff シグナル（変更ファイルパス・diff 内文字列）に対して **メインコンテキストで再評価** する
-2. **「条件を満たすのに起動されなかった focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在、`package.json` 変更があるのに dependency 不在）
-3. 検出した観点漏れは `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として追記する
-4. effort が `high` 以上 かつ 追加 1 体で補える観点なら、その focus の reviewer を 1 体だけ追加起動して結果を Step 6 に合流させてよい（任意・best-effort。失敗しても missing_coverage 記載のまま続行）
+手順の詳細（観点判定表の再評価 → 未起動 focus 検出 → missing_coverage 追記 → high 以上での補完起動）: → orchestration-guide `## 8`
 
 **スキップ条件**: `--emergency`（緊急モード）または `skip-mode`（生成物 PR）では構成が意図的に最小化されているため本チェックをスキップする。
 
@@ -304,15 +207,9 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 - `--emergency`（緊急モード）または `skip-mode`（生成物 PR）
 - high-risk surface（triage-guide.md `## 8.5` の surface 判定）を含まない
 
-**実行する場合**:
+**実行する場合**: orchestration-guide `## 9` の手順に従う（surface 判定 → skeptic を 1 体 `model: opus`, `effort: max` で起動。**findings / reviewer の推論は渡さない**のが独立性の核 → `[recall-skeptic]` タグ付き指摘を dedup して統合し、反証レイヤー(5.9)の対象にも含める）。
 
-1. **surface 判定**: 変更 diff に対し triage-guide.md `## 8.5` の判定を行う。DB 書込（`INSERT`/`UPDATE`/`DELETE` の生 SQL または ORM 書込 API `.create(`/`.update(`/`.save(`/`.upsert(` 等）/ 金銭・数量 numeric 演算 / 認可・認証、いずれかの正規表現ヒット、**または** reviewer が `[surface:high-risk]` フラグを返した（PR 自己申告 D1-High 含む）場合に high-risk surface と判定
-2. `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` の `## 8 冷や読み skeptic テンプレート` を使用し、skeptic agent を **1 体**、`model: opus`, `effort: max`, `isolation: "worktree"` で起動
-   - **findings / reviewer の推論は渡さない**（独立性の核）。diff と最小 focus、base ref のみ渡す
-   - **PR 番号注入（必須）**: Step 5 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
-3. skeptic の指摘（`[recall-skeptic]` タグ付き）を既存指摘に統合。重複は dedup（同一ファイル ±5 行 + 類似内容）。skeptic の指摘も通常のスコアリング・報告マトリクス・**反証レイヤー(5.9)の対象**に含める
-
-**失敗時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に `recall-skeptic: <failure reason>` を追記して続行する。**起動条件（high-risk surface）を満たしたのに未実行だった事実は Step 7 レポートに必ず出す**（silent 失敗で偽の安心を防ぐ）。
+**失敗時**: `missing_coverage` に追記して続行。**起動条件（high-risk surface）を満たしたのに未実行だった事実は Step 7 レポートに必ず出す**（silent 失敗で偽の安心を防ぐ）。
 
 ### 5.9 反証レイヤー（adversarial verification / 動的）
 
@@ -324,17 +221,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 - `--emergency`（緊急モード）または `skip-mode`（生成物 PR）
 - 反証対象（triage-guide.md `## 9` のゲート）に合致する指摘が 0 件
 
-**実行する場合**:
-
-1. triage-guide.md `## 9 反証レイヤー` の選定ルールで対象指摘を選ぶ（high: 非対称ゾーン BLOCKER 60-94 / CRITICAL 80-94、xhigh/max: 報告ゾーン全体 + MAJOR）。**specialist 由来の指摘は全 effort で除外**
-2. 対象指摘ごとに `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` `## 7 Adversarial-verify テンプレート` で反証エージェントを `model: opus`, `effort: max`, `isolation: "worktree"` で並列起動する
-   - 指摘の主張（severity / confidence / file:line / 内容）のみ渡し、**reviewer の理由文は渡さない**（アンカリング防止）
-   - **PR 番号注入（必須）**: Step 5 と同様に prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
-   - `pre-existing` / `intended` 鮮度の git 判定（`git show <base>:<file>` / `git blame`）を反証エージェントに許可する
-3. 各 verdict（refuted / confirmed / uncertain / severity-inflated）を収集し、Step 6 のスコアリングに渡す
-4. レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 7 で出力）
-
-**失敗時**: 反証エージェントが失敗した指摘は verdict なし（= 反証スキップ）として元の confidence / severity のまま続行する（best-effort、missing_coverage には記録しない）
+**実行する場合**: orchestration-guide `## 10` の手順に従う（triage-guide `## 9` の選定ルールで対象を選び、反証エージェントを `model: opus`, `effort: max` で並列起動。**reviewer の理由文は渡さない**＝アンカリング防止 → verdict を Step 6 のスコアリングに渡す。失敗した指摘は verdict なしのまま続行の best-effort）。レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 7 で出力）。
 
 ### 6. スコアリングとフィルタリング（2軸: confidence × severity）
 

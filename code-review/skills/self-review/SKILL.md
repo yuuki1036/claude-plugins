@@ -36,6 +36,9 @@ Phase 0 の explorer/reviewer 並列起動も同じ思想で、reviewer は expl
 
 ## 実行手順
 
+実行フェーズの共通詳細（部分失敗耐性・auto-retry・動的ラウンドの実行手順・Vault 照合・訂正の伝播前ガード）の正本:
+→ Read `${CLAUDE_PLUGIN_ROOT}/references/orchestration-guide.md`（以下「orchestration-guide」。self-review では `isolation: "worktree"` を使わない等の差分は同ガイド `## 0` を参照）
+
 ### 1. diff 収集とコンテキスト準備
 
 ```bash
@@ -100,25 +103,8 @@ embed mode 時の return 仕様（**dual format**: 人間可読 markdown ＋ 機
 
 レビュー局面は蓄積された知見が最も効く高 ROI な発火点。変更ファイルに関連する過去のレビュー指摘・落とし穴を vault から引いて reviewer に注入する（GitHub issue #68。feature-dev Phase 1.6 Vault Recall と同一の retrieval 基盤を呼ぶ対の改善）。
 
-**利用可否の検出（未導入なら skip / 後方互換）**:
-
-```bash
-# kvault コマンド または /vault-recall skill のいずれかが使えれば実行
-command -v kvault >/dev/null 2>&1 && echo "kvault: available"
-```
-
-`kvault` も `/vault-recall` skill も使えない環境では本ステップ全体を skip する（vault 未導入リポジトリでは no-op）。
-
-**照合手順**:
-
-1. Step 1 で収集した変更ファイルのパス・主要な識別子（関数名・型名・コンポーネント名）・技術語をクエリ語にする
-2. 代表的なクエリを 1〜3 個 `kvault recall "<query>"` で実行する（`/vault-recall` skill が使える場合はそちら経由でも可）。出力は `results[]`（`similarity` / `title` / `excerpt` / `path` / `tags`）の JSON
-3. 各結果の `similarity` と、上位ヒットと下位ヒットの **gap**（スコア差）で関連度を判断する。上位が明確に分離して高 similarity（目安: 上位 `similarity` ≥ 50 かつ次点との gap が明確）なら関連ありとみなす。全体が低 similarity で団子状なら関連なしと判断して注入しない（ノイズ注入を避ける）
-4. 関連ありと判断した知見（`title` + `excerpt` + `path`）を Step 4 の各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する
-
-**注意**:
-- `--embed` 呼び出し（feature-dev Phase 6 等）でも本ステップは動作する（呼び出し元が retrieval 基盤を共有する前提）
-- vault 照合は best-effort。`kvault` 実行が失敗・タイムアウトしても `missing_coverage` には記録せず skip して続行する（レビュー本体をブロックしない）
+利用可否の検出（`kvault` / `/vault-recall` が無ければ skip の後方互換）・照合手順（クエリ構築 → similarity と gap で関連度判定 → reviewer プロンプトへの注入）・best-effort の注意事項:
+→ orchestration-guide `## 11`
 
 ### 2. Phase 0: トリアージ
 
@@ -158,23 +144,13 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 
 全 explorer の完了を待ち、結果を収集する。
 
-**部分失敗耐性:** 個別 explorer が失敗しても全体を中止しない。失敗した explorer の type / focus / エラー要旨を `missing_coverage` リストに記録し、残った explorer の結果で続行する。該当 focus に依存する reviewer には、Step 4 で「探索結果なし（失敗理由）」を明示して渡す。
+**部分失敗耐性:** orchestration-guide `## 5` に従う（個別失敗で全体を中止せず `missing_coverage` に記録して続行）。
 
 ### 3.9 AGENTS.md 階層動的選択（reviewer 起動前）
 
-変更ファイルパスから対応する `{dir}/AGENTS.md` を Bash で探索し、該当層だけを reviewer プロンプトに同梱する。リポジトリ全体の AGENTS.md / CLAUDE.md を毎回フルロードせず、変更があった層のみ拾うことで reviewer 入力 token を典型 30〜50% 削減する。
+変更ファイルパスから対応する `{dir}/AGENTS.md` を Bash で探索し、該当層だけを reviewer プロンプトに同梱する（reviewer 入力 token を典型 30〜50% 削減）。
 
-```bash
-git diff "${BASE}..HEAD" --name-only | xargs -n1 dirname 2>/dev/null | sort -u | while read dir; do
-  while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
-    [ -f "$dir/AGENTS.md" ] && echo "$dir/AGENTS.md"
-    [ -f "$dir/CLAUDE.md" ] && echo "$dir/CLAUDE.md"
-    dir=$(dirname "$dir")
-  done
-done | sort -u
-```
-
-ヒットしたファイルのみ Read で読み込み、各 reviewer のプロンプトに `## 該当層の AGENTS.md / CLAUDE.md` セクションとして注入する。AGENTS.md が無いリポジトリでは no-op（後方互換）。
+探索 bash・注入セクション名・no-op 条件（後方互換）の詳細: → orchestration-guide `## 4`
 
 ### 4. レビューフェーズ（reviewer 並列起動）
 
@@ -189,22 +165,11 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - diff 全文を各 reviewer に渡す
 - `isolation: "worktree"` は使用しない
 
-**effort 設計意図**: reviewer は `max` で深い推論を優先（overthinking による偽陽性は Confidence ≥80 フィルタで刈り取る）。オーケストレーター（skill frontmatter）は `xhigh`。Opus 4.8 は `high` が既定 effort のため、demanding task 向けに一段引き上げた設定。
-
-**diff-first 原則:** 各エージェントには diff の出力を渡す。エージェントのファイル Read は共通ユーティリティの仕様確認など、diff だけでは判断できない文脈把握に限定する。ただし、変更箇所を含む関数の全体確認は積極的に行うこと。
-
 全 reviewer の完了を待ち、結果を収集する。
 
-**出力形式の検証と auto-retry（GitHub issue #69）:** 各 reviewer の出力が「レビュー結果」として妥当か機械的に検証する。以下のいずれも欠く出力は **非レビュー出力**（空応答・system-reminder / skill 案内の断片・tool_use ゼロでの早期終了等）とみなす:
+reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出力形式の検証と auto-retry・部分失敗耐性・最小保証の閾値）: → orchestration-guide `## 5`
 
-- `### レビュー結果` 見出し（または `#### 指摘事項` / `#### 総括` のいずれか）
-- 指摘が 1 件以上ある場合、`[confidence: XX]` と `[severity: ...]` タグを含む行が存在する
-
-非レビュー出力を検出した reviewer は、**同一プロンプトで 1 回だけ auto-retry** する（複数同時検出時はまとめて並列 retry）。retry 出力も非レビュー出力なら、その reviewer の focus / angle を `missing_coverage` に「非レビュー出力（auto-retry 後も形式不正）」として記録して続行する（欠損観点として扱い、フィルタを素通りさせない）。「指摘ゼロ」を明示的に報告した妥当な出力（`### レビュー結果` を持ち問題なしと結論）は非レビュー出力ではないため retry 対象にしない。
-
-**部分失敗耐性:** 個別 reviewer が失敗しても成功した reviewer の結果で合成継続する。失敗した reviewer の focus / angle / エラー要旨を `missing_coverage` リストに追記する。
-
-**最小保証の閾値:** Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促す。それ以外は欠損観点を明示しつつ Step 5 に進む。
+**最小保証の閾値のみ抜粋**: Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促す。それ以外は欠損観点を明示しつつ Step 5 に進む。
 
 ### 4.5 Adaptive deepening: 追加 explorer ラウンド（v2.12.0 / 動的）
 
@@ -213,19 +178,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
 - 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
 
-**実行する場合**:
-
-1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
-2. 集約結果から **最大 3 件** の追加探索ターゲットを選ぶ（BLOCKER 候補に関わる unmet を優先）
-3. `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md` の `re-explore` テンプレートで追加 explorer を `model: sonnet` で並列起動する
-   - 各 explorer に対応する unmet_information を指示として渡す
-   - `isolation: "worktree"` は使用しない（self-review は未コミット変更を含むため）
-4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`, `effort: max` で再起動
-   - 初回指摘 + 追加 explorer 結果を context として渡し、「初回 confidence を再評価せよ」と指示
-   - 再起動 reviewer の出力は初回出力を置換
-5. レポートに「Round 2 trigger: <reason>」を記録（Step 6 で出力）
-
-**失敗時**: 追加 explorer / 再起動 reviewer が失敗した場合は初回結果のままで続行（best-effort）
+**実行する場合**: orchestration-guide `## 6` の手順に従う（unmet_information 集約 → 追加 explorer 最大 3 体 → 該当 reviewer 再起動 → 初回出力を置換。失敗時は初回結果のまま続行の best-effort）。レポートに「Round 2 trigger: <reason>」を記録（Step 6 で出力）。
 
 ### 4.6 Meta-reviewer ラウンド（v2.12.0 / 動的）
 
@@ -234,26 +187,13 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
 - Step 4.5 後の全指摘（フィルタリング前）に **BLOCKER も CRITICAL も 1 件もない**
 
-**実行する場合**:
-
-1. `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` の `## 6. Meta-reviewer テンプレート` を使用
-2. meta-reviewer agent を 1 体、`model: fable`, `effort: max` で起動
-   - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
-   - `isolation: "worktree"` は使用しない
-3. meta-reviewer の出力（追加指摘）を既存指摘に統合
-   - 重複は dedup（同一ファイル ±5 行 + 類似内容）
-   - meta-reviewer の指摘も通常のスコアリング・フィルタリング対象
-
-**失敗時**: meta-reviewer が失敗した場合は missing_coverage に `meta-reviewer: <failure reason>` を追記して続行
+**実行する場合**: orchestration-guide `## 7` の手順に従う（meta-reviewer を 1 体 `model: fable`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。
 
 ### 4.7 観点カバレッジ・セルフチェック（メインコンテキスト / 常時実行）
 
 Step 5 の直前に、**メインコンテキストで**（Agent は使わない・低コスト）起動 focus の妥当性を 1 回検査する。観点漏れは高 severity 指摘が無くても起こりうるため、meta-reviewer (4.6) の起動有無・effort・severity に依存せず **常時実行** する（GitHub issue #69）。
 
-1. `triage-guide.md` の「reviewer の観点判定」表の各条件を、実際の diff シグナル（変更ファイルパス・diff 内文字列）に対して **メインコンテキストで再評価** する
-2. **「条件を満たすのに起動されなかった focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在）
-3. 検出した観点漏れは `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として追記する
-4. effort が `high` 以上 かつ 追加 1 体で補える観点なら、その focus の reviewer を 1 体だけ追加起動して結果を Step 5 に合流させてよい（任意・best-effort）
+手順の詳細（観点判定表の再評価 → 未起動 focus 検出 → missing_coverage 追記 → high 以上での補完起動）: → orchestration-guide `## 8`
 
 **スキップ条件**: `--focus` / `--exclude` 指定時は意図的にスコープを絞り込んでいるため、その範囲外の観点漏れは missing_coverage に記録するのみで追加起動はしない。
 
@@ -267,14 +207,9 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 - `--focus` / `--exclude` でスコープを絞り込んでいる
 - high-risk surface（triage-guide.md `## 8.5` の surface 判定）を含まない
 
-**実行する場合**:
+**実行する場合**: orchestration-guide `## 9` の手順に従う（surface 判定 → skeptic を 1 体 `model: opus`, `effort: max` で起動。**findings / reviewer の推論は渡さない**のが独立性の核 → `[recall-skeptic]` タグ付き指摘を dedup して統合し、反証レイヤー(4.9)の対象にも含める）。
 
-1. **surface 判定**: 変更 diff に triage-guide.md `## 8.5` の判定を適用。DB 書込（`INSERT`/`UPDATE`/`DELETE` の生 SQL または ORM 書込 API）/ 金銭・数量 numeric 演算 / 認可・認証の正規表現ヒット、**または** reviewer が `[surface:high-risk]` フラグを返した場合に high-risk surface と判定
-2. `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` の `## 8 冷や読み skeptic テンプレート` を使用し、skeptic agent を **1 体**、`model: opus`, `effort: max` で起動（`isolation: "worktree"` は使用しない＝未コミット変更を含むため）
-   - **findings / reviewer の推論は渡さない**（独立性の核）。diff と最小 focus、base ref のみ渡す
-3. skeptic の指摘（`[recall-skeptic]` タグ付き）を既存指摘に統合。重複は dedup（同一ファイル ±5 行 + 類似内容）。skeptic の指摘も通常のスコアリング・報告マトリクス・**反証レイヤー(4.9)の対象**に含める
-
-**失敗時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に `recall-skeptic: <failure reason>` を追記して続行する。**起動条件（high-risk surface）を満たしたのに未実行だった事実は Step 6 レポートに必ず出す**。
+**失敗時**: `missing_coverage` に追記して続行。**起動条件（high-risk surface）を満たしたのに未実行だった事実は Step 6 レポートに必ず出す**。
 
 ### 4.9 反証レイヤー（adversarial verification / 動的）
 
@@ -286,16 +221,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 - `--focus` / `--exclude` でスコープを絞り込んでいる（既検証の再評価を避ける）
 - 反証対象（triage-guide.md `## 9` のゲート）に合致する指摘が 0 件
 
-**実行する場合**:
-
-1. triage-guide.md `## 9 反証レイヤー` の選定ルールで対象指摘を選ぶ（high: 非対称ゾーン BLOCKER 60-94 / CRITICAL 80-94、xhigh/max: 報告ゾーン全体 + MAJOR）。**specialist 由来の指摘は全 effort で除外**
-2. 対象指摘ごとに `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` `## 7 Adversarial-verify テンプレート` で反証エージェントを `model: opus`, `effort: max` で並列起動する（`isolation: "worktree"` は使用しない＝未コミット変更を含むため）
-   - 指摘の主張（severity / confidence / file:line / 内容）のみ渡し、**reviewer の理由文は渡さない**（アンカリング防止）
-   - `pre-existing` / `intended` 鮮度の git 判定（`git show <base>:<file>` / `git blame`）を反証エージェントに許可する
-3. 各 verdict（refuted / confirmed / uncertain / severity-inflated）を収集し、Step 5 のスコアリングに渡す
-4. レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 6 で出力）
-
-**失敗時**: 反証エージェントが失敗した指摘は verdict なし（= 反証スキップ）として元の confidence / severity のまま続行する（best-effort）
+**実行する場合**: orchestration-guide `## 10` の手順に従う（triage-guide `## 9` の選定ルールで対象を選び、反証エージェントを `model: opus`, `effort: max` で並列起動。**reviewer の理由文は渡さない**＝アンカリング防止 → verdict を Step 5 のスコアリングに渡す。失敗した指摘は verdict なしのまま続行の best-effort）。レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 6 で出力）。
 
 ### 5. スコアリングとフィルタリング（2軸: confidence × severity）
 
@@ -466,12 +392,6 @@ payload 規約（review skill と同一。subscriber が publisher を区別せ�
 - **BLOCKER/CRITICAL のみ**: 該当 severity の指摘のみ再表示し、ファイルごとにまとめて修正を実施する
 - **このまま**: 完了（BLOCKER 指摘が 1 件以上残っている場合は「BLOCKER 指摘を残したままコミットしますか？」と AskUserQuestion で再確認する）
 
-**訂正の伝播前ガード（over-correction 防止 / GitHub issue #71）**: findings をコード/文書本文に**反映する前に**、その修正が依拠する load-bearing な事実主張を一次ソースで再確認する。修正を「探す」段だけでなく「書く」段にもツール接地を効かせる（reviewer-prompts.md「事実主張のツール接地」の対）。
-
-- **repo で確認できる主張**（コード挙動・型・呼び出し関係）→ Read/Grep で現物を確認してから書き換える。記憶や推測で本文を直さない
-- **repo で確認できない主張**（DB/本番の現状態・外部数値・運用設定・「本番では解消済み」等）→ 「事実」として断定的に書かない。正本（spec / PR / Issue / ADR / コミットメッセージ）で裏が取れない限り **「要確認（典拠=X）」マーカーを残す**。reviewer 指摘が `[unverified: ...]` 付きなら、その不確実性を修正後の本文にも引き継ぐ
-- **暫定入力を確定として伝播しない**: ユーザーや reviewer の推測的な言及（「〜かも」「たぶん」「〜のはず」）を、確定した事実として複数箇所に展開しない。確定させるには一次ソースを引くこと
-- **1 箇所先行確認 → 確証後に展開**: 同じ訂正を複数箇所に広げる場合、まず 1 箇所で正本確認し、確証が取れてから他箇所へ展開する（未検証の訂正を一括で 5 箇所に広げて全部誤り、という失敗を防ぐ）
-- **複数観点の独立一致は高信頼**: 同一箇所を複数の独立した reviewer 観点が指している場合は、相互の誤検出が打ち消されるため高信頼として扱ってよい
+**訂正の伝播前ガード（over-correction 防止 / GitHub issue #71）**: findings をコード/文書本文に**反映する前に**、その修正が依拠する load-bearing な事実主張を一次ソースで再確認する。判定ルール（repo で確認できる/できない主張の扱い・暫定入力の非伝播・1 箇所先行確認・複数観点の独立一致）の詳細: → orchestration-guide `## 12`
 
 **修正の指針（Fix the code, not the reviewer）**: 「分かりにくい」「誤解を招く」「意図が読めない」系の指摘に対しては、説明コメントを足して取り繕うのではなく、**コード・命名・型・構造そのものを直して解消する**ことを優先する。将来の読み手（半年後の自分・別コンテキストの Claude）も同じ箇所でつまずくため（Google eng-practices "Handling reviewer comments: fix the code, not the reviewer"）。

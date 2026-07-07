@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.33.1] - 2026-07-07
+
+### Changed
+- **review / self-review SKILL.md を references/ に分割**（review 531→418 行 / self-review 477→397 行）。実行フェーズの共通詳細（PR 番号注入・Issue ファイル必読フロー・AGENTS.md 階層動的選択・部分失敗耐性・auto-retry・動的ラウンド 5.5〜5.9 / 4.5〜4.9 の実行手順・Vault 照合・訂正の伝播前ガード）を新設の `references/orchestration-guide.md` に正本として集約し、SKILL.md 本文は高レベルワークフロー（Phase 一覧・スキップ条件・スコアリング規則・レポート契約・AskUserQuestion 仕様）に絞った。挙動の変更なし
+
 ## [2.33.0] - 2026-07-05
 
 ### Added
