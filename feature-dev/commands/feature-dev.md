@@ -127,6 +127,36 @@ fi
 
 ---
 
+## Phase 1.4: BDD Spec Evaluation (bdd-spec:evaluate-spec handoff)
+
+**Goal**: Phase 1.3 で spec.md を生成した場合、それを architect の入力にする前に品質ゲートを通す。網羅性（同値分割表 ⇔ Scenario）・トレーサビリティ（epic AC ⇔ Scenario）の穴を実装着手前に潰す。
+
+**Why this phase exists**: 生成直後の spec は「もっともらしいが穴がある」状態になりやすい（AC に対応する Scenario 欠落・同値クラスの未カバー）。穴のある spec を真実として Phase 4 architect に渡すと、その穴が実装に伝播する。安いオラクル（機械的なリンク・表セル検証）を実装の前に挟む（Clearwing 原則 8）。bdd-spec 未インストール、または Phase 1.3 を skip した場合は何もしない（後方互換）。
+
+### Step 1: Applicability check
+
+- Phase 1.3 で `BDD_SPEC_PATH` が空（spec 未生成 / bdd-spec 未インストール / ユーザーが skip） → **Phase 1.4 を skip して Phase 1.5 へ**
+- `BDD_SPEC_PATH` がセットされている → 次の Step へ
+
+### Step 2: Invoke bdd-spec:evaluate-spec (embed)
+
+`Skill` tool で `bdd-spec:evaluate-spec` を呼ぶ。安定 API に従い引数で対象と embed を渡す:
+
+- `spec=<BDD_SPEC_PATH>`（Phase 0 の対象選択をスキップ）
+- `--embed`（evaluate-spec 側の Phase 6 AskUserQuestion をスキップし、Phase 5 レポートをそのまま返す）
+
+### Step 3: Gate on findings
+
+- 🔴 critical（未カバー AC・リンク切れ・構文破綻）が 1 件以上 → **ユーザーに提示して確認**する。AskUserQuestion で「spec を修正してから設計に進む（推奨）/ このまま進む」を選ばせる。spec の穴は architect が読む前に埋めるのが安いため、修正を既定に置く
+- 🟡 major 以下のみ → レポートを情報として提示し、そのまま Phase 1.5 へ進む（ブロックしない）
+- 指摘 0 件 → 「spec は契約として妥当」と一言添えて Phase 1.5 へ
+
+### Step 4: Fallback handling
+
+- bdd-spec:evaluate-spec が失敗（version 不整合・内部エラー）→ warning を出して fallback。評価をスキップして Phase 1.5 へ継続する（評価は best-effort。設計フロー自体はブロックしない）
+
+---
+
 ## Phase 1.5: Issue Context Detection (linear-workflow / indie-workflow handoff)
 
 **Goal**: Detect upfront Issue context handed off by linear-workflow / indie-workflow and skip redundant discovery.

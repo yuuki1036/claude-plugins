@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-07-07
+
+### Added
+- **Phase 1.4「BDD Spec Evaluation」を新設**（bdd-spec:evaluate-spec への dormant 連携。GitHub issue #78）。Phase 1.3 で spec.md を生成した場合、architect（Phase 4）の入力にする前に `bdd-spec:evaluate-spec` を `spec=<path> --embed` で呼び、網羅性（同値分割表⇔Scenario）・トレーサビリティ（epic AC⇔Scenario）の穴を機械判定する。🔴 critical（未カバー AC・リンク切れ）検出時は AskUserQuestion で「修正してから設計に進む（推奨）」を提示。穴のある spec が実装に伝播するのを安いオラクルで実装前に止める（Clearwing 原則 8）。bdd-spec 未インストール / Phase 1.3 skip 時は何もしない（後方互換）。評価失敗時は warning を出して best-effort で継続（設計フローをブロックしない）
+
 ## [2.9.1] - 2026-07-07
 
 ### Changed
