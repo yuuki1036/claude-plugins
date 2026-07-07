@@ -1,0 +1,25 @@
+plugin: adr-keeper
+cases:
+  - id: adr-create-ja
+    prompt: ADR 作成して
+    expected_skill: adr-keeper:adr
+    k: 3
+  - id: adr-record-decision-ja
+    prompt: さっきの設計判断を ADR に記録して
+    expected_skill: adr-keeper:adr
+    k: 3
+  - id: adr-why-ja
+    prompt: この決定の理由を後から辿れるように残したい
+    expected_skill: adr-keeper:adr
+    k: 3
+  - id: adr-supersede-ja
+    prompt: 古い ADR を supersede して新しい決定に置き換えて
+    expected_skill: adr-keeper:adr
+    k: 3
+
+  # --- 誤発火防止 ---
+  # 「設計書の作成」は design-doc の領分（単一決定の記録 = adr との弁別）
+  - id: adr-nofire-design-doc
+    prompt: この機能の技術設計書を作って
+    expected_skill: design-doc:design-doc
+    k: 3

@@ -1,0 +1,23 @@
+plugin: doc-freshness
+# コマンド名 doc-freshness-check とスキル名 doc-freshness が非対称のため両方を許容。
+cases:
+  - id: doc-freshness-ja
+    prompt: doc の鮮度をチェックして
+    expected_skill: [doc-freshness:doc-freshness, doc-freshness:doc-freshness-check]
+    k: 3
+  - id: doc-freshness-stale-ja
+    prompt: stale なドキュメントを検出して
+    expected_skill: [doc-freshness:doc-freshness, doc-freshness:doc-freshness-check]
+    k: 3
+  - id: doc-freshness-last-validated-ja
+    prompt: last-validated が古い doc がないか確認して
+    expected_skill: [doc-freshness:doc-freshness, doc-freshness:doc-freshness-check]
+    k: 3
+
+  # --- 誤発火防止 ---
+  # wikilink / orphan の健全性は knowledge-lint の領分（doc-freshness との責務分離）。
+  # indie / linear は排他インストール想定のため両方を許容。
+  - id: doc-freshness-nofire-knowledge-lint
+    prompt: knowledge の健全性をチェックして
+    expected_skill: [indie-workflow:knowledge-lint, linear-workflow:knowledge-lint]
+    k: 3

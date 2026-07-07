@@ -1,0 +1,26 @@
+plugin: failure-journal
+cases:
+  - id: log-failure-ja
+    prompt: また同じミスをした。失敗を記録しておいて
+    expected_skill: failure-journal:log-failure
+    k: 3
+  - id: log-failure-journal-ja
+    prompt: 再発しそうな失敗を journal に追記して
+    expected_skill: failure-journal:log-failure
+    k: 3
+  - id: retro-aggregate-ja
+    prompt: 再発パターンを集計して規約に還流する提案を出して
+    expected_skill: failure-journal:retro
+    k: 3
+  # log-failure <-> retro の弁別（記録 = log-failure、集計 = retro）
+  - id: retro-count-ja
+    prompt: 同じ失敗を何回踏んだか集計して
+    expected_skill: failure-journal:retro
+    k: 3
+
+  # --- 誤発火防止 ---
+  # 「振り返り」は indie-workflow:retrospective の領分（failure-journal:retro との弁別）
+  - id: retro-nofire-retrospective
+    prompt: 今週の振り返りをして
+    expected_skill: indie-workflow:retrospective
+    k: 3

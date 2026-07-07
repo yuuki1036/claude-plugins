@@ -1,0 +1,23 @@
+plugin: feature-dev
+# command のみのプラグイン（skill なし）。コマンド名 feature-dev:feature-dev を期待値にする。
+cases:
+  - id: feature-dev-ja
+    prompt: この機能をワークフローに沿って開発して
+    expected_skill: feature-dev:feature-dev
+    k: 3
+  - id: feature-dev-guided-ja
+    prompt: 機能開発ワークフローで実装を進めて
+    expected_skill: feature-dev:feature-dev
+    k: 3
+
+  # --- 誤発火防止（隣接スキルへのルーティング） ---
+  # 「課題の発見・起票」は indie-issue-discover の領分
+  - id: feature-dev-nofire-discover
+    prompt: やることを洗い出して issue を自動で作って
+    expected_skill: indie-workflow:indie-issue-discover
+    k: 3
+  # 「設計だけ詰める」は design-doc の領分（実装込みの feature-dev と弁別）
+  - id: feature-dev-nofire-design-doc
+    prompt: 実装せず設計だけ詰めたい
+    expected_skill: design-doc:design-doc
+    k: 3

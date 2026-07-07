@@ -1,0 +1,20 @@
+plugin: bdd-spec
+# コマンド名 bdd-spec-create とスキル名 create-spec が非対称のため両方を許容
+# （design-doc.yaml の nofire ケースと同じ前例）。
+cases:
+  - id: bdd-spec-create-ja
+    prompt: この機能の BDD spec を作って
+    expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
+    k: 3
+  - id: bdd-spec-user-story-ja
+    prompt: user story を scaffold して
+    expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
+    k: 3
+  - id: bdd-spec-scenario-ja
+    prompt: 振る舞いの仕様を Scenario で書きたい
+    expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
+    k: 3
+  - id: bdd-spec-equivalence-ja
+    prompt: 同値分割表のテンプレを用意して
+    expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
+    k: 3
