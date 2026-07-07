@@ -55,6 +55,22 @@ features/
                        # Layer 4: #### Examples テーブル + 同値分割表
 ```
 
+## 品質検証
+
+scaffold した spec を埋めた後、`bdd-spec-evaluate` で 4 観点の静的レビューをかけられる:
+
+```
+/bdd-spec-evaluate                          # features/*/spec.md を選択して評価
+/bdd-spec-evaluate features/{story}/spec.md # 対象を明示
+```
+
+- **Gherkin 構文妥当性**（機械・ファネル第 1 段）: Feature / Scenario の Given-When-Then 構造・Scenario Outline の Examples・プレースホルダ対応
+- **粒度一貫性**（意味）: When の単一アクション性・Then が実装詳細に踏み込んでいないか・1 Scenario 1 振る舞い
+- **網羅性**: 同値分割表 ⇔ Scenario の**双方向トレース**（表にあるのに未カバーの同値クラス / 表にない orphan scenario を検出）
+- **トレーサビリティ**: epic の AC ⇔ Scenario のリンク解決・未カバー AC の検出・Why が Scenario 群で満たされるか
+
+severity（🔴/🟡/🔵）× confidence（機械判定は 100、意味判断は不確実性に応じて）でフィルタし、修正は confidence 100 の機械確定分のみ承認後に自動化する（over-correction 抑制）。
+
 ## スコープ
 
 ### v0.1.0 (Phase 1)
@@ -63,19 +79,23 @@ features/
 - ✅ `all_spec.md` / `common_spec.md` テンプレ提供
 - ✅ 短縮モード切替
 
-### Phase 2 候補（別 Issue）
+### v0.2.0 (Phase 2)
 
-- ⏸ `bdd-spec-evaluate` で BDD 構文 / 粒度 / 網羅性 / トレーサビリティの 4 観点静的レビュー
-- ⏸ 同値分割表 ↔ Scenario の双方向 trace 検証
+- ✅ `bdd-spec-evaluate` で BDD 構文 / 粒度 / 網羅性 / トレーサビリティの 4 観点静的レビュー
+- ✅ 同値分割表 ↔ Scenario の双方向 trace 検証
+
+動的検証（実際に Scenario を実行する）はスコープ外。
 
 ## 既存 plugin との関係
 
-- `feature-dev` から `Skill bdd-spec:create-spec` 呼び出しを前提に API を安定化（Phase 1 仕様確定済）
-- **現状のスコープは scaffold のみ**（`bdd-spec-create`）。静的構文レビュー / 網羅性検証は未実装で、`bdd-spec-evaluate` として**将来リリース (Phase 2) で追加予定**。動的検証（実際に Scenario を実行する）はスコープ外
+- `feature-dev` から `Skill bdd-spec:create-spec`（Phase 1.3 scaffold）と `Skill bdd-spec:evaluate-spec`（Phase 1.4 品質ゲート）の呼び出しを前提に API を安定化
+- create-spec（Generator）と evaluate-spec（Evaluator）は責務分離。生成時の思い込みに引きずられず独立に穴を見つける設計
 
 ## 構成
 
 | 種別 | 名前 | 説明 |
 |------|------|------|
 | コマンド | `/bdd-spec-create` | user story dir + epic/spec scaffold |
+| コマンド | `/bdd-spec-evaluate` | 埋めた spec を 4 観点で静的レビュー |
 | スキル | `create-spec` | scaffold ロジック + template 流し込み |
+| スキル | `evaluate-spec` | 4 観点評価（構文/粒度/網羅性/トレーサビリティ） |

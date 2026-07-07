@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.2.0] - 2026-07-07
+
+### Added
+- **`evaluate-spec` スキル + `bdd-spec-evaluate` コマンドを新設**（Phase 2 予約分の実装。GitHub issue #78）。埋めた spec.md / epic.md を 4 観点で静的レビューする品質ゲート:
+  - **Gherkin 構文妥当性**（機械・ファネル第 1 段）: Feature/Scenario の Given-When-Then 構造・Scenario Outline の Examples・`<placeholder>` と列見出しの対応・フェンス開閉を grep で確定判定
+  - **粒度一貫性**（意味）: When の単一アクション性・Then が実装詳細に踏み込んでいないか・1 Scenario 1 振る舞い
+  - **網羅性**: 同値分割表 ⇔ Scenario の**双方向トレース**（表にあるのに未カバーの同値クラス / 表にない orphan scenario を検出）
+  - **トレーサビリティ**: epic の AC ⇔ Scenario リンク解決・未カバー AC 検出・Why が Scenario 群で満たされるかの意味判断
+- severity（🔴/🟡/🔵）× confidence（機械判定は 100、意味判断は不確実性に応じて 0-100）でフィルタ。機械判定をファネル第 1 段に置き、意味判断（LLM）を後段に回す（コスト×精度原則 1/8/10）
+- **`${CLAUDE_EFFORT}` 実行時分岐**: low/medium=機械判定に絞る、high=全 4 観点、xhigh/max=依存 spec 横断・境界値精査・Why 十分性まで
+- **scaffold ゲート**: プレースホルダだらけの空骨格は観点 1 のみ評価し、観点 2-4 は「埋めてから再実行」と案内（空骨格に網羅性を問うノイズを防ぐ）
+- 修正は confidence 100 の機械確定分のみ AskUserQuestion 承認後に自動化（over-correction 抑制）
+- `feature-dev` Phase 1.4 への dormant 連携用に安定 API（`spec=<path>` / `--embed`）を提供
+- `create-spec`（Generator）と `evaluate-spec`（Evaluator）を責務分離（生成時の思い込みに引きずられず独立に穴を見つける）
+
 ## [0.1.2] - 2026-07-02
 
 ### Fixed

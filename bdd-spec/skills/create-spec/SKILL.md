@@ -196,7 +196,7 @@ date +%Y-%m-%d   # {CREATED_DATE} 用。epic.md / spec.md の last-validated に
 
 ## 注意事項
 
-- **読み取り中心、書き出しは Phase 4-6**: scaffold が主目的、評価は対象外（評価系 `bdd-spec-evaluate` は本プラグインの**将来リリース (Phase 2)** で別途検討。ここでの Phase 2 はプラグインのロードマップ段階を指し、上記の処理フローの Phase 2「dir 名決定」とは無関係）
+- **読み取り中心、書き出しは Phase 4-6**: scaffold が主目的、評価は対象外（埋めた後の 4 観点評価は姉妹スキル `bdd-spec:evaluate-spec` の領分。Generator と Evaluator を分離している）
 - **既存ファイル上書きは Phase 2 で明示承認**: epic.md / spec.md を勝手に上書きしない
 - **用語整合は提案のみ**: 自動置換すると意図しないリネームを起こすため、ユーザー判断に委ねる
 - **shortPath の trade-off**: 日本語フルパスは `ls` で機能カタログになる利点 vs Windows MAX_PATH / CI 互換性。`shortPath: true` で運用する場合は dir 名と user story 文を spec.md 冒頭に併記する規約
