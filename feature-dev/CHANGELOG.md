@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] - 2026-07-07
+
+### Changed
+- feature-dev.md に **コスト×精度パイプライン 10 原則の採用/不採用宣言を集約**（ルート CLAUDE.md 規約への準拠）。採用: 1（ファネル=Phase 1.7 triage）/ 3（段階予算=effort→agent 数）/ 4（モデルルーティング=explorer:sonnet / architect:fable）/ 8（外部オラクル=Phase 5.3 + Phase 6 fail-fast）。捨てた: 2/10（スコアリングは code-review へ委譲）/ 5（G-V ループは固定リトライ上限）/ 6（failure-journal へ委譲）/ 7（反証は code-review 側）。従来は各 Phase に散在していた言及を Effort Adaptation 直下に一言で集約
+
 ## [2.9.0] - 2026-07-02
 
 ### Added

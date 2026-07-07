@@ -37,6 +37,10 @@ Summary:
 - `xhigh`: Multi-explorer (≤5), multi-architect (≤3), redundant reviewers (≤6).
 - `max`: Full upper bounds — explorer ≤6, architect ≤3, reviewer ≤8.
 
+## Cost×Precision Pipeline Principles (adopted / dropped)
+
+Of the 10 principles in root CLAUDE.md「コスト×精度パイプライン設計指針」, this workflow **adopts: 1 (funnel = Phase 1.7 triage gates expensive explorer/architect/reviewer counts) / 3 (staged budget = `${CLAUDE_EFFORT}` → agent counts above) / 4 (model routing = explorer:sonnet / architect:fable / review delegated to code-review's routing) / 8 (external oracle + fail-closed = Phase 5.3 type/lint/test gate before LLM review, and Phase 6 fail-fast when code-review is not installed)**. **Dropped**: 2/10 (scoring lives in code-review:self-review, which Phase 6 delegates to), 5 (no unbounded iteration — the G-V fix loop has a fixed retry cap), 6 (evidence accumulation is failure-journal's role), 7 (adversarial verification is code-review's Phase 5.9, not duplicated here).
+
 ---
 
 ## Phase 1: Discovery
