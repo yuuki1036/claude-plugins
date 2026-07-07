@@ -36,6 +36,10 @@ allowed-tools:
 
 - `${CLAUDE_SKILL_DIR}/references/review-perspectives.md` — 4 視点のチェックリストと effort 別構成（正本）
 
+## コスト×精度パイプライン設計（採用/不採用）
+
+ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 2（2 軸スコア化 = severity × confidence、confidence < 50 は自動除外）/ 3（段階予算 = `${CLAUDE_EFFORT}` → 視点数・反証の有無）/ 4（モデルルーティング = design-reviewer:opus 明示）/ 7（敵対的独立検証 = Phase 4.5 で発見者の推論を渡さない独立 verifier が 支持/反証/保留 を判定）/ 10（確信度フィールド化 = findings に confidence 必須）**。**捨てた**: 1（ファネル）は対象が単一 doc で絞り込み不要、5（暴走ガード）は反復を持たない単発レビューのため不要、6（証拠ラダー）/ 8（外部オラクル）は静的文書レビューに機械判定オラクルが存在しないため（コード裏取りは Grep/Read の事実確認で代替）。
+
 ---
 
 ## Phase 0: 対象特定

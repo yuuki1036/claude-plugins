@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.1] - 2026-07-07
+
+### Changed
+- `design-review` SKILL.md に **コスト×精度パイプライン 10 原則の採用/不採用宣言を追加**（ルート CLAUDE.md 規約への準拠）。採用: 2（severity × confidence）/ 3（effort→視点数）/ 4（design-reviewer:opus）/ 7（Phase 4.5 独立反証）/ 10（confidence 必須）。捨てた: 1 / 5 / 6 / 8（単一 doc 対象・単発レビュー・機械オラクル不在のため）。実装済みの挙動を宣言として明文化したもので挙動の変更なし
+
 ## [0.4.0] - 2026-07-02
 
 ### Added
