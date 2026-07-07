@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.38.0] - 2026-07-07
+
+### Added
+- **深掘り系スキル 3 本に `${CLAUDE_EFFORT}` 実行時分岐を追加**（ルート CLAUDE.md「深掘り系スキルには effort 分岐必須」規約への準拠）:
+  - `indie-maintain`: 走査深度の effort 適応（low/medium=検出・集計系のみ、high=全処理フル、xhigh/max=knowledge 重複排除の全プロジェクト横断 + 品質整理の全セクション精読）。「起動＝実行確定・止まらない」は effort 不変
+  - `retrospective`: 分析深度の effort 適応（low/medium=定量指標 + 前回比較のみ、high=全実施、xhigh/max=反復テーマの source 本文精読まで）
+  - `issue-design`: grill の掘り下げの effort 適応（low/medium=充足確認中心で残 open は 1 回提示、high=依存順 1 問ずつ、xhigh/max=畳み直し周回増 + 決定事項の根拠再点検）。linear-workflow と byte-identical なミラー実装
+
+### Changed
+- **`indie-issue-maintain` SKILL.md を references/ に分割**（491→298 行）。整理判定基準（cleanup-criteria.md）・検出ガード（detection-guards.md）・knowledge 管理（knowledge-guide.md）・writing-polish 連携手順（writing-polish-integration.md）を切り出し、本文は高レベルワークフローに絞った。挙動の変更なし
+- `indie-maintain` に **writing-polish 連携を対象外とする設計判断を明記**（出力が機械的な status 遷移と実行後レポートのみで散文成果物を生成しないため。散文を生成する indie-issue-maintain / indie-issue-create 側は必須連携済み）
+
 ## [1.37.0] - 2026-07-02
 
 ### Added

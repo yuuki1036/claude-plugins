@@ -1,15 +1,40 @@
 {
   "name": "indie-workflow",
-  "version": "1.37.0",
+  "version": "1.38.0",
   "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。AI が多観点スキャンで課題を発見し issue を自動起票（indie-issue-discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
   "author": {
     "name": "yuki"
   },
   "_requirements": [
-    { "name": "feature-dev", "type": "plugin", "required": false, "description": "feature-dev プラグイン（実装計画策定に使用）" },
-    { "name": "bdd-spec", "type": "plugin", "required": false, "description": "bdd-spec プラグイン（issue-design の bilayer / indie-issue-create の spec 選択で spec.md 生成に使用。未インストール時は dormant）" },
-    { "name": "design-doc", "type": "plugin", "required": false, "description": "design-doc プラグイン（issue-design の design doc 昇格 / indie-issue-create の spec 選択で使用。未インストール時は dormant）" },
-    { "name": "adr-keeper", "type": "plugin", "required": false, "description": "adr-keeper プラグイン（indie-issue-create の spec 選択で単一の設計判断を ADR 記録。未インストール時は spec 選択肢から除外）" },
-    { "name": "writing-polish", "type": "plugin", "required": false, "description": "writing-polish プラグイン（issue / knowledge / follow-up / retrospective 等の散文成果物を確定前に embed 推敲。インストール時は必須連携、未インストール時のみ skip）" }
+    {
+      "name": "feature-dev",
+      "type": "plugin",
+      "required": false,
+      "description": "feature-dev プラグイン（実装計画策定に使用）"
+    },
+    {
+      "name": "bdd-spec",
+      "type": "plugin",
+      "required": false,
+      "description": "bdd-spec プラグイン（issue-design の bilayer / indie-issue-create の spec 選択で spec.md 生成に使用。未インストール時は dormant）"
+    },
+    {
+      "name": "design-doc",
+      "type": "plugin",
+      "required": false,
+      "description": "design-doc プラグイン（issue-design の design doc 昇格 / indie-issue-create の spec 選択で使用。未インストール時は dormant）"
+    },
+    {
+      "name": "adr-keeper",
+      "type": "plugin",
+      "required": false,
+      "description": "adr-keeper プラグイン（indie-issue-create の spec 選択で単一の設計判断を ADR 記録。未インストール時は spec 選択肢から除外）"
+    },
+    {
+      "name": "writing-polish",
+      "type": "plugin",
+      "required": false,
+      "description": "writing-polish プラグイン（issue / knowledge / follow-up / retrospective 等の散文成果物を確定前に embed 推敲。インストール時は必須連携、未インストール時のみ skip）"
+    }
   ]
 }

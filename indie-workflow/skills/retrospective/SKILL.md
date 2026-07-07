@@ -33,6 +33,20 @@ Good / Problem / Try の振り返りフレームで対話的に学びを抽出�
 
 ---
 
+## effort 適応（分析深度）
+
+実行時 effort = `${CLAUDE_EFFORT}` に応じて分析の深さを調整する。データ収集（Phase 1 の Source 1・2）・レポート保存（Phase 4）・writing-polish 連携（Phase 3.5）は effort によらず実施する。
+
+| effort | 分析深度 |
+|--------|---------|
+| low / medium | 定量指標（Phase 2 の 1〜5: 完了実績・作業期間・スコープ精度・knowledge 件数・debt 増減）と前回 retro 比較（6）のみ集計する。反復テーマ検出（7）・再発失敗突合（8。Phase 1 の Source 3 取得ごと省略してよい）・概念ページ化提案（Phase 2.5）は省略し、Good / Problem / Try（Phase 3）は 3 項目を 1 回の問いかけにまとめる（速度優先） |
+| high（既定） | Phase 1〜4 を全実施（指標 1〜8 の算出・概念ページ化提案・1 項目ずつの対話的な学び抽出） |
+| xhigh / max | 全実施に加え、反復テーマ検出（7）は tags 集計に留めず該当 source 本文の共通パターンまで精読して統合候補を具体化し、再発失敗（8）は閾値未満（3 回未満）の tag も参考として列挙する |
+
+省略した指標はレポートに `省略（effort: {値}）` と明記する。
+
+---
+
 ## Phase 1: データ収集
 
 ### Source 1: Event Bus（優先、軽量）
