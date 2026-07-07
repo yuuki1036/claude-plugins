@@ -239,9 +239,9 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 
 ## writing-polish 連携（本文添削・必須）
 
-整理後の **Issue 本文** と **切り出した knowledge ページ** の両方を、ファイル確定（処理フロー Step 13）の直前に writing-polish へ渡して推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+整理後の **Issue 本文** と **切り出した knowledge ページ** の両方を、ファイル確定（処理フロー Step 13）の直前に `Skill` tool で `writing-polish:writing-polish` を呼んで推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
 
-インストール判定（bash）・呼び出し引数（`--embed --tone issue`）・結果反映時の構造保護（frontmatter / wikilink / 見出し階層は変更しない）・fallback の詳細手順:
+`Skill` 呼び出しのインストール判定（bash）・引数（`--embed --tone issue`）・結果反映時の構造保護（frontmatter / wikilink / 見出し階層は変更しない）・fallback の詳細手順:
 → Read `${CLAUDE_SKILL_DIR}/references/writing-polish-integration.md`
 
 ---

@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.35.1] - 2026-07-07
+
+### Fixed
+- `issue-maintain` の writing-polish 連携節に `Skill` tool 呼び出しの明示を復帰（indie-workflow 1.38.1 とミラー対称）。1.35.0 の references 分割で SKILL.md 本文から `Skill` の言及が消え、frontmatter の `Skill` 宣言が未使用候補として検出されていた問題を解消
+
 ## [1.35.0] - 2026-07-07
 
 ### Added
