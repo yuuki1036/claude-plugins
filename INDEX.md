@@ -14,16 +14,16 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 |-----------|---------|----:|------:|-------|-------|-----|------|
 | [adr-keeper](#adr-keeper) | 0.2.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.1.2 | 1 | 1 | - | - | - | BDD spec 駆動の user story scaffold |
-| [claude-meta](#claude-meta) | 1.11.2 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.33.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
-| [design-doc](#design-doc) | 0.4.0 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
+| [claude-meta](#claude-meta) | 1.12.0 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
+| [code-review](#code-review) | 2.33.1 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [design-doc](#design-doc) | 0.4.1 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.23.1 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
 | [doc-freshness](#doc-freshness) | 0.2.0 | 1 | 1 | - | - | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.1.2 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
-| [feature-dev](#feature-dev) | 2.9.0 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
+| [feature-dev](#feature-dev) | 2.9.1 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
-| [indie-workflow](#indie-workflow) | 1.37.0 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
-| [linear-workflow](#linear-workflow) | 1.34.0 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
+| [indie-workflow](#indie-workflow) | 1.38.0 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
+| [linear-workflow](#linear-workflow) | 1.35.0 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.5 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.8 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.7.2 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
