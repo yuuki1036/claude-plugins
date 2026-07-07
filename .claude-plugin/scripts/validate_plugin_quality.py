@@ -104,6 +104,7 @@ def check_allowed_tools_exists(plugin_dir: Path, errors: list[str]) -> None:
 # command 専用プラグイン（feature-dev / plugin-manager）はペアが存在しないので載せない.
 COMMAND_SKILL_ALIASES: dict[tuple[str, str], str] = {
     ("bdd-spec", "bdd-spec-create"): "create-spec",
+    ("bdd-spec", "bdd-spec-evaluate"): "evaluate-spec",
     ("claude-meta", "catch-up"): "cc-catch-up",
     ("claude-meta", "revise-claude-md"): "claude-md-improver",
     ("dev-workflow", "commit"): "git-commit-helper",

@@ -18,3 +18,23 @@ cases:
     prompt: 同値分割表のテンプレを用意して
     expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
     k: 3
+
+  # --- evaluate-spec トリガー回帰 ---
+  - id: evaluate-spec-ja
+    prompt: この spec.md をレビューして品質をチェックして
+    expected_skill: [bdd-spec:evaluate-spec, bdd-spec:bdd-spec-evaluate]
+    k: 3
+  - id: evaluate-spec-coverage-ja
+    prompt: 同値分割表と Scenario の網羅性チェックして
+    expected_skill: [bdd-spec:evaluate-spec, bdd-spec:bdd-spec-evaluate]
+    k: 3
+  - id: evaluate-spec-holes-ja
+    prompt: BDD spec の穴を見つけて
+    expected_skill: [bdd-spec:evaluate-spec, bdd-spec:bdd-spec-evaluate]
+    k: 3
+
+  # --- create ⇔ evaluate の弁別（作る=create、評価する=evaluate） ---
+  - id: bdd-spec-create-not-evaluate
+    prompt: 新しい user story の spec を作って
+    expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
+    k: 3

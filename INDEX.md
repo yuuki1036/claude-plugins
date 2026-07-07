@@ -13,14 +13,14 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | プラグイン | version | cmd | skill | agent | hooks | mcp | 概要 |
 |-----------|---------|----:|------:|-------|-------|-----|------|
 | [adr-keeper](#adr-keeper) | 0.2.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
-| [bdd-spec](#bdd-spec) | 0.1.2 | 1 | 1 | - | - | - | BDD spec 駆動の user story scaffold |
+| [bdd-spec](#bdd-spec) | 0.2.0 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 4 観点評価 |
 | [claude-meta](#claude-meta) | 1.12.0 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.33.1 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.4.1 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.23.1 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
 | [doc-freshness](#doc-freshness) | 0.2.0 | 1 | 1 | - | - | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.1.2 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
-| [feature-dev](#feature-dev) | 2.9.1 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
+| [feature-dev](#feature-dev) | 2.10.0 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
 | [indie-workflow](#indie-workflow) | 1.38.0 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
 | [linear-workflow](#linear-workflow) | 1.35.0 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
@@ -41,9 +41,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 - **skills**: `adr`
 
 ### bdd-spec
-BDD spec 駆動の scaffold。user story dir + epic.md（Why/What 散文）+ spec.md（Feature/Scenario/Examples + 同値分割表）を生成。
-- **commands**: `bdd-spec-create`
-- **skills**: `create-spec`
+BDD spec 駆動の scaffold + 評価。create で user story dir + epic.md（Why/What 散文）+ spec.md（Feature/Scenario/Examples + 同値分割表）を生成、evaluate で構文/粒度/網羅性（同値分割表⇔Scenario 双方向トレース）/トレーサビリティの 4 観点を severity×confidence で静的レビュー。
+- **commands**: `bdd-spec-create`, `bdd-spec-evaluate`
+- **skills**: `create-spec`, `evaluate-spec`
 
 ### claude-meta
 Claude Code 自体の設定管理・改善ツール。CLAUDE.md 監査改善、CC アップデート追従、eval 回帰テスト、新コンポーネント追加前の退路確保判断。
@@ -85,7 +85,7 @@ Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットア
 - **publishes**: `failure:logged`（Event Bus）
 
 ### feature-dev
-コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec から spec.md 生成、Phase 4.5 で採用設計を design-doc に export（dormant）、Phase 6 は code-review:self-review に `--embed` 委譲。
+コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec から spec.md 生成、Phase 1.4 で bdd-spec:evaluate-spec に品質ゲート委譲（dormant）、Phase 4.5 で採用設計を design-doc に export（dormant）、Phase 6 は code-review:self-review に `--embed` 委譲。
 - **commands**: `feature-dev`
 - **agents**: `code-explorer`, `code-architect`
 - **hooks**: SessionStart
