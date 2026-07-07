@@ -20,6 +20,16 @@ Audit, evaluate, and improve CLAUDE.md files across a codebase to ensure Claude 
 
 **This skill can write to CLAUDE.md files.** After presenting a quality report and getting user approval, it updates CLAUDE.md files with targeted improvements.
 
+## Effort Adaptation
+
+実行時 effort = `${CLAUDE_EFFORT}` に応じて監査の深さを変える:
+
+| effort | 構成 |
+|---|---|
+| `low` / `medium` | root の CLAUDE.md のみ対象。Phase 2 の Quick Assessment Checklist と Common Issues の検出に絞る（Diátaxis レンズ・三段防御チェックリスト・静的検査化候補の抽出は skip） |
+| `high`（既定） | 全 CLAUDE.md（monorepo packages 含む）を対象に全 Phase を実施 |
+| `xhigh` / `max` | 上記に加え、Skill Invocation Guidance Audit でインストール済み skill を全数照合し、三段防御チェックリストを重要規約ごとに個別検証する |
+
 ## Workflow
 
 ### Phase 1: Discovery

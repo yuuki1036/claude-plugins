@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.12.0] - 2026-07-07
+
+### Added
+- `claude-md-improver` に **`${CLAUDE_EFFORT}` 実行時分岐（Effort Adaptation）を追加**。low/medium=root CLAUDE.md のみ + Quick Assessment 中心（Diátaxis / 三段防御 / 静的検査化候補は skip）、high=全 CLAUDE.md 全 Phase、xhigh/max=skill 全数照合 + 三段防御の規約別個別検証
+
+### Fixed
+- `commands/revise-claude-md.md` の allowed-tools に `AskUserQuestion` を追加（ペアの skill 側には宣言済みだった不一致。validate_plugin_quality.py の別名ペアチェック新設で検出）
+
 ## [1.11.2] - 2026-07-02
 
 ### Fixed

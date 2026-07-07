@@ -1,6 +1,6 @@
 {
   "name": "claude-meta",
-  "version": "1.11.2",
+  "version": "1.12.0",
   "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善（骨抜き禁止/三段防御/階層 AGENTS.md/優先度規約/静的検査優先の 6 パターン強化）、CCアップデート追従、セッション学習の反映、eval 回帰テスト（トリガーフレーズ → 期待スキル起動を pass^k で検証）、新コンポーネント追加前判断（skill/agent/hook/command 追加前の退路確保）",
   "author": {
     "name": "yuki"

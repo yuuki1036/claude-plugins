@@ -6,6 +6,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - AskUserQuestion
 ---
 
 このセッションでの、このコードベースにおける Claude Code の作業に関する学びを振り返り、今後の Claude セッションがより効果的に動けるようなコンテキストを CLAUDE.md に反映する。
