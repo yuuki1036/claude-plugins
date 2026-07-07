@@ -99,8 +99,24 @@ def check_allowed_tools_exists(plugin_dir: Path, errors: list[str]) -> None:
             errors.append(f"[tools:{name}] SKILL.md missing allowed-tools: {skill_md.relative_to(ROOT)}")
 
 
+# command 名と skill 名が同名でないペアの対応表（(plugin, command stem) -> skill dir 名）.
+# 同名ペアのみ検証すると、これらの別名ペアが allowed-tools 一致チェックの盲点になるため明示する.
+# command 専用プラグイン（feature-dev / plugin-manager）はペアが存在しないので載せない.
+COMMAND_SKILL_ALIASES: dict[tuple[str, str], str] = {
+    ("bdd-spec", "bdd-spec-create"): "create-spec",
+    ("claude-meta", "catch-up"): "cc-catch-up",
+    ("claude-meta", "revise-claude-md"): "claude-md-improver",
+    ("dev-workflow", "commit"): "git-commit-helper",
+    ("dev-workflow", "pr"): "pr-creator",
+    ("doc-freshness", "doc-freshness-check"): "doc-freshness",
+    ("notebooklm-workflow", "notebook-add-source"): "notebook-source-adder",
+    ("notebooklm-workflow", "notebook-query"): "notebook-query-assistant",
+    ("plugin-feedback", "feedback"): "feedback-issue",
+}
+
+
 def check_allowed_tools_pair(plugin_dir: Path, errors: list[str]) -> None:
-    """command と同名 skill の allowed-tools が一致するか."""
+    """command と同名（または COMMAND_SKILL_ALIASES で対応づけた）skill の allowed-tools が一致するか."""
     name = plugin_dir.name
     cmd_dir = plugin_dir / "commands"
     skill_dir = plugin_dir / "skills"
@@ -110,7 +126,16 @@ def check_allowed_tools_pair(plugin_dir: Path, errors: list[str]) -> None:
         stem = cmd_md.stem
         skill_md = skill_dir / stem / "SKILL.md"
         if not skill_md.is_file():
-            continue
+            alias = COMMAND_SKILL_ALIASES.get((name, stem))
+            if alias is None:
+                continue
+            skill_md = skill_dir / alias / "SKILL.md"
+            if not skill_md.is_file():
+                errors.append(
+                    f"[tools:{name}] COMMAND_SKILL_ALIASES の参照先 skill が存在しない: "
+                    f"'{stem}' -> skills/{alias}/SKILL.md"
+                )
+                continue
         cmd_fm = parse_frontmatter(cmd_md) or ""
         skill_fm = parse_frontmatter(skill_md) or ""
         cmd_tools = parse_tools(cmd_fm)
