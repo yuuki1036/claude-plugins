@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.0] - 2026-07-07
+
+### Added
+- **イベント駆動の鮮度検知 hook を追加（Phase 2 予約分の実装。GitHub issue #79）**。従来の手動走査（skill）に加え、決定的検証を Hook に置いて遵守率 100% に寄せる:
+  - **`frontmatter-guard.sh`（PostToolUse: Edit/Write/MultiEdit）**: frontmatter 必須の project doc（`.claude/designs/` `.claude/adr/`）への .md 作成/編集時に `last-validated` / `phase` の欠落を grep ベースで検知し、`additionalContext` で**非ブロッキング**警告する。frontmatter キーの存在チェックは決定的なので Hook に昇格（ルート CLAUDE.md「ルール配置の意思決定」）。ブロックしないため PreToolUse の failure mode（新規 doc 作成阻害）を回避
+  - **`stale-check.sh`（SessionStart: once, opt-in）**: `.claude/doc-freshness.json` の `sessionStartCheck: true` を有効化したときのみ、対象 doc の stale をセッション開始時に 1 回まとめて通知。毎セッションのノイズを避けるため既定 off。`append_only: true` / `phase: superseded` は skill Phase 3 と同基準で免除
+- **hook 設定を `references/hook-config.md` に文書化**。`hookTargets`（対象 path prefix）/ `postToolUseCheck` / `sessionStartCheck` を `.claude/doc-freshness.json` に追加
+- 対象は frontmatter 必須の project doc（`.claude/designs/` `.claude/adr/`）に限定。プラグイン内部 doc（SKILL.md / references/ / README）は含めない（version + CHANGELOG で鮮度管理され、`last-validated` を付けると恒常 stale 化するため。ルート CLAUDE.md 規約）
+
 ## [0.2.0] - 2026-07-02
 
 ### Added

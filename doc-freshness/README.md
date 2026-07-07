@@ -9,6 +9,11 @@
 /doc-freshness-check CLAUDE.md  # 単一ファイル走査
 ```
 
+手動走査に加え、イベント駆動の鮮度検知 hook を持つ（`references/hook-config.md`）:
+
+- **PostToolUse (Edit/Write/MultiEdit)**: frontmatter 必須の project doc（`.claude/designs/` `.claude/adr/`）への .md 作成/編集時に `last-validated` / `phase` の欠落を**非ブロッキング**で警告（常時 on・対象 dir 限定）
+- **SessionStart (once, opt-in)**: 対象 doc の stale をセッション開始時に 1 回まとめて通知（`.claude/doc-freshness.json` の `sessionStartCheck: true` で有効化）
+
 ## frontmatter 規約
 
 ```yaml
@@ -63,8 +68,9 @@ phase: current               # current | target | superseded
 
 ## 設計判断
 
-- **PreToolUse hook は採用しない**: 新規 doc 作成時に last-validated 不在で即 error になる failure mode を回避（観察事例あり）
-- **Phase 1 = command + skill のみ**: hook 連動は需要が顕在化したタイミングで Phase 2 として追加
+- **PreToolUse hook は採用しない**: 新規 doc 作成時に last-validated 不在で即 error になる failure mode を回避（観察事例あり）。frontmatter 検知は PostToolUse（書き込み後・非ブロッキング）のみ
+- **hook 対象は project doc に限定**: `.claude/designs/` `.claude/adr/` のみ。プラグイン内部 doc（SKILL.md / references/ / README）は含めない（version + CHANGELOG で鮮度管理され、`last-validated` を付けると恒常 stale 化するため）
+- **SessionStart stale-check は opt-in**: 毎セッションの stale 通知はノイズになりうるため既定 off。継続監視したいプロジェクトだけ `sessionStartCheck: true` で有効化する
 - **knowledge-lint との責務分離**: broken wikilink / orphan は knowledge-lint、frontmatter 鮮度は doc-freshness
 - **append-only 履歴文書の stale 免除**: `append_only: true` で ADR のような「作成後に内容が固定される文書」を stale error から守る。`phase: current` の閾値を当てると作成直後から恒常 stale になる委譲破綻を回避する（design doc は生きた文書なので付けない）
 
@@ -74,3 +80,5 @@ phase: current               # current | target | superseded
 |------|------|------|
 | コマンド | `/doc-freshness-check` | プロジェクト全体または指定ファイルの鮮度走査 |
 | スキル | `doc-freshness` | 走査・判定・レポート生成のロジック |
+| hook | `frontmatter-guard`（PostToolUse） | frontmatter 必須 project doc の frontmatter 欠落を非ブロッキング検知 |
+| hook | `stale-check`（SessionStart, opt-in） | 対象 doc の stale をセッション開始時に一括通知 |

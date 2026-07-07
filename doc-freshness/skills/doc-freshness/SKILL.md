@@ -25,6 +25,7 @@ allowed-tools:
 
 - `references/frontmatter-spec.md` — frontmatter スキーマ定義
 - `references/thresholds.md` — 閾値のデフォルト値と上書き方法
+- `references/hook-config.md` — イベント駆動の鮮度検知 hook（PostToolUse frontmatter 警告 / SessionStart stale 一括警告）の設定
 
 ---
 
@@ -228,6 +229,6 @@ active doc（`phase: current` / `target`）の本文中に、`superseded` ファ
 
 - **読み取り中心、副作用は AskUserQuestion 承認後のみ**: Phase 7 まではすべて read-only。Phase 8 の自動修正（frontmatter 一括追加 / last-validated 更新）だけが Edit / Write を使う。それ以外の書き込みはしない
 - **knowledge-lint との責務分離**: broken wikilink (`[[name]]` 記法) と orphan は knowledge-lint の責務。doc-freshness は frontmatter / Markdown link / 行数ガードに専念
-- **PreToolUse hook は採用しない**: 新規 doc 作成時に last-validated 不在で即 error になる failure mode を回避（Phase 2 として hook 連動を検討する場合は PostToolUse のみ）
+- **hook 連動（Phase 2、実装済み）**: frontmatter 欠落の検知は PostToolUse hook（`frontmatter-guard.sh`、非ブロッキング）、stale の継続監視は SessionStart hook（`stale-check.sh`、opt-in）に委ねる。**PreToolUse は採用しない**（新規 doc 作成時に last-validated 不在で即 error になる failure mode を回避）。設定は `references/hook-config.md` を参照。本スキル（手動走査）と hook は役割分担: hook は「欠落の即時検知」と「stale の一括通知」だけを担い、行数ガード・link 検証・superseded 参照・修正提案は本スキルが担う
 - **fs の birth time 非対応**: 一部 fs（ext4 など）は作成日時を返さないため、mtime にフォールバックする。grace period 判定が緩めになるが安全側
 - **append-only 免除は stale 判定のみ**: `append_only: true` は「作成後に内容が固定される履歴文書」（ADR 等）を stale error から守るためのマーカー。frontmatter スキーマ・link・superseded 参照は通常どおり検証する。design doc は `phase: target → current` で鮮度を測る生きた文書なので付けない（住み分けは付与側プラグインの責務）

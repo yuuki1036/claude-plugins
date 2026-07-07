@@ -47,7 +47,7 @@ doc-freshness が使う各種閾値のデフォルト値と、プロジェクト
 
 ### `gracePeriodDays = 7`
 
-新規 doc 作成直後は frontmatter / レビューが整っていない。観察事例で「PreToolUse hook が新規 doc 作成を阻害する failure mode」が報告されており、Phase 1 では PostToolUse hook も持たないが将来追加時の備えとして grace period を持つ。7 日は「次の週次レビューまで」の意。
+新規 doc 作成直後は frontmatter / レビューが整っていない。観察事例で「PreToolUse hook が新規 doc 作成を阻害する failure mode」が報告されているため、frontmatter 検知は PostToolUse hook（非ブロッキング警告）のみで行い、grace period 内の欠落は skill 側でも warn 止まりにする。7 日は「次の週次レビューまで」の意。hook の設定は `hook-config.md` を参照。
 
 ### `lineLimits = {40, 65}`
 
