@@ -1,16 +1,46 @@
 {
   "name": "linear-workflow",
-  "version": "1.34.0",
+  "version": "1.35.0",
   "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
   "author": {
     "name": "yuki"
   },
   "_requirements": [
-    { "name": "linear", "type": "mcp_server", "required": true, "description": "Linear MCP サーバー" },
-    { "name": "feature-dev", "type": "plugin", "required": false, "description": "feature-dev プラグイン（実装計画策定に使用）" },
-    { "name": "bdd-spec", "type": "plugin", "required": false, "description": "bdd-spec プラグイン（issue-design の bilayer / issue-create の spec 選択で spec.md 生成に使用。未インストール時は dormant）" },
-    { "name": "design-doc", "type": "plugin", "required": false, "description": "design-doc プラグイン（issue-design の design doc 昇格 / issue-create の spec 選択で使用。未インストール時は dormant）" },
-    { "name": "adr-keeper", "type": "plugin", "required": false, "description": "adr-keeper プラグイン（issue-create の spec 選択で単一の設計判断を ADR 記録。未インストール時は spec 選択肢から除外）" },
-    { "name": "writing-polish", "type": "plugin", "required": false, "description": "writing-polish プラグイン（issue / knowledge / follow-up 等の散文成果物を確定前に embed 推敲。インストール時は必須連携、未インストール時のみ skip）" }
+    {
+      "name": "linear",
+      "type": "mcp_server",
+      "required": true,
+      "description": "Linear MCP サーバー"
+    },
+    {
+      "name": "feature-dev",
+      "type": "plugin",
+      "required": false,
+      "description": "feature-dev プラグイン（実装計画策定に使用）"
+    },
+    {
+      "name": "bdd-spec",
+      "type": "plugin",
+      "required": false,
+      "description": "bdd-spec プラグイン（issue-design の bilayer / issue-create の spec 選択で spec.md 生成に使用。未インストール時は dormant）"
+    },
+    {
+      "name": "design-doc",
+      "type": "plugin",
+      "required": false,
+      "description": "design-doc プラグイン（issue-design の design doc 昇格 / issue-create の spec 選択で使用。未インストール時は dormant）"
+    },
+    {
+      "name": "adr-keeper",
+      "type": "plugin",
+      "required": false,
+      "description": "adr-keeper プラグイン（issue-create の spec 選択で単一の設計判断を ADR 記録。未インストール時は spec 選択肢から除外）"
+    },
+    {
+      "name": "writing-polish",
+      "type": "plugin",
+      "required": false,
+      "description": "writing-polish プラグイン（issue / knowledge / follow-up 等の散文成果物を確定前に embed 推敲。インストール時は必須連携、未インストール時のみ skip）"
+    }
   ]
 }

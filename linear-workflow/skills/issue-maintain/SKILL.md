@@ -70,61 +70,15 @@ last_active: 2026-03-20
 
 ## 整理対象
 
-### 削除してよいもの
+各セクションを走査し、以下の 4 分類で整理する:
 
-| 対象 | 判断基準 | 例 |
-|------|----------|-----|
-| 完了済みサブタスクの詳細 | チェック済み `[x]` で、実装内容が変更ファイルに反映済み | 調査手順の詳細ステップ |
-| 不採用になったアプローチ | 別の方法を採用した検討メモ | 「案A: xxx → 不採用（理由: yyy）」 |
-| 解決済みの問題・疑問 | 結論が出て実装に反映済み | 「Q: xxxは必要？ → 不要と判明」 |
-| 重複した記載 | 同じ内容が複数セクションにある | 概要と調査結果で同じ説明 |
-| 一時的なデバッグメモ | ログ出力やテスト結果の生データ | 「console.log の結果: ...」 |
+- **削除してよいもの**: 完了済みサブタスクの詳細 / 不採用になったアプローチ / 解決済みの問題・疑問 / 重複した記載 / 一時的なデバッグメモ
+- **残すもの**: 未完了タスク `[ ]` の詳細 / 採用した設計判断と理由 / スコープ外の記載 / 変更ファイル一覧 / 備考（副次的な発見）
+- **圧縮するもの**: 完了済みサブタスクは詳細を削って1行サマリーにする
+- **更新履歴の統合**: 同日に複数エントリがある場合、セッション単位にまとめる
 
-### 残すもの
-
-| 対象 | 理由 |
-|------|------|
-| 未完了タスク `[ ]` の詳細 | 次のセッションで作業に必要 |
-| 採用した設計判断と理由 | 後から「なぜこうしたか」を追えるように |
-| スコープ外の記載 | 意図的に除外した理由のトレーサビリティ |
-| 変更ファイル一覧 | 実装の全体像把握に必要 |
-| 備考（副次的な発見） | 将来の参考情報 |
-
-### 圧縮するもの
-
-完了済みサブタスクは詳細を削って1行サマリーにする：
-
-**Before:**
-```md
-- [x] IntensitySearchInput コンポーネントの実装
-  - props: modelValue, placeholder, disabled, ideaVersions
-  - emit: update:modelValue, select
-  - El-Autocomplete ベースで実装
-  - fetchSuggestions で API 呼び出し
-  - IDEA バージョンラベルをドロップダウン内に表示
-  - テスト作成済み
-```
-
-**After:**
-```md
-- [x] IntensitySearchInput コンポーネント実装（PR #84）
-```
-
-### 更新履歴の統合
-
-同日に複数エントリがある場合、セッション単位にまとめる：
-
-**Before:**
-```md
-| 2026-03-03 | 実装完了 |
-| 2026-03-03 | バグ修正: xxx |
-| 2026-03-03 | リファクタ: yyy |
-```
-
-**After:**
-```md
-| 2026-03-03 | 実装完了。バグ修正（xxx）、リファクタ（yyy）を実施 |
-```
+判断基準の詳細と Before/After 例は以下を参照:
+→ Read `${CLAUDE_SKILL_DIR}/references/cleanup-criteria.md`
 
 ---
 
@@ -181,25 +135,8 @@ knowledge の status フロントマターや切り出し時の照合ルール�
 
 knowledge ファイルの切り出し・更新・削除を行った際は、`knowledge/index.md` を必ず同期する。
 
-### フォーマット
-
-```markdown
-# Knowledge Index
-
-| ファイル | tags | status | 概要 |
-|---------|------|--------|------|
-| api-patterns.md | api, rest, pagination | verified | REST API のページネーションパターン |
-| cache-strategy.md | cache, redis, ttl | planned | キャッシュ戦略の設計案 |
-```
-
-### 更新ルール
-
-1. knowledge ファイルの新規作成時: 行を追加
-2. knowledge ファイルの更新時: 該当行の tags・status・概要を更新
-3. knowledge ファイルの削除時: 該当行を削除
-4. 概要はファイルの最初の見出し直後の1文を使用する（30文字以内に要約）
-5. index.md 自体は knowledge ファイルとしてカウントしない
-6. concept（`knowledge/concepts/*.md`）はファイル列をパス付き（`concepts/{slug}.md`）で記載する
+フォーマットと更新ルール（新規/更新/削除時の行操作、概要の要約規則、concept のパス付き記載）の詳細:
+→ Read `${CLAUDE_SKILL_DIR}/references/knowledge-guide.md`
 
 ---
 
@@ -207,52 +144,8 @@ knowledge ファイルの切り出し・更新・削除を行った際は、`kno
 
 source（個別知見）を切り出した後、複数の source を横断する知見が見えてきたら **概念ページ（concept）** に統合する。これが knowledge の価値の本体になる（個別知見の寄せ集めではなく、繋いで初めて見える構造を残す）。kind / wikilink の定義は `knowledge` スキルの SKILL.md を参照。
 
-### 波及の判断
-
-切り出した／更新した source の tags・トピックを既存 knowledge と照合し、次を判定する:
-
-1. **既存 concept に該当あり**（`knowledge/concepts/*.md` に関連する概念ページがある）:
-   - その concept の「関連ソース」に `[[新しい source]]` を追加する
-   - 「横断的知見」を読み返し、新しい source で補強・修正できる点があれば追記する（矛盾を見つけたら明記する）
-   - concept の frontmatter `updated` を当日日付に更新する
-2. **新規 concept の候補**（同じテーマを扱う source が 2 件以上あり、まだ概念ページが無い）:
-   - 新規 concept ページの作成を提案する（下記テンプレート）
-3. **該当なし**（単発の知見）:
-   - source のままにする（無理に concept 化しない）
-
-### concept ページのテンプレート
-
-`knowledge/concepts/{concept-slug}.md` に作成する:
-
-```markdown
----
-kind: concept
-source: {代表的な元 Issue ID または統合元}
-status: verified | planned
-verified: YYYY-MM-DD
-updated: YYYY-MM-DD
-tags: [...]
----
-
-# {概念名}
-
-## 概要
-{この概念が何か。1〜2 文}
-
-## 横断的知見
-{複数 source を跨いで見えてくる構造・共通パターン・矛盾。concept の核}
-
-## 未解決の問い
-{この概念について残っている疑問・検証したい点}
-
-## 関連ソース
-- [[source-a]] — {このソースから得た観点}
-- [[source-b]] — {このソースから得た観点}
-```
-
-- 「横断的知見」が薄い（単一 source の要約に留まる）なら concept にせず source のままにする
-- 関連ソースは `[[name]]`（拡張子なし basename）で参照する
-- concept も index.md に登録する（ファイル列は `concepts/{slug}.md`）
+波及の判断（既存 concept への `[[ ]]` 追加 / 新規 concept 作成 / source のまま）と concept ページのテンプレート・frontmatter 仕様の詳細:
+→ Read `${CLAUDE_SKILL_DIR}/references/knowledge-guide.md`
 
 ### 報告
 
@@ -287,36 +180,9 @@ Issue のタスクが全て完了した場合、以下を実行する：
 
 `/issue-maintain` で Issue を `completed` に遷移させる前、または完了サブタスクが 3 件以上ある時に、コードレビューが実施されたかを確認する。feature-dev 経由を通らず `/issue-maintain` だけで完了マークするケースで、レビュー素通りを防ぐ品質ガード。
 
-### 検出ロジック
-
-以下を満たすときに「レビュー未実施の疑い」と判定する:
-
-1. **遷移条件**: 以下のいずれか
-   - status が `in-progress` → `completed` に遷移する
-   - 完了サブタスク `[x]` の合計が 3 件以上
-2. **未実施シグナル**: Issue 本文（特に更新履歴・進捗）に以下のキーワードが**含まれていない**
-   - `self-review` / `セルフレビュー` / `/self-review`
-   - `code-review` / `/review` / `コードレビュー実施`
-   - `code-reviewer` agent / `reviewer agent`
-3. 例外: type が `investigation`（実装を伴わない調査 Issue）の場合はスキップ
-
-### 報告フォーマット（非ブロッキング）
-
-起動＝実行確定のため、レビューガードで**止めない**。検出した場合は完了マークを進めつつ、最終レポートの冒頭で警告する:
-
-```
-⚠️ レビュー未実施の可能性: {Issue ID} を completed にしました。
-   コミット前に `/self-review` の実行を推奨します。
-```
-
-- 完了マーク自体は実行する（承認待ちしない）
-- ユーザーはレポートを見てからチャットで `/self-review` を起動できる
-
-### 注意事項
-
-- 検出は機械的に行い、警告はレポートに出すが処理は止めない
-- 完了済みサブタスクが 3 件未満かつ status 遷移がない場合は本ガードを発火させない
-- レビュー実施キーワードを検出した時点でガードはスキップする
+- 検出ロジック（遷移条件・未実施シグナルのキーワード・investigation 例外）・警告フォーマット・注意事項の詳細:
+  → Read `${CLAUDE_SKILL_DIR}/references/detection-guards.md`
+- 起動＝実行確定のためガードで**止めない**。検出時も完了マークは実行し、最終レポートの冒頭で警告する（非ブロッキング）。ユーザーはレポートを見てからチャットで `/self-review` を起動できる
 
 ---
 
@@ -350,55 +216,20 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 
 ## スコープ外差分検出（follow-up 自動提示）
 
-Issue ファイルの「スコープ外」「後続 Issue 候補」「やらないこと」セクションへの**前回コミット以降の追加行**を検出し、`/follow-up new` 候補として一括提示する。
+Issue ファイルの「スコープ外」「後続 Issue 候補」「やらないこと」セクションへの**前回コミット以降の追加行**を git diff で検出し、`/follow-up new` 候補として一括提示する。
 
-### 検出ロジック
-
-1. `git log -1 --format=%H -- {issue-file-path}` で直近コミットの hash を取得（Bash）
-   - 未コミットファイル（新規 Issue）の場合は本ステップをスキップ
-2. `git diff {hash}..HEAD -- {issue-file-path}` で前回コミット以降の差分を取得（Bash）
-   - 比較対象は作業ツリー（未コミット変更を含む）
-3. 差分から以下条件のセクション内の追加行（`+` 始まり、`+++` を除く）を抽出:
-   - 見出しが「スコープ外」「後続 Issue 候補」「やらないこと」を含むセクション
-   - 抽出単位: 箇条書き行（`- ` で始まる行）
-4. 抽出した行をユーザーへの提示用に整形
-
-### 報告フォーマット
-
-検出が 1 件以上の場合のみ、**最終レポートに列挙**する（AskUserQuestion で止めない。新規 follow-up ファイルの生成は副作用が大きいので自動化せず、ユーザーがチャットで判断する）:
-
-```
-スコープ外 / 後続 Issue 候補 から N 件の follow-up 候補を検出:
-1. {1 件目の要約}
-2. {2 件目の要約}
-...
-→ `/follow-up new` で記録できます
-```
-
-### 注意事項
-
-- 既存の follow-up 検知（会話中シグナル）とは独立。Issue ファイル更新タイミングでの差分検出という別軸
-- 同じ行を 2 回提示しないよう、検出後は対応行に `<!-- follow-up-checked -->` マーカーを付けてもよい（任意。記録または明示スキップ済みの行は次回スキップ対象）
-- 検出対象セクションが Issue ファイルに無い場合はスキップ
+- 検出ロジック（git log/diff の手順・抽出条件・スキップ条件）・報告フォーマット・注意事項の詳細:
+  → Read `${CLAUDE_SKILL_DIR}/references/detection-guards.md`
+- 検出が 1 件以上の場合のみ**最終レポートに列挙**する（AskUserQuestion で止めない。新規 follow-up ファイルの生成は副作用が大きいので自動化せず、ユーザーがチャットで判断する）
 
 ---
 
 ## writing-polish 連携（本文添削・必須）
 
-整理した Issue 本文と、切り出した knowledge ページの散文を、整理計画のユーザー提示（処理フロー Step 10）／ファイル確定（Step 11）の直前に writing-polish へ渡して推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+整理した **Issue 本文** と **切り出した knowledge ページ** の両方を、writing-polish 連携（処理フロー Step 9.5）でファイル確定の直前に推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
 
-1. インストール判定（check-deps.sh と同方式）:
-   ```bash
-   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
-     WRITING_POLISH=1
-   else
-     WRITING_POLISH=0
-   fi
-   ```
-   `WRITING_POLISH=0` → 本節を skip。
-2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼ぶ。**Issue 本文の散文 + 切り出した knowledge ページの散文の両方**を推敲する。
-3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **frontmatter・wikilink（`[[ ]]`）・見出し階層・テンプレート構造（9 セクション・必須セクション）は変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
-4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で完了する。
+インストール判定（bash）・呼び出し引数（`--embed --tone issue`）・結果反映時の構造保護（frontmatter / wikilink / 見出し階層は変更しない）・fallback の詳細手順:
+→ Read `${CLAUDE_SKILL_DIR}/references/writing-polish-integration.md`
 
 ---
 

@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.35.0] - 2026-07-07
+
+### Added
+- **深掘り系スキル 2 本に `${CLAUDE_EFFORT}` 実行時分岐を追加**（ルート CLAUDE.md「深掘り系スキルには effort 分岐必須」規約への準拠。indie-workflow 1.38.0 とミラー対称）:
+  - `linear-maintain`: 走査深度の effort 適応（low/medium=同期・検出系のみ、high=全処理フル、xhigh/max=全チーム横断 + 品質整理の精読）。「起動＝実行確定・止まらない」は effort 不変
+  - `issue-design`: grill の掘り下げの effort 適応。indie-workflow と byte-identical なミラー実装
+
+### Changed
+- **`issue-maintain` SKILL.md を references/ に分割**（449→280 行）。整理判定基準（cleanup-criteria.md）・検出ガード（detection-guards.md）・knowledge 管理（knowledge-guide.md）・writing-polish 連携手順（writing-polish-integration.md）を切り出し、本文は高レベルワークフローに絞った（indie-issue-maintain とミラー対称の references 構造）。挙動の変更なし
+- `linear-maintain` に **writing-polish 連携を対象外とする設計判断を明記**（出力が機械的な status 遷移と実行後レポートのみで散文成果物を生成しないため。散文を生成する issue-maintain / issue-create 側は必須連携済み）
+
 ## [1.34.0] - 2026-07-02
 
 ### Added
