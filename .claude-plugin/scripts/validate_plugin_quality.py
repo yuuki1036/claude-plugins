@@ -390,6 +390,86 @@ CHECKS = [
 ]
 
 
+# linear-workflow / indie-workflow はミラー構造. 共通機能は片方の変更を必ず他方へ対称反映する規約
+# （CLAUDE.md「linear-workflow / indie-workflow はミラー規約」）. このチェックは skill の存在・分類の
+# 対称性を機械検証し、片側だけの追加・削除（取り残し）と対応表の stale を warning で拾う.
+# 命名が異なるペアは MIRROR_SKILL_PAIRS で明示. 意図的な片側限定は *_ONLY で except 登録する
+# （未登録の非対称＝取り残し疑い）. 構造差分（Phase 構成・dormant 連携）までは踏み込まない.
+MIRROR_SKILL_PAIRS: dict[str, str] = {
+    # linear skill 名 -> indie skill 名
+    "follow-up": "indie-follow-up",
+    "init": "indie-init",
+    "issue-create": "indie-issue-create",
+    "issue-design": "issue-design",
+    "issue-maintain": "indie-issue-maintain",
+    "knowledge": "knowledge",
+    "knowledge-lint": "knowledge-lint",
+    "linear-maintain": "indie-maintain",
+    "session-start": "indie-start",
+}
+# 意図的な片側限定 skill（CLAUDE.md「意図的な非対称」）. ここに載らない片側 skill は取り残し疑いとして warning.
+MIRROR_INTENTIONAL_LINEAR_ONLY: set[str] = {
+    "dashboard",  # indie では indie-start が main ダッシュボードを兼ねるため linear のみ
+}
+MIRROR_INTENTIONAL_INDIE_ONLY: set[str] = {
+    "indie-issue-discover",  # 「次に何をやるか」を一人で回す個人開発特化（linear 展開は必要顕在化まで保留）
+    "retrospective",         # 「何を学んだか」の振り返り. 同上
+}
+
+
+def check_mirror_symmetry(warnings: list[str]) -> None:
+    """linear-workflow / indie-workflow のミラー skill 対称性を検証する（非ブロッキング warning）.
+
+    片側だけに追加・削除された skill（取り残し疑い）と、対応表 / except の stale を検出する.
+    存在・分類の対称性に絞り、構造差分（Phase 構成・dormant 連携）までは踏み込まない.
+    """
+    linear_dir = ROOT / "linear-workflow" / "skills"
+    indie_dir = ROOT / "indie-workflow" / "skills"
+    if not linear_dir.is_dir() or not indie_dir.is_dir():
+        return  # 片方でも未導入なら検証しない（後方互換・プラグイン独立性）
+
+    linear_skills = {p.name for p in linear_dir.iterdir() if (p / "SKILL.md").is_file()}
+    indie_skills = {p.name for p in indie_dir.iterdir() if (p / "SKILL.md").is_file()}
+    tag = "mirror-symmetry"
+
+    # 1. ペアの片側欠落（対応表にあるのに一方が実在しない）
+    for lin, ind in sorted(MIRROR_SKILL_PAIRS.items()):
+        lin_ok, ind_ok = lin in linear_skills, ind in indie_skills
+        if lin_ok and not ind_ok:
+            warnings.append(
+                f"[{tag}] ミラーペアの indie 側が欠落: linear '{lin}' に対応する indie '{ind}' が無い"
+                "（取り残し疑い. 対称実装するか対応表を見直す）"
+            )
+        elif ind_ok and not lin_ok:
+            warnings.append(
+                f"[{tag}] ミラーペアの linear 側が欠落: indie '{ind}' に対応する linear '{lin}' が無い"
+                "（取り残し疑い. 対称実装するか対応表を見直す）"
+            )
+
+    # 2. 分類の網羅性（対応表にも except にも無い skill ＝ 新規片側追加の疑い）
+    paired_linear = set(MIRROR_SKILL_PAIRS.keys())
+    paired_indie = set(MIRROR_SKILL_PAIRS.values())
+    for s in sorted(linear_skills - paired_linear - MIRROR_INTENTIONAL_LINEAR_ONLY):
+        warnings.append(
+            f"[{tag}] 未分類の linear skill '{s}'（ミラー対応表にも意図的非対称 except にも無い. "
+            "indie 側に対称実装するか MIRROR_SKILL_PAIRS / MIRROR_INTENTIONAL_LINEAR_ONLY に登録）"
+        )
+    for s in sorted(indie_skills - paired_indie - MIRROR_INTENTIONAL_INDIE_ONLY):
+        warnings.append(
+            f"[{tag}] 未分類の indie skill '{s}'（ミラー対応表にも意図的非対称 except にも無い. "
+            "linear 側に対称実装するか MIRROR_SKILL_PAIRS / MIRROR_INTENTIONAL_INDIE_ONLY に登録）"
+        )
+
+    # 3. 対応表 / except の stale（登録されているが実在しない）
+    for s in sorted(MIRROR_INTENTIONAL_LINEAR_ONLY - linear_skills):
+        warnings.append(f"[{tag}] MIRROR_INTENTIONAL_LINEAR_ONLY の '{s}' が実在しない（対応表を掃除）")
+    for s in sorted(MIRROR_INTENTIONAL_INDIE_ONLY - indie_skills):
+        warnings.append(f"[{tag}] MIRROR_INTENTIONAL_INDIE_ONLY の '{s}' が実在しない（対応表を掃除）")
+    for lin, ind in sorted(MIRROR_SKILL_PAIRS.items()):
+        if lin not in linear_skills and ind not in indie_skills:
+            warnings.append(f"[{tag}] MIRROR_SKILL_PAIRS の '{lin}<->{ind}' が両側とも実在しない（対応表を掃除）")
+
+
 def resolve_plugins(args: list[str]) -> list[Path]:
     if args:
         return [Path(a).resolve() for a in args]
@@ -409,10 +489,11 @@ def main() -> int:
 
     check_shared_references_sync(errors)
     check_routing_axes_sync(errors)
+    check_mirror_symmetry(warnings)
 
     if warnings:
         # 助言（非ブロッキング）. errors と分離して常に出力する.
-        print("Plugin quality warnings (allowed-tools 最小性 / 非ブロッキング):", file=sys.stderr)
+        print("Plugin quality warnings (allowed-tools 最小性 / ミラー対称性 / 非ブロッキング):", file=sys.stderr)
         print("", file=sys.stderr)
         for w in warnings:
             print(f"  - {w}", file=sys.stderr)

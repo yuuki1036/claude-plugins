@@ -3,3 +3,4 @@
 .claude/events.jsonl
 .claude/failure-journal/
 .claude/.instinct-memory-cursor
+__pycache__/

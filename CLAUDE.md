@@ -90,7 +90,7 @@ claude plugin prune
 - plugin 開発は plugin-dev plugin を用いて必要に応じて agent team を使用する
 - 新 skill / agent / hook / command を追加する前は `claude-meta:component-addition-advisor` で退路確保（既存拡張で解けないか）を判定する
 - **深掘り系スキルには `${CLAUDE_EFFORT}` 実行時分岐を必須とする**。深掘り系 = 走査・分析・レビュー・多段 agent など「かける深さで結果の質が変わる」スキル（maintain / discover / review / retrospective / design 系）。単純 CRUD・scaffold・単発記録系（init / follow-up / log-failure 等）には不要
-- **linear-workflow / indie-workflow はミラー規約**: 共通機能（issue-create / issue-maintain / issue-design / follow-up / knowledge / knowledge-lint / maintain / session-start 系）は片方を変更したら必ず他方にも対称に反映する。**意図的な非対称**は次の 2 つのみ: `indie-issue-discover` と `retrospective`（いずれも「次に何をやるか・何を学んだか」を一人で回す個人開発特化の機能として indie のみに実装。linear 側への展開は必要が顕在化してから判断）。これ以外の片側だけの機能・改善は取り残しとみなす
+- **linear-workflow / indie-workflow はミラー規約**: 共通機能（issue-create / issue-maintain / issue-design / follow-up / knowledge / knowledge-lint / maintain / session-start 系）は片方を変更したら必ず他方にも対称に反映する。**意図的な非対称**は次の 2 つのみ: `indie-issue-discover` と `retrospective`（いずれも「次に何をやるか・何を学んだか」を一人で回す個人開発特化の機能として indie のみに実装。linear 側への展開は必要が顕在化してから判断）。これ以外の片側だけの機能・改善は取り残しとみなす。**skill の対称性は `validate_plugin_quality.py` の `MIRROR_SKILL_PAIRS`（命名違いペア）/ `MIRROR_INTENTIONAL_LINEAR_ONLY` / `MIRROR_INTENTIONAL_INDIE_ONLY`（意図的非対称の except）で機械検証する（片側追加・片側欠落・対応表 stale を非ブロッキング warning）— 新スキルを追加したら対応表 or except への登録も必須（`COMMAND_SKILL_ALIASES` と同じく更新漏れは検証に出る）。構造差分（Phase 構成・dormant 連携）は対象外で人手判断に残す
 - **プラグイン内部 doc（SKILL.md / references/ / README）には doc-freshness frontmatter を付けない**: これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理されており、`last-validated`（current=5 日閾値）を付けると恒常 stale 化して逆効果。doc-freshness の対象はプロジェクト側の doc（CLAUDE.md / `.claude/adr/` / `.claude/designs/` 等）
 
 ## ルール配置の意思決定（決定的 hook > LLM 判定）
@@ -337,7 +337,7 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 **自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/references/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
 
 - `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期（INDEX の version 列・記載漏れ・余分行、CLAUDE.md の一覧表記載漏れ）
-- `validate_plugin_quality.py`: allowed-tools 存在・command↔skill ペア一致 / hooks.json 参照スクリプトの safe_hook_init / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ存在 / allowed-tools 最小性 #14b（SKILL.md・agents の未使用ツール検出、非ブロッキング warning。commands はペア一致ルールのため対象外）
+- `validate_plugin_quality.py`: allowed-tools 存在・command↔skill ペア一致 / hooks.json 参照スクリプトの safe_hook_init / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ存在 / allowed-tools 最小性 #14b（SKILL.md・agents の未使用ツール検出、非ブロッキング warning。commands はペア一致ルールのため対象外）/ linear・indie ミラー対称性（skill の片側取り残し・対応表 stale を非ブロッキング warning。対応表は `MIRROR_SKILL_PAIRS` / `MIRROR_INTENTIONAL_*`）
 - `claude plugin validate`: CLI スキーマ（`_requirements` 警告は除外）
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
