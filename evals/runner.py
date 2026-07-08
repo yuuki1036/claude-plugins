@@ -407,7 +407,8 @@ def invoke_claude(
         # claude CLI はエラーを stdout に出すことがある（例: 未ログイン時の
         # "Not logged in · Please run /login" は stdout・stderr 空・exit 1）。
         # stderr が空のとき stdout を出さないと原因が完全に不可視になる
-        detail = (completed.stderr.strip() or completed.stdout.strip())[:200]
+        # 末尾を取る: 本質的なエラー（"Not logged in" 等）は警告類の後ろに出るため
+        detail = (completed.stderr.strip() or completed.stdout.strip())[-200:]
         raise RuntimeError(f"claude exited with {completed.returncode}: {detail}")
     return AttemptObservation(
         skill=extract_skill(completed.stdout),
