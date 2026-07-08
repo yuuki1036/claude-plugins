@@ -404,9 +404,11 @@ def invoke_claude(
     )
     latency_ms = int((time.monotonic() - t0) * 1000)
     if completed.returncode != 0:
-        raise RuntimeError(
-            f"claude exited with {completed.returncode}: {completed.stderr[:200]}"
-        )
+        # claude CLI はエラーを stdout に出すことがある（例: 未ログイン時の
+        # "Not logged in · Please run /login" は stdout・stderr 空・exit 1）。
+        # stderr が空のとき stdout を出さないと原因が完全に不可視になる
+        detail = (completed.stderr.strip() or completed.stdout.strip())[:200]
+        raise RuntimeError(f"claude exited with {completed.returncode}: {detail}")
     return AttemptObservation(
         skill=extract_skill(completed.stdout),
         stdout=completed.stdout,
