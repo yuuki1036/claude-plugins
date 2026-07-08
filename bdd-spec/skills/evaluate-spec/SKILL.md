@@ -1,9 +1,9 @@
 ---
 name: evaluate-spec
 description: >
-  BDD spec (spec.md / epic.md) を 4 観点で静的レビューする品質ゲート。
+  BDD spec (spec.md / epic.md) を 5 観点で静的レビューする品質ゲート。
   Gherkin 構文妥当性・粒度一貫性・網羅性（同値分割表⇔Scenario 双方向トレース）・
-  トレーサビリティ（epic の Why/What/AC ⇔ spec）を severity×confidence で評価する。
+  トレーサビリティ（epic の Why/What/AC ⇔ spec）・遷移カバレッジ（状態遷移表⇔Scenario、stateful のみ dormant）を severity×confidence で評価する。
   create-spec が scaffold した spec を埋めた後の品質検証に使う（scaffold は create-spec の領分）。
   トリガー: 「spec を評価」「spec 品質チェック」「BDD spec レビュー」「spec.md をレビュー」
   「同値分割の網羅性チェック」「spec の穴を見つけて」「/bdd-spec-evaluate」
@@ -19,7 +19,7 @@ allowed-tools:
 
 # Evaluate Spec
 
-`create-spec` が scaffold し、ユーザーが埋めた BDD spec を静的レビューするスキル。**spec を作り直す場ではなく、構文・粒度・網羅性・トレーサビリティの穴を根拠つきで挙げる場**。実装/テストに入る前の品質ゲートとして使う。
+`create-spec` が scaffold し、ユーザーが埋めた BDD spec を静的レビューするスキル。**spec を作り直す場ではなく、構文・粒度・網羅性・トレーサビリティ・遷移カバレッジの穴を根拠つきで挙げる場**。実装/テストに入る前の品質ゲートとして使う。
 
 ## いつ使う / いつ使わない
 
@@ -33,7 +33,7 @@ allowed-tools:
 
 ## 参照する規範（references）
 
-- `${CLAUDE_SKILL_DIR}/references/evaluation-rubric.md` — 4 観点の詳細チェックリストと severity×confidence 付与ルール（正本）
+- `${CLAUDE_SKILL_DIR}/references/evaluation-rubric.md` — 5 観点の詳細チェックリストと severity×confidence 付与ルール（正本）
 
 ## コスト×精度パイプライン設計（採用/不採用）
 
@@ -48,7 +48,7 @@ allowed-tools:
    - パス指定あり → その spec.md を対象。ディレクトリ指定なら配下の `spec.md`
    - 省略 → `{featuresDir}/*/spec.md` を Glob。1 件なら自動選択、複数なら AskUserQuestion で選択（`phase: current` を優先し最新を先頭 + `(Recommended)`）、0 件なら「評価対象の spec.md がありません。/bdd-spec-create で作成してください」と案内して終了
 3. 対象 spec.md と、その frontmatter `epic:` が指す epic.md を Read する
-4. **scaffold ゲート**（evaluation-rubric.md「scaffold 状態の扱い」）: 本文の過半が `{...}` プレースホルダ、または全 Scenario の Given/When/Then がプレースホルダのまま → **「まだ scaffold 段階」と判定**。観点 1（構造の存在）のみ評価し、観点 2-4 は「spec を埋めてから再実行してください」と案内してスキップする
+4. **scaffold ゲート**（evaluation-rubric.md「scaffold 状態の扱い」）: 本文の過半が `{...}` プレースホルダ、または全 Scenario の Given/When/Then がプレースホルダのまま → **「まだ scaffold 段階」と判定**。観点 1（構造の存在）のみ評価し、観点 2-5 は「spec を埋めてから再実行してください」と案内してスキップする（scaffold 段階では状態遷移表もプレースホルダなので観点 5 も skip 対象に含める）
 
 ## Phase 1: 観点 1 — Gherkin 構文妥当性（機械 / ファネル第 1 段）
 
@@ -79,6 +79,18 @@ evaluation-rubric.md「観点 4」の 4.1〜4.7 を評価する。
 - 未カバー AC は 🔴 critical（実装が要件を取りこぼす）
 - epic の What（成果物）が AC/Scenario に対応づくか、Why が Scenario 群で満たされるか、スコープ外を誤カバーしていないかを意味判断（confidence 付き）
 
+## Phase 4.5: 観点 5 — 遷移カバレッジ（状態遷移表 ⇔ Scenario 双方向トレース・stateful のみ / dormant）
+
+evaluation-rubric.md「観点 5」の 5.1〜5.5 を評価する。**dormant 発火ゲート**: spec.md に「状態遷移表」セクションが無い、または表に**実データ行が無い**（全データ行が `{...}` プレースホルダを含む、または `Scenario N` / `（未カバー）` 等の scaffold 定型リテラルのみ）なら本観点を丸ごと skip する（stateless spec・scaffold 直後の未記入テンプレにノイズを出さない）。判定は「プレースホルダ・定型リテラルを除いた実データ行の有無」を grep で機械化する（表セルの単純な非空判定では scaffold テンプレの `{draft}` を非空と誤判定するため使わない）。Phase 0 の scaffold ゲート該当時も skip する。
+
+- **表 → Scenario / Scenario → 表**: 状態遷移表の各辺の「カバー Scenario」と、各 Scenario の構造化注記「カバーする辺」を双方向トレースし、未カバー辺・orphan transition を 🟡 で検出（confidence 100。注記が grep 一致するため）
+- **注記欠落**: stateful spec の Scenario に「カバーする辺」注記が無ければ 🟡（fail-closed。意味判定にフォールバックしない）
+- **巡回辺の取りこぼし**: 差し戻し・再編集・リトライ相当の後退辺 / 自己ループが 1 つも無い happy-path 偏重を意味判断で検出（stateful-but-acyclic は誤検知しないよう confidence を抑える）
+- **構造矛盾（5.4）**: 終端状態から出る辺・到達不能状態・出口の無い非終端状態を意味判断で検出
+- **glossary 整合（任意オラクル）**: `all_spec.md` に `遷移可能先` があり該当 entity を触る場合のみ、(遷移元, 遷移先) ペアの矛盾を照合
+
+辺の再構成が決定的なのは Scenario 側の「カバーする辺」注記を必須化しているため（自由文 Given/When/Then からの辺抽出は意味判定になる）。表セルの走査とリンク解決は Grep/Bash で機械的に行う（外部オラクル）。
+
 ## Phase 5: レポート出力
 
 各指摘を evaluation-rubric.md の報告閾値マトリクス（severity × confidence）でフィルタして出力する。
@@ -88,8 +100,8 @@ evaluation-rubric.md「観点 4」の 4.1〜4.7 を評価する。
 
 **対象**: {featuresDir}/{dirname}/spec.md（+ epic.md）
 **総合判定**: {契約として妥当 | 埋め残し・穴あり | 構文破綻（要是正）}
-**スコア**: 構文 {🔴n/🟡n/🔵n} / 粒度 {…} / 網羅性 {…} / トレーサビリティ {…}
-{scaffold 段階の場合: **⚠️ scaffold 段階のため観点 2-4 はスキップ。spec を埋めてから再実行してください**}
+**スコア**: 構文 {🔴n/🟡n/🔵n} / 粒度 {…} / 網羅性 {…} / トレーサビリティ {…} / 遷移カバレッジ {… | stateful のみ・非該当なら「-」}
+{scaffold 段階の場合: **⚠️ scaffold 段階のため観点 2-5 はスキップ。spec を埋めてから再実行してください**}
 
 ### 🔴 critical
 1. [観点4/confidence 100] epic.md AC-2 に対応する Scenario が spec.md に存在しない
@@ -138,11 +150,12 @@ evaluation-rubric.md「観点 4」の 4.1〜4.7 を評価する。
 ```
 1. Phase 0: 対象 spec.md / epic.md 特定 + scaffold ゲート
 2. Phase 1: 観点1 構文（機械・ファネル第1段）
-3. Phase 2: 観点2 粒度（意味）        ┐ scaffold 段階なら
-4. Phase 3: 観点3 網羅性（双方向トレース）├ スキップ
-5. Phase 4: 観点4 トレーサビリティ      ┘
-6. Phase 5: severity×confidence でフィルタしてレポート
-7. Phase 6: 修正提案（任意・AskUserQuestion 承認後のみ）
+3. Phase 2: 観点2 粒度（意味）           ┐ scaffold 段階なら
+4. Phase 3: 観点3 網羅性（双方向トレース）  │ 観点 2-5 を
+5. Phase 4: 観点4 トレーサビリティ         ┤ スキップ
+6. Phase 4.5: 観点5 遷移カバレッジ         ┘（4.5 は状態遷移表なし / 未記入でも skip）
+7. Phase 5: severity×confidence でフィルタしてレポート
+8. Phase 6: 修正提案（任意・AskUserQuestion 承認後のみ）
 ```
 
 ## effort 適応
@@ -151,9 +164,9 @@ evaluation-rubric.md「観点 4」の 4.1〜4.7 を評価する。
 
 | effort | 構成 |
 |---|---|
-| `low` / `medium` | 観点 1（機械構文）+ 観点 3 の機械判定分（表⇔Scenario 双方向トレースのリンク切れ・空セル、confidence 100）+ 観点 4 のリンク解決に絞る。意味判断（観点 2 粒度・観点 3 の同値クラス過不足・観点 4 の Why-answered）は skip し「深掘りは effort を上げて再実行」と案内 |
-| `high`（既定） | 全 4 観点を実施（機械 + 意味判断の全チェック項目） |
-| `xhigh` / `max` | 上記に加え、依存 spec（`関連` セクションの他 spec）とのトレーサビリティ横断検証、境界値分析の過不足を因子ごとに精査、epic の Why に対する Scenario 群の十分性を踏み込んで評価 |
+| `low` / `medium` | 観点 1（機械構文）+ 観点 3 の機械判定分（表⇔Scenario 双方向トレースのリンク切れ・空セル、confidence 100）+ 観点 4 のリンク解決 + 観点 5 の機械判定分（表 ⇔「カバーする辺」注記の双方向トレース・注記欠落、stateful spec のみ）に絞る。意味判断（観点 2 粒度・観点 3 の同値クラス過不足・観点 4 の Why-answered・観点 5 の巡回辺取りこぼし）は skip し「深掘りは effort を上げて再実行」と案内 |
+| `high`（既定） | 全 5 観点を実施（機械 + 意味判断の全チェック項目） |
+| `xhigh` / `max` | 上記に加え、依存 spec（`関連` セクションの他 spec）とのトレーサビリティ横断検証、境界値分析の過不足を因子ごとに精査、epic の Why に対する Scenario 群の十分性、状態遷移の臨界パス（正常完了 + 主要な差し戻し 1 本）の path 観点まで踏み込んで評価 |
 
 ---
 

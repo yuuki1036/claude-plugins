@@ -57,7 +57,7 @@ features/
 
 ## 品質検証
 
-scaffold した spec を埋めた後、`bdd-spec-evaluate` で 4 観点の静的レビューをかけられる:
+scaffold した spec を埋めた後、`bdd-spec-evaluate` で 5 観点の静的レビューをかけられる:
 
 ```
 /bdd-spec-evaluate                          # features/*/spec.md を選択して評価
@@ -68,6 +68,7 @@ scaffold した spec を埋めた後、`bdd-spec-evaluate` で 4 観点の静的
 - **粒度一貫性**（意味）: When の単一アクション性・Then が実装詳細に踏み込んでいないか・1 Scenario 1 振る舞い
 - **網羅性**: 同値分割表 ⇔ Scenario の**双方向トレース**（表にあるのに未カバーの同値クラス / 表にない orphan scenario を検出）
 - **トレーサビリティ**: epic の AC ⇔ Scenario のリンク解決・未カバー AC の検出・Why が Scenario 群で満たされるか
+- **遷移カバレッジ**（stateful のみ・dormant）: 状態遷移表 ⇔ Scenario の**双方向トレース**（未カバー辺 / orphan transition を検出）。アプリのワークフローを FSM とみなし巡回辺（差し戻し・再編集・リトライ）の網羅を辺カバレッジで検証。状態遷移表が無ければ発火しない
 
 severity（🔴/🟡/🔵）× confidence（機械判定は 100、意味判断は不確実性に応じて）でフィルタし、修正は confidence 100 の機械確定分のみ承認後に自動化する（over-correction 抑制）。
 
@@ -84,6 +85,11 @@ severity（🔴/🟡/🔵）× confidence（機械判定は 100、意味判断�
 - ✅ `bdd-spec-evaluate` で BDD 構文 / 粒度 / 網羅性 / トレーサビリティの 4 観点静的レビュー
 - ✅ 同値分割表 ↔ Scenario の双方向 trace 検証
 
+### v0.3.0 (Phase 3)
+
+- ✅ `bdd-spec-evaluate` に遷移カバレッジ観点（第 5 観点）を追加。状態遷移表 ⇔ Scenario の双方向トレース（stateful spec のみ dormant 発火）
+- ✅ アプリのワークフローを DAG ではなく巡回する FSM としてモデル化し、巡回辺の網羅を辺カバレッジで検証（グラフは Scenario の「カバーする辺」注記から再構成し別管理しない）
+
 動的検証（実際に Scenario を実行する）はスコープ外。
 
 ## 既存 plugin との関係
@@ -96,6 +102,6 @@ severity（🔴/🟡/🔵）× confidence（機械判定は 100、意味判断�
 | 種別 | 名前 | 説明 |
 |------|------|------|
 | コマンド | `/bdd-spec-create` | user story dir + epic/spec scaffold |
-| コマンド | `/bdd-spec-evaluate` | 埋めた spec を 4 観点で静的レビュー |
+| コマンド | `/bdd-spec-evaluate` | 埋めた spec を 5 観点で静的レビュー |
 | スキル | `create-spec` | scaffold ロジック + template 流し込み |
-| スキル | `evaluate-spec` | 4 観点評価（構文/粒度/網羅性/トレーサビリティ） |
+| スキル | `evaluate-spec` | 5 観点評価（構文/粒度/網羅性/トレーサビリティ/遷移カバレッジ） |

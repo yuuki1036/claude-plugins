@@ -1,5 +1,5 @@
 ---
-description: BDD spec (spec.md / epic.md) を 4 観点で静的レビューする品質ゲート
+description: BDD spec (spec.md / epic.md) を 5 観点で静的レビューする品質ゲート
 user_invocable: true
 allowed-tools:
   - Read
@@ -28,5 +28,6 @@ evaluate-spec スキルを使って、埋めた BDD spec を静的レビュー�
 3. Phase 2: 観点2 粒度一貫性（意味）
 4. Phase 3: 観点3 網羅性（同値分割表 ⇔ Scenario 双方向トレース）
 5. Phase 4: 観点4 トレーサビリティ（epic ⇔ spec）
-6. Phase 5: severity×confidence でフィルタしてレポート
-7. Phase 6: 修正提案（任意・AskUserQuestion 承認後のみ）
+6. Phase 4.5: 観点5 遷移カバレッジ（状態遷移表 ⇔ Scenario・stateful のみ / 表が空なら skip）
+7. Phase 5: severity×confidence でフィルタしてレポート
+8. Phase 6: 修正提案（任意・AskUserQuestion 承認後のみ）

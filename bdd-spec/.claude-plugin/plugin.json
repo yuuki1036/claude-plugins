@@ -1,7 +1,7 @@
 {
   "name": "bdd-spec",
-  "version": "0.2.0",
-  "description": "BDD spec 駆動の scaffold + 評価プラグイン。create で user story dir + epic.md / spec.md 2ファイル粒度 + 同値分割表テンプレを生成し、evaluate で構文/粒度/網羅性（同値分割表⇔Scenario 双方向トレース）/トレーサビリティの 4 観点を severity×confidence で静的レビュー",
+  "version": "0.3.0",
+  "description": "BDD spec 駆動の scaffold + 評価プラグイン。create で user story dir + epic.md / spec.md 2ファイル粒度 + 同値分割表 + 状態遷移表（stateful のみ）テンプレを生成し、evaluate で構文/粒度/網羅性（同値分割表⇔Scenario 双方向トレース）/トレーサビリティ/遷移カバレッジ（状態遷移表⇔Scenario、stateful のみ dormant）の 5 観点を severity×confidence で静的レビュー",
   "author": {
     "name": "yuki"
   }

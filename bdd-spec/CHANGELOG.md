@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.0] - 2026-07-08
+
+### Added
+- **`evaluate-spec` に第 5 観点「遷移カバレッジ」を追加**（design doc `.claude/designs/20260708-bdd-spec-transition-coverage.md`）。アプリのワークフローを DAG ではなく巡回する FSM としてモデル化し、状態遷移の網羅を検証する:
+  - **状態遷移表 ⇔ Scenario の双方向トレース**（観点 3 と同型）: 未カバー辺 / orphan transition を confidence 100 で機械検出。カバレッジ基準は辺（全 transition を最低 1 Scenario でカバー）で、全パスは要求しない（巡回でパスが指数爆発するため）
+  - **グラフは別成果物として保守せず、Scenario の構造化注記「カバーする辺」から再構成**（drift 回避）。再構成を決定的にするため注記を必須化した（自由文 Given/When/Then からの辺抽出は意味判定になり confidence 100 が成立しないため。注記欠落は fail-closed で 🟡）
+  - **dormant 発火ゲート**: `spec-template.md` に状態遷移表が無い / 空なら観点 5 を丸ごと skip（stateless な CRUD/参照系にノイズを出さない）
+  - **glossary 整合（任意オラクル）**: `all_spec.md` の `遷移可能先` があり該当 entity を触る場合のみ (遷移元, 遷移先) ペアの矛盾を照合
+  - 未カバー巡回辺は既定 🟡（advisory）。stateful-but-acyclic への誤検知を避け、fail 方向を見逃し許容側に倒す
+- `create-spec` の `spec-template.md` に状態遷移表（stateful のみ・任意）scaffold と Scenario の「カバーする辺」注記、テンプレ設計判断を追加
+- `${CLAUDE_EFFORT}` 分岐に観点 5 を組み込み（low/medium=機械判定分、high=全 5 観点、xhigh/max=臨界パス path 観点まで）
+
+### Changed
+- evaluate-spec / create-spec / plugin.json / README / INDEX / ルート CLAUDE.md の「4 観点」表記を「5 観点」に更新（遷移カバレッジ追加に伴う SSoT 同期）
+
 ## [0.2.0] - 2026-07-07
 
 ### Added

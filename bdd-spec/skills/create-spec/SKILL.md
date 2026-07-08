@@ -2,7 +2,7 @@
 name: create-spec
 description: >
   BDD spec 駆動の user story を scaffold する。
-  user story dir + epic.md（Why/What 散文）+ spec.md（BDD Feature/Scenario/Examples + 同値分割表）を生成する。
+  user story dir + epic.md（Why/What 散文）+ spec.md（BDD Feature/Scenario/Examples + 同値分割表 + 状態遷移表（stateful のみ・任意））を生成する。
   プロジェクトに all_spec.md / common_spec.md が無ければそれらも初期化する。
   トリガー: 「BDD spec 作る」「user story scaffold」「Feature ファイル作る」「spec.md 作る」
   「BDD で書きたい」「Scenario テンプレ」「同値分割表 テンプレ」「/bdd-spec-create」
@@ -119,7 +119,7 @@ date +%Y-%m-%d   # {CREATED_DATE} 用。epic.md / spec.md の last-validated に
 - `{CREATED_DATE}` → Phase 4 で取得した `date +%Y-%m-%d` の結果（frontmatter の `last-validated`）
 - `Feature:` 行は `{want}` から自動生成（例: `Feature: 契約書を一括承認する`）
 - `Background:` は `common_spec.md` への参照
-- `Scenario:` / `#### Examples` / 同値分割表は **空の骨格**として scaffold（ユーザーが後で埋める）
+- `Scenario:` / `#### Examples` / 同値分割表 / 状態遷移表（stateful のみ・任意）は **空の骨格**として scaffold（ユーザーが後で埋める）。stateful なフィーチャーでは各 Scenario に「カバーする辺」注記も併せて埋めるよう案内する（`bdd-spec-evaluate` 観点 5 の双方向トレース用）
 
 書き出し先: `{featuresDir}/{dirname}/spec.md`
 
@@ -196,7 +196,7 @@ date +%Y-%m-%d   # {CREATED_DATE} 用。epic.md / spec.md の last-validated に
 
 ## 注意事項
 
-- **読み取り中心、書き出しは Phase 4-6**: scaffold が主目的、評価は対象外（埋めた後の 4 観点評価は姉妹スキル `bdd-spec:evaluate-spec` の領分。Generator と Evaluator を分離している）
+- **読み取り中心、書き出しは Phase 4-6**: scaffold が主目的、評価は対象外（埋めた後の 5 観点評価は姉妹スキル `bdd-spec:evaluate-spec` の領分。Generator と Evaluator を分離している）
 - **既存ファイル上書きは Phase 2 で明示承認**: epic.md / spec.md を勝手に上書きしない
 - **用語整合は提案のみ**: 自動置換すると意図しないリネームを起こすため、ユーザー判断に委ねる
 - **shortPath の trade-off**: 日本語フルパスは `ls` で機能カタログになる利点 vs Windows MAX_PATH / CI 互換性。`shortPath: true` で運用する場合は dir 名と user story 文を spec.md 冒頭に併記する規約

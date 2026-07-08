@@ -13,7 +13,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | プラグイン | version | cmd | skill | agent | hooks | mcp | 概要 |
 |-----------|---------|----:|------:|-------|-------|-----|------|
 | [adr-keeper](#adr-keeper) | 0.2.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
-| [bdd-spec](#bdd-spec) | 0.2.0 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 4 観点評価 |
+| [bdd-spec](#bdd-spec) | 0.3.0 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [claude-meta](#claude-meta) | 1.12.0 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.33.1 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.4.1 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
@@ -41,7 +41,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 - **skills**: `adr`
 
 ### bdd-spec
-BDD spec 駆動の scaffold + 評価。create で user story dir + epic.md（Why/What 散文）+ spec.md（Feature/Scenario/Examples + 同値分割表）を生成、evaluate で構文/粒度/網羅性（同値分割表⇔Scenario 双方向トレース）/トレーサビリティの 4 観点を severity×confidence で静的レビュー。
+BDD spec 駆動の scaffold + 評価。create で user story dir + epic.md（Why/What 散文）+ spec.md（Feature/Scenario/Examples + 同値分割表 + 状態遷移表（stateful のみ・任意））を生成、evaluate で構文/粒度/網羅性（同値分割表⇔Scenario 双方向トレース）/トレーサビリティ/遷移カバレッジ（状態遷移表⇔Scenario、stateful のみ dormant）の 5 観点を severity×confidence で静的レビュー。
 - **commands**: `bdd-spec-create`, `bdd-spec-evaluate`
 - **skills**: `create-spec`, `evaluate-spec`
 
