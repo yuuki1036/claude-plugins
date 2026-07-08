@@ -45,6 +45,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | failure-journal | 2 | 2 | - | SessionStart | 再発失敗の fingerprint 集計。JSON Lines journal に append、30日×3回閾値超で retro 還流提案、failure:logged を event bus に publish（indie-workflow:retrospective と責務分離） |
 | writing-polish | 1 | 1 | - | - | 文章を語句レベルで推敲・添削する汎用スキル。最小差分 diff → 採否フロー、過剰修正(over-correction)抑制を中核原則化。校正ルール正本(tone-guide)に textlint 4 preset + Vale を統合、提示正本(presentation-guide)で確信度ラベル[確実]/[任意]/[要確認]・サマリ行・保全明示の採否 UX を規定（提示は軽く情報は厚く）、日英両対応。pr-creator/git-commit-helper/issue-design が --embed で soft 委譲（dormant 連携） |
 | design-doc | 2 | 2 | 1 | - | 技術設計書 (design doc) を実装に入らず作成・永続化（grill で前提確定 → 代替案比較 → .claude/designs/ に保存。実装ブリッジ必須 + supersede 機械化で死に文書化を防ぐ。bdd-spec/adr-keeper/writing-polish と dormant 連携、doc-freshness に鮮度 lint を委譲。export 非対話 API で他プラグインから doc 化可能。design-review で 4 視点 agent の静的レビューを単体実行） |
+| spec-advisor | 1 | 1 | - | SessionStart | 開発タスクの内容から適切な設計・計画系成果物（WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / Issue粒度=issue-design / 実装一気通貫=feature-dev）を判断し実装着手前に提案（判定 SSoT を routing-rubric に一元化。SessionStart hook の ambient ルール注入＋spec-advise skill/command の明示起動の2経路。over-suggestion guard を先頭に置くファネルで軽微タスク（bugfix/typo/設定変更）には黙り、確信度が高い時のみ提案・迷う時のみ AskUserQuestion。dormant 判定で未導入プラグインは提案肢から除外、全連携先 optional でプラグイン独立。issue-create/feature-dev の既存 spec ルーティングとは別に raw chat のタスクを ambient に拾う） |
 
 ## セットアップ
 

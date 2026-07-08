@@ -3,7 +3,7 @@
 Claude Code プラグインのマーケットプレイスリポジトリ。各プラグインは独立して動作する（プラグイン間依存なし）。
 
 - 生成日: 2026-06-25
-- プラグイン数: 16
+- プラグイン数: 17
 - マニフェスト: `.claude-plugin/marketplace.json`（各 `plugin.json` から派生・SSoT 検証あり）
 
 > 詳細な運用規約・設計判断は [CLAUDE.md](CLAUDE.md) を参照。本ファイルは各プラグインのコンポーネント構成の早見表。
@@ -27,6 +27,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.5 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.8 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.7.2 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
+| [spec-advisor](#spec-advisor) | 0.1.0 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.6.2 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
 排他関係: `indie-workflow` と `linear-workflow` は同系統（ローカル / Linear）で排他利用想定。両方有効時は両者の SessionStart hook が同名スキルのトリガー衝突を警告する。
@@ -128,6 +129,13 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 インストール済みプラグインの一括更新と、マーケットプレイスの後発追加プラグイン取りこぼし通知。
 - **commands**: `update-all`
 - **hooks**: SessionStart
+
+### spec-advisor
+開発タスクの内容から、実装着手前に書くべき設計・計画系成果物（WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / Issue粒度=issue-design / 実装一気通貫=feature-dev）を判断して提案。判定の SSoT を `routing-rubric.md` に一元化。over-suggestion guard を先頭に置くファネルで bugfix/typo/設定変更には黙り、確信度が高い時だけ 1 文根拠で提案・迷う時のみ AskUserQuestion。dormant 判定で未導入プラグインは提案肢から除外、全て未導入なら沈黙。
+- **commands**: `spec-advise`
+- **skills**: `spec-advise`
+- **hooks**: SessionStart（inject-advisor-rule、ambient ルール注入・対象プラグイン未導入時 inert）
+- **dormant 連携**: bdd-spec / design-doc / adr-keeper / feature-dev / issue-design（linear・indie）— すべて optional
 
 ### writing-polish
 文章を語句レベルで推敲・添削する汎用スキル。最小差分 diff → 採否フロー。校正ルールは textlint（preset-ja-technical-writing/japanese/ai-writing/JTF-style）と Vale 由来のカテゴリを tone-guide 正本に内蔵、日英両対応。over-correction 抑制を中核原則に。
