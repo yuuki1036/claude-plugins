@@ -207,9 +207,11 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 - `--emergency`（緊急モード）または `skip-mode`（生成物 PR）
 - high-risk surface（triage-guide.md `## 8.5` の surface 判定）を含まない
 
+**スキップ時も surface 判定は必ず実施（silent skip 防止・issue #85）**: 上記スキップ条件（effort / config / emergency）に該当して skeptic agent を起動しない場合でも、surface 判定（triage-guide.md `## 8.5` の正規表現。diff への grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と **独立に必ず実施** する。surface=true なら skeptic 未起動の事実と skip_reason（`effort` / `config` / `emergency`）を Step 7 レポートの「動的ラウンド」行に必ず出す（`review:completed` payload の `recall_skeptic` 記録と対を成す human レポート契約）。
+
 **実行する場合**: orchestration-guide `## 9` の手順に従う（surface 判定 → skeptic を 1 体 `model: opus`, `effort: max` で起動。**findings / reviewer の推論は渡さない**のが独立性の核 → `[recall-skeptic]` タグ付き指摘を dedup して統合し、反証レイヤー(5.9)の対象にも含める）。
 
-**失敗時**: `missing_coverage` に追記して続行。**起動条件（high-risk surface）を満たしたのに未実行だった事実は Step 7 レポートに必ず出す**（silent 失敗で偽の安心を防ぐ）。
+**失敗時 / スキップ時**: skeptic の失敗は `missing_coverage` に追記して続行。**起動条件（high-risk surface）を満たしたのに未実行だった事実は、失敗・effort/config/emergency スキップのいずれでも Step 7 レポートに必ず出す**（silent skip で「守ったつもり」の偽の安心を防ぐ）。
 
 ### 5.9 反証レイヤー（adversarial verification / 動的）
 
@@ -256,6 +258,8 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 `missing_coverage` リストが空でない場合は「⚠️ 欠損観点」セクションを追加する（空なら省略）。
 
+**冷や読み skeptic の観測可能性（issue #85）**: high-risk surface を含む変更では、冷や読み skeptic（Phase 5.8）の起動有無を「動的ラウンド」行に **必ず** 出す（起動＝追加件数 / 未起動＝skip 理由）。surface HIT かつ未起動の silent skip を作らない。
+
 ```
 ## レビュー結果
 
@@ -266,7 +270,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 **総合判定**: {Approve | Approve with nits | Needs work}（scoring-guide.md「レビュー結論（総合判定）」の表に従って決定）
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
-**動的ラウンド**: Round 2 探索 N 体起動 / Meta-reviewer {実行 | スキップ理由} / 反証 {対象 N 件 | スキップ理由}
+**動的ラウンド**: Round 2 探索 N 体起動 / Meta-reviewer {実行 | スキップ理由} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/emergency）| 非該当（surface なし）} / 反証 {対象 N 件 | スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{反証スキップ時はこの行を省略}
 

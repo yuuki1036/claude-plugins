@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.33.2] - 2026-07-08
+
+### Fixed
+- **冷や読み skeptic の silent skip を修正**（issue #85）。high-risk surface HIT なのに Phase 4.8/5.8 が effort/config/scope スキップで畳まれた際、その事実が Step 6/7 の human レポートにも `missing_coverage` にも出ず観測不能だった問題を修正:
+  - Step 6/7 レポートの「動的ラウンド」行に **冷や読み skeptic の起動有無を明示**（実行＝追加件数 / 未起動＝skip 理由 / 非該当＝surface なし）。従来は Meta-reviewer と反証のみで skeptic 項目が欠落していた
+  - Phase 4.8/5.8 のスキップ条件に該当しても、surface 判定（正規表現・grep で安価）は Phase 0 の構成判断（縮退構成・小 diff）と **独立に必ず実施** し、surface=true なら未起動事実と skip_reason を human レポートに必ず出す契約を追加（`--embed` / event 発火の有無に依存しない observability）
+  - orchestration-guide `## 9` / triage-guide `## 8.5` の「失敗時のみレポート」文言を「失敗・スキップのいずれでも」に拡張
+  - これにより #77（high 昇格判断）の `recall_skeptic.skip_reason` 計測が headless 通常実行でも成立する
+
 ## [2.33.1] - 2026-07-07
 
 ### Changed
