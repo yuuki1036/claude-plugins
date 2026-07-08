@@ -22,12 +22,12 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [failure-journal](#failure-journal) | 0.1.2 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.10.0 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
-| [indie-workflow](#indie-workflow) | 1.38.1 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
-| [linear-workflow](#linear-workflow) | 1.35.1 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
+| [indie-workflow](#indie-workflow) | 1.38.2 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
+| [linear-workflow](#linear-workflow) | 1.35.2 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.5 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.8 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.7.2 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
-| [spec-advisor](#spec-advisor) | 0.1.0 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
+| [spec-advisor](#spec-advisor) | 0.1.1 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.6.2 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
 排他関係: `indie-workflow` と `linear-workflow` は同系統（ローカル / Linear）で排他利用想定。両方有効時は両者の SessionStart hook が同名スキルのトリガー衝突を警告する。
@@ -151,6 +151,7 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 |------|------|------|
 | marketplace マニフェスト | `.claude-plugin/marketplace.json` | plugin.json から派生（SSoT 検証） |
 | hook 共通ラッパー（正本） | `.claude-plugin/lib/safe-hook.sh` | 各プラグインへ byte-identical 複製 |
+| spec ルーティング 3 軸コア（正本） | `.claude-plugin/lib/routing-axes.md` | ROUTING-AXES 区間を spec-advisor / linear / indie に複製（dedent 比較で同期検証） |
 | JSON Schema | `.claude-plugin/schema/` | plugin.json / marketplace.json / hooks.json |
 | SSoT 検証 | `.claude-plugin/scripts/validate-ssot.sh`, `validate_ssot.py` | バージョン・description・_requirements 同期 |
 | 自動品質チェック | `.claude-plugin/scripts/auto-quality-check.sh` | Stop hook で非ブロッキング通知 |

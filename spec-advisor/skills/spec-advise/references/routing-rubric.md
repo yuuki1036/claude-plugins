@@ -3,12 +3,13 @@
 開発タスクの説明から、実装着手前に書くべき設計・計画系成果物を判定する基準。
 `spec-advise` skill と ambient rule（`rules/advisor-rule.md`）がこの表を参照する。
 
-**SSoT の現状（重要）**: 同種の WHAT/HOW/WHY 判定は `linear-workflow` / `indie-workflow` の
-issue-create（着手前 spec 選択）と `feature-dev`（Phase 1.3 / 4.5）にも**インラインで独立実装**が存在する。
-本ファイルはそれらの唯一の正本ではなく、`spec-advisor` が担う「構造化入口を通らない raw chat のタスク」
-向けの判定基準である。真の一元化には、他プラグインが本ファイルを `Read` 参照するか pre-commit で表セルの
-一致を検証する束ね方が要る（単なるコピー増加を避ける）。現状は意図的に非統合（cross-plugin refactor は
-linear/indie ミラー影響が大きく別タスク）。
+**SSoT の構成（重要）**: WHAT/HOW/WHY の 3 軸コア（下の `ROUTING-AXES` 区間）は
+正本 `.claude-plugin/lib/routing-axes.md` の複製で、`linear-workflow` / `indie-workflow` の
+issue-create（着手前 spec 選択）と共有している。同期は `validate_plugin_quality.py` が
+Critical 検証する（safe-hook.sh と同型）。**この区間を編集するときは正本と全消費サイトを
+同時に更新すること**。区間外（guard / 拡張軸 / 確信度・dormant・effort）は spec-advisor 固有の
+文脈特化であり同期対象外。`feature-dev`（Phase 1.3 / 4.5）は分類表を持たない handoff のため対象外。
+設計判断: `.claude/designs/20260708-spec-routing-ssot.md`
 
 ## 5 軸モデル
 
@@ -38,11 +39,20 @@ Issue 粒度の `issue-design` は linear / indie が同名なので `linear-wor
 
 ## signal → 軸
 
+共有 3 軸コア（正本: `.claude-plugin/lib/routing-axes.md`。issue-create（linear/indie）と同期・quality-check が検証）:
+
+<!-- ROUTING-AXES:START -->
+| 軸 | シグナル | 委譲先 | 出力先 |
+|---|---|---|---|
+| **WHAT** | ユーザー可視な振る舞い・受け入れ条件が中心（新機能・仕様変更） | `bdd-spec:create-spec` | Scenario/Examples を `features/` に |
+| **HOW** | 技術方式の選定・代替案比較・複数 Issue/コンポーネントに波及 | `design-doc:design-doc` | トレードオフ比較を `.claude/designs/` に |
+| **WHY** | 単一の重要な設計判断（ライブラリ・方針）を理由ごと残す | `adr-keeper:adr` | 決定を `.claude/adr/` に append-only |
+<!-- ROUTING-AXES:END -->
+
+spec-advisor 固有の拡張軸（同期対象外）:
+
 | タスクのシグナル | 推奨軸 | skill |
 |---|---|---|
-| 新機能・仕様変更。ユーザー可視な振る舞い / 受け入れ条件 / エッジケースの網羅が中心 | WHAT | `bdd-spec:create-spec` |
-| 技術方式の選定・ライブラリ/アーキテクチャ比較・複数 Issue やコンポーネントに波及・トレードオフが Issue 本文に収まらない | HOW | `design-doc:design-doc` |
-| 単一の重要な決定（このライブラリを使う / この方針を採る）を、後から理由を辿れるよう残したい | WHY | `adr-keeper:adr` |
 | 1 つの Issue の作業を 9 セクションで構造化し、決定と open を仕分けたい | Issue 粒度 | `issue-design` |
 | 上記の設計を経て、そのまま実装まで一気に進める意思が明確 | 実装 | `feature-dev` |
 | 原因調査・分析。結論が出れば方針が決まる | （調査中は不要） | 結論を残すなら `adr-keeper:adr` |

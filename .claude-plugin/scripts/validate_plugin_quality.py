@@ -10,6 +10,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - allowed-tools 一致: command <-> skill ペアの allowed-tools が完全一致か
   - hooks 安全性: hook スクリプトが safe_hook_init を呼んでいるか
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
+  - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
   - references 参照整合性: SKILL.md / commands/*.md / agents/*.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
 
@@ -31,10 +32,24 @@ from __future__ import annotations
 import json
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CANONICAL_SAFE_HOOK = ROOT / ".claude-plugin" / "lib" / "safe-hook.sh"
+
+# spec ルーティング 3 軸コア（WHAT/HOW/WHY → プラグイン対応）の正本と消費サイト.
+# 各ファイルの ROUTING-AXES:START / END マーカー区間を dedent 後に比較する
+# （消費サイトはリスト内などで一様なインデントを付けてよい）.
+# 設計判断: .claude/designs/20260708-spec-routing-ssot.md
+CANONICAL_ROUTING_AXES = ROOT / ".claude-plugin" / "lib" / "routing-axes.md"
+ROUTING_AXES_CONSUMERS = [
+    ROOT / "spec-advisor" / "skills" / "spec-advise" / "references" / "routing-rubric.md",
+    ROOT / "linear-workflow" / "skills" / "issue-create" / "SKILL.md",
+    ROOT / "indie-workflow" / "skills" / "indie-issue-create" / "SKILL.md",
+]
+ROUTING_AXES_START = "<!-- ROUTING-AXES:START -->"
+ROUTING_AXES_END = "<!-- ROUTING-AXES:END -->"
 
 # 両プラグインで byte-identical であるべき共有 references（(canonical, replica) のペア）.
 # issue-design の普遍部分（9 セクションテンプレ / 設計判断ルール）は linear / indie で同一内容を共有する.
@@ -194,6 +209,50 @@ def check_safe_hook_sync(plugin_dir: Path, errors: list[str]) -> None:
         errors.append(f"[safe-hook-sync:{name}] diverged from canonical: {replica.relative_to(ROOT)}")
 
 
+def _extract_routing_axes(path: Path, errors: list[str]) -> str | None:
+    """ROUTING-AXES マーカー区間の内容を dedent して返す（マーカー行は含めない）.
+
+    消費サイトはリスト内などで一様なインデントを付けてよいため、
+    textwrap.dedent で共通インデントを外してから比較する（それ以外の差分は fail）.
+    """
+    rel = path.relative_to(ROOT)
+    lines = read_text(path).splitlines()
+    starts = [i for i, l in enumerate(lines) if l.strip() == ROUTING_AXES_START]
+    ends = [i for i, l in enumerate(lines) if l.strip() == ROUTING_AXES_END]
+    if len(starts) != 1 or len(ends) != 1:
+        errors.append(
+            f"[routing-axes-sync] marker count invalid (START={len(starts)}, END={len(ends)}, 期待は各1): {rel}"
+        )
+        return None
+    if ends[0] <= starts[0]:
+        errors.append(f"[routing-axes-sync] END marker precedes START: {rel}")
+        return None
+    region = lines[starts[0] + 1 : ends[0]]
+    return textwrap.dedent("\n".join(region))
+
+
+def check_routing_axes_sync(errors: list[str]) -> None:
+    """spec ルーティング 3 軸コアの delimiter 区間が正本と一致するかを検証する（plugin 跨ぎ）."""
+    if not CANONICAL_ROUTING_AXES.is_file():
+        errors.append(f"[routing-axes-sync] canonical missing: {CANONICAL_ROUTING_AXES.relative_to(ROOT)}")
+        return
+    canonical = _extract_routing_axes(CANONICAL_ROUTING_AXES, errors)
+    if canonical is None:
+        return
+    for consumer in ROUTING_AXES_CONSUMERS:
+        if not consumer.is_file():
+            errors.append(f"[routing-axes-sync] consumer missing: {consumer.relative_to(ROOT)}")
+            continue
+        region = _extract_routing_axes(consumer, errors)
+        if region is None:
+            continue
+        if region != canonical:
+            errors.append(
+                f"[routing-axes-sync] diverged from canonical "
+                f"({CANONICAL_ROUTING_AXES.relative_to(ROOT)}): {consumer.relative_to(ROOT)}"
+            )
+
+
 def check_shared_references_sync(errors: list[str]) -> None:
     """両プラグインで共有する references が byte-identical かを検証する（plugin 跨ぎ）."""
     for canonical, replica in SHARED_REFERENCES:
@@ -349,6 +408,7 @@ def main() -> int:
         check_allowed_tools_minimality(plugin_dir, warnings)
 
     check_shared_references_sync(errors)
+    check_routing_axes_sync(errors)
 
     if warnings:
         # 助言（非ブロッキング）. errors と分離して常に出力する.

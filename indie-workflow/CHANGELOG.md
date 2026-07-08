@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.38.2] - 2026-07-08
+
+### Changed
+- `indie-issue-create` Phase 8 の判定表を再構成: WHAT/HOW/WHY の 3 軸コアを `ROUTING-AXES:START/END` マーカー区間として正本 `.claude-plugin/lib/routing-axes.md` と同期（quality-check が dedent 比較で Critical 検証）。type 別の追加判定（bugfix/investigation/debt → 不要）は区間外の「type 別の追加判定」表に分離（ワークフロー固有・同期対象外）。判定内容は不変・spec-advisor / linear-workflow とドリフトしない機械保証を追加（linear-workflow 1.35.2 とミラー対称。設計判断: `.claude/designs/20260708-spec-routing-ssot.md`）
+
 ## [1.38.1] - 2026-07-07
 
 ### Fixed

@@ -203,14 +203,23 @@ Issue の情報が確定した段階で、既存の knowledge を検索する。
 
 2. **自動推奨（判定表）**: type と Issue の性質から推奨を 1 つ決める。WHAT / HOW / WHY は排他ではない（大きめの feature は bdd-spec で WHAT を固めてから design-doc で HOW、のように併用してよい）。推奨が未導入の spec を指す場合（例: design-doc 推奨だが `SPEC_DD=0`）は導入済みの次点か「不要」にフォールバックする。
 
-   | シグナル | 推奨 | 軸 / 出力先 |
-   |---|---|---|
-   | ユーザー可視な振る舞い・受け入れ条件が中心（新機能・仕様変更） | **bdd-spec** | WHAT — Scenario/Examples を `features/` に |
-   | 技術方式の選定・代替案比較・複数 Issue/コンポーネントに波及 | **design-doc** | HOW — トレードオフ比較を `.claude/designs/` に永続化 |
-   | 単一の重要な設計判断（ライブラリ・方針）を理由ごと残す | **adr-keeper** | WHY — 決定を `.claude/adr/` に append-only |
-   | 影響範囲が限定的な修正・typo・設定変更（bugfix） | **不要** | 仕様化コストが見合わない → 直接実装 |
-   | 原因調査・分析（investigation） | **不要**（結論で方針が決まれば adr） | 調査は Issue 本文で十分 |
-   | 技術的負債の解消（debt） | **不要**（移行方式が大きいなら design-doc） | 小さな改善は直接着手、大きな移行は HOW を design-doc に |
+   共有 3 軸コア（正本: `.claude-plugin/lib/routing-axes.md`。spec-advisor / indie-workflow と同期・quality-check が検証。**編集時は正本と全消費サイトを同時更新**）:
+
+   <!-- ROUTING-AXES:START -->
+   | 軸 | シグナル | 委譲先 | 出力先 |
+   |---|---|---|---|
+   | **WHAT** | ユーザー可視な振る舞い・受け入れ条件が中心（新機能・仕様変更） | `bdd-spec:create-spec` | Scenario/Examples を `features/` に |
+   | **HOW** | 技術方式の選定・代替案比較・複数 Issue/コンポーネントに波及 | `design-doc:design-doc` | トレードオフ比較を `.claude/designs/` に |
+   | **WHY** | 単一の重要な設計判断（ライブラリ・方針）を理由ごと残す | `adr-keeper:adr` | 決定を `.claude/adr/` に append-only |
+   <!-- ROUTING-AXES:END -->
+
+   type 別の追加判定（このワークフロー固有・同期対象外）:
+
+   | type / シグナル | 推奨 |
+   |---|---|
+   | 影響範囲が限定的な修正・typo・設定変更（bugfix） | **不要** — 仕様化コストが見合わない → 直接実装 |
+   | 原因調査・分析（investigation） | **不要**（結論で方針が決まれば adr）— 調査は Issue 本文で十分 |
+   | 技術的負債の解消（debt） | **不要**（移行方式が大きいなら design-doc）— 小さな改善は直接着手、大きな移行は HOW を design-doc に |
 
 3. **提示（自動推奨 → 低確信時のみ質問）**:
    - **確信度が高い**（bugfix / debt → 不要、明確な新機能 → bdd-spec 等）: 推奨と根拠を 1 文で示してそのまま進む（「不要」なら何も起動しない）

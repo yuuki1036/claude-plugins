@@ -214,6 +214,22 @@ hook 共通ラッパーの正本と複製が byte-identical であることを�
 
 **不一致は hook の挙動が予測不能になるため Critical。** 正本を修正したら全複製を同期する。
 
+### 15b. routing-axes 同期チェック（Critical）
+
+spec ルーティング 3 軸コア（WHAT→bdd-spec / HOW→design-doc / WHY→adr-keeper）の正本と消費サイトの delimiter 区間が一致することを検証する。中核は `validate_plugin_quality.py` の `check_routing_axes_sync()` が決定的に実行する。
+
+**対象**:
+
+- 正本: `.claude-plugin/lib/routing-axes.md`
+- 消費サイト: `spec-advisor/skills/spec-advise/references/routing-rubric.md` / `linear-workflow/skills/issue-create/SKILL.md`（Phase 5）/ `indie-workflow/skills/indie-issue-create/SKILL.md`（Phase 8）
+
+**チェック**:
+
+- 各ファイルに `<!-- ROUTING-AXES:START -->` / `<!-- ROUTING-AXES:END -->` マーカーが**各1回**存在するか
+- マーカー区間の内容が **dedent 後に**正本と一致するか（消費サイトはリスト内などで一様なインデントを付けてよい。それ以外の差分は fail）
+
+**不一致は軸→プラグイン対応のサイレントなドリフトを生むため Critical。** 区間を編集するときは正本と全消費サイトを同時更新する。区間外の type 別判定・拡張軸は各サイトの文脈特化で比較対象外（設計判断: `.claude/designs/20260708-spec-routing-ssot.md`）。
+
 ### 16. 変更差分のセルフレビュー（条件付き）
 
 静的整合性チェック（項目 0〜15）は frontmatter・同期・構造を検証するが、**変更したコード/スクリプトの実質的な品質（バグ・退行・設計判断・サイレント失敗）は別軸**。working tree に変更がある場合は `code-review:self-review` を呼んで差分をレビューし、結果を本レポートに統合する。
