@@ -18,6 +18,10 @@ cases:
     prompt: 同値分割表のテンプレを用意して
     expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
     k: 3
+  - id: bdd-spec-transition-table-ja
+    prompt: 状態遷移表つきの BDD spec を scaffold して
+    expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
+    k: 3
 
   # --- evaluate-spec トリガー回帰 ---
   - id: evaluate-spec-ja
@@ -30,6 +34,10 @@ cases:
     k: 3
   - id: evaluate-spec-holes-ja
     prompt: BDD spec の穴を見つけて
+    expected_skill: [bdd-spec:evaluate-spec, bdd-spec:bdd-spec-evaluate]
+    k: 3
+  - id: evaluate-spec-transition-ja
+    prompt: 状態遷移の網羅性を spec でチェックして
     expected_skill: [bdd-spec:evaluate-spec, bdd-spec:bdd-spec-evaluate]
     k: 3
 
