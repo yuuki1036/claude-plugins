@@ -33,19 +33,24 @@ code-review の high-risk recall 補強（Tier3 v2.30.0 / Tier2 v2.31.0 / Tier1 
 cd evals/fixtures/recall
 ./setup.sh 01-value-flow-insert
 
-# 2. 出力された temp dir で self-review を実行（対話モード必須・下記注意）
+# 2. 出力された temp dir で self-review を実行（コマンド名は名前空間付きで指定）
 cd <出力された target dir>
-claude
-# プロンプト: 「コミット前にセルフレビューして」
+claude -p "/code-review:self-review" --permission-mode plan
+# 対話モードなら: claude を起動して /code-review:self-review
 
 # 3. レポートを expected.yaml と照合して記録
 ```
 
-> **⚠️ headless（`claude -p`）+ plan mode では skill が起動しないことがある**
-> （2026-07-04 スモークで確認。素の Claude の単騎レビューになり、Tier1 パイプラインを
-> 測れない）。本計測は**対話モードで実行**し、出力に **「Phase 0 トリアージ結果」表が
-> 出ること**で skill 起動を確認してから記録する。skill 起動が確認できない run はカウント
-> せず再実行する。
+> **⚠️ コマンド名は必ず名前空間付き `/code-review:self-review` で指定する**
+> 名前空間なし `/self-review` や自然文プロンプトはユーザーグローバルの旧 self-review
+> skill 等に解決され、素の単騎レビューになって Tier1 パイプラインを測れない
+> （2026-07-04 スモークの「headless で skill 不起動」の実際の原因。2026-07-08 の
+> 本計測で名前空間付きなら headless でも skill が起動することを確認済み）。
+> 各 run とも transcript に **「Phase 0 トリアージ結果」表が出ること**で skill 起動を
+> 確認してから記録する。skill 起動が確認できない run はカウントせず再実行する。
+>
+> **⚠️ plan mode では `review:completed` event が publish されない**（書き込み制約）。
+> fixture 計測は issue #77 の recall_skeptic 集計データに寄与しない。
 >
 > **合成 fixture の解釈上の注意**: fixture は最小 diff（実 PR より探索空間が狭い）なので
 > 実バグより見つけやすい。PASS は「デグレしていない」ことの回帰確認であり、

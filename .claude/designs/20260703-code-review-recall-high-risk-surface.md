@@ -3,7 +3,7 @@ id: 20260703-code-review-recall-high-risk-surface
 title: code-review の high-risk surface における recall 補強（冷や読み skeptic + surface-aware 閾値）
 status: accepted
 phase: current
-last-validated: 2026-07-03
+last-validated: 2026-07-08
 supersedes: []
 superseded-by: null
 issue: null
@@ -165,7 +165,8 @@ open の確定（実装時に採用した方向）:
 - **ADR Enforcement 見直し**: supersede 実施済み。
 
 残タスク:
-- **回帰 fixture は作成済み**（2026-07-04）: `evals/fixtures/recall/` に合成 fixture 3 本（01=#1 層跨ぎ値フロー recall / 07=#7 帰結接続 recall / 90=副単位ゲート precision 対照群）+ `expected.yaml`（判定ルール: recall は k=3 中 2 回以上、precision は 0 回厳格）+ `setup.sh`（temp repo 構築 + surface 判定の決定的発火チェック）+ runbook README。setup 検証済み（01=HIT raw-sql+money / 07=MISS が正解 / 90=HIT money）。スモーク 1 本実施（`evals/reports/recall-20260704-smoke.md`）: fixture 01 のバグは CRITICAL で検出可能と確認。ただし headless plan mode では skill が起動せず素の単騎レビューになるため、**k=3 の本計測は対話モードで skill 起動（Phase 0 表）を確認して実施する（未了）**。
+- **回帰 fixture は作成済み**（2026-07-04）: `evals/fixtures/recall/` に合成 fixture 3 本（01=#1 層跨ぎ値フロー recall / 07=#7 帰結接続 recall / 90=副単位ゲート precision 対照群）+ `expected.yaml`（判定ルール: recall は k=3 中 2 回以上、precision は 0 回厳格）+ `setup.sh`（temp repo 構築 + surface 判定の決定的発火チェック）+ runbook README。setup 検証済み（01=HIT raw-sql+money / 07=MISS が正解 / 90=HIT money）。
+- **k=3 本計測 完了（2026-07-08, v2.33.1, GitHub issue #76）**: `evals/reports/recall-20260708.md`。**01 PASS (3/3 CRITICAL 以上) / 07 PASS (3/3 BLOCKER) / 90 PASS (パターン合致 FP 0/3) → recall 回帰 PASS**。headless でも名前空間付き `/code-review:self-review` なら skill が起動する（スモークの不起動原因はコマンド名解決だった）。副次発見 2 点: (1) **skeptic silent skip** — surface HIT 6 run 中起動 1 run のみ、かつ未起動が missing_coverage に出ない遵守バグ（GitHub issue #85）。ただし skeptic 未起動でも 01 は全捕捉で、Tier2 だけで合成 fixture 級は足りる傍証（Tier1 縮小出口条件の材料）。(2) plan mode では review:completed が publish されず #77 の集計に寄与しない。
 - high での skeptic 起動昇格判断: 前提だった `recall_skeptic` payload フィールド（surface / fired / skip_reason / findings_added）は **v2.33.0 で実装済み**（2026-07-05）。skip 時も正規表現 surface 判定を必ず記録する。昇格の判断基準と jq 集計手順は `triage-guide.md` §8.5「high 昇格の判断基準」に記載。あとは xhigh 運用で events を貯めて集計するだけ（データ蓄積待ち）。
 
 ## 未解決事項 (open)
