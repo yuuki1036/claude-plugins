@@ -1,0 +1,47 @@
+plugin: spec-advisor
+# spec-advise のトリガー回帰 + 隣接プラグイン（design-doc / issue-design / adr-keeper / bdd-spec）への
+# 誤発火防止。spec-advise は「どの設計成果物を選ぶか」というメタ選択が領分で、成果物そのものの生成
+# （design-doc / bdd-spec / adr）や Issue 本文設計（issue-design）を横取りしないことを検証する。
+cases:
+  # --- spec-advise トリガー回帰（メタ選択の問い） ---
+  - id: spec-advise-which-method
+    prompt: bdd-spec と design-doc、どっちを先に書くべき?
+    expected_skill: spec-advisor:spec-advise
+    k: 3
+  - id: spec-advise-what-first
+    prompt: この機能、実装前に何を用意すべきか判断して
+    expected_skill: spec-advisor:spec-advise
+    k: 3
+  - id: spec-advise-start
+    prompt: 何から設計を始めればいいか相談したい
+    expected_skill: spec-advisor:spec-advise
+    k: 3
+  - id: spec-advise-spec-or-impl
+    prompt: この作業、先に仕様を書くべき? それとも直接実装でいい?
+    expected_skill: spec-advisor:spec-advise
+    k: 3
+  - id: spec-advise-select
+    prompt: 設計・計画のどのやり方から着手すべきか選んで
+    expected_skill: spec-advisor:spec-advise
+    k: 3
+
+  # --- 誤発火防止（隣接スキルに正しくルーティングされるか） ---
+  # 成果物の「生成」依頼は各プラグインの領分。spec-advise（選択）が横取りしないこと。
+  - id: spec-advise-nofire-design-doc
+    prompt: この機能の技術設計書を作って
+    expected_skill: design-doc:design-doc
+    k: 3
+  - id: spec-advise-nofire-issue-design
+    prompt: この Issue を設計し直して
+    # issue-design は linear / indie に同名で存在する（どちらに解決してもよい）
+    expected_skill: [indie-workflow:issue-design, linear-workflow:issue-design]
+    k: 3
+  - id: spec-advise-nofire-adr
+    prompt: この設計判断の理由を後から辿れるように記録して
+    expected_skill: adr-keeper:adr
+    k: 3
+  - id: spec-advise-nofire-bdd-spec
+    prompt: この機能の BDD spec を作って
+    # スキル名 + コマンド名の両方を許容（bdd-spec は command 名 bdd-spec-create が skill 名 create-spec と非対称）
+    expected_skill: [bdd-spec:create-spec, bdd-spec:bdd-spec-create]
+    k: 3
