@@ -96,27 +96,34 @@ Issue の内容が確定した段階で、対象コードの現状を軽く確�
    - 確認は 3〜5 回以内の Glob/Grep に留める（全網羅ではない）
    - bugfix / investigation / debt は対象コードが明確なことが多いので、この Phase はスキップしてよい（feature 時に特に有効）
 
-### Phase 5.5: 関連 Knowledge の検索
+### Phase 5.5: 関連ナレッジの検索（knowledge / ADR / 完了 Issue）
 
-Issue の内容が確定した段階で、既存の knowledge を検索する。
+Issue の内容が確定した段階で、過去の蓄積から「この問題を過去に解いた・判断したことがないか」を検索し、関連するものを起票フローで提示する（蓄積→活用の導線を閉じる）。検索は grep ベースの安価な絞り込みのみとし、embedding 等の高コスト処理・環境依存は持ち込まない（ファネル先頭の絞り込み）。
 
-1. `.claude/indie/{slug}/knowledge/index.md` の存在を確認（Read）
-2. **index.md が存在する場合:**
-   - index.md を Read で読み込む
-   - Issue のタイトル・概要からキーワードを抽出する
-   - index.md の tags 列とキーワードを照合し、関連する knowledge を特定する
-3. **index.md が存在しない場合:**
-   - `.claude/indie/{slug}/knowledge/*.md` を Glob で列挙する
-   - knowledge ファイルが存在すれば、各ファイルのフロントマター（tags）と照合する
-4. **関連 knowledge が見つかった場合:**
-   - ユーザーに提示する:
-     ```
-     関連する knowledge が見つかりました:
-     - `knowledge/{topic}.md` — {概要}（tags: {tags}）
-     参照しますか？
-     ```
-   - ユーザーが参照を希望した場合、Read で内容を表示する
-   - Issue ファイルの「備考」セクションに関連 knowledge へのリンクを記載する
+まず Issue のタイトル・概要から検索キーワードを 2〜4 個抽出する（固有名詞・機能名・エラー語・ドメイン語を優先）。以降の grep は Bash で実行する（例: `grep -rliE "<kw1>|<kw2>" <dir> 2>/dev/null`）。
+
+**1. knowledge**
+1. `.claude/indie/{slug}/knowledge/index.md` があれば Read し、tags 列とキーワードを照合する
+2. index.md が無ければ `.claude/indie/{slug}/knowledge/*.md` を Glob し、各フロントマター（tags）と照合する
+3. 併せてキーワードで `.claude/indie/{slug}/knowledge/` を grep し、tags に載らない本文一致も拾う
+
+**2. 完了 Issue**
+- `.claude/indie/{slug}/issues/` をキーワードで grep し、ヒットしたファイルのうち frontmatter が `status: completed`（または `canceled`）のものを「過去に解いた/判断した類似 Issue」として抽出する（未完了 Issue との重複起票チェックとは目的が別なので、ここでは過去に解決・判断済み＝completed / canceled に絞る）
+
+**3. ADR（dormant・adr-keeper 導入時のみ）**
+- `.claude/adr/` が存在する場合のみ `.claude/adr/*.md` をキーワードで grep し、関連する設計判断を抽出する。ディレクトリが無ければ skip（未導入時は完全にスキップ・後方互換）
+
+**関連が 1 件以上見つかった場合:**
+- 種別ラベル付きでまとめて提示する（取捨選択できる形で）:
+  ```
+  過去の関連ナレッジが見つかりました（取捨選択できます）:
+  - [knowledge] `knowledge/{topic}.md` — {概要}（tags: {tags}）
+  - [完了Issue] `issues/{ID}.md` — {タイトル}
+  - [ADR] `adr/{file}.md` — {タイトル}
+  参照・引用しますか？
+  ```
+- ユーザーが選んだものを Read で内容表示し、Issue ファイルの「備考」セクションに種別ラベル付きで関連リンクを記載する
+- 1 件も見つからなければ何も追記せず次 Phase へ進む（ノイズを出さない）
 
 ### Phase 6: Issue ファイル生成
 
@@ -192,8 +199,8 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
    - 確認済みファイル: {パス一覧}
    - 既存実装の有無: {あれば該当箇所のサマリー}
 
-   ## Phase 5.5 関連 Knowledge
-   - {参照済み knowledge ファイル名と tags}
+   ## Phase 5.5 関連ナレッジ（knowledge / ADR / 完了 Issue）
+   - {参照済み knowledge / ADR / 完了 Issue のファイル名と種別ラベル}
 
    ## 親 Issue（frontmatter の parent: に値がある場合）
    - [{PARENT-ID}] {タイトル} — 背景・計画のサマリー

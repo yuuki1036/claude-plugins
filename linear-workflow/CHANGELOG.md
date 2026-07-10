@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.36.0] - 2026-07-10
+
+### Added
+- **issue-create Phase 2.5 を「関連ナレッジの検索」に拡張**（issue #80）。knowledge のみだった検索対象を knowledge / ADR / 完了 Issue の 3 種に広げ、起票時に「この問題を過去に解いた・判断したことがないか」を grep で自動推奨する（蓄積→活用の導線を閉じる）:
+  - **完了 Issue**: `issues/*.md` を grep し `status: completed` / `canceled` のものを類似判断として抽出（未完了 Issue の重複起票チェックとは目的が別なので completed / canceled に絞る）
+  - **ADR**: adr-keeper 導入時のみ `.claude/adr/*.md` を grep（未導入なら skip・dormant）
+  - 検索は grep ベースの安価な絞り込みのみで embedding・環境依存は持ち込まない（ファネル先頭）。見つからなければ何も追記せずノイズを出さない
+  - feature-dev への引き継ぎ prompt の見出しも「関連ナレッジ（knowledge / ADR / 完了 Issue）」に更新
+
 ## [1.35.2] - 2026-07-08
 
 ### Changed
