@@ -17,7 +17,7 @@ allowed-tools:
 
 - 引数がテキストならそれを、ファイルパスなら読み込んだ内容を、省略なら直近の自分の生成テキストを対象にする。
 - `--embed` 指定時は採否確認を出さず推敲結果のみ返す（他プラグインからの呼び出し用）。
-- `--tone <種別>` で文書種別（commit / pr / issue / rfc / review 等）を明示できる。
+- `--tone <種別>` で文書種別（commit / pr / issue / rfc / review / code-comment 等）を明示できる。`code-comment` はコードコメント校正（別正本 `code-comment-guide.md`。what 削除・subtype 別保全）に分岐する。
 - `--aggressive` で任意の言い換え提案まで広く出す。
 
 中核原則（最小差分・過剰修正の抑制・原文の声の保持・構造の不変更）を必ず守る。

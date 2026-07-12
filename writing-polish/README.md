@@ -9,6 +9,7 @@
 - 文体（敬体/常体）のぶれ統一、トーンの整え
 - AI っぽさ（過剰な箇条書き・過剰強調・hype 表現・絵文字）の除去
 - 用語の一貫性チェック、能動態への寄せ
+- **コードコメント校正**（`--tone code-comment`）: コードから自明な what コメントの削除・docstring/TODO 保全・code-review との責務分離（別正本 `code-comment-guide.md`）
 - （任意）気の利いた言い換え提案
 - **textlint 連携（任意）**: textlint 導入時は日本語の表記・文法・冗長構文を決定的にチェック。未導入時は LLM 判定にフォールバック
 
@@ -26,7 +27,7 @@
 
 オプション:
 
-- `--tone <種別>`: 文書種別を明示（commit / pr / issue / rfc / review）
+- `--tone <種別>`: 文書種別を明示（commit / pr / issue / rfc / review / code-comment）。`code-comment` は別正本 `code-comment-guide.md` に分岐し、コードから自明な what コメントの削除・docstring/TODO 保全・code-review との責務分離で処理する（削除提案は不可逆度が高いため常に任意/要確認）
 - `--aggressive`: 任意の言い換え提案まで広く出す
 - `--embed`: 採否確認を出さず推敲結果のみ返す（他プラグインからの呼び出し用）
 

@@ -28,7 +28,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [plugin-feedback](#plugin-feedback) | 1.2.8 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.7.2 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
 | [spec-advisor](#spec-advisor) | 0.1.1 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
-| [writing-polish](#writing-polish) | 0.6.2 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
+| [writing-polish](#writing-polish) | 0.7.0 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
 排他関係: `indie-workflow` と `linear-workflow` は同系統（ローカル / Linear）で排他利用想定。両方有効時は両者の SessionStart hook が同名スキルのトリガー衝突を警告する。
 
