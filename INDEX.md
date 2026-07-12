@@ -103,6 +103,7 @@ Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットア
 - **commands / skills**（同名ペア 11）: `indie-init`, `indie-start`, `indie-issue-create`, `indie-issue-discover`, `indie-issue-maintain`, `indie-maintain`, `indie-follow-up`, `issue-design`, `knowledge`, `knowledge-lint`, `retrospective`
 - **agents**: `code-context`, `doc-resolver`, `discover-verifier`
 - **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse
+- **publishes**: `issue:completed`（Event Bus）
 - **subscribes**: `issue:completed`（retrospective）
 
 ### linear-workflow

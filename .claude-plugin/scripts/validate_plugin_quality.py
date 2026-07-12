@@ -11,6 +11,8 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - hooks 安全性: hook スクリプトが safe_hook_init を呼んでいるか
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
+  - event-bus 同期: 実 publish される event（grep 実測=正本）と、それを記載する doc が一致するか
+    （CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md publishes 行の plugin×event ペア）
   - references 参照整合性: SKILL.md / commands/*.md / agents/*.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
 
@@ -66,6 +68,22 @@ SHARED_REFERENCES = [
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 REF_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\s)`'\"]+)")
+
+# Event Bus: 実際に publish される event 名 ⇔ event を記載する doc の同期検証.
+# publisher は skill(SKILL.md) / command(commands/*.md) / hook スクリプト(hooks/scripts/*.sh)
+# の 3 種に分散するため、宣言 frontmatter は置かず `event_bus_publish "<event>"` の
+# リテラル呼び出しを grep 実測（=正本）し、event を記載する 3 系統の doc と照合する
+# （宣言⇔実装の二重管理を作らない）:
+#   1. CLAUDE.md イベント表（event 集合）
+#   2. INDEX.md イベント表（event 集合）
+#   3. INDEX.md 各プラグイン詳細の `**publishes**:` 行（plugin×event ペア）
+CLAUDE_MD = ROOT / "CLAUDE.md"
+INDEX_MD = ROOT / "INDEX.md"
+EVENT_PUBLISH_RE = re.compile(r'event_bus_publish\s+"([a-z][a-z_]*:[a-z][a-z_]*)"')
+EVENT_TABLE_ROW_RE = re.compile(r"^\|\s*`([a-z][a-z_]*:[a-z][a-z_]*)`\s*\|")
+EVENT_INLINE_RE = re.compile(r"`([a-z][a-z_]*:[a-z][a-z_]*)`")
+INDEX_SECTION_RE = re.compile(r"^### ([a-z][a-z-]+)\s*$")
+EVENT_PUBLISHER_GLOBS = ["*/skills/**/SKILL.md", "*/commands/*.md", "*/hooks/scripts/*.sh"]
 
 
 def read_text(path: Path) -> str:
@@ -267,6 +285,96 @@ def check_shared_references_sync(errors: list[str]) -> None:
                 f"[shared-ref-sync] diverged: {replica.relative_to(ROOT)} "
                 f"!= {canonical.relative_to(ROOT)}"
             )
+
+
+def _collect_published_pairs() -> set[tuple[str, str]]:
+    """コードベースの実 publish 箇所から (plugin, event) ペアを収集する（=正本）.
+
+    plugin 名は発行元ファイルの相対パス先頭ディレクトリから導出する.
+    """
+    pairs: set[tuple[str, str]] = set()
+    for pattern in EVENT_PUBLISHER_GLOBS:
+        for path in ROOT.glob(pattern):
+            plugin = path.relative_to(ROOT).parts[0]
+            for event in EVENT_PUBLISH_RE.findall(read_text(path)):
+                pairs.add((plugin, event))
+    return pairs
+
+
+def _events_in_table(path: Path) -> set[str] | None:
+    """`| \\`event\\` | ...` 形式の表行から event 名集合を収集する（読めなければ None）."""
+    if not path.is_file():
+        return None
+    return {
+        m.group(1)
+        for line in read_text(path).splitlines()
+        if (m := EVENT_TABLE_ROW_RE.match(line))
+    }
+
+
+def _collect_index_publishes() -> set[tuple[str, str]] | None:
+    """INDEX.md 各プラグイン詳細の `**publishes**:` 行から (plugin, event) ペアを収集する."""
+    if not INDEX_MD.is_file():
+        return None
+    pairs: set[tuple[str, str]] = set()
+    current: str | None = None
+    for line in read_text(INDEX_MD).splitlines():
+        m = INDEX_SECTION_RE.match(line)
+        if m:
+            current = m.group(1)
+            continue
+        if current and "**publishes**" in line:
+            for event in EVENT_INLINE_RE.findall(line):
+                pairs.add((current, event))
+    return pairs
+
+
+def check_event_bus_sync(errors: list[str]) -> None:
+    """実 publish される event と、それを記載する 3 系統の doc の同期を検証する（plugin 跨ぎ）.
+
+    正本 = 実 `event_bus_publish` の (plugin, event) ペア. 以下と双方向照合する:
+      1. CLAUDE.md イベント表（event 集合）
+      2. INDEX.md イベント表（event 集合）
+      3. INDEX.md の `**publishes**:` 行（plugin×event ペア）
+    """
+    tag = "event-bus-sync"
+    published_pairs = _collect_published_pairs()
+    published_events = {event for _, event in published_pairs}
+
+    # doc 1 & 2: event 集合の双方向照合
+    for label, table in (
+        ("CLAUDE.md イベント表", _events_in_table(CLAUDE_MD)),
+        ("INDEX.md イベント表", _events_in_table(INDEX_MD)),
+    ):
+        if table is None:
+            errors.append(f"[{tag}] {label} が読めない（ファイル欠落）")
+            continue
+        for event in sorted(published_events - table):
+            errors.append(
+                f"[{tag}] event '{event}' が実 publish されているが {label} に未記載 "
+                f"（表に追記するか publish を削除）"
+            )
+        for event in sorted(table - published_events):
+            errors.append(
+                f"[{tag}] event '{event}' が {label} に記載されているが publish 箇所がない "
+                f"（表から削除するか publisher を実装）"
+            )
+
+    # doc 3: plugin×event ペアの双方向照合
+    index_pairs = _collect_index_publishes()
+    if index_pairs is None:
+        errors.append(f"[{tag}] INDEX.md が読めない（ファイル欠落）")
+        return
+    for plugin, event in sorted(published_pairs - index_pairs):
+        errors.append(
+            f"[{tag}] {plugin} が '{event}' を publish するが INDEX.md の '### {plugin}' 詳細に "
+            f"`**publishes**: \\`{event}\\``（Event Bus）行がない（追記する）"
+        )
+    for plugin, event in sorted(index_pairs - published_pairs):
+        errors.append(
+            f"[{tag}] INDEX.md が '{plugin} publishes {event}' と記載するが実際には publish しない "
+            f"（publishes 行を削除するか publisher を実装）"
+        )
 
 
 def check_references(plugin_dir: Path, errors: list[str]) -> None:
@@ -489,6 +597,7 @@ def main() -> int:
 
     check_shared_references_sync(errors)
     check_routing_axes_sync(errors)
+    check_event_bus_sync(errors)
     check_mirror_symmetry(warnings)
 
     if warnings:

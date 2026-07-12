@@ -337,7 +337,7 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 **自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/references/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
 
 - `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期（INDEX の version 列・記載漏れ・余分行、CLAUDE.md の一覧表記載漏れ）
-- `validate_plugin_quality.py`: allowed-tools 存在・command↔skill ペア一致 / hooks.json 参照スクリプトの safe_hook_init / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ存在 / allowed-tools 最小性 #14b（SKILL.md・agents の未使用ツール検出、非ブロッキング warning。commands はペア一致ルールのため対象外）/ linear・indie ミラー対称性（skill の片側取り残し・対応表 stale を非ブロッキング warning。対応表は `MIRROR_SKILL_PAIRS` / `MIRROR_INTENTIONAL_*`）
+- `validate_plugin_quality.py`: allowed-tools 存在・command↔skill ペア一致 / hooks.json 参照スクリプトの safe_hook_init / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ存在 / Event Bus 同期（実 `event_bus_publish` の (plugin, event) ペアを grep 実測=正本とし、event を記載する 3 系統の doc と双方向照合: CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md 各プラグイン詳細の `**publishes**:` 行の plugin×event ペア。publisher が skill/command/hook に分散するため宣言 frontmatter は置かず実測照合＝宣言と実装の二重管理を作らない。新イベント追加時の表更新漏れ・プラグイン単位の publishes 記載漏れを Critical で検知）/ allowed-tools 最小性 #14b（SKILL.md・agents の未使用ツール検出、非ブロッキング warning。commands はペア一致ルールのため対象外）/ linear・indie ミラー対称性（skill の片側取り残し・対応表 stale を非ブロッキング warning。対応表は `MIRROR_SKILL_PAIRS` / `MIRROR_INTENTIONAL_*`）
 - `claude plugin validate`: CLI スキーマ（`_requirements` 警告は除外）
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
