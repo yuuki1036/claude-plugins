@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.40.0] - 2026-07-12
+
+### Added
+- **indie-issue-maintain に「未import knowledge の検知」ステップを追加**（issue #86）。knowledge 切り出しの反映先である横断 vault への `/import-knowledge` は手動トリガーで忘れやすいため、切り出し直後（責務的に最も自然な発火位置）で未import件数を検知して促す:
+  - feature-dev Phase 1.6 と同じ detect→skip パターン。`KNOWLEDGE_VAULT_ROOT` + vault 側検知 CLI（`_shared/scripts/unimported_scan.py`）の二段で存在確認し、いずれか欠けたら静かに skip（vault を持たないマシンで壊れない後方互換）
+  - 現プロジェクトの knowledge dir を `--project` に、`--count` で fresh 件数だけ取得（frontmatter 突合のみで軽量・実測 0.4s）。N>0 のときだけ最終レポートで `/import-knowledge` を推奨（AskUserQuestion では止めない）
+  - linear-workflow 1.37.0 とミラー対称
+
 ## [1.39.0] - 2026-07-10
 
 ### Added

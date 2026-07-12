@@ -160,6 +160,48 @@ concept の作成・更新も他の整理と同様、承認待ちで止めず実
 
 ---
 
+## 未import knowledge の検知（横断 vault 反映促し）
+
+knowledge/ 切り出しは本スキルの責務だが、切り出した知見を**横断 vault** に反映する `/import-knowledge` は手動トリガーで忘れやすい。切り出し直後の本スキル内で未import件数を検知して促すのが責務的に最も自然（切り出さない＝新規 import も無い、という論理も噛み合い、セッション開始 hook より発火位置が的確）。
+
+feature-dev Phase 1.6（Vault Recall）と同じ **detect→skip パターン**に乗る。vault を持たないマシンでは静かに skip して後方互換を壊さない。
+
+### Step 1: 検知 CLI の存在確認（外部依存の二段確認）
+
+vault は本プラグイン外の外部資産。環境変数 `KNOWLEDGE_VAULT_ROOT` と検知スクリプトの**両方**が揃って初めて利用可能とみなす。
+
+```bash
+# vault 側の軽量 CLI（frontmatter 突合 + triage jsonl のみ・ベクトル検索なし。実測 0.4s）。
+# vault の場所は環境変数 KNOWLEDGE_VAULT_ROOT で明示指定する（個人環境パスをハードコードしない）。
+SCAN="$KNOWLEDGE_VAULT_ROOT/_shared/scripts/unimported_scan.py"
+if [ -n "$KNOWLEDGE_VAULT_ROOT" ] && [ -f "$SCAN" ]; then
+  UNIMPORTED_AVAILABLE=1
+else
+  UNIMPORTED_AVAILABLE=0
+fi
+```
+
+- `UNIMPORTED_AVAILABLE=0` → 本節を **skip**（`KNOWLEDGE_VAULT_ROOT` 未設定 / スクリプト不在のいずれか）。notify も出さず静かに飛ばす（vault を持たない環境で常態的にノイズを出さないため）
+- `UNIMPORTED_AVAILABLE=1` → 次の Step へ
+
+### Step 2: 未import件数の取得
+
+現在のプロジェクトの knowledge dir パスを `--project` に渡し、`--count` で fresh 件数だけ取得する（`{slug}` は対象 Issue から特定済み）。cwd プロジェクトに絞るので linear の案件コードを端末に出さない。
+
+```bash
+N=$(python3 "$SCAN" --project ".claude/indie/{slug}/knowledge" --count 2>/dev/null || echo 0)
+```
+
+### Step 3: 促し
+
+`N > 0` の場合のみ、最終レポートに 1 行で列挙する（AskUserQuestion では止めない。import 実行はユーザーがチャットで判断する）:
+
+> 未import knowledge {N}件。`/import-knowledge` で vault 反映を推奨
+
+`N = 0` または取得失敗（`echo 0` fallback）時は何も出さない（ノイズを出さない）。
+
+---
+
 ## 即クローズパターンの検出
 
 Issue 起票後、実装せずに即クローズされた Issue（`status: completed` かつ `created == last_active` かつ進捗の `[x]` タスク 0 件）を検出し、経緯が残せているか確認する。
@@ -267,6 +309,7 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 12. 整理を承認待ちせず実行する
 12.5 writing-polish 連携（整理後の Issue 本文 + 切り出した knowledge ページの散文を確定直前に推敲。writing-polish 必須節を参照）
 13. knowledge/ 切り出し・concept 波及があった場合、knowledge/index.md を更新（concept はパス付きで登録）
+13.5 未import knowledge の検知（KNOWLEDGE_VAULT_ROOT + unimported_scan.py の二段 detect→skip。fresh 件数 N>0 なら `/import-knowledge` を最終レポートで促す。vault 不在時は静かに skip）
 14. 更新履歴にメンテナンス内容を記録
 15. 実行内容を最終レポートにまとめて報告:
     - スコープ超過警告（該当する場合）
@@ -276,6 +319,7 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
     - 統合した更新履歴
     - knowledge/ 切り出し（破壊的変更検出は 🔴 マーカー付きで先頭表示、tags を併記。照合結果を含む）
     - 概念ページ（concept）への波及（新規作成 / 既存 concept への `[[ ]]` 追加）
+    - 未import knowledge 件数（vault 利用可 かつ N>0 の場合のみ。`/import-knowledge` を推奨）
     - スコープ外差分から検出した follow-up 候補（記録は未実行。ユーザーが判断）
     - レビュー未実施の警告（該当する場合。非ブロッキング）
     - 追加したテンプレート不足セクション
