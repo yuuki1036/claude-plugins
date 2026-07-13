@@ -153,6 +153,26 @@ concept の作成・更新も他の整理と同様、承認待ちで止めず実
 
 ---
 
+## 未import knowledge の検知（vault 反映促し）
+
+knowledge の切り出し（source→concept 統合）はこのスキルの責務だが、それを横断 vault に反映する `/import-knowledge` は手動トリガーで忘れがち。切り出し完了直後のこのタイミングで未import件数を検知して促すのが責務的に最も自然（切り出さない＝新規 import も無い、という論理も噛み合う）。
+
+検知は vault 側の軽量 CLI（`unimported_scan.py`）に委譲する。**feature-dev Phase 1.6 の detect→skip パターンを踏襲**し、vault を持たないマシンでは後方互換で skip する（プラグイン独立性のため）。
+
+```bash
+# KNOWLEDGE_VAULT_ROOT 未設定 or scan スクリプト不在なら skip（vault を持たないマシンで壊れない）。
+SCAN="$KNOWLEDGE_VAULT_ROOT/_shared/scripts/unimported_scan.py"
+if [ -n "$KNOWLEDGE_VAULT_ROOT" ] && [ -f "$SCAN" ]; then
+  # --project で cwd プロジェクトに絞り、--count で fresh 件数だけ返す（ベクトル検索を使わず軽量）
+  python3 "$SCAN" --project "$(basename "$PWD")" --count 2>/dev/null
+fi
+```
+
+- scan スクリプトが返す件数 `N > 0` なら「未import knowledge {N}件。`/import-knowledge {slug}` で vault 反映を推奨」と**最終レポートに列挙**する（`{slug}` は整理対象 Issue の slug）
+- `N == 0` / skip / エラー時は何も出さない（fail-silent。促しは非ブロッキングの推奨に留め、AskUserQuestion で止めない）
+
+---
+
 ## タスク完了時のフロー
 
 Issue のタスクが全て完了した場合、以下を実行する：
@@ -251,6 +271,7 @@ Issue ファイルの「スコープ外」「後続 Issue 候補」「やらな�
 9.5 writing-polish 連携（Issue 本文 + 切り出し knowledge の散文を推敲。frontmatter / wikilink / 見出し階層 / テンプレート構造は変更しない。「writing-polish 連携」節を参照）
 10. 整理を承認待ちせず実行する（既存 knowledge / concept を編集した場合は frontmatter `updated` を当日日付に更新）
 11. knowledge/ 切り出し・concept 波及があった場合、knowledge/index.md を更新（concept はパス付きで登録）
+11.5 未import knowledge の検知（vault CLI に委譲。KNOWLEDGE_VAULT_ROOT + scan スクリプトが揃う時のみ。N>0 なら `/import-knowledge` 促しをレポートに）
 12. 更新履歴にメンテナンス内容を記録
 13. 実行内容を最終レポートにまとめて報告:
     - 削除したもの（git 管理下のため復元可能）
@@ -258,6 +279,7 @@ Issue ファイルの「スコープ外」「後続 Issue 候補」「やらな�
     - 統合した更新履歴
     - knowledge/ 切り出し（破壊的変更検出は 🔴 マーカー付きで先頭表示、tags を併記）
     - 概念ページ（concept）への波及（新規作成 / 既存 concept への `[[ ]]` 追加）
+    - 未import knowledge の件数（vault 反映促し。N>0 時のみ、`/import-knowledge` 推奨）
     - スコープ外差分から検出した follow-up 候補（記録は未実行。ユーザーが判断）
     - レビュー未実施の警告（該当する場合。非ブロッキング）
     - 追加したテンプレート不足セクション
