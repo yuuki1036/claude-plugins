@@ -160,6 +160,37 @@ concept の作成・更新も他の整理と同様、承認待ちで止めず実
 
 ---
 
+## 未import knowledge の検知（横断 vault 反映の促し）
+
+knowledge の切り出し（source→concept 統合）は本スキルの責務だが、それを横断 vault（別リポジトリ）に反映する `/import-knowledge` は手動トリガーで忘れがち。切り出し直後のこのタイミングで未import件数を検知して促すのが責務的に最も自然（切り出さない＝新規 import も無い、という論理も噛み合う）。
+
+feature-dev Phase 1.6 と同じ **detect→skip パターン**。依存先は plugin ではなく外部リポジトリの vault（検知 CLI `unimported_scan.py`）なので、環境変数と CLI 本体の二段で存在確認し、いずれか欠けたら skip して後方互換を壊さない（vault を持たないマシンで壊れない）。
+
+### Step 1: Detect（外部 CLI 依存の存在確認）
+
+```bash
+# vault は本 plugin 外の外部リポジトリ。KNOWLEDGE_VAULT_ROOT 未設定 or 検知 CLI 不在なら本節を skip。
+SCAN="$KNOWLEDGE_VAULT_ROOT/_shared/scripts/unimported_scan.py"
+if [ -n "$KNOWLEDGE_VAULT_ROOT" ] && [ -f "$SCAN" ]; then
+  # Step 2 へ。現在のプロジェクトの knowledge dir を --project に渡し、--count で fresh 件数だけ取得する。
+  # ベクトル検索を使わず frontmatter 突合 + triage jsonl のみで軽量（実測 0.4s）。stderr は捨てる。
+  UNIMPORTED=$(python3 "$SCAN" --project ".claude/indie/{slug}/knowledge" --count 2>/dev/null)
+else
+  UNIMPORTED=""   # skip（skip 理由は notify しない＝サイレント。注入なしでも既存フローはそのまま動く）
+fi
+```
+
+### Step 2: N>0 なら最終レポートで促す
+
+`UNIMPORTED` が 1 以上なら最終レポートに列挙する（AskUserQuestion で止めない。import 自体は cross-repo write で副作用が大きく、実行はユーザーがチャットで判断する）:
+
+「未import knowledge {N}件。`/import-knowledge` で横断 vault への反映を推奨」
+
+- 出力は slug 別件数のみ（案件コードを端末に出さない配慮は CLI 側が担保）
+- `UNIMPORTED` が空（skip）or `0` の場合は何も出さない
+
+---
+
 ## 即クローズパターンの検出
 
 Issue 起票後、実装せずに即クローズされた Issue（`status: completed` かつ `created == last_active` かつ進捗の `[x]` タスク 0 件）を検出し、経緯が残せているか確認する。
@@ -267,6 +298,7 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 12. 整理を承認待ちせず実行する
 12.5 writing-polish 連携（整理後の Issue 本文 + 切り出した knowledge ページの散文を確定直前に推敲。writing-polish 必須節を参照）
 13. knowledge/ 切り出し・concept 波及があった場合、knowledge/index.md を更新（concept はパス付きで登録）
+13.5 未import knowledge 検知（KNOWLEDGE_VAULT_ROOT + 検知 CLI があれば未import件数を取得。無ければ skip。「未import knowledge の検知」節を参照）
 14. 更新履歴にメンテナンス内容を記録
 15. 実行内容を最終レポートにまとめて報告:
     - スコープ超過警告（該当する場合）
@@ -277,6 +309,7 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
     - knowledge/ 切り出し（破壊的変更検出は 🔴 マーカー付きで先頭表示、tags を併記。照合結果を含む）
     - 概念ページ（concept）への波及（新規作成 / 既存 concept への `[[ ]]` 追加）
     - スコープ外差分から検出した follow-up 候補（記録は未実行。ユーザーが判断）
+    - 未import knowledge 件数（N>0 の場合のみ。`/import-knowledge` で横断 vault 反映を推奨）
     - レビュー未実施の警告（該当する場合。非ブロッキング）
     - 追加したテンプレート不足セクション
 ```
