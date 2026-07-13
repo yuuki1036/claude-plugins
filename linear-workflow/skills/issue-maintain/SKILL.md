@@ -179,10 +179,10 @@ fi
 
 ### Step 2: 未import件数の取得
 
-現在のプロジェクトの knowledge dir パスを `--project` に渡し、`--count` で fresh 件数だけ取得する（`{slug}` は対象 Issue から特定済み）。cwd プロジェクトに絞るので linear の案件コードを端末に出さない。
+`--project` は vault 側で**巡回パスに対する部分文字列フィルタ**として使われる（`KNOWLEDGE_IMPORT_ROOTS`〔既定 `~/Projects`〕配下の `.claude/{indie,linear}/{slug}/{knowledge,concepts}` 絶対パスに対する部分一致）。cwd の開発プロジェクトに絞る用途なので、**現在のプロジェクトのディレクトリ名**（`basename "$PWD"`）を渡す。これで当該プロジェクト配下の全 slug の knowledge/concepts の fresh 件数が集計される（案件コードは端末に出さない）。`--count` で fresh 件数の整数だけを取得する。
 
 ```bash
-N=$(python3 "$SCAN" --project ".claude/linear/{slug}/knowledge" --count 2>/dev/null || echo 0)
+N=$(python3 "$SCAN" --project "$(basename "$PWD")" --count 2>/dev/null || echo 0)
 ```
 
 ### Step 3: 促し

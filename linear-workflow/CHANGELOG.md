@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.37.1] - 2026-07-13
+
+### Fixed
+- **未import knowledge 検知の `--project` 引数を修正**（issue #86 のセルフレビュー指摘）。vault 側 `unimported_scan.py` の `--project` は「巡回パス（`~/Projects` 等配下の `.claude/{indie,linear}/{slug}/{knowledge,concepts}` 絶対パス）に対する部分文字列フィルタ」で、cwd プロジェクトに絞る用途。旧実装は `.claude/linear/{slug}/knowledge` を渡していたため、単一 slug の knowledge のみ一致し他 slug・`concepts` の fresh を取りこぼして恒常的に過少カウントしていた。`basename "$PWD"`（プロジェクトのディレクトリ名）を渡す形に修正し、当該プロジェクト配下の全 slug の knowledge/concepts を集計する（indie-workflow 1.40.1 とミラー対称）
+
 ## [1.37.0] - 2026-07-12
 
 ### Added
