@@ -1,6 +1,11 @@
 ---
 description: 開発タスクから適切な設計・計画系成果物（bdd-spec / design-doc / adr-keeper / issue-design / feature-dev）を判断して提案する
-allowed-tools: Skill, AskUserQuestion, Bash, Read, Grep
+allowed-tools:
+  - Skill
+  - AskUserQuestion
+  - Bash
+  - Read
+  - Grep
 ---
 
 `spec-advise` スキルを起動し、実装着手前に書くべき設計・計画系成果物を判定・提案する。

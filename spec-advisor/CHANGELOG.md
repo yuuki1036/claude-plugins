@@ -2,6 +2,11 @@
 
 spec-advisor の変更履歴。[Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) 形式、[SemVer](https://semver.org/lang/ja/) に従う。
 
+## [0.1.2] - 2026-07-14
+
+### Fixed
+- **`allowed-tools` をカンマ区切り文字列から YAML リスト形式に修正**（`commands/spec-advise.md` / `skills/spec-advise/SKILL.md`）。ルート CLAUDE.md の記法規約（YAML リスト形式）に反しており、`/quality-check` の「allowed-tools フォーマット統一チェック」で Warning となっていた。ツール構成（`Skill` / `AskUserQuestion` / `Bash` / `Read` / `Grep`）は変更なく、command ↔ skill のペア一致も維持。挙動に影響しない記法の正規化
+
 ## [0.1.1] - 2026-07-08
 
 ### Changed
