@@ -101,7 +101,24 @@ done | sort -u
 
 ### effort 設計意図
 
-reviewer は `max` で深い推論を優先（overthinking による偽陽性は Confidence ≥80 フィルタで刈り取る）。オーケストレーター（skill frontmatter）は `high`（＝ Opus 4.8 の既定 effort に揃える）。これにより effort ゲート付きの高コスト独立レイヤー（meta-reviewer / 冷や読み skeptic）は既定で不発とし、high-risk 変更をレビューしたい時だけ `/self-review` を `xhigh`/`max` で明示起動して escalation する運用にする（reviewer 本体の `max` は据え置きなのでレビュー品質のコアは落ちない）。
+reviewer は `xhigh`。**全レビューで必ず走り、体数も最大（典型 2〜10 体。`## 7` の最小保証 2 体 〜 上限 10 体）のため、レビュー総コストの最大項**。よって `max` からの 1 段引き下げは全レビューに効く**最大のコストレバー**になる（唯一ではない。下記の変動費も参照）。CLAUDE.md モデルルーティング規約「判断・検証は `opus` + effort 引き上げ」は満たしたまま（`xhigh` は既定 `high` からの引き上げであり、規約は `max` を要求していない）。
+
+> **体数の下限に注意**: 「常に 2 体以上」は不変条件では**ない**。`doc-review-mode` は 1〜2 体、`skip-mode` は `spec-compliance` のみ 1 体（triage-guide `## 2.5` のモード構成は Stage 2 の上限・最小保証より**優先**する）、self-review の `--focus` 指定時は最小保証すら起動しない。他所でこの不変条件を援用しないこと。
+
+オーケストレーター（skill frontmatter）は `high`（＝ Opus 4.8 の既定 effort に揃える）。これにより effort ゲート付きの独立レイヤー（meta-reviewer / 冷や読み skeptic）は既定で不発とし、high-risk 変更をレビューしたい時だけ `/self-review` を `xhigh`/`max` で明示起動して escalation する運用にする。
+
+**独立検証レイヤー（meta-reviewer / 冷や読み skeptic / 反証エージェント）は `max` 据え置き**。ただし据え置きの根拠は「体数が小さいから」ではなく（下表のとおり反証は体数が指摘数に比例する）、**誤判定コストの非対称性**にある:
+
+| 層 | 体数 | 既定 high で起動するか |
+|---|---|---|
+| meta-reviewer | 1 体・1 round（triage-guide `## 8`） | しない（xhigh/max 起点） |
+| 冷や読み skeptic | PR あたり 1 体・1 round（`## 8.5`） | しない（xhigh/max 起点） |
+| 反証エージェント | **指摘ごと 1 体**（`## 9`）＝指摘数に比例 | **する**（非対称ゾーンに限定） |
+
+- **反証の誤却下は指摘を落とす**（消えるのは MAJOR / MINOR のみ。BLOCKER / CRITICAL は refuted でも消さず係争注記が scoring-guide の不変条件で機械保証される）
+- **skeptic の見落としは recall 補強そのものを無効化する**（足す係が足さなければ層ごと無意味）
+
+**下げるのは全レビューで必ず走る常時レイヤー、据え置くのは誤判定コストが非対称な検証レイヤー**という切り分けを意図的に取る。なお**次点の変動費は反証（既定パスで opus×`max`×指摘数）と specialist（reviewer 枠とは別枠で上限 6 体。triage-guide `## 7`）**であり、コストが再び問題化したらこの 2 つが次の検討対象になる。
 
 ### diff-first 原則
 
@@ -133,7 +150,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
    - 各 explorer に対応する unmet_information（focus, target, why, related_finding）を指示として渡す
    - isolation は `## 0` に従う（review は `isolation: "worktree"`（PR ブランチ）、self-review は使用しない）
    - **PR 番号注入（review のみ・必須）**: `## 1` に従い prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
-4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`, `effort: max` で再起動する
+4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`, `effort: xhigh` で再起動する（初回 reviewer と同 effort に揃える）
    - 再起動 reviewer には初回指摘 + 追加 explorer 結果を context として渡し、「初回 confidence を再評価せよ」と指示
    - 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
    - **PR 番号注入（review のみ・必須）**: `## 1` に従う
@@ -158,7 +175,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
 1. `triage-guide.md` の「reviewer の観点判定」表の各条件を、実際の diff シグナル（変更ファイルパス・diff 内文字列）に対して **メインコンテキストで再評価** する
 2. **「条件を満たすのに起動されなかった focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在、`package.json` 変更があるのに dependency 不在）
 3. 検出した観点漏れは `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として追記する
-4. effort が `high` 以上 かつ 追加 1 体で補える観点なら、その focus の reviewer を 1 体だけ追加起動して結果をスコアリング step に合流させてよい（任意・best-effort。失敗しても missing_coverage 記載のまま続行）
+4. effort が `high` 以上 かつ 追加 1 体で補える観点なら、その focus の reviewer を 1 体だけ `model: opus`, `effort: xhigh`（初回 reviewer と同 effort）で追加起動して結果をスコアリング step に合流させてよい（任意・best-effort。失敗しても missing_coverage 記載のまま続行）。**effort を揃えるのは、非対称な深さの指摘が同じ confidence 軸で合流するのを避けるため**
 
 ## 9. 冷や読み skeptic 実行手順（review Phase 5.8・self-review Phase 4.8）
 

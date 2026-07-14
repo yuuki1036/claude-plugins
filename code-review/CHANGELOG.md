@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.36.0] - 2026-07-15
+
+### Changed
+- **reviewer 本体の effort を `max` → `xhigh` に変更**（review / self-review）。**reviewer は全レビューで必ず走り体数も最大（典型 2〜10 体）＝総コストの最大項**なのに対し、v2.34.0 が既定 opt-in 化した meta-reviewer / 冷や読み skeptic は内容条件を満たしたときだけ 1 体走る層で、その内容条件（BLOCKER/CRITICAL 検出）の充足率も 20 件中 6 件＝30% にとどまる `[unverified: gist 集約のうち adversarial_verify 規約追加(2026-06-24)以降の 20 件。events.jsonl は gitignored のため repo からは検証不能]`。つまり v2.34.0 の変更は**削減量が小さいまま、high-risk 変更での見落とし側の保険だけを落としていた**。`max` からの 1 段引き下げは全レビューに効く**最大の**コストレバーになる:
+  - adaptive deepening の reviewer 再起動（orchestration-guide `## 6`）と観点カバレッジ・セルフチェックの追加 reviewer（`## 8`）も初回 reviewer と同 effort に揃えて `xhigh` に変更（非対称な深さの指摘が同じ confidence 軸で合流するのを避けるため）
+  - **独立検証レイヤー（meta-reviewer / 冷や読み skeptic / 反証エージェント）は `max` 据え置き**。据え置きの根拠は体数ではなく**誤判定コストの非対称性**（反証の誤却下は指摘を落とし＝消えるのは MAJOR/MINOR のみ、BLOCKER/CRITICAL は係争注記が機械保証される／skeptic の見落としは recall 補強そのものを無効化する）。**下げるのは全レビューで必ず走る常時レイヤー、据え置くのは誤判定コストが非対称な検証レイヤー**という切り分け
+  - CLAUDE.md モデルルーティング規約「判断・検証は `opus` + effort 引き上げ」は維持（`xhigh` は既定 `high` からの引き上げであり、規約は `max` を要求していない）。偽陽性は従来どおり confidence ≥80 フィルタと反証レイヤーで刈り取る
+  - **次点の変動費は反証（既定 high でも起動し、体数は指摘ごと 1 体＝指摘数に比例）と specialist（reviewer 枠とは別枠で上限 6 体）**。コストが再び問題化したらこの 2 つが次の検討対象（reviewer の effort が「唯一の」レバーではない）
+  - **既知の制約**: `review:completed` payload に `effort` フィールドが無いため、この変更が指摘の質に与えた影響は**事後に相関できない**。効果測定を要する場合は payload への `effort` / `agent_count` 追加が前提になる
+
 ## [2.35.1] - 2026-07-15
 
 ### Fixed
