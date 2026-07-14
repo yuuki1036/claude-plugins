@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.34.0] - 2026-07-14
+
+### Changed
+- **既定 effort を `xhigh` → `high` に変更**（review / self-review 両 SKILL.md）。frontmatter の `effort: xhigh` は Opus 4.7 向け orchestrator 調整（`097e4f7`）の名残で、その後に追加された effort ゲート付きレイヤー（meta-reviewer / 冷や読み skeptic）の設計上の既定「`high`」と矛盾し、本来 opt-in のはずの高コスト独立レイヤーが常時起動していた。triage-guide が一貫して呼ぶ「high（既定）」に実装を揃える:
+  - **meta-reviewer（Phase 4.6/5.6）と冷や読み skeptic（Phase 4.8/5.8）が既定で不発**になる（従来通り xhigh/max を明示すれば escalation として起動）。反証レイヤー・adaptive deepening（high で起動）と reviewer 本体（`effort:max`）は不変のため、偽陽性フィルタ・レビュー品質のコアは落ちない。落ちるのは high-risk 変更での見落とし側の保険のみ
+  - 副次効果として issue #77 の計測前提（skeptic の `skip_reason="effort"` 蓄積による high 昇格判断）が復活する。実効既定が xhigh だと skeptic は毎回起動し `skip_reason="effort"` が永久に貯まらなかった
+- **モデルルーティングから `fable` を全廃し `opus` に統一**（プロジェクト方針）。meta-reviewer を `model: fable` → `model: opus` に変更（review / self-review / orchestration-guide）。design doc `20260703` が「独立検証は強モデル＝opus」と結論済みの方針とも整合。plugin description の `meta-reviewer(fable)` 表記も更新
+
 ## [2.33.2] - 2026-07-08
 
 ### Fixed

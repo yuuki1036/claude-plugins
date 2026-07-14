@@ -147,7 +147,7 @@ tsc / lint / build では検知できない runtime 初期化バグ（DB client 
 
 既存のコードベース機能を、実行パスを entry point からデータ保存まで追跡し、抽象層・パターン・依存関係をマッピングして分析する。Phase 2 で並列起動される。出力は entry point の file:line 参照、ステップごとの実行フロー、主要コンポーネントの責務、アーキテクチャの知見、読むべき必須ファイルのリスト。
 
-### `code-architect`（model: fable）
+### `code-architect`（model: opus）
 
 既存パターンを分析し、実装 blueprint を設計する。Phase 4 で起動される。BDD Spec Injection / Issue Context Injection / Vault Knowledge Injection / Hook-First Rule Placement の各セクションを持つ。出力は発見したパターン、アーキテクチャ決定と根拠、コンポーネント設計、実装マップ、データフロー、build sequence、critical details、Runtime Smoke Test Targets（Phase 5.5 が叩く URL / route）。
 

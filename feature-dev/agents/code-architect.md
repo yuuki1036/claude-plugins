@@ -2,7 +2,7 @@
 name: code-architect
 description: Designs feature architectures by analyzing existing codebase patterns and conventions, then providing implementation blueprints with specific files to create/modify, component designs, data flows, and build sequences
 tools: Glob, Grep, LS, Read
-model: fable
+model: opus
 color: green
 ---
 

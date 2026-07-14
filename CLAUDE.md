@@ -168,8 +168,9 @@ agent / サブタスクのロールに応じて既定モデルを出し分ける
 | 探索・収集・機械的サマリ（read-only fan-out。code-context / explorer 等） | `sonnet` | 事実収集は弱モデルで足り、体数を稼げる |
 | 判断・検証・レビュー（load-bearing な結論。reviewer 等） | `opus` + effort 引き上げ | 誤判定コストが高い段は精度優先 |
 | 敵対的独立検証（発見者と別コンテキストで反証。code-review 反証 / discover-verifier / design-review 反証） | `opus` | 検証は精度が命なので強モデル。独立性は「発見者の推論を渡さない」+ 別コンテキストで担保する（モデルを弱める必要はない） |
-| 統合・メタレビュー・設計 blueprint（meta-reviewer / architect 等） | `fable` | 別系統モデルで相関を切り、判定の偏りを平す |
+| 統合・メタレビュー・設計 blueprint（meta-reviewer / architect 等） | `opus` | load-bearing な統合・設計判断は強モデルで質を担保する |
 
+- **`fable` は使用しない**（プロジェクト方針）。従来 fable が担っていた「別系統モデルで相関を切る」decorrelation は行わず、統合・メタレビュー・設計 blueprint も `opus` に寄せる。独立性が要る局面（meta-reviewer / 敵対的独立検証）は**別コンテキスト起動 + 発見者の推論を渡さない**ことで担保し、モデル多様性には依存しない。
 - agent frontmatter か skill 本文で **明示指定**する（親からの継承任せにしない。指定漏れは `validate_plugin_quality.py` の warning で拾えるようにするのが望ましい）。
 - 1 呼び出し内は単一モデル。ステージ間での切り替えは可。
 

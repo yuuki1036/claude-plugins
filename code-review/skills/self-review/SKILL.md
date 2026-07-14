@@ -5,7 +5,7 @@ description: >
   diff → explorer(sonnet) → reviewer(opus) を動的構成、severity×confidence マトリクスでフィルタ。
   トリガー: 「セルフレビュー」「/self-review」「自分の変更を確認」「コミット前にチェック」
   引数: [base branch] [--staged] [--focus <観点>] [--exclude <観点1,観点2>] [--embed] (省略時は自動検出)
-effort: xhigh
+effort: high
 allowed-tools:
   - Bash
   - Read
@@ -22,7 +22,7 @@ allowed-tools:
 
 ## コスト×精度パイプライン設計（採用/不採用）
 
-ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 1（ファネル = Phase 0 triage で高コスト reviewer を通過分に絞る）/ 2（2 軸スコア化 = confidence × severity マトリクス）/ 3（段階予算 = `${CLAUDE_EFFORT}` → explorer/reviewer 体数）/ 4（モデルルーティング = explorer:sonnet / reviewer:opus / meta:fable / 反証:opus）/ 7（敵対的独立検証 = Phase 4.9 反証レイヤー、recall 側は Phase 4.8 冷や読み skeptic）**。**捨てた**: 5（暴走ガード）は反復・起票を持たない単発レビューのため不要、6（証拠ラダー）は指摘蓄積・昇格の責務を failure-journal に委ね、8（外部オラクル）は diff レビューが対象で型/テスト実行は feature-dev Phase 5.3 の役割と分離した。
+ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 1（ファネル = Phase 0 triage で高コスト reviewer を通過分に絞る）/ 2（2 軸スコア化 = confidence × severity マトリクス）/ 3（段階予算 = `${CLAUDE_EFFORT}` → explorer/reviewer 体数）/ 4（モデルルーティング = explorer:sonnet / reviewer:opus / meta:opus / 反証:opus）/ 7（敵対的独立検証 = Phase 4.9 反証レイヤー、recall 側は Phase 4.8 冷や読み skeptic）**。**捨てた**: 5（暴走ガード）は反復・起票を持たない単発レビューのため不要、6（証拠ラダー）は指摘蓄積・昇格の責務を failure-journal に委ね、8（外部オラクル）は diff レビューが対象で型/テスト実行は feature-dev Phase 5.3 の役割と分離した。
 
 ## 設計原則: Generator と分離された Evaluator
 
@@ -187,7 +187,7 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 - 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
 - Step 4.5 後の全指摘（フィルタリング前）に **BLOCKER も CRITICAL も 1 件もない**
 
-**実行する場合**: orchestration-guide `## 7` の手順に従う（meta-reviewer を 1 体 `model: fable`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。
+**実行する場合**: orchestration-guide `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。
 
 ### 4.7 観点カバレッジ・セルフチェック（メインコンテキスト / 常時実行）
 

@@ -101,7 +101,7 @@ done | sort -u
 
 ### effort 設計意図
 
-reviewer は `max` で深い推論を優先（overthinking による偽陽性は Confidence ≥80 フィルタで刈り取る）。オーケストレーター（skill frontmatter）は `xhigh`。Opus 4.8 は `high` が既定 effort のため、demanding task 向けに一段引き上げた設定。
+reviewer は `max` で深い推論を優先（overthinking による偽陽性は Confidence ≥80 フィルタで刈り取る）。オーケストレーター（skill frontmatter）は `high`（＝ Opus 4.8 の既定 effort に揃える）。これにより effort ゲート付きの高コスト独立レイヤー（meta-reviewer / 冷や読み skeptic）は既定で不発とし、high-risk 変更をレビューしたい時だけ `/self-review` を `xhigh`/`max` で明示起動して escalation する運用にする（reviewer 本体の `max` は据え置きなのでレビュー品質のコアは落ちない）。
 
 ### diff-first 原則
 
@@ -144,7 +144,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
 ## 7. Meta-reviewer 実行手順（review Phase 5.6・self-review Phase 4.6）
 
 1. reviewer-prompts.md の `## 6. Meta-reviewer テンプレート` を使用
-2. meta-reviewer agent を 1 体、`model: fable`, `effort: max` で起動
+2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動
    - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
    - isolation は `## 0` に従う。**PR 番号注入（review のみ・必須）**: `## 1` に従う
 3. meta-reviewer の出力（追加指摘）を既存指摘に統合

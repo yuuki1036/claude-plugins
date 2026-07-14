@@ -140,7 +140,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - **doc-substance の主観抑制もこのクランプで行う（2 軸で扱いを分ける）**:
   - **A 軸（主張の真偽）**: doc の論理 / 有用性 / 内容誤り指摘で根拠（code:line または内部矛盾の doc:line ×2）を示せないものは「表現の好み」とみなしてクランプする
   - **B 軸（文書としての成立性 — 完全性 / doc 種別適合 / 読み手前提 / WHY 根拠 / ナビ）**: **doc:line（欠落・誤配置・孤立の発生箇所）＋ 破られた期待（doc 種別の契約 / その doc が宣言する対象読者・スコープ / 手順が参照する未記載の前提）を示せていればクランプしない**。裏取りの相手がコードではなく doc 種別の期待構造であるため、code:line が無いことだけを理由に「好み」とみなさない（reviewer-prompts.md `doc-substance` の grounding 規則を参照）。逆に「**語句を最小差分で言い換えれば済む**」だけの指摘（writing-polish の領分）は B 軸を騙っていてもクランプする
-  - doc-substance の MAJOR は既定 effort（high）では反証レイヤー対象外（triage-guide.md `## 9` のゲートは BLOCKER 60-94 / CRITICAL 80-94 限定）だが、review skill は effort=xhigh 既定のため B 軸 MAJOR も反証レイヤー（Phase 5.9、xhigh/max で MAJOR まで拡大）で独立検証される。「最小差分 reword か否か」のクランプが B 軸ノイズの一次抑制、反証レイヤーが構造指摘の偽陽性摘出という二段構えになる
+  - doc-substance の MAJOR は既定 effort（high）では反証レイヤー対象外（triage-guide.md `## 9` のゲートは BLOCKER 60-94 / CRITICAL 80-94 限定）。この場合は「最小差分 reword か否か」のクランプが B 軸ノイズの唯一の抑制機構になる。`xhigh`/`max` に escalation した場合のみ B 軸 MAJOR も反証レイヤー（Phase 5.9、xhigh/max で MAJOR まで拡大）で独立検証され、クランプ（一次抑制）＋ 反証（偽陽性摘出）の二段構えになる
 
 ### 上限クランプ: 未検証の外部状態主張（claim grounding / GitHub issue #71）
 
