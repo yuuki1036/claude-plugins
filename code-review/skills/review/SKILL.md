@@ -334,7 +334,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
      1. label: "精査する（推奨）" / description: "純粋な好み・settled な蒸し返し・実害極小の nit・既存コード由来を再評価し取り下げ／降格を提案"
      2. label: "そのまま" / description: "再評価せず現状の指摘を確定する"
 
-   「そのまま」なら 2 へ。「精査する」なら **メインコンテキストで**（Agent 不使用）各指摘を 3 分類する。判定には必ず根拠（カテゴリ + file:line / PR コンテキスト典拠）を添える:
+   「そのまま」なら 2 へ（**精査を行わなかった場合は報告マトリクス通過後の全指摘を「残存」とみなす**。以降のステップが参照する「残存・降格した指摘」はこの確定集合を指す）。「精査する」なら **メインコンテキストで**（Agent 不使用）各指摘を 3 分類する。判定には必ず根拠（カテゴリ + file:line / PR コンテキスト典拠）を添える:
 
    - **取り下げ（withdraw）** — 正しくても対応に値しない: 純粋な好み（CLAUDE.md / style guide / 計測 / 具体的不具合の根拠なし、≤40 クランプを擦り抜けた残滓）/ settled な設計判断の蒸し返し（session-context / Issue / PR 説明で確定済み）/ 実害極小の MINOR nitpick / 既存コード由来（この diff 非導入）
    - **降格（downgrade）** — 内容は妥当だが severity 過大: 1 段階下げ + `Optional:` / `Nit:` 化
@@ -342,9 +342,32 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
    取り下げ・降格は **理由を明示し人間が覆せる形**で提示する（破棄しない）。精査後、`## 精査結果`（取り下げ N / 降格 M / 残存 K ＋ 取り下げた指摘の一覧と理由）を出力し、**残存 + 降格を反映した調整後レポートを再出力**する（総合判定・severity 別件数を残存指摘で再導出）。以降の返答ドラフト・publish は精査後（post）の確定値を使う。
 
-2. **投稿コメントのドラフト生成（任意）**: 精査後に残存／降格した指摘が **1 件以上** ある、**または** 総合判定が **Approve / Approve with nits** の場合に実行（どちらにも該当しなければスキップして 3 へ）。生成する全文面は `reply-tone-guide.md` `## 0 必須ルール`（Claude 署名 / 作成者・他レビュアーへの敬意 / 簡潔さ / 良い点を 1 文）を**厳守**する。
+2. **PR・指摘の解説（任意）**: 返答ドラフトを書く前に、PR の全体像や各指摘の背景を解説して判断材料を揃える。**解説はチャット出力のみで投稿コメントではない**ため `reply-tone-guide.md` は適用しない（署名・敬語テンプレは不要）。`--emergency` 時はスキップして 3 へ。
 
-   レポート出力直後に **AskUserQuestion** で要否を確認する（options は状態に応じて提示する）:
+   精査（1）の確定後に **AskUserQuestion** で解説対象を確認する:
+
+   - question: "返答ドラフトの前に解説しますか？（PR の全体像や指摘の背景を説明します。投稿はしません）"
+   - header: "解説"
+   - multiSelect: true
+   - options:
+     1. label: "解説不要" / description: "解説せず返答ドラフトの確認へ進む（既定）"
+     2. label: "PR について" / description: "この PR が何をやっているか＝変更の全体像・設計意図・影響範囲を解説"
+     3. label: "指摘について" / description: "対象の指摘番号を次に入力。なぜ問題か／直し方／取り下げ材料を解説"（**残存・降格した指摘が 1 件以上あるときのみ提示**）
+
+   「解説不要」が選ばれたら（他と同時に選ばれていても優先して）3 へ。それ以外は選択された対象を解説する:
+
+   - **PR について**: Step 2.5 で構築した PR コンテキストブロックと diff を典拠に、`変更の全体像`（何を・なぜ）/ `設計意図`（採用したアプローチと、そう読み取れる根拠）/ `変更の流れ`（主要ファイルの関係）/ `影響範囲`（波及先・リスク面）を解説する
+   - **指摘について**: **AskUserQuestion** で「解説する指摘番号（例: `1,3,5` / `all`）」を free-text 入力させ、対象の**残存・降格指摘ごとに**以下 3 点を解説する（`all` = 残存・降格した指摘の全件。取り下げ済みは含まない。範囲外番号・空入力は対象なしとみなして 3 へ）:
+     - **なぜ問題か**: 背景・原理・実害シナリオ。必ずコード根拠（`file:line`）を添える
+     - **直し方**: 具体的な修正方針と代替案・トレードオフ（そのまま返答ドラフトの前提知識になる）
+     - **取り下げ材料**: 反論・据置の根拠になりうる情報（既存コード由来か / settled な設計判断か / 実害が極小か）。**取り下げを推すのではなく、著者が指摘を覆すための材料を対称に置く**
+
+   - **断定抑止（1 と同基準）**: 解説でも load-bearing な事実主張は断定で書かない。repo で確認できる主張は `file:line` を、正本 doc で確認できる主張は典拠を添える。repo / 正本で裏が取れない外部状態（DB / 本番 / 運用設定）は「要確認（典拠=X）」とし、元の指摘が `[unverified: ...]` 付きならその不確実性を解説にも引き継ぐ
+   - 解説の結果ユーザーが取り下げ・降格を望んだ場合は、1 の 3 分類に差し戻して**調整後レポートを再出力**してから 3 へ進む（以降の返答ドラフト・publish は再確定値を使う）
+
+3. **投稿コメントのドラフト生成（任意）**: 精査後に残存／降格した指摘が **1 件以上** ある、**または** 総合判定が **Approve / Approve with nits** の場合に実行（どちらにも該当しなければスキップして 4 へ）。生成する全文面は `reply-tone-guide.md` `## 0 必須ルール`（Claude 署名 / 作成者・他レビュアーへの敬意 / 簡潔さ / 良い点を 1 文）を**厳守**する。
+
+   精査（1）・解説（2）の確定後に **AskUserQuestion** で要否を確認する（options は状態に応じて提示する）:
 
    - question: "投稿用コメントのドラフトを生成しますか？（投稿は行わず、コピペ可能な文面のみ出力します）"
    - header: "コメントドラフト"
@@ -352,11 +375,19 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
    - options:
      1. label: "不要" / description: "ドラフトは生成しない（既定）"
      2. label: "承認コメント" / description: "簡潔な承認 + 良い点 1 文 + 署名"（**総合判定が Approve / Approve with nits のときのみ提示**）
-     3. label: "重要指摘のみ" / description: "severity BLOCKER / CRITICAL の返答ドラフト"（残存指摘があるときのみ）
+     3. label: "重要指摘のみ" / description: "severity BLOCKER / CRITICAL の返答ドラフト"（**BLOCKER / CRITICAL が 1 件以上あるときのみ提示**。Approve with nits は定義上 BLOCKER/CRITICAL が無く本選択肢が空振りするため、残存指摘の有無では条件付けない）
      4. label: "全件" / description: "全残存指摘 ＋ 該当すれば承認コメント"（残存指摘があるときのみ）
      5. label: "個別選択" / description: "対象の指摘番号を入力する"（残存指摘があるときのみ）
 
-   「不要」なら 3 へ。それ以外は以下を実行:
+   **選択肢数の不変条件**（AskUserQuestion は 2〜4 個が仕様上限。提示条件を変更するときは必ず再検算する）:
+
+   | 総合判定 | 提示される options | 数 |
+   |---|---|---|
+   | Approve（報告指摘ゼロ） | 不要 / 承認コメント | 2 |
+   | Approve with nits（BLOCKER・CRITICAL なし、残存 ≥ 1） | 不要 / 承認コメント / 全件 / 個別選択 | 4 |
+   | Needs work（BLOCKER または CRITICAL ≥ 1） | 不要 / 重要指摘のみ / 全件 / 個別選択 | 4 |
+
+   「不要」なら 4 へ。それ以外は以下を実行:
 
    - `${CLAUDE_PLUGIN_ROOT}/references/reply-tone-guide.md` を Read で読み込む
    - **承認コメント**（総合判定 Approve / Approve with nits、かつ「承認コメント」または「全件」選択時）: reply-tone-guide.md `### 2.7 承認メッセージ` のテンプレで生成。良い点は「良かった点」セクションから **1 文に圧縮**（file:line 添え）。Needs work では生成しない。**承認メッセージ本文で触れた nit は指摘返答ドラフトと重複させない**（全体コメントは要点のみ・詳細は inline スレッド側へ。reply-tone-guide 2.7「nits は詳述しない」と整合）
@@ -392,7 +423,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
    生成中に reply-tone-guide.md に明示のないトーン判断が必要になった場合は、ドラフト末尾に `（補足: {判断点} はガイドに明示なし。ユーザー確認推奨）` を添える。
 
-3. **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**指摘の精査を行った場合は精査後（post）の確定件数を使う**（取り下げ・降格を反映）。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
+4. **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**指摘の精査を行った場合は精査後（post）の確定件数を使う**（取り下げ・降格を反映）。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
 
    ```bash
    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
@@ -419,4 +450,4 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
    - 失敗してもレポート自体は成功扱い（best-effort）
    - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` / `recall_skeptic` は新規フィールド追加なので旧 subscriber 影響なし
 
-4. **ExitWorktree** で worktree から抜ける。
+5. **ExitWorktree** で worktree から抜ける。
