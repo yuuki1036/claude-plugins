@@ -260,6 +260,13 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 **冷や読み skeptic の観測可能性（issue #85）**: high-risk surface を含む変更では、冷や読み skeptic（Phase 5.8）の起動有無を「動的ラウンド」行に **必ず** 出す（起動＝追加件数 / 未起動＝skip 理由）。surface HIT かつ未起動の silent skip を作らない。
 
+**skeptic 由来の帰属をレポートまで保つ（`findings_added` の計測妥当性）**: Phase 5.8 の skeptic 指摘に付いた由来タグは、**レポート本文の指摘行にもそのまま残す**（`[confidence][severity]` の後・カテゴリの前に置く）。タグを落とすと**締めフロー 4** の publish 時点で由来を再構成できず、`findings_added` が記憶頼みになって系統的に 0 へ潰れる（＝ skeptic の価値率が実態より低く出る）。**由来タグはレポート契約の一部**であり、任意の装飾ではない。
+
+タグは 2 種（正本: orchestration-guide `## 9`）。**重複の有無で意味が正反対**になるため混ぜない:
+
+- `[recall-skeptic]` — skeptic 単独由来（reviewer 指摘と重複しなかった）。**fleet 共通盲点を実際に破った＝ skeptic の価値**
+- `[recall-skeptic:dup]` — 重複 survivor（reviewer も到達していた）。独立到達の記録としては残すが**盲点でなかった事例で recall の足し前はゼロ**
+
 ```
 ## レビュー結果
 
@@ -290,9 +297,14 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 3. [confidence: 90][severity: CRITICAL][re-flag: @reviewer-1] xxx（2026-04-22 に既指摘、diff で未修正）
    ファイル: src/api.ts:30-35
 
+4. [confidence: 85][severity: CRITICAL][recall-skeptic][バグ] 空文字の draft が numeric 列へ素通りする
+   ファイル: src/repo.ts:88
+   影響: 22P02 で INSERT が落ちる
+   {由来タグ: skeptic 単独由来は `[recall-skeptic]` / reviewer と重複した survivor は `[recall-skeptic:dup]`。締めフロー 4 の publish で `findings_added` / `findings_overlap` を数える唯一の根拠なので落とさない。番号は他の指摘と通し連番にする}
+
 ### 📋 MAJOR 指摘
 
-4. [confidence: 95][severity: MAJOR][設計] ...
+5. [confidence: 95][severity: MAJOR][設計] ...
 
 ### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
 - reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
@@ -428,7 +440,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
    ```bash
    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
      SAFE_HOOK_NAME="code-review:review" event_bus_publish "review:completed" \
-     "{\"pr\":\"<number>\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>}}"
+     "{\"pr\":\"<number>\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
    ```
 
    payload 規約:
@@ -446,7 +458,10 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
      - `surface`: high-risk surface 判定の結果（bool）。**Phase 5.8 が effort / userConfig でスキップされた場合も、正規表現部分の surface 判定（triage-guide.md `## 8.5`。diff への grep で安価）だけは payload 構築時に必ず実施して記録する**。「surface=true なのに effort ゲートで skeptic が走らなかった頻度」が high 昇格判断の核心メトリクスのため
      - `fired`: skeptic agent が実際に起動したか（bool）
      - `skip_reason`: `fired=false` のときの理由。`"effort"`（xhigh/max 未満）/ `"config"`（`enable_recall_skeptic: false`）/ `"no-surface"` / `"emergency"`（緊急・skip モード）のいずれか。`fired=true` なら `null`
-     - `findings_added`: skeptic 由来（`[recall-skeptic]` タグ）の指摘のうち報告マトリクスを通過した件数。skeptic の価値率（起動あたりの実報告数）の計測用
+     - `attribution_schema`: 由来帰属の規約バージョン。**常に `2` を入れる**（2 = 由来タグがレポート書式に規定され dedup のタグ生存も定義された版 = 2.35.1 以降）。マーカー無し（schema 1 相当）の旧サンプルは `findings_added` が記憶依存で系統的に 0 へ潰れており判断に使えないため、下流の集計は本フィールドで濾す（triage-guide `## 8.5`）。**日付では切れない** — 配布ラグにより未更新マシンは修正日以降も schema 1 を publish し続けるため
+     - `findings_added`: **skeptic 単独由来**（`[recall-skeptic]` タグ。reviewer 指摘と重複しなかった）の指摘のうち報告マトリクスを通過した件数。**「動的ラウンド」行の `実行（N 件追加）` の N と同値**（N はヘッダに置かれ本文より先に出力されるが、**本文確定後に数えてヘッダへ反映する**。二重管理にしない）。**skeptic の価値率の分子はこれのみ**（重複分は下の `findings_overlap` へ。混ぜると重複が常態のため価値率が 100% に張り付き、縮小分岐が原理的に発火しなくなる）
+     - `findings_overlap`: **重複 survivor**（`[recall-skeptic:dup]` タグ。reviewer も同じ問題に到達していた）の件数。skeptic が独立に到達した記録として残すが、盲点でなかった事例なので**価値率には算入しない**
+     - 両フィールドとも **Step 7 で最初に出力したレポート本文のタグ付き指摘を数えて求める**（Phase 5.8 の記憶から再構成しない。publish は Phase 5.8 から遠く、間に精査・解説・ドラフト生成が挟まるため、記憶依存にすると系統的に 0 へ潰れる）。**計測点は報告マトリクス通過時点（精査の前）＝ Step 7 の初回レポート**であり、精査（締めフロー 1）が再出力する調整後レポートではない。**精査で取り下げた分は減算しない** — 「skeptic が報告に値する指摘を出せたか」を測るフィールドで、必要性で落ちたかは別軸なので混ぜない
    - 失敗してもレポート自体は成功扱い（best-effort）
    - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` / `recall_skeptic` は新規フィールド追加なので旧 subscriber 影響なし
 

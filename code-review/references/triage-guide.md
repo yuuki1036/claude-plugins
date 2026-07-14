@@ -355,11 +355,17 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
   jq -s '[.[] | select(.payload.recall_skeptic.surface == true and .payload.recall_skeptic.skip_reason == "effort")] | length'
 
 # skeptic の価値率（fired のうち findings_added > 0 の割合。昇格の価値）
+# attribution_schema >= 2 で絞るのは必須（schema 1 相当＝マーカー無しは帰属が壊れており findings_added が信用できない。後述の注記）
+# 分子は findings_added（skeptic 単独由来）のみ。findings_overlap（reviewer と重複＝盲点でなかった事例）は算入しない
 grep '"event":"review:completed"' .claude/events.jsonl | \
-  jq -s '[.[] | select(.payload.recall_skeptic.fired == true)] | if length == 0 then "no data" else ([.[] | select(.payload.recall_skeptic.findings_added > 0)] | length) / length end'
+  jq -s '[.[] | select(.payload.recall_skeptic.fired == true and (.payload.recall_skeptic.attribution_schema // 1) >= 2)] | if length == 0 then "no data" else ([.[] | select(.payload.recall_skeptic.findings_added > 0)] | length) / length end'
 ```
 
 目安（厳密な閾値でなく判断材料）: 直近 30 日で `skip_reason="effort"` の surface ヒットが**継続的に発生**し（≒ high 実行でも high-risk 変更を日常的にレビューしている）、かつ xhigh 実績の価値率（findings_added > 0 率）が**明確に非ゼロ**なら、high 昇格のコスト（opus 1 体/PR）に見合うとみなして effort 適応表の high を「起動」に変更する。逆に xhigh でほぼ findings_added=0 が続くなら、skeptic の縮小（Tier2 で足りる判定）を先に検討する。
+
+**⚠️ `attribution_schema` が無い（＝ schema 1 相当）サンプルの `findings_added` は判断に使えない**: code-review 2.35.1 より前は由来タグ `[recall-skeptic]` がレポート書式に規定されておらず、dedup 時のタグ生存も未規定だったため、publish（Phase 5.8 から 200 行以上離れ、間に精査・解説・ドラフト生成を挟む）時点で由来を再構成できず、`findings_added` が記憶依存で系統的に 0 へ潰れていた。実際に `fired=true` 4 件すべてが `findings_added=0` だが、これは「価値ゼロ」と「帰属の喪失」を**区別できない** `[unverified: gist 集約 69 件。project-local events.jsonl は gitignored のため repo からは検証不能]`。
+
+**縮小・撤去の判断は `attribution_schema >= 2` のサンプルのみで行う**（上の jq がこのフィルタを内蔵している）。**日付では切らないこと** — マーケットプレイス配布のため、未更新マシンは修正日以降も schema 1 の payload を publish し続ける（`plugin-manager` による一括更新が前提＝ラグは常態）。`ts` で切っても汚染が混入する。publish 側が自己申告する版マーカーだけが配布ラグに耐える。壊れた計測を根拠に不可逆な撤去をしない。
 
 ### model / 作法（反証レイヤーと対称）
 

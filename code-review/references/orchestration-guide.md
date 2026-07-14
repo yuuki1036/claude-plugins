@@ -167,6 +167,12 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
    - **findings / reviewer の推論は渡さない**（独立性の核）。diff と最小 focus、base ref のみ渡す
    - **PR 番号注入（review のみ・必須）**: `## 1` に従う
 3. skeptic の指摘（`[recall-skeptic]` タグ付き）を既存指摘に統合。重複は dedup（同一ファイル ±5 行 + 類似内容）。skeptic の指摘も通常のスコアリング・報告マトリクス・**反証レイヤーの対象**に含める
+   - **dedup 時はタグを残す側へ引き継ぐ**（どちらの本文を採用するかに関わらず）。reviewer 指摘と重複したときにタグごと捨てると skeptic の寄与が不可視になり過少計上される。**独立の skeptic が同じ問題に到達した事実は、reviewer が先に見つけていても失われない**
+   - ただし**タグは 2 種に分ける**。重複の有無で意味が正反対になるため、同一カウンタに載せてはならない:
+     - `[recall-skeptic]` — **skeptic 単独由来**（dedup で reviewer 指摘と重複しなかった）。fleet 共通盲点を実際に破った事例＝ skeptic の価値そのもの
+     - `[recall-skeptic:dup]` — **重複 survivor**（reviewer も同じ問題に到達していた）。skeptic が独立に到達した記録としては残すが、**盲点でなかった事例なので recall の足し前はゼロ**
+   - **`[recall-skeptic:dup]` を価値率の分子に混ぜない**。skeptic は generalist 一頭で reviewer 最大 10 体と同じ diff を読むため**重複は常態**であり、混ぜると価値率が 100% に張り付いて「findings_added=0 なら縮小」の分岐が原理的に発火しなくなる（過少計上の裏返しで、過大計上という別の壊れ方になる）
+   - タグは**レポート本文の指摘行まで持ち越す**（Step 7 / Step 6 のレポート契約。publish 時に `findings_added` / `findings_overlap` を数える唯一の根拠）
 
 **失敗時 / スキップ時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に `recall-skeptic: <failure reason>` を追記して続行する。スキップ条件（effort / config / scope・emergency）に該当した場合でも、surface 判定（正規表現・grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と独立に必ず実施する。**起動条件（high-risk surface）を満たしたのに未実行だった事実は、失敗・スキップのいずれでもレポート（review Step 7 / self-review Step 6 の「動的ラウンド」行）に必ず出す**（silent skip で偽の安心を防ぐ・issue #85）
 

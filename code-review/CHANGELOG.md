@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.35.1] - 2026-07-15
+
+### Fixed
+- **`recall_skeptic.findings_added` の帰属が失われ、skeptic の価値率が系統的に 0 へ潰れていた問題を修正**。実測（gist 集約 69 件）で `fired=true` 4 件すべてが `findings_added=0` だったが、これは「skeptic に価値がない」ことの証拠になっていなかった。由来の帰属チェーンが 3 箇所で切れており、**「価値ゼロ」と「帰属の喪失」を区別できない**状態だった:
+  - **レポート書式に由来タグの居場所が無かった**。`reviewer-prompts.md` は skeptic に「各指摘の冒頭に `[recall-skeptic]` タグを付ける（由来を追跡するため）」と指示していたのに、Step 7 / Step 6 のレポート書式のタグ枠は `[confidence][severity][カテゴリ]` の 3 つだけで、由来タグはレポートを書いた時点で消えていた。書式に由来タグを明記し、実例も追加してレポート契約の一部と位置づけた
+  - **dedup でタグごと消えうる**。`orchestration-guide` の「重複は dedup（同一ファイル ±5 行 + 類似内容）」はどちらが生き残るか未規定で、reviewer 指摘と重なると skeptic の寄与が不可視になった。**残す側へタグを引き継ぐ**ことを規定
+  - **publish が計測点から遠すぎた**。Phase 5.8 → Step 6 scoring（計測点）→ 締めフロー 4 publish と 200 行以上離れ、間に精査・解説・ドラフト生成という指摘リストを書き換える対話ステップが 3 つ挟まる。かつ payload は LLM が手で JSON を組む。両フィールドを「**Step 7 で最初に出力したレポート本文のタグ付き指摘を数えて求める**」と再定義し、記憶からの再構成をやめた。計測点（報告マトリクス通過時点＝精査の前＝ Step 7 の初回レポート。精査が再出力する調整後レポートではない）を明示し、精査で取り下げた分を減算しないことを規定。「動的ラウンド」行の `実行（N 件追加）` の N と `findings_added` は同値であり、本文確定後に数えてヘッダへ反映する（二重管理にしない）ことも明記
+- **由来タグを 2 種に分離し、価値率の分子から重複を排除**。上記の「dedup 時にタグを残す」規定だけでは、**過少計上（0 潰れ）を過大計上へ反転させるだけ**だった。dedup 規定は重複を残す理由を「fleet 共通盲点でなかったことの記録」と自ら述べており、**重複＝ skeptic が recall を足していない事例**である。それを `findings_added`（＝ triage-guide が読む「価値率」の分子）に混ぜると、skeptic は generalist 一頭で reviewer 最大 10 体と同じ diff を読むため**重複が常態**となり、価値率が 100% に張り付いて「`findings_added=0` が続くなら縮小」の分岐が原理的に発火しなくなる:
+  - `[recall-skeptic]` = **skeptic 単独由来**（dedup で重複しなかった＝実際に破った盲点）→ `findings_added` に計上。**価値率の分子はこれのみ**
+  - `[recall-skeptic:dup]` = **重複 survivor**（reviewer も到達していた）→ 新設の `findings_overlap` に計上。独立到達の記録として残すが**価値率には算入しない**
+- **`attribution_schema` 版マーカーを `recall_skeptic` payload に追加**（常に `2`）。当初は「修正日より前のデータは使えない」と日付で切る注記にしていたが、**日付では原理的に切れない**。マーケットプレイス配布のため未更新マシンは修正日以降も schema 1 の payload を publish し続けるからで、`plugin-manager` による一括更新が前提＝**ラグは常態**（本リポジトリ自身、修正当日まで pre-commit hook が未設定のマシンが存在した）。publish 側が自己申告する版マーカーだけが配布ラグに耐えるため、この方式に変更。`triage-guide` の価値率 jq に `attribution_schema >= 2` フィルタを**式として埋め込み**（散文の警告だけでは、コピペ実行時に汚染データで判断してしまうため）
+- review / self-review 対称に反映。self-review 側の publish は Step 6.4（Step 6.5 は構造化 JSON / Step 7 は修正方針確認）
+
 ## [2.35.0] - 2026-07-14
 
 ### Added
