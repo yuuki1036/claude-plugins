@@ -406,7 +406,8 @@ Issue 1-6 は**全て実装完了**（Issue 5 は分解粒度の注記どおり 
 実装で確定した本 doc からのズレ:
 
 - **`references/examples.md` は作らなかった**。上の全体像 tree からも削除済み。scaffold のテンプレは `template.md`、契約は `format-spec.md` が持ち、使用例は SKILL.md 本文に埋めた方が参照が 1 段浅くなるため
-- **eval 回帰（`evals/runner.py`）は未実施**。ケース定義 `evals/cases/living-spec-workflow.yaml` は作成済みだが、runner がインストール済みプラグインしか候補にしないため、marketplace（GitHub リモート）への push + install が前提になる。design-doc / adr-keeper との弁別を測る誤発火防止ケースを含むので、install 後に pass^k=3 で回す
+- **eval 回帰（`evals/runner.py`）は未実施**。ケース定義 `evals/cases/living-spec-workflow.yaml`（15 ケース。design-doc / adr-keeper との弁別を測る誤発火防止 4 ケースを含む）は作成済みで、push + `claude plugin install living-spec-workflow@yuuki1036-claude-plugins` まで完了している。**残る blocker は OAuth セッション切れ**（headless の `claude -p` が `Failed to authenticate: OAuth session expired and could not be refreshed` で落ちる）。対話セッションで再ログインしたうえで `python3 evals/runner.py --plugin living-spec-workflow` を pass^k=3 で回す
+  - 認証切れの状態では**全プラグインのコマンドが `Unknown command` になる**（`/adr` / `/design-doc` / `/spec-advise` でも同じ）。living-spec 固有の登録漏れではないので、この症状を見ても plugin.json やコマンド定義を疑わないこと
 
 ### 4. 実装完了時の doc 更新手順
 
