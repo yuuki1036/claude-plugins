@@ -325,7 +325,8 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 - **terminalSequence helpers (CC 2.1.141+)**: `safe-hook.sh` の `safe_hook_emit_bell` / `safe_hook_emit_window_title` は端末ベル / ウィンドウタイトルを JSON 出力で送る。`safe_hook_emit` (plain text) と**混在不可**（terminalSequence は単独 JSON 出力）。長時間処理の完了通知や警告アラートに opt-in で利用する
 - **${CLAUDE_EFFORT} skill 適応分岐 (CC 2.1.120+)**: SKILL.md / コマンド本文に `${CLAUDE_EFFORT}` を書くと実行時 effort (low/medium/high/xhigh/max) が展開される。深掘り skill では `low/medium → 速度優先、xhigh/max → 多重 agent` のような条件分岐を入れる。frontmatter の `effort:` は宣言（既定値）、本文の `${CLAUDE_EFFORT}` は実行時値
 - **eval のプロンプトにスラッシュコマンドを使わない**: `evals/runner.py` は headless の `claude -p` を呼ぶが、**headless はプラグインのコマンドを登録しない**ため `/living-spec` `/adr` `/design-doc` はいずれも `Unknown command` で必ず落ちる。**認証の有無とは無関係**（`claude auth status` が `loggedIn: true` でも再現するので、`Failed to authenticate` が同時に出ていても認証切れのせいだと誤診しないこと）。トリガーは自然言語のプロンプトで測る。`evals/cases/notebooklm-workflow.yaml` の `add-source-slash` がこの理由で恒常 fail している（未修正）
-- **eval の fail はまず「プラグイン選択」と「skill id の綴り」を分けて読む**: モデルが実在しない skill id を綴る fail が一定率で出る（`adr-keeper:adr` を `adr-keeper:adr-keeper`、`notebook-source-adder` を `notebooklm-add-source` 等）。プラグインの選択自体が正しいなら、それは harness 側の性質でスキル description の問題ではない。**expected に実在しない id を列挙して緑にしない**（eval が意味を失う）。誤発火の有無は「どのプラグインが選ばれたか」で判定する
+- **eval の fail はまず「プラグイン選択」と「skill id の綴り」を分けて読む**: モデルが実在しない skill id を綴る fail が一定率で出る（`adr-keeper:adr` を `adr-keeper:adr-keeper`、`notebook-source-adder` を `notebooklm-add-source`、`notebook-query-assistant` を `notebook-summarizer` 等）。プラグインの選択自体が正しいなら、それは harness 側の性質でスキル description の問題ではない。**expected に実在しない id を列挙して緑にしない**（eval が意味を失う）。誤発火の有無は「どのプラグインが選ばれたか」で判定する
+- **eval の判定に k=1 の結果を使わない**: 上の id 捏造は**確率的**で、k=1 で落ちたケースが k=3 では通ることがある（notebooklm-workflow は k=1 で 3 件落ちたが k=3 では 1 件に減った）。`--k 1` は配線確認（ケースが読めるか・プラグインが解決するか）専用で、**恒常的に落ちる／description が悪い の根拠にはならない**。判定は既定の pass^k=3 で行う
 
 ## バージョニング規約
 

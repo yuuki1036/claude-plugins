@@ -1,4 +1,12 @@
 plugin: notebooklm-workflow
+# スラッシュコマンド（/notebook-add-source）はプロンプトに使わない。headless の
+# `claude -p` はプラグインのコマンドを登録しないため `Unknown command` で必ず落ちる
+# （認証とは無関係で loggedIn: true でも再現。CLAUDE.md の Gotchas 参照）。
+# 旧 add-source-slash / query-slash は自然言語トリガーに置き換えた。
+#
+# expected_skill に 2 つ並ぶのは、このプラグインだけ command 名と skill 名が食い違って
+# おり（COMMAND_SKILL_ALIASES に登録）、セッションのスキル一覧に 2 機能で 4 エントリが
+# 並ぶため。実在しない id（notebooklm-add-source 等）は足さないこと。
 cases:
   - id: add-source-ja
     prompt: NotebookLM にこのURLを追加して
@@ -8,8 +16,8 @@ cases:
     prompt: ノートに資料を投入したい
     expected_skill: [notebooklm-workflow:notebook-source-adder, notebooklm-workflow:notebook-add-source]
     k: 3
-  - id: add-source-slash
-    prompt: /notebook-add-source
+  - id: add-source-youtube
+    prompt: この YouTube 動画を NotebookLM のソースに登録して
     expected_skill: [notebooklm-workflow:notebook-source-adder, notebooklm-workflow:notebook-add-source]
     k: 3
   - id: query-ja
@@ -20,7 +28,7 @@ cases:
     prompt: NotebookLM のノートを要約して
     expected_skill: [notebooklm-workflow:notebook-query-assistant, notebooklm-workflow:notebook-query]
     k: 3
-  - id: query-slash
-    prompt: /notebook-query
+  - id: query-source-content
+    prompt: NotebookLM に入れた資料の内容を調べて答えて
     expected_skill: [notebooklm-workflow:notebook-query-assistant, notebooklm-workflow:notebook-query]
     k: 3
