@@ -406,8 +406,10 @@ Issue 1-6 は**全て実装完了**（Issue 5 は分解粒度の注記どおり 
 実装で確定した本 doc からのズレ:
 
 - **`references/examples.md` は作らなかった**。上の全体像 tree からも削除済み。scaffold のテンプレは `template.md`、契約は `format-spec.md` が持ち、使用例は SKILL.md 本文に埋めた方が参照が 1 段浅くなるため
-- **eval 回帰（`evals/runner.py`）は未実施**。ケース定義 `evals/cases/living-spec-workflow.yaml`（15 ケース。design-doc / adr-keeper との弁別を測る誤発火防止 4 ケースを含む）は作成済みで、push + `claude plugin install living-spec-workflow@yuuki1036-claude-plugins` まで完了している。**残る blocker は OAuth セッション切れ**（headless の `claude -p` が `Failed to authenticate: OAuth session expired and could not be refreshed` で落ちる）。対話セッションで再ログインしたうえで `python3 evals/runner.py --plugin living-spec-workflow` を pass^k=3 で回す
-  - 認証切れの状態では**全プラグインのコマンドが `Unknown command` になる**（`/adr` / `/design-doc` / `/spec-advise` でも同じ）。living-spec 固有の登録漏れではないので、この症状を見ても plugin.json やコマンド定義を疑わないこと
+- **eval 回帰（`evals/runner.py`）は実施済み: 12/15（pass^k=3）**。ケース定義は `evals/cases/living-spec-workflow.yaml`（15 ケース。design-doc / adr-keeper との弁別を測る誤発火防止 4 ケースを含む）
+  - **目的だった弁別は全ケース成功**。「設計書作って」「RFC 書きたい」は 3/3 で `design-doc` に流れ、living-spec に誤発火したケースは 0 件。**プラグインの選択は全ケース正しく、外れたのは skill id の綴りだけ**（`nofire-adr` は `adr-keeper` を選んだうえで id を `adr-keeper:adr-keeper` と綴った）
+  - **残る 2 件の fail は harness 側の性質**で living-spec の欠陥ではない。手を触れていない `notebooklm-workflow` で同じ 2 クラスが再現する（`--plugin notebooklm-workflow` は 4 ケース中 3 ケースが同じ id 捏造で落ちる）。**expected を緩めて通さない**（実在しない id を正解扱いすることになるため）
+- **eval のプロンプトにスラッシュコマンドを使わない**。headless の `claude -p` はプラグインのコマンドを登録せず `Unknown command` で必ず落ちる（`/adr` / `/design-doc` / `/spec-advise` でも同じ。認証の有無とは無関係で、`loggedIn: true` でも再現する）。`notebooklm-workflow` の `add-source-slash` が同じ理由で恒常 fail している。init の意図は自然言語のプロンプトで測る
 
 ### 4. 実装完了時の doc 更新手順
 

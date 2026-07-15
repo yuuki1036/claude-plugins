@@ -9,8 +9,12 @@ cases:
     prompt: living spec を作りたい
     expected_skill: living-spec-workflow:living-spec
     k: 3
+  # スラッシュコマンド（/living-spec init auth-redesign）はプロンプトに使わない。
+  # headless の `claude -p` はプラグインのコマンドを登録しないため `Unknown command` で
+  # 必ず落ちる（/adr・/design-doc でも同様。notebooklm-workflow の add-source-slash が
+  # 同じ理由で恒常 fail している）。init の意図は自然言語で測る。
   - id: living-spec-trigger-init
-    prompt: /living-spec init auth-redesign
+    prompt: auth-redesign の living spec を新規作成して
     expected_skill: living-spec-workflow:living-spec
     k: 3
   - id: living-spec-trigger-converge
