@@ -46,7 +46,7 @@ esac
 # 設定ロード（.claude/doc-freshness.json）。無ければデフォルト。
 # postToolUseCheck: false で本 hook を無効化。hookTargets で対象 prefix を上書き。
 CONFIG="${PROJECT_DIR}/.claude/doc-freshness.json"
-DEFAULT_TARGETS=".claude/designs/ .claude/adr/"
+DEFAULT_TARGETS=".claude/designs/ .claude/adr/ .claude/living-specs/"
 TARGETS="$DEFAULT_TARGETS"
 if [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
   if [ "$(jq -r '.postToolUseCheck // true' "$CONFIG" 2>/dev/null)" = "false" ]; then

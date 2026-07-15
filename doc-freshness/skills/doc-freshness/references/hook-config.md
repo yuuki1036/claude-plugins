@@ -17,7 +17,7 @@ doc-freshness は手動走査（`/doc-freshness-check` スキル）に加えて�
 
 ```json
 {
-  "hookTargets": [".claude/designs/", ".claude/adr/"],
+  "hookTargets": [".claude/designs/", ".claude/adr/", ".claude/living-specs/"],
   "postToolUseCheck": true,
   "sessionStartCheck": false
 }
@@ -25,7 +25,7 @@ doc-freshness は手動走査（`/doc-freshness-check` スキル）に加えて�
 
 | キー | デフォルト | 意味 |
 |---|---|---|
-| `hookTargets` | `[".claude/designs/", ".claude/adr/"]` | frontmatter 必須とみなす project doc の path prefix（project root 相対）。両 hook が共有 |
+| `hookTargets` | `[".claude/designs/", ".claude/adr/", ".claude/living-specs/"]` | frontmatter 必須とみなす project doc の path prefix（project root 相対）。両 hook が共有 |
 | `postToolUseCheck` | `true` | `false` で PostToolUse frontmatter 警告を無効化 |
 | `sessionStartCheck` | `false` | `true` で SessionStart の stale 一括警告を有効化（opt-in） |
 
@@ -34,11 +34,29 @@ doc-freshness は手動走査（`/doc-freshness-check` スキル）に加えて�
 
 ## 対象範囲の設計判断
 
-**なぜ `.claude/designs/` と `.claude/adr/` に限定するか**:
+**なぜ `.claude/designs/` `.claude/adr/` `.claude/living-specs/` に限定するか**:
 
-- この 2 dir は adr-keeper / design-doc が鮮度 lint を委譲する「frontmatter 必須の project doc」置き場（skill Phase 1 の走査対象と一致）。
+- この 3 dir は adr-keeper / design-doc / living-spec-workflow が鮮度 lint を委譲する「frontmatter 必須の project doc」置き場（skill Phase 1 の走査対象と一致）。
 - **プラグイン内部 doc（SKILL.md / references/ / README）は対象に含めない**。ルート CLAUDE.md の規約どおり、これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理され、`last-validated`（current=5 日閾値）を付けると恒常 stale 化して逆効果になるため。
 - 別の project doc 置き場（例: `docs/adr/`）を使う場合は `hookTargets` で明示的に追加する。
+
+**委譲元プラグインを追加するときは、この 6 箇所を同時に更新する**（1 箇所でも漏れると、委譲を宣言した側は「鮮度 lint に守られている」と思い込むのに実際は走査されない silent な不成立になる。**0.1.0 で実際に踏み 0.2.0 で修正した**）:
+
+**挙動に効く 4 箇所**（漏れると走査されない）
+
+1. skill `SKILL.md` Phase 1 の**走査対象リスト**と、その直後の**除外規則**（「〜を除く `.claude/` 配下」という反対向きの規定なので、追加側だけ直しても効かない）
+2. `hooks/scripts/frontmatter-guard.sh` の `DEFAULT_TARGETS`
+3. `hooks/scripts/stale-check.sh` の `TARGETS` フォールバック
+4. 本ファイルの既定値と本節
+
+**記述に効く 2 箇所**（漏れても動くが、doc が実態と食い違う）
+
+5. `README.md` の hook 説明と走査対象セクション
+6. `.claude-plugin/plugin.json` の description（+ `.claude-plugin/marketplace.json` の同期。version bump と CHANGELOG も必須）
+
+> 5・6 は機械検証の死角。`validate_ssot.py` は marketplace の description 一致と INDEX/CLAUDE.md の一覧表しか照合せず、README 本文は誰も見ていない。挙動側だけ直して doc を取り残すのは、silent 不成立と同じ「守られているつもり」を別の形で作る。
+
+受け入れ条件は**実測**にする（宣言の追加だけで済ませない）: 対象 dir に doc を 1 本置いて `/doc-freshness-check` が実際に拾うことを確認する。
 
 ## 免除ルール（stale-check.sh）
 

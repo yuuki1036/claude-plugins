@@ -28,7 +28,7 @@ command -v jq >/dev/null 2>&1 || safe_hook_error Dependency "jq required for ses
 CUR_THRESH=$(jq -r '.thresholds.current // 5' "$CONFIG" 2>/dev/null || true); CUR_THRESH=${CUR_THRESH:-5}
 TGT_THRESH=$(jq -r '.thresholds.target // 15' "$CONFIG" 2>/dev/null || true); TGT_THRESH=${TGT_THRESH:-15}
 TARGETS=$(jq -r '.hookTargets[]? // empty' "$CONFIG" 2>/dev/null | tr '\n' ' ' || true)
-[ -z "$TARGETS" ] && TARGETS=".claude/designs/ .claude/adr/"
+[ -z "$TARGETS" ] && TARGETS=".claude/designs/ .claude/adr/ .claude/living-specs/"
 
 # 日付 → epoch 秒（macOS BSD date / Linux GNU date 両対応）
 date_to_ts() {

@@ -3,7 +3,7 @@
 Claude Code プラグインのマーケットプレイスリポジトリ。各プラグインは独立して動作する（プラグイン間依存なし）。
 
 - 生成日: 2026-06-25
-- プラグイン数: 17
+- プラグイン数: 18
 - マニフェスト: `.claude-plugin/marketplace.json`（各 `plugin.json` から派生・SSoT 検証あり）
 
 > 詳細な運用規約・設計判断は [CLAUDE.md](CLAUDE.md) を参照。本ファイルは各プラグインのコンポーネント構成の早見表。
@@ -18,12 +18,13 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [code-review](#code-review) | 2.36.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.4.1 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.23.1 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
-| [doc-freshness](#doc-freshness) | 0.3.0 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
+| [doc-freshness](#doc-freshness) | 0.4.0 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.1.2 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.11.0 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
 | [indie-workflow](#indie-workflow) | 1.40.0 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
 | [linear-workflow](#linear-workflow) | 1.37.0 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
+| [living-spec-workflow](#living-spec-workflow) | 0.3.0 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.5 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.8 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.7.2 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
@@ -112,6 +113,13 @@ Linear MCP 連携のプロジェクト・Issue 管理。セッション開始か
 - **agents**: `code-context`, `doc-resolver`, `linear-sync`
 - **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged
 - **publishes**: `issue:completed`（Event Bus）
+
+### living-spec-workflow
+Issue 化前の設計収束ドキュメント (living spec) を `.claude/living-specs/` にフラット配置で運用。OQ 台帳と Decision log を両方 append-only の表として持ち、情報の move を設計から除いて消失を構造的に防ぐ。確度ラベル（確定 / 方向性(仮) / 未定）と since 日付でセクション粒度の収束を追跡。
+- **commands / skills**（同名ペア 2）: `living-spec`（サブコマンド: `init` / `oq` / `oq list` / `decision` / `spec` / `status`）, `living-spec-maintain`（整合・鮮度の 8 段検証。`--spec` / `--all`）
+- **references**: `living-spec/format-spec.md`（対象ファイル特定・表スキーマ・確度ラベル・採番規約・パース正規表現の正本）, `living-spec/template.md`, `living-spec-maintain/check-rules.md`（段 1-8 の判定内容・severity・修正方針の正本）
+- **dormant 連携**: `doc-freshness` 0.4.0+（ファイル単位の鮮度 lint を委譲。未導入時は縮退 warning を出して動作）
+- **設計の核心**: 採番は HTML コメント除去後の数値 max+1。`decision` が双方向参照（OQ の `関連 D#` ↔ Decision の `関連 OQ`）を 1 コマンドで書き、直後に Read で検証して片方向ならその場で直す。maintain は段 1-7 の機械判定を先頭に置き段 8 の LLM 判断は通過分にだけ当てる（`${CLAUDE_EFFORT}` 分岐）
 
 ### notebooklm-workflow
 NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノートへの Q&A・要約を自然言語で操作。

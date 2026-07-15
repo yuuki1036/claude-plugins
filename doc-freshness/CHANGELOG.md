@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.0] - 2026-07-15
+
+### Added
+
+- **`.claude/living-specs/` を走査対象に追加**（living-spec-workflow が `_requirements` で鮮度 lint を委譲するため）。living spec は `phase: target` の生きた文書で `append_only: true` を持たないため、target 閾値（既定 15 日）で stale 判定される
+  - `skills/doc-freshness/SKILL.md`: Phase 1 の走査対象リストに `.claude/living-specs/**/*.md` を追加し、**除外規則側**（「`.claude/adr/` / `.claude/designs/` を除く `.claude/` 配下」）にも反映
+  - `hooks/scripts/frontmatter-guard.sh` / `hooks/scripts/stale-check.sh`: 両 hook の既定 TARGETS に追加
+  - `skills/doc-freshness/references/hook-config.md`: `hookTargets` の既定値と「対象範囲の設計判断」を更新
+
+### Changed
+
+- `references/hook-config.md` の「対象範囲の設計判断」に、**委譲元プラグインを追加するときに同時更新すべき 6 箇所**（挙動に効く 4 + 記述に効く 2）と、受け入れ条件を実測にする旨を明記。**0.1.0 で踏み 0.2.0 で修正した** silent 不成立（走査対象への追加漏れで、委譲を宣言した側が守られていると思い込む）の再発を防ぐ
+
+### Notes
+
+- 除外規則が「特定 dir を**除く** `.claude/` 配下」という反対向きの規定になっているため、走査対象リストへの追加だけでは効かない。両方の更新が必須
+- `.claude/doc-freshness.json` に `hookTargets` を設定済みのプロジェクトでは、既定値の変更が反映されない（指定すると配列で**置き換わる**ため）。利用者側での追記が必要
+
 ## [0.3.0] - 2026-07-07
 
 ### Added

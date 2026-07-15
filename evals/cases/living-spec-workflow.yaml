@@ -1,0 +1,76 @@
+plugin: living-spec-workflow
+# トリガー回帰 + 隣接プラグイン（design-doc / adr-keeper / issue-design）への誤発火防止。
+# living-spec は「未確定を抱えた継続収束 + OQ 台帳」、design-doc は「代替案比較の 1 回性スナップショット」、
+# adr-keeper は「点の決定記録」。「設計ドキュメント」系の語は design-doc の領分なので
+# living-spec の description には入れず、固有語（living spec / OQ / Decision log / 確度ラベル）に寄せている。
+cases:
+  # --- トリガー回帰（スキル選択） ---
+  - id: living-spec-trigger-ja
+    prompt: living spec を作りたい
+    expected_skill: living-spec-workflow:living-spec
+    k: 3
+  - id: living-spec-trigger-init
+    prompt: /living-spec init auth-redesign
+    expected_skill: living-spec-workflow:living-spec
+    k: 3
+  - id: living-spec-trigger-converge
+    prompt: Issue 化する前に未確定を詰めるドキュメントを作りたい
+    expected_skill: living-spec-workflow:living-spec
+    k: 3
+  - id: living-spec-trigger-oq
+    prompt: Open Questions 台帳を作って管理したい
+    expected_skill: living-spec-workflow:living-spec
+    k: 3
+  - id: living-spec-trigger-oq-add
+    prompt: living spec に OQ を追加して
+    expected_skill: living-spec-workflow:living-spec
+    k: 3
+  - id: living-spec-trigger-decision
+    prompt: この決定を Decision log に記録して関連する OQ を閉じて
+    expected_skill: living-spec-workflow:living-spec
+    k: 3
+  - id: living-spec-trigger-status
+    prompt: living spec の収束率と残ってる open OQ を見せて
+    expected_skill: living-spec-workflow:living-spec
+    k: 3
+
+  # --- living-spec-maintain のトリガー回帰 ---
+  - id: living-spec-maintain-trigger-ja
+    prompt: living spec の整合をチェックして
+    expected_skill: living-spec-workflow:living-spec-maintain
+    k: 3
+  - id: living-spec-maintain-trigger-refs
+    prompt: OQ と Decision の参照が合ってるか点検して
+    expected_skill: living-spec-workflow:living-spec-maintain
+    k: 3
+  - id: living-spec-maintain-trigger-stale
+    prompt: 確度ラベルが塩漬けになってる項目を検出して
+    expected_skill: living-spec-workflow:living-spec-maintain
+    k: 3
+
+  # --- living-spec <-> living-spec-maintain の弁別（作成・更新は living-spec 側）---
+  - id: living-spec-nofire-maintain-on-create
+    prompt: living spec に新しい OQ を起票して
+    expected_skill: living-spec-workflow:living-spec
+    k: 3
+
+  # --- 誤発火防止（隣接スキルに正しくルーティングされるか） ---
+  # 「設計書の作成」は design-doc の領分（1 回性スナップショット = living-spec との弁別）
+  - id: living-spec-nofire-design-doc
+    prompt: この機能の設計書作って
+    expected_skill: design-doc:design-doc
+    k: 3
+  - id: living-spec-nofire-design-doc-rfc
+    prompt: この変更の RFC 書きたい
+    expected_skill: design-doc:design-doc
+    k: 3
+  # 「決定の記録」は adr-keeper の領分（点の記録 = living-spec の Decision log との弁別）
+  - id: living-spec-nofire-adr
+    prompt: さっきの設計判断を記録しておいて
+    expected_skill: adr-keeper:adr
+    k: 3
+  # Issue 1 件の作業設計は issue-design の領分
+  - id: living-spec-nofire-issue-design
+    prompt: この Issue を設計し直して
+    expected_skill: indie-workflow:issue-design
+    k: 3

@@ -11,7 +11,7 @@
 
 手動走査に加え、イベント駆動の鮮度検知 hook を持つ（`references/hook-config.md`）:
 
-- **PostToolUse (Edit/Write/MultiEdit)**: frontmatter 必須の project doc（`.claude/designs/` `.claude/adr/`）への .md 作成/編集時に `last-validated` / `phase` の欠落を**非ブロッキング**で警告（常時 on・対象 dir 限定）
+- **PostToolUse (Edit/Write/MultiEdit)**: frontmatter 必須の project doc（`.claude/designs/` `.claude/adr/` `.claude/living-specs/`）への .md 作成/編集時に `last-validated` / `phase` の欠落を**非ブロッキング**で警告（常時 on・対象 dir 限定）
 - **SessionStart (once, opt-in)**: 対象 doc の stale をセッション開始時に 1 回まとめて通知（`.claude/doc-freshness.json` の `sessionStartCheck: true` で有効化）
 
 ## frontmatter 規約
@@ -33,8 +33,8 @@ phase: current               # current | target | superseded
 ## 走査対象
 
 - プロジェクト root 配下の `**/*.md`
-- `.claude/adr/**/*.md`（adr-keeper）と `.claude/designs/**/*.md`（design-doc）を明示追加（Glob は既定で dot ディレクトリを拾わないため）
-- 除外: `.git/` / `node_modules/` / 生成物、および `.claude/adr` / `.claude/designs` を除く `.claude/` 配下、プロジェクトツリー外
+- `.claude/adr/**/*.md`（adr-keeper）、`.claude/designs/**/*.md`（design-doc）、`.claude/living-specs/**/*.md`（living-spec-workflow）を明示追加（Glob は既定で dot ディレクトリを拾わないため）
+- 除外: `.git/` / `node_modules/` / 生成物、および `.claude/adr` / `.claude/designs` / `.claude/living-specs` を除く `.claude/` 配下、プロジェクトツリー外
 
 ## チェック項目
 

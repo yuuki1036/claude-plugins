@@ -51,10 +51,11 @@ allowed-tools:
    - **dot ディレクトリ配下の doc を明示追加**: Glob の `**` は既定で dot ディレクトリ（`.claude/` 等）を拾わないため、以下を個別に Glob して対象に加える:
      - `.claude/adr/**/*.md`（adr-keeper が鮮度 lint を委譲する ADR）
      - `.claude/designs/**/*.md`（design-doc が鮮度 lint を委譲する design doc）
+     - `.claude/living-specs/**/*.md`（living-spec-workflow が鮮度 lint を委譲する living spec）
    - `CLAUDE.md` / `AGENTS.md` はリポジトリ root + 各サブディレクトリ両方を対象
    - **除外**: 以下は走査対象から外す:
      - `.git/` / `node_modules/` / `dist/` / `build/` / `vendor/` 配下（生成物・依存ライブラリ）
-     - `.claude/adr/` / `.claude/designs/` を除く `.claude/` 配下（session-context.md 等の gitignored な運用ファイル。frontmatter を前提にしない）
+     - `.claude/adr/` / `.claude/designs/` / `.claude/living-specs/` を除く `.claude/` 配下（session-context.md 等の gitignored な運用ファイル。frontmatter を前提にしない）
      - **プラグイン外を除外** = プロジェクトのソースツリー外（`$HOME/.claude/` 配下にインストールされたプラグイン本体の doc 等）は対象にしない。走査は常に**カレントプロジェクト root 配下**に限定する
 3. **新規ファイル grace period 判定**: 各ファイルの作成日時を Bash で取得し、`gracePeriodDays` 以内なら重大度を緩める:
    - stale（Phase 3）/ 行数（Phase 4）/ link（Phase 5）/ superseded 参照（Phase 6）の検出 → **info** に降格（新規 doc の整備途中を error にしない）
