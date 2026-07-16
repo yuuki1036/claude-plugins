@@ -2,6 +2,11 @@
 
 spec-advisor の変更履歴。[Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) 形式、[SemVer](https://semver.org/lang/ja/) に従う。
 
+## [0.1.3] - 2026-07-16
+
+### Changed
+- `spec-advise` skill の description から over-suggestion guard / dormant 判定の内部機構説明を削除し SKILL.md 本文へ集約（常駐コンテキスト削減）。判断軸（WHAT/HOW/WHY/Issue粒度/実装）+ トリガーは維持（eval pass^k=3 で非退行を確認）。
+
 ## [0.1.2] - 2026-07-14
 
 ### Fixed

@@ -1,8 +1,7 @@
 ---
 name: notebook-source-adder
 description: |
-  NotebookLM のノートに URL / PDF / YouTube / Google Drive のソースを追加する。
-  Claude Code セッション中に見つけた記事や参考資料を、後で読み返したり Q&A の材料にしたいときに使う。
+  NotebookLM のノートに URL / PDF / YouTube / Google Drive のソースを追加する。セッション中に見つけた記事・資料を後で読み返す / Q&A する材料として投入する。
   トリガー: 「NotebookLM にソース追加」「NotebookLM に URL 追加」「ノートに URL 追加」「ノートに資料を追加」「ノートに資料を投入」「リサーチノートに追加」「PDF/YouTube/Drive を NotebookLM へ」「notebooklm に追加」「NotebookLM にこの URL」「NotebookLM にこの記事」「/notebook-add-source」
   引数: [notebook] <source-url-or-path>
 effort: low

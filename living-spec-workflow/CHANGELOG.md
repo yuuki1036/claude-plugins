@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.1] - 2026-07-16
+
+### Changed
+
+- `living-spec` / `living-spec-maintain` skill の description を圧縮（常駐コンテキスト削減）。情報 move 除去の設計背景・段別 severity 内訳・design-doc/adr-keeper 責務分離の説明を SKILL.md 本文へ降ろし、what + サブコマンド列挙 + トリガーに絞った（eval pass^k=3 で非退行を確認。既存の近接スキル混同 3 件はダイエット前後で同一 fail ＝回帰なし）。
+
 ## [0.3.0] - 2026-07-15
 
 ### Added

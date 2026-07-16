@@ -1,11 +1,7 @@
 ---
 name: design-doc
 description: >
-  技術設計書 (design doc / RFC 相当) を実装に入らず作成・永続化するスキル。
-  grill で前提を確定し、代替案のトレードオフ比較から採用案を `.claude/designs/` に保存する。
-  実装ブリッジ (Implementation Bridge) セクション必須化と supersede 機械化で死に文書化を防ぐ。
-  Issue 1 件の作業設計は issue-design、振る舞い仕様 (WHAT) は bdd-spec、単一決定の記録は adr-keeper、
-  実装込みの開発は feature-dev に任せる（このスキルは HOW の設計とその永続化に専念する）。
+  技術設計書 (design doc / RFC 相当) を実装に入らず作成・永続化するスキル。grill で前提を確定し、代替案のトレードオフ比較から採用案を `.claude/designs/` に保存する。supersede 機械化で死に文書化を防ぐ。
   トリガー: 「設計書作って」「design doc」「技術設計書」「RFC 書きたい」「設計ドキュメント作成」
   「実装せず設計だけ詰めたい」「設計を文書化」「design doc supersede」「設計書一覧」「/design-doc」
 effort: medium

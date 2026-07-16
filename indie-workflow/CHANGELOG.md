@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.40.2] - 2026-07-16
+
+### Changed
+- `issue-design` / `indie-issue-discover` skill の description を圧縮（常駐コンテキスト削減）。責務分離文・「起動＝実行確定」の説明・連携先の内部機構を SKILL.md 本文（責務境界表・設計原則節）へ降ろし、what + トリガーに絞った。`issue-design` は linear-workflow 1.37.2 とミラー対称に削減（eval pass^k=3 で非退行を確認）。
+
 ## [1.40.1] - 2026-07-16
 
 ### Fixed

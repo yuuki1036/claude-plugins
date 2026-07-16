@@ -2,7 +2,6 @@
 name: spec-advise
 description: >
   開発タスクの内容から、実装着手前に書くべき設計・計画系成果物（WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / Issue粒度=issue-design / 実装一気通貫=feature-dev）を判断して提案する。
-  over-suggestion guard で軽微なタスク（bugfix/typo/設定変更）には黙り、迷う時だけ AskUserQuestion で選ばせる。dormant 判定で未導入プラグインは提案肢から除外。
   トリガー: 「何から設計する」「spec 選択」「どの設計手法を選ぶ」「設計いる?」「先に仕様書く?」「bdd と design-doc どっち」「実装前に何を用意する」「/spec-advise」「spec advisor」
 allowed-tools:
   - Skill

@@ -1,11 +1,7 @@
 ---
 name: issue-design
 description: >
-  Linear 連携プロジェクトの Issue documentation の書き方ガイド。9 セクションテンプレと設計判断ルール（決定 vs open の
-  境界、現時点の方向性マーカー、後続の双方向記述、確定タイミング明示）に沿って、Issue 本文を
-  設計・構造化・リライトする。新規 Issue の起票・Linear 取り込みは issue-create、
-  作成済み Issue の整理・圧縮・品質チェックは issue-maintain に任せる
-  （このスキルは設計判断の言語化と構造リライトに専念する）。
+  Linear 連携プロジェクトの Issue documentation の書き方ガイド。9 セクションテンプレと設計判断ルール（決定 vs open の境界、方向性マーカー、確定タイミング明示）に沿って Issue 本文を設計・構造化・リライトする。
   トリガー: 「Issue 設計」「Issueの書き方」「Issueを設計し直す」「Issueリライト」「設計判断どう書く」「決定とopenの仕分け」「9セクション設計」「/issue-design」
 effort: medium
 allowed-tools:

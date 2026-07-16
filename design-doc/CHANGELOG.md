@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.3] - 2026-07-16
+
+### Changed
+- `design-doc` skill の description を圧縮（常駐コンテキスト削減）。実装ブリッジ必須化の詳細・issue-design/bdd-spec/adr-keeper/feature-dev への責務分離文（4 連文）を SKILL.md 本文（責務境界表）へ降ろし、what + トリガーに絞った（eval pass^k=3 で非退行を確認）。
+
 ## [0.4.2] - 2026-07-16
 
 ### Fixed

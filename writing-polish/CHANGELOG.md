@@ -5,6 +5,12 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.8.1] - 2026-07-16
+
+### Changed
+
+- `writing-polish` skill の description を圧縮（常駐コンテキスト削減）。校正ルール正本（tone-guide）・コードコメント自動判定の内部機構（fail-safe / docstring 保全）・code-review 責務分離の説明を SKILL.md 本文へ降ろし、description は what + トリガー + 引数に絞った（起動判断に必要な情報は維持、eval pass^k=3 で選択精度の非退行を確認）。
+
 ## [0.8.0] - 2026-07-12
 
 ### Added

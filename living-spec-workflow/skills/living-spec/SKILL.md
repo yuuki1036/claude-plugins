@@ -1,13 +1,7 @@
 ---
 name: living-spec
 description: >
-  Issue 化前の「設計収束ドキュメント」(living spec) を作成・運用するスキル。
-  OQ (Open Questions) 台帳と Decision log を両方 append-only の表として持ち、情報の move を設計から除いて
-  移動漏れによる消失を構造的に防ぐ。確度ラベル（確定 / 方向性(仮) / 未定）と since 日付でセクション粒度の
-  収束を追跡する。init（scaffold）/ oq（OQ 台帳）/ decision（Decision log + 関連 OQ の close）/
-  spec（確度更新）/ status（収束率と open OQ 残数）を提供する。
-  完成した設計のスナップショットは design-doc、単一決定の記録は adr-keeper に任せる
-  （このスキルは「未確定を抱えたまま収束させる継続運用」に専念する）。
+  Issue 化前の「設計収束ドキュメント」(living spec) を作成・運用するスキル。OQ (Open Questions) 台帳と Decision log を append-only の表で持ち、確度ラベル（確定 / 方向性(仮) / 未定）で未確定を抱えたまま収束を追跡する。init / oq / decision / spec / status を提供する。
   トリガー: 「living spec」「リビングスペック」「living spec 作る」「OQ 台帳」「Open Questions 台帳」
   「OQ 追加」「Decision log」「決定を記録して OQ を閉じる」「確度ラベル」「収束率」
   「Issue 化前に未確定を詰めたい」「設計を収束させたい」「/living-spec」

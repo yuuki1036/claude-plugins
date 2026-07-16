@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.1] - 2026-07-16
+
+### Changed
+- `evaluate-spec` skill の description を圧縮（常駐コンテキスト削減）。5 観点の各詳細説明（括弧内トレース定義）・create-spec 責務分離を SKILL.md 本文へ降ろし、観点名の列挙 + トリガーに絞った（eval pass^k=3 で非退行を確認）。
+
 ## [0.3.0] - 2026-07-08
 
 ### Added

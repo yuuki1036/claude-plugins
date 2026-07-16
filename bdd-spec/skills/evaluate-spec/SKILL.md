@@ -1,10 +1,7 @@
 ---
 name: evaluate-spec
 description: >
-  BDD spec (spec.md / epic.md) を 5 観点で静的レビューする品質ゲート。
-  Gherkin 構文妥当性・粒度一貫性・網羅性（同値分割表⇔Scenario 双方向トレース）・
-  トレーサビリティ（epic の Why/What/AC ⇔ spec）・遷移カバレッジ（状態遷移表⇔Scenario、stateful のみ dormant）を severity×confidence で評価する。
-  create-spec が scaffold した spec を埋めた後の品質検証に使う（scaffold は create-spec の領分）。
+  BDD spec (spec.md / epic.md) を 5 観点（Gherkin 構文・粒度一貫性・網羅性・トレーサビリティ・遷移カバレッジ）で静的レビューする品質ゲート。severity×confidence で評価する。
   トリガー: 「spec を評価」「spec 品質チェック」「BDD spec レビュー」「spec.md をレビュー」
   「同値分割の網羅性チェック」「spec の穴を見つけて」「/bdd-spec-evaluate」
 effort: medium

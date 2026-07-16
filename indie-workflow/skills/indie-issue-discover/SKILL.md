@@ -1,11 +1,7 @@
 ---
 name: indie-issue-discover
 description: >
-  個人開発プロジェクトを AI が多観点でスキャンし、取り組むべき課題（バグ・未実装機能・技術的負債）を
-  発見して indie issue として自動起票する。優先度上位を起票し、残りは backlog に蓄積する。
-  起動＝実行確定で、止まらずスキャン → 自動起票 → 実行後レポートまで進める（AskUserQuestion で止めない）。
-  起票は indie-issue-create のテンプレート・採番・writing-polish 連携を再利用し、実装着手は feature-dev に接続する。
-  検出だけの indie-maintain、人が思いついたメモの indie-follow-up とは責務が異なる（AI がゼロから発見・起票する）。
+  個人開発プロジェクトを AI が多観点でスキャンし、取り組むべき課題（バグ・未実装機能・技術的負債）を発見して indie issue として自動起票する。優先度上位を起票し、残りは backlog に蓄積する。
   トリガー: 「課題を見つけて」「issue を自動で作って」「やることを洗い出して」「バグを探して起票」「タスク発掘」「何かやることない？」「課題発見」「/indie-issue-discover」
 allowed-tools:
   - Read

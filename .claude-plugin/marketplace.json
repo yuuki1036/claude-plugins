@@ -36,7 +36,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.37.1",
+      "version": "1.37.2",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "indie-workflow",
       "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。AI が多観点スキャンで課題を発見し issue を自動起票（indie-issue-discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.40.1",
+      "version": "1.40.2",
       "author": {
         "name": "yuki"
       },
@@ -81,7 +81,7 @@
     {
       "name": "notebooklm-workflow",
       "description": "NotebookLM 連携ワークフロー。URL/PDF/YouTube/Drive のソース追加と既存ノートへの Q&A・要約取得を自然言語で操作（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱）",
-      "version": "0.2.5",
+      "version": "0.2.6",
       "author": {
         "name": "yuki"
       },
@@ -108,7 +108,7 @@
     {
       "name": "bdd-spec",
       "description": "BDD spec 駆動の scaffold + 評価プラグイン。create で user story dir + epic.md / spec.md 2ファイル粒度 + 同値分割表 + 状態遷移表（stateful のみ）テンプレを生成し、evaluate で構文/粒度/網羅性（同値分割表⇔Scenario 双方向トレース）/トレーサビリティ/遷移カバレッジ（状態遷移表⇔Scenario、stateful のみ dormant）の 5 観点を severity×confidence で静的レビュー",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "yuki"
       },
@@ -135,7 +135,7 @@
     {
       "name": "writing-polish",
       "description": "文章を語句レベルで推敲・添削する汎用スキル。最小差分の diff 提示 → 採否フローで冗長削り・曖昧語の具体化・トーン統一・AI っぽさ除去・用語一貫性・過剰抽象/衒学語の平易化を行う。校正ルールは textlint(preset-ja-technical-writing/japanese/ai-writing/JTF-style) と Vale 由来のカテゴリを tone-guide 正本に内蔵、日英両対応。語彙の抽象度を見るカテゴリ7(平易性/over-abstraction)・negative parallelism 等の構文 tell・textlint/Vale 委譲境界を明文化。カテゴリ5に行為主体隠蔽(false agency: モノ主語の人間動詞)、カテゴリ2に反証不能な主張の検出、カテゴリ4に情感記号の濫用を追加(いずれも固定辞書化せず構造/densityで判定)。textlint preset-ai-writing を同梱 config で有効化し装飾絵文字/機械的リスト/過剰強調/hype を決定的に委譲。textlint 導入時は日本語の決定的チェックを併用(未導入時は LLM 判定にフォールバック、required:false)。過剰修正(over-correction)抑制を中核原則に据える。提示は確信度ラベル([確実]/[任意]/[要確認])・冒頭サマリ行・効能で書く理由・保全の明示で人間が採否しやすく設計(presentation-guide が提示 UX の正本)。対象の内容(コメント行構造/ソース拡張子)から自動でコードコメント種別を判定し(曖昧なら散文に倒す fail-safe・重い言語別パースはしない)別正本 code-comment-guide に分岐、コードから自明な what コメントの削除・subtype別保全(docstring/TODO/ライセンスは保全)・単体自明性テストで code-review と責務分離(正しさ検証には踏み込まない)、削除提案は不可逆度が高いため常に任意/要確認・linter skip。他プラグインから --embed で soft 委譲可能(pr-creator/git-commit-helper/issue-design が dormant 連携)",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "author": {
         "name": "yuki"
       },
@@ -144,7 +144,7 @@
     {
       "name": "design-doc",
       "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱（confidence フィルタ + high 以上で敵対的反証 phase）",
-      "version": "0.4.2",
+      "version": "0.4.3",
       "author": {
         "name": "yuki"
       },
@@ -153,7 +153,7 @@
     {
       "name": "spec-advisor",
       "description": "開発タスクの内容から適切な設計・計画系成果物（WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / Issue粒度=issue-design / 実装一気通貫=feature-dev）を判断し、実装着手前に提案する。判定の SSoT を routing-rubric に一元化し、SessionStart hook で ambient ルールを注入（対象プラグインが1つも未導入なら inert）＋ spec-advise skill / command で明示起動の2経路。over-suggestion guard で bugfix/typo/設定変更には黙り、dormant 判定で未導入プラグインは提案肢から除外する。全連携先 optional でプラグイン独立",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "author": {
         "name": "yuki"
       },
@@ -162,7 +162,7 @@
     {
       "name": "living-spec-workflow",
       "description": "Issue 化前の設計収束ドキュメント (living spec) を .claude/living-specs/ にフラット配置で作成・運用する。OQ (Open Questions) 台帳と Decision log を両方 append-only の表として持ち、情報の move を設計から除くことで移動漏れによる消失を構造的に防ぐ。/living-spec が init（scaffold）/ oq（採番 + append）/ decision（採番 + 関連 OQ の close と双方向参照の検証）/ spec（確度更新 + since の機械付与）/ status（収束率 + open OQ 残数）を提供し、/living-spec-maintain が整合・鮮度を 8 段のファネルで検証する（段 1-7 は機械パースで Critical/Warning、段 8 のみ LLM が現在地サマリのズレを見る。effort 分岐あり）。確度ラベル（確定 / 方向性(仮) / 未定）と since 日付でセクション粒度の収束を追跡。表スキーマ・採番・相互参照・パース正規表現は format-spec.md が正本。ファイル単位の鮮度 lint は doc-freshness 0.4.0+ に委譲（未インストール時は縮退 warning を出して動作）",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "yuki"
       },
