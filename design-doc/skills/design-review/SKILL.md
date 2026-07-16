@@ -15,6 +15,7 @@ allowed-tools:
   - Grep
   - Bash
   - Edit
+  - Agent
   - AskUserQuestion
 ---
 
@@ -71,7 +72,7 @@ allowed-tools:
 
 ## Phase 3: レビュー実行
 
-**agent 構成の場合**: 各 design-reviewer agent を **perspective mode** で並列起動する。プロンプトに以下を含める:
+**agent 構成の場合**: 各 design-reviewer agent を **perspective mode** で並列起動する（各 Agent call に `run_in_background: false` を明示。CC 2.1.198 で既定が background になり、省略すると findings を待たずに Phase 4 へ進んで取りこぼす）。プロンプトに以下を含める:
 
 1. `Mode: perspective` を明示
 2. 担当 Perspective 名 + `review-perspectives.md` から該当視点のチェックリスト全文
@@ -114,7 +115,7 @@ allowed-tools:
 
 **手順**:
 
-1. BLOCKER / MAJOR の finding を対象に、`Agent`（`design-reviewer`、`model: opus`）を **verification mode** で 1 体起動する。プロンプトに `Mode: verification` を明示し、**元 reviewer の suggestion / rationale は渡さず**、finding の `section` と `evidence`（file:line）と「この指摘は本当に妥当か？ 反論を組め」という中立な問いだけを渡す（アンカリング防止）。perspective は割り当てない。
+1. BLOCKER / MAJOR の finding を対象に、`Agent`（`design-reviewer`、`model: opus`、`run_in_background: false`）を **verification mode** で 1 体起動する。プロンプトに `Mode: verification` を明示し、**元 reviewer の suggestion / rationale は渡さず**、finding の `section` と `evidence`（file:line）と「この指摘は本当に妥当か？ 反論を組め」という中立な問いだけを渡す（アンカリング防止）。perspective は割り当てない。
 2. agent は doc とコードを独立に読み直し、各 finding を verification mode の Output format（**支持 / 反証 / 保留** + basis）で返す（根拠は file:line か doc 引用）。
 3. 判定を集約表の「反証」列に反映する:
    - **反証**（別 agent が明確に否定）→ その finding は severity を 1 段下げるか、レポートで「反証あり」と明示し Phase 5 の反映候補から外す

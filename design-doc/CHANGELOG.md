@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.2] - 2026-07-16
+
+### Fixed
+- **design-review で並列起動した design-reviewer の findings 取りこぼしを修正**。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、Phase 3 の perspective agent 並列起動と Phase 4.5 の独立検証 agent に `run_in_background: false` の明示を追加（省略すると findings を待たずに集約へ進み取りこぼす）
+- **design-review の allowed-tools に `Agent` が欠落していた問題を修正**（skill / command 両方）。本文は Phase 3 / 4.5 で design-reviewer agent の起動を指示しているのに宣言が無く、agent 構成（effort high 以上）が起動できない状態だった。command↔skill ペア一致検証は両方に同じ欠落があるため素通りしていた
+
 ## [0.4.1] - 2026-07-07
 
 ### Changed

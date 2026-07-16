@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.36.1] - 2026-07-16
+
+### Fixed
+- **fanout した agent の結果取りこぼしを修正**。CC 2.1.198 で Agent tool の既定が background 実行に変わり、`run_in_background` 未指定の explorer / reviewer / meta-reviewer / skeptic / 反証エージェントがすべて background で飛んでいた。オーケストレーターは「完了を待つ」つもりでも同期的には待てず、完了前に次フェーズへ進んで agent の出力を取りこぼしていた（「反応が返ってこない agent」問題。結果自体は tool result として後から返るが、消費するフェーズが先に走ってしまう順序の問題）。orchestration-guide `## 0` に「全 agent 起動で `run_in_background: false` を必ず明示する」横断ルールを追加し、review / self-review の explorer・reviewer 起動手順にも明記した
+
 ## [2.36.0] - 2026-07-15
 
 ### Changed

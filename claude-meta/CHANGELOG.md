@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.12.1] - 2026-07-16
+
+### Fixed
+- **cc-catch-up で並列起動した agent の走査結果取りこぼしを修正**。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、Phase P.1 の剪定候補スキャン（並列 Agent）と Phase 3 の条件付き Agent 起動に `run_in_background: false` の明示を追加（省略すると P.2 / Phase 4 が結果を待たずに進み取りこぼす）
+
 ## [1.12.0] - 2026-07-07
 
 ### Added

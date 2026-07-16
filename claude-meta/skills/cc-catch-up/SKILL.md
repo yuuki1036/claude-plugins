@@ -86,7 +86,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/scan-frontmatter.sh" . > 
 - `hooks` — `{events: [...], handler_types: [...], has_condition: bool}`（不使用なら `null`）
 - `skills` / `agents` / `commands` — `[{name|file, frontmatter_keys: [...]}]`（各 frontmatter のトップレベルキー）
 
-このプロファイルを Phase 4 の Gap 分析にそのまま入力する。**Agent は判断・要約層に限定**する: frontmatter に現れない使用実態（hook 発火条件の意味、skill 本文での `${...}` 変数利用、agents の効果的な model 選択等）で文脈判断が要る場合**のみ**、該当プラグインに絞って Agent を起動する。全プラグイン一律の 5 並列 fan-out は行わない（生抽出が pre-pass で済むため）。
+このプロファイルを Phase 4 の Gap 分析にそのまま入力する。**Agent は判断・要約層に限定**する: frontmatter に現れない使用実態（hook 発火条件の意味、skill 本文での `${...}` 変数利用、agents の効果的な model 選択等）で文脈判断が要る場合**のみ**、該当プラグインに絞って Agent を起動する（`run_in_background: false` を明示。結果を Phase 4 の入力にするため）。全プラグイン一律の 5 並列 fan-out は行わない（生抽出が pre-pass で済むため）。
 
 > Phase 1-2（Changelog 分析）は本 pre-pass と並列に進めてよい（独立）。
 
@@ -151,7 +151,7 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 
 #### P.1: 剪定候補スキャン
 
-各プラグインに対して並列 Agent で以下を走査:
+各プラグインに対して並列 Agent で以下を走査（各 Agent call に `run_in_background: false` を明示。CC 2.1.198 で既定が background になり、省略すると P.2 が走査結果を待たずに進んで取りこぼす）:
 
 1. `hooks/hooks.json` + `hooks/scripts/*` — C-2（ハーネス重複）候補
 2. `skills/*/SKILL.md` — C-1（モデル挙動ガード）、C-4（旧 effort 設定）、C-5（過剰手順）候補

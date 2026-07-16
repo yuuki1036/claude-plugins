@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.1] - 2026-07-16
+
+### Fixed
+- **並列起動した code-explorer / code-architect の結果取りこぼしを修正**。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、Phase 2 / Phase 4 / Phase 6 escalation の agent 起動に `run_in_background: false` の明示を追加（省略すると完了を待たずに次フェーズへ進み結果を取りこぼす）
+
 ## [2.11.0] - 2026-07-14
 
 ### Changed

@@ -525,6 +525,62 @@ MIRROR_INTENTIONAL_INDIE_ONLY: set[str] = {
 }
 
 
+# Agent fanout の同期起動明示: CC 2.1.198 で Agent tool の既定が background 実行に
+# 変わったため、fanout して結果を待つ設計の skill/command は各 Agent call に
+# `run_in_background: false` を明示する必要がある（CLAUDE.md Gotchas 参照）。
+# 「fanout して結果を待つ構造か」は文脈判断だが、「並列 Agent 起動の記述があるのに
+# run_in_background にファイル内で一度も言及しない」は grep で近似できるため
+# 非ブロッキング warning として検出する（8 箇所修正・2 箇所取り残しの実績が昇格根拠）。
+AGENT_FANOUT_RE = re.compile(
+    r"並列[^\n]{0,20}(?:Agent|agent|エージェント)"  # 「並列で Agent を起動」「並列 Agent」
+    r"|(?:Agent|agent|エージェント)[^\n]{0,20}並列"  # 「Agent tool call を…並列」「explorer 並列起動」
+    r"|multiple Agent tool calls"
+    r"|agents?[^\n]{0,30}in parallel",
+    re.IGNORECASE,
+)
+# 起動動詞が同一行に無い記述（用語説明・Phase 一覧の要約等）は起動指示でないため除外.
+AGENT_LAUNCH_VERB_RE = re.compile(r"起動|走査|実行|launch|spawn", re.IGNORECASE)
+RUN_IN_BACKGROUND_RE = re.compile(r"run_in_background")
+
+
+def _check_agent_sync_in(files: list[Path], tag: str, warnings: list[str]) -> None:
+    for md in files:
+        body = read_text(md)
+        if RUN_IN_BACKGROUND_RE.search(body):
+            continue
+        hit_line = next(
+            (
+                i
+                for i, line in enumerate(body.splitlines(), start=1)
+                if AGENT_FANOUT_RE.search(line) and AGENT_LAUNCH_VERB_RE.search(line)
+            ),
+            None,
+        )
+        if hit_line is None:
+            continue
+        rel = md.relative_to(ROOT)
+        warnings.append(
+            f"[agent-sync:{tag}] 要確認: 並列 Agent 起動の記述があるが `run_in_background` に言及なし"
+            f"（CC 2.1.198+ は既定 background。結果を待つ設計なら `run_in_background: false` を明示—人手確認）: {rel}:{hit_line}"
+        )
+
+
+def check_agent_sync_launch(plugin_dir: Path, warnings: list[str]) -> None:
+    """並列 Agent 起動を指示する SKILL.md / command が run_in_background に言及しているか."""
+    targets: list[Path] = []
+    targets += sorted((plugin_dir / "skills").glob("*/SKILL.md"))
+    targets += sorted((plugin_dir / "commands").glob("*.md"))
+    _check_agent_sync_in(targets, plugin_dir.name, warnings)
+
+
+def check_agent_sync_launch_repo_local(warnings: list[str]) -> None:
+    """repo ローカル（プラグイン外）の .claude/skills / .claude/commands も同様に検査."""
+    targets: list[Path] = []
+    targets += sorted((ROOT / ".claude" / "skills").glob("*/SKILL.md"))
+    targets += sorted((ROOT / ".claude" / "commands").glob("*.md"))
+    _check_agent_sync_in(targets, "repo-local", warnings)
+
+
 def check_mirror_symmetry(warnings: list[str]) -> None:
     """linear-workflow / indie-workflow のミラー skill 対称性を検証する（非ブロッキング warning）.
 
@@ -594,11 +650,13 @@ def main() -> int:
         for check in CHECKS:
             check(plugin_dir, errors)
         check_allowed_tools_minimality(plugin_dir, warnings)
+        check_agent_sync_launch(plugin_dir, warnings)
 
     check_shared_references_sync(errors)
     check_routing_axes_sync(errors)
     check_event_bus_sync(errors)
     check_mirror_symmetry(warnings)
+    check_agent_sync_launch_repo_local(warnings)
 
     if warnings:
         # 助言（非ブロッキング）. errors と分離して常に出力する.

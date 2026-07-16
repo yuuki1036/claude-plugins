@@ -139,7 +139,7 @@ Issue ファイルが存在しない場合（Phase F4 へ進む場合）はス�
 **起動手順:**
 
 1. `${CLAUDE_SKILL_DIR}/references/context-agents.md` を Read する
-2. **必須**: 以下 2 つの Agent を**同一メッセージ内で並列起動する**（Agent tool call を 2 つ、1 つのレスポンスに含める）。逐次起動は禁止（待ち時間が 2 倍になる）
+2. **必須**: 以下 2 つの Agent を**同一メッセージ内で並列起動する**（Agent tool call を 2 つ、1 つのレスポンスに含める）。逐次起動は禁止（待ち時間が 2 倍になる）。各 Agent call に `run_in_background: false` を明示する（CC 2.1.198 で既定が background になり、省略すると完了を待たずに進んで結果を取りこぼす）
    - Agent #1 Doc Resolver: Issue ファイル内容 + スラッグを渡す
    - Agent #2 Code Context: Issue ファイル内容を渡す
 3. 全エージェントの完了を待つ（並列起動していれば最長エージェントの時間で揃う）

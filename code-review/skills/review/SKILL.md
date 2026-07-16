@@ -139,6 +139,7 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 - 各 explorer に Phase 0 が決定した focus と対象ファイル・関数を指示として渡す
 - explorer-prompts.md の該当する Focus テンプレートをプロンプトに含める
 - 全エージェントを `isolation: "worktree"` で起動する（PR ブランチの状態でファイルを読むため）
+- 全エージェントに `run_in_background: false` を明示する（orchestration-guide `## 0`。省略すると background 起動になり結果を取りこぼす）
 - **PR 番号注入（必須）**: orchestration-guide `## 1` に従う（欠かすと偽陽性を量産する。GitHub issue #56 / #69）
 
 全 explorer の完了を待ち、結果を収集する。
@@ -163,6 +164,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus`、`effor
 - セッションコンテキストが有効な場合、reviewer-prompts.md のセッションコンテキスト注入テンプレートに従い全 reviewer に注入する
 - `gh pr diff` の出力を各 reviewer に渡す
 - 全エージェントを `isolation: "worktree"` で起動する
+- 全エージェントに `run_in_background: false` を明示する（orchestration-guide `## 0`）
 - **PR 番号注入（必須）**: orchestration-guide `## 1` に従う
 
 全 reviewer の完了を待ち、結果を収集する。

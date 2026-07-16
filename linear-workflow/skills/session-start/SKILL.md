@@ -169,7 +169,7 @@ Issue ファイルが存在しない場合（Phase N4 へ進む場合）はス�
 **起動手順:**
 
 1. `${CLAUDE_SKILL_DIR}/references/context-agents.md` を Read する
-2. **必須**: 以下 3 つの Agent を**同一メッセージ内で並列起動する**（Agent tool call を 3 つ、1 つのレスポンスに含める）。逐次起動は禁止（待ち時間が 3 倍になる）
+2. **必須**: 以下 3 つの Agent を**同一メッセージ内で並列起動する**（Agent tool call を 3 つ、1 つのレスポンスに含める）。逐次起動は禁止（待ち時間が 3 倍になる）。各 Agent call に `run_in_background: false` を明示する（CC 2.1.198 で既定が background になり、省略すると完了を待たずに進んで結果を取りこぼす）
    - Agent #1 Doc Resolver: Issue ファイル内容 + スラッグを渡す
    - Agent #2 Code Context: Issue ファイル内容を渡す
    - Agent #3 Linear Sync: Issue ID + frontmatter を渡す

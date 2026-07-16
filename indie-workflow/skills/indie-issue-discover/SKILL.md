@@ -71,7 +71,7 @@ ls -d .claude/indie/*/ 2>/dev/null
 
 ### Phase 3: 多観点スキャン
 
-対象プロジェクトのコードと管理ファイルを以下の観点でスキャンし、課題候補を抽出する。FE（フロントエンド）アプリのバグ・未実装機能を重視する。並列時は観点ごとに `Agent`（Explore）を起動して候補を集約する。
+対象プロジェクトのコードと管理ファイルを以下の観点でスキャンし、課題候補を抽出する。FE（フロントエンド）アプリのバグ・未実装機能を重視する。並列時は観点ごとに `Agent`（Explore）を起動して候補を集約する（各 Agent call に `run_in_background: false` を明示。CC 2.1.198 で既定が background になり、省略すると候補を待たずに進んで取りこぼす）。
 
 > **モデルルーティング（Clearwing 原則 4）**: スキャン（候補列挙＝ランカー役）は安いモデルで足りるので、並列 `Agent` は `model: sonnet` を明示する。誤検知の最後の砦である Phase 4.5 の独立検証（深掘り役）は強モデルを使う。ルート CLAUDE.md「モデルルーティング規約」参照。
 
@@ -155,7 +155,7 @@ fi
 
 **Step 2: 敵対的独立検証（agent・迎合防止）**
 
-起票候補ごとに `Agent`（`discover-verifier`、`model: opus`）を起動する。**発見者の `rationale` は渡さない**（思い込み伝播を遮断）。渡すのは `evidence`（`path:line`）と `type` と中立な問いだけ。agent は自分でコードを読み直し、4 軸を YES/NO + 確信度(0-100) で返す:
+起票候補ごとに `Agent`（`discover-verifier`、`model: opus`、`run_in_background: false`）を起動する。**発見者の `rationale` は渡さない**（思い込み伝播を遮断）。渡すのは `evidence`（`path:line`）と `type` と中立な問いだけ。agent は自分でコードを読み直し、4 軸を YES/NO + 確信度(0-100) で返す:
 
 - **REAL**: その箇所に実際に問題があるか（例: 空 catch が本当に握りつぶしか）
 - **NOT-INTENDED**: 意図的な実装でないか（コメント・命名・設計から意図的と読めないか）

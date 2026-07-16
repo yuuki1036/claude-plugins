@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.37.1] - 2026-07-16
+
+### Fixed
+- **並列起動した agent の結果取りこぼしを修正**（indie-workflow 1.40.1 とミラー）。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、session-start Phase N3.5 の Context Recovery Agent Team（Doc Resolver / Code Context / Linear Sync）に `run_in_background: false` の明示を追加（省略すると完了を待たずに進み結果を取りこぼす）
+
 ## [1.37.0] - 2026-07-13
 
 ### Added

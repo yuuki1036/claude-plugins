@@ -12,6 +12,8 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 | レビュー中止時 | ExitWorktree してから終了 | そのまま終了 |
 | 動的ラウンドの Phase 番号 | 5.5 / 5.6 / 5.7 / 5.8 / 5.9 | 4.5 / 4.6 / 4.7 / 4.8 / 4.9 |
 
+**同期起動の明示（両 skill・全 agent 起動に適用）**: explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / 冷や読み skeptic / 反証エージェントのすべてで、Agent call に `run_in_background: false` を必ず明示する。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、省略するとオーケストレーターが結果を待たずに次フェーズへ進み、完了通知の遅れた agent の出力を取りこぼす（「反応が返ってこない agent」の正体）。本ガイドの `## 6`〜`## 10` の各起動手順にもこのルールが適用される。
+
 ## 1. PR 番号注入（review のみ / agent 起動時に必須）
 
 review skill が worktree で起動する **すべての agent**（explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / skeptic / 反証エージェント）に適用する。

@@ -317,7 +317,7 @@ Subsequent phases consume this table directly.
 **Skip condition**: Phase 1.7 assigned 0 explorers. Skip directly to Phase 3.
 
 **Actions**:
-1. Launch the N code-explorer agents specified by the Phase 1.7 configuration table in parallel (single message, multiple Agent tool calls). Each agent receives:
+1. Launch the N code-explorer agents specified by the Phase 1.7 configuration table in parallel (single message, multiple Agent tool calls, each with `run_in_background: false` — the Agent tool defaults to background since CC 2.1.198, and omitting it means results are not awaited). Each agent receives:
    - Its assigned `focus` (similar-features / architecture-mapping / shared-modules / history-context / dependency-trace / layer-mapping)
    - Its target scope (specific directory / module / abstraction layer)
    - A request to return 5-10 key files to read
@@ -378,7 +378,7 @@ Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2
 **Goal**: Design implementation approaches with different trade-offs
 
 **Actions**:
-1. Launch the N code-architect agents specified by the Phase 1.7 configuration table in parallel. Each agent receives its assigned `focus`:
+1. Launch the N code-architect agents specified by the Phase 1.7 configuration table in parallel (each with `run_in_background: false` — same rationale as Phase 2). Each agent receives its assigned `focus`:
    - `minimal-changes`: smallest change, maximum reuse of existing code
    - `clean-architecture`: maintainability, elegant abstractions, long-term evolvability
    - `pragmatic-balance`: speed + quality tradeoff explicitly weighed
@@ -467,7 +467,7 @@ Phase 5 has two modes — check the invocation context:
 **Actions**:
 1. Read each flagged file at the indicated line range
 2. Apply the reviewer's suggested fix (or a minimal equivalent that resolves the issue)
-3. If the fix requires design-level changes, escalate by launching `code-architect` with focus `delta-proposal` and **consume 1 loop iteration**. Otherwise apply directly with Edit.
+3. If the fix requires design-level changes, escalate by launching `code-architect` (with `run_in_background: false`) with focus `delta-proposal` and **consume 1 loop iteration**. Otherwise apply directly with Edit.
 4. Update the loop state file (`/tmp/feature-dev-loop-state.json`) — see Phase 6 Step 3 for the format
 5. Return to Phase 6 Step 3 (do NOT re-run Phase 5.5 unless the fix is runtime-sensitive and effort ≥ `medium`)
 

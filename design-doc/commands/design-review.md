@@ -7,6 +7,7 @@ allowed-tools:
   - Grep
   - Bash
   - Edit
+  - Agent
   - AskUserQuestion
 ---
 
