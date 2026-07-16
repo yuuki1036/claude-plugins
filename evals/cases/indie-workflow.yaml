@@ -46,3 +46,21 @@ cases:
     prompt: 何かやることない？バグとか未実装を洗い出して起票しといて
     expected_skill: indie-workflow:indie-issue-discover
     k: 3
+  # ミラー未カバー分（follow-up / init / issue-maintain / maintain）。mirror 相手と
+  # スキル名が異なり tail 一致で救済されないため、プロンプトに indie 文脈（個人開発/ローカル）を含めて弁別する
+  - id: indie-follow-up-ja
+    prompt: 個人開発の作業中に見つけたこれは別件だから、後でやるタスクとしてメモしておいて
+    expected_skill: indie-workflow:indie-follow-up
+    k: 3
+  - id: indie-init-ja
+    prompt: このプロジェクトでローカルの個人開発 Issue 管理を始めたい。初期セットアップして
+    expected_skill: indie-workflow:indie-init
+    k: 3
+  - id: indie-issue-maintain-ja
+    prompt: セッション終了前に、今日の作業内容をローカルの Issue ファイルに反映して整理して
+    expected_skill: indie-workflow:indie-issue-maintain
+    k: 3
+  - id: indie-maintain-ja
+    prompt: 個人開発プロジェクト全体を棚卸しして、放置している Issue を整理したい
+    expected_skill: indie-workflow:indie-maintain
+    k: 3
