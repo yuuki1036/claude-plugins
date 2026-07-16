@@ -21,11 +21,14 @@ fi
 [ -z "$COMMAND" ] && safe_hook_error Validation "empty command"
 
 # git commit 系のみ反応（rebase/amend/--dry-run/--help 等は除外）
-# 「git commit」が単語境界で出現し、かつ除外フラグを含まない場合のみ通す
-if ! echo "$COMMAND" | grep -qE '(^|[^[:alnum:]_])git[[:space:]]+commit([[:space:]]|$)'; then
+# 「git commit」が単語境界で出現し、かつ除外フラグを含まない場合のみ通す。
+# クオート内文字列を除去してから判定（コミットメッセージ中の "git commit" や
+# "--amend" 言及での誤判定防止。push-reminder.sh と同方式）
+CMD_STRIPPED=$(printf '%s' "$COMMAND" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")
+if ! printf '%s\n' "$CMD_STRIPPED" | grep -qE '(^|[^[:alnum:]_])git[[:space:]]+((-C|-c)[[:space:]]+[^[:space:]]+[[:space:]]+|--?[^[:space:]]+[[:space:]]+)*commit([[:space:]]|$)'; then
   safe_hook_error Validation "not a git commit command"
 fi
-if echo "$COMMAND" | grep -qE -- '--dry-run|--help|--amend'; then
+if printf '%s\n' "$CMD_STRIPPED" | grep -qE -- '--dry-run|--help|--amend'; then
   # --amend は HEAD を上書きする系なので、新規 commit イベントとは扱わない（dedup の責務をこちらに寄せる）
   safe_hook_error Validation "skipped commit flavor"
 fi

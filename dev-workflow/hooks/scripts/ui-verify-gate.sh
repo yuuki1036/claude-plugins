@@ -5,6 +5,21 @@
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "dev-workflow:ui-verify-gate"
 
+# hooks.json の `if:` は実行環境によって評価されないことがある（push-reminder で実測）。
+# 同型リスクの予防として、スクリプト内でも command を自己判定する（二重ゲート）
+INPUT=$(safe_hook_input)
+if command -v jq &>/dev/null; then
+  COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+else
+  COMMAND=$(echo "$INPUT" | grep -oE '"command"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"command"[[:space:]]*:[[:space:]]*"([^"]+)"/\1/')
+fi
+[ -z "$COMMAND" ] && safe_hook_error Validation "empty command"
+# クオート内文字列を除去してから判定（push-reminder.sh と同方式）
+CMD_STRIPPED=$(printf '%s' "$COMMAND" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")
+if ! printf '%s\n' "$CMD_STRIPPED" | grep -qE '(^|[^[:alnum:]_])git[[:space:]]+((-C|-c)[[:space:]]+[^[:space:]]+[[:space:]]+|--?[^[:space:]]+[[:space:]]+)*commit([[:space:]]|$)'; then
+  safe_hook_error Validation "not a git commit command"
+fi
+
 STATE_DIR=".claude"
 PENDING_FLAG="${STATE_DIR}/.ui-verify-pending"
 ENABLED_FLAG="${STATE_DIR}/.ui-verify-enabled"

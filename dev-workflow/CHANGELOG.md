@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.23.2] - 2026-07-16
+
+### Fixed
+- `push-reminder.sh` が全 Bash 呼び出しで reminder を注入する暴発を修正。hooks.json の `if: "Bash(git push *)"` が実行環境によって評価されないことが実測されたため、スクリプト内で `tool_input.command` から `git push` を自己判定する二重ゲートを追加（`on-commit.sh` と同方式）
+- `ui-verify-gate.sh` にも同様の `git commit` 自己判定を追加（`if:` 不発時に UI 検証有効プロジェクトで全 Bash に reminder を撒く潜在暴発の予防）
+- push reminder の文言を `/self-review` から `/code-review:self-review` に修正（名前空間なしだと旧グローバル skill に解決される衝突の回避）
+- command 自己判定の精度を強化（push-reminder / ui-verify-gate / on-commit の 3 スクリプト共通）: クオート内文字列を除去してから判定（コミットメッセージ中の "git push" / "--amend" 言及での誤発火・誤除外を防止）し、`git -C <dir> push` 等グローバルオプション経由の形式も判定対象に追加
+
 ## [1.23.1] - 2026-07-02
 
 ### Fixed
