@@ -28,26 +28,28 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 
 ## プラグイン一覧
 
+各プラグインの説明は 1 行要約のみ（このファイルは毎セッション常駐するため）。機能内訳・設計判断の詳細は INDEX.md・各プラグインの README / SKILL.md・`.claude/designs/` を参照。
+
 | プラグイン | コマンド | スキル | agents | hooks | 説明 |
 |-----------|---------|-------|--------|-------|------|
-| code-review | 2 | 2 | - | SessionStart | Phase 0 トリアージ + 動的エージェント構成コードレビュー / セルフレビュー |
-| dev-workflow | 3 | 5 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認の開発ワークフロー（chrome-devtools MCP 同梱。worktree-setup / worktree-teardown で並列開発環境の構築・破棄もサポート。pr-creator は PR 本文をユーザー提示前に writing-polish で必須推敲（インストール時）） |
-| claude-meta | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査改善・CCアップデート追従・eval 回帰テスト・新コンポーネント追加前判断 |
-| linear-workflow | 10 | 10 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | Linear MCP 連携の Issue/プロジェクト管理（knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計 + open を grill で詰める。issue-create で着手前 spec 選択（WHAT/HOW/WHY を bdd-spec/design-doc/adr に dormant ルーティング）＋起票時に関連ナレッジ（knowledge/ADR/完了Issue）を grep 自動推奨（蓄積→活用の導線。ADR は dormant）。issue/knowledge/follow-up 等の全散文成果物を確定前に writing-polish で必須推敲（インストール時）、code コメント・docs を含む広域ルールは project-rules.md に注入） |
-| indie-workflow | 11 | 11 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | 個人開発向けローカル Issue 管理（linear-workflow と排他。knowledge は source/concept 2層 + wikilink + lint。issue-design で 9 セクション設計 + open を grill で詰める。indie-issue-create で着手前 spec 選択（WHAT/HOW/WHY を bdd-spec/design-doc/adr に dormant ルーティング）＋起票時に関連ナレッジ（knowledge/ADR/完了Issue）を grep 自動推奨（蓄積→活用の導線。ADR は dormant）。indie-issue-discover で AI が多観点スキャン（バグ兆候・未実装・FE 改善・テスト欠落・既存シグナル）して課題を発見し issue を自動起票（起票上限・status:backlog・重複除外で暴走防止、起票は indie-issue-create 再利用。起票候補は Phase 4.5 で外部オラクル + 独立検証 agent discover-verifier により誤検知を起票前に落とす=fail-closed）。issue/knowledge/follow-up/retrospective 等の全散文成果物を確定前に writing-polish で必須推敲（インストール時）、code コメント・docs を含む広域ルールは project-rules.md に注入） |
-| plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + ほぼ全部 install しているマーケットプレイスの後発追加取りこぼし通知 |
+| code-review | 2 | 2 | - | SessionStart | Phase 0 トリアージ + 動的エージェント構成のコードレビュー / セルフレビュー |
+| dev-workflow | 3 | 5 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認・worktree 並列開発（chrome-devtools MCP 同梱） |
+| claude-meta | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査・CC アップデート追従・eval 回帰テスト・コンポーネント追加前判断 |
+| linear-workflow | 10 | 10 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | Linear MCP 連携の Issue / knowledge / spec ルーティング管理（indie-workflow とミラー） |
+| indie-workflow | 11 | 11 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | 個人開発向けローカル Issue 管理（linear-workflow と排他ミラー + issue 自動発見・retrospective） |
+| plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + 後発追加の取りこぼし通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
-| feature-dev | 1 | - | 2 | SessionStart | 8 phase 機能開発ワークフロー（Phase 1.3 で bdd-spec から spec.md 生成 + Phase 1.4 で bdd-spec:evaluate-spec に品質ゲート委譲（dormant） + Phase 1.7 動的トリアージ + Phase 3 clarifying を grill 化（1問ずつ・推奨つき・コードで答えられる問いは自己解決）+ Phase 4.5 で採用設計を design-doc に export（dormant）+ Phase 6 G-V 自動 fix ループ + runtime smoke test 含む。code-explorer / code-architect 同梱。Phase 6 は code-review:self-review に委譲、code-review 未インストール時 fail-fast）。claude-plugins-official からフォーク |
-| notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（jacob-bd/notebooklm-mcp-cli を .mcp.json で同梱） |
-| guardrail-protect | - | - | - | PreToolUse | git commit の hook 迂回（--no-verify/-n・git 省略形・-c core.hooksPath・変数間接・sh -c スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック（config 自己保護・fail-loud 付き） |
-| doc-freshness | 1 | 1 | - | PostToolUse, SessionStart | last-validated / phase frontmatter による doc 鮮度機械強制。手動走査（command + skill）に加え、PostToolUse hook で frontmatter 必須の project doc（.claude/designs・.claude/adr・.claude/living-specs）への frontmatter 欠落を非ブロッキング検知、SessionStart hook（opt-in）で stale を一括通知。プラグイン内部 doc（references/ 等）は対象外（version+CHANGELOG で鮮度管理） |
-| bdd-spec | 2 | 2 | - | - | BDD spec 駆動の scaffold + 評価（user story dir + epic/spec 2ファイル + 階層化 + 同値分割表 + 状態遷移表（stateful のみ）を create で生成）。evaluate で構文/粒度/網羅性（同値分割表⇔Scenario 双方向トレース）/トレーサビリティ（epic AC⇔Scenario）/遷移カバレッジ（状態遷移表⇔Scenario、アプリのワークフローを FSM とみなし辺カバレッジで検証、stateful のみ dormant）の 5 観点を severity×confidence で静的レビュー。グラフは Scenario の「カバーする辺」注記から再構成し別管理しない（drift 回避）。機械判定（構文・リンク・表セル）をファネル第1段に置き意味判断を後段に回す。Generator(create) と Evaluator(evaluate) を責務分離。feature-dev Phase 1.4 に dormant 連携 |
-| adr-keeper | 1 | 1 | - | - | 設計判断 (ADR) を append-only 蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法セクション必須 + supersede 時の新規作成/旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化（append_only frontmatter で doc-freshness の stale 判定を免除し鮮度 lint を委譲） |
-| failure-journal | 2 | 2 | - | SessionStart | 再発失敗の fingerprint 集計。JSON Lines journal に append、30日×3回閾値超で retro 還流提案、failure:logged を event bus に publish（indie-workflow:retrospective と責務分離） |
-| writing-polish | 1 | 1 | - | - | 文章を語句レベルで推敲・添削する汎用スキル。最小差分 diff → 採否フロー、過剰修正(over-correction)抑制を中核原則化。校正ルール正本(tone-guide)に textlint 4 preset + Vale を統合、提示正本(presentation-guide)で確信度ラベル[確実]/[任意]/[要確認]・サマリ行・保全明示の採否 UX を規定（提示は軽く情報は厚く）、日英両対応。pr-creator/git-commit-helper/issue-design が --embed で soft 委譲（dormant 連携） |
-| design-doc | 2 | 2 | 1 | - | 技術設計書 (design doc) を実装に入らず作成・永続化（grill で前提確定 → 代替案比較 → .claude/designs/ に保存。実装ブリッジ必須 + supersede 機械化で死に文書化を防ぐ。bdd-spec/adr-keeper/writing-polish と dormant 連携、doc-freshness に鮮度 lint を委譲。export 非対話 API で他プラグインから doc 化可能。design-review で 4 視点 agent の静的レビューを単体実行） |
-| spec-advisor | 1 | 1 | - | SessionStart | 開発タスクの内容から適切な設計・計画系成果物（WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / Issue粒度=issue-design / 実装一気通貫=feature-dev）を判断し実装着手前に提案（判定 SSoT を routing-rubric に一元化。SessionStart hook の ambient ルール注入＋spec-advise skill/command の明示起動の2経路。over-suggestion guard を先頭に置くファネルで軽微タスク（bugfix/typo/設定変更）には黙り、確信度が高い時のみ提案・迷う時のみ AskUserQuestion。dormant 判定で未導入プラグインは提案肢から除外、全連携先 optional でプラグイン独立。issue-create/feature-dev の既存 spec ルーティングとは別に raw chat のタスクを ambient に拾う） |
-| living-spec-workflow | 2 | 2 | - | - | Issue 化前の設計収束ドキュメント (living spec) を `.claude/living-specs/` にフラット配置で作成・運用（`/living-spec` は init / oq / decision / spec / status のサブコマンド構成。OQ 台帳と Decision log を両方 append-only の表として持ち、情報の move を設計から除いて消失を構造的に防ぐ＝不整合のみ検知に委ねる。採番は HTML コメント除去後の数値 max+1、decision が双方向参照を 1 コマンドで書き直後に Read で検証＝片方向をその場で直す。確度ラベル（確定/方向性(仮)/未定）と since 日付でセクション粒度の収束を追跡し status が収束率と open OQ 残数を集計。`/living-spec-maintain` は整合・鮮度を 8 段のファネルで検証＝段 1-7 の機械判定を先頭に置き段 8 の LLM 判断は通過分にだけ当てる（${CLAUDE_EFFORT} 分岐）、fail-closed はパースにのみ適用しネットワーク不達は Info（未検証）に留める、通過時のみ last-validated を更新。契約 (format-spec.md) と検知器 (check-rules.md) を分離＝契約を検知器に書き写さない。doc-freshness 0.4.0+ にファイル鮮度を委譲（dormant・未導入時は縮退 warning）） |
+| feature-dev | 1 | - | 2 | SessionStart | 8 phase 機能開発ワークフロー（spec 品質ゲート・G-V fix ループ・self-review 委譲） |
+| notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（notebooklm-mcp-cli を .mcp.json で同梱） |
+| guardrail-protect | - | - | - | PreToolUse | git commit の hook 迂回と lint/hook 設定ファイルの骨抜き編集をブロック |
+| doc-freshness | 1 | 1 | - | PostToolUse, SessionStart | frontmatter による project doc の鮮度機械強制（走査 + hook 検知 + stale 通知） |
+| bdd-spec | 2 | 2 | - | - | BDD spec の scaffold（create）と 5 観点静的レビュー（evaluate）の責務分離ペア |
+| adr-keeper | 1 | 1 | - | - | 設計判断 (ADR) の append-only 蓄積と supersede 機械化 |
+| failure-journal | 2 | 2 | - | SessionStart | 再発失敗の fingerprint 集計と閾値超えの規約還流提案 |
+| writing-polish | 1 | 1 | - | - | 文章の語句レベル推敲（最小差分 diff → 採否、過剰修正抑制、日英対応） |
+| design-doc | 2 | 2 | 1 | - | 技術設計書の作成・永続化・supersede・多視点レビュー（実装ブリッジ必須） |
+| spec-advisor | 1 | 1 | - | SessionStart | タスク内容から設計系成果物（WHAT/HOW/WHY）を判断して実装前に提案 |
+| living-spec-workflow | 2 | 2 | - | - | Issue 化前の設計収束ドキュメント (living spec) の作成・運用と 8 段ファネル検証 |
 
 ## セットアップ
 
@@ -321,6 +323,7 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 - **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げる。上げないと使用側で更新が検知されない。pre-commit hook でブロックされる
 - **CHANGELOG 未更新**: バージョンバンプ時は CHANGELOG.md も更新必須。pre-commit hook でブロックされる
 - **_requirements の同期忘れ**: プラグインの依存先が変わったら plugin.json の `_requirements` と `check-deps.sh` の両方を更新する。pre-commit の `validate-ssot.sh` が `check_xxx "<name>"` 形式の一致を検証する
+- **hooks.json の if:/matcher に単独依存しない（注入・block 系 hook の自己判定必須）**: `if: "Bash(git push *)"`（CC 2.1.85+）や matcher のフィルタは**実行環境によって評価されない**ことが実測済み（2026-07: dev-workflow push-reminder が全 Bash 呼び出しで additionalContext を注入する暴発。配布・スキーマ・構文は正しかった）。PreToolUse/PostToolUse の hook スクリプトは `INPUT=$(safe_hook_input)` で tool_input を取得し発火条件を自己判定する二重ゲートにする（手本: `dev-workflow/hooks/scripts/on-commit.sh`）。`validate_plugin_quality.py` の hook-self-judge チェックが `safe_hook_input` 非参照を非ブロッキング warning で検知する。FileChanged の path-glob matcher も同型リスクだが tool_input が無いためチェック対象外（既知の残リスク）
 - **hooks.json の args[] exec 形式 (CC 2.1.139+)**: 新規 hook は `command: "bash <path>"` ではなく `command: "bash", args: ["<path>"]` の exec 形式で書く。シェル解釈を経由せず直接 spawn するので安全＆高速。スキーマは `.claude-plugin/schema/hooks.schema.json` を参照
 - **terminalSequence helpers (CC 2.1.141+)**: `safe-hook.sh` の `safe_hook_emit_bell` / `safe_hook_emit_window_title` は端末ベル / ウィンドウタイトルを JSON 出力で送る。`safe_hook_emit` (plain text) と**混在不可**（terminalSequence は単独 JSON 出力）。長時間処理の完了通知や警告アラートに opt-in で利用する
 - **${CLAUDE_EFFORT} skill 適応分岐 (CC 2.1.120+)**: SKILL.md / コマンド本文に `${CLAUDE_EFFORT}` を書くと実行時 effort (low/medium/high/xhigh/max) が展開される。深掘り skill では `low/medium → 速度優先、xhigh/max → 多重 agent` のような条件分岐を入れる。frontmatter の `effort:` は宣言（既定値）、本文の `${CLAUDE_EFFORT}` は実行時値
@@ -343,7 +346,7 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 **自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/references/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
 
 - `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期（INDEX の version 列・記載漏れ・余分行、CLAUDE.md の一覧表記載漏れ）
-- `validate_plugin_quality.py`: allowed-tools 存在・command↔skill ペア一致 / hooks.json 参照スクリプトの safe_hook_init / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ存在 / Event Bus 同期（実 `event_bus_publish` の (plugin, event) ペアを grep 実測=正本とし、event を記載する 3 系統の doc と双方向照合: CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md 各プラグイン詳細の `**publishes**:` 行の plugin×event ペア。publisher が skill/command/hook に分散するため宣言 frontmatter は置かず実測照合＝宣言と実装の二重管理を作らない。新イベント追加時の表更新漏れ・プラグイン単位の publishes 記載漏れを Critical で検知）/ allowed-tools 最小性 #14b（SKILL.md・agents の未使用ツール検出、非ブロッキング warning。commands はペア一致ルールのため対象外）/ linear・indie ミラー対称性（skill の片側取り残し・対応表 stale を非ブロッキング warning。対応表は `MIRROR_SKILL_PAIRS` / `MIRROR_INTENTIONAL_*`）/ Agent fanout 同期起動（並列 Agent 起動の記述（同一行に起動動詞）があるのに `run_in_background` 言及なしの SKILL.md・commands を非ブロッキング warning。repo ローカル `.claude/skills` / `.claude/commands` も対象）
+- `validate_plugin_quality.py`: allowed-tools 存在・command↔skill ペア一致 / hooks.json 参照スクリプトの safe_hook_init / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ存在 / Event Bus 同期（実 `event_bus_publish` の (plugin, event) ペアを grep 実測=正本とし、event を記載する 3 系統の doc と双方向照合: CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md 各プラグイン詳細の `**publishes**:` 行の plugin×event ペア。publisher が skill/command/hook に分散するため宣言 frontmatter は置かず実測照合＝宣言と実装の二重管理を作らない。新イベント追加時の表更新漏れ・プラグイン単位の publishes 記載漏れを Critical で検知）/ allowed-tools 最小性 #14b（SKILL.md・agents の未使用ツール検出、非ブロッキング warning。commands はペア一致ルールのため対象外）/ linear・indie ミラー対称性（skill の片側取り残し・対応表 stale を非ブロッキング warning。対応表は `MIRROR_SKILL_PAIRS` / `MIRROR_INTENTIONAL_*`）/ Agent fanout 同期起動（並列 Agent 起動の記述（同一行に起動動詞）があるのに `run_in_background` 言及なしの SKILL.md・commands を非ブロッキング warning。repo ローカル `.claude/skills` / `.claude/commands` も対象）/ hook 自己判定（PreToolUse/PostToolUse スクリプトの `safe_hook_input` 非参照を非ブロッキング warning。if:/matcher 単独依存の暴発防止）/ コンテキスト予算（skill description 単体 600 chars・全体合計 15,000 chars 超過を非ブロッキング warning。description は毎セッション常駐のため）
 - `claude plugin validate`: CLI スキーマ（`_requirements` 警告は除外）
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。

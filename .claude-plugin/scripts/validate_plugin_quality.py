@@ -20,6 +20,13 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - allowed-tools 最小性 (#14b): frontmatter 宣言ツールが本文で未言及（未使用候補）.
     Read/Write/Edit/Glob/Grep/Bash や MCP ツールは日本語表現・記述的言及の偽陽性が
     あるため『要確認』に留め, LLM/人手の最終判断を残す (#14b の偽陽性除外規約に準拠).
+  - hook 自己判定: PreToolUse/PostToolUse の hook スクリプトが stdin（safe_hook_input）
+    を参照しているか. hooks.json の if:/matcher は実行環境で評価されないことが実測
+    されており（2026-07 push-reminder 暴発）, フィルタ単独依存の注入 hook は全ツール
+    呼び出しへの暴発リスクになる.
+  - コンテキスト予算: skill description の単体上限（600 chars）と全プラグイン合計上限
+    （15,000 chars）. description は毎セッションのシステムプロンプトに常駐するため,
+    肥大化は合計で判断品質を劣化させる.
 
 実行: python3 validate_plugin_quality.py [plugin_dir ...]
   引数無し: 全プラグイン
@@ -185,28 +192,12 @@ def check_hooks_safety(plugin_dir: Path, errors: list[str]) -> None:
     """hooks.json で参照されているスクリプトが safe_hook_init を呼んでいるか検証する.
 
     hooks/scripts/ 直下の helper スクリプト（hooks.json に登場しないもの）は検査対象外.
+    パス解決は _hook_script_paths（args[] exec 形式 / legacy command 文字列の両対応）に
+    委譲する. 旧実装は command フィールドのみを正規表現で走査していたため, 全プラグインが
+    exec 形式（CC 2.1.139+）へ移行した後は参照が常に空＝検証が空振りしていた.
     """
     name = plugin_dir.name
-    hooks_json = plugin_dir / "hooks" / "hooks.json"
-    if not hooks_json.is_file():
-        return
-    try:
-        data = json.loads(read_text(hooks_json))
-    except json.JSONDecodeError:
-        return
-    referenced: set[Path] = set()
-    cmd_re = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\s;|&]+\.sh)")
-    for event_matchers in data.get("hooks", {}).values():
-        if not isinstance(event_matchers, list):
-            continue
-        for matcher in event_matchers:
-            for h in matcher.get("hooks", []):
-                cmd = h.get("command", "")
-                for m in cmd_re.finditer(cmd):
-                    referenced.add(plugin_dir / m.group(1).lstrip("/"))
-    for script in sorted(referenced):
-        if not script.is_file():
-            continue
+    for script in _hook_script_paths(plugin_dir, None):
         if "safe_hook_init" not in read_text(script):
             errors.append(f"[hooks:{name}] hook script missing safe_hook_init: {script.relative_to(ROOT)}")
 
@@ -488,6 +479,95 @@ def check_allowed_tools_minimality(plugin_dir: Path, warnings: list[str]) -> Non
                 warnings.append(f"[minimality:{name}] 未使用候補 '{tool}'（frontmatter 宣言だが本文に言及なし）: {rel}")
 
 
+def _hook_script_paths(plugin_dir: Path, events: tuple[str, ...] | None) -> list[Path]:
+    """hooks.json から指定イベントの hook スクリプトパスを解決する（args[] / legacy command 両対応）.
+
+    events=None で全イベントを対象にする. 同一スクリプトの重複参照は 1 回に dedup する.
+    """
+    hooks_json = plugin_dir / "hooks" / "hooks.json"
+    if not hooks_json.is_file():
+        return []
+    try:
+        data = json.loads(read_text(hooks_json))
+    except json.JSONDecodeError:
+        return []  # JSON 破損は schema 検証（validate_ssot）の領分
+    hooks = data.get("hooks", {})
+    if not isinstance(hooks, dict):
+        return []
+    scripts: list[Path] = []
+    seen: set[Path] = set()
+    for event in (events if events is not None else tuple(hooks.keys())):
+        entries = hooks.get(event, [])
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            for h in entry.get("hooks", []):
+                candidates = list(h.get("args", []))
+                if not candidates and isinstance(h.get("command"), str):
+                    candidates = h["command"].split()
+                for c in candidates:
+                    if not c.endswith(".sh"):
+                        continue
+                    script = plugin_dir / c.replace("${CLAUDE_PLUGIN_ROOT}/", "")
+                    if script.is_file() and script not in seen:
+                        seen.add(script)
+                        scripts.append(script)
+    return scripts
+
+
+def check_hook_self_judgement(plugin_dir: Path, warnings: list[str]) -> None:
+    """PreToolUse/PostToolUse hook スクリプトの stdin 自己判定を検証する（非ブロッキング warning）.
+
+    hooks.json の `if:`（CC 2.1.85+）や matcher によるフィルタは実行環境によって
+    評価されないことが実測されている（2026-07: `if: "Bash(git push *)"` の
+    push-reminder が全 Bash 呼び出しで発火）. tool イベントの hook は
+    `safe_hook_input` で tool_input を取得し発火条件を自己判定しなければ,
+    フィルタ不発時に全ツール呼び出しへの注入・誤 block になる.
+    SessionStart / FileChanged 等は対象外（tool_input が無い・低頻度）.
+    スキーマ検証は `if` を正当なフィールドとして通すため, この暴発モードは
+    本チェックでしか拾えない.
+    """
+    name = plugin_dir.name
+    for script in _hook_script_paths(plugin_dir, ("PreToolUse", "PostToolUse")):
+        if "safe_hook_input" not in read_text(script):
+            warnings.append(
+                f"[hook-self-judge:{name}] {script.relative_to(ROOT)} が safe_hook_input を参照していない"
+                "（if:/matcher 単独依存は暴発リスク。tool_input を自己判定すること）"
+            )
+
+
+# skill description は毎セッションのシステムプロンプトに常駐する（本文は遅延ロード）.
+# 単体上限はルーティング（いつ起動するか）に必要な情報量の目安, 合計上限は
+# マーケットプレイス全体としての常駐コンテキスト予算（超過は skill 選択品質を劣化させる）.
+SKILL_DESC_CHAR_LIMIT = 600
+SKILL_DESC_TOTAL_LIMIT = 15000
+DESC_RE = re.compile(r"^description:(.*?)(?=^\S|\Z)", re.MULTILINE | re.DOTALL)
+
+
+def check_context_budget(warnings: list[str]) -> None:
+    """skill description の常駐コンテキスト予算を検証する（非ブロッキング warning）."""
+    total = 0
+    for skill_md in sorted(ROOT.glob("*/skills/*/SKILL.md")):
+        fm = parse_frontmatter(skill_md)
+        if fm is None:
+            continue
+        dm = DESC_RE.search(fm)
+        if not dm:
+            continue
+        desc = re.sub(r"\s+", " ", dm.group(1)).strip()
+        total += len(desc)
+        if len(desc) > SKILL_DESC_CHAR_LIMIT:
+            warnings.append(
+                f"[context-budget] description {len(desc)} chars > {SKILL_DESC_CHAR_LIMIT}"
+                f"（ルーティングに不要な設計背景は本文へ）: {skill_md.relative_to(ROOT)}"
+            )
+    if total > SKILL_DESC_TOTAL_LIMIT:
+        warnings.append(
+            f"[context-budget] 全 skill description 合計 {total} chars > {SKILL_DESC_TOTAL_LIMIT}"
+            "（常駐コンテキスト予算超過。上位の description をダイエットすること）"
+        )
+
+
 CHECKS = [
     check_allowed_tools_exists,
     check_allowed_tools_pair,
@@ -651,12 +731,14 @@ def main() -> int:
             check(plugin_dir, errors)
         check_allowed_tools_minimality(plugin_dir, warnings)
         check_agent_sync_launch(plugin_dir, warnings)
+        check_hook_self_judgement(plugin_dir, warnings)
 
     check_shared_references_sync(errors)
     check_routing_axes_sync(errors)
     check_event_bus_sync(errors)
     check_mirror_symmetry(warnings)
     check_agent_sync_launch_repo_local(warnings)
+    check_context_budget(warnings)
 
     if warnings:
         # 助言（非ブロッキング）. errors と分離して常に出力する.
