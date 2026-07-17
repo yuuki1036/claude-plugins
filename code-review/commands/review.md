@@ -7,6 +7,7 @@ allowed-tools:
   - EnterWorktree
   - ExitWorktree
   - AskUserQuestion
+  - Skill
 argument-hint: "[PR番号] [--emergency] (省略時は現在のブランチのPRを自動取得。--emergency は本番ホットフィックス向けの最小構成レビュー)"
 ---
 

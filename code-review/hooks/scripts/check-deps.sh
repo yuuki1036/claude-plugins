@@ -6,6 +6,7 @@ source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "code-review:check-deps"
 
 errors=""
+warnings=""
 
 check_mcp() {
   local name="$1" required="$2" desc="$3"
@@ -39,14 +40,30 @@ check_cli() {
   fi
 }
 
+check_plugin() {
+  local name="$1" required="$2" desc="$3"
+  # settings.json の enabled plugins（"name@marketplace" 形式）を確認
+  if [ -f "$HOME/.claude/settings.json" ] && grep -q "\"${name}@" "$HOME/.claude/settings.json" 2>/dev/null; then
+    return 0
+  fi
+  if [ "$required" = "true" ]; then
+    errors="${errors}\n- [ERROR] ${desc}（${name}）がインストールされていません"
+  else
+    warnings="${warnings}\n- [WARN] ${desc}（${name}）が未インストールです（オプション）"
+  fi
+}
+
 # --- チェック実行 ---
 check_mcp "github" "true" "GitHub MCP サーバー"
 # kvault は self-review Step 1.5 の Vault 照合で使う任意の外部 CLI（未導入時は skip）
 check_cli "kvault" "false" "knowledge vault CLI（self-review Vault 照合。未導入時は skip）"
+# writing-polish は review 締めフロー 3 のドラフト推敲で使う dormant 連携（未導入時は skip）
+check_plugin "writing-polish" "false" "writing-polish プラグイン（返答ドラフトの提示前推敲。未インストール時は skip）"
 
 # --- 結果出力 ---
-if [ -n "$errors" ]; then
+if [ -n "$errors" ] || [ -n "$warnings" ]; then
   echo "## 依存チェック (code-review)"
-  echo -e "$errors"
+  [ -n "$errors" ] && echo -e "$errors"
+  [ -n "$warnings" ] && echo -e "$warnings"
   echo ""
 fi
