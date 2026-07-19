@@ -1,0 +1,53 @@
+name: バグ報告
+description: "不具合・期待通り動かない（label: bug）"
+labels: [bug]
+title: "[plugin-name] "
+body:
+  - type: dropdown
+    id: plugin
+    attributes:
+      label: 対象プラグイン
+      options:
+        - adr-keeper
+        - bdd-spec
+        - claude-meta
+        - code-review
+        - design-doc
+        - dev-workflow
+        - doc-freshness
+        - failure-journal
+        - feature-dev
+        - guardrail-protect
+        - indie-workflow
+        - linear-workflow
+        - living-spec-workflow
+        - notebooklm-workflow
+        - plugin-feedback
+        - plugin-manager
+        - spec-advisor
+        - writing-polish
+        - repo 全体 / その他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: プラグインバージョン
+      placeholder: "例: 2.37.0"
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待した動作
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動作
+      description: 可能ならトリガーに使ったフレーズ・エラー出力も添える
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 再現手順・補足

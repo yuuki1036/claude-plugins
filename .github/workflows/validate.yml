@@ -1,0 +1,50 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # plugin.json / marketplace.json / hooks.json のスキーマ準拠と SSoT 同期
+      - name: validate-ssot
+        run: bash .claude-plugin/scripts/validate-ssot.sh
+
+      # allowed-tools / safe-hook.sh drift / references 参照整合性 / トリガーフレーズ等
+      # （warnings は exit code に影響しない。errors のみ fail）
+      - name: validate-plugin-quality
+        run: python3 .claude-plugin/scripts/validate_plugin_quality.py
+
+      # pre-commit と同等のバージョンバンプ検査（PR のみ）
+      # ローカル hook は --no-verify で迂回できるため CI 側でも検査する
+      - name: check-version-bump
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+          errors=0
+          for plugin_json in */.claude-plugin/plugin.json; do
+            [ -f "$plugin_json" ] || continue
+            plugin_dir=${plugin_json%%/*}
+            content_changes=$(echo "$changed" | grep "^${plugin_dir}/" | grep -v "^${plugin_dir}/.claude-plugin/plugin.json$" || true)
+            if [ -n "$content_changes" ]; then
+              if ! echo "$changed" | grep -q "^${plugin_dir}/.claude-plugin/plugin.json$"; then
+                echo "::error::${plugin_dir}: プラグイン内容が変更されているのに plugin.json のバージョンバンプがありません"
+                errors=1
+              fi
+              if ! echo "$changed" | grep -q "^${plugin_dir}/CHANGELOG.md$"; then
+                echo "::error::${plugin_dir}: バージョンバンプ時は CHANGELOG.md の更新も必要です"
+                errors=1
+              fi
+            fi
+          done
+          exit $errors

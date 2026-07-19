@@ -1,0 +1,46 @@
+name: 改善要望
+description: "改善要望・機能追加（label: enhancement）"
+labels: [enhancement]
+title: "[plugin-name] "
+body:
+  - type: dropdown
+    id: plugin
+    attributes:
+      label: 対象プラグイン
+      options:
+        - adr-keeper
+        - bdd-spec
+        - claude-meta
+        - code-review
+        - design-doc
+        - dev-workflow
+        - doc-freshness
+        - failure-journal
+        - feature-dev
+        - guardrail-protect
+        - indie-workflow
+        - linear-workflow
+        - living-spec-workflow
+        - notebooklm-workflow
+        - plugin-feedback
+        - plugin-manager
+        - spec-advisor
+        - writing-polish
+        - 新プラグイン提案
+        - repo 全体 / その他
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 困っていること・背景
+      description: どんな場面で何が不便か（Why）
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提案内容
+      description: どう変わってほしいか（What）。実装案があれば How も
+    validations:
+      required: true
