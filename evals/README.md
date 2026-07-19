@@ -157,3 +157,9 @@ python3 evals/runner.py --exclude-tag holdout,slow
 - Python 3.8+
 - `claude` CLI（PATH 上）
 - `pyyaml`（推奨。無い場合は内蔵の最小パーサで対応するが `graders` / ネスト構造は読めない）
+
+## Gotchas（CLAUDE.md から移設）
+
+- **eval のプロンプトにスラッシュコマンドを使わない**: `evals/runner.py` は headless の `claude -p` を呼ぶが、**headless はプラグインのコマンドを登録しない**ため `/living-spec` `/adr` `/design-doc` はいずれも `Unknown command` で必ず落ちる。**認証の有無とは無関係**（`claude auth status` が `loggedIn: true` でも再現するので、`Failed to authenticate` が同時に出ていても認証切れのせいだと誤診しないこと）。トリガーは自然言語のプロンプトで測る。`evals/cases/notebooklm-workflow.yaml` の `add-source-slash` がこの理由で恒常 fail している（未修正）
+- **eval の fail はまず「プラグイン選択」と「skill id の綴り」を分けて読む**: モデルが実在しない skill id を綴る fail が一定率で出る（`adr-keeper:adr` を `adr-keeper:adr-keeper`、`notebook-source-adder` を `notebooklm-add-source`、`notebook-query-assistant` を `notebook-summarizer` 等）。プラグインの選択自体が正しいなら、それは harness 側の性質でスキル description の問題ではない。**expected に実在しない id を列挙して緑にしない**（eval が意味を失う）。誤発火の有無は「どのプラグインが選ばれたか」で判定する
+- **eval の判定に k=1 の結果を使わない**: 上の id 捏造は**確率的**で、k=1 で落ちたケースが k=3 では通ることがある（notebooklm-workflow は k=1 で 3 件落ちたが k=3 では 1 件に減った）。`--k 1` は配線確認（ケースが読めるか・プラグインが解決するか）専用で、**恒常的に落ちる／description が悪い の根拠にはならない**。判定は既定の pass^k=3 で行う

@@ -98,98 +98,14 @@ claude plugin prune
 
 ## ルール配置の意思決定（決定的 hook > LLM 判定）
 
-新しいルール・制約を追加するときは、以下の優先順位で配置先を決める。決定的機械検証（lint/型/テスト/hook）は LLM 判定より ROI が高い（Thoughtworks Harness Engineering 参照）。Hook の遵守率 100% に対し CLAUDE.md は ~80% にとどまる前提で判断する。
-
-### 意思決定フロー
-
-```
-ルールを追加したい
-  │
-  ▼
-① 決定的検証で判定可能か？（文字列・ファイル存在・JSON スキーマ・exit code 等）
-  ├─ YES → Hook（PreToolUse/PostToolUse/Stop 等）で強制する
-  └─ NO  ↓
-  ▼
-② 文脈判断・自然言語理解が必要か？（コードレビュー・意図推定・要約等）
-  ├─ YES → Skill（呼び出しタイミング明示）または Agent（自律実行）
-  └─ NO  ↓
-  ▼
-③ 恒常的に参照したい規約・背景情報か？
-  └─ CLAUDE.md（プロジェクト全体）or skill の references/（局所的）
-```
-
-### 配置先の判定表
-
-| 特性 | Hook | Skill / Agent | CLAUDE.md |
-|------|------|---------------|-----------|
-| 遵守率 | 100%（決定的） | ~90%（呼び出せば確実） | ~80%（読み落としあり） |
-| 自然言語判定 | 不可 | 可 | 可 |
-| セッション外で強制 | 可 | 不可 | 不可 |
-| 具体例・背景説明 | 不向き | 向く | 向く |
-| 変更コスト | 中（スクリプト編集） | 中（SKILL.md 編集） | 低（文章修正） |
-| 代表例 | バージョンバンプ忘れ検知 / 禁止コマンド遮断 | セルフレビュー / Issue 作成 | 命名規約 / 言語設定 |
-
-### CLAUDE.md → Hook 昇格の判断基準
-
-CLAUDE.md に書いたルールが守られていない事象が以下いずれかに該当したら、Hook 昇格を検討する。
-
-- 同じ違反が 2 回以上発生している（履歴・コミットログから確認）
-- 違反した場合の修復コストが高い（後から辿ると手戻りが大きい、データ損失、外部影響）
-- 判定ロジックがルールベースで表現可能（if/grep/diff で書ける）
-
-逆に、以下に該当する場合は CLAUDE.md / Skill に留める。
-
-- 文脈依存で例外が多い（「基本は X、ただし Y のときは Z」）
-- 違反してもリカバリが容易
-- 判定に自然言語理解が必要
+新しいルール・制約を追加するときは **Hook（決定的検証可能）> Skill/Agent（文脈判断）> CLAUDE.md（恒常参照の規約）** の優先順位で配置先を決める。遵守率は Hook 100% / Skill ~90% / CLAUDE.md ~80%。CLAUDE.md のルールが 2 回以上破られた・修復コストが高い・if/grep/diff で判定できる、のいずれかに該当したら Hook 昇格を検討する。判定フロー・判定表・昇格基準の詳細は `docs/rule-placement.md` を読むこと。
 
 ## コスト×精度パイプライン設計指針（多段 agent スキル/コマンド）
 
-コスト（トークン・レイテンシ）と精度（偽陽性・偽陰性）を両立する多段 agent パイプラインを設計するときの共通指針。code-review / feature-dev / indie-issue-discover / failure-journal が独立に体現しているパターンを一般化したもの（元ネタ: Zenn「LLMエージェントのコスト×精度両立戦略：Clearwing に学ぶ設計原則」）。
+**新しい深掘り系スキル・コマンド・agent team を設計するときは、着手前に `docs/pipeline-design.md` を読むこと。** 10 原則（ファネル / 2軸スコア / 段階予算 / モデルルーティング / 暴走ガード / 証拠ラダー / 敵対的独立検証 / 外部オラクル / 構造化受け渡し / 確信度フィールド化）のどれを採用しどれを捨てたかを SKILL.md に一言残す。常時適用する要点のみ以下に残す:
 
-新しい深掘り系スキル・コマンド・agent team を設計するときは、以下 10 原則のうち **どれを採用し・どれをあえて捨てたか** を SKILL.md に一言残す。全部入れる必要はない（対象規模に合わせる）。核心は「**弱いモデルの失敗モードをワークフローで囲い込む**」＝賢いモデル購買より先に「どこで絞り・どこで検証し・どこで止めるか」を設計すること。
-
-| # | 原則 | 一言 | 正本 / 参考実装 |
-|---|------|------|----------------|
-| 1 | ファネル | 安価な絞り込み（diff/scope/grep/AST/トリアージ）を先頭に置き、高コスト検証は通過分にだけ適用 | `code-review/references/triage-guide.md` |
-| 2 | 2 軸スコア化 | 結論には confidence(0-100) と severity を独立フィールドで付与し、報告閾値をマトリクスで決める | `code-review/references/scoring-guide.md` |
-| 3 | 段階予算 | `${CLAUDE_EFFORT}` → (agent 数 / 反復回数 / 起票数) をマッピング。low は速度優先・high 以上で多重化 | `feature-dev/references/triage-guide.md` |
-| 4 | モデルルーティング | 探索=弱モデル / 判断・検証・独立検証=強モデル / 統合・メタレビュー=別系統モデル（下表） | 本節の下表 |
-| 5 | 暴走ガード | 予算上限・最大反復・同一 fingerprint 再試行抑制の三点セットを PoC 段階から装備 | `indie-workflow/skills/indie-issue-discover` |
-| 6 | 証拠ラダー | 単発の指摘は蓄積し、閾値超で下流の高コスト処理や規約/hook に昇格させる | `failure-journal` |
-| 7 | 敵対的独立検証 | 高リスク結論は別モデル・別コンテキストで反証。**発見者の推論を検証者に見せない**（迎合防止） | `code-review` 反証レイヤー |
-| 8 | 外部オラクル + fail-closed | 型/テスト/コンパイル/実行の**機械判定**で客観検証し、LLM に投げる前に落とす。曖昧・エラー時は保守側（不可/保留）に倒す | — |
-| 9 | 構造化受け渡し | agent 間は最小 JSON（識別子・file:line）のみ渡してコンテキスト膨張を防ぐ | Event Bus / Shared State 規約 |
-| 10 | 確信度フィールド化 | 不確実な主張は「未検証」タグで明示し、フィルタで自動除外。断定で高 severity を作らない | `code-review/references/scoring-guide.md` |
-
-### モデルルーティング規約（原則 4）
-
-agent / サブタスクのロールに応じて既定モデルを出し分ける。「**後から変えにくい判断を伴う結論には強モデル、絞り込み探索には弱モデル**」が原則。自動プローブはせず人手のルーティング表でハードコードする。
-
-| ロール | 既定モデル | 理由 |
-|--------|-----------|------|
-| 探索・収集・機械的サマリ（read-only fan-out。code-context / explorer 等） | `sonnet` | 事実収集は弱モデルで足り、体数を稼げる |
-| 判断・検証・レビュー（load-bearing な結論。reviewer 等） | `opus` + effort 引き上げ | 誤判定コストが高い段は精度優先 |
-| 敵対的独立検証（発見者と別コンテキストで反証。code-review 反証 / discover-verifier / design-review 反証） | `opus` | 検証は精度が命なので強モデル。独立性は「発見者の推論を渡さない」+ 別コンテキストで担保する（モデルを弱める必要はない） |
-| 統合・メタレビュー・設計 blueprint（meta-reviewer / architect 等） | `opus` | load-bearing な統合・設計判断は強モデルで質を担保する |
-
-- **`fable` は使用しない**（プロジェクト方針）。従来 fable が担っていた「別系統モデルで相関を切る」decorrelation は行わず、統合・メタレビュー・設計 blueprint も `opus` に寄せる。独立性が要る局面（meta-reviewer / 敵対的独立検証）は**別コンテキスト起動 + 発見者の推論を渡さない**ことで担保し、モデル多様性には依存しない。
-- agent frontmatter か skill 本文で **明示指定**する（親からの継承任せにしない。指定漏れは `validate_plugin_quality.py` の warning で拾えるようにするのが望ましい）。
-- 1 呼び出し内は単一モデル。ステージ間での切り替えは可。
-
-### 外部オラクル + fail-closed（原則 8）の勘所
-
-「正解を機械判定できる手段」を 1 つ持つかがパイプライン精度の上限を決める。**LLM レビューの手前に安いオラクルを差し込む**のが最も費用対効果が高い。
-
-- コード領域: 型チェック（`tsc --noEmit` 等）・テスト・lint・ビルド・実行結果。**変更範囲・対象ファイルに絞って**実行する（全ビルド/全テストは重い）。
-- 検出できない・実行不能なら結果を破棄せず「疑いのまま保留（backlog / 人手送り）」に倒す（fail-closed）。誤 OK 判定コストが高いドメインほど効く。
-- 検証プラグイン（code-review 等）が未インストールなら品質ゲートは skip せず **fail-fast**（feature-dev Phase 6 が採用）。
-
-### あえて入れない（このリポジトリでの判断）
-
-- **70/25/5 の予算配分＋繰越**: Claude Code は直列トークン予算でなく並列 agent＋体数上限モデル。effort→体数マッピングで十分。繰越は管理コストに見合わない。
-- **finding schema の全面統一**: 共通化はコア 3 点（severity 語彙 / confidence 0-100 / evidence 必須）に留め、報告マトリクスは scoring-guide.md を soft 参照。ドメイン粒度を壊さない。
-- **暴走ガード・モデルルーティングの hook 強制**: effort やループ回数は LLM の文脈判断で決まり決定的検証できない。意思決定フロー②に従い CLAUDE.md 規約止まりが正解。
+- **モデルルーティング**: 探索・収集は `sonnet`、判断・検証・統合は `opus`。agent frontmatter か skill 本文で明示指定する（継承任せにしない）
+- **`fable` は使用しない**（プロジェクト方針）。独立性は「別コンテキスト起動 + 発見者の推論を渡さない」で担保する
 
 ## Event Bus 規約（Hook = Message Bus）
 
@@ -226,86 +142,15 @@ event_bus_clear
 | `review:completed` | code-review Step 7（レポート出力後） | **code-review**（実装済） | **linear-workflow / indie-workflow:issue-maintain**（実装済） |
 | `failure:logged` | 再発しうる失敗を journal に記録 | **failure-journal**（実装済） | **indie-workflow:retrospective**（実装済） |
 
-### Publisher の責務
+### Publisher / Subscriber の責務（要点）
 
-- 自プラグインの hook 内で `event_bus_publish` を呼ぶ
-- payload は最小限の JSON（issue_id / file path / 識別子のみ。本文は含めない）
-- 副作用がある場合は payload に冪等性キーを含める
-
-### Subscriber の責務
-
-- `event_bus_tail` で読み出し、自前で dedup（ts + event 名 + payload のハッシュ等）
-- イベントログのフォーマットが将来変わる可能性があるので JSON Lines パーサ前提で実装
-- Hook 内での重い処理は禁止（必要なら別 skill / agent に委譲）
-
-### デバッグ
-
-```bash
-# 直近 10 件
-tail -n 10 .claude/events.jsonl
-
-# 特定イベントを追う
-grep '"event":"issue:completed"' .claude/events.jsonl | jq .
-```
-
-### 設計判断: なぜ JSON Lines + ファイル？
-
-- Claude Code はローカル CLI なので EventBridge / Redis Pub/Sub は過剰
-- 記事の「デバッグ困難」リスクは `tail` / `grep` でカバー
-- セッション跨ぎで参照可能（git にコミットしないが project-local には残る）
-- 全プラグインに既に配布されている `safe-hook.sh` に乗せられるので追加配布物なし
+- Publisher: payload は最小限の JSON（識別子のみ、本文を含めない）。副作用がある場合は冪等性キーを含める
+- Subscriber: `event_bus_tail` で読み出し自前で dedup。Hook 内での重い処理は禁止（別 skill / agent に委譲）
+- publish / subscribe を実装・変更するときは `docs/event-bus.md`（責務の詳細・デバッグ手順・設計判断）を読むこと
 
 ## Shared State 規約（cross-plugin な永続ファイル）
 
-複数プラグインが読み書きする shared state ファイルに **producer / consumer を明示する frontmatter** を必須化する。Classmethod「Claude Code マルチエージェントオーケストレーションパターン」記事の Shared State パターンを軽量実装したもの。
-
-> Event Bus（時系列イベント）と shared state（最新状態の永続）は使い分ける。シグナル通知は events.jsonl、現在値の参照は shared state frontmatter を読む。
-
-### frontmatter フォーマット
-
-shared state markdown の冒頭に YAML frontmatter を置く。各 type のドメイン固有フィールドは別途追加してよい（衝突しない限り）。
-
-```yaml
----
-shared_state_type: session | follow-up | knowledge | event-cache
-producer: <plugin-name>           # 主な書き込み元
-consumers: [<plugin>, ...]        # 読み出し側プラグイン
-schema_version: 1                 # フィールド変更時に bump
-last_updated: <ISO8601>           # 書き込み時に更新（producer が責任を持つ）
----
-```
-
-### type 一覧
-
-| type | 配置 | producer | 主な consumers | 永続性 |
-|---|---|---|---|---|
-| `session` | `.claude/session-context.md` | linear-workflow / indie-workflow | code-review / feature-dev / dev-workflow | セッション単位（gitignored） |
-| `follow-up` | `.claude/{linear\|indie}/{slug}/follow-ups/*.md` | linear-workflow / indie-workflow | dashboard / issue-maintain | 永続（committed） |
-| `knowledge` | `.claude/{linear\|indie}/{slug}/knowledge/**/*.md` | linear-workflow / indie-workflow | knowledge / knowledge-lint / session-start (related mode) | 永続（committed）。knowledge は共通契約フィールドではなくドメイン固有 frontmatter（kind/status/verified/updated/tags）で代替し、consumer 側も契約フィールド（shared_state_type 等）を読まない |
-| `event-cache` | （予約。events.jsonl の集計結果キャッシュ用） | - | - | - |
-
-### Producer の責務
-
-- 書き込み時に **必ず frontmatter を更新**する（`last_updated` の更新を含む）
-- `schema_version` を変える場合は consumers 側の対応を確認してから bump する
-- ファイル削除時は frontmatter を消すのではなく**ファイル自体を削除**する
-
-### Consumer の責務
-
-- frontmatter 不在のファイルも読める実装にする（**後方互換**: 既存ファイルが移行されるまで warning に留める）
-- `shared_state_type` が想定外なら処理をスキップして warning 出力
-- `last_updated` が極端に古い場合は stale 判定の判断材料に使ってよい
-
-### 設計判断: なぜ frontmatter？なぜ flat な `.claude/shared/` に移行しない？
-
-- 既存ファイルは **slug-scoped** な構造（`.claude/{workflow}/{slug}/knowledge/`）を持っており、flat 移行は 30+ 箇所のパス参照書き換えが必要でリスク高
-- frontmatter 規約だけなら配置はそのままで producer/consumer を明示でき、移行コストが極小
-- 必要性が顕在化したタイミング（例: cross-plugin で同名ファイル衝突が頻発したら）に flat 移行を再検討する
-
-### Gotcha
-
-- session-context.md は **gitignored** なので frontmatter 不在のまま動くケースがある。consumer は frontmatter 必須を前提にしない
-- follow-up / knowledge は **committed** なので新規ファイルは frontmatter 付き必須。既存ファイルは移行されるまで knowledge-lint で warning
+複数プラグインが読み書きする shared state ファイル（session-context / follow-up / knowledge）には **producer / consumer を明示する frontmatter** を必須化する（`shared_state_type` / `producer` / `consumers` / `schema_version` / `last_updated`）。Event Bus（時系列イベント通知）と shared state（現在値の参照）は使い分ける。**shared state ファイルを新設・変更するときは `docs/shared-state.md` を読むこと**（frontmatter フォーマット・type 一覧・producer/consumer の責務・後方互換ルール）。
 
 ## CHANGELOG 規約
 
@@ -328,9 +173,7 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 - **terminalSequence helpers (CC 2.1.141+)**: `safe-hook.sh` の `safe_hook_emit_bell` / `safe_hook_emit_window_title` は端末ベル / ウィンドウタイトルを JSON 出力で送る。`safe_hook_emit` (plain text) と**混在不可**（terminalSequence は単独 JSON 出力）。長時間処理の完了通知や警告アラートに opt-in で利用する
 - **${CLAUDE_EFFORT} skill 適応分岐 (CC 2.1.120+)**: SKILL.md / コマンド本文に `${CLAUDE_EFFORT}` を書くと実行時 effort (low/medium/high/xhigh/max) が展開される。深掘り skill では `low/medium → 速度優先、xhigh/max → 多重 agent` のような条件分岐を入れる。frontmatter の `effort:` は宣言（既定値）、本文の `${CLAUDE_EFFORT}` は実行時値
 - **Agent tool の background 既定 (CC 2.1.198+)**: Agent tool は `run_in_background` 省略時に background 起動になった（従来は同期）。fanout して結果を待つスキル（explorer/reviewer/verifier 等）では各 Agent call に **`run_in_background: false` を必ず明示**する。省略するとオーケストレーターが完了を待たずに次フェーズへ進み、結果を取りこぼす（結果自体は tool result として後から返るが、消費するフェーズが先に走る順序の問題。「反応が返ってこない agent」問題）。code-review の正本は `orchestration-guide.md ## 0`。取り漏れは `validate_plugin_quality.py` の agent-sync チェックが非ブロッキング warning で検知する
-- **eval のプロンプトにスラッシュコマンドを使わない**: `evals/runner.py` は headless の `claude -p` を呼ぶが、**headless はプラグインのコマンドを登録しない**ため `/living-spec` `/adr` `/design-doc` はいずれも `Unknown command` で必ず落ちる。**認証の有無とは無関係**（`claude auth status` が `loggedIn: true` でも再現するので、`Failed to authenticate` が同時に出ていても認証切れのせいだと誤診しないこと）。トリガーは自然言語のプロンプトで測る。`evals/cases/notebooklm-workflow.yaml` の `add-source-slash` がこの理由で恒常 fail している（未修正）
-- **eval の fail はまず「プラグイン選択」と「skill id の綴り」を分けて読む**: モデルが実在しない skill id を綴る fail が一定率で出る（`adr-keeper:adr` を `adr-keeper:adr-keeper`、`notebook-source-adder` を `notebooklm-add-source`、`notebook-query-assistant` を `notebook-summarizer` 等）。プラグインの選択自体が正しいなら、それは harness 側の性質でスキル description の問題ではない。**expected に実在しない id を列挙して緑にしない**（eval が意味を失う）。誤発火の有無は「どのプラグインが選ばれたか」で判定する
-- **eval の判定に k=1 の結果を使わない**: 上の id 捏造は**確率的**で、k=1 で落ちたケースが k=3 では通ることがある（notebooklm-workflow は k=1 で 3 件落ちたが k=3 では 1 件に減った）。`--k 1` は配線確認（ケースが読めるか・プラグインが解決するか）専用で、**恒常的に落ちる／description が悪い の根拠にはならない**。判定は既定の pass^k=3 で行う
+- **eval を実行・修正する前に `evals/README.md` の Gotchas を読む**: スラッシュコマンドは headless で必ず落ちる（自然言語プロンプトで測る）/ fail は「プラグイン選択」と「skill id の綴り」を分けて読む（id 捏造は harness 側の性質）/ 判定は k=1 でなく pass^k=3 で行う — 詳細と実例は README 側に集約
 
 ## バージョニング規約
 
@@ -345,8 +188,9 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 
 **自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/references/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
 
-- `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期（INDEX の version 列・記載漏れ・余分行、CLAUDE.md の一覧表記載漏れ）
-- `validate_plugin_quality.py`: allowed-tools 存在・command↔skill ペア一致 / hooks.json 参照スクリプトの safe_hook_init / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ存在 / Event Bus 同期（実 `event_bus_publish` の (plugin, event) ペアを grep 実測=正本とし、event を記載する 3 系統の doc と双方向照合: CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md 各プラグイン詳細の `**publishes**:` 行の plugin×event ペア。publisher が skill/command/hook に分散するため宣言 frontmatter は置かず実測照合＝宣言と実装の二重管理を作らない。新イベント追加時の表更新漏れ・プラグイン単位の publishes 記載漏れを Critical で検知）/ allowed-tools 最小性 #14b（SKILL.md・agents の未使用ツール検出、非ブロッキング warning。commands はペア一致ルールのため対象外）/ linear・indie ミラー対称性（skill の片側取り残し・対応表 stale を非ブロッキング warning。対応表は `MIRROR_SKILL_PAIRS` / `MIRROR_INTENTIONAL_*`）/ Agent fanout 同期起動（並列 Agent 起動の記述（同一行に起動動詞）があるのに `run_in_background` 言及なしの SKILL.md・commands を非ブロッキング warning。repo ローカル `.claude/skills` / `.claude/commands` も対象）/ hook 自己判定（PreToolUse/PostToolUse スクリプトの `safe_hook_input` 非参照を非ブロッキング warning。if:/matcher 単独依存の暴発防止）/ コンテキスト予算（skill description 単体 600 chars・全体合計 15,000 chars 超過を非ブロッキング warning。description は毎セッション常駐のため）
+- `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期
+- `validate_plugin_quality.py`: allowed-tools / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ / Event Bus 同期 / ミラー対称性 / hook 自己判定 / コンテキスト予算ほか — **検査項目の正本はスクリプト冒頭 docstring**（ここに列挙を複製しない）
+- `sync-linear-from-indie.sh --check`: indie 正本の共有ファイルと linear 側の drift 検出
 - `claude plugin validate`: CLI スキーマ（`_requirements` 警告は除外）
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
