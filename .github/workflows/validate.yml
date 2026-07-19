@@ -24,6 +24,10 @@ jobs:
       - name: validate-plugin-quality
         run: python3 .claude-plugin/scripts/validate_plugin_quality.py
 
+      # indie-workflow を正本とする linear-workflow 共有ファイルの drift 検出
+      - name: sync-linear-from-indie-check
+        run: bash .claude-plugin/scripts/sync-linear-from-indie.sh --check
+
       # pre-commit と同等のバージョンバンプ検査（PR のみ）
       # ローカル hook は --no-verify で迂回できるため CI 側でも検査する
       - name: check-version-bump

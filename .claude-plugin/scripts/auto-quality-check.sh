@@ -68,6 +68,11 @@ if command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
+# 2.5. indie/linear 共有ファイルの drift チェック
+if ! SYNC_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/sync-linear-from-indie.sh" --check 2>&1)"; then
+  ISSUES="${ISSUES}${SYNC_OUT}\n"
+fi
+
 # 3. claude plugin validate（_requirements 警告は仕様により除外）
 if command -v claude >/dev/null 2>&1; then
   while IFS= read -r plugin_dir; do
