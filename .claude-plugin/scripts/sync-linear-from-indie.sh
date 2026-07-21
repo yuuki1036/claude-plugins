@@ -29,7 +29,11 @@
 #   --write で linear-workflow の内容が変わったら、plugin.json のバージョンバンプと
 #   CHANGELOG.md 更新が必要（pre-commit / CI が検査する）。
 #
-# Exit: 0 (drift なし / 書き込み完了) / 1 (drift あり)
+# Exit:
+#   0 … --check: drift なし / --write: 全件書き込み成功
+#   1 … --check: drift あり / --write: 正本欠損や書き込み失敗で未完了
+#       （--write では内容の drift は「解消対象」なので失敗扱いにしない）
+#   2 … 引数が不正
 
 set -euo pipefail
 
@@ -37,6 +41,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 MODE="${1:---check}"
+case "$MODE" in
+  --check|--write) ;;
+  *)
+    echo "不明な引数: $MODE" >&2
+    echo "usage: sync-linear-from-indie.sh [--check|--write]" >&2
+    exit 2
+    ;;
+esac
 
 # "indie相対パス:linear相対パス" の組。パスが同じでも明示する。
 # safe-hook.sh は validate_plugin_quality.py の safe-hook-sync が検証するため対象外。
@@ -65,7 +77,11 @@ apply_transform() {
     "$1"
 }
 
+# drift  … 内容不一致。--check では失敗だが、--write では「これから解消する対象」＝正常
+# broken … 正本が無い等の構成エラー。どちらのモードでも失敗（--write でも同期できない）
 drift=0
+broken=0
+written=0
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
@@ -73,7 +89,7 @@ check_pair() {
   local kind="$1" src="indie-workflow/$2" dst="linear-workflow/$3"
   if [ ! -f "$src" ]; then
     echo "ERROR [$kind] 正本が存在しない: $src" >&2
-    drift=1
+    broken=1
     return
   fi
   if [ "$kind" = "shared" ]; then
@@ -90,7 +106,12 @@ check_pair() {
     drift=1
   fi
   if [ "$MODE" = "--write" ]; then
-    cp "$tmp" "$dst"
+    if ! mkdir -p "$(dirname "$dst")" || ! cp "$tmp" "$dst"; then
+      echo "ERROR [$kind] 書き込みに失敗: $dst" >&2
+      broken=1
+      return
+    fi
+    written=$(( written + 1 ))
   fi
 }
 
@@ -102,16 +123,31 @@ for pair in "${TRANSFORM[@]}"; do
 done
 
 total=$(( ${#SHARED[@]} + ${#TRANSFORM[@]} ))
+
 if [ "$MODE" = "--write" ]; then
-  echo "sync 完了 (${total} files)。linear-workflow に変更が出た場合はバージョンバンプを忘れずに"
+  # 実際に書けた件数を報告する（マニフェスト件数ではない）。
+  # 正本欠損などで書けなかったものがあれば非ゼロで返す（--write でも失敗は失敗）。
+  if [ "$broken" -ne 0 ]; then
+    echo "sync 未完了: ${written}/${total} files のみ書き込み。上の ERROR を解消すること" >&2
+    exit 1
+  fi
+  echo "sync 完了 (${written}/${total} files)。linear-workflow に変更が出た場合はバージョンバンプを忘れずに"
   exit 0
+fi
+
+if [ "$broken" -ne 0 ]; then
+  echo "" >&2
+  echo "正本が欠落しているため同期できない。マニフェスト（SHARED / TRANSFORM 配列）と" >&2
+  echo "実ファイルの対応を確認すること" >&2
+  exit 1
 fi
 
 if [ "$drift" -eq 0 ]; then
   echo "indie/linear sync check passed (${total} files)"
-else
-  echo "" >&2
-  echo "drift を解消するには: 正しい内容を indie-workflow 側に反映してから" >&2
-  echo "  bash .claude-plugin/scripts/sync-linear-from-indie.sh --write" >&2
+  exit 0
 fi
-exit "$drift"
+
+echo "" >&2
+echo "drift を解消するには: 正しい内容を indie-workflow 側に反映してから" >&2
+echo "  bash .claude-plugin/scripts/sync-linear-from-indie.sh --write" >&2
+exit 1
