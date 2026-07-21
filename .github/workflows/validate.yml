@@ -10,6 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # check-version-bump が差分範囲を解決するために全履歴が要る。
+          # 既定の fetch-depth:1 だと grafted な shallow clone になり、
+          # base も --depth=1 で取ると merge base が shallow 境界の外に出て
+          # `git diff base...HEAD` が `fatal: no merge base` で必ず落ちる。
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -28,13 +34,35 @@ jobs:
       - name: sync-linear-from-indie-check
         run: bash .claude-plugin/scripts/sync-linear-from-indie.sh --check
 
-      # pre-commit と同等のバージョンバンプ検査（PR のみ）
-      # ローカル hook は --no-verify で迂回できるため CI 側でも検査する
+      # pre-commit と同等のバージョンバンプ検査。
+      # ローカル hook は --no-verify で迂回できるため CI 側でも検査する。
+      # 本リポジトリは main 直コミット運用なので push イベントでも必ず走らせる
+      # （PR 限定にすると通常経路が素通りして保険にならない）。
       - name: check-version-bump
-        if: github.event_name == 'pull_request'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          changed=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$BASE_REF"
+            range="origin/${BASE_REF}...HEAD"
+          else
+            # push: 今回 push された範囲を見る。初回 push / force push 直後や
+            # 履歴から消えた SHA では before が使えないため直前コミットで代用する
+            if [ -n "$BEFORE_SHA" ] \
+              && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
+              && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              range="${BEFORE_SHA}..HEAD"
+            elif git rev-parse HEAD~1 >/dev/null 2>&1; then
+              range="HEAD~1..HEAD"
+            else
+              echo "比較対象が特定できないため skip（初回コミット）"
+              exit 0
+            fi
+          fi
+          echo "比較範囲: $range"
+          changed=$(git diff --name-only "$range")
           errors=0
           for plugin_json in */.claude-plugin/plugin.json; do
             [ -f "$plugin_json" ] || continue
