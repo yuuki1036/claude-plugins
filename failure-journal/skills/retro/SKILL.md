@@ -10,6 +10,7 @@ effort: medium
 allowed-tools:
   - Read
   - Bash
+  - Agent
   - AskUserQuestion
 ---
 
@@ -49,7 +50,21 @@ log-failure は手動起票のため、**Claude が自己訂正した失敗は�
 > **自動 append は禁止。** precision 35% で誤起票すると journal が汚れ、閾値集計の信頼性を直接損なう。
 > append する `timestamp` はサルベージ実行時刻ではなく、**失敗が発生した transcript 上の時刻**を使う（窓集計の正確性のため）。
 
-引数 `--no-salvage` が指定された場合、または transcript ディレクトリが存在しない場合は本 Phase をスキップして Phase 1 へ進む。
+### effort 適応（`${CLAUDE_EFFORT}`）
+
+走査と分類は effort で深さを変える。現在の effort は `${CLAUDE_EFFORT}`。
+
+| effort | 走査窓 | 分類 |
+|---|---|---|
+| low / medium | 集計窓を上限 7 日に縮める | 逐次分類のみ（Agent 並列化しない）。候補 30 件超なら上位のみ提示し、打ち切った件数を明示する |
+| high（既定） | 集計窓どおり（既定 30 日） | 候補 30 件超で Agent 並列分類 + tag 正規化 |
+| xhigh / max | 集計窓どおり | 全件を Agent 並列分類。バッチを細かく割り、tag 正規化を独立コンテキストで実行する |
+
+> Agent を並列起動するときは各 call に **`run_in_background: false` を必ず明示**する。CC 2.1.198+ は既定が background のため、省略すると分類結果が揃う前に tag 正規化・承認フェーズへ進んでしまう。
+
+> **打ち切りは必ず可視化する**（`log()` 相当の明示）。黙って上位 N 件に絞ると「これで全部」と読まれる。
+
+引数 `--no-salvage` が指定された場合、または transcript ディレクトリが存在しない場合は本 Phase をスキップして Phase 1 へ進む。**ただしディレクトリ不在は無言でスキップせず、探したパスを提示する**（slug 導出ミスが「失敗 0 件」に化けるのを防ぐため）。
 
 ---
 
