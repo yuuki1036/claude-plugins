@@ -250,12 +250,23 @@ linear-workflow と indie-workflow はミラー構造（共通機能は片方の
 
 ### 16. 変更差分のセルフレビュー（条件付き）
 
-静的整合性チェック（項目 0〜15）は frontmatter・同期・構造を検証するが、**変更したコード/スクリプトの実質的な品質（バグ・退行・設計判断・サイレント失敗）は別軸**。working tree に変更がある場合は `code-review:self-review` を呼んで差分をレビューし、結果を本レポートに統合する。
+静的整合性チェック（項目 0〜15）は frontmatter・同期・構造を検証するが、**変更したコード/スクリプトの実質的な品質（バグ・退行・設計判断・サイレント失敗）は別軸**。**未レビューの差分**がある場合は `code-review:self-review` を呼んでレビューし、結果を本レポートに統合する。
 
 **実行条件**:
 
-1. `git status --porcelain` で working tree に変更（未コミット / ステージ済み）があるか確認
-2. 変更が無ければ本チェックは skip（レビュー対象なし）
+1. レビュー対象を求める。**working tree だけでなく未 push コミットも含める**:
+   ```bash
+   REVIEW_BASE=""
+   # 未 push コミット（コミット済み = working tree はクリーンでもレビュー未実施でありうる）
+   if git rev-parse --verify -q "@{upstream}" >/dev/null 2>&1 \
+     && [ -n "$(git log --oneline @{upstream}..HEAD)" ]; then
+     REVIEW_BASE="@{upstream}"
+   fi
+   DIRTY="$(git status --porcelain)"
+   ```
+2. `REVIEW_BASE` が空 かつ `DIRTY` が空なら skip（レビュー対象なし）。どちらかがあれば実行し、**self-review には `REVIEW_BASE` を引数で渡す**（未 push 分を差分に含めるため。空なら引数なしで自動検出）
+
+> **working tree だけを見ないこと。** 旧実装は `git status --porcelain` のみで判定していたため、**コミット済み・未 push・未レビューの差分が丸ごと対象外**になっていた。2026-07-21 に実際にこれを踏み、5 コミット（+652/-193）が未レビューのまま push 待ちで残っていたのを手動で気づいて拾った。push 前ゲートとして使うなら未 push 分こそ主対象。
 3. `code-review` プラグインの有効性を判定（後方互換・プラグイン独立性のため）。**キー存在だけを見ると無効化（`":false"`）でも文字列が残り誤検知し、project-scoped 有効化を取りこぼす**（#74 と同根）。グローバル + プロジェクトローカルの settings を見て、`":true"` を明示マッチする:
    ```bash
    HAS_REVIEW=0
@@ -365,11 +376,24 @@ linear-workflow と indie-workflow はミラー構造（共通機能は片方の
 
 `/quality-check` のレポート出力直前に、以下を判定してサジェスト文を追加する:
 
+**frontmatter 区間（先頭 `---` 〜 次の `---`）に差分があるか**で判定する。行の書式では判定しないこと。
+
 ```bash
-git diff --unified=0 HEAD -- '*SKILL.md' | grep -E '^\+(description:|\s*トリガー:|\s*- 「)' | head -1
+# 未 push コミット + working tree を対象にする（base は origin/main、無ければ HEAD）
+base="$(git rev-parse --verify -q origin/main >/dev/null && echo origin/main || echo HEAD)"
+for f in $(git diff --name-only "$base" -- '*SKILL.md'; git diff --name-only -- '*SKILL.md'); do
+  # frontmatter の行範囲を求め、その範囲に触れる hunk があるかを見る
+  end=$(awk 'NR>1 && /^---$/{print NR; exit}' "$f")
+  [ -n "$end" ] || continue
+  if git diff -U0 "$base" -- "$f"; git diff -U0 -- "$f"; then :; fi \
+    | grep -oE '^@@ -[0-9]+(,[0-9]+)? \+([0-9]+)' | grep -oE '[0-9]+$' \
+    | awk -v e="$end" '$1<=e{found=1} END{exit !found}' && echo "$f"
+done
 ```
 
-マッチがあれば（= description / トリガーフレーズの変更を含む diff が存在）、レポート末尾に以下を追加:
+> **書式マッチにしないこと。** 旧実装は `^\+(description:|\s*トリガー:|\s*- 「)` で判定していたが、**48 skill 中 41 が `description: >` の折り返しブロック形式**で、継続行の変更（`+  集計前に transcript を…`）が `description:` でも `- 「` でも始まらないため検出できなかった。実際に 2026-07-21 の failure-journal 0.2.0 で description とトリガーを両方変更したのに検出 0 件だった。
+
+出力があれば（= description / トリガーフレーズを含む frontmatter の変更が存在）、レポート末尾に以下を追加:
 
 ```md
 ## 推奨: eval-runner 実行
@@ -379,7 +403,7 @@ description / トリガーフレーズの変更を検出しました。回帰の
 の実行を推奨します。
 ```
 
-未コミット変更（working tree）も含めるなら `HEAD` を省略した `git diff --unified=0 -- '*SKILL.md'` を併用する。
+上の判定は未 push コミット（`origin/main..HEAD`）と working tree の両方を見る。`origin/main` が無い環境では `HEAD`（= working tree のみ）にフォールバックする。
 
 ### 手動呼び出し例
 
