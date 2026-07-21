@@ -19,7 +19,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [design-doc](#design-doc) | 0.4.3 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.23.2 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
 | [doc-freshness](#doc-freshness) | 0.4.0 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
-| [failure-journal](#failure-journal) | 0.2.0 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
+| [failure-journal](#failure-journal) | 0.2.1 | 2 | 2 | - | SessionStart | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.11.1 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
 | [indie-workflow](#indie-workflow) | 1.40.2 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |

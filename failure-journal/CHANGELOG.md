@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.2.1] - 2026-07-21
+
+### Fixed
+
+- **transcript サルベージの並列分類ガードを追加**（0.2.0 の実運用で 2 件の失敗モードが顕在化）。(1) 並列 agent が互いの語彙を見ないため同一の失敗に別 tag が付き、分散して閾値 3 回に届かなくなる → tag 正規化フェーズを必須化。(2) 担当行番号を勝手に振り直す agent が出て timestamp への逆引きが壊れる → 識別子は ISO 時刻を verbatim で返させる規約に変更（`skills/retro/references/transcript-salvage.md` / `skills/retro/SKILL.md`）
+
 ## [0.2.0] - 2026-07-21
 
 ### Added

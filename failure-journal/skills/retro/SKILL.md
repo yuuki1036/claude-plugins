@@ -42,8 +42,9 @@ log-failure は手動起票のため、**Claude が自己訂正した失敗は�
 2. assistant 発話を抽出する。**`isSidechain != true` で subagent の発話を除外**（除外しないと agent プロンプトが大量に誤検出される）
 3. 自己訂正シグナルを grep で絞る
 4. **LLM で REAL / NOISE を分類**する（grep の precision は約 35%）。判定軸は log-failure と同じ「同じ状況で再発しうるか」の単一基準
-5. 既存 journal と重複排除する（tag の意味的一致で判定。timestamp は起票時刻であり失敗発生時刻とは限らない）
-6. REAL 候補を一覧提示し、**承認を得てから append** する
+5. **並列分類した場合は tag を正規化する**（必須）。並列 agent は互いの語彙を見ないため同一の失敗に別 tag が付き、分散したままだと閾値 3 回に届かず還流提案が出ない
+6. 既存 journal と重複排除する（tag の意味的一致で判定。timestamp は起票時刻であり失敗発生時刻とは限らない）
+7. REAL 候補を一覧提示し、**承認を得てから append** する
 
 > **自動 append は禁止。** precision 35% で誤起票すると journal が汚れ、閾値集計の信頼性を直接損なう。
 > append する `timestamp` はサルベージ実行時刻ではなく、**失敗が発生した transcript 上の時刻**を使う（窓集計の正確性のため）。
