@@ -10,6 +10,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/lib/routing-axes.md # spec ルーティング 3 軸コア（正本。ROUTING-AXES 区間を消費サイトに複製）
 .claude-plugin/schema/           # JSON Schema（plugin.json / marketplace.json / hooks.json）
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
+                                 # sync-linear-from-indie.sh（indie 正本 → linear の片方向同期・drift 検出）
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期チェック
 {plugin-name}/                   # 各プラグイン（独立したディレクトリ）
   .claude-plugin/plugin.json     # プラグインマニフェスト
@@ -94,6 +95,10 @@ claude plugin prune
 - 新 skill / agent / hook / command を追加する前は `claude-meta:component-addition-advisor` で退路確保（既存拡張で解けないか）を判定する
 - **深掘り系スキルには `${CLAUDE_EFFORT}` 実行時分岐を必須とする**。深掘り系 = 走査・分析・レビュー・多段 agent など「かける深さで結果の質が変わる」スキル（maintain / discover / review / retrospective / design 系）。単純 CRUD・scaffold・単発記録系（init / follow-up / log-failure 等）には不要
 - **linear-workflow / indie-workflow はミラー規約**: 共通機能（issue-create / issue-maintain / issue-design / follow-up / knowledge / knowledge-lint / maintain / session-start 系）は片方を変更したら必ず他方にも対称に反映する。**意図的な非対称**は次の 2 つのみ: `indie-issue-discover` と `retrospective`（いずれも「次に何をやるか・何を学んだか」を一人で回す個人開発特化の機能として indie のみに実装。linear 側への展開は必要が顕在化してから判断）。これ以外の片側だけの機能・改善は取り残しとみなす。**skill の対称性は `validate_plugin_quality.py` の `MIRROR_SKILL_PAIRS`（命名違いペア）/ `MIRROR_INTENTIONAL_LINEAR_ONLY` / `MIRROR_INTENTIONAL_INDIE_ONLY`（意図的非対称の except）で機械検証する（片側追加・片側欠落・対応表 stale を非ブロッキング warning）— 新スキルを追加したら対応表 or except への登録も必須（`COMMAND_SKILL_ALIASES` と同じく更新漏れは検証に出る）。構造差分（Phase 構成・dormant 連携）は対象外で人手判断に残す
+  - **ただし下記 10 ファイルだけは「対称反映」ではなく indie 正本の片方向同期**（`sync-linear-from-indie.sh` が管理）。**linear 側を直接編集してはいけない**（`--write` で無条件上書きされて消える）。修正は必ず indie 側に入れて `--write` で反映する
+    - byte-identical（4）: `agents/code-context.md` / `skills/issue-design/references/design-rules.md` / `skills/issue-design/references/template-9sections.md` / `skills/indie-issue-maintain/references/cleanup-criteria.md`（linear 側は `skills/issue-maintain/...`）
+    - sed 変換あり（6）: `commands/knowledge.md` / `commands/knowledge-lint.md` / `hooks/scripts/on-knowledge-change.sh` / `hooks/scripts/on-issue-change.sh` / `hooks/scripts/set-session-title.sh` / `skills/knowledge-lint/SKILL.md`
+    - この 10 ファイル以外（SKILL.md 本体・Phase 構成など）は従来どおり**双方向の対称反映**。同期対象を増やしたらスクリプトの `SHARED` / `TRANSFORM` 配列とこの一覧の両方を更新する
 - **プラグイン内部 doc（SKILL.md / references/ / README）には doc-freshness frontmatter を付けない**: これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理されており、`last-validated`（current=5 日閾値）を付けると恒常 stale 化して逆効果。doc-freshness の対象はプロジェクト側の doc（CLAUDE.md / `.claude/adr/` / `.claude/designs/` 等）
 
 ## ルール配置の意思決定（決定的 hook > LLM 判定）
@@ -164,6 +169,8 @@ event_bus_clear
 - **hooks の stdin 消費**: hook スクリプトは必ず stdin を消費してから処理を開始する。消費しないとハングする。`safe-hook.sh` の `safe_hook_init` が自動で消費するため、全 hook は `source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"` 経由で書く
 - **hooks の stdout**: hook スクリプトの stdout が Claude のコンテキストに注入される。条件付き注入は `safe_hook_error <category>` で silent exit 0（Validation/Dependency/Auth/NotFound はサイレント、Unexpected のみ stderr に通知）
 - **safe-hook.sh の同期**: 正本は `.claude-plugin/lib/safe-hook.sh`。各プラグインの `hooks/lib/safe-hook.sh` は byte-identical な複製。`/quality-check` で同期を検証する（不一致は Critical）
+- **linear 側の共有ファイルを直接編集しない（indie が正本・片方向）**: `sync-linear-from-indie.sh` が管理する 10 ファイル（一覧は「プラグイン開発ルール」のミラー規約）は **indie-workflow が正本で、linear 側は生成物**。linear 側を直接編集すると `--write` で無条件上書きされて消え、`--check` は CI（`.github/workflows/validate.yml`）で**ブロッキング fail** する（safe-hook.sh 同期やミラー対称性が非ブロッキング warning なのと違い、こちらは落ちる）。直すときは indie 側を修正して `--write` で反映する。Stop hook の `auto-quality-check.sh` でも `--check` が走るが、**トリガー正規表現に `/agents/` が無いため `agents/code-context.md` 単独編集では発火しない**（push 後の CI まで気づけない既知の穴）
+
 - **routing-axes の同期**: spec ルーティングの 3 軸コア（WHAT→bdd-spec / HOW→design-doc / WHY→adr-keeper）の正本は `.claude-plugin/lib/routing-axes.md`。`ROUTING-AXES:START/END` マーカー区間が spec-advisor routing-rubric / linear・indie の issue-create に複製されており、`validate_plugin_quality.py` が dedent 比較で同期を検証する（不一致は Critical）。区間を編集するときは正本と全消費サイトを同時更新する。区間外の type 別判定・拡張軸は各サイトの文脈特化で同期対象外（設計判断: `.claude/designs/20260708-spec-routing-ssot.md`）
 - **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げる。上げないと使用側で更新が検知されない。pre-commit hook でブロックされる
 - **CHANGELOG 未更新**: バージョンバンプ時は CHANGELOG.md も更新必須。pre-commit hook でブロックされる
@@ -186,7 +193,7 @@ event_bus_clear
 プラグインの新規作成・変更時は `/quality-check` で全プラグインの品質バリデーションを実行する。
 個別のスキル開発時は plugin-dev の agent team（plugin-validator, skill-reviewer）を活用する。
 
-**自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/references/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
+**自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/agents/` / `*/references/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
 
 - `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期
 - `validate_plugin_quality.py`: allowed-tools / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ / Event Bus 同期 / ミラー対称性 / hook 自己判定 / コンテキスト予算ほか — **検査項目の正本はスクリプト冒頭 docstring**（ここに列挙を複製しない）

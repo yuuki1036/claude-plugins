@@ -16,6 +16,8 @@
 #      - safe-hook.sh canonical と replica の byte-identical
 #      - SKILL.md の ${CLAUDE_PLUGIN_ROOT}/... 参照の実在
 #      - SKILL.md description の「トリガー:」存在
+#   2.5. sync-linear-from-indie.sh --check
+#      - indie 正本と linear 側共有ファイル（10 件）の drift 検出
 #   3. claude plugin validate
 #      - plugin.json の CLI スキーマバリデーション（_requirements 警告は除外）
 #
@@ -50,7 +52,7 @@ if [ -z "$CHANGED" ]; then
   exit 0
 fi
 
-if ! echo "$CHANGED" | grep -qE '(\.claude-plugin/.*\.json|/skills/|/commands/|/hooks/|/references/|/CHANGELOG\.md|marketplace\.json)'; then
+if ! echo "$CHANGED" | grep -qE '(\.claude-plugin/.*\.json|/skills/|/commands/|/hooks/|/agents/|/references/|/CHANGELOG\.md|marketplace\.json)'; then
   exit 0
 fi
 
