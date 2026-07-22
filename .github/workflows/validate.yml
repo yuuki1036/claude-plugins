@@ -21,6 +21,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # jsonschema が無いと validate_ssot.py の try_validate_schema が silent skip し、
+      # 「ローカルでは落ちるが CI では通る」逆転が起きる（2026-07 精査で検出）
+      - name: install-deps
+        run: pip install jsonschema
+
       # plugin.json / marketplace.json / hooks.json のスキーマ準拠と SSoT 同期
       - name: validate-ssot
         run: bash .claude-plugin/scripts/validate-ssot.sh

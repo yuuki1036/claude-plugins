@@ -31,11 +31,22 @@ def load_json(path: Path) -> dict:
         return json.load(f)
 
 
+_SCHEMA_SKIP_WARNED = False
+
+
 def try_validate_schema(instance: dict, schema_name: str, errors: list[str], label: str) -> None:
     """jsonschema ライブラリがあれば利用、無ければスキップ (構造チェックで代替)."""
+    global _SCHEMA_SKIP_WARNED
     try:
         import jsonschema  # type: ignore
     except ImportError:
+        # silent skip にすると「ローカルでは落ちるが CI では通る」逆転に気づけない
+        if not _SCHEMA_SKIP_WARNED:
+            print(
+                "warning: jsonschema が無いためスキーマ検証を skip（pip install jsonschema）",
+                file=sys.stderr,
+            )
+            _SCHEMA_SKIP_WARNED = True
         return
     schema_path = SCHEMA_DIR / schema_name
     if not schema_path.exists():

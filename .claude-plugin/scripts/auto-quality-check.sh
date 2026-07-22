@@ -25,7 +25,7 @@
 #   working tree に以下のパターンの変更がある場合のみチェック実行
 #     - */plugin.json
 #     - .claude-plugin/marketplace.json
-#     - */skills/** / */commands/** / */hooks/** / */references/**
+#     - */skills/** / */commands/** / */hooks/** / */agents/** / */references/**
 #     - */CHANGELOG.md
 #
 # 出力:

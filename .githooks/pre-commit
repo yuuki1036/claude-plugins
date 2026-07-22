@@ -84,3 +84,24 @@ if [ -x .claude-plugin/scripts/validate-ssot.sh ]; then
     exit 1
   fi
 fi
+
+# プラグイン品質チェック（errors のみブロック。warnings は通す）
+# CI と同じ検査を commit 前に走らせ、「pre-commit は通るが CI で落ちる」非対称を塞ぐ
+if [ -f .claude-plugin/scripts/validate_plugin_quality.py ]; then
+  if ! python3 .claude-plugin/scripts/validate_plugin_quality.py > /dev/null 2>&1; then
+    python3 .claude-plugin/scripts/validate_plugin_quality.py 2>&1 | grep -v "^warning:" || true
+    echo ""
+    echo "  validate_plugin_quality.py の errors を解消してください"
+    exit 1
+  fi
+fi
+
+# indie 正本 → linear 共有ファイルの drift 検出（CI ではブロッキング fail する）
+if [ -x .claude-plugin/scripts/sync-linear-from-indie.sh ]; then
+  if ! bash .claude-plugin/scripts/sync-linear-from-indie.sh --check > /dev/null 2>&1; then
+    bash .claude-plugin/scripts/sync-linear-from-indie.sh --check || true
+    echo ""
+    echo "  linear 側を直接編集していないか確認し、indie 側を修正して --write で反映してください"
+    exit 1
+  fi
+fi
