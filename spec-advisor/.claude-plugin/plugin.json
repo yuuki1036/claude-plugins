@@ -1,6 +1,6 @@
 {
   "name": "spec-advisor",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "開発タスクの内容から適切な設計・計画系成果物（WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / Issue粒度=issue-design / 実装一気通貫=feature-dev）を判断し、実装着手前に提案する。判定の SSoT を routing-rubric に一元化し、SessionStart hook で ambient ルールを注入（対象プラグインが1つも未導入なら inert）＋ spec-advise skill / command で明示起動の2経路。over-suggestion guard で bugfix/typo/設定変更には黙り、dormant 判定で未導入プラグインは提案肢から除外する。全連携先 optional でプラグイン独立",
   "author": {
     "name": "yuki"
