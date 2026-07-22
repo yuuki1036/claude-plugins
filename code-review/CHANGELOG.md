@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.37.1] - 2026-07-22
+
+### Fixed
+- **`scoring-guide.md` の surface-aware 閾値の根拠 ADR 参照が廃版を指していたのを修正**。`ADR-20260703155637` は同日に `ADR-20260703204045`（Enforcement 訂正版）へ supersede されており `status: superseded` だが、現行仕様書が旧 ID を引用したままだった。参照先を accepted 側の `20260703204045` に更新した（CHANGELOG 内の過去エントリは当時の記録として旧 ID のまま残す）
+  - supersede 時に**被参照側の更新が漏れる**構造的な穴の実例。adr-keeper の supersede 機械化は「新規作成 + 旧 ADR の 4 フィールド更新」までで、外部からの被参照を追跡していない
+
 ## [2.37.0] - 2026-07-17
 
 ### Added

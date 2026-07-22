@@ -69,7 +69,7 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 - **MAJOR は confidence 95+ で報告**: 確信度が低いと「正しい判断」と区別できないノイズになりがち
 - **MINOR は confidence 95+ で報告**: ほぼ確実な時のみ。それ以下は nitpick として除外
 
-### surface-aware 閾値（high-risk surface に限る recall 補正 / ADR-20260703155637）
+### surface-aware 閾値（high-risk surface に限る recall 補正 / ADR-20260703204045）
 
 **high-risk surface**（DB 書込 / 金銭・数量計算 / 認可・認証、または PR 自己申告 D1-High。判定は triage-guide.md `## 8.5` の surface 判定）を含む指摘に限り、報告閾値を非対称に緩める:
 
