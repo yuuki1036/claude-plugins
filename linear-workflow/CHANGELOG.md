@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.37.3] - 2026-07-22
+
+### Fixed
+- **「即クローズパターンの検出」節を detection-guards.md に復元**（1.34.0 で indie から移植した機能が 1.35.0 の references 分割時に脱落していた regression。CHANGELOG に記録があるのに実装が消えていた）
+- **detection-guards.md に「未コミットの新規 Issue はスキップ」注意事項を indie 側から反映**（drift 解消）
+- **on-issue-change.sh / on-knowledge-change.sh を indie 正本から同期**（発火条件の自己判定ゲート追加・payload サニタイズ。詳細は indie-workflow 1.40.3 参照）
+- **safe-hook.sh: `event_bus_publish` の payload 省略時デフォルトが壊れた JSON になるバグを修正**（`${2:-{\}}` が `{}` でなく文字列 `{\}` に展開され invalid JSON 行が書かれていた。正本 `.claude-plugin/lib/safe-hook.sh` の修正を全プラグインへ同期）
+
 ## [1.37.2] - 2026-07-16
 
 ### Changed

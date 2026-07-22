@@ -70,7 +70,7 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 `--emergency` 引数が渡された場合（本番障害のホットフィックス等）、Google eng-practices "Emergencies" に従い **速度優先の最小構成** でレビューする。diff シグナルからの自動判定ではなく、人間が明示的に宣言する点が他モードと異なる（他のモード判定より優先する）。
 
 - **起動**: reviewer-bugs + reviewer-security の最小 2 体のみ（specialist は red-flag 検出時のみ通常通り起動 — 緊急時こそインジェクション・破壊的操作の混入が危険なため）
-- **スキップ**: explorer / 冗長ペア / Phase 5.5 (adaptive deepening) / Phase 5.6 (meta-reviewer)。速度と正しさのトレードオフをスコープ縮小で取る
+- **スキップ**: explorer / 冗長ペア / Phase 5.5 (adaptive deepening) / Phase 5.6 (meta-reviewer) / Phase 5.7 (カバレッジ self-check) / Phase 5.8 (冷や読み skeptic) / Phase 5.9 (反証レイヤー)。速度と正しさのトレードオフをスコープ縮小で取る
 - **レビューは省略しない**: 構成を絞るだけで「無レビュー」にはしない
 - **レポート冒頭に必須バナー**: `⚠️ 緊急レビュー（最小構成）: マージ後に通常の /review を必ず実施すること`
 - **緊急の定義**（eng-practices）: ロールバック回避 / 本番ユーザー影響のバグ修正 / 重大セキュリティ穴 / 法的緊急 等の **小さな** 変更に限る。soft deadline・疲労・タイムゾーンは緊急ではない（その場合は通常レビュー）
@@ -271,7 +271,7 @@ Phase 0 が明確な判断を下せない場合のデフォルト構成:
 
 ## 7. 最小保証とフェーズ上限
 
-- **最小保証**: reviewer-bugs + reviewer-claude-md の2体は Phase 0 の判断に関わらず常に起動
+- **最小保証**: reviewer-bugs（focus: bug-detection）+ reviewer-claude-md（focus: claude-md-compliance）の2体は Phase 0 の判断に関わらず常に起動
 - **explorer 上限**: 6体
 - **reviewer 上限**: 10体
 - **specialist 上限**: 6体（reviewer 枠とは別カウント、red-flag pattern 検出時のみ起動）
@@ -340,7 +340,7 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 
 ### 起動ゲート（暴走ガード）
 
-- **effort 適応**: **xhigh / max 起点**で起動。low / medium はスキップ。high（既定）は当面スキップし、`review:completed` の頻度計測後に昇格を検討する（既存 5.6/5.8 と対称の fail-safe。今回の見落としは xhigh で発生したため xhigh を直せば当面の再発を防げる）
+- **effort 適応**: **xhigh / max 起点**で起動。low / medium はスキップ。high（既定）は当面スキップし、`review:completed` の頻度計測後に昇格を検討する（既存 5.6/5.9 と対称の fail-safe。今回の見落としは xhigh で発生したため xhigh を直せば当面の再発を防げる）
 - **上限**: **PR あたり skeptic 1 体・1 round のみ**（per-surface 起動ではない）。skeptic の指摘も通常の scoring・報告マトリクス・反証レイヤーの対象
 - **surface 非該当ならスキップ**: high-risk surface を含まない変更では起動しない（noise 爆発を避け high-risk に限定）
 - **計測（skip 時も surface 判定は記録する）**: effort / userConfig / scope でスキップした場合も、正規表現部分の surface 判定（diff への grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と独立に必ず実施し、`review:completed` payload の `recall_skeptic` に記録する（SKILL.md Step 7 / Step 6 の payload 規約参照）。加えて surface=true なら、`--embed` / event 発火の有無に依存しない **human レポート（Step 7 / Step 6 の「動的ラウンド」行）にも skeptic の起動有無（未起動時は skip_reason）を必ず出す**（headless 通常実行での silent skip を防ぐ・issue #85）

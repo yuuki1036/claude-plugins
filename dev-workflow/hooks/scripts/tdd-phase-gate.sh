@@ -81,4 +81,5 @@ if [[ ! -f "$FILE_PATH" ]] && [[ "$TOOL_NAME" == "Write" ]]; then
 fi
 
 # ここまで来たら: 既存の実装ファイルをテスト無しで編集しようとしている → 警告
-safe_hook_emit "[tdd-phase-gate] ${BASENAME} に対応するテストファイルが見つかりません。Red phase として先にテストを書くか、既存テストの位置を確認してください。（hook を止める: rm ${ENABLED_FLAG}）"
+# PreToolUse の plain stdout は到達保証が弱いため additionalContext で注入する（push-reminder.sh と同方式）
+safe_hook_emit_context "PreToolUse" "[tdd-phase-gate] ${BASENAME} に対応するテストファイルが見つかりません。Red phase として先にテストを書くか、既存テストの位置を確認してください。（hook を止める: rm ${ENABLED_FLAG}）"

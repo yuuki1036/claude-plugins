@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.23.3] - 2026-07-22
+
+### Fixed
+- **ui-verify の chrome-devtools MCP ツール名を実行時の実名に修正**（プラグイン同梱 MCP は `mcp__chrome-devtools__*` でなく `mcp__plugin_dev-workflow_chrome-devtools__*` として公開される。旧表記だと allowed-tools の allowlist が空振りして permission プロンプトが増え、本文のツール名も実在名と不一致だった。SKILL.md / commands / cheatsheet の 34 箇所を更新）
+- **ui-verify-gate.sh / tdd-phase-gate.sh の注入方式を additionalContext に統一**（push-reminder.sh が実測済みの「PreToolUse の plain stdout は到達保証が弱い」問題に対し、同一プラグイン内で plain stdout のまま残っていた 2 本を `safe_hook_emit_context` へ移行）
+- **safe-hook.sh: `event_bus_publish` の payload 省略時デフォルトが壊れた JSON になるバグを修正**（`${2:-{\}}` が `{}` でなく文字列 `{\}` に展開され invalid JSON 行が書かれていた。正本 `.claude-plugin/lib/safe-hook.sh` の修正を全プラグインへ同期）
+
 ## [1.23.2] - 2026-07-16
 
 ### Fixed

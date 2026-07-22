@@ -185,7 +185,9 @@ __event_bus_init_log() {
 # 例: event_bus_publish "issue:completed" '{"issue_id":"PROJ-123"}'
 event_bus_publish() {
   local event_name="${1:-}"
-  local payload="${2:-{\}}"
+  # ${2:-{\}} は {} でなく文字列 {\} に展開され invalid JSON を書くため 2 段で既定値を入れる
+  local payload="${2:-}"
+  [ -n "$payload" ] || payload='{}'
   if [ -z "$event_name" ]; then
     __safe_hook_log Validation "event_bus_publish called with empty event name"
     return 1

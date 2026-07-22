@@ -293,7 +293,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 
 ### 📋 MAJOR 指摘
 
-3. [confidence: 95][severity: MAJOR][設計] ...
+4. [confidence: 95][severity: MAJOR][設計] ...
 
 ### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
 - reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査

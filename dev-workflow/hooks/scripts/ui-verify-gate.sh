@@ -36,8 +36,5 @@ case "$PENDING_STATUS" in
   verified-local|verified-snap) safe_hook_error NotFound "ui change already verified ($PENDING_STATUS)" ;;
 esac
 
-cat <<EOF
-[ui-verify] UI 変更（${PENDING_SINCE}）後、動作確認が記録されていません（status: ${PENDING_STATUS}）。
-コミット前に /ui-verify snap で screenshot + console チェックを検討してください。
-（既に確認済みなら、git-commit-helper の Step 4.5 で「ローカル目視済み」を選択するか、rm ${PENDING_FLAG} で無視可能）
-EOF
+# PreToolUse の plain stdout は到達保証が弱いため additionalContext で注入する（push-reminder.sh と同方式）
+safe_hook_emit_context "PreToolUse" "[ui-verify] UI 変更（${PENDING_SINCE}）後、動作確認が記録されていません（status: ${PENDING_STATUS}）。コミット前に /ui-verify snap で screenshot + console チェックを検討してください。（既に確認済みなら、git-commit-helper の Step 4.5 で「ローカル目視済み」を選択するか、rm ${PENDING_FLAG} で無視可能）"

@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.40.3] - 2026-07-22
+
+### Fixed
+- **on-issue-change.sh / on-knowledge-change.sh に発火条件の自己判定ゲートを追加**（matcher 暴発時に全 FileChanged で「Issue/Knowledge が変更された」通知が無条件注入されていた。file_path をパターン判定してから emit する二重ゲートに変更。event payload への生パス補間も `"` `\` 除去でサニタイズ）
+- **detection-guards.md の linear 側との drift を解消**（「比較対象は作業ツリー」注記と `<!-- follow-up-checked -->` マーカー運用を linear 側から反映）
+- **indie-issue-discover の観点 C から削除済みユーザーレイヤー skill `vercel-react-best-practices` への参照を除去**（チェック項目は既に inline 化済みで実行不能な指示だけが残っていた）
+- **safe-hook.sh: `event_bus_publish` の payload 省略時デフォルトが壊れた JSON になるバグを修正**（`${2:-{\}}` が `{}` でなく文字列 `{\}` に展開され invalid JSON 行が書かれていた。正本 `.claude-plugin/lib/safe-hook.sh` の修正を全プラグインへ同期）
+
 ## [1.40.2] - 2026-07-16
 
 ### Changed

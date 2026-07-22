@@ -94,8 +94,7 @@ Phase 6 開始時に **diff を見て再判定**する（後述 Section 6）。
 ### React/Next.js 判定
 
 `package.json` に `react` / `next` が含まれる場合:
-- architect / reviewer に **vercel-best-practices** 観点を追加
-- UI 変更を伴う場合は公式 skill `web-design-guidelines` のチェックリストに準拠
+- architect / reviewer に **vercel-best-practices** 観点を追加（UI 変更のレビュー観点は code-review 委譲時にそちらの modern-web チェックリストでカバーされる）
 
 ### 外部ライブラリ最新仕様の参照
 

@@ -9,7 +9,7 @@ ui-verify スキルから参照される MCP tool の使い方メモ。
 新しいタブでページを開く。最初のページを開くときはこれを使う。
 
 ```
-mcp__chrome-devtools__new_page(url: "http://localhost:3000/")
+mcp__plugin_dev-workflow_chrome-devtools__new_page(url: "http://localhost:3000/")
 ```
 
 ### navigate_page
@@ -27,7 +27,7 @@ mcp__chrome-devtools__new_page(url: "http://localhost:3000/")
 ページ全体 or 指定要素を PNG で保存。
 
 ```
-mcp__chrome-devtools__take_screenshot(
+mcp__plugin_dev-workflow_chrome-devtools__take_screenshot(
   filePath: "/absolute/path/.claude/screenshots/snap-20260418/desktop.png",
   fullPage: true
 )
@@ -50,10 +50,10 @@ DOM のアクセシビリティツリーを取得。click/fill する要素の u
 
 ```
 # 先に snapshot
-snapshot = mcp__chrome-devtools__take_snapshot()
+snapshot = mcp__plugin_dev-workflow_chrome-devtools__take_snapshot()
 # uid を抽出して操作
-mcp__chrome-devtools__click(uid: "12345")
-mcp__chrome-devtools__fill(uid: "67890", value: "test input")
+mcp__plugin_dev-workflow_chrome-devtools__click(uid: "12345")
+mcp__plugin_dev-workflow_chrome-devtools__fill(uid: "67890", value: "test input")
 ```
 
 ### fill_form
@@ -65,7 +65,7 @@ mcp__chrome-devtools__fill(uid: "67890", value: "test input")
 要素やテキストの出現を待つ。SPA の初期描画や遷移後に必須。
 
 ```
-mcp__chrome-devtools__wait_for(text: "Dashboard")
+mcp__plugin_dev-workflow_chrome-devtools__wait_for(text: "Dashboard")
 ```
 
 ## 観測
@@ -76,7 +76,7 @@ mcp__chrome-devtools__wait_for(text: "Dashboard")
 
 ```
 # エラーだけ抽出するのは返り値側でフィルタ
-messages = mcp__chrome-devtools__list_console_messages()
+messages = mcp__plugin_dev-workflow_chrome-devtools__list_console_messages()
 # error level のみをユーザーに報告
 ```
 
@@ -100,7 +100,7 @@ messages = mcp__chrome-devtools__list_console_messages()
 viewport サイズ変更。
 
 ```
-mcp__chrome-devtools__resize_page(width: 375, height: 812)
+mcp__plugin_dev-workflow_chrome-devtools__resize_page(width: 375, height: 812)
 ```
 
 ### emulate
@@ -114,7 +114,7 @@ mcp__chrome-devtools__resize_page(width: 375, height: 812)
 任意の JS を実行。scroll 位置調整、data 確認、実 CSS 値取得などに便利。
 
 ```
-mcp__chrome-devtools__evaluate_script(
+mcp__plugin_dev-workflow_chrome-devtools__evaluate_script(
   function: "() => window.getComputedStyle(document.querySelector('.header')).padding"
 )
 ```

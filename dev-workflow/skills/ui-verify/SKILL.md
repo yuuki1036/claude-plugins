@@ -10,18 +10,18 @@ allowed-tools:
   - Bash
   - Read
   - Edit
-  - mcp__chrome-devtools__navigate_page
-  - mcp__chrome-devtools__new_page
-  - mcp__chrome-devtools__take_screenshot
-  - mcp__chrome-devtools__take_snapshot
-  - mcp__chrome-devtools__list_console_messages
-  - mcp__chrome-devtools__list_network_requests
-  - mcp__chrome-devtools__resize_page
-  - mcp__chrome-devtools__click
-  - mcp__chrome-devtools__hover
-  - mcp__chrome-devtools__fill
-  - mcp__chrome-devtools__press_key
-  - mcp__chrome-devtools__wait_for
+  - mcp__plugin_dev-workflow_chrome-devtools__navigate_page
+  - mcp__plugin_dev-workflow_chrome-devtools__new_page
+  - mcp__plugin_dev-workflow_chrome-devtools__take_screenshot
+  - mcp__plugin_dev-workflow_chrome-devtools__take_snapshot
+  - mcp__plugin_dev-workflow_chrome-devtools__list_console_messages
+  - mcp__plugin_dev-workflow_chrome-devtools__list_network_requests
+  - mcp__plugin_dev-workflow_chrome-devtools__resize_page
+  - mcp__plugin_dev-workflow_chrome-devtools__click
+  - mcp__plugin_dev-workflow_chrome-devtools__hover
+  - mcp__plugin_dev-workflow_chrome-devtools__fill
+  - mcp__plugin_dev-workflow_chrome-devtools__press_key
+  - mcp__plugin_dev-workflow_chrome-devtools__wait_for
 ---
 
 # ui-verify
@@ -87,7 +87,7 @@ lsof -nP -iTCP:${DEV_PORT} -sTCP:LISTEN 2>/dev/null
 2. パッケージマネージャを推定（`pnpm-lock.yaml`→pnpm / `yarn.lock`→yarn / `bun.lockb`→bun / else npm）
 3. **ユーザーに起動許可を確認**（勝手に port を占有しない）
 4. 許可されたら background で起動: `pnpm dev &` 相当を Bash の `run_in_background: true` で実行
-5. `mcp__chrome-devtools__wait_for` で HTTP が応答するまで待機（最大30秒）
+5. `mcp__plugin_dev-workflow_chrome-devtools__wait_for` で HTTP が応答するまで待機（最大30秒）
 
 **認証や環境変数が必要な場合:**
 - `.env` / `.env.local` が存在するか確認

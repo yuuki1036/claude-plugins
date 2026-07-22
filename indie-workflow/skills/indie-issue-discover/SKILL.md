@@ -86,7 +86,7 @@ ls -d .claude/indie/*/ 2>/dev/null
 
 **観点 C — FE 特有の改善余地（React / Next.js）**
 
-> 対象が React/Next.js プロジェクトのとき、`vercel-react-best-practices` スキル（ユーザーレイヤー）の観点を適用する。
+> 対象が React/Next.js プロジェクトのとき、以下のチェック項目を適用する。
 - アクセシビリティ: `alt` 無し `img`、`label` 無し `input`、`aria-*` 欠落
 - パフォーマンス: 不要な再レンダリング兆候、`'use client'` の過剰付与、画像最適化漏れ（`next/image` 不使用）
 - 巨大コンポーネント（目安 300 行超）、未使用 export / dead code

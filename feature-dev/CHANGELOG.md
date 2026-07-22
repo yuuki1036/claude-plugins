@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.2] - 2026-07-22
+
+### Fixed
+- **triage-guide.md から存在しない公式 skill `web-design-guidelines` への参照を除去**（UI 変更のレビュー観点は code-review 委譲時に modern-web チェックリストでカバーされる旨に差し替え）
+- **safe-hook.sh: `event_bus_publish` の payload 省略時デフォルトが壊れた JSON になるバグを修正**（`${2:-{\}}` が `{}` でなく文字列 `{\}` に展開され invalid JSON 行が書かれていた。正本 `.claude-plugin/lib/safe-hook.sh` の修正を全プラグインへ同期）
+
 ## [2.11.1] - 2026-07-16
 
 ### Fixed

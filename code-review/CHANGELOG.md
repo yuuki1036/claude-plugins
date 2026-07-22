@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.37.2] - 2026-07-22
+
+### Fixed
+- **triage-guide.md の Phase 参照 typo を修正**（skeptic の effort ゲート説明が「既存 5.6/5.8 と対称」となっていたが 5.8 は skeptic 自身。SKILL.md と同じ「5.6/5.9」に統一）
+- **緊急モードのスキップ対象列挙を 5.7〜5.9 追加後の実態に更新**（triage-guide と SKILL.md 本文が「Phase 5.5 / 5.6」のみ列挙していたが、5.7 カバレッジ self-check / 5.8 冷や読み skeptic / 5.9 反証レイヤーも各スキップ条件で --emergency を含む）
+- **最小保証の reviewer 名に focus 語彙の対応を併記**（reviewer-bugs = bug-detection / reviewer-claude-md = claude-md-compliance。findings JSON の focus 語彙との二重語彙による混乱を防止）
+- **self-review レポート例の MAJOR 指摘の連番重複を修正**（CRITICAL 例と同じ「3.」だったのを「4.」に。連番は findings JSON の id と 1:1 契約のため例の誤りが伝播しやすい）
+- **safe-hook.sh: `event_bus_publish` の payload 省略時デフォルトが壊れた JSON になるバグを修正**（`${2:-{\}}` が `{}` でなく文字列 `{\}` に展開され invalid JSON 行が書かれていた。正本 `.claude-plugin/lib/safe-hook.sh` の修正を全プラグインへ同期）
+
 ## [2.37.1] - 2026-07-22
 
 ### Fixed
