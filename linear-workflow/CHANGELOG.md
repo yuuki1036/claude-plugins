@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.37.4] - 2026-07-23
+
+### Changed
+- **agents/code-context.md の tools から未使用の Grep を削除**（indie 正本からの片方向同期で反映。詳細は indie-workflow 1.40.4 参照）
+
 ## [1.37.3] - 2026-07-22
 
 ### Fixed

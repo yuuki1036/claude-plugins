@@ -11,7 +11,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/schema/           # JSON Schema（plugin.json / marketplace.json / hooks.json）
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
                                  # sync-linear-from-indie.sh（indie 正本 → linear の片方向同期・drift 検出）
-.githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期チェック
+.githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・indie/linear drift チェック
 {plugin-name}/                   # 各プラグイン（独立したディレクトリ）
   .claude-plugin/plugin.json     # プラグインマニフェスト
   commands/                      # スラッシュコマンド定義（YAML frontmatter + markdown）

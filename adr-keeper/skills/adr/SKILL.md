@@ -12,7 +12,6 @@ allowed-tools:
   - Write
   - Edit
   - Glob
-  - Grep
   - Bash
   - AskUserQuestion
 ---

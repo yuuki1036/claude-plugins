@@ -3,8 +3,6 @@ description: "変更を分析して原子性重視の高品質コミットを作
 allowed-tools:
   - Bash
   - Read
-  - Glob
-  - Grep
   - AskUserQuestion
   - Skill
 ---

@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.2.1] - 2026-07-23
+
+### Changed
+- **allowed-tools から未使用の Grep を削除**（skill / command の両方。全フロー（list / new / supersede）が Glob + Read + Bash + Write + Edit で完結しており内容検索の場面がない。/quality-check の最小性チェックで検出）
+
 ## [0.2.0] - 2026-07-02
 
 ### Added

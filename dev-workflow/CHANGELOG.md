@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.23.4] - 2026-07-23
+
+### Changed
+- **git-commit-helper の allowed-tools から未使用の Glob / Grep を削除**（skill / command の両方。対象特定は全て git コマンド（Bash 経由）で行い、ツールとしてのファイル探索・内容検索フローがない。/quality-check の最小性チェックで検出）
+
 ## [1.23.3] - 2026-07-22
 
 ### Fixed

@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.40.4] - 2026-07-23
+
+### Changed
+- **agents/code-context.md の tools から未使用の Grep を削除**（手順が Issue 本文からのパス抽出 → Glob 存在確認 → Read → Bash（git 状態）で完結しコード内容検索の場面がない。/quality-check の最小性チェックで検出）
+
 ## [1.40.3] - 2026-07-22
 
 ### Fixed

@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git操作・PR作成・UI動作確認・git worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、Linear Issue連携PR作成、chrome-devtools MCPによるUI自動化、worktree 単位の DB/port 分離、PostToolUse 自動 lint チェーン(fmt-fix→lint-fix→check、opt-in)、PR 本文の bullet 上限数値化、writing-polish 連携(PR 本文を提示前に必須推敲)、commit subject 品質規約(曖昧 subject 禁止例カタログ、Google eng-practices 由来)、PR 本文のローカル限定ドキュメント参照防止(パス無し自然言語言及の advisory 検出)、PR 概要の What/Why/Outcome を字数制約で省略しない両立明記+生成後セルフチェック(Step 4.7)",
-      "version": "1.23.3",
+      "version": "1.23.4",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "linear-workflow",
       "description": "Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.37.3",
+      "version": "1.37.4",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "indie-workflow",
       "description": "個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。AI が多観点スキャンで課題を発見し issue を自動起票（indie-issue-discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.40.3",
+      "version": "1.40.4",
       "author": {
         "name": "yuki"
       },
@@ -117,7 +117,7 @@
     {
       "name": "adr-keeper",
       "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "yuki"
       },

@@ -4,7 +4,7 @@ description: Issue ファイルで言及されたソースファイルの現状�
 model: sonnet
 effort: medium
 maxTurns: 15
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Bash
 ---
 
 あなたはコード状態把握エージェントです。
