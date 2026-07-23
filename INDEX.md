@@ -22,9 +22,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [failure-journal](#failure-journal) | 0.3.1 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.11.2 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.1 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
-| [indie-workflow](#indie-workflow) | 1.40.5 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
+| [indie-workflow](#indie-workflow) | 1.40.6 | 11 | 11 | 3 | 5 events | - | **deprecated** → issue-workflow へ移行 |
 | [issue-workflow](#issue-workflow) | 1.2.0 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
-| [linear-workflow](#linear-workflow) | 1.37.4 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
+| [linear-workflow](#linear-workflow) | 1.37.5 | 10 | 10 | 3 | 4 events | - | **deprecated** → issue-workflow へ移行 |
 | [living-spec-workflow](#living-spec-workflow) | 0.3.1 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.7 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.9 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
@@ -32,7 +32,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [spec-advisor](#spec-advisor) | 0.1.4 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.8.1 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
-排他関係: `indie-workflow` と `linear-workflow` は同系統（ローカル / Linear）で排他利用想定。両方有効時は両者の SessionStart hook が同名スキルのトリガー衝突を警告する。
+排他関係: `indie-workflow` / `linear-workflow` は **deprecated**（後継 = `issue-workflow`）。issue-workflow と旧 2 プラグインの同一マシン併存は禁止（uninstall → install を連続実行。移行チェックリスト: `docs/issue-workflow-migration.md`）。
 
 ---
 
@@ -101,7 +101,7 @@ Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットア
 - **hooks**: PreToolUse
 
 ### indie-workflow
-個人開発向けローカル Issue 管理。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。knowledge は source/concept 2 層 + wikilink + lint。issue-design で 9 セクション設計 + grill。
+**deprecated**（後継 = issue-workflow。移行手順は `docs/issue-workflow-migration.md`）。個人開発向けローカル Issue 管理。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。knowledge は source/concept 2 層 + wikilink + lint。issue-design で 9 セクション設計 + grill。
 - **commands / skills**（同名ペア 11）: `indie-init`, `indie-start`, `indie-issue-create`, `indie-issue-discover`, `indie-issue-maintain`, `indie-maintain`, `indie-follow-up`, `issue-design`, `knowledge`, `knowledge-lint`, `retrospective`
 - **agents**: `code-context`, `doc-resolver`, `discover-verifier`
 - **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse
@@ -118,7 +118,7 @@ Issue 管理ワークフロー（linear-workflow / indie-workflow の統合後�
 - **移行**: 旧 2 プラグインとの同一マシン併存は禁止（uninstall → install を連続実行）
 
 ### linear-workflow
-Linear MCP 連携のプロジェクト・Issue 管理。セッション開始から Issue 作成・メンテ・Linear 同期まで一貫管理。
+**deprecated**（後継 = issue-workflow。移行手順は `docs/issue-workflow-migration.md`）。Linear MCP 連携のプロジェクト・Issue 管理。セッション開始から Issue 作成・メンテ・Linear 同期まで一貫管理。
 - **commands / skills**（同名ペア 10）: `init`, `session-start`, `issue-create`, `issue-maintain`, `issue-design`, `linear-maintain`, `follow-up`, `dashboard`, `knowledge`, `knowledge-lint`
 - **agents**: `code-context`, `doc-resolver`, `linear-sync`
 - **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged

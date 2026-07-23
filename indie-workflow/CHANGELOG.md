@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.40.6] - 2026-07-23
+
+### Deprecated
+- **本プラグインは deprecated**。後継は issue-workflow（linear/indie 統合・backend 自動判定。ADR-20260722164106 / design doc 20260722-issue-workflow-unification）。移行は「linear-workflow / indie-workflow を uninstall → issue-workflow を install」を連続実行する（**同一マシンでの新旧同時 install は禁止**: hook の二重発火・トリガー衝突が起きる）。`.claude/indie/` のデータはそのまま使える（rename 不要）。全マシン移行確認後にリポジトリから削除予定
+
 ## [1.40.5] - 2026-07-23
 
 ### Fixed
