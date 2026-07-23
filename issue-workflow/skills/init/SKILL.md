@@ -3,7 +3,7 @@ name: init
 description: >
   プロジェクトの初期セットアップ。backend（local / linear）を選択し、
   対応するデータディレクトリ構造とテンプレートファイルを作成する。
-  トリガー: 「プロジェクト初期化」「issue 管理セットアップ」「プロジェクトセットアップ」「/init」
+  トリガー: 「プロジェクト初期化」「issue 管理セットアップ」「プロジェクトセットアップ」「/issue-workflow:init」
 effort: low
 allowed-tools:
   - mcp__linear__list_projects

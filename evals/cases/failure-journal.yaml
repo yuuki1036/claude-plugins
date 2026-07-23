@@ -19,8 +19,8 @@ cases:
     k: 3
 
   # --- 誤発火防止 ---
-  # 「振り返り」は indie-workflow:retrospective の領分（failure-journal:retro との弁別）
+  # 「振り返り」は issue-workflow:retrospective の領分（failure-journal:retro との弁別）
   - id: retro-nofire-retrospective
     prompt: 今週の振り返りをして
-    expected_skill: indie-workflow:retrospective
+    expected_skill: issue-workflow:retrospective
     k: 3

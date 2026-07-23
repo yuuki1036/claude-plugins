@@ -1,8 +1,8 @@
 # Linear 固有の記法
 
-Linear の Issue / プロジェクト description を書くときの記法。これは **Linear 固有** で、ローカル Markdown 管理（indie-workflow）には適用しない。
+Linear の Issue / プロジェクト description を書くときの記法。これは **Linear 固有** で、ローカル Markdown 管理（BACKEND=local）には適用しない。
 
-> このファイルは linear-workflow にのみ存在する（普遍 references とは違い複製しない）。
+> このファイルは BACKEND=linear のときのみ Read される（issue-design SKILL の Phase 3 参照）。
 
 ---
 

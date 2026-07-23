@@ -116,7 +116,7 @@ created: YYYY-MM-DD
 2. ブランチ名から Issue ID を抽出する（正規表現: `[A-Z]+-\d+`）
 3. Issue ID が取れない場合はユーザーに `source_issue` を入力させる
 4. Issue ID プレフィックスを小文字化して slug を特定する
-5. `{DATA_DIR}/{slug}/` の存在を確認。存在しない場合は `/init` への誘導で中断
+5. `{DATA_DIR}/{slug}/` の存在を確認。存在しない場合は `/issue-workflow:init` への誘導で中断
 
 ### N2: 内容ヒアリング
 

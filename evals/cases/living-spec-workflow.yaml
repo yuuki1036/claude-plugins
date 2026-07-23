@@ -76,5 +76,5 @@ cases:
   # Issue 1 件の作業設計は issue-design の領分
   - id: living-spec-nofire-issue-design
     prompt: この Issue を設計し直して
-    expected_skill: indie-workflow:issue-design
+    expected_skill: issue-workflow:issue-design
     k: 3

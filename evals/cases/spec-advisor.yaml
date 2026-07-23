@@ -34,7 +34,7 @@ cases:
   - id: spec-advise-nofire-issue-design
     prompt: この Issue を設計し直して
     # issue-design は linear / indie に同名で存在する（どちらに解決してもよい）
-    expected_skill: [indie-workflow:issue-design, linear-workflow:issue-design]
+    expected_skill: issue-workflow:issue-design
     k: 3
   - id: spec-advise-nofire-adr
     prompt: この設計判断の理由を後から辿れるように記録して

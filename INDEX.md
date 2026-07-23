@@ -23,7 +23,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [feature-dev](#feature-dev) | 2.11.2 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.1 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
 | [indie-workflow](#indie-workflow) | 1.40.6 | 11 | 11 | 3 | 5 events | - | **deprecated** → issue-workflow へ移行 |
-| [issue-workflow](#issue-workflow) | 1.2.0 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
+| [issue-workflow](#issue-workflow) | 1.2.1 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [linear-workflow](#linear-workflow) | 1.37.5 | 10 | 10 | 3 | 4 events | - | **deprecated** → issue-workflow へ移行 |
 | [living-spec-workflow](#living-spec-workflow) | 0.3.1 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.7 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
@@ -183,16 +183,16 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 
 | イベント | publisher | 主な subscriber |
 |---|---|---|
-| `issue:completed` | linear-workflow / indie-workflow | indie-workflow:retrospective |
+| `issue:completed` | issue-workflow（移行中は旧 linear/indie-workflow も） | issue-workflow:retrospective |
 | `feature:implemented` | feature-dev | -（fire-and-forget） |
-| `commit:created` | dev-workflow | linear / indie:issue-maintain |
-| `review:completed` | code-review | linear / indie:issue-maintain |
-| `failure:logged` | failure-journal | indie:retrospective |
+| `commit:created` | dev-workflow | issue-workflow:issue-maintain |
+| `review:completed` | code-review | issue-workflow:issue-maintain |
+| `failure:logged` | failure-journal | issue-workflow:retrospective |
 
 ### Shared State（frontmatter で producer/consumer 明示）
 
 | type | 配置 | producer |
 |---|---|---|
-| `session` | `.claude/session-context.md` | linear / indie-workflow |
-| `follow-up` | `.claude/{linear\|indie}/{slug}/follow-ups/*.md` | linear / indie-workflow |
-| `knowledge` | `.claude/{linear\|indie}/{slug}/knowledge/**/*.md` | linear / indie-workflow |
+| `session` | `.claude/session-context.md` | issue-workflow |
+| `follow-up` | `.claude/{linear\|indie}/{slug}/follow-ups/*.md` | issue-workflow |
+| `knowledge` | `.claude/{linear\|indie}/{slug}/knowledge/**/*.md` | issue-workflow |

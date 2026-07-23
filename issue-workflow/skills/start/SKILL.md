@@ -283,7 +283,7 @@ Issue ファイルが存在しない場合:
 
 1. `issue-create` スキルを使った新規作成をユーザーに提案する
    - 「Issue ファイルが見つかりません。`/issue-create` で新規作成しますか？」と確認
-2. ユーザーの承認を得てから `issue-create` スキルを実行する
+2. ユーザーの承認を得てから **Skill ツール**で `issue-create` スキルを実行する
 3. ユーザーが不要と判断した場合はスキップして Phase F6 へ
 
 ### Phase F5: 放置 Issue 検知 + Follow-up 通知

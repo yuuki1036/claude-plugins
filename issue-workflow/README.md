@@ -28,6 +28,8 @@ Issue 管理ワークフロープラグイン。linear-workflow / indie-workflow
 | maintain | 全プロジェクトの棚卸し（放置 Issue・frozen・負債・クリーンアップ） |
 | discover | AI が多観点スキャンで課題を発見して issue を自動起票 |
 | retrospective | 振り返り・見積もり精度分析 |
+| dashboard | Linear プロジェクトのダッシュボード表示（linear backend 専用） |
+| linear-maintain | Linear MCP と同期してローカル管理ファイルを最新化（linear backend 専用） |
 
 ## 主な機能
 

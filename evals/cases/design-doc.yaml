@@ -37,7 +37,7 @@ cases:
   # --- 誤発火防止（隣接スキルに正しくルーティングされるか） ---
   - id: design-doc-nofire-issue-design
     prompt: この Issue を設計し直して
-    expected_skill: indie-workflow:issue-design
+    expected_skill: issue-workflow:issue-design
     k: 3
   - id: design-doc-nofire-adr
     prompt: さっきの設計判断を記録しておいて

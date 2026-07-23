@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.1] - 2026-07-23
+
+### Fixed
+- **set-session-title.sh が通常構成（片方 backend のみ）で毎回 silent fail する regression を修正**（self-review CRITICAL・独立反証で confirmed）。`find .claude/indie .claude/linear` は片方の dir が無いとファイルを見つけても exit 1 を返し、pipefail + ERR trap で hook 全体が exit していた。detect-backend.sh で backend を判定し有効側 dir のみを find する方式に変更（both は Validation で明示 silent exit = 他 hook と整合）
+- README のスキル一覧に dashboard / linear-maintain（1.1.0 移植分）を追記
+- linear-syntax.md の自己言及を統合後の実態に更新（「indie-workflow には適用しない」→ BACKEND=local、「linear-workflow にのみ存在する」→ BACKEND=linear のときのみ Read）
+- follow-up N1 の `/init` 誘導と init のトリガーフレーズを `/issue-workflow:init` に統一（組み込み /init との衝突回避。他 11 箇所と同形式に）
+- start Phase F4 に「Skill ツールで issue-create を実行」の明示を復元（統合時に旧 linear 版の文面から脱落し、allowed-tools の Skill 宣言が本文未言及になっていた）
+
 ## [1.2.0] - 2026-07-23
 
 ### Added

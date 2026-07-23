@@ -19,5 +19,5 @@ cases:
   # indie / linear は排他インストール想定のため両方を許容。
   - id: doc-freshness-nofire-knowledge-lint
     prompt: knowledge の健全性をチェックして
-    expected_skill: [indie-workflow:knowledge-lint, linear-workflow:knowledge-lint]
+    expected_skill: issue-workflow:knowledge-lint
     k: 3
