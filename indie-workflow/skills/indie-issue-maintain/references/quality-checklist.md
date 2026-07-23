@@ -43,12 +43,12 @@ id: {ISSUE-ID}
 type: bugfix | feature | investigation | debt
 created: YYYY-MM-DD
 last_active: YYYY-MM-DD
-scope_size: small | medium | large   # feature テンプレでは必須（他 type は任意）
+scope_size: small | medium | large   # 必須（全 type）
 ---
 ```
 
 - `status` の値は `indie-maintain` の正式定義（`backlog` / `in-progress` / `frozen` / `completed` / `canceled`）に揃える。`debt` は type であって status ではない（混同しない）
-- `scope_size` は feature テンプレートでは必須。bugfix / investigation / debt では任意だが、付与するとスコープ超過チェック（§6）が有効になる
+- `scope_size` は全 type で必須（テンプレ既定値: bugfix / debt は `small`）。未設定の既存 Issue はスコープ超過チェック（§6）がスキップされるため、整理時に付与する
 
 #### オプションフィールド
 ```yaml

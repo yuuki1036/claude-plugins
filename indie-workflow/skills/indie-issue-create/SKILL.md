@@ -57,13 +57,16 @@ allowed-tools:
     2. label: "feature" / description: "新機能追加・既存機能の改修・リファクタリング"
     3. label: "investigation" / description: "原因調査・パフォーマンス分析・技術選定"
     4. label: "debt" / description: "コード品質改善・依存関係更新・非推奨 API の移行"
-- テンプレート選択の回答が feature だった場合、続けて **AskUserQuestion** でスコープサイズを確認する:
-  - question: "この feature の実装規模は？（タスク数上限と見積もり基準に使用）"
-  - header: "スコープ"
-  - options:
-    1. label: "small" / description: "3タスク以下（1-2日で完了）"
-    2. label: "medium" / description: "7タスク以下（数日〜1週間）"
-    3. label: "large" / description: "15タスク以下（1週間以上）"
+- スコープサイズは**全 type で必須**（`check-scope-size` hook のリアルタイム警告とスコープ超過チェックの前提）:
+  - feature の場合は **AskUserQuestion** で確認する:
+    - question: "この feature の実装規模は？（タスク数上限と見積もり基準に使用）"
+    - header: "スコープ"
+    - options:
+      1. label: "small" / description: "3タスク以下（1-2日で完了）"
+      2. label: "medium" / description: "7タスク以下（数日〜1週間）"
+      3. label: "large" / description: "15タスク以下（1週間以上）"
+  - bugfix / debt はテンプレ既定値 `small` をそのまま使う（明らかに大きい場合のみ調整して一言添える）
+  - investigation はタスク内容から判断して設定する（既定は `small`。質問はしない）
 - テンプレートは以下を Read で読み込む:
   - `${CLAUDE_SKILL_DIR}/references/{type}.md`
 
@@ -134,7 +137,7 @@ Issue の内容が確定した段階で、過去の蓄積から「この問題�
    - `status: in-progress`
    - `id: {ISSUE-ID}`
    - `type: {選択したtype}`
-   - `scope_size: {small|medium|large}`（feature の場合のみ）
+   - `scope_size: {small|medium|large}`（全 type 必須。feature は Phase 4 の選択値、他 type は Phase 4 で決めた値）
    - `created: {今日の日付}`
    - `last_active: {今日の日付}`
    - `pr: ""` (空欄)

@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.40.5] - 2026-07-23
+
+### Fixed
+- **scope_size の必須範囲の矛盾を解消（全 type 必須に統一）**。indie-issue-create 本文が「feature の場合のみ」、quality-checklist が「feature 必須・他 type 任意」としていた一方、テンプレ 4 種・indie-issue-discover・check-scope-size hook は全 type 前提だった。テンプレ・hook 側に合わせて create（Phase 4 に type 別の決め方を明記）と quality-checklist を全 type 必須に修正（issue-workflow 統合の先行修正。等価移送の対照を確定させるため統合前に独立実施）
+
 ## [1.40.4] - 2026-07-23
 
 ### Changed
