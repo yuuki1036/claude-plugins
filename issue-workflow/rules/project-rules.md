@@ -20,6 +20,13 @@
 - `last_active` を作業のたびに更新する
 - セッション終了前に `/issue-maintain` で Issue ファイルを更新する
 
+## Linear MCP 連携（backend=linear のみ）
+
+- **Linear API は読み取り専用**: `get_issue`, `list_issues`, `get_project` 等の読み取りのみ使用する。`save_issue` 等の書き込み API は、ユーザーが「Linear の Issue を更新して」等と明示的に指示した場合のみ使用する
+- 「Issue 更新」「Issue 整理」はローカルの Issue ファイル（`{DATA_DIR}/*/issues/*.md`）の更新を意味する。Linear API の更新ではない
+- `/linear-maintain` で Linear → ローカルの一方向同期を実行する（プロジェクト doc、Issue ステータスの取得・更新）
+- Linear 側のステータス変更は Linear UI で行う
+
 ## スコープ管理
 
 - Issue の `scope_size` で宣言したサイズを守る（small: 3個以下, medium: 7個以下, large: 15個以下）

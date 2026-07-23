@@ -37,6 +37,7 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
 
 - `${CLAUDE_SKILL_DIR}/references/template-9sections.md` — 9 セクションの定義・書き方・コピペ用雛形（普遍）
 - `${CLAUDE_SKILL_DIR}/references/design-rules.md` — 決定 vs open の境界、現時点の方向性、双方向依存、確定タイミング（普遍）
+- `${CLAUDE_SKILL_DIR}/references/linear-syntax.md` — Linear 固有記法（collapsible / Issue リンク / インライン pros/cons）。**BACKEND=linear のときのみ** Read する
 
 ---
 
@@ -128,14 +129,24 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
    3. 切り出す場合: `design-doc:design-doc` スキル（new）で設計を詰め、生成された doc の相対パスを Issue の「参考資料」にリンクする。該当 open は「確定タイミング: design doc <id> で確定」に書き換える（Issue 側に議論を重複させない）
    4. fallback: design-doc 呼び出しが失敗したら warning を出し、従来どおり Issue 内の grill で続行する
 
-### Phase 3: ローカル Markdown 記法の適用
+### Phase 3: 記法の適用（backend 別）
 
-issue-workflow の Issue は `{DATA_DIR}/{slug}/issues/*.md` のローカル Markdown ファイル。標準 Markdown で書く。
+#### BACKEND=local: 標準 Markdown
+
+Issue は `{DATA_DIR}/{slug}/issues/*.md` のローカル Markdown ファイル。標準 Markdown で書く。
 
 1. 補助セクション（依存・参考資料）を畳みたい場合は `<details><summary>…</summary> … </details>` を使う
 2. 他 Issue への参照は相対パス（`../issues/{ISSUE-ID}.md`）で繋ぎ、双方向依存を可視化する
 3. open の pros/cons はインライン圧縮形式（`— Pros: … / Cons: …`）で書く
 4. 重複表現を除去して一望性を高める
+
+#### BACKEND=linear: Linear 記法
+
+1. `references/linear-syntax.md` を Read する
+2. 補助セクション（依存・参考資料）は `+++` collapsible で畳む（閉じ忘れに注意）
+3. 他 Issue 参照は `<issue id>` リンクで繋ぐ（双方向依存を可視化）
+4. open の pros/cons はインライン圧縮形式で書く
+5. 重複表現を除去して一望性を高める
 
 ### Phase 3.5: writing-polish 連携（本文添削・必須）
 
@@ -151,7 +162,7 @@ Phase 1〜3 で設計した 9 セクション本文の散文部分は、ユー�
    ```
    `WRITING_POLISH=0` → 本 Phase を skip。
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。
-3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **9 セクション構造・`<details>` collapsible・相対パス Issue リンクは変更しない（各セクション内の散文のみ推敲）。構造を壊す結果は破棄し元案を使う**。変更があれば何を変えたか一言添える。
+3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **9 セクション構造・collapsible（local: `<details>` / linear: `+++`）・Issue リンク（local: 相対パス / linear: `<issue id>`）は変更しない（各セクション内の散文のみ推敲）。構造を壊す結果は破棄し元案を使う**。変更があれば何を変えたか一言添える。
 4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で従来どおり完了する。
 
 > 対象は human 層の散文。bdd-spec bilayer で生成する AI 層 spec.md は添削対象外。

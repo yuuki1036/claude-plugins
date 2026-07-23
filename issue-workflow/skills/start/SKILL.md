@@ -7,6 +7,9 @@ description: >
 effort: high
 allowed-tools:
   - Agent
+  - Skill
+  - mcp__linear__get_issue
+  - mcp__linear__list_issues
   - Read
   - Write
   - Glob
@@ -31,17 +34,101 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 
 以後の `{DATA_DIR}` は検出したデータディレクトリ、`BACKEND` は判定結果を指す。
 
+### Phase 0.7: Linear MCP 利用可能性チェック（BACKEND=linear のみ）
+
+1. 軽量な Linear MCP 呼び出し（`mcp__linear__get_issue` など）を試みる
+2. ツールが見つからない・接続エラーの場合:
+   - **AskUserQuestion** で続行/中断を確認する:
+     - question: "Linear MCP が利用できません。MCP なしで続行するとローカルファイルの情報のみでセッションを開始します（Linear からの Issue 取得・同期は不可）。"
+     - header: "Linear MCP 未検出"
+     - options:
+       1. label: "続行" / description: "ローカルファイルのみでセッション開始する"
+       2. label: "中断" / description: "スキルを中断する"
+   - 「中断」選択時: スキルを終了する
+   - 「続行」選択時: Linear MCP を使う Phase（1.5, Q2, P1〜P2, F3.5 の Linear Sync Agent）をスキップし、ローカルファイルのみで進行する
+3. 正常に応答が返った場合: そのまま Phase 1 に進む
+
 ### Phase 1: ブランチ名の取得と分岐
 
 1. `git branch --show-current` でカレントブランチ名を取得する（Bash）
-2. ブランチ名が `main` または `master` の場合:
-   - **ダッシュボードモード**（Phase D1〜D4）へ進む
-3. それ以外の場合:
-   - **Feature ブランチモード**（Phase F1〜F7）へ進む
+2. **BACKEND=local の場合:**
+   - ブランチ名が `main` または `master` → **ダッシュボードモード**（Phase D1〜D4）へ進む
+   - それ以外 → **Feature ブランチモード**（Phase F1〜F7）へ進む
+3. **BACKEND=linear の場合:**
+   - ブランチ名から Issue ID（正規表現 `[A-Z]+-\d+`）を抽出できない（main, develop 等）→ **Quick Pick モード**（Phase Q1〜Q3）へ進む
+   - Issue ID を抽出できた → **Phase 1.5** へ進む
+
+### Phase 1.5: 子 Issue 有無チェック（BACKEND=linear のみ）
+
+1. `mcp__linear__list_issues(parentId={issueId}, limit=1)` を呼び出す
+   - `limit: 1` で1件だけ取得（存在チェックのみ）
+2. 結果が1件以上: **親 Issue 軽量サマリーモード**（Phase P1〜P2）へ進む
+3. 結果が0件: **Feature ブランチモード**（Phase F1〜F7）へ進む
 
 ---
 
-## ダッシュボードモード（main/master ブランチ時）
+## Quick Pick モード（BACKEND=linear・Issue ID なしブランチ）
+
+最小限の情報で素早く次のタスクを選べるようにする。
+
+### Phase Q1: アクティブ Issue クイックチェック
+
+1. Grep で `{DATA_DIR}/` 配下の `status: in-progress` を一括検索する
+   - `Grep(pattern="status: in-progress", path="{DATA_DIR}/", file_pattern="*.md")`
+2. マッチしたファイル数をカウントする（内容は読まない）
+3. `{DATA_DIR}/*/follow-ups/*.md` を Glob で列挙し、各ファイルの frontmatter `status: open` をカウントする
+4. 表示:
+   ```
+   アクティブ Issue: {N}件（詳細は `/dashboard`）
+   open な follow-up: {M}件
+   ```
+   - follow-up が0件の場合は行を省略する
+
+### Phase Q2: Next Issue ピック
+
+1. `mcp__linear__list_issues(assignee="me", state="unstarted", limit=5)` を呼び出す
+   - 自分にアサインされた未着手 Issue を取得
+2. 取得結果を priority フィールドで並べ替える（1=Urgent → 4=Low の順）
+3. 候補を提示する:
+   ```
+   **次に着手できる Issue（優先度順）:**
+   1. [{ISSUE-ID}] [{priority}] {title}
+   2. ...
+   ```
+
+### Phase Q3: アクション提案
+
+- Issue を選択 → ブランチ作成: `git checkout -b feat/{ISSUE-ID}-{desc}` + `/issue-create`
+- 詳細を確認 → `/dashboard`
+- プロジェクト同期 → `/linear-maintain`
+
+---
+
+## 親 Issue 軽量サマリーモード（BACKEND=linear・子 Issue あり）
+
+最小限の情報を表示し、詳細は `/dashboard` に委譲する。
+
+### Phase P1: 親 Issue の基本情報取得
+
+1. `mcp__linear__get_issue(id={issueId})` で親 Issue のタイトル・ステータスを取得する
+2. `mcp__linear__list_issues(parentId={issueId}, limit=50)` で子 Issue 件数とステータス内訳を取得する
+
+### Phase P2: サマリー表示 + 案内
+
+1. 以下の軽量サマリーを表示する:
+   ```
+   **親 Issue**: [{ISSUE-ID}] {title}
+   **ステータス**: {status}
+   **子 Issue**: {total}件（完了: {done}, 進行中: {in_progress}, 未着手: {todo}）
+   ```
+2. 案内を表示する:
+   - 「`/dashboard {ISSUE-ID}` で子 Issue の詳細進捗を確認できます」
+   - In Progress の子 Issue がある場合: 「`git checkout -b feat/{CHILD-ID}-{desc}` で作業を継続」
+   - 全子 Issue が Done の場合: 「全子 Issue 完了。親 Issue のクローズを検討してください。」
+
+---
+
+## ダッシュボードモード（BACKEND=local・main/master ブランチ時）
 
 ### Phase D1: 全プロジェクトスキャン
 
@@ -120,8 +207,8 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 ### Phase F3: 関連ファイル読み込み
 
 1. **プロジェクト doc の読み込み**
-   - `{DATA_DIR}/{slug}/project.md` の存在を確認（Read）
-   - 存在する場合は内容を読み込む
+   - BACKEND=local: `{DATA_DIR}/{slug}/project.md` の存在を確認（Read）し、存在する場合は内容を読み込む
+   - BACKEND=linear: Glob で `{DATA_DIR}/{slug}/projects/*.md` を検索し、存在するファイルを Read で全て読み込む
 
 2. **Issue ファイルの確認**
    - `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md` の存在を確認（Read）
@@ -138,19 +225,21 @@ Issue ファイルが存在しない場合（Phase F4 へ進む場合）はス�
 
 エージェントプロンプトの詳細は `${CLAUDE_SKILL_DIR}/references/context-agents.md` を参照すること。
 
-**以下の2エージェントを並列起動する:**
+**以下のエージェントを並列起動する（#3 は BACKEND=linear のみ）:**
 
 | Agent | 役割 | 入力 |
 |-------|------|------|
 | #1 Doc Resolver | 親 Issue・関連 Issue・Knowledge 直接参照を辿る | Issue ファイル内容、スラッグ |
 | #2 Code Context | Issue 内のソースファイル参照を辿る + Git 状態取得 | Issue ファイル内容 |
+| #3 Linear Sync（BACKEND=linear のみ） | Linear API の最新状態との差分検出 | Issue ID、frontmatter 情報 |
 
 **起動手順:**
 
 1. `${CLAUDE_SKILL_DIR}/references/context-agents.md` を Read する
-2. **必須**: 以下 2 つの Agent を**同一メッセージ内で並列起動する**（Agent tool call を 2 つ、1 つのレスポンスに含める）。逐次起動は禁止（待ち時間が 2 倍になる）。各 Agent call に `run_in_background: false` を明示する（CC 2.1.198 で既定が background になり、省略すると完了を待たずに進んで結果を取りこぼす）
+2. **必須**: 対象の Agent（local: 2 つ / linear: 3 つ）を**同一メッセージ内で並列起動する**（Agent tool call を 1 つのレスポンスに含める）。逐次起動は禁止（待ち時間が倍になる）。各 Agent call に `run_in_background: false` を明示する（CC 2.1.198 で既定が background になり、省略すると完了を待たずに進んで結果を取りこぼす）
    - Agent #1 Doc Resolver: Issue ファイル内容 + スラッグを渡す
    - Agent #2 Code Context: Issue ファイル内容を渡す
+   - Agent #3 Linear Sync（BACKEND=linear のみ、Phase 0.7 で MCP 利用可の場合のみ）: Issue ID + frontmatter を渡す
 3. 全エージェントの完了を待つ（並列起動していれば最長エージェントの時間で揃う）
 4. 各エージェントの結果を Phase F6 の報告に統合する
 
@@ -222,6 +311,7 @@ Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する
 - **関連 Knowledge**: Agent #1 の直接参照結果 + Phase F3.7 の keyword 検索結果をマージ（あれば）
 - **参照ソースファイル**: Agent #2 の結果（読み込んだファイルの役割サマリー）（あれば）
 - **Git 状態**: Agent #2 の結果（コミット数・最新コミット・未コミット変更・変更規模）
+- **Linear 同期**: Agent #3 の結果（ステータス差分・新規コメント）（BACKEND=linear のみ・あれば）
 - **読み込んだプロジェクト doc**: 読み込んだファイル名
 - **放置 Issue 警告**: 該当があれば表示（Phase F5）
 - **debt サマリー**: `type: debt` の Issue 件数
@@ -248,7 +338,7 @@ Issue ファイルの状態と Git 状態に応じて案内を分岐する:
 ### Phase CTX: session-context.md 書き出し
 
 Feature ブランチモードで Issue ファイルの読み込みに成功した場合に実行する。
-ダッシュボードモード（main/master）および Issue ファイルが存在しない場合はスキップする。
+ダッシュボードモード・Quick Pick モード・親 Issue 軽量サマリーモード、および Issue ファイルが存在しない場合はスキップする。
 
 1. 以下の情報を `.claude/session-context.md` に Write で書き出す:
 

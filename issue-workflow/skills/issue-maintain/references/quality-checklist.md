@@ -39,7 +39,7 @@
 ```yaml
 ---
 status: backlog | in-progress | frozen | completed | canceled
-id: {ISSUE-ID}
+id: {ISSUE-ID}                       # BACKEND=local。linear では代わりに linear: {ISSUE-ID}
 type: bugfix | feature | investigation | debt
 created: YYYY-MM-DD
 last_active: YYYY-MM-DD
@@ -53,6 +53,7 @@ scope_size: small | medium | large   # 必須（全 type）
 #### オプションフィールド
 ```yaml
 project: {プロジェクト名}
+linear_status: {Linear上のステータス}   # BACKEND=linear のみ
 frozen_date: YYYY-MM-DD   # status: frozen のとき必須。frozen からの経過日数判定（maintain の frozen 再評価）に使用
 pr: #{PR番号}
 follow_up:

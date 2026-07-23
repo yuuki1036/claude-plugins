@@ -1,6 +1,8 @@
 ---
 status: in-progress          # 必須。値: backlog / in-progress / frozen / completed / canceled
-id: {ISSUE-ID}               # 必須。例: MYAPP-3
+id: {ISSUE-ID}               # 必須（BACKEND=local）。例: MYAPP-3。linear では代わりに linear: を使う
+linear: {ISSUE-ID}           # 必須（BACKEND=linear）。local では書かない
+project: {project-name}      # 任意（BACKEND=linear のみ）。Linear プロジェクト名
 type: bugfix                 # 必須。値: bugfix / feature / investigation / debt
 scope_size: small            # 必須。値: small / medium / large
 created: YYYY-MM-DD          # 必須

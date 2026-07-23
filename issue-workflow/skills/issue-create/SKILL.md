@@ -2,10 +2,11 @@
 name: issue-create
 description: >
   Issue ファイルの新規作成。テンプレート選択、ブランチ自動作成、feature-dev への接続まで
-  一貫サポート。
-  トリガー: 「タスク作成」「Issue起票」「新しいタスク」「/issue-create」
+  一貫サポート。backend=linear では Linear MCP から Issue 情報を取得して取り込む。
+  トリガー: 「タスク作成」「Issue起票」「新しいタスク」「Issueファイル作成」「Linear の Issue をローカルに取り込む」「/issue-create」
 effort: medium
 allowed-tools:
+  - mcp__linear__get_issue
   - Read
   - Write
   - Glob
@@ -30,6 +31,20 @@ allowed-tools:
 
 以後の `{DATA_DIR}` は検出したデータディレクトリ、`BACKEND` は判定結果を指す。
 
+### Phase 0.7: Linear MCP 利用可能性チェック（BACKEND=linear のみ）
+
+1. Phase 3 の `get_issue` 呼び出しを試みる（Phase 3 と兼用）
+2. ツールが見つからない・接続エラーの場合:
+   - **AskUserQuestion** で続行/中断を確認する:
+     - question: "Linear MCP が利用できません。MCP なしで続行する場合、Issue 情報は手動入力になります。"
+     - header: "Linear MCP 未検出"
+     - options:
+       1. label: "続行" / description: "Issue 情報を手動入力して作成する"
+       2. label: "中断" / description: "スキルを中断する"
+   - 「中断」選択時: スキルを終了する
+   - 「続行」選択時: 以後は**手動入力経路**として進む（Phase 3 の Linear 取得をスキップ）
+3. 正常に応答が返った場合: そのまま通常フローに進む
+
 ### Phase 1: プロジェクトスラッグの特定
 
 1. コマンド引数で指定されていればそれを使う
@@ -40,11 +55,19 @@ allowed-tools:
 
 `{DATA_DIR}/{slug}/` が存在しない場合、`/issue-workflow:init {slug}` の実行を案内して処理を中止する。
 
-### Phase 3: Issue ID の生成（採番先確定）
+### Phase 3: Issue ID の確定
+
+#### BACKEND=local: ローカル採番
 
 1. `{DATA_DIR}/{slug}/counter.txt` を Read で読み取る
 2. `{SLUG大文字}-{番号}` 形式で Issue ID を生成する（例: `MYAPP-3`）
 3. **先に `counter.txt` を +1 して Write（採番を確定）**。issue ファイル Write より前に確定することで、途中中断時に同じ番号が再採番されてファイルを上書きするのを防ぐ（discover / follow-up と同一方式）
+
+#### BACKEND=linear: Linear から取得
+
+1. Issue ID をユーザーから受け取る（start から渡される場合もある。採番は Linear 側が持つため counter.txt は使わない）
+2. Linear MCP `get_issue` でタイトル・説明・プロジェクト情報を取得する（Phase 0.7 で取得済みの場合は再利用する）
+3. 取得できない場合（手動入力経路）はユーザーに手動入力を依頼する
 
 ### Phase 4: テンプレート選択
 
@@ -84,10 +107,13 @@ allowed-tools:
 1. ユーザーにタイトルを確認する
 2. ユーザーに概要（説明）を確認する
 3. 既にユーザーが説明している場合はそれを使い、重複して聞かない
+4. BACKEND=linear で `get_issue` からタイトル・説明を取得できている場合はそれを使い、ヒアリングをスキップする
 
 ### Phase 5.4: コードベース現状確認
 
 Issue の内容が確定した段階で、対象コードの現状を軽く確認し「すでに実装済みの機能に対する Issue 起票」を防ぐ。
+
+> BACKEND=linear で Linear MCP から Issue を取得できた通常経路では、この Phase をスキップしてよい（重複は Linear 側で管理される）。手動入力経路では実施し、あわせて `{DATA_DIR}/{slug}/issues/*.md` を Glob/Grep で走査して同一トピックの既存 Issue が無いかも確認する。
 
 1. **キーワード抽出**: Issue のタイトル・概要から具体的な対象を示すキーワードを抽出する
    - 例: 「Home ページ実装」→ `Home`, `HeroSection`, `page.tsx`
@@ -144,7 +170,7 @@ Issue の内容が確定した段階で、過去の蓄積から「この問題�
 
 2. **frontmatter の記入**
    - `status: in-progress`
-   - `id: {ISSUE-ID}`
+   - BACKEND=local: `id: {ISSUE-ID}` / BACKEND=linear: `linear: {ISSUE-ID}`（Linear のプロジェクト情報があれば `project:` も記入）
    - `type: {選択したtype}`
    - `scope_size: {small|medium|large}`（全 type 必須。feature は Phase 4 の選択値、他 type は Phase 4 で決めた値）
    - `created: {今日の日付}`
@@ -153,7 +179,7 @@ Issue の内容が確定した段階で、過去の蓄積から「この問題�
 
 3. **本文の生成**
    - テンプレートの構造に従う
-   - ユーザーから得た情報を「概要」セクションに反映する
+   - ユーザーから得た情報（BACKEND=linear では Linear の description）を「概要」セクションに反映する
    - プレースホルダはそのまま残し、ユーザーが後から埋められるようにする
 
 4. **writing-polish 推敲 → ユーザー承認**
@@ -175,13 +201,13 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
    ```
    `WRITING_POLISH=0` → 本 Phase を skip。
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。
-3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **9 セクション構造（テンプレートの見出し階層）・frontmatter・プレースホルダ・相対パスリンクは変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
+3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **9 セクション構造（テンプレートの見出し階層）・frontmatter・プレースホルダ・相対パスリンク・Linear collapsible（`+++`。BACKEND=linear のみ）は変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
 4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で完了する。
 
 ### Phase 7: 後処理
 
 1. 作成したファイルの絶対パスを報告する（採番は Phase 3 で確定済みのため、ここでは `counter.txt` を触らない）
-2. **ブランチ自動作成**: **AskUserQuestion** で確認してから `git checkout -b {type}/{SLUG-N}-{description}` を実行する:
+2. **ブランチ自動作成（BACKEND=local のみ）**: **AskUserQuestion** で確認してから `git checkout -b {type}/{SLUG-N}-{description}` を実行する（BACKEND=linear ではこのステップをスキップする）:
    - question: "ブランチ `{type}/{SLUG-N}-{description}` を作成しますか？"
    - header: "ブランチ"
    - options:
@@ -205,6 +231,7 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
    ## Issue コンテキスト
    - Issue ファイル: `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md`
    - type: {type}, scope_size: {scope_size}
+   - Linear URL: {get_issue から取得した URL（BACKEND=linear のみ）}
    - 概要: {Phase 5 で収集した概要}
 
    ## Phase 5.4 コードベース調査結果

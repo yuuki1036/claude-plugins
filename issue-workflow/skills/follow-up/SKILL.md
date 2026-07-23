@@ -6,6 +6,8 @@ description: >
   「フォローアップ記録」「/follow-up」「/follow-up list」「/follow-up promote」
 effort: medium
 allowed-tools:
+  - mcp__linear__save_issue
+  - mcp__linear__get_issue
   - Read
   - Write
   - Edit
@@ -65,6 +67,7 @@ status: open              # open / promoted / backlog / dismissed
 type: bug                 # bug / feature / debt / investigation / idea
 priority: medium          # high / medium / low
 source_issue: MYAPP-3     # 元 Issue（必須）
+linear_issue: ""          # 既存 Linear Issue への紐づけ（任意。BACKEND=linear のみ）
 created: YYYY-MM-DD
 ---
 ```
@@ -89,7 +92,7 @@ created: YYYY-MM-DD
 
 ---
 
-## Phase 0: サブコマンド判定
+## Phase 0.5: サブコマンド判定
 
 1. 引数を確認する
 2. `new` または引数なし → **Phase N** へ
@@ -131,6 +134,16 @@ created: YYYY-MM-DD
   - question: "優先度は？"
   - header: "優先度"
   - options: high / medium / low
+
+### N3.5: Linear Issue 紐づけ確認（BACKEND=linear のみ）
+
+1. AskUserQuestion:
+   - question: "既存の Linear Issue に紐づけますか？"
+   - header: "Linear Issue 紐づけ"
+   - options:
+     1. label: "紐づけない" / description: "ローカルメモとして記録"
+     2. label: "紐づける" / description: "Linear Issue ID を入力"
+2. 「紐づける」選択時: Issue ID を入力させて `linear_issue` に設定
 
 ### N4: ファイル生成
 
@@ -193,6 +206,23 @@ created: YYYY-MM-DD
 
 1. Read で内容を確認し、ユーザーに表示する
 
+### P2.5: 昇格先の確認（BACKEND=linear のみ）
+
+- AskUserQuestion:
+  - question: "Issue の作成先は？"
+  - header: "Issue 昇格先"
+  - options:
+    1. label: "ローカルのみ" / description: "ローカル Issue ファイルのみ作成（Linear には起票しない）"
+    2. label: "Linear にも作成" / description: "save_issue で Linear にも起票する"
+- 「Linear にも作成」選択時: Linear MCP の利用可能性を確認する
+  - `mcp__linear__get_issue` を軽量に呼び出してテスト
+  - 失敗した場合は AskUserQuestion:
+    - question: "Linear MCP が利用できません。"
+    - header: "Linear MCP 未検出"
+    - options:
+      1. label: "ローカルのみに変更" / description: "ローカル Issue ファイルのみ作成する"
+      2. label: "中断" / description: "promote を中断する"
+
 ### P3: テンプレート選択
 
 1. follow-up の `type` から Issue テンプレートを推定する:
@@ -216,6 +246,8 @@ created: YYYY-MM-DD
 
 ### P5: Issue 作成の実行
 
+#### BACKEND=local
+
 1. `{DATA_DIR}/{slug}/counter.txt` を Read し、現在の番号を取得する
 2. Issue ID を生成: `{SLUG大文字}-{番号}`
 3. **先に `counter.txt` を +1 して Write（採番を確定）**。issue ファイル Write より前に確定することで、途中中断時に同じ番号が再採番されてファイルを上書きするのを防ぐ（issue-create / discover と同一方式）
@@ -230,6 +262,21 @@ created: YYYY-MM-DD
      1. label: "作成する" / description: "ブランチを作成してチェックアウト"
      2. label: "スキップ" / description: "ブランチは自分で作る"
    - type-prefix: bugfix → `fix`、feature → `feat`、investigation → `investigate`、debt → `chore`、idea → `feat`
+
+#### BACKEND=linear
+
+- **「ローカルのみ」の場合**（P2.5 の選択）:
+  1. P3 で選択したテンプレート（`${CLAUDE_SKILL_DIR}/../issue-create/references/{type}.md`）を Read する
+  2. follow-up の「内容」を概要セクション、「対応メモ」を計画セクションに反映して Issue ファイルを生成
+  3. 配置先: `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md`（採番は Linear 側が持つため counter.txt は使わない）
+  4. `linear_issue` フィールドがあれば、その ID を Issue ファイルの `linear` frontmatter に設定
+  5. ユーザーに Issue ファイル内容を提示し、承認を得てから Write
+- **「Linear にも作成」の場合**:
+  1. `mcp__linear__save_issue` で Linear Issue を作成する
+     - title: follow-up の title
+     - description: 「内容」+「対応メモ」セクションの内容
+  2. 返却された Issue ID を使って上記「ローカルのみ」と同じ手順でローカル Issue ファイルも生成する
+- ブランチ自動作成（local の step 8）は行わない
 
 ### P6: follow-up ファイルの更新
 
@@ -258,5 +305,6 @@ created: YYYY-MM-DD
 ## 注意事項
 
 - follow-up は軽量なメモ。Issue のような厳密な構造は求めない
-- follow-up は `counter.txt` を使わない。Issue 昇格時に初めて採番する
+- follow-up は `counter.txt` を使わない。Issue 昇格時（BACKEND=local）に初めて採番する
+- Linear API の書き込み（`save_issue`）はユーザーが P2.5 で「Linear にも作成」を明示選択した場合のみ（BACKEND=linear）
 - follow-ups/ ディレクトリは初回 Write 時に自動作成される

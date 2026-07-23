@@ -266,6 +266,11 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 3. 削除したファイル一覧を最終レポートに列挙する（git 管理下のため復元可能）
 ```
 
+### linear-maintain からの自動呼び出し（BACKEND=linear のみ）
+
+`/linear-maintain` 実行時に completed が検知された場合、本スキルの処理フローが自動実行される。
+手動で `/issue-maintain` を実行した場合も同じルールが適用される。
+
 ---
 
 ## writing-polish 連携（本文添削・必須）

@@ -1,6 +1,8 @@
 ---
 description: Follow-up タスクの作成・一覧・Issue昇格
 allowed-tools:
+  - mcp__linear__save_issue
+  - mcp__linear__get_issue
   - Read
   - Write
   - Edit
