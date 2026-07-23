@@ -1,0 +1,83 @@
+# 個人開発プロジェクト管理ルール
+
+このプロジェクトは issue-workflow で Issue を管理している。データディレクトリは backend により `.claude/indie/`（local）または `.claude/linear/`（linear）で、以下 `{DATA_DIR}` と表記する。以下のルールに従うこと。
+
+## セッション開始時
+
+1. `/start` を実行して作業コンテキストを読み込む
+2. ブランチ名から Issue ID を自動特定し、関連ファイルを読み込む
+
+## ブランチ命名規則
+
+- `{type}/{PROJECT-N}-{description}` 形式を使う
+- 例: `feat/MYAPP-3-add-auth`, `fix/BLOG-2-typo`
+
+## Issue ファイル管理
+
+- Issue ファイル: `{DATA_DIR}/{project}/issues/{PROJECT-N}.md`
+- プロジェクト概要: `{DATA_DIR}/{project}/project.md`（linear backend では `{DATA_DIR}/{project}/projects/` 配下）
+- 作業の進捗は Issue ファイルのチェックリストに反映する
+- `last_active` を作業のたびに更新する
+- セッション終了前に `/issue-maintain` で Issue ファイルを更新する
+
+## スコープ管理
+
+- Issue の `scope_size` で宣言したサイズを守る（small: 3個以下, medium: 7個以下, large: 15個以下）
+- タスクが増えてきたら分割を検討する
+- 「スコープ外」セクションに除外理由を明記する
+
+## Agent Team の活用
+
+- タスクに取り掛かる際は Agent team（複数エージェントの並列起動）を積極的に使う
+- 大きなタスクは単一エージェントで抱え込まず、調査・実装・テストなど独立した作業は並列エージェントに分割することを推奨する
+- エージェントの起動に確認は不要。必要なだけ立ち上げてよい
+
+## Follow-up タスクの検知
+
+作業中に以下のシグナルを検知した場合、follow-up タスクとして記録することを提案する:
+
+**検知パターン:**
+- 「これは別タスクで」「後でやる」「スコープ外だけど気になる」
+- 「今は触らないけど」「技術的負債として残す」「TODO: 後で直す」
+- ユーザーが作業を意図的に中断・保留する発言
+- コードの TODO コメントを書いた・発見した
+- Issue の「スコープ外」セクションに項目を追加した
+
+**提案フォーマット:**
+
+```
+follow-up を記録しますか？
+タイトル: 「{検知した内容の要約}」
+type: {推定タイプ}
+
+→ `/follow-up new` で記録
+```
+
+**重要:** 提案は1回のみ行う。ユーザーが断った場合は再提案しない。
+作業の流れを止めないことを優先する。
+
+## Knowledge の活用
+
+- セッション開始時・コンパクション後に knowledge インデックスが自動注入される
+- 実装方針の検討時や問題解決時に、関連する knowledge を Read して活用する
+- `/knowledge` で一覧表示、`/knowledge search <キーワード>` で検索できる
+- 新しい知見は `/issue-maintain` の実行時に自動的に切り出される
+
+## 作業フロー
+
+1. セッション開始 → `/start`
+2. 新規 Issue 作成 → `/issue-create`
+3. 作業中の進捗更新 → Issue ファイルのチェックリストを更新
+4. 作業中に follow-up 発生 → `/follow-up new` で記録
+5. セッション終了前 → `/issue-maintain` で Issue ファイルを整理
+6. follow-up の確認 → `/follow-up list` で一覧、`/follow-up promote` で Issue 昇格
+7. 定期的な棚卸し → `/maintain` でプロジェクト全体を整理
+8. 振り返り → `/retrospective` で学びを抽出
+
+## 文章の推敲（writing-polish 必須）
+
+issue 作業中に生成・更新する**全ての自然言語テキスト**は、確定（ファイル書き込み・ユーザー提示・コミット）の前に writing-polish を通すこと。対象は Issue / knowledge / follow-up / retrospective といった `{DATA_DIR}/` 配下の管理ファイルだけでなく、**コードコメント・README・設計ドキュメント等あらゆる散文を含む**（gitignore 対象かどうかは問わない）。
+
+- `writing-polish` プラグインがインストールされていれば**必須**。未インストール時のみ skip（プラグイン独立性のため）。
+- 呼び出しは `Skill` tool で `writing-polish:writing-polish` を `--embed` 付きで実行し、文書種別に応じて `--tone`（issue/pr/commit/rfc/review）を選ぶ。
+- 構造（コード構文・見出し階層・テンプレート・frontmatter）を壊す推敲結果は破棄し元案を使う。

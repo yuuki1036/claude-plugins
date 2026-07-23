@@ -3,7 +3,7 @@
 Claude Code プラグインのマーケットプレイスリポジトリ。各プラグインは独立して動作する（プラグイン間依存なし）。
 
 - 生成日: 2026-06-25
-- プラグイン数: 18
+- プラグイン数: 19
 - マニフェスト: `.claude-plugin/marketplace.json`（各 `plugin.json` から派生・SSoT 検証あり）
 
 > 詳細な運用規約・設計判断は [CLAUDE.md](CLAUDE.md) を参照。本ファイルは各プラグインのコンポーネント構成の早見表。
@@ -23,6 +23,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [feature-dev](#feature-dev) | 2.11.2 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.1 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
 | [indie-workflow](#indie-workflow) | 1.40.5 | 11 | 11 | 3 | 5 events | - | 個人開発向けローカル Issue 管理 |
+| [issue-workflow](#issue-workflow) | 1.0.0 | 11 | 11 | 3 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [linear-workflow](#linear-workflow) | 1.37.4 | 10 | 10 | 3 | 4 events | - | Linear MCP 連携の Issue/プロジェクト管理 |
 | [living-spec-workflow](#living-spec-workflow) | 0.3.1 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.7 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
@@ -106,6 +107,15 @@ Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットア
 - **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse
 - **publishes**: `issue:completed`（Event Bus）
 - **subscribes**: `issue:completed`（retrospective）
+
+### issue-workflow
+Issue 管理ワークフロー（linear-workflow / indie-workflow の統合後継）。backend（local: `.claude/indie/` / linear: `.claude/linear/`）をデータディレクトリの存在で自動判定し、単一のスキル群で両方を扱う。旧 indie 専用機能（discover / retrospective / scope_size）は両 backend に開放。
+- **commands / skills**（同名ペア 11）: `init`, `start`, `issue-create`, `issue-design`, `issue-maintain`, `follow-up`, `knowledge`, `knowledge-lint`, `maintain`, `discover`, `retrospective`
+- **agents**: `code-context`, `doc-resolver`, `discover-verifier`
+- **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse
+- **publishes**: `issue:completed`（Event Bus）
+- **subscribes**: `issue:completed`（retrospective）
+- **移行**: 旧 2 プラグインとの同一マシン併存は禁止（uninstall → install を連続実行）
 
 ### linear-workflow
 Linear MCP 連携のプロジェクト・Issue 管理。セッション開始から Issue 作成・メンテ・Linear 同期まで一貫管理。
