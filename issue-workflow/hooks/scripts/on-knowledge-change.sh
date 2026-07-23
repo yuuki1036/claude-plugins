@@ -11,7 +11,7 @@ file_path=$(printf '%s' "$payload" | grep -oE '"file_path"[[:space:]]*:[[:space:
 
 # knowledge ファイル以外（matcher 暴発時の任意ファイル）では何もしない
 if [ -z "$file_path" ] \
-  || ! echo "$file_path" | grep -qE '\.claude/indie/[^/]+/knowledge/([^/]+/)?[^/]+\.md$'; then
+  || ! echo "$file_path" | grep -qE '\.claude/(indie|linear)/[^/]+/knowledge/([^/]+/)?[^/]+\.md$'; then
   safe_hook_error Validation "not a knowledge file: ${file_path:-<empty>}"
 fi
 

@@ -10,7 +10,7 @@ BRANCH=$(git branch --show-current 2>/dev/null || true)
 ISSUE_ID=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' | head -1 || true)
 [[ -z "$ISSUE_ID" ]] && safe_hook_error NotFound "no issue id in branch name"
 
-ISSUE_FILE=$(find .claude/indie -name "${ISSUE_ID}.md" 2>/dev/null | head -1)
+ISSUE_FILE=$(find .claude/indie .claude/linear -name "${ISSUE_ID}.md" 2>/dev/null | head -1)
 [[ -z "$ISSUE_FILE" ]] && safe_hook_error NotFound "issue file not found: $ISSUE_ID"
 
 TITLE=$(grep '^title:' "$ISSUE_FILE" | head -1 | sed 's/^title:[[:space:]]*//' | sed 's/^"//;s/"$//')

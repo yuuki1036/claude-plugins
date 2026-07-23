@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.2.0] - 2026-07-23
+
+### Added
+- **hooks 統合（backend 両対応）**
+  - `hooks/lib/detect-backend.sh` を新設（SKILL の Phase 0 と同一述語「dir が存在し、かつ slug サブディレクトリを 1 つ以上持つ」で判定）
+  - inject-rules: backend 判定に基づきルール + knowledge index + 放置 Issue 検知を注入（放置 Issue 検知は linear にも開放）。両 backend 有効時は衝突警告のみ注入、残骸 dir は注意書き + 継続
+  - on-issue-change / on-knowledge-change / check-scope-size / set-session-title: パスパターンを `.claude/{indie,linear}` 両対応化（`linear:` frontmatter の ID 抽出 fallback 含む）
+  - hooks.json の FileChanged matcher に `.claude/linear/` 系 3 パターンを追加
+- **意図的逸脱②: check-deps の backend ゲートを新規実装**。linear-workflow から `check_mcp` を移植し、「backend=linear が有効なときのみ Linear MCP 未設定を警告」する条件分岐を追加（plugin.json の linear MCP は `required: false`。旧 linear-workflow の `required: true` から変更）
+
 ## [1.1.0] - 2026-07-23
 
 ### Added

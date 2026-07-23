@@ -12,14 +12,14 @@ file_path=$(printf '%s' "$payload" | grep -oE '"file_path"[[:space:]]*:[[:space:
 
 # Issue ファイル以外（matcher 暴発時の任意ファイル）では何もしない
 if [ -z "$file_path" ] || [ ! -f "$file_path" ] \
-  || ! echo "$file_path" | grep -qE '\.claude/indie/[^/]+/issues/[^/]+\.md$'; then
+  || ! echo "$file_path" | grep -qE '\.claude/(indie|linear)/[^/]+/issues/[^/]+\.md$'; then
   safe_hook_error Validation "not an issue file: ${file_path:-<empty>}"
 fi
 
 # status: completed が立った場合に Event Bus へ発行
 if grep -qE '^status:[[:space:]]*completed' "$file_path"; then
   issue_id=$(basename "$file_path" .md | tr -d '"\\')
-  slug=$(echo "$file_path" | sed -E 's|.*\.claude/indie/([^/]+)/issues/.*|\1|' | tr -d '"\\')
+  slug=$(echo "$file_path" | sed -E 's#.*\.claude/(indie|linear)/([^/]+)/issues/.*#\2#' | tr -d '"\\')
   # payload は生補間のため JSON を壊す文字を除去してから埋め込む
   safe_path=$(printf '%s' "$file_path" | tr -d '"\\')
   event_bus_publish "issue:completed" "{\"issue_id\":\"${issue_id}\",\"slug\":\"${slug}\",\"file\":\"${safe_path}\"}"

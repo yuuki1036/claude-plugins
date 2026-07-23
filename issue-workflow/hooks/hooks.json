@@ -7,7 +7,9 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-deps.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-deps.sh"
+            ],
             "timeout": 5,
             "once": true
           }
@@ -19,7 +21,9 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/inject-rules.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/inject-rules.sh"
+            ],
             "timeout": 10
           }
         ]
@@ -32,7 +36,9 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/inject-rules.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/inject-rules.sh"
+            ],
             "timeout": 10
           }
         ]
@@ -45,7 +51,9 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/set-session-title.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/set-session-title.sh"
+            ],
             "timeout": 5,
             "once": true
           }
@@ -59,7 +67,22 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-issue-change.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-issue-change.sh"
+            ],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": ".claude/linear/*/issues/*.md",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-issue-change.sh"
+            ],
             "timeout": 5
           }
         ]
@@ -70,7 +93,22 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-knowledge-change.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-knowledge-change.sh"
+            ],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": ".claude/linear/*/knowledge/*.md",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-knowledge-change.sh"
+            ],
             "timeout": 5
           }
         ]
@@ -81,7 +119,22 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-knowledge-change.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-knowledge-change.sh"
+            ],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": ".claude/linear/*/knowledge/concepts/*.md",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-knowledge-change.sh"
+            ],
             "timeout": 5
           }
         ]
@@ -94,7 +147,9 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-scope-size.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-scope-size.sh"
+            ],
             "timeout": 5
           }
         ]

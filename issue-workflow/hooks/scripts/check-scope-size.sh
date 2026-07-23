@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-scope-size.sh — PostToolUse hook (Edit|Write|MultiEdit)
-# .claude/indie/*/issues/*.md の進捗チェックリスト数が scope_size 上限を超えたら警告
+# .claude/{indie,linear}/*/issues/*.md の進捗チェックリスト数が scope_size 上限を超えたら警告
 # 上限: small:3 / medium:7 / large:15（Issue #30 参照）
 # issue-maintain の膨張閾値（5/8/16）とは別物で、こちらはリアルタイム初動警告
 
@@ -24,8 +24,8 @@ esac
 
 [[ -z "$FILE_PATH" ]] && safe_hook_error Validation "empty file_path"
 
-# .claude/indie/*/issues/*.md にマッチするか（相対/絶対どちらでも）
-if ! echo "$FILE_PATH" | grep -qE '\.claude/indie/[^/]+/issues/[^/]+\.md$'; then
+# .claude/{indie,linear}/*/issues/*.md にマッチするか（相対/絶対どちらでも）
+if ! echo "$FILE_PATH" | grep -qE '\.claude/(indie|linear)/[^/]+/issues/[^/]+\.md$'; then
   safe_hook_error Validation "not an issue file: $FILE_PATH"
 fi
 
@@ -34,6 +34,7 @@ fi
 # frontmatter から scope_size と id を抽出
 SCOPE_SIZE=$(awk '/^---$/{c++; next} c==1 && /^scope_size:/ {sub(/^scope_size:[[:space:]]*/, ""); print; exit}' "$FILE_PATH")
 ISSUE_ID=$(awk '/^---$/{c++; next} c==1 && /^id:/ {sub(/^id:[[:space:]]*/, ""); print; exit}' "$FILE_PATH")
+[ -n "$ISSUE_ID" ] || ISSUE_ID=$(awk '/^---$/{c++; next} c==1 && /^linear:/ {sub(/^linear:[[:space:]]*/, ""); print; exit}' "$FILE_PATH")
 
 [[ -z "$SCOPE_SIZE" ]] && safe_hook_error Validation "scope_size not found"
 

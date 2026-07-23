@@ -1,11 +1,17 @@
 {
   "name": "issue-workflow",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Issue 管理ワークフロー（linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
   "author": {
     "name": "yuki"
   },
   "_requirements": [
+    {
+      "name": "linear",
+      "type": "mcp_server",
+      "required": false,
+      "description": "Linear MCP サーバー（backend=linear のときのみ使用。check-deps が backend=linear 検出時のみ未設定を警告する。local backend では不要）"
+    },
     {
       "name": "feature-dev",
       "type": "plugin",
