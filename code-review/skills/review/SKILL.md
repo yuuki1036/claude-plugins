@@ -59,7 +59,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-pr-context.sh" <PR番号>
 
 スクリプトは PR 説明 / issue コメント / レビューサマリ / 行単位 review コメント（返信チェーン込み）を構造化 markdown で出力する。スクリプトが失敗した場合は ExitWorktree して、失敗理由をユーザーに報告し終了（PR コンテキスト無しでは re-flag 判定ができないため、レビュー継続は許可しない）。
 
-**【任意】Issue ファイル必読フロー（linear-workflow / indie-workflow 併用時）**:
+**【任意】Issue ファイル必読フロー（issue-workflow 併用時）**:
 
 PR head / base branch 名から Issue ID を抽出し、ローカルの Issue ファイルがあれば spec-compliance reviewer の prompt に同梱する。仕様・受入条件・設計判断を踏まえた判定の精度が上がる（GitHub issue #43）。
 

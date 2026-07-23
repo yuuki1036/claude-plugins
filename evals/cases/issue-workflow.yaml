@@ -1,0 +1,87 @@
+plugin: issue-workflow
+# linear-workflow (12) + indie-workflow (14) の統合改廃（design doc 20260722 open #1 = 案(b)）。
+# 旧 2 プラグインの弁別用フレーズ（「個人開発の」「Linear 連携の」等）は backend 自動判定により
+# 不要になったため削除し、素のトリガーフレーズで検証する。
+# 実行は旧 2 プラグインを uninstall 済みの状態で行うこと（同居中は旧側への名前解決で flaky になる）。
+cases:
+  - id: start-branch-ja
+    prompt: このブランチの作業を開始する
+    expected_skill: issue-workflow:start
+    k: 3
+    tags: [smoke]
+  - id: start-today-ja
+    prompt: 今日の作業を開始する
+    expected_skill: issue-workflow:start
+    k: 3
+  - id: init-ja
+    prompt: このプロジェクトで Issue 管理を始めたい。初期セットアップして
+    expected_skill: issue-workflow:init
+    k: 3
+  - id: issue-create-ja
+    prompt: 新しいタスクを起票して
+    expected_skill: issue-workflow:issue-create
+    k: 3
+    tags: [smoke, issue-design]
+  - id: issue-create-linear-import
+    # 旧 linear-workflow のトリガーフレーズが統合スキルに解決されることの検証
+    prompt: Linear の Issue をローカルに取り込んで
+    expected_skill: issue-workflow:issue-create
+    k: 3
+    tags: [issue-design]
+  - id: issue-design-ja
+    prompt: この Issue を 9 セクション構造で設計し直したい
+    expected_skill: issue-workflow:issue-design
+    k: 3
+    tags: [issue-design]
+  - id: issue-design-natural
+    prompt: 決定事項と open な判断ポイントを切り分けて Issue を設計し直したい
+    expected_skill: issue-workflow:issue-design
+    k: 3
+    tags: [issue-design]
+  - id: issue-maintain-ja
+    prompt: セッション終了前に、今日の作業内容を Issue ファイルに反映して整理して
+    expected_skill: issue-workflow:issue-maintain
+    k: 3
+  - id: follow-up-ja
+    prompt: 作業中に見つけたこれは別件だから、後でやるタスクとしてメモしておいて
+    expected_skill: issue-workflow:follow-up
+    k: 3
+  - id: knowledge-search-ja
+    prompt: 過去に似た問題を解決した知見はある？
+    expected_skill: issue-workflow:knowledge
+    k: 3
+    tags: [knowledge]
+  - id: knowledge-lint-ja
+    prompt: knowledge のリンク切れと孤立ページをチェックして
+    expected_skill: issue-workflow:knowledge-lint
+    k: 3
+    tags: [knowledge]
+  - id: knowledge-lint-natural
+    prompt: ナレッジの健全性を点検したい
+    expected_skill: issue-workflow:knowledge-lint
+    k: 3
+    tags: [knowledge]
+  - id: maintain-ja
+    prompt: プロジェクト全体を棚卸しして、放置している Issue を整理したい
+    expected_skill: issue-workflow:maintain
+    k: 3
+  - id: discover-ja
+    prompt: このプロジェクトの課題を見つけて issue を自動で作って
+    expected_skill: issue-workflow:discover
+    k: 3
+  - id: discover-natural
+    prompt: 何かやることない？バグとか未実装を洗い出して起票しといて
+    expected_skill: issue-workflow:discover
+    k: 3
+  - id: retrospective-ja
+    prompt: 今月の開発を振り返る
+    expected_skill: issue-workflow:retrospective
+    k: 3
+  - id: dashboard-ja
+    prompt: Linearのダッシュボード見せて
+    expected_skill: issue-workflow:dashboard
+    k: 3
+  - id: linear-maintain-ja
+    prompt: Linear と同期してローカルの Issue 管理ファイルを最新化して
+    expected_skill: issue-workflow:linear-maintain
+    k: 3

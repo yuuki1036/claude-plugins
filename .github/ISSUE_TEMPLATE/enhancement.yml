@@ -18,8 +18,7 @@ body:
         - failure-journal
         - feature-dev
         - guardrail-protect
-        - indie-workflow
-        - linear-workflow
+        - issue-workflow
         - living-spec-workflow
         - notebooklm-workflow
         - plugin-feedback

@@ -16,9 +16,9 @@ candidates 方式を採る理由: 失敗の大半は Claude の自己訂正で�
 
 判断軸を **「同じ状況で再発しうるか」の単一基準** に絞ることで、「これは記録すべきか」で迷わない設計にしています。
 
-## `indie-workflow:retrospective` との違い
+## `issue-workflow:retrospective` との違い
 
-| | failure-journal | indie-workflow:retrospective |
+| | failure-journal | issue-workflow:retrospective |
 |---|---|---|
 | 責務 | 再発する失敗の **機械集計と規約還流** | **主観的なセッション振り返り**・見積もり精度分析 |
 | データ | fingerprint (tag) ベースの JSON Lines | セッション単位の定性的な振り返り |
@@ -80,7 +80,7 @@ journal ディレクトリの中身を **参照してよいのは `/retro` 実�
 {"ts":"2026-05-29T12:00:00Z","plugin":"failure-journal","event":"failure:logged","payload":{"tag":"spec-skipped-without-rationale"}}
 ```
 
-これにより、plugin-feedback / linear-workflow などが subscribe して Issue 自動起票するエコシステムを組めます（subscriber は `event_bus_tail "failure:logged"` で読み出し、自前で dedup する）。
+これにより、plugin-feedback / issue-workflow などが subscribe して Issue 自動起票するエコシステムを組めます（subscriber は `event_bus_tail "failure:logged"` で読み出し、自前で dedup する）。
 
 ## 還流先の判断
 

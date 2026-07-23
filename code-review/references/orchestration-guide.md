@@ -25,7 +25,7 @@ agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRe
 PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null || echo "<番号>")
 ```
 
-## 2. Issue ファイル必読フロー（review Step 1 の任意フロー / linear-workflow・indie-workflow 併用時）
+## 2. Issue ファイル必読フロー（review Step 1 の任意フロー / issue-workflow 併用時）
 
 PR head / base branch 名から Issue ID を抽出し、ローカルの Issue ファイルがあれば agent prompt に同梱する。仕様・受入条件・設計判断を踏まえた spec-compliance 判定の精度が上がる（GitHub issue #43）。
 
@@ -35,7 +35,7 @@ HEAD_REF=$(gh pr view <PR番号> --json headRefName -q .headRefName)
 BASE_REF=$(gh pr view <PR番号> --json baseRefName -q .baseRefName)
 ISSUE_IDS=$(echo "$HEAD_REF $BASE_REF" | grep -oE '[A-Z]+-[0-9]+' | sort -u)
 
-# 2. ローカル Issue ファイル探索（linear-workflow / indie-workflow 双方）
+# 2. ローカル Issue ファイル探索（local / linear 両 backend の dir を走査）
 for ID in $ISSUE_IDS; do
   find .claude/linear -name "*.md" 2>/dev/null | xargs grep -l "$ID" 2>/dev/null
   find .claude/indie -name "*.md" 2>/dev/null | xargs grep -l "$ID" 2>/dev/null

@@ -134,4 +134,4 @@ tag: spec-skipped-without-rationale
 - **append-only**: 既存行の編集・削除は禁止。修正したい場合も新規行を追記する
 - **journal は retro 実行中のみ Read**: log-failure は append が主目的で、集計のために journal 全体を読む必要はない（fingerprint の AI 出力汚染を避ける）。Phase 0/2 での既存 tag 参照は表記揺れ防止の最小限に留める
 - **event payload は最小**: tag のみ。本文を含めると Event Bus 規約（最小 JSON）違反になる
-- **retrospective との責務分離**: 主観的なセッション振り返りは `indie-workflow:retrospective` の責務。本スキルは機械集計可能な fingerprint の記録に専念する
+- **retrospective との責務分離**: 主観的なセッション振り返りは `issue-workflow:retrospective` の責務。本スキルは機械集計可能な fingerprint の記録に専念する

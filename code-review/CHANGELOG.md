@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.37.3] - 2026-07-23
+
+### Changed
+- Issue ファイル必読フローの併用プラグイン参照を linear-workflow / indie-workflow から issue-workflow に更新（統合プラグインへの移行。dir スキャン（.claude/indie・.claude/linear）はデータ dir 温存により無改修）
+
 ## [2.37.2] - 2026-07-22
 
 ### Fixed

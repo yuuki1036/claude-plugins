@@ -17,7 +17,7 @@ allowed-tools:
 
 # Retro
 
-failure journal を集計し、再発する失敗パターンを検出して規約還流（AGENTS.md/CLAUDE.md・hook・skill）を提案するスキル。責務は「再発パターンの検出と還流」であり、主観的なセッション振り返りは対象外（`indie-workflow:retrospective` の責務）。
+failure journal を集計し、再発する失敗パターンを検出して規約還流（AGENTS.md/CLAUDE.md・hook・skill）を提案するスキル。責務は「再発パターンの検出と還流」であり、主観的なセッション振り返りは対象外（`issue-workflow:retrospective` の責務）。
 
 詳細仕様は `references/` を参照:
 
@@ -205,4 +205,4 @@ Phase 2 の集計結果から `count >= 3` の tag を抽出する。0 件なら
 - **journal / candidates は retro 実行中のみ Read**: 集計のために読むのは本スキル実行中だけ。常時 Read すると fingerprint が AI の出力に汚染され集計が不安定になる（candidates への **append** はセッション中いつでもよい — 自己申告ルールの責務。Read だけを禁じる）
 - **還流先の判断のみ**: 実際の AGENTS.md/hook/skill 編集は責務外。「どこに何を反映すべきか」の提案までを担う
 - **date の OS 差異**: 30 日境界算出は macOS BSD date (`-v-30d`) と Linux GNU date (`-d '30 days ago'`) を両対応でフォールバックする
-- **retrospective との責務分離**: 主観的なセッション振り返り・見積もり精度分析は `indie-workflow:retrospective`。本スキルは機械集計による再発検出に専念する
+- **retrospective との責務分離**: 主観的なセッション振り返り・見積もり精度分析は `issue-workflow:retrospective`。本スキルは機械集計による再発検出に専念する

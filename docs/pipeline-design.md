@@ -10,7 +10,7 @@
 | 2 | 2 軸スコア化 | 結論には confidence(0-100) と severity を独立フィールドで付与し、報告閾値をマトリクスで決める | `code-review/references/scoring-guide.md` |
 | 3 | 段階予算 | `${CLAUDE_EFFORT}` → (agent 数 / 反復回数 / 起票数) をマッピング。low は速度優先・high 以上で多重化 | `feature-dev/references/triage-guide.md` |
 | 4 | モデルルーティング | 探索=弱モデル / 判断・検証・独立検証=強モデル / 統合・メタレビュー=別系統モデル（下表） | 本節の下表 |
-| 5 | 暴走ガード | 予算上限・最大反復・同一 fingerprint 再試行抑制の三点セットを PoC 段階から装備 | `indie-workflow/skills/indie-issue-discover` |
+| 5 | 暴走ガード | 予算上限・最大反復・同一 fingerprint 再試行抑制の三点セットを PoC 段階から装備 | `issue-workflow/skills/discover` |
 | 6 | 証拠ラダー | 単発の指摘は蓄積し、閾値超で下流の高コスト処理や規約/hook に昇格させる | `failure-journal` |
 | 7 | 敵対的独立検証 | 高リスク結論は別モデル・別コンテキストで反証。**発見者の推論を検証者に見せない**（迎合防止） | `code-review` 反証レイヤー |
 | 8 | 外部オラクル + fail-closed | 型/テスト/コンパイル/実行の**機械判定**で客観検証し、LLM に投げる前に落とす。曖昧・エラー時は保守側（不可/保留）に倒す | — |

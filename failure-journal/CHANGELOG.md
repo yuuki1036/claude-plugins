@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.1] - 2026-07-23
+
+### Changed
+- retrospective 連携の参照先を `indie-workflow:retrospective` から `issue-workflow:retrospective` に更新（linear/indie 統合プラグインへの移行。README / log-failure / retro）
+
 ## [0.3.0] - 2026-07-23
 
 ### Added
