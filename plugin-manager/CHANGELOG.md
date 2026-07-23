@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.8.1] - 2026-07-23
+
+### Fixed
+- **SessionStart 通知が「後継の直接 install」を勧めて併存禁止状態に誘導し得た穴を修正**。インストール済み deprecated の後継プラグインは通常の「/plugin install」提案から分離し、「/update-all を実行（自動移行が走る）」への誘導として通知する
+- check-missing-plugins.sh: bash 3.2 の `set -u` で空配列 `"${arr[@]}"` 展開が unbound variable になり state 記録が落ちるバグを修正（`${arr[@]+...}` ガード）
+
 ## [1.8.0] - 2026-07-23
 
 ### Added

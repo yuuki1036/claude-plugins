@@ -52,6 +52,7 @@ now_iso=$(date -u "+%Y-%m-%dT%H:%M:%SZ")
 installed_set=$(jq -r '.plugins // {} | keys[]' "$INSTALLED_FILE" 2>/dev/null | sort -u)
 
 filtered=()
+migrate_hints=()
 
 shopt -s nullglob
 for mp_json in "$MARKETPLACES_DIR"/*/.claude-plugin/marketplace.json; do
@@ -64,6 +65,16 @@ for mp_json in "$MARKETPLACES_DIR"/*/.claude-plugin/marketplace.json; do
   # _superseded_by 付き（= deprecated）は提案から除外する（deprecated の新規 install を勧めない）
   mp_plugins_sorted=$(jq -r --arg mp "$mp_name" '.plugins[]? | select(._superseded_by | not) | .name // empty | "\(.)@\($mp)"' "$mp_json" 2>/dev/null | sort -u)
   [ -z "$mp_plugins_sorted" ] && continue
+
+  # インストール済み deprecated の後継名を収集（後継の直接 install 提案は併存誘発なので update-all 移行に誘導する）
+  mp_migr_succ=""
+  while IFS=$'\t' read -r dep_id succ; do
+    [ -z "$dep_id" ] && continue
+    if printf '%s\n' "$installed_set" | grep -qxF "$dep_id"; then
+      mp_migr_succ="${mp_migr_succ}${succ}
+"
+    fi
+  done < <(jq -r --arg mp "$mp_name" '.plugins[]? | select(._superseded_by) | "\(.name)@\($mp)\t\(._superseded_by)"' "$mp_json" 2>/dev/null)
 
   mp_total=$(printf '%s\n' "$mp_plugins_sorted" | wc -l | tr -d ' ')
   mp_installed=$(comm -12 <(printf '%s\n' "$mp_plugins_sorted") <(printf '%s\n' "$installed_set") | wc -l | tr -d ' ')
@@ -90,22 +101,39 @@ for mp_json in "$MARKETPLACES_DIR"/*/.claude-plugin/marketplace.json; do
       fi
     fi
 
+    bare_name="${plugin%@*}"
+    if [ -n "$mp_migr_succ" ] && printf '%s' "$mp_migr_succ" | grep -qxF "$bare_name"; then
+      migrate_hints+=("$plugin")
+      continue
+    fi
+
     filtered+=("$plugin")
   done < <(comm -23 <(printf '%s\n' "$mp_plugins_sorted") <(printf '%s\n' "$installed_set"))
 done
 
-[ "${#filtered[@]}" -eq 0 ] && exit 0
+[ "${#filtered[@]}" -eq 0 ] && [ "${#migrate_hints[@]}" -eq 0 ] && exit 0
 
-safe_hook_emit "ℹ️  marketplace に未インストールのプラグインがあります:"
-for plugin in "${filtered[@]}"; do
-  safe_hook_emit "  - ${plugin}"
-done
-safe_hook_emit ""
-safe_hook_emit "  インストール: /plugin install <name>@<marketplace>"
+if [ "${#migrate_hints[@]}" -gt 0 ]; then
+  safe_hook_emit "ℹ️  deprecated プラグインの後継が未インストールです。直接 install せず /update-all を実行してください（旧プラグインを uninstall してから後継を install する自動移行が走ります。併存は hook 二重発火・トリガー衝突の原因）:"
+  for plugin in "${migrate_hints[@]}"; do
+    safe_hook_emit "  - ${plugin}"
+  done
+  safe_hook_emit ""
+fi
+
+if [ "${#filtered[@]}" -gt 0 ]; then
+  safe_hook_emit "ℹ️  marketplace に未インストールのプラグインがあります:"
+  for plugin in "${filtered[@]}"; do
+    safe_hook_emit "  - ${plugin}"
+  done
+  safe_hook_emit ""
+  safe_hook_emit "  インストール: /plugin install <name>@<marketplace>"
+fi
 safe_hook_emit "  抑止: ~/.claude/plugin-manager/config.json (ignore_plugins / ignore_marketplaces / install_ratio_threshold)"
 
 tmp_state=$(mktemp 2>/dev/null) || tmp_state="${STATE_FILE}.tmp"
-plugins_json=$(printf '%s\n' "${filtered[@]}" | jq -R . | jq -s .)
+# bash 3.2 の set -u は空配列の "${arr[@]}" 展開を unbound 扱いするため ${arr[@]+...} でガードする
+plugins_json=$(printf '%s\n' ${filtered[@]+"${filtered[@]}"} ${migrate_hints[@]+"${migrate_hints[@]}"} | grep -v '^$' | jq -R . | jq -s .)
 jq --arg now "$now_iso" --argjson plugins "$plugins_json" \
   '.last_notified = (.last_notified // {}) + ($plugins | map({key: ., value: $now}) | from_entries)' \
   "$STATE_FILE" > "$tmp_state" 2>/dev/null && mv "$tmp_state" "$STATE_FILE" || rm -f "$tmp_state"
