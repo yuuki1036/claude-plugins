@@ -16,8 +16,6 @@
 #      - safe-hook.sh canonical と replica の byte-identical
 #      - SKILL.md の ${CLAUDE_PLUGIN_ROOT}/... 参照の実在
 #      - SKILL.md description の「トリガー:」存在
-#   2.5. sync-linear-from-indie.sh --check
-#      - indie 正本と linear 側共有ファイル（10 件）の drift 検出
 #   3. claude plugin validate
 #      - plugin.json の CLI スキーマバリデーション（_requirements 警告は除外）
 #
@@ -68,11 +66,6 @@ if command -v python3 >/dev/null 2>&1; then
   if ! PQ_OUT="$(python3 "$REPO_ROOT/.claude-plugin/scripts/validate_plugin_quality.py" 2>&1)"; then
     ISSUES="${ISSUES}${PQ_OUT}\n"
   fi
-fi
-
-# 2.5. indie/linear 共有ファイルの drift チェック
-if ! SYNC_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/sync-linear-from-indie.sh" --check 2>&1)"; then
-  ISSUES="${ISSUES}${SYNC_OUT}\n"
 fi
 
 # 3. claude plugin validate（_requirements 警告は仕様により除外）

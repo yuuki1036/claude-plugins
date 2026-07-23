@@ -221,7 +221,7 @@ spec ルーティング 3 軸コア（WHAT→bdd-spec / HOW→design-doc / WHY�
 **対象**:
 
 - 正本: `.claude-plugin/lib/routing-axes.md`
-- 消費サイト: `spec-advisor/skills/spec-advise/references/routing-rubric.md` / `linear-workflow/skills/issue-create/SKILL.md`（Phase 5）/ `indie-workflow/skills/indie-issue-create/SKILL.md`（Phase 8）
+- 消費サイト: `spec-advisor/skills/spec-advise/references/routing-rubric.md` / `issue-workflow/skills/issue-create/SKILL.md`（Phase 8）
 
 **チェック**:
 
@@ -229,24 +229,6 @@ spec ルーティング 3 軸コア（WHAT→bdd-spec / HOW→design-doc / WHY�
 - マーカー区間の内容が **dedent 後に**正本と一致するか（消費サイトはリスト内などで一様なインデントを付けてよい。それ以外の差分は fail）
 
 **不一致は軸→プラグイン対応のサイレントなドリフトを生むため Critical。** 区間を編集するときは正本と全消費サイトを同時更新する。区間外の type 別判定・拡張軸は各サイトの文脈特化で比較対象外（設計判断: `.claude/designs/20260708-spec-routing-ssot.md`）。
-
-### 15c. linear/indie ミラー対称性チェック（Warning）
-
-linear-workflow と indie-workflow はミラー構造（共通機能は片方の変更を必ず他方へ対称反映する規約）。片側だけに skill が追加・削除される「取り残し」を機械検出する。中核は `validate_plugin_quality.py` の `check_mirror_symmetry()` が決定的に実行する（非ブロッキング warning）。
-
-**対応表（正本はスクリプト内）**:
-
-- `MIRROR_SKILL_PAIRS`: 命名が異なるミラーペア（linear skill 名 → indie skill 名。例 `issue-create` → `indie-issue-create` / `session-start` → `indie-start`）
-- `MIRROR_INTENTIONAL_LINEAR_ONLY`: linear のみの意図的非対称（`dashboard` = indie-start が兼務）
-- `MIRROR_INTENTIONAL_INDIE_ONLY`: indie のみの意図的非対称（`indie-issue-discover` / `retrospective`）
-
-**検出内容**:
-
-- **ペアの片側欠落**: 対応表にあるのに一方の SKILL.md が存在しない（取り残し疑い）
-- **未分類 skill**: 対応表にも except にも載らない skill（新規に片側だけ追加された疑い）→ 対称実装するか対応表/except に登録
-- **対応表/except の stale**: 登録されているが実在しない skill（掃除対象）
-
-**対象範囲**: skill の存在・分類の対称性に絞る。構造差分（Phase 構成・dormant 連携・frontmatter フィールド）は偽陽性が多いため対象外で人手判断に残す（段階導入の余地）。片方のプラグインが未導入なら検証しない（後方互換・プラグイン独立性）。
 
 ### 16. 変更差分のセルフレビュー（条件付き）
 

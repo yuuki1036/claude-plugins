@@ -4,8 +4,7 @@ WHAT / HOW / WHY の軸→プラグイン対応の正本。下の delimiter 区�
 
 - 消費サイト:
   - `spec-advisor/skills/spec-advise/references/routing-rubric.md`
-  - `linear-workflow/skills/issue-create/SKILL.md`（Phase 5）
-  - `indie-workflow/skills/indie-issue-create/SKILL.md`（Phase 8）
+  - `issue-workflow/skills/issue-create/SKILL.md`（Phase 8）
 - 同期検証: `validate_plugin_quality.py` の routing-axes 同期チェック（Critical）。
   マーカー行（`ROUTING-AXES:START` / `END`）に挟まれた区間を **dedent 後に比較**する
   （消費サイト側はリスト内などで一様なインデントを付けてよい。それ以外の差分は fail）。
