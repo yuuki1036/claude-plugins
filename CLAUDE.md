@@ -38,7 +38,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | linear-workflow | 10 | 10 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | **deprecated** → issue-workflow へ移行（全マシン移行後に削除） |
 | indie-workflow | 11 | 11 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | **deprecated** → issue-workflow へ移行（全マシン移行後に削除） |
 | issue-workflow | 13 | 13 | 4 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | Issue 管理（linear/indie 統合後継。backend 自動判定・移行中） |
-| plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + 後発追加の取りこぼし通知 |
+| plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + deprecated の自動移行（_superseded_by）+ 後発追加通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 | feature-dev | 1 | - | 2 | SessionStart | 8 phase 機能開発ワークフロー（spec 品質ゲート・G-V fix ループ・self-review 委譲） |
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（notebooklm-mcp-cli を .mcp.json で同梱） |

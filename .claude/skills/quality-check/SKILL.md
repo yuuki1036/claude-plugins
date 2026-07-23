@@ -34,7 +34,7 @@ allowed-tools:
 `claude plugin validate {plugin-dir}` を各プラグインに対して実行し、スキーマエラーがないか確認。
 
 - CLI のビルトインバリデーターが plugin.json のスキーマ整合性を検証する
-- `_requirements` の "Unrecognized key" 警告は無視する（自前の拡張フィールドのため）
+- `_requirements` / `_superseded_by` の "Unrecognized key" / "Unknown field" 警告は無視する（自前の拡張フィールドのため）
 - それ以外のエラーがあればインストール不可のため Critical
 - **このチェックで失敗したプラグインは後続チェックも実行するが、スキーマ修正が最優先**
 

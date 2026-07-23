@@ -2,7 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
-## [1.7.3] - 2026-07-22
+## [1.8.0] - 2026-07-23
+
+### Added
+- **update-all に deprecated プラグインの自動移行（auto-migrate）を追加**。marketplace エントリの `_superseded_by`（機械可読な後継宣言）を検出したら、更新の代わりに「同一後継を持つ deprecated 群を全て uninstall → 後継を install」を原子的に実行する（併存禁止プラグインの同時 install を構造的に回避）。後継が既に install 済みなら deprecated の uninstall のみ。後継の install 失敗時は旧プラグインを再 install してロールバック。`~/.claude/plugin-manager/config.json` の `auto_migrate: false` で無効化可能
+- Phase 4.7 の未インストール検出と SessionStart hook（check-missing-plugins.sh）が `_superseded_by` 付き（= deprecated）プラグインを提案から除外するようになった（deprecated の新規 install を勧めない）
+
+## [1.7.3]## [1.7.3] - 2026-07-22
 
 ### Fixed
 - **safe-hook.sh: `event_bus_publish` の payload 省略時デフォルトが壊れた JSON になるバグを修正**（`${2:-{\}}` が `{}` でなく文字列 `{\}` に展開され invalid JSON 行が書かれていた。正本 `.claude-plugin/lib/safe-hook.sh` の修正を全プラグインへ同期）

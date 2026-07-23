@@ -61,7 +61,8 @@ for mp_json in "$MARKETPLACES_DIR"/*/.claude-plugin/marketplace.json; do
   ignore_mp=$(jq -nr --argjson ig "$ignore_marketplaces_json" --arg p "$mp_name" '$ig | map(. == $p) | any')
   [ "$ignore_mp" = "true" ] && continue
 
-  mp_plugins_sorted=$(jq -r --arg mp "$mp_name" '.plugins[]?.name // empty | "\(.)@\($mp)"' "$mp_json" 2>/dev/null | sort -u)
+  # _superseded_by 付き（= deprecated）は提案から除外する（deprecated の新規 install を勧めない）
+  mp_plugins_sorted=$(jq -r --arg mp "$mp_name" '.plugins[]? | select(._superseded_by | not) | .name // empty | "\(.)@\($mp)"' "$mp_json" 2>/dev/null | sort -u)
   [ -z "$mp_plugins_sorted" ] && continue
 
   mp_total=$(printf '%s\n' "$mp_plugins_sorted" | wc -l | tr -d ' ')

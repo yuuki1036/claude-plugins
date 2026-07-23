@@ -11,7 +11,17 @@
 
 `/update-all` は「自作マーケットプレイス」（このコマンドが属するマーケットプレイス）に絞って更新する。全件更新したい場合のみ `--all` を付ける。更新後は Before/After バージョンと更新済みプラグインの CHANGELOG 抜粋を結果テーブルで報告する。
 
-更新実行時、自作マーケットプレイスに登録済みだが未インストールのプラグインがあれば併せて通知する（後発追加の取りこぼし防止。`update-all` は更新専用のため自動導入はしない）。
+更新実行時、自作マーケットプレイスに登録済みだが未インストールのプラグインがあれば併せて通知する（後発追加の取りこぼし防止。deprecated（`_superseded_by` 付き）は提案から除外。`update-all` は更新専用のため自動導入はしない）。
+
+## deprecated プラグインの自動移行（auto-migrate）
+
+marketplace エントリに `_superseded_by: "<後継名>"` を持つ deprecated プラグインがインストールされている場合、`/update-all` は更新の代わりに**自動移行**する:
+
+1. 同一後継を持つ deprecated 群を全て uninstall
+2. 後継プラグインを install（既に install 済みなら uninstall のみ = 併存解消）
+3. 後継の install 失敗時は旧プラグインを再 install してロールバック
+
+併存が禁止されているプラグイン群（hook 二重発火・トリガー衝突）を中間状態なしで入れ替えるための機構。`~/.claude/plugin-manager/config.json` の `auto_migrate: false` で無効化できる。
 
 ## SessionStart 通知
 

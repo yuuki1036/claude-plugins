@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.40.7] - 2026-07-23
+
+### Added
+- plugin.json / marketplace エントリに `_superseded_by: "issue-workflow"` を追加（機械可読な後継宣言）。plugin-manager 1.8.0 の update-all がこれを検出して自動移行（旧 uninstall → issue-workflow install）する
+
 ## [1.40.6] - 2026-07-23
 
 ### Deprecated

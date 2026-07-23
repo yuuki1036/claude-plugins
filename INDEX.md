@@ -22,13 +22,13 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [failure-journal](#failure-journal) | 0.3.1 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.11.2 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.1 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
-| [indie-workflow](#indie-workflow) | 1.40.6 | 11 | 11 | 3 | 5 events | - | **deprecated** → issue-workflow へ移行 |
+| [indie-workflow](#indie-workflow) | 1.40.7 | 11 | 11 | 3 | 5 events | - | **deprecated** → issue-workflow へ移行 |
 | [issue-workflow](#issue-workflow) | 1.2.1 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
-| [linear-workflow](#linear-workflow) | 1.37.5 | 10 | 10 | 3 | 4 events | - | **deprecated** → issue-workflow へ移行 |
+| [linear-workflow](#linear-workflow) | 1.37.6 | 10 | 10 | 3 | 4 events | - | **deprecated** → issue-workflow へ移行 |
 | [living-spec-workflow](#living-spec-workflow) | 0.3.1 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.7 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.9 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
-| [plugin-manager](#plugin-manager) | 1.7.3 | 1 | - | - | SessionStart | - | プラグイン一括更新・後発追加通知 |
+| [plugin-manager](#plugin-manager) | 1.8.0 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
 | [spec-advisor](#spec-advisor) | 0.1.4 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.8.1 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 

@@ -8,7 +8,9 @@ linear-workflow / indie-workflow → issue-workflow の移行状況をマシン�
 
 ## 移行手順（各マシンで連続実行する）
 
-**新旧の同時 install は禁止**（issue-workflow は indie 母体のため、同居すると SessionStart / FileChanged / PostToolUse hook が同一 `.claude/indie` に対して二重発火し、prefix なし統一名によりトリガーフレーズも衝突する）。
+**推奨: `/update-all` による自動移行**（plugin-manager 1.8.0+）。update-all が旧 2 プラグインの `_superseded_by: issue-workflow` を検出し、「旧 2 つを uninstall → issue-workflow を install」を自動で原子的に実行する。plugin-manager が 1.7.x のマシンでは、初回の `/update-all` で plugin-manager 自体が 1.8.0 に更新されるので、**再起動後にもう一度 `/update-all`** を実行すると移行が走る。
+
+手動で行う場合は以下のとおり。**新旧の同時 install は禁止**（issue-workflow は indie 母体のため、同居すると SessionStart / FileChanged / PostToolUse hook が同一 `.claude/indie` に対して二重発火し、prefix なし統一名によりトリガーフレーズも衝突する）。
 
 ```bash
 claude plugin uninstall linear-workflow

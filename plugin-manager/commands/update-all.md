@@ -56,6 +56,26 @@ Phase 0 で実行した `claude plugin list` の出力を再利用し、Phase 0 
 >   Scope: user
 > ```
 
+### Phase 2.5: deprecated プラグインの自動移行（auto-migrate）
+
+marketplace が後継プラグインを宣言している deprecated プラグインを検出し、更新の代わりに移行する。
+
+1. **opt-out 確認**: `~/.claude/plugin-manager/config.json` の `auto_migrate` が `false` なら本 Phase をスキップし、検出結果だけ Phase 5 で「移行候補（auto_migrate=false のためスキップ）」として報告する（既定は有効）。
+2. **検出**: Phase 1 で最新化した各マーケットプレイスの `~/.claude/plugins/marketplaces/<mp-name>/.claude-plugin/marketplace.json` を読み、Phase 2 の対象プラグインのうち **エントリに `_superseded_by` を持つもの**を抽出する:
+
+```bash
+jq -r '.plugins[] | select(._superseded_by) | "\(.name)	\(._superseded_by)"' "$MP_JSON"
+```
+
+3. **後継ごとにグループ化して移行を原子的に実行する**（同一後継を持つ deprecated 群は、後継の hook・トリガーと衝突するため「全部 uninstall → 後継を 1 回 install」の順序を厳守。片方だけ uninstall した中間状態で止めない）:
+   1. グループ内の deprecated プラグインを全て uninstall する（Phase 3-1 と同じフォールバック chain を使う）
+   2. 後継 `<successor>@<marketplace>` が未インストールなら install する（既にインストール済みなら uninstall のみで完了 = 併存状態の解消）
+   3. **ロールバック**: 後継の install に失敗した場合、直前に uninstall した deprecated 群を元のバージョンで再 install し、エラーとして報告する（プラグインが 1 つも無い状態で放置しない）
+4. 移行したプラグインは Phase 3 の更新対象から除外する。
+5. 移行結果（deprecated 群 → 後継、uninstall/install の成否）を Phase 5 の報告に渡す。
+
+> 例: linear-workflow / indie-workflow は `_superseded_by: "issue-workflow"` を宣言しており、どちらか（または両方）がインストール済みのマシンでは update-all 実行時に自動で issue-workflow へ移行される。
+
 ### Phase 3: 各プラグインの再インストール
 
 CLI の競合を避けるため順次実行（並列不可）。
@@ -106,6 +126,7 @@ cat ~/.claude/plugins/cache/<marketplace-name>/<plugin-name>/<After-version>/CHA
 1. Phase 0 で記録した自作マーケットプレイス名に対応する `marketplace.json` を特定し、登録済み全プラグインの `name@marketplace` 一覧を取得する。
 2. インストール済み一覧（`installed_plugins.json` の keys）と突き合わせ、差分（＝登録済みだが未インストール）を抽出する。
 3. SessionStart hook と挙動を揃えるため、`~/.claude/plugin-manager/config.json` の `ignore_plugins` / `ignore_marketplaces` を尊重して除外する（cooldown / install_ratio 閾値は update-all では適用しない＝明示実行なので毎回検出する）。
+4. **`_superseded_by` を持つ（= deprecated な）未インストールプラグインは提案から除外する**（deprecated の新規 install を勧めない）。
 
 ```bash
 MP_NAME="<Phase 0 で記録した自作マーケットプレイス名>"
@@ -126,7 +147,7 @@ if [ -n "$MP_JSON" ] && [ -f "$INSTALLED_FILE" ]; then
     ignore_marketplaces_json=$(jq -c '.ignore_marketplaces // []' "$CONFIG_FILE" 2>/dev/null || echo '[]')
   fi
   if [ "$(jq -nr --argjson ig "$ignore_marketplaces_json" --arg p "$MP_NAME" '$ig|map(.==$p)|any')" != "true" ]; then
-    registered=$(jq -r --arg mp "$MP_NAME" '.plugins[]?.name // empty | "\(.)@\($mp)"' "$MP_JSON" 2>/dev/null | sort -u)
+    registered=$(jq -r --arg mp "$MP_NAME" '.plugins[]? | select(._superseded_by | not) | .name // empty | "\(.)@\($mp)"' "$MP_JSON" 2>/dev/null | sort -u)
     installed=$(jq -r '.plugins // {} | keys[]' "$INSTALLED_FILE" 2>/dev/null | sort -u)
     comm -23 <(printf '%s\n' "$registered") <(printf '%s\n' "$installed") | while IFS= read -r p; do
       [ -z "$p" ] && continue
@@ -151,6 +172,11 @@ fi
 | name@marketplace | 1.0.0 | 1.1.0 | 更新済み |
 | name@marketplace | 1.0.0 | 1.0.0 | 変更なし |
 | name@marketplace | 1.0.0 | - | エラー |
+
+### 移行（deprecated → 後継）
+
+- linear-workflow, indie-workflow → issue-workflow へ移行しました（uninstall → install）
+- 反映には Claude Code の再起動が必要です
 
 ### 更新内容
 
@@ -179,6 +205,7 @@ fi
 - Before と After のバージョンが同じ → **変更なし**
 - install に失敗した → **エラー**（After は `-` と表示）
 
+「移行」セクションは Phase 2.5 で移行（または移行候補の検出）が 1 件以上ある場合のみ表示する。
 「更新内容」セクションは更新済みプラグインが1つ以上ある場合のみ表示する。
 全プラグインが「変更なし」の場合はこのセクションを省略する。
 

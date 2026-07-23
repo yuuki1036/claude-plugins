@@ -3,7 +3,12 @@
   "title": "Claude Code Plugin Manifest",
   "description": "SSoT: このスキーマは {plugin-name}/.claude-plugin/plugin.json の検証に用いる。marketplace.json / check-deps.sh はここから派生する",
   "type": "object",
-  "required": ["name", "version", "description", "author"],
+  "required": [
+    "name",
+    "version",
+    "description",
+    "author"
+  ],
   "additionalProperties": false,
   "properties": {
     "name": {
@@ -23,9 +28,13 @@
     },
     "author": {
       "type": "object",
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
-        "name": { "type": "string" }
+        "name": {
+          "type": "string"
+        }
       }
     },
     "_requirements": {
@@ -33,16 +42,31 @@
       "description": "外部依存の宣言。hooks/scripts/check-deps.sh と同期必須",
       "items": {
         "type": "object",
-        "required": ["name", "type", "required", "description"],
+        "required": [
+          "name",
+          "type",
+          "required",
+          "description"
+        ],
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string" },
+          "name": {
+            "type": "string"
+          },
           "type": {
             "type": "string",
-            "enum": ["mcp_server", "cli_tool", "plugin"]
+            "enum": [
+              "mcp_server",
+              "cli_tool",
+              "plugin"
+            ]
           },
-          "required": { "type": "boolean" },
-          "description": { "type": "string" }
+          "required": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          }
         }
       }
     },
@@ -51,16 +75,40 @@
       "description": "ユーザー設定可能なオプション",
       "additionalProperties": {
         "type": "object",
-        "required": ["title", "description", "type"],
+        "required": [
+          "title",
+          "description",
+          "type"
+        ],
         "properties": {
-          "title": { "type": "string" },
-          "description": { "type": "string" },
-          "type": { "type": "string", "enum": ["string", "number", "boolean"] },
-          "required": { "type": "boolean" },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
           "default": {},
-          "sensitive": { "type": "boolean" }
+          "sensitive": {
+            "type": "boolean"
+          }
         }
       }
+    },
+    "_superseded_by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "後継プラグイン名（deprecated 時のみ）。plugin-manager の update-all が自動移行（旧 uninstall → 後継 install）に使う"
     }
   }
 }

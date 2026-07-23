@@ -36,20 +36,22 @@
     {
       "name": "linear-workflow",
       "description": "【deprecated: issue-workflow へ移行してください（同一マシンでの新旧同時 install 禁止。旧 2 つを uninstall → issue-workflow を install）】Linear MCP連携のプロジェクト・Issue管理ワークフロー。セッション開始からIssue作成、メンテナンス、Linear同期まで一貫管理。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.37.5",
+      "version": "1.37.6",
       "author": {
         "name": "yuki"
       },
-      "source": "./linear-workflow"
+      "source": "./linear-workflow",
+      "_superseded_by": "issue-workflow"
     },
     {
       "name": "indie-workflow",
       "description": "【deprecated: issue-workflow へ移行してください（同一マシンでの新旧同時 install 禁止。旧 2 つを uninstall → issue-workflow を install）】個人開発向けローカル Issue 管理ワークフロー。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。AI が多観点スキャンで課題を発見し issue を自動起票（indie-issue-discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.40.6",
+      "version": "1.40.7",
       "author": {
         "name": "yuki"
       },
-      "source": "./indie-workflow"
+      "source": "./indie-workflow",
+      "_superseded_by": "issue-workflow"
     },
     {
       "name": "issue-workflow",
@@ -63,7 +65,7 @@
     {
       "name": "plugin-manager",
       "description": "インストール済みプラグインの一括更新と、ほぼ全部 install しているマーケットプレイスの後発追加プラグイン取りこぼし通知（SessionStart hook）",
-      "version": "1.7.3",
+      "version": "1.8.0",
       "author": {
         "name": "yuki"
       },

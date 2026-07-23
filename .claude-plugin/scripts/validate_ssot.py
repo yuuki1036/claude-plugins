@@ -5,7 +5,7 @@ plugin.json を SSoT として、marketplace.json / check-deps.sh / hooks.json �
 
 検証内容:
   1. スキーマ準拠 (jsonschema が無い環境では最小限の構造チェックに fallback)
-  2. marketplace.json の plugins[*] と各 plugin.json の name/version/description 一致
+  2. marketplace.json の plugins[*] と各 plugin.json の name/version/description/_superseded_by 一致
   3. plugin.json の _requirements と hooks/scripts/check-deps.sh の登場名一致
   4. source ディレクトリと plugin.json の存在一致
   5. INDEX.md / CLAUDE.md のプラグイン記載が plugin.json と整合
@@ -120,7 +120,7 @@ def check_marketplace_sync(manifests: dict[str, dict], errors: list[str]) -> Non
         if name not in manifests:
             continue
         m = manifests[name]
-        for field in ("version", "description"):
+        for field in ("version", "description", "_superseded_by"):
             mp_val = entry.get(field)
             pj_val = m.get(field)
             if mp_val != pj_val:
