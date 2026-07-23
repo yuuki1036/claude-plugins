@@ -1,6 +1,8 @@
 # Transcript Salvage
 
-retro の Phase 0.5（未起票失敗のサルベージ）の仕様。
+retro の Phase 0.6（transcript サルベージ・**フォールバック**）の仕様。
+
+> **位置づけ（0.3.0 で降格）**: 一次の取りこぼし回収は Phase 0.5 の candidates レビュー（SessionStart 注入の自己申告ルールが起票源）に移った。本手順は「candidates が 0 件の期間（ルール導入前・未浸透環境）」と「`--salvage` 明示時」のみ実行する。理由: 本手順は precision ~35%・sidechain 盲点・transcript 30 日消滅・マシンローカルという構造制約を持ち、自己申告が機能している環境では重ねる価値が薄い。
 
 ## なぜ必要か
 

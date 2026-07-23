@@ -46,7 +46,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 | doc-freshness | 1 | 1 | - | PostToolUse, SessionStart | frontmatter による project doc の鮮度機械強制（走査 + hook 検知 + stale 通知） |
 | bdd-spec | 2 | 2 | - | - | BDD spec の scaffold（create）と 5 観点静的レビュー（evaluate）の責務分離ペア |
 | adr-keeper | 1 | 1 | - | - | 設計判断 (ADR) の append-only 蓄積と supersede 機械化 |
-| failure-journal | 2 | 2 | - | SessionStart | 再発失敗の fingerprint 集計と閾値超えの規約還流提案 |
+| failure-journal | 2 | 2 | - | SessionStart, PostCompact | 再発失敗の fingerprint 集計と閾値超えの規約還流提案（自己訂正の candidates 自己申告つき） |
 | writing-polish | 1 | 1 | - | - | 文章の語句レベル推敲（最小差分 diff → 採否、過剰修正抑制、日英対応） |
 | design-doc | 2 | 2 | 1 | - | 技術設計書の作成・永続化・supersede・多視点レビュー（実装ブリッジ必須） |
 | spec-advisor | 1 | 1 | - | SessionStart | タスク内容から設計系成果物（WHAT/HOW/WHY）を判断して実装前に提案 |

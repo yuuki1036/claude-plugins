@@ -2,7 +2,8 @@
 name: retro
 description: >
   failure journal を集計し、直近 30 日で同一 tag が 3 回以上再発したパターンを抽出して規約還流提案を生成する。
-  集計前に transcript を走査して未起票の失敗をサルベージし、手動起票の取りこぼしを回収する。
+  集計前に candidates.jsonl（セッション中の自己訂正を Claude 自身が記録した候補）をレビューして journal に昇格し、
+  候補が無い期間は transcript サルベージにフォールバックして取りこぼしを回収する。
   閾値超え tag ごとに「AGENTS.md/CLAUDE.md・hook・skill のどれに反映すべきか」と「既存ガードレールでカバーできていない理由」を出力する。
   トリガー: 「retro」「振り返り集計」「再発パターン抽出」「failure 集計」
   「同じ失敗を何回踏んだ」「規約還流」「未起票の失敗を拾って」「/retro」
@@ -33,9 +34,24 @@ failure journal を集計し、再発する失敗パターンを検出して規�
 
 ---
 
-## Phase 0.5: 未起票失敗のサルベージ
+## Phase 0.5: 候補レビュー（candidates → journal 昇格）
 
-log-failure は手動起票のため、**Claude が自己訂正した失敗は人間の目に触れず journal に入らない**（実測の起票率 ≒2.5%）。集計前に transcript を走査して取りこぼしを回収する。
+log-failure は手動起票のため、**Claude が自己訂正した失敗は人間の目に触れず journal に入らない**（実測の起票率 ≒2.5%）。このギャップは SessionStart hook が注入する自己申告ルール（`rules/self-report-rule.md`）で埋める: Claude は自己訂正した瞬間に `.claude/failure-journal/candidates.jsonl` へ候補を 1 行 append しており、本 Phase はその候補を承認レビューで journal に昇格する。
+
+1. `candidates.jsonl` の `verdict: null` 行を読み込む（ファイル不在・0 件なら Phase 0.6 へ）
+2. 各候補を log-failure と同じ単一基準（**同じ状況で再発しうるか**）で REAL / NOISE に分類し、一覧提示して承認を得る
+3. 承認された REAL は tag 規約（`../log-failure/references/journal-schema.md`）に従って tag を付与し journal へ append する。`timestamp` は候補の `ts` を使う。既存 journal とは tag の意味的一致で重複排除する
+4. **レビューした全行に verdict を書き戻す**（`accepted` / `rejected`）。却下候補が次回 retro で再浮上するのを防ぐ（旧 transcript サルベージ設計の既知の穴への対処）
+   - `candidates.jsonl` は journal と違い append-only ではない。ただし許可されるのは **verdict フィールドの書き戻しのみ**（行の削除・summary の書き換えはしない）
+
+> candidates が 1 件以上あった場合、Phase 0.6 のサルベージは既定でスキップする（自己申告ルールが機能している環境では、precision 35% の transcript 走査を重ねる価値が薄い）。
+
+## Phase 0.6: transcript サルベージ（フォールバック）
+
+以下の**いずれか**の場合のみ実行する（該当しなければ skip して Phase 1 へ）:
+
+- 引数 `--salvage` が明示された（candidates と併用して網羅性を上げたいとき）
+- Phase 0.5 の候補が 0 件だった（自己申告ルール導入前の期間・ルール未浸透環境の後方互換）
 
 手順の詳細は `references/transcript-salvage.md`。要点:
 
@@ -64,7 +80,9 @@ log-failure は手動起票のため、**Claude が自己訂正した失敗は�
 
 > **打ち切りは必ず可視化する**（`log()` 相当の明示）。黙って上位 N 件に絞ると「これで全部」と読まれる。
 
-引数 `--no-salvage` が指定された場合、または transcript ディレクトリが存在しない場合は本 Phase をスキップして Phase 1 へ進む。**ただしディレクトリ不在は無言でスキップせず、探したパスを提示する**（slug 導出ミスが「失敗 0 件」に化けるのを防ぐため）。
+引数 `--no-salvage` が指定された場合、または transcript ディレクトリが存在しない場合は本 Phase をスキップして Phase 1 へ進む（`--no-salvage` でも Phase 0.5 の候補レビューは実行する）。**ただしディレクトリ不在は無言でスキップせず、探したパスを提示する**（slug 導出ミスが「失敗 0 件」に化けるのを防ぐため）。
+
+> **既知の盲点（sidechain）**: subagent は SessionStart ルールを受けないため候補を書かない。subagent 内の失敗は candidates に載らず、transcript サルベージも `isSidechain != true` で除外している（意図的。agent プロンプトの誤検出回避を優先）。多段 agent スキル内の失敗はオーケストレーターが訂正した時点で候補化されることに期待する設計。
 
 ---
 
@@ -168,22 +186,23 @@ Phase 2 の集計結果から `count >= 3` の tag を抽出する。0 件なら
 
 ```
 1. Phase 0:   journal 読み込み（retro 実行中のみ Read）
-2. Phase 0.5: 未起票失敗のサルベージ（transcript 走査 → LLM 分類 → 承認 → append）
-3. Phase 1:   窓・閾値の決定（30 日 / 3 回）
-4. Phase 2:   tag 別集計（jq、30 日境界フィルタ → group → count）
-5. Phase 3:   閾値超え tag 抽出（count >= 3）
-6. Phase 4:   還流先提案（hook / skill / 規約 + 未カバー理由）
-7. Phase 5:   レポート出力
-8. Phase 6:   還流アクション確認（任意、AskUserQuestion）
+2. Phase 0.5: 候補レビュー（candidates.jsonl → 承認 → journal 昇格 → verdict 書き戻し）
+3. Phase 0.6: transcript サルベージ（フォールバック: --salvage 明示 or 候補 0 件のみ）
+4. Phase 1:   窓・閾値の決定（30 日 / 3 回）
+5. Phase 2:   tag 別集計（jq、30 日境界フィルタ → group → count）
+6. Phase 3:   閾値超え tag 抽出（count >= 3）
+7. Phase 4:   還流先提案（hook / skill / 規約 + 未カバー理由）
+8. Phase 5:   レポート出力
+9. Phase 6:   還流アクション確認（任意、AskUserQuestion）
 ```
 
 ---
 
 ## 注意事項
 
-- **副作用は承認後のみ**: Phase 0.5 の journal append と Phase 6 の還流アクションのみが書き込み。いずれも承認を経る。Phase 1〜5 は read-only
+- **副作用は承認後のみ**: Phase 0.5 / 0.6 の journal append・verdict 書き戻しと Phase 6 の還流アクションのみが書き込み。いずれも承認を経る。Phase 1〜5 は read-only
 - **サルベージの自動 append 禁止**: 検知は grep で決定的だが precision は約 35%。誤起票は閾値集計を直接汚すため、必ず一覧提示 → 承認を挟む
-- **journal は retro 実行中のみ Read**: 集計のために journal を読むのは本スキル実行中だけ。常時 Read すると fingerprint が AI の出力に汚染され集計が不安定になる
+- **journal / candidates は retro 実行中のみ Read**: 集計のために読むのは本スキル実行中だけ。常時 Read すると fingerprint が AI の出力に汚染され集計が不安定になる（candidates への **append** はセッション中いつでもよい — 自己申告ルールの責務。Read だけを禁じる）
 - **還流先の判断のみ**: 実際の AGENTS.md/hook/skill 編集は責務外。「どこに何を反映すべきか」の提案までを担う
 - **date の OS 差異**: 30 日境界算出は macOS BSD date (`-v-30d`) と Linux GNU date (`-d '30 days ago'`) を両対応でフォールバックする
 - **retrospective との責務分離**: 主観的なセッション振り返り・見積もり精度分析は `indie-workflow:retrospective`。本スキルは機械集計による再発検出に専念する

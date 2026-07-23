@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.0] - 2026-07-23
+
+### Added
+- **candidates.jsonl による自己訂正の自己申告フローを追加**（起票導線ギャップの構造対応）。SessionStart hook が自己申告ルール（`rules/self-report-rule.md`）を注入し、Claude が自己訂正した瞬間に候補を 1 行 append する。/retro Phase 0.5 が承認レビューで journal に昇格し、レビュー済み行に verdict（accepted/rejected）を書き戻して却下候補の再浮上を防ぐ。失敗を検知できる唯一の主体（Claude 自身）に検知した瞬間書かせることで、transcript 30 日消滅・grep precision 35%・マシンローカル依存という旧サルベージ設計の制約を回避する
+- **PostCompact hook を追加**（同一スクリプトの再実行）。compaction で自己申告ルールが失われるのを防ぐ
+
+### Changed
+- **transcript サルベージを Phase 0.6 のフォールバックに降格**（実行条件: `--salvage` 明示 or 集計窓内の候補 0 件。`--no-salvage` はサルベージのみ禁止し候補レビューは実行する）
+- retro / journal-schema / README を candidates フロー前提に更新（gitignore 推奨をディレクトリ単位に変更、sidechain 盲点とマルチマシン制約を既知の制約として明文化）
+
 ## [0.2.3] - 2026-07-22
 
 ### Fixed

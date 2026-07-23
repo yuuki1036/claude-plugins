@@ -9,6 +9,17 @@ failure-journal の永続フォーマット定義。
 - 書き込み: **append-only**（既存行の編集・削除を禁止）
 - 永続性: **gitignore 推奨**（fingerprint を AI の出力に汚染させないため、commit せずローカルに留める。README 参照）
 
+## candidates.jsonl（自己申告の候補置き場）
+
+journal の手前に置くステージングファイル。SessionStart 注入ルール（`rules/self-report-rule.md`）により、Claude が自己訂正した瞬間に 1 行 append する。`/retro` Phase 0.5 が承認レビューで journal に昇格する。
+
+- パス: `.claude/failure-journal/candidates.jsonl`
+- スキーマ: `{"ts":"<ISO8601 UTC>","summary":"<何をどう間違えたか 1 行>","verdict":null}`
+  - `verdict` は起票時 `null`。`/retro` のレビュー後に `"accepted"` / `"rejected"` が書き戻される（再浮上防止）
+  - `summary` は自由文。固有名詞可（tag 化・抽象化は retro のレビューで行う）
+- journal との違い: append-only ではない（verdict の書き戻しのみ許可。行削除・summary 書き換えは禁止）
+- Read 制約は journal と同じ（**retro 実行中のみ Read**。append はいつでもよい）
+
 ## スキーマ
 
 各行は次の構造の単一 JSON オブジェクト:

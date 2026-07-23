@@ -6,11 +6,11 @@
 
 このプラグインの責務は **「セッション振り返り」ではなく「再発する失敗パターンの検出と規約還流」** です。
 
-1. AI が失敗するたびに `/log-failure` で JSON Lines (`journal.jsonl`) に append する
-2. 一定期間後に `/retro` で集計し、閾値超え（直近 30 日 × 3 回以上）のパターンを抽出する
+1. **セッション中**: SessionStart hook が注入する自己申告ルールにより、Claude が自己訂正した瞬間に `candidates.jsonl` へ候補を 1 行 append する（人間の操作不要）。人間が気づいた失敗は従来どおり `/log-failure` で journal に直接 append する
+2. 一定期間後に `/retro` で candidates を**承認レビューして journal に昇格**し、閾値超え（直近 30 日 × 3 回以上）のパターンを抽出する
 3. 抽出したパターンごとに「AGENTS.md/CLAUDE.md・hook・skill のどれに反映すべきか」と「既存ガードレールでカバーできていない理由」を提案する
 
-`/retro` は集計の前に **transcript を走査して未起票の失敗をサルベージ**します（Phase 0.5）。手動起票は「人間が失敗に気づいて想起したもの」しか拾えないためです。サルベージは grep 検知 → LLM 分類 → **承認制 append** で取りこぼしを回収します。
+candidates 方式を採る理由: 失敗の大半は Claude の自己訂正で人間の目に触れず、手動起票では拾えないためです（実測の起票率 ≒2.5%）。「retro 時に過去の transcript を掘る」のではなく、**検知できる唯一の主体（Claude 自身）に検知した瞬間書かせる**ことで、transcript の 30 日消滅・grep precision 35%・却下候補の再浮上という旧サルベージ設計の制約を回避します。transcript サルベージは候補が無い期間のフォールバック（Phase 0.6）として残ります。
 
 > 開発環境での実測では、記録に値する失敗が約 40 件発生した期間に journal 起票は 1 件でした。ただしこれは単一環境（1 ユーザー・日本語セッション主体）の値で、対象 9 プロジェクトのうち 8 は log-failure を未運用だったため、「導線の弱さ」と「未運用」が合算されています。測定条件は `skills/retro/references/transcript-salvage.md` を参照してください。
 
@@ -31,7 +31,7 @@
 | コマンド | 説明 |
 |---|---|
 | `/log-failure [現象]` | 再発しうる失敗を journal に append。tag を規約検証し、`failure:logged` event を publish |
-| `/retro [日数] [--no-salvage]` | transcript から未起票の失敗をサルベージ（承認制）した上で journal を集計し、閾値超えの再発パターンを抽出して還流提案を出力。`--no-salvage` で走査をスキップ |
+| `/retro [日数] [--salvage] [--no-salvage]` | candidates を承認レビューして journal に昇格し、集計・閾値超え抽出・還流提案を出力。候補 0 件なら transcript サルベージにフォールバック（`--salvage` で強制実行、`--no-salvage` で禁止） |
 
 ## journal の保存と運用
 
@@ -44,17 +44,22 @@
 
 ### gitignore 推奨
 
-`.claude/failure-journal/journal.jsonl` は **`.gitignore` への追加を推奨** します。journal の中身を毎セッションで AI に読ませると fingerprint が AI の出力に汚染され、集計が不安定になるためです。commit せずローカルに留めてください。
+`.claude/failure-journal/` は **ディレクトリごと `.gitignore` への追加を推奨** します。journal / candidates の中身を毎セッションで AI に読ませると fingerprint が AI の出力に汚染され、集計が不安定になるためです。commit せずローカルに留めてください。
 
 `.gitignore` 例:
 
 ```
-.claude/failure-journal/journal.jsonl
+.claude/failure-journal/
 ```
 
-### journal は retro 実行中のみ Read
+### journal / candidates は retro 実行中のみ Read
 
-journal ディレクトリの中身を **参照してよいのは `/retro` 実行中のみ** という運用ルールを設けています。`/log-failure` は append が主目的で、journal 全体を読む必要はありません（表記揺れ防止のための既存 tag 参照は最小限）。常時 Read すると fingerprint が AI の出力に汚染されるため避けてください。
+journal ディレクトリの中身を **参照してよいのは `/retro` 実行中のみ** という運用ルールを設けています。`/log-failure` は append が主目的で、journal 全体を読む必要はありません（表記揺れ防止のための既存 tag 参照は最小限）。candidates.jsonl も同様に **append はいつでも・Read は retro 中のみ** です。常時 Read すると fingerprint が AI の出力に汚染されるため避けてください。
+
+### 既知の制約
+
+- **sidechain 盲点**: subagent は SessionStart ルールを受けないため候補を書きません。多段 agent スキル内の失敗は、オーケストレーターが訂正した時点での候補化に期待する設計です
+- **マルチマシン**: candidates / journal はマシンローカルです。プロジェクトを複数マシンで開発する場合、retro は実行マシンの分しか見えません（transcript 依存だった旧設計よりは、ファイルを commit する選択肢が生まれた分だけ改善）
 
 ## tag 規約
 
