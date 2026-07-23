@@ -99,7 +99,7 @@
     {
       "name": "doc-freshness",
       "description": "ドキュメント鮮度の機械強制。last-validated / phase frontmatter による stale 検出、行数ガード、internal link 検証、新規 doc grace period 対応。.claude/adr・.claude/designs・.claude/living-specs も走査し append_only: true で append-only 履歴文書の stale 判定を免除。PostToolUse hook で frontmatter 欠落を非ブロッキング検知、SessionStart hook（opt-in）で stale を一括通知",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "author": {
         "name": "yuki"
       },
@@ -117,7 +117,7 @@
     {
       "name": "adr-keeper",
       "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "author": {
         "name": "yuki"
       },

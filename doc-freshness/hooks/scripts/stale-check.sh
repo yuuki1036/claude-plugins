@@ -25,7 +25,7 @@ command -v jq >/dev/null 2>&1 || safe_hook_error Dependency "jq required for ses
 
 # 閾値と対象 prefix（config で上書き可、無ければデフォルト）
 # jq 失敗（config 破損等）でも set -e で中断しないよう || true でガードし、空はデフォルトに倒す
-CUR_THRESH=$(jq -r '.thresholds.current // 5' "$CONFIG" 2>/dev/null || true); CUR_THRESH=${CUR_THRESH:-5}
+CUR_THRESH=$(jq -r '.thresholds.current // 60' "$CONFIG" 2>/dev/null || true); CUR_THRESH=${CUR_THRESH:-60}
 TGT_THRESH=$(jq -r '.thresholds.target // 15' "$CONFIG" 2>/dev/null || true); TGT_THRESH=${TGT_THRESH:-15}
 TARGETS=$(jq -r '.hookTargets[]? // empty' "$CONFIG" 2>/dev/null | tr '\n' ' ' || true)
 [ -z "$TARGETS" ] && TARGETS=".claude/designs/ .claude/adr/ .claude/living-specs/"

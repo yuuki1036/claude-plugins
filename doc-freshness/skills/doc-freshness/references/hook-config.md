@@ -37,7 +37,7 @@ doc-freshness は手動走査（`/doc-freshness-check` スキル）に加えて�
 **なぜ `.claude/designs/` `.claude/adr/` `.claude/living-specs/` に限定するか**:
 
 - この 3 dir は adr-keeper / design-doc / living-spec-workflow が鮮度 lint を委譲する「frontmatter 必須の project doc」置き場（skill Phase 1 の走査対象と一致）。
-- **プラグイン内部 doc（SKILL.md / references/ / README）は対象に含めない**。ルート CLAUDE.md の規約どおり、これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理され、`last-validated`（current=5 日閾値）を付けると恒常 stale 化して逆効果になるため。
+- **プラグイン内部 doc（SKILL.md / references/ / README）は対象に含めない**。ルート CLAUDE.md の規約どおり、これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理され、`last-validated`（current 閾値）を付けると恒常 stale 化して逆効果になるため。
 - 別の project doc 置き場（例: `docs/adr/`）を使う場合は `hookTargets` で明示的に追加する。
 
 **委譲元プラグインを追加するときは、この 6 箇所を同時に更新する**（1 箇所でも漏れると、委譲を宣言した側は「鮮度 lint に守られている」と思い込むのに実際は走査されない silent な不成立になる。**0.1.0 で実際に踏み 0.2.0 で修正した**）:

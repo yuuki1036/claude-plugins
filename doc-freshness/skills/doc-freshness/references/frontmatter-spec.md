@@ -25,7 +25,7 @@ phase: current               # current | target | superseded
 
 | 値 | 意味 | stale 閾値（デフォルト） |
 |---|---|---|
-| `current` | **現行ドキュメント**。本日時点で有効な仕様・規約・運用 | 5 日 |
+| `current` | **現行ドキュメント**。本日時点で有効な仕様・規約・運用 | 60 日（warn） |
 | `target` | **将来計画**。target architecture / roadmap など、未着手だが目標として残す | 15 日 |
 | `superseded` | **廃止済み**。historical な記録として残すが現行には使わない | （stale 判定対象外） |
 

@@ -166,5 +166,5 @@ supersede 時は旧 ADR の更新結果も併記する。
 - **タイムスタンプは必ず Bash で取得**: Claude が擬似乱数 / 時刻を作らず `date +%Y%m%d%H%M%S` を実行する。秒精度でファイル名衝突を回避（`references/naming.md`）
 - **適用方法 (Enforcement) セクション必須**: ADR の死に文書化を防ぐため、「lint / test / hook で機械強制できないか」を必ず検討させる欄を設ける。決定的検証で守れる決定はそちらに昇格させる
 - **append-only 原則**: supersede 時も旧 ADR を削除しない。status / phase を `superseded` に更新して履歴として残す
-- **doc-freshness との住み分け**: adr-keeper は ADR の作成・命名・supersede 整合のみ担当。鮮度 lint（last-validated stale 判定）は doc-freshness が `.claude/adr/` を走査して担う。frontmatter（`last-validated` / `phase`）を共通化しているので連携可能。ただし ADR は append-only 履歴文書のため `phase: current` の stale 閾値（5 日）を当てると作成直後から恒常 stale になる。これを避けるためテンプレに `append_only: true` を付け、doc-freshness 側で stale 判定を免除させる（doc-freshness v0.2.0+）
+- **doc-freshness との住み分け**: adr-keeper は ADR の作成・命名・supersede 整合のみ担当。鮮度 lint（last-validated stale 判定）は doc-freshness が `.claude/adr/` を走査して担う。frontmatter（`last-validated` / `phase`）を共通化しているので連携可能。ただし ADR は append-only 履歴文書のため `phase: current` の stale 閾値を当てると閾値経過後から恒常 stale になる。これを避けるためテンプレに `append_only: true` を付け、doc-freshness 側で stale 判定を免除させる（doc-freshness v0.2.0+）
 - **status と phase の対応**: `accepted` → `phase: current`、`superseded` → `phase: superseded`。`proposed`（未決定）も許容するが、ADR は通常「決定済み」を記録するため既定は `accepted`

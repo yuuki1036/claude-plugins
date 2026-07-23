@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.2.2] - 2026-07-23
+
+### Fixed
+- **SKILL.md の doc-freshness 閾値参照から具体値（5 日）を除去**（doc-freshness 0.5.0 で current 閾値が 60 日 warn に変わり数値が stale 化するため、閾値非依存の記述に変更。append_only 免除の論旨は不変）
+
 ## [0.2.1] - 2026-07-23
 
 ### Changed

@@ -99,7 +99,7 @@ claude plugin prune
     - byte-identical（4）: `agents/code-context.md` / `skills/issue-design/references/design-rules.md` / `skills/issue-design/references/template-9sections.md` / `skills/indie-issue-maintain/references/cleanup-criteria.md`（linear 側は `skills/issue-maintain/...`）
     - sed 変換あり（6）: `commands/knowledge.md` / `commands/knowledge-lint.md` / `hooks/scripts/on-knowledge-change.sh` / `hooks/scripts/on-issue-change.sh` / `hooks/scripts/set-session-title.sh` / `skills/knowledge-lint/SKILL.md`
     - この 10 ファイル以外（SKILL.md 本体・Phase 構成など）は従来どおり**双方向の対称反映**。同期対象を増やしたらスクリプトの `SHARED` / `TRANSFORM` 配列とこの一覧の両方を更新する
-- **プラグイン内部 doc（SKILL.md / references/ / README）には doc-freshness frontmatter を付けない**: これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理されており、`last-validated`（current=5 日閾値）を付けると恒常 stale 化して逆効果。doc-freshness の対象はプロジェクト側の doc（CLAUDE.md / `.claude/adr/` / `.claude/designs/` 等）
+- **プラグイン内部 doc（SKILL.md / references/ / README）には doc-freshness frontmatter を付けない**: これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理されており、`last-validated`（current 閾値）を付けると恒常 stale 化して逆効果。doc-freshness の対象はプロジェクト側の doc（CLAUDE.md / `.claude/adr/` / `.claude/designs/` 等）
 
 ## ルール配置の意思決定（決定的 hook > LLM 判定）
 

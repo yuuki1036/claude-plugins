@@ -33,7 +33,7 @@ allowed-tools:
 
 1. `.claude/doc-freshness.json` の存在を確認（Read、存在しなければデフォルト値で続行）
 2. 設定値:
-   - `thresholds.current` (デフォルト `5` 日)
+   - `thresholds.current` (デフォルト `60` 日)
    - `thresholds.target` (デフォルト `15` 日)
    - `gracePeriodDays` (デフォルト `7` 日)
    - `lineLimits.warn` / `lineLimits.error` (デフォルト `40` / `65`)
@@ -95,7 +95,7 @@ allowed-tools:
 
 ---
 
-## Phase 3: phase 別 stale 判定（error）
+## Phase 3: phase 別 stale 判定（current = warn / target = error）
 
 `last-validated` と現在日付の差分を計算し、`phase` ごとの閾値と比較する。
 
@@ -113,15 +113,17 @@ age_days=$(( (now - ts) / 86400 ))
 
 | phase | 閾値（デフォルト） | 超過時 |
 |---|---|---|
-| `current` | 5 日 | 🔴 error |
+| `current` | 60 日 | 🟡 warn |
 | `target` | 15 日 | 🔴 error |
 | `superseded` | 判定対象外 | - |
+
+> **severity を phase で分ける理由**: current（実装済みの記録）の乖離は時間でなくコード変更で生じるため、時間閾値は安全網に留めて warn 止まりにする。error は放置が実害に直結する target（未実装計画の塩漬け）に限定する。旧デフォルト（current 5 日 error）は完成した設計記録に週次再検証を要求する形になり、自リポジトリで design doc 全件が恒常 error のまま放置される「誰も見ない信号」を生んだ（2026-07 精査で実測）。
 
 ### append-only な履歴文書の stale 免除（error 化しない）
 
 **`append_only: true` を frontmatter に持つファイルは phase に関わらず stale 判定を免除する**（Phase 2 で収集済み）。
 
-- 理由: ADR（`.claude/adr/`）のように「決定した時点の記録を append-only で残す」文書は、作成後に内容が変わらないのが正常挙動。`phase: current` の stale 閾値（5 日）を当てると、作成 5 日後から恒常的に stale error になり委譲が破綻する。
+- 理由: ADR（`.claude/adr/`）のように「決定した時点の記録を append-only で残す」文書は、作成後に内容が変わらないのが正常挙動。`phase: current` の stale 閾値を当てると、閾値経過後から恒常的に stale になり委譲が破綻する。
 - 免除するのは **Phase 3 の stale 判定のみ**。frontmatter スキーマ（Phase 2）・link（Phase 5）・superseded 参照（Phase 6）は通常どおり検証する。
 - レポートでは「append-only（stale 免除）」として info 表示する（黙って skip しない）。
 - **付与側の責務**: このマーカーは adr-keeper のテンプレが accepted ADR に `append_only: true` を付ける。design-doc は `phase: target → current` の遷移で鮮度を測る「生きた文書」なので付けない（下記「設計判断」）。
@@ -181,7 +183,7 @@ active doc（`phase: current` / `target`）の本文中に、`superseded` ファ
 
 ### 詳細
 
-🔴 stale (current, 8日 > 5日): docs/architecture.md
+🟡 stale (current, 75日 > 60日): docs/architecture.md
 🔴 stale (target, 22日 > 15日): docs/roadmap-2026q3.md
 🔴 broken link: CLAUDE.md → ./missing.md
 🟡 行数超過 (44 > 40): CLAUDE.md

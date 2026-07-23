@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.0] - 2026-07-23
+
+### Changed
+- **`thresholds.current` のデフォルトを 5 日 → 60 日に変更し、超過の重大度を error → warn に降格**（`target` は 15 日 error のまま）。旧デフォルトは「current doc は週次レビューされる」前提だったが実運用で成立せず、実装済みスナップショットとして安定した design doc 全件が恒常 stale error のまま放置される「誰も見ない信号」を自リポジトリで実測した（2026-07 精査）。current の乖離は時間でなくコード変更で生じるため、時間閾値は安全網（60 日 warn）に留め、error は放置が実害に直結する target（未実装計画の塩漬け）に限定する。SKILL / thresholds / frontmatter-spec / README / stale-check.sh のデフォルトを一括更新
+
 ## [0.4.1] - 2026-07-22
 
 ### Fixed

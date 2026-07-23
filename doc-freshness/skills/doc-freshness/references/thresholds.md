@@ -6,8 +6,8 @@ doc-freshness が使う各種閾値のデフォルト値と、プロジェクト
 
 | 項目 | デフォルト | 意味 |
 |---|---|---|
-| `thresholds.current` | `5` 日 | `phase: current` の stale 閾値 |
-| `thresholds.target` | `15` 日 | `phase: target` の stale 閾値 |
+| `thresholds.current` | `60` 日 | `phase: current` の stale 閾値（超過は **warn**） |
+| `thresholds.target` | `15` 日 | `phase: target` の stale 閾値（超過は **error**） |
 | `gracePeriodDays` | `7` 日 | 新規ファイルの猶予期間 |
 | `lineLimits.warn` | `40` 行 | harness doc の行数 warn 閾値 |
 | `lineLimits.error` | `65` 行 | harness doc の行数 error 閾値 |
@@ -37,9 +37,9 @@ doc-freshness が使う各種閾値のデフォルト値と、プロジェクト
 
 ## 閾値の根拠
 
-### `thresholds.current = 5`
+### `thresholds.current = 60`（0.5.0 で 5 → 60・error → warn に変更）
 
-現行ドキュメントは週次でレビューされる前提（営業日ベースで 5 日）。これを超えると「先週確認した内容」となり信頼性が落ちる。
+旧デフォルト（5 日 / error）は「current doc は週次でレビューされる」前提だったが、実運用では成立しなかった: 実装済みスナップショットとして安定した doc に週次再検証を要求した結果、自リポジトリで design doc 全件が恒常 stale error のまま放置される「誰も見ない信号」が実測された（2026-07 精査）。current の乖離は時間でなく**コード変更**で生じるため、時間閾値は「四半期レビュー未満の安全網」（60 日）+ warn に緩め、error は target に限定する。
 
 ### `thresholds.target = 15`
 
@@ -58,11 +58,11 @@ LLM の context window への影響を考慮。harness doc は毎セッション
 
 ## 上書き例
 
-### 厳しめに運用したい
+### 厳しめに運用したい（doc を週次レビューするチーム等）
 
 ```json
 {
-  "thresholds": { "current": 3, "target": 7 },
+  "thresholds": { "current": 7, "target": 7 },
   "lineLimits": { "warn": 30, "error": 50 }
 }
 ```
@@ -71,7 +71,7 @@ LLM の context window への影響を考慮。harness doc は毎セッション
 
 ```json
 {
-  "thresholds": { "current": 14, "target": 60 },
+  "thresholds": { "current": 180, "target": 60 },
   "gracePeriodDays": 30
 }
 ```

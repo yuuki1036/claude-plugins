@@ -25,7 +25,7 @@ phase: current               # current | target | superseded
 
 - `last-validated`: 最終検証日。手動で更新する
 - `phase`:
-  - `current` — 現行ドキュメント。stale 閾値: **5 日**（デフォルト）
+  - `current` — 現行ドキュメント。stale 閾値: **60 日**（デフォルト・超過は warn）
   - `target` — 将来計画。stale 閾値: **15 日**
   - `superseded` — 廃止済み。active doc から参照されると error
 - `append_only`（任意）: `true` で **stale 判定を免除**（作成後に内容が固定される履歴文書向け。ADR が付与）
