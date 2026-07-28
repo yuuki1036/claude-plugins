@@ -115,7 +115,7 @@ python3 evals/runner.py --report evals/reports/latest.md
 python3 evals/runner.py --dry-run
 
 # モデル間比較
-python3 evals/runner.py --models claude-opus-4-7,claude-sonnet-4-6
+python3 evals/runner.py --models claude-opus-5,claude-sonnet-5
 
 # hold-out のみ（改訂後の最終確認）
 python3 evals/runner.py --only-tag holdout

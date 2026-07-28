@@ -17,7 +17,7 @@ Tags（hold-out 機構）:
   - デフォルトで holdout を除外する（改訂サイクルで参照禁止のホールドアウト）
 
 Models（モデル間比較）:
-  - --models opus-4-7,sonnet-4-6 で複数モデル実行
+  - --models claude-opus-5,claude-sonnet-5 で複数モデル実行
   - レポートに比較表を出力
 
 Usage:
@@ -25,7 +25,7 @@ Usage:
     python3 evals/runner.py --plugin dev-workflow            # プラグイン絞り込み
     python3 evals/runner.py --case commit-ja                 # ケース ID 絞り込み
     python3 evals/runner.py --k 1                            # k=1 に上書き（スモーク）
-    python3 evals/runner.py --models opus-4-7,sonnet-4-6     # モデル比較
+    python3 evals/runner.py --models claude-opus-5,claude-sonnet-5     # モデル比較
     python3 evals/runner.py --only-tag holdout               # ホールドアウトのみ
     python3 evals/runner.py --exclude-tag holdout,slow       # 除外タグ追加
 """
@@ -552,7 +552,7 @@ def main() -> int:
     parser.add_argument("--report", type=Path, help="レポート出力先 (md)")
     parser.add_argument(
         "--models",
-        help="比較対象モデルを CSV で指定 (例: opus-4-7,sonnet-4-6)。省略時は claude のデフォルト",
+        help="比較対象モデルを CSV で指定 (例: claude-opus-5,claude-sonnet-5)。省略時は claude のデフォルト",
     )
     parser.add_argument(
         "--only-tag",
