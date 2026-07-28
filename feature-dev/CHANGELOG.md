@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.3] - 2026-07-28
+
+### Changed
+- Phase 1.6 (Vault Recall) の存在理由の記述を世代非依存に更新（「Opus は recall tool を省略しがち」は Opus 4.8 世代の挙動。Opus 5 でも必須ステップとして構造化する理由づけに書き換え。動作は不変）
+
 ## [2.11.2] - 2026-07-22
 
 ### Fixed

@@ -183,7 +183,7 @@ fi
 
 **Goal**: 過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を knowledge vault から recall し、Phase 4 architect の入力に注入する。
 
-**Why this phase exists**: Opus は recall 系の tool 呼び出しを省略しがち。設計着手の直前に **必須ステップ** として埋め込むことで「引き忘れ」を構造的に防ぐ。注入された知見は authoritative ではなく **advisory（参考情報）** で、現コードベースのパターンと矛盾する場合は現コードベースを優先する。
+**Why this phase exists**: recall 系の tool 呼び出しはモデルの文脈判断に任せると省略されうる（Opus 4.8 世代で顕著。Opus 5 でも「引くかどうか」を毎回モデル判断に委ねる理由はない）。設計着手の直前に **必須ステップ** として埋め込むことで「引き忘れ」を構造的に防ぐ。注入された知見は authoritative ではなく **advisory（参考情報）** で、現コードベースのパターンと矛盾する場合は現コードベースを優先する。
 
 ### Step 1: Detect kvault availability（外部 CLI 依存の存在確認）
 

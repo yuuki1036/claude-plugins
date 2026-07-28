@@ -1,6 +1,6 @@
 {
   "name": "issue-workflow",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Issue 管理ワークフロー（linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
   "author": {
     "name": "yuki"

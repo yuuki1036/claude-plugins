@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.37.4] - 2026-07-28
+
+### Changed
+- orchestration-guide のオーケストレーター effort 説明を Opus 5 基準に更新（既定 `high` は Opus 4.8 と同値のため運用は不変。ドキュメント上の世代表記のみ）
+
 ## [2.37.3] - 2026-07-23
 
 ### Changed

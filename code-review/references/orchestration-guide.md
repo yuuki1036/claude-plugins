@@ -107,7 +107,7 @@ reviewer は `xhigh`。**全レビューで必ず走り、体数も最大（典�
 
 > **体数の下限に注意**: 「常に 2 体以上」は不変条件では**ない**。`doc-review-mode` は 1〜2 体、`skip-mode` は `spec-compliance` のみ 1 体（triage-guide `## 2.5` のモード構成は Stage 2 の上限・最小保証より**優先**する）、self-review の `--focus` 指定時は最小保証すら起動しない。他所でこの不変条件を援用しないこと。
 
-オーケストレーター（skill frontmatter）は `high`（＝ Opus 4.8 の既定 effort に揃える）。これにより effort ゲート付きの独立レイヤー（meta-reviewer / 冷や読み skeptic）は既定で不発とし、high-risk 変更をレビューしたい時だけ `/self-review` を `xhigh`/`max` で明示起動して escalation する運用にする。
+オーケストレーター（skill frontmatter）は `high`（＝ Opus 5 の既定 effort に揃える。Opus 4.8 と同じ既定値なので旧世代でも同運用）。これにより effort ゲート付きの独立レイヤー（meta-reviewer / 冷や読み skeptic）は既定で不発とし、high-risk 変更をレビューしたい時だけ `/self-review` を `xhigh`/`max` で明示起動して escalation する運用にする。
 
 **独立検証レイヤー（meta-reviewer / 冷や読み skeptic / 反証エージェント）は `max` 据え置き**。ただし据え置きの根拠は「体数が小さいから」ではなく（下表のとおり反証は体数が指摘数に比例する）、**誤判定コストの非対称性**にある:
 
