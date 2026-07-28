@@ -321,9 +321,9 @@ allowed-tools: Agent, Read, Glob, Grep, ...
 }
 ```
 
-### P-11: Opus 4.7 向け effort 調整 (`max` → `xhigh`)
+### P-11: Opus 4.7 以降の effort 調整 (`max` → `xhigh`)
 
-Opus 4.7 では `xhigh` が新設され、コーディング・エージェント用途の推奨設定となった。`max` は overthinking の傾向があり、diminishing returns が出やすい。
+Opus 4.7 で `xhigh` が新設され、以降の世代（Opus 4.8 / Opus 5 / Sonnet 5 含む）でコーディング・エージェント用途の推奨設定。`max` は overthinking の傾向があり、diminishing returns が出やすい。
 
 **Before** (Opus 4.6 までの設定):
 ```yaml
@@ -334,7 +334,7 @@ effort: max
 ---
 ```
 
-**After** (Opus 4.7 向け):
+**After** (Opus 4.7 以降向け):
 ```yaml
 ---
 name: review
@@ -344,10 +344,10 @@ effort: xhigh
 ```
 
 判定基準:
-- **コーディング / エージェント系** → `xhigh`（新しい推奨デフォルト）
+- **コーディング / エージェント系** → `xhigh`（推奨デフォルト）
 - **intelligence-sensitive な軽作業** → `high`（従来維持）
 - **max 継続が妥当な場面** → 明確に精度>コストで、overthinking が許容されるケースのみ
-- **`low` / `medium`** → Opus 4.7 は厳密に effort を守るので複雑タスクには under-thinking リスクあり。迷ったら `high` に上げる
+- **`low` / `medium`** → Opus 4.7/4.8 では複雑タスクに under-thinking リスクがあったが、**Opus 5 世代では low/medium が旧世代の high 級に強い**。ルーチン作業・探索段は積極的に下げてよい（複雑な判断段は引き続き `high` 以上）
 
 ---
 

@@ -13,7 +13,7 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
 以下のいずれかで Phase P を起動する:
 
 1. **モデル世代アップデート検知**: state file の `lastCatchUpModel` と現在のモデルファミリが異なる
-   - 例: `claude-opus-4-6` → `claude-opus-4-7`、`claude-sonnet-4-5` → `claude-sonnet-4-6`
+   - 例: `claude-opus-4-8` → `claude-opus-5`、`claude-sonnet-4-6` → `claude-sonnet-5`
 2. **ユーザー明示**: Phase 0 の AskUserQuestion で「剪定モード」を選択
 3. **定期実行**: 前回剪定から 90 日以上経過（state file の `lastPruningDate`）
 
@@ -30,11 +30,14 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
 | サブカテゴリ | 旧モデル課題 | 新世代で改善されうる理由 |
 |-------------|-------------|------------------------|
 | ツール選択ガード | `grep/find/cat` を Bash で呼ぶ傾向 | 最新モデルは dedicated tool を優先 |
-| 並列化リマインダ | 独立呼び出しを直列化する傾向 | Opus 4.7 は並列 tool call を積極採用 |
-| 冗長出力抑制 | 長い前置き/末尾要約 | Opus 4.7 は簡潔応答を学習済み |
-| コメント抑制 | 過剰コメント生成 | 4.7 世代は「コメント書きすぎない」が default |
+| 並列化リマインダ | 独立呼び出しを直列化する傾向 | Opus 4.7 以降は並列 tool call を積極採用 |
+| コメント抑制 | 過剰コメント生成 | 4.7 世代以降は「コメント書きすぎない」が default |
 | TaskCreate 促進 | タスク分割を怠る傾向 | 新モデルは自発的に TodoWrite/TaskCreate |
-| effort=max 一律設定 | 4.6 以前は max で頭打ち | 4.7 は xhigh が推奨、max は overthinking |
+| effort=max 一律設定 | 4.6 以前は max で頭打ち | 4.7 以降は xhigh が推奨、max は overthinking |
+| 自己検証の促進（Opus 5〜） | 「最後にダブルチェックせよ」で検証漏れを補正 | Opus 5 は自己検証が既定挙動。指示を残すと over-verification でコスト増 |
+| subagent 委譲の促進（Opus 5〜） | 「積極的に委譲せよ」で委譲不足（4.8 世代）を補正 | Opus 5 は委譲過剰側に反転。促進文は削り、体数上限の明示に置き換える |
+
+**方向が反転した制約に注意（Opus 5〜）**: 「冗長出力抑制」（簡潔指示）は 4.7 世代では剪定候補だったが、**Opus 5 は既定の応答・成果物が長め**のため簡潔指示はむしろ有効に戻った。剪定は一方通行ではなく世代ごとに方向を再判定する。実行経路は下記「復活判定（prunedConstraints の再走査）」（Phase P.1 の走査対象に含まれ、レポート・対話フローに復活候補として流れる）。
 
 **判定シグナル**:
 - hook/skill/CLAUDE.md 本文に「〜するな」「必ず〜」系の短い行動規則がある
@@ -88,6 +91,14 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
 
 ---
 
+## 復活判定（prunedConstraints の再走査）
+
+剪定候補スキャン（現存ファイルの走査）とは**別に**、state file の `prunedConstraints` を読み、各項目を現世代の C-1 表で再判定する。剪定済み制約はファイルから消えているため現存ファイル走査ではヒットせず、この再走査が無いと剪定は一方通行になる。
+
+- 判定: 剪定当時の `reason` が現世代でも成立するか？ **方向が反転していれば【復活候補】**（例: 「冗長出力抑制」は 4.7 世代で剪定 → Opus 5 で応答が長めに戻ったため復活候補）
+- 復活候補はレポートの「復活候補（方向反転）」節に列挙し、対話フローで「復活する」を提示する
+- 復活が承認されたら該当行を戻し、`prunedConstraints` から削除する（既存の「剪定された制約が復活する場合」の後始末規定に接続）
+
 ## 剪定判定フロー
 
 各候補について以下を順に判定:
@@ -133,6 +144,12 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
 
 #### 2. [Medium] ...
 
+### 復活候補（方向反転）
+{prunedConstraints の再走査で方向反転を検出した場合のみ。0 件なら省略}
+- {plugin}/{component}: {制約タイトル}
+  - 剪定時の理由: {prunedConstraints の reason}
+  - 復活理由: {現世代で方向が反転した根拠}
+
 ### 保持推奨（参考）
 - {plugin}/{component}: {理由}
 ```
@@ -149,6 +166,13 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
    - 保留（今回は触らない）
    - 保持する（将来も剪定対象外としてマーク）
    ```
+   復活候補（方向反転）には別の 3 択を提示する:
+   ```
+   Q: 剪定済みの {制約} は現世代で方向が反転しています。復活させますか？
+   - 復活する（該当行を戻し prunedConstraints から削除）
+   - 保留（今回は触らない。次回も候補化）
+   - 破棄（復活不要として prunedConstraints に at を更新して残す）
+   ```
 2. multi-select ではなく **1 件ずつ** 確認（誤爆防止）
 3. 候補が 10 件超の場合は優先度 High のみ個別確認、Medium/Low は「全件まとめて削除 / 全件保留」の 2 択
 4. 「保持」を選んだものは state file の `preservedConstraints` に記録し、以降の剪定候補から除外
@@ -162,7 +186,7 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
 ```json
 {
   "lastCatchUpVersion": "2.1.114",
-  "lastCatchUpModel": "claude-opus-4-7",
+  "lastCatchUpModel": "claude-opus-5",
   "lastCatchUpDate": "2026-04-22",
   "lastPruningDate": "2026-04-22",
   "appliedFeatures": [...],
@@ -171,7 +195,7 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
     {
       "id": "dev-workflow/rules/no-grep-bash",
       "category": "C-1",
-      "reason": "Opus 4.7 は dedicated tool を優先",
+      "reason": "Opus 5 は dedicated tool を優先",
       "at": "2026-04-22"
     }
   ],

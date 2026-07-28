@@ -157,6 +157,7 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 2. `skills/*/SKILL.md` — C-1（モデル挙動ガード）、C-4（旧 effort 設定）、C-5（過剰手順）候補
 3. `agents/*.md` — C-1、C-4（retired model ID）候補
 4. `rules/*.md` / `CLAUDE.md` — C-1、C-3（組み込み置換可能）、C-5 候補
+5. state file の `prunedConstraints` — **復活候補**（剪定済み制約を現世代の C-1 表で再判定し、方向反転を検出。`pruning-heuristics.md` の「復活判定」参照。剪定済み制約はファイルに存在しないため 1〜4 の走査ではヒットしない）
 
 **除外**: state file の `preservedConstraints` にマークされた項目はスキップ
 
@@ -186,6 +187,8 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 - **保留**（今回は触らない。次回も候補化）
 - **保持する**（永続的に剪定対象外としてマーク → `preservedConstraints` 追加）
 
+復活候補（P.1 の 5 で検出した方向反転項目）には「復活する / 保留 / 破棄」の 3 択を提示する（`pruning-heuristics.md` の「対話フロー」準拠。復活時は該当行を戻し `prunedConstraints` から削除する）。
+
 候補が 10 件超の場合、High のみ個別確認、Medium/Low は「全件まとめて削除 / 全件保留」の 2 択に集約。
 
 #### P.5: 適用と記録
@@ -204,7 +207,7 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 ```json
 {
   "lastCatchUpVersion": "2.1.86",
-  "lastCatchUpModel": "claude-opus-4-7",
+  "lastCatchUpModel": "claude-opus-5",
   "lastCatchUpDate": "2026-03-29",
   "lastPruningDate": "2026-03-29",
   "appliedFeatures": ["if-conditional-hooks", "effort-frontmatter", ...],

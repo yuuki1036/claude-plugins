@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.0] - 2026-07-28
+
+### Added
+- **Phase P に復活判定（prunedConstraints の再走査）を追加**。剪定済み制約を現世代の C-1 表で再判定し、方向が反転した制約（例: 簡潔指示は Opus 5 で有効に戻る）を「復活候補」としてレポート・対話フロー（復活する / 保留 / 破棄の 3 択）に流す。剪定済み制約は現存ファイル走査にヒットしないため、この経路が無いと剪定は一方通行だった
+- pruning-heuristics の C-1 表に Opus 5 で不要化した剪定候補 2 件（自己検証促進・subagent 委譲促進）を追加
+
+### Changed
+- **cc-catch-up を Claude 5 世代（Opus 5 / Sonnet 5）に対応**。P-11 の effort 判定を Opus 5 世代（low/medium が旧世代 high 級）に更新。例示モデル ID を `claude-opus-5` / `claude-sonnet-5` に更新
+
+### Fixed
+- plugin-features の `xhigh` 適用世代表記を修正（「Opus 4.7 専用」→「Opus 4.7 以降で使用可」。Opus 4.8 / Opus 5 / Sonnet 5 でも使用可能なため）
+
 ## [1.12.1] - 2026-07-16
 
 ### Fixed
