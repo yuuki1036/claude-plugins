@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.37.5] - 2026-07-28
+
+### Changed
+- **reviewer fan-out の effort を実行時 `${CLAUDE_EFFORT}` 連動に変更**（review / self-review 共通）。従来の固定 `xhigh` から、既定パス（low/medium/high）は `high`、明示 escalation（xhigh/max）時のみ `xhigh` に。reviewer は全レビューで必ず走る最大コスト項のため最大のコストレバー（max→xhigh に続く 2 段目）。根拠は Opus 5 のレビュー系低 effort 耐性 + 反証/skeptic/meta の補償層（これらの `max` は据え置き）。Round 2 再起動・カバレッジ補完起動は「初回 reviewer と同 effort」に統一。効果は review:completed メトリクスで監視し悪化時は差し戻す
+
 ## [2.37.4] - 2026-07-28
 
 ### Changed

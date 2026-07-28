@@ -24,7 +24,7 @@ agent / サブタスクのロールに応じて既定モデルを出し分ける
 | ロール | 既定モデル | 理由 |
 |--------|-----------|------|
 | 探索・収集・機械的サマリ（read-only fan-out。code-context / explorer 等） | `sonnet` | 事実収集は弱モデルで足り、体数を稼げる |
-| 判断・検証・レビュー（load-bearing な結論。reviewer 等） | `opus` + effort 引き上げ | 誤判定コストが高い段は精度優先 |
+| 判断・検証・レビュー（load-bearing な結論。reviewer 等） | `opus`（effort は実行時連動: 既定 `high`、明示 escalation 時 `xhigh`） | 誤判定コストが高い段は精度優先。Opus 5 はレビュー・判断系が `high` で精度を保つため、常時レイヤーの effort 引き上げは escalation 時のみに縮小（旧規約「opus + effort 引き上げ」は Opus 4.x 世代の前提） |
 | 敵対的独立検証（発見者と別コンテキストで反証。code-review 反証 / discover-verifier / design-review 反証） | `opus` | 検証は精度が命なので強モデル。独立性は「発見者の推論を渡さない」+ 別コンテキストで担保する（モデルを弱める必要はない） |
 | 統合・メタレビュー・設計 blueprint（meta-reviewer / architect 等） | `opus` | load-bearing な統合・設計判断は強モデルで質を担保する |
 

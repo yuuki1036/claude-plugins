@@ -103,7 +103,7 @@ done | sort -u
 
 ### effort 設計意図
 
-reviewer は `xhigh`。**全レビューで必ず走り、体数も最大（典型 2〜10 体。`## 7` の最小保証 2 体 〜 上限 10 体）のため、レビュー総コストの最大項**。よって `max` からの 1 段引き下げは全レビューに効く**最大のコストレバー**になる（唯一ではない。下記の変動費も参照）。CLAUDE.md モデルルーティング規約「判断・検証は `opus` + effort 引き上げ」は満たしたまま（`xhigh` は既定 `high` からの引き上げであり、規約は `max` を要求していない）。
+reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/medium/high（既定）→ `high` / xhigh・max（明示 escalation）→ `xhigh`**。reviewer は**全レビューで必ず走り、体数も最大（典型 2〜10 体。`## 7` の最小保証 2 体 〜 上限 10 体）のため、レビュー総コストの最大項**であり、ここが最大のコストレバー（`max`→`xhigh` に続く 2 段目の引き下げ。唯一ではない。下記の変動費も参照）。既定パスを `high` に引き下げた根拠は 2 つ: ① Opus 5 はコードレビュー・バグ発見が低 effort でも精度が落ちにくい（公式モデルガイダンス）② reviewer 単発の深さには依存しない補償層（反証 / skeptic / meta-reviewer、いずれも `max` 据え置き）がある。escalation 時は従来どおり `xhigh` で深掘りする。効果は `review:completed` メトリクス（blocker/critical 件数・findings 推移）で監視し、悪化が観測されたら既定を `xhigh` に戻す。
 
 > **体数の下限に注意**: 「常に 2 体以上」は不変条件では**ない**。`doc-review-mode` は 1〜2 体、`skip-mode` は `spec-compliance` のみ 1 体（triage-guide `## 2.5` のモード構成は Stage 2 の上限・最小保証より**優先**する）、self-review の `--focus` 指定時は最小保証すら起動しない。他所でこの不変条件を援用しないこと。
 
@@ -152,7 +152,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
    - 各 explorer に対応する unmet_information（focus, target, why, related_finding）を指示として渡す
    - isolation は `## 0` に従う（review は `isolation: "worktree"`（PR ブランチ）、self-review は使用しない）
    - **PR 番号注入（review のみ・必須）**: `## 1` に従い prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
-4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`, `effort: xhigh` で再起動する（初回 reviewer と同 effort に揃える）
+4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、**初回 reviewer と同じ effort** で再起動する（`## 5` の連動表に従う）
    - 再起動 reviewer には初回指摘 + 追加 explorer 結果を context として渡し、「初回 confidence を再評価せよ」と指示
    - 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
    - **PR 番号注入（review のみ・必須）**: `## 1` に従う
@@ -177,7 +177,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
 1. `triage-guide.md` の「reviewer の観点判定」表の各条件を、実際の diff シグナル（変更ファイルパス・diff 内文字列）に対して **メインコンテキストで再評価** する
 2. **「条件を満たすのに起動されなかった focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在、`package.json` 変更があるのに dependency 不在）
 3. 検出した観点漏れは `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として追記する
-4. effort が `high` 以上 かつ 追加 1 体で補える観点なら、その focus の reviewer を 1 体だけ `model: opus`, `effort: xhigh`（初回 reviewer と同 effort）で追加起動して結果をスコアリング step に合流させてよい（任意・best-effort。失敗しても missing_coverage 記載のまま続行）。**effort を揃えるのは、非対称な深さの指摘が同じ confidence 軸で合流するのを避けるため**
+4. effort が `high` 以上 かつ 追加 1 体で補える観点なら、その focus の reviewer を 1 体だけ `model: opus`、**初回 reviewer と同じ effort**（`## 5` の連動表）で追加起動して結果をスコアリング step に合流させてよい（任意・best-effort。失敗しても missing_coverage 記載のまま続行）。**effort を揃えるのは、非対称な深さの指摘が同じ confidence 軸で合流するのを避けるため**
 
 ## 9. 冷や読み skeptic 実行手順（review Phase 5.8・self-review Phase 4.8）
 
