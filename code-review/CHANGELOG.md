@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.38.2] - 2026-07-29
+
+### Changed
+- **review SKILL.md の締めフロー 1〜3 を `references/closing-flow-guide.md` に分割**（skill-size warning 対応: 本文 506 行 → 377 行）。精査（1）は指摘ありのときのみ実行、1・2 は `--emergency` でスキップ、ドラフト生成（3）は Approve 系でも到達するが AskUserQuestion で opt-out できる末端フローであり、progressive disclosure の押し出し対象（docs/skill-writing.md の branch 判定）。SKILL.md 側には実行条件・実行順・「残存」確定集合の定義を残し、AskUserQuestion 文言・3 分類基準・パターン×voice 表・writing-polish 推敲手順を reference 側へ移した。挙動の変更なし。reply-tone-guide の writing-polish 正本参照も追随
+
 ## [2.38.1] - 2026-07-29
 
 ### Fixed
