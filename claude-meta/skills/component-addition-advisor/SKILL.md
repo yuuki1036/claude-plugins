@@ -9,8 +9,6 @@ description: >
 effort: medium
 allowed-tools:
   - Read
-  - Glob
-  - Grep
   - Bash
   - AskUserQuestion
 ---
@@ -70,6 +68,8 @@ find {plugin-dir}/skills -name "SKILL.md"
 find {plugin-dir}/commands -name "*.md"
 find {plugin-dir}/agents -name "*.md"
 ```
+
+列挙した候補のうち目的が近いものは、SKILL.md 本文と plugin.json の `_requirements` を Read で開いて拡張余地を確認する。
 
 **質問:**
 - 既存 skill / command の allowed-tools を拡張すれば対応可能か？

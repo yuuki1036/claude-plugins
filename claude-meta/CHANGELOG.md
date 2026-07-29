@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.1] - 2026-07-29
+
+### Changed
+- **未使用ツール宣言の削除（14b 精査 + self-review 追認分）**: claude-code-setup（`Glob` / `Grep`）・claude-md-improver（`Glob`）・component-addition-advisor（`Glob` / `Grep`）の allowed-tools から本文ワークフローに割当のないツールを削除。本文の探索・抽出手順は全て Bash（ls / find / grep パイプ）に割当済みで挙動は不変
+- component-addition-advisor の Step 1 に「候補 skill の SKILL.md / plugin.json を Read で確認する」を明記し、`Read` 宣言と本文の対応の曖昧さを解消
+- `revise-claude-md` コマンドの allowed-tools からも `Glob` を削除（探索は Bash find に割当済み。エイリアスペア claude-md-improver との allowed-tools 一致規約に同期）
+
 ## [1.13.0] - 2026-07-28
 
 ### Added

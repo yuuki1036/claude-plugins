@@ -49,7 +49,7 @@ knowledge の種類（source / concept）と wikilink 記法の定義は `knowle
    - basename（拡張子なし）→ 相対パス のマップを作る。`concepts/` 配下は `kind: concept`、直下は `kind: source`（frontmatter の `kind` 明示があればそれを優先）
 2. 各ファイルを Read し、本文中の `[[name]]` を全て抽出してリンク集合を作る。あわせて frontmatter から `last-validated` / `phase` / `updated` / `verified` / `status` / `kind` / `subkind` を読み取り、項目 8（鮮度）・項目 9（glossary）の判定用に保持する
 3. `knowledge/index.md` を Read し、登録済みファイル一覧を取得する（存在しなければ「未整備」として記録）
-4. 各 Issue ファイル（`{DATA_DIR}/{slug}/issues/*.md`）の `[[name]]` 参照も補助的に収集する（orphan 判定の参照元に含める）
+4. 各 Issue ファイル（`{DATA_DIR}/{slug}/issues/*.md`）の `[[name]]` 参照も Grep（pattern: `\[\[[^\]]+\]\]`）で補助的に収集する（orphan 判定の参照元に含める。Issue 本文は全文 Read せずマッチ行のみ使う）
 
 `${CLAUDE_EFFORT}` が `low` / `medium` のときは決定的チェック（broken wikilink・index 整合・鮮度〔項目 8〕）を優先し、LLM 判定（表記ゆれ・重複概念・glossary 用語重複〔項目 9〕）は件数が多い場合に上位のみ提示する。`xhigh` / `max` のときは全ファイルを対象に LLM 判定まで網羅的に行う。項目 8（stale knowledge）は決定的なので effort によらず常時実行する。
 

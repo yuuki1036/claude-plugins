@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.1] - 2026-07-29
+
+### Changed
+- doc-resolver agent の tools から未使用の `Grep` を削除（全ステップが Read / Glob に割当済み。宣言の除去のみで挙動は不変）
+- knowledge-lint Phase 1 の Issue ファイル `[[name]]` 収集を「Grep（pattern 明示）でマッチ行のみ使う」と明記し、`Grep` 宣言と本文の対応の曖昧さを解消
+
 ## [1.4.0] - 2026-07-29
 
 ### Added
