@@ -95,7 +95,7 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
 
 ### Phase 2: 決定 vs open の仕分け
 
-1. `references/design-rules.md` を Read する（ルール1〜5）
+1. `references/design-rules.md` を Read する（ルール1〜6）
 2. 確定事項を「決定事項」、未確定を「判断ポイント (open)」に振り分ける
    - 仕分けの問い: 「今ここで根拠を書き切れるか？」YES→決定 / NO→open
 3. 各 open には必ず以下を添える:

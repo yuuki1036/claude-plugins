@@ -6,6 +6,7 @@ description: >
 allowed-tools:
   - Read
   - Write
+  - Edit
   - Glob
   - Grep
   - Bash
@@ -124,9 +125,10 @@ backend 検出（冒頭の Phase 0）で確定した `{DATA_DIR}` の slug 一�
 
 1. **既存 issue との重複除外（冪等性）**: `{DATA_DIR}/{slug}/issues/*.md` を Glob/Grep で確認し、同一ファイル対象・同一趣旨の候補を除外（issue-create Phase 5.4 のコードベース確認方式。3〜5 回の Glob/Grep に留める）。**evidence の `path:line` を冪等キーとして使い、既存 issue 本文に同じ `path:line` が含まれていればスキップする**（discover を再実行しても同じ課題を二重起票しないため）
 2. **backlog 重複除外**: `backlog.md` に既出の項目を除外
-3. **候補マージ**: 同一箇所を指す候補を 1 件に統合
-4. **優先度スコア**: `impact 重み ÷ effort` を基本に、type 重み（bugfix・未実装 > debt > investigation）で調整
-5. **分類**: 上位 N 件を「起票候補」、残りを「backlog 蓄積」に振り分け（起票は Phase 4.5 検証通過が前提）
+3. **却下記録との照合**: `{DATA_DIR}/{slug}/knowledge/*.md` の `kind: rejected`（却下記録）を Read し、候補が却下済み概念と一致したら**起票も backlog 蓄積もせず**、レポートの「却下済み概念と一致」欄に列挙する。判定基準（概念類似の正例・負例・迷ったら backlog に倒す fail-open）は `${CLAUDE_PLUGIN_ROOT}/skills/discover/references/rejected-record.md` の「照合のルール」を読むこと。却下記録が 0 件ならこのステップはスキップ
+4. **候補マージ**: 同一箇所を指す候補を 1 件に統合
+5. **優先度スコア**: `impact 重み ÷ effort` を基本に、type 重み（bugfix・未実装 > debt > investigation）で調整
+6. **分類**: 上位 N 件を「起票候補」、残りを「backlog 蓄積」に振り分け（起票は Phase 4.5 検証通過が前提）
 
 候補が 0 件なら、その旨をレポートして終了（健全なら issue を捏造しない）。
 
@@ -237,6 +239,9 @@ fi
 ### backlog に蓄積（{M} 件）
 - {title}（{type}, {impact}）— {evidence}
 
+### 却下済み概念と一致（{J} 件）
+- {title} — [[{却下記録の basename}]]（却下理由の 1 行要約）。再検討するならチャットで指示（指示があれば却下記録を更新・削除して通常フローで起票する）
+
 ### スキャン観点と検出数
 - A バグ兆候: {x} / B 未実装: {x} / C FE改善: {x} / D テスト欠落: {x} / E 既存シグナル: {x}
 
@@ -244,6 +249,12 @@ fi
 - 着手するなら `/feature-dev {ISSUE-ID}` または `/start`（feature ブランチで）
 - 起票内容は `status: backlog`。不要なら issue ファイルを削除（git 復元可）
 ```
+
+### Phase 7.5: 却下記録（レポート後・ユーザー指示時のみ）
+
+レポートを見たユーザーが「これはやらない」と判断した候補（起票済み issue の削除指示・backlog 項目の破棄指示を含む）は、`kind: rejected` の knowledge として**理由付きで永続化**する。これが無いと、backlog から行を消した候補を次回の discover が蒸し返す。
+
+書式・記録のルール（1 概念 = 1 ファイル / 恒久的理由のみ / 実装済みは書かない / index.md 追記）の正本: `${CLAUDE_PLUGIN_ROOT}/skills/discover/references/rejected-record.md` を Read して従うこと。既存ファイルへの追記（却下履歴・index.md）は Edit で行う。
 
 ## イベント連携
 
@@ -255,4 +266,5 @@ fi
 - **偽陽性は前提だが起票前に絞る**: 静的スキャンは誤検知しうる。起票候補は Phase 4.5 の独立検証（外部オラクル + 敵対的 agent）で裏取りし、通らなければ起票せず backlog に降格する（fail-closed）。加えて起票分も `status: backlog` + evidence 明示 + git 復元可能の三重で安全側に倒す。人はレポートを見て取捨選択できる
 - **検証は起票候補に限定**: Phase 4.5 の検証は上位 N 件のみ。backlog 蓄積分まで検証するとコストが爆発する（傾斜予算配分）。発見（安いスキャン）と検証（高い深掘り）を段で分け、後者を通過分だけに集中させる
 - **issue を捏造しない**: 候補 0 件ならそう報告する。健全なコードに無理やり課題を作らない
+- **却下は永続化する**: ユーザーが「やらない」と判断した候補は Phase 7.5 の却下記録（`kind: rejected`）に理由付きで書く。記録の無い却下は次回スキャンで必ず再浮上する
 - **既存ロジックの再利用**: テンプレート・採番・推敲は issue-create を、再発失敗の集計は failure-journal の event を再利用する（重複実装しない）

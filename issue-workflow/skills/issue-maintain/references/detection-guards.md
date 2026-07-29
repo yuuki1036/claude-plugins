@@ -17,7 +17,8 @@
   - 実タスク数: {actual} 個
   - 提案:
     (A) scope_size を {推奨サイズ} に更新する
-    (B) タスクを別 Issue に分割する（スコープ外に切り出し）
+    (B) タスクを別 Issue に分割する（スコープ外に切り出し。分割は縦のスライスで切る
+        — issue-design の design-rules.md ルール6。層で横に切らない）
 ```
 
 - `small: 5+` → 推奨サイズは `medium`

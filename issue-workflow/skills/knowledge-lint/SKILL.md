@@ -73,6 +73,7 @@ knowledge の種類（source / concept）と wikilink 記法の定義は `knowle
 
 - broken wikilink の編集距離判定: basename の Levenshtein 距離が 2 以下、または大文字小文字・ハイフン/アンダースコア違いのみの候補を「張替候補」とする。候補が複数なら自動提案せず列挙のみ
 - orphan / isolated は記事の "orphaned pages" に相当。これらは「まだ繋がっていない知見」のシグナルであり、エラーではなく統合の機会として提示する
+- **`kind: rejected`（却下記録）の適用範囲**: 項目 1〜3・6 は通常どおり適用する。項目 4・5・9 は定義上（concept / source 限定）もとより非該当。**項目 7（重複概念）は却下記録同士にのみ適用**する（「1 概念 = 1 ファイル」規約の違反検出。却下記録 vs 通常 knowledge の類似は正常状態なので提示しない）。**項目 8（鮮度）は対象外**とする — 却下記録は恒久的な決定の記録で再検証の対象ではなく、鮮度フィールドを持たない（ADR の `append_only` 免除と同じ扱い。書式の正本: discover の `references/rejected-record.md`）
 - **項目 8（鮮度判定）**: `last-validated` / `phase` は任意フィールド。未記入でも error にせず warn / info に留める（transitional period）。判定は次の決定的 fallback chain で行う:
   - 有効鮮度日: `last-validated` → 無ければ `updated` → 無ければ `verified` → いずれも無ければ判定スキップ + 記入を促す info。fallback を使った場合はレポートに `(updated fallback)` 等を明記
   - 有効 phase: `phase` → 無ければ `status` から推定（`verified`→current / `planned`→target、`(status→phase 推定)` と明記）→ 両方無ければ current 扱い（安全側）+ info

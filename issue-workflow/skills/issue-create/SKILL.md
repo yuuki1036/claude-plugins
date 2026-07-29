@@ -201,7 +201,7 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
    ```
    `WRITING_POLISH=0` → 本 Phase を skip。
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。
-3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **9 セクション構造（テンプレートの見出し階層）・frontmatter・プレースホルダ・相対パスリンク・Linear collapsible（`+++`。BACKEND=linear のみ）は変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
+3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **テンプレート構造（type 別テンプレートの見出し階層）・frontmatter・プレースホルダ・相対パスリンク・Linear collapsible（`+++`。BACKEND=linear のみ）は変更しない（構造を壊す結果は破棄し元案を使う）**。変更があれば何を変えたか一言添える。
 4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で完了する。
 
 ### Phase 7: 後処理

@@ -35,7 +35,7 @@ Issue 管理ワークフロープラグイン。linear-workflow / indie-workflow
 
 - 放置 Issue 検知・スコープ管理（`scope_size`: small 3 / medium 7 / large 15。超過はリアルタイム警告）
 - 技術的負債トラッキングと定期棚卸し
-- knowledge の蓄積（source / concept の 2 層 + wikilink）と健全性 lint
+- knowledge の蓄積（source / concept / rejected の 3 種 + wikilink）と健全性 lint。rejected（却下記録）は「対応しない」と決めた提案を理由付きで永続化し、discover の再提案を機械的に抑止する
 - AI 主導の課題発見（discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）
 - 振り返り（retrospective。完了実績・見積もり精度・反復テーマの concept 化提案）
 - issue 作業の全散文成果物に writing-polish 推敲を必須連携（未インストール時は skip）

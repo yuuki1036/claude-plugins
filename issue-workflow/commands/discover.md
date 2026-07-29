@@ -3,6 +3,7 @@ description: AI が課題を発見して issue を自動起票
 allowed-tools:
   - Read
   - Write
+  - Edit
   - Glob
   - Grep
   - Bash

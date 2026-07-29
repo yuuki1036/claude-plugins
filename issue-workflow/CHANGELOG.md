@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.0] - 2026-07-29
+
+### Added
+- **却下記録（`kind: rejected`）機構を追加**（mattpocock/skills の triage `.out-of-scope/` KB を翻案）。人間が「対応しない」と明示判断した提案・課題を knowledge に概念単位・理由付きで永続化し、discover の重複除外（Phase 4 に照合ステップ追加。キーワードでなく概念類似で判定）が参照して再提案を機械的に抑止する。書式・照合基準（概念類似の正例・負例・迷ったら backlog に倒す fail-open）の正本は `discover/references/rejected-record.md`（frontmatter は `status: rejected` 固定 + `rejected: 日付`、鮮度フィールドなし）。書き込み導線は discover Phase 7.5（レポート後のユーザー見送り指示）と maintain の破棄フロー（canceled / dismissed / backlog 破棄、処理 2・3・6・7 共通ルール）。「実装済みだった候補は記録しない」「一時的理由（優先度低下）は却下でなく延期」の汚染防止規定つき。knowledge SKILL の kind 表・一覧表示（concept → source → rejected の 3 段）に登録し、knowledge-lint の適用範囲を明文化（項目 7 は却下記録同士のみ・項目 8 鮮度は対象外 = ADR の append_only 免除と同扱い）。discover の allowed-tools に Edit を追加（却下履歴・index.md への追記用、command 側も同期）
+- **design-rules にルール6「分割は縦に切る」を追加**（同リポジトリ to-tickets の vertical slice / expand–contract を翻案）。Issue 分割は層で横に切らず単独検証可能な縦のスライスで切る規範と、wide refactor の expand → migrate → contract 3 段分解（各段をルール3 の先行/後続で接続）。issue-maintain の detection-guards スコープ超過警告 (B) からも参照
+
+### Changed
+- design-rules.md の冒頭注記を実態に合わせ更新（linear-workflow への byte-identical 複製規約は ADR-20260722164106 のミラー規約廃止に伴い終了。既に diverge していた）
+
+### Fixed
+- issue-create Phase 6.5 の writing-polish 保護対象の記述を「9 セクション構造」から「テンプレート構造（type 別テンプレートの見出し階層）」に修正（issue-create が使う type 別テンプレは 9 セクションではなく、9 セクションは issue-design 経由のリライトでのみ適用されるため用語がずれていた）
+
 ## [1.3.0] - 2026-07-28
 
 ### Added

@@ -36,8 +36,9 @@ knowledge は 2 種類ある。frontmatter の `kind` で区別する。
 |------|------|------|
 | `source`（省略時のデフォルト） | `knowledge/*.md` | 個別知見。1 つの Issue / 調査から切り出した単一トピックの知見 |
 | `concept` | `knowledge/concepts/*.md` | 概念ページ。複数の source を横断して統合した知見（共通パターン・矛盾・全体構造） |
+| `rejected` | `knowledge/*.md` | 却下記録。人間が「対応しない」と明示判断した提案・課題を概念単位で理由付き永続化したもの。discover の重複除外と maintain の破棄フローが読み書きする（書式の正本: discover の `references/rejected-record.md`。frontmatter は `status: rejected` 固定 + `rejected: 日付`、鮮度フィールドは持たない） |
 
-`kind` が無いファイルは `source` として扱う（後方互換）。概念ページの本質は「複数ソースを繋いで初めて見える構造」を蓄積することにある。
+`kind` が無いファイルは `source` として扱う（後方互換）。概念ページの本質は「複数ソースを繋いで初めて見える構造」を蓄積することにある。却下記録の本質は「やらないという決定」を institutional memory として残し、同じ提案の再検討を機械的に防ぐことにある。
 
 `concept` には任意のサブ分類 `subkind: glossary` を付けられる。用語の SSoT（単一定義ページ）として扱われ、複数 glossary 間で同一用語が重複定義されていないかを `/knowledge-lint`（項目 9）が検出する。
 
@@ -86,7 +87,7 @@ knowledge 同士は `[[name]]` 記法でリンクする（`name` は拡張子な
 3. **index.md が存在しない場合:**
    - `{DATA_DIR}/{slug}/knowledge/**/*.md` を Glob で列挙（`concepts/` 配下も含む。`index.md` は除外）
    - 各ファイルのフロントマター（kind, tags, status, source）を Read して一覧化
-4. **概念ページ（concept）を先に、個別知見（source）を後に**表示する。concept は横断的に俯瞰するエントリポイントになるため上位に置く
+4. **概念ページ（concept）→ 個別知見（source）→ 却下記録（rejected）の順に**表示する。concept は横断的に俯瞰するエントリポイントになるため上位に、rejected は「やらないことの記録」なので末尾に置く
 5. knowledge が0件の場合:
    - 「このプロジェクトにはまだ knowledge がありません。`/issue-maintain` で知見を切り出せます。」と表示
 
@@ -141,9 +142,16 @@ knowledge 同士は `[[name]]` 記法でリンクする（`name` は拡張子な
 |---------|------|--------|------|
 | api-patterns.md | api, rest, pagination | verified | REST API のページネーションパターン |
 
-concept {M}件 / source {N}件。
+### 却下記録（対応しないと決めたもの）
+| ファイル | tags | status | 概要 |
+|---------|------|--------|------|
+| dark-mode.md | theme, ui | rejected | ダークモード対応はしない（レンダリング前提が単一パレット） |
+
+concept {M}件 / source {N}件 / rejected {R}件。
 `/knowledge search <keyword>` で検索、`/knowledge-lint` で健全性チェックができます。
 ```
+
+> 却下記録が 0 件のときは「却下記録」セクションごと省略する。
 
 ### 検索結果
 

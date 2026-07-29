@@ -71,12 +71,20 @@ effort によらず「止まらず実行し切り、実行後レポートで報�
 `status: in-progress` の Issue のうち、`last_active` が **7日以上前** のものを検出する。
 
 - 検出した Issue を**最終レポートに列挙**する（経過日数つき）。継続 / 凍結（`status: frozen` + `frozen_date`）/ 破棄（`status: canceled`）の判断はユーザーがチャットで指示する。AskUserQuestion で止めない
+- 破棄指示を受けたら「破棄時の却下記録」（処理 3 直後の共通ルール）を適用する
 
 ### 3. frozen Issue 再評価
 
 `status: frozen` の Issue のうち、`frozen_date` が **30日以上前** のものを検出する。
 
 - 検出した Issue を**最終レポートに列挙**する（凍結日数つき）。再開（`status: in-progress` + `last_active` 更新）/ 破棄（`status: canceled`）の判断はユーザーがチャットで指示する。AskUserQuestion で止めない
+
+#### 破棄時の却下記録（処理 2・3・6・7 共通）
+
+破棄（`status: canceled` / follow-up の `dismissed` / backlog 項目の破棄）を指示されたとき、それが「二度と取り組まない」性質の提案・課題なら、却下理由を `kind: rejected` の knowledge に記録する（書式・index.md 追記の正本: `${CLAUDE_PLUGIN_ROOT}/skills/discover/references/rejected-record.md`）。discover の再提案抑止がこの記録を照合する。
+
+- ユーザーの破棄指示に理由が含まれていればそれを使い、無ければ「理由も残しますか（discover の再提案抑止に使われます）」と一言だけチャットで確認する
+- 単なる中断・優先度低下・時期尚早は却下ではないので記録しない（canceled にするだけでよい）
 
 ### 4. debt サマリー
 
@@ -124,6 +132,7 @@ effort によらず「止まらず実行し切り、実行後レポートで報�
 - `status: open` のものを列挙する
 - `created` から14日以上経過しているものを警告付きでハイライトする
 - 検出した follow-up を**最終レポートに列挙**する。対処（昇格 `/follow-up promote` / backlog 移動 / 削除 `dismissed`）はユーザーがチャットで指示する。AskUserQuestion で止めない
+- `dismissed` 指示が「二度とやらない」判断なら、「破棄時の却下記録」（処理 3 直後の共通ルール）に従い `kind: rejected` に記録する
 
 ### 7. backlog.md 整理
 
@@ -131,6 +140,7 @@ effort によらず「止まらず実行し切り、実行後レポートで報�
 
 - 優先度や緊急性が高そうな項目をハイライト
 - 昇格する場合は Issue ファイルを作成し、backlog.md から削除
+- 項目の破棄（削除）指示が「二度とやらない」判断なら「破棄時の却下記録」（処理 3 直後の共通ルール）を適用する。単なる整理・陳腐化による削除は記録不要
 
 ### 8. project.md 更新
 
