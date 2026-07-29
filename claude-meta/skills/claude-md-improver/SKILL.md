@@ -8,7 +8,6 @@ effort: high
 allowed-tools:
   - Read
   - Edit
-  - Glob
   - Grep
   - Bash
   - AskUserQuestion

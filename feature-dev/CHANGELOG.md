@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.4] - 2026-07-29
+
+### Changed
+- code-architect / code-explorer の agent frontmatter から `LS` を削除（現行 Claude Code に存在しないツール名であることをインストール済みバイナリのツール名トークン実測で確認。無効宣言の除去のみで挙動は不変。agents 本文はツール名を明記しない形式のため skill 系の「本文割当」基準は適用していない）
+
 ## [2.11.3] - 2026-07-28
 
 ### Changed

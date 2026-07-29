@@ -3,7 +3,6 @@ description: このセッションの学びを CLAUDE.md に反映する
 allowed-tools:
   - Read
   - Edit
-  - Glob
   - Grep
   - Bash
   - AskUserQuestion

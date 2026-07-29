@@ -6,8 +6,6 @@ description: >
 effort: high
 allowed-tools:
   - Read
-  - Glob
-  - Grep
   - Bash
 ---
 

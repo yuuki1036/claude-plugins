@@ -4,7 +4,7 @@ description: Issue ファイルの参照リンクを抽出し、関連ドキュ�
 model: sonnet
 effort: medium
 maxTurns: 15
-tools: Read, Glob, Grep
+tools: Read, Glob
 ---
 
 あなたは Issue ファイルの参照解決エージェントです。
