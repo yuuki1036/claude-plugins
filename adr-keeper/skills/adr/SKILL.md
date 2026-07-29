@@ -77,6 +77,19 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
 
 ## Phase 3: new（新規作成）
 
+**記録価値の 3 条件セルフチェック**（手順に入る前に自問する。ゲートの目的は ADR の希釈防止 — 些末な記録が混ざるほど、重要な ADR が読まれなくなる。**Phase 4 supersede からの呼び出しでは適用しない** — 覆される決定が既に ADR として存在すること自体が 3 条件の充足を示すため）:
+
+1. **覆すコストが大きい** — 後からこの判断を変えるのに意味のある作業・調整が要る
+2. **文脈なしでは不可解** — 将来の読者が「なぜこうしたのか」と疑問に思う
+3. **実在したトレードオフの結果** — 本物の代替案があり、理由を持って選んだ
+
+3 つすべて YES なら黙って手順 1 へ進む。**1 つでも NO なら** AskUserQuestion で 1 回だけ確認する（再確認はしない。ユーザーが「記録する」を選んだらそれ以上異を唱えない）:
+- question: "この判断は {満たさない条件} を満たさないように見えます。ADR として記録しますか？"
+- header: "ADR ゲート"
+- options:
+  1. label: "記録しない (Recommended)" / description: "design doc の決定事項・knowledge・コミットメッセージ等の軽い置き場で足りる"
+  2. label: "ADR として記録する" / description: "3 条件の判定に誤りがある、または記録する独自の理由がある"
+
 1. **タイムスタンプ取得**（必ず Bash で取る。擬似時刻を作らない）:
    ```bash
    date +%Y%m%d%H%M%S
@@ -154,7 +167,7 @@ supersede 時は旧 ADR の更新結果も併記する。
 1. Phase 0: .claude/adr/ 存在確認（無ければ mkdir）
 2. Phase 1: サブコマンド判定（list / new / supersede）
 3. Phase 2: list → frontmatter 解析 → id 降順の表
-4. Phase 3: new → date +%Y%m%d%H%M%S → kebab → template Write
+4. Phase 3: new → 記録価値 3 条件ゲート（supersede 経由は除外）→ date +%Y%m%d%H%M%S → kebab → template Write
 5. Phase 4: supersede → 新 ADR 作成 + 旧 ADR 4 フィールド更新 + 相互参照確認
 6. Phase 5: 完了報告
 ```

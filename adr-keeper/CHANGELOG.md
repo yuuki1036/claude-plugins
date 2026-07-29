@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.0] - 2026-07-29
+
+### Added
+- **Phase 3 (new) に記録価値の 3 条件セルフゲートを追加**（mattpocock/skills の domain-modeling「Offer ADRs sparingly」を翻案）。①覆すコストが大きい ②文脈なしでは不可解 ③実在したトレードオフの結果 — の 3 条件を書く前に自問し、1 つでも欠けたら AskUserQuestion で 1 回だけ確認する（推奨は「記録しない」= design doc の決定事項・knowledge 等の軽い置き場）。従来 `/adr new` 直接起動には抑止が一切なく、ゲートは spec-advisor の WHY 軸ルーティング判定と design-doc の `[→ADR候補]` マーカーに外在していた。supersede（Phase 4）経由の新 ADR 作成にはゲートを適用しない（覆される決定の存在自体が 3 条件の充足を示すため）。目的は ADR の希釈防止
+
 ## [0.2.2] - 2026-07-23
 
 ### Fixed
