@@ -9,7 +9,7 @@
     {
       "name": "code-review",
       "description": "Phase 0 トリアージ + 動的エージェント構成の PR コードレビュー / セルフレビュー。confidence × severity の 2 軸スコアリングで報告閾値をマトリクス制御し、diff パターンから explorer(sonnet) → reviewer(opus) を動的構成する。red-flag specialist 自動起動、adaptive deepening（追加 explorer ラウンド）、高 severity 検出時の meta-reviewer(opus) ラウンド、冷や読み skeptic（high-risk surface で findings 非注入の独立 opus が fleet 共通盲点を破る recall 補強）、反証レイヤー（reviewer 指摘を独立 opus が反証し偽陽性を先回り摘出、高 severity は消さず係争注記）を備える。high-risk surface（DB 書込 / 金 / 認可）に限り報告閾値を surface-aware に緩め recall を非対称補正。doc-substance 観点で docs の内容妥当性も検証。self-review は --embed で他プラグイン（feature-dev Phase 6 等）から委譲可能。review:completed を Event Bus に publish。",
-      "version": "2.37.5",
+      "version": "2.38.0",
       "author": {
         "name": "yuki"
       },
@@ -56,7 +56,7 @@
     {
       "name": "issue-workflow",
       "description": "Issue 管理ワークフロー（linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。",
-      "version": "1.2.2",
+      "version": "1.3.0",
       "author": {
         "name": "yuki"
       },

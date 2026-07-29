@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.38.0] - 2026-07-28
+
+### Added
+- **worktree teardown 連携を追加**（worktree 削除の独立した 2 トリガー点のうち「レビュー完了後」側。Issue 完了後側は issue-workflow:issue-maintain 1.3.0 が担う）
+  - self-review Step 8: 非 embed・worktree 内・worktree-setup マーカー（`envs/.backend.env.worktree`）あり・clean tree・dev-workflow 有効（enabled-only 判定）の全条件成立時、修正方針フロー完了後に AskUserQuestion（残す / 削除する）で確認し、削除選択時は `dev-workflow:worktree-teardown` を Skill 起動する。allowed-tools に Skill を追加（command 側も同期）。embed 契約（Step 1）にも Step 8 skip を明記
+  - review 締めフロー 6: ExitWorktree 後に PR ブランチへ紐づく開発用 worktree を「ブランチ一致 + `.claude/worktrees/` 除外 + worktree-setup マーカー」の 3 条件で検出し、`/worktree-teardown` の実行を案内する（ブランチ一致だけではレビュー用一時 worktree を誤検出するため。teardown は worktree 内からしか実行できないため自動起動せず案内のみ・非ブロッキング）
+  - `_requirements` / check-deps.sh に dev-workflow（optional plugin）を追加
+
 ## [2.37.5] - 2026-07-28
 
 ### Changed

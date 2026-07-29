@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.0] - 2026-07-28
+
+### Added
+- **issue-maintain に worktree teardown 連携を追加**。Issue の status が completed / canceled に遷移し、Issue ブランチに紐づく worktree（境界付き grep で検出。`MYAPP-3` が `MYAPP-30` に部分一致しない）が存在する場合、**AskUserQuestion（削除する / 残す）で確認してから** `dev-workflow:worktree-teardown` を起動する（teardown は clean tree の `git worktree remove` を無確認実行するため、削除の同意は呼び出し元で取る。「起動＝実行確定」原則の唯一の例外 = git 復元不能な不可逆操作。allowed-tools に AskUserQuestion を追加、command 側も同期）。worktree 削除のトリガー点は code-review レビュー後と本スキル後の独立した 2 点で、こちらは Issue 完了側を担う。自動起動は「本実行での遷移 && worktree 内 && dev-workflow 有効（enabled-only 判定: `": true"` 明示マッチ × settings 3 ファイル走査）」のときのみ。teardown 候補のレポート列挙（非破壊）は遷移不問で行い、`--all` / main clone での残骸 worktree の受け皿はこちらが担う。cwd 消失事故を防ぐため起動は必ず全処理・最終レポート後、かつ起動前に Issue ファイル編集のコミット状況を確認する
+- `_requirements` / check-deps.sh に dev-workflow（optional plugin）を追加
+
 ## [1.2.2] - 2026-07-28
 
 ### Changed

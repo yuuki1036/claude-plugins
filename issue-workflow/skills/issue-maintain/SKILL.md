@@ -13,6 +13,7 @@ allowed-tools:
   - Glob
   - Bash
   - Skill
+  - AskUserQuestion
 ---
 
 # Issue メンテナンス
@@ -222,6 +223,7 @@ Issue のタスクが全て完了した場合、以下を実行する：
      「open な follow-up が {N}件あります。`/follow-up list` で確認できます」
    - frontmatter の `follow_up` リストに未起票の文字列がある場合:
      「未起票の follow-up が {N}件あります。`/follow-up new` で記録できます」とレポートに列挙（自動記録はしない）
+7. worktree teardown 連携の発動判定（「worktree teardown 連携」節を参照。起動は最終レポート後）
 
 ---
 
@@ -273,6 +275,53 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 
 ---
 
+## worktree teardown 連携（完了 Issue の worktree 破棄）
+
+Issue 完了後に作業用 worktree（dev-workflow:worktree-setup で作成。識別マーカー: worktree 内の `envs/.backend.env.worktree`）が放置されるのを防ぐ後片付け連携。worktree 削除のトリガー点は 2 つあり（①通常のレビュー完了後 = code-review 側が担当 / ②Issue 完了後 = 本節が担当）、互いに独立している（通常の review 実施後に本スキルは走らない）。
+
+### 関連 worktree の検出
+
+ブランチ名に Issue ID を含む worktree を**境界付き**で検出する（`MYAPP-3` が `MYAPP-30` のブランチに部分一致しないよう、ID 直後に区切り文字を要求する）:
+
+```bash
+git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)" || true
+```
+
+### レポート列挙（非破壊・status 遷移は不問）
+
+対象 Issue が completed / canceled で、関連 worktree が存在すれば、実行文脈（worktree 内 / main clone / `--all`）を問わず最終レポートに **teardown 候補**として worktree パスと「該当 worktree 内で `/worktree-teardown` を実行」の案内を列挙する。破壊的操作を伴わないため status 遷移の有無は問わない（`--all` で元から completed の残骸 worktree を拾う受け皿はこちら）。dev-workflow 未インストール環境では「main 側から `git worktree remove <path>` で削除」の手動案内を添える。
+
+### 自動起動（すべて満たす場合のみ）
+
+1. 本スキルの実行で対象 Issue の status が `completed` / `canceled` に**遷移した**（元から completed だった Issue の再整理では発動しない）
+2. 現在のセッションが該当 worktree 内で動いている: `git rev-parse --git-dir` ≠ `git rev-parse --git-common-dir` かつ現ブランチが該当 Issue のブランチ（main clone 上では自動起動しない。worktree-teardown は worktree 内からしか実行できない）
+3. dev-workflow が**有効**である:
+   ```bash
+   DEV_WORKFLOW=0
+   for f in "$HOME/.claude/settings.json" ".claude/settings.json" ".claude/settings.local.json"; do
+     grep -Eq '"dev-workflow@[^"]*"[[:space:]]*:[[:space:]]*true' "$f" 2>/dev/null && DEV_WORKFLOW=1
+   done
+   ```
+   キー存在だけを見る grep は使わない（`": false"` の無効化済みプラグインを導入済みと誤判定し、project-scoped 有効化を取りこぼすため。enabled-only 判定）
+
+発動時、**最終レポート出力後**に **AskUserQuestion** で削除の意思を確認する（worktree・DB・env は git で復元できない不可逆操作のため「起動＝実行確定」原則の例外として確認する。teardown 自身は clean tree の `git worktree remove` を確認なしで実行するため、削除の同意は必ずここで取る）:
+
+- question: "Issue 完了に伴い、この worktree を削除（teardown）しますか？"
+- header: "worktree"
+- multiSelect: false
+- options:
+  1. label: "削除する" / description: "dev-workflow:worktree-teardown を起動して DB / port / worktree を片付ける"
+  2. label: "残す" / description: "worktree を維持する（続けて作業する場合はこちら）"
+
+「削除する」が選ばれたら `Skill` tool で `dev-workflow:worktree-teardown` を起動する。プロセス kill / DB drop / `--force` remove の個別確認は teardown 側のチェックリストに従う。
+
+### 注意
+
+- teardown を起動する前に、本スキルが行った Issue ファイル・knowledge の編集のコミット状況を確認する。worktree 側 `{DATA_DIR}` への未コミット編集は worktree remove で失われるため、残したい変更は先にコミットする（teardown の uncommitted チェックでも警告されるが、このスキル自身の編集が失われる事故を防ぐため先に確認する）
+- teardown は cwd（worktree）自体を削除するため、必ず**このスキルの全処理と最終レポートを終えた後**に起動する
+
+---
+
 ## writing-polish 連携（本文添削・必須）
 
 整理後の **Issue 本文** と **切り出した knowledge ページ** の両方を、ファイル確定（処理フロー Step 13）の直前に `Skill` tool で `writing-polish:writing-polish` を呼んで推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
@@ -317,6 +366,10 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
     - スコープ外差分から検出した follow-up 候補（記録は未実行。ユーザーが判断）
     - レビュー未実施の警告（該当する場合。非ブロッキング）
     - 追加したテンプレート不足セクション
+    - worktree teardown 候補（main 上で検出した場合 / dev-workflow 未インストールの場合の手動案内）
+16. worktree teardown 連携の自動起動（発動条件・分岐の正本は「worktree teardown 連携」節。
+    completed / canceled 遷移 && worktree 内 && dev-workflow 有効のとき、AskUserQuestion で
+    削除の意思を確認してから dev-workflow:worktree-teardown を起動。cwd が消えるため必ず最終ステップ）
 ```
 
 ## 更新履歴への記録形式
@@ -332,5 +385,5 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 - **情報を減らすのではなく、ノイズを減らす**
 - 判断に迷う場合は残す（過剰な削除よりは冗長な方がマシ）
 - knowledge/ 切り出し時は必ずコードベースとの照合を行う
-- 起動＝実行確定。承認待ちで止まらず最後まで実行し、**実行後にレポートで報告**する（AskUserQuestion で問い直さない）
+- 起動＝実行確定。承認待ちで止まらず最後まで実行し、**実行後にレポートで報告**する（AskUserQuestion で問い直さない）。**唯一の例外**は worktree teardown 連携の削除確認（git で復元できない不可逆操作のため。最終レポート後に置くことで実行の流れも止めない）
 - Issue ファイルは git 管理下のため、不要な変更は git で復元できる

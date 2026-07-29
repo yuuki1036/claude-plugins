@@ -503,3 +503,21 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
    - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` / `recall_skeptic` は新規フィールド追加なので旧 subscriber 影響なし
 
 5. **ExitWorktree** で worktree から抜ける。
+
+6. **関連 worktree の teardown 案内（任意・非ブロッキング）**: ExitWorktree 後（main clone 上）、PR ブランチに紐づく**開発用 worktree**（dev-workflow:worktree-setup で作成したもの）が残っていないか検出する。ブランチ名一致だけではレビュー用に EnterWorktree した一時 worktree（`.claude/worktrees/` 配下）と区別できないため、**パス除外 + worktree-setup マーカーの 2 条件**で開発用 worktree に限定する:
+
+   ```bash
+   # PR ブランチを保持する worktree を列挙 → 一時 worktree を除外 → worktree-setup 由来のみ残す
+   git worktree list --porcelain \
+     | awk -v ref="refs/heads/<PR ブランチ名>" '/^worktree /{wt=substr($0,10)} $0=="branch "ref{print wt}' \
+     | while read -r wt; do
+         case "$wt" in */.claude/worktrees/*) continue;; esac   # レビュー用一時 worktree
+         [ -f "$wt/envs/.backend.env.worktree" ] && echo "$wt"  # worktree-setup マーカー
+       done
+   ```
+
+   - 検出した場合のみ、最後に一言案内する: 「関連する開発用 worktree が残っています: `<path>`。作業が完了していれば該当 worktree 内で `/worktree-teardown` を実行して片付けられます」
+   - dev-workflow の有効判定は self-review Step 8 と同じ enabled-only 判定（`grep -Eq '"dev-workflow@[^"]*"[[:space:]]*:[[:space:]]*true'` を global / project / local の settings 3 ファイルに対して実行）。無効なら `git worktree remove <path>` の手動案内に切り替える
+   - worktree-teardown は worktree 内からしか実行できないため、ここでは**自動起動しない**（案内のみ）
+   - 未検出なら何も出力しない
+   - 補足: 開発用 worktree が PR ブランチを checkout したままだと、Step 1 の `gh pr checkout` は二重チェックアウト禁止で失敗する（レビュー自体は `gh pr diff` ベースで劣化続行できる）。その経路でも本ステップの検出は機能する

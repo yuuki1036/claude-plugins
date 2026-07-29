@@ -63,6 +63,7 @@ check_plugin "bdd-spec" "false" "bdd-spec プラグイン（issue-design bilayer
 check_plugin "design-doc" "false" "design-doc プラグイン（issue-design の design doc 昇格 / issue-create の spec 選択）"
 check_plugin "adr-keeper" "false" "adr-keeper プラグイン（issue-create の spec 選択で ADR 記録）"
 check_plugin "writing-polish" "false" "writing-polish プラグイン（散文成果物の確定前 embed 推敲）"
+check_plugin "dev-workflow" "false" "dev-workflow プラグイン（issue-maintain の Issue 完了時に worktree-teardown を起動）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then

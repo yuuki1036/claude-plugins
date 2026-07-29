@@ -8,6 +8,7 @@ allowed-tools:
   - Glob
   - Bash
   - Skill
+  - AskUserQuestion
 argument-hint: ""
 ---
 

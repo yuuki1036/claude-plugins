@@ -5,6 +5,7 @@ allowed-tools:
   - Read
   - Agent
   - AskUserQuestion
+  - Skill
 argument-hint: "[--staged | base branch] [--focus <観点>] [--exclude <観点1,観点2>] [--embed] (省略時はデフォルトブランチとの差分)"
 ---
 
