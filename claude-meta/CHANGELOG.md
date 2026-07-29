@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.2] - 2026-07-29
+
+### Fixed
+- **実在しない plugin-dev プラグインへの委譲参照を実在する受け皿に差し替え**。component-addition-advisor の「他スキルとの連携」（plugin-validator / skill-reviewer への委譲 2 箇所 + 末尾の委譲宣言）を `/quality-check` + `validate_plugin_quality.py`（構造・同期）と `docs/skill-writing.md` + eval-runner（執筆品質・トリガー回帰）に変更。cc-catch-up P.4 の「新規 hook 作成は別途 plugin-dev で」を `docs/rule-placement.md` の判定フロー参照に変更。plugin-dev はリポジトリに一度も実在せず「skill 作成後の品質レビュー」の受け皿が宙に浮いていた（ルート CLAUDE.md の同種参照 2 箇所も同時に解消）。claude-code-setup references 内の plugin-dev 言及は公式マーケットプレイスのプラグインを指す正当な記述のため対象外
+
 ## [1.13.1] - 2026-07-29
 
 ### Changed

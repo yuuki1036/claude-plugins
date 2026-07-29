@@ -95,7 +95,6 @@ claude plugin prune
 - commands/ と skills/ の allowed-tools は一致させる（コマンドとスキルがペアになっている場合のみ。独立したコマンドやスキルには適用されない。別名ペア（`commit`↔`git-commit-helper` 等）は `validate_plugin_quality.py` の `COMMAND_SKILL_ALIASES` に登録して検証対象に含める — 新しい別名ペアを作ったら対応表への追加も必須）
 - 後から変えにくい判断を伴う方針確認は `AskUserQuestion` で選択 UI を提示する（SKILL.md のワークフロー内に呼び出し仕様を直接記述する）
   - **例外（起動＝実行確定なスキル）**: ユーザーがコマンド起動した時点で実行意思が確定しているメンテナンス系スキル（maintain 系等）では、起動時の実行可否確認・モード選択や実行中の承認を `AskUserQuestion` で問い直さない。選択 UI で通常のチャット入力が奪われる UX コストを避けるため、止まらず最後まで実行し**結果は実行後レポートで報告**する。判断が要る検出（削除・status 遷移等）は AskUserQuestion で止めず**レポートに列挙してチャットで指示**を受ける。前提は「操作対象が git 管理下で復元可能」かつ「実行後に全件レポートで可視化される」こと。この前提を満たさない不可逆操作（外部送信・本番影響等）は従来どおり `AskUserQuestion` で確認する
-- plugin 開発は plugin-dev plugin を用いて必要に応じて agent team を使用する
 - 新 skill / agent / hook / command を追加する前は `claude-meta:component-addition-advisor` で退路確保（既存拡張で解けないか）を判定する
 - **深掘り系スキルには `${CLAUDE_EFFORT}` 実行時分岐を必須とする**。深掘り系 = 走査・分析・レビュー・多段 agent など「かける深さで結果の質が変わる」スキル（maintain / discover / review / retrospective / design 系）。単純 CRUD・scaffold・単発記録系（init / follow-up / log-failure 等）には不要
 - **issue-workflow の backend 分岐規約**: 旧 linear-workflow / indie-workflow のミラー規約は廃止した（ADR-20260722164106）。共通機能は issue-workflow 内の backend 分岐（`BACKEND=local|linear` / `{DATA_DIR}` 変数化 / 「BACKEND=linear のときのみ」の条件付き Phase）で表現する。backend 判定述語は「データ dir が存在し、かつ slug サブディレクトリを 1 つ以上持つ」で SKILL（Phase 0）と hook（`hooks/lib/detect-backend.sh`）を統一する。プラグイン間依存禁止の制約下で複製が発生したら、それは分割単位の誤りを示すシグナルとして扱う
@@ -190,7 +189,7 @@ event_bus_clear
 ## 品質チェック
 
 プラグインの新規作成・変更時は `/quality-check` で全プラグインの品質バリデーションを実行する。
-個別のスキル開発時は plugin-dev の agent team（plugin-validator, skill-reviewer）を活用する。
+個別のスキル開発時は `docs/skill-writing.md` の観点（description の branch 設計・情報階層・no-op 剪定・失敗モードカタログ）で自己点検し、description / トリガーフレーズを変えたら evals で回帰を確認する。
 
 **自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/agents/` / `*/references/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
 

@@ -214,12 +214,12 @@ options:
 
 ## 他スキルとの連携
 
-- **`plugin-dev:plugin-validator`**: 構造検証はこちらに任せる
-- **`plugin-dev:skill-reviewer`**: 作成後の品質レビューはこちらに任せる
+- **`/quality-check` + `validate_plugin_quality.py`**: 構造検証・スキーマ・SSoT 同期はこちらに任せる
+- **`docs/skill-writing.md` + `claude-meta:eval-runner`**: 作成後の品質点検（執筆観点の自己レビュー + トリガー回帰テスト）はこちらに任せる
 - **`claude-meta:cc-catch-up`**: Phase P（剪定モード）の判定材料として本 skill の `_requirements` を参照する
 - **`claude-meta:claude-md-improver`**: Skill Coordination セクションで新 skill を参照すべきかを判定する
 
-本 skill は **追加前のゲート** を担当。作成後のレビューは plugin-dev の agent team に委譲する。
+本 skill は **追加前のゲート** を担当。作成後の検証は `/quality-check`（構造・同期）と `docs/skill-writing.md` + evals（執筆品質・トリガー回帰）に委譲する。
 
 ## 使用例
 
