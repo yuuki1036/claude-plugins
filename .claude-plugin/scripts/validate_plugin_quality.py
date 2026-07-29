@@ -27,6 +27,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - コンテキスト予算: skill description の単体上限（600 chars）と全プラグイン合計上限
     （15,000 chars）. description は毎セッションのシステムプロンプトに常駐するため,
     肥大化は合計で判断品質を劣化させる.
+  - skill 本文サイズ: SKILL.md 本文の行数上限（500 行）. 超過は references への
+    progressive disclosure を促す（規模目安の正本は component-addition-advisor,
+    執筆指針は docs/skill-writing.md）.
 
 実行: python3 validate_plugin_quality.py [plugin_dir ...]
   引数無し: 全プラグイン
@@ -538,6 +541,31 @@ def check_context_budget(warnings: list[str]) -> None:
         )
 
 
+# SKILL.md 本文は起動時に全文ロードされる. 500 行以上は references への
+# progressive disclosure を検討するサイン（規模目安は component-addition-advisor
+# の「500 行以上 → references に分割」, 執筆指針は docs/skill-writing.md）.
+# frontmatter は context-budget 側で別途計上するため本文行数から除外する.
+SKILL_BODY_LINE_LIMIT = 500
+
+
+def check_skill_body_size(warnings: list[str]) -> None:
+    """SKILL.md 本文（frontmatter を除く）の行数を検証する（非ブロッキング warning）."""
+    for skill_md in sorted(ROOT.glob("*/skills/*/SKILL.md")):
+        lines = read_text(skill_md).splitlines()
+        if lines and lines[0].strip() == "---":
+            for i, line in enumerate(lines[1:], start=1):
+                if line.strip() == "---":
+                    lines = lines[i + 1 :]
+                    break
+        n = len(lines)
+        if n >= SKILL_BODY_LINE_LIMIT:
+            warnings.append(
+                f"[skill-size] SKILL.md 本文 {n} 行 >= {SKILL_BODY_LINE_LIMIT}"
+                f"（一部 branch しか使わない定義・表は references へ — docs/skill-writing.md）: "
+                f"{skill_md.relative_to(ROOT)}"
+            )
+
+
 CHECKS = [
     check_allowed_tools_exists,
     check_allowed_tools_pair,
@@ -627,6 +655,7 @@ def main() -> int:
     check_event_bus_sync(errors)
     check_agent_sync_launch_repo_local(warnings)
     check_context_budget(warnings)
+    check_skill_body_size(warnings)
 
     if warnings:
         # 助言（非ブロッキング）. errors と分離して常に出力する.

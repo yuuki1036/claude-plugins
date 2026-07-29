@@ -12,18 +12,18 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 
 | プラグイン | version | cmd | skill | agent | hooks | mcp | 概要 |
 |-----------|---------|----:|------:|-------|-------|-----|------|
-| [adr-keeper](#adr-keeper) | 0.2.2 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
+| [adr-keeper](#adr-keeper) | 0.3.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.1 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [claude-meta](#claude-meta) | 1.13.0 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.38.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.4.3 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
-| [dev-workflow](#dev-workflow) | 1.24.0 | 3 | 5 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・worktree |
+| [dev-workflow](#dev-workflow) | 1.25.0 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.0 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.3.1 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.11.3 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.1 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
 | [indie-workflow](#indie-workflow) | 1.40.7 | 11 | 11 | 3 | 5 events | - | **deprecated** → issue-workflow へ移行 |
-| [issue-workflow](#issue-workflow) | 1.3.0 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
+| [issue-workflow](#issue-workflow) | 1.4.0 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [linear-workflow](#linear-workflow) | 1.37.6 | 10 | 10 | 3 | 4 events | - | **deprecated** → issue-workflow へ移行 |
 | [living-spec-workflow](#living-spec-workflow) | 0.3.1 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.7 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
@@ -39,7 +39,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 ## 各プラグイン詳細
 
 ### adr-keeper
-設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法 (Enforcement) セクション必須。supersede 時は新規作成 + 旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。
+設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法 (Enforcement) セクション必須。new 時は記録価値 3 条件ゲート（覆すコスト大 × 文脈なしで不可解 × 実在のトレードオフ。欠けたら 1 回だけ確認、supersede 経由は除外）。supersede 時は新規作成 + 旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。
 - **commands**: `adr`
 - **skills**: `adr`
 
@@ -68,9 +68,9 @@ Phase 0 トリアージ + 動的エージェント構成のコードレビュー
 - **soft 連携**: bdd-spec（WHAT 入力）/ adr-keeper（[→ADR候補] 切り出し）/ writing-polish（散文推敲）が dormant
 
 ### dev-workflow
-Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットアップ。原子性重視コミット、Linear Issue 連携 PR、chrome-devtools MCP による UI 自動化、PostToolUse 自動 lint チェーン（opt-in）。
-- **commands**: `commit`, `pr`, `ui-verify`
-- **skills**: `git-commit-helper`, `pr-creator`, `ui-verify`, `worktree-setup`, `worktree-teardown`
+Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環境セットアップ。原子性重視コミット、Linear Issue 連携 PR、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断（diagnose）、PostToolUse 自動 lint チェーン（opt-in）。
+- **commands**: `commit`, `diagnose`, `pr`, `ui-verify`
+- **skills**: `diagnose`, `git-commit-helper`, `pr-creator`, `ui-verify`, `worktree-setup`, `worktree-teardown`
 - **hooks**: PreToolUse, PostToolUse, SessionStart
 - **mcp**: chrome-devtools（同梱）
 - **publishes**: `commit:created`（Event Bus）
@@ -109,7 +109,7 @@ Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットア
 - **subscribes**: `issue:completed`（retrospective）
 
 ### issue-workflow
-Issue 管理ワークフロー（linear-workflow / indie-workflow の統合後継）。backend（local: `.claude/indie/` / linear: `.claude/linear/`）をデータディレクトリの存在で自動判定し、単一のスキル群で両方を扱う。旧 indie 専用機能（discover / retrospective / scope_size）は両 backend に開放。
+Issue 管理ワークフロー（linear-workflow / indie-workflow の統合後継）。backend（local: `.claude/indie/` / linear: `.claude/linear/`）をデータディレクトリの存在で自動判定し、単一のスキル群で両方を扱う。旧 indie 専用機能（discover / retrospective / scope_size）は両 backend に開放。knowledge に却下記録（`kind: rejected`）を持ち、人間が見送った提案の再提案を discover が概念類似照合で抑止する。
 - **commands / skills**（同名ペア 13）: `init`, `start`, `issue-create`, `issue-design`, `issue-maintain`, `follow-up`, `knowledge`, `knowledge-lint`, `maintain`, `discover`, `retrospective`, `dashboard`（linear 専用）, `linear-maintain`（linear 専用）
 - **agents**: `code-context`, `doc-resolver`, `discover-verifier`, `linear-sync`（linear 専用）
 - **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse
@@ -170,7 +170,7 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 |------|------|------|
 | marketplace マニフェスト | `.claude-plugin/marketplace.json` | plugin.json から派生（SSoT 検証） |
 | hook 共通ラッパー（正本） | `.claude-plugin/lib/safe-hook.sh` | 各プラグインへ byte-identical 複製 |
-| spec ルーティング 3 軸コア（正本） | `.claude-plugin/lib/routing-axes.md` | ROUTING-AXES 区間を spec-advisor / linear / indie に複製（dedent 比較で同期検証） |
+| spec ルーティング 3 軸コア（正本） | `.claude-plugin/lib/routing-axes.md` | ROUTING-AXES 区間を spec-advisor routing-rubric / issue-workflow issue-create に複製（dedent 比較で同期検証） |
 | JSON Schema | `.claude-plugin/schema/` | plugin.json / marketplace.json / hooks.json |
 | SSoT 検証 | `.claude-plugin/scripts/validate-ssot.sh`, `validate_ssot.py` | バージョン・description・_requirements 同期 |
 | 自動品質チェック | `.claude-plugin/scripts/auto-quality-check.sh` | Stop hook で非ブロッキング通知 |
