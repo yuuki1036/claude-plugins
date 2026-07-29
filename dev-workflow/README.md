@@ -1,6 +1,6 @@
 # dev-workflow
 
-Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットアップを束ねた開発ワークフロープラグイン。原子性重視のコミット、Linear Issue 連携 PR、chrome-devtools MCP による UI 自動化、worktree 単位の DB / port 分離をサポートする。
+Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環境セットアップを束ねた開発ワークフロープラグイン。原子性重視のコミット、Linear Issue 連携 PR、chrome-devtools MCP による UI 自動化、feedback loop 駆動のバグ診断、worktree 単位の DB / port 分離をサポートする。
 
 ## コマンド一覧
 
@@ -9,6 +9,7 @@ Git 操作・PR 作成・UI 動作確認・git worktree 並列環境セットア
 | `/commit` | git-commit-helper | 変更を分析して原子性重視の高品質コミットを作成 |
 | `/pr` | pr-creator | 差分とコミット履歴からドラフト PR を自動作成 |
 | `/ui-verify` | ui-verify | Web UI の動作確認・スタイル調整・スクリーンショット取得 |
+| `/diagnose` | diagnose | 厄介なバグ・性能劣化を feedback loop 駆動の 6 Phase 規律で診断 |
 
 worktree-setup / worktree-teardown はコマンドを持たず、トリガーフレーズまたはスキル直接呼び出しで起動する。
 
@@ -53,6 +54,22 @@ chrome-devtools MCP を使って Web UI の動作確認・スタイル調整・�
 **トリガー例**: 「動作確認」「UI チェック」「スクリーンショット」「スタイル調整」「レスポンシブ確認」「/ui-verify」
 
 **引数**: `[verify|tune|snap] [target-url-or-path]`
+
+### diagnose
+
+厄介なバグ・性能劣化を feedback loop 駆動の 6 Phase 規律で診断するスキル。「red-capable な検証コマンドが実行済みになるまで仮説フェーズに進まない」を進入条件として強制する。
+
+- Phase 1: feedback loop 構築（手段 10 種・非決定バグは再現率引き上げ）
+- Phase 2: 再現 + 最小化（全要素が load-bearing になるまで削る）
+- Phase 3: ランク付き反証可能仮説 3〜5 個（単一仮説アンカリング防止）
+- Phase 4: `[DEBUG-xxxx]` タグ付き計装（全仮説反証時は Phase 3 へループバック）
+- Phase 5: 正しい seam でのみ回帰テスト → 修正
+- Phase 6: 後始末 + post-mortem（failure-journal / issue-workflow へ dormant 還流）
+- 原因が明白な自明バグには使わない（Phase 0 で判定）
+
+**トリガー例**: 「バグ診断」「原因を調べて」「再現しない」「遅くなった原因」「/diagnose」
+
+**引数**: `[症状・再現手順・対象箇所]`
 
 ### worktree-setup
 

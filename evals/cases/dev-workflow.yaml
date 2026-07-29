@@ -33,9 +33,24 @@ cases:
     expected_skill: dev-workflow:worktree-teardown
     k: 3
 
+  # diagnose の正発火と ui-verify との誤発火防止
+  - id: diagnose-ja
+    prompt: このバグ、再現したりしなかったりで原因が絞れないから診断して
+    expected_skill: dev-workflow:diagnose
+    k: 3
+  - id: diagnose-perf-ja
+    prompt: いつからか分からないけどアプリが遅くなった原因を調べて
+    expected_skill: dev-workflow:diagnose
+    k: 3
+
   # hold-out: 改訂サイクル中は実行されない（--only-tag holdout で実行）
   - id: commit-paraphrase-ja
     prompt: 今の変更をまとめて記録しておいて
     expected_skill: [dev-workflow:git-commit-helper, dev-workflow:commit]
+    k: 3
+    tags: [holdout]
+  - id: diagnose-paraphrase-ja
+    prompt: 直したはずなのにまた同じ症状が出てるんだけど、見てくれない？
+    expected_skill: dev-workflow:diagnose
     k: 3
     tags: [holdout]

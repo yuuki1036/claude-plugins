@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.25.0] - 2026-07-29
+
+### Added
+- **diagnose スキル / コマンドを新規追加**（mattpocock/skills の diagnosing-bugs を翻案）。厄介なバグ・性能劣化を feedback loop 駆動の 6 Phase 規律（loop 構築 → 再現+最小化 → ランク付き反証可能仮説 3〜5 → `[DEBUG-xxxx]` タグ付き計装 → 正しい seam での回帰テスト+修正 → 後始末+post-mortem）で診断する。「red-capable な 1 コマンドが存在するまで仮説フェーズに進まない」を進入条件として強制。`${CLAUDE_EFFORT}` で loop 投資・仮説数を段階化。post-mortem は failure-journal（candidates.jsonl 追記）と issue-workflow（follow-up / issue 起票提案）へ dormant 還流。多段 agent は不採用（状態を引き継ぐ逐次規律のため — pipeline-design 採否注記を SKILL.md に明記）。新規追加の根拠（component-addition-advisor 判定）: 既存 5 skill のいずれともトリガーが意味的に重ならず、リポジトリ全体にも診断系 skill が存在しない（隣接は ui-verify の console/network 監視のみ）
+
 ## [1.24.0] - 2026-07-28
 
 ### Added
