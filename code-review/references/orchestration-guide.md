@@ -14,6 +14,8 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 
 **同期起動の明示（両 skill・全 agent 起動に適用）**: explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / 冷や読み skeptic / 反証エージェントのすべてで、Agent call に `run_in_background: false` を必ず明示する。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、省略するとオーケストレーターが結果を待たずに次フェーズへ進み、完了通知の遅れた agent の出力を取りこぼす（「反応が返ってこない agent」の正体）。本ガイドの `## 6`〜`## 10` の各起動手順にもこのルールが適用される。
 
+**並列発行の明示（複数体を起動する全フェーズに適用 / GitHub issue #95）**: `run_in_background: false` は「1 体ずつ順に起動する」ことを意味**しない**。複数体を起動するフェーズでは、**同一アシスタントメッセージ内に対象フェーズの全 Agent call を並べて一括発行し、その 1 応答で全結果を待つ**。`run_in_background: false` は取りこぼし防止（結果を待つ）、同一メッセージ内の一括発行は並列性（フェーズの実時間を相内最長に収める）で、**2 つは直交する独立の要件**。1 体ずつ別メッセージで発行するとフェーズの実時間が相内最長ではなく全体の合計になる（実測: 12 体のレビューで 20.9 min で済むところが 72.9 min、約 3.5 倍。issue #95）。単体起動のフェーズ（meta-reviewer / 冷や読み skeptic）には適用対象がない。
+
 ## 1. PR 番号注入（review のみ / agent 起動時に必須）
 
 review skill が worktree で起動する **すべての agent**（explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / skeptic / 反証エージェント）に適用する。
@@ -148,7 +150,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
 
 1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
 2. 集約結果から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
-3. explorer-prompts.md の `re-explore` テンプレートで追加 explorer を `model: sonnet` で並列起動する
+3. explorer-prompts.md の `re-explore` テンプレートで追加 explorer を `model: sonnet` で並列起動する（全 call を同一メッセージ内で一括発行する — `## 0` 並列発行の明示）
    - 各 explorer に対応する unmet_information（focus, target, why, related_finding）を指示として渡す
    - isolation は `## 0` に従う（review は `isolation: "worktree"`（PR ブランチ）、self-review は使用しない）
    - **PR 番号注入（review のみ・必須）**: `## 1` に従い prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
@@ -198,7 +200,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
 ## 10. 反証レイヤー実行手順（review Phase 5.9・self-review Phase 4.9）
 
 1. triage-guide.md `## 9 反証レイヤー` の選定ルールで対象指摘を選ぶ（high: 非対称ゾーン BLOCKER 60-94 / CRITICAL 80-94、xhigh/max: 報告ゾーン全体 + MAJOR）。**specialist 由来の指摘は全 effort で除外**
-2. 対象指摘ごとに reviewer-prompts.md `## 7 Adversarial-verify テンプレート` で反証エージェントを `model: opus`, `effort: max` で並列起動する（isolation は `## 0` に従う）
+2. 対象指摘ごとに reviewer-prompts.md `## 7 Adversarial-verify テンプレート` で反証エージェントを `model: opus`, `effort: max` で並列起動する（isolation は `## 0` に従う。全 call を同一メッセージ内で一括発行する — `## 0` 並列発行の明示）
    - 指摘の主張（severity / confidence / file:line / 内容）のみ渡し、**reviewer の理由文は渡さない**（アンカリング防止）
    - **PR 番号注入（review のみ・必須）**: `## 1` に従う
    - `pre-existing` / `intended` 鮮度の git 判定（`git show <base>:<file>` / `git blame`）を反証エージェントに許可する

@@ -140,7 +140,7 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 - 各 explorer に Phase 0 が決定した focus と対象ファイル・関数を指示として渡す
 - explorer-prompts.md の該当する Focus テンプレートをプロンプトに含める
 - 全エージェントを `isolation: "worktree"` で起動する（PR ブランチの状態でファイルを読むため）
-- 全エージェントに `run_in_background: false` を明示する（orchestration-guide `## 0`。省略すると background 起動になり結果を取りこぼす）
+- 全エージェントに `run_in_background: false` を明示し、**全 explorer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide `## 0`。`run_in_background` 省略は取りこぼし、1 体ずつ別メッセージ発行は逐次実行＝実時間が合計に膨らむ。2 つは独立の要件）
 - **PR 番号注入（必須）**: orchestration-guide `## 1` に従う（欠かすと偽陽性を量産する。GitHub issue #56 / #69）
 
 全 explorer の完了を待ち、結果を収集する。
@@ -165,7 +165,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - セッションコンテキストが有効な場合、reviewer-prompts.md のセッションコンテキスト注入テンプレートに従い全 reviewer に注入する
 - `gh pr diff` の出力を各 reviewer に渡す
 - 全エージェントを `isolation: "worktree"` で起動する
-- 全エージェントに `run_in_background: false` を明示する（orchestration-guide `## 0`）
+- 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
 - **PR 番号注入（必須）**: orchestration-guide `## 1` に従う
 
 全 reviewer の完了を待ち、結果を収集する。

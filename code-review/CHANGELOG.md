@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.38.1] - 2026-07-29
+
+### Fixed
+- **並列起動の実現手段を明文化**（GitHub issue #95）。「並列起動する」という指示に対し実現手段（**同一アシスタントメッセージ内に対象フェーズの全 Agent call を並べて一括発行する**）が未記述で、orchestration-guide `## 0` の同期起動ルール（`run_in_background: false`）を素直に読むと 1 体ずつの逐次実行が仕様準拠に見えていた（実測: 12 体レビューが相内最長 20.9 min で済むところ逐次合計 72.9 min、約 3.5 倍）。`## 0` に「並列発行の明示」段落を追加し、取りこぼし防止（`run_in_background: false`）と並列性（同一メッセージ一括発行）が直交する独立の要件であることを明記。review / self-review 両 SKILL の explorer / reviewer 起動 bullet と guide `## 6`（追加 explorer）/ `## 10`（反証）の起動手順にも一括発行の 1 行を追加。単体起動フェーズ（meta-reviewer / 冷や読み skeptic = issue 記載の `## 9`）は適用対象がないため対象外と明記
+
 ## [2.38.0] - 2026-07-28
 
 ### Added
