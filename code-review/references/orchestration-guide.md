@@ -105,7 +105,7 @@ done | sort -u
 
 ### effort 設計意図
 
-reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/medium/high（既定）→ `high` / xhigh・max（明示 escalation）→ `xhigh`**。reviewer は**全レビューで必ず走り、体数も最大（典型 2〜10 体。`## 7` の最小保証 2 体 〜 上限 10 体）のため、レビュー総コストの最大項**であり、ここが最大のコストレバー（`max`→`xhigh` に続く 2 段目の引き下げ。唯一ではない。下記の変動費も参照）。既定パスを `high` に引き下げた根拠は 2 つ: ① Opus 5 はコードレビュー・バグ発見が低 effort でも精度が落ちにくい（公式モデルガイダンス）② reviewer 単発の深さには依存しない補償層（反証 / skeptic / meta-reviewer、いずれも `max` 据え置き）がある。escalation 時は従来どおり `xhigh` で深掘りする。効果は `review:completed` メトリクス（blocker/critical 件数・findings 推移）で監視し、悪化が観測されたら既定を `xhigh` に戻す。
+reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/medium/high（既定）→ `high` / xhigh・max（明示 escalation）→ `xhigh`**。reviewer は**全レビューで必ず走り、体数も最大（triage-guide `## 7` の最小保証 2 体 〜 effort 適応上限: high 6 体 / xhigh・max 10 体）のため、レビュー総コストの最大項**であり、ここが最大のコストレバー（`max`→`xhigh` に続く 2 段目の引き下げ。唯一ではない。下記の変動費も参照）。既定パスを `high` に引き下げた根拠は 2 つ: ① Opus 5 はコードレビュー・バグ発見が低 effort でも精度が落ちにくい（公式モデルガイダンス）② reviewer 単発の深さには依存しない補償層（反証 / skeptic / meta-reviewer、いずれも `max` 据え置き）がある。escalation 時は従来どおり `xhigh` で深掘りする。効果は `review:completed` メトリクス（blocker/critical 件数・findings 推移）で監視し、悪化が観測されたら既定を `xhigh` に戻す。
 
 > **体数の下限に注意**: 「常に 2 体以上」は不変条件では**ない**。`doc-review-mode` は 1〜2 体、`skip-mode` は `spec-compliance` のみ 1 体（triage-guide `## 2.5` のモード構成は Stage 2 の上限・最小保証より**優先**する）、self-review の `--focus` 指定時は最小保証すら起動しない。他所でこの不変条件を援用しないこと。
 
@@ -122,7 +122,7 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 - **反証の誤却下は指摘を落とす**（消えるのは MAJOR / MINOR のみ。BLOCKER / CRITICAL は refuted でも消さず係争注記が scoring-guide の不変条件で機械保証される）
 - **skeptic の見落としは recall 補強そのものを無効化する**（足す係が足さなければ層ごと無意味）
 
-**下げるのは全レビューで必ず走る常時レイヤー、据え置くのは誤判定コストが非対称な検証レイヤー**という切り分けを意図的に取る。なお**次点の変動費は反証（既定パスで opus×`max`×指摘数）と specialist（reviewer 枠とは別枠で上限 6 体。triage-guide `## 7`）**であり、コストが再び問題化したらこの 2 つが次の検討対象になる。
+**下げるのは全レビューで必ず走る常時レイヤー、据え置くのは誤判定コストが非対称な検証レイヤー**という切り分けを意図的に取る。なお**次点の変動費は反証（既定パスで opus×`max`×指摘数）と specialist（reviewer 枠とは別枠。high 既定は束ね起動で上限 3 体 / xhigh・max は個別起動で上限 6 体。triage-guide `## 7`）**であり、コストが再び問題化したら反証の上限・バッチ化が次の検討対象になる（v2.39.0 で specialist 側は束ね起動を導入済み）。
 
 ### diff-first 原則
 
@@ -146,18 +146,16 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 
 Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促す（review では ExitWorktree してから終了する）。それ以外は欠損観点を明示しつつスコアリング step に進む。
 
-## 6. Adaptive deepening 実行手順（追加 explorer ラウンド / review Phase 5.5・self-review Phase 4.5）
+## 6. Adaptive deepening 実行手順（Round 2 / review Phase 5.5・self-review Phase 4.5）
 
 1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
 2. 集約結果から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
-3. explorer-prompts.md の `re-explore` テンプレートで追加 explorer を `model: sonnet` で並列起動する（全 call を同一メッセージ内で一括発行する — `## 0` 並列発行の明示）
-   - 各 explorer に対応する unmet_information（focus, target, why, related_finding）を指示として渡す
-   - isolation は `## 0` に従う（review は `isolation: "worktree"`（PR ブランチ）、self-review は使用しない）
+3. **経路分岐**（実行時 effort = `${CLAUDE_EFFORT}`。triage-guide `## 8` Phase 5.5）:
+   - **high（既定）— 1 段圧縮**: 追加 explorer は起動しない。unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、**初回 reviewer と同じ effort**（`## 5` の連動表）で再起動する（全 call を同一メッセージ内で一括発行 — `## 0` 並列発行の明示）。プロンプトには①初回指摘②担当分の unmet_information（focus, target, why, related_finding）を渡し、「**まず unmet ターゲットを自分で Read / Grep / Glob で探索し、取得した事実に基づいて初回 confidence を再評価せよ**」と指示する
+   - **xhigh / max — 2 段**: explorer-prompts.md の `re-explore` テンプレートで追加 explorer（最大 3 体）を `model: sonnet` で並列起動し（一括発行 — `## 0`）、各 explorer に対応する unmet_information を渡す。完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、初回と同じ effort で再起動し、初回指摘 + 追加 explorer 結果を context として渡して「初回 confidence を再評価せよ」と指示する
+   - いずれの経路も isolation は `## 0` に従う（review は `isolation: "worktree"`（PR ブランチ）、self-review は使用しない）
    - **PR 番号注入（review のみ・必須）**: `## 1` に従い prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
-4. 追加 explorer 完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、**初回 reviewer と同じ effort** で再起動する（`## 5` の連動表に従う）
-   - 再起動 reviewer には初回指摘 + 追加 explorer 結果を context として渡し、「初回 confidence を再評価せよ」と指示
-   - 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
-   - **PR 番号注入（review のみ・必須）**: `## 1` に従う
+4. 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
 5. レポートに「Round 2 trigger: <reason>」を記録（レポート出力 step = review Step 7 / self-review Step 6 で出力）
 
 **失敗時**: 追加 explorer / 再起動 reviewer が失敗した場合は初回結果のままで続行（missing_coverage には追記しない、Round 2 は best-effort）
@@ -174,12 +172,24 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
 
 **失敗時**: meta-reviewer が失敗した場合は missing_coverage に `meta-reviewer: <failure reason>` を追記して続行
 
-## 8. 観点カバレッジ・セルフチェック手順（review Phase 5.7・self-review Phase 4.7）
+## 8. 観点カバレッジ検算（起動前検算 + 事後突合）
+
+### 8a. 起動前検算（review Step 3.3・self-review Step 2.3 / 構成テーブル確定前・常時実行）
+
+reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検算する:
 
 1. `triage-guide.md` の「reviewer の観点判定」表の各条件を、実際の diff シグナル（変更ファイルパス・diff 内文字列）に対して **メインコンテキストで再評価** する
-2. **「条件を満たすのに起動されなかった focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在、`package.json` 変更があるのに dependency 不在）
-3. 検出した観点漏れは `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として追記する
-4. effort が `high` 以上 かつ 追加 1 体で補える観点なら、その focus の reviewer を 1 体だけ `model: opus`、**初回 reviewer と同じ effort**（`## 5` の連動表）で追加起動して結果をスコアリング step に合流させてよい（任意・best-effort。失敗しても missing_coverage 記載のまま続行）。**effort を揃えるのは、非対称な深さの指摘が同じ confidence 軸で合流するのを避けるため**
+2. **「条件を満たすのに構成に入っていない focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在、`package.json` 変更があるのに dependency 不在）
+3. 検出した focus は **構成テーブルに追加してから確定する**（effort 適応上限（triage-guide `## 7`）に収まる範囲で追加する。上限に達した場合は観点バンドル（triage-guide `## 7`）で既存 reviewer に相乗りさせ、それも不能なら `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として記録する。旧 5.7 の「追加は 1 体まで」制限は事後の直列 wave を抑えるためのものだったので、起動前検算には引き継がない）
+4. **モード除外（review のみ）**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**構成追加は行わない**。検出した focus は `missing_coverage` に「観点未起動: <focus>（mode: <mode> により意図的縮退）」として記録のみする。self-review は `--focus` / `--exclude` 指定時にその範囲内でのみ検算する
+
+> v2.39.0 で reviewer 起動後（旧 Phase 5.7 / 4.7 の補完起動）から前倒し。起動前に検算すれば漏れ focus は本隊 wave に合流でき、事後の補完起動（直列 wave 1 本追加）が不要になる。planning 漏れ（判定表 vs 構成）の検出力は同一の機械的な表照合のため変わらない（issue #69 の「観点漏れを常時検査する」意図は維持）。
+
+### 8b. 事後突合（review Phase 5.7・self-review Phase 4.7 / logging のみ・agent 追加起動なし）
+
+スコアリング直前に、8a で確定した構成テーブルと **実際に起動・完走した focus** をメインコンテキストで突合し、差分（未起動・失敗・非レビュー出力で欠損した focus）を `missing_coverage` に追記する。**本フェーズで agent は追加起動しない**（観点漏れの検出は 8a へ前倒し済み。目的はレポートの「欠損観点」セクションを確定させること）。`## 5` の部分失敗耐性による記録と重複してよい（dedup してレポートに出す）
+
+> **意図的トレードオフ（v2.39.0）**: 旧 5.7 が持っていた「失敗 reviewer の補完起動」（起動されたが完走しなかった focus を 1 体だけ再起動する救済）は、直列 wave 削減とのトレードオフで**廃止**した。失敗 focus は `missing_coverage` として欠損観点セクションに必ず明示され、必要ならユーザーが再実行を指示する。auto-retry（`## 5` の出力形式検証）は形式不正のみが対象でハード失敗は救わない — この差は仕様であり見落としではない。
 
 ## 9. 冷や読み skeptic 実行手順（review Phase 5.8・self-review Phase 4.8）
 
@@ -192,7 +202,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
    - ただし**タグは 2 種に分ける**。重複の有無で意味が正反対になるため、同一カウンタに載せてはならない:
      - `[recall-skeptic]` — **skeptic 単独由来**（dedup で reviewer 指摘と重複しなかった）。fleet 共通盲点を実際に破った事例＝ skeptic の価値そのもの
      - `[recall-skeptic:dup]` — **重複 survivor**（reviewer も同じ問題に到達していた）。skeptic が独立に到達した記録としては残すが、**盲点でなかった事例なので recall の足し前はゼロ**
-   - **`[recall-skeptic:dup]` を価値率の分子に混ぜない**。skeptic は generalist 一頭で reviewer 最大 10 体と同じ diff を読むため**重複は常態**であり、混ぜると価値率が 100% に張り付いて「findings_added=0 なら縮小」の分岐が原理的に発火しなくなる（過少計上の裏返しで、過大計上という別の壊れ方になる）
+   - **`[recall-skeptic:dup]` を価値率の分子に混ぜない**。skeptic は generalist 一頭で reviewer fleet（effort 上限まで最大 6〜10 体）と同じ diff を読むため**重複は常態**であり、混ぜると価値率が 100% に張り付いて「findings_added=0 なら縮小」の分岐が原理的に発火しなくなる（過少計上の裏返しで、過大計上という別の壊れ方になる）
    - タグは**レポート本文の指摘行まで持ち越す**（Step 7 / Step 6 のレポート契約。publish 時に `findings_added` / `findings_overlap` を数える唯一の根拠）
 
 **失敗時 / スキップ時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に `recall-skeptic: <failure reason>` を追記して続行する。スキップ条件（effort / config / scope・emergency）に該当した場合でも、surface 判定（正規表現・grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と独立に必ず実施する。**起動条件（high-risk surface）を満たしたのに未実行だった事実は、失敗・スキップのいずれでもレポート（review Step 7 / self-review Step 6 の「動的ラウンド」行）に必ず出す**（silent skip で偽の安心を防ぐ・issue #85）

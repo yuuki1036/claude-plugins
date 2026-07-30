@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.39.0] - 2026-07-30
+
+### Changed
+- **high 既定のレビュー構成を縮小し、直列 wave を圧縮**（レビュー時間・トークン削減。品質側の補償層＝反証 / skeptic / 最小保証 / specialist トリガー感度は据え置き、xhigh/max のフル構成は現行維持で深さは明示 escalation に残す）
+  - **effort 適応上限の正本を triage-guide `## 7` に集約**: high は explorer 4 / reviewer 6 / specialist 3、xhigh・max は従来どおり 6 / 10 / 6。上限超過の観点は近接観点バンドル（1 体 3 観点まで。bug-detection / security / spec-compliance / claude-md-compliance は単独維持）で可能な限り吸収し、容量（単独 4 + バンドル枠 = high 最大 10 観点）を超えた分は missing_coverage として欠損観点セクションに明示する。バンドル時の出力規約（focus キーは原観点・観点ごと独立列挙・自己フィルタ禁止）を reviewer-prompts `## 3` 冒頭に規定
+  - **冗長ペアを xhigh/max 専用化**: high 以下はペア条件成立時も 1 体とし Angle A/B を両方内挿（reviewer 1 体あたりの固定注入コンテキスト＝diff + PR コンテキスト + AGENTS.md の複製数が減る）。反証 confirmed による補償は報告マトリクス通過見込み帯に限られ、**閾値直下の指摘をペアの +15 が押し上げていた効果は補償されない**（この帯の recall 低下は縮小のコストとして許容し severity 別件数で監視。「ペア合意 +10」「片方のみ -5」は angle 内挿 1 体に適用しないことを scoring-guide に注記）
+  - **specialist の束ね起動**: high 以下は複数 red-flag ヒット時に 1〜2 体へテンプレート連結注入（guardrail-bypass のみ単独維持）。トリガー感度（検出正規表現）は不変
+  - **Phase 5.5/4.5 を high で 1 段圧縮**: 追加 explorer を廃し、再起動 reviewer（最大 3 体）が unmet ターゲットを自力探索してから confidence を再評価（sonnet 経由の要約受け渡しロスも解消）。xhigh/max は現行 2 段を維持
+  - **観点カバレッジ検算を Phase 0 直後へ前倒し**（orchestration-guide `## 8` を 8a 起動前検算 / 8b 事後突合に分割）: 漏れ focus は本隊 wave に合流し、旧 5.7/4.7 の事後補完起動（直列 wave 1 本）を廃止。事後は logging のみの突合に（issue #69 の常時検査の意図は 8a で維持）。`default-mode` 以外（emergency / doc-review / dba / supply-chain / skip）では検算による構成追加を行わず missing_coverage 記録のみ（モード構成の優先を維持）。旧 5.7 の「失敗 reviewer の補完起動」は wave 削減とのトレードオフで廃止（8b に明記。失敗 focus は欠損観点として必ず可視化）
+
+### Added
+- **`review:completed` payload に計測フィールドを追加**: `effort`（実行時 effort での層別用）/ `duration_min`（Step 1 で開始時刻を TMPDIR 配下のファイルに記録し publish 時に算出。シェル変数受け渡しは Bash 呼び出し間で消えて epoch/60 のゴミ値になるため禁止と明記。欠測は -1）/ `agents`（explorer / reviewer / specialist / round2 / verify の実起動体数）。縮小のロールバック判断は `agents` フィールド存在を版マーカーに、xhigh/max 明示実行を対照群として縮小後サンプル内で比較する（旧 payload は effort 層別不能のため基準に使わない。判定 jq を triage-guide `## 7` に同梱）
+
 ## [2.38.2] - 2026-07-29
 
 ### Changed

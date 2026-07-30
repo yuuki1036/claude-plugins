@@ -204,7 +204,7 @@ explorer の報告と矛盾する問題を発見した場合は、自分で Read
 
 ### Unmet information の申告（v2.12.0 追加 / Phase 5.5 トリガー）
 
-レビュー中に「この観点を確定するには追加の context が必要だが、自分の探索能力では届かない」と判断した場合、出力の末尾に `## unmet_information` セクションを追加して申告すること。Phase 5.5 で追加 explorer が起動され、該当 reviewer のみ再実行される。
+レビュー中に「この観点を確定するには追加の context が必要だが、自分の探索能力では届かない」と判断した場合、出力の末尾に `## unmet_information` セクションを追加して申告すること。Phase 5.5（Round 2）で該当 reviewer のみ再実行される。high 既定では追加 explorer を経由せず、**再起動された reviewer 自身が unmet ターゲットを Read / Grep / Glob で探索してから再評価する**（xhigh/max では追加 explorer の結果が渡される）。申告時は再起動後の自分が探索を始められるよう target を具体的に書くこと。
 
 #### 申告の判断基準
 
@@ -295,6 +295,20 @@ review skill から呼び出される reviewer には、SKILL.md Step 2.5 で構
 ## 3. Focus テンプレート
 
 以下の各 focus について、プロンプトの追加指示を定義する。各テンプレートは共通指示に追加される形式。
+
+### 観点バンドル起動時の追加指示（high 以下の体数圧縮 / triage-guide `## 7`）
+
+1 体の reviewer に複数観点の Focus テンプレートを束ねて注入する場合（reviewer 上限超過の吸収）、各テンプレートを連結した上で、プロンプト冒頭に以下を必ず追加する:
+
+```
+この reviewer には複数観点が割り当てられている: {focus キーの一覧}
+- 各観点のチェックリストを 1 観点ずつ順に・独立に適用し、観点ごとに指摘を全件列挙すること
+- 指摘の [カテゴリ] と focus キーは原観点のキーをそのまま使う（バンドル名を作らない。embed JSON の focus・missing_coverage の語彙と揃えるため）
+- 観点間で指摘を相殺・自己フィルタしない（「別観点で見たから省略」禁止。dedup はオーケストレーターが行う）
+- unmet_information / related-observations / [surface:high-risk] の申告は観点ごとでなく出力末尾にまとめてよい
+```
+
+1 体あたりのバンドルは 3 観点まで（attention 希釈の上限）。bug-detection / security / spec-compliance / claude-md-compliance は束ねない（triage-guide `## 7`）。
 
 ### bug-detection（バグ・ロジックエラー検出）
 
@@ -776,7 +790,9 @@ a11y / セマンティック HTML を検証し、加えて `${CLAUDE_PLUGIN_ROOT
 
 ## 4. Angle テンプレート（冗長ペア用）
 
-Phase 0 が同一観点を複数体（x2）にする場合の angle（分析の切り口）テンプレート:
+Phase 0 が同一観点を複数体（x2）にする場合の angle（分析の切り口）テンプレート。
+
+**冗長ペアの実起動は xhigh / max 専用**（triage-guide `## 7`）。high 以下ではペア条件（triage-guide `## 4` の冗長度判定）を満たしても 1 体で起動し、該当観点の Angle A / B を**両方**その 1 体のプロンプトに内挿して「各 angle を順に独立に適用し、それぞれの指摘を全件列挙せよ」と指示する。angle 内挿の 1 体には「ペア合意 +10」「片方のみ検出 -5」を適用しない（独立性が担保されないため。recall への影響と補償の実態は triage-guide `## 7` の冗長ペア条項が正本）:
 
 ### bug-detection
 - **Angle A（データフロー）**: 変数の定義→変更→参照を追跡し、意図しない上書き・未初期化・型不一致を検出
@@ -805,6 +821,8 @@ Phase 0 が同一観点を複数体（x2）にする場合の angle（分析の�
 ## 5. Specialist テンプレート（v2.12.0 追加 / Red-flag pattern 検出時に自動起動）
 
 Specialist は通常の reviewer とは別カテゴリで、triage-guide.md `## 3 Red-flag pattern による specialist 自動起動` の判定で起動される。**指摘の大半が BLOCKER または CRITICAL になる前提**で動作する（人間判断を促すのが目的のため、低 confidence でも報告マトリクスで届く）。
+
+**束ね起動（high 以下 / triage-guide `## 7`）**: 複数の red-flag が同時ヒットした場合、specialist-guardrail-bypass のみ単独 1 体を維持し、残りの specialist は 1〜2 体に束ねて該当テンプレートを連結注入する。出力規約は観点バンドル（`## 3` 冒頭）と同じ: focus キーは原 specialist 名（`specialist-injection` 等）をそのまま使い、観点ごとに独立に全件列挙し、自己フィルタしない。トリガー感度（検出正規表現）は変更しない。xhigh / max では従来どおり個別起動（上限 6 体）。
 
 ### specialist-injection（コード/コマンドインジェクション）
 

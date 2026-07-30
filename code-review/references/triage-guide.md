@@ -70,7 +70,7 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 `--emergency` 引数が渡された場合（本番障害のホットフィックス等）、Google eng-practices "Emergencies" に従い **速度優先の最小構成** でレビューする。diff シグナルからの自動判定ではなく、人間が明示的に宣言する点が他モードと異なる（他のモード判定より優先する）。
 
 - **起動**: reviewer-bugs + reviewer-security の最小 2 体のみ（specialist は red-flag 検出時のみ通常通り起動 — 緊急時こそインジェクション・破壊的操作の混入が危険なため）
-- **スキップ**: explorer / 冗長ペア / Phase 5.5 (adaptive deepening) / Phase 5.6 (meta-reviewer) / Phase 5.7 (カバレッジ self-check) / Phase 5.8 (冷や読み skeptic) / Phase 5.9 (反証レイヤー)。速度と正しさのトレードオフをスコープ縮小で取る
+- **スキップ**: explorer / 冗長ペア / Step 3.3 の起動前検算による構成追加（orchestration-guide `### 8a` のモード除外。検出は missing_coverage 記録のみ）/ Phase 5.5 (adaptive deepening) / Phase 5.6 (meta-reviewer) / Phase 5.7 (カバレッジ事後突合) / Phase 5.8 (冷や読み skeptic) / Phase 5.9 (反証レイヤー)。速度と正しさのトレードオフをスコープ縮小で取る
 - **レビューは省略しない**: 構成を絞るだけで「無レビュー」にはしない
 - **レポート冒頭に必須バナー**: `⚠️ 緊急レビュー（最小構成）: マージ後に通常の /review を必ず実施すること`
 - **緊急の定義**（eng-practices）: ロールバック回避 / 本番ユーザー影響のバグ修正 / 重大セキュリティ穴 / 法的緊急 等の **小さな** 変更に限る。soft deadline・疲労・タイムゾーンは緊急ではない（その場合は通常レビュー）
@@ -167,10 +167,10 @@ diff に以下の **危険パターン** が検出された場合、対応する
 | **ガードレール骨抜き** — lint / hook / static check 設定ファイル（`.golangci.yml`, `.eslintrc*`, `lefthook.yml`, `pre-commit*`, `redocly.yaml`, `tsconfig.json`, `ruff.toml`, `.rubocop.yml` 等）からの **ルール削除・無効化・severity 降格（error→warn）・適用範囲縮小**、または `--no-verify` / `--no-gpg-sign` / `disable_*` フラグの新規追加 | **specialist-guardrail-bypass**（骨抜き検出） | **BLOCKER 固定**（commit body に明示的 justify がない限り） |
 
 **判定の原則**:
-- 文字列マッチは false positive を伴うが、specialist の役割は「人間判断を促す」ことなので積極的に起動して問題ない
+- 文字列マッチは false positive を伴うが、specialist の役割は「人間判断を促す」ことなので積極的に起動して問題ない。**トリガー感度（検出正規表現）は effort に関わらず変更しない**（recall 直撃のため）
 - specialist は対応する Focus テンプレート（reviewer-prompts.md `## 5. Specialist テンプレート`）を使用
 - specialist の指摘は **大半が BLOCKER または CRITICAL** になるため、低 confidence でも報告マトリクスで人間に届く
-- specialist は上限 6 体（reviewer 上限 10 体とは別枠、specialist 起動で reviewer 枠を圧迫しない）
+- specialist は reviewer 枠とは別カウント（specialist 起動で reviewer 枠を圧迫しない）。**体数は `## 7` の effort 適応表に従う**: high 以下では複数 red-flag ヒット時に 1〜2 体へ束ねて該当テンプレートを連結注入する（specialist-guardrail-bypass のみ単独 1 体を維持）。xhigh / max は個別起動・上限 6 体。束ね時の出力規約は reviewer-prompts.md `## 5` 冒頭を参照
 
 ### PR コンテキストによる観点追加・冗長化（review skill のみ）
 
@@ -195,7 +195,7 @@ SKILL.md Step 2.5 で構築した PR コンテキストブロックの内容も�
 | 大規模リファクタ（10+ファイル） | 3-5 | アーキテクチャレイヤー単位 |
 | 共通モジュールの変更 | +1 | 呼び出し元の影響範囲調査 |
 
-- **上限: 6体**
+- **上限**: `## 7` の effort 適応表に従う（high 4 体 / xhigh・max 6 体）
 
 ### reviewer の冗長度判定
 
@@ -206,6 +206,8 @@ SKILL.md Step 2.5 で構築した PR コンテキストブロックの内容も�
 - 状態変異が3箇所以上（同一変数への代入が散在）
 - 複数モジュール間のデータフローに影響
 - explorer が「複雑」と報告した領域
+
+**冗長ペア（x2）の実起動は xhigh / max 専用**（`## 7`）。high 以下では上記条件を満たしても 1 体で起動し、Angle A / B を両方その 1 体のプロンプトに内挿する（reviewer-prompts.md `## 4`）。条件判定自体は全 effort で行う（angle 内挿の要否を決めるため）。
 
 ### 冗長ペアの angle（分析の切り口）
 
@@ -219,7 +221,7 @@ SKILL.md Step 2.5 で構築した PR コンテキストブロックの内容も�
 
 他の観点も必要に応じて angle を設定する。
 
-- **reviewer 上限: 10体**
+- **reviewer 上限**: `## 7` の effort 適応表に従う（high 6 体 / xhigh・max 10 体）
 
 ## 5. 出力フォーマット
 
@@ -269,28 +271,54 @@ Phase 0 が明確な判断を下せない場合のデフォルト構成:
 - explorer: 2体（history-context, dependency-trace）
 - reviewer: 4体（bug-detection, claude-md-compliance, error-handling, cross-cutting）
 
-## 7. 最小保証とフェーズ上限
+## 7. 最小保証とフェーズ上限（effort 適応 / 体数の正本）
 
 - **最小保証**: reviewer-bugs（focus: bug-detection）+ reviewer-claude-md（focus: claude-md-compliance）の2体は Phase 0 の判断に関わらず常に起動
-- **explorer 上限**: 6体
-- **reviewer 上限**: 10体
-- **specialist 上限**: 6体（reviewer 枠とは別カウント、red-flag pattern 検出時のみ起動）
+- フェーズ上限は実行時 effort = `${CLAUDE_EFFORT}` で決まる。**本表が体数上限の正本**（SKILL.md・他節の上限言及はここを参照する）:
+
+| 枠 | low / medium | high（既定） | xhigh / max |
+|---|:---:|:---:|:---:|
+| explorer | 2 | 4 | 6 |
+| reviewer | 4 | 6 | 10 |
+| specialist | 3（束ね起動） | 3（束ね起動） | 6（個別起動） |
+| 冗長ペア（x2） | なし | なし（angle 両内挿） | 積極投入 |
+
+- **冗長ペアは xhigh / max 専用**。high 以下ではペア条件（`## 4` の冗長度判定）成立時も 1 体とし、Angle A / B を両方その 1 体のプロンプトに内挿する（reviewer-prompts.md `## 4`）
+  - **補償の実態を正確に**: 反証レイヤーの `confirmed` は「複数エージェント検出 +15」と同じ発火源だが（scoring-guide.md）、反証対象は**報告マトリクス通過見込みの指摘に限られる**（`## 9`）。つまり **閾値直下の指摘（通常 surface の CRITICAL 70 台・MAJOR 80-94）をペアの +15 が報告側へ押し上げていた効果は補償されない**。この帯の recall 低下は縮小のコストとして許容し、severity 別件数（下記ロールバック条件）で監視する
+  - **angle 内挿時の scoring**: 1 体内で両 angle が同一問題に到達しても「ペア合意 +10」は付けず、「片方のみ検出 -5」も適用しない（独立性が担保されないため。scoring-guide.md の両項は冗長ペア実起動時＝xhigh/max のみ発火する）
+- **観点バンドル（high 以下）**: 起動条件を満たした観点数が reviewer 上限を超える場合、近接観点を 1 体に束ねて**可能な限り**吸収する（例: error-handling + comment-accuracy + type-design / config + dependency）。1 体あたり 3 観点まで。**bug-detection / security / spec-compliance / claude-md-compliance は束ねず単独を維持**する（指摘密度が高く attention 希釈の代償が大きい観点）。束ね時の出力規約（focus キーは原観点・観点ごとに独立列挙・自己フィルタ禁止）は reviewer-prompts.md `## 3` 冒頭を参照
+  - **容量と超過時の扱い**: 吸収容量は「単独 4 観点 +（reviewer 上限 − 4）× 3」＝ high で最大 10 観点。観点判定表は 17 観点あるため、フルスタックな大型 PR では超過しうる。**超過分は `missing_coverage` に「観点未起動: <focus>（reviewer 上限超過）」として必ず記録**し、レポートの欠損観点セクションに明示する（脱落を silent にしない）。超過が常態化する PR は xhigh への明示 escalation を促す
+- **specialist の束ね起動（high 以下）**: 複数 red-flag 同時ヒット時、specialist-guardrail-bypass のみ単独 1 体を維持し、残りを 1〜2 体に束ねて該当テンプレートを連結注入する（`## 3` Red-flag 節）。トリガー感度は変更しない
+- **縮小のロールバック条件（v2.39.0 の high 既定縮小）**: 効果は `review:completed` の `agents` / `duration_min` / blocker+critical 件数で監視する。**判定に使えるのは `agents` フィールドを持つサンプルのみ**（= v2.39.0 以降の publish。フィールド存在が publish 側の自己申告版マーカーであり、配布ラグに耐える。旧サンプルは `effort` を持たず high 実行と xhigh 実行を層別できないため、「縮小前との比較」の基準側には使えない — `## 8.5` の「日付では切らない」と同じ流儀）。悪化の検証は旧データ比ではなく、**xhigh/max の明示実行（フル構成）を対照群にした縮小後サンプル内の比較**で行う:
+
+  ```bash
+  # effort=high（縮小構成）のレビュー 1 件あたり blocker+critical 平均と duration_min 中央値
+  grep '"event":"review:completed"' .claude/events.jsonl | \
+    jq -s '[.[] | select(.payload.agents != null and .payload.effort == "high")] |
+      if length == 0 then "no data" else
+        {n: length,
+         hi_avg: (([.[] | .payload.blocker_count + .payload.critical_count] | add) / length),
+         dur_med: ([.[] | .payload.duration_min | select(. >= 0)] | sort | .[(length/2|floor)] // "no data")}
+      end'
+  # 対照群は .payload.effort == "xhigh" or "max" に置き換えて同じ式で出す
+  ```
+
+  縮小後 30 日で high 群の hi_avg が対照群比で明確に低い状態が続いたら、まず冗長ペアの high 復帰（次に reviewer 上限 10 復帰）を検討する。サンプルが `no data` のうちは判断しない。印象や単発の見落とし報告だけで戻さない（壊れた・不足した計測を根拠に不可逆な判断をしない。skeptic の high 昇格判断 `## 8.5` と同じ流儀）
 
 ## 8. 動的ラウンド（Phase 5.5 / 5.6 / v2.12.0 追加）
 
-### Phase 5.5: Adaptive deepening (追加 explorer ラウンド)
+### Phase 5.5: Adaptive deepening (Round 2 / unmet_information 起点)
 
 **起動条件**: 全 reviewer 完了後、reviewer の出力に `unmet_information` フィールドが 1 件以上ある場合のみ起動
 
-**目的**: reviewer が「この観点を確定するには追加の context が必要」と自覚した領域に対して、追加 explorer を 1 round だけ走らせ、該当 reviewer のみ再実行する適応的深掘り
+**目的**: reviewer が「この観点を確定するには追加の context が必要」と自覚した領域を 1 round だけ深掘りする適応的再評価
 
-**動作**:
-1. `unmet_information` を集約し、対象ファイル/フォーカスごとに追加 explorer を起動
-2. 追加 explorer は `re-explore` フォーカス（explorer-prompts.md 参照）で起動
-3. 該当 reviewer のみ再起動（他は再実行しない、コスト抑制）
-4. 結果を初回 reviewer 結果と統合（重複指摘は dedup）
+**動作（effort で経路が分かれる。実行手順の正本は orchestration-guide `## 6`）**:
+- **high（既定）— 1 段圧縮**: 追加 explorer は起動しない。unmet を申告した reviewer のみ再起動し、**unmet ターゲットを自力探索（Read / Grep / Glob）してから初回 confidence を再評価**させる。直列 wave を 2 → 1 に減らし、sonnet 経由の要約受け渡しも省く（的の絞れた追加探索は opus 自身が掘る方が受け渡しロスがない）
+- **xhigh / max — 2 段**: `re-explore` フォーカス（explorer-prompts.md 参照）の追加 explorer → 該当 reviewer 再起動。探索を広めに撒く価値がある明示 escalation 時のみ 2 段を使う
+- いずれの経路も他の reviewer は再実行しない（コスト抑制）。結果は初回 reviewer 結果と統合（重複指摘は dedup）
 
-**上限**: 1 round のみ（多段化禁止）。追加 explorer 上限 3 体、再起動 reviewer 上限 3 体
+**上限**: 1 round のみ（多段化禁止）。再起動 reviewer 上限 3 体（xhigh/max の追加 explorer も上限 3 体）
 
 ### Phase 5.6: Meta-reviewer round
 
@@ -312,9 +340,9 @@ Phase 0 が明確な判断を下せない場合のデフォルト構成:
 |---|---|---|
 | low | スキップ | スキップ |
 | medium | スキップ | スキップ |
-| high (default) | unmet_information があれば起動 | スキップ |
-| xhigh | 起動 | 起動 |
-| max | 起動 | 起動 |
+| high (default) | unmet_information があれば起動（1 段圧縮） | スキップ |
+| xhigh | 起動（2 段） | 起動 |
+| max | 起動（2 段） | 起動 |
 
 ### userConfig による無効化
 

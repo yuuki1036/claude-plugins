@@ -112,7 +112,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - git blame で過去に同様の修正あり: **+15**
 - **指摘冒頭に `[re-flag: @<既指摘者>]` タグあり**（review skill のみ、PR 行単位 review comment で既指摘 かつ diff で未修正）: **+15**
 - セキュリティ関連: **+10**
-- 同一観点の冗長ペアが合意（独立した視点からの裏付け）: **+10**
+- 同一観点の冗長ペアが合意（独立した視点からの裏付け）: **+10**（冗長ペアの実起動は xhigh/max のみ。high 以下の angle 内挿 1 体には適用しない — triage-guide `## 7`）
 - explorer の発見と一致する指摘（探索結果で裏付けあり）: **+10**（doc-substance の「主張がコードと食い違う」指摘を grounding explorer / reviewer が code:line で裏取りした場合もこの発火源。doc-substance 専用の新規加点は作らない）
 - reviewer-security の CRITICAL/BLOCKER 判定: **+10**
 - reviewer-migration のデータ損失判定: **+10**
@@ -124,7 +124,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - 自動生成コード: **-30**
 - セッションコンテキストの設計判断と一致する指摘: **-30**
 - セッションコンテキストの「スコープ外」に該当する指摘: **-50**
-- 同一観点の冗長ペアで片方のみ検出（確信度が下がる）: **-5**
+- 同一観点の冗長ペアで片方のみ検出（確信度が下がる）: **-5**（同上: xhigh/max の実ペアのみ。high 以下の angle 内挿 1 体には適用しない）
 - reviewer-pattern-consistency のスタイル的指摘: **-15**
 - **指摘冒頭に `[intent-conflict]` タグあり**（PR 説明の意図と矛盾、spec-compliance の仕様違反判定は対象外、review skill のみ）: **-20**
 - **指摘冒頭に `[resolved: @<同意者>]` タグあり**（PR 会話で LGTM/resolved 等の同意あり、review skill のみ）: **-30**

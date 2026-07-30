@@ -39,6 +39,13 @@ allowed-tools:
 ### 1. PR の取得と前提確認
 
 ```bash
+# duration_min 計測用の開始時刻を記録（Step 7 の payload で使用）
+# シェル変数は Bash 呼び出し間で持続しないため、必ずファイルで受け渡す（変数だと
+# publish 時に未定義 =0 と評価され epoch/60 のゴミ値が publish される）。
+# repo を汚さないよう TMPDIR 配下に置き、cwd から決定的にパスを導出する
+TS_FILE="${TMPDIR:-/tmp}/.review-start-$(pwd | cksum | cut -d' ' -f1)"
+date +%s > "$TS_FILE"
+
 # PR 番号指定時: worktree 内で checkout（作業ブランチに影響なし）
 gh pr checkout <PR番号>
 
@@ -116,19 +123,23 @@ Step 2.5 の PR コンテキストブロック（説明・issue コメント・�
 #### 3.2 Stage 2: 体数・フォーカス・冗長度決定
 
 各タイプの体数と各エージェントの具体的なフォーカスを決定する:
-- explorer: 独立した探索対象の数に比例（上限 6 体）
-- reviewer: 必要な観点数 × 対象コードの複雑さに応じた冗長度（上限 10 体）
-- 冗長ペアには異なる angle（分析の切り口）を割り当てる
+- explorer: 独立した探索対象の数に比例
+- reviewer: 必要な観点数 × 対象コードの複雑さに応じた冗長度
+- 冗長ペアには異なる angle（分析の切り口）を割り当てる（実起動は xhigh/max のみ。下記）
 - 最小保証: reviewer-bugs + reviewer-claude-md の 2 体は常に起動
 
-**effort 適応の上限調整**: 現在の effort = `${CLAUDE_EFFORT}` に応じて上記上限を調整する:
-- `low` / `medium`: explorer 上限 2 体、reviewer 上限 4 体（最小保証は維持）。深掘りより速度優先
-- `high`（既定）: 上記の上限をそのまま採用
-- `xhigh` / `max`: explorer 上限 6 体、reviewer 上限 10 体を full に使い、冗長ペアを積極投入
+**effort 適応の上限調整**（体数の正本: triage-guide `## 7`）: 現在の effort = `${CLAUDE_EFFORT}` に応じて上限を調整する:
+- `low` / `medium`: explorer 2 体、reviewer 4 体、specialist 3 体（束ね起動）（最小保証は維持）。深掘りより速度優先
+- `high`（既定）: explorer 4 体、reviewer 6 体、specialist 3 体（束ね起動）。**冗長ペアは組まない**（ペア条件成立時は Angle A/B を 1 体に内挿）。上限を超える観点数は近接観点のバンドルで可能な限り吸収し、それでも収まらない観点は `missing_coverage` に必ず記録する（容量の算式は triage-guide `## 7`。脱落を silent にしない）
+- `xhigh` / `max`: explorer 6 体、reviewer 10 体、specialist 6 体を full に使い、冗長ペアを積極投入
 
-#### 3.3 構成テーブル出力
+#### 3.3 観点カバレッジ検算と構成テーブル出力
 
-triage-guide.md の出力フォーマットに従い、エージェント構成テーブルを出力する。
+**構成テーブルを確定する前に、起動前検算を実施する（orchestration-guide `### 8a`・default-mode のみ構成追加）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば構成テーブルに追加（またはバンドルで相乗り）してから確定する。v2.39.0 で旧 Phase 5.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。
+
+**モード除外**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**検算による構成追加は行わない**。検出した focus は `missing_coverage` に「観点未起動: <focus>（mode: <mode> により意図的縮退）」として記録のみする。
+
+検算後、triage-guide.md の出力フォーマットに従い、エージェント構成テーブルを出力する。
 
 ### 4. 探索フェーズ（explorer 並列起動）
 
@@ -174,14 +185,14 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 
 **最小保証の閾値のみ抜粋**: Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促してから ExitWorktree する。それ以外は欠損観点を明示しつつ Step 6 に進む。
 
-### 5.5 Adaptive deepening: 追加 explorer ラウンド（v2.12.0 / 動的）
+### 5.5 Adaptive deepening: Round 2（unmet_information 起点 / 動的）
 
 **スキップ条件**（いずれか満たせばこのフェーズ全体をスキップして Step 5.6 へ）:
 - userConfig `enable_adaptive_rounds` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
 - 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
 
-**実行する場合**: orchestration-guide `## 6` の手順に従う（unmet_information 集約 → 追加 explorer 最大 3 体 → 該当 reviewer 再起動 → 初回出力を置換。失敗時は初回結果のまま続行の best-effort）。レポートに「Round 2 trigger: <reason>」を記録（Step 7 で出力）。
+**実行する場合**: orchestration-guide `## 6` の手順に従う（unmet_information 集約 → **high は 1 段圧縮**: 追加 explorer なしで該当 reviewer 最大 3 体を再起動し unmet ターゲットを自力探索させる / **xhigh・max は 2 段**: 追加 explorer 最大 3 体 → 該当 reviewer 再起動 → 初回出力を置換。失敗時は初回結果のまま続行の best-effort）。レポートに「Round 2 trigger: <reason>」を記録（Step 7 で出力）。
 
 ### 5.6 Meta-reviewer ラウンド（v2.12.0 / 動的）
 
@@ -192,11 +203,9 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 
 **実行する場合**: orchestration-guide `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。
 
-### 5.7 観点カバレッジ・セルフチェック（メインコンテキスト / 常時実行）
+### 5.7 観点カバレッジ・事後突合（メインコンテキスト / 常時実行・agent 追加起動なし）
 
-Step 6 の直前に、**メインコンテキストで**（Agent は使わない・低コスト）起動 focus の妥当性を 1 回検査する。観点漏れは高 severity 指摘が無くても起こりうるため、meta-reviewer (5.6) の起動有無・effort・severity に依存せず **常時実行** する（meta-reviewer は起動条件が「effort=xhigh/max かつ BLOCKER/CRITICAL あり」と厳しく、観点漏れを取りこぼすため。GitHub issue #69）。
-
-手順の詳細（観点判定表の再評価 → 未起動 focus 検出 → missing_coverage 追記 → high 以上での補完起動）: → orchestration-guide `## 8`
+Step 6 の直前に、**メインコンテキストで**（Agent は使わない・低コスト）Step 3.3 の起動前検算で確定した構成テーブルと実際に起動・完走した focus を突合し、差分を `missing_coverage` に追記する（orchestration-guide `### 8b`）。観点漏れの検出は Step 3.3 の起動前検算（`### 8a`）へ前倒し済みのため、**本フェーズで agent は追加起動しない**（v2.39.0。issue #69 の常時検査の意図は 8a で維持）。
 
 **スキップ条件**: `--emergency`（緊急モード）または `skip-mode`（生成物 PR）では構成が意図的に最小化されているため本チェックをスキップする。
 
@@ -280,7 +289,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 **総合判定**: {Approve | Approve with nits | Needs work}（scoring-guide.md「レビュー結論（総合判定）」の表に従って決定）
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
-**動的ラウンド**: Round 2 探索 N 体起動 / Meta-reviewer {実行 | スキップ理由} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/emergency）| 非該当（surface なし）} / 反証 {対象 N 件 | スキップ理由}
+**動的ラウンド**: Round 2 {未実行 | 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行 | スキップ理由} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/emergency）| 非該当（surface なし）} / 反証 {対象 N 件 | スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{反証スキップ時はこの行を省略}
 
@@ -346,13 +355,26 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 4. **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**指摘の精査を行った場合は精査後（post）の確定件数を使う**（取り下げ・降格を反映）。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
 
    ```bash
+   # 開始時刻は Step 1 が書いたファイルから読む（シェル変数は呼び出し間で消えるため）。欠測は -1
+   TS_FILE="${TMPDIR:-/tmp}/.review-start-$(pwd | cksum | cut -d' ' -f1)"
+   S=$(cat "$TS_FILE" 2>/dev/null)
+   DUR=$([ -n "$S" ] && echo $(( ($(date +%s) - S) / 60 )) || echo -1)
    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
      SAFE_HOOK_NAME="code-review:review" event_bus_publish "review:completed" \
-     "{\"pr\":\"<number>\",\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
+     "{\"pr\":\"<number>\",\"effort\":\"${CLAUDE_EFFORT}\",\"duration_min\":$DUR,\"agents\":{\"explorer\":<n>,\"reviewer\":<n>,\"specialist\":<n>,\"round2\":<n>,\"verify\":<n>},\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
    ```
 
    payload 規約:
    - `pr` は PR 番号の文字列（Step 1 で取得済み）。PR 番号取得に失敗した場合は `"local"` とする
+   - `effort` は実行時 `${CLAUDE_EFFORT}` の文字列（`low`〜`max`。山括弧などの装飾は付けず実値をそのまま入れる）。体数上限・動的ラウンドの起動有無を左右する条件変数なので、下流の集計は本フィールドで層別する（v2.39.0 追加）
+   - `duration_min` は Step 1 が `$TS_FILE`（TMPDIR 配下・cwd から決定的に導出）に書いた開始時刻から publish 時点までの分（整数）。**シェル変数での受け渡しは禁止**（Bash 呼び出し間で変数は消え、bash 算術が未定義変数を 0 と評価して epoch/60 のゴミ値が入るため）。ファイルが無い・空の場合は `-1`（欠測を 0 と区別する）
+   - `agents` は実際に**起動した** agent 体数（成功・失敗を問わず起動数。v2.39.0 の上限調整の効果測定に使う）:
+     - `explorer`: Step 4 の初回 explorer 体数
+     - `reviewer`: Step 5 の初回 reviewer 体数（specialist を含めない）
+     - `specialist`: red-flag specialist の実起動体数（束ね後）
+     - `round2`: Phase 5.5 の再起動 reviewer + 追加 explorer の合計（レポート「動的ラウンド」行の N + M と一致させる）
+     - `verify`: Phase 5.9 の反証エージェント体数
+     - meta-reviewer / skeptic は含めない（skeptic は `recall_skeptic.fired`、meta はレポートの「動的ラウンド」行で観測可能）
    - `blocker_count` / `critical_count` / `major_count` / `minor_count` は数値（severity 別件数）
    - `missing_coverage` は文字列配列（reviewer focus 名）。空なら `[]`
    - `result_grid` は 5 値の集計オブジェクト（後段 hook / PR コメント自動投稿の dispatch 用）:
@@ -371,7 +393,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
      - `findings_overlap`: **重複 survivor**（`[recall-skeptic:dup]` タグ。reviewer も同じ問題に到達していた）の件数。skeptic が独立に到達した記録として残すが、盲点でなかった事例なので**価値率には算入しない**
      - 両フィールドとも **Step 7 で最初に出力したレポート本文のタグ付き指摘を数えて求める**（Phase 5.8 の記憶から再構成しない。publish は Phase 5.8 から遠く、間に精査・解説・ドラフト生成が挟まるため、記憶依存にすると系統的に 0 へ潰れる）。**計測点は報告マトリクス通過時点（精査の前）＝ Step 7 の初回レポート**であり、精査（締めフロー 1）が再出力する調整後レポートではない。**精査で取り下げた分は減算しない** — 「skeptic が報告に値する指摘を出せたか」を測るフィールドで、必要性で落ちたかは別軸なので混ぜない
    - 失敗してもレポート自体は成功扱い（best-effort）
-   - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` / `recall_skeptic` は新規フィールド追加なので旧 subscriber 影響なし
+   - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` / `recall_skeptic` / `effort` / `duration_min` / `agents` は新規フィールド追加なので旧 subscriber 影響なし
 
 5. **ExitWorktree** で worktree から抜ける。
 
