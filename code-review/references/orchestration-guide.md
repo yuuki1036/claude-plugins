@@ -180,7 +180,7 @@ reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検
 
 1. `triage-guide.md` の「reviewer の観点判定」表の各条件を、実際の diff シグナル（変更ファイルパス・diff 内文字列）に対して **メインコンテキストで再評価** する
 2. **「条件を満たすのに構成に入っていない focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在、`package.json` 変更があるのに dependency 不在）
-3. 検出した focus は **構成テーブルに追加してから確定する**（effort 適応上限（triage-guide `## 7`）に収まる範囲で追加する。上限に達した場合は観点バンドル（triage-guide `## 7`）で既存 reviewer に相乗りさせ、それも不能なら `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として記録する。旧 5.7 の「追加は 1 体まで」制限は事後の直列 wave を抑えるためのものだったので、起動前検算には引き継がない）
+3. 検出した focus は **構成テーブルに追加してから確定する**（実効上限＝ effort 上限（triage-guide `## 7`）と規模キャップ（同 `## 6.2`）の min に収まる範囲で追加する。**検算による追加で実効上限を超えてはならない** — 超える分は下記のバンドル／`missing_coverage` に回す。上限に達した場合は観点バンドル（triage-guide `## 7`）で既存 reviewer に相乗りさせ、それも不能なら `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として記録する。旧 5.7 の「追加は 1 体まで」制限は事後の直列 wave を抑えるためのものだったので、起動前検算には引き継がない）
 4. **モード除外（review のみ）**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**構成追加は行わない**。検出した focus は `missing_coverage` に「観点未起動: <focus>（mode: <mode> により意図的縮退）」として記録のみする。self-review は `--focus` / `--exclude` 指定時にその範囲内でのみ検算する
 
 > v2.39.0 で reviewer 起動後（旧 Phase 5.7 / 4.7 の補完起動）から前倒し。起動前に検算すれば漏れ focus は本隊 wave に合流でき、事後の補完起動（直列 wave 1 本追加）が不要になる。planning 漏れ（判定表 vs 構成）の検出力は同一の機械的な表照合のため変わらない（issue #69 の「観点漏れを常時検査する」意図は維持）。
@@ -250,3 +250,24 @@ findings をコード/文書本文に**反映する前に**、その修正が依
 - **暫定入力を確定として伝播しない**: ユーザーや reviewer の推測的な言及（「〜かも」「たぶん」「〜のはず」）を、確定した事実として複数箇所に展開しない。確定させるには一次ソースを引くこと
 - **1 箇所先行確認 → 確証後に展開**: 同じ訂正を複数箇所に広げる場合、まず 1 箇所で正本確認し、確証が取れてから他箇所へ展開する（未検証の訂正を一括で 5 箇所に広げて全部誤り、という失敗を防ぐ）
 - **複数観点の独立一致は高信頼**: 同一箇所を複数の独立した reviewer 観点が指している場合は、相互の誤検出が打ち消されるため高信頼として扱ってよい
+
+## 13. Event Bus publish 先の固定（review 締めフロー 4・self-review Step 6.4 共通 / GitHub issue #96）
+
+`event_bus_publish` の書込先は `safe-hook.sh` の `__event_bus_init_log` が `${CLAUDE_PROJECT_DIR:-$PWD}/.claude/events.jsonl` として決める。`CLAUDE_PROJECT_DIR` は未設定のことがあり、その場合 **cwd 相対**になる。これは 2 経路で計測を失う:
+
+- **review**: Step 0 の `EnterWorktree` で cwd が `.claude/worktrees/<name>` に移るため、publish は worktree 側の `events.jsonl` に書かれ、締めフロー 5 の `ExitWorktree(remove)` で worktree ごと消える
+- **self-review**: worktree は使わないが、dev-workflow の作業用 worktree 内から実行された場合は同様に worktree 側へ書かれ、Step 8 の teardown で消える
+
+**worktree 進入後に `git rev-parse --show-toplevel` を撮っても解決しない**（worktree 自身を返すため）。`--git-common-dir` は linked worktree 内でも**メインリポジトリの `.git`** を返すので、進入後でもメインルートを導出できる。
+
+両 skill で以下の 2 行を**同一の導出式**として使う（開始時刻ファイル `TS_FILE` のパス導出も、worktree 進入前後で `pwd` が変わってしまい `duration_min` が欠測になるため、同じ `MAIN_ROOT` から決定的に導出する）:
+
+```bash
+GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
+TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d' ' -f1)"
+```
+
+- `GCD` が空（git 2.31 未満で `--path-format` 非対応、または非 git ディレクトリ）のときだけ `pwd` にフォールバックする。**`cd "$GCD/.."` を無条件に書かないこと** — `GCD` が空だと `/..` すなわち `/` に cd してしまい、`/.claude/events.jsonl` へ書きに行く
+- publish 側は `CLAUDE_PROJECT_DIR="$MAIN_ROOT"` を `event_bus_publish` の呼び出しに前置して上書きする（環境の設定値より導出値を優先する。EnterWorktree が `CLAUDE_PROJECT_DIR` を worktree に張り替える実装でも正しく main へ落ちる）
+- publish 後に `rm -f "$TS_FILE"` で開始時刻ファイルを消す（中断したレビューの残骸が次回の `duration_min` を汚さないようにする）

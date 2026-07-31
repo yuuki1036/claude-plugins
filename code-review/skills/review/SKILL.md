@@ -39,11 +39,14 @@ allowed-tools:
 ### 1. PR の取得と前提確認
 
 ```bash
-# duration_min 計測用の開始時刻を記録（Step 7 の payload で使用）
+# duration_min 計測用の開始時刻を記録（締めフロー 4 の payload で使用）
 # シェル変数は Bash 呼び出し間で持続しないため、必ずファイルで受け渡す（変数だと
 # publish 時に未定義 =0 と評価され epoch/60 のゴミ値が publish される）。
-# repo を汚さないよう TMPDIR 配下に置き、cwd から決定的にパスを導出する
-TS_FILE="${TMPDIR:-/tmp}/.review-start-$(pwd | cksum | cut -d' ' -f1)"
+# パスは cwd ではなく「メインリポジトリのルート」から導出する（Step 0 で worktree に
+# 入っているため cwd 基準だと publish 時と食い違う。導出式の正本: orchestration-guide `## 13`）
+GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
+TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d' ' -f1)"
 date +%s > "$TS_FILE"
 
 # PR 番号指定時: worktree 内で checkout（作業ブランチに影響なし）
@@ -91,6 +94,18 @@ gh pr diff <PR番号> --name-only
 - プロジェクト特性シグナル（`package.json` の存在確認と主要依存の確認）
 - 変更ファイルの行数: `wc -l <changed_files>`
 
+**規模帯の判定（Phase 0 の規模キャップに使う / 必須）**: 全体の変更量ではなく、lock・生成物・テスト・doc を除いた **core** で数える（triage-guide `## 6.1`）。テスト 5 ファイルと doc 1 ファイルを含む 9 ファイルの PR が、実質 3 ファイル `+22 -13` にもかかわらず large 相当に扱われて 17 体起動する事故を防ぐ（GitHub issue #96）:
+
+```bash
+BASE=$(gh pr view <PR番号> --json baseRefName -q .baseRefName)
+git diff --numstat "origin/${BASE}...HEAD" \
+  | grep -Ev '(^|/)(dist|build|vendor)/|\.lock$|package-lock\.json$|yarn\.lock$|pnpm-lock\.yaml$|\.snap$|\.generated\.' \
+  | grep -Ev '\.(test|spec)\.|(^|/)(__tests__|tests)/|\.md$|(^|/)docs/' \
+  | awk '{f++; l+=$1+$2} END {printf "core: %d files / %d lines\n", f+0, l+0}'
+```
+
+出力の core ファイル数・行数を triage-guide `## 6.2` の表に当てて帯（small / medium / large）を決め、Phase 0 の構成テーブル・Step 7 レポート冒頭・締めフロー 4 の `size_tier` に記録する。
+
 ### 2.5. PR コンテキストブロックの構築
 
 Step 1 の `fetch-pr-context.sh` 出力をそのまま「PR コンテキストブロック」として保持する（LLM による再構築・要約・編集は **禁止**：再現性と取りこぼし防止のため）。このブロックは Phase 0 のタイプ判定と **全 reviewer のプロンプト注入** の両方に使用する。
@@ -128,10 +143,19 @@ Step 2.5 の PR コンテキストブロック（説明・issue コメント・�
 - 冗長ペアには異なる angle（分析の切り口）を割り当てる（実起動は xhigh/max のみ。下記）
 - 最小保証: reviewer-bugs + reviewer-claude-md の 2 体は常に起動
 
-**effort 適応の上限調整**（体数の正本: triage-guide `## 7`）: 現在の effort = `${CLAUDE_EFFORT}` に応じて上限を調整する:
+**実効上限 = min(effort 上限, 規模キャップ)**（体数の正本: triage-guide `## 7` / `## 6.2`）。**2 系統を必ず両方適用する**（effort 上限だけを見ると、小 PR に上限いっぱいの体数が張り付いて所要時間が数倍に膨らむ。GitHub issue #96 の実測は core 3 ファイル `+22 -13` の PR に 17 体 / 130 分）。
+
+第 1 系統 — **effort 上限**（現在の effort = `${CLAUDE_EFFORT}`）:
 - `low` / `medium`: explorer 2 体、reviewer 4 体、specialist 3 体（束ね起動）（最小保証は維持）。深掘りより速度優先
 - `high`（既定）: explorer 4 体、reviewer 6 体、specialist 3 体（束ね起動）。**冗長ペアは組まない**（ペア条件成立時は Angle A/B を 1 体に内挿）。上限を超える観点数は近接観点のバンドルで可能な限り吸収し、それでも収まらない観点は `missing_coverage` に必ず記録する（容量の算式は triage-guide `## 7`。脱落を silent にしない）
 - `xhigh` / `max`: explorer 6 体、reviewer 10 体、specialist 6 体を full に使い、冗長ペアを積極投入
+
+第 2 系統 — **規模キャップ**（Step 2 で数えた core 規模。triage-guide `## 6`）:
+- small（core ≤ 3 ファイル かつ ≤ 100 行）: explorer 0 / reviewer 3 / specialist 1
+- medium（core 4-10 ファイル または 101-500 行）: explorer 2 / reviewer 5 / specialist 2
+- large: キャップなし（effort 上限がそのまま実効上限）
+- **最小保証の 2 体は規模キャップより優先**。キャップに収まらない観点は `missing_coverage` に「観点未起動: <focus>（規模キャップ: <帯>）」として記録する
+- **規模キャップが effort 上限を下回った場合、Round 2（Step 5.5）は effort に関わらず 1 段圧縮経路**（追加 explorer なし）を使う。一方 **reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない**（規模キャップが削るのは breadth のみ。triage-guide `## 6.3`）
 
 #### 3.3 観点カバレッジ検算と構成テーブル出力
 
@@ -284,11 +308,12 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 {emergency モード時のみ先頭に: **⚠️ 緊急レビュー（最小構成）: マージ後に通常の /review を必ず実施すること**}
 
-**[mode: {emergency|doc-review|dba|supply-chain|skip|default}, agents: [<focus 名のリスト>]]**
+**[mode: {emergency|doc-review|dba|supply-chain|skip|default}, size: {small|medium|large} (core N files / N lines), agents: [<focus 名のリスト>]]**
 
 **総合判定**: {Approve | Approve with nits | Needs work}（scoring-guide.md「レビュー結論（総合判定）」の表に従って決定）
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
+**実効上限**: explorer N / reviewer N / specialist N（effort `{値}` の上限と規模キャップ `{帯}` の min。どちらが効いたかを明記する）
 **動的ラウンド**: Round 2 {未実行 | 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行 | スキップ理由} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/emergency）| 非該当（surface なし）} / 反証 {対象 N 件 | スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{反証スキップ時はこの行を省略}
@@ -354,20 +379,28 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 4. **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**指摘の精査を行った場合は精査後（post）の確定件数を使う**（取り下げ・降格を反映）。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
 
+   **書込先はメインリポジトリのルートに固定する（必須。GitHub issue #96）**: この時点の cwd は Step 0 で入った worktree であり、`event_bus_publish` は `CLAUDE_PROJECT_DIR` 未設定時に cwd 相対で書く。素のまま publish すると worktree 側の `.claude/events.jsonl` に書かれ、直後の締めフロー 5 `ExitWorktree(remove)` で**計測ごと消える**（2026-07-31 時点で review 由来のサンプルが 1 件も残っていない原因）。導出式と落とし穴（`GCD` 空時に `/` へ cd する事故）の正本: → orchestration-guide `## 13`
+
    ```bash
+   # events.jsonl と開始時刻ファイルの基準を「メインリポジトリのルート」に固定する。
+   # worktree 内の --show-toplevel は worktree 自身を返すので使わない（--git-common-dir を使う）
+   GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+   MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
    # 開始時刻は Step 1 が書いたファイルから読む（シェル変数は呼び出し間で消えるため）。欠測は -1
-   TS_FILE="${TMPDIR:-/tmp}/.review-start-$(pwd | cksum | cut -d' ' -f1)"
+   TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d' ' -f1)"
    S=$(cat "$TS_FILE" 2>/dev/null)
    DUR=$([ -n "$S" ] && echo $(( ($(date +%s) - S) / 60 )) || echo -1)
    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
-     SAFE_HOOK_NAME="code-review:review" event_bus_publish "review:completed" \
-     "{\"pr\":\"<number>\",\"effort\":\"${CLAUDE_EFFORT}\",\"duration_min\":$DUR,\"agents\":{\"explorer\":<n>,\"reviewer\":<n>,\"specialist\":<n>,\"round2\":<n>,\"verify\":<n>},\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
+     CLAUDE_PROJECT_DIR="$MAIN_ROOT" SAFE_HOOK_NAME="code-review:review" event_bus_publish "review:completed" \
+     "{\"pr\":\"<number>\",\"effort\":\"${CLAUDE_EFFORT}\",\"size_tier\":\"<small|medium|large>\",\"duration_min\":$DUR,\"agents\":{\"explorer\":<n>,\"reviewer\":<n>,\"specialist\":<n>,\"round2\":<n>,\"verify\":<n>},\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
+   rm -f "$TS_FILE"   # 中断したレビューの残骸が次回の duration_min を汚さないよう掃除する
    ```
 
    payload 規約:
    - `pr` は PR 番号の文字列（Step 1 で取得済み）。PR 番号取得に失敗した場合は `"local"` とする
    - `effort` は実行時 `${CLAUDE_EFFORT}` の文字列（`low`〜`max`。山括弧などの装飾は付けず実値をそのまま入れる）。体数上限・動的ラウンドの起動有無を左右する条件変数なので、下流の集計は本フィールドで層別する（v2.39.0 追加）
-   - `duration_min` は Step 1 が `$TS_FILE`（TMPDIR 配下・cwd から決定的に導出）に書いた開始時刻から publish 時点までの分（整数）。**シェル変数での受け渡しは禁止**（Bash 呼び出し間で変数は消え、bash 算術が未定義変数を 0 と評価して epoch/60 のゴミ値が入るため）。ファイルが無い・空の場合は `-1`（欠測を 0 と区別する）
+   - `size_tier` は Phase 0 が判定した規模帯（`small` / `medium` / `large`。triage-guide `## 6.1` の core 基準）。規模キャップの効果測定と `duration_min` の層別に使う（v2.40.0 追加。所要時間は規模と体数の両方に効かれるため、帯を混ぜた比較はキャップの効果を検出できない）
+   - `duration_min` は Step 1 が `$TS_FILE`（TMPDIR 配下・**メインリポジトリのルートから決定的に導出**）に書いた開始時刻から publish 時点までの分（整数）。**シェル変数での受け渡しは禁止**（Bash 呼び出し間で変数は消え、bash 算術が未定義変数を 0 と評価して epoch/60 のゴミ値が入るため）。ファイルが無い・空の場合は `-1`（欠測を 0 と区別する）。パス導出を cwd 基準にすると Step 1（worktree 内）と publish 時で食い違って常に欠測になるため、両方で同じ `MAIN_ROOT` 導出式を使う
    - `agents` は実際に**起動した** agent 体数（成功・失敗を問わず起動数。v2.39.0 の上限調整の効果測定に使う）:
      - `explorer`: Step 4 の初回 explorer 体数
      - `reviewer`: Step 5 の初回 reviewer 体数（specialist を含めない）
@@ -393,7 +426,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
      - `findings_overlap`: **重複 survivor**（`[recall-skeptic:dup]` タグ。reviewer も同じ問題に到達していた）の件数。skeptic が独立に到達した記録として残すが、盲点でなかった事例なので**価値率には算入しない**
      - 両フィールドとも **Step 7 で最初に出力したレポート本文のタグ付き指摘を数えて求める**（Phase 5.8 の記憶から再構成しない。publish は Phase 5.8 から遠く、間に精査・解説・ドラフト生成が挟まるため、記憶依存にすると系統的に 0 へ潰れる）。**計測点は報告マトリクス通過時点（精査の前）＝ Step 7 の初回レポート**であり、精査（締めフロー 1）が再出力する調整後レポートではない。**精査で取り下げた分は減算しない** — 「skeptic が報告に値する指摘を出せたか」を測るフィールドで、必要性で落ちたかは別軸なので混ぜない
    - 失敗してもレポート自体は成功扱い（best-effort）
-   - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` / `recall_skeptic` / `effort` / `duration_min` / `agents` は新規フィールド追加なので旧 subscriber 影響なし
+   - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` / `recall_skeptic` / `effort` / `duration_min` / `agents` / `size_tier` は新規フィールド追加なので旧 subscriber 影響なし
 
 5. **ExitWorktree** で worktree から抜ける。
 

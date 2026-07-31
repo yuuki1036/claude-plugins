@@ -46,8 +46,11 @@ Phase 0 の explorer/reviewer 並列起動も同じ思想で、reviewer は expl
 # duration_min 計測用の開始時刻を記録（Step 6.4 の payload で使用）
 # シェル変数は Bash 呼び出し間で持続しないため、必ずファイルで受け渡す（変数だと
 # publish 時に未定義 =0 と評価され epoch/60 のゴミ値が publish される）。
-# repo を汚さないよう TMPDIR 配下に置き、cwd から決定的にパスを導出する
-TS_FILE="${TMPDIR:-/tmp}/.review-start-$(pwd | cksum | cut -d' ' -f1)"
+# パスは cwd ではなく「メインリポジトリのルート」から導出する（作業用 worktree 内から
+# 実行された場合に teardown で消えるのを防ぐ。導出式の正本: orchestration-guide `## 13`）
+GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
+TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d' ' -f1)"
 date +%s > "$TS_FILE"
 
 # 引数で base branch が指定されていればそれを使用
@@ -68,7 +71,16 @@ git diff --cached --name-only
 
 # 変更ファイルの行数
 wc -l <changed_files>
+
+# 規模帯の判定（Phase 0 の規模キャップに使う / 必須）。全体ではなく lock・生成物・
+# テスト・doc を除いた core で数える（triage-guide `## 6.1`。GitHub issue #96）
+{ git diff --numstat "${BASE}..HEAD"; git diff --numstat; git diff --cached --numstat; } \
+  | grep -Ev '(^|/)(dist|build|vendor)/|\.lock$|package-lock\.json$|yarn\.lock$|pnpm-lock\.yaml$|\.snap$|\.generated\.' \
+  | grep -Ev '\.(test|spec)\.|(^|/)(__tests__|tests)/|\.md$|(^|/)docs/' \
+  | awk '{f[$3]=1; l+=$1+$2} END {printf "core: %d files / %d lines\n", length(f), l+0}'
 ```
+
+出力の core ファイル数・行数を triage-guide `## 6.2` の表に当てて帯（small / medium / large）を決め、Phase 0 の構成テーブル・Step 6 レポート冒頭・Step 6.4 の `size_tier` に記録する（3 系統の diff が重なるファイルは行数が重複計上されうるが、帯を分けるには十分な粗さ。`--staged` 指定時は `git diff --cached --numstat` のみを対象にする）。
 
 変更がなければ終了。
 
@@ -135,7 +147,17 @@ diff の特性を分析し、必要なエージェントタイプを判定する
 - 冗長ペアには異なる angle（分析の切り口）を割り当てる（実起動は xhigh/max のみ。下記）
 - 最小保証: reviewer-bugs + reviewer-claude-md の 2 体は常に起動
 
-**effort 適応の上限調整**（体数の正本: triage-guide `## 7`）: 現在の effort = `${CLAUDE_EFFORT}` に応じて上限を調整する:
+**実効上限 = min(effort 上限, 規模キャップ)**（体数の正本: triage-guide `## 7` / `## 6.2`）。**2 系統を必ず両方適用する**（effort 上限だけを見ると小さな変更に上限いっぱいの体数が張り付く。GitHub issue #96）。
+
+第 2 系統 — **規模キャップ**（Step 1 で数えた core 規模。triage-guide `## 6`）:
+- small（core ≤ 3 ファイル かつ ≤ 100 行）: explorer 0 / reviewer 3 / specialist 1
+- medium（core 4-10 ファイル または 101-500 行）: explorer 2 / reviewer 5 / specialist 2
+- large: キャップなし（effort 上限がそのまま実効上限）
+- **最小保証の 2 体は規模キャップより優先**。キャップに収まらない観点は `missing_coverage` に「観点未起動: <focus>（規模キャップ: <帯>）」として記録する
+- **規模キャップが effort 上限を下回った場合、Round 2（Phase 4.5）は effort に関わらず 1 段圧縮経路**（追加 explorer なし）。一方 **reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない**（削るのは breadth のみ。triage-guide `## 6.3`）
+- `--focus` / `--exclude` でスコープを絞った実行では、そもそも構成が観点指定で決まるため規模キャップは追加で効かせない（指定観点は必ず起動する）
+
+第 1 系統 — **effort 上限**（現在の effort = `${CLAUDE_EFFORT}`）:
 - `low` / `medium`: explorer 2 体、reviewer 4 体、specialist 3 体（束ね起動）（最小保証は維持）。深掘りより速度優先
 - `high`（既定）: explorer 4 体、reviewer 6 体、specialist 3 体（束ね起動）。**冗長ペアは組まない**（ペア条件成立時は Angle A/B を 1 体に内挿）。上限を超える観点数は近接観点のバンドルで可能な限り吸収し、それでも収まらない観点は `missing_coverage` に必ず記録する（容量の算式は triage-guide `## 7`。脱落を silent にしない）
 - `xhigh` / `max`: explorer 6 体、reviewer 10 体、specialist 6 体を full に使い、冗長ペアを積極投入
@@ -283,6 +305,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 **総合判定**: {Approve | Approve with nits | Needs work}（scoring-guide.md「レビュー結論（総合判定）」の表に従う。コミット前ゲートとして「このままコミットしてよいか」の指針）
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
+**実効上限**: explorer N / reviewer N / specialist N（effort `{値}` の上限と規模キャップ `{帯}`（core N files / N lines）の min。どちらが効いたかを明記する）
 **動的ラウンド**: Round 2 {未実行 | 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行 | スキップ理由} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/scope）| 非該当（surface なし）} / 反証 {対象 N 件 | スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{反証スキップ時はこの行を省略}
@@ -331,20 +354,27 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 
 副作用のみで標準出力にレポート文字を足さないため、embed mode の出力フォーマット（Step 6.5 の JSON ブロック → marker の順序）には影響しない。self-review は PR を持たないため `pr` は `"local"` 固定とする。
 
+**書込先はメインリポジトリのルートに固定する（必須。GitHub issue #96）**: self-review は worktree に入らないが、dev-workflow の作業用 worktree 内から実行されることがある。その場合 cwd 相対で書くと Step 8 の teardown で `.claude/events.jsonl` ごと消える（review 側で同型の事故が実際に起きた）。導出式と落とし穴（`GCD` 空時に `/` へ cd する事故）の正本: → orchestration-guide `## 13`
+
 ```bash
+# events.jsonl と開始時刻ファイルの基準を「メインリポジトリのルート」に固定する
+GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
 # 開始時刻は Step 1 が書いたファイルから読む（シェル変数は呼び出し間で消えるため）。欠測は -1
-TS_FILE="${TMPDIR:-/tmp}/.review-start-$(pwd | cksum | cut -d' ' -f1)"
+TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d' ' -f1)"
 S=$(cat "$TS_FILE" 2>/dev/null)
 DUR=$([ -n "$S" ] && echo $(( ($(date +%s) - S) / 60 )) || echo -1)
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
-  SAFE_HOOK_NAME="code-review:self-review" event_bus_publish "review:completed" \
-  "{\"pr\":\"local\",\"effort\":\"${CLAUDE_EFFORT}\",\"duration_min\":$DUR,\"agents\":{\"explorer\":<n>,\"reviewer\":<n>,\"specialist\":<n>,\"round2\":<n>,\"verify\":<n>},\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
+  CLAUDE_PROJECT_DIR="$MAIN_ROOT" SAFE_HOOK_NAME="code-review:self-review" event_bus_publish "review:completed" \
+  "{\"pr\":\"local\",\"effort\":\"${CLAUDE_EFFORT}\",\"size_tier\":\"<small|medium|large>\",\"duration_min\":$DUR,\"agents\":{\"explorer\":<n>,\"reviewer\":<n>,\"specialist\":<n>,\"round2\":<n>,\"verify\":<n>},\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
+rm -f "$TS_FILE"   # 中断したレビューの残骸が次回の duration_min を汚さないよう掃除する
 ```
 
 payload 規約（review skill と同一。subscriber が publisher を区別せず集計できるよう揃える）:
 - `pr`: self-review は常に `"local"`
 - `effort`: 実行時 `${CLAUDE_EFFORT}` の文字列（`low`〜`max`。山括弧などの装飾は付けず実値をそのまま入れる）。体数上限・動的ラウンドの起動有無を左右する条件変数なので、下流の集計は本フィールドで層別する（v2.39.0 追加）
-- `duration_min`: Step 1 が `$TS_FILE`（TMPDIR 配下・cwd から決定的に導出）に書いた開始時刻から publish 時点までの分（整数）。**シェル変数での受け渡しは禁止**（Bash 呼び出し間で変数は消え、bash 算術が未定義変数を 0 と評価して epoch/60 のゴミ値が入るため）。ファイルが無い・空の場合は `-1`（欠測を 0 と区別する）
+- `size_tier`: Phase 0 が判定した規模帯（`small` / `medium` / `large`。triage-guide `## 6.1` の core 基準）。規模キャップの効果測定と `duration_min` の層別に使う（v2.40.0 追加）
+- `duration_min`: Step 1 が `$TS_FILE`（TMPDIR 配下・**メインリポジトリのルートから決定的に導出**）に書いた開始時刻から publish 時点までの分（整数）。**シェル変数での受け渡しは禁止**（Bash 呼び出し間で変数は消え、bash 算術が未定義変数を 0 と評価して epoch/60 のゴミ値が入るため）。ファイルが無い・空の場合は `-1`（欠測を 0 と区別する）。パス導出を cwd 基準にすると Step 1 と publish 時で食い違う恐れがあるため、両方で同じ `MAIN_ROOT` 導出式を使う
 - `agents`: 実際に**起動した** agent 体数（成功・失敗を問わず起動数。v2.39.0 の上限調整の効果測定に使う）。`explorer`=Step 3 の初回 explorer / `reviewer`=Step 4 の初回 reviewer（specialist 含めない）/ `specialist`=束ね後の実起動体数 / `round2`=Phase 4.5 の再起動 reviewer + 追加 explorer 合計（レポート「動的ラウンド」行の N + M と一致させる）/ `verify`=Phase 4.9 の反証体数。meta-reviewer / skeptic は含めない（skeptic は `recall_skeptic.fired` で観測可能）
 - `blocker_count` / `critical_count` / `major_count` / `minor_count`: severity 別件数（Step 6 報告マトリクス通過後）
 - `missing_coverage`: 欠損観点の focus 名配列（空なら `[]`）

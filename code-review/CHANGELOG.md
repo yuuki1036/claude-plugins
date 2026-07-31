@@ -2,6 +2,27 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.40.0] - 2026-07-31
+
+### Fixed
+- **`review:completed` が worktree ごと消えて review 経路の計測が 1 件も残っていなかった問題を修正**（GitHub issue #96 B）。`event_bus_publish` は `CLAUDE_PROJECT_DIR` 未設定時に cwd 相対で書くため、review では Step 0 の `EnterWorktree` 後に publish → 締めフロー 5 の `ExitWorktree(remove)` で worktree ごと消えていた（self-review も作業用 worktree 内から実行された場合は Step 8 teardown で同型の消失）。publish 先をメインリポジトリのルートに固定する:
+  - 導出は `git rev-parse --path-format=absolute --git-common-dir` の親。**worktree 内の `--show-toplevel` は worktree 自身を返すため使えない**（`--git-common-dir` は linked worktree 内でも main の `.git` を返す）
+  - publish 呼び出しに `CLAUDE_PROJECT_DIR="$MAIN_ROOT"` を前置して環境値より導出値を優先する
+  - `duration_min` の開始時刻ファイル（`TS_FILE`）のパス導出も `pwd` 基準から同じ `MAIN_ROOT` 基準へ変更（worktree 進入前後で `pwd` が変わり欠測になるのを防ぐ）。publish 後に `rm -f` で掃除し、中断したレビューの残骸が次回を汚さないようにする
+  - `GCD` が空（git 2.31 未満 / 非 git）のときだけ `pwd` へフォールバックする。無条件に `cd "$GCD/.."` と書くと `/` に cd して `/.claude/events.jsonl` へ書きに行くため、この分岐は必須。導出式と落とし穴の正本は orchestration-guide `## 13`
+  - **影響**: v2.39.0 で追加した計測フィールドは review 経路では 1 件も蓄積されていなかった。v2.39.0 の high 既定縮小の効果測定は本修正以降のサンプルで行う（triage-guide `## 7` のロールバック条件に注記）
+
+### Changed
+- **体数上限を「effort 上限 × 規模キャップ」の 2 系統 min に変更**（GitHub issue #96 A）。従来は effort 上限しか効かず、9 ファイル `+116 -22`（うち本番コード 3 ファイル `+22 -13`、残りはテスト 5 + doc 1）の PR に xhigh で 17 体が起動しレポートまで 95 分・締めまで 130 分かかっていた。旧 `## 6` の規模別構成は「Phase 0 が明確な判断を下せない場合」限定のフォールバックだったため、diff シグナルが読めると規模が上限に一切効かなかった:
+  - **規模キャップ**（triage-guide `## 6.2`）: small = explorer 0 / reviewer 3 / specialist 1、medium = 2 / 5 / 2、large = キャップなし。最小保証の 2 体はキャップより優先。収まらない観点は `missing_coverage` に「規模キャップ: <帯>」として記録（脱落を silent にしない）
+  - **帯は core で判定する**（`## 6.1`）: lock / 生成物 / vendor を除外し、さらにテスト・doc を除いた本番コードで数える。テスト・doc は観点の起動根拠にはなるが体数を押し上げる根拠にはしない。判定用の `git diff --numstat` + フィルタを両 SKILL に同梱
+  - **削るのは breadth だけ**（`## 6.3`）: reviewer 個々の effort・meta-reviewer（5.6）・冷や読み skeptic（5.8）・反証レイヤー（5.9）は帯に関わらず effort 指定どおり動かす。規模キャップが effort 上限を下回った帯では Round 2 を effort に関わらず 1 段圧縮経路にする。「effort は 1 体あたりの深さの指定であって並べる体数の指定ではない」を設計原則として明記
+  - 旧 `## 6` のフォールバック構成は `## 6.4` に温存（キャップではなく初期値としての役割は変わらない）
+
+### Added
+- **`review:completed` payload に `size_tier` を追加**（`small` / `medium` / `large`）。規模キャップの効果測定と `duration_min` の層別に使う。所要時間は規模と体数の両方に効かれるため、帯を混ぜた中央値ではキャップの効果と PR 規模の分布変化を分離できない（triage-guide `## 7` のロールバック jq に層別の注記を追加）
+- レポート冒頭に **`size:` と `実効上限` 行**を追加（review / self-review 共通）。effort 上限と規模キャップのどちらが効いたかを人間が事後に検証できるようにする
+
 ## [2.39.0] - 2026-07-30
 
 ### Changed

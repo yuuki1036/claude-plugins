@@ -170,7 +170,7 @@ diff に以下の **危険パターン** が検出された場合、対応する
 - 文字列マッチは false positive を伴うが、specialist の役割は「人間判断を促す」ことなので積極的に起動して問題ない。**トリガー感度（検出正規表現）は effort に関わらず変更しない**（recall 直撃のため）
 - specialist は対応する Focus テンプレート（reviewer-prompts.md `## 5. Specialist テンプレート`）を使用
 - specialist の指摘は **大半が BLOCKER または CRITICAL** になるため、低 confidence でも報告マトリクスで人間に届く
-- specialist は reviewer 枠とは別カウント（specialist 起動で reviewer 枠を圧迫しない）。**体数は `## 7` の effort 適応表に従う**: high 以下では複数 red-flag ヒット時に 1〜2 体へ束ねて該当テンプレートを連結注入する（specialist-guardrail-bypass のみ単独 1 体を維持）。xhigh / max は個別起動・上限 6 体。束ね時の出力規約は reviewer-prompts.md `## 5` 冒頭を参照
+- specialist は reviewer 枠とは別カウント（specialist 起動で reviewer 枠を圧迫しない）。**体数は `## 7` の effort 適応表と `## 6.2` の規模キャップの min**（規模側は small 1 体 / medium 2 体）: high 以下では複数 red-flag ヒット時に 1〜2 体へ束ねて該当テンプレートを連結注入する（specialist-guardrail-bypass のみ単独 1 体を維持）。xhigh / max は個別起動・上限 6 体。束ね時の出力規約は reviewer-prompts.md `## 5` 冒頭を参照
 
 ### PR コンテキストによる観点追加・冗長化（review skill のみ）
 
@@ -195,7 +195,7 @@ SKILL.md Step 2.5 で構築した PR コンテキストブロックの内容も�
 | 大規模リファクタ（10+ファイル） | 3-5 | アーキテクチャレイヤー単位 |
 | 共通モジュールの変更 | +1 | 呼び出し元の影響範囲調査 |
 
-- **上限**: `## 7` の effort 適応表に従う（high 4 体 / xhigh・max 6 体）
+- **上限**: `## 7` の effort 適応表と `## 6.2` の規模キャップの **min**（effort 側は high 4 体 / xhigh・max 6 体、規模側は small 0 体 / medium 2 体）
 
 ### reviewer の冗長度判定
 
@@ -221,7 +221,7 @@ SKILL.md Step 2.5 で構築した PR コンテキストブロックの内容も�
 
 他の観点も必要に応じて angle を設定する。
 
-- **reviewer 上限**: `## 7` の effort 適応表に従う（high 6 体 / xhigh・max 10 体）
+- **reviewer 上限**: `## 7` の effort 適応表と `## 6.2` の規模キャップの **min**（effort 側は high 6 体 / xhigh・max 10 体、規模側は small 3 体 / medium 5 体。最小保証の 2 体は規模キャップより優先）
 
 ## 5. 出力フォーマット
 
@@ -231,7 +231,8 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 ## Phase 0 トリアージ結果
 
 ### 変更特性
-- 規模: {small|medium|large}
+- 規模: {small|medium|large}（core {N} ファイル / {N} 行、全体 {N} ファイル / {N} 行）
+- 実効上限: explorer {N} / reviewer {N} / specialist {N}（effort {値} 上限 {N}/{N}/{N} と規模キャップ {N}/{N}/{N} の min。`## 6.2`）
 - リスク因子: [巨大ファイル, 条件分岐追加, 共通モジュール変更, ...]
 - コンテキスト: [session-context, issue-files, knowledge, ...]
 
@@ -252,29 +253,62 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 | R4 | spec-compliance | - | E1 | Issue 仕様との整合性検証 |
 ```
 
-## 6. フォールバック構成
+## 6. 規模判定と規模キャップ（体数上限の第 2 系統）
 
-Phase 0 が明確な判断を下せない場合のデフォルト構成:
+体数の実効上限は **effort 上限（`## 7`）と規模キャップ（本節）の min** で決まる。
 
-### small（変更ファイル <= 3, 変更行数 <= 100）
+effort だけで上限を決めると、小さな PR にも effort 上限いっぱいの体数が張り付く。実測（GitHub issue #96）: 9 ファイル / `+116 -22`（うち本番コードは 3 ファイル `+22 -13`、残りはテスト 5 + doc 1）の PR を xhigh で流したところ explorer 4 + reviewer 10 + specialist 1 + Round 2 explorer 2 = **17 体**が起動し、レポートまで 95 分・締めまで 130 分かかった。旧 `## 6` は「Phase 0 が明確な判断を下せない場合」限定のフォールバックだったため、diff シグナルが読めてしまうと規模が上限に一切効かなかった。
 
-- explorer: 0体
-- reviewer: 2体（bug-detection, claude-md-compliance）
+切り分けの原則: **effort は「1 体あたりどれだけ深く読むか」の指定であって、「何体並べるか」の指定ではない。** 規模キャップはこの切り分けを機械化する。
 
-### medium（変更ファイル 4-10, 変更行数 101-500）
+### 6.1 実質規模の数え方
 
-- explorer: 1体（history-context）
-- reviewer: 3体（bug-detection, claude-md-compliance, error-handling）
+`gh pr diff <PR番号> --name-only`（self-review は `git diff --name-only`）と行数から数える。**帯の判定は core 側で行う**:
 
-### large（変更ファイル > 10, 変更行数 > 500）
+- **除外**（どちらの系統にも数えない）: lock ファイル（`*.lock` / `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml`）、生成物（`dist/` / `build/` / `*.snap` / `*.generated.*`）、vendor 配下
+- **core**（帯の判定に使う）: 上記除外後から、さらにテスト（`*.test.*` / `*.spec.*` / `__tests__/` / `tests/`）とドキュメント（`*.md` / `docs/`）を除いた本番コード
+- テスト・ドキュメントは観点判定（test-quality / doc-substance 等）の**起動根拠にはなる**が、**体数を押し上げる根拠にはしない**（1 観点 1 体で足り、fleet を要さないため）
 
-- explorer: 2体（history-context, dependency-trace）
-- reviewer: 4体（bug-detection, claude-md-compliance, error-handling, cross-cutting）
+core が 0（テスト・doc のみの PR）の場合は `## 2.5` のモード判定（doc-review-mode 等）に従い、本節の帯は **small** を使う。
 
-## 7. 最小保証とフェーズ上限（effort 適応 / 体数の正本）
+### 6.2 規模キャップ
 
-- **最小保証**: reviewer-bugs（focus: bug-detection）+ reviewer-claude-md（focus: claude-md-compliance）の2体は Phase 0 の判断に関わらず常に起動
-- フェーズ上限は実行時 effort = `${CLAUDE_EFFORT}` で決まる。**本表が体数上限の正本**（SKILL.md・他節の上限言及はここを参照する）:
+| 帯 | 条件（core 基準） | explorer | reviewer | specialist |
+|---|---|:---:|:---:|:---:|
+| small | ファイル ≤ 3 **かつ** 行数 ≤ 100 | 0 | 3 | 1 |
+| medium | ファイル 4-10 **または** 行数 101-500 | 2 | 5 | 2 |
+| large | ファイル > 10 **または** 行数 > 500 | キャップなし | キャップなし | キャップなし |
+
+- **判定は large → medium → small の順**に上から当て、最初に条件を満たした帯を採る（条件が重なる場合は大きい帯が勝つ。例: 2 ファイル / 600 行は行数で large）
+- **large 帯は規模キャップを課さない**（effort 上限がそのまま実効上限になる）
+- **最小保証（reviewer-bugs + reviewer-claude-md の 2 体）は規模キャップより優先**する。small でもこの 2 体は必ず起動する
+- キャップに収まらない観点は、effort 上限超過と同じ扱いで `missing_coverage` に「観点未起動: <focus>（規模キャップ: <帯>）」として**必ず記録**する（脱落を silent にしない）。近接観点のバンドル（`## 7`）による吸収を先に試みる
+- 判定した帯と core の実数は Phase 0 の出力（`## 5`）とレポート冒頭・`review:completed` payload の `size_tier` に必ず出す（キャップが効いたことを事後に検証できるようにする）
+
+### 6.3 規模キャップが削るもの・削らないもの
+
+規模キャップが削るのは **breadth（並べる体数）だけ**。depth を担う層は帯に関わらず effort の指定どおり動かす。
+
+- **削る**: explorer / reviewer / specialist の体数、冗長ペア、Round 2 の追加 explorer（**規模キャップが effort 上限を下回った帯では、Round 2 は effort に関わらず `## 8` の 1 段圧縮経路を使う**）
+- **削らない**: reviewer 個々の effort（`## 7` の連動表どおり。xhigh 指定なら reviewer は `xhigh` のまま）、meta-reviewer（5.6）、冷や読み skeptic（5.8）、反証レイヤー（5.9）。いずれも 1〜数体で、小さな diff ほど 1 体あたりの費用対効果が高い
+
+xhigh / max を明示指定したユーザーが求めているのは「小さな diff を深く読むこと」であって「小さな diff に 17 体並べること」ではない。
+
+### 6.4 Phase 0 が判断できない場合のフォールバック構成
+
+diff シグナルが読めず観点を決められない場合の既定構成（キャップではなく初期値。旧 `## 6` の内容）:
+
+| 帯 | フォールバック構成 |
+|---|---|
+| small | reviewer 2（bug-detection, claude-md-compliance） |
+| medium | explorer 1（history-context）+ reviewer 3（bug-detection, claude-md-compliance, error-handling） |
+| large | explorer 2（history-context, dependency-trace）+ reviewer 4（bug-detection, claude-md-compliance, error-handling, cross-cutting） |
+
+## 7. 最小保証とフェーズ上限（effort 適応 / effort 側上限の正本。実効上限は `## 6.2` との min）
+
+- **最小保証**: reviewer-bugs（focus: bug-detection）+ reviewer-claude-md（focus: claude-md-compliance）の2体は Phase 0 の判断・規模キャップに関わらず常に起動
+- **実効上限 = min(effort 上限（本表）, 規模キャップ（`## 6.2`))**。effort 上限は「深さの予算」、規模キャップは「広さの上限」で、両者は独立に効く。どちらか小さい方を採る（GitHub issue #96。effort 上限だけを見ると小 PR に上限いっぱいの体数が張り付く）
+- effort 上限は実行時 effort = `${CLAUDE_EFFORT}` で決まる。**本表が effort 側上限の正本**（SKILL.md・他節の上限言及はここを参照する）:
 
 | 枠 | low / medium | high（既定） | xhigh / max |
 |---|:---:|:---:|:---:|
@@ -304,6 +338,10 @@ Phase 0 が明確な判断を下せない場合のデフォルト構成:
   ```
 
   縮小後 30 日で high 群の hi_avg が対照群比で明確に低い状態が続いたら、まず冗長ペアの high 復帰（次に reviewer 上限 10 復帰）を検討する。サンプルが `no data` のうちは判断しない。印象や単発の見落とし報告だけで戻さない（壊れた・不足した計測を根拠に不可逆な判断をしない。skeptic の high 昇格判断 `## 8.5` と同じ流儀）
+
+  **`duration_min` の比較は `size_tier` を揃えて行う**（v2.40.0 で payload に追加）。所要時間は規模と体数の両方に効かれるため、帯を混ぜた中央値は規模キャップの効果と PR 規模の分布変化を分離できない。上の jq に `and .payload.size_tier == "small"` 等を足して帯ごとに見る。
+
+  **`review` 由来サンプルは v2.40.0 より前は 1 件も存在しない**（GitHub issue #96 B）。publish が EnterWorktree 配下の cwd 相対パスで行われていたため、`review:completed` は worktree 側の `.claude/events.jsonl` に書かれ、直後の `ExitWorktree(remove)` で worktree ごと消えていた。v2.40.0 で publish 先をメインリポジトリのルートに固定（orchestration-guide `## 13`）するまで、蓄積されていたのは worktree を使わない self-review 由来のみ。**したがって v2.39.0 の high 既定縮小は review 経路については測定できていない** — 判断は v2.40.0 以降のサンプルが貯まってから行う
 
 ## 8. 動的ラウンド（Phase 5.5 / 5.6 / v2.12.0 追加）
 
