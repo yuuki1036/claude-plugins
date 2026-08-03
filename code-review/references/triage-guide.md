@@ -326,20 +326,24 @@ diff シグナルが読めず観点を決められない場合の既定構成（
 - **縮小のロールバック条件（v2.39.0 の high 既定縮小）**: 効果は `review:completed` の `agents` / `duration_min` / blocker+critical 件数で監視する。**判定に使えるのは `agents` フィールドを持つサンプルのみ**（= v2.39.0 以降の publish。フィールド存在が publish 側の自己申告版マーカーであり、配布ラグに耐える。旧サンプルは `effort` を持たず high 実行と xhigh 実行を層別できないため、「縮小前との比較」の基準側には使えない — `## 8.5` の「日付では切らない」と同じ流儀）。悪化の検証は旧データ比ではなく、**xhigh/max の明示実行（フル構成）を対照群にした縮小後サンプル内の比較**で行う:
 
   ```bash
-  # effort=high（縮小構成）のレビュー 1 件あたり blocker+critical 平均と duration_min 中央値
+  # effort=high（縮小構成）のレビュー 1 件あたり blocker+critical 平均と fleet 区間の中央値
+  # 所要時間は duration_fleet_min で見る（duration_min は締めフローの人間待ちを含む）
   grep '"event":"review:completed"' .claude/events.jsonl | \
     jq -s '[.[] | select(.payload.agents != null and .payload.effort == "high")] |
       if length == 0 then "no data" else
         {n: length,
          hi_avg: (([.[] | .payload.blocker_count + .payload.critical_count] | add) / length),
-         dur_med: ([.[] | .payload.duration_min | select(. >= 0)] | sort | .[(length/2|floor)] // "no data")}
+         fleet_med: ([.[] | .payload.duration_fleet_min // -1 | select(. >= 0)] | sort | .[(length/2|floor)] // "no data")}
       end'
   # 対照群は .payload.effort == "xhigh" or "max" に置き換えて同じ式で出す
+  # 帯を揃えるときは select(...) に and .payload.size_tier == "small" 等を足す
   ```
 
   縮小後 30 日で high 群の hi_avg が対照群比で明確に低い状態が続いたら、まず冗長ペアの high 復帰（次に reviewer 上限 10 復帰）を検討する。サンプルが `no data` のうちは判断しない。印象や単発の見落とし報告だけで戻さない（壊れた・不足した計測を根拠に不可逆な判断をしない。skeptic の high 昇格判断 `## 8.5` と同じ流儀）
 
-  **`duration_min` の比較は `size_tier` を揃えて行う**（v2.40.0 で payload に追加）。所要時間は規模と体数の両方に効かれるため、帯を混ぜた中央値は規模キャップの効果と PR 規模の分布変化を分離できない。上の jq に `and .payload.size_tier == "small"` 等を足して帯ごとに見る。
+  **所要時間は `duration_fleet_min` で見る**（v2.41.0 で payload に追加。正本: orchestration-guide `## 14`）。`duration_min`（全体）は締めフローの人間待ちを含み（かつ publisher 間で意味が非対称）、人間の都合で 10 倍振れるため体数調整の効果測定には使えない。体数が効くのは fleet 区間だけ。**比較は `size_tier` を揃えて行う**（v2.40.0 追加）— 所要時間は規模と体数の両方に効かれるため、帯を混ぜた中央値は規模キャップの効果と PR 規模の分布変化を分離できない。
+
+  **体数を壁時計のレバーとして扱わない（v2.41.0）**: 並列発行が効いている限り fleet 区間の実時間は「wave 内最長の 1 体」で決まるため、**体数削減の効果は線形ではない**。そして**体数削減が壁時計に効いた証拠は現時点で存在しない** — v2.39.0 / v2.40.0 の縮小を評価できる区間別サンプルが無く、唯一あった 210 分のサンプルも `duration_min`（内訳不明）だったため判定不能だった。`duration_fleet_min` が貯まるまでは、**体数を壁時計の打ち手として動かさない**（体数削減が確実に効くのはトークンコスト）。壁時計を縮めたい場合にまず触るのは ①1 体あたりの探索量（reviewer-prompts.md `## 1` の探索予算）②直列 wave 数（skeptic 相乗り・`## 8.5`）③メインコンテキストの思考量（`duration_triage_min` で観測）。recall だけ落ちて時間が変わらない改悪を避けるため、**この節のロールバック判断に「時間が長いから体数を減らす」を混ぜない**。
 
   **`review` 由来サンプルは v2.40.0 より前は 1 件も存在しない**（GitHub issue #96 B）。publish が EnterWorktree 配下の cwd 相対パスで行われていたため、`review:completed` は worktree 側の `.claude/events.jsonl` に書かれ、直後の `ExitWorktree(remove)` で worktree ごと消えていた。v2.40.0 で publish 先をメインリポジトリのルートに固定（orchestration-guide `## 13`）するまで、蓄積されていたのは worktree を使わない self-review 由来のみ。**したがって v2.39.0 の high 既定縮小は review 経路については測定できていない** — 判断は v2.40.0 以降のサンプルが貯まってから行う
 
@@ -391,7 +395,15 @@ diff シグナルが読めず観点を決められない場合の既定構成（
 
 ## 8.5. 冷や読み skeptic ラウンド（Phase 5.8 / 4.8 / recall 補強）
 
-high-risk surface を含む変更に限り、事前所見と無関係に **findings 非注入の独立 skeptic を 1 体**起動し、fleet 共通の盲点（層跨ぎ値フロー等）を冷や読みで破る recall 補強フェーズ。反証レイヤー（false-positive 潰し）の鏡像＝ false-negative hunter として、**観点カバレッジ self-check の後・反証レイヤーの前**に挿入する（review=Phase 5.8 / self-review=Phase 4.8）。meta-reviewer（Phase 5.6）が findings 注入で非独立なため fleet 共通盲点を引きずるのに対し、skeptic は独立読み直しで盲点を破る。
+high-risk surface を含む変更に限り、事前所見と無関係に **findings 非注入の独立 skeptic を 1 体**起動し、fleet 共通の盲点（層跨ぎ値フロー等）を冷や読みで破る recall 補強フェーズ。反証レイヤー（false-positive 潰し）の鏡像＝ false-negative hunter。meta-reviewer（Phase 5.6）が findings 注入で非独立なため fleet 共通盲点を引きずるのに対し、skeptic は独立読み直しで盲点を破る。
+
+### 起動タイミング: reviewer wave に相乗り（v2.41.0）
+
+**skeptic は reviewer と同一メッセージで一括発行する**（review Step 5 / self-review Step 4 の reviewer 一括発行に相乗り）。結果の統合・dedup だけを従来位置（review=Phase 5.8 / self-review=Phase 4.8）で行う。
+
+根拠: **findings 非注入がこのレイヤーの設計の核**であり、skeptic は reviewer の出力に一切依存しない。にもかかわらず reviewer の後に直列配置されていたため、依存関係が無いのに 1 wave 分の実時間（opus 1 体の全所要）を積み増していた。同時発火なら壁時計への追加はゼロ（wave 内最長が伸びない限り）。
+
+**例外（fallback / 従来どおり直列）**: surface 判定が **reviewer の `[surface:high-risk]` フラグ由来**で事後に true になった場合のみ、reviewer 完了後の 5.8 位置で単独起動する。この経路だけは reviewer 出力に依存するため同時発火できない（正規表現・PR 自己申告で事前に HIT していれば相乗り済みなので、fallback が走るのは正規表現が取り逃した ORM 抽象越えのケースに限られる）。
 
 ### high-risk surface 判定
 
@@ -407,6 +419,7 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 ### 起動ゲート（暴走ガード）
 
 - **effort 適応**: **xhigh / max 起点**で起動。low / medium はスキップ。high（既定）は当面スキップし、`review:completed` の頻度計測後に昇格を検討する（既存 5.6/5.9 と対称の fail-safe。今回の見落としは xhigh で発生したため xhigh を直せば当面の再発を防げる）
+  - **surface 判定は Phase 0 で先に行う**（相乗り発火の可否を reviewer 起動前に決めるため）。正規表現 + PR 自己申告 D1-High は Phase 0 で判定でき、effort ゲートを通過していれば reviewer 一括発行に skeptic を混ぜる
 - **上限**: **PR あたり skeptic 1 体・1 round のみ**（per-surface 起動ではない）。skeptic の指摘も通常の scoring・報告マトリクス・反証レイヤーの対象
 - **surface 非該当ならスキップ**: high-risk surface を含まない変更では起動しない（noise 爆発を避け high-risk に限定）
 - **計測（skip 時も surface 判定は記録する）**: effort / userConfig / scope でスキップした場合も、正規表現部分の surface 判定（diff への grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と独立に必ず実施し、`review:completed` payload の `recall_skeptic` に記録する（SKILL.md Step 7 / Step 6 の payload 規約参照）。加えて surface=true なら、`--embed` / event 発火の有無に依存しない **human レポート（Step 7 / Step 6 の「動的ラウンド」行）にも skeptic の起動有無（未起動時は skip_reason）を必ず出す**（headless 通常実行での silent skip を防ぐ・issue #85）
@@ -462,8 +475,14 @@ reviewer の指摘を独立エージェントが反証し、偽陽性の promine
 | effort | 反証対象（報告マトリクス通過見込みの指摘のうち） | 反証体数 |
 |---|---|---|
 | low / medium | スキップ | 0 |
-| high（既定） | 非対称ゾーンのみ: BLOCKER 60-94 / CRITICAL 80-94 | 指摘ごと 1 体 |
-| xhigh / max | 上記 + BLOCKER/CRITICAL 95+ + MAJOR | 指摘ごと 1 体 |
+| high（既定） | 非対称ゾーンのみ: BLOCKER 60-94 / CRITICAL 80-94 | `ceil(対象件数 / 5)` 体・上限 3 体 |
+| xhigh / max | 上記 + BLOCKER/CRITICAL 95+ + MAJOR | 同上 |
+
+**バッチ化（v2.41.0）**: 反証は **1 体あたり最大 5 件**をまとめて渡す（旧: 指摘ごと 1 体）。反証に必要な独立性は「指摘を出した reviewer と別コンテキスト」であって「指摘同士が別コンテキスト」ではないため、同一 diff の読み直しを N 体で重複させる意味がない。反証は**かつて指摘数に比例する唯一の変動費**（`## 7` の体数表で reviewer / specialist は上限が効くのに対し、旧構成の反証だけは指摘が増えるほど体数が増えた）であり、既定パスのコストの主要項だった。**本節のバッチ化で上限 3 体・15 件に頭打ちになり、他層と同じく上限で止まる**。バッチ内の相互汚染（1 件の verdict を別件の根拠にする）は reviewer-prompts.md `## 7` の鉄則で禁止する。
+
+**対象が 15 件（3 体 × 5 件）を超えた場合**: severity → confidence の順で優先度を付け、上位 15 件のみ反証する。溢れた指摘は verdict なし（＝反証スキップ）として元の confidence / severity のまま続行し、**レポートの反証行に予算超過件数を明記する**（silent に落とさない）。レポート行の書式の正本は orchestration-guide `## 10` 手順 4。
+
+**縮小のロールバック条件（v2.41.0 のバッチ化 + effort 引き下げ）**: 2 つの縮小を同時適用しているため、誤却下が増えていないかを `review:completed` の `adversarial_verify` で監視する。`duration_triage_min` フィールドの有無で v2.41.0 前後を層別し（日付では切らない）、**`uncertain` 比率**（＝根拠を出せず判定できなかった割合）と **MAJOR/MINOR の `refuted` 比率**を比較する。uncertain が明確に増えていれば effort を `max` に戻す、refuted が明確に増えていればバッチサイズを 5 → 3 に下げるか個別起動に戻す。サンプルが貯まるまでは判断しない（`## 7` のロールバック条件と同じ流儀）。
 
 **除外（全 effort 共通）**:
 
@@ -477,10 +496,11 @@ surface-aware 報告閾値（scoring-guide.md `## 報告マトリクス`）が h
 ### 動作
 
 1. 上表のゲートで対象指摘を選ぶ
-2. 対象指摘ごとに反証エージェント（reviewer-prompts.md `## 7 Adversarial-verify テンプレート`）を `model: opus`, `effort: max` で起動。指摘の主張のみ渡し reviewer 推論は渡さない
+2. 対象指摘を 5 件ずつのバッチに分け、バッチごとに反証エージェント（reviewer-prompts.md `## 7 Adversarial-verify テンプレート`）を `model: opus`, `effort: high` で起動。指摘の主張のみ渡し reviewer 推論は渡さない
+   - **effort は v2.41.0 で `max` → `high`**。effort 方針の正本は orchestration-guide `## 5`（「下げるのは『全レビューで走る』または『指摘数に比例する』レイヤー、据え置くのは 1 体固定の検証レイヤー」）。反証は誤判定コストの非対称性を **verdict の扱い側**（高 severity は `refuted` でも `severity-inflated` でも消さず係争注記 = scoring-guide の不変条件）で吸収しているため、effort での二重の保険は要らない
 3. `pre-existing` / `intended` の鮮度は LLM 前に `git show <base>:<file>` / `git blame` で機械判定
 4. verdict を scoring（scoring-guide.md `## 反証レイヤーの verdict 反映`）に渡す。**高 severity は消さず注記**、MAJOR/MINOR のみ取り下げ可（理由は付録に記録）
-5. 初版は 1 指摘 1 体（パネルは将来拡張）
+5. 1 体が複数 verdict を返す（バッチ）。**全 finding_id 分の verdict が揃っているか突合し、欠落は verdict なし扱い**にする（欠落を confirmed とも refuted とも解釈しない）
 
 ### effort 適応（5.5/5.6 とは別ゲート）
 

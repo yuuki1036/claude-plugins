@@ -105,24 +105,25 @@ done | sort -u
 
 ### effort 設計意図
 
-reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/medium/high（既定）→ `high` / xhigh・max（明示 escalation）→ `xhigh`**。reviewer は**全レビューで必ず走り、体数も最大（triage-guide `## 7` の最小保証 2 体 〜 effort 適応上限: high 6 体 / xhigh・max 10 体）のため、レビュー総コストの最大項**であり、ここが最大のコストレバー（`max`→`xhigh` に続く 2 段目の引き下げ。唯一ではない。下記の変動費も参照）。既定パスを `high` に引き下げた根拠は 2 つ: ① Opus 5 はコードレビュー・バグ発見が低 effort でも精度が落ちにくい（公式モデルガイダンス）② reviewer 単発の深さには依存しない補償層（反証 / skeptic / meta-reviewer、いずれも `max` 据え置き）がある。escalation 時は従来どおり `xhigh` で深掘りする。効果は `review:completed` メトリクス（blocker/critical 件数・findings 推移）で監視し、悪化が観測されたら既定を `xhigh` に戻す。
+reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/medium/high（既定）→ `high` / xhigh・max（明示 escalation）→ `xhigh`**。reviewer は**全レビューで必ず走り、体数も最大（triage-guide `## 7` の最小保証 2 体 〜 effort 適応上限: high 6 体 / xhigh・max 10 体）のため、レビュー総コストの最大項**であり、ここが最大のコストレバー（`max`→`xhigh` に続く 2 段目の引き下げ。唯一ではない。下記の変動費も参照）。既定パスを `high` に引き下げた根拠は 2 つ: ① Opus 5 はコードレビュー・バグ発見が低 effort でも精度が落ちにくい（公式モデルガイダンス）② reviewer 単発の深さには依存しない補償層がある（**skeptic / meta-reviewer は `max` 据え置き。反証は v2.41.0 で `high` + 扱い側の不変条件で担保**。下表と「反証だけを別扱いにする理由」を参照）。escalation 時は従来どおり `xhigh` で深掘りする。効果は `review:completed` メトリクス（blocker/critical 件数・findings 推移）で監視し、悪化が観測されたら既定を `xhigh` に戻す。
 
 > **体数の下限に注意**: 「常に 2 体以上」は不変条件では**ない**。`doc-review-mode` は 1〜2 体、`skip-mode` は `spec-compliance` のみ 1 体（triage-guide `## 2.5` のモード構成は Stage 2 の上限・最小保証より**優先**する）、self-review の `--focus` 指定時は最小保証すら起動しない。他所でこの不変条件を援用しないこと。
 
 オーケストレーター（skill frontmatter）は `high`（＝ Opus 5 の既定 effort に揃える。Opus 4.8 と同じ既定値なので旧世代でも同運用）。これにより effort ゲート付きの独立レイヤー（meta-reviewer / 冷や読み skeptic）は既定で不発とし、high-risk 変更をレビューしたい時だけ `/self-review` を `xhigh`/`max` で明示起動して escalation する運用にする。
 
-**独立検証レイヤー（meta-reviewer / 冷や読み skeptic / 反証エージェント）は `max` 据え置き**。ただし据え置きの根拠は「体数が小さいから」ではなく（下表のとおり反証は体数が指摘数に比例する）、**誤判定コストの非対称性**にある:
+**体数が固定の独立検証レイヤー（meta-reviewer / 冷や読み skeptic）は `max` 据え置き**。据え置きの根拠は **誤判定コストの非対称性**（skeptic の見落としは recall 補強そのものを無効化する＝足す係が足さなければ層ごと無意味）と、**体数が 1 体固定でコストが伸びない**ことの両方:
 
-| 層 | 体数 | 既定 high で起動するか |
-|---|---|---|
-| meta-reviewer | 1 体・1 round（triage-guide `## 8`） | しない（xhigh/max 起点） |
-| 冷や読み skeptic | PR あたり 1 体・1 round（`## 8.5`） | しない（xhigh/max 起点） |
-| 反証エージェント | **指摘ごと 1 体**（`## 9`）＝指摘数に比例 | **する**（非対称ゾーンに限定） |
+| 層 | 体数 | effort | 既定 high で起動するか |
+|---|---|---|---|
+| meta-reviewer | 1 体・1 round（triage-guide `## 8`） | `max` | しない（xhigh/max 起点） |
+| 冷や読み skeptic | PR あたり 1 体・1 round（`## 8.5`） | `max` | しない（xhigh/max 起点） |
+| 反証エージェント | **5 件ごと 1 体・上限 3 体**（`## 9`）＝唯一の変動費 | **`high`**（v2.41.0 で `max` から引き下げ） | **する**（非対称ゾーンに限定） |
 
-- **反証の誤却下は指摘を落とす**（消えるのは MAJOR / MINOR のみ。BLOCKER / CRITICAL は refuted でも消さず係争注記が scoring-guide の不変条件で機械保証される）
-- **skeptic の見落としは recall 補強そのものを無効化する**（足す係が足さなければ層ごと無意味）
+**反証だけを別扱いにする理由**: 反証は既定パスで走り、かつ体数が指摘数に比例する**唯一の変動費**だった（reviewer / specialist は上限で頭打ちになる。v2.41.0 のバッチ化で反証も上限 3 体・15 件に頭打ちになった）。ここは誤判定コストの非対称性を **verdict の扱い側**で吸収している — BLOCKER / CRITICAL は `refuted` でも `severity-inflated` でも報告から消さず係争注記を付ける（**2 経路とも** scoring-guide の不変条件で機械保証。`severity-inflated` 側は v2.41.0 で塞いだ）、消えるのは MAJOR / MINOR だけ。**扱い側で保険が効いている層に effort でも保険をかけるのは二重**なので、v2.41.0 で `max` → `high` に下げバッチ化した。
 
-**下げるのは全レビューで必ず走る常時レイヤー、据え置くのは誤判定コストが非対称な検証レイヤー**という切り分けを意図的に取る。なお**次点の変動費は反証（既定パスで opus×`max`×指摘数）と specialist（reviewer 枠とは別枠。high 既定は束ね起動で上限 3 体 / xhigh・max は個別起動で上限 6 体。triage-guide `## 7`）**であり、コストが再び問題化したら反証の上限・バッチ化が次の検討対象になる（v2.39.0 で specialist 側は束ね起動を導入済み）。
+> **この論拠は scoring-guide の不変条件に依存している**。`severity-inflated` の穴（旧規約では高 severity が 1 段階降格で報告マトリクスを割って silent に消えた）を塞ぐ前は effort 引き下げの前提が成立しない。不変条件を緩める変更をするときは、反証 effort を `max` に戻すかどうかを同時に判断すること。
+
+**下げるのは「全レビューで走る」または「指摘数に比例する」レイヤー、据え置くのは 1 体固定の検証レイヤー**という切り分けを取る。残る変動費は specialist（reviewer 枠とは別枠。high 既定は束ね起動で上限 3 体 / xhigh・max は個別起動で上限 6 体。triage-guide `## 7`）だが、こちらは red-flag 検出時のみで上限も効くため次の検討対象ではない。
 
 ### diff-first 原則
 
@@ -194,7 +195,9 @@ reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検
 ## 9. 冷や読み skeptic 実行手順（review Phase 5.8・self-review Phase 4.8）
 
 1. **surface 判定**: 変更 diff に対し triage-guide.md `## 8.5` の判定を行う。DB 書込（`INSERT`/`UPDATE`/`DELETE` の生 SQL または ORM 書込 API `.create(`/`.update(`/`.save(`/`.upsert(` 等）/ 金銭・数量 numeric 演算 / 認可・認証、いずれかの正規表現ヒット、**または** reviewer が `[surface:high-risk]` フラグを返した場合に high-risk surface と判定する。review では **PR 自己申告 D1-High** も OR 判定に含める（self-review は PR を持たないため正規表現 + reviewer フラグのみ）
-2. reviewer-prompts.md の `## 8 冷や読み skeptic テンプレート` を使用し、skeptic agent を **1 体**、`model: opus`, `effort: max` で起動する（isolation は `## 0` に従う）
+   - **判定は Phase 0（reviewer 起動前）で行う**（v2.41.0）。正規表現 + PR 自己申告は diff だけで決まるため事前に取れる。effort ゲートも通過していれば、下記 2 の skeptic を **reviewer 一括発行と同一メッセージで発火**する（triage-guide `## 8.5` 起動タイミング）。結果の統合・dedup（下記 3）だけを 5.8 / 4.8 の位置で行う
+   - **fallback（直列）**: reviewer の `[surface:high-risk]` フラグ由来で事後に surface=true になった場合のみ、reviewer 完了後に単独起動する。正規表現が取り逃した ORM 抽象越えのケースに限られる
+2. **手順 1 の相乗りで発火済みの場合、本手順は実行しない**（fallback 経路でのみ実行する。二重起動は「PR あたり skeptic 1 体・1 round」の上限違反であり `recall_skeptic.fired` の計測も壊す）。fallback のときのみ、reviewer-prompts.md の `## 8 冷や読み skeptic テンプレート` を使用し、skeptic agent を **1 体**、`model: opus`, `effort: max` で起動する（isolation は `## 0` に従う）
    - **findings / reviewer の推論は渡さない**（独立性の核）。diff と最小 focus、base ref のみ渡す
    - **PR 番号注入（review のみ・必須）**: `## 1` に従う
 3. skeptic の指摘（`[recall-skeptic]` タグ付き）を既存指摘に統合。重複は dedup（同一ファイル ±5 行 + 類似内容）。skeptic の指摘も通常のスコアリング・報告マトリクス・**反証レイヤーの対象**に含める
@@ -210,14 +213,17 @@ reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検
 ## 10. 反証レイヤー実行手順（review Phase 5.9・self-review Phase 4.9）
 
 1. triage-guide.md `## 9 反証レイヤー` の選定ルールで対象指摘を選ぶ（high: 非対称ゾーン BLOCKER 60-94 / CRITICAL 80-94、xhigh/max: 報告ゾーン全体 + MAJOR）。**specialist 由来の指摘は全 effort で除外**
-2. 対象指摘ごとに reviewer-prompts.md `## 7 Adversarial-verify テンプレート` で反証エージェントを `model: opus`, `effort: max` で並列起動する（isolation は `## 0` に従う。全 call を同一メッセージ内で一括発行する — `## 0` 並列発行の明示）
+2. 対象指摘に通し番号（finding_id）を振り、**5 件ずつのバッチに分ける**（上限 3 体 = 15 件。超過分の扱いは triage-guide `## 9`）。バッチごとに reviewer-prompts.md `## 7 Adversarial-verify テンプレート` で反証エージェントを `model: opus`, `effort: high` で並列起動する（isolation は `## 0` に従う。全 call を同一メッセージ内で一括発行する — `## 0` 並列発行の明示）
    - 指摘の主張（severity / confidence / file:line / 内容）のみ渡し、**reviewer の理由文は渡さない**（アンカリング防止）
+   - **バッチの切り方**: **同一ファイル・同一 reviewer 由来の指摘は意図的に散らす**（同一ファイルは 1 バッチ 2 件までを目安に分割）。バッチ化で失うのは reviewer からの独立性ではなく **反証者側の誤読の独立性** — 1 体がその関数の制御フローを 1 回読み違えると同一ファイルの指摘が束で `refuted` になり、MAJOR は confidence −40 で実質まとめて消える（旧構成の「指摘ごと 1 体」はこれを構造的に防いでいた）。diff 読解の共有によるコスト削減は寄せなくても大半が得られるので、寄せる誘惑に乗らない
    - **PR 番号注入（review のみ・必須）**: `## 1` に従う
    - `pre-existing` / `intended` 鮮度の git 判定（`git show <base>:<file>` / `git blame`）を反証エージェントに許可する
-3. 各 verdict（refuted / confirmed / uncertain / severity-inflated）を収集し、スコアリング step に渡す
-4. レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（レポート出力 step で出力）
+3. 各 verdict（refuted / confirmed / uncertain / severity-inflated）を収集し、**finding_id で対象指摘と突合**してスコアリング step に渡す。verdict が返らなかった finding_id は verdict なし扱い（confirmed とも refuted とも解釈しない）
+4. **レポートの反証行の正本（両 skill・triage-guide からもここを参照する）**: `反証: 対象 N 件（うち実施 X 件 / 予算超過 Y 件 / 反証失敗 Z 件）/ 係争 M 件 / 取り下げ K 件`。
+   - `N`（対象）= ゲートで選ばれた全件（予算超過分を含む）、`X`（実施）= 実際に verdict が返った件数。**payload の `agents.verify_findings` は `X` と一致させる**（`N` ではない。同じ「対象」の語で別の量を数えない）
+   - 0 件の項目は省略してよいが、`Y` / `Z` が 1 以上なら必ず出す（silent に落とさない）
 
-**失敗時**: 反証エージェントが失敗した指摘は verdict なし（= 反証スキップ）として元の confidence / severity のまま続行する（best-effort、missing_coverage には記録しない）
+**失敗時**: 反証エージェントが失敗した指摘は verdict なし（= 反証スキップ）として元の confidence / severity のまま続行する（best-effort、missing_coverage には記録しない）。**バッチ 1 体の失敗は最大 5 件分の verdict を失う**ため、失敗したバッチの件数はレポートの反証行に「反証失敗 N 件」として出す
 
 ## 11. Vault 照合手順（self-review Step 1.5 / 過去の指摘・落とし穴の retrieval）
 
@@ -271,3 +277,104 @@ TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d
 - `GCD` が空（git 2.31 未満で `--path-format` 非対応、または非 git ディレクトリ）のときだけ `pwd` にフォールバックする。**`cd "$GCD/.."` を無条件に書かないこと** — `GCD` が空だと `/..` すなわち `/` に cd してしまい、`/.claude/events.jsonl` へ書きに行く
 - publish 側は `CLAUDE_PROJECT_DIR="$MAIN_ROOT"` を `event_bus_publish` の呼び出しに前置して上書きする（環境の設定値より導出値を優先する。EnterWorktree が `CLAUDE_PROJECT_DIR` を worktree に張り替える実装でも正しく main へ落ちる）
 - publish 後に `rm -f "$TS_FILE"` で開始時刻ファイルを消す（中断したレビューの残骸が次回の `duration_min` を汚さないようにする）
+
+## 14. 所要時間の 3 分割計測（review / self-review 共通 / v2.41.0）
+
+`duration_min` 単独では **agent の実行時間・メインコンテキストの思考時間・人間の応答待ち**が 1 個の数字に潰れ、どの改善が効いたかを判定できない（実測: 3 体 210 分のサンプルが 1 件あるだけで、内訳が不明なため次の打ち手を選べなかった）。`TS_FILE` に区間マーカーを追記して 3 分割する。
+
+**マーカーの書き込み点**（いずれも `## 13` の `MAIN_ROOT` 導出式で決めた同じ `TS_FILE` に追記する）:
+
+| キー | 書き込む位置 | 意味 |
+|---|---|---|
+| `t0` | review Step 1 / self-review Step 1 の冒頭（`>` で新規作成） | レビュー開始 |
+| `t1` | **最初の agent を一括発行する直前**（explorer を配置していれば explorer 発行直前 = review Step 4 / self-review Step 3、していなければ reviewer 発行直前 = review Step 5 / self-review Step 4） | triage 区間の終わり |
+| `t2` | **初回レポートを出力した直後**（review Step 7 / self-review Step 6。締めフローに入る前） | fleet 区間の終わり |
+| `t3` | publish 時点（ファイルには書かず `date +%s` で取る） | 全体の終わり |
+
+```bash
+# 各マーカーの書き込み（t0 のみ > で新規作成、以降は >> で追記）
+echo "t0 $(date +%s)" >  "$TS_FILE"   # Step 1
+# t1 は explorer / reviewer の両起動点に同じ行を置き、先に到達した方だけが書く（二重記録防止）
+grep -q '^t1 ' "$TS_FILE" 2>/dev/null || echo "t1 $(date +%s)" >> "$TS_FILE"
+echo "t2 $(date +%s)" >> "$TS_FILE"   # 初回レポート出力の直後
+```
+
+> **`t1` を explorer 発行直前に置く理由（v2.41.0 の修正）**: `t1` を reviewer 発行直前に固定すると、explorer wave（high で最大 4 体 / xhigh・max で 6 体）の実時間が triage 区間に丸ごと混入し、「メインコンテキストの思考時間の代理指標」という `duration_triage_min` の定義が成立しない。explorer を配置したレビューで triage が膨らみ、**「思考量が主因」という誤診に誘導される**（そしてプロンプト圧縮という誤った打ち手を選ばせる）。agent wave はすべて fleet 側に入れる。
+
+**publish 時の算出**（欠測は `-1`。ファイルが無い / マーカーが欠ける場合も 0 と混同しない）:
+
+```bash
+NOW=$(date +%s)
+DURS=$(awk -v now="$NOW" '{t[$1]=$2} END {
+  printf "%d %d %d %d",
+    ("t0" in t) ? int((now - t["t0"])/60) : -1,
+    ("t0" in t && "t1" in t) ? int((t["t1"] - t["t0"])/60) : -1,
+    ("t1" in t && "t2" in t) ? int((t["t2"] - t["t1"])/60) : -1,
+    ("t2" in t) ? int((now - t["t2"])/60) : -1
+}' "$TS_FILE" 2>/dev/null)
+# 分割代入は word splitting に依存しない read を使う（zsh は `set -- $VAR` で分割しない）
+read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING <<< "${DURS:--1 -1 -1 -1}"
+```
+
+- `duration_min`（= `$DUR`）は **従来どおり全体**（t0→t3）。後方互換のため意味を変えない
+- `duration_triage_min` = t0→t1: PR/diff 収集・Phase 0・起動前検算・プロンプト構築。**メインコンテキストの思考時間の代理指標**
+- `duration_fleet_min` = t1→t2: reviewer 発火から初回レポートまで。**agent wave の実時間 + scoring/レポート生成**
+- `duration_closing_min` = t2→t3: 締めフロー（精査・解説・ドラフト）。**大半が人間の応答待ち**なので、他の 2 区間と混ぜて比較しない
+  - **publisher 差分（必読）**: review は `レポート → 締めフロー 1〜3（人間待ち）→ 締めフロー 4 publish` の順なので t2→t3 が人間待ちを捉える。**self-review は publish（Step 6.4）が Step 7 の修正方針確認より前**にあり構造上 ≒0 になるため、**self-review は `duration_closing_min` に `-1`（測定不能）を入れる**。0 を publish すると「人間待ちが無かった」と誤読される
+  - 同じ理由で **`duration_min`（全体）の意味も publisher 間で非対称**（review は締めフロー込み / self-review は Step 7 手前まで）。集計は `plugin` フィールドで層別してから行い、区間比較には `duration_fleet_min` を使う
+- **3 区間の和は `duration_min` と一致しない**ことがある（マーカー欠測時）。一致を仮定した検算をしない
+- 旧サンプルとの層別: `duration_triage_min` フィールドの存在が v2.41.0 以降の publish マーカーになる（triage-guide `## 7` のロールバック条件が `agents` フィールドで版を切るのと同じ流儀。日付では切らない）
+
+## 15. embed mode の構造化 findings JSON（self-review Step 6.5 のみ）
+
+**`--embed` が指定されている場合のみ**、Step 6 の markdown レポート直後に機械可読な findings ブロックを出力する（非 embed 実行では出力しない）。呼び出し元（feature-dev Phase 6 等）はこの JSON を決定的にパースし、markdown の正規表現パースに依存しない。
+
+出力フォーマット（マーカーで厳密に囲む。前後に余計な文字を入れない）:
+
+~~~
+<!-- FINDINGS_JSON_START -->
+```json
+{
+  "schema_version": 1,
+  "summary": {"score": 7, "blocker": 1, "critical": 2, "major": 1, "minor": 0},
+  "findings": [
+    {
+      "id": 1,
+      "severity": "BLOCKER",
+      "confidence": 70,
+      "focus": "security",
+      "file": "src/config.ts",
+      "line": 15,
+      "title": "Hardcoded secret の疑い",
+      "impact": "コミット時にシークレット漏洩",
+      "suggested_fix": "process.env.X 経由に置換する"
+    }
+  ],
+  "missing_coverage": ["reviewer-security: timeout で未検査"]
+}
+```
+<!-- FINDINGS_JSON_END -->
+~~~
+
+フィールド契約（**schema_version: 1**。変更時は bump して consumer に通知）:
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `schema_version` | int | yes | 契約バージョン。フィールド追加/変更時に bump |
+| `summary.score` | int | yes | 総合評価 (0-10) |
+| `summary.{blocker,critical,major,minor}` | int | yes | severity 別件数（Step 6 報告マトリクス通過後の件数） |
+| `findings[].id` | int | yes | Step 6 の連番と一致させる |
+| `findings[].severity` | enum | yes | `BLOCKER` \| `CRITICAL` \| `MAJOR` \| `MINOR`（Step 5 でスコアリング後の最終値） |
+| `findings[].confidence` | int | yes | 0-100（Step 5 で加減算後の最終値） |
+| `findings[].focus` | string | yes | **発生元 reviewer の安定 focus キー**（`bug-detection` / `security` / `claude-md-compliance` / `error-handling` / `spec-compliance` / `performance` 等。triage-guide の focus 語彙）。表示用の日本語カテゴリ（`[セキュリティ]` 等）ではなく、**この英語キーを使う**。呼び出し元の fingerprint (`file:line:focus`) と `--focus` / `--exclude` の語彙に揃える |
+| `findings[].file` | string | yes | リポジトリ相対パス |
+| `findings[].line` | int | yes | 主たる行番号（範囲なら開始行） |
+| `findings[].title` | string | yes | 1 行要約 |
+| `findings[].impact` | string | no | 影響説明 |
+| `findings[].suggested_fix` | string | no | 修正方針（呼び出し元の auto-fix が利用。不明なら省略可） |
+| `missing_coverage` | string[] | yes | 欠損観点（空配列可） |
+
+- **findings は Step 6 で報告された指摘と 1:1**（報告マトリクスで skip されたものは含めない）。`id` は Step 6 のレポート連番に一致させる
+- **反証レイヤー（Phase 4.9）の効果は `severity` / `confidence` に反映済み**（Step 5 で verdict 反映を適用してから報告するため、JSON には最終値が入る）。`refuted` で取り下げた MAJOR/MINOR は findings に含まれない。**係争中の BLOCKER/CRITICAL は通常通り findings に残り、`title` または `impact` に `⚠️ 反証メモ:` を含める**（schema_version は据え置き 1。新フィールドは追加しない＝consumer 後方互換）
+- JSON として valid であること（末尾カンマ禁止、ダブルクオート、改行は文字列内で `\n`）
+- このブロックの**後**に `[embed-mode: findings-only, no-prompt]` marker を置く

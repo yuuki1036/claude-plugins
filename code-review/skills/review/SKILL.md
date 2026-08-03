@@ -39,7 +39,7 @@ allowed-tools:
 ### 1. PR の取得と前提確認
 
 ```bash
-# duration_min 計測用の開始時刻を記録（締めフロー 4 の payload で使用）
+# 所要時間計測の開始マーカー t0 を記録（締めフロー 4 の payload で使用）
 # シェル変数は Bash 呼び出し間で持続しないため、必ずファイルで受け渡す（変数だと
 # publish 時に未定義 =0 と評価され epoch/60 のゴミ値が publish される）。
 # パスは cwd ではなく「メインリポジトリのルート」から導出する（Step 0 で worktree に
@@ -47,7 +47,10 @@ allowed-tools:
 GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
 TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d' ' -f1)"
-date +%s > "$TS_FILE"
+echo "t0 $(date +%s)" > "$TS_FILE"
+# 以降 t1（最初の agent 一括発行の直前。explorer があれば Step 4 / 無ければ Step 5）/
+# t2（Step 7 の初回レポート出力の直後）を
+# 同じファイルに追記する。3 分割の意味と算出式の正本: orchestration-guide `## 14`
 
 # PR 番号指定時: worktree 内で checkout（作業ブランチに影響なし）
 gh pr checkout <PR番号>
@@ -165,6 +168,14 @@ Step 2.5 の PR コンテキストブロック（説明・issue コメント・�
 
 検算後、triage-guide.md の出力フォーマットに従い、エージェント構成テーブルを出力する。
 
+#### 3.4 high-risk surface 判定（冷や読み skeptic の相乗り判断 / 常時実行）
+
+Phase 0 の最後に、triage-guide `## 8.5` の surface 判定（diff への正規表現 grep + PR 自己申告 D1-High）を **必ず実施** する。安価な grep なので構成に関わらず常に行う（silent skip 防止・issue #85）。
+
+- surface=true **かつ Phase 5.8 のスキップ条件（userConfig / effort / `--emergency`・`skip-mode`）のいずれにも該当しない**場合、skeptic を **Step 5 の reviewer 一括発行に相乗りさせる**（同一メッセージ内で発火。1 wave 削減）。**条件は個別に列挙せず Phase 5.8 の定義を参照すること** — 相乗りで起動が前倒しされる以上、5.8 に到達してからスキップ判定しても手遅れ（agent は既に走っている）。列挙の取りこぼしは `--emergency` で `effort: max` の skeptic が余計に走る事故に直結する
+- surface=true だがスキップ条件に該当する場合は、`skip_reason` を記録して Step 7 レポートと payload に出す（従来どおり）
+- reviewer の `[surface:high-risk]` フラグ由来で事後に surface=true になる経路は Phase 5.8 の fallback で拾う
+
 ### 4. 探索フェーズ（explorer 並列起動）
 
 Phase 0 が explorer を 1 体以上配置した場合のみ実行。explorer が不要と判断された場合はスキップして Step 5 へ。
@@ -177,6 +188,12 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 - 全エージェントを `isolation: "worktree"` で起動する（PR ブランチの状態でファイルを読むため）
 - 全エージェントに `run_in_background: false` を明示し、**全 explorer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide `## 0`。`run_in_background` 省略は取りこぼし、1 体ずつ別メッセージ発行は逐次実行＝実時間が合計に膨らむ。2 つは独立の要件）
 - **PR 番号注入（必須）**: orchestration-guide `## 1` に従う（欠かすと偽陽性を量産する。GitHub issue #56 / #69）
+
+一括発行の**直前**に fleet 区間の開始マーカーを記録する（**agent wave はすべて fleet 側に入れる**。explorer を triage 区間に含めると `duration_triage_min` が「メイン思考の代理指標」でなくなる。orchestration-guide `## 14`）:
+
+```bash
+grep -q '^t1 ' "$TS_FILE" 2>/dev/null || echo "t1 $(date +%s)" >> "$TS_FILE"
+```
 
 全 explorer の完了を待ち、結果を収集する。
 
@@ -201,7 +218,14 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - `gh pr diff` の出力を各 reviewer に渡す
 - 全エージェントを `isolation: "worktree"` で起動する
 - 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
+- **冷や読み skeptic の相乗り**: Step 3.4 で surface=true かつ Phase 5.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、reviewer-prompts.md `## 8`）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-guide `## 8.5` 起動タイミング）。結果の統合は Phase 5.8 で行う
 - **PR 番号注入（必須）**: orchestration-guide `## 1` に従う
+
+一括発行の**直前**に fleet 区間の開始マーカーを記録する（orchestration-guide `## 14`。`TS_FILE` は Step 1 と同じ導出式で決める。Step 4 で explorer を起動していれば既に記録済みなので、`grep` ガードで二重記録を防ぐ）:
+
+```bash
+grep -q '^t1 ' "$TS_FILE" 2>/dev/null || echo "t1 $(date +%s)" >> "$TS_FILE"
+```
 
 全 reviewer の完了を待ち、結果を収集する。
 
@@ -245,7 +269,9 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 **スキップ時も surface 判定は必ず実施（silent skip 防止・issue #85）**: 上記スキップ条件（effort / config / emergency）に該当して skeptic agent を起動しない場合でも、surface 判定（triage-guide.md `## 8.5` の正規表現。diff への grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と **独立に必ず実施** する。surface=true なら skeptic 未起動の事実と skip_reason（`effort` / `config` / `emergency`）を Step 7 レポートの「動的ラウンド」行に必ず出す（`review:completed` payload の `recall_skeptic` 記録と対を成す human レポート契約）。
 
-**実行する場合**: orchestration-guide `## 9` の手順に従う（surface 判定 → skeptic を 1 体 `model: opus`, `effort: max` で起動。**findings / reviewer の推論は渡さない**のが独立性の核 → `[recall-skeptic]` タグ付き指摘を dedup して統合し、反証レイヤー(5.9)の対象にも含める）。
+**実行する場合**: orchestration-guide `## 9` の手順に従う。**起動は Step 5 の reviewer 一括発行に相乗り済み**（Step 3.4 で surface 判定・ゲート通過を確認している）なので、本フェーズで行うのは **結果の統合**（`[recall-skeptic]` / `[recall-skeptic:dup]` タグ付き指摘を dedup して統合し、反証レイヤー(5.9)の対象にも含める）。
+
+**fallback（直列起動）**: reviewer の `[surface:high-risk]` フラグ由来で**ここで初めて** surface=true になった場合のみ、skeptic を 1 体 `model: opus`, `effort: max` で単独起動する（**findings / reviewer の推論は渡さない**のが独立性の核）。正規表現・PR 自己申告で事前に HIT していれば相乗り済みなのでこの経路は走らない。
 
 **失敗時 / スキップ時**: skeptic の失敗は `missing_coverage` に追記して続行。**起動条件（high-risk surface）を満たしたのに未実行だった事実は、失敗・effort/config/emergency スキップのいずれでも Step 7 レポートに必ず出す**（silent skip で「守ったつもり」の偽の安心を防ぐ）。
 
@@ -259,7 +285,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 - `--emergency`（緊急モード）または `skip-mode`（生成物 PR）
 - 反証対象（triage-guide.md `## 9` のゲート）に合致する指摘が 0 件
 
-**実行する場合**: orchestration-guide `## 10` の手順に従う（triage-guide `## 9` の選定ルールで対象を選び、反証エージェントを `model: opus`, `effort: max` で並列起動。**reviewer の理由文は渡さない**＝アンカリング防止 → verdict を Step 6 のスコアリングに渡す。失敗した指摘は verdict なしのまま続行の best-effort）。レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 7 で出力）。
+**実行する場合**: orchestration-guide `## 10` の手順に従う（triage-guide `## 9` の選定ルールで対象を選び、**5 件ずつのバッチ**に分けて反証エージェントを `model: opus`, `effort: high` で並列起動（上限 3 体）。**reviewer の理由文は渡さない**＝アンカリング防止 → verdict を finding_id で突合して Step 6 のスコアリングに渡す。失敗した指摘は verdict なしのまま続行の best-effort）。レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 7 で出力）。
 
 ### 6. スコアリングとフィルタリング（2軸: confidence × severity）
 
@@ -277,7 +303,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
    - PR コンテキストタグ（`[re-flag: ...]` / `[resolved: ...]` / `[intent-conflict]` / `[scope:out]`）の加減算
    - 複数エージェント検出 / explorer 裏付け / セッションコンテキスト等の加減算
    - 最終 confidence を 0-100 にクランプ
-4. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（反証 `severity-inflated` もこのルールに統合。二重降格しない）
+4. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（反証 `severity-inflated` もこのルールに統合。二重降格しない）。**BLOCKER / CRITICAL の `severity-inflated` は降格後に報告マトリクスを割る場合のみ据え置き + 反証メモ**（scoring-guide の不変条件。高 severity を silent に消さない）
 5. **報告マトリクスでフィルタ**:
 
    | severity \ confidence | <60 | 60-79 | 80-94 | 95+ |
@@ -368,6 +394,12 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 **良かった点の扱い**: 著者が意図的に良くした箇所を **0〜2 件** 具体的に挙げる（該当ファイル:行を添える）。設計判断・テストの充実・エッジケース対応・可読性の工夫など、レビューを通して見えた優れた点を拾う。指摘ばかりに偏らずメンタリング効果を持たせる狙いだが、「全体的に良い」のような中身のない称賛はノイズになるので書かない。特筆すべき点がなければセクションごと省略する。
 
+**レポートを出力した直後に fleet 区間の終了マーカーを記録する**（締めフロー＝人間の応答待ちを混ぜないため。orchestration-guide `## 14`。`TS_FILE` は Step 1 と同じ導出式）:
+
+```bash
+echo "t2 $(date +%s)" >> "$TS_FILE"
+```
+
 レポート出力後、以下の順で締める。締めフロー 1〜3 の詳細手順（AskUserQuestion の文言・options 提示条件・3 分類の判定基準・解説の観点・ドラフトのパターン×voice・メタ行・署名・writing-polish 推敲・出力フォーマット）の正本:
 → Read `${CLAUDE_PLUGIN_ROOT}/references/closing-flow-guide.md`（以下「closing-flow-guide」。1〜3 のいずれかを実行する場合のみ読む）
 
@@ -386,27 +418,42 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
    # worktree 内の --show-toplevel は worktree 自身を返すので使わない（--git-common-dir を使う）
    GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
    MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
-   # 開始時刻は Step 1 が書いたファイルから読む（シェル変数は呼び出し間で消えるため）。欠測は -1
+   # 区間マーカーは Step 1 / 4-5 / 7 が書いたファイルから読む（シェル変数は呼び出し間で消えるため）
+   # 欠測はすべて -1（0 と区別する）。算出式の正本: orchestration-guide `## 14`
    TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d' ' -f1)"
-   S=$(cat "$TS_FILE" 2>/dev/null)
-   DUR=$([ -n "$S" ] && echo $(( ($(date +%s) - S) / 60 )) || echo -1)
+   NOW=$(date +%s)
+   DURS=$(awk -v now="$NOW" '{t[$1]=$2} END {
+     printf "%d %d %d %d",
+       ("t0" in t) ? int((now - t["t0"])/60) : -1,
+       ("t0" in t && "t1" in t) ? int((t["t1"] - t["t0"])/60) : -1,
+       ("t1" in t && "t2" in t) ? int((t["t2"] - t["t1"])/60) : -1,
+       ("t2" in t) ? int((now - t["t2"])/60) : -1
+   }' "$TS_FILE" 2>/dev/null)
+   # 分割代入は read を使う（zsh は `set -- $VAR` で語分割しないため壊れる）
+   read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING <<< "${DURS:--1 -1 -1 -1}"
    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
      CLAUDE_PROJECT_DIR="$MAIN_ROOT" SAFE_HOOK_NAME="code-review:review" event_bus_publish "review:completed" \
-     "{\"pr\":\"<number>\",\"effort\":\"${CLAUDE_EFFORT}\",\"size_tier\":\"<small|medium|large>\",\"duration_min\":$DUR,\"agents\":{\"explorer\":<n>,\"reviewer\":<n>,\"specialist\":<n>,\"round2\":<n>,\"verify\":<n>},\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
-   rm -f "$TS_FILE"   # 中断したレビューの残骸が次回の duration_min を汚さないよう掃除する
+     "{\"pr\":\"<number>\",\"effort\":\"${CLAUDE_EFFORT}\",\"size_tier\":\"<small|medium|large>\",\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"agents\":{\"explorer\":<n>,\"reviewer\":<n>,\"specialist\":<n>,\"round2\":<n>,\"verify\":<n>,\"verify_findings\":<n>},\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"severity_inflated\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
+   rm -f "$TS_FILE"   # 中断したレビューの残骸が次回の duration を汚さないよう掃除する
    ```
 
    payload 規約:
    - `pr` は PR 番号の文字列（Step 1 で取得済み）。PR 番号取得に失敗した場合は `"local"` とする
    - `effort` は実行時 `${CLAUDE_EFFORT}` の文字列（`low`〜`max`。山括弧などの装飾は付けず実値をそのまま入れる）。体数上限・動的ラウンドの起動有無を左右する条件変数なので、下流の集計は本フィールドで層別する（v2.39.0 追加）
    - `size_tier` は Phase 0 が判定した規模帯（`small` / `medium` / `large`。triage-guide `## 6.1` の core 基準）。規模キャップの効果測定と `duration_min` の層別に使う（v2.40.0 追加。所要時間は規模と体数の両方に効かれるため、帯を混ぜた比較はキャップの効果を検出できない）
-   - `duration_min` は Step 1 が `$TS_FILE`（TMPDIR 配下・**メインリポジトリのルートから決定的に導出**）に書いた開始時刻から publish 時点までの分（整数）。**シェル変数での受け渡しは禁止**（Bash 呼び出し間で変数は消え、bash 算術が未定義変数を 0 と評価して epoch/60 のゴミ値が入るため）。ファイルが無い・空の場合は `-1`（欠測を 0 と区別する）。パス導出を cwd 基準にすると Step 1（worktree 内）と publish 時で食い違って常に欠測になるため、両方で同じ `MAIN_ROOT` 導出式を使う
+   - `duration_min` は Step 1 が `$TS_FILE`（TMPDIR 配下・**メインリポジトリのルートから決定的に導出**）に書いた `t0` から publish 時点までの分（整数・全体）。**シェル変数での受け渡しは禁止**（Bash 呼び出し間で変数は消え、bash 算術が未定義変数を 0 と評価して epoch/60 のゴミ値が入るため）。ファイルが無い・マーカーが欠ける場合は `-1`（欠測を 0 と区別する）。パス導出を cwd 基準にすると Step 1（worktree 内）と publish 時で食い違って常に欠測になるため、両方で同じ `MAIN_ROOT` 導出式を使う
+   - `duration_triage_min` / `duration_fleet_min` / `duration_closing_min` は所要時間の 3 分割（v2.41.0 追加。正本: orchestration-guide `## 14`）。**この 3 つを混ぜて比較しない**:
+     - `duration_triage_min`（t0→t1）: PR/diff 収集・Phase 0・起動前検算・プロンプト構築＝**メインコンテキストの思考時間の代理指標**
+     - `duration_fleet_min`（t1→t2）: reviewer 発火から初回レポートまで＝**agent wave の実時間 + scoring/レポート生成**
+     - `duration_closing_min`（t2→t3）: 締めフロー＝**大半が人間の応答待ち**。改善の効果測定には使わない（人間の都合で 10 倍振れる）
+     - 3 区間の和は `duration_min` と一致しないことがある（マーカー欠測時）。一致を仮定した検算をしない
    - `agents` は実際に**起動した** agent 体数（成功・失敗を問わず起動数。v2.39.0 の上限調整の効果測定に使う）:
      - `explorer`: Step 4 の初回 explorer 体数
      - `reviewer`: Step 5 の初回 reviewer 体数（specialist を含めない）
      - `specialist`: red-flag specialist の実起動体数（束ね後）
      - `round2`: Phase 5.5 の再起動 reviewer + 追加 explorer の合計（レポート「動的ラウンド」行の N + M と一致させる）
-     - `verify`: Phase 5.9 の反証エージェント体数
+     - `verify`: Phase 5.9 の反証エージェント体数（**バッチ化後は体数 ≒ ceil(実施件数/5)** なので指摘数の代理指標にならない）。**v2.41.0 前後で意味が変わる**（旧: 指摘ごと 1 体）ため、集計時は `duration_triage_min` の有無で層別してから使う
+     - `verify_findings`: Phase 5.9 で**実際に verdict が返った件数**（v2.41.0 追加。バッチ化で体数と件数が分離したため別フィールドにする）。**レポート反証行の「うち実施 X 件」と一致させる**（ゲートで選ばれた対象 N 件ではない。予算超過・反証失敗で verdict が無い分は含めない）
      - meta-reviewer / skeptic は含めない（skeptic は `recall_skeptic.fired`、meta はレポートの「動的ラウンド」行で観測可能）
    - `blocker_count` / `critical_count` / `major_count` / `minor_count` は数値（severity 別件数）
    - `missing_coverage` は文字列配列（reviewer focus 名）。空なら `[]`
@@ -416,7 +463,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
      - `low`: MINOR 件数（nitpick / 提案）
      - `skip`: severity スコープ外でフィルタされた件数
      - `error`: reviewer / explorer が失敗した件数（`missing_coverage` の length と一致）
-   - `adversarial_verify` は反証レイヤー（Phase 5.9）の verdict 集計（`confirmed` / `refuted` / `uncertain` / `contested`=高 severity の係争件数）。反証スキップ時は全 0。**review / self-review 両 publisher で同一フィールド名を揃える**（後から偽却下率を計測するため）
+   - `adversarial_verify` は反証レイヤー（Phase 5.9）の verdict 集計（`confirmed` / `refuted` / `uncertain` / `severity_inflated` / `contested`=高 severity の係争件数）。反証スキップ時は全 0。**review / self-review 両 publisher で同一フィールド名を揃える**（後から偽却下率を計測するため）。`severity_inflated` は v2.41.0 追加（4 つ目の verdict が集計から漏れていた。バッチ化 + effort 引き下げのロールバック判断に使う。triage-guide `## 9`）
    - `recall_skeptic` は冷や読み skeptic（Phase 5.8）の実行記録。skeptic の high 昇格判断（triage-guide.md `## 8.5` の effort ゲート見直し）の計測データになる:
      - `surface`: high-risk surface 判定の結果（bool）。**Phase 5.8 が effort / userConfig でスキップされた場合も、正規表現部分の surface 判定（triage-guide.md `## 8.5`。diff への grep で安価）だけは payload 構築時に必ず実施して記録する**。「surface=true なのに effort ゲートで skeptic が走らなかった頻度」が high 昇格判断の核心メトリクスのため
      - `fired`: skeptic agent が実際に起動したか（bool）
@@ -426,7 +473,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
      - `findings_overlap`: **重複 survivor**（`[recall-skeptic:dup]` タグ。reviewer も同じ問題に到達していた）の件数。skeptic が独立に到達した記録として残すが、盲点でなかった事例なので**価値率には算入しない**
      - 両フィールドとも **Step 7 で最初に出力したレポート本文のタグ付き指摘を数えて求める**（Phase 5.8 の記憶から再構成しない。publish は Phase 5.8 から遠く、間に精査・解説・ドラフト生成が挟まるため、記憶依存にすると系統的に 0 へ潰れる）。**計測点は報告マトリクス通過時点（精査の前）＝ Step 7 の初回レポート**であり、精査（締めフロー 1）が再出力する調整後レポートではない。**精査で取り下げた分は減算しない** — 「skeptic が報告に値する指摘を出せたか」を測るフィールドで、必要性で落ちたかは別軸なので混ぜない
    - 失敗してもレポート自体は成功扱い（best-effort）
-   - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` / `recall_skeptic` / `effort` / `duration_min` / `agents` / `size_tier` は新規フィールド追加なので旧 subscriber 影響なし
+   - 後方互換: subscriber 側は `critical_count` の存在を仮定して良い（旧 payload との互換性のため必須）。`result_grid` / `adversarial_verify` / `recall_skeptic` / `effort` / `duration_min` / `agents` / `size_tier` / `duration_*_min` / `agents.verify_findings` は新規フィールド追加なので旧 subscriber 影響なし。**`duration_triage_min` の存在が v2.41.0 以降の publish マーカー**（縮小前後の層別に使う。日付では切らない）
 
 5. **ExitWorktree** で worktree から抜ける。
 

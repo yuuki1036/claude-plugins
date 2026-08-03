@@ -192,11 +192,14 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 | `refuted`（file:line 反証根拠あり） | **MAJOR / MINOR** | confidence **−40**（実質マトリクス外）。ただし **取り下げ理由を必ず付録に記録**（誤却下を人間が覆せる経路を残す。理由には軸名と反証 file:line を含める） |
 | `confirmed`（独立にパス再現） | 全 severity | 既存「複数エージェント同一指摘 +15」の **発火源として扱う**。反証 confirm と複数エージェント検出が同時成立しても **+15 は一度だけ**（二重計上の排他） |
 | `uncertain`（具体根拠なし） | 全 severity | confidence **−10** + 本文に `（反証: 未確定）` を付記。**単独では何も落とせない**（怠惰な却下で本物を殺さないため） |
-| `severity-inflated`（影響過大の根拠あり） | 全 severity | **既存「severity 調整ルール（軽微）」の一項目として** severity を 1 段階下げる。退行 invariant 検算で既に下げている場合は二重適用しない（既存の排他条件を流用） |
+| `severity-inflated`（影響過大の根拠あり） | **BLOCKER / CRITICAL** | **降格後に報告マトリクスを割る場合は severity を据え置き**、本文先頭に `⚠️ 反証メモ: severity 過大の疑い（<根拠 file:line>、要確認）` を付与する（= 係争中）。割らない場合のみ 1 段階下げる。判定は降格後の (severity, confidence) を報告マトリクスに当てて行う |
+| `severity-inflated`（影響過大の根拠あり） | **MAJOR / MINOR** | **既存「severity 調整ルール（軽微）」の一項目として** severity を 1 段階下げる。退行 invariant 検算で既に下げている場合は二重適用しない（既存の排他条件を流用） |
 
 ### 不変条件（機械保証）
 
-- **高 severity（BLOCKER / CRITICAL）の指摘は反証レイヤーで報告から消えない。** refuted でも confidence/severity を据え置き、本文に反証メモを付すのみ。最終判断は人間に残す（false-negative の構造的防止）
+- **高 severity（BLOCKER / CRITICAL）の指摘は反証レイヤーで報告から消えない。** `refuted` は confidence/severity を据え置き、`severity-inflated` は報告マトリクスを割る降格を行わない。いずれも本文に反証メモを付すのみで、最終判断は人間に残す（false-negative の構造的防止）
+  - **`severity-inflated` の穴（v2.41.0 で塞いだ）**: 旧規約は `severity-inflated` を「全 severity で 1 段階下げる」としていたため、**BLOCKER 60-79 → CRITICAL 60-79（要 80）/ CRITICAL 80-94 → MAJOR 80-94（要 95）** が報告マトリクスを割って silent に消えていた。`refuted` 経路しか塞いでいない不変条件は、反証レイヤーの effort を下げる根拠には使えない（orchestration-guide `## 5` の「扱い側で保険が効いている」はこの修正込みで成立する）
+  - **降格で消える場合は「🔁 反証で取り下げた指摘」にも出さない**（あの節は MAJOR/MINOR の `refuted` 専用）。高 severity は本文に残すのが唯一の正しい扱い
 - **security specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**（triage-guide.md `## 9` のゲートで除外）。万一 verdict が付いても confidence / severity は据え置き、反証メモも付さない（誤反証の代償が非対称に大きい）
 - 係争メモは `[...]` タグ語彙を増やさず本文の `⚠️ 反証メモ:` で表す（reviewer 自己申告タグ `[scope:out]` 等はオーケストレーターでなく reviewer が付与する系統。producer を記法で区別する）
 - verdict が付いていない指摘（反証レイヤー未起動・対象外・反証失敗）は本ステップを no-op として素通りする（後方互換）
@@ -204,7 +207,8 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 ### パネル運用時の集計（max effort で 1 指摘を複数体反証する場合・将来拡張）
 
 - `refuted` 成立は **過半数かつ全員が file:line 反証根拠を提示** した時のみ。票割れ・棄権（uncertain 混在）は uncertain 扱いとし delta を合算しない
-- 初版は全 effort で 1 指摘 1 体運用（パネルは event bus 計測後に拡張判断）
+- 現行は全 effort で **1 指摘 1 verdict**（v2.41.0 以降、反証エージェント 1 体が最大 5 件を担当するバッチ運用。1 件を複数体で見るパネルではない）。パネルは event bus 計測後に拡張判断
+- **バッチはパネルではない**: 同じ指摘に複数 verdict が付くことは無いので、上の過半数ルールは現行では発火しない。バッチ内の verdict 同士を合算・相殺してはならない（triage-guide `## 9`）
 
 ---
 

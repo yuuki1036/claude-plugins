@@ -2,6 +2,44 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.41.0] - 2026-08-03
+
+壁時計時間の主因が「体数（breadth）」ではなく「**1 体あたりの探索量・直列 wave 数・メインコンテキストの思考量**」にあると特定し、そちらを削る版。v2.39.0 / v2.40.0 の体数縮小はトークンコストには効いたが、並列発行が効いている限り fleet 区間の実時間は wave 内最長の 1 体で決まるため壁時計には構造的に効かなかった（実測: 3 体・210 分のサンプル）。
+
+### Changed
+- **reviewer 共通指示の契約を圧縮し、1 体あたりの探索予算を明示**（reviewer-prompts.md `## 1`）。指示に忠実な世代のモデルでは、指摘 1 件あたりに課した 10 個超の契約をすべて律儀に実行するため、思考時間とツールループが「契約数 × 指摘数」で膨らんでいた:
+  - **評価原則 1 を「PASS が証明されるまで FAIL」→「未確認は SKIP と書く」に改訂**。旧文は「問題なし」に証拠を要求することで探索を無限定に延長させていた。求めているのは「未確認を PASS と偽らないこと」であって「PASS を証明しきること」ではない
+  - **探索予算を新設**: diff 外の追加 Read は 10 ファイルまで / 1 つの主張の裏取りは 1 往復まで（届かなければ confidence を下げるか `unmet_information` へ）/ 予算を使い切ったらその時点で確定する。**予算は探索にかけ、報告にはかけない**（指摘の件数・severity に上限は設けない。発見段階の自己間引きは recall を落とすため従来どおり禁止）
+  - invariant 検算・claim grounding を**手順（やり方の記述）から出力要件（根拠欄が埋まらなければ confidence を下げる）へ格下げ**。`[unverified:]` タグ等の機構は据え置き
+  - 「静的検査優先の自己問い」を指摘ごとの自問プロセスから、該当時のみ 1 行併記する出力規約へ縮小
+- **冷や読み skeptic を reviewer wave に相乗り発火**（triage-guide `## 8.5` / orchestration-guide `## 9`）。skeptic は findings 非注入が設計の核で reviewer 出力に一切依存しないにもかかわらず、Phase 5.8/4.8 に直列配置されていたため、依存関係が無いのに opus 1 体分の実時間を積み増していた。surface 判定（正規表現 + PR 自己申告）を Phase 0 に前倒しし（review Step 3.4 / self-review Step 2.4）、ゲート通過時は reviewer 一括発行に含める。結果の統合・dedup は従来位置のまま。**fallback**: reviewer の `[surface:high-risk]` フラグ由来で事後に surface=true になった場合のみ従来どおり直列で単独起動する
+- **反証レイヤーをバッチ化し effort を `max` → `high` に引き下げ**（triage-guide `## 9` / orchestration-guide `## 5`・`## 10`）。反証は既定パスで走り体数が指摘数に比例する**唯一の変動費**で、既定パスのコストの主要項だった:
+  - **1 体あたり最大 5 件**のバッチ（上限 3 体 = 15 件）。反証が要求する独立性は「指摘を出した reviewer と別コンテキスト」であって「指摘同士が別コンテキスト」ではない。同一 diff の読み直しを N 体で重複させる意味がないため束ねる
+  - effort 引き下げの根拠は、誤判定コストの非対称性を **verdict の扱い側**で既に吸収していること（BLOCKER / CRITICAL は refuted でも消さず係争注記＝ scoring-guide の不変条件）。扱い側で保険が効いている層に effort でも保険をかけるのは二重。**体数が 1 体固定の meta-reviewer / 冷や読み skeptic は `max` 据え置き**
+  - バッチ内の相互汚染（1 件の verdict を別件の根拠にする）を reviewer-prompts.md `## 7` の鉄則で禁止。全 finding_id に verdict を返させ、欠落は verdict なし扱いで突合する
+  - 対象が 15 件を超えた場合は severity → confidence 順で上位 15 件のみ反証し、溢れた件数をレポートに明示する（silent に落とさない）
+
+### Added
+- **所要時間を 3 分割して計測**（orchestration-guide `## 14`。payload に `duration_triage_min` / `duration_fleet_min` / `duration_closing_min` を追加）。`duration_min` 単独では agent 実行時間・メインコンテキストの思考時間・人間の応答待ちが 1 個の数字に潰れ、どの改善が効いたか判定できなかった（210 分のサンプルが 1 件あるだけで内訳不明だった）:
+  - `TS_FILE` に区間マーカー（`t0` 開始 / `t1` reviewer 一括発行の直前 / `t2` 初回レポート出力の直後）を追記し、publish 時に awk で 4 値を算出する。欠測はすべて `-1`（0 と区別する）
+  - `duration_triage_min` = メインコンテキストの思考時間の代理指標 / `duration_fleet_min` = agent wave の実時間 / `duration_closing_min` = 大半が人間の応答待ち（**効果測定に使わない**）
+  - `duration_min`（全体）は後方互換のため意味を変えない。3 区間の和は全体と一致しないことがある（マーカー欠測時）ため一致を仮定しない
+  - **`duration_triage_min` の存在が v2.41.0 以降の publish マーカー**（日付では切らない＝配布ラグに耐える。`agents` フィールドと同じ流儀）
+- `agents.verify_findings`（反証の**対象指摘数**）を payload に追加。バッチ化で `agents.verify`（体数）と件数が分離したため別フィールドにする
+
+### Fixed
+- **`severity-inflated` verdict で高 severity 指摘が silent に消える穴を塞いだ**（scoring-guide）。旧規約は「全 severity で 1 段階下げる」だったため、**BLOCKER 60-79 → CRITICAL（要 80）/ CRITICAL 80-94 → MAJOR（要 95）** が報告マトリクスを割って消え、係争注記も残らなかった。`refuted` 経路しか塞いでいない不変条件を「反証 effort を下げてよい唯一の根拠」に昇格させていたため、この修正なしでは effort 引き下げの前提が成立しない。高 severity は**降格後にマトリクスを割る場合は severity 据え置き + 反証メモ**に変更
+- **`duration_triage_min` に explorer wave が混入していた**。`t1` を reviewer 発行直前に固定していたため、explorer（最大 4〜6 体）の実時間が「メインコンテキストの思考時間の代理指標」に計上され、explorer を配置したレビューで「思考量が主因」という誤診に誘導していた。`t1` を**最初の agent 一括発行の直前**（explorer があればその直前）へ移し、`grep` ガードで二重記録を防ぐ。**agent wave はすべて fleet 側**に入る
+- **self-review の `duration_closing_min` が構造上 ≒0 になる問題**。self-review は publish（Step 6.4）が Step 7 の修正方針確認より前にあるため t2→t3 に人間待ちが入らない。0 を publish すると「人間待ちが無かった」と誤読されるため **`-1`（測定不能）** を入れるよう変更し、`duration_min`（全体）の意味が publisher 間で非対称であることを両 SKILL と orchestration-guide に明記
+- **review Step 3.4 の skeptic 相乗りゲートが `--emergency` / `skip-mode` を取りこぼしていた**。相乗りで起動が前倒しされる以上、Phase 5.8 に到達してからスキップ判定しても手遅れ（緊急モードで `effort: max` の skeptic が余計に走る）。条件の個別列挙をやめ Phase 5.8 の定義への単一参照に変更
+- 反証バッチの切り方を「同一ファイルを寄せる」から**「同一ファイル・同一 reviewer 由来は散らす」に反転**。バッチ化で失うのは reviewer からの独立性ではなく**反証者側の誤読の独立性**で、1 体の誤読が同一ファイルの指摘を束で `refuted` にしうる（MAJOR は −40 で実質消える）
+- 探索予算の**適用範囲を reviewer / specialist に限定**（独立検証レイヤーは対象外）。打ち切り時の痕跡を選択式から **AND**（confidence を下げる場合も `unmet_information` に `予算切れ:` を必ず記録）に変更し、探索予算経由の recall 低下が事後に検出できるようにした。low / medium では Round 2 が走らず回収経路が無いことも明記
+- triage-guide `## 7` のロールバック条件が `duration_min`（全体）で所要時間を見ていたため、締めフローの人間待ちに支配されて体数調整の効果を検出できなかった。**jq スニペット本体を `duration_fleet_min` に修正**（散文での置換指示をやめた）。あわせて「体数は壁時計に効かない（実測）」という断定を、**「効いた証拠が現時点で無い（旧サンプルは内訳不明で判定不能）」**に緩めた（同じサンプルを一方で使用不能・他方で結論の根拠にしていた循環の解消）。「時間が長いから体数を減らす」判断を混ぜない規範は維持
+- 反証の 2 縮小（バッチ化 + effort 引き下げ）に**ロールバック条件を追加**（`adversarial_verify` の `uncertain` 比率と MAJOR/MINOR の `refuted` 比率を版マーカーで層別して監視）
+- `adversarial_verify` に **`severity_inflated`** を追加（4 つ目の verdict が集計から漏れていた）。`agents.verify_findings` の定義を「ゲート対象数」から**「実際に verdict が返った件数」**に明確化し、レポートの反証行の書式を orchestration-guide `## 10` に一本化。`agents.verify` は v2.41.0 前後で意味が変わるため層別が必要な旨を明記
+- orchestration-guide `## 9` 手順 2 に**「相乗りで発火済みなら実行しない」ガード**を追加（skeptic の二重起動と `recall_skeptic.fired` の計測汚染を防ぐ）
+- 反証 effort 引き下げ後も「補償層はいずれも `max` 据え置き」という旧前提が同一セクションに残り、新表と矛盾していたのを解消。triage-guide から orchestration-guide への effort 方針の参照（存在しない `## 7` 引用）も修正
+
 ## [2.40.0] - 2026-07-31
 
 ### Fixed
