@@ -10,19 +10,30 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/lib/routing-axes.md # spec ルーティング 3 軸コア（正本。ROUTING-AXES 区間を消費サイトに複製）
 .claude-plugin/schema/           # JSON Schema（plugin.json / marketplace.json / hooks.json）
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
+                                 # validate_plugin_quality.py（品質検証。検査項目の正本は冒頭 docstring）
+                                 # auto-quality-check.sh（Stop hook から上記 2 本 + CLI validate を自動実行）
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors) チェック
-docs/                            # 横断設計指針（pipeline-design / rule-placement / skill-writing / event-bus / shared-state）
+.github/workflows/validate.yml   # CI。push / PR で SSoT・品質・バージョンバンプを検証（evals は非対応）
+.claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
+  settings.json                  # Stop hook（auto-quality-check.sh）等の設定
+  commands/ skills/              # /quality-check の実体（マーケットプレイスに配布しない自前コマンド）
+  adr/ designs/                  # 本リポジトリ自身の設計判断・設計書
+docs/                            # 横断設計指針（pipeline-design / rule-placement / skill-writing / event-bus /
+                                 # shared-state / issue-workflow-migration + session-reports/）
 evals/                           # スキル起動回帰テスト（runner.py + cases/*.yaml。README に Gotchas）
 INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の表と同期検証される）
 {plugin-name}/                   # 各プラグイン（独立したディレクトリ）
   .claude-plugin/plugin.json     # プラグインマニフェスト
+  .mcp.json                      # 同梱 MCP サーバー定義（dev-workflow / notebooklm-workflow のみ）
   commands/                      # スラッシュコマンド定義（YAML frontmatter + markdown）
   skills/                        # スキル定義（SKILL.md + references/）
   agents/                        # エージェント定義（frontmatter付き markdown）
+  references/                    # プラグイン共通の参照ドキュメント（skills/ 配下とは別。一部プラグインのみ）
   hooks/                         # フック定義（hooks.json + scripts/）
     lib/safe-hook.sh             # 正本の byte-identical 複製（hook 持ちプラグインのみ）
   rules/                         # SessionStart 等で注入されるルール（一部プラグインのみ）
     project-rules.md             # プロジェクト全体の作業ルール（SessionStart hook で注入）
+                                 # 別名もある: self-report-rule.md / advisor-rule.md
   CHANGELOG.md                   # 変更履歴（Keep a Changelog 形式）
   README.md
 ```
@@ -159,8 +170,7 @@ event_bus_clear
 
 ## CHANGELOG 規約
 
-- 各プラグインに `CHANGELOG.md` を配置（Keep a Changelog 形式）
-- バージョンバンプ時は CHANGELOG.md の更新必須（pre-commit hook で強制）
+- 各プラグインに `CHANGELOG.md` を配置（Keep a Changelog 形式）。バージョンバンプとの同時更新が必須な点は Gotchas「バージョンバンプ忘れ」を参照
 - Conventional Commits type との対応: `feat` → Added / `fix` → Fixed / `refactor` → Changed / `chore` → 原則省略
 
 ## Gotchas
@@ -169,7 +179,6 @@ event_bus_clear
 - **hooks の stdin 消費**: hook スクリプトは必ず stdin を消費してから処理を開始する。消費しないとハングする。`safe-hook.sh` の `safe_hook_init` が自動で消費するため、全 hook は `source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"` 経由で書く
 - **hooks の stdout**: hook スクリプトの stdout が Claude のコンテキストに注入される。条件付き注入は `safe_hook_error <category>` で silent exit 0（Validation/Dependency/Auth/NotFound はサイレント、Unexpected のみ stderr に通知）
 - **safe-hook.sh の同期**: 正本は `.claude-plugin/lib/safe-hook.sh`。各プラグインの `hooks/lib/safe-hook.sh` は byte-identical な複製。`/quality-check` で同期を検証する（不一致は Critical）
-
 - **routing-axes の同期**: spec ルーティングの 3 軸コア（WHAT→bdd-spec / HOW→design-doc / WHY→adr-keeper）の正本は `.claude-plugin/lib/routing-axes.md`。`ROUTING-AXES:START/END` マーカー区間が spec-advisor routing-rubric / issue-workflow の issue-create に複製されており、`validate_plugin_quality.py` が dedent 比較で同期を検証する（不一致は Critical）。区間を編集するときは正本と全消費サイトを同時更新する。区間外の type 別判定・拡張軸は各サイトの文脈特化で同期対象外（設計判断: `.claude/designs/20260708-spec-routing-ssot.md`）
 - **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げ、CHANGELOG.md も同時更新する。上げないと使用側で更新が検知されない。どちらも pre-commit hook でブロックされる
 - **_requirements の同期忘れ**: プラグインの依存先が変わったら plugin.json の `_requirements` と `check-deps.sh` の両方を更新する。pre-commit の `validate-ssot.sh` が `check_xxx "<name>"` 形式の一致を検証する
@@ -177,7 +186,7 @@ event_bus_clear
 - **hooks.json の args[] exec 形式 (CC 2.1.139+)**: 新規 hook は `command: "bash <path>"` ではなく `command: "bash", args: ["<path>"]` の exec 形式で書く。シェル解釈を経由せず直接 spawn するので安全＆高速。スキーマは `.claude-plugin/schema/hooks.schema.json` を参照
 - **terminalSequence helpers (CC 2.1.141+)**: `safe-hook.sh` の `safe_hook_emit_bell` / `safe_hook_emit_window_title` は端末ベル / ウィンドウタイトルを JSON 出力で送る。`safe_hook_emit` (plain text) と**混在不可**（terminalSequence は単独 JSON 出力）。長時間処理の完了通知や警告アラートに opt-in で利用する
 - **${CLAUDE_EFFORT} skill 適応分岐 (CC 2.1.120+)**: SKILL.md / コマンド本文に `${CLAUDE_EFFORT}` を書くと実行時 effort (low/medium/high/xhigh/max) が展開される。深掘り skill では `low/medium → 速度優先、xhigh/max → 多重 agent` のような条件分岐を入れる。frontmatter の `effort:` は宣言（既定値）、本文の `${CLAUDE_EFFORT}` は実行時値
-- **Agent tool の background 既定 (CC 2.1.198+)**: Agent tool は `run_in_background` 省略時に background 起動になった（従来は同期）。fanout して結果を待つスキル（explorer/reviewer/verifier 等）では各 Agent call に **`run_in_background: false` を必ず明示**する。省略するとオーケストレーターが完了を待たずに次フェーズへ進み、結果を取りこぼす（結果自体は tool result として後から返るが、消費するフェーズが先に走る順序の問題。「反応が返ってこない agent」問題）。あわせて **並列にするには全 Agent call を同一メッセージ内で一括発行する**こと — `run_in_background: false` は結果を待つ（取りこぼし防止）だけで並列性を意味せず、1 体ずつ別メッセージで発行すると実時間が体数分の合計に膨らむ（実測 3.5 倍。issue #95）。2 つは直交する独立の要件。code-review の正本は `orchestration-guide.md ## 0`。取り漏れは `validate_plugin_quality.py` の agent-sync チェックが非ブロッキング warning で検知する
+- **Agent tool の background 既定 (CC 2.1.198+)**: fanout して結果を待つスキル（explorer/reviewer/verifier 等）では **①各 Agent call に `run_in_background: false` を明示**（省略＝background 起動で結果を取りこぼす）し、**②全 Agent call を同一メッセージ内で一括発行**する（1 体ずつ別メッセージだと実時間が体数分の合計になる）。**①は取りこぼし防止・②は並列性で、直交する独立の要件**（①だけでは並列にならない）。根拠と実測は `orchestration-guide.md ## 0`（正本・issue #95）。取り漏れは `validate_plugin_quality.py` の agent-sync チェックが非ブロッキング warning で検知する
 - **eval を実行・修正する前に `evals/README.md` の Gotchas を読む**: スラッシュコマンドは headless で必ず落ちる（自然言語プロンプトで測る）/ fail は「プラグイン選択」と「skill id の綴り」を分けて読む（id 捏造は harness 側の性質）/ 判定は k=1 でなく pass^k=3 で行う — 詳細と実例は README 側に集約
 
 ## バージョニング規約
@@ -199,7 +208,7 @@ event_bus_clear
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
 
-スキルの description / トリガーフレーズを変更した場合は `evals/runner.py` で回帰テストを実行する（`claude-meta:eval-runner` スキル経由も可）。pass^k=3 基準でスキル選択の安定性を検証できる。ローカル実行のみ（CI 非対応、通常セッション枠を消費）。
+スキルの description / トリガーフレーズを変更した場合は `evals/runner.py` で回帰テストを実行する（`claude-meta:eval-runner` スキル経由も可）。pass^k=3 基準でスキル選択の安定性を検証できる。**evals だけはローカル実行のみ**（`.github/workflows/validate.yml` は SSoT・品質・バージョンバンプを検証するが evals は回さない。通常セッション枠を消費するため）。
 
 ## ブランチ運用
 
