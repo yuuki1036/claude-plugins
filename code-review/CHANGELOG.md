@@ -2,6 +2,46 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.43.0] - 2026-08-04
+
+`review` 経路で 2 つの構造的な壊れ（子 agent が base branch を読む / 計測が並行セッションに汚染される）を塞ぎ、壁時計の残る主因である「メインコンテキストのプロンプト複製」と「直列 wave 数」に手を入れた版。
+
+### Fixed
+- **子 worktree の `gh pr checkout` が構造的に必ず失敗し、agent が base branch のファイルを読んでいた**（GitHub issue #98。explorer-prompts / reviewer-prompts の共通指示 + orchestration-guide `## 1`）。review skill は Step 0 で `EnterWorktree`、Step 1 で `gh pr checkout` するため**親 review worktree が PR ブランチを保持している**。子 worktree は親 branch を継承せず origin/default から派生するので `HEAD != {{HEAD_REF}}` が常に成立し、else 分岐の `gh pr checkout` が git の二重チェックアウト禁止で失敗する。テンプレートは失敗時に続行するため、**テンプレート自身が「深刻な偽陽性の原因」と警告している状態のままレビューが走っていた**。issue #69 の `{{HEAD_REF}}` ガードは「親が checkout 済みなら子でスキップ」の意図だったが、子の HEAD が PR ブランチになることはないため review 経路では一度も発火しない:
+  - ブランチ名での checkout を廃止し、`git fetch origin refs/pull/<N>/head` + `git checkout --detach FETCH_HEAD` に変更（detach なら親と競合しない）
+  - 検証を **期待 HEAD SHA（`{{HEAD_SHA}}`）との突合**に変更。`{{HEAD_REF}}` はブランチ名なので detach 後の検証には使えず、プロンプト冒頭の文脈情報としてのみ残す。オーケストレーターは Step 1 の `gh pr view --json headRefOid` で取得して全 agent に注入する
+  - 不一致時は「レビュー結果の冒頭に warning を明記し confidence を下げる」を明示（silent に続行させない）
+- **`TS_FILE` が worktree 間で衝突し `duration_*` が「もっともらしい誤値」で publish されていた**（GitHub issue #99。orchestration-guide `## 13.1` + 両 SKILL）。`--git-common-dir` は linked worktree からもメインリポジトリの `.git` を返すため、publish 先をメインルートに固定する目的（#96）には正しい一方、**同一リポジトリの全 worktree で `MAIN_ROOT` が同一**になり `TS_FILE` が 1 本に collapse していた。Step 1 は `>` の truncate で書くので後発セッションが先行のマーカーを消し、締めフローの `rm -f` は走行中の他セッションのマーカーを削除していた。**汚染が欠測（`-1`）ではなく過小値として入る**ため、ロールバック判断の一次指標 `duration_fleet_min` が静かに壊れる（実測: 52 分のレビューが約 8 分）:
+  - **パスの識別子を `git rev-parse --show-toplevel`（その worktree 自身のパス）から作る**。`--git-common-dir` が全 worktree で同じ値を返すのに対しこれは worktree ごとに異なるので、1 つで並行セッションを分離できる。review はさらに PR 番号を混ぜる。識別に失敗したときの縮退先は「別ファイル ＝ 欠測」であって誤値ではない
+  - **ブランチ名は識別子に使わない**。`git rev-parse --abbrev-ref HEAD` は **detached HEAD でも `HEAD` を返す**ため `${VAR:-fallback}` が発火せず、detached な worktree がすべて同じ slug に collapse する（`git bisect` 中に発生）。切り詰めによる長いブランチ名の接頭辞衝突も同様。初版はブランチ slug を使っていたが、セルフレビューで両方の反例が実測されたため差し替えた
+  - `rm -f` を `t2` マーカーの存在確認つきに変更。ただし**これは所有権チェックではなく近似**（ファイル内容に書き手の識別子が無い）。衝突自体は上記のパス識別子で塞ぎ、このガードは万一の衝突時に掃除より他セッションの計測を優先する二段目、という位置づけを doc に明記した
+  - v2.43.0 未満の `duration_*` は汚染を受けうるため、ロールバック判断の基準側に使わない旨を doc に明記
+
+### Added
+- **大きい共有コンテキストのファイル経由渡し**（GitHub issue #100 A。orchestration-guide `## 3.5`）。Step 2.5 の「LLM による再構築・要約・編集は禁止」は正しいが、素直に実装するとオーケストレーターが同一ブロックを N 体ぶん**書き出す**設計になっていた（実測: PR コンテキスト約 15,000 字 × 6 体。52 分のレビューのうち agent 実時間 29 分を除いた約 20 分がメインコンテキスト）:
+  - `fetch-pr-context.sh` の出力を `$PR_CTX_FILE`（`$TMPDIR` 配下・PR 番号入り）に保存し、reviewer には**パスのみ**渡して自分で Read させる。**忠実性はむしろ上がる**（バイト同一で転記リスクがゼロ＝「再構築禁止」を機械的に保証）。子 worktree でも `$TMPDIR` は同一ホストなので読める
+  - AGENTS.md / CLAUDE.md の階層注入も**元ファイルのパス渡し**に変更（既にディスク上にあるのでコピーも不要）
+  - explorer 結果は**従来どおりインライン**（選択的注入で複製係数がほぼ 1。ファイル化すると explorer 体数ぶんの Write が増えて逆効果）
+  - ファイル書込に失敗した場合はインライン注入にフォールバックする（レビュー本体をブロックしない）
+  - パス導出の `WT` は**それを使う bash ブロック内で導出する**。別ブロックの変数は消えており、空のまま `printf %s "" | cksum` を通すと**エラーにならず定数 `4294967295` が返って**パスが「ホスト上の全リポジトリで共有される固定値」に潰れる（＝別リポジトリの PR コンテキストを掴む誤値縮退）。初版はこれを踏んでおり、セルフレビューで 4 体が独立に検出した
+  - 保存は**一時ファイルに書いて成功時のみ `mv`** する。`>` はスクリプト失敗時も空ファイルを残し、空ファイルは「読める」ため reviewer の「読めなかった場合」ガードをすり抜けて「過去指摘なし」と誤判定される
+- **Phase 0 の構成テーブルに「直列 wave」行を追加**（GitHub issue #100 B。triage-guide `## 5` / `## 5.1`）。ユーザーに見えていたのは体数だけで、壁時計を決める直列 wave 数は最後まで見えなかった。**体数はトークンコストのレバー、wave 数は壁時計のレバー**という `## 7` の切り分けをそのまま表示する（下限＝ Phase 0 で確定している wave / 上限＝条件付き wave が全部発火した場合、wave あたりの目安時間つき）
+- **`duration_explore_min` の計測**（GitHub issue #100 D。orchestration-guide `## 14`）。`t1` を explorer 発行直前に置いた v2.41.0 の修正の副作用で、fleet 区間に「explorer wave + reviewer wave + プロンプト構築 + scoring」が全部入り、どの wave が何分かかったか分からなくなっていた。explorer 回収直後に `t1b` を置き、`t1`→`t1b` を explorer wave の実時間として切り出す（`duration_fleet_min` の内数。explorer 未起動時は `-1`）。triage-guide `## 5.1` が Phase 0 で提示する「wave あたり目安 6〜16 min」を実測で裏付けるフィールド（実測: explorer 2 体で 5.9 分）
+  - **「メインコンテキストのプロンプト構築時間」はマーカーでは測れないと確定した**（同節）。プロンプトのテキストを書く行為がそのまま Agent call の発行であり、「書き終わったが未発行」の瞬間が存在しないため、マーカーを発行より前に置けば書く前に発火し、後ろに置けば agent が既に走っている。初版では `t1c` / `duration_prep_min` でこれを測ろうとしたが、セルフレビュー実測で**発行直前マーカーが 7 秒**（同じ fleet 区間は 22 分）を記録して構造的に不可能と判明したため撤回した。`## 3.5` の外出し効果は `duration_fleet_min` を `size_tier` × `agents.reviewer` × `effort` で層別して見る
+- **HEAD 検証の機械的回収**（GitHub issue #98 の未達分。orchestration-guide `## 5` + 両プロンプトテンプレート）。SHA を注入しても、検証結果を報告する必須欄が無ければ「検証を怠った / 一致した / 不一致だが warning を書き忘れた」がオーケストレーターから区別できず、issue #98 が名指しした「自己申告に委ねている」構造が残る。出力フォーマットに **`HEAD 検証: <実測 SHA> / 期待 <SHA> / 一致|不一致|未実行` の必須 1 行**を置き、不在・不一致なら `missing_coverage` へ記録し当該 agent の指摘全件に `[unverified: HEAD 不一致]` を付ける。`review:completed` payload に `head_verified: {ok, mismatch, unknown}` を追加し、「何体が正しい HEAD を見ていたか」を事後集計できるようにした。**行の不在自体が信号**になるので agent の善意に依存しない
+- **xhigh / max の反証ゲートと非対称ゾーン論の緊張を明文化**（GitHub issue #100 補足。triage-guide `## 9`）。xhigh / max のゲートは「報告ゾーン全体 + MAJOR」なので confidence 95+ の最も取り下がりにくい層が全件対象になり、直列 wave 1 本（6〜16 min）を要する。据え置く理由（明示 escalation での偽陽性コストの非対称性）と、壁時計を縮める必要が出たときの最初の候補（MAJOR 95+ をゲートから外す）を記録した
+
+### Changed
+- **Round 2 のスキップ条件に「unmet が全件 repo 外」を追加**（GitHub issue #100 C。triage-guide `## 8` + orchestration-guide `## 6` + 両 SKILL）。実測では unmet 8 件のうち 7 件が構造的に到達不能だった（DB / 本番の実データ、外部サービスの実挙動、repo に存在しない旧実装、意図的にスキップした lint 実走）。target の分類は文字列を読めば決まるのでメインコンテキストで判定でき、agent を要さない。**ただし無条件スキップは有害**なので「全 target が repo 外のときだけ」に限定する — 実測で到達可能だった 1 件（DB 制約）を Round 2 が repo 内 doc で解決した結果、指摘 1 件の severity が MAJOR → MINOR に変わっている。判定に迷う target は repo 内側に倒す。スキップ時は `missing_coverage` とレポートの「動的ラウンド」行に理由を出す
+- **`duration_triage_min` を「メイン思考量の代理指標」として使うのをやめた**（issue #100 D）。`duration_fleet_min` の説明に「プロンプト構築を含む（分離できない）」を明記し、triage-guide `## 7` の打ち手③（壁時計を縮めるときにまず触る箇所）も「メインコンテキストの思考量（`duration_triage_min` で観測）」から「プロンプト複製量（`## 3.5` のファイル経由渡し。効果は `duration_fleet_min` の層別で見る）」に差し替えた — 定義変更が消費サイトに伝播していなかった
+- **agent の checkout ブロックに dirty tree ゲートを追加**（両プロンプトテンプレート）。`git checkout --detach` は**未コミット変更があっても exit 0 で成功し変更を持ち越したまま detach する**（実測）。隔離 worktree はレビュー開始時点で必ず clean なので、dirty なら「ユーザーの作業ツリー」と自己判定して checkout をスキップする。散文の「self-review からは PR 番号が渡らないためスキップ可」という許可形だけでは、PR 番号が紛れる経路が 1 つでもあればユーザーの作業ツリーを silent に detach しうる
+- **`git fetch` と `git checkout` の失敗を切り分け**（両プロンプトテンプレート）。`A && B || C` の結合では fetch 失敗でも checkout 失敗でも同じメッセージが出て、agent が誤った原因を報告していた
+- **`gh pr checkout`（親 worktree・review Step 1）の失敗時に中止**するよう明記。子 agent は detach で正しい HEAD に入るため、続行するとメインコンテキストだけが base branch を読む非対称が生じる（規模判定・Phase 0・締めフローが全部 base 基準になる）
+- **`HEAD_SHA` が空のまま agent を起動しない**よう明記（orchestration-guide `## 1`）。空を注入すると detach が成功していても全 agent が恒常的に「不一致」warning を出して confidence を下げ、`git rev-parse` 自体が失敗する環境では空同士が一致して checkout をスキップしたうえ「一致」と判定する
+- `grep ... && ...` 形のマーカー記録・掃除を `{ ...; } || true` で包み、正常系（explorer 未起動・`t2` 欠測）でブロックが exit 1 を返して「失敗」と誤読されるのを防いだ
+- triage-guide `## 5.1` の worked example を `2〜5` → `2〜6` に修正し、上限の算式（表の各行の最大値の総和）を明記。括弧内に 6 本を列挙しながら上限を 5 と書いていた
+- `orchestration-guide` `## 14` の見出し・導入文と INDEX.md の説明を「3 分割」から実体に合わせて更新
+
 ## [2.42.0] - 2026-08-03
 
 ### Changed

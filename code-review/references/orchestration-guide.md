@@ -7,7 +7,7 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 | 項目 | review | self-review |
 |---|---|---|
 | agent の isolation | 全 agent を `isolation: "worktree"` で起動（PR ブランチの状態でファイルを読むため） | `isolation: "worktree"` は使用しない（セルフレビューは未コミット変更を含むため） |
-| PR 番号注入 | 必須（`## 1`） | 不要（PR を持たない） |
+| PR 番号・期待 HEAD SHA 注入 | 必須（`## 1`） | 不要（PR を持たない） |
 | diff の取得 | `gh pr diff`（GitHub 上の正しい差分） | `git diff`（base branch との差分 + 未コミット） |
 | レビュー中止時 | ExitWorktree してから終了 | そのまま終了 |
 | 動的ラウンドの Phase 番号 | 5.5 / 5.6 / 5.7 / 5.8 / 5.9 | 4.5 / 4.6 / 4.7 / 4.8 / 4.9 |
@@ -16,16 +16,24 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 
 **並列発行の明示（複数体を起動する全フェーズに適用 / GitHub issue #95）**: `run_in_background: false` は「1 体ずつ順に起動する」ことを意味**しない**。複数体を起動するフェーズでは、**同一アシスタントメッセージ内に対象フェーズの全 Agent call を並べて一括発行し、その 1 応答で全結果を待つ**。`run_in_background: false` は取りこぼし防止（結果を待つ）、同一メッセージ内の一括発行は並列性（フェーズの実時間を相内最長に収める）で、**2 つは直交する独立の要件**。1 体ずつ別メッセージで発行するとフェーズの実時間が相内最長ではなく全体の合計になる（実測: 12 体のレビューで 20.9 min で済むところが 72.9 min、約 3.5 倍。issue #95）。単体起動のフェーズ（meta-reviewer / 冷や読み skeptic）には適用対象がない。
 
-## 1. PR 番号注入（review のみ / agent 起動時に必須）
+## 1. PR 番号・期待 HEAD SHA 注入（review のみ / agent 起動時に必須）
 
 review skill が worktree で起動する **すべての agent**（explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / skeptic / 反証エージェント）に適用する。
 
-agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRefName>`」を必ず明記し、explorer-prompts.md / reviewer-prompts.md 共通指示の `{{PR_NUMBER}}` と `{{HEAD_REF}}` プレースホルダを実数値に置換する。`isolation: "worktree"` の子 worktree は親 branch を継承せず origin/default-branch から派生するため、checkout 指示を欠かすと PR の変更を観測できず偽陽性を量産する（GitHub issue #56）。`{{HEAD_REF}}` 注入により、EnterWorktree 済みの親 worktree と二重 checkout になるケースを子 worktree 側でスキップできる（GitHub issue #69）。
+agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRefName>` / **期待 HEAD SHA: `<headRefOid>`**」を必ず明記し、explorer-prompts.md / reviewer-prompts.md 共通指示の `{{PR_NUMBER}}` / `{{HEAD_REF}}` / `{{HEAD_SHA}}` プレースホルダを実数値に置換する。`isolation: "worktree"` の子 worktree は親 branch を継承せず origin/default-branch から派生するため、checkout 指示を欠かすと PR の変更を観測できず偽陽性を量産する（GitHub issue #56）。
 
 ```bash
-# PR_NUMBER は Step 1 で取得済み（gh pr view --json number -q .number で再取得可能）
+# PR_NUMBER / HEAD_SHA は Step 1 で取得済み（gh pr view の --json で再取得可能）
 PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null || echo "<番号>")
+HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
+[ -n "$HEAD_SHA" ] || echo "FATAL: headRefOid を取得できない"
 ```
+
+**`HEAD_SHA` が空のまま agent を起動してはならない**。空を注入すると子側の突合が `[ "$(git rev-parse HEAD)" = "" ]` になり、detach が正しく成功していても**全 agent が恒常的に「HEAD 不一致」warning を出して confidence を下げる**（逆方向の静かな品質劣化）。さらに `git rev-parse` 自体が失敗する環境では空同士が一致して **checkout を丸ごとスキップしたうえ「一致」と判定する**。取得できない場合は PR コンテキスト取得失敗（review Step 1）と同格に扱い、ExitWorktree して中止する。
+
+**ブランチ名での checkout は使わない（GitHub issue #98）**。review 経路では Step 0 の `EnterWorktree` + Step 1 の `gh pr checkout` により**親 review worktree が PR ブランチを保持している**ため、子 worktree の `HEAD` が PR ブランチ名と一致することは構造的にありえず、`gh pr checkout` は git の二重チェックアウト禁止で**必ず失敗する**。テンプレートは失敗時に続行するため、agent が base branch のファイルを読んだままレビューを始める（テンプレート自身が「深刻な偽陽性の原因」と警告している状態）。issue #69 で入れた `{{HEAD_REF}}` ガードは「親が checkout 済みなら子でスキップ」の意図だったが、この機構により一度も発火しない。
+
+そのため子 agent 側は **`refs/pull/<N>/head` を fetch して detach で入る**（親と競合しない）。`{{HEAD_REF}}` はブランチ名なので detach 後の HEAD 検証には使えず、**検証は `{{HEAD_SHA}}` との突合で行う**（`{{HEAD_REF}}` はプロンプト冒頭の文脈情報としてのみ残す）。セットアップ bash の正本は explorer-prompts.md / reviewer-prompts.md の共通指示。
 
 ## 2. Issue ファイル必読フロー（review Step 1 の任意フロー / issue-workflow 併用時）
 
@@ -51,7 +59,7 @@ done | sort -u
 
 ## 3. PR コンテキストブロックの構造（review Step 2.5 の参考）
 
-`fetch-pr-context.sh` のスクリプト出力の構造（参考）:
+`fetch-pr-context.sh` のスクリプト出力の構造（参考。実体はファイルに落とし、reviewer にはパスだけ渡す → `## 3.5`）:
 
 ```
 ## PR コンテキスト
@@ -82,6 +90,37 @@ done | sort -u
 
 データが無い項目は `fetch-pr-context.sh` が「（なし）」を出力する。
 
+## 3.5. 大きい共有コンテキストはファイル経由で渡す（review / self-review 共通 / GitHub issue #100 A）
+
+**同一の内容を N 体のプロンプトに書き出さない。ファイルに落として agent に Read させる。**
+
+Step 2.5 は「LLM による再構築・要約・編集は禁止」と正しく定めているが、素直に実装するとオーケストレーターが同一ブロックを N 体ぶん**書き出す**設計になる（xhigh/max・large 帯なら 10〜16 体）。実測では PR コンテキストが約 15,000 字、これを 6 体に転記していた（52 分のレビューのうちメインコンテキスト消費が約 20 分。issue #100）。パス渡しには 3 つの利点がある:
+
+- **忠実性が上がる**：agent が読むのはバイト同一の原本で、転記・要約のリスクがゼロになる（Step 2.5 の「再構築禁止」を機械的に保証する）
+- オーケストレーターの出力トークンが `(N-1) × ブロック長` ぶん減る
+- 子 worktree でも `$TMPDIR` は同一ホストなので読める（worktree の外にあるパスを Read するだけ）
+
+対象と扱い:
+
+| 対象 | 渡し方 | 備考 |
+|---|---|---|
+| PR コンテキストブロック | `fetch-pr-context.sh` の出力を `$PR_CTX_FILE` に保存し、**パスのみ**注入 | メインコンテキストは Phase 0 のタイプ判定のために 1 回だけ Read する |
+| AGENTS.md / CLAUDE.md（`## 4`） | **元ファイルのパスをそのまま**注入（コピーを作らない） | 既にディスク上にあるので追加コストゼロ |
+| explorer 結果（review Step 5 / self-review Step 4 の選択的注入） | **従来どおりインラインで注入する** | 選択的注入なので複製係数がほぼ 1（1 explorer → 依存する 1〜2 reviewer）。ファイル化すると explorer 体数ぶんの Write が増えて逆効果 |
+
+`$PR_CTX_FILE` のパスは `TS_FILE` と同じ衝突回避が要る（`## 13.1`）。**`WT` を同一ブロック内で導出してから**組み立てる:
+
+```bash
+WT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+PR_CTX_FILE="${TMPDIR:-/tmp}/.review-prctx-$(printf %s "$WT" | cksum | cut -d' ' -f1)-pr<PR番号>.md"
+```
+
+- **`WT` の導出を別ブロックの変数に頼らないこと**（`## 13.1` の `TS_FILE` と同じ理由）。シェル変数は Bash 呼び出し間で消えるため、空のまま `printf %s "" | cksum` を通すと**エラーにならず定数 `4294967295` が返り**、パスが「ホスト上の全リポジトリで共有される固定値」に潰れる。この経路は欠測ではなく**誤値**（別リポジトリの PR コンテキストを掴む）に倒れるので、`## 13.1` の「縮退先は欠測」原則の例外になってしまう。パスを組み立てる bash ブロックには必ず `WT=` の行を含める
+- **プロンプトには「このファイルを最初に Read せよ」と明示する**（パスだけ置いても読まない agent が出る）。テンプレートの正本は reviewer-prompts.md `## 2.5`
+- **`>` はスクリプトが失敗しても空ファイルを残す**。空・ヘッダ欠落のファイルは「読める」ため reviewer の「読めなかった場合」ガードをすり抜け、「過去指摘なし」と誤判定される。**一時ファイルに書いて成功時のみ `mv` する**こと（下記 `## 3.5` の bash はこの形にしてある）
+- ファイル書込に失敗した場合は**従来どおりインライン注入にフォールバックする**（レビュー本体をブロックしない）。フォールバックしたことは `missing_coverage` には記録しない（観点の欠損ではないため）
+- 掃除（review 締めフロー 4）も**同一ブロックで `WT` を再導出**してから消す。作成側と削除側でパスが食い違うと一時ファイルが恒久的に残る
+
 ## 4. AGENTS.md 階層動的選択（reviewer 起動前 / review Step 4.9・self-review Step 3.9）
 
 変更ファイルパスから対応する `{dir}/AGENTS.md` を Bash で探索し、該当層だけを reviewer プロンプトに同梱する。リポジトリ全体の AGENTS.md / CLAUDE.md を毎回フルロードせず、変更があった層のみ拾うことで reviewer 入力 token を典型 30〜50% 削減する。
@@ -99,7 +138,7 @@ git diff "${BASE}..HEAD" --name-only | xargs -n1 dirname 2>/dev/null | sort -u |
 done | sort -u
 ```
 
-ヒットしたファイルのみ Read で読み込み、各 reviewer のプロンプトに `## 該当層の AGENTS.md / CLAUDE.md` セクションとして注入する。AGENTS.md が無いリポジトリでは探索結果が空になるだけで no-op（後方互換）。
+ヒットした**ファイルのパス一覧**を、各 reviewer のプロンプトに `## 該当層の AGENTS.md / CLAUDE.md` セクションとして渡し、「最初に Read せよ」と明示する（`## 3.5`。既にディスク上にあるファイルなので本文をプロンプトへ転記しない — reviewer 体数ぶんの複製がそのまま消える）。オーケストレーター自身は読む必要がない。AGENTS.md が無いリポジトリでは探索結果が空になるだけで no-op（後方互換）。
 
 ## 5. reviewer 起動の共通詳細
 
@@ -135,6 +174,25 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 
 - `### レビュー結果` 見出し（または `#### 指摘事項` / `#### 総括` のいずれか）
 - 指摘が 1 件以上ある場合、`[confidence: XX]` と `[severity: ...]` タグを含む行が存在する
+- **review の場合、`HEAD 検証:` 行が存在する**（下記）
+
+### HEAD 検証の回収（review のみ / GitHub issue #98）
+
+`## 1` の checkout は agent 側で走るため、**「検証したか」をオーケストレーターが観測できなければ、base branch を読んだままの agent の指摘が silent に報告へ混ざる**。issue #98 が「HEAD 検証はテンプレートが agent の自己申告に委ねているため、オーケストレーター側では失敗を検知できない」と指摘したのはこの構造で、SHA 注入だけでは解消しない（不在と成功が同じ「warning が無い出力」に見える）。
+
+そのため両プロンプトテンプレートの出力フォーマットに **必須 1 行** を置く:
+
+```
+HEAD 検証: <実測 SHA> / 期待 <{{HEAD_SHA}}> / 一致|不一致|未実行
+```
+
+オーケストレーターは結果回収時（review Step 4 / Step 5）にこの行を読み、以下を行う:
+
+- **`不一致` / `未実行` / 行そのものが無い** → `missing_coverage` に `HEAD 不一致: <agent の focus>（実測 <SHA>）` を記録し、**その agent の指摘すべてに `[unverified: HEAD 不一致]` を付ける**（scoring-guide の claim grounding と同じ扱い）
+- 行が無いだけの場合は上記の非レビュー出力と同様に **1 回だけ auto-retry** してよい（retry 後も無ければ記録して続行）
+- 集計は `review:completed` payload の `head_verified` に載せる（`{ok, mismatch, unknown}`）。「何体が正しい HEAD を見ていたか」を事後に追えるようにするのが目的
+
+**この行の不在自体が信号になる**ことが要点で、agent の善意に依存しない。self-review は PR を持たず checkout もしないため対象外。
 
 非レビュー出力を検出した reviewer は、**同一プロンプトで 1 回だけ auto-retry** する（複数同時検出時はまとめて並列 retry）。retry 出力も非レビュー出力なら、その reviewer の focus / angle を `missing_coverage` に「非レビュー出力（auto-retry 後も形式不正）」として記録して続行する（欠損観点として扱い、フィルタを素通りさせない）。「指摘ゼロ」を明示的に報告した妥当な出力（`### レビュー結果` を持ち問題なしと結論）は非レビュー出力ではないため retry 対象にしない。
 
@@ -150,12 +208,13 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
 ## 6. Adaptive deepening 実行手順（Round 2 / review Phase 5.5・self-review Phase 4.5）
 
 1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
-2. 集約結果から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
+1.5. **各 target を repo 内 / repo 外に分類する**（triage-guide `## 8` の分類表。メインコンテキストで判定・agent 不要）。**全件が repo 外なら本フェーズ全体をスキップ**し、`missing_coverage` に「Round 2 スキップ: unmet 全件が repo 外（<target 要旨>）」を記録して次フェーズへ進む。1 件でも repo 内があれば通常どおり続行する（迷う target は repo 内側に倒す）
+2. repo 内の target から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
 3. **経路分岐**（実行時 effort = `${CLAUDE_EFFORT}`。triage-guide `## 8` Phase 5.5）:
    - **high（既定）— 1 段圧縮**: 追加 explorer は起動しない。unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、**初回 reviewer と同じ effort**（`## 5` の連動表）で再起動する（全 call を同一メッセージ内で一括発行 — `## 0` 並列発行の明示）。プロンプトには①初回指摘②担当分の unmet_information（focus, target, why, related_finding）を渡し、「**まず unmet ターゲットを自分で Read / Grep / Glob で探索し、取得した事実に基づいて初回 confidence を再評価せよ**」と指示する
    - **xhigh / max — 2 段**: explorer-prompts.md の `re-explore` テンプレートで追加 explorer（最大 3 体）を `model: sonnet` で並列起動し（一括発行 — `## 0`）、各 explorer に対応する unmet_information を渡す。完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、初回と同じ effort で再起動し、初回指摘 + 追加 explorer 結果を context として渡して「初回 confidence を再評価せよ」と指示する
    - いずれの経路も isolation は `## 0` に従う（review は `isolation: "worktree"`（PR ブランチ）、self-review は使用しない）
-   - **PR 番号注入（review のみ・必須）**: `## 1` に従い prompt 冒頭に PR_NUMBER / head ref を明記し `{{PR_NUMBER}}` を置換（issue #56）
+   - **PR 番号・期待 HEAD SHA 注入（review のみ・必須）**: `## 1` に従い prompt 冒頭に PR_NUMBER / head ref / head SHA を明記し `{{PR_NUMBER}}` / `{{HEAD_SHA}}` を置換（issue #56 / #98）
 4. 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
 5. レポートに「Round 2 trigger: <reason>」を記録（レポート出力 step = review Step 7 / self-review Step 6 で出力）
 
@@ -166,7 +225,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
 1. reviewer-prompts.md の `## 6. Meta-reviewer テンプレート` を使用
 2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動
    - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
-   - isolation は `## 0` に従う。**PR 番号注入（review のみ・必須）**: `## 1` に従う
+   - isolation は `## 0` に従う。**PR 番号・期待 HEAD SHA 注入（review のみ・必須）**: `## 1` に従う
 3. meta-reviewer の出力（追加指摘）を既存指摘に統合
    - 重複は dedup（同一ファイル ±5 行 + 類似内容）
    - meta-reviewer の指摘も通常のスコアリング・フィルタリング対象
@@ -199,7 +258,7 @@ reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検
    - **fallback（直列）**: reviewer の `[surface:high-risk]` フラグ由来で事後に surface=true になった場合のみ、reviewer 完了後に単独起動する。正規表現が取り逃した ORM 抽象越えのケースに限られる
 2. **手順 1 の相乗りで発火済みの場合、本手順は実行しない**（fallback 経路でのみ実行する。二重起動は「PR あたり skeptic 1 体・1 round」の上限違反であり `recall_skeptic.fired` の計測も壊す）。fallback のときのみ、reviewer-prompts.md の `## 8 冷や読み skeptic テンプレート` を使用し、skeptic agent を **1 体**、`model: opus`, `effort: max` で起動する（isolation は `## 0` に従う）
    - **findings / reviewer の推論は渡さない**（独立性の核）。diff と最小 focus、base ref のみ渡す
-   - **PR 番号注入（review のみ・必須）**: `## 1` に従う
+   - **PR 番号・期待 HEAD SHA 注入（review のみ・必須）**: `## 1` に従う
 3. skeptic の指摘（`[recall-skeptic]` タグ付き）を既存指摘に統合。重複は dedup（同一ファイル ±5 行 + 類似内容）。skeptic の指摘も通常のスコアリング・報告マトリクス・**反証レイヤーの対象**に含める
    - **dedup 時はタグを残す側へ引き継ぐ**（どちらの本文を採用するかに関わらず）。reviewer 指摘と重複したときにタグごと捨てると skeptic の寄与が不可視になり過少計上される。**独立の skeptic が同じ問題に到達した事実は、reviewer が先に見つけていても失われない**
    - ただし**タグは 2 種に分ける**。重複の有無で意味が正反対になるため、同一カウンタに載せてはならない:
@@ -216,7 +275,7 @@ reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検
 2. 対象指摘に通し番号（finding_id）を振り、**5 件ずつのバッチに分ける**（上限 3 体 = 15 件。超過分の扱いは triage-guide `## 9`）。バッチごとに reviewer-prompts.md `## 7 Adversarial-verify テンプレート` で反証エージェントを `model: opus`, `effort: high` で並列起動する（isolation は `## 0` に従う。全 call を同一メッセージ内で一括発行する — `## 0` 並列発行の明示）
    - 指摘の主張（severity / confidence / file:line / 内容）のみ渡し、**reviewer の理由文は渡さない**（アンカリング防止）
    - **バッチの切り方**: **同一ファイル・同一 reviewer 由来の指摘は意図的に散らす**（同一ファイルは 1 バッチ 2 件までを目安に分割）。バッチ化で失うのは reviewer からの独立性ではなく **反証者側の誤読の独立性** — 1 体がその関数の制御フローを 1 回読み違えると同一ファイルの指摘が束で `refuted` になり、MAJOR は confidence −40 で実質まとめて消える（旧構成の「指摘ごと 1 体」はこれを構造的に防いでいた）。diff 読解の共有によるコスト削減は寄せなくても大半が得られるので、寄せる誘惑に乗らない
-   - **PR 番号注入（review のみ・必須）**: `## 1` に従う
+   - **PR 番号・期待 HEAD SHA 注入（review のみ・必須）**: `## 1` に従う
    - `pre-existing` / `intended` 鮮度の git 判定（`git show <base>:<file>` / `git blame`）を反証エージェントに許可する
 3. 各 verdict（refuted / confirmed / uncertain / severity-inflated）を収集し、**finding_id で対象指摘と突合**してスコアリング step に渡す。verdict が返らなかった finding_id は verdict なし扱い（confirmed とも refuted とも解釈しない）
 4. **レポートの反証行の正本（両 skill・triage-guide からもここを参照する）**: `反証: 対象 N 件（うち実施 X 件 / 予算超過 Y 件 / 反証失敗 Z 件）/ 係争 M 件 / 取り下げ K 件`。
@@ -266,21 +325,50 @@ findings をコード/文書本文に**反映する前に**、その修正が依
 
 **worktree 進入後に `git rev-parse --show-toplevel` を撮っても解決しない**（worktree 自身を返すため）。`--git-common-dir` は linked worktree 内でも**メインリポジトリの `.git`** を返すので、進入後でもメインルートを導出できる。
 
-両 skill で以下の 2 行を**同一の導出式**として使う（開始時刻ファイル `TS_FILE` のパス導出も、worktree 進入前後で `pwd` が変わってしまい `duration_min` が欠測になるため、同じ `MAIN_ROOT` から決定的に導出する）:
+両 skill で以下の 2 行を**同一の導出式**として使う:
 
 ```bash
 GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
-TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d' ' -f1)"
 ```
 
 - `GCD` が空（git 2.31 未満で `--path-format` 非対応、または非 git ディレクトリ）のときだけ `pwd` にフォールバックする。**`cd "$GCD/.."` を無条件に書かないこと** — `GCD` が空だと `/..` すなわち `/` に cd してしまい、`/.claude/events.jsonl` へ書きに行く
 - publish 側は `CLAUDE_PROJECT_DIR="$MAIN_ROOT"` を `event_bus_publish` の呼び出しに前置して上書きする（環境の設定値より導出値を優先する。EnterWorktree が `CLAUDE_PROJECT_DIR` を worktree に張り替える実装でも正しく main へ落ちる）
-- publish 後に `rm -f "$TS_FILE"` で開始時刻ファイルを消す（中断したレビューの残骸が次回の `duration_min` を汚さないようにする）
 
-## 14. 所要時間の 3 分割計測（review / self-review 共通 / v2.41.0）
+### 13.1 開始時刻ファイル `TS_FILE` のパス（セッション識別必須 / GitHub issue #99）
 
-`duration_min` 単独では **agent の実行時間・メインコンテキストの思考時間・人間の応答待ち**が 1 個の数字に潰れ、どの改善が効いたかを判定できない（実測: 3 体 210 分のサンプルが 1 件あるだけで、内訳が不明なため次の打ち手を選べなかった）。`TS_FILE` に区間マーカーを追記して 3 分割する。
+`TS_FILE` も worktree 進入前後で `pwd` が変わると欠測になるため `MAIN_ROOT` から導出するが、**`MAIN_ROOT` だけでは足りない**。`--git-common-dir` は linked worktree からもメインリポジトリの `.git` を返すので、**同一リポジトリの全 worktree で `MAIN_ROOT` が同一**になり `TS_FILE` が 1 本に collapse する。Step 1 は `>` の truncate で書くため、後から始まったセッションが先行セッションのマーカーを消す。
+
+これが厄介なのは、汚染が**欠測（`-1`）ではなく「もっともらしい小さい値」**として入る点。`duration_fleet_min` は `## 5` / triage-guide `## 7` `## 9` のロールバック判断の一次指標なのに、並行開発環境では静かに過小報告される（実測: 52 分のレビューが約 8 分と出た。43 分後に別 worktree のセッションが `t0` を上書きしていた）。`dev-workflow:worktree-setup` で worktree を並列運用する前提のマーケットプレイスなので、この衝突は例外ではなく常態になりうる。
+
+**パスの識別子は `--show-toplevel`（= その worktree 自身のパス）から作る**。`--git-common-dir` が全 worktree で同じ値を返すのに対し、`--show-toplevel` は**worktree ごとに異なる**ので、これ 1 つで並行セッションを分離できる。同一セッション内では Step 1 と publish の両方が同じ worktree の中で走る（review は ExitWorktree より前に publish する）ため、決定性も保たれる:
+
+```bash
+# 両 skill 共通。WT は「今いる worktree のルート」= 並行セッションの識別子
+WT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+
+# review: さらに PR 番号を混ぜる（同一 worktree から別 PR を続けてレビューした残骸と分ける）
+TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$WT" | cksum | cut -d' ' -f1)-pr<PR番号>"
+
+# self-review: WT だけで足りる（PR を持たない）
+TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$WT" | cksum | cut -d' ' -f1)"
+```
+
+- **ブランチ名を識別子に使わないこと**。`git rev-parse --abbrev-ref HEAD` は **detached HEAD でも文字列 `HEAD` を返す**（`git bisect` 中・特定コミットの検証中に発生）。`${VAR:-fallback}` は空でないので発火せず、detached な worktree はすべて同じ slug に collapse する。切り詰め（`cut -c1-40`）も長いブランチ名の共通接頭辞を衝突させる。**「同一ブランチは複数 worktree で checkout できないから強い識別子」という理屈は detached 状態では成立しない**
+- **識別子の取得に失敗したときの縮退先は「欠測」であって「誤値」ではない**。`--show-toplevel` が失敗して `pwd` に落ちた場合もパスが変わるだけで、publish 側は別ファイルを読んで `-1`（欠測）になる。他セッションの値を拾って誤報告するより望ましい
+- **publish 後の掃除は、`t2` マーカーが残っていることを確認してから行う**:
+
+  ```bash
+  grep -q '^t2 ' "$TS_FILE" 2>/dev/null && rm -f "$TS_FILE"
+  ```
+
+  これは**所有権チェックではなく、そう振る舞う近似**である。ファイルの中身は `t0/t1/t1b/t2 <epoch>` だけで書き手を識別しないため、パスが衝突した場合には「他セッションが書いた `t2`」にヒットしうる。衝突自体は上の `WT` 識別子で塞いでおり、このガードは**万一の衝突時に掃除より他セッションの計測を優先する**ための二段目。「自分が書いたファイルにのみ効く」と読まないこと
+
+## 14. 所要時間の区間分割計測（review / self-review 共通 / v2.41.0 で 3 分割・v2.43.0 で explore 追加）
+
+`duration_min` 単独では **agent の実行時間・メインコンテキストの思考時間・人間の応答待ち**が 1 個の数字に潰れ、どの改善が効いたかを判定できない（実測: 3 体 210 分のサンプルが 1 件あるだけで、内訳が不明なため次の打ち手を選べなかった）。`TS_FILE` に区間マーカーを追記して分割する。
+
+> **測れないものを先に確定しておく（v2.43.0）**: **オーケストレーターが reviewer プロンプトを書いていた時間は、マーカーでは分離できない。** プロンプトのテキストを書く行為が、そのまま Agent call の発行だからである。「書き終わったが、まだ発行していない」瞬間が存在しないため、マーカーを Agent call より前に置けば書く前に発火し、後ろに置けば agent は既に走り出している。実測（v2.43.0 の self-review、reviewer 5 + specialist 1 体）でも、発行直前に置いたマーカーは**7 秒**を記録した一方で fleet 全体は 22 分だった。**プロンプト組み立てコストは `duration_fleet_min` に含まれる**と受け入れ、外出し（`## 3.5`）の効果は `duration_fleet_min` を `size_tier` × `agents.reviewer` × `effort` で層別して見る。マーカーを増やして測ろうとしないこと。
 
 **マーカーの書き込み点**（いずれも `## 13` の `MAIN_ROOT` 導出式で決めた同じ `TS_FILE` に追記する）:
 
@@ -288,42 +376,54 @@ TS_FILE="${TMPDIR:-/tmp}/.review-start-$(printf %s "$MAIN_ROOT" | cksum | cut -d
 |---|---|---|
 | `t0` | review Step 1 / self-review Step 1 の冒頭（`>` で新規作成） | レビュー開始 |
 | `t1` | **最初の agent を一括発行する直前**（explorer を配置していれば explorer 発行直前 = review Step 4 / self-review Step 3、していなければ reviewer 発行直前 = review Step 5 / self-review Step 4） | triage 区間の終わり |
+| `t1b` | **explorer 結果を回収した直後**（explorer を 1 体以上起動した場合のみ書く） | explorer wave の終わり |
 | `t2` | **初回レポートを出力した直後**（review Step 7 / self-review Step 6。締めフローに入る前） | fleet 区間の終わり |
 | `t3` | publish 時点（ファイルには書かず `date +%s` で取る） | 全体の終わり |
 
 ```bash
-# 各マーカーの書き込み（t0 のみ > で新規作成、以降は >> で追記）
+# 各マーカーの書き込み（t0 のみ > で新規作成、以降は >> で追記）。
+# 実行位置は上表のとおりで、まとめて実行するものではない
 echo "t0 $(date +%s)" >  "$TS_FILE"   # Step 1
 # t1 は explorer / reviewer の両起動点に同じ行を置き、先に到達した方だけが書く（二重記録防止）
 grep -q '^t1 ' "$TS_FILE" 2>/dev/null || echo "t1 $(date +%s)" >> "$TS_FILE"
+echo "t1b $(date +%s)" >> "$TS_FILE"  # explorer 結果の回収直後（explorer を起動した場合のみ）
 echo "t2 $(date +%s)" >> "$TS_FILE"   # 初回レポート出力の直後
 ```
 
 > **`t1` を explorer 発行直前に置く理由（v2.41.0 の修正）**: `t1` を reviewer 発行直前に固定すると、explorer wave（high で最大 4 体 / xhigh・max で 6 体）の実時間が triage 区間に丸ごと混入し、「メインコンテキストの思考時間の代理指標」という `duration_triage_min` の定義が成立しない。explorer を配置したレビューで triage が膨らみ、**「思考量が主因」という誤診に誘導される**（そしてプロンプト圧縮という誤った打ち手を選ばせる）。agent wave はすべて fleet 側に入れる。
+
+> **`t1b` を足した理由（GitHub issue #100 D）**: 上の修正の副作用として、fleet 区間に「explorer wave + reviewer wave + 動的ラウンド + プロンプト構築 + scoring」が全部入り、**どの wave が何分かかったのかが分からない**。`t1`→`t1b` を切り出すと explorer wave 単独の実時間が取れ、triage-guide `## 5.1` が Phase 0 で提示する「wave あたり目安 6〜16 min」を実測で裏付けられる（v2.43.0 の実測: explorer 2 体で 5.9 分）。
+>
+> **この区間も「純粋な agent 時間」ではない**（explorer プロンプトを書く時間が入る）。ただし explorer は体数も 1 体あたりのプロンプトも reviewer より小さいので汚染は相対的に小さい。**「メインコンテキストの思考時間」を測るフィールドではない** — それは上記のとおり原理的に測れない。
+>
+> explorer を配置しなかったレビューでは `t1b` を書かず `duration_explore_min` は `-1`（該当なし）にする。0 を publish すると「explorer wave が一瞬で終わった」と誤読される。
 
 **publish 時の算出**（欠測は `-1`。ファイルが無い / マーカーが欠ける場合も 0 と混同しない）:
 
 ```bash
 NOW=$(date +%s)
 DURS=$(awk -v now="$NOW" '{t[$1]=$2} END {
-  printf "%d %d %d %d",
+  printf "%d %d %d %d %d",
     ("t0" in t) ? int((now - t["t0"])/60) : -1,
     ("t0" in t && "t1" in t) ? int((t["t1"] - t["t0"])/60) : -1,
     ("t1" in t && "t2" in t) ? int((t["t2"] - t["t1"])/60) : -1,
-    ("t2" in t) ? int((now - t["t2"])/60) : -1
+    ("t2" in t) ? int((now - t["t2"])/60) : -1,
+    ("t1" in t && "t1b" in t) ? int((t["t1b"] - t["t1"])/60) : -1
 }' "$TS_FILE" 2>/dev/null)
 # 分割代入は word splitting に依存しない read を使う（zsh は `set -- $VAR` で分割しない）
-read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING <<< "${DURS:--1 -1 -1 -1}"
+read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE <<< "${DURS:--1 -1 -1 -1 -1}"
 ```
 
 - `duration_min`（= `$DUR`）は **従来どおり全体**（t0→t3）。後方互換のため意味を変えない
-- `duration_triage_min` = t0→t1: PR/diff 収集・Phase 0・起動前検算・プロンプト構築。**メインコンテキストの思考時間の代理指標**
-- `duration_fleet_min` = t1→t2: reviewer 発火から初回レポートまで。**agent wave の実時間 + scoring/レポート生成**
+- `duration_triage_min` = t0→t1: PR/diff 収集・Phase 0・起動前検算。**メイン思考量の代理指標として使わない**（explorer 未配置なら reviewer プロンプト構築が丸ごとここに入り、配置していても explorer プロンプトの構築が入る）
+- `duration_fleet_min` = t1→t2: 最初の agent 発火から初回レポートまで。**agent wave の実時間 + プロンプト構築 + scoring/レポート生成**。プロンプト構築コストはここに含まれる（上記のとおり分離できない）
+- `duration_explore_min` = t1→t1b: explorer wave の実時間（`duration_fleet_min` の内数）。explorer 未起動時は `-1`。**wave 単価の実測値**として triage-guide `## 5.1` の目安時間を裏付けるのに使う
 - `duration_closing_min` = t2→t3: 締めフロー（精査・解説・ドラフト）。**大半が人間の応答待ち**なので、他の 2 区間と混ぜて比較しない
   - **publisher 差分（必読）**: review は `レポート → 締めフロー 1〜3（人間待ち）→ 締めフロー 4 publish` の順なので t2→t3 が人間待ちを捉える。**self-review は publish（Step 6.4）が Step 7 の修正方針確認より前**にあり構造上 ≒0 になるため、**self-review は `duration_closing_min` に `-1`（測定不能）を入れる**。0 を publish すると「人間待ちが無かった」と誤読される
   - 同じ理由で **`duration_min`（全体）の意味も publisher 間で非対称**（review は締めフロー込み / self-review は Step 7 手前まで）。集計は `plugin` フィールドで層別してから行い、区間比較には `duration_fleet_min` を使う
-- **3 区間の和は `duration_min` と一致しない**ことがある（マーカー欠測時）。一致を仮定した検算をしない
-- 旧サンプルとの層別: `duration_triage_min` フィールドの存在が v2.41.0 以降の publish マーカーになる（triage-guide `## 7` のロールバック条件が `agents` フィールドで版を切るのと同じ流儀。日付では切らない）
+- **triage / fleet / closing の和は `duration_min` と一致しない**ことがある（マーカー欠測時）。一致を仮定した検算をしない。`duration_explore_min` は fleet の**内数**なので和に足さない
+- 旧サンプルとの層別: `duration_triage_min` フィールドの存在が v2.41.0 以降の publish マーカーになる（triage-guide `## 7` のロールバック条件が `agents` フィールドで版を切るのと同じ流儀。日付では切らない）。`duration_explore_min` の存在が v2.43.0 以降のマーカー
+- **`duration_*` が並行セッションに汚染されていないこと**は `## 13.1` の `TS_FILE` セッション識別に依存する。識別子を持たない版（v2.43.0 未満）の値は、同一リポジトリで worktree を並列運用していた期間について「もっともらしい過小値」を含みうるため、ロールバック判断の基準側に使わない
 
 ## 15. embed mode の構造化 findings JSON（self-review Step 6.5 のみ）
 
@@ -378,3 +478,46 @@ read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING <<< "${DURS:--1 -1 -1 -1}"
 - **反証レイヤー（Phase 4.9）の効果は `severity` / `confidence` に反映済み**（Step 5 で verdict 反映を適用してから報告するため、JSON には最終値が入る）。`refuted` で取り下げた MAJOR/MINOR は findings に含まれない。**係争中の BLOCKER/CRITICAL は通常通り findings に残り、`title` または `impact` に `⚠️ 反証メモ:` を含める**（schema_version は据え置き 1。新フィールドは追加しない＝consumer 後方互換）
 - JSON として valid であること（末尾カンマ禁止、ダブルクオート、改行は文字列内で `\n`）
 - このブロックの**後**に `[embed-mode: findings-only, no-prompt]` marker を置く
+
+## 16. `review:completed` payload 契約（review 締めフロー 4・self-review Step 6.4 共通 / 正本）
+
+**両 skill で同一フィールド名を使う**（subscriber が publisher を区別せず集計できるようにするため）。skill 固有の差分だけを各 SKILL.md に書き、フィールドの意味はここを正本とする。
+
+| フィールド | 内容 |
+|---|---|
+| `pr` | PR 番号の文字列。self-review と PR 番号取得失敗時は `"local"` |
+| `effort` | 実行時 `${CLAUDE_EFFORT}` の実値（`low`〜`max`。装飾を付けない）。体数上限と動的ラウンドの起動を左右する条件変数なので、下流の集計は必ずこれで層別する（v2.39.0） |
+| `size_tier` | Phase 0 が判定した規模帯（`small` / `medium` / `large`。triage-guide `## 6.1` の core 基準）。所要時間は規模と体数の両方に効かれるため、帯を混ぜた比較は規模キャップの効果を検出できない（v2.40.0） |
+| `duration_min` ほか `duration_*` | 区間分割の意味・欠測時の扱い・「混ぜて比較しない」理由は `## 14` が正本。`TS_FILE` のパス導出は `## 13.1` |
+| `head_verified` | `{ok, mismatch, unknown}`（review のみ。v2.43.0）。各 agent の `HEAD 検証:` 行の集計で、`unknown` は行が無かった agent 数。`mismatch + unknown > 0` のレビューは指摘の信頼度が落ちる（`## 5`） |
+| `blocker_count` / `critical_count` / `major_count` / `minor_count` | severity 別件数（報告マトリクス通過後） |
+| `missing_coverage` | 欠損観点の focus 名配列。空なら `[]` |
+
+**`agents`** — 実際に**起動した**体数（成功・失敗を問わない。v2.39.0 の上限調整の効果測定に使う）:
+
+- `explorer` / `reviewer`: 初回の体数（`reviewer` に specialist を含めない）
+- `specialist`: red-flag specialist の実起動体数（束ね後）
+- `round2`: Round 2 の再起動 reviewer + 追加 explorer の合計（レポート「動的ラウンド」行の N + M と一致させる）
+- `verify`: 反証エージェントの**体数**。**バッチ化後は ≒ `ceil(実施件数/5)`** なので指摘数の代理指標にならない。**v2.41.0 前後で意味が変わる**（旧: 指摘ごと 1 体）ため `duration_triage_min` の有無で層別してから使う
+- `verify_findings`: 反証で**実際に verdict が返った件数**（v2.41.0）。**レポート反証行の「うち実施 X 件」と一致させる**（ゲート対象 N 件ではない）
+- meta-reviewer / skeptic は含めない（それぞれ `recall_skeptic.fired` とレポートの「動的ラウンド」行で観測できる）
+
+**`result_grid`** — 後段 hook / PR コメント自動投稿の dispatch 用の 5 値: `high`=BLOCKER+CRITICAL / `medium`=MAJOR / `low`=MINOR / `skip`=severity スコープ外でフィルタされた件数 / `error`=agent が失敗した件数（`missing_coverage` の length と一致）。
+
+**`adversarial_verify`** — 反証レイヤーの verdict 集計（`confirmed` / `refuted` / `uncertain` / `severity_inflated` / `contested`=高 severity の係争件数）。スキップ時は全 0。`severity_inflated` は v2.41.0 追加（4 つ目の verdict が集計から漏れていた。バッチ化 + effort 引き下げのロールバック判断に使う。triage-guide `## 9`）。
+
+**`recall_skeptic`** — 冷や読み skeptic の実行記録。high 昇格判断（triage-guide `## 8.5`）の計測データ:
+
+- `surface`: high-risk surface 判定の結果（bool）。**skeptic が effort / userConfig でスキップされた場合も、正規表現部分の判定だけは payload 構築時に必ず実施して記録する** — 「surface=true なのに effort ゲートで走らなかった頻度」が昇格判断の核心メトリクスのため
+- `fired`: skeptic agent が実際に起動したか（bool）
+- `skip_reason`: `fired=false` のときの理由。`"effort"` / `"config"` / `"no-surface"` / `"emergency"`（self-review は `"scope"` = `--focus`/`--exclude` 指定も取りうる）。`fired=true` なら `null`
+- `attribution_schema`: 由来帰属の規約バージョン。**常に `2` を入れる**（2 = 由来タグがレポート書式に規定され dedup のタグ生存も定義された版 = 2.35.1 以降）。schema 1 相当の旧サンプルは `findings_added` が記憶依存で系統的に 0 へ潰れており判断に使えないため下流はこれで濾す。**日付では切れない**（配布ラグで未更新マシンは修正日以降も schema 1 を publish する）
+- `findings_added`: **skeptic 単独由来**（`[recall-skeptic]` タグ）の指摘のうち報告マトリクスを通過した件数。**レポート「動的ラウンド」行の `実行（N 件追加）` の N と同値**（N はヘッダに置かれるが**本文確定後に数えてヘッダへ反映する**。二重管理にしない）。**価値率の分子はこれのみ**
+- `findings_overlap`: **重複 survivor**（`[recall-skeptic:dup]` タグ）の件数。独立到達の記録としては残すが、盲点でなかった事例なので**価値率には算入しない**（混ぜると重複が常態のため価値率が 100% に張り付き、縮小分岐が原理的に発火しなくなる）
+- 両フィールドとも **初回レポート本文のタグ付き指摘を数えて求める**（skeptic フェーズの記憶から再構成しない。publish は遠く、間に精査・解説・ドラフト生成が挟まるため記憶依存にすると系統的に 0 へ潰れる）。**計測点は報告マトリクス通過時点（精査の前）**であり、精査後の調整レポートではない。**精査で取り下げた分は減算しない**（「報告に値する指摘を出せたか」を測るフィールドで、必要性で落ちたかは別軸）
+
+**共通ルール**:
+
+- publish に失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を publisher 名（`code-review:review` / `code-review:self-review`）に上書きして識別する
+- 後方互換: subscriber 側は `critical_count` の存在を仮定してよい（旧 payload との互換性のため必須）。それ以外は新規フィールド追加なので旧 subscriber 影響なし（現物確認: `issue-workflow:issue-maintain` は `pr` と件数しか読まない）
+- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない

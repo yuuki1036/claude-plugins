@@ -16,7 +16,7 @@ Phase 0 実行前に以下の情報を収集する:
 |---|---|---|
 | diff 全文 | `git diff` / `gh pr diff` | Yes |
 | 変更ファイルリスト + 各ファイルの行数 | `--name-only` + `wc -l` | Yes |
-| PR コンテキストブロック（review skill のみ） | SKILL.md Step 2.5 で構築（説明・issue コメント・レビューサマリ・行単位 review comment） | review skill で PR ありの場合 |
+| PR コンテキスト（review skill のみ） | SKILL.md Step 1 が `$PR_CTX_FILE` に保存した原本（説明・issue コメント・レビューサマリ・行単位 review comment）。Phase 0 はメインコンテキストが Read した内容を使う | review skill で PR ありの場合 |
 | CLAUDE.md | プロジェクトルートから読み込み | 存在する場合 |
 | session-context.md | 存在チェック + ブランチ一致チェック | 存在する場合 |
 | Issue/knowledge ファイルの有無 | ファイル存在チェック | 存在する場合 |
@@ -174,7 +174,7 @@ diff に以下の **危険パターン** が検出された場合、対応する
 
 ### PR コンテキストによる観点追加・冗長化（review skill のみ）
 
-SKILL.md Step 2.5 で構築した PR コンテキストブロックの内容も判定シグナルとして使う:
+SKILL.md Step 1 が保存した PR コンテキスト（`$PR_CTX_FILE`）の内容も判定シグナルとして使う:
 
 - PR 説明に「セキュリティ修正」「認可」「脆弱性」等の言及 → security 観点を追加
 - PR 説明に「パフォーマンス改善」「最適化」「N+1」等の言及 → performance 観点を追加・冗長化
@@ -233,6 +233,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 ### 変更特性
 - 規模: {small|medium|large}（core {N} ファイル / {N} 行、全体 {N} ファイル / {N} 行）
 - 実効上限: explorer {N} / reviewer {N} / specialist {N}（effort {値} 上限 {N}/{N}/{N} と規模キャップ {N}/{N}/{N} の min。`## 6.2`）
+- 直列 wave: {下限}〜{上限}（{explorer → }reviewer+skeptic{ → [Round 2 ×{1|2}]}{ → [meta]}{ → [反証]}）／wave あたり目安 6〜16 min
 - リスク因子: [巨大ファイル, 条件分岐追加, 共通モジュール変更, ...]
 - コンテキスト: [session-context, issue-files, knowledge, ...]
 
@@ -252,6 +253,23 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 | R3 | claude-md-compliance | - | - | CLAUDE.md ルール照合 |
 | R4 | spec-compliance | - | E1 | Issue 仕様との整合性検証 |
 ```
+
+### 5.1 直列 wave 数の見積もり（GitHub issue #100 B）
+
+**体数はトークンコストのレバー、wave 数は壁時計のレバー**（`## 7`「体数を壁時計のレバーとして扱わない」の対）。並列発行が効いている限り 1 wave の実時間は「wave 内最長の 1 体」で決まるので、壁時計は体数ではなく**直列に積み上がる wave の本数**で決まる。ところが現状ユーザーに見えるのは体数だけで、wave 数は最後まで見えない。Phase 0 の出力に 1 行足して同じ切り分けをユーザーにも見せる。
+
+| wave | 条件 | 本数 |
+|---|---|:---:|
+| explorer | explorer を 1 体以上配置した場合 | 0 / 1 |
+| reviewer（+ 冷や読み skeptic の相乗り・`## 8.5`） | 常時 | 1 |
+| Round 2（`## 8` Phase 5.5） | effort ≥ high かつ unmet_information あり | 0 / 1（high・規模キャップ帯）/ 2（xhigh・max の 2 段） |
+| meta-reviewer（Phase 5.6） | effort が xhigh / max かつ BLOCKER/CRITICAL あり | 0 / 1 |
+| 反証（`## 9` Phase 5.9） | effort ≥ high かつ対象指摘あり | 0 / 1 |
+
+- **下限 = Phase 0 で確定している wave**（explorer の有無 + reviewer の 1 本）。**上限 = 上表の各行の最大値の総和**（例に依存せずこの算式で出す）
+- 例（effort=xhigh / medium 帯 / explorer 2 体配置）: 下限 = 1（explorer）+ 1（reviewer）= 2、上限 = 2 + 2（Round 2）+ 1（meta）+ 1（反証）= 6 なので `直列 wave: 2〜6（explorer → reviewer+skeptic → [Round 2 ×2] → [meta] → [反証]）`
+- **括弧内の列挙と上限の数を必ず突き合わせる**（`[Round 2 ×2]` は 2 本と数える）。ここがズレると wave 可視化の唯一の出力が誤った目安を提示する
+- 実測が上限に張り付くようなら、削る候補は wave であって体数ではない（`## 8` の 1 段圧縮経路・`## 8.5` の相乗り・`## 8` Phase 5.5 のスキップ条件）
 
 ## 6. 規模判定と規模キャップ（体数上限の第 2 系統）
 
@@ -343,7 +361,7 @@ diff シグナルが読めず観点を決められない場合の既定構成（
 
   **所要時間は `duration_fleet_min` で見る**（v2.41.0 で payload に追加。正本: orchestration-guide `## 14`）。`duration_min`（全体）は締めフローの人間待ちを含み（かつ publisher 間で意味が非対称）、人間の都合で 10 倍振れるため体数調整の効果測定には使えない。体数が効くのは fleet 区間だけ。**比較は `size_tier` を揃えて行う**（v2.40.0 追加）— 所要時間は規模と体数の両方に効かれるため、帯を混ぜた中央値は規模キャップの効果と PR 規模の分布変化を分離できない。
 
-  **体数を壁時計のレバーとして扱わない（v2.41.0）**: 並列発行が効いている限り fleet 区間の実時間は「wave 内最長の 1 体」で決まるため、**体数削減の効果は線形ではない**。そして**体数削減が壁時計に効いた証拠は現時点で存在しない** — v2.39.0 / v2.40.0 の縮小を評価できる区間別サンプルが無く、唯一あった 210 分のサンプルも `duration_min`（内訳不明）だったため判定不能だった。`duration_fleet_min` が貯まるまでは、**体数を壁時計の打ち手として動かさない**（体数削減が確実に効くのはトークンコスト）。壁時計を縮めたい場合にまず触るのは ①1 体あたりの探索量（reviewer-prompts.md `## 1` の探索予算）②直列 wave 数（skeptic 相乗り・`## 8.5`）③メインコンテキストの思考量（`duration_triage_min` で観測）。recall だけ落ちて時間が変わらない改悪を避けるため、**この節のロールバック判断に「時間が長いから体数を減らす」を混ぜない**。
+  **体数を壁時計のレバーとして扱わない（v2.41.0）**: 並列発行が効いている限り fleet 区間の実時間は「wave 内最長の 1 体」で決まるため、**体数削減の効果は線形ではない**。そして**体数削減が壁時計に効いた証拠は現時点で存在しない** — v2.39.0 / v2.40.0 の縮小を評価できる区間別サンプルが無く、唯一あった 210 分のサンプルも `duration_min`（内訳不明）だったため判定不能だった。`duration_fleet_min` が貯まるまでは、**体数を壁時計の打ち手として動かさない**（体数削減が確実に効くのはトークンコスト）。壁時計を縮めたい場合にまず触るのは ①1 体あたりの探索量（reviewer-prompts.md `## 1` の探索予算）②直列 wave 数（`## 5.1` で可視化・skeptic 相乗り `## 8.5`・Round 2 の repo 外スキップ `## 8`。実測は `duration_explore_min` が wave 単価を示す）③メインコンテキストのプロンプト複製量（PR コンテキスト等のファイル経由渡し・orchestration-guide `## 3.5`）。**③は `duration_triage_min` では観測できない** — プロンプトを書く行為と Agent call の発行が同一なのでマーカーで分離できず、コストは `duration_fleet_min` に含まれる（orchestration-guide `## 14`）。③の効果は `duration_fleet_min` を `size_tier` × `agents.reviewer` × `effort` で層別して見る。recall だけ落ちて時間が変わらない改悪を避けるため、**この節のロールバック判断に「時間が長いから体数を減らす」を混ぜない**。
 
   **`review` 由来サンプルは v2.40.0 より前は 1 件も存在しない**（GitHub issue #96 B）。publish が EnterWorktree 配下の cwd 相対パスで行われていたため、`review:completed` は worktree 側の `.claude/events.jsonl` に書かれ、直後の `ExitWorktree(remove)` で worktree ごと消えていた。v2.40.0 で publish 先をメインリポジトリのルートに固定（orchestration-guide `## 13`）するまで、蓄積されていたのは worktree を使わない self-review 由来のみ。**したがって v2.39.0 の high 既定縮小は review 経路については測定できていない** — 判断は v2.40.0 以降のサンプルが貯まってから行う
 
@@ -351,9 +369,16 @@ diff シグナルが読めず観点を決められない場合の既定構成（
 
 ### Phase 5.5: Adaptive deepening (Round 2 / unmet_information 起点)
 
-**起動条件**: 全 reviewer 完了後、reviewer の出力に `unmet_information` フィールドが 1 件以上ある場合のみ起動
+**起動条件**: 全 reviewer 完了後、reviewer の出力に `unmet_information` フィールドが 1 件以上あり、**かつ target の少なくとも 1 件が repo 内で到達可能**な場合に起動
 
 **目的**: reviewer が「この観点を確定するには追加の context が必要」と自覚した領域を 1 round だけ深掘りする適応的再評価
+
+**repo 外 target による全件スキップ（GitHub issue #100 C）**: unmet の target が**全件 repo 外情報**なら、追加探索は構造的に空振りするため wave を 1 本まるごと省く。target の分類は文字列を読めば決まるのでメインコンテキストで判定でき、agent を要さない。
+
+- **repo 外**（到達不能）: DB / 本番環境の実データ、外部サービスの実挙動（デザインツール・実機描画・ブラウザ実測）、このリポジトリに存在しないコード（他リポジトリ・削除済みの旧実装）、意図的にスキップした実行結果（lint / テスト / ビルドの実走）
+- **repo 内**（到達可能）: ソース・型定義・設定・マイグレーション・doc・コミット履歴など、Read / Grep / Glob / git で届くもの
+- **1 件でも repo 内があれば通常どおり起動する。無条件スキップは有害** — 実測では unmet 8 件中 7 件が到達不能だったが、残り 1 件（DB 制約）を Round 2 が repo 内 doc で解決した結果、指摘 1 件の severity が MAJOR → MINOR に変わった。判定に迷う target は repo 内側に倒す
+- スキップした場合は `missing_coverage` に「Round 2 スキップ: unmet 全件が repo 外（<target 要旨>）」として記録し、レポートの「動的ラウンド」行にも理由を出す（silent に落とさない）
 
 **動作（effort で経路が分かれる。実行手順の正本は orchestration-guide `## 6`）**:
 - **high（既定）— 1 段圧縮**: 追加 explorer は起動しない。unmet を申告した reviewer のみ再起動し、**unmet ターゲットを自力探索（Read / Grep / Glob）してから初回 confidence を再評価**させる。直列 wave を 2 → 1 に減らし、sonnet 経由の要約受け渡しも省く（的の絞れた追加探索は opus 自身が掘る方が受け渡しロスがない）
@@ -511,6 +536,10 @@ surface-aware 報告閾値（scoring-guide.md `## 報告マトリクス`）が h
 | xhigh / max | 報告ゾーン全体 + MAJOR まで起動 |
 
 > adaptive(5.5) は high で起動・meta-reviewer(5.6) は xhigh+ のみ。反証レイヤーは「非対称ゾーンを high から狙う」独自ゲートで、5.6 とは起動条件が異なる。
+
+**xhigh / max ゲートと非対称ゾーン論の緊張（据え置きの明示 / GitHub issue #100 補足）**: 本節冒頭は反証対象の設計思想を「詰めると取り下がるのは**不確実だが報告される非対称ゾーン**」と述べているが、xhigh / max のゲートは「報告ゾーン全体 + MAJOR」なので **confidence 95+ の MAJOR / BLOCKER / CRITICAL が全件対象**になる。これは**最も取り下がりにくい層に、直列 wave 1 本（`## 5.1` の目安で 6〜16 min）を使う**ことを意味し、非対称ゾーン論からはみ出す。実測例: 52 分のレビューで最終的に残った反証対象が MAJOR 3 件（conf 95 / 99 / 100）だけという構成になった。
+
+それでも据え置くのは、xhigh / max が**明示 escalation**（「小さな diff を深く読む」の意思表示）であり、この帯で偽陽性を 1 件通すコストが wave 1 本より大きいと判断しているため。ただし**この緊張とコストは記録しておく** — 壁時計を縮める必要が出たとき、xhigh の反証ゲートを「非対称ゾーン + BLOCKER/CRITICAL 95+」に狭める（MAJOR 95+ を外す）のが最初の候補になる。判断は `adversarial_verify` の `refuted` 内訳（95+ MAJOR の取り下げ実績）が貯まってから行う。
 
 ### userConfig による無効化
 

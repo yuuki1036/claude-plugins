@@ -12,20 +12,28 @@ SKILL.md から `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md` として
 このタスクが PR 番号付きで渡された場合、**最初の Bash 呼び出しで必ず以下を実行**:
 
 ```bash
-# 既に対象 PR の HEAD を指していれば checkout をスキップ（親 review worktree が
-# 既に checkout 済みのとき、子 worktree で再 checkout すると
-# "already checked out at <親worktree>" で失敗するため。GitHub issue #69）
-if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "{{HEAD_REF}}" ]; then
-  echo "already on {{HEAD_REF}}, checkout skip"
+# 既に期待 SHA を指していれば何もしない。そうでなければ PR head を fetch して detach で入る。
+# ブランチ名での checkout（gh pr checkout / git checkout <branch>）は使わない —
+# 親 review worktree が同じブランチを保持しているため二重チェックアウト禁止で必ず失敗する
+# （GitHub issue #98）。detach なら親と競合しない。
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  # 未コミット変更があるツリーは隔離 worktree ではない（＝ユーザーの作業ツリー）と判断し、
+  # detach しない。detach 自体は dirty でも exit 0 で成功してしまうため、ここで自己判定する
+  echo "working tree dirty: 隔離 worktree ではないと判断して checkout をスキップする"
+elif [ "$(git rev-parse HEAD 2>/dev/null)" = "{{HEAD_SHA}}" ]; then
+  echo "already at {{HEAD_SHA}}, checkout skip"
 else
-  gh pr checkout {{PR_NUMBER}} 2>&1 || echo "checkout failed: HEAD 検証で続行可否を判断する"
+  git fetch origin refs/pull/{{PR_NUMBER}}/head || echo "fetch failed: PR head を取得できない"
+  git checkout --detach FETCH_HEAD || echo "checkout failed: detach に失敗した"
 fi
-git rev-parse --abbrev-ref HEAD
+git rev-parse HEAD   # {{HEAD_SHA}} と一致することを必ず確認する
 ```
 
 `isolation: "worktree"` で起動された子 worktree は親の branch を継承せず、既定では origin/default-branch から派生する。Read 系ツールは worktree のローカルファイルを見るため、checkout を省くと PR の変更を観測できず**深刻な偽陽性の原因**になる。self-review からは PR 番号が渡らないためスキップ可。
 
-`{{HEAD_REF}}` はオーケストレーターが prompt 冒頭に明記する対象 head ref に置換される。`git rev-parse --abbrev-ref HEAD` の結果が PR ブランチ名（プロンプトで指示された head ref）と一致することを必ず確認すること。checkout に失敗し、かつ HEAD も head ref と一致しない場合はレビュー結果の冒頭に warning を追加し、影響を受けた指摘の confidence を下げる。
+`{{HEAD_SHA}}` はオーケストレーターが prompt 冒頭に明記する期待 HEAD SHA（`gh pr view --json headRefOid`）に置換される。**最後の `git rev-parse HEAD` の出力が `{{HEAD_SHA}}` と一致することを必ず確認すること**（`{{HEAD_REF}}` はブランチ名なので detach 後の検証には使えない。文脈情報としてのみ参照する）。
+
+**結果は出力フォーマットの `HEAD 検証:` 行に必ず書くこと**（後述。`一致` / `不一致` / `未実行` のいずれか）。この行はオーケストレーターが機械的に読み、不在・不一致なら当該 reviewer の指摘全件に `[unverified: HEAD 不一致]` を付けて `missing_coverage` に記録する。**行を省くと「検証した」とは扱われない。**一致しなかった場合はレビュー結果の冒頭にも warning を明記し、diff に依存する指摘の confidence を下げる（silent に続行しない）。
 
 ---
 
@@ -162,6 +170,8 @@ explorer の報告と矛盾する問題を発見した場合は、自分で Read
 ```
 ### レビュー結果
 
+HEAD 検証: <git rev-parse HEAD の実測値> / 期待 <{{HEAD_SHA}}> / 一致|不一致|未実行
+
 #### 指摘事項
 1. [confidence: XX][severity: BLOCKER|CRITICAL|MAJOR|MINOR][カテゴリ] 指摘内容
    ファイル: path/to/file:行番号
@@ -173,6 +183,8 @@ explorer の報告と矛盾する問題を発見した場合は、自分で Read
 - 変更の概要理解
 - 主要なリスク
 ```
+
+**`HEAD 検証:` 行は PR 番号付きで起動された場合の必須行**（self-review 経由で PR 番号が渡らない場合は省略してよい）。省略・`不一致`・`未実行` はオーケストレーターが欠損として扱う。
 
 **重要**: `[confidence: XX]` と `[severity: XXX]` の両方を指摘冒頭に必ず明記すること。severity の欠落は CRITICAL 扱いとして処理されるため、MINOR/MAJOR/BLOCKER に該当する指摘は明示すること。
 
@@ -252,13 +264,13 @@ session-context が有効な場合、全 reviewer のプロンプト末尾に追
 
 ## 2.5. PR コンテキスト注入テンプレート（review skill のみ）
 
-review skill から呼び出される reviewer には、SKILL.md Step 2.5 で構築した PR コンテキストブロックを以下の形式で末尾に追加する。self-review skill では PR が存在しないため注入しない。
+review skill から呼び出される reviewer には、SKILL.md Step 2.5 が保存した PR コンテキストファイルの**パス**を以下の形式で末尾に追加する（本文は転記しない。理由と例外は orchestration-guide `## 3.5`）。self-review skill では PR が存在しないため注入しない。
 
 ```
 ---
 ## PR コンテキスト
 
-{SKILL.md Step 2.5 の PR コンテキストブロック全文}
+**最初に `{PR_CTX_FILE のパス}` を Read すること**（PR 説明 / issue コメント / レビューサマリ / 行単位 review コメントの原本。下の検出ルールはこの内容に対して適用する）。読めなかった場合は、その旨をレビュー結果の冒頭に明記した上で下の検出ルールを適用せずに続行する（読めていないのに「既指摘なし」と判断しない）。
 
 ### 検出ルール（confidence 数値は scoring-guide.md が正本）
 

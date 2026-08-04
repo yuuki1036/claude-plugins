@@ -15,7 +15,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [adr-keeper](#adr-keeper) | 0.3.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.1 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [claude-meta](#claude-meta) | 1.13.2 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.42.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [code-review](#code-review) | 2.43.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.4.3 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.25.0 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.0 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
@@ -54,7 +54,7 @@ Claude Code 自体の設定管理・改善ツール。CLAUDE.md 監査改善、C
 - **skills**: `cc-catch-up`, `claude-code-setup`, `claude-md-improver`, `component-addition-advisor`, `eval-runner`
 
 ### code-review
-Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity 2 軸スコアリング、体数上限は effort 上限（high 既定は縮小構成 + 観点バンドル / 冗長ペア・specialist 個別起動は xhigh/max のみ）と規模キャップ（テスト・doc を除いた core 規模。深さを担う層は削らない）の min、red-flag specialist 自動起動（high 既定は束ね起動）、high severity 検出時の meta-reviewer ラウンド、冷や読み skeptic（Phase 5.8/4.8: high-risk surface で findings 非注入の独立 opus が fleet 共通盲点を破る recall 補強）、反証レイヤー（Phase 5.9/4.9: 指摘を独立エージェントが 5 件ずつのバッチで反証、高 severity は消さず係争注記、specialist 除外）、high-risk surface に限る surface-aware 報告閾値。skeptic は reviewer wave に相乗り発火（findings 非注入＝ reviewer 出力に非依存）、reviewer には 1 体あたりの探索予算を課す。所要時間は triage / fleet / closing に 3 分割して計測。事実主張のツール接地 (claim grounding) と over-correction ガード（issue #71）。self-review は `--embed` で他プラグインから委譲可能。
+Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity 2 軸スコアリング、体数上限は effort 上限（high 既定は縮小構成 + 観点バンドル / 冗長ペア・specialist 個別起動は xhigh/max のみ）と規模キャップ（テスト・doc を除いた core 規模。深さを担う層は削らない）の min、red-flag specialist 自動起動（high 既定は束ね起動）、high severity 検出時の meta-reviewer ラウンド、冷や読み skeptic（Phase 5.8/4.8: high-risk surface で findings 非注入の独立 opus が fleet 共通盲点を破る recall 補強）、反証レイヤー（Phase 5.9/4.9: 指摘を独立エージェントが 5 件ずつのバッチで反証、高 severity は消さず係争注記、specialist 除外）、high-risk surface に限る surface-aware 報告閾値。skeptic は reviewer wave に相乗り発火（findings 非注入＝ reviewer 出力に非依存）、reviewer には 1 体あたりの探索予算を課す。所要時間は triage / explore / fleet / closing に分割して計測（計測ファイルは worktree パスと PR 番号で識別し並行セッション間の衝突を防ぐ。プロンプト構築コストは原理的に分離できず fleet に含まれる）。子 agent は PR head を detach で checkout し、期待 HEAD SHA との突合結果を必須行で報告する。事実主張のツール接地 (claim grounding) と over-correction ガード（issue #71）。self-review は `--embed` で他プラグインから委譲可能。
 - **commands**: `review`, `self-review`
 - **skills**: `review`, `self-review`
 - **hooks**: SessionStart
