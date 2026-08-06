@@ -67,7 +67,7 @@ REF_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\s)`'\"]+)")
 
 # Event Bus: 実際に publish される event 名 ⇔ event を記載する doc の同期検証.
 # publisher は skill(SKILL.md) / command(commands/*.md) / hook スクリプト(hooks/scripts/*.sh)
-# の 3 種に分散するため、宣言 frontmatter は置かず `event_bus_publish "<event>"` の
+# の 4 種に分散するため、宣言 frontmatter は置かず `event_bus_publish "<event>"` の
 # リテラル呼び出しを grep 実測（=正本）し、event を記載する 3 系統の doc と照合する
 # （宣言⇔実装の二重管理を作らない）:
 #   1. CLAUDE.md イベント表（event 集合）
@@ -79,7 +79,15 @@ EVENT_PUBLISH_RE = re.compile(r'event_bus_publish\s+"([a-z][a-z_]*:[a-z][a-z_]*)
 EVENT_TABLE_ROW_RE = re.compile(r"^\|\s*`([a-z][a-z_]*:[a-z][a-z_]*)`\s*\|")
 EVENT_INLINE_RE = re.compile(r"`([a-z][a-z_]*:[a-z][a-z_]*)`")
 INDEX_SECTION_RE = re.compile(r"^### ([a-z][a-z-]+)\s*$")
-EVENT_PUBLISHER_GLOBS = ["*/skills/**/SKILL.md", "*/commands/*.md", "*/hooks/scripts/*.sh"]
+# publish は skill 本文 / hook / **プラグイン同梱スクリプト** のいずれからも行われる.
+# scripts/ を外すと, publish 処理をスクリプトへ切り出したプラグインの publisher を
+# 見失い「表に載っているが publish されていない」の偽陽性になる（code-review v2.48.0 で実際に発生）.
+EVENT_PUBLISHER_GLOBS = [
+    "*/skills/**/SKILL.md",
+    "*/commands/*.md",
+    "*/hooks/scripts/*.sh",
+    "*/scripts/*.sh",
+]
 
 
 def read_text(path: Path) -> str:
@@ -260,6 +268,12 @@ def _collect_published_pairs() -> set[tuple[str, str]]:
     for pattern in EVENT_PUBLISHER_GLOBS:
         for path in ROOT.glob(pattern):
             plugin = path.relative_to(ROOT).parts[0]
+            # pathlib の glob は先頭ドットのディレクトリを除外しないため
+            # `.claude-plugin/scripts/*.sh` 等が混ざる. plugin 名を導出できない
+            # ものは publisher として扱わない（INDEX.md の見出し規約 `^### [a-z]`
+            # にも載せられず, 恒久エラーになる）
+            if not (ROOT / plugin / ".claude-plugin" / "plugin.json").is_file():
+                continue
             for event in EVENT_PUBLISH_RE.findall(read_text(path)):
                 pairs.add((plugin, event))
     return pairs
@@ -341,6 +355,43 @@ def check_event_bus_sync(errors: list[str]) -> None:
         )
 
 
+# `<focus>` / `{{PLUGIN_ROOT}}` / `*` を含むパスはテンプレート表記なので実在検査から外す
+PLACEHOLDER_RE = re.compile(r"[<>*]|\{\{")
+
+
+def check_doc_anchors(plugin_dir: Path, errors: list[str]) -> None:
+    """`<file>.md ## <番号>` 形式の相互参照が実在の見出しを指すか検証する.
+
+    参照ドキュメントを利用タイミング別に分冊すると, 節番号を維持したまま本文だけが
+    別ファイルへ移る. このとき参照側のファイル名を張り替え忘れても
+    「ファイルは実在する」ので check_references は素通りし, 遅延読み込みの導線だけが
+    静かに切れる（code-review v2.47.0 の分割で実際に 11 箇所発生）.
+    """
+    tag = "doc-anchor"
+    ref_dir = plugin_dir / "references"
+    if not ref_dir.is_dir():
+        return
+    # 見出しの節番号を収集（`## 8.5. xxx` / `### 6.2 xxx` / `### 8a. xxx` を許容）
+    heading_re = re.compile(r"^#{2,4}\s+(\d+(?:\.\d+)?|\d+[ab])[.\s]", re.M)
+    anchors: dict[str, set[str]] = {}
+    for md in ref_dir.rglob("*.md"):
+        anchors[md.name] = set(heading_re.findall(read_text(md)))
+    # 参照側: `foo.md ## 8.5` / `foo.md \`## 8.5\`` の両形式
+    ref_re = re.compile(r"([a-z][a-z0-9-]*\.md)\s*`?##\s+(\d+(?:\.\d+)?)`")
+    targets = sorted(ref_dir.rglob("*.md"))
+    targets += sorted((plugin_dir / "skills").glob("*/SKILL.md"))
+    targets += sorted((plugin_dir / "scripts").glob("*.sh"))
+    for path in targets:
+        for fname, sec in ref_re.findall(read_text(path)):
+            if fname not in anchors:
+                continue  # references/ 外のファイル名は対象外
+            if sec not in anchors[fname]:
+                errors.append(
+                    f"[{tag}] {path.relative_to(ROOT)}: `{fname} ## {sec}` は実在しない節を指す "
+                    f"（分割で移動した可能性. ファイル名を張り替えるか節を復元する）"
+                )
+
+
 def check_references(plugin_dir: Path, errors: list[str]) -> None:
     """${CLAUDE_PLUGIN_ROOT}/... の参照切れを検査する.
 
@@ -352,11 +403,16 @@ def check_references(plugin_dir: Path, errors: list[str]) -> None:
     targets += sorted((plugin_dir / "skills").glob("*/SKILL.md"))
     targets += sorted((plugin_dir / "commands").glob("*.md"))
     targets += sorted((plugin_dir / "agents").glob("*.md"))
+    # references/ 配下も対象にする. 参照の重心がここへ移った以上,
+    # SKILL.md だけを見ていては参照切れを検出できない
+    targets += sorted((plugin_dir / "references").rglob("*.md"))
     for md in targets:
         text = read_text(md)
         seen: set[str] = set()
         for m in REF_RE.finditer(text):
             ref = m.group(1).rstrip(".,);")
+            if PLACEHOLDER_RE.search(ref):
+                continue  # `<focus>` 等のテンプレート表記は実在検査の対象外
             if ref in seen:
                 continue
             seen.add(ref)
@@ -572,6 +628,7 @@ CHECKS = [
     check_hooks_safety,
     check_safe_hook_sync,
     check_references,
+    check_doc_anchors,
     check_trigger_phrases,
 ]
 

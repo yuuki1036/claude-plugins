@@ -50,7 +50,7 @@ if [ -z "$CHANGED" ]; then
   exit 0
 fi
 
-if ! echo "$CHANGED" | grep -qE '(\.claude-plugin/.*\.json|/skills/|/commands/|/hooks/|/agents/|/references/|/CHANGELOG\.md|marketplace\.json)'; then
+if ! echo "$CHANGED" | grep -qE '(\.claude-plugin/.*\.json|/skills/|/commands/|/hooks/|/agents/|/references/|/scripts/|/CHANGELOG\.md|marketplace\.json)'; then
   exit 0
 fi
 

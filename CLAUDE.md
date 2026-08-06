@@ -29,6 +29,8 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
   skills/                        # スキル定義（SKILL.md + references/）
   agents/                        # エージェント定義（frontmatter付き markdown）
   references/                    # プラグイン共通の参照ドキュメント（skills/ 配下とは別。一部プラグインのみ）
+  scripts/                       # 同梱スクリプト（一部プラグインのみ）。SKILL 本文に bash を書き下ろさず
+                                 # ここへ寄せる。lib/ に共通処理を置いてよい（複製を作らない）
   hooks/                         # フック定義（hooks.json + scripts/）
     lib/safe-hook.sh             # 正本の byte-identical 複製（hook 持ちプラグインのみ）
   rules/                         # SessionStart 等で注入されるルール（一部プラグインのみ）
@@ -200,7 +202,7 @@ event_bus_clear
 プラグインの新規作成・変更時は `/quality-check` で全プラグインの品質バリデーションを実行する。
 個別のスキル開発時は `docs/skill-writing.md` の観点（description の branch 設計・情報階層・no-op 剪定・失敗モードカタログ）で自己点検し、description / トリガーフレーズを変えたら evals で回帰を確認する。
 
-**自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/agents/` / `*/references/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
+**自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/agents/` / `*/references/` / `*/scripts/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
 
 - `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期
 - `validate_plugin_quality.py`: allowed-tools / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ / Event Bus 同期 / hook 自己判定 / コンテキスト予算ほか — **検査項目の正本はスクリプト冒頭 docstring**（ここに列挙を複製しない）
