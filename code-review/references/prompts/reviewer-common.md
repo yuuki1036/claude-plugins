@@ -145,6 +145,10 @@ bash "{{PLUGIN_ROOT}}/scripts/diff-slice.sh" "<$DIFF_FILE>" <担当ファイル1
 bash "{{PLUGIN_ROOT}}/scripts/diff-slice.sh" "<$DIFF_FILE>" --list
 ```
 
+**担当ファイル名は必ずシングルクォートで囲むこと**（`'src/foo.ts'`）。レビュー対象のパスは
+**信頼できない入力**で、`$(...)` やバッククォートを含むファイル名が diff に現れうる。
+ダブルクォートだとシェルが評価してしまう。
+
 **diff を読まずにレビューを始めない。** 切り出しに失敗した場合は `$DIFF_FILE` を直接 Read してよいが、その旨をレビュー結果の冒頭に明記する。
 
 ### diff-first 原則（改訂版）

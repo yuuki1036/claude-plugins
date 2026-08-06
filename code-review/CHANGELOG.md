@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.48.2] - 2026-08-07
+
+### Fixed
+- **PR ブランチ名がシェル行に補間される経路を塞いだ**（`scripts/detect-dev-worktree.sh` + review SKILL 締めフロー 6）。ブランチ名は PR 作者が完全に制御する外部入力で、git の ref 名規則は `$` / バッククォート / `;` / `|` を禁じていない（`feat/$(...)` は有効な ref 名）。SKILL 本文が `detect-dev-worktree.sh "<PR ブランチ名>"` と書いて LLM に実値を埋めさせる形だったため、その文字列がレビュアーのシェルで評価されうる状態だった。**この構造は v2.46.0 より前から存在し（self-review の反証レイヤーが pre-existing と判定）本改修が導入したものではない**が、スクリプト化で公開契約として再固定するタイミングなので塞いだ:
+  - スクリプトを `--pr <N>` 受けに変更し、ブランチ名の取得を内部の `gh pr view` に閉じた。**LLM が触るのは数値だけ**になる（`--pr` は数値のみ受理）
+  - `--branch <name>` も残すが、SKILL からは使わない。比較は `awk -v` + 文字列等価でシェル再評価を経ない
+  - 検証: `--pr 'x$(touch /tmp/PWNED)'` は exit 2 で弾かれ、`--branch 'feat/$(touch ...)'` でもファイルは作られないことを確認
+- **担当ファイル名のクォート規約を agent 側に明記**（`prompts/reviewer-common.md` / `prompts/explorer-common.md`）。`diff-slice.sh` に渡すパスはレビュー対象由来＝信頼できない入力なので、シングルクォートで囲むよう指示した（ダブルクォートだと `$(...)` が評価される）
+- **`detect-dev-worktree.sh` のマーカー判定に frontend を追加**。`envs/.backend.env.worktree` のみを見ており、frontend だけの worktree で検出漏れになっていた（`dev-workflow` の cleanup-checklist は両方を条件にしている）
+
+### Added
+- **削減効果の実トークン実測を `design-notes/orchestration-rationale.md` に記録**。同一指示の subagent 2 体に旧セット / 新セットを Read させ、transcript の `usage` から比較した（fleet を回さず、変えた変数だけを分離できる）。**doc がコンテキストに積む実トークンは 135,433 → 75,342（−44.4%）**、Read 呼び出しは 9 → 5 回。あわせて **`bytes/3` の概算が絶対値を約 25% 過小評価する**ことが判明したので、実測係数 ≒ 0.44 tokens/byte を記録した（従来 CHANGELOG に書いてきた「103.5k → 54.9k」は削減率としては妥当だが絶対値は低め）
+
 ## [2.48.1] - 2026-08-07
 
 v2.46.0〜v2.48.0 の再編を `/self-review`（explorer 2 + reviewer 6 + specialist 2 + 反証 1）にかけて見つかった**自分で入れた退行**を潰した版。反証レイヤーが BLOCKER 2 件を pre-existing / 環境依存として却下したので、確定した分だけを直している。

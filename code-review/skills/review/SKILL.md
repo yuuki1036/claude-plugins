@@ -496,7 +496,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
 6. **関連 worktree の teardown 案内（任意・非ブロッキング）**: ExitWorktree 後（main clone 上）、PR ブランチに紐づく**開発用 worktree**（dev-workflow:worktree-setup で作成したもの）が残っていないか検出する。ブランチ名一致だけではレビュー用に EnterWorktree した一時 worktree（`.claude/worktrees/` 配下）と区別できないため、**パス除外 + worktree-setup マーカーの 2 条件**で開発用 worktree に限定する:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-dev-worktree.sh" "<PR ブランチ名>"
+   # ブランチ名を SKILL 本文に埋めない（PR 作者が制御する文字列がシェルで評価される経路になる）。
+   # PR 番号だけ渡し、ブランチ名の取得はスクリプト内に閉じる
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-dev-worktree.sh" --pr <PR番号>
    ```
 
    - 検出した場合のみ、最後に一言案内する: 「関連する開発用 worktree が残っています: `<path>`。作業が完了していれば該当 worktree 内で `/worktree-teardown` を実行して片付けられます」
