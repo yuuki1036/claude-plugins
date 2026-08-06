@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.44.0] - 2026-08-06
+
+蓄積済み 43 件（`review` 12 / `self-review` 31）を実際に集計して、**計測が答えられない問い**と**規約と実データの乖離**を 3 つ見つけて塞いだ版。仕様（scoring / 報告マトリクス）には手を入れていない — 切り分けデータが無い段階で precision に関わる不可逆な変更をしないため。
+
+### Added
+- **`pre_adjust_counts` を `review:completed` payload に追加**（orchestration-guide `## 16` + 両 SKILL のスコアリング手順 1）。スコアリング手順 1 完了時点（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 別件数。既存の `*_count` は報告マトリクス通過**後**の値しか持たないため、**「reviewer が検出しなかった」と「検出したが調整で消えた」を事後に区別できなかった**:
+  - 動機は下記の観測（triage-guide `## 7` の「未解決の観測」に記録）。**review 経路 12 件すべてで `major_count`=0** の一方 self-review は 31 件で MAJOR 78 件。MAJOR と MINOR は報告マトリクス上どちらも confidence 95+ の同一閾値なのに review では MINOR だけ 27 件通っており、しかも review は `recall_skeptic.surface` が 10/10 で true（= surface-aware 閾値で MAJOR が 85+ に**緩和されている**状態）でゼロ。両 SKILL の scoring 規約は同一であることを確認済みで、仕様差では説明がつかない
+  - **一段目（検出由来 / 調整由来）だけを切るフィールド**。降格（`severity-inflated` / `[scope:out]`）と confidence 落ちは同じ差分に合流するので内訳は分離できない。二段目が必要と分かってから内訳フィールドを足す（LLM が手で組む JSON なのでフィールド数自体がコスト）
+  - 版マーカー: `pre_adjust_counts` の存在が v2.44.0 以降
+
+### Fixed
+- **`missing_coverage` の語彙を固定**（orchestration-guide `## 16` + 両 SKILL のレポート出力）。要素を **識別子のみ**（`<focus 名>` / `<phase 名>` / `<phase 名>:<focus 名>`）に限定し、理由・件数・finding id・自由文の混入を禁止した。理由はレポート本文の「⚠️ 欠損観点」セクションに書く。実データでは同一概念が `adversarial-verify:finding-A` / `adversarial-verify-finding3` / `adversarial-verify: F2 未反証` / `adversarial-verify: 対象が実証済み` の **4 通りに分裂**しており、`group_by` 集計が成立していなかった（欠損観点の偏りを見るのが本フィールドの唯一の用途なので、綴りが割れると計測目的そのものが消える）
+- **`result_grid.error` = `len(missing_coverage)` の一致要件を撤回**（orchestration-guide `## 16`）。`missing_coverage` は agent 失敗だけでなく「観点未起動（reviewer 上限超過・条件不成立）」「フェーズスキップ」も含むため、正しい関係は `error ≤ len(missing_coverage)` の包含。**実データ 43 件中 11 件で不一致**（うち 10 件は `error=0` で `missing_coverage` が非空）。一致を仮定した検算をしない旨を明記した
+
 ## [2.43.0] - 2026-08-04
 
 `review` 経路で 2 つの構造的な壊れ（子 agent が base branch を読む / 計測が並行セッションに汚染される）を塞ぎ、壁時計の残る主因である「メインコンテキストのプロンプト複製」と「直列 wave 数」に手を入れた版。

@@ -491,7 +491,8 @@ read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE <<< "${DURS:--1 -1 -1 -1 -
 | `duration_min` ほか `duration_*` | 区間分割の意味・欠測時の扱い・「混ぜて比較しない」理由は `## 14` が正本。`TS_FILE` のパス導出は `## 13.1` |
 | `head_verified` | `{ok, mismatch, unknown}`（review のみ。v2.43.0）。各 agent の `HEAD 検証:` 行の集計で、`unknown` は行が無かった agent 数。`mismatch + unknown > 0` のレビューは指摘の信頼度が落ちる（`## 5`） |
 | `blocker_count` / `critical_count` / `major_count` / `minor_count` | severity 別件数（報告マトリクス通過後） |
-| `missing_coverage` | 欠損観点の focus 名配列。空なら `[]` |
+| `pre_adjust_counts` | `{blocker, critical, major, minor}`（v2.44.0）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の生の severity 分布。下の「調整前後の分離」を参照 |
+| `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
 
 **`agents`** — 実際に**起動した**体数（成功・失敗を問わない。v2.39.0 の上限調整の効果測定に使う）:
 
@@ -502,7 +503,31 @@ read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE <<< "${DURS:--1 -1 -1 -1 -
 - `verify_findings`: 反証で**実際に verdict が返った件数**（v2.41.0）。**レポート反証行の「うち実施 X 件」と一致させる**（ゲート対象 N 件ではない）
 - meta-reviewer / skeptic は含めない（それぞれ `recall_skeptic.fired` とレポートの「動的ラウンド」行で観測できる）
 
-**`result_grid`** — 後段 hook / PR コメント自動投稿の dispatch 用の 5 値: `high`=BLOCKER+CRITICAL / `medium`=MAJOR / `low`=MINOR / `skip`=severity スコープ外でフィルタされた件数 / `error`=agent が失敗した件数（`missing_coverage` の length と一致）。
+**`result_grid`** — 後段 hook / PR コメント自動投稿の dispatch 用の 5 値: `high`=BLOCKER+CRITICAL / `medium`=MAJOR / `low`=MINOR / `skip`=severity スコープ外でフィルタされた件数 / `error`=**agent が失敗した件数**。
+
+- **`error` は `missing_coverage` の length と一致しない**（v2.44.0 で規約を修正）。`missing_coverage` は「agent 失敗」だけでなく「観点未起動（reviewer 上限超過・条件不成立）」「フェーズスキップ（skeptic の effort skip 等）」も含むため、常に `error ≤ len(missing_coverage)` の包含関係になる。旧規約は一致を要求していたが、**実データ 43 件中 11 件で不一致**（うち 10 件は `error=0` で `missing_coverage` が非空 = 未起動のみ）。一致を仮定した検算をしない
+
+**`pre_adjust_counts` の使い方（調整前後の分離 / v2.44.0）** — `major_count` 等は報告マトリクス通過**後**の値なので、**「reviewer が検出しなかった」と「検出したが調整で消えた」を区別できない**。差分で分離する:
+
+```bash
+# 「調整で消えた MAJOR」の件数を publisher 別に見る
+grep '"event":"review:completed"' .claude/events.jsonl | \
+  jq -s '[.[] | select(.payload.pre_adjust_counts != null)] | group_by(.plugin) | map({
+    plugin: .[0].plugin, n: length,
+    major_pre: ([.[]|.payload.pre_adjust_counts.major]|add),
+    major_post: ([.[]|.payload.major_count]|add),
+    lost: (([.[]|.payload.pre_adjust_counts.major]|add) - ([.[]|.payload.major_count]|add))
+  })'
+```
+
+- **消えた分の内訳（降格 / confidence 不足）はこの 1 フィールドでは分離できない。** `severity-inflated` 降格・`[scope:out]` 降格・報告マトリクスの confidence 落ちが同じ差分に合流するため。**まず「検出由来か調整由来か」の一段目だけを切る**フィールドであり、二段目が必要と分かってから内訳フィールドを足す（LLM が手で組む JSON なのでフィールド数自体がコスト）
+- 版マーカー: **`pre_adjust_counts` の存在が v2.44.0 以降**。日付では切らない
+
+**`missing_coverage` の記法（v2.44.0 で語彙固定）** — 要素は **識別子のみ**とし、理由・件数・finding id・自由文を混ぜない:
+
+- 許容形: `<focus 名>`（例 `performance` / `error-handling`）/ `<phase 名>`（例 `explorer` / `recall-skeptic` / `adversarial-verify`）/ `<phase 名>:<focus 名>`（例 `explorer:value-flow-trace`）
+- **禁止**: `recall-skeptic (skip: effort=high)` / `adversarial-verify: F2 未反証` / `reviewer-security: surface なしのため未起動（メインで代替評価）` のような理由つき自由文。**理由はレポート本文の「⚠️ 欠損観点」セクションに書く**（payload は集計用）
+- 理由: 実データで同一概念が `adversarial-verify:finding-A` / `adversarial-verify-finding3` / `adversarial-verify: F2 未反証` / `adversarial-verify: 対象が実証済み` の **4 通りに分裂**し、`group_by` 集計が成立しなくなっていた。欠損観点の偏り（どの観点が落ちやすいか）は本フィールドの唯一の用途なので、綴りが割れると計測目的そのものが消える
 
 **`adversarial_verify`** — 反証レイヤーの verdict 集計（`confirmed` / `refuted` / `uncertain` / `severity_inflated` / `contested`=高 severity の係争件数）。スキップ時は全 0。`severity_inflated` は v2.41.0 追加（4 つ目の verdict が集計から漏れていた。バッチ化 + effort 引き下げのロールバック判断に使う。triage-guide `## 9`）。
 
@@ -520,4 +545,4 @@ read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE <<< "${DURS:--1 -1 -1 -1 -
 
 - publish に失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を publisher 名（`code-review:review` / `code-review:self-review`）に上書きして識別する
 - 後方互換: subscriber 側は `critical_count` の存在を仮定してよい（旧 payload との互換性のため必須）。それ以外は新規フィールド追加なので旧 subscriber 影響なし（現物確認: `issue-workflow:issue-maintain` は `pr` と件数しか読まない）
-- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
+- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない

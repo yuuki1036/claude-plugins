@@ -365,6 +365,25 @@ diff シグナルが読めず観点を決められない場合の既定構成（
 
   **`review` 由来サンプルは v2.40.0 より前は 1 件も存在しない**（GitHub issue #96 B）。publish が EnterWorktree 配下の cwd 相対パスで行われていたため、`review:completed` は worktree 側の `.claude/events.jsonl` に書かれ、直後の `ExitWorktree(remove)` で worktree ごと消えていた。v2.40.0 で publish 先をメインリポジトリのルートに固定（orchestration-guide `## 13`）するまで、蓄積されていたのは worktree を使わない self-review 由来のみ。**したがって v2.39.0 の high 既定縮小は review 経路については測定できていない** — 判断は v2.40.0 以降のサンプルが貯まってから行う
 
+### 未解決の観測: review 経路の MAJOR がゼロに張り付いている（2026-08-06 / 判定は v2.44.0 サンプル待ち）
+
+蓄積済み 43 件（`review` 12 / `self-review` 31）を集計したところ、**publisher 間で MAJOR の分布が極端に非対称**だった:
+
+| publisher | n | `major_count`=0 の回 | b / c / major / minor 合計 | `severity_inflated`（1 回あたり） |
+|---|--:|--:|---|--:|
+| `code-review:review` | 12 | **12 / 12** | 0 / 1 / **0** / 27 | 9 件（**0.82**） |
+| `code-review:self-review` | 31 | 10 / 31 | 2 / 7 / **78** / 59 | 7 件（0.30） |
+
+- **「PR が綺麗だった」では説明できない**: MAJOR と MINOR は報告マトリクス上どちらも confidence 95+ の同一閾値なのに、review では MINOR が 27 件通って MAJOR が 0 件
+- **緩和側がゼロ**: review は `recall_skeptic.surface` が 10/10 で true（= 全件 high-risk surface 判定）。surface-aware 閾値により **MAJOR は 85+ に緩和されている状態で 0 件**。緩和していない self-review が 78 件
+- 両 SKILL の scoring 手順（review Step 6 / self-review Step 5）は severity 処理の規約が**同一**であることを確認済み。仕様差では説明がつかない
+
+**考えられる経路**（いずれも出口が MINOR なので `minor_count` に合流する）: ① `severity-inflated` 降格 ② `[scope:out]` 降格（他人の PR は「既存の問題」判定が出やすい）③ confidence 95 未満での skip ④ そもそも reviewer が MAJOR を出していない。
+
+**判定手順**: v2.44.0 で追加した `pre_adjust_counts` が貯まったら orchestration-guide `## 16` の jq を回す。`pre_adjust_counts.major` が **0 に近ければ ④（検出由来）**、**post との差が大きければ ①〜③（調整由来）**。
+
+**それまで scoring 規約を変えない。** 特に「MAJOR/MINOR の `severity-inflated` を無条件降格から保護する」（scoring-guide の不変条件を MAJOR へ拡張する）は precision を直接下げる不可逆な変更であり、**降格由来だと確認できていない段階で入れてはならない**。壊れた・不足した計測を根拠に不可逆な判断をしない（`## 8.5` と同じ流儀）。
+
 ## 8. 動的ラウンド（Phase 5.5 / 5.6 / v2.12.0 追加）
 
 ### Phase 5.5: Adaptive deepening (Round 2 / unmet_information 起点)
