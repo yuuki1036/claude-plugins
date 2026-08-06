@@ -475,6 +475,7 @@ read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE <<< "${DURS:--1 -1 -1 -1 -
 | `missing_coverage` | string[] | yes | 欠損観点（空配列可） |
 
 - **findings は Step 6 で報告された指摘と 1:1**（報告マトリクスで skip されたものは含めない）。`id` は Step 6 のレポート連番に一致させる
+- **「✏️ コメント推敲」（B 系統）は findings に含めない**（v2.45.0）。severity / confidence を持たない別枠出力であり、呼び出し元（feature-dev Phase 6 等）の auto-fix は severity 駆動で動くため。推敲は人間が採否を決める性質のもので、自動適用の対象にしない
 - **反証レイヤー（Phase 4.9）の効果は `severity` / `confidence` に反映済み**（Step 5 で verdict 反映を適用してから報告するため、JSON には最終値が入る）。`refuted` で取り下げた MAJOR/MINOR は findings に含まれない。**係争中の BLOCKER/CRITICAL は通常通り findings に残り、`title` または `impact` に `⚠️ 反証メモ:` を含める**（schema_version は据え置き 1。新フィールドは追加しない＝consumer 後方互換）
 - JSON として valid であること（末尾カンマ禁止、ダブルクオート、改行は文字列内で `\n`）
 - このブロックの**後**に `[embed-mode: findings-only, no-prompt]` marker を置く
@@ -541,8 +542,16 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - `findings_overlap`: **重複 survivor**（`[recall-skeptic:dup]` タグ）の件数。独立到達の記録としては残すが、盲点でなかった事例なので**価値率には算入しない**（混ぜると重複が常態のため価値率が 100% に張り付き、縮小分岐が原理的に発火しなくなる）
 - 両フィールドとも **初回レポート本文のタグ付き指摘を数えて求める**（skeptic フェーズの記憶から再構成しない。publish は遠く、間に精査・解説・ドラフト生成が挟まるため記憶依存にすると系統的に 0 へ潰れる）。**計測点は報告マトリクス通過時点（精査の前）**であり、精査後の調整レポートではない。**精査で取り下げた分は減算しない**（「報告に値する指摘を出せたか」を測るフィールドで、必要性で落ちたかは別軸）
 
+**`comment_polish`**（**self-review のみ** / v2.45.0）— コメント推敲（reviewer-prompts.md `### コメント推敲（B 系統）`）の実行記録:
+
+- `fired`: **`comment-accuracy` 観点が構成に入り、B 系統ブロックを連結して reviewer を起動したか**（bool）。**単独起動とバンドル相乗りを区別しない**（high 既定では束ねが常態で、束ね時に「comment-accuracy reviewer」という単独 agent は存在しない。「専任 reviewer が立ったか」と読むと既定構成で常に false になる）
+- `suggested`: **reviewer が B 系統で挙げた総件数**。掲載上限（10 件）で切る前・二重掲載の除去前の数を入れる。**レポート掲載数とは一致しない**（掲載数は上限と dedup の後）。reviewer が `## コメント推敲提案` ブロックごと出力しなかった場合は **`-1`（測定不能）**とし、`missing_coverage` に `comment-accuracy` を記録する（「該当なし＝観点は効いたが 0 件」と「ブロック欠落＝観点が実質死んだ」を 0 に潰さない）
+- **2 フィールド持つ理由**: 「起動したが提案 0 件」（打ち手＝観点の効き・プロンプトの具体性）と「そもそも起動していない」（打ち手＝ triage の起動条件・Step 4 の連結漏れ）は対処が正反対。本機能は *チェック項目に書いてあるのに報告まで到達しない* という失敗の再発防止が目的なので、**出力ゼロが観測できないと同じ穴に落ちる**
+  - この失敗の論拠は**構造**（MINOR 95+ ＋ 好みクランプ 40 を推敲提案が通過できない）であって計測ではない。payload は focus 別の属性を持たないため、「v2.44.0 まで報告ゼロだった」を実測で示すことはできない（**この点を実測事実として書かないこと**）
+- review 側は publish しない（B 系統は self-review 限定。他人の PR への推敲提案は越権になりやすいという設計判断）
+
 **共通ルール**:
 
 - publish に失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を publisher 名（`code-review:review` / `code-review:self-review`）に上書きして識別する
 - 後方互換: subscriber 側は `critical_count` の存在を仮定してよい（旧 payload との互換性のため必須）。それ以外は新規フィールド追加なので旧 subscriber 影響なし（現物確認: `issue-workflow:issue-maintain` は `pr` と件数しか読まない）
-- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
+- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降・`comment_polish` の存在が v2.45.0 以降（self-review のみ）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない

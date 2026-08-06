@@ -20,10 +20,11 @@ allowed-tools:
 
 - PR 不要。ローカルのみで完結
 - コミット前・PR 作成前の品質ゲートとして使用
+- **コメント推敲（B 系統）を出すのは self-review だけ**（v2.45.0）。diff で追加・変更したコメントを「読み手に必要な情報のみか / 冗長表現が無いか」の 2 観点で推敲し、severity マトリクスを通さない別枠セクションに before→after で出す。他人の PR に文面の推敲を投稿するのは越権になりやすいため review 側には入れない
 
 ## コスト×精度パイプライン設計（採用/不採用）
 
-ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 1（ファネル = Phase 0 triage で高コスト reviewer を通過分に絞る）/ 2（2 軸スコア化 = confidence × severity マトリクス）/ 3（段階予算 = `${CLAUDE_EFFORT}` → explorer/reviewer 体数）/ 4（モデルルーティング = explorer:sonnet / reviewer:opus / meta:opus / 反証:opus）/ 7（敵対的独立検証 = Phase 4.9 反証レイヤー、recall 側は Phase 4.8 冷や読み skeptic）**。**捨てた**: 5（暴走ガード）は反復・起票を持たない単発レビューのため不要、6（証拠ラダー）は指摘蓄積・昇格の責務を failure-journal に委ね、8（外部オラクル）は diff レビューが対象で型/テスト実行は feature-dev Phase 5.3 の役割と分離した。
+ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 1（ファネル = Phase 0 triage で高コスト reviewer を通過分に絞る）/ 2（2 軸スコア化 = confidence × severity マトリクス。**ただしコメント推敲（B 系統）は 2 軸を持たずマトリクスを通さない別枠経路** / v2.45.0）/ 3（段階予算 = `${CLAUDE_EFFORT}` → explorer/reviewer 体数）/ 4（モデルルーティング = explorer:sonnet / reviewer:opus / meta:opus / 反証:opus）/ 7（敵対的独立検証 = Phase 4.9 反証レイヤー、recall 側は Phase 4.8 冷や読み skeptic）**。**捨てた**: 5（暴走ガード）は反復・起票を持たない単発レビューのため不要、6（証拠ラダー）は指摘蓄積・昇格の責務を failure-journal に委ね、8（外部オラクル）は diff レビューが対象で型/テスト実行は feature-dev Phase 5.3 の役割と分離した。
 
 ## 設計原則: Generator と分離された Evaluator
 
@@ -218,6 +219,7 @@ echo "t1b $(date +%s)" >> "$TS_FILE"
 Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する。effort は実行時 `${CLAUDE_EFFORT}` に連動させる（low/medium/high（既定）→ `high`、xhigh/max → `xhigh`。設計意図は orchestration-guide `## 5`）:
 - 各 reviewer に Phase 0 が決定した focus（と冗長ペアの場合は angle）を指示として渡す
 - reviewer-prompts.md の該当する Focus テンプレートと共通指示をプロンプトに含める
+- **`comment-accuracy` を担当する reviewer には `### コメント推敲（B 系統）` ブロックを末尾に連結する**（単独起動・バンドル相乗りのどちらでも連結。B 系統は Focus テンプレートではないので前項では拾われない。連結漏れは機能の silent な不発になる）
 - **explorer 結果の選択的注入**: 構成テーブルの「explorer 依存」列に記載された explorer の結果を、該当する reviewer のプロンプトに `## Explorer 結果` セクションとして注入する
 - セッションコンテキストが有効な場合、reviewer-prompts.md のセッションコンテキスト注入テンプレートに従い全 reviewer に注入する
 - **Vault 注入**: Step 1.5 で関連ありと判断した知見があれば、各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する。reviewer には「過去に同種コードで指摘された観点を優先的に確認せよ。ただし現在の diff に該当しなければ無視してよい」と添える
@@ -301,7 +303,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 
 1. **各指摘の base confidence と severity を取得**
    - reviewer 出力の `[confidence: XX]` と `[severity: BLOCKER|CRITICAL|MAJOR|MINOR]` をパース
-   - severity が欠落している指摘は **CRITICAL とみなす**（後方互換 / 安全側デフォルト）
+   - severity が欠落している指摘は **CRITICAL とみなす**（後方互換 / 安全側デフォルト）。**ただし `## コメント推敲提案` ブロックはこの既定の対象外**（severity を持たないのが仕様。指摘として扱わず、手順 7 まで素通りさせる）
    - **この時点の severity 別件数を控える**（= `pre_adjust_counts`。統合・dedup 後、手順 2 以降の verdict 反映・加減算・降格・フィルタを**一切かける前**の生の分布）。Step 6.4 の publish で使う。**手順 5 通過後の件数との差が「調整で消えた分」**であり、これが無いと「reviewer が検出しなかった」と「検出したが調整で消えた」を事後に区別できない（orchestration-guide `## 16`）
 2. **反証 verdict の反映**（Phase 4.9 が動いた場合のみ。scoring-guide.md `## 反証レイヤーの verdict 反映` に従う）
    - **BLOCKER / CRITICAL の `refuted` は confidence / severity を据え置き**、指摘本文先頭に `⚠️ 反証メモ: <軸>（<根拠 file:line>、要確認）` を付与（**報告から消さない**）
@@ -319,6 +321,9 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
    | MINOR | skip | skip | skip | 報告 |
 
 6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外
+7. **コメント推敲（B 系統）は本ステップを一切通さない**: `## コメント推敲提案` ブロックは手順 1〜6 と反証レイヤー（Phase 4.9）をすべてバイパスして Step 6 にそのまま流す。**severity / confidence を後付けしない**（付けた瞬間マトリクスの対象になり MINOR 95+ と好みクランプ 40 の 2 段で全滅する）。詳細は reviewer-prompts.md `### コメント推敲（B 系統）`。**`review_severity_threshold` も B 系統には効かない**（severity を持たないため。推敲を止めるなら `--exclude comment-accuracy`）。オーケストレーター側で行う調整は次の 2 つだけ:
+   - **二重掲載の除去**: **手順 5-6 を通過して Step 6 に残った指摘**と同一 file:line のコメントのみ B から落とす。**「A 系統が指摘として挙げた」だけでは落とさない** — A の冗長コメント指摘は MINOR 95+ で大半が skip されるため、それを理由に B からも消すと A でも B でも出ない（B 系統を作った理由そのものを打ち消す）
+   - **掲載上限**: 10 件を超える場合はここで切り、末尾に「他 N 件」と添える（reviewer 側は全件出す規約。発見段階では間引かせない）。`comment_polish.suggested` には**切る前の総数**を入れる
 
 ### 6. レポート出力
 
@@ -364,6 +369,15 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 ### 📋 MAJOR 指摘
 
 4. [confidence: 95][severity: MAJOR][設計] ...
+
+### ✏️ コメント推敲（severity 対象外・採否はあなたが決める）
+{`comment-accuracy` が構成に入っていれば（**バンドル相乗りを含む**）必ず見出しを出す（0 件なら「該当なし」。省略すると silent skip と区別できない）。構成に無ければ見出しごと省略し、**diff にコメントの追加・変更があるのに未起動だった場合のみ** `comment-accuracy` を欠損観点に記録する（トリガ不成立の未起動は正常系。記録すると `missing_coverage` の偏り集計が潰れる）。掲載上限 10 件、超過分は末尾に「他 N 件」}
+
+1. src/foo.ts:12 [不要]
+   before: `// カウンタをインクリメント`
+   after: (削除)
+   理由: `count++` が自明でコードの同語反復
+{タグは 2 種: `[不要]`=読み手に必要な情報を含まない / `[冗長]`=情報は必要だが表現が冗長。以降も同形式}
 
 ### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
 - reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
@@ -422,7 +436,7 @@ read DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE <<< "${DURS:--1 -1 -1 -1 -
 DUR_CLOSING=-1
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
   CLAUDE_PROJECT_DIR="$MAIN_ROOT" SAFE_HOOK_NAME="code-review:self-review" event_bus_publish "review:completed" \
-  "{\"pr\":\"local\",\"effort\":\"${CLAUDE_EFFORT}\",\"size_tier\":\"<small|medium|large>\",\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"duration_explore_min\":$DUR_EXPLORE,\"agents\":{\"explorer\":<n>,\"reviewer\":<n>,\"specialist\":<n>,\"round2\":<n>,\"verify\":<n>,\"verify_findings\":<n>},\"pre_adjust_counts\":{\"blocker\":<n>,\"critical\":<n>,\"major\":<n>,\"minor\":<n>},\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"severity_inflated\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>}}"
+  "{\"pr\":\"local\",\"effort\":\"${CLAUDE_EFFORT}\",\"size_tier\":\"<small|medium|large>\",\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"duration_explore_min\":$DUR_EXPLORE,\"agents\":{\"explorer\":<n>,\"reviewer\":<n>,\"specialist\":<n>,\"round2\":<n>,\"verify\":<n>,\"verify_findings\":<n>},\"pre_adjust_counts\":{\"blocker\":<n>,\"critical\":<n>,\"major\":<n>,\"minor\":<n>},\"blocker_count\":<n>,\"critical_count\":<n>,\"major_count\":<n>,\"minor_count\":<n>,\"missing_coverage\":[<json-array of focus names>],\"result_grid\":{\"high\":<n>,\"medium\":<n>,\"low\":<n>,\"skip\":<n>,\"error\":<n>},\"adversarial_verify\":{\"confirmed\":<n>,\"refuted\":<n>,\"uncertain\":<n>,\"severity_inflated\":<n>,\"contested\":<n>},\"recall_skeptic\":{\"attribution_schema\":2,\"surface\":<bool>,\"fired\":<bool>,\"skip_reason\":<string|null>,\"findings_added\":<n>,\"findings_overlap\":<n>},\"comment_polish\":{\"fired\":<bool>,\"suggested\":<n>}}"
 # 掃除は t2 マーカーの存在を確認してから（衝突時に走行中の他レビューの計測を壊さない
 # ための二段目。所有権チェックではない点は orchestration-guide `## 13.1`）。
 # `|| true` が無いと t2 欠測時にブロックが exit 1 になり publish 失敗と誤読される
@@ -435,6 +449,7 @@ source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
 - **`duration_min`（全体）の意味は publisher 間で非対称**: review は締めフロー（人間待ち）を含み、self-review は Step 7 の手前で切れる。**`plugin` フィールドで層別してから比較する**。区間別に見るなら `duration_fleet_min` を使う
 - `head_verified` は publish しない（checkout を行わないため）
 - `recall_skeptic.skip_reason` は `"scope"`（`--focus`/`--exclude` 指定）も取りうる
+- **`comment_polish` は self-review のみのフィールド**（v2.45.0。`fired` / `suggested` の定義と計数基準は orchestration-guide `## 16` が正本）
 
 ### 6.5. 構造化 findings JSON（embed mode のみ）
 

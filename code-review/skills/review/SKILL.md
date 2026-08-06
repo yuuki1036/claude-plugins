@@ -238,6 +238,7 @@ echo "t1b $(date +%s)" >> "$TS_FILE"
 Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する。effort は実行時 `${CLAUDE_EFFORT}` に連動させる（low/medium/high（既定）→ `high`、xhigh/max → `xhigh`。設計意図は orchestration-guide `## 5`）:
 - 各 reviewer に Phase 0 が決定した focus（と冗長ペアの場合は angle）を指示として渡す
 - reviewer-prompts.md の該当する Focus テンプレートと共通指示をプロンプトに含める
+- **`### コメント推敲（B 系統）` ブロックは連結しない**（self-review 限定。他人の PR に文面の推敲を投稿するのは越権になりやすい。前項の「該当する Focus テンプレート」にこのブロックを含めないこと）
 - **explorer 結果の選択的注入**: 構成テーブルの「explorer 依存」列に記載された explorer の結果を、該当する reviewer のプロンプトに `## Explorer 結果` セクションとして注入する
 - **PR コンテキスト注入**: Step 1 が保存した `$PR_CTX_FILE` の**パス**を、reviewer-prompts.md の「PR コンテキスト注入テンプレート」(#2.5) に従い全 reviewer のプロンプトに渡す（本文は転記しない。「最初に Read せよ」の明示が必須。重複指摘の回避と著者意図の尊重ルールはテンプレート内に明記）
 - セッションコンテキストが有効な場合、reviewer-prompts.md のセッションコンテキスト注入テンプレートに従い全 reviewer に注入する
