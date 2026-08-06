@@ -94,5 +94,5 @@ options:
 
 ## 関連: 階層 AGENTS.md を活用する skill
 
-- `code-review`: 変更ファイルパスから対応する `{dir}/AGENTS.md` を Glob で動的選択して reviewer プロンプトに同梱（`reviewer-prompts.md` の `## 1. 共通指示` 参照）
+- `code-review`: 変更ファイルパスから対応する `{dir}/AGENTS.md` を `scripts/triage-signals.sh` が探索し（`## agents-md` セクション）、ヒットしたパスを reviewer プロンプトに渡して agent 自身に Read させる（本文は転記しない。規約は `references/prompts/reviewer-common.md`）
 - `feature-dev`: Phase 1 の探索フェーズで該当層の AGENTS.md を優先読み込み

@@ -114,7 +114,7 @@ Anthropic / Vercel 公式が同梱・配布している skill のレコメンド
 
 | 内製プラグイン | 連携先公式 skill | 連携方法 |
 |---|---|---|
-| `code-review` | `web-design-guidelines`, `vercel-react-best-practices`, `context7` | reviewer-prompts.md の Focus テンプレート内で参照 |
+| `code-review` | `web-design-guidelines`, `vercel-react-best-practices`, `context7` | `references/prompts/focus/` の Focus テンプレート内で参照 |
 | `plugin-dev:skill-development` | `skill-creator` | プラグイン文脈で SKILL.md 構造を、汎用部分は公式へ委譲 |
 | `plugin-dev:mcp-integration` | `mcp-builder` | プラグイン文脈で MCP 取込みを、サーバー実装は公式へ委譲 |
 | `dev-workflow:ui-verify` | `chrome-devtools`, `webapp-testing` | smoke は ui-verify、E2E は webapp-testing |

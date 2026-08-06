@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.3] - 2026-08-07
+
+### Fixed
+- code-review の参照先を新構成に更新（`reviewer-prompts.md` の節番号 → `references/prompts/` 配下の実ファイル）。AGENTS.md 階層選択の記述も、Glob から `scripts/triage-signals.sh` の `## agents-md` セクションによる探索に実態を合わせた
+
 ## [1.13.2] - 2026-07-29
 
 ### Fixed

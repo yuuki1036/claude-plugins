@@ -53,5 +53,5 @@ AI agent は「テストを通すために lint rule を緩める」「hook が�
 ## 関連
 
 - 三段防御パターン: `claude-meta/skills/claude-md-improver/references/three-tier-defense.md`
-- code-review の specialist-guardrail-bypass: `code-review/references/reviewer-prompts.md` §5
+- code-review の specialist-guardrail-bypass: `code-review/references/prompts/specialist/guardrail-bypass.md`
 - CLAUDE.md のルール配置の意思決定: リポジトリルートの CLAUDE.md §「ルール配置の意思決定」
