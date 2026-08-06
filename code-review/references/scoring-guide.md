@@ -7,14 +7,7 @@
 1. **confidence (確信度)** — *指摘が事実として正しい確率*。0-100。reviewer が証拠（diff・ファイル Read・explorer 結果）でどれだけ裏付けられるか
 2. **severity (重大度)** — *指摘が現実に与える影響の大きさ*。BLOCKER / CRITICAL / MAJOR / MINOR の 4 段階。「もしこの指摘が当たっていた場合に何が起きるか」で判定
 
-この 2 軸を混同すると次のジレンマが起きる:
-
-| ケース | 単一軸 (confidence のみ) の問題 |
-|---|---|
-| **重大だが不確実** (race condition の疑い) | confidence 中程度 → 80 未満で**落ちる**。致命的見落とし |
-| **軽微だが確実** (typo) | confidence 高い → 報告される。ノイズ |
-
-2 軸化により **「BLOCKER は不確実でも報告」「MINOR はほぼ確実な時だけ報告」** という非対称な報告ルールを表現できる。
+2 軸化により **「BLOCKER は不確実でも報告」「MINOR はほぼ確実な時だけ報告」** という非対称な報告ルールを表現できる（単一軸で起きるジレンマの整理: `design-notes/scoring-rationale.md`）。
 
 ---
 
@@ -47,7 +40,7 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 - セキュリティ・データ整合性・本番事故に直結するものは原則 BLOCKER または CRITICAL
 - 「動くけど将来困る」系は MAJOR
 - 「あれば良い」程度は MINOR
-- 観点ごとの目安は reviewer-prompts.md の Focus テンプレートに記載
+- 観点ごとの目安は `prompts/focus/<focus>.md`に記載
 
 ---
 
@@ -71,7 +64,7 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 
 ### surface-aware 閾値（high-risk surface に限る recall 補正 / ADR-20260703204045）
 
-**high-risk surface**（DB 書込 / 金銭・数量計算 / 認可・認証、または PR 自己申告 D1-High。判定は triage-guide.md `## 8.5` の surface 判定）を含む指摘に限り、報告閾値を非対称に緩める:
+**high-risk surface**（DB 書込 / 金銭・数量計算 / 認可・認証、または PR 自己申告 D1-High。判定は triage-dynamic-gates.md `## 8.5` の surface 判定）を含む指摘に限り、報告閾値を非対称に緩める:
 
 | severity | 通常 surface | high-risk surface |
 |---|:---:|:---:|
@@ -82,7 +75,7 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 
 - **目的**: high-risk surface では CRITICAL 見落としのコストが nit 偽陽性のコストを大きく上回るため、その層に限って recall を優先する（見落としコストが偽陽性コストを上回る層の非対称扱い）。低リスク surface の noise は据え置く
 - **効かせる箇所は適用順序の手順 7 の一点のみ**（下記「適用順序」参照）。precision の本丸（手順 2〜6 = 反証 verdict 反映 / 加減算 / `[unverified] min75` / `≤40 好みクランプ`）と Phase 5.9 の specialist 反証除外は**不変**。緩和は報告マトリクスのフィルタ段でのみ適用する
-- **緩和帯の反証吸収**: high-risk surface で新規報告化する CRITICAL 70-79 / MAJOR 85-94 は、effort=high でも反証レイヤー（Phase 5.9）の対象に含める（triage-guide.md `## 9` の high-risk surface 例外ゲート）。緩めた recall を独立反証が吸収する二段構えを保つ
+- **緩和帯の反証吸収**: high-risk surface で新規報告化する CRITICAL 70-79 / MAJOR 85-94 は、effort=high でも反証レイヤー（Phase 5.9）の対象に含める（triage-dynamic-gates.md `## 9` の high-risk surface 例外ゲート）。緩めた recall を独立反証が吸収する二段構えを保つ
 
 ### severity が付与されていない指摘の扱い（後方互換）
 
@@ -112,7 +105,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - git blame で過去に同様の修正あり: **+15**
 - **指摘冒頭に `[re-flag: @<既指摘者>]` タグあり**（review skill のみ、PR 行単位 review comment で既指摘 かつ diff で未修正）: **+15**
 - セキュリティ関連: **+10**
-- 同一観点の冗長ペアが合意（独立した視点からの裏付け）: **+10**（冗長ペアの実起動は xhigh/max のみ。high 以下の angle 内挿 1 体には適用しない — triage-guide `## 7`）
+- 同一観点の冗長ペアが合意（独立した視点からの裏付け）: **+10**（冗長ペアの実起動は xhigh/max のみ。high 以下の angle 内挿 1 体には適用しない — triage-guide.md `## 7`）
 - explorer の発見と一致する指摘（探索結果で裏付けあり）: **+10**（doc-substance の「主張がコードと食い違う」指摘を grounding explorer / reviewer が code:line で裏取りした場合もこの発火源。doc-substance 専用の新規加点は作らない）
 - reviewer-security の CRITICAL/BLOCKER 判定: **+10**
 - reviewer-migration のデータ損失判定: **+10**
@@ -139,12 +132,12 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - 規約違反・実害の証拠を伴う指摘はクランプ対象外（通常のスコアリングを行う）
 - **doc-substance の主観抑制もこのクランプで行う（2 軸で扱いを分ける）**:
   - **A 軸（主張の真偽）**: doc の論理 / 有用性 / 内容誤り指摘で根拠（code:line または内部矛盾の doc:line ×2）を示せないものは「表現の好み」とみなしてクランプする
-  - **B 軸（文書としての成立性 — 完全性 / doc 種別適合 / 読み手前提 / WHY 根拠 / ナビ）**: **doc:line（欠落・誤配置・孤立の発生箇所）＋ 破られた期待（doc 種別の契約 / その doc が宣言する対象読者・スコープ / 手順が参照する未記載の前提）を示せていればクランプしない**。裏取りの相手がコードではなく doc 種別の期待構造であるため、code:line が無いことだけを理由に「好み」とみなさない（reviewer-prompts.md `doc-substance` の grounding 規則を参照）。逆に「**語句を最小差分で言い換えれば済む**」だけの指摘（writing-polish の領分）は B 軸を騙っていてもクランプする
-  - doc-substance の MAJOR は既定 effort（high）では反証レイヤー対象外（triage-guide.md `## 9` のゲートは BLOCKER 60-94 / CRITICAL 80-94 限定）。この場合は「最小差分 reword か否か」のクランプが B 軸ノイズの唯一の抑制機構になる。`xhigh`/`max` に escalation した場合のみ B 軸 MAJOR も反証レイヤー（Phase 5.9、xhigh/max で MAJOR まで拡大）で独立検証され、クランプ（一次抑制）＋ 反証（偽陽性摘出）の二段構えになる
+  - **B 軸（文書としての成立性 — 完全性 / doc 種別適合 / 読み手前提 / WHY 根拠 / ナビ）**: **doc:line（欠落・誤配置・孤立の発生箇所）＋ 破られた期待（doc 種別の契約 / その doc が宣言する対象読者・スコープ / 手順が参照する未記載の前提）を示せていればクランプしない**。裏取りの相手がコードではなく doc 種別の期待構造であるため、code:line が無いことだけを理由に「好み」とみなさない（`prompts/focus/doc-substance.md` の grounding 規則を参照）。逆に「**語句を最小差分で言い換えれば済む**」だけの指摘（writing-polish の領分）は B 軸を騙っていてもクランプする
+  - doc-substance の MAJOR は既定 effort（high）では反証レイヤー対象外（triage-dynamic-gates.md `## 9` のゲートは BLOCKER 60-94 / CRITICAL 80-94 限定）。この場合は「最小差分 reword か否か」のクランプが B 軸ノイズの唯一の抑制機構になる。`xhigh`/`max` に escalation した場合のみ B 軸 MAJOR も反証レイヤー（Phase 5.9、xhigh/max で MAJOR まで拡大）で独立検証され、クランプ（一次抑制）＋ 反証（偽陽性摘出）の二段構えになる
 
 ### 上限クランプ: 未検証の外部状態主張（claim grounding / GitHub issue #71）
 
-指摘冒頭に **`[unverified: <対象>]` タグ**が付いている場合（reviewer が「repo / 正本 doc では検証できない外部状態—DB/本番の現状態・外部数値・運用設定・環境依存—に依拠している」と申告したもの。reviewer-prompts.md「事実主張のツール接地」）は **confidence を 75 で上限クランプ**する。
+指摘冒頭に **`[unverified: <対象>]` タグ**が付いている場合（reviewer が「repo / 正本 doc では検証できない外部状態—DB/本番の現状態・外部数値・運用設定・環境依存—に依拠している」と申告したもの。`prompts/reviewer-common.md`「事実主張のツール接地」）は **confidence を 75 で上限クランプ**する。
 
 - 効果: BLOCKER 級の「重大な疑い」だけが報告マトリクスを通過し（BLOCKER は confidence 60+ で報告）、CRITICAL 以下の未検証断定は自動除外される
 - 目的: repo から確認できない主張を「事実」として高 confidence で報告させない（未検証断定の構造的抑止）。確証が必要なら reviewer は `## unmet_information` で正本確認を求める
@@ -158,7 +151,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 4. **未検証クランプ**: `[unverified: ...]` タグ付きの指摘は confidence を `min(値, 75)` に制限
 5. **好みベース上限クランプ**: 根拠が個人的好みのみの指摘は confidence を `min(値, 40)` に制限（両クランプ該当時はこちらが優先）
 6. 0-100 にクランプ
-7. severity と組み合わせて報告マトリクスでフィルタ。**このとき high-risk surface フラグ付きの指摘には surface-aware 閾値（CRITICAL 70+ / MAJOR 85+）を適用する**（surface 判定は triage-guide.md `## 8.5`。手順 2〜6 の precision 機構は不変で、緩和はこの手順 7 の一点のみ）
+7. severity と組み合わせて報告マトリクスでフィルタ。**このとき high-risk surface フラグ付きの指摘には surface-aware 閾値（CRITICAL 70+ / MAJOR 85+）を適用する**（surface 判定は triage-dynamic-gates.md `## 8.5`。手順 2〜6 の precision 機構は不変で、緩和はこの手順 7 の一点のみ）
 
 ---
 
@@ -167,7 +160,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 severity は基本的に reviewer の判定を尊重するが、以下の場合のみ Step 6 で調整する:
 
 - **タグ `[scope:out]` または `[resolved: ...]` が付いた指摘**: severity を 1 段階下げる（BLOCKER → CRITICAL、CRITICAL → MAJOR、MAJOR → MINOR、MINOR → そのまま）
-- **退行指摘で invariant が incidental と検算された場合**（reviewer-prompts.md「退行指摘の invariant 検算」: 隣接経路で同 invariant が未強制と確認）: severity を 1 段階下げる。reviewer が検算済みで既に下げている場合は二重適用しない（指摘理由の「incidental と判断」記載で判別）
+- **退行指摘で invariant が incidental と検算された場合**（`prompts/reviewer-common.md`「退行指摘の invariant 検算」: 隣接経路で同 invariant が未強制と確認）: severity を 1 段階下げる。reviewer が検算済みで既に下げている場合は二重適用しない（指摘理由の「incidental と判断」記載で判別）
 - **複数 reviewer が同一指摘を BLOCKER と判定**: severity を BLOCKER のまま維持（混乱を防ぐ）
 - **doc-substance の裏取り済み内容誤りの CRITICAL 昇格（grounding ガード付き）**: doc の主張とコードが code:line で矛盾し裏取りできた指摘は CRITICAL に昇格する。**ただし昇格は、矛盾の相手が「doc が実際に参照する・実在する・現行の」コード経路である場合に限る**。次のいずれかでは昇格させず MAJOR に留める / 取り下げる:
   - (a) 矛盾の相手が doc の参照しない別経路や stale なパス（grounding 誤読。例: doc は `src/api` を指すのに未参照の `src/legacy` と突き合わせている）
@@ -198,17 +191,13 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 ### 不変条件（機械保証）
 
 - **高 severity（BLOCKER / CRITICAL）の指摘は反証レイヤーで報告から消えない。** `refuted` は confidence/severity を据え置き、`severity-inflated` は報告マトリクスを割る降格を行わない。いずれも本文に反証メモを付すのみで、最終判断は人間に残す（false-negative の構造的防止）
-  - **`severity-inflated` の穴（v2.41.0 で塞いだ）**: 旧規約は `severity-inflated` を「全 severity で 1 段階下げる」としていたため、**BLOCKER 60-79 → CRITICAL 60-79（要 80）/ CRITICAL 80-94 → MAJOR 80-94（要 95）** が報告マトリクスを割って silent に消えていた。`refuted` 経路しか塞いでいない不変条件は、反証レイヤーの effort を下げる根拠には使えない（orchestration-guide `## 5` の「扱い側で保険が効いている」はこの修正込みで成立する）
+  - **この不変条件は反証レイヤーの effort 引き下げの前提になっている**（orchestration-guide.md `## 5`）。緩める変更をするときは反証 effort を `max` に戻すかを同時に判断する。→ 経緯: `design-notes/scoring-rationale.md`
   - **降格で消える場合は「🔁 反証で取り下げた指摘」にも出さない**（あの節は MAJOR/MINOR の `refuted` 専用）。高 severity は本文に残すのが唯一の正しい扱い
-- **security specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**（triage-guide.md `## 9` のゲートで除外）。万一 verdict が付いても confidence / severity は据え置き、反証メモも付さない（誤反証の代償が非対称に大きい）
+- **security specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**（triage-dynamic-gates.md `## 9` のゲートで除外）。万一 verdict が付いても confidence / severity は据え置き、反証メモも付さない（誤反証の代償が非対称に大きい）
 - 係争メモは `[...]` タグ語彙を増やさず本文の `⚠️ 反証メモ:` で表す（reviewer 自己申告タグ `[scope:out]` 等はオーケストレーターでなく reviewer が付与する系統。producer を記法で区別する）
 - verdict が付いていない指摘（反証レイヤー未起動・対象外・反証失敗）は本ステップを no-op として素通りする（後方互換）
 
-### パネル運用時の集計（max effort で 1 指摘を複数体反証する場合・将来拡張）
-
-- `refuted` 成立は **過半数かつ全員が file:line 反証根拠を提示** した時のみ。票割れ・棄権（uncertain 混在）は uncertain 扱いとし delta を合算しない
-- 現行は全 effort で **1 指摘 1 verdict**（v2.41.0 以降、反証エージェント 1 体が最大 5 件を担当するバッチ運用。1 件を複数体で見るパネルではない）。パネルは event bus 計測後に拡張判断
-- **バッチはパネルではない**: 同じ指摘に複数 verdict が付くことは無いので、上の過半数ルールは現行では発火しない。バッチ内の verdict 同士を合算・相殺してはならない（triage-guide `## 9`）
+> **バッチはパネルではない**: 現行は全 effort で **1 指摘 1 verdict**（反証エージェント 1 体が最大 5 件を担当するバッチ運用）。同じ指摘に複数 verdict が付くことは無いので、**バッチ内の verdict 同士を合算・相殺してはならない**（triage-dynamic-gates.md `## 9`）。パネル運用（1 指摘を複数体で反証）は将来拡張で、集計規則は `design-notes/scoring-rationale.md`。
 
 ---
 

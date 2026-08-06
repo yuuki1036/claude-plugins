@@ -12,18 +12,18 @@
 
 **HTML/CSS のネイティブ API > JavaScript ワークアラウンド**。同じ UX をネイティブ機能で実現できるのに自前 JS で再実装している箇所を、より標準的・保守的・アクセシブルな選択肢に寄せる。
 
-ただし **このチェックリストの指摘は大半が「任意改善」**である。reviewer-prompts.md の評価原則「好みではなく原則」と scoring-guide の confidence クランプに必ず従う:
+ただし **このチェックリストの指摘は大半が「任意改善」**である。`prompts/reviewer-common.md` の評価原則「好みではなく原則」と scoring-guide の confidence クランプに必ず従う:
 
 - 動いているコードを「モダンでない」という理由だけで書き換えさせる指摘は **`Optional:` prefix・confidence ≤ 60**。
 - confidence を上げてよいのは **事実根拠があるとき**に限る:
   - **Baseline ゲート違反**（後述）= ブラウザ互換の事実 → confidence 75-90 / `MAJOR`
-  - 自前実装にアクセシビリティ欠陥が伴う（フォーカストラップ漏れ等）→ それは **ui-quality の a11y 観点（reviewer-prompts.md）側で指摘**し、こちらでは重複させない。
+  - 自前実装にアクセシビリティ欠陥が伴う（フォーカストラップ漏れ等）→ それは **ui-quality の a11y 観点（`prompts/focus/ui-quality.md`）側で指摘**し、こちらでは重複させない。
 
 ## ui-quality（a11y）との棲み分け
 
 | 観点 | 担当 |
 |---|---|
-| aria / alt / コントラスト / セマンティック HTML / フォーカス管理 / キーボード操作 | **ui-quality 本体（reviewer-prompts.md）** |
+| aria / alt / コントラスト / セマンティック HTML / フォーカス管理 / キーボード操作 | **ui-quality 本体（`prompts/focus/ui-quality.md`）** |
 | 「自前実装 → ネイティブ API」置き換え / Baseline ゲート / modern CSS・forms | **このチェックリスト** |
 
 a11y 違反はこのファイルでは扱わない（重複指摘の禁止）。ネイティブ API 化が「結果的に a11y も改善する」場合は、Optional 改善の補足として一言添える程度に留める。
@@ -46,7 +46,7 @@ a11y 違反はこのファイルでは扱わない（重複指摘の禁止）。
 | 色操作・グラデーションを hex/rgb/hsl で手計算 | `oklch`（知覚均等・広色域） | **好み度高 → `Optional:` ≤ 45**（強く推さない） |
 | 過剰な polyfill / core-js import | 対象 API が Baseline widely available なら polyfill 削除を検討 | Baseline 確認後 `Optional:` 55-65 |
 
-> マッピングは「diff に新規導入された UI」のみ対象。既存コードのレガシー実装をリファクタさせる指摘は出さない（reviewer-prompts.md「新規導入部分のみ報告」原則）。
+> マッピングは「diff に新規導入された UI」のみ対象。既存コードのレガシー実装をリファクタさせる指摘は出さない（`prompts/reviewer-common.md`「新規導入部分のみ報告」原則）。
 
 ---
 

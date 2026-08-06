@@ -2,6 +2,121 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.48.1] - 2026-08-07
+
+v2.46.0〜v2.48.0 の再編を `/self-review`（explorer 2 + reviewer 6 + specialist 2 + 反証 1）にかけて見つかった**自分で入れた退行**を潰した版。反証レイヤーが BLOCKER 2 件を pre-existing / 環境依存として却下したので、確定した分だけを直している。
+
+### Fixed
+- **publish の payload が複数行で `events.jsonl` の JSON Lines を壊していた**（`scripts/publish-review-event.sh`）。両 SKILL のテンプレートは整形済みの複数行 JSON で、`event_bus_publish` は `printf '...%s\n'` で 1 行 1 イベントとして追記するため、**1 イベントが 4〜6 物理行に割れ、どの行も単独ではパース不能**になっていた。`json.load` は改行を空白として受理するので、直前に足した妥当性検証がこの破壊だけをすり抜けていた（再現確認: 4 行 / 4 行ともパース失敗）。subscriber は `issue-workflow:issue-maintain`:
+  - sed によるテキスト合成（`duration_*` 除去 → `{` 直後へ注入 → カンマ正規化）を**廃止し、python3 で parse → update → 再シリアライズ**に置き換えた。`separators=(",",":")` で改行が構造的に混入しない
+  - これで同時に消えた 2 つの欠陥: ①除去 sed が値を整数リテラル前提で見ており、`"duration_min": 42`（コロン後に空白）や `null` が漏れると重複キーの**後勝ちで注入値が負ける** ②カンマ正規化 sed が JSON の**文字列値の中身まで書き換える**（`"x,,y"` → `"x,y"`）
+  - `python3` を**必須依存に格上げ**（`command -v` での条件付きスキップをやめた）。「壊れた 1 行が集計を壊す」ための検証が、python3 不在で黙って無効化されていた
+- **`size_tier` の帯判定が triage-guide `## 6.2` の定義と逆だった**（`scripts/triage-signals.sh`）。`else if (cf<=10 || cl<=500) medium` は「ファイル > 10 **または** 行数 > 500 なら large」を満たさず、**`15 files/50 lines` や `12 files/100 lines` が medium に落ちて規模キャップで fleet が無言で半減**していた（ガイドが large の worked example に挙げる `2 files/600 lines` も medium）。large → medium → small の順判定に修正。あわせて `CLASSIFIED` が空のときは `size_tier=unknown` + `numstat=failed` を出す（取得失敗を「変更 0 件」と同じ small に潰さない）
+- **`diff-slice.sh` が空出力 + exit 0 でレビュー対象を無言で落としていた**。パス抽出が `diff --git` の `$4` だったため、**スペース入りパスと rename（`{old => new}`）で必ず取りこぼす**うえ、0 件マッチを成功として返すので reviewer は「担当ファイルに変更なし」と解釈していた（`reviewer-common.md` の「切り出しに失敗したら明記する」ガードが空出力を失敗と判別できない）:
+  - パス抽出を `+++ b/<path>` 行（行末までが 1 パス）ベースに変更し、`/dev/null` 側は `--- a/<path>` で補う
+  - **マッチ 0 件は `exit 3` + stderr の WARN** にした。スペース入り・rename・0 件の 3 ケースで再現確認済み
+- **`measure-tokens.sh` がサブエージェントを 1 つも数えていなかった**。`isSidechain` は top-level transcript では常に `false` で、サブエージェントは `<slug>/<session-id>/subagents/agent-*.jsonl` という別階層にある。**`sub` 行が常に 0 になるため、プロンプト複製の削減で main → sub へ移動しただけのコストまで「削減」に見える**（削減幅の系統的な過大評価）:
+  - 集計対象を `subagents/*.jsonl` に拡張し、main / sub の判定を**ファイルの所在**に変更（実測でこのセッションの sub = 11 体 / output 516k / cache_write 4,682k を計上できるようになった）
+  - slug 導出を `sed 's#/#-#g'` → `s#[^a-zA-Z0-9]#-#g` に修正（`.claude/worktrees/` 配下＝ **review が実際に走る場所**で必ず不一致になっていた）
+  - sub が 0 件のときに自己診断メッセージを出す（前提が壊れたときに黙って 0 を返さない）
+- **diff 取得に失敗すると前回実行の古い diff を再利用していた**（`scripts/triage-signals.sh`）。「成功時のみ `mv`」は空ファイル対策であって stale 対策ではなく、`$OUT` に前回の中身が残っていると `[ ! -s ]` を通過して `exit 0` していた。取得前に `rm -f "$OUT"` し、`gh pr diff` / `git diff` の終了ステータスを直接ゲートにした
+- **`base..HEAD` の失敗が握り潰されていた**（同上）。`{ A; B; C; } > out && mv` はブレースグループの終了ステータスが**最後のコマンド**のものになるため、base ref が解決できず 1 本目が fatal でも未コミット分だけで成功扱いになり、**コミット済みの変更が丸ごと欠落したまま完走**していた。`git rev-parse --verify` で先に解決を確認し、3 系統を個別に検査する
+- **`prompts/session-context.md` の規約が誰にも届かなくなっていた**。中身がオーケストレーター向けの「プロンプト末尾に本文を展開せよ」テンプレートのままで、パス渡しに切り替えた後は orchestrator も agent も読まない孤立 doc になり、**「意図的な設計判断は confidence −30」が消えていた**。reviewer 向けの指示に書き換え、両 SKILL の「必ず Read させる」リストに条件付きで追加した
+- **`${CLAUDE_PLUGIN_ROOT}` が子 agent の環境に存在しない**ため、プロンプトテンプレート内の `${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh` が解決できず、diff の切り出しが失敗して**全文 Read にフォールバック**していた（対策 2 の効果が消える）。テンプレートを `{{PLUGIN_ROOT}}` プレースホルダに変え、両 SKILL の「可変部」に実パスの明記を必須項目として追加
+- **`angles.md` が high 既定では誰にも渡らなかった**。Read 条件が「冗長ペア時」で、冗長ペアの実起動は xhigh/max 専用のため、「ペアを削った代償を angle 内挿で補う」という縮小の前提が空振りしていた。条件を「ペア条件が成立したとき（high 以下の内挿を含む）」に変更
+- **分割による参照の張り替え漏れ 21 箇所**。`reviewer-prompts.md ## 6 / ## 8 / ## 2` など旧構造を指す参照が残っていた。**v2.47.0 の「全参照を張り替えた」は誤り**で、検証スクリプトが書き換えスクリプトと**同じ正規表現の盲点**（`` `file.md ## N` `` のようにバックティックが filename の前に来る形）を持っていたため 0 件と報告していた
+- **`xargs -n1 dirname` が `it's.ts` のようなパスで `unterminated quote` を起こし、`## agents-md` セクションが途中で落ちていた**（`triage-signals.sh`）。while ループに置換
+- **`wc -l < "$f"` を `-f` チェックより前に実行していた**（同上）。レビュー対象が `evil.js -> /dev/zero` のような symlink を含むとハングする。順序を入れ替えた
+- **`review-timing.sh` が未知引数を黙殺していた**。`--PR` のような綴り違いで `start` と `mark` が別ファイルを掴み、計測が全欠測になる経路があった。`exit 2` に変更し、`--pr` の値も数値のみ受理する
+- **`python3` が未宣言の必須依存だった**（`_requirements` / `check-deps.sh`）。jq で直したのと同じ穴を同じ改修で作っていた
+- **`fetch-pr-context.sh --save` の PR 番号が位置依存**で、`--save 123` の順で呼ぶと保存先が `-pr--save` になり削除側と食い違っていた。`--save` 除去後の第 1 引数から取るよう修正。あわせて `bash "$0"` の自己再実行を `${BASH_SOURCE[0]}` 基準に変え、空配列展開を bash 3.2 でも落ちない形にした
+
+### Changed
+- **一時ファイルのパス導出を `scripts/lib/review-paths.sh` に集約**。同じ式が 4 スクリプト + ガイドのスニペットに散っており、`fetch-pr-context.sh` だけ空値ハンドリングが違う（`-pr${1:-0}` vs `${PR:+-pr$PR}`）という乖離が既に発生していた。あわせて**一時ファイルを `$TMPDIR/claude-code-review-<uid>/`（0700 / umask 077）に閉じ込めた** — `$TMPDIR` 直下に 0644 の固定名で置くと、`TMPDIR` 未設定の環境（Linux / CI の多く）で world-writable な `/tmp` に落ち、symlink 先置きによる上書きと未コミットコードの読み取りが成立する
+- **`## files` セクションに 80 件の上限**（`triage-signals.sh`）。ファイル数に比例して伸びる唯一のセクションで、800 ファイルの PR ではここだけで約 19k tokens に達し「ダイジェストを compact に保つ」目的を打ち消していた。超過分は件数のみ表示し、全件は `diff-slice.sh --list` で取る
+- **`## hunks` から funcname コンテキストを落とした**（同上）。`@@ -a,b +c,d @@ <直前の行の実内容>` の形式なので、`API_KEY=...` のような代入行が stdout に載りうる（再現確認済み）。範囲情報だけを出す
+- `prompts/focus/*.md` 15 ファイルの冒頭から移行残骸（「現行 #N から移行。」）を削除。分割で「reviewer が最初に読む行」に昇格したが、`#N` を解決できる doc は現存しない
+
+## [2.48.0] - 2026-08-06
+
+SKILL 本文の bash をスクリプトへ切り出し（**LLM に手続きを書かせるのをやめる**）、これまで一度も測っていなかった**トークン消費を実測できる**ようにした版。
+
+### Added
+- **`scripts/measure-tokens.sh`**: セッションの transcript からトークン消費を集計する。`review:completed` payload は所要時間しか持たず、トークンは skill 実行中に自己観測できないため、**事後に transcript から取る**のが唯一の手段。Claude Code の transcript（`~/.claude/projects/<slug>/*.jsonl`）は各アシスタントメッセージに `usage` を持ち、`isSidechain` でメインループとサブエージェントを分離できる:
+  - `main.output`（オーケストレーターが**書いた**量。プロンプト複製の効果はここ・単価最大）/ `main.cache_write`（**新規に読んだ**量。参照 doc 分冊の効果はここ）/ `sub.*`（サブエージェント側）を分けて出す
+  - `cache_read` は再利用ぶんで単価が低いため**前後比較の指標には使わない**旨を出力に明記
+  - `--list` / `--since` でセッションと時間窓を選べる（1 セッションで複数レビューを回した場合の切り出し用）
+  - 仕様は orchestration-measurement.md `## 17`。**v2.46.0 / v2.47.0 の削減効果はバイト数からの概算のままで、実測はこれから**
+- **`scripts/review-timing.sh`**: 区間マーカー（`start` / `mark t1|t1b|t2` / `durations` / `cleanup`）。`TS_FILE` のパス導出（worktree ルート + PR 番号での並行セッション分離）を 1 箇所に閉じた
+- **`scripts/publish-review-event.sh`**: `review:completed` の publish。書込先のメインリポジトリ固定・所要時間の算出と注入・一時ファイルの掃除をまとめて担当する
+- **`scripts/detect-dev-worktree.sh`**: PR ブランチを保持する開発用 worktree の検出（パス除外 + worktree-setup マーカーの 2 条件）
+- **`fetch-pr-context.sh --save`**: 出力をファイルへ原子的に保存してパスを stdout に出すモード
+
+### Changed
+- **SKILL 本文の bash をスクリプト呼び出しに置換**（両 SKILL）。残る bash はほぼ 1 行呼び出しだけになった。**トークン削減は SKILL.md で約 1.3k と見込みより小さかった**（本文の大半は bash ではなく手順の散文だったため）が、副次的な効果の方が大きい:
+  - **LLM が毎回 30 行の bash を書き下ろす**必要がなくなった（転記ミスの余地が消える）
+  - **所要時間の算出を LLM にさせない**。`duration_*` は payload で渡さず、スクリプトが計測ファイルから注入する
+  - **publish 前に payload の JSON 妥当性を検証**するようになった。不正なら publish せず `FATAL:` で落ちる（**壊れた 1 行は events.jsonl 全体の集計を壊す**ため、これは実質的なバグ修正）
+- orchestration-measurement.md `## 13` / `## 13.1` / `## 14` の bash を**仕様の記述に置き換え**、実装はスクリプトが正本であることを明記した（二重管理の解消）
+
+### Fixed
+- **`jq` が未宣言の必須依存だった**。`fetch-pr-context.sh` は `require_cmd jq` で必須としているのに `_requirements` にも `check-deps.sh` にも無く、**未導入環境では review Step 1 が理由不明で落ちる**状態だった。両方に追加した（SSoT 検証で対応が担保される）
+- **品質検証器が publisher を見失う穴を塞いだ**（`.claude-plugin/scripts/validate_plugin_quality.py`）。`EVENT_PUBLISHER_GLOBS` が `*/skills/**` `*/commands/*` `*/hooks/scripts/*` だけを見ていたため、**publish 処理をプラグイン同梱スクリプトへ切り出すと publisher が検出できなくなり**「表に載っているが publish されていない」の偽陽性が 3 件出た（本改修で実際に踏んだ）。`*/scripts/*.sh` を走査対象に追加した
+
+## [2.47.0] - 2026-08-06
+
+v2.46.0 の続き。残っていたオーケストレーター側の読み込みコストを、**規範と根拠の分離**（実行時に読むのは「何をせよ」だけ）と**遅延読み込み**（条件付きフェーズのガイドはそのフェーズが走ると決まってから読む）で削った版。仕様・閾値・判定ロジックは変えていない。
+
+### Changed
+- **ガイドを利用タイミング別に分冊**（`orchestration-guide.md` 554 行 → 170 行 / `triage-guide.md` 566 行 → 348 行）。従来はどちらも実行手順の冒頭で全文を読んでいたが、内容の大半は条件付きフェーズ用で、既定 effort ではスキップされるフェーズの手順まで毎回読み込んでいた:
+  - `orchestration-dynamic-rounds.md`（`## 6` Round 2 / `## 7` meta-reviewer / `## 9` skeptic / `## 10` 反証）— いずれかを**実行すると決まってから** Read
+  - `orchestration-measurement.md`（`## 13` publish 先固定 / `## 13.1` `TS_FILE` パス / `## 14` 区間計測 / `## 16` payload 契約）— **publish の直前**に Read
+  - `orchestration-optional-flows.md`（`## 2` Issue 必読 / `## 11` Vault / `## 12` 訂正の伝播前ガード / `## 15` embed JSON）— 各フローの**適用条件を満たしたとき**だけ
+  - `triage-dynamic-gates.md`（`## 8` 動的ラウンド / `## 8.5` skeptic / `## 9` 反証の起動ゲート）— **起動可否を判断する段**で Read。Phase 0 の構成決定には不要（surface 判定は `triage-signals.sh` の `## surface` が機械適用済み）
+  - **節番号は分割前のものを維持**（外部からの参照を切らないため）。他ファイルの節を指すときはファイル名を前置する規約にし、全参照を張り替えた
+  - 各分冊と両ガイド冒頭に「いつ Read するか」の表を置き、両 SKILL.md の実行手順冒頭にも同じ表を追加した（**Read 指示を書き換えないと分割の効果が出ない**ため）
+- **規範と根拠を分離し、根拠を `references/design-notes/` へ退避**。実測値・失敗の履歴・却下した代替案・判断待ちの観測ログは、**Opus 5 が規範に従うためには不要**（規則があれば従える）だが**将来の編集者が規範を壊さないためには必要**。読者が違うのでファイルと読み込みタイミングを分けた:
+  - `orchestration-rationale.md`: 並列発行の 3.5 倍実測（#95）/ ブランチ名 checkout が構造的に必ず失敗する経緯（#98 / #69）/ HEAD 検証行を必須にした理由 / ファイル経由渡しの実測（#100 A）/ reviewer effort を `xhigh`→`high` に下げた根拠と層別の切り分け / 観点カバレッジ検算の前倒し（v2.39.0）
+  - `triage-rationale.md`: 規模キャップの実測（17 体 / 130 分・#96）/ wave 可視化の理由（#100 B）/ 縮小のロールバック条件と監視 jq / 「体数を壁時計のレバーとして扱わない」の全文 / **未解決の観測（review 経路の MAJOR がゼロに張り付いている）**
+  - `scoring-rationale.md`: 2 軸が必要な理由 / `severity-inflated` の穴（v2.41.0 で塞いだ）/ パネル運用の将来拡張
+  - `pr-context-format.md`: `fetch-pr-context.sh` の出力フォーマット（オーケストレーターは知る必要がない）
+  - **根拠を消したのではなく移した。** ガイド本体には「→ 根拠: `design-notes/...`」のリンクを残し、**将来の編集を縛る制約だけは本体に残した**（例: 反証 effort の引き下げが scoring-guide の不変条件に依存している点 / 「時間が長いから体数を減らす」をロールバック判断に混ぜない点 / `pre_adjust_counts` が貯まるまで scoring 規約を変えない点）
+  - `design-notes/README.md` に読者と読むタイミングを明記し、**規範を変更する PR では対応する design-note も同時更新する**ことを規約化した
+
+### 効果
+
+オーケストレーターが常時読み込む参照ドキュメントは **103.5k → 55.6k tokens**（v2.46.0 のプロンプト分割ぶんを含む）。条件付きの分冊（動的ラウンド 4.2k / 起動ゲート 7.8k / 任意フロー 3.4k）はスキップされれば読まない。
+
+**残る最大項は SKILL.md 本体（18.7k / 536 行）** で、常時読み込みの中で最大になった。bash ブロックのスクリプト化が次の打ち手（`skill-size` warning も 500 行超で出ている）。
+
+## [2.46.0] - 2026-08-06
+
+トークン消費の残る 2 大要因（**プロンプトテンプレートの体数ぶん複製**と **diff の (1+N) 重複**）を、v2.43.0 で PR コンテキストにだけ適用していた「ファイル経由渡し」（issue #100 A）の横展開で塞いだ版。メインコンテキストは **diff 全文もプロンプト本文も一度も載せない**。
+
+### Changed
+- **プロンプトテンプレートをパス渡しに変更**（`references/prompts/` 新設 + 両 SKILL の explorer / reviewer 起動手順）。オーケストレーターがテンプレート本文をプロンプトへ転記していたため、**同一テキストを起動体数ぶん出力していた**。共通指示だけで約 7.3k tokens あり、6 体構成では約 44k tokens の出力複製になっていた（出力トークンは単価が最も高い）:
+  - `reviewer-prompts.md`（1,142 行）と `explorer-prompts.md`（240 行）を **1 観点 1 ファイル**に分割し `references/prompts/` へ移設。`reviewer-common.md` / `focus/<focus>.md` / `specialist/<key>.md` / `explorer-common.md` / `explorer/<focus>.md` / `meta-reviewer.md` / `adversarial-verify.md` / `recall-skeptic.md` / `angles.md` / `bundle-rules.md` / `session-context.md` / `pr-context-rules.md`
+  - 旧 2 ファイルは**索引**として残す（`## 1`〜`## 8` の旧節番号 → 新パスの対応表 + プロンプトの組み立て方）。他プラグインからの参照（`guardrail-protect` §5 等）を切らないため
+  - **オーケストレーターはテンプレートを Read しない**。agent プロンプトは「Read させるパスの列挙 + 可変部（PR 番号 / 期待 HEAD SHA / diff パス / 担当ファイル / 各種パス / explorer 結果）」だけで構成する。1 体あたり約 9k tokens → 約 0.4k tokens
+  - agent が Read を怠った場合は既存の出力形式検証（orchestration-guide `## 5`）が `### レビュー結果` 見出し・`[confidence:]` タグ・`HEAD 検証:` 行の欠落として検出し 1 回だけ auto-retry する（新しい検知機構を足していない）
+  - **分割は機械的に行い本文は改変していない**（85,559 → 84,754 bytes。差分は節区切りの `---` と索引へ移した intro のみ）。内部の節番号相互参照（`## 3` の Focus テンプレート等）だけをファイルパス参照に書き換えた
+- **diff をパス渡しに変更**（両 SKILL + orchestration-guide `## 3.5` / `## 5`）。従来は main が `gh pr diff` を 1 回読み、さらに各 reviewer プロンプトへ**転記**していた（`diff サイズ × (1 + N)`）:
+  - `triage-signals.sh` が diff を `$DIFF_FILE` に保存する。**リダイレクトで書くので main は中身を見ない**
+  - agent には `$DIFF_FILE` のパスと担当ファイル名を渡し、`diff-slice.sh` で自分の担当ハンクだけを切り出させる（実測: 199KB の diff → 1 ファイル 4.5KB）
+  - 担当を絞れない観点（cross-cutting / pattern-consistency / spec-compliance 等）には `--list` で全ファイル名を渡す
+  - `## 3.5` に**判断基準「複製係数」**を明記した（係数 1 に近いものはインラインが安い / 体数ぶん立つものはパス渡し）。explorer 結果は従来どおりインライン
+- **Phase 0 の入力を signal digest に変更**（両 SKILL Step 2 / Step 1 + triage-guide `## 2`）。生 diff ではなく決定的なシグナル表で構成判断する:
+  - `## meta`（diff パス）/ `## size`（core 規模・`size_tier`・モード判定用の比率）/ `## files`（class × 増減）/ `## hunks`（core の `@@` 関数コンテキスト）/ `## focus-signals`（観点判定表のヒット数と根拠ファイル）/ `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`
+  - **スクリプトは policy を持たない**。モード決定・観点採否・体数は従来どおり triage-guide が決める（スクリプトが出すのは事実のみ）。語彙は triage-guide `## 3` / `## 8.5` に一致させる
+  - 従来 SKILL 本文に散っていた bash（core 規模カウント / AGENTS.md 階層探索 / Issue ID 抽出）を本スクリプトに集約した。`## agents-md` は orchestration-guide `## 4` の探索結果を兼ねる
+
+### Added
+- **`scripts/triage-signals.sh`**: diff の保存とシグナルダイジェスト出力。`--pr <N>`（review） / `--base <ref>`（self-review: base..HEAD + staged + unstaged） / `--staged`（staged のみ）
+- **`scripts/diff-slice.sh`**: 保存済み diff から指定パスぶんのハンクを切り出す。`--list` で含まれるファイル一覧
+
+### Fixed
+- **self-review の diff 収集から staged 分が落ちる経路を塞いだ**。ダイジェスト化にあたり 3 系統（`base..HEAD` / `--cached` / unstaged）を集約する実装にし、**同一パスが複数系統に現れたときはパス単位で合算**する（集約しないとファイル数が重複計上され `size_tier` が実態より大きく出る）。従来 SKILL の awk も `f[$3]=1` でファイル数だけは dedup していたが、スクリプト側で行数も含めて一貫させた
+
 ## [2.45.0] - 2026-08-06
 
 self-review に**コメント推敲**を組み込んだ版。毎回手で頼んでいた作業をスキル側に載せる。
