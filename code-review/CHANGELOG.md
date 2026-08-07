@@ -2,6 +2,28 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.49.0] - 2026-08-07
+
+実 PR に review を走らせたフィードバック（GitHub issue #104 / #106）への対応と、そのセッションの
+transcript を分解して分かった**サブエージェント側のコスト構造**への打ち手。
+
+### Fixed
+- **`measure-tokens.sh` が review skill では常に `sub: 0` になっていた**（GitHub issue #104）。`review` は Step 0 で `EnterWorktree` するため、セッションが **2 つの project slug に割れる** — メインループは元リポジトリ側の slug に、サブエージェントは worktree パス由来の slug に格納される。スクリプトは前者しか走査していなかった。**v2.48.1 の修正は self-review（`EnterWorktree` を使わない）でしか検証しておらず、review 経路が未検証だった**:
+  - **session-id は全 slug を通じて一意**なので、`~/.claude/projects/*/<session-id>/subagents/` と slug をまたいで引き当てる形に変更した。`--claude-worktrees-*` という命名規則に依存しないので、`EnterWorktree` の実装が変わっても効く
+  - 実機の 42 slug で確認: 同一 session-id がメイン側（`tool-results` のみ）と worktree 側（`subagents/`）に分かれている。修正前は 0 体だった実セッションで 23 体を正しく集計できるようになった
+  - 警告文の「CC 側の格納場所が変わった可能性がある」は本経路を想定しておらず誤った切り分けに誘導するため、実在確認のコマンドを示す文言に変えた
+- **skill frontmatter の `effort` と実行時 `${CLAUDE_EFFORT}` の二層構造が読み取りにくい**（GitHub issue #106）。frontmatter は skill を開けば真っ先に目に入るが、それが**オーケストレーター専用**で reviewer にも動的ラウンドにも効かないことは orchestration-guide まで辿らないと分からず、「high 運用のつもりが xhigh で meta-reviewer・skeptic・反証拡大が全部走った」という取り違えが起きていた。**規模キャップが先に効くケースでは体数が変わらないぶん気づきにくい**:
+  - 両 SKILL の「前提」節に二層構造を明記（self-review には「前提」節が無かったので新設）
+  - Step 7 / Step 6 レポートの「実効上限」行に「実行時 effort が reviewer と動的ラウンドを支配する」注記を追加
+
+### Changed
+- **agent 側にツール使用の規約を追加**（`prompts/reviewer-common.md` / `prompts/explorer-common.md`）。issue #104 のセッション（23 体）の transcript を分解したところ、**サブエージェント側コストの 45% が `cache_read`**（= 往復回数 × その時点のコンテキスト量）で、往復が減ればトークンと壁時計の両方に効くことが分かった。実測に基づく 4 項目:
+  - **独立したツール呼び出しは 1 メッセージにまとめる**。実測では **558 回のツール呼び出しが 100% 単発**（1 メッセージ 1 件）で、往復ごとに文脈全体が読み直されていた。オーケストレーター側には「同一メッセージ内で一括発行」を課していたのに、agent 側には何も書いていなかった
+  - **`Read` は範囲を指定する**。実測では **84% が範囲指定なしの全文 Read**。500 行超は `Grep` で当たりを付けて `offset` / `limit` で読む
+  - **探索は `Grep` / `Glob` ツールを優先し `Bash` の `grep` / `find` を使わない**
+  - **`Bash` は絶対パスを使い先頭に `cd` を付けない**。実測では **Bash 297 回のうち 181 回（61%）が `cd` 始まり**で、複合コマンド中の `cd` はパーミッション確認を誘発しうる
+- **探索予算に「読む量」の上限を追加**（同）。従来は「diff 外の追加 Read は 10 ファイルまで」とファイル数しか縛っておらず、大きいファイルを 10 個読めば数十万トークンになる。実測では **1 体あたり 334k tokens を新規に読み込んでいた**
+
 ## [2.48.2] - 2026-08-07
 
 ### Fixed

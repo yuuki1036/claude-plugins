@@ -35,10 +35,8 @@ done
 
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が必要" >&2; exit 2; }
 
-# transcript の置き場は cwd のパスを slug 化したディレクトリ
 # transcript ディレクトリの slug は cwd を正規化したもの。Claude Code は英数字以外を
-# すべて `-` に置換するため、`/` だけを置換すると `.claude/worktrees/...` 配下
-# （= review が実際に走る場所）で必ず不一致になる
+# すべて `-` に置換する
 ROOT=$(pwd)
 SLUG=$(printf %s "$ROOT" | sed 's#[^a-zA-Z0-9]#-#g')
 DIR="$HOME/.claude/projects/$SLUG"
@@ -53,8 +51,15 @@ fi
 [ -n "$SESSION" ] && [ -f "$SESSION" ] || {
   echo "FATAL: transcript が見つからない（--session で指定するか --list で確認）: $DIR" >&2; exit 1; }
 
-# サブエージェントの transcript は親セッションと同名のディレクトリ配下にある
-SUBGLOB="${SESSION%.jsonl}/subagents"
+# **サブエージェントの transcript は別の project slug にあることがある**（GitHub issue #104）。
+# review skill は Step 0 で EnterWorktree するため、セッションが 2 つの slug に割れる:
+#   <repo-slug>/<session-id>.jsonl                        ← メインループ
+#   <repo-slug>--claude-worktrees-<name>/<session-id>/subagents/  ← サブエージェント
+# メイン slug 配下だけを見ると review では必ず sub=0 になる。
+# **session-id は全 slug を通じて一意**なので、slug をまたいで session-id で引き当てる
+# （`--claude-worktrees-*` という命名規則に依存しないので EnterWorktree の実装が変わっても効く）。
+SESSION_ID=$(basename "$SESSION" .jsonl)
+SUBGLOB="$HOME/.claude/projects/*/${SESSION_ID}/subagents"
 
 SESSION="$SESSION" SINCE="$SINCE" SUBDIR="$SUBGLOB" python3 <<'PY'
 import glob, json, os, sys
@@ -65,6 +70,7 @@ buckets = {False: dict(n=0, out=0, cw=0, cr=0, inp=0), True: dict(n=0, out=0, cw
 first_ts = last_ts = None
 
 # main = 親 transcript / sub = <session-id>/subagents/agent-*.jsonl
+# subdir は `~/.claude/projects/*/<session-id>/subagents` のようなワイルドカード付き
 sub_files = sorted(glob.glob(os.path.join(subdir, "*.jsonl"))) if subdir else []
 targets = [(path, False)] + [(f, True) for f in sub_files]
 
@@ -114,7 +120,8 @@ if agents:
 elif buckets[False]["n"]:
     # 前提が壊れたときに黙って 0 を返さない（sub が常に 0 だと削減幅を過大評価する）
     print("\n⚠️  サブエージェントの transcript が見つからない: " + (subdir or "(未指定)"))
-    print("   fleet を起動したレビューで 0 体なら、CC 側の格納場所が変わった可能性がある")
+    print("   fleet を起動したのに 0 体なら、session-id での引き当てが効いていない。")
+    print("   `ls ~/.claude/projects/*/" + os.path.basename(os.path.dirname(subdir or "")) + "/subagents` で実在を確認する")
 print("""
 読み方: main.output = オーケストレーターが書いた量（プロンプト複製はここ・単価最大）
         main.cache_write = 新規に読み込んだ量（参照 doc の読み込みはここ）
