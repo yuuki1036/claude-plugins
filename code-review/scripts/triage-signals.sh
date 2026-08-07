@@ -281,6 +281,11 @@ done | sort -u
 [ -f CLAUDE.md ] && echo "CLAUDE.md"
 
 echo "## issue-ids"
+# Issue ID は大文字限定（`[A-Z]+-[0-9]+`）で抽出する（GitHub issue #107）。
+# Linear の Issue ID は慣例的に大文字（例: ENG-123）。ignore-case にすると
+# `utf-8` / `sha-1` / `base-64` / `ipv6-1` のような語がブランチ名・ref から誤マッチし、
+# triage digest に無関係な「Issue ID」が載る。小文字 ID を使う backend を追加するときは
+# ここを見直す（その場合も誤マッチ増を避けるため prefix を絞る等の対策を伴わせる）。
 if [ -n "$PR" ]; then
   gh pr view "$PR" --json headRefName,baseRefName -q '.headRefName + " " + .baseRefName' 2>/dev/null \
     | grep -oE '[A-Z]+-[0-9]+' | sort -u

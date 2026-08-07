@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.50.2] - 2026-08-07
+
+### Changed
+- **`scripts/triage-signals.sh` の issue-ids 抽出が大文字限定である意図をコメントで明示**（GitHub issue #107）。`grep -oE '[A-Z]+-[0-9]+'` は Linear の慣例（大文字 Issue ID）に合わせた意図的な絞り込みで、ignore-case にすると `utf-8` / `sha-1` / `base-64` 等がブランチ名から誤マッチする。小文字 ID の backend を追加するときの見直しポイントも併記した（コードの挙動は不変）。
+
 ## [2.50.1] - 2026-08-07
 
 ### Fixed
