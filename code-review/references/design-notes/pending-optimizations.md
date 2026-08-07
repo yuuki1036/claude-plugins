@@ -39,6 +39,27 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 
 **採らない理由（現時点）**: cache_write 全体（7.7M）の **3%** にしかならない。一方で共通指示は precision を支える契約（評価 6 原則 / claim grounding / 探索予算 / 出力フォーマット）の集まりで、削ると recall・precision に直接効く。**費用対効果が悪い**。圧縮するなら 1〜2 を先にやる。
 
+## 5. reviewer effort profile の A/B（`differentiated` の採否 / v2.51.0 で仕込み済み）
+
+**現状**: reviewer は high 帯で全員 `high`（`uniform`）。userConfig `reviewer_effort_profile=differentiated` で、high 帯に限り低密度観点だけ `medium` に下げられる実験フラグを入れた（マップ: triage-guide.md `## 7.1`）。**まだ採否を決めていない**。
+
+**仮説**: Opus 5 の素の性能なら、低密度観点（comment-accuracy / pattern-consistency / config / dependency / type-design / ui-quality / cross-cutting / doc-substance / test-quality / api-design）は `medium` でも recall が落ちない。
+
+**効果の見積もり（過大評価を避ける）**: effort が削るのは output/thinking トークン。コスト内訳は cache_read 45% + cache_write 38% + output 17%（本ファイル冒頭の基準値）なので、**削れるのは 17% の一部だけ＝ modest**。壁時計も wave 数と探索往復が支配で thinking 量ではないため、短縮も小さい。**「大きく効く」と期待しないこと**。
+
+**A/B 手順（`differentiated` を採用してよいかの判定）**:
+1. **同一 PR・同一 diff** で 2 回流す。arm A = `uniform`（既定）/ arm B = `reviewer_effort_profile=differentiated`。`size_tier` は自動で揃う（同一 diff のため）
+2. 各 arm で計測を取る:
+   - **recall（最重要）**: レポートの severity 別件数と `pre_adjust_counts` の **blocker+critical**。`review:completed` payload の `reviewer_effort_profile` で arm を層別
+   - **トークン**: `scripts/measure-tokens.sh`（`## 17`。`sub.output` / `sub.cache_write` の差を見る。同一 PR・1 セッション 1 レビューで取る）
+   - **壁時計**: `duration_fleet_min`
+3. **判定基準**: arm B の **blocker+critical recall が arm A から落ちていない**ことが採用の必要条件。落ちていなければトークン/壁時計の差分を採用のうまみとして評価する。1 PR では足りず、`size_tier` を揃えた複数 PR（できれば high-risk surface を含む PR を 1 本以上）で確認する（このリポの流儀＝サンプルが貯まるまで判断しない）
+4. **結論後の後始末**:
+   - **採用**: `differentiated` を既定化するか検討し、実験フラグ（userConfig）と payload の `reviewer_effort_profile` の暫定注記を整理する
+   - **不採用**: フラグ・マップ（triage-guide.md `## 7.1`）・payload フィールド・本節を撤去する（実験スカフォールドを残さない）
+
+**注意**: 高密度観点（bug-detection / security / spec-compliance / claude-md-compliance / error-handling / migration / performance）と specialist を `medium` に混ぜて測らないこと。難所の recall を落とすと A/B の結論が「安く見えて実は劣化」に倒れる。検証層（meta / skeptic / 反証）は 1 体固定なので profile 対象外のまま。
+
 ## 4. explorer wave の廃止（直列 wave −1）
 
 **現状**: explorer → reviewer の直列 1 wave。explorer の結果を reviewer へ選択的に注入する。

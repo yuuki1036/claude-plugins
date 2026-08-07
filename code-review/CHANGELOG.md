@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.51.0] - 2026-08-07
+
+### Added
+- **reviewer effort profile の A/B スイッチ**（userConfig `reviewer_effort_profile`、既定 `uniform`）。「Opus 5 の素性能なら低密度観点は `medium` でも recall が落ちないのでは」という仮説を計測で検証するための実験フラグ:
+  - `differentiated` を指定すると **high 帯に限り**低密度観点（comment-accuracy / pattern-consistency / config / dependency / type-design / ui-quality / cross-cutting / doc-substance / test-quality / api-design）の reviewer を `medium` で起動する。高密度観点（bug-detection / security / spec-compliance / claude-md-compliance / error-handling / migration / performance）・specialist・最小保証 2 体は `high` 維持。**xhigh/max は明示 escalation なので profile を無視**して全 reviewer を `xhigh` のまま。検証層（meta / skeptic / 反証）と explorer は対象外
+  - effort が cache（コスト全体の 83%）ではなく output/thinking（~17%）側に効くため**節約は modest** と分かったうえで、recall を落とさず取れる分だけ取る位置づけ。マップの正本は `triage-guide.md` `## 7.1`
+  - `review:completed` payload に `reviewer_effort_profile` を追加（A/B の arm を層別する暫定フィールド。存在が v2.51.0 マーカー）。**同一 PR で uniform / differentiated を流し、blocker+critical recall が落ちないことを必要条件に採否を判定する** A/B 手順・判定基準・結論後の撤去条件を `design-notes/pending-optimizations.md` `## 5` に記載
+  - 既定 `uniform` は現行挙動と完全一致（下流に影響なし）
+
 ## [2.50.2] - 2026-08-07
 
 ### Changed

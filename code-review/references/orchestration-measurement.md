@@ -105,6 +105,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 | `pr` | PR 番号の文字列。self-review と PR 番号取得失敗時は `"local"` |
 | `effort` | 実行時 `${CLAUDE_EFFORT}` の実値（`low`〜`max`。装飾を付けない）。体数上限と動的ラウンドの起動を左右する条件変数なので、下流の集計は必ずこれで層別する（v2.39.0） |
 | `size_tier` | Phase 0 が判定した規模帯（`small` / `medium` / `large`。triage-guide.md `## 6.1` の core 基準）。所要時間は規模と体数の両方に効かれるため、帯を混ぜた比較は規模キャップの効果を検出できない（v2.40.0） |
+| `reviewer_effort_profile` | reviewer effort profile の arm（`uniform` / `differentiated`。triage-guide.md `## 7.1`）。**A/B の層別キー**で、これが無いと 2 arm がどちらも `effort:"high"` で記録され区別できない。存在が v2.51.0 以降のマーカー（日付では切らない）。**実験フラグに紐づく暫定フィールド**で、A/B の結論が出て profile 機能を撤去するときに一緒に消す（design-notes/pending-optimizations.md） |
 | `duration_min` ほか `duration_*` | 区間分割の意味・欠測時の扱い・「混ぜて比較しない」理由は `## 14` が正本。`TS_FILE` のパス導出は `## 13.1` |
 | `head_verified` | `{ok, mismatch, unknown}`（review のみ。v2.43.0）。各 agent の `HEAD 検証:` 行の集計で、`unknown` は行が無かった agent 数。`mismatch + unknown > 0` のレビューは指摘の信頼度が落ちる（orchestration-guide.md `## 5`） |
 | `blocker_count` / `critical_count` / `major_count` / `minor_count` | severity 別件数（報告マトリクス通過後） |
