@@ -96,3 +96,29 @@ reviewer 起動後（旧 Phase 5.7 / 4.7 の補完起動）から前倒しした
 - **プロンプト複製（出力トークン）と diff のパス渡しの効果はこの計測に含まれない**。
   そちらは `scripts/measure-tokens.sh` で main / sub を分けて測る（main→sub へ移動した分を
   見落とさないため、sub を必ず含めること）
+
+
+## 締めフロー 5 で agent worktree を掃除する理由（GitHub issue #105）
+
+Agent tool の `isolation: "worktree"` は **「変更が無ければ自動削除」** する仕様。にもかかわらず実測で 13〜23 個の agent worktree が残り、`agent-*` ブランチは 45 本まで蓄積していた。
+
+**原因はプラグイン自身にある。** `prompts/reviewer-common.md` の必須セットアップが
+
+```
+git fetch origin refs/pull/<N>/head
+git checkout --detach FETCH_HEAD
+```
+
+を実行するため、子 worktree の作業ツリーが作成時（origin/default-branch 派生）から**丸ごと入れ替わる**。ファイルは dirty でないが「作成時と同じ状態」ではないので、自動削除の対象から外れる。issue の観察「未コミット変更なし・PR head SHA のまま」と整合する。
+
+**detach をやめて自動削除に任せる選択は取れない。** これは issue #98 で「子 agent が base branch のファイルを読んだままレビューする」偽陽性を潰すために入れた機構で、戻すと品質が落ちる。残留を作っているのがプラグインである以上、プラグインが片付ける。
+
+**却下した代替案**:
+
+| 案 | 却下理由 |
+|---|---|
+| SKILL.md に手順を書くだけ（吸収しない） | 毎回手作業。`ExitWorktree` が失敗して運用がブロックされる |
+| `git worktree prune` | prune は「ディレクトリが消えた worktree の登録を掃除する」だけで、実体があるものは消さない |
+| `ExitWorktree` に force 相当を渡す | そのオプションは無い。あっても state 検証を潰すのは危険 |
+
+**`agent-*` ブランチを消してよい理由**: agent はコミットしないので、ブランチが指すのは PR head そのもの。削除で失われるコミットは無い。並行レビューの生きた worktree は「どの worktree にも checkout されていないものだけ消す」条件で保護される（ただし agent が detach 済みだとブランチは free に見えるため、並行実行時に他レビューの未使用ブランチを消しうる。agent の作業には影響しない）。

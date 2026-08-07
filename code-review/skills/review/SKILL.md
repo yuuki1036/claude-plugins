@@ -94,10 +94,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-pr-context.sh" <PR番号> --save
 
 **【任意】Issue ファイル必読フロー（issue-workflow 併用時）**:
 
-PR head / base branch 名から Issue ID を抽出し、ローカルの Issue ファイルがあれば spec-compliance reviewer の prompt に同梱する。仕様・受入条件・設計判断を踏まえた判定の精度が上がる（GitHub issue #43）。
-
-抽出・探索の bash 手順・親 Issue の 1 段追跡・スキップ条件（best-effort / 後方互換）の詳細:
-→ orchestration-optional-flows.md `## 2`
+Step 2 のダイジェスト `## issue-ids` に Issue ID があり、ローカルに Issue ファイルが実在する場合のみ、spec-compliance reviewer の prompt に同梱する（仕様・受入条件を踏まえた判定の精度が上がる。手順・親 Issue の 1 段追跡・スキップ条件: → orchestration-optional-flows.md `## 2`）。
 
 ### 2. diff の保存とシグナルダイジェストの取得
 
@@ -486,9 +483,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
      }'
    ```
 
-   - スクリプトは payload の JSON 妥当性を検証してから書く（壊れた 1 行は events.jsonl 全体の集計を壊すため、不正なら publish せず `FATAL:` で落ちる）
-   - **書込先はメインリポジトリのルートに固定される**。この時点の cwd は Step 0 で入った worktree であり、素のまま publish すると締めフロー 5 の `ExitWorktree(remove)` で計測ごと消える（→ orchestration-measurement.md `## 13`）
-   - 計測ファイルと PR コンテキスト / diff の一時ファイルもスクリプトが掃除する
+   - スクリプトが payload の JSON 妥当性検証・書込先のメインリポジトリ固定・一時ファイルの掃除まで行う（→ orchestration-measurement.md `## 13`）
 
    **payload 契約の正本は orchestration-measurement.md `## 16`**（フィールドの意味・版マーカー・後方互換をここに複写しない）。review 固有の点のみ:
    - `pr` は Step 1 で取得した PR 番号の文字列。取得に失敗した場合は `"local"`
@@ -496,9 +491,17 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
    - `duration_closing_min` は締めフロー（人間の応答待ち）を捉える。**改善の効果測定には使わない**（人間の都合で 10 倍振れる）
    - `agents.round2` / `recall_skeptic.findings_added` はレポートの「動的ラウンド」行の数値と一致させる
 
-5. **ExitWorktree** で worktree から抜ける。
+5. **agent worktree の掃除（ExitWorktree の直前 / 必須）**: agent は `isolation: "worktree"` で起動するため体数ぶんの worktree が配下に残り、**この状態では `ExitWorktree(remove)` が state 検証に失敗して worktree を畳めない**（GitHub issue #105）:
 
-6. **関連 worktree の teardown 案内（任意・非ブロッキング）**: ExitWorktree 後（main clone 上）、PR ブランチに紐づく**開発用 worktree**（dev-workflow:worktree-setup で作成したもの）が残っていないか検出する。ブランチ名一致だけではレビュー用に EnterWorktree した一時 worktree（`.claude/worktrees/` 配下）と区別できないため、**パス除外 + worktree-setup マーカーの 2 条件**で開発用 worktree に限定する:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/cleanup-agent-worktrees.sh"
+   ```
+
+   削除対象は **①現在の worktree の配下 ②未コミット変更なし ③自分自身ではない** の 3 条件を満たすものだけ（並行レビューや開発用 worktree には触れない）。**出力の件数をレポートに 1 行残し**、失敗が 1 件以上なら手動 remove を案内する。掃除に失敗しても続行する（best-effort）。→ 残留する理由: `design-notes/orchestration-rationale.md`
+
+6. **ExitWorktree** で worktree から抜ける。
+
+7. **関連 worktree の teardown 案内（任意・非ブロッキング）**: ExitWorktree 後（main clone 上）、PR ブランチに紐づく**開発用 worktree**（dev-workflow:worktree-setup で作成したもの）が残っていないか検出する。ブランチ名一致だけではレビュー用に EnterWorktree した一時 worktree（`.claude/worktrees/` 配下）と区別できないため、**パス除外 + worktree-setup マーカーの 2 条件**で開発用 worktree に限定する:
 
    ```bash
    # ブランチ名を SKILL 本文に埋めない（PR 作者が制御する文字列がシェルで評価される経路になる）。

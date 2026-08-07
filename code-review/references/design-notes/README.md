@@ -10,6 +10,7 @@
 | `triage-rationale.md` | `triage-guide.md` 系（規模キャップの実測 / wave 可視化 / 縮小のロールバック条件と監視 / 未解決の観測） |
 | `scoring-rationale.md` | `scoring-guide.md`（2 軸の必要性 / `severity-inflated` の穴 / パネル運用の将来拡張） |
 | `pr-context-format.md` | `scripts/fetch-pr-context.sh` の出力フォーマット |
+| `pending-optimizations.md` | **未実装の最適化案**と計測の基準値（実装したらこのファイルから消す） |
 
 ## なぜ分けたか
 

@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.50.0] - 2026-08-07
+
+### Added
+- **`scripts/cleanup-agent-worktrees.sh`**（GitHub issue #105）。agent は `isolation: "worktree"` で起動するため体数ぶんの worktree がレビュー用 worktree の配下に残り、**その状態では締めフローの `ExitWorktree(remove)` が state 検証に失敗して worktree を畳めない**（実測で 13〜23 個が残留、`agent-*` ブランチは 45 本まで蓄積していた）:
+  - **原因はプラグイン自身にある**。Agent tool の worktree は「変更が無ければ自動削除」される仕様だが、`prompts/reviewer-common.md` の必須セットアップ（`git fetch origin refs/pull/N/head` + `git checkout --detach FETCH_HEAD`）が作業ツリーを丸ごと入れ替えるため対象外になる。detach をやめれば自動削除に任せられるが、それは issue #98 で「子 agent が base branch を読む」偽陽性を潰すために入れた機構なので戻せない。残留を作っているのがプラグインである以上プラグインが片付ける（判断の詳細と却下した代替案: `design-notes/orchestration-rationale.md`）
+  - **削除は 3 条件をすべて満たすものだけ**: ①現在の worktree の配下 ②未コミット変更なし ③自分自身ではない。並行する別レビューや開発用 worktree には触れない
+  - **メインリポジトリ上では実行を拒否する**（`--git-dir` と `--git-common-dir` の一致で検出）。そこで「配下の worktree」を対象にするとレビュー用 worktree 自体と開発用 worktree を巻き込むため
+  - `agent-*` ブランチは「どの worktree にも checkout されていない」ものだけ削除する（生きた worktree のブランチは保護される）。agent はコミットしないのでブランチが指すのは PR head そのもので、削除で失われるコミットは無い
+  - `--dry-run` で対象の列挙のみも可能。**件数は必ず報告する**（silent skip で「片付いたつもり」を作らない）
+  - review SKILL の締めフローに 5 として挿入し、以降を 1 つ繰り下げた（ExitWorktree は 6、teardown 案内は 7）
+
+### Changed
+- **未実装の最適化案を `design-notes/pending-optimizations.md` に記録**。meta-reviewer と反証の並列化（直列 wave −1）/ main 側のツール呼び出しバッチ化 / `reviewer-common.md` の圧縮 / explorer wave の廃止 の 4 件について、見積もり・トレードオフ・「今は採らない理由」・判断に必要な計測を残した。あわせて v2.49.0 の agent ツール規約を入れる**前**の実測値（23 体・バッチ率 1.00・Read 範囲指定率 16%・`cd` 始まり 61%）を基準値として記録し、次の実 review と比較できるようにした
+
 ## [2.49.0] - 2026-08-07
 
 実 PR に review を走らせたフィードバック（GitHub issue #104 / #106）への対応と、そのセッションの

@@ -1,0 +1,48 @@
+# 未実装の最適化案（実行時には読まない）
+
+実測で効きそうだと分かっているが、**まだ入れていない**打ち手。トレードオフか複雑度のどちらかで判断が要るものを置く。実装したらこのファイルから消して、根拠を対応する rationale ファイルへ移す。
+
+## 計測の基準値（改修効果はここと比べる）
+
+v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR 1 件・effort xhigh・規模 medium・23 体（GitHub issue #104 のセッション）:
+
+| | msgs | tool calls | output | cache_write | cache_read |
+|---|---:|---:|---:|---:|---:|
+| main | 167 | — | 675k | 3,126k | 43,152k |
+| sub (23 体) | 1,202 | 558 | 483k | 7,676k | 115,896k |
+
+- コスト比（output×5 / cache_write×1.25 / cache_read×0.1 で重み付け）: **cache_read 45% / cache_write 38% / output 17%**
+- 1 体平均: 52 msgs / 24 tool calls / cache_write 334k / cache_read 5,039k / peak context 142〜185k
+- **バッチ率 1.00**（558 回のツール呼び出しが 100% 単発）、**Read の範囲指定率 16%**、**Bash の `cd` 始まり 61%**
+
+次に実 review を流したら `scripts/measure-tokens.sh` で同じ指標を取り、この表と比較する。
+
+## 1. meta-reviewer と反証レイヤーの並列化（直列 wave −1）
+
+**現状**: Phase 5.6（meta）→ Phase 5.9（反証）の直列。どちらも reviewer 完了後に走る。
+
+**着眼**: 両者は**互いに独立**している。meta は findings を**足す**係、反証は**潰す**係で、入力はどちらも「reviewer の全指摘」。依存があるのは「meta が足した指摘も反証対象に含める」という一点だけ。
+
+**案**: meta と反証を同時発火し、**meta が足した指摘だけを追加の反証バッチに回す**。meta が 0 件なら wave が 1 本減り、足した場合だけ現状と同じ wave 数になる（期待値で削減）。
+
+**採らない理由（現時点）**: 実装の複雑度が上がる（反証を 2 段に分ける・verdict の突合が 2 系統になる）。かつ **xhigh / max でしか meta が走らない**ので、既定 high の運用では効果ゼロ。壁時計の実測（`duration_fleet_min`）が貯まって「meta の wave が実際に効いている」と分かってから入れる。
+
+## 2. メインコンテキスト側のツール呼び出しバッチ化
+
+**現状**: agent 側には v2.49.0 で規約を入れたが、オーケストレーター（main）には入れていない。main も 167 msgs / cache_read 43M を使っている。
+
+**採らない理由（現時点）**: main の呼び出しは agent と違い**逐次判断が本質**のものが多い（Phase 0 の判定 → 構成決定 → 起動、のように前の結果が次を決める）。独立に並べられるのは Step 1〜2 の情報収集くらいで、既に `triage-signals.sh` が 1 回の Bash に畳んである。**効果が小さいのに SKILL 本文が伸びる**（SKILL は常時読み込みなので、書いた分だけ確実にコストが増える）ほうが損。agent 側の効果を測ってから再検討する。
+
+## 3. `reviewer-common.md` の圧縮
+
+**現状**: 21.8k bytes ≒ 9.6k tokens。これを全 agent が読むので、23 体なら 221k tokens。
+
+**採らない理由（現時点）**: cache_write 全体（7.7M）の **3%** にしかならない。一方で共通指示は precision を支える契約（評価 6 原則 / claim grounding / 探索予算 / 出力フォーマット）の集まりで、削ると recall・precision に直接効く。**費用対効果が悪い**。圧縮するなら 1〜2 を先にやる。
+
+## 4. explorer wave の廃止（直列 wave −1）
+
+**現状**: explorer → reviewer の直列 1 wave。explorer の結果を reviewer へ選択的に注入する。
+
+**案**: explorer を廃し、reviewer に「必要なら自分で探索」させる。
+
+**採らない理由**: reviewer の探索量（＝ cache_write と往復）が増えるので、wave を 1 本減らす代わりに wave 内の時間が伸びる。**トレードオフの向きが不明**なうえ、explorer の「判定せず事実だけ集める」独立性は reviewer の確証バイアスを避ける設計上の要でもある。`duration_explore_min`（v2.43.0 で追加）が貯まって wave 単価が分かってから判断する。
