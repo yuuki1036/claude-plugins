@@ -186,13 +186,13 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 | `confirmed`（独立にパス再現） | 全 severity | 既存「複数エージェント同一指摘 +15」の **発火源として扱う**。反証 confirm と複数エージェント検出が同時成立しても **+15 は一度だけ**（二重計上の排他） |
 | `uncertain`（具体根拠なし） | 全 severity | confidence **−10** + 本文に `（反証: 未確定）` を付記。**単独では何も落とせない**（怠惰な却下で本物を殺さないため） |
 | `severity-inflated`（影響過大の根拠あり） | **BLOCKER / CRITICAL** | **降格後に報告マトリクスを割る場合は severity を据え置き**、本文先頭に `⚠️ 反証メモ: severity 過大の疑い（<根拠 file:line>、要確認）` を付与する（= 係争中）。割らない場合のみ 1 段階下げる。判定は降格後の (severity, confidence) を報告マトリクスに当てて行う |
-| `severity-inflated`（影響過大の根拠あり） | **MAJOR / MINOR** | **既存「severity 調整ルール（軽微）」の一項目として** severity を 1 段階下げる。退行 invariant 検算で既に下げている場合は二重適用しない（既存の排他条件を流用） |
+| `severity-inflated`（影響過大の根拠あり） | **MAJOR / MINOR** | **既存「severity 調整ルール（軽微）」の一項目として** severity を 1 段階下げる。退行 invariant 検算で既に下げている場合は二重適用しない（既存の排他条件を流用）。**降格の結果 severity が報告マトリクス / `review_severity_threshold` を割って脱落する場合は、`refuted` の MAJOR/MINOR と同じく取り下げ理由を付録（🔁）に記録する**（verdict 種別・軸名・反証 file:line を含める。降格で消える指摘だけ silent に落ちて `refuted` との透明性が食い違うのを防ぐ / GitHub issue #109） |
 
 ### 不変条件（機械保証）
 
 - **高 severity（BLOCKER / CRITICAL）の指摘は反証レイヤーで報告から消えない。** `refuted` は confidence/severity を据え置き、`severity-inflated` は報告マトリクスを割る降格を行わない。いずれも本文に反証メモを付すのみで、最終判断は人間に残す（false-negative の構造的防止）
   - **この不変条件は反証レイヤーの effort 引き下げの前提になっている**（orchestration-guide.md `## 5`）。緩める変更をするときは反証 effort を `max` に戻すかを同時に判断する。→ 経緯: `design-notes/scoring-rationale.md`
-  - **降格で消える場合は「🔁 反証で取り下げた指摘」にも出さない**（あの節は MAJOR/MINOR の `refuted` 専用）。高 severity は本文に残すのが唯一の正しい扱い
+  - **高 severity は仮に降格で消えても「🔁 反証で取り下げた指摘」には出さない**（あの節は MAJOR/MINOR が反証で報告閾値を割った場合に載る節 — `refuted` の −40 と `severity-inflated` の降格の両方を含む / issue #109）。高 severity は係争注記付きで本文に残すのが唯一の正しい扱い
 - **security specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**（triage-dynamic-gates.md `## 9` のゲートで除外）。万一 verdict が付いても confidence / severity は据え置き、反証メモも付さない（誤反証の代償が非対称に大きい）
 - 係争メモは `[...]` タグ語彙を増やさず本文の `⚠️ 反証メモ:` で表す（reviewer 自己申告タグ `[scope:out]` 等はオーケストレーターでなく reviewer が付与する系統。producer を記法で区別する）
 - verdict が付いていない指摘（反証レイヤー未起動・対象外・反証失敗）は本ステップを no-op として素通りする（後方互換）

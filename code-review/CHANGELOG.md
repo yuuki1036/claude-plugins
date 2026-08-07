@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.50.1] - 2026-08-07
+
+### Fixed
+- **反証 `severity-inflated` による MAJOR/MINOR 降格が silent に脱落していた**（GitHub issue #109）。`refuted` で取り下げた MAJOR/MINOR は取り下げ理由を「🔁 反証で取り下げた指摘」付録に記録していたのに対し、`severity-inflated` で 1 段階降格した結果 `review_severity_threshold`（既定 MAJOR）を割って脱落する指摘は**どこにも記録されず**、レビュアーが「なぜ消えたか」を追えなかった。反証由来の脱落 2 経路で透明性が食い違っていた:
+  - `scoring-guide.md`「反証レイヤーの verdict 反映」の `severity-inflated` MAJOR/MINOR 行に、降格で報告閾値を割って脱落する場合は `refuted` と同じく 🔁 付録へ記録する規約を追加（verdict 種別・軸名・反証 file:line を含める）
+  - 両 SKILL のスコアリング手順 4 と「🔁 反証で取り下げた指摘」セクションの条件を「`refuted` 専用」から「反証で報告閾値を割った MAJOR/MINOR 全般（`refuted` の −40 と `severity-inflated` の降格の両方）」へ拡張。付録の取り下げ理由行に verdict 種別を明示させ、2 経路を区別可能にした
+  - 高 severity（BLOCKER/CRITICAL）は従来どおり降格で消さず係争注記付きで本文に残す不変条件は不変（付録にも出さない）。本修正はレポート出力のみの変更で wave / 体数を増やさない
+
 ## [2.50.0] - 2026-08-07
 
 ### Added

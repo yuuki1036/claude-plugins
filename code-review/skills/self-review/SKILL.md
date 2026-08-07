@@ -317,7 +317,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
    - **MAJOR / MINOR の `refuted`** は confidence −40（取り下げ理由を付録に記録）、`confirmed` は既存「複数エージェント +15」の発火源（二重計上しない）、`uncertain` は −10
    - verdict が無い指摘（対象外・反証失敗）は no-op
 3. **confidence への加算・減算ルールを適用**して 0-100 にクランプ
-4. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（self-review では PR タグは通常出ない。反証 `severity-inflated` もこのルールに統合し二重降格しない）。**BLOCKER / CRITICAL の `severity-inflated` は降格後に報告マトリクスを割る場合のみ据え置き + 反証メモ**（scoring-guide の不変条件。高 severity を silent に消さない）
+4. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（self-review では PR タグは通常出ない。反証 `severity-inflated` もこのルールに統合し二重降格しない）。**BLOCKER / CRITICAL の `severity-inflated` は降格後に報告マトリクスを割る場合のみ据え置き + 反証メモ**（scoring-guide の不変条件。高 severity を silent に消さない）。**MAJOR / MINOR が `severity-inflated` の降格で報告閾値を割って脱落する場合は、`refuted` の −40 脱落と同じく 🔁 付録に取り下げ理由を記録する**（scoring-guide.md `## 反証レイヤーの verdict 反映` / issue #109。降格で消える指摘が silent に落ちない）
 5. **報告マトリクスでフィルタ**:
 
    | severity \ confidence | <60 | 60-79 | 80-94 | 95+ |
@@ -392,10 +392,10 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 - explorer-<focus>: timeout → 依存していた reviewer-<focus> には探索結果なしで実行
 
 ### 🔁 反証で取り下げた指摘（参考・人間が覆せる）
-{反証レイヤーが MAJOR/MINOR を refuted で取り下げた場合のみ。0 件なら省略}
+{反証レイヤーが MAJOR/MINOR を報告閾値未満へ落とした場合に載る（`refuted` の confidence −40 と `severity-inflated` の降格の両方 / issue #109）。0 件なら省略}
 - [取り下げ前: confidence XX / severity MAJOR] xxx の指摘
   ファイル: path/to/file:行番号
-  取り下げ理由: <軸>（反証根拠 file:line）
+  取り下げ理由: <verdict: refuted | severity-inflated> — <軸>（反証根拠 file:line）
   ※ 反証が誤りと思えばこの指摘は有効。再評価してよい
 
 ### 総括
