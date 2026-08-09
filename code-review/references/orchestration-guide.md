@@ -98,7 +98,7 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 | 層 | 体数 | effort | 既定 high で起動するか |
 |---|---|---|---|
 | meta-reviewer | 1 体・1 round（triage-dynamic-gates.md `## 8`） | `max` | しない（xhigh/max 起点） |
-| 冷や読み skeptic | PR あたり 1 体・1 round（triage-dynamic-gates.md `## 8.5`） | `max` | しない（xhigh/max 起点） |
+| 冷や読み skeptic | PR あたり 1 体・1 round（triage-dynamic-gates.md `## 8.5`） | `max` | **する**（high 起点 / surface=true のときだけ。v2.52.0 で昇格） |
 | 反証エージェント | **5 件ごと 1 体・上限 3 体**（triage-dynamic-gates.md `## 9`）＝唯一の変動費 | **`high`**（v2.41.0 で `max` から引き下げ） | **する**（非対称ゾーンに限定） |
 
 > **反証 effort の引き下げは scoring-guide の不変条件に依存している**（BLOCKER / CRITICAL は `refuted` でも `severity-inflated` でも報告から消さず係争注記を付ける）。**不変条件を緩める変更をするときは、反証 effort を `max` に戻すかどうかを同時に判断すること。**

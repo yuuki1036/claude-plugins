@@ -88,33 +88,39 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 
 ### 起動ゲート（暴走ガード）
 
-- **effort 適応**: **xhigh / max 起点**で起動。low / medium はスキップ。high（既定）は当面スキップし、`review:completed` の頻度計測後に昇格を検討する（既存 5.6/5.9 と対称の fail-safe。今回の見落としは xhigh で発生したため xhigh を直せば当面の再発を防げる）
+- **effort 適応**: **high 起点**で起動（v2.52.0 で xhigh/max 起点から昇格）。low / medium はスキップ。**meta-reviewer（`## 8`）は xhigh/max 起点のまま**で、skeptic だけ先に昇格している（skeptic は findings 非注入で reviewer wave に相乗りするため**直列 wave を増やさない**が、meta は reviewer 完了後に直列 wave を 1 本足すため。昇格の実測根拠: `design-notes/triage-rationale.md`）
   - **surface 判定は Phase 0 で先に行う**（相乗り発火の可否を reviewer 起動前に決めるため）。正規表現 + PR 自己申告 D1-High は Phase 0 で判定でき、effort ゲートを通過していれば reviewer 一括発行に skeptic を混ぜる
 - **上限**: **PR あたり skeptic 1 体・1 round のみ**（per-surface 起動ではない）。skeptic の指摘も通常の scoring・報告マトリクス・反証レイヤーの対象
 - **surface 非該当ならスキップ**: high-risk surface を含まない変更では起動しない（noise 爆発を避け high-risk に限定）
 - **計測（skip 時も surface 判定は記録する）**: effort / userConfig / scope でスキップした場合も、正規表現部分の surface 判定（diff への grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と独立に必ず実施し、`review:completed` payload の `recall_skeptic` に記録する（SKILL.md Step 7 / Step 6 の payload 規約参照）。加えて surface=true なら、`--embed` / event 発火の有無に依存しない **human レポート（Step 7 / Step 6 の「動的ラウンド」行）にも skeptic の起動有無（未起動時は skip_reason）を必ず出す**（headless 通常実行での silent skip を防ぐ・issue #85）
 
-### high 昇格の判断基準（計測後）
+### 昇格後の監視とロールバック条件（v2.52.0 で high 起点に昇格済み）
 
-effort=high での起動昇格は、`review:completed` の `recall_skeptic` 集計で判断する:
+**昇格の根拠は `design-notes/triage-rationale.md`**（需要 63% / 価値率 50%、n=8）。ここには昇格後に何を見るかだけを置く。
 
 ```bash
-# surface=true なのに effort ゲートで skeptic が走らなかった件数（昇格の需要）
+# ① 実装が効いているか: 昇格後は skip_reason="effort" が消えるはず。
+#    消えなければ SKILL 側のスキップ条件が更新されていない信号
 grep '"event":"review:completed"' .claude/events.jsonl | \
-  jq -s '[.[] | select(.payload.recall_skeptic.surface == true and .payload.recall_skeptic.skip_reason == "effort")] | length'
+  jq -s '[.[] | select(.payload.recall_skeptic.surface == true)] |
+    group_by(.payload.recall_skeptic.skip_reason // "fired") |
+    map({reason: .[0].payload.recall_skeptic.skip_reason // "fired", n: length})'
 
-# skeptic の価値率（fired のうち findings_added > 0 の割合。昇格の価値）
-# attribution_schema >= 2 で絞るのは必須（schema 1 相当＝マーカー無しは帰属が壊れており findings_added が信用できない。後述の注記）
-# 分子は findings_added（skeptic 単独由来）のみ。findings_overlap（reviewer と重複＝盲点でなかった事例）は算入しない
+# ② 価値率が維持されているか（縮小・撤去の判断材料）
+#    attribution_schema >= 2 で絞るのは必須（schema 1 は findings_added が壊れている）
 grep '"event":"review:completed"' .claude/events.jsonl | \
-  jq -s '[.[] | select(.payload.recall_skeptic.fired == true and (.payload.recall_skeptic.attribution_schema // 1) >= 2)] | if length == 0 then "no data" else ([.[] | select(.payload.recall_skeptic.findings_added > 0)] | length) / length end'
+  jq -s '[.[] | select(.payload.recall_skeptic.fired == true and (.payload.recall_skeptic.attribution_schema // 1) >= 2)] |
+    if length == 0 then "no data"
+    else {n: length, valuable: ([.[] | select(.payload.recall_skeptic.findings_added > 0)] | length)} end'
 ```
 
-目安（厳密な閾値でなく判断材料）: 直近 30 日で `skip_reason="effort"` の surface ヒットが**継続的に発生**し（≒ high 実行でも high-risk 変更を日常的にレビューしている）、かつ xhigh 実績の価値率（findings_added > 0 率）が**明確に非ゼロ**なら、high 昇格のコスト（opus 1 体/PR）に見合うとみなして effort 適応表の high を「起動」に変更する。逆に xhigh でほぼ findings_added=0 が続くなら、skeptic の縮小（Tier2 で足りる判定）を先に検討する。
+**ロールバック条件**: 昇格後のサンプル（`fired=true` かつ `attribution_schema >= 2`）が **15 件以上貯まった時点で価値率が 25% を下回っていたら**、high を「スキップ」に戻す。昇格判断が n=8 の 50% だったので、**n を倍にしても半分を切る**なら昇格根拠が崩れたとみなす。
 
-**⚠️ `attribution_schema` が無い（＝ schema 1 相当）サンプルの `findings_added` は判断に使えない**: code-review 2.35.1 より前は由来タグ `[recall-skeptic]` がレポート書式に規定されておらず、dedup 時のタグ生存も未規定だったため、publish（Phase 5.8 から 200 行以上離れ、間に精査・解説・ドラフト生成を挟む）時点で由来を再構成できず、`findings_added` が記憶依存で系統的に 0 へ潰れていた。実際に `fired=true` 4 件すべてが `findings_added=0` だが、これは「価値ゼロ」と「帰属の喪失」を**区別できない** `[unverified: gist 集約 69 件。project-local events.jsonl は gitignored のため repo からは検証不能]`。
+- **昇格直後の数件で判断しない**（`findings_added=0` が 2〜3 件続くのは 50% の分布内）
+- **`findings_overlap` を価値率の分子に混ぜない**（reviewer と重複した指摘は「盲点でなかった事例」なので、混ぜると価値率が 100% に張り付いて縮小分岐が原理的に発火しなくなる）
+- 戻すのは effort 適応行の 1 行だけ。ユーザー側は `enable_recall_skeptic: false` で個別に止められる
 
-**縮小・撤去の判断は `attribution_schema >= 2` のサンプルのみで行う**（上の jq がこのフィルタを内蔵している）。**日付では切らないこと** — マーケットプレイス配布のため、未更新マシンは修正日以降も schema 1 の payload を publish し続ける（`plugin-manager` による一括更新が前提＝ラグは常態）。`ts` で切っても汚染が混入する。publish 側が自己申告する版マーカーだけが配布ラグに耐える。壊れた計測を根拠に不可逆な撤去をしない。
+**⚠️ `attribution_schema` が無い（＝ schema 1 相当）サンプルの `findings_added` は判断に使えない**: code-review 2.35.1 より前は由来タグ `[recall-skeptic]` がレポート書式に規定されておらず、dedup 時のタグ生存も未規定だったため、publish 時点で由来を再構成できず `findings_added` が記憶依存で系統的に 0 へ潰れていた。**日付では切らないこと** — マーケットプレイス配布のため、未更新マシンは修正日以降も schema 1 の payload を publish し続ける。publish 側が自己申告する版マーカーだけが配布ラグに耐える。壊れた計測を根拠に不可逆な撤去をしない。
 
 ### model / 作法（反証レイヤーと対称）
 

@@ -280,7 +280,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 
 **スキップ条件**（いずれか満たせばスキップして 4.9 へ）:
 - userConfig `enable_recall_skeptic` が `false`
-- 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**（high 既定は当面スキップ、計測後に昇格を検討＝既存 4.6/4.9 と対称の fail-safe）
+- 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`（**high は起動する**。v2.52.0 で昇格 — surface=true の 63% が effort ゲートで未起動だった一方、起動できた回の 50% が fleet 共通盲点を実際に破っていた。根拠: `design-notes/triage-rationale.md`）
 - `--focus` / `--exclude` でスコープを絞り込んでいる
 - high-risk surface（triage-dynamic-gates.md `## 8.5` の surface 判定）を含まない
 

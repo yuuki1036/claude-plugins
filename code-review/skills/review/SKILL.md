@@ -33,10 +33,9 @@ allowed-tools:
 
 ## 実行手順
 
-実行フェーズの共通詳細の正本:
-→ Read `${CLAUDE_PLUGIN_ROOT}/references/orchestration-guide.md`（以下「orchestration-guide」）
+実行フェーズの共通詳細の正本 → Read `${CLAUDE_PLUGIN_ROOT}/references/orchestration-guide.md`（以下「orchestration-guide」）
 
-**orchestration-guide は分冊されている。冒頭の「この分割の読み方」に従い、必要になった分冊だけをその時点で Read する**（条件付きフェーズを全部スキップするなら分冊は読まない）:
+**分冊されている。必要になった分冊だけをその時点で Read する**（全スキップなら読まない）:
 
 | 分冊 | Read するタイミング |
 |---|---|
@@ -314,7 +313,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 **スキップ条件**（いずれか満たせばスキップして 5.9 へ）:
 - userConfig `enable_recall_skeptic` が `false`
-- 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**（high 既定は当面スキップ。`review:completed` の頻度計測後に high 昇格を検討＝既存 5.6/5.9 と対称の fail-safe）
+- 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`（**high は起動する**。v2.52.0 で昇格 — surface=true の 63% が effort ゲートで未起動だった一方、起動できた回の 50% が fleet 共通盲点を実際に破っていた。根拠: `design-notes/triage-rationale.md`）
 - `--emergency`（緊急モード）または `skip-mode`（生成物 PR）
 - high-risk surface（triage-dynamic-gates.md `## 8.5` の surface 判定）を含まない
 
@@ -372,7 +371,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 `missing_coverage` リストが空でない場合は「⚠️ 欠損観点」セクションを追加する（空なら省略）。**理由・補足はこのセクション本文に書き、payload の `missing_coverage` 配列には識別子のみを入れる**（語彙は orchestration-measurement.md `## 16`。自由文を入れると綴りが割れて集計不能になる）。
 
-**冷や読み skeptic の観測可能性（issue #85）**: high-risk surface を含む変更では、冷や読み skeptic（Phase 5.8）の起動有無を「動的ラウンド」行に **必ず** 出す（起動＝追加件数 / 未起動＝skip 理由）。surface HIT かつ未起動の silent skip を作らない。
+**冷や読み skeptic の観測可能性（issue #85）**: surface を含む変更では skeptic（Phase 5.8）の起動有無を「動的ラウンド」行に **必ず** 出す（起動＝追加件数 / 未起動＝skip 理由）。surface HIT かつ未起動の silent skip を作らない。
 
 **skeptic 由来の帰属をレポートまで保つ（`findings_added` の計測妥当性）**: Phase 5.8 の skeptic 指摘に付いた由来タグは、**レポート本文の指摘行にもそのまま残す**（`[confidence][severity]` の後・カテゴリの前に置く）。タグを落とすと**締めフロー 4** の publish 時点で由来を再構成できず、`findings_added` が記憶頼みになって系統的に 0 へ潰れる（＝ skeptic の価値率が実態より低く出る）。**由来タグはレポート契約の一部**であり、任意の装飾ではない。
 
@@ -393,7 +392,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
 **実効上限**: explorer N / reviewer N / specialist N（**実行時** effort `{値}` の上限と規模キャップ `{帯}` の min。どちらが効いたかを明記する）
   ※ reviewer の effort と動的ラウンド（meta / skeptic / 反証ゲート）は**実行時 effort に連動**する。skill frontmatter の effort はオーケストレーター用で別枠
-**動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件 repo 外）| 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行 | スキップ理由} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/emergency）| 非該当（surface なし）} / 反証 {対象 N 件 | スキップ理由}
+**動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件 repo 外）| 実行（reviewer N 体 / explorer M 体）} / Meta-reviewer {実行 | skip 理由} / 冷や読み skeptic {実行（N 件追加）| skip（理由: config/emergency）| 非該当（surface なし）} / 反証 {対象 N 件 | skip 理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{反証スキップ時はこの行を省略}
 

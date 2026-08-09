@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.52.0] - 2026-08-07
+
+冷や読み skeptic を **high 起点に昇格**した版。`triage-dynamic-gates.md ## 8.5` が自ら定めていた昇格基準を、蓄積した `review:completed` が両方とも満たしたため。
+
+### Changed
+- **冷や読み skeptic（Phase 5.8 / 4.8）の effort ゲートを `xhigh / max 起点` → `high 起点` に昇格**（`triage-dynamic-gates.md ## 8.5` + `orchestration-guide.md ## 5` の層別テーブル + 両 SKILL のスキップ条件）。5 リポジトリ横断の `review:completed` **50 件**（`attribution_schema >= 2` は 33 件）を集計した結果:
+  - **需要**: surface=true 24 件のうち **15 件（63%）が `skip_reason="effort"` で未起動**。基準の「継続的に発生」を満たす
+  - **価値**: `fired=true` 8 件のうち **4 件（50%）が `findings_added > 0`**。基準の「明確に非ゼロ」を満たす
+  - **待機のコスト**: 価値率 50% が正しいなら、effort skip した 15 件で**約 7〜8 件の fleet 共通盲点を取り逃していた**計算になる
+  - **昇格コストが小さい**: skeptic は v2.41.0 で reviewer wave への相乗りになっており、**直列 wave を増やさない**（壁時計への影響は wave 内最長を更新したときだけ）。増えるのは opus 1 体ぶんのトークンで、しかも surface=true のときだけ
+  - **meta-reviewer は xhigh/max 起点のまま据え置いた**。meta は reviewer 全結果に依存するため相乗りできず**直列 wave を 1 本足す**。壁時計が wave 数に支配される以上、skeptic と同じ扱いにはできない
+  - 以前 design-notes に記録していた「`fired=true` 4 件すべてが `findings_added=0` だが、価値ゼロと帰属の喪失を区別できない」は、**schema 2 のサンプルで決着した** — 帰属が壊れていただけで実際には半分が盲点を破っていた。**壊れた計測を根拠に撤去しなくて正解だった事例**として design-notes に残した
+- **`## 8.5` の「high 昇格の判断基準（計測後）」を「昇格後の監視とロールバック条件」に差し替えた**。昇格判断が n=8 の価値率 50% だったことを踏まえ、**戻す条件を先に決めてある**: `fired=true` かつ `attribution_schema >= 2` が **15 件貯まった時点で価値率が 25% を下回ったら** high をスキップに戻す（n を倍にしても半分を切るなら昇格根拠が崩れたとみなす）。あわせて「実装が効いているか」の確認 jq（昇格後は `skip_reason="effort"` が消えるはず。消えなければ SKILL 側の更新漏れの信号）も置いた
+
 ## [2.51.0] - 2026-08-07
 
 ### Added
