@@ -29,6 +29,11 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
   skills/                        # スキル定義（SKILL.md + references/）
   agents/                        # エージェント定義（frontmatter付き markdown）
   references/                    # プラグイン共通の参照ドキュメント（skills/ 配下とは別。一部プラグインのみ）
+    prompts/                     # agent プロンプト本体（1 観点 1 ファイル）。オーケストレーターは
+                                 # Read せずパスだけ渡し、agent 自身に読ませる（本文をプロンプトへ
+                                 # 転記すると同一テキストを起動体数ぶん書き出すことになる）
+    design-notes/                # 設計の「なぜ」（実測値・失敗の履歴・却下した代替案・未実装案）。
+                                 # **実行時には読まない** — 規範は各ガイド本体に置き、根拠はここへ分ける
   scripts/                       # 同梱スクリプト（一部プラグインのみ）。SKILL 本文に bash を書き下ろさず
                                  # ここへ寄せる。lib/ に共通処理を置いてよい（複製を作らない）
   hooks/                         # フック定義（hooks.json + scripts/）
