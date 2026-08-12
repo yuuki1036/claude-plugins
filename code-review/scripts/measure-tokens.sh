@@ -35,21 +35,54 @@ done
 
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が必要" >&2; exit 2; }
 
-# transcript ディレクトリの slug は cwd を正規化したもの。Claude Code は英数字以外を
-# すべて `-` に置換する
+# transcript ディレクトリの slug はセッションを開始したディレクトリを正規化したもの
+# （Claude Code は英数字以外をすべて `-` に置換する）。
+#
+# **cwd 由来の slug だけを見ると review 経路では必ず落ちる**（GitHub issue #112）。
+# review skill は Step 0 で必ず EnterWorktree するため、本スクリプトを実行する時点の
+# cwd は worktree 側だが、セッションはメインリポジトリで始まっているのでメインループの
+# transcript はメイン slug の下にある。逆に dev-workflow の作業用 worktree 内で開始した
+# セッションでは cwd 側にある。**どちらかに決め打ちすると片方で必ず欠測する**ので、
+# 両方を候補にして「最も新しい .jsonl」を採る（実行中のセッションが最新であることを使う）。
+#
+# メインルートの導出は `--git-common-dir`（linked worktree からもメインの .git を返す）。
+# publish-review-event.sh / lib/review-paths.sh と同じ手法。
 ROOT=$(pwd)
-SLUG=$(printf %s "$ROOT" | sed 's#[^a-zA-Z0-9]#-#g')
-DIR="$HOME/.claude/projects/$SLUG"
+CAND_ROOTS=("$ROOT")
+GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+# GCD が空のときに無条件で cd "$GCD/.." すると `/` に降りるので必ず分岐する
+if [ -n "$GCD" ] && MAIN_ROOT=$(cd "$GCD/.." && pwd 2>/dev/null); then
+  [ "$MAIN_ROOT" != "$ROOT" ] && CAND_ROOTS+=("$MAIN_ROOT")
+fi
+
+DIRS=()
+for _r in "${CAND_ROOTS[@]}"; do
+  DIRS+=("$HOME/.claude/projects/$(printf %s "$_r" | sed 's#[^a-zA-Z0-9]#-#g')")
+done
+
+# 候補ディレクトリ横断で .jsonl を集める（`ls -t` に全件渡して大域的な新しい順にする。
+# ディレクトリごとに `ls -t | head -1` すると候補間の順序が失われる）
+FILES=()
+for _d in "${DIRS[@]}"; do
+  for _f in "$_d"/*.jsonl; do [ -f "$_f" ] && FILES+=("$_f"); done
+done
 
 if [ "$LIST" = "1" ]; then
-  ls -lt "$DIR"/*.jsonl 2>/dev/null | head -20 || echo "セッションが見つからない: $DIR"
+  if [ ${#FILES[@]} -gt 0 ]; then
+    ls -lt "${FILES[@]}" | head -20
+  else
+    printf 'セッションが見つからない:\n' >&2
+    printf '  %s\n' "${DIRS[@]}" >&2
+  fi
   exit 0
 fi
-if [ -z "$SESSION" ]; then
-  SESSION=$(ls -t "$DIR"/*.jsonl 2>/dev/null | head -1)
+if [ -z "$SESSION" ] && [ ${#FILES[@]} -gt 0 ]; then
+  SESSION=$(ls -t "${FILES[@]}" | head -1)
 fi
 [ -n "$SESSION" ] && [ -f "$SESSION" ] || {
-  echo "FATAL: transcript が見つからない（--session で指定するか --list で確認）: $DIR" >&2; exit 1; }
+  echo "FATAL: transcript が見つからない（--session で指定するか --list で確認）。探索したディレクトリ:" >&2
+  printf '  %s\n' "${DIRS[@]}" >&2
+  exit 1; }
 
 # **サブエージェントの transcript は別の project slug にあることがある**（GitHub issue #104）。
 # review skill は Step 0 で EnterWorktree するため、セッションが 2 つの slug に割れる:

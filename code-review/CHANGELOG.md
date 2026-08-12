@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.52.1] - 2026-08-12
+
+### Fixed
+- **`measure-tokens.sh` が worktree 内から main transcript を解決できず、review 経路では引数なし実行が必ず FATAL で落ちていた**（GitHub issue #112）。transcript の slug は**セッションを開始した**ディレクトリ由来だが、探索側は `ROOT=$(pwd)` で cwd 由来の slug しか見ていなかった。review skill は Step 0 で必ず `EnterWorktree` するため、実行時の cwd（worktree 側）の slug 配下にメインループの transcript は存在しない:
+  - issue #104 の対応は**サブエージェント側の glob 化のみ**で、main transcript の入口は cwd 由来のまま残っていた。結果として sub は解決できるのに main で先に落ちる状態だった
+  - **cwd 側とメインリポジトリ側（`--git-common-dir` 由来）の両方を候補**にし、横断で最も新しい `.jsonl` を採る。実行中のセッションの transcript が最新であることを使う。**どちらかに決め打ちすると片方で必ず欠測する** — dev-workflow の作業用 worktree 内で開始したセッションは逆に cwd 側にあるため
+  - `ls -t` には候補ディレクトリ横断で全件を渡す（ディレクトリごとに `head -1` すると候補間の順序が失われる）
+  - 導出は `publish-review-event.sh` / `lib/review-paths.sh` と同じ `--git-common-dir` 手法。**`GCD` が空のとき `cd "$GCD/.."` を実行しない**分岐も踏襲した（`/` に降りる）
+  - 見つからないときの FATAL と `--list` は**探索したディレクトリを全件表示**する（ユーザーが `--session` に渡すパスを自力で探さずに済む）
+  - `orchestration-measurement.md ## 17` に worktree 経路の注記を追加。「引数なし実行」を第一の用途として書いている doc とスクリプトの前提の食い違いを解消した
+
 ## [2.52.0] - 2026-08-07
 
 冷や読み skeptic を **high 起点に昇格**した版。`triage-dynamic-gates.md ## 8.5` が自ら定めていた昇格基準を、蓄積した `review:completed` が両方とも満たしたため。

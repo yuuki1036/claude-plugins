@@ -183,6 +183,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/measure-tokens.sh" --list     # セッショ
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/measure-tokens.sh" --since 2026-08-06T10:00  # 時刻で絞る
 ```
 
+> **worktree 内から実行しても引数なしで通る**（GitHub issue #112）。transcript の slug はセッションを**開始した**ディレクトリ由来なので、review 経路（Step 0 で必ず `EnterWorktree`）では cwd 側の slug にメインループの transcript が存在しない。スクリプトは **cwd 側とメインリポジトリ側（`--git-common-dir` 由来）の両方**を候補にして最新の `.jsonl` を採るので、review 後にそのまま実行してよい。dev-workflow の作業用 worktree 内で開始したセッション（transcript が cwd 側にある逆パターン）も同じ仕組みで拾える。**どちらの候補にも無いときは `--session <絶対パス>`** を使う（`--list` が探索したディレクトリを表示する）。
+
 Claude Code の transcript（`~/.claude/projects/<slug>/*.jsonl`）は各アシスタントメッセージに `usage` を持ち、`isSidechain` でメインループとサブエージェントを分離できる。スクリプトはこれを `main` / `sub` に分けて集計する。
 
 | 指標 | 意味 | 何の効果が出るか |
