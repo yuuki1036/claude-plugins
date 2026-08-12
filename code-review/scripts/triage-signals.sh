@@ -306,9 +306,8 @@ if MAIN_ROOT=$(review_main_root); then
 else
   echo "WARN: メイン作業ツリーを導出できないため main-root を出力しない（依存の読み取り先は agent に渡らない）" >&2
 fi
-# **lockfile が PR で変わっていれば、メイン側の依存は PR 後の状態と一致しない。**
-# 「読めた」と「PR 後の状態を読めた」は別なので、agent が confidence を下げる判断を
-# できるよう機械的に出す（LLM に lockfile 判定をさせない）。
+# **lockfile が変更に含まれていれば、メイン側の依存は PR 後の状態と一致しない。**
+# agent が confidence を下げる判断をできるよう機械的に出す（LLM に lockfile 判定をさせない）。
 printf '%s\n' "$CLASSIFIED" | cut -f4 \
   | grep -E '(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Gemfile\.lock|poetry\.lock|go\.sum|Cargo\.lock|composer\.lock)$' \
   | sed 's/^/lockfile-changed\t/' | head -5

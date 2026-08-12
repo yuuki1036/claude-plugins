@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.58.1] - 2026-08-12
+
+### Changed
+- `triage-signals.sh` の lockfile コメントを self-review の `--base` 経路にも合う表現に直し、言い換えの重複を削った（quality-check セルフレビューのコメント推敲提案）
+
 ## [2.58.0] - 2026-08-12
 
 `/quality-check` のセルフレビューが v2.53.0〜2.57.0 に対して出した指摘（BLOCKER 1 / MAJOR 7 + マトリクス外 8）を全件修正した版。**自分で入れた計測・注入の 3 つが、いずれも「欠測ではなく誤値」に倒れていた。**
