@@ -101,6 +101,9 @@ path, since = os.environ["SESSION"], os.environ.get("SINCE") or None
 subdir = os.environ.get("SUBDIR") or ""
 buckets = {False: dict(n=0, out=0, cw=0, cr=0, inp=0), True: dict(n=0, out=0, cw=0, cr=0, inp=0)}
 first_ts = last_ts = None
+tool_of = {}      # tool_use_id -> ツール名（main のみ）
+intake = {}       # ツール名 -> tool_result の総文字数
+intake_n = {}     # ツール名 -> tool_result の件数
 
 # main = 親 transcript / sub = <session-id>/subagents/agent-*.jsonl
 # subdir は `~/.claude/projects/*/<session-id>/subagents` のようなワイルドカード付き
@@ -118,11 +121,34 @@ for fpath, side in targets:
                 e = json.loads(line)
             except ValueError:
                 continue
-            u = (e.get("message") or {}).get("usage")
-            if not u:
-                continue
+            # `--since` は取り込み内訳にも同じく効かせる（usage 表だけ絞られて内訳が
+            # 全期間のままだと、区間比較で内訳を読んだときに桁が合わない）
             ts = e.get("timestamp") or ""
             if since and ts and ts < since:
+                continue
+            # **main への取り込みを「何経由で入ったか」に分解する**（GitHub issue #118）。
+            # cache_write は「新規に読んだ量」だが、参照 doc の読み込みと agent 出力の
+            # 取り込みが同じバケツに入るため、cache_write 単独では分冊・遅延読み込みの
+            # 効果を判定できない（fleet が大きいほど agent 側が支配的になる）。
+            # tool_result の実体サイズなら経由別に切り分けられる。
+            if not side:
+                msg = e.get("message") or {}
+                blocks = msg.get("content")
+                if isinstance(blocks, list):
+                    for blk in blocks:
+                        if not isinstance(blk, dict):
+                            continue
+                        if blk.get("type") == "tool_use":
+                            tool_of[blk.get("id")] = blk.get("name") or "?"
+                        elif blk.get("type") == "tool_result":
+                            body = blk.get("content")
+                            if not isinstance(body, str):
+                                body = json.dumps(body, ensure_ascii=False)
+                            name = tool_of.get(blk.get("tool_use_id"), "?")
+                            intake[name] = intake.get(name, 0) + len(body)
+                            intake_n[name] = intake_n.get(name, 0) + 1
+            u = (e.get("message") or {}).get("usage")
+            if not u:
                 continue
             if ts:
                 first_ts = ts if first_ts is None else min(first_ts, ts)
@@ -155,8 +181,24 @@ elif buckets[False]["n"]:
     print("\n⚠️  サブエージェントの transcript が見つからない: " + (subdir or "(未指定)"))
     print("   fleet を起動したのに 0 体なら、session-id での引き当てが効いていない。")
     print("   `ls ~/.claude/projects/*/" + os.path.basename(os.path.dirname(subdir or "")) + "/subagents` で実在を確認する")
+if intake:
+    total_chars = sum(intake.values())
+    print("\nmain への取り込み内訳（tool_result の実体サイズ / GitHub issue #118）")
+    print(f"{'':<10}{'件数':>6}{'chars':>12}{'占有':>8}")
+    for name, chars in sorted(intake.items(), key=lambda kv: -kv[1])[:6]:
+        share = chars / total_chars * 100 if total_chars else 0
+        print(f"{name[:10]:<10}{intake_n[name]:>6}{chars:>12,}{share:>7.1f}%")
+    agent_share = intake.get("Agent", 0) / total_chars * 100 if total_chars else 0
+    print(f"→ Agent 経由が取り込みの {agent_share:.1f}%。**`main.cache_write` はこれと参照 doc の合算**")
+
 print("""
 読み方: main.output = オーケストレーターが書いた量（プロンプト複製はここ・単価最大）
-        main.cache_write = 新規に読み込んだ量（参照 doc の読み込みはここ）
-        cache_read は再利用ぶんなので単価が低い。前後比較は output と cache_write で見る""")
+        main.cache_write = 新規に読み込んだ量。**参照 doc の読み込み + agent 出力の取り込みが
+                           合流している**ので、分冊・遅延読み込みの効果はこれ単独では見えない
+                           （#118。上の取り込み内訳で Agent 経由の占有を確認してから読む）
+        cache_read は再利用ぶんなので単価が低い。前後比較には使わない
+
+取り込み内訳は tool_result の**文字数**（トークンではない）。換算係数が内容種別で変わるため
+絶対値ではなく **経由別の比率**として読む。分冊の効果を単独で見たいなら agent を起動しない
+経路（Phase 0 までで中断・skip-mode）のサンプルで測るのが確実。""")
 PY
