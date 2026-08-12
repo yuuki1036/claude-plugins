@@ -11,6 +11,12 @@
 
 同期起動（`run_in_background: false`）と並列発行（同一メッセージ内で一括発行）のルールは `orchestration-guide.md ## 0` が正本で、本ファイルの全起動手順に適用される。
 
+**本ファイルの全フェーズに適用: agent の結果を回収した直後に `mark t1c` を記録する**（v2.60.0）。`t1c` は**後勝ち**なので、どのフェーズがそのレビューの最後の wave になったかを判断しなくてよい — **回収したら毎回書く**のが正しい運用。動的ラウンドは起動可否が実行時に決まるため、「最後の wave の後だけ書く」規約にするとスキップ時に書き忘れて欠測になる。区間の意味は `orchestration-measurement.md ## 14`（`duration_synthesis_min`）:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]
+```
+
 ## 6. Adaptive deepening 実行手順（Round 2 / review Phase 5.5・self-review Phase 4.5）
 
 1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する

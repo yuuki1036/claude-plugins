@@ -47,7 +47,7 @@ MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
 # ---- 所要時間フィールドを注入 ----------------------------------------------
 PR_ARGS=(); [ -n "$PR" ] && PR_ARGS=(--pr "$PR")
 DURS=$(bash "$HERE/review-timing.sh" durations ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)
-read -r DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE <<< "${DURS:--1 -1 -1 -1 -1}"
+read -r DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE DUR_SYNTHESIS <<< "${DURS:--1 -1 -1 -1 -1 -1}"
 
 # self-review は publish が「修正方針確認」より前にあり closing 区間が構造上 ≒0 になるため
 # -1（測定不能）を入れる。0 を publish すると「人間待ちが無かった」と誤読される（`## 14`）
@@ -62,7 +62,7 @@ case "$PLUGIN" in *self-review) DUR_CLOSING=-1 ;; esac
 #   ③ カンマ正規化 sed が JSON の文字列値の中身まで書き換える
 # 再シリアライズなら 3 つとも構造的に起きない。
 MERGED=$(
-  REVIEW_DURS="{\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"duration_explore_min\":$DUR_EXPLORE}" \
+  REVIEW_DURS="{\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"duration_explore_min\":$DUR_EXPLORE,\"duration_synthesis_min\":$DUR_SYNTHESIS}" \
   python3 - "$PAYLOAD" <<'PY'
 import json, os, sys
 try:

@@ -265,7 +265,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 | explorer | explorer を 1 体以上配置した場合 | 0 / 1 |
 | reviewer（+ 冷や読み skeptic の相乗り・triage-dynamic-gates.md `## 8.5`） | 常時 | 1 |
 | Round 2（triage-dynamic-gates.md `## 8` Phase 5.5） | effort ≥ high かつ unmet_information あり | 0 / 1（high・規模キャップ帯）/ 2（xhigh・max の 2 段） |
-| meta-reviewer（Phase 5.6） | effort が xhigh / max かつ BLOCKER/CRITICAL あり | 0 / 1 |
+| meta-reviewer（Phase 5.6） | effort が xhigh / max かつ BLOCKER/CRITICAL あり（**`small` 帯は BLOCKER 有りのみ**・`## 6.3`） | 0 / 1 |
 | 反証（triage-dynamic-gates.md `## 9` Phase 5.9） | effort ≥ high かつ対象指摘あり | 0 / 1 |
 
 - **下限 = Phase 0 で確定している wave**（explorer の有無 + reviewer の 1 本）。**上限 = 上表の各行の最大値の総和**（例に依存せずこの算式で出す）
@@ -310,9 +310,10 @@ core が 0（テスト・doc のみの PR）の場合は `## 2.5` のモード�
 規模キャップが削るのは **breadth（並べる体数）だけ**。depth を担う層は帯に関わらず effort の指定どおり動かす。
 
 - **削る**: explorer / reviewer / specialist の体数、冗長ペア、Round 2 の追加 explorer（**規模キャップが effort 上限を下回った帯では、Round 2 は effort に関わらず triage-dynamic-gates.md `## 8` の 1 段圧縮経路を使う**）
-- **削らない**: reviewer 個々の effort（`## 7` の連動表どおり。xhigh 指定なら reviewer は `xhigh` のまま）、meta-reviewer（5.6）、冷や読み skeptic（5.8）、反証レイヤー（5.9）。いずれも 1〜数体で、小さな diff ほど 1 体あたりの費用対効果が高い
+- **削らない**: reviewer 個々の effort（`## 7` の連動表どおり。xhigh 指定なら reviewer は `xhigh` のまま）、冷や読み skeptic（5.8）、反証レイヤー（5.9）。いずれも 1〜数体で、小さな diff ほど 1 体あたりの費用対効果が高い
+- **例外 1 つだけ: meta-reviewer（5.6）は `small` 帯かつ BLOCKER 不在のときスキップする**（v2.60.0 / triage-dynamic-gates.md `## 8`）。**この原則に対する唯一の例外**であり、根拠が n=1 と弱いためロールバック条件つきの暫定措置として入れてある（`design-notes/triage-rationale.md`）。**他の depth 層へ横展開しないこと** — skeptic / 反証は帯連動させない
 
-xhigh / max を明示指定したユーザーが求めているのは「小さな diff を深く読むこと」であって「小さな diff に 17 体並べること」ではない。
+xhigh / max を明示指定したユーザーが求めているのは「小さな diff を深く読むこと」であって「小さな diff に 17 体並べること」ではない。**ただし meta-reviewer は「深く読む」層ではなく「他の reviewer の見落としを探す」層**で、reviewer の体数が規模キャップで 3 体まで絞られた帯では**探す相手そのものが小さい**（実測: `small` 帯で meta が出した 4 件は報告マトリクスを 1 件も通らなかった）。上の例外はこの非対称に基づく。
 
 ### 6.4 Phase 0 が判断できない場合のフォールバック構成
 

@@ -6,11 +6,11 @@
 |---|---|
 | `## 13` | publish 先をメインリポジトリのルートに固定する（worktree で計測ごと消えるのを防ぐ） |
 | `## 13.1` | `TS_FILE` のパス導出（並行セッションの衝突回避） |
-| `## 14` | 所要時間の区間分割計測（t0 / t1 / t1b / t2 / t3） |
+| `## 14` | 所要時間の区間分割計測（t0 / t1 / t1b / t1c / t2 / t3） |
 | `## 16` | `review:completed` payload 契約（両 skill 共通の正本） |
 | `## 17` | トークン消費の計測（transcript からの事後集計。publish とは独立に任意実行） |
 
-**マーカー（`t0` / `t1` / `t1b` / `t2`）の書き込み自体はレビュー中に行う。** 書き込み位置は SKILL.md の各 Step に埋め込んであり、本ファイルを読まなくても実行できる（`## 14` は意味と算出式の正本）。
+**マーカー（`t0` / `t1` / `t1b` / `t1c` / `t2`）の書き込み自体はレビュー中に行う。** 書き込み位置は SKILL.md の各 Step に埋め込んであり、本ファイルを読まなくても実行できる（`## 14` は意味と算出式の正本）。
 
 ## 13. Event Bus publish 先の固定（review 締めフロー 4・self-review Step 6.4 共通 / GitHub issue #96）
 
@@ -56,7 +56,13 @@
 
 `duration_min` 単独では **agent の実行時間・メインコンテキストの思考時間・人間の応答待ち**が 1 個の数字に潰れ、どの改善が効いたかを判定できない（実測: 3 体 210 分のサンプルが 1 件あるだけで、内訳が不明なため次の打ち手を選べなかった）。`TS_FILE` に区間マーカーを追記して分割する。
 
-> **測れないものを先に確定しておく（v2.43.0）**: **オーケストレーターが reviewer プロンプトを書いていた時間は、マーカーでは分離できない。** プロンプトのテキストを書く行為が、そのまま Agent call の発行だからである。「書き終わったが、まだ発行していない」瞬間が存在しないため、マーカーを Agent call より前に置けば書く前に発火し、後ろに置けば agent は既に走り出している。実測（v2.43.0 の self-review、reviewer 5 + specialist 1 体）でも、発行直前に置いたマーカーは**7 秒**を記録した一方で fleet 全体は 22 分だった。**プロンプト組み立てコストは `duration_fleet_min` に含まれる**と受け入れ、外出し（orchestration-guide.md `## 3.5`）の効果は `duration_fleet_min` を `size_tier` × `agents.reviewer` × `effort` で層別して見る。マーカーを増やして測ろうとしないこと。
+> **測れないものを先に確定しておく（v2.43.0）**: **オーケストレーターが reviewer プロンプトを書いていた時間は、マーカーでは分離できない。** プロンプトのテキストを書く行為が、そのまま Agent call の発行だからである。「書き終わったが、まだ発行していない」瞬間が存在しないため、マーカーを Agent call より前に置けば書く前に発火し、後ろに置けば agent は既に走り出している。実測（v2.43.0 の self-review、reviewer 5 + specialist 1 体）でも、発行直前に置いたマーカーは**7 秒**を記録した一方で fleet 全体は 22 分だった。**プロンプト組み立てコストは `duration_fleet_min` に含まれる**と受け入れ、外出し（orchestration-guide.md `## 3.5`）の効果は `duration_fleet_min` を `size_tier` × `agents.reviewer` × `effort` で層別して見る。マーカーを **Agent call の前後に**増やして測ろうとしないこと。
+
+> **上の禁止の射程（v2.60.0 で明確化）**: 上の結論は「**プロンプト組み立て**時間の分離」についてのもので、そこは正しい。ただし fleet 区間には**もう 1 種類の agent 非稼働時間**がある — **最後の agent wave を回収した後の scoring / dedup / verdict 反映 / レポート生成**である。この区間は「回収済み ＝ 全 agent 終了済み」なので **agent が 1 体も走っていないことが構造的に保証される**。Agent call の前後に置くマーカーではないため上の不可能性に当たらず、`t1c` → `t2` として分離できる（`duration_synthesis_min`）。
+>
+> 動機（実測 / review・1 ファイル 97 行の doc PR・xhigh・reviewer 3 + meta 1 + verify 3）: `duration_fleet_min` 44 分に対し agent wave の実時間は約 24 分（reviewer 8.5 + meta 8.9 + verify 6.2、各 wave 内最長）で、**残り約 20 分（46%）がオーケストレーター側**だった。`duration_triage_min` は 3 分しか出ていないため、**この 20 分はどのフィールドにも現れていなかった**。支配的な区間が構造的に不可視だと「時間が長いから体数を減らす」という誤った打ち手に誘導される（triage-guide.md `## 7` が禁じている混同そのもの）。
+>
+> **`duration_synthesis_min` は「メイン思考時間」の全量ではない。** wave 間のプロンプト構築・分冊 Read は依然として wave 区間に混ざるため、取れるのは「最後の wave 回収以降」だけ。**オーケストレーター時間の下限値**として読み、`duration_fleet_min - duration_synthesis_min` を「agent wave + wave 間のメイン時間」の合計として扱う。
 
 **マーカーの書き込み点**（いずれも `## 13` の `MAIN_ROOT` 導出式で決めた同じ `TS_FILE` に追記する）:
 
@@ -65,6 +71,7 @@
 | `t0` | review Step 1 / self-review Step 1 の冒頭（`>` で新規作成） | レビュー開始 |
 | `t1` | **最初の agent を一括発行する直前**（explorer を配置していれば explorer 発行直前 = review Step 4 / self-review Step 3、していなければ reviewer 発行直前 = review Step 5 / self-review Step 4） | triage 区間の終わり |
 | `t1b` | **explorer 結果を回収した直後**（explorer を 1 体以上起動した場合のみ書く） | explorer wave の終わり |
+| `t1c` | **agent wave の結果を回収した直後**（reviewer wave / Round 2 / meta / 反証 の**各回収点で毎回**追記する） | 最後の agent wave の終わり |
 | `t2` | **初回レポートを出力した直後**（review Step 7 / self-review Step 6。締めフローに入る前） | fleet 区間の終わり |
 | `t3` | publish 時点（ファイルには書かず `date +%s` で取る） | 全体の終わり |
 
@@ -72,8 +79,11 @@
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" start   [--pr N]   # Step 1
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1  [--pr N]  # 最初の agent 一括発行の直前（二重記録しない）
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1b [--pr N]  # explorer 結果の回収直後（起動した場合のみ）
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]  # agent wave 回収の直後（wave ごとに毎回・後勝ち）
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初回レポート出力の直後
 ```
+
+> **`t1c` は wave ごとに毎回追記してよい**（`durations` の awk が後勝ちで最後の値を採る）。「どの wave が最後か」を**オーケストレーターに予測させない**ための設計 — 動的ラウンドは起動可否が実行時に決まるので、「最後の wave の後にだけ書く」という規約にすると、スキップが起きたときに書き忘れて欠測になる。**毎回書けば必ず正しい**。
 
 > **`t1` を explorer 発行直前に置く理由（v2.41.0 の修正）**: `t1` を reviewer 発行直前に固定すると、explorer wave（high で最大 4 体 / xhigh・max で 6 体）の実時間が triage 区間に丸ごと混入し、「メインコンテキストの思考時間の代理指標」という `duration_triage_min` の定義が成立しない。explorer を配置したレビューで triage が膨らみ、**「思考量が主因」という誤診に誘導される**（そしてプロンプト圧縮という誤った打ち手を選ばせる）。agent wave はすべて fleet 側に入れる。
 
@@ -89,11 +99,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 - `duration_triage_min` = t0→t1: PR/diff 収集・Phase 0・起動前検算。**メイン思考量の代理指標として使わない**（explorer 未配置なら reviewer プロンプト構築が丸ごとここに入り、配置していても explorer プロンプトの構築が入る）
 - `duration_fleet_min` = t1→t2: 最初の agent 発火から初回レポートまで。**agent wave の実時間 + プロンプト構築 + scoring/レポート生成**。プロンプト構築コストはここに含まれる（上記のとおり分離できない）
 - `duration_explore_min` = t1→t1b: explorer wave の実時間（`duration_fleet_min` の内数）。explorer 未起動時は `-1`。**wave 単価の実測値**として triage-guide.md `## 5.1` の目安時間を裏付けるのに使う
+- `duration_synthesis_min` = t1c→t2: **最後の agent wave 回収から初回レポートまで**（`duration_fleet_min` の内数 / v2.60.0）。scoring・dedup・verdict 反映・レポート生成で、**agent 非稼働が構造的に保証される唯一の区間**。オーケストレーター時間の**下限値**として読む（wave 間のプロンプト構築・分冊 Read は wave 区間側に残るため全量ではない）。`t1c` 欠測時は `-1`
+  - **用途**: `duration_fleet_min` が大きいときの打ち手の切り分け。`duration_synthesis_min` が支配的なら打ち手は**メイン側**（分冊の遅延読み込み・可変部の圧縮・scoring の機械化）であって体数削減ではない。逆に小さければ wave 側（直列 wave 数・1 体あたりの探索量）を見る
+  - **`duration_explore_min` と同じく fleet の内数**なので、区間の和を `duration_fleet_min` と一致させる検算をしない
 - `duration_closing_min` = t2→t3: 締めフロー（精査・解説・ドラフト）。**大半が人間の応答待ち**なので、他の 2 区間と混ぜて比較しない
   - **publisher 差分（必読）**: review は `レポート → 締めフロー 1〜3（人間待ち）→ 締めフロー 4 publish` の順なので t2→t3 が人間待ちを捉える。**self-review は publish（Step 6.4）が Step 7 の修正方針確認より前**にあり構造上 ≒0 になるため、**self-review は `duration_closing_min` に `-1`（測定不能）を入れる**。0 を publish すると「人間待ちが無かった」と誤読される
   - 同じ理由で **`duration_min`（全体）の意味も publisher 間で非対称**（review は締めフロー込み / self-review は Step 7 手前まで）。集計は `plugin` フィールドで層別してから行い、区間比較には `duration_fleet_min` を使う
 - **triage / fleet / closing の和は `duration_min` と一致しない**ことがある（マーカー欠測時）。一致を仮定した検算をしない。`duration_explore_min` は fleet の**内数**なので和に足さない
-- 旧サンプルとの層別: `duration_triage_min` フィールドの存在が v2.41.0 以降の publish マーカーになる（triage-guide.md `## 7` のロールバック条件が `agents` フィールドで版を切るのと同じ流儀。日付では切らない）。`duration_explore_min` の存在が v2.43.0 以降のマーカー
+- 旧サンプルとの層別: `duration_triage_min` フィールドの存在が v2.41.0 以降の publish マーカーになる（triage-guide.md `## 7` のロールバック条件が `agents` フィールドで版を切るのと同じ流儀。日付では切らない）。`duration_explore_min` の存在が v2.43.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降のマーカー
 - **`duration_*` が並行セッションに汚染されていないこと**は `## 13.1` の `TS_FILE` セッション識別に依存する。識別子を持たない版（v2.43.0 未満）の値は、同一リポジトリで worktree を並列運用していた期間について「もっともらしい過小値」を含みうるため、ロールバック判断の基準側に使わない
 
 ## 16. `review:completed` payload 契約（review 締めフロー 4・self-review Step 6.4 共通 / 正本）
@@ -165,10 +178,12 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 **`meta_reviewer`** — meta-reviewer ラウンドの実行記録（GitHub issue #121）。**帯連動ゲート（`triage-guide.md ## 6.3` の「削らない」判断）を再評価するための計測**で、これが無いと価値率を出せず `## 7` の流儀（「サンプルが無いうちは判断しない」）に従うと永久に判断できない:
 
 - `fired`: meta-reviewer agent が実際に起動したか（bool）
-- `skip_reason`: `fired=false` のときの理由。`"effort"`（high 以下）/ `"config"`（`enable_meta_reviewer: false`）/ `"no-high-severity"`（BLOCKER/CRITICAL 不在で起動条件を満たさない）/ `"emergency"`。`fired=true` なら `null`
+- `skip_reason`: `fired=false` のときの理由。`"effort"`（high 以下）/ `"config"`（`enable_meta_reviewer: false`）/ `"no-high-severity"`（BLOCKER/CRITICAL 不在で起動条件を満たさない）/ `"size-tier"`（`small` 帯かつ BLOCKER 不在 / v2.60.0〜）/ `"emergency"`。`fired=true` なら `null`
+- `gate_schema`: **起動ゲートの版**（`recall_skeptic.gate_schema` と同じ流儀 / v2.60.0〜）。**常に `2` を入れる**（1 = 帯非連動＝ effort と高 severity だけで決まる v2.59.x 以前 / 2 = `size_tier: small` かつ BLOCKER 不在でスキップする v2.60.0 以降）。**これが無いと下記ロールバック条件のクエリが v2.59.x 以前のサンプルを混ぜてしまう** — 旧版は small 帯でも起動していたので `findings_added` の分母の意味が違う。日付では切らない（配布ラグ）
 - `findings_added`: **meta 単独由来**（`[meta]` タグ）の指摘のうち報告マトリクスを通過した件数。定義・計測点は `recall_skeptic.findings_added` と同一（**初回レポート本文のタグ付き指摘を数える**。記憶から再構成しない。精査で取り下げた分は減算しない）
 - **由来タグ `[meta]` はレポート契約の一部**（`recall_skeptic` の `[recall-skeptic]` と同じ扱い）。タグを落とすと publish 時点で由来を再構成できず `findings_added` が系統的に 0 へ潰れる
 - **`findings_added` は meta の価値を捉えきらない**（フィールド設計時に認識済みの非対称）。meta は「単独起動されなかった観点を自分で当たって『指摘なし』と閉じる」という**指摘以外の価値**も出すが、それはこのフィールドに現れない。**価値率が低くても即座に撤去判断をしない** — 撤去を検討する段では、レポート本文で「閉じた観点」の有無も併せて読む
+- **v2.60.0 の帯連動ゲートは「撤去」ではなく「帯限定の縮小」**（`small` 帯かつ BLOCKER 不在のみスキップ / `medium`・`large` と BLOCKER 有りは従来どおり起動）。上の非対称を踏まえ、**指摘以外の価値が最も薄い帯に限って**止めている。**判断根拠は n=1 でこのリポジトリの通常の基準（`## 8.5` の skeptic は n=15、`## 9` の反証は n=19）を下回る** — ロールバック条件と経緯の正本は `design-notes/triage-rationale.md`
 
 **`recall_skeptic`** — 冷や読み skeptic の実行記録。high 昇格判断（triage-dynamic-gates.md `## 8.5`）の計測データ:
 
@@ -194,7 +209,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - publish に失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を publisher 名（`code-review:review` / `code-review:self-review`）に上書きして識別する
 - 後方互換: subscriber 側は `critical_count` の存在を仮定してよい（旧 payload との互換性のため必須）。それ以外は新規フィールド追加なので旧 subscriber 影響なし（現物確認: `issue-workflow:issue-maintain` は `pr` と件数しか読まない）
 - **ゲートを動かす変更には必ず版マーカーを足す**（GitHub issue #115 の一般化）。effort ゲート・起動条件・算出方法を変えると**フィールドの有無は変わらないのに意味が変わる**ため、「フィールドの有無で層別する」という下のルールだけでは新旧を区別できない。`recall_skeptic.gate_schema` / `pre_adjust_counts.schema` と同じく publisher 自己申告の整数を足すこと
-- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
+- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の帯連動ゲートの版は `meta_reviewer.gate_schema`**）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
 
 ## 17. トークン消費の計測（改修の前後比較 / v2.48.0）
 

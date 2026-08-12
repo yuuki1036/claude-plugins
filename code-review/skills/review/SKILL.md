@@ -204,7 +204,7 @@ Step 1 で Read した PR コンテキスト（説明・issue コメント・レ
 
 #### 3.4 high-risk surface 判定（冷や読み skeptic の相乗り判断 / 常時実行）
 
-Phase 0 の最後に、triage-dynamic-gates.md `## 8.5` の surface 判定（diff への正規表現 grep + PR 自己申告 D1-High）を **必ず実施** する。安価な grep なので構成に関わらず常に行う（silent skip 防止・issue #85）。
+Phase 0 の最後に high-risk surface 判定を **必ず実施** する（安価なので構成に関わらず常に行う。silent skip 防止・issue #85）。**判定は Step 2 のダイジェスト `## surface` をそのまま読み、この判定のために triage-dynamic-gates.md を Read しない**（v2.60.0。分冊の Read は diff サイズと無関係な固定費で、小 PR では支配的になる）。ダイジェストに当該セクションが無い場合のみ定義の正本として `triage-dynamic-gates.md ## 8.5` を読む。**PR 自己申告 D1-High はダイジェストに含まれない**ので、Step 1 で Read 済みの PR コンテキスト（本文・ラベルの高リスク申告）から判定し、正規表現ヒットと **OR** で結合する。
 
 - surface=true **かつ Phase 5.8 のスキップ条件（userConfig / effort / `--emergency`・`skip-mode`）のいずれにも該当しない**場合、skeptic を **Step 5 の reviewer 一括発行に相乗りさせる**（同一メッセージ内で発火。1 wave 削減）。**条件は個別に列挙せず Phase 5.8 の定義を参照すること** — 相乗りで起動が前倒しされる以上、5.8 に到達してからスキップ判定しても手遅れ（agent は既に走っている）。列挙の取りこぼしは `--emergency` で `effort: max` の skeptic が余計に走る事故に直結する
 - surface=true だがスキップ条件に該当する場合は、`skip_reason` を記録して Step 7 レポートと payload に出す（従来どおり）
@@ -274,7 +274,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1 --pr <PR番号>
 ```
 
-全 reviewer の完了を待ち、結果を収集する。
+全 reviewer の完了を待ち、結果を収集する。**回収した直後**に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c --pr <PR番号>` を実行する（`t1c`→`t2` = agent 非稼働が保証される synthesis 区間。**動的ラウンドの各回収点でも毎回繰り返す** — 後勝ちなので最後の wave を判断しなくてよい。orchestration-measurement.md `## 14`）。
 
 **HEAD 検証の回収（必須）**: 各出力の `HEAD 検証:` 行を読み、不在・不一致なら `missing_coverage` に記録して当該 reviewer の指摘全件に `[unverified: HEAD 不一致]` を付ける。件数は締めフロー 4 の `head_verified` へ（手順の正本: orchestration-guide.md `## 5`）。
 
@@ -288,7 +288,7 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 - userConfig `enable_adaptive_rounds` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
 - 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
-- **unmet の target が全件 repo 外情報**（DB / 本番の実データ、外部サービスの実挙動、このリポジトリに存在しないコード、意図的にスキップした lint / テスト実走など）で、追加探索が構造的に空振りする場合。分類表と「1 件でも repo 内があれば起動する」根拠は triage-dynamic-gates.md `## 8`（GitHub issue #100 C）。スキップ時は `missing_coverage` に「Round 2 スキップ: unmet 全件が repo 外（<target 要旨>）」を記録し、レポートの「動的ラウンド」行にも出す
+- **unmet の target が全件「到達不能」**（DB / 本番の実データ、このリポジトリに存在しないコード、意図的にスキップした lint / テスト実走など）で、追加探索が構造的に空振りする場合。分類表と「1 件でも到達可能なら起動する」根拠は triage-dynamic-gates.md `## 8`（GitHub issue #100 C）。スキップ時は `missing_coverage` に「Round 2 スキップ: unmet 全件が到達不能（<target 要旨>）」を記録し、レポートの「動的ラウンド」行にも出す。**⚠️ 「repo 外」≠「到達不能」（v2.60.0）** — 外部サービスの実挙動でも**その MCP / CLI がセッションで使えるなら到達可能**で、Round 2 の前に**メインで直接照会して解決してよい**（read-only）
 
 **実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 6` の手順に従う（unmet_information 集約 → **high は 1 段圧縮**: 追加 explorer なしで該当 reviewer 最大 3 体を再起動し unmet ターゲットを自力探索させる / **xhigh・max は 2 段**: 追加 explorer 最大 3 体 → 該当 reviewer 再起動 → 初回出力を置換。失敗時は初回結果のまま続行の best-effort）。レポートに「Round 2 trigger: <reason>」を記録（Step 7 で出力）。
 
@@ -297,9 +297,9 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 **スキップ条件**（いずれか満たせばスキップして Step 6 へ）:
 - userConfig `enable_meta_reviewer` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
-- Step 5.5 後の全指摘（フィルタリング前）に **BLOCKER も CRITICAL も 1 件もない**
+- Step 5.5 後の全指摘（フィルタリング前）に **BLOCKER も CRITICAL も 1 件もない**、または **`size_tier` が `small` かつ BLOCKER が 1 件もない**（後者は v2.60.0 / `skip_reason: "size-tier"`。BLOCKER があれば帯に関わらず起動する。**規模帯に連動する唯一の例外**で triage-guide.md `## 6.3`、根拠が n=1 のため**ロールバック条件つきの暫定ゲート** → `design-notes/triage-rationale.md`）
 
-**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。
+**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。**回収した直後に `mark t1c` を記録する**（Step 5 と同じ呼び出し。後勝ち）。
 
 ### 5.7 観点カバレッジ・事後突合（メインコンテキスト / 常時実行・agent 追加起動なし）
 
@@ -392,7 +392,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
 **実効上限**: explorer N / reviewer N / specialist N（**実行時** effort `{値}` の上限と規模キャップ `{帯}` の min。どちらが効いたかを明記する）
   ※ reviewer の effort と動的ラウンド（meta / skeptic / 反証ゲート）は**実行時 effort に連動**する。skill frontmatter の effort はオーケストレーター用で別枠
-**動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件 repo 外）| 実行（reviewer N 体 / explorer M 体）} / Meta-reviewer {実行 | skip 理由} / 冷や読み skeptic {実行（N 件追加）| skip（理由: config/emergency）| 非該当（surface なし）} / 反証 {対象 N 件 | skip 理由}
+**動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（reviewer N 体 / explorer M 体）} / Meta-reviewer {実行 | skip 理由（`effort` / `config` / `no-high-severity` / `size-tier` / `emergency`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: config/emergency）| 非該当（surface なし）} / 反証 {対象 N 件 | skip 理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{反証スキップ時はこの行を省略}
 
@@ -480,7 +480,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
        "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
        "adversarial_verify":{"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
        "recall_skeptic":{"attribution_schema":2,"gate_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
-       "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>}
+       "meta_reviewer":{"gate_schema":2,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>}
      }'
    ```
 

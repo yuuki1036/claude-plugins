@@ -244,7 +244,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1
 ```
 
-全 reviewer の完了を待ち、結果を収集する。
+全 reviewer の完了を待ち、結果を収集する。**回収した直後**に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c` を実行する（`t1c`→`t2` = agent 非稼働が保証される synthesis 区間。**動的ラウンドの各回収点でも毎回繰り返す** — 後勝ちなので最後の wave を判断しなくてよい。orchestration-measurement.md `## 14`）。
 
 reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出力形式の検証と auto-retry・部分失敗耐性・最小保証の閾値）: → orchestration-guide.md `## 5`
 
@@ -266,8 +266,9 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 - userConfig `enable_meta_reviewer` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
 - Step 4.5 後の全指摘（フィルタリング前）に **BLOCKER も CRITICAL も 1 件もない**
+- **`size_tier` が `small` かつ BLOCKER が 1 件もない**（v2.60.0 / `skip_reason: "size-tier"`）。BLOCKER があれば帯に関わらず起動する。**この 1 条件だけが規模帯に連動する例外**で（triage-guide.md `## 6.3`）、根拠が n=1 のため**ロールバック条件つきの暫定ゲート** → `design-notes/triage-rationale.md`
 
-**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。
+**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。**回収した直後に `mark t1c` を記録する**（Step 4 と同じ呼び出し。後勝ち）。
 
 ### 4.7 観点カバレッジ・事後突合（メインコンテキスト / 常時実行・agent 追加起動なし）
 
@@ -354,7 +355,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
 **実効上限**: explorer N / reviewer N / specialist N（**実行時** effort `{値}` の上限と規模キャップ `{帯}`（core N files / N lines）の min。どちらが効いたかを明記する）
   ※ reviewer の effort と動的ラウンド（meta / skeptic / 反証ゲート）は**実行時 effort に連動**する。skill frontmatter の effort はオーケストレーター用で別枠
-**動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件 repo 外）| 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行 | スキップ理由} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/scope）| 非該当（surface なし）} / 反証 {対象 N 件 | スキップ理由}
+**動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行 | スキップ理由（`effort` / `config` / `no-high-severity` / `size-tier`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/scope）| 非該当（surface なし）} / 反証 {対象 N 件 | スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{反証スキップ時はこの行を省略}
 
@@ -434,7 +435,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
     "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
     "adversarial_verify":{"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
     "recall_skeptic":{"attribution_schema":2,"gate_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
-    "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
+    "meta_reviewer":{"gate_schema":2,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
     "comment_polish":{"fired":<bool>,"suggested":<n>}
   }'
 ```
