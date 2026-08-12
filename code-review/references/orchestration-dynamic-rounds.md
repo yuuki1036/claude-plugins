@@ -11,7 +11,7 @@
 
 同期起動（`run_in_background: false`）と並列発行（同一メッセージ内で一括発行）のルールは `orchestration-guide.md ## 0` が正本で、本ファイルの全起動手順に適用される。
 
-**本ファイルの全フェーズに適用: agent の結果を回収した直後に `mark t1c` を記録する**（v2.60.0）。`t1c` は**後勝ち**なので、どのフェーズがそのレビューの最後の wave になったかを判断しなくてよい — **回収したら毎回書く**のが正しい運用。動的ラウンドは起動可否が実行時に決まるため、「最後の wave の後だけ書く」規約にするとスキップ時に書き忘れて欠測になる。区間の意味は `orchestration-measurement.md ## 14`（`duration_synthesis_min`）:
+**すべての agent wave の回収点に適用（本ファイルの全フェーズ + orchestration-guide.md `## 5` の auto-retry）: agent の結果を回収した直後に `mark t1c` を記録する**（v2.60.0）。`t1c` は**後勝ち**なので、どのフェーズがそのレビューの最後の wave になったかを判断しなくてよい — **回収したら毎回書く**のが正しい運用。動的ラウンドは起動可否が実行時に決まるため、「最後の wave の後だけ書く」規約にするとスキップ時に書き忘れて欠測になる。区間の意味は `orchestration-measurement.md ## 14`（`duration_synthesis_min`）:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]
@@ -20,8 +20,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]
 ## 6. Adaptive deepening 実行手順（Round 2 / review Phase 5.5・self-review Phase 4.5）
 
 1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
-1.5. **各 target を repo 内 / repo 外に分類する**（triage-dynamic-gates.md `## 8` の分類表。メインコンテキストで判定・agent 不要）。**全件が repo 外なら本フェーズ全体をスキップ**し、`missing_coverage` に「Round 2 スキップ: unmet 全件が repo 外（<target 要旨>）」を記録して次フェーズへ進む。1 件でも repo 内があれば通常どおり続行する（迷う target は repo 内側に倒す）
-2. repo 内の target から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
+1.5. **各 target を repo 内 / セッション到達可能 / 到達不能の 3 分類に振り分ける**（triage-dynamic-gates.md `## 8` の分類表。メインコンテキストで判定・agent 不要）。**「repo 外」＝「到達不能」ではない**（v2.60.0。二分のままだと取れる情報を「構造的に空振り」と誤判定して wave ごと捨てる）:
+   - **セッション到達可能**（そのサービスの MCP / CLI がこのセッションで使える外部状態）は、**Round 2 を起動する前にメインコンテキストで直接照会して解決する**（read-only の照会に限る。書込・破壊的操作は含めない）。これは Round 2 の代替であって追加ではない。解決したら該当指摘の confidence / severity を再評価し、レポートの「動的ラウンド」行に `スキップ（unmet をメインで直接照会して解決）` と出す
+   - 照会で解決したぶんを除いて**残りが全件「到達不能」なら本フェーズ全体をスキップ**し、`missing_coverage` に「Round 2 スキップ: unmet 全件が到達不能（<target 要旨>）」を記録して次フェーズへ進む
+   - **1 件でも repo 内 / 未解決のセッション到達可能があれば通常どおり続行する**（迷う target は到達可能側に倒す）
+2. **repo 内 + 未解決のセッション到達可能**の target から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
 3. **経路分岐**（実行時 effort = `${CLAUDE_EFFORT}`。triage-dynamic-gates.md `## 8` Phase 5.5）:
    - **high（既定）— 1 段圧縮**: 追加 explorer は起動しない。unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、**初回 reviewer と同じ effort**（orchestration-guide.md `## 5` の連動表）で再起動する（全 call を同一メッセージ内で一括発行 — orchestration-guide.md `## 0` 並列発行の明示）。プロンプトには①初回指摘②担当分の unmet_information（focus, target, why, related_finding）を渡し、「**まず unmet ターゲットを自分で Read / Grep / Glob で探索し、取得した事実に基づいて初回 confidence を再評価せよ**」と指示する
    - **xhigh / max — 2 段**: `prompts/explorer/re-explore.md`で追加 explorer（最大 3 体）を `model: sonnet` で並列起動し（一括発行 — orchestration-guide.md `## 0`）、各 explorer に対応する unmet_information を渡す。完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、初回と同じ effort で再起動し、初回指摘 + 追加 explorer 結果を context として渡して「初回 confidence を再評価せよ」と指示する

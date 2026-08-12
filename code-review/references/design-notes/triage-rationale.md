@@ -140,7 +140,7 @@ review / `size_tier: small`（doc 1 ファイル `+75 -22`）/ `effort: xhigh` /
 |---|---|
 | `duration_fleet_min` | 44 分 |
 | agent wave 実時間（各 wave 内最長の和） | 約 24 分（reviewer 8.5 / meta 8.9 / verify 6.2） |
-| meta の wave 単価 | **8.9 分**（+ 529 リトライ分。全体 47 分の約 2 割） |
+| meta の wave 単価 | **8.9 分**（リトライを含む。**レポートまでの 47 分**の約 2 割 — 締めフローを含む全体 58 分ではない） |
 | `meta_reviewer.findings_added` | **0**（4 件出したが報告マトリクスを 1 件も通らず） |
 | 反証レイヤーの寄与（対照） | 6.2 分で 6 件中 4 件を落とした（`severity_inflated` 3 / `refuted` 1） |
 
