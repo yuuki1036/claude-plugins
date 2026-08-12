@@ -221,7 +221,7 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 - 可変部として Phase 0 が決定した focus・対象ファイル・関数、および **Step 2 の `$DIFF_FILE` のパスと担当ファイル名**を渡す（`diff-slice.sh` で自分の担当ぶんを切り出せることも明記する）
 - 全エージェントを `isolation: "worktree"` で起動する（PR ブランチの状態でファイルを読むため）
 - 全エージェントに `run_in_background: false` を明示し、**全 explorer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0`。`run_in_background` 省略は取りこぼし、1 体ずつ別メッセージ発行は逐次実行＝実時間が合計に膨らむ。2 つは独立の要件）
-- **PR 番号・期待 HEAD SHA 注入（必須）**: orchestration-guide.md `## 1` に従う（欠かすと偽陽性を量産する。GitHub issue #56 / #98）
+- **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` 注入（必須）**: orchestration-guide.md `## 1` / `## 1.1` に従う（前者を欠かすと偽陽性を量産 #56 / #98、後者を欠かすと依存を読めず「検証不能」の誤申告で wave を 1 本失う #113）
 
 一括発行の**直前**に fleet 区間の開始マーカーを記録する（**agent wave はすべて fleet 側に入れる**。explorer を triage 区間に含めると `duration_triage_min` が「メイン思考の代理指標」でなくなる。orchestration-measurement.md `## 14`）:
 
@@ -256,7 +256,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - **`prompts/focus/comment-polish.md` は Read 対象に入れない**（self-review 限定。他人の PR に文面の推敲を投稿するのは越権になりやすい）
 - **可変部**（ここだけをオーケストレーターが書く）:
   - **`{{PLUGIN_ROOT}}` = プラグインルートの絶対パス**（必須）。`${CLAUDE_PLUGIN_ROOT}` は**子 agent の環境には存在しない**ため、テンプレート内の `${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh` はそのままでは解決できない。実パスを明記して「テンプレート中の `${CLAUDE_PLUGIN_ROOT}` はこの値に読み替えよ」と指示する（欠かすと diff の切り出しが失敗し、全文 Read にフォールバックしてパス渡しの効果が消える）
-  - PR 番号 / 対象 head ref / **期待 HEAD SHA**（テンプレート中の `{{PR_NUMBER}}` / `{{HEAD_REF}}` / `{{HEAD_SHA}}` をこの実値で読み替えよ、と明記する）
+  - PR 番号 / 対象 head ref / **期待 HEAD SHA** / **`{{MAIN_ROOT}}`**（テンプレート中の `{{PR_NUMBER}}` / `{{HEAD_REF}}` / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` をこの実値で読み替えよ、と明記する。`{{MAIN_ROOT}}` と併せて渡す `dep-dir` / `lockfile-changed` の扱いは orchestration-guide.md `## 1.1`）
   - **`$DIFF_FILE` のパスと担当ファイル名**（`diff-slice.sh` で担当ぶんを切り出せることも明記）。**diff 本文は渡さない**
   - Step 1 が保存した **`$PR_CTX_FILE` のパス**（本文は転記しない。「最初に Read せよ」の明示が必須。検出ルールは `pr-context-rules.md` 側にある）
   - Step 4.9 の **AGENTS.md / CLAUDE.md のパス一覧**
@@ -266,7 +266,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - 全エージェントを `isolation: "worktree"` で起動する
 - 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
 - **冷や読み skeptic の相乗り**: Step 3.4 で surface=true かつ Phase 5.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `prompts/recall-skeptic.md` をパス渡し）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 5.8 で行う
-- **PR 番号・期待 HEAD SHA 注入（必須）**: orchestration-guide.md `## 1` に従う
+- **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` 注入（必須）**: orchestration-guide.md `## 1` / `## 1.1` に従う（後者を欠かすと依存を読めず「検証不能」の誤申告で wave を 1 本失う。#113）
 
 一括発行の**直前**に fleet 区間の開始マーカーを記録する（orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式で決める。Step 4 で explorer を起動していれば記録済みなので `grep` ガードで二重記録を防ぐ。`||` 形なのでガードが偽でもブロックは成功終了する）:
 

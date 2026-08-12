@@ -47,6 +47,21 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 - **ブランチ名での checkout は使わない**。子 agent 側は `refs/pull/<N>/head` を fetch して **detach で入る**（親 worktree と競合しない）
 - **HEAD 検証は `{{HEAD_SHA}}` との突合で行う**（`{{HEAD_REF}}` はブランチ名なので detach 後の検証には使えず、プロンプト冒頭の文脈情報としてのみ残す）。セットアップ bash の正本は `prompts/reviewer-common.md` / `prompts/explorer-common.md`
 
+### 1.1 メインリポジトリのパス注入（`{{MAIN_ROOT}}` / GitHub issue #113）
+
+**同じ agent 群に `{{MAIN_ROOT}}` も必ず注入する。** 子 worktree には `node_modules` などの gitignore 対象の依存が存在しないため、これを欠かすと **ディスク上にある事実を agent が「検証不能」と誤申告**し、Round 2 が走る構成でしか回収されない（実測: 初回 wave で 3 件が `unmet_information` に落ち、Round 2 で全件解決して MAJOR 1 件がそこで初めて出た = wave 1 本ぶんの遅延）。
+
+**値は Phase 0 の digest から取る。組み立てを SKILL 本文に書かない**（`## 3.5` の一時ファイルパスと同じ理由）。`triage-signals.sh` の `## host-deps` セクションが出す:
+
+| 行 | 内容 | プロンプトでの扱い |
+|---|---|---|
+| `main-root <path>` | メインリポジトリの絶対パス（`--git-common-dir` 由来。worktree 進入後でも解決できる） | `{{MAIN_ROOT}}` を置換する |
+| `dep-dir <path>` | メイン側に実在する依存ディレクトリ（`node_modules` / `vendor` / `.venv` / `venv` / `.yarn`） | 冒頭に列挙して渡す。0 件なら列挙しない |
+| `lockfile-changed <path>` | PR が lockfile を変更している | **出ていれば冒頭に明記する**。メイン側の依存が PR 後の状態と一致しないため、agent は根拠にする際に confidence を下げる |
+
+- **`{{MAIN_ROOT}}` は「依存を読むための逃げ道」であって、レビュー対象を読む場所ではない**。メイン側はユーザーの作業ツリーで PR と無関係な未コミット変更を含みうる。この非対称はプロンプト側（`prompts/reviewer-common.md` / `prompts/explorer-common.md`）にも書いてあるが、注入時に潰さないこと
+- self-review は `isolation: "worktree"` を使わない（依存はそのまま読める）ため**注入不要**
+
 → 空 SHA が「静かな品質劣化」に倒れる仕組みと、ブランチ名 checkout が構造的に必ず失敗する経緯（issue #98 / #69）: `design-notes/orchestration-rationale.md`
 
 ## 3.5. 大きい共有コンテキストはファイル経由で渡す（review / self-review 共通 / GitHub issue #100 A）

@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.53.0] - 2026-08-12
+
+### Added
+- **agent worktree に依存パッケージが無く、ディスク上の事実が「検証不能」に落ちていた問題を塞いだ**（GitHub issue #113）。`isolation: "worktree"` の子 worktree は gitignore 対象の `node_modules` / `vendor` / `.venv` を持たないため、依存の実装を読めば確定できる事実を agent が `unmet_information` として申告していた。実測では初回 wave で 3 件が「検証不能」になり、**Round 2 で全件解決して MAJOR 1 件がそこで初めて出た** — wave 1 本（約 10 分）を、最初からディスク上にあった事実の回収に費やしていた。Round 2 は effort / userConfig でスキップされうるため既定パスの保険にならない:
+  - `triage-signals.sh` に **`## host-deps` セクション**を追加。`main-root`（`--git-common-dir` 由来のメインリポジトリ絶対パス）/ `dep-dir`（メイン側に実在する依存 dir）/ `lockfile-changed`（PR が lockfile を変更しているか）を機械的に出す。**LLM にパス組み立ても lockfile 判定もさせない**
+  - `prompts/reviewer-common.md` / `prompts/explorer-common.md` に `{{MAIN_ROOT}}` プレースホルダと「**『依存を読めないので検証不能』と申告する前に必ずここを試す**」の指示を追加（`{{PR_NUMBER}}` / `{{HEAD_SHA}}` と同じ方式）
+  - `orchestration-guide.md ## 1.1` を新設し、注入を **`## 1` の PR 番号・HEAD SHA と同格の必須項目**として規定。両 SKILL の explorer 起動（Step 4）・reviewer 起動（Step 5）の両方に注入指示を置いた
+  - **`{{MAIN_ROOT}}` は「依存を読むための逃げ道」であって、レビュー対象を読む場所ではない**点を prompt / guide の両方に明記した。メイン側はユーザーの作業ツリーで PR と無関係な未コミット変更を含みうるため、そこからレビュー対象コードを読むと偽陽性になる（#56 で checkout 指示を入れた理由と同型の罠を、逆向きに作らないため）
+  - **lockfile を変更する PR ではメイン側の依存が PR 後の状態と一致しない**。`lockfile-changed` が出ている場合は根拠にする際に「メイン側の依存で確認（PR 後の状態とは異なる可能性）」と明記し confidence を下げるよう規定した（「読めた」と「PR 後の状態を読めた」を同一視しない）
+  - self-review は `isolation: "worktree"` を使わない（依存はそのまま読める）ため**注入不要**。prompt 側にもスキップ可と明記
+
 ## [2.52.1] - 2026-08-12
 
 ### Fixed

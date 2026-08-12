@@ -280,6 +280,28 @@ done | sort -u
 [ -f AGENTS.md ] && echo "AGENTS.md"
 [ -f CLAUDE.md ] && echo "CLAUDE.md"
 
+echo "## host-deps"
+# 子 agent は `isolation: "worktree"` の worktree に入るため、gitignore 対象の依存
+# （node_modules / vendor / .venv 等）がそこに存在しない。**ディスク上にある事実を
+# agent が「検証不能」と誤申告し、wave を 1 本まるごと回収に費やす**のを防ぐため、
+# メインリポジトリの絶対パスを digest に載せてプロンプトへ注入させる（GitHub issue #113）。
+#
+# 導出は publish-review-event.sh / measure-tokens.sh と同じ `--git-common-dir` 方式
+# （linked worktree からもメインの .git を返すので worktree 進入後でも解決できる）。
+# GCD が空のときに無条件で cd "$GCD/.." すると `/` に降りるので必ず分岐する。
+GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
+printf 'main-root\t%s\n' "$MAIN_ROOT"
+for d in node_modules vendor .venv venv .yarn; do
+  [ -d "$MAIN_ROOT/$d" ] && printf 'dep-dir\t%s/%s\n' "$MAIN_ROOT" "$d"
+done
+# **lockfile が PR で変わっていれば、メイン側の依存は PR 後の状態と一致しない。**
+# 「読めた」と「PR 後の状態を読めた」は別なので、agent が confidence を下げる判断を
+# できるよう機械的に出す（LLM に lockfile 判定をさせない）。
+printf '%s\n' "$CLASSIFIED" | cut -f4 \
+  | grep -E '(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Gemfile\.lock|poetry\.lock|go\.sum|Cargo\.lock|composer\.lock)$' \
+  | sed 's/^/lockfile-changed\t/' | head -5
+
 echo "## issue-ids"
 # Issue ID は大文字限定（`[A-Z]+-[0-9]+`）で抽出する（GitHub issue #107）。
 # Linear の Issue ID は慣例的に大文字（例: ENG-123）。ignore-case にすると

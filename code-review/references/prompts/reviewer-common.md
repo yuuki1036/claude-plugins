@@ -26,6 +26,20 @@ git rev-parse HEAD   # {{HEAD_SHA}} と一致することを必ず確認する
 
 `{{HEAD_SHA}}` はオーケストレーターが prompt 冒頭に明記する期待 HEAD SHA（`gh pr view --json headRefOid`）に置換される。**最後の `git rev-parse HEAD` の出力が `{{HEAD_SHA}}` と一致することを必ず確認すること**（`{{HEAD_REF}}` はブランチ名なので detach 後の検証には使えない。文脈情報としてのみ参照する）。
 
+### 依存パッケージの読み方（worktree 起動時のみ / GitHub issue #113）
+
+**この worktree には `node_modules` などの gitignore 対象の依存が存在しない。** 依存の実装を読む必要があるときは、メインリポジトリ側の絶対パス `{{MAIN_ROOT}}` の配下を読む:
+
+```bash
+ls {{MAIN_ROOT}}/node_modules/<package>/    # 例。存在する依存 dir はプロンプト冒頭に列挙されている
+```
+
+- **「依存を読めないので検証不能」と申告する前に必ずここを試すこと。** ディスク上にある事実を `unmet_information` に落とすと、Round 2 が走る構成でしか回収されない（Round 2 は effort / userConfig でスキップされうる）。実測では初回 wave で 3 件が「検証不能」になり、Round 2 で全件解決して **MAJOR 1 件がそこで初めて出た** — wave 1 本ぶんの遅延がそのまま損になる
+- **ただし `{{MAIN_ROOT}}` は PR の HEAD ではない。** lockfile を変更する PR ではメイン側の依存が PR 後の状態と一致しない。プロンプト冒頭に `lockfile-changed` が示されている場合は、読んだ内容を根拠にするとき「メイン側の依存で確認（PR 後の状態とは異なる可能性）」と明記し confidence を下げる
+- **依存以外は必ずこの worktree のファイルを読む。** `{{MAIN_ROOT}}` はユーザーの作業ツリーで、PR と無関係な未コミット変更や別ブランチの状態を含みうる。レビュー対象コードをそちらから読むと偽陽性の原因になる
+
+self-review からは `isolation: "worktree"` を使わない（依存はそのまま読める）ためこの節はスキップ可。
+
 **結果は出力フォーマットの `HEAD 検証:` 行に必ず書くこと**（後述。`一致` / `不一致` / `未実行` のいずれか）。この行はオーケストレーターが機械的に読み、不在・不一致なら当該 reviewer の指摘全件に `[unverified: HEAD 不一致]` を付けて `missing_coverage` に記録する。**行を省くと「検証した」とは扱われない。**一致しなかった場合はレビュー結果の冒頭にも warning を明記し、diff に依存する指摘の confidence を下げる（silent に続行しない）。
 
 ---

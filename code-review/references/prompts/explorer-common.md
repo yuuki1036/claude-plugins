@@ -26,6 +26,15 @@ git rev-parse HEAD   # {{HEAD_SHA}} と一致することを必ず確認する
 
 `{{HEAD_SHA}}` はオーケストレーターが prompt 冒頭に明記する期待 HEAD SHA（`gh pr view --json headRefOid`）に置換される。**最後の `git rev-parse HEAD` の出力が `{{HEAD_SHA}}` と一致することを確認してから探索を開始すること**（`{{HEAD_REF}}` はブランチ名なので detach 後の検証には使えない。文脈情報としてのみ参照する）。
 
+### 依存パッケージの読み方（worktree 起動時のみ / GitHub issue #113）
+
+**この worktree には `node_modules` などの gitignore 対象の依存が存在しない。** 依存の実装を辿る必要があるときは、メインリポジトリ側の絶対パス `{{MAIN_ROOT}}` の配下を読む（存在する依存 dir はプロンプト冒頭に列挙されている）。
+
+- **「依存を読めない」で探索を打ち切らないこと。** そこで落とした事実は下流 reviewer が `unmet_information` に載せることになり、Round 2 が走る構成でしか回収されない
+- **`{{MAIN_ROOT}}` は PR の HEAD ではない**。依存以外（探索対象のコード）は必ずこの worktree のファイルを読む。メイン側はユーザーの作業ツリーで PR と無関係な状態を含みうる
+
+self-review からは `isolation: "worktree"` を使わないためこの節はスキップ可。
+
 **結果は出力フォーマットの `HEAD 検証:` 行に必ず書くこと**（後述。`一致` / `不一致` / `未実行` のいずれか）。この行はオーケストレーターが機械的に読み、不在・不一致なら `missing_coverage` に記録して依存 reviewer に伝える。**行を省くと「検証した」とは扱われない。**一致しない場合はエラー要旨を「reviewer への注意事項」にも記録する。
 
 ---
