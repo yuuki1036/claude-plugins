@@ -109,7 +109,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 | `duration_min` ほか `duration_*` | 区間分割の意味・欠測時の扱い・「混ぜて比較しない」理由は `## 14` が正本。`TS_FILE` のパス導出は `## 13.1` |
 | `head_verified` | `{ok, mismatch, unknown}`（review のみ。v2.43.0）。各 agent の `HEAD 検証:` 行の集計で、`unknown` は行が無かった agent 数。`mismatch + unknown > 0` のレビューは指摘の信頼度が落ちる（orchestration-guide.md `## 5`） |
 | `blocker_count` / `critical_count` / `major_count` / `minor_count` | severity 別件数（報告マトリクス通過後） |
-| `pre_adjust_counts` | `{blocker, critical, major, minor}`（v2.44.0）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の生の severity 分布。**v2.54.0 以降は各 reviewer の `## below-threshold` の件数を足して求める**（実効閾値未満は本文に列挙されないため。足さないと「検出しなかった」と「列挙しなかった」が 0 に潰れる / GitHub issue #117）。下の「調整前後の分離」を参照 |
+| `pre_adjust_counts` | `{blocker, critical, major, minor, schema}`。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 分布。**`schema` は下記のとおり必須**（v2.58.0〜）。下の「調整前後の分離」を参照 |
+| `severity_threshold` | 実行時の `review_severity_threshold` 実効値（`BLOCKER`〜`MINOR`）。**どの severity が `## below-threshold` に回ったかを事後に判別するために必須**（v2.58.0〜）。これが無いと `pre_adjust_counts` の非可換性を補正できない |
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
 
 **`agents`** — 実際に**起動した**体数（成功・失敗を問わない。v2.39.0 の上限調整の効果測定に使う）:
@@ -130,7 +131,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 ```bash
 # 「調整で消えた MAJOR」の件数を publisher 別に見る
 grep '"event":"review:completed"' .claude/events.jsonl | \
-  jq -s '[.[] | select(.payload.pre_adjust_counts != null)] | group_by(.plugin) | map({
+  jq -s '[.[] | select((.payload.pre_adjust_counts.schema // 1) == 2
+           and .payload.severity_threshold == "MAJOR")] | group_by(.plugin) | map({
     plugin: .[0].plugin, n: length,
     major_pre: ([.[]|.payload.pre_adjust_counts.major]|add),
     major_post: ([.[]|.payload.major_count]|add),
@@ -138,8 +140,19 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
   })'
 ```
 
+**`pre_adjust_counts.schema` の意味（v2.58.0 / GitHub issue #117 のセルフレビュー指摘）** — **算出方法が版で非可換に変わったのに、フィールドの有無では層別できない**ため自己申告の版マーカーを持たせる（`recall_skeptic.attribution_schema` と同じ流儀。日付では切らない）:
+
+| `schema` | 算出方法 | 粒度 |
+|---|---|---|
+| `1`（v2.44.0〜v2.53.x。**フィールド欠落 = 1 と読む**） | reviewer が列挙した指摘のみを数える | 統合・dedup 後 |
+| `2`（v2.54.0〜） | 上に各 reviewer の `## below-threshold` の件数を**同名 severity のバケツへ**足す | **足し込む分は dedup されない**（reviewer 横断の生合計） |
+
+- **schema 1 と 2 を同じ列で比較しない。** schema 2 は閾値未満ぶんが非 dedup で載るため、reviewer 間で重複した指摘が重複計上される。#117 の効果（「MINOR 85% 破棄」の改善）を測るときは **schema 2 同士**で比べる
+- **`severity_threshold` と併せて読む。** `MAJOR`（既定）なら MINOR だけが非 dedup、`CRITICAL` なら MAJOR も非 dedup になる。閾値を知らずに `major_pre - major_post` を取ると運用差が改善に見える
+- 消費側の絞り込み例: `select((.payload.pre_adjust_counts.schema // 1) == 2 and .payload.severity_threshold == "MAJOR")`
+
 - **消えた分の内訳（降格 / confidence 不足）はこの 1 フィールドでは分離できない。** `severity-inflated` 降格・`[scope:out]` 降格・報告マトリクスの confidence 落ちが同じ差分に合流するため。**まず「検出由来か調整由来か」の一段目だけを切る**フィールドであり、二段目が必要と分かってから内訳フィールドを足す（LLM が手で組む JSON なのでフィールド数自体がコスト）
-- 版マーカー: **`pre_adjust_counts` の存在が v2.44.0 以降**。日付では切らない
+- 版マーカー: **`pre_adjust_counts` の存在が v2.44.0 以降・`schema` サブフィールドが算出方法の版**（欠落 = `1`）。日付では切らない
 
 **`missing_coverage` の記法（v2.44.0 で語彙固定）** — 要素は **識別子のみ**とし、理由・件数・finding id・自由文を混ぜない:
 
@@ -171,7 +184,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 
 - publish に失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を publisher 名（`code-review:review` / `code-review:self-review`）に上書きして識別する
 - 後方互換: subscriber 側は `critical_count` の存在を仮定してよい（旧 payload との互換性のため必須）。それ以外は新規フィールド追加なので旧 subscriber 影響なし（現物確認: `issue-workflow:issue-maintain` は `pr` と件数しか読まない）
-- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降・`comment_polish` の存在が v2.45.0 以降（self-review のみ）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
+- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
 
 ## 17. トークン消費の計測（改修の前後比較 / v2.48.0）
 

@@ -37,7 +37,7 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 ### severity 付与の原則
 
 - **「もし指摘が真なら何が起きるか」で判定する**（confidence と独立）
-- **付与の前に base 状態を確認する**（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）。PR が触れていない不備は除外、PR 前から同じ・PR が意図した変更は 1 段階下げてから申告する。**影響を先に見積もってから base を見ると過大評価が入る**（実測: 反証 verdict の 60% が `severity_inflated`、`refuted` は 6%）
+- **付与の前に base 状態を確認する**（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）。PR が触れていない不備は除外、PR 前から同じ・PR が意図した変更は 1 段階下げてから申告する。**影響を先に見積もってから base を見ると過大評価が入る**（実測値の正本: `design-notes/scoring-rationale.md`）
 - セキュリティ・データ整合性・本番事故に直結するものは原則 BLOCKER または CRITICAL
 - 「動くけど将来困る」系は MAJOR
 - 「あれば良い」程度は MINOR

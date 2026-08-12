@@ -201,6 +201,7 @@ event_bus_clear
 - MAJOR: 破壊的変更（スキル/コマンドの削除・リネーム）
 - MINOR: 機能追加（新スキル/コマンド、既存機能拡張）
 - PATCH: 修正（バグ修正、ドキュメント、リファクタ）
+- **判定は「変更ファイルの種類」で行う**: commit type が `docs` で変更が `*.md` + version/CHANGELOG のみなら PATCH。MINOR を当てると `plugin-manager:update-all` の利用者に「機能追加が入った」と誤ったシグナルを送る（pre-commit は bump の有無しか見ないので機械的には素通りする）
 
 ## 品質チェック
 

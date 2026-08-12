@@ -22,6 +22,8 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 |---|---|---|
 | agent の isolation | 全 agent を `isolation: "worktree"` で起動（PR ブランチの状態でファイルを読むため） | `isolation: "worktree"` は使用しない（セルフレビューは未コミット変更を含むため） |
 | PR 番号・期待 HEAD SHA 注入 | 必須（`## 1`） | 不要（PR を持たない） |
+| `{{MAIN_ROOT}}` 注入 | 必須（`## 1.1`） | 不要（worktree を使わないので依存はそのまま読める） |
+| 実効報告閾値 `{{SEVERITY_THRESHOLD}}` 注入 | **必須（`## 2`）** | **必須（`## 2`）** |
 | diff の取得 | `triage-signals.sh --pr <N>`（内部で `gh pr diff`＝ GitHub 上の正しい差分） | `triage-signals.sh --base <ref>`（内部で `git diff`。base 差分 + staged + unstaged。`--staged` で staged のみ） |
 | レビュー中止時 | ExitWorktree してから終了 | そのまま終了 |
 | 動的ラウンドの Phase 番号 | 5.5 / 5.6 / 5.7 / 5.8 / 5.9 | 4.5 / 4.6 / 4.7 / 4.8 / 4.9 |
@@ -55,14 +57,17 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 | 行 | 内容 | プロンプトでの扱い |
 |---|---|---|
-| `main-root <path>` | メインリポジトリの絶対パス（`--git-common-dir` 由来。worktree 進入後でも解決できる） | `{{MAIN_ROOT}}` を置換する |
-| `dep-dir <path>` | メイン側に実在する依存ディレクトリ（`node_modules` / `vendor` / `.venv` / `venv` / `.yarn`） | 冒頭に列挙して渡す。0 件なら列挙しない |
+| `main-root <path>` | メイン作業ツリーの絶対パス（`lib/review-paths.sh` の `review_main_root`。linked worktree からも解決できる） | `{{MAIN_ROOT}}` を置換する。**行が無ければ導出失敗**なので `{{MAIN_ROOT}}` を注入せず、依存の読み取り先は渡さない（誤値を注入するより注入しない方が安全側） |
+| `dep-dir <path>` | メイン側に実在する依存ディレクトリ（`node_modules` / `vendor` / `.venv` / `venv` / `.yarn`）。**symlink と `main-root` 配下に収まらない実体は除外済み**（CWE-59） | 冒頭に列挙して渡す。0 件なら列挙しない |
 | `lockfile-changed <path>` | PR が lockfile を変更している | **出ていれば冒頭に明記する**。メイン側の依存が PR 後の状態と一致しないため、agent は根拠にする際に confidence を下げる |
 
 - **`{{MAIN_ROOT}}` は「依存を読むための逃げ道」であって、レビュー対象を読む場所ではない**。メイン側はユーザーの作業ツリーで PR と無関係な未コミット変更を含みうる。この非対称はプロンプト側（`prompts/reviewer-common.md` / `prompts/explorer-common.md`）にも書いてあるが、注入時に潰さないこと
 - self-review は `isolation: "worktree"` を使わない（依存はそのまま読める）ため**注入不要**
+- **`main-root` 行が出ない場合がある**（メイン作業ツリーを導出できないとき。スクリプトは stderr に WARN を出す）。そのときは `{{MAIN_ROOT}}` を未置換のまま渡さず、**プロンプトからこの節ごと省く**。agent 側は未注入時に本節を適用しない規約になっている（`prompts/reviewer-common.md`）
 
-### 1.2 実効報告閾値の注入（`{{SEVERITY_THRESHOLD}}` / review・self-review 共通 / GitHub issue #117）
+→ 空 SHA が「静かな品質劣化」に倒れる仕組みと、ブランチ名 checkout が構造的に必ず失敗する経緯（issue #98 / #69）: `design-notes/orchestration-rationale.md`
+
+## 2. 実効報告閾値の注入（`{{SEVERITY_THRESHOLD}}` / **review・self-review 共通** / GitHub issue #117）
 
 **reviewer には userConfig `review_severity_threshold` の実効値を必ず渡す**（既定 `MAJOR`）。報告マトリクスと本閾値は**直列に掛かる 2 段のフィルタ**で、reviewer は後段を知らされていなかったため、構造的にほぼ報告されない severity に出力予算を使い続けていた（実測: MINOR 調整前 60 → 報告 9 件 = **85% 破棄**、うち confidence 95+ が 7 件）。
 
@@ -70,8 +75,6 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 - **オーケストレーターは `pre_adjust_counts` にこの件数を足す**（`orchestration-measurement.md ## 16`）。足さないと「検出しなかった」と「列挙しなかった」が 0 に潰れ、本施策の効果測定と再評価の根拠が同時に失われる
 - **抑制されるのは列挙だけで判定は従来どおり**。閾値未満を理由に severity を繰り上げさせない（較正が壊れ、`pre_adjust_counts` も歪む）
 - **self-review の B 系統（`## コメント推敲提案`）は severity を持たないため対象外**。閾値も抑制も効かない（`prompts/focus/comment-polish.md`）
-
-→ 空 SHA が「静かな品質劣化」に倒れる仕組みと、ブランチ名 checkout が構造的に必ず失敗する経緯（issue #98 / #69）: `design-notes/orchestration-rationale.md`
 
 ## 3.5. 大きい共有コンテキストはファイル経由で渡す（review / self-review 共通 / GitHub issue #100 A）
 

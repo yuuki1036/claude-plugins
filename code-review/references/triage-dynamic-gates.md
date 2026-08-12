@@ -160,7 +160,7 @@ reviewer の指摘を独立エージェントが反証し、過大な指摘の p
 
 **対象が 15 件（3 体 × 5 件）を超えた場合**: severity → confidence の順で優先度を付け、上位 15 件のみ反証する。溢れた指摘は verdict なし（＝反証スキップ）として元の confidence / severity のまま続行し、**レポートの反証行に予算超過件数を明記する**（silent に落とさない）。レポート行の書式の正本は orchestration-dynamic-rounds.md `## 10` 手順 4。
 
-**縮小のロールバック条件（v2.41.0 のバッチ化 + effort 引き下げ）— 判定済み・維持（v2.56.0 / GitHub issue #119）**
+**縮小のロールバック条件（v2.41.0 のバッチ化 + effort 引き下げ）— 判定済み・維持（v2.57.0 / GitHub issue #119）**
 
 サンプルが貯まったため判定した。**`effort: high` とバッチサイズ 5 を維持する**（n=19 / 計 67 verdict）:
 

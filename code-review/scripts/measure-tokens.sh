@@ -121,8 +121,7 @@ for fpath, side in targets:
                 e = json.loads(line)
             except ValueError:
                 continue
-            # `--since` は取り込み内訳にも同じく効かせる（usage 表だけ絞られて内訳が
-            # 全期間のままだと、区間比較で内訳を読んだときに桁が合わない）
+            # `--since` は取り込み内訳にも効かせる（usage 表だけ絞ると区間比較で桁が合わない）
             ts = e.get("timestamp") or ""
             if since and ts and ts < since:
                 continue
@@ -130,8 +129,31 @@ for fpath, side in targets:
             # cache_write は「新規に読んだ量」だが、参照 doc の読み込みと agent 出力の
             # 取り込みが同じバケツに入るため、cache_write 単独では分冊・遅延読み込みの
             # 効果を判定できない（fleet が大きいほど agent 側が支配的になる）。
-            # tool_result の実体サイズなら経由別に切り分けられる。
+            #
+            # **経路は tool_result だけではない**。`type: "attachment"` のエントリ
+            # （hook stdout の注入・skill/agent listing・編集ファイルのスニペット等）も
+            # 同じくコンテキストへ入る。実測では attachment が tool_result 合計を
+            # 上回るセッションがあり、これを分母から落とすと Agent 経由の占有が
+            # 系統的に過大に出る（実測で 2.4〜3.3 倍）。両方を同じ表に積む。
             if not side:
+                if e.get("type") == "attachment":
+                    att = e.get("attachment") or {}
+                    if isinstance(att, dict):
+                        # 注入本文を持つフィールドは type ごとに違う。allowlist で拾い、
+                        # どれも無いときだけ全体長にフォールバックする（黙って 0 にしない）
+                        chars = 0
+                        for key in ("content", "stdout", "stderr", "snippet",
+                                    "addedLines", "addedBlocks"):
+                            val = att.get(key)
+                            if isinstance(val, str):
+                                chars += len(val)
+                            elif isinstance(val, (list, dict)):
+                                chars += len(json.dumps(val, ensure_ascii=False))
+                        if chars == 0:
+                            chars = len(json.dumps(att, ensure_ascii=False))
+                        name = "attachment:%s" % (att.get("type") or "?")
+                        intake[name] = intake.get(name, 0) + chars
+                        intake_n[name] = intake_n.get(name, 0) + 1
                 msg = e.get("message") or {}
                 blocks = msg.get("content")
                 if isinstance(blocks, list):
@@ -144,6 +166,8 @@ for fpath, side in targets:
                             body = blk.get("content")
                             if not isinstance(body, str):
                                 body = json.dumps(body, ensure_ascii=False)
+                            # `--since` 指定時、tool_use が窓外・tool_result が窓内だと
+                            # 名前が引けず `?` に落ちる（境界の数件。欠測として出す）
                             name = tool_of.get(blk.get("tool_use_id"), "?")
                             intake[name] = intake.get(name, 0) + len(body)
                             intake_n[name] = intake_n.get(name, 0) + 1
@@ -183,22 +207,24 @@ elif buckets[False]["n"]:
     print("   `ls ~/.claude/projects/*/" + os.path.basename(os.path.dirname(subdir or "")) + "/subagents` で実在を確認する")
 if intake:
     total_chars = sum(intake.values())
-    print("\nmain への取り込み内訳（tool_result の実体サイズ / GitHub issue #118）")
-    print(f"{'':<10}{'件数':>6}{'chars':>12}{'占有':>8}")
-    for name, chars in sorted(intake.items(), key=lambda kv: -kv[1])[:6]:
+    print("\nmain への取り込み内訳（tool_result + attachment の文字数 / GitHub issue #118）")
+    print(f"{'':<24}{'件数':>6}{'chars':>12}{'占有':>8}")
+    for name, chars in sorted(intake.items(), key=lambda kv: -kv[1])[:8]:
         share = chars / total_chars * 100 if total_chars else 0
-        print(f"{name[:10]:<10}{intake_n[name]:>6}{chars:>12,}{share:>7.1f}%")
+        print(f"{name[:24]:<24}{intake_n[name]:>6}{chars:>12,}{share:>7.1f}%")
     agent_share = intake.get("Agent", 0) / total_chars * 100 if total_chars else 0
-    print(f"→ Agent 経由が取り込みの {agent_share:.1f}%。**`main.cache_write` はこれと参照 doc の合算**")
+    print(f"→ Agent 経由は**取り込み全体の** {agent_share:.1f}%（`main.cache_write` に占める比率ではない）")
 
 print("""
 読み方: main.output = オーケストレーターが書いた量（プロンプト複製はここ・単価最大）
-        main.cache_write = 新規に読み込んだ量。**参照 doc の読み込み + agent 出力の取り込みが
-                           合流している**ので、分冊・遅延読み込みの効果はこれ単独では見えない
-                           （#118。上の取り込み内訳で Agent 経由の占有を確認してから読む）
-        cache_read は再利用ぶんなので単価が低い。前後比較には使わない
+        main.cache_write = 新規に読み込んだ量。取り込み（参照 doc も agent 出力も）はここへ
+                           合流するが、**大半はターンごとに再キャッシュされるプロンプト前半**で、
+                           取り込みぶんは実測で 1 割前後にとどまる（#118）。分冊・遅延読み込みの
+                           効果を cache_write 単独で判定しない
+        cache_read = 再利用ぶん。**単価は低いが総量は最大**になりやすい（往復回数 × その時点の
+                     文脈量）。往復削減の効果はここに出るので output / cache_write と併せて見る
 
-取り込み内訳は tool_result の**文字数**（トークンではない）。換算係数が内容種別で変わるため
-絶対値ではなく **経由別の比率**として読む。分冊の効果を単独で見たいなら agent を起動しない
-経路（Phase 0 までで中断・skip-mode）のサンプルで測るのが確実。""")
+取り込み内訳は**文字数**（トークンではない）。換算係数が内容種別で変わるため絶対値ではなく
+**経由別の比率**として読む。上の表は cache_write の分解ではない（桁が合わないのが正常）。
+分冊の効果を単独で見たいなら agent を起動しない経路（Phase 0 までで中断・skip-mode）で測る。""")
 PY

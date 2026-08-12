@@ -38,7 +38,11 @@ ls {{MAIN_ROOT}}/node_modules/<package>/    # 例。存在する依存 dir は�
 - **ただし `{{MAIN_ROOT}}` は PR の HEAD ではない。** lockfile を変更する PR ではメイン側の依存が PR 後の状態と一致しない。プロンプト冒頭に `lockfile-changed` が示されている場合は、読んだ内容を根拠にするとき「メイン側の依存で確認（PR 後の状態とは異なる可能性）」と明記し confidence を下げる
 - **依存以外は必ずこの worktree のファイルを読む。** `{{MAIN_ROOT}}` はユーザーの作業ツリーで、PR と無関係な未コミット変更や別ブランチの状態を含みうる。レビュー対象コードをそちらから読むと偽陽性の原因になる
 
+- **`{{MAIN_ROOT}}` が実パスに置換されていない場合はこの節を適用しない。** オーケストレーターがメイン作業ツリーを導出できなかったということなので、プレースホルダのままのパスを `ls` しない。依存を読めないことは通常どおり `unmet_information` に申告してよい
+
 self-review からは `isolation: "worktree"` を使わない（依存はそのまま読める）ためこの節はスキップ可。
+
+### HEAD 検証結果の申告（worktree 起動時は必須）
 
 **結果は出力フォーマットの `HEAD 検証:` 行に必ず書くこと**（後述。`一致` / `不一致` / `未実行` のいずれか）。この行はオーケストレーターが機械的に読み、不在・不一致なら当該 reviewer の指摘全件に `[unverified: HEAD 不一致]` を付けて `missing_coverage` に記録する。**行を省くと「検証した」とは扱われない。**一致しなかった場合はレビュー結果の冒頭にも warning を明記し、diff に依存する指摘の confidence を下げる（silent に続行しない）。
 
@@ -122,7 +126,7 @@ linter / ast-grep / 型検査でルール化できる指摘には、修正案に
 
 #### severity を付ける前に: base 状態の確認（pre-existing / intended / GitHub issue #114）
 
-**severity は「PR がその状態を作ったか」で意味が変わる。** 影響の大きさを先に見積もってから base を確認すると、PR 前から同じだった不備や PR が意図してそうした変更に高 severity が付く。実測では反証レイヤーの verdict の **60% が `severity_inflated`**（`refuted` は 6%）で、内訳を見ると**半分は base を先に見ていれば reviewer 自身が避けられた**ものだった。
+**severity は「PR がその状態を作ったか」で意味が変わる。** 影響の大きさを先に見積もってから base を確認すると、PR 前から同じだった不備や PR が意図してそうした変更に高 severity が付く。反証レイヤーで最も多く返る verdict は取り下げ（`refuted`）ではなく **severity 過大**であり、その相当部分は base を先に見ていれば reviewer 自身が避けられたものだった（実測値の正本: `design-notes/scoring-rationale.md`）。
 
 **まず追加コストゼロで判定できる。** 「PR 前から存在した不備」を MAJOR 以上で出そうとしているときだけ、以下の順で確認する:
 
@@ -163,6 +167,14 @@ Step 6 で `scoring-guide.md` の報告マトリクスに従いフィルタさ�
 
 ```
 ## below-threshold
+MINOR: 13
+```
+
+`{{SEVERITY_THRESHOLD}}` が `CRITICAL` 等で **抑制対象が複数 severity にまたがる場合は、対象になった severity をすべて 1 行ずつ出す**（0 件でも行を省かない）:
+
+```
+## below-threshold
+MAJOR: 5
 MINOR: 13
 ```
 
@@ -267,7 +279,7 @@ HEAD 検証: <git rev-parse HEAD の実測値> / 期待 <{{HEAD_SHA}}> / 一致|
 - 主要なリスク
 
 ## below-threshold
-MINOR: <実効閾値未満と判定した件数。0 でも書く>
+MINOR: <実効閾値未満と判定した件数。0 でも書く。抑制対象の severity ごとに 1 行>
 ```
 
 **`HEAD 検証:` 行は PR 番号付きで起動された場合の必須行**（self-review 経由で PR 番号が渡らない場合は省略してよい）。省略・`不一致`・`未実行` はオーケストレーターが欠損として扱う。

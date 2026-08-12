@@ -364,7 +364,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
    | MAJOR | skip | skip | skip | 報告 |
    | MINOR | skip | skip | skip | 報告 |
 
-6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を足す**（列挙されていないため。#117）
+6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を同名 severity のバケツへ足し、`schema: 2` と `severity_threshold` を併せて記録する**（足し込む分は dedup されないため版で非可換。orchestration-measurement.md `## 16`）
 7. **出力**: タグ（`[re-flag: @user]` 等）と severity ラベルを指摘文冒頭にそのまま残す。`⚠️ 反証メモ:` が付いた係争指摘は本文にメモを残したまま出力する
 
 ### 7. レポート出力

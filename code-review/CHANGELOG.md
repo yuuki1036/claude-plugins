@@ -2,6 +2,31 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.58.0] - 2026-08-12
+
+`/quality-check` のセルフレビューが v2.53.0〜2.57.0 に対して出した指摘（BLOCKER 1 / MAJOR 7 + マトリクス外 8）を全件修正した版。**自分で入れた計測・注入の 3 つが、いずれも「欠測ではなく誤値」に倒れていた。**
+
+### Fixed
+- **取り込み内訳が `attachment` 経由を分母から落としており、Agent 占有が系統的に過大だった**（#118 の修正が別の誤配分を作っていた）。`type: "attachment"` のエントリ（hook stdout の注入・skill/agent listing・編集ファイルのスニペット）も同じくコンテキストに入るのに `tool_result` しか数えていなかった。実測で attachment は tool_result 合計の 0.6〜2.0 倍あり、**同一セッションで Agent 占有が 33.9% → 21.9% に是正**された。注入本文のフィールドは type ごとに異なるため allowlist（`content` / `stdout` / `stderr` / `snippet` / `addedLines` / `addedBlocks`）で拾い、どれも無いときだけ全体長にフォールバックする（黙って 0 にしない）
+  - あわせて「`main.cache_write` はこれと参照 doc の合算」という断定を撤回した。**表の合計は cache_write の 1 割前後**にすぎず（大半はターンごとに再キャッシュされるプロンプト前半）、`Read` は既に表の中にあるので名指しも誤っていた。「取り込み全体に占める比率」に言い直し、**表は cache_write の分解ではない**（桁が合わないのが正常）と明記
+  - **`cache_read` は「前後比較には使わない」から「単価は低いが総量は最大になりやすい。往復削減の効果はここに出る」に訂正**。`prompts/reviewer-common.md` 自身が「サブエージェント側のコストの 45% が `cache_read`」を根拠にツール使用規約を定めており、往復削減という主要な改善軸の効果が計測の読み方から丸ごと落ちていた
+- **`main-root` の導出が誤値に倒れうる 2 経路を塞いだ**（#113 の対策が無シグナルで無効化される穴）。`--git-common-dir` の親は「メイン作業ツリー」ではなく、**submodule では `<super>/.git/modules`**（`.git` 内部）を、`--separate-git-dir` では gitdir 置き場の親を指す。さらに GCD が空のとき無警告で `pwd`（= review では worktree 側）に縮退していた:
+  - 導出を `lib/review-paths.sh` の **`review_main_root()`（`git worktree list --porcelain` の 1 行目）に一本化**した。linked worktree からもメイン側を返すことを実測で確認済み。3 箇所に散っていた式の複製もこれで解消
+  - **導出失敗時の縮退は「空」であって `pwd` ではない**。`main-root` 行ごと出力せず stderr に WARN を出す。orchestration-guide `## 1.1` にも「行が無ければ `{{MAIN_ROOT}}` を注入しない」を規定し、`prompts/reviewer-common.md` 側にも「未置換なら本節を適用しない」ガードを置いた（誤値を注入するより注入しない方が安全側）
+- **`dep-dir` が symlink を辿ってリポジトリ外を「読んでよい依存 dir」として広告していた**（CWE-59）。対象名は全て gitignore 慣例名で実体が無いのが普通なため、同名 symlink がコミットされていても気づかれにくい。`[ -L ]` で除外し、実体が `main-root` 配下に収まることも `pwd -P` の prefix 一致で確認する。**反証レイヤーは「PR 由来の symlink は main clone に着地しない」（review は worktree 側に checkout する）を実測で示して BLOCKER → MINOR 相当と判定したが、欠陥自体は本物**なので塞いだ
+- **`pre_adjust_counts` の算出方法が v2.54.0 で非可換に変わったのに層別できなかった**。フィールドの有無は変わらないため「フィールドの有無で層別する」という自リポジトリの規約下では新旧を区別する手段が存在しなかった:
+  - **`pre_adjust_counts.schema`（欠落 = 1 / v2.54.0 以降 = 2）と `severity_threshold` を payload に追加**。schema 2 は `## below-threshold` 由来ぶんが **dedup されない**（reviewer 横断の生合計）ので、schema 1 と同じ列で比較すると重複計上で効果が過大に出る。監視 jq と版マーカー一覧も同時に更新した
+  - `## below-threshold` の書式を **severity ごとの複数行に一般化**（`review_severity_threshold = "CRITICAL"` 運用では MAJOR も抑制対象になるのに `MINOR:` 1 行しか例示が無く、入れ先が未定義だった）。両 SKILL の集計手順も「**同名 severity のバケツへ**足す」と具体化
+- **`{{SEVERITY_THRESHOLD}}`（両 skill 共通）が「review のみ」の `## 1` 配下にあり self-review 経路から辿れなかった**。独立節 `## 2` に格上げし、`## 0` の skill 差分表に `{{MAIN_ROOT}}` と `{{SEVERITY_THRESHOLD}}` の行を追加した。`## 1` 用の rationale ポインタが `## 1.2` 配下に取り残されていたのも戻した
+- **`orchestration-dynamic-rounds.md` の 4 起動点（Round 2 / meta / skeptic fallback / 反証）に注入指示が反映されていなかった**。**Round 2 は #113 が塞ごうとした「依存が読めず検証不能」が最も起きる場所そのもの**で、ここで `{{MAIN_ROOT}}` が未置換だと再起動 reviewer が `ls {{MAIN_ROOT}}/...` をリテラル実行して失敗する
+- **doc の版ラベルが実バージョンと不一致**（`v2.56.0` → `v2.57.0`。`triage-dynamic-gates.md` / `triage-rationale.md`）。**CHANGELOG の「両 SKILL に注入指示を置いた」も誤り**で、実際は review のみ（同エントリ末尾の「self-review は注入不要」と矛盾していた）。`triage-rationale.md` の母数矛盾（「有効な 13 件」と「13 件中 1 件欠測」の併存）も「取得を試みた 14 件のうち有効 13 件」に明確化した
+- **実測値（`severity_inflated` 60% / `refuted` 6%）の 6 サイトへの複製をやめた**。実行時プロンプト（`reviewer-common.md` / `adversarial-verify.md`）と `scoring-guide.md` は**規範の記述**（「較正が主機能」）だけを持ち、比率は `design-notes/scoring-rationale.md` 1 箇所 + ポインタに集約する。n が増えるたび 6 箇所を同期する運用は機械検証もできず、既に版ラベルで同期漏れが 1 件出ていた
+- `HEAD 検証:` 行の必須指示が新設節の配下に押し出されていたため、`### HEAD 検証結果の申告（worktree 起動時は必須）` の見出しを与えて所属を明示した
+
+### Changed
+- **`## below-threshold` が CLAUDE.md「Opus 5 足場③」に反する方向であることを `design-notes/scoring-rationale.md` に明記**した。**効果測定の盲点**（閾値を知った reviewer が *そもそも形成しなくなった* MINOR は `pre_adjust_counts` に現れない = この施策で最も起きやすい劣化が計測の死角に入る）と、切り分け方法（`review_severity_threshold = "MINOR"` の対照サンプル）、撤去条件を併せて記録した
+- ルート CLAUDE.md のバージョニング規約に **bump 種別の判定基準**を追記（`docs` commit で変更が `*.md` + version/CHANGELOG のみなら PATCH。MINOR は `plugin-manager:update-all` の利用者に誤ったシグナルを送る）
+
 ## [2.57.0] - 2026-08-12
 
 蓄積した `review:completed` で**保留していた 2 つの監視項目を判定して閉じた**版。どちらも実装は変えず、結論と根拠を doc に確定させる。
@@ -55,7 +80,7 @@
 - **agent worktree に依存パッケージが無く、ディスク上の事実が「検証不能」に落ちていた問題を塞いだ**（GitHub issue #113）。`isolation: "worktree"` の子 worktree は gitignore 対象の `node_modules` / `vendor` / `.venv` を持たないため、依存の実装を読めば確定できる事実を agent が `unmet_information` として申告していた。実測では初回 wave で 3 件が「検証不能」になり、**Round 2 で全件解決して MAJOR 1 件がそこで初めて出た** — wave 1 本（約 10 分）を、最初からディスク上にあった事実の回収に費やしていた。Round 2 は effort / userConfig でスキップされうるため既定パスの保険にならない:
   - `triage-signals.sh` に **`## host-deps` セクション**を追加。`main-root`（`--git-common-dir` 由来のメインリポジトリ絶対パス）/ `dep-dir`（メイン側に実在する依存 dir）/ `lockfile-changed`（PR が lockfile を変更しているか）を機械的に出す。**LLM にパス組み立ても lockfile 判定もさせない**
   - `prompts/reviewer-common.md` / `prompts/explorer-common.md` に `{{MAIN_ROOT}}` プレースホルダと「**『依存を読めないので検証不能』と申告する前に必ずここを試す**」の指示を追加（`{{PR_NUMBER}}` / `{{HEAD_SHA}}` と同じ方式）
-  - `orchestration-guide.md ## 1.1` を新設し、注入を **`## 1` の PR 番号・HEAD SHA と同格の必須項目**として規定。両 SKILL の explorer 起動（Step 4）・reviewer 起動（Step 5）の両方に注入指示を置いた
+  - `orchestration-guide.md ## 1.1` を新設し、注入を **`## 1` の PR 番号・HEAD SHA と同格の必須項目**として規定。`review` SKILL の explorer 起動（Step 4）・reviewer 起動（Step 5）の両方に注入指示を置いた（self-review は下記のとおり注入不要）
   - **`{{MAIN_ROOT}}` は「依存を読むための逃げ道」であって、レビュー対象を読む場所ではない**点を prompt / guide の両方に明記した。メイン側はユーザーの作業ツリーで PR と無関係な未コミット変更を含みうるため、そこからレビュー対象コードを読むと偽陽性になる（#56 で checkout 指示を入れた理由と同型の罠を、逆向きに作らないため）
   - **lockfile を変更する PR ではメイン側の依存が PR 後の状態と一致しない**。`lockfile-changed` が出ている場合は根拠にする際に「メイン側の依存で確認（PR 後の状態とは異なる可能性）」と明記し confidence を下げるよう規定した（「読めた」と「PR 後の状態を読めた」を同一視しない）
   - self-review は `isolation: "worktree"` を使わない（依存はそのまま読める）ため**注入不要**。prompt 側にもスキップ可と明記

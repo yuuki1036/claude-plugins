@@ -286,15 +286,26 @@ echo "## host-deps"
 # agent が「検証不能」と誤申告し、wave を 1 本まるごと回収に費やす**のを防ぐため、
 # メインリポジトリの絶対パスを digest に載せてプロンプトへ注入させる（GitHub issue #113）。
 #
-# 導出は publish-review-event.sh / measure-tokens.sh と同じ `--git-common-dir` 方式
-# （linked worktree からもメインの .git を返すので worktree 進入後でも解決できる）。
-# GCD が空のときに無条件で cd "$GCD/.." すると `/` に降りるので必ず分岐する。
-GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
-printf 'main-root\t%s\n' "$MAIN_ROOT"
-for d in node_modules vendor .venv venv .yarn; do
-  [ -d "$MAIN_ROOT/$d" ] && printf 'dep-dir\t%s/%s\n' "$MAIN_ROOT" "$d"
-done
+# 導出は lib/review-paths.sh の `review_main_root` が正本（式をここに複製しない）。
+# **導出できないときは行ごと出さない。** `pwd` に倒すと worktree 側のパスが
+# 「メインリポジトリ」を名乗って agent プロンプトへ入り、#113 の失敗が無シグナルで
+# 再発する（誤値を注入するより注入しないほうが安全側）。
+if MAIN_ROOT=$(review_main_root); then
+  printf 'main-root\t%s\n' "$MAIN_ROOT"
+  # **symlink は列挙しない**（CWE-59）。対象名はすべて gitignore 慣例名なので
+  # 同名の symlink がコミットされていても気づかれにくく、`[ -d ]` は解決先を見るため
+  # リポジトリ外を「読んでよい依存 dir」として広告してしまう。実体が MAIN_ROOT 配下に
+  # 収まることまで確認する。
+  for d in node_modules vendor .venv venv .yarn; do
+    p="$MAIN_ROOT/$d"
+    [ -d "$p" ] || continue
+    [ -L "$p" ] && continue
+    rp=$(cd "$p" 2>/dev/null && pwd -P) || continue
+    case "$rp/" in "$MAIN_ROOT"/*) printf 'dep-dir\t%s\n' "$p" ;; esac
+  done
+else
+  echo "WARN: メイン作業ツリーを導出できないため main-root を出力しない（依存の読み取り先は agent に渡らない）" >&2
+fi
 # **lockfile が PR で変わっていれば、メイン側の依存は PR 後の状態と一致しない。**
 # 「読めた」と「PR 後の状態を読めた」は別なので、agent が confidence を下げる判断を
 # できるよう機械的に出す（LLM に lockfile 判定をさせない）。
