@@ -160,7 +160,19 @@ reviewer の指摘を独立エージェントが反証し、過大な指摘の p
 
 **対象が 15 件（3 体 × 5 件）を超えた場合**: severity → confidence の順で優先度を付け、上位 15 件のみ反証する。溢れた指摘は verdict なし（＝反証スキップ）として元の confidence / severity のまま続行し、**レポートの反証行に予算超過件数を明記する**（silent に落とさない）。レポート行の書式の正本は orchestration-dynamic-rounds.md `## 10` 手順 4。
 
-**縮小のロールバック条件（v2.41.0 のバッチ化 + effort 引き下げ）**: 2 つの縮小を同時適用しているため、誤却下が増えていないかを `review:completed` の `adversarial_verify` で監視する。`duration_triage_min` フィールドの有無で v2.41.0 前後を層別し（日付では切らない）、**`uncertain` 比率**（＝根拠を出せず判定できなかった割合）と **MAJOR/MINOR の `refuted` 比率**を比較する。uncertain が明確に増えていれば effort を `max` に戻す、refuted が明確に増えていればバッチサイズを 5 → 3 に下げるか個別起動に戻す。サンプルが貯まるまでは判断しない（triage-guide.md `## 7` のロールバック条件と同じ流儀）。
+**縮小のロールバック条件（v2.41.0 のバッチ化 + effort 引き下げ）— 判定済み・維持（v2.56.0 / GitHub issue #119）**
+
+サンプルが貯まったため判定した。**`effort: high` とバッチサイズ 5 を維持する**（n=19 / 計 67 verdict）:
+
+| 監視項目 | 実測 | 判定 |
+|---|---|---|
+| **`uncertain` 比率**（= 根拠を出せず判定できなかった割合） | **0 件 / 0%** | effort を `max` に戻す根拠なし |
+| **`refuted` 比率** | 4 件 / **6%** | バッチサイズを 5 → 3 に下げる根拠なし |
+
+`uncertain` が 0 なのは「反証エージェントが判定を避けている」のではなく**判定できている**と読んでよい（`prompts/adversarial-verify.md` は根拠を出せない場合に `uncertain` を選ぶよう指示しており、実測 1 件では 9 件すべてに `file:line` 付きの根拠が返っていた）。→ 実測の詳細と `severity_inflated` 60% の扱い: `design-notes/scoring-rationale.md`
+
+- **再監視の条件**: 反証プロンプト・ゲート・バッチサイズを変更したときは、`uncertain` が 0 のままかを再確認する（この判定は現行の 3 つの組み合わせに対するもの）
+- **`orchestration-guide.md ## 5` の注記（不変条件を緩めるときは反証 effort を `max` に戻すか同時に判断する）は本判定で閉じない。** あちらは verdict 分布とは独立の条件で、scoring-guide の「高 severity 非削除」不変条件に依存している
 
 **除外（全 effort 共通）**:
 

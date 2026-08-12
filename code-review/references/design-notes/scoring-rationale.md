@@ -46,6 +46,13 @@
 
 **反証レイヤーの実際の主機能は severity の較正であって偽陽性の除去ではない**（`refuted` は 6%）。層の価値を否定するデータではない — 実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている。**記述と実挙動がずれていた**ので `triage-dynamic-gates.md ## 9` / `prompts/adversarial-verify.md` / 両 SKILL の位置づけを書き換えた。
 
+### v2.41.0 の縮小（バッチ化 + effort 引き下げ）は維持で確定した（GitHub issue #119）
+
+同じ 19 サンプルが `triage-dynamic-gates.md ## 9` のロールバック条件の判定材料でもあった。**`uncertain` 0% / `refuted` 6%** で、どちらの戻し条件（uncertain 増 → effort を `max` に戻す / refuted 増 → バッチ 5 → 3）にも該当しない。**`effort: high` とバッチサイズ 5 を維持**する判定を `## 9` に記録し、「サンプルが貯まるまでは判断しない」の保留状態を解消した。
+
+- `uncertain` が 0 なのは判定を避けているのではなく**判定できている**と読む（`adversarial-verify.md` は根拠を出せない場合に `uncertain` を選ぶよう指示しており、実測 1 件では 9 件すべてに `file:line` 付き根拠が返っていた。1 件は実ブラウザでの再現まで実施）
+- **`orchestration-guide.md ## 5` の注記は閉じていない** — 「不変条件（高 severity 非削除）を緩めるときは反証 effort を `max` に戻すか同時に判断する」は verdict 分布とは独立の条件なので、本判定に巻き込まない
+
 **上流ガード（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」）を入れた根拠は n=1 のデータである。** review 1 件の `severity_inflated` 6 件の軸別内訳（pre-existing 1 / intended 2 / misread 1 / 影響が過大 2）から「半分は base を先に見れば避けられた」と読んだ。
 
 - **軸別の内訳は payload に無く、レポート本文から手で数えた値**。集計値（n=19）と内訳（n=1）の信頼度は別物として扱うこと
