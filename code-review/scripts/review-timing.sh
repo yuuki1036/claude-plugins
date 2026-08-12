@@ -12,7 +12,7 @@
 #   review-timing.sh durations [--pr N]               # "DUR TRIAGE FLEET CLOSING EXPLORE SYNTHESIS" を出力
 #   review-timing.sh cleanup [--pr N]                 # t2 がある場合のみ削除
 #
-# t1c は **agent wave を回収するたびに追記してよい**（durations は最後の値を採る）。
+# t1c は **agent wave を回収するたびに追記する**（durations は最後の値を採る）。
 # 「どの wave が最後か」をオーケストレーターに予測させないための設計。
 set -uo pipefail
 
@@ -49,8 +49,7 @@ case "$CMD" in
         grep -q '^t1 ' "$TS_FILE" 2>/dev/null || echo "t1 $(date +%s)" >> "$TS_FILE"
         ;;
       t1b|t1c|t2)
-        # t1c は複数回追記されうる（wave ごと）。durations 側の awk が後勝ちで
-        # 最後の値を採るため、「最後の wave だったか」を呼び出し側が判断しなくてよい
+        # t1c は wave ごとに複数回追記されうる（durations 側の awk が後勝ち）
         echo "$KEY $(date +%s)" >> "$TS_FILE"
         ;;
       *) echo "FATAL: mark のキーは t1 / t1b / t1c / t2 のいずれか（受領: '$KEY'）" >&2; exit 2 ;;
