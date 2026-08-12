@@ -142,7 +142,9 @@ skeptic テンプレートは `prompts/recall-skeptic.md`。findings / reviewer 
 
 ## 9. 反証レイヤー（Phase 5.9 / 4.9 / 動的）
 
-reviewer の指摘を独立エージェントが反証し、偽陽性の prominence を下げるフェーズ。**冷や読み skeptic の後・scoring の前**に挿入する（review=Phase 5.9 / self-review=Phase 4.9）。meta-reviewer / skeptic が「見落とし（false negative）」を足す係なのに対し、反証レイヤーは「偽陽性（false positive）を独立に潰す」鏡像の係。skeptic が足した指摘も本レイヤーの反証対象に含める。
+reviewer の指摘を独立エージェントが反証し、過大な指摘の prominence を下げるフェーズ。**冷や読み skeptic の後・scoring の前**に挿入する（review=Phase 5.9 / self-review=Phase 4.9）。meta-reviewer / skeptic が「見落とし（false negative）」を足す係なのに対し、本レイヤーは「独立読み直しで**severity を較正し、偽陽性を摘出する**」鏡像の係。skeptic が足した指摘も本レイヤーの反証対象に含める。
+
+> **実際の主機能は severity の較正であって偽陽性の除去ではない**（GitHub issue #114 / n=19・67 verdict）: `severity_inflated` **60%** / `confirmed` 34% / `refuted` **6%** / `uncertain` 0%。層の価値を否定するデータではない（実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている）が、**「偽陽性を潰す層」と読むと期待と実挙動がずれる**。過大 severity の上流対策は `prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」に置いた。
 
 ### 対象指摘の選定（非対称ゾーン優先 + specialist 除外）
 

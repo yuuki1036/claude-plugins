@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.55.0] - 2026-08-12
+
+### Changed
+- **severity 付与の前に base 状態（pre-existing / intended）を確認する手順を置いた**（GitHub issue #114）。反証レイヤーの verdict を全期間集計すると `severity_inflated` が **60%**（40/67）で `refuted` は 6% しかなく、過大評価が主要な失敗モードだった。`prompts/reviewer-common.md` には「退行指摘の invariant 検算」があるが **severity 付与の前段に置かれていない**ため、影響を先に見積もってから base を見る順序になっていた:
+  - **追加コストゼロの判定を先に置いた**。issue の提案は指摘ごとに `git show <base>:<file>` / `git blame` を回す形だったが、それでは探索予算を圧迫する。**①指摘対象の行が diff の追加行にあるか**（`$DIFF_FILE` は手元にあるので探索ゼロ）→ 無ければ既存の除外対象ルールに合流、**②PR 説明・コミットメッセージが意図と説明しているか**（`$PR_CTX_FILE` は既読）→ intended として 1 段階降格、の順で判定し、**`git blame` の 1 往復は「行は触っているが不備は PR 前から同じ」と主張する場合だけ**に絞った
+  - **pre-existing は「降格」ではなく「除外」になる場合がある**点を明示した。PR が触れていない不備は既存の除外対象ルール（「今回の変更で導入されたものではない既存の問題」）どおり報告しない。降格するのは PR がその行を触っている場合だけ
+  - **二重降格を塞いだ**（`scoring-guide.md`「severity 調整ルール」）。reviewer が pre-existing / intended で 1 段下げた指摘に対し、反証レイヤーが同じ軸で `severity-inflated` を返しても追加調整しない。判別は理由欄の記載で行う（退行 invariant 検算の既存ガードと同じ方式）。同じ軸を 2 回引くと過小評価になる
+- **反証レイヤーの位置づけを実測に合わせて書き換えた**（`triage-dynamic-gates.md ## 9` / `prompts/adversarial-verify.md` / 両 SKILL）。「偽陽性（false positive）を独立に潰す鏡像」→「独立読み直しで **severity を較正し、偽陽性を摘出する**」。`refuted` が 6% しかない以上、旧記述は期待と実挙動がずれており、反証エージェント側も「潰す」方に引っ張られる。**層の価値を否定するデータではない**（実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている）
+  - **上流ガードの根拠が n=1 である点を `design-notes/scoring-rationale.md` に明記した**。軸別の内訳（pre-existing 1 / intended 2 / misread 1 / 影響過大 2）は payload に無くレポート本文から手で数えた値で、集計値（n=19）とは信頼度が別。そのため**入れたのは prompt の手順追加という可逆な変更だけ**にし、`severity-inflated` の降格規則そのもの（不可逆側）は触っていない。効果の確認方法（反証の `severity_inflated` 比率が下がるはず / 下がらなければ主因は base 以外）も併記した
+
 ## [2.54.0] - 2026-08-12
 
 ### Changed

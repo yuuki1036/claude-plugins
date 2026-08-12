@@ -327,7 +327,7 @@ Step 6 の直前に、**メインコンテキストで**（Agent は使わない
 
 ### 5.9 反証レイヤー（adversarial verification / 動的）
 
-冷や読み skeptic の後・スコアリングの前に、reviewer の指摘を独立エージェントが反証する。偽陽性を人間が詰める前に先回りして摘出するフェーズ（`${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` `## 9 反証レイヤー`）。meta-reviewer (5.6) / skeptic (5.8) が見落とし（false negative）を足す係なのに対し、本フェーズは偽陽性（false positive）を独立に潰す鏡像。skeptic が足した指摘も本レイヤーの対象。
+冷や読み skeptic の後・スコアリングの前に、reviewer の指摘を独立エージェントが反証する。偽陽性を人間が詰める前に先回りして摘出するフェーズ（`${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` `## 9 反証レイヤー`）。meta-reviewer (5.6) / skeptic (5.8) が見落とし（false negative）を足す係なのに対し、本フェーズは独立読み直しで **severity を較正し偽陽性を摘出する**鏡像（実測は較正が主機能: `severity_inflated` 60% / `refuted` 6%。#114）。skeptic が足した指摘も本レイヤーの対象。
 
 **スキップ条件**（いずれか満たせばスキップして Step 6 へ）:
 - userConfig `enable_adversarial_verify` が `false`

@@ -37,6 +37,7 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 ### severity 付与の原則
 
 - **「もし指摘が真なら何が起きるか」で判定する**（confidence と独立）
+- **付与の前に base 状態を確認する**（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）。PR が触れていない不備は除外、PR 前から同じ・PR が意図した変更は 1 段階下げてから申告する。**影響を先に見積もってから base を見ると過大評価が入る**（実測: 反証 verdict の 60% が `severity_inflated`、`refuted` は 6%）
 - セキュリティ・データ整合性・本番事故に直結するものは原則 BLOCKER または CRITICAL
 - 「動くけど将来困る」系は MAJOR
 - 「あれば良い」程度は MINOR
@@ -161,6 +162,7 @@ severity は基本的に reviewer の判定を尊重するが、以下の場合�
 
 - **タグ `[scope:out]` または `[resolved: ...]` が付いた指摘**: severity を 1 段階下げる（BLOCKER → CRITICAL、CRITICAL → MAJOR、MAJOR → MINOR、MINOR → そのまま）
 - **退行指摘で invariant が incidental と検算された場合**（`prompts/reviewer-common.md`「退行指摘の invariant 検算」: 隣接経路で同 invariant が未強制と確認）: severity を 1 段階下げる。reviewer が検算済みで既に下げている場合は二重適用しない（指摘理由の「incidental と判断」記載で判別）
+- **pre-existing / intended と申告された指摘**（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）: **reviewer が既に 1 段階下げているので追加調整しない**。理由欄の「pre-existing（`git blame` で PR 前のコミット由来）」「intended（典拠: …）」記載で判別する。**同じ軸で反証レイヤーが `severity-inflated` を返した場合も二重適用しない**（下記 `severity-inflated` の排他条件に合流させる）
 - **複数 reviewer が同一指摘を BLOCKER と判定**: severity を BLOCKER のまま維持（混乱を防ぐ）
 - **doc-substance の裏取り済み内容誤りの CRITICAL 昇格（grounding ガード付き）**: doc の主張とコードが code:line で矛盾し裏取りできた指摘は CRITICAL に昇格する。**ただし昇格は、矛盾の相手が「doc が実際に参照する・実在する・現行の」コード経路である場合に限る**。次のいずれかでは昇格させず MAJOR に留める / 取り下げる:
   - (a) 矛盾の相手が doc の参照しない別経路や stale なパス（grounding 誤読。例: doc は `src/api` を指すのに未参照の `src/legacy` と突き合わせている）
@@ -186,7 +188,7 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 | `confirmed`（独立にパス再現） | 全 severity | 既存「複数エージェント同一指摘 +15」の **発火源として扱う**。反証 confirm と複数エージェント検出が同時成立しても **+15 は一度だけ**（二重計上の排他） |
 | `uncertain`（具体根拠なし） | 全 severity | confidence **−10** + 本文に `（反証: 未確定）` を付記。**単独では何も落とせない**（怠惰な却下で本物を殺さないため） |
 | `severity-inflated`（影響過大の根拠あり） | **BLOCKER / CRITICAL** | **降格後に報告マトリクスを割る場合は severity を据え置き**、本文先頭に `⚠️ 反証メモ: severity 過大の疑い（<根拠 file:line>、要確認）` を付与する（= 係争中）。割らない場合のみ 1 段階下げる。判定は降格後の (severity, confidence) を報告マトリクスに当てて行う |
-| `severity-inflated`（影響過大の根拠あり） | **MAJOR / MINOR** | **既存「severity 調整ルール（軽微）」の一項目として** severity を 1 段階下げる。退行 invariant 検算で既に下げている場合は二重適用しない（既存の排他条件を流用）。**降格の結果 severity が報告マトリクス / `review_severity_threshold` を割って脱落する場合は、`refuted` の MAJOR/MINOR と同じく取り下げ理由を付録（🔁）に記録する**（verdict 種別・軸名・反証 file:line を含める。降格で消える指摘だけ silent に落ちて `refuted` との透明性が食い違うのを防ぐ / GitHub issue #109） |
+| `severity-inflated`（影響過大の根拠あり） | **MAJOR / MINOR** | **既存「severity 調整ルール（軽微）」の一項目として** severity を 1 段階下げる。**退行 invariant 検算・pre-existing / intended 申告（#114）で既に下げている場合は二重適用しない**（理由欄の記載で判別。同じ軸を 2 回引くと過小評価になる）。**降格の結果 severity が報告マトリクス / `review_severity_threshold` を割って脱落する場合は、`refuted` の MAJOR/MINOR と同じく取り下げ理由を付録（🔁）に記録する**（verdict 種別・軸名・反証 file:line を含める。降格で消える指摘だけ silent に落ちて `refuted` との透明性が食い違うのを防ぐ / GitHub issue #109） |
 
 ### 不変条件（機械保証）
 

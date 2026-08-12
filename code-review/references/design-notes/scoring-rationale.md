@@ -32,3 +32,22 @@
 ## 判断待ちの観測: review 経路の MAJOR がゼロに張り付いている
 
 **scoring 規約を変える前に `design-notes/triage-rationale.md` の「未解決の観測」を読むこと。** 特に「MAJOR/MINOR の `severity-inflated` を無条件降格から保護する」（高 severity の不変条件を MAJOR へ拡張する）は precision を直接下げる不可逆な変更であり、**降格由来だと確認できていない段階で入れてはならない**。
+
+## 反証 verdict の実測分布と、上流ガードを入れた根拠（v2.55.0 / GitHub issue #114）
+
+全期間の集計（`adversarial_verify.severity_inflated` を持つ **19 サンプル / 計 67 verdict**）:
+
+| verdict | 件数 | 比率 |
+|---|---:|---:|
+| confirmed | 23 | 34% |
+| **severity_inflated** | **40** | **60%** |
+| refuted | 4 | 6% |
+| uncertain | 0 | 0% |
+
+**反証レイヤーの実際の主機能は severity の較正であって偽陽性の除去ではない**（`refuted` は 6%）。層の価値を否定するデータではない — 実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている。**記述と実挙動がずれていた**ので `triage-dynamic-gates.md ## 9` / `prompts/adversarial-verify.md` / 両 SKILL の位置づけを書き換えた。
+
+**上流ガード（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」）を入れた根拠は n=1 のデータである。** review 1 件の `severity_inflated` 6 件の軸別内訳（pre-existing 1 / intended 2 / misread 1 / 影響が過大 2）から「半分は base を先に見れば避けられた」と読んだ。
+
+- **軸別の内訳は payload に無く、レポート本文から手で数えた値**。集計値（n=19）と内訳（n=1）の信頼度は別物として扱うこと
+- そのため**入れたのは prompt の手順追加という可逆な変更だけ**にした。`severity-inflated` の降格規則そのもの（不可逆側）は触っていない。この非対称は意図的で、上の「判断待ちの観測」と同じ流儀
+- **効果の確認は `pre_adjust_counts` と `adversarial_verify.severity_inflated` の比率で行う**。ガードが効けば reviewer 側で降格済みの指摘が増え、反証の `severity_inflated` 比率が下がるはず。下がらなければ「reviewer は base を見ていない」か「過大評価の主因が base 以外（misread / 影響の見積もり）」のどちらかで、打ち手が変わる
