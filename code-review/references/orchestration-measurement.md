@@ -109,7 +109,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 | `duration_min` ほか `duration_*` | 区間分割の意味・欠測時の扱い・「混ぜて比較しない」理由は `## 14` が正本。`TS_FILE` のパス導出は `## 13.1` |
 | `head_verified` | `{ok, mismatch, unknown}`（review のみ。v2.43.0）。各 agent の `HEAD 検証:` 行の集計で、`unknown` は行が無かった agent 数。`mismatch + unknown > 0` のレビューは指摘の信頼度が落ちる（orchestration-guide.md `## 5`） |
 | `blocker_count` / `critical_count` / `major_count` / `minor_count` | severity 別件数（報告マトリクス通過後） |
-| `pre_adjust_counts` | `{blocker, critical, major, minor}`（v2.44.0）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の生の severity 分布。下の「調整前後の分離」を参照 |
+| `pre_adjust_counts` | `{blocker, critical, major, minor}`（v2.44.0）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の生の severity 分布。**v2.54.0 以降は各 reviewer の `## below-threshold` の件数を足して求める**（実効閾値未満は本文に列挙されないため。足さないと「検出しなかった」と「列挙しなかった」が 0 に潰れる / GitHub issue #117）。下の「調整前後の分離」を参照 |
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
 
 **`agents`** — 実際に**起動した**体数（成功・失敗を問わない。v2.39.0 の上限調整の効果測定に使う）:

@@ -135,6 +135,23 @@ Step 6 で `scoring-guide.md` の報告マトリクスに従いフィルタさ�
 
 境界値（confidence 75-85）や他 reviewer と矛盾しうる指摘では、①diff の意図（コミットメッセージ / PR 説明 / session-context）との矛盾 ②既存問題の新規誤認 ③証拠が数値を裏付けているか、を確認してから確定する。
 
+#### 実効報告閾値 `{{SEVERITY_THRESHOLD}}`（列挙の抑制 / GitHub issue #117）
+
+上のマトリクスの**さらに後段**に、userConfig `review_severity_threshold` による足切りが直列で掛かる。オーケストレーターがその実効値を `{{SEVERITY_THRESHOLD}}`（既定 `MAJOR`）として渡す。
+
+**実効閾値より低い severity と判定した指摘は、本文に列挙せず件数だけ申告する**（出力末尾に置く。0 件でもブロックごと省かない）:
+
+```
+## below-threshold
+MINOR: 13
+```
+
+- **判定そのものはやめない。** severity は通常どおり付け、閾値未満と分かった時点で本文を書かずに数える。書いた出力が捨てられるのを防ぐのが目的であって、見落とすためではない
+- **「閾値未満だから」を理由に severity を繰り上げてはならない。** 繰り上げれば報告には載るが、それは発見ではなく較正の破壊であり、下流の `pre_adjust_counts` も歪む。**迷ったら本来の severity で数に入れる**
+- 件数はオーケストレーターが計測に使う。実測では MINOR が調整前 60 件 → 報告 9 件（**85% 破棄**）で、うち confidence 95+ が 7 件あった。**報告マトリクスは通ったのに閾値で全滅**しており、書く予算がそのまま捨てられていた
+- **`{{SEVERITY_THRESHOLD}}` が `MINOR` のときは足切りが無い**ので全 severity を通常どおり列挙する（このブロックは `0` になる）。`{{SEVERITY_THRESHOLD}}` が渡っていない場合も**列挙を抑制しない**（未注入を「抑制してよい」と読み替えると silent に指摘が消える）
+- **閾値の対象外（従来どおり出す）**: `## unmet_information` / `## related-observations`（`FYI:` を含む。severity を持たない）/ `[surface:high-risk]` フラグ / `## コメント推敲提案`（self-review の B 系統。severity を持たない別枠経路）
+
 ### 退行（regression）指摘の invariant 検算（GitHub issue #69）
 
 「旧コードでは X だった → 変更で X が失われた → 退行」という指摘は、**X が一貫した不変条件（invariant）か、特定経路の偶発的副作用（incidental）か** を区別して出す。区別しないと単一経路の旧挙動を invariant とみなして severity を過大評価する。
@@ -228,6 +245,9 @@ HEAD 検証: <git rev-parse HEAD の実測値> / 期待 <{{HEAD_SHA}}> / 一致|
 #### 総括
 - 変更の概要理解
 - 主要なリスク
+
+## below-threshold
+MINOR: <実効閾値未満と判定した件数。0 でも書く>
 ```
 
 **`HEAD 検証:` 行は PR 番号付きで起動された場合の必須行**（self-review 経由で PR 番号が渡らない場合は省略してよい）。省略・`不一致`・`未実行` はオーケストレーターが欠損として扱う。

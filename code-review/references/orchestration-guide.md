@@ -62,6 +62,15 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 - **`{{MAIN_ROOT}}` は「依存を読むための逃げ道」であって、レビュー対象を読む場所ではない**。メイン側はユーザーの作業ツリーで PR と無関係な未コミット変更を含みうる。この非対称はプロンプト側（`prompts/reviewer-common.md` / `prompts/explorer-common.md`）にも書いてあるが、注入時に潰さないこと
 - self-review は `isolation: "worktree"` を使わない（依存はそのまま読める）ため**注入不要**
 
+### 1.2 実効報告閾値の注入（`{{SEVERITY_THRESHOLD}}` / review・self-review 共通 / GitHub issue #117）
+
+**reviewer には userConfig `review_severity_threshold` の実効値を必ず渡す**（既定 `MAJOR`）。報告マトリクスと本閾値は**直列に掛かる 2 段のフィルタ**で、reviewer は後段を知らされていなかったため、構造的にほぼ報告されない severity に出力予算を使い続けていた（実測: MINOR 調整前 60 → 報告 9 件 = **85% 破棄**、うち confidence 95+ が 7 件）。
+
+- 閾値未満と判定した指摘は reviewer が本文を書かず **`## below-threshold` に件数だけ**返す。規約の正本は `prompts/reviewer-common.md`「実効報告閾値」
+- **オーケストレーターは `pre_adjust_counts` にこの件数を足す**（`orchestration-measurement.md ## 16`）。足さないと「検出しなかった」と「列挙しなかった」が 0 に潰れ、本施策の効果測定と再評価の根拠が同時に失われる
+- **抑制されるのは列挙だけで判定は従来どおり**。閾値未満を理由に severity を繰り上げさせない（較正が壊れ、`pre_adjust_counts` も歪む）
+- **self-review の B 系統（`## コメント推敲提案`）は severity を持たないため対象外**。閾値も抑制も効かない（`prompts/focus/comment-polish.md`）
+
 → 空 SHA が「静かな品質劣化」に倒れる仕組みと、ブランチ名 checkout が構造的に必ず失敗する経緯（issue #98 / #69）: `design-notes/orchestration-rationale.md`
 
 ## 3.5. 大きい共有コンテキストはファイル経由で渡す（review / self-review 共通 / GitHub issue #100 A）

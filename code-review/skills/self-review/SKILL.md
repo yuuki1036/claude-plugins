@@ -227,6 +227,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - **可変部**（ここだけをオーケストレーターが書く）:
   - **`{{PLUGIN_ROOT}}` = プラグインルートの絶対パス**（必須）。`${CLAUDE_PLUGIN_ROOT}` は**子 agent の環境には存在しない**ため、テンプレート内の `${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh` はそのままでは解決できない。実パスを明記して読み替えを指示する（欠かすと diff の切り出しが失敗し全文 Read に落ちる）
   - **`$DIFF_FILE` のパスと担当ファイル名**（`diff-slice.sh` で担当ぶんを切り出せることも明記）。**diff 本文は渡さない**
+  - **`{{SEVERITY_THRESHOLD}}` = `review_severity_threshold` の実効値**（必須）。閾値未満は reviewer が本文を書かず `## below-threshold` に件数だけ返す（欠かすと書かせて捨てる。#117。意味は scoring-guide.md「実効閾値を reviewer に伝える」）。**B 系統（`## コメント推敲提案`）は severity を持たないため対象外**で、抑制されない
   - Step 3.9 の **AGENTS.md / CLAUDE.md のパス一覧**
   - セッションコンテキストが有効なら `.claude/session-context.md` の**パス**（あわせて `prompts/session-context.md` を Read 対象に入れる。規約はそちらにある）
   - Phase 0 が決定した focus（と冗長ペアの場合は angle）、担当範囲
@@ -327,7 +328,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
    | MAJOR | skip | skip | skip | 報告 |
    | MINOR | skip | skip | skip | 報告 |
 
-6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外
+6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を足す**（列挙されていないため。#117）
 7. **コメント推敲（B 系統）は本ステップを一切通さない**: `## コメント推敲提案` ブロックは手順 1〜6 と反証レイヤー（Phase 4.9）をすべてバイパスして Step 6 にそのまま流す。**severity / confidence を後付けしない**（付けた瞬間マトリクスの対象になり MINOR 95+ と好みクランプ 40 の 2 段で全滅する）。詳細は `prompts/focus/comment-polish.md`。**`review_severity_threshold` も B 系統には効かない**（severity を持たないため。推敲を止めるなら `--exclude comment-accuracy`）。オーケストレーター側で行う調整は次の 2 つだけ:
    - **二重掲載の除去**: **手順 5-6 を通過して Step 6 に残った指摘**と同一 file:line のコメントのみ B から落とす。**「A 系統が指摘として挙げた」だけでは落とさない** — A の冗長コメント指摘は MINOR 95+ で大半が skip されるため、それを理由に B からも消すと A でも B でも出ない（B 系統を作った理由そのものを打ち消す）
    - **掲載上限**: 10 件を超える場合はここで切り、末尾に「他 N 件」と添える（reviewer 側は全件出す規約。発見段階では間引かせない）。`comment_polish.suggested` には**切る前の総数**を入れる

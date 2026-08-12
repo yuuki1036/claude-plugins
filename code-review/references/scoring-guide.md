@@ -211,6 +211,14 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 
 `review_severity_threshold = "CRITICAL"` を設定すると MAJOR 以下を完全に除外（厳しめ運用）。`"MINOR"` にすると全 severity を報告（緩め運用）。デフォルトの `"MAJOR"` は上記マトリクス通り。
 
+### 実効閾値を reviewer に伝える（GitHub issue #117）
+
+**実効値を `{{SEVERITY_THRESHOLD}}` として reviewer プロンプトに注入する**（規約の正本は `prompts/reviewer-common.md` の「実効報告閾値」）。閾値未満の指摘は reviewer が本文を書かず `## below-threshold` に件数だけ返す。
+
+- 報告マトリクスと `review_severity_threshold` は**直列に掛かる 2 段のフィルタ**で、既定 `MAJOR` では MINOR が構造的にほぼ全滅する（実測: 調整前 60 → 報告 9 件 = 85% 破棄。うち confidence 95+ が 7 件）。reviewer は実効値を知らされていなかったため抑制もできず、**書かせて捨てるという最も損な組み合わせ**になっていた
+- **`pre_adjust_counts` は `## below-threshold` の件数を足して求める**（`orchestration-measurement.md ## 16`）。足さないと「reviewer が検出しなかった」と「閾値未満なので列挙しなかった」が 0 に潰れ、**この issue の根拠になった計測そのものが今後取れなくなる**
+- **抑制は列挙だけで、判定は従来どおり**。閾値未満を理由にした severity の繰り上げは較正の破壊として扱う（reviewer 側にも明記済み）
+
 ---
 
 ## レビュー結論（総合判定）

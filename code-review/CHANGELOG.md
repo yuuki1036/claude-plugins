@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.54.0] - 2026-08-12
+
+### Changed
+- **reviewer に実効報告閾値を伝え、閾値未満の列挙をやめさせた**（GitHub issue #117）。報告マトリクスと userConfig `review_severity_threshold`（既定 `MAJOR`）は**直列に掛かる 2 段のフィルタ**だが、reviewer は後段を知らされていなかったため、構造的にほぼ報告されない severity に出力予算を使い続けていた。実測（`pre_adjust_counts` を持つ 6 サンプル）では MINOR が調整前 60 件 → 報告 9 件の **85% 破棄**で、うち confidence 95+ が 7 件 — **報告マトリクスは通過したのに閾値で全滅**しており、reviewer の calibration ではなく構造の問題だった:
+  - `{{SEVERITY_THRESHOLD}}` を reviewer プロンプトに注入する（`{{PR_NUMBER}}` / `{{MAIN_ROOT}}` と同じプレースホルダ方式）。規約の正本は `prompts/reviewer-common.md`「実効報告閾値」、注入規約は `orchestration-guide.md ## 1.2`
+  - 閾値未満と判定した指摘は**本文を書かず `## below-threshold` に件数だけ**返す。**0 件でもブロックを省かない**（「観点が死んだ」と「該当なし」を 0 に潰さない）
+  - **採ったのは issue の案 A**（reviewer に抑制させる）。案 B（MINOR を折りたたみ付録として出す）は main 出力が増えて削減目的に逆行するため見送った。ただし A の素朴な適用（MINOR を完全に禁止）は **severity 判定が MAJOR 側へ歪む**ため、**「判定はする・列挙だけしない」**形に限定した:
+    - 「閾値未満だから」を理由にした severity の繰り上げを**明示的に禁止**（繰り上げれば報告に載るが、それは発見ではなく較正の破壊）。迷ったら本来の severity で数に入れる
+    - `{{SEVERITY_THRESHOLD}}` が `MINOR` のとき、および**未注入のとき**は列挙を抑制しない（未注入を「抑制してよい」と読み替えると silent に指摘が消える）
+  - **`pre_adjust_counts` は `## below-threshold` の件数を足して求める** よう規約を更新（`orchestration-measurement.md ## 16` / 両 SKILL のスコアリング手順 6）。足さないと「reviewer が検出しなかった」と「閾値未満なので列挙しなかった」が 0 に潰れ、**本施策の効果測定と再評価の根拠（この issue を起票できた計測そのもの）が同時に失われる**
+  - **閾値の対象外**を明示: `## unmet_information` / `## related-observations`（`FYI:` 含む）/ `[surface:high-risk]` フラグ / self-review の B 系統 `## コメント推敲提案`（severity を持たない別枠経路。`review_severity_threshold` が効かないのは従来どおり）
+
 ## [2.53.0] - 2026-08-12
 
 ### Added
