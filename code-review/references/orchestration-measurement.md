@@ -70,7 +70,7 @@
 |---|---|---|
 | `t0` | review Step 1 / self-review Step 1 の冒頭（`>` で新規作成） | レビュー開始 |
 | `t1` | **最初の agent を一括発行する直前**（explorer を配置していれば explorer 発行直前 = review Step 4 / self-review Step 3、していなければ reviewer 発行直前 = review Step 5 / self-review Step 4） | triage 区間の終わり |
-| `t1b` | **explorer 結果を回収した直後**（explorer を 1 体以上起動した場合のみ書く） | explorer wave の終わり |
+| `t1b` | **explorer 結果を回収した直後**（explorer を 1 体以上起動した場合のみ書く。**複数 wave に分けてしまった場合は wave ごとに毎回**） | explorer wave の終わり（**行数 = explorer wave の本数** → `agents.explorer_waves`） |
 | `t1c` | **agent wave の結果を回収した直後**（reviewer wave / Round 2 / meta / 反証 の**各回収点で毎回**追記する） | 最後の agent wave の終わり |
 | `t2` | **初回レポートを出力した直後**（review Step 7 / self-review Step 6。締めフローに入る前） | fleet 区間の終わり |
 | `t3` | publish 時点（ファイルには書かず `date +%s` で取る） | 全体の終わり |
@@ -92,6 +92,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 > **この区間も「純粋な agent 時間」ではない**（explorer プロンプトを書く時間が入る）。ただし explorer は体数も 1 体あたりのプロンプトも reviewer より小さいので汚染は相対的に小さい。**「メインコンテキストの思考時間」を測るフィールドではない** — それは上記のとおり原理的に測れない。
 >
 > explorer を配置しなかったレビューでは `t1b` を書かず `duration_explore_min` は `-1`（該当なし）にする。0 を publish すると「explorer wave が一瞬で終わった」と誤読される。
+
+> **`t1b` の行数が `agents.explorer_waves` になる（v2.61.0 / GitHub issue #122）**: explorer は「同一メッセージ内で一括発行する」規約（orchestration-guide.md `## 0`）だが、**破ったことが計測に現れないため事後に気づけなかった**（実測: 1 体を単独発行してから残り 3 体を次のメッセージで出したため `duration_explore_min` が 18 分 = 7.7 + 9.2 になった。一括なら wave 内最長の約 9 分で済んでいた）。**wave ごとに `t1b` を打てば行数がそのまま wave 本数になる**ので、追加のマーカー種別を増やさずに検知できる。`durations` は最後の `t1b` を採るため、分割しても `duration_explore_min` は全 wave を覆う。
+>
+> 値の注入と警告は `publish-review-event.sh` が行う（**SKILL 側は `agents.explorer_waves` を渡さない**）。`>= 2` なら「一括発行が破られた可能性」、`agents.explorer >= 1` かつ `0` なら「マーカーの打ち忘れ」を stderr に WARN する。
 
 **publish 時の算出**（欠測は `-1`。ファイルが無い / マーカーが欠ける場合も 0 と混同しない）は `scripts/publish-review-event.sh` が `review-timing.sh durations` 経由で行い、`duration_*` フィールドを payload に注入する。**SKILL 側は `duration_*` を渡さない**（LLM に時刻計算をさせない）。
 
@@ -129,9 +133,16 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 **`agents`** — 実際に**起動した**体数（成功・失敗を問わない。v2.39.0 の上限調整の効果測定に使う）:
 
 - `explorer` / `reviewer`: 初回の体数（`reviewer` に specialist を含めない）
+- `explorer_waves`: **explorer wave の本数**（v2.61.0 / `t1b` マーカーの行数を `publish-review-event.sh` が注入する。**SKILL からは渡さない**）。一括発行が守られていれば explorer 起動時 `1` / 未起動 `0`。**`>= 2` は「1 メッセージにまとめていれば wave 内最長で済んだのに、直列に積んだ」ことを意味する**（orchestration-guide.md `## 0`）。`agents.explorer >= 1` かつ `explorer_waves == 0` は**マーカーの打ち忘れ（欠測）**であって「wave が無かった」ではない。存在が v2.61.0 以降のマーカー
+  ```bash
+  # 一括発行が破られた回の頻度と、そのときの explore 区間
+  grep '"event":"review:completed"' .claude/events.jsonl | \
+    jq -s '[.[] | select((.payload.agents.explorer_waves // 0) >= 2)] |
+      map({plugin, waves: .payload.agents.explorer_waves, explorer: .payload.agents.explorer, explore_min: .payload.duration_explore_min})'
+  ```
 - `specialist`: red-flag specialist の実起動体数（束ね後）
 - `round2`: Round 2 の再起動 reviewer + 追加 explorer の合計（レポート「動的ラウンド」行の N + M と一致させる）
-- `verify`: 反証エージェントの**体数**。**バッチ化後は ≒ `ceil(実施件数/5)`** なので指摘数の代理指標にならない。**v2.41.0 前後で意味が変わる**（旧: 指摘ごと 1 体）ため `duration_triage_min` の有無で層別してから使う
+- `verify`: 反証エージェントの**体数**（v2.61.0 以降は meta 由来指摘の追加バッチ 1 体もここに加算する。triage-dynamic-gates.md `## 9`）。**バッチ化後は ≒ `ceil(実施件数/5)`** なので指摘数の代理指標にならない。**v2.41.0 前後で意味が変わる**（旧: 指摘ごと 1 体）ため `duration_triage_min` の有無で層別してから使う
 - `verify_findings`: 反証で**実際に verdict が返った件数**（v2.41.0）。**レポート反証行の「うち実施 X 件」と一致させる**（ゲート対象 N 件ではない）
 - meta-reviewer / skeptic は含めない（**それぞれ `meta_reviewer` / `recall_skeptic` の専用フィールドで観測する**。`agents` は体数上限の効果測定用で、1 体固定の検証層を混ぜると上限との対応が崩れる）
 
@@ -209,7 +220,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - publish に失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を publisher 名（`code-review:review` / `code-review:self-review`）に上書きして識別する
 - 後方互換: subscriber 側は `critical_count` の存在を仮定してよい（旧 payload との互換性のため必須）。それ以外は新規フィールド追加なので旧 subscriber 影響なし（現物確認: `issue-workflow:issue-maintain` は `pr` と件数しか読まない）
 - **ゲートを動かす変更には必ず版マーカーを足す**（GitHub issue #115 の一般化）。effort ゲート・起動条件・算出方法を変えると**フィールドの有無は変わらないのに意味が変わる**ため、「フィールドの有無で層別する」という下のルールだけでは新旧を区別できない。`recall_skeptic.gate_schema` / `pre_adjust_counts.schema` と同じく publisher 自己申告の整数を足すこと
-- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の帯連動ゲートの版は `meta_reviewer.gate_schema`**）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
+- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の帯連動ゲートの版は `meta_reviewer.gate_schema`**）・`agents.explorer_waves` の存在が v2.61.0 以降**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
 
 ## 17. トークン消費の計測（改修の前後比較 / v2.48.0）
 

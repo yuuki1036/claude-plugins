@@ -10,10 +10,12 @@
 #   review-timing.sh start [--pr N]                   # t0 を記録（新規作成）
 #   review-timing.sh mark <t1|t1b|t1c|t2> [--pr N]    # マーカー追記（t1 は二重記録しない）
 #   review-timing.sh durations [--pr N]               # "DUR TRIAGE FLEET CLOSING EXPLORE SYNTHESIS" を出力
+#   review-timing.sh waves [--pr N]                   # explorer wave の発行回数（t1b の行数）を出力
 #   review-timing.sh cleanup [--pr N]                 # t2 がある場合のみ削除
 #
-# t1c は **agent wave を回収するたびに追記する**（durations は最後の値を採る）。
-# 「どの wave が最後か」をオーケストレーターに予測させないための設計。
+# **t1b は explorer wave を、t1c はすべての agent wave を**回収するたびに追記する
+# （durations は最後の値を採る）。「どの wave が最後か」をオーケストレーターに予測させない
+# ための設計。t1b の行数がそのまま explorer wave の本数になる（`waves` / GitHub issue #122）。
 set -uo pipefail
 
 CMD="${1:-}"; shift || true
@@ -49,7 +51,7 @@ case "$CMD" in
         grep -q '^t1 ' "$TS_FILE" 2>/dev/null || echo "t1 $(date +%s)" >> "$TS_FILE"
         ;;
       t1b|t1c|t2)
-        # t1c は wave ごとに複数回追記されうる（durations 側の awk が後勝ち）
+        # t1b / t1c は wave ごとに複数回追記されうる（durations 側の awk が後勝ち）
         echo "$KEY $(date +%s)" >> "$TS_FILE"
         ;;
       *) echo "FATAL: mark のキーは t1 / t1b / t1c / t2 のいずれか（受領: '$KEY'）" >&2; exit 2 ;;
@@ -69,12 +71,20 @@ case "$CMD" in
         ("t1c" in t && "t2" in t) ? int((t["t2"] - t["t1c"])/60) : -1
     }' "$TS_FILE" 2>/dev/null || echo "-1 -1 -1 -1 -1 -1"
     ;;
+  waves)
+    # explorer wave の本数 = t1b の行数。一括発行が守られていれば 1（explorer 未起動なら 0）。
+    # 2 以上は「explorer を複数メッセージに分けて発行した」＝ wave 1 本ぶんの損失を意味する
+    # `grep -c` は 0 件でも "0" を出したうえで exit 1 するので `||` で足すと 2 行出る。
+    # 代入で受けて空（ファイル無し）だけを 0 に倒す
+    N_T1B=$(grep -c '^t1b ' "$TS_FILE" 2>/dev/null)
+    echo "${N_T1B:-0}"
+    ;;
   cleanup)
     # t2 の存在確認は所有権チェックではなく、万一パスが衝突したときに
     # 「掃除より他セッションの計測を優先する」ための二段目
     { grep -q '^t2 ' "$TS_FILE" 2>/dev/null && rm -f "$TS_FILE"; } || true
     ;;
   *)
-    echo "usage: review-timing.sh <start|mark|durations|cleanup> [--pr N]" >&2; exit 2 ;;
+    echo "usage: review-timing.sh <start|mark|durations|waves|cleanup> [--pr N]" >&2; exit 2 ;;
 esac
 exit 0

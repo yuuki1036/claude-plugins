@@ -30,7 +30,7 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 
 **同期起動の明示（両 skill・全 agent 起動に適用）**: explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / 冷や読み skeptic / 反証エージェントのすべてで、Agent call に `run_in_background: false` を必ず明示する。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、省略するとオーケストレーターが結果を待たずに次フェーズへ進み、完了通知の遅れた agent の出力を取りこぼす（「反応が返ってこない agent」の正体）。`orchestration-dynamic-rounds.md` の各起動手順にもこのルールが適用される。
 
-**並列発行の明示（複数体を起動する全フェーズに適用）**: `run_in_background: false` は「1 体ずつ順に起動する」ことを意味**しない**。複数体を起動するフェーズでは、**同一アシスタントメッセージ内に対象フェーズの全 Agent call を並べて一括発行し、その 1 応答で全結果を待つ**。**2 つは直交する独立の要件**（前者は取りこぼし防止、後者は並列性）。単体起動のフェーズ（meta-reviewer / 冷や読み skeptic）には適用対象がない。→ 根拠と実測: `design-notes/orchestration-rationale.md`
+**並列発行の明示（複数体を起動する全フェーズに適用）**: `run_in_background: false` は「1 体ずつ順に起動する」ことを意味**しない**。複数体を起動するフェーズでは、**同一アシスタントメッセージ内に対象フェーズの全 Agent call を並べて一括発行し、その 1 応答で全結果を待つ**。**2 つは直交する独立の要件**（前者は取りこぼし防止、後者は並列性）。**1 体しか起動しないフェーズも「他フェーズと同一 wave」なら適用対象**である（冷や読み skeptic は reviewer wave に相乗り / **meta-reviewer は反証バッチと同一メッセージ** — v2.61.0。起動タイミングの正本は triage-dynamic-gates.md `## 8` / `## 8.5`）。真に単独 wave になるのは skeptic の fallback 起動だけ。→ 根拠と実測: `design-notes/orchestration-rationale.md`
 
 ## 1. PR 番号・期待 HEAD SHA 注入（review のみ / agent 起動時に必須）
 
@@ -91,6 +91,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 | PR コンテキストブロック | `fetch-pr-context.sh` の出力を `$PR_CTX_FILE` に保存し、**パスのみ**注入 | メインコンテキストは Phase 0 のタイプ判定のために 1 回だけ Read する |
 | AGENTS.md / CLAUDE.md（`## 4`） | **元ファイルのパスをそのまま**注入（コピーを作らない） | 既にディスク上にあるので追加コストゼロ。パスは `triage-signals.sh` の `## agents-md` が出す |
 | explorer 結果（review Step 5 / self-review Step 4 の選択的注入） | **従来どおりインラインで注入する** | 選択的注入なので複製係数がほぼ 1（1 explorer → 依存する 1〜2 reviewer）。ファイル化すると explorer 体数ぶんの Write が増えて逆効果 |
+| **explorer の「確定事実」**（`## 確定事実（explorer 共通・裏取り済み）`） | **全 reviewer にインライン注入する**が、**合計 10 行以内**に切る | 唯一の意図的な例外。複製係数は体数ぶん立つが、**消すのは reviewer 側の重複探索**（実測: 同一の事実に 5 体が独立到達し、同じ 2 ファイルを読み直していた。GitHub issue #122）。10 行を超えるなら選択的注入に落とす — 長さがそのまま体数倍のコストになる |
 
 > **判断基準は「複製係数」**（= その内容が何体のプロンプトに現れるか）。係数が 1 に近いものはインラインの方が安い（Write / Read の往復が増えるだけ）。係数が体数ぶん立つものは必ずパス渡しにする。**同一内容を 2 体以上に書くと分かった時点でパス渡しを検討する。**
 
@@ -126,7 +127,7 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 |---|---|---|---|
 | meta-reviewer | 1 体・1 round（triage-dynamic-gates.md `## 8`） | `max` | しない（xhigh/max 起点） |
 | 冷や読み skeptic | PR あたり 1 体・1 round（triage-dynamic-gates.md `## 8.5`） | `max` | **する**（high 起点 / surface=true のときだけ。v2.52.0 で昇格） |
-| 反証エージェント | **5 件ごと 1 体・上限 3 体**（triage-dynamic-gates.md `## 9`）＝唯一の変動費 | **`high`**（v2.41.0 で `max` から引き下げ） | **する**（非対称ゾーンに限定） |
+| 反証エージェント | **5 件ごと 1 体・本体上限 3 体 ＋ meta 由来の追加バッチ 1 体**（計 4 体 20 件 / v2.61.0。triage-dynamic-gates.md `## 9`）＝唯一の変動費 | **`high`**（v2.41.0 で `max` から引き下げ） | **する**（非対称ゾーンに限定） |
 
 > **反証 effort の引き下げは scoring-guide の不変条件に依存している**（BLOCKER / CRITICAL は `refuted` でも `severity-inflated` でも報告から消さず係争注記を付ける）。**不変条件を緩める変更をするときは、反証 effort を `max` に戻すかどうかを同時に判断すること。**
 

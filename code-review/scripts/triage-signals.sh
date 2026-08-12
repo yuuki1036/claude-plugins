@@ -255,8 +255,30 @@ echo "## surface"
 
 echo "## explorer-signals"
 # triage-guide `## 3` explorer の必要性判定
-printf '%s\n' "$CLASSIFIED" | cut -f4 | grep -E '(^|/)(utils|shared|lib|common|helpers|core)/' \
-  | sed 's/^/shared-module\t/' | head -10
+# shared-module には **呼び出し元の概数**を添える（同節の explorer 下限判定 / GitHub issue
+# #122）。数えないと「型引数を 1 つ足しただけの共通モジュール変更」にも explorer が 1 体
+# 張り付く。**誤差は両方向に出る**: basename の word 一致は doc の言及も拾って過大に振れる
+# 一方、**追跡済みファイルの literal 一致しか見ない**ので未追跡ファイル・barrel / path alias
+# 経由の import は取り逃して過小にも振れる。**数えられない場合は `?`**（下限判定は起動する側
+# に倒す。0 に潰すと下限を最も緩く通してしまう）
+printf '%s\n' "$CLASSIFIED" | cut -f4 | grep -E '(^|/)(utils|shared|lib|common|helpers|core)/' | head -10 \
+  | while IFS= read -r f; do
+      base=$(basename -- "$f"); base="${base%.*}"
+      n="?"
+      # 3 文字未満の basename（`db` 等）は word 一致でも誤ヒットが多すぎるので数えない。
+      # `-w` + 固定文字列で import/require/from のいずれの記法も拾う（言語非依存の粗い近似）
+      if [ "${#base}" -ge 3 ]; then
+        # **`git grep` の既定 pathspec は cwd**。self-review は worktree に入らず cwd が
+        # セッション起動 dir のままなので、リポジトリルート以外から起動すると探索範囲が縮む。
+        # `-C "$WT"` + `--full-name` で repo ルート基準に固定する（`$f` も repo ルート相対
+        # なので、自己除外の `grep -vxF` はこれで初めて一致する）
+        out=$(git -C "$WT" grep --full-name -lwF -e "$base" 2>/dev/null); rc=$?
+        # rc は 0=ヒット / 1=該当なし / 2 以上=エラー。**終了ステータスを見ずに `wc -l` へ流すと
+        # 計数失敗も 0 になる**（`wc` は上流が失敗しても数値を出す）ため、`?` の縮退が死ぬ
+        [ "$rc" -le 1 ] && n=$(printf '%s\n' "$out" | grep -vxF -- "$f" | grep -c .)
+      fi
+      printf 'shared-module\t%s (importers: %s)\n' "$f" "$n"
+    done
 printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core" {print $4}' | while read -r f; do
   # `-f` を先に見る。レビュー対象が `evil.js -> /dev/zero` のような symlink を含むと、
   # 後置きでは wc が EOF に到達せずハングする

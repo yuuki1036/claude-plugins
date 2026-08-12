@@ -49,6 +49,11 @@ PR_ARGS=(); [ -n "$PR" ] && PR_ARGS=(--pr "$PR")
 DURS=$(bash "$HERE/review-timing.sh" durations ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)
 read -r DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE DUR_SYNTHESIS <<< "${DURS:--1 -1 -1 -1 -1 -1}"
 
+# explorer wave の発行回数（t1b の行数）。一括発行が破られたことを事後に検知するための
+# 計測で、LLM の自己申告ではなくマーカーから導出する（GitHub issue #122）
+EXPLORER_WAVES=$(bash "$HERE/review-timing.sh" waves ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)
+case "$EXPLORER_WAVES" in ''|*[!0-9]*) EXPLORER_WAVES=0 ;; esac
+
 # self-review は publish が「修正方針確認」より前にあり closing 区間が構造上 ≒0 になるため
 # -1（測定不能）を入れる。0 を publish すると「人間待ちが無かった」と誤読される（`## 14`）
 case "$PLUGIN" in *self-review) DUR_CLOSING=-1 ;; esac
@@ -63,6 +68,7 @@ case "$PLUGIN" in *self-review) DUR_CLOSING=-1 ;; esac
 # 再シリアライズなら 3 つとも構造的に起きない。
 MERGED=$(
   REVIEW_DURS="{\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"duration_explore_min\":$DUR_EXPLORE,\"duration_synthesis_min\":$DUR_SYNTHESIS}" \
+  REVIEW_EXPLORER_WAVES="$EXPLORER_WAVES" \
   python3 - "$PAYLOAD" <<'PY'
 import json, os, sys
 try:
@@ -75,6 +81,26 @@ if not isinstance(payload, dict):
     sys.exit(1)
 # duration_* は常にスクリプト側の値で上書きする（呼び出し側が渡していても勝つ）
 payload.update(json.loads(os.environ["REVIEW_DURS"]))
+
+# agents.explorer_waves も同じくマーカー由来の値で上書きする（自己申告させない）。
+# 一括発行が守られていれば explorer 起動時 1 / 未起動 0。2 以上は wave 1 本ぶんの損失
+waves = int(os.environ.get("REVIEW_EXPLORER_WAVES") or 0)
+agents = payload.get("agents")
+if not isinstance(agents, dict):
+    agents = {}
+    payload["agents"] = agents
+agents["explorer_waves"] = waves
+launched = agents.get("explorer")
+if waves >= 2:
+    sys.stderr.write(
+        "WARN: explorer wave が %d 本ある（一括発行が破られた可能性）。"
+        "1 メッセージにまとめていれば wave 内最長の 1 本で済む — orchestration-guide.md `## 0`\n" % waves
+    )
+elif isinstance(launched, int) and launched >= 1 and waves == 0:
+    sys.stderr.write(
+        "WARN: explorer を %d 体起動したのに t1b マーカーが無い（explorer_waves が欠測）。"
+        "回収直後の `review-timing.sh mark t1b` を打ち忘れている\n" % launched
+    )
 # separators で空白・改行を排除し、1 行に収める
 sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
 PY

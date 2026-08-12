@@ -17,15 +17,7 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 
 次に実 review を流したら `scripts/measure-tokens.sh` で同じ指標を取り、この表と比較する。
 
-## 1. meta-reviewer と反証レイヤーの並列化（直列 wave −1）
-
-**現状**: Phase 5.6（meta）→ Phase 5.9（反証）の直列。どちらも reviewer 完了後に走る。
-
-**着眼**: 両者は**互いに独立**している。meta は findings を**足す**係、反証は**潰す**係で、入力はどちらも「reviewer の全指摘」。依存があるのは「meta が足した指摘も反証対象に含める」という一点だけ。
-
-**案**: meta と反証を同時発火し、**meta が足した指摘だけを追加の反証バッチに回す**。meta が 0 件なら wave が 1 本減り、足した場合だけ現状と同じ wave 数になる（期待値で削減）。
-
-**採らない理由（現時点）**: 実装の複雑度が上がる（反証を 2 段に分ける・verdict の突合が 2 系統になる）。かつ **xhigh / max でしか meta が走らない**ので、既定 high の運用では効果ゼロ。壁時計の実測（`duration_fleet_min`）が貯まって「meta の wave が実際に効いている」と分かってから入れる。
+> **1.（meta-reviewer と反証レイヤーの並列化）は v2.61.0 で実装した**（GitHub issue #122）。根拠は `orchestration-rationale.md`「meta-reviewer と反証レイヤーを同一 wave にした経緯」へ移した。
 
 ## 2. メインコンテキスト側のツール呼び出しバッチ化
 

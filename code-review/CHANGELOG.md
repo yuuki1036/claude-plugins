@@ -2,6 +2,34 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.61.0] - 2026-08-13
+
+`self-review` 1 件（`effort: xhigh` / `size_tier: large` / core 25 files・1694 lines / 全体 57 分・agent 18 体・約 335 万 tokens）の `review:completed` 実測に基づき、**breadth（体数）ではなく wave 数と重複探索**を削った版（GitHub issue #122）。検証層（反証 2 体が 5 件を severity 降格・1 件を refute / skeptic 単独由来 1 件 / meta 単独由来 1 件）は費用対効果が確認できたため削っていない。
+
+### Added
+- **`agents.explorer_waves`（`t1b` マーカーの行数）** — 「explorer は同一メッセージで一括発行する」規約（`orchestration-guide.md ## 0`）は v2.35.0 から正しく書かれていたが、**破ったときに計測へ現れない**ため事後に検知できなかった。実測では 1 体を単独発行してから残り 3 体を次のメッセージで出したため `duration_explore_min` が 18 分（7.7 + 9.2）— 一括なら wave 内最長の約 9 分で済んでいる:
+  - **マーカー種別を増やさずに検知する**。`t1b` は「explorer 結果の回収直後」に打つ規約なので、wave ごとに打てば行数がそのまま wave 本数になる（`review-timing.sh waves`）。`durations` は最後の `t1b` を採るので `duration_explore_min` の意味は変わらない
+  - 値の注入と WARN は `publish-review-event.sh` が行い、**SKILL 側は渡さない**（自己申告にすると系統的に「1」へ潰れる）。`>= 2` で「一括発行が破られた可能性」、`agents.explorer >= 1` かつ `0` で「マーカーの打ち忘れ」を stderr に出す
+- **explorer の「確定事実」枠（`## 確定事実（explorer 共通・裏取り済み）`）** — 実測で**同じ事実に 5 体が独立到達**し（`next.config.ts` に `serverActions` が無く Next 既定の 1MB が効く）、5 体それぞれが同じ 2 ファイルを読み直していた。explorer 出力に `#### 確定事実`（最大 5 項目・`ファイル:行` 必須）を設け、統合したものを**全 reviewer に共通注入**する:
+  - 複製係数が体数ぶん立つ**唯一の意図的な例外**なので、**合計 10 行以内**で殺す（超えるなら選択的注入に落とす）。消しているのは複製コストではなく reviewer 側の重複探索
+  - reviewer 側は**裏取り済みとして扱い再確認の Read をしない**（「参考情報」だと結局各自が読み直し、複製コストだけ増える）。矛盾を観察したときだけ自分で Read して明記する
+- **共通モジュール explorer 必須ルールの規模下限** — 実測では**型引数を 1 つ足しただけ（`+5 -2` 行）**の共通モジュール変更に explorer 1 体が 13.6 万 tokens・35 tool_uses を費やして「問題なし・後方互換」と結論していた。`importers ≤ 5` かつ後方互換な変更かつ他の explorer 条件に非該当なら reviewer の Read に委ねる（`triage-signals.sh` の `shared-module` 行に呼び出し元の概数を追加）。v2.12.0 の緩和意図は撤回せず、**波及先が数えられて少ない場合に限る**
+
+### Fixed
+- 上記 3 点をセルフレビューで検証し、初稿の不備を修正した（同版内で対応済み。以下は「入れた変更が意図どおり効かない」型で、実行時に落ちるものは無い）:
+  - **`importers` の計数失敗が explorer 下限ゲートを fail-open させていた** — `wc -l` は上流が失敗しても数値を出すため `?` フォールバックが到達不能で、失敗が `0`（下限 `≤5` を最も緩く通す値）に潰れていた。`git grep` の終了ステータス（0/1 は正常・2 以上はエラー）で分岐するよう修正
+  - **`git grep` の既定 pathspec が cwd だった** — `self-review` は worktree に入らず cwd がセッション起動ディレクトリのままなので、リポジトリルート以外から起動すると探索範囲が縮み、`$f`（repo ルート相対）との自己除外も効かなかった（実測: repo root 85 件 → サブディレクトリから 5 件）。`git -C "$WT" --full-name` で repo ルート基準に固定
+  - **「過大見積もりだから安全側」は片側だけの断定だった** — 追跡済みファイルの literal 一致しか見ないので、未追跡ファイル・barrel / path alias 経由の import を取り逃して**過小にも振れる**。両方向を明記
+  - **同一 wave 化の伝播漏れ 3 件** — 毎回読む正本 `orchestration-guide.md ## 0` が meta を「単体起動＝一括発行の対象外」と宣言したまま／meta を high 起点へ昇格させない根拠「直列 wave を 1 本足す」が 2 サイトに残存（`triage-dynamic-gates.md ## 8.5` / `triage-rationale.md`。**昇格の判断軸は wave コストではなく価値率に移った**旨を明記）／反証の体数上限「3 体・15 件」が 4 箇所で未更新（実効 4 体・20 件）
+  - **参照・記述の誤り 4 件** — `triage-guide.md` の典拠が `## 7` を指していた（実体は self-review SKILL の規則）／両 SKILL の 5.8・4.8 冒頭と各フェーズのスキップ先ポインタが旧実行順のまま／`review-timing.sh` のヘッダが t1b にも「全 agent wave で打つ」と読める書き方だった／`README.md` の Phase 5.6 説明が単独ラウンド前提のまま
+
+### Changed
+- **meta-reviewer（5.6 / 4.6）と反証レイヤー（5.9 / 4.9）を同一 wave で一括発行**（実測で約 8 分の短縮 / `design-notes/pending-optimizations.md` に未実装案として置いていたものを実装）。両者は入力が同じ「reviewer の全指摘」で**互いの出力に依存しない**（meta は足す係・反証は較正する係）。冷や読み skeptic を reviewer wave に相乗りさせたのと同じ理屈:
+  - **唯一の依存**（meta が足した指摘も反証対象）は **追加バッチ 1 体・上限 5 件**に閉じた。`[meta]` タグ付き指摘が反証ゲートに該当したときだけ直列で走り、0 件なら wave は増えない（期待値で削減）
+  - 前提として**冷や読み skeptic の統合（5.8 / 4.8）をこの wave より前に済ませる**（skeptic の指摘を反証対象に含めるため。統合は agent を要さないメイン作業）
+  - 見送っていた理由「xhigh/max でしか meta が走らないので既定 high では効果ゼロ」は据え置かない — **meta が走る帯は 1 wave の単価が最も高い帯**でもあるため
+- `triage-guide.md ## 5.1` の wave 表・レポートの「直列 wave」行を `[meta+反証]` / `[追加反証]` に更新
+
 ## [2.60.2] - 2026-08-12
 
 ### Fixed

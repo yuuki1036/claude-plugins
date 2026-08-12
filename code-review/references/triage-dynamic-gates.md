@@ -48,8 +48,15 @@
 
 **目的**: 高 severity 指摘が出た = 高リスク変更と判定し、別 reviewer に「ここまでの結果を踏まえて、他の reviewer が見落としている観点はないか」を問うメタレビュー
 
+### 起動タイミング: 反証レイヤー（`## 9`）と同一 wave（v2.61.0 / GitHub issue #122）
+
+**meta-reviewer と反証エージェントは同一メッセージで一括発行する**（review Step 5.6 / self-review Step 4.6 の位置）。両者の入力はどちらも「Round 2 後の全指摘 + skeptic 統合済み指摘」で、**互いの出力には依存しない**（meta は findings を足す係、反証は既存 findings を較正する係）。直列に置くと依存が無いのに wave を 1 本積み増す（実測 issue #122: 約 8 分）。冷や読み skeptic を reviewer wave に相乗りさせているのと同じ理屈。
+
+- **前提**: 相乗り skeptic の統合（`## 8.5` / Phase 5.8・4.8）を**この wave の前に済ませる**。skeptic の指摘も反証対象に含めるため（統合はメインコンテキストの dedup 作業で agent を要さない。fallback の単独起動が走った場合のみ、その wave の完了を待ってから発行する）
+- **代償と補償**: meta が足した指摘は同一 wave の反証を受けられない。反証ゲートに該当する `[meta]` タグ付き指摘が出た場合に限り、**追加バッチ 1 体（上限 5 件）を直列で走らせる**（`## 9`）。meta が 0 件 / ゲート非該当なら wave は増えない
+
 **動作**:
-1. meta-reviewer agent (`prompts/meta-reviewer.md`) を 1 体起動
+1. meta-reviewer agent (`prompts/meta-reviewer.md`) を 1 体起動（反証バッチと同一メッセージ）
 2. 入力: 全 reviewer の指摘リスト（フィルタ前）、diff、explorer 結果
 3. 出力: 追加指摘（あれば。なくても OK）
 4. meta-reviewer の指摘も通常のスコアリング・フィルタリング対象に含める
@@ -100,7 +107,7 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 
 ### 起動ゲート（暴走ガード）
 
-- **effort 適応**: **high 起点**で起動（v2.52.0 で xhigh/max 起点から昇格）。low / medium はスキップ。**meta-reviewer（`## 8`）は xhigh/max 起点のまま**で、skeptic だけ先に昇格している（skeptic は findings 非注入で reviewer wave に相乗りするため**直列 wave を増やさない**が、meta は reviewer 完了後に直列 wave を 1 本足すため。昇格の実測根拠: `design-notes/triage-rationale.md`）
+- **effort 適応**: **high 起点**で起動（v2.52.0 で xhigh/max 起点から昇格）。low / medium はスキップ。**meta-reviewer（`## 8`）は xhigh/max 起点のまま**で、skeptic だけ先に昇格している（skeptic は findings 非注入で reviewer wave に相乗りするため**直列 wave を増やさない**が、meta は reviewer 完了後に直列 wave を 1 本足していたため。**⚠️ この wave コストは v2.61.0 で消えた** — meta は反証レイヤーと同一 wave になり、反証が走る帯（effort ≥ high）では追加 wave が 0 本になる（`## 8` 起動タイミング）。**昇格を再検討する余地があり、判断軸は wave コストではなく `meta_reviewer.findings_added` の価値率**に移っている。昇格の実測根拠: `design-notes/triage-rationale.md`）
   - **surface 判定は Phase 0 で先に行う**（相乗り発火の可否を reviewer 起動前に決めるため）。正規表現 + PR 自己申告 D1-High は Phase 0 で判定でき、effort ゲートを通過していれば reviewer 一括発行に skeptic を混ぜる
 - **上限**: **PR あたり skeptic 1 体・1 round のみ**（per-surface 起動ではない）。skeptic の指摘も通常の scoring・報告マトリクス・反証レイヤーの対象
 - **surface 非該当ならスキップ**: high-risk surface を含まない変更では起動しない（noise 爆発を避け high-risk に限定）
@@ -158,7 +165,7 @@ skeptic テンプレートは `prompts/recall-skeptic.md`。findings / reviewer 
 
 ## 9. 反証レイヤー（Phase 5.9 / 4.9 / 動的）
 
-reviewer の指摘を独立エージェントが反証し、過大な指摘の prominence を下げるフェーズ。**冷や読み skeptic の後・scoring の前**に挿入する（review=Phase 5.9 / self-review=Phase 4.9）。meta-reviewer / skeptic が「見落とし（false negative）」を足す係なのに対し、本レイヤーは「独立読み直しで**severity を較正し、偽陽性を摘出する**」鏡像の係。skeptic が足した指摘も本レイヤーの反証対象に含める。
+reviewer の指摘を独立エージェントが反証し、過大な指摘の prominence を下げるフェーズ。**冷や読み skeptic の統合後・scoring の前**に挿入する（review=Phase 5.9 / self-review=Phase 4.9）。**起動は meta-reviewer（`## 8` Phase 5.6）と同一 wave**（v2.61.0。両者は互いに独立 — 根拠は `## 8` の起動タイミング節）。meta-reviewer / skeptic が「見落とし（false negative）」を足す係なのに対し、本レイヤーは「独立読み直しで**severity を較正し、偽陽性を摘出する**」鏡像の係。skeptic が足した指摘も本レイヤーの反証対象に含める。
 
 > **実際の主機能は severity の較正であって偽陽性の除去ではない**（GitHub issue #114 / n=19・67 verdict）: `severity_inflated` **60%** / `confirmed` 34% / `refuted` **6%** / `uncertain` 0%。層の価値を否定するデータではない（実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている）が、**「偽陽性を潰す層」と読むと期待と実挙動がずれる**。過大 severity の上流対策は `prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」に置いた。
 
@@ -172,9 +179,14 @@ reviewer の指摘を独立エージェントが反証し、過大な指摘の p
 | high（既定） | 非対称ゾーンのみ: BLOCKER 60-94 / CRITICAL 80-94 | `ceil(対象件数 / 5)` 体・上限 3 体 |
 | xhigh / max | 上記 + BLOCKER/CRITICAL 95+ + MAJOR | 同上 |
 
-**バッチ化（v2.41.0）**: 反証は **1 体あたり最大 5 件**をまとめて渡す（旧: 指摘ごと 1 体）。反証に必要な独立性は「指摘を出した reviewer と別コンテキスト」であって「指摘同士が別コンテキスト」ではないため、同一 diff の読み直しを N 体で重複させる意味がない。反証は**かつて指摘数に比例する唯一の変動費**（triage-guide.md `## 7` の体数表で reviewer / specialist は上限が効くのに対し、旧構成の反証だけは指摘が増えるほど体数が増えた）であり、既定パスのコストの主要項だった。**本節のバッチ化で上限 3 体・15 件に頭打ちになり、他層と同じく上限で止まる**。バッチ内の相互汚染（1 件の verdict を別件の根拠にする）は `prompts/adversarial-verify.md` の鉄則で禁止する。
+**バッチ化（v2.41.0）**: 反証は **1 体あたり最大 5 件**をまとめて渡す（旧: 指摘ごと 1 体）。反証に必要な独立性は「指摘を出した reviewer と別コンテキスト」であって「指摘同士が別コンテキスト」ではないため、同一 diff の読み直しを N 体で重複させる意味がない。反証は**かつて指摘数に比例する唯一の変動費**（triage-guide.md `## 7` の体数表で reviewer / specialist は上限が効くのに対し、旧構成の反証だけは指摘が増えるほど体数が増えた）であり、既定パスのコストの主要項だった。**本節のバッチ化で上限 3 体・15 件に頭打ちになり、他層と同じく上限で止まる**（v2.61.0 以降は下記の meta 由来追加バッチ 1 体を含めて **4 体・20 件**が実効上限）。バッチ内の相互汚染（1 件の verdict を別件の根拠にする）は `prompts/adversarial-verify.md` の鉄則で禁止する。
 
-**対象が 15 件（3 体 × 5 件）を超えた場合**: severity → confidence の順で優先度を付け、上位 15 件のみ反証する。溢れた指摘は verdict なし（＝反証スキップ）として元の confidence / severity のまま続行し、**レポートの反証行に予算超過件数を明記する**（silent に落とさない）。レポート行の書式の正本は orchestration-dynamic-rounds.md `## 10` 手順 4。
+**meta 由来指摘の追加バッチ（v2.61.0 / 同一 wave 化の補償）**: meta-reviewer と同一 wave で発行する以上、**`[meta]` タグ付きの追加指摘は本体バッチの対象に入らない**。統合後にゲート（上表）へ該当する `[meta]` 指摘があれば、**追加バッチ 1 体（上限 5 件）だけ**を直列で走らせる（本体の上限 3 体とは別枠で、`agents.verify` には加算する）。
+
+- `[meta:dup]`（reviewer 指摘と重複）は本体バッチで既に反証されているので対象外
+- 該当が 0 件なら wave は増えない（meta が 0 件のときと同じ）。6 件以上ある場合は severity → confidence 順で上位 5 件のみ反証し、溢れは予算超過としてレポートの反証行に出す
+
+**対象が 15 件（3 体 × 5 件）を超えた場合**（本体バッチの予算。meta 由来追加バッチの溢れは上記のとおり別枠で 5 件）: severity → confidence の順で優先度を付け、上位 15 件のみ反証する。溢れた指摘は verdict なし（＝反証スキップ）として元の confidence / severity のまま続行し、**レポートの反証行に予算超過件数を明記する**（silent に落とさない）。レポート行の書式の正本は orchestration-dynamic-rounds.md `## 10` 手順 4。
 
 **縮小のロールバック条件（v2.41.0 のバッチ化 + effort 引き下げ）— 判定済み・維持（v2.57.0 / GitHub issue #119）**
 

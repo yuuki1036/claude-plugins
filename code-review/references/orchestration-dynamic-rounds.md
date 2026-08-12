@@ -37,8 +37,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]
 
 ## 7. Meta-reviewer 実行手順（review Phase 5.6・self-review Phase 4.6）
 
+> **起動は反証レイヤー（`## 10`）と同一メッセージで行う**（v2.61.0 / triage-dynamic-gates.md `## 8` 起動タイミング）。実行順は `Round 2 → skeptic 統合 → **meta 1 体 + 反証バッチ最大 3 体を一括発行** → 回収して `mark t1c` → [meta 由来指摘の追加反証バッチ] → scoring`。**どちらか一方だけが起動条件を満たす場合はそれだけを発行する**（片方のスキップはもう片方の発行を妨げない）。
+
 1. `prompts/meta-reviewer.md` を使用
-2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動
+2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動（反証バッチと同一メッセージ内）
    - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
    - isolation は orchestration-guide.md `## 0` に従う。**PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` 注入（review のみ・必須）**: orchestration-guide.md `## 1` / `## 1.1` に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
 3. meta-reviewer の出力（追加指摘）を既存指摘に統合
@@ -69,6 +71,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]
 
 ## 10. 反証レイヤー実行手順（review Phase 5.9・self-review Phase 4.9）
 
+> **起動は meta-reviewer（`## 7`）と同一メッセージで行う**（v2.61.0）。対象選定の材料は「Round 2 後 + skeptic 統合済み」の全指摘で、**meta の出力は待たない**（meta 由来指摘は手順 3.5 の追加バッチで拾う）。
+
 1. triage-dynamic-gates.md `## 9 反証レイヤー` の選定ルールで対象指摘を選ぶ（high: 非対称ゾーン BLOCKER 60-94 / CRITICAL 80-94、xhigh/max: 報告ゾーン全体 + MAJOR）。**specialist 由来の指摘は全 effort で除外**
 2. 対象指摘に通し番号（finding_id）を振り、**5 件ずつのバッチに分ける**（上限 3 体 = 15 件。超過分の扱いは triage-dynamic-gates.md `## 9`）。バッチごとに `prompts/adversarial-verify.md` で反証エージェントを `model: opus`, `effort: high` で並列起動する（isolation は orchestration-guide.md `## 0` に従う。全 call を同一メッセージ内で一括発行する — orchestration-guide.md `## 0` 並列発行の明示）
    - 指摘の主張（severity / confidence / file:line / 内容）のみ渡し、**reviewer の理由文は渡さない**（アンカリング防止）
@@ -76,8 +80,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]
    - **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` 注入（review のみ・必須）**: orchestration-guide.md `## 1` / `## 1.1` に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
    - `pre-existing` / `intended` 鮮度の git 判定（`git show <base>:<file>` / `git blame`）を反証エージェントに許可する
 3. 各 verdict（refuted / confirmed / uncertain / severity-inflated）を収集し、**finding_id で対象指摘と突合**してスコアリング step に渡す。verdict が返らなかった finding_id は verdict なし扱い（confirmed とも refuted とも解釈しない）
+3.5. **meta 由来指摘の追加バッチ**（meta-reviewer と同一 wave で発行しているため / v2.61.0）: 統合後の `[meta]` タグ付き指摘（`[meta:dup]` は除く）に triage-dynamic-gates.md `## 9` のゲート該当分があれば、**追加バッチ 1 体・上限 5 件**を同じ手順（手順 2 の作法）で起動し、verdict を手順 3 と同様に突合する。0 件なら起動しない（wave が増えない）。この 1 体は本体の上限 3 体とは別枠だが `agents.verify` には加算する
 4. **レポートの反証行の正本（両 skill・triage-guide からもここを参照する）**: `反証: 対象 N 件（うち実施 X 件 / 予算超過 Y 件 / 反証失敗 Z 件）/ 係争 M 件 / 取り下げ K 件`。
-   - `N`（対象）= ゲートで選ばれた全件（予算超過分を含む）、`X`（実施）= 実際に verdict が返った件数。**payload の `agents.verify_findings` は `X` と一致させる**（`N` ではない。同じ「対象」の語で別の量を数えない）
+   - `N`（対象）= ゲートで選ばれた全件（予算超過分と手順 3.5 の meta 由来追加分を含む）、`X`（実施）= 実際に verdict が返った件数。**payload の `agents.verify_findings` は `X` と一致させる**（`N` ではない。同じ「対象」の語で別の量を数えない）
    - 0 件の項目は省略してよいが、`Y` / `Z` が 1 以上なら必ず出す（silent に落とさない）
    - **verdict 分布の偏りを検知して注記する（GitHub issue #110）**: `X >= 5` かつ**単一 verdict が実施件数の 80% 以上**を占めるとき、反証行の次の行に注記を 1 行足す:
 

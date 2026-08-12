@@ -83,7 +83,7 @@ React/Next.js プロジェクトでは ui-quality に modern-web-checklist の�
 ### 動的ラウンド（effort 適応）
 
 - **Phase 5.5 Adaptive deepening**: reviewer の `unmet_information` 申告をトリガーに Round 2 を 1 回実行（high 既定は該当 reviewer 再起動のみの 1 段圧縮・再起動 reviewer が自力探索 / xhigh・max は追加 explorer → reviewer 再起動の 2 段）
-- **Phase 5.6 Meta-reviewer**: BLOCKER / CRITICAL 検出時に、他 reviewer の見落とし観点を探すメタレビューを 1 ラウンド実行（effort xhigh/max のみ）
+- **Phase 5.6 Meta-reviewer**: BLOCKER / CRITICAL 検出時に、他 reviewer の見落とし観点を探すメタレビューを 1 ラウンド実行（effort xhigh/max のみ）。**反証レイヤー (Phase 5.9) と同一 wave で発行**し、meta が足した指摘だけを上限 5 件の追加反証バッチに回す（v2.61.0）
 
 どちらも `plugin.json` の userConfig（`enable_adaptive_rounds` / `enable_meta_reviewer`）で無効化できる。
 

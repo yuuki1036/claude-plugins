@@ -33,7 +33,7 @@ agent に渡すのは以下だけ。本文は書かない。
 2. ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<focus>.md
 
 <可変部: PR 番号 / 期待 HEAD SHA / diff ファイルのパスと担当ファイル /
- PR コンテキストのパス / AGENTS.md のパス / explorer 結果 / angle 指定>
+ PR コンテキストのパス / AGENTS.md のパス / explorer 結果 / 確定事実 / angle 指定>
 ```
 
 - `{{PR_NUMBER}}` / `{{HEAD_REF}}` / `{{HEAD_SHA}}` のプレースホルダは `reviewer-common.md` 側にあるため、**実値を可変部に明記**して「テンプレート中のプレースホルダをこの値で読み替えよ」と指示する
@@ -51,6 +51,7 @@ agent に渡すのは以下だけ。本文は書かない。
 | Read させるパス | ファイルパスの**列挙のみ**（各パスの中身を要約しない） |
 | 担当範囲 | focus キー / 担当ファイル名 / angle 名。**1〜3 行** |
 | explorer 結果 | 該当 explorer の出力を `## Explorer 結果` に貼る（選択的注入なので複製係数 ≒ 1） |
+| 確定事実 | 全 explorer の `#### 確定事実` を統合したものを `## 確定事実（explorer 共通・裏取り済み）` に貼る。**全 reviewer 共通・合計 10 行以内**（複製係数が体数ぶん立つ唯一の枠。orchestration-guide.md `## 3.5`） |
 
 - **禁止**: focus の観点解説・チェックリストの再掲・severity 判定基準の再説明・「doc なので〜と読み替えよ」のような長い読み替え指示。**読み替えが毎回必要なら `prompts/focus/<focus>.md` 側に mode 別の節を作る**（1 回書けば全レビューで効く。可変部に書くと毎レビュー × 体数ぶん払う）
 - **例外**: `doc-review-mode` 等でテンプレートに無い一時的な読み替えが要る場合は書いてよいが、**2 回目に同じ読み替えを書いたらテンプレート側へ移す**

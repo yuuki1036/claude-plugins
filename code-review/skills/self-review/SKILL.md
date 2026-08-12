@@ -199,10 +199,10 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1
 ```
 
-全 explorer の完了を待ち、結果を収集する。**回収した直後**に explorer wave の終了マーカーを記録する（`t1`→`t1b` = explorer wave の実時間。orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式で決める）:
+全 explorer の完了を待ち、結果を収集する。**回収した直後**に explorer wave の終了マーカーを記録し（`t1`→`t1b` = explorer wave の実時間。orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式）、各 explorer の `#### 確定事実` 欄を集約して **合計 10 行以内**にまとめておく（Step 4 で全 reviewer に注入する枠。無ければ no-op）:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1b
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1b   # 複数メッセージに分けてしまった場合も wave ごとに毎回打つ（行数が agents.explorer_waves になる・#122）
 ```
 
 **部分失敗耐性:** orchestration-guide.md `## 5` に従う（個別失敗で全体を中止せず `missing_coverage` に記録して続行）。
@@ -232,7 +232,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
   - セッションコンテキストが有効なら `.claude/session-context.md` の**パス**（あわせて `prompts/session-context.md` を Read 対象に入れる。規約はそちらにある）
   - Phase 0 が決定した focus（と冗長ペアの場合は angle）、担当範囲
   - **PR 番号・HEAD SHA は渡さない**（self-review は PR を持たないため、テンプレートの worktree セットアップ節は適用外である旨を明記する）
-- **explorer 結果の選択的注入**: 構成テーブルの「explorer 依存」列に記載された explorer の結果を、該当する reviewer のプロンプトに `## Explorer 結果` セクションとして**インラインで**注入する（選択的注入なので複製係数がほぼ 1）
+- **explorer 結果の選択的注入**: 構成テーブルの「explorer 依存」列に記載された explorer の結果を、該当する reviewer のプロンプトに `## Explorer 結果` セクションとして**インラインで**注入する（選択的注入なので複製係数がほぼ 1）。**Step 3 でまとめた確定事実だけは `## 確定事実（explorer 共通・裏取り済み）` として全 reviewer（specialist・skeptic を除く）に注入する**（合計 10 行以内に切る。扱いの規約は `prompts/reviewer-common.md` 側。#122）
 - **Vault 注入**: Step 1.5 で関連ありと判断した知見があれば、各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する。reviewer には「過去に同種コードで指摘された観点を優先的に確認せよ。ただし現在の diff に該当しなければ無視してよい」と添える
 - `isolation: "worktree"` は使用しない
 - 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
@@ -252,7 +252,7 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 
 ### 4.5 Adaptive deepening: Round 2（unmet_information 起点 / 動的）
 
-**スキップ条件**（いずれか満たせばこのフェーズ全体をスキップして Step 4.6 へ）:
+**スキップ条件**（いずれか満たせばこのフェーズ全体をスキップして Step 4.8 の skeptic 統合へ）:
 - userConfig `enable_adaptive_rounds` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
 - 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
@@ -260,15 +260,15 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 
 **実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 6` の手順に従う（unmet_information 集約 → **high は 1 段圧縮**: 追加 explorer なしで該当 reviewer 最大 3 体を再起動し unmet ターゲットを自力探索させる / **xhigh・max は 2 段**: 追加 explorer 最大 3 体 → 該当 reviewer 再起動 → 初回出力を置換。失敗時は初回結果のまま続行の best-effort）。**回収した直後に `mark t1c` を記録する**（Step 4 と同じ呼び出し。後勝ち）。レポートに「Round 2 trigger: <reason>」を記録（Step 6 で出力）。
 
-### 4.6 Meta-reviewer ラウンド（v2.12.0 / 動的）
+### 4.6 Meta-reviewer ラウンド（v2.12.0 / 動的・**4.9 反証と同一 wave**。実行順は `4.5 → 4.8 の skeptic 統合 → 4.6 meta + 4.9 反証を同一メッセージで一括発行 → mark t1c → [meta 由来の追加反証バッチ] → 4.7 → Step 5`。両者は互いの出力に依存しないので直列に置かない / **片方がスキップでも他方はそのまま発行する** / #122）
 
-**スキップ条件**（いずれか満たせばスキップして Step 5 へ）:
+**スキップ条件**（いずれか満たせばスキップし、同一 wave の 4.9 だけを発行する）:
 - userConfig `enable_meta_reviewer` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
 - Step 4.5 後の全指摘（フィルタリング前）に **BLOCKER も CRITICAL も 1 件もない**
 - **`size_tier` が `small` かつ BLOCKER が 1 件もない**（v2.60.0 / `skip_reason: "size-tier"`）。BLOCKER があれば帯に関わらず起動する。**この 1 条件だけが規模帯に連動する例外**で（triage-guide.md `## 6.3`）、根拠が n=1 のため**ロールバック条件つきの暫定ゲート** → `design-notes/triage-rationale.md`
 
-**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。**回収した直後に `mark t1c` を記録する**（Step 4 と同じ呼び出し。後勝ち）。
+**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で **Step 4.9 の反証バッチと同一メッセージ内で**起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。**回収した直後に `mark t1c` を記録する**（Step 4 と同じ呼び出し。後勝ち。反証と同一 wave なので打点は 1 回で足りる）。
 
 ### 4.7 観点カバレッジ・事後突合（メインコンテキスト / 常時実行・agent 追加起動なし）
 
@@ -278,9 +278,9 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 
 ### 4.8 冷や読み skeptic ラウンド（recall 補強 / 動的）
 
-観点カバレッジ self-check の後・反証レイヤーの前に、**high-risk surface を含む変更に限り**、reviewer の findings も推論も渡さない独立 skeptic を 1 体起動し、fleet 共通の盲点（層跨ぎ値フロー等）を冷や読みで探す（`${CLAUDE_PLUGIN_ROOT}/references/triage-dynamic-gates.md` `## 8.5 冷や読み skeptic ラウンド`）。反証レイヤー(4.9)が偽陽性を潰す係なのに対し、本フェーズは見落とし（false negative）を独立読み直しで足す係。self-review は PR を持たないため surface 判定は diff 正規表現 + reviewer の `[surface:high-risk]` フラグで行う（PR 自己申告 D1-High は無い）。
+reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前に統合する。**high-risk surface を含む変更に限り**、reviewer の findings も推論も渡さない独立 skeptic を 1 体起動し、fleet 共通の盲点（層跨ぎ値フロー等）を冷や読みで探す（`${CLAUDE_PLUGIN_ROOT}/references/triage-dynamic-gates.md` `## 8.5 冷や読み skeptic ラウンド`）。反証レイヤー(4.9)が偽陽性を潰す係なのに対し、本フェーズは見落とし（false negative）を独立読み直しで足す係。self-review は PR を持たないため surface 判定は diff 正規表現 + reviewer の `[surface:high-risk]` フラグで行う（PR 自己申告 D1-High は無い）。
 
-**スキップ条件**（いずれか満たせばスキップして 4.9 へ）:
+**スキップ条件**（いずれか満たせばスキップして 4.6 + 4.9 の一括発行へ）:
 - userConfig `enable_recall_skeptic` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`（**high は起動する**。v2.52.0 で昇格 — surface=true の 63% が effort ゲートで未起動だった一方、起動できた回の 50% が fleet 共通盲点を実際に破っていた。根拠: `design-notes/triage-rationale.md`）
 - `--focus` / `--exclude` でスコープを絞り込んでいる
@@ -288,23 +288,23 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 
 **スキップ時も surface 判定は必ず実施（silent skip 防止・issue #85）**: 上記スキップ条件（effort / config / scope）に該当して skeptic agent を起動しない場合でも、surface 判定（triage-dynamic-gates.md `## 8.5` の正規表現。diff への grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と **独立に必ず実施** する。surface=true なら skeptic 未起動の事実と skip_reason（`effort` / `config` / `scope`）を Step 6 レポートの「動的ラウンド」行に必ず出す（`--embed` の有無に依存しない human レポート契約。JSON payload の `recall_skeptic` 記録と対を成す）。
 
-**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 9` の手順に従う。**起動は Step 4 の reviewer 一括発行に相乗り済み**（Step 2.4 で surface 判定・ゲート通過を確認している）なので、本フェーズで行うのは **結果の統合**（`[recall-skeptic]` / `[recall-skeptic:dup]` タグ付き指摘を dedup して統合し、反証レイヤー(4.9)の対象にも含める）。
+**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 9` の手順に従う。**起動は Step 4 の reviewer 一括発行に相乗り済み**（Step 2.4 で surface 判定・ゲート通過を確認している）なので、本フェーズで行うのは **結果の統合**（`[recall-skeptic]` / `[recall-skeptic:dup]` タグ付き指摘を dedup して統合し、反証レイヤー(4.9)の対象にも含める）。**この統合は 4.6 + 4.9 の同一 wave 発行より前に済ませる**（skeptic の指摘を反証対象に含めるため。統合はメインコンテキストの作業で agent を要さない）。
 
 **fallback（直列起動）**: reviewer の `[surface:high-risk]` フラグ由来で**ここで初めて** surface=true になった場合のみ、skeptic を 1 体 `model: opus`, `effort: max` で単独起動する（**findings / reviewer の推論は渡さない**のが独立性の核）。**この経路で起動した場合は回収した直後に `mark t1c` を記録する**（相乗り経路では Step 4 で記録済みなので不要）。正規表現で事前に HIT していれば相乗り済みなのでこの経路は走らない。
 
 **失敗時 / スキップ時**: skeptic の失敗は `missing_coverage` に追記して続行。**起動条件（high-risk surface）を満たしたのに未実行だった事実は、失敗・effort/config/scope スキップのいずれでも Step 6 レポートに必ず出す**（silent skip で「守ったつもり」の偽の安心を防ぐ）。
 
-### 4.9 反証レイヤー（adversarial verification / 動的）
+### 4.9 反証レイヤー（adversarial verification / 動的・**meta-reviewer(4.6) と同一 wave**）
 
-冷や読み skeptic の後・スコアリングの前に、reviewer の指摘を独立エージェントが反証する。偽陽性を先回りして摘出するフェーズ（`${CLAUDE_PLUGIN_ROOT}/references/triage-dynamic-gates.md` `## 9 反証レイヤー`）。meta-reviewer (4.6) / skeptic (4.8) が見落とし（false negative）を足す係なのに対し、本フェーズは独立読み直しで **severity を較正し偽陽性を摘出する**鏡像（実測は較正が主機能: `severity_inflated` 60% / `refuted` 6%。#114）。skeptic が足した指摘も本レイヤーの対象。
+冷や読み skeptic の統合後・スコアリングの前に、reviewer の指摘を独立エージェントが反証する。偽陽性を先回りして摘出するフェーズ（`${CLAUDE_PLUGIN_ROOT}/references/triage-dynamic-gates.md` `## 9 反証レイヤー`）。meta-reviewer (4.6) / skeptic (4.8) が見落とし（false negative）を足す係なのに対し、本フェーズは独立読み直しで **severity を較正し偽陽性を摘出する**鏡像（実測は較正が主機能: `severity_inflated` 60% / `refuted` 6%。#114）。skeptic が足した指摘も本レイヤーの対象。
 
-**スキップ条件**（いずれか満たせばスキップして Step 5 へ）:
+**スキップ条件**（いずれか満たせばスキップし、同一 wave の 4.6 だけを発行する）:
 - userConfig `enable_adversarial_verify` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
 - `--focus` / `--exclude` でスコープを絞り込んでいる（既検証の再評価を避ける）
 - 反証対象（triage-dynamic-gates.md `## 9` のゲート）に合致する指摘が 0 件
 
-**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 10` の手順に従う（triage-dynamic-gates.md `## 9` の選定ルールで対象を選び、**5 件ずつのバッチ**に分けて反証エージェントを `model: opus`, `effort: high` で並列起動（上限 3 体）。**reviewer の理由文は渡さない**＝アンカリング防止 → verdict を finding_id で突合して Step 5 のスコアリングに渡す。失敗した指摘は verdict なしのまま続行の best-effort）。**回収した直後に `mark t1c` を記録する**（Step 4 と同じ呼び出し。後勝ち。既定 effort ではこのフェーズが最後の agent wave になるため、ここを落とすと `duration_synthesis_min` が反証 wave を丸ごと含む）。レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 6 で出力）。
+**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 10` の手順に従う（triage-dynamic-gates.md `## 9` の選定ルールで対象を選び、**5 件ずつのバッチ**に分けて反証エージェントを `model: opus`, `effort: high` で並列起動（上限 3 体）。**この一括発行に Step 4.6 の meta-reviewer を含める**（同一 wave）。**reviewer の理由文は渡さない**＝アンカリング防止 → verdict を finding_id で突合して Step 5 のスコアリングに渡す。失敗した指摘は verdict なしのまま続行の best-effort）。**回収した直後に `mark t1c` を記録する**（Step 4 と同じ呼び出し。後勝ち。既定 effort ではこのフェーズが最後の agent wave になるため、ここを落とすと `duration_synthesis_min` が反証 wave を丸ごと含む）。レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 6 で出力）。 **meta 由来指摘の追加バッチ**（`[meta]` タグ付きが反証ゲートに該当する場合のみ 1 体・上限 5 件を直列起動。0 件なら wave は増えない。`## 10` 手順 3.5）を起動したときは、回収直後に再度 `mark t1c` を記録する。
 
 ### 5. スコアリングとフィルタリング（2軸: confidence × severity）
 
@@ -355,7 +355,7 @@ Step 5 の直前に、**メインコンテキストで**（Agent は使わない
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
 **実効上限**: explorer N / reviewer N / specialist N（**実行時** effort `{値}` の上限と規模キャップ `{帯}`（core N files / N lines）の min。どちらが効いたかを明記する）
   ※ reviewer の effort と動的ラウンド（meta / skeptic / 反証ゲート）は**実行時 effort に連動**する。skill frontmatter の effort はオーケストレーター用で別枠
-**動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行 | スキップ理由（`effort` / `config` / `no-high-severity` / `size-tier`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/scope）| 非該当（surface なし）} / 反証 {対象 N 件 | スキップ理由}
+**動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行（N 件追加）| スキップ理由（`effort` / `config` / `no-high-severity` / `size-tier`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/scope）| 非該当（surface なし）} / 反証 {対象 N 件（うち meta 由来の追加バッチ M 件）| スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{反証スキップ時はこの行を省略}
 
@@ -420,7 +420,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2
 
 副作用のみで標準出力にレポート文字を足さないため、embed mode の出力フォーマット（Step 6.5 の JSON ブロック → marker の順序）には影響しない。self-review は PR を持たないため `pr` は `"local"` 固定とする。
 
-**publish は専用スクリプトで行う**（書込先の固定・所要時間の算出・一時ファイルの掃除をまとめて担当する）。`duration_*` フィールドは**渡さない** — スクリプトが計測ファイルから算出して注入し、self-review では `duration_closing_min` を `-1`（測定不能）に固定する:
+**publish は専用スクリプトで行う**（書込先の固定・所要時間の算出・一時ファイルの掃除をまとめて担当する）。`duration_*` と **`agents.explorer_waves`** は**渡さない** — スクリプトが計測ファイル（`t1b` マーカー）から算出して注入する。self-review では `duration_closing_min` を `-1`（測定不能）に固定する:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \

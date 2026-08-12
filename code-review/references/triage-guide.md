@@ -89,10 +89,23 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 - 変更ファイルに500行超のファイルがある
 - 3関数以上に跨がる変更
 - if-else/switch への条件追加がある
-- **共通モジュール（`utils/`, `shared/`, `lib/`, `common/`, `helpers/`, `core/`）の変更** — **行数や関数数に関わらず必ず explorer 1 体（shared-module-impact）を起動**（v2.12.0 で緩和: 小規模変更でも依存元への波及を見落とさないため）
+- **共通モジュール（`utils/`, `shared/`, `lib/`, `common/`, `helpers/`, `core/`）の変更** — **行数や関数数に関わらず explorer 1 体（shared-module-impact）を起動**（v2.12.0 で緩和: 小規模変更でも依存元への波及を見落とさないため）。**ただし下記の規模下限に該当する場合のみ起動しない**
 - 複数ファイル間でデータが流れる変更パターン（schema→domain→DB / FE→BE のような層跨ぎの値フローを含む場合は explorer に `value-flow-trace` focus を優先割り当てする）
 
 上記いずれにも該当しない場合、explorer はスキップする。
+
+#### 共通モジュール必須ルールの規模下限（v2.61.0 / GitHub issue #122）
+
+**次を 3 つとも満たす共通モジュール変更では explorer を起動せず、reviewer（cross-cutting / bug-detection）の Read に委ねる**:
+
+1. `## explorer-signals` の `importers` が **5 以下**（`?`＝数えられなかった場合は起動する側に倒す）
+2. その共通モジュールの **export を削除・リネームしておらず、既存引数の必須化もしていない**（型引数の追加・内部実装のみの変更・後方互換な拡張は該当する）
+3. **その変更ファイルが他の explorer 起動条件（500 行超 / 3 関数以上 / 条件分岐追加 / 層跨ぎ値フロー）に該当しない**
+
+- 実測（issue #122）: 型引数を 1 つ足しただけ（`+5 -2` 行）の共通モジュール変更に explorer 1 体が **13.6 万 tokens・35 tool_uses** を費やして「問題なし・後方互換」と結論した。呼び出し元が数件なら reviewer 自身の Read で足り、explorer 1 体ぶんが丸ごと浮く
+- **v2.12.0 の意図（小規模変更でも依存元への波及を見落とさない）は撤回していない**。下限が効くのは「波及先が数えられて少なく、かつ呼び出し側の書き換えを強制しない変更」だけで、破壊的変更・呼び出し元多数はこれまでどおり必ず起動する
+- **`missing_coverage` には記録しない**（条件不成立の未起動は正常系。記録すると欠損観点の偏り集計が潰れる — self-review SKILL の `comment-accuracy` 欠損記録規則と同じ扱い）。代わりに Phase 0 構成テーブルの「リスク因子」行に `共通モジュール変更（importers N 件・explorer 下限で reviewer に委譲）` と出して可視化する
+- **委譲先の reviewer には担当ファイルとして当該共通モジュールを必ず割り当てる**（委譲したのに誰も読まない状態を作らない）
 
 ### reviewer の観点判定
 
@@ -235,7 +248,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 ### 変更特性
 - 規模: {small|medium|large}（core {N} ファイル / {N} 行、全体 {N} ファイル / {N} 行）
 - 実効上限: explorer {N} / reviewer {N} / specialist {N}（effort {値} 上限 {N}/{N}/{N} と規模キャップ {N}/{N}/{N} の min。`## 6.2`）
-- 直列 wave: {下限}〜{上限}（{explorer → }reviewer+skeptic{ → [Round 2 ×{1|2}]}{ → [meta]}{ → [反証]}）／wave あたり目安 6〜16 min
+- 直列 wave: {下限}〜{上限}（{explorer → }reviewer+skeptic{ → [Round 2 ×{1|2}]}{ → [meta+反証]}{ → [追加反証]}）／wave あたり目安 6〜16 min
 - リスク因子: [巨大ファイル, 条件分岐追加, 共通モジュール変更, ...]
 - コンテキスト: [session-context, issue-files, knowledge, ...]
 
@@ -265,11 +278,11 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 | explorer | explorer を 1 体以上配置した場合 | 0 / 1 |
 | reviewer（+ 冷や読み skeptic の相乗り・triage-dynamic-gates.md `## 8.5`） | 常時 | 1 |
 | Round 2（triage-dynamic-gates.md `## 8` Phase 5.5） | effort ≥ high かつ unmet_information あり | 0 / 1（high・規模キャップ帯）/ 2（xhigh・max の 2 段） |
-| meta-reviewer（Phase 5.6） | effort が xhigh / max かつ BLOCKER/CRITICAL あり（**`small` 帯は BLOCKER 有りのみ**・`## 6.3`） | 0 / 1 |
-| 反証（triage-dynamic-gates.md `## 9` Phase 5.9） | effort ≥ high かつ対象指摘あり | 0 / 1 |
+| **meta-reviewer + 反証（Phase 5.6 / 5.9 を同一 wave で一括発行**・v2.61.0） | いずれかが起動条件を満たす（meta: effort が xhigh / max かつ BLOCKER/CRITICAL あり（**`small` 帯は BLOCKER 有りのみ**・`## 6.3`）／反証: effort ≥ high かつ対象指摘あり） | 0 / 1 |
+| 追加反証バッチ（meta 由来指摘が反証ゲートに該当したときのみ・triage-dynamic-gates.md `## 9`） | meta が起動し、かつ meta 単独由来の指摘が反証ゲートに該当 | 0 / 1 |
 
 - **下限 = Phase 0 で確定している wave**（explorer の有無 + reviewer の 1 本）。**上限 = 上表の各行の最大値の総和**（例に依存せずこの算式で出す）
-- 例（effort=xhigh / medium 帯 / explorer 2 体配置）: 下限 = 1（explorer）+ 1（reviewer）= 2、上限 = 2 + 2（Round 2）+ 1（meta）+ 1（反証）= 6 なので `直列 wave: 2〜6（explorer → reviewer+skeptic → [Round 2 ×2] → [meta] → [反証]）`
+- 例（effort=xhigh / medium 帯 / explorer 2 体配置）: 下限 = 1（explorer）+ 1（reviewer）= 2、上限 = 2 + 2（Round 2）+ 1（meta+反証）+ 1（追加反証）= 6 なので `直列 wave: 2〜6（explorer → reviewer+skeptic → [Round 2 ×2] → [meta+反証] → [追加反証]）`
 - **括弧内の列挙と上限の数を必ず突き合わせる**（`[Round 2 ×2]` は 2 本と数える）。ここがズレると wave 可視化の唯一の出力が誤った目安を提示する
 - 実測が上限に張り付くようなら、削る候補は wave であって体数ではない（triage-dynamic-gates.md `## 8` の 1 段圧縮経路・triage-dynamic-gates.md `## 8.5` の相乗り・triage-dynamic-gates.md `## 8` Phase 5.5 のスキップ条件）
 
