@@ -12,6 +12,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
                                  # validate_plugin_quality.py（品質検証。検査項目の正本は冒頭 docstring）
                                  # auto-quality-check.sh（Stop hook から上記 2 本 + CLI validate を自動実行）
+                                 # bump-version.sh（バージョンバンプの 4 ファイル同時更新。pre-commit は検証のみで実行しない）
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors) チェック
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・バージョンバンプを検証（evals は非対応）
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
@@ -95,6 +96,11 @@ claude plugin tag {plugin-name}
 
 # 孤立した自動インストール依存の掃除（v2.1.121+）
 claude plugin prune
+
+# バージョンバンプ（plugin.json / marketplace.json / INDEX.md / CHANGELOG.md を同時更新）
+# CHANGELOG のエントリを書いてから --sync するのが主経路（CHANGELOG が版の正本）
+bash .claude-plugin/scripts/bump-version.sh {plugin-name} --sync
+bash .claude-plugin/scripts/bump-version.sh {plugin-name} patch   # 次版を計算して見出しだけ挿入
 ```
 
 ## コミット規約
