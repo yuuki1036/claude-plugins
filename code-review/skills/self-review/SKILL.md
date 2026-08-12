@@ -427,12 +427,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
     "pr":"local","effort":"'"${CLAUDE_EFFORT}"'","size_tier":"<small|medium|large>",
     "reviewer_effort_profile":"<uniform|differentiated>",
     "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
-    "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
+    "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>,"schema":2},
+    "severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
     "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
     "missing_coverage":[<json-array of focus names>],
     "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
     "adversarial_verify":{"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
-    "recall_skeptic":{"attribution_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
+    "recall_skeptic":{"attribution_schema":2,"gate_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
+    "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
     "comment_polish":{"fired":<bool>,"suggested":<n>}
   }'
 ```
@@ -447,6 +449,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 - **`duration_min`（全体）の意味は publisher 間で非対称**: review は締めフロー（人間待ち）を含み、self-review は Step 7 の手前で切れる。**`plugin` フィールドで層別してから比較する**。区間別に見るなら `duration_fleet_min` を使う
 - `head_verified` は publish しない（checkout を行わないため）
 - `recall_skeptic.skip_reason` は `"scope"`（`--focus`/`--exclude` 指定）も取りうる
+- `recall_skeptic.findings_added` / `meta_reviewer.findings_added` はレポートの「動的ラウンド」行の数値と一致させる（それぞれ `[recall-skeptic]` / `[meta]` タグ付き指摘を数える。#121）
 - **`comment_polish` は self-review のみのフィールド**（v2.45.0。`fired` / `suggested` の定義と計数基準は orchestration-measurement.md `## 16` が正本）
 
 ### 6.5. 構造化 findings JSON（embed mode のみ）

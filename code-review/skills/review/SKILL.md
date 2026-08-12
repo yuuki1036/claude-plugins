@@ -474,22 +474,22 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
        "reviewer_effort_profile":"<uniform|differentiated>",
        "head_verified":{"ok":<n>,"mismatch":<n>,"unknown":<n>},
        "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
-       "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
+       "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>,"schema":2},"severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
        "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
        "missing_coverage":[<json-array of focus names>],
        "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
        "adversarial_verify":{"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
-       "recall_skeptic":{"attribution_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>}
+       "recall_skeptic":{"attribution_schema":2,"gate_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
+       "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>}
      }'
    ```
 
    - スクリプトが payload の JSON 妥当性検証・書込先のメインリポジトリ固定・一時ファイルの掃除まで行う（→ orchestration-measurement.md `## 13`）
 
    **payload 契約の正本は orchestration-measurement.md `## 16`**（フィールドの意味・版マーカー・後方互換をここに複写しない）。review 固有の点のみ:
-   - `pr` は Step 1 で取得した PR 番号の文字列。取得に失敗した場合は `"local"`
-   - `head_verified` は review のみのフィールド（Step 4 / Step 5 で回収した `HEAD 検証:` 行の集計）
+   - `pr` は Step 1 で取得した PR 番号の文字列（失敗時は `"local"`）。`head_verified` は review のみのフィールド（Step 4 / Step 5 で回収した `HEAD 検証:` 行の集計）
    - `duration_closing_min` は締めフロー（人間の応答待ち）を捉える。**改善の効果測定には使わない**（人間の都合で 10 倍振れる）
-   - `agents.round2` / `recall_skeptic.findings_added` はレポートの「動的ラウンド」行の数値と一致させる
+   - `agents.round2` / `recall_skeptic.findings_added` はレポートの「動的ラウンド」行の数値と一致させる。**`meta_reviewer.findings_added` も同様**（`[meta]` タグ付き指摘を数える。#121）
 
 5. **agent worktree の掃除（ExitWorktree の直前 / 必須）**: agent は `isolation: "worktree"` で起動するため体数ぶんの worktree が配下に残り、**この状態では `ExitWorktree(remove)` が state 検証に失敗して worktree を畳めない**（GitHub issue #105）:
 

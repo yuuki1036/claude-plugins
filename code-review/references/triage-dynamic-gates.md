@@ -100,9 +100,13 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 
 ```bash
 # ① 実装が効いているか: 昇格後は skip_reason="effort" が消えるはず。
-#    消えなければ SKILL 側のスキップ条件が更新されていない信号
+#    消えなければ SKILL 側のスキップ条件が更新されていない信号。
+#    **gate_schema >= 2 の絞り込みは必須**（GitHub issue #115）。昇格前のサンプルは
+#    skip_reason="effort" を持ったまま永久に残るため、絞らないと常に「信号あり」を返し
+#    本物の実装バグを検知できない。日付では切らない（配布ラグ）
 grep '"event":"review:completed"' .claude/events.jsonl | \
-  jq -s '[.[] | select(.payload.recall_skeptic.surface == true)] |
+  jq -s '[.[] | select(.payload.recall_skeptic.surface == true
+           and (.payload.recall_skeptic.gate_schema // 1) >= 2)] |
     group_by(.payload.recall_skeptic.skip_reason // "fired") |
     map({reason: .[0].payload.recall_skeptic.skip_reason // "fired", n: length})'
 
