@@ -1,5 +1,8 @@
 # オーケストレーション実行ガイド（review / self-review 共通の実行フェーズ詳細）
 
+<!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
+<!-- SSOT: code-review/references/triage-guide.md#7.1 @f2b72215 -->
+
 review / self-review SKILL.md の各フェーズから参照される実行詳細の正本。SKILL.md 本文は高レベルワークフロー（Phase 一覧・各 Phase の目的と入出力・分岐条件）を保持し、具体的な手順・bash・失敗時の扱いは本ファイル群に置く。エージェント構成の決定ロジック（起動条件・effort 適応・上限）は triage-guide.md、プロンプト本文は `prompts/` を参照。
 
 ## この分割の読み方（必要になった節だけ Read する）

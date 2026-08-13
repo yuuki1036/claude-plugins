@@ -1,5 +1,8 @@
 # closing-flow-guide — 締めフロー 1〜3 の詳細手順
 
+<!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
+<!-- SSOT: code-review/references/reply-tone-guide.md#0.1 @4e5176fd -->
+
 review スキル Step 7（レポート出力）後の締めフロー 1（指摘の精査）/ 2（PR・指摘の解説）/ 3（投稿コメントのドラフト生成）の詳細手順の正本。**各フローの実行条件（スキップ判定）と実行順は SKILL.md 側が正本** — 条件を満たして実行するときに本ファイルの該当セクションを参照する。締めフロー 4（Event Bus publish）〜 6 は SKILL.md 側に正本がある。
 
 ## 1. 指摘の精査（必要性ゲート）

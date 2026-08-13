@@ -1,5 +1,8 @@
 # Reviewer プロンプト索引
 
+<!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
+
 reviewer / specialist / meta-reviewer / 反証 / skeptic の各プロンプト本体は `references/prompts/` 配下に **1 観点 1 ファイル**で置く。
 
 **オーケストレーター（メインコンテキスト）はこのファイルも `prompts/` の中身も Read しない。** agent プロンプトには**ファイルパスだけ**を渡し、agent 自身に Read させる（orchestration-guide.md `## 3.5`）。本文をプロンプトへ転記すると同一テキストを起動体数ぶん書き出すことになり、出力トークンが `(N-1) × 本文長` 膨らむ。共通指示だけで約 7.3k tokens あるため、6 体構成では約 44k tokens の複製になっていた。

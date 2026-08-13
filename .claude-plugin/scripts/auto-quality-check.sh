@@ -18,6 +18,10 @@
 #      - SKILL.md description の「トリガー:」存在
 #   3. claude plugin validate
 #      - plugin.json の CLI スキーマバリデーション（_requirements 警告は除外）
+#   4. .claude-plugin/scripts/tests（stdlib unittest）
+#      - 検証スクリプト自身の回帰テスト。SSoT pin は pin の初期値も検証と同じ
+#        関数で作るため、実リポジトリに対する検証だけでは切り出しの欠陥を検出
+#        できない（v2.63.1）。期待値を独立に構築するテストがその穴を塞ぐ
 #
 # トリガー条件:
 #   working tree に以下のパターンの変更がある場合のみチェック実行
@@ -65,6 +69,13 @@ fi
 if command -v python3 >/dev/null 2>&1; then
   if ! PQ_OUT="$(python3 "$REPO_ROOT/.claude-plugin/scripts/validate_plugin_quality.py" 2>&1)"; then
     ISSUES="${ISSUES}${PQ_OUT}\n"
+  fi
+fi
+
+# 2.5. 検証スクリプト自身の回帰テスト（依存なし・1 秒未満）
+if command -v python3 >/dev/null 2>&1 && [ -d "$REPO_ROOT/.claude-plugin/scripts/tests" ]; then
+  if ! UT_OUT="$(cd "$REPO_ROOT" && python3 -m unittest discover -s .claude-plugin/scripts/tests 2>&1)"; then
+    ISSUES="${ISSUES}[unit-tests] $(echo "$UT_OUT" | tail -20)\n"
   fi
 fi
 

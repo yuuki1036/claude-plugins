@@ -1,5 +1,12 @@
 # 動的ラウンド実行手順（条件付きフェーズ / orchestration-guide 分冊）
 
+<!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
+<!-- SSOT: code-review/references/orchestration-guide.md#0 @79cdab45 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @fe10bf1f -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @3f9680c8 -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @45554663 -->
+
 **このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は SKILL.md 側にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。
 
 | 節 | フェーズ | review / self-review |

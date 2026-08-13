@@ -35,6 +35,13 @@ jobs:
       - name: validate-plugin-quality
         run: python3 .claude-plugin/scripts/validate_plugin_quality.py
 
+      # 検証スクリプト自身の回帰テスト（stdlib unittest・依存なし）。
+      # SSoT pin は pin の初期値も検証と同じ関数で生成するため、実リポジトリに対する
+      # 検証だけでは切り出しの欠陥を検出できない（v2.63.1）。期待値を独立に構築する
+      # テストがその自己整合の盲点を塞ぐ
+      - name: unit-tests
+        run: python3 -m unittest discover -s .claude-plugin/scripts/tests
+
       # pre-commit と同等のバージョンバンプ検査。
       # ローカル hook は --no-verify で迂回できるため CI 側でも検査する。
       # 本リポジトリは main 直コミット運用なので push イベントでも必ず走らせる

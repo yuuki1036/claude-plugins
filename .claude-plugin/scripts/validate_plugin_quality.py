@@ -11,6 +11,13 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - hooks 安全性: hook スクリプトが safe_hook_init を呼んでいるか
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
+  - SSoT pin: `<!-- SSOT: <path>#<anchor> @<hash8> -->` の pin が正本の実ハッシュと一致するか.
+    routing-axes は「区間が byte-identical」を検証するが, doc → doc の伝播関係の多くは
+    言い換え / 要約なので一致比較にできない. pin は内容の一致ではなく『正本が変わったら
+    消費サイトを確認して打ち直す』手順を強制する（v2.63.0 のセルフレビューで検出した
+    欠陥 11 件中 6 件が「正本を直したが複製先に伝播していない」型だった）.
+    打ち直し: `python3 validate_plugin_quality.py --update-ssot-pins`（明示操作。
+    pre-commit では走らせない — 自動更新すると確認の強制力が消える）.
   - event-bus 同期: 実 publish される event（grep 実測=正本）と、それを記載する doc が一致するか
     （CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md publishes 行の plugin×event ペア）
   - references 参照整合性: SKILL.md / commands/*.md / agents/*.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
@@ -44,6 +51,7 @@ Exit code: 0 (pass / warning のみ) / 1 (errors あり)
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -66,6 +74,14 @@ ROUTING_AXES_CONSUMERS = [
 ]
 ROUTING_AXES_START = "<!-- ROUTING-AXES:START -->"
 ROUTING_AXES_END = "<!-- ROUTING-AXES:END -->"
+
+# 正本 → 消費サイトの伝播関係を宣言する pin.
+#   <!-- SSOT: <repo ルート相対の md パス>#<見出しの前方一致 anchor> @<hash8> -->
+# anchor 省略でファイル全体. 検証対象は「pin を置いた場所」で決まる（scanner は repo 全体を舐める）.
+SSOT_PIN_RE = re.compile(
+    r"<!--\s*SSOT:\s*(?P<path>[^\s#>]+?)(?:#(?P<anchor>[^\s@>]+))?\s+@(?P<hash>[0-9a-f]+)\s*-->"
+)
+SSOT_PIN_LEN = 8
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 REF_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\s)`'\"]+)")
@@ -218,6 +234,156 @@ def check_safe_hook_sync(plugin_dir: Path, errors: list[str]) -> None:
         return
     if replica.read_bytes() != CANONICAL_SAFE_HOOK.read_bytes():
         errors.append(f"[safe-hook-sync:{name}] diverged from canonical: {replica.relative_to(ROOT)}")
+
+
+def _normalize_section(text: str) -> str:
+    """節本文を hash 可能な正規形にする（行末空白の除去 + 前後の空行の除去）.
+
+    末尾空白やファイル末尾の改行だけで pin が壊れると, 実質無変更の編集で
+    消費サイト確認を強要することになるため, そこだけは吸収する.
+    """
+    lines = [line.rstrip() for line in text.splitlines()]
+    while lines and not lines[0]:
+        lines.pop(0)
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
+
+
+def _markdown_headings(lines: list[str]) -> list[tuple[int, int, str]]:
+    """フェンス付きコードブロックの外にある見出しだけを (行 index, レベル, テキスト) で返す.
+
+    フェンスを追跡しないと, bash コードブロック内のコメント行（`# ...`）が
+    level 1 の見出しとして拾われ, 節がそこで打ち切られる. このリポジトリの
+    references は実行手順として bash 片を多用するため, 構造的に踏みやすい.
+    """
+    heads: list[tuple[int, int, str]] = []
+    fence: str | None = None
+    for i, line in enumerate(lines):
+        fm = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if fm:
+            tok = fm.group(1)
+            if fence is None:
+                fence = tok
+            elif tok[0] == fence[0] and len(tok) >= len(fence):
+                fence = None
+            continue
+        if fence is not None:
+            continue
+        m = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if m:
+            heads.append((i, len(m.group(1)), m.group(2).strip()))
+    return heads
+
+
+def _slice_section(path: Path, anchor: str | None) -> str | None:
+    """正本 md から `anchor` の節を切り出す（anchor が None ならファイル全体）.
+
+    anchor は見出しテキストの前方一致で当てる（`## 3.5. 可変部の…` に対し `3.5`）.
+    節の範囲は見出し行から, 同レベル以上の次の見出しの直前まで.
+    見出しの判定は `_markdown_headings` に委ね, フェンス内の `#` 行は見出しにしない.
+    見つからなければ None（呼び出し側が error にする）.
+
+    **`## 8` は同レベルの `## 8.5` を含まない**（節の区切りは見出しレベルで決まり,
+    anchor 番号の階層では決まらない）. `8.5` を保護したいなら別 pin を打つ.
+    """
+    text = read_text(path)
+    if anchor is None:
+        return _normalize_section(text)
+    lines = text.splitlines()
+    heads = _markdown_headings(lines)
+    start = level = None
+    for pos, (i, lv, htext) in enumerate(heads):
+        # `1` が `13. …` に当たる事故を防ぐため, anchor の直後に区切り（`.` / 空白）を要求する
+        if htext == anchor or htext.startswith(f"{anchor}.") or htext.startswith(f"{anchor} "):
+            start, level = i, lv
+            rest = heads[pos + 1 :]
+            break
+    if start is None:
+        return None
+    end = next((i for i, lv, _ in rest if lv <= level), len(lines))
+    return _normalize_section("\n".join(lines[start:end]))
+
+
+def _canonical_digest(path: Path, anchor: str | None) -> str | None:
+    section = _slice_section(path, anchor)
+    if section is None:
+        return None
+    return hashlib.sha256(section.encode("utf-8")).hexdigest()[:SSOT_PIN_LEN]
+
+
+def _iter_ssot_pins() -> list[tuple[Path, int, re.Match[str]]]:
+    """リポジトリ内の全 md から SSOT pin 宣言を収集する（配置場所で運用範囲を決める）."""
+    hits: list[tuple[Path, int, re.Match[str]]] = []
+    for path in sorted(ROOT.rglob("*.md")):
+        if ".git" in path.parts:
+            continue
+        for lineno, line in enumerate(read_text(path).splitlines(), start=1):
+            for m in SSOT_PIN_RE.finditer(line):
+                hits.append((path, lineno, m))
+    return hits
+
+
+def check_ssot_pins(errors: list[str], update: bool = False) -> int:
+    """`<!-- SSOT: <path>#<anchor> @<hash> -->` を正本の実ハッシュと突合する.
+
+    routing-axes 同期は「区間が byte-identical であること」を検証するが,
+    doc → doc の伝播関係の多くは **言い換え / 要約** なので一致比較にはできない.
+    pin は「正本のこの節を見て書いた」という状態を持たせ, 正本が変わったら
+    消費サイトを確認して pin を打ち直す, という手順を機械強制するためのもの
+    （内容の一致は要求しない。git 履歴に依存しないので後追い・CI でも検出できる）.
+
+    update=True のとき pin を実ハッシュへ書き換える（明示操作。pre-commit では行わない）.
+    戻り値は書き換えた pin の数.
+    """
+    updated = 0
+    per_file: dict[Path, list[tuple[re.Match[str], str]]] = {}
+    for path, lineno, m in _iter_ssot_pins():
+        rel = path.relative_to(ROOT)
+        raw_path, anchor, pinned = m.group("path"), m.group("anchor"), m.group("hash")
+        canonical = ROOT / raw_path
+        loc = f"{rel}:{lineno}"
+        if not canonical.is_file():
+            errors.append(f"[ssot-pin] canonical missing (repo ルート相対で書く): {raw_path} <- {loc}")
+            continue
+        if canonical.suffix != ".md":
+            errors.append(f"[ssot-pin] canonical は md のみ対応: {raw_path} <- {loc}")
+            continue
+        if canonical.resolve() == path.resolve():
+            errors.append(f"[ssot-pin] 自己参照の pin は無意味: {loc}")
+            continue
+        if anchor is None and SSOT_PIN_RE.search(read_text(canonical)):
+            # ファイル全体 pin の正本が自身も pin を持つと, 相手の pin 更新で正本の内容が
+            # 変わる → こちらの pin も stale, が循環しうる（相互 pin では打ち直しが収束しない）.
+            errors.append(
+                f"[ssot-pin] ファイル全体 pin の正本が自身も pin を持つ（打ち直しが収束しない）。"
+                f"節 anchor を指定するか pin を持たないファイルを正本にする: {raw_path} <- {loc}"
+            )
+            continue
+        actual = _canonical_digest(canonical, anchor)
+        if actual is None:
+            errors.append(f"[ssot-pin] anchor '{anchor}' が {raw_path} に見つからない <- {loc}")
+            continue
+        if actual == pinned:
+            continue
+        if update:
+            per_file.setdefault(path, []).append((m, actual))
+            continue
+        errors.append(
+            f"[ssot-pin] 正本 {raw_path}"
+            + (f" `{anchor}`" if anchor else "")
+            + f" が pin @{pinned} から変わっている（実 @{actual}）。"
+            f"消費サイトへ伝播したか確認し pin を打ち直す: {loc}"
+        )
+
+    for path, pins in per_file.items():
+        text = read_text(path)
+        for m, actual in pins:
+            text = text.replace(m.group(0), m.group(0).replace(f"@{m.group('hash')}", f"@{actual}"))
+            updated += 1
+        path.write_text(text, encoding="utf-8")
+        print(f"  updated {len(pins)} pin(s): {path.relative_to(ROOT)}", file=sys.stderr)
+    return updated
 
 
 def _extract_routing_axes(path: Path, errors: list[str]) -> str | None:
@@ -725,7 +891,20 @@ def resolve_plugins(args: list[str]) -> list[Path]:
 
 
 def main() -> int:
-    plugins = resolve_plugins(sys.argv[1:])
+    args = sys.argv[1:]
+    update_pins = "--update-ssot-pins" in args
+    args = [a for a in args if a != "--update-ssot-pins"]
+    if update_pins:
+        print("Updating SSoT pins (正本を確認済みとして打ち直す):", file=sys.stderr)
+        # errors を捨てない: 打ち直しは pin 記法のミスが最も起きる操作なので,
+        # canonical 欠落 / anchor 不明などをその場で出さないと次の pre-commit まで露見しない
+        pin_errors: list[str] = []
+        n = check_ssot_pins(pin_errors, update=True)
+        print(f"  total: {n} pin(s) updated", file=sys.stderr)
+        for e in pin_errors:
+            print(f"  - {e}", file=sys.stderr)
+        return 1 if pin_errors else 0
+    plugins = resolve_plugins(args)
     errors: list[str] = []
     warnings: list[str] = []
     for plugin_dir in plugins:
@@ -738,6 +917,7 @@ def main() -> int:
         check_hook_self_judgement(plugin_dir, warnings)
 
     check_routing_axes_sync(errors)
+    check_ssot_pins(errors)
     check_event_bus_sync(errors)
     check_agent_sync_launch_repo_local(warnings)
     check_context_budget(warnings)

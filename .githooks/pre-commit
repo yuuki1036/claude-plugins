@@ -96,3 +96,16 @@ if [ -f .claude-plugin/scripts/validate_plugin_quality.py ]; then
   fi
 fi
 
+# 検証スクリプト自身の回帰テスト（stdlib unittest / 依存なし・1 秒未満）
+# SSoT pin は「pin の初期値」も検証と同じ関数で作るため, 切り出しが壊れていても
+# 実リポジトリに対する検証は全 pin pass になる（v2.63.1 で実際に起きた）。
+# 期待値を独立に構築するテストだけがこの自己整合の盲点を塞ぐ
+if [ -d .claude-plugin/scripts/tests ]; then
+  if ! python3 -m unittest discover -s .claude-plugin/scripts/tests > /dev/null 2>&1; then
+    python3 -m unittest discover -s .claude-plugin/scripts/tests 2>&1 | tail -30
+    echo ""
+    echo "  .claude-plugin/scripts/tests の失敗を解消してください"
+    exit 1
+  fi
+fi
+

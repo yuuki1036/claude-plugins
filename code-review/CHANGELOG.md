@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.63.1] - 2026-08-13
+
+### Added
+- **SSoT pin による正本 → 消費サイトの伝播検証**（15 pin / ADR-20260813223000）— v2.63.0 のセルフレビューで検出した欠陥 11 件中 **6 件が「正本を書き換えたが複製先に伝播していない」型**だったが、対応関係が doc の散文（「正本は X」）にしか無く機械検証できていなかった。消費サイトの冒頭に `<!-- SSOT: <path>#<anchor> @<hash8> -->` を宣言し、`validate_plugin_quality.py` が正本の該当節のハッシュと突合する:
+  - 検証の意味論は**内容の一致ではなく「正本が変わったら消費サイトを確認して pin を打ち直す」手順の強制**。今回の 6 件はどれも言い換え・要約なので、既存の routing-axes 型（byte-identical 区間比較）では 1 件もカバーできなかった
+  - **節単位**なので正本の無関係な節を編集しても発火しない。行末空白のみの変更も正規化で吸収する（実測で確認）
+  - 打点先: `orchestration-guide.md ## 3.5` の 4 消費サイト（reviewer-prompts / orchestration-dynamic-rounds / review・self-review SKILL）ほか、`## 0` / `## 5` / `triage-dynamic-gates ## 8` `## 8.5` `## 9` / `orchestration-dynamic-rounds ## 6` `## 10` / `orchestration-measurement ## 16` / `triage-guide ## 7.1` / `reply-tone-guide ## 0.1`
+  - 打ち直しは `--update-ssot-pins`（明示操作。pre-commit では自動更新しない。repo 全体を一括で打ち直す）
+
+**同版内のセルフレビュー（explorer 1 + reviewer 5 + 反証 2）で初稿の欠陥を検出し対処した。** 最大のものは**機構そのものが silent に不発だった 1 件**:
+
+- **節の切り出しがフェンス付きコードブロックを認識していなかった** — bash 片のコメント行（`# ...`）を見出しと誤検出して節を途中で打ち切っていた。実測で 14 pin 中 3 pin が該当し、`orchestration-measurement.md ## 16` は **156 行中 85 行しかハッシュ対象になっていなかった（46% が無保護）**。無保護側には `pre_adjust_counts` / `missing_coverage` / `adversarial_verify` の全フィールド定義が入っており、**両 SKILL の payload 契約が消費する中核部分がまるごと検証外**だった。pin の初期ハッシュを同じ壊れた関数で生成していたため 14 pin すべてが `ok` に見えていた（生成と検証が同一関数を共有する自己整合の盲点）。`_markdown_headings` でフェンス状態を追跡する形に修正し、対照実験で偽陰性の解消を確認
+- **`--update-ssot-pins` が errors を捨てて exit 0 を返していた** — canonical 欠落 / anchor 不明などが「打ち直しで最も起きやすいミス」なのに沈黙し、`total: 0 pin(s) updated` と表示されていた。エラーを出力して非ゼロで返す
+- **ファイル全体 pin の循環ガードを追加** — anchor 省略の相互 pin は打ち直しが収束しない（合成ケースで実測）。正本自身が pin を持つ場合は error にする
+- **`#8` が同レベルの `## 8.5` を含まない**ことを docstring / CLAUDE.md に明記し、`triage-dynamic-gates.md ## 8.5` の pin を追加（散文では依存を明示していたのに pin が無かった）
+- pin コメントの「打ち直し」文言が repo 全体一括であることを伝えていなかった点、消費サイトも md 限定である制約が未記載だった点、ADR の規模数値（280）が「正本」の言及行数であって宣言数（51）ではなかった点を訂正
+
+上記 2 件を回帰テスト（`.claude-plugin/scripts/tests/` / stdlib unittest 24 件）で固定した。**期待ハッシュをテスト側で独立に構築する**ことで、生成と検証が同一関数を共有する自己整合の盲点を塞ぐ。変異テストで、フェンス修正を戻すと 5 件・update errors 修正を戻すと 1 件 fail することを確認済み。pre-commit / CI / Stop hook の 3 経路に接続した。
+
 ## [2.63.0] - 2026-08-13
 
 実 PR 1 件（medium 帯 core 7 files / 208 lines・effort `xhigh`・全体 81 分・直列 wave **5 本**・agent 12 体）の区間計測と `measure-tokens.sh` を突き合わせて特定した 4 点（GitHub issue #124）。`duration_synthesis_min` が 2 分しかなく、`orchestration-measurement.md ## 14` の切り分けに従えば打ち手は scoring 側ではなく **wave 側**という診断に基づく。
