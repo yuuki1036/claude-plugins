@@ -196,12 +196,34 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 
 - **高 severity（BLOCKER / CRITICAL）の指摘は反証レイヤーで報告から消えない。** `refuted` は confidence/severity を据え置き、`severity-inflated` は報告マトリクスを割る降格を行わない。いずれも本文に反証メモを付すのみで、最終判断は人間に残す（false-negative の構造的防止）
   - **この不変条件は反証レイヤーの effort 引き下げの前提になっている**（orchestration-guide.md `## 5`）。緩める変更をするときは反証 effort を `max` に戻すかを同時に判断する。→ 経緯: `design-notes/scoring-rationale.md`
-  - **高 severity は仮に降格で消えても「🔁 反証で取り下げた指摘」には出さない**（あの節は MAJOR/MINOR が反証で報告閾値を割った場合に載る節 — `refuted` の −40 と `severity-inflated` の降格の両方を含む / issue #109）。高 severity は係争注記付きで本文に残すのが唯一の正しい扱い
+  - **高 severity は仮に降格で消えても「🔁 報告閾値を割った指摘」には出さない**（**反証由来の脱落に限った話**。あの節の① = `refuted` の −40 と `severity-inflated` の降格 / issue #109）。高 severity は係争注記付きで本文に残すのが唯一の正しい扱い。**② の加減算由来には高 severity の保護が無いので、そちらは severity を問わず記録する**（`## 報告閾値を割った指摘の記録` / issue #128）
 - **security specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**（triage-dynamic-gates.md `## 9` のゲートで除外）。万一 verdict が付いても confidence / severity は据え置き、反証メモも付さない（誤反証の代償が非対称に大きい）
 - 係争メモは `[...]` タグ語彙を増やさず本文の `⚠️ 反証メモ:` で表す（reviewer 自己申告タグ `[scope:out]` 等はオーケストレーターでなく reviewer が付与する系統。producer を記法で区別する）
 - verdict が付いていない指摘（反証レイヤー未起動・対象外・反証失敗）は本ステップを no-op として素通りする（後方互換）
 
 > **バッチはパネルではない**: 現行は全 effort で **1 指摘 1 verdict**（反証エージェント 1 体が最大 5 件を担当するバッチ運用）。同じ指摘に複数 verdict が付くことは無いので、**バッチ内の verdict 同士を合算・相殺してはならない**（triage-dynamic-gates.md `## 9`）。パネル運用（1 指摘を複数体で反証）は将来拡張で、集計規則は `design-notes/scoring-rationale.md`。
+
+---
+
+## 報告閾値を割った指摘の記録
+
+**🔁 付録の対象範囲（GitHub issue #128）。見出しに括弧を足さないこと** — 本節は SSoT pin の anchor として両 SKILL から参照されており、anchor は空白を含められず前方一致の区切りに `.` / 空白しか許さないため、括弧付きの見出しは pin で引けなくなる。
+
+**reviewer が列挙した指摘が報告マトリクスを通過しなかったら、経路に関わらず 🔁 付録に記録する。** 本リポジトリが各層に置いている「**削ったら痕跡を必ず残す**」の系列（`prompts/reviewer-common.md`「打ち切ったら痕跡を必ず残す（選択式ではない）」／ skeptic の silent skip 防止・issue #85 ／ 反証の予算超過を必ず出す・triage-dynamic-gates.md `## 9`）を、スコアリング段にも適用する。
+
+脱落の経路は 2 系統あり、**従来は ① しか記録されていなかった**。**番号は本ファイルの「適用順序」に揃える**:
+
+| # | 経路 | 発火する箇所 | 記録 |
+|---|---|---|---|
+| ① | **反証 verdict** — `refuted` の confidence −40 / `severity-inflated` の降格 | 手順 2 ＋「severity 調整ルール（軽微）」（適用順序に番号を持たない） | issue #109 で規定済み |
+| ② | **スコアリングの加減算** — 上記「confidence スコア加減算ルール」の減算、および手順 4（未検証 75）／手順 5（好み 40）の上限クランプ | 手順 3〜5 | **本節で追加** |
+
+- **② は反証が効かない回にしか起きないわけではないが、効かない回では脱落の全量になる**。反証レイヤーの対象は **既定の high では非対称ゾーン（BLOCKER 60-94 / CRITICAL 80-94）限定で、xhigh / max では 95+ と MAJOR まで拡大する**（triage-dynamic-gates.md `## 9`）。したがって **既定 high で MAJOR しか出ない回では ① が一度も発火せず、記録経路が丸ごと存在しなかった**
+- **severity は問わない**。①は「高 severity を反証で消さない」不変条件があるので 🔁 に出ないが（本文に係争注記で残す）、②にその保護は無く、`[unverified]` の 75 クランプで CRITICAL が、好みクランプの 40 で任意の severity が落ちうる
+- **記録するのは「reviewer が列挙した指摘」だけ**。`## below-threshold` に件数だけ返った閾値未満は指摘として存在しないので対象外（`pre_adjust_counts` 側で数える）
+- 実測（2026-08-13 / self-review・effort=high）: 「テストコードでの指摘 −10」で MAJOR 2 件（confidence 100→90 / 95→85）が閾値 95 を割った。どちらも内容は正しく実際に修正されたが、**規則どおりに機械適用するとレポートのどこにも出なかった**
+
+記録形式は各 SKILL.md の Step 6 レポートテンプレート（`### 🔁 報告閾値を割った指摘`）に従う。**脱落理由には経路が①か②か分かる情報を必ず入れる**（①は verdict 名と反証根拠 file:line、②は適用した規則名と confidence の遷移）。
 
 ---
 

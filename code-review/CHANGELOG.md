@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.64.0] - 2026-08-14
+
+### Added
+- **🔁 付録の対象を「報告閾値を割った全経路」へ拡張**（GitHub issue #128 / 正本: `scoring-guide.md ## 報告閾値を割った指摘の記録`）— 従来 🔁 付録は**反証由来の脱落専用**（`refuted` の −40 と `severity-inflated` の降格 / #109）で、**スコアリングの加減算（手順 3〜5 の減算・クランプ）で報告マトリクスを割った指摘は本文にも付録にも出なかった**。`docs/pipeline-design.md` の「no silent caps」に反する:
+  - **反証レイヤーの対象は既定 high では非対称ゾーン（BLOCKER 60-94 / CRITICAL 80-94）限定**（xhigh / max では 95+ と MAJOR まで拡大）なので、既定 high で MAJOR しか出ない回では反証由来の脱落が 0 件になり、**記録経路が丸ごと存在しなかった**
+  - **加減算由来は severity を問わず記録する** — ①には「高 severity を反証で消さない」不変条件があるが、②にその保護は無い（`[unverified]` の 75 クランプで CRITICAL が、好みクランプの 40 で任意の severity が落ちうる）
+  - 実測（2026-08-13 / self-review・effort=high・v2.63.1 の diff）: 「テストコードでの指摘 −10」で MAJOR 2 件（confidence 100→90 / 95→85）が閾値 95 を割った。どちらも内容は正しく実際に修正されたが、規則どおりの機械適用ではレポートのどこにも出なかった
+  - 両 SKILL の Step 5 に手順 4.5 を追加し、Step 6 のレポート見出しを `### 🔁 反証で取り下げた指摘` → `### 🔁 報告閾値を割った指摘` に変更（脱落理由に経路①②が分かる情報を必須化）
+  - **新設した正本 → 消費サイト関係に SSoT pin を打った**（両 SKILL → `scoring-guide.md#報告閾値を割った指摘の記録`。計 15 → 17 pin）。あわせて正本の見出しから括弧を外した — anchor は空白を含められず前方一致の区切りに `.` / 空白しか許さないため、`## 見出し（補足）` の形は pin で引けない
+
+### Fixed
+- **`review-retro.sh` の「計測の健全性」が版未導入サンプルを分母に含んでいた**（GitHub issue #127）— `synthesis %d/%d` / `explorer_waves %d/%d` の分母が全サンプル（`n_all`）だったため、**版を重ねるほど記録率が構造的に下がって見え**、「マーカーが記録できていない」と誤読させていた:
+  - `orchestration-measurement.md ## 16` は「**フィールドの有無が版マーカー**」「層別は必ずフィールドの有無で行い、日付では切らない」と規定している。フィールド不在は「そのサンプルは古い版で publish された」の identification であって欠測ではない
+  - 母集団を `measurement_gaps` を持つ回（= v2.62.0 以降）に絞った。**フィールド自身の有無を分母にすると循環する**ので、後発フィールドを版プロキシに使う
+  - **2 フィールドで欠測の現れ方が違うので判定を分けた**: `duration_synthesis_min` は打点が無ければ `-1` が入るので存在判定（`measured()`）で検出できるが、**`agents.explorer_waves` は打点が無くても `0` が必ず入る**（`publish-review-event.sh` が無条件代入）。後者を存在判定で数えると母集団と恒真に一致し、**打点漏れがあっても常に 100% を表示する死んだ指標**になる。漏れは `measurement_gaps` の `explorer-wave` として現れるのでそちらで数え、分母も explorer を起動した回に絞る（未起動は該当なし）
+  - 実測（このリポジトリ n=22）: `explorer_waves 4/22` → **`2/2`**（`n_modern` = 2）。**判定標本は 2 件**しかない。なお 6 マーカーを横断した instance ベースでは導入後分母 21/22 が記録済みで、「記録率が低い」という読みは分母の作り方に由来していた
+  - `--json` は `measurement.n_modern` / `modern_synthesis` / `modern_explorer_waves` / `modern_explorer_waves_scope` を追加（既存 `have_*` は後方互換のため据え置き。**waves だけ分母が `scope` 側**）
+- `scoring-guide.md` の不変条件節が旧見出し名「🔁 反証で取り下げた指摘」を参照していた（正本内の伝播漏れ）
+
 ## [2.63.1] - 2026-08-13
 
 ### Added

@@ -20,6 +20,7 @@ allowed-tools:
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @cdd70b6a -->
+<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @3cf8c3c4 -->
 
 ## review との違い
 
@@ -329,6 +330,7 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
    - verdict が無い指摘（対象外・反証失敗）は no-op
 3. **confidence への加算・減算ルールを適用**して 0-100 にクランプ
 4. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（self-review では PR タグは通常出ない。反証 `severity-inflated` もこのルールに統合し二重降格しない）。**BLOCKER / CRITICAL の `severity-inflated` は降格後に報告マトリクスを割る場合のみ据え置き + 反証メモ**（scoring-guide の不変条件。高 severity を silent に消さない）。**MAJOR / MINOR が `severity-inflated` の降格で報告閾値を割って脱落する場合は、`refuted` の −40 脱落と同じく 🔁 付録に取り下げ理由を記録する**（scoring-guide.md `## 反証レイヤーの verdict 反映` / issue #109。降格で消える指摘が silent に落ちない）
+4.5. **加減算で報告閾値を割った指摘を控える**（issue #128）: 手順 3〜4 の減算・クランプ・降格の結果、手順 5 の報告マトリクスを通過しなくなる指摘は、**severity を問わず** 🔁 付録に「調整前の (severity, confidence) / 適用した規則名 / 遷移後の値」を記録する。反証由来の脱落（手順 2）と同じ枠に、経路が分かる形で並べる。**反証の対象は既定 high では非対称ゾーン限定（xhigh / max で MAJOR まで拡大）なので、既定 high で MAJOR しか出ない回では本経路が脱落の全量になる**。正本: scoring-guide.md `## 報告閾値を割った指摘の記録`
 5. **報告マトリクスでフィルタ**:
 
    | severity \ confidence | <60 | 60-79 | 80-94 | 95+ |
@@ -402,12 +404,12 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
 - reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
 - explorer-<focus>: timeout → 依存していた reviewer-<focus> には探索結果なしで実行
 
-### 🔁 反証で取り下げた指摘（参考・人間が覆せる）
-{反証レイヤーが MAJOR/MINOR を報告閾値未満へ落とした場合に載る（`refuted` の confidence −40 と `severity-inflated` の降格の両方 / issue #109）。0 件なら省略}
-- [取り下げ前: confidence XX / severity MAJOR] xxx の指摘
+### 🔁 報告閾値を割った指摘（参考・人間が覆せる）
+{reviewer が列挙した指摘が報告マトリクスを通過しなかった場合に載る。**経路（反証 verdict / 加減算）を問わず記録し、severity 別の扱いは正本に従う** → scoring-guide.md `## 報告閾値を割った指摘の記録`。0 件なら省略}
+- [調整前: confidence XX / severity MAJOR] xxx の指摘
   ファイル: path/to/file:行番号
-  取り下げ理由: <verdict: refuted | severity-inflated> — <軸>（反証根拠 file:line）
-  ※ 反証が誤りと思えばこの指摘は有効。再評価してよい
+  脱落理由: <verdict: refuted | severity-inflated> — <軸>（反証根拠 file:line）／ <加減算: 規則名> — confidence XX → YY
+  ※ 判断が誤りと思えばこの指摘は有効。再評価してよい
 
 ### 総括
 - 変更の概要

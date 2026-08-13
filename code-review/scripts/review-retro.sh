@@ -328,6 +328,25 @@ split_waves = sum(1 for e in events
                   if (num((e["p"].get("agents") or {}).get("explorer_waves")) or 0) >= 2)
 n_gapfield = sum(1 for e in events if isinstance(e["p"].get("measurement_gaps"), list))
 
+# 健全性表示の母集団は `measurement_gaps` を持つ回（= v2.62.0 以降）に絞る（issue #127）.
+# フィールド不在は「そのサンプルは旧版で publish された」という identification であって
+# 欠測ではない（orchestration-measurement.md `## 16`「フィールドの有無が版マーカー」）.
+# 全サンプルを分母にすると版を重ねるほど記録率が構造的に下がって見える.
+# フィールド自身の有無を分母にすると循環するので、後発フィールドを版プロキシに使う.
+modern = [e for e in events if isinstance(e["p"].get("measurement_gaps"), list)]
+n_modern = len(modern)
+# **2 フィールドで欠測の現れ方が違う**（publish-review-event.sh）. 1 つの判定にまとめないこと:
+#   duration_synthesis_min … 打点が無ければ -1 が入る → `measured()` の除外で検出できる
+#   agents.explorer_waves  … 打点が無くても 0 が必ず入る → **存在判定では検出できない**.
+#                            漏れは measurement_gaps の `explorer-wave` として現れる
+# 後者を存在判定で数えると modern と恒真に一致し、打点漏れがあっても 100% しか表示しない.
+modern_synthesis = len(measured(modern, "duration_synthesis_min"))
+# explorer 未起動の回は「該当なし」なので分母から外す（欠測ではない）
+modern_waves_scope = [e for e in modern
+                      if (num((e["p"].get("agents") or {}).get("explorer")) or 0) >= 1]
+modern_waves = sum(1 for e in modern_waves_scope
+                   if "explorer-wave" not in (e["p"].get("measurement_gaps") or []))
+
 # ---- シグナル判定（ロールバック条件・再監視条件のトリガー） ----------------
 # **すべて「サンプル数下限 × 比率」で判定する**。1 件でも点灯する条件を混ぜると
 # シグナル欄が常時点灯し、「⚠️ が出たときだけ行動する」という契約が壊れる
@@ -384,7 +403,13 @@ if as_json:
         "round2_fired": round2_fired, "verify_fired": verify_fired,
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
-                        "split_explorer_waves": split_waves},
+                        "split_explorer_waves": split_waves,
+                        # 健全性判定に使うのは下の modern 側。上の have_* は全サンプル母数の
+                        # 生カウントで後方互換のため残す。**waves は分母が違う**
+                        # （explorer 起動回のみ = modern_explorer_waves_scope）
+                        "n_modern": n_modern, "modern_synthesis": modern_synthesis,
+                        "modern_explorer_waves": modern_waves,
+                        "modern_explorer_waves_scope": len(modern_waves_scope)},
         "signals": signals,
     }, ensure_ascii=False, indent=2))
     sys.exit(0)
@@ -459,10 +484,18 @@ for name, st in (("skeptic", skeptic), ("meta", meta)):
             "%s=%d" % kv for kv in sorted(st["skips"].items(), key=lambda kv: -kv[1]))))
 
 print()
-print("**計測の健全性**: synthesis %d/%d 件 / explorer_waves %d/%d 件"
-      % (have_synthesis, n_all, have_waves, n_all)
-      + ("" if not gap_counts else " / 欠測内訳 " + " ".join(
-          "%s=%d" % kv for kv in sorted(gap_counts.items(), key=lambda kv: -kv[1]))))
+if n_modern == 0:
+    print("**計測の健全性**: 判定対象なし（`measurement_gaps` を持つ v2.62.0 以降の"
+          "サンプルが 0 件。全 %d 件は旧版で publish されたもの）" % n_all)
+else:
+    waves_txt = ("explorer_waves %d/%d 件（explorer 起動回のみ）"
+                 % (modern_waves, len(modern_waves_scope)) if modern_waves_scope
+                 else "explorer_waves 該当なし（explorer 起動回 0）")
+    print("**計測の健全性**（母集団 %d/%d 件 = v2.62.0 以降。フィールド不在は旧版の "
+          "identification であって欠測ではない）: synthesis %d/%d 件 / %s"
+          % (n_modern, n_all, modern_synthesis, n_modern, waves_txt)
+          + ("" if not gap_counts else " / 欠測内訳 " + " ".join(
+              "%s=%d" % kv for kv in sorted(gap_counts.items(), key=lambda kv: -kv[1]))))
 
 if signals:
     print()
