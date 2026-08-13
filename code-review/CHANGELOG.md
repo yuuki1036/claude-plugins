@@ -2,6 +2,63 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.62.0] - 2026-08-13
+
+`review:completed` の蓄積イベント **49 件（うち区間計測あり 22 件・反証 verdict 計 102 件）** を集計した振り返りに基づく改善（GitHub issue #123）。**計測して分かったことを計測基盤側に還す**版で、レビュー本体のアルゴリズムは変えていない。
+
+### Added
+- **降格される典型パターン 4 型**（`prompts/reviewer-common.md` / issue #123 A） — 反証 verdict の**過半が `severity_inflated`**（累計 102 件中 53 件 = 52%）で `refuted`（9%）を大きく上回る。下流で 52% を降格し続けるより **severity の定義を上流で精密にする**方が安い。base 由来 / 読み違え / 影響の過大見積もり / カテゴリの取り違え を判別基準の表にした:
+  - **追加の検証手順ではない**（探索予算は据え置き）。手元の情報で**ラベルを選び直す**ための定義で、該当したら 1 段下げて理由欄に型名を書く。CLAUDE.md「Opus 5 で逆効果になる足場」の②（自分でダブルチェックさせる）を踏まないための線引き
+  - 「迷ったら下げる」ではない旨を明記。4 型に当てはまらない指摘を予防的に下げると較正が逆方向に壊れる
+  - **効果測定用に `adversarial_verify.calibration_schema` を新設**（1 = base 確認のみ / 2 = 4 型明示）。累計比率で読むと施策前サンプルに薄まるため層別が要る
+- **`scripts/review-retro.sh`（振り返り集計 / issue #123 E）** — `triage-guide.md` / `triage-dynamic-gates.md` には各層の**ロールバック条件・再監視の条件**が随所に書いてあるのに、**判定するための集計手段が無かった**（本 issue 自体も jq を手で組んで書いた）。条件は比率と件数で決まる決定的な計算なので、LLM に毎回 jq を組ませずスクリプトへ閉じた:
+  - 出力は effort × size_tier の fleet 時間・体数、体数 vs 壁時計の相関、検出 → 報告の歩留まり（schema 2 / 閾値別）、反証 verdict 分布（`calibration_schema` 層別）、動的層の発火率と skip 理由、計測マーカーの欠測率
+  - **ロールバック条件・再監視条件に該当したときだけ ⚠️ シグナル行**を立てる（閾値とサンプル数下限はスクリプト側）。「サンプルが無いうちは判断しない」（`triage-guide.md ## 7`）を集計側でも守る
+  - **publish の直後に毎回実行する**（`## 18`）。集計が「気が向いたときにやる作業」に落ちると条件判定が永久に走らないため
+- **`scripts/detect-recent-review.sh`（skill 跨ぎの重複レビュー検出 / issue #123 D）** — `--focus` / `--exclude` は**同一 skill 内**の重複しか防げない。実測では self-review と PR レビューが同一 diff を 2 回舐め、互いを知らないまま同じ 3 件に独立到達していた:
+  - 突合キーは **diff の内容ダイジェスト**（`diff_digest`）。HEAD SHA ではなく diff にしたのは self-review が未コミット変更を含むため。内容ベースなので publisher に依らず一致する
+  - 検出時のみ **AskUserQuestion** で続行可否を確認する（review Step 2.4 / self-review Step 1.4。`--embed` ではスキップ）。**出力が空なら何も報告しない**（no-op を報告しない）
+  - **前回の指摘本文は参照しない** — 判定材料を payload だけに限り、前回の結論に引きずられないようにする
+- **`measurement_gaps` / `diff_digest` payload フィールド** — いずれも `publish-review-event.sh` が算出して注入する（SKILL からは渡さない）。前者は `duration_*` が `-1` になった理由を「打ち忘れ」と「該当なし」に分け、**欠測率そのものを計測対象**にする
+
+### Changed
+- **区間マーカーの打点規約を `mark wave` の 1 本に統一した**（issue #123 B） — `duration_synthesis_min` の保有率 **3/49**・`agents.explorer_waves` **2/49** と計測が機能していなかった。原因は打点のたびに `t1b`（explorer）と `t1c`（その他）を**判断させて**いたこと。「wave を回収したら `mark wave`、explorer wave なら `--explorer`」に一本化した:
+  - **逆算による補完はしない。** publish 時刻から推定すれば欠測は消えるが、それは誤値であって計測ではない（`## 13.1` の「縮退先は欠測であって誤値ではない」と同じ原則）。欠測は `measurement_gaps` として可視化する側で扱う
+  - **explorer 打点を synthesis 側に混ぜない**（スクリプトで分離）。混ぜると reviewer wave の打点を落としたときに「もっともらしい過大値」が出る
+  - 旧キー（`mark t1b` / `mark t1c`）はエイリアスとして受理し続ける
+- **meta-reviewer の起動ゲートを緩めた**（`gate_schema: 3` / issue #123 C） — 旧ゲートは高 severity の存在だけを条件にしており、**実測 xhigh 14 件中 `fired=1`**（skip 理由は全件 `no-high-severity`）とほぼ常時不発だった。「報告見込みの MAJOR が 3 件以上」を起動条件に追加した:
+  - **緩めてよくなったのは v2.61.0 で wave コストが消えたから**（meta は反証と同一 wave）。増えるのは meta 1 体ぶんの token だけで、xhigh / max は明示 escalation なのでこの帯に限れば見合う
+  - **effort ゲート（xhigh/max 起点）は据え置く。** 昇格の判断軸は価値率だが、`fired=1` では出せない。**まず起動サンプルを貯めるのが先**
+  - **ロールバック条件つき**: `gate_schema >= 3` かつ `fired=true` が 10 件以上で `findings_added > 0` が 20% 未満なら層を畳む。判定は `review-retro.sh` が自動で出す
+- **`review-timing.sh mark` が失敗しなくなった** — `start` 未実行・一時ファイル消失でもファイルを作り直し、stderr に警告を出して exit 0 で返す（issue 報告時に `mark t1b` が exit 1 で落ちていた）。マーカー 1 個の失敗でレビュー本体を止めない。`mark t2` 時に wave の打点が 1 つも無ければその場で警告する
+- **payload テンプレートを両 SKILL から `orchestration-measurement.md ## 16` へ移した** — 「payload 契約の正本は `## 16`」と書きながら**テンプレート本体だけが SKILL 側に 2 つ**あり、フィールドを足すたびに 3 箇所を同時に直す形になっていた。移設で両 skill の差分（`pr` 固定値 / `head_verified` / `comment_polish` の 3 点）も 1 画面で見えるようになる。publish 直前に `## 16` を Read する既存手順のままで足りる
+
+### Fixed
+
+**同版内のセルフレビュー（reviewer 8 + 反証 3 + meta 1）で初稿の欠陥 12 件を検出し、全件対処した。** 「計測基盤を直す版で、その計測基盤の集計側に判断を誤らせる欠陥を入れていた」という構図だったので、以下は再発防止の記録でもある:
+
+- **集計の母集団定義が節ごとにアドホックだった**（4 件が同根） — `review-retro.sh` に共通の層別を入れて解消:
+  - **`layer_stats()` が版マーカーで層別していなかった**。`triage-dynamic-gates.md` は skeptic に `attribution_schema >= 2`、meta に `gate_schema >= 3` の絞り込みを**必須**と定め、「壊れた計測を根拠に不可逆な撤去をしない」とまで書いてあるのに、**そのロールバック判定を実装する側が絞り込みを落としていた**（同ファイル内で反証 verdict 側だけが `calibration_schema` で層別できていた非対称）
+  - **meta シグナルの分母に「設計上 meta が起動しない帯」が入っていた**。既定 effort=high を 8 回回すだけで「1 度も起動していない」が必ず点灯する（反証層が 8 件投入して再現）。`skip_reason` が `effort` / `config` / `scope` / `emergency` の回は分母から外す
+  - **相関の結論文が `r` の値に依らず固定だった**。「体数は壁時計のレバーではない」を無条件に印字しており、**このリポジトリの実データで `r = 0.877` の直後に出ていた**。`n < 10` は解釈しない / `|r| >= 0.6` は ⚠️ シグナルとして再監視条件に載せる、へ分岐化
+  - **歩留まりの `schema != 2` が前方非互換だった**。次の版 bump でセクションが無音で消える。`>= 2` にして版ごとに層別表示する
+- **「検出できなかった」と「該当なし」を同一出力に潰していた**（3 件が同根）。**この版の中核成果は `measurement_gaps` でまさにその区別をフィールド化したこと**なのに、同版で入れた consumer 2 本がその区別を捨てていた:
+  - `--json` が「0 件」「ログ未存在」で **Markdown を返していた**（機械可読契約の破れ）。両経路とも JSON を返す
+  - 明示指定した `--diff` の不在が silent だった（caller のバグと「重複なし」が区別できない）。**SKILL から `--diff` を落とし**（自力導出と等価で失敗モードごと消える）、明示指定時のみ WARN する
+  - 突合キーを算出できなかった回に痕跡が無かった → `measurement_gaps` に `diff-digest` を追加。あわせて「欠測は gaps で見える」という**存在しない機構を指していたコメント**を実装に追随させた
+- **`diff_digest` が review / self-review 間で一致しないのに doc が「publisher に依らず一致」と保証していた**。review は `gh pr diff`、self-review は `git diff BASE..HEAD` + `--cached` + unstaged の**3 本連結**で diff を作るため原理的に一致しない（反証層が実 PR で実測: `1462260100-1256` vs `2713407599-105966`）。**issue #123 D の動機シナリオがまさにこの経路**だったので、doc を実態に合わせるだけでなく**弱いキー `diff_files`（変更ファイルパス集合）を併設**して skill 跨ぎを拾えるようにした（弱いキーの一致は「重複の疑い」どまりと明示）
+- **`except OSError` が `UnicodeDecodeError` を捕捉していなかった**（`ValueError` のサブクラス）。`readlines()` は全体を先にデコードするので、共有ログである `.claude/events.jsonl` に非 UTF-8 バイトが 1 つ混入すると新規 2 スクリプトが恒久クラッシュする。`errors="replace"` で、壊れた行だけが既存の `except ValueError` に落ちる設計どおりの縮退に戻した
+- **空白を含むリポジトリパスで新規 2 スクリプトが機能停止していた**。パス集合を空白区切り文字列に畳んで未クォート展開しており、`review-retro.sh` は「計測データがまだ無い」と**事実に反する断定**を返していた（3 reviewer + 反証層が bash で end-to-end 再現）。配列 + `${ARR[@]+"${ARR[@]}"}` へ
+- **`lib/review-paths.sh` の「この式を他所へ複製しないこと」に反する複製があった**。events.jsonl の場所導出 12 行が新規 2 本に逐語複製（`diff -u` で文字単位一致）。`review_event_logs()` / `review_diff_keys()` を lib に追加して 3 スクリプトから呼ぶ形に集約
+- **`explorer_waves` の規約と計測意味論が矛盾していた**（meta-reviewer の指摘）。「explorer wave を回収したら `--explorer`」を普遍則としながら `>= 2` を「一括発行違反」と断定していたため、**xhigh/max で Round 2 の追加 explorer を起動すると規約どおりの動作が誤検知される**。`--explorer` は**初回 explorer wave 専用**と定義し、Round 2 の追加 explorer は `mark wave` で打つことを両 SKILL に明記
+- **上流降格に透明性の記録が無かった**（反証層が refuted の副産物として発見）。下流（反証）降格には `🔁` 付録があるのに、今回追加した降格典型 4 型で `{{SEVERITY_THRESHOLD}}` を跨いだ降格は痕跡が残らない。`## below-threshold` に `demoted-across-threshold: <型名> N` を添える規約を追加
+- **同梱シェルスクリプトに機械的検証ゲートが 1 つも無かった**（meta-reviewer の指摘。上記の複数件の共通原因）。`shellcheck` / `bash -n` / `py_compile` はリポジトリ全体でゼロヒットで、**420 行の bash + 埋め込み Python が構文検証を一度も経ずに配布される**状態だった。`validate_plugin_quality.py` に `check_shell_syntax`（`bash -n` / errors 扱い）を追加し、pre-commit と CI の両方で掛かるようにした
+- **`orchestration-measurement.md` の目次に `## 19` が無かった**（`orchestration-guide.md` の索引は `## 18` / `## 19` の両方が漏れ）。冒頭の「レビュー本体の実行には不要」も `## 19` だけ例外である旨を明記
+
+- **反証レイヤーの実測分布の記述を累計 n=102 に更新**（`triage-dynamic-gates.md ## 9` / `design-notes/scoring-rationale.md`）。あわせて **「この 52% を上流対策の効果測定に使わない」**旨と、v2.55.0 の上流ガードに版マーカーを付け忘れていた経緯（プロンプト変更はゲート変更ではないと読んだが、**計測値の意味は同じように変わる**）を根拠側に記録した
+- `orchestration-measurement.md` の「`wave` は毎回追記して**よい**」を「追記**する**」に直した（v2.60.2 で `review-timing.sh` 側だけ直していた許可の含意が、正本側に残っていた）
+- `review-timing.sh` のサブコマンド数の記述が 4 のままだった（実体は `waves` / `gaps` を含めて 6）
+
 ## [2.61.0] - 2026-08-13
 
 `self-review` 1 件（`effort: xhigh` / `size_tier: large` / core 25 files・1694 lines / 全体 57 分・agent 18 体・約 335 万 tokens）の `review:completed` 実測に基づき、**breadth（体数）ではなく wave 数と重複探索**を削った版（GitHub issue #122）。検証層（反証 2 体が 5 件を severity 降格・1 件を refute / skeptic 単独由来 1 件 / meta 単独由来 1 件）は費用対効果が確認できたため削っていない。

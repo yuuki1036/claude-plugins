@@ -10,7 +10,7 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 |---|---|---|
 | **orchestration-guide.md**（本ファイル） | `## 0` skill 差分 / `## 1` HEAD SHA 注入 / `## 3.5` ファイル経由渡し / `## 4` AGENTS.md / `## 5` reviewer 起動 / `## 8` 観点カバレッジ検算 | **常時**（実行手順の冒頭で 1 回） |
 | `orchestration-dynamic-rounds.md` | `## 6` Round 2 / `## 7` meta-reviewer / `## 9` 冷や読み skeptic / `## 10` 反証レイヤー | 各フェーズのスキップ条件を評価し、**実行すると決まったとき**。全スキップなら読まない |
-| `orchestration-measurement.md` | `## 13` publish 先固定 / `## 13.1` `TS_FILE` パス / `## 14` 区間分割計測 / `## 16` payload 契約 / `## 17` トークン計測 | **publish 手前**（review 締めフロー 4 / self-review Step 6.4）。`## 17` だけは publish と独立で、前後比較したいときに任意 |
+| `orchestration-measurement.md` | `## 13` publish 先固定 / `## 13.1` `TS_FILE` パス / `## 14` 区間分割計測 / `## 16` payload 契約 / `## 17` トークン計測 / `## 18` 振り返り集計 / `## 19` 重複検出 | **publish 手前**（review 締めフロー 4 / self-review Step 6.4）。`## 17` は publish と独立で任意、`## 19` だけは重複検出（Step 2.4 / 1.4）の背景を引くときに読む |
 | `orchestration-optional-flows.md` | `## 2` Issue 必読 / `## 11` Vault 照合 / `## 12` 訂正の伝播前ガード / `## 15` embed mode JSON | 各フローの適用条件を満たしたときだけ |
 | `design-notes/` | 設計判断・実測値・失敗の履歴 | **実行時には読まない**（本ファイル群を編集するときに読む） |
 
@@ -165,7 +165,7 @@ HEAD 検証: <実測 SHA> / 期待 <{{HEAD_SHA}}> / 一致|不一致|未実行
 
 **この行の不在自体が信号になる**ことが要点で、agent の善意に依存しない。self-review は PR を持たず checkout もしないため対象外。
 
-非レビュー出力を検出した reviewer は、**同一プロンプトで 1 回だけ auto-retry** する（複数同時検出時はまとめて並列 retry）。retry 出力も非レビュー出力なら、その reviewer の focus / angle を `missing_coverage` に「非レビュー出力（auto-retry 後も形式不正）」として記録して続行する（欠損観点として扱い、フィルタを素通りさせない）。**retry も agent wave なので、retry 出力を回収した直後に `mark t1c` を記録し直す**（後勝ち。打ち忘れると retry の実時間が `duration_synthesis_min` に混入し、「agent 非稼働が構造的に保証される区間」という定義が破れる — orchestration-measurement.md `## 14`）。「指摘ゼロ」を明示的に報告した妥当な出力（`### レビュー結果` を持ち問題なしと結論）は非レビュー出力ではないため retry 対象にしない。
+非レビュー出力を検出した reviewer は、**同一プロンプトで 1 回だけ auto-retry** する（複数同時検出時はまとめて並列 retry）。retry 出力も非レビュー出力なら、その reviewer の focus / angle を `missing_coverage` に「非レビュー出力（auto-retry 後も形式不正）」として記録して続行する（欠損観点として扱い、フィルタを素通りさせない）。**retry も agent wave なので、retry 出力を回収した直後に `mark wave` を記録し直す**（後勝ち。打ち忘れると retry の実時間が `duration_synthesis_min` に混入し、「agent 非稼働が構造的に保証される区間」という定義が破れる — orchestration-measurement.md `## 14`）。「指摘ゼロ」を明示的に報告した妥当な出力（`### レビュー結果` を持ち問題なしと結論）は非レビュー出力ではないため retry 対象にしない。
 
 ### 部分失敗耐性
 

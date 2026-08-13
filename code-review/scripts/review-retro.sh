@@ -1,0 +1,473 @@
+#!/usr/bin/env bash
+# `review:completed` の蓄積イベントを集計して、レビュー基盤自体の振り返りを出す
+# （GitHub issue #123 E）。
+#
+# **なぜスクリプトなのか**: ロールバック条件・再監視条件は比率と件数で決まる決定的な計算な
+# ので、LLM に毎回 jq を組ませない（CLAUDE.md「決定的 hook > LLM 判定」/ 経緯と出力の読み方の
+# 正本は references/orchestration-measurement.md `## 18`）。
+#
+# 使い方:
+#   review-retro.sh                     # 全期間 + 直近 30 日を集計
+#   review-retro.sh --since 2026-07-01  # 起点を指定
+#   review-retro.sh --last 20           # 直近 N 件だけ
+#   review-retro.sh --json              # 機械可読（**0 件・ログ不在でも必ず JSON を返す**）
+#
+# **層別の原則**: 版マーカー（`pre_adjust_counts.schema` / `*.gate_schema` /
+# `attribution_schema` / `calibration_schema`）で切り、日付では切らない。マーケットプレイス
+# 配布のため未更新マシンが旧仕様で publish し続けるため。**累計で読むと施策の効果が薄まる**
+# ので、版マーカーを持つ指標は必ず層別してから判定する（比較演算子は `>=` で前方互換にする。
+# `== N` にすると次の版 bump でセクションが無音で消える）。
+set -uo pipefail
+
+SINCE=""; LAST=""; AS_JSON=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --since) [ $# -ge 2 ] || { echo "FATAL: --since に値が必要" >&2; exit 2; }; SINCE="$2"; shift 2 ;;
+    --last)  [ $# -ge 2 ] || { echo "FATAL: --last に値が必要" >&2; exit 2; }; LAST="$2"; shift 2 ;;
+    --json)  AS_JSON=1; shift ;;
+    *) echo "FATAL: 未知の引数: $1" >&2; exit 2 ;;
+  esac
+done
+case "${LAST:-0}" in ''|*[!0-9]*) echo "FATAL: --last は数値のみ（受領: '$LAST'）" >&2; exit 2 ;; esac
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=lib/review-paths.sh
+# 読み取り専用なので `review_paths_init`（一時 dir の作成）は呼ばない。使うのは
+# `review_event_logs` / `review_main_root` だけで、どちらも init に依存しない
+. "$HERE/lib/review-paths.sh"
+
+if ! review_event_logs; then
+  # **`--json` でも必ず JSON を返す**（機械可読の契約は「データがある場合だけ」ではない）
+  if [ "$AS_JSON" = "1" ]; then
+    echo '{"n":0,"reason":"no-events-log","signals":[]}'
+  else
+    echo "## レビュー振り返り"
+    echo "計測データ（.claude/events.jsonl）がまだ無い。レビューを数回回すと集計が出る。"
+  fi
+  exit 0
+fi
+
+command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が必要" >&2; exit 2; }
+
+REVIEW_SINCE="$SINCE" REVIEW_LAST="${LAST:-0}" REVIEW_JSON="$AS_JSON" \
+  python3 - ${REVIEW_EVENT_LOGS[@]+"${REVIEW_EVENT_LOGS[@]}"} <<'PY'
+import json, os, sys
+from datetime import datetime, timedelta, timezone
+
+since_raw = os.environ.get("REVIEW_SINCE") or ""
+last_n = int(os.environ.get("REVIEW_LAST") or 0)
+as_json = os.environ.get("REVIEW_JSON") == "1"
+
+since = None
+if since_raw:
+    try:
+        since = datetime.fromisoformat(since_raw.replace("Z", "+00:00"))
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
+    except ValueError:
+        sys.stderr.write("WARN: --since を解釈できないので無視する: %s\n" % since_raw)
+
+events, seen = [], set()
+for path in sys.argv[1:]:
+    try:
+        # errors="replace" は必須。既定の strict だと UnicodeDecodeError（OSError ではなく
+        # ValueError 系）が下の except を貫通し、**非 UTF-8 バイト 1 つで恒久クラッシュ**する。
+        # 壊れたバイトはその行の json パースが下の except ValueError で落ちて設計どおり縮退する
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        continue
+    for line in lines:
+        line = line.strip()
+        if not line or '"review:completed"' not in line:
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue              # 壊れた 1 行で集計全体を落とさない
+        if ev.get("event") != "review:completed":
+            continue
+        ts = ev.get("ts") or ""
+        key = (ts, ev.get("plugin"), json.dumps(ev.get("payload"), sort_keys=True))
+        if key in seen:           # 候補パスが同一ファイルを指す場合の重複除去
+            continue
+        seen.add(key)
+        try:
+            when = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+        except ValueError:
+            when = None
+        events.append({"ts": ts, "when": when, "plugin": ev.get("plugin", "?"),
+                       "p": ev.get("payload") or {}})
+
+events.sort(key=lambda e: e["ts"])
+if since:
+    events = [e for e in events if e["when"] and e["when"] >= since]
+if last_n:
+    events = events[-last_n:]
+
+if not events:
+    if as_json:
+        print(json.dumps({"n": 0, "reason": "no-samples-in-range", "signals": []},
+                         ensure_ascii=False))
+    else:
+        print("## レビュー振り返り")
+        print("対象サンプルが 0 件。")
+    sys.exit(0)
+
+now = datetime.now(timezone.utc)
+recent = [e for e in events if e["when"] and e["when"] >= now - timedelta(days=30)]
+
+
+def num(v):
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def schema_of(d, key):
+    """版マーカーを int に寄せる（欠落・解釈不能は 1 = 最古の版として扱う）。"""
+    try:
+        return int(d.get(key) or 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def measured(rows, key):
+    """欠測（-1）と未収録（None）を除いた実測値だけを返す。"""
+    out = []
+    for e in rows:
+        v = num(e["p"].get(key))
+        if v is not None and v >= 0:
+            out.append(v)
+    return out
+
+
+def median(xs):
+    if not xs:
+        return None
+    s = sorted(xs)
+    m = len(s) // 2
+    return s[m] if len(s) % 2 else (s[m - 1] + s[m]) / 2
+
+
+def pearson(xs, ys):
+    n = len(xs)
+    if n < 3:
+        return None
+    mx, my = sum(xs) / n, sum(ys) / n
+    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    vx = sum((x - mx) ** 2 for x in xs)
+    vy = sum((y - my) ** 2 for y in ys)
+    if vx <= 0 or vy <= 0:
+        return None
+    return cov / (vx ** 0.5 * vy ** 0.5)
+
+
+def total_agents(p):
+    """fleet の実体数。1 体固定の検証層（meta / skeptic）も起動していれば足す。"""
+    a = p.get("agents")
+    if not isinstance(a, dict):
+        return None
+    vals = [num(a.get(k)) for k in ("explorer", "reviewer", "specialist", "round2", "verify")]
+    vals = [v for v in vals if v is not None]
+    if not vals:
+        return None
+    extra = 0
+    for field in ("meta_reviewer", "recall_skeptic"):
+        d = p.get(field)
+        if isinstance(d, dict) and d.get("fired") is True:
+            extra += 1
+    return sum(vals) + extra
+
+
+def pct(part, whole):
+    return (100.0 * part / whole) if whole else 0.0
+
+
+# 「設計上そもそも起動しない」スキップ理由。**価値率とゲート判定の分母から外す**。
+# これを分母に入れると、既定 effort で回しただけのサンプルが「起動していない」として
+# 積み上がり、ゲートの実装バグと運用上の非該当を区別できなくなる
+OUT_OF_SCOPE_SKIPS = {"effort", "config", "emergency", "scope"}
+
+report, signals = [], []
+
+# ---- 1. サンプル数 ---------------------------------------------------------
+by_plugin = {}
+for e in events:
+    by_plugin[e["plugin"]] = by_plugin.get(e["plugin"], 0) + 1
+report.append(("サンプル", "全 %d 件（直近 30 日 %d 件） / %s"
+               % (len(events), len(recent),
+                  " ".join("%s=%d" % kv for kv in sorted(by_plugin.items())))))
+
+# ---- 2. effort × size_tier 別の fleet 時間・体数 ---------------------------
+buckets = {}
+for e in events:
+    p = e["p"]
+    fleet = num(p.get("duration_fleet_min"))
+    if fleet is None or fleet < 0:
+        continue
+    key = "%s/%s" % (p.get("effort", "?"), p.get("size_tier", "?"))
+    buckets.setdefault(key, {"fleet": [], "agents": []})
+    buckets[key]["fleet"].append(fleet)
+    ta = total_agents(p)
+    if ta is not None:
+        buckets[key]["agents"].append(ta)
+
+tier_rows = []
+for key in sorted(buckets, key=lambda k: -len(buckets[k]["fleet"])):
+    b = buckets[key]
+    tier_rows.append((key, len(b["fleet"]), median(b["fleet"]), median(b["agents"])))
+
+# ---- 3. 体数 vs 壁時計の相関 ----------------------------------------------
+xs, ys = [], []
+for e in events:
+    p = e["p"]
+    fleet, ta = num(p.get("duration_fleet_min")), total_agents(p)
+    if fleet is not None and fleet >= 0 and ta is not None:
+        xs.append(ta)
+        ys.append(fleet)
+r = pearson(xs, ys)
+R_MIN_N = 10          # これ未満では結論を書かない（標本が小さすぎる）
+R_FLAT = 0.3          # |r| < これ なら「レバーではない」を支持
+R_STRONG = 0.6        # |r| >= これ なら再監視条件に該当
+
+# ---- 4. 区間の中央値 -------------------------------------------------------
+spans = [(k, median(measured(events, "duration_%s_min" % k)), len(measured(events, "duration_%s_min" % k)))
+         for k in ("triage", "explore", "fleet", "synthesis", "closing")]
+
+# ---- 5. pre_adjust → 報告の歩留まり（版マーカー × 閾値で層別） --------------
+# `>= 2` にするのは前方互換のため（`== 2` だと schema 3 でセクションが無音で消える）
+yields = {}
+for e in events:
+    p = e["p"]
+    pre = p.get("pre_adjust_counts")
+    if not isinstance(pre, dict) or schema_of(pre, "schema") < 2:
+        continue
+    key = "schema>=%d/threshold=%s" % (schema_of(pre, "schema"), p.get("severity_threshold") or "?")
+    y = yields.setdefault(key, {"n": 0, "pre": 0, "post": 0})
+    y["n"] += 1
+    for sev in ("blocker", "critical", "major", "minor"):
+        v = num(pre.get(sev))
+        if v:
+            y["pre"] += v
+    for sev in ("blocker_count", "critical_count", "major_count", "minor_count"):
+        v = num(p.get(sev))
+        if v:
+            y["post"] += v
+
+# ---- 6. 反証 verdict 分布（calibration_schema で層別） ---------------------
+verdict_layers = {}
+for e in events:
+    av = e["p"].get("adversarial_verify")
+    if not isinstance(av, dict):
+        continue
+    total = sum(num(av.get(k)) or 0 for k in
+                ("confirmed", "refuted", "uncertain", "severity_inflated", "contested"))
+    if total <= 0:
+        continue
+    layer = schema_of(av, "calibration_schema")
+    L = verdict_layers.setdefault(layer, {"n": 0, "total": 0, "confirmed": 0, "refuted": 0,
+                                          "uncertain": 0, "severity_inflated": 0, "contested": 0})
+    L["n"] += 1
+    L["total"] += total
+    for k in ("confirmed", "refuted", "uncertain", "severity_inflated", "contested"):
+        L[k] += num(av.get(k)) or 0
+
+# ---- 7. 動的層の発火率と skip 理由（版マーカー + スコープで層別） -----------
+def layer_stats(field, schema_key, min_schema):
+    """版マーカーで濾し、設計上非該当のスキップを分母から外して集計する。
+
+    `n_raw` は全サンプル、`n` は判定に使える母集団（層別後 × スコープ内）。
+    両方返すのは「まだサンプルが貯まっていない」と「絞った結果 0 件」を区別するため。
+    """
+    st = {"n_raw": 0, "n": 0, "fired": 0, "valuable": 0,
+          "skips": {}, "dropped_schema": 0, "dropped_scope": 0,
+          "schema_key": schema_key, "min_schema": min_schema}
+    for e in events:
+        d = e["p"].get(field)
+        if not isinstance(d, dict):
+            continue
+        st["n_raw"] += 1
+        if schema_of(d, schema_key) < min_schema:
+            st["dropped_schema"] += 1
+            continue
+        reason = d.get("skip_reason") or None
+        if d.get("fired") is not True and reason in OUT_OF_SCOPE_SKIPS:
+            st["dropped_scope"] += 1
+            st["skips"][reason] = st["skips"].get(reason, 0) + 1
+            continue
+        st["n"] += 1
+        if d.get("fired") is True:
+            st["fired"] += 1
+            if (num(d.get("findings_added")) or 0) > 0:
+                st["valuable"] += 1
+        else:
+            key = reason or "unknown"
+            st["skips"][key] = st["skips"].get(key, 0) + 1
+    return st
+
+
+# ロールバック条件の層別要件の正本: triage-dynamic-gates.md `## 8`（meta） / `## 8.5`（skeptic）
+skeptic = layer_stats("recall_skeptic", "attribution_schema", 2)
+meta = layer_stats("meta_reviewer", "gate_schema", 3)
+round2_fired = sum(1 for e in events if (num((e["p"].get("agents") or {}).get("round2")) or 0) > 0)
+verify_fired = sum(1 for e in events if (num((e["p"].get("agents") or {}).get("verify")) or 0) > 0)
+
+# ---- 8. 計測の欠測率 -------------------------------------------------------
+n_all = len(events)
+gap_counts = {}
+for e in events:
+    gaps = e["p"].get("measurement_gaps")
+    if isinstance(gaps, list):
+        for g in gaps:
+            gap_counts[str(g)] = gap_counts.get(str(g), 0) + 1
+have_synthesis = len(measured(events, "duration_synthesis_min"))
+have_waves = sum(1 for e in events
+                 if num((e["p"].get("agents") or {}).get("explorer_waves")) is not None)
+split_waves = sum(1 for e in events
+                  if (num((e["p"].get("agents") or {}).get("explorer_waves")) or 0) >= 2)
+n_gapfield = sum(1 for e in events if isinstance(e["p"].get("measurement_gaps"), list))
+
+# ---- シグナル判定（ロールバック条件・再監視条件のトリガー） ----------------
+# **すべて「サンプル数下限 × 比率」で判定する**。1 件でも点灯する条件を混ぜると
+# シグナル欄が常時点灯し、「⚠️ が出たときだけ行動する」という契約が壊れる
+newest_layer = max(verdict_layers) if verdict_layers else None
+if newest_layer is not None:
+    L = verdict_layers[newest_layer]
+    ratio = pct(L["severity_inflated"], L["total"])
+    if L["total"] >= 20 and ratio >= 45:
+        signals.append("severity_inflated が %.0f%%（calibration_schema=%s / %d verdict）。"
+                       "上流較正（prompts/reviewer-common.md の降格典型）が効いていない疑い"
+                       % (ratio, newest_layer, L["total"]))
+    if L["total"] >= 20 and pct(L["uncertain"], L["total"]) >= 15:
+        signals.append("uncertain が %.0f%%。反証 effort を max に戻す条件"
+                       "（triage-dynamic-gates.md `## 9`）に該当" % pct(L["uncertain"], L["total"]))
+    if L["total"] >= 20 and pct(L["refuted"], L["total"]) >= 20:
+        signals.append("refuted が %.0f%%。反証バッチサイズ 5 → 3 の再検討条件に該当"
+                       % pct(L["refuted"], L["total"]))
+if r is not None and len(xs) >= R_MIN_N and abs(r) >= R_STRONG:
+    signals.append("体数と fleet 時間の相関が r=%.2f（n=%d）と高い。"
+                   "「体数は壁時計のレバーではない」（triage-guide.md `## 7`）の再監視条件に該当"
+                   % (r, len(xs)))
+if have_waves >= 10 and pct(split_waves, have_waves) >= 20:
+    signals.append("explorer wave が 2 本以上に割れた回が %.0f%%（%d/%d）。一括発行の規約"
+                   "（orchestration-guide.md `## 0`）が守られていない"
+                   % (pct(split_waves, have_waves), split_waves, have_waves))
+if n_gapfield >= 5 and gap_counts:
+    worst = max(gap_counts.items(), key=lambda kv: kv[1])
+    if pct(worst[1], n_gapfield) >= 20:
+        signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。打点箇所の見直しが要る"
+                       % (worst[0], pct(worst[1], n_gapfield), worst[1], n_gapfield))
+if skeptic["fired"] >= 15 and pct(skeptic["valuable"], skeptic["fired"]) < 25:
+    signals.append("冷や読み skeptic の価値率が %.0f%%（fired %d 件 / attribution_schema>=2）。"
+                   "high 起点への昇格を戻すロールバック条件"
+                   "（triage-dynamic-gates.md `## 8.5`）に該当"
+                   % (pct(skeptic["valuable"], skeptic["fired"]), skeptic["fired"]))
+if meta["n"] >= 8 and meta["fired"] == 0:
+    signals.append("meta-reviewer が起動対象 %d 件（gate_schema>=3・effort 帯内）で 1 度も"
+                   "起動していない。起動ゲートの再検討が要る" % meta["n"])
+elif meta["fired"] >= 10 and pct(meta["valuable"], meta["fired"]) < 20:
+    signals.append("meta-reviewer の価値率が %.0f%%（fired %d 件 / gate_schema>=3）。"
+                   "層を畳むロールバック条件（triage-dynamic-gates.md `## 8`）に該当"
+                   % (pct(meta["valuable"], meta["fired"]), meta["fired"]))
+
+# ---- 出力 -----------------------------------------------------------------
+if as_json:
+    print(json.dumps({
+        "n": n_all, "n_recent_30d": len(recent), "by_plugin": by_plugin,
+        "tiers": [{"key": k, "n": n, "fleet_median": f, "agents_median": a}
+                  for k, n, f, a in tier_rows],
+        "agents_fleet_r": r, "agents_fleet_n": len(xs),
+        "spans": {k: {"median": m, "n": c} for k, m, c in spans},
+        "yields": yields, "verdict_layers": verdict_layers,
+        "recall_skeptic": skeptic, "meta_reviewer": meta,
+        "round2_fired": round2_fired, "verify_fired": verify_fired,
+        "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
+                        "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
+                        "split_explorer_waves": split_waves},
+        "signals": signals,
+    }, ensure_ascii=False, indent=2))
+    sys.exit(0)
+
+print("## レビュー振り返り（review:completed n=%d）" % n_all)
+print()
+for label, value in report:
+    print("- **%s**: %s" % (label, value))
+
+print()
+print("**effort × size_tier**（fleet 中央値 / 体数中央値）")
+print()
+print("| effort/tier | n | fleet 中央値 | 体数中央値 |")
+print("|---|---:|---:|---:|")
+for key, n, f, a in tier_rows[:8]:
+    print("| %s | %d | %s | %s |" % (key, n, "-" if f is None else "%g 分" % f,
+                                     "-" if a is None else "%g" % a))
+if r is not None:
+    print()
+    line = "体数 vs fleet 時間の相関 **r = %.3f**（n=%d）。" % (r, len(xs))
+    if len(xs) < R_MIN_N:
+        line += "**n < %d なので解釈しない**（標本不足）。" % R_MIN_N
+    elif abs(r) < R_FLAT:
+        line += ("**体数は壁時計のレバーではない**（triage-guide.md `## 7`）— "
+                 "時間が長いときの打ち手は synthesis / wave 側で切り分ける。")
+    elif abs(r) < R_STRONG:
+        line += ("弱〜中程度の相関。**effort が交絡している可能性**があるので、"
+                 "上の effort × tier 表で帯別に見てから判断する。")
+    else:
+        line += "**⚠️ 相関が高い**（下のシグナル欄を参照）。"
+    print(line)
+
+print()
+print("**区間の中央値**: " + " / ".join(
+    "%s %s（n=%d）" % (k, "-" if m is None else "%g 分" % m, c) for k, m, c in spans))
+
+if yields:
+    print()
+    print("**pre_adjust → 報告の歩留まり**（版マーカー × 閾値で層別）")
+    for key, y in sorted(yields.items()):
+        print("- %s: n=%d / 検出 %d → 報告 %d（%.1f%%）"
+              % (key, y["n"], y["pre"], y["post"], pct(y["post"], y["pre"])))
+
+if verdict_layers:
+    print()
+    print("**反証 verdict 分布**（calibration_schema で層別 — 累計で読むと施策の効果が薄まる）")
+    print()
+    print("| calib | サンプル | verdict | confirmed | severity_inflated | refuted | uncertain | contested |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|")
+    for layer in sorted(verdict_layers):
+        L = verdict_layers[layer]
+        print("| %s | %d | %d | %.0f%% | **%.0f%%** | %.0f%% | %.0f%% | %.0f%% |" % (
+            layer, L["n"], L["total"],
+            pct(L["confirmed"], L["total"]), pct(L["severity_inflated"], L["total"]),
+            pct(L["refuted"], L["total"]), pct(L["uncertain"], L["total"]),
+            pct(L["contested"], L["total"])))
+
+print()
+print("**動的層の発火**（skeptic / meta は版マーカーと effort 帯で絞った母集団）: "
+      "skeptic %d/%d（価値 %d） / meta %d/%d（価値 %d） / round2 %d/%d / 反証 %d/%d"
+      % (skeptic["fired"], skeptic["n"], skeptic["valuable"],
+         meta["fired"], meta["n"], meta["valuable"],
+         round2_fired, n_all, verify_fired, n_all))
+for name, st in (("skeptic", skeptic), ("meta", meta)):
+    if st["dropped_schema"] or st["dropped_scope"]:
+        print("  - %s 母集団: 全 %d 件 → 判定対象 %d 件（版マーカー %s>=%d で除外 %d / "
+              "設計上非該当で除外 %d）"
+              % (name, st["n_raw"], st["n"], st["schema_key"], st["min_schema"],
+                 st["dropped_schema"], st["dropped_scope"]))
+    if st["skips"]:
+        print("  - %s skip 理由: %s" % (name, " / ".join(
+            "%s=%d" % kv for kv in sorted(st["skips"].items(), key=lambda kv: -kv[1]))))
+
+print()
+print("**計測の健全性**: synthesis %d/%d 件 / explorer_waves %d/%d 件"
+      % (have_synthesis, n_all, have_waves, n_all)
+      + ("" if not gap_counts else " / 欠測内訳 " + " ".join(
+          "%s=%d" % kv for kv in sorted(gap_counts.items(), key=lambda kv: -kv[1]))))
+
+if signals:
+    print()
+    print("**⚠️ シグナル**（ロールバック条件・再監視条件に該当）")
+    for s in signals:
+        print("- %s" % s)
+PY
+exit 0

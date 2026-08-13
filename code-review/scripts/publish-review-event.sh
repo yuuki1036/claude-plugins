@@ -49,10 +49,24 @@ PR_ARGS=(); [ -n "$PR" ] && PR_ARGS=(--pr "$PR")
 DURS=$(bash "$HERE/review-timing.sh" durations ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)
 read -r DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE DUR_SYNTHESIS <<< "${DURS:--1 -1 -1 -1 -1 -1}"
 
-# explorer wave の発行回数（t1b の行数）。一括発行が破られたことを事後に検知するための
-# 計測で、LLM の自己申告ではなくマーカーから導出する（GitHub issue #122）
+# explorer wave の発行回数（`we` マーカーの行数）。一括発行が破られたことを事後に検知する
+# ための計測で、LLM の自己申告ではなくマーカーから導出する（GitHub issue #122）
 EXPLORER_WAVES=$(bash "$HERE/review-timing.sh" waves ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)
 case "$EXPLORER_WAVES" in ''|*[!0-9]*) EXPLORER_WAVES=0 ;; esac
+
+# 欠測マーカーの識別子（`measurement_gaps`）。区間フィールドが -1 になった理由を
+# 「打ち忘れ」と「そもそも該当しない」に分けて事後集計できるようにする（issue #123 B）。
+# 値は review-timing.sh が持つ（打点の正本はあちら側なので判定式を複製しない）
+MEASUREMENT_GAPS=$(bash "$HERE/review-timing.sh" gaps ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)
+
+# 同一 diff への重複レビューを事後に突合するためのキー（issue #123 D）。
+# diff ファイルは publish 後の掃除で消えるので、ここで撮っておく。
+# **強弱 2 本ある**（算出と使い分けの正本: lib/review-paths.sh の `review_diff_keys`）
+DIFF_FILE_PATH=$(review_path diff)
+DIFF_DIGEST=""; DIFF_FILES=""
+if KEYS=$(review_diff_keys "$DIFF_FILE_PATH"); then
+  read -r DIFF_DIGEST DIFF_FILES <<< "$KEYS"
+fi
 
 # self-review は publish が「修正方針確認」より前にあり closing 区間が構造上 ≒0 になるため
 # -1（測定不能）を入れる。0 を publish すると「人間待ちが無かった」と誤読される（`## 14`）
@@ -69,6 +83,9 @@ case "$PLUGIN" in *self-review) DUR_CLOSING=-1 ;; esac
 MERGED=$(
   REVIEW_DURS="{\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"duration_explore_min\":$DUR_EXPLORE,\"duration_synthesis_min\":$DUR_SYNTHESIS}" \
   REVIEW_EXPLORER_WAVES="$EXPLORER_WAVES" \
+  REVIEW_MEASUREMENT_GAPS="$MEASUREMENT_GAPS" \
+  REVIEW_DIFF_DIGEST="$DIFF_DIGEST" \
+  REVIEW_DIFF_FILES="$DIFF_FILES" \
   python3 - "$PAYLOAD" <<'PY'
 import json, os, sys
 try:
@@ -91,15 +108,40 @@ if not isinstance(agents, dict):
     payload["agents"] = agents
 agents["explorer_waves"] = waves
 launched = agents.get("explorer")
+
+# 欠測マーカーの識別子。explorer wave の欠測だけは「起動したのに打点が無い」ときのみ
+# gap であり、explorer 未起動なら該当なしなので、体数を知っているここで足す
+gaps = [g for g in os.environ.get("REVIEW_MEASUREMENT_GAPS", "").split() if g]
+if isinstance(launched, int) and launched >= 1 and waves == 0:
+    gaps.append("explorer-wave")
+
+digest = os.environ.get("REVIEW_DIFF_DIGEST") or ""
+files_key = os.environ.get("REVIEW_DIFF_FILES") or ""
+if digest:
+    payload["diff_digest"] = digest
+    if files_key:
+        payload["diff_files"] = files_key
+else:
+    # 突合キーを作れなかった＝重複検出が事後に効かない。**該当なしと区別できるよう
+    # gap を立てる**（この経路を黙らせると「検出できなかった」が「重複が無かった」に潰れる）
+    gaps.append("diff-digest")
+
+# gaps の確定はここ（append する経路をすべて通した後に代入する）
+payload["measurement_gaps"] = gaps
+
 if waves >= 2:
     sys.stderr.write(
         "WARN: explorer wave が %d 本ある（一括発行が破られた可能性）。"
         "1 メッセージにまとめていれば wave 内最長の 1 本で済む — orchestration-guide.md `## 0`\n" % waves
     )
-elif isinstance(launched, int) and launched >= 1 and waves == 0:
+elif "explorer-wave" in gaps:
     sys.stderr.write(
-        "WARN: explorer を %d 体起動したのに t1b マーカーが無い（explorer_waves が欠測）。"
-        "回収直後の `review-timing.sh mark t1b` を打ち忘れている\n" % launched
+        "WARN: explorer を %s 体起動したのに explorer wave の打点が無い（explorer_waves が欠測）。"
+        "回収直後の `review-timing.sh mark wave --explorer` を打ち忘れている\n" % launched
+    )
+if gaps:
+    sys.stderr.write(
+        "WARN: 計測マーカーの欠測: %s（対応する duration_* が -1 で publish される）\n" % ", ".join(gaps)
     )
 # separators で空白・改行を排除し、1 行に収める
 sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))

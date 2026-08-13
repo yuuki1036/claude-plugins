@@ -44,9 +44,25 @@
 
 ### Phase 5.6: Meta-reviewer round
 
-**起動条件**: Phase 5.5 完了後、フィルタリング前の指摘に **BLOCKER または CRITICAL** が 1 件以上あり、**かつ `size_tier` が `small` でない（`small` の場合は BLOCKER が 1 件以上ある）**場合に起動（帯連動は v2.60.0 で追加 / `gate_schema: 2`）
+**起動条件**（v2.62.0 で緩和 / `gate_schema: 3`）: Phase 5.5 完了後、以下のいずれかを満たす場合に起動する。
 
-**目的**: 高 severity 指摘が出た = 高リスク変更と判定し、別 reviewer に「ここまでの結果を踏まえて、他の reviewer が見落としている観点はないか」を問うメタレビュー
+1. フィルタリング前の指摘に **BLOCKER** が 1 件以上ある（`size_tier` に関わらず起動）
+2. `size_tier` が `small` **でない**、かつ次のいずれか
+   - フィルタリング前の指摘に **CRITICAL** が 1 件以上ある
+   - **報告マトリクス通過見込みの MAJOR が 3 件以上**ある（v2.62.0 で追加した経路）
+
+**目的**: 高リスク変更と判定し、別 reviewer に「ここまでの結果を踏まえて、他の reviewer が見落としている観点はないか」を問うメタレビュー
+
+**MAJOR 経路を足した理由（GitHub issue #123 C）**: 旧ゲート（`gate_schema: 2`）は高 severity の存在だけを条件にしていたが、**実運用では高 severity がほとんど残らない**（実測: xhigh 実行 14 件で `fired=1` / `skipped=3`、skip 理由は全件 `no-high-severity`）。反証レイヤーの `severity_inflated` が過半という分布とも整合しており、**この層は条件が原理的にほぼ成立しないまま維持コストだけを払っていた**。
+
+- **緩めてよくなったのは wave コストが消えたから**（v2.61.0）。meta は反証レイヤーと同一 wave で発行されるようになり、反証が走る帯（effort ≥ high）では**起動しても直列 wave は増えない**。増えるのは meta 1 体ぶんの token だけで、xhigh / max は明示 escalation なのでこの帯に限れば見合う
+- **effort ゲート（xhigh / max 起点）は据え置く。** `## 8.5` は「昇格の判断軸は wave コストではなく `meta_reviewer.findings_added` の価値率」と書いているが、その価値率は `fired=1` では出せない。**まず起動サンプルを貯めるのが先**で、effort 昇格はその後の判断
+- **閾値を「報告マトリクス通過見込み」で取るのは反証ゲート（`## 9`）と同じ基準**。フィルタ前の生の MAJOR 件数で取ると、規模の大きい PR でほぼ常時成立して実質「常に起動」になる
+
+**ロールバック条件**: `gate_schema >= 3` かつ `fired=true` のサンプルが **10 件以上貯まった時点で `findings_added > 0` の比率が 20% を下回っていたら**、この層を畳む（起動条件を戻すのではなく撤去を検討する）。旧ゲートで判断できなかった「価値率」を測るための緩和なので、**測った結果が出たら畳む判断まで行う**のが本変更の含意。
+
+- 判定は `scripts/review-retro.sh` が自動で出す（`meta-reviewer の価値率が …%` のシグナル行）。**スクリプト側で `gate_schema >= 3` の層別と、設計上非該当なスキップ（`effort` / `config` / `scope` / `emergency`）の分母除外を実施済み** — 旧ゲートのサンプルや「既定 effort で回しただけの回」が価値率に混ざらない
+- **`findings_added` は meta の価値を捉えきらない**（`## 16` の非対称。単独起動されなかった観点を「指摘なし」と閉じる価値は数に出ない）。撤去を検討する段では、レポート本文で「閉じた観点」の有無も併せて読む
 
 ### 起動タイミング: 反証レイヤー（`## 9`）と同一 wave（v2.61.0 / GitHub issue #122）
 
@@ -70,8 +86,8 @@
 | low | スキップ | スキップ |
 | medium | スキップ | スキップ |
 | high (default) | unmet_information があれば起動（1 段圧縮） | スキップ |
-| xhigh | 起動（2 段。**規模キャップが effort 上限を下回る帯は 1 段圧縮**） | 起動（**`small` 帯は BLOCKER 有りのみ**） |
-| max | 起動（2 段。**規模キャップが effort 上限を下回る帯は 1 段圧縮**） | 起動（**`small` 帯は BLOCKER 有りのみ**） |
+| xhigh | 起動（2 段。**規模キャップが effort 上限を下回る帯は 1 段圧縮**） | 起動（BLOCKER / CRITICAL / **報告見込み MAJOR 3 件以上**。**`small` 帯は BLOCKER 有りのみ**） |
+| max | 起動（2 段。**規模キャップが effort 上限を下回る帯は 1 段圧縮**） | 同上 |
 
 **「起動するか否か」が規模帯に連動するのは Phase 5.6 だけ（v2.60.0）**。5.8 / 5.9 は帯に連動せず、**Phase 5.5 は起動可否こそ帯非連動だが段数は従来から帯連動する**（規模キャップが effort 上限を下回る帯では追加 explorer なしの 1 段圧縮経路 — triage-guide.md `## 6.3` / 同 `## 5.1` の wave 表）。5.6 のスキップは triage-guide.md `## 6.3` の「規模キャップが削るのは breadth だけ」という原則に対する**唯一の例外**（＝ depth 層を帯で止める唯一の例）で、根拠が n=1 と弱いため**ロールバック条件つきの暫定措置**として入れてある（`design-notes/triage-rationale.md`）。他の depth 層（5.8 / 5.9）へ同じ帯連動を横展開しないこと。
 
@@ -107,7 +123,7 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 
 ### 起動ゲート（暴走ガード）
 
-- **effort 適応**: **high 起点**で起動（v2.52.0 で xhigh/max 起点から昇格）。low / medium はスキップ。**meta-reviewer（`## 8`）は xhigh/max 起点のまま**で、skeptic だけ先に昇格している（skeptic は findings 非注入で reviewer wave に相乗りするため**直列 wave を増やさない**が、meta は reviewer 完了後に直列 wave を 1 本足していたため。**⚠️ この wave コストは v2.61.0 で消えた** — meta は反証レイヤーと同一 wave になり、反証が走る帯（effort ≥ high）では追加 wave が 0 本になる（`## 8` 起動タイミング）。**昇格を再検討する余地があり、判断軸は wave コストではなく `meta_reviewer.findings_added` の価値率**に移っている。昇格の実測根拠: `design-notes/triage-rationale.md`）
+- **effort 適応**: **high 起点**で起動（v2.52.0 で xhigh/max 起点から昇格）。low / medium はスキップ。**meta-reviewer（`## 8`）は xhigh/max 起点のまま**で、skeptic だけ先に昇格している（skeptic は findings 非注入で reviewer wave に相乗りするため**直列 wave を増やさない**が、meta は reviewer 完了後に直列 wave を 1 本足していたため。**⚠️ この wave コストは v2.61.0 で消えた** — meta は反証レイヤーと同一 wave になり、反証が走る帯（effort ≥ high）では追加 wave が 0 本になる（`## 8` 起動タイミング）。**昇格を再検討する余地があり、判断軸は wave コストではなく `meta_reviewer.findings_added` の価値率**に移っている。ただし**その価値率を出すサンプルが無い**（xhigh 14 件で `fired=1`）ため、v2.62.0 では effort 昇格ではなく**severity ゲートの緩和**を先に入れて起動サンプルを貯めている（`## 8` の `gate_schema: 3`）。effort 昇格の判断はその後。昇格の実測根拠: `design-notes/triage-rationale.md`）
   - **surface 判定は Phase 0 で先に行う**（相乗り発火の可否を reviewer 起動前に決めるため）。正規表現 + PR 自己申告 D1-High は Phase 0 で判定でき、effort ゲートを通過していれば reviewer 一括発行に skeptic を混ぜる
 - **上限**: **PR あたり skeptic 1 体・1 round のみ**（per-surface 起動ではない）。skeptic の指摘も通常の scoring・報告マトリクス・反証レイヤーの対象
 - **surface 非該当ならスキップ**: high-risk surface を含まない変更では起動しない（noise 爆発を避け high-risk に限定）
@@ -137,7 +153,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
     else {n: length, valuable: ([.[] | select(.payload.recall_skeptic.findings_added > 0)] | length)} end'
 ```
 
-**ロールバック条件**: 昇格後のサンプル（`fired=true` かつ `attribution_schema >= 2`）が **15 件以上貯まった時点で価値率が 25% を下回っていたら**、high を「スキップ」に戻す。昇格判断が n=8 の 50% だったので、**n を倍にしても半分を切る**なら昇格根拠が崩れたとみなす。
+**ロールバック条件**: 昇格後のサンプル（`fired=true` かつ `attribution_schema >= 2`）が **15 件以上貯まった時点で価値率が 25% を下回っていたら**、high を「スキップ」に戻す。**この層別は `scripts/review-retro.sh` が実装済み**（下の jq は手で確認したいときの控え）。昇格判断が n=8 の 50% だったので、**n を倍にしても半分を切る**なら昇格根拠が崩れたとみなす。
 
 - **昇格直後の数件で判断しない**（`findings_added=0` が 2〜3 件続くのは 50% の分布内）
 - **`findings_overlap` を価値率の分子に混ぜない**（reviewer と重複した指摘は「盲点でなかった事例」なので、混ぜると価値率が 100% に張り付いて縮小分岐が原理的に発火しなくなる）
@@ -167,7 +183,9 @@ skeptic テンプレートは `prompts/recall-skeptic.md`。findings / reviewer 
 
 reviewer の指摘を独立エージェントが反証し、過大な指摘の prominence を下げるフェーズ。**冷や読み skeptic の統合後・scoring の前**に挿入する（review=Phase 5.9 / self-review=Phase 4.9）。**起動は meta-reviewer（`## 8` Phase 5.6）と同一 wave**（v2.61.0。両者は互いに独立 — 根拠は `## 8` の起動タイミング節）。meta-reviewer / skeptic が「見落とし（false negative）」を足す係なのに対し、本レイヤーは「独立読み直しで**severity を較正し、偽陽性を摘出する**」鏡像の係。skeptic が足した指摘も本レイヤーの反証対象に含める。
 
-> **実際の主機能は severity の較正であって偽陽性の除去ではない**（GitHub issue #114 / n=19・67 verdict）: `severity_inflated` **60%** / `confirmed` 34% / `refuted` **6%** / `uncertain` 0%。層の価値を否定するデータではない（実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている）が、**「偽陽性を潰す層」と読むと期待と実挙動がずれる**。過大 severity の上流対策は `prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」に置いた。
+> **実際の主機能は severity の較正であって偽陽性の除去ではない**（GitHub issue #114 / 累計 n=49・102 verdict）: `severity_inflated` **52%** / `confirmed` 37% / `refuted` **9%** / `uncertain` 0% / `contested` 2%。層の価値を否定するデータではない（実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている）が、**「偽陽性を潰す層」と読むと期待と実挙動がずれる**。過大 severity の上流対策は `prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」と、その直後の**「降格される典型パターン」**（v2.62.0 / issue #123 A）に置いた。
+>
+> **この 52% を上流対策の効果測定に使わないこと。** 累計値は対策前のサンプルを含むため、施策の効果が構造的に薄まる（`## 16` の「版マーカーで層別し日付で切らない」の一般則）。効果は `adversarial_verify.calibration_schema` で層別した内訳で見る — 集計は `scripts/review-retro.sh` が層別済みの表で出す。
 
 ### 対象指摘の選定（非対称ゾーン優先 + specialist 除外）
 

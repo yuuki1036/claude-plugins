@@ -11,10 +11,10 @@
 
 同期起動（`run_in_background: false`）と並列発行（同一メッセージ内で一括発行）のルールは `orchestration-guide.md ## 0` が正本で、本ファイルの全起動手順に適用される。
 
-**すべての agent wave の回収点に適用（本ファイルの全フェーズ + orchestration-guide.md `## 5` の auto-retry）: agent の結果を回収した直後に `mark t1c` を記録する**（v2.60.0）。`t1c` は**後勝ち**なので、どのフェーズがそのレビューの最後の wave になったかを判断しなくてよい — **回収したら毎回書く**のが正しい運用。動的ラウンドは起動可否が実行時に決まるため、「最後の wave の後だけ書く」規約にするとスキップ時に書き忘れて欠測になる。区間の意味は `orchestration-measurement.md ## 14`（`duration_synthesis_min`）:
+**すべての agent wave の回収点に適用（本ファイルの全フェーズ + orchestration-guide.md `## 5` の auto-retry）: agent の結果を回収した直後に `mark wave` を記録する**（v2.60.0）。打点は**後勝ち**なので、どのフェーズがそのレビューの最後の wave になったかを判断しなくてよい — **回収したら毎回書く**のが正しい運用。動的ラウンドは起動可否が実行時に決まるため、「最後の wave の後だけ書く」規約にするとスキップ時に書き忘れて欠測になる。区間の意味は `orchestration-measurement.md ## 14`（`duration_synthesis_min`）:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
 ```
 
 ## 6. Adaptive deepening 実行手順（Round 2 / review Phase 5.5・self-review Phase 4.5）
@@ -37,7 +37,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]
 
 ## 7. Meta-reviewer 実行手順（review Phase 5.6・self-review Phase 4.6）
 
-> **起動は反証レイヤー（`## 10`）と同一メッセージで行う**（v2.61.0 / triage-dynamic-gates.md `## 8` 起動タイミング）。実行順は `Round 2 → skeptic 統合 → **meta 1 体 + 反証バッチ最大 3 体を一括発行** → 回収して `mark t1c` → [meta 由来指摘の追加反証バッチ] → scoring`。**どちらか一方だけが起動条件を満たす場合はそれだけを発行する**（片方のスキップはもう片方の発行を妨げない）。
+> **起動は反証レイヤー（`## 10`）と同一メッセージで行う**（v2.61.0 / triage-dynamic-gates.md `## 8` 起動タイミング）。実行順は `Round 2 → skeptic 統合 → **meta 1 体 + 反証バッチ最大 3 体を一括発行** → 回収して `mark wave` → [meta 由来指摘の追加反証バッチ] → scoring`。**どちらか一方だけが起動条件を満たす場合はそれだけを発行する**（片方のスキップはもう片方の発行を妨げない）。
 
 1. `prompts/meta-reviewer.md` を使用
 2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動（反証バッチと同一メッセージ内）

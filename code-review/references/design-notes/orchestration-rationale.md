@@ -16,7 +16,7 @@
 
 規約は v2.35.0 から正しく書かれていたが、**破ったときに計測へ現れなかった**ため事後に検知できなかった。実測（self-review / xhigh / large 帯）: explorer 1 体を単独発行してから残り 3 体を次のメッセージで出したため `duration_explore_min` が **18 分（7.7 + 9.2）**になった。一括なら wave 内最長の約 9 分で済んでいる。
 
-**マーカー種別を増やさずに検知する**: `t1b` は「explorer 結果を回収した直後」に打つ規約なので、wave ごとに打てば**行数がそのまま wave 本数**になる（`review-timing.sh waves` → `agents.explorer_waves`）。`durations` は最後の `t1b` を採るので既存の `duration_explore_min` の意味は変わらない。**LLM の自己申告にしなかった**のは、破ったことを自覚していれば最初から破らないため（自己申告は系統的に「1」へ潰れる）。
+**マーカー種別を増やさずに検知する**: explorer wave の打点（現 `mark wave --explorer`）は「explorer 結果を回収した直後」に打つ規約なので、wave ごとに打てば**行数がそのまま wave 本数**になる（`review-timing.sh waves` → `agents.explorer_waves`）。`durations` は最後の explorer 打点を採るので既存の `duration_explore_min` の意味は変わらない。**LLM の自己申告にしなかった**のは、破ったことを自覚していれば最初から破らないため（自己申告は系統的に「1」へ潰れる）。
 
 ## `## 1` ブランチ名 checkout を廃止し detach + SHA 突合にした経緯（issue #98 / #69）
 

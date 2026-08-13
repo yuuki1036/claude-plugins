@@ -1,16 +1,18 @@
 # 計測と Event Bus publish（orchestration-guide 分冊）
 
-**このファイルは publish の直前に Read する**（review 締めフロー 4 / self-review Step 6.4）。レビュー本体の実行には不要。
+**このファイルは publish の直前に Read する**（review 締めフロー 4 / self-review Step 6.4）。レビュー本体の実行には不要 — **`## 19` だけは例外**で、重複検出（review Step 2.4 / self-review Step 1.4）の背景を後から引くときに読む（実行自体は SKILL 本文だけで完結する）。
 
 | 節 | 内容 |
 |---|---|
 | `## 13` | publish 先をメインリポジトリのルートに固定する（worktree で計測ごと消えるのを防ぐ） |
 | `## 13.1` | `TS_FILE` のパス導出（並行セッションの衝突回避） |
-| `## 14` | 所要時間の区間分割計測（t0 / t1 / t1b / t1c / t2 / t3） |
+| `## 14` | 所要時間の区間分割計測（t0 / t1 / wave / t2 / t3） |
 | `## 16` | `review:completed` payload 契約（両 skill 共通の正本） |
 | `## 17` | トークン消費の計測（transcript からの事後集計。publish とは独立に任意実行） |
+| `## 18` | 蓄積イベントの振り返り集計（publish の直後に毎回実行。シグナルの読み方） |
+| `## 19` | 直近レビューとの重複検出（**review Step 2.4 / self-review Step 1.4** で参照） |
 
-**マーカー（`t0` / `t1` / `t1b` / `t1c` / `t2`）の書き込み自体はレビュー中に行う。** 書き込み位置は SKILL.md の各 Step に埋め込んであり、本ファイルを読まなくても実行できる（`## 14` は意味と算出式の正本）。
+**マーカー（`t0` / `t1` / `wave` / `t2`）の書き込み自体はレビュー中に行う。** 書き込み位置は SKILL.md の各 Step に埋め込んであり、本ファイルを読まなくても実行できる（`## 14` は意味と算出式の正本）。
 
 ## 13. Event Bus publish 先の固定（review 締めフロー 4・self-review Step 6.4 共通 / GitHub issue #96）
 
@@ -35,7 +37,7 @@
 
 **パスの識別子は `--show-toplevel`（= その worktree 自身のパス）から作る**。`--git-common-dir` が全 worktree で同じ値を返すのに対し、`--show-toplevel` は**worktree ごとに異なる**ので、これ 1 つで並行セッションを分離できる。同一セッション内では Step 1 と publish の両方が同じ worktree の中で走る（review は ExitWorktree より前に publish する）ため、決定性も保たれる:
 
-**実装は `scripts/review-timing.sh` が持ち、パス導出は `scripts/lib/review-paths.sh` が正本**（`start` / `mark` / `durations` / `cleanup` の 4 サブコマンド。SKILL からはこれを呼ぶだけで、パスの組み立てを本文に書かない）。識別子の仕様:
+**実装は `scripts/review-timing.sh` が持ち、パス導出は `scripts/lib/review-paths.sh` が正本**（`start` / `mark` / `durations` / `waves` / `gaps` / `cleanup` の 6 サブコマンド。SKILL からはこれを呼ぶだけで、パスの組み立てを本文に書かない）。識別子の仕様:
 
 - **worktree のルート**（`--show-toplevel`）を cksum で slug 化する。review はさらに `--pr N` で PR 番号を混ぜる（`--pr` は数値のみ受理する）
 - `--git-common-dir` は使わない（全 worktree で同じ値を返すので識別子にならない）
@@ -50,7 +52,7 @@
   grep -q '^t2 ' "$TS_FILE" 2>/dev/null && rm -f "$TS_FILE"
   ```
 
-  これは**所有権チェックではなく、そう振る舞う近似**である。ファイルの中身は `t0/t1/t1b/t1c/t2 <epoch>` だけで書き手を識別しないため、パスが衝突した場合には「他セッションが書いた `t2`」にヒットしうる。衝突自体は上の `WT` 識別子で塞いでおり、このガードは**万一の衝突時に掃除より他セッションの計測を優先する**ための二段目。「自分が書いたファイルにのみ効く」と読まないこと
+  これは**所有権チェックではなく、そう振る舞う近似**である。ファイルの中身は `t0/t1/we/w/t2 <epoch>` だけで書き手を識別しないため、パスが衝突した場合には「他セッションが書いた `t2`」にヒットしうる。衝突自体は上の `WT` 識別子で塞いでおり、このガードは**万一の衝突時に掃除より他セッションの計測を優先する**ための二段目。「自分が書いたファイルにのみ効く」と読まないこと
 
 ## 14. 所要時間の区間分割計測（review / self-review 共通 / v2.41.0 で 3 分割・v2.43.0 で explore 追加・v2.60.0 で synthesis 追加）
 
@@ -58,7 +60,7 @@
 
 > **測れないものを先に確定しておく（v2.43.0）**: **オーケストレーターが reviewer プロンプトを書いていた時間は、マーカーでは分離できない。** プロンプトのテキストを書く行為が、そのまま Agent call の発行だからである。「書き終わったが、まだ発行していない」瞬間が存在しないため、マーカーを Agent call より前に置けば書く前に発火し、後ろに置けば agent は既に走り出している。実測（v2.43.0 の self-review、reviewer 5 + specialist 1 体）でも、発行直前に置いたマーカーは**7 秒**を記録した一方で fleet 全体は 22 分だった。**プロンプト組み立てコストは `duration_fleet_min` に含まれる**と受け入れ、外出し（orchestration-guide.md `## 3.5`）の効果は `duration_fleet_min` を `size_tier` × `agents.reviewer` × `effort` で層別して見る。マーカーを **Agent call の前後に**増やして測ろうとしないこと。
 
-> **上の禁止の射程（v2.60.0 で明確化）**: 上の結論は「**プロンプト組み立て**時間の分離」についてのもので、そこは正しい。ただし fleet 区間には**もう 1 種類の agent 非稼働時間**がある — **最後の agent wave を回収した後の scoring / dedup / verdict 反映 / レポート生成**である。この区間は「回収済み ＝ 全 agent 終了済み」なので **agent が 1 体も走っていないことが構造的に保証される**。Agent call の前後に置くマーカーではないため上の不可能性に当たらず、`t1c` → `t2` として分離できる（`duration_synthesis_min`）。
+> **上の禁止の射程（v2.60.0 で明確化）**: 上の結論は「**プロンプト組み立て**時間の分離」についてのもので、そこは正しい。ただし fleet 区間には**もう 1 種類の agent 非稼働時間**がある — **最後の agent wave を回収した後の scoring / dedup / verdict 反映 / レポート生成**である。この区間は「回収済み ＝ 全 agent 終了済み」なので **agent が 1 体も走っていないことが構造的に保証される**。Agent call の前後に置くマーカーではないため上の不可能性に当たらず、`wave` → `t2` として分離できる（`duration_synthesis_min`）。
 >
 > 動機（実測 / review・1 ファイル 97 行の doc PR・xhigh・reviewer 3 + meta 1 + verify 3）: `duration_fleet_min` 44 分に対し agent wave の実時間は約 24 分（reviewer 8.5 + meta 8.9 + verify 6.2、各 wave 内最長）で、**残り約 20 分（46%）がオーケストレーター側**だった。`duration_triage_min` は 3 分しか出ていないため、**この 20 分はどのフィールドにも現れていなかった**。支配的な区間が構造的に不可視だと「時間が長いから体数を減らす」という誤った打ち手に誘導される（triage-guide.md `## 7` が禁じている混同そのもの）。
 >
@@ -66,34 +68,40 @@
 
 **マーカーの書き込み点**（いずれも `## 13` の `MAIN_ROOT` 導出式で決めた同じ `TS_FILE` に追記する）:
 
+**打点の規約は 1 本にまとめてある（v2.62.0 / GitHub issue #123 B）**: 「**agent wave を回収したら `mark wave` を打つ。explorer wave なら `--explorer` を付ける**」だけを覚える。旧来は explorer 回収が `t1b`・その他の wave 回収が `t1c` と**打点のたびに種類を判断させて**いたが、実測では `duration_synthesis_min` の保有率が **3 / 49**・`agents.explorer_waves` が **2 / 49** と計測として機能していなかった（両フィールドとも v2.60.0 / v2.61.0 以降のサンプルにしか載らないので全件が打ち忘れではないが、**打点した回自体が数件しかない**）。旧キー（`mark` に `t1b` / `t1c` を渡す形）はエイリアスとして受理し続けるが、**規約としては使わない**。
+
 | キー | 書き込む位置 | 意味 |
 |---|---|---|
 | `t0` | review Step 1 / self-review Step 1 の冒頭（`>` で新規作成） | レビュー開始 |
 | `t1` | **最初の agent を一括発行する直前**（explorer を配置していれば explorer 発行直前 = review Step 4 / self-review Step 3、していなければ reviewer 発行直前 = review Step 5 / self-review Step 4） | triage 区間の終わり |
-| `t1b` | **explorer 結果を回収した直後**（explorer を 1 体以上起動した場合のみ書く。**複数 wave に分けてしまった場合は wave ごとに毎回**） | explorer wave の終わり（**行数 = explorer wave の本数** → `agents.explorer_waves`） |
-| `t1c` | **agent wave の結果を回収した直後**（reviewer wave / Round 2 / meta / 反証 の**各回収点で毎回**追記する） | 最後の agent wave の終わり |
+| `wave --explorer` | **初回 explorer 結果を回収した直後**（Step 4 / Step 3 の explorer。**複数 wave に分けてしまった場合は wave ごとに毎回**） | explorer wave の終わり（**行数 = explorer wave の本数** → `agents.explorer_waves`） |
+| `wave` | **その他すべての agent wave の回収直後**（reviewer wave / **Round 2（追加 explorer を含む）** / meta + 反証 / 追加反証バッチ の**各回収点で毎回**） | 最後の agent wave の終わり |
 | `t2` | **初回レポートを出力した直後**（review Step 7 / self-review Step 6。締めフローに入る前） | fleet 区間の終わり |
 | `t3` | publish 時点（ファイルには書かず `date +%s` で取る） | 全体の終わり |
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" start   [--pr N]   # Step 1
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1  [--pr N]  # 最初の agent 一括発行の直前（二重記録しない）
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1b [--pr N]  # explorer 結果の回収直後（起動した場合のみ）
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1c [--pr N]  # agent wave 回収の直後（wave ごとに毎回・後勝ち）
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初回レポート出力の直後
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" start [--pr N]              # Step 1
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1 [--pr N]            # 最初の agent 一括発行の直前（二重記録しない）
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave --explorer [--pr N]  # explorer 結果の回収直後
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]          # その他の agent wave 回収の直後（毎回・後勝ち）
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]            # 初回レポート出力の直後
 ```
 
-> **`t1c` は wave ごとに毎回追記してよい**（`durations` の awk が後勝ちで最後の値を採る）。「どの wave が最後か」を**オーケストレーターに予測させない**ための設計 — 動的ラウンドは起動可否が実行時に決まるので、「最後の wave の後にだけ書く」という規約にすると、スキップが起きたときに書き忘れて欠測になる。**毎回書けば必ず正しい**。
+> **`wave` は回収のたびに毎回追記する**（`durations` の awk が後勝ちで最後の値を採る）。「どの wave が最後か」を**オーケストレーターに予測させない**ための設計 — 動的ラウンドは起動可否が実行時に決まるので、「最後の wave の後にだけ書く」という規約にすると、スキップが起きたときに書き忘れて欠測になる。**毎回書けば必ず正しい**。
+
+> **`--explorer` 付きの打点を synthesis 側に混ぜないこと**（スクリプト側で分離済み）。explorer 回収だけ打って reviewer wave の打点を落とした場合、混ぜると `duration_synthesis_min` が reviewer wave を丸ごと含む「もっともらしい過大値」になる。**縮退先は欠測（-1）であって誤値ではない**（`## 13.1` と同じ原則）。
+
+> **`mark` は失敗しない（v2.62.0）**: `start` 未実行・一時ファイル消失でもファイルを作り直し、stderr に警告を出して exit 0 で返す。マーカー 1 個の失敗でレビュー本体を止めない。**逆算による補完はしない** — publish 時刻から wave の打点を推定すれば欠測は消えるが、それは誤値であって計測ではない。欠測は `measurement_gaps` に出して可視化する側で扱う。
 
 > **`t1` を explorer 発行直前に置く理由（v2.41.0 の修正）**: `t1` を reviewer 発行直前に固定すると、explorer wave（high で最大 4 体 / xhigh・max で 6 体）の実時間が triage 区間に丸ごと混入し、「メインコンテキストの思考時間の代理指標」という `duration_triage_min` の定義が成立しない。explorer を配置したレビューで triage が膨らみ、**「思考量が主因」という誤診に誘導される**（そしてプロンプト圧縮という誤った打ち手を選ばせる）。agent wave はすべて fleet 側に入れる。
 
-> **`t1b` を足した理由（GitHub issue #100 D）**: 上の修正の副作用として、fleet 区間に「explorer wave + reviewer wave + 動的ラウンド + プロンプト構築 + scoring」が全部入り、**どの wave が何分かかったのかが分からない**。`t1`→`t1b` を切り出すと explorer wave 単独の実時間が取れ、triage-guide.md `## 5.1` が Phase 0 で提示する「wave あたり目安 6〜16 min」を実測で裏付けられる（v2.43.0 の実測: explorer 2 体で 5.9 分）。
+> **explorer wave 区間（現 `wave --explorer`）を足した理由（GitHub issue #100 D）**: 上の修正の副作用として、fleet 区間に「explorer wave + reviewer wave + 動的ラウンド + プロンプト構築 + scoring」が全部入り、**どの wave が何分かかったのかが分からない**。`t1`→ 最初の `wave --explorer` を切り出すと explorer wave 単独の実時間が取れ、triage-guide.md `## 5.1` が Phase 0 で提示する「wave あたり目安 6〜16 min」を実測で裏付けられる（v2.43.0 の実測: explorer 2 体で 5.9 分）。
 >
 > **この区間も「純粋な agent 時間」ではない**（explorer プロンプトを書く時間が入る）。ただし explorer は体数も 1 体あたりのプロンプトも reviewer より小さいので汚染は相対的に小さい。**「メインコンテキストの思考時間」を測るフィールドではない** — それは上記のとおり原理的に測れない。
 >
-> explorer を配置しなかったレビューでは `t1b` を書かず `duration_explore_min` は `-1`（該当なし）にする。0 を publish すると「explorer wave が一瞬で終わった」と誤読される。
+> explorer を配置しなかったレビューでは `wave --explorer` を打たず `duration_explore_min` は `-1`（該当なし）にする。0 を publish すると「explorer wave が一瞬で終わった」と誤読される。
 
-> **`t1b` の行数が `agents.explorer_waves` になる（v2.61.0 / GitHub issue #122）**: explorer は「同一メッセージ内で一括発行する」規約（orchestration-guide.md `## 0`）だが、**破ったことが計測に現れないため事後に気づけなかった**（実測: 1 体を単独発行してから残り 3 体を次のメッセージで出したため `duration_explore_min` が 18 分 = 7.7 + 9.2 になった。一括なら wave 内最長の約 9 分で済んでいた）。**wave ごとに `t1b` を打てば行数がそのまま wave 本数になる**ので、追加のマーカー種別を増やさずに検知できる。`durations` は最後の `t1b` を採るため、分割しても `duration_explore_min` は全 wave を覆う。
+> **explorer wave 打点の行数が `agents.explorer_waves` になる（v2.61.0 / GitHub issue #122）**: explorer は「同一メッセージ内で一括発行する」規約（orchestration-guide.md `## 0`）だが、**破ったことが計測に現れないため事後に気づけなかった**（実測: 1 体を単独発行してから残り 3 体を次のメッセージで出したため `duration_explore_min` が 18 分 = 7.7 + 9.2 になった。一括なら wave 内最長の約 9 分で済んでいた）。**wave ごとに `mark wave --explorer` を打てば行数がそのまま wave 本数になる**ので、追加のマーカー種別を増やさずに検知できる。`durations` は最後の explorer 打点を採るため、分割しても `duration_explore_min` は全 wave を覆う。
 >
 > 値の注入と警告は `publish-review-event.sh` が行う（**SKILL 側は `agents.explorer_waves` を渡さない**）。`>= 2` なら「一括発行が破られた可能性」、`agents.explorer >= 1` かつ `0` なら「マーカーの打ち忘れ」を stderr に WARN する。
 
@@ -102,8 +110,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 - `duration_min`（= `$DUR`）は **従来どおり全体**（t0→t3）。後方互換のため意味を変えない
 - `duration_triage_min` = t0→t1: PR/diff 収集・Phase 0・起動前検算。**メイン思考量の代理指標として使わない**（explorer 未配置なら reviewer プロンプト構築が丸ごとここに入り、配置していても explorer プロンプトの構築が入る）
 - `duration_fleet_min` = t1→t2: 最初の agent 発火から初回レポートまで。**agent wave の実時間 + プロンプト構築 + scoring/レポート生成**。プロンプト構築コストはここに含まれる（上記のとおり分離できない）
-- `duration_explore_min` = t1→t1b: explorer wave の実時間（`duration_fleet_min` の内数）。explorer 未起動時は `-1`。**wave 単価の実測値**として triage-guide.md `## 5.1` の目安時間を裏付けるのに使う
-- `duration_synthesis_min` = t1c→t2: **最後の agent wave 回収から初回レポートまで**（`duration_fleet_min` の内数 / v2.60.0）。scoring・dedup・verdict 反映・レポート生成で、**agent 非稼働が構造的に保証される唯一の区間**。オーケストレーター時間の**下限値**として読む（wave 間のプロンプト構築・分冊 Read は wave 区間側に残るため全量ではない）。`t1c` 欠測時は `-1`
+- `duration_explore_min` = t1→ 最後の explorer wave 打点: explorer wave の実時間（`duration_fleet_min` の内数）。explorer 未起動時は `-1`。**wave 単価の実測値**として triage-guide.md `## 5.1` の目安時間を裏付けるのに使う
+- `duration_synthesis_min` = 最後の agent wave 打点→t2: **最後の agent wave 回収から初回レポートまで**（`duration_fleet_min` の内数 / v2.60.0）。scoring・dedup・verdict 反映・レポート生成で、**agent 非稼働が構造的に保証される唯一の区間**。オーケストレーター時間の**下限値**として読む（wave 間のプロンプト構築・分冊 Read は wave 区間側に残るため全量ではない）。打点欠測時は `-1`
   - **用途**: `duration_fleet_min` が大きいときの打ち手の切り分け。`duration_synthesis_min` が支配的なら打ち手は**メイン側**（分冊の遅延読み込み・可変部の圧縮・scoring の機械化）であって体数削減ではない。逆に小さければ wave 側（直列 wave 数・1 体あたりの探索量）を見る
   - **`duration_explore_min` と同じく fleet の内数**なので、区間の和を `duration_fleet_min` と一致させる検算をしない
 - `duration_closing_min` = t2→t3: 締めフロー（精査・解説・ドラフト）。**大半が人間の応答待ち**なので、他の 2 区間と混ぜて比較しない
@@ -117,6 +125,48 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 
 **両 skill で同一フィールド名を使う**（subscriber が publisher を区別せず集計できるようにするため）。skill 固有の差分だけを各 SKILL.md に書き、フィールドの意味はここを正本とする。
 
+### payload テンプレート（v2.62.0 で SKILL から移設）
+
+**`<...>` を実値で埋めてそのまま `--payload` に渡す。** 版マーカーの整数（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`）は**リテラルのまま**で、実行時に判断して変えない。`duration_*` / `agents.explorer_waves` / `measurement_gaps` / `diff_digest` は**渡さない**（スクリプトが注入する）。
+
+review 用（`--plugin code-review:review --pr <PR番号>`）:
+
+```json
+{
+  "pr":"<number>","effort":"<low|medium|high|xhigh|max>","size_tier":"<small|medium|large>",
+  "reviewer_effort_profile":"<uniform|differentiated>",
+  "head_verified":{"ok":<n>,"mismatch":<n>,"unknown":<n>},
+  "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
+  "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>,"schema":2},
+  "severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
+  "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
+  "missing_coverage":[<json-array of focus names>],
+  "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
+  "adversarial_verify":{"calibration_schema":2,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
+  "recall_skeptic":{"attribution_schema":2,"gate_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
+  "meta_reviewer":{"gate_schema":3,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>}
+}
+```
+
+self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 固定 / `head_verified` を持たない / `comment_polish` を持つ**、の 3 点だけが上との差:
+
+```json
+{
+  "pr":"local","effort":"<low|medium|high|xhigh|max>","size_tier":"<small|medium|large>",
+  "reviewer_effort_profile":"<uniform|differentiated>",
+  "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
+  "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>,"schema":2},
+  "severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
+  "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
+  "missing_coverage":[<json-array of focus names>],
+  "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
+  "adversarial_verify":{"calibration_schema":2,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
+  "recall_skeptic":{"attribution_schema":2,"gate_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
+  "meta_reviewer":{"gate_schema":3,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
+  "comment_polish":{"fired":<bool>,"suggested":<n>}
+}
+```
+
 | フィールド | 内容 |
 |---|---|
 | `pr` | PR 番号の文字列。self-review と PR 番号取得失敗時は `"local"` |
@@ -129,11 +179,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2  [--pr N]  # 初�
 | `pre_adjust_counts` | `{blocker, critical, major, minor, schema}`。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 分布。**`schema` は下記のとおり必須**（v2.58.0〜）。下の「調整前後の分離」を参照 |
 | `severity_threshold` | 実行時の `review_severity_threshold` 実効値（`BLOCKER`〜`MINOR`）。**どの severity が `## below-threshold` に回ったかを事後に判別するために必須**（v2.58.0〜）。これが無いと `pre_adjust_counts` の非可換性を補正できない |
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
+| `measurement_gaps` | **打点が欠けたマーカーの識別子配列**（v2.62.0 / `publish-review-event.sh` が注入。**SKILL からは渡さない**）。語彙は `start` / `t1` / `wave` / `t2` / `explorer-wave` / `diff-digest`。`duration_*` が `-1` になった理由を「打ち忘れ」と「該当なし」に分けるためのフィールドで、**欠測率そのものを計測対象にする**（issue #123 B）。`explorer-wave` は `agents.explorer >= 1` かつ打点 0 のときだけ入る（explorer 未起動は該当なしなので gap ではない）。`diff-digest` は突合キーを算出できなかった回に入る（＝ `## 19` の重複検出が事後に効かない。**「重複が無かった」と区別するために立てる**） |
+| `diff_digest` | **diff 全文の cksum**（v2.62.0 / `publish-review-event.sh` が算出。**SKILL からは渡さない**）。重複レビューの**強い突合キー**で、**同一 skill の再実行でのみ一致する** — review は `gh pr diff`、self-review は `git diff BASE..HEAD` + `--cached` + unstaged の **3 本連結**で diff を作るので、同じ変更でもバイト列が違う（実測: 同一 head の PR で `1462260100-1256` vs `2713407599-105966`）。HEAD SHA ではなく diff にしたのは self-review が未コミット変更を含むため |
+| `diff_files` | **変更ファイルパス集合の cksum**（v2.62.0 / 同上）。**skill を跨いでも一致する弱いキー**で、連結・index 行・ハンクの分かれ方に影響されない代わりに**別内容の変更でも一致しうる**（＝重複の疑いどまり）。強弱 2 本を持つ理由は上の非対称。算出の正本は `scripts/lib/review-paths.sh` の `review_diff_keys` |
 
 **`agents`** — 実際に**起動した**体数（成功・失敗を問わない。v2.39.0 の上限調整の効果測定に使う）:
 
 - `explorer` / `reviewer`: 初回の体数（`reviewer` に specialist を含めない）
-- `explorer_waves`: **explorer wave の本数**（v2.61.0 / `t1b` マーカーの行数を `publish-review-event.sh` が注入する。**SKILL からは渡さない**）。一括発行が守られていれば explorer 起動時 `1` / 未起動 `0`。**`>= 2` は「1 メッセージにまとめていれば wave 内最長で済んだのに、直列に積んだ」ことを意味する**（orchestration-guide.md `## 0`）。`agents.explorer >= 1` かつ `explorer_waves == 0` は**マーカーの打ち忘れ（欠測）**であって「wave が無かった」ではない。存在が v2.61.0 以降のマーカー
+- `explorer_waves`: **explorer wave の本数**（v2.61.0 / explorer wave 打点の行数を `publish-review-event.sh` が注入する。**SKILL からは渡さない**）。一括発行が守られていれば explorer 起動時 `1` / 未起動 `0`。**`>= 2` は「1 メッセージにまとめていれば wave 内最長で済んだのに、直列に積んだ」ことを意味する**（orchestration-guide.md `## 0`）。`agents.explorer >= 1` かつ `explorer_waves == 0` は**マーカーの打ち忘れ（欠測）**であって「wave が無かった」ではない。存在が v2.61.0 以降のマーカー
   ```bash
   # 一括発行が破られた回の頻度と、そのときの explore 区間
   grep '"event":"review:completed"' .claude/events.jsonl | \
@@ -186,11 +239,13 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 
 **`adversarial_verify`** — 反証レイヤーの verdict 集計（`confirmed` / `refuted` / `uncertain` / `severity_inflated` / `contested`=高 severity の係争件数）。スキップ時は全 0。`severity_inflated` は v2.41.0 追加（4 つ目の verdict が集計から漏れていた。バッチ化 + effort 引き下げのロールバック判断に使う。triage-dynamic-gates.md `## 9`）。
 
+- `calibration_schema`: **上流 severity 較正ガードの版**（v2.62.0 / `pre_adjust_counts.schema` と同じ流儀）。**常に `2` を入れる**（1 = base 状態の確認だけを課していた v2.55.0〜v2.61.x / 2 = `prompts/reviewer-common.md` に「降格される典型パターン」の 4 型を明示した v2.62.0 以降）。**これが無いと A の効果を測れない** — `severity_inflated` 比率は累計で読むと施策前サンプルに薄められ、上流ガードが効いたかどうかが判定できなくなる（issue #123 A）。日付では切らない（配布ラグ）
+
 **`meta_reviewer`** — meta-reviewer ラウンドの実行記録（GitHub issue #121）。**帯連動ゲート（`triage-guide.md ## 6.3` の「削らない」判断）を再評価するための計測**で、これが無いと価値率を出せず `## 7` の流儀（「サンプルが無いうちは判断しない」）に従うと永久に判断できない:
 
 - `fired`: meta-reviewer agent が実際に起動したか（bool）
-- `skip_reason`: `fired=false` のときの理由。`"effort"`（high 以下）/ `"config"`（`enable_meta_reviewer: false`）/ `"no-high-severity"`（BLOCKER/CRITICAL 不在で起動条件を満たさない）/ `"size-tier"`（`small` 帯かつ BLOCKER 不在 / v2.60.0〜）/ `"emergency"`。`fired=true` なら `null`
-- `gate_schema`: **起動ゲートの版**（`recall_skeptic.gate_schema` と同じ流儀 / v2.60.0〜）。**常に `2` を入れる**（1 = 帯非連動＝ effort と高 severity だけで決まる v2.59.x 以前 / 2 = `size_tier: small` かつ BLOCKER 不在でスキップする v2.60.0 以降）。**これが無いと下記ロールバック条件のクエリが v2.59.x 以前のサンプルを混ぜてしまう** — 旧版は small 帯でも起動していたので `findings_added` の分母の意味が違う。日付では切らない（配布ラグ）
+- `skip_reason`: `fired=false` のときの理由。`"effort"`（high 以下）/ `"config"`（`enable_meta_reviewer: false`）/ `"no-high-severity"`（**起動条件の severity 側を満たさない**。`gate_schema: 3` では「BLOCKER / CRITICAL 不在**かつ**報告見込み MAJOR が 3 件未満」を指す）/ `"size-tier"`（`small` 帯かつ BLOCKER 不在 / v2.60.0〜）/ `"emergency"`。`fired=true` なら `null`
+- `gate_schema`: **起動ゲートの版**（`recall_skeptic.gate_schema` と同じ流儀 / v2.60.0〜）。**常に `3` を入れる**（1 = 帯非連動＝ effort と高 severity だけで決まる v2.59.x 以前 / 2 = `size_tier: small` かつ BLOCKER 不在でスキップする v2.60.0〜v2.61.x / 3 = MAJOR 3 件以上でも起動する v2.62.0 以降）。**これが無いとロールバック条件のクエリが旧版のサンプルを混ぜてしまう** — 版ごとに `fired` の分母も `skip_reason` の意味も違う。日付では切らない（配布ラグ）
 - `findings_added`: **meta 単独由来**（`[meta]` タグ）の指摘のうち報告マトリクスを通過した件数。定義・計測点は `recall_skeptic.findings_added` と同一（**初回レポート本文のタグ付き指摘を数える**。記憶から再構成しない。精査で取り下げた分は減算しない）
 - **由来タグ `[meta]` はレポート契約の一部**（`recall_skeptic` の `[recall-skeptic]` と同じ扱い）。タグを落とすと publish 時点で由来を再構成できず `findings_added` が系統的に 0 へ潰れる
 - **`findings_added` は meta の価値を捉えきらない**（フィールド設計時に認識済みの非対称）。meta は「単独起動されなかった観点を自分で当たって『指摘なし』と閉じる」という**指摘以外の価値**も出すが、それはこのフィールドに現れない。**価値率が低くても即座に撤去判断をしない** — 撤去を検討する段では、レポート本文で「閉じた観点」の有無も併せて読む
@@ -220,7 +275,8 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - publish に失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を publisher 名（`code-review:review` / `code-review:self-review`）に上書きして識別する
 - 後方互換: subscriber 側は `critical_count` の存在を仮定してよい（旧 payload との互換性のため必須）。それ以外は新規フィールド追加なので旧 subscriber 影響なし（現物確認: `issue-workflow:issue-maintain` は `pr` と件数しか読まない）
 - **ゲートを動かす変更には必ず版マーカーを足す**（GitHub issue #115 の一般化）。effort ゲート・起動条件・算出方法を変えると**フィールドの有無は変わらないのに意味が変わる**ため、「フィールドの有無で層別する」という下のルールだけでは新旧を区別できない。`recall_skeptic.gate_schema` / `pre_adjust_counts.schema` と同じく publisher 自己申告の整数を足すこと
-- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の帯連動ゲートの版は `meta_reviewer.gate_schema`**）・`agents.explorer_waves` の存在が v2.61.0 以降**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
+- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の起動ゲートの版は `meta_reviewer.gate_schema`**）・`agents.explorer_waves` の存在が v2.61.0 以降・`measurement_gaps` / `diff_digest` の存在が v2.62.0 以降（**上流 severity 較正の版は `adversarial_verify.calibration_schema`**）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
+- **集計は `scripts/review-retro.sh` が行う**（v2.62.0 / issue #123 E）。上の層別ルール（版マーカーで切る / 累計で読まない / 区間を混ぜない）をスクリプト側に閉じてあるので、**jq を毎回組み立てない**。人間向けレポートは publish の直後に自動で出る（review 締めフロー 4 / self-review Step 6.4）。`--json` で機械可読、`--since` / `--last` で範囲を絞れる
 
 ## 17. トークン消費の計測（改修の前後比較 / v2.48.0）
 
@@ -259,3 +315,51 @@ Claude Code の transcript（`~/.claude/projects/<slug>/*.jsonl`）は各アシ�
 - **比較は同じ PR / 同じ diff で行う**（規模が変われば当然変わる）。`size_tier` を揃えるのは `duration_fleet_min` と同じ流儀
 - **`duration_*` と混ぜて 1 つの結論を出さない**。体数削減が確実に効くのはトークンであって壁時計ではない（triage-guide.md `## 7`「体数を壁時計のレバーとして扱わない」）
 - transcript はセッション単位なので、**1 セッションで 1 レビューだけ回したときが最も読みやすい**。複数回した場合は `--since` で切る
+
+## 18. 蓄積イベントの振り返り集計（publish の直後 / v2.62.0 / GitHub issue #123 E）
+
+`triage-guide.md` / `triage-dynamic-gates.md` には各層の**ロールバック条件・再監視の条件**が随所に書いてあるのに、**それを判定するための集計手段が無かった**。条件は比率と件数で決まる決定的な計算なので、LLM に毎回 jq を組ませずスクリプトへ閉じる（CLAUDE.md「ルール配置の意思決定: 決定的 hook > LLM 判定」）。
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh"              # publish 直後に毎回実行する
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --last 20    # 直近 N 件だけ
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --json       # 機械可読
+```
+
+**出力の読み方**（本ファイルの他節が正本である解釈をここに複製しない。以下は「どの節に戻るか」の対応表）:
+
+| 出力 | 戻り先 |
+|---|---|
+| effort × size_tier の fleet / 体数、体数 vs fleet の相関 | triage-guide.md `## 7`（**体数を壁時計のレバーとして扱わない**）。**結論文は `r` と n で分岐する** — n < 10 は解釈しない / `|r| < 0.3` は上記主張を支持 / 0.3〜0.6 は effort の交絡を疑って帯別に見る / `|r| >= 0.6` は ⚠️ シグナルとして同主張の**再監視条件**に該当。低いこと自体は打ち手にならないが、**高いことは打ち手になる** |
+| 区間の中央値（triage / explore / fleet / synthesis / closing） | `## 14`（synthesis が支配的ならメイン側、そうでなければ wave 側） |
+| pre_adjust → 報告の歩留まり | `## 16` の `pre_adjust_counts`（**schema 2 同士・同一 `severity_threshold` でのみ比較**） |
+| 反証 verdict 分布（`calibration_schema` 層別） | triage-dynamic-gates.md `## 9` / `prompts/reviewer-common.md`「降格される典型パターン」 |
+| 動的層の発火率と skip 理由 | 同 `## 8`（meta）/ `## 8.5`（skeptic） |
+| 計測の健全性（欠測内訳） | `## 14` の打点規約 |
+
+**⚠️ シグナル行が出たときだけ行動する。** 各シグナルは対応するロールバック条件・再監視条件のトリガーで、閾値とサンプル数下限はスクリプト側に埋めてある（例: skeptic 価値率は `fired >= 15` かつ 25% 未満、meta は `fired >= 10` かつ 20% 未満）。**シグナルが出ていない指標を眺めて打ち手を決めない** — 「サンプルが無いうちは判断しない」（triage-guide.md `## 7`）を集計側でも守るための設計。
+
+- **人間向けレポートに毎回出す**のは、集計が「気が向いたときにやる作業」に落ちると条件判定が永久に走らないため（本 issue の発端がまさにそれ）。出力は 40 行程度で、レビュー本体のレポートより後に置く
+- **publish の後に実行する**（自分の回を集計に含めるため）。失敗してもレビューは成功扱い（best-effort）
+
+## 19. 直近レビューとの重複検出（review Step 2.4 / self-review Step 1.4 / v2.62.0 / GitHub issue #123 D）
+
+`--focus` / `--exclude` は**同一 skill 内**の重複しか防げない。実測では self-review と PR レビューが同一 diff を 2 回舐め、互いを知らないまま同じ 3 件に独立到達していた。skill をまたぐ重複は仕組みで拾えていなかったので、publish 済みの計測イベントを突合キーにする。
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" [--diff <実パス>] [--pr N] [--window-hours 24]
+```
+
+**突合キーは強弱 2 本ある**（算出の正本は `scripts/lib/review-paths.sh` の `review_diff_keys`、payload 契約は `## 16`）:
+
+| キー | 一致する範囲 | 読み方 |
+|---|---|---|
+| `diff_digest`（強） | **同一 skill の再実行のみ** | 「同一 diff」と断定してよい |
+| `diff_files`（弱） | **skill を跨いでも一致する** | 「重複の疑い」どまり。**別内容の変更でも一致しうる** |
+
+- **強いキーだけでは skill 跨ぎを拾えない。** review は `gh pr diff`、self-review は `git diff BASE..HEAD` + `--cached` + unstaged の**3 本連結**で diff を作るので、同じ変更でもバイト列が違う（実測で確認済み。`## 16` の `diff_digest` 行）。**動機となったシナリオそのものが強いキーの外にある**ため、弱いキーを併設した
+- **判定材料は前回の payload だけ**で、指摘本文は読まない（**前回の結論に引きずられないため**。独立性は反証レイヤー / skeptic と同じ理由で守る）
+- **出力が空なら何も報告しない**（no-op を報告させない）。`events.jsonl` が無い / `python3` が無い場合も silent に抜ける。**ただし `--diff` を明示指定して不在だった場合だけは stderr に WARN する** — それは caller のバグであって「重複が無い」ではない
+- **`--diff` は省略してよい**（省略時は `review_path diff` を自力導出する。`triage-signals.sh` の既定出力先・publish の digest 算出元と同一関数なので、**省略した方が転記ずれの失敗モードが無い**）
+- **突合キーを作れなかった回は `measurement_gaps` に `diff-digest` が立つ**（`## 16`）。「検出できなかった」を「重複が無かった」に潰さないための可視化
+- `events.jsonl` の探索は publish 側（`--git-common-dir` の親）と `review_main_root`（`git worktree list`）の**両方**を候補にする。submodule / `--separate-git-dir` では両者が食い違い、片方しか見ないと「書けているのに読めない」で検出が silent に死ぬ。**パスは配列で持つこと**（空白区切り文字列 + 未クォート展開は、空白を含むリポジトリパスで同じ silent 死を招く。実測で再現済み）

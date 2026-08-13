@@ -38,6 +38,7 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 
 - **「もし指摘が真なら何が起きるか」で判定する**（confidence と独立）
 - **付与の前に base 状態を確認する**（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）。PR が触れていない不備は除外、PR 前から同じ・PR が意図した変更は 1 段階下げてから申告する。**影響を先に見積もってから base を見ると過大評価が入る**（実測値の正本: `design-notes/scoring-rationale.md`）
+- **降格される典型 4 型**（同ファイルの「降格される典型パターン」/ v2.62.0・GitHub issue #123 A）: base 由来 / 読み違え / 影響の過大見積もり / カテゴリの取り違え。**反証レイヤーの verdict の過半が `severity_inflated`** という実測を受けて、下流で降格するより上流で severity 定義を精密にする方針。オーケストレーター側の調整規則（下記「severity 調整ルール」）は変えていない — reviewer が理由欄に降格の型を書くので、**二重適用ガードは従来どおり理由欄の記載で判別する**
 - セキュリティ・データ整合性・本番事故に直結するものは原則 BLOCKER または CRITICAL
 - 「動くけど将来困る」系は MAJOR
 - 「あれば良い」程度は MINOR

@@ -83,7 +83,7 @@ React/Next.js プロジェクトでは ui-quality に modern-web-checklist の�
 ### 動的ラウンド（effort 適応）
 
 - **Phase 5.5 Adaptive deepening**: reviewer の `unmet_information` 申告をトリガーに Round 2 を 1 回実行（high 既定は該当 reviewer 再起動のみの 1 段圧縮・再起動 reviewer が自力探索 / xhigh・max は追加 explorer → reviewer 再起動の 2 段）
-- **Phase 5.6 Meta-reviewer**: BLOCKER / CRITICAL 検出時に、他 reviewer の見落とし観点を探すメタレビューを 1 ラウンド実行（effort xhigh/max のみ）。**反証レイヤー (Phase 5.9) と同一 wave で発行**し、meta が足した指摘だけを上限 5 件の追加反証バッチに回す（v2.61.0）
+- **Phase 5.6 Meta-reviewer**: BLOCKER / CRITICAL 検出時、または報告見込みの MAJOR が 3 件以上あるときに、他 reviewer の見落とし観点を探すメタレビューを 1 ラウンド実行（effort xhigh/max のみ）。**反証レイヤー (Phase 5.9) と同一 wave で発行**し、meta が足した指摘だけを上限 5 件の追加反証バッチに回す（v2.61.0）。MAJOR 経路は v2.62.0 で追加 — 高 severity の存在だけを条件にしていた旧ゲートは実測 14 件中 1 回しか起動せず、価値率を測るサンプルすら貯まらなかった
 
 どちらも `plugin.json` の userConfig（`enable_adaptive_rounds` / `enable_meta_reviewer`）で無効化できる。
 
@@ -126,3 +126,15 @@ confidence は explorer の裏付け（+10）・冗長ペア合意（+10）・CL
 ## Event Bus 連携
 
 review / self-review は完了時に `review:completed` イベントを Event Bus（`.claude/events.jsonl`）に publish する。payload は `pr` / `missing_coverage` / `result_grid`（high/medium/low/skip/error の集計）等。後段の集計・PR コメント自動投稿の土台として使う。
+
+### 振り返り集計（v2.62.0）
+
+publish の直後に `scripts/review-retro.sh` が蓄積イベントを集計し、レポートの後ろに出す。effort × 規模帯の所要時間、体数と壁時計の相関、検出 → 報告の歩留まり、反証 verdict 分布、動的層の発火率、計測マーカーの欠測率を出し、**各層のロールバック条件・再監視条件に該当したときだけ ⚠️ シグナル行**を立てる。単体でも実行できる:
+
+```bash
+bash <plugin>/scripts/review-retro.sh              # 全期間 + 直近 30 日
+bash <plugin>/scripts/review-retro.sh --last 20    # 直近 N 件
+bash <plugin>/scripts/review-retro.sh --json       # 機械可読
+```
+
+同一 diff への二重レビュー（self-review 直後に PR レビューを回す等）は `scripts/detect-recent-review.sh` が diff の内容ダイジェストで突合し、検出時に続行可否を確認する。
