@@ -15,8 +15,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  # bump-version.sh（バージョンバンプの 4 ファイル同時更新。pre-commit は検証のみで実行しない）
 .claude-plugin/scripts/tests/    # 検証スクリプト自身の回帰テスト（stdlib unittest・依存なし）
                                  # python3 -m unittest discover -s .claude-plugin/scripts/tests
-.githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors) チェック
-.github/workflows/validate.yml   # CI。push / PR で SSoT・品質・バージョンバンプを検証（evals は非対応）
+.githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・回帰テスト
+.github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
   settings.json                  # Stop hook（auto-quality-check.sh）等の設定
   commands/ skills/              # /quality-check の実体（マーケットプレイスに配布しない自前コマンド）
@@ -195,7 +195,7 @@ event_bus_clear
 - **hooks の stdout**: hook スクリプトの stdout が Claude のコンテキストに注入される。条件付き注入は `safe_hook_error <category>` で silent exit 0（Validation/Dependency/Auth/NotFound はサイレント、Unexpected のみ stderr に通知）
 - **safe-hook.sh の同期**: 正本は `.claude-plugin/lib/safe-hook.sh`。各プラグインの `hooks/lib/safe-hook.sh` は byte-identical な複製。`/quality-check` で同期を検証する（不一致は Critical）
 - **routing-axes の同期**: spec ルーティングの 3 軸コア（WHAT→bdd-spec / HOW→design-doc / WHY→adr-keeper）の正本は `.claude-plugin/lib/routing-axes.md`。`ROUTING-AXES:START/END` マーカー区間が spec-advisor routing-rubric / issue-workflow の issue-create に複製されており、`validate_plugin_quality.py` が dedent 比較で同期を検証する（不一致は Critical）。区間を編集するときは正本と全消費サイトを同時更新する。区間外の type 別判定・拡張軸は各サイトの文脈特化で同期対象外（設計判断: `.claude/designs/20260708-spec-routing-ssot.md`）
-- **正本 → 消費サイトの伝播漏れ（SSoT pin）**: doc が実行手順そのものになるプラグインでは consumer が別の doc なので、正本を直しても伝播漏れが見えにくい（code-review v2.63.0 のセルフレビューで検出した欠陥 11 件中 6 件がこの型）。**言い換え・要約で複製されている関係**は、消費サイトの冒頭に `<!-- SSOT: <repo ルート相対の md パス>#<見出し前方一致 anchor> @<hash8> -->` を置いて宣言する。`validate_plugin_quality.py` の `check_ssot_pins` が正本の該当節をハッシュして突合し、ずれていれば Critical。**要求するのは内容の一致ではなく「正本が変わったら消費サイトを確認して pin を打ち直す」手順**（routing-axes 同期は「同一テキストであること自体が仕様」の関係を扱う別の仕組みで、両者は併存する）。打ち直しは `python3 .claude-plugin/scripts/validate_plugin_quality.py --update-ssot-pins`（**明示操作**。pre-commit では自動更新しない — 自動化すると確認の強制力が消える。**repo 全体の pin を一括で打ち直す**ので、全消費サイトを確認してから使う）。**正本・消費サイトとも md のみ対応**（スクリプトを正本にはできず、非 md に pin を書いても警告なく無効化される）。**節の区切りは見出しレベルで決まるので `#8` は同レベルの `## 8.5` を含まない**（別 pin を打つ）。現在の適用範囲は code-review のみ。設計判断: `.claude/adr/20260813223000-ssot-pin-over-marker-sync.md`
+- **正本 → 消費サイトの伝播漏れ（SSoT pin）**: doc が実行手順そのものになるプラグインでは consumer が別の doc なので、正本を直しても伝播漏れが見えにくい（code-review v2.63.0 のセルフレビューで検出した欠陥 11 件中 6 件がこの型）。**言い換え・要約で複製されている関係**は、消費サイトの冒頭に `<!-- SSOT: <repo ルート相対の md パス>#<見出し前方一致 anchor> @<hash8> -->` を置いて宣言する。`validate_plugin_quality.py` の `check_ssot_pins` が正本の該当節をハッシュして突合し、ずれていれば Critical。**要求するのは内容の一致ではなく「正本が変わったら消費サイトを確認して pin を打ち直す」手順**（routing-axes 同期は「同一テキストであること自体が仕様」の関係を扱う別の仕組みで、両者は併存する）。打ち直しは `python3 .claude-plugin/scripts/validate_plugin_quality.py --update-ssot-pins`（**明示操作**。pre-commit では自動更新しない — 自動化すると確認の強制力が消える。**repo 全体の pin を一括で打ち直す**ので、全消費サイトを確認してから使う）。**新規 pin の打ち方**: hash を手計算せず `@00000000` のダミーで宣言し、`--update-ssot-pins` で確定させる（初期値も検証も同じ切り出しを通るのでこれが正規経路）。**hash は 8 桁の小文字 hex**で、外すと `pin 記法が不正で検証されない` の Critical になる（黙って無効化はしない）。**pin 宣言はファイル冒頭＝最初の見出しより前に置く**（pin した節の中に pin があると打ち直しが収束せず、これも Critical）。**doc に記法例を書くときはフェンスか行内コードに入れる**（生きた pin として拾われない）。**正本・消費サイトとも md のみ対応**（スクリプトを正本にはできず、非 md に pin を書いても警告なく無効化される）。**節の区切りは見出しレベルで決まるので `#8` は同レベルの `## 8.5` を含まない**（別 pin を打つ。anchor `8` は `## 8.5` に吸着せず、一致が 2 件以上なら曖昧として Critical）。現在の適用範囲は code-review のみ。設計判断: `.claude/adr/20260813223000-ssot-pin-over-marker-sync.md`
 - **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げ、CHANGELOG.md も同時更新する。上げないと使用側で更新が検知されない。どちらも pre-commit hook でブロックされる
 - **_requirements の同期忘れ**: プラグインの依存先が変わったら plugin.json の `_requirements` と `check-deps.sh` の両方を更新する。pre-commit の `validate-ssot.sh` が `check_xxx "<name>"` 形式の一致を検証する
 - **hooks.json の if:/matcher に単独依存しない（注入・block 系 hook の自己判定必須）**: `if: "Bash(git push *)"`（CC 2.1.85+）や matcher のフィルタは**実行環境によって評価されない**ことが実測済み（2026-07: dev-workflow push-reminder が全 Bash 呼び出しで additionalContext を注入する暴発。配布・スキーマ・構文は正しかった）。PreToolUse/PostToolUse の hook スクリプトは `INPUT=$(safe_hook_input)` で tool_input を取得し発火条件を自己判定する二重ゲートにする（手本: `dev-workflow/hooks/scripts/on-commit.sh`）。`validate_plugin_quality.py` の hook-self-judge チェックが `safe_hook_input` 非参照を非ブロッキング warning で検知する。FileChanged の path-glob matcher も同型リスクだが tool_input が無いためチェック対象外（既知の残リスク）
@@ -226,7 +226,7 @@ event_bus_clear
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
 
-スキルの description / トリガーフレーズを変更した場合は `evals/runner.py` で回帰テストを実行する（`claude-meta:eval-runner` スキル経由も可）。pass^k=3 基準でスキル選択の安定性を検証できる。**evals だけはローカル実行のみ**（`.github/workflows/validate.yml` は SSoT・品質・バージョンバンプを検証するが evals は回さない。通常セッション枠を消費するため）。
+スキルの description / トリガーフレーズを変更した場合は `evals/runner.py` で回帰テストを実行する（`claude-meta:eval-runner` スキル経由も可）。pass^k=3 基準でスキル選択の安定性を検証できる。**evals だけはローカル実行のみ**（`.github/workflows/validate.yml` は SSoT・品質・回帰テスト・バージョンバンプを検証するが evals は回さない。通常セッション枠を消費するため）。
 
 ## ブランチ運用
 

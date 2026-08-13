@@ -186,6 +186,45 @@ class SliceSectionTest(unittest.TestCase):
         self.assertIn("child", section)
         self.assertNotIn("## 8.", section)
 
+    def test_anchor_does_not_stick_to_a_deeper_sibling(self):
+        """`## 8.` が無い文書で anchor `8` が `## 8.5.` へ黙って吸着しない.
+
+        吸着すると `#8` と `#8.5` が同一節をハッシュし, 打ち直しで「pin は ok なのに
+        `## 8.` 本体は無保護」が恒久化する（v2.63.1 と同型の自己整合の盲点）.
+        """
+        doc = _write(
+            self.root,
+            "canon.md",
+            """
+            ## 2. two
+
+            two
+
+            ## 8.5. 兄弟だけがある
+
+            eight-and-a-half
+            """,
+        )
+        self.assertIsNone(v._slice_section(doc, "8"))
+        self.assertIn("eight-and-a-half", v._slice_section(doc, "8.5"))
+
+    def test_ambiguous_anchor_returns_none(self):
+        """同一 anchor に一致する見出しが 2 件あれば, 先頭を黙って採らず None を返す."""
+        doc = _write(
+            self.root,
+            "canon.md",
+            """
+            ## 3.5. 対象の節
+
+            first
+
+            ## 3.5. 同名の節
+
+            second
+            """,
+        )
+        self.assertIsNone(v._slice_section(doc, "3.5"))
+
     def test_anchor_none_returns_whole_file(self):
         doc = _write(self.root, "canon.md", "# A\n\nbody\n\n## B\n\nmore\n")
         section = v._slice_section(doc, None)
@@ -338,6 +377,97 @@ class CheckSsotPinsTest(unittest.TestCase):
         errors: list[str] = []
         v.check_ssot_pins(errors)
         self.assertTrue(any("収束しない" in e for e in errors), errors)
+
+    def test_pin_in_a_fenced_block_is_not_collected(self):
+        """解説のコードブロックに書いた記法例は「生きた pin」にならない.
+
+        収集がフェンスを見ないと, 具体的なハッシュ入りの例を doc に 1 つ書いた瞬間に
+        repo 全体が 3 経路で落ち, `--update-ssot-pins` が解説文のハッシュを書き換える.
+        """
+        _write(
+            self.root,
+            "consumer.md",
+            """
+            # 消費サイト
+
+            ```md
+            <!-- SSOT: canon.md#3.5 @00000000 -->
+            ```
+            """,
+        )
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertEqual(errors, [])
+
+    def test_pin_in_inline_code_is_not_collected(self):
+        """行内コード片の記法説明（CLAUDE.md / ADR の書式例）も収集しない."""
+        _write(self.root, "consumer.md", "# c\n\n`<!-- SSOT: canon.md#3.5 @00000000 -->` を置く\n")
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertEqual(errors, [])
+
+    def test_pin_outside_fence_is_still_collected(self):
+        """フェンス除外が「全部拾わない」に倒れていないことの対（negative の相方）."""
+        self._consumer("00000000")
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertEqual(len(errors), 1)
+
+    def test_malformed_pin_is_reported(self):
+        """記法を外した pin を「pin ではない」と黙って捨てない（無警告の無効化を作らない）."""
+        for bad in ("DEADBEEF", "TBD", "<hash8>"):
+            with self.subTest(hash=bad):
+                self._consumer(bad)
+                errors: list[str] = []
+                v.check_ssot_pins(errors)
+                self.assertEqual(len(errors), 1, errors)
+                self.assertIn("記法が不正", errors[0])
+
+    def test_pin_inside_the_pinned_section_is_reported(self):
+        """anchor 付きでも, pin した節が pin を含めば収束しないので error.
+
+        「pin はそれが効く節の直上に置く」という自然な整理で踏む（旧ガードは
+        anchor 省略時にしか掛かっておらず, 現行 pin が無事なのは配置の慣習のおかげだった）.
+        """
+        _write(self.root, "a.md", "# a\n\n## 1. 節\n\n<!-- SSOT: b.md#1 @00000000 -->\n\nx\n")
+        _write(self.root, "b.md", "# b\n\n## 1. 節\n\n<!-- SSOT: a.md#1 @00000000 -->\n\ny\n")
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertTrue(all("収束しない" in e for e in errors), errors)
+        self.assertEqual(len(errors), 2, errors)
+
+    def test_pin_in_a_nested_directory_is_collected(self):
+        """走査はサブディレクトリまで再帰する（実 pin は全件サブディレクトリにある）.
+
+        `rglob` → `glob` の 1 文字改変で pin 機構が 3 経路とも沈黙するが,
+        消費サイトを ROOT 直下にしか置かない fixture ではこの改変が素通りする.
+        """
+        _write(self.root, "nested/deep/consumer.md", "# c\n\n<!-- SSOT: canon.md#3.5 @00000000 -->\n")
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("nested/deep/consumer.md", errors[0])
+
+    def test_update_rewrites_every_pin_in_a_file(self):
+        """1 ファイルに複数 pin がある実形状（実 repo は最大 5 pin/ファイル）を打ち直す."""
+        consumer = _write(
+            self.root,
+            "consumer.md",
+            """
+            # 消費サイト
+
+            <!-- SSOT: canon.md#3.5 @00000000 -->
+            <!-- SSOT: canon.md#4 @00000000 -->
+            """,
+        )
+        updated = v.check_ssot_pins([], update=True)
+        self.assertEqual(updated, 2)
+        body = consumer.read_text()
+        self.assertIn(v._canonical_digest(self.canon, "3.5"), body)
+        self.assertIn(v._canonical_digest(self.canon, "4"), body)
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertEqual(errors, [])
 
     def test_update_rewrites_pin_and_converges(self):
         consumer = self._consumer("00000000")

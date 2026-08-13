@@ -174,7 +174,8 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 | JSON Schema | `.claude-plugin/schema/` | plugin.json / marketplace.json / hooks.json |
 | SSoT 検証 | `.claude-plugin/scripts/validate-ssot.sh`, `validate_ssot.py` | バージョン・description・_requirements 同期 |
 | 自動品質チェック | `.claude-plugin/scripts/auto-quality-check.sh` | Stop hook で非ブロッキング通知 |
-| pre-commit | `.githooks/pre-commit` | バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・indie/linear drift |
+| 検証スクリプトの回帰テスト | `.claude-plugin/scripts/tests/` | `python3 -m unittest discover -s .claude-plugin/scripts/tests`（stdlib・依存なし。期待値を実装から独立に構築する） |
+| pre-commit | `.githooks/pre-commit` | バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・回帰テスト |
 | eval 回帰テスト | `evals/`（runner.py / cases / reports） | トリガーフレーズ → スキル起動を pass^k=3 で検証 |
 
 ### Event Bus（`.claude/events.jsonl`）

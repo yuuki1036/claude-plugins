@@ -18,6 +18,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     欠陥 11 件中 6 件が「正本を直したが複製先に伝播していない」型だった）.
     打ち直し: `python3 validate_plugin_quality.py --update-ssot-pins`（明示操作。
     pre-commit では走らせない — 自動更新すると確認の強制力が消える）.
+    新規 pin は hash を手計算せず `@00000000` で宣言して上記で確定させる.
+    記法不正 / anchor の曖昧一致 / pin した節が pin を含む（打ち直しが収束しない）も
+    ここで error にする — 「宣言はあるが一度も検証されない」状態を作らないため.
   - event-bus 同期: 実 publish される event（grep 実測=正本）と、それを記載する doc が一致するか
     （CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md publishes 行の plugin×event ペア）
   - references 参照整合性: SKILL.md / commands/*.md / agents/*.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
@@ -81,6 +84,13 @@ ROUTING_AXES_END = "<!-- ROUTING-AXES:END -->"
 SSOT_PIN_RE = re.compile(
     r"<!--\s*SSOT:\s*(?P<path>[^\s#>]+?)(?:#(?P<anchor>[^\s@>]+))?\s+@(?P<hash>[0-9a-f]+)\s*-->"
 )
+# 厳密パターンに落ちた宣言を「pin ではない」と黙って捨てないための緩い検出.
+# hash が hex でない / `@` 前の空白欠落 などの記法ミスは pin を無警告で無効化するため,
+# 「SSOT: と書いたのに検証されない」状態を error にする（新規 pin は手書きなので現実的に踏む）.
+SSOT_PIN_LOOSE_RE = re.compile(r"<!--\s*SSOT:")
+# doc が書式を説明する `<!-- SSOT: ... -->` を pin と誤認しないため, 行内コード片は除去して走査する
+# （フェンス付きコードブロックは `_iter_unfenced_lines` 側で除外済み）.
+INLINE_CODE_RE = re.compile(r"`[^`]*`")
 SSOT_PIN_LEN = 8
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
@@ -250,14 +260,13 @@ def _normalize_section(text: str) -> str:
     return "\n".join(lines)
 
 
-def _markdown_headings(lines: list[str]) -> list[tuple[int, int, str]]:
-    """フェンス付きコードブロックの外にある見出しだけを (行 index, レベル, テキスト) で返す.
+def _iter_unfenced_lines(lines: list[str]) -> list[tuple[int, str]]:
+    """フェンス付きコードブロックの外にある行だけを (行 index, 本文) で返す.
 
-    フェンスを追跡しないと, bash コードブロック内のコメント行（`# ...`）が
-    level 1 の見出しとして拾われ, 節がそこで打ち切られる. このリポジトリの
-    references は実行手順として bash 片を多用するため, 構造的に踏みやすい.
+    見出し検出と pin 収集の両方がこれを通る. 片方だけフェンスを追跡していると,
+    「解説のコードブロックに書いた記法例が生きた pin になる」ような非対称が生まれる.
     """
-    heads: list[tuple[int, int, str]] = []
+    out: list[tuple[int, str]] = []
     fence: str | None = None
     for i, line in enumerate(lines):
         fm = re.match(r"^\s*(`{3,}|~{3,})", line)
@@ -268,21 +277,60 @@ def _markdown_headings(lines: list[str]) -> list[tuple[int, int, str]]:
             elif tok[0] == fence[0] and len(tok) >= len(fence):
                 fence = None
             continue
-        if fence is not None:
-            continue
+        if fence is None:
+            out.append((i, line))
+    return out
+
+
+def _markdown_headings(lines: list[str]) -> list[tuple[int, int, str]]:
+    """フェンス付きコードブロックの外にある見出しだけを (行 index, レベル, テキスト) で返す.
+
+    フェンスを追跡しないと, bash コードブロック内のコメント行（`# ...`）が
+    level 1 の見出しとして拾われ, 節がそこで打ち切られる. このリポジトリの
+    references は実行手順として bash 片を多用するため, 構造的に踏みやすい.
+    """
+    heads: list[tuple[int, int, str]] = []
+    for i, line in _iter_unfenced_lines(lines):
         m = re.match(r"^(#{1,6})\s+(.*)$", line)
         if m:
             heads.append((i, len(m.group(1)), m.group(2).strip()))
     return heads
 
 
+def _anchor_matches(anchor: str, htext: str) -> bool:
+    """見出しテキストが anchor に一致するか（番号 anchor の前方一致の暴発を両側から塞ぐ）.
+
+    anchor の直後に区切り（`.` / 空白）を要求し, **さらにその次が数字でないこと**を求める:
+
+    - `1` は `13. …` に当たらない（区切り要求。従来から）
+    - `8` は `8.5. …` に当たらない（数字の除外。`8. …` にだけ当たる）
+
+    後者が無いと, 正本から `## 8.` が消えた・節を並べ替えたといった通常の編集で
+    `#8` の pin が黙って `## 8.5` へ吸着し, 「pin は ok なのに本体は無保護」になる.
+    """
+    if htext == anchor:
+        return True
+    if not htext.startswith(anchor):
+        return False
+    rest = htext[len(anchor) :]
+    if rest[0] not in ". ":
+        return False
+    return not (len(rest) > 1 and rest[1].isdigit())
+
+
+def _anchor_hit_count(path: Path, anchor: str) -> int:
+    heads = _markdown_headings(read_text(path).splitlines())
+    return sum(1 for _, _, htext in heads if _anchor_matches(anchor, htext))
+
+
 def _slice_section(path: Path, anchor: str | None) -> str | None:
     """正本 md から `anchor` の節を切り出す（anchor が None ならファイル全体）.
 
     anchor は見出しテキストの前方一致で当てる（`## 3.5. 可変部の…` に対し `3.5`）.
+    一致規則は `_anchor_matches`（`1` は `13.` に, `8` は `8.5.` に当たらない）.
     節の範囲は見出し行から, 同レベル以上の次の見出しの直前まで.
     見出しの判定は `_markdown_headings` に委ね, フェンス内の `#` 行は見出しにしない.
-    見つからなければ None（呼び出し側が error にする）.
+    **一致が 0 件でも 2 件以上でも None**（呼び出し側が理由を分けて error にする）.
 
     **`## 8` は同レベルの `## 8.5` を含まない**（節の区切りは見出しレベルで決まり,
     anchor 番号の階層では決まらない）. `8.5` を保護したいなら別 pin を打つ.
@@ -292,36 +340,51 @@ def _slice_section(path: Path, anchor: str | None) -> str | None:
         return _normalize_section(text)
     lines = text.splitlines()
     heads = _markdown_headings(lines)
-    start = level = None
-    for pos, (i, lv, htext) in enumerate(heads):
-        # `1` が `13. …` に当たる事故を防ぐため, anchor の直後に区切り（`.` / 空白）を要求する
-        if htext == anchor or htext.startswith(f"{anchor}.") or htext.startswith(f"{anchor} "):
-            start, level = i, lv
-            rest = heads[pos + 1 :]
-            break
-    if start is None:
+    hits = [pos for pos, (_, _, htext) in enumerate(heads) if _anchor_matches(anchor, htext)]
+    if len(hits) != 1:
         return None
-    end = next((i for i, lv, _ in rest if lv <= level), len(lines))
+    start, level, _ = heads[hits[0]]
+    end = next((i for i, lv, _ in heads[hits[0] + 1 :] if lv <= level), len(lines))
     return _normalize_section("\n".join(lines[start:end]))
+
+
+def _has_live_pin(text: str) -> bool:
+    """本文に「生きた」pin 宣言が含まれるか（フェンス内・行内コード片の記法例は数えない）."""
+    return any(
+        SSOT_PIN_RE.search(INLINE_CODE_RE.sub("", raw))
+        for _, raw in _iter_unfenced_lines(text.splitlines())
+    )
+
+
+def _digest_section(section: str) -> str:
+    return hashlib.sha256(section.encode("utf-8")).hexdigest()[:SSOT_PIN_LEN]
 
 
 def _canonical_digest(path: Path, anchor: str | None) -> str | None:
     section = _slice_section(path, anchor)
-    if section is None:
-        return None
-    return hashlib.sha256(section.encode("utf-8")).hexdigest()[:SSOT_PIN_LEN]
+    return None if section is None else _digest_section(section)
 
 
-def _iter_ssot_pins() -> list[tuple[Path, int, re.Match[str]]]:
-    """リポジトリ内の全 md から SSOT pin 宣言を収集する（配置場所で運用範囲を決める）."""
+def _iter_ssot_pins() -> tuple[list[tuple[Path, int, re.Match[str]]], list[str]]:
+    """リポジトリ内の全 md から SSOT pin 宣言を収集する（配置場所で運用範囲を決める）.
+
+    戻り値は (収集できた pin, 記法不正の位置). **フェンス内と行内コード片は走査しない** —
+    doc に書いた記法例が「生きた pin」になると, 正本の編集で無関係な作業まで止まり,
+    `--update-ssot-pins` が解説文中のハッシュを黙って書き換えてしまう.
+    """
     hits: list[tuple[Path, int, re.Match[str]]] = []
+    malformed: list[str] = []
     for path in sorted(ROOT.rglob("*.md")):
         if ".git" in path.parts:
             continue
-        for lineno, line in enumerate(read_text(path).splitlines(), start=1):
-            for m in SSOT_PIN_RE.finditer(line):
-                hits.append((path, lineno, m))
-    return hits
+        for i, raw in _iter_unfenced_lines(read_text(path).splitlines()):
+            line = INLINE_CODE_RE.sub("", raw)
+            found = list(SSOT_PIN_RE.finditer(line))
+            for m in found:
+                hits.append((path, i + 1, m))
+            if len(SSOT_PIN_LOOSE_RE.findall(line)) > len(found):
+                malformed.append(f"{path.relative_to(ROOT)}:{i + 1}")
+    return hits, malformed
 
 
 def check_ssot_pins(errors: list[str], update: bool = False) -> int:
@@ -338,7 +401,13 @@ def check_ssot_pins(errors: list[str], update: bool = False) -> int:
     """
     updated = 0
     per_file: dict[Path, list[tuple[re.Match[str], str]]] = {}
-    for path, lineno, m in _iter_ssot_pins():
+    pins, malformed = _iter_ssot_pins()
+    for bad in malformed:
+        errors.append(
+            "[ssot-pin] pin 記法が不正で検証されない（hash は 8 桁の小文字 hex。"
+            f"新規 pin は @00000000 で置いて `--update-ssot-pins` で確定させる）: {bad}"
+        )
+    for path, lineno, m in pins:
         rel = path.relative_to(ROOT)
         raw_path, anchor, pinned = m.group("path"), m.group("anchor"), m.group("hash")
         canonical = ROOT / raw_path
@@ -352,18 +421,29 @@ def check_ssot_pins(errors: list[str], update: bool = False) -> int:
         if canonical.resolve() == path.resolve():
             errors.append(f"[ssot-pin] 自己参照の pin は無意味: {loc}")
             continue
-        if anchor is None and SSOT_PIN_RE.search(read_text(canonical)):
-            # ファイル全体 pin の正本が自身も pin を持つと, 相手の pin 更新で正本の内容が
-            # 変わる → こちらの pin も stale, が循環しうる（相互 pin では打ち直しが収束しない）.
+        section = _slice_section(canonical, anchor)
+        if section is None:
+            hit = _anchor_hit_count(canonical, anchor) if anchor else 0
+            if hit > 1:
+                errors.append(
+                    f"[ssot-pin] anchor '{anchor}' が {raw_path} の見出し {hit} 件に一致（曖昧）。"
+                    f"どの節を指すか一意になる anchor にする <- {loc}"
+                )
+            else:
+                errors.append(f"[ssot-pin] anchor '{anchor}' が {raw_path} に見つからない <- {loc}")
+            continue
+        if _has_live_pin(section):
+            # pin した節が自身も pin を含むと, 相手の pin を打ち直すたびに正本の内容が変わり,
+            # こちらの pin も stale になる（相互 pin では打ち直しが収束しない）.
+            # anchor の有無に依らず掛ける: 「pin は節の直上に置く」という自然な整理をした瞬間に
+            # 3 経路が恒久的に赤になり, --update-ssot-pins を何度打っても解けなくなるため.
             errors.append(
-                f"[ssot-pin] ファイル全体 pin の正本が自身も pin を持つ（打ち直しが収束しない）。"
-                f"節 anchor を指定するか pin を持たないファイルを正本にする: {raw_path} <- {loc}"
+                f"[ssot-pin] pin した節が自身も pin を含む（打ち直しが収束しない）。"
+                f"pin 宣言を含まない節を指すか, 宣言をファイル冒頭（最初の見出しより前）へ寄せる:"
+                f" {raw_path} <- {loc}"
             )
             continue
-        actual = _canonical_digest(canonical, anchor)
-        if actual is None:
-            errors.append(f"[ssot-pin] anchor '{anchor}' が {raw_path} に見つからない <- {loc}")
-            continue
+        actual = _digest_section(section)
         if actual == pinned:
             continue
         if update:
