@@ -15,6 +15,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     （CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md publishes 行の plugin×event ペア）
   - references 参照整合性: SKILL.md / commands/*.md / agents/*.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
+  - シェル構文: 同梱スクリプト（*/scripts/**.sh, */hooks/**.sh）が `bash -n` を通るか.
+    CI は manifest と doc しか見ておらず, LLM が書いたスクリプトは構文検証を一度も
+    経ずに配布されていた（issue #123 の meta-review）.
 
 検査項目（warnings = 助言, exit code に影響しない）:
   - allowed-tools 最小性 (#14b): frontmatter 宣言ツールが本文で未言及（未使用候補）.
@@ -43,6 +46,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -622,6 +627,29 @@ def check_skill_body_size(warnings: list[str]) -> None:
             )
 
 
+def check_shell_syntax(plugin_dir: Path, errors: list[str]) -> None:
+    """同梱シェルスクリプトの構文を `bash -n` で検証する.
+
+    LLM が書いたスクリプトは「構文は通るが動かない」より前に「そもそも構文エラー」で
+    配布されうるのに、CI は manifest と doc しか見ていなかった（issue #123 の meta-review）.
+    `bash -n` は決定的・高速なので errors 扱いにする（CLAUDE.md「決定的 hook > LLM 判定」）.
+    shellcheck のような深い解析は未導入環境があるため対象外.
+    """
+    if not shutil.which("bash"):
+        return
+    for sh in sorted(plugin_dir.glob("scripts/**/*.sh")) + sorted(plugin_dir.glob("hooks/**/*.sh")):
+        rel = sh.relative_to(ROOT)
+        proc = subprocess.run(
+            ["bash", "-n", str(sh)], capture_output=True, text=True, check=False
+        )
+        if proc.returncode != 0:
+            detail = (proc.stderr or "").strip().splitlines()
+            errors.append(
+                "[shell-syntax] bash -n が失敗: %s%s"
+                % (rel, (" — " + detail[0]) if detail else "")
+            )
+
+
 CHECKS = [
     check_allowed_tools_exists,
     check_allowed_tools_pair,
@@ -630,6 +658,7 @@ CHECKS = [
     check_references,
     check_doc_anchors,
     check_trigger_phrases,
+    check_shell_syntax,
 ]
 
 
