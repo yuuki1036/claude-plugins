@@ -169,6 +169,6 @@ fi
 # ---- 一時ファイルの掃除 -----------------------------------------------------
 if [ "$KEEP" = "0" ]; then
   bash "$HERE/review-timing.sh" cleanup ${PR_ARGS[@]+"${PR_ARGS[@]}"}
-  rm -f "$(review_path prctx)" "$(review_path diff)"
+  rm -f "$(review_path prctx)" "$(review_path diff)" "$(review_path agentctx)"
 fi
 exit 0

@@ -91,9 +91,31 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 | PR コンテキストブロック | `fetch-pr-context.sh` の出力を `$PR_CTX_FILE` に保存し、**パスのみ**注入 | メインコンテキストは Phase 0 のタイプ判定のために 1 回だけ Read する |
 | AGENTS.md / CLAUDE.md（`## 4`） | **元ファイルのパスをそのまま**注入（コピーを作らない） | 既にディスク上にあるので追加コストゼロ。パスは `triage-signals.sh` の `## agents-md` が出す |
 | explorer 結果（review Step 5 / self-review Step 4 の選択的注入） | **従来どおりインラインで注入する** | 選択的注入なので複製係数がほぼ 1（1 explorer → 依存する 1〜2 reviewer）。ファイル化すると explorer 体数ぶんの Write が増えて逆効果 |
-| **explorer の「確定事実」**（`## 確定事実（explorer 共通・裏取り済み）`） | **全 reviewer にインライン注入する**が、**合計 10 行以内**に切る | 唯一の意図的な例外。複製係数は体数ぶん立つが、**消すのは reviewer 側の重複探索**（実測: 同一の事実に 5 体が独立到達し、同じ 2 ファイルを読み直していた。GitHub issue #122）。10 行を超えるなら選択的注入に落とす — 長さがそのまま体数倍のコストになる |
+| **可変部の共通ブロック**（全 agent 共通の実値集合 / v2.63.0） | `triage-signals.sh` の `## meta` が出す `agent_ctx_file=` のパスに**オーケストレーターが 1 回だけ書き出し**、各プロンプトには**パスと focus 固有の差分だけ**を書く | 複製係数 = 体数で表中最大級。実測（issue #124）では reviewer 5 + skeptic 1 + meta 1 + 反証 3 の**計 10 本に同一ブロックを手書き**しており、wave 間のメイン時間 ≈16.1 分（fleet の 26%）がここに効いていた。中身は下記 |
+| **explorer の「確定事実」**（`## 確定事実（explorer 共通・裏取り済み）`） | **共通ブロックには入れず、reviewer にだけインライン注入する**（**specialist・skeptic には渡さない**）。**合計 10 行以内** | **意図的にファイル化しない唯一の枠。** 共通ブロックに同梱すると skeptic にも届き、`triage-dynamic-gates.md ## 8.5` の「findings 非注入がこのレイヤーの設計の核」が壊れる（false-negative hunter が fleet の所見を前提にしてしまう）。10 行上限で複製コストは既に抑えられており、**独立性と引き換えにする価値がない** |
 
 > **判断基準は「複製係数」**（= その内容が何体のプロンプトに現れるか）。係数が 1 に近いものはインラインの方が安い（Write / Read の往復が増えるだけ）。係数が体数ぶん立つものは必ずパス渡しにする。**同一内容を 2 体以上に書くと分かった時点でパス渡しを検討する。**
+
+### 可変部の共通ブロックに入れるもの（v2.63.0 / GitHub issue #124 (c)）
+
+`agent_ctx_file` に**全 agent で同一の実値**を書き、プロンプト側は「まず `<agent_ctx_file>` を Read せよ」の 1 行 + focus 固有の差分だけにする:
+
+- `{{PLUGIN_ROOT}}` の実パス（テンプレート内の `${CLAUDE_PLUGIN_ROOT}` の読み替え指示を含む）
+- `$DIFF_FILE` のパスと `diff-slice.sh` の使い方
+- **base ref**（`## meta` の `base=`。skeptic / 反証 / base 検算がいずれも要求する）
+- `{{SEVERITY_THRESHOLD}}` の実効値
+- AGENTS.md / CLAUDE.md のパス一覧（`## 4`）
+- **review のみ**: `{{MAIN_ROOT}}` と `dep-dir` 一覧（`## 1.1`）、PR 番号と `{{HEAD_SHA}}`、`$PR_CTX_FILE` のパス
+- session-context が有効なときはそのパス
+- 全 agent 共通の重点指示（`--focus` / `--exclude` のスコープ等）
+
+**共通ブロックに入れないもの**（agent ごとに違う / 渡してはいけない）: Read させるテンプレートのパス（`focus/<name>.md` 等）、担当 focus と angle、担当ファイル、explorer 結果の選択的注入、Vault 注入、**explorer の確定事実**（上表のとおり reviewer 限定でインライン。specialist / skeptic には渡さない）、**findings**（反証エージェントに reviewer の理由文を渡さない規約）。
+
+- **書き出すのは explorer wave の回収後・reviewer 一括発行の直前に 1 回**（`## meta` はもっと早く出るが、パスを控えておくだけで書き出しはここ）。**explorer プロンプトは対象外**（explorer は共通ブロックより前に走るので従来どおりインライン可変部）
+- **20 行以内に収まるならインラインでよい**（Write / Read の往復の方が高くつく）。実運用では上記を並べると常に超えるので**ファイル化が既定**。この 20 行は**共通ブロック全体**の閾値で、上表の確定事実の 10 行とは別の数字
+- **書き出しは 1 回だけ**。wave をまたいで内容が変わらないので、Round 2 / meta / 反証の各 wave でも同じパスを渡す
+- **書込に失敗したら従来どおりインライン注入にフォールバックする**（レビュー本体をブロックしない。`missing_coverage` には記録しない）
+- 掃除は `publish-review-event.sh` が行う（`$DIFF_FILE` / `$PR_CTX_FILE` と同じ扱い）
 
 `$PR_CTX_FILE` のパスは**スクリプトが導出する**（`fetch-pr-context.sh --save` が保存先パスを stdout に返す）。**パスの組み立てを SKILL 本文や doc に複製しないこと** — 正本は `scripts/lib/review-paths.sh` で、作成側と削除側が食い違うと一時ファイルが恒久的に残る。
 
@@ -175,6 +197,25 @@ HEAD 検証: <実測 SHA> / 期待 <{{HEAD_SHA}}> / 一致|不一致|未実行
 ### 最小保証の閾値
 
 Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促す（review では ExitWorktree してから終了する）。それ以外は欠損観点を明示しつつスコアリング step に進む。
+
+### origin 主張の base 検算（レポート掲載前 / 常時実行 / v2.63.0・GitHub issue #124 (d)）
+
+**「この diff による退行」と主張する指摘は、レポートに載せる前にオーケストレーターが base 側を確認する。**
+
+```bash
+# ローカルに同名ブランチが無い / 古い場合があるので origin 側を先に試す
+# （triage-signals.sh も `origin/${BASE}...HEAD` → `${BASE}...HEAD` の 2 段を持つ）
+git show "origin/<base>:<path>" || git show "<base>:<path>"
+```
+
+- **対象**: 指摘が `退行` / `regression` / 「変更前は X だった」/ `origin: this-diff` を load-bearing な根拠にしているもの。**severity と confidence に関わらず**掛ける（掲載前の 1 コマンドで決まる）
+- **base に同経路があれば pre-existing** として `scoring-guide.md`「severity 調整ルール」の**「オーケストレーターの base 検算で pre-existing と判定した場合」**に従う（reviewer 申告があるケースの項ではない — あちらは「reviewer が既に下げているので追加調整しない」なので、**申告の無い skeptic 指摘に当てると何も起きない**）。diff が周辺の前提を変えて潜在問題を顕在化させた場合は pre-existing としない（この区別は従来どおり）
+- **どちらのコマンドも解決できない場合は検算不能**として理由欄に `base 検算: 未実行（base ref 未解決）` を残す（silent に飛ばさない）
+- **確認できたら理由欄に `base 検算: <結果>（git show <base>:<path>）` と残す**（reviewer 側の申告と二重に降格しないため。判別規約は `scoring-guide.md`）
+
+**なぜオーケストレーター側にも要るか**: reviewer は `prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」で縛られているが、**冷や読み skeptic はこの規約を継承していない**（`prompts/recall-skeptic.md` が `reviewer-common.md` を参照するのは worktree セットアップと出力フォーマットの 2 点だけ）。実測（issue #124）では skeptic が「0 行取込でグリッドが全消えするのは本 diff 由来の退行」と主張し、オーケストレーターがそれを支持してユーザーに伝えたあと、反証レイヤーが `refuted`(axis: pre-existing) で覆した — **`git show <base>:<file>` 1 コマンドで決まる事実**だった。
+
+**影響の非対称**: 反証レイヤーは effort ≥ high でしか走らないので、**low / medium では誰も検算せず誤帰属がそのまま報告される**。本検算は effort に依存しない決定的な手順なので、その穴を塞ぐ位置にある。
 
 ## 8. 観点カバレッジ検算（起動前検算 + 事後突合）
 

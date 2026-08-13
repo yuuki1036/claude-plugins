@@ -21,7 +21,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
 
 1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
 1.5. **各 target を repo 内 / セッション到達可能 / 到達不能の 3 分類に振り分ける**（triage-dynamic-gates.md `## 8` の分類表。メインコンテキストで判定・agent 不要）。**「repo 外」＝「到達不能」ではない**（v2.60.0。二分のままだと取れる情報を「構造的に空振り」と誤判定して wave ごと捨てる）:
-   - **セッション到達可能**（そのサービスの MCP / CLI がこのセッションで使える外部状態）は、**Round 2 を起動する前にメインコンテキストで直接照会して解決する**（read-only の照会に限る。書込・破壊的操作は含めない）。これは Round 2 の代替であって追加ではない。解決したら該当指摘の confidence / severity を再評価し、レポートの「動的ラウンド」行に `スキップ（unmet をメインで直接照会して解決）` と出す
+   - **セッション到達可能**（①そのサービスの MCP / CLI がこのセッションで使える外部状態 ②**ディスク上に実体のある他リポジトリ** — 存在確認 1 回で判定・絶対パス・read-only。定義の正本は triage-dynamic-gates.md `## 8` の分類表）は、**Round 2 を起動する前にメインコンテキストで直接照会して解決する**（read-only の照会に限る。書込・破壊的操作は含めない）。これは Round 2 の代替であって追加ではない。解決したら該当指摘の confidence / severity を再評価し、レポートの「動的ラウンド」行に `スキップ（unmet をメインで直接照会して解決）` と出す
    - 照会で解決したぶんを除いて**残りが全件「到達不能」なら本フェーズ全体をスキップ**し、`missing_coverage` に「Round 2 スキップ: unmet 全件が到達不能（<target 要旨>）」を記録して次フェーズへ進む
    - **1 件でも repo 内 / 未解決のセッション到達可能があれば通常どおり続行する**（迷う target は到達可能側に倒す）
 2. **repo 内 + 未解決のセッション到達可能**の target から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
@@ -29,7 +29,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
    - **high（既定）— 1 段圧縮**: 追加 explorer は起動しない。unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、**初回 reviewer と同じ effort**（orchestration-guide.md `## 5` の連動表）で再起動する（全 call を同一メッセージ内で一括発行 — orchestration-guide.md `## 0` 並列発行の明示）。プロンプトには①初回指摘②担当分の unmet_information（focus, target, why, related_finding）を渡し、「**まず unmet ターゲットを自分で Read / Grep / Glob で探索し、取得した事実に基づいて初回 confidence を再評価せよ**」と指示する
    - **xhigh / max — 2 段**: `prompts/explorer/re-explore.md`で追加 explorer（最大 3 体）を `model: sonnet` で並列起動し（一括発行 — orchestration-guide.md `## 0`）、各 explorer に対応する unmet_information を渡す。完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、初回と同じ effort で再起動し、初回指摘 + 追加 explorer 結果を context として渡して「初回 confidence を再評価せよ」と指示する
    - いずれの経路も isolation は orchestration-guide.md `## 0` に従う（review は `isolation: "worktree"`（PR ブランチ）、self-review は使用しない）
-   - **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` 注入（review のみ・必須）**: orchestration-guide.md `## 1` / `## 1.1` に従い prompt 冒頭に PR_NUMBER / head ref / head SHA / メインルートを明記し `{{PR_NUMBER}}` / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` を置換（issue #56 / #98 / #113）。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2` / issue #117）
+   - **共通ブロック（`agent_ctx_file`）のパスを渡す**: PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` はそこに入っているので**プロンプトに再掲しない**（v2.63.0 / orchestration-guide.md `## 3.5`。値の意味は `## 1` / `## 1.1`） に従い prompt 冒頭に PR_NUMBER / head ref / head SHA / メインルートを明記し `{{PR_NUMBER}}` / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` を置換（issue #56 / #98 / #113）。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2` / issue #117）
 4. 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
 5. レポートに「Round 2 trigger: <reason>」を記録（レポート出力 step = review Step 7 / self-review Step 6 で出力）
 
@@ -42,7 +42,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
 1. `prompts/meta-reviewer.md` を使用
 2. meta-reviewer agent を 1 体、`model: opus`, `effort: max` で起動（反証バッチと同一メッセージ内）
    - 入力: diff、全 reviewer の指摘リスト（フィルタ前）、起動された focus 一覧、explorer 結果
-   - isolation は orchestration-guide.md `## 0` に従う。**PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` 注入（review のみ・必須）**: orchestration-guide.md `## 1` / `## 1.1` に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
+   - isolation は orchestration-guide.md `## 0` に従う。**共通ブロック（`agent_ctx_file`）のパスを渡す**: PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` はそこに入っているので**プロンプトに再掲しない**（v2.63.0 / orchestration-guide.md `## 3.5`。値の意味は `## 1` / `## 1.1`） に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
 3. meta-reviewer の出力（追加指摘）を既存指摘に統合
    - 重複は dedup（同一ファイル ±5 行 + 類似内容）
    - meta-reviewer の指摘も通常のスコアリング・フィルタリング対象
@@ -58,7 +58,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
    - **fallback（直列）**: reviewer の `[surface:high-risk]` フラグ由来で事後に surface=true になった場合のみ、reviewer 完了後に単独起動する。正規表現が取り逃した ORM 抽象越えのケースに限られる
 2. **手順 1 の相乗りで発火済みの場合、本手順は実行しない**（fallback 経路でのみ実行する。二重起動は「PR あたり skeptic 1 体・1 round」の上限違反であり `recall_skeptic.fired` の計測も壊す）。fallback のときのみ、`prompts/recall-skeptic.md` を使用し、skeptic agent を **1 体**、`model: opus`, `effort: max` で起動する（isolation は orchestration-guide.md `## 0` に従う）
    - **findings / reviewer の推論は渡さない**（独立性の核）。diff と最小 focus、base ref のみ渡す
-   - **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` 注入（review のみ・必須）**: orchestration-guide.md `## 1` / `## 1.1` に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
+   - **共通ブロック（`agent_ctx_file`）のパスを渡す**: PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` はそこに入っているので**プロンプトに再掲しない**（v2.63.0 / orchestration-guide.md `## 3.5`。値の意味は `## 1` / `## 1.1`） に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
 3. skeptic の指摘（`[recall-skeptic]` タグ付き）を既存指摘に統合。重複は dedup（同一ファイル ±5 行 + 類似内容）。skeptic の指摘も通常のスコアリング・報告マトリクス・**反証レイヤーの対象**に含める
    - **dedup 時はタグを残す側へ引き継ぐ**（どちらの本文を採用するかに関わらず）。reviewer 指摘と重複したときにタグごと捨てると skeptic の寄与が不可視になり過少計上される。**独立の skeptic が同じ問題に到達した事実は、reviewer が先に見つけていても失われない**
    - ただし**タグは 2 種に分ける**。重複の有無で意味が正反対になるため、同一カウンタに載せてはならない:
@@ -77,7 +77,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
 2. 対象指摘に通し番号（finding_id）を振り、**5 件ずつのバッチに分ける**（上限 3 体 = 15 件。超過分の扱いは triage-dynamic-gates.md `## 9`）。バッチごとに `prompts/adversarial-verify.md` で反証エージェントを `model: opus`, `effort: high` で並列起動する（isolation は orchestration-guide.md `## 0` に従う。全 call を同一メッセージ内で一括発行する — orchestration-guide.md `## 0` 並列発行の明示）
    - 指摘の主張（severity / confidence / file:line / 内容）のみ渡し、**reviewer の理由文は渡さない**（アンカリング防止）
    - **バッチの切り方**: **同一ファイル・同一 reviewer 由来の指摘は意図的に散らす**（同一ファイルは 1 バッチ 2 件までを目安に分割）。バッチ化で失うのは reviewer からの独立性ではなく **反証者側の誤読の独立性** — 1 体がその関数の制御フローを 1 回読み違えると同一ファイルの指摘が束で `refuted` になり、MAJOR は confidence −40 で実質まとめて消える（旧構成の「指摘ごと 1 体」はこれを構造的に防いでいた）。diff 読解の共有によるコスト削減は寄せなくても大半が得られるので、寄せる誘惑に乗らない
-   - **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` 注入（review のみ・必須）**: orchestration-guide.md `## 1` / `## 1.1` に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
+   - **共通ブロック（`agent_ctx_file`）のパスを渡す**: PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` はそこに入っているので**プロンプトに再掲しない**（v2.63.0 / orchestration-guide.md `## 3.5`。値の意味は `## 1` / `## 1.1`） に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
    - `pre-existing` / `intended` 鮮度の git 判定（`git show <base>:<file>` / `git blame`）を反証エージェントに許可する
 3. 各 verdict（refuted / confirmed / uncertain / severity-inflated）を収集し、**finding_id で対象指摘と突合**してスコアリング step に渡す。verdict が返らなかった finding_id は verdict なし扱い（confirmed とも refuted とも解釈しない）
 3.5. **meta 由来指摘の追加バッチ**（meta-reviewer と同一 wave で発行しているため / v2.61.0）: 統合後の `[meta]` タグ付き指摘（`[meta:dup]` は除く）に triage-dynamic-gates.md `## 9` のゲート該当分があれば、**追加バッチ 1 体・上限 5 件**を同じ手順（手順 2 の作法）で起動し、verdict を手順 3 と同様に突合する。0 件なら起動しない（wave が増えない）。この 1 体は本体の上限 3 体とは別枠だが `agents.verify` には加算する

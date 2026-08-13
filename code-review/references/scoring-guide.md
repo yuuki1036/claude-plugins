@@ -164,6 +164,7 @@ severity は基本的に reviewer の判定を尊重するが、以下の場合�
 - **タグ `[scope:out]` または `[resolved: ...]` が付いた指摘**: severity を 1 段階下げる（BLOCKER → CRITICAL、CRITICAL → MAJOR、MAJOR → MINOR、MINOR → そのまま）
 - **退行指摘で invariant が incidental と検算された場合**（`prompts/reviewer-common.md`「退行指摘の invariant 検算」: 隣接経路で同 invariant が未強制と確認）: severity を 1 段階下げる。reviewer が検算済みで既に下げている場合は二重適用しない（指摘理由の「incidental と判断」記載で判別）
 - **pre-existing / intended と申告された指摘**（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）: **reviewer が既に 1 段階下げているので追加調整しない**。理由欄の「pre-existing（`git blame` で PR 前のコミット由来）」「intended（典拠: …）」記載で判別する。**同じ軸で反証レイヤーが `severity-inflated` を返した場合も二重適用しない**（下記 `severity-inflated` の排他条件に合流させる）
+- **オーケストレーターの base 検算で pre-existing と判定した場合**（v2.63.0 / `orchestration-guide.md ## 5`「origin 主張の base 検算」/ GitHub issue #124 (d)）: **reviewer 側の申告が無ければここで 1 段階下げる**（PR がその行を触っていなければ降格ではなく**除外**）。理由欄に `base 検算: <結果>（git show ...）` と残す。**理由欄に既に `pre-existing` / `intended` の申告がある指摘には適用しない**（二重適用の防止。判別は上記の記載で行う）。**この項が要るのは冷や読み skeptic が `prompts/reviewer-common.md` の base 確認規約を継承しないため** — 直前の項（reviewer 申告あり）だけでは skeptic 由来の誤帰属が降格されない
 - **複数 reviewer が同一指摘を BLOCKER と判定**: severity を BLOCKER のまま維持（混乱を防ぐ）
 - **doc-substance の裏取り済み内容誤りの CRITICAL 昇格（grounding ガード付き）**: doc の主張とコードが code:line で矛盾し裏取りできた指摘は CRITICAL に昇格する。**ただし昇格は、矛盾の相手が「doc が実際に参照する・実在する・現行の」コード経路である場合に限る**。次のいずれかでは昇格させず MAJOR に留める / 取り下げる:
   - (a) 矛盾の相手が doc の参照しない別経路や stale なパス（grounding 誤読。例: doc は `src/api` を指すのに未参照の `src/legacy` と突き合わせている）

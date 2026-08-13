@@ -3,6 +3,7 @@ description: "コミット前のセルフレビューを実行する（2フェ�
 allowed-tools:
   - Bash
   - Read
+  - Write
   - Agent
   - AskUserQuestion
   - Skill

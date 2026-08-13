@@ -9,6 +9,7 @@ effort: high
 allowed-tools:
   - Bash
   - Read
+  - Write
   - Agent
   - EnterWorktree
   - ExitWorktree
@@ -109,7 +110,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --pr <PR番号>
 
 | セクション | 内容 | 使う場所 |
 |---|---|---|
-| `## meta` | `diff_file=` の**パス**、base ref | 以降の全 agent へ渡す |
+| `## meta` | `diff_file=` / **`agent_ctx_file=`** の**パス**、base ref | 以降の全 agent へ渡す |
 | `## size` | `core_files` / `core_lines` / `size_tier` / `md_ratio` / `generated_ratio` / `migration_files` | Stage 0 のモード判定・Stage 2 の規模キャップ |
 | `## files` | 変更ファイルの `class`(core/test/doc/gen) × 増減行数 | 担当ファイルの割り当て |
 | `## hunks` | core ファイルの `@@` 行（関数コンテキスト付き） | 変更の性質の把握 |
@@ -124,7 +125,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --pr <PR番号>
 
 **シグナルは事実であって判定ではない。** モード決定・観点採否・体数は triage-guide が決める（スクリプトは policy を持たない）。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む。
 
-**`diff_file=` の値は以降ずっと使うので、パス文字列そのものを控えておく**（シェル変数は Bash 呼び出し間で消えるため、`$DIFF_FILE` として引き回さず実パスを毎回書く）。
+**`diff_file=` と `agent_ctx_file=` の値は以降ずっと使うので、パス文字列そのものを控えておく**（後者は Step 5 の共通ブロック書き出し先。**slug は不透明な cksum 値なので、控え損ねると復元できない**）（シェル変数は Bash 呼び出し間で消えるため、`$DIFF_FILE` として引き回さず実パスを毎回書く）。
 
 **ダイジェストで判断が付かない場合のみ** `diff-slice.sh` で必要なファイルの diff だけを読む（全文 Read はしない）:
 
@@ -262,19 +263,13 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
   - **ペア条件が成立したとき → `prompts/angles.md`**（xhigh/max の実ペアだけでなく、**high 以下の angle 内挿でも渡す**。渡さないと「ペアを削った代償を angle で補う」という縮小の前提が空振りする）
   - セッションコンテキストが有効なとき → `prompts/session-context.md`（confidence −30 の規約はここにある。パスだけ渡しても規約は届かない）
 - **`prompts/focus/comment-polish.md` は Read 対象に入れない**（self-review 限定。他人の PR に文面の推敲を投稿するのは越権になりやすい）
-- **可変部**（ここだけをオーケストレーターが書く）:
-  - **`{{PLUGIN_ROOT}}` = プラグインルートの絶対パス**（必須）。`${CLAUDE_PLUGIN_ROOT}` は**子 agent の環境には存在しない**ため、テンプレート内の `${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh` はそのままでは解決できない。実パスを明記して「テンプレート中の `${CLAUDE_PLUGIN_ROOT}` はこの値に読み替えよ」と指示する（欠かすと diff の切り出しが失敗し、全文 Read にフォールバックしてパス渡しの効果が消える）
-  - PR 番号 / 対象 head ref / **期待 HEAD SHA** / **`{{MAIN_ROOT}}`** / **`{{SEVERITY_THRESHOLD}}`**（テンプレート中の同名プレースホルダをこの実値で読み替えよ、と明記する。`dep-dir` / `lockfile-changed` の扱いは orchestration-guide.md `## 1.1`、閾値の意味は scoring-guide.md「実効閾値を reviewer に伝える」）
-  - **`$DIFF_FILE` のパスと担当ファイル名**（`diff-slice.sh` で担当ぶんを切り出せることも明記）。**diff 本文は渡さない**
-  - Step 1 が保存した **`$PR_CTX_FILE` のパス**（本文は転記しない。「最初に Read せよ」の明示が必須。検出ルールは `pr-context-rules.md` 側にある）
-  - Step 4.9 の **AGENTS.md / CLAUDE.md のパス一覧**
-  - セッションコンテキストが有効なら `.claude/session-context.md` の**パス**（あわせて `prompts/session-context.md` を Read 対象に入れる。規約はそちらにある）
-  - Phase 0 が決定した focus（と冗長ペアの場合は angle）、担当範囲
-- **explorer 結果の選択的注入**: 構成テーブルの「explorer 依存」列に記載された explorer の結果を、該当する reviewer のプロンプトに `## Explorer 結果` セクションとして**インラインで**注入する（選択的注入なので複製係数がほぼ 1。orchestration-guide.md `## 3.5`）。**Step 4 でまとめた確定事実だけは `## 確定事実（explorer 共通・裏取り済み）` として全 reviewer（specialist・skeptic を除く）に注入する**（合計 10 行以内に切る。扱いの規約は `prompts/reviewer-common.md` 側。#122）
+- **可変部の共通ブロック（全 agent 共通の実値集合）は 1 ファイルに落としてパス渡しする**: Step 2 の `## meta` が出す `agent_ctx_file=` のパスに **Write で 1 回だけ**書き出し、各プロンプトには「まず `<agent_ctx_file>` を Read せよ」の 1 行だけを置く。**入れる項目・残す項目・フォールバックの正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**（`{{PLUGIN_ROOT}}` / PR 番号 / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` / `$DIFF_FILE` / `$PR_CTX_FILE` / AGENTS.md パス / 確定事実 など。実測で reviewer 5 + skeptic 1 + meta 1 + 反証 3 の計 10 本に手書きしていた — #124 (c)）
+- **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）
+- **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 4 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `prompts/reviewer-common.md` 側（#122）
 - 全エージェントを `isolation: "worktree"` で起動する
 - 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
 - **冷や読み skeptic の相乗り**: Step 3.4 で surface=true かつ Phase 5.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `prompts/recall-skeptic.md` をパス渡し）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 5.8 で行う
-- **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}`・`{{SEVERITY_THRESHOLD}}` 注入（必須）**: orchestration-guide.md `## 1` / `## 1.1` / `## 1.2` に従う（MAIN_ROOT を欠かすと「検証不能」の誤申告で wave を 1 本失う #113、SEVERITY_THRESHOLD を欠かすと閾値未満を書かせて捨てる #117）
+- **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}`・`{{SEVERITY_THRESHOLD}}` は共通ブロックに含める（必須）**: 値の意味と欠落時の影響は orchestration-guide.md `## 1` / `## 1.1` / `## 2`（MAIN_ROOT を欠かすと「検証不能」の誤申告で wave を 1 本失う #113、SEVERITY_THRESHOLD を欠かすと閾値未満を書かせて捨てる #117）。**プロンプトに再掲しない**
 
 一括発行の**直前**に fleet 区間の開始マーカーを記録する（orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式で決める。Step 4 で explorer を起動していれば記録済みなので `grep` ガードで二重記録を防ぐ。`||` 形なのでガードが偽でもブロックは成功終了する）:
 
@@ -354,6 +349,7 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
    - reviewer 出力の `[confidence: XX]` と `[severity: BLOCKER|CRITICAL|MAJOR|MINOR]` をパース
    - severity が欠落している指摘は **CRITICAL とみなす**（後方互換 / 安全側デフォルト）
    - **この時点の severity 別件数を控える**（= `pre_adjust_counts`。統合・dedup 後、手順 2 以降の verdict 反映・加減算・降格・フィルタを**一切かける前**の生の分布）。締めフロー 4 の publish で使う。**手順 5 通過後の件数との差が「調整で消えた分」**であり、これが無いと「reviewer が検出しなかった」と「検出したが調整で消えた」を事後に区別できない（orchestration-measurement.md `## 16`）
+   - **base 検算は `pre_adjust_counts` を控えた後に行う**（降格が「調整で消えた分」として会計されるため）。`退行` / 「変更前は X だった」を根拠にする指摘は `git show <base>:<path>` で base 側を検算する（orchestration-guide.md `## 5`「origin 主張の base 検算」。**冷や読み skeptic は reviewer 側の base 確認規約を継承しない**ため、この層の主張が主対象。反証レイヤーは effort ≥ high でしか走らないので、この検算だけが effort 非依存 / #124 (d)）
 2. **反証 verdict の反映**（Phase 5.9 が動いた場合のみ。scoring-guide.md `## 反証レイヤーの verdict 反映` に従う）
    - **BLOCKER / CRITICAL の `refuted` は confidence / severity を据え置き**、指摘本文先頭に `⚠️ 反証メモ: <軸>（<根拠 file:line>、要確認）` を付与（**報告から消さない**）
    - **MAJOR / MINOR の `refuted`** は confidence −40（取り下げ理由を付録に記録）

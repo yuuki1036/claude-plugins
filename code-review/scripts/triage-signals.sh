@@ -95,6 +95,13 @@ REMOVED_CODE=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1!="gen" && $1!="doc"
 
 echo "## meta"
 echo "diff_file=$OUT"
+# 全 agent 共通の可変部を書き出す先。**このスクリプトは中身を作らない**（内容は
+# オーケストレーターが組む）。パスだけをここで配って導出式の複製を防ぐ（#124 (c)）
+# 配る前に前回の残骸を必ず消す。中身はオーケストレーターが書くので、消さないと
+# 「読めるが前回の値」を全 agent が掴む（publish に到達しない回＝掃除が走らない回がある）。
+# diff 側と同じ「配る前に消す」規約に揃える — 縮退先は誤値ではなく欠測
+rm -f "$(review_path agentctx)"
+echo "agent_ctx_file=$(review_path agentctx)"
 echo "base=${BASE:-unknown}"
 echo "worktree=$WT"
 

@@ -3,6 +3,7 @@ description: "PRのコードレビューを実行する（2フェーズ構成・
 allowed-tools:
   - Bash
   - Read
+  - Write
   - Agent
   - EnterWorktree
   - ExitWorktree
