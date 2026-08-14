@@ -72,6 +72,37 @@ fi
 # -1（測定不能）を入れる。0 を publish すると「人間待ちが無かった」と誤読される（`## 14`）
 case "$PLUGIN" in *self-review) DUR_CLOSING=-1 ;; esac
 
+# ---- トークン消費（**review のみ** / issue #126） ---------------------------
+# 体数削減が確実に効くのは壁時計ではなくトークン（triage-guide.md `## 7`）なのに、payload は
+# 時間しか持っていなかった＝主要レバーの効果が自動集計の外にあった。publish はレポートの後
+# ＝ transcript 確定後なので、ここでなら自分の回の消費量を読める。
+#
+# **self-review は載せない**。`EnterWorktree` は cwd と subagent の slug を変えるだけで
+# **セッション自体はメインリポジトリで始まったまま**なので（measure-tokens.sh の候補 dir 探索が
+# まさにこれを前提にしている）、review も「隔離セッション」ではない。両者を分けるのは publish の
+# 位置で、review は `t0 → レポート → publish` が 1 レビューで閉じる直列区間なのに対し、
+# self-review は publish（Step 6.4）の後に Step 7 の修正方針確認と修正作業が続く。
+# **窓の外に本作業が続く側は近似が成立しない**。
+TOKENS_JSON=""; TOKENS_WANTED=0; TOKENS_WINDOW="session"
+TOK_ARGS=()
+case "$PLUGIN" in
+  *:review)
+    TOKENS_WANTED=1
+    T0=$(bash "$HERE/review-timing.sh" t0 ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)
+    case "$T0" in
+      ''|*[!0-9]*) : ;;   # t0 欠測。窓を絞れないので --since なしで呼ぶ（下の window で区別する）
+      *)
+        # **末尾の `Z` を付けない**。transcript の timestamp は小数秒つき（`...:33.123Z`）で
+        # measure-tokens.sh の絞り込みは文字列比較なので、`...:33Z` は同秒のメッセージより
+        # 大きくなり境界の 1 秒ぶんを落とす。秒までの接頭辞なら常に手前に来る
+        SINCE_ISO=$(python3 -c 'import sys,datetime;print(datetime.datetime.fromtimestamp(int(sys.argv[1]),datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"))' "$T0" 2>/dev/null)
+        if [ -n "$SINCE_ISO" ]; then TOK_ARGS=(--since "$SINCE_ISO"); TOKENS_WINDOW="since-t0"; fi
+        ;;
+    esac
+    TOKENS_JSON=$(bash "$HERE/measure-tokens.sh" --json ${TOK_ARGS[@]+"${TOK_ARGS[@]}"} 2>/dev/null)
+    ;;
+esac
+
 # ---- payload をパース → duration_* を上書き → **1 行**に再シリアライズ -------
 # テキスト合成（sed による除去 + 文字列連結）はやめた。以下 3 つを同時に踏んでいたため:
 #   ① SKILL のテンプレートは複数行なので、改行がそのまま events.jsonl へ流れて
@@ -86,6 +117,9 @@ MERGED=$(
   REVIEW_MEASUREMENT_GAPS="$MEASUREMENT_GAPS" \
   REVIEW_DIFF_DIGEST="$DIFF_DIGEST" \
   REVIEW_DIFF_FILES="$DIFF_FILES" \
+  REVIEW_TOKENS="$TOKENS_JSON" \
+  REVIEW_TOKENS_WANTED="$TOKENS_WANTED" \
+  REVIEW_TOKENS_WINDOW="$TOKENS_WINDOW" \
   python3 - "$PAYLOAD" <<'PY'
 import json, os, sys
 try:
@@ -115,6 +149,74 @@ gaps = [g for g in os.environ.get("REVIEW_MEASUREMENT_GAPS", "").split() if g]
 if isinstance(launched, int) and launched >= 1 and waves == 0:
     gaps.append("explorer-wave")
 
+# ---- 版マーカー（定数）の注入（GitHub issue #125） --------------------------
+# 版マーカーは「常に N を入れる」定数なのに **LLM が手書きする 15 フィールドの一部**だった。
+# テンプレート追従は version drift 中に漏れうる（実測: `recall_skeptic.gate_schema` に
+# 導入後の miss / `calibration_schema` はテンプレ更新の 2 版跨ぎで落ちた）。落ちると
+# サンプルが**逆の版バケツに入って集計を汚す**ので、単なる欠測より悪い。
+#
+# 本スクリプトは版付きディレクトリ（`.../code-review/<version>/scripts/`）配下にあり
+# **自分の版の定数を知っている**ので、ここで上書きすれば手書き失敗モードが構造的に消える
+# （`duration_*` / `explorer_waves` / `measurement_gaps` / `diff_digest` と同じ方式）。
+#
+# **正本は references/orchestration-measurement.md `## 16`。値を変えるときは両方を直す。**
+SCHEMA_MARKERS = {
+    "pre_adjust_counts":  {"schema": 2},
+    "adversarial_verify": {"calibration_schema": 2, "gate_schema": 2},
+    "recall_skeptic":     {"attribution_schema": 2, "gate_schema": 2},
+    "meta_reviewer":      {"gate_schema": 3},
+}
+for field, marks in SCHEMA_MARKERS.items():
+    d = payload.get(field)
+    if isinstance(d, dict):
+        d.update(marks)          # 呼び出し側が渡していてもスクリプト側が勝つ
+    else:
+        # 層のオブジェクトごと落ちた回。版マーカーだけ作っても中身が無いので**注入しない**
+        # （空の dict は retro の母集団に「起動記録なし」として混ざる）。可視化だけする
+        gaps.append("payload:%s" % field)
+
+# 発火記録（`fired` / `skip_reason`）は実行時の事実なのでスクリプトからは注入できない。
+# **落ちたことだけは検知する** — `fired` が無いと retro は「走らなかった」と「走れる対象が
+# 無かった」を区別できず、ゲート設計の妥当性を計測で判断できなくなる（issue #129）
+for field in ("adversarial_verify", "recall_skeptic", "meta_reviewer"):
+    d = payload.get(field)
+    if isinstance(d, dict) and "fired" not in d:
+        gaps.append("payload:%s.fired" % field)
+
+# ---- トークン消費（review のみ / issue #126） -------------------------------
+if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
+    try:
+        tok = json.loads(os.environ.get("REVIEW_TOKENS") or "")
+    except ValueError:
+        tok = None
+    main_n = (tok.get("main") or {}).get("n") if isinstance(tok, dict) else None
+    if isinstance(tok, dict) and isinstance(main_n, int) and main_n > 0:
+        def _k(side, key):
+            v = (tok.get(side) or {}).get(key)
+            return round(v / 1000.0, 1) if isinstance(v, (int, float)) else None
+        payload["tokens"] = {
+            "schema": 1,
+            # 窓の種類。`session` は t0 を撮れずセッション全体を集計した回で、レビュー外の
+            # 作業が混ざる。**集計側は since-t0 だけを使う**（混ぜると体数との対応が消える）
+            "window": os.environ.get("REVIEW_TOKENS_WINDOW") or "session",
+            # **どの transcript のどこからを数えたか**を残す（セッションの選択は「候補 dir の
+            # 最新 .jsonl」という推定で、worktree 並列運用では取り違えうる）。値そのものは
+            # もっともらしいので、この 2 つが無いと取り違えを事後に検出する手段が消える
+            "session": tok.get("session"), "first_ts": tok.get("first_ts"),
+            "main_output_k": _k("main", "output"),
+            "main_cache_write_k": _k("main", "cache_write"),
+            "sub_output_k": _k("sub", "output"),
+            # 窓内に usage を持つ subagent の本数（`sub_files` = glob 総数は窓非適用なので
+            # 載せない。同じオブジェクトに窓ありと窓なしを混在させない）
+            "sub_agents": tok.get("sub_agents"),
+        }
+    else:
+        # **`main.n == 0` は「トークンが 0 だった」ではない。** review は必ずメインループの
+        # メッセージを出してから publish するので、0 は「transcript を引けなかった」か
+        # 「窓が空振りした」を意味する。ゼロを実測値として載せると retro の中央値と
+        # 体数相関を壊す（実測: 相関 r が 1.00 → 0.18）。**欠測は誤値より望ましい**
+        gaps.append("tokens")
+
 digest = os.environ.get("REVIEW_DIFF_DIGEST") or ""
 files_key = os.environ.get("REVIEW_DIFF_FILES") or ""
 if digest:
@@ -141,7 +243,8 @@ elif "explorer-wave" in gaps:
     )
 if gaps:
     sys.stderr.write(
-        "WARN: 計測マーカーの欠測: %s（対応する duration_* が -1 で publish される）\n" % ", ".join(gaps)
+        "WARN: 計測マーカーの欠測: %s（打点由来は対応する duration_* が -1 / "
+        "`payload:*` は payload 側の欠落 / `tokens` は transcript を引けなかった回）\n" % ", ".join(gaps)
     )
 # separators で空白・改行を排除し、1 行に収める
 sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))

@@ -37,7 +37,7 @@
 
 **パスの識別子は `--show-toplevel`（= その worktree 自身のパス）から作る**。`--git-common-dir` が全 worktree で同じ値を返すのに対し、`--show-toplevel` は**worktree ごとに異なる**ので、これ 1 つで並行セッションを分離できる。同一セッション内では Step 1 と publish の両方が同じ worktree の中で走る（review は ExitWorktree より前に publish する）ため、決定性も保たれる:
 
-**実装は `scripts/review-timing.sh` が持ち、パス導出は `scripts/lib/review-paths.sh` が正本**（`start` / `mark` / `durations` / `waves` / `gaps` / `cleanup` の 6 サブコマンド。SKILL からはこれを呼ぶだけで、パスの組み立てを本文に書かない）。識別子の仕様:
+**実装は `scripts/review-timing.sh` が持ち、パス導出は `scripts/lib/review-paths.sh` が正本**（`start` / `mark` / `durations` / `t0` / `waves` / `gaps` / `cleanup` の 7 サブコマンド。SKILL からはこれを呼ぶだけで、パスの組み立てを本文に書かない。`t0` は publish がトークン計測の窓を絞るために使う内部用で、SKILL からは呼ばない）。識別子の仕様:
 
 - **worktree のルート**（`--show-toplevel`）を cksum で slug 化する。review はさらに `--pr N` で PR 番号を混ぜる（`--pr` は数値のみ受理する）
 - `--git-common-dir` は使わない（全 worktree で同じ値を返すので識別子にならない）
@@ -127,7 +127,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 
 ### payload テンプレート（v2.62.0 で SKILL から移設）
 
-**`<...>` を実値で埋めてそのまま `--payload` に渡す。** 版マーカーの整数（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`）は**リテラルのまま**で、実行時に判断して変えない。`duration_*` / `agents.explorer_waves` / `measurement_gaps` / `diff_digest` は**渡さない**（スクリプトが注入する）。
+**`<...>` を実値で埋めてそのまま `--payload` に渡す。渡すのは実行時の事実だけ**（件数 / bool / `skip_reason` / 実効設定値）。
+
+> **版マーカーの整数は渡さない**（v2.65.0 / GitHub issue #125）。`schema` / `gate_schema` / `attribution_schema` / `calibration_schema` は `publish-review-event.sh` が注入する。以前は「常に N を入れる」定数を**テンプレートの一部として手書き**させていたが、版が上がるたびにテンプレ追従が要り、**version drift 中に漏れる**（実測: `recall_skeptic.gate_schema` に導入後の miss / `calibration_schema` は 1 セッション中に 2 版跨いだため落ちた）。落ちるとサンプルが**逆の版バケツに入って集計を汚す**ので、単なる欠測より悪い。スクリプトは版付きディレクトリ配下にあり自分の版の定数を知っているので、注入なら構造的に漏れない。
+>
+> 同様に `duration_*` / `agents.explorer_waves` / `measurement_gaps` / `diff_digest` / `diff_files` / `tokens` も**渡さない**（スクリプトが注入する）。
+>
+> **層のオブジェクトそのもの（`pre_adjust_counts` / `adversarial_verify` / `recall_skeptic` / `meta_reviewer`）は必ず入れる。** 落ちた場合は版マーカーを注入する先が無いので、`measurement_gaps` に `payload:<field>` を立てて可視化する（空オブジェクトを捏造すると「起動記録なし」として母集団に混ざるため注入しない）。`fired` を落とした場合も同様に `payload:<field>.fired` が立つ。
 
 review 用（`--plugin code-review:review --pr <PR番号>`）:
 
@@ -137,14 +143,14 @@ review 用（`--plugin code-review:review --pr <PR番号>`）:
   "reviewer_effort_profile":"<uniform|differentiated>",
   "head_verified":{"ok":<n>,"mismatch":<n>,"unknown":<n>},
   "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
-  "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>,"schema":2},
+  "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
   "severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
   "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
   "missing_coverage":[<json-array of focus names>],
   "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
-  "adversarial_verify":{"calibration_schema":2,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
-  "recall_skeptic":{"attribution_schema":2,"gate_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
-  "meta_reviewer":{"gate_schema":3,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>}
+  "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
+  "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
+  "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>}
 }
 ```
 
@@ -155,14 +161,14 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
   "pr":"local","effort":"<low|medium|high|xhigh|max>","size_tier":"<small|medium|large>",
   "reviewer_effort_profile":"<uniform|differentiated>",
   "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
-  "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>,"schema":2},
+  "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
   "severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
   "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
   "missing_coverage":[<json-array of focus names>],
   "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
-  "adversarial_verify":{"calibration_schema":2,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
-  "recall_skeptic":{"attribution_schema":2,"gate_schema":2,"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
-  "meta_reviewer":{"gate_schema":3,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
+  "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
+  "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
+  "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
   "comment_polish":{"fired":<bool>,"suggested":<n>}
 }
 ```
@@ -176,12 +182,13 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
 | `duration_min` ほか `duration_*` | 区間分割の意味・欠測時の扱い・「混ぜて比較しない」理由は `## 14` が正本。`TS_FILE` のパス導出は `## 13.1` |
 | `head_verified` | `{ok, mismatch, unknown}`（review のみ。v2.43.0）。各 agent の `HEAD 検証:` 行の集計で、`unknown` は行が無かった agent 数。`mismatch + unknown > 0` のレビューは指摘の信頼度が落ちる（orchestration-guide.md `## 5`） |
 | `blocker_count` / `critical_count` / `major_count` / `minor_count` | severity 別件数（報告マトリクス通過後） |
-| `pre_adjust_counts` | `{blocker, critical, major, minor, schema}`。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 分布。**`schema` は下記のとおり必須**（v2.58.0〜）。下の「調整前後の分離」を参照 |
+| `pre_adjust_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 分布。下の「調整前後の分離」を参照 |
 | `severity_threshold` | 実行時の `review_severity_threshold` 実効値（`BLOCKER`〜`MINOR`）。**どの severity が `## below-threshold` に回ったかを事後に判別するために必須**（v2.58.0〜）。これが無いと `pre_adjust_counts` の非可換性を補正できない |
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
-| `measurement_gaps` | **打点が欠けたマーカーの識別子配列**（v2.62.0 / `publish-review-event.sh` が注入。**SKILL からは渡さない**）。語彙は `start` / `t1` / `wave` / `t2` / `explorer-wave` / `diff-digest`。`duration_*` が `-1` になった理由を「打ち忘れ」と「該当なし」に分けるためのフィールドで、**欠測率そのものを計測対象にする**（issue #123 B）。`explorer-wave` は `agents.explorer >= 1` かつ打点 0 のときだけ入る（explorer 未起動は該当なしなので gap ではない）。`diff-digest` は突合キーを算出できなかった回に入る（＝ `## 19` の重複検出が事後に効かない。**「重複が無かった」と区別するために立てる**） |
+| `measurement_gaps` | **打点が欠けたマーカーの識別子配列**（v2.62.0 / `publish-review-event.sh` が注入。**SKILL からは渡さない**）。語彙は `start` / `t1` / `wave` / `t2` / `explorer-wave` / `diff-digest` / `tokens`（**review のみ**。transcript を引けなかった / 窓が空振りした）/ `payload:<field>`（層のオブジェクトごと欠落）/ `payload:<field>.fired`（発火記録の欠落）。**後ろ 3 つは v2.65.0 で追加**。**識別子ごとに是正先が違う**（打点 / payload テンプレート / transcript 引き当て / 突合キー算出）ので、集計側は種類を混ぜて 1 つの是正先を提示しないこと。**`tokens` は review でしか立たないので分母も review に絞る**。`duration_*` が `-1` になった理由を「打ち忘れ」と「該当なし」に分けるためのフィールドで、**欠測率そのものを計測対象にする**（issue #123 B）。`explorer-wave` は `agents.explorer >= 1` かつ打点 0 のときだけ入る（explorer 未起動は該当なしなので gap ではない）。`diff-digest` は突合キーを算出できなかった回に入る（＝ `## 19` の重複検出が事後に効かない。**「重複が無かった」と区別するために立てる**） |
 | `diff_digest` | **diff 全文の cksum**（v2.62.0 / `publish-review-event.sh` が算出。**SKILL からは渡さない**）。重複レビューの**強い突合キー**で、**同一 skill の再実行でのみ一致する** — review は `gh pr diff`、self-review は `git diff BASE..HEAD` + `--cached` + unstaged の **3 本連結**で diff を作るので、同じ変更でもバイト列が違う（実測: 同一 head の PR で `1462260100-1256` vs `2713407599-105966`）。HEAD SHA ではなく diff にしたのは self-review が未コミット変更を含むため |
 | `diff_files` | **変更ファイルパス集合の cksum**（v2.62.0 / 同上）。**skill を跨いでも一致する弱いキー**で、連結・index 行・ハンクの分かれ方に影響されない代わりに**別内容の変更でも一致しうる**（＝重複の疑いどまり）。強弱 2 本を持つ理由は上の非対称。算出の正本は `scripts/lib/review-paths.sh` の `review_diff_keys` |
+| `tokens` | **トークン消費**（**review のみ** / v2.65.0 / `publish-review-event.sh` が `measure-tokens.sh --json` を呼んで注入。**SKILL からは渡さない**）。`{schema, window, main_output_k, main_cache_write_k, sub_output_k, sub_agents}`。下の「トークンを payload に載せる」を参照 |
 
 **`agents`** — 実際に**起動した**体数（成功・失敗を問わない。v2.39.0 の上限調整の効果測定に使う）:
 
@@ -217,7 +224,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
   })'
 ```
 
-**`pre_adjust_counts.schema` の意味（v2.58.0 / GitHub issue #117 のセルフレビュー指摘）** — **算出方法が版で非可換に変わったのに、フィールドの有無では層別できない**ため自己申告の版マーカーを持たせる（`recall_skeptic.attribution_schema` と同じ流儀。日付では切らない）:
+**`pre_adjust_counts.schema` の意味（v2.58.0 / GitHub issue #117 のセルフレビュー指摘）** — **算出方法が版で非可換に変わったのに、フィールドの有無では層別できない**ため publisher 側の版マーカーを持たせる（`recall_skeptic.attribution_schema` と同じ流儀。日付では切らない。**値の注入は v2.65.0 でスクリプト側へ移した**）:
 
 | `schema` | 算出方法 | 粒度 |
 |---|---|---|
@@ -239,13 +246,19 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 
 **`adversarial_verify`** — 反証レイヤーの verdict 集計（`confirmed` / `refuted` / `uncertain` / `severity_inflated` / `contested`=高 severity の係争件数）。スキップ時は全 0。`severity_inflated` は v2.41.0 追加（4 つ目の verdict が集計から漏れていた。バッチ化 + effort 引き下げのロールバック判断に使う。triage-dynamic-gates.md `## 9`）。
 
-- `calibration_schema`: **上流 severity 較正ガードの版**（v2.62.0 / `pre_adjust_counts.schema` と同じ流儀）。**常に `2` を入れる**（1 = base 状態の確認だけを課していた v2.55.0〜v2.61.x / 2 = `prompts/reviewer-common.md` に「降格される典型パターン」の 4 型を明示した v2.62.0 以降）。**これが無いと A の効果を測れない** — `severity_inflated` 比率は累計で読むと施策前サンプルに薄められ、上流ガードが効いたかどうかが判定できなくなる（issue #123 A）。日付では切らない（配布ラグ）
+- `fired` / `skip_reason`: **発火記録**（v2.65.0 / GitHub issue #129）。他の 2 つの動的層（`recall_skeptic` / `meta_reviewer`）は持っていたのに**この層だけ持たず**、下流は `agents.verify > 0` から起動有無を推定するしかなかった。それでは **「走らなかった」と「走れる対象が無かった」を区別できない**:
+  - `skip_reason` の語彙は `"effort"`（low / medium）/ `"config"`（`enable_adversarial_verify: false`）/ `"scope"`（self-review の `--focus` / `--exclude`）/ `"emergency"`（`--emergency` / `skip-mode`）/ **`"no-eligible-findings"`**（triage-dynamic-gates.md `## 9` のゲートに合致する指摘が 0 件）。`fired=true` なら `null`
+  - **`"no-eligible-findings"` が本フィールドの主目的**。既定 effort（high）のゲートは非対称ゾーン（BLOCKER 60-94 / CRITICAL 80-94）だけなので、**BLOCKER / CRITICAL が 1 件も出なければ MAJOR がいくら出ても対象は構造的に 0 件**になる（実測: 本リポジトリの `pre_adjust_counts` を持つ 6 件中 3 件が不発で、いずれも BLOCKER + CRITICAL = 0・MAJOR は 6〜8 件。**「3 回連続」ではない** — 間に起動回が 2 件挟まる。issue #129 が別途「3 回連続」と報告しているのは複数リポジトリを含む実運用の体感で、この 6 件表からは再現しない）。他の 4 つと違い**設計上の非該当ではなく「ゲート幅が実効的に狭いか」の観測点**なので、下流の分母から外さない（`review-retro.sh` の `OUT_OF_SCOPE_SKIPS` に入れない）
+  - **ゲート幅の妥当性はこのフィールドが貯まるまで判断しない**。狭いこと自体が問題だとはまだ言えず、**測れないことが問題**だった（再監視条件は triage-dynamic-gates.md `## 9`）
+- `gate_schema`: **起動ゲートの版**（v2.65.0 / `meta_reviewer.gate_schema` と同じ流儀）。**`publish-review-event.sh` が注入する**（1 = `fired` を持たない v2.64.x 以前 = 発火を記録していない版 / 2 = 非対称ゾーン + surface-aware 例外 + 追加バッチの confidence 上乗せゲート = v2.65.0 以降）。**旧サンプルは「起動しなかった」ではなく「記録していない」**なので、発火率を出すときは必ず `gate_schema >= 2` で濾す
+  - **版マーカーだけでは記録漏れを落とせない**（注入方式の帰結。全 3 層に共通）。版マーカーはスクリプトが入れるので、**`fired` を落とした現行版 payload にも最新版が入る**。「フィールドの有無が版マーカー」の層別は旧版にしか効かないため、**現行版の記録漏れは `measurement_gaps` の `payload:<field>.fired` で外す**（`review-retro.sh` の `layer_stats` が `dropped_unrecorded` として実装）。外さないと記録漏れが `skip_reason=unknown` として分母に混ざり、発火率が実態より薄まる／「1 度も起動していない」という偽のロールバックシグナルまで点灯しうる
+- `calibration_schema`: **上流 severity 較正ガードの版**（v2.62.0 / `pre_adjust_counts.schema` と同じ流儀）。**`publish-review-event.sh` が注入する**（1 = base 状態の確認だけを課していた v2.55.0〜v2.61.x / 2 = `prompts/reviewer-common.md` に「降格される典型パターン」の 4 型を明示した v2.62.0 以降）。**これが無いと A の効果を測れない** — `severity_inflated` 比率は累計で読むと施策前サンプルに薄められ、上流ガードが効いたかどうかが判定できなくなる（issue #123 A）。日付では切らない（配布ラグ）
 
 **`meta_reviewer`** — meta-reviewer ラウンドの実行記録（GitHub issue #121）。**帯連動ゲート（`triage-guide.md ## 6.3` の「削らない」判断）を再評価するための計測**で、これが無いと価値率を出せず `## 7` の流儀（「サンプルが無いうちは判断しない」）に従うと永久に判断できない:
 
 - `fired`: meta-reviewer agent が実際に起動したか（bool）
 - `skip_reason`: `fired=false` のときの理由。`"effort"`（high 以下）/ `"config"`（`enable_meta_reviewer: false`）/ `"no-high-severity"`（**起動条件の severity 側を満たさない**。`gate_schema: 3` では「BLOCKER / CRITICAL 不在**かつ**報告見込み MAJOR が 3 件未満」を指す）/ `"size-tier"`（`small` 帯かつ BLOCKER 不在 / v2.60.0〜）/ `"emergency"`。`fired=true` なら `null`
-- `gate_schema`: **起動ゲートの版**（`recall_skeptic.gate_schema` と同じ流儀 / v2.60.0〜）。**常に `3` を入れる**（1 = 帯非連動＝ effort と高 severity だけで決まる v2.59.x 以前 / 2 = `size_tier: small` かつ BLOCKER 不在でスキップする v2.60.0〜v2.61.x / 3 = MAJOR 3 件以上でも起動する v2.62.0 以降）。**これが無いとロールバック条件のクエリが旧版のサンプルを混ぜてしまう** — 版ごとに `fired` の分母も `skip_reason` の意味も違う。日付では切らない（配布ラグ）
+- `gate_schema`: **起動ゲートの版**（`recall_skeptic.gate_schema` と同じ流儀 / v2.60.0〜）。**`publish-review-event.sh` が注入する**（1 = 帯非連動＝ effort と高 severity だけで決まる v2.59.x 以前 / 2 = `size_tier: small` かつ BLOCKER 不在でスキップする v2.60.0〜v2.61.x / 3 = MAJOR 3 件以上でも起動する v2.62.0 以降）。**これが無いとロールバック条件のクエリが旧版のサンプルを混ぜてしまう** — 版ごとに `fired` の分母も `skip_reason` の意味も違う。日付では切らない（配布ラグ）
 - `findings_added`: **meta 単独由来**（`[meta]` タグ）の指摘のうち報告マトリクスを通過した件数。定義・計測点は `recall_skeptic.findings_added` と同一（**初回レポート本文のタグ付き指摘を数える**。記憶から再構成しない。精査で取り下げた分は減算しない）
 - **由来タグ `[meta]` はレポート契約の一部**（`recall_skeptic` の `[recall-skeptic]` と同じ扱い）。タグを落とすと publish 時点で由来を再構成できず `findings_added` が系統的に 0 へ潰れる
 - **`findings_added` は meta の価値を捉えきらない**（フィールド設計時に認識済みの非対称）。meta は「単独起動されなかった観点を自分で当たって『指摘なし』と閉じる」という**指摘以外の価値**も出すが、それはこのフィールドに現れない。**価値率が低くても即座に撤去判断をしない** — 撤去を検討する段では、レポート本文で「閉じた観点」の有無も併せて読む
@@ -256,8 +269,8 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - `surface`: high-risk surface 判定の結果（bool）。**skeptic が effort / userConfig でスキップされた場合も、正規表現部分の判定だけは payload 構築時に必ず実施して記録する** — 「surface=true なのに effort ゲートで走らなかった頻度」が昇格判断の核心メトリクスのため
 - `fired`: skeptic agent が実際に起動したか（bool）
 - `skip_reason`: `fired=false` のときの理由。`"effort"` / `"config"` / `"no-surface"` / `"emergency"`（self-review は `"scope"` = `--focus`/`--exclude` 指定も取りうる）。`fired=true` なら `null`
-- `gate_schema`: **起動ゲートの版**（GitHub issue #115）。**常に `2` を入れる**（2 = high 起点に昇格した v2.52.0 以降）。`attribution_schema` が由来タグの版であるのに対し、こちらは**どの effort で起動する構成だったか**を識別する。**これが無いと `## 8.5` の監視クエリ①（「昇格後は `skip_reason="effort"` が消えるはず」）が昇格前の残骸を拾い続け、永久に偽の「信号あり」を返す** — 実装バグが起きても検知できない。日付では切れない（配布ラグで未更新マシンは旧ゲートで publish し続ける）
-- `attribution_schema`: 由来帰属の規約バージョン。**常に `2` を入れる**（2 = 由来タグがレポート書式に規定され dedup のタグ生存も定義された版 = 2.35.1 以降）。schema 1 相当の旧サンプルは `findings_added` が記憶依存で系統的に 0 へ潰れており判断に使えないため下流はこれで濾す。**日付では切れない**（配布ラグで未更新マシンは修正日以降も schema 1 を publish する）
+- `gate_schema`: **起動ゲートの版**（GitHub issue #115）。**`publish-review-event.sh` が注入する**（2 = high 起点に昇格した v2.52.0 以降）。`attribution_schema` が由来タグの版であるのに対し、こちらは**どの effort で起動する構成だったか**を識別する。**これが無いと `## 8.5` の監視クエリ①（「昇格後は `skip_reason="effort"` が消えるはず」）が昇格前の残骸を拾い続け、永久に偽の「信号あり」を返す** — 実装バグが起きても検知できない。日付では切れない（配布ラグで未更新マシンは旧ゲートで publish し続ける）
+- `attribution_schema`: 由来帰属の規約バージョン。**`publish-review-event.sh` が注入する**（2 = 由来タグがレポート書式に規定され dedup のタグ生存も定義された版 = 2.35.1 以降）。schema 1 相当の旧サンプルは `findings_added` が記憶依存で系統的に 0 へ潰れており判断に使えないため下流はこれで濾す。**日付では切れない**（配布ラグで未更新マシンは修正日以降も schema 1 を publish する）
 - `findings_added`: **skeptic 単独由来**（`[recall-skeptic]` タグ）の指摘のうち報告マトリクスを通過した件数。**レポート「動的ラウンド」行の `実行（N 件追加）` の N と同値**（N はヘッダに置かれるが**本文確定後に数えてヘッダへ反映する**。二重管理にしない）。**価値率の分子はこれのみ**
 - `findings_overlap`: **重複 survivor**（`[recall-skeptic:dup]` タグ）の件数。独立到達の記録としては残すが、盲点でなかった事例なので**価値率には算入しない**（混ぜると重複が常態のため価値率が 100% に張り付き、縮小分岐が原理的に発火しなくなる）
 - 両フィールドとも **初回レポート本文のタグ付き指摘を数えて求める**（skeptic フェーズの記憶から再構成しない。publish は遠く、間に精査・解説・ドラフト生成が挟まるため記憶依存にすると系統的に 0 へ潰れる）。**計測点は報告マトリクス通過時点（精査の前）**であり、精査後の調整レポートではない。**精査で取り下げた分は減算しない**（「報告に値する指摘を出せたか」を測るフィールドで、必要性で落ちたかは別軸）
@@ -270,23 +283,45 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
   - この失敗の論拠は**構造**（MINOR 95+ ＋ 好みクランプ 40 を推敲提案が通過できない）であって計測ではない。payload は focus 別の属性を持たないため、「v2.44.0 まで報告ゼロだった」を実測で示すことはできない（**この点を実測事実として書かないこと**）
 - review 側は publish しない（B 系統は self-review 限定。他人の PR への推敲提案は越権になりやすいという設計判断）
 
+**`tokens`（**review のみ** / v2.65.0 / GitHub issue #126）** — publish 時に `measure-tokens.sh --json` を呼んで注入する。**`## 17` の「skill 実行中に自分の消費量を観測できない」制約は publish 時点には当たらない**（publish はレポートの後 ＝ transcript 確定後）:
+
+| サブフィールド | 内容 |
+|---|---|
+| `schema` | 算出方法の版（現行 `1`）。スクリプトが注入する |
+| `window` | `"since-t0"`（`t0` マーカー以降だけを集計）/ `"session"`（`t0` を撮れずセッション全体を集計）。**集計側は `since-t0` だけを使う** |
+| `session` / `first_ts` | どの transcript のどこからを数えたか（取り違えの事後検出用。下記） |
+| `main_output_k` | メインループの `output_tokens` / 1000。**プロンプト複製の単価が最も高い項**（`## 17` の表） |
+| `main_cache_write_k` | 同 `cache_creation_input_tokens` / 1000。**分冊・遅延読み込みの効果判定には使わない**（#118 の交絡） |
+| `sub_output_k` | サブエージェント側の `output_tokens` / 1000。**体数と 1 体あたりの探索量が出る** |
+| `sub_agents` | **窓内に usage を持つ**サブエージェント transcript の本数。**`measure-tokens.sh --json` の `sub_files`（glob 総数・窓非適用）は載せない** — 同じオブジェクトに窓ありと窓なしを混在させると、`sub_output_k / sub_agents`（1 体あたりの探索量）が窓外の体数で薄まる |
+
+- **なぜ載せるのか**: triage-guide.md `## 7` の核心テーゼは「**体数削減が確実に効くのは壁時計ではなくトークン**」なのに、payload は所要時間しか持たず、`## 18` の自動集計も時間だけを見ていた。つまり**主要レバーが効かない指標を自動集計し、効く指標を集計していなかった**（issue #126）
+- **self-review は載せない**。**`EnterWorktree` は cwd と subagent の slug を変えるだけで、セッション自体はメインリポジトリで始まったまま**なので（`## 17` の候補 dir 探索がこれを前提にしている）、review も「隔離セッション」ではない。両者を分けるのは **publish の位置**で、review は `t0 → レポート → publish` が 1 レビューで閉じる直列区間なのに対し、**self-review は publish（Step 6.4）の後に Step 7 の修正方針確認と修正作業が続く**。窓の外に本作業が続く側では近似が成立しない。**この非対称は仕様**であって欠測ではない
+- **窓は `t0` 以降であってレビュー区間そのものではない。** review でも、レビュー中にユーザーが別作業を挟めば混ざる。**「粗い k 値」として読み、前後比較は同じ PR / 同じ diff で行う**（`## 17` と同じ流儀）
+- **どの transcript のどこからを数えたかは `session` / `first_ts` に残す。** セッションの選択は「候補 dir の最新 `.jsonl`」という推定で、worktree 並列運用では取り違えうる。値そのものはもっともらしいので、**この 2 つが無いと取り違えを事後に検出する手段が消える**
+- **`main.n == 0` は「トークンが 0 だった」ではない。** review は必ずメインループのメッセージを出してから publish するので、0 は「transcript を引けなかった」か「窓が空振りした」を意味する。この回は `tokens` を載せず `measurement_gaps` に `tokens` を立てる（ゼロを実測値として載せると retro の中央値と体数相関が壊れる。実測で相関が 1.00 → 0.18 に落ちた）
+
 **共通ルール**:
 
 - publish に失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を publisher 名（`code-review:review` / `code-review:self-review`）に上書きして識別する
 - 後方互換: subscriber 側は `critical_count` の存在を仮定してよい（旧 payload との互換性のため必須）。それ以外は新規フィールド追加なので旧 subscriber 影響なし（現物確認: `issue-workflow:issue-maintain` は `pr` と件数しか読まない）
-- **ゲートを動かす変更には必ず版マーカーを足す**（GitHub issue #115 の一般化）。effort ゲート・起動条件・算出方法を変えると**フィールドの有無は変わらないのに意味が変わる**ため、「フィールドの有無で層別する」という下のルールだけでは新旧を区別できない。`recall_skeptic.gate_schema` / `pre_adjust_counts.schema` と同じく publisher 自己申告の整数を足すこと
-- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の起動ゲートの版は `meta_reviewer.gate_schema`**）・`agents.explorer_waves` の存在が v2.61.0 以降・`measurement_gaps` / `diff_digest` の存在が v2.62.0 以降（**上流 severity 較正の版は `adversarial_verify.calibration_schema`**）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
+- **ゲートを動かす変更には必ず版マーカーを足す**（GitHub issue #115 の一般化）。effort ゲート・起動条件・算出方法を変えると**フィールドの有無は変わらないのに意味が変わる**ため、「フィールドの有無で層別する」という下のルールだけでは新旧を区別できない。`recall_skeptic.gate_schema` / `pre_adjust_counts.schema` と同じく publisher 側の整数を足すこと。**足す先は `publish-review-event.sh` の `SCHEMA_MARKERS`**（v2.65.0〜。SKILL のテンプレートに手書きさせない — 定数を LLM に持たせると version drift 中に落ちる / issue #125）
+- **動的層を足すときは `fired` / `skip_reason` / `gate_schema` の 3 点セットを必ず持たせる**（v2.65.0 / issue #129 の一般化）。verdict や件数だけでは **「走らなかった」と「走れる対象が無かった」を区別できず**、ゲート設計の妥当性が永久に測れない。`skip_reason` の語彙には**「設計上の非該当」（effort / config / scope / emergency）と「ゲートに該当する対象が 0 件」を別の値で**入れること（前者だけが下流の分母から外れる）
+- 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の起動ゲートの版は `meta_reviewer.gate_schema`**）・`agents.explorer_waves` の存在が v2.61.0 以降・`measurement_gaps` / `diff_digest` の存在が v2.62.0 以降（**上流 severity 較正の版は `adversarial_verify.calibration_schema`**）・`adversarial_verify.fired` / `tokens` の存在が v2.65.0 以降（**反証の起動ゲートの版は `adversarial_verify.gate_schema`**）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
 - **集計は `scripts/review-retro.sh` が行う**（v2.62.0 / issue #123 E）。上の層別ルール（版マーカーで切る / 累計で読まない / 区間を混ぜない）をスクリプト側に閉じてあるので、**jq を毎回組み立てない**。人間向けレポートは publish の直後に自動で出る（review 締めフロー 4 / self-review Step 6.4）。`--json` で機械可読、`--since` / `--last` で範囲を絞れる
 
 ## 17. トークン消費の計測（改修の前後比較 / v2.48.0）
 
-`review:completed` payload は**所要時間しか持たない**。トークンは payload に載せられない（skill 実行中に自分の消費量を観測する手段が無い）ため、**transcript から事後に集計する**:
+トークンは **transcript から事後に集計する**（各アシスタントメッセージの `usage` が正本）:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/measure-tokens.sh"            # 現リポジトリの最新セッション
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/measure-tokens.sh" --list     # セッション候補
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/measure-tokens.sh" --since 2026-08-06T10:00  # 時刻で絞る
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/measure-tokens.sh" --json     # 機械可読（publish が使う）
 ```
+
+> **review の粗い値は payload に自動で載る**（v2.65.0 / issue #126）。「skill 実行中に自分の消費量を観測できない」という制約は **publish 時点（レポート出力後 ＝ transcript 確定後）には当たらない**ため、`publish-review-event.sh` が `--json --since <t0>` で呼んで `tokens` フィールドに入れ、`## 18` の retro がトレンドを出す。**本節の手動実行が要るのは** ①self-review（payload に載らない）②取り込み内訳を見たいとき ③特定セッションを指定したいとき。契約は `## 16` の `tokens`。
 
 > **worktree 内から実行しても引数なしで通る**（GitHub issue #112）。transcript の slug はセッションを**開始した**ディレクトリ由来なので、review 経路（Step 0 で必ず `EnterWorktree`）では cwd 側の slug にメインループの transcript が存在しない。スクリプトは **cwd 側とメインリポジトリ側（`--git-common-dir` 由来）の両方**を候補にして最新の `.jsonl` を採るので、review 後にそのまま実行してよい。dev-workflow の作業用 worktree 内で開始したセッション（transcript が cwd 側にある逆パターン）も同じ仕組みで拾える。**どちらの候補にも無いときは `--session <絶対パス>`** を使う（`--list` が探索したディレクトリを表示する）。
 
@@ -334,7 +369,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --json       # 機械可読
 | 区間の中央値（triage / explore / fleet / synthesis / closing） | `## 14`（synthesis が支配的ならメイン側、そうでなければ wave 側） |
 | pre_adjust → 報告の歩留まり | `## 16` の `pre_adjust_counts`（**schema 2 同士・同一 `severity_threshold` でのみ比較**） |
 | 反証 verdict 分布（`calibration_schema` 層別） | triage-dynamic-gates.md `## 9` / `prompts/reviewer-common.md`「降格される典型パターン」 |
-| 動的層の発火率と skip 理由 | 同 `## 8`（meta）/ `## 8.5`（skeptic） |
+| 動的層の発火率と skip 理由 | 同 `## 8`（meta）/ `## 8.5`（skeptic）/ `## 9`（反証のゲート幅） |
+| トークン（main.output / sub.output / 体数との相関） | `## 17` と triage-guide.md `## 7`（**体数が効くのはこちら側**。壁時計の結論と混ぜない） |
 | 計測の健全性（欠測内訳） | `## 14` の打点規約 |
 
 **⚠️ シグナル行が出たときだけ行動する。** 各シグナルは対応するロールバック条件・再監視条件のトリガーで、閾値とサンプル数下限はスクリプト側に埋めてある（例: skeptic 価値率は `fired >= 15` かつ 25% 未満、meta は `fired >= 10` かつ 20% 未満）。**シグナルが出ていない指標を眺めて打ち手を決めない** — 「サンプルが無いうちは判断しない」（triage-guide.md `## 7`）を集計側でも守るための設計。

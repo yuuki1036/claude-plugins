@@ -274,14 +274,26 @@ for e in events:
         L[k] += num(av.get(k)) or 0
 
 # ---- 7. 動的層の発火率と skip 理由（版マーカー + スコープで層別） -----------
-def layer_stats(field, schema_key, min_schema):
+def verdict_total(d):
+    """反証レイヤーの「価値」は verdict が返った件数（findings_added を持たない層）。"""
+    return sum(num(d.get(k)) or 0 for k in
+               ("confirmed", "refuted", "uncertain", "severity_inflated", "contested"))
+
+
+def layer_stats(field, schema_key, min_schema, value_of=None):
     """版マーカーで濾し、設計上非該当のスキップを分母から外して集計する。
 
     `n_raw` は全サンプル、`n` は判定に使える母集団（層別後 × スコープ内）。
     両方返すのは「まだサンプルが貯まっていない」と「絞った結果 0 件」を区別するため。
+
+    `value_of` は「その回に価値が出たか」を測る関数（既定は `findings_added`）。
+    **層ごとに価値の定義が違う**ので固定しない — 反証は指摘を足す層ではないため
+    `findings_added` を持たず、既定のままだと価値率が恒常 0% に潰れる。
     """
+    if value_of is None:
+        value_of = lambda d: num(d.get("findings_added")) or 0  # noqa: E731
     st = {"n_raw": 0, "n": 0, "fired": 0, "valuable": 0,
-          "skips": {}, "dropped_schema": 0, "dropped_scope": 0,
+          "skips": {}, "dropped_schema": 0, "dropped_scope": 0, "dropped_unrecorded": 0,
           "schema_key": schema_key, "min_schema": min_schema}
     for e in events:
         d = e["p"].get(field)
@@ -291,6 +303,15 @@ def layer_stats(field, schema_key, min_schema):
         if schema_of(d, schema_key) < min_schema:
             st["dropped_schema"] += 1
             continue
+        # **版マーカーだけでは記録漏れを落とせない**（v2.65.0 / issue #125 と #129 の相互作用）。
+        # 版マーカーは publish-review-event.sh が注入するので、`fired` を落とした payload にも
+        # 最新版が入る。「フィールドの有無が版マーカー」という層別が現行版に対しては効かず、
+        # 記録漏れが `skip_reason=unknown` として分母に混ざる（= 発火率が実態より薄まり、
+        # 「1 度も起動していない」という偽のロールバックシグナルまで点灯しうる）。
+        # publish が立てた gap をそのまま使って外す（判定式を二重管理しない）
+        if ("payload:%s.fired" % field) in (e["p"].get("measurement_gaps") or []):
+            st["dropped_unrecorded"] += 1
+            continue
         reason = d.get("skip_reason") or None
         if d.get("fired") is not True and reason in OUT_OF_SCOPE_SKIPS:
             st["dropped_scope"] += 1
@@ -299,7 +320,7 @@ def layer_stats(field, schema_key, min_schema):
         st["n"] += 1
         if d.get("fired") is True:
             st["fired"] += 1
-            if (num(d.get("findings_added")) or 0) > 0:
+            if value_of(d) > 0:
                 st["valuable"] += 1
         else:
             key = reason or "unknown"
@@ -308,10 +329,18 @@ def layer_stats(field, schema_key, min_schema):
 
 
 # ロールバック条件の層別要件の正本: triage-dynamic-gates.md `## 8`（meta） / `## 8.5`（skeptic）
+# / `## 9`（反証）
 skeptic = layer_stats("recall_skeptic", "attribution_schema", 2)
 meta = layer_stats("meta_reviewer", "gate_schema", 3)
-round2_fired = sum(1 for e in events if (num((e["p"].get("agents") or {}).get("round2")) or 0) > 0)
-verify_fired = sum(1 for e in events if (num((e["p"].get("agents") or {}).get("verify")) or 0) > 0)
+# 反証も他 2 層と同じ流儀で絞る（issue #129）。**旧版は `fired` を持たない**ので
+# `gate_schema >= 2` で落ちる — 「起動しなかった」ではなく「発火を記録していない版」
+adversarial = layer_stats("adversarial_verify", "gate_schema", 2, value_of=verdict_total)
+# round2 は専用オブジェクトを持たないので `agents.round2` の**キー存在**を版プロキシにする
+# （`agents` を持たない旧サンプルを分母に入れると発火率が構造的に薄まる。#127 と同型）
+round2_scope = [e for e in events
+                if num((e["p"].get("agents") or {}).get("round2")) is not None]
+round2_fired = sum(1 for e in round2_scope
+                   if (num((e["p"]["agents"]).get("round2")) or 0) > 0)
 
 # ---- 8. 計測の欠測率 -------------------------------------------------------
 n_all = len(events)
@@ -327,6 +356,10 @@ have_waves = sum(1 for e in events
 split_waves = sum(1 for e in events
                   if (num((e["p"].get("agents") or {}).get("explorer_waves")) or 0) >= 2)
 n_gapfield = sum(1 for e in events if isinstance(e["p"].get("measurement_gaps"), list))
+# `tokens` gap の分母。review だけが計測対象なので self-review を混ぜない
+n_gapfield_review = sum(1 for e in events
+                        if isinstance(e["p"].get("measurement_gaps"), list)
+                        and str(e["plugin"]).endswith(":review"))
 
 # 健全性表示の母集団は `measurement_gaps` を持つ回（= v2.62.0 以降）に絞る（issue #127）.
 # フィールド不在は「そのサンプルは旧版で publish された」という identification であって
@@ -346,6 +379,47 @@ modern_waves_scope = [e for e in modern
                       if (num((e["p"].get("agents") or {}).get("explorer")) or 0) >= 1]
 modern_waves = sum(1 for e in modern_waves_scope
                    if "explorer-wave" not in (e["p"].get("measurement_gaps") or []))
+
+# ---- 9. トークン消費（review のみ / GitHub issue #126） --------------------
+# **窓が `since-t0` の回だけを集計する**。`session` はレビュー開始マーカーを撮れず
+# セッション全体を集計した回で、レビュー外の作業が混ざるため体数との対応が読めない。
+# 時間と混ぜて 1 つの結論を出さないこと（triage-guide.md `## 7`）— **体数が確実に効くのは
+# こちら側**で、`duration_fleet_min` との相関（上の r）とは別物として読む。
+# **分母は 3 段で出す**（`layer_stats` と同じ流儀 / issue #128 のセルフレビュー指摘）。
+# 「まだサンプルが無い」と「絞った結果 0 件」を区別できないと、`t0` 打点が構造的に壊れて
+# 全回 `window=session` になったとき「機能が新しい」と「計測が壊れている」を判別できない
+tok_raw = [e for e in events if isinstance(e["p"].get("tokens"), dict)]
+tok_rows, tok_dropped_window, tok_dropped_schema = [], 0, 0
+for e in tok_raw:
+    t = e["p"]["tokens"] or {}
+    if schema_of(t, "schema") < 1:      # 今は恒真だが、次の版で無言の混入を防ぐ
+        tok_dropped_schema += 1
+    elif t.get("window") != "since-t0":
+        tok_dropped_window += 1
+    else:
+        tok_rows.append(e)
+
+
+def tok_vals(key):
+    out = []
+    for e in tok_rows:
+        v = num((e["p"]["tokens"] or {}).get(key))
+        if v is not None and v >= 0:
+            out.append(v)
+    return out
+
+
+tok_main = tok_vals("main_output_k")
+tok_sub = tok_vals("sub_output_k")
+# 体数 vs sub.output。**トークンは体数に素直に効く**という主張の検算で、崩れたら
+# 「体数を減らせばトークンが減る」という triage-guide `## 7` の前提を見直す信号になる
+txs, tys = [], []
+for e in tok_rows:
+    ta, so = total_agents(e["p"]), num((e["p"]["tokens"] or {}).get("sub_output_k"))
+    if ta is not None and so is not None and so >= 0:
+        txs.append(ta)
+        tys.append(so)
+tok_r = pearson(txs, tys)
 
 # ---- シグナル判定（ロールバック条件・再監視条件のトリガー） ----------------
 # **すべて「サンプル数下限 × 比率」で判定する**。1 件でも点灯する条件を混ぜると
@@ -374,14 +448,38 @@ if have_waves >= 10 and pct(split_waves, have_waves) >= 20:
                    % (pct(split_waves, have_waves), split_waves, have_waves))
 if n_gapfield >= 5 and gap_counts:
     worst = max(gap_counts.items(), key=lambda kv: kv[1])
-    if pct(worst[1], n_gapfield) >= 20:
-        signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。打点箇所の見直しが要る"
-                       % (worst[0], pct(worst[1], n_gapfield), worst[1], n_gapfield))
+    # **gap の種類で是正先が違う**（v2.65.0 で語彙が 3 種増えた / issue #128 のセルフレビュー指摘）。
+    # 全部を「打点箇所の見直し」と言うと、payload の記述漏れに対して誤った是正先を指す
+    if worst[0].startswith("payload:"):
+        hint = "payload テンプレートの記述漏れ（両 SKILL の publish 節）を見直す"
+    elif worst[0] == "tokens":
+        hint = "transcript の引き当て（measure-tokens.sh のセッション選択・窓）を見直す"
+    elif worst[0] == "diff-digest":
+        hint = "diff の突合キー算出（lib/review-paths.sh）を見直す"
+    else:
+        hint = "打点箇所の見直しが要る"
+    # `tokens` gap は構造的に review でしか立たない（publish が `*:review` でのみ計測する）。
+    # 全サンプルを分母にすると self-review 混じりで薄まる（#127 と同型）
+    denom = n_gapfield_review if worst[0] == "tokens" else n_gapfield
+    if denom and pct(worst[1], denom) >= 20:
+        signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。%s"
+                       % (worst[0], pct(worst[1], denom), worst[1], denom, hint))
 if skeptic["fired"] >= 15 and pct(skeptic["valuable"], skeptic["fired"]) < 25:
     signals.append("冷や読み skeptic の価値率が %.0f%%（fired %d 件 / attribution_schema>=2）。"
                    "high 起点への昇格を戻すロールバック条件"
                    "（triage-dynamic-gates.md `## 8.5`）に該当"
                    % (pct(skeptic["valuable"], skeptic["fired"]), skeptic["fired"]))
+# 反証レイヤーのゲート幅（issue #129）。**「走らなかった」ではなく「対象が構造的に 0 件」**
+# が常態化しているかを見る。既定 high のゲートは BLOCKER 60-94 / CRITICAL 80-94 だけなので、
+# MAJOR しか出ないレビューが続くと層ごと不発になる（実測: `pre_adjust_counts` を持つ 6 件中
+# 3 件が不発。いずれも BLOCKER + CRITICAL = 0 で MAJOR は 6〜8 件出ていた）
+if adversarial["n"] >= 10:
+    _dry = adversarial["skips"].get("no-eligible-findings", 0)
+    if pct(_dry, adversarial["n"]) >= 50:
+        signals.append("反証レイヤーがゲート該当 0 件で不発だった回が %.0f%%（%d/%d / "
+                       "gate_schema>=2）。既定 high のゲート幅を再検討する条件"
+                       "（triage-dynamic-gates.md `## 9`）に該当"
+                       % (pct(_dry, adversarial["n"]), _dry, adversarial["n"]))
 if meta["n"] >= 8 and meta["fired"] == 0:
     signals.append("meta-reviewer が起動対象 %d 件（gate_schema>=3・effort 帯内）で 1 度も"
                    "起動していない。起動ゲートの再検討が要る" % meta["n"])
@@ -400,7 +498,14 @@ if as_json:
         "spans": {k: {"median": m, "n": c} for k, m, c in spans},
         "yields": yields, "verdict_layers": verdict_layers,
         "recall_skeptic": skeptic, "meta_reviewer": meta,
-        "round2_fired": round2_fired, "verify_fired": verify_fired,
+        "adversarial_verify": adversarial,
+        "round2_fired": round2_fired, "round2_scope": len(round2_scope),
+        "tokens": {"n": len(tok_rows), "n_raw": len(tok_raw),
+                   "dropped_window": tok_dropped_window,
+                   "dropped_schema": tok_dropped_schema,
+                   "main_output_k_median": median(tok_main),
+                   "sub_output_k_median": median(tok_sub),
+                   "agents_sub_output_r": tok_r, "agents_sub_output_n": len(txs)},
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
                         "split_explorer_waves": split_waves,
@@ -468,20 +573,38 @@ if verdict_layers:
             pct(L["contested"], L["total"])))
 
 print()
-print("**動的層の発火**（skeptic / meta は版マーカーと effort 帯で絞った母集団）: "
-      "skeptic %d/%d（価値 %d） / meta %d/%d（価値 %d） / round2 %d/%d / 反証 %d/%d"
+print("**動的層の発火**（**層ごとに分母が違う** — 各層の版マーカーで濾し、設計上の非該当"
+      "スキップを外した母集団。round2 は `agents.round2` を持つ回）: "
+      "skeptic %d/%d（価値 %d） / meta %d/%d（価値 %d） / 反証 %d/%d（verdict 有 %d） / "
+      "round2 %d/%d"
       % (skeptic["fired"], skeptic["n"], skeptic["valuable"],
          meta["fired"], meta["n"], meta["valuable"],
-         round2_fired, n_all, verify_fired, n_all))
-for name, st in (("skeptic", skeptic), ("meta", meta)):
-    if st["dropped_schema"] or st["dropped_scope"]:
+         adversarial["fired"], adversarial["n"], adversarial["valuable"],
+         round2_fired, len(round2_scope)))
+for name, st in (("skeptic", skeptic), ("meta", meta), ("反証", adversarial)):
+    if st["dropped_schema"] or st["dropped_scope"] or st["dropped_unrecorded"]:
         print("  - %s 母集団: 全 %d 件 → 判定対象 %d 件（版マーカー %s>=%d で除外 %d / "
-              "設計上非該当で除外 %d）"
+              "設計上非該当で除外 %d / 発火記録の欠落で除外 %d）"
               % (name, st["n_raw"], st["n"], st["schema_key"], st["min_schema"],
-                 st["dropped_schema"], st["dropped_scope"]))
+                 st["dropped_schema"], st["dropped_scope"], st["dropped_unrecorded"]))
     if st["skips"]:
         print("  - %s skip 理由: %s" % (name, " / ".join(
             "%s=%d" % kv for kv in sorted(st["skips"].items(), key=lambda kv: -kv[1]))))
+
+print()
+if not tok_rows:
+    print("**トークン**: 判定対象なし（`tokens` を持つ review のサンプル %d 件 / うち "
+          "`window=session` で除外 %d 件。self-review は構造的に載らない）"
+          % (len(tok_raw), tok_dropped_window))
+else:
+    line = ("**トークン**（review のみ / t0 以降の窓 / n=%d/%d・`window=session` で除外 %d）: "
+            "main.output 中央値 %s / sub.output 中央値 %s"
+            % (len(tok_rows), len(tok_raw), tok_dropped_window,
+               "-" if median(tok_main) is None else "%g k" % median(tok_main),
+               "-" if median(tok_sub) is None else "%g k" % median(tok_sub)))
+    if tok_r is not None:
+        line += " / 体数 vs sub.output r=%.2f（n=%d）" % (tok_r, len(txs))
+    print(line + "。**壁時計の結論と混ぜない**（体数が効くのはこちら側 — triage-guide.md `## 7`）")
 
 print()
 if n_modern == 0:

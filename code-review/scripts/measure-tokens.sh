@@ -21,14 +21,16 @@
 #   measure-tokens.sh --session <path>     # 特定の transcript
 #   measure-tokens.sh --list               # セッション候補を新しい順に表示
 #   measure-tokens.sh --since 2026-08-06T10:00Z # その時刻以降だけ集計（**UTC**。transcript が UTC のため）
+#   measure-tokens.sh --json               # 機械可読（publish-review-event.sh が payload に載せる）
 set -uo pipefail
 
-SESSION=""; SINCE=""; LIST=0
+SESSION=""; SINCE=""; LIST=0; AS_JSON=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --session) SESSION="$2"; shift 2 ;;
     --since)   SINCE="$2"; shift 2 ;;
     --list)    LIST=1; shift ;;
+    --json)    AS_JSON=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -94,13 +96,17 @@ fi
 SESSION_ID=$(basename "$SESSION" .jsonl)
 SUBGLOB="$HOME/.claude/projects/*/${SESSION_ID}/subagents"
 
-SESSION="$SESSION" SINCE="$SINCE" SUBDIR="$SUBGLOB" python3 <<'PY'
+SESSION="$SESSION" SINCE="$SINCE" SUBDIR="$SUBGLOB" AS_JSON="$AS_JSON" python3 <<'PY'
 import glob, json, os, sys
 
 path, since = os.environ["SESSION"], os.environ.get("SINCE") or None
 subdir = os.environ.get("SUBDIR") or ""
 buckets = {False: dict(n=0, out=0, cw=0, cr=0, inp=0), True: dict(n=0, out=0, cw=0, cr=0, inp=0)}
 first_ts = last_ts = None
+# **窓内に usage を持つ subagent transcript のファイル集合**。`--since` はメッセージ行に効くので、
+# glob したファイル数をそのまま体数にすると窓の外で起動した agent まで数えてしまう（実測:
+# `--since 2099-01-01` で `sub.n=0` なのに `sub_agents=8`）。窓と体数の意味を揃える
+sub_seen = set()
 tool_of = {}      # tool_use_id -> ツール名（main のみ）
 intake = {}       # ツール名 -> tool_result の総文字数
 intake_n = {}     # ツール名 -> tool_result の件数
@@ -178,6 +184,8 @@ for fpath, side in targets:
                 first_ts = ts if first_ts is None else min(first_ts, ts)
                 last_ts = ts if last_ts is None else max(last_ts, ts)
             b = buckets[side]
+            if side:
+                sub_seen.add(fpath)
             b["n"] += 1
             b["out"] += u.get("output_tokens") or 0
             b["cw"] += u.get("cache_creation_input_tokens") or 0
@@ -186,6 +194,27 @@ for fpath, side in targets:
 agents = sub_files
 
 def k(v): return f"{v/1000:,.1f}k"
+
+# **機械可読モード**（GitHub issue #126）: publish-review-event.sh が review の publish 時に
+# 呼んで `tokens` フィールドへ載せる。取り込み内訳は payload に載せない（文字数であって
+# トークンではなく、集計側で混ぜると桁が合わない — 上の `## 17` の注記と同じ理由）
+if os.environ.get("AS_JSON") == "1":
+    print(json.dumps({
+        "session": os.path.basename(path),
+        "since": since, "first_ts": first_ts, "last_ts": last_ts,
+        "main": {"n": buckets[False]["n"], "output": buckets[False]["out"],
+                 "cache_write": buckets[False]["cw"], "cache_read": buckets[False]["cr"],
+                 "input": buckets[False]["inp"]},
+        "sub": {"n": buckets[True]["n"], "output": buckets[True]["out"],
+                "cache_write": buckets[True]["cw"], "cache_read": buckets[True]["cr"],
+                "input": buckets[True]["inp"]},
+        # **2 つは別物**。`sub_agents` は窓内に usage を持つ本数（他フィールドと同じ窓）、
+        # `sub_files` は glob した総数（**窓非適用**）。後者は「transcript は在るのに窓内が
+        # 空」＝引き当て失敗の検出に要る（呼び出し側が縮退判定に使う）
+        "sub_agents": len(sub_seen),
+        "sub_files": len(agents),
+    }, ensure_ascii=False, separators=(",", ":")))
+    sys.exit(0)
 
 print(f"transcript : {os.path.basename(path)}")
 if first_ts:

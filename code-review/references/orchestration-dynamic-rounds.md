@@ -5,7 +5,7 @@
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @fe10bf1f -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @3f9680c8 -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @45554663 -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @040c3aee -->
 
 **このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は SKILL.md 側にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。
 
@@ -91,6 +91,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
 4. **レポートの反証行の正本（両 skill・triage-guide からもここを参照する）**: `反証: 対象 N 件（うち実施 X 件 / 予算超過 Y 件 / 反証失敗 Z 件）/ 係争 M 件 / 取り下げ K 件`。
    - `N`（対象）= ゲートで選ばれた全件（予算超過分と手順 3.5 の meta 由来追加分を含む）、`X`（実施）= 実際に verdict が返った件数。**payload の `agents.verify_findings` は `X` と一致させる**（`N` ではない。同じ「対象」の語で別の量を数えない）
    - 0 件の項目は省略してよいが、`Y` / `Z` が 1 以上なら必ず出す（silent に落とさない）
+   - **層ごとスキップした回も 1 行出す**（v2.65.0 / GitHub issue #129。skeptic の silent skip 防止と同じ扱い）: `反証: スキップ（<skip_reason>）`。**ゲート該当 0 件のときは特に省略しない** — 既定 high では BLOCKER / CRITICAL 不在なら対象が構造的に 0 件になるので、無言だと「反証を通った」と読まれる。値の語彙と payload 側の記録は orchestration-measurement.md `## 16` の `adversarial_verify`
    - **verdict 分布の偏りを検知して注記する（GitHub issue #110）**: `X >= 5` かつ**単一 verdict が実施件数の 80% 以上**を占めるとき、反証行の次の行に注記を 1 行足す:
 
      ```

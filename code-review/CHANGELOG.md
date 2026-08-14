@@ -2,6 +2,38 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.65.0] - 2026-08-14
+
+計測 3 件（#125 / #129 / #126）。いずれも「レビューの中身」ではなく「レビュー基盤の効果を判定する側」の欠陥で、共通の型は **payload の一部を LLM に手書きさせている / そもそも記録していない → 下流の層別が壊れる**。
+
+### Added
+- **反証レイヤーに `fired` / `skip_reason` / `gate_schema` を追加**（GitHub issue #129 / 正本: `orchestration-measurement.md ## 16` + `triage-dynamic-gates.md ## 9`）— 3 つある動的層のうち**この層だけが発火記録を持たず**、`review-retro.sh` は `agents.verify > 0` から起動有無を推定するしかなかった。そのため **「走らなかった」と「走れる対象が無かった」を区別できない**:
+  - 効いてくるのは既定 effort のゲートが狭いため。high の反証対象は非対称ゾーン（BLOCKER 60-94 / CRITICAL 80-94）だけなので、**BLOCKER / CRITICAL が 1 件も出なければ MAJOR が何件あっても対象は構造的に 0 件**になる。実測（issue #129 / `pre_adjust_counts` を持つ 6 件）では未起動 3 件がすべて「effort=high かつ BLOCKER+CRITICAL=0」で、実装バグでもスキップでもなく**設計どおりの不発**だった
+  - `skip_reason` の語彙は `effort` / `config` / `scope` / `emergency` / **`no-eligible-findings`**。**5 つ目だけは設計上の非該当ではない**ので下流の分母から外さない（`review-retro.sh` の `OUT_OF_SCOPE_SKIPS` がこの区別を持つ）。これが「ゲート幅が実効的に狭いか」の観測点になる
+  - **ゲート設計を否定する変更ではない**。「詰めると取り下がるのは不確実だが報告される非対称ゾーン」という設計意図は妥当で、**測れないことが問題**だった。ゲート幅の再監視条件（`gate_schema >= 2` が 10 件かつ `no-eligible-findings` が 50% 以上）を `## 9` に明記し、`review-retro.sh` が ⚠️ シグナルとして自動判定する
+  - 層ごとスキップした回もレポートに 1 行出す（`反証: スキップ（<skip_reason>）`。skeptic の silent skip 防止と同じ扱い）
+- **トークン消費を `review:completed` payload に載せた**（GitHub issue #126 / `tokens` フィールド・**review のみ**）— `triage-guide.md ## 7` の核心テーゼは「**体数削減が確実に効くのは壁時計ではなくトークン**」なのに、payload は時間しか持たず `## 18` の自動集計も時間だけを見ていた。つまり**主要レバーが効かない指標を自動集計し、効く指標を集計していなかった**:
+  - `## 17` の「skill 実行中に自分の消費量を観測できない」制約は **publish 時点（レポート出力後 ＝ transcript 確定後）には当たらない**。`publish-review-event.sh` が `measure-tokens.sh --json --since <t0>` を呼んで `main_output_k` / `main_cache_write_k` / `sub_output_k` / `sub_agents` を注入する（`measure-tokens.sh` に `--json`、`review-timing.sh` に `t0` サブコマンドを追加）
+  - **窓は `t0` 以降**（`window: "since-t0"`）。`t0` を撮れなかった回は `"session"` になり、**集計側は `since-t0` だけを使う**（レビュー外の作業が混ざった窓を体数と対応づけない）
+  - **self-review には載せない**。メインセッション共有でレビュー単独に切り出せず、窓の汚染度が読めない。review は Step 0 で必ず `EnterWorktree` する隔離セッション ≒ 1 レビューなので窓が近似として成立する。**この非対称は仕様**
+  - `review-retro.sh` に main.output / sub.output の中央値と**体数 vs sub.output の相関**を追加した（「体数はトークンに素直に効く」という前提の検算。壁時計側の r とは別物として読む）
+  - **`main.n == 0` は欠測に倒す**（セルフレビュー指摘）。review は必ずメインループのメッセージを出してから publish するので 0 は「引けなかった / 窓が空振りした」を意味する。ゼロを実測値として載せると retro の中央値と相関が壊れる（実測: 相関 **1.00 → 0.18**・中央値が 4 割過小）。人間向けモードにあった「黙って 0 を返さない」ガード（#104）が `--json` の早期 return で迂回されていた
+  - **`sub_agents` は窓内に usage を持つ本数**に直した（同上）。glob 総数は `--since` が効かず、`window: since-t0` を名乗るオブジェクトに窓外の体数が混ざっていた（実測: `sub.n=0` なのに `sub_agents=8`）。glob 総数は `--json` の `sub_files` として別名で残し、payload には載せない
+  - **`session` / `first_ts` を payload に残す**（同上）。transcript の選択は「候補 dir の最新 `.jsonl`」という推定で worktree 並列運用では取り違えうるが、値はもっともらしいので**この 2 つが無いと事後に検出できない**
+
+### Fixed
+- **版マーカーの整数を LLM の手書きからスクリプト注入に移した**（GitHub issue #125 / `publish-review-event.sh` の `SCHEMA_MARKERS`）— `pre_adjust_counts.schema` / `adversarial_verify.calibration_schema` / `recall_skeptic.{attribution,gate}_schema` / `meta_reviewer.gate_schema` は「常に N を入れる」定数なのに、**15 フィールドある手書き payload の一部**だった:
+  - 落ちると欠測ではなく**サンプルが逆の版バケツに入って集計を汚す**ので、単なる欠測より悪い。実測でも `recall_skeptic.gate_schema` に導入後の miss があり、`calibration_schema` は 1 セッション中に 2 版跨いだためテンプレ追従が漏れた。**marketplace が worktree 並列運用前提なので version drift は常態**
+  - スクリプトは版付きディレクトリ（`.../code-review/<version>/scripts/`）配下にあり**自分の版の定数を知っている**ので、注入なら構造的に漏れない（`duration_*` / `explorer_waves` / `measurement_gaps` / `diff_digest` が既に採っている方式の踏襲）
+  - **層のオブジェクトごと落ちた回・`fired` が落ちた回は `measurement_gaps` に `payload:<field>` / `payload:<field>.fired` を立てる**（空オブジェクトを捏造すると「起動記録なし」として母集団に混ざるため注入はしない）。transcript を引けなかった回の `tokens` も同様
+  - **「ゲートを動かす変更には必ず版マーカーを足す」規約の追加先を `SCHEMA_MARKERS` に変更**し、あわせて「動的層を足すときは `fired` / `skip_reason` / `gate_schema` の 3 点セットを持たせる」を #129 の一般化として `## 16` に足した
+  - **区間マーカー（wave 打点）のパス脆弱性は本版では変更しない**（issue #125 のもう 1 つの提案）。`${CLAUDE_PLUGIN_ROOT}` の版付き絶対パスが更新で壊れる懸念は正しいが、**壊れるときは publish 自身も同時に壊れる**（同じ plugin root 配下）ため、打点だけを退避しても publish ごと失われて事象は「部分欠測」ではなく「イベント不在」になる。打点側の独立した対策では救えないので、`TS_FILE` のパスが版に依存しない（`--show-toplevel` + `TMPDIR` 由来）ことを確認したうえで据え置く
+- **版マーカーの注入方式だけでは「発火記録の欠落」を層別できない**（セルフレビュー指摘 / #125 と #129 の相互作用）— 版マーカーはスクリプトが入れるので、**`fired` を落とした現行版 payload にも最新版が入る**。「フィールドの有無が版マーカー」という層別は旧版にしか効かず、記録漏れが `skip_reason=unknown` として分母に混ざっていた。合成イベントで再現したところ **`meta-reviewer が起動対象 8 件で 1 度も起動していない` という存在しない実装バグのロールバック提案が点灯**し、逆に #129 の反証シグナルは分母が膨らんで発火しにくくなっていた（100% → 50% の境界へ低下）。publish は `payload:<field>.fired` gap を既に立てていたのに retro が読んでいなかったので、`layer_stats` に `dropped_unrecorded` を足して外す
+- **retro の欠測シグナルが gap の種類を問わず「打点箇所の見直し」を提示していた**（同上）— v2.65.0 で語彙が 3 種増えたのに文言が据え置きで、payload の記述漏れに対して誤った是正先を指していた（再現済み）。識別子のプレフィックスで是正先を出し分け、**`tokens` gap は review でしか立たない**ので分母も review に絞った（#127 と同型が新語彙側で再発していた）
+- **retro のトークン節だけが「分母の明示」「版マーカーで層別」の作法から外れていた**（同上）— `window != "since-t0"` の回を件数も残さず捨てていたため、`t0` 打点が構造的に壊れて全回 `session` になったときに「サンプルが無い」と「計測が壊れている」を区別できなかった。`n_raw` / `dropped_window` / `dropped_schema` を出力に足した
+- **doc の伝播漏れ・事実誤認 3 件**（同上）— ①両 SKILL のスコアリング手順 6 に「`schema: 2` を記録する」が残っていた（正本からは削除済みで、次に版を上げたとき SKILL だけが旧値を書かせ続ける）②`## 16` の「実測: 3 回連続で不発」が引用元の 6 件表から再現しない（間に起動回が 2 件挟まる。「3 回連続」は issue #129 の複数リポジトリを含む実運用報告）③「review は隔離 worktree セッション」が事実に反する（`EnterWorktree` は cwd と subagent slug を変えるだけでセッションはメインのまま。self-review を外す本当の理由は**publish の後に修正作業が続く**こと）
+- **`review-retro.sh` の「動的層の発火」行で反証と round2 の母集団が絞られていなかった**（issue #129 / #127 と同型）— 括弧書きが自ら「skeptic / meta は絞った」と述べており、**残り 2 つは全サンプルが分母**だった。反証は `adversarial_verify.gate_schema >= 2`、round2 は `agents.round2` のキー存在を版プロキシにして絞る。あわせて `layer_stats()` の「価値」判定を層ごとに差し替え可能にした（**反証は指摘を足す層ではないので `findings_added` を持たず、既定のままだと価値率が恒常 0% に潰れる**）
+
 ## [2.64.0] - 2026-08-14
 
 ### Added

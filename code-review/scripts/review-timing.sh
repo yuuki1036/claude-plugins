@@ -12,6 +12,7 @@
 #   review-timing.sh mark wave [--explorer] [--pr N]       # agent wave を回収するたび
 #   review-timing.sh mark t2 [--pr N]                      # 初回レポート出力の直後
 #   review-timing.sh durations [--pr N]                    # "DUR TRIAGE FLEET CLOSING EXPLORE SYNTHESIS"
+#   review-timing.sh t0 [--pr N]                           # t0 の epoch（無ければ空行）
 #   review-timing.sh waves [--pr N]                        # explorer wave の発行回数
 #   review-timing.sh gaps [--pr N]                         # 欠測マーカーの識別子（空白区切り。無ければ空行）
 #   review-timing.sh cleanup [--pr N]                      # t2 がある場合のみ削除
@@ -117,6 +118,12 @@ case "$CMD" in
         ("w"  in t && "t2" in t) ? int((t["t2"] - t["w"])/60)  : -1
     }' "$TS_FILE" 2>/dev/null || echo "-1 -1 -1 -1 -1 -1"
     ;;
+  t0)
+    # レビュー開始の epoch。トークン計測の窓を「この回のレビュー」に絞るために publish が使う
+    # （GitHub issue #126）。**欠測は空行**で返す — 0 や現在時刻へ倒すと窓が全セッション /
+    # 空区間に化けるので、呼び出し側が「窓を絞れなかった」と判定できるようにする
+    awk '$1=="t0" {print $2; found=1} END {if (!found) print ""}' "$TS_FILE" 2>/dev/null || echo ""
+    ;;
   waves)
     # explorer wave の本数 = `we` の行数。一括発行が守られていれば 1（explorer 未起動なら 0）。
     # 2 以上は「explorer を複数メッセージに分けて発行した」＝ wave 1 本ぶんの損失を意味する
@@ -134,6 +141,6 @@ case "$CMD" in
     { grep -q '^t2 ' "$TS_FILE" 2>/dev/null && rm -f "$TS_FILE"; } || true
     ;;
   *)
-    echo "usage: review-timing.sh <start|mark|durations|waves|gaps|cleanup> [--pr N]" >&2; exit 2 ;;
+    echo "usage: review-timing.sh <start|mark|durations|t0|waves|gaps|cleanup> [--pr N]" >&2; exit 2 ;;
 esac
 exit 0

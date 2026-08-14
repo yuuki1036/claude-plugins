@@ -2,7 +2,7 @@
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @4260c35c -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @193c34a5 -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @3cd94d38 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#5 @75709af1 -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
@@ -246,6 +246,18 @@ reviewer の指摘を独立エージェントが反証し、過大な指摘の p
 
 - **再監視の条件**: 反証プロンプト・ゲート・バッチサイズを変更したときは、`uncertain` が 0 のままかを再確認する（この判定は現行の 3 つの組み合わせに対するもの）
 - **`orchestration-guide.md ## 5` の注記（不変条件を緩めるときは反証 effort を `max` に戻すか同時に判断する）は本判定で閉じない。** あちらは verdict 分布とは独立の条件で、scoring-guide の「高 severity 非削除」不変条件に依存している
+
+### 発火の計測とゲート幅の再監視（v2.65.0 / GitHub issue #129）
+
+**この層は `fired` / `skip_reason` / `gate_schema` を payload に記録する**（他の 2 つの動的層と同じ流儀。フィールド定義の正本は `orchestration-measurement.md ## 16`）。**記録が無かった v2.64.x 以前は、下流が `agents.verify > 0` から起動有無を推定するしかなく、「走らなかった」と「走れる対象が無かった」を区別できなかった。**
+
+区別が要るのは、**既定 effort（high）のゲートが上表のとおり非対称ゾーンだけ**だからである。**BLOCKER / CRITICAL が 1 件も出なければ、MAJOR がいくら出ても反証対象は構造的に 0 件**になる。実測（issue #129 / `pre_adjust_counts` を持つ 6 件）では未起動 3 件がすべて「effort=high かつ BLOCKER+CRITICAL=0」で、実装バグでもスキップでもなく**設計どおりの不発**だった（MAJOR は各回 6〜8 件出ている）。
+
+**再監視の条件**: `gate_schema >= 2` の母集団が **10 件**貯まった時点で、`skip_reason="no-eligible-findings"` が **50% 以上**なら本節のゲート幅を再検討する（`review-retro.sh` が自動で ⚠️ シグナルを出す）。検討の選択肢は「high の非対称ゾーンに MAJOR の一部帯を足す」だが、**足すこと自体が結論ではない** — 上表の設計意図（「詰めると取り下がるのは不確実だが報告される非対称ゾーン」）と、下の xhigh / max 節が記録しているトレードオフ（最も取り下がりにくい層に wave 1 本を使う）を併せて判断する。
+
+- **狭いこと自体はまだ問題だと言えない。** 本 issue が直したのは**測れないこと**であって、ゲート幅ではない
+- 分母の作り方: `skip_reason` の 5 値のうち **`"no-eligible-findings"` だけは設計上の非該当ではない**ので、下流の分母から外さない（`effort` / `config` / `scope` / `emergency` は外す）。`review-retro.sh` の `OUT_OF_SCOPE_SKIPS` がこの区別を持つ
+- `severity_inflated` 較正（`calibration_schema`）の効果測定も、**この層が回っていない回のサンプルが混ざると読めなくなる**。発火記録はそちらの前提でもある
 
 **除外（全 effort 共通）**:
 
