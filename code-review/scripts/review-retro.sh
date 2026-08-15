@@ -360,6 +360,11 @@ n_gapfield = sum(1 for e in events if isinstance(e["p"].get("measurement_gaps"),
 n_gapfield_review = sum(1 for e in events
                         if isinstance(e["p"].get("measurement_gaps"), list)
                         and str(e["plugin"]).endswith(":review"))
+# `late-publish` gap の分母。**self-review でしか立たない**（review は締めフローの人間待ちを
+# 含むのが契約なので、publish が遅いこと自体は正常）。混ぜると #127 と同型に薄まる
+n_gapfield_selfreview = sum(1 for e in events
+                            if isinstance(e["p"].get("measurement_gaps"), list)
+                            and str(e["plugin"]).endswith(":self-review"))
 
 # 健全性表示の母集団は `measurement_gaps` を持つ回（= v2.62.0 以降）に絞る（issue #127）.
 # フィールド不在は「そのサンプルは旧版で publish された」という identification であって
@@ -425,17 +430,26 @@ tok_r = pearson(txs, tys)
 # **すべて「サンプル数下限 × 比率」で判定する**。1 件でも点灯する条件を混ぜると
 # シグナル欄が常時点灯し、「⚠️ が出たときだけ行動する」という契約が壊れる
 newest_layer = max(verdict_layers) if verdict_layers else None
+# 上流較正（`prompts/reviewer-common.md` の「降格される典型パターン」= v2.62.0）の効果は
+# **対策後のサンプルでしか測れない**（orchestration-measurement.md `## 16` / triage-dynamic-gates.md
+# `## 9`「この 52% を上流対策の効果測定に使わないこと」）。`calibration_schema` が未注入だった
+# v2.64.x 以前のサンプルは全部 layer 1 に落ちるため、**対策前の累計値でシグナルが発火し続けて
+# いた**（issue #131）。層 1 しか無いうちは黙る
+CALIB_MIN = 2
+VERDICT_MIN = 20     # 層内の verdict 件数の下限（これ未満では層の比率を解釈しない）
 if newest_layer is not None:
     L = verdict_layers[newest_layer]
     ratio = pct(L["severity_inflated"], L["total"])
-    if L["total"] >= 20 and ratio >= 45:
+    if L["total"] >= VERDICT_MIN and ratio >= 45 and newest_layer >= CALIB_MIN:
         signals.append("severity_inflated が %.0f%%（calibration_schema=%s / %d verdict）。"
                        "上流較正（prompts/reviewer-common.md の降格典型）が効いていない疑い"
                        % (ratio, newest_layer, L["total"]))
-    if L["total"] >= 20 and pct(L["uncertain"], L["total"]) >= 15:
+    # 下の 2 つは `CALIB_MIN` で絞らない。**反証レイヤー自身の設定**（effort / バッチサイズ）の
+    # 再監視条件であって上流較正の効果測定ではないので、較正版で層別する理由が無い
+    if L["total"] >= VERDICT_MIN and pct(L["uncertain"], L["total"]) >= 15:
         signals.append("uncertain が %.0f%%。反証 effort を max に戻す条件"
                        "（triage-dynamic-gates.md `## 9`）に該当" % pct(L["uncertain"], L["total"]))
-    if L["total"] >= 20 and pct(L["refuted"], L["total"]) >= 20:
+    if L["total"] >= VERDICT_MIN and pct(L["refuted"], L["total"]) >= 20:
         signals.append("refuted が %.0f%%。反証バッチサイズ 5 → 3 の再検討条件に該当"
                        % pct(L["refuted"], L["total"]))
 if r is not None and len(xs) >= R_MIN_N and abs(r) >= R_STRONG:
@@ -446,24 +460,50 @@ if have_waves >= 10 and pct(split_waves, have_waves) >= 20:
     signals.append("explorer wave が 2 本以上に割れた回が %.0f%%（%d/%d）。一括発行の規約"
                    "（orchestration-guide.md `## 0`）が守られていない"
                    % (pct(split_waves, have_waves), split_waves, have_waves))
-if n_gapfield >= 5 and gap_counts:
-    worst = max(gap_counts.items(), key=lambda kv: kv[1])
-    # **gap の種類で是正先が違う**（v2.65.0 で語彙が 3 種増えた / issue #128 のセルフレビュー指摘）。
-    # 全部を「打点箇所の見直し」と言うと、payload の記述漏れに対して誤った是正先を指す
-    if worst[0].startswith("payload:"):
-        hint = "payload テンプレートの記述漏れ（両 SKILL の publish 節）を見直す"
-    elif worst[0] == "tokens":
-        hint = "transcript の引き当て（measure-tokens.sh のセッション選択・窓）を見直す"
-    elif worst[0] == "diff-digest":
-        hint = "diff の突合キー算出（lib/review-paths.sh）を見直す"
-    else:
-        hint = "打点箇所の見直しが要る"
-    # `tokens` gap は構造的に review でしか立たない（publish が `*:review` でのみ計測する）。
-    # 全サンプルを分母にすると self-review 混じりで薄まる（#127 と同型）
-    denom = n_gapfield_review if worst[0] == "tokens" else n_gapfield
-    if denom and pct(worst[1], denom) >= 20:
-        signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。%s"
-                       % (worst[0], pct(worst[1], denom), worst[1], denom, hint))
+# **gap は種類ごとに評価する**（v2.66.0 / issue #133 のセルフレビュー指摘）。旧版は
+# `max(gap_counts)` で最頻の 1 種だけを閾値にかけていたが、**分母が種類ごとに違う**（下記）ので
+# 生カウントの大小で勝者を決めると母集団の違う指標を比べることになる。実害は 2 方向:
+#   ① 分母の小さい種類（`tokens` / `late-publish`）が 1 件で 100% になり単発で点灯しうる
+#   ② 逆に分母の大きい種類が件数で勝つと、100% の種類が一度も評価されない
+# 種類ごとに (件数 / 自分の分母) で判定し、下限も自分の分母に掛ける。
+GAP_MIN_N = 5        # その種類の分母がこれ未満なら判定しない（単発点灯の防止）
+GAP_RATIO = 20       # 欠測率がこれ以上で ⚠️
+
+
+def gap_denom(g):
+    """gap 種別ごとの母集団。**構造的に片方の skill でしか立たない種類がある**（#127 と同型）。"""
+    if g == "tokens":                  # publish が `*:review` でのみ計測する
+        return n_gapfield_review
+    if g == "late-publish":            # publish が `*self-review` でのみ判定する
+        return n_gapfield_selfreview
+    return n_gapfield
+
+
+def gap_hint(g):
+    """**gap の種類で是正先が違う**（issue #128 のセルフレビュー指摘）。
+    全部を「打点箇所の見直し」と言うと、payload の記述漏れに対して誤った是正先を指す。"""
+    if g.startswith("payload:"):
+        return "payload テンプレートの記述漏れ（両 SKILL の publish 節）を見直す"
+    if g == "late-publish":
+        return ("publish が t2 から 10 分以上遅れた回が常態化している（self-review Step 6.4）。"
+                "`review-timing.sh publish-pending` のガード位置を見直す")
+    if g == "tokens":
+        return "transcript の引き当て（measure-tokens.sh のセッション選択・窓）を見直す"
+    if g == "diff-digest":
+        return "diff の突合キー算出（lib/review-paths.sh）を見直す"
+    return "打点箇所の見直しが要る"
+
+
+gap_hits = []
+for g, cnt in gap_counts.items():
+    d = gap_denom(g)
+    if d >= GAP_MIN_N and pct(cnt, d) >= GAP_RATIO:
+        gap_hits.append((pct(cnt, d), g, cnt, d))
+# 欠測率の高い順。**上位 2 件まで**（全部並べるとシグナル欄が表になって「⚠️ が出たときだけ
+# 行動する」契約の可読性が落ちる。残りは「計測の健全性」行の欠測内訳で見える）
+for ratio_g, g, cnt, d in sorted(gap_hits, reverse=True)[:2]:
+    signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。%s"
+                   % (g, ratio_g, cnt, d, gap_hint(g)))
 if skeptic["fired"] >= 15 and pct(skeptic["valuable"], skeptic["fired"]) < 25:
     signals.append("冷や読み skeptic の価値率が %.0f%%（fired %d 件 / attribution_schema>=2）。"
                    "high 起点への昇格を戻すロールバック条件"
@@ -571,6 +611,21 @@ if verdict_layers:
             pct(L["confirmed"], L["total"]), pct(L["severity_inflated"], L["total"]),
             pct(L["refuted"], L["total"]), pct(L["uncertain"], L["total"]),
             pct(L["contested"], L["total"])))
+    # 黙るだけだと「効果あり」と読まれうるので、**判定できない間はその旨を 1 行で言う**
+    # （⚠️ 欄には出さない / issue #131）。**「層 1 のみ」だけを待ち扱いにしない** — 現行版 publish は
+    # `calibration_schema: 2` を常に注入するので層 2 は 1 件目ですぐ現れる一方、シグナルは
+    # `VERDICT_MIN` を要求する。層で切るだけだと**蓄積中（1〜19 verdict）が無言区間**になり、
+    # まさに避けたかった誤読を作る
+    if newest_layer is not None and newest_layer < CALIB_MIN:
+        print()
+        print("上流較正（v2.62.0）の効果判定は **`calibration_schema >= %d` のサンプル待ち**"
+              "（現在は層 %s のみ = 対策前）。累計の severity_inflated 比率を効果測定に使わない"
+              " — triage-dynamic-gates.md `## 9`" % (CALIB_MIN, newest_layer))
+    elif newest_layer is not None and verdict_layers[newest_layer]["total"] < VERDICT_MIN:
+        print()
+        print("上流較正（v2.62.0）の効果判定は **層 %d を蓄積中**（%d/%d verdict）。"
+              "この件数ではシグナルを出さない — triage-dynamic-gates.md `## 9`"
+              % (newest_layer, verdict_layers[newest_layer]["total"], VERDICT_MIN))
 
 print()
 print("**動的層の発火**（**層ごとに分母が違う** — 各層の版マーカーで濾し、設計上の非該当"

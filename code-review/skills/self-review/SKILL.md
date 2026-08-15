@@ -19,7 +19,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @74e69656 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @ba6303aa -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @3cf8c3c4 -->
 
 ## review との違い
@@ -174,7 +174,7 @@ diff の特性を分析し、必要なエージェントタイプを判定する
 - small（core ≤ 3 ファイル かつ ≤ 100 行）: explorer 0 / reviewer 3 / specialist 1
 - medium（core 4-10 ファイル または 101-500 行）: explorer 2 / reviewer 5 / specialist 2
 - large: キャップなし（effort 上限がそのまま実効上限）
-- **最小保証の 2 体は規模キャップより優先**。キャップに収まらない観点は `missing_coverage` に「観点未起動: <focus>（規模キャップ: <帯>）」として記録する
+- **最小保証の 2 体は規模キャップより優先**。キャップに収まらない観点は `missing_coverage` に識別子 `<focus>` として記録する（**規模キャップで落ちた旨はレポートの「⚠️ 欠損観点」へ** — payload は識別子のみ）
 - **規模キャップが effort 上限を下回った場合、Round 2（Phase 4.5）は effort に関わらず 1 段圧縮経路**（追加 explorer なし）。一方 **reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない**（削るのは breadth のみ。triage-guide.md `## 6.3`）
 - `--focus` / `--exclude` でスコープを絞った実行では、そもそも構成が観点指定で決まるため規模キャップは追加で効かせない（指定観点は必ず起動する）
 
@@ -265,7 +265,7 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 - userConfig `enable_adaptive_rounds` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
 - 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
-- **unmet の target が全件「到達不能」**（DB / 本番の実データ、このリポジトリに存在しないコード、意図的にスキップした lint / テスト実走など）で、追加探索が構造的に空振りする場合。分類表と「1 件でも到達可能なら起動する」根拠は triage-dynamic-gates.md `## 8`（GitHub issue #100 C）。スキップ時は `missing_coverage` に「Round 2 スキップ: unmet 全件が到達不能（<target 要旨>）」を記録し、レポートの「動的ラウンド」行にも出す。**⚠️ 「repo 外」≠「到達不能」（v2.60.0）** — 外部サービスの実挙動でも**その MCP / CLI がセッションで使えるなら到達可能**で、Round 2 の前に**メインで直接照会して解決してよい**（read-only）
+- **unmet の target が全件「到達不能」**（DB / 本番の実データ、このリポジトリに存在しないコード、意図的にスキップした lint / テスト実走など）で、追加探索が構造的に空振りする場合。分類表と「1 件でも到達可能なら起動する」根拠は triage-dynamic-gates.md `## 8`（GitHub issue #100 C）。スキップ時は `missing_coverage` に識別子 `round2` を記録し（**理由はレポート本文へ**）、レポートの「動的ラウンド」行にも出す。**⚠️ 「repo 外」≠「到達不能」（v2.60.0）** — 外部サービスの実挙動でも**その MCP / CLI がセッションで使えるなら到達可能**で、Round 2 の前に**メインで直接照会して解決してよい**（read-only）
 
 **実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 6` の手順に従う（unmet_information 集約 → **high は 1 段圧縮**: 追加 explorer なしで該当 reviewer 最大 3 体を再起動し unmet ターゲットを自力探索させる / **xhigh・max は 2 段**: 追加 explorer 最大 3 体 → 該当 reviewer 再起動 → 初回出力を置換。失敗時は初回結果のまま続行の best-effort）。**回収した直後に `mark wave` を記録する**（Step 4 と同じ呼び出し。後勝ち。**追加 explorer を起動した場合も `--explorer` は付けない** — `agents.explorer_waves` は「初回 explorer の一括発行が守られたか」の指標で、Round 2 の追加 explorer を混ぜると規約どおりの起動が「一括発行違反」として誤検知される）。レポートに「Round 2 trigger: <reason>」を記録（Step 6 で出力）。
 
@@ -423,13 +423,13 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2
 ```
 
+> **「レポート出力 → `mark t2` → 6.4 の publish」は不可分の締めで、Step 6 はここまで**（GitHub issue #133）。番号は分かれているが 6.4 は独立した任意ステップではない。**publish を踏む前に Step 7（修正方針確認・修正作業）へ進まないこと** — publish は副作用のみで標準出力に何も足さないため、**脱落しても実行中は誰も気づかない**（実測: MAJOR 4 件を報告して全件修正した回が丸ごと欠測になり、meta 起動サンプルを 1 件失った）。ユーザーが事前に「指摘は全部修正して」と伝えている回ほど落ちやすい。
+
 ### 6.4. Event Bus publish（`review:completed` / 計測用）
 
 **このステップの直前に `${CLAUDE_PLUGIN_ROOT}/references/orchestration-measurement.md` を Read する**（publish 先の固定・`TS_FILE` のパス導出・区間の算出式・payload 契約の正本。レビュー本体の実行には不要なのでここまで読まない）。
 
-レポート出力後、集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**embed / 非 embed の両モードで実行する**（LLM 駆動 fan-out の「観点取りこぼし」「severity/confidence のパース安定性」を後から定量化するための計測データを蓄積する目的。review skill と同じ `review:completed` イベントで集計を揃える）。
-
-副作用のみで標準出力にレポート文字を足さないため、embed mode の出力フォーマット（Step 6.5 の JSON ブロック → marker の順序）には影響しない。self-review は PR を持たないため `pr` は `"local"` 固定とする。
+レポート出力後、集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**embed / 非 embed の両モードで実行する**（LLM 駆動 fan-out の「観点取りこぼし」「severity/confidence のパース安定性」を後から定量化するための計測データを蓄積する目的。review skill と同じ `review:completed` イベントで集計を揃える）。副作用のみで標準出力にレポート文字を足さないため embed mode の出力フォーマット（Step 6.5 の JSON ブロック → marker の順序）には影響しない。self-review は PR を持たないため `pr` は `"local"` 固定とする。
 
 **publish は専用スクリプトで行う**（書込先の固定・所要時間の算出・一時ファイルの掃除をまとめて担当する）。`duration_*` と **`agents.explorer_waves`** は**渡さない** — スクリプトが計測ファイル（explorer wave の打点）から算出して注入する。self-review では `duration_closing_min` を `-1`（測定不能）に固定する:
 
@@ -438,17 +438,15 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
   --plugin code-review:self-review --payload '<orchestration-measurement.md `## 16` の self-review 用テンプレートを実値で埋めたもの。effort は '"${CLAUDE_EFFORT}"' の実値>'
 ```
 
-- スクリプトは payload の JSON 妥当性を検証してから書く（不正なら publish せず `FATAL:` で落ちる）。**`measurement_gaps` / `diff_digest` も渡さない**（計測ファイルと一時 diff から算出して注入される）
+- スクリプトは payload の JSON 妥当性と **`missing_coverage` の語彙**を検証してから書く（不正なら publish せず `FATAL:` で落ちる。識別子以外＝理由つき自由文は弾かれるので、**理由はレポートの「⚠️ 欠損観点」に書き、フィールドごと落として通さない** / issue #132）。**`measurement_gaps` / `diff_digest` も渡さない**（計測ファイルと一時 diff から算出して注入される）。計測ファイルと diff の一時ファイルもスクリプトが掃除する
 - **版マーカーの整数も渡さない**（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`。v2.65.0 でスクリプト注入に移した — 定数の手書きは version drift 中に落ち、サンプルが逆の版バケツに入る / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）。なお **`tokens` は review 限定**でここには載らない（**publish の後に Step 7 の修正方針確認と修正作業が続くため、窓の外に本作業が残る** / issue #126）。トークンを見たいときは `measure-tokens.sh` を手動実行する（→ 同 `## 17`）
 - **書込先はメインリポジトリのルートに固定される**。self-review は worktree に入らないが、dev-workflow の作業用 worktree 内から実行されると cwd 相対では Step 8 の teardown で消える（→ orchestration-measurement.md `## 13`）
-- 計測ファイルと diff の一時ファイルもスクリプトが掃除する
 
 **payload 契約の正本は orchestration-measurement.md `## 16`**（フィールドの意味・版マーカー・後方互換をここに複写しない）。self-review 固有の点のみ:
 - `pr` は常に `"local"`（PR を持たない）
 - **`duration_closing_min` は常に `-1`（測定不能）**: publish（Step 6.4）が Step 7 の修正方針確認より前にあるため t2→t3 に人間の応答待ちが入らない。0 を publish すると「人間待ちが無かった」と誤読される
 - **`duration_min`（全体）の意味は publisher 間で非対称**: review は締めフロー（人間待ち）を含み、self-review は Step 7 の手前で切れる。**`plugin` フィールドで層別してから比較する**。区間別に見るなら `duration_fleet_min` を使う
-- `head_verified` は publish しない（checkout を行わないため）
-- `recall_skeptic.skip_reason` は `"scope"`（`--focus`/`--exclude` 指定）も取りうる
+- `head_verified` は publish しない（checkout を行わないため）。`recall_skeptic.skip_reason` は `"scope"`（`--focus`/`--exclude` 指定）も取りうる
 - `recall_skeptic.findings_added` / `meta_reviewer.findings_added` はレポートの「動的ラウンド」行の数値と一致させる（それぞれ `[recall-skeptic]` / `[meta]` タグ付き指摘を数える。#121）
 - **`comment_polish` は self-review のみのフィールド**（v2.45.0。`fired` / `suggested` の定義と計数基準は orchestration-measurement.md `## 16` が正本）
 
@@ -463,9 +461,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 
 ### 7. 修正方針の確認
 
-**embed mode skip**: 引数で `--embed` が指定されている場合は本ステップ全体を skip する。Step 6 の markdown レポート → **Step 6.5 の構造化 JSON ブロック** → `[embed-mode: findings-only, no-prompt]` の 1 行 marker、の順で出力して完了。AskUserQuestion を呼ばないことで呼び出し元 plugin の UX を阻害しない。
+**publish 済みかのガード（`--embed` / 指摘 0 件でも必ず実行する / GitHub issue #133）**: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" publish-pending` で 6.4 の脱落を捕まえる。**下の skip 条件はこのガードには掛からない** — 本ステップの他の判定（embed / 指摘件数）より前に、レポート出力後 1 回だけ無条件で実行する。**警告が出たら他を中断して 6.4 を先に完了させる**（計測ファイルはまだ残っているので、この時点なら損失なく復旧できる。修正作業に入ってから気づいた回は `duration_min` が欠測に倒れる）。**embed 経路こそ落ちやすい**（publish の後に呼び出し元の作業が続くため）ので、ここを条件分岐の内側に入れない。
 
-指摘事項が 1 件以上ある場合のみ実行する。指摘が 0 件なら「問題なし」で完了。
+**embed mode skip**: 引数で `--embed` が指定されている場合は、上のガードを実行したうえで本ステップの残りを skip する。Step 6 の markdown レポート → **Step 6.5 の構造化 JSON ブロック** → `[embed-mode: findings-only, no-prompt]` の 1 行 marker、の順で出力して完了。AskUserQuestion を呼ばないことで呼び出し元 plugin の UX を阻害しない。
+
+**以下の修正方針フローは**指摘事項が 1 件以上ある場合のみ実行する。指摘が 0 件なら（上のガードを実行したうえで）「問題なし」で完了。
 
 レポート全文を出力し終えた直後に **AskUserQuestion** で修正方針を確認する:
 - question: "指摘事項への対応方針を選択してください（コミット前の作業優先度を整理します）"

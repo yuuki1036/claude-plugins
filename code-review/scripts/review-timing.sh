@@ -11,10 +11,12 @@
 #   review-timing.sh mark t1 [--pr N]                      # 最初の一括発行の直前（二重記録しない）
 #   review-timing.sh mark wave [--explorer] [--pr N]       # agent wave を回収するたび
 #   review-timing.sh mark t2 [--pr N]                      # 初回レポート出力の直後
+#   review-timing.sh mark published [--pr N]               # publish 成功の直後（publish スクリプトが呼ぶ）
 #   review-timing.sh durations [--pr N]                    # "DUR TRIAGE FLEET CLOSING EXPLORE SYNTHESIS"
 #   review-timing.sh t0 [--pr N]                           # t0 の epoch（無ければ空行）
 #   review-timing.sh waves [--pr N]                        # explorer wave の発行回数
 #   review-timing.sh gaps [--pr N]                         # 欠測マーカーの識別子（空白区切り。無ければ空行）
+#   review-timing.sh publish-pending [--pr N]              # t2 あり & pub なしなら警告（それ以外は無言）
 #   review-timing.sh cleanup [--pr N]                      # t2 がある場合のみ削除
 #
 # **打点の規約は 1 本にまとめてある**（v2.62.0 / GitHub issue #123 B）: 「agent wave を
@@ -100,8 +102,19 @@ case "$CMD" in
         # ここで言えば「まだ publish 前」なので次回以降の是正には間に合う
         grep -q '^w ' "$TS_FILE" 2>/dev/null || \
           echo "WARN: agent wave の打点（mark wave）が 1 つも無い。duration_synthesis_min が欠測になる" >&2
+        # publish の脱落を「その場で見える」ようにする（GitHub issue #133）。publish は計測ファイル
+        # への副作用が本体で**レポートには何も足さない**ため、踏み忘れても実行中は誰も気づかない
+        # （成功時に `published to ...` の 1 行を出すが、それは踏んだときにしか出ないので脱落の
+        # 検知には使えない）。**次にやることではなく「締めの終点」として言う** — ここで「次は
+        # publish」と書くと review の締めフロー 1〜3（精査・解説・ドラフト）を飛ばす誘導になる
+        echo "t2 記録。レポート後の締めは **publish（self-review Step 6.4 / review 締めフロー 4）で終わる**。"
+        echo "publish を踏まずに次のフェーズ（指摘の修正 / worktree 掃除）へ進まないこと。"
         ;;
-      *) echo "FATAL: mark のキーは t1 / wave / t2（旧: t1b / t1c）のいずれか（受領: '$KEY'）" >&2; exit 2 ;;
+      # publish 成功の記録（v2.66.0 / GitHub issue #133）。**`publish-pending` の判定根拠**で、
+      # `publish-review-event.sh` が `event_bus_publish` に成功したときだけ打つ。
+      # 掃除でファイルごと消えるのが通常経路なので、この行が效くのは `--keep-temp` の回
+      published) echo "pub $(date +%s)" >> "$TS_FILE" ;;
+      *) echo "FATAL: mark のキーは t1 / wave / t2 / published（旧: t1b / t1c）のいずれか（受領: '$KEY'）" >&2; exit 2 ;;
     esac
     ;;
   durations)
@@ -135,12 +148,32 @@ case "$CMD" in
   gaps)
     emit_gaps
     ;;
+  publish-pending)
+    # publish（`review:completed`）を踏んだかを判定する（GitHub issue #133）。
+    # 「**`t2` があって `pub` が無い**」＝レポートは出したが publish が成っていない。
+    #
+    # **`pub` を見る（ファイルの有無だけで判定しない）**: `publish-review-event.sh` は publish に
+    # 成功したときだけ `mark published` を打ってから掃除する。ファイル不在で判定していた版は
+    # ①publish が失敗した回（掃除は成否に関わらず走っていた）②`--keep-temp` の回、の 2 つを
+    # 取り違えていた。**取りこぼしていたのは「イベントが書かれず打点も消えた」最悪の回**。
+    #
+    # 縮退の向き: ファイル不在は「publish 済みで掃除された」と「そもそも計測していない /
+    # TMPDIR ごと消えた」の両方を含むので**無言で抜ける**。ここで警告すると publish 済みの回でも
+    # 毎回鳴り、「⚠️ が出たときだけ行動する」という契約が壊れる
+    if grep -q '^t2 ' "$TS_FILE" 2>/dev/null && ! grep -q '^pub ' "$TS_FILE" 2>/dev/null; then
+      echo "WARN: publish（review:completed）が未実施のまま次のフェーズへ進もうとしている。" >&2
+      echo "  → 先に publish を実行する（self-review Step 6.4 / review 締めフロー 4）。" >&2
+      echo "  → **t2 直後に戻れば損失はない**が、修正作業などで時間が経っていると" >&2
+      echo "     duration_min が伸びる（self-review は 10 分以上で -1 = 欠測に倒れる）。" >&2
+      echo "  → publish を試みて失敗した回もここで鳴る（一時ファイルを残してある）。" >&2
+    fi
+    ;;
   cleanup)
     # t2 の存在確認は所有権チェックではなく、万一パスが衝突したときに
     # 「掃除より他セッションの計測を優先する」ための二段目
     { grep -q '^t2 ' "$TS_FILE" 2>/dev/null && rm -f "$TS_FILE"; } || true
     ;;
   *)
-    echo "usage: review-timing.sh <start|mark|durations|t0|waves|gaps|cleanup> [--pr N]" >&2; exit 2 ;;
+    echo "usage: review-timing.sh <start|mark|durations|t0|waves|gaps|publish-pending|cleanup> [--pr N]" >&2; exit 2 ;;
 esac
 exit 0

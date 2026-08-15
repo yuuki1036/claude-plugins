@@ -21,7 +21,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @74e69656 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @ba6303aa -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @3cf8c3c4 -->
 
 ## 前提
@@ -205,14 +205,14 @@ Step 1 で Read した PR コンテキスト（説明・issue コメント・レ
 - small（core ≤ 3 ファイル かつ ≤ 100 行）: explorer 0 / reviewer 3 / specialist 1
 - medium（core 4-10 ファイル または 101-500 行）: explorer 2 / reviewer 5 / specialist 2
 - large: キャップなし（effort 上限がそのまま実効上限）
-- **最小保証の 2 体は規模キャップより優先**。キャップに収まらない観点は `missing_coverage` に「観点未起動: <focus>（規模キャップ: <帯>）」として記録する
+- **最小保証の 2 体は規模キャップより優先**。キャップに収まらない観点は `missing_coverage` に識別子 `<focus>` として記録する（**規模キャップで落ちた旨はレポートの「⚠️ 欠損観点」へ** — payload は識別子のみ）
 - **規模キャップが effort 上限を下回った場合、Round 2（Step 5.5）は effort に関わらず 1 段圧縮経路**（追加 explorer なし）を使う。一方 **reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない**（規模キャップが削るのは breadth のみ。triage-guide.md `## 6.3`）
 
 #### 3.3 観点カバレッジ検算と構成テーブル出力
 
 **構成テーブルを確定する前に、起動前検算を実施する（orchestration-guide `### 8a`・default-mode のみ構成追加）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば構成テーブルに追加（またはバンドルで相乗り）してから確定する。v2.39.0 で旧 Phase 5.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。
 
-**モード除外**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**検算による構成追加は行わない**。検出した focus は `missing_coverage` に「観点未起動: <focus>（mode: <mode> により意図的縮退）」として記録のみする。
+**モード除外**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**検算による構成追加は行わない**。検出した focus は `missing_coverage` に識別子 `<focus>` のみ記録する（**mode による意図的縮退である旨はレポート本文へ**）。
 
 検算後、triage-guide.md の出力フォーマット（`## 5`）に従い、エージェント構成テーブルを出力する。**「直列 wave」行を必ず含める**（見積もり方は triage-guide.md `## 5.1`）— 体数はトークンコストのレバー、wave 数は壁時計のレバーで、後者だけが従来ユーザーから見えなかった（GitHub issue #100 B）。
 
@@ -296,7 +296,7 @@ reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出�
 - userConfig `enable_adaptive_rounds` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
 - 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
-- **unmet の target が全件「到達不能」**（DB / 本番の実データ、このリポジトリに存在しないコード、意図的にスキップした lint / テスト実走など）で、追加探索が構造的に空振りする場合。分類表と「1 件でも到達可能なら起動する」根拠は triage-dynamic-gates.md `## 8`（GitHub issue #100 C）。スキップ時は `missing_coverage` に「Round 2 スキップ: unmet 全件が到達不能（<target 要旨>）」を記録し、レポートの「動的ラウンド」行にも出す。**⚠️ 「repo 外」≠「到達不能」（v2.60.0）** — 外部サービスの実挙動でも**その MCP / CLI がセッションで使えるなら到達可能**で、Round 2 の前に**メインで直接照会して解決してよい**（read-only）
+- **unmet の target が全件「到達不能」**（DB / 本番の実データ、このリポジトリに存在しないコード、意図的にスキップした lint / テスト実走など）で、追加探索が構造的に空振りする場合。分類表と「1 件でも到達可能なら起動する」根拠は triage-dynamic-gates.md `## 8`（GitHub issue #100 C）。スキップ時は `missing_coverage` に識別子 `round2` を記録し（**理由はレポート本文へ**）、レポートの「動的ラウンド」行にも出す。**⚠️ 「repo 外」≠「到達不能」（v2.60.0）** — 外部サービスの実挙動でも**その MCP / CLI がセッションで使えるなら到達可能**で、Round 2 の前に**メインで直接照会して解決してよい**（read-only）
 
 **実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 6` の手順に従う（unmet_information 集約 → **high は 1 段圧縮**: 追加 explorer なしで該当 reviewer 最大 3 体を再起動し unmet ターゲットを自力探索させる / **xhigh・max は 2 段**: 追加 explorer 最大 3 体 → 該当 reviewer 再起動 → 初回出力を置換。失敗時は初回結果のまま続行の best-effort）。**回収した直後に `mark wave` を記録する**（Step 5 と同じ呼び出し。後勝ち。**追加 explorer を起動した場合も `--explorer` は付けない** — `agents.explorer_waves` は「初回 explorer の一括発行が守られたか」の指標で、Round 2 の追加 explorer を混ぜると規約どおりの起動が「一括発行違反」として誤検知される）。レポートに「Round 2 trigger: <reason>」を記録（Step 7 で出力）。
 
@@ -472,9 +472,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
 
 3. **投稿コメントのドラフト生成（任意）**: 精査後に残存／降格した指摘が **1 件以上** ある、**または** 総合判定が **Approve / Approve with nits** の場合に実行（どちらにも該当しなければスキップして 4 へ）。closing-flow-guide `## 3` に従い AskUserQuestion で要否と対象を確認し、`reply-tone-guide.md` `## 0 必須ルール` を厳守した文面を生成する（パターン×voice 選定・メタ行・署名・断定抑止・`Skill` tool 経由の writing-polish 推敲を含む）。**投稿は行わずドラフト出力のみ**。ユーザーが GitHub UI で手動投稿する。
 
-4. **このステップの直前に `${CLAUDE_PLUGIN_ROOT}/references/orchestration-measurement.md` を Read する**（publish 先の固定・`TS_FILE` のパス導出・区間の算出式・payload 契約の正本。レビュー本体の実行には不要なのでここまで読まない）。
-
-   **Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**指摘の精査を行った場合は精査後（post）の確定件数を使う**（取り下げ・降格を反映）。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。`SAFE_HOOK_NAME` を `code-review:review` に上書きして event_bus_publish を直接呼ぶ。
+4. **このステップの直前に `${CLAUDE_PLUGIN_ROOT}/references/orchestration-measurement.md` を Read する**（publish 先の固定・`TS_FILE` のパス導出・区間の算出式・payload 契約の正本。レビュー本体の実行には不要なのでここまで読まない）。**Event Bus publish (`review:completed`)**: 集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**指摘の精査を行った場合は精査後（post）の確定件数を使う**（取り下げ・降格を反映）。レポートに必要な数値（critical = confidence ≥ 90 件数、warning = 80 ≤ confidence < 90 件数、missing_coverage 配列）は既に手元にあるはず。
 
    **publish は専用スクリプトで行う**（書込先の固定・所要時間の算出・一時ファイルの掃除をまとめて担当する）。`duration_*` と **`agents.explorer_waves`** は**渡さない** — スクリプトが計測ファイル（explorer wave の打点）から算出して注入する:
 
@@ -483,7 +481,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
      --plugin code-review:review --pr <PR番号> --payload '<orchestration-measurement.md `## 16` の review 用テンプレートを実値で埋めたもの。effort は '"${CLAUDE_EFFORT}"' の実値>'
    ```
 
-   - スクリプトが payload の JSON 妥当性検証・書込先のメインリポジトリ固定・一時ファイルの掃除まで行う（→ orchestration-measurement.md `## 13`）。**`measurement_gaps` / `diff_digest` / `tokens` と版マーカーの整数（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`）も渡さない** — 計測ファイル・一時 diff・transcript から算出して注入される（定数の手書きは version drift 中に落ちサンプルが逆の版バケツに入るため v2.65.0 で移した / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）
+   - スクリプトが payload の JSON 妥当性検証・**`missing_coverage` の語彙検証**（識別子以外＝理由つき自由文は `FATAL` で弾く。**理由はレポートの「⚠️ 欠損観点」に書き、フィールドごと落として通さない** / issue #132）・書込先のメインリポジトリ固定・一時ファイルの掃除まで行う（→ orchestration-measurement.md `## 13`）。**`measurement_gaps` / `diff_digest` / `tokens` と版マーカーの整数（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`）も渡さない** — 計測ファイル・一時 diff・transcript から算出して注入される（定数の手書きは version drift 中に落ちサンプルが逆の版バケツに入るため v2.65.0 で移した / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）
 
    **payload 契約の正本は orchestration-measurement.md `## 16`**（フィールドの意味・版マーカー・後方互換をここに複写しない）。review 固有の点のみ:
    - `pr` は Step 1 で取得した PR 番号の文字列（失敗時は `"local"`）。`head_verified` は review のみのフィールド（Step 4 / Step 5 で回収した `HEAD 検証:` 行の集計）
@@ -492,9 +490,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
 
    **publish の直後に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh"` を実行する**（→ 同 `## 18`）。出力は**そのままレポートの後ろに出す**（要約・再解釈をしない）。**⚠️ シグナル行が出たときだけ**戻り先ドキュメントを示して 1〜2 行の所見を添え、無い回は集計表だけ出す。失敗しても続行（best-effort）。
 
-5. **agent worktree の掃除（ExitWorktree の直前 / 必須）**: agent は `isolation: "worktree"` で起動するため体数ぶんの worktree が配下に残り、**この状態では `ExitWorktree(remove)` が state 検証に失敗して worktree を畳めない**（GitHub issue #105）:
+5. **agent worktree の掃除（ExitWorktree の直前 / 必須）**: agent は `isolation: "worktree"` で起動するため体数ぶんの worktree が配下に残り、**この状態では `ExitWorktree(remove)` が state 検証に失敗して worktree を畳めない**（GitHub issue #105）。**同じブロックで publish 済みかを確認する**（4 の publish は副作用のみで出力に何も足さないため、脱落しても実行中は気づけない。ここは必須ステップなので通過が保証される / GitHub issue #133。**警告が出たら ExitWorktree の前に 4 へ戻る** — `TS_FILE` の slug は worktree のパス由来なので、抜けた後では同じ計測ファイルを引けなくなる / orchestration-measurement.md `## 13.1`）:
 
    ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" publish-pending --pr <PR番号>
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/cleanup-agent-worktrees.sh"
    ```
 

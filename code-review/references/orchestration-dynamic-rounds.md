@@ -3,9 +3,9 @@
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @79cdab45 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @fe10bf1f -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @3f9680c8 -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @040c3aee -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @34e7126b -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @3d150994 -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @fb050107 -->
 
 **このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は SKILL.md 側にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。
 
@@ -29,7 +29,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
 1. 全 reviewer 出力をパースし、`## unmet_information` セクションを集約する
 1.5. **各 target を repo 内 / セッション到達可能 / 到達不能の 3 分類に振り分ける**（triage-dynamic-gates.md `## 8` の分類表。メインコンテキストで判定・agent 不要）。**「repo 外」＝「到達不能」ではない**（v2.60.0。二分のままだと取れる情報を「構造的に空振り」と誤判定して wave ごと捨てる）:
    - **セッション到達可能**（①そのサービスの MCP / CLI がこのセッションで使える外部状態 ②**ディスク上に実体のある他リポジトリ** — 存在確認 1 回で判定・絶対パス・read-only。定義の正本は triage-dynamic-gates.md `## 8` の分類表）は、**Round 2 を起動する前にメインコンテキストで直接照会して解決する**（read-only の照会に限る。書込・破壊的操作は含めない）。これは Round 2 の代替であって追加ではない。解決したら該当指摘の confidence / severity を再評価し、レポートの「動的ラウンド」行に `スキップ（unmet をメインで直接照会して解決）` と出す
-   - 照会で解決したぶんを除いて**残りが全件「到達不能」なら本フェーズ全体をスキップ**し、`missing_coverage` に「Round 2 スキップ: unmet 全件が到達不能（<target 要旨>）」を記録して次フェーズへ進む
+   - 照会で解決したぶんを除いて**残りが全件「到達不能」なら本フェーズ全体をスキップ**し、`missing_coverage` に識別子 `round2` を記録して次フェーズへ進む（**理由（到達不能な target の要旨）はレポートの「⚠️ 欠損観点」に書く** — payload は識別子のみ）
    - **1 件でも repo 内 / 未解決のセッション到達可能があれば通常どおり続行する**（迷う target は到達可能側に倒す）
 2. **repo 内 + 未解決のセッション到達可能**の target から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
 3. **経路分岐**（実行時 effort = `${CLAUDE_EFFORT}`。triage-dynamic-gates.md `## 8` Phase 5.5）:
@@ -56,7 +56,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
    - **由来タグ `[meta]` を付け、レポート本文の指摘行まで持ち越す**（GitHub issue #121）。`recall_skeptic` の `[recall-skeptic]` と同じ扱いで、**タグはレポート契約の一部**。落とすと publish 時点で由来を再構成できず `meta_reviewer.findings_added` が記憶依存になって系統的に 0 へ潰れる
    - dedup で reviewer 指摘と重複した場合は `[meta:dup]` とし、`findings_added` の分子に入れない（`[recall-skeptic:dup]` と同じ理由 — 重複は「盲点でなかった事例」なので混ぜると価値率が張り付く）
 
-**失敗時**: meta-reviewer が失敗した場合は missing_coverage に `meta-reviewer: <failure reason>` を追記して続行
+**失敗時**: meta-reviewer が失敗した場合は `missing_coverage` に識別子 `meta-reviewer` を追記して続行（**失敗理由はレポートの「⚠️ 欠損観点」に書く**）
 
 ## 9. 冷や読み skeptic 実行手順（review Phase 5.8・self-review Phase 4.8）
 
@@ -74,7 +74,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
    - **`[recall-skeptic:dup]` を価値率の分子に混ぜない**。skeptic は generalist 一頭で reviewer fleet（effort 上限まで最大 6〜10 体）と同じ diff を読むため**重複は常態**であり、混ぜると価値率が 100% に張り付いて「findings_added=0 なら縮小」の分岐が原理的に発火しなくなる（過少計上の裏返しで、過大計上という別の壊れ方になる）
    - タグは**レポート本文の指摘行まで持ち越す**（Step 7 / Step 6 のレポート契約。publish 時に `findings_added` / `findings_overlap` を数える唯一の根拠）
 
-**失敗時 / スキップ時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に `recall-skeptic: <failure reason>` を追記して続行する。スキップ条件（effort / config / scope・emergency）に該当した場合でも、surface 判定（正規表現・grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と独立に必ず実施する。**起動条件（high-risk surface）を満たしたのに未実行だった事実は、失敗・スキップのいずれでもレポート（review Step 7 / self-review Step 6 の「動的ラウンド」行）に必ず出す**（silent skip で偽の安心を防ぐ・issue #85）
+**失敗時 / スキップ時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に識別子 `recall-skeptic` を追記して続行する（**失敗理由はレポートの「⚠️ 欠損観点」に書く**）。スキップ条件（effort / config / scope・emergency）に該当した場合でも、surface 判定（正規表現・grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と独立に必ず実施する。**起動条件（high-risk surface）を満たしたのに未実行だった事実は、失敗・スキップのいずれでもレポート（review Step 7 / self-review Step 6 の「動的ラウンド」行）に必ず出す**（silent skip で偽の安心を防ぐ・issue #85）
 
 ## 10. 反証レイヤー実行手順（review Phase 5.9・self-review Phase 4.9）
 

@@ -70,7 +70,23 @@ fi
 
 # self-review は publish が「修正方針確認」より前にあり closing 区間が構造上 ≒0 になるため
 # -1（測定不能）を入れる。0 を publish すると「人間待ちが無かった」と誤読される（`## 14`）
-case "$PLUGIN" in *self-review) DUR_CLOSING=-1 ;; esac
+#
+# **遅れて publish した回（t2 から 10 分以上）は `duration_min` を欠測に倒す**（GitHub issue #133）。
+# self-review の `duration_min` は「t0 → Step 6.4」という契約なので、publish 脱落に後から気づいて
+# 修正作業の後に踏むと、契約と違う区間を**もっともらしい大きい値**として載せてしまう。t2→publish の
+# 生値（closing を -1 に潰す前）でしか判定できないのでここで見る。**review には掛けない** — あちらは
+# 締めフロー（人間待ち）を含むのが契約なので、大きいこと自体は正常
+LATE_PUBLISH=0
+case "$PLUGIN" in
+  *self-review)
+    case "$DUR_CLOSING" in
+      ''|-1|*[!0-9-]*) : ;;
+      *) [ "$DUR_CLOSING" -ge 10 ] && LATE_PUBLISH=1 ;;
+    esac
+    DUR_CLOSING=-1
+    ;;
+esac
+[ "$LATE_PUBLISH" = "1" ] && DUR=-1
 
 # ---- トークン消費（**review のみ** / issue #126） ---------------------------
 # 体数削減が確実に効くのは壁時計ではなくトークン（triage-guide.md `## 7`）なのに、payload は
@@ -120,8 +136,9 @@ MERGED=$(
   REVIEW_TOKENS="$TOKENS_JSON" \
   REVIEW_TOKENS_WANTED="$TOKENS_WANTED" \
   REVIEW_TOKENS_WINDOW="$TOKENS_WINDOW" \
+  REVIEW_LATE_PUBLISH="$LATE_PUBLISH" \
   python3 - "$PAYLOAD" <<'PY'
-import json, os, sys
+import json, os, re, sys
 try:
     payload = json.loads(sys.argv[1])
 except ValueError as e:
@@ -130,6 +147,38 @@ except ValueError as e:
 if not isinstance(payload, dict):
     sys.stderr.write("payload が JSON オブジェクトでない\n")
     sys.exit(1)
+
+# ---- `missing_coverage` の語彙検証（GitHub issue #132） ---------------------
+# 規約は「識別子のみ」（正本: references/orchestration-measurement.md `## 16` の
+# 「`missing_coverage` の記法」）なのに検証が無く、実データに理由つき自由文が 12 種混入して
+# **同一観点が別項目として数えられていた**（`adversarial-verify` が 4 項目に分裂）。欠損観点の
+# 偏りを見るのが本フィールドの唯一の用途なので、綴りが割れると計測目的そのものが消える。
+#
+# **JSON 妥当性検証と同じ位置で fail-fast する**（黙って正規化しない）。理由・補足はレポート
+# 本文の「⚠️ 欠損観点」に書く規約なので、落として直させても情報は失われない。
+#
+# **`fullmatch` を使う（`match` + `$` ではない）**: Python の `$` は文字列末尾の改行 1 個の直前にも
+# マッチするため、`match` だと `"recall-skeptic\n"` が通る。`json.dumps` が `\n` をエスケープして
+# 1 行 JSON は壊れないので**下流のどの検証にも引っかからず**、塞いだはずの綴り割れが復活する。
+# publish 全体を落とす代償を払う検証なので、緩い一致で妥協しない。
+MC_RE = re.compile(r"[a-z0-9-]+(:[a-z0-9-]+)?")
+mc = payload.get("missing_coverage")
+if mc is not None:
+    if not isinstance(mc, list):
+        sys.stderr.write("missing_coverage が配列でない（空なら [] を渡す）\n")
+        sys.exit(1)
+    bad = [x for x in mc if not (isinstance(x, str) and MC_RE.fullmatch(x))]
+    if bad:
+        sys.stderr.write(
+            "missing_coverage に識別子以外が混ざっている: %s\n"
+            "許容形は `<focus 名>` / `<phase 名>` / `<phase 名>:<focus 名>`（小文字・数字・`-` のみ。"
+            "例 `error-handling` / `recall-skeptic` / `explorer:value-flow-trace`）。\n"
+            "**理由・件数・finding id はレポート本文の「⚠️ 欠損観点」に書く**（payload は集計用）。\n"
+            "**フィールドごと落として通さないこと** — 欠落は measurement_gaps に記録される。\n"
+            % json.dumps(bad, ensure_ascii=False)
+        )
+        sys.exit(1)
+
 # duration_* は常にスクリプト側の値で上書きする（呼び出し側が渡していても勝つ）
 payload.update(json.loads(os.environ["REVIEW_DURS"]))
 
@@ -148,6 +197,16 @@ launched = agents.get("explorer")
 gaps = [g for g in os.environ.get("REVIEW_MEASUREMENT_GAPS", "").split() if g]
 if isinstance(launched, int) and launched >= 1 and waves == 0:
     gaps.append("explorer-wave")
+
+# 上の語彙検証を「フィールドを消す」で回避されると、綴り割れの代わりに**静かな全欠測**になる。
+# 欠落は空配列（＝欠損観点なし）と区別して可視化する（issue #132）
+if mc is None:
+    gaps.append("payload:missing_coverage")
+
+# 遅れて publish した self-review（issue #133）。`duration_min` は -1 に倒してあるので、
+# **なぜ欠測なのか**をここで残す（打点漏れと区別できないと是正先が分からない）
+if os.environ.get("REVIEW_LATE_PUBLISH") == "1":
+    gaps.append("late-publish")
 
 # ---- 版マーカー（定数）の注入（GitHub issue #125） --------------------------
 # 版マーカーは「常に N を入れる」定数なのに **LLM が手書きする 15 フィールドの一部**だった。
@@ -257,10 +316,12 @@ case "$MERGED" in
 esac
 
 # ---- publish（best-effort。失敗してもレビュー自体は成功扱い） ---------------
+PUBLISHED=0
 # shellcheck disable=SC1091
 if source "${CLAUDE_PLUGIN_ROOT:-$HERE/..}/hooks/lib/safe-hook.sh" 2>/dev/null; then
   if CLAUDE_PROJECT_DIR="$MAIN_ROOT" SAFE_HOOK_NAME="$PLUGIN" \
        event_bus_publish "review:completed" "$MERGED"; then
+    PUBLISHED=1
     echo "published to $MAIN_ROOT/.claude/events.jsonl ($PLUGIN)"
   else
     echo "WARN: event_bus_publish に失敗した（計測データは欠測になる）" >&2
@@ -269,9 +330,19 @@ else
   echo "WARN: safe-hook.sh を読み込めず publish をスキップした" >&2
 fi
 
-# ---- 一時ファイルの掃除 -----------------------------------------------------
-if [ "$KEEP" = "0" ]; then
-  bash "$HERE/review-timing.sh" cleanup ${PR_ARGS[@]+"${PR_ARGS[@]}"}
-  rm -f "$(review_path prctx)" "$(review_path diff)" "$(review_path agentctx)"
+# ---- 一時ファイルの掃除（**publish に成功したときだけ** / GitHub issue #133） -
+# 旧版は成否に関わらず掃除していたため、**イベントが書かれなかった回ほど痕跡が残らない**という
+# 逆向きの縮退になっていた（打点ごと消えるので後から publish し直せず、`publish-pending` も
+# ファイル不在で無言になる）。失敗回は一時ファイルを残し、次のフェーズ冒頭のガードに拾わせる。
+if [ "$PUBLISHED" = "1" ]; then
+  # 掃除より先に成功マーカーを打つ（`--keep-temp` でファイルが残る回のため。KEEP=0 なら直後に消える）
+  bash "$HERE/review-timing.sh" mark published ${PR_ARGS[@]+"${PR_ARGS[@]}"}
+  if [ "$KEEP" = "0" ]; then
+    bash "$HERE/review-timing.sh" cleanup ${PR_ARGS[@]+"${PR_ARGS[@]}"}
+    rm -f "$(review_path prctx)" "$(review_path diff)" "$(review_path agentctx)"
+  fi
+else
+  echo "WARN: publish に失敗したので一時ファイルを残した（同じ引数で再実行すれば復旧できる。" >&2
+  echo "      次フェーズ冒頭の \`review-timing.sh publish-pending\` もこの回を検知する）" >&2
 fi
 exit 0

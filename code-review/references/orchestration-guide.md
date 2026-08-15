@@ -184,18 +184,18 @@ HEAD 検証: <実測 SHA> / 期待 <{{HEAD_SHA}}> / 一致|不一致|未実行
 
 オーケストレーターは結果回収時（review Step 4 / Step 5）にこの行を読み、以下を行う:
 
-- **`不一致` / `未実行` / 行そのものが無い** → `missing_coverage` に `HEAD 不一致: <agent の focus>（実測 <SHA>）` を記録し、**その agent の指摘すべてに `[unverified: HEAD 不一致]` を付ける**（scoring-guide の claim grounding と同じ扱い）
+- **`不一致` / `未実行` / 行そのものが無い** → `missing_coverage` に識別子 `head-mismatch:<agent の focus>` を記録し（**実測 SHA はレポート本文へ**）、**その agent の指摘すべてに `[unverified: HEAD 不一致]` を付ける**（scoring-guide の claim grounding と同じ扱い）
 - 行が無いだけの場合は上記の非レビュー出力と同様に **1 回だけ auto-retry** してよい（retry 後も無ければ記録して続行）
 - 集計は `review:completed` payload の `head_verified` に載せる（`{ok, mismatch, unknown}`）。「何体が正しい HEAD を見ていたか」を事後に追えるようにするのが目的
 
 **この行の不在自体が信号になる**ことが要点で、agent の善意に依存しない。self-review は PR を持たず checkout もしないため対象外。
 
-非レビュー出力を検出した reviewer は、**同一プロンプトで 1 回だけ auto-retry** する（複数同時検出時はまとめて並列 retry）。retry 出力も非レビュー出力なら、その reviewer の focus / angle を `missing_coverage` に「非レビュー出力（auto-retry 後も形式不正）」として記録して続行する（欠損観点として扱い、フィルタを素通りさせない）。**retry も agent wave なので、retry 出力を回収した直後に `mark wave` を記録し直す**（後勝ち。打ち忘れると retry の実時間が `duration_synthesis_min` に混入し、「agent 非稼働が構造的に保証される区間」という定義が破れる — orchestration-measurement.md `## 14`）。「指摘ゼロ」を明示的に報告した妥当な出力（`### レビュー結果` を持ち問題なしと結論）は非レビュー出力ではないため retry 対象にしない。
+非レビュー出力を検出した reviewer は、**同一プロンプトで 1 回だけ auto-retry** する（複数同時検出時はまとめて並列 retry）。retry 出力も非レビュー出力なら、その reviewer の focus / angle を `missing_coverage` に識別子 `<focus>` を記録して続行する（**auto-retry 後も形式不正だった旨はレポート本文へ**）（欠損観点として扱い、フィルタを素通りさせない）。**retry も agent wave なので、retry 出力を回収した直後に `mark wave` を記録し直す**（後勝ち。打ち忘れると retry の実時間が `duration_synthesis_min` に混入し、「agent 非稼働が構造的に保証される区間」という定義が破れる — orchestration-measurement.md `## 14`）。「指摘ゼロ」を明示的に報告した妥当な出力（`### レビュー結果` を持ち問題なしと結論）は非レビュー出力ではないため retry 対象にしない。
 
 ### 部分失敗耐性
 
-- **explorer**: 個別 explorer が失敗しても全体を中止しない。失敗した explorer の type / focus / エラー要旨を `missing_coverage` リストに記録し、残った explorer の結果で続行する。該当 focus に依存する reviewer には、reviewer 起動時に「探索結果なし（失敗理由）」を明示して渡す
-- **reviewer**: 個別 reviewer が失敗しても成功した reviewer の結果で合成継続する。失敗した reviewer の focus / angle / エラー要旨を `missing_coverage` リストに追記する
+- **explorer**: 個別 explorer が失敗しても全体を中止しない。失敗した explorer を `missing_coverage` に識別子 `explorer:<focus>` として記録し（**エラー要旨はレポート本文へ**）、残った explorer の結果で続行する。該当 focus に依存する reviewer には、reviewer 起動時に「探索結果なし（失敗理由）」を明示して渡す
+- **reviewer**: 個別 reviewer が失敗しても成功した reviewer の結果で合成継続する。失敗した reviewer を `missing_coverage` に識別子 `<focus>` として追記する（**angle・エラー要旨はレポート本文へ**）
 
 ### 最小保証の閾値
 
@@ -228,8 +228,8 @@ reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検
 
 1. `triage-guide.md` の「reviewer の観点判定」表の各条件を、実際の diff シグナル（変更ファイルパス・diff 内文字列）に対して **メインコンテキストで再評価** する
 2. **「条件を満たすのに構成に入っていない focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在、`package.json` 変更があるのに dependency 不在）
-3. 検出した focus は **構成テーブルに追加してから確定する**（実効上限＝ effort 上限（triage-guide.md `## 7`）と規模キャップ（triage-guide.md `## 6.2`）の min に収まる範囲。**検算による追加で実効上限を超えてはならない** — 上限に達したら観点バンドル（triage-guide.md `## 7`）で既存 reviewer に相乗りさせ、それも不能なら `missing_coverage` に「観点未起動: <focus>（diff シグナル: <根拠>）」として記録する）
-4. **モード除外（review のみ）**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**構成追加は行わない**。検出した focus は `missing_coverage` に「観点未起動: <focus>（mode: <mode> により意図的縮退）」として記録のみする。self-review は `--focus` / `--exclude` 指定時にその範囲内でのみ検算する
+3. 検出した focus は **構成テーブルに追加してから確定する**（実効上限＝ effort 上限（triage-guide.md `## 7`）と規模キャップ（triage-guide.md `## 6.2`）の min に収まる範囲。**検算による追加で実効上限を超えてはならない** — 上限に達したら観点バンドル（triage-guide.md `## 7`）で既存 reviewer に相乗りさせ、それも不能なら `missing_coverage` に識別子 `<focus>` を記録する（**根拠の diff シグナルはレポート本文へ**））
+4. **モード除外（review のみ）**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**構成追加は行わない**。検出した focus は `missing_coverage` に識別子 `<focus>` のみ記録する（**mode による意図的縮退である旨はレポート本文へ**）。self-review は `--focus` / `--exclude` 指定時にその範囲内でのみ検算する
 
 ### 8b. 事後突合（review Phase 5.7・self-review Phase 4.7 / logging のみ・agent 追加起動なし）
 

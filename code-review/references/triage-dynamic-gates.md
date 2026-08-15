@@ -1,9 +1,9 @@
 # 動的ラウンドの起動ゲート（triage-guide 分冊）
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @4260c35c -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @a70a602f -->
 <!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @3cd94d38 -->
-<!-- SSOT: code-review/references/orchestration-guide.md#5 @75709af1 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @22014383 -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
 
@@ -43,7 +43,7 @@
   - **読むときは絶対パスを使う**（review は worktree 内から実行されるため、相対パスで兄弟ディレクトリを辿らない。メイン作業ツリーの絶対パスは `triage-signals.sh` の `## host-deps` の `main-root` が出す）
   - **読み取り専用**。他リポジトリに書き込まない
 - **1 件でも repo 内 / セッション到達可能があれば、スキップしない** — 実測では unmet 8 件中 7 件が到達不能だったが、残り 1 件（DB 制約）を Round 2 が repo 内 doc で解決した結果、指摘 1 件の severity が MAJOR → MINOR に変わった。判定に迷う target は到達可能側に倒す
-- スキップした場合は `missing_coverage` に「Round 2 スキップ: unmet 全件が到達不能（<target 要旨>）」として記録し、レポートの「動的ラウンド」行にも理由を出す（silent に落とさない）
+- スキップした場合は `missing_coverage` に識別子 `round2` を記録し（**理由はレポート本文へ**）、レポートの「動的ラウンド」行にも理由を出す（silent に落とさない）
 
 **動作（effort で経路が分かれる。実行手順の正本は orchestration-dynamic-rounds.md `## 6`）**:
 - **high（既定）— 1 段圧縮**: 追加 explorer は起動しない。unmet を申告した reviewer のみ再起動し、**unmet ターゲットを自力探索（Read / Grep / Glob）してから初回 confidence を再評価**させる。直列 wave を 2 → 1 に減らし、sonnet 経由の要約受け渡しも省く（的の絞れた追加探索は opus 自身が掘る方が受け渡しロスがない）
@@ -187,7 +187,7 @@ skeptic テンプレートは `prompts/recall-skeptic.md`。findings / reviewer 
 ### userConfig / 失敗時
 
 - **userConfig**: `enable_recall_skeptic: false` で強制スキップ（既定 true）。計測前の暴走はこの config と effort での明示スキップで即時停止できる
-- **失敗時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に `recall-skeptic: <failure reason>` を追記して best-effort 続行する。**起動条件（high-risk surface）を満たしたのに未実行だった事実はレポートに必ず出す**（silent 失敗で「守ったつもり」の偽の安心を防ぐ）
+- **失敗時**: skeptic が失敗 / タイムアウトした場合は `missing_coverage` に識別子 `recall-skeptic` を追記して best-effort 続行する（**失敗理由はレポート本文へ**）。**起動条件（high-risk surface）を満たしたのに未実行だった事実はレポートに必ず出す**（silent 失敗で「守ったつもり」の偽の安心を防ぐ）
 
 ## 9. 反証レイヤー（Phase 5.9 / 4.9 / 動的）
 
@@ -196,6 +196,8 @@ reviewer の指摘を独立エージェントが反証し、過大な指摘の p
 > **実際の主機能は severity の較正であって偽陽性の除去ではない**（GitHub issue #114 / 累計 n=49・102 verdict）: `severity_inflated` **52%** / `confirmed` 37% / `refuted` **9%** / `uncertain` 0% / `contested` 2%。層の価値を否定するデータではない（実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている）が、**「偽陽性を潰す層」と読むと期待と実挙動がずれる**。過大 severity の上流対策は `prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」と、その直後の**「降格される典型パターン」**（v2.62.0 / issue #123 A）に置いた。
 >
 > **この 52% を上流対策の効果測定に使わないこと。** 累計値は対策前のサンプルを含むため、施策の効果が構造的に薄まる（`## 16` の「版マーカーで層別し日付で切らない」の一般則）。効果は `adversarial_verify.calibration_schema` で層別した内訳で見る — 集計は `scripts/review-retro.sh` が層別済みの表で出す。
+>
+> **この禁止はスクリプト側でも守らせている**（v2.66.0 / GitHub issue #131）: `review-retro.sh` の `severity_inflated` シグナルは **`calibration_schema >= 2` の層でしか発火しない**。`calibration_schema` が LLM の手書きだった v2.64.x 以前は全サンプルが層 1（対策**前**）に落ちるため、**doc が「使うな」と書いている累計値でシグナルが鳴り続けていた**。**判定できるだけの層 2 サンプルが貯まるまでは、表の下に状態を 1 行出す**（黙ると「効果あり」と読まれるため）— 層 1 しか無ければ「対策前のみ」、層 2 が 20 verdict 未満なら「蓄積中（N/20）」。**層で切るだけにしないこと** — 現行版は `calibration_schema: 2` を常に注入するので層 2 は 1 件目ですぐ現れる一方、シグナルは 20 verdict を要求するため、蓄積中が無言区間になる。**`uncertain` / `refuted` のシグナルはこの層別に掛けない** — 反証レイヤー自身の effort / バッチサイズの再監視条件であって、上流較正の効果測定ではない。
 
 ### 対象指摘の選定（非対称ゾーン優先 + specialist 除外）
 

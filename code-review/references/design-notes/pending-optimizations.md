@@ -59,3 +59,15 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 **案**: explorer を廃し、reviewer に「必要なら自分で探索」させる。
 
 **採らない理由**: reviewer の探索量（＝ cache_write と往復）が増えるので、wave を 1 本減らす代わりに wave 内の時間が伸びる。**トレードオフの向きが不明**なうえ、explorer の「判定せず事実だけ集める」独立性は reviewer の確証バイアスを避ける設計上の要でもある。`duration_explore_min`（v2.43.0 で追加）が貯まって wave 単価が分かってから判断する。
+
+## 5. publish 脱落ガードの Stop hook 昇格
+
+**現状**: `review-timing.sh publish-pending` を SKILL の必須ステップ冒頭（self-review Step 7 / review 締めフロー 5）で呼ぶ。判定自体は決定的（`t2` があって `pub` が無い）だが、**呼ぶかどうかは LLM 依存**。
+
+**案**: Stop hook 化する。`.claude/settings.json` の `auto-quality-check.sh` と同型で、ターン終了時に `${TMPDIR}/claude-code-review-<uid>/review-start-*` を glob して未 publish の計測ファイルが残っていれば通知する（`--pr N` を知らなくても glob で当たる）。CLAUDE.md「ルール配置の意思決定」の昇格基準のうち **①判定が if/grep で表現できる ②修復コストが高い（打点は復元不能）** の 2 つに該当する。
+
+**まだ入れていない理由**:
+
+- **誤検知の設計が未確定**。glob は**他セッション・他リポジトリのレビュー**の計測ファイルにも当たる（`TS_FILE` の slug は worktree ルート由来で、hook 側からは自分の回かどうかを判定できない）。並行レビューが常態のマーケットプレイス前提（`dev-workflow:worktree-setup`）では、鳴りっぱなしになって「⚠️ が出たときだけ行動する」契約を壊すリスクがある
+- code-review は現在 SessionStart hook しか持たず、**新規 hook の追加は `claude-meta:component-addition-advisor` の退路確保ゲートの対象**（CLAUDE.md）。既存拡張（SKILL 側のガード）で足りるかを先に測る
+- **判断材料**: `measurement_gaps` の `late-publish` の発生率（`review-retro.sh` が gap 種別ごとに自分の分母で判定する / v2.66.0）。SKILL 側ガードで頻度が落ちなければ hook へ上げる

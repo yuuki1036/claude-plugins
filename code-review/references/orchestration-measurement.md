@@ -37,7 +37,7 @@
 
 **パスの識別子は `--show-toplevel`（= その worktree 自身のパス）から作る**。`--git-common-dir` が全 worktree で同じ値を返すのに対し、`--show-toplevel` は**worktree ごとに異なる**ので、これ 1 つで並行セッションを分離できる。同一セッション内では Step 1 と publish の両方が同じ worktree の中で走る（review は ExitWorktree より前に publish する）ため、決定性も保たれる:
 
-**実装は `scripts/review-timing.sh` が持ち、パス導出は `scripts/lib/review-paths.sh` が正本**（`start` / `mark` / `durations` / `t0` / `waves` / `gaps` / `cleanup` の 7 サブコマンド。SKILL からはこれを呼ぶだけで、パスの組み立てを本文に書かない。`t0` は publish がトークン計測の窓を絞るために使う内部用で、SKILL からは呼ばない）。識別子の仕様:
+**実装は `scripts/review-timing.sh` が持ち、パス導出は `scripts/lib/review-paths.sh` が正本**（`start` / `mark`（`t1` / `wave` / `t2` / `published`）/ `durations` / `t0` / `waves` / `gaps` / `publish-pending` / `cleanup` の 8 サブコマンド。SKILL からはこれを呼ぶだけで、パスの組み立てを本文に書かない。`t0` は publish がトークン計測の窓を絞るために使う内部用で、SKILL からは呼ばない）。識別子の仕様:
 
 - **worktree のルート**（`--show-toplevel`）を cksum で slug 化する。review はさらに `--pr N` で PR 番号を混ぜる（`--pr` は数値のみ受理する）
 - `--git-common-dir` は使わない（全 worktree で同じ値を返すので識別子にならない）
@@ -117,6 +117,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 - `duration_closing_min` = t2→t3: 締めフロー（精査・解説・ドラフト）。**大半が人間の応答待ち**なので、他の 2 区間と混ぜて比較しない
   - **publisher 差分（必読）**: review は `レポート → 締めフロー 1〜3（人間待ち）→ 締めフロー 4 publish` の順なので t2→t3 が人間待ちを捉える。**self-review は publish（Step 6.4）が Step 7 の修正方針確認より前**にあり構造上 ≒0 になるため、**self-review は `duration_closing_min` に `-1`（測定不能）を入れる**。0 を publish すると「人間待ちが無かった」と誤読される
   - 同じ理由で **`duration_min`（全体）の意味も publisher 間で非対称**（review は締めフロー込み / self-review は Step 7 手前まで）。集計は `plugin` フィールドで層別してから行い、区間比較には `duration_fleet_min` を使う
+  - **publish の脱落と、遅れて気づいた回の扱い（v2.66.0 / GitHub issue #133）**: publish は副作用のみで標準出力に何も足さないため、**踏み忘れても実行中は誰も気づかない**（self-review は Step 6.4 の後に Step 7 の修正作業が控えており、「指摘は全部修正して」と言われている回ほど落ちる）。二重で塞ぐ:
+    - `mark t2` が「締めは publish で終わる」ことを stdout に出す（**打点の直後 ＝ 落ちる直前**に言う）
+    - `review-timing.sh publish-pending [--pr N]` が「**`t2` があって `pub` が無い**」で未 publish を検出する。呼ぶ位置は self-review Step 7 冒頭（**embed / 指摘 0 件でもここだけは実行する**）/ review 締めフロー 5。**ファイル不在は無言**（publish 済みで掃除された回と「そもそも計測していない」を区別できないので、鳴らす側に倒すと毎回鳴る）
+    - **`pub` マーカーと掃除の順序が判定の土台**（v2.66.0 のセルフレビュー指摘）: `publish-review-event.sh` は `event_bus_publish` に**成功したときだけ** `mark published` を打ち、そのときだけ一時ファイルを掃除する。旧版は成否に関わらず掃除していたため、**イベントが書かれなかった回ほど痕跡が残らない**という逆向きの縮退になっていた（打点ごと消えて再 publish もできず、ガードもファイル不在で無言）。失敗回は一時ファイルを残すので、同じ引数で再実行すれば復旧できる
+    - 遅れて publish した self-review は **`duration_min` を `-1`（欠測）に倒し `measurement_gaps` に `late-publish` を立てる**（t2→publish が **10 分以上**）。契約と違う区間を「もっともらしい大きい値」として載せない（`## 13.1` と同じ原則）。**review には掛けない** — あちらは締めフロー（人間待ち）を含むのが契約なので大きいこと自体が正常。`duration_fleet_min` 以下の区間は t2 までで閉じているので影響を受けない
 - **triage / fleet / closing の和は `duration_min` と一致しない**ことがある（マーカー欠測時）。一致を仮定した検算をしない。`duration_explore_min` は fleet の**内数**なので和に足さない
 - 旧サンプルとの層別: `duration_triage_min` フィールドの存在が v2.41.0 以降の publish マーカーになる（triage-guide.md `## 7` のロールバック条件が `agents` フィールドで版を切るのと同じ流儀。日付では切らない）。`duration_explore_min` の存在が v2.43.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降のマーカー
 - **`duration_*` が並行セッションに汚染されていないこと**は `## 13.1` の `TS_FILE` セッション識別に依存する。識別子を持たない版（v2.43.0 未満）の値は、同一リポジトリで worktree を並列運用していた期間について「もっともらしい過小値」を含みうるため、ロールバック判断の基準側に使わない
@@ -185,7 +190,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
 | `pre_adjust_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 分布。下の「調整前後の分離」を参照 |
 | `severity_threshold` | 実行時の `review_severity_threshold` 実効値（`BLOCKER`〜`MINOR`）。**どの severity が `## below-threshold` に回ったかを事後に判別するために必須**（v2.58.0〜）。これが無いと `pre_adjust_counts` の非可換性を補正できない |
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
-| `measurement_gaps` | **打点が欠けたマーカーの識別子配列**（v2.62.0 / `publish-review-event.sh` が注入。**SKILL からは渡さない**）。語彙は `start` / `t1` / `wave` / `t2` / `explorer-wave` / `diff-digest` / `tokens`（**review のみ**。transcript を引けなかった / 窓が空振りした）/ `payload:<field>`（層のオブジェクトごと欠落）/ `payload:<field>.fired`（発火記録の欠落）。**後ろ 3 つは v2.65.0 で追加**。**識別子ごとに是正先が違う**（打点 / payload テンプレート / transcript 引き当て / 突合キー算出）ので、集計側は種類を混ぜて 1 つの是正先を提示しないこと。**`tokens` は review でしか立たないので分母も review に絞る**。`duration_*` が `-1` になった理由を「打ち忘れ」と「該当なし」に分けるためのフィールドで、**欠測率そのものを計測対象にする**（issue #123 B）。`explorer-wave` は `agents.explorer >= 1` かつ打点 0 のときだけ入る（explorer 未起動は該当なしなので gap ではない）。`diff-digest` は突合キーを算出できなかった回に入る（＝ `## 19` の重複検出が事後に効かない。**「重複が無かった」と区別するために立てる**） |
+| `measurement_gaps` | **打点が欠けたマーカーの識別子配列**（v2.62.0 / `publish-review-event.sh` が注入。**SKILL からは渡さない**）。語彙は `start` / `t1` / `wave` / `t2` / `explorer-wave` / `diff-digest` / `tokens`（**review のみ**。transcript を引けなかった / 窓が空振りした）/ `payload:<field>`（**payload 側の欠落**。層のオブジェクトごと落ちた回 + `payload:missing_coverage`）/ `payload:<field>.fired`（発火記録の欠落）/ `late-publish`（**self-review のみ** / v2.66.0。t2 から 10 分以上あけて publish した回 = `duration_min` の契約が壊れているので `-1` に倒した。→ `## 14`）。**`tokens` / `payload:*` / `*.fired` は v2.65.0 で追加**。**識別子ごとに是正先が違う**（打点 / payload テンプレート / transcript 引き当て / 突合キー算出）ので、集計側は種類を混ぜて 1 つの是正先を提示しないこと。**`tokens` は review でしか立たないので分母も review に絞る**。`duration_*` が `-1` になった理由を「打ち忘れ」と「該当なし」に分けるためのフィールドで、**欠測率そのものを計測対象にする**（issue #123 B）。`explorer-wave` は `agents.explorer >= 1` かつ打点 0 のときだけ入る（explorer 未起動は該当なしなので gap ではない）。`diff-digest` は突合キーを算出できなかった回に入る（＝ `## 19` の重複検出が事後に効かない。**「重複が無かった」と区別するために立てる**） |
 | `diff_digest` | **diff 全文の cksum**（v2.62.0 / `publish-review-event.sh` が算出。**SKILL からは渡さない**）。重複レビューの**強い突合キー**で、**同一 skill の再実行でのみ一致する** — review は `gh pr diff`、self-review は `git diff BASE..HEAD` + `--cached` + unstaged の **3 本連結**で diff を作るので、同じ変更でもバイト列が違う（実測: 同一 head の PR で `1462260100-1256` vs `2713407599-105966`）。HEAD SHA ではなく diff にしたのは self-review が未コミット変更を含むため |
 | `diff_files` | **変更ファイルパス集合の cksum**（v2.62.0 / 同上）。**skill を跨いでも一致する弱いキー**で、連結・index 行・ハンクの分かれ方に影響されない代わりに**別内容の変更でも一致しうる**（＝重複の疑いどまり）。強弱 2 本を持つ理由は上の非対称。算出の正本は `scripts/lib/review-paths.sh` の `review_diff_keys` |
 | `tokens` | **トークン消費**（**review のみ** / v2.65.0 / `publish-review-event.sh` が `measure-tokens.sh --json` を呼んで注入。**SKILL からは渡さない**）。`{schema, window, main_output_k, main_cache_write_k, sub_output_k, sub_agents}`。下の「トークンを payload に載せる」を参照 |
@@ -238,11 +243,12 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - **消えた分の内訳（降格 / confidence 不足）はこの 1 フィールドでは分離できない。** `severity-inflated` 降格・`[scope:out]` 降格・報告マトリクスの confidence 落ちが同じ差分に合流するため。**まず「検出由来か調整由来か」の一段目だけを切る**フィールドであり、二段目が必要と分かってから内訳フィールドを足す（LLM が手で組む JSON なのでフィールド数自体がコスト）
 - 版マーカー: **`pre_adjust_counts` の存在が v2.44.0 以降・`schema` サブフィールドが算出方法の版**（欠落 = `1`）。日付では切らない
 
-**`missing_coverage` の記法（v2.44.0 で語彙固定）** — 要素は **識別子のみ**とし、理由・件数・finding id・自由文を混ぜない:
+**`missing_coverage` の記法（v2.44.0 で語彙固定・v2.66.0 で機械検証）** — 要素は **識別子のみ**とし、理由・件数・finding id・自由文を混ぜない:
 
-- 許容形: `<focus 名>`（例 `performance` / `error-handling`）/ `<phase 名>`（例 `explorer` / `recall-skeptic` / `adversarial-verify`）/ `<phase 名>:<focus 名>`（例 `explorer:value-flow-trace`）
+- 許容形: `<focus 名>`（例 `performance` / `error-handling`）/ `<phase 名>`（例 `explorer` / `round2` / `recall-skeptic` / `meta-reviewer` / `adversarial-verify`）/ `<phase 名>:<focus 名>`（例 `explorer:value-flow-trace` / `head-mismatch:security`）。**正規表現 `^[a-z0-9-]+(:[a-z0-9-]+)?$` に完全一致**（`re.fullmatch`。`re.match` だと末尾改行 1 個を通すので使わない）
 - **禁止**: `recall-skeptic (skip: effort=high)` / `adversarial-verify: F2 未反証` / `reviewer-security: surface なしのため未起動（メインで代替評価）` のような理由つき自由文。**理由はレポート本文の「⚠️ 欠損観点」セクションに書く**（payload は集計用）
 - 理由: 実データで同一概念が `adversarial-verify:finding-A` / `adversarial-verify-finding3` / `adversarial-verify: F2 未反証` / `adversarial-verify: 対象が実証済み` の **4 通りに分裂**し、`group_by` 集計が成立しなくなっていた。欠損観点の偏り（どの観点が落ちやすいか）は本フィールドの唯一の用途なので、綴りが割れると計測目的そのものが消える
+- **`publish-review-event.sh` が上の正規表現で検証し、外れたら publish せず `FATAL` で落ちる**（v2.66.0 / GitHub issue #132。規約だけでは守られず、実データに自由文が 12 種混入していた）。**黙って正規化はしない** — どの識別子に寄せるかを推測すると別の綴り割れを作る。**フィールドごと落として通さないこと**（欠落は `measurement_gaps` の `payload:missing_coverage` として記録され、綴り割れが静かな全欠測に置き換わるだけになる）
 
 **`adversarial_verify`** — 反証レイヤーの verdict 集計（`confirmed` / `refuted` / `uncertain` / `severity_inflated` / `contested`=高 severity の係争件数）。スキップ時は全 0。`severity_inflated` は v2.41.0 追加（4 つ目の verdict が集計から漏れていた。バッチ化 + effort 引き下げのロールバック判断に使う。triage-dynamic-gates.md `## 9`）。
 
