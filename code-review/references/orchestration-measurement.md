@@ -146,6 +146,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 
 | payload フィールド | 版マーカー | 現行値 |
 |---|---|---|
+| `findings_class` | `schema` | 1 |
 | `pre_adjust_counts` | `schema` | 2 |
 | `adversarial_verify` | `calibration_schema` | 2 |
 | `adversarial_verify` | `gate_schema` | 2 |
@@ -155,7 +156,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 
 - **`tokens.schema` は本表に載せない**（＝ `SCHEMA_MARKERS` に入れない）。**片方の skill でしか載らないフィールドの版マーカーは対象外**という例外で、`SCHEMA_MARKERS` は「層のオブジェクトが無ければ `payload:<field>` gap を立てる」経路と対になっているため、review 限定の `tokens` を入れると **self-review で毎回 gap が立つ**。この種のフィールドは構築ブロック側のリテラルで持つ（現行 `tokens.schema: 1`）
 - 値を変えるときは**本表と `SCHEMA_MARKERS` を同時に直す**。片方だけ直すと publish の実データ（スクリプトが正）と doc の解釈（本表が正）がずれ、下流の層別が静かに誤る
->
+
 review 用（`--plugin code-review:review --pr <PR番号>`）:
 
 ```json
@@ -169,6 +170,7 @@ review 用（`--plugin code-review:review --pr <PR番号>`）:
   "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
   "missing_coverage":[<json-array of focus names>],
   "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
+  "findings_class":{"lint":<n>,"test":<n>,"judgement":<n>},
   "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
   "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
   "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>}
@@ -187,6 +189,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
   "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
   "missing_coverage":[<json-array of focus names>],
   "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
+  "findings_class":{"lint":<n>,"test":<n>,"judgement":<n>},
   "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
   "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
   "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
@@ -206,6 +209,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
 | `pre_adjust_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 分布。下の「調整前後の分離」を参照 |
 | `severity_threshold` | 実行時の `review_severity_threshold` 実効値（`BLOCKER`〜`MINOR`）。**どの severity が `## below-threshold` に回ったかを事後に判別するために必須**（v2.58.0〜）。これが無いと `pre_adjust_counts` の非可換性を補正できない |
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
+| `findings_class` | **報告した指摘を「何が捕まえるべきだったか」で分類した件数**（v2.68.0 / GitHub 由来ではなく運用課題から）+ `schema`（スクリプトが注入）。`lint`=静的検査（grep / AST / 構造走査）で機械的に検出できた / `test`=回帰テストがあれば捕まえられた（コードの挙動の誤り）/ `judgement`=設計判断・主張の妥当性など機械で判定できない。**合計は報告件数（blocker+critical+major+minor）と一致させる**。下の「`findings_class` の使い方」を参照 |
 | `measurement_gaps` | **打点が欠けたマーカーの識別子配列**（v2.62.0 / `publish-review-event.sh` が注入。**SKILL からは渡さない**）。語彙は `start` / `t1` / `wave` / `t2` / `explorer-wave` / `diff-digest` / `tokens`（**review のみ**。transcript を引けなかった / 窓が空振りした）/ `payload:<field>`（**payload 側の欠落**。層のオブジェクトごと落ちた回 + `payload:missing_coverage`）/ `payload:<field>.fired`（発火記録の欠落）/ `late-publish`（**self-review のみ** / v2.66.0。t2 から 10 分以上あけて publish した回 = `duration_min` の契約が壊れているので `-1` に倒した。→ `## 14`）。**`tokens` / `payload:*` / `*.fired` は v2.65.0 で追加**。**識別子ごとに是正先が違う**（打点 / payload テンプレート / transcript 引き当て / 突合キー算出）ので、集計側は種類を混ぜて 1 つの是正先を提示しないこと。**`tokens` は review でしか立たないので分母も review に絞る**。`duration_*` が `-1` になった理由を「打ち忘れ」と「該当なし」に分けるためのフィールドで、**欠測率そのものを計測対象にする**（issue #123 B）。`explorer-wave` は `agents.explorer >= 1` かつ打点 0 のときだけ入る（explorer 未起動は該当なしなので gap ではない）。`diff-digest` は突合キーを算出できなかった回に入る（＝ `## 19` の重複検出が事後に効かない。**「重複が無かった」と区別するために立てる**） |
 | `diff_digest` | **diff 全文の cksum**（v2.62.0 / `publish-review-event.sh` が算出。**SKILL からは渡さない**）。重複レビューの**強い突合キー**で、**同一 skill の再実行でのみ一致する** — review は `gh pr diff`、self-review は `git diff BASE..HEAD` + `--cached` + unstaged の **3 本連結**で diff を作るので、同じ変更でもバイト列が違う（実測: 同一 head の PR で `1462260100-1256` vs `2713407599-105966`）。HEAD SHA ではなく diff にしたのは self-review が未コミット変更を含むため |
 | `diff_files` | **変更ファイルパス集合の cksum**（v2.62.0 / 同上）。**skill を跨いでも一致する弱いキー**で、連結・index 行・ハンクの分かれ方に影響されない代わりに**別内容の変更でも一致しうる**（＝重複の疑いどまり）。強弱 2 本を持つ理由は上の非対称。算出の正本は `scripts/lib/review-paths.sh` の `review_diff_keys` |
@@ -265,6 +269,13 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - **禁止**: `recall-skeptic (skip: effort=high)` / `adversarial-verify: F2 未反証` / `reviewer-security: surface なしのため未起動（メインで代替評価）` のような理由つき自由文。**理由はレポート本文の「⚠️ 欠損観点」セクションに書く**（payload は集計用）
 - 理由: 実データで同一概念が `adversarial-verify:finding-A` / `adversarial-verify-finding3` / `adversarial-verify: F2 未反証` / `adversarial-verify: 対象が実証済み` の **4 通りに分裂**し、`group_by` 集計が成立しなくなっていた。欠損観点の偏り（どの観点が落ちやすいか）は本フィールドの唯一の用途なので、綴りが割れると計測目的そのものが消える
 - **`publish-review-event.sh` が上の正規表現で検証し、外れたら publish せず `FATAL` で落ちる**（v2.66.0 / GitHub issue #132。規約だけでは守られず、実データに自由文が 12 種混入していた）。**黙って正規化はしない** — どの識別子に寄せるかを推測すると別の綴り割れを作る。**フィールドごと落として通さないこと**（欠落は `measurement_gaps` の `payload:missing_coverage` として記録され、綴り割れが静かな全欠測に置き換わるだけになる）
+
+**`findings_class` の使い方（v2.68.0）** — **目的は「指摘を減らすこと」ではなく「機械が見つけるべきものを agent に探させない」こと**:
+
+- **0 件を目標にしない。** 300 行の diff で指摘 0 件のレビューの方が疑わしい。見るのは**構成比**で、`lint` の比率が高い＝ linter を足す余地がある、`test` が高い＝回帰テストが足りない、というシグナルとして読む
+- **分類はレポート出力後・publish 前に数える**（記憶から再構成しない）。判断に迷う指摘は `judgement` に倒す（`lint` / `test` を過大に見積もると「機械化の余地がある」という誤ったシグナルになる）
+- **`lint` は「今ある linter が検出できた」ではなく「静的検査で検出しうる」**。まだ実装されていないルールでも、grep / AST / 構造走査で決まるなら `lint` に数える — そうしないと「lint が無いから lint 可能な指摘は 0 件」という恒真の指標になる
+- 集計は `review-retro.sh` が層別して出す。**実測の出発点**（v2.66.0 + v2.67.0 のセルフレビュー計 14 件）: `lint` 6 / `test` 6 / `judgement` 2 ＝ **86% が機械で捕まる層**だった
 
 **`adversarial_verify`** — 反証レイヤーの verdict 集計（`confirmed` / `refuted` / `uncertain` / `severity_inflated` / `contested`=高 severity の係争件数）。スキップ時は全 0。`severity_inflated` は v2.41.0 追加（4 つ目の verdict が集計から漏れていた。バッチ化 + effort 引き下げのロールバック判断に使う。triage-dynamic-gates.md `## 9`）。
 

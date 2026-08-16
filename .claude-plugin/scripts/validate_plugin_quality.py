@@ -29,6 +29,11 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     （CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md publishes 行の plugin×event ペア）
   - references 参照整合性: SKILL.md / commands/*.md / agents/*.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
+  - doc 構造: 番号見出しの重複（他 doc からの番号参照が曖昧になる）と, blockquote を
+    分断した孤立 `>` 行. どちらもセルフレビューが見逃した / agent 8 体を要した型で,
+    判定は行走査だけで決まる（v2.68.0 / 「lint が見つけるべきものを agent に探させない」）.
+  - テスト収集: `if __name__` より後ろの TestCase（直接実行で静かに件数が減り `OK` が出る）.
+  - テスト重複: 同一クラス内で本体が同一のテストメソッド（名前が主張する内容を検証していない）.
   - シェル構文: 同梱スクリプト（*/scripts/**.sh, */hooks/**.sh）が `bash -n` を通るか.
     CI は manifest と doc しか見ておらず, LLM が書いたスクリプトは構文検証を一度も
     経ずに配布されていた（issue #123 の meta-review）.
@@ -651,6 +656,136 @@ def check_schema_markers_sync(errors: list[str]) -> None:
             )
 
 
+HEADING_NUM_RE = re.compile(r"^#{2,6}\s+(\d+(?:\.\d+)*)\.?\s")
+ORPHAN_QUOTE_RE = re.compile(r"^>\s*$")
+# 「この doc は番号見出しで参照される」規約が効く範囲. SKILL / references は
+# `## 16` のような番号で相互参照するので, 重複は SSoT pin の anchor 曖昧一致と同型の実害になる.
+DOC_LINT_GLOBS = ["*/references/**/*.md", "*/skills/*/SKILL.md"]
+
+
+def check_doc_structure(plugin_dir: Path, errors: list[str]) -> None:
+    """番号見出しの重複と blockquote の分断を検出する（v2.68.0 / doc lint）.
+
+    どちらも**セルフレビューが実際に見逃した / 検出に agent 8 体を要した**型で,
+    判定は行の走査だけで決まる（CLAUDE.md「決定的 hook > LLM 判定」）:
+
+    - **番号見出しの重複**: 同一ファイルに `## 5` が 2 つあると, 他 doc からの
+      `## 5` 参照がどちらを指すか決まらない（SSoT pin の anchor 曖昧一致と同型）.
+    - **孤立した `>` 行**: blockquote の途中に見出しや段落を挿入すると, 継続行の
+      `>` だけが残り, 後続の規範段落が別の節へ再親子化する.
+
+    フェンス内は見ない（`_iter_unfenced_lines`）— コード例の `#` や `>` は見出し
+    でも引用でもない.
+    """
+    name = plugin_dir.name
+    seen: set[Path] = set()
+    for pattern in DOC_LINT_GLOBS:
+        for md in sorted(plugin_dir.glob(pattern.split("/", 1)[1])):
+            if md in seen:
+                continue
+            seen.add(md)
+            lines = read_text(md).splitlines()
+            unfenced = _iter_unfenced_lines(lines)
+            nums: dict[str, list[int]] = {}
+            for i, line in unfenced:
+                m = HEADING_NUM_RE.match(line)
+                if m:
+                    nums.setdefault(m.group(1), []).append(i + 1)
+            for num, at in sorted(nums.items()):
+                if len(at) > 1:
+                    errors.append(
+                        f"[doc-structure:{name}] 番号見出し `{num}` が重複している"
+                        f"（他 doc からの番号参照が曖昧になる。行 {at}）: {md.relative_to(ROOT)}"
+                    )
+            for pos, (i, line) in enumerate(unfenced):
+                if not ORPHAN_QUOTE_RE.match(line):
+                    continue
+                # **探索は次の見出しまで**. 節境界を越えて探すと,「引用が節末尾で終わり
+                # 次が見出し」という正常な形まで孤立扱いになる（誤検知の主因）
+                nxt = ""
+                for _, l in unfenced[pos + 1:]:
+                    if not l.strip():
+                        continue
+                    nxt = "" if l.lstrip().startswith("#") else l
+                    break
+                if nxt and not nxt.startswith(">"):
+                    errors.append(
+                        f"[doc-structure:{name}] 孤立した `>` 行（blockquote が分断されている）: "
+                        f"{md.relative_to(ROOT)}:{i + 1}"
+                    )
+
+
+def _test_files() -> list[Path]:
+    return sorted(p for p in ROOT.glob("**/tests/test_*.py") if ".git" not in p.parts)
+
+
+def check_test_collection(errors: list[str]) -> None:
+    """`if __name__ == "__main__"` より後ろの TestCase を検出する（v2.68.0）.
+
+    `unittest.main()` は `sys.exit()` するので, **後ろに置いたクラスは定義自体が
+    評価されない**. discover 経路（pre-commit / CI / Stop hook）は無事なので
+    **直接実行だけ静かに件数が減り, しかも `OK` が出る**（実測: discover 41 /
+    直接実行 33）. 「壊れているのに緑」の典型なのでファイル走査で潰す.
+    """
+    for path in _test_files():
+        lines = read_text(path).splitlines()
+        main_at = next((i for i, l in enumerate(lines) if l.startswith("if __name__")), None)
+        if main_at is None:
+            continue
+        late = [i + 1 for i, l in enumerate(lines) if l.startswith("class ") and i > main_at]
+        if late:
+            errors.append(
+                f"[test-collection] `if __name__` より後ろに TestCase がある"
+                f"（直接実行で収集されない。行 {late}）: {path.relative_to(ROOT)}"
+            )
+
+
+def check_duplicate_test_bodies(errors: list[str]) -> None:
+    """同一クラス内で本体が同一のテストメソッドを検出する（v2.68.0）.
+
+    名前が別の主張をしているのに中身が同じ＝**独立に失敗しうる条件を持たない**.
+    実測 2 回とも「別のことを検証しているつもり」の空振りテストだった.
+    docstring は比較から外す（説明だけ違うのは同一とみなす）.
+
+    **decorator と引数はキーに含める**: `@patch("mod.a")` / `@patch("mod.b")` や
+    `@unittest.skipIf(...)` の有無は**本体が同じでも独立に失敗しうる**正当なテストで,
+    これを重複と呼ぶと errors（= pre-commit ブロック）で正しいテストを止める.
+
+    **本体が `pass` だけのものは対象外**: プレースホルダは「名前が主張する内容を
+    検証していない」の対象ではないうえ, 3 つあると 2 件目以降が全部 1 件目の重複として
+    報告される（実測）.
+    """
+    for path in _test_files():
+        try:
+            tree = ast.parse(read_text(path))
+        except SyntaxError as e:
+            errors.append(f"[test-duplicate] パースできない: {path.relative_to(ROOT)} ({e})")
+            continue
+        for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]:
+            seen: dict[str, str] = {}
+            for fn in [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name.startswith("test")]:
+                body = [
+                    n for n in fn.body
+                    if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)
+                            and isinstance(n.value.value, str))
+                ]
+                if all(isinstance(n, ast.Pass) for n in body):
+                    continue          # プレースホルダ（`pass` のみ）は比較対象にしない
+                key = "|".join([
+                    ast.dump(ast.Module(body=body, type_ignores=[])),
+                    ast.dump(fn.args),
+                    *(ast.dump(d) for d in fn.decorator_list),
+                ])
+                if key in seen:
+                    errors.append(
+                        f"[test-duplicate] `{cls.name}.{fn.name}` の本体が "
+                        f"`{seen[key]}` と同一（名前が主張する内容を検証していない）: "
+                        f"{path.relative_to(ROOT)}"
+                    )
+                else:
+                    seen[key] = fn.name
+
+
 def _collect_published_pairs() -> set[tuple[str, str]]:
     """コードベースの実 publish 箇所から (plugin, event) ペアを収集する（=正本）.
 
@@ -1046,6 +1181,7 @@ CHECKS = [
     check_doc_anchors,
     check_trigger_phrases,
     check_shell_syntax,
+    check_doc_structure,
 ]
 
 
@@ -1139,6 +1275,8 @@ def main() -> int:
 
     check_routing_axes_sync(errors)
     check_schema_markers_sync(errors)
+    check_test_collection(errors)
+    check_duplicate_test_bodies(errors)
     check_ssot_pins(errors)
     check_event_bus_sync(errors)
     check_agent_sync_launch_repo_local(warnings)

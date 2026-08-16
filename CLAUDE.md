@@ -13,7 +13,10 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  # validate_plugin_quality.py（品質検証。検査項目の正本は冒頭 docstring）
                                  # auto-quality-check.sh（Stop hook から上記 2 本 + CLI validate を自動実行）
                                  # bump-version.sh（バージョンバンプの 4 ファイル同時更新。pre-commit は検証のみで実行しない）
-.claude-plugin/scripts/tests/    # 検証スクリプト自身の回帰テスト（stdlib unittest・依存なし）
+.claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。2 系統:
+                                 #  ① 検証スクリプト自身（test_validate_plugin_quality.py）
+                                 #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
+                                 #     （`test_<plugin>_*.py`。bats を入れず依存ゼロで 3 経路に載せる）
                                  # python3 -m unittest discover -s .claude-plugin/scripts/tests
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・回帰テスト
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
@@ -205,6 +208,9 @@ event_bus_clear
 - **Agent tool の background 既定 (CC 2.1.198+)**: fanout して結果を待つスキル（explorer/reviewer/verifier 等）では **①各 Agent call に `run_in_background: false` を明示**（省略＝background 起動で結果を取りこぼす）し、**②全 Agent call を同一メッセージ内で一括発行**する（1 体ずつ別メッセージだと実時間が体数分の合計になる）。**①は取りこぼし防止・②は並列性で、直交する独立の要件**（①だけでは並列にならない）。根拠と実測は `orchestration-guide.md ## 0`（正本・issue #95）。取り漏れは `validate_plugin_quality.py` の agent-sync チェックが非ブロッキング warning で検知する
 - **eval を実行・修正する前に `evals/README.md` の Gotchas を読む**: スラッシュコマンドは headless で必ず落ちる（自然言語プロンプトで測る）/ fail は「プラグイン選択」と「skill id の綴り」を分けて読む（id 捏造は harness 側の性質）/ 判定は k=1 でなく pass^k=3 で行う — 詳細と実例は README 側に集約
 
+- **新しい lint / 検証ロジックを足すときは ①既存 repo での検出数を先に測って error / warning の水準を決める ②変異テストで「実装を壊すと該当テストが落ちる」ことを確認する**: 初回実行で偽陽性が出る warning は「⚠️ が出たときだけ行動する」契約を壊すので、入れない方がまし（実例: 版ラベルの追随漏れ検出は 6/6 が偽陽性で撤去した → `code-review/references/design-notes/pending-optimizations.md ## 9`）。変異テストの結果は **`__pycache__` を消してから**読む（stale bytecode で「全部検知した」という嘘の結果が出る）
+- **同梱スクリプトのテストは `.claude-plugin/scripts/tests/` に置く**（プラグイン配下に置かない — 配布物にテストが混ざる）。ハーネスは python の subprocess で、bats 等の外部依存を足さない。判断の経緯: `code-review/CHANGELOG.md` v2.68.0
+
 ## バージョニング規約
 
 - MAJOR: 破壊的変更（スキル/コマンドの削除・リネーム）
@@ -222,7 +228,7 @@ event_bus_clear
 - `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期
 - `validate_plugin_quality.py`: allowed-tools / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ / Event Bus 同期 / hook 自己判定 / コンテキスト予算ほか — **検査項目の正本はスクリプト冒頭 docstring**（ここに列挙を複製しない）
 - `claude plugin validate`: CLI スキーマ（`_requirements` 警告は除外）
-- `python3 -m unittest discover -s .claude-plugin/scripts/tests`: 検証スクリプト自身の回帰テスト。**検証機構の期待値をその機構自身で生成すると、壊れていても全件 pass する**（SSoT pin の初期ハッシュを未テストの `_slice_section` で作り、節の 46% が無保護なまま 14 pin 全部が ok に見えた実例が v2.63.1）。**期待値をテスト側で独立に構築すること**（`test_digest_matches_independently_computed_expectation`）。検証ロジックを足すときは同じ原則でテストを添える
+- `python3 -m unittest discover -s .claude-plugin/scripts/tests`: 回帰テスト（検証スクリプト自身 + プラグイン同梱スクリプトの CLI テスト）。**検証機構の期待値をその機構自身で生成すると、壊れていても全件 pass する**（SSoT pin の初期ハッシュを未テストの `_slice_section` で作り、節の 46% が無保護なまま 14 pin 全部が ok に見えた実例が v2.63.1）。**期待値をテスト側で独立に構築すること**（`test_digest_matches_independently_computed_expectation`）。検証ロジックを足すときは同じ原則でテストを添える
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
 

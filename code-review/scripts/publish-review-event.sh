@@ -179,6 +179,39 @@ if mc is not None:
         )
         sys.exit(1)
 
+# ---- `findings_class` の検証（v2.68.0） --------------------------------------
+# **このフィールドは「次に何を機械化すべきか」を決めるメーター**なので、汚染時の損失が
+# 他のフィールドより大きい。にもかかわらず正本（`## 16`）の「合計は報告件数と一致させる」は
+# 規約だけで強制力が無かった — `missing_coverage` が「規約だけでは守られず実データに自由文が
+# 12 種混入していた」（issue #132）のと同じ型。同じ位置で fail-fast する。
+fc = payload.get("findings_class")
+if fc is not None:
+    if not isinstance(fc, dict):
+        sys.stderr.write("findings_class が JSON オブジェクトでない\n")
+        sys.exit(1)
+    bad = [k for k in ("lint", "test", "judgement")
+           if not isinstance(fc.get(k), int) or isinstance(fc.get(k), bool) or fc.get(k) < 0]
+    if bad:
+        sys.stderr.write(
+            "findings_class の %s が非負整数でない（lint / test / judgement の 3 つとも必須）\n"
+            % ", ".join(bad)
+        )
+        sys.exit(1)
+    counts = [payload.get(k) for k in
+              ("blocker_count", "critical_count", "major_count", "minor_count")]
+    # **件数フィールドが揃っている回だけ突合する**（揃っていない回を落とすと、
+    # 契約の範囲外まで publish を止めることになる）
+    if all(isinstance(c, int) and not isinstance(c, bool) for c in counts):
+        total = fc["lint"] + fc["test"] + fc["judgement"]
+        if total != sum(counts):
+            sys.stderr.write(
+                "findings_class の合計 %d が報告件数 %d と一致しない"
+                "（blocker %d / critical %d / major %d / minor %d）。"
+                "**分類は報告した指摘だけを数える** — 閾値を割った指摘は含めない\n"
+                % (total, sum(counts), *counts)
+            )
+            sys.exit(1)
+
 # duration_* は常にスクリプト側の値で上書きする（呼び出し側が渡していても勝つ）
 payload.update(json.loads(os.environ["REVIEW_DURS"]))
 
@@ -220,6 +253,7 @@ if os.environ.get("REVIEW_LATE_PUBLISH") == "1":
 #
 # **正本は references/orchestration-measurement.md `## 16`。値を変えるときは両方を直す。**
 SCHEMA_MARKERS = {
+    "findings_class":     {"schema": 1},
     "pre_adjust_counts":  {"schema": 2},
     "adversarial_verify": {"calibration_schema": 2, "gate_schema": 2},
     "recall_skeptic":     {"attribution_schema": 2, "gate_schema": 2},

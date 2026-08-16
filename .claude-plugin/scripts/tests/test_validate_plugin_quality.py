@@ -31,6 +31,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "validate_plugin_quality.py"
+Q = '"' * 3   # fixture 内に docstring を書くための三重引用符（入れ子を避ける）
 
 
 def _load_module():
@@ -563,6 +564,7 @@ class CheckSchemaMarkersSyncTest(unittest.TestCase):
         markers: dict[tuple[str, str], int],
         anchor: str = "版マーカーの現行値",
         trailing_rows: str = "",
+        noise: bool = True,
     ) -> None:
         rows = "\n".join("| `%s` | `%s` | %d |" % (f, k, val) for (f, k), val in markers.items())
         v.SCHEMA_MARKERS_DOC.write_text(
@@ -571,9 +573,9 @@ class CheckSchemaMarkersSyncTest(unittest.TestCase):
             "本文。\n\n"
             f"### {anchor}\n\n"
             "| payload フィールド | 版マーカー | 現行値 |\n|---|---|---|\n"
-            + rows + self.IN_TABLE_NOISE + trailing_rows + "\n\n"
+            + rows + (self.IN_TABLE_NOISE if noise else "") + trailing_rows + "\n\n"
             "- 注記。\n"
-            + self.IN_SECTION_NOISE +
+            + (self.IN_SECTION_NOISE if noise else "") +
             "\n### 別の節\n\n"
             "| payload フィールド | 版マーカー | 現行値 |\n|---|---|---|\n"
             "| `無関係` | `dummy` | 99 |\n",
@@ -581,8 +583,9 @@ class CheckSchemaMarkersSyncTest(unittest.TestCase):
         )
 
     def test_matching_values_produce_no_error(self):
+        """ノイズ無しの最小 doc での baseline（ノイズ耐性は別テストが見る）."""
         self._write_script(self.MARKERS)
-        self._write_doc(self.MARKERS)
+        self._write_doc(self.MARKERS, noise=False)
         errors: list[str] = []
         v.check_schema_markers_sync(errors)
         self.assertEqual(errors, [])
@@ -728,6 +731,271 @@ class TestDiscoveryTest(unittest.TestCase):
             for t in getattr(t, "_tests", [t])
         }
         self.assertEqual(defined - collected, set(), "収集されていない TestCase がある")
+
+
+class DocStructureTest(unittest.TestCase):
+    """番号見出しの重複と blockquote 分断（v2.68.0 / doc lint）.
+
+    どちらも**実際にセルフレビューをすり抜けた / agent 8 体を要した**型なので,
+    「lint が見つけるべきものを agent に探させない」の実装として入れた.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+        (self.plugin / "references").mkdir(parents=True)
+
+    def _doc(self, body: str) -> None:
+        _write(self.plugin / "references", "guide.md", body)
+
+    def test_clean_doc_produces_no_error(self):
+        self._doc("""
+            # ガイド
+
+            ## 1. 最初
+
+            > 引用の 1 段落目。
+            >
+            > 2 段落目。
+
+            ## 2. 次
+            """)
+        errors: list[str] = []
+        v.check_doc_structure(self.plugin, errors)
+        self.assertEqual(errors, [])
+
+    def test_duplicate_numbered_heading_is_reported(self):
+        self._doc("""
+            # ガイド
+
+            ## 5. これ
+
+            ## 4. あれ
+
+            ## 5. 重複
+            """)
+        errors: list[str] = []
+        v.check_doc_structure(self.plugin, errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("番号見出し `5` が重複", errors[0])
+
+    def test_orphan_blockquote_line_is_reported(self):
+        self._doc("""
+            # ガイド
+
+            ## 1. これ
+
+            > 引用。
+            >
+
+            通常の段落。
+            """)
+        errors: list[str] = []
+        v.check_doc_structure(self.plugin, errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("孤立した `>` 行", errors[0])
+
+    def test_skill_md_is_also_scanned(self):
+        """**`*/skills/*/SKILL.md` 経路**（glob からこちらを落としても気づけない状態にしない）."""
+        (self.plugin / "skills" / "demo").mkdir(parents=True)
+        _write(self.plugin / "skills" / "demo", "SKILL.md", """
+            # スキル
+
+            ## 3. これ
+
+            ## 3. 重複
+            """)
+        errors: list[str] = []
+        v.check_doc_structure(self.plugin, errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("SKILL.md", errors[0])
+
+    def test_quote_ending_before_a_heading_is_not_reported(self):
+        """**節末尾で引用が終わるのは正常**（探索が節境界を越えると誤検知になる）."""
+        self._doc("""
+            # ガイド
+
+            ## 1. これ
+
+            > 引用。
+            >
+
+            ## 2. 次の節
+            """)
+        errors: list[str] = []
+        v.check_doc_structure(self.plugin, errors)
+        self.assertEqual(errors, [])
+
+    def test_fenced_block_is_not_scanned(self):
+        """**フェンス内の `##` と `>` は見出しでも引用でもない**（誤検知の主因）."""
+        self._doc("""
+            # ガイド
+
+            ## 1. これ
+
+            ```markdown
+            ## 1. フェンス内の同番号
+            > 引用の例
+            >
+            ```
+
+            本文。
+            """)
+        errors: list[str] = []
+        v.check_doc_structure(self.plugin, errors)
+        self.assertEqual(errors, [])
+
+
+class TestFileLintTest(unittest.TestCase):
+    """テストファイル自身の lint（収集漏れ / 本体重複 / v2.68.0）."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        (self.root / "tests").mkdir()
+
+    def _test_file(self, body: str) -> None:
+        _write(self.root / "tests", "test_demo.py", body)
+
+    def test_class_before_main_is_fine(self):
+        self._test_file("""
+            import unittest
+
+
+            class A(unittest.TestCase):
+                def test_x(self):
+                    self.assertTrue(True)
+
+
+            if __name__ == "__main__":
+                unittest.main()
+            """)
+        errors: list[str] = []
+        v.check_test_collection(errors)
+        self.assertEqual(errors, [])
+
+    def test_class_after_main_is_reported(self):
+        self._test_file("""
+            import unittest
+
+
+            if __name__ == "__main__":
+                unittest.main()
+
+
+            class Late(unittest.TestCase):
+                def test_x(self):
+                    self.assertTrue(True)
+            """)
+        errors: list[str] = []
+        v.check_test_collection(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("`if __name__` より後ろ", errors[0])
+
+    def test_identical_test_bodies_are_reported(self):
+        self._test_file("""
+            import unittest
+
+
+            class A(unittest.TestCase):
+                def test_one(self):
+                    self.assertEqual(1, 1)
+
+                def test_two(self):
+                    # 名前は別のことを主張しているが中身は同じ
+                    self.assertEqual(1, 1)
+            """)
+        errors: list[str] = []
+        v.check_duplicate_test_bodies(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("`A.test_two` の本体が `test_one` と同一", errors[0])
+
+    def test_decorator_difference_is_not_a_duplicate(self):
+        """`@patch` 違いは**本体が同じでも独立に失敗しうる**正当なテスト."""
+        self._test_file("""
+            import unittest
+            from unittest.mock import patch
+
+
+            class A(unittest.TestCase):
+                @patch("mod.a")
+                def test_one(self, m):
+                    self.assertEqual(1, 1)
+
+                @patch("mod.b")
+                def test_two(self, m):
+                    self.assertEqual(1, 1)
+            """)
+        errors: list[str] = []
+        v.check_duplicate_test_bodies(errors)
+        self.assertEqual(errors, [])
+
+    def test_placeholder_pass_bodies_are_not_duplicates(self):
+        """`pass` のみのプレースホルダは対象外（3 つあると 2 件目以降が全部誤検知になる）."""
+        self._test_file("""
+            import unittest
+
+
+            class A(unittest.TestCase):
+                def test_one(self):
+                    pass
+
+                def test_two(self):
+                    pass
+
+                def test_three(self):
+                    pass
+            """)
+        errors: list[str] = []
+        v.check_duplicate_test_bodies(errors)
+        self.assertEqual(errors, [])
+
+    def test_docstring_only_difference_is_still_a_duplicate(self):
+        """説明だけ違うのは同一とみなす（docstring 剥がしが効いていること）."""
+        body = "\n".join([
+            "",
+            "            import unittest",
+            "",
+            "",
+            "            class A(unittest.TestCase):",
+            "                def test_one(self):",
+            "                    " + Q + "ある観点。" + Q,
+            "                    self.assertEqual(1, 1)",
+            "",
+            "                def test_two(self):",
+            "                    " + Q + "別の観点のつもり。" + Q,
+            "                    self.assertEqual(1, 1)",
+            "            ",
+        ])
+        self._test_file(body)
+        errors: list[str] = []
+        v.check_duplicate_test_bodies(errors)
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_different_bodies_are_fine(self):
+        self._test_file("""
+            import unittest
+
+
+            class A(unittest.TestCase):
+                def test_one(self):
+                    self.assertEqual(1, 1)
+
+                def test_two(self):
+                    self.assertEqual(2, 2)
+            """)
+        errors: list[str] = []
+        v.check_duplicate_test_bodies(errors)
+        self.assertEqual(errors, [])
 
 
 if __name__ == "__main__":

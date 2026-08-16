@@ -19,7 +19,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @321c9b60 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @c8c93302 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @3cf8c3c4 -->
 
 ## review との違い
@@ -440,13 +440,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 
 - スクリプトは payload の JSON 妥当性と **`missing_coverage` の語彙**を検証してから書く（不正なら publish せず `FATAL:` で落ちる。識別子以外＝理由つき自由文は弾かれるので、**理由はレポートの「⚠️ 欠損観点」に書き、フィールドごと落として通さない** / issue #132）。**`measurement_gaps` / `diff_digest` も渡さない**（計測ファイルと一時 diff から算出して注入される）。計測ファイルと diff の一時ファイルもスクリプトが掃除する
 - **版マーカーの整数も渡さない**（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`。v2.65.0 でスクリプト注入に移した — 定数の手書きは version drift 中に落ち、サンプルが逆の版バケツに入る / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）。なお **`tokens` は review 限定**でここには載らない（**publish の後に Step 7 の修正方針確認と修正作業が続くため、窓の外に本作業が残る** / issue #126）。トークンを見たいときは `measure-tokens.sh` を手動実行する（→ 同 `## 17`）
+- **報告した指摘を `findings_class` に分類して入れる**（`lint` / `test` / `judgement`。合計は報告件数と一致。分類の基準と「0 件を目標にしない」理由は orchestration-measurement.md `## 16` の「`findings_class` の使い方」）
 - **書込先はメインリポジトリのルートに固定される**。self-review は worktree に入らないが、dev-workflow の作業用 worktree 内から実行されると cwd 相対では Step 8 の teardown で消える（→ orchestration-measurement.md `## 13`）。**publish の WARN に `⚠️ 計測:` の追記指示が出たら、レポート末尾にその 1 行を追記する**（#135。explorer の一括発行違反・wave 打点漏れは実行中に何も起きず、しかも打点漏れは違反の証拠自体を消す）
 
 **payload 契約の正本は orchestration-measurement.md `## 16`**（フィールドの意味・版マーカー・後方互換をここに複写しない）。self-review 固有の点のみ:
 - `pr` は常に `"local"`（PR を持たない）
 - **`duration_closing_min` は常に `-1`（測定不能）**: publish（Step 6.4）が Step 7 の修正方針確認より前にあるため t2→t3 に人間の応答待ちが入らない。0 を publish すると「人間待ちが無かった」と誤読される
-- **`duration_min`（全体）の意味は publisher 間で非対称**: review は締めフロー（人間待ち）を含み、self-review は Step 7 の手前で切れる。**`plugin` フィールドで層別してから比較する**。区間別に見るなら `duration_fleet_min` を使う
-- `head_verified` は publish しない（checkout を行わないため）。`recall_skeptic.skip_reason` は `"scope"`（`--focus`/`--exclude` 指定）も取りうる
+- **`duration_min`（全体）の意味は publisher 間で非対称**（review は締めフロー込み / self-review は Step 7 手前まで）。**`plugin` で層別してから比較する**。`head_verified` は publish しない（checkout を行わないため）。`recall_skeptic.skip_reason` は `"scope"`（`--focus`/`--exclude` 指定）も取りうる
 - `recall_skeptic.findings_added` / `meta_reviewer.findings_added` はレポートの「動的ラウンド」行の数値と一致させる（それぞれ `[recall-skeptic]` / `[meta]` タグ付き指摘を数える。#121）
 - **`comment_polish` は self-review のみのフィールド**（v2.45.0。`fired` / `suggested` の定義と計数基準は orchestration-measurement.md `## 16` が正本）
 

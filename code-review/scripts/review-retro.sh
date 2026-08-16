@@ -426,6 +426,26 @@ for e in tok_rows:
         tys.append(so)
 tok_r = pearson(txs, tys)
 
+# ---- 9.5. 指摘の分類（何が捕まえるべきだったか / v2.68.0） ------------------
+# **目的は指摘を減らすことではない**（300 行の diff で 0 件の方が疑わしい）。見るのは構成比で、
+# `lint` が高い＝ linter を足す余地、`test` が高い＝回帰テストが足りない、というシグナル。
+# 契約は orchestration-measurement.md `## 16` の `findings_class`
+FC_MIN_SCHEMA = 1    # 版マーカー（`>=` で前方互換にする / 冒頭の層別の原則）
+fc_raw = [e for e in events if isinstance(e["p"].get("findings_class"), dict)]
+fc_rows, fc_dropped_schema = [], 0
+for e in fc_raw:
+    if schema_of(e["p"]["findings_class"], "schema") < FC_MIN_SCHEMA:
+        fc_dropped_schema += 1      # 分類の定義を変えたら旧サンプルを混ぜない
+    else:
+        fc_rows.append(e)
+fc = {"lint": 0, "test": 0, "judgement": 0}
+for e in fc_rows:
+    d = e["p"]["findings_class"]
+    for k in fc:
+        fc[k] += num(d.get(k)) or 0
+fc_total = sum(fc.values())
+
+
 # ---- シグナル判定（ロールバック条件・再監視条件のトリガー） ----------------
 # **すべて「サンプル数下限 × 比率」で判定する**。1 件でも点灯する条件を混ぜると
 # シグナル欄が常時点灯し、「⚠️ が出たときだけ行動する」という契約が壊れる
@@ -504,6 +524,26 @@ for g, cnt in gap_counts.items():
 for ratio_g, g, cnt, d in sorted(gap_hits, reverse=True)[:2]:
     signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。%s"
                    % (g, ratio_g, cnt, d, gap_hint(g)))
+# 指摘の分類（v2.68.0）。**機械で捕まる層を agent に探させている**割合が高いままなら、
+# lint / テストを足す方が安い（CLAUDE.md「決定的 hook > LLM 判定」を自分の保守に適用する）
+# **下限は「レビュー回数」と「指摘件数」の二重**。他のシグナル（skeptic の `fired >= 15` /
+# 反証の `n >= 10` / meta の `n >= 8`）はすべて**回数**で切っており、件数だけで切ると
+# **指摘の多いレビュー 1 回で点灯する**（同ブロック冒頭「1 件でも点灯する条件を混ぜない」に反する）。
+FC_MIN_ROWS = 8      # レビュー回数の下限（既存シグナルの 8〜15 に揃える）
+FC_MIN_N = 20        # 指摘件数の下限（これ未満では構成比を解釈しない）
+# **しきい値は実測ベースラインの上に置く**。導入時の実測（v2.66.0 + v2.67.0 / 14 件）が
+# lint 43% / test 43% なので、30% だと**定常状態で常時点灯**して「⚠️ が出たときだけ行動する」
+# 契約を壊す。ベースラインを更新したらこの値も見直す（片方だけ動かさない）
+FC_LINT_HOT = 55
+FC_TEST_HOT = 55
+if len(fc_rows) >= FC_MIN_ROWS and fc_total >= FC_MIN_N and pct(fc["lint"], fc_total) >= FC_LINT_HOT:
+    signals.append("報告した指摘の %.0f%%（%d/%d 件 / %d 回）が **lint で捕まる層**。"
+                   "静的検査（grep / AST / 構造走査）でルール化できないか検討する"
+                   % (pct(fc["lint"], fc_total), fc["lint"], fc_total, len(fc_rows)))
+if len(fc_rows) >= FC_MIN_ROWS and fc_total >= FC_MIN_N and pct(fc["test"], fc_total) >= FC_TEST_HOT:
+    signals.append("報告した指摘の %.0f%%（%d/%d 件 / %d 回）が **回帰テストで捕まる層**。"
+                   "同梱スクリプトのテストが足りていない"
+                   % (pct(fc["test"], fc_total), fc["test"], fc_total, len(fc_rows)))
 if skeptic["fired"] >= 15 and pct(skeptic["valuable"], skeptic["fired"]) < 25:
     signals.append("冷や読み skeptic の価値率が %.0f%%（fired %d 件 / attribution_schema>=2）。"
                    "high 起点への昇格を戻すロールバック条件"
@@ -537,6 +577,8 @@ if as_json:
         "agents_fleet_r": r, "agents_fleet_n": len(xs),
         "spans": {k: {"median": m, "n": c} for k, m, c in spans},
         "yields": yields, "verdict_layers": verdict_layers,
+        "findings_class": {"n": len(fc_rows), "n_raw": len(fc_raw),
+                           "dropped_schema": fc_dropped_schema, "total": fc_total, **fc},
         "recall_skeptic": skeptic, "meta_reviewer": meta,
         "adversarial_verify": adversarial,
         "round2_fired": round2_fired, "round2_scope": len(round2_scope),
@@ -645,6 +687,20 @@ for name, st in (("skeptic", skeptic), ("meta", meta), ("反証", adversarial)):
     if st["skips"]:
         print("  - %s skip 理由: %s" % (name, " / ".join(
             "%s=%d" % kv for kv in sorted(st["skips"].items(), key=lambda kv: -kv[1]))))
+
+print()
+if fc_rows:
+    print("**指摘の分類**（何が捕まえるべきだったか / n=%d 回・計 %d 件）: "
+          "lint %.0f%%（%d） / test %.0f%%（%d） / judgement %.0f%%（%d）。"
+          "**0 件を目標にしない — 見るのは構成比**（lint/test が高いほど機械化の余地）"
+          % (len(fc_rows), fc_total,
+             pct(fc["lint"], fc_total), fc["lint"],
+             pct(fc["test"], fc_total), fc["test"],
+             pct(fc["judgement"], fc_total), fc["judgement"]))
+elif fc_raw:
+    print("**指摘の分類**: 判定対象なし（`findings_class` を持つ %d 件はすべて版マーカーで除外）" % len(fc_raw))
+else:
+    print("**指摘の分類**: 判定対象なし（`findings_class` を持つサンプルが 0 件）")
 
 print()
 if not tok_rows:
