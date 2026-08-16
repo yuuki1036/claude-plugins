@@ -2,6 +2,23 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.67.0] - 2026-08-15
+
+計測基盤の残り 3 件（#134 / #136 / #135）。いずれも**検知経路の不在**で、値そのものは現時点で壊れていない。
+
+### Added
+- **版マーカー定数の script ↔ doc 同期を機械検証する**（GitHub issue #134 / `validate_plugin_quality.py` の `schema-markers` チェック）— v2.65.0 の注入方式（#125）で「2 箇所を人手で揃える」関係が SKILL↔doc から **script↔doc へ移動しただけ**で、強制力はコード内コメント 1 行しかなかった。**SSoT pin は md 限定なのでこの関係を宣言できない**（Gotchas / ADR-20260813223000）ため、pre-commit も CI も無言で通していた:
+  - `orchestration-measurement.md ## 16` に機械可読な「版マーカーの現行値」表を新設し、`SCHEMA_MARKERS` を `ast.literal_eval` で読んで突合する。ずれは Critical
+  - **`tokens.schema` を対象外にする例外を明文化した**（#134 の併発指摘）。`SCHEMA_MARKERS` は「層のオブジェクトが無ければ `payload:<field>` gap を立てる」経路と対なので、**review 限定フィールドを入れると self-review で毎回 gap が立つ**。規約文だけ読んだ将来の追加者が区別に気づけるようにする
+  - 回帰テスト 8 件を追加（33 → 41）。**期待値はテスト側の 1 つのリテラルから script / doc の両 fixture を生成して独立に構築する**（CLAUDE.md「検証機構の期待値をその機構自身で生成すると、壊れていても全件 pass する」）
+
+### Changed
+- **反証スキップ時のレポート文言を「未実施」に変えた**（GitHub issue #136）— `反証: 対象 0 件` は**「検証したが問題なし」と読める**が、実際は「検証していない」で、確信度の表示が実態より高く出ていた。`no-eligible-findings` のときだけ `反証: 未実施（対象帯に該当なし。MAJOR 以下の severity は較正されていない）` と書く（他の 4 つの skip 理由は「この構成では走らせない」なので従来どおり）
+  - **ゲート幅の拡張（#136 の本命案）は保留**。「加減算で報告閾値を超えた MAJOR を対象に足す」は指摘として妥当だが、**既定 high では meta が走らず反証 wave 自体が無い回が多いため、足すと直列 wave が 1 本生える**（xhigh / max は既に MAJOR 全件が対象なので効くのは high 限定）。`## 9` の再監視条件（`gate_schema >= 2` が 10 件 / `no-eligible-findings` 50% 以上）が点灯してから判断する → `design-notes/pending-optimizations.md ## 6`
+  - **issue の前提を実データで訂正した**: #136 は実例を xhigh としているが、`skip_reason` を持つサンプルは 2 件とも **effort=high** で、どちらも設計どおりの不発だった（xhigh で MAJOR が対象外になっていた事実は無い）
+- **explorer の一括発行違反・wave 打点漏れをレポートに出すようにした**（GitHub issue #135 / 案 B）— 規約違反は実行中に何も起きず、**打点漏れは違反の証拠自体を消す**（`explorer_waves` は打点の行数で直列発行を暴く指標なので、打ち忘れると検知不能になる）。publish の WARN に「レポート末尾に `⚠️ 計測: ...` を 1 行追記せよ」の具体指示を足し、両 SKILL に追記規約を書いた
+  - **本命は `Agent` hook（独立した観測者）だが未採用**。subagent のツール名が `Agent` であることは transcript で実測したが、**PostToolUse が `Agent` で発火するかを確認できていない**（hook の発火は transcript に残らず、セッション内で settings を足す実験は偽陰性を返しうる）。検証手順・自己判定の要件・`component-addition-advisor` ゲートを → `design-notes/pending-optimizations.md ## 7`
+
 ## [2.66.0] - 2026-08-14
 
 計測基盤の 3 件（#133 / #132 / #131）。v2.65.0 と同じ「レビュー基盤の効果を判定する側」の欠陥で、型は **記録が黙って落ちる / 落ちても実行中に誰も気づかない**。

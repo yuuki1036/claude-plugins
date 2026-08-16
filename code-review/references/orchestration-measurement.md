@@ -137,6 +137,22 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 > **版マーカーの整数は渡さない**（v2.65.0 / GitHub issue #125）。`schema` / `gate_schema` / `attribution_schema` / `calibration_schema` は `publish-review-event.sh` が注入する。以前は「常に N を入れる」定数を**テンプレートの一部として手書き**させていたが、版が上がるたびにテンプレ追従が要り、**version drift 中に漏れる**（実測: `recall_skeptic.gate_schema` に導入後の miss / `calibration_schema` は 1 セッション中に 2 版跨いだため落ちた）。落ちるとサンプルが**逆の版バケツに入って集計を汚す**ので、単なる欠測より悪い。スクリプトは版付きディレクトリ配下にあり自分の版の定数を知っているので、注入なら構造的に漏れない。
 >
 > 同様に `duration_*` / `agents.explorer_waves` / `measurement_gaps` / `diff_digest` / `diff_files` / `tokens` も**渡さない**（スクリプトが注入する）。
+
+### 版マーカーの現行値
+
+**`publish-review-event.sh` の `SCHEMA_MARKERS` と本表は同値でなければならない**（v2.66.0 / GitHub issue #134）。値の意味（どの版が何を指すか）は各フィールドの節が正本で、本表は**現行値だけ**を機械可読な形で持つ。`validate_plugin_quality.py` の `schema-markers` チェックが両者を突合し、ずれていれば Critical で落とす — 注入方式に移した時点で「2 箇所を人手で揃える」関係が SKILL↔doc から script↔doc へ移っただけで、**SSoT pin は md 限定なのでこの関係を宣言できない**（Gotchas / ADR-20260813223000）。
+
+| payload フィールド | 版マーカー | 現行値 |
+|---|---|---|
+| `pre_adjust_counts` | `schema` | 2 |
+| `adversarial_verify` | `calibration_schema` | 2 |
+| `adversarial_verify` | `gate_schema` | 2 |
+| `recall_skeptic` | `attribution_schema` | 2 |
+| `recall_skeptic` | `gate_schema` | 2 |
+| `meta_reviewer` | `gate_schema` | 3 |
+
+- **`tokens.schema` は本表に載せない**（＝ `SCHEMA_MARKERS` に入れない）。**片方の skill でしか載らないフィールドの版マーカーは対象外**という例外で、`SCHEMA_MARKERS` は「層のオブジェクトが無ければ `payload:<field>` gap を立てる」経路と対になっているため、review 限定の `tokens` を入れると **self-review で毎回 gap が立つ**。この種のフィールドは構築ブロック側のリテラルで持つ（現行 `tokens.schema: 1`）
+- 値を変えるときは**本表と `SCHEMA_MARKERS` を同時に直す**。片方だけ直すと publish の実データ（スクリプトが正）と doc の解釈（本表が正）がずれ、下流の層別が静かに誤る
 >
 > **層のオブジェクトそのもの（`pre_adjust_counts` / `adversarial_verify` / `recall_skeptic` / `meta_reviewer`）は必ず入れる。** 落ちた場合は版マーカーを注入する先が無いので、`measurement_gaps` に `payload:<field>` を立てて可視化する（空オブジェクトを捏造すると「起動記録なし」として母集団に混ざるため注入しない）。`fired` を落とした場合も同様に `payload:<field>.fired` が立つ。
 
@@ -311,7 +327,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 
 - publish に失敗してもレビュー自体は成功扱い（best-effort）。`SAFE_HOOK_NAME` を publisher 名（`code-review:review` / `code-review:self-review`）に上書きして識別する
 - 後方互換: subscriber 側は `critical_count` の存在を仮定してよい（旧 payload との互換性のため必須）。それ以外は新規フィールド追加なので旧 subscriber 影響なし（現物確認: `issue-workflow:issue-maintain` は `pr` と件数しか読まない）
-- **ゲートを動かす変更には必ず版マーカーを足す**（GitHub issue #115 の一般化）。effort ゲート・起動条件・算出方法を変えると**フィールドの有無は変わらないのに意味が変わる**ため、「フィールドの有無で層別する」という下のルールだけでは新旧を区別できない。`recall_skeptic.gate_schema` / `pre_adjust_counts.schema` と同じく publisher 側の整数を足すこと。**足す先は `publish-review-event.sh` の `SCHEMA_MARKERS`**（v2.65.0〜。SKILL のテンプレートに手書きさせない — 定数を LLM に持たせると version drift 中に落ちる / issue #125）
+- **ゲートを動かす変更には必ず版マーカーを足す**（GitHub issue #115 の一般化）。effort ゲート・起動条件・算出方法を変えると**フィールドの有無は変わらないのに意味が変わる**ため、「フィールドの有無で層別する」という下のルールだけでは新旧を区別できない。`recall_skeptic.gate_schema` / `pre_adjust_counts.schema` と同じく publisher 側の整数を足すこと。**足す先は `publish-review-event.sh` の `SCHEMA_MARKERS` と上の「版マーカーの現行値」表の 2 箇所**（v2.65.0〜。SKILL のテンプレートに手書きさせない — 定数を LLM に持たせると version drift 中に落ちる / issue #125。2 箇所の同値は `validate_plugin_quality.py` が検証する / issue #134）。**例外は「片方の skill でしか載らないフィールド」**（現行 `tokens`）で、そちらは構築ブロックのリテラルに置く（理由は同表の注記）
 - **動的層を足すときは `fired` / `skip_reason` / `gate_schema` の 3 点セットを必ず持たせる**（v2.65.0 / issue #129 の一般化）。verdict や件数だけでは **「走らなかった」と「走れる対象が無かった」を区別できず**、ゲート設計の妥当性が永久に測れない。`skip_reason` の語彙には**「設計上の非該当」（effort / config / scope / emergency）と「ゲートに該当する対象が 0 件」を別の値で**入れること（前者だけが下流の分母から外れる）
 - 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の起動ゲートの版は `meta_reviewer.gate_schema`**）・`agents.explorer_waves` の存在が v2.61.0 以降・`measurement_gaps` / `diff_digest` の存在が v2.62.0 以降（**上流 severity 較正の版は `adversarial_verify.calibration_schema`**）・`adversarial_verify.fired` / `tokens` の存在が v2.65.0 以降（**反証の起動ゲートの版は `adversarial_verify.gate_schema`**）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
 - **集計は `scripts/review-retro.sh` が行う**（v2.62.0 / issue #123 E）。上の層別ルール（版マーカーで切る / 累計で読まない / 区間を混ぜない）をスクリプト側に閉じてあるので、**jq を毎回組み立てない**。人間向けレポートは publish の直後に自動で出る（review 締めフロー 4 / self-review Step 6.4）。`--json` で機械可読、`--since` / `--last` で範囲を絞れる

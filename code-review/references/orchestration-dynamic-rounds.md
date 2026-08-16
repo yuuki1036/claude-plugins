@@ -5,7 +5,7 @@
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @34e7126b -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @3d150994 -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @fb050107 -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @840c2f28 -->
 
 **このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は SKILL.md 側にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。
 
@@ -92,6 +92,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
    - `N`（対象）= ゲートで選ばれた全件（予算超過分と手順 3.5 の meta 由来追加分を含む）、`X`（実施）= 実際に verdict が返った件数。**payload の `agents.verify_findings` は `X` と一致させる**（`N` ではない。同じ「対象」の語で別の量を数えない）
    - 0 件の項目は省略してよいが、`Y` / `Z` が 1 以上なら必ず出す（silent に落とさない）
    - **層ごとスキップした回も 1 行出す**（v2.65.0 / GitHub issue #129。skeptic の silent skip 防止と同じ扱い）: `反証: スキップ（<skip_reason>）`。**ゲート該当 0 件のときは特に省略しない** — 既定 high では BLOCKER / CRITICAL 不在なら対象が構造的に 0 件になるので、無言だと「反証を通った」と読まれる。値の語彙と payload 側の記録は orchestration-measurement.md `## 16` の `adversarial_verify`
+   - **`no-eligible-findings` だけは「未実施」と分かる文言にする**（v2.66.0 / GitHub issue #136）: `反証: 未実施（対象帯に該当なし。<閾値以下の severity> は較正されていない）`。例: 既定 high で BLOCKER / CRITICAL 不在なら `反証: 未実施（対象帯に該当なし。MAJOR 以下の severity は較正されていない）`。**「対象 0 件」と書かないこと** — 他の 4 つの skip 理由（`effort` / `config` / `scope` / `emergency`）は「この構成では走らせない」だが、これだけは**走る構成なのに対象が無かった**ので、同じ書き方だと「検証したが問題なし」と読まれる。確信度の表示が実態より高く出る経路になる
    - **verdict 分布の偏りを検知して注記する（GitHub issue #110）**: `X >= 5` かつ**単一 verdict が実施件数の 80% 以上**を占めるとき、反証行の次の行に注記を 1 行足す:
 
      ```

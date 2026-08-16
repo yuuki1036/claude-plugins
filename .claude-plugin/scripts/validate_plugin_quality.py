@@ -11,6 +11,10 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - hooks 安全性: hook スクリプトが safe_hook_init を呼んでいるか
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
+  - schema-markers 同期: code-review の版マーカー定数（publish-review-event.sh の SCHEMA_MARKERS）が
+    orchestration-measurement.md `## 16`「版マーカーの現行値」表と同値か. 注入方式（v2.65.0）で
+    「2 箇所を人手で揃える」関係が script <-> doc へ移ったが, SSoT pin は md 限定でこの関係を
+    宣言できない（issue #134）. doc がずれても実データは壊れないぶん気づけないので機械検証に寄せる.
   - SSoT pin: `<!-- SSOT: <path>#<anchor> @<hash8> -->` の pin が正本の実ハッシュと一致するか.
     routing-axes は「区間が byte-identical」を検証するが, doc → doc の伝播関係の多くは
     言い換え / 要約なので一致比較にできない. pin は内容の一致ではなく『正本が変わったら
@@ -54,6 +58,7 @@ Exit code: 0 (pass / warning のみ) / 1 (errors あり)
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -77,6 +82,14 @@ ROUTING_AXES_CONSUMERS = [
 ]
 ROUTING_AXES_START = "<!-- ROUTING-AXES:START -->"
 ROUTING_AXES_END = "<!-- ROUTING-AXES:END -->"
+
+# 版マーカー定数（`SCHEMA_MARKERS`）の script <-> doc 同期.
+# SSoT pin は md 限定なのでこの関係を宣言できない（Gotchas / ADR-20260813223000）.
+# 注入方式（v2.65.0 / issue #125）で「2 箇所を人手で揃える」関係が SKILL<->doc から
+# script<->doc へ移っただけで, 強制力がコード内コメント 1 行しか無かった（issue #134）.
+SCHEMA_MARKERS_SCRIPT = ROOT / "code-review" / "scripts" / "publish-review-event.sh"
+SCHEMA_MARKERS_DOC = ROOT / "code-review" / "references" / "orchestration-measurement.md"
+SCHEMA_MARKERS_DOC_ANCHOR = "版マーカーの現行値"
 
 # 正本 → 消費サイトの伝播関係を宣言する pin.
 #   <!-- SSOT: <repo ルート相対の md パス>#<見出しの前方一致 anchor> @<hash8> -->
@@ -507,6 +520,85 @@ def check_routing_axes_sync(errors: list[str]) -> None:
             errors.append(
                 f"[routing-axes-sync] diverged from canonical "
                 f"({CANONICAL_ROUTING_AXES.relative_to(ROOT)}): {consumer.relative_to(ROOT)}"
+            )
+
+
+def _parse_schema_markers_script(text: str) -> dict[tuple[str, str], int] | None:
+    """`SCHEMA_MARKERS = {...}` を python リテラルとして読む（実装側 = 実データの正）."""
+    m = re.search(r"^SCHEMA_MARKERS\s*=\s*(\{.*?^\})", text, re.S | re.M)
+    if not m:
+        return None
+    try:
+        raw = ast.literal_eval(m.group(1))
+    except (ValueError, SyntaxError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    out: dict[tuple[str, str], int] = {}
+    for field, marks in raw.items():
+        if not isinstance(marks, dict):
+            return None
+        for key, value in marks.items():
+            if not isinstance(value, int):
+                return None
+            out[(str(field), str(key))] = value
+    return out
+
+
+def _parse_schema_markers_doc(section: str) -> dict[tuple[str, str], int]:
+    """doc の「版マーカーの現行値」表を読む（| `field` | `marker` | N |）."""
+    rows = re.findall(
+        r"^\|\s*`([A-Za-z0-9_]+)`\s*\|\s*`([A-Za-z0-9_]+)`\s*\|\s*(\d+)\s*\|\s*$",
+        section,
+        re.M,
+    )
+    return {(field, marker): int(value) for field, marker, value in rows}
+
+
+def check_schema_markers_sync(errors: list[str]) -> None:
+    """版マーカー定数が script と doc で同値かを検証する（GitHub issue #134）.
+
+    **doc がずれても実データは壊れない**（注入するのはスクリプト）が, `## 16` は
+    「どの版バケツが何を意味するか」の正本なので, ずれた時点で下流の層別解釈が誤る.
+    実行時に即壊れないぶん気づけないので機械検証に寄せる（CLAUDE.md「決定的 hook > LLM 判定」）.
+
+    **片方のファイルが無い環境では黙って skip する**（code-review 固有のチェックなので,
+    プラグインを削除・改名した repo で誤爆させない）.
+    """
+    if not (SCHEMA_MARKERS_SCRIPT.is_file() and SCHEMA_MARKERS_DOC.is_file()):
+        return
+    script = _parse_schema_markers_script(read_text(SCHEMA_MARKERS_SCRIPT))
+    if script is None:
+        errors.append(
+            f"[schema-markers] SCHEMA_MARKERS を読めない（記法変更か構文エラー）: "
+            f"{SCHEMA_MARKERS_SCRIPT.relative_to(ROOT)}"
+        )
+        return
+    section = _slice_section(SCHEMA_MARKERS_DOC, SCHEMA_MARKERS_DOC_ANCHOR)
+    if section is None:
+        errors.append(
+            f"[schema-markers] doc に「{SCHEMA_MARKERS_DOC_ANCHOR}」節が無い（または複数ある）: "
+            f"{SCHEMA_MARKERS_DOC.relative_to(ROOT)}"
+        )
+        return
+    doc = _parse_schema_markers_doc(section)
+    if not doc:
+        errors.append(
+            f"[schema-markers] doc の表を 1 行も読めない（`| \\`field\\` | \\`marker\\` | N |` 形式）: "
+            f"{SCHEMA_MARKERS_DOC.relative_to(ROOT)} `{SCHEMA_MARKERS_DOC_ANCHOR}`"
+        )
+        return
+    rel_s, rel_d = SCHEMA_MARKERS_SCRIPT.relative_to(ROOT), SCHEMA_MARKERS_DOC.relative_to(ROOT)
+    for key in sorted(script.keys() | doc.keys()):
+        label = f"{key[0]}.{key[1]}"
+        if key not in doc:
+            errors.append(f"[schema-markers] `{label}` = {script[key]} が doc の表に無い: {rel_d}")
+        elif key not in script:
+            errors.append(f"[schema-markers] `{label}` が doc にあるが SCHEMA_MARKERS に無い: {rel_s}")
+        elif script[key] != doc[key]:
+            errors.append(
+                f"[schema-markers] `{label}` の値がずれている（script={script[key]} / doc={doc[key]}）: "
+                f"{rel_s} <-> {rel_d}"
             )
 
 
@@ -997,6 +1089,7 @@ def main() -> int:
         check_hook_self_judgement(plugin_dir, warnings)
 
     check_routing_axes_sync(errors)
+    check_schema_markers_sync(errors)
     check_ssot_pins(errors)
     check_event_bus_sync(errors)
     check_agent_sync_launch_repo_local(warnings)

@@ -290,15 +290,25 @@ else:
 # gaps の確定はここ（append する経路をすべて通した後に代入する）
 payload["measurement_gaps"] = gaps
 
+# 並列発行の担保と打点は**どちらもオーケストレーターの自己申告**で、破っても実行中は何も
+# 起きない（GitHub issue #135）。しかも打点漏れは違反の証拠自体を消すので、`explorer-wave`
+# gap は「打ち忘れ」であると同時に「直列発行だったかもしれないが確かめられない」を意味する。
+# **独立した観測者（Agent の PostToolUse hook）が本命の解**だが未検証なので、当面は
+# 「気づかず通過する」のを止める側に倒す — レポートへの追記を明示的に指示する
+# （→ design-notes/pending-optimizations.md `## 7`）
 if waves >= 2:
     sys.stderr.write(
-        "WARN: explorer wave が %d 本ある（一括発行が破られた可能性）。"
-        "1 メッセージにまとめていれば wave 内最長の 1 本で済む — orchestration-guide.md `## 0`\n" % waves
+        "WARN: explorer wave が %d 本ある（一括発行が破られた）。1 メッセージにまとめていれば "
+        "wave 内最長の 1 本で済む — orchestration-guide.md `## 0`\n"
+        "  → **レポート末尾に 1 行追記すること**: "
+        "`⚠️ 計測: explorer を %d wave に分けて発行した（一括発行の規約違反 / #135）`\n" % (waves, waves)
     )
 elif "explorer-wave" in gaps:
     sys.stderr.write(
         "WARN: explorer を %s 体起動したのに explorer wave の打点が無い（explorer_waves が欠測）。"
-        "回収直後の `review-timing.sh mark wave --explorer` を打ち忘れている\n" % launched
+        "回収直後の `review-timing.sh mark wave --explorer` を打ち忘れている\n"
+        "  → **打点漏れは一括発行違反の証拠も同時に消す**（#135）。レポート末尾に 1 行追記すること: "
+        "`⚠️ 計測: explorer wave の打点漏れ（一括発行が守られたか事後に検証できない / #135）`\n" % launched
     )
 if gaps:
     sys.stderr.write(

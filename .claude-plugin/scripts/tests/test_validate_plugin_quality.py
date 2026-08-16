@@ -488,3 +488,136 @@ class CheckSsotPinsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CheckSchemaMarkersSyncTest(unittest.TestCase):
+    """版マーカー定数の script <-> doc 突合（GitHub issue #134）.
+
+    **期待値をテスト側で独立に構築する**（CLAUDE.md「検証機構の期待値をその機構自身で
+    生成すると、壊れていても全件 pass する」）。fixture の script / doc はどちらも
+    下の `MARKERS` リテラルから組み立て、実装のパーサは一切通さない。
+    """
+
+    # 唯一の真値。script fixture も doc fixture もここから機械的に生成する
+    MARKERS = {
+        ("pre_adjust_counts", "schema"): 2,
+        ("adversarial_verify", "calibration_schema"): 2,
+        ("adversarial_verify", "gate_schema"): 3,
+        ("meta_reviewer", "gate_schema"): 3,
+    }
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = (v.ROOT, v.SCHEMA_MARKERS_SCRIPT, v.SCHEMA_MARKERS_DOC)
+        v.ROOT = self.root
+        v.SCHEMA_MARKERS_SCRIPT = self.root / "publish.sh"
+        v.SCHEMA_MARKERS_DOC = self.root / "doc.md"
+
+        def _restore() -> None:
+            v.ROOT, v.SCHEMA_MARKERS_SCRIPT, v.SCHEMA_MARKERS_DOC = self._orig
+
+        self.addCleanup(_restore)
+
+    def _write_script(self, markers: dict[tuple[str, str], int]) -> None:
+        """実スクリプトと同じ形（heredoc python ブロック内の dict）で書き出す."""
+        by_field: dict[str, dict[str, int]] = {}
+        for (field, key), value in markers.items():
+            by_field.setdefault(field, {})[key] = value
+        body = "\n".join(
+            '    "%s": {%s},' % (f, ", ".join('"%s": %d' % kv for kv in m.items()))
+            for f, m in by_field.items()
+        )
+        v.SCHEMA_MARKERS_SCRIPT.write_text(
+            "#!/usr/bin/env bash\n"
+            "python3 - <<'PY'\n"
+            "# 版マーカー（定数）の注入\n"
+            "SCHEMA_MARKERS = {\n" + body + "\n}\n"
+            "PY\n",
+            encoding="utf-8",
+        )
+
+    def _write_doc(self, markers: dict[tuple[str, str], int], anchor: str = "版マーカーの現行値") -> None:
+        rows = "\n".join("| `%s` | `%s` | %d |" % (f, k, val) for (f, k), val in markers.items())
+        v.SCHEMA_MARKERS_DOC.write_text(
+            "# 計測\n\n"
+            "## 16. payload 契約\n\n"
+            "本文。\n\n"
+            f"### {anchor}\n\n"
+            "| payload フィールド | 版マーカー | 現行値 |\n|---|---|---|\n" + rows + "\n\n"
+            "- 注記。\n\n"
+            "### 別の節\n\n"
+            "| payload フィールド | 版マーカー | 現行値 |\n|---|---|---|\n"
+            "| `無関係` | `dummy` | 99 |\n",
+            encoding="utf-8",
+        )
+
+    def test_matching_values_produce_no_error(self):
+        self._write_script(self.MARKERS)
+        self._write_doc(self.MARKERS)
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(errors, [])
+
+    def test_value_drift_is_reported(self):
+        drifted = dict(self.MARKERS)
+        drifted[("meta_reviewer", "gate_schema")] = 4     # doc だけ据え置き
+        self._write_script(drifted)
+        self._write_doc(self.MARKERS)
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("meta_reviewer.gate_schema", errors[0])
+        self.assertIn("script=4", errors[0])
+        self.assertIn("doc=3", errors[0])
+
+    def test_marker_missing_from_doc_is_reported(self):
+        partial = {k: val for k, val in self.MARKERS.items() if k != ("adversarial_verify", "gate_schema")}
+        self._write_script(self.MARKERS)
+        self._write_doc(partial)
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("adversarial_verify.gate_schema", errors[0])
+        self.assertIn("doc の表に無い", errors[0])
+
+    def test_marker_only_in_doc_is_reported(self):
+        partial = {k: val for k, val in self.MARKERS.items() if k != ("pre_adjust_counts", "schema")}
+        self._write_script(partial)
+        self._write_doc(self.MARKERS)
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("pre_adjust_counts.schema", errors[0])
+        self.assertIn("SCHEMA_MARKERS に無い", errors[0])
+
+    def test_rows_outside_the_section_are_not_read(self):
+        """**別の節の同型テーブルを拾わないこと**（拾うと doc 全体が暗黙の正本になる）."""
+        self._write_script(self.MARKERS)
+        self._write_doc(self.MARKERS)
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(errors, [])   # 「別の節」の `無関係.dummy = 99` は無視される
+
+    def test_unreadable_dict_is_reported(self):
+        v.SCHEMA_MARKERS_SCRIPT.write_text("#!/usr/bin/env bash\necho no markers here\n", encoding="utf-8")
+        self._write_doc(self.MARKERS)
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("SCHEMA_MARKERS を読めない", errors[0])
+
+    def test_missing_doc_section_is_reported(self):
+        self._write_script(self.MARKERS)
+        self._write_doc(self.MARKERS, anchor="別名の節")
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("節が無い", errors[0])
+
+    def test_missing_files_are_skipped(self):
+        """code-review 固有のチェックなので, ファイルが無い repo では黙って skip する."""
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(errors, [])

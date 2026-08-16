@@ -71,3 +71,39 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 - **誤検知の設計が未確定**。glob は**他セッション・他リポジトリのレビュー**の計測ファイルにも当たる（`TS_FILE` の slug は worktree ルート由来で、hook 側からは自分の回かどうかを判定できない）。並行レビューが常態のマーケットプレイス前提（`dev-workflow:worktree-setup`）では、鳴りっぱなしになって「⚠️ が出たときだけ行動する」契約を壊すリスクがある
 - code-review は現在 SessionStart hook しか持たず、**新規 hook の追加は `claude-meta:component-addition-advisor` の退路確保ゲートの対象**（CLAUDE.md）。既存拡張（SKILL 側のガード）で足りるかを先に測る
 - **判断材料**: `measurement_gaps` の `late-publish` の発生率（`review-retro.sh` が gap 種別ごとに自分の分母で判定する / v2.66.0）。SKILL 側ガードで頻度が落ちなければ hook へ上げる
+
+## 6. 既定 high で「加減算で報告閾値を超えた MAJOR」を反証対象に含める
+
+**動機（GitHub issue #136）**: `scoring-guide.md` の「複数エージェント検出 +15」は MAJOR を単独で報告閾値（95）へ押し上げられるのに、**押し上げの妥当性は誰も検証していない**。既定 high の反証ゲートは非対称ゾーン（BLOCKER 60-94 / CRITICAL 80-94）だけなので、BLOCKER / CRITICAL が 0 件の回では反証が構造的に不発になり、**severity 過大が最も起きる帯が最も較正されない**。
+
+**案**: 既定 high のゲートに「**加減算を除いた base confidence が閾値未満**で、加減算後に閾値を超えた MAJOR」を足す。追加バッチの上乗せゲート（`## 9` の `confidence + 15 >= 報告閾値`）と鏡像の関係（あちらは「+15 の最良ケースでも届かないなら no-op」、こちらは「+15 が無ければ届かなかった＝押し上げが未検証」）。
+
+**採らない理由（v2.66.0 時点）— 既定パスに直列 wave を 1 本足すため**:
+
+- meta-reviewer は xhigh / max 起点なので、**既定 high では 4.6 + 4.9 の wave がそもそも存在しない**回が多い。BLOCKER / CRITICAL 不在の回にこのゲートを足すと、**今まで wave が無かったところに wave が生える**（実測の wave 単価は 6〜16 分 / `triage-guide.md ## 5.1`）。token だけの増加ではない
+- **xhigh / max では既に MAJOR 全件が対象**（`## 9` の表）。つまり本案が効くのは high 限定で、そこがちょうど wave を新設する帯にあたる
+- **`## 9` には既にゲート幅の再監視条件がある**（`gate_schema >= 2` が 10 件かつ `no-eligible-findings` 50% 以上）。v2.65.0 で `fired` / `skip_reason` を記録し始めたばかりで**実測は 2/2 件**。判断の材料は揃いつつあるので、**先に条件を満たすまで待つ**のが repo の流儀（「サンプルが無いうちは判断しない」/ `triage-guide.md ## 7`）
+
+**issue の前提の訂正（実データで確認）**: #136 は実例を「self-review・xhigh / medium・MAJOR 7 件で `no-eligible-findings`」としているが、`.claude/events.jsonl` の該当サンプル（MAJOR 7 件の回）は **effort=high** だった。`skip_reason` を持つ 2 件も両方 high で、**どちらも設計どおりの不発**。xhigh で MAJOR が対象外になっていた事実は無い。
+
+**先に入れたもの**: レポート文言（`no-eligible-findings` のとき「未実施（対象帯に該当なし。MAJOR 以下の severity は較正されていない）」）。誤読（「対象 0 件」＝「検証したが問題なし」）はゲート幅と独立に潰せるため、コストゼロの側だけ先に採った。
+
+**再判断の材料**: `review-retro.sh` の反証シグナル（`gate_schema >= 2` の母集団 10 件 / `no-eligible-findings` 50% 以上）。点灯したらこの案と「high の非対称ゾーンに MAJOR の一部帯を足す」案（`## 9`）を併せて検討する。
+
+## 7. explorer の一括発行と wave 打点を Agent hook（独立した観測者）へ移す
+
+**動機（GitHub issue #135）**: 並列発行の規約（`orchestration-guide.md ## 0`）と wave 打点（`## 14`）は**どちらもオーケストレーターの自己申告**で、破っても実行中は何も起きない。しかも **2 が 1 を検知不能にする**: `agents.explorer_waves` は「打点の行数 = wave 数」で直列発行を暴くための指標（issue #122）なのに、その行を書くのがオーケストレーター自身なので、**打点を忘れた瞬間に違反の証拠も同時に消える**。実測でも `explorer_waves` は導入以来まともに観測できていない。
+
+**案**: `Agent` の PreToolUse / PostToolUse hook で打点する。**発行時刻**を記録すれば wave 判定は明快 — 一括発行なら発行時刻がほぼ同時刻に固まり、1 体ずつ直列に出すと前の agent の実行時間ぶん離れる（完了時刻のクラスタリングより閾値が要らない）。検知したい対象（オーケストレーターの手順遵守）と検知の担い手が分離するのが要点。
+
+**入れていない理由 — 発火するかを確認できていない**:
+
+- **subagent のツール名が `Agent` であることは確認済み**（CC 2.1.233 の transcript 実測）。未確認なのは「`PreToolUse` / `PostToolUse` が `Agent` に対して発火するか」で、**hook の発火記録は transcript に残らない**ため既存データからは判定できない
+- **セッション内での実験は偽陰性を返しうる**。`settings.json` に hook を足しても実行中セッションが再読込する保証が無く、「発火しなかった」がツール非対応なのか設定未反映なのか切り分けられない
+- **検証手順**: ①`.claude/settings.json` に `PostToolUse` / matcher `Agent` の hook（マーカーファイルに 1 行 append するだけ）を足す ②**セッションを再起動する** ③任意の agent を 1 体起動する ④マーカーが増えたか見る。発火するなら `tool_name` の実値（`Agent` / `Task`）も同時に控える
+- **repo の Gotchas「hooks.json の if:/matcher に単独依存しない」に従い、自己判定を必須にする**: `tool_name` を `safe_hook_input` で読み、さらに**レビュー中か**（`review_path timing` が存在するか）を見てから打点する。そうしないと全セッションの全 Agent 呼び出しで発火する
+- **新規 hook の追加は `claude-meta:component-addition-advisor` の退路確保ゲートの対象**（CLAUDE.md）。code-review は現在 SessionStart hook しか持たないので、判定を経てから入れる
+
+**先に入れたもの（案 B / v2.66.0）**: publish の WARN に「レポート末尾に `⚠️ 計測: ...` を 1 行追記せよ」という具体指示を足し、両 SKILL に追記規約を書いた。stderr の警告をユーザーに見える場所へ移すだけで、**自己申告構造そのものは変わっていない**（本命は上の案）。
+
+**案 C（不採用）**: fan-out を Workflow スクリプト（`parallel()` / `pipeline()`）へ移す。explorer wave / reviewer wave / 反証バッチは構造的には `parallel()` そのもので、散文で「一括発行せよ」と指示する代わりに制御構造で保証できる、という筋は成立する。ただし skill の全面書き換えになり費用対効果が悪い。
