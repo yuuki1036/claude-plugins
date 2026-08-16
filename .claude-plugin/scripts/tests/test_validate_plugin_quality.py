@@ -486,8 +486,6 @@ class CheckSsotPinsTest(unittest.TestCase):
         self.assertEqual(len(errors), 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class CheckSchemaMarkersSyncTest(unittest.TestCase):
@@ -510,13 +508,17 @@ class CheckSchemaMarkersSyncTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
-        self._orig = (v.ROOT, v.SCHEMA_MARKERS_SCRIPT, v.SCHEMA_MARKERS_DOC)
+        self._orig = (v.ROOT, v.SCHEMA_MARKERS_SCRIPT, v.SCHEMA_MARKERS_DOC, v.SCHEMA_MARKERS_PLUGIN)
         v.ROOT = self.root
         v.SCHEMA_MARKERS_SCRIPT = self.root / "publish.sh"
         v.SCHEMA_MARKERS_DOC = self.root / "doc.md"
+        v.SCHEMA_MARKERS_PLUGIN = self.root / "plugin.json"
+        # skip の判定は「プラグインが在るか」なので, 既定では在る状態にしておく
+        v.SCHEMA_MARKERS_PLUGIN.write_text("{}", encoding="utf-8")
 
         def _restore() -> None:
-            v.ROOT, v.SCHEMA_MARKERS_SCRIPT, v.SCHEMA_MARKERS_DOC = self._orig
+            (v.ROOT, v.SCHEMA_MARKERS_SCRIPT, v.SCHEMA_MARKERS_DOC,
+             v.SCHEMA_MARKERS_PLUGIN) = self._orig
 
         self.addCleanup(_restore)
 
@@ -538,16 +540,41 @@ class CheckSchemaMarkersSyncTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _write_doc(self, markers: dict[tuple[str, str], int], anchor: str = "版マーカーの現行値") -> None:
+    # 実データ相当のノイズ. **対象節の「中」に置く** — 実ファイルの anchor 節は次の
+    # 同レベル以上の見出しまで（実測 193 行）に及び, `## 16` は payload 契約の本体なので
+    # 非対象テーブルが同一節内に実在する. 節の「外」に置く fixture では,
+    # 実際に効いている防御（テーブルブロック限定 + 行書式の厳格さ）を一度も通らない.
+    IN_SECTION_NOISE = (
+        "\n"
+        "| フィールド | 内容 |\n|---|---|\n"
+        "| `diff_digest` | diff 全文の cksum |\n"
+        "\n"
+        "| `schema` | 算出方法 | 粒度 |\n|---|---|---|\n"
+        "| `1`（v2.44.0〜） | reviewer が列挙した指摘のみ | 統合・dedup 後 |\n"
+    )
+
+    # **対象テーブルの中**に置く非マーカー行（バッククォート無し × 3 列目が数値）。
+    # テーブルブロック限定は「ブロックの外」を守るだけなので, **行書式の厳格さ**を試すには
+    # ブロックの中にノイズが要る。これが無いとバッククォート要求を外す変異を検知できない
+    IN_TABLE_NOISE = "\n| 備考 | 旧ゲート | 2 |"
+
+    def _write_doc(
+        self,
+        markers: dict[tuple[str, str], int],
+        anchor: str = "版マーカーの現行値",
+        trailing_rows: str = "",
+    ) -> None:
         rows = "\n".join("| `%s` | `%s` | %d |" % (f, k, val) for (f, k), val in markers.items())
         v.SCHEMA_MARKERS_DOC.write_text(
             "# 計測\n\n"
             "## 16. payload 契約\n\n"
             "本文。\n\n"
             f"### {anchor}\n\n"
-            "| payload フィールド | 版マーカー | 現行値 |\n|---|---|---|\n" + rows + "\n\n"
-            "- 注記。\n\n"
-            "### 別の節\n\n"
+            "| payload フィールド | 版マーカー | 現行値 |\n|---|---|---|\n"
+            + rows + self.IN_TABLE_NOISE + trailing_rows + "\n\n"
+            "- 注記。\n"
+            + self.IN_SECTION_NOISE +
+            "\n### 別の節\n\n"
             "| payload フィールド | 版マーカー | 現行値 |\n|---|---|---|\n"
             "| `無関係` | `dummy` | 99 |\n",
             encoding="utf-8",
@@ -592,13 +619,65 @@ class CheckSchemaMarkersSyncTest(unittest.TestCase):
         self.assertIn("pre_adjust_counts.schema", errors[0])
         self.assertIn("SCHEMA_MARKERS に無い", errors[0])
 
-    def test_rows_outside_the_section_are_not_read(self):
-        """**別の節の同型テーブルを拾わないこと**（拾うと doc 全体が暗黙の正本になる）."""
+    def test_noise_tables_in_the_same_section_are_not_read(self):
+        """**同一節内の非対象テーブルを拾わないこと**（実データのレイアウト）.
+
+        `_write_doc` は対象表の後ろに 2 列表と「3 列目が非数値」の表を置く.
+        テーブルブロック限定 + 行書式の厳格さのどちらかを緩めるとここが落ちる.
+        """
         self._write_script(self.MARKERS)
-        self._write_doc(self.MARKERS)
+        self._write_doc(self.MARKERS)          # 既定でノイズ入り
         errors: list[str] = []
         v.check_schema_markers_sync(errors)
-        self.assertEqual(errors, [])   # 「別の節」の `無関係.dummy = 99` は無視される
+        self.assertEqual(errors, [])
+
+    def test_a_later_row_in_the_section_does_not_override(self):
+        """**節の後方に同型行を足しても正本を上書きしないこと**.
+
+        節全体に findall を掛けていた版は dict の後勝ちで `3` が `2` に化けた（実測）.
+        対象表の外に置いた行は「拾わない」のが正しい挙動なので errors は空.
+        """
+        self._write_script(self.MARKERS)
+        self._write_doc(self.MARKERS)
+        doc = v.SCHEMA_MARKERS_DOC.read_text(encoding="utf-8")
+        # **対象節の中・最初のテーブルブロックの外**に置く（節末尾に足すのと同じ位置）。
+        # ファイル末尾に足すと「別の節」に入ってしまい, 節境界だけを見るテストに退化する
+        assert "\n### 別の節" in doc
+        doc = doc.replace("\n### 別の節", "\n| `meta_reviewer` | `gate_schema` | 2 |\n\n### 別の節", 1)
+        v.SCHEMA_MARKERS_DOC.write_text(doc, encoding="utf-8")
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(errors, [])
+
+    def test_duplicate_row_in_the_table_is_reported(self):
+        """**対象表の中の重複は後勝ちで黙らせない**（どちらが正本か決められない）."""
+        self._write_script(self.MARKERS)
+        self._write_doc(self.MARKERS, trailing_rows="\n| `meta_reviewer` | `gate_schema` | 2 |")
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertTrue(any("重複" in e and "meta_reviewer.gate_schema" in e for e in errors), errors)
+
+    def test_one_sided_missing_file_is_reported(self):
+        """**片方だけ欠けているのは error**（リネームで保護が無言で外れるのを防ぐ）."""
+        self._write_script(self.MARKERS)
+        self._write_doc(self.MARKERS)
+        v.SCHEMA_MARKERS_SCRIPT.unlink()
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("突合対象が見つからない", errors[0])
+
+    def test_bool_value_is_rejected(self):
+        """`isinstance(True, int)` は真なので, bool を通すと `True == 1` で一致扱いになる."""
+        self._write_doc(self.MARKERS)
+        v.SCHEMA_MARKERS_SCRIPT.write_text(
+            "python3 - <<'PY'\nSCHEMA_MARKERS = {\n    \"pre_adjust_counts\": {\"schema\": True},\n}\nPY\n",
+            encoding="utf-8",
+        )
+        errors: list[str] = []
+        v.check_schema_markers_sync(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("整数ではない", errors[0])
 
     def test_unreadable_dict_is_reported(self):
         v.SCHEMA_MARKERS_SCRIPT.write_text("#!/usr/bin/env bash\necho no markers here\n", encoding="utf-8")
@@ -616,8 +695,40 @@ class CheckSchemaMarkersSyncTest(unittest.TestCase):
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("節が無い", errors[0])
 
-    def test_missing_files_are_skipped(self):
-        """code-review 固有のチェックなので, ファイルが無い repo では黙って skip する."""
+    def test_missing_plugin_is_skipped(self):
+        """**黙るのはプラグインごと無いときだけ**（code-review を消した repo で誤爆させない）."""
+        v.SCHEMA_MARKERS_PLUGIN.unlink()
         errors: list[str] = []
         v.check_schema_markers_sync(errors)
         self.assertEqual(errors, [])
+
+
+class TestDiscoveryTest(unittest.TestCase):
+    """**このファイルのテストが全部収集されているか**を自分で確かめる.
+
+    `if __name__ == "__main__": unittest.main()` より後ろにクラスを足すと,
+    `unittest.main()` が `sys.exit()` するため後続のクラス定義自体が評価されず,
+    **直接実行だけ静かに件数が減る**（実測: discover 41 件 / 直接実行 33 件で
+    どちらも `OK`）. 強制経路（pre-commit / CI / Stop hook）は 3 本とも discover なので
+    実害は出ないが, 「OK が出るのに走っていない」はこのファイルが存在する理由そのもの.
+    """
+
+    def test_every_testcase_in_this_module_is_collected(self):
+        import __main__  # noqa: F401  （直接実行時のモジュール差異を吸収する意図はない）
+
+        module = sys.modules[__name__]
+        defined = {
+            name
+            for name, obj in vars(module).items()
+            if isinstance(obj, type) and issubclass(obj, unittest.TestCase)
+        }
+        collected = {
+            type(t).__name__
+            for t in unittest.defaultTestLoader.loadTestsFromModule(module)._tests
+            for t in getattr(t, "_tests", [t])
+        }
+        self.assertEqual(defined - collected, set(), "収集されていない TestCase がある")
+
+
+if __name__ == "__main__":
+    unittest.main()

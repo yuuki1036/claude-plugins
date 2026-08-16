@@ -90,6 +90,10 @@ ROUTING_AXES_END = "<!-- ROUTING-AXES:END -->"
 SCHEMA_MARKERS_SCRIPT = ROOT / "code-review" / "scripts" / "publish-review-event.sh"
 SCHEMA_MARKERS_DOC = ROOT / "code-review" / "references" / "orchestration-measurement.md"
 SCHEMA_MARKERS_DOC_ANCHOR = "版マーカーの現行値"
+# skip の判定は「関係の両端が揃っているか」ではなく「**検証対象のプラグインが在るか**」で行う.
+# 両端で見ると, 片方をリネーム / 移動しただけで保護が無言で外れる（`check_safe_hook_sync` が
+# hooks ディレクトリの存在でゲートし, 正本・複製の欠落は error にしているのと同じ流儀）.
+SCHEMA_MARKERS_PLUGIN = ROOT / "code-review" / ".claude-plugin" / "plugin.json"
 
 # 正本 → 消費サイトの伝播関係を宣言する pin.
 #   <!-- SSOT: <repo ルート相対の md パス>#<見出しの前方一致 anchor> @<hash8> -->
@@ -523,36 +527,68 @@ def check_routing_axes_sync(errors: list[str]) -> None:
             )
 
 
-def _parse_schema_markers_script(text: str) -> dict[tuple[str, str], int] | None:
-    """`SCHEMA_MARKERS = {...}` を python リテラルとして読む（実装側 = 実データの正）."""
+def _parse_schema_markers_script(text: str) -> tuple[dict[tuple[str, str], int] | None, str]:
+    """`SCHEMA_MARKERS = {...}` を python リテラルとして読む（実装側 = 実データの正）.
+
+    失敗時は `(None, 理由)` を返す. **理由を分けるのは誤診断を避けるため** — 一律
+    「記法変更か構文エラー」と言うと, 値の型が違うだけの回に対して誤った是正先を指す.
+
+    `bool` を弾くのは Python の `isinstance(True, int)` が真になるため.
+    `{"schema": True}` は doc の `1` と `True == 1` で**一致扱いのまま素通り**し,
+    publish される JSON には `true` が入る（値の誤りを黙って通す唯一の経路だった）.
+    """
     m = re.search(r"^SCHEMA_MARKERS\s*=\s*(\{.*?^\})", text, re.S | re.M)
     if not m:
-        return None
+        return None, "`SCHEMA_MARKERS = {` から行頭 `}` までを見つけられない（記法変更か閉じ括弧のインデント）"
     try:
         raw = ast.literal_eval(m.group(1))
-    except (ValueError, SyntaxError):
-        return None
+    except (ValueError, SyntaxError) as e:
+        return None, f"python リテラルとして評価できない（{e}）"
     if not isinstance(raw, dict):
-        return None
+        return None, f"dict ではない（{type(raw).__name__}）"
     out: dict[tuple[str, str], int] = {}
     for field, marks in raw.items():
         if not isinstance(marks, dict):
-            return None
+            return None, f"`{field}` の値が dict ではない（{type(marks).__name__}）"
         for key, value in marks.items():
-            if not isinstance(value, int):
-                return None
+            if isinstance(value, bool) or not isinstance(value, int):
+                return None, f"`{field}.{key}` の値が整数ではない（{value!r}）"
             out[(str(field), str(key))] = value
-    return out
+    return out, ""
 
 
-def _parse_schema_markers_doc(section: str) -> dict[tuple[str, str], int]:
-    """doc の「版マーカーの現行値」表を読む（| `field` | `marker` | N |）."""
-    rows = re.findall(
-        r"^\|\s*`([A-Za-z0-9_]+)`\s*\|\s*`([A-Za-z0-9_]+)`\s*\|\s*(\d+)\s*\|\s*$",
-        section,
-        re.M,
-    )
-    return {(field, marker): int(value) for field, marker, value in rows}
+SCHEMA_MARKERS_ROW_RE = re.compile(
+    r"^\|\s*`([A-Za-z0-9_]+)`\s*\|\s*`([A-Za-z0-9_]+)`\s*\|\s*(\d+)\s*\|\s*$"
+)
+
+
+def _parse_schema_markers_doc(section: str) -> tuple[dict[tuple[str, str], int], list[str]]:
+    """doc の「版マーカーの現行値」表を読む（| `field` | `marker` | N |）.
+
+    **節全体ではなく「最初のテーブルブロック」だけを見る**. anchor の節は次の同レベル以上の
+    見出しまで（実測 193 行）に及び, `## 16` は payload 契約の本体なので同型の表が今後
+    増えうる. 節全体に findall を掛けると **後方の同型行が dict の後勝ちで正本を上書きする**
+    （実測: 節末尾に 1 行足すと `gate_schema` が 3 → 2 に化けた）.
+
+    重複キーは呼び出し側で error にする（黙って後勝ちにしない）.
+    """
+    lines = section.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.lstrip().startswith("|")), None)
+    if start is None:
+        return {}, []
+    out: dict[tuple[str, str], int] = {}
+    dups: list[str] = []
+    for line in lines[start:]:
+        if not line.lstrip().startswith("|"):
+            break                      # テーブルブロックの終わり
+        m = SCHEMA_MARKERS_ROW_RE.match(line)
+        if not m:
+            continue                   # 区切り行（|---|）とヘッダ行
+        key = (m.group(1), m.group(2))
+        if key in out:
+            dups.append(f"{key[0]}.{key[1]}")
+        out[key] = int(m.group(3))
+    return out, dups
 
 
 def check_schema_markers_sync(errors: list[str]) -> None:
@@ -562,15 +598,26 @@ def check_schema_markers_sync(errors: list[str]) -> None:
     「どの版バケツが何を意味するか」の正本なので, ずれた時点で下流の層別解釈が誤る.
     実行時に即壊れないぶん気づけないので機械検証に寄せる（CLAUDE.md「決定的 hook > LLM 判定」）.
 
-    **片方のファイルが無い環境では黙って skip する**（code-review 固有のチェックなので,
-    プラグインを削除・改名した repo で誤爆させない）.
+    **黙るのは「プラグインごと無い」ときだけ**（code-review 固有のチェックなので, プラグインを
+    削除した repo で誤爆させない）. **片方だけ欠けているのは error** — script か doc の一方を
+    リネーム / 移動しただけで保護が無言で外れると, #134 が塞いだ「強制力がコメント 1 行しかない」
+    状態にリネーム 1 回で戻る（縮退の向きは `check_safe_hook_sync` / `check_routing_axes_sync`
+    と揃える: 対象の存在でゲートし, 欠落は落とす）.
     """
-    if not (SCHEMA_MARKERS_SCRIPT.is_file() and SCHEMA_MARKERS_DOC.is_file()):
+    if not SCHEMA_MARKERS_PLUGIN.is_file():
         return
-    script = _parse_schema_markers_script(read_text(SCHEMA_MARKERS_SCRIPT))
+    missing = [p for p in (SCHEMA_MARKERS_SCRIPT, SCHEMA_MARKERS_DOC) if not p.is_file()]
+    if missing:
+        for p in missing:
+            errors.append(
+                f"[schema-markers] 突合対象が見つからない（移動・改名ならパス定数も直す）: "
+                f"{p.relative_to(ROOT)}"
+            )
+        return
+    script, why = _parse_schema_markers_script(read_text(SCHEMA_MARKERS_SCRIPT))
     if script is None:
         errors.append(
-            f"[schema-markers] SCHEMA_MARKERS を読めない（記法変更か構文エラー）: "
+            f"[schema-markers] SCHEMA_MARKERS を読めない — {why}: "
             f"{SCHEMA_MARKERS_SCRIPT.relative_to(ROOT)}"
         )
         return
@@ -581,14 +628,16 @@ def check_schema_markers_sync(errors: list[str]) -> None:
             f"{SCHEMA_MARKERS_DOC.relative_to(ROOT)}"
         )
         return
-    doc = _parse_schema_markers_doc(section)
+    doc, dups = _parse_schema_markers_doc(section)
+    rel_s, rel_d = SCHEMA_MARKERS_SCRIPT.relative_to(ROOT), SCHEMA_MARKERS_DOC.relative_to(ROOT)
     if not doc:
         errors.append(
             f"[schema-markers] doc の表を 1 行も読めない（`| \\`field\\` | \\`marker\\` | N |` 形式）: "
-            f"{SCHEMA_MARKERS_DOC.relative_to(ROOT)} `{SCHEMA_MARKERS_DOC_ANCHOR}`"
+            f"{rel_d} `{SCHEMA_MARKERS_DOC_ANCHOR}`"
         )
         return
-    rel_s, rel_d = SCHEMA_MARKERS_SCRIPT.relative_to(ROOT), SCHEMA_MARKERS_DOC.relative_to(ROOT)
+    for dup in dups:
+        errors.append(f"[schema-markers] doc の表に `{dup}` が重複している（後勝ちで黙らせない）: {rel_d}")
     for key in sorted(script.keys() | doc.keys()):
         label = f"{key[0]}.{key[1]}"
         if key not in doc:

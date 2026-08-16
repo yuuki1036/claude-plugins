@@ -103,7 +103,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 
 > **explorer wave 打点の行数が `agents.explorer_waves` になる（v2.61.0 / GitHub issue #122）**: explorer は「同一メッセージ内で一括発行する」規約（orchestration-guide.md `## 0`）だが、**破ったことが計測に現れないため事後に気づけなかった**（実測: 1 体を単独発行してから残り 3 体を次のメッセージで出したため `duration_explore_min` が 18 分 = 7.7 + 9.2 になった。一括なら wave 内最長の約 9 分で済んでいた）。**wave ごとに `mark wave --explorer` を打てば行数がそのまま wave 本数になる**ので、追加のマーカー種別を増やさずに検知できる。`durations` は最後の explorer 打点を採るため、分割しても `duration_explore_min` は全 wave を覆う。
 >
-> 値の注入と警告は `publish-review-event.sh` が行う（**SKILL 側は `agents.explorer_waves` を渡さない**）。`>= 2` なら「一括発行が破られた可能性」、`agents.explorer >= 1` かつ `0` なら「マーカーの打ち忘れ」を stderr に WARN する。
+> 値の注入と警告は `publish-review-event.sh` が行う（**SKILL 側は `agents.explorer_waves` を渡さない**）。`>= 2` なら「一括発行が破られた」、`agents.explorer >= 1` かつ `0` なら「マーカーの打ち忘れ」を stderr に WARN し、**どちらもレポート末尾に `⚠️ 計測: ...` を 1 行追記するよう指示する**（v2.67.0 / GitHub issue #135。Round 2 の追加 explorer には `--explorer` を付けない規約があるので、`>= 2` は初回 wave の分割を意味する＝断定してよい）。
 
 **publish 時の算出**（欠測は `-1`。ファイルが無い / マーカーが欠ける場合も 0 と混同しない）は `scripts/publish-review-event.sh` が `review-timing.sh durations` 経由で行い、`duration_*` フィールドを payload に注入する。**SKILL 側は `duration_*` を渡さない**（LLM に時刻計算をさせない）。
 
@@ -137,10 +137,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 > **版マーカーの整数は渡さない**（v2.65.0 / GitHub issue #125）。`schema` / `gate_schema` / `attribution_schema` / `calibration_schema` は `publish-review-event.sh` が注入する。以前は「常に N を入れる」定数を**テンプレートの一部として手書き**させていたが、版が上がるたびにテンプレ追従が要り、**version drift 中に漏れる**（実測: `recall_skeptic.gate_schema` に導入後の miss / `calibration_schema` は 1 セッション中に 2 版跨いだため落ちた）。落ちるとサンプルが**逆の版バケツに入って集計を汚す**ので、単なる欠測より悪い。スクリプトは版付きディレクトリ配下にあり自分の版の定数を知っているので、注入なら構造的に漏れない。
 >
 > 同様に `duration_*` / `agents.explorer_waves` / `measurement_gaps` / `diff_digest` / `diff_files` / `tokens` も**渡さない**（スクリプトが注入する）。
+>
+> **層のオブジェクトそのもの（`pre_adjust_counts` / `adversarial_verify` / `recall_skeptic` / `meta_reviewer`）は必ず入れる。** 落ちた場合は版マーカーを注入する先が無いので、`measurement_gaps` に `payload:<field>` を立てて可視化する（空オブジェクトを捏造すると「起動記録なし」として母集団に混ざるため注入しない）。`fired` を落とした場合も同様に `payload:<field>.fired` が立つ。
 
 ### 版マーカーの現行値
 
-**`publish-review-event.sh` の `SCHEMA_MARKERS` と本表は同値でなければならない**（v2.66.0 / GitHub issue #134）。値の意味（どの版が何を指すか）は各フィールドの節が正本で、本表は**現行値だけ**を機械可読な形で持つ。`validate_plugin_quality.py` の `schema-markers` チェックが両者を突合し、ずれていれば Critical で落とす — 注入方式に移した時点で「2 箇所を人手で揃える」関係が SKILL↔doc から script↔doc へ移っただけで、**SSoT pin は md 限定なのでこの関係を宣言できない**（Gotchas / ADR-20260813223000）。
+**`publish-review-event.sh` の `SCHEMA_MARKERS` と本表は同値でなければならない**（v2.67.0 / GitHub issue #134）。値の意味（どの版が何を指すか）は各フィールドの節が正本で、本表は**現行値だけ**を機械可読な形で持つ。`validate_plugin_quality.py` の `schema-markers` チェックが両者を突合し、ずれていれば Critical で落とす — 注入方式に移した時点で「2 箇所を人手で揃える」関係が SKILL↔doc から script↔doc へ移っただけで、**SSoT pin は md 限定なのでこの関係を宣言できない**（Gotchas / ADR-20260813223000）。
 
 | payload フィールド | 版マーカー | 現行値 |
 |---|---|---|
@@ -154,8 +156,6 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 - **`tokens.schema` は本表に載せない**（＝ `SCHEMA_MARKERS` に入れない）。**片方の skill でしか載らないフィールドの版マーカーは対象外**という例外で、`SCHEMA_MARKERS` は「層のオブジェクトが無ければ `payload:<field>` gap を立てる」経路と対になっているため、review 限定の `tokens` を入れると **self-review で毎回 gap が立つ**。この種のフィールドは構築ブロック側のリテラルで持つ（現行 `tokens.schema: 1`）
 - 値を変えるときは**本表と `SCHEMA_MARKERS` を同時に直す**。片方だけ直すと publish の実データ（スクリプトが正）と doc の解釈（本表が正）がずれ、下流の層別が静かに誤る
 >
-> **層のオブジェクトそのもの（`pre_adjust_counts` / `adversarial_verify` / `recall_skeptic` / `meta_reviewer`）は必ず入れる。** 落ちた場合は版マーカーを注入する先が無いので、`measurement_gaps` に `payload:<field>` を立てて可視化する（空オブジェクトを捏造すると「起動記録なし」として母集団に混ざるため注入しない）。`fired` を落とした場合も同様に `payload:<field>.fired` が立つ。
-
 review 用（`--plugin code-review:review --pr <PR番号>`）:
 
 ```json

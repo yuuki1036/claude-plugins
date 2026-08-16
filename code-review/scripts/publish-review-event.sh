@@ -295,7 +295,7 @@ payload["measurement_gaps"] = gaps
 # gap は「打ち忘れ」であると同時に「直列発行だったかもしれないが確かめられない」を意味する。
 # **独立した観測者（Agent の PostToolUse hook）が本命の解**だが未検証なので、当面は
 # 「気づかず通過する」のを止める側に倒す — レポートへの追記を明示的に指示する
-# （→ design-notes/pending-optimizations.md `## 7`）
+# （→ design-notes/pending-optimizations.md `## 8`）
 if waves >= 2:
     sys.stderr.write(
         "WARN: explorer wave が %d 本ある（一括発行が破られた）。1 メッセージにまとめていれば "
