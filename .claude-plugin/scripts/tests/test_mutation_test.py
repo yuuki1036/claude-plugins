@@ -21,6 +21,7 @@ import stat
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -253,6 +254,39 @@ class ApplyAndTestTest(unittest.TestCase):
         v = mt.apply_and_test(self._mutant(), ["sleep", "5"], 1)
         self.assertEqual(v, "timeout")
         self.assertEqual(self.target.read_bytes(), self.original, "タイムアウトでも復元される")
+
+    def test_timeout_kills_the_whole_process_tree(self):
+        """**孫プロセスを置き去りにしない.**
+
+        `subprocess.run(timeout=...)` は直接の子だけを殺す。テストランナーが起動した
+        被験スクリプトが変異で無限ループ化していると、そちらは生き残って回り続ける
+        （実測: `triage-signals.sh` が **12 本・4 時間**、各 14% CPU で残っていた）。
+        timeout は想定内の結果なので、後始末まで含めて想定内にする。
+
+        ここでは「子が孫を産んでから自分は待つだけ」という構造を作り、timeout 後に
+        **孫が生きていないこと**を pid で直接確かめる（`kill -0` 相当）。
+        """
+        marker = self.root / "grandchild.pid"
+        script = self.root / "spawn.sh"
+        script.write_text(
+            "#!/usr/bin/env bash\n"
+            # 孫: 自分の pid を書いてから延々と回る（無限ループ化した被験スクリプトの代役）
+            "bash -c 'echo $$ > \"%s\"; while :; do sleep 0.2; done' &\n"
+            "wait\n" % marker, encoding="utf-8")
+        verdict = mt.apply_and_test(self._mutant(), ["bash", str(script)], 2)
+        self.assertEqual(verdict, "timeout")
+        self.assertTrue(marker.is_file(), "前提: 孫が起動して pid を書く")
+        pid = int(marker.read_text().strip())
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except (ProcessLookupError, PermissionError):
+                break                      # 回収済み
+            time.sleep(0.1)
+        else:
+            os.kill(pid, 9)                # テストが CPU を焼き続けないよう始末する
+            self.fail("孫プロセス %d が timeout 後も生きている" % pid)
 
     def test_external_edit_is_not_overwritten(self):
         """**外部が編集していたら書き戻さない**（黙って作業を消さない）."""

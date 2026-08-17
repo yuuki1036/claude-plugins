@@ -113,6 +113,51 @@ def run(cmd: list[str], cwd: Path, timeout: int = 600) -> subprocess.CompletedPr
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
 
 
+def run_group(cmd: list[str], cwd: Path, timeout: int) -> subprocess.CompletedProcess[str]:
+    """テストコマンドを**独立したプロセスグループ**で走らせ、timeout ではグループごと殺す.
+
+    **`subprocess.run(timeout=...)` は直接の子だけを殺す。** テストランナーが起動した
+    孫（`bash <被験スクリプト>` 等）は生き残るので、**変異で無限ループ化した孫が
+    そのまま回り続ける**。実測: `dirname .` が `.` を返し続ける変異体の
+    `triage-signals.sh` が **12 本・4 時間**、各 14% CPU で残っていた（timeout した変異
+    2 回ぶんの取りこぼしが積み上がったもの）。timeout は想定内の結果なので、
+    後始末まで含めて想定内にする。
+
+    `start_new_session=True` で子を新しいプロセスグループのリーダーにし、
+    負の pid へシグナルを送ってグループ全体（孫・ひ孫を含む）を回収する。
+    """
+    env = dict(os.environ, **{OWNER_ENV: str(os.getpid())})
+    with subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True, env=env, start_new_session=True) as proc:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill_group(proc)
+            # グループを畳んでから残りの出力を回収する（`communicate` を呼ばないと
+            # パイプが閉じられず ResourceWarning になる）
+            try:
+                out, err = proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                out, err = "", ""
+            raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    """プロセスグループへ TERM → （猶予後に）KILL を送る."""
+    for sig, grace in ((signal.SIGTERM, 2.0), (signal.SIGKILL, 0.0)):
+        try:
+            os.killpg(os.getpgid(proc.pid), sig)
+        except (ProcessLookupError, PermissionError):
+            return          # 既に終了している / 送れない（グループが無い）
+        if grace:
+            try:
+                proc.wait(timeout=grace)
+                return      # TERM で畳めた
+            except subprocess.TimeoutExpired:
+                continue    # KILL へ進む
+
+
 def clear_pycache() -> None:
     """**毎回消す**。stale bytecode は「全部検知した」という嘘の結果を返す（実測）."""
     for d in ROOT.rglob("__pycache__"):
@@ -406,7 +451,9 @@ def apply_and_test(mutant: Mutant, test_cmd: list[str], timeout: int) -> str:
         wrote = True
         clear_pycache()
         try:
-            proc = run(test_cmd, ROOT, timeout=timeout)
+            # **プロセスグループごと起動する**（timeout 時に孫まで回収するため。`run` では
+            # 直接の子だけが死に、無限ループ化した被験スクリプトが残る — `run_group` の注記）
+            proc = run_group(test_cmd, ROOT, timeout=timeout)
         except subprocess.TimeoutExpired:
             # **hang は想定内**: 変異規則に `break` → `continue`（打ち切りを外す）があり、
             # 終端が `break` だけのループに当てると無限ループになる。1 個の hang で run 全体を
