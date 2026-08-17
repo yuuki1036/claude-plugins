@@ -3,7 +3,7 @@
 Issue を書くときの判断軸。9 セクションテンプレ（`template-9sections.md`）の「決定事項」「判断ポイント (open)」を正しく書き分けるための規範。記法非依存。
 
 > 正本はこのファイル（issue-workflow）。旧 linear-workflow への byte-identical 複製規約は
-> ミラー規約の廃止（ADR-20260722164106）に伴い終了した（linear-workflow は deprecated・削除予定）。
+> ミラー規約の廃止（ADR-20260722164106）に伴い終了し、linear-workflow 自体も 2026-08-17 に削除した。
 
 ---
 

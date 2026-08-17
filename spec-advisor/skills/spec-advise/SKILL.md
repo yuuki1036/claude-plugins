@@ -27,7 +27,7 @@ effort: medium
 
 1. `references/routing-rubric.md` を Read する。
 2. **guard を先に適用**（ファネル第 1 段）: bugfix / typo / 設定変更 / 軽微 refactor / 影響が数行に閉じる / 既存 spec に沿うだけ → **提案せず終了**。
-3. **dormant 判定**（Bash・enabled-only）: グローバル + プロジェクトローカルの settings（`$HOME/.claude/settings.json`・`$CLAUDE_PROJECT_DIR/.claude/settings.json`・同 `settings.local.json`）を `grep -Eq '"<plugin>@[^"]*"[[:space:]]*:[[:space:]]*true'` で走査し、`bdd-spec` / `design-doc` / `adr-keeper` / `feature-dev` / `linear-workflow` / `indie-workflow` の**有効**を確認する（`": false"` の無効化-but-インストール済みは除外＝#74 の誤検知回避。project-scoped 有効化も取りこぼさない）。有効な軸だけを提案候補にする。
+3. **dormant 判定**（Bash・enabled-only）: グローバル + プロジェクトローカルの settings（`$HOME/.claude/settings.json`・`$CLAUDE_PROJECT_DIR/.claude/settings.json`・同 `settings.local.json`）を `grep -Eq '"<plugin>@[^"]*"[[:space:]]*:[[:space:]]*true'` で走査し、`bdd-spec` / `design-doc` / `adr-keeper` / `feature-dev` / `issue-workflow` の**有効**を確認する（`": false"` の無効化-but-インストール済みは除外＝#74 の誤検知回避。project-scoped 有効化も取りこぼさない）。有効な軸だけを提案候補にする。
 4. **effort 分岐**（`${CLAUDE_EFFORT}`）:
    - `low` / `medium`: タスク説明のみで軸を判定。
    - `high` / `xhigh` / `max`: 関連 Issue / コードを Read・Grep で軽く確認し、影響範囲・複数コンポーネント波及・既存 spec の有無を裏取りしてから判定（over-suggestion 抑制の精度を上げる）。
@@ -39,7 +39,7 @@ effort: medium
    - WHAT → `Skill` tool で `bdd-spec:create-spec`（role / want / why を渡せれば非対話 API、不足なら通常起動）
    - HOW → `Skill` tool で `design-doc:design-doc`
    - WHY → `Skill` tool で `adr-keeper:adr`
-   - Issue 粒度 → `Skill` tool で `linear-workflow:issue-design` または `indie-workflow:issue-design`（導入済みの方。両者は**同名 skill** なので namespace を明示して起動する）
+   - Issue 粒度 → `Skill` tool で `issue-workflow:issue-design`
    - 実装 → `feature-dev` は **command 専用**プラグイン（skill を持たない）。`Skill` tool では起動できないので、`/feature-dev` の実行を案内する。
    - 「不要」→ 起動せず実装へ。
 8. **提案は 1 回のみ。** 断られたら同一タスクで再提案しない（作業の流れを止めない）。

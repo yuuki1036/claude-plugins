@@ -3,7 +3,7 @@
 Issue doc の標準構造。設計・リライト時はこの 9 セクションで構成する。
 記法非依存（Linear / ローカル Markdown 共通）の普遍テンプレ。
 
-> このファイルは linear-workflow / issue-workflow 両方に byte-identical で複製される正本。
+> このファイルが正本（旧 linear-workflow への byte-identical 複製規約は ADR-20260722164106 で終了）。
 > 編集したら両プラグインに同じ内容を反映すること（記法固有の要素はここに書かない）。
 
 ---

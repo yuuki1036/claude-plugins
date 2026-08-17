@@ -48,7 +48,7 @@ Mocking: Factory functions in `tests/factories/` (not inline mocks)
 ```markdown
 ## Skill Coordination
 
-- **Issue 作業開始時**: `linear-workflow:session-start` を使う
+- **Issue 作業開始時**: `issue-workflow:session-start` を使う
 - **コミット前レビュー**: `code-review:self-review` を使う
 - **PR 作成**: `dev-workflow:pr-creator` を使う
 ```

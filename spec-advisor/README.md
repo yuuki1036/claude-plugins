@@ -30,4 +30,4 @@
 
 ## 依存（すべて optional）
 
-`bdd-spec` / `design-doc` / `adr-keeper` / `feature-dev` / `issue-design`（`linear-workflow` または `indie-workflow`）。1 つも無い環境では advisor は inert。
+`bdd-spec` / `design-doc` / `adr-keeper` / `feature-dev` / `issue-design`（`issue-workflow`）。1 つも無い環境では advisor は inert。

@@ -94,7 +94,7 @@ OQ を close するとき、台帳から行を消して Decision へ移す設計
 | Issue 化前に、未確定を抱えたまま設計を収束させる | **living-spec-workflow**（本プラグイン） |
 | 代替案を比較して採用案を確定し、スナップショットとして残す | `design-doc` |
 | 単一の設計判断（WHY）を点で記録する | `adr-keeper` |
-| Issue 1 件の作業設計（9 セクション） | `linear-workflow` / `indie-workflow` の issue-design |
+| Issue 1 件の作業設計（9 セクション） | `issue-workflow` の issue-design |
 | 設計から実装まで一気通貫 | `feature-dev` |
 
 living spec で確度が `確定` に寄った塊ができたら Issue 化する。living spec 側からプラグインは呼ばない（疎結合）。ユーザーが `/issue-create` / `/indie-issue-create` に手で渡す。

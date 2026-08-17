@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # inject-advisor-rule.sh — SessionStart hook (once)
 # 設計・計画系プラグイン（bdd-spec / design-doc / adr-keeper / feature-dev /
-# linear-workflow / indie-workflow）が 1 つでも導入されていれば、開発タスク検知時に
+# issue-workflow）が 1 つでも導入されていれば、開発タスク検知時に
 # spec ルーティングを促す ambient ルールを注入する。
 #
 # 設計方針:
@@ -28,7 +28,7 @@ SETTINGS_FILES=(
 
 # dormant ゲート: 提案先が 1 つでも「有効」なら注入する（enabled-only）
 installed=0
-for p in bdd-spec design-doc adr-keeper feature-dev linear-workflow indie-workflow; do
+for p in bdd-spec design-doc adr-keeper feature-dev issue-workflow; do
   for f in "${SETTINGS_FILES[@]}"; do
     if grep -Eq "\"${p}@[^\"]*\"[[:space:]]*:[[:space:]]*true" "$f" 2>/dev/null; then
       installed=1

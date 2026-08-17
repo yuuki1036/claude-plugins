@@ -1,7 +1,7 @@
 {
   "name": "issue-workflow",
-  "version": "1.4.1",
-  "description": "Issue 管理ワークフロー（linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。却下記録（kind: rejected）で見送り提案の再提案を discover が概念類似照合で抑止。",
+  "version": "1.4.2",
+  "description": "Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。却下記録（kind: rejected）で見送り提案の再提案を discover が概念類似照合で抑止。",
   "author": {
     "name": "yuki"
   },

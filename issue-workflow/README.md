@@ -1,6 +1,6 @@
 # issue-workflow
 
-Issue 管理ワークフロープラグイン。linear-workflow / indie-workflow の統合後継で、backend（local / linear）をデータディレクトリから自動判定して単一のスキル群で両方を扱う。
+Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-workflow の統合後継で、backend（local / linear）をデータディレクトリから自動判定して単一のスキル群で両方を扱う。
 
 ## backend の考え方
 
@@ -42,6 +42,8 @@ Issue 管理ワークフロープラグイン。linear-workflow / indie-workflow
 
 ## 旧プラグインからの移行
 
-1. 旧 2 プラグイン（linear-workflow / indie-workflow）を uninstall する
+旧 linear-workflow / indie-workflow は 2026-08-17 にリポジトリから削除した。まだ旧プラグインが入っているマシンでは:
+
+1. 旧プラグインを uninstall する（`claude plugin uninstall linear-workflow@<marketplace>`）
 2. issue-workflow を install する（新旧の同時 install は禁止。hook の二重発火とトリガー衝突が起きる）
 3. データディレクトリはそのまま使える（rename 不要）

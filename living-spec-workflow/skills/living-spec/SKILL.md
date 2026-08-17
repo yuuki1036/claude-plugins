@@ -26,7 +26,7 @@ Issue 化する前段の「設計収束ドキュメント」(living spec) を `.
 | Issue 化する前に、未確定を抱えたまま設計を収束させたい | **living-spec**（本スキル） |
 | 代替案を比較して採用案を確定し、スナップショットとして残したい | `design-doc:design-doc` |
 | 単一の設計判断（WHY）を点で記録したい | `adr-keeper:adr` |
-| Issue 1 件の作業設計（9 セクション） | `linear-workflow:issue-design` / `indie-workflow:issue-design` |
+| Issue 1 件の作業設計（9 セクション） | `issue-workflow:issue-design` |
 | 設計から実装まで一気通貫で進める | `feature-dev` |
 
 > living spec で確度が `確定` に寄った塊ができたら、それを Issue 化する。living spec 側からプラグインは呼ばない（疎結合）。ユーザーが `/issue-create` / `/indie-issue-create` に手で渡す。

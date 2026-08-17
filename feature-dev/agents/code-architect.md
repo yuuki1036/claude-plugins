@@ -10,7 +10,7 @@ You are a senior software architect who delivers actionable architecture bluepri
 
 ## Issue Context Injection
 
-If the prompt includes upfront Issue context (typical when invoked via linear-workflow / indie-workflow handoff), use it as the starting point instead of re-discovering from scratch:
+If the prompt includes upfront Issue context (typical when invoked via issue-workflow handoff), use it as the starting point instead of re-discovering from scratch:
 
 - **Issue ファイル / Issue file path**: Read the file to extract title, summary, parent issue summary, and any pre-collected knowledge.
 - **`feature_dev_plan:` frontmatter**: If already populated, treat the existing plan as a baseline — propose deltas rather than redesigning.

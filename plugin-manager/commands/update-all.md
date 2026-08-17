@@ -74,7 +74,7 @@ jq -r '.plugins[] | select(._superseded_by) | "\(.name)	\(._superseded_by)"' "$M
 4. 移行したプラグインは Phase 3 の更新対象から除外する。
 5. 移行結果（deprecated 群 → 後継、uninstall/install の成否）を Phase 5 の報告に渡す。
 
-> 例: linear-workflow / indie-workflow は `_superseded_by: "issue-workflow"` を宣言しており、どちらか（または両方）がインストール済みのマシンでは update-all 実行時に自動で issue-workflow へ移行される。
+> 例: deprecated なプラグインが `_superseded_by: "<後継>"` を宣言していれば、それがインストール済みのマシンでは update-all 実行時に自動で後継へ移行される（旧 linear-workflow / indie-workflow → issue-workflow がこの経路で移行された）。
 
 ### Phase 3: 各プラグインの再インストール
 
@@ -175,7 +175,7 @@ fi
 
 ### 移行（deprecated → 後継）
 
-- linear-workflow, indie-workflow → issue-workflow へ移行しました（uninstall → install）
+- <deprecated-plugin> → <後継> へ移行しました（uninstall → install）
 - 反映には Claude Code の再起動が必要です
 
 ### 更新内容

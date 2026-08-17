@@ -1,6 +1,6 @@
 {
   "name": "living-spec-workflow",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Issue 化前の設計収束ドキュメント (living spec) を .claude/living-specs/ にフラット配置で作成・運用する。OQ (Open Questions) 台帳と Decision log を両方 append-only の表として持ち、情報の move を設計から除くことで移動漏れによる消失を構造的に防ぐ。/living-spec が init（scaffold）/ oq（採番 + append）/ decision（採番 + 関連 OQ の close と双方向参照の検証）/ spec（確度更新 + since の機械付与）/ status（収束率 + open OQ 残数）を提供し、/living-spec-maintain が整合・鮮度を 8 段のファネルで検証する（段 1-7 は機械パースで Critical/Warning、段 8 のみ LLM が現在地サマリのズレを見る。effort 分岐あり）。確度ラベル（確定 / 方向性(仮) / 未定）と since 日付でセクション粒度の収束を追跡。表スキーマ・採番・相互参照・パース正規表現は format-spec.md が正本。ファイル単位の鮮度 lint は doc-freshness 0.4.0+ に委譲（未インストール時は縮退 warning を出して動作）",
   "_requirements": [
     {

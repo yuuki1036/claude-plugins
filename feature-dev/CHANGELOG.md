@@ -5,6 +5,11 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.5] - 2026-08-17
+
+### Changed
+- 削除された `linear-workflow` / `indie-workflow` への参照を `issue-workflow` に張り替えた（旧 2 プラグインは統合後継への移行完了に伴いリポジトリから削除）
+
 ## [2.11.4] - 2026-07-29
 
 ### Changed

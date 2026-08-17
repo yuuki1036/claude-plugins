@@ -135,7 +135,7 @@ CLAUDE.md 単体で Claude の skill 呼び出しを後押しできているか�
 - Generic advice not specific to the project
 - "TODO" items never completed
 - Duplicate info across multiple CLAUDE.md files
-- **インストール済みの主要 skill が 1 つも命名参照されていない**（例: `linear-workflow:session-start` を常用しているのに CLAUDE.md に出てこない）
+- **インストール済みの主要 skill が 1 つも命名参照されていない**（例: `issue-workflow:session-start` を常用しているのに CLAUDE.md に出てこない）
 - **自動生成風のボイラープレート**（一般論の羅列・プロジェクト固有の判断が見えない）
 - **タスク→skill 対応表が欠落**しており、Claude が類推でしか呼び出せない
 - **Diátaxis 観点の構造問題**（補助診断 — 詳細は [diataxis-framework.md](diataxis-framework.md)）:

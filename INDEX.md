@@ -14,25 +14,23 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 |-----------|---------|----:|------:|-------|-------|-----|------|
 | [adr-keeper](#adr-keeper) | 0.3.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.1 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
-| [claude-meta](#claude-meta) | 1.13.3 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
+| [claude-meta](#claude-meta) | 1.13.4 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.68.1 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
-| [design-doc](#design-doc) | 0.4.3 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
+| [design-doc](#design-doc) | 0.4.4 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.25.1 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.0 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.3.1 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
-| [feature-dev](#feature-dev) | 2.11.4 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
+| [feature-dev](#feature-dev) | 2.11.5 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.2 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
-| [indie-workflow](#indie-workflow) | 1.40.7 | 11 | 11 | 3 | 5 events | - | **deprecated** → issue-workflow へ移行 |
-| [issue-workflow](#issue-workflow) | 1.4.1 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
-| [linear-workflow](#linear-workflow) | 1.37.6 | 10 | 10 | 3 | 4 events | - | **deprecated** → issue-workflow へ移行 |
-| [living-spec-workflow](#living-spec-workflow) | 0.3.1 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
+| [issue-workflow](#issue-workflow) | 1.4.2 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
+| [living-spec-workflow](#living-spec-workflow) | 0.3.2 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.7 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.9 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
-| [plugin-manager](#plugin-manager) | 1.8.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
-| [spec-advisor](#spec-advisor) | 0.1.4 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
+| [plugin-manager](#plugin-manager) | 1.8.2 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
+| [spec-advisor](#spec-advisor) | 0.1.5 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.8.1 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
-排他関係: `indie-workflow` / `linear-workflow` は **deprecated**（後継 = `issue-workflow`）。issue-workflow と旧 2 プラグインの同一マシン併存は禁止（uninstall → install を連続実行。移行チェックリスト: `docs/issue-workflow-migration.md`）。
+旧 `indie-workflow` / `linear-workflow` は `issue-workflow` に統合され、2026-08-17 にリポジトリから削除した（移行の経緯: `docs/issue-workflow-migration.md`）。
 
 ---
 
@@ -100,29 +98,14 @@ Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環
 `git commit` の hook 迂回（`--no-verify`/`-n`・git 省略形・`-c core.hooksPath` 上書き・変数間接・`sh -c` スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック。config 自己保護・fail-loud（jq/perl 不在時に無言で無効化しない）付き。
 - **hooks**: PreToolUse
 
-### indie-workflow
-**deprecated**（後継 = issue-workflow。移行手順は `docs/issue-workflow-migration.md`）。個人開発向けローカル Issue 管理。放置検知、スコープ管理、技術的負債トラッキング、振り返りまで一貫サポート。knowledge は source/concept 2 層 + wikilink + lint。issue-design で 9 セクション設計 + grill。
-- **commands / skills**（同名ペア 11）: `indie-init`, `indie-start`, `indie-issue-create`, `indie-issue-discover`, `indie-issue-maintain`, `indie-maintain`, `indie-follow-up`, `issue-design`, `knowledge`, `knowledge-lint`, `retrospective`
-- **agents**: `code-context`, `doc-resolver`, `discover-verifier`
-- **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse
-- **publishes**: `issue:completed`（Event Bus）
-- **subscribes**: `issue:completed`（retrospective）
-
 ### issue-workflow
-Issue 管理ワークフロー（linear-workflow / indie-workflow の統合後継）。backend（local: `.claude/indie/` / linear: `.claude/linear/`）をデータディレクトリの存在で自動判定し、単一のスキル群で両方を扱う。旧 indie 専用機能（discover / retrospective / scope_size）は両 backend に開放。knowledge に却下記録（`kind: rejected`）を持ち、人間が見送った提案の再提案を discover が概念類似照合で抑止する。
+Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local: `.claude/indie/` / linear: `.claude/linear/`）をデータディレクトリの存在で自動判定し、単一のスキル群で両方を扱う。旧 indie 専用機能（discover / retrospective / scope_size）は両 backend に開放。knowledge に却下記録（`kind: rejected`）を持ち、人間が見送った提案の再提案を discover が概念類似照合で抑止する。
 - **commands / skills**（同名ペア 13）: `init`, `start`, `issue-create`, `issue-design`, `issue-maintain`, `follow-up`, `knowledge`, `knowledge-lint`, `maintain`, `discover`, `retrospective`, `dashboard`（linear 専用）, `linear-maintain`（linear 専用）
 - **agents**: `code-context`, `doc-resolver`, `discover-verifier`, `linear-sync`（linear 専用）
 - **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse
 - **publishes**: `issue:completed`（Event Bus）
 - **subscribes**: `issue:completed`（retrospective）
 - **移行**: 旧 2 プラグインとの同一マシン併存は禁止（uninstall → install を連続実行）
-
-### linear-workflow
-**deprecated**（後継 = issue-workflow。移行手順は `docs/issue-workflow-migration.md`）。Linear MCP 連携のプロジェクト・Issue 管理。セッション開始から Issue 作成・メンテ・Linear 同期まで一貫管理。
-- **commands / skills**（同名ペア 10）: `init`, `session-start`, `issue-create`, `issue-maintain`, `issue-design`, `linear-maintain`, `follow-up`, `dashboard`, `knowledge`, `knowledge-lint`
-- **agents**: `code-context`, `doc-resolver`, `linear-sync`
-- **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged
-- **publishes**: `issue:completed`（Event Bus）
 
 ### living-spec-workflow
 Issue 化前の設計収束ドキュメント (living spec) を `.claude/living-specs/` にフラット配置で運用。OQ 台帳と Decision log を両方 append-only の表として持ち、情報の move を設計から除いて消失を構造的に防ぐ。確度ラベル（確定 / 方向性(仮) / 未定）と since 日付でセクション粒度の収束を追跡。
@@ -184,7 +167,7 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 
 | イベント | publisher | 主な subscriber |
 |---|---|---|
-| `issue:completed` | issue-workflow（移行中は旧 linear/indie-workflow も） | issue-workflow:retrospective |
+| `issue:completed` | issue-workflow | issue-workflow:retrospective |
 | `feature:implemented` | feature-dev | -（fire-and-forget） |
 | `commit:created` | dev-workflow | issue-workflow:issue-maintain |
 | `review:completed` | code-review | issue-workflow:issue-maintain |

@@ -68,9 +68,7 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 | code-review | 2 | 2 | - | SessionStart | Phase 0 トリアージ + 動的エージェント構成のコードレビュー / セルフレビュー |
 | dev-workflow | 4 | 6 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認・バグ診断・worktree 並列開発（chrome-devtools MCP 同梱） |
 | claude-meta | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査・CC アップデート追従・eval 回帰テスト・コンポーネント追加前判断 |
-| linear-workflow | 10 | 10 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged | **deprecated** → issue-workflow へ移行（全マシン移行後に削除） |
-| indie-workflow | 11 | 11 | 3 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | **deprecated** → issue-workflow へ移行（全マシン移行後に削除） |
-| issue-workflow | 13 | 13 | 4 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | Issue 管理（linear/indie 統合後継。backend 自動判定・移行中） |
+| issue-workflow | 13 | 13 | 4 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | Issue 管理（旧 linear/indie の統合後継。backend 自動判定） |
 | plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + deprecated の自動移行（_superseded_by）+ 後発追加通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 | feature-dev | 1 | - | 2 | SessionStart | 8 phase 機能開発ワークフロー（spec 品質ゲート・G-V fix ループ・self-review 委譲） |
@@ -117,7 +115,7 @@ bash .claude-plugin/scripts/bump-version.sh {plugin-name} patch   # 次版を計
 ## コミット規約
 
 - Conventional Commits: `<type>(<scope>): <日本語description>`
-- scope はプラグイン名（例: `feat(linear-workflow): ...`）
+- scope はプラグイン名（例: `feat(issue-workflow): ...`）
 - 複数プラグインにまたがる場合は scope 省略
 
 ## プラグイン開発ルール
@@ -176,7 +174,7 @@ event_bus_clear
 
 | イベント | 発火タイミング | publisher | 主な subscriber |
 |---|---|---|---|
-| `issue:completed` | Issue ファイルの status が completed に遷移 | issue-workflow（移行中は旧 linear/indie-workflow も） | **issue-workflow:retrospective**（実装済） |
+| `issue:completed` | Issue ファイルの status が completed に遷移 | issue-workflow | **issue-workflow:retrospective**（実装済） |
 | `feature:implemented` | feature-dev Phase 7 完了 | **feature-dev**（実装済） | -（fire-and-forget） |
 | `commit:created` | git commit 成功（PostToolUse Bash matcher で検知） | **dev-workflow**（実装済） | **issue-workflow:issue-maintain**（実装済） |
 | `review:completed` | code-review Step 7（レポート出力後） | **code-review**（実装済） | **issue-workflow:issue-maintain**（実装済） |

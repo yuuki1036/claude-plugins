@@ -269,7 +269,7 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
 
 2. **自動推奨（判定表）**: type と Issue の性質から推奨を 1 つ決める。WHAT / HOW / WHY は排他ではない（大きめの feature は bdd-spec で WHAT を固めてから design-doc で HOW、のように併用してよい）。推奨が未導入の spec を指す場合（例: design-doc 推奨だが `SPEC_DD=0`）は導入済みの次点か「不要」にフォールバックする。
 
-   共有 3 軸コア（正本: `.claude-plugin/lib/routing-axes.md`。spec-advisor / linear-workflow と同期・quality-check が検証。**編集時は正本と全消費サイトを同時更新**）:
+   共有 3 軸コア（正本: `.claude-plugin/lib/routing-axes.md`。spec-advisor と同期・quality-check が検証。**編集時は正本と全消費サイトを同時更新**）:
 
    <!-- ROUTING-AXES:START -->
    | 軸 | シグナル | 委譲先 | 出力先 |

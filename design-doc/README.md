@@ -48,7 +48,7 @@ tags: []
 
 | プラグイン | 境界 |
 |---|---|
-| `indie-workflow:issue-design` | Issue = タスク 1 件の作業設計。design doc = **タスクを跨ぐ技術設計**（複数 Issue に分解される粒度） |
+| `issue-workflow:issue-design` | Issue = タスク 1 件の作業設計。design doc = **タスクを跨ぐ技術設計**（複数 Issue に分解される粒度） |
 | `bdd-spec` | spec.md = WHAT（振る舞い仕様）。design doc = **HOW**（実現方式）。spec があれば入力として読むだけで Scenario は生成しない |
 | `adr-keeper` | ADR = 単一決定の WHY を**点**で記録。design doc = 設計全体を**面**で記述。`[→ADR候補]` から切り出して相互リンク |
 | `feature-dev` | feature-dev = 設計 + 実装の一気通貫。design-doc = **実装フェーズを持たない**（Write 先は `.claude/designs/` のみ） |
@@ -64,7 +64,7 @@ tags: []
 
 ## export 非対話 API（他プラグインからの呼び出し）
 
-`Skill design-doc:design-doc` に `mode=export title=... content=...` を渡すと、grill / 設計フェーズを skip して doc 化のみ実行する（AskUserQuestion 不発火）。feature-dev v2.7.0+ の Phase 4.5 がこの API で architect 出力（揮発するトレードオフ比較）を永続化する。indie-workflow v1.30.0+ / linear-workflow v1.29.0+ の issue-design は、タスク単位を超えた open の昇格先として design-doc（new モード）を呼ぶ。
+`Skill design-doc:design-doc` に `mode=export title=... content=...` を渡すと、grill / 設計フェーズを skip して doc 化のみ実行する（AskUserQuestion 不発火）。feature-dev v2.7.0+ の Phase 4.5 がこの API で architect 出力（揮発するトレードオフ比較）を永続化する。issue-workflow の issue-design は、タスク単位を超えた open の昇格先として design-doc（new モード）を呼ぶ。
 
 ## 設計判断
 

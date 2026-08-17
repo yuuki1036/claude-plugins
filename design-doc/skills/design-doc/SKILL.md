@@ -26,7 +26,7 @@ allowed-tools:
 |------|-----------|
 | タスクを跨ぐ技術設計（アーキテクチャ・データフロー・移行戦略）を文書化したい | **design-doc**（本スキル） |
 | 既存 design doc の改訂・supersede・一覧 | **design-doc**（本スキル） |
-| Issue 1 件の作業設計（9 セクション・決定/open の仕分け） | `indie-workflow:issue-design` |
+| Issue 1 件の作業設計（9 セクション・決定/open の仕分け） | `issue-workflow:issue-design` |
 | 振る舞い仕様（Feature/Scenario/Examples = WHAT）を書く | `bdd-spec:create-spec` |
 | 単一の設計判断（WHY）だけを点で記録する | `adr-keeper:adr` |
 | 設計から実装まで一気通貫で進める | `feature-dev` |

@@ -4,7 +4,7 @@
 `spec-advise` skill と ambient rule（`rules/advisor-rule.md`）がこの表を参照する。
 
 **SSoT の構成（重要）**: WHAT/HOW/WHY の 3 軸コア（下の `ROUTING-AXES` 区間）は
-正本 `.claude-plugin/lib/routing-axes.md` の複製で、`linear-workflow` / `indie-workflow` の
+正本 `.claude-plugin/lib/routing-axes.md` の複製で、`issue-workflow` の
 issue-create（着手前 spec 選択）と共有している。同期は `validate_plugin_quality.py` が
 Critical 検証する（safe-hook.sh と同型）。**この区間を編集するときは正本と全消費サイトを
 同時に更新すること**。区間外（guard / 拡張軸 / 確信度・dormant・effort）は spec-advisor 固有の
@@ -23,7 +23,7 @@ Critical 検証する（safe-hook.sh と同型）。**この区間を編集す�
 
 軸は排他ではない（後述の組み合わせを参照）。委譲手段は軸ごとに異なる: WHAT/HOW/WHY/Issue 粒度は
 `Skill` tool で skill 起動、**実装のみ `/feature-dev` command の実行を案内**する（feature-dev は skill を持たない）。
-Issue 粒度の `issue-design` は linear / indie が同名なので `linear-workflow:issue-design` / `indie-workflow:issue-design` と namespace を明示する。
+Issue 粒度の `issue-design` は `issue-workflow:issue-design` を起動する。
 
 ## 判定フロー（ファネル: 先に「不要」を落とす）
 
@@ -77,7 +77,7 @@ spec-advisor 固有の拡張軸（同期対象外）:
 
 ## dormant 判定（プラグイン独立）
 
-- 各軸のコンポーネントは、グローバル + プロジェクトローカルの settings（`$HOME/.claude/settings.json`・`$CLAUDE_PROJECT_DIR/.claude/settings.json`・同 `settings.local.json`）を `grep -Eq '"<plugin>@[^"]*"[[:space:]]*:[[:space:]]*true'` で走査して**有効**を判定する（`bdd-spec` / `design-doc` / `adr-keeper` / `feature-dev`。`issue-design` は `linear-workflow` / `indie-workflow` のいずれか）。`": false"` の無効化-but-インストール済みは除外する（#74 の誤検知回避。形式差で拾えない時は沈黙側に倒す）。
+- 各軸のコンポーネントは、グローバル + プロジェクトローカルの settings（`$HOME/.claude/settings.json`・`$CLAUDE_PROJECT_DIR/.claude/settings.json`・同 `settings.local.json`）を `grep -Eq '"<plugin>@[^"]*"[[:space:]]*:[[:space:]]*true'` で走査して**有効**を判定する（`bdd-spec` / `design-doc` / `adr-keeper` / `feature-dev`。`issue-design` は `issue-workflow`）。`": false"` の無効化-but-インストール済みは除外する（#74 の誤検知回避。形式差で拾えない時は沈黙側に倒す）。
 - 推奨軸が無効/未導入なら、提案肢から外し、次点 or 「不要」にフォールバックする。
 - 全て無効/未導入なら advisor は沈黙する（提案する先が無い）。
 

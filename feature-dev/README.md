@@ -39,7 +39,7 @@
 |---|---|---|
 | 1 | Discovery | 何を作るかを把握する |
 | 1.3 | BDD Spec Creation | bdd-spec 連携。spec.md を architect の入力契約として生成（dormant） |
-| 1.5 | Issue Context Detection | linear-workflow / indie-workflow からの引き継ぎ context を検出 |
+| 1.5 | Issue Context Detection | issue-workflow からの引き継ぎ context を検出 |
 | 1.6 | Vault Recall | 外部 kvault CLI から横断知見を recall し architect に advisory 注入（dormant） |
 | 1.7 | Triage | explorer / architect / reviewer の体数・focus を動的決定 |
 | 2 | Codebase Exploration | code-explorer で既存コードとパターンを把握 |
@@ -64,7 +64,7 @@
 
 ### Phase 1.5: Issue Context Detection（linear / indie 連携）
 
-`Issue ファイル:` パスや `feature_dev_plan:` frontmatter を検出すると、linear-workflow / indie-workflow からの引き継ぎ context を読み込む。Issue context が完備なら Phase 1.7 に「explorer 0 体」を信号して Phase 2 を実質 skip し、context を Phase 4 architect に直接渡す。
+`Issue ファイル:` パスや `feature_dev_plan:` frontmatter を検出すると、issue-workflow からの引き継ぎ context を読み込む。Issue context が完備なら Phase 1.7 に「explorer 0 体」を信号して Phase 2 を実質 skip し、context を Phase 4 architect に直接渡す。
 
 ### Phase 1.6: Vault Recall（外部 kvault CLI 連携 / dormant）
 

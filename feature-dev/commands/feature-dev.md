@@ -157,9 +157,9 @@ fi
 
 ---
 
-## Phase 1.5: Issue Context Detection (linear-workflow / indie-workflow handoff)
+## Phase 1.5: Issue Context Detection (issue-workflow handoff)
 
-**Goal**: Detect upfront Issue context handed off by linear-workflow / indie-workflow and skip redundant discovery.
+**Goal**: Detect upfront Issue context handed off by issue-workflow and skip redundant discovery.
 
 **Trigger conditions** (match any in `$ARGUMENTS` or recent conversation context):
 
