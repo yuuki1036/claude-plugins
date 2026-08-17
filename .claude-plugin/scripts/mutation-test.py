@@ -36,9 +36,13 @@ Exit code: 0（既定。`--strict` 指定時のみ生存で 1）/ 2（引数エ�
 from __future__ import annotations
 
 import argparse
+import base64
+import json
 import os
 import re
 import shutil
+import signal
+import stat
 import subprocess
 import sys
 import time
@@ -85,7 +89,8 @@ RULES: list[tuple[str, str, str]] = [
     (r"(?<![<>=!])<(?![<=])", "<=", "< を <= に（境界を 1 つ広げる）"),
 ]
 COMMENT_ONLY = re.compile(r"^\s*(#|//)")
-# 変異を意図的に除外する印（等価変異・到達不能な分岐に付ける）。理由を必ず書かせる
+# 変異を意図的に除外する印（等価変異・到達不能な分岐に付ける）。理由を必ず書かせる。
+# **変異させたいコード行と同じ行に置く**（直前の行に書いても効かない）
 SKIP_MARK = re.compile(r"#\s*mutation-ok:\s*\S")
 
 
@@ -98,8 +103,14 @@ class Mutant:
     rule: str
 
 
+OWNER_ENV = "MUTATION_TEST_OWNER_PID"
+
+
 def run(cmd: list[str], cwd: Path, timeout: int = 600) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    # 所有者 pid を環境に載せる。テストコマンドがこのツール自身のテストを含むとき,
+    # 子プロセスは「今まさに変異が当たっている最中」だと env だけで判定できる
+    env = dict(os.environ, **{OWNER_ENV: str(os.getpid())})
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
 
 
 def clear_pycache() -> None:
@@ -109,12 +120,21 @@ def clear_pycache() -> None:
             shutil.rmtree(d, ignore_errors=True)
 
 
-def is_test_file(path: Path) -> bool:
+def _rel(path: Path) -> str:
+    """表示用の相対パス（ROOT 外でも落ちない）.
+
+    `relative_to` は ROOT 外で `ValueError` を投げる。**tamper 経路のメッセージ組み立てで
+    落ちると「復元していない / 元はこの行」という復旧情報が丸ごと消える**ので、
+    表示は必ずここを通す。
+    """
     try:
-        rel = path.relative_to(ROOT).as_posix()
+        return path.relative_to(ROOT).as_posix()
     except ValueError:
-        rel = path.as_posix()
-    return bool(TEST_PATH_RE.search(rel))
+        return path.as_posix()
+
+
+def is_test_file(path: Path) -> bool:
+    return bool(TEST_PATH_RE.search(_rel(path)))
 
 
 def changed_lines(base: str) -> dict[Path, set[int]]:
@@ -224,6 +244,80 @@ class ExternalEditError(RuntimeError):
     """変異中に対象ファイルが外部から変更された（復元すると他所の編集を消すので中断する）."""
 
 
+# 変異中の原本をディスクへ退避する場所。**プロセスメモリだけでは足りない** —
+# 復元は `try/finally` に閉じているので Python 例外は全部通るが、**SIGTERM / SIGHUP では
+# `finally` が走らない**。露出窓は狭いレースではなく実行時間のほぼ全体（実測 baseline 9 秒 ×
+# 既定 25 = 約 4 分）で、対象は既定で**未コミットの作業ファイル**なので `git checkout` で
+# 戻せない。しかも変異は意図的に fail-open 方向なので、残っても **survived 型はテストが
+# 定義上検知しない**（緑のまま commit される）。
+JOURNAL = ".mutation-test-journal.json"
+
+
+def _journal_path() -> Path:
+    return ROOT / JOURNAL
+
+
+def _journal_write(path: Path, original: bytes) -> None:
+    _journal_path().write_text(json.dumps({
+        "path": _rel(path), "mode": stat.S_IMODE(path.stat().st_mode),
+        "original_b64": base64.b64encode(original).decode("ascii"),
+        "pid": os.getpid(),
+    }), encoding="utf-8")
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # 別ユーザー所有の生存プロセス。反転すると「他人の run を生存扱いしない」＝
+        # 安全側から危険側に倒れるが、単一ユーザーの作業ツリーでは到達しない分岐
+        return True  # mutation-ok: 別ユーザー所有の生存 pid をテストから用意できない
+    return True
+
+
+def _journal_clear() -> None:
+    _journal_path().unlink(missing_ok=True)
+
+
+def recover_from_journal() -> bool:
+    """前回の run が中断して変異が残っていれば戻す（戻したら True）."""
+    # **親 run の実行中は何もしない**（env は変異の影響を受けないので, 復旧述語そのものが
+    # 変異している最中でも成立する。pid 生存判定は SIGKILL 経路のための第 2 の網）
+    owner_env = os.environ.get(OWNER_ENV)
+    if owner_env and owner_env != str(os.getpid()):
+        return False
+    jp = _journal_path()
+    if not jp.is_file():
+        return False
+    try:
+        data = json.loads(jp.read_text(encoding="utf-8"))
+        target = ROOT / data["path"]
+        original = base64.b64decode(data["original_b64"])
+    except (ValueError, KeyError, OSError) as e:
+        print(f"FATAL: ジャーナルを読めない（手で確認すること）: {jp} ({e})", file=sys.stderr)
+        return False
+    # **実行中の run が置いたジャーナルには触らない**。テストコマンドがこのツール自身の
+    # テストを含む場合（このリポジトリがまさにそう）、子プロセスの起動時復旧が
+    # **親が今まさに当てている変異を横から戻す** — 親からは「外部編集」に見えて計測が中断する。
+    owner = data.get("pid")
+    if isinstance(owner, int) and owner != os.getpid() and _pid_alive(owner):
+        return False
+    if not target.is_file():
+        print(f"WARN: ジャーナルの対象が無い: {data['path']}", file=sys.stderr)
+        _journal_clear()
+        return False
+    if target.read_bytes() == original:
+        _journal_clear()          # 既に戻っている（正常終了直後にジャーナルだけ残った等）
+        return False
+    _atomic_write(target, original)
+    os.chmod(target, data.get("mode", 0o644))
+    _journal_clear()
+    print(f"前回の中断で残っていた変異を {data['path']} から復元した", file=sys.stderr)
+    return True
+
+
 def _atomic_write(path: Path, data: bytes) -> None:
     """同一ディレクトリの一時ファイルへ書いて `os.replace` で差し替える.
 
@@ -232,8 +326,15 @@ def _atomic_write(path: Path, data: bytes) -> None:
     部分書き込みで原本を壊す経路を構造的に消しておく。
     """
     tmp = path.with_name(path.name + ".mutant.tmp")
+    # **モードを引き継ぐ**（実測: 引き継がないと 0o755 → 0o644）。`write_bytes` は新しい inode を
+    # umask 既定で作り `os.replace` がメタデータごと差し替えるので、**バイト列は戻るがモードは戻らない**。
+    # `.sh` の実行ビットが落ちると `.githooks/pre-commit` の `-x` ゲートが**無言で**素通りする＝
+    # 「新しいガードを足す作業そのものが既存のガードを外す」
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     try:
         tmp.write_bytes(data)
+        if mode is not None:
+            os.chmod(tmp, mode)
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
@@ -261,6 +362,7 @@ def apply_and_test(mutant: Mutant, test_cmd: list[str], timeout: int) -> str:
     wrote = tampered = False
     verdict = "invalid"
     try:
+        _journal_write(mutant.path, original_bytes)   # **書く前に**退避する（順序が肝）
         _atomic_write(mutant.path, mutated_bytes)
         wrote = True
         clear_pycache()
@@ -284,14 +386,16 @@ def apply_and_test(mutant: Mutant, test_cmd: list[str], timeout: int) -> str:
                 _atomic_write(mutant.path, original_bytes)
             else:
                 tampered = True
+        if not tampered:
+            _journal_clear()      # 復元できた回だけ消す（残れば次回の起動時に拾う）
         clear_pycache()
     if tampered:
         # **復旧に必要な情報を全部書く**。「`git diff` で確認」だけだと、実際に見落として
         # 変異が残ったまま次の run の baseline を壊した（実測）。行番号と前後の実テキストを出す
         raise ExternalEditError(
-            f"変異中に {mutant.path.relative_to(ROOT)} が外部から変更された。\n"
+            f"変異中に {_rel(mutant.path)} が外部から変更された。\n"
             "  復元すると他所の編集を消すので**書き戻していない**。\n"
-            f"  **{mutant.path.relative_to(ROOT)}:{mutant.lineno} に変異が当たったままの可能性がある**"
+            f"  **{_rel(mutant.path)}:{mutant.lineno} に変異が当たったままの可能性がある**"
             f"（{mutant.rule}）:\n"
             f"    元:   {mutant.original.strip()}\n"
             f"    変異: {mutant.mutated.strip()}\n"
@@ -300,7 +404,22 @@ def apply_and_test(mutant: Mutant, test_cmd: list[str], timeout: int) -> str:
     return verdict
 
 
-def main() -> int:
+def _install_signal_handlers() -> None:
+    """SIGTERM / SIGHUP で復元してから既定の終了に落とす.
+
+    SIGINT は `KeyboardInterrupt` になるので `finally` が走る＝この経路は要らない。
+    足りないのはハンドラ既定が「即死」の 2 つだけ。
+    """
+    def _handler(signum, _frame):
+        recover_from_journal()
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)      # 既定の終了ステータス（128+N）を保つ
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, _handler)
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(add_help=True)
     ap.add_argument("--base", default="HEAD")
     ap.add_argument("--file", nargs="*", default=None)
@@ -309,7 +428,10 @@ def main() -> int:
     ap.add_argument("--test-cmd", default=DEFAULT_TEST_CMD)
     ap.add_argument("--timeout", type=int, default=0,
                     help="1 変異あたりの秒数（既定 0 = baseline 実測の 5 倍・最低 30 秒）")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
+
+    # **変更行を数える前に**戻す（残った変異は diff に混ざり、対象行そのものを歪める）
+    recover_from_journal()
 
     test_cmd = args.test_cmd.split()
     if args.file:
@@ -318,6 +440,11 @@ def main() -> int:
             p = (ROOT / f).resolve()
             if p.suffix not in TARGET_SUFFIXES or not p.is_file():
                 print(f"FATAL: 対象外か不在: {f}", file=sys.stderr)
+                return 2
+            if not p.is_relative_to(ROOT):
+                # **ROOT 外を対象にしない**: テストコマンドは repo 固定なので全件 survived になり
+                # 「生存率 100%」という無意味な指標が出るうえ、表示・復旧経路が ROOT 前提
+                print(f"FATAL: リポジトリ外は対象にしない: {f}", file=sys.stderr)
                 return 2
             if is_test_file(p):
                 print(f"FATAL: テストファイルは変異対象にしない（判定者であって被験者ではない）: {f}",
@@ -350,6 +477,7 @@ def main() -> int:
         print((baseline.stdout + baseline.stderr)[-800:], file=sys.stderr)
         return 2
 
+    _install_signal_handlers()   # ここから先が変異を書く区間
     mutants = build_mutants(targets)
     dropped = max(0, len(mutants) - args.max)
     mutants = mutants[: args.max]
@@ -372,7 +500,7 @@ def main() -> int:
             break
         mark = {"survived": "SURVIVED", "killed": "killed",
                 "invalid": "invalid", "timeout": "TIMEOUT"}[verdict]
-        print(f"  [{i}/{len(mutants)}] {mark:9s} {m.path.relative_to(ROOT)}:{m.lineno} — {m.rule}")
+        print(f"  [{i}/{len(mutants)}] {mark:9s} {_rel(m.path)}:{m.lineno} — {m.rule}")
         if verdict == "survived":
             survived.append(m)
         elif verdict == "killed":
@@ -391,7 +519,7 @@ def main() -> int:
         print("タイムアウトした変異（**無限ループ化した可能性**。`--timeout` を延ばすか"
               "`# mutation-ok:` で外す）:")
         for m in timed_out:
-            print(f"  {m.path.relative_to(ROOT)}:{m.lineno}  {m.rule}")
+            print(f"  {_rel(m.path)}:{m.lineno}  {m.rule}")
     if scored:
         print(f"生存率 {100.0 * len(survived) / scored:.0f}%"
               "（**テストが検証していない挙動の割合**。0% を目標にはしない — "
@@ -400,7 +528,7 @@ def main() -> int:
         print()
         print("生存した変異（テストがこの変更を検知しない）:")
         for m in survived:
-            print(f"  {m.path.relative_to(ROOT)}:{m.lineno}  {m.rule}")
+            print(f"  {_rel(m.path)}:{m.lineno}  {m.rule}")
             print(f"    - {m.original.strip()}")
             print(f"    + {m.mutated.strip()}")
     # **中断した回は必ず非ゼロ**（`--strict` 無しでも「全部走った」と読ませない）

@@ -15,6 +15,7 @@ docstring 自身が「実測で事故った」と書いている箇所なので�
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import stat
 import sys
@@ -285,6 +286,206 @@ class ChangedLinesTest(unittest.TestCase):
             """)
         self.assertEqual(got, {})
 
+
+
+class AtomicWriteTest(unittest.TestCase):
+    def test_preserves_file_mode(self):
+        """実行ビットを落とさない（落とすと `.sh` のガードが無言で外れる）.
+
+        `write_bytes` は新しい inode を umask 既定で作り `os.replace` がメタデータごと
+        差し替える。**バイト列は原本に戻るがモードは戻らない**ので、変異テストを
+        1 回回すだけで `.githooks/` 配下の実行ビットが 755 → 644 に落ちていた。"""
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "hook.sh"
+            f.write_text("echo ok\n")
+            os.chmod(f, 0o755)
+            mt._atomic_write(f, b"echo mutated\n")
+            self.assertEqual(stat.S_IMODE(f.stat().st_mode), 0o755)
+            mt._atomic_write(f, b"echo ok\n")
+            self.assertEqual(stat.S_IMODE(f.stat().st_mode), 0o755)
+
+    def test_keeps_non_executable_as_is(self):
+        """644 のファイルを勝手に 755 にしない（逆方向の取り違えを防ぐ）."""
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "mod.py"
+            f.write_text("x = 1\n")
+            os.chmod(f, 0o644)
+            mt._atomic_write(f, b"x = 2\n")
+            self.assertEqual(stat.S_IMODE(f.stat().st_mode), 0o644)
+
+    def test_no_tmp_file_left_behind(self):
+        """一時ファイルを残さない（次回の走査対象に混ざる）."""
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "a.py"
+            f.write_text("x = 1\n")
+            mt._atomic_write(f, b"x = 2\n")
+            self.assertEqual([p.name for p in Path(d).iterdir()], ["a.py"])
+
+
+class JournalRecoveryTest(unittest.TestCase):
+    """中断で残った変異をディスク経由で戻せること.
+
+    復元は `try/finally` に閉じているので Python 例外は全部通るが、**SIGTERM / SIGHUP は
+    `finally` を走らせない**。原本がプロセスメモリにしか無いと、その瞬間に
+    「fail-open 方向へ書き換わった未コミットのファイル」が作業ツリーに残る。
+    しかも変異は survived 型＝**テストが定義上検知しない**ので、緑のまま commit される。"""
+
+    def setUp(self):
+        self._orig_root = mt.ROOT
+        # **周囲の env に依存させない**。このテスト群は変異 run の子プロセスとしても走るので,
+        # 所有者マーカーが立ったまま復旧を期待すると baseline が赤くなる
+        self._orig_owner = os.environ.get(mt.OWNER_ENV)
+        os.environ[mt.OWNER_ENV] = str(os.getpid())
+        self._tmp = tempfile.TemporaryDirectory()
+        mt.ROOT = Path(self._tmp.name)
+        self.target = mt.ROOT / "guard.sh"
+        self.original = b"[ $# -gt 2 ] || exit 2\n"
+        self.target.write_bytes(self.original)
+        os.chmod(self.target, 0o755)
+
+    def tearDown(self):
+        mt.ROOT = self._orig_root
+        os.environ.pop(mt.OWNER_ENV, None)
+        if self._orig_owner is not None:
+            os.environ[mt.OWNER_ENV] = self._orig_owner
+        self._tmp.cleanup()
+
+    def _leave_mutation(self):
+        """「変異を書いた直後に殺された」状態を作る."""
+        mt._journal_write(self.target, self.original)
+        mt._atomic_write(self.target, b"[ $# -ge 2 ] || exit 2\n")
+
+    def test_recovers_content_and_mode(self):
+        self._leave_mutation()
+        self.assertTrue(mt.recover_from_journal())
+        self.assertEqual(self.target.read_bytes(), self.original)
+        self.assertEqual(stat.S_IMODE(self.target.stat().st_mode), 0o755)
+        self.assertFalse(mt._journal_path().exists())
+
+    def test_no_journal_is_a_noop(self):
+        self.assertFalse(mt.recover_from_journal())
+
+    def test_already_restored_only_clears_journal(self):
+        """正常終了直後にジャーナルだけ残った場合は書き戻さない."""
+        mt._journal_write(self.target, self.original)
+        self.assertFalse(mt.recover_from_journal())
+        self.assertFalse(mt._journal_path().exists())
+        self.assertEqual(self.target.read_bytes(), self.original)
+
+    def test_live_owner_journal_is_left_alone(self):
+        """実行中の run のジャーナルは触らない（自己干渉の回帰テスト）.
+
+        テストコマンドがこのツール自身のテストを含むと, 子プロセスの起動時復旧が
+        **親が当てている最中の変異を戻す**。親からは外部編集に見えて計測が止まる
+        （実測: 9 変異中 0 件で中断した）。
+        """
+        self._leave_mutation()
+        mutated = self.target.read_bytes()
+        raw = json.loads(mt._journal_path().read_text())
+        raw["pid"] = os.getpid() + 0          # 生存中の別 pid として自分自身を書く
+        mt._journal_path().write_text(json.dumps(raw), encoding="utf-8")
+        # 自分自身の pid は「自分が所有者」なので復旧してよい
+        self.assertTrue(mt.recover_from_journal())
+
+        self._leave_mutation()
+        raw = json.loads(mt._journal_path().read_text())
+        raw["pid"] = os.getppid()             # 親プロセス = 生存している別 pid
+        mt._journal_path().write_text(json.dumps(raw), encoding="utf-8")
+        self.assertFalse(mt.recover_from_journal(), "生存所有者のジャーナルは戻さない")
+        self.assertEqual(self.target.read_bytes(), mutated, "他 run の変異を横取りしない")
+        self.assertTrue(mt._journal_path().exists(), "他 run のジャーナルを消さない")
+
+    def test_pid_alive_predicate(self):
+        """生存判定そのものを直接測る（変異が harness 経由でしか効かないため）."""
+        self.assertTrue(mt._pid_alive(os.getpid()))
+        self.assertTrue(mt._pid_alive(os.getppid()))
+        self.assertFalse(mt._pid_alive(2 ** 22))
+
+    def test_owner_env_blocks_recovery(self):
+        """親 run の実行中は子プロセスが復旧しない（env 経路）."""
+        self._leave_mutation()
+        mutated = self.target.read_bytes()
+        old = os.environ.get(mt.OWNER_ENV)
+        os.environ[mt.OWNER_ENV] = str(os.getpid() + 1)
+        try:
+            self.assertFalse(mt.recover_from_journal())
+            self.assertEqual(self.target.read_bytes(), mutated)
+        finally:
+            os.environ.pop(mt.OWNER_ENV, None)
+            if old is not None:
+                os.environ[mt.OWNER_ENV] = old
+
+    def test_owner_env_matching_self_allows_recovery(self):
+        """自分が所有者なら復旧してよい（env が付いていても止めない）."""
+        self._leave_mutation()
+        old = os.environ.get(mt.OWNER_ENV)
+        os.environ[mt.OWNER_ENV] = str(os.getpid())
+        try:
+            self.assertTrue(mt.recover_from_journal())
+            self.assertEqual(self.target.read_bytes(), self.original)
+        finally:
+            os.environ.pop(mt.OWNER_ENV, None)
+            if old is not None:
+                os.environ[mt.OWNER_ENV] = old
+
+    def test_dead_owner_journal_is_recovered(self):
+        """所有者が死んでいれば戻す（SIGKILL / クラッシュ経路）."""
+        self._leave_mutation()
+        raw = json.loads(mt._journal_path().read_text())
+        raw["pid"] = 2 ** 22                  # 存在しない pid
+        mt._journal_path().write_text(json.dumps(raw), encoding="utf-8")
+        self.assertTrue(mt.recover_from_journal())
+        self.assertEqual(self.target.read_bytes(), self.original)
+
+    def test_journal_clear_is_idempotent(self):
+        """ジャーナルが無くても落ちない（正常終了経路で二重に呼ばれる）."""
+        mt._journal_clear()
+        mt._journal_clear()
+        self.assertFalse(mt._journal_path().exists())
+
+    def test_missing_target_reports_and_does_not_claim_recovery(self):
+        """対象が消えていたら「復旧した」と言わない（呼び出し側の判断が変わる）."""
+        self._leave_mutation()
+        self.target.unlink()
+        self.assertFalse(mt.recover_from_journal())
+        self.assertFalse(mt._journal_path().exists())
+
+    def test_broken_journal_is_not_swallowed(self):
+        """壊れたジャーナルは黙って消さない（消すと復旧手段が無くなる）."""
+        self._leave_mutation()
+        mt._journal_path().write_text("{ 壊れている", encoding="utf-8")
+        self.assertFalse(mt.recover_from_journal())
+        self.assertTrue(mt._journal_path().exists())
+
+    def test_apply_and_test_clears_journal_on_success(self):
+        """復元できた回はジャーナルを残さない（残ると次回に誤検出する）."""
+        mutant = mt.Mutant(path=self.target, lineno=1, rule="test",
+                           original="[ $# -gt 2 ] || exit 2",
+                           mutated="[ $# -ge 2 ] || exit 2")
+        mt.apply_and_test(mutant, ["true"], timeout=30)
+        self.assertEqual(self.target.read_bytes(), self.original)
+        self.assertFalse(mt._journal_path().exists())
+
+
+class RootContainmentTest(unittest.TestCase):
+    """`--file` が repo 外を受け付けないこと.
+
+    テストコマンドは repo 固定なので repo 外を変異させても全部 survived になり、
+    「生存率 100%」という無意味な数字が出る。加えて表示・復旧経路が ROOT 相対前提で、
+    `relative_to` が **メッセージを組み立てる前に** 例外を投げると
+    「どのファイルの何行目が原本だったか」という復旧情報ごと消える。"""
+
+    def test_rejects_path_outside_root(self):
+        with tempfile.TemporaryDirectory() as d:
+            outside = Path(d) / "x.py"
+            outside.write_text("x = 1 > 2\n")
+            rc = mt.main(["--file", str(outside)])
+            self.assertEqual(rc, 2)
+
+    def test_rel_does_not_raise_outside_root(self):
+        """表示用パスは repo 外でも落ちない（復旧情報を守る最後の砦）."""
+        self.assertEqual(mt._rel(Path("/nowhere/x.py")), "/nowhere/x.py")
+        self.assertEqual(mt._rel(mt.ROOT / "a/b.py"), "a/b.py")
 
 if __name__ == "__main__":
     unittest.main()

@@ -31,7 +31,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
   - doc 構造: 番号見出しの重複（他 doc からの番号参照が曖昧になる）と, blockquote を
     分断した孤立 `>` 行. どちらもセルフレビューが見逃した / agent 8 体を要した型で,
-    判定は行走査だけで決まる（v2.68.0 / 「lint が見つけるべきものを agent に探させない」）.
+    判定は行走査だけで決まる（「lint が見つけるべきものを agent に探させない」）.
   - テスト収集: `if __name__` より後ろの TestCase（直接実行で静かに件数が減り `OK` が出る）.
   - テスト重複: 同一クラス内で本体が同一のテストメソッド（名前が主張する内容を検証していない）.
   - 版プレースホルダ: bump 済みのプラグインに `vNEXT` が残っていないか. `vNEXT` は
@@ -70,6 +70,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -668,7 +669,7 @@ DOC_LINT_GLOBS = ["*/references/**/*.md", "*/skills/*/SKILL.md"]
 
 
 def check_doc_structure(plugin_dir: Path, errors: list[str]) -> None:
-    """番号見出しの重複と blockquote の分断を検出する（v2.68.0 / doc lint）.
+    """番号見出しの重複と blockquote の分断を検出する（doc lint）.
 
     どちらも**セルフレビューが実際に見逃した / 検出に agent 8 体を要した**型で,
     判定は行の走査だけで決まる（CLAUDE.md「決定的 hook > LLM 判定」）:
@@ -724,7 +725,7 @@ def _test_files() -> list[Path]:
 
 
 def check_test_collection(errors: list[str]) -> None:
-    """`if __name__ == "__main__"` より後ろの TestCase を検出する（v2.68.0）.
+    """`if __name__ == "__main__"` より後ろの TestCase を検出する.
 
     `unittest.main()` は `sys.exit()` するので, **後ろに置いたクラスは定義自体が
     評価されない**. discover 経路（pre-commit / CI / Stop hook）は無事なので
@@ -745,7 +746,7 @@ def check_test_collection(errors: list[str]) -> None:
 
 
 def check_duplicate_test_bodies(errors: list[str]) -> None:
-    """同一クラス内で本体が同一のテストメソッドを検出する（v2.68.0）.
+    """同一クラス内で本体が同一のテストメソッドを検出する.
 
     名前が別の主張をしているのに中身が同じ＝**独立に失敗しうる条件を持たない**.
     実測 2 回とも「別のことを検証しているつもり」の空振りテストだった.
@@ -800,11 +801,17 @@ def read_plugin_version(plugin_dir: Path) -> str | None:
         return None
 
 
+# 比較基準。既定は HEAD（＝作業ツリーとの差 ＝ pre-commit 用途）。
+# **CI では作業ツリー == HEAD なので既定のままだと構造的に必ず no-op になる**
+# （「検査を足したのに一度も発火しない」型）。CI は push / PR の範囲の起点を渡す。
+VERSION_BASE = os.environ.get("QUALITY_VERSION_BASE") or "HEAD"
+
+
 def _version_at_head(plugin_dir: Path) -> str | None:
-    """HEAD 時点の plugin.json の version（取れなければ None）."""
+    """比較基準時点の plugin.json の version（取れなければ None）."""
     rel = (plugin_dir / ".claude-plugin" / "plugin.json").relative_to(ROOT).as_posix()
     try:
-        proc = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=ROOT,
+        proc = subprocess.run(["git", "show", f"{VERSION_BASE}:{rel}"], cwd=ROOT,
                               capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -825,9 +832,12 @@ def check_pending_version_placeholder(plugin_dir: Path, errors: list[str]) -> No
     `design-notes/pending-optimizations.md ## 9`）.
 
     **開発中は `vNEXT` が残っていて正常**なので, 無条件に鳴らすと毎ターン鳴る warning に
-    なる（このリポジトリが繰り返し避けてきた形）. **bump が起きた作業ツリーでだけ**判定する
+    なる（このリポジトリが繰り返し避けてきた形）. **bump が起きたときだけ**判定する
     — version が HEAD と違う ＝ この変更で bump 済み ＝ プレースホルダは解決済みのはず.
     取りこぼす典型は「別のプラグインを bump したので自分の `vNEXT` が残った」ケース.
+
+    比較基準は `QUALITY_VERSION_BASE`（既定 HEAD）. **CI では作業ツリー == HEAD なので
+    既定のままでは永久に発火しない** — CI 側が push / PR 範囲の起点を渡す.
     """
     head = _version_at_head(plugin_dir)
     if head is None or head == read_plugin_version(plugin_dir):

@@ -154,10 +154,6 @@ for p, _, _ in touched:
 if mode == "next" and any(p == cl_path for p, _, _ in touched):
     print("  ↑ CHANGELOG は見出しのみ挿入した。本文は自分で書くこと")
 
-if not dry:
-    for p, _, new_text in touched:
-        p.write_text(new_text)
-
 # 5) `vNEXT` プレースホルダの解決（プラグイン配下のみ）.
 # **repo 直下の共通スクリプト / doc は対象外** — あれらはプラグイン版に属さないので、
 # 版ラベルではなく issue 番号で参照する（複数プラグインを同時に bump したとき
@@ -199,8 +195,15 @@ for f in sorted(pathlib.Path(plugin).rglob("*")):
     if hits == 0:
         continue
     placeholder_hits.append((f, hits))
-    if not dry:
-        f.write_text("".join(out_lines), encoding="utf-8")
+    touched.append((f, text, "".join(out_lines)))
+
+# **全部読み終えてから書く**（two-phase）。1〜4 と 5 で書き込み位置が分かれていると,
+# 途中の失敗（権限 / ディスク / 読めないファイル）で「版は上がったが vNEXT は残った」
+# 半端な状態が残り, しかも次回の bump は差分無しで素通りする。
+if not dry:
+    for p, _, new_text in touched:
+        p.write_text(new_text, encoding="utf-8")
+
 if placeholder_hits:
     total = sum(n for _, n in placeholder_hits)
     print("  vNEXT を v%s に解決: %d 箇所 / %d ファイル%s"

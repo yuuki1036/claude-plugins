@@ -15,10 +15,12 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  # bump-version.sh（バージョンバンプの 4 ファイル同時更新 + vNEXT 解決。
                                  #   pre-commit は検証のみで実行しない）
                                  # mutation-test.py（変更行の変異テスト。検証していない挙動を列挙）
-.claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。2 系統:
-                                 #  ① 検証スクリプト自身（test_validate_plugin_quality.py）
+.claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。3 系統:
+                                 #  ① 検証スクリプト自身（test_validate_plugin_quality.py / test_mutation_test.py）
                                  #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
                                  #     （`test_<plugin>_*.py`。bats を入れず依存ゼロで 3 経路に載せる）
+                                 #  ③ repo 直下スクリプトの CLI テスト（test_bump_version.py。
+                                 #     使い捨ての git リポジトリを立てて本物の CLI を叩く）
                                  # python3 -m unittest discover -s .claude-plugin/scripts/tests
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・回帰テスト
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
@@ -211,7 +213,7 @@ event_bus_clear
 - **eval を実行・修正する前に `evals/README.md` の Gotchas を読む**: スラッシュコマンドは headless で必ず落ちる（自然言語プロンプトで測る）/ fail は「プラグイン選択」と「skill id の綴り」を分けて読む（id 捏造は harness 側の性質）/ 判定は k=1 でなく pass^k=3 で行う — 詳細と実例は README 側に集約
 
 - **版ラベルは `vNEXT` と書く**（プラグイン配下の md / sh / py）。`bump-version.sh` が bump 時に実版へ置換し、`validate_plugin_quality.py` が「bump 済みなのに `vNEXT` が残っている」を error にする。**具体的な版番号を手書きしない** — 書く時点では正しい値が確定しておらず（bump は後）、実測で 3 回再発した。検出側の機械化は 2 度失敗している（履歴参照と区別できない / Claude Code の版と表記が衝突する）ので、**確定していない値を書かせない**方で解いた。repo 直下の共通スクリプト・doc は**プラグイン版に属さない**ので版ラベルを持たせず issue 番号で参照する。**規約そのものを説明するときは行内コードかフェンスに入れる**（SSoT pin と同じ扱い — 生きたプレースホルダとして置換・検出の対象にならない。実測でこの説明文ごと実版に書き換えた）。経緯: `code-review/references/design-notes/pending-optimizations.md ## 9`
-- **新しい lint / 検証ロジックを足すときは ①既存 repo での検出数を先に測って error / warning の水準を決める ②変異テストで「実装を壊すと該当テストが落ちる」ことを確認する**: 初回実行で偽陽性が出る warning は「⚠️ が出たときだけ行動する」契約を壊すので、入れない方がまし（実例: 版ラベルの追随漏れ検出は 6/6 が偽陽性で撤去した → `code-review/references/design-notes/pending-optimizations.md ## 9`）。変異テストは **`python3 .claude-plugin/scripts/mutation-test.py`** で自動化してある（変更行だけを対象に比較演算子・境界・真偽値・打ち切りを機械的に反転し、テストが落ちない＝**検証していない挙動**を列挙する）。`__pycache__` の消去・元バイト列での復元・並行編集の検知は**ツール側に入っている**（どれも手動でやって事故った）。**実行中に対象ファイルを編集しないこと**
+- **新しい lint / 検証ロジックを足すときは ①既存 repo での検出数を先に測って error / warning の水準を決める ②変異テストで「実装を壊すと該当テストが落ちる」ことを確認する**: 初回実行で偽陽性が出る warning は「⚠️ が出たときだけ行動する」契約を壊すので、入れない方がまし（実例: 版ラベルの追随漏れ検出は 6/6 が偽陽性で撤去した → `code-review/references/design-notes/pending-optimizations.md ## 9`）。変異テストは **`python3 .claude-plugin/scripts/mutation-test.py`** で自動化してある（変更行だけを対象に比較演算子・境界・真偽値・打ち切りを機械的に反転し、テストが落ちない＝**検証していない挙動**を列挙する）。`__pycache__` の消去・元バイト列での復元・**モードの保存**・並行編集の検知は**ツール側に入っている**（どれも手動でやって事故った）。**実行中に対象ファイルを編集しないこと**。中断されても変異が残らないよう原本は `.mutation-test-journal.json` に退避され、次回起動時に自動で戻る（所有者 pid と `MUTATION_TEST_OWNER_PID` で、実行中の run の変異は横取りしない）
 - **同梱スクリプトのテストは `.claude-plugin/scripts/tests/` に置く**（プラグイン配下に置かない — 配布物にテストが混ざる）。ハーネスは python の subprocess で、bats 等の外部依存を足さない。判断の経緯: `code-review/CHANGELOG.md` v2.68.0
 
 ## バージョニング規約
@@ -219,6 +221,7 @@ event_bus_clear
 - MAJOR: 破壊的変更（スキル/コマンドの削除・リネーム）
 - MINOR: 機能追加（新スキル/コマンド、既存機能拡張）
 - PATCH: 修正（バグ修正、ドキュメント、リファクタ）
+- **版ラベルは `vNEXT` で書く**: doc / コメントに「この挙動は vNEXT で入った」と書くと `bump-version.sh` がそのプラグイン配下だけを実版へ解決する（書く時点では版が確定しない構造的な race を消すため）。行内コード・フェンス内の `vNEXT` は規約の説明とみなして置換しない。**repo 直下の共通スクリプト（`.claude-plugin/scripts/` 等）はどのプラグイン版にも属さないので版ラベルを書かない** — issue 番号か設計ノートへのパスで参照する
 - **判定は「変更ファイルの種類」で行う**: commit type が `docs` で変更が `*.md` + version/CHANGELOG のみなら PATCH。MINOR を当てると `plugin-manager:update-all` の利用者に「機能追加が入った」と誤ったシグナルを送る（pre-commit は bump の有無しか見ないので機械的には素通りする）
 
 ## 品質チェック

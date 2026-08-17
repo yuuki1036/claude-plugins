@@ -30,9 +30,38 @@ jobs:
       - name: validate-ssot
         run: bash .claude-plugin/scripts/validate-ssot.sh
 
+      # 差分の起点を 1 箇所で決める。**quality と version-bump が同じ起点を使う**
+      # （バージョン基準を各ステップで別々に決めると、片方だけ no-op になっても気づけない）
+      - name: resolve-diff-base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$BASE_REF"
+            base="origin/${BASE_REF}"
+          elif [ -n "$BEFORE_SHA" ] \
+            && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
+            && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            # push: 今回 push された範囲を見る。初回 push / force push 直後や
+            # 履歴から消えた SHA では before が使えないため直前コミットで代用する
+            base="$BEFORE_SHA"
+          elif git rev-parse HEAD~1 >/dev/null 2>&1; then
+            base="HEAD~1"
+          else
+            base=""   # 初回コミット: 比較対象が無い
+          fi
+          echo "比較起点: ${base:-（無し）}"
+          echo "DIFF_BASE=$base" >> "$GITHUB_ENV"
+
       # allowed-tools / safe-hook.sh drift / references 参照整合性 / トリガーフレーズ等
       # （warnings は exit code に影響しない。errors のみ fail）
+      # QUALITY_VERSION_BASE: bump 契機の検査（vNEXT 残存など）は「作業ツリー vs 基準」で
+      # 判定するので、CI で既定の HEAD のままだと必ず no-op になる
       - name: validate-plugin-quality
+        env:
+          QUALITY_VERSION_BASE: ${{ env.DIFF_BASE }}
         run: python3 .claude-plugin/scripts/validate_plugin_quality.py
 
       # 検証スクリプト自身の回帰テスト（stdlib unittest・依存なし）。
@@ -49,25 +78,16 @@ jobs:
       - name: check-version-bump
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-          BEFORE_SHA: ${{ github.event.before }}
         run: |
+          if [ -z "${DIFF_BASE:-}" ]; then
+            echo "比較対象が特定できないため skip（初回コミット）"
+            exit 0
+          fi
+          # PR は三点（merge base 起点）、push は二点（push された範囲そのもの）
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            git fetch origin "$BASE_REF"
-            range="origin/${BASE_REF}...HEAD"
+            range="${DIFF_BASE}...HEAD"
           else
-            # push: 今回 push された範囲を見る。初回 push / force push 直後や
-            # 履歴から消えた SHA では before が使えないため直前コミットで代用する
-            if [ -n "$BEFORE_SHA" ] \
-              && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
-              && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-              range="${BEFORE_SHA}..HEAD"
-            elif git rev-parse HEAD~1 >/dev/null 2>&1; then
-              range="HEAD~1..HEAD"
-            else
-              echo "比較対象が特定できないため skip（初回コミット）"
-              exit 0
-            fi
+            range="${DIFF_BASE}..HEAD"
           fi
           echo "比較範囲: $range"
           changed=$(git diff --name-only "$range")

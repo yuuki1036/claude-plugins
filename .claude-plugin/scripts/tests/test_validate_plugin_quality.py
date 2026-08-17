@@ -28,6 +28,8 @@ import importlib.util
 import sys
 import tempfile
 import textwrap
+import os
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -735,7 +737,7 @@ class TestDiscoveryTest(unittest.TestCase):
 
 
 class DocStructureTest(unittest.TestCase):
-    """番号見出しの重複と blockquote 分断（v2.68.0 / doc lint）.
+    """番号見出しの重複と blockquote 分断（doc lint）.
 
     どちらも**実際にセルフレビューをすり抜けた / agent 8 体を要した**型なので,
     「lint が見つけるべきものを agent に探させない」の実装として入れた.
@@ -872,7 +874,7 @@ class DocStructureTest(unittest.TestCase):
 
 
 class TestFileLintTest(unittest.TestCase):
-    """テストファイル自身の lint（収集漏れ / 本体重複 / v2.68.0）."""
+    """テストファイル自身の lint（収集漏れ / 本体重複）."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -1042,7 +1044,7 @@ class TestFileLintTest(unittest.TestCase):
 
 
 class VersionPlaceholderTest(unittest.TestCase):
-    """`vNEXT` の残存検査（v2.68.0）.
+    """`vNEXT` の残存検査.
 
     **開発中の残存は正常**（bump 前）なので、bump が起きた作業ツリーでだけ鳴ること —
     ここを間違えると毎ターン鳴る warning になり、このリポジトリが繰り返し避けてきた
@@ -1130,6 +1132,41 @@ class VersionPlaceholderTest(unittest.TestCase):
         errors: list[str] = []
         v.check_pending_version_placeholder(self.plugin, errors)
         self.assertEqual(errors, [])
+
+class VersionBaseTest(unittest.TestCase):
+    """比較基準の解決（`QUALITY_VERSION_BASE`）.
+
+    **既定が壊れると検査が構造的に no-op になる**（`git show None:...` が必ず失敗し、
+    version が読めない → 早期 return → 何も鳴らない）。しかも「エラーが出ない」ので
+    壊れていることに気づけない — CI で一度も発火しなかった原因と同じ形。
+    """
+
+    SCRIPT = Path(__file__).resolve().parents[1] / "validate_plugin_quality.py"
+
+    def _base_with_env(self, value):
+        env = dict(os.environ)
+        env.pop("QUALITY_VERSION_BASE", None)
+        if value is not None:
+            env["QUALITY_VERSION_BASE"] = value
+        code = (
+            "import importlib.util,sys;"
+            f"spec=importlib.util.spec_from_file_location('vq', r'{self.SCRIPT}');"
+            "m=importlib.util.module_from_spec(spec);sys.modules['vq']=m;"
+            "spec.loader.exec_module(m);print(m.VERSION_BASE)"
+        )
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.strip()
+
+    def test_defaults_to_head(self):
+        self.assertEqual(self._base_with_env(None), "HEAD")
+
+    def test_empty_env_falls_back_to_head(self):
+        """CI が空文字を渡しうる（初回コミットで base が決まらない場合）."""
+        self.assertEqual(self._base_with_env(""), "HEAD")
+
+    def test_env_overrides(self):
+        self.assertEqual(self._base_with_env("origin/main"), "origin/main")
 
 
 if __name__ == "__main__":
