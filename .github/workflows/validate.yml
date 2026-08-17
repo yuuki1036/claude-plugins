@@ -71,6 +71,21 @@ jobs:
       - name: unit-tests
         run: python3 -m unittest discover -s .claude-plugin/scripts/tests
 
+      # 変更行の変異テスト。**テストが実は何も検証していない**（通るだけのテスト）を
+      # 機械的に検出する。ローカルでは手動起動なので、強制力は CI 側に置く。
+      #
+      # **今は非ブロッキング**: 同梱スクリプト 48 本のうちテストがあるのは数本で、
+      # 未テストのスクリプトを触ると生存率が当然高くなる。この段階で fail にすると
+      # 「CI を通すためにテストを書く」ではなく「CI を無視する」に倒れる。
+      # スクリプトのテスト網羅が上がったら `continue-on-error` を外して fail 化する。
+      - name: mutation-test
+        continue-on-error: true
+        run: |
+          if [ -z "${DIFF_BASE:-}" ]; then
+            echo "比較対象が特定できないため skip（初回コミット）"; exit 0
+          fi
+          python3 .claude-plugin/scripts/mutation-test.py --base "$DIFF_BASE" --max 15
+
       # pre-commit と同等のバージョンバンプ検査。
       # ローカル hook は --no-verify で迂回できるため CI 側でも検査する。
       # 本リポジトリは main 直コミット運用なので push イベントでも必ず走らせる

@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.25.1] - 2026-08-17
+
+### Fixed
+- **`on-commit.sh` が Conventional Commits 形式でないメッセージで `commit:created` を publish していなかった**。type 抽出の `grep` が非マッチで exit 1 を返し、safe-hook の ERR trap が発火して publish 前に exit 0 していた（`[ -z "$TYPE" ] && TYPE="other"` のフォールバックに到達しない）。`|| true` を追加
+- **同 hook が最初のコミット（親なし）で invalid JSON を event log に書いていた**。`grep -c` は 0 件でも `0` を出力したうえで exit 1 するため `|| echo 0` が二重に効き `"files":00` になっていた。event log の 1 行が壊れると読み手が丸ごとパースできなくなる。`|| true` + 数値検証に変更
+- 同 hook が最初のコミットの変更ファイル数を 0 と数えていた（`diff-tree` に `--root` が無く親なしコミットで空になる）
+
 ## [1.25.0] - 2026-07-29
 
 ### Added

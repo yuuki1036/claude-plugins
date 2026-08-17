@@ -42,13 +42,21 @@ SHA=$(git log -1 --format=%h 2>/dev/null || true)
 
 SUBJECT=$(git log -1 --format=%s 2>/dev/null || true)
 # Conventional Commits の type を先頭から抽出（feat / fix / refactor / chore / docs / test / perf / ci / build / style / revert）
-TYPE=$(printf '%s' "$SUBJECT" | grep -oE '^(feat|fix|refactor|chore|docs|test|perf|ci|build|style|revert)' | head -1)
+# **`|| true` が要る**: 型なしメッセージだと grep が exit 1 を返し, safe-hook の ERR trap が
+# 発火して**イベントを publish せずに exit 0 する**（型なしコミットで publish が丸ごと落ちる）
+TYPE=$(printf '%s' "$SUBJECT" | grep -oE '^(feat|fix|refactor|chore|docs|test|perf|ci|build|style|revert)' | head -1 || true)
 [ -z "$TYPE" ] && TYPE="other"
 
-# 変更ファイル数（diff-tree -m --first-parent でマージコミットでも第一親との差分を数える）
-FILES_COUNT=$(git diff-tree --no-commit-id --name-only -r -m --first-parent HEAD 2>/dev/null | grep -cvE '^$' || echo 0)
+# 変更ファイル数（diff-tree -m --first-parent でマージコミットでも第一親との差分を数える）。
+# --root: 親の無い最初のコミットでも空にならない（無いと 0 件になる）
+#
+# `|| echo 0` は使わない。**grep -c は 0 件でも "0" を出したうえで exit 1 する**ので、
+# フォールバックが二重に出て "00" になり、payload が invalid JSON になる
+# （event log の 1 行が壊れると、読み手が丸ごとパースできなくなる）
+FILES_COUNT=$(git diff-tree --root --no-commit-id --name-only -r -m --first-parent HEAD 2>/dev/null | grep -cvE '^$' || true)
 FILES_COUNT=$(printf '%s' "$FILES_COUNT" | tr -d '[:space:]')
-[ -z "$FILES_COUNT" ] && FILES_COUNT=0
+# 数値以外が入り込んだら 0 に落とす（payload の JSON 妥当性は publisher の責務）
+case "$FILES_COUNT" in ''|*[!0-9]*) FILES_COUNT=0 ;; esac
 
 # 同じ HEAD に対する dedup は subscriber 側の責務（CLAUDE.md 規約）。ここでは fire-and-forget
 event_bus_publish "commit:created" "{\"sha\":\"${SHA}\",\"type\":\"${TYPE}\",\"files\":${FILES_COUNT}}"
