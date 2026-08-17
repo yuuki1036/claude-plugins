@@ -17,6 +17,14 @@
 #
 # **CHANGELOG の本文は書かない。** 何が変わったかは人間 / LLM が書く。本スクリプトが持つのは
 # 「版番号の算術」と「4 ファイルの同時更新」だけ（決定的に検証できる部分）。
+#
+# **`vNEXT` プレースホルダの解決（5 つ目の仕事）**: プラグイン配下の md / sh / py に書かれた
+# `vNEXT` を新版へ一括置換する。doc に「この変更が入った版」を書くとき、**書く時点では正しい
+# 値が確定していない**（bump は後）ため、手書きの版ラベルは構造的に古くなる — 実測で 3 回
+# 再発し、検出側の機械化も 2 度失敗した（履歴参照と区別できない / CC の版と表記が衝突する。
+# 経緯: code-review/references/design-notes/pending-optimizations.md `## 9`）。
+# **確定していない値を書かせない**のが解。`vNEXT` は履歴参照と曖昧にならないトークンなので
+# 置換も検出も偽陽性ゼロで済む。
 set -uo pipefail
 
 PLUGIN=""; MODE=""; LEVEL=""; DRY=0
@@ -149,4 +157,54 @@ if mode == "next" and any(p == cl_path for p, _, _ in touched):
 if not dry:
     for p, _, new_text in touched:
         p.write_text(new_text)
+
+# 5) `vNEXT` プレースホルダの解決（プラグイン配下のみ）.
+# **repo 直下の共通スクリプト / doc は対象外** — あれらはプラグイン版に属さないので、
+# 版ラベルではなく issue 番号で参照する（複数プラグインを同時に bump したとき
+# どちらの版に解決すべきか決まらない）。
+placeholder_hits = []
+for f in sorted(pathlib.Path(plugin).rglob("*")):
+    if f.suffix not in (".md", ".sh", ".py") or not f.is_file():
+        continue
+    text = f.read_text(encoding="utf-8", errors="replace")
+    if "vNEXT" not in text:
+        continue
+    # **行内コード / フェンス内の `vNEXT` は置換しない**（SSoT pin と同じ規約 /
+    # CLAUDE.md「doc に記法例を書くときはフェンスか行内コードに入れる」）。
+    # 規約そのものを説明している文章まで書き換えてしまうため（実測で踏んだ）。
+    # 生きたプレースホルダは**裸で書く**: 「この挙動は vNEXT で入った」
+    out_lines, fence, hits = [], None, 0
+    for line in text.splitlines(keepends=True):
+        m = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if m:
+            tok = m.group(1)
+            if fence is None:
+                fence = tok
+            elif tok[0] == fence[0] and len(tok) >= len(fence):
+                fence = None
+            out_lines.append(line)
+            continue
+        if fence is not None:
+            out_lines.append(line)
+            continue
+        # 行内コード（`...`）を退避してから置換し、戻す
+        spans = []
+        def _stash(mo):
+            spans.append(mo.group(0))
+            return "\x00%d\x00" % (len(spans) - 1)
+        masked = re.sub(r"`[^`\n]*`", _stash, line)
+        hits += masked.count("vNEXT")
+        masked = masked.replace("vNEXT", "v" + new_s)
+        out_lines.append(re.sub(r"\x00(\d+)\x00", lambda mo: spans[int(mo.group(1))], masked))
+    if hits == 0:
+        continue
+    placeholder_hits.append((f, hits))
+    if not dry:
+        f.write_text("".join(out_lines), encoding="utf-8")
+if placeholder_hits:
+    total = sum(n for _, n in placeholder_hits)
+    print("  vNEXT を v%s に解決: %d 箇所 / %d ファイル%s"
+          % (new_s, total, len(placeholder_hits), "  [dry-run]" if dry else ""))
+    for f, n in placeholder_hits:
+        print("    %s (%d)" % (f, n))
 PY

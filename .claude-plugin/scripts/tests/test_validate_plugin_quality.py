@@ -23,6 +23,7 @@ pin と検証が自己整合し、全 pin が `ok` に見える。実際 v2.63.1
 from __future__ import annotations
 
 import hashlib
+import json
 import importlib.util
 import sys
 import tempfile
@@ -815,6 +816,25 @@ class DocStructureTest(unittest.TestCase):
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("SKILL.md", errors[0])
 
+    def test_orphan_is_found_even_when_the_section_ends_with_a_quote(self):
+        """探索は**最初の非空行で打ち切る**（打ち切りを外すと節末尾の引用に吸われて見逃す）."""
+        self._doc("""
+            # ガイド
+
+            ## 1. これ
+
+            > 引用の途中。
+            >
+
+            通常の段落（ここで分断されている）。
+
+            > 別の引用が節末尾にある。
+            """)
+        errors: list[str] = []
+        v.check_doc_structure(self.plugin, errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("孤立した `>` 行", errors[0])
+
     def test_quote_ending_before_a_heading_is_not_reported(self):
         """**節末尾で引用が終わるのは正常**（探索が節境界を越えると誤検知になる）."""
         self._doc("""
@@ -900,6 +920,29 @@ class TestFileLintTest(unittest.TestCase):
         v.check_test_collection(errors)
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("`if __name__` より後ろ", errors[0])
+
+    def test_class_with_docstring_and_attributes_is_handled(self):
+        """**クラス本体に関数以外がある**実データ形（docstring / 属性）で壊れないこと.
+
+        `isinstance(n, ast.FunctionDef) and n.name.startswith("test")` の `and` を緩めると
+        属性ノードで `.name` を触って落ちる。fixture が関数だけだとこの変異が生き残る。
+        """
+        self._test_file("""
+            import unittest
+
+
+            class A(unittest.TestCase):
+                MARKER = {"a": 1}
+
+                def test_one(self):
+                    self.assertEqual(1, 1)
+
+                def helper(self):
+                    return 2
+            """)
+        errors: list[str] = []
+        v.check_duplicate_test_bodies(errors)
+        self.assertEqual(errors, [])
 
     def test_identical_test_bodies_are_reported(self):
         self._test_file("""
@@ -995,6 +1038,97 @@ class TestFileLintTest(unittest.TestCase):
             """)
         errors: list[str] = []
         v.check_duplicate_test_bodies(errors)
+        self.assertEqual(errors, [])
+
+
+class VersionPlaceholderTest(unittest.TestCase):
+    """`vNEXT` の残存検査（v2.68.0）.
+
+    **開発中の残存は正常**（bump 前）なので、bump が起きた作業ツリーでだけ鳴ること —
+    ここを間違えると毎ターン鳴る warning になり、このリポジトリが繰り返し避けてきた
+    「⚠️ が出たときだけ行動する」契約の破壊になる。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+        (self.plugin / ".claude-plugin").mkdir(parents=True)
+        (self.plugin / "references").mkdir()
+        self._head_version = "1.0.0"
+        self._orig_head = v._version_at_head
+        v._version_at_head = lambda _p: self._head_version
+        self.addCleanup(lambda: setattr(v, "_version_at_head", self._orig_head))
+
+    def _plugin_json(self, version: str) -> None:
+        (self.plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "demo", "version": version}), encoding="utf-8")
+
+    def _doc(self, body: str) -> None:
+        (self.plugin / "references" / "note.md").write_text(body, encoding="utf-8")
+
+    def test_placeholder_before_bump_is_allowed(self):
+        """**bump 前の `vNEXT` は正常**（開発中に毎回鳴らさない）."""
+        self._plugin_json("1.0.0")           # HEAD と同じ = 未 bump
+        self._doc("この挙動は vNEXT で入った。")
+        errors: list[str] = []
+        v.check_pending_version_placeholder(self.plugin, errors)
+        self.assertEqual(errors, [])
+
+    def test_placeholder_after_bump_is_reported(self):
+        self._plugin_json("1.1.0")           # HEAD と違う = bump 済み
+        self._doc("この挙動は vNEXT で入った。")
+        errors: list[str] = []
+        v.check_pending_version_placeholder(self.plugin, errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("vNEXT", errors[0])
+        self.assertIn("note.md", errors[0])
+
+    def test_resolved_placeholder_after_bump_is_clean(self):
+        self._plugin_json("1.1.0")
+        self._doc("この挙動は v1.1.0 で入った。")
+        errors: list[str] = []
+        v.check_pending_version_placeholder(self.plugin, errors)
+        self.assertEqual(errors, [])
+
+    def test_unknown_head_version_is_skipped(self):
+        """HEAD に無い（新規プラグイン）回は判定しない."""
+        v._version_at_head = lambda _p: None
+        self._plugin_json("0.1.0")
+        self._doc("vNEXT")
+        errors: list[str] = []
+        v.check_pending_version_placeholder(self.plugin, errors)
+        self.assertEqual(errors, [])
+
+    def test_placeholder_in_inline_code_is_not_reported(self):
+        """**規約そのものを説明する文章は対象外**（`vNEXT` を行内コードで書いた場合）.
+
+        SSoT pin と同じ扱い。これを入れないと「置換も検出も、規約の説明文を壊す」
+        （実測: bump が説明文の 7 箇所を実版に書き換えた）。
+        """
+        self._plugin_json("1.1.0")
+        self._doc("\n".join([
+            "版ラベルは `vNEXT` と書く（行内コード）。",
+            "",
+            "```markdown",
+            "この挙動は vNEXT で入った   <- フェンス内の記法例",
+            "```",
+            "",
+        ]))
+        errors: list[str] = []
+        v.check_pending_version_placeholder(self.plugin, errors)
+        self.assertEqual(errors, [])
+
+    def test_only_md_sh_py_are_scanned(self):
+        """走査対象は md / sh / py（JSON の中の文字列などは見ない）."""
+        self._plugin_json("1.1.0")
+        (self.plugin / "data.json").write_text('{"note": "vNEXT"}', encoding="utf-8")
+        errors: list[str] = []
+        v.check_pending_version_placeholder(self.plugin, errors)
         self.assertEqual(errors, [])
 
 

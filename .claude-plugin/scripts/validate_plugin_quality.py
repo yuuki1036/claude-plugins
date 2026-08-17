@@ -34,6 +34,10 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     判定は行走査だけで決まる（v2.68.0 / 「lint が見つけるべきものを agent に探させない」）.
   - テスト収集: `if __name__` より後ろの TestCase（直接実行で静かに件数が減り `OK` が出る）.
   - テスト重複: 同一クラス内で本体が同一のテストメソッド（名前が主張する内容を検証していない）.
+  - 版プレースホルダ: bump 済みのプラグインに `vNEXT` が残っていないか. `vNEXT` は
+    「この変更が入る版」を書くためのもので bump 時に解決される（版ラベルを手書きすると
+    書いた時点で値が未確定＝構造的に古くなる。3 回再発し検出側の機械化も 2 度失敗した）.
+    **開発中の残存は正常**なので bump が起きた作業ツリーでだけ判定する.
   - シェル構文: 同梱スクリプト（*/scripts/**.sh, */hooks/**.sh）が `bash -n` を通るか.
     CI は manifest と doc しか見ておらず, LLM が書いたスクリプトは構文検証を一度も
     経ずに配布されていた（issue #123 の meta-review）.
@@ -786,6 +790,65 @@ def check_duplicate_test_bodies(errors: list[str]) -> None:
                     seen[key] = fn.name
 
 
+VERSION_PLACEHOLDER = "vNEXT"
+
+
+def read_plugin_version(plugin_dir: Path) -> str | None:
+    try:
+        return json.loads(read_text(plugin_dir / ".claude-plugin" / "plugin.json")).get("version")
+    except (OSError, ValueError):
+        return None
+
+
+def _version_at_head(plugin_dir: Path) -> str | None:
+    """HEAD 時点の plugin.json の version（取れなければ None）."""
+    rel = (plugin_dir / ".claude-plugin" / "plugin.json").relative_to(ROOT).as_posix()
+    try:
+        proc = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=ROOT,
+                              capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        return json.loads(proc.stdout).get("version")
+    except ValueError:
+        return None
+
+
+def check_pending_version_placeholder(plugin_dir: Path, errors: list[str]) -> None:
+    """bump 済みのプラグインに `vNEXT` が残っていないかを見る.
+
+    `vNEXT` は「この変更が入る版」を書くためのプレースホルダで, `bump-version.sh` が
+    bump 時に**そのプラグイン配下だけ**を実版へ置換する（版ラベルは書く時点では確定して
+    いない, という構造的な race を消すため / 経緯は code-review の
+    `design-notes/pending-optimizations.md ## 9`）.
+
+    **開発中は `vNEXT` が残っていて正常**なので, 無条件に鳴らすと毎ターン鳴る warning に
+    なる（このリポジトリが繰り返し避けてきた形）. **bump が起きた作業ツリーでだけ**判定する
+    — version が HEAD と違う ＝ この変更で bump 済み ＝ プレースホルダは解決済みのはず.
+    取りこぼす典型は「別のプラグインを bump したので自分の `vNEXT` が残った」ケース.
+    """
+    head = _version_at_head(plugin_dir)
+    if head is None or head == read_plugin_version(plugin_dir):
+        return
+    for f in sorted(plugin_dir.rglob("*")):
+        if f.suffix not in (".md", ".sh", ".py") or not f.is_file():
+            continue
+        # **行内コード / フェンス内は対象外**（規約そのものを説明する文章が引っかかる /
+        # SSoT pin と同じ扱い）。生きたプレースホルダは裸で書く
+        lines = read_text(f).splitlines()
+        live = "\n".join(
+            INLINE_CODE_RE.sub("", line) for _, line in _iter_unfenced_lines(lines)
+        )
+        if VERSION_PLACEHOLDER in live:
+            errors.append(
+                f"[version-placeholder] bump 済みなのに `{VERSION_PLACEHOLDER}` が残っている"
+                f"（`bump-version.sh {plugin_dir.name}` は自分のプラグイン配下しか解決しない）: "
+                f"{f.relative_to(ROOT).as_posix()}"
+            )
+
+
 def _collect_published_pairs() -> set[tuple[str, str]]:
     """コードベースの実 publish 箇所から (plugin, event) ペアを収集する（=正本）.
 
@@ -1182,6 +1245,7 @@ CHECKS = [
     check_trigger_phrases,
     check_shell_syntax,
     check_doc_structure,
+    check_pending_version_placeholder,
 ]
 
 

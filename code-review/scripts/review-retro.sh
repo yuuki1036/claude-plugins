@@ -430,7 +430,10 @@ tok_r = pearson(txs, tys)
 # **目的は指摘を減らすことではない**（300 行の diff で 0 件の方が疑わしい）。見るのは構成比で、
 # `lint` が高い＝ linter を足す余地、`test` が高い＝回帰テストが足りない、というシグナル。
 # 契約は orchestration-measurement.md `## 16` の `findings_class`
-FC_MIN_SCHEMA = 1    # 版マーカー（`>=` で前方互換にする / 冒頭の層別の原則）
+# 版マーカー（`>=` で前方互換にする / 冒頭の層別の原則）。**現時点では何も除外しない** —
+# `schema_of` は欠落・0 を 1 に丸めるので `>= 1` は恒真。分類の定義を変えて 2 に上げたときに
+# 初めて効くフック。**`dropped_schema: 0` を「層別が効いている」と読まないこと**
+FC_MIN_SCHEMA = 1
 fc_raw = [e for e in events if isinstance(e["p"].get("findings_class"), dict)]
 fc_rows, fc_dropped_schema = [], 0
 for e in fc_raw:

@@ -12,7 +12,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
                                  # validate_plugin_quality.py（品質検証。検査項目の正本は冒頭 docstring）
                                  # auto-quality-check.sh（Stop hook から上記 2 本 + CLI validate を自動実行）
-                                 # bump-version.sh（バージョンバンプの 4 ファイル同時更新。pre-commit は検証のみで実行しない）
+                                 # bump-version.sh（バージョンバンプの 4 ファイル同時更新 + vNEXT 解決。
+                                 #   pre-commit は検証のみで実行しない）
+                                 # mutation-test.py（変更行の変異テスト。検証していない挙動を列挙）
 .claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。2 系統:
                                  #  ① 検証スクリプト自身（test_validate_plugin_quality.py）
                                  #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
@@ -208,7 +210,8 @@ event_bus_clear
 - **Agent tool の background 既定 (CC 2.1.198+)**: fanout して結果を待つスキル（explorer/reviewer/verifier 等）では **①各 Agent call に `run_in_background: false` を明示**（省略＝background 起動で結果を取りこぼす）し、**②全 Agent call を同一メッセージ内で一括発行**する（1 体ずつ別メッセージだと実時間が体数分の合計になる）。**①は取りこぼし防止・②は並列性で、直交する独立の要件**（①だけでは並列にならない）。根拠と実測は `orchestration-guide.md ## 0`（正本・issue #95）。取り漏れは `validate_plugin_quality.py` の agent-sync チェックが非ブロッキング warning で検知する
 - **eval を実行・修正する前に `evals/README.md` の Gotchas を読む**: スラッシュコマンドは headless で必ず落ちる（自然言語プロンプトで測る）/ fail は「プラグイン選択」と「skill id の綴り」を分けて読む（id 捏造は harness 側の性質）/ 判定は k=1 でなく pass^k=3 で行う — 詳細と実例は README 側に集約
 
-- **新しい lint / 検証ロジックを足すときは ①既存 repo での検出数を先に測って error / warning の水準を決める ②変異テストで「実装を壊すと該当テストが落ちる」ことを確認する**: 初回実行で偽陽性が出る warning は「⚠️ が出たときだけ行動する」契約を壊すので、入れない方がまし（実例: 版ラベルの追随漏れ検出は 6/6 が偽陽性で撤去した → `code-review/references/design-notes/pending-optimizations.md ## 9`）。変異テストの結果は **`__pycache__` を消してから**読む（stale bytecode で「全部検知した」という嘘の結果が出る）
+- **版ラベルは `vNEXT` と書く**（プラグイン配下の md / sh / py）。`bump-version.sh` が bump 時に実版へ置換し、`validate_plugin_quality.py` が「bump 済みなのに `vNEXT` が残っている」を error にする。**具体的な版番号を手書きしない** — 書く時点では正しい値が確定しておらず（bump は後）、実測で 3 回再発した。検出側の機械化は 2 度失敗している（履歴参照と区別できない / Claude Code の版と表記が衝突する）ので、**確定していない値を書かせない**方で解いた。repo 直下の共通スクリプト・doc は**プラグイン版に属さない**ので版ラベルを持たせず issue 番号で参照する。**規約そのものを説明するときは行内コードかフェンスに入れる**（SSoT pin と同じ扱い — 生きたプレースホルダとして置換・検出の対象にならない。実測でこの説明文ごと実版に書き換えた）。経緯: `code-review/references/design-notes/pending-optimizations.md ## 9`
+- **新しい lint / 検証ロジックを足すときは ①既存 repo での検出数を先に測って error / warning の水準を決める ②変異テストで「実装を壊すと該当テストが落ちる」ことを確認する**: 初回実行で偽陽性が出る warning は「⚠️ が出たときだけ行動する」契約を壊すので、入れない方がまし（実例: 版ラベルの追随漏れ検出は 6/6 が偽陽性で撤去した → `code-review/references/design-notes/pending-optimizations.md ## 9`）。変異テストは **`python3 .claude-plugin/scripts/mutation-test.py`** で自動化してある（変更行だけを対象に比較演算子・境界・真偽値・打ち切りを機械的に反転し、テストが落ちない＝**検証していない挙動**を列挙する）。`__pycache__` の消去・元バイト列での復元・並行編集の検知は**ツール側に入っている**（どれも手動でやって事故った）。**実行中に対象ファイルを編集しないこと**
 - **同梱スクリプトのテストは `.claude-plugin/scripts/tests/` に置く**（プラグイン配下に置かない — 配布物にテストが混ざる）。ハーネスは python の subprocess で、bats 等の外部依存を足さない。判断の経緯: `code-review/CHANGELOG.md` v2.68.0
 
 ## バージョニング規約

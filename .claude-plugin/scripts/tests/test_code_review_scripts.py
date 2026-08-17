@@ -334,5 +334,141 @@ class RetroTest(ScriptTestBase):
         self.assertIn("findings_class", json.loads(out))
 
 
+class FindingsClassValidationTest(ScriptTestBase):
+    """`findings_class` の publish 側検証（v2.68.0）.
+
+    **変異テストが炙り出したギャップ**: 検証を追加したのに回帰テストが 1 件も無く、
+    `if fc is not None:` を `is None` に反転しても `total != sum` を `==` にしても
+    テストスイートが緑のままだった。
+    """
+
+    def _payload(self, fc, counts=(0, 0, 3, 1)) -> dict:
+        p = dict(BASE_PAYLOAD)
+        for k, v in zip(("blocker_count", "critical_count", "major_count", "minor_count"), counts):
+            p[k] = v
+        if fc is None:
+            p.pop("findings_class", None)
+        else:
+            p["findings_class"] = fc
+        return p
+
+    def test_matching_total_passes(self):
+        r = self.publish(self._payload({"lint": 1, "test": 2, "judgement": 1}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_total_mismatch_is_rejected(self):
+        """合計が報告件数と合わなければ publish を止める（契約に強制力を与える）."""
+        r = self.publish(self._payload({"lint": 1, "test": 1, "judgement": 0}))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("一致しない", r.stderr)
+        self.assertEqual(self.events(), [])
+
+    def test_non_integer_is_rejected(self):
+        r = self.publish(self._payload({"lint": "1", "test": 2, "judgement": 1}))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("非負整数でない", r.stderr)
+
+    def test_bool_is_rejected(self):
+        """`isinstance(True, int)` は真なので bool を弾かないと合計計算が静かに狂う."""
+        r = self.publish(self._payload({"lint": True, "test": 2, "judgement": 1}))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("非負整数でない", r.stderr)
+
+    def test_missing_key_is_rejected(self):
+        r = self.publish(self._payload({"lint": 1, "test": 3}))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("非負整数でない", r.stderr)
+
+    def test_absent_field_is_allowed(self):
+        """**フィールド自体が無い回は落とさない**（契約の範囲外まで publish を止めない）."""
+        r = self.publish(self._payload(None))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_counts_missing_skips_the_sum_check(self):
+        """件数フィールドが揃っていない回は突合しない（型検証だけ効く）."""
+        p = dict(BASE_PAYLOAD)
+        p["findings_class"] = {"lint": 9, "test": 9, "judgement": 9}
+        r = self.publish(p)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_schema_marker_is_injected(self):
+        self.publish(self._payload({"lint": 1, "test": 2, "judgement": 1}))
+        self.assertEqual(self.last_payload()["findings_class"]["schema"], 1)
+
+
+class FindingsClassSignalTest(ScriptTestBase):
+    """`findings_class` シグナルの下限（v2.68.0 / 「1 回で点灯しない」が核）."""
+
+    def _rows(self, n: int, per: dict) -> list[dict]:
+        return [{"effort": "high", "measurement_gaps": [], "findings_class": dict(per, schema=1)}
+                for _ in range(n)]
+
+    def _write(self, rows: list[dict]) -> None:
+        (self.root / ".claude").mkdir(exist_ok=True)
+        (self.root / ".claude" / "events.jsonl").write_text(
+            "\n".join(json.dumps({"ts": "2026-08-1%d T%02d:00:00Z".replace(" ", "") % (i // 24, i % 24),
+                                   "plugin": "code-review:self-review",
+                                   "event": "review:completed", "payload": r}, ensure_ascii=False)
+                       for i, r in enumerate(rows)) + "\n", encoding="utf-8")
+
+    def test_single_review_does_not_fire(self):
+        """**指摘が何件あってもレビュー 1 回では点灯しない**（下限の単位が回数であること）."""
+        self._write(self._rows(1, {"lint": 30, "test": 0, "judgement": 0}))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("lint で捕まる層", out)
+
+    def test_enough_reviews_and_findings_fire(self):
+        self._write(self._rows(9, {"lint": 8, "test": 1, "judgement": 1}))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("lint で捕まる層", out)
+
+    def test_exactly_at_the_row_minimum_fires(self):
+        """**下限ちょうどで点灯する**（`>=` を `>` に狭める変異を殺す境界テスト）."""
+        self._write(self._rows(8, {"lint": 8, "test": 1, "judgement": 1}))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("lint で捕まる層", out)
+
+    def test_test_side_signal_at_the_row_minimum_fires(self):
+        self._write(self._rows(8, {"lint": 1, "test": 8, "judgement": 1}))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("回帰テストで捕まる層", out)
+
+    def test_test_side_signal_does_not_fire_on_a_single_review(self):
+        """test 側も**回数**の下限が効くこと（`and` を `or` に緩める変異を殺す）."""
+        self._write(self._rows(1, {"lint": 0, "test": 30, "judgement": 0}))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("回帰テストで捕まる層", out)
+
+    def test_below_the_ratio_does_not_fire(self):
+        """**しきい値は実測ベースライン（43%）の上**（下回ると定常状態で常時点灯する）."""
+        self._write(self._rows(9, {"lint": 4, "test": 3, "judgement": 3}))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("lint で捕まる層", out)
+
+    def test_schema_filter_is_currently_inert(self):
+        """**版マーカー層別は現時点で何も除外しない**ことを表明する.
+
+        `schema_of` は欠落・`0` を `1` に丸めるので `>= 1` は恒真。前方互換のフックとして
+        正しいが、`dropped_schema: 0` を「層別が効いている」と読める形なので、
+        **恒真であること自体をテストで固定**しておく（分類の定義を変えて 2 に上げたら
+        このテストが落ちる＝そのとき初めて除外の挙動を書く）。
+        """
+        rows = [{"effort": "high", "measurement_gaps": [],
+                 "findings_class": {"lint": 8, "test": 1, "judgement": 1, "schema": 0}}
+                for _ in range(9)]
+        self._write(rows)
+        out = self.run_script(RETRO, "--json", env=self._env()).stdout
+        fc = json.loads(out)["findings_class"]
+        self.assertEqual(fc["dropped_schema"], 0, "schema 0 が除外されている（丸めの前提が変わった）")
+        self.assertEqual(fc["n"], 9)
+
+    def test_zero_findings_is_not_reported_as_missing(self):
+        """**「指摘 0 件」と「未収録」を同一視しない**（`--json` だけ正しい状態を作らない）."""
+        self._write(self._rows(3, {"lint": 0, "test": 0, "judgement": 0}))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("n=3 回", out)
+        self.assertNotIn("持つサンプルが 0 件", out)
+
+
 if __name__ == "__main__":
     unittest.main()
