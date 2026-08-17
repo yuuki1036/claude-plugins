@@ -61,9 +61,18 @@ class HookTestCase(unittest.TestCase):
     def plugin_root(self) -> Path:
         return ROOT / self.PLUGIN
 
+    # git が hook 実行時に渡す変数（`GIT_INDEX_FILE=.git/index` 等の相対パス）を落とす。
+    # 残すと、テスト内の使い捨てリポジトリで git を叩いたときに外側の index を掴んで落ちる
+    # （本スイート自身が pre-commit から走るため、その環境で通ることが要件）
+    GIT_HOOK_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
+                    "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                    "GIT_QUARANTINE_PATH", "GIT_REFLOG_ACTION", "GIT_EDITOR")
+
     def run_hook(self, payload: dict, cwd: Path | None = None,
                  env_extra: dict | None = None) -> HookResult:
         env = dict(os.environ)
+        for key in self.GIT_HOOK_ENV:
+            env.pop(key, None)
         env["CLAUDE_PLUGIN_ROOT"] = str(self.plugin_root)
         env.update(env_extra or {})
         proc = subprocess.run(
@@ -90,12 +99,15 @@ class HookTestCase(unittest.TestCase):
 class TempGitRepo:
     """使い捨ての git リポジトリ（hook が git を叩くので本物が要る）."""
 
+    #: git hook 由来の変数を落とした環境（外側の index を掴まないため）
+    ENV = {k: v for k, v in os.environ.items() if k not in HookTestCase.GIT_HOOK_ENV}
+
     def __enter__(self) -> Path:
         self._tmp = tempfile.TemporaryDirectory()
         self.path = Path(self._tmp.name)
         for args in (["init", "-q"], ["config", "user.email", "t@example.com"],
                      ["config", "user.name", "t"]):
-            subprocess.run(["git", *args], cwd=self.path, capture_output=True)
+            subprocess.run(["git", *args], cwd=self.path, capture_output=True, env=self.ENV)
         return self.path
 
     def __exit__(self, *exc):
@@ -103,7 +115,8 @@ class TempGitRepo:
 
     def commit(self, message: str, filename: str = "f.txt", body: str = "x") -> str:
         (self.path / filename).write_text(body)
-        subprocess.run(["git", "add", "-A"], cwd=self.path, capture_output=True)
-        subprocess.run(["git", "commit", "-qm", message], cwd=self.path, capture_output=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.path, capture_output=True, env=self.ENV)
+        subprocess.run(["git", "commit", "-qm", message], cwd=self.path, capture_output=True,
+                       env=self.ENV)
         return subprocess.run(["git", "log", "-1", "--format=%h"], cwd=self.path,
-                              capture_output=True, text=True).stdout.strip()
+                              capture_output=True, text=True, env=self.ENV).stdout.strip()

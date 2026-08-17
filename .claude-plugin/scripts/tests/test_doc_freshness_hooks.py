@@ -165,6 +165,21 @@ class StaleCheckTest(HookTestCase):
             self._doc(root, ".claude/designs/t.md", validated=days_ago(20), phase="target")
             self.assertFired(self._run(root), "20日 > 15日")
 
+    def test_age_is_a_whole_number_of_days_regardless_of_the_time_of_day(self):
+        """**日数は実行時刻で揺れない。**
+
+        BSD `date -j -f "%Y-%m-%d"` は指定の無い時刻フィールドに現在時刻を埋めるので、
+        両辺を日境界に揃えないと「20 日 − 数秒」が切り捨てで 19 日になる（実測で
+        境界テストが実行時刻によって落ちた）。閾値ぴったりの日数で 2 回測って固定する。
+        """
+        for _ in range(2):
+            with TempGitRepo() as root:
+                self._setup(root, {"sessionStartCheck": True, "thresholds": {"current": 30}})
+                self._doc(root, ".claude/designs/a.md", validated=days_ago(30))
+                self.assertSilent(self._run(root), "30 日ちょうどは stale でない")
+                self._doc(root, ".claude/designs/a.md", validated=days_ago(31))
+                self.assertFired(self._run(root), "31日 > 30日")
+
     def test_phase_missing_is_treated_as_current(self):
         with TempGitRepo() as root:
             self._setup(root, {"sessionStartCheck": True, "thresholds": {"current": 10}})

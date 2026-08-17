@@ -66,8 +66,25 @@ class ScriptTestBase(unittest.TestCase):
                        env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
                             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
 
+    # **git が hook 実行時に渡す変数を落とす**。`GIT_INDEX_FILE=.git/index` のような
+    # **相対パス**が入っており、テスト内の使い捨てリポジトリで git を叩くと外側の index を
+    # 掴もうとして落ちる（実測: pre-commit から本スイートを走らせると
+    # `fatal: .git/index: index file open failed: Not a directory` で 21 件失敗した）。
+    # **本スイートは pre-commit と CI で強制される**ので、その環境で通ることが要件。
+    GIT_HOOK_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
+                    "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                    "GIT_QUARANTINE_PATH", "GIT_REFLOG_ACTION", "GIT_EDITOR")
+
     def _env(self, **extra: str) -> dict[str, str]:
         env = {**os.environ, "TMPDIR": str(self.root / "tmp"), "CLAUDE_PLUGIN_ROOT": str(PLUGIN)}
+        for key in self.GIT_HOOK_ENV:
+            env.pop(key, None)
+        # **ctype は UTF-8 に固定する**（実利用の通常環境に揃える）。C ロケールでは
+        # `"$VAR（"` のような日本語隣接の展開が**動いてしまう**ため、UTF-8 でのみ出る
+        # `unbound variable`（実測: detect-recent-review.sh の WARN が exit 1 になっていた）を
+        # 取りこぼす。LC_ALL があると LC_CTYPE を上書きするので落とす
+        env.pop("LC_ALL", None)
+        env["LC_CTYPE"] = "C.UTF-8"
         env.update(extra)
         return env
 
@@ -170,6 +187,28 @@ class CleanupTest(ScriptTestBase):
         path = self.full_run()
         self.publish()
         self.assertFalse(path.exists())
+
+    def test_success_removes_every_temp_file_of_the_review(self):
+        """**掃除の対象は種別を増やすたびに漏れる**（残ると TMPDIR に溜まり続ける）.
+
+        prctx / diff / agentctx / oracles を実在させてから publish し、全部消えることを見る。
+        """
+        ts = self.full_run()
+        # パスは `lib/review-paths.sh` に問い合わせる（命名規則をテスト側に複製しない）
+        made = []
+        for kind in ("prctx", "diff", "agentctx", "oracles"):
+            proc = subprocess.run(
+                ["bash", "-c", '. "$1/scripts/lib/review-paths.sh"; review_paths_init ""; '
+                               'review_path "$2"', "_", str(PLUGIN), kind],
+                cwd=self.root, capture_output=True, text=True, env=self._env())
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            path = Path(proc.stdout.strip())
+            path.write_text("x\n", encoding="utf-8")
+            made.append(path)
+        self.publish()
+        leftovers = [p for p in made if p.exists()]
+        self.assertEqual(leftovers, [], "publish 後に一時ファイルが残っている: %s" % leftovers)
+        self.assertFalse(ts.exists(), "計測ファイルも消える")
 
     def test_failure_keeps_timing_file_for_retry(self):
         path = self.full_run()

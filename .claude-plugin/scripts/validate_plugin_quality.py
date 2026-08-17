@@ -41,6 +41,10 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - シェル構文: 同梱スクリプト（*/scripts/**.sh, */hooks/**.sh）が `bash -n` を通るか.
     CI は manifest と doc しか見ておらず, LLM が書いたスクリプトは構文検証を一度も
     経ずに配布されていた（issue #123 の meta-review）.
+  - シェル多バイト展開: `"$VAR（..."` のような**波括弧なしの展開 + 直後の非 ASCII**.
+    UTF-8 ロケールの bash が非 ASCII の 1 バイト目まで変数名に取り込むため, `set -u`
+    下では診断を出さず exit 1 する. **C ロケールでは再現しない**ので開発機のシェル設定
+    次第で見えなくなる（実測: detect-recent-review.sh の WARN が丸ごと死んでいた / #138）.
 
 検査項目（warnings = 助言, exit code に影響しない）:
   - allowed-tools 最小性 (#14b): frontmatter 宣言ツールが本文で未言及（未使用候補）.
@@ -1245,6 +1249,37 @@ def check_shell_syntax(plugin_dir: Path, errors: list[str]) -> None:
             )
 
 
+# `"$VAR（..."` のように**裸の変数展開の直後が非 ASCII**だと、UTF-8 ロケールの bash が
+# その 1 バイト目まで変数名に取り込む（実測: `LC_CTYPE=C.UTF-8` / `ja_JP.UTF-8` /
+# `en_US.UTF-8` で `DIFF<0xef>: unbound variable`。C / POSIX では**再現しない**）。
+# `set -u` と組み合わさると、そのメッセージを出さずに exit 1 する。
+#
+# 昇格根拠: detect-recent-review.sh の WARN が丸ごと死んでいた（`--diff` 明示指定の
+# 不在を「黙らない」ための経路が、まさに黙っていた）。**開発者のシェルが C ロケールだと
+# 再現しない**ので人手レビューで見つかりにくい一方、判定は正規表現で決まる。
+# 既存 repo での実測は 1 件（この欠陥そのもの）＋ コメント行 1 件で、後者は除外規則で落ちる。
+BARE_EXPANSION_BEFORE_MULTIBYTE_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*(?=[^\x00-\x7f])")
+
+
+def check_shell_multibyte_expansion(plugin_dir: Path, errors: list[str]) -> None:
+    """`${VAR}` の波括弧が無い展開の直後に非 ASCII 文字が来る箇所を検出する."""
+    for sh in sorted(plugin_dir.glob("scripts/**/*.sh")) + sorted(plugin_dir.glob("hooks/**/*.sh")):
+        for lineno, line in enumerate(read_text(sh).splitlines(), start=1):
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                continue  # コメント行は展開されない
+            # 行内コメント以降も展開されないので落とす（`code # 説明の $VAR（...）`）
+            code = line.split(" #", 1)[0]
+            match = BARE_EXPANSION_BEFORE_MULTIBYTE_RE.search(code)
+            if match is None:
+                continue
+            errors.append(
+                "[shell-multibyte] %s:%d 展開 `%s` の直後が非 ASCII。UTF-8 ロケールの bash が"
+                "変数名に取り込み `set -u` で落ちる（`${%s}` と波括弧で囲む）"
+                % (sh.relative_to(ROOT), lineno, match.group(0), match.group(0)[1:])
+            )
+
+
 CHECKS = [
     check_allowed_tools_exists,
     check_allowed_tools_pair,
@@ -1254,6 +1289,7 @@ CHECKS = [
     check_doc_anchors,
     check_trigger_phrases,
     check_shell_syntax,
+    check_shell_multibyte_expansion,
     check_doc_structure,
     check_pending_version_placeholder,
 ]

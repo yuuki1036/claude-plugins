@@ -30,12 +30,18 @@ TGT_THRESH=$(jq -r '.thresholds.target // 15' "$CONFIG" 2>/dev/null || true); TG
 TARGETS=$(jq -r '.hookTargets[]? // empty' "$CONFIG" 2>/dev/null | tr '\n' ' ' || true)
 [ -z "$TARGETS" ] && TARGETS=".claude/designs/ .claude/adr/ .claude/living-specs/"
 
-# 日付 → epoch 秒（macOS BSD date / Linux GNU date 両対応）
+# 日付 → epoch 秒（macOS BSD date / Linux GNU date 両対応）。
+# **必ず 00:00:00 に固定する。** BSD の `date -j -f "%Y-%m-%d"` は指定の無いフィールドに
+# **現在時刻**を埋めるため、`now` を取ってから数ミリ秒後に評価されると差が
+# 「20 日 − 数秒」になり、切り捨てで 19 日に落ちる（境界テストが実行時刻で揺れた実測）。
+# 比較対象が日付だけなので、両辺を日境界に揃えるのが正しい。
 date_to_ts() {
   local d="$1"
-  date -j -f "%Y-%m-%d" "$d" "+%s" 2>/dev/null || date -d "$d" "+%s" 2>/dev/null || echo ""
+  date -j -f "%Y-%m-%d %H:%M:%S" "$d 00:00:00" "+%s" 2>/dev/null \
+    || date -d "$d 00:00:00" "+%s" 2>/dev/null || echo ""
 }
-now=$(date "+%s")
+# `now` も今日の 00:00:00 に揃える（age は必ず整数日になる）
+now=$(date_to_ts "$(date "+%Y-%m-%d")")
 
 stale_list=""
 stale_count=0

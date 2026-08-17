@@ -30,7 +30,7 @@ done
 
 GD=$(git rev-parse --path-format=absolute --git-dir 2>/dev/null)
 GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-[ -n "$GD" ] && [ -n "$GCD" ] || { echo "FATAL: git リポジトリではない" >&2; exit 2; }
+[ -n "$GD" ] && [ -n "$GCD" ] || { echo "FATAL: git リポジトリではない" >&2; exit 2; }  # mutation-ok: 2 つは同じ git 呼び出しで同時に成否が決まり、片方だけ空にする入力を作れない
 
 # **メインリポジトリ上では実行しない。** そこで「配下の worktree」を対象にすると
 # レビュー用 worktree 自体と開発用 worktree まで巻き込む
@@ -43,7 +43,10 @@ SELF=$(git rev-parse --show-toplevel 2>/dev/null)
 [ -n "$SELF" ] || { echo "FATAL: worktree のルートを取得できない" >&2; exit 2; }
 
 removed=0; kept=0; failed=0
-FREED=""   # 削除した（する）worktree が使っていたブランチ。dry-run でも件数を正しく出すため
+# **dry-run 専用**の集合。下の `INUSE` は削除ループの**後**に数えるので、実削除した
+# worktree のブランチはその時点で既に「未使用」として現れる。dry-run では何も削除しない
+# ぶん INUSE に残り続けるため、この集合が無いと「消せるはずのブランチ」を報告できない
+FREED=""
 
 # --- 1. 配下の agent worktree ---
 while IFS= read -r wt; do
@@ -63,7 +66,8 @@ while IFS= read -r wt; do
   # 未コミット変更が無いことは上で確認済み。--force は locked worktree 対策
   if git worktree remove --force "$wt" 2>/dev/null; then
     removed=$((removed+1))
-    [ -n "$br" ] && FREED="$FREED$br"$'\n'
+    # ここで FREED へ足す必要は無い（実削除後は INUSE 側から消えている）。
+    # 足しても結果が変わらない = テストで守れない行になるので置かない
   else
     echo "  FAILED $wt （手動で git worktree remove --force してください）" >&2
     failed=$((failed+1))
@@ -75,21 +79,28 @@ done < <(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{print sub
 # 指すのは PR head なので、削除しても失われるコミットは無い。
 # **checkout 中のものは触らない**ので、並行レビューの生きた worktree は保護される。
 INUSE=$(git worktree list --porcelain 2>/dev/null | awk '/^branch /{sub(/^branch refs\/heads\//,""); print}')
-bdel=0
+bdel=0; bfail=0
 while IFS= read -r br; do
   [ -n "$br" ] || continue
   printf '%s\n' "$INUSE" | grep -qxF "$br" && ! printf '%s\n' "$FREED" | grep -qxF "$br" && continue
   if [ "$DRY" = "1" ]; then
     echo "  would delete branch  $br"; bdel=$((bdel+1)); continue
   fi
-  git branch -D "$br" >/dev/null 2>&1 && bdel=$((bdel+1))
+  # **失敗を件数から落とさない。** worktree 側は `失敗 N 件` を報告するのに、
+  # ブランチ側だけ黙って「0 件削除」になると残骸が積もっても誰も気づけない
+  if git branch -D "$br" >/dev/null 2>&1; then
+    bdel=$((bdel+1))
+  else
+    echo "  FAILED branch $br （手動で git branch -D してください）" >&2
+    bfail=$((bfail+1))
+  fi
 done < <(git branch --list 'agent-*' --format='%(refname:short)' 2>/dev/null)
 
 [ "$DRY" = "1" ] || git worktree prune 2>/dev/null
 
 # **必ず件数を報告する**（silent skip で「片付いたつもり」を作らない）
-printf 'agent worktree: %d 件%s / 保持 %d 件 / 失敗 %d 件、agent-* ブランチ: %d 件%s\n' \
+printf 'agent worktree: %d 件%s / 保持 %d 件 / 失敗 %d 件、agent-* ブランチ: %d 件%s / 失敗 %d 件\n' \
   "$removed" "$([ "$DRY" = 1 ] && echo ' (dry-run)' || echo ' 削除')" \
   "$kept" "$failed" \
-  "$bdel" "$([ "$DRY" = 1 ] && echo ' (dry-run)' || echo ' 削除')"
+  "$bdel" "$([ "$DRY" = 1 ] && echo ' (dry-run)' || echo ' 削除')" "$bfail"
 exit 0

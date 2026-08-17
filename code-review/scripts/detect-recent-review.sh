@@ -44,8 +44,11 @@ if [ ! -s "$DIFF" ]; then
   # **明示指定の不在は caller のバグ**なので黙らない（重複が無いことの証明にはならない）。
   # 自力導出のフォールバックが空なのは「まだ diff を保存していない」だけなので silent。
   # publish 側は digest を作れなかったとき `measurement_gaps` に `diff-digest` を立てる
+  # **`${DIFF}` の波括弧は必須**。`$DIFF（` と書くと UTF-8 ロケールの bash が `（` の
+  # 先頭バイトを変数名に取り込み、`set -u` で `DIFF<0xef>: unbound variable` になって
+  # **WARN を出さずに exit 1 する**（C ロケールでは再現しないため気づきにくい）
   [ "$DIFF_EXPLICIT" = "1" ] && \
-    echo "WARN: --diff が空か存在しない: $DIFF（重複検出をスキップ。引数を省けば自力導出する）" >&2
+    echo "WARN: --diff が空か存在しない: ${DIFF}（重複検出をスキップ。引数を省けば自力導出する）" >&2
   exit 0
 fi
 
@@ -79,7 +82,7 @@ for path in sys.argv[1:]:
     # 直近から遡る。events.jsonl は追記のみなので後ろが新しい
     for line in reversed(lines[-2000:]):
         line = line.strip()
-        if not line or '"review:completed"' not in line:
+        if not line or '"review:completed"' not in line:  # mutation-ok: 事前判定は高速化で、外しても下の event 名比較が同じ結果になる
             continue
         try:
             ev = json.loads(line)

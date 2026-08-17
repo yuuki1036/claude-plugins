@@ -169,11 +169,32 @@ def _looks_quoted(line: str, start: int) -> bool:
 # 比較として書けるのは `[[ a > b ]]` / `(( a > b ))` の中だけなので、そこだけ許可する。
 SHELL_COMPARE_CONTEXT = re.compile(r"\[\[|\(\(")
 
+# `-lt` / `-gt` / `-le` / `-ge` / `-eq` / `-ne` は**コマンドのフラグとしても同じ綴りで現れる**
+# （`ls -lt` / `sort -n` 系）。フラグを変異させると `ls -le` のような**構文的には有効な別コマンド**が
+# でき、テストは当然落ちないので「生存 = 未検証」の一覧に偽の行が並ぶ（実測: `measure-tokens.sh`
+# の `ls -lt` が生存として報告された）。生存リストは行動を促す信号なので偽陽性を出さない。
+# 比較として書けるのは `[ ... ]` / `[[ ... ]]` / `(( ... ))` / `test ...` の中だけなので、
+# **同一行にそのいずれかが先行することを要求する**近似で絞る。
+SHELL_TEST_CONTEXT = re.compile(r"\[\[?|\(\(|\btest\b")
+SHELL_NUMERIC_OPS = frozenset({"-lt", "-le", "-gt", "-ge", "-eq", "-ne"})
+
 
 def _is_shell_redirect(path: Path, line: str, start: int) -> bool:
     if path.suffix != ".sh":
         return False
     return not SHELL_COMPARE_CONTEXT.search(line[:start])
+
+
+def _is_numeric_op_outside_a_test(line: str, start: int) -> bool:
+    """`-lt` 等が test 式の外（コマンドのフラグ・文字列の一部）に現れているか.
+
+    **ファイル種別で分岐しない。** `-lt` が比較演算子になるのは shell の test 式だけで、
+    `.py` に現れる `-lt` は文字列の一部（shell コマンドを組む配列等）なので、
+    どちらの言語でも「test 式の中でなければ変異させない」で正しい。
+    種別で分けると `.py` 側の分岐が**どちらに倒しても結果が変わらない**行になり、
+    その変異が生き残って偽の未検証として一覧に出る（実測でそうなった）。
+    """
+    return not SHELL_TEST_CONTEXT.search(line[:start])
 
 
 def _code_end(line: str) -> int:
@@ -244,6 +265,9 @@ def build_mutants(targets: dict[Path, set[int]]) -> list[Mutant]:
                     elif m.start() >= code_end or _looks_quoted(line, m.start()):
                         continue         # 近似（.sh とトークナイズ不能な .py）
                     if m.group(0) in ("<", ">") and _is_shell_redirect(path, line, m.start()):
+                        continue
+                    if (m.group(0) in SHELL_NUMERIC_OPS
+                            and _is_numeric_op_outside_a_test(line, m.start())):
                         continue
                     mutated = line[:m.start()] + repl + line[m.end():]
                     if mutated == line:

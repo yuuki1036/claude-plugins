@@ -4,3 +4,5 @@
 .claude/failure-journal/
 .claude/.instinct-memory-cursor
 __pycache__/
+# mutation-test.py が実行中に原本を退避する場所（中断時の復元用。作業ファイルなので追跡しない）
+.mutation-test-journal.json

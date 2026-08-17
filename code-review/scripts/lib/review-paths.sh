@@ -110,7 +110,7 @@ review_diff_keys() {
   printf '%s %s' "$digest" "$files"
 }
 
-# review_path <diff|prctx|timing|agentctx>
+# review_path <diff|prctx|timing|agentctx|oracles>
 review_path() {
   local kind="$1" suffix=""
   [ -n "${REVIEW_PR:-}" ] && suffix="-pr${REVIEW_PR}"
@@ -118,6 +118,9 @@ review_path() {
     diff)   printf '%s/review-diff-%s%s.diff' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     prctx)  printf '%s/review-prctx-%s%s.md'  "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     timing) printf '%s/review-start-%s%s'     "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
+    # oracles: 機械層（`run-oracles.sh`）の出力全文。digest は先頭数十行に切るので、
+    # 全文を読みたい agent / 人間のためにパスを配る（GitHub issue #137）
+    oracles) printf '%s/review-oracles-%s%s.log' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     # agentctx: 全 agent 共通の可変部（実値集合）。オーケストレーターが 1 回書き、
     # 各 agent はパスを受け取って自分で Read する（orchestration-guide.md `## 3.5`）
     agentctx) printf '%s/review-agentctx-%s%s.md' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;

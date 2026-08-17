@@ -30,7 +30,7 @@ allowed-tools:
 
 ## コスト×精度パイプライン設計（採用/不採用）
 
-ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 1（ファネル = Phase 0 triage で高コスト reviewer を通過分に絞る）/ 2（2 軸スコア化 = confidence × severity マトリクス。**ただしコメント推敲（B 系統）は 2 軸を持たずマトリクスを通さない別枠経路** / v2.45.0）/ 3（段階予算 = `${CLAUDE_EFFORT}` → explorer/reviewer 体数）/ 4（モデルルーティング = explorer:sonnet / reviewer:opus / meta:opus / 反証:opus）/ 7（敵対的独立検証 = Phase 4.9 反証レイヤー、recall 側は Phase 4.8 冷や読み skeptic）**。**捨てた**: 5（暴走ガード）は反復・起票を持たない単発レビューのため不要、6（証拠ラダー）は指摘蓄積・昇格の責務を failure-journal に委ね、8（外部オラクル）は diff レビューが対象で型/テスト実行は feature-dev Phase 5.3 の役割と分離した。
+ルート CLAUDE.md「コスト×精度パイプライン設計指針」の 10 原則のうち **採用: 1（ファネル = Phase 0 triage で高コスト reviewer を通過分に絞る）/ 2（2 軸スコア化 = confidence × severity マトリクス。**ただしコメント推敲（B 系統）は 2 軸を持たずマトリクスを通さない別枠経路** / v2.45.0）/ 3（段階予算 = `${CLAUDE_EFFORT}` → explorer/reviewer 体数）/ 4（モデルルーティング = explorer:sonnet / reviewer:opus / meta:opus / 反証:opus）/ 7（敵対的独立検証 = Phase 4.9 反証レイヤー、recall 側は Phase 4.8 冷や読み skeptic）/ 8（外部オラクル = Step 1.7 の機械層先行実行。**プロジェクトが `.claude/review-oracles.sh` で宣言したときのみ**。宣言が無ければ no-op で、コマンドはプラグイン側で推測しない / v2.69.0・ADR-20260817170000）**。**捨てた**: 5（暴走ガード）は反復・起票を持たない単発レビューのため不要、6（証拠ラダー）は指摘蓄積・昇格の責務を failure-journal に委ねた。
 
 ## 設計原則: Generator と分離された Evaluator
 
@@ -103,12 +103,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --base "${BASE}"
 
 `--embed` 引数が指定されている場合は、本 skill が他 plugin（例: feature-dev Phase 6）からプログラム的に呼び出されたと判断する。Step 7 の修正方針確認 AskUserQuestion と Step 8 の worktree teardown 連携を skip し、Step 6 のレポートをそのまま return する。呼び出し元側で findings を集約・後処理する前提。
 
-embed mode 時の return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON）:
-- Step 6 のレポート全文（severity 別にグルーピングされた指摘リスト、欠損観点、総括）を出力
-- **その直後に Step 6.5 の構造化 findings JSON ブロックを出力**（`<!-- FINDINGS_JSON_START -->` / `<!-- FINDINGS_JSON_END -->` で囲む）。呼び出し元はこの JSON を決定的にパースして findings を集約する（markdown の正規表現パースに依存させない）
-- 末尾に `[embed-mode: findings-only, no-prompt]` の 1 行 marker を出す（JSON ブロックの**後ろ**）
-- AskUserQuestion は呼ばない（呼び出し元の UX を阻害しない）
-- 後方互換: `--embed` 指定なしの呼び出し（`/self-review` 単独実行等）は従来通り Step 7 まで完走し、JSON ブロックは出力しない
+return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、marker の位置、後方互換）の正本 → orchestration-optional-flows.md `## 15`。AskUserQuestion は呼ばない（呼び出し元の UX を阻害しない）。
 
 **`--focus` / `--exclude`（同一セッションでの重複レビュー回避）:**
 
@@ -142,10 +137,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh"
 
 ### 1.5 Vault 照合（過去の指摘・落とし穴の retrieval / 任意・後方互換）
 
-レビュー局面は蓄積された知見が最も効く高 ROI な発火点。変更ファイルに関連する過去のレビュー指摘・落とし穴を vault から引いて reviewer に注入する（GitHub issue #68。feature-dev Phase 1.6 Vault Recall と同一の retrieval 基盤を呼ぶ対の改善）。
+変更ファイルに関連する過去のレビュー指摘を vault から引いて reviewer に注入する（GitHub issue #68）。利用可否の検出（`kvault` / `/vault-recall` が無ければ skip）・照合手順・best-effort の注意事項 → orchestration-optional-flows.md `## 11`
 
-利用可否の検出（`kvault` / `/vault-recall` が無ければ skip の後方互換）・照合手順（クエリ構築 → similarity と gap で関連度判定 → reviewer プロンプトへの注入）・best-effort の注意事項:
-→ orchestration-optional-flows.md `## 11`
+### 1.7 機械層の先行実行（原則 8 / `.claude/review-oracles.sh` を置いたプロジェクトのみ・`--embed` では skip）
+
+**agent の担当は「機械が決められないもの」に限る。** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-oracles.sh"` を実行し、プロジェクトが宣言した機械層（lint / 型 / テスト等）を Phase 0 の**前に**通す。**出力が空なら宣言なし＝何も報告せず Phase 0 へ**（no-op を報告しない）。`status=green` は Step 6 レポート冒頭に `機械層: green (<elapsed>s)` を出すだけ。**`red` / `timeout` / `error` のときだけ** → Read `${CLAUDE_PLUGIN_ROOT}/references/machine-layer.md`（続行可否の確認・reviewer への「既知」の渡し方・計測規約の正本。設計判断は ADR-20260817170000）。`--embed` では呼び出し元が自分の品質ゲートを持つため skip する。
 
 ### 2. Phase 0: トリアージ
 

@@ -7,6 +7,18 @@ if [ -z "$staged_files" ]; then
   exit 0
 fi
 
+# **変異テストの実行中はコミットさせない。** 実行中はディスク上のファイルが変異体に
+# 差し替わっており、その状態で `git add` すると**変異が index に入る**（実測: `and` を
+# `or` に変えた行がステージされていた）。ツール側のガードは「対象ファイルの外部編集」を
+# 見ているだけで、staging は素通りする。ジャーナルの実在で決定的に判定できる
+if [ -f .mutation-test-journal.json ]; then
+  echo "変異テストが実行中です（.mutation-test-journal.json あり）。"
+  echo "  実行中は変異体がディスク上にあるため、コミットすると変異が入ります。"
+  echo "  完了を待ってから、staged の内容を確認してコミットしてください:"
+  echo "    git diff --cached   # 意図しない演算子の反転が混ざっていないか"
+  exit 1
+fi
+
 errors=()
 
 for plugin_json in */.claude-plugin/plugin.json; do

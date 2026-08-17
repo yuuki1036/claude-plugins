@@ -27,6 +27,24 @@ PR ベースのコードレビュー。PR が必須（`gh pr diff` で差分を�
 - `--exclude <観点1,観点2>` — 同一セッションで既に検証済みの観点をスキップする
 - `--embed` — 他 plugin からの呼び出し用。終端の修正方針確認 AskUserQuestion を skip し、レポート + 機械可読 findings JSON を return する（feature-dev Phase 6 等で使用）
 
+## 機械層の先行実行（self-review のみ / opt-in）
+
+**agent の担当を「機械が決められないもの」に限る**ための前段。プロジェクトのリポジトリルートに `.claude/review-oracles.sh` を置くと、self-review は Phase 0 の**前に**それを実行する。置かなければ何も起きない（完全 no-op）。
+
+```bash
+#!/usr/bin/env bash
+# .claude/review-oracles.sh — 存在自体が宣言
+# exit 0 = 緑 / 1 = 検出あり（stdout に内容）/ 2 = 判定不能（緑と区別される）
+npm run lint && npm run typecheck && npm test
+```
+
+- **`red` でも自動停止はしない**。「直してから」「このまま続行」を確認する（機械層が赤くても設計レビューを先に受けたいことがある）
+- **`timeout`（既定 300 秒）/ `error` は緑と区別**して欠測として扱う。倒すと「機械層が死んでいる」と「通っている」が区別できなくなる
+- 続行時は出力を reviewer に「既知」として渡すが、抑制は **同一 file:line × 同一ルール**に限る（同じ箇所の別欠陥は報告させる）
+- コマンドはプラグイン側で推測しない（`package.json` からの推測は誤検出時に任意コマンドの実行になる）
+
+設計判断と撤回条件: `.claude/adr/20260817170000-machine-layer-before-self-review-agents.md` / 運用の正本: `references/machine-layer.md`
+
 ## レビュー構成
 
 ### Phase 0: トリアージ（メインコンテキスト）

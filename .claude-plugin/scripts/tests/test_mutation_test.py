@@ -161,6 +161,36 @@ class ShellRedirectTest(unittest.TestCase):
             p.write_text("jq -r .a f 2>/dev/null || true\necho hi > out.log\ncat <in.txt\n")
             self.assertEqual([r for r in self._rules(p) if ">" in r or "<" in r], [])
 
+    def test_command_flags_are_not_mutated_as_comparisons(self):
+        """`ls -lt` の `-lt` は**フラグ**。変異させると `ls -le` という有効な別コマンドになり、
+        テストは落ちないので偽の生存が並ぶ（実測: `measure-tokens.sh` の `ls -lt`）。
+        """
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "x.sh"
+            p.write_text('ls -lt "${FILES[@]}" | head -20\nsort -n out.txt\n')
+            self.assertEqual([r for r in self._rules(p) if "-lt" in r or "-le" in r], [])
+
+    def test_numeric_comparison_in_a_test_expression_is_mutated(self):
+        """`[ ... ]` / `test ...` の中の `-lt` は比較なので変異させる（両側から測る）."""
+        for src in ('if [ "$n" -lt 3 ]; then echo x; fi\n',
+                    'if [[ "$n" -lt 3 ]]; then echo x; fi\n',
+                    'if test "$n" -lt 3; then echo x; fi\n'):
+            with self.subTest(src=src.strip()):
+                with tempfile.TemporaryDirectory() as d:
+                    p = Path(d) / "x.sh"
+                    p.write_text(src)
+                    self.assertTrue(any("-lt を -le に" in r for r in self._rules(p)))
+
+    def test_numeric_comparison_in_python_is_unaffected_by_the_shell_guard(self):
+        """`.py` の `==` は素通し（この抑制は `-lt` 系の綴りにだけ効く）."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "x.py"
+            p.write_text('flag = "-lt"\nif n == 1:\n    pass\n')
+            rules = self._rules(p)
+            self.assertTrue(any("== を != に" in r for r in rules))
+            # `.py` の文字列に入っている `-lt` も test 式の外なので変異させない
+            self.assertFalse(any("-lt を -le に" in r for r in rules))
+
     def test_comparison_inside_double_brackets_is_mutated(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "x.sh"

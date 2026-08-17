@@ -33,6 +33,14 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$HERE/lib/review-paths.sh"
 review_paths_init "$PR" || exit 2
 WT="$REVIEW_WT"
+
+# **非 ASCII パスを C クォートさせない**（`core.quotePath` の既定は true）。
+# クォートされると `"a/\346\227\245.txt"` になり、`## files` の一覧も diff-slice.sh の
+# 切り出しキーも**呼び出し側が渡すパスと一致しない**文字列になる（実測）。
+# awk 側での復元は `%c` がロケールと awk のバージョンでバイト／文字に揺れるため移植できない。
+# **生成側で生の UTF-8 に正規化する**のが唯一 1 箇所で済む対策。
+# `gh pr diff` は GitHub 側の生成なのでこの制御は効かない（そちらは既に生の UTF-8）
+QP="-c core.quotePath=false"
 [ -n "$OUT" ] || OUT=$(review_path diff)
 
 # ---- diff の取得 -----------------------------------------------------------
@@ -47,7 +55,7 @@ if [ -n "$PR" ]; then
   mv "$OUT.tmp" "$OUT"
 elif [ "$STAGED" = "1" ]; then
   # ステージ済みのみ（未ステージ・コミット済みは対象外）
-  git diff --cached > "$OUT.tmp" || { echo "FATAL: git diff --cached に失敗した" >&2; exit 1; }
+  git $QP diff --cached > "$OUT.tmp" || { echo "FATAL: git diff --cached に失敗した" >&2; exit 1; }
   mv "$OUT.tmp" "$OUT"
 else
   [ -n "$BASE" ] || { echo "FATAL: --pr か --base のどちらかが必須" >&2; exit 2; }
@@ -59,9 +67,9 @@ else
   # base..HEAD（2 ドット = 直接比較。従来挙動）+ staged + unstaged の 3 系統。
   # 3 系統が重なるファイルは行数が重複計上されうるが、帯を分けるには十分な粗さ
   : > "$OUT.tmp"
-  git diff "${BASE}..HEAD" >> "$OUT.tmp" || { echo "FATAL: git diff ${BASE}..HEAD に失敗した" >&2; exit 1; }
-  git diff --cached      >> "$OUT.tmp" || { echo "FATAL: git diff --cached に失敗した" >&2; exit 1; }
-  git diff               >> "$OUT.tmp" || { echo "FATAL: git diff に失敗した" >&2; exit 1; }
+  git $QP diff "${BASE}..HEAD" >> "$OUT.tmp" || { echo "FATAL: git diff ${BASE}..HEAD に失敗した" >&2; exit 1; }
+  git $QP diff --cached      >> "$OUT.tmp" || { echo "FATAL: git diff --cached に失敗した" >&2; exit 1; }
+  git $QP diff               >> "$OUT.tmp" || { echo "FATAL: git diff に失敗した" >&2; exit 1; }
   mv "$OUT.tmp" "$OUT"
 fi
 if [ ! -s "$OUT" ]; then
@@ -108,12 +116,12 @@ echo "worktree=$WT"
 # ---- ファイル分類と規模 ---------------------------------------------------
 # 分類: gen（lock・生成物）/ test / doc / core。core の定義は triage-guide `## 6.1`
 if [ -n "$PR" ]; then
-  NUMSTAT=$(git diff --numstat "origin/${BASE}...HEAD" 2>/dev/null)
-  [ -n "$NUMSTAT" ] || NUMSTAT=$(git diff --numstat "${BASE}...HEAD" 2>/dev/null)
+  NUMSTAT=$(git $QP diff --numstat "origin/${BASE}...HEAD" 2>/dev/null)
+  [ -n "$NUMSTAT" ] || NUMSTAT=$(git $QP diff --numstat "${BASE}...HEAD" 2>/dev/null)
 elif [ "$STAGED" = "1" ]; then
-  NUMSTAT=$(git diff --cached --numstat 2>/dev/null)
+  NUMSTAT=$(git $QP diff --cached --numstat 2>/dev/null)
 else
-  NUMSTAT=$({ git diff --numstat "${BASE}..HEAD"; git diff --cached --numstat; git diff --numstat; } 2>/dev/null | grep -v '^$')
+  NUMSTAT=$({ git $QP diff --numstat "${BASE}..HEAD"; git $QP diff --cached --numstat; git $QP diff --numstat; } 2>/dev/null | grep -v '^$')
 fi
 
 # 同一パスが複数系統（base..HEAD / staged / unstaged）に現れるため、パス単位で集約する。
@@ -235,7 +243,9 @@ echo "## focus-signals"
   sig ui-quality       '\.(tsx|jsx|vue|svelte)$|(^|/)(components|pages|app)/' paths
   sig ui-quality       'aria-|role=|<img|<button|tabindex|onClick|onKeyDown'
   sig doc-substance    '(^|/)(CLAUDE|AGENTS|CONTRIBUTING|README)|\.claude/(adr|designs)/' paths
-  # 任意 *.md の実質 prose 行（frontmatter / list マーカー / link-only を除く）。
+  # 任意 *.md の**語を持つ行**（空行と、マーカー・区切りだけの行 — `---` / `|---|---|` /
+  # `> ` / `* * *` — を除く）。**箇条書きの本文は数える**: 本文が箇条書きで書かれた doc が
+  # 大半で、除外すると doc-substance の起動閾値にほぼ届かなくなる。
   # 起動閾値（概ね 10 行以上）の判定は triage-guide `## 3` に委ね、ここは件数だけ出す
   sig doc-prose-lines  '[^[:space:]|>*+-]' doc
 } | merge_sig
@@ -279,7 +289,7 @@ printf '%s\n' "$CLASSIFIED" | cut -f4 | grep -E '(^|/)(utils|shared|lib|common|h
         # セッション起動 dir のままなので、リポジトリルート以外から起動すると探索範囲が縮む。
         # `-C "$WT"` + `--full-name` で repo ルート基準に固定する（`$f` も repo ルート相対
         # なので、自己除外の `grep -vxF` はこれで初めて一致する）
-        out=$(git -C "$WT" grep --full-name -lwF -e "$base" 2>/dev/null); rc=$?
+        out=$(git $QP -C "$WT" grep --full-name -lwF -e "$base" 2>/dev/null); rc=$?
         # rc は 0=ヒット / 1=該当なし / 2 以上=エラー。**終了ステータスを見ずに `wc -l` へ流すと
         # 計数失敗も 0 になる**（`wc` は上流が失敗しても数値を出す）ため、`?` の縮退が死ぬ
         [ "$rc" -le 1 ] && n=$(printf '%s\n' "$out" | grep -vxF -- "$f" | grep -c .)
@@ -287,27 +297,33 @@ printf '%s\n' "$CLASSIFIED" | cut -f4 | grep -E '(^|/)(utils|shared|lib|common|h
       printf 'shared-module\t%s (importers: %s)\n' "$f" "$n"
     done
 printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core" {print $4}' | while read -r f; do
+  # **パスは repo ルート相対**なので `$WT` を前置する。cwd 相対で見ると、
+  # リポジトリルート以外から起動した場合（self-review は worktree に入らず cwd が
+  # セッション起動 dir のまま）に全ファイルが「存在しない」に倒れ、シグナルが黙って消える。
   # `-f` を先に見る。レビュー対象が `evil.js -> /dev/zero` のような symlink を含むと、
   # 後置きでは wc が EOF に到達せずハングする
-  [ -f "$f" ] || continue
-  n=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
+  [ -f "$WT/$f" ] || continue
+  n=$(wc -l < "$WT/$f" 2>/dev/null | tr -d ' ')
   [ "${n:-0}" -gt 500 ] && printf 'large-file\t%s (%s lines)\n' "$f" "$n"
 done | head -10
 
 echo "## agents-md"
+# **実在判定は `$WT` 基準で行い、出力は repo ルート相対のまま**にする（agent 側は
+# repo ルートから読む）。cwd 相対で見ると、リポジトリルート以外から起動したときに
+# セクションが丸ごと空になり、reviewer の CLAUDE.md 準拠観点が入力なしで走る。
 # xargs は入力のクォートを解釈するため、`it's.ts` のようなパスで
 # `unterminated quote` を起こし、以降のファイルが丸ごと処理されない
 printf '%s\n' "$CLASSIFIED" | cut -f4 | while IFS= read -r p; do
   [ -n "$p" ] && dirname -- "$p"
 done | sort -u | while read -r d; do
-  while [ "$d" != "." ] && [ "$d" != "/" ]; do
-    [ -f "$d/AGENTS.md" ] && echo "$d/AGENTS.md"
-    [ -f "$d/CLAUDE.md" ] && echo "$d/CLAUDE.md"
+  while [ "$d" != "." ] && [ "$d" != "/" ]; do  # mutation-ok: どちらを崩しても `dirname .` が `.` を返し続けて無限ループになる
+    [ -f "$WT/$d/AGENTS.md" ] && echo "$d/AGENTS.md"
+    [ -f "$WT/$d/CLAUDE.md" ] && echo "$d/CLAUDE.md"
     d=$(dirname "$d")
   done
 done | sort -u
-[ -f AGENTS.md ] && echo "AGENTS.md"
-[ -f CLAUDE.md ] && echo "CLAUDE.md"
+[ -f "$WT/AGENTS.md" ] && echo "AGENTS.md"
+[ -f "$WT/CLAUDE.md" ] && echo "CLAUDE.md"
 
 echo "## host-deps"
 # 子 agent は `isolation: "worktree"` の worktree に入るため、gitignore 対象の依存

@@ -6,22 +6,9 @@
 #   機械的に検証可能な品質チェックを実行して早期に違反を検知する。
 #
 # 実行するチェック:
-#   1. validate-ssot.sh
-#      - plugin.json / marketplace.json / hooks.json のスキーマ準拠
-#      - marketplace.json と plugin.json の name/version/description 同期
-#      - _requirements と check-deps.sh の一致
-#   2. validate_plugin_quality.py
-#      - allowed-tools の存在と command <-> skill ペア一致
-#      - hooks.json で参照されるスクリプトの safe_hook_init 呼び出し
-#      - safe-hook.sh canonical と replica の byte-identical
-#      - SKILL.md の ${CLAUDE_PLUGIN_ROOT}/... 参照の実在
-#      - SKILL.md description の「トリガー:」存在
-#   3. claude plugin validate
-#      - plugin.json の CLI スキーマバリデーション（_requirements 警告は除外）
-#   4. .claude-plugin/scripts/tests（stdlib unittest）
-#      - 検証スクリプト自身の回帰テスト。SSoT pin は pin の初期値も検証と同じ
-#        関数で作るため、実リポジトリに対する検証だけでは切り出しの欠陥を検出
-#        できない（v2.63.1）。期待値を独立に構築するテストがその穴を塞ぐ
+#   `machine-layer.sh` に委譲する（検査の並びの正本はあちら。ここに複製しない
+#   — 同じ並びが Stop hook / pre-commit / CI / self-review 前段の 4 経路で要るため）。
+#   **このスクリプトの責務は「いつ走らせるか」と「hook 向けにどう出すか」だけ。**
 #
 # トリガー条件:
 #   working tree に以下のパターンの変更がある場合のみチェック実行
@@ -60,40 +47,14 @@ fi
 
 ISSUES=""
 
-# 1. SSoT 同期チェック
-if ! SSOT_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/validate-ssot.sh" 2>&1)"; then
-  ISSUES="${ISSUES}${SSOT_OUT}\n"
-fi
-
-# 2. プラグイン品質チェック（決定的検証項目）
-if command -v python3 >/dev/null 2>&1; then
-  if ! PQ_OUT="$(python3 "$REPO_ROOT/.claude-plugin/scripts/validate_plugin_quality.py" 2>&1)"; then
-    ISSUES="${ISSUES}${PQ_OUT}\n"
-  fi
-fi
-
-# 2.5. 検証スクリプト自身の回帰テスト（依存なし・1 秒未満）
-if command -v python3 >/dev/null 2>&1 && [ -d "$REPO_ROOT/.claude-plugin/scripts/tests" ]; then
-  if ! UT_OUT="$(cd "$REPO_ROOT" && python3 -m unittest discover -s .claude-plugin/scripts/tests 2>&1)"; then
-    ISSUES="${ISSUES}[unit-tests] $(echo "$UT_OUT" | tail -20)\n"
-  fi
-fi
-
-# 3. claude plugin validate（_requirements 警告は仕様により除外）
-if command -v claude >/dev/null 2>&1; then
-  while IFS= read -r plugin_dir; do
-    [ -z "$plugin_dir" ] && continue
-    VAL_OUT="$(claude plugin validate "$plugin_dir" 2>&1 || true)"
-    # _requirements / _superseded_by は SSoT 用の独自フィールド。CLI スキーマ警告は仕様により除外する。
-    # CC のバージョンで警告文言が変わる（旧: 'Unrecognized key: "_requirements"' /
-    # 新: '_requirements: Unknown field ...'）ため、文言ではなく _requirements の有無で除外する。
-    FILTERED="$(echo "$VAL_OUT" | grep -E '^\s*❯' | grep -Ev '_requirements|_superseded_by' || true)"
-    if [ -n "$FILTERED" ]; then
-      name="$(basename "$plugin_dir")"
-      ISSUES="${ISSUES}[schema:${name}] ${FILTERED}\n"
-    fi
-  done < <(find "$REPO_ROOT" -maxdepth 3 -name plugin.json -path '*/.claude-plugin/*' -not -path '*/node_modules/*' -exec dirname {} \; | xargs -I{} dirname {} 2>/dev/null | sort -u)
-fi
+# 検査本体は machine-layer.sh（並びの正本）。exit 1 = 検出 / 2 = 判定不能。
+# **判定不能も黙って通さない**（前提が壊れているのに緑に見えるのを避ける）
+ML_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/machine-layer.sh" 2>&1)"; ML_RC=$?
+case "$ML_RC" in
+  0) ;;
+  1) ISSUES="${ML_OUT}\n" ;;
+  *) ISSUES="[machine-layer] 判定不能（exit ${ML_RC}）:\n${ML_OUT}\n" ;;
+esac
 
 if [ -n "$ISSUES" ]; then
   # stderr: ユーザー向け通知（端末に表示）

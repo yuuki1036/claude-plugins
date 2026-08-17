@@ -2,6 +2,43 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.69.0] - 2026-08-17
+
+**機械層を agent の手前に出し（#137）、残っていた同梱スクリプト 7 本にテストを付けた（#138）。** テストを書いた過程で**実バグ 9 件**を検出している（1 本あたり 1.3 件）。うち 1 件は **UTF-8 ロケールでしか再現しない**型で、開発機のシェル設定次第で人手レビューからは永久に見えない。
+
+### Added
+- **self-review Step 1.7: 機械層の先行実行**（`scripts/run-oracles.sh` / 原則 8 の除外を部分撤回。設計判断は `.claude/adr/20260817170000-machine-layer-before-self-review-agents.md`）。**プロジェクトが `.claude/review-oracles.sh` を置いたときだけ**動き、無ければ完全 no-op:
+  - **コマンドはプラグイン側で推測しない**。self-review は任意のプロジェクトで動くので、`package.json` から lint を当てにいくと誤検出時に任意のコマンドを走らせることになる。**何を安いオラクルとみなすかはプロジェクトの判断**なので、宣言ファイルの存在自体を opt-in として扱う
+  - **`red` で自動停止はしない**。AskUserQuestion で続行可否を委ねる（「lint は赤いが設計レビューを先に受けたい」を潰すと recall が落ちる）。隣の Step 1.4（重複検出）と同じ形
+  - **`timeout` / `error` を green に倒さない**。緑と欠測を混ぜると、reviewer は空の「既知」リストを見て「機械層は何も検出しなかった」と読む
+  - **「既知」の抑制は `同一 file:line × 同一ルール` に限る**（過剰抑制は同じ箇所の別欠陥を消す）。機械層の結果を agent に再検証させない（Opus 5 規約）
+  - 効果は `findings_class.lint` の減少で測り、`judgement` が減ったら注入をやめる（ADR に撤回条件）
+  - macOS に `timeout` が無いので**プロセスグループごと打ち切る**（`set -m` + `kill -TERM -$pid`）。孫プロセスのテストランナーが生き残らないことをテストで固定した
+- **同梱スクリプト 7 本に CLI テストを追加**（`test_code_review_diff_scripts.py` / `test_code_review_detection.py` / `test_code_review_context.py` / `test_code_review_oracles.py` = 175 件。全体 333 → 512 件）:
+  - `cleanup-agent-worktrees.sh` は**不可逆**（worktree を消す）なので「**消さない**条件」を肯定側より厚く書いた（メインリポジトリ上では走らない / 配下でない worktree に触れない / 未コミット変更があれば残す / 生きた worktree の使用中ブランチを消さない）
+  - `gh` は PATH 先頭の stub に差し替え、**stub を本物の flag 体系に合わせた**（`gh repo view` に `--repo` は無い等）。ここを緩めると「stub でだけ通る」経路ができる
+  - `detect-recent-review.sh` は `publish-review-event.sh` と**2 本通しで**測る（書き手と読み手が同じ digest を見ているかは片方の単体テストでは分からない）
+  - **テストの env で `LC_CTYPE=C.UTF-8` を固定**した。C ロケールでは下の多バイト展開バグが**再現しない**ため、開発機のロケール次第でテストが空振りする
+- **`validate_plugin_quality.py` に `shell-multibyte` 検査を追加**（errors）— `"$VAR（..."` のような**波括弧なしの展開 + 直後の非 ASCII**を検出する。既存 repo での実測は該当 1 件（下の実バグそのもの）＋コメント行 1 件（除外規則で落ちる）で、**偽陽性 0 件**を確認してから errors にした
+- **`.claude-plugin/scripts/machine-layer.sh`（repo 側）**: 検査の並びの正本を 1 本に集約した。同じ並びが Stop hook / pre-commit / CI / self-review 前段の 4 経路で要り、`auto-quality-check.sh` のヘッダは既に一覧の複製を抱えていた
+
+### Fixed
+- **`diff-slice.sh --list` が幻のパスを出し、rename / mode 変更・binary を落としていた**（レビュー対象の切り出しなので、取りこぼすと**レビューしていない差分が「レビュー済み」になる**）:
+  - 追加行の内容が `++ foo` だと diff 上は `+++ foo` になり、行全体に `^\+\+\+ ` を当てていたため**本文が一覧のパスとして載っていた**
+  - **内容変更を伴わない rename・mode 変更のみ・binary は `---` / `+++` を持たない**（実測）ため一覧から丸ごと落ちていた。`rename to` と `diff --git a/P b/P` の対称形からの復元を足した
+  - **空白入りパスが必ず 0 件マッチ（exit 3）になっていた**。git は `--- a/sp ace.txt` の末尾にタブを 1 つ付ける。**合成 fixture にはそれが無く、「空白入りパスを扱える」というテストが何も検証していなかった** — 実 git 出力に切り替えて発覚した型
+  - `--list` と切り出しが**別実装**だったのを 1 つに統合した（食い違うと「一覧に出たのに切り出せない」が起き、agent は「担当ファイルの diff が取れない」と報告して 1 体ぶん空振りする）。「一覧に出たパスは必ず切り出せる」を不変条件としてテストに固定
+- **`triage-signals.sh` の `large-file` シグナルと `## agents-md` が、リポジトリルート以外から起動すると黙って消えていた**。スクリプト自身が「self-review は worktree に入らず cwd はセッション起動 dir のまま」と明記して `git grep` だけ `-C "$WT"` で直しており、**同じ前提が他の 2 箇所に適用されていなかった**。`## agents-md` は reviewer の CLAUDE.md 準拠観点の入力なので、空になると観点が入力なしで走る
+- **`detect-recent-review.sh` の WARN が UTF-8 ロケールで出ないまま exit 1 していた**。`"$DIFF（"` は `（` の先頭バイトまで変数名に取り込まれ、`set -u` で `DIFF<0xef>: unbound variable` になる（`C.UTF-8` / `ja_JP.UTF-8` / `en_US.UTF-8` で再現、C / POSIX では再現しない）。**「明示指定の不在は caller のバグなので黙らない」ための経路が、まさに黙っていた**
+- **`fetch-pr-context.sh --repo` 経路が丸ごと機能していなかった**。`gh repo view` に `--repo` flag は無い（位置引数）ため `unknown flag` で落ちる。`--repo` が指定されているならその値が答えなので API 呼び出し自体を省いた。あわせて**取得失敗時に前回の PR コンテキストが残る**問題を塞いだ（成功時のみ mv するガードは空ファイル対策で stale 対策ではない — `triage-signals.sh` の diff と同じ規約に揃えた）
+- **`cleanup-agent-worktrees.sh` がブランチ削除の失敗を件数から落としていた**（worktree 側は `失敗 N 件` を報告するのに非対称で、「必ず件数を報告する」という自身の契約に反していた）
+- **`measure-tokens.sh` の `--session` / `--since` が値欠落時に `set -u` の生エラーだけ出していた**（他の同梱スクリプトと同じ形で弾く）
+- `triage-signals.sh` の `doc-prose-lines` のコメントが実挙動と食い違っていた（**箇条書きの本文は数える**。数えないのはマーカーだけの行）。本文が箇条書きの doc が大半なので、除外すると doc-substance の閾値にほぼ届かない — コメント側を実装に合わせた
+
+### Changed
+- **変異テスト実行中のコミットを pre-commit で止めた**（repo 側）。実行中はディスク上のファイルが変異体に差し替わっており、その状態で `git add` すると**変異が index に入る**（実測: `and` を `or` に反転した行がステージされていた）。ツール側のガードは「対象ファイルの外部編集」だけを見ていて staging は素通りするので、ジャーナルの実在で決定的に判定する
+- `self-review` の embed mode return 仕様と Vault 照合を SKILL 本文からポインタに置き換えた（正本は `orchestration-optional-flows.md ## 15` / `## 11`。本文の複製を減らし、Step 1.7 追加後も本文サイズ上限に収めた）
+
 ## [2.68.1] - 2026-08-17
 
 ### Fixed

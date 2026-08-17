@@ -15,10 +15,10 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [adr-keeper](#adr-keeper) | 0.3.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.1 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [claude-meta](#claude-meta) | 1.13.4 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.68.1 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [code-review](#code-review) | 2.69.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.4.4 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.25.1 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
-| [doc-freshness](#doc-freshness) | 0.5.1 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
+| [doc-freshness](#doc-freshness) | 0.5.2 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.3.1 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.11.5 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.2.2 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
@@ -52,7 +52,7 @@ Claude Code 自体の設定管理・改善ツール。CLAUDE.md 監査改善、C
 - **skills**: `cc-catch-up`, `claude-code-setup`, `claude-md-improver`, `component-addition-advisor`, `eval-runner`
 
 ### code-review
-Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity 2 軸スコアリング、体数上限は effort 上限（high 既定は縮小構成 + 観点バンドル / 冗長ペア・specialist 個別起動は xhigh/max のみ）と規模キャップ（テスト・doc を除いた core 規模。深さを担う層は削らない — 唯一の例外は meta の small 帯 かつ BLOCKER 不在スキップ）の min、red-flag specialist 自動起動（high 既定は束ね起動）、high severity 検出時の meta-reviewer ラウンド、冷や読み skeptic（Phase 5.8/4.8: high-risk surface で findings 非注入の独立 opus が fleet 共通盲点を破る recall 補強）、反証レイヤー（Phase 5.9/4.9: 指摘を独立エージェントが 5 件ずつのバッチで反証、高 severity は消さず係争注記、specialist 除外）、high-risk surface に限る surface-aware 報告閾値。skeptic は reviewer wave に相乗り発火（findings 非注入＝ reviewer 出力に非依存）、meta と反証も互いに独立なので同一 wave（meta 由来指摘のみ上限 5 件の追加反証バッチ）、explorer の「確定事実」は全 reviewer に共通注入して重複探索を減らす、reviewer には 1 体あたりの探索予算を課す。所要時間は triage / explore / fleet / synthesis / closing に分割して計測し、explorer wave の発行回数（一括発行が破られると 2 以上）も publish する（計測ファイルは worktree パスと PR 番号で識別し並行セッション間の衝突を防ぐ。プロンプト構築コストは原理的に分離できず fleet に含まれる）。子 agent は PR head を detach で checkout し、期待 HEAD SHA との突合結果を必須行で報告する。事実主張のツール接地 (claim grounding) と over-correction ガード（issue #71）。self-review は `--embed` で他プラグインから委譲可能。self-review のみコメント推敲（追加・変更コメントを「読み手に必要な情報のみか / 冗長表現が無いか」で推敲し before→after を別枠出力。severity マトリクスと好みクランプをバイパスする独立経路）。
+Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity 2 軸スコアリング、体数上限は effort 上限（high 既定は縮小構成 + 観点バンドル / 冗長ペア・specialist 個別起動は xhigh/max のみ）と規模キャップ（テスト・doc を除いた core 規模。深さを担う層は削らない — 唯一の例外は meta の small 帯 かつ BLOCKER 不在スキップ）の min、red-flag specialist 自動起動（high 既定は束ね起動）、high severity 検出時の meta-reviewer ラウンド、冷や読み skeptic（Phase 5.8/4.8: high-risk surface で findings 非注入の独立 opus が fleet 共通盲点を破る recall 補強）、反証レイヤー（Phase 5.9/4.9: 指摘を独立エージェントが 5 件ずつのバッチで反証、高 severity は消さず係争注記、specialist 除外）、high-risk surface に限る surface-aware 報告閾値。skeptic は reviewer wave に相乗り発火（findings 非注入＝ reviewer 出力に非依存）、meta と反証も互いに独立なので同一 wave（meta 由来指摘のみ上限 5 件の追加反証バッチ）、explorer の「確定事実」は全 reviewer に共通注入して重複探索を減らす、reviewer には 1 体あたりの探索予算を課す。所要時間は triage / explore / fleet / synthesis / closing に分割して計測し、explorer wave の発行回数（一括発行が破られると 2 以上）も publish する（計測ファイルは worktree パスと PR 番号で識別し並行セッション間の衝突を防ぐ。プロンプト構築コストは原理的に分離できず fleet に含まれる）。子 agent は PR head を detach で checkout し、期待 HEAD SHA との突合結果を必須行で報告する。事実主張のツール接地 (claim grounding) と over-correction ガード（issue #71）。self-review は agent 起動前に**プロジェクトが宣言した機械層**（`.claude/review-oracles.sh` があるときだけ実行。`red` は続行可否を確認し、`timeout` / `error` は緑と区別して欠測扱い）を通し、agent の担当を「機械が決められないもの」に絞る（原則 8 / ADR-20260817170000）。self-review は `--embed` で他プラグインから委譲可能。self-review のみコメント推敲（追加・変更コメントを「読み手に必要な情報のみか / 冗長表現が無いか」で推敲し before→after を別枠出力。severity マトリクスと好みクランプをバイパスする独立経路）。
 - **commands**: `review`, `self-review`
 - **skills**: `review`, `self-review`
 - **hooks**: SessionStart

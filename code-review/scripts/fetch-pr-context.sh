@@ -28,7 +28,7 @@ ARGS=()
 for a in "$@"; do
   if [[ "$a" == "--save" ]]; then SAVE=1; else ARGS+=("$a"); fi
 done
-if [[ "$SAVE" == "1" ]]; then
+if [[ "$SAVE" == "1" ]]; then  # mutation-ok: 反転すると本体が自分自身を無限に再帰起動する（テストでは打ち切れない）
   HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   # shellcheck source=lib/review-paths.sh
   . "$HERE/lib/review-paths.sh"
@@ -36,6 +36,11 @@ if [[ "$SAVE" == "1" ]]; then
   review_paths_init "${ARGS[0]:-}" || exit 2
   OUT=$(review_path prctx)
   trap 'rm -f "$OUT.tmp"' EXIT
+  # **取得前に $OUT を必ず消す**（triage-signals.sh の diff と同じ規約）。
+  # 成功時のみ mv するガードは**空ファイル対策であって stale 対策ではない**: 残したまま
+  # 失敗すると前回の PR コンテキストが読める状態で残り、reviewer は「読めた」と判断して
+  # **古い過去指摘**でレビューする。縮退先は誤値ではなく欠測。
+  rm -f "$OUT"
   if bash "$HERE/$(basename "${BASH_SOURCE[0]}")" ${ARGS[@]+"${ARGS[@]}"} > "$OUT.tmp" && [ -s "$OUT.tmp" ]; then
     mv "$OUT.tmp" "$OUT"
     echo "$OUT"
@@ -53,6 +58,7 @@ fi
 shift
 
 REPO_ARGS=()
+REPO_NAME=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo)
@@ -61,6 +67,7 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       REPO_ARGS=(--repo "$2")
+      REPO_NAME="$2"
       shift 2
       ;;
     *)
@@ -96,7 +103,14 @@ ISSUE_COMMENTS_JSON=$(fetch_or_fail "issue コメント" gh pr view "$PR_NUMBER"
 REVIEWS_JSON=$(fetch_or_fail "レビューサマリ" gh pr view "$PR_NUMBER" ${REPO_ARGS[@]+"${REPO_ARGS[@]}"} --json reviews)
 
 # 行単位 review コメントは pulls API から（gh pr view では取得できない）
-REPO_FULL=$(gh repo view ${REPO_ARGS[@]+"${REPO_ARGS[@]}"} --json nameWithOwner --jq '.nameWithOwner')
+# **`gh repo view` に `--repo` は無い**（`gh repo view [<repository>]` の位置引数）。
+# `${REPO_ARGS[@]}` をそのまま渡すと `unknown flag: --repo` で落ち、`--repo` 経路が
+# 丸ごと使えなくなる。指定されているならその値が答えなので API 呼び出し自体が不要
+if [[ -n "$REPO_NAME" ]]; then
+  REPO_FULL="$REPO_NAME"
+else
+  REPO_FULL=$(fetch_or_fail "リポジトリ名" gh repo view --json nameWithOwner --jq '.nameWithOwner')
+fi
 LINE_COMMENTS_JSON=$(fetch_or_fail "行単位 review コメント" \
   gh api "repos/${REPO_FULL}/pulls/${PR_NUMBER}/comments" --paginate)
 

@@ -27,8 +27,10 @@ set -uo pipefail
 SESSION=""; SINCE=""; LIST=0; AS_JSON=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --session) SESSION="$2"; shift 2 ;;
-    --since)   SINCE="$2"; shift 2 ;;
+    # `$2` を素で読むと `set -u` の生エラー（`$2: unbound variable`）だけが出て、
+    # **どの引数の指定漏れか**が残らない。他の同梱スクリプトと同じ形で弾く
+    --session) [ $# -ge 2 ] || { echo "FATAL: --session に値が必要" >&2; exit 2; }; SESSION="$2"; shift 2 ;;
+    --since)   [ $# -ge 2 ] || { echo "FATAL: --since に値が必要" >&2; exit 2; }; SINCE="$2"; shift 2 ;;
     --list)    LIST=1; shift ;;
     --json)    AS_JSON=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;

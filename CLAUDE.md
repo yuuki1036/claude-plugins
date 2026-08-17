@@ -11,7 +11,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/schema/           # JSON Schema（plugin.json / marketplace.json / hooks.json）
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
                                  # validate_plugin_quality.py（品質検証。検査項目の正本は冒頭 docstring）
-                                 # auto-quality-check.sh（Stop hook から上記 2 本 + CLI validate を自動実行）
+                                 # machine-layer.sh（検査の並びの正本。exit 0 緑 / 1 検出 / 2 判定不能。
+                                 #   Stop hook・self-review 前段の両方がこれを呼ぶ）
+                                 # auto-quality-check.sh（Stop hook。いつ走らせるかと hook 向け出力だけを持つ）
                                  # bump-version.sh（バージョンバンプの 4 ファイル同時更新 + vNEXT 解決。
                                  #   pre-commit は検証のみで実行しない）
                                  # mutation-test.py（変更行の変異テスト。検証していない挙動を列挙）
@@ -28,6 +30,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
   settings.json                  # Stop hook（auto-quality-check.sh）等の設定
+  review-oracles.sh              # self-review が agent 起動前に走らせる機械層の宣言
+                                 #   （存在自体が opt-in。中身は machine-layer.sh を呼ぶだけ）
   commands/ skills/              # /quality-check の実体（マーケットプレイスに配布しない自前コマンド）
   adr/ designs/                  # 本リポジトリ自身の設計判断・設計書
 docs/                            # 横断設計指針（pipeline-design / rule-placement / skill-writing / event-bus /
@@ -206,6 +210,7 @@ event_bus_clear
 - **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げ、CHANGELOG.md も同時更新する。上げないと使用側で更新が検知されない。どちらも pre-commit hook でブロックされる
 - **_requirements の同期忘れ**: プラグインの依存先が変わったら plugin.json の `_requirements` と `check-deps.sh` の両方を更新する。pre-commit の `validate-ssot.sh` が `check_xxx "<name>"` 形式の一致を検証する
 - **hook スクリプトは `hook_harness.py` でテストする**: hooks.json を経由せずスクリプトを直接叩き、**発火する条件より「黙る条件」を厚く**書く（暴発の blast radius が最大だから）。`safe_hook_input` の参照有無は静的検査で見ているが、**その自己判定が実際に効くか**は実行しないと分からない（実測: 最初の 19 テストで publish が丸ごと落ちる欠陥を 3 件検出した）。特に **`VAR=$(... | grep ...)` は `|| true` が必須** — 非マッチの exit 1 が safe-hook の ERR trap を踏み、以降の処理を実行せず exit 0 する（`grep -c` は「0 を出力して exit 1」なので `|| echo 0` は二重出力になり JSON が壊れる）
+- **日本語の直前の変数展開は `${VAR}` と波括弧で囲む**: `"$DIFF（重複検出をスキップ）"` は **UTF-8 ロケールの bash** が `（` の 1 バイト目まで変数名に取り込み、`set -u` 下で `DIFF<0xef>: unbound variable` を出して**そのメッセージを表示せず exit 1** する（`C.UTF-8` / `ja_JP.UTF-8` / `en_US.UTF-8` で再現、`C` / `POSIX` では再現しない = 開発機のロケール次第で見えない）。`validate_plugin_quality.py` の `shell-multibyte` 検査が errors で止める。実例: `detect-recent-review.sh` の WARN が丸ごと死んでいた（#138）
 - **jq の `//` を真偽値の既定に使わない**: `//` は左辺が `false` でも「無い」扱いにするので、`jq -r '.flag // true'` は `flag: false` を `true` に化けさせる（doc-freshness の opt-out が効いていなかった実例）。素で読んで文字列比較する（キーが無ければ jq は `"null"` を返す）
 - **hooks.json の if:/matcher に単独依存しない（注入・block 系 hook の自己判定必須）**: `if: "Bash(git push *)"`（CC 2.1.85+）や matcher のフィルタは**実行環境によって評価されない**ことが実測済み（2026-07: dev-workflow push-reminder が全 Bash 呼び出しで additionalContext を注入する暴発。配布・スキーマ・構文は正しかった）。PreToolUse/PostToolUse の hook スクリプトは `INPUT=$(safe_hook_input)` で tool_input を取得し発火条件を自己判定する二重ゲートにする（手本: `dev-workflow/hooks/scripts/on-commit.sh`）。`validate_plugin_quality.py` の hook-self-judge チェックが `safe_hook_input` 非参照を非ブロッキング warning で検知する。FileChanged の path-glob matcher も同型リスクだが tool_input が無いためチェック対象外（既知の残リスク）
 - **hooks.json の args[] exec 形式 (CC 2.1.139+)**: 新規 hook は `command: "bash <path>"` ではなく `command: "bash", args: ["<path>"]` の exec 形式で書く。シェル解釈を経由せず直接 spawn するので安全＆高速。スキーマは `.claude-plugin/schema/hooks.schema.json` を参照
