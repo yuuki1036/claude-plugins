@@ -49,7 +49,10 @@ CONFIG="${PROJECT_DIR}/.claude/doc-freshness.json"
 DEFAULT_TARGETS=".claude/designs/ .claude/adr/ .claude/living-specs/"
 TARGETS="$DEFAULT_TARGETS"
 if [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
-  if [ "$(jq -r '.postToolUseCheck // true' "$CONFIG" 2>/dev/null)" = "false" ]; then
+  # **`// true` を使わない**: jq の `//` は左辺が `false` でも「無い」扱いにするので、
+  # `postToolUseCheck: false` が既定の true に化けて **opt-out が効かなくなる**。
+  # 素で読んで文字列比較する（キーが無ければ jq は "null" を返す＝有効のまま）
+  if [ "$(jq -r '.postToolUseCheck' "$CONFIG" 2>/dev/null)" = "false" ]; then
     safe_hook_error Validation "postToolUseCheck disabled by config"
   fi
   CUSTOM=$(jq -r '.hookTargets[]? // empty' "$CONFIG" 2>/dev/null | tr '\n' ' ' || true)

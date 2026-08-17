@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """dev-workflow の hook スクリプトの回帰テスト.
 
-対象は「自己判定で黙るか」が仕様の中心にある 2 本:
+**通す条件より、黙る条件を厚く**書く。hook の失敗様式は「鳴らない」より
+「鳴りすぎる」方が高コストで（全ツール呼び出しに影響する）、実際に踏んだのもそちら。
 
-- `push-reminder.sh` — 実際に暴発した当事者（`if: "Bash(git push *)"` が評価されず
-  全 Bash 呼び出しに注入した）。**通す条件より、黙る条件の方が重要**
-- `on-commit.sh` — Event Bus の `commit:created` publisher。誤発火すると
-  subscriber（issue-maintain）が存在しないコミットに反応する
+- `push-reminder.sh` — 暴発の当事者（`if: "Bash(git push *)"` が評価されず全 Bash 呼び出しに注入した）
+- `on-commit.sh` — Event Bus の `commit:created` publisher。誤発火すると subscriber が空振りする
+- `detect-web-project.sh` — フラグの**立て方だけでなく消し方**（Web でなくなった時）
+- `ui-verify-gate.sh` / `ui-change-reminder.sh` — 3 値フラグ（unverified / verified-local / verified-snap）
+- `tdd-phase-gate.sh` — opt-in なので**既定で絶対に鳴らない**ことが第一の仕様
 
 実行: python3 -m unittest discover -s .claude-plugin/scripts/tests
 """
@@ -151,6 +153,352 @@ class OnCommitTest(HookTestCase):
             repo = TempGitRepo.__new__(TempGitRepo); repo.path = repo_path
             repo.commit("feat: x")
             self.assertSilent(self.run_hook(self.bash_payload("git commit -m x"), cwd=repo_path))
+
+
+class DetectWebProjectTest(HookTestCase):
+    """SessionStart: package.json の依存で ui-verify 連携フラグを管理する（無音）."""
+
+    PLUGIN = "dev-workflow"
+    SCRIPT = "hooks/scripts/detect-web-project.sh"
+
+    def _run_in(self, root: Path, package: dict | None):
+        if package is not None:
+            (root / "package.json").write_text(json.dumps(package))
+        return self.run_hook({"hook_event_name": "SessionStart"}, cwd=root)
+
+    def test_enables_for_web_framework(self):
+        for dep in ("next", "react", "vue", "svelte", "@angular/core", "astro"):
+            with self.subTest(dep=dep), TempGitRepo() as root:
+                self._run_in(root, {"dependencies": {dep: "^1.0.0"}})
+                self.assertTrue((root / ".claude" / ".ui-verify-enabled").is_file(), dep)
+
+    def test_enables_from_dev_dependencies(self):
+        with TempGitRepo() as root:
+            self._run_in(root, {"devDependencies": {"vue": "^3"}})
+            self.assertTrue((root / ".claude" / ".ui-verify-enabled").is_file())
+
+    def test_does_not_enable_for_non_web(self):
+        with TempGitRepo() as root:
+            self._run_in(root, {"dependencies": {"express": "^4", "lodash": "^4"}})
+            self.assertFalse((root / ".claude" / ".ui-verify-enabled").exists())
+
+    def test_partial_name_does_not_match(self):
+        """`react-native-cli` のような部分一致で有効化しない（完全一致が仕様）."""
+        with TempGitRepo() as root:
+            self._run_in(root, {"dependencies": {"preact-compat-shim": "^1"}})
+            self.assertFalse((root / ".claude" / ".ui-verify-enabled").exists())
+
+    def test_removes_flag_when_package_json_disappears(self):
+        """**有効化だけでなく無効化も**する（Web でなくなったのに残ると誤って gate が働く）."""
+        with TempGitRepo() as root:
+            flag = root / ".claude" / ".ui-verify-enabled"
+            flag.parent.mkdir(exist_ok=True); flag.touch()
+            self._run_in(root, None)
+            self.assertFalse(flag.exists())
+
+    def test_removes_flag_when_web_dep_removed(self):
+        with TempGitRepo() as root:
+            flag = root / ".claude" / ".ui-verify-enabled"
+            flag.parent.mkdir(exist_ok=True); flag.touch()
+            self._run_in(root, {"dependencies": {"express": "^4"}})
+            self.assertFalse(flag.exists())
+
+    def test_is_silent(self):
+        with TempGitRepo() as root:
+            self.assertSilent(self._run_in(root, {"dependencies": {"next": "^14"}}))
+
+
+class UiVerifyGateTest(HookTestCase):
+    """PreToolUse(commit): 未確認の UI 変更があれば促す（ブロックはしない）."""
+
+    PLUGIN = "dev-workflow"
+    SCRIPT = "hooks/scripts/ui-verify-gate.sh"
+
+    def _setup(self, root: Path, *, enabled: bool, pending: str | None):
+        d = root / ".claude"; d.mkdir(exist_ok=True)
+        if enabled:
+            (d / ".ui-verify-enabled").touch()
+        if pending is not None:
+            (d / ".ui-verify-pending").write_text(f"{pending}\n2026-08-17T00:00:00Z\n")
+
+    def test_fires_when_unverified(self):
+        with TempGitRepo() as root:
+            self._setup(root, enabled=True, pending="unverified")
+            self.assertFired(self.run_hook(self.bash_payload("git commit -m x"), cwd=root),
+                             "ui-verify")
+
+    def test_silent_when_already_verified(self):
+        for status in ("verified-local", "verified-snap"):
+            with self.subTest(status=status), TempGitRepo() as root:
+                self._setup(root, enabled=True, pending=status)
+                self.assertSilent(self.run_hook(self.bash_payload("git commit -m x"), cwd=root))
+
+    def test_silent_when_not_enabled(self):
+        with TempGitRepo() as root:
+            self._setup(root, enabled=False, pending="unverified")
+            self.assertSilent(self.run_hook(self.bash_payload("git commit -m x"), cwd=root))
+
+    def test_silent_without_pending(self):
+        with TempGitRepo() as root:
+            self._setup(root, enabled=True, pending=None)
+            self.assertSilent(self.run_hook(self.bash_payload("git commit -m x"), cwd=root))
+
+    def test_silent_for_non_commit_command(self):
+        with TempGitRepo() as root:
+            self._setup(root, enabled=True, pending="unverified")
+            for cmd in ("git push", "ls", 'echo "git commit"'):
+                with self.subTest(cmd=cmd):
+                    self.assertSilent(self.run_hook(self.bash_payload(cmd), cwd=root))
+
+    def test_never_blocks(self):
+        with TempGitRepo() as root:
+            self._setup(root, enabled=True, pending="unverified")
+            self.assertNotEqual(
+                self.run_hook(self.bash_payload("git commit -m x"), cwd=root).returncode, 2)
+
+
+class UiChangeReminderTest(HookTestCase):
+    PLUGIN = "dev-workflow"
+    SCRIPT = "hooks/scripts/ui-change-reminder.sh"
+
+    def _enable(self, root: Path):
+        d = root / ".claude"; d.mkdir(exist_ok=True); (d / ".ui-verify-enabled").touch()
+
+    def payload(self, path: str, tool: str = "Edit") -> dict:
+        return {"tool_name": tool, "tool_input": {"file_path": path}}
+
+    def test_fires_for_ui_extensions(self):
+        for name in ("a.tsx", "b.vue", "c.svelte", "d.css", "e.scss", "f.astro", "g.mdx"):
+            with self.subTest(name=name), TempGitRepo() as root:
+                self._enable(root)
+                res = self.run_hook(self.payload(str(root / name)), cwd=root)
+                self.assertIn("[ui-verify]", res.stdout, name)
+
+    def test_creates_pending_flag_as_unverified(self):
+        with TempGitRepo() as root:
+            self._enable(root)
+            self.run_hook(self.payload(str(root / "a.tsx")), cwd=root)
+            self.assertEqual((root / ".claude" / ".ui-verify-pending")
+                             .read_text().splitlines()[0], "unverified")
+
+    def test_does_not_reset_existing_verified_flag(self):
+        """1 セッション中の小修正で verified を毎回消さない（意図的な仕様）."""
+        with TempGitRepo() as root:
+            self._enable(root)
+            pending = root / ".claude" / ".ui-verify-pending"
+            pending.write_text("verified-snap\n2026-08-17T00:00:00Z\n")
+            self.run_hook(self.payload(str(root / "a.tsx")), cwd=root)
+            self.assertEqual(pending.read_text().splitlines()[0], "verified-snap")
+
+    def test_silent_for_non_ui_file(self):
+        with TempGitRepo() as root:
+            self._enable(root)
+            for name in ("a.ts", "b.py", "README.md", "c.json"):
+                with self.subTest(name=name):
+                    self.assertSilent(self.run_hook(self.payload(str(root / name)), cwd=root))
+
+    def test_silent_when_not_enabled(self):
+        with TempGitRepo() as root:
+            self.assertSilent(self.run_hook(self.payload(str(root / "a.tsx")), cwd=root))
+
+    def test_silent_for_non_edit_tool(self):
+        with TempGitRepo() as root:
+            self._enable(root)
+            self.assertSilent(self.run_hook(self.payload(str(root / "a.tsx"), tool="Bash"), cwd=root))
+
+
+class TddPhaseGateTest(HookTestCase):
+    """opt-in なので**既定では絶対に鳴らない**ことが第一の仕様."""
+
+    PLUGIN = "dev-workflow"
+    SCRIPT = "hooks/scripts/tdd-phase-gate.sh"
+
+    def _enable(self, root: Path):
+        d = root / ".claude"; d.mkdir(exist_ok=True); (d / ".tdd-phase-gate-enabled").touch()
+
+    def payload(self, path: Path, tool: str = "Edit") -> dict:
+        return {"tool_name": tool, "tool_input": {"file_path": str(path)}}
+
+    def test_silent_when_not_enabled(self):
+        with TempGitRepo() as root:
+            src = root / "a.ts"; src.write_text("export const a = 1\n")
+            self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+    def test_fires_for_source_without_test(self):
+        with TempGitRepo() as root:
+            self._enable(root)
+            src = root / "a.ts"; src.write_text("export const a = 1\n")
+            self.assertFired(self.run_hook(self.payload(src), cwd=root), "tdd-phase-gate")
+
+    def test_silent_when_sibling_test_exists(self):
+        for test_name in ("a.test.ts", "a.spec.ts"):
+            with self.subTest(test_name=test_name), TempGitRepo() as root:
+                self._enable(root)
+                src = root / "a.ts"; src.write_text("x\n")
+                (root / test_name).write_text("test\n")
+                self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+    def test_silent_when_test_in_tests_dir(self):
+        with TempGitRepo() as root:
+            self._enable(root)
+            src = root / "a.ts"; src.write_text("x\n")
+            (root / "__tests__").mkdir()
+            (root / "__tests__" / "a.test.ts").write_text("t\n")
+            self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+    def test_silent_for_test_and_config_files(self):
+        with TempGitRepo() as root:
+            self._enable(root)
+            for name in ("a.test.ts", "a.spec.ts", "test_a.py", "vite.config.ts",
+                         "next.config.js", "a.d.ts", "a.stories.tsx"):
+                with self.subTest(name=name):
+                    f = root / name; f.write_text("x\n")
+                    self.assertSilent(self.run_hook(self.payload(f), cwd=root))
+
+    def test_silent_inside_test_directories(self):
+        with TempGitRepo() as root:
+            self._enable(root)
+            for d in ("__tests__", "tests", "test", "__mocks__"):
+                with self.subTest(dir=d):
+                    (root / d).mkdir(exist_ok=True)
+                    f = root / d / "a.ts"; f.write_text("x\n")
+                    self.assertSilent(self.run_hook(self.payload(f), cwd=root))
+
+    def test_silent_for_non_source_extension(self):
+        with TempGitRepo() as root:
+            self._enable(root)
+            for name in ("README.md", "a.json", "a.css", "a.yaml"):
+                with self.subTest(name=name):
+                    f = root / name; f.write_text("x\n")
+                    self.assertSilent(self.run_hook(self.payload(f), cwd=root))
+
+    def test_new_file_write_is_allowed(self):
+        """テストより先に空の実装ファイルを作るのは Red phase の正常フロー."""
+        with TempGitRepo() as root:
+            self._enable(root)
+            self.assertSilent(self.run_hook(self.payload(root / "new.ts", tool="Write"), cwd=root))
+
+    def test_never_blocks(self):
+        with TempGitRepo() as root:
+            self._enable(root)
+            src = root / "a.ts"; src.write_text("x\n")
+            self.assertNotEqual(self.run_hook(self.payload(src), cwd=root).returncode, 2)
+
+class PostFormatLintTest(HookTestCase):
+    """opt-in の 3 段チェーン（fmt → lint → check）。**check だけが block を出す**."""
+
+    PLUGIN = "dev-workflow"
+    SCRIPT = "hooks/scripts/post-format-lint.sh"
+
+    def _config(self, root: Path, cfg: dict):
+        d = root / ".claude"; d.mkdir(exist_ok=True)
+        (d / "dev-workflow.json").write_text(json.dumps(cfg))
+
+    def payload(self, path: Path, tool: str = "Edit") -> dict:
+        return {"tool_name": tool, "tool_input": {"file_path": str(path)}}
+
+    def _lang(self, *, fmt="", lint="", check="", enabled=None) -> dict:
+        lang: dict = {"extensions": ["ts"]}
+        if fmt:
+            lang["fmt"] = fmt
+        if lint:
+            lang["lint"] = lint
+        if check:
+            lang["check"] = check
+        if enabled is not None:
+            lang["enabled"] = enabled
+        return {"lint": {"enabled": True, "languages": {"typescript": lang}}}
+
+    def test_dormant_without_config(self):
+        """**設定が無ければ完全 dormant**（opt-in の第一要件）."""
+        with TempGitRepo() as root:
+            src = root / "a.ts"; src.write_text("x\n")
+            self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+    def test_dormant_when_disabled(self):
+        with TempGitRepo() as root:
+            self._config(root, {"lint": {"enabled": False,
+                                         "languages": {"typescript": {"extensions": ["ts"],
+                                                                      "check": "false"}}}})
+            src = root / "a.ts"; src.write_text("x\n")
+            self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+    def test_language_can_be_disabled_individually(self):
+        """`enabled: false` の言語だけ止まる（jq の `//` 罠を踏んでいないこと）."""
+        with TempGitRepo() as root:
+            self._config(root, self._lang(check="false", enabled=False))
+            src = root / "a.ts"; src.write_text("x\n")
+            self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+    def test_blocks_when_check_fails(self):
+        with TempGitRepo() as root:
+            self._config(root, self._lang(check="sh -c 'echo 違反あり >&2; exit 1' --"))
+            src = root / "a.ts"; src.write_text("x\n")
+            out = self.run_hook(self.payload(src), cwd=root).stdout
+            self.assertIn("block", out)
+            self.assertIn("post-format-lint", out)
+
+    def test_silent_when_check_passes(self):
+        with TempGitRepo() as root:
+            self._config(root, self._lang(check="true"))
+            src = root / "a.ts"; src.write_text("x\n")
+            self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+    def test_fmt_and_lint_failures_do_not_block(self):
+        """fmt / lint 段は黙って直す係。**失敗しても block しない**."""
+        with TempGitRepo() as root:
+            self._config(root, self._lang(fmt="false", lint="false", check="true"))
+            src = root / "a.ts"; src.write_text("x\n")
+            self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+    def test_unknown_extension_is_silent(self):
+        with TempGitRepo() as root:
+            self._config(root, self._lang(check="false"))
+            src = root / "a.py"; src.write_text("x\n")
+            self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+    def test_non_edit_tool_is_silent(self):
+        with TempGitRepo() as root:
+            self._config(root, self._lang(check="false"))
+            src = root / "a.ts"; src.write_text("x\n")
+            self.assertSilent(self.run_hook(self.payload(src, tool="Bash"), cwd=root))
+
+    def test_missing_file_is_silent(self):
+        with TempGitRepo() as root:
+            self._config(root, self._lang(check="false"))
+            self.assertSilent(self.run_hook(self.payload(root / "none.ts"), cwd=root))
+
+    def test_never_exits_two(self):
+        """block は JSON で表現する。exit 2 は使わない."""
+        with TempGitRepo() as root:
+            self._config(root, self._lang(check="false"))
+            src = root / "a.ts"; src.write_text("x\n")
+            self.assertNotEqual(self.run_hook(self.payload(src), cwd=root).returncode, 2)
+
+
+class UploadScreenshotsTest(unittest.TestCase):
+    """引数バリデーションのみ（本体は gh 経由の network I/O なので対象外）.
+
+    `hooks/scripts/` に置かれているが hooks.json から呼ばれる hook ではなく CLI。
+    それでも「引数無しで走ると何をするか」は決まっているべきなので、そこだけ固定する。
+    """
+
+    SCRIPT = Path(__file__).resolve().parents[3] / "dev-workflow/hooks/scripts/upload-screenshots.sh"
+
+    def _run(self, *args):
+        import subprocess
+        return subprocess.run(["bash", str(self.SCRIPT), *args],
+                              capture_output=True, text=True, timeout=30)
+
+    def test_usage_without_arguments(self):
+        res = self._run()
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("Usage:", res.stderr)
+
+    def test_usage_for_missing_directory(self):
+        res = self._run("/nonexistent/dir")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("Usage:", res.stderr)
 
 
 if __name__ == "__main__":

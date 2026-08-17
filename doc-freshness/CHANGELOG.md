@@ -2,6 +2,11 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.1] - 2026-08-17
+
+### Fixed
+- **`postToolUseCheck: false` で hook を無効化できなかった**。jq の `//` 演算子は左辺が `false` でも「無い」扱いにするため、明示的な opt-out が既定の `true` に化けていた。素で読んで文字列比較する形に修正（回帰テスト付き）
+
 ## [0.5.0] - 2026-07-23
 
 ### Changed

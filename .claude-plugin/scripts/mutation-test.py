@@ -163,6 +163,19 @@ def _looks_quoted(line: str, start: int) -> bool:
     return head.count('"') % 2 == 1 or head.count("'") % 2 == 1
 
 
+# シェルの `>` `<` はほぼ全部**リダイレクト**で、比較ではない（`2>/dev/null` `>>log` `&>`）。
+# これを境界変異させると `2>=/dev/null` のような**構文的に別物**が生まれ、テストが落ちないので
+# 「生存 = 未検証」の一覧に混ざる。生存リストは行動を促す信号なので、偽の生存を出さない。
+# 比較として書けるのは `[[ a > b ]]` / `(( a > b ))` の中だけなので、そこだけ許可する。
+SHELL_COMPARE_CONTEXT = re.compile(r"\[\[|\(\(")
+
+
+def _is_shell_redirect(path: Path, line: str, start: int) -> bool:
+    if path.suffix != ".sh":
+        return False
+    return not SHELL_COMPARE_CONTEXT.search(line[:start])
+
+
 def _code_end(line: str) -> int:
     """行末コメントの開始位置を返す（コメント内は変異させない）.
 
@@ -230,6 +243,8 @@ def build_mutants(targets: dict[Path, set[int]]) -> list[Mutant]:
                             continue     # 文字列 / コメントの中（tokenize で確定）
                     elif m.start() >= code_end or _looks_quoted(line, m.start()):
                         continue         # 近似（.sh とトークナイズ不能な .py）
+                    if m.group(0) in ("<", ">") and _is_shell_redirect(path, line, m.start()):
+                        continue
                     mutated = line[:m.start()] + repl + line[m.end():]
                     if mutated == line:
                         continue

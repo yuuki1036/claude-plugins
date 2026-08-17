@@ -143,6 +143,51 @@ class BuildMutantsTest(unittest.TestCase):
         self.assertFalse(mt.is_test_file(Path("x/scripts/mutation-test.py")))
 
 
+class ShellRedirectTest(unittest.TestCase):
+    """シェルの `>` はリダイレクトであって比較ではない.
+
+    `2>/dev/null` を `2>=/dev/null` にしても**テストが落ちない**ので生存扱いになるが、
+    これは「検証していない挙動」ではなく偽の生存。生存リストは行動を促す信号なので、
+    ここにノイズが混ざると一覧そのものが読まれなくなる（実測で 2/10 が偽の生存だった）。
+    """
+
+    def _rules(self, path: Path):
+        return [m.rule for m in mt.build_mutants(
+            {path: set(range(1, len(path.read_text().splitlines()) + 1))})]
+
+    def test_redirects_are_not_mutated(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "x.sh"
+            p.write_text("jq -r .a f 2>/dev/null || true\necho hi > out.log\ncat <in.txt\n")
+            self.assertEqual([r for r in self._rules(p) if ">" in r or "<" in r], [])
+
+    def test_comparison_inside_double_brackets_is_mutated(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "x.sh"
+            p.write_text('if [[ "$a" > "$b" ]]; then echo x; fi\n')
+            self.assertTrue(any("> を >= に" in r for r in self._rules(p)))
+
+    def test_arithmetic_comparison_is_mutated(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "x.sh"
+            p.write_text("if (( count > limit )); then echo x; fi\n")
+            self.assertTrue(any("> を >= に" in r for r in self._rules(p)))
+
+    def test_python_comparison_is_unaffected(self):
+        """この抑制は .sh 限定（.py の `>` は比較）."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "x.py"
+            p.write_text("if count > limit:\n    pass\n")
+            self.assertTrue(any("> を >= に" in r for r in self._rules(p)))
+
+    def test_shell_numeric_test_operators_still_mutate(self):
+        """`-gt` 等は文脈に関係なく比較."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "x.sh"
+            p.write_text('[ "$n" -gt 3 ] && echo big\n')
+            self.assertTrue(any("-gt" in r for r in self._rules(p)))
+
+
 class ApplyAndTestTest(unittest.TestCase):
     """**復元経路**（失敗するとユーザーの未コミット変更が消える）."""
 
