@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 import unittest
@@ -128,18 +129,34 @@ class FetchPrContextTest(ScriptTestBase):
                 data[key] = value
         self.fixtures_path.write_text(json.dumps(data), encoding="utf-8")
 
+    def isolated_bin(self, *names: str) -> Path:
+        """指定した名前だけが引ける bin dir を作る（`bash` は常に入れる）.
+
+        **`/usr/bin` や `/bin` を混ぜて「そこには無いはず」に頼ってはいけない。**
+        Linux では `/bin` が `/usr/bin` の symlink で、CI には `gh` も `jq` も入っている
+        （実測: この前提で書いた 2 件が ubuntu でだけ落ちた）。依存欠落の経路は
+        **引けるものを列挙する**側で作る。
+        """
+        d = self.root / "tmp" / ("bin-" + "-".join(names or ("none",)))
+        d.mkdir(parents=True, exist_ok=True)
+        for name in ("bash", *names):
+            real = shutil.which(name)
+            self.assertIsNotNone(real, "%s が見つからない" % name)
+            link = d / name
+            if not link.exists():
+                link.symlink_to(real)
+        return d
+
     def env(self, with_gh: bool = True, with_jq: bool = True) -> dict[str, str]:
-        """PATH を組み替える。**依存欠落の経路は PATH を絞って作る**（ambient に本物が居る）."""
+        """PATH を組み替える。**依存欠落の経路は PATH を絞って作る**."""
         env = self._env()
         env["GH_FIXTURES"] = str(self.fixtures_path)
         if not with_gh:
-            # gh を引けない PATH（本物の gh は /opt/homebrew/bin 等にある）
-            empty = self.root / "tmp" / "empty-bin"
-            empty.mkdir(parents=True, exist_ok=True)
-            env["PATH"] = "%s:/usr/bin:/bin" % empty
+            env["PATH"] = str(self.isolated_bin())            # gh も jq も引けない
         elif not with_jq:
-            # gh stub + `/bin`（bash は要るが jq は無い。jq は /usr/bin と homebrew 側にある）
-            env["PATH"] = "%s:/bin" % self.bin
+            gh_only = self.isolated_bin()                      # bash だけの dir に
+            (gh_only / "gh").symlink_to(self.bin / "gh")       # gh stub を足す（jq は無い）
+            env["PATH"] = str(gh_only)
         else:
             env["PATH"] = "%s:%s" % (self.bin, env["PATH"])
         return env

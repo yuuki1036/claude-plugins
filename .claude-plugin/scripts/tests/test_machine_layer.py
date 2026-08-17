@@ -14,6 +14,7 @@ stub を置いた使い捨てリポジトリに向けて契約だけを見る。
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -54,27 +55,46 @@ class MachineLayerTest(unittest.TestCase):
         (d / "test_stub.py").write_text(body, encoding="utf-8")
 
     def env(self, with_python: bool = True, with_claude: bool = False) -> dict[str, str]:
-        """PATH を絞った環境を作る（本物の `claude` を引くと実リポジトリの検査が走る）."""
+        """PATH を絞った環境を作る（本物の `claude` を引くと実リポジトリの検査が走る）.
+
+        **「このディレクトリには無いはず」に頼らない。** Linux では `/bin` が `/usr/bin` の
+        symlink なので、`/bin` を混ぜると python3 が引けてしまう（実測: `with_python=False`
+        の 2 件が ubuntu でだけ落ちた）。**引けるものを列挙する**側で作る。
+        """
         env = dict(os.environ)
         env["MACHINE_LAYER_ROOT"] = str(self.root)
         link = self.bin / "python3"
         if with_python:
             if not link.exists():
                 link.symlink_to(sys.executable)
-            # `find` / `grep` / `sort` は `/usr/bin` に居る（CLI スキーマ検査で使う）
-            env["PATH"] = "%s:/usr/bin:/bin" % self.bin
         else:
-            # **python3 をどこからも引けない PATH**（`/usr/bin/python3` があるので外す）。
-            # 判定不能の経路は section 4 に到達しないので coreutils は要らない
             link.unlink(missing_ok=True)
-            env["PATH"] = "%s:/bin" % self.bin
+        # bash は常に要る。section 4（CLI スキーマ検査）は find / xargs / grep / sort /
+        # basename を使うので、python3 がある構成だけそれらを足す
+        needed = ["bash"]
+        if with_python:
+            needed += ["find", "xargs", "grep", "sort", "basename", "tail", "dirname"]
+        for name in needed:
+            real = shutil.which(name)
+            self.assertIsNotNone(real, "%s が見つからない" % name)
+            dest = self.bin / name
+            if not dest.exists():
+                dest.symlink_to(real)
+        env["PATH"] = str(self.bin)
         if with_claude:
             self.write_claude_stub()
         return env
 
-    def write_claude_stub(self, findings: str = "") -> None:
+    def write_claude_stub(self, *findings: str) -> None:
+        """`claude` の stub。**bash builtin だけで書く**（PATH を絞るので `cat` は引けない）.
+
+        実測: `cat <<EOF` の stub が `cat: command not found` で落ち、出力が空になったため
+        「指摘なし」と区別できなかった。stub が壊れていても**テストは緑に見える**型なので、
+        `test_..._reported_per_plugin` の assert が唯一の防壁になる。
+        """
         stub = self.bin / "claude"
-        stub.write_text("#!/usr/bin/env bash\ncat <<'EOF'\n%s\nEOF\nexit 0\n" % findings,
+        args = " ".join("'%s'" % f.replace("'", "'\\''") for f in findings) or "''"
+        stub.write_text("#!/usr/bin/env bash\nprintf '%%s\\n' %s\nexit 0\n" % args,
                         encoding="utf-8")
         stub.chmod(0o755)
 
@@ -152,7 +172,7 @@ class MachineLayerTest(unittest.TestCase):
         (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
         self.with_tests_dir(passing=True)
         env = self.env(with_claude=True)
-        self.write_claude_stub("  ❯ _requirements: Unknown field\n  ❯ _superseded_by: Unknown")
+        self.write_claude_stub("  ❯ _requirements: Unknown field", "  ❯ _superseded_by: Unknown")
         res = self.run_layer(env=env)
         self.assertEqual(res.returncode, 0, res.stdout)
         self.assertEqual(res.stdout, "")

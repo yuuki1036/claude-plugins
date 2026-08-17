@@ -61,10 +61,14 @@ class ScriptTestBase(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         (self.root / "tmp").mkdir()
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        # **リポジトリ内に author を設定する**。env の `GIT_AUTHOR_*` は init commit にしか
+        # 効かず、テストが独自に `git commit` すると **CI（global config が無い環境）で
+        # だけ失敗する**（実測: ubuntu で `git commit` が黙って失敗し、rename のはずの diff が
+        # 「新規ファイル」になってテストが落ちた）
+        for key, value in (("user.email", "t@example.com"), ("user.name", "t")):
+            subprocess.run(["git", "config", key, value], cwd=self.root, check=True)
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "init"],
-                       cwd=self.root, check=True,
-                       env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+                       cwd=self.root, check=True)
 
     # **git が hook 実行時に渡す変数を落とす**。`GIT_INDEX_FILE=.git/index` のような
     # **相対パス**が入っており、テスト内の使い捨てリポジトリで git を叩くと外側の index を
