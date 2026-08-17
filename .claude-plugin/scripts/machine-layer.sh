@@ -24,7 +24,10 @@
 #   - `validate-ssot.sh`（SSoT 同期の項目）
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# 既定はスクリプトの位置から導く。`MACHINE_LAYER_ROOT` は**テスト用の差し替え口**で、
+# stub を置いた使い捨てリポジトリに向けて exit code の契約（0/1/2）を検証するために要る
+# （検査本体は実行に数分かかるので、本物を走らせるテストは書けない）
+REPO_ROOT="${MACHINE_LAYER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_ROOT" || { echo "FATAL: リポジトリルートへ移動できない" >&2; exit 2; }
 
 ISSUES=""
@@ -58,7 +61,6 @@ fi
 #    全体を判定不能に倒さない）
 if command -v claude >/dev/null 2>&1; then
   while IFS= read -r plugin_dir; do
-    [ -z "$plugin_dir" ] && continue
     VAL_OUT="$(claude plugin validate "$plugin_dir" 2>&1 || true)"
     # `_requirements` / `_superseded_by` は SSoT 用の独自フィールドなので CLI 警告から除外する。
     # CC のバージョンで警告文言が変わるため、文言ではなくフィールド名の有無で除外する
@@ -66,9 +68,11 @@ if command -v claude >/dev/null 2>&1; then
     if [ -n "$FILTERED" ]; then
       add "[schema:$(basename "$plugin_dir")] ${FILTERED}"
     fi
+  # 空行はパイプライン側で落とす（ループ内で `[ -z ] && continue` と書くと、
+  # その 1 行が反転したときに**全プラグインを黙って skip する**経路になる）
   done < <(find "$REPO_ROOT" -maxdepth 3 -name plugin.json -path '*/.claude-plugin/*' \
              -not -path '*/node_modules/*' -exec dirname {} \; \
-             | xargs -I{} dirname {} 2>/dev/null | sort -u)
+             | xargs -I{} dirname {} 2>/dev/null | grep -v '^[[:space:]]*$' | sort -u)
 fi
 
 if [ -n "$ISSUES" ]; then
