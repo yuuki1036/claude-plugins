@@ -102,6 +102,16 @@ class ScriptTestBase(unittest.TestCase):
         self.assertTrue(out, "start がパスを返していない")
         return Path(out)
 
+    def signals(self, out: str) -> str:
+        """⚠️ シグナル欄だけを返す（欄が無ければ空文字）.
+
+        **`assertNotIn` だけの否定テストは liveness ガードが要る** — 条件式で「欄が無ければ空」に
+        倒すと, retro が異常終了して stdout が空でも恒久 pass になる（実測: `fc_total` を壊すと
+        肯定系 9 件が落ちるのに否定系 3 件は緑のままだった）。欄の有無自体をここで表明する。
+        """
+        self.assertIn("## レビュー振り返り", out, "retro が出力していない")
+        return out.split("⚠️ シグナル")[-1] if "⚠️ シグナル" in out else ""
+
     def full_run(self) -> Path:
         """t0 → t1 → wave → t2 まで打った状態を作る."""
         path = self.ts_file()
@@ -303,22 +313,13 @@ class RetroTest(ScriptTestBase):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("severity_inflated が", out)
 
-    def _signals(self, out: str) -> str:
-        """⚠️ シグナル欄だけを返す（欄が無ければ空文字）.
-
-        条件式で「欄が無ければ空」に倒すと, retro が異常終了して stdout が空でも
-        恒久 pass になる。欄の有無自体をここで表明する。
-        """
-        self.assertIn("## レビュー振り返り", out, "retro が出力していない")
-        return out.split("⚠️ シグナル")[-1] if "⚠️ シグナル" in out else ""
-
     def test_gap_signal_does_not_fire_on_a_single_sample(self):
         """`late-publish` は self-review 母集団で判定する（**単発で 100% 点灯しない**）."""
         rows = [{"effort": "high", "measurement_gaps": ["late-publish"]}]
         rows += [{"_plugin": "code-review:review", "effort": "high", "measurement_gaps": []}
                  for _ in range(4)]
         self._events(rows)
-        self.assertNotIn("late-publish", self._signals(self.run_script(RETRO, env=self._env()).stdout))
+        self.assertNotIn("late-publish", self.signals(self.run_script(RETRO, env=self._env()).stdout))
 
     def test_gap_signal_fires_when_its_own_denominator_is_met(self):
         """**母集団が揃えば点灯する**（分母を分けた目的側。分母 0 で永久に沈黙しないこと）."""
@@ -326,7 +327,7 @@ class RetroTest(ScriptTestBase):
         rows += [{"_plugin": "code-review:review", "effort": "high", "measurement_gaps": []}
                  for _ in range(6)]
         self._events(rows)
-        self.assertIn("late-publish", self._signals(self.run_script(RETRO, env=self._env()).stdout))
+        self.assertIn("late-publish", self.signals(self.run_script(RETRO, env=self._env()).stdout))
 
     def test_json_mode_always_returns_json(self):
         self._events([self._verdict(2, 1)])
@@ -415,7 +416,7 @@ class FindingsClassSignalTest(ScriptTestBase):
         """**指摘が何件あってもレビュー 1 回では点灯しない**（下限の単位が回数であること）."""
         self._write(self._rows(1, {"lint": 30, "test": 0, "judgement": 0}))
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertNotIn("lint で捕まる層", out)
+        self.assertNotIn("lint で捕まる層", self.signals(out))
 
     def test_enough_reviews_and_findings_fire(self):
         self._write(self._rows(9, {"lint": 8, "test": 1, "judgement": 1}))
@@ -437,13 +438,25 @@ class FindingsClassSignalTest(ScriptTestBase):
         """test 側も**回数**の下限が効くこと（`and` を `or` に緩める変異を殺す）."""
         self._write(self._rows(1, {"lint": 0, "test": 30, "judgement": 0}))
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertNotIn("回帰テストで捕まる層", out)
+        self.assertNotIn("回帰テストで捕まる層", self.signals(out))
+
+    def test_exactly_at_the_ratio_threshold_fires(self):
+        """**しきい値ちょうど（55%）で点灯する**（`>=` を `>` に狭める変異を殺す）."""
+        self._write(self._rows(11, {"lint": 11, "test": 5, "judgement": 4}))   # 11/20 = 55%
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("lint で捕まる層", self.signals(out))
+
+    def test_just_below_the_ratio_does_not_fire(self):
+        """**50% では点灯しない**（しきい値を実測ベースライン 43% 域まで下げる変異を殺す）."""
+        self._write(self._rows(11, {"lint": 10, "test": 5, "judgement": 5}))   # 10/20 = 50%
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("lint で捕まる層", self.signals(out))
 
     def test_below_the_ratio_does_not_fire(self):
-        """**しきい値は実測ベースライン（43%）の上**（下回ると定常状態で常時点灯する）."""
+        """ベースライン域（40%）でも点灯しないこと."""
         self._write(self._rows(9, {"lint": 4, "test": 3, "judgement": 3}))
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertNotIn("lint で捕まる層", out)
+        self.assertNotIn("lint で捕まる層", self.signals(out))
 
     def test_schema_filter_is_currently_inert(self):
         """**版マーカー層別は現時点で何も除外しない**ことを表明する.
