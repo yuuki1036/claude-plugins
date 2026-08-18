@@ -1,0 +1,95 @@
+name: mutation-nightly
+
+# 変異テストの**深い方**。push 側（validate.yml）は `--max 5` のスモークに絞ってあり、
+# 網羅はこちらが持つ。
+#
+# **なぜ分けたか**: 変異テストは 1 変異ごとにフルスイートを回すので、所要は
+# `--max × スイート実行時間` にそのまま比例する（実測: `--max 15` で 960〜1065 秒 ＝
+# CI 全体の 94%）。スイートは伸び続ける（524 → 597 件）ので、push 側に深い検証を
+# 置いたままだと**変更が大きい回ほど待たされる**構造が悪化する。
+# 待つ人が居ない時間帯に寄せて、push 側は即時性だけを担保する。
+#
+# **失敗は GitHub Issue に起票する**（#138 の「非ブロッキングだと守られない」への答え）。
+# nightly を単に fail させるだけだと Actions のタブが赤いまま放置されるので、
+# 生存した変異の一覧を本文に入れて起票し、同じ issue が open なら追記する。
+
+on:
+  schedule:
+    - cron: "0 18 * * *"   # 03:00 JST（前日 18:00 UTC）
+  workflow_dispatch:        # 手動起動（範囲は同じく直近 24h）
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    # `--max 60 × フルスイート` は伸びうる（実測 1 変異 113 秒 → 上限で約 2 時間）。
+    # 既定の 6 時間まで走らせる理由が無いので切っておく（打ち切られたら --max を下げる）
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # --base の解決に履歴が要る
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install-deps
+        run: pip install jsonschema
+
+      # 直近 24 時間に入った変更行を対象にする。**24h より古い最新のコミット**を base に
+      # 置くことで「昨夜以降に触った行」だけを見る。24h 以内にコミットが無ければ何もしない
+      - name: resolve-base
+        run: |
+          base=$(git rev-list -1 --before="24 hours ago" HEAD)
+          if [ -z "$base" ] || [ "$base" = "$(git rev-parse HEAD)" ]; then
+            echo "直近 24h に変更が無いので skip"
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          else
+            echo "比較起点: $base"
+            echo "MUT_BASE=$base" >> "$GITHUB_ENV"
+          fi
+
+      # `--max 60` は「1 日ぶんの変更行なら実質全部」を狙った値。上限に当たった回は
+      # ログに「N 個を対象外にした」と出るので、恒常的に当たるようなら分割を検討する
+      - name: mutation-test
+        if: env.SKIP != '1'
+        run: |
+          set -o pipefail
+          python3 .claude-plugin/scripts/mutation-test.py \
+            --base "$MUT_BASE" --max 60 --strict 2>&1 | tee mutation.log
+
+      # **失敗を黙って流さない**。Actions の赤は見に行かないと気づけないので issue にする
+      - name: report
+        if: failure() && env.SKIP != '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "## 生存した変異がある（nightly / \`--base ${MUT_BASE}\`）"
+            echo
+            echo "**生存 = そのコードを壊してもテストが落ちない**＝その挙動を検証していない。"
+            echo "直し方は 2 つだけ: ①生存した変異を殺すテストを足す"
+            echo "②等価変異なら**理由つきで** \`# mutation-ok: <理由>\` を同じ行に置く。"
+            echo
+            echo "- run: ${RUN_URL}"
+            echo "- 対象: ${MUT_BASE}..$(git rev-parse --short HEAD)"
+            echo
+            echo '```'
+            tail -40 mutation.log 2>/dev/null || echo "(ログを取得できなかった)"
+            echo '```'
+          } > body.md
+          # **同じ issue が open なら追記する**（毎晩新しい issue を立てない）。
+          # タイトルの前方一致で引く（検索構文のエスケープに依存しない）
+          existing=$(gh issue list --state open --limit 100 --json number,title \
+            --jq '[.[] | select(.title | startswith("[mutation-nightly]"))][0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file body.md
+          else
+            gh issue create --title "[mutation-nightly] 生存した変異がある" \
+              --label bug --body-file body.md
+          fi

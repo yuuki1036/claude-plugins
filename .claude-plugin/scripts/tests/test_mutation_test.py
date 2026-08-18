@@ -144,6 +144,31 @@ class BuildMutantsTest(unittest.TestCase):
         self.assertFalse(mt.is_test_file(Path("x/scripts/mutation-test.py")))
 
 
+class SpreadTest(unittest.TestCase):
+    """`--max` で切るときにファイルが偏らないこと（push 側の CI は浅く回すため）."""
+
+    @staticmethod
+    def _m(name: str, lineno: int):
+        return mt.Mutant(path=Path(name), lineno=lineno, original="x", mutated="y", rule="r")
+
+    def test_files_are_interleaved(self):
+        mutants = [self._m("a.sh", i) for i in range(1, 4)]
+        mutants += [self._m("b.sh", i) for i in range(1, 4)]
+        got = [m.path.name for m in mt.spread(mutants)]
+        self.assertEqual(got, ["a.sh", "b.sh", "a.sh", "b.sh", "a.sh", "b.sh"])
+
+    def test_the_first_n_cover_every_file(self):
+        """**先頭 N 件で全ファイルに触れる**のが目的（偏ると片方が無検証のまま緑になる）."""
+        mutants = [self._m("%d.sh" % f, i) for f in range(4) for i in range(1, 6)]
+        head = mt.spread(mutants)[:4]
+        self.assertEqual(sorted(m.path.name for m in head),
+                         ["0.sh", "1.sh", "2.sh", "3.sh"])
+
+    def test_uneven_counts_do_not_drop_mutants(self):
+        mutants = [self._m("a.sh", i) for i in range(1, 5)] + [self._m("b.sh", 1)]
+        self.assertEqual(len(mt.spread(mutants)), 5, "並べ替えで落ちている")
+
+
 class ShellRedirectTest(unittest.TestCase):
     """シェルの `>` はリダイレクトであって比較ではない.
 

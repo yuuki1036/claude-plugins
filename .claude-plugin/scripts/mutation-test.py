@@ -287,6 +287,25 @@ def _py_masked_spans(path: Path) -> dict[int, list[tuple[int, int]]] | None:
     return spans
 
 
+def spread(mutants: list[Mutant]) -> list[Mutant]:
+    """ファイルを丸に並べ替える（`--max` で切ったときに 1 ファイルへ偏らせないため）.
+
+    `build_mutants` はファイル順・行順に積むので、先頭から `--max` 件を採ると
+    **アルファベット順で先に来るファイルだけ**を見た結果になる。変更が複数ファイルに
+    またがる回ほど偏りが効くので、ファイル横断で 1 個ずつ拾う順序に直す。
+    **決定的**（`sorted` のみ。乱択にすると CI の再現性が消える）。
+    """
+    by_file: dict[Path, list[Mutant]] = {}
+    for m in mutants:
+        by_file.setdefault(m.path, []).append(m)
+    out: list[Mutant] = []
+    while any(by_file.values()):
+        for path in sorted(by_file):
+            if by_file[path]:
+                out.append(by_file[path].pop(0))
+    return out
+
+
 def build_mutants(targets: dict[Path, set[int]]) -> list[Mutant]:
     mutants: list[Mutant] = []
     for path in sorted(targets):
@@ -564,7 +583,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     _install_signal_handlers()   # ここから先が変異を書く区間
-    mutants = build_mutants(targets)
+    # **ファイル横断で丸めてから切る**。先頭から切ると変更が複数ファイルにまたがる回で
+    # 1 ファイルに偏る（push 側の CI は `--max` を小さくしてあるので特に効く）
+    mutants = spread(build_mutants(targets))
     dropped = max(0, len(mutants) - args.max)
     mutants = mutants[: args.max]
     print(f"変異 {len(mutants)} 個を実行する"

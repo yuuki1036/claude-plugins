@@ -36,6 +36,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  # python3 .claude-plugin/scripts/run-tests.py
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・回帰テスト
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
+                                 #   変異テストは `--max 5` のスモークだけ（深い検証は nightly）
+.github/workflows/mutation-nightly.yml # 変異テストの深い方（03:00 JST / 直近 24h の変更行を
+                                 #   --max 60）。生存があれば GitHub Issue を起票・追記する
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
   settings.json                  # Stop hook（auto-quality-check.sh）等の設定
   review-oracles.sh              # self-review が agent 起動前に走らせる機械層の宣言

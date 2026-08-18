@@ -76,6 +76,12 @@ jobs:
       # 変更行の変異テスト。**テストが実は何も検証していない**（通るだけのテスト）を
       # 機械的に検出する。ローカルでは手動起動なので、強制力は CI 側に置く。
       #
+      # **push 側は浅いスモーク（`--max 5`）**。1 変異ごとにフルスイートを回すので、
+      # 変更行が多い回は `--max` にそのまま比例する（実測: `--max 15` で 960〜1065 秒 ＝
+      # CI 全体の 94%）。**深い検証は nightly（`mutation-nightly.yml`）に移した**
+      # ので、ここは「明らかに何も検証していない」を早く弾くだけに絞る。
+      # 切り方は `spread()` がファイル横断で丸めるので、浅くても全変更ファイルに触れる。
+      #
       # **ブロッキング**（`--strict` = 生存が 1 つでもあれば fail / GitHub issue #138）。
       # 非ブロッキングだった理由（「同梱スクリプトにテストが数本しか無く、触ると生存率が
       # 当然高くなる」）は hook 27/27 + 同梱スクリプト 37/37 で消えた。
@@ -94,7 +100,7 @@ jobs:
           if [ -z "${DIFF_BASE:-}" ]; then
             echo "比較対象が特定できないため skip（初回コミット）"; exit 0
           fi
-          python3 .claude-plugin/scripts/mutation-test.py --base "$DIFF_BASE" --max 15 --strict
+          python3 .claude-plugin/scripts/mutation-test.py --base "$DIFF_BASE" --max 5 --strict
 
       # pre-commit と同等のバージョンバンプ検査。
       # ローカル hook は --no-verify で迂回できるため CI 側でも検査する。
