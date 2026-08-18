@@ -2,6 +2,23 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.70.0] - 2026-08-18
+
+**計測できていなかった 2 つを payload に載せた。** このマシンの `review:completed` 37 件を transcript と突き合わせた実測が契機（GitHub issue #142 / #143）。
+
+### Added
+- **`dispatch`: agent の発行パターン**（#142）。`measure-tokens.sh` が agent transcript の**起動時刻の間隔**から `batched` / `serial` / `mixed` / `single` を判定し、publish が payload に載せる。`verdict` が `batched` 以外なら stderr で警告する
+  - **なぜ要るか**: `duration_fleet_min` は「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を区別できない。実測では **16 回中 13 回が逐次発行**で、累計 **431 分（7.2 時間）** を失っていた。守られた 3 回はいずれも 3〜5 体の小規模で、**体数が多い＝一括発行が最も効く回ほど破られている**
+  - 一括発行の規約（#95 / `orchestration-guide.md ## 0`）は 2026-07 から存在する。**規約はあるのに守られない**原因は、守られたかどうかを誰も観測していないこと。事後計測なので暴発しない（発行そのものを hook で止める案より安い）
+  - 判定できない回（agent 0〜1 体 / transcript を引けない）は `measurement_gaps` に `dispatch` を立てる。**「一括だった」に倒さない**
+  - `review-retro.sh` に「一括発行が守られた割合」を追加
+- **self-review でも `tokens` を載せる**（#143）。実測: 37 件すべてで欠測しており、**体数削減・分冊・遅延読み込みの効果を一度も測れていなかった**
+  - 旧版は「self-review は publish の後に Step 7 の修正作業が続く」として除外していたが、`measure-tokens.sh` は **publish 時点の transcript を読む**ので `t0 → publish` は閉じている（後続の修正はまだ transcript に無い）
+  - 窓に修正作業が混ざるのは**遅れて publish した回だけ**なので、そこは `window: "since-t0-late"` として区別する（集計側は `since-t0` だけを使う契約なので自動的に外れる）
+
+### Changed
+- `references/orchestration-measurement.md` `## 16` / `## 17` を追従（`tokens` の適用範囲・`dispatch` の契約・`measurement_gaps` の語彙）
+
 ## [2.69.1] - 2026-08-18
 
 **セルフレビューが自分の機械層変更に見つけた欠陥の修正。** 機械層の exit code 契約（0 緑 / 1 検出 / 2 判定不能）が、消費側の `run-oracles.sh` で失われていた。

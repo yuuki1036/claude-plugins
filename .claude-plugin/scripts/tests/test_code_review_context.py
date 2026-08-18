@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 import os
 import shutil
 import subprocess
@@ -612,6 +613,85 @@ class MeasureTokensTest(ScriptTestBase):
             self.usage_row("2026-08-17T10:00:30Z", out=10),
         ])
         self.assertEqual(self.intake_row(self.measure().stdout, "?"), 20)
+
+
+class DispatchPatternTest(MeasureTokensTest):
+    """agent の**起動間隔**から一括発行が守られたかを判定する（GitHub issue #142）.
+
+    `duration_fleet_min` は「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を
+    区別できない。実測ではこの区別が最大の改善余地だった（16 回中 13 回が逐次発行で、
+    累計 431 分＝7.2 時間を失っていた）。**規約はあるのに守られない**ので、
+    守られたかどうかを事後に観測できるようにする。
+    """
+
+    def with_agents(self, offsets_sec: list[int], session: str = "s1") -> dict:
+        """`offsets_sec` の秒数だけずらして agent を起動した transcript を作る."""
+        base = datetime(2026, 8, 18, 1, 0, 0)
+        self.write_session(session, [self.usage_row(base.isoformat() + "Z", out=10)])
+        for i, off in enumerate(offsets_sec):
+            ts = (base + timedelta(seconds=off)).isoformat() + "Z"
+            self.write_subagent(session, "agent-%d" % i, [self.usage_row(ts, out=5)])
+        return self.as_json()["dispatch"]
+
+    def test_same_message_dispatch_is_batched(self):
+        d = self.with_agents([1, 3, 8])
+        self.assertEqual(d["verdict"], "batched", d)
+        self.assertEqual(d["agents"], 3)
+
+    def test_one_by_one_dispatch_is_serial(self):
+        """1 体ずつ別メッセージで発行した回（実測の 13/16 がこれ）."""
+        d = self.with_agents([0, 400, 900])
+        self.assertEqual(d["verdict"], "serial", d)
+        self.assertEqual(d["max_gap_sec"], 500)
+        self.assertEqual(d["span_sec"], 900)
+
+    def test_split_dispatch_is_mixed(self):
+        """間隔は詰まっているが総幅が広い＝何回かに分けて発行している."""
+        d = self.with_agents([0, 60, 119, 175])
+        self.assertEqual(d["verdict"], "mixed", d)
+
+    def test_exactly_two_agents_are_judged(self):
+        """**2 体ちょうど**が判定の下限（`>= 2`）。ここを外すと最小の fleet が判定不能に落ちる."""
+        self.assertEqual(self.with_agents([0, 4])["verdict"], "batched")
+        self.setUp()
+        d = self.with_agents([0, 600])
+        self.assertEqual(d["verdict"], "serial", d)
+        self.assertEqual(d["agents"], 2)
+
+    def test_text_mode_prints_the_pattern_and_hints_only_when_broken(self):
+        """人間向け出力: 破られた回だけ是正先を出す（守れた回は行だけで黙る）."""
+        self.with_agents([0, 600])
+        broken = self.measure().stdout
+        self.assertIn("逐次発行", broken)
+        self.assertIn("最長 1 体ぶん", broken, "是正先を出していない")
+        self.setUp()
+        self.with_agents([0, 4])
+        ok = self.measure().stdout
+        self.assertIn("一括発行", ok)
+        self.assertNotIn("最長 1 体ぶん", ok, "守れた回にまで是正を出している")
+
+    def test_a_single_agent_cannot_be_judged(self):
+        """1 体では wave の概念が立たない。**batched に倒さない**."""
+        self.assertEqual(self.with_agents([0])["verdict"], "single")
+
+    def test_no_agent_is_unknown_not_batched(self):
+        base = datetime(2026, 8, 18, 1, 0, 0).isoformat() + "Z"
+        self.write_session("s1", [self.usage_row(base, out=10)])
+        d = self.as_json()["dispatch"]
+        self.assertEqual(d["verdict"], "unknown", d)
+        self.assertEqual(d["agents"], 0)
+
+    def test_agents_outside_the_window_are_not_counted(self):
+        """窓（`--since`）と体数の意味を揃える（既存の `sub_agents` と同じ契約）."""
+        base = datetime(2026, 8, 18, 1, 0, 0)
+        self.write_session("s1", [self.usage_row(base.isoformat() + "Z", out=10)])
+        self.write_subagent("s1", "agent-old",
+                            [self.usage_row((base - timedelta(hours=2)).isoformat() + "Z", out=5)])
+        self.write_subagent("s1", "agent-new",
+                            [self.usage_row(base.isoformat() + "Z", out=5)])
+        d = json.loads(self.measure("--json", "--since",
+                                    base.isoformat()).stdout)["dispatch"]
+        self.assertEqual(d["agents"], 1, "窓の外で起動した agent を数えている")
 
 
 if __name__ == "__main__":

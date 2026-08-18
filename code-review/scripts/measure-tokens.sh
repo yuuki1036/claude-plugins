@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# セッションのトークン消費を transcript から集計する（改修の前後比較用）。
+# セッションの**トークン消費と agent の発行パターン**を transcript から集計する
+# （改修の前後比較用）。
 #
 # `review:completed` payload は所要時間しか持たないため、「トークンが減ったか」は
 # 従来まったく測れていなかった。Claude Code の transcript (jsonl) は各アシスタント
@@ -15,6 +16,9 @@
 #   - main.output      … オーケストレーターが**書いた**量。プロンプト複製はここに出る（単価最大）
 #   - main.cache_write … オーケストレーターが**新規に読んだ**量。参照 doc の読み込みはここ
 #   - sub.*            … サブエージェント側。体数を変えた効果はここに出る
+#   - dispatch         … agent の**起動間隔**から一括発行が守られたかを判定する
+#                        （GitHub issue #142）。`duration_fleet_min` は「9 体を逐次で
+#                        回した 89 分」と「1 体が 89 分かかった」を区別できない
 #
 # 使い方:
 #   measure-tokens.sh                      # 現在のリポジトリの最新セッション
@@ -109,6 +113,7 @@ first_ts = last_ts = None
 # glob したファイル数をそのまま体数にすると窓の外で起動した agent まで数えてしまう（実測:
 # `--since 2099-01-01` で `sub.n=0` なのに `sub_agents=8`）。窓と体数の意味を揃える
 sub_seen = set()
+sub_first = {}    # サブエージェント transcript -> 窓内で最初の timestamp（= 起動時刻）
 tool_of = {}      # tool_use_id -> ツール名（main のみ）
 intake = {}       # ツール名 -> tool_result の総文字数
 intake_n = {}     # ツール名 -> tool_result の件数
@@ -179,6 +184,10 @@ for fpath, side in targets:
                             name = tool_of.get(blk.get("tool_use_id"), "?")
                             intake[name] = intake.get(name, 0) + len(body)
                             intake_n[name] = intake_n.get(name, 0) + 1
+            # **usage を持つ行に限らない**（起動直後のメタ行が先に来る）。窓の適用は
+            # 上の `since` フィルタで済んでいるので、ここに来た時点で窓内
+            if side and ts and fpath not in sub_first:
+                sub_first[fpath] = ts
             u = (e.get("message") or {}).get("usage")
             if not u:
                 continue
@@ -194,6 +203,39 @@ for fpath, side in targets:
             b["cr"] += u.get("cache_read_input_tokens") or 0
             b["inp"] += u.get("input_tokens") or 0
 agents = sub_files
+
+# **発行パターンの判定**（GitHub issue #142）。実測: 16 回中 13 回が逐次発行で、
+# 累計 431 分（7.2 時間）を失っていた。守られた 3 回はいずれも 3〜5 体の小規模で、
+# **体数が多い＝一括発行が最も効く回ほど破られている**。
+#
+# 事後計測なので暴発しない（hook で発行そのものを止める案より安く、副作用も無い）。
+DISPATCH_GAP_SEC = 120
+
+
+def _epoch(ts):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+starts = sorted(t for t in (_epoch(v) for v in sub_first.values()) if t is not None)
+dispatch = {"agents": len(starts), "max_gap_sec": None, "span_sec": None, "verdict": "unknown"}
+if len(starts) == 1:
+    # 1 体では一括かどうかを問えない（wave の概念が立たない）
+    dispatch.update(max_gap_sec=0, span_sec=0, verdict="single")
+elif len(starts) >= 2:
+    gaps = [b - a for a, b in zip(starts, starts[1:])]
+    span = starts[-1] - starts[0]
+    if max(gaps) > DISPATCH_GAP_SEC:
+        verdict = "serial"          # 1 体ずつ別メッセージで発行している
+    elif span < DISPATCH_GAP_SEC:
+        verdict = "batched"         # 同一メッセージ内の一括発行
+    else:
+        verdict = "mixed"           # 何回かに分けて発行している
+    dispatch.update(max_gap_sec=round(max(gaps)), span_sec=round(span), verdict=verdict)
+
 
 def k(v): return f"{v/1000:,.1f}k"
 
@@ -215,6 +257,9 @@ if os.environ.get("AS_JSON") == "1":
         # 空」＝引き当て失敗の検出に要る（呼び出し側が縮退判定に使う）
         "sub_agents": len(sub_seen),
         "sub_files": len(agents),
+        # **窓内に起動した agent の起動間隔**（`sub_agents` と同じ窓）。publish が payload の
+        # `dispatch` に載せ、`verdict != "batched"` のとき警告する
+        "dispatch": dispatch,
     }, ensure_ascii=False, separators=(",", ":")))
     sys.exit(0)
 
@@ -236,6 +281,15 @@ elif buckets[False]["n"]:
     print("\n⚠️  サブエージェントの transcript が見つからない: " + (subdir or "(未指定)"))
     print("   fleet を起動したのに 0 体なら、session-id での引き当てが効いていない。")
     print("   `ls ~/.claude/projects/*/" + os.path.basename(os.path.dirname(subdir or "")) + "/subagents` で実在を確認する")
+# **`if agents:` の elif 連鎖の外に置く**（間に挟むと「1 体だけ起動した回」で
+# 『transcript が見つからない』が誤発火する）
+if dispatch["verdict"] in ("serial", "mixed", "batched"):
+    label = {"serial": "逐次発行", "mixed": "分割発行", "batched": "一括発行"}[dispatch["verdict"]]
+    print("発行パターン    : %s（%d 体 / 最大間隔 %ds / 総幅 %ds）"
+          % (label, dispatch["agents"], dispatch["max_gap_sec"], dispatch["span_sec"]))
+    if dispatch["verdict"] != "batched":
+        print("   → 一括発行なら fleet は**最長 1 体ぶん**で済む"
+              "（orchestration-guide.md `## 0`「並列発行の明示」）")
 if intake:
     total_chars = sum(intake.values())
     print("\nmain への取り込み内訳（tool_result + attachment の文字数 / GitHub issue #118）")

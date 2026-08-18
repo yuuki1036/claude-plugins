@@ -88,21 +88,21 @@ case "$PLUGIN" in
 esac
 [ "$LATE_PUBLISH" = "1" ] && DUR=-1
 
-# ---- トークン消費（**review のみ** / issue #126） ---------------------------
+# ---- トークン消費と発行パターン（issue #126 / #142 / #143） -----------------
 # 体数削減が確実に効くのは壁時計ではなくトークン（triage-guide.md `## 7`）なのに、payload は
 # 時間しか持っていなかった＝主要レバーの効果が自動集計の外にあった。publish はレポートの後
 # ＝ transcript 確定後なので、ここでなら自分の回の消費量を読める。
 #
-# **self-review は載せない**。`EnterWorktree` は cwd と subagent の slug を変えるだけで
-# **セッション自体はメインリポジトリで始まったまま**なので（measure-tokens.sh の候補 dir 探索が
-# まさにこれを前提にしている）、review も「隔離セッション」ではない。両者を分けるのは publish の
-# 位置で、review は `t0 → レポート → publish` が 1 レビューで閉じる直列区間なのに対し、
-# self-review は publish（Step 6.4）の後に Step 7 の修正方針確認と修正作業が続く。
-# **窓の外に本作業が続く側は近似が成立しない**。
+# **self-review も載せる**（issue #143 で除外を撤回）。旧版は「self-review は publish の後に
+# Step 7 の修正作業が続くので窓の外に本作業が続く」として除外していたが、`measure-tokens.sh` は
+# **publish 時点の transcript を読む**ので、その時点で `t0 → publish` は閉じている（後続の修正は
+# まだ transcript に存在しない）。除外が正当なのは**遅れて publish した回だけ**で、そこは
+# `LATE_PUBLISH`（t2 から 10 分以上）で既に判定できているので `window` を分けて表現する。
+# 実測: 除外していた間、このマシンの review:completed 37 件すべてで `tokens` が欠測だった。
 TOKENS_JSON=""; TOKENS_WANTED=0; TOKENS_WINDOW="session"
 TOK_ARGS=()
 case "$PLUGIN" in
-  *:review)
+  *:review|*self-review)
     TOKENS_WANTED=1
     T0=$(bash "$HERE/review-timing.sh" t0 ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)
     case "$T0" in
@@ -112,7 +112,12 @@ case "$PLUGIN" in
         # measure-tokens.sh の絞り込みは文字列比較なので、`...:33Z` は同秒のメッセージより
         # 大きくなり境界の 1 秒ぶんを落とす。秒までの接頭辞なら常に手前に来る
         SINCE_ISO=$(python3 -c 'import sys,datetime;print(datetime.datetime.fromtimestamp(int(sys.argv[1]),datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"))' "$T0" 2>/dev/null)
-        if [ -n "$SINCE_ISO" ]; then TOK_ARGS=(--since "$SINCE_ISO"); TOKENS_WINDOW="since-t0"; fi
+        if [ -n "$SINCE_ISO" ]; then
+          TOK_ARGS=(--since "$SINCE_ISO")
+          # **遅れて publish した回は窓に修正作業が混ざる**ので別の名前で出す。
+          # 集計側は `since-t0` だけを使う契約なので、混ざった回は自動的に外れる
+          if [ "$LATE_PUBLISH" = "1" ]; then TOKENS_WINDOW="since-t0-late"; else TOKENS_WINDOW="since-t0"; fi
+        fi
         ;;
     esac
     TOKENS_JSON=$(bash "$HERE/measure-tokens.sh" --json ${TOK_ARGS[@]+"${TOK_ARGS[@]}"} 2>/dev/null)
@@ -276,7 +281,7 @@ for field in ("adversarial_verify", "recall_skeptic", "meta_reviewer"):
     if isinstance(d, dict) and "fired" not in d:
         gaps.append("payload:%s.fired" % field)
 
-# ---- トークン消費（review のみ / issue #126） -------------------------------
+# ---- トークン消費と発行パターン（issue #126 / #142 / #143） -----------------
 if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
     try:
         tok = json.loads(os.environ.get("REVIEW_TOKENS") or "")
@@ -309,6 +314,27 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 「窓が空振りした」を意味する。ゼロを実測値として載せると retro の中央値と
         # 体数相関を壊す（実測: 相関 r が 1.00 → 0.18）。**欠測は誤値より望ましい**
         gaps.append("tokens")
+
+    # **発行パターンは tokens とは独立に載せる**（GitHub issue #142）。窓が空振りして
+    # `tokens` が欠測になった回でも、agent の起動時刻は拾えていることがある。
+    # `duration_fleet_min` だけでは「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を
+    # 区別できず、実測ではその区別が最大の改善余地だった（16 回中 13 回が逐次 / 累計 431 分）
+    disp = tok.get("dispatch") if isinstance(tok, dict) else None
+    if isinstance(disp, dict) and disp.get("verdict") not in (None, "unknown"):
+        payload["dispatch"] = disp
+        if disp.get("verdict") in ("serial", "mixed"):
+            label = "逐次発行" if disp["verdict"] == "serial" else "分割発行"
+            sys.stderr.write(
+                "WARN: agent を%s している（%s 体 / 最大間隔 %s 秒）。一括発行なら fleet は"
+                "**最長 1 体ぶん**で済む — orchestration-guide.md `## 0`「並列発行の明示」\n"
+                "  → **レポート末尾に 1 行追記すること**: "
+                "`⚠️ 計測: agent を%s した（一括発行の規約違反 / #142）`\n"
+                % (label, disp.get("agents"), disp.get("max_gap_sec"), label)
+            )
+    else:
+        # 判定できなかった（agent 0〜1 体 / transcript を引けない）。**「一括だった」に
+        # 倒さない** — 規約が守られたことの証拠が無い回として残す
+        gaps.append("dispatch")
 
 digest = os.environ.get("REVIEW_DIFF_DIGEST") or ""
 files_key = os.environ.get("REVIEW_DIFF_FILES") or ""

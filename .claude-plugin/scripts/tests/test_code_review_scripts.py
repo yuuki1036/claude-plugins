@@ -20,6 +20,7 @@ pre-commit / CI / Stop hook の 3 経路に**設定変更なしで**乗る。
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 import os
 import subprocess
 import tempfile
@@ -261,6 +262,99 @@ class MissingCoverageValidationTest(ScriptTestBase):
         self.assertIn("payload:missing_coverage", self.last_payload()["measurement_gaps"])
 
 
+class TokenAndDispatchPayloadTest(ScriptTestBase):
+    """publish が `tokens` / `dispatch` を payload に載せる（GitHub issue #142 / #143）.
+
+    - **#143**: self-review は `tokens` を構造的に載せていなかった（実測: このマシンの
+      review:completed 37 件すべてで欠測）。体数削減・分冊の効果は全部そこに出るのに、
+      主要レバーの効果が自動集計の外にあった
+    - **#142**: `duration_fleet_min` は「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を
+      区別できない。実測 16 回のうち 13 回が逐次発行で、累計 431 分を失っていた
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.home = self.root / "home"
+        (self.home / ".claude" / "projects").mkdir(parents=True)
+
+    def env_home(self) -> dict[str, str]:
+        return self._env(HOME=str(self.home))
+
+    def write_transcript(self, agent_offsets: list[int]) -> None:
+        """cwd に対応する slug へ session + subagent を置く（起動時刻を秒でずらす）."""
+        slug = "".join(c if c.isalnum() else "-" for c in str(self.root))
+        d = self.home / ".claude" / "projects" / slug
+        d.mkdir(parents=True, exist_ok=True)
+        base = datetime(2026, 8, 18, 1, 0, 0)
+
+        def row(ts: str) -> str:
+            return json.dumps({"type": "assistant", "timestamp": ts,
+                               "message": {"usage": {"output_tokens": 10,
+                                                     "cache_creation_input_tokens": 20,
+                                                     "cache_read_input_tokens": 30}}})
+
+        (d / "s1.jsonl").write_text(row(base.isoformat() + "Z") + "\n", encoding="utf-8")
+        sub = d / "s1" / "subagents"
+        sub.mkdir(parents=True, exist_ok=True)
+        for i, off in enumerate(agent_offsets):
+            ts = (base + timedelta(seconds=off)).isoformat() + "Z"
+            (sub / ("agent-%d.jsonl" % i)).write_text(row(ts) + "\n", encoding="utf-8")
+
+    def test_self_review_carries_tokens(self):
+        """**除外の撤回**（#143）。載らない回は「載せない」ではなく欠測として残す."""
+        self.write_transcript([0, 5])
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertIn("tokens", p, "self-review で tokens が載っていない")
+        self.assertEqual(p["tokens"]["window"], "session", "t0 が無い回は session 窓")
+        self.assertEqual(p["tokens"]["sub_agents"], 2)
+
+    def test_missing_transcript_is_a_gap_not_a_zero(self):
+        """transcript を引けない回に 0 を載せない（retro の中央値と相関を壊すため）."""
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertNotIn("tokens", p)
+        self.assertIn("tokens", p["measurement_gaps"])
+
+    def test_serial_dispatch_lands_and_warns(self):
+        self.write_transcript([0, 600, 1300])
+        res = self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertEqual(p["dispatch"]["verdict"], "serial", p.get("dispatch"))
+        self.assertEqual(p["dispatch"]["agents"], 3)
+        self.assertIn("逐次発行", res.stderr)
+        self.assertIn("#142", res.stderr)
+
+    def test_batched_dispatch_does_not_warn(self):
+        """**守れた回は黙る**（⚠️ が出たときだけ行動する契約）."""
+        self.write_transcript([0, 3, 7])
+        res = self.publish(env=self.env_home())
+        self.assertEqual(self.last_payload()["dispatch"]["verdict"], "batched")
+        self.assertNotIn("逐次発行", res.stderr)
+        self.assertNotIn("分割発行", res.stderr)
+
+    def test_undecidable_dispatch_is_a_gap_not_batched(self):
+        """agent が居ない回を「一括だった」に倒さない（規約遵守の証拠が無い回）."""
+        self.write_transcript([])
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertNotIn("dispatch", p)
+        self.assertIn("dispatch", p["measurement_gaps"])
+
+    def test_late_publish_marks_the_window(self):
+        """遅れて publish した回は窓に修正作業が混ざる。**別の名前で出す**（#143）."""
+        self.write_transcript([0, 5])
+        path = self.ts_file()
+        now = int(time.time())
+        path.write_text("t0 %d\nt1 %d\nw %d\nt2 %d\n"
+                        % (now - 3600, now - 3500, now - 2000, now - 1800), encoding="utf-8")
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertIn("late-publish", p["measurement_gaps"], "前提: 遅延 publish と判定されている")
+        if "tokens" in p:
+            self.assertEqual(p["tokens"]["window"], "since-t0-late")
+
+
 class LatePublishTest(ScriptTestBase):
     """遅れて publish した self-review は `duration_min` を欠測に倒す（issue #133）."""
 
@@ -336,6 +430,35 @@ class RetroTest(ScriptTestBase):
                                        "calibration_schema": calib, "confirmed": 1,
                                        "refuted": 0, "uncertain": 0,
                                        "severity_inflated": inflated, "contested": 0}}
+
+    def _dispatch(self, verdict: str, max_gap: int = 0, agents: int = 3) -> dict:
+        return {"effort": "high", "measurement_gaps": [],
+                "dispatch": {"agents": agents, "max_gap_sec": max_gap,
+                             "span_sec": max_gap, "verdict": verdict}}
+
+    def test_dispatch_rate_is_reported(self):
+        """一括発行が守られた割合を毎回の振り返りに出す（GitHub issue #142）."""
+        self._events([self._dispatch("serial", 600), self._dispatch("batched", 5),
+                      self._dispatch("serial", 400), self._dispatch("mixed", 100)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**発行パターン**", out)
+        self.assertIn("1/4", out, "守られた割合が出ていない")
+        # 破られた回（600 / 400 / 100）の中央値 = 400。**守れた回を混ぜると値が変わる**ので、
+        # 「どの母集団の中央値か」までを固定する
+        self.assertIn("中央値 400 秒", out)
+
+    def test_undecidable_dispatch_is_out_of_the_denominator(self):
+        """`single` / `unknown` は分母に入れない（判定できないものを守れた側に数えない）."""
+        self._events([self._dispatch("batched", 5), self._dispatch("single", 0, agents=1),
+                      self._dispatch("unknown", 0, agents=0)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("1/1", out, "判定不能を分母に入れている")
+
+    def test_no_dispatch_sample_says_so(self):
+        """サンプル 0 件を「守られた」と読めない形で出す."""
+        self._events([{"effort": "high", "measurement_gaps": []}])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**発行パターン**: 判定対象なし", out)
 
     def test_signal_withheld_while_only_pre_measure_layer_exists(self):
         """層 1 しか無いうちは `severity_inflated` シグナルを出さない（doc が「使うな」と書く値）."""

@@ -705,13 +705,35 @@ elif fc_raw:
 else:
     print("**指摘の分類**: 判定対象なし（`findings_class` を持つサンプルが 0 件）")
 
+# **発行パターン**（GitHub issue #142）: 一括発行が守られた割合。実測では 16 回中 13 回が
+# 逐次発行で、累計 431 分（7.2 時間）を失っていた。**規約はあるのに守られない**ので、
+# 守られた割合を毎回の振り返りに出す
+disp_rows = [e for e in events if isinstance(e["p"].get("dispatch"), dict)]
+judged = [e["p"]["dispatch"] for e in disp_rows
+          if (e["p"]["dispatch"] or {}).get("verdict") in ("batched", "serial", "mixed")]
+print()
+if not judged:
+    print("**発行パターン**: 判定対象なし（`dispatch` を持つサンプル %d 件）" % len(disp_rows))
+else:
+    n_b = sum(1 for d in judged if d["verdict"] == "batched")
+    lost = [d for d in judged if d["verdict"] != "batched"]
+    # **中央値は破られた回だけで採る**（守れた回の間隔は数秒なので、混ぜると値が潰れる）
+    mid = median([d.get("max_gap_sec") or 0 for d in lost])
+    tail = "" if mid is None else " / 逐次・分割の最大間隔 中央値 %g 秒" % mid
+    print("**発行パターン**（一括発行が守られた割合 / n=%d）: **%d/%d（%.0f%%）**%s"
+          % (len(judged), n_b, len(judged), pct(n_b, len(judged)), tail))
+    if n_b < len(judged):
+        print("  - 一括発行なら fleet は**wave 内最長の 1 体**で決まる。"
+              "破られた回は体数ぶんの実時間を直列で払っている（orchestration-guide.md `## 0`）")
+
 print()
 if not tok_rows:
-    print("**トークン**: 判定対象なし（`tokens` を持つ review のサンプル %d 件 / うち "
-          "`window=session` で除外 %d 件。self-review は構造的に載らない）"
+    print("**トークン**: 判定対象なし（`tokens` を持つサンプル %d 件 / うち "
+          "`window=session` / `since-t0-late` で除外 %d 件。**v2.70.0 より前は review でしか"
+          "載らなかった**ので、それ以前のサンプルには構造的に無い / GitHub issue #143）"
           % (len(tok_raw), tok_dropped_window))
 else:
-    line = ("**トークン**（review のみ / t0 以降の窓 / n=%d/%d・`window=session` で除外 %d）: "
+    line = ("**トークン**（t0 以降の窓 / n=%d/%d・`window=session` / `since-t0-late` で除外 %d）: "
             "main.output 中央値 %s / sub.output 中央値 %s"
             % (len(tok_rows), len(tok_raw), tok_dropped_window,
                "-" if median(tok_main) is None else "%g k" % median(tok_main),
