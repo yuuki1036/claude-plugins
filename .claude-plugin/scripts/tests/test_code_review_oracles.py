@@ -73,6 +73,19 @@ class RunOraclesTest(ScriptTestBase):
         self.assertIn("数値のみ", res.stderr)
 
     # ---- status の区別 ------------------------------------------------------
+    def test_exit_2_is_error_not_red(self):
+        """**判定不能を「検出」と混ぜない**（GitHub issue #140 / M6）.
+
+        機械層の契約は 2 = 判定不能。red に落とすと「機械層が問題を検出しました。
+        直しますか？」と提示され、実体が `pip install jsonschema` のような環境差でも
+        直せない指摘として扱われる。
+        """
+        self.declare("#!/usr/bin/env bash\necho '判定できなかった'\nexit 2\n")
+        res = self.run_oracles()
+        got = self.fields(res.stdout)
+        self.assertEqual(got.get("status"), "error", res.stdout)
+        self.assertEqual(got.get("exit_code"), "2")
+
     def test_green_when_the_oracle_succeeds(self):
         self.declare("#!/usr/bin/env bash\necho 'すべて通過'\n")
         res = self.run_oracles()

@@ -9,7 +9,7 @@ exit 0 で通る。
 **特に `apply_and_test` の復元経路は、失敗するとユーザーの未コミット変更が消える**。
 docstring 自身が「実測で事故った」と書いている箇所なので、ここを厚く見る。
 
-実行: python3 -m unittest discover -s .claude-plugin/scripts/tests
+実行: python3 .claude-plugin/scripts/run-tests.py
 """
 
 from __future__ import annotations

@@ -11,7 +11,12 @@ plugin.json を SSoT として、marketplace.json / check-deps.sh / hooks.json �
   5. INDEX.md / CLAUDE.md のプラグイン記載が plugin.json と整合
      (INDEX.md は一覧表の version 列・記載漏れ・余分行、CLAUDE.md は一覧表への記載漏れ)
 
-Exit code: 0 (pass) / 1 (違反あり) / 2 (実行環境エラー)
+Exit code: 0 (pass) / 1 (違反あり) / 2 (判定不能: 実行環境エラー・前提の欠落)
+
+**「判定不能」を「pass」に倒さない**: jsonschema が無い環境ではスキーマ検証だけが
+skip される。exit 0 + "passed" を返すと、ローカル（jsonschema 無し）で緑・CI で赤という
+非対称が push まで見えない（GitHub issue #139 / #140）。違反が別に見つかっていれば
+そちらを優先して 1 を返す（直せるものがある方が行動につながる）。
 """
 
 from __future__ import annotations
@@ -31,22 +36,23 @@ def load_json(path: Path) -> dict:
         return json.load(f)
 
 
-_SCHEMA_SKIP_WARNED = False
+#: jsonschema が無くスキーマ検証を skip したか（最終判定を「pass」に倒さないために見る）
+_SCHEMA_SKIPPED = False
 
 
 def try_validate_schema(instance: dict, schema_name: str, errors: list[str], label: str) -> None:
     """jsonschema ライブラリがあれば利用、無ければスキップ (構造チェックで代替)."""
-    global _SCHEMA_SKIP_WARNED
+    global _SCHEMA_SKIPPED
     try:
         import jsonschema  # type: ignore
     except ImportError:
         # silent skip にすると「ローカルでは落ちるが CI では通る」逆転に気づけない
-        if not _SCHEMA_SKIP_WARNED:
+        if not _SCHEMA_SKIPPED:
             print(
                 "warning: jsonschema が無いためスキーマ検証を skip（pip install jsonschema）",
                 file=sys.stderr,
             )
-            _SCHEMA_SKIP_WARNED = True
+            _SCHEMA_SKIPPED = True
         return
     schema_path = SCHEMA_DIR / schema_name
     if not schema_path.exists():
@@ -208,8 +214,13 @@ def check_docs_sync(manifests: dict[str, dict], errors: list[str]) -> None:
     plugin_names = set(manifests)
 
     # INDEX.md: 一覧表 `| [name](#name) | version | ...` の version 列を照合する
+    #
+    # **ファイルが無いときに黙って skip しない**: 対象が消えれば検査は no-op になるが、
+    # 出力は「passed」のままで区別がつかない（検査が死んでも緑に見える型 / issue #139）
     index_path = ROOT / "INDEX.md"
-    if index_path.exists():
+    if not index_path.exists():
+        errors.append("[docs:INDEX.md] not found: 一覧表の同期を検証できない")
+    else:
         text = index_path.read_text(encoding="utf-8")
         found: dict[str, str] = {}
         row_re = re.compile(
@@ -231,7 +242,9 @@ def check_docs_sync(manifests: dict[str, dict], errors: list[str]) -> None:
 
     # CLAUDE.md: 一覧表セル `| name |` の存在のみ照合する（version 列は持たない）
     claude_path = ROOT / "CLAUDE.md"
-    if claude_path.exists():
+    if not claude_path.exists():
+        errors.append("[docs:CLAUDE.md] not found: 一覧表の同期を検証できない")
+    else:
         text = claude_path.read_text(encoding="utf-8")
         for name in sorted(plugin_names):
             cell_re = re.compile(rf"^\|\s*{re.escape(name)}\s*\|", re.MULTILINE)
@@ -268,6 +281,15 @@ def main() -> int:
         print("", file=sys.stderr)
         print(f"  total: {len(errors)} issue(s)", file=sys.stderr)
         return 1
+
+    if _SCHEMA_SKIPPED:
+        # 検証できなかったものを「通過」と呼ばない。ここを 0 にすると
+        # 「スキーマ違反が無い」と「スキーマを見ていない」の区別が消える
+        print("SSoT validation incomplete: jsonschema が無くスキーマ検証を実行できなかった",
+              file=sys.stderr)
+        print("  pip install jsonschema （CI は導入済みなので、この環境だけが緩い）",
+              file=sys.stderr)
+        return 2
 
     print(f"SSoT validation passed ({len(manifests)} plugins)")
     return 0

@@ -9,7 +9,7 @@
 - `stale-check.sh` — opt-in。config が無ければ**何もしない**。閾値は phase 別で、
   境界（ちょうど閾値なら鳴らない / 1 日超えたら鳴る）を両側から測る
 
-実行: python3 -m unittest discover -s .claude-plugin/scripts/tests
+実行: python3 .claude-plugin/scripts/run-tests.py
 """
 
 from __future__ import annotations

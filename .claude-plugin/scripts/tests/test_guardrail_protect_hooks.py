@@ -10,7 +10,7 @@
 しかもこのファイルは「引用符=メッセージ」という素朴前提を廃するために自前の
 シェル準拠トークナイザを持っている。テストが 1 本も無い状態で置いておく代物ではない。
 
-実行: python3 -m unittest discover -s .claude-plugin/scripts/tests
+実行: python3 .claude-plugin/scripts/run-tests.py
 """
 
 from __future__ import annotations

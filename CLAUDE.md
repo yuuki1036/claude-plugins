@@ -17,15 +17,23 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  # bump-version.sh（バージョンバンプの 4 ファイル同時更新 + vNEXT 解決。
                                  #   pre-commit は検証のみで実行しない）
                                  # mutation-test.py（変更行の変異テスト。検証していない挙動を列挙）
-.claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。3 系統:
+                                 # run-tests.py（回帰テストの起動口。新セッションで走らせ、
+                                 #   終了後に残ったプロセスを検出・回収する。pre-commit / CI /
+                                 #   machine-layer はここを呼ぶ）
+.claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。4 系統:
                                  #  ① 検証スクリプト自身（test_validate_plugin_quality.py / test_mutation_test.py）
                                  #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
                                  #     （`test_<plugin>_*.py`。bats を入れず依存ゼロで 3 経路に載せる）
-                                 #  ③ repo 直下スクリプトの CLI テスト（test_bump_version.py。
-                                 #     使い捨ての git リポジトリを立てて本物の CLI を叩く）
+                                 #  ③ repo 直下スクリプトの CLI テスト（使い捨てリポジトリを立てる）。
+                                 #     ゲートの判断（何を止めるか / 判定不能を通すか）は stub を置いて
+                                 #     exit code の契約だけを見る: test_machine_layer.py /
+                                 #     test_auto_quality_check.py / test_pre_commit.py
+                                 #     本物を使い捨てリポジトリに向けて走らせ生成物まで見る:
+                                 #     test_bump_version.py / test_validate_ssot.py /
+                                 #     test_run_tests.py（#139 / #140）
                                  #  ④ hook スクリプト（hook_harness.py + test_<plugin>_hooks.py。
                                  #     stdin に JSON を流し「発火するか / 黙るか」を直接見る）
-                                 # python3 -m unittest discover -s .claude-plugin/scripts/tests
+                                 # python3 .claude-plugin/scripts/run-tests.py
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・回帰テスト
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
@@ -92,6 +100,10 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 ```bash
 # pre-commit hook を有効化（初回のみ）
 git config core.hooksPath .githooks
+
+# SSoT 検査の前提（**必須**）。無いとスキーマ検証が実行できず、
+# validate-ssot.sh が exit 2（判定不能）を返して pre-commit が止まる
+pip install jsonschema
 ```
 
 ## コマンド
@@ -210,6 +222,7 @@ event_bus_clear
 - **バージョンバンプ忘れ**: プラグインの内容を変更したら必ず plugin.json の version を上げ、CHANGELOG.md も同時更新する。上げないと使用側で更新が検知されない。どちらも pre-commit hook でブロックされる
 - **_requirements の同期忘れ**: プラグインの依存先が変わったら plugin.json の `_requirements` と `check-deps.sh` の両方を更新する。pre-commit の `validate-ssot.sh` が `check_xxx "<name>"` 形式の一致を検証する
 - **hook スクリプトは `hook_harness.py` でテストする**: hooks.json を経由せずスクリプトを直接叩き、**発火する条件より「黙る条件」を厚く**書く（暴発の blast radius が最大だから）。`safe_hook_input` の参照有無は静的検査で見ているが、**その自己判定が実際に効くか**は実行しないと分からない（実測: 最初の 19 テストで publish が丸ごと落ちる欠陥を 3 件検出した）。特に **`VAR=$(... | grep ...)` は `|| true` が必須** — 非マッチの exit 1 が safe-hook の ERR trap を踏み、以降の処理を実行せず exit 0 する（`grep -c` は「0 を出力して exit 1」なので `|| echo 0` は二重出力になり JSON が壊れる）
+- **`set -e` 下で「非ゼロが正常」なコマンドの結果を `VAR="$(...)"; RC=$?` と書かない**: 代入の終了コードは中のコマンドのもので、非ゼロならその行で `set -e`（safe-hook が張る）が発動し、**以降を実行せず ERR trap → exit 0** する。hook の正常系が silent exit 0 なので、呼び出し側からは「何も検出しなかった」と区別がつかない。`VAR="$(...)" && RC=0 || RC=$?` と `||` リストに入れる。実例: `auto-quality-check.sh` が機械層の exit 1 を受け取った瞬間に死に、**検出の通知（stderr / additionalContext）が丸ごと消えていた**（v2.69.0 の書き換えで混入し #139 のテスト追加で発覚）。同種: `VAR=$(... | grep ...)` の `|| true`（上のバレット）
 - **日本語の直前の変数展開は `${VAR}` と波括弧で囲む**: `"$DIFF（重複検出をスキップ）"` は **UTF-8 ロケールの bash** が `（` の 1 バイト目まで変数名に取り込み、`set -u` 下で `DIFF<0xef>: unbound variable` を出して**そのメッセージを表示せず exit 1** する（`C.UTF-8` / `ja_JP.UTF-8` / `en_US.UTF-8` で再現、`C` / `POSIX` では再現しない = 開発機のロケール次第で見えない）。`validate_plugin_quality.py` の `shell-multibyte` 検査が errors で止める。実例: `detect-recent-review.sh` の WARN が丸ごと死んでいた（#138）
 - **jq の `//` を真偽値の既定に使わない**: `//` は左辺が `false` でも「無い」扱いにするので、`jq -r '.flag // true'` は `flag: false` を `true` に化けさせる（doc-freshness の opt-out が効いていなかった実例）。素で読んで文字列比較する（キーが無ければ jq は `"null"` を返す）
 - **hooks.json の if:/matcher に単独依存しない（注入・block 系 hook の自己判定必須）**: `if: "Bash(git push *)"`（CC 2.1.85+）や matcher のフィルタは**実行環境によって評価されない**ことが実測済み（2026-07: dev-workflow push-reminder が全 Bash 呼び出しで additionalContext を注入する暴発。配布・スキーマ・構文は正しかった）。PreToolUse/PostToolUse の hook スクリプトは `INPUT=$(safe_hook_input)` で tool_input を取得し発火条件を自己判定する二重ゲートにする（手本: `dev-workflow/hooks/scripts/on-commit.sh`）。`validate_plugin_quality.py` の hook-self-judge チェックが `safe_hook_input` 非参照を非ブロッキング warning で検知する。FileChanged の path-glob matcher も同型リスクだが tool_input が無いためチェック対象外（既知の残リスク）
@@ -221,6 +234,8 @@ event_bus_clear
 
 - **版ラベルは `vNEXT` と書く**（プラグイン配下の md / sh / py）。`bump-version.sh` が bump 時に実版へ置換し、`validate_plugin_quality.py` が「bump 済みなのに `vNEXT` が残っている」を error にする。**具体的な版番号を手書きしない** — 書く時点では正しい値が確定しておらず（bump は後）、実測で 3 回再発した。検出側の機械化は 2 度失敗している（履歴参照と区別できない / Claude Code の版と表記が衝突する）ので、**確定していない値を書かせない**方で解いた。repo 直下の共通スクリプト・doc は**プラグイン版に属さない**ので版ラベルを持たせず issue 番号で参照する。**規約そのものを説明するときは行内コードかフェンスに入れる**（SSoT pin と同じ扱い — 生きたプレースホルダとして置換・検出の対象にならない。実測でこの説明文ごと実版に書き換えた）。経緯: `code-review/references/design-notes/pending-optimizations.md ## 9`
 - **新しい lint / 検証ロジックを足すときは ①既存 repo での検出数を先に測って error / warning の水準を決める ②変異テストで「実装を壊すと該当テストが落ちる」ことを確認する**: 初回実行で偽陽性が出る warning は「⚠️ が出たときだけ行動する」契約を壊すので、入れない方がまし（実例: 版ラベルの追随漏れ検出は 6/6 が偽陽性で撤去した → `code-review/references/design-notes/pending-optimizations.md ## 9`）。変異テストは **`python3 .claude-plugin/scripts/mutation-test.py`** で自動化してある（変更行だけを対象に比較演算子・境界・真偽値・打ち切りを機械的に反転し、テストが落ちない＝**検証していない挙動**を列挙する）。`__pycache__` の消去・元バイト列での復元・**モードの保存**・並行編集の検知は**ツール側に入っている**（どれも手動でやって事故った）。**実行中に対象ファイルを編集しないこと**。中断されても変異が残らないよう原本は `.mutation-test-journal.json` に退避され、次回起動時に自動で戻る（所有者 pid と `MUTATION_TEST_OWNER_PID` で、実行中の run の変異は横取りしない）
+- **テストは「環境の不在」に頼らない（Linux CI でだけ落ちる型）**: ①PATH を絞るときは「このディレクトリには無いはず」ではなく**引けるものを列挙する**（Linux の `/bin` は `/usr/bin` の symlink で、CI には `gh` も `jq` も `python3` も入っている）②`git commit` する使い捨てリポジトリは**リポジトリ側に author を設定する**（env の `GIT_AUTHOR_*` は init commit にしか効かず、global config の無い CI でだけ黙って失敗し、rename が「新規ファイル」に化ける）③PATH を絞る場面の stub は **bash builtin だけで書く**（`cat` すら引けない。stub が落ちると出力が空になり「指摘なし」と区別できない）④ライブラリの不在は探さず**作って再現する**（`raise ImportError` する同名パッケージを `PYTHONPATH` の先頭に置く）⑤**書き込み先を決める環境変数は継承させず、テスト専用の使い捨てディレクトリを指す** — `CLAUDE_PROJECT_DIR` は event bus の出力先（`${CLAUDE_PROJECT_DIR:-$PWD}`）で、本スイートは **Stop hook / self-review 前段からも走る＝そこではこの変数が入る**。継承すると publish が実リポジトリの `.claude/events.jsonl` へ飛び、publish を見るテストは落ち、**黙る側のテストは緑のまま実データを汚す**（実測: 偽イベント 20 件が混入し、`review-retro` の母数になっていた）。実測: ①〜③で CI が 6 件・⑤で Stop hook 経由が 3 件落ちた（#140 / #139）
+- **移植性と環境差は CI でしか検出できない（push して CI を確認するまで完了ではない）**: pre-commit は開発機（macOS）でしか走らないので、**Linux 固有の失敗は原理的に push 前に検出できない**（Docker を pre-commit に入れるのは体感コストが見合わない）。機械層は同じコマンドを走らせるが**環境が違う**。前提ライブラリの差だけは塞いだ — `validate-ssot.sh` は jsonschema が無いと exit 2（判定不能）を返し、pre-commit がそこで止める（以前は warning を出しつつ「passed」と表示し、ローカル緑 / CI 赤の非対称が push まで見えなかった）。**OS 差は残るので、push 後に CI の結果を見るまで作業を完了と見なさない**（#140）
 - **同梱スクリプトのテストは `.claude-plugin/scripts/tests/` に置く**（プラグイン配下に置かない — 配布物にテストが混ざる）。ハーネスは python の subprocess で、bats 等の外部依存を足さない。判断の経緯: `code-review/CHANGELOG.md` v2.68.0
 
 ## バージョニング規約
@@ -241,7 +256,7 @@ event_bus_clear
 - `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期
 - `validate_plugin_quality.py`: allowed-tools / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ / Event Bus 同期 / hook 自己判定 / コンテキスト予算ほか — **検査項目の正本はスクリプト冒頭 docstring**（ここに列挙を複製しない）
 - `claude plugin validate`: CLI スキーマ（`_requirements` 警告は除外）
-- `python3 -m unittest discover -s .claude-plugin/scripts/tests`: 回帰テスト（検証スクリプト自身 + プラグイン同梱スクリプトの CLI テスト）。**検証機構の期待値をその機構自身で生成すると、壊れていても全件 pass する**（SSoT pin の初期ハッシュを未テストの `_slice_section` で作り、節の 46% が無保護なまま 14 pin 全部が ok に見えた実例が v2.63.1）。**期待値をテスト側で独立に構築すること**（`test_digest_matches_independently_computed_expectation`）。検証ロジックを足すときは同じ原則でテストを添える
+- `python3 .claude-plugin/scripts/run-tests.py`: 回帰テスト（検証スクリプト自身 + プラグイン同梱スクリプトの CLI テスト）。**起動口をこのラッパに寄せてある** — テストを新しいセッションで走らせ、終了後に残ったプロセスを検出・回収する（テストは緑のまま 12 本が 4 時間回り続けた実例 / #140）。素の `python3 -m unittest discover -s .claude-plugin/scripts/tests` でも走るが、その経路には残留の検出が無い。**検証機構の期待値をその機構自身で生成すると、壊れていても全件 pass する**（SSoT pin の初期ハッシュを未テストの `_slice_section` で作り、節の 46% が無保護なまま 14 pin 全部が ok に見えた実例が v2.63.1）。**期待値をテスト側で独立に構築すること**（`test_digest_matches_independently_computed_expectation`）。検証ロジックを足すときは同じ原則でテストを添える
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
 

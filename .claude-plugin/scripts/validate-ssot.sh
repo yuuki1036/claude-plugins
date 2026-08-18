@@ -7,7 +7,7 @@
 #   3. plugin.json の _requirements と hooks/scripts/check-deps.sh の登場名一致
 #
 # 実行: bash .claude-plugin/scripts/validate-ssot.sh
-# Exit: 0 (pass) / 1 (違反あり)
+# Exit: 0 (pass) / 1 (違反あり) / 2 (判定不能: python3 や jsonschema が無く検査できなかった)
 
 set -euo pipefail
 

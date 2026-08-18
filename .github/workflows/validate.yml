@@ -68,8 +68,10 @@ jobs:
       # SSoT pin は pin の初期値も検証と同じ関数で生成するため、実リポジトリに対する
       # 検証だけでは切り出しの欠陥を検出できない（v2.63.1）。期待値を独立に構築する
       # テストがその自己整合の盲点を塞ぐ
+      # 起動口は run-tests.py。テストが起動したプロセスの残留を検出・回収する
+      # （テスト全件 green のまま 12 本が 4 時間回り続けた実績がある / issue #140）
       - name: unit-tests
-        run: python3 -m unittest discover -s .claude-plugin/scripts/tests
+        run: python3 .claude-plugin/scripts/run-tests.py
 
       # 変更行の変異テスト。**テストが実は何も検証していない**（通るだけのテスト）を
       # 機械的に検出する。ローカルでは手動起動なので、強制力は CI 側に置く。

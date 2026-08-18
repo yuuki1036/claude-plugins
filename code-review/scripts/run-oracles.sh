@@ -76,9 +76,12 @@ else
   wait "$pid"; RC=$?
   # 126/127 は「実行できなかった」なので red（=検出した）と区別する
   case "$RC" in
-    0)       STATUS=green ;;
-    126|127) STATUS=error ;;
-    *)       STATUS=red ;;
+    0)         STATUS=green ;;
+    # **2 は「判定不能」**（機械層の契約 / `.claude/review-oracles.sh` の宣言）。
+    # red に落とすと「検査が問題を検出した」として提示され、直せないもの
+    # （jsonschema 未導入等）に「直しますか？」と聞くことになる
+    2|126|127) STATUS=error ;;
+    *)         STATUS=red ;;
   esac
 fi
 set +m

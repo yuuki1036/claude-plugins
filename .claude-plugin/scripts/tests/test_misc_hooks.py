@@ -8,7 +8,7 @@
 - 依存が揃っていれば無音（毎セッション鳴る hook は「⚠️ が出たら行動」の契約を壊す）
 - 依存不足でも exit 2 でブロックしない（起動を止めない）
 
-実行: python3 -m unittest discover -s .claude-plugin/scripts/tests
+実行: python3 .claude-plugin/scripts/run-tests.py
 """
 
 from __future__ import annotations

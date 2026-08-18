@@ -5,14 +5,16 @@
 特に `check-scope-size.sh` は「上限ちょうどでは鳴らない / 1 超えたら鳴る」が仕様なので、
 境界を両側から測る（`<=` を `<` にする類の変異はここでしか死なない）。
 
-実行: python3 -m unittest discover -s .claude-plugin/scripts/tests
+実行: python3 .claude-plugin/scripts/run-tests.py
 """
 
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from hook_harness import HookTestCase, TempGitRepo
 
@@ -143,6 +145,20 @@ class OnIssueChangeTest(HookTestCase):
             self.run_hook(self._payload(f), cwd=root)
             events = self._events(root)
             self.assertEqual([e["event"] for e in events], ["issue:completed"])
+
+    def test_events_never_land_in_the_ambient_project_dir(self):
+        """publish 先は**テストが見るディレクトリ**（環境変数の継承で外へ出さない / #139 の実測）."""
+        with TempGitRepo() as root:
+            f = issue_file(root, scope="small", tasks=1)
+            f.write_text(f.read_text().replace("scope_size: small",
+                                               "scope_size: small\nstatus: completed"))
+            decoy = root / "decoy"
+            decoy.mkdir()
+            with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": str(decoy)}):
+                self.run_hook(self._payload(f), cwd=root)
+            self.assertEqual([e["event"] for e in self._events(root)], ["issue:completed"])
+            self.assertFalse((decoy / ".claude" / "events.jsonl").exists(),
+                             "環境変数が指す先へ publish している")
 
     def test_silent_when_not_completed(self):
         with TempGitRepo() as root:

@@ -17,7 +17,7 @@ pin と検証が自己整合し、全 pin が `ok` に見える。実際 v2.63.1
 （`test_digest_matches_independently_computed_expectation` がその核）。
 
 実行:
-  python3 -m unittest discover -s .claude-plugin/scripts/tests
+  python3 .claude-plugin/scripts/run-tests.py
 """
 
 from __future__ import annotations

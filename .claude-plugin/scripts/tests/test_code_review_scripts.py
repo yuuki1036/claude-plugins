@@ -14,7 +14,7 @@ pre-commit / CI / Stop hook の 3 経路に**設定変更なしで**乗る。
 ここが埋まればレビューは判断が要る層に集中できる（`findings_class` の `test` 比率で測る）。
 
 実行:
-  python3 -m unittest discover -s .claude-plugin/scripts/tests
+  python3 .claude-plugin/scripts/run-tests.py
 """
 
 from __future__ import annotations

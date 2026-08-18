@@ -10,7 +10,7 @@
 置換側はここで、残存検査側は `test_validate_plugin_quality.py` で、
 **同じ入力に対する期待を独立に**書く（片方の実装を流用して期待値を作らない）。
 
-実行: python3 -m unittest discover -s .claude-plugin/scripts/tests
+実行: python3 .claude-plugin/scripts/run-tests.py
 """
 
 from __future__ import annotations

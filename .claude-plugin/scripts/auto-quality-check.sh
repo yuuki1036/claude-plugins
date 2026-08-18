@@ -15,6 +15,7 @@
 #     - */plugin.json
 #     - .claude-plugin/marketplace.json
 #     - */skills/** / */commands/** / */hooks/** / */agents/** / */references/**
+#     - */scripts/**
 #     - */CHANGELOG.md
 #
 # 出力:
@@ -49,7 +50,12 @@ ISSUES=""
 
 # 検査本体は machine-layer.sh（並びの正本）。exit 1 = 検出 / 2 = 判定不能。
 # **判定不能も黙って通さない**（前提が壊れているのに緑に見えるのを避ける）
-ML_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/machine-layer.sh" 2>&1)"; ML_RC=$?
+#
+# **`VAR="$(...)"; RC=$?` と書かないこと**: safe-hook が `set -e` を張っているので、
+# 非ゼロで終わる代入がそこで ERR trap を踏み、**以降の report 部を実行せず exit 0** する
+# （＝検出したのに通知が消え、緑と区別がつかない。v2.69.0 で実際に落ちていた）。
+# `&& RC=0 || RC=$?` は代入を AND-OR リストに入れるので `set -e` の対象外になる
+ML_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/machine-layer.sh" 2>&1)" && ML_RC=0 || ML_RC=$?
 case "$ML_RC" in
   0) ;;
   1) ISSUES="${ML_OUT}\n" ;;

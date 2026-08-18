@@ -90,9 +90,17 @@ fi
 
 # SSoT 同期チェック: plugin.json ↔ marketplace.json / _requirements ↔ check-deps.sh
 if [ -f .claude-plugin/scripts/validate-ssot.sh ]; then
-  if ! bash .claude-plugin/scripts/validate-ssot.sh; then
+  bash .claude-plugin/scripts/validate-ssot.sh && ssot_rc=0 || ssot_rc=$?
+  if [ "$ssot_rc" = "1" ]; then
     echo ""
     echo "  plugin.json が SSoT。派生物 (marketplace.json / check-deps.sh) を同期してください"
+    exit 1
+  elif [ "$ssot_rc" != "0" ]; then
+    # 判定不能（jsonschema 不在等）。**通さない**: ここを素通しすると
+    # 「ローカルは緑・CI は赤」の非対称が push まで見えない（GitHub issue #140）
+    echo ""
+    echo "  SSoT 検査が判定不能（exit ${ssot_rc}）。前提を入れてから再実行してください"
+    echo "  この検査は CI では前提込みで走るため、ここで通すと差が push まで残ります"
     exit 1
   fi
 fi
@@ -108,16 +116,24 @@ if [ -f .claude-plugin/scripts/validate_plugin_quality.py ]; then
   fi
 fi
 
-# 検証スクリプト自身の回帰テスト（stdlib unittest / 依存なし・1 秒未満）
+# 検証スクリプト自身の回帰テスト（stdlib unittest / 依存なし）
 # SSoT pin は「pin の初期値」も検証と同じ関数で作るため, 切り出しが壊れていても
 # 実リポジトリに対する検証は全 pin pass になる（v2.63.1 で実際に起きた）。
 # 期待値を独立に構築するテストだけがこの自己整合の盲点を塞ぐ
 if [ -d .claude-plugin/scripts/tests ]; then
-  if ! python3 -m unittest discover -s .claude-plugin/scripts/tests > /dev/null 2>&1; then
-    python3 -m unittest discover -s .claude-plugin/scripts/tests 2>&1 | tail -30
+  # 起動口は run-tests.py（テストが置き去りにしたプロセスをここで回収する / issue #140）。
+  # **出力は 1 回の実行から取る** — 以前は「静かに実行 → 失敗したらもう一度実行して表示」
+  # で、落ちたときだけ実測 100 秒規模を 2 回払っていた
+  test_out=$(python3 .claude-plugin/scripts/run-tests.py 2>&1)
+  test_rc=$?
+  if [ "$test_rc" != "0" ]; then
+    echo "$test_out" | tail -30
     echo ""
     echo "  .claude-plugin/scripts/tests の失敗を解消してください"
     exit 1
   fi
+  # 残留プロセスの警告は緑判定に含めないが表示はする
+  # （`|| true` は grep 非マッチの exit 1 を hook の終了コードへ漏らさないため）
+  echo "$test_out" | grep -F "[run-tests" || true
 fi
 

@@ -15,7 +15,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [adr-keeper](#adr-keeper) | 0.3.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.1 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [claude-meta](#claude-meta) | 1.13.4 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.69.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [code-review](#code-review) | 2.69.1 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.4.4 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.25.1 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.2 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
@@ -156,8 +156,10 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 | spec ルーティング 3 軸コア（正本） | `.claude-plugin/lib/routing-axes.md` | ROUTING-AXES 区間を spec-advisor routing-rubric / issue-workflow issue-create に複製（dedent 比較で同期検証） |
 | JSON Schema | `.claude-plugin/schema/` | plugin.json / marketplace.json / hooks.json |
 | SSoT 検証 | `.claude-plugin/scripts/validate-ssot.sh`, `validate_ssot.py` | バージョン・description・_requirements 同期 |
-| 自動品質チェック | `.claude-plugin/scripts/auto-quality-check.sh` | Stop hook で非ブロッキング通知 |
-| 検証スクリプトの回帰テスト | `.claude-plugin/scripts/tests/` | `python3 -m unittest discover -s .claude-plugin/scripts/tests`（stdlib・依存なし。期待値を実装から独立に構築する） |
+| 機械層（検査の並びの正本） | `.claude-plugin/scripts/machine-layer.sh` | exit 0 緑 / 1 検出 / 2 判定不能。Stop hook と self-review 前段が呼ぶ |
+| 自動品質チェック | `.claude-plugin/scripts/auto-quality-check.sh` | Stop hook で非ブロッキング通知（機械層に委譲。いつ走らせるかと hook 向け出力だけを持つ） |
+| 回帰テストの起動口 | `.claude-plugin/scripts/run-tests.py` | 新しいセッションで実行し、終了後に残ったプロセスを検出・回収する（pre-commit / CI / 機械層が呼ぶ） |
+| 検証スクリプトの回帰テスト | `.claude-plugin/scripts/tests/` | `python3 .claude-plugin/scripts/run-tests.py`（stdlib・依存なし。期待値を実装から独立に構築する） |
 | pre-commit | `.githooks/pre-commit` | バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・回帰テスト |
 | eval 回帰テスト | `evals/`（runner.py / cases / reports） | トリガーフレーズ → スキル起動を pass^k=3 で検証 |
 

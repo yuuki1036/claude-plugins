@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.69.1] - 2026-08-18
+
+**セルフレビューが自分の機械層変更に見つけた欠陥の修正。** 機械層の exit code 契約（0 緑 / 1 検出 / 2 判定不能）が、消費側の `run-oracles.sh` で失われていた。
+
+### Fixed
+- **`run-oracles.sh` が機械層の exit 2 を `red` に落としていた**（`status=green|red|timeout|error` の `*)` に吸われていた）。`red` は「検査が問題を検出した」の意味で、AskUserQuestion も「問題を検出しました。直しますか？」と提示するため、**実体が「jsonschema 未導入で検査を実行できなかった」でも直せない指摘として突きつけられる**。`2` を `126|127` と同じ `error`（前提が無く判定できなかった）へ倒す。`references/machine-layer.md` の status 表も exit 2 を明記する形に更新した
+  - 契機: リポジトリ側の機械層が exit 2 を返す条件を広げたこと（jsonschema 不在での SSoT 検査）。宣言側（`.claude/review-oracles.sh`）は当初から「exit 2 = 判定不能」を契約していたが、消費側がその status を持っていなかった
+  - `test_code_review_oracles.py` に exit 2 → `status=error` を固定するテストを追加
+
 ## [2.69.0] - 2026-08-17
 
 **機械層を agent の手前に出し（#137）、残っていた同梱スクリプト 7 本にテストを付けた（#138）。** テストを書いた過程で**実バグ 9 件**を検出している（1 本あたり 1.3 件）。うち 1 件は **UTF-8 ロケールでしか再現しない**型で、開発機のシェル設定次第で人手レビューからは永久に見えない。

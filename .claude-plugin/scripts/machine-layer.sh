@@ -31,12 +31,21 @@ REPO_ROOT="${MACHINE_LAYER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && 
 cd "$REPO_ROOT" || { echo "FATAL: リポジトリルートへ移動できない" >&2; exit 2; }
 
 ISSUES=""
+UNKNOWN=0
 add() { ISSUES="${ISSUES}$1"$'\n'; }
 
 # 1. SSoT 同期（スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / 一覧の同期）
-if ! OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/validate-ssot.sh" 2>&1)"; then
-  add "$OUT"
-fi
+#
+# **子の exit 2（判定不能）を 1（検出）に混ぜない**: jsonschema が無い等で検査を
+# 実行できなかった回を「品質問題あり」として通知すると、直せないものが指摘欄に出る。
+# 逆に 0 へ倒すと「違反が無い」と「見ていない」の区別が消える。
+# なお `RC=$?` を別の文にすると `set -e` 環境で ERR trap を踏むので、代入は AND-OR リストに入れる
+OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/validate-ssot.sh" 2>&1)" && RC=0 || RC=$?
+case "$RC" in
+  0) ;;
+  1) add "$OUT" ;;
+  *) UNKNOWN=1; add "[machine-layer] SSoT 検査が判定不能（exit ${RC}）:"$'\n'"$OUT" ;;
+esac
 
 # 2〜3 は python3 が前提。**無いときは「通過」ではなく「判定不能」**（exit 2）
 if ! command -v python3 >/dev/null 2>&1; then
@@ -46,14 +55,34 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 # 2. プラグイン品質（allowed-tools / safe-hook 同期 / references 整合 / SSoT pin / ほか）
-if ! OUT="$(python3 "$REPO_ROOT/.claude-plugin/scripts/validate_plugin_quality.py" 2>&1)"; then
-  add "$OUT"
-fi
+#    検査 1 と同じ扱い（0/1 以外は「実行できなかった」= 判定不能。python は
+#    ファイルを開けないと 2、実行不能なら 126/127 を返す）
+OUT="$(python3 "$REPO_ROOT/.claude-plugin/scripts/validate_plugin_quality.py" 2>&1)" && RC=0 || RC=$?
+case "$RC" in
+  0) ;;
+  1) add "$OUT" ;;
+  *) UNKNOWN=1; add "[machine-layer] 品質検査が判定不能（exit ${RC}）:"$'\n'"$OUT" ;;
+esac
 
-# 3. 回帰テスト（検証スクリプト自身 + 同梱スクリプトの CLI テスト + hook テスト）
+# 3. 回帰テスト（検証スクリプト自身 + 同梱スクリプトの CLI テスト + hook テスト）。
+#    **起動は run-tests.py に寄せる**: テストが起動したプロセスの残留をそこで回収する
+#    （テストが緑でも外に副作用が残る型は、テストの成否では検出できない / #140）
 if [ -d "$REPO_ROOT/.claude-plugin/scripts/tests" ]; then
-  if ! OUT="$(python3 -m unittest discover -s .claude-plugin/scripts/tests 2>&1)"; then
-    add "[unit-tests] $(printf '%s' "$OUT" | tail -20)"
+  OUT="$(python3 "$REPO_ROOT/.claude-plugin/scripts/run-tests.py" 2>&1)" && RC=0 || RC=$?
+  case "$RC" in
+    0) ;;
+    1) add "[unit-tests] $(printf '%s' "$OUT" | tail -20)" ;;
+    # スクリプト不在（2 / 127）や「テストが 1 件も走らなかった」（5）は失敗ではなく
+    # **測れなかった**。1 に畳むと「直せない指摘」として通知される
+    *) UNKNOWN=1; add "[machine-layer] 回帰テストが判定不能（exit ${RC}）:"$'\n'"$(printf '%s' "$OUT" | tail -20)" ;;
+  esac
+  # **残留プロセスの警告は exit code に載らない契約**（run-tests.py）。rc だけ見ていると
+  # ここで捨てられ、Stop hook と self-review 前段の 2 経路で #140 の検出が不可視になる
+  # `[run-tests:leak]` だけを拾う（`pgrep` 不在の skip 通知は同じ `[run-tests]` 前置きで
+  # 出るので、前方一致にすると PATH を絞った環境で常時発火する）
+  LEAK="$(printf '%s' "$OUT" | grep -F '[run-tests:leak]' || true)"
+  if [ -n "$LEAK" ]; then
+    add "$LEAK"
   fi
 fi
 
@@ -77,6 +106,13 @@ fi
 
 if [ -n "$ISSUES" ]; then
   printf '%s' "$ISSUES"
+  # **判定不能が混ざっていたら 2 が勝つ**（python3 不在の分岐と同じ倒し方）。
+  # 呼び出し側が知りたいのは「機械層を信用してよいか」で、そこが崩れている回は
+  # 検出の有無に関わらず「判定できなかった」として扱う
+  # （消費側の対応: Stop hook は「判定不能」表示 / run-oracles は `status=error`）
+  if [ "$UNKNOWN" -eq 1 ]; then
+    exit 2
+  fi
   exit 1
 fi
 exit 0

@@ -10,14 +10,16 @@
 - `ui-verify-gate.sh` / `ui-change-reminder.sh` — 3 値フラグ（unverified / verified-local / verified-snap）
 - `tdd-phase-gate.sh` — opt-in なので**既定で絶対に鳴らない**ことが第一の仕様
 
-実行: python3 -m unittest discover -s .claude-plugin/scripts/tests
+実行: python3 .claude-plugin/scripts/run-tests.py
 """
 
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from hook_harness import HookTestCase, TempGitRepo
 
@@ -98,6 +100,25 @@ class OnCommitTest(HookTestCase):
             self.assertEqual([e["event"] for e in events], ["commit:created"])
             self.assertEqual(events[0]["payload"]["type"], "feat")
             self.assertEqual(events[0]["payload"]["files"], 1)
+
+    def test_events_never_land_in_the_ambient_project_dir(self):
+        """**環境の `CLAUDE_PROJECT_DIR` を継承しない**（この変数は書き込み先を決める）.
+
+        継承すると publish は `${CLAUDE_PROJECT_DIR}/.claude/events.jsonl` へ飛ぶ。
+        本スイートは Stop hook / self-review 前段からも走る＝**その環境ではこの変数が入る**ので、
+        publish を見るテストは落ち、黙る側のテストは**緑のまま**実リポジトリの計測データを汚す
+        （実測: 偽イベント 20 件が `.claude/events.jsonl` に混入していた）。
+        """
+        with TempGitRepo() as repo_path:
+            repo = TempGitRepo.__new__(TempGitRepo); repo.path = repo_path
+            repo.commit("feat(x): 追加")
+            decoy = repo_path / "decoy"
+            decoy.mkdir()
+            with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": str(decoy)}):
+                self.run_hook(self.bash_payload('git commit -m "feat(x): 追加"'), cwd=repo_path)
+            self.assertEqual([e["event"] for e in self._events(repo_path)], ["commit:created"])
+            self.assertFalse((decoy / ".claude" / "events.jsonl").exists(),
+                             "環境変数が指す先へ publish している")
 
     def test_type_falls_back_to_other(self):
         with TempGitRepo() as repo_path:

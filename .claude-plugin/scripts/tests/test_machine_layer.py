@@ -39,6 +39,10 @@ class MachineLayerTest(unittest.TestCase):
         # 既定はすべて通る stub（テストごとに必要なものだけ差し替える）
         self.write_stub("validate-ssot.sh", STUB_OK)
         self.write_stub("validate_plugin_quality.py", "import sys\nsys.exit(0)\n")
+        # 回帰テストの起動口は本物を使う（stub にすると「テストを実際に走らせて
+        # 失敗を拾う」という検査 3（回帰テスト）の要件そのものが検証されなくなる）
+        shutil.copy2(ROOT / ".claude-plugin" / "scripts" / "run-tests.py",
+                     self.scripts / "run-tests.py")
 
     def write_stub(self, name: str, body: str) -> Path:
         p = self.scripts / name
@@ -131,6 +135,64 @@ class MachineLayerTest(unittest.TestCase):
         res = self.run_layer()
         self.assertEqual(res.returncode, 1)
         self.assertIn("[unit-tests]", res.stdout)
+
+    def test_ssot_unknown_verdict_is_not_reported_as_a_detection(self):
+        """子の exit 2 を 1 に混ぜない（「直せるもの」と「判定できなかった」は別物）.
+
+        `validate-ssot.sh` は jsonschema が無いと 2 を返す。ここで 1 に倒すと
+        「品質問題あり」として通知され、直せない指摘が指摘欄に出る。
+        """
+        self.write_stub("validate-ssot.sh",
+                        "#!/usr/bin/env bash\necho 'jsonschema が無い' >&2\nexit 2\n")
+        self.with_tests_dir(passing=True)
+        res = self.run_layer()
+        self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+        self.assertIn("判定不能", res.stdout)
+        self.assertIn("jsonschema が無い", res.stdout)
+
+    def test_unknown_verdict_wins_over_detections(self):
+        """判定不能と検出が同居したら 2（機械層を信用してよいかが呼び出し側の関心）."""
+        self.write_stub("validate-ssot.sh", "#!/usr/bin/env bash\nexit 2\n")
+        self.write_stub("validate_plugin_quality.py",
+                        "print('allowed-tools が一致しない')\nimport sys; sys.exit(1)\n")
+        self.with_tests_dir(passing=True)
+        res = self.run_layer()
+        self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+        self.assertIn("判定不能", res.stdout)
+        self.assertIn("allowed-tools が一致しない", res.stdout, "検出内容も捨てない")
+
+    def test_a_check_that_could_not_run_is_unknown_not_a_detection(self):
+        """検査 2 / 3 の「実行できなかった」も 1 に畳まない（GitHub issue #140 / M5）.
+
+        スクリプト不在（python の exit 2 / 127）を「品質問題あり」として通知すると、
+        直せないものが指摘欄に出る。検査 1 だけに入れていた区別を全検査へ揃える。
+        """
+        cases = (("validate_plugin_quality.py", "品質検査が判定不能"),
+                 ("run-tests.py", "回帰テストが判定不能"))
+        for name, fragment in cases:
+            with self.subTest(script=name):
+                self.setUp()
+                self.with_tests_dir(passing=True)
+                (self.scripts / name).unlink()   # 実行できない状態にする
+                res = self.run_layer()
+                self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+                self.assertIn(fragment, res.stdout)
+
+    def test_a_leaked_process_warning_is_not_swallowed(self):
+        """`run-tests.py` の残留警告は **rc=0 でも捨てない**（#140 / M4）.
+
+        残留は exit code に載らない契約なので、rc だけ見ていると Stop hook と
+        self-review 前段の 2 経路で #140 の検出が丸ごと消える。
+        """
+        self.with_tests_dir(passing=True)
+        self.write_stub("run-tests.py",
+                        "import sys\n"
+                        "print('[run-tests:leak] テスト終了後に 2 個のプロセスが残っている: 1, 2',"
+                        " file=sys.stderr)\n"
+                        "sys.exit(0)\n")
+        res = self.run_layer()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("残っている", res.stdout)
 
     def test_missing_python_exits_2_not_0(self):
         """**「判定不能」を「通過」に倒さない.**
