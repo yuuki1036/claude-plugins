@@ -119,6 +119,26 @@ class DiffSliceListTest(DiffScriptTestBase):
         self.assertRegex(diff, r"\+\+\+ b/sp ace\.ts\t", "前提: git が末尾にタブを付ける")
         self.assertEqual(self.list_paths(diff), ["sp ace.ts"])
 
+    def test_lists_deleted_path_when_git_omits_the_a_b_prefix(self):
+        """**`diff.noprefix=true` の環境で削除ファイルを引けるか**（#148 / nightly が検出）.
+
+        削除は `+++ /dev/null` なので `plus` が立たず、`diff --git` 行も
+        `diff --git gone.ts gone.ts`（prefix 無し）になって `sym_path` の対称形復元が
+        効かない。**`---` 行を `minus` に取る経路が唯一の復元手段**になる。
+        prefix がある通常の diff では `sym_path` のフォールバックが救ってしまうため、
+        この経路は「削除 × prefix 無し」の組み合わせでしか観測できない
+        （`--- ` 行の判定を反転させる変異が 2026-08-18 の nightly で生存した）。
+        `diff.noprefix` はユーザーの git 設定なので、こちらから制御できない前提条件。
+        """
+        self.write("gone.ts", "a\n")
+        self.add()
+        self.git("commit", "-qm", "init")
+        (self.root / "gone.ts").unlink()
+        self.add()
+        diff = self.git("-c", "diff.noprefix=true", "diff", "--cached").stdout
+        self.assertIn("diff --git gone.ts gone.ts", diff, "前提: prefix が付いていない")
+        self.assertEqual(self.list_paths(diff), ["gone.ts"])
+
     def test_body_lines_that_look_like_headers_are_not_paths(self):
         """**追加行の内容が `++ ...` だと diff 上は `+++ ...` になる。**
 
