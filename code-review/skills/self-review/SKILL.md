@@ -67,25 +67,37 @@ self-review では `isolation: "worktree"` を使わない等の差分は orches
 
 ### 1. diff 収集とコンテキスト準備
 
+**Step 1 と 1.4 は 1 つの Bash 呼び出しにまとめる**（GitHub issue #147）。間に LLM の判断が挟まらない — 後段は前段の**出力を読んで決める**のではなく、同じシェルの変数とファイルを使うだけなので、分けると往復ぶんの `cache_read` を払うだけになる。**1.7 の機械層はここに含めない**（理由は 1.7 側に記載）。
+
 ```bash
 # 所要時間計測の開始マーカー t0 を記録（Step 6.4 の payload で使用）。
 # 以降 t1（一括発行の直前）/ wave --explorer（explorer 回収直後）/ wave（agent wave 回収の直後・毎回）/ t2（レポート出力直後）を
 # 同じスクリプトで追記する。パス導出・区間の意味の正本: orchestration-measurement.md `## 13.1` `## 14`
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" start
 
-# 引数で base branch が指定されていればそれを使用
-# 指定がなければデフォルトブランチを自動検出
-git remote show origin | grep "HEAD branch" | sed 's/.*: //'
+# base branch: 引数指定があればそれを使い、無ければデフォルトブランチを自動検出する
+BASE="<引数で指定された base branch。指定が無ければ空のまま>"
+[ -n "$BASE" ] || BASE=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
+echo "base=$BASE"
+
+if [ -n "$BASE" ]; then
+  # diff を $DIFF_FILE に保存し、シグナルダイジェストのみ stdout に出す
+  # （`--staged` 指定時はこの行の末尾に --staged を足す）
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --base "$BASE"
+
+  # Step 1.4 の重複検出。**`--embed` のときはこの行を落とす**。triage-signals.sh が書いた
+  # diff ファイルを読むので**この順序である必要がある**（パス引数は要らない / 自力導出する）
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh"
+else
+  echo "FATAL: base branch を特定できない（後続 2 本はスキップした）"
+fi
 ```
 
-base branch が特定できない場合はユーザーに確認する。
+**`set -e` を張らないこと**、そして**分岐を `[ 条件 ] && コマンド` で書かないこと**（どちらも CLAUDE.md Gotchas の ERR trap family）。base 検出の `grep` は非マッチで exit 1 を返すので、`set -e` 下では `BASE=$(... | grep ...)` を含む `||` リストがそこでシェルごと落ち、**以降の 2 本を実行せずに終わる**。`if` なら BASE が空でも 0 で終わり、`FATAL:` の 1 行が出力に残る。
+
+`FATAL:` が出たら base branch を特定できていない（後続 2 本は走っていない）。ユーザーに base branch を確認してから呼び直す。
 
 **diff 全文をメインコンテキストに載せない。** `triage-signals.sh` が diff（コミット済み + 未コミット）をファイルへ保存し、Phase 0 に必要な**事実だけ**を compact に出力する。diff は reviewer / explorer へ**パスで渡す**（本文を転記しない。orchestration-guide.md `## 3.5`）。
-
-```bash
-# diff を $DIFF_FILE に保存し、シグナルダイジェストのみ stdout に出す
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --base "${BASE}"
-```
 
 出力セクション（`## meta` / `## size` / `## files` / `## hunks` / `## focus-signals` / `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`）の意味と使い道の正本 → review SKILL.md `### 2`。self-review では `## issue-ids` はブランチ名から抽出され、`## meta` の `base` は指定した base branch になる。
 
@@ -129,9 +141,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 
 ### 1.4 直近レビューとの重複検出（skill 跨ぎ / 常時実行・agent なし。`--embed` ではスキップ）
 
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh"
-```
+**実行は Step 1 の Bash 呼び出しに同梱済み**（#147）。ここは出力の解釈だけを行う。
 
 **出力が空なら何も報告せず Step 1.5 へ**。`## recent-review` が出た場合のみ **AskUserQuestion** で続行可否を確認する（question:「同一の diff が直近にレビュー済みです（<plugin> / <日時> / 報告 <件数>）。このままレビューを続けますか？」/ header:「重複レビュー」/ options: ①label「続行する」description「別観点・別 effort で見直す価値があると判断した場合」 ②label「中止する」description「前回のレポートで足りる。agent を 1 体も起動せず終了する」）。**「中止する」なら Phase 0 に進まず終了**。上の `--focus` / `--exclude` は同一 skill 内の重複しか防げないので、この経路が skill を跨ぐぶんを見る。突合キーの性質と背景: → orchestration-measurement.md `## 19`
 
@@ -142,6 +152,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh"
 ### 1.7 機械層の先行実行（原則 8 / `.claude/review-oracles.sh` を置いたプロジェクトのみ・`--embed` では skip）
 
 **agent の担当は「機械が決められないもの」に限る。** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-oracles.sh"` を実行し、プロジェクトが宣言した機械層（lint / 型 / テスト等）を Phase 0 の**前に**通す。**出力が空なら宣言なし＝何も報告せず Phase 0 へ**（no-op を報告しない）。`status=green` は Step 6 レポート冒頭に `機械層: green (<elapsed>s)` を出すだけ。**`red` / `timeout` / `error` のときだけ** → Read `${CLAUDE_PLUGIN_ROOT}/references/machine-layer.md`（続行可否の確認・reviewer への「既知」の渡し方・計測規約の正本。設計判断は ADR-20260817170000）。`--embed` では呼び出し元が自分の品質ゲートを持つため skip する。
+
+**この呼び出しを Step 1 にまとめないこと**（#147 で検討して見送った）。1.4 の重複検出には「中止する」＝ agent を 1 体も起動せず終える経路があり、機械層（lint / 型 / テスト）を前倒しすると**中止しても払い戻せない実行時間**を先に払うことになる。往復 1 回ぶんの `cache_read` より、中止経路の意味を保つほうが大きい。
 
 ### 2. Phase 0: トリアージ
 

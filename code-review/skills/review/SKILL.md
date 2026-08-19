@@ -105,11 +105,18 @@ Step 2 のダイジェスト `## issue-ids` に Issue ID があり、ローカ�
 
 **diff 全文をメインコンテキストに載せない。** `triage-signals.sh` が diff をファイルへ保存し、Phase 0 に必要な**事実だけ**を compact に出力する。diff は reviewer / explorer へ**パスで渡す**（本文を転記しない。orchestration-guide.md `## 3.5`）。
 
+**Step 2 と 2.4 は 1 つの Bash 呼び出しにまとめる**（GitHub issue #147）。間に LLM の判断が挟まらない — 後段は前段の**出力を読んで決める**のではなく、同じシェルが書いたファイルを読むだけなので、分けると往復ぶんの `cache_read` を払うだけになる。**Step 1 とは合流させない**（`gh pr checkout` の失敗＝中止経路を挟むため。失敗したまま `triage-signals.sh` を走らせると base branch の diff を掴む）。
+
 ```bash
 # diff を $DIFF_FILE に保存し、シグナルダイジェストのみ stdout に出す。
 # 出力に diff 本体は含まれない（large PR でもメインコンテキストは一定サイズ）
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --pr <PR番号>
+
+# Step 2.4 の重複検出。triage-signals.sh が書いた diff ファイルを読むので**この順序**
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" --pr <PR番号>
 ```
+
+**`set -e` を張らないこと**（CLAUDE.md Gotchas の ERR trap family。前段が落ちても後段は無害に空で返る）。
 
 出力セクションと使い道:
 
@@ -148,9 +155,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file の実パス>" pa
 
 ### 2.4. 直近レビューとの重複検出（skill 跨ぎ / 常時実行・agent なし）
 
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" --pr <PR番号>
-```
+**実行は Step 2 の Bash 呼び出しに同梱済み**（#147）。ここは出力の解釈だけを行う。
 
 **出力が空なら何も報告せず Step 2.5 へ**。`## recent-review` が出た場合のみ **AskUserQuestion** で続行可否を確認する（question:「同一の diff が直近にレビュー済みです（<plugin> / <日時> / 報告 <件数>）。このままレビューを続けますか？」/ header:「重複レビュー」/ options: ①label「続行する」description「別観点・別 effort で見直す価値があると判断した場合」 ②label「中止する」description「前回のレポートで足りる。agent を 1 体も起動せず終了する」）。**「中止する」なら ExitWorktree して終了**（Phase 0 に進まない）。突合キーの性質と背景: → orchestration-measurement.md `## 19`
 
