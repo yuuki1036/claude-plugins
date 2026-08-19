@@ -269,9 +269,8 @@ for fpath, ts in sub_first.items():
     started = _epoch(ts)
     meta_path = fpath[:-len(".jsonl")] + ".meta.json" if fpath.endswith(".jsonl") else ""
     tool_use_id = None
-    # mutation-ok: `and` → `or` は等価（存在しない meta_path を open すれば OSError を
-    # 拾って同じ「引き当て失敗」に落ちる）
-    if meta_path and os.path.exists(meta_path):
+    # 印は**変異させる行と同じ行**に置かないと効かない（直前行に書いていて #152 で生存した）
+    if meta_path and os.path.exists(meta_path):  # mutation-ok: `or` は等価（存在しない meta_path は open が OSError を投げ同じ「引き当て失敗」に落ちる）
         try:
             with open(meta_path) as mfh:
                 meta = json.load(mfh)

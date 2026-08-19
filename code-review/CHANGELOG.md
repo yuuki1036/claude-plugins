@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.73.1] - 2026-08-20
+
+### Fixed
+
+- **`measure-tokens.sh` の `mutation-ok` 印を変異行と同じ行へ移した**（GitHub issue #152）。印は等価変異の理由つきで書かれていたが**直前の行**に置かれており、`SKIP_MARK` は行内しか見ないため無効だった（nightly で 40 件中 1 件だけ生存 = この行）。等価性の根拠自体は変わらない — `and` を `or` にしても、存在しない `meta_path` は `open` が `OSError` を投げて同じ「引き当て失敗」経路に落ちる
+
 ## [2.73.0] - 2026-08-19
 
 **情報収集フェーズの往復を畳んだ**（GitHub issue #147）。16 回の実測で main は 1 レビューあたり **42 往復・cache_read 15M** を使う。`cache_read` は「往復回数 × その時点の文脈量」で決まるため、体数削減も分冊も往復数には効かない。`pending-optimizations.md ## 2`（main 側のバッチ化）は v2.49.0 以前の基準値で却下していたので、実測を材料に**部分的に撤回**した。
