@@ -64,6 +64,7 @@ class AutoQualityCheckTest(unittest.TestCase):
         self.scripts.mkdir(parents=True)
         self.bin = self.root / "bin"
         self.bin.mkdir()
+        self.set_pgrep()
         shutil.copy2(SAFE_HOOK, self.root / ".claude-plugin" / "lib" / "safe-hook.sh")
         shutil.copy2(SCRIPT, self.scripts / "auto-quality-check.sh")
         self.marker = self.root / "layer-invocations"
@@ -109,6 +110,23 @@ class AutoQualityCheckTest(unittest.TestCase):
         stub.write_text(body, encoding="utf-8")
         stub.chmod(0o755)
 
+    def set_pgrep(self, code: int = 1) -> None:
+        r"""`pgrep` の stub を置く（既定の 1 = 該当なし＝変異テストは走っていない）.
+
+        **テストを実プロセス表に依存させない**: `auto-quality-check.sh` は変異テスト中かを
+        `pgrep -f "mutation-test\.py"` で判定する。本物を引かせると、このスイートが
+        `mutation-test.py` の中から走る経路（CI の `mutation-test` ジョブ / ローカルの
+        変異テスト）で**自分の親プロセスに引っかかり**、全ケースがスキップに落ちて
+        「静かに緑」ではなく一斉に落ちる（実測: CI で 19 failures + 2 errors。使い捨て
+        リポジトリで隔離できるのはジャーナル側だけで、プロセス表は隔離できない）。
+
+        **PATH から外すのではなく stub を置く**: `command -v pgrep` が偽だとガードが
+        ジャーナル判定だけに短絡し、pgrep 経路が一度も実行されないテストになる。
+        """
+        stub = self.bin / "pgrep"
+        stub.write_text("#!/usr/bin/env bash\nexit %d\n" % code, encoding="utf-8")
+        stub.chmod(0o755)
+
     @property
     def layer_ran(self) -> bool:
         return self.marker.exists()
@@ -130,7 +148,11 @@ class AutoQualityCheckTest(unittest.TestCase):
         # **リポジトリの外に置く** — 中に置くとキャッシュを書いた事実が `git status` に
         # 現れて指紋が毎回変わり、debounce が永久に効かない状態をテストしてしまう
         env["TMPDIR"] = str(self.cache_dir)
+        # **stub を PATH の先頭に置く**（`set_pgrep` の docstring 参照）。ここを実物の
+        # `pgrep` に任せると、このスイートが変異テストの中から走る経路で全ケースが
+        # スキップに落ちる
         if with_encoder:
+            env["PATH"] = str(self.bin) + os.pathsep + env.get("PATH", "")
             return env
         # **「このディレクトリには無いはず」に頼らない**（Linux の `/bin` は `/usr/bin` の
         # symlink で、CI には python3 も jq も入っている）。**引けるものを列挙する**側で作る。
@@ -289,6 +311,16 @@ class AutoQualityCheckTest(unittest.TestCase):
         self.assertFalse(self.layer_ran, "変異テストの実行中に検査を走らせている")
         self.assertIn("変異テスト", res.stderr, "黙って exit すると『問題なし』と読める")
         self.assertEqual(res.stdout, "", "修復材料が無いので Claude には注入しない")
+
+    def test_running_mutation_test_is_detected_by_pgrep_without_a_journal(self):
+        """ジャーナルが無い**変異と変異の隙間**も塞ぐ（そこも検査結果は当てにならない）."""
+        self.modify("demo/skills/s/SKILL.md")
+        self.assertFalse((self.root / ".mutation-test-journal.json").exists(), "前提")
+        self.set_pgrep(0)
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertFalse(self.layer_ran, "pgrep が引けているのに検査を走らせている")
+        self.assertIn("変異テスト", res.stderr)
 
     def test_the_skip_does_not_poison_the_cache(self):
         """スキップした回を「clean だった」として記録しない（次のターンで検査が飛ぶ）."""
