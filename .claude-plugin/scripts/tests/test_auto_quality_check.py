@@ -56,6 +56,9 @@ class AutoQualityCheckTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name).resolve()
         self.addCleanup(self._tmp.cleanup)
+        self._cache_tmp = tempfile.TemporaryDirectory()
+        self.cache_dir = Path(self._cache_tmp.name).resolve()
+        self.addCleanup(self._cache_tmp.cleanup)
         (self.root / ".claude-plugin" / "lib").mkdir(parents=True)
         self.scripts = self.root / ".claude-plugin" / "scripts"
         self.scripts.mkdir(parents=True)
@@ -122,6 +125,11 @@ class AutoQualityCheckTest(unittest.TestCase):
 
     def env(self, with_encoder: bool = True) -> dict[str, str]:
         env = {k: v for k, v in os.environ.items() if k not in GIT_HOOK_ENV}
+        # **キャッシュの置き場をテスト専用に向ける**（実 `/tmp` を汚さない / リポジトリ
+        # パスが鍵なので使い捨てリポジトリごとに別ファイルになる）。
+        # **リポジトリの外に置く** — 中に置くとキャッシュを書いた事実が `git status` に
+        # 現れて指紋が毎回変わり、debounce が永久に効かない状態をテストしてしまう
+        env["TMPDIR"] = str(self.cache_dir)
         if with_encoder:
             return env
         # **「このディレクトリには無いはず」に頼らない**（Linux の `/bin` は `/usr/bin` の
@@ -270,6 +278,83 @@ class AutoQualityCheckTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(res.stdout, "", "JSON を組めないなら注入しない")
         self.assertIn("[quality] 何かがずれている", res.stderr)
+
+    # ---- 走らせない条件: 変異テストの実行中 ---------------------------------
+    def test_running_mutation_test_skips_the_layer(self):
+        """変異中のソースを検査しても結果が嘘になる（実測: 1 作業中に 6 回の偽検出）."""
+        self.modify("demo/skills/s/SKILL.md")
+        (self.root / ".mutation-test-journal.json").write_text("{}", encoding="utf-8")
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertFalse(self.layer_ran, "変異テストの実行中に検査を走らせている")
+        self.assertIn("変異テスト", res.stderr, "黙って exit すると『問題なし』と読める")
+        self.assertEqual(res.stdout, "", "修復材料が無いので Claude には注入しない")
+
+    def test_the_skip_does_not_poison_the_cache(self):
+        """スキップした回を「clean だった」として記録しない（次のターンで検査が飛ぶ）."""
+        self.modify("demo/skills/s/SKILL.md")
+        journal = self.root / ".mutation-test-journal.json"
+        journal.write_text("{}", encoding="utf-8")
+        self.run_hook()
+        journal.unlink()
+        self.set_layer(1, "[quality] 変異とは無関係の本物の検出")
+        res = self.run_hook()
+        self.assertTrue(self.layer_ran, "スキップした回のせいで検査が飛んでいる")
+        self.assertIn("本物の検出", self.context(res))
+
+    # ---- 走らせない条件: 前回から作業ツリーが変わっていない -------------------
+    def test_unchanged_tree_does_not_rerun_the_layer(self):
+        """毎ターン走ると実測 125 秒のスイートが空回りする（同じ内容なら結果も同じ）."""
+        self.modify("demo/skills/s/SKILL.md")
+        self.run_hook()
+        self.assertTrue(self.layer_ran, "前提: 1 回目は走る")
+        self.marker.unlink()
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertFalse(self.layer_ran, "作業ツリーが同じなのに再走している")
+
+    def test_a_cached_detection_is_replayed_without_rerunning(self):
+        """**黙るだけにしない**: 検出のあった次のターンで無言になると「直った」と読める."""
+        self.modify("demo/skills/s/SKILL.md")
+        self.set_layer(1, "[quality] SSoT pin がずれている")
+        first = self.run_hook()
+        self.assertIn("SSoT pin がずれている", self.context(first))
+        self.marker.unlink()
+        second = self.run_hook()
+        self.assertFalse(self.layer_ran, "キャッシュがあるのに再走している")
+        self.assertIn("SSoT pin がずれている", self.context(second), "検出が消えている")
+        self.assertIn("SSoT pin がずれている", second.stderr)
+
+    def test_changing_a_tracked_file_invalidates_the_cache(self):
+        self.modify("demo/skills/s/SKILL.md")
+        self.run_hook()
+        self.marker.unlink()
+        (self.root / "demo" / "skills" / "s" / "SKILL.md").write_text("changed again\n",
+                                                                     encoding="utf-8")
+        self.run_hook()
+        self.assertTrue(self.layer_ran, "中身が変わったのに再走していない")
+
+    def test_changing_an_untracked_file_invalidates_the_cache(self):
+        """`git diff` ではなく**中身のハッシュ**で指紋を採る理由（untracked を拾う）."""
+        self.modify("demo/skills/s/SKILL.md")
+        new_file = self.root / "demo" / "scripts" / "x.sh"
+        new_file.parent.mkdir(parents=True, exist_ok=True)
+        new_file.write_text("echo a\n", encoding="utf-8")
+        self.run_hook()
+        self.marker.unlink()
+        new_file.write_text("echo b\n", encoding="utf-8")
+        self.run_hook()
+        self.assertTrue(self.layer_ran, "untracked の中身の変化を拾えていない")
+
+    def test_without_cksum_the_layer_always_runs(self):
+        """指紋を採れない環境では**走る側に倒す**（検査を飛ばす方に倒さない）."""
+        self.modify("demo/skills/s/SKILL.md")
+        env = self.env(with_encoder=False)      # PATH に cksum を置かない
+        self.run_hook(env=env)
+        self.assertTrue(self.layer_ran, "前提: 1 回目は走る")
+        self.marker.unlink()
+        self.run_hook(env=env)
+        self.assertTrue(self.layer_ran, "指紋を採れないのにスキップしている")
 
     def test_stdin_is_consumed_so_the_hook_cannot_hang(self):
         """hook は stdin を消費してから処理を始める（消費しないとハングする）."""

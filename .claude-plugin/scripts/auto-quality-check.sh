@@ -10,8 +10,11 @@
 #   — 同じ並びが Stop hook / pre-commit / CI / self-review 前段の 4 経路で要るため）。
 #   **このスクリプトの責務は「いつ走らせるか」と「hook 向けにどう出すか」だけ。**
 #
-# トリガー条件:
-#   working tree に以下のパターンの変更がある場合のみチェック実行
+# トリガー条件（**走らせない条件は 3 つ**）:
+#   ①変異テストの実行中はスキップする（ソースが書き換わっているので結果が嘘になる）
+#   ②前回の実行から作業ツリーが変わっていなければスキップし、**前回の検出をキャッシュから
+#     出し直す**（再走しない。黙るだけだと「直った」と読めてしまう）
+#   ③working tree に以下のパターンの変更がある場合のみチェック実行
 #     - */plugin.json
 #     - .claude-plugin/marketplace.json
 #     - */skills/** / */commands/** / */hooks/** / */agents/** / */references/**
@@ -46,6 +49,86 @@ if ! echo "$CHANGED" | grep -qE '(\.claude-plugin/.*\.json|/skills/|/commands/|/
   exit 0
 fi
 
+# ---- 走らせない条件 1: 変異テストが実行中 ----------------------------------
+# `mutation-test.py` は**対象ファイルを書き換えながら**テストを回す。その最中に検査を
+# 走らせると、見ているのは変異したソースなので**結果が丸ごと嘘になる**（実測: 1 回の
+# 作業中に 6 回発火し、6 回とも偽の失敗報告だった）。ジャーナルの存在＝変異を当てている
+# 最中で、`pgrep` が引ければ変異と変異の隙間も塞ぐ（PATH を絞った環境では省略される）。
+#
+# **黙って exit しない**: Stop hook の正常系は silent exit 0 なので、無言だと「検査して
+# 問題なし」と区別がつかない。1 行だけ理由を出す（additionalContext は出さない —
+# Claude に修復させる材料が無いため）
+if [ -f "$REPO_ROOT/.mutation-test-journal.json" ] ||
+   { command -v pgrep >/dev/null 2>&1 && pgrep -f "mutation-test\.py" >/dev/null 2>&1; }; then
+  echo "auto-quality-check: 変異テストの実行中なのでスキップした（結果が当てにならない）" >&2
+  exit 0
+fi
+
+# ---- 走らせない条件 2: 前回から作業ツリーが変わっていない --------------------
+# 検査は毎ターン終了時に走るので、質問に答えただけのターンでもフルスイート（実測 125 秒）が
+# 回る。**前回と同じ内容なら結果も同じ**なので走らせ直さない。
+#
+# **前回の検出は握り潰さない**: clean だったときに黙るだけだと、検出のあったターンの次に
+# 何も出なくなり「直った」と読めてしまう。結果ごとキャッシュして**再走せずに出し直す**。
+#
+# 指紋は「status の行 + 変更ファイルの中身」。`git diff` を使わないのは untracked の中身の
+# 変化を拾うため。`cksum` が引けない環境では**キャッシュを使わない**（毎回走る側に倒す）
+CACHE=""
+FINGERPRINT=""
+if command -v cksum >/dev/null 2>&1; then
+  CACHE="${TMPDIR:-/tmp}/claude-auto-quality-check-$(printf '%s' "$REPO_ROOT" | cksum | cut -d' ' -f1)"
+  # **`[ -f ] && cksum` と書かないこと**: status にはディレクトリ（`?? dir/` の畳み込み）や
+  # rename の `old -> new` が来るので `-f` は普通に偽になる。偽の AND リストは終了コード 1 で
+  # 終わり、`set -e`（safe-hook が張る）が**サブシェルをそこで殺す** — 指紋が空のまま
+  # ERR trap で exit 0 し、**検査を一度も走らせずに「問題なし」に見える**（実測）。
+  # `if` は条件が偽でも 0 で終わるのでこの形にする
+  # 指紋には **`-uall`** の status を使う（既定は中身が全部 untracked な dir を `?? demo/` に
+  # 畳むので、その下のファイルを編集しても指紋が動かない ＝ 新規スクリプトを書いている間
+  # ずっと再走しない）。トリガー判定側の `$CHANGED` は既存の挙動のまま触らない
+  CHANGED_ALL="$(git -C "$REPO_ROOT" status --porcelain -uall 2>/dev/null | cut -c4-)"
+  FINGERPRINT="$({
+    printf '%s\n' "$CHANGED_ALL"
+    while IFS= read -r _f; do
+      if [ -f "$REPO_ROOT/$_f" ]; then cksum < "$REPO_ROOT/$_f"; fi
+    done <<< "$CHANGED_ALL"
+  } | cksum | cut -d' ' -f1)"
+  # 指紋を採れなかったらキャッシュを使わない（**走る側に倒す**）
+  [ -n "$FINGERPRINT" ] || CACHE=""
+fi
+
+emit() {
+  # 検出内容（`$1`）をユーザーと Claude の両方へ出す。**キャッシュ再生にも使う**ので
+  # 検査の実行とは分けてある
+  {
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚠️  auto-quality-check: 修正が必要な問題があります"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    printf "%b" "$1"
+    echo ""
+    echo "詳細確認は /quality-check を実行してください"
+  } >&2
+
+  # stdout: Claude 向けに additionalContext で注入（CC 2.1.163, Stop hook）
+  # Claude がその場で品質問題（SSoT drift / バージョンバンプ忘れ等）を修復できるようにする。
+  # JSON 文字列エスケープは確実なエンコーダ（python3 → jq）に委譲。
+  # どちらも無い環境では additionalContext は出さず stderr 通知のみ（後方互換）。
+  MESSAGE="$(printf "%b" "auto-quality-check が修正の必要な品質問題を検出しました。以下を修正するか /quality-check で詳細を確認してください:\n${1}")"
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$MESSAGE" | python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":sys.stdin.read()}}))'
+  elif command -v jq >/dev/null 2>&1; then
+    printf '%s' "$MESSAGE" | jq -Rsc '{hookSpecificOutput:{hookEventName:"Stop",additionalContext:.}}'
+  fi
+}
+
+if [ -n "$CACHE" ] && [ -f "$CACHE" ]; then
+  CACHED_FP="$(head -1 "$CACHE")"
+  if [ "$CACHED_FP" = "$FINGERPRINT" ]; then
+    CACHED_ISSUES="$(tail -n +2 "$CACHE")"
+    [ -n "$CACHED_ISSUES" ] && emit "$CACHED_ISSUES"
+    exit 0
+  fi
+fi
+
 ISSUES=""
 
 # 検査本体は machine-layer.sh（並びの正本）。exit 1 = 検出 / 2 = 判定不能。
@@ -63,26 +146,15 @@ case "$ML_RC" in
 esac
 
 if [ -n "$ISSUES" ]; then
-  # stderr: ユーザー向け通知（端末に表示）
-  {
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "⚠️  auto-quality-check: 修正が必要な問題があります"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    printf "%b" "$ISSUES"
-    echo ""
-    echo "詳細確認は /quality-check を実行してください"
-  } >&2
+  emit "$ISSUES"
+fi
 
-  # stdout: Claude 向けに additionalContext で注入（CC 2.1.163, Stop hook）
-  # Claude がその場で品質問題（SSoT drift / バージョンバンプ忘れ等）を修復できるようにする。
-  # JSON 文字列エスケープは確実なエンコーダ（python3 → jq）に委譲。
-  # どちらも無い環境では additionalContext は出さず stderr 通知のみ（後方互換）。
-  MESSAGE="$(printf "%b" "auto-quality-check が修正の必要な品質問題を検出しました。以下を修正するか /quality-check で詳細を確認してください:\n${ISSUES}")"
-  if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$MESSAGE" | python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":sys.stdin.read()}}))'
-  elif command -v jq >/dev/null 2>&1; then
-    printf '%s' "$MESSAGE" | jq -Rsc '{hookSpecificOutput:{hookEventName:"Stop",additionalContext:.}}'
-  fi
+# 次のターンで作業ツリーが同じなら再走しないための記録（検出内容ごと残す）。
+# 書けなくても検査自体は済んでいるので握り潰してよい
+if [ -n "$CACHE" ]; then
+  # **展開前の生テキストで持つ**（再生側も `emit` の `%b` を通るので、ここで展開すると
+  # `\n` が二重に処理される）
+  { printf '%s\n' "$FINGERPRINT"; printf '%s' "$ISSUES"; } > "$CACHE" 2>/dev/null || true
 fi
 
 exit 0
