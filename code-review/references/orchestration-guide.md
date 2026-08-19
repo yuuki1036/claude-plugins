@@ -165,7 +165,13 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 
 レビューの真のソースは diff であることは変わらない。エージェントのファイル Read は共通ユーティリティの仕様確認など、diff だけでは判断できない文脈把握に限定する。ただし、変更箇所を含む関数の全体確認は積極的に行うこと。
 
-**担当ファイルの割り当ては観点に応じて決める**（`triage-signals.sh` の `## files` と `## focus-signals` の根拠ファイルが材料）。担当を絞れない観点（cross-cutting / pattern-consistency / spec-compliance 等）には `--list` で全ファイル名を渡し、必要なぶんを自分で切り出させる。
+**担当ファイルの割り当ては観点に応じて決める**（`triage-signals.sh` の `## files` と `## focus-signals` の根拠ファイルが材料）。
+
+**全ファイルを渡してよい観点は次の 3 つに限る**（GitHub issue #144）: `cross-cutting` / `pattern-consistency` / `spec-compliance`。いずれも**ファイル間の関係そのものが観点**なので、部分集合では判定が成立しない。この 3 つには `--list` で全ファイル名を渡し、必要なぶんを自分で切り出させる。
+
+**それ以外の観点は絞る。** 旧版はこの 3 つを「等」で開いていたため、`## focus-signals` に根拠ファイルを持つ観点まで既定で全件に落ちていた（実測: `claude-md-compliance` に全変更ファイルを渡した回が重み付き **857k で指摘 1 件**）。絞る材料が本当に無ければ全件を渡してよいが、**その reviewer の構成テーブル `指示` 欄に `担当: 全件` と書く** — 判断して全件にしたのか、既定で落ちたのかを事後に区別できないと、この規約が守られたかどうかを観測できない。
+
+**`class`（core/test/doc/gen）による機械的な絞り込みは採らない**（→ `design-notes/pending-optimizations.md` `## 10`）。
 
 ### 出力形式の検証と auto-retry（GitHub issue #69）
 
