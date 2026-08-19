@@ -315,25 +315,28 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 体数相関を壊す（実測: 相関 r が 1.00 → 0.18）。**欠測は誤値より望ましい**
         gaps.append("tokens")
 
-    # **発行パターンは tokens とは独立に載せる**（GitHub issue #142）。窓が空振りして
-    # `tokens` が欠測になった回でも、agent の起動時刻は拾えていることがある。
+    # **発行パターンは tokens とは独立に載せる**（GitHub issue #142 / 判定単位は #149）。
+    # 窓が空振りして `tokens` が欠測になった回でも、agent の発行元は拾えていることがある。
     # `duration_fleet_min` だけでは「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を
-    # 区別できず、実測ではその区別が最大の改善余地だった（16 回中 13 回が逐次 / 累計 431 分）
+    # 区別できない。**判定単位は wave**（同一メッセージから出た agent の束）で、層をまたぐ
+    # 逐次実行（explorer → reviewer → 反証）は設計上正当なので違反に数えない
     disp = tok.get("dispatch") if isinstance(tok, dict) else None
     if isinstance(disp, dict) and disp.get("verdict") not in (None, "unknown"):
         payload["dispatch"] = disp
-        if disp.get("verdict") in ("serial", "mixed"):
-            label = "逐次発行" if disp["verdict"] == "serial" else "分割発行"
+        # **警告は `serial` だけ**。`layered`（層ごとの wave）は設計上正当な形なので、
+        # 警告すると「⚠️ が出たときだけ行動する」契約が壊れる
+        if disp.get("verdict") == "serial":
             sys.stderr.write(
-                "WARN: agent を%s している（%s 体 / 最大間隔 %s 秒）。一括発行なら fleet は"
-                "**最長 1 体ぶん**で済む — orchestration-guide.md `## 0`「並列発行の明示」\n"
+                "WARN: agent を逐次発行している（%s 体 / %s wave / 単独 wave が %s 連続）。"
+                "同一フェーズは 1 メッセージで一括発行すれば fleet は**wave 内最長の 1 体**で"
+                "済む — orchestration-guide.md `## 0`「並列発行の明示」\n"
                 "  → **レポート末尾に 1 行追記すること**: "
-                "`⚠️ 計測: agent を%s した（一括発行の規約違反 / #142）`\n"
-                % (label, disp.get("agents"), disp.get("max_gap_sec"), label)
+                "`⚠️ 計測: agent を逐次発行した（一括発行の規約違反 / #142）`\n"
+                % (disp.get("agents"), disp.get("waves"), disp.get("max_solo_run"))
             )
     else:
-        # 判定できなかった（agent 0〜1 体 / transcript を引けない）。**「一括だった」に
-        # 倒さない** — 規約が守られたことの証拠が無い回として残す
+        # 判定できなかった（agent 0 体 / transcript や meta.json を引けない）。**「一括だった」
+        # にも「逐次だった」にも倒さない** — 規約が守られたことの証拠が無い回として残す
         gaps.append("dispatch")
 
 digest = os.environ.get("REVIEW_DIFF_DIGEST") or ""

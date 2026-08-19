@@ -705,26 +705,35 @@ elif fc_raw:
 else:
     print("**指摘の分類**: 判定対象なし（`findings_class` を持つサンプルが 0 件）")
 
-# **発行パターン**（GitHub issue #142）: 一括発行が守られた割合。実測では 16 回中 13 回が
-# 逐次発行で、累計 431 分（7.2 時間）を失っていた。**規約はあるのに守られない**ので、
-# 守られた割合を毎回の振り返りに出す
+# **発行パターン**（GitHub issue #142 / 判定単位の是正が #149）: 一括発行が守られた割合。
+# **`dispatch.schema >= 2` だけを集計する** — schema 1 は起動時刻のフラットな時系列に 120 秒
+# 閾値を当てており、**wave 間ギャップ（層をまたぐ正当な逐次実行）を違反として数えていた**。
+# 混ぜると「守られた割合」が構造的に 0% に張り付く（実測: schema 1 の 4 件は全て serial）
 disp_rows = [e for e in events if isinstance(e["p"].get("dispatch"), dict)]
+v1_rows = [e for e in disp_rows if (e["p"]["dispatch"] or {}).get("schema") is None]
 judged = [e["p"]["dispatch"] for e in disp_rows
-          if (e["p"]["dispatch"] or {}).get("verdict") in ("batched", "serial", "mixed")]
+          if (e["p"]["dispatch"] or {}).get("schema") is not None
+          and (e["p"]["dispatch"] or {}).get("verdict") in ("batched", "serial", "layered")]
+v1_tail = ("" if not v1_rows
+           else " / 判定単位が誤っていた schema 1 を %d 件除外" % len(v1_rows))
 print()
 if not judged:
-    print("**発行パターン**: 判定対象なし（`dispatch` を持つサンプル %d 件）" % len(disp_rows))
+    print("**発行パターン**: 判定対象なし（`dispatch.schema >= 2` を持つサンプル %d 件%s）"
+          % (len(disp_rows) - len(v1_rows), v1_tail))
 else:
     n_b = sum(1 for d in judged if d["verdict"] == "batched")
-    lost = [d for d in judged if d["verdict"] != "batched"]
-    # **中央値は破られた回だけで採る**（守れた回の間隔は数秒なので、混ぜると値が潰れる）
-    mid = median([d.get("max_gap_sec") or 0 for d in lost])
-    tail = "" if mid is None else " / 逐次・分割の最大間隔 中央値 %g 秒" % mid
-    print("**発行パターン**（一括発行が守られた割合 / n=%d）: **%d/%d（%.0f%%）**%s"
-          % (len(judged), n_b, len(judged), pct(n_b, len(judged)), tail))
-    if n_b < len(judged):
-        print("  - 一括発行なら fleet は**wave 内最長の 1 体**で決まる。"
-              "破られた回は体数ぶんの実時間を直列で払っている（orchestration-guide.md `## 0`）")
+    n_s = sum(1 for d in judged if d["verdict"] == "serial")
+    # **1 wave あたりの体数**が効率の本体（wave 数は層の数なので減らせない）。
+    # 守れているほど大きくなる
+    per_wave = median([(d.get("agents") or 0) / (d.get("waves") or 1) for d in judged])
+    tail = "" if per_wave is None else " / 1 wave あたり 中央値 %.1f 体" % per_wave
+    print("**発行パターン**（一括発行 / n=%d%s）: **batched %d・layered %d・serial %d**%s"
+          % (len(judged), v1_tail, n_b, len(judged) - n_b - n_s, n_s, tail))
+    if n_s:
+        print("  - **serial %d 件**（単独 wave が %d 連続以上）。同一フェーズを 1 メッセージで"
+              "発行すれば fleet は**wave 内最長の 1 体**で決まる（orchestration-guide.md `## 0`）"
+              % (n_s, min(d.get("max_solo_run") or 0 for d in judged
+                          if d["verdict"] == "serial")))
 
 print()
 if not tok_rows:

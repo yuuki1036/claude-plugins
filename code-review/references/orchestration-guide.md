@@ -33,7 +33,7 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 
 **同期起動の明示（両 skill・全 agent 起動に適用）**: explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / 冷や読み skeptic / 反証エージェントのすべてで、Agent call に `run_in_background: false` を必ず明示する。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、省略するとオーケストレーターが結果を待たずに次フェーズへ進み、完了通知の遅れた agent の出力を取りこぼす（「反応が返ってこない agent」の正体）。`orchestration-dynamic-rounds.md` の各起動手順にもこのルールが適用される。
 
-**並列発行の明示（複数体を起動する全フェーズに適用）**: `run_in_background: false` は「1 体ずつ順に起動する」ことを意味**しない**。複数体を起動するフェーズでは、**同一アシスタントメッセージ内に対象フェーズの全 Agent call を並べて一括発行し、その 1 応答で全結果を待つ**。**2 つは直交する独立の要件**（前者は取りこぼし防止、後者は並列性）。**1 体しか起動しないフェーズも「他フェーズと同一 wave」なら適用対象**である（冷や読み skeptic は reviewer wave に相乗り / **meta-reviewer は反証バッチと同一メッセージ** — v2.61.0。起動タイミングの正本は triage-dynamic-gates.md `## 8` / `## 8.5`）。真に単独 wave になるのは skeptic の fallback 起動だけ。→ 根拠と実測: `design-notes/orchestration-rationale.md`
+**並列発行の明示（複数体を起動する全フェーズに適用）**: `run_in_background: false` は「1 体ずつ順に起動する」ことを意味**しない**。複数体を起動するフェーズでは、**同一アシスタントメッセージ内に対象フェーズの全 Agent call を並べて一括発行し、その 1 応答で全結果を待つ**。**2 つは直交する独立の要件**（前者は取りこぼし防止、後者は並列性）。**1 体しか起動しないフェーズも「他フェーズと同一 wave」なら適用対象**である（冷や読み skeptic は reviewer wave に相乗り / **meta-reviewer は反証バッチと同一メッセージ** — v2.61.0。起動タイミングの正本は triage-dynamic-gates.md `## 8` / `## 8.5`）。真に単独 wave になるのは skeptic の fallback 起動だけ。**守られたかは publish 時に事後計測される** — `meta.json` の `toolUseId` から wave を復元し、**単独 wave が 3 連続以上**なら payload の `dispatch.verdict` が `serial` になり WARN が出る（orchestration-measurement.md `## 16` / GitHub issue #142・#149）。層ごとに wave が分かれること自体（explorer → reviewer → 反証）は `layered` で、違反ではない。→ 根拠と実測: `design-notes/orchestration-rationale.md`
 
 ## 1. PR 番号・期待 HEAD SHA 注入（review のみ / agent 起動時に必須）
 

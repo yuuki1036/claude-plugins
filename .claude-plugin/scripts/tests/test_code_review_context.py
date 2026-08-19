@@ -616,63 +616,99 @@ class MeasureTokensTest(ScriptTestBase):
 
 
 class DispatchPatternTest(MeasureTokensTest):
-    """agent の**起動間隔**から一括発行が守られたかを判定する（GitHub issue #142）.
+    """agent を**どのメッセージから発行したか**で一括発行が守られたかを判定する.
 
-    `duration_fleet_min` は「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を
-    区別できない。実測ではこの区別が最大の改善余地だった（16 回中 13 回が逐次発行で、
-    累計 431 分＝7.2 時間を失っていた）。**規約はあるのに守られない**ので、
-    守られたかどうかを事後に観測できるようにする。
+    GitHub issue #142（計測の導入）/ #149（判定単位の是正）。`duration_fleet_min` は
+    「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を区別できない。
+
+    **単位は wave（同一メッセージから出た agent の束）**であってレビュー全体ではない。
+    explorer → reviewer → 反証 は設計上逐次なので、層をまたぐ間隔を違反に数えると
+    2 層以上のレビューは規約を守っていても `batched` に到達できない（#149）。
     """
 
-    def with_agents(self, offsets_sec: list[int], session: str = "s1") -> dict:
-        """`offsets_sec` の秒数だけずらして agent を起動した transcript を作る."""
+    def with_waves(self, waves: list[list[int]], session: str = "s1",
+                   meta: bool = True) -> dict:
+        """wave ごとに `message.id` を分けた transcript を作る.
+
+        `waves[i]` は同一メッセージから発行した agent の起動オフセット（秒）。
+        """
         base = datetime(2026, 8, 18, 1, 0, 0)
-        self.write_session(session, [self.usage_row(base.isoformat() + "Z", out=10)])
-        for i, off in enumerate(offsets_sec):
-            ts = (base + timedelta(seconds=off)).isoformat() + "Z"
-            self.write_subagent(session, "agent-%d" % i, [self.usage_row(ts, out=5)])
+        rows = [self.usage_row(base.isoformat() + "Z", out=10)]
+        idx = 0
+        for wave_no, offsets in enumerate(waves):
+            for off in offsets:
+                ts = (base + timedelta(seconds=off)).isoformat() + "Z"
+                rows.append(self.agent_call_row(ts, "msg-%d" % wave_no, "tu-%d" % idx))
+                self.write_agent(session, idx, ts, meta=meta)
+                idx += 1
+        self.write_session(session, rows)
         return self.as_json()["dispatch"]
 
-    def test_same_message_dispatch_is_batched(self):
-        d = self.with_agents([1, 3, 8])
+    @staticmethod
+    def agent_call_row(ts: str, msg_id: str, tool_use_id: str, uuid: str = "") -> str:
+        """Agent の tool_use 1 ブロックぶんの行.
+
+        **transcript は 1 メッセージを tool_use ブロックごとに別行へ分解して書く**
+        （行の `uuid` は別・`message.id` は共通）。fixture もその形に揃える。
+        """
+        return json.dumps({
+            "type": "assistant", "timestamp": ts, "uuid": uuid or ("u-" + tool_use_id),
+            "message": {"id": msg_id,
+                        "content": [{"type": "tool_use", "id": tool_use_id, "name": "Agent"}]},
+        })
+
+    def write_agent(self, session: str, idx: int, ts: str, meta: bool = True) -> None:
+        path = self.write_subagent(session, "agent-%d" % idx, [self.usage_row(ts, out=5)])
+        if meta:
+            path.with_suffix(".meta.json").write_text(
+                json.dumps({"agentType": "general-purpose", "toolUseId": "tu-%d" % idx}),
+                encoding="utf-8")
+
+    def test_one_message_is_batched(self):
+        d = self.with_waves([[1, 3, 8]])
         self.assertEqual(d["verdict"], "batched", d)
-        self.assertEqual(d["agents"], 3)
+        self.assertEqual((d["agents"], d["waves"], d["wave_sizes"]), (3, 1, [3]))
+
+    def test_waves_are_grouped_by_message_id_not_by_row_uuid(self):
+        """**同一メッセージの行は `uuid` が別**（実測）。`uuid` で束ねると一括発行の回まで
+        「1 体ずつの wave」に見え、全件が `serial` に落ちる（#149 の実装で踏んだ）."""
+        d = self.with_waves([[0, 10, 20, 30, 40]])
+        self.assertEqual(d["waves"], 1, d)
+        self.assertEqual(d["verdict"], "batched", d)
 
     def test_one_by_one_dispatch_is_serial(self):
-        """1 体ずつ別メッセージで発行した回（実測の 13/16 がこれ）."""
-        d = self.with_agents([0, 400, 900])
+        """1 体ずつ別メッセージで発行した回（実測の a272adb8 が 9 wave × 1 体）."""
+        d = self.with_waves([[0], [400], [900]])
         self.assertEqual(d["verdict"], "serial", d)
-        self.assertEqual(d["max_gap_sec"], 500)
+        self.assertEqual((d["waves"], d["max_solo_run"]), (3, 3))
+        self.assertEqual(d["max_inter_wave_sec"], 500)
         self.assertEqual(d["span_sec"], 900)
 
-    def test_split_dispatch_is_mixed(self):
-        """間隔は詰まっているが総幅が広い＝何回かに分けて発行している."""
-        d = self.with_agents([0, 60, 119, 175])
-        self.assertEqual(d["verdict"], "mixed", d)
+    def test_layered_waves_are_not_a_violation(self):
+        """explorer → reviewer のような層ごとの wave は設計上正当（**`batched` に到達
+        できないのが正常**）。ここを違反に数えたのが #149 の欠陥."""
+        d = self.with_waves([[0, 5], [600, 605, 610, 620, 630, 640]])
+        self.assertEqual(d["verdict"], "layered", d)
+        self.assertEqual(d["wave_sizes"], [2, 6])
 
-    def test_exactly_two_agents_are_judged(self):
-        """**2 体ちょうど**が判定の下限（`>= 2`）。ここを外すと最小の fleet が判定不能に落ちる."""
-        self.assertEqual(self.with_agents([0, 4])["verdict"], "batched")
+    def test_two_solo_waves_are_not_serial_but_three_are(self):
+        """**閾値の境界**。単独 wave 2 連続は別ゲートの並び（skeptic → meta）で説明が
+        つくが、3 連続はこのパイプラインの層構造では説明できない."""
+        self.assertEqual(self.with_waves([[0], [300], [600, 605]])["verdict"], "layered")
         self.setUp()
-        d = self.with_agents([0, 600])
+        d = self.with_waves([[0], [300], [600], [900, 905]])
         self.assertEqual(d["verdict"], "serial", d)
-        self.assertEqual(d["agents"], 2)
+        self.assertEqual(d["max_solo_run"], 3)
 
-    def test_text_mode_prints_the_pattern_and_hints_only_when_broken(self):
-        """人間向け出力: 破られた回だけ是正先を出す（守れた回は行だけで黙る）."""
-        self.with_agents([0, 600])
-        broken = self.measure().stdout
-        self.assertIn("逐次発行", broken)
-        self.assertIn("最長 1 体ぶん", broken, "是正先を出していない")
-        self.setUp()
-        self.with_agents([0, 4])
-        ok = self.measure().stdout
-        self.assertIn("一括発行", ok)
-        self.assertNotIn("最長 1 体ぶん", ok, "守れた回にまで是正を出している")
+    def test_solo_run_counts_consecutive_waves_only(self):
+        """連続でない単独 wave を積み上げない（[1,5,1] を violation にしない）."""
+        d = self.with_waves([[0], [300, 305, 310, 315, 320], [900]])
+        self.assertEqual(d["max_solo_run"], 1, d)
+        self.assertEqual(d["verdict"], "layered", d)
 
     def test_a_single_agent_cannot_be_judged(self):
         """1 体では wave の概念が立たない。**batched に倒さない**."""
-        self.assertEqual(self.with_agents([0])["verdict"], "single")
+        self.assertEqual(self.with_waves([[0]])["verdict"], "single")
 
     def test_no_agent_is_unknown_not_batched(self):
         base = datetime(2026, 8, 18, 1, 0, 0).isoformat() + "Z"
@@ -681,17 +717,94 @@ class DispatchPatternTest(MeasureTokensTest):
         self.assertEqual(d["verdict"], "unknown", d)
         self.assertEqual(d["agents"], 0)
 
+    def test_unresolvable_agents_are_undecidable_not_serial(self):
+        """meta.json を引けない回（旧 transcript）。**「逐次だった」にも倒さない**（#149）."""
+        d = self.with_waves([[0], [400], [900]], meta=False)
+        self.assertEqual(d["verdict"], "unknown", d)
+        self.assertEqual(d["unresolved"], 3, d)
+        self.assertIsNone(d["waves"])
+
+    def test_partially_unresolvable_agents_do_not_shrink_the_wave_count(self):
+        """一部だけで wave を組むと wave 数が実態より小さく出る＝`batched` 寄りの誤判定."""
+        base = datetime(2026, 8, 18, 1, 0, 0)
+        rows = [self.usage_row(base.isoformat() + "Z", out=10)]
+        rows.append(self.agent_call_row(base.isoformat() + "Z", "msg-0", "tu-0"))
+        self.write_agent("s1", 0, base.isoformat() + "Z")
+        ts = (base + timedelta(seconds=600)).isoformat() + "Z"
+        self.write_agent("s1", 1, ts, meta=False)      # 発行元を引けない 1 体
+        self.write_session("s1", rows)
+        d = self.as_json()["dispatch"]
+        self.assertEqual(d["verdict"], "unknown", d)
+        self.assertEqual(d["unresolved"], 1, d)
+
+    def test_nested_dispatch_is_attributed_to_the_agent_that_issued_it(self):
+        """入れ子起動（agent が agent を起動）を親メッセージに寄せない."""
+        base = datetime(2026, 8, 18, 1, 0, 0)
+        rows = [self.usage_row(base.isoformat() + "Z", out=10),
+                self.agent_call_row(base.isoformat() + "Z", "msg-0", "tu-0")]
+        self.write_agent("s1", 0, base.isoformat() + "Z")
+        child_ts = (base + timedelta(seconds=300)).isoformat() + "Z"
+        # 親 agent の transcript の中から発行された 1 体
+        self.write_subagent("s1", "agent-0", [
+            self.usage_row(base.isoformat() + "Z", out=5),
+            self.agent_call_row(child_ts, "msg-child", "tu-1")])
+        self.write_agent("s1", 1, child_ts)
+        self.write_session("s1", rows)
+        d = self.as_json()["dispatch"]
+        self.assertEqual(d["waves"], 2, d)
+        self.assertEqual(d["agents"], 2, d)
+
+    def test_only_agent_tool_calls_define_a_wave(self):
+        """sub 側で拾うのは **Agent の tool_use だけ**（他ツールの id を wave にしない）."""
+        base = datetime(2026, 8, 18, 1, 0, 0)
+        rows = [self.usage_row(base.isoformat() + "Z", out=10),
+                self.agent_call_row(base.isoformat() + "Z", "msg-0", "tu-0")]
+        self.write_agent("s1", 0, base.isoformat() + "Z")
+        child_ts = (base + timedelta(seconds=300)).isoformat() + "Z"
+        # 親 agent が **Read** を呼んだ行。id は agent-1 の toolUseId と同じにしてある
+        self.write_subagent("s1", "agent-0", [
+            self.usage_row(base.isoformat() + "Z", out=5),
+            json.dumps({"type": "assistant", "timestamp": child_ts, "uuid": "u-read",
+                        "message": {"id": "msg-read",
+                                    "content": [{"type": "tool_use", "id": "tu-1",
+                                                 "name": "Read"}]}})])
+        self.write_agent("s1", 1, child_ts)
+        self.write_session("s1", rows)
+        d = self.as_json()["dispatch"]
+        self.assertEqual(d["verdict"], "unknown", d)
+        self.assertEqual(d["unresolved"], 1, "Agent 以外の tool_use を発行元に採っている")
+
+    def test_text_mode_prints_the_pattern_and_hints_only_when_broken(self):
+        """人間向け出力: 破られた回だけ是正先を出す（層ごとの wave では黙る）."""
+        self.with_waves([[0], [400], [900]])
+        broken = self.measure().stdout
+        self.assertIn("逐次発行", broken)
+        self.assertIn("wave 内最長の 1 体", broken, "是正先を出していない")
+        self.setUp()
+        self.with_waves([[0, 5], [600, 605]])
+        ok = self.measure().stdout
+        self.assertIn("層ごとの発行", ok)
+        self.assertNotIn("wave 内最長の 1 体", ok, "正当な形にまで是正を出している")
+
+    def test_text_mode_says_it_could_not_judge(self):
+        """判定を諦めた回を黙って落とさない（守れた回と区別がつかなくなる）."""
+        self.with_waves([[0], [400]], meta=False)
+        self.assertIn("判定不能", self.measure().stdout)
+
     def test_agents_outside_the_window_are_not_counted(self):
         """窓（`--since`）と体数の意味を揃える（既存の `sub_agents` と同じ契約）."""
         base = datetime(2026, 8, 18, 1, 0, 0)
-        self.write_session("s1", [self.usage_row(base.isoformat() + "Z", out=10)])
-        self.write_subagent("s1", "agent-old",
-                            [self.usage_row((base - timedelta(hours=2)).isoformat() + "Z", out=5)])
-        self.write_subagent("s1", "agent-new",
-                            [self.usage_row(base.isoformat() + "Z", out=5)])
+        old = (base - timedelta(hours=2)).isoformat() + "Z"
+        rows = [self.usage_row(base.isoformat() + "Z", out=10),
+                self.agent_call_row(old, "msg-old", "tu-0"),
+                self.agent_call_row(base.isoformat() + "Z", "msg-new", "tu-1")]
+        self.write_agent("s1", 0, old)
+        self.write_agent("s1", 1, base.isoformat() + "Z")
+        self.write_session("s1", rows)
         d = json.loads(self.measure("--json", "--since",
                                     base.isoformat()).stdout)["dispatch"]
         self.assertEqual(d["agents"], 1, "窓の外で起動した agent を数えている")
+        self.assertEqual(d["verdict"], "single", d)
 
 
 if __name__ == "__main__":

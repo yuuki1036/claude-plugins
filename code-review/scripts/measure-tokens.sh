@@ -16,9 +16,10 @@
 #   - main.output      … オーケストレーターが**書いた**量。プロンプト複製はここに出る（単価最大）
 #   - main.cache_write … オーケストレーターが**新規に読んだ**量。参照 doc の読み込みはここ
 #   - sub.*            … サブエージェント側。体数を変えた効果はここに出る
-#   - dispatch         … agent の**起動間隔**から一括発行が守られたかを判定する
-#                        （GitHub issue #142）。`duration_fleet_min` は「9 体を逐次で
-#                        回した 89 分」と「1 体が 89 分かかった」を区別できない
+#   - dispatch         … agent を**どのメッセージから発行したか**で一括発行が守られたかを
+#                        判定する（GitHub issue #142 / 判定単位の是正が #149）。
+#                        `duration_fleet_min` は「9 体を逐次で回した 89 分」と
+#                        「1 体が 89 分かかった」を区別できない
 #
 # 使い方:
 #   measure-tokens.sh                      # 現在のリポジトリの最新セッション
@@ -115,6 +116,20 @@ first_ts = last_ts = None
 sub_seen = set()
 sub_first = {}    # サブエージェント transcript -> 窓内で最初の timestamp（= 起動時刻）
 tool_of = {}      # tool_use_id -> ツール名（main のみ）
+# **Agent の tool_use id -> (発行したアシスタントメッセージのキー, 時刻)**。
+# 同一メッセージから出た agent は同一 wave（GitHub issue #149）。main だけでなく
+# sub 側も見る（agent がさらに agent を起動した回を親メッセージに寄せないため）。
+#
+# **キーは `message.id`（無ければ `requestId`）であって行の `uuid` ではない**。transcript は
+# 1 メッセージを **tool_use ブロックごとに別行へ分解**して書く（実測: 同一メッセージから出た
+# 5 体が `uuid` 別・`message.id` 共通で、各行の content は 1 ブロックだけ）。`uuid` で束ねると
+# **一括発行した回まで「1 体ずつの wave」に見え、全件が serial に落ちる**
+agent_dispatch = {}
+
+
+def _wave_key(entry):
+    msg = entry.get("message") or {}
+    return msg.get("id") or entry.get("requestId") or entry.get("uuid")
 intake = {}       # ツール名 -> tool_result の総文字数
 intake_n = {}     # ツール名 -> tool_result の件数
 
@@ -175,6 +190,8 @@ for fpath, side in targets:
                             continue
                         if blk.get("type") == "tool_use":
                             tool_of[blk.get("id")] = blk.get("name") or "?"
+                            if blk.get("name") == "Agent":
+                                agent_dispatch[blk.get("id")] = (_wave_key(e), ts)
                         elif blk.get("type") == "tool_result":
                             body = blk.get("content")
                             if not isinstance(body, str):
@@ -184,6 +201,16 @@ for fpath, side in targets:
                             name = tool_of.get(blk.get("tool_use_id"), "?")
                             intake[name] = intake.get(name, 0) + len(body)
                             intake_n[name] = intake_n.get(name, 0) + 1
+            elif e.get("type") == "assistant":
+                # sub 側は取り込み内訳を採らない（main の負荷が論点）が、**Agent の発行だけは
+                # 拾う**。入れ子起動（`spawnDepth >= 2`）を親メッセージに寄せると wave の
+                # 大きさが実態とずれる
+                blocks = (e.get("message") or {}).get("content")
+                if isinstance(blocks, list):
+                    for blk in blocks:
+                        if (isinstance(blk, dict) and blk.get("type") == "tool_use"
+                                and blk.get("name") == "Agent"):
+                            agent_dispatch[blk.get("id")] = (_wave_key(e), ts)
             # **usage を持つ行に限らない**（起動直後のメタ行が先に来る）。窓の適用は
             # 上の `since` フィルタで済んでいるので、ここに来た時点で窓内
             if side and ts and fpath not in sub_first:
@@ -204,12 +231,25 @@ for fpath, side in targets:
             b["inp"] += u.get("input_tokens") or 0
 agents = sub_files
 
-# **発行パターンの判定**（GitHub issue #142）。実測: 16 回中 13 回が逐次発行で、
-# 累計 431 分（7.2 時間）を失っていた。守られた 3 回はいずれも 3〜5 体の小規模で、
-# **体数が多い＝一括発行が最も効く回ほど破られている**。
+# **発行パターンの判定**（GitHub issue #142 / 判定単位の是正が #149）。
+# `duration_fleet_min` は「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を区別できない。
 #
-# 事後計測なので暴発しない（hook で発行そのものを止める案より安く、副作用も無い）。
-DISPATCH_GAP_SEC = 120
+# **判定単位は wave（同一メッセージから出た agent の束）であってレビュー全体ではない**
+# （orchestration-guide.md `## 0`）。explorer → reviewer → 反証 は設計上逐次で、1 メッセージに
+# まとめられない。旧版は起動時刻のフラットな時系列に 120 秒閾値を当てていたため、**wave 間の
+# ギャップ（実測ベースライン 6〜9 分）を違反として数え、2 層以上のレビューは規約を完全に
+# 守っていても `batched` に到達できなかった**（#149）。
+#
+# wave は推定しない。`subagents/agent-*.meta.json` の `toolUseId` を transcript の `tool_use`
+# ブロックへ引き当てれば、**どのアシスタントメッセージから出たか**が確定する。時間閾値も
+# LLM の自己申告も要らない（`agents.explorer_waves` = 打点の行数 は自己申告なので、打ち忘れた
+# 瞬間に違反の証拠も消えていた / design-notes/pending-optimizations.md `## 8`）。
+DISPATCH_SCHEMA = 2
+# **連続する単独 wave が何本続いたら違反と呼ぶか**。1 体だけの wave 自体は正当（設計上 1 体
+# しか起動しないフェーズがある）。2 連続も skeptic → meta のような別ゲートの並びで説明が
+# つく。**3 連続以上はこのパイプラインの層構造では説明できない**ので、そこを閾値にする。
+# 上げ下げの判断材料として `waves` / `wave_sizes` を payload に残す
+DISPATCH_SOLO_RUN = 3
 
 
 def _epoch(ts):
@@ -220,21 +260,63 @@ def _epoch(ts):
         return None
 
 
-starts = sorted(t for t in (_epoch(v) for v in sub_first.values()) if t is not None)
-dispatch = {"agents": len(starts), "max_gap_sec": None, "span_sec": None, "verdict": "unknown"}
-if len(starts) == 1:
-    # 1 体では一括かどうかを問えない（wave の概念が立たない）
-    dispatch.update(max_gap_sec=0, span_sec=0, verdict="single")
-elif len(starts) >= 2:
-    gaps = [b - a for a, b in zip(starts, starts[1:])]
-    span = starts[-1] - starts[0]
-    if max(gaps) > DISPATCH_GAP_SEC:
-        verdict = "serial"          # 1 体ずつ別メッセージで発行している
-    elif span < DISPATCH_GAP_SEC:
-        verdict = "batched"         # 同一メッセージ内の一括発行
+# 窓内に起動した agent を「発行元メッセージ」へ寄せる。**引き当てられない agent が 1 体でも
+# あれば判定しない** — 一部だけで wave を組むと wave 数が実態より小さく出て、`batched` 寄りの
+# 誤判定になる。#142 が持っていた原則（「一括だった」に倒さない）を**両側**に効かせる
+waves_by_msg = {}
+unresolved = 0
+for fpath, ts in sub_first.items():
+    started = _epoch(ts)
+    meta_path = fpath[:-len(".jsonl")] + ".meta.json" if fpath.endswith(".jsonl") else ""
+    tool_use_id = None
+    # mutation-ok: `and` → `or` は等価（存在しない meta_path を open すれば OSError を
+    # 拾って同じ「引き当て失敗」に落ちる）
+    if meta_path and os.path.exists(meta_path):
+        try:
+            with open(meta_path) as mfh:
+                meta = json.load(mfh)
+            if isinstance(meta, dict):
+                tool_use_id = meta.get("toolUseId")
+        except (OSError, ValueError):
+            tool_use_id = None
+    owner = agent_dispatch.get(tool_use_id) if tool_use_id else None
+    if started is None or not owner or not owner[0]:
+        unresolved += 1
+        continue
+    waves_by_msg.setdefault(owner[0], []).append(started)
+
+dispatch = {"schema": DISPATCH_SCHEMA, "agents": len(sub_first), "waves": None,
+            "wave_sizes": None, "max_solo_run": None, "max_inter_wave_sec": None,
+            "span_sec": None, "verdict": "unknown"}
+if unresolved:
+    # 旧い transcript（meta.json が無い）・窓の外で発行された agent・入れ子起動の親を
+    # 引けない回。**「一括だった」にも「逐次だった」にも倒さない**（#149）
+    dispatch["unresolved"] = unresolved
+elif len(sub_first) == 1:
+    # 1 体では wave の概念が立たない
+    dispatch.update(waves=1, wave_sizes=[1], max_solo_run=1,
+                    max_inter_wave_sec=0, span_sec=0, verdict="single")
+elif waves_by_msg:
+    ordered = sorted(waves_by_msg.values(), key=min)
+    sizes = [len(w) for w in ordered]
+    heads = [min(w) for w in ordered]
+    solo_run = best_solo_run = 0
+    for n in sizes:
+        solo_run = solo_run + 1 if n == 1 else 0
+        best_solo_run = max(best_solo_run, solo_run)
+    inter = [b - a for a, b in zip(heads, heads[1:])]
+    starts = sorted(t for w in ordered for t in w)
+    if len(ordered) == 1:
+        verdict = "batched"          # 全体が同一メッセージ内の一括発行
+    elif best_solo_run >= DISPATCH_SOLO_RUN:
+        verdict = "serial"           # 1 体ずつ別メッセージで発行している
     else:
-        verdict = "mixed"           # 何回かに分けて発行している
-    dispatch.update(max_gap_sec=round(max(gaps)), span_sec=round(span), verdict=verdict)
+        # **多層だが違反の証拠が無い**。explorer → reviewer → 反証 のような層ごとの wave は
+        # 設計上正当で、1 メッセージにまとめられない（`batched` に到達できないのが正常）
+        verdict = "layered"
+    dispatch.update(waves=len(ordered), wave_sizes=sizes, max_solo_run=best_solo_run,
+                    max_inter_wave_sec=round(max(inter)) if inter else 0,
+                    span_sec=round(starts[-1] - starts[0]), verdict=verdict)
 
 
 def k(v): return f"{v/1000:,.1f}k"
@@ -257,8 +339,9 @@ if os.environ.get("AS_JSON") == "1":
         # 空」＝引き当て失敗の検出に要る（呼び出し側が縮退判定に使う）
         "sub_agents": len(sub_seen),
         "sub_files": len(agents),
-        # **窓内に起動した agent の起動間隔**（`sub_agents` と同じ窓）。publish が payload の
-        # `dispatch` に載せ、`verdict != "batched"` のとき警告する
+        # **窓内に起動した agent の発行パターン**（`sub_agents` と同じ窓）。publish が payload の
+        # `dispatch` に載せ、`verdict == "serial"` のとき警告する（`layered` は層ごとの wave
+        # ＝設計上正当なので警告しない / #149）
         "dispatch": dispatch,
     }, ensure_ascii=False, separators=(",", ":")))
     sys.exit(0)
@@ -283,13 +366,18 @@ elif buckets[False]["n"]:
     print("   `ls ~/.claude/projects/*/" + os.path.basename(os.path.dirname(subdir or "")) + "/subagents` で実在を確認する")
 # **`if agents:` の elif 連鎖の外に置く**（間に挟むと「1 体だけ起動した回」で
 # 『transcript が見つからない』が誤発火する）
-if dispatch["verdict"] in ("serial", "mixed", "batched"):
-    label = {"serial": "逐次発行", "mixed": "分割発行", "batched": "一括発行"}[dispatch["verdict"]]
-    print("発行パターン    : %s（%d 体 / 最大間隔 %ds / 総幅 %ds）"
-          % (label, dispatch["agents"], dispatch["max_gap_sec"], dispatch["span_sec"]))
-    if dispatch["verdict"] != "batched":
-        print("   → 一括発行なら fleet は**最長 1 体ぶん**で済む"
-              "（orchestration-guide.md `## 0`「並列発行の明示」）")
+if dispatch["verdict"] in ("serial", "layered", "batched"):
+    label = {"serial": "逐次発行", "layered": "層ごとの発行", "batched": "一括発行"}[dispatch["verdict"]]
+    print("発行パターン    : %s（%d 体 / %d wave %s / wave 間の最大 %ds）"
+          % (label, dispatch["agents"], dispatch["waves"],
+             "+".join(str(n) for n in dispatch["wave_sizes"]), dispatch["max_inter_wave_sec"]))
+    if dispatch["verdict"] == "serial":
+        print("   → 同一フェーズは 1 メッセージで一括発行する。fleet は**wave 内最長の 1 体**で"
+              "決まる（orchestration-guide.md `## 0`「並列発行の明示」）")
+elif dispatch.get("unresolved"):
+    # 判定を諦めた回を黙って落とさない（`batched` にも `serial` にも倒さない / #149）
+    print("発行パターン    : 判定不能（%d 体中 %d 体の発行元メッセージを引けない）"
+          % (dispatch["agents"], dispatch["unresolved"]))
 if intake:
     total_chars = sum(intake.values())
     print("\nmain への取り込み内訳（tool_result + attachment の文字数 / GitHub issue #118）")

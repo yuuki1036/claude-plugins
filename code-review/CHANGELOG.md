@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.70.1] - 2026-08-19
+
+**発行パターンの判定単位を wave に是正した**（GitHub issue #149）。v2.70.0 で入れた `dispatch` は、**規約を完全に守っていても 2 層以上のレビューが `serial` に落ちる**欠陥を持っていた。
+
+### Fixed
+- **`dispatch` の判定を wave 単位にした**（#149）。旧版は agent の起動時刻をフラットに並べて 120 秒閾値を当てていたため、**wave 間ギャップ（explorer → reviewer → 反証 という設計上正当な逐次実行。実測ベースライン 6〜9 分）を違反として数えていた**。実測でも v2.70.0 以降の 4 件すべてが `serial` になっていた
+  - **wave は推定しない**。`subagents/agent-*.meta.json` の `toolUseId` を transcript の `tool_use` ブロックへ引き当てると、どのアシスタントメッセージから発行されたかが確定する。時間閾値も LLM の自己申告も要らない（`agents.explorer_waves` は打点の自己申告なので、打ち忘れた瞬間に違反の証拠も消えていた）
+  - **束ねるキーは行の `uuid` ではなく `message.id`**。transcript は 1 メッセージを tool_use ブロックごとに別行へ分解して書くため、`uuid` で束ねると**一括発行した回まで「1 体ずつの wave」に見え、全件が `serial` に落ちる**（実装中に踏んで実データで気づいた）
+  - `verdict` を `batched`（全体が 1 メッセージ）/ `layered`（層ごとの wave。**設計上正当**）/ `serial`（単独 wave が 3 連続以上）/ `single` / `unknown` に整理し、**警告は `serial` だけ**にした。`mixed` の廃止と併せて「⚠️ が出たときだけ行動する」契約を回復する
+  - 閾値の根拠: 1 体だけの wave 自体は正当（設計上 1 体しか起動しないフェーズがある）。2 連続も skeptic → meta のような別ゲートの並びで説明がつく。**3 連続以上はこのパイプラインの層構造では説明できない**。上げ下げの判断材料として `waves` / `wave_sizes` / `max_solo_run` を payload に残す
+  - **引き当てられない agent が 1 体でもあれば判定しない**（`verdict: "unknown"` + `unresolved`）。一部だけで wave を組むと wave 数が実態より小さく出て `batched` 寄りに誤判定する。#142 が持っていた原則（「一括だった」に倒さない）を**両側**に効かせた
+  - 実データでの検証（直近 8 セッション）: 旧判定は 8/8 が `serial`。新判定は `batched` 1 / `layered` 5 / `serial` 2（`[1,1,1,...]` の 9 wave と、末尾に単独 wave が 5 連続する 30 体の回）
+- **`review-retro.sh` は `dispatch.schema >= 2` だけを集計する**。schema 1 は誤った単位の判定なので、混ぜると「守られた割合」が構造的に 0% に張り付く。除外件数は出力に明示する
+- `publish-review-event.sh` の WARN 文言が「fleet は**最長 1 体ぶん**」（レビュー全体）と `review-retro.sh` の「**wave 内最長の 1 体**」（wave 単位）で食い違っていた。wave 単位に統一した
+
+### Changed
+- `references/orchestration-measurement.md` `## 16` の `dispatch` 契約・`measurement_gaps` の `dispatch` 語彙を追従（SSoT pin 再打刻）
+
 ## [2.70.0] - 2026-08-18
 
 **計測できていなかった 2 つを payload に載せた。** このマシンの `review:completed` 37 件を transcript と突き合わせた実測が契機（GitHub issue #142 / #143）。

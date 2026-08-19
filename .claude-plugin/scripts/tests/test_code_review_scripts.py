@@ -280,8 +280,13 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
     def env_home(self) -> dict[str, str]:
         return self._env(HOME=str(self.home))
 
-    def write_transcript(self, agent_offsets: list[int]) -> None:
-        """cwd に対応する slug へ session + subagent を置く（起動時刻を秒でずらす）."""
+    def write_transcript(self, waves: list[list[int]]) -> None:
+        """cwd に対応する slug へ session + subagent を置く.
+
+        `waves[i]` は**同一メッセージから発行した** agent の起動オフセット（秒）。
+        transcript は 1 メッセージを tool_use ブロックごとに別行へ分解して書くので、
+        fixture も「行は別・`message.id` は共通」の形に揃える（GitHub issue #149）。
+        """
         slug = "".join(c if c.isalnum() else "-" for c in str(self.root))
         d = self.home / ".claude" / "projects" / slug
         d.mkdir(parents=True, exist_ok=True)
@@ -293,16 +298,28 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
                                                      "cache_creation_input_tokens": 20,
                                                      "cache_read_input_tokens": 30}}})
 
-        (d / "s1.jsonl").write_text(row(base.isoformat() + "Z") + "\n", encoding="utf-8")
+        rows = [row(base.isoformat() + "Z")]
         sub = d / "s1" / "subagents"
         sub.mkdir(parents=True, exist_ok=True)
-        for i, off in enumerate(agent_offsets):
-            ts = (base + timedelta(seconds=off)).isoformat() + "Z"
-            (sub / ("agent-%d.jsonl" % i)).write_text(row(ts) + "\n", encoding="utf-8")
+        idx = 0
+        for wave_no, offsets in enumerate(waves):
+            for off in offsets:
+                ts = (base + timedelta(seconds=off)).isoformat() + "Z"
+                rows.append(json.dumps({
+                    "type": "assistant", "timestamp": ts, "uuid": "u-%d" % idx,
+                    "message": {"id": "msg-%d" % wave_no,
+                                "content": [{"type": "tool_use", "id": "tu-%d" % idx,
+                                             "name": "Agent"}]}}))
+                (sub / ("agent-%d.jsonl" % idx)).write_text(row(ts) + "\n", encoding="utf-8")
+                (sub / ("agent-%d.meta.json" % idx)).write_text(
+                    json.dumps({"agentType": "general-purpose", "toolUseId": "tu-%d" % idx}),
+                    encoding="utf-8")
+                idx += 1
+        (d / "s1.jsonl").write_text("\n".join(rows) + "\n", encoding="utf-8")
 
     def test_self_review_carries_tokens(self):
         """**除外の撤回**（#143）。載らない回は「載せない」ではなく欠測として残す."""
-        self.write_transcript([0, 5])
+        self.write_transcript([[0, 5]])
         self.publish(env=self.env_home())
         p = self.last_payload()
         self.assertIn("tokens", p, "self-review で tokens が載っていない")
@@ -317,21 +334,30 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         self.assertIn("tokens", p["measurement_gaps"])
 
     def test_serial_dispatch_lands_and_warns(self):
-        self.write_transcript([0, 600, 1300])
+        """1 体ずつ別メッセージで発行した回（単独 wave が 3 連続）."""
+        self.write_transcript([[0], [600], [1300]])
         res = self.publish(env=self.env_home())
         p = self.last_payload()
         self.assertEqual(p["dispatch"]["verdict"], "serial", p.get("dispatch"))
-        self.assertEqual(p["dispatch"]["agents"], 3)
+        self.assertEqual((p["dispatch"]["agents"], p["dispatch"]["waves"]), (3, 3))
+        self.assertEqual(p["dispatch"]["schema"], 2, "版マーカーが無いと retro が層別できない")
         self.assertIn("逐次発行", res.stderr)
         self.assertIn("#142", res.stderr)
 
     def test_batched_dispatch_does_not_warn(self):
         """**守れた回は黙る**（⚠️ が出たときだけ行動する契約）."""
-        self.write_transcript([0, 3, 7])
+        self.write_transcript([[0, 3, 7]])
         res = self.publish(env=self.env_home())
         self.assertEqual(self.last_payload()["dispatch"]["verdict"], "batched")
         self.assertNotIn("逐次発行", res.stderr)
-        self.assertNotIn("分割発行", res.stderr)
+
+    def test_layered_dispatch_does_not_warn(self):
+        """層ごとの wave は設計上正当（explorer → reviewer）。**ここで警告すると
+        2 層以上のレビューが毎回警告になる**（GitHub issue #149）."""
+        self.write_transcript([[0, 5], [600, 605, 610]])
+        res = self.publish(env=self.env_home())
+        self.assertEqual(self.last_payload()["dispatch"]["verdict"], "layered")
+        self.assertNotIn("逐次発行", res.stderr)
 
     def test_undecidable_dispatch_is_a_gap_not_batched(self):
         """agent が居ない回を「一括だった」に倒さない（規約遵守の証拠が無い回）."""
@@ -343,7 +369,7 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
 
     def test_late_publish_marks_the_window(self):
         """遅れて publish した回は窓に修正作業が混ざる。**別の名前で出す**（#143）."""
-        self.write_transcript([0, 5])
+        self.write_transcript([[0, 5]])
         path = self.ts_file()
         now = int(time.time())
         path.write_text("t0 %d\nt1 %d\nw %d\nt2 %d\n"
@@ -431,28 +457,51 @@ class RetroTest(ScriptTestBase):
                                        "refuted": 0, "uncertain": 0,
                                        "severity_inflated": inflated, "contested": 0}}
 
-    def _dispatch(self, verdict: str, max_gap: int = 0, agents: int = 3) -> dict:
-        return {"effort": "high", "measurement_gaps": [],
-                "dispatch": {"agents": agents, "max_gap_sec": max_gap,
-                             "span_sec": max_gap, "verdict": verdict}}
+    def _dispatch(self, verdict: str, waves: int = 3, agents: int = 3,
+                  schema: int | None = 2, solo_run: int = 3) -> dict:
+        d = {"agents": agents, "waves": waves, "wave_sizes": [1] * waves,
+             "max_solo_run": solo_run, "max_inter_wave_sec": 600, "span_sec": 900,
+             "verdict": verdict}
+        if schema is not None:
+            d["schema"] = schema
+        return {"effort": "high", "measurement_gaps": [], "dispatch": d}
 
     def test_dispatch_rate_is_reported(self):
-        """一括発行が守られた割合を毎回の振り返りに出す（GitHub issue #142）."""
-        self._events([self._dispatch("serial", 600), self._dispatch("batched", 5),
-                      self._dispatch("serial", 400), self._dispatch("mixed", 100)])
+        """発行パターンの内訳を毎回の振り返りに出す（GitHub issue #142 / #149）."""
+        self._events([self._dispatch("serial", solo_run=5),
+                      self._dispatch("batched", waves=1, agents=4),
+                      self._dispatch("serial", solo_run=3),
+                      self._dispatch("layered", waves=2, agents=6, solo_run=1)])
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("**発行パターン**", out)
-        self.assertIn("1/4", out, "守られた割合が出ていない")
-        # 破られた回（600 / 400 / 100）の中央値 = 400。**守れた回を混ぜると値が変わる**ので、
-        # 「どの母集団の中央値か」までを固定する
-        self.assertIn("中央値 400 秒", out)
+        self.assertIn("batched 1・layered 1・serial 2", out, "内訳が出ていない")
+        # 1 wave あたりの体数（4/1, 6/2, 3/3, 3/3）の中央値 = 2.0
+        self.assertIn("中央値 2.0 体", out)
+        # **是正先の「何連続から」は serial の回だけで採る**（3 と 5 の小さい方）。
+        # layered の solo_run=1 を混ぜると「1 連続以上」という無意味な閾値になる
+        self.assertIn("単独 wave が 3 連続以上", out)
+
+    def test_schema_1_samples_are_excluded_from_the_denominator(self):
+        """**判定単位が誤っていた schema 1 を混ぜない**（GitHub issue #149）.
+
+        schema 1 は wave 間ギャップを違反として数えており、実測 4 件すべてが `serial`。
+        混ぜると「守られた割合」が構造的に 0% に張り付く。
+        """
+        self._events([self._dispatch("serial", schema=None),
+                      self._dispatch("serial", schema=None),
+                      self._dispatch("batched", waves=1, agents=4)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("batched 1・layered 0・serial 0", out, "旧 schema を分母に入れている")
+        self.assertIn("schema 1 を 2 件除外", out, "除外したことを黙っている")
 
     def test_undecidable_dispatch_is_out_of_the_denominator(self):
         """`single` / `unknown` は分母に入れない（判定できないものを守れた側に数えない）."""
-        self._events([self._dispatch("batched", 5), self._dispatch("single", 0, agents=1),
-                      self._dispatch("unknown", 0, agents=0)])
+        self._events([self._dispatch("batched", waves=1, agents=4),
+                      self._dispatch("single", waves=1, agents=1),
+                      self._dispatch("unknown", waves=0, agents=0)])
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("1/1", out, "判定不能を分母に入れている")
+        self.assertIn("n=1", out, "判定不能を分母に入れている")
+        self.assertIn("batched 1・layered 0・serial 0", out)
 
     def test_no_dispatch_sample_says_so(self):
         """サンプル 0 件を「守られた」と読めない形で出す."""
