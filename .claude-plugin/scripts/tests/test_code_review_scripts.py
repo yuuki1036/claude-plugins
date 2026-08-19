@@ -41,6 +41,7 @@ BASE_PAYLOAD = {
     "size_tier": "medium",
     "missing_coverage": [],
     "pre_adjust_counts": {"blocker": 0, "critical": 0, "major": 1, "minor": 0},
+    "below_threshold_counts": {"blocker": 0, "critical": 0, "major": 0, "minor": 0},
     "adversarial_verify": {"fired": True, "skip_reason": None},
     "recall_skeptic": {"fired": False, "skip_reason": "no-surface"},
     "meta_reviewer": {"fired": False, "skip_reason": "effort"},
@@ -550,6 +551,70 @@ class RetroTest(ScriptTestBase):
         self.assertIn("findings_class", json.loads(out))
 
 
+    # ---- 検出 → 報告の内訳（GitHub issue #146） -----------------------------
+    SEVS = ("blocker", "critical", "major", "minor")
+
+    def _yield_row(self, pre, post, below=None) -> dict:
+        r = {"effort": "high", "measurement_gaps": [], "severity_threshold": "MAJOR",
+             "pre_adjust_counts": {**dict(zip(self.SEVS, pre)), "schema": 2}}
+        r.update(dict(zip(("%s_count" % s for s in self.SEVS), post)))
+        if below is not None:
+            r["below_threshold_counts"] = dict(zip(self.SEVS, below))
+        return r
+
+    def test_written_findings_are_separated_from_count_only(self):
+        """合算では (a) 本文を書いてから捨てた と (b) 件数だけ返した を分けられない."""
+        self._events([self._yield_row((0, 0, 10, 20), (0, 0, 4, 0), below=(0, 0, 0, 20))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        # **層別キーごと見る**（閾値が違う回を同じ列で比べると運用差が改善に見える）
+        self.assertIn("schema>=2/threshold=MAJOR: n=1 / 本文を書いた 10", out)
+        self.assertIn("本文を書いた 10（検出 30 − 件数のみ 20）→ 報告 4", out)
+        self.assertIn("本文を書いてから捨てた: 6 件（60.0%）", out)
+
+    def test_unknown_threshold_is_not_folded_into_the_default(self):
+        """`severity_threshold` が無い回を `MAJOR` の列に混ぜない（`?` で別層にする）.
+
+        どの severity が `## below-threshold` に回ったかは閾値で決まるので、
+        閾値不明を既定と同じ列に入れると**運用差が施策の効果に見える**。
+        """
+        row = self._yield_row((0, 0, 10, 20), (0, 0, 4, 0), below=(0, 0, 0, 20))
+        row.pop("severity_threshold")
+        self._events([row])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("threshold=?: n=1", out)
+        self.assertNotIn("threshold=MAJOR", out)
+
+    def test_rows_without_the_field_are_out_of_the_denominator(self):
+        """**持たない回を混ぜない** — 混ぜると pre だけ増えて (a) が過大に出る."""
+        self._events([self._yield_row((0, 0, 10, 20), (0, 0, 4, 0), below=(0, 0, 0, 20)),
+                      self._yield_row((0, 0, 99, 99), (0, 0, 1, 0))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("n=1 / 本文を書いた 10", out)
+        self.assertIn("検出 30 − 件数のみ 20", out)
+
+    def test_negative_drop_is_not_rounded(self):
+        """0 に丸めると「捨てていない」と読める（手順 1 の後で足す層があるため負が出る）."""
+        self._events([self._yield_row((0, 0, 5, 0), (0, 0, 8, 0), below=(0, 0, 0, 0))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("本文を書いてから捨てた: -3 件", out)
+        self.assertIn("recall_skeptic / meta_reviewer", out, "負の理由を言わずに出さない")
+
+    def test_zero_drop_is_not_labelled_as_negative(self):
+        """捨てた 0 件は「負」ではない（注記が付くと後段の層が足したと誤読される）."""
+        self._events([self._yield_row((0, 0, 4, 6), (0, 0, 4, 0), below=(0, 0, 0, 6))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("本文を書いてから捨てた: 0 件（0.0%）", out)
+        self.assertNotIn("recall_skeptic / meta_reviewer", out)
+
+    def test_no_sample_says_it_cannot_be_judged_yet(self):
+        """歩留まりだけ出して黙ると「分離できている」と読める（#131 と同じ型）."""
+        self._events([self._yield_row((0, 0, 10, 20), (0, 0, 4, 0))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("`below_threshold_counts` を持つサンプル待ち", out)
+        # 待ちメッセージ自身が説明として同じ語を含むので、**集計行だけ**を指して見る
+        self.assertNotIn("本文を書いた ", out)
+
+
 class FindingsClassValidationTest(ScriptTestBase):
     """`findings_class` の publish 側検証（v2.68.0）.
 
@@ -610,6 +675,76 @@ class FindingsClassValidationTest(ScriptTestBase):
     def test_schema_marker_is_injected(self):
         self.publish(self._payload({"lint": 1, "test": 2, "judgement": 1}))
         self.assertEqual(self.last_payload()["findings_class"]["schema"], 1)
+
+
+class BelowThresholdCountsValidationTest(ScriptTestBase):
+    """`below_threshold_counts` の publish 側検証（GitHub issue #146）.
+
+    **このフィールドの唯一の用途は分離**（本文を書いてから捨てた / 件数だけ返した）なので、
+    `pre_adjust_counts` を超える値が 1 件でも混ざると分離そのものが意味を失う。
+    `findings_class` と同じ位置・同じ流儀で fail-fast する契約をここで固定する。
+    """
+
+    def _payload(self, bt, pre=(0, 0, 3, 5)) -> dict:
+        p = dict(BASE_PAYLOAD)
+        p["pre_adjust_counts"] = dict(zip(("blocker", "critical", "major", "minor"), pre))
+        if bt is None:
+            p.pop("below_threshold_counts", None)
+        else:
+            p["below_threshold_counts"] = bt
+        return p
+
+    def test_within_pre_adjust_passes(self):
+        r = self.publish(self._payload({"blocker": 0, "critical": 0, "major": 1, "minor": 5}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_exceeding_pre_adjust_is_rejected(self):
+        """再掲が元を超えるのは足し忘れか二重計上（定義上ありえない）."""
+        r = self.publish(self._payload({"blocker": 0, "critical": 0, "major": 4, "minor": 5}))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("超えている", r.stderr)
+        self.assertEqual(self.events(), [], "矛盾したサンプルを残さない")
+
+    def test_equal_to_pre_adjust_passes(self):
+        """**全部が閾値未満だった回**は等しくなる（境界を弾かない）."""
+        r = self.publish(self._payload({"blocker": 0, "critical": 0, "major": 3, "minor": 5}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_non_integer_is_rejected(self):
+        r = self.publish(self._payload({"blocker": 0, "critical": 0, "major": "1", "minor": 5}))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("非負整数でない", r.stderr)
+
+    def test_bool_is_rejected(self):
+        """`isinstance(True, int)` は真なので、弾かないと比較が静かに通る."""
+        r = self.publish(self._payload({"blocker": True, "critical": 0, "major": 1, "minor": 5}))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("非負整数でない", r.stderr)
+
+    def test_missing_key_is_rejected(self):
+        """0 件でもキーを省かせない（「無かった」と「数えなかった」を潰さない）."""
+        r = self.publish(self._payload({"blocker": 0, "critical": 0, "major": 1}))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("非負整数でない", r.stderr)
+
+    def test_absent_field_is_allowed_but_recorded_as_a_gap(self):
+        """フィールドごと落ちた回は publish を止めないが、**欠測として可視化する**."""
+        r = self.publish(self._payload(None))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("payload:below_threshold_counts",
+                      self.last_payload().get("measurement_gaps", []))
+
+    def test_pre_adjust_missing_skips_the_comparison(self):
+        """`pre_adjust_counts` が揃っていない回は突合しない（型検証だけ効く）."""
+        p = dict(BASE_PAYLOAD)
+        p["pre_adjust_counts"] = {"blocker": 0, "critical": 0, "major": 1}
+        p["below_threshold_counts"] = {"blocker": 0, "critical": 0, "major": 9, "minor": 9}
+        r = self.publish(p)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_schema_marker_is_injected(self):
+        self.publish(self._payload({"blocker": 0, "critical": 0, "major": 1, "minor": 5}))
+        self.assertEqual(self.last_payload()["below_threshold_counts"]["schema"], 1)
 
 
 class FindingsClassSignalTest(ScriptTestBase):

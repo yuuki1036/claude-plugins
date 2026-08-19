@@ -217,6 +217,43 @@ if fc is not None:
             )
             sys.exit(1)
 
+# ---- `below_threshold_counts` の検証（v2.71.0 / GitHub issue #146） ------------
+# **`pre_adjust_counts` に足し込んだぶんの再掲**なので、元より大きい値は定義上ありえない
+# （足し忘れか二重計上のどちらか）。合算しか残っていないと **(a) 本文を書いてから捨てた**
+# （出力トークンの純損失）と **(b) 件数だけ返した**（既に節約できている）が分離できず、
+# 閾値注入（#117）の効果を判定できない。**分離がこのフィールドの唯一の用途**なので、
+# 汚染を通すと足した意味がそのまま消える。`findings_class` と同じ位置・流儀で fail-fast する。
+SEVS = ("blocker", "critical", "major", "minor")
+bt = payload.get("below_threshold_counts")
+if bt is not None:
+    if not isinstance(bt, dict):
+        sys.stderr.write("below_threshold_counts が JSON オブジェクトでない\n")
+        sys.exit(1)
+    bad = [k for k in SEVS
+           if not isinstance(bt.get(k), int) or isinstance(bt.get(k), bool) or bt.get(k) < 0]
+    if bad:
+        sys.stderr.write(
+            "below_threshold_counts の %s が非負整数でない（%s の 4 つとも必須。"
+            "0 件でもキーを省かない — 「閾値未満が無かった」と「数えなかった」を潰さないため）\n"
+            % (", ".join(bad), " / ".join(SEVS))
+        )
+        sys.exit(1)
+    pre = payload.get("pre_adjust_counts")
+    # **`pre_adjust_counts` が揃っている回だけ突合する**（揃っていない回を落とすと契約の
+    # 範囲外まで publish を止めることになる / `findings_class` の合計突合と同じ理由）
+    if isinstance(pre, dict) and all(
+            isinstance(pre.get(k), int) and not isinstance(pre.get(k), bool) for k in SEVS):
+        over = ["%s（%d > %d）" % (k, bt[k], pre[k]) for k in SEVS if bt[k] > pre[k]]
+        if over:
+            sys.stderr.write(
+                "below_threshold_counts が pre_adjust_counts を超えている: %s\n"
+                "**`pre_adjust_counts` は `## below-threshold` を足し込んだ合算**で、"
+                "`below_threshold_counts` はそのうち足し込んだぶんの再掲。超えるのは "
+                "pre 側への足し忘れか below 側の二重計上（orchestration-measurement.md `## 16`）\n"
+                % ", ".join(over)
+            )
+            sys.exit(1)
+
 # duration_* は常にスクリプト側の値で上書きする（呼び出し側が渡していても勝つ）
 payload.update(json.loads(os.environ["REVIEW_DURS"]))
 
@@ -260,6 +297,7 @@ if os.environ.get("REVIEW_LATE_PUBLISH") == "1":
 SCHEMA_MARKERS = {
     "findings_class":     {"schema": 1},
     "pre_adjust_counts":  {"schema": 2},
+    "below_threshold_counts": {"schema": 1},
     "adversarial_verify": {"calibration_schema": 2, "gate_schema": 2},
     "recall_skeptic":     {"attribution_schema": 2, "gate_schema": 2},
     "meta_reviewer":      {"gate_schema": 3},

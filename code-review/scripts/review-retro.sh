@@ -255,6 +255,28 @@ for e in events:
         if v:
             y["post"] += v
 
+# ---- 5.1 「本文を書いてから捨てた」率（GitHub issue #146） -------------------
+# 上の歩留まりは **(a) 本文を書いてから捨てた**（出力トークンの純損失）と
+# **(b) `## below-threshold` で件数だけ返した**（既に節約できている）を合算しているので、
+# #117（閾値注入）が効いたのかを判定できない。`below_threshold_counts` を持つ回**だけ**を
+# 別に集計する — 持たない回を混ぜると `pre` の母数だけが増えて (a) が過大に出る。
+splits = {}
+for e in events:
+    p = e["p"]
+    pre = p.get("pre_adjust_counts")
+    bt = p.get("below_threshold_counts")
+    if not isinstance(pre, dict) or schema_of(pre, "schema") < 2 or not isinstance(bt, dict):
+        continue
+    key = "schema>=%d/threshold=%s" % (schema_of(pre, "schema"), p.get("severity_threshold") or "?")
+    sp = splits.setdefault(key, {"n": 0, "pre": 0, "below": 0, "post": 0})
+    sp["n"] += 1
+    for sev in ("blocker", "critical", "major", "minor"):
+        sp["pre"] += num(pre.get(sev)) or 0
+        sp["below"] += num(bt.get(sev)) or 0
+    for sev in ("blocker_count", "critical_count", "major_count", "minor_count"):
+        sp["post"] += num(p.get(sev)) or 0
+
+
 # ---- 6. 反証 verdict 分布（calibration_schema で層別） ---------------------
 verdict_layers = {}
 for e in events:
@@ -642,6 +664,26 @@ if yields:
     for key, y in sorted(yields.items()):
         print("- %s: n=%d / 検出 %d → 報告 %d（%.1f%%）"
               % (key, y["n"], y["pre"], y["post"], pct(y["post"], y["pre"])))
+
+if splits:
+    print()
+    print("**検出 → 報告の内訳**（`below_threshold_counts` を持つ回のみ / #146）")
+    for key, sp in sorted(splits.items()):
+        written = sp["pre"] - sp["below"]
+        dropped = written - sp["post"]
+        print("- %s: n=%d / 本文を書いた %d（検出 %d − 件数のみ %d）→ 報告 %d"
+              % (key, sp["n"], written, sp["pre"], sp["below"], sp["post"]))
+        # **負を丸めない**（0 に丸めると「捨てていない」と読める）。手順 1 の後に走る層
+        # （recall_skeptic / meta_reviewer の findings_added）が足すと負になりうる
+        print("  - **本文を書いてから捨てた: %d 件（%.1f%%）**%s"
+              % (dropped, pct(dropped, written),
+                 "" if dropped >= 0 else
+                 " — 負は手順 1 の後に走る層が足したぶん（recall_skeptic / meta_reviewer）"))
+elif yields:
+    print()
+    print("**検出 → 報告の内訳**は `below_threshold_counts` を持つサンプル待ち（#146）"
+          " — 上の歩留まりは「本文を書いてから捨てた」と「件数だけ返した」の合算で、"
+          "この 2 つを分けないと閾値注入（#117）の効果は判定できない")
 
 if verdict_layers:
     print()

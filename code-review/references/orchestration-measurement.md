@@ -148,6 +148,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 |---|---|---|
 | `findings_class` | `schema` | 1 |
 | `pre_adjust_counts` | `schema` | 2 |
+| `below_threshold_counts` | `schema` | 1 |
 | `adversarial_verify` | `calibration_schema` | 2 |
 | `adversarial_verify` | `gate_schema` | 2 |
 | `recall_skeptic` | `attribution_schema` | 2 |
@@ -166,6 +167,7 @@ review 用（`--plugin code-review:review --pr <PR番号>`）:
   "head_verified":{"ok":<n>,"mismatch":<n>,"unknown":<n>},
   "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
   "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
+  "below_threshold_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
   "severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
   "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
   "missing_coverage":[<json-array of focus names>],
@@ -185,6 +187,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
   "reviewer_effort_profile":"<uniform|differentiated>",
   "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
   "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
+  "below_threshold_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
   "severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
   "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
   "missing_coverage":[<json-array of focus names>],
@@ -207,6 +210,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
 | `head_verified` | `{ok, mismatch, unknown}`（review のみ。v2.43.0）。各 agent の `HEAD 検証:` 行の集計で、`unknown` は行が無かった agent 数。`mismatch + unknown > 0` のレビューは指摘の信頼度が落ちる（orchestration-guide.md `## 5`） |
 | `blocker_count` / `critical_count` / `major_count` / `minor_count` | severity 別件数（報告マトリクス通過後） |
 | `pre_adjust_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 分布。下の「調整前後の分離」を参照 |
+| `below_threshold_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**`pre_adjust_counts` に足し込んだ `## below-threshold` ぶんだけ**を同じ severity バケツで再掲する（GitHub issue #146）。`pre_adjust_counts` は合算のままなので、**`pre_adjust - below_threshold` が「reviewer が本文を書いて列挙した指摘」**になる。これが無いと検出 → 報告の歩留まりが (a) 本文を書いてから捨てた（出力トークンの純損失）と (b) 件数だけ返した（既に節約できている）に分解できない。**`pre_adjust_counts` 側の値を超えてはならない**（publish が fail-fast する） |
 | `severity_threshold` | 実行時の `review_severity_threshold` 実効値（`BLOCKER`〜`MINOR`）。**どの severity が `## below-threshold` に回ったかを事後に判別するために必須**（v2.58.0〜）。これが無いと `pre_adjust_counts` の非可換性を補正できない |
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
 | `findings_class` | **報告した指摘を「何が捕まえるべきだったか」で分類した件数**（v2.68.0 / GitHub 由来ではなく運用課題から）+ `schema`（スクリプトが注入）。`lint`=静的検査（grep / AST / 構造走査）で機械的に検出できた / `test`=回帰テストがあれば捕まえられた（コードの挙動の誤り）/ `judgement`=設計判断・主張の妥当性など機械で判定できない。**合計は報告件数（blocker+critical+major+minor）と一致させる**。下の「`findings_class` の使い方」を参照 |
@@ -261,8 +265,21 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - **`severity_threshold` と併せて読む。** `MAJOR`（既定）なら MINOR だけが非 dedup、`CRITICAL` なら MAJOR も非 dedup になる。閾値を知らずに `major_pre - major_post` を取ると運用差が改善に見える
 - 消費側の絞り込み例: `select((.payload.pre_adjust_counts.schema // 1) == 2 and .payload.severity_threshold == "MAJOR")`
 
-- **消えた分の内訳（降格 / confidence 不足）はこの 1 フィールドでは分離できない。** `severity-inflated` 降格・`[scope:out]` 降格・報告マトリクスの confidence 落ちが同じ差分に合流するため。**まず「検出由来か調整由来か」の一段目だけを切る**フィールドであり、二段目が必要と分かってから内訳フィールドを足す（LLM が手で組む JSON なのでフィールド数自体がコスト）
+- **消えた分の内訳（降格 / confidence 不足）はこの 1 フィールドでは分離できない。** `severity-inflated` 降格・`[scope:out]` 降格・報告マトリクスの confidence 落ちが同じ差分に合流するため。**まず「検出由来か調整由来か」の一段目だけを切る**フィールドであり、二段目が必要と分かってから内訳フィールドを足す（LLM が手で組む JSON なのでフィールド数自体がコスト）。**二段目は下の `below_threshold_counts` で 1 つだけ足した**（#146）
 - 版マーカー: **`pre_adjust_counts` の存在が v2.44.0 以降・`schema` サブフィールドが算出方法の版**（欠落 = `1`）。日付では切らない
+
+**`below_threshold_counts` による二段目の切り分け（v2.71.0 / GitHub issue #146）** — 一段目だけでは、消えた分が **(a) 本文を書いてから捨てた**のか **(b) `## below-threshold` で件数だけ返した**のかを分離できない。`pre_adjust_counts` が両方を合算しているためで、これでは #117（閾値注入）が効いているかを判定できない（実測: 検出 342 → 報告 91 = 26.6%。この 251 件の内訳が読めなかった）。**`pre_adjust_counts` は合算のまま据え置き**、足し込んだぶんを再掲する:
+
+| 量 | 式 | 意味 |
+|---|---|---|
+| 列挙された指摘 | `pre_adjust - below_threshold` | reviewer が**本文を書いた**数 |
+| 本文を書いてから捨てた | `(pre_adjust - below_threshold) - <sev>_count` | **出力トークンの純損失**。大きいなら閾値注入の効き方（プロンプトの位置・表現）を見直す |
+| 件数だけ返した | `below_threshold` | 既に節約できている分 |
+
+- **`pre_adjust_counts` を「列挙分だけ」に変えない**（schema 3 にしない）。既存サンプルとの比較可能性が切れ、下流の jq も全部書き換えになる。合算 + 再掲なら**過去データはそのまま読める**（schema 2 のまま据え置くのはこのため）
+- **`below_threshold` は非 dedup の生合計**で schema 2 の性質を引き継ぐ一方、差し引いた「列挙された指摘」は dedup 済み。**2 つは粒度が違う**ので、reviewer 間の重複が多い回では引きすぎる（＝「本文を書いた数」を過小評価する）
+- 「本文を書いてから捨てた」が**負になる回がある** — 手順 1 の後に走る層（`recall_skeptic` / `meta_reviewer` の `findings_added`）が指摘を足すため。**丸めない**（0 に丸めると「捨てていない」と読める）
+
 
 **`missing_coverage` の記法（v2.44.0 で語彙固定・v2.66.0 で機械検証）** — 要素は **識別子のみ**とし、理由・件数・finding id・自由文を混ぜない:
 

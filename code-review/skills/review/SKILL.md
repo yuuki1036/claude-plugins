@@ -21,7 +21,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @b1b87e7d -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @b227b8b0 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @3cf8c3c4 -->
 
 ## 前提
@@ -375,7 +375,7 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
    | MAJOR | skip | skip | skip | 報告 |
    | MINOR | skip | skip | skip | 報告 |
 
-6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を同名 severity のバケツへ足し、`severity_threshold` を併せて記録する**（足し込む分は dedup されないため版で非可換。版マーカー `schema` は**スクリプトが注入する**ので書かない。orchestration-measurement.md `## 16`）
+6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を同名 severity のバケツへ足し、`severity_threshold` を併せて記録する**（足し込む分は dedup されないため版で非可換。版マーカー `schema` は**スクリプトが注入する**ので書かない。orchestration-measurement.md `## 16`）。**足し込んだその件数を `below_threshold_counts` にも同じバケツで再掲する**（0 件でもキーを省かない / GitHub issue #146）。合算しか残らないと **(a) 本文を書いてから捨てた**（出力トークンの純損失）と **(b) 件数だけ返した**（既に節約できている）が分離できず、閾値注入の効果を判定できない。**`pre_adjust_counts` を超える値は publish が fail-fast する**
 7. **出力**: タグ（`[re-flag: @user]` 等）と severity ラベルを指摘文冒頭にそのまま残す。`⚠️ 反証メモ:` が付いた係争指摘は本文にメモを残したまま出力する
 
 ### 7. レポート出力
@@ -483,7 +483,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
 
    - **報告した指摘を `findings_class` に分類して入れる**（`lint` / `test` / `judgement`。合計は報告件数と一致。分類の基準と「0 件を目標にしない」理由は orchestration-measurement.md `## 16` の「`findings_class` の使い方」）
    - **publish の WARN に `⚠️ 計測:` の追記指示が出たら、レポート末尾にその 1 行を追記する**（#135。explorer の一括発行違反・wave 打点漏れは実行中に何も起きず、しかも打点漏れは違反の証拠自体を消す）
-   - スクリプトが payload の JSON 妥当性検証・**`missing_coverage` の語彙検証**（識別子以外＝理由つき自由文は `FATAL` で弾く。**理由はレポートの「⚠️ 欠損観点」に書き、フィールドごと落として通さない** / issue #132）・書込先のメインリポジトリ固定・一時ファイルの掃除まで行う（→ orchestration-measurement.md `## 13`）。**`measurement_gaps` / `diff_digest` / `tokens` と版マーカーの整数（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`）も渡さない** — 計測ファイル・一時 diff・transcript から算出して注入される（定数の手書きは version drift 中に落ちサンプルが逆の版バケツに入るため v2.65.0 で移した / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）
+   - スクリプトが payload の JSON 妥当性検証・**`missing_coverage` の語彙検証**（識別子以外＝理由つき自由文は `FATAL` で弾く。**理由はレポートの「⚠️ 欠損観点」に書き、フィールドごと落として通さない** / issue #132）・書込先のメインリポジトリ固定・一時ファイルの掃除まで行う（→ orchestration-measurement.md `## 13`）。**`measurement_gaps` / `diff_digest` / `tokens` と版マーカーの整数（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`）も渡さない** — 計測ファイル・一時 diff・transcript から算出して注入される（定数の手書きは version drift 中に落ちサンプルが逆の版バケツに入るため v2.65.0 で移した / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts` / `below_threshold_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）
 
    **payload 契約の正本は orchestration-measurement.md `## 16`**（フィールドの意味・版マーカー・後方互換をここに複写しない）。review 固有の点のみ:
    - `pr` は Step 1 で取得した PR 番号の文字列（失敗時は `"local"`）。`head_verified` は review のみ（Step 4 / Step 5 の `HEAD 検証:` 行の集計）。`duration_closing_min` は締めフロー（人間の応答待ち）を捉えるが**改善の効果測定には使わない**（人間の都合で 10 倍振れる）

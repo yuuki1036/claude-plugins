@@ -76,6 +76,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 - 閾値未満と判定した指摘は reviewer が本文を書かず **`## below-threshold` に件数だけ**返す。規約の正本は `prompts/reviewer-common.md`「実効報告閾値」
 - **オーケストレーターは `pre_adjust_counts` にこの件数を足す**（`orchestration-measurement.md ## 16`）。足さないと「検出しなかった」と「列挙しなかった」が 0 に潰れ、本施策の効果測定と再評価の根拠が同時に失われる
+- **足した件数は `below_threshold_counts` にも再掲する**（同 `## 16` / #146）。合算のままでは「本文を書いてから捨てた」と「件数だけ返した」を分離できず、**本施策が出力トークンを実際に節約できているか**が測れない
 - **抑制されるのは列挙だけで判定は従来どおり**。閾値未満を理由に severity を繰り上げさせない（較正が壊れ、`pre_adjust_counts` も歪む）
 - **self-review の B 系統（`## コメント推敲提案`）は severity を持たないため対象外**。閾値も抑制も効かない（`prompts/focus/comment-polish.md`）
 

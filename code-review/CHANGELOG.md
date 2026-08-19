@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.71.0] - 2026-08-19
+
+**検出 → 報告の歩留まりを「本文を書いてから捨てた」と「件数だけ返した」に分離した**（GitHub issue #146）。実測で検出 342 → 報告 91（26.6%）だったが、消えた 251 件が **(a) reviewer が本文を書いてから捨てられた**（＝出力トークンの純損失）のか **(b) `## below-threshold` で件数だけ返した**（＝#117 で既に節約できている）のか、集計から切り分けられなかった。`pre_adjust_counts` が両方を合算しているためで、この状態では**閾値注入が効いているかどうかを判定できない**。
+
+### Added
+
+- **payload に `below_threshold_counts` を追加**（`{blocker, critical, major, minor}` + `schema`）。`pre_adjust_counts` に足し込んだ `## below-threshold` ぶん**だけ**を同じ severity バケツで再掲する。`pre_adjust - below_threshold` が「reviewer が本文を書いて列挙した指摘」になる
+  - **`pre_adjust_counts` は合算のまま据え置く**（schema 3 にしない）。列挙分だけに変えると既存 12 サンプルとの比較可能性が切れ、下流の jq も全部書き換えになる。合算 + 再掲なら**過去データはそのまま読める**
+  - 版マーカー `schema: 1` は `SCHEMA_MARKERS` で**スクリプトが注入**する（手書きさせない / issue #125）。層のオブジェクトが落ちた回は `measurement_gaps` に `payload:below_threshold_counts` が立つ
+- **`review-retro.sh` に「検出 → 報告の内訳」**を追加。`below_threshold_counts` を**持つ回だけ**で集計する（持たない回を混ぜると `pre` の母数だけ増えて (a) が過大に出る）。サンプルが 0 件の間は**歩留まりだけ出して黙らず**「分離にはサンプル待ち」と明示する（黙ると分離できていると読める / #131 と同じ型）
+
+### Fixed
+
+- **`below_threshold_counts` が `pre_adjust_counts` を超えたら publish を fail-fast する**。再掲が元を超えるのは定義上ありえず、pre 側への足し忘れか below 側の二重計上のどちらか。**分離がこのフィールドの唯一の用途**なので、汚染を通すと足した意味がそのまま消える（`missing_coverage` / `findings_class` と同じ位置・流儀）
+  - 0 件でもキーを省かせない（「閾値未満が無かった」と「数えなかった」を 0 に潰さないため）
+  - `pre_adjust_counts` が揃っていない回は突合をスキップする（契約の範囲外まで publish を止めない）
+
+### Changed
+
+- 両 SKILL のスコアリング手順 6 / `scoring-guide.md` / `orchestration-guide.md` に再掲の規約を追記し、`orchestration-measurement.md ## 16`（正本）に切り分けの式と 3 つの落とし穴を記録した — ①`pre_adjust_counts` を列挙分だけに変えない ②`below_threshold` は非 dedup の生合計なので差し引いた値と粒度が違う ③「本文を書いてから捨てた」は**負になりうる**（手順 1 の後に走る `recall_skeptic` / `meta_reviewer` が足すため）ので丸めない
+
+テスト +13 件（publish 側の検証 9 / retro 側の集計 4）。
+
+
 ## [2.70.1] - 2026-08-19
 
 **発行パターンの判定単位を wave に是正した**（GitHub issue #149）。v2.70.0 で入れた `dispatch` は、**規約を完全に守っていても 2 層以上のレビューが `serial` に落ちる**欠陥を持っていた。
