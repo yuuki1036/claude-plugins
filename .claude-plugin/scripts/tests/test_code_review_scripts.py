@@ -614,6 +614,70 @@ class RetroTest(ScriptTestBase):
         # 待ちメッセージ自身が説明として同じ語を含むので、**集計行だけ**を指して見る
         self.assertNotIn("本文を書いた ", out)
 
+    # ---- 体数 vs fleet 時間の相関（issue #151）------------------------------
+    # `size_tier` は体数と fleet の**両方**を決めるので、層別しない相関は tier の効果を
+    # 体数の効果として計上する。下の fixture は tier 内 r=0.000 / 層別なし r=0.944 で、
+    # まさにその交絡だけを取り出したもの
+    def _corr_rows(self, tier: str, base_agents: int, base_fleet: int, n: int = 12) -> list[dict]:
+        return [{"effort": "high", "measurement_gaps": [], "size_tier": tier,
+                 "duration_fleet_min": base_fleet + (i * 3) % 10,
+                 "agents": {"reviewer": base_agents + i % 6}} for i in range(n)]
+
+    def test_correlation_is_stratified_by_size_tier(self):
+        """tier 内で無相関なら、層別なしの r が高くてもシグナルを出さない."""
+        self._events(self._corr_rows("small", 2, 10) + self._corr_rows("large", 12, 100))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("| small | 12 | 0.000 | 体数はレバーではない |", out)
+        self.assertIn("| large | 12 | 0.000 | 体数はレバーではない |", out)
+        self.assertIn("層別なしの r = 0.944", out, "参考値としての層別なしが消えている")
+        self.assertIn("発火条件には使わない", out)
+        self.assertNotIn("体数と fleet 時間の相関が tier 内で高い", self.signals(out))
+
+    def test_strong_correlation_inside_a_tier_still_fires(self):
+        """層別で黙らせすぎない liveness — tier 内で高ければ従来どおり鳴る."""
+        rows = [{"effort": "high", "measurement_gaps": [], "size_tier": "medium",
+                 "duration_fleet_min": 10 + 3 * i, "agents": {"reviewer": 2 + i}}
+                for i in range(12)]
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("| medium | 12 | 1.000 | ⚠️ 高い |", out)
+        self.assertIn("体数と fleet 時間の相関が tier 内で高い（medium r=1.00 n=12）",
+                      self.signals(out))
+
+    def test_tier_at_exactly_the_minimum_is_judged(self):
+        """`n == R_MIN_N` は判定する側（境界を 1 つ狭めると 10 件貯めても黙る）."""
+        self._events(self._corr_rows("small", 2, 10, n=10))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("| small | 10 | 0.232 | 体数はレバーではない |", out)
+        self.assertNotIn("体数と壁時計の関係は判定しない", out)
+
+    def test_correlation_exactly_at_the_strong_threshold_fires(self):
+        """`|r| == R_STRONG` は発火する側（`>` に狭めると閾値ちょうどが漏れる）.
+
+        fixture は **r がちょうど 0.6 になる**ように作ってある（偏差平方和 100 / 100・
+        積和 60 で `60/(10*10)`）。乱数で近い値を取ると境界を跨いだか分からない
+        """
+        agents = [13, 3, 13, 3, 8, 8, 8, 8, 8, 8]
+        fleet = [27, 13, 19, 21, 20, 20, 20, 20, 20, 20]
+        self._events([{"effort": "high", "measurement_gaps": [], "size_tier": "medium",
+                       "duration_fleet_min": f, "agents": {"reviewer": a}}
+                      for a, f in zip(agents, fleet)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("| medium | 10 | 0.600 | ⚠️ 高い |", out)
+        self.assertIn("体数と fleet 時間の相関が tier 内で高い（medium r=0.60 n=10）",
+                      self.signals(out))
+
+    def test_thin_tier_is_undecidable_rather_than_a_signal(self):
+        """n < 10 の tier は r が 1.0 でも判定不能に倒す（単発点灯の防止）."""
+        rows = [{"effort": "high", "measurement_gaps": [], "size_tier": "large",
+                 "duration_fleet_min": 10 + 3 * i, "agents": {"reviewer": 2 + i}}
+                for i in range(9)]
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("| large | 9 | 1.000 | 判定不能（n < 10） |", out)
+        self.assertIn("体数と壁時計の関係は判定しない", out)
+        self.assertNotIn("体数と fleet 時間の相関が tier 内で高い", self.signals(out))
+
 
 class FindingsClassValidationTest(ScriptTestBase):
     """`findings_class` の publish 側検証（v2.68.0）.

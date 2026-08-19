@@ -218,18 +218,33 @@ for key in sorted(buckets, key=lambda k: -len(buckets[k]["fleet"])):
     b = buckets[key]
     tier_rows.append((key, len(b["fleet"]), median(b["fleet"]), median(b["agents"])))
 
-# ---- 3. 体数 vs 壁時計の相関 ----------------------------------------------
+# ---- 3. 体数 vs 壁時計の相関（size_tier 内で計算する）----------------------
+# `size_tier` は体数（triage-guide.md `## 7` の体数表）と fleet 時間の**両方**を決めるので、
+# 層別しない相関は tier の効果を体数の効果として計上する。実測 n=48 で層別なし r=0.592 に
+# 対し、最大サンプルの medium（n=30）は r=0.315 まで落ちた（GitHub issue #151）。
+# **発火条件は層別後の r だけで判定する** — 層別なしの r は交絡を含む参考値として出すだけ。
+# 相関の式（Pearson）は変えていない。層別の単位だけの変更
 xs, ys = [], []
+tier_xy = {}
 for e in events:
     p = e["p"]
     fleet, ta = num(p.get("duration_fleet_min")), total_agents(p)
     if fleet is not None and fleet >= 0 and ta is not None:
         xs.append(ta)
         ys.append(fleet)
+        tx, ty = tier_xy.setdefault(str(p.get("size_tier", "?")), ([], []))
+        tx.append(ta)
+        ty.append(fleet)
 r = pearson(xs, ys)
 R_MIN_N = 10          # これ未満では結論を書かない（標本が小さすぎる）
 R_FLAT = 0.3          # |r| < これ なら「レバーではない」を支持
 R_STRONG = 0.6        # |r| >= これ なら再監視条件に該当
+# tier ごとの (tier, n, r)。**下限は層別なしと同じ `R_MIN_N`**（層別で n が割れるぶん
+# 判定不能に倒れる tier が増えるが、緩めると単発の tier が点灯する側に倒れる）
+tier_r_rows = [(t, len(v[0]), pearson(v[0], v[1]))
+               for t, v in sorted(tier_xy.items(), key=lambda kv: -len(kv[1][0]))]
+tier_r_judged = [(t, n_t, rr) for t, n_t, rr in tier_r_rows
+                 if rr is not None and n_t >= R_MIN_N]
 
 # ---- 4. 区間の中央値 -------------------------------------------------------
 spans = [(k, median(measured(events, "duration_%s_min" % k)), len(measured(events, "duration_%s_min" % k)))
@@ -497,10 +512,13 @@ if newest_layer is not None:
     if L["total"] >= VERDICT_MIN and pct(L["refuted"], L["total"]) >= 20:
         signals.append("refuted が %.0f%%。反証バッチサイズ 5 → 3 の再検討条件に該当"
                        % pct(L["refuted"], L["total"]))
-if r is not None and len(xs) >= R_MIN_N and abs(r) >= R_STRONG:
-    signals.append("体数と fleet 時間の相関が r=%.2f（n=%d）と高い。"
+# **層別なしの r では発火させない**（tier 交絡で常時点灯した / issue #151）
+r_strong_tiers = [(t, n_t, rr) for t, n_t, rr in tier_r_judged if abs(rr) >= R_STRONG]
+if r_strong_tiers:
+    signals.append("体数と fleet 時間の相関が tier 内で高い（%s）。"
                    "「体数は壁時計のレバーではない」（triage-guide.md `## 7`）の再監視条件に該当"
-                   % (r, len(xs)))
+                   % " / ".join("%s r=%.2f n=%d" % (t, rr, n_t)
+                                for t, n_t, rr in r_strong_tiers))
 if have_waves >= 10 and pct(split_waves, have_waves) >= 20:
     signals.append("explorer wave が 2 本以上に割れた回が %.0f%%（%d/%d）。一括発行の規約"
                    "（orchestration-guide.md `## 0`）が守られていない"
@@ -599,7 +617,10 @@ if as_json:
         "n": n_all, "n_recent_30d": len(recent), "by_plugin": by_plugin,
         "tiers": [{"key": k, "n": n, "fleet_median": f, "agents_median": a}
                   for k, n, f, a in tier_rows],
+        # 層別なしは交絡を含む参考値（後方互換のため残す）。判定は by_tier 側で行う
         "agents_fleet_r": r, "agents_fleet_n": len(xs),
+        "agents_fleet_by_tier": [{"tier": t, "n": n_t, "r": rr}
+                                 for t, n_t, rr in tier_r_rows],
         "spans": {k: {"median": m, "n": c} for k, m, c in spans},
         "yields": yields, "verdict_layers": verdict_layers,
         "findings_class": {"n": len(fc_rows), "n_raw": len(fc_raw),
@@ -639,20 +660,33 @@ print("|---|---:|---:|---:|")
 for key, n, f, a in tier_rows[:8]:
     print("| %s | %d | %s | %s |" % (key, n, "-" if f is None else "%g 分" % f,
                                      "-" if a is None else "%g" % a))
-if r is not None:
+if tier_r_rows:
     print()
-    line = "体数 vs fleet 時間の相関 **r = %.3f**（n=%d）。" % (r, len(xs))
-    if len(xs) < R_MIN_N:
-        line += "**n < %d なので解釈しない**（標本不足）。" % R_MIN_N
-    elif abs(r) < R_FLAT:
-        line += ("**体数は壁時計のレバーではない**（triage-guide.md `## 7`）— "
-                 "時間が長いときの打ち手は synthesis / wave 側で切り分ける。")
-    elif abs(r) < R_STRONG:
-        line += ("弱〜中程度の相関。**effort が交絡している可能性**があるので、"
-                 "上の effort × tier 表で帯別に見てから判断する。")
-    else:
-        line += "**⚠️ 相関が高い**（下のシグナル欄を参照）。"
-    print(line)
+    print("**体数 vs fleet 時間の相関**（size_tier 内。tier が体数と fleet の両方を"
+          "決めるため層別しない r は交絡する / issue #151）")
+    print()
+    print("| tier | n | r | 判定 |")
+    print("|---|---:|---:|---|")
+    for t, n_t, rr in tier_r_rows:
+        if rr is None or n_t < R_MIN_N:
+            verdict = "判定不能（n < %d）" % R_MIN_N
+        elif abs(rr) < R_FLAT:
+            verdict = "体数はレバーではない"
+        elif abs(rr) < R_STRONG:
+            verdict = "弱〜中（effort の交絡を疑う）"
+        else:
+            verdict = "⚠️ 高い"
+        print("| %s | %d | %s | %s |" % (t, n_t, "-" if rr is None else "%.3f" % rr, verdict))
+    print()
+    if not tier_r_judged:
+        print("どの tier も n < %d。**体数と壁時計の関係は判定しない**（標本不足）。" % R_MIN_N)
+    elif all(abs(rr) < R_FLAT for _, _, rr in tier_r_judged):
+        print("判定できる全 tier で |r| < %.1f。**体数は壁時計のレバーではない**"
+              "（triage-guide.md `## 7`）— 時間が長いときの打ち手は synthesis / wave 側で"
+              "切り分ける。" % R_FLAT)
+    if r is not None:
+        print("層別なしの r = %.3f（n=%d）は **tier 交絡を含むので発火条件には使わない**"
+              "（参考値）。" % (r, len(xs)))
 
 print()
 print("**区間の中央値**: " + " / ".join(
