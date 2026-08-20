@@ -313,8 +313,8 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
                                 "content": [{"type": "tool_use", "id": "tu-%d" % idx,
                                              "name": "Agent"}]}}))
                 # agent transcript は「起動行 + 終了行」の 2 行。**末尾行の timestamp が
-                # 終了時刻**（GitHub issue #153）。`ends` が None ならその体は終了行を
-                # 持たない（欠測経路の再現）
+                # 終了時刻**（GitHub issue #153）。`ends` にその体の index が
+                # 無ければ終了行を持たない（欠測経路の再現）
                 end_off = None if ends is None else ends.get(idx)
                 lines = [row(ts)]
                 if end_off is not None:
@@ -344,7 +344,7 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         打ち手が正反対（wave を減らす / 往復を減らす）なので、分けないまま是正すると
         「wave を消したのに fleet が縮まない」を踏む。
         """
-        # wave 1 = agent 0,1（0 秒起動 / 600 秒で終了）→ wave 2 = agent 2（1000 秒起動）
+        # wave 1 = agent 0,1（0 秒起動 / 終了は 500 と 600 = 最後は 600）→ wave 2 = agent 2（1000 秒起動）
         # ギャップ 1000 秒 = agent 実行 600 + オーケストレーター 400
         self.write_transcript([[0, 0], [1000]], ends={0: 500, 1: 600, 2: 1200})
         self.publish(env=self.env_home())
@@ -355,6 +355,31 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         self.assertEqual(d["inter_wave_idle_sec"], 400)
         self.assertEqual(d["inter_wave_agent_sec"] + d["inter_wave_idle_sec"],
                          d["max_inter_wave_sec"], "内訳の和が総和と一致していない")
+
+    def test_wave_gap_picks_the_largest_gap_not_the_first(self):
+        """**argmax を守る**（セルフレビューで検出 / 変異 `i = 0` が生存していた）.
+
+        既存の gap fixture は全部 2 wave（ギャップ 1 本）で、`max(range(...), key=...)` が
+        恒等になるため「最大を選ぶ」振る舞いを一度も観測していなかった。explorer →
+        reviewer → 反証 は設計上 3 wave 以上なので、破れるのは例外系ではなく主経路。
+        壊れると内訳の和 == 総和が破れ、retro の agent 側比率がそのまま歪む。
+        """
+        # ギャップは 200（wave1→2）と 1000（wave2→3）。内訳は**後者**について出す
+        self.write_transcript([[0], [200], [1200]], ends={0: 100, 1: 300, 2: 1300})
+        self.publish(env=self.env_home())
+        d = self.last_payload()["dispatch"]
+        self.assertEqual(d["max_inter_wave_sec"], 1000)
+        self.assertEqual((d["inter_wave_agent_sec"], d["inter_wave_idle_sec"]), (100, 900))
+        self.assertEqual(d["inter_wave_agent_sec"] + d["inter_wave_idle_sec"],
+                         d["max_inter_wave_sec"], "内訳の和が総和と一致していない")
+
+    def test_wave_gap_is_zero_for_a_batched_run(self):
+        """1 wave の回は `(0, 0)`（**欠測ではなく実値**）. retro 側の除外根拠になる契約."""
+        self.write_transcript([[0, 5]], ends={0: 300, 1: 400})
+        self.publish(env=self.env_home())
+        d = self.last_payload()["dispatch"]
+        self.assertEqual(d["verdict"], "batched")
+        self.assertEqual((d["inter_wave_agent_sec"], d["inter_wave_idle_sec"]), (0, 0))
 
     def test_wave_gap_is_missing_when_an_end_is_unavailable(self):
         """終了時刻が 1 体でも取れなければ**両方 -1**（欠測）.
@@ -422,7 +447,7 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         # **現行値をリテラルで固定する**（`>= 2` に緩めない）。集計側は `>=` で前方互換に
         # 読むが、publisher 側は版を上げたときにここが落ちて「集計の層別と契約 doc も
         # 直したか」を問う trip wire になる（実測: #153 で schema 3 に上げた回に発火した）
-        self.assertEqual(p["dispatch"]["schema"], 3, "版マーカーが無いと retro が層別できない")
+        self.assertEqual(p["dispatch"]["schema"], 3, "schema を上げたら retro の層別と契約 doc も直したか")
         self.assertIn("逐次発行", res.stderr)
         self.assertIn("#142", res.stderr)
 
@@ -587,15 +612,27 @@ class RetroTest(ScriptTestBase):
         self.assertIn("| high/medium | 1 | 5000 k |", out,
                       "除算できない回を分母に入れているか、落としすぎている")
 
-    def test_waiting_line_when_tokens_lack_cache_read(self):
-        """schema 1 のサンプルしか無い間は**待ち行を出す**（黙ると「読めている」と誤読される）.
+    def test_waiting_line_names_the_actual_reason(self):
+        """待ち行は**落とした理由を件数で出し分ける**（セルフレビューで検出）.
 
-        #131 と同じ型 — 表が消えるだけだと「1 体あたりは問題なかった」に見える。
+        旧実装は「`sub_cache_read_k` を持つサンプル待ち（schema 2）」と原因を版マーカーに
+        断定していたが、この else には ①版が古い ②`sub_agents` が 0 / 欠測で除算不可 の
+        2 経路が落ちる。②を①と報告すると publisher を直しにいく誤診になる。
         """
-        self._events([self._tokens("medium", None, 5, schema=1)])
+        self._events([self._tokens("medium", None, 5, schema=1),        # 版が古い
+                      self._tokens("medium", 50000.0, 0)])              # 除算不可
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("`tokens.sub_cache_read_k` を持つサンプル待ち", out)
+        self.signals(out)
+        self.assertIn("`tokens.schema >= 2` 未満で除外 1", out)
+        self.assertIn("除算不可 1", out)
         self.assertNotIn("**1 体あたり cache_read**（effort", out, "表が出てしまっている")
+
+    def test_per_agent_cache_read_gates_on_schema(self):
+        """版マーカーで先に切る（フィールド在否で代用しない / 冒頭の層別の原則）."""
+        self._events([self._tokens("medium", 99999.0, 1, schema=1),   # 旧版は混ぜない
+                      self._tokens("medium", 20000.0, 4)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("| high/medium | 1 | 5000 k |", out, "旧 schema を分母に入れている")
 
     def test_wave_gap_breakdown_is_reported(self):
         """最大ギャップの内訳を出す（GitHub issue #153）— 支配側で打ち手が正反対になる."""
@@ -607,7 +644,31 @@ class RetroTest(ScriptTestBase):
         self.assertIn("**最大ギャップの内訳**（n=2）", out)
         self.assertIn("agent 実行 中央値 800 秒", out)
         self.assertIn("オーケストレーター 中央値 200 秒", out)
-        self.assertIn("agent 側が 80%", out)
+        self.assertIn("**agent 側 80%**（回ごとの比の中央値）", out)
+
+    def test_wave_gap_share_is_a_median_of_per_run_ratios_not_a_pool(self):
+        """**比率は回ごとの比の中央値**（総和プールではない / セルフレビューで検出）.
+
+        プールド比 `sum(a)/sum(a+i)` は巨大ギャップ 1 件に支配され、同じ行に並ぶ中央値と
+        逆の結論を出す。この fixture は 5 件中 4 件が idle 支配（10:90）で、外れ値 1 件だけが
+        agent 支配。プールドなら 85% 前後（= agent 支配）に反転する。
+        """
+        rows = [self._dispatch("layered", schema=3, waves=2, agents=5, solo_run=1, gap=g)
+                for g in [(10, 90), (11, 89), (12, 88), (13, 87), (3000, 200)]]
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**agent 側 12%**（回ごとの比の中央値）", out,
+                      "プールド比に戻っている（外れ値 1 件が結論を握る）")
+        self.assertIn("**idle 支配**", out, "n=5 は下限を満たすので打ち手を出す")
+
+    def test_wave_gap_withholds_the_verdict_below_the_sample_floor(self):
+        """n < 5 では**数値だけ出して打ち手を出さない**（このファイルの他の打ち手行と同じ流儀）."""
+        self._events([self._dispatch("layered", schema=3, waves=2, agents=5, solo_run=1,
+                                     gap=(900, 100))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**agent 側 90%**", out, "数値は n=1 でも出す（観測の可視化）")
+        self.assertIn("**打ち手は出さない**（n < 5", out)
+        self.assertNotIn("agent 支配", out, "下限未満で打ち手を出している")
 
     def test_wave_gap_breakdown_drops_missing_not_zeroes_it(self):
         """欠測（-1）は**分母から外す**. 0 に倒すと idle 支配の誤読になる."""
@@ -617,26 +678,78 @@ class RetroTest(ScriptTestBase):
                                      gap=(600, 400))])
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("**最大ギャップの内訳**（n=1）", out, "欠測を分母に入れている")
-        self.assertIn("agent 側が 60%", out)
+        self.assertIn("**agent 側 60%**", out)
 
     def test_wave_gap_breakdown_keeps_zero_agent_time(self):
         """`agent 実行 0 秒` は**実測値**であって欠測ではない（変異テストで生存した経路）.
 
         agent が既に終わっていてギャップ全部がオーケストレーター作業、という回こそ
-        idle 支配の証拠。0 を欠測扱いで落とすと**分母が agent 支配側に偏る** —
-        #153 が避けようとしている誤読そのものを集計側で作ることになる。
+        idle 支配の証拠。0 を欠測扱いで落とすと**分母が agent 支配側に偏る**。
         """
         self._events([self._dispatch("layered", schema=3, waves=2, agents=5, solo_run=1,
                                      gap=(0, 900))])
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("**最大ギャップの内訳**（n=1）", out, "agent 0 秒の回を落としている")
-        self.assertIn("agent 側が 0%", out)
+        self.assertIn("**agent 側 0%**", out)
 
-    def test_wave_gap_breakdown_waits_on_schema_3(self):
-        """schema 2 しか無い間は**待ち行**（黙ると合算値を内訳と読まれる）."""
-        self._events([self._dispatch("layered", waves=2, agents=6, solo_run=1)])
+    def test_wave_gap_excludes_batched_zero_gap_without_dying(self):
+        """`batched` の回は `(0, 0)` で載る（1 wave = ギャップ無し）. 分母に入れない.
+
+        入れると `sum(a+i) == 0` で ZeroDivisionError。しかも retro は `set -uo pipefail`
+        （`-e` なし）+ 末尾 `exit 0` なので、**rc 0 のまま stdout が途中で切れる** —
+        `signals()` の docstring が警告している型そのもの。liveness ガードを付ける。
+        """
+        self._events([self._dispatch("batched", schema=3, waves=1, agents=3, solo_run=1,
+                                     gap=(0, 0))])
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("`dispatch.schema >= 3` のサンプル待ち", out)
+        self.signals(out)                     # 途中で死んでいないこと
+        self.assertIn("`batched` でギャップ無し 1", out, "除外理由を潰している")
+        self.assertNotIn("agent 側", out)
+
+    def test_wave_gap_counts_missing_separately_from_no_gap(self):
+        """除外理由の**2 つのカウンタが独立に効く**（変異テストで 3 件生存した経路）.
+
+        全件が欠測（-1）の回は「終了時刻の欠測」であって「`batched` でギャップ無し」ではない。
+        両者を取り違えると、是正先が transcript 側か wave 構成側かで正反対になる。
+        """
+        self._events([self._dispatch("layered", schema=3, waves=2, agents=6, solo_run=1,
+                                     gap=(-1, -1)),
+                      self._dispatch("layered", schema=3, waves=2, agents=6, solo_run=1,
+                                     gap=(-1, -1))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.signals(out)
+        self.assertIn("終了時刻の欠測 2", out)
+        self.assertIn("`batched` でギャップ無し 0", out, "欠測をギャップ無しに数えている")
+
+    def test_wave_gap_survives_a_half_missing_payload(self):
+        """片側だけ `null` の payload で**落ちない**（`or` の短絡が None 比較を守っている）.
+
+        `a < 0` を `a is None` より先に評価すると `TypeError`。retro は `set -uo pipefail`
+        （`-e` なし）+ 末尾 `exit 0` なので、**rc 0 のまま出力が途中で切れる**。
+        """
+        self._events([self._dispatch("layered", schema=3, waves=2, agents=6, solo_run=1,
+                                     gap=(None, 5))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.signals(out)                     # 途中で死んでいないこと
+        self.assertIn("終了時刻の欠測 1", out)
+
+    def test_wave_gap_verdict_boundaries_are_inclusive(self):
+        """支配側の判定は **60% / 40% ちょうどを含む**（境界を狭めると「支配側なし」に落ちる）."""
+        for gap, expected in [((600, 400), "**agent 支配**"), ((400, 600), "**idle 支配**")]:
+            with self.subTest(gap=gap):
+                self._events([self._dispatch("layered", schema=3, waves=2, agents=5,
+                                             solo_run=1, gap=gap)] * 5)
+                out = self.run_script(RETRO, env=self._env()).stdout
+                self.assertIn(expected, out)
+                self.assertNotIn("支配側なし", out)
+
+    def test_wave_gap_waiting_line_separates_absence_from_exclusion(self):
+        """「まだ載っていない」と「載ったが全件除外」を区別する（原因の断定をやめる）."""
+        self._events([self._dispatch("layered", waves=2, agents=6, solo_run=1)])  # schema 2
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("`dispatch.schema >= 3` が 0 件", out)
+        self.assertIn("終了時刻の欠測 0", out)
+
 
     def test_dispatch_rate_is_reported(self):
         """発行パターンの内訳を毎回の振り返りに出す（GitHub issue #142 / #149）."""

@@ -497,13 +497,22 @@ tok_r = pearson(txs, tys)
 # 1 体あたりの読む量には手が入っておらず、`pending-optimizations.md ## 計測の基準値` の
 # 1 体平均 cache_read 5,039k と比べる先がここ。**effort × size_tier で層別する** — tier は
 # 担当ファイル数を、effort は 1 体あたりの探索量を決めるので、混ぜた中央値は両方の交絡を負う。
-# **除算は `sub_agents` が正のときだけ**（0 や欠測で割ると inf / 例外になり、その回だけ
-# 静かに落ちるのではなく集計全体が壊れる）
+# **除算は `sub_agents` が正のときだけ**（0 で割れば `ZeroDivisionError`、欠測なら
+# `TypeError` で、その回だけ静かに落ちるのではなく集計全体が死ぬ）。
+# **版マーカーで先に切る** — フィールドの在否で代用すると、将来 `sub_cache_read_k` の窓や
+# 単位を変えて schema を上げたとき旧版が無言で同じ中央値に混ざる（冒頭の層別の原則）。
+# 今は schema 2 とフィールド追加が同一版なので等価だが、等価なうちに揃えておく
+TOK_CACHE_READ_MIN_SCHEMA = 2
 per_agent_buckets = {}
+per_agent_old_schema = per_agent_undividable = 0
 for e in tok_rows:
     t = e["p"]["tokens"] or {}
+    if schema_of(t, "schema") < TOK_CACHE_READ_MIN_SCHEMA:
+        per_agent_old_schema += 1
+        continue
     cr, na = num(t.get("sub_cache_read_k")), num(t.get("sub_agents"))
     if cr is None or cr < 0 or na is None or na <= 0:
+        per_agent_undividable += 1
         continue
     key = "%s/%s" % (e["p"].get("effort", "?"), e["p"].get("size_tier", "?"))
     per_agent_buckets.setdefault(key, []).append(cr / na)
@@ -580,6 +589,10 @@ if have_waves >= 10 and pct(split_waves, have_waves) >= 20:
 #   ② 逆に分母の大きい種類が件数で勝つと、100% の種類が一度も評価されない
 # 種類ごとに (件数 / 自分の分母) で判定し、下限も自分の分母に掛ける。
 GAP_MIN_N = 5        # その種類の分母がこれ未満なら判定しない（単発点灯の防止）
+# wave 間ギャップの内訳から**打ち手を提示する**ための下限（GitHub issue #153）。
+# 数値そのものは n=1 から出す（観測の可視化）が、`agent 支配 / idle 支配` の判定は
+# ここを超えてから。#153 本文のサンプル下限（5 件）に合わせてある
+WAVE_GAP_MIN_N = 5
 GAP_RATIO = 20       # 欠測率がこれ以上で ⚠️
 
 
@@ -888,23 +901,52 @@ else:
               % (n_s, min(d.get("max_solo_run") or 0 for d in judged
                           if d["verdict"] == "serial")))
     # **最大ギャップの内訳**（GitHub issue #153）。どちらが支配的かで打ち手が正反対
-    # （agent 側なら wave を減らす / idle 側なら往復を減らす）。**欠測（-1）は除く** —
-    # 0 に倒すと「agent は回っていなかった」に化けて idle 支配の誤読になる
-    gaps = [(num(d.get("inter_wave_agent_sec")), num(d.get("inter_wave_idle_sec")))
-            for d in judged if schema_of(d, "schema") >= 3]
-    gaps = [(a, i) for a, i in gaps if a is not None and i is not None
+    # （agent 側なら wave を減らす / idle 側なら往復を減らす）。
+    #
+    # **比率は「回ごとの比の中央値」で採る**（総和プールではない）。プールド比 `sum(a)/sum(a+i)`
+    # は巨大ギャップ 1 件に支配され、**同じ行に並ぶ中央値と逆の結論を出す**（実測:
+    # (10,90)(11,89)(12,88)(13,87)(3000,200) で中央値は idle 支配なのにプールドは agent 85%）。
+    # 印字した数値だけで再計算できることを不変条件にする。隣の `per_wave`（体数/wave）も
+    # 回ごとの比の中央値を採っており、そちらに揃えた
+    #
+    # 除外は 2 種類あり、**理由を潰さない**: `-1` は欠測（終了時刻が引けなかった回）、
+    # `(0, 0)` は `batched`（1 wave = ギャップ無し）で**目標状態そのもの**。どちらも
+    # 「サンプルが無い」ではないので、else 側で件数を出し分ける（#131 と同じ誤読を作らない）
+    gap_rows = [(num(d.get("inter_wave_agent_sec")), num(d.get("inter_wave_idle_sec")))
+                for d in judged if schema_of(d, "schema") >= 3]
+    gap_missing = sum(1 for a, i in gap_rows
+                      if a is None or i is None or a < 0 or i < 0)
+    gap_nogap = sum(1 for a, i in gap_rows
+                    if a is not None and i is not None
+                    and a >= 0 and i >= 0 and (a + i) == 0)
+    gaps = [(a, i) for a, i in gap_rows if a is not None and i is not None
             and a >= 0 and i >= 0 and (a + i) > 0]
     if gaps:
         m_agent, m_idle = median([a for a, _ in gaps]), median([i for _, i in gaps])
-        share = sum(a for a, _ in gaps) / sum(a + i for a, i in gaps)
-        print("  - **最大ギャップの内訳**（n=%d）: agent 実行 中央値 %.0f 秒 / "
-              "オーケストレーター 中央値 %.0f 秒。**agent 側が %.0f%%**（`>= 60%%` なら"
-              "打ち手は末尾 wave の去就、`<= 40%%` なら往復削減 / issue #153）"
-              % (len(gaps), m_agent, m_idle, share * 100))
+        # 回ごとの比の中央値。`a + i > 0` は上のフィルタで保証済み
+        share = median([a / (a + i) for a, i in gaps])
+        line = ("  - **最大ギャップの内訳**（n=%d）: agent 実行 中央値 %.0f 秒 / "
+                "オーケストレーター 中央値 %.0f 秒 / **agent 側 %.0f%%**（回ごとの比の中央値）"
+                % (len(gaps), m_agent, m_idle, share * 100))
+        # **打ち手の提示にはサンプル下限を掛ける**（このファイルの他の打ち手行と同じ流儀 —
+        # `R_MIN_N` / `VERDICT_MIN` / `GAP_MIN_N` / skeptic `>= 15` / meta `>= 10`）。
+        # #153 が Phase 2 を保留した理由（支配側が正反対の打ち手を指す）を、集計側から
+        # 骨抜きにしないため。下限未満では数値だけ出して打ち手を出さない
+        if len(gaps) < WAVE_GAP_MIN_N:
+            line += "。**打ち手は出さない**（n < %d / issue #153）" % WAVE_GAP_MIN_N
+        elif share >= 0.6:
+            line += "。**agent 支配** → 打ち手は末尾 wave の去就（issue #153）"
+        elif share <= 0.4:
+            line += "。**idle 支配** → 打ち手は往復削減（#147 / issue #153）"
+        else:
+            line += "。**支配側なし**（40-60%%）— どちらの打ち手も当てない（issue #153）"
+        print(line)
     else:
-        print("  - **最大ギャップの内訳**は `dispatch.schema >= 3` のサンプル待ち（#153） — "
-              "`max_inter_wave_sec` だけでは agent 実行時間とオーケストレーター作業時間が"
-              "合算されており、**wave を消したのに fleet が縮まない**を踏みうる")
+        print("  - **最大ギャップの内訳**: 実測 0 件（`dispatch.schema >= 3` が %d 件 / "
+              "うち終了時刻の欠測 %d・`batched` でギャップ無し %d）。**「まだ載っていない」と"
+              "「載ったが全件除外」を区別すること** — 前者は publisher、後者は transcript か "
+              "wave 構成が原因（#153）"
+              % (len(gap_rows), gap_missing, gap_nogap))
 
 print()
 if not tok_rows:
@@ -932,9 +974,11 @@ else:
         for key, n, m in per_agent_rows[:8]:
             print("| %s | %d | %s |" % (key, n, "-" if m is None else "%.0f k" % m))
     else:
-        print("**1 体あたり cache_read**は `tokens.sub_cache_read_k` を持つサンプル待ち"
-              "（schema 2 / issue #156） — 総量だけでは「体数が多い」と「1 体が読みすぎ」を"
-              "切り分けられない")
+        print("**1 体あたり cache_read**: 実測 0 件（`tokens.schema >= %d` 未満で除外 %d・"
+              "`sub_agents` が 0 / 欠測で除算不可 %d）。**「まだ載っていない」と「載ったが"
+              "除算できない」を区別すること** — 前者は publisher、後者は "
+              "`measure-tokens.sh` の窓・引き当てが原因（issue #156）"
+              % (TOK_CACHE_READ_MIN_SCHEMA, per_agent_old_schema, per_agent_undividable))
 
 print()
 if n_modern == 0:

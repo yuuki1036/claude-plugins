@@ -115,15 +115,14 @@ first_ts = last_ts = None
 # `--since 2099-01-01` で `sub.n=0` なのに `sub_agents=8`）。窓と体数の意味を揃える
 sub_seen = set()
 sub_first = {}    # サブエージェント transcript -> 窓内で最初の timestamp（= 起動時刻）
-# 同 -> 窓内で最後の timestamp（= 終了時刻）。**先頭を読めば起動時刻・末尾を読めば終了時刻**で
-# 対称（GitHub issue #153）。wave 間ギャップを「wave N の agent が回っていた時間」と
+# 同 -> 窓内で**最も新しい** timestamp（= 終了時刻 / GitHub issue #153）。wave 間ギャップを「wave N の agent が回っていた時間」と
 # 「オーケストレーターが次の wave を出すまでの時間」に割るのに要る
 sub_last = {}
 # 同 -> 窓内の timestamp 付き行数。**終了時刻が「取れた」と言えるのは 2 行以上あるときだけ**。
 # transcript が 1 行しか無い（窓が起動直後で切れた / 途中で壊れた）回は `sub_last` が
 # `sub_first` と同一になり、**「起動と同時に終わった」と区別がつかない**。そのまま使うと
 # agent 実行時間が 0 に出て idle 側が総取りし、「オーケストレーターが遅い」という誤った
-# 打ち手を選ばせる（#153 が縮退の向きとして禁じているのがこれ）
+# 打ち手を選ばせる（#153）
 sub_rows = {}
 tool_of = {}      # tool_use_id -> ツール名（main のみ）
 # **Agent の tool_use id -> (発行したアシスタントメッセージのキー, 時刻)**。
