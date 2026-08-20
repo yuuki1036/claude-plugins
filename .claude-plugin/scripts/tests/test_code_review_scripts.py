@@ -281,7 +281,8 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
     def env_home(self) -> dict[str, str]:
         return self._env(HOME=str(self.home))
 
-    def write_transcript(self, waves: list[list[int]], scale: int = 1) -> None:
+    def write_transcript(self, waves: list[list[int]], scale: int = 1,
+                         ends: dict[int, int] | None = None) -> None:
         """cwd に対応する slug へ session + subagent を置く.
 
         `waves[i]` は**同一メッセージから発行した** agent の起動オフセット（秒）。
@@ -311,7 +312,15 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
                     "message": {"id": "msg-%d" % wave_no,
                                 "content": [{"type": "tool_use", "id": "tu-%d" % idx,
                                              "name": "Agent"}]}}))
-                (sub / ("agent-%d.jsonl" % idx)).write_text(row(ts) + "\n", encoding="utf-8")
+                # agent transcript は「起動行 + 終了行」の 2 行。**末尾行の timestamp が
+                # 終了時刻**（GitHub issue #153）。`ends` が None ならその体は終了行を
+                # 持たない（欠測経路の再現）
+                end_off = None if ends is None else ends.get(idx)
+                lines = [row(ts)]
+                if end_off is not None:
+                    lines.append(row((base + timedelta(seconds=end_off)).isoformat() + "Z"))
+                (sub / ("agent-%d.jsonl" % idx)).write_text("\n".join(lines) + "\n",
+                                                            encoding="utf-8")
                 (sub / ("agent-%d.meta.json" % idx)).write_text(
                     json.dumps({"agentType": "general-purpose", "toolUseId": "tu-%d" % idx}),
                     encoding="utf-8")
@@ -326,6 +335,53 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         self.assertIn("tokens", p, "self-review で tokens が載っていない")
         self.assertEqual(p["tokens"]["window"], "session", "t0 が無い回は session 窓")
         self.assertEqual(p["tokens"]["sub_agents"], 2)
+
+    def test_wave_gap_is_split_into_agent_and_idle(self):
+        """**wave 間ギャップの内訳を分ける**（GitHub issue #153）.
+
+        `max_inter_wave_sec` は「wave N 起動 → wave N+1 起動」なので、agent が回って
+        いた時間とオーケストレーターの統合作業時間が合算されている。どちらが支配的かで
+        打ち手が正反対（wave を減らす / 往復を減らす）なので、分けないまま是正すると
+        「wave を消したのに fleet が縮まない」を踏む。
+        """
+        # wave 1 = agent 0,1（0 秒起動 / 600 秒で終了）→ wave 2 = agent 2（1000 秒起動）
+        # ギャップ 1000 秒 = agent 実行 600 + オーケストレーター 400
+        self.write_transcript([[0, 0], [1000]], ends={0: 500, 1: 600, 2: 1200})
+        self.publish(env=self.env_home())
+        d = self.last_payload()["dispatch"]
+        self.assertEqual(d["schema"], 3, "schema を上げずにフィールドだけ足している")
+        self.assertEqual(d["max_inter_wave_sec"], 1000)
+        self.assertEqual(d["inter_wave_agent_sec"], 600, "wave 内の**最後**の終了で測る")
+        self.assertEqual(d["inter_wave_idle_sec"], 400)
+        self.assertEqual(d["inter_wave_agent_sec"] + d["inter_wave_idle_sec"],
+                         d["max_inter_wave_sec"], "内訳の和が総和と一致していない")
+
+    def test_wave_gap_is_missing_when_an_end_is_unavailable(self):
+        """終了時刻が 1 体でも取れなければ**両方 -1**（欠測）.
+
+        取れた体だけで max を採ると「まだ回っていた時間」が短く出て **idle が過大**に
+        なり、「オーケストレーターが遅い」という誤った打ち手を選ばせる。
+        """
+        self.write_transcript([[0, 0], [1000]], ends={0: 500, 2: 1200})   # agent 1 に終了行が無い
+        self.publish(env=self.env_home())
+        d = self.last_payload()["dispatch"]
+        self.assertEqual(d["inter_wave_agent_sec"], -1)
+        self.assertEqual(d["inter_wave_idle_sec"], -1)
+        # wave 構成そのものは起動時刻だけで決まるので判定は生きている
+        self.assertEqual(d["wave_sizes"], [2, 1])
+        self.assertEqual(d["max_inter_wave_sec"], 1000)
+
+    def test_wave_gap_absorbs_an_overrunning_agent(self):
+        """次の wave 起動時点でまだ回っている agent がいたら、ギャップは**全部 agent 側**.
+
+        `min(last_end, 次の起動)` でクランプしないと `idle` が負になり、`max(0, ...)` で
+        0 に潰れて内訳の和が総和と合わなくなる。
+        """
+        self.write_transcript([[0], [600]], ends={0: 900, 1: 1000})
+        self.publish(env=self.env_home())
+        d = self.last_payload()["dispatch"]
+        self.assertEqual(d["inter_wave_agent_sec"], 600)
+        self.assertEqual(d["inter_wave_idle_sec"], 0)
 
     def test_tokens_carry_cache_read(self):
         """**重み付け最大の項を落とさない**（GitHub issue #156）.
@@ -363,7 +419,10 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         p = self.last_payload()
         self.assertEqual(p["dispatch"]["verdict"], "serial", p.get("dispatch"))
         self.assertEqual((p["dispatch"]["agents"], p["dispatch"]["waves"]), (3, 3))
-        self.assertEqual(p["dispatch"]["schema"], 2, "版マーカーが無いと retro が層別できない")
+        # **現行値をリテラルで固定する**（`>= 2` に緩めない）。集計側は `>=` で前方互換に
+        # 読むが、publisher 側は版を上げたときにここが落ちて「集計の層別と契約 doc も
+        # 直したか」を問う trip wire になる（実測: #153 で schema 3 に上げた回に発火した）
+        self.assertEqual(p["dispatch"]["schema"], 3, "版マーカーが無いと retro が層別できない")
         self.assertIn("逐次発行", res.stderr)
         self.assertIn("#142", res.stderr)
 
@@ -481,10 +540,13 @@ class RetroTest(ScriptTestBase):
                                        "severity_inflated": inflated, "contested": 0}}
 
     def _dispatch(self, verdict: str, waves: int = 3, agents: int = 3,
-                  schema: int | None = 2, solo_run: int = 3) -> dict:
+                  schema: int | None = 2, solo_run: int = 3,
+                  gap: tuple[int, int] | None = None) -> dict:
         d = {"agents": agents, "waves": waves, "wave_sizes": [1] * waves,
              "max_solo_run": solo_run, "max_inter_wave_sec": 600, "span_sec": 900,
              "verdict": verdict}
+        if gap is not None:
+            d["inter_wave_agent_sec"], d["inter_wave_idle_sec"] = gap
         if schema is not None:
             d["schema"] = schema
         return {"effort": "high", "measurement_gaps": [], "dispatch": d}
@@ -534,6 +596,47 @@ class RetroTest(ScriptTestBase):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("`tokens.sub_cache_read_k` を持つサンプル待ち", out)
         self.assertNotIn("**1 体あたり cache_read**（effort", out, "表が出てしまっている")
+
+    def test_wave_gap_breakdown_is_reported(self):
+        """最大ギャップの内訳を出す（GitHub issue #153）— 支配側で打ち手が正反対になる."""
+        self._events([self._dispatch("layered", schema=3, waves=2, agents=7, solo_run=1,
+                                     gap=(900, 100)),
+                      self._dispatch("layered", schema=3, waves=2, agents=5, solo_run=1,
+                                     gap=(700, 300))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**最大ギャップの内訳**（n=2）", out)
+        self.assertIn("agent 実行 中央値 800 秒", out)
+        self.assertIn("オーケストレーター 中央値 200 秒", out)
+        self.assertIn("agent 側が 80%", out)
+
+    def test_wave_gap_breakdown_drops_missing_not_zeroes_it(self):
+        """欠測（-1）は**分母から外す**. 0 に倒すと idle 支配の誤読になる."""
+        self._events([self._dispatch("layered", schema=3, waves=2, agents=7, solo_run=1,
+                                     gap=(-1, -1)),
+                      self._dispatch("layered", schema=3, waves=2, agents=5, solo_run=1,
+                                     gap=(600, 400))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**最大ギャップの内訳**（n=1）", out, "欠測を分母に入れている")
+        self.assertIn("agent 側が 60%", out)
+
+    def test_wave_gap_breakdown_keeps_zero_agent_time(self):
+        """`agent 実行 0 秒` は**実測値**であって欠測ではない（変異テストで生存した経路）.
+
+        agent が既に終わっていてギャップ全部がオーケストレーター作業、という回こそ
+        idle 支配の証拠。0 を欠測扱いで落とすと**分母が agent 支配側に偏る** —
+        #153 が避けようとしている誤読そのものを集計側で作ることになる。
+        """
+        self._events([self._dispatch("layered", schema=3, waves=2, agents=5, solo_run=1,
+                                     gap=(0, 900))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**最大ギャップの内訳**（n=1）", out, "agent 0 秒の回を落としている")
+        self.assertIn("agent 側が 0%", out)
+
+    def test_wave_gap_breakdown_waits_on_schema_3(self):
+        """schema 2 しか無い間は**待ち行**（黙ると合算値を内訳と読まれる）."""
+        self._events([self._dispatch("layered", waves=2, agents=6, solo_run=1)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("`dispatch.schema >= 3` のサンプル待ち", out)
 
     def test_dispatch_rate_is_reported(self):
         """発行パターンの内訳を毎回の振り返りに出す（GitHub issue #142 / #149）."""

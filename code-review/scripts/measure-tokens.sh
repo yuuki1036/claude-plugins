@@ -115,6 +115,16 @@ first_ts = last_ts = None
 # `--since 2099-01-01` で `sub.n=0` なのに `sub_agents=8`）。窓と体数の意味を揃える
 sub_seen = set()
 sub_first = {}    # サブエージェント transcript -> 窓内で最初の timestamp（= 起動時刻）
+# 同 -> 窓内で最後の timestamp（= 終了時刻）。**先頭を読めば起動時刻・末尾を読めば終了時刻**で
+# 対称（GitHub issue #153）。wave 間ギャップを「wave N の agent が回っていた時間」と
+# 「オーケストレーターが次の wave を出すまでの時間」に割るのに要る
+sub_last = {}
+# 同 -> 窓内の timestamp 付き行数。**終了時刻が「取れた」と言えるのは 2 行以上あるときだけ**。
+# transcript が 1 行しか無い（窓が起動直後で切れた / 途中で壊れた）回は `sub_last` が
+# `sub_first` と同一になり、**「起動と同時に終わった」と区別がつかない**。そのまま使うと
+# agent 実行時間が 0 に出て idle 側が総取りし、「オーケストレーターが遅い」という誤った
+# 打ち手を選ばせる（#153 が縮退の向きとして禁じているのがこれ）
+sub_rows = {}
 tool_of = {}      # tool_use_id -> ツール名（main のみ）
 # **Agent の tool_use id -> (発行したアシスタントメッセージのキー, 時刻)**。
 # 同一メッセージから出た agent は同一 wave（GitHub issue #149）。main だけでなく
@@ -213,8 +223,15 @@ for fpath, side in targets:
                             agent_dispatch[blk.get("id")] = (_wave_key(e), ts)
             # **usage を持つ行に限らない**（起動直後のメタ行が先に来る）。窓の適用は
             # 上の `since` フィルタで済んでいるので、ここに来た時点で窓内
-            if side and ts and fpath not in sub_first:
-                sub_first[fpath] = ts
+            if side and ts:
+                if fpath not in sub_first:
+                    sub_first[fpath] = ts
+                # **`max` で採る**（行が時系列に並んでいる前提を置かない。append ログなので
+                # 通常は並ぶが、並びを仮定すると壊れたときに「終了が起動より前」という
+                # 負のギャップになり、静かに 0 へクランプされて欠測と区別できなくなる）
+                prev = sub_last.get(fpath)
+                sub_last[fpath] = ts if prev is None else max(prev, ts)
+                sub_rows[fpath] = sub_rows.get(fpath, 0) + 1
             u = (e.get("message") or {}).get("usage")
             if not u:
                 continue
@@ -244,7 +261,12 @@ agents = sub_files
 # ブロックへ引き当てれば、**どのアシスタントメッセージから出たか**が確定する。時間閾値も
 # LLM の自己申告も要らない（`agents.explorer_waves` = 打点の行数 は自己申告なので、打ち忘れた
 # 瞬間に違反の証拠も消えていた / design-notes/pending-optimizations.md `## 8`）。
-DISPATCH_SCHEMA = 2
+# schema 3: wave 間ギャップの内訳（`inter_wave_agent_sec` / `inter_wave_idle_sec`）を追加
+# （GitHub issue #153）。`max_inter_wave_sec` は「wave N 起動 → wave N+1 起動」なので、
+# **agent が回っていた時間**と**オーケストレーターの統合・dedup・scoring 時間**が
+# 合算されている。どちらが支配的かで打ち手が正反対（前者なら wave を減らす / 後者なら
+# 往復を減らす）なので、分離しないまま是正すると「wave を消したのに fleet が縮まない」を踏む
+DISPATCH_SCHEMA = 3
 # **連続する単独 wave が何本続いたら違反と呼ぶか**。1 体だけの wave 自体は正当（設計上 1 体
 # しか起動しないフェーズがある）。2 連続も skeptic → meta のような別ゲートの並びで説明が
 # つく。**3 連続以上はこのパイプラインの層構造では説明できない**ので、そこを閾値にする。
@@ -282,10 +304,16 @@ for fpath, ts in sub_first.items():
     if started is None or not owner or not owner[0]:
         unresolved += 1
         continue
-    waves_by_msg.setdefault(owner[0], []).append(started)
+    # 終了時刻は**取れないことがある**（末尾行に timestamp が無い / 窓の切り方）ので、
+    # 起動時刻と違って引き当て失敗を `unresolved` に数えない。wave 構成そのものは
+    # 起動時刻だけで決まるため、終了が欠けても `verdict` は判定できる（欠測にするのは
+    # 内訳 2 本だけ / #153）
+    ended = _epoch(sub_last.get(fpath) or "") if sub_rows.get(fpath, 0) >= 2 else None
+    waves_by_msg.setdefault(owner[0], []).append((started, ended))
 
 dispatch = {"schema": DISPATCH_SCHEMA, "agents": len(sub_first), "waves": None,
             "wave_sizes": None, "max_solo_run": None, "max_inter_wave_sec": None,
+            "inter_wave_agent_sec": None, "inter_wave_idle_sec": None,
             "span_sec": None, "verdict": "unknown"}
 if unresolved:
     # 旧い transcript（meta.json が無い）・窓の外で発行された agent・入れ子起動の親を
@@ -294,17 +322,40 @@ if unresolved:
 elif len(sub_first) == 1:
     # 1 体では wave の概念が立たない
     dispatch.update(waves=1, wave_sizes=[1], max_solo_run=1,
-                    max_inter_wave_sec=0, span_sec=0, verdict="single")
+                    max_inter_wave_sec=0, inter_wave_agent_sec=0,
+                    inter_wave_idle_sec=0, span_sec=0, verdict="single")
 elif waves_by_msg:
-    ordered = sorted(waves_by_msg.values(), key=min)
+    ordered = sorted(waves_by_msg.values(), key=lambda w: min(s for s, _ in w))
     sizes = [len(w) for w in ordered]
-    heads = [min(w) for w in ordered]
+    heads = [min(s for s, _ in w) for w in ordered]
     solo_run = best_solo_run = 0
     for n in sizes:
         solo_run = solo_run + 1 if n == 1 else 0
         best_solo_run = max(best_solo_run, solo_run)
     inter = [b - a for a, b in zip(heads, heads[1:])]
-    starts = sorted(t for w in ordered for t in w)
+    starts = sorted(s for w in ordered for s, _ in w)
+
+    # **最大ギャップの内訳だけを割る**（GitHub issue #153）。`max_inter_wave_sec` が
+    # 報告している当のギャップと同じ区間でないと、内訳と総和が対応しない。
+    #
+    # 縮退の向き: **終了時刻が 1 体でも取れなければ両方 -1（欠測）**。取れた体だけで
+    # max を採ると「まだ回っていた時間」が実態より短く出て、**idle 側が過大**になる
+    # ＝「オーケストレーターが遅い」という誤った打ち手を選ばせる（#153 の期待する動作）
+    agent_sec = idle_sec = -1
+    if inter:
+        i = max(range(len(inter)), key=lambda j: inter[j])
+        ends = [e for _, e in ordered[i]]
+        if all(e is not None for e in ends):
+            # wave i の agent が回り終えた時刻。次の wave 起動より後なら（前の層が
+            # まだ走っているうちに次を出した回）ギャップ全体が agent 実行に埋まる
+            last_end = max(ends)
+            agent_sec = round(max(0.0, min(last_end, heads[i + 1]) - heads[i]))
+            # **idle は引き算で出す**（`round(gap - agent)` ではなく `round(gap) - agent`）。
+            # 両方を独立に丸めると和が `max_inter_wave_sec` と 1 秒ずれ、読む側に
+            # 「3 つ目のバケツがある」と誤読させる。**内訳の和 == 総和**を成立させる
+            idle_sec = max(0, round(inter[i]) - agent_sec)
+    else:
+        agent_sec = idle_sec = 0   # 1 wave = ギャップ無し。欠測ではない
     if len(ordered) == 1:
         verdict = "batched"          # 全体が同一メッセージ内の一括発行
     elif best_solo_run >= DISPATCH_SOLO_RUN:
@@ -315,6 +366,7 @@ elif waves_by_msg:
         verdict = "layered"
     dispatch.update(waves=len(ordered), wave_sizes=sizes, max_solo_run=best_solo_run,
                     max_inter_wave_sec=round(max(inter)) if inter else 0,
+                    inter_wave_agent_sec=agent_sec, inter_wave_idle_sec=idle_sec,
                     span_sec=round(starts[-1] - starts[0]), verdict=verdict)
 
 

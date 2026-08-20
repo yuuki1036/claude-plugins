@@ -887,6 +887,24 @@ else:
               "発行すれば fleet は**wave 内最長の 1 体**で決まる（orchestration-guide.md `## 0`）"
               % (n_s, min(d.get("max_solo_run") or 0 for d in judged
                           if d["verdict"] == "serial")))
+    # **最大ギャップの内訳**（GitHub issue #153）。どちらが支配的かで打ち手が正反対
+    # （agent 側なら wave を減らす / idle 側なら往復を減らす）。**欠測（-1）は除く** —
+    # 0 に倒すと「agent は回っていなかった」に化けて idle 支配の誤読になる
+    gaps = [(num(d.get("inter_wave_agent_sec")), num(d.get("inter_wave_idle_sec")))
+            for d in judged if schema_of(d, "schema") >= 3]
+    gaps = [(a, i) for a, i in gaps if a is not None and i is not None
+            and a >= 0 and i >= 0 and (a + i) > 0]
+    if gaps:
+        m_agent, m_idle = median([a for a, _ in gaps]), median([i for _, i in gaps])
+        share = sum(a for a, _ in gaps) / sum(a + i for a, i in gaps)
+        print("  - **最大ギャップの内訳**（n=%d）: agent 実行 中央値 %.0f 秒 / "
+              "オーケストレーター 中央値 %.0f 秒。**agent 側が %.0f%%**（`>= 60%%` なら"
+              "打ち手は末尾 wave の去就、`<= 40%%` なら往復削減 / issue #153）"
+              % (len(gaps), m_agent, m_idle, share * 100))
+    else:
+        print("  - **最大ギャップの内訳**は `dispatch.schema >= 3` のサンプル待ち（#153） — "
+              "`max_inter_wave_sec` だけでは agent 実行時間とオーケストレーター作業時間が"
+              "合算されており、**wave を消したのに fleet が縮まない**を踏みうる")
 
 print()
 if not tok_rows:
