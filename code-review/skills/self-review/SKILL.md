@@ -19,7 +19,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @2d9dc871 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @ca56da91 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @3cf8c3c4 -->
 
 ## review との違い
@@ -447,7 +447,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 ```
 
 - スクリプトは payload の JSON 妥当性と **`missing_coverage` の語彙**を検証してから書く（不正なら publish せず `FATAL:` で落ちる。識別子以外＝理由つき自由文は弾かれるので、**理由はレポートの「⚠️ 欠損観点」に書き、フィールドごと落として通さない** / issue #132）。**`measurement_gaps` / `diff_digest` も渡さない**（計測ファイルと一時 diff から算出して注入される）。計測ファイルと diff の一時ファイルもスクリプトが掃除する
-- **版マーカーの整数も渡さない**（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`。v2.65.0 でスクリプト注入に移した — 定数の手書きは version drift 中に落ち、サンプルが逆の版バケツに入る / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts` / `below_threshold_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）。なお **`tokens` は review 限定**でここには載らない（**publish の後に Step 7 の修正方針確認と修正作業が続くため、窓の外に本作業が残る** / issue #126）。トークンを見たいときは `measure-tokens.sh` を手動実行する（→ 同 `## 17`）
+- **版マーカーの整数も渡さない**（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`。v2.65.0 でスクリプト注入に移した — 定数の手書きは version drift 中に落ち、サンプルが逆の版バケツに入る / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts` / `below_threshold_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）。**`tokens` も self-review に載る**（v2.70.0 で review 限定を撤回 / issue #143。`measure-tokens.sh` は publish 時点の transcript を読むので `t0 → publish` は閉じており、窓に Step 7 の修正作業が混ざるのは遅れて publish した回だけ ＝ `window: "since-t0-late"` で区別される）。これも**スクリプトが注入するので渡さない**。取り込み内訳や特定セッションを見たいときだけ `measure-tokens.sh` を手動実行する（→ 同 `## 17`）
 - **報告した指摘を `findings_class` に分類して入れる**（`lint` / `test` / `judgement`。合計は報告件数と一致。分類の基準と「0 件を目標にしない」理由は orchestration-measurement.md `## 16` の「`findings_class` の使い方」）
 - **書込先はメインリポジトリのルートに固定される**。self-review は worktree に入らないが、dev-workflow の作業用 worktree 内から実行されると cwd 相対では Step 8 の teardown で消える（→ orchestration-measurement.md `## 13`）。**publish の WARN に `⚠️ 計測:` の追記指示が出たら、レポート末尾にその 1 行を追記する**（#135。explorer の一括発行違反・wave 打点漏れは実行中に何も起きず、しかも打点漏れは違反の証拠自体を消す）
 

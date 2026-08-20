@@ -155,7 +155,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 | `recall_skeptic` | `gate_schema` | 2 |
 | `meta_reviewer` | `gate_schema` | 3 |
 
-- **`tokens.schema` は本表に載せない**（＝ `SCHEMA_MARKERS` に入れない）。`SCHEMA_MARKERS` は「層のオブジェクトが無ければ `payload:<field>` gap を立てる」経路と対になっているが、`tokens` は **transcript を引けたかどうかで載る回と載らない回がある**（欠測は専用の `tokens` gap で表現済み）。二重に gap が立つのを避けるため、この種のフィールドは構築ブロック側のリテラルで持つ（現行 `tokens.schema: 1`）。**v2.70.0 より前は「review 限定だから」が理由だった**が、self-review にも載るようになったので理由が変わった（結論は同じ / GitHub issue #143）
+- **`tokens.schema` は本表に載せない**（＝ `SCHEMA_MARKERS` に入れない）。`SCHEMA_MARKERS` は「層のオブジェクトが無ければ `payload:<field>` gap を立てる」経路と対になっているが、`tokens` は **transcript を引けたかどうかで載る回と載らない回がある**（欠測は専用の `tokens` gap で表現済み）。二重に gap が立つのを避けるため、この種のフィールドは構築ブロック側のリテラルで持つ（現行 `tokens.schema: 2`）。**v2.70.0 より前は「review 限定だから」が理由だった**が、self-review にも載るようになったので理由が変わった（結論は同じ / GitHub issue #143）
 - 値を変えるときは**本表と `SCHEMA_MARKERS` を同時に直す**。片方だけ直すと publish の実データ（スクリプトが正）と doc の解釈（本表が正）がずれ、下流の層別が静かに誤る
 
 review 用（`--plugin code-review:review --pr <PR番号>`）:
@@ -221,7 +221,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
 | `measurement_gaps` | **打点が欠けたマーカーの識別子配列**（v2.62.0 / `publish-review-event.sh` が注入。**SKILL からは渡さない**）。語彙は `start` / `t1` / `wave` / `t2` / `explorer-wave` / `diff-digest` / `tokens`（transcript を引けなかった / 窓が空振りした。**v2.70.0 より前は review のみ**）/ `dispatch`（**agent が 0 体 / transcript・`meta.json` を引けず発行パターンを判定できなかった回**。「一括だった」にも「逐次だった」にも倒さないための欠測 / #149）/ `payload:<field>`（**payload 側の欠落**。層のオブジェクトごと落ちた回 + `payload:missing_coverage`）/ `payload:<field>.fired`（発火記録の欠落）/ `late-publish`（**self-review のみ** / v2.66.0。t2 から 10 分以上あけて publish した回 = `duration_min` の契約が壊れているので `-1` に倒した。→ `## 14`）。**`tokens` / `payload:*` / `*.fired` は v2.65.0 で追加**。**識別子ごとに是正先が違う**（打点 / payload テンプレート / transcript 引き当て / 突合キー算出）ので、集計側は種類を混ぜて 1 つの是正先を提示しないこと。**`tokens` / `dispatch` は transcript を引けた回でしか判定できないので、分母をそこに絞る**（v2.70.0 より前の `tokens` は review 限定だったので、版で層別する）。`duration_*` が `-1` になった理由を「打ち忘れ」と「該当なし」に分けるためのフィールドで、**欠測率そのものを計測対象にする**（issue #123 B）。`explorer-wave` は `agents.explorer >= 1` かつ打点 0 のときだけ入る（explorer 未起動は該当なしなので gap ではない）。`diff-digest` は突合キーを算出できなかった回に入る（＝ `## 19` の重複検出が事後に効かない。**「重複が無かった」と区別するために立てる**） |
 | `diff_digest` | **diff 全文の cksum**（v2.62.0 / `publish-review-event.sh` が算出。**SKILL からは渡さない**）。重複レビューの**強い突合キー**で、**同一 skill の再実行でのみ一致する** — review は `gh pr diff`、self-review は `git diff BASE..HEAD` + `--cached` + unstaged の **3 本連結**で diff を作るので、同じ変更でもバイト列が違う（実測: 同一 head の PR で `1462260100-1256` vs `2713407599-105966`）。HEAD SHA ではなく diff にしたのは self-review が未コミット変更を含むため |
 | `diff_files` | **変更ファイルパス集合の cksum**（v2.62.0 / 同上）。**skill を跨いでも一致する弱いキー**で、連結・index 行・ハンクの分かれ方に影響されない代わりに**別内容の変更でも一致しうる**（＝重複の疑いどまり）。強弱 2 本を持つ理由は上の非対称。算出の正本は `scripts/lib/review-paths.sh` の `review_diff_keys` |
-| `tokens` | **トークン消費**（**review / self-review 共通** / v2.65.0・**self-review は v2.70.0 で追加**（GitHub issue #143）/ `publish-review-event.sh` が `measure-tokens.sh --json` を呼んで注入。**SKILL からは渡さない**）。`{schema, window, main_output_k, main_cache_write_k, sub_output_k, sub_agents}`。下の「トークンを payload に載せる」を参照 |
+| `tokens` | **トークン消費**（**review / self-review 共通** / v2.65.0・**self-review は v2.70.0 で追加**（GitHub issue #143）/ `publish-review-event.sh` が `measure-tokens.sh --json` を呼んで注入。**SKILL からは渡さない**）。`{schema, window, session, first_ts, main_output_k, main_cache_write_k, main_cache_read_k, sub_output_k, sub_cache_write_k, sub_cache_read_k, sub_agents}`（**`cache_read` 系は v2.76.0 / #156** — 重み付けコスト最大の項が schema 1 では載っていなかった）。下の「トークンを payload に載せる」を参照 |
 | `dispatch` | **agent の発行パターン**（v2.70.0 / GitHub issue #142・判定単位の是正が #149 / `publish-review-event.sh` が `measure-tokens.sh --json` から注入。**SKILL からは渡さない**）。`{schema, agents, waves, wave_sizes, max_solo_run, max_inter_wave_sec, span_sec, verdict}` で、`verdict` は `batched`（全体が 1 メッセージ）/ `layered`（層ごとの wave。**設計上正当**）/ `serial`（単独 wave が 3 連続以上 ＝ 規約違反）/ `single`（1 体で判定不能）/ `unknown`（引き当て不能。`unresolved` に体数が入り `measurement_gaps` に `dispatch` が立つ）。**`duration_fleet_min` だけでは「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を区別できない**。**判定単位は wave**（同一メッセージから出た agent の束）であってレビュー全体ではない — explorer → reviewer → 反証 は設計上逐次なので、層をまたぐ間隔を違反に数えると 2 層以上のレビューは規約を守っていても `batched` に到達できない（**`schema` 1（v2.70.1 未満）はこの誤った単位で判定しているので、集計側は `schema >= 2` に絞る**）。wave は推定ではなく `subagents/agent-*.meta.json` の `toolUseId` を transcript の `tool_use` ブロックへ引き当てて確定する（**行の `uuid` ではなく `message.id` で束ねる** — transcript は 1 メッセージを tool_use ブロックごとに別行へ分解して書くため）。LLM の自己申告に依存しない点は `agents.explorer_waves`（打点の行数）との違い |
 
 **`agents`** — 実際に**起動した**体数（成功・失敗を問わない。v2.39.0 の上限調整の効果測定に使う）:
@@ -339,20 +339,23 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
   - この失敗の論拠は**構造**（MINOR 95+ ＋ 好みクランプ 40 を推敲提案が通過できない）であって計測ではない。payload は focus 別の属性を持たないため、「v2.44.0 まで報告ゼロだった」を実測で示すことはできない（**この点を実測事実として書かないこと**）
 - review 側は publish しない（B 系統は self-review 限定。他人の PR への推敲提案は越権になりやすいという設計判断）
 
-**`tokens`（**review のみ** / v2.65.0 / GitHub issue #126）** — publish 時に `measure-tokens.sh --json` を呼んで注入する。**`## 17` の「skill 実行中に自分の消費量を観測できない」制約は publish 時点には当たらない**（publish はレポートの後 ＝ transcript 確定後）:
+**`tokens`（**review / self-review 共通** / v2.65.0・self-review は v2.70.0（#143）・`cache_read` 系は v2.76.0（#156）/ GitHub issue #126）** — publish 時に `measure-tokens.sh --json` を呼んで注入する。**`## 17` の「skill 実行中に自分の消費量を観測できない」制約は publish 時点には当たらない**（publish はレポートの後 ＝ transcript 確定後）:
 
 | サブフィールド | 内容 |
 |---|---|
-| `schema` | 算出方法の版（現行 `1`）。スクリプトが注入する |
+| `schema` | 算出方法の版（現行 `2` = `cache_read` 系を含む / #156）。スクリプトが注入する |
 | `window` | `"since-t0"`（`t0` マーカー以降だけを集計）/ `"session"`（`t0` を撮れずセッション全体を集計）。**集計側は `since-t0` だけを使う** |
 | `session` / `first_ts` | どの transcript のどこからを数えたか（取り違えの事後検出用。下記） |
 | `main_output_k` | メインループの `output_tokens` / 1000。**プロンプト複製の単価が最も高い項**（`## 17` の表） |
 | `main_cache_write_k` | 同 `cache_creation_input_tokens` / 1000。**分冊・遅延読み込みの効果判定には使わない**（#118 の交絡） |
+| `main_cache_read_k` | 同 `cache_read_input_tokens` / 1000（v2.76.0）。**往復回数 × その時点の文脈量**なので、絶対値ではなく往復を減らした前後で読む（#147） |
 | `sub_output_k` | サブエージェント側の `output_tokens` / 1000。**体数と 1 体あたりの探索量が出る** |
+| `sub_cache_write_k` | 同 `cache_creation_input_tokens` / 1000（v2.76.0） |
+| `sub_cache_read_k` | 同 `cache_read_input_tokens` / 1000（v2.76.0）。**重み付けコスト（output×5 / cache_write×1.25 / cache_read×0.1）で最大の項**。実測で sub のこれ単独が 1 レビューの総コストの 38% を占めた。`sub_cache_read_k / sub_agents` が **1 体あたりの読む量**で、`design-notes/pending-optimizations.md ## 計測の基準値` の 1 体平均 5,039k と比べる（#156） |
 | `sub_agents` | **窓内に usage を持つ**サブエージェント transcript の本数。**`measure-tokens.sh --json` の `sub_files`（glob 総数・窓非適用）は載せない** — 同じオブジェクトに窓ありと窓なしを混在させると、`sub_output_k / sub_agents`（1 体あたりの探索量）が窓外の体数で薄まる |
 
 - **なぜ載せるのか**: triage-guide.md `## 7` の核心テーゼは「**体数削減が確実に効くのは壁時計ではなくトークン**」なのに、payload は所要時間しか持たず、`## 18` の自動集計も時間だけを見ていた。つまり**主要レバーが効かない指標を自動集計し、効く指標を集計していなかった**（issue #126）
-- **self-review は載せない**。**`EnterWorktree` は cwd と subagent の slug を変えるだけで、セッション自体はメインリポジトリで始まったまま**なので（`## 17` の候補 dir 探索がこれを前提にしている）、review も「隔離セッション」ではない。両者を分けるのは **publish の位置**で、review は `t0 → レポート → publish` が 1 レビューで閉じる直列区間なのに対し、**self-review は publish（Step 6.4）の後に Step 7 の修正方針確認と修正作業が続く**。窓の外に本作業が続く側では近似が成立しない。**この非対称は仕様**であって欠測ではない
+- **~~self-review は載せない~~（v2.70.0 で撤回・#143）**。撤回の理由は下の `## 18` 側の注記に集約してある（`measure-tokens.sh` は publish 時点の transcript を読むので `t0 → publish` は閉じており、窓に修正作業が混ざるのは遅れて publish した回だけ ＝ `window: "since-t0-late"` で区別できる）。以下は撤回前の論拠の記録: **`EnterWorktree` は cwd と subagent の slug を変えるだけで、セッション自体はメインリポジトリで始まったまま**なので（`## 17` の候補 dir 探索がこれを前提にしている）、review も「隔離セッション」ではない。両者を分けるのは **publish の位置**で、review は `t0 → レポート → publish` が 1 レビューで閉じる直列区間なのに対し、**self-review は publish（Step 6.4）の後に Step 7 の修正方針確認と修正作業が続く**。窓の外に本作業が続く側では近似が成立しない。**この非対称は仕様**であって欠測ではない
 - **窓は `t0` 以降であってレビュー区間そのものではない。** review でも、レビュー中にユーザーが別作業を挟めば混ざる。**「粗い k 値」として読み、前後比較は同じ PR / 同じ diff で行う**（`## 17` と同じ流儀）
 - **どの transcript のどこからを数えたかは `session` / `first_ts` に残す。** セッションの選択は「候補 dir の最新 `.jsonl`」という推定で、worktree 並列運用では取り違えうる。値そのものはもっともらしいので、**この 2 つが無いと取り違えを事後に検出する手段が消える**
 - **`main.n == 0` は「トークンが 0 だった」ではない。** review は必ずメインループのメッセージを出してから publish するので、0 は「transcript を引けなかった」か「窓が空振りした」を意味する。この回は `tokens` を載せず `measurement_gaps` に `tokens` を立てる（ゼロを実測値として載せると retro の中央値と体数相関が壊れる。実測で相関が 1.00 → 0.18 に落ちた）

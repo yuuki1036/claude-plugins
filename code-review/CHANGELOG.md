@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.76.0] - 2026-08-20
+
+**トークン計測が重み付け最大の項を落としていた**（GitHub issue #156）。`tokens` payload は `output` と main の `cache_write` しか載せておらず、コスト比で 45% を占める `cache_read` が観測の外にあった（`pending-optimizations.md ## 計測の基準値`）。実測（`2026-08-18T03:17Z` の self-review・9 体・レビュー区間のみ）では **sub の `cache_read` 単独で総コストの 38%**、1 体あたり 5,749k で基準値 5,039k から下がっていない。**規模キャップ（#96）は「広さ」を切っただけで、1 体あたりの読む量には一度も手が入っていない。**
+
+### Added
+
+- **`tokens.main_cache_read_k` / `sub_cache_read_k` / `sub_cache_write_k`**（`schema` を 2 へ）。`measure-tokens.sh --json` は元から返しているので取得経路の追加は無く、**落としていたのは publish 側**
+- **`review-retro.sh` に「1 体あたり cache_read」を effort × size_tier で層別して出す**。総量だけでは「体数が多い」と「1 体が読みすぎ」を切り分けられず、tier は担当ファイル数を・effort は 1 体あたりの探索量を決めるので層別しない中央値は両方の交絡を負う（体数 vs fleet の r を tier 内で取るのと同じ理由 / #151）。`sub_agents` が 0・欠測の回は**除算せず落とす**（0 に倒すと集計が例外で死に、1 に倒すと 1 体あたりが総量に化ける）
+- schema 1 のサンプルしか無い間の待ち行（黙ると「1 体あたりは問題なかった」と読まれる / #131 と同じ型の誤読）
+- 回帰テスト 4 本（publish の値 1 / retro の層別・除算ガード・待ち行 3）
+
+### なぜ観測だけなのか
+
+削る候補（担当ファイルの絞り込み / 探索予算 / 体数）はどれも recall とのトレードオフを持つ。`pending-optimizations.md ## 10`（`class` で機械的に絞る）は既に「採らない」で決着しており、残る材料は `## focus-signals` の根拠ファイル側だが、**シグナルが出ていないファイルを構造的に落とす**ので recall への影響測定が前提になる。層別の実測が無いまま当てると、どれが効いたのか事後に切り分けられない。
+
 ## [2.75.0] - 2026-08-20
 
 **上流較正の効果が review 側で出ていない**（GitHub issue #150）。tier・effort・ゲートを揃えても `severity_inflated` が review 84-90%（confirmed 6-12%）/ self-review 50-51%（confirmed 25-46%）と非対称で、PR レビューが `pre_major 50 → 報告 7 件`・4 本中 3 本が報告 0 件になっていた。**本版は打ち手ではなく観測**を足す（現状 n=14 で「型が的外れ」の証拠はまだ無いので、プロンプト修正を先に当てない）。

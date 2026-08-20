@@ -493,6 +493,26 @@ for e in tok_rows:
         tys.append(so)
 tok_r = pearson(txs, tys)
 
+# **1 体あたりの cache_read**（GitHub issue #156）。体数キャップ（#96）は「広さ」を切ったが
+# 1 体あたりの読む量には手が入っておらず、`pending-optimizations.md ## 計測の基準値` の
+# 1 体平均 cache_read 5,039k と比べる先がここ。**effort × size_tier で層別する** — tier は
+# 担当ファイル数を、effort は 1 体あたりの探索量を決めるので、混ぜた中央値は両方の交絡を負う。
+# **除算は `sub_agents` が正のときだけ**（0 や欠測で割ると inf / 例外になり、その回だけ
+# 静かに落ちるのではなく集計全体が壊れる）
+per_agent_buckets = {}
+for e in tok_rows:
+    t = e["p"]["tokens"] or {}
+    cr, na = num(t.get("sub_cache_read_k")), num(t.get("sub_agents"))
+    if cr is None or cr < 0 or na is None or na <= 0:
+        continue
+    key = "%s/%s" % (e["p"].get("effort", "?"), e["p"].get("size_tier", "?"))
+    per_agent_buckets.setdefault(key, []).append(cr / na)
+
+per_agent_rows = []
+for key in sorted(per_agent_buckets, key=lambda k: -len(per_agent_buckets[k])):
+    per_agent_rows.append((key, len(per_agent_buckets[key]),
+                           median(per_agent_buckets[key])))
+
 # ---- 9.5. 指摘の分類（何が捕まえるべきだったか / v2.68.0） ------------------
 # **目的は指摘を減らすことではない**（300 行の diff で 0 件の方が疑わしい）。見るのは構成比で、
 # `lint` が高い＝ linter を足す余地、`test` が高い＝回帰テストが足りない、というシグナル。
@@ -883,6 +903,20 @@ else:
     if tok_r is not None:
         line += " / 体数 vs sub.output r=%.2f（n=%d）" % (tok_r, len(txs))
     print(line + "。**壁時計の結論と混ぜない**（体数が効くのはこちら側 — triage-guide.md `## 7`）")
+    print()
+    if per_agent_rows:
+        print("**1 体あたり cache_read**（effort × size_tier。基準値は 1 体 5,039k / "
+              "`pending-optimizations.md ## 計測の基準値`。**体数キャップは広さを切っただけで"
+              "ここには手が入っていない** / issue #156）")
+        print()
+        print("| effort/tier | n | 1 体あたり中央値 |")
+        print("|---|---:|---:|")
+        for key, n, m in per_agent_rows[:8]:
+            print("| %s | %d | %s |" % (key, n, "-" if m is None else "%.0f k" % m))
+    else:
+        print("**1 体あたり cache_read**は `tokens.sub_cache_read_k` を持つサンプル待ち"
+              "（schema 2 / issue #156） — 総量だけでは「体数が多い」と「1 体が読みすぎ」を"
+              "切り分けられない")
 
 print()
 if n_modern == 0:

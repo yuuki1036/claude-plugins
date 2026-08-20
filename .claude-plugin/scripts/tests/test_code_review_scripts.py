@@ -281,7 +281,7 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
     def env_home(self) -> dict[str, str]:
         return self._env(HOME=str(self.home))
 
-    def write_transcript(self, waves: list[list[int]]) -> None:
+    def write_transcript(self, waves: list[list[int]], scale: int = 1) -> None:
         """cwd に対応する slug へ session + subagent を置く.
 
         `waves[i]` は**同一メッセージから発行した** agent の起動オフセット（秒）。
@@ -295,9 +295,9 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
 
         def row(ts: str) -> str:
             return json.dumps({"type": "assistant", "timestamp": ts,
-                               "message": {"usage": {"output_tokens": 10,
-                                                     "cache_creation_input_tokens": 20,
-                                                     "cache_read_input_tokens": 30}}})
+                               "message": {"usage": {"output_tokens": 10 * scale,
+                                                     "cache_creation_input_tokens": 20 * scale,
+                                                     "cache_read_input_tokens": 30 * scale}}})
 
         rows = [row(base.isoformat() + "Z")]
         sub = d / "s1" / "subagents"
@@ -326,6 +326,28 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         self.assertIn("tokens", p, "self-review で tokens が載っていない")
         self.assertEqual(p["tokens"]["window"], "session", "t0 が無い回は session 窓")
         self.assertEqual(p["tokens"]["sub_agents"], 2)
+
+    def test_tokens_carry_cache_read(self):
+        """**重み付け最大の項を落とさない**（GitHub issue #156）.
+
+        schema 1 は `output` と main の `cache_write` しか載せておらず、コスト比で
+        45% を占める `cache_read` が payload の外にあった（`pending-optimizations.md
+        ## 計測の基準値`）。`measure-tokens.sh --json` は元から返しているので、
+        **落としていたのは publish 側**。
+        """
+        # 1k tokens 単位で丸めるので、fixture も k オーダーまで持ち上げる
+        # （10/20/30 のままだと全部 0.0 に潰れ、「載っている」と「0」を区別できない）
+        self.write_transcript([[0, 5]], scale=1000)
+        self.publish(env=self.env_home())
+        t = self.last_payload()["tokens"]
+        self.assertEqual(t["schema"], 2, "schema を上げずにフィールドだけ足している")
+        # main は 1 メッセージ / sub は 2 体 × 1 メッセージ
+        self.assertEqual(t["main_cache_read_k"], 30.0)
+        self.assertEqual(t["sub_cache_read_k"], 60.0)
+        self.assertEqual(t["sub_cache_write_k"], 40.0)
+        # 既存フィールドを壊していない
+        self.assertEqual(t["sub_output_k"], 20.0)
+        self.assertEqual(t["sub_agents"], 2)
 
     def test_missing_transcript_is_a_gap_not_a_zero(self):
         """transcript を引けない回に 0 を載せない（retro の中央値と相関を壊すため）."""
@@ -466,6 +488,52 @@ class RetroTest(ScriptTestBase):
         if schema is not None:
             d["schema"] = schema
         return {"effort": "high", "measurement_gaps": [], "dispatch": d}
+
+    def _tokens(self, tier: str, cache_read_k, agents, effort: str = "high",
+                schema: int = 2) -> dict:
+        return {"effort": effort, "size_tier": tier, "measurement_gaps": [],
+                "tokens": {"schema": schema, "window": "since-t0",
+                           "main_output_k": 100.0, "sub_output_k": 200.0,
+                           "sub_cache_read_k": cache_read_k, "sub_agents": agents}}
+
+    def test_per_agent_cache_read_is_layered_by_effort_and_tier(self):
+        """**1 体あたり**で出す（GitHub issue #156）.
+
+        総量だけでは「体数が多い」と「1 体が読みすぎ」を切り分けられない。tier は担当
+        ファイル数を、effort は 1 体あたりの探索量を決めるので、層別しない中央値は
+        両方の交絡を負う（`## 3` の r を tier 内で取るのと同じ理由 / issue #151）。
+        """
+        self._events([self._tokens("medium", 50000.0, 10),   # 5,000k/体
+                      self._tokens("medium", 42000.0, 6),    # 7,000k/体 → 中央値 6,000k
+                      self._tokens("small", 9000.0, 3, effort="xhigh")])  # 3,000k/体
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**1 体あたり cache_read**", out)
+        self.assertIn("| high/medium | 2 | 6000 k |", out)
+        self.assertIn("| xhigh/small | 1 | 3000 k |", out)
+
+    def test_per_agent_cache_read_never_divides_by_zero(self):
+        """`sub_agents` が 0 / 欠測の回は**除算せず落とす**.
+
+        0 で割ると集計全体が例外で死ぬ（その回だけ静かに欠測、にはならない）。
+        欠測を 1 体に倒すのも不可 — 1 体あたりが総量に化けて基準値比較を壊す。
+        """
+        self._events([self._tokens("medium", 50000.0, 0),
+                      self._tokens("medium", 50000.0, None),
+                      self._tokens("medium", 20000.0, 4)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.signals(out)
+        self.assertIn("| high/medium | 1 | 5000 k |", out,
+                      "除算できない回を分母に入れているか、落としすぎている")
+
+    def test_waiting_line_when_tokens_lack_cache_read(self):
+        """schema 1 のサンプルしか無い間は**待ち行を出す**（黙ると「読めている」と誤読される）.
+
+        #131 と同じ型 — 表が消えるだけだと「1 体あたりは問題なかった」に見える。
+        """
+        self._events([self._tokens("medium", None, 5, schema=1)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("`tokens.sub_cache_read_k` を持つサンプル待ち", out)
+        self.assertNotIn("**1 体あたり cache_read**（effort", out, "表が出てしまっている")
 
     def test_dispatch_rate_is_reported(self):
         """発行パターンの内訳を毎回の振り返りに出す（GitHub issue #142 / #149）."""

@@ -392,7 +392,12 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             v = (tok.get(side) or {}).get(key)
             return round(v / 1000.0, 1) if isinstance(v, (int, float)) else None
         payload["tokens"] = {
-            "schema": 1,
+            # schema 2: `cache_read` 系を追加（GitHub issue #156）。**重み付けコスト
+            # （output×5 / cache_write×1.25 / cache_read×0.1）では cache_read が最大**
+            # （`pending-optimizations.md ## 計測の基準値` で 45%）なのに、schema 1 は
+            # output と main の cache_write しか載せていなかった＝主要項が観測の外にあった。
+            # `measure-tokens.sh --json` は元から返しているので取得経路の追加は無い
+            "schema": 2,
             # 窓の種類。`session` は t0 を撮れずセッション全体を集計した回で、レビュー外の
             # 作業が混ざる。**集計側は since-t0 だけを使う**（混ぜると体数との対応が消える）
             "window": os.environ.get("REVIEW_TOKENS_WINDOW") or "session",
@@ -402,7 +407,10 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             "session": tok.get("session"), "first_ts": tok.get("first_ts"),
             "main_output_k": _k("main", "output"),
             "main_cache_write_k": _k("main", "cache_write"),
+            "main_cache_read_k": _k("main", "cache_read"),
             "sub_output_k": _k("sub", "output"),
+            "sub_cache_write_k": _k("sub", "cache_write"),
+            "sub_cache_read_k": _k("sub", "cache_read"),
             # 窓内に usage を持つ subagent の本数（`sub_files` = glob 総数は窓非適用なので
             # 載せない。同じオブジェクトに窓ありと窓なしを混在させない）
             "sub_agents": tok.get("sub_agents"),
