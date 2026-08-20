@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.78.1] - 2026-08-21
+
+### Fixed
+
+- **`per_agent_buckets` のガードが片側だけ `null` の payload で落ちうる経路を回帰テストで塞いだ**（nightly 変異テストが検出 / GitHub issue #157）。`sub_cache_read_k` だけ `null`（＝ `measure-tokens.sh` が cache_read を返せなかった回）で `cr is None` より先に `cr < 0` を評価すると `TypeError` になり、retro は `set -uo pipefail`（`-e` なし）+ 末尾 `exit 0` なので **rc 0 のまま出力が途中で切れる**。
+- **v2.78.0 が dispatch 側の同型（`test_wave_gap_survives_a_half_missing_payload`）だけを塞いでいた**。同じ失敗モードが同じ版の中に 2 箇所あり、片方しか見ていなかった。ローカルの変異テストは直前コミットの変更行しか対象にしないため出ず、nightly（`--base` が 2 日前・39 変異）で初めて生存した。**「同型を 1 つ直したら、同じ形が他にないか grep する」** を手順に足すべきシグナル
+
 ## [2.78.0] - 2026-08-20
 
 **セルフレビュー（`b4cbaac..HEAD`）で v2.76.0 / v2.77.0 の集計出力に欠陥 7 件**。反証レイヤーが 10 件中 7 confirmed / 3 降格。**足した計測自身が誤った打ち手を指す**型が 4 件で、うち 2 件は回帰テストが構造的に検出できない位置にあった。

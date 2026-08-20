@@ -627,6 +627,21 @@ class RetroTest(ScriptTestBase):
         self.assertIn("除算不可 1", out)
         self.assertNotIn("**1 体あたり cache_read**（effort", out, "表が出てしまっている")
 
+    def test_per_agent_cache_read_survives_a_half_missing_payload(self):
+        """`sub_cache_read_k` だけ `null` の回で**落ちない**（nightly 変異 #157）.
+
+        `cr < 0` を `cr is None` より先に評価すると `TypeError`。retro は
+        `set -uo pipefail`（`-e` なし）+ 末尾 `exit 0` なので **rc 0 のまま出力が途中で
+        切れる**。dispatch 側（`test_wave_gap_survives_a_half_missing_payload`）と同じ型で、
+        そちらだけ塞いで**こちらを塞いでいなかった**。版ゲートを通る schema 2 で作る
+        （schema 1 だと先に `continue` してこの行に到達しない）。
+        """
+        self._events([self._tokens("medium", None, 5),
+                      self._tokens("medium", 20000.0, 4)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.signals(out)                     # 途中で死んでいないこと
+        self.assertIn("| high/medium | 1 | 5000 k |", out, "落ちない回まで捨てている")
+
     def test_per_agent_cache_read_gates_on_schema(self):
         """版マーカーで先に切る（フィールド在否で代用しない / 冒頭の層別の原則）."""
         self._events([self._tokens("medium", 99999.0, 1, schema=1),   # 旧版は混ぜない
