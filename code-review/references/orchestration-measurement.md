@@ -167,13 +167,15 @@ review 用（`--plugin code-review:review --pr <PR番号>`）:
   "head_verified":{"ok":<n>,"mismatch":<n>,"unknown":<n>},
   "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
   "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
-  "below_threshold_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
+  "below_threshold_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>,
+    "demoted_types":{"base_derived":<n>,"misread":<n>,"overstated_impact":<n>,"miscategorized":<n>,"unknown":<n>}},
   "severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
   "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
   "missing_coverage":[<json-array of focus names>],
   "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
   "findings_class":{"lint":<n>,"test":<n>,"judgement":<n>},
-  "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
+  "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>,
+    "inflated_axes":{"base_derived":<n>,"misread":<n>,"overstated_impact":<n>,"miscategorized":<n>,"unknown":<n>}},
   "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
   "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>}
 }
@@ -187,13 +189,15 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
   "reviewer_effort_profile":"<uniform|differentiated>",
   "agents":{"explorer":<n>,"reviewer":<n>,"specialist":<n>,"round2":<n>,"verify":<n>,"verify_findings":<n>},
   "pre_adjust_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
-  "below_threshold_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>},
+  "below_threshold_counts":{"blocker":<n>,"critical":<n>,"major":<n>,"minor":<n>,
+    "demoted_types":{"base_derived":<n>,"misread":<n>,"overstated_impact":<n>,"miscategorized":<n>,"unknown":<n>}},
   "severity_threshold":"<BLOCKER|CRITICAL|MAJOR|MINOR>",
   "blocker_count":<n>,"critical_count":<n>,"major_count":<n>,"minor_count":<n>,
   "missing_coverage":[<json-array of focus names>],
   "result_grid":{"high":<n>,"medium":<n>,"low":<n>,"skip":<n>,"error":<n>},
   "findings_class":{"lint":<n>,"test":<n>,"judgement":<n>},
-  "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>},
+  "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>,
+    "inflated_axes":{"base_derived":<n>,"misread":<n>,"overstated_impact":<n>,"miscategorized":<n>,"unknown":<n>}},
   "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
   "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
   "comment_polish":{"fired":<bool>,"suggested":<n>}
@@ -210,7 +214,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
 | `head_verified` | `{ok, mismatch, unknown}`（review のみ。v2.43.0）。各 agent の `HEAD 検証:` 行の集計で、`unknown` は行が無かった agent 数。`mismatch + unknown > 0` のレビューは指摘の信頼度が落ちる（orchestration-guide.md `## 5`） |
 | `blocker_count` / `critical_count` / `major_count` / `minor_count` | severity 別件数（報告マトリクス通過後） |
 | `pre_adjust_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 分布。下の「調整前後の分離」を参照 |
-| `below_threshold_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**`pre_adjust_counts` に足し込んだ `## below-threshold` ぶんだけ**を同じ severity バケツで再掲する（GitHub issue #146）。`pre_adjust_counts` は合算のままなので、**`pre_adjust - below_threshold` が「reviewer が本文を書いて列挙した指摘」**になる。これが無いと検出 → 報告の歩留まりが (a) 本文を書いてから捨てた（出力トークンの純損失）と (b) 件数だけ返した（既に節約できている）に分解できない。**`pre_adjust_counts` 側の値を超えてはならない**（publish が fail-fast する） |
+| `below_threshold_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**`pre_adjust_counts` に足し込んだ `## below-threshold` ぶんだけ**を同じ severity バケツで再掲する（GitHub issue #146）。`pre_adjust_counts` は合算のままなので、**`pre_adjust - below_threshold` が「reviewer が本文を書いて列挙した指摘」**になる。これが無いと検出 → 報告の歩留まりが (a) 本文を書いてから捨てた（出力トークンの純損失）と (b) 件数だけ返した（既に節約できている）に分解できない。**`pre_adjust_counts` 側の値を超えてはならない**（publish が fail-fast する）。**`demoted_types`** はそのうち **`{{SEVERITY_THRESHOLD}}` を跨ぐ降格で落ちたぶん**の型別内訳（`prompts/reviewer-common.md`「降格される典型パターン」の 4 型 + 型を判別できなかった `unknown`。GitHub issue #150）。型名の対応は**base 由来 → `base_derived` / 読み違え → `misread` / 影響の過大見積もり → `overstated_impact` / カテゴリの取り違え → `miscategorized`**（`inflated_axes` と同じ語彙にしてあるので、上流降格と下流降格を同じ軸で並べて読める）。上流降格が実際に起きているかが観測できないと、上流較正が「型が的外れ」なのか「型を適用していない」のかを切り分けられない。**合計が `below_threshold_counts` の 4 バケツの合計を超えてはならない** |
 | `severity_threshold` | 実行時の `review_severity_threshold` 実効値（`BLOCKER`〜`MINOR`）。**どの severity が `## below-threshold` に回ったかを事後に判別するために必須**（v2.58.0〜）。これが無いと `pre_adjust_counts` の非可換性を補正できない |
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
 | `findings_class` | **報告した指摘を「何が捕まえるべきだったか」で分類した件数**（v2.68.0 / GitHub 由来ではなく運用課題から）+ `schema`（スクリプトが注入）。`lint`=静的検査（grep / AST / 構造走査）で機械的に検出できた / `test`=回帰テストがあれば捕まえられた（コードの挙動の誤り）/ `judgement`=設計判断・主張の妥当性など機械で判定できない。**合計は報告件数（blocker+critical+major+minor）と一致させる**。下の「`findings_class` の使い方」を参照 |
@@ -301,6 +305,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
   - `skip_reason` の語彙は `"effort"`（low / medium）/ `"config"`（`enable_adversarial_verify: false`）/ `"scope"`（self-review の `--focus` / `--exclude`）/ `"emergency"`（`--emergency` / `skip-mode`）/ **`"no-eligible-findings"`**（triage-dynamic-gates.md `## 9` のゲートに合致する指摘が 0 件）。`fired=true` なら `null`
   - **`"no-eligible-findings"` が本フィールドの主目的**。既定 effort（high）のゲートは非対称ゾーン（BLOCKER 60-94 / CRITICAL 80-94）だけなので、**BLOCKER / CRITICAL が 1 件も出なければ MAJOR がいくら出ても対象は構造的に 0 件**になる（実測: 本リポジトリの `pre_adjust_counts` を持つ 6 件中 3 件が不発で、いずれも BLOCKER + CRITICAL = 0・MAJOR は 6〜8 件。**「3 回連続」ではない** — 間に起動回が 2 件挟まる。issue #129 が別途「3 回連続」と報告しているのは複数リポジトリを含む実運用の体感で、この 6 件表からは再現しない）。他の 4 つと違い**設計上の非該当ではなく「ゲート幅が実効的に狭いか」の観測点**なので、下流の分母から外さない（`review-retro.sh` の `OUT_OF_SCOPE_SKIPS` に入れない）
   - **ゲート幅の妥当性はこのフィールドが貯まるまで判断しない**。狭いこと自体が問題だとはまだ言えず、**測れないことが問題**だった（再監視条件は triage-dynamic-gates.md `## 9`）
+- `inflated_axes`: **`severity_inflated` の型別内訳**（GitHub issue #150）。反証エージェントが返す `axis` を `prompts/reviewer-common.md`「降格される典型パターン」の 4 型へ寄せて数える（`pre-existing` / `intended` → `base_derived` / `misread` → `misread` / `overstated-impact` → `overstated_impact` / `miscategorized` → `miscategorized`）。**軸が返らなかった・語彙外だった件は `unknown`** に落とす（publish は合計が `severity_inflated` と一致することを fail-fast で確かめるので、型が取れなかった回も件数は失われない）。**このフィールドの用途は打ち手の選択**で、`base_derived` が支配的なら直すのはプロンプトの表現ではなく**reviewer に渡る base 側の情報**になる（review は PR diff から復元するしかなく、self-review は変更意図をメインコンテキストが知っている — その非対称が実測で `severity_inflated` 84-90% vs 50% として出ている）
 - `gate_schema`: **起動ゲートの版**（v2.65.0 / `meta_reviewer.gate_schema` と同じ流儀）。**`publish-review-event.sh` が注入する**（1 = `fired` を持たない v2.64.x 以前 = 発火を記録していない版 / 2 = 非対称ゾーン + surface-aware 例外 + 追加バッチの confidence 上乗せゲート = v2.65.0 以降）。**旧サンプルは「起動しなかった」ではなく「記録していない」**なので、発火率を出すときは必ず `gate_schema >= 2` で濾す
   - **版マーカーだけでは記録漏れを落とせない**（注入方式の帰結。全 3 層に共通）。版マーカーはスクリプトが入れるので、**`fired` を落とした現行版 payload にも最新版が入る**。「フィールドの有無が版マーカー」の層別は旧版にしか効かないため、**現行版の記録漏れは `measurement_gaps` の `payload:<field>.fired` で外す**（`review-retro.sh` の `layer_stats` が `dropped_unrecorded` として実装）。外さないと記録漏れが `skip_reason=unknown` として分母に混ざり、発火率が実態より薄まる／「1 度も起動していない」という偽のロールバックシグナルまで点灯しうる
 - `calibration_schema`: **上流 severity 較正ガードの版**（v2.62.0 / `pre_adjust_counts.schema` と同じ流儀）。**`publish-review-event.sh` が注入する**（1 = base 状態の確認だけを課していた v2.55.0〜v2.61.x / 2 = `prompts/reviewer-common.md` に「降格される典型パターン」の 4 型を明示した v2.62.0 以降）。**これが無いと A の効果を測れない** — `severity_inflated` 比率は累計で読むと施策前サンプルに薄められ、上流ガードが効いたかどうかが判定できなくなる（issue #123 A）。日付では切らない（配布ラグ）

@@ -254,6 +254,57 @@ if bt is not None:
             )
             sys.exit(1)
 
+# ---- 降格の型別内訳の検証（GitHub issue #150） --------------------------------
+# **件数だけでは打ち手が決まらない**。`severity_inflated` がどの降格典型で落ちたかが残らないと、
+# 上流較正が「型が的外れ」なのか「そもそも上流で直せない」のかを切り分けられない
+# （実測: 同一版・同一 effort・同一ゲートで review 側だけ 84-90% / self-review は 50%）。
+# 合計の突合まで見るのは `findings_class` と同じ理由 — **内訳が本体とずれた時点で
+# 「型が取れなかった件」と「数え漏らした件」が混ざり、切り分けという唯一の用途が消える**。
+DEMOTE_TYPES = ("base_derived", "misread", "overstated_impact", "miscategorized", "unknown")
+
+
+def check_demote_types(d, parent, field):
+    """5 キーの非負整数を要求して合計を返す（0 件でもキーを省かせない）。"""
+    bad = [k for k in DEMOTE_TYPES
+           if not isinstance(d.get(k), int) or isinstance(d.get(k), bool) or d.get(k) < 0]
+    if bad:
+        sys.stderr.write(
+            "%s.%s の %s が非負整数でない（%s の 5 つとも必須。0 件でもキーを省かない — "
+            "「その型が無かった」と「数えなかった」を潰さないため）\n"
+            % (parent, field, ", ".join(bad), " / ".join(DEMOTE_TYPES))
+        )
+        sys.exit(1)
+    return sum(d[k] for k in DEMOTE_TYPES)
+
+
+av = payload.get("adversarial_verify")
+if isinstance(av, dict) and isinstance(av.get("inflated_axes"), dict):
+    axes_total = check_demote_types(av["inflated_axes"], "adversarial_verify", "inflated_axes")
+    infl = av.get("severity_inflated")
+    if isinstance(infl, int) and not isinstance(infl, bool) and axes_total != infl:
+        sys.stderr.write(
+            "inflated_axes の合計 %d が severity_inflated %d と一致しない\n"
+            "**軸が返らなかった・語彙外だった件は `unknown` に落とす**（型が取れなくても件数は"
+            "落とさない）。反証プロンプトの axis 語彙は prompts/adversarial-verify.md\n"
+            % (axes_total, infl)
+        )
+        sys.exit(1)
+
+if isinstance(bt, dict) and isinstance(bt.get("demoted_types"), dict):
+    dem_total = check_demote_types(bt["demoted_types"], "below_threshold_counts", "demoted_types")
+    # **SEVS の型は上のブロックで検証済み**（`bt` が dict なら 4 キーとも非負整数を通っている）。
+    # ここで再判定を挟むと**通らない分岐**になり、壊しても誰も気づかない
+    below_total = sum(bt[k] for k in SEVS)
+    if dem_total > below_total:
+        sys.stderr.write(
+            "demoted_types の合計 %d が below_threshold_counts の合計 %d を超えている\n"
+            "**跨ぐ降格で落ちた指摘は `## below-threshold` に計上されている**ので、"
+            "内訳が本体を超えるのは二重計上か本体への足し忘れ"
+            "（orchestration-measurement.md `## 16`）\n"
+            % (dem_total, below_total)
+        )
+        sys.exit(1)
+
 # duration_* は常にスクリプト側の値で上書きする（呼び出し側が渡していても勝つ）
 payload.update(json.loads(os.environ["REVIEW_DURS"]))
 
@@ -318,6 +369,16 @@ for field in ("adversarial_verify", "recall_skeptic", "meta_reviewer"):
     d = payload.get(field)
     if isinstance(d, dict) and "fired" not in d:
         gaps.append("payload:%s.fired" % field)
+
+# 型別内訳の記録漏れ（issue #150）。**「その型が無かった」と「数えなかった」を潰さない**ため、
+# 内訳が要る回（降格が実際に起きた回）に限って gap を立てる。層ごとスキップした回や
+# 閾値未満が 0 件の回まで gap にすると、記録漏れの信号がノイズに埋もれる
+if isinstance(av, dict) and "inflated_axes" not in av:
+    infl = av.get("severity_inflated")
+    if isinstance(infl, int) and not isinstance(infl, bool) and infl > 0:
+        gaps.append("payload:adversarial_verify.inflated_axes")
+if isinstance(bt, dict) and "demoted_types" not in bt and sum(bt[k] for k in SEVS) > 0:
+    gaps.append("payload:below_threshold_counts.demoted_types")
 
 # ---- トークン消費と発行パターン（issue #126 / #142 / #143） -----------------
 if os.environ.get("REVIEW_TOKENS_WANTED") == "1":

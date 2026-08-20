@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.75.0] - 2026-08-20
+
+**上流較正の効果が review 側で出ていない**（GitHub issue #150）。tier・effort・ゲートを揃えても `severity_inflated` が review 84-90%（confirmed 6-12%）/ self-review 50-51%（confirmed 25-46%）と非対称で、PR レビューが `pre_major 50 → 報告 7 件`・4 本中 3 本が報告 0 件になっていた。**本版は打ち手ではなく観測**を足す（現状 n=14 で「型が的外れ」の証拠はまだ無いので、プロンプト修正を先に当てない）。
+
+### Added
+
+- **`adversarial_verify.inflated_axes`** — `severity_inflated` の**型別内訳**。反証エージェントは既に `axis` を返しているので、語彙に `overstated-impact` / `miscategorized` を足して `prompts/reviewer-common.md`「降格される典型パターン」の 4 型に対応させ、型ごとに数える（`pre-existing` / `intended` → `base_derived`）。**軸が返らなかった件は `unknown`** に落とし、publish が **合計 == `severity_inflated`** を fail-fast で確かめる（型が取れなくても件数は落とさない）
+- **`below_threshold_counts.demoted_types`** — reviewer が `{{SEVERITY_THRESHOLD}}` を跨いで自分で降格した分の型別内訳。**`inflated_axes` と同じ語彙**にしてあり、上流降格と下流降格を同じ軸で並べて読める。合計が `below_threshold_counts` の合計を超えると fail-fast
+- **`review-retro.sh` の型別内訳を skill 別に出す**。非対称そのものが観測対象なので skill を潰して合算しない。内訳が 1 件も無い間は待ち状態を 1 行出す（黙ると「型は取れている」と読まれる / #131 と同じ型の誤読）
+- 回帰テスト 13 本（publish の検証 10 / retro の出力 3）
+
+### なぜ観測だけなのか
+
+`design-notes/scoring-rationale.md` が用意している切り分け（「型が的外れ」か「そもそも上流で直せない」か）は、**どの降格典型で落ちたかが payload に残っていない**ため進められなかった。仮説は「review 側の reviewer に base 文脈が構造的に届いていない」（self-review は変更意図をメインコンテキストが知っているが、review は PR diff から復元するしかなく、4 型のうち `pre-existing` / `intended` の判定材料が不足する）。**`base_derived` が支配的だと出れば、打ち手はプロンプトの表現ではなく「review 側に base 側の情報を渡す」になる** — その分岐をデータで決めるための計測。
+
 ## [2.74.0] - 2026-08-20
 
 `review-retro.sh` の ⚠️ シグナル「体数と fleet 時間の相関が高い」が **tier 交絡で常時点灯**していた（GitHub issue #151）。全 9 リポジトリ n=83 の実測。

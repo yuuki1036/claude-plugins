@@ -614,6 +614,53 @@ class RetroTest(ScriptTestBase):
         # 待ちメッセージ自身が説明として同じ語を含むので、**集計行だけ**を指して見る
         self.assertNotIn("本文を書いた ", out)
 
+    # ---- 降格の型別内訳（issue #150）----------------------------------------
+    def _axes_row(self, plugin: str, **types) -> dict:
+        d = {k: 0 for k in ("base_derived", "misread", "overstated_impact",
+                            "miscategorized", "unknown")}
+        d.update(types)
+        return {"_plugin": plugin, "effort": "high", "measurement_gaps": [],
+                "adversarial_verify": {"fired": True, "skip_reason": None, "gate_schema": 2,
+                                       "calibration_schema": 2, "confirmed": 0, "refuted": 0,
+                                       "uncertain": 0, "contested": 0,
+                                       "severity_inflated": sum(d.values()),
+                                       "inflated_axes": d}}
+
+    def test_demote_types_are_broken_down_by_skill(self):
+        """**非対称そのものが観測対象**なので skill を潰して合算しない（#150）."""
+        self._events([self._axes_row("code-review:review", base_derived=8, misread=2),
+                      self._axes_row("code-review:self-review", overstated_impact=1,
+                                     miscategorized=1)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("反証 `severity_inflated` の型別内訳", out)
+        self.assertIn("| review | 1 | 10 | 80% | 20% | 0% | 0% | 0% |", out)
+        self.assertIn("| self-review | 1 | 2 | 0% | 0% | 50% | 50% | 0% |", out)
+
+    def test_upstream_demotions_use_the_same_vocabulary(self):
+        """上流（reviewer の閾値跨ぎ降格）と下流（反証）を同じ軸で並べて読む."""
+        row = self._axes_row("code-review:review", base_derived=1)
+        row["below_threshold_counts"] = {
+            "blocker": 0, "critical": 0, "major": 0, "minor": 9,
+            "demoted_types": {"base_derived": 0, "misread": 3, "overstated_impact": 0,
+                              "miscategorized": 0, "unknown": 0}}
+        self._events([row])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("上流降格（`## below-threshold` 跨ぎ）の型別内訳", out)
+        self.assertIn("| review | 1 | 3 | 0% | 100% | 0% | 0% | 0% |", out)
+
+    def test_missing_breakdown_says_it_is_waiting(self):
+        """黙ると「型は取れている」と読まれる（#131 と同じ型の誤読）."""
+        self._events([self._verdict(2, 5) for _ in range(3)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("`inflated_axes` / `demoted_types` を持つサンプル待ち", out)
+        self.assertNotIn("反証 `severity_inflated` の型別内訳", out)
+
+    def test_no_verdict_sample_does_not_announce_waiting(self):
+        """反証が 1 度も走っていない回まで待ち行を出さない（待ち行がノイズになる）."""
+        self._events([{"effort": "high", "measurement_gaps": []} for _ in range(3)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("`inflated_axes` / `demoted_types` を持つサンプル待ち", out)
+
     # ---- 体数 vs fleet 時間の相関（issue #151）------------------------------
     # `size_tier` は体数と fleet の**両方**を決めるので、層別しない相関は tier の効果を
     # 体数の効果として計上する。下の fixture は tier 内 r=0.000 / 層別なし r=0.944 で、
@@ -809,6 +856,100 @@ class BelowThresholdCountsValidationTest(ScriptTestBase):
     def test_schema_marker_is_injected(self):
         self.publish(self._payload({"blocker": 0, "critical": 0, "major": 1, "minor": 5}))
         self.assertEqual(self.last_payload()["below_threshold_counts"]["schema"], 1)
+
+
+class DemoteTypesValidationTest(ScriptTestBase):
+    """降格の型別内訳の publish 側検証（GitHub issue #150）.
+
+    **用途は打ち手の選択**（`base_derived` が支配的なら直すのは prompt の表現ではなく
+    reviewer に渡る base 側の情報）。内訳が本体とずれると「型が取れなかった件」と
+    「数え漏らした件」が混ざり、その切り分けが消える。
+    """
+
+    TYPES = ("base_derived", "misread", "overstated_impact", "miscategorized", "unknown")
+
+    def _axes(self, **over) -> dict:
+        d = {k: 0 for k in self.TYPES}
+        d.update(over)
+        return d
+
+    def _payload(self, axes=None, inflated=2, demoted=None, below=(0, 0, 0, 4)) -> dict:
+        p = dict(BASE_PAYLOAD)
+        p["pre_adjust_counts"] = {"blocker": 0, "critical": 0, "major": 1, "minor": 9}
+        p["below_threshold_counts"] = dict(zip(("blocker", "critical", "major", "minor"), below))
+        if demoted is not None:
+            p["below_threshold_counts"]["demoted_types"] = demoted
+        av = dict(BASE_PAYLOAD["adversarial_verify"])
+        av.update({"confirmed": 0, "refuted": 0, "uncertain": 0,
+                   "severity_inflated": inflated, "contested": 0})
+        if axes is not None:
+            av["inflated_axes"] = axes
+        p["adversarial_verify"] = av
+        return p
+
+    def test_matching_axes_total_passes(self):
+        r = self.publish(self._payload(self._axes(base_derived=2), demoted=self._axes()))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.last_payload()["adversarial_verify"]["inflated_axes"]["base_derived"], 2)
+        # **記録されている回に gap を立てない**（立てると retro が母集団から外し、
+        # 内訳を書いた回ほど集計から消える）
+        self.assertNotIn("payload:adversarial_verify.inflated_axes",
+                         self.last_payload()["measurement_gaps"])
+
+    def test_axes_total_mismatch_is_rejected(self):
+        """合計が `severity_inflated` と合わなければ止める（型不明は `unknown` へ）."""
+        r = self.publish(self._payload(self._axes(misread=1)))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("severity_inflated", r.stderr)
+        self.assertEqual(self.events(), [])
+
+    def test_unknown_bucket_absorbs_a_missing_axis(self):
+        """軸が返らなかった件を捨てずに数える経路（合計は維持される）."""
+        r = self.publish(self._payload(self._axes(base_derived=1, unknown=1)))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_missing_type_key_is_rejected(self):
+        axes = self._axes(base_derived=2)
+        axes.pop("unknown")
+        r = self.publish(self._payload(axes))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("非負整数でない", r.stderr)
+
+    def test_bool_is_rejected(self):
+        """`isinstance(True, int)` は真なので、弾かないと合計が静かに狂う."""
+        r = self.publish(self._payload(self._axes(base_derived=True, unknown=1)))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("非負整数でない", r.stderr)
+
+    def test_absent_axes_is_allowed_but_recorded_as_a_gap(self):
+        """内訳が要る回（降格が起きた回）の記録漏れは gap にする."""
+        r = self.publish(self._payload(None))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("payload:adversarial_verify.inflated_axes",
+                      self.last_payload()["measurement_gaps"])
+
+    def test_no_inflated_verdict_does_not_raise_a_gap(self):
+        """降格が 0 件の回まで gap にすると、記録漏れの信号がノイズに埋もれる."""
+        self.publish(self._payload(None, inflated=0, below=(0, 0, 0, 0)))
+        self.assertNotIn("payload:adversarial_verify.inflated_axes",
+                         self.last_payload()["measurement_gaps"])
+
+    def test_demoted_types_exceeding_below_threshold_is_rejected(self):
+        """跨ぐ降格で落ちた分は `## below-threshold` に計上済み — 超えるのは二重計上."""
+        r = self.publish(self._payload(self._axes(base_derived=2),
+                                       demoted=self._axes(misread=5), below=(0, 0, 0, 4)))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("below_threshold_counts の合計", r.stderr)
+
+    def test_absent_demoted_types_is_recorded_as_a_gap(self):
+        self.publish(self._payload(self._axes(base_derived=2)))
+        self.assertIn("payload:below_threshold_counts.demoted_types",
+                      self.last_payload()["measurement_gaps"])
+
+    def test_empty_below_threshold_does_not_raise_a_gap(self):
+        self.publish(self._payload(self._axes(base_derived=2), below=(0, 0, 0, 0)))
+        self.assertNotIn("payload:below_threshold_counts.demoted_types",
+                         self.last_payload()["measurement_gaps"])
 
 
 class FindingsClassSignalTest(ScriptTestBase):

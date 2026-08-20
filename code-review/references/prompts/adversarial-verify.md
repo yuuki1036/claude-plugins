@@ -46,6 +46,17 @@ reviewer が出した指摘を、それを形成していない独立エージ�
 - `uncertain`: どちらの方向にも具体根拠を出せなかった場合（**「たぶん大丈夫」「おそらく問題」は uncertain**。証拠なき却下・証拠なき同調を refuted/confirmed にしない）
 - `severity-inflated`: 問題は本物だが影響が過大評価されている場合（適正 severity を併記）
 
+### `severity-inflated` の型（axis に必ず入れる / GitHub issue #150）
+
+**どの型で降格したか**が残らないと、上流（reviewer 側）の何を直せばよいかが決まらない。`reviewer-common.md`「降格される典型パターン」の 4 型に対応させて axis を選ぶ:
+
+- `pre-existing` / `intended` … **base 由来**（この diff が導入していない / 意図的だと doc・テスト・PR 説明が示す）
+- `misread` … **読み違え**（到達経路・型・制約を読み違えている）
+- `overstated-impact` … **影響の過大見積もり**（発現に必要な前提を端点まで具体化できない / 縮退・リトライで吸収される / 影響が単一経路に閉じる）
+- `miscategorized` … **カテゴリの取り違え**（当面動く負債・実行時挙動に影響しない不備を高 severity にしている）
+
+**`severity-inflated` で `none` を返さない**。型を選べないなら、それは降格の根拠が無いということなので `confirmed` か `uncertain` にする。
+
 ### 出力フォーマット
 **受け取った指摘の件数だけ、以下のブロックを繰り返す**（1 件でも省略しない）。
 
@@ -53,7 +64,8 @@ reviewer が出した指摘を、それを形成していない独立エージ�
 
 - finding_id: <対象指摘の番号>
 - verdict: refuted | confirmed | uncertain | severity-inflated
-- axis: unreachable | pre-validated | misread | pre-existing | intended | none
+- axis: unreachable | pre-validated | misread | pre-existing | intended | overstated-impact | miscategorized | none
+  - **`overstated-impact` / `miscategorized` は `severity-inflated` 専用**（反証軸ではなく降格の型）。`refuted` にこの 2 つを使わない
 - evidence: <file:line + 具体的な反証/裏付け根拠。git 判定はコマンドと結果を添える>
 - suggested_severity: <severity-inflated の場合のみ。適正 severity>
 - note: <1 行。人間が最終判断するための要点>

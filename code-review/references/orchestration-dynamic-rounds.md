@@ -5,7 +5,7 @@
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @34e7126b -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @3d150994 -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @6a1fca18 -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @6392364d -->
 
 **このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は SKILL.md 側にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。
 
@@ -87,6 +87,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
    - **共通ブロック（`agent_ctx_file`）のパスを渡す**: PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` はそこに入っているので**プロンプトに再掲しない**（v2.63.0 / orchestration-guide.md `## 3.5`。値の意味は `## 1` / `## 1.1`） に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
    - `pre-existing` / `intended` 鮮度の git 判定（`git show <base>:<file>` / `git blame`）を反証エージェントに許可する
 3. 各 verdict（refuted / confirmed / uncertain / severity-inflated）を収集し、**finding_id で対象指摘と突合**してスコアリング step に渡す。verdict が返らなかった finding_id は verdict なし扱い（confirmed とも refuted とも解釈しない）
+   - **`severity-inflated` の `axis` を型ごとに数える**（GitHub issue #150）。`adversarial_verify.inflated_axes` として payload に載せる（orchestration-measurement.md `## 16`）。件数だけでは**どの降格典型で落ちたか**が残らず、上流較正が「型が的外れ」なのか「そもそも上流で直せない」のかを切り分けられない。**数えるのはメインコンテキストで、agent の追加起動は不要**
 3.5. **meta 由来指摘の追加バッチ**（meta-reviewer と同一 wave で発行しているため / v2.61.0）: 統合後の `[meta]` タグ付き指摘（`[meta:dup]` は除く）に triage-dynamic-gates.md `## 9` のゲート該当分があれば、**追加バッチ 1 体・上限 5 件**を同じ手順（手順 2 の作法）で起動し、verdict を手順 3 と同様に突合する。0 件なら起動しない（wave が増えない）。この 1 体は本体の上限 3 体とは別枠だが `agents.verify` には加算する
 4. **レポートの反証行の正本（両 skill・triage-guide からもここを参照する）**: `反証: 対象 N 件（うち実施 X 件 / 予算超過 Y 件 / 反証失敗 Z 件）/ 係争 M 件 / 取り下げ K 件`。
    - `N`（対象）= ゲートで選ばれた全件（予算超過分と手順 3.5 の meta 由来追加分を含む）、`X`（実施）= 実際に verdict が返った件数。**payload の `agents.verify_findings` は `X` と一致させる**（`N` ではない。同じ「対象」の語で別の量を数えない）

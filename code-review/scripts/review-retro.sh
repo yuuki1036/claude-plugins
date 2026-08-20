@@ -310,6 +310,36 @@ for e in events:
     for k in ("confirmed", "refuted", "uncertain", "severity_inflated", "contested"):
         L[k] += num(av.get(k)) or 0
 
+# ---- 6.1 降格の型別内訳（skill 別 / GitHub issue #150）---------------------
+# **どの型で落ちたか**が分かれば打ち手が決まる。`base_derived` が支配的なら直すのは
+# プロンプトの表現ではなく **reviewer に渡る base 側の情報**（review は PR diff から復元する
+# しかなく、self-review は変更意図をメインコンテキストが知っている）。**skill 別に出す**のは
+# 非対称そのものが観測対象だから（実測: 同一版・同一 effort・同一 tier で review 84-90% /
+# self-review 50%）。上流（reviewer の閾値跨ぎ降格）と下流（反証）を**同じ語彙**で並べる
+DEMOTE_TYPES = ("base_derived", "misread", "overstated_impact", "miscategorized", "unknown")
+
+
+def demote_rows(field, key):
+    """`{plugin: {n, total, <type>...}}`。内訳を持たない回は分母にも入れない。"""
+    rows = {}
+    for e in events:
+        parent = e["p"].get(field)
+        d = parent.get(key) if isinstance(parent, dict) else None
+        if not isinstance(d, dict):
+            continue
+        row = rows.setdefault(e["plugin"],
+                              dict({"n": 0, "total": 0}, **{k: 0 for k in DEMOTE_TYPES}))
+        row["n"] += 1
+        for k in DEMOTE_TYPES:
+            v = num(d.get(k)) or 0
+            row[k] += v
+            row["total"] += v
+    return rows
+
+
+inflated_axes = demote_rows("adversarial_verify", "inflated_axes")
+demoted_types = demote_rows("below_threshold_counts", "demoted_types")
+
 # ---- 7. 動的層の発火率と skip 理由（版マーカー + スコープで層別） -----------
 def verdict_total(d):
     """反証レイヤーの「価値」は verdict が返った件数（findings_added を持たない層）。"""
@@ -623,6 +653,7 @@ if as_json:
                                  for t, n_t, rr in tier_r_rows],
         "spans": {k: {"median": m, "n": c} for k, m, c in spans},
         "yields": yields, "verdict_layers": verdict_layers,
+        "inflated_axes": inflated_axes, "demoted_types": demoted_types,
         "findings_class": {"n": len(fc_rows), "n_raw": len(fc_raw),
                            "dropped_schema": fc_dropped_schema, "total": fc_total, **fc},
         "recall_skeptic": skeptic, "meta_reviewer": meta,
@@ -747,6 +778,32 @@ if verdict_layers:
         print("上流較正（v2.62.0）の効果判定は **層 %d を蓄積中**（%d/%d verdict）。"
               "この件数ではシグナルを出さない — triage-dynamic-gates.md `## 9`"
               % (newest_layer, verdict_layers[newest_layer]["total"], VERDICT_MIN))
+
+for _title, _rows, _note in (
+        ("反証 `severity_inflated` の型別内訳", inflated_axes, "下流（反証レイヤー）の降格"),
+        ("上流降格（`## below-threshold` 跨ぎ）の型別内訳", demoted_types,
+         "reviewer が自分で閾値を跨いで降格した分")):
+    if not any(r["total"] for r in _rows.values()):
+        continue
+    print()
+    print("**%s**（%s / **skill 別** — 非対称そのものが観測対象）" % (_title, _note))
+    print()
+    print("| skill | サンプル | 件数 | base 由来 | 読み違え | 影響過大 | カテゴリ違い | 型不明 |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|")
+    for _plugin in sorted(_rows):
+        _r = _rows[_plugin]
+        if not _r["total"]:
+            continue
+        print("| %s | %d | %d | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% |"
+              % (_plugin.split(":")[-1], _r["n"], _r["total"],
+                 *[pct(_r[k], _r["total"]) for k in DEMOTE_TYPES]))
+
+# **黙ると「型は取れている」と読まれる**（#131 と同じ型の誤読）。内訳が 1 件も無い間は、
+# 反証 verdict が貯まっていること自体を根拠に待ち状態を 1 行出す
+if verdict_layers and not any(r["total"] for r in inflated_axes.values()):
+    print()
+    print("**降格の型別内訳**は `inflated_axes` / `demoted_types` を持つサンプル待ち（#150）"
+          " — 件数だけでは「型が的外れ」と「そもそも上流で直せない」を切り分けられない")
 
 print()
 print("**動的層の発火**（**層ごとに分母が違う** — 各層の版マーカーで濾し、設計上の非該当"

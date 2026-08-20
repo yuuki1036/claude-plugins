@@ -2,7 +2,7 @@
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @a70a602f -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @1d90538a -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @f09710f8 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#5 @9df185df -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
@@ -280,6 +280,7 @@ surface-aware 報告閾値（scoring-guide.md `## 報告マトリクス`）が h
 3. `pre-existing` / `intended` の鮮度は LLM 前に `git show <base>:<file>` / `git blame` で機械判定
 4. verdict を scoring（scoring-guide.md `## 反証レイヤーの verdict 反映`）に渡す。**高 severity は消さず注記**、MAJOR/MINOR のみ取り下げ可（理由は付録に記録）
 5. 1 体が複数 verdict を返す（バッチ）。**全 finding_id 分の verdict が揃っているか突合し、欠落は verdict なし扱い**にする（欠落を confirmed とも refuted とも解釈しない）
+6. **`severity-inflated` は `axis`（降格の型）まで数えて payload に載せる**（`adversarial_verify.inflated_axes` / GitHub issue #150）。件数だけでは**上流較正の型が的外れなのか、そもそも上流で直せないのか**を切り分けられない
 
 ### effort 適応（5.5/5.6 とは別ゲート）
 
