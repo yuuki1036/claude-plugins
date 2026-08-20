@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.26.0] - 2026-08-20
+
+### Removed
+- **`git-commit-helper` の Step 4.5「UI 変更時の自動確認」を削除**。UI 差分を検知して AskUserQuestion（desktop 1 枚 / 複数 viewport / ローカル目視済み / スキップ）で撮影を確認していたが、コミットのたびに選択 UI が通常のチャット入力を奪うコストに撮影の価値が見合わない。commit 直前の通知は PreToolUse の `ui-verify-gate.sh`（非ブロッキング・additionalContext）だけに一本化する。撮影自体は `/ui-verify snap` と `pr-creator` Step 4.5（PR body への添付）に残る
+- 上記に伴い `git-commit-helper` skill / `commit` command の allowed-tools から `AskUserQuestion` を削除（本スキルでの唯一の用途だったため）
+
+### Changed
+- **pending flag（`.claude/.ui-verify-pending`）3 値仕様の正本を `ui-verify/SKILL.md` に移設**（旧正本は削除した git-commit-helper Step 4.5）。`verified-local` の書き込み主体を「git-commit-helper のユーザー選択」から「手動（撮影せず黙らせたいとき）」に変更し、コマンド例を明記
+- `ui-verify-gate.sh` の reminder 文言から git-commit-helper Step 4.5 への案内を削除し、`verified-local` の手動書き込み / flag 削除の 2 経路に変更
+
 ## [1.25.1] - 2026-08-17
 
 ### Fixed

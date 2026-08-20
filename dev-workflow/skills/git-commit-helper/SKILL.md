@@ -9,7 +9,6 @@ effort: medium
 allowed-tools:
   - Bash
   - Read
-  - AskUserQuestion
   - Skill
 ---
 
@@ -21,7 +20,7 @@ allowed-tools:
 
 - 推奨フロー: 実装 → `/self-review` → 修正 → `/git-commit-helper`
 - 理由: 同一コンテキストで生成と判定を行うと confirmation bias で見落としが増える
-- 自身では品質判定をしない（UI 変更時の snap のみ Step 4.5 で扱う）
+- 自身では品質判定をしない（UI 変更の動作確認も持たない。`ui-verify-gate.sh` が commit 直前に非ブロッキングで通知する）
 
 ## 実行手順
 
@@ -95,62 +94,6 @@ git log --oneline -10
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を呼ぶ。`--embed` を必ず付け、`--tone commit` を伝え、生成したコミットメッセージの description 部分を渡す。
 3. 返ってきた推敲済みテキストを description の代わりに使う。ただし **`<type>(<scope>):` prefix 構造と言語設定は変更しない（description 文面のみ推敲）。絶対厳守ルール（AI・ツール関連の記述/Co-Authored-By/Generated with 禁止）を維持。違反する結果は破棄**。変更があれば「何を変えたか」を一言添える。
 4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で従来どおり完了する。
-
-### 4.5 UI 変更時の自動確認（条件付き）
-
-以下すべてを満たす場合のみ実行する:
-
-- `.claude/.ui-verify-enabled` が存在（SessionStart の detect-web-project.sh が設定）
-- 変更差分に UI 拡張子ファイル（tsx/jsx/vue/svelte/css/scss/html/astro/mdx）が含まれる
-- `.claude/.ui-verify-pending` が存在 OR `.claude/screenshots/` に直近5分以内の snap がない
-- ユーザー引数に `--no-ui-verify` が含まれない
-
-#### probe / spike fast path（撮影スキップを default に）
-
-ブランチ名に以下のキーワードが含まれる場合は「PR 性質的に撮影不要 / 1 枚で十分」と判定し、`AskUserQuestion` の **default 選択肢を「ローカル目視済み」に倒す**。本人が必要だと思ったら明示的に「desktop 1 枚」を選択できる。
-
-- `probe` / `spike` / `stage1` / `compat` / `verify` / `poc` / `experiment`
-
-判定: `git branch --show-current | grep -iE '(probe|spike|stage1|compat|verify|poc|experiment)'`
-
-#### AskUserQuestion 多段化（4 択）
-
-「撮る / スキップ」の二択ではなく以下の 4 択で確認する:
-
-- question: "UI 変更を検知。snap を撮る？"
-- header: "snap"
-- options:
-  1. label: "desktop 1 枚" / description: "標準。証跡として 1 枚だけ撮影（推奨）"
-  2. label: "複数 viewport" / description: "レスポンシブ・レイアウト変更時。mobile/tablet/desktop を opt-in"
-  3. label: "ローカル目視済み" / description: "既に手元で確認済み。撮影せず verified-local としてマーク"
-  4. label: "スキップ" / description: "撮影せず unverified のまま続行（reminder hook は黙らない可能性あり）"
-
-probe fast path 該当時はオプション 3「ローカル目視済み」を default にする。それ以外は 1「desktop 1 枚」を default にする。
-
-#### 選択別の動作
-
-| 選択 | ui-verify 呼び出し | pending flag 操作 |
-|------|------------------|------------------|
-| desktop 1 枚 | `snap` モード（引数なし＝デフォルト desktop 1 枚） | `verified-snap` を書き込み |
-| 複数 viewport | `snap --viewports=mobile,desktop` 等（追加で viewport をユーザーに確認） | `verified-snap` を書き込み |
-| ローカル目視済み | 呼び出さない | `verified-local` を書き込み |
-| スキップ | 呼び出さない | `unverified` を書き込み（または削除） |
-
-保存先（撮影時）: `.claude/screenshots/commit-$(date +%s)/`
-
-#### pending flag 3 値仕様
-
-`.claude/.ui-verify-pending` の内容を以下の 3 値で管理する（旧仕様の「存在 / 非存在」から拡張）:
-
-| 値 | 意味 |
-|----|------|
-| `unverified` | 未確認。reminder hook が PR 作成時に「撮影推奨」を出す |
-| `verified-local` | ローカル目視済み。reminder hook はスキップ |
-| `verified-snap` | snap 撮影済み。reminder hook はスキップ |
-
-`ui-change-reminder.sh` が UI 変更を検知した時の初期値は `unverified`。git-commit-helper / ui-verify がユーザー選択に応じて上書きする。
-
-この分岐をスキップした場合でも、PreToolUse gate hook が `git commit` 実行時に reminder を出す点に注意する。
 
 ### 5. フック対応とプッシュ
 

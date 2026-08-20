@@ -207,7 +207,18 @@ PR タイプ判定はブランチ名・コミットメッセージ・差分か�
   mkdir -p .claude
   printf 'verified-snap\n%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .claude/.ui-verify-pending
   ```
-  pending flag は 3 値仕様（`unverified` / `verified-local` / `verified-snap`）。詳細は `git-commit-helper/SKILL.md` Step 4.5「pending flag 3 値仕様」を参照。
+  pending flag は 3 値仕様（正本はここ）:
+
+  | 値 | 意味 | 書き込む主体 |
+  |----|------|------------|
+  | `unverified` | 未確認。gate hook が `git commit` 直前に reminder を出す | `ui-change-reminder.sh`（UI ファイル変更検知時） |
+  | `verified-local` | ローカル目視済み。gate hook は黙る | 手動（撮影せず黙らせたいとき） |
+  | `verified-snap` | snap 撮影済み。gate hook は黙る | ui-verify（verify / tune / snap の完了時） |
+
+  撮影せず黙らせる場合は次を実行する:
+  ```bash
+  printf 'verified-local\n%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .claude/.ui-verify-pending
+  ```
 
 ## MCP Tool の使い方
 

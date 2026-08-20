@@ -37,4 +37,4 @@ case "$PENDING_STATUS" in
 esac
 
 # PreToolUse の plain stdout は到達保証が弱いため additionalContext で注入する（push-reminder.sh と同方式）
-safe_hook_emit_context "PreToolUse" "[ui-verify] UI 変更（${PENDING_SINCE}）後、動作確認が記録されていません（status: ${PENDING_STATUS}）。コミット前に /ui-verify snap で screenshot + console チェックを検討してください。（既に確認済みなら、git-commit-helper の Step 4.5 で「ローカル目視済み」を選択するか、rm ${PENDING_FLAG} で無視可能）"
+safe_hook_emit_context "PreToolUse" "[ui-verify] UI 変更（${PENDING_SINCE}）後、動作確認が記録されていません（status: ${PENDING_STATUS}）。コミット前に /ui-verify snap で screenshot + console チェックを検討してください。（既に目視確認済みなら printf verified-local を ${PENDING_FLAG} に書くか、rm ${PENDING_FLAG} で無視可能）"
