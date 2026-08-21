@@ -305,6 +305,44 @@ if isinstance(bt, dict) and isinstance(bt.get("demoted_types"), dict):
         )
         sys.exit(1)
 
+# ---- 動的層の `skip_reason` の語彙検証（v2.79.0 / `missing_coverage` と同型） ----
+# **正本（`## 16`）は層ごとに語彙を決めているのに検証が無かった** — `missing_coverage` が
+# 「規約だけでは守られず実データに自由文が 12 種混入していた」（issue #132）のとまったく
+# 同じ型で、実測でも `no-surface` が `surface-none` / `surface-not-detected` に割れていた
+# （全リポジトリ 91 件のうち 3 件。うち 1 件は #132 の対策より後）。retro の skip 理由集計は
+# `group_by` なので、**綴りが割れると「どのゲートで落ちているか」という唯一の用途が
+# その件数ぶん消える**。しかも消えたことが `unknown` ではなく別バケツとして出るので、
+# 集計を見ても欠測に見えない。
+#
+# **語彙外は fail-fast**（`missing_coverage` と同じ理由 — 正しい値は呼び出し側が知っており、
+# 落として直させても情報は失われない。黙って正規化はしない＝どれに寄せるかを推測すると
+# 別の綴り割れを作る）。**`fired=false` なのに `skip_reason` が無い回は gap に倒す**
+# （下の `payload:<field>.fired` と同じ流儀。書き忘れは寄せ先を推測できないので、
+# 落とす側ではなく可視化する側に置く）。
+SKIP_REASONS = {
+    "adversarial_verify": ("effort", "config", "scope", "emergency", "no-eligible-findings"),
+    "recall_skeptic":     ("effort", "config", "no-surface", "emergency", "scope"),
+    "meta_reviewer":      ("effort", "config", "no-high-severity", "size-tier",
+                           "emergency", "scope"),
+}
+for field, allowed in SKIP_REASONS.items():
+    d = payload.get(field)
+    # **`fired` が厳密に False の回だけ見る**。層ごとの欠落・`fired` の欠落は下の gap 側の
+    # 担当で、ここで拾うと同じ欠落に 2 つの是正先が立つ
+    if not isinstance(d, dict) or d.get("fired") is not False:
+        continue
+    sr = d.get("skip_reason")
+    if sr is not None and sr not in allowed:
+        sys.stderr.write(
+            "%s.skip_reason が語彙外: %s\n"
+            "許容値は %s（正本: references/orchestration-measurement.md `## 16`）。\n"
+            "**理由の補足はレポート本文に書く** — payload は集計用で、綴りが割れると "
+            "group_by が成立しない。**フィールドごと落として通さないこと**（欠落は "
+            "measurement_gaps に記録される）\n"
+            % (field, json.dumps(sr, ensure_ascii=False), " / ".join(allowed))
+        )
+        sys.exit(1)
+
 # duration_* は常にスクリプト側の値で上書きする（呼び出し側が渡していても勝つ）
 payload.update(json.loads(os.environ["REVIEW_DURS"]))
 
@@ -367,8 +405,15 @@ for field, marks in SCHEMA_MARKERS.items():
 # 無かった」を区別できず、ゲート設計の妥当性を計測で判断できなくなる（issue #129）
 for field in ("adversarial_verify", "recall_skeptic", "meta_reviewer"):
     d = payload.get(field)
-    if isinstance(d, dict) and "fired" not in d:
+    if not isinstance(d, dict):
+        continue
+    if "fired" not in d:
         gaps.append("payload:%s.fired" % field)
+    # **`fired=false` なのに理由が無い回**（v2.79.0 / 実測 8/49 件）。retro の skip 理由集計では
+    # `unknown` に化けるが、それだけでは「書き忘れ」と「その層に語彙が無い」を区別できない。
+    # 上の語彙検証が語彙外を落とすので、**残る汚染はこの経路だけ**になる
+    elif d.get("fired") is False and d.get("skip_reason") is None:
+        gaps.append("payload:%s.skip_reason" % field)
 
 # 型別内訳の記録漏れ（issue #150）。**「その型が無かった」と「数えなかった」を潰さない**ため、
 # 内訳が要る回（降格が実際に起きた回）に限って gap を立てる。層ごとスキップした回や

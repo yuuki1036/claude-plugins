@@ -263,6 +263,97 @@ class MissingCoverageValidationTest(ScriptTestBase):
         self.assertIn("payload:missing_coverage", self.last_payload()["measurement_gaps"])
 
 
+class SkipReasonValidationTest(ScriptTestBase):
+    """動的層の `skip_reason` の語彙検証（`missing_coverage` / #132 と同型）.
+
+    **期待値はスクリプトの `SKIP_REASONS` を読まず、doc（`## 16`）から独立に書く** —
+    検証機構の期待値をその機構自身で作ると、壊れていても全件 pass する（CLAUDE.md）。
+    """
+
+    def _payload(self, field: str, value, *, fired=False) -> dict:
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        p[field] = {"fired": fired}
+        if value is not ...:                      # `...` はキーごと落とす
+            p[field]["skip_reason"] = value
+        return p
+
+    def test_canonical_vocabulary_passes(self):
+        """doc `## 16` が列挙する値は 3 層とも通る."""
+        for field, allowed in (
+                ("adversarial_verify",
+                 ("effort", "config", "scope", "emergency", "no-eligible-findings")),
+                ("recall_skeptic", ("effort", "config", "no-surface", "emergency", "scope")),
+                ("meta_reviewer", ("effort", "config", "no-high-severity", "size-tier",
+                                   "emergency", "scope"))):
+            for reason in allowed:
+                with self.subTest(field=field, reason=reason):
+                    r = self.publish(self._payload(field, reason))
+                    self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_drifted_spelling_is_rejected(self):
+        """実データに出た綴り割れ（`no-surface` → `surface-none` 等）を落とす."""
+        for bad in ("surface-none", "surface-not-detected"):
+            with self.subTest(bad=bad):
+                r = self.publish(self._payload("recall_skeptic", bad))
+                self.assertEqual(r.returncode, 1)
+                self.assertIn("語彙外", r.stderr)
+                self.assertEqual(self.events(), [], "FATAL なのに publish されている")
+
+    def test_vocabulary_is_per_layer(self):
+        """**層をまたいだ流用も落とす** — 層ごとにゲートの意味が違う."""
+        r = self.publish(self._payload("recall_skeptic", "no-high-severity"))
+        self.assertEqual(r.returncode, 1, "meta の語彙が skeptic で通っている")
+        r = self.publish(self._payload("meta_reviewer", "no-surface"))
+        self.assertEqual(r.returncode, 1, "skeptic の語彙が meta で通っている")
+
+    def test_free_text_is_rejected(self):
+        bad = "effort（high 以下のため）"
+        r = self.publish(self._payload("meta_reviewer", bad))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("語彙外", r.stderr)
+        # **値をそのまま見せる**（`ensure_ascii=True` だと `\uXXXX` になり、日本語の混入では
+        # 何を直せばいいのか読めないメッセージになる）
+        self.assertIn(bad, r.stderr)
+
+    def test_fired_true_is_not_validated(self):
+        """`fired=true` の回は見ない（skip 理由の集計に入らないので実害が無い）.
+
+        ここを厳格にすると、計測に影響しない書き方の揺れで publish が丸ごと死ぬ。
+        **語彙外の値で確かめる** — 語彙内の値だと「見ていない」と「見て通した」が同じ結果になる。
+        """
+        r = self.publish(self._payload("recall_skeptic", "起動したので理由なし", fired=True))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_missing_reason_becomes_a_gap_not_a_failure(self):
+        """書き忘れは**寄せ先を推測できない**ので落とさず可視化する（実測 8/49 件）."""
+        for value in (None, ...):
+            with self.subTest(value=value):
+                r = self.publish(self._payload("recall_skeptic", value))
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("payload:recall_skeptic.skip_reason",
+                              self.last_payload()["measurement_gaps"])
+
+    def test_recorded_reason_does_not_raise_a_gap(self):
+        """**理由が書けている回に gap を立てない** — 立てると欠測率が常時 100% になり、
+        「⚠️ が出たときだけ行動する」契約が壊れる（否定側の liveness ガード）."""
+        r = self.publish(self._payload("recall_skeptic", "no-surface"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        gaps = self.last_payload()["measurement_gaps"]
+        self.assertNotIn("payload:recall_skeptic.skip_reason", gaps)
+        # gap 欄そのものが消えていたら上の assertNotIn は恒真になる
+        self.assertIsInstance(gaps, list)
+
+    def test_fired_missing_keeps_the_fired_gap(self):
+        """`fired` ごと落ちた回は `.fired` 側の gap のまま（是正先が違う）."""
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        p["recall_skeptic"] = {"surface": False}
+        self.publish(p)
+        gaps = self.last_payload()["measurement_gaps"]
+        self.assertIn("payload:recall_skeptic.fired", gaps)
+        self.assertNotIn("payload:recall_skeptic.skip_reason", gaps,
+                         "同じ欠落に 2 つの是正先が立っている")
+
+
 class TokenAndDispatchPayloadTest(ScriptTestBase):
     """publish が `tokens` / `dispatch` を payload に載せる（GitHub issue #142 / #143）.
 

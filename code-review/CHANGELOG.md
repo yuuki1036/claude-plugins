@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.79.0] - 2026-08-21
+
+### Added
+
+- **動的層の `skip_reason` を publish 時に語彙検証する**（`missing_coverage` / issue #132 と同型）。正本（`orchestration-measurement.md ## 16`）は層ごとに語彙を決めているのに検証が無く、実測で `no-surface` が `surface-none` / `surface-not-detected` に割れていた（全リポジトリ 91 件中 3 件。**うち 1 件は #132 の対策より後**）。retro の skip 理由集計は `group_by` なので、綴りが割れると「どのゲートで落ちているか」がその件数ぶん消え、しかも**別バケツとして出るため集計上は欠測に見えない**。語彙外は publish せず `FATAL` で落とす（黙って正規化しない — 寄せ先を推測すると別の綴り割れを作る）。層をまたいだ流用（skeptic に `no-high-severity` 等）も弾く
+- **`measurement_gaps` に `payload:<field>.skip_reason` を追加**。`fired=false` なのに理由が無い回（実測 8/49 件）は retro で `unknown` に化けるだけで、「書き忘れ」と「語彙に無い」を区別できなかった。**語彙外と違い寄せ先を推測できない**ので、落とさず可視化する側に置く（`payload:<field>.fired` と同じ流儀）
+
 ## [2.78.2] - 2026-08-21
 
 ### Changed
