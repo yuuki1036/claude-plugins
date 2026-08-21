@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.80.0] - 2026-08-21
+
+### Added
+
+- **自己申告の `agents` と機械計測の `dispatch.agents` の食い違いを publish が検知する**（GitHub issue #154）。実測で **review 側だけ内訳合計が 3 割足りない**（dispatch 28 対 内訳 19 / 27 対 20。self-review は 6/6 件で完全一致）。`agents` は**体数中央値・体数 vs fleet の相関・`sub_output_k` との相関すべての分母**なので、片方の skill で取りこぼすと skill 間の比較が成立せず、#150 の非対称（`severity_inflated` が review 84-90% / self-review 50%）を「体数の差」で説明できるかどうかも検証できない
+  - 突合は `explorer + reviewer + specialist + round2 + verify` に**動的層の `fired` ぶんを足して**から行う（`agents` は meta / skeptic を含まない契約のため。補正しないと self-review まで恒常的にずれ、review 固有という信号が埋もれる）。`verify_findings` / `explorer_waves` は体数ではないので足さない
+  - 食い違ったら `measurement_gaps` に **`agents-mismatch`** を積む。**fail-fast にしない** — 差の存在自体が観測対象で、publish を止めると計測が丸ごと消える（`inflated_axes` の合計不一致を落とすのとは非対称）。**まず発生率を測る**段で、原因の特定と `agents` の機械計測化は次段（#154 の 2 / 3）
+
 ## [2.79.0] - 2026-08-21
 
 ### Added

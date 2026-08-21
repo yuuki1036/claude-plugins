@@ -578,6 +578,77 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         if "tokens" in p:
             self.assertEqual(p["tokens"]["window"], "since-t0-late")
 
+    # ---- `agents`（自己申告）と `dispatch.agents`（機械計測）の突合 / issue #154 ----
+
+    def _with_agents(self, agents: dict, **layers) -> dict:
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        p["agents"] = agents
+        for field, fired in layers.items():
+            p[field] = {"fired": fired, "skip_reason": None if fired else "effort"}
+        return p
+
+    def test_matching_agent_counts_raise_no_gap(self):
+        """一致する回に gap を立てない（立つと発生率が常時 100% になり信号が死ぬ）."""
+        self.write_transcript([[0, 5]])                     # 実測 2 体
+        self.publish(self._with_agents({"explorer": 0, "reviewer": 2}), env=self.env_home())
+        p = self.last_payload()
+        self.assertEqual(p["dispatch"]["agents"], 2, "前提: 機械計測が 2 体")
+        self.assertNotIn("agents-mismatch", p["measurement_gaps"])
+
+    def test_mismatch_is_recorded_without_failing_publish(self):
+        """**fail-fast にしない** — 止めるとその回の計測が丸ごと消える（#154）."""
+        self.write_transcript([[0, 5, 9]])                  # 実測 3 体 / 申告 2 体
+        r = self.publish(self._with_agents({"explorer": 0, "reviewer": 2}), env=self.env_home())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertIn("agents-mismatch", p["measurement_gaps"])
+        # **両フィールドが残っていること**が「差の大きさを gap に載せない」判断の前提
+        self.assertEqual(p["dispatch"]["agents"], 3)
+        self.assertEqual(p["agents"]["reviewer"], 2)
+
+    def test_fired_layers_are_added_before_comparing(self):
+        """`agents` は meta / skeptic を含まない契約なので `fired` ぶんを足してから比べる.
+
+        補正しないと self-review まで恒常的にずれ、**review 固有という信号が埋もれる**。
+        """
+        self.write_transcript([[0, 5, 9, 12]])              # 実測 4 体 = reviewer 2 + 動的層 2
+        self.publish(self._with_agents({"explorer": 0, "reviewer": 2},
+                                       recall_skeptic=True, meta_reviewer=True),
+                     env=self.env_home())
+        p = self.last_payload()
+        self.assertEqual(p["dispatch"]["agents"], 4, "前提: 機械計測が 4 体")
+        self.assertNotIn("agents-mismatch", p["measurement_gaps"],
+                         "動的層を足さずに比べている")
+
+    def test_non_headcount_keys_are_not_summed(self):
+        """`verify_findings` / `explorer_waves` は**体数ではない**ので足さない.
+
+        どちらも `agents` の中に整数で同居しているため、キー名で絞らずに整数を拾うと
+        黙って加算され、**一致しているのに `agents-mismatch` が立ち続ける**（＝欠測率が
+        飽和して #154 の観測目的そのものが消える）。
+        """
+        self.write_transcript([[0, 5]])                     # 実測 2 体
+        self.publish(self._with_agents(
+            {"explorer": 0, "reviewer": 2, "verify_findings": 10}), env=self.env_home())
+        p = self.last_payload()
+        self.assertEqual(p["agents"]["explorer_waves"], 0, "前提: 打点由来の値も同居している")
+        self.assertNotIn("agents-mismatch", p["measurement_gaps"])
+
+    def test_unfired_layers_are_not_added(self):
+        """`fired=false` の層は起動していないので足さない（逆方向の取り違え）."""
+        self.write_transcript([[0, 5]])                     # 実測 2 体
+        self.publish(self._with_agents({"explorer": 0, "reviewer": 2},
+                                       recall_skeptic=False, meta_reviewer=False),
+                     env=self.env_home())
+        self.assertNotIn("agents-mismatch", self.last_payload()["measurement_gaps"])
+
+    def test_undeterminable_dispatch_does_not_raise_the_mismatch_gap(self):
+        """発行パターンを引けない回は `dispatch` gap のまま（是正先が違う）."""
+        self.publish(self._with_agents({"explorer": 0, "reviewer": 2}), env=self.env_home())
+        gaps = self.last_payload()["measurement_gaps"]
+        self.assertIn("dispatch", gaps, "前提: 判定不能な回")
+        self.assertNotIn("agents-mismatch", gaps)
+
 
 class LatePublishTest(ScriptTestBase):
     """遅れて publish した self-review は `duration_min` を欠測に倒す（issue #133）."""

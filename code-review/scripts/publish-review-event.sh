@@ -486,6 +486,29 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
                 "`⚠️ 計測: agent を逐次発行した（一括発行の規約違反 / #142）`\n"
                 % (disp.get("agents"), disp.get("waves"), disp.get("max_solo_run"))
             )
+        # ---- 自己申告（`agents`）と機械計測（`dispatch.agents`）の突合（issue #154） ----
+        # **review 側だけ内訳合計が合わない**（実測: dispatch 28 に対し内訳 19 / 別の回は
+        # 27 対 20。self-review は 6/6 件で完全一致）。`agents` は**体数中央値・体数 vs
+        # fleet の相関・sub_output_k との相関**すべての分母なので、片方の skill で 3 割
+        # 取りこぼしていると **review と self-review を並べた比較が成立しない**。
+        #
+        # **fail-fast にしない** — 差の存在自体が観測対象で、publish を止めると計測が丸ごと
+        # 消える（`inflated_axes` の合計不一致を落とすのと非対称に扱う理由がここ。あちらは
+        # 「内訳が本体とずれたら用途が消える」ので落とす側）。まず発生率を測る。
+        #
+        # **`agents` は動的層を含まない契約**（`## 16`: meta / skeptic は専用フィールドで
+        # 観測する）なので、突合の前に `fired` の数を足す。この補正なしで比べると
+        # self-review まで恒常的にずれ、**review 固有の欠陥という信号がノイズに埋もれる**。
+        declared = sum(v for k, v in agents.items()
+                       if k in ("explorer", "reviewer", "specialist", "round2", "verify")
+                       and isinstance(v, int) and not isinstance(v, bool))
+        declared += sum(1 for f in ("recall_skeptic", "meta_reviewer")
+                        if isinstance(payload.get(f), dict) and payload[f].get("fired") is True)
+        measured = disp.get("agents")
+        # **差の大きさは gap に載せない**（`measurement_gaps` は識別子の配列という契約）。
+        # 両フィールドが payload に残っているので、下流はいつでも引き算し直せる
+        if isinstance(measured, int) and not isinstance(measured, bool) and measured != declared:
+            gaps.append("agents-mismatch")
     else:
         # 判定できなかった（agent 0 体 / transcript や meta.json を引けない）。**「一括だった」
         # にも「逐次だった」にも倒さない** — 規約が守られたことの証拠が無い回として残す
