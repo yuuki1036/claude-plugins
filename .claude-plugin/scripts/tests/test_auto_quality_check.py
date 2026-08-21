@@ -24,15 +24,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from git_env import scrub
+
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / ".claude-plugin" / "scripts" / "auto-quality-check.sh"
 SAFE_HOOK = ROOT / ".claude-plugin" / "lib" / "safe-hook.sh"
-
-# git が hook 実行時に渡す変数（`GIT_INDEX_FILE=.git/index` の**相対パス**等）を落とす。
-# 本スイートは pre-commit からも走るので、残すと使い捨てリポジトリで外側の index を掴む
-GIT_HOOK_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
-                "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-                "GIT_QUARANTINE_PATH", "GIT_REFLOG_ACTION", "GIT_EDITOR")
 
 #: プラグイン関連とみなされ検査が走るべきパス（ヘッダのトリガー条件の実体）
 TRIGGERING = (
@@ -78,7 +74,7 @@ class AutoQualityCheckTest(unittest.TestCase):
 
     # ---- 使い捨てリポジトリの操作 -------------------------------------------
     def git(self, *args: str) -> subprocess.CompletedProcess[str]:
-        env = {k: v for k, v in os.environ.items() if k not in GIT_HOOK_ENV}
+        env = scrub()   # git hook 由来の変数を落とす（正本と理由は `git_env`）
         return subprocess.run(["git", *args], cwd=str(self.root), capture_output=True,
                               text=True, env=env, check=True)
 
@@ -142,7 +138,7 @@ class AutoQualityCheckTest(unittest.TestCase):
         )
 
     def env(self, with_encoder: bool = True) -> dict[str, str]:
-        env = {k: v for k, v in os.environ.items() if k not in GIT_HOOK_ENV}
+        env = scrub()
         # **キャッシュの置き場をテスト専用に向ける**（実 `/tmp` を汚さない / リポジトリ
         # パスが鍵なので使い捨てリポジトリごとに別ファイルになる）。
         # **リポジトリの外に置く** — 中に置くとキャッシュを書いた事実が `git status` に

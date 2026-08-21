@@ -23,6 +23,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from git_env import scrub
+
 SCRIPT = Path(__file__).resolve().parents[1] / "bump-version.sh"
 
 
@@ -54,7 +56,17 @@ class BumpVersionSandbox(unittest.TestCase):
         self._tmp.cleanup()
 
     def _git(self, *args):
-        return subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True)
+        return subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True,
+                              env=self._env())
+
+    def _env(self) -> dict[str, str]:
+        """git hook 由来の変数を落とした env（正本と理由は `git_env` の docstring）.
+
+        **`bump-version.sh` 自身も git を叩く**ので、`_git` だけでなくスクリプトの起動にも
+        通す（linked worktree から commit すると `demo-plugin` の `init` コミットが
+        **実リポジトリ**に乗っていた / GitHub issue #158）。
+        """
+        return scrub()
 
     def _commit_all(self):
         self._git("add", "-A")
@@ -62,7 +74,7 @@ class BumpVersionSandbox(unittest.TestCase):
 
     def _bump(self, *args, expect_ok: bool = True):
         r = subprocess.run(["bash", str(SCRIPT), self.PLUGIN, *args],
-                           cwd=self.root, capture_output=True, text=True)
+                           cwd=self.root, capture_output=True, text=True, env=self._env())
         if expect_ok:
             # **異常終了を「変わっていない」で素通りさせない**。中断しても
             # 「置換されないこと」を確かめる系のテストは全部緑になってしまう

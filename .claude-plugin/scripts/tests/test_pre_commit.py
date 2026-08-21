@@ -12,18 +12,15 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
+from git_env import scrub
+
 ROOT = Path(__file__).resolve().parents[3]
 HOOK = ROOT / ".githooks" / "pre-commit"
-
-GIT_HOOK_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
-                "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-                "GIT_QUARANTINE_PATH", "GIT_REFLOG_ACTION", "GIT_EDITOR")
 
 
 class PreCommitTest(unittest.TestCase):
@@ -48,7 +45,7 @@ class PreCommitTest(unittest.TestCase):
                               text=True, env=self.env(), check=True)
 
     def env(self) -> dict[str, str]:
-        return {k: v for k, v in os.environ.items() if k not in GIT_HOOK_ENV}
+        return scrub()   # git hook 由来の変数を落とす（正本と理由は `git_env`）
 
     def write(self, rel: str, body: str, mode: int = 0o644) -> Path:
         path = self.root / rel

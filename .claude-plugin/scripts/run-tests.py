@@ -47,6 +47,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TESTS_DIR = ".claude-plugin/scripts/tests"
 
+sys.path.append(str(ROOT / TESTS_DIR))
+from git_env import scrub   # noqa: E402  （テスト側と同じ正本を使う。複製しない）
+
 #: SIGTERM を送ってから SIGKILL に上げるまでの猶予（秒）
 GRACE_SEC = 2.0
 
@@ -156,8 +159,15 @@ def _install_signal_forwarding(pgid: int) -> None:
 
 
 def _spawn(cmd: list[str], log) -> subprocess.Popen:
-    """テストを**別プロセスグループ・同一セッション**で起動する（出力は `log` へ）."""
-    kwargs = {"cwd": str(ROOT), "stdout": log, "stderr": log}
+    """テストを**別プロセスグループ・同一セッション**で起動する（出力は `log` へ）.
+
+    **git hook 由来の環境変数はここで落とす**（GitHub issue #158）。この起動口は
+    pre-commit から呼ばれるので、linked worktree で commit すると `GIT_DIR` に
+    **実リポジトリの絶対パス**が入って渡ってくる。個々のテストも `git_env.scrub()` を
+    通す規約だが（`python3 -m unittest discover` で直に走らせる経路が残るため）、
+    **壊れ方が実リポジトリの破壊**なので、強制される経路は入口でも落とす。
+    """
+    kwargs = {"cwd": str(ROOT), "stdout": log, "stderr": log, "env": scrub()}
     if sys.version_info >= (3, 11):  # mutation-ok: 境界をずらしても fallback が同じグループを作る
         kwargs["process_group"] = 0
     else:  # 3.10 以下には process_group が無い

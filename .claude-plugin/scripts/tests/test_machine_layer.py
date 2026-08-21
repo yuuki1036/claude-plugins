@@ -54,6 +54,8 @@ class MachineLayerTest(unittest.TestCase):
         """`unittest discover` の対象を置く（`python3 -m unittest` を実際に走らせる）."""
         d = self.scripts / "tests"
         d.mkdir(exist_ok=True)
+        # 本物の `run-tests.py` は起動口で git hook 由来の env を落とすのに `git_env` を読む
+        shutil.copy2(Path(__file__).resolve().parent / "git_env.py", d / "git_env.py")
         body = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n"
         body += "        self.assertTrue(True)\n" if passing else "        self.fail('わざと失敗')\n"
         (d / "test_stub.py").write_text(body, encoding="utf-8")

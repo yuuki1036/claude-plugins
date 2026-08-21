@@ -16,11 +16,12 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+from git_env import scrub
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -61,18 +62,10 @@ class HookTestCase(unittest.TestCase):
     def plugin_root(self) -> Path:
         return ROOT / self.PLUGIN
 
-    # git が hook 実行時に渡す変数（`GIT_INDEX_FILE=.git/index` 等の相対パス）を落とす。
-    # 残すと、テスト内の使い捨てリポジトリで git を叩いたときに外側の index を掴んで落ちる
-    # （本スイート自身が pre-commit から走るため、その環境で通ることが要件）
-    GIT_HOOK_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
-                    "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-                    "GIT_QUARANTINE_PATH", "GIT_REFLOG_ACTION", "GIT_EDITOR")
-
     def run_hook(self, payload: dict, cwd: Path | None = None,
                  env_extra: dict | None = None) -> HookResult:
-        env = dict(os.environ)
-        for key in self.GIT_HOOK_ENV:
-            env.pop(key, None)
+        # git hook 由来の変数を落とす（正本と理由は `git_env` の docstring）
+        env = scrub()
         env["CLAUDE_PLUGIN_ROOT"] = str(self.plugin_root)
         # **`CLAUDE_PROJECT_DIR` を継承させない**。event bus の書き込み先は
         # `${CLAUDE_PROJECT_DIR:-$PWD}` なので、この変数が入った環境（＝Claude Code の
@@ -121,8 +114,8 @@ class HookTestCase(unittest.TestCase):
 class TempGitRepo:
     """使い捨ての git リポジトリ（hook が git を叩くので本物が要る）."""
 
-    #: git hook 由来の変数を落とした環境（外側の index を掴まないため）
-    ENV = {k: v for k, v in os.environ.items() if k not in HookTestCase.GIT_HOOK_ENV}
+    #: git hook 由来の変数を落とした環境（外側のリポジトリを掴まないため / `git_env`）
+    ENV = scrub()
 
     def __enter__(self) -> Path:
         self._tmp = tempfile.TemporaryDirectory()

@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-import os
 import subprocess
 import tempfile
 import time
 import unittest
 from pathlib import Path
+
+from git_env import scrub
 
 REPO = Path(__file__).resolve().parents[3]
 PLUGIN = REPO / "code-review"
@@ -62,29 +63,22 @@ class ScriptTestBase(unittest.TestCase):
         self.root = Path(self._tmp.name).resolve()
         self.addCleanup(self._tmp.cleanup)
         (self.root / "tmp").mkdir()
-        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        # **ここも `_env()` を通す**。`_env()` にだけスクラブが入っていて `setUp` に
+        # 入っていなかったため、linked worktree から commit すると `git init` 以降が
+        # **実リポジトリ**に当たっていた（GitHub issue #158 / 詳細は `git_env` の docstring）
+        env = self._env()
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True, env=env)
         # **リポジトリ内に author を設定する**。env の `GIT_AUTHOR_*` は init commit にしか
         # 効かず、テストが独自に `git commit` すると **CI（global config が無い環境）で
         # だけ失敗する**（実測: ubuntu で `git commit` が黙って失敗し、rename のはずの diff が
         # 「新規ファイル」になってテストが落ちた）
         for key, value in (("user.email", "t@example.com"), ("user.name", "t")):
-            subprocess.run(["git", "config", key, value], cwd=self.root, check=True)
+            subprocess.run(["git", "config", key, value], cwd=self.root, check=True, env=env)
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "init"],
-                       cwd=self.root, check=True)
-
-    # **git が hook 実行時に渡す変数を落とす**。`GIT_INDEX_FILE=.git/index` のような
-    # **相対パス**が入っており、テスト内の使い捨てリポジトリで git を叩くと外側の index を
-    # 掴もうとして落ちる（実測: pre-commit から本スイートを走らせると
-    # `fatal: .git/index: index file open failed: Not a directory` で 21 件失敗した）。
-    # **本スイートは pre-commit と CI で強制される**ので、その環境で通ることが要件。
-    GIT_HOOK_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
-                    "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-                    "GIT_QUARANTINE_PATH", "GIT_REFLOG_ACTION", "GIT_EDITOR")
+                       cwd=self.root, check=True, env=env)
 
     def _env(self, **extra: str) -> dict[str, str]:
-        env = {**os.environ, "TMPDIR": str(self.root / "tmp"), "CLAUDE_PLUGIN_ROOT": str(PLUGIN)}
-        for key in self.GIT_HOOK_ENV:
-            env.pop(key, None)
+        env = scrub(TMPDIR=str(self.root / "tmp"), CLAUDE_PLUGIN_ROOT=str(PLUGIN))
         # **ctype は UTF-8 に固定する**（実利用の通常環境に揃える）。C ロケールでは
         # `"$VAR（"` のような日本語隣接の展開が**動いてしまう**ため、UTF-8 でのみ出る
         # `unbound variable`（実測: detect-recent-review.sh の WARN が exit 1 になっていた）を

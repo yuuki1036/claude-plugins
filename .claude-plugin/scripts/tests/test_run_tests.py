@@ -91,6 +91,8 @@ class RunTestsTest(unittest.TestCase):
         self.tests = self.scripts / "tests"
         self.tests.mkdir(parents=True)
         shutil.copy2(SCRIPT, self.scripts / "run-tests.py")
+        # `run-tests.py` は起動口で git hook 由来の env を落とすのに `git_env` を読む
+        shutil.copy2(SCRIPT.parent / "tests" / "git_env.py", self.tests / "git_env.py")
         self.marker = self.tests / "leaked.pid"
         self.addCleanup(self.kill_leftovers)
 
