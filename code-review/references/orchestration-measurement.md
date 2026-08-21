@@ -444,7 +444,16 @@ Claude Code の transcript（`~/.claude/projects/<slug>/*.jsonl`）は各アシ�
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh"              # publish 直後に毎回実行する
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --last 20    # 直近 N 件だけ
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --json       # 機械可読
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --logs ~/Projects/*/.claude/events.jsonl   # 合算
 ```
+
+**`--logs` は複数リポジトリの合算**（issue #160）。**シグナルのサンプル数下限は 1 リポジトリ単独では構造的に届かない**（skeptic は `fired >= 15`、meta は `fired >= 10`。実測ではマシン全体 91 件のうち 70 件が単一リポジトリに偏り、他は各 1〜6 件）。一方でプラグインの改善判断に使う指標は発火率・verdict 分布・歩留まりが中心で、**どのリポジトリで回したかに依存しない**ため合算が正しい母集団になる場面が多い。
+
+- **探索はしない**（`--all-repos` のような暗黙の探索範囲を持たせない）。渡したファイルだけを見るので**どの母集団で判断したかが履歴に残る**
+- **読めないパスは exit 2**（判定不能）。タイプミスを「サンプルが少ない」に化けさせない
+- **重複は 2 段で落とす** — 同一ファイルの重複指定（glob の重なり）はパスの実体で、同一イベントが別ファイルにある場合（worktree へコピーされた `events.jsonl`）は `ts` + `plugin` + payload 全体で
+- **出力は必ず「どのログから何件」を出す**（`--logs` の有無を問わず）。⚠️ シグナルの契約は母集団が言えて初めて成立するので、件数だけでは再現できない
+- **マシン間の合算は別問題**（`events.jsonl` は gitignored でマシンローカル / #141）。**自分の見えている範囲を全体と誤認しない** — 実測で、別マシンから見た本リポジトリの `review:completed` が 2 件だったため「publish が落ちている」と読まれた回がある（同時点で開発機側には 30 件あった / #159）
 
 **出力の読み方**（本ファイルの他節が正本である解釈をここに複製しない。以下は「どの節に戻るか」の対応表）:
 

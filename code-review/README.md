@@ -153,6 +153,7 @@ publish の直後に `scripts/review-retro.sh` が蓄積イベントを集計し
 bash <plugin>/scripts/review-retro.sh              # 全期間 + 直近 30 日
 bash <plugin>/scripts/review-retro.sh --last 20    # 直近 N 件
 bash <plugin>/scripts/review-retro.sh --json       # 機械可読
+bash <plugin>/scripts/review-retro.sh --logs ~/Projects/*/.claude/events.jsonl   # 複数リポジトリを合算
 ```
 
 同一 diff への二重レビュー（self-review 直後に PR レビューを回す等）は `scripts/detect-recent-review.sh` が diff の内容ダイジェストで突合し、検出時に続行可否を確認する。

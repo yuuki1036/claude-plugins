@@ -11,6 +11,13 @@
 #   review-retro.sh --since 2026-07-01  # 起点を指定
 #   review-retro.sh --last 20           # 直近 N 件だけ
 #   review-retro.sh --json              # 機械可読（**0 件・ログ不在でも必ず JSON を返す**）
+#   review-retro.sh --logs ~/Projects/*/.claude/events.jsonl   # 複数ログを合算（issue #160）
+#
+# **`--logs` は明示指定のみ**（探索はしない）。指定したファイルが読めなければ exit 2 で止める
+# — 手作業の連結を置き換えるのが目的なので、**タイプミスを「サンプルが少ない」に化けさせない**。
+# 同一イベントが複数ファイルに現れる（worktree のコピー等）場合は `ts` + `plugin` + payload 全体
+# で dedup する。**どのログから何件採ったかは必ず出力する**（母集団が言えないと
+# 「⚠️ が出たときだけ行動する」契約が成立しない）。
 #
 # **層別の原則**: 版マーカー（`pre_adjust_counts.schema` / `*.gate_schema` /
 # `attribution_schema` / `calibration_schema`）で切り、日付では切らない。マーケットプレイス
@@ -19,12 +26,19 @@
 # `== N` にすると次の版 bump でセクションが無音で消える）。
 set -uo pipefail
 
-SINCE=""; LAST=""; AS_JSON=0
+SINCE=""; LAST=""; AS_JSON=0; EXPLICIT_LOGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --since) [ $# -ge 2 ] || { echo "FATAL: --since に値が必要" >&2; exit 2; }; SINCE="$2"; shift 2 ;;
     --last)  [ $# -ge 2 ] || { echo "FATAL: --last に値が必要" >&2; exit 2; }; LAST="$2"; shift 2 ;;
     --json)  AS_JSON=1; shift ;;
+    # **後続の非フラグ引数をすべて取る**（`--logs ~/Projects/*/.claude/events.jsonl` のように
+    # シェルの glob をそのまま渡せる形にする。`--log` の繰り返しだと glob が使えない）
+    --logs)
+      shift
+      while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do EXPLICIT_LOGS+=("$1"); shift; done
+      [ ${#EXPLICIT_LOGS[@]} -gt 0 ] || { echo "FATAL: --logs にパスが必要" >&2; exit 2; }
+      ;;
     *) echo "FATAL: 未知の引数: $1" >&2; exit 2 ;;
   esac
 done
@@ -36,7 +50,14 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `review_event_logs` / `review_main_root` だけで、どちらも init に依存しない
 . "$HERE/lib/review-paths.sh"
 
-if ! review_event_logs; then
+if [ ${#EXPLICIT_LOGS[@]} -gt 0 ]; then
+  # **明示指定は黙って捨てない**。探索（下）と違い、読めないパスはユーザーの誤りなので
+  # 「サンプルが少ない」に化けさせず判定不能（exit 2）で止める
+  for _log in "${EXPLICIT_LOGS[@]}"; do
+    [ -f "$_log" ] || { echo "FATAL: --logs のパスが読めない: $_log" >&2; exit 2; }
+  done
+  REVIEW_EVENT_LOGS=("${EXPLICIT_LOGS[@]}")
+elif ! review_event_logs; then
   # **`--json` でも必ず JSON を返す**（機械可読の契約は「データがある場合だけ」ではない）
   if [ "$AS_JSON" = "1" ]; then
     echo '{"n":0,"reason":"no-events-log","signals":[]}'
@@ -68,7 +89,22 @@ if since_raw:
         sys.stderr.write("WARN: --since を解釈できないので無視する: %s\n" % since_raw)
 
 events, seen = [], set()
-for path in sys.argv[1:]:
+#: どのログから何件採ったか（母集団の再現性 / issue #160）。dedup で落ちた件数も数える
+#
+# **同一ファイルの重複指定は先に畳む**（glob が重なる / `.` 付きパスを混ぜる）。畳まないと
+# 2 回読んで 2 回目が全部イベント重複になり、`ログ 2 本 … 3 件 / 3 件` と**合計が n を超える
+# 表示**になる。ファイルが違えば（worktree へコピーされた events.jsonl 等）ここは通り、
+# 下のイベント単位の dedup が拾う
+source_paths, _seen_real, dup_paths = [], set(), 0
+for _path in sys.argv[1:]:
+    _real = os.path.realpath(_path)
+    if _real in _seen_real:
+        dup_paths += 1
+        continue
+    _seen_real.add(_real)
+    source_paths.append(_path)
+dup_dropped = 0
+for path in source_paths:
     try:
         # errors="replace" は必須。既定の strict だと UnicodeDecodeError（OSError ではなく
         # ValueError 系）が下の except を貫通し、**非 UTF-8 バイト 1 つで恒久クラッシュ**する。
@@ -89,7 +125,8 @@ for path in sys.argv[1:]:
             continue
         ts = ev.get("ts") or ""
         key = (ts, ev.get("plugin"), json.dumps(ev.get("payload"), sort_keys=True))
-        if key in seen:           # 候補パスが同一ファイルを指す場合の重複除去
+        if key in seen:           # 同一イベントが複数ログに現れる場合の重複除去
+            dup_dropped += 1        # （候補パスの重なり / worktree へコピーされた events.jsonl）
             continue
         seen.add(key)
         try:
@@ -99,7 +136,7 @@ for path in sys.argv[1:]:
         except ValueError:
             when = None
         events.append({"ts": ts, "when": when, "plugin": ev.get("plugin", "?"),
-                       "p": ev.get("payload") or {}})
+                       "p": ev.get("payload") or {}, "src": path})
 
 events.sort(key=lambda e: e["ts"])
 if since:
@@ -107,13 +144,34 @@ if since:
 if last_n:
     events = events[-last_n:]
 
+def source_rows(rows):
+    """**集計に実際に入った件数**をログごとに返す（0 件のログも母集団の一部として残す）."""
+    counted = {path: 0 for path in source_paths}
+    for e in rows:
+        counted[e["src"]] = counted.get(e["src"], 0) + 1
+    return [{"path": path, "n": counted[path]} for path in source_paths]
+
+
+def sources_line():
+    extra = "（同一ファイルの重複指定 %d 本を除外）" % dup_paths if dup_paths else ""
+    return ("**母集団**: ログ %d 本%s / 重複イベント除外 %d 件"
+            % (len(source_paths), extra, dup_dropped))
+
+
 if not events:
     if as_json:
-        print(json.dumps({"n": 0, "reason": "no-samples-in-range", "signals": []},
+        print(json.dumps({"n": 0, "reason": "no-samples-in-range", "signals": [],
+                          "sources": source_rows(events),
+                          "sources_dropped_duplicates": dup_dropped,
+                          "sources_dropped_paths": dup_paths},
                          ensure_ascii=False))
     else:
         print("## レビュー振り返り")
         print("対象サンプルが 0 件。")
+        print()
+        print(sources_line())
+        for row in source_rows(events):
+            print("- `%s` … %d 件" % (row["path"], row["n"]))
     sys.exit(0)
 
 now = datetime.now(timezone.utc)
@@ -678,6 +736,9 @@ elif meta["fired"] >= 10 and pct(meta["valuable"], meta["fired"]) < 20:
 if as_json:
     print(json.dumps({
         "n": n_all, "n_recent_30d": len(recent), "by_plugin": by_plugin,
+        # 母集団の再現性（どのログから何件採ったか / issue #160）
+        "sources": source_rows(events), "sources_dropped_duplicates": dup_dropped,
+        "sources_dropped_paths": dup_paths,
         "tiers": [{"key": k, "n": n, "fleet_median": f, "agents_median": a}
                   for k, n, f, a in tier_rows],
         # 層別なしは交絡を含む参考値（後方互換のため残す）。判定は by_tier 側で行う
@@ -712,6 +773,10 @@ if as_json:
     sys.exit(0)
 
 print("## レビュー振り返り（review:completed n=%d）" % n_all)
+print()
+print(sources_line())
+for row in source_rows(events):
+    print("- `%s` … %d 件" % (row["path"], row["n"]))
 print()
 for label, value in report:
     print("- **%s**: %s" % (label, value))

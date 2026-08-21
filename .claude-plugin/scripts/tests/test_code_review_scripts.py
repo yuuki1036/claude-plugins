@@ -1493,5 +1493,116 @@ class FindingsClassSignalTest(ScriptTestBase):
         self.assertNotIn("持つサンプルが 0 件", out)
 
 
+class RetroExplicitLogsTest(ScriptTestBase):
+    """`--logs` による複数ログの合算（GitHub issue #160）.
+
+    **判断に足りるサンプル数は合算しないと出ない**（実測: 判定に `fired >= 15` を要求する
+    シグナルがあるのに、1 リポジトリ単独では構造的に届かない）。合算そのものは 30 行の
+    jq で書けるが、それを毎回手で組むと**母集団が記録に残らない**（#150 の「83 件」と
+    #160 の「91 件」はどのファイルを拾ったか再現できない）。ここで測るのは
+    ①複数ログを足せるか ②重複を落とすか ③**母集団を言えるか**の 3 点。
+    """
+
+    def write_log(self, rel: str, rows: list[dict], start: int = 0) -> Path:
+        """`self.root` 配下の任意の位置にログを置く（別リポジトリの events.jsonl 相当）."""
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(
+            json.dumps({"ts": "2026-08-%02dT00:00:00Z" % (start + i + 1),
+                        "plugin": "code-review:self-review",
+                        "event": "review:completed", "payload": r}, ensure_ascii=False)
+            for i, r in enumerate(rows)) + "\n", encoding="utf-8")
+        return path
+
+    def base_rows(self, n: int) -> list[dict]:
+        return [{"effort": "high", "size_tier": "medium", "measurement_gaps": []}
+                for _ in range(n)]
+
+    def retro(self, *args: str) -> str:
+        res = self.run_script(RETRO, *args, env=self._env())
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout
+
+    def test_sums_events_across_logs(self):
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
+        b = self.write_log("repo-b/.claude/events.jsonl", self.base_rows(3), start=10)
+        out = self.retro("--logs", str(a), str(b))
+        self.assertIn("n=5", out)
+
+    def test_reports_which_log_contributed_how_many(self):
+        """**母集団を言えないと「⚠️ が出たときだけ行動する」契約が成立しない**."""
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
+        b = self.write_log("repo-b/.claude/events.jsonl", self.base_rows(3), start=10)
+        out = self.retro("--logs", str(a), str(b))
+        self.assertIn("ログ 2 本", out)
+        self.assertIn("`%s` … 2 件" % a, out)
+        self.assertIn("`%s` … 3 件" % b, out)
+
+    def test_a_log_with_no_samples_is_still_listed(self):
+        """0 件のログを黙って消さない（「見ていない」と「見たが 0 件」は別）."""
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
+        empty = self.write_log("repo-b/.claude/events.jsonl", [])
+        out = self.retro("--logs", str(a), str(empty))
+        self.assertIn("`%s` … 0 件" % empty, out)
+
+    def test_the_same_event_in_two_files_is_counted_once(self):
+        """worktree へコピーされた events.jsonl は同一イベントを持つ（実測: 3 本が同じ 70 件）."""
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(3))
+        copy = self.root / "wt" / ".claude" / "events.jsonl"
+        copy.parent.mkdir(parents=True)
+        copy.write_text(a.read_text(encoding="utf-8"), encoding="utf-8")
+        out = self.retro("--logs", str(a), str(copy))
+        self.assertIn("n=3", out)
+        self.assertIn("重複イベント除外 3 件", out)
+        self.assertIn("`%s` … 0 件" % copy, out)
+
+    def test_the_same_path_twice_is_read_once(self):
+        """**合計が n を超える表示を作らない**。glob が重なるだけで起きる."""
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(3))
+        out = self.retro("--logs", str(a), "./" + str(a.relative_to(self.root)))
+        self.assertIn("n=3", out)
+        self.assertIn("ログ 1 本（同一ファイルの重複指定 1 本を除外）", out)
+
+    def test_json_carries_the_population(self):
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
+        b = self.write_log("repo-b/.claude/events.jsonl", self.base_rows(3), start=10)
+        got = json.loads(self.retro("--logs", str(a), str(b), "--json"))
+        self.assertEqual(got["n"], 5)
+        self.assertEqual(got["sources"], [{"path": str(a), "n": 2}, {"path": str(b), "n": 3}])
+        self.assertEqual(got["sources_dropped_duplicates"], 0)
+
+    def test_flags_after_logs_are_still_parsed(self):
+        """`--logs` は後続の非フラグ引数だけを取る（`--last` を食べない）."""
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(5))
+        got = json.loads(self.retro("--logs", str(a), "--last", "2", "--json"))
+        self.assertEqual(got["n"], 2)
+
+    def test_an_unreadable_path_is_fatal(self):
+        """**明示指定の誤りを「サンプルが少ない」に化けさせない**（exit 2 = 判定不能）."""
+        res = self.run_script(RETRO, "--logs", str(self.root / "nope.jsonl"), env=self._env())
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("読めない", res.stderr)
+
+    def test_logs_without_a_value_is_fatal(self):
+        res = self.run_script(RETRO, "--logs", env=self._env())
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("パスが必要", res.stderr)
+
+    def test_explicit_logs_replace_discovery(self):
+        """**探索結果と混ぜない**（再現性のために「渡したものだけ」を見る）."""
+        self.write_log(".claude/events.jsonl", self.base_rows(4))   # 探索で拾われる側
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
+        got = json.loads(self.retro("--logs", str(a), "--json"))
+        self.assertEqual(got["n"], 2)
+        self.assertEqual([r["path"] for r in got["sources"]], [str(a)])
+
+    def test_discovery_still_reports_its_source(self):
+        """`--logs` を使わない既定の経路でも母集団は出す."""
+        self.write_log(".claude/events.jsonl", self.base_rows(3))
+        out = self.retro()
+        self.assertIn("ログ 1 本", out)
+        self.assertIn(".claude/events.jsonl` … 3 件", out)
+
+
 if __name__ == "__main__":
     unittest.main()
