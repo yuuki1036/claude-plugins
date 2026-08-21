@@ -7,6 +7,7 @@
 | `## 13` | publish 先をメインリポジトリのルートに固定する（worktree で計測ごと消えるのを防ぐ） |
 | `## 13.1` | `TS_FILE` のパス導出（並行セッションの衝突回避） |
 | `## 14` | 所要時間の区間分割計測（t0 / t1 / wave / t2 / t3） |
+| `## 15` | 区間・wave 単価の**実測ベースライン**（数値の正本。Phase 0 の目安提示はここを引く） |
 | `## 16` | `review:completed` payload 契約（両 skill 共通の正本） |
 | `## 17` | トークン消費の計測（transcript からの事後集計。publish とは独立に任意実行） |
 | `## 18` | 蓄積イベントの振り返り集計（publish の直後に毎回実行。シグナルの読み方） |
@@ -95,7 +96,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 
 > **`t1` を explorer 発行直前に置く理由（v2.41.0 の修正）**: `t1` を reviewer 発行直前に固定すると、explorer wave（high で最大 4 体 / xhigh・max で 6 体）の実時間が triage 区間に丸ごと混入し、「メインコンテキストの思考時間の代理指標」という `duration_triage_min` の定義が成立しない。explorer を配置したレビューで triage が膨らみ、**「思考量が主因」という誤診に誘導される**（そしてプロンプト圧縮という誤った打ち手を選ばせる）。agent wave はすべて fleet 側に入れる。
 
-> **explorer wave 区間（現 `wave --explorer`）を足した理由（GitHub issue #100 D）**: 上の修正の副作用として、fleet 区間に「explorer wave + reviewer wave + 動的ラウンド + プロンプト構築 + scoring」が全部入り、**どの wave が何分かかったのかが分からない**。`t1`→ 最初の `wave --explorer` を切り出すと explorer wave 単独の実時間が取れ、triage-guide.md `## 5.1` が Phase 0 で提示する「wave あたり目安 6〜16 min」を実測で裏付けられる（v2.43.0 の実測: explorer 2 体で 5.9 分）。
+> **explorer wave 区間（現 `wave --explorer`）を足した理由（GitHub issue #100 D）**: 上の修正の副作用として、fleet 区間に「explorer wave + reviewer wave + 動的ラウンド + プロンプト構築 + scoring」が全部入り、**どの wave が何分かかったのかが分からない**。`t1`→ 最初の `wave --explorer` を切り出すと explorer wave 単独の実時間が取れ、triage-guide.md `## 5.1` が Phase 0 で提示する wave 単価の目安を実測で裏付けられる（v2.43.0 の実測: explorer 2 体で 5.9 分。**累計の実測値は `## 15`**）。
 >
 > **この区間も「純粋な agent 時間」ではない**（explorer プロンプトを書く時間が入る）。ただし explorer は体数も 1 体あたりのプロンプトも reviewer より小さいので汚染は相対的に小さい。**「メインコンテキストの思考時間」を測るフィールドではない** — それは上記のとおり原理的に測れない。
 >
@@ -110,7 +111,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 - `duration_min`（= `$DUR`）は **従来どおり全体**（t0→t3）。後方互換のため意味を変えない
 - `duration_triage_min` = t0→t1: PR/diff 収集・Phase 0・起動前検算。**メイン思考量の代理指標として使わない**（explorer 未配置なら reviewer プロンプト構築が丸ごとここに入り、配置していても explorer プロンプトの構築が入る）
 - `duration_fleet_min` = t1→t2: 最初の agent 発火から初回レポートまで。**agent wave の実時間 + プロンプト構築 + scoring/レポート生成**。プロンプト構築コストはここに含まれる（上記のとおり分離できない）
-- `duration_explore_min` = t1→ 最後の explorer wave 打点: explorer wave の実時間（`duration_fleet_min` の内数）。explorer 未起動時は `-1`。**wave 単価の実測値**として triage-guide.md `## 5.1` の目安時間を裏付けるのに使う
+- `duration_explore_min` = t1→ 最後の explorer wave 打点: explorer wave の実時間（`duration_fleet_min` の内数）。explorer 未起動時は `-1`。**wave 単価の実測値**として triage-guide.md `## 5.1` の目安時間を裏付けるのに使う（集計後の値の置き場は `## 15`）
 - `duration_synthesis_min` = 最後の agent wave 打点→t2: **最後の agent wave 回収から初回レポートまで**（`duration_fleet_min` の内数 / v2.60.0）。scoring・dedup・verdict 反映・レポート生成で、**agent 非稼働が構造的に保証される唯一の区間**。オーケストレーター時間の**下限値**として読む（wave 間のプロンプト構築・分冊 Read は wave 区間側に残るため全量ではない）。打点欠測時は `-1`
   - **用途**: `duration_fleet_min` が大きいときの打ち手の切り分け。`duration_synthesis_min` が支配的なら打ち手は**メイン側**（分冊の遅延読み込み・可変部の圧縮・scoring の機械化）であって体数削減ではない。逆に小さければ wave 側（直列 wave 数・1 体あたりの探索量）を見る
   - **`duration_explore_min` と同じく fleet の内数**なので、区間の和を `duration_fleet_min` と一致させる検算をしない
@@ -125,6 +126,25 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 - **triage / fleet / closing の和は `duration_min` と一致しない**ことがある（マーカー欠測時）。一致を仮定した検算をしない。`duration_explore_min` は fleet の**内数**なので和に足さない
 - 旧サンプルとの層別: `duration_triage_min` フィールドの存在が v2.41.0 以降の publish マーカーになる（triage-guide.md `## 7` のロールバック条件が `agents` フィールドで版を切るのと同じ流儀。日付では切らない）。`duration_explore_min` の存在が v2.43.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降のマーカー
 - **`duration_*` が並行セッションに汚染されていないこと**は `## 13.1` の `TS_FILE` セッション識別に依存する。識別子を持たない版（v2.43.0 未満）の値は、同一リポジトリで worktree を並列運用していた期間について「もっともらしい過小値」を含みうるため、ロールバック判断の基準側に使わない
+
+## 15. 区間・wave 単価の実測ベースライン（実測値の正本 / v2.78.2 / GitHub issue #155）
+
+**各区間の実測値はここだけに書く。** `triage-guide.md ## 5` の Phase 0 出力と `## 5.1` は**目安の提示に留め、数値を二重に持たない**（実測が動いたら本節だけを直せば提示側が追随する / CLAUDE.md の SSoT 方針）。
+
+| 区間 | 実測 | n | 出典フィールド |
+|---|---|---:|---|
+| explorer wave | **中央値 6 分** | 29 | `duration_explore_min` |
+| explorer 以降の wave 間隔 | **14〜34 分** | 5 | `dispatch.max_inter_wave_sec` |
+| triage（t0→t1） | 中央値 2 分 | 53 | `duration_triage_min` |
+| fleet（t1→t2） | 中央値 41 分 | 52 | `duration_fleet_min` |
+| synthesis（最後の wave→t2） | 中央値 1.5 分 | 26 | `duration_synthesis_min` |
+| closing（t2→t3） | 中央値 17 分 | 21 | `duration_closing_min`（**review のみ** / 大半が人間待ち） |
+
+- **単一の「wave あたり N 分」では表せない。** explorer wave は 6 分で安く、目安を外しているのは **reviewer → 反証** の間（5/5 件が 16 分超）。層で分けて提示する
+- **`max_inter_wave_sec` は「wave 単価」そのものではない** — wave N の agent 実行時間と、その後のオーケストレーターの統合・dedup・scoring が合算されている（分離は GitHub issue #153 の `dispatch` 拡張）。ただし **Phase 0 の見積もりが約束するのは実時間**なので、内訳が割れるまでは合算値のまま目安に使う
+- 別経路の実測（review / small 帯 / `## 14` の v2.60.0 の注記）とも矛盾しない: agent wave 実時間 約 24 分（reviewer 8.5 / meta 8.9 / verify 6.2 ＝ 各 wave 内最長）に対しオーケストレーター側が約 20 分で、**reviewer wave の 8.5 + 20 = 28.5 分**は上のレンジに収まる。`## 14` は内訳側・本表は合算側で、**同じ現象を別の切り口で測っている**
+- **更新の条件**: #153 の内訳分離（agent 実行 vs 待ち時間）が payload に載ったら「explorer 以降の wave 間隔」を 2 行に割る。それまで**この数字を下げる方向に丸めない**（見積もりが外れるコストの方が高い）
+- 集計は `scripts/review-retro.sh`（`## 18`）。**本表は手で更新する** — retro は毎回の実行時点の値を出すが、doc 側の目安は版として固定しておかないと提示が回ごとにぶれる
 
 ## 16. `review:completed` payload 契約（review 締めフロー 4・self-review Step 6.4 共通 / 正本）
 

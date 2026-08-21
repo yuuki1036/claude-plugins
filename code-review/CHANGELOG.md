@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.78.2] - 2026-08-21
+
+### Changed
+
+- **wave 単価の目安を実測に合わせ、数値の正本を `orchestration-measurement.md ## 15`（新設）に一本化した**（GitHub issue #155）。Phase 0 が提示していた「wave あたり 6〜16 min」は実測（`dispatch.max_inter_wave_sec` n=5 で 14〜34 分）と 2 倍以上ずれていた。**単一の数字では表せない** — explorer wave だけが 6 分（`duration_explore_min` n=29）で安く、外しているのは reviewer → 反証 の間なので、`explorer 約 6 min / 以降 14〜34 min` と層で分けて出す。`triage-guide.md ## 5 / ## 5.1` と `triage-dynamic-gates.md ## 9` / `pending-optimizations ## 7` は提示・参照に留め、数値を二重に持たない
+- **`pending-optimizations ## 4`（explorer wave の廃止）を「採らない」で決着させた**（同 #155）。保留条件「`duration_explore_min` が貯まって wave 単価が分かってから判断する」は n=29 で満たされ、**explorer wave は直列 wave の中で最も安い**（6 分 vs 14〜34 分）ことが分かった。廃止で減るのは 6 分だけで reviewer の探索量は増えるため、トレードオフの向きが「採らない」に確定した。再検討の条件を明記してある
+
 ## [2.78.1] - 2026-08-21
 
 ### Fixed

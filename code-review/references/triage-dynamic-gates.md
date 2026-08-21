@@ -292,7 +292,7 @@ surface-aware 報告閾値（scoring-guide.md `## 報告マトリクス`）が h
 
 > adaptive(5.5) は high で起動・meta-reviewer(5.6) は xhigh+ のみ。反証レイヤーは「非対称ゾーンを high から狙う」独自ゲートで、5.6 とは起動条件が異なる。
 
-**xhigh / max ゲートと非対称ゾーン論の緊張（据え置きの明示 / GitHub issue #100 補足）**: 本節冒頭は反証対象の設計思想を「詰めると取り下がるのは**不確実だが報告される非対称ゾーン**」と述べているが、xhigh / max のゲートは「報告ゾーン全体 + MAJOR」なので **confidence 95+ の MAJOR / BLOCKER / CRITICAL が全件対象**になる。これは**最も取り下がりにくい層に、直列 wave 1 本（triage-guide.md `## 5.1` の目安で 6〜16 min）を使う**ことを意味し、非対称ゾーン論からはみ出す。実測例: 52 分のレビューで最終的に残った反証対象が MAJOR 3 件（conf 95 / 99 / 100）だけという構成になった。
+**xhigh / max ゲートと非対称ゾーン論の緊張（据え置きの明示 / GitHub issue #100 補足）**: 本節冒頭は反証対象の設計思想を「詰めると取り下がるのは**不確実だが報告される非対称ゾーン**」と述べているが、xhigh / max のゲートは「報告ゾーン全体 + MAJOR」なので **confidence 95+ の MAJOR / BLOCKER / CRITICAL が全件対象**になる。これは**最も取り下がりにくい層に、直列 wave 1 本（reviewer 以降の wave なので実測 14〜34 min / orchestration-measurement.md `## 15`）を使う**ことを意味し、非対称ゾーン論からはみ出す。実測例: 52 分のレビューで最終的に残った反証対象が MAJOR 3 件（conf 95 / 99 / 100）だけという構成になった。
 
 それでも据え置くのは、xhigh / max が**明示 escalation**（「小さな diff を深く読む」の意思表示）であり、この帯で偽陽性を 1 件通すコストが wave 1 本より大きいと判断しているため。ただし**この緊張とコストは記録しておく** — 壁時計を縮める必要が出たとき、xhigh の反証ゲートを「非対称ゾーン + BLOCKER/CRITICAL 95+」に狭める（MAJOR 95+ を外す）のが最初の候補になる。判断は `adversarial_verify` の `refuted` 内訳（95+ MAJOR の取り下げ実績）が貯まってから行う。
 

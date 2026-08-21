@@ -58,13 +58,22 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 
 **注意**: 高密度観点（bug-detection / security / spec-compliance / claude-md-compliance / error-handling / migration / performance）と specialist を `medium` に混ぜて測らないこと。難所の recall を落とすと A/B の結論が「安く見えて実は劣化」に倒れる。検証層（meta / skeptic / 反証）は 1 体固定なので profile 対象外のまま。
 
-## 4. explorer wave の廃止（直列 wave −1）
+## 4. explorer wave の廃止（直列 wave −1）— **採らないで決着**（v2.78.2 / GitHub issue #155）
 
 **現状**: explorer → reviewer の直列 1 wave。explorer の結果を reviewer へ選択的に注入する。
 
 **案**: explorer を廃し、reviewer に「必要なら自分で探索」させる。
 
-**採らない理由**: reviewer の探索量（＝ cache_write と往復）が増えるので、wave を 1 本減らす代わりに wave 内の時間が伸びる。**トレードオフの向きが不明**なうえ、explorer の「判定せず事実だけ集める」独立性は reviewer の確証バイアスを避ける設計上の要でもある。`duration_explore_min`（v2.43.0 で追加）が貯まって wave 単価が分かってから判断する。
+**保留条件は満たされた**: 旧版の保留理由は「`duration_explore_min`（v2.43.0 で追加）が貯まって wave 単価が分かってから判断する」だった。n=29 / 中央値 **6 分**（`orchestration-measurement.md ## 15`）で材料が揃ったので決着させる。
+
+**採らない理由**:
+
+- **explorer wave は直列 wave の中で最も安い**（6 分。reviewer 以降の wave は 14〜34 分）。廃止して減るのは 6 分だけで、**削る対象として最も割が悪い**
+- 一方で reviewer の探索量（＝ cache_write と往復）は増えるので、wave を 1 本減らす代わりに wave 内の時間が伸びる。旧版が「トレードオフの向きが不明」としていた点は、**片側だけ実測が付いて「採らない」に確定した**
+- explorer の「判定せず事実だけ集める」独立性は reviewer の確証バイアスを避ける設計上の要で、これは実測と無関係に維持される
+- **wave を削るなら見るのは reviewer → 反証 の間**（`## 15` / 内訳の分離は GitHub issue #153）
+
+**再検討の条件**: `duration_explore_min` の中央値が reviewer 以降の wave 単価に近づいたとき（= explorer 側の探索量が膨らんだ兆候）。**「wave 数を減らしたい」を理由に再検討しない** — 本節はその動機を実測で棄却した節である。
 
 ## 6. publish 脱落ガードの Stop hook 昇格
 
@@ -86,7 +95,7 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 
 **採らない理由（v2.67.0 時点）— 既定パスに直列 wave を 1 本足すため**:
 
-- meta-reviewer は xhigh / max 起点なので、**既定 high では 4.6 + 4.9 の wave がそもそも存在しない**回が多い。BLOCKER / CRITICAL 不在の回にこのゲートを足すと、**今まで wave が無かったところに wave が生える**（実測の wave 単価は 6〜16 分 / `triage-guide.md ## 5.1`）。token だけの増加ではない
+- meta-reviewer は xhigh / max 起点なので、**既定 high では 4.6 + 4.9 の wave がそもそも存在しない**回が多い。BLOCKER / CRITICAL 不在の回にこのゲートを足すと、**今まで wave が無かったところに wave が生える**（生えるのは reviewer 以降の wave なので実測 14〜34 分 / `orchestration-measurement.md ## 15`）。token だけの増加ではない
 - **xhigh / max では既に MAJOR 全件が対象**（`triage-dynamic-gates.md ## 9` の表）。つまり本案が効くのは high 限定で、そこがちょうど wave を新設する帯にあたる
 - **`## 9` には既にゲート幅の再監視条件がある**（閾値の正本は `triage-dynamic-gates.md ## 9`。**ここに数値を書き写さない** — 閾値が動いたときに片方だけ古くなる）。v2.65.0 で `fired` / `skip_reason` を記録し始めたばかりで**実測は 3/3 件**。判断の材料は揃いつつあるので、**先に条件を満たすまで待つ**のが repo の流儀（「サンプルが無いうちは判断しない」/ `triage-guide.md ## 7`）
 
