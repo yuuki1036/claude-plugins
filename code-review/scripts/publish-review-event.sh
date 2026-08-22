@@ -44,10 +44,12 @@ GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 # GCD が空のときに無条件で cd "$GCD/.." すると `/` に降りてしまうので必ず分岐する
 MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
 
-# ---- 所要時間フィールドを注入 ----------------------------------------------
+# ---- 計測フィールドの収集 --------------------------------------------------
+# **並び順に依存がある**（GitHub issue #161 で入れ替えた）: `durations` は打点が落ちた
+# 区間を agent の実測時刻で埋めるため `measure-tokens.sh` の結果を先に要る。よって
+# **トークン計測 → 補完値の算出 → durations → late-publish 判定 → 窓の命名**の順に並べる。
+# 旧版は durations が先頭にあり、`TOKENS_WINDOW` だけが late-publish に依存していた。
 PR_ARGS=(); [ -n "$PR" ] && PR_ARGS=(--pr "$PR")
-DURS=$(bash "$HERE/review-timing.sh" durations ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)
-read -r DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE DUR_SYNTHESIS <<< "${DURS:--1 -1 -1 -1 -1 -1}"
 
 # explorer wave の発行回数（`we` マーカーの行数）。一括発行が破られたことを事後に検知する
 # ための計測で、LLM の自己申告ではなくマーカーから導出する（GitHub issue #122）
@@ -67,26 +69,6 @@ DIFF_DIGEST=""; DIFF_FILES=""
 if KEYS=$(review_diff_keys "$DIFF_FILE_PATH"); then
   read -r DIFF_DIGEST DIFF_FILES <<< "$KEYS"
 fi
-
-# self-review は publish が「修正方針確認」より前にあり closing 区間が構造上 ≒0 になるため
-# -1（測定不能）を入れる。0 を publish すると「人間待ちが無かった」と誤読される（`## 14`）
-#
-# **遅れて publish した回（t2 から 10 分以上）は `duration_min` を欠測に倒す**（GitHub issue #133）。
-# self-review の `duration_min` は「t0 → Step 6.4」という契約なので、publish 脱落に後から気づいて
-# 修正作業の後に踏むと、契約と違う区間を**もっともらしい大きい値**として載せてしまう。t2→publish の
-# 生値（closing を -1 に潰す前）でしか判定できないのでここで見る。**review には掛けない** — あちらは
-# 締めフロー（人間待ち）を含むのが契約なので、大きいこと自体は正常
-LATE_PUBLISH=0
-case "$PLUGIN" in
-  *self-review)
-    case "$DUR_CLOSING" in
-      ''|-1|*[!0-9-]*) : ;;
-      *) [ "$DUR_CLOSING" -ge 10 ] && LATE_PUBLISH=1 ;;
-    esac
-    DUR_CLOSING=-1
-    ;;
-esac
-[ "$LATE_PUBLISH" = "1" ] && DUR=-1
 
 # ---- トークン消費と発行パターン（issue #126 / #142 / #143） -----------------
 # 体数削減が確実に効くのは壁時計ではなくトークン（triage-guide.md `## 7`）なのに、payload は
@@ -116,13 +98,163 @@ case "$PLUGIN" in
           TOK_ARGS=(--since "$SINCE_ISO")
           # **遅れて publish した回は窓に修正作業が混ざる**ので別の名前で出す。
           # 集計側は `since-t0` だけを使う契約なので、混ざった回は自動的に外れる
-          if [ "$LATE_PUBLISH" = "1" ]; then TOKENS_WINDOW="since-t0-late"; else TOKENS_WINDOW="since-t0"; fi
+          # **窓の名前は late-publish 判定の後で確定させる**（判定は下の `durations` に
+          # 依存し、その durations がこの計測結果に依存するため。`since-t0-late` への
+          # 書き換えは LATE_PUBLISH の確定直後に行う）
+          TOKENS_WINDOW="since-t0"
         fi
         ;;
     esac
     TOKENS_JSON=$(bash "$HERE/measure-tokens.sh" --json ${TOK_ARGS[@]+"${TOK_ARGS[@]}"} 2>/dev/null)
     ;;
 esac
+
+# ---- 打点が落ちた区間を agent の実測時刻で埋める（GitHub issue #161） -------
+# 区間打点はオーケストレーターの記憶に依存しており、実測で **v2.62.0 以降の 10 件中
+# 5 件が 1 つ以上落としていた**（`t1` 1 / `wave` 2 / `explorer-wave` 2 / `t2` 1）。
+# 打ち手を決めるための #156 / #153 のサンプルが、どちらも打点漏れで区間内訳を欠いていた。
+#
+# **`## 14` の「逆算による補完はしない」には当たらない**。あの禁止の射程は *publish
+# 時刻からの推定* で、それは誤値になる。ここで使うのは `measure-tokens.sh` が
+# `wave_clock` に出す **agent transcript の実測時刻**で、#142 が `dispatch` で確立した
+# 「wave は推定しない」経路と同じもの。**打点が有る区間には触らない**（review-timing 側で担保）。
+#
+# **`t2` は埋めない** — 初回レポート出力はメイン文脈のイベントで agent transcript に
+# 現れない。publish 時刻から逆算すれば欠測は消えるが、それが禁止されている当のもの。
+DERIVED_ARGS=(); DERIVED_MARKERS=""
+if [ -n "$TOKENS_JSON" ]; then
+  DERIVED=$(
+    REVIEW_TOKENS="$TOKENS_JSON" \
+    REVIEW_EPOCHS="$(bash "$HERE/review-timing.sh" epochs ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)" \
+    python3 - "$PAYLOAD" <<'PY'
+import json, os, sys
+
+
+def _num(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _emit(t1=None, we=None, w=None):
+    """`T1 WE W MARKERS`（欠測は `-`）。**識別子は `measurement_gaps` と同じ語彙**に揃える."""
+    names = {"t1": "t1", "we": "explorer-wave", "w": "wave"}
+    got = [k for k, v in (("t1", t1), ("we", we), ("w", w)) if v is not None]
+    print("%s %s %s %s" % (t1 if t1 is not None else "-", we if we is not None else "-",
+                           w if w is not None else "-",
+                           ",".join(names[k] for k in got) or "-"))
+    sys.exit(0)
+
+
+try:
+    tok = json.loads(os.environ.get("REVIEW_TOKENS") or "null")
+except ValueError:
+    tok = None
+clock = tok.get("wave_clock") if isinstance(tok, dict) else None
+# `wave_clock` は **`unresolved` が無い回にだけ**入る（wave 構成が信用できない回は出ない）
+if not isinstance(clock, list) or not clock:
+    _emit()
+
+raw = ((os.environ.get("REVIEW_EPOCHS") or "").split() + ["-"] * 5)[:5]
+t0, t1, we, w, t2 = (_num(x) for x in raw)
+
+# `agents.explorer` は SKILL の自己申告。**explorer wave の同定には突合としてしか使わない**
+# （体数が一致しなければ埋めない ＝ 推定に落とさない / #142 の原則）
+try:
+    agents = (json.loads(sys.argv[1]) or {}).get("agents") or {}
+except (ValueError, AttributeError, IndexError):
+    agents = {}
+explorer_n = agents.get("explorer")
+if not isinstance(explorer_n, int) or isinstance(explorer_n, bool) or explorer_n < 0:
+    explorer_n = 0
+
+
+def ok(v, lo):
+    """`t0 <= lo <= v <= t2` を満たすときだけ採る.
+
+    **矛盾する補完はしない** — 順序が崩れた値を入れると区間が負や過大になり、
+    「もっともらしい誤値」を publish することになる（`## 13.1` と同じ原則）。
+    """
+    if v is None:
+        return False
+    if t0 is not None and v < t0:
+        return False
+    if t2 is not None and v > t2:
+        return False
+    return not (lo is not None and v < lo)
+
+
+d_t1 = d_we = d_w = None
+
+# t1 = **最初の agent の起動時刻**。打点の定義は「最初の一括発行の直前」で、差は agent 起動の
+# オーバーヘッドぶん（秒オーダー）。区間は分で持つので丸めに吸収される
+if t1 is None and ok(_num(clock[0].get("start")), t0):
+    d_t1 = _num(clock[0].get("start"))
+
+eff_t1 = t1 if t1 is not None else d_t1
+
+# w = **最終 wave** の終了時刻。`end` は wave 内の全体の終了が取れたときだけ入るので、
+# 1 体でも欠ければここも埋まらない（#153 の縮退方向）
+if w is None and ok(_num(clock[-1].get("end")), eff_t1):
+    d_w = _num(clock[-1].get("end"))
+
+# we = 先頭から累積して `agents.explorer` に**ちょうど一致**する wave 群の終了時刻。
+# 一致しない回（explorer を複数 wave に割った回・Round 2 の追加 explorer が混ざった回）は
+# 埋めない。**「先頭 wave = explorer」と決め打たない**のがこの突合の目的
+if we is None and explorer_n > 0:
+    acc = 0
+    for i, wave in enumerate(clock):
+        acc += _num(wave.get("n")) or 0
+        if acc > explorer_n:
+            break
+        if acc == explorer_n:
+            ends = [_num(x.get("end")) for x in clock[:i + 1]]
+            if all(e is not None for e in ends) and ok(max(ends), eff_t1):
+                d_we = max(ends)
+            break
+
+_emit(d_t1, d_we, d_w)
+PY
+  ) || DERIVED=""
+  read -r _D_T1 _D_WE _D_W DERIVED_MARKERS <<< "${DERIVED:-"- - - -"}"
+  [ "$_D_T1" = "-" ] || DERIVED_ARGS+=(--derived-t1 "$_D_T1")
+  [ "$_D_WE" = "-" ] || DERIVED_ARGS+=(--derived-explore "$_D_WE")
+  [ "$_D_W"  = "-" ] || DERIVED_ARGS+=(--derived-wave "$_D_W")
+  [ "$DERIVED_MARKERS" = "-" ] && DERIVED_MARKERS=""
+fi
+
+# ---- 所要時間フィールドを注入 ----------------------------------------------
+DURS=$(bash "$HERE/review-timing.sh" durations ${PR_ARGS[@]+"${PR_ARGS[@]}"} \
+       ${DERIVED_ARGS[@]+"${DERIVED_ARGS[@]}"} 2>/dev/null)
+read -r DUR DUR_TRIAGE DUR_FLEET DUR_CLOSING DUR_EXPLORE DUR_SYNTHESIS <<< "${DURS:--1 -1 -1 -1 -1 -1}"
+
+# self-review は publish が「修正方針確認」より前にあり closing 区間が構造上 ≒0 になるため
+# -1（測定不能）を入れる。0 を publish すると「人間待ちが無かった」と誤読される（`## 14`）
+#
+# **遅れて publish した回（t2 から 10 分以上）は `duration_min` を欠測に倒す**（GitHub issue #133）。
+# self-review の `duration_min` は「t0 → Step 6.4」という契約なので、publish 脱落に後から気づいて
+# 修正作業の後に踏むと、契約と違う区間を**もっともらしい大きい値**として載せてしまう。t2→publish の
+# 生値（closing を -1 に潰す前）でしか判定できないのでここで見る。**review には掛けない** — あちらは
+# 締めフロー（人間待ち）を含むのが契約なので、大きいこと自体は正常
+LATE_PUBLISH=0
+case "$PLUGIN" in
+  *self-review)
+    case "$DUR_CLOSING" in
+      ''|-1|*[!0-9-]*) : ;;
+      *) [ "$DUR_CLOSING" -ge 10 ] && LATE_PUBLISH=1 ;;
+    esac
+    DUR_CLOSING=-1
+    ;;
+esac
+[ "$LATE_PUBLISH" = "1" ] && DUR=-1
+
+# **遅れて publish した回は窓に修正作業が混ざる**ので別の名前で出す（判定が上の
+# `DUR_CLOSING` に依存するのでここで確定させる）。集計側は `since-t0` だけを使う契約
+# なので、混ざった回は自動的に外れる
+if [ "$LATE_PUBLISH" = "1" ] && [ "$TOKENS_WINDOW" = "since-t0" ]; then
+  TOKENS_WINDOW="since-t0-late"
+fi
 
 # ---- payload をパース → duration_* を上書き → **1 行**に再シリアライズ -------
 # テキスト合成（sed による除去 + 文字列連結）はやめた。以下 3 つを同時に踏んでいたため:
@@ -136,6 +268,7 @@ MERGED=$(
   REVIEW_DURS="{\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"duration_explore_min\":$DUR_EXPLORE,\"duration_synthesis_min\":$DUR_SYNTHESIS}" \
   REVIEW_EXPLORER_WAVES="$EXPLORER_WAVES" \
   REVIEW_MEASUREMENT_GAPS="$MEASUREMENT_GAPS" \
+  REVIEW_DERIVED_MARKERS="$DERIVED_MARKERS" \
   REVIEW_DIFF_DIGEST="$DIFF_DIGEST" \
   REVIEW_DIFF_FILES="$DIFF_FILES" \
   REVIEW_TOKENS="$TOKENS_JSON" \
@@ -527,6 +660,11 @@ else:
 
 # gaps の確定はここ（append する経路をすべて通した後に代入する）
 payload["measurement_gaps"] = gaps
+# **打点漏れを実測時刻で埋めたマーカー**（GitHub issue #161）。`measurement_gaps` の側は
+# **消さない** — 打点漏れ率そのものが観測対象（#123 B）で、補完で消すと「打点規約が守られて
+# いるか」が見えなくなる。2 つを別フィールドに分けることで「欠測率」と「打点漏れ率」が
+# 分離して読める。**常に載せる**（フィールドの存在自体が補完機構の版マーカーになる）
+payload["derived_markers"] = [m for m in (os.environ.get("REVIEW_DERIVED_MARKERS") or "").split(",") if m]
 
 # 並列発行の担保と打点は**どちらもオーケストレーターの自己申告**で、破っても実行中は何も
 # 起きない（GitHub issue #135）。しかも打点漏れは違反の証拠自体を消すので、`explorer-wave`
@@ -548,10 +686,15 @@ elif "explorer-wave" in gaps:
         "  → **打点漏れは一括発行違反の証拠も同時に消す**（#135）。レポート末尾に 1 行追記すること: "
         "`⚠️ 計測: explorer wave の打点漏れ（一括発行が守られたか事後に検証できない / #135）`\n" % launched
     )
+# 補完できた回は「打点漏れ ＝ 欠測」ではないので、警告と同じ行で言う（issue #161）。
+# **打点漏れの警告自体は消さない** — 埋まったかどうかと、規約が守られたかは別の話
+derived_note = ("。うち %s は agent の実測時刻で補完済み（derived_markers）"
+                % ", ".join(payload["derived_markers"])) if payload["derived_markers"] else ""
 if gaps:
     sys.stderr.write(
-        "WARN: 計測マーカーの欠測: %s（打点由来は対応する duration_* が -1 / "
-        "`payload:*` は payload 側の欠落 / `tokens` は transcript を引けなかった回）\n" % ", ".join(gaps)
+        "WARN: 計測マーカーの欠測: %s（打点由来は agent の実測時刻で埋まらなければ "
+        "duration_* が -1 / `payload:*` は payload 側の欠落 / `tokens` は transcript を"
+        "引けなかった回）%s\n" % (", ".join(gaps), derived_note)
     )
 # separators で空白・改行を排除し、1 行に収める
 sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))

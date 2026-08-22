@@ -314,6 +314,30 @@ dispatch = {"schema": DISPATCH_SCHEMA, "agents": len(sub_first), "waves": None,
             "wave_sizes": None, "max_solo_run": None, "max_inter_wave_sec": None,
             "inter_wave_agent_sec": None, "inter_wave_idle_sec": None,
             "span_sec": None, "verdict": "unknown"}
+
+# ---- 区間打点の補完材料（GitHub issue #161） --------------------------------
+# 区間打点（`review-timing.sh mark`）はオーケストレーターの記憶に依存しており、実測で
+# **v2.62.0 以降の 10 件中 5 件が 1 つ以上落としていた**（`t1` 1 / `wave` 2 /
+# `explorer-wave` 2 / `t2` 1）。#142 / #153 が既に読んでいる**起動時刻と終了時刻**を
+# そのまま渡せば、publish 側で「落ちた区間だけ」を実測値で埋められる。
+#
+# **`## 14` の「逆算による補完はしない」には当たらない**。あの禁止の射程は *publish 時刻
+# からの推定* で、それは誤値になる。ここで渡すのは agent transcript の実測時刻そのもので、
+# #142 が `dispatch` で確立した原則（「wave は推定しない。時間閾値も自己申告も要らない」）と
+# 同じ経路。**どのマーカーを埋めるかの判断は publish 側**（`agents` を持つのがあちらのため）。
+#
+# **payload には載せない** — 絶対時刻は集計に使わず、載せると窓外の情報が payload に混ざる。
+# `unresolved` がある回は出さない（wave 構成そのものが信用できない / #142 と同じ原則）。
+wave_clock = None
+if not unresolved and waves_by_msg:
+    wave_clock = [
+        {"n": len(w), "start": round(min(s for s, _ in w)),
+         # 終了は **1 体でも取れなければ `None`**。取れた体だけで max を採ると「まだ回って
+         # いた時間」が実態より短く出て、補完値が前倒しになる（#153 の縮退方向と揃える）
+         "end": round(max(e for _, e in w)) if all(e is not None for _, e in w) else None}
+        for w in sorted(waves_by_msg.values(), key=lambda w: min(s for s, _ in w))
+    ]
+
 if unresolved:
     # 旧い transcript（meta.json が無い）・窓の外で発行された agent・入れ子起動の親を
     # 引けない回。**「一括だった」にも「逐次だった」にも倒さない**（#149）
@@ -393,6 +417,9 @@ if os.environ.get("AS_JSON") == "1":
         # `dispatch` に載せ、`verdict == "serial"` のとき警告する（`layered` は層ごとの wave
         # ＝設計上正当なので警告しない / #149）
         "dispatch": dispatch,
+        # **区間打点の補完材料**（issue #161）。wave ごとの `{n, start, end}`（epoch 秒）。
+        # `end` は wave 内の全体の終了時刻が取れたときだけ入る。**payload へは転記しない**
+        "wave_clock": wave_clock,
     }, ensure_ascii=False, separators=(",", ":")))
     sys.exit(0)
 

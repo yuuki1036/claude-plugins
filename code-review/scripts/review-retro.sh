@@ -480,6 +480,21 @@ have_waves = sum(1 for e in events
                  if num((e["p"].get("agents") or {}).get("explorer_waves")) is not None)
 split_waves = sum(1 for e in events
                   if (num((e["p"].get("agents") or {}).get("explorer_waves")) or 0) >= 2)
+# **打点漏れのうち実測時刻で埋まった分**（GitHub issue #161）。`measurement_gaps` と
+# **排他ではない** — 補完できた回は両方に載る。分けて出すのは「打点規約が守られているか」
+# （＝ gap 側）と「区間データが使えるか」（＝ 補完後）が別の量だからで、混ぜると
+# 「⚠️ が出たときだけ行動する」契約のどちらの意味かが読めなくなる。
+# **分母はフィールドを持つ回**（不在は旧版の identification であって欠測ではない / #127）
+derived_counts = {}
+n_derivedfield = 0
+for e in events:
+    dm = e["p"].get("derived_markers")
+    if not isinstance(dm, list):
+        continue
+    n_derivedfield += 1
+    for m in dm:
+        derived_counts[str(m)] = derived_counts.get(str(m), 0) + 1
+
 n_gapfield = sum(1 for e in events if isinstance(e["p"].get("measurement_gaps"), list))
 # `tokens` gap の分母。review だけが計測対象なので self-review を混ぜない
 n_gapfield_review = sum(1 for e in events
@@ -1058,6 +1073,19 @@ else:
           % (n_modern, n_all, modern_synthesis, n_modern, waves_txt)
           + ("" if not gap_counts else " / 欠測内訳 " + " ".join(
               "%s=%d" % kv for kv in sorted(gap_counts.items(), key=lambda kv: -kv[1]))))
+    # **補完の待ち行を出し分ける**（issue #161）。「フィールドを持つ回が 0」（旧版のみ）と
+    # 「持っているが 1 件も補完していない」（打点が守られた or 補完条件を満たさなかった）は
+    # 別の状態で、潰すと「補完機構が入っているのに効いていない」を見逃す
+    if n_derivedfield == 0:
+        print("  - 打点補完: 判定対象なし（`derived_markers` フィールドが 1 件も無い"
+              "＝すべて補完機構より前の版で publish された）")
+    elif not derived_counts:
+        print("  - 打点補完: %d 件中 0 件（打点が守られたか、補完条件を満たさなかった回のみ）"
+              % n_derivedfield)
+    else:
+        print("  - 打点補完（agent の実測時刻で埋めた分 / `measurement_gaps` とは排他ではない）: "
+              "%s" % " ".join("%s=%d" % kv
+                              for kv in sorted(derived_counts.items(), key=lambda kv: -kv[1])))
 
 if signals:
     print()

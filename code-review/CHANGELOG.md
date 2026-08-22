@@ -2,6 +2,26 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.82.0] - 2026-08-22
+
+### Added
+
+- **打点が落ちた区間を agent transcript の実測時刻で埋める**（GitHub issue #161）。区間打点（`review-timing.sh mark`）はオーケストレーターの記憶に依存しており、実測で **v2.62.0 以降の 10 件中 5 件が 1 つ以上落としていた**（`t1` 1 / `wave` 2 / `explorer-wave` 2 / `t2` 1）。結果として `duration_explore_min` が 4/10・`duration_synthesis_min` が 3/10 で欠測し、**#156 が基準値の裏付けに使った回と #153 が初の `schema 3` サンプルにした回が、どちらも打点漏れで区間内訳を欠いていた** ——打ち手を決めるための 2 サンプルが、計測基盤の穴で削られていた
+  - **#135 / `pending-optimizations ## 8` が残していた側**。あの項の動機は「①一括発行違反が検知できない ②打点漏れで区間が欠測する」の 2 つで、①は #142 が `dispatch` を transcript から機械計測して解決済み。**②は手つかずで、Agent hook 案の「発火するか確認できていない」というブロッカーの後ろに残っていた**。しかし #142 / #153 が読んでいる `subagents/agent-*.jsonl` には、hook で取ろうとしていた時刻が既に入っている——**新規 hook を足さずに既存の事後計測経路で埋まる**
+  - `measure-tokens.sh --json` が `wave_clock`（wave ごとの `{n, start, end}`）を返し、`publish-review-event.sh` が `review-timing.sh durations --derived-t1 / --derived-explore / --derived-wave` へ渡す。**payload には絶対時刻を載せない**
+  - 補完するのは `t1`（最初の agent 起動）/ `wave`（**最終 wave** の終了）/ `explorer-wave`（先頭から累積して `agents.explorer` に**ちょうど一致**する wave 群の終了）の 3 つ。**`t2` / `t0` は補完しない** — メイン文脈のイベントで agent transcript に現れず、publish 時刻からの逆算は `orchestration-measurement.md ## 14` が禁じている当のもの
+  - **`## 14` の「逆算による補完はしない」は撤回していない**。あの禁止の射程は *publish 時刻からの推定*（＝誤値）で、ここで使うのは実測時刻。両者を分ける線は「**その時刻が実際に観測されたか**」であって「補完したかどうか」ではない、と doc 側で明示した
+  - **explorer wave の同定は突合であって推定ではない**。体数の累計が一致しない回（explorer を複数 wave に割った回・Round 2 の追加 explorer が混ざった回）は埋めない。「先頭 wave = explorer」と決め打つと、区間が別物に化ける
+  - **縮退の向き**: `dispatch` が判定できなかった回（`unresolved` あり）は一切埋めない / 最終 wave の体が 1 つでも終了時刻を持たなければ埋めない（#153 と同じ）/ `t0 <= 補完値 <= t2` を満たさない値は採らない。`durations` 側にも**負の区間を `-1` に倒す**二段目を入れた（打点だけなら時刻は単調増加なので起こりえず、負が出るのは補完値の矛盾か時計のずれ）
+- **`derived_markers` を payload に追加**（識別子の配列 / 常に載る）。**`measurement_gaps` は消さない** — 打点漏れ率そのものが観測対象（#123 B）で、補完で消すと「打点規約が守られているか」が見えなくなる。2 つを分けることで**「区間の欠測率」と「打点漏れ率」が分離して読める**
+- **回帰テスト 11 件を追加**（補完の 4 契約 + retro の待ち行 3 状態 + 引数ガード）。変異テストのスモーク（`--max 6`）で生存 1 件を検出して潰した — publish は `--derived-t1 / --derived-explore / --derived-wave` を並べて渡すため、**単独で渡す形が結合テストから一度も通らず**、境界を 1 つ狭める変異（`$# -ge 2` → `-gt 2`）が生き残っていた
+- **`review-retro.sh` の計測の健全性に補完済みの内訳を追加**。待ち行は 3 状態を出し分ける（①フィールドを持つ回が 0 = 旧版のみ ②持っているが 1 件も補完していない ③補完あり）。②を「判定対象なし」に潰すと**補完機構が入っているのに一度も効いていない**を見逃す（#153 / #156 で同型の縮退を踏んでいる）
+
+### Changed
+
+- **`publish-review-event.sh` の計測フィールド収集の順序**を「トークン計測 → 補完値の算出 → `durations` → late-publish 判定 → 窓の命名」に入れ替えた。`durations` が `measure-tokens.sh` の結果に依存するようになったため。`TOKENS_WINDOW` の `since-t0-late` への書き換えだけが late-publish 判定に依存するので、そこを最後に回して循環を解いた
+- **`measurement_gaps` の WARN 文言**を「打点由来は対応する `duration_*` が -1」から「実測時刻で埋まらなければ -1」に修正し、補完できた識別子を同じ行に出すようにした（補完後は前者が成り立たない）
+
 ## [2.81.0] - 2026-08-21
 
 ### Added

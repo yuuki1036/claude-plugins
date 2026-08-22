@@ -20,7 +20,7 @@ pre-commit / CI / Stop hook の 3 経路に**設定変更なしで**乗る。
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import subprocess
 import tempfile
 import time
@@ -348,14 +348,11 @@ class SkipReasonValidationTest(ScriptTestBase):
                          "同じ欠落に 2 つの是正先が立っている")
 
 
-class TokenAndDispatchPayloadTest(ScriptTestBase):
-    """publish が `tokens` / `dispatch` を payload に載せる（GitHub issue #142 / #143）.
+class TranscriptFixture(ScriptTestBase):
+    """transcript fixture の組み立てだけを持つ土台（**テストは持たない**）.
 
-    - **#143**: self-review は `tokens` を構造的に載せていなかった（実測: このマシンの
-      review:completed 37 件すべてで欠測）。体数削減・分冊の効果は全部そこに出るのに、
-      主要レバーの効果が自動集計の外にあった
-    - **#142**: `duration_fleet_min` は「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を
-      区別できない。実測 16 回のうち 13 回が逐次発行で、累計 431 分を失っていた
+    `TokenAndDispatchPayloadTest` に生えていた helper を切り出したもの。テスト同士が
+    継承し合うと親のテストが子の名前で**もう一度**走る（実測: 14 件が二重実行された）。
     """
 
     def setUp(self) -> None:
@@ -367,7 +364,8 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         return self._env(HOME=str(self.home))
 
     def write_transcript(self, waves: list[list[int]], scale: int = 1,
-                         ends: dict[int, int] | None = None) -> None:
+                         ends: dict[int, int] | None = None,
+                         base: datetime | None = None) -> None:
         """cwd に対応する slug へ session + subagent を置く.
 
         `waves[i]` は**同一メッセージから発行した** agent の起動オフセット（秒）。
@@ -377,7 +375,10 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         slug = "".join(c if c.isalnum() else "-" for c in str(self.root))
         d = self.home / ".claude" / "projects" / slug
         d.mkdir(parents=True, exist_ok=True)
-        base = datetime(2026, 8, 18, 1, 0, 0)
+        # `base` を差し替えられるのは**打点との整合を実際に通すため**（GitHub issue #161）。
+        # 補完値は `t0 <= v <= t2` を満たさないと採られないので、計測ファイルの時刻と
+        # transcript の時刻を同じ時間軸に乗せる必要がある
+        base = base or datetime(2026, 8, 18, 1, 0, 0)
 
         def row(ts: str) -> str:
             return json.dumps({"type": "assistant", "timestamp": ts,
@@ -411,6 +412,17 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
                     encoding="utf-8")
                 idx += 1
         (d / "s1.jsonl").write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+class TokenAndDispatchPayloadTest(TranscriptFixture):
+    """publish が `tokens` / `dispatch` を payload に載せる（GitHub issue #142 / #143）.
+
+    - **#143**: self-review は `tokens` を構造的に載せていなかった（実測: このマシンの
+      review:completed 37 件すべてで欠測）。体数削減・分冊の効果は全部そこに出るのに、
+      主要レバーの効果が自動集計の外にあった
+    - **#142**: `duration_fleet_min` は「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を
+      区別できない。実測 16 回のうち 13 回が逐次発行で、累計 431 分を失っていた
+    """
 
     def test_self_review_carries_tokens(self):
         """**除外の撤回**（#143）。載らない回は「載せない」ではなく欠測として残す."""
@@ -644,6 +656,167 @@ class TokenAndDispatchPayloadTest(ScriptTestBase):
         self.assertNotIn("agents-mismatch", gaps)
 
 
+class DerivedMarkerTest(TranscriptFixture):
+    """打点が落ちた区間を agent の実測時刻で埋める（GitHub issue #161）.
+
+    区間打点はオーケストレーターの記憶に依存しており、実測で **v2.62.0 以降の 10 件中
+    5 件が 1 つ以上落としていた**（`t1` 1 / `wave` 2 / `explorer-wave` 2 / `t2` 1）。
+    #156 が基準値の裏付けに使った回と #153 が初の schema 3 サンプルにした回が、**どちらも
+    打点漏れで区間内訳を欠いていた**＝打ち手を決めるためのサンプルが打点漏れで削られていた。
+
+    守る契約は 4 つ:
+
+    1. **打点が有る側が常に勝つ**（補完は穴埋めであって上書きではない）
+    2. **矛盾する値は採らない**（`t0 <= v <= t2` / 縮退先は欠測であって誤値ではない）
+    3. **explorer wave は突合であって推定ではない**（体数が一致しなければ埋めない）
+    4. **`measurement_gaps` は消さない**（打点漏れ率そのものが観測対象 / #123 B）
+    """
+
+    BASE = datetime(2026, 8, 18, 1, 0, 0)
+
+    def epoch(self, off: int = 0) -> int:
+        return int(self.BASE.replace(tzinfo=timezone.utc).timestamp()) + off
+
+    def timeline(self, **markers: int) -> None:
+        """計測ファイルを直接組み立てる.
+
+        `mark` は `date +%s`（実行時刻）を書くので、fixture の transcript（固定の過去時刻）と
+        別の時間軸になり、**整合ガードが常に偽になって補完経路を一度も通らない**。
+        ここだけはファイルを直接書いて両者を同じ軸に乗せる。
+        """
+        path = Path(self.timing("start").stdout.strip())
+        path.write_text("".join("%s %d\n" % (k, v) for k, v in markers.items()),
+                        encoding="utf-8")
+
+    def run_publish(self, payload: dict | None = None) -> dict:
+        self.publish(payload, env=self.env_home())
+        return self.last_payload()
+
+    def two_waves(self, ends: dict[int, int] | None = None) -> None:
+        """wave 1 = agent 0,1（終了 200 / 300）→ wave 2 = agent 2（600 起動 / 900 終了）."""
+        self.write_transcript([[0, 5], [600]],
+                              ends={0: 200, 1: 300, 2: 900} if ends is None else ends,
+                              base=self.BASE)
+
+    def test_a_derived_flag_needs_a_value(self):
+        """値落ちを黙殺しない（`--pr` / `--since` と同じ規約）.
+
+        黙って無視すると補完が効かないまま「打点も無い」回と区別がつかず、
+        **計測が silent に壊れる**。境界（`$# >= 2`）を 1 つ狭める変異が生存していたので、
+        **値ありの経路も同時に表明する**（publish は 3 つ並べて渡すため、単独で渡す形は
+        結合テストからは一度も通らない）。
+        """
+        self.ts_file()
+        self.assertEqual(self.timing("durations", "--derived-t1").returncode, 2,
+                         "値なしの `--derived-t1` を受理している")
+        self.assertEqual(self.timing("durations", "--derived-t1", "1").returncode, 0,
+                         "値ありの `--derived-t1` を拒否している")
+
+    def test_wave_marker_is_derived_from_the_last_wave_end(self):
+        """`wave` 打点漏れ ＝ `duration_synthesis_min` 欠測、を実測時刻で埋める."""
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        p = self.run_publish()
+        # t2(1200) − 最終 wave の終了(900) = 300 秒
+        self.assertEqual(p["duration_synthesis_min"], 5)
+        self.assertIn("wave", p["derived_markers"])
+        self.assertIn("wave", p["measurement_gaps"],
+                      "補完で打点漏れの事実まで消している（打点漏れ率が観測できなくなる）")
+
+    def test_t1_marker_is_derived_from_the_first_agent_start(self):
+        """`t1` 打点漏れは triage と fleet の**両方**を欠測にする（実測 1 件）."""
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t2=self.epoch(1200))
+        p = self.run_publish()
+        self.assertEqual(p["duration_triage_min"], 5, "t0 → 最初の agent 起動 = 300 秒")
+        self.assertEqual(p["duration_fleet_min"], 20, "最初の agent 起動 → t2 = 1200 秒")
+        self.assertIn("t1", p["derived_markers"])
+
+    def test_marker_wins_over_the_derived_value(self):
+        """**補完は上書きではない**。打点が有る区間には触らない."""
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10),
+                      w=self.epoch(1140), t2=self.epoch(1200))
+        p = self.run_publish()
+        self.assertEqual(p["duration_synthesis_min"], 1, "打点(1140) ではなく実測(900) を使った")
+        self.assertEqual(p["derived_markers"], [])
+
+    def test_explorer_wave_is_matched_by_headcount_not_assumed(self):
+        """先頭 wave 群の体数累計が `agents.explorer` と**一致したときだけ**埋める."""
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        payload = dict(BASE_PAYLOAD, agents={"explorer": 2, "reviewer": 1})
+        p = self.run_publish(payload)
+        # wave 1 の体数 2 == explorer 2 → その wave の終了(300) が explorer wave の終わり
+        self.assertEqual(p["duration_explore_min"], 5, "t1(-10) → 300 = 310 秒")
+        self.assertIn("explorer-wave", p["derived_markers"])
+
+    def test_explorer_wave_is_not_derived_when_the_headcount_disagrees(self):
+        """**「先頭 wave = explorer」と決め打たない**（一致しない回は欠測のまま）.
+
+        これを推定に落とすと、Round 2 の追加 explorer が混ざった回や explorer を
+        複数 wave に割った回で `duration_explore_min` が別物の区間に化ける。
+        """
+        self.write_transcript([[0, 5, 7], [600]], ends={0: 200, 1: 300, 2: 250, 3: 900},
+                              base=self.BASE)
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        payload = dict(BASE_PAYLOAD, agents={"explorer": 2, "reviewer": 2})
+        p = self.run_publish(payload)
+        self.assertEqual(p["duration_explore_min"], -1, "先頭 wave は 3 体で explorer 2 と不一致")
+        self.assertNotIn("explorer-wave", p["derived_markers"])
+        self.assertIn("wave", p["derived_markers"], "他のマーカーの補完まで巻き添えにしている")
+
+    def test_wave_is_not_derived_when_an_end_is_missing(self):
+        """最終 wave の体が 1 つでも終了時刻を持たなければ埋めない（#153 の縮退方向）."""
+        self.two_waves(ends={0: 200, 1: 300})     # agent 2（最終 wave）に終了行が無い
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        p = self.run_publish()
+        self.assertEqual(p["duration_synthesis_min"], -1)
+        self.assertNotIn("wave", p["derived_markers"])
+
+    def test_a_value_after_t2_is_rejected_instead_of_going_negative(self):
+        """**矛盾する補完はしない**。採ると `duration_synthesis_min` が負になる."""
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(100))
+        p = self.run_publish()
+        self.assertEqual(p["duration_synthesis_min"], -1, "t2(100) より後(900)の値を採った")
+        self.assertEqual(p["derived_markers"], [])
+
+    def test_t2_is_never_derived(self):
+        """`t2`（初回レポート出力）はメイン文脈のイベントで agent transcript に現れない.
+
+        publish 時刻から逆算すれば欠測は消えるが、それが `## 14` の禁じている当のもの。
+        """
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10))
+        p = self.run_publish()
+        self.assertEqual(p["duration_fleet_min"], -1, "t2 を逆算で埋めている")
+        self.assertEqual(p["duration_synthesis_min"], -1)
+        self.assertIn("t2", p["measurement_gaps"])
+        self.assertNotIn("t2", p["derived_markers"])
+
+    def test_unresolvable_dispatch_does_not_derive(self):
+        """wave 構成が確定しない回は埋めない（#142 の「どちらにも倒さない」を継承）."""
+        self.two_waves()
+        slug = "".join(c if c.isalnum() else "-" for c in str(self.root))
+        (self.home / ".claude" / "projects" / slug / "s1" / "subagents"
+         / "agent-2.meta.json").unlink()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        p = self.run_publish()
+        self.assertIn("dispatch", p["measurement_gaps"], "前提（unresolved）が再現できていない")
+        self.assertEqual(p["derived_markers"], [])
+        self.assertEqual(p["duration_synthesis_min"], -1)
+
+    def test_derived_markers_is_always_present(self):
+        """フィールドの存在自体が補完機構の版マーカーになる（日付では切らない流儀）."""
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10),
+                      w=self.epoch(1000), t2=self.epoch(1200))
+        p = self.run_publish()
+        self.assertIn("derived_markers", p)
+        self.assertEqual(p["derived_markers"], [])
+
+
 class LatePublishTest(ScriptTestBase):
     """遅れて publish した self-review は `duration_min` を欠測に倒す（issue #133）."""
 
@@ -738,6 +911,43 @@ class RetroTest(ScriptTestBase):
                 "tokens": {"schema": schema, "window": "since-t0",
                            "main_output_k": 100.0, "sub_output_k": 200.0,
                            "sub_cache_read_k": cache_read_k, "sub_agents": agents}}
+
+    def test_derived_markers_are_counted_separately_from_gaps(self):
+        """補完済みの内訳を出す（GitHub issue #161）.
+
+        `measurement_gaps` と**排他ではない**（補完できた回は両方に載る）。混ぜると
+        「打点規約が守られているか」と「区間データが使えるか」のどちらの話か読めなくなる。
+        """
+        self._events([
+            {"effort": "high", "measurement_gaps": ["wave", "explorer-wave"],
+             "derived_markers": ["wave", "explorer-wave"]},
+            {"effort": "high", "measurement_gaps": ["t1"], "derived_markers": ["t1"]},
+        ])
+        out = self.run_script(RETRO).stdout
+        self.assertIn("打点補完", out)
+        self.assertIn("wave=1", out)
+        self.assertIn("explorer-wave=1", out)
+        self.assertIn("t1=1", out)
+        self.assertIn("欠測内訳", out, "補完で打点漏れの内訳まで消している")
+
+    def test_no_derived_field_is_told_apart_from_nothing_derived(self):
+        """**待ち行の 3 状態を潰さない**（#153 / #156 で同じ縮退を踏んでいる）.
+
+        「フィールドを持つ回が 0（旧版のみ）」と「持っているが 1 件も補完していない」は
+        別の状態で、後者を「判定対象なし」と言うと**補完機構が入っているのに一度も
+        効いていない**を見逃す。
+        """
+        self._events([{"effort": "high", "measurement_gaps": ["wave"]}])
+        self.assertIn("判定対象なし", self.derived_line(self.run_script(RETRO).stdout))
+        self._events([{"effort": "high", "measurement_gaps": [], "derived_markers": []}])
+        out = self.run_script(RETRO).stdout
+        self.assertIn("1 件中 0 件", out)
+        self.assertNotIn("打点補完: 判定対象なし", out)
+
+    def derived_line(self, out: str) -> str:
+        """`打点補完` 行だけを取り出す（他セクションの「判定対象なし」と混同しないため）."""
+        self.assertIn("## レビュー振り返り", out, "retro が出力していない")
+        return "\n".join(l for l in out.splitlines() if "打点補完" in l)
 
     def test_per_agent_cache_read_is_layered_by_effort_and_tier(self):
         """**1 体あたり**で出す（GitHub issue #156）.

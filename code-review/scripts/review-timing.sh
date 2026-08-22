@@ -13,6 +13,9 @@
 #   review-timing.sh mark t2 [--pr N]                      # 初回レポート出力の直後
 #   review-timing.sh mark published [--pr N]               # publish 成功の直後（publish スクリプトが呼ぶ）
 #   review-timing.sh durations [--pr N]                    # "DUR TRIAGE FLEET CLOSING EXPLORE SYNTHESIS"
+#            [--derived-t1 E] [--derived-explore E] [--derived-wave E]
+#                                                          # 打点が**無い**区間だけを実測値で埋める（#161）
+#   review-timing.sh epochs [--pr N]                       # "t0 t1 we w t2"（欠測は `-`）
 #   review-timing.sh t0 [--pr N]                           # t0 の epoch（無ければ空行）
 #   review-timing.sh waves [--pr N]                        # explorer wave の発行回数
 #   review-timing.sh gaps [--pr N]                         # 欠測マーカーの識別子（空白区切り。無ければ空行）
@@ -41,10 +44,18 @@ case "$CMD" in
 esac
 PR=""
 IS_EXPLORER=0
+D_T1=""; D_WE=""; D_W=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --pr) [ $# -ge 2 ] || { echo "FATAL: --pr に値が必要" >&2; exit 2; }; PR="$2"; shift 2 ;;
     --explorer) IS_EXPLORER=1; shift ;;
+    # **打点が落ちた区間を agent transcript の実測時刻で埋める**（GitHub issue #161）。
+    # 値は `publish-review-event.sh` が `measure-tokens.sh --json` の `wave_clock` から
+    # 算出して渡す（どの wave が explorer かの突合は `agents` を持つあちら側の責務）。
+    # **打点が有る区間には触らない** — 補完は欠測の穴埋めであって上書きではない
+    --derived-t1)      [ $# -ge 2 ] || { echo "FATAL: --derived-t1 に値が必要" >&2; exit 2; }; D_T1="$2"; shift 2 ;;
+    --derived-explore) [ $# -ge 2 ] || { echo "FATAL: --derived-explore に値が必要" >&2; exit 2; }; D_WE="$2"; shift 2 ;;
+    --derived-wave)    [ $# -ge 2 ] || { echo "FATAL: --derived-wave に値が必要" >&2; exit 2; }; D_W="$2"; shift 2 ;;
     # 未知引数を黙殺しない。`--PR` のような綴り違いを黙って無視すると start と mark が
     # 別ファイルを掴み、durations が全欠測(-1)になる（計測が silent に壊れる）
     *) echo "FATAL: 未知の引数: $1" >&2; exit 2 ;;
@@ -121,14 +132,29 @@ case "$CMD" in
     # 欠測はすべて -1（0 と区別する）。t3（全体の終わり）は呼び出し時刻を使う。
     # `we` / `w` が複数行あるときはそれぞれ後勝ち（= 最後の explorer wave / 最後の agent wave）
     NOW=$(date +%s)
-    awk -v now="$NOW" '{t[$1]=$2} END {
+    # **数値以外は黙って捨てる**。呼び出し側の算出が失敗して空文字や `-` が来たとき、
+    # awk が 0 に coerce して「1970 年に wave を回収した」ような巨大な区間を作るのを防ぐ
+    case "$D_T1" in ''|*[!0-9]*) D_T1="" ;; esac
+    case "$D_WE" in ''|*[!0-9]*) D_WE="" ;; esac
+    case "$D_W"  in ''|*[!0-9]*) D_W=""  ;; esac
+    awk -v now="$NOW" -v d_t1="$D_T1" -v d_we="$D_WE" -v d_w="$D_W" '
+    function span(a, b,   d) {
+      if (!(a in t) || !(b in t)) return -1
+      d = int((t[b] - t[a]) / 60)
+      # **負の区間は誤値**（補完値の矛盾 / 時計のずれ）。打点だけなら時刻は単調増加なので
+      # 起こりえない。`## 14` の原則どおり**縮退先は欠測であって誤値ではない**
+      return (d < 0) ? -1 : d
+    }
+    { t[$1] = $2 }
+    END {
+      t["t3"] = now
+      # **打点が有る側が常に勝つ**（issue #161）。補完は「落ちた区間だけ」を埋める
+      if (!("t1" in t) && d_t1 != "") t["t1"] = d_t1
+      if (!("we" in t) && d_we != "") t["we"] = d_we
+      if (!("w"  in t) && d_w  != "") t["w"]  = d_w
       printf "%d %d %d %d %d %d\n",
-        ("t0" in t) ? int((now - t["t0"])/60) : -1,
-        ("t0" in t && "t1" in t) ? int((t["t1"] - t["t0"])/60) : -1,
-        ("t1" in t && "t2" in t) ? int((t["t2"] - t["t1"])/60) : -1,
-        ("t2" in t) ? int((now - t["t2"])/60) : -1,
-        ("t1" in t && "we" in t) ? int((t["we"] - t["t1"])/60) : -1,
-        ("w"  in t && "t2" in t) ? int((t["t2"] - t["w"])/60)  : -1
+        span("t0", "t3"), span("t0", "t1"), span("t1", "t2"),
+        span("t2", "t3"), span("t1", "we"), span("w", "t2")
     }' "$TS_FILE" 2>/dev/null || echo "-1 -1 -1 -1 -1 -1"
     ;;
   t0)
@@ -144,6 +170,17 @@ case "$CMD" in
     # 代入で受けて空（ファイル無し）だけを 0 に倒す
     N_WE=$(grep -c '^we ' "$TS_FILE" 2>/dev/null)
     echo "${N_WE:-0}"
+    ;;
+  epochs)
+    # 打点の**生の epoch**（`t0 t1 we w t2` / 欠測は `-`）。`durations` が分を返すのに対し、
+    # こちらは補完値の整合（t0 <= t1 <= we <= w <= t2）を publish 側で検算するために出す。
+    # `we` / `w` は複数行あるとき **後勝ち**（`durations` の awk と同じ規約）
+    awk '{t[$1]=$2} END {
+      printf "%s %s %s %s %s\n",
+        ("t0" in t) ? t["t0"] : "-", ("t1" in t) ? t["t1"] : "-",
+        ("we" in t) ? t["we"] : "-", ("w"  in t) ? t["w"]  : "-",
+        ("t2" in t) ? t["t2"] : "-"
+    }' "$TS_FILE" 2>/dev/null || echo "- - - - -"
     ;;
   gaps)
     emit_gaps
@@ -174,6 +211,6 @@ case "$CMD" in
     { grep -q '^t2 ' "$TS_FILE" 2>/dev/null && rm -f "$TS_FILE"; } || true
     ;;
   *)
-    echo "usage: review-timing.sh <start|mark|durations|t0|waves|gaps|publish-pending|cleanup> [--pr N]" >&2; exit 2 ;;
+    echo "usage: review-timing.sh <start|mark|durations|t0|epochs|waves|gaps|publish-pending|cleanup> [--pr N]" >&2; exit 2 ;;
 esac
 exit 0

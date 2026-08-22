@@ -92,7 +92,27 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 
 > **`--explorer` 付きの打点を synthesis 側に混ぜないこと**（スクリプト側で分離済み）。explorer 回収だけ打って reviewer wave の打点を落とした場合、混ぜると `duration_synthesis_min` が reviewer wave を丸ごと含む「もっともらしい過大値」になる。**縮退先は欠測（-1）であって誤値ではない**（`## 13.1` と同じ原則）。
 
-> **`mark` は失敗しない（v2.62.0）**: `start` 未実行・一時ファイル消失でもファイルを作り直し、stderr に警告を出して exit 0 で返す。マーカー 1 個の失敗でレビュー本体を止めない。**逆算による補完はしない** — publish 時刻から wave の打点を推定すれば欠測は消えるが、それは誤値であって計測ではない。欠測は `measurement_gaps` に出して可視化する側で扱う。
+> **`mark` は失敗しない（v2.62.0）**: `start` 未実行・一時ファイル消失でもファイルを作り直し、stderr に警告を出して exit 0 で返す。マーカー 1 個の失敗でレビュー本体を止めない。
+
+> **打点漏れの補完（v2.82.0 / GitHub issue #161）— 何が許され、何が禁じられているか**
+>
+> 打点はオーケストレーターの記憶に依存しており、**実測で v2.62.0 以降の 10 件中 5 件が 1 つ以上落としていた**（`t1` 1 / `wave` 2 / `explorer-wave` 2 / `t2` 1）。結果として `duration_explore_min` が 4/10・`duration_synthesis_min` が 3/10 で欠測し、**#156 が基準値の裏付けに使った回と #153 が初の `schema 3` サンプルにした回が、どちらも打点漏れで区間内訳を欠いていた**（打ち手を決めるための 2 サンプルが打点漏れで削られた）。
+>
+> **禁止（変わらない）: publish 時刻からの逆算。** publish 時刻から wave の打点を推定すれば欠測は消えるが、それは誤値であって計測ではない。
+>
+> **許可: `subagents/agent-*.jsonl` の実測時刻による補完。** `measure-tokens.sh` は #142（起動時刻）と #153（終了時刻）で**既にこれを読んでいる**。`--json` の `wave_clock`（wave ごとの `{n, start, end}`）を `publish-review-event.sh` が受け取り、`review-timing.sh durations --derived-t1 / --derived-explore / --derived-wave` へ渡す。**推定ではなく実測なので誤値にならない**（#142 が `dispatch` で確立した「wave は推定しない。時間閾値も自己申告も要らない」経路と同じもの）。両者を分ける線は「**その時刻が実際に観測されたか**」であって、「補完したかどうか」ではない。
+>
+> | マーカー | 補完値 | 埋めない条件 |
+> |---|---|---|
+> | `t1` | 最初の agent の起動時刻 | — |
+> | `wave` | **最終 wave** の agent 終了時刻の max | 最終 wave の体が 1 つでも終了時刻を持たない |
+> | `explorer-wave` | 先頭から累積して `agents.explorer` に**ちょうど一致**する wave 群の終了時刻の max | 累計が一致しない（＝ 先頭 wave が explorer だと**決め打たない**） |
+> | `t2` | **補完しない** | メイン文脈のイベントで agent transcript に現れない。逆算は上の禁止に当たる |
+> | `t0` | **補完しない** | 同上（実測では 0/10 件で落ちている） |
+>
+> **共通の縮退**: `dispatch` が判定できなかった回（`unresolved` あり）は wave 構成そのものが信用できないので一切埋めない。`t0 <= 補完値 <= t2` を満たさない値も採らない（採ると区間が負や過大になり「もっともらしい誤値」を publish することになる）。**打点が有る区間には触らない** — 補完は穴埋めであって上書きではない。
+>
+> **`measurement_gaps` は消さない。** 打点漏れ率そのものが観測対象（issue #123 B）で、補完で消すと「打点規約が守られているか」が見えなくなる。補完できたマーカーは別フィールド **`derived_markers`** に載せ、**「区間の欠測率」と「打点漏れ率」を分離して読む**。
 
 > **`t1` を explorer 発行直前に置く理由（v2.41.0 の修正）**: `t1` を reviewer 発行直前に固定すると、explorer wave（high で最大 4 体 / xhigh・max で 6 体）の実時間が triage 区間に丸ごと混入し、「メインコンテキストの思考時間の代理指標」という `duration_triage_min` の定義が成立しない。explorer を配置したレビューで triage が膨らみ、**「思考量が主因」という誤診に誘導される**（そしてプロンプト圧縮という誤った打ち手を選ばせる）。agent wave はすべて fleet 側に入れる。
 
@@ -239,6 +259,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
 | `findings_class` | **報告した指摘を「何が捕まえるべきだったか」で分類した件数**（v2.68.0 / GitHub 由来ではなく運用課題から）+ `schema`（スクリプトが注入）。`lint`=静的検査（grep / AST / 構造走査）で機械的に検出できた / `test`=回帰テストがあれば捕まえられた（コードの挙動の誤り）/ `judgement`=設計判断・主張の妥当性など機械で判定できない。**合計は報告件数（blocker+critical+major+minor）と一致させる**。下の「`findings_class` の使い方」を参照 |
 | `measurement_gaps` | **打点が欠けたマーカーの識別子配列**（v2.62.0 / `publish-review-event.sh` が注入。**SKILL からは渡さない**）。語彙は `start` / `t1` / `wave` / `t2` / `explorer-wave` / `diff-digest` / `tokens`（transcript を引けなかった / 窓が空振りした。**v2.70.0 より前は review のみ**）/ `dispatch`（**agent が 0 体 / transcript・`meta.json` を引けず発行パターンを判定できなかった回**。「一括だった」にも「逐次だった」にも倒さないための欠測 / #149）/ `payload:<field>`（**payload 側の欠落**。層のオブジェクトごと落ちた回 + `payload:missing_coverage`）/ `payload:<field>.fired`（発火記録の欠落）/ `payload:<field>.skip_reason`（**`fired=false` なのに理由が無い回** / v2.79.0。語彙外は publish が落とすので、ここに残るのは書き忘れだけ）/ `agents-mismatch`（**自己申告の `agents` 内訳合計と機械計測の `dispatch.agents` が食い違った回** / v2.80.0 / #154。突合前に動的層の `fired` ぶんを足してから比べる ＝ `agents` は meta / skeptic を含まない契約のため。**差の大きさは載せない** — 両フィールドが payload に残るので下流で引き算できる。**fail-fast にしない** — 差の存在自体が観測対象で、止めると計測が丸ごと消える）/ `late-publish`（**self-review のみ** / v2.66.0。t2 から 10 分以上あけて publish した回 = `duration_min` の契約が壊れているので `-1` に倒した。→ `## 14`）。**`tokens` / `payload:*` / `*.fired` は v2.65.0 で追加**。**識別子ごとに是正先が違う**（打点 / payload テンプレート / transcript 引き当て / 突合キー算出）ので、集計側は種類を混ぜて 1 つの是正先を提示しないこと。**`tokens` / `dispatch` は transcript を引けた回でしか判定できないので、分母をそこに絞る**（v2.70.0 より前の `tokens` は review 限定だったので、版で層別する）。`duration_*` が `-1` になった理由を「打ち忘れ」と「該当なし」に分けるためのフィールドで、**欠測率そのものを計測対象にする**（issue #123 B）。`explorer-wave` は `agents.explorer >= 1` かつ打点 0 のときだけ入る（explorer 未起動は該当なしなので gap ではない）。`diff-digest` は突合キーを算出できなかった回に入る（＝ `## 19` の重複検出が事後に効かない。**「重複が無かった」と区別するために立てる**） |
+| `derived_markers` | **打点漏れを agent の実測時刻で埋めたマーカーの識別子配列**（v2.82.0 / `publish-review-event.sh` が注入。**SKILL からは渡さない**）。語彙は `measurement_gaps` と共通で `t1` / `wave` / `explorer-wave` の 3 つだけ（`t0` / `t2` はメイン文脈のイベントなので補完しない → `## 14`）。**`measurement_gaps` と排他ではない** — 補完できた回は両方に載る。打点漏れ率（`measurement_gaps` 側）と区間の欠測率（`duration_*` が `-1`）は別の量で、この 2 フィールドを分けているのはそれを分離して読むため。**常に載る**（空配列を含む）ので、フィールドの存在自体が補完機構の版マーカーになる |
 | `diff_digest` | **diff 全文の cksum**（v2.62.0 / `publish-review-event.sh` が算出。**SKILL からは渡さない**）。重複レビューの**強い突合キー**で、**同一 skill の再実行でのみ一致する** — review は `gh pr diff`、self-review は `git diff BASE..HEAD` + `--cached` + unstaged の **3 本連結**で diff を作るので、同じ変更でもバイト列が違う（実測: 同一 head の PR で `1462260100-1256` vs `2713407599-105966`）。HEAD SHA ではなく diff にしたのは self-review が未コミット変更を含むため |
 | `diff_files` | **変更ファイルパス集合の cksum**（v2.62.0 / 同上）。**skill を跨いでも一致する弱いキー**で、連結・index 行・ハンクの分かれ方に影響されない代わりに**別内容の変更でも一致しうる**（＝重複の疑いどまり）。強弱 2 本を持つ理由は上の非対称。算出の正本は `scripts/lib/review-paths.sh` の `review_diff_keys` |
 | `tokens` | **トークン消費**（**review / self-review 共通** / v2.65.0・**self-review は v2.70.0 で追加**（GitHub issue #143）/ `publish-review-event.sh` が `measure-tokens.sh --json` を呼んで注入。**SKILL からは渡さない**）。`{schema, window, session, first_ts, main_output_k, main_cache_write_k, main_cache_read_k, sub_output_k, sub_cache_write_k, sub_cache_read_k, sub_agents}`（**`cache_read` 系は v2.76.0 / #156** — 重み付けコスト最大の項が schema 1 では載っていなかった）。下の「トークンを payload に載せる」を参照 |
