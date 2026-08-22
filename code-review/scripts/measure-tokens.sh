@@ -316,15 +316,12 @@ dispatch = {"schema": DISPATCH_SCHEMA, "agents": len(sub_first), "waves": None,
             "span_sec": None, "verdict": "unknown"}
 
 # ---- 区間打点の補完材料（GitHub issue #161） --------------------------------
-# 区間打点（`review-timing.sh mark`）はオーケストレーターの記憶に依存しており、実測で
-# **v2.62.0 以降の 10 件中 5 件が 1 つ以上落としていた**（`t1` 1 / `wave` 2 /
-# `explorer-wave` 2 / `t2` 1）。#142 / #153 が既に読んでいる**起動時刻と終了時刻**を
-# そのまま渡せば、publish 側で「落ちた区間だけ」を実測値で埋められる。
-#
-# **`## 14` の「逆算による補完はしない」には当たらない**。あの禁止の射程は *publish 時刻
-# からの推定* で、それは誤値になる。ここで渡すのは agent transcript の実測時刻そのもので、
-# #142 が `dispatch` で確立した原則（「wave は推定しない。時間閾値も自己申告も要らない」）と
-# 同じ経路。**どのマーカーを埋めるかの判断は publish 側**（`agents` を持つのがあちらのため）。
+# #142 / #153 が既に読んでいる**起動時刻と終了時刻**をそのまま渡し、publish 側で「落ちた
+# 区間だけ」を実測値で埋める。渡すのは agent transcript の実測時刻そのものなので
+# `## 14` の禁止（*publish 時刻からの推定*）には当たらない。
+# **打点漏れの実測値と射程の論拠は `publish-review-event.sh` の同節が正本**（数字を 2 箇所に
+# 書くと更新漏れで食い違う）。**どのマーカーを埋めるかの判断も publish 側**（`agents` を
+# 持つのがあちらのため）。
 #
 # **payload には載せない** — 絶対時刻は集計に使わず、載せると窓外の情報が payload に混ざる。
 # `unresolved` がある回は出さない（wave 構成そのものが信用できない / #142 と同じ原則）。
@@ -418,7 +415,7 @@ if os.environ.get("AS_JSON") == "1":
         # ＝設計上正当なので警告しない / #149）
         "dispatch": dispatch,
         # **区間打点の補完材料**（issue #161）。wave ごとの `{n, start, end}`（epoch 秒）。
-        # `end` は wave 内の全体の終了時刻が取れたときだけ入る。**payload へは転記しない**
+        # `end` は wave 内の全体の終了時刻が取れたときだけ入る
         "wave_clock": wave_clock,
     }, ensure_ascii=False, separators=(",", ":")))
     sys.exit(0)

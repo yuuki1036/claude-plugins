@@ -481,9 +481,8 @@ have_waves = sum(1 for e in events
 split_waves = sum(1 for e in events
                   if (num((e["p"].get("agents") or {}).get("explorer_waves")) or 0) >= 2)
 # **打点漏れのうち実測時刻で埋まった分**（GitHub issue #161）。`measurement_gaps` と
-# **排他ではない** — 補完できた回は両方に載る。分けて出すのは「打点規約が守られているか」
-# （＝ gap 側）と「区間データが使えるか」（＝ 補完後）が別の量だからで、混ぜると
-# 「⚠️ が出たときだけ行動する」契約のどちらの意味かが読めなくなる。
+# **排他ではない** — 補完できた回は両方に載る。「打点規約が守られているか」（gap 側）と
+# 「区間が使えるか」（`duration_*` 側）は別の量なので混ぜない。
 # **分母はフィールドを持つ回**（不在は旧版の identification であって欠測ではない / #127）
 derived_counts = {}
 n_derivedfield = 0

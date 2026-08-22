@@ -45,10 +45,9 @@ GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 MAIN_ROOT=$([ -n "$GCD" ] && (cd "$GCD/.." && pwd) || pwd)
 
 # ---- 計測フィールドの収集 --------------------------------------------------
-# **並び順に依存がある**（GitHub issue #161 で入れ替えた）: `durations` は打点が落ちた
-# 区間を agent の実測時刻で埋めるため `measure-tokens.sh` の結果を先に要る。よって
-# **トークン計測 → 補完値の算出 → durations → late-publish 判定 → 窓の命名**の順に並べる。
-# 旧版は durations が先頭にあり、`TOKENS_WINDOW` だけが late-publish に依存していた。
+# **並び順に依存がある**（GitHub issue #161）: `durations` が `measure-tokens.sh` の結果を
+# 必要とするため、**トークン計測 → 補完値の算出 → durations → late-publish 判定 →
+# 窓の命名**の順に並べる（並べ替えると補完が効かない）。
 PR_ARGS=(); [ -n "$PR" ] && PR_ARGS=(--pr "$PR")
 
 # explorer wave の発行回数（`we` マーカーの行数）。一括発行が破られたことを事後に検知する
@@ -96,8 +95,6 @@ case "$PLUGIN" in
         SINCE_ISO=$(python3 -c 'import sys,datetime;print(datetime.datetime.fromtimestamp(int(sys.argv[1]),datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"))' "$T0" 2>/dev/null)
         if [ -n "$SINCE_ISO" ]; then
           TOK_ARGS=(--since "$SINCE_ISO")
-          # **遅れて publish した回は窓に修正作業が混ざる**ので別の名前で出す。
-          # 集計側は `since-t0` だけを使う契約なので、混ざった回は自動的に外れる
           # **窓の名前は late-publish 判定の後で確定させる**（判定は下の `durations` に
           # 依存し、その durations がこの計測結果に依存するため。`since-t0-late` への
           # 書き換えは LATE_PUBLISH の確定直後に行う）
@@ -121,8 +118,16 @@ esac
 #
 # **`t2` は埋めない** — 初回レポート出力はメイン文脈のイベントで agent transcript に
 # 現れない。publish 時刻から逆算すれば欠測は消えるが、それが禁止されている当のもの。
+#
+# **`t0` にアンカーされた窓の回だけ補完する**（セルフレビューで検出 / #161）。`t0` 打点が
+# 欠けると `measure-tokens.sh` は `--since` なし＝**セッション全体**を窓にするので、
+# `wave_clock` に同一セッションの無関係な agent が混ざる。しかも下の `ok()` は `t0` が
+# 欠測だと下限チェックを飛ばすため、**何時間も前の別作業の agent 起動時刻**がそのまま
+# `t1` の補完値になり、`duration_fleet_min` が「もっともらしい過大値」として publish される
+# （実測: 本来 10 分の回が 120 分）。**この機構が守ろうとした原則そのものを破る経路**。
+# `wave_clock` が「この回の agent だけ」であることの担保は窓しか無いので、窓の名前で判定する。
 DERIVED_ARGS=(); DERIVED_MARKERS=""
-if [ -n "$TOKENS_JSON" ]; then
+if [ -n "$TOKENS_JSON" ] && [ "$TOKENS_WINDOW" = "since-t0" ]; then
   DERIVED=$(
     REVIEW_TOKENS="$TOKENS_JSON" \
     REVIEW_EPOCHS="$(bash "$HERE/review-timing.sh" epochs ${PR_ARGS[@]+"${PR_ARGS[@]}"} 2>/dev/null)" \
@@ -161,9 +166,17 @@ t0, t1, we, w, t2 = (_num(x) for x in raw)
 
 # `agents.explorer` は SKILL の自己申告。**explorer wave の同定には突合としてしか使わない**
 # （体数が一致しなければ埋めない ＝ 推定に落とさない / #142 の原則）
+#
+# **`agents` は truthy な非 dict になりうる**（`{"agents": 12}` 等。SKILL テンプレートを
+# LLM が埋めるフィールドなので現実的な入力）。`or {}` は falsy しか吸収しないため、
+# 旧版は `.get()` が try の**外**にあり未捕捉 `AttributeError` で補完が丸ごと no-op に
+# なっていた。**同ファイルの payload 構築側は元から `isinstance` で正規化しており**、
+# 新規ブロックだけがその不変条件を落としていた（セルフレビューで検出 / #161）
 try:
-    agents = (json.loads(sys.argv[1]) or {}).get("agents") or {}
+    agents = (json.loads(sys.argv[1]) or {}).get("agents")
 except (ValueError, AttributeError, IndexError):
+    agents = None
+if not isinstance(agents, dict):
     agents = {}
 explorer_n = agents.get("explorer")
 if not isinstance(explorer_n, int) or isinstance(explorer_n, bool) or explorer_n < 0:
@@ -171,14 +184,18 @@ if not isinstance(explorer_n, int) or isinstance(explorer_n, bool) or explorer_n
 
 
 def ok(v, lo):
-    """`t0 <= lo <= v <= t2` を満たすときだけ採る.
+    """`v` が**取れている**下限・上限（`t0` / `lo` / `t2`）に矛盾しないときだけ採る.
 
     **矛盾する補完はしない** — 順序が崩れた値を入れると区間が負や過大になり、
     「もっともらしい誤値」を publish することになる（`## 13.1` と同じ原則）。
+
+    **欠測した側は制約なしとして扱う**（打点漏れが前提の機構なので `t0` / `t2` / `lo` は
+    欠けうる）。`t0` が欠ける回そのものは呼び出し側が窓で弾いているので、ここに来る時点で
+    `t0` は在る。実効条件は `v >= max(t0, lo)` かつ `v <= t2`。
     """
     if v is None:
         return False
-    if t0 is not None and v < t0:
+    if t0 is not None and v < t0:  # mutation-ok: 窓を `since-t0` に限定したので publish 経路からは到達しない防御（`wave_clock` の agent は必ず t0 以降に起動している）
         return False
     if t2 is not None and v > t2:
         return False
@@ -214,9 +231,23 @@ if we is None and explorer_n > 0:
                 d_we = max(ends)
             break
 
+# **explorer wave が最終 wave より後に終わっていたら explorer 側を落とす**。`clock` は
+# **start でソート**されているので `clock[-1]` は「最後に起動した wave」であって「最後に
+# 終わった wave」とは限らない。`we > w` のまま通すと `duration_explore_min` と
+# `duration_synthesis_min` が重なり、`review-timing.sh` 冒頭が名指しで禁じている
+# 「もっともらしい過大値」になる。**縮退させるのは we 側**（`w` は synthesis の起点で
+# 影響が大きく、explorer 区間は fleet の内数なので落としても和は壊れない）
+_last = w if w is not None else d_w
+if d_we is not None and _last is not None and d_we > _last:
+    d_we = None
+
 _emit(d_t1, d_we, d_w)
 PY
-  ) || DERIVED=""
+  # **異常終了は「補完対象が無かった」と区別する**（セルフレビューで検出 / #161）。
+  # 両方を `DERIVED_MARKERS=""` に潰すと、機構が落ちた回が retro の「補完条件を満たさなかった
+  # 回」に紛れ、**効果測定の当のフィールドが失敗を成功と同じ形で記録する**。このリポジトリは
+  # 同型の状況で一貫して gap を立てている（`dispatch` / `diff-digest` / `tokens`）
+  ) || { DERIVED=""; MEASUREMENT_GAPS="${MEASUREMENT_GAPS:+$MEASUREMENT_GAPS }derived"; }
   read -r _D_T1 _D_WE _D_W DERIVED_MARKERS <<< "${DERIVED:-"- - - -"}"
   [ "$_D_T1" = "-" ] || DERIVED_ARGS+=(--derived-t1 "$_D_T1")
   [ "$_D_WE" = "-" ] || DERIVED_ARGS+=(--derived-explore "$_D_WE")

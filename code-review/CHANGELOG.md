@@ -2,6 +2,33 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.82.1] - 2026-08-22
+
+v2.82.0（#161）のセルフレビューで検出した欠陥の修正。反証レイヤーで 15 件を検証し **confirmed 7 / severity-inflated 6 / refuted 2**。
+
+### Fixed
+
+- **`t0` 打点が欠測した回に、無関係な agent の時刻で `t1` を補完して誤値を publish していた**。`t0` が無いと `measure-tokens.sh` は `--since` なし＝**セッション全体**を窓にするため `wave_clock` に同一セッションの別作業の agent が混ざる。しかも `ok()` は `t0` 欠測だと下限チェックを飛ばすので、**何時間も前の起動時刻**がそのまま `t1` になっていた（実測: 本来 10 分の回が `duration_fleet_min` 120 分）。**#161 が守ろうとした「縮退先は欠測であって誤値ではない」を #161 自身が破っていた** — しかも `derived_markers` に載るので retro では最も信頼度が高いラベル付きの過大値として集計に入る。補完の実行条件を `window == "since-t0"` に限定した（`wave_clock` が「この回の agent だけ」であることの担保は窓しか無い）
+- **`payload.agents` が truthy な非 dict のとき未捕捉 `AttributeError` で補完機構が丸ごと no-op になっていた**。`or {}` は falsy しか吸収せず、`.get()` が `try` の**外**にあった。同ファイルの payload 構築側は元から `isinstance` で正規化しており、新規ブロックだけが不変条件を落としていた。`agents` は SKILL テンプレートを LLM が埋めるフィールドなので、**payload が荒れている回＝打点も落ちやすい回**で優先的に落ちる経路だった
+- **explorer wave が最終 wave より後に終わる回で `duration_explore_min` と `duration_synthesis_min` が重なっていた**。`wave_clock` は **start でソート**されているので `clock[-1]` は「最後に起動した wave」であって「最後に終わった wave」とは限らない。`we > w` なら explorer 側を欠測に倒す
+- **補完の異常終了が「補完対象が無かった」と区別できなかった**。両方が `derived_markers: []` に潰れ、retro が機構の失敗を「補完条件を満たさなかった回」として数えていた。`measurement_gaps` に `derived` を立てる（同型の状況で `dispatch` / `diff-digest` / `tokens` が既に取っている扱いに揃えた）
+
+### Added
+
+- **回帰テスト 13 件**。v2.82.0 のセルフレビューは**新設したガードの変異 8 件が 8 件とも生存**することを実測で示していた（`span()` の負クランプ / 非数値スクラブ / `ok()` の下限 2 本 / explorer-wave の marker-wins・`end` 完全性・bool ガード / retro の補完内訳）。**肯定系（補完が効く経路）は守られていたのに、`## 14` の原則を実際に守っている行だけが全部テストの射程外**という非対称だった
+  - `--derived-*` は usage に載った公開 CLI なので、`durations` の **stdout を直接見る**テストを足した（従来は returncode しか見ていなかった）
+  - retro のテストは `measurement_gaps` と `derived_markers` に**同じ識別子**を入れていたため、`assertIn(..., out)` が既存の「欠測内訳」行だけで満たされ、補完内訳を丸ごと殺しても緑だった。fixture を非対称にし `derived_line()` で行を絞る
+  - `ok()` の `t0` 下限は窓の限定で publish 経路から到達しなくなったので `# mutation-ok:` で明示的に外した（防御としては残す）
+  - **等価変異を 2 件踏んで fixture を組み直した**: ①explorer 群の `end` 完全性は explorer が **2 wave に割れた形**でないと `wave_clock` 側が既に `end=None` に倒しており、ガードを外しても結果が変わらない ②bool ガードは `True == 1` なので**先頭 wave が 1 体**でないと累計が一致しない。どちらも「テストは書いたが検証していない」状態だった
+  - `durations` 側の marker-wins（publish とは独立した二段目）は結合テストから到達しないので、**CLI を直接叩く**テストで表明した
+  - **修正した 12 経路すべてで「実装を壊すとテストが落ちる」ことを実測で確認**した
+
+### Changed
+
+- **`timeline()` を `ScriptTestBase` へ移した**。計測ファイルの書式を組み立てる helper が 2 つ（`DerivedMarkerTest.timeline()` / `LatePublishTest._stale_timing()`）になっており、マーカー行書式が変わると直す箇所が 2 つになる。後者を前者の薄いラッパにした
+- **doc の陳腐化 4 件**（v2.82.0 が既存記述を偽にしたもの）: `## 13.1` のサブコマンド列挙に `epochs`（8 → 9）/ `## 14` の `duration_synthesis_min` 行と publish 算出行に補完の但し書き / `## 14` の表の `explorer-wave` に埋めない条件 2 つ / **`## 16` の `measurement_gaps` 定義**（「`duration_*` が `-1` になった理由」→「打点規約が守られたか」。直下の `derived_markers` 行と正面から矛盾していた。**SSoT pin を打ち直した＝節を再確認したはずなのに残した**）
+- **コメントが実装より強い保証を謳っていた 3 件**を実装に合わせた: `ok()` の docstring（`t0 <= lo` は未検査 / 欠測側は制約なし）/ `epochs` の存在理由（`we <= w` は検算していない）/ 実測値と射程解釈の二重記載を `publish-review-event.sh` 側を正本に一本化（数字を 2 箇所に書くと更新漏れで食い違う）
+
 ## [2.82.0] - 2026-08-22
 
 ### Added

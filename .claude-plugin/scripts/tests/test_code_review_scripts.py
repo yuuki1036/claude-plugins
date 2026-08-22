@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -128,6 +129,21 @@ class ScriptTestBase(unittest.TestCase):
         """
         self.assertIn("## レビュー振り返り", out, "retro が出力していない")
         return out.split("⚠️ シグナル")[-1] if "⚠️ シグナル" in out else ""
+
+    def timeline(self, **markers: int) -> None:
+        """計測ファイルを**任意の時間軸で**直接組み立てる.
+
+        `mark` は `date +%s`（実行時刻）しか書けないので、fixture の transcript（固定の
+        過去時刻）と別の軸になり、**整合ガードが常に偽になって補完経路を一度も通らない**。
+        ここだけはファイルを直接書いて両者を同じ軸に乗せる。
+
+        **`ScriptTestBase` に置く**（GitHub issue #161 のセルフレビュー指摘）: 同じ書式を
+        組み立てる helper が 2 つあると、`review-timing.sh` のマーカー行書式が変わったとき
+        直す箇所が 2 つになる。
+        """
+        path = Path(self.timing("start").stdout.strip())
+        path.write_text("".join("%s %d\n" % (k, v) for k, v in markers.items()),
+                        encoding="utf-8")
 
     def full_run(self) -> Path:
         """t0 → t1 → wave → t2 まで打った状態を作る."""
@@ -677,17 +693,6 @@ class DerivedMarkerTest(TranscriptFixture):
     def epoch(self, off: int = 0) -> int:
         return int(self.BASE.replace(tzinfo=timezone.utc).timestamp()) + off
 
-    def timeline(self, **markers: int) -> None:
-        """計測ファイルを直接組み立てる.
-
-        `mark` は `date +%s`（実行時刻）を書くので、fixture の transcript（固定の過去時刻）と
-        別の時間軸になり、**整合ガードが常に偽になって補完経路を一度も通らない**。
-        ここだけはファイルを直接書いて両者を同じ軸に乗せる。
-        """
-        path = Path(self.timing("start").stdout.strip())
-        path.write_text("".join("%s %d\n" % (k, v) for k, v in markers.items()),
-                        encoding="utf-8")
-
     def run_publish(self, payload: dict | None = None) -> dict:
         self.publish(payload, env=self.env_home())
         return self.last_payload()
@@ -807,6 +812,167 @@ class DerivedMarkerTest(TranscriptFixture):
         self.assertEqual(p["derived_markers"], [])
         self.assertEqual(p["duration_synthesis_min"], -1)
 
+    # ---- ここから下は v2.82.0 のセルフレビューで「変異が生存した」経路（#161） --------
+    # 肯定系（補完が効く経路）は守られていたのに、**`## 14` の「縮退先は欠測であって誤値では
+    # ない」を実際に守っている行だけ**が全部テストの射程外だった（変異 8 件中 8 件が生存）。
+
+    def test_a_session_window_run_is_not_derived(self):
+        """**`t0` にアンカーされない窓の回は補完しない**（最も重い実欠陥だった）.
+
+        `t0` 打点が欠けると `measure-tokens.sh` は `--since` なし＝セッション全体を窓に
+        するので、`wave_clock` に同一セッションの無関係な agent が混ざる。しかも `ok()` は
+        `t0` 欠測だと下限を飛ばすため、**何時間も前の別作業の起動時刻**が `t1` の補完値に
+        なり `duration_fleet_min` が過大値として publish されていた（実測 10 分 → 120 分）。
+        """
+        self.two_waves()
+        self.timeline(t1=self.epoch(-10), t2=self.epoch(1200))   # t0 を打たない
+        p = self.run_publish()
+        self.assertEqual(p["tokens"]["window"], "session", "前提（t0 欠測）が再現できていない")
+        self.assertEqual(p["derived_markers"], [], "窓を絞れていない回で補完している")
+
+    def test_a_non_dict_agents_does_not_break_derivation(self):
+        """`payload.agents` が truthy な非 dict でも補完機構は死なない.
+
+        `or {}` は falsy しか吸収しないため、旧版は `.get()` が try の**外**にあり未捕捉
+        `AttributeError` で `--derived-*` が丸ごと渡らなくなっていた（publish 自体は
+        `|| DERIVED=""` で成功するので**壊れても緑**）。
+        """
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        r = self.publish(dict(BASE_PAYLOAD, agents="oops"), env=self.env_home())
+        self.assertNotIn("Traceback", r.stderr, "補完 python が例外で落ちている")
+        p = self.last_payload()
+        self.assertIn("wave", p["derived_markers"], "型不正で補完全体が無効化されている")
+
+    def test_durations_ignores_a_derived_value_when_the_marker_exists(self):
+        """`durations` 側の **marker-wins**（publish 側とは独立した二段目）.
+
+        publish は打点が有る区間に `--derived-*` を渡さないので、この二段目は結合テスト
+        からは到達しない。`--derived-*` は usage に載った公開 CLI なので直接叩いて表明する。
+        """
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(0),
+                      we=self.epoch(600), w=self.epoch(900), t2=self.epoch(1200))
+        out = self.timing("durations", "--derived-explore", str(self.epoch(60)),
+                          "--derived-wave", str(self.epoch(60))).stdout.split()
+        self.assertEqual(out[4], "10", "explore が打点(600) ではなく補完値(60) を採っている")
+        self.assertEqual(out[5], "5", "synthesis が打点(900) ではなく補完値(60) を採っている")
+
+    def test_a_derived_value_after_t2_degrades_to_missing_not_negative(self):
+        """`durations` の**負クランプ**（`review-timing.sh` 側の二段目）.
+
+        publish 側の `ok()` が先に落とすため結合テストからは到達しない。`--derived-*` は
+        usage に載った CLI なので、直接叩いて縮退を表明する。
+        """
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(100))
+        out = self.timing("durations", "--derived-wave", str(self.epoch(900))).stdout.split()
+        self.assertEqual(out[5], "-1", "負の synthesis をそのまま返している")
+
+    def test_a_non_numeric_derived_value_is_dropped_not_coerced(self):
+        """**非数値スクラブ**。awk は文字列を 0 に coerce するので「1970 年に回収した」になる."""
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        for bad in ("-", "abc"):
+            out = self.timing("durations", "--derived-wave", bad).stdout.split()
+            self.assertEqual(out[5], "-1", "非数値 %r を採用している" % bad)
+
+    def test_a_value_before_the_t1_marker_is_rejected(self):
+        """`ok()` の**下限**（`v < lo`）。上限だけがテストで守られていた.
+
+        最終 wave の終了が `t1` 打点より前なら、その `wave_clock` は別の作業のもの。
+        採ると `duration_synthesis_min` が過大になる（負にならないので `span()` の
+        クランプでは捕まらない）。
+        """
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(1000), t2=self.epoch(1200))
+        p = self.run_publish()
+        self.assertEqual(p["duration_synthesis_min"], -1, "t1 より前の終了時刻を採っている")
+        self.assertEqual(p["derived_markers"], [])
+
+    def test_explorer_wave_marker_wins_over_the_derived_value(self):
+        """explorer-wave の **marker-wins**。`t1` / `w` では守られていたのに `we` だけ無検証だった."""
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10),
+                      we=self.epoch(600), w=self.epoch(1000), t2=self.epoch(1200))
+        payload = dict(BASE_PAYLOAD, agents={"explorer": 2, "reviewer": 1})
+        p = self.run_publish(payload)
+        self.assertEqual(p["duration_explore_min"], 10, "打点(600) ではなく実測(300) を使った")
+        self.assertEqual(p["derived_markers"], [])
+
+    def test_explorer_wave_is_not_derived_when_one_of_its_waves_lacks_an_end(self):
+        """explorer 群の **`end` 完全性**。`wave` 行では守られていたが explorer 側は無検証だった.
+
+        **explorer が 2 wave に割れた形で組む**。単一 wave だと `wave_clock` 側が既に
+        `end=None` に倒しているので `all(...)` を外しても結果が変わらず（等価変異）、
+        ガードを守れているかを観測できない。割れていれば `[300, None]` になり、
+        ガードを外すと `max()` が int と None を比較して落ちる。
+        """
+        # wave 1 = explorer 1 体（終了 300）/ wave 2 = explorer 2 体（1 体に終了行が無い）
+        # / wave 3 = reviewer 1 体。累計 1 → 3 で explorer 3 に一致する
+        self.write_transcript([[0], [100, 105], [600]],
+                              ends={0: 300, 1: 400, 3: 900}, base=self.BASE)
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        payload = dict(BASE_PAYLOAD, agents={"explorer": 3, "reviewer": 1})
+        p = self.run_publish(payload)
+        self.assertEqual(p["duration_explore_min"], -1)
+        self.assertNotIn("explorer-wave", p["derived_markers"])
+        self.assertNotIn("derived", p["measurement_gaps"],
+                         "補完が例外で落ちている（`all(...)` ガードが効いていない）")
+        self.assertIn("wave", p["derived_markers"], "最終 wave の補完まで巻き添えにしている")
+
+    def test_a_boolean_explorer_count_is_not_a_headcount(self):
+        """`True` は `int` のサブクラス。体数として扱うと `explorer=1` に化ける.
+
+        同モジュールの `DemoteTypesValidationTest` が確立している規約（bool を int と
+        取り違えない）が `agents.explorer` にだけ適用されていなかった。
+        """
+        # **先頭 wave を 1 体にする**。`True == 1` なので、体数 1 の wave が先頭に無いと
+        # 累計が一致せずガードの有無で結果が変わらない（等価変異になって観測できない）
+        self.write_transcript([[0], [600]], ends={0: 300, 1: 900}, base=self.BASE)
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        payload = dict(BASE_PAYLOAD, agents={"explorer": True, "reviewer": 1})
+        p = self.run_publish(payload)
+        self.assertNotIn("explorer-wave", p["derived_markers"], "bool を体数として扱っている")
+        self.assertEqual(p["duration_explore_min"], -1)
+
+    def test_an_explorer_wave_ending_after_the_last_wave_is_dropped(self):
+        """`we > w` を通すと explore と synthesis が**重なる**（区間の二重計上）.
+
+        `wave_clock` は **start でソート**されているので `clock[-1]` は「最後に起動した
+        wave」であって「最後に終わった wave」とは限らない。
+        """
+        # wave 1（explorer 2 体）が 5000 まで走り、wave 2（1 体）は 900 で終わる
+        self.write_transcript([[0, 5], [600]], ends={0: 4000, 1: 5000, 2: 900},
+                              base=self.BASE)
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(6000))
+        payload = dict(BASE_PAYLOAD, agents={"explorer": 2, "reviewer": 1})
+        p = self.run_publish(payload)
+        self.assertNotIn("explorer-wave", p["derived_markers"], "we > w を通している")
+        self.assertEqual(p["duration_explore_min"], -1)
+
+    def test_a_broken_derivation_is_recorded_as_a_gap(self):
+        """補完 python の**異常終了**を「補完対象が無かった」と区別する.
+
+        両方を `derived_markers == []` に潰すと、機構が落ちた回が retro の
+        「補完条件を満たさなかった回」に紛れ、効果測定の当のフィールドが失敗を成功と
+        同じ形で記録する。**payload を壊せない**ので `PATH` から python3 を外して再現する。
+        """
+        self.two_waves()
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        stub = self.root / "stub"
+        stub.mkdir()
+        # **補完の呼び出しだけを落とす**。publish は payload のマージにも python3 を使うので、
+        # 素朴に潰すとイベントごと消えて「gap が立ったか」を観測できない（実際に踏んだ）。
+        # 補完側だけが `REVIEW_EPOCHS` を渡すので、それを見分けに使う。**本物は絶対パスで
+        # exec する**（PATH 経由だと stub 自身に戻って無限再帰する）
+        (stub / "python3").write_text(
+            '#!/bin/bash\nif [ -n "${REVIEW_EPOCHS:-}" ]; then exit 9; fi\n'
+            'exec %s "$@"\n' % sys.executable, encoding="utf-8")
+        (stub / "python3").chmod(0o755)
+        env = self.env_home()
+        env["PATH"] = "%s:%s" % (stub, env.get("PATH", ""))
+        self.publish(env=env)
+        p = self.last_payload()
+        self.assertIn("derived", p["measurement_gaps"], "補完の異常終了が記録されていない")
+
     def test_derived_markers_is_always_present(self):
         """フィールドの存在自体が補完機構の版マーカーになる（日付では切らない流儀）."""
         self.two_waves()
@@ -821,13 +987,10 @@ class LatePublishTest(ScriptTestBase):
     """遅れて publish した self-review は `duration_min` を欠測に倒す（issue #133）."""
 
     def _stale_timing(self, closing_min: int) -> None:
-        path = self.ts_file()
+        """`timeline()` の薄いラッパ（マーカー行書式の正本を 1 箇所に保つ / #161）."""
         now = int(time.time())
-        path.write_text(
-            "t0 %d\nt1 %d\nw %d\nt2 %d\n"
-            % (now - 3600, now - 3500, now - 2000, now - closing_min * 60),
-            encoding="utf-8",
-        )
+        self.timeline(t0=now - 3600, t1=now - 3500, w=now - 2000,
+                      t2=now - closing_min * 60)
 
     def test_late_self_review_drops_duration_min(self):
         self._stale_timing(30)
@@ -918,17 +1081,24 @@ class RetroTest(ScriptTestBase):
         `measurement_gaps` と**排他ではない**（補完できた回は両方に載る）。混ぜると
         「打点規約が守られているか」と「区間データが使えるか」のどちらの話か読めなくなる。
         """
+        # **2 つの行を非対称にする**（セルフレビューで検出 / #161）。旧版は `measurement_gaps`
+        # と `derived_markers` に同じ識別子を入れていたため、`assertIn(..., out)` が既存の
+        # 「欠測内訳」行だけで満たされ、**打点補完の内訳を丸ごと殺しても緑**だった
+        # （`for m in dm:` → `for m in []:` の変異が RetroTest 42 件を素通りした）
         self._events([
-            {"effort": "high", "measurement_gaps": ["wave", "explorer-wave"],
-             "derived_markers": ["wave", "explorer-wave"]},
+            {"effort": "high", "measurement_gaps": ["wave", "explorer-wave", "t2"],
+             "derived_markers": ["wave"]},
             {"effort": "high", "measurement_gaps": ["t1"], "derived_markers": ["t1"]},
         ])
         out = self.run_script(RETRO).stdout
-        self.assertIn("打点補完", out)
-        self.assertIn("wave=1", out)
-        self.assertIn("explorer-wave=1", out)
-        self.assertIn("t1=1", out)
+        line = self.derived_line(out)
+        self.assertIn("wave=1", line)
+        self.assertIn("t1=1", line)
+        self.assertNotIn("explorer-wave", line,
+                         "補完していない識別子を補完済みとして数えている")
+        self.assertNotIn("t2", line, "補完対象外のマーカーが補完済みに混ざっている")
         self.assertIn("欠測内訳", out, "補完で打点漏れの内訳まで消している")
+        self.assertIn("explorer-wave=1", out, "欠測内訳の側が消えている")
 
     def test_no_derived_field_is_told_apart_from_nothing_derived(self):
         """**待ち行の 3 状態を潰さない**（#153 / #156 で同じ縮退を踏んでいる）.
