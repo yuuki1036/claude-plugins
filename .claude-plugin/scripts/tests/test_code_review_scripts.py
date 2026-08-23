@@ -2143,6 +2143,48 @@ class ReviewBackfillTest(TranscriptFixture):
     def backfill(self, log: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return self.run_script(BACKFILL, "--logs", str(log), *args, env=self.env_home())
 
+    def test_a_missing_wave_end_does_not_abort_the_row(self):
+        """終了時刻が取れない wave があっても行ごと落とさない.
+
+        `wave_clock` の `end` は **wave 内に終了時刻を取れない体が 1 体でもいれば `None`**
+        （`measure-tokens.sh` の縮退 / #153）。素で引き算すると `TypeError` で**途中まで
+        出力して落ちる**。実データが全部埋まっていたため表に出ていなかった経路。
+        """
+        self.write_transcript([[120], [200], [280, 290]], base=self.BASE, ends={0: 150})
+        r = self.backfill(self.write_events(self.payload()), "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rows = json.loads(r.stdout)["backfilled"]
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]["tail_wave_share"], "欠測を実数に倒している")
+        self.assertIsNotNone(rows[0]["waves_expected"], "他の値まで巻き添えにしている")
+
+    def test_waves_expected_agrees_with_publish(self):
+        """**期待 wave 本数の式が publish と後付けで一致する**（複製の乖離を縛る）.
+
+        式の正本は `publish-review-event.sh`。後付け側は同じ式の複製なので、
+        **意味から再構成すると静かにずれる**（実装中に `declared` を deny-list で書き直して
+        偽の食い違いを出した）。publish が書いたイベントをそのまま後付けに読ませ、
+        両者が同じ値を出すことを表明する。
+        """
+        base = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=20)
+        # 先頭 agent を t0 から離す（窓は分オーダーで丸まるので、境界に置くと外れる）
+        self.write_transcript([[120], [200], [280, 290]], base=base)
+        t0 = int(base.replace(tzinfo=timezone.utc).timestamp())
+        self.timeline(t0=t0, t1=t0 + 60, t2=t0 + 900)
+        payload = dict(BASE_PAYLOAD, agents={"explorer": 1, "reviewer": 3, "verify": 0})
+        self.publish(payload, env=self.env_home())
+        published = self.last_payload()
+
+        log = self.root / ".claude" / "events.jsonl"
+        self.assertTrue(log.is_file(), "前提: publish がイベントを書いている")
+        r = self.backfill(log, "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rows = json.loads(r.stdout)["backfilled"]
+        self.assertEqual(len(rows), 1, "後付けが窓を作れていない（fixture の時刻がずれた）")
+        self.assertEqual(rows[0]["waves_expected"], published["dispatch"]["waves_expected"])
+        self.assertEqual(rows[0]["wave_split"],
+                         "wave-split" in published["measurement_gaps"])
+
     def test_unreadable_log_is_fatal(self):
         """**明示指定したログが読めなければ止める。** 黙って 0 件に倒すと、タイプミスが
         「サンプルが少ない」に化けて判断そのものを誤らせる（`review-retro.sh` と同じ流儀）."""

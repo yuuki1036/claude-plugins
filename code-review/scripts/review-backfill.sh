@@ -18,14 +18,20 @@
 # 使い方:
 #   review-backfill.sh                    # 既定のイベントログを後付けして表で出す
 #   review-backfill.sh --logs A B         # ログを明示（review-retro.sh と同じ流儀）
+#   review-backfill.sh --projects ~/.claude/projects/*   # transcript の探索先を明示
 #   review-backfill.sh --json             # 機械可読
+#
+# **`--projects` は明示指定のみ**（既定は今いるリポジトリ由来の 2 候補）。`--logs` で
+# 他リポジトリのイベントを混ぜると transcript は別 slug にあるため既定では解決できないが、
+# **暗黙に全 slug へ広げない** — 同時刻に別リポジトリでレビューが走っていると、窓が重なった
+# 別セッションを掴みうる（誤値より欠測に倒す本スクリプトの方針）。広げるのは利用者の明示操作。
 set -uo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=lib/review-paths.sh
 . "$HERE/lib/review-paths.sh"
 
-AS_JSON=0; EXPLICIT_LOGS=()
+AS_JSON=0; EXPLICIT_LOGS=(); EXPLICIT_PROJS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) AS_JSON=1; shift ;;
@@ -33,6 +39,11 @@ while [ $# -gt 0 ]; do
       shift
       while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do EXPLICIT_LOGS+=("$1"); shift; done
       [ ${#EXPLICIT_LOGS[@]} -gt 0 ] || { echo "FATAL: --logs にパスが必要" >&2; exit 2; }
+      ;;
+    --projects)
+      shift
+      while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do EXPLICIT_PROJS+=("$1"); shift; done
+      [ ${#EXPLICIT_PROJS[@]} -gt 0 ] || { echo "FATAL: --projects にパスが必要" >&2; exit 2; }
       ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -53,8 +64,16 @@ else
 fi
 [ ${#LOGS[@]} -gt 0 ] || { echo "イベントログが無い（.claude/events.jsonl）" >&2; exit 0; }
 
-review_project_dirs
-PROJ_DIRS=(${REVIEW_PROJECT_DIRS[@]+"${REVIEW_PROJECT_DIRS[@]}"})
+if [ ${#EXPLICIT_PROJS[@]} -gt 0 ]; then
+  # **実在を要求する**（`--logs` と同じ。タイプミスを「サンプルが少ない」に化けさせない）
+  for _d in "${EXPLICIT_PROJS[@]}"; do
+    [ -d "$_d" ] || { echo "FATAL: project ディレクトリが読めない: ${_d}" >&2; exit 2; }
+  done
+  PROJ_DIRS=("${EXPLICIT_PROJS[@]}")
+else
+  review_project_dirs
+  PROJ_DIRS=(${REVIEW_PROJECT_DIRS[@]+"${REVIEW_PROJECT_DIRS[@]}"})
+fi
 
 REVIEW_LOGS=$(printf '%s\n' "${LOGS[@]}") \
 REVIEW_PROJS=$(printf '%s\n' "${PROJ_DIRS[@]}") \
@@ -200,14 +219,36 @@ for e in events:
     declared += sum(1 for f in ("recall_skeptic", "meta_reviewer")
                     if isinstance(p.get(f), dict) and p[f].get("fired") is True)
 
+    # 期待 wave 本数。**式の正本は `publish-review-event.sh`**（`wave-split` を立てる側）。
+    # ここは同じ式を後付け用に持つ複製で、**両者の一致は回帰テストで縛っている**
+    # （`declared` を意味から再構成して偽の食い違いを出した実例があるため）
+    def n_of(key):
+        v = a.get(key)
+        return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
+
+    expected = ((1 if n_of("explorer") > 0 else 0) + 1
+                + (1 if n_of("verify") > 0 else 0)
+                + (2 if n_of("round2") > 0 else 0))
+    waves = d.get("waves")
+    # publish 側と同じく **`agents` の申告が壊れている回では判定しない**
+    split = (declared == (d.get("agents") or 0) and isinstance(waves, int)
+             and not isinstance(waves, bool) and waves > expected)
+
     sub, n_ag = tok.get("sub") or {}, tok.get("sub_agents") or 0
     clock = tok.get("wave_clock") or []
     tail_share = tail_n = None
+    # **`end` は欠測しうる**（wave 内に終了時刻を取れない体が 1 体でもいれば
+    # `measure-tokens.sh` が `None` を入れる / #153 の縮退方向）。素で引き算すると
+    # `TypeError` で**行の途中まで出力して落ちる** — 実データが全部埋まっていたので
+    # 表に出ていなかった経路（回帰テストで検出）
     if len(clock) > 1:
-        span = clock[-1]["end"] - clock[0]["start"]
-        if span > 0:
-            tail_n = clock[-1]["n"]
-            tail_share = (clock[-1]["end"] - clock[-1]["start"]) / span
+        last_end, first_start = clock[-1].get("end"), clock[0].get("start")
+        last_start = clock[-1].get("start")
+        if None not in (last_end, first_start, last_start):
+            span = last_end - first_start
+            if span > 0:
+                tail_n = clock[-1]["n"]
+                tail_share = (last_end - last_start) / span
     rows.append({
         "ts": e["ts"], "plugin": e.get("plugin"), "session": best,
         "effort": p.get("effort"), "size_tier": p.get("size_tier"),
@@ -217,6 +258,8 @@ for e in events:
         "sub_agents": n_ag,
         "tail_wave_n": tail_n,
         "tail_wave_share": round(tail_share, 3) if tail_share is not None else None,
+        "waves_expected": expected,
+        "wave_split": split,
     })
 
 if AS_JSON:
@@ -252,6 +295,14 @@ for r in rows:
         json.dumps(d.get("wave_sizes")), d.get("agents"), r["agents_diff"],
         r["cache_read_k_per_agent"] if r["cache_read_k_per_agent"] is not None else "-", tail))
 
+split = [r for r in rows if r["wave_split"]]
+judged = [r for r in rows if r["agents_diff"] == 0]
+print("\n- **一括発行違反（wave 本数が期待超え）**: %d / %d 件"
+      "（`agents` の申告が壊れた回 %d 件は判定対象外）"
+      % (len(split), len(judged), len(rows) - len(judged)))
+for r in split:
+    print("    %s  wave %s（期待 %s） %s" % (r["ts"], r["dispatch"].get("waves"),
+                                            r["waves_expected"], json.dumps(r["dispatch"].get("wave_sizes"))))
 mismatch = [r for r in rows if r["agents_diff"] != 0]
 print("\n- **`agents` の申告と機械計測の差**: 一致 %d / 不一致 %d（#154）"
       % (len(rows) - len(mismatch), len(mismatch)))
