@@ -2078,6 +2078,25 @@ class WaveSplitTest(TranscriptFixture):
         self.assertIn("agents-mismatch", p["measurement_gaps"], "前提: 申告が壊れている")
         self.assertNotIn("wave-split", p["measurement_gaps"])
 
+    def test_a_run_without_explorers_expects_one_wave_fewer(self):
+        """explorer 0 体の回で見込みを 1 つ減らす（**見込み過多は検出漏れになる**）.
+
+        既存テストが全部 explorer 1 体だったため、`explorer > 0` を `>= 0` に広げる変異
+        （＝常に 1 wave 多く見込む）が CI の変異スモークまで生存した。広げると
+        `[5,1]` 型（explorer 無し）の分割が丸ごと見えなくなる。
+        """
+        self.write_transcript([[0], [100, 110], [200]], base=self.BASE)
+        p = self.run_publish(self.agents(explorer=0, reviewer=3))
+        self.assertEqual(p["dispatch"]["waves_expected"], 2)
+        self.assertIn("wave-split", p["measurement_gaps"])
+
+    def test_a_run_without_verification_expects_one_wave_fewer(self):
+        """反証 0 体の回も同じ（`verify` 側の境界を独立に表明する）."""
+        self.write_transcript([[0], [100], [200, 210]], base=self.BASE)
+        p = self.run_publish(self.agents(reviewer=3, verify=0))
+        self.assertEqual(p["dispatch"]["waves_expected"], 2)
+        self.assertIn("wave-split", p["measurement_gaps"])
+
     def test_waves_expected_is_always_present(self):
         """**常に載る**ので、フィールドの存在自体が版マーカーになる（`derived_markers` と同じ流儀）."""
         self.write_transcript([[0], [100, 110, 120], [200]], base=self.BASE)
