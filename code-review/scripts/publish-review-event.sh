@@ -673,6 +673,41 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 両フィールドが payload に残っているので、下流はいつでも引き算し直せる
         if isinstance(measured, int) and not isinstance(measured, bool) and measured != declared:
             gaps.append("agents-mismatch")
+
+        # ---- wave 本数の期待値との突合（一括発行違反の全層検出 / GitHub issue #153 の続き） ----
+        # 上の `serial` 判定は**単独 wave が 3 連続**を要求するので、「reviewer 5 体のうち
+        # 1 体だけ先に出した」型を取り逃す（実測: fleet span の 20% ＝ 9 分を失った回が
+        # `layered`（正常）と判定されていた）。`agents.explorer_waves` は explorer 層しか
+        # 数えないので、こちらも同じ回を検出しない。**規約は全 agent に掛かる**（`## 0`）
+        # のに、機械検出は 2 経路とも一部しか見ていなかった。
+        #
+        # **層の同定はしない。** `subagents/*.meta.json` の `description` は LLM の自由文で
+        # 書式が安定しておらず（実測 25 セッションで大半が分類不能。日英混在・命名バラバラ）、
+        # 分類器を置くと**静かに何も検出しない**方向に倒れる。既存フィールドの算術だけで見る。
+        #
+        # 期待本数は**保守側**（見込みを増やす方向）に倒す。取り逃しは出るが偽陽性は出にくい。
+        # ただし skeptic の fallback 起動（`triage-dynamic-gates.md ## 8.5` / 真に単独 wave に
+        # なる唯一の正規経路）は見込まない — 見込むと実測済みの違反 2 件を両方取り逃す。
+        # **その偽陽性がどれだけ混ざるかを測るのが本 gap の目的**なので、まだ WARN は出さない
+        # （`agents-mismatch` と同じ「まず発生率を測る」段階）。
+        #
+        # `waves_expected` は**常に載せる**ので、フィールドの存在自体が版マーカーになる
+        # （`derived_markers` と同じ流儀。`dispatch.schema` は `measure-tokens.sh` が持つ
+        # 版なので、publish 側の追加で上げると出所が 2 つに割れる）。
+        def _agents_n(key):
+            v = agents.get(key)
+            return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
+
+        expected = ((1 if _agents_n("explorer") > 0 else 0) + 1
+                    + (1 if _agents_n("verify") > 0 else 0)
+                    + (2 if _agents_n("round2") > 0 else 0))
+        payload["dispatch"] = dict(disp, waves_expected=expected)
+        waves = disp.get("waves")
+        # **`agents-mismatch` の回では判定しない** — 期待本数は `agents` の自己申告から作るので、
+        # 申告が壊れている回に重ねると**原因の違う 2 つの信号**が混ざって是正先を指せなくなる
+        if ("agents-mismatch" not in gaps and isinstance(waves, int)
+                and not isinstance(waves, bool) and waves > expected):
+            gaps.append("wave-split")
     else:
         # 判定できなかった（agent 0 体 / transcript や meta.json を引けない）。**「一括だった」
         # にも「逐次だった」にも倒さない** — 規約が守られたことの証拠が無い回として残す

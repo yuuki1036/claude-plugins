@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.84.0] - 2026-08-23
+
+一括発行違反（`orchestration-guide.md ## 0`）の**全層検出**。既存の 2 経路がどちらも一部しか見ておらず、**実測で fleet span の 20%（9 分）を失った回が「正常」と判定されていた**。
+
+### Added
+
+- **`dispatch.waves_expected`（publish が注入）と `measurement_gaps` の `wave-split`**
+  - 既存の検出は ①`dispatch.verdict == "serial"`（**単独 wave 3 連続**を要求）②`agents.explorer_waves`（**explorer 層しか数えない**）の 2 つで、**「reviewer 5 体のうち 1 体だけ先に出した」型を両方とも取り逃す**。実測 `2026-08-22T04:09` の回は `bug-detection` だけが 9 分早く単独発行され、`wave_sizes` が `[1,1,5,3]`・`max_solo_run` 2 で `layered`（正常）判定だった。一括なら `max(505s, 822s)` で済むところを `505 + 36 + 822` 払っている
+  - 期待本数は `(explorer が 1 体以上 ? 1 : 0) + 1 + (verify が 1 体以上 ? 1 : 0) + (round2 が 1 体以上 ? 2 : 0)`。**窓を切った実サンプル 6 件で 6/6 正解・偽陽性 0**（既知の違反 2 件を両方検出）
+  - **層の同定はしない。** `subagents/*.meta.json` の `description` で層を分類する案を実データで検証して**棄却した** — 書式が LLM の自由文で安定せず（実測 25 セッションで大半が分類不能。`reviewer bug-detection` / `Review CLAUDE.md compliance` / `R1 bug-detection` / `doc 整合性レビュー（R1）` が混在）、分類器は**静かに何も検出しない**方向に倒れる。さらに窓を切らないと別レビューの agent を数え、Round 2 の正当な分割も違反にする（実測で両方の偽陽性を確認）
+  - **`agents-mismatch` の回では立てない**（期待は `agents` の自己申告から作るので、申告が壊れた回に重ねると原因の違う 2 つの信号が混ざる）
+  - **まだ WARN は出さない。** skeptic の fallback 起動（`triage-dynamic-gates.md ## 8.5` / 真に単独 wave になる唯一の正規経路）を見込むと実測済みの違反を両方取り逃すため見込んでおらず、**その偽陽性がどれだけ混ざるかを測るのが本 gap の目的**（`agents-mismatch` と同じ「まず発生率を測る」段階）
+- **回帰テスト 6 件**（`WaveSplitTest`）。検出 / 正準形で鳴らない（偽陽性ガード）/ Round 2 の見込み / `agents-mismatch` での抑止 / `waves_expected` が常に載る / fail-fast しない
+
 ## [2.83.1] - 2026-08-23
 
 nightly の変異テストが検出した生存 8 件（GitHub issue #164 / #161 の打点補完コード）を解消した。**生存 = その挙動を検証していない**。

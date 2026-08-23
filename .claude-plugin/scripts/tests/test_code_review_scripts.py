@@ -2011,6 +2011,87 @@ class RetroExplicitLogsTest(ScriptTestBase):
         self.assertIn(".claude/events.jsonl` … 3 件", out)
 
 
+class WaveSplitTest(TranscriptFixture):
+    """wave 本数の期待値との突合（一括発行違反の全層検出）.
+
+    既存の 2 経路はどちらも一部しか見ていなかった:
+
+    - `dispatch.verdict == "serial"` は**単独 wave 3 連続**を要求する → 「reviewer 5 体の
+      うち 1 体だけ先に出した」型を取り逃す（実測: fleet span の 20% ＝ 9 分を失った回が
+      `layered`（正常）判定だった）
+    - `agents.explorer_waves` は explorer 層しか数えない
+
+    規約（`orchestration-guide.md ## 0`）は全 agent に掛かるので、**層を同定せず
+    既存フィールドの算術**で見る。`meta.json` の `description` による層分類は採らない —
+    LLM の自由文で書式が安定せず（実測 25 セッションで大半が分類不能）、分類器は
+    **静かに何も検出しない**方向に倒れる。
+    """
+
+    BASE = datetime(2026, 8, 18, 1, 0, 0)
+
+    def epoch(self, off: int = 0) -> int:
+        return int(self.BASE.replace(tzinfo=timezone.utc).timestamp()) + off
+
+    def run_publish(self, payload: dict | None = None) -> dict:
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        self.publish(payload, env=self.env_home())
+        return self.last_payload()
+
+    def agents(self, **over) -> dict:
+        a = {"explorer": 1, "reviewer": 3, "verify": 1}
+        a.update(over)
+        return dict(BASE_PAYLOAD, agents=a)
+
+    def test_a_split_layer_raises_the_gap(self):
+        """reviewer が 2 wave に割れた形（実測 08-22 の型）を検出する."""
+        self.write_transcript([[0], [100], [200, 210], [300]], base=self.BASE)
+        p = self.run_publish(self.agents())
+        self.assertEqual(p["dispatch"]["waves"], 4)
+        self.assertEqual(p["dispatch"]["waves_expected"], 3)
+        self.assertIn("wave-split", p["measurement_gaps"])
+
+    def test_the_canonical_shape_is_not_flagged(self):
+        """explorer → reviewer → 反証 は設計上正当（**偽陽性を出さない**）.
+
+        ここが鳴ると「⚠️ が出たときだけ行動する」契約が壊れる。
+        """
+        self.write_transcript([[0], [100, 110, 120], [200]], base=self.BASE)
+        p = self.run_publish(self.agents())
+        self.assertEqual(p["dispatch"]["waves"], 3)
+        self.assertNotIn("wave-split", p["measurement_gaps"])
+
+    def test_round_two_is_allowed_extra_waves(self):
+        """Round 2 の再起動は `## 8` で正当に wave を増やす（見込みに入れる）."""
+        self.write_transcript([[0], [100], [200, 210], [300]], base=self.BASE)
+        p = self.run_publish(self.agents(reviewer=2, round2=1))
+        self.assertEqual(p["dispatch"]["waves_expected"], 5)
+        self.assertNotIn("wave-split", p["measurement_gaps"])
+
+    def test_a_broken_headcount_suppresses_the_verdict(self):
+        """`agents-mismatch` の回では判定しない.
+
+        期待本数は `agents` の**自己申告**から作るので、申告が壊れている回に重ねると
+        原因の違う 2 つの信号が混ざり、是正先を指せなくなる。
+        """
+        self.write_transcript([[0], [100], [200, 210], [300]], base=self.BASE)
+        p = self.run_publish(self.agents(reviewer=1))
+        self.assertIn("agents-mismatch", p["measurement_gaps"], "前提: 申告が壊れている")
+        self.assertNotIn("wave-split", p["measurement_gaps"])
+
+    def test_waves_expected_is_always_present(self):
+        """**常に載る**ので、フィールドの存在自体が版マーカーになる（`derived_markers` と同じ流儀）."""
+        self.write_transcript([[0], [100, 110, 120], [200]], base=self.BASE)
+        p = self.run_publish(self.agents())
+        self.assertIn("waves_expected", p["dispatch"])
+
+    def test_the_gap_does_not_fail_the_publish(self):
+        """**fail-fast にしない** — 止めると計測が丸ごと消える（`agents-mismatch` と同じ）."""
+        self.write_transcript([[0], [100], [200, 210], [300]], base=self.BASE)
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        r = self.publish(self.agents(), env=self.env_home())
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+
 class ReviewBackfillTest(TranscriptFixture):
     """後付け計測 CLI（`review-backfill.sh` / GitHub issue #153・#156）.
 
