@@ -704,8 +704,8 @@ class DerivedMarkerTest(TranscriptFixture):
                               ends={0: 200, 1: 300, 2: 900} if ends is None else ends,
                               base=self.BASE)
 
-    def test_a_derived_flag_needs_a_value(self):
-        """値落ちを黙殺しない（`--pr` / `--since` と同じ規約）.
+    def test_a_value_taking_flag_needs_a_value(self):
+        """値落ちを黙殺しない（`--pr` と `--derived-*` / `--since` と同じ規約）.
 
         黙って無視すると補完が効かないまま「打点も無い」回と区別がつかず、
         **計測が silent に壊れる**。境界（`$# >= 2`）を 1 つ狭める変異が生存していたので、
@@ -713,10 +713,14 @@ class DerivedMarkerTest(TranscriptFixture):
         結合テストからは一度も通らない）。
         """
         self.ts_file()
-        self.assertEqual(self.timing("durations", "--derived-t1").returncode, 2,
-                         "値なしの `--derived-t1` を受理している")
-        self.assertEqual(self.timing("durations", "--derived-t1", "1").returncode, 0,
-                         "値ありの `--derived-t1` を拒否している")
+        # **3 フラグすべてを単独で通す**。publish は 3 つ並べて渡すので、1 つだけ渡す形は
+        # 結合テストからは一度も通らない。`--derived-t1` だけ表明していたため
+        # `--derived-explore` の境界変異が nightly まで生存した（GitHub issue #164）
+        for flag in ("--pr", "--derived-t1", "--derived-explore", "--derived-wave"):
+            self.assertEqual(self.timing("durations", flag).returncode, 2,
+                             "値なしの `%s` を受理している" % flag)
+            self.assertEqual(self.timing("durations", flag, "1").returncode, 0,
+                             "値ありの `%s` を拒否している" % flag)
 
     def test_wave_marker_is_derived_from_the_last_wave_end(self):
         """`wave` 打点漏れ ＝ `duration_synthesis_min` 欠測、を実測時刻で埋める."""
@@ -853,8 +857,13 @@ class DerivedMarkerTest(TranscriptFixture):
         """
         self.timeline(t0=self.epoch(-300), t1=self.epoch(0),
                       we=self.epoch(600), w=self.epoch(900), t2=self.epoch(1200))
-        out = self.timing("durations", "--derived-explore", str(self.epoch(60)),
+        out = self.timing("durations", "--derived-t1", str(self.epoch(60)),
+                          "--derived-explore", str(self.epoch(60)),
                           "--derived-wave", str(self.epoch(60))).stdout.split()
+        # **3 マーカーぶんすべてを表明する**。`t1` だけ抜けていたため、`t1` 行の
+        # `&&` を `||` に緩める変異（＝実打点を補完値で上書きする）が生存していた
+        # （GitHub issue #164）。上書きが起きると triage が 5 分から 6 分にずれる
+        self.assertEqual(out[1], "5", "triage が打点(0) ではなく補完値(60) を採っている")
         self.assertEqual(out[4], "10", "explore が打点(600) ではなく補完値(60) を採っている")
         self.assertEqual(out[5], "5", "synthesis が打点(900) ではなく補完値(60) を採っている")
 
@@ -1007,6 +1016,23 @@ class LatePublishTest(ScriptTestBase):
         p = self.last_payload()
         self.assertNotEqual(p["duration_min"], -1)
         self.assertNotIn("late-publish", p["measurement_gaps"])
+
+    def test_the_ten_minute_boundary_is_late(self):
+        """**閾値ちょうどは遅延側**（`## 16` の「10 分以上あけて publish した回」）.
+
+        境界を 1 つ狭める変異が nightly まで生存していた（GitHub issue #164）。
+        `duration_min` を落とすかどうかの判定なので、片側にずれると**契約が壊れた回を
+        正常として集計に入れる**。
+        """
+        self._stale_timing(10)
+        self.publish()
+        self.assertIn("late-publish", self.last_payload()["measurement_gaps"])
+
+    def test_just_under_the_boundary_is_not_late(self):
+        """境界の反対側も同時に表明する（`assertIn` だけだと恒真に倒れても気づけない）."""
+        self._stale_timing(9)
+        self.publish()
+        self.assertNotIn("late-publish", self.last_payload()["measurement_gaps"])
 
     def test_review_is_not_affected(self):
         """review は締めフロー（人間待ち）込みが契約なので、長くても正常."""

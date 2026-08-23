@@ -158,7 +158,7 @@ except ValueError:
     tok = None
 clock = tok.get("wave_clock") if isinstance(tok, dict) else None
 # `wave_clock` は **`unresolved` が無い回にだけ**入る（wave 構成が信用できない回は出ない）
-if not isinstance(clock, list) or not clock:
+if not isinstance(clock, list) or not clock:  # mutation-ok: `wave_clock` は `None` か非空リストしか来ない（`measure-tokens.sh` は `waves_by_msg` が空なら `None` を出す）ので and/or の差が観測できない
     _emit()
 
 raw = ((os.environ.get("REVIEW_EPOCHS") or "").split() + ["-"] * 5)[:5]
@@ -194,9 +194,9 @@ def ok(v, lo):
     `t0` は在る。実効条件は「`v` が `max(t0, lo)` 以上、かつ `t2` 以下」。
     """
     if v is None:
-        return False
+        return False  # mutation-ok: 呼び出し側は `ok(X)` が真のとき同じ `X` を代入するので、`None` を通しても代入されるのは `None`（出力が変わらない）
     if t0 is not None and v < t0:  # mutation-ok: 窓を `since-t0` に限定したので publish 経路からは到達しない防御（`wave_clock` の agent は必ず t0 以降に起動している）
-        return False
+        return False  # mutation-ok: 上の行と同じ理由で到達しない
     if t2 is not None and v > t2:
         return False
     return not (lo is not None and v < lo)
@@ -224,12 +224,12 @@ if we is None and explorer_n > 0:
     for i, wave in enumerate(clock):
         acc += _num(wave.get("n")) or 0
         if acc > explorer_n:
-            break
+            break  # mutation-ok: `n` は 1 以上（`measure-tokens.sh` の `len(w)`）なので acc は狭義単調増加。一度超えたら二度と一致しない
         if acc == explorer_n:
             ends = [_num(x.get("end")) for x in clock[:i + 1]]
             if all(e is not None for e in ends) and ok(max(ends), eff_t1):
                 d_we = max(ends)
-            break
+            break  # mutation-ok: 同上（次の周回で必ず acc が explorer_n を超え、上の break に落ちる）
 
 # **explorer wave が最終 wave より後に終わっていたら explorer 側を落とす**。`clock` は
 # **start でソート**されているので `clock[-1]` は「最後に起動した wave」であって「最後に
