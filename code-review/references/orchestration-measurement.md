@@ -503,6 +503,17 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --logs ~/Projects/*/.claude
 - **人間向けレポートに毎回出す**のは、集計が「気が向いたときにやる作業」に落ちると条件判定が永久に走らないため（本 issue の発端がまさにそれ）。出力は 40 行程度で、レビュー本体のレポートより後に置く
 - **publish の後に実行する**（自分の回を集計に含めるため）。失敗してもレビューは成功扱い（best-effort）
 
+## 18.1. 後付け計測（`review-backfill.sh` / v2.83.0 / GitHub issue #153・#156）
+
+計測フィールドは**追加された版以降の回にしか載らない**ので、判断に必要なサンプルは待つしかなかった。ただし agent transcript は残っているので、**窓を復元できる回に限り**事後に同じ値を算出できる。`scripts/review-backfill.sh` がそれを行う（実測: #153 は n=1 から n=6 になり Phase 2 の判定下限を満たし、#156 は n=2 から n=7 になった）。
+
+- 窓は publish 済み payload の `duration_min` / `duration_triage_min` / `duration_fleet_min` から `[t0, t2]` を逆算する。**分オーダーの誤差が乗る**ので、境界に近い判定（打点補完の可否など）には使えない
+- **値そのものは推定ではない** — `measure-tokens.sh` が読む agent transcript の実測時刻で、`## 16` の `dispatch` と同じ経路
+- **窓が汚れる回は捨てる**（誤値より欠測）。除外は 3 経路: ①区間欠測で窓を作れない ②窓の外にも同セッションの agent がある（`--since` に上限が無いため別レビューが末尾に入る）③`max_inter_wave_sec` が 2 時間を超える（窓が別レビューを丸ごと内包している）。**除外は理由ごとに件数を出す** — 母数を言えないと「⚠️ が出たときだけ行動する」契約が成立しない
+- **`agents` の突合式は `publish-review-event.sh` の `declared` と同一にする**（allow-list の 5 キー + `recall_skeptic` / `meta_reviewer` の `fired`）。deny-list で書くと契約外のキー（実データに `skeptic` の例がある）を足してしまい、#154 が検知したい信号と同じ形のノイズになる
+
+**後付け値を publish しない / `review-retro.sh` に混ぜない。** retro は publish 時点の計測を集計する道具で、精度の違う値を混ぜると層別が読めなくなる。本スクリプトは「判断のためにサンプルを増やしたいとき」に**手で**回す。**doc の実測ベースライン（`## 15`）に載せるときは出典欄に後付けである旨を書く。**
+
 ## 19. 直近レビューとの重複検出（review Step 2.4 / self-review Step 1.4 / v2.62.0 / GitHub issue #123 D）
 
 `--focus` / `--exclude` は**同一 skill 内**の重複しか防げない。実測では self-review と PR レビューが同一 diff を 2 回舐め、互いを知らないまま同じ 3 件に独立到達していた。skill をまたぐ重複は仕組みで拾えていなかったので、publish 済みの計測イベントを突合キーにする。

@@ -35,6 +35,7 @@ PLUGIN = REPO / "code-review"
 TIMING = PLUGIN / "scripts" / "review-timing.sh"
 PUBLISH = PLUGIN / "scripts" / "publish-review-event.sh"
 RETRO = PLUGIN / "scripts" / "review-retro.sh"
+BACKFILL = PLUGIN / "scripts" / "review-backfill.sh"
 
 # 最小構成の payload（層のオブジェクトは必ず入れる契約 / orchestration-measurement.md `## 16`）
 BASE_PAYLOAD = {
@@ -1982,6 +1983,104 @@ class RetroExplicitLogsTest(ScriptTestBase):
         out = self.retro()
         self.assertIn("ログ 1 本", out)
         self.assertIn(".claude/events.jsonl` … 3 件", out)
+
+
+class ReviewBackfillTest(TranscriptFixture):
+    """後付け計測 CLI（`review-backfill.sh` / GitHub issue #153・#156）.
+
+    **守りたいのは「誤値を出すより欠測に倒す」**。窓は payload の `duration_*` からの
+    逆算なので、窓が汚れた回を通すと**もっともらしい過大値**が判断に混ざる。除外の
+    3 経路（区間欠測 / 窓外の agent / 窓が別レビューを内包）と、突合式が publish と
+    同一であることを固定する。
+    """
+
+    BASE = datetime(2026, 8, 18, 1, 0, 0)
+    TS = "2026-08-18T02:00:00Z"
+
+    def payload(self, **over) -> dict:
+        """`t0` が `BASE` に一致する窓を作る payload（60 分 = triage 1 + fleet 50 + closing）."""
+        p = {"pr": "local", "effort": "high", "size_tier": "medium",
+             "duration_min": 60, "duration_triage_min": 1, "duration_fleet_min": 50,
+             "agents": {"explorer": 1, "reviewer": 1},
+             "recall_skeptic": {"fired": False}, "meta_reviewer": {"fired": False}}
+        p.update(over)
+        return p
+
+    def write_events(self, *payloads: dict, ts: str | None = None) -> Path:
+        log = self.root / "events.jsonl"
+        log.write_text("".join(
+            json.dumps({"ts": ts or self.TS, "plugin": "code-review:self-review",
+                        "event": "review:completed", "payload": p}) + "\n"
+            for p in payloads), encoding="utf-8")
+        return log
+
+    def backfill(self, log: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return self.run_script(BACKFILL, "--logs", str(log), *args, env=self.env_home())
+
+    def test_unreadable_log_is_fatal(self):
+        """**明示指定したログが読めなければ止める。** 黙って 0 件に倒すと、タイプミスが
+        「サンプルが少ない」に化けて判断そのものを誤らせる（`review-retro.sh` と同じ流儀）."""
+        r = self.run_script(BACKFILL, "--logs", str(self.root / "nope.jsonl"),
+                            env=self.env_home())
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+
+    def test_backfills_dispatch_from_a_surviving_transcript(self):
+        """窓が清潔な回は `dispatch` を後付けする（本スクリプトの存在理由）."""
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        r = self.backfill(self.write_events(self.payload()), "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rows = json.loads(r.stdout)["backfilled"]
+        self.assertEqual(len(rows), 1, r.stdout)
+        self.assertEqual(rows[0]["dispatch"]["agents"], 2)
+        self.assertEqual(rows[0]["dispatch"]["wave_sizes"], [1, 1])
+
+    def test_declared_counts_only_the_publish_allow_list(self):
+        """**突合式は `publish-review-event.sh` の `declared` と同一**（allow-list 5 キー）.
+
+        `agents` は SKILL テンプレートを LLM が埋めるので、契約に無いキー（実データに
+        `skeptic` の例がある）が混ざる。**deny-list で書くとそれを足してしまい**、
+        #154 が検知したい「review 側だけ内訳が足りない」信号と同じ形のノイズを作る。
+        実装時に実際に踏んで `-1` の偽の食い違いを出した。
+        """
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        p = self.payload(agents={"explorer": 1, "reviewer": 1, "skeptic": 5,
+                                 "verify_findings": 9, "explorer_waves": 1})
+        rows = json.loads(self.backfill(self.write_events(p), "--json").stdout)["backfilled"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["declared"], 2, "allow-list 外のキーを足している")
+        self.assertEqual(rows[0]["agents_diff"], 0)
+
+    def test_agents_outside_the_window_exclude_the_run(self):
+        """**窓の外にも同セッションの agent がいる回は使わない。** `measure-tokens.sh` の
+        `--since` に上限が無いので、別レビューの agent が `wave_clock` の末尾に入る
+        （実測: 1 セッションに 3 レビューが入った回で末尾が翌日の agent になった）."""
+        self.write_transcript([[60], [300], [10800]], ends={0: 180, 1: 420, 2: 11000},
+                              base=self.BASE)
+        r = self.backfill(self.write_events(self.payload()), "--json")
+        out = json.loads(r.stdout)
+        self.assertEqual(out["backfilled"], [])
+        self.assertTrue(any("別レビュー混入" in k for k in out["skipped"]), out["skipped"])
+
+    def test_missing_durations_are_excluded_with_a_reason(self):
+        """区間が欠測した回は窓を作れない。**除外は理由つきで数える**（母数を言えないと
+        「⚠️ が出たときだけ行動する」契約が成立しない）."""
+        r = self.backfill(self.write_events(self.payload(duration_fleet_min=-1)))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("区間欠測で窓を作れない", r.stdout)
+        self.assertIn("後付け成立 0 件", r.stdout)
+
+    def test_zero_rows_still_returns_valid_json(self):
+        """0 件でも JSON を返す（`review-retro.sh --json` と同じ契約）."""
+        r = self.backfill(self.write_events(self.payload(duration_min=-1)), "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads(r.stdout)
+        self.assertEqual(out["backfilled"], [])
+        self.assertEqual(out["candidates"], 1)
+
+    def test_zero_rows_does_not_read_as_broken_measurement(self):
+        """後付けできないことを「計測が壊れている」と読ませない（原理的に不可能な回がある）."""
+        r = self.backfill(self.write_events(self.payload(duration_min=-1)))
+        self.assertIn("原理的に後付けできない", r.stdout)
 
 
 if __name__ == "__main__":

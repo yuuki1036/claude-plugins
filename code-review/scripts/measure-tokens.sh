@@ -44,30 +44,15 @@ done
 
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が必要" >&2; exit 2; }
 
-# transcript ディレクトリの slug はセッションを開始したディレクトリを正規化したもの
-# （Claude Code は英数字以外をすべて `-` に置換する）。
-#
-# **cwd 由来の slug だけを見ると review 経路では必ず落ちる**（GitHub issue #112）。
-# review skill は Step 0 で必ず EnterWorktree するため、本スクリプトを実行する時点の
-# cwd は worktree 側だが、セッションはメインリポジトリで始まっているのでメインループの
-# transcript はメイン slug の下にある。逆に dev-workflow の作業用 worktree 内で開始した
-# セッションでは cwd 側にある。**どちらかに決め打ちすると片方で必ず欠測する**ので、
-# 両方を候補にして「最も新しい .jsonl」を採る（実行中のセッションが最新であることを使う）。
-#
-# メインルートの導出は `--git-common-dir`（linked worktree からもメインの .git を返す）。
-# publish-review-event.sh / lib/review-paths.sh と同じ手法。
-ROOT=$(pwd)
-CAND_ROOTS=("$ROOT")
-GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-# GCD が空のときに無条件で cd "$GCD/.." すると `/` に降りるので必ず分岐する
-if [ -n "$GCD" ] && MAIN_ROOT=$(cd "$GCD/.." && pwd 2>/dev/null); then
-  [ "$MAIN_ROOT" != "$ROOT" ] && CAND_ROOTS+=("$MAIN_ROOT")
-fi
-
-DIRS=()
-for _r in "${CAND_ROOTS[@]}"; do
-  DIRS+=("$HOME/.claude/projects/$(printf %s "$_r" | sed 's#[^a-zA-Z0-9]#-#g')")
-done
+# transcript ディレクトリの slug 導出は `lib/review-paths.sh` の `review_project_dirs`
+# が正本（cwd 側とメイン側の 2 候補を返す理由・片方に決め打ちできない理由はそちら）。
+# ここでは候補ディレクトリを受け取って「最も新しい .jsonl」を採るだけ
+# （実行中のセッションが最新であることを使う）。
+HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=lib/review-paths.sh
+. "$HERE/lib/review-paths.sh"
+review_project_dirs
+DIRS=(${REVIEW_PROJECT_DIRS[@]+"${REVIEW_PROJECT_DIRS[@]}"})
 
 # 候補ディレクトリ横断で .jsonl を集める（`ls -t` に全件渡して大域的な新しい順にする。
 # ディレクトリごとに `ls -t | head -1` すると候補間の順序が失われる）

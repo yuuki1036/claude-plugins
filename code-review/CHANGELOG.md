@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.83.0] - 2026-08-23
+
+publish 済みイベントに transcript から計測を後付けする CLI を追加した。**サンプル待ちで止まっていた計測 issue の母数を、新しくレビューを回さずに増やす**ための道具（#153 は n=1 から 6、#156 は n=2 から 7 になった）。
+
+### Added
+
+- **`scripts/review-backfill.sh`** — `review:completed` の窓（`[t0, t2]`）を payload の `duration_*` から逆算し、生き残っている `subagents/agent-*.jsonl` に対して `measure-tokens.sh` を回して `dispatch` / `tokens` を後付けする。読むだけで **publish はしない**
+  - **窓が汚れる回は捨てる**（誤値より欠測）: ①区間欠測で窓を作れない ②窓の外にも同セッションの agent がある（`--since` に上限が無いので別レビューが `wave_clock` の末尾に入る。実測で 1 セッションに 3 レビューが入った回を踏んだ）③`max_inter_wave_sec` が 2 時間超（窓が別レビューを内包。実測 27 時間）。**除外は理由ごとに件数を出す**
+  - **`agents` の突合式は `publish-review-event.sh` の `declared` と同一**（allow-list の 5 キー + `recall_skeptic` / `meta_reviewer` の `fired`）。実装時に deny-list で書いて、契約外の `skeptic` キーを足し `-1` の偽の食い違いを出した。#154 が検知したい信号と同じ形のノイズなので回帰テストで固定した
+  - `orchestration-measurement.md ## 18.1` に「後付け値を publish しない / retro に混ぜない」を含む運用を書いた
+- **回帰テスト 7 件**（`ReviewBackfillTest`）。除外の 3 経路・突合式・ログ不在の fail-fast・0 件時の JSON 契約・0 件を「計測が壊れている」と読ませない文言
+
+### Changed
+
+- **transcript の project ディレクトリ導出を `lib/review-paths.sh` の `review_project_dirs` に集約**した。`measure-tokens.sh` にインラインで書かれていた式を切り出し、`review-backfill.sh` と共有する（複製を作らない / CLAUDE.md）。挙動は従来と同じ（cwd 側 + `--git-common-dir` の親の 2 候補）
+
 ## [2.82.3] - 2026-08-22
 
 #153 Phase 2 の判定。**末尾 1 体 wave は現状維持**とし、実測ベースライン（`orchestration-measurement.md ## 15`）に fleet の内訳を追記した。

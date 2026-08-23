@@ -88,6 +88,38 @@ review_event_logs() {
   [ ${#REVIEW_EVENT_LOGS[@]} -gt 0 ]
 }
 
+# Claude Code の transcript が置かれる project ディレクトリ候補を配列
+# `REVIEW_PROJECT_DIRS` に入れる（存在しないパスも候補として返す — 呼び出し側が glob する）。
+#
+# **候補は 2 つ必要**（GitHub issue #112）。slug は「セッションを開始したディレクトリ」を
+# 正規化したもので、review skill は Step 0 で EnterWorktree するため、実行時の `pwd` は
+# worktree 側・メインループの transcript はメイン slug 側にある。逆に `dev-workflow` の
+# 作業用 worktree 内で開始したセッションでは `pwd` 側にある。**どちらかに決め打ちすると
+# 片方で必ず欠測する。**
+#
+# メインルートの導出に `--git-common-dir` の親を使うのは、上の `review_main_root` とは
+# **意図的に別**（`publish-review-event.sh` / `measure-tokens.sh` の従来挙動をそのまま
+# 保つため）。ここを `review_main_root` に寄せると、submodule 構成で従来引けていた
+# transcript が引けなくなる方向へ動く。
+#
+# 呼び出し側は `${REVIEW_PROJECT_DIRS[@]+"${REVIEW_PROJECT_DIRS[@]}"}` で展開すること
+# （bash 3.2 + `set -u` では空配列の素の展開が落ちる）。
+review_project_dirs() {
+  REVIEW_PROJECT_DIRS=()
+  local roots=("$PWD") gcd main_root r
+  gcd=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+  # gcd が空のまま `cd "$gcd/.."` すると `/` に降りるので必ず分岐する
+  if [ -n "$gcd" ] && main_root=$(cd "$gcd/.." 2>/dev/null && pwd); then
+    [ "$main_root" != "$PWD" ] && roots+=("$main_root")
+  fi
+  for r in "${roots[@]}"; do
+    REVIEW_PROJECT_DIRS+=("$HOME/.claude/projects/$(printf %s "$r" | sed 's#[^a-zA-Z0-9]#-#g')")
+  done
+  # 上の `review_event_logs` の同じ書き方とは意味が違う — あちらは実在チェックを
+  # 通すので本当に空になりうる
+  [ ${#REVIEW_PROJECT_DIRS[@]} -gt 0 ]  # mutation-ok: roots は必ず $PWD を含むので空にならない（到達しない防御）
+}
+
 # diff ファイルの突合キーを 2 本出力する（`<digest> <files-key>`。算出不能なら空 + rc=1）。
 #
 # **2 本ある理由**: `diff_digest`（全文の cksum）は**同一 skill の再実行でしか一致しない**。
