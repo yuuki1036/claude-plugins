@@ -56,6 +56,18 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
    - **採用**: `differentiated` を既定化するか検討し、実験フラグ（userConfig）と payload の `reviewer_effort_profile` の暫定注記を整理する
    - **不採用**: フラグ・マップ（triage-guide.md `## 7.1`）・payload フィールド・本節を撤去する（実験スカフォールドを残さない）
 
+### 次の 1 回で取ること（2026-08-23 / 実行はまだ）
+
+**arm B は 34 版・24 レビューで一度も走っていない**（`review:completed` の `reviewer_effort_profile` は uniform 24 / differentiated 0）。上の A/B 手順が「同一 PR で 2 回流す」を要求していて重いのが理由と思われるので、**先に 1 回だけ回して足場が動くかと効き目の桁を見る**。
+
+- **やること**: 次に普通に回す self-review で userConfig `reviewer_effort_profile=differentiated` を指定するだけ（追加コストはゼロ）
+- **ペア実行は要らない**（この段階では）。**arm B は 1 回の run の中で高密度観点＝`high` / 低密度観点＝`medium` に割れる**ので、**同一 diff・同一セッションで対照比較ができる**。上の手順がペアを要求しているのは run 間の交絡を消すためで、run 内で割れる設計ならその交絡は最初から無い。ペアが要るのは recall の判定（落ちた指摘を数える）だけ
+- **1 回で分かること**: ①足場が動くか（payload に `differentiated` が載り、effort が実際に割れるか。現在 0/24 で完全に未検証）②per-agent の output トークンと実行時間が high 群と medium 群で差が出るか
+- **1 回では分からないこと**: recall。差が出たときに初めてペア実行へ投資する
+- **要る道具**: `measure-tokens.sh` は sub を合算しているので、**agent ごとの内訳**が要る（focus は `subagents/*.meta.json` の `description` から取れる。書式は不安定だが 1 run 内なら構成が既知なので同定できる）
+- **比較のベースライン**（`uniform` / `high` / `medium` / 全マシン dedup 後 n=10・fleet 実測 8 件）: `12 14 15 19 20 20 26 36`（中央値 19 分）。**範囲が 3 倍あるので、fleet だけを 1 点比べても分布に埋もれる** — 判断材料は上の②（run 内比較）が主
+- **「走らせていないから畳む」はしない**（本節の不採用条項は「走らせて payが無かった」用）。②で差が出なければ、そこで初めて根拠つきで撤去できる
+
 **注意**: 高密度観点（bug-detection / security / spec-compliance / claude-md-compliance / error-handling / migration / performance）と specialist を `medium` に混ぜて測らないこと。難所の recall を落とすと A/B の結論が「安く見えて実は劣化」に倒れる。検証層（meta / skeptic / 反証）は 1 体固定なので profile 対象外のまま。
 
 ## 4. explorer wave の廃止（直列 wave −1）— **採らないで決着**（v2.78.2 / GitHub issue #155）

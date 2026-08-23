@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.85.2] - 2026-08-23
+
+### Changed
+
+- **`design-notes/pending-optimizations.md ## 5` に「次の 1 回で取ること」を追記**。effort profile の A/B は **34 版・24 レビューで arm B の実行が 0 回**（`reviewer_effort_profile` は uniform 24 / differentiated 0）で、上の手順が「同一 PR で 2 回流す」を要求していて重いのが理由と思われる。**arm B は 1 run の中で高密度観点＝`high` / 低密度観点＝`medium` に割れるので、ペア実行なしで同一 diff の対照比較ができる**（ペアが要るのは recall の判定だけ）。次の self-review で userConfig を指定するだけで取れる形に手順を落とし、比較用のベースライン（uniform / high / medium の fleet 分布）も併記した
+
 ## [2.85.1] - 2026-08-23
 
 ### Changed
