@@ -2,6 +2,23 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.82.3] - 2026-08-22
+
+#153 Phase 2 の判定。**末尾 1 体 wave は現状維持**とし、実測ベースライン（`orchestration-measurement.md ## 15`）に fleet の内訳を追記した。
+
+### Changed
+
+- **`max_inter_wave_sec` を「次の wave の費用」と読む誤りを doc で名指しで禁じた**。この値は **wave N 起動 → wave N+1 起動**なので、**wave N+1 がまだ起動していない区間**を含む。#153 起票時はここから「反証 1 体を起動するために fleet の 56-70% を払っている」と読んでいたが、`wave_clock` で末尾 wave の `end - start` を直接測ると **中央値 14.8%（11.6〜25.5% / n=3）**。実測 `[5,1]` の回で `max_inter_wave_sec` は span の 74.5% を占める一方、末尾 1 体そのものは 25.5% で、残りは wave 1 の reviewer 5 体が回っていた時間だった。**指標の読み違えで打ち手の期待値を 4 倍に見積もる**経路なので、正本側に禁止として置いた
+- **`## 15` の「explorer 以降の wave 間隔」を内訳 2 行に割った**（更新の条件として本節自身が予告していたもの）。前 wave の agent 実行が **中央値 89.0%（78.1〜93.5% / n=6）**、orchestrator の統合作業が **中央値 11.0%**
+- **fleet 全体の分解を追記**。orchestrator の待ちは **中央値 8.4%・最大 14.3%（n=6）**で、**fleet の約 92% は agent が回っている時間**。往復削減で縮む上限がここだと明示した。壁時計の打ち手は wave の本数ではなく 1 体あたりの実行時間（#156）にあることを行き先として書いた
+- `triage-guide.md ## 7` の「内訳の分離は GitHub issue #153」を、分離済みの参照に更新した
+- **`design-notes/pending-optimizations.md ## 11` に「末尾 1 体 wave の廃止 — 採らないで決着」を追加**。末尾 1 体は既定 high では**反証レイヤー本体**（`## 9` の meta 由来追加バッチではない — 既定 high では meta が走らない）で、#150 の実測では報告 10 件中 3 件を降格している。14.8% と引き換えに落とすものが大きい。`## 4`（explorer wave 廃止）の「wave を削るなら見るのは reviewer → 反証 の間」も、決着済みの参照に更新した
+
+### Notes
+
+- 上記の実測のうち **fleet 分解と末尾 wave 占有率の 2 行は後付け値**。`wave_clock` は payload に載せない契約（`## 16`）なので、生存している `subagents/agent-*.jsonl` に `[t0, t2]` の窓をかけて事後に算出した。`review-retro.sh` には出ない点を表に明記してある
+- 母集団は **self-review / high / medium に偏っている**（6/6）。review 側の wave 構成では内訳が変わりうるので、次の更新条件を「review 側 5 件」に置いた
+
 ## [2.82.2] - 2026-08-22
 
 ### Fixed

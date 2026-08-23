@@ -284,7 +284,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 - **下限 = Phase 0 で確定している wave**（explorer の有無 + reviewer の 1 本）。**上限 = 上表の各行の最大値の総和**（例に依存せずこの算式で出す）
 - 例（effort=xhigh / medium 帯 / explorer 2 体配置）: 下限 = 1（explorer）+ 1（reviewer）= 2、上限 = 2 + 2（Round 2）+ 1（meta+反証）+ 1（追加反証）= 6 なので `直列 wave: 2〜6（explorer → reviewer+skeptic → [Round 2 ×2] → [meta+反証] → [追加反証]）`
 - **括弧内の列挙と上限の数を必ず突き合わせる**（`[Round 2 ×2]` は 2 本と数える）。ここがズレると wave 可視化の唯一の出力が誤った目安を提示する
-- **wave 単価は層で分けて出す**（explorer wave 約 6 min / 以降の wave 14〜34 min）。**単一の「wave あたり N 分」では表せない** — explorer wave だけが安く、reviewer → 反証 の間が 2 倍以上かかる。**実測値の正本は orchestration-measurement.md `## 15`** で、本節と Phase 0 出力は提示に留める（数値を両方に書かない）。「以降の wave」の値は agent 実行時間とオーケストレーターの統合作業の**合算**（内訳の分離は GitHub issue #153）
+- **wave 単価は層で分けて出す**（explorer wave 約 6 min / 以降の wave 14〜34 min）。**単一の「wave あたり N 分」では表せない** — explorer wave だけが安く、reviewer → 反証 の間が 2 倍以上かかる。**実測値の正本は orchestration-measurement.md `## 15`** で、本節と Phase 0 出力は提示に留める（数値を両方に書かない）。「以降の wave」の値は agent 実行時間とオーケストレーターの統合作業の**合算**で、内訳は分離済み（`orchestration-measurement.md ## 15` の 2 行。実測では約 9 割が前 wave の agent 実行）
 - 実測が上限に張り付くようなら、削る候補は wave であって体数ではない（triage-dynamic-gates.md `## 8` の 1 段圧縮経路・triage-dynamic-gates.md `## 8.5` の相乗り・triage-dynamic-gates.md `## 8` Phase 5.5 のスキップ条件）
 
 ## 6. 規模判定と規模キャップ（体数上限の第 2 系統）
