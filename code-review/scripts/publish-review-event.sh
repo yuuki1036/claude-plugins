@@ -649,6 +649,22 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 倒すと交絡したサンプルが単一世代の分布に混ざる（`tokens` の 0 と同じ理由）
         gaps.append("models")
 
+    # **軸を寄せ損ねた回を可視化する**（GitHub issue #167）。`inflated_axes` / `demoted_types` は
+    # 反証 agent・reviewer が返す語彙を 4 型へ寄せて数える契約だが、**寄せ漏れは静かに通る** —
+    # 合計の突合（上の fail-fast）は `unknown` に落としても一致するので検出できない。
+    # 実測: `intended` 2 件が `base_derived` に寄らず `unknown` に落ち、review 側の唯一の
+    # 型付きサンプルで `base_derived` を 8% と読むか 23% と読むかが変わった（#150 の判断材料）。
+    #
+    # **fail-fast にしない**。`unknown` は「軸が返らなかった」正当な回にも立つ値で、止めると
+    # その回の計測が丸ごと消える（`agents-mismatch` と同じ判断。合計不一致を落とすのとは非対称で、
+    # あちらは内訳が本体とずれた時点で切り分けという用途自体が消えるので落とす側）
+    for _parent, _field, _gap in (("adversarial_verify", "inflated_axes", "axis-unknown"),
+                                  ("below_threshold_counts", "demoted_types", "demoted-unknown")):
+        _d = payload.get(_parent)
+        _d = _d.get(_field) if isinstance(_d, dict) else None
+        if isinstance(_d, dict) and isinstance(_d.get("unknown"), int) and _d["unknown"] > 0:
+            gaps.append(_gap)
+
     # **発行パターンは tokens とは独立に載せる**（GitHub issue #142 / 判定単位は #149）。
     # 窓が空振りして `tokens` が欠測になった回でも、agent の発行元は拾えていることがある。
     # `duration_fleet_min` だけでは「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を

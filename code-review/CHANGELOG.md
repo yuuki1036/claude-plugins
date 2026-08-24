@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.87.0] - 2026-08-24
+
+`inflated_axes` の語彙寄せが payload 生成時に適用されず、**`intended` が `unknown` に落ちていた**（GitHub issue #167）。
+
+実測（`2026-08-24T02:34:04Z` / PR 398）ではレポート本文の自己申告が `intended` 2 + `pre-existing` 1 なのに、payload は `base_derived: 1` / `unknown: 2`。正しくは `base_derived: 3` / `unknown: 0`。**review 側の型付きサンプルは現時点で 1 件しかなくそれがこの回**なので、`base_derived` を 8% と読むか 23% と読むかで #150 の評価が変わる。
+
+原因は**対応表の置き場所**。`orchestration-measurement.md ## 16` の深い位置にはあったが、payload を組み立てるのは両 SKILL の Step 6 で、そこには無かった。反証 agent が返す `axis` の語彙は 5 バケツより広い（8 値）ため、寄せる手順が実行者側に無いと落ちる。
+
+### Added
+
+- **`measurement_gaps` に `axis-unknown` / `demoted-unknown`**。`inflated_axes` / `demoted_types` の `unknown` が 1 件以上ある回に立てる。**合計の突合では寄せ漏れを検出できない** — 語彙内の値を `unknown` に落としても `severity_inflated` との一致は保たれるため、これが無いと寄せ漏れは静かに通る
+  - **fail-fast にしない**。`unknown` は「軸が返らなかった」正当な回にも立つ値で、止めるとその回の計測が丸ごと消える（`agents-mismatch` と同じ判断。合計不一致を落とすのとは非対称で、あちらは内訳が本体とずれた時点で切り分けという用途自体が消える）
+  - **上流（`demoted_types`）と下流（`inflated_axes`）で識別子を分ける**。是正先が違う（reviewer の型名 / 反証プロンプトの axis 語彙）ので、1 つに潰すと集計側が是正先を指せない
+- **両 SKILL の Step 6 に対応表**（`pre-existing` / `intended` → `base_derived` ほか）。payload を組み立てる場所に置く
+
+### Fixed
+
+- **軸の語彙に寄せ先の無い 3 値があることを明記**。反証 agent の `axis` は 8 値（`unreachable | pre-validated | misread | pre-existing | intended | overstated-impact | miscategorized | none`）だが doc の対応表は 4 値ぶんしか書いておらず、`unreachable` / `pre-validated` / `none` の扱いが未定義だった。**これらは `severity-inflated` の軸ではない**ので寄せ先が無く `unknown` に落ちる、と定義した
+
+### 補足
+
+- 上流の `demoted_types` 側は実測で壊れていない（同じ回で `unknown 0`）。語彙が日本語の型名で対応表が同じ節にあるため。ただし同型の寄せ漏れは起きうるので検出は両方に入れた
+- 影響を受けた実データ（PR 398 の回）は本リポジトリの `events.jsonl` には無い。正しい読み方は issue 本文に残してある
+
 ## [2.86.0] - 2026-08-24
 
 `review:completed` にモデル世代を機械計測で載せる（GitHub issue #169）。**集計の最大の交絡因子が層別できていなかった。**

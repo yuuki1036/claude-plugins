@@ -688,6 +688,61 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         self.assertNotIn("agents-mismatch", gaps)
 
 
+class AxisUnknownGapTest(ScriptTestBase):
+    """軸を寄せ損ねた回を可視化する（GitHub issue #167）.
+
+    `inflated_axes` / `demoted_types` は反証 agent・reviewer が返す語彙を 4 型へ寄せて
+    数える契約だが、**寄せ漏れは静かに通る** — 合計の突合は `unknown` に落としても
+    一致するので検出できない。実測では `intended` 2 件が `base_derived` に寄らず
+    `unknown` に落ち、review 側の唯一の型付きサンプルで `base_derived` を 8% と読むか
+    23% と読むかが変わっていた（#150 の判断材料そのもの）。
+    """
+
+    def _axes(self, unknown: int, base: int = 0) -> dict:
+        return {"base_derived": base, "misread": 0, "overstated_impact": 0,
+                "miscategorized": 0, "unknown": unknown}
+
+    def test_an_unmapped_axis_raises_the_gap(self):
+        self.publish(dict(BASE_PAYLOAD,
+                          adversarial_verify={"fired": True, "skip_reason": None,
+                                              "severity_inflated": 3,
+                                              "inflated_axes": self._axes(2, base=1)}))
+        self.assertIn("axis-unknown", self.last_payload()["measurement_gaps"])
+
+    def test_a_fully_mapped_run_is_not_flagged(self):
+        """**偽陽性を出さない**（鳴ると「⚠️ が出たときだけ行動する」契約が壊れる）."""
+        self.publish(dict(BASE_PAYLOAD,
+                          adversarial_verify={"fired": True, "skip_reason": None,
+                                              "severity_inflated": 3,
+                                              "inflated_axes": self._axes(0, base=3)}))
+        self.assertNotIn("axis-unknown", self.last_payload()["measurement_gaps"])
+
+    def test_the_upstream_side_has_its_own_gap(self):
+        """`demoted_types`（上流降格）は別の識別子で立てる.
+
+        是正先が違う（反証プロンプトの axis 語彙 / reviewer の型名）ので、
+        1 つの識別子に混ぜると集計側が是正先を指せなくなる。
+        """
+        p = dict(BASE_PAYLOAD,
+                 below_threshold_counts={"blocker": 0, "critical": 0, "major": 0, "minor": 2,
+                                         "demoted_types": self._axes(2)})
+        p["pre_adjust_counts"] = {"blocker": 0, "critical": 0, "major": 1, "minor": 2}
+        self.publish(p)
+        gaps = self.last_payload()["measurement_gaps"]
+        self.assertIn("demoted-unknown", gaps)
+        self.assertNotIn("axis-unknown", gaps, "上流と下流の是正先が同じ識別子に潰れている")
+
+    def test_the_gap_does_not_block_the_publish(self):
+        """**fail-fast にしない**（`unknown` は正当な回にも立つ。止めると計測が丸ごと消える）."""
+        r = self.publish(dict(BASE_PAYLOAD,
+                              adversarial_verify={"fired": True, "skip_reason": None,
+                                                  "severity_inflated": 2,
+                                                  "inflated_axes": self._axes(2)}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.last_payload()["adversarial_verify"]["inflated_axes"]["unknown"], 2,
+                         "内訳そのものが落ちている")
+
+
 class ModelGenerationTest(TranscriptFixture):
     """`review:completed` にモデル世代を機械計測で載せる（GitHub issue #169）.
 
