@@ -384,6 +384,31 @@ for e in events:
         sp["post"] += num(p.get(sev)) or 0
 
 
+# ---- 5.2 「報告 0 件」と「価値 0」の分離（GitHub issue #168） ---------------
+# 報告 0 件の回は**空振りとは限らない**。閾値の外に落ちた指摘を付録で人間に推している回が
+# あり、集計側がそれを 0 と読むと**費用対効果の分子が構造的に欠ける**（実測: severity 4 バケツ
+# すべて 0 なのに付録 18 件・うち 4 件を人間に推していた回。1 件はテストの穴が実証済み）。
+#
+# **`appendix` を持つ回だけを母数にする**（旧版を混ぜると「推奨なし」が水増しされる）。
+# 版マーカーで切る流儀は `## 9` の cache_read と同じ。
+APPENDIX_MIN_SCHEMA = 1
+apx_rows, apx_silent, apx_rescued = [], 0, 0
+for e in events:
+    p = e["p"]
+    a = p.get("appendix")
+    if not isinstance(a, dict) or schema_of(a, "schema") < APPENDIX_MIN_SCHEMA:
+        continue
+    listed, rec = num(a.get("listed")), num(a.get("recommended"))
+    if listed is None or listed < 0 or rec is None or rec < 0:
+        continue
+    reported = sum(num(p.get(k)) or 0 for k in
+                   ("blocker_count", "critical_count", "major_count", "minor_count"))
+    apx_rows.append((listed, rec, reported))
+    if reported == 0:
+        apx_silent += 1
+        if rec > 0:
+            apx_rescued += 1
+
 # ---- 6. 反証 verdict 分布（calibration_schema で層別） ---------------------
 verdict_layers = {}
 for e in events:
@@ -1100,6 +1125,28 @@ else:
               % (TOK_CACHE_READ_MIN_SCHEMA, per_agent_old_schema, per_agent_undividable))
 
 print()
+# ---- 🔁 付録（「報告 0 件」と「価値 0」の分離 / GitHub issue #168） ----------
+if apx_rows:
+    tot_listed = sum(r[0] for r in apx_rows)
+    tot_rec = sum(r[1] for r in apx_rows)
+    print("**🔁 付録**（n=%d / `appendix.schema` を持つ回だけ）: 列挙 %d 件 / うち人間に推した %d 件"
+          % (len(apx_rows), tot_listed, tot_rec))
+    if apx_silent:
+        print("- **報告 0 件の回 %d 件のうち %d 件は推奨あり**（＝空振りではない）。"
+              "**この %d 件を「価値 0」として費用対効果の分母に入れない** — "
+              "体数キャップ・effort profile・閾値の判断が過小評価に倒れる（issue #168）"
+              % (apx_silent, apx_rescued, apx_rescued))
+    if tot_listed:
+        # **推奨率そのものを見る**。全件が推奨に膨らむ失敗モードは、上限を置く代わりに
+        # ここで観測して実測で判断する（`scoring-guide.md` の「推奨マーカー」）
+        print("- 推奨率 %.0f%%（%d/%d）。**高止まりするなら定義が緩んでいる**"
+              "（推奨は「修正コストが小さい」項目に限る規約 / issue #168）"
+              % (tot_rec / tot_listed * 100, tot_rec, tot_listed))
+    print()
+else:
+    print("**🔁 付録**: 実測 0 件（`appendix` を持つ回がまだ無い / issue #168）。"
+          "**「推した指摘が無かった」ではなく「フィールドが載っていない」**")
+    print()
 if n_modern == 0:
     print("**計測の健全性**: 判定対象なし（`measurement_gaps` を持つ v2.62.0 以降の"
           "サンプルが 0 件。全 %d 件は旧版で publish されたもの）" % n_all)

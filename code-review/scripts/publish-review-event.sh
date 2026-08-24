@@ -441,6 +441,31 @@ def check_demote_types(d, parent, field):
     return sum(d[k] for k in DEMOTE_TYPES)
 
 
+# ---- 🔁 付録の件数（GitHub issue #168） ----
+# **付録に列挙しただけでは「報告 0 件の回」と「価値 0 の回」が payload 上で同じ形になる。**
+# 実測（2026-08-24T02:34 / PR 398 / 21 体 / 62 分）は severity 4 バケツすべて 0 だが、
+# 付録に 18 件が並び、うち 4 件は「この diff 内で 1 行で閉じるので見送るのは惜しい」と
+# 人間に推されていた（1 件は反証エージェントがテストの穴を実証済み）。集計側はこれを
+# 「報告 0 件」と読むので、体数キャップ・effort profile・閾値のどの打ち手も
+# **費用対効果の分子が構造的に欠けたまま**過小評価に倒れる。
+#
+# **この値は LLM の自己申告**（レポート本文の判断そのもの）で、機械計測へ寄せる経路が無い。
+# 検証できるのは構造の不変条件だけ ＝ `recommended` は `listed` を超えない
+apx = payload.get("appendix")
+if isinstance(apx, dict):
+    bad = [k for k in ("listed", "recommended")
+           if not isinstance(apx.get(k), int) or isinstance(apx.get(k), bool) or apx.get(k) < 0]
+    if bad:
+        sys.stderr.write(
+            "appendix の %s が非負整数でない（listed / recommended とも必須。0 件でもキーを省かない — "
+            "「推した指摘が無かった」と「数えなかった」を潰さないため）\n" % ", ".join(bad))
+        sys.exit(1)
+    if apx["recommended"] > apx["listed"]:
+        sys.stderr.write(
+            "appendix.recommended %d が listed %d を超えている（`※ 推奨:` は付録に並べた行に付ける"
+            "マーカーなので、列挙件数を超えることはない）\n" % (apx["recommended"], apx["listed"]))
+        sys.exit(1)
+
 av = payload.get("adversarial_verify")
 if isinstance(av, dict) and isinstance(av.get("inflated_axes"), dict):
     axes_total = check_demote_types(av["inflated_axes"], "adversarial_verify", "inflated_axes")
@@ -551,6 +576,7 @@ SCHEMA_MARKERS = {
     "findings_class":     {"schema": 1},
     "pre_adjust_counts":  {"schema": 2},
     "below_threshold_counts": {"schema": 1},
+    "appendix":           {"schema": 1},
     "adversarial_verify": {"calibration_schema": 2, "gate_schema": 2},
     "recall_skeptic":     {"attribution_schema": 2, "gate_schema": 2},
     "meta_reviewer":      {"gate_schema": 3},

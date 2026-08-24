@@ -21,8 +21,8 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @d5ab4ea2 -->
-<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @3cf8c3c4 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @0b73ade0 -->
+<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @4eac2029 -->
 
 ## 前提
 
@@ -380,7 +380,7 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
    | MAJOR | skip | skip | skip | 報告 |
    | MINOR | skip | skip | skip | 報告 |
 
-6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を同名 severity のバケツへ足し、`severity_threshold` を併せて記録する**（足し込む分は dedup されないため版で非可換。版マーカー `schema` は**スクリプトが注入する**ので書かない。orchestration-measurement.md `## 16`）。**足し込んだその件数を `below_threshold_counts` にも同じバケツで再掲し、`## below-threshold` の `demoted-across-threshold:` 行の型名を `demoted_types` に型別で数える**（どちらも 0 件でもキーを省かない / GitHub issue #146・#150）。合算しか残らないと **(a) 本文を書いてから捨てた**（出力トークンの純損失）と **(b) 件数だけ返した**（既に節約できている）が分離できず、閾値注入の効果を判定できない。**`pre_adjust_counts` を超える値は publish が fail-fast する**。**`adversarial_verify.inflated_axes` は反証 agent の `axis` を同じ 4 型へ寄せて数える**（`pre-existing` / `intended` → `base_derived` / `misread` → `misread` / `overstated-impact` → `overstated_impact` / `miscategorized` → `miscategorized`。**`unknown` は「軸が返らなかった・語彙外だった」件だけ**で、`unreachable` / `pre-validated` / `none` は`severity-inflated` の軸ではないのでここに落ちる）。**語彙内の値を寄せ忘れても合計の突合は通る**ので、`unknown` が 1 件以上あると `measurement_gaps` に `axis-unknown` / `demoted-unknown` が立つ / GitHub issue #167
+6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) より低い severity は除外。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を同名 severity のバケツへ足し、`severity_threshold` を併せて記録する**（足し込む分は dedup されないため版で非可換。版マーカー `schema` は**スクリプトが注入する**ので書かない。orchestration-measurement.md `## 16`）。**足し込んだその件数を `below_threshold_counts` にも同じバケツで再掲し、`## below-threshold` の `demoted-across-threshold:` 行の型名を `demoted_types` に型別で数える**（どちらも 0 件でもキーを省かない / GitHub issue #146・#150）。合算しか残らないと **(a) 本文を書いてから捨てた**（出力トークンの純損失）と **(b) 件数だけ返した**（既に節約できている）が分離できず、閾値注入の効果を判定できない。**`pre_adjust_counts` を超える値は publish が fail-fast する**。**🔁 付録の件数は `appendix` に載せる**（`{listed, recommended}`。`listed` は付録に並べた行数、`recommended` はそのうち `※ 推奨:` を付けた行数。0 件でもキーを省かない / GitHub issue #168）— **付録に列挙しただけでは「報告 0 件の回」と「価値 0 の回」が payload 上で同じ形になる**（実測: severity 4 バケツすべて 0 なのに付録 18 件・うち 4 件を人間に推していた回がある）。`recommended` が `listed` を超えると publish が fail-fast する。マーカーの規約は scoring-guide.md `## 報告閾値を割った指摘の記録` の「推奨マーカー」。**`adversarial_verify.inflated_axes` は反証 agent の `axis` を同じ 4 型へ寄せて数える**（`pre-existing` / `intended` → `base_derived` / `misread` → `misread` / `overstated-impact` → `overstated_impact` / `miscategorized` → `miscategorized`。**`unknown` は「軸が返らなかった・語彙外だった」件だけ**で、`unreachable` / `pre-validated` / `none` は`severity-inflated` の軸ではないのでここに落ちる）。**語彙内の値を寄せ忘れても合計の突合は通る**ので、`unknown` が 1 件以上あると `measurement_gaps` に `axis-unknown` / `demoted-unknown` が立つ / GitHub issue #167
 7. **出力**: タグ（`[re-flag: @user]` 等）と severity ラベルを指摘文冒頭にそのまま残す。`⚠️ 反証メモ:` が付いた係争指摘は本文にメモを残したまま出力する
 
 ### 7. レポート出力
@@ -447,6 +447,7 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
   ファイル: path/to/file:行番号
   脱落理由: <verdict: refuted | severity-inflated> — <軸>（反証根拠 file:line）／ <加減算: 規則名> — confidence XX → YY
   ※ 判断が誤りと思えばこの指摘は有効。再評価してよい
+  ※ 推奨: <見送るのが惜しい理由。修正コストが小さい項目にだけ付ける。閾値を割った理由は上の欄にあるので繰り返さない>
 
 ### 良かった点
 - [src/auth.ts:67-72] 認証失敗の異常系を網羅的に分岐していて堅牢

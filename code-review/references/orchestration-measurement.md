@@ -196,6 +196,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 | `findings_class` | `schema` | 1 |
 | `pre_adjust_counts` | `schema` | 2 |
 | `below_threshold_counts` | `schema` | 1 |
+| `appendix` | `schema` | 1 |
 | `adversarial_verify` | `calibration_schema` | 2 |
 | `adversarial_verify` | `gate_schema` | 2 |
 | `recall_skeptic` | `attribution_schema` | 2 |
@@ -224,7 +225,9 @@ review 用（`--plugin code-review:review --pr <PR番号>`）:
   "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>,
     "inflated_axes":{"base_derived":<n>,"misread":<n>,"overstated_impact":<n>,"miscategorized":<n>,"unknown":<n>}},
   "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
-  "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>}
+  "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
+  "appendix":{"listed":<n>,"recommended":<n>},
+  "appendix":{"listed":<n>,"recommended":<n>}
 }
 ```
 
@@ -262,6 +265,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
 | `blocker_count` / `critical_count` / `major_count` / `minor_count` | severity 別件数（報告マトリクス通過後） |
 | `pre_adjust_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**スコアリング手順 1 完了時点**（統合・dedup 後、verdict 反映・加減算・降格・フィルタの**前**）の severity 分布。下の「調整前後の分離」を参照 |
 | `below_threshold_counts` | `{blocker, critical, major, minor}` + `schema`（**スクリプトが注入**）。**`pre_adjust_counts` に足し込んだ `## below-threshold` ぶんだけ**を同じ severity バケツで再掲する（GitHub issue #146）。`pre_adjust_counts` は合算のままなので、**`pre_adjust - below_threshold` が「reviewer が本文を書いて列挙した指摘」**になる。これが無いと検出 → 報告の歩留まりが (a) 本文を書いてから捨てた（出力トークンの純損失）と (b) 件数だけ返した（既に節約できている）に分解できない。**`pre_adjust_counts` 側の値を超えてはならない**（publish が fail-fast する）。**`demoted_types`** はそのうち **`{{SEVERITY_THRESHOLD}}` を跨ぐ降格で落ちたぶん**の型別内訳（`prompts/reviewer-common.md`「降格される典型パターン」の 4 型 + 型を判別できなかった `unknown`。GitHub issue #150）。型名の対応は**base 由来 → `base_derived` / 読み違え → `misread` / 影響の過大見積もり → `overstated_impact` / カテゴリの取り違え → `miscategorized`**（`inflated_axes` と同じ語彙にしてあるので、上流降格と下流降格を同じ軸で並べて読める）。上流降格が実際に起きているかが観測できないと、上流較正が「型が的外れ」なのか「型を適用していない」のかを切り分けられない。**合計が `below_threshold_counts` の 4 バケツの合計を超えてはならない** |
+| `appendix` | **🔁 付録の件数**（v2.88.0 / GitHub issue #168）。`{listed, recommended}` + `schema`（**スクリプトが注入**）。`listed` は付録に並べた行数、`recommended` はそのうち `※ 推奨:` を付けた行数。**0 件でもキーを省かない**。**付録に列挙しただけでは「報告 0 件の回」と「価値 0 の回」が payload 上で同じ形になる** — 実測（`2026-08-24T02:34:04Z` / PR 398 / 21 体 / 62 分 / sub cache_read 164.9M）は severity 4 バケツすべて 0 だが、付録に 18 件が並び、うち 4 件は「この diff 内で 1 行で閉じるので見送るのは惜しい」と人間に推され、1 件は反証エージェントが実際にコードを削ってテストを走らせ**テストの穴を実証**していた。集計側がこれを「報告 0 件」と読むと、体数キャップ・effort profile・閾値のどの打ち手も**費用対効果の分子が構造的に欠けたまま**過小評価に倒れる。**この値は LLM の自己申告**（レポート本文の判断そのもの）で、機械計測へ寄せる経路が無い — 検証できるのは構造の不変条件だけで、`recommended` が `listed` を超えると publish が fail-fast する。**`result_grid.skip` とは別の量**（あちらは triage で落とした観点の数）。マーカーの規約と判断軸（修正コストが小さいか）は `scoring-guide.md ## 報告閾値を割った指摘の記録` の「推奨マーカー」が正本 |
 | `severity_threshold` | 実行時の `review_severity_threshold` 実効値（`BLOCKER`〜`MINOR`）。**どの severity が `## below-threshold` に回ったかを事後に判別するために必須**（v2.58.0〜）。これが無いと `pre_adjust_counts` の非可換性を補正できない |
 | `missing_coverage` | 欠損観点の識別子配列。空なら `[]`。**語彙は下の「`missing_coverage` の記法」に従う** |
 | `findings_class` | **報告した指摘を「何が捕まえるべきだったか」で分類した件数**（v2.68.0 / GitHub 由来ではなく運用課題から）+ `schema`（スクリプトが注入）。`lint`=静的検査（grep / AST / 構造走査）で機械的に検出できた / `test`=回帰テストがあれば捕まえられた（コードの挙動の誤り）/ `judgement`=設計判断・主張の妥当性など機械で判定できない。**合計は報告件数（blocker+critical+major+minor）と一致させる**。下の「`findings_class` の使い方」を参照 |

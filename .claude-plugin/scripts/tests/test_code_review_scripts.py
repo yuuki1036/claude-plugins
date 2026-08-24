@@ -688,6 +688,117 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         self.assertNotIn("agents-mismatch", gaps)
 
 
+class AppendixCountTest(ScriptTestBase):
+    """🔁 付録の件数を payload に載せる（GitHub issue #168）.
+
+    **付録に列挙しただけでは「報告 0 件の回」と「価値 0 の回」が payload 上で同じ形になる。**
+    実測（PR 398 / 21 体 / 62 分）は severity 4 バケツすべて 0 だが付録に 18 件が並び、
+    うち 4 件は人間に推され 1 件はテストの穴が実証済みだった。集計側がこれを「報告 0 件」と
+    読むと、体数キャップ・effort profile・閾値のどの打ち手も分子が欠けたまま過小評価に倒れる。
+    """
+
+    def test_the_counts_are_carried_with_a_schema_marker(self):
+        self.publish(dict(BASE_PAYLOAD, appendix={"listed": 18, "recommended": 4}))
+        a = self.last_payload()["appendix"]
+        self.assertEqual((a["listed"], a["recommended"]), (18, 4))
+        self.assertEqual(a["schema"], 1, "版マーカーが注入されていない")
+
+    def test_a_recommendation_cannot_exceed_the_listing(self):
+        """**構造の不変条件**（`※ 推奨:` は付録に並べた行に付けるマーカー）.
+
+        この値は LLM の自己申告で機械計測へ寄せる経路が無い。検証できるのはここだけ。
+        """
+        r = self.publish(dict(BASE_PAYLOAD, appendix={"listed": 2, "recommended": 3}))
+        self.assertNotEqual(r.returncode, 0, "listed を超える recommended が通っている")
+        self.assertIn("recommended", r.stderr)
+
+    def test_zero_counts_are_not_omittable(self):
+        """0 件でもキーを省かせない（「推した指摘が無かった」と「数えなかった」を潰さない）."""
+        r = self.publish(dict(BASE_PAYLOAD, appendix={"listed": 0}))
+        self.assertNotEqual(r.returncode, 0, "recommended の欠落が通っている")
+
+    def test_a_boolean_is_not_accepted_as_a_count(self):
+        """`True` は `int` の派生なので素の isinstance を素通りする.
+
+        件数フィールド全般で明示的に弾いている（`check_demote_types` と同じ理由）。
+        通すと `recommended: True` が 1 件として集計に混ざる。
+        """
+        r = self.publish(dict(BASE_PAYLOAD, appendix={"listed": True, "recommended": 0}))
+        self.assertNotEqual(r.returncode, 0, "bool が件数として通っている")
+        self.assertIn("listed", r.stderr)
+
+    def test_a_non_integer_is_rejected_without_crashing(self):
+        """非整数は比較の前に弾く（**比較まで進むと TypeError で落ちる**）."""
+        r = self.publish(dict(BASE_PAYLOAD, appendix={"listed": "18", "recommended": 4}))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("Traceback", r.stderr, "型エラーで落ちている（弾いていない）")
+
+    def test_a_negative_count_is_rejected(self):
+        r = self.publish(dict(BASE_PAYLOAD, appendix={"listed": 3, "recommended": -1}))
+        self.assertNotEqual(r.returncode, 0)
+
+    def test_a_missing_appendix_is_visible(self):
+        """フィールドごと落ちた回を可視化する（層のオブジェクトと同じ扱い）."""
+        self.publish(BASE_PAYLOAD)
+        p = self.last_payload()
+        self.assertNotIn("appendix", p, "空のオブジェクトを捏造している")
+        self.assertIn("payload:appendix", p["measurement_gaps"])
+
+
+class AppendixRetroTest(ScriptTestBase):
+    """retro が「報告 0 件のうち推奨ありの回」を出す（GitHub issue #168）."""
+
+    def _events(self, rows: list[dict]) -> None:
+        log = self.root / ".claude" / "events.jsonl"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("\n".join(
+            json.dumps({"ts": "2026-08-1%d T00:%02d:00Z".replace(" ", "") % (i // 60, i % 60),
+                        "plugin": "code-review:self-review",
+                        "event": "review:completed", "payload": r}, ensure_ascii=False)
+            for i, r in enumerate(rows)) + "\n", encoding="utf-8")
+
+    def _row(self, listed: int, rec: int, reported: int) -> dict:
+        return {"effort": "high", "measurement_gaps": [],
+                "appendix": {"listed": listed, "recommended": rec, "schema": 1},
+                "blocker_count": 0, "critical_count": 0,
+                "major_count": reported, "minor_count": 0}
+
+    def test_a_silent_run_with_recommendations_is_called_out(self):
+        """**報告 0 件でも推奨ありなら空振りではない**（費用対効果の分子）."""
+        self._events([self._row(18, 4, 0), self._row(3, 0, 0), self._row(5, 1, 2)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("報告 0 件の回 2 件のうち 1 件は推奨あり", out)
+
+    def test_the_recommendation_rate_is_reported(self):
+        """**推奨率そのものを見る**（全件が推奨に膨らむ失敗モードの検出）."""
+        self._events([self._row(10, 10, 0)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("推奨率 100%", out)
+
+    def test_a_malformed_appendix_is_excluded_from_the_population(self):
+        """壊れた `appendix` は母数に入れない（**retro は他マシンが書いた JSON も読む**）.
+
+        publish の fail-fast は自マシンの publish 経路にしか掛からない。`--logs` で
+        別リポジトリのログを合算する経路（#160）では検証を通っていない値が来うるので、
+        読む側でも落とす。潰すと欠けた値が 0 件として推奨率の分母に混ざる。
+        """
+        self._events([self._row(18, 4, 0),
+                      {"effort": "high", "measurement_gaps": [], "blocker_count": 0,
+                       "critical_count": 0, "major_count": 0, "minor_count": 0,
+                       "appendix": {"recommended": 2, "schema": 1}}])   # listed 欠落
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("n=1", out, "壊れた行を母数に入れている")
+        self.assertIn("列挙 18 件 / うち人間に推した 4 件", out)
+
+    def test_an_absent_field_is_not_read_as_no_recommendations(self):
+        """旧版（`appendix` 無し）を「推奨なし」に潰さない."""
+        self._events([{"effort": "high", "measurement_gaps": [], "blocker_count": 0,
+                       "critical_count": 0, "major_count": 0, "minor_count": 0}])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("フィールドが載っていない", out)
+        self.assertNotIn("報告 0 件の回", out, "旧版を母数に入れている")
+
+
 class AxisUnknownGapTest(ScriptTestBase):
     """軸を寄せ損ねた回を可視化する（GitHub issue #167）.
 
