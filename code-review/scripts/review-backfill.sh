@@ -226,9 +226,17 @@ for e in events:
         v = a.get(key)
         return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
 
+    # meta が指摘を足した回の追加反証 wave（#166）。**publish 側と同じ条件**にすること
+    m = p.get("meta_reviewer")
+    meta_added = (isinstance(m, dict) and m.get("fired") is True
+                  and isinstance(m.get("findings_added"), int)
+                  and not isinstance(m.get("findings_added"), bool)
+                  and m["findings_added"] > 0)
+
     expected = ((1 if n_of("explorer") > 0 else 0) + 1
                 + (1 if n_of("verify") > 0 else 0)
-                + (2 if n_of("round2") > 0 else 0))
+                + (2 if n_of("round2") > 0 else 0)
+                + (1 if meta_added else 0))
     waves = d.get("waves")
     # publish 側と同じく **`agents` の申告が壊れている回では判定しない**
     split = (declared == (d.get("agents") or 0) and isinstance(waves, int)

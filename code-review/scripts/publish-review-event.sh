@@ -732,9 +732,26 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             v = agents.get(key)
             return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
 
+        # **meta が指摘を足した回は反証 wave が 1 本増える**（GitHub issue #166）。
+        # meta 由来の `[meta]` タグ付き指摘を反証にかける追加バッチは、**meta の出力が
+        # 存在しない時点では発行できない**ので構造的な直列であって一括発行違反ではない。
+        # `meta_reviewer` は `agents` に計上しない契約（`## 16`）なので、この 1 本は
+        # 既存の式のどの項にも現れず、実運用で初めて `wave-split` が立ったとき偽陽性だった。
+        #
+        # **`findings_added` が 1 以上**を条件にする。実際の追加バッチは「足した指摘のうち
+        # 反証ゲートに該当する分があるとき」だけ起動するので、これは見込みの上側（保守側）。
+        # 本ブロックの方針どおり、取り逃しを許して偽陽性を出さない方へ倒す
+        def _meta_added_findings():
+            m = payload.get("meta_reviewer")
+            if not isinstance(m, dict) or m.get("fired") is not True:
+                return False
+            n = m.get("findings_added")
+            return isinstance(n, int) and not isinstance(n, bool) and n > 0
+
         expected = ((1 if _agents_n("explorer") > 0 else 0) + 1
                     + (1 if _agents_n("verify") > 0 else 0)
-                    + (2 if _agents_n("round2") > 0 else 0))
+                    + (2 if _agents_n("round2") > 0 else 0)
+                    + (1 if _meta_added_findings() else 0))
         payload["dispatch"] = dict(disp, waves_expected=expected)
         waves = disp.get("waves")
         # **`agents-mismatch` の回では判定しない** — 期待本数は `agents` の自己申告から作るので、

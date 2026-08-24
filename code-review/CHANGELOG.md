@@ -2,6 +2,26 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.87.1] - 2026-08-24
+
+`wave-split`（v2.84.0）の初サンプルが**偽陽性**だった（GitHub issue #166）。
+
+対象は `2026-08-24T02:34:04Z` / PR 398 / xhigh / large / 21 体 / `wave_sizes: [6,10,4,1]`。wave 4 は **meta-reviewer が追加した指摘（`findings_added: 2`）を反証にかけるバッチ**で、**meta の出力が存在しない時点では発行できない**構造的な直列。一括発行違反ではない。
+
+`meta_reviewer` は `agents` に計上しない契約（`orchestration-measurement.md ## 16`）なので、この追加 wave は期待式のどの項にも現れていなかった。v2.84.0 の検証（実サンプル 6 件で 6/6 正解）と v2.85.0 の backfill 判定（判定可能 6 件 / 検出 2 件 / 偽陽性 0）には、この型のサンプルが入っていなかった。
+
+### Fixed
+
+- **期待式に meta 項を追加**: `(explorer が 1 体以上 ? 1 : 0) + 1 + (verify が 1 体以上 ? 1 : 0) + (round2 が 1 体以上 ? 2 : 0) + (meta_reviewer.fired かつ findings_added が 1 以上 ? 1 : 0)`
+  - 条件を `findings_added` が 1 以上にしたのは**見込みの上側（保守側）に倒す**ため。実際の追加バッチは足した指摘のうち反証ゲート該当分があるときだけ起動するので、これは超集合。本判定の既存方針（取り逃しを許して偽陽性を出さない）と揃えた
+  - **式は `publish-review-event.sh`（正本）と `review-backfill.sh`（複製）の 2 箇所を同時に直した**。境界は両側でテストする（片方だけ直すと静かにずれる）
+- **判定そのものは緩めていない**。v2.84.0 が拾った既知の違反（reviewer が単独 wave に割れる `[1,1,5,3]` 型）は meta と無関係なので取り逃さない。回帰テストで明示的に表明した
+
+### 補足
+
+- WARN 化を保留している理由（skeptic の fallback 起動の偽陽性がどれだけ混ざるか未知）は変わらない。**本件は fallback とは別経路の偽陽性**で、こちらは式で消せる
+- 回帰テスト 6 件追加（publish 4 / backfill 2）。境界は `findings_added` 0 / meta 未発火 / 既知の違反を取り逃さないこと。**meta 発火は `declared` に +1 されるので fixture の体数を揃えないと `agents-mismatch` が立って wave 判定が抑止される** — 実装中にこれで 2 件落ちた
+
 ## [2.87.0] - 2026-08-24
 
 `inflated_axes` の語彙寄せが payload 生成時に適用されず、**`intended` が `unknown` に落ちていた**（GitHub issue #167）。

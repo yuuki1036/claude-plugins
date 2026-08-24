@@ -2334,6 +2334,60 @@ class WaveSplitTest(TranscriptFixture):
         self.assertEqual(p["dispatch"]["waves_expected"], 5)
         self.assertNotIn("wave-split", p["measurement_gaps"])
 
+    def test_meta_added_findings_expect_one_more_wave(self):
+        """**meta 由来指摘の反証バッチは構造的な直列**（GitHub issue #166）.
+
+        実運用で初めて `wave-split` が立った回（`[6,10,4,1]` / PR 398）が偽陽性だった。
+        wave 4 は meta が足した指摘を反証にかけるバッチで、**meta の出力が存在しない
+        時点では発行できない**。`meta_reviewer` は `agents` に計上しない契約なので、
+        この 1 本は既存の式のどの項にも現れていなかった。
+        """
+        # meta 発火は `declared` に +1 されるので transcript も 6 体にする
+        # （`agents-mismatch` が立つと wave 判定そのものが抑止される）
+        self.write_transcript([[0], [100, 105], [200, 210], [300]], base=self.BASE)
+        p = dict(self.agents(),
+                 meta_reviewer={"fired": True, "skip_reason": None, "findings_added": 2})
+        published = self.run_publish(p)
+        self.assertNotIn("agents-mismatch", published["measurement_gaps"], "前提: 申告が揃っている")
+        self.assertEqual(published["dispatch"]["waves"], 4)
+        self.assertEqual(published["dispatch"]["waves_expected"], 4,
+                         "meta が足した指摘の反証 wave を見込んでいない")
+        self.assertNotIn("wave-split", published["measurement_gaps"])
+
+    def test_meta_without_added_findings_does_not_raise_the_expectation(self):
+        """`findings_added` 0 の回では増やさない（**見込み過多は検出漏れになる**）."""
+        self.write_transcript([[0], [100, 105], [200, 210], [300]], base=self.BASE)
+        p = dict(self.agents(),
+                 meta_reviewer={"fired": True, "skip_reason": None, "findings_added": 0})
+        published = self.run_publish(p)
+        self.assertEqual(published["dispatch"]["waves_expected"], 3)
+        self.assertIn("wave-split", published["measurement_gaps"],
+                      "既知の違反を取り逃している")
+
+    def test_an_unfired_meta_does_not_raise_the_expectation(self):
+        """meta 未発火なら増やさない（`findings_added` が残っていても発火が優先）."""
+        self.write_transcript([[0], [100], [200, 210], [300]], base=self.BASE)
+        p = dict(self.agents(),
+                 meta_reviewer={"fired": False, "skip_reason": "effort", "findings_added": 3})
+        published = self.run_publish(p)
+        self.assertEqual(published["dispatch"]["waves_expected"], 3)
+        self.assertIn("wave-split", published["measurement_gaps"])
+
+    def test_the_known_reviewer_split_is_still_caught_with_meta(self):
+        """**判定そのものを緩めない**（#166 の補足）.
+
+        v2.84.0 が拾った既知の違反（reviewer が単独 wave に割れる `[1,1,...]` 型）は
+        meta と無関係なので、meta の項を足しても取り逃さない。
+        """
+        # 6 体 / 5 wave（[1,1,1,2,1]）に対し meta 込みの見込みは 4
+        self.write_transcript([[0], [100], [200], [300, 310], [400]], base=self.BASE)
+        p = dict(self.agents(),
+                 meta_reviewer={"fired": True, "skip_reason": None, "findings_added": 2})
+        published = self.run_publish(p)
+        self.assertEqual(published["dispatch"]["waves_expected"], 4)
+        self.assertIn("wave-split", published["measurement_gaps"],
+                      "meta の項を足したせいで既知の違反を取り逃している")
+
     def test_a_broken_headcount_suppresses_the_verdict(self):
         """`agents-mismatch` の回では判定しない.
 
@@ -2648,6 +2702,28 @@ class ReviewBackfillTest(TranscriptFixture):
         r = self.backfill(self.write_events(self.payload(agents={"reviewer": 2})), "--json")
         rows = json.loads(r.stdout)["backfilled"]
         self.assertEqual(rows[0]["waves_expected"], 1, "explorer 0 体で 1 wave 多く見込んでいる")
+
+    def test_expected_waves_include_the_meta_batch(self):
+        """meta が指摘を足した回は後付け側も 1 本多く見込む（publish と同じ境界 / #166）.
+
+        式は publish が正本でここは複製。**片方だけ直すと静かにずれる**ので、
+        境界そのものを両側で表明する。
+        """
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        p = self.payload(agents={"explorer": 1, "reviewer": 1},
+                         meta_reviewer={"fired": True, "skip_reason": None,
+                                        "findings_added": 2})
+        rows = json.loads(self.backfill(self.write_events(p), "--json").stdout)["backfilled"]
+        self.assertEqual(rows[0]["waves_expected"], 3, "meta の追加反証 wave を見込んでいない")
+
+    def test_expected_waves_ignore_a_meta_that_added_nothing(self):
+        """`findings_added` 0 なら増やさない（**見込み過多は検出漏れになる**）."""
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        p = self.payload(agents={"explorer": 1, "reviewer": 1},
+                         meta_reviewer={"fired": True, "skip_reason": None,
+                                        "findings_added": 0})
+        rows = json.loads(self.backfill(self.write_events(p), "--json").stdout)["backfilled"]
+        self.assertEqual(rows[0]["waves_expected"], 2)
 
     def test_the_tail_share_is_reported_when_ends_exist(self):
         """終了時刻が揃った回は末尾 wave の占有率を**実数で**出す.
