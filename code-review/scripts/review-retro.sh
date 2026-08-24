@@ -257,6 +257,40 @@ report.append(("サンプル", "全 %d 件（直近 30 日 %d 件） / %s"
                % (len(events), len(recent),
                   " ".join("%s=%d" % kv for kv in sorted(by_plugin.items())))))
 
+# ---- モデル世代の層別キー（GitHub issue #169） ------------------------------
+# `effort` / `size_tier` / `reviewer_effort_profile` の層別は、Opus 5 と 4.8 が混ざった
+# 瞬間に成立しなくなる（実測: 2026-08-24 の 1 日で 3 サンプル中 2 件が 4.8 で、
+# `sub_cache_read_k / sub_agents` の 7,853k と 3,7xx k の差が tier と世代で完全に交絡していた）。
+# 世代はユーザーが実行時に選ぶもの（エイリアスは親世代を継ぐ / `docs/pipeline-design.md`）
+# なので、**事故ではなく層別キー**として扱う。
+def gen_of(p):
+    """payload → 世代ラベル。`unrecorded`（旧版）と `mixed`（切替・引き当て失敗）は
+    どちらも既知の世代と同じバケツに入れない。「たぶん opus-5 だった」は観測ではない。"""
+    m = p.get("models")
+    if not isinstance(m, dict):
+        return "unrecorded"
+    v = m.get("main")
+    if not isinstance(v, str) or not v:
+        return "mixed"
+    return v[len("claude-"):] if v.startswith("claude-") else v
+
+
+# **母集団に 2 種以上あるときだけキーへ足す**。1 種しか無い期間まで割ると、既存の
+# `effort/size_tier` バケツが n=1 に砕けて中央値が読めなくなる。分割の目的は交絡を切ることで
+# あって、キーを増やすことではない
+GEN_COUNTS = {}
+for _e in events:
+    _g = gen_of(_e["p"])
+    GEN_COUNTS[_g] = GEN_COUNTS.get(_g, 0) + 1
+GEN_KINDS = sorted(GEN_COUNTS)
+GEN_SPLIT = len(GEN_KINDS) > 1
+
+
+def with_gen(p, key):
+    """世代が 2 種以上ある母集団でだけ層別キーへ世代を足す。"""
+    return key + "/" + gen_of(p) if GEN_SPLIT else key
+
+
 # ---- 2. effort × size_tier 別の fleet 時間・体数 ---------------------------
 buckets = {}
 for e in events:
@@ -264,7 +298,7 @@ for e in events:
     fleet = num(p.get("duration_fleet_min"))
     if fleet is None or fleet < 0:
         continue
-    key = "%s/%s" % (p.get("effort", "?"), p.get("size_tier", "?"))
+    key = with_gen(p, "%s/%s" % (p.get("effort", "?"), p.get("size_tier", "?")))
     buckets.setdefault(key, {"fleet": [], "agents": []})
     buckets[key]["fleet"].append(fleet)
     ta = total_agents(p)
@@ -385,7 +419,7 @@ def demote_rows(field, key):
         d = parent.get(key) if isinstance(parent, dict) else None
         if not isinstance(d, dict):
             continue
-        row = rows.setdefault(e["plugin"],
+        row = rows.setdefault(with_gen(e["p"], e["plugin"]),
                               dict({"n": 0, "total": 0}, **{k: 0 for k in DEMOTE_TYPES}))
         row["n"] += 1
         for k in DEMOTE_TYPES:
@@ -586,7 +620,7 @@ for e in tok_rows:
     if cr is None or cr < 0 or na is None or na <= 0:
         per_agent_undividable += 1
         continue
-    key = "%s/%s" % (e["p"].get("effort", "?"), e["p"].get("size_tier", "?"))
+    key = with_gen(e["p"], "%s/%s" % (e["p"].get("effort", "?"), e["p"].get("size_tier", "?")))
     per_agent_buckets.setdefault(key, []).append(cr / na)
 
 per_agent_rows = []
@@ -795,6 +829,12 @@ print()
 for label, value in report:
     print("- **%s**: %s" % (label, value))
 
+print()
+# **世代の内訳は常に出す**（#169）。層別しなかった回に「なぜ 1 本の中央値なのか」を
+# 残さないと、次に世代が混ざったとき過去の数字をそのまま比較してしまう
+print("**モデル世代**: %s → %s（#169）" % (
+    " / ".join("`%s` %d 件" % (g, GEN_COUNTS[g]) for g in GEN_KINDS) or "サンプル無し",
+    "2 種以上あるので下の層別キーに含めている" if GEN_SPLIT else "1 種のみなので層別しない"))
 print()
 print("**effort × size_tier**（fleet 中央値 / 体数中央値）")
 print()

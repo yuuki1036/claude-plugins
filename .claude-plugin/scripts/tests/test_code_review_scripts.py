@@ -37,6 +37,7 @@ TIMING = PLUGIN / "scripts" / "review-timing.sh"
 PUBLISH = PLUGIN / "scripts" / "publish-review-event.sh"
 RETRO = PLUGIN / "scripts" / "review-retro.sh"
 BACKFILL = PLUGIN / "scripts" / "review-backfill.sh"
+MEASURE = PLUGIN / "scripts" / "measure-tokens.sh"
 
 # 最小構成の payload（層のオブジェクトは必ず入れる契約 / orchestration-measurement.md `## 16`）
 BASE_PAYLOAD = {
@@ -383,7 +384,9 @@ class TranscriptFixture(ScriptTestBase):
 
     def write_transcript(self, waves: list[list[int]], scale: int = 1,
                          ends: dict[int, int] | None = None,
-                         base: datetime | None = None) -> None:
+                         base: datetime | None = None,
+                         main_models: tuple[str, ...] = ("claude-opus-5",),
+                         sub_models: tuple[str, ...] | None = None) -> None:
         """cwd に対応する slug へ session + subagent を置く.
 
         `waves[i]` は**同一メッセージから発行した** agent の起動オフセット（秒）。
@@ -398,13 +401,22 @@ class TranscriptFixture(ScriptTestBase):
         # transcript の時刻を同じ時間軸に乗せる必要がある
         base = base or datetime(2026, 8, 18, 1, 0, 0)
 
-        def row(ts: str) -> str:
-            return json.dumps({"type": "assistant", "timestamp": ts,
-                               "message": {"usage": {"output_tokens": 10 * scale,
-                                                     "cache_creation_input_tokens": 20 * scale,
-                                                     "cache_read_input_tokens": 30 * scale}}})
+        # **実 transcript の assistant 行は必ず `message.model` を持つ**（GitHub issue #169）。
+        # fixture から落とすと publish が毎回 `models` 欠測になり、**欠測が既定の形**として
+        # テストに焼き付く。既定で載せ、旧版・混在の経路は引数で明示的に作る
+        def row(ts: str, model: str | None = "claude-opus-5") -> str:
+            msg: dict = {"usage": {"output_tokens": 10 * scale,
+                                   "cache_creation_input_tokens": 20 * scale,
+                                   "cache_read_input_tokens": 30 * scale}}
+            if model:
+                msg["model"] = model
+            return json.dumps({"type": "assistant", "timestamp": ts, "message": msg})
 
-        rows = [row(base.isoformat() + "Z")]
+        # `main_models` が空タプルなら `model` を持たない行（`models` を引けない旧版の再現）。
+        # 2 つ以上なら main 側が混在した回（実測: opus-5 → opus-4-8 → opus-5 の切替）
+        subs = sub_models if sub_models is not None else main_models
+        rows = [row((base + timedelta(seconds=i)).isoformat() + "Z", m)
+                for i, m in enumerate(main_models or (None,))]
         sub = d / "s1" / "subagents"
         sub.mkdir(parents=True, exist_ok=True)
         idx = 0
@@ -420,9 +432,11 @@ class TranscriptFixture(ScriptTestBase):
                 # 終了時刻**（GitHub issue #153）。`ends` にその体の index が
                 # 無ければ終了行を持たない（欠測経路の再現）
                 end_off = None if ends is None else ends.get(idx)
-                lines = [row(ts)]
+                sub_model = subs[idx % len(subs)] if subs else None
+                lines = [row(ts, sub_model)]
                 if end_off is not None:
-                    lines.append(row((base + timedelta(seconds=end_off)).isoformat() + "Z"))
+                    lines.append(row((base + timedelta(seconds=end_off)).isoformat() + "Z",
+                                     sub_model))
                 (sub / ("agent-%d.jsonl" % idx)).write_text("\n".join(lines) + "\n",
                                                             encoding="utf-8")
                 (sub / ("agent-%d.meta.json" % idx)).write_text(
@@ -672,6 +686,133 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         gaps = self.last_payload()["measurement_gaps"]
         self.assertIn("dispatch", gaps, "前提: 判定不能な回")
         self.assertNotIn("agents-mismatch", gaps)
+
+
+class ModelGenerationTest(TranscriptFixture):
+    """`review:completed` にモデル世代を機械計測で載せる（GitHub issue #169）.
+
+    `effort` / `size_tier` / `reviewer_effort_profile` の層別は、Opus 5 と 4.8 が混ざった
+    瞬間に成立しなくなる（実測: 2026-08-24 の 1 日で 3 サンプル中 2 件が 4.8 で、1 体あたり
+    cache_read の 7,853k と 3,7xx k の差が tier と世代で完全に交絡していた）。世代は
+    ユーザーが実行時に選ぶもの（エイリアスは親世代を継ぐ / #170）なので**層別キー**として扱う。
+    自己申告は無く、transcript の `message.model` からの機械計測。
+    """
+
+    def test_payload_carries_main_and_sub_generations(self):
+        self.write_transcript([[0, 5]], main_models=("claude-opus-5",),
+                              sub_models=("claude-opus-5", "claude-sonnet-5"))
+        self.publish(env=self.env_home())
+        m = self.last_payload()["models"]
+        self.assertEqual(m["schema"], 1, "schema を上げずにフィールドだけ足している")
+        self.assertEqual(m["main"], "claude-opus-5")
+        self.assertEqual(m["main_distinct"], ["claude-opus-5"])
+        self.assertEqual(m["sub_distinct"], ["claude-opus-5", "claude-sonnet-5"],
+                         "ロール別ルーティングの世代が集合で残っていない")
+
+    def test_sub_generation_follows_the_parent(self):
+        """#170 の踏み下げ。親が 4.8 なら `opus` の sub も 4.8 で、両方 payload に残る.
+
+        この経路が壊れると `CLAUDE_CODE_SUBAGENT_MODEL` などで前提が崩れた回を
+        事後に検出できなくなる（`sub_distinct` はそのための証拠）。
+        """
+        self.write_transcript([[0, 5]], main_models=("claude-opus-4-8",),
+                              sub_models=("claude-opus-4-8", "claude-sonnet-5"))
+        self.publish(env=self.env_home())
+        m = self.last_payload()["models"]
+        self.assertEqual(m["main"], "claude-opus-4-8")
+        self.assertEqual(m["sub_distinct"], ["claude-opus-4-8", "claude-sonnet-5"])
+
+    def test_mixed_main_is_null_not_a_representative_value(self):
+        """**片方を代表値に選ばない**（実測: opus-5 → opus-4-8 → opus-5 の切替）.
+
+        選ぶと交絡したサンプルが単一世代の分布に混ざり、「深さのコストが下がった」と
+        「世代が違うから軽い」が永久に分離できなくなる（#156 / #150）。
+        """
+        self.write_transcript([[0, 5]], main_models=("claude-opus-5", "claude-opus-4-8"))
+        self.publish(env=self.env_home())
+        m = self.last_payload()["models"]
+        self.assertIsNone(m["main"], "混在した回に代表値を選んでいる")
+        self.assertEqual(m["main_distinct"], ["claude-opus-4-8", "claude-opus-5"],
+                         "混在の事実そのものが落ちている")
+
+    def test_synthetic_placeholder_is_not_a_generation(self):
+        """`<synthetic>` を素通しすると**単一世代の回まで mixed に落ちる**.
+
+        実測: 160 transcript の走査で 11 件。除外しないと `main_distinct` が 2 件になり、
+        上のテストが要求する「混在の検出」が偽陽性で埋まる。
+        """
+        self.write_transcript([[0, 5]], main_models=("claude-opus-5", "<synthetic>"))
+        self.publish(env=self.env_home())
+        m = self.last_payload()["models"]
+        self.assertEqual(m["main"], "claude-opus-5")
+        self.assertEqual(m["main_distinct"], ["claude-opus-5"])
+
+    def test_missing_model_is_a_gap_not_a_guess(self):
+        """世代を引けない回は欠測。**「単一世代だった」に倒さない**（`tokens` の 0 と同じ）."""
+        self.write_transcript([[0, 5]], main_models=(), sub_models=())
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertNotIn("models", p, "引けない回に models を捏造している")
+        self.assertIn("models", p["measurement_gaps"])
+
+    def test_a_run_without_subagents_still_records_the_main_generation(self):
+        """**sub が 0 体でも main の世代は載る**（`main_distinct` か `sub_distinct` の**片方**で足りる）.
+
+        Phase 0 で打ち切った回・skip-mode の回は sub が 1 体も出ない。両方を要求すると
+        この経路が丸ごと `models` 欠測に落ち、**fleet を起動しなかった回の世代が残らない**。
+        """
+        self.write_transcript([])
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertIn("models", p, "sub 0 体の回で世代を捨てている")
+        self.assertEqual(p["models"]["main"], "claude-opus-5")
+        self.assertEqual(p["models"]["sub_distinct"], [])
+
+    def test_cli_prints_both_sides_of_the_generation(self):
+        """人間向け出力にも世代を出す（`measure-tokens.sh` を直接叩く経路）.
+
+        publish 経由でしか検証しないと、CLI として使ったときの表示（sub の世代が
+        `-` に潰れる等）が無検証のまま残る。
+        """
+        self.write_transcript([[0, 5]], main_models=("claude-opus-4-8",),
+                              sub_models=("claude-opus-4-8", "claude-sonnet-5"))
+        out = self.run_script(MEASURE, env=self.env_home()).stdout
+        self.assertIn("モデル世代", out)
+        self.assertIn("main=claude-opus-4-8", out)
+        self.assertIn("sub=claude-opus-4-8+claude-sonnet-5", out,
+                      "sub 側の世代が潰れている")
+
+    def test_cli_prints_the_generation_without_subagents(self):
+        """sub が 0 体でも行を出す（main だけ分かっている回を黙らせない）."""
+        self.write_transcript([])
+        out = self.run_script(MEASURE, env=self.env_home()).stdout
+        self.assertIn("main=claude-opus-5 / sub=-", out)
+
+    def test_a_caller_supplied_generation_is_discarded(self):
+        """呼び出し側が渡した `models` は捨てる（**自己申告を機械計測に化けさせない**）.
+
+        `models` は「自己申告が無い」ことが値の意味そのもの。残すと transcript を
+        引けなかった回に **LLM が書いた世代が機械計測のふりをして残る**（#154 の型）。
+        """
+        self.write_transcript([], main_models=())          # 世代を引けない transcript
+        self.publish(dict(BASE_PAYLOAD,
+                          models={"schema": 1, "main": "claude-opus-5",
+                                  "main_distinct": ["claude-opus-5"], "sub_distinct": []}),
+                     env=self.env_home())
+        p = self.last_payload()
+        self.assertNotIn("models", p, "呼び出し側の自己申告が payload に残っている")
+        self.assertIn("models", p["measurement_gaps"])
+
+    def test_models_is_independent_of_the_tokens_window(self):
+        """`tokens` が欠測でも世代は載る（`dispatch` と同じ流儀）.
+
+        世代を `tokens` にぶら下げると、窓が空振りした回で層別キーごと消える。
+        """
+        self.write_transcript([[0, 5]])
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertIn("models", p)
+        self.assertEqual(p["models"]["main"], "claude-opus-5")
 
 
 class DerivedMarkerTest(TranscriptFixture):
@@ -1102,6 +1243,76 @@ class RetroTest(ScriptTestBase):
                 "tokens": {"schema": schema, "window": "since-t0",
                            "main_output_k": 100.0, "sub_output_k": 200.0,
                            "sub_cache_read_k": cache_read_k, "sub_agents": agents}}
+
+    # ---- モデル世代による層別（GitHub issue #169） --------------------------
+
+    def _models(self, main):
+        """`models` フィールド。`main=None` は混在・引き当て失敗の回."""
+        return {"schema": 1, "main": main,
+                "main_distinct": [main] if main else ["claude-opus-4-8", "claude-opus-5"],
+                "sub_distinct": [main] if main else []}
+
+    def test_generation_is_not_a_key_while_the_population_is_uniform(self):
+        """**1 種しか無い期間は層別しない**（既存バケツを n=1 に砕かない）.
+
+        分割の目的は交絡を切ることであって、キーを増やすことではない。ここが壊れると
+        `effort × size_tier` の中央値が全部 n=1 になり、読めるものが何も残らない。
+        """
+        self._events([dict(self._tokens("medium", 1000.0, 2),
+                           models=self._models("claude-opus-5")) for _ in range(3)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("| high/medium | 3 |", out, "1 種なのに世代でキーが割れている")
+        self.assertIn("1 種のみなので層別しない", out)
+
+    def test_generation_becomes_a_key_once_two_are_present(self):
+        """**2 種以上あれば層別キーに入る**（世代跨ぎで中央値を累計しない / #156）."""
+        self._events([dict(self._tokens("medium", 1000.0, 2),
+                           models=self._models("claude-opus-5")),
+                      dict(self._tokens("medium", 8000.0, 2),
+                           models=self._models("claude-opus-4-8"))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("high/medium/opus-5", out)
+        self.assertIn("high/medium/opus-4-8", out)
+        self.assertIn("層別キーに含めている", out)
+        self.assertNotIn("| high/medium | 2 |", out,
+                         "世代跨ぎのバケツが残っている（累計すると較正効果と世代差が混ざる）")
+
+    def test_unrecorded_generation_is_not_folded_into_a_known_one(self):
+        """旧版（`models` 無し）を既知の世代と同じバケツに入れない.
+
+        「たぶん opus-5 だった」は観測ではない。畳むと**新フィールドを入れた意味が消える**。
+        """
+        self._events([dict(self._tokens("medium", 1000.0, 2),
+                           models=self._models("claude-opus-5")),
+                      self._tokens("medium", 8000.0, 2)])           # 旧版 = models 無し
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("high/medium/unrecorded", out)
+        self.assertIn("high/medium/opus-5", out)
+
+    def test_an_empty_generation_string_is_treated_as_mixed(self):
+        """`main: ""` も mixed（**外部の payload を読む側なので値の形を仮定しない**）.
+
+        `models` は他マシン・旧版・後付けスクリプトが書いた JSON としても入ってくる。
+        空文字を素通しすると `""` という名前のバケツができ、**世代不明の回が
+        独立した「世代」として中央値を持つ**。
+        """
+        self._events([dict(self._tokens("medium", 1000.0, 2),
+                           models=self._models("claude-opus-5")),
+                      dict(self._tokens("medium", 8000.0, 2),
+                           models={"schema": 1, "main": "", "main_distinct": [],
+                                   "sub_distinct": []})])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("high/medium/mixed", out)
+        self.assertNotIn("high/medium//", out, "空文字がそのままバケツ名になっている")
+
+    def test_mixed_generation_gets_its_own_bucket(self):
+        """`main` が null の回は `mixed`。単一世代の分布に混ぜない."""
+        self._events([dict(self._tokens("medium", 1000.0, 2),
+                           models=self._models("claude-opus-5")),
+                      dict(self._tokens("medium", 8000.0, 2), models=self._models(None))])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("high/medium/mixed", out)
+        self.assertIn("`mixed` 1 件", out, "混在の件数が母集団の内訳に出ていない")
 
     def test_derived_markers_are_counted_separately_from_gaps(self):
         """補完済みの内訳を出す（GitHub issue #161）.
@@ -2143,6 +2354,47 @@ class ReviewBackfillTest(TranscriptFixture):
 
     def backfill(self, log: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return self.run_script(BACKFILL, "--logs", str(log), *args, env=self.env_home())
+
+    def test_rows_carry_the_model_generation(self):
+        """後付け行に世代を持たせる（GitHub issue #169）.
+
+        `cache_read_k_per_agent` は **tier と世代が交絡する**（実測: 7,853k と 3,7xx k）。
+        世代キーが無いと「深さのコストが下がった」と「4.8 だから軽い」を永久に分離できない。
+        """
+        self.write_transcript([[120], [200], [280, 290]], base=self.BASE,
+                              main_models=("claude-opus-4-8",),
+                              sub_models=("claude-opus-4-8", "claude-sonnet-5"))
+        rows = json.loads(self.backfill(self.write_events(self.payload()), "--json").stdout)["backfilled"]
+        self.assertEqual(len(rows), 1, "前提: 後付けが成立していない")
+        self.assertEqual(rows[0]["model_main"], "claude-opus-4-8")
+
+    def test_a_mixed_generation_row_is_not_given_a_representative_value(self):
+        """混在した回は `None`。**単一世代の中央値に混ぜない**（表示は `mixed` バケツ）."""
+        self.write_transcript([[120], [200], [280, 290]], base=self.BASE,
+                              main_models=("claude-opus-5", "claude-opus-4-8"))
+        log = self.write_events(self.payload())
+        rows = json.loads(self.backfill(log, "--json").stdout)["backfilled"]
+        self.assertIsNone(rows[0]["model_main"], "混在した回に代表値を選んでいる")
+        self.assertIn("mixed", self.backfill(log).stdout)
+
+    def test_the_mixed_bucket_is_the_one_marked_unusable(self):
+        """注記は **mixed 行にだけ**付き、中央値は実数で出る.
+
+        注記が単一世代の行へ回ると「比較に使うな」が逆向きに掛かり、**mixed の
+        バケツが比較可能に見える**。中央値が `-` に潰れる変異も同時に殺す。
+        """
+        self.write_transcript([[120], [200], [280, 290]], base=self.BASE,
+                              main_models=("claude-opus-5", "claude-opus-4-8"))
+        mixed = self.backfill(self.write_events(self.payload())).stdout
+        self.assertRegex(mixed, r"mixed\s+n=1\s+中央値 [0-9.]+k\s+←",
+                         "mixed 行に実数の中央値と注記が並んでいない")
+
+    def test_a_single_generation_row_is_not_marked_unusable(self):
+        """単一世代の行には注記を付けない（`## 世代別` の対になるケース）."""
+        self.write_transcript([[120], [200], [280, 290]], base=self.BASE,
+                              main_models=("claude-opus-4-8",))
+        out = self.backfill(self.write_events(self.payload())).stdout
+        self.assertNotIn("←", out, "単一世代の行に「比較に使わない」の注記が付いている")
 
     def test_a_missing_wave_end_does_not_abort_the_row(self):
         """終了時刻が取れない wave があっても行ごと落とさない.

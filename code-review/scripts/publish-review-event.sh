@@ -631,6 +631,24 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 体数相関を壊す（実測: 相関 r が 1.00 → 0.18）。**欠測は誤値より望ましい**
         gaps.append("tokens")
 
+    # **モデル世代**（GitHub issue #169）。`effort` / `size_tier` / `reviewer_effort_profile` で
+    # 層別する設計だが、Opus 5 と 4.8 が混ざるとその層別が成立しない（実測: 2026-08-24 の
+    # 1 日で 3 サンプル中 2 件が 4.8）。世代はユーザーが実行時に選ぶもので（エイリアスは
+    # 親世代を継ぐ / `docs/pipeline-design.md`）、**事故ではなく層別キー**として扱う。
+    # **tokens とは独立に載せる**（窓が空振りしても世代は拾えることがある / dispatch と同じ流儀）。
+    # 自己申告は無い — `measure-tokens.sh` が transcript の `message.model` から機械計測する
+    # **呼び出し側が渡した値は捨てる**（`SKILL からは渡さない` 契約の fail-closed 側）。
+    # 残すと、transcript を引けなかった回に **LLM が書いた世代が機械計測のふりをして残る**。
+    # `models` は「自己申告は無い」ことが値の意味そのものなので、ここは黙って上書きしない
+    payload.pop("models", None)
+    mdl = tok.get("models") if isinstance(tok, dict) else None
+    if isinstance(mdl, dict) and (mdl.get("main_distinct") or mdl.get("sub_distinct")):
+        payload["models"] = mdl
+    else:
+        # 世代が引けない回を黙って落とさない。**「単一世代だった」に倒さない**のが要点で、
+        # 倒すと交絡したサンプルが単一世代の分布に混ざる（`tokens` の 0 と同じ理由）
+        gaps.append("models")
+
     # **発行パターンは tokens とは独立に載せる**（GitHub issue #142 / 判定単位は #149）。
     # 窓が空振りして `tokens` が欠測になった回でも、agent の発行元は拾えていることがある。
     # `duration_fleet_min` だけでは「9 体を逐次で回した 89 分」と「1 体が 89 分かかった」を

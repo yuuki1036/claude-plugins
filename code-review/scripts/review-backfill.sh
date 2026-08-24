@@ -260,6 +260,11 @@ for e in events:
         "tail_wave_share": round(tail_share, 3) if tail_share is not None else None,
         "waves_expected": expected,
         "wave_split": split,
+        # **モデル世代**（#169）。`cache_read_k_per_agent` は tier と世代が交絡するので、
+        # 層別キー無しに中央値を出すと「深さのコストが下がった」と「世代が違うから軽い」を
+        # 分離できない。`main` が `None` の回（実行中に切り替えた / 引けなかった）は
+        # `mixed` として別バケツに落とす — **単一世代の分布に混ぜない**
+        "model_main": (tok.get("models") or {}).get("main"),
     })
 
 if AS_JSON:
@@ -285,13 +290,20 @@ if not rows:
           "打点が落ちた回と transcript が消えた回は原理的に後付けできない")
     raise SystemExit(0)
 
-print("\n%-22s %-12s %-16s %6s %6s %8s %9s" %
-      ("ts", "effort/tier", "wave_sizes", "体数", "申告差", "cr/体(k)", "末尾wave"))
+def gen_label(v):
+    """モデル世代の表示ラベル。`None` は混在か引き当て失敗で、どちらも層別に使えない"""
+    if not v:
+        return "mixed"
+    return v[len("claude-"):] if v.startswith("claude-") else v
+
+
+print("\n%-22s %-12s %-10s %-16s %6s %6s %8s %9s" %
+      ("ts", "effort/tier", "世代", "wave_sizes", "体数", "申告差", "cr/体(k)", "末尾wave"))
 for r in rows:
     d = r["dispatch"]
     tail = "-" if r["tail_wave_share"] is None else "%d体 %.0f%%" % (r["tail_wave_n"], r["tail_wave_share"] * 100)
-    print("%-22s %-12s %-16s %6s %+6d %8s %9s" % (
-        r["ts"], "%s/%s" % (r["effort"], r["size_tier"]),
+    print("%-22s %-12s %-10s %-16s %6s %+6d %8s %9s" % (
+        r["ts"], "%s/%s" % (r["effort"], r["size_tier"]), gen_label(r["model_main"]),
         json.dumps(d.get("wave_sizes")), d.get("agents"), r["agents_diff"],
         r["cache_read_k_per_agent"] if r["cache_read_k_per_agent"] is not None else "-", tail))
 
@@ -309,6 +321,24 @@ print("\n- **`agents` の申告と機械計測の差**: 一致 %d / 不一致 %d
 m = med([r["cache_read_k_per_agent"] for r in rows])
 if m is not None:
     print("- **1 体あたり cache_read の中央値**: %.1fk（#156 の基準値は 5,039k）" % m)
+# **世代で層別する**（#169）。tier と世代が交絡した状態で 1 本の中央値を出すと、
+# 「深さのコストが下がった」と「世代が違うから軽い」を分離できない。
+# **単一世代の回だけを比較に使う** — mixed は件数だけ出して分布には混ぜない
+by_gen = {}
+for r in rows:
+    by_gen.setdefault(gen_label(r["model_main"]), []).append(r["cache_read_k_per_agent"])
+# **全行が mixed の回でも内訳を出す**。1 種だからと「層別不要」で畳むと、
+# **上の中央値が丸ごと比較に使えない行から出来ている**ことが表に出ない
+UNUSABLE_GEN = "mixed"
+if len(by_gen) > 1 or UNUSABLE_GEN in by_gen:
+    print("  世代別（交絡を切るための層別 / #169）:")
+    for g in sorted(by_gen):
+        gm = med(by_gen[g])
+        note = "  ← 混在・引き当て失敗。単一世代の比較には使わない" if g == "mixed" else ""
+        print("    %-10s n=%-3d 中央値 %s%s"
+              % (g, len(by_gen[g]), "%.1fk" % gm if gm is not None else "-", note))
+elif rows:
+    print("  （世代は %s の 1 種のみ。層別不要 / #169）" % next(iter(by_gen)))
 gaps = [(d["inter_wave_agent_sec"], d["inter_wave_idle_sec"])
         for d in (r["dispatch"] for r in rows)
         # mutation-ok: 2 つのフィールドは `measure-tokens.sh` が必ず同時に入れる（`schema` 3）ので、片方だけ在る dispatch は生成経路が無い

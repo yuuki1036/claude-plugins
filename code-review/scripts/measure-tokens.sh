@@ -94,6 +94,11 @@ import glob, json, os, sys
 path, since = os.environ["SESSION"], os.environ.get("SINCE") or None
 subdir = os.environ.get("SUBDIR") or ""
 buckets = {False: dict(n=0, out=0, cw=0, cr=0, inp=0), True: dict(n=0, out=0, cw=0, cr=0, inp=0)}
+# **モデル世代**（GitHub issue #169）。`effort` / `size_tier` で層別する設計だが、
+# Opus 5 と 4.8 が混ざった瞬間にその層別が成立しなくなる（実測: 2026-08-24 の 1 日で
+# 3 サンプル中 2 件が 4.8）。世代はユーザーが実行時に選ぶもの（エイリアスは親世代を継ぐ
+# — `docs/pipeline-design.md` モデルルーティング規約）なので、**事故ではなく層別キー**として扱う
+models = {False: set(), True: set()}
 first_ts = last_ts = None
 # **窓内に usage を持つ subagent transcript のファイル集合**。`--since` はメッセージ行に効くので、
 # glob したファイル数をそのまま体数にすると窓の外で起動した agent まで数えてしまう（実測:
@@ -216,6 +221,15 @@ for fpath, side in targets:
                 prev = sub_last.get(fpath)
                 sub_last[fpath] = ts if prev is None else max(prev, ts)
                 sub_rows[fpath] = sub_rows.get(fpath, 0) + 1
+            # `message.model` は assistant 行にだけ載る素の文字列。**`<synthetic>` のような
+            # プレースホルダが混ざる**ので（実測: 160 transcript を走査して 11 件）、
+            # `<` 始まりは実モデルではないとして数えない。ここを素通しすると
+            # `main_distinct` が 2 件になり、単一世代の回まで「混在」に落ちる
+            mdl = (e.get("message") or {}).get("model")
+            if isinstance(mdl, str):
+                mdl = mdl.strip()
+                if mdl and not mdl.startswith("<"):
+                    models[side].add(mdl)
             u = (e.get("message") or {}).get("usage")
             if not u:
                 continue
@@ -377,6 +391,26 @@ elif waves_by_msg:
 
 def k(v): return f"{v/1000:,.1f}k"
 
+# **モデル世代の確定**（GitHub issue #169）。`main` は**単一世代の回にだけ**値を入れる。
+# 実行中にモデルを切り替えた回（実測: self-review のセッションで opus-5 → opus-4-8 → opus-5）と
+# 引き当て失敗はどちらも `None` に倒し、集計側で「mixed」の別バケツへ落とさせる。
+# **どちらか片方を代表値として選ばない** — 選ぶと交絡したサンプルが単一世代の分布に混ざり、
+# 「深さのコストが下がった」と「世代が違うから軽い」が永久に分離できなくなる（#156 / #150）。
+#
+# `sub_distinct` は集合で持つ。同一レビューで opus と sonnet が混在するのは**設計どおり**
+# （ロール別ルーティング）なので、sub 側の複数値は混在の証拠ではない。層別キーは `main` で、
+# `sub_distinct` は「エイリアスが親世代を継ぐ」前提が崩れた回を事後に検出するための証拠
+# （`CLAUDE_CODE_SUBAGENT_MODEL` が立っていた回など / `docs/pipeline-design.md`）
+MODELS_SCHEMA = 1
+_main_models = sorted(models[False])
+_sub_models = sorted(models[True])
+models_out = {
+    "schema": MODELS_SCHEMA,
+    "main": _main_models[0] if len(_main_models) == 1 else None,
+    "main_distinct": _main_models,
+    "sub_distinct": _sub_models,
+}
+
 # **機械可読モード**（GitHub issue #126）: publish-review-event.sh が review の publish 時に
 # 呼んで `tokens` フィールドへ載せる。取り込み内訳は payload に載せない（文字数であって
 # トークンではなく、集計側で混ぜると桁が合わない — 上の `## 17` の注記と同じ理由）
@@ -402,6 +436,8 @@ if os.environ.get("AS_JSON") == "1":
         # **区間打点の補完材料**（issue #161）。wave ごとの `{n, start, end}`（epoch 秒）。
         # `end` は wave 内の全体の終了時刻が取れたときだけ入る
         "wave_clock": wave_clock,
+        # **モデル世代**（issue #169）。層別キーは `main`（単一世代の回だけ非 null）
+        "models": models_out,
     }, ensure_ascii=False, separators=(",", ":")))
     sys.exit(0)
 
@@ -437,6 +473,17 @@ elif dispatch.get("unresolved"):
     # 判定を諦めた回を黙って落とさない（`batched` にも `serial` にも倒さない / #149）
     print("発行パターン    : 判定不能（%d 体中 %d 体の発行元メッセージを引けない）"
           % (dispatch["agents"], dispatch["unresolved"]))
+# **モデル世代**（issue #169）。`main` が空＝混在か引き当て失敗で、集計側では層別に使えない回
+if models_out["main_distinct"] or models_out["sub_distinct"]:
+    if models_out["main"]:
+        _m = models_out["main"]
+    elif models_out["main_distinct"]:
+        _m = "混在（%s）" % "/".join(models_out["main_distinct"])
+    else:
+        _m = "不明"
+    print("モデル世代      : main=%s / sub=%s"
+          % (_m, "+".join(models_out["sub_distinct"]) or "-"))
+
 if intake:
     total_chars = sum(intake.values())
     print("\nmain への取り込み内訳（tool_result + attachment の文字数 / GitHub issue #118）")
