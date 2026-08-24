@@ -264,7 +264,7 @@ for e in events:
 
 if AS_JSON:
     print(json.dumps({"backfilled": rows, "candidates": len(events),
-                      "skipped": skipped}, ensure_ascii=False, indent=2))
+                      "skipped": skipped}, ensure_ascii=False, indent=2))  # mutation-ok: ensure_ascii は日本語の除外理由を生で出すためで、JSON としては等価（テストは json.loads を通すので殺せないし殺す意味もない）
     raise SystemExit(0)
 
 
@@ -311,7 +311,9 @@ if m is not None:
     print("- **1 体あたり cache_read の中央値**: %.1fk（#156 の基準値は 5,039k）" % m)
 gaps = [(d["inter_wave_agent_sec"], d["inter_wave_idle_sec"])
         for d in (r["dispatch"] for r in rows)
+        # mutation-ok: 2 つのフィールドは `measure-tokens.sh` が必ず同時に入れる（`schema` 3）ので、片方だけ在る dispatch は生成経路が無い
         if d.get("inter_wave_agent_sec", -1) > -1 and d.get("inter_wave_idle_sec", -1) > -1
+        # mutation-ok: 同上（上の行で両方の存在が確定してから足している）
         and (d["inter_wave_agent_sec"] + d["inter_wave_idle_sec"]) > 0]
 if gaps:
     ar = med([g[0] / (g[0] + g[1]) for g in gaps])

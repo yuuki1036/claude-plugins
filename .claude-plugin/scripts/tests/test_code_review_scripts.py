@@ -20,6 +20,7 @@ pre-commit / CI / Stop hook の 3 経路に**設定変更なしで**乗る。
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 import subprocess
 import sys
@@ -2157,6 +2158,209 @@ class ReviewBackfillTest(TranscriptFixture):
         self.assertEqual(len(rows), 1)
         self.assertIsNone(rows[0]["tail_wave_share"], "欠測を実数に倒している")
         self.assertIsNotNone(rows[0]["waves_expected"], "他の値まで巻き添えにしている")
+
+    def test_projects_needs_a_value(self):
+        """`--projects` も値落ちを黙殺しない（`--logs` と同じ規約）.
+
+        **テストを書かずに足したため、CI の変異スモークで引数パースの境界 3 件が
+        生存した**（`--logs` 側だけ表明していた）。値を取るフラグは全部同じ形で縛る。
+        """
+        r = self.run_script(BACKFILL, "--logs", str(self.write_events(self.payload())),
+                            "--projects", env=self.env_home())
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+
+    def test_a_missing_projects_dir_is_fatal(self):
+        """存在しない探索先で黙って 0 件に倒さない（タイプミスを「サンプルが少ない」にしない）."""
+        r = self.run_script(BACKFILL, "--logs", str(self.write_events(self.payload())),
+                            "--projects", str(self.root / "nope"), env=self.env_home())
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+
+    def test_projects_overrides_the_search_path(self):
+        """`--projects` が実際に探索先を差し替える（空の dir を渡せば 0 件になる）."""
+        empty = self.root / "empty-projects"
+        empty.mkdir()
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        r = self.run_script(BACKFILL, "--logs", str(self.write_events(self.payload())),
+                            "--projects", str(empty), "--json", env=self.env_home())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["backfilled"], [],
+                         "`--projects` が既定の探索先を上書きしていない")
+
+    def test_the_human_summary_reports_the_aggregates(self):
+        """**既定（人間向け）出力の集計行を表明する**.
+
+        テストが全部 `--json` 経由だったため、集計行（突合の一致数 / 中央値 / ギャップ
+        内訳の抽出条件）が**丸ごと未検証**で、nightly が 13 件の生存を出した。
+        既定出力こそこのツールの主インターフェース。
+        """
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        r = self.backfill(self.write_events(self.payload()))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("後付け成立 1 件", r.stdout)
+        self.assertIn("一致 1 / 不一致 0", r.stdout, "突合の集計が壊れている")
+        self.assertIn("0 / 1 件", r.stdout, "違反判定の分母が壊れている")
+        # **値まで見る**。行の存在だけだと `tok.get("sub") and {}` のような既定値の
+        # 潰し方の変異が生き残る（合計 0 でも行は出る）
+        med = re.search(r"1 体あたり cache_read の中央値\*\*: ([0-9.]+)k", r.stdout)
+        self.assertIsNotNone(med, "cache_read の中央値行が出ていない")
+        self.assertGreater(float(med.group(1)), 0, "cache_read を 0 に潰している")
+        self.assertIn("最大 wave 間ギャップに占める agent 実行の中央値", r.stdout,
+                      "ギャップ内訳の抽出条件が壊れている")
+        # 表の行に cr/体 の実数が出る（`is not None` の三項が反転すると `-` になる）
+        self.assertNotRegex(r.stdout, r"\+0\s+-\s", "cr/体 を欠測扱いにしている")
+
+    def test_a_mismatched_run_is_excluded_from_the_split_denominator(self):
+        """`agents` の申告が壊れた回は違反判定の分母から外す（集計行の対称性）."""
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        p = self.payload(agents={"explorer": 1, "reviewer": 9})
+        r = self.backfill(self.write_events(p))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("一致 0 / 不一致 1", r.stdout)
+        self.assertIn("0 / 0 件", r.stdout, "判定対象外の回を分母に入れている")
+
+    def test_logs_needs_a_value(self):
+        """`--logs` も値落ちを黙殺しない（`--projects` と対称に表明する）."""
+        r = self.run_script(BACKFILL, "--logs", env=self.env_home())
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+
+    def test_the_default_discovery_finds_the_repo_log(self):
+        """**`--logs` 省略時の既定経路**（`review_event_logs`）が効く.
+
+        テストが全部 `--logs` を渡していたため、既定経路の分岐が丸ごと未検証だった。
+        利用者が最初に打つのは引数なしの形。
+        """
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        log = self.root / ".claude" / "events.jsonl"
+        log.parent.mkdir(exist_ok=True)
+        log.write_text(json.dumps({"ts": self.TS, "plugin": "code-review:self-review",
+                                   "event": "review:completed", "payload": self.payload()}) + "\n",
+                       encoding="utf-8")
+        r = self.run_script(BACKFILL, "--json", env=self.env_home())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(json.loads(r.stdout)["backfilled"]), 1,
+                         "既定の探索でリポジトリのログを見つけられていない")
+
+    def test_no_log_at_all_exits_zero_with_a_message(self):
+        """ログが 1 つも無い環境では **exit 0 + 説明**（異常終了にしない）."""
+        r = self.run_script(BACKFILL, env=self.env_home())
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("イベントログが無い", r.stderr)
+
+    def test_agent_start_uses_the_first_timestamp(self):
+        """agent の**起動時刻は先頭行**（末尾行ではない）.
+
+        末尾を採ると窓の判定が「終了時刻」で行われ、**窓内で起動した回が丸ごと
+        transcript 無しに化ける**。
+        """
+        # 終了行だけを窓（t2）の外へ置く。先頭行を見ていれば窓内に入る
+        self.write_transcript([[60]], ends={0: 4000}, base=self.BASE)
+        r = self.backfill(self.write_events(self.payload(agents={"explorer": 1})), "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(json.loads(r.stdout)["backfilled"]), 1,
+                         "終了時刻で窓を判定している")
+
+    def test_rows_are_ordered_by_timestamp(self):
+        """出力は ts 昇順（ログの並び順に依存しない）."""
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        log = self.root / "events.jsonl"
+        # **2 件とも同じ窓を張る**（`duration_min` を伸ばして t0 を揃える）。片方が窓外だと
+        # 行が 1 本しか出ず、並び順の表明が**空振りする**（実際に一度そう書いて生存させた）
+        later = ({"ts": "2026-08-18T02:30:00Z"}, self.payload(duration_min=90))
+        first = ({"ts": self.TS}, self.payload())
+        log.write_text("".join(
+            json.dumps({"ts": h["ts"], "plugin": "code-review:self-review",
+                        "event": "review:completed", "payload": pl}) + "\n"
+            for h, pl in (later, first)), encoding="utf-8")
+        rows = json.loads(self.backfill(log, "--json").stdout)["backfilled"]
+        self.assertEqual(len(rows), 2, "前提: 2 件とも窓を作れている")
+        self.assertEqual([r["ts"] for r in rows], sorted(r["ts"] for r in rows),
+                         "ログの並び順をそのまま出している")
+
+    def test_dedup_is_independent_of_key_order(self):
+        """同一イベントの重複排除は **payload のキー順に依存しない**.
+
+        複数ログを合算すると同じイベントが別の書き出し順で入りうる。キー順で
+        別物と見なすと**母数が水増しされる**（実測で ad-hoc 集計が n を倍にした）。
+        """
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        a = {"pr": "local", "effort": "high", "size_tier": "medium",
+             "duration_min": 60, "duration_triage_min": 1, "duration_fleet_min": 50,
+             "agents": {"explorer": 1, "reviewer": 1},
+             "recall_skeptic": {"fired": False}, "meta_reviewer": {"fired": False}}
+        b = {k: a[k] for k in reversed(list(a))}
+        log = self.root / "events.jsonl"
+        log.write_text("".join(
+            json.dumps({"ts": self.TS, "plugin": "code-review:self-review",
+                        "event": "review:completed", "payload": p}) + "\n" for p in (a, b)),
+            encoding="utf-8")
+        out = json.loads(self.backfill(log, "--json").stdout)
+        self.assertEqual(out["candidates"], 1, "キー順違いを別イベントとして数えている")
+
+    def test_the_window_includes_its_boundaries(self):
+        """窓は**閉区間**（`t0` / `t2` ちょうどに起動した agent を落とさない）.
+
+        **両端を別々に表明する** — 片側だけだともう片方の境界変異が生き残る。
+        """
+        # payload の 60 分 = triage 1 + fleet 50 → t0 は BASE / t2 は t0 + 3060 秒
+        for off in (0, 3060):
+            with self.subTest(offset=off):
+                self.setUp()
+                self.write_transcript([[off]], ends={0: off + 40}, base=self.BASE)
+                r = self.backfill(self.write_events(self.payload(agents={"explorer": 1})), "--json")
+                self.assertEqual(len(json.loads(r.stdout)["backfilled"]), 1,
+                                 "境界の agent を落としている")
+
+    def test_the_near_window_guard_includes_its_boundary(self):
+        """別レビュー混入の判定帯も**閉区間**（境界ちょうどの agent を「遠い」に倒さない）."""
+        # 窓内 1 体 + 窓の 6 時間ちょうど手前に 1 体
+        self.write_transcript([[-6 * 3600], [60]], ends={0: -6 * 3600 + 40, 1: 180},
+                              base=self.BASE)
+        r = self.backfill(self.write_events(self.payload()), "--json")
+        out = json.loads(r.stdout)
+        self.assertEqual(out["backfilled"], [], "境界の agent を混入と見なしていない")
+
+    def test_a_window_swallowing_another_review_is_excluded(self):
+        """wave 間ギャップが時間単位の回は窓が別レビューを内包している（除外）.
+
+        レビュー中の wave 間隔ではありえない値。この経路が死ぬと、**別レビューの
+        agent を含んだ行がそのまま集計に入る**（実測で 27 時間の回を踏んだ）。
+        """
+        self.write_transcript([[60], [9000]], ends={0: 180, 1: 9100}, base=self.BASE)
+        # 窓が両方の agent を含むように張る（t0 = BASE / t2 = t0 + 191 分）
+        log = self.write_events(self.payload(duration_min=200, duration_fleet_min=190),
+                                ts="2026-08-18T04:20:00Z")
+        r = self.backfill(log, "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads(r.stdout)
+        self.assertEqual(out["backfilled"], [])
+        self.assertTrue(any("内包" in k for k in out["skipped"]), out["skipped"])
+
+    def test_expected_waves_drop_when_no_explorer_ran(self):
+        """explorer 0 体なら見込みを 1 つ減らす（publish 側と同じ境界）."""
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        r = self.backfill(self.write_events(self.payload(agents={"reviewer": 2})), "--json")
+        rows = json.loads(r.stdout)["backfilled"]
+        self.assertEqual(rows[0]["waves_expected"], 1, "explorer 0 体で 1 wave 多く見込んでいる")
+
+    def test_the_tail_share_is_reported_when_ends_exist(self):
+        """終了時刻が揃った回は末尾 wave の占有率を**実数で**出す.
+
+        `wave_clock` の既定値の潰し方（`or []`）が壊れると、行は出るのに
+        中身だけ欠測に化ける。
+        """
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        rows = json.loads(self.backfill(self.write_events(self.payload()), "--json").stdout)["backfilled"]
+        self.assertIsNotNone(rows[0]["tail_wave_share"], "wave_clock を空に潰している")
+        self.assertEqual(rows[0]["tail_wave_n"], 1)
+
+    def test_the_summary_reports_the_tail_and_gap_lines(self):
+        """末尾 1 体 wave とギャップ内訳の行が**値つきで**出る（抽出条件の表明）."""
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        out = self.backfill(self.write_events(self.payload())).stdout
+        self.assertRegex(out, r"末尾 1 体 wave が fleet span に占める割合の中央値\*\*: [0-9.]+%",
+                         "末尾 1 体の抽出条件が壊れている")
+        self.assertRegex(out, r"agent 実行の中央値\*\*: [0-9.]+%（n=[1-9]",
+                         "ギャップ内訳の抽出条件が壊れている")
 
     def test_waves_expected_agrees_with_publish(self):
         """**期待 wave 本数の式が publish と後付けで一致する**（複製の乖離を縛る）.
