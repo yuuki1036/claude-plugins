@@ -1,7 +1,6 @@
 # オーケストレーション実行ガイド（review / self-review 共通の実行フェーズ詳細）
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/triage-guide.md#7.1 @f2b72215 -->
 
 review / self-review SKILL.md の各フェーズから参照される実行詳細の正本。SKILL.md 本文は高レベルワークフロー（Phase 一覧・各 Phase の目的と入出力・分岐条件）を保持し、具体的な手順・bash・失敗時の扱いは本ファイル群に置く。エージェント構成の決定ロジック（起動条件・effort 適応・上限）は triage-guide.md、プロンプト本文は `prompts/` を参照。
 
@@ -143,7 +142,6 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/medium/high（既定）→ `high` / xhigh・max（明示 escalation）→ `xhigh`**。オーケストレーター（skill frontmatter）は `high`。これにより effort ゲート付きの独立レイヤー（meta-reviewer / 冷や読み skeptic）は既定で不発とし、high-risk 変更をレビューしたい時だけ `xhigh`/`max` で明示起動して escalation する運用にする。
 
-> **reviewer_effort_profile（A/B 実験）**: userConfig `reviewer_effort_profile=differentiated` のときは、上の high 帯マッピングを focus 別に差別化し低密度観点だけ `medium` に下げる（高密度観点・specialist は `high` 維持、xhigh/max は無視）。マップと位置づけの正本は triage-guide.md `## 7.1`、既定 `uniform` は本項どおり。
 
 > **体数の下限に注意**: 「常に 2 体以上」は不変条件では**ない**。`doc-review-mode` は 1〜2 体、`skip-mode` は `spec-compliance` のみ 1 体（triage-guide.md `## 2.5` のモード構成は Stage 2 の上限・最小保証より**優先**する）、self-review の `--focus` 指定時は最小保証すら起動しない。他所でこの不変条件を援用しないこと。
 

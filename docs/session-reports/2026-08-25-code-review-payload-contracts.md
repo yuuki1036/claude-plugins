@@ -12,7 +12,7 @@
 
 | # | やること | 状態 | どこに書いてあるか |
 |---|---|---|---|
-| 1 | **effort profile の arm B を 1 回回す** | **依然 0 回。** 前回「34 版・24 レビューで実行 0」と書いたが、今日さらに 4 版進んで**まだ 0**。次の self-review で `reviewer_effort_profile=differentiated` を指定するだけ | `design-notes/pending-optimizations.md ## 5`「次の 1 回で取ること」 |
+| 1 | ~~effort profile の arm B を 1 回回す~~ | **完了・不採用で決着**（[#171](https://github.com/yuuki1036/claude-plugins/issues/171)）。本セッション末に実行し、high 群と medium 群でトークン・時間とも差が無かった。スカフォールド 9 ファイルを撤去（v2.89.0） | `design-notes/pending-optimizations.md ## 5` |
 | 2 | **[#162](https://github.com/yuuki1036/claude-plugins/issues/162)** guardrail-protect の hook（gh の外向き書き込みで参照の実在性を検証） | 計測済み・実装待ち。`claimed-fact-without-source` が全期間 11 回で最多 | issue 本文 |
 | 3 | **[#163](https://github.com/yuuki1036/claude-plugins/issues/163)** CLAUDE.md に「未知データの構造を確かめる」手順則 | 同上。**今日はこの手順を踏んで 2 件の欠陥を事前に潰した**（下の 4 節）ので、規約化の根拠が 1 つ増えた | issue 本文 |
 | 4 | `measure-tokens.sh` の **per-agent 内訳** | 1 の前提。sub を合算しているので run 内の対照比較ができない | 同上 |

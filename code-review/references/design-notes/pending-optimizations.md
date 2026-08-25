@@ -37,38 +37,26 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 
 **採らない理由（現時点）**: cache_write 全体（7.7M）の **3%** にしかならない。一方で共通指示は precision を支える契約（評価 6 原則 / claim grounding / 探索予算 / 出力フォーマット）の集まりで、削ると recall・precision に直接効く。**費用対効果が悪い**。圧縮するなら 1〜2 を先にやる。
 
-## 5. reviewer effort profile の A/B（`differentiated` の採否 / v2.51.0 で仕込み済み）
+## 5. reviewer effort profile の A/B（`differentiated`）— **実測して不採用で決着**（v2.89.0 / GitHub issue #171）
 
-**現状**: reviewer は high 帯で全員 `high`（`uniform`）。userConfig `reviewer_effort_profile=differentiated` で、high 帯に限り低密度観点だけ `medium` に下げられる実験フラグを入れた（マップ: triage-guide.md `## 7.1`）。**まだ採否を決めていない**。
+**結論: 撤去した。** userConfig・マップ（旧 triage-guide `## 7.1`）・両 SKILL の分岐・payload テンプレート・orchestration-guide の注記をすべて削除した（payload の `reviewer_effort_profile` は**旧サンプルの層別のため語彙だけ残す** — `orchestration-measurement.md ## 16`）。
 
-**仮説**: Opus 5 の素の性能なら、低密度観点（comment-accuracy / pattern-consistency / config / dependency / type-design / ui-quality / cross-cutting / doc-substance / test-quality / api-design）は `medium` でも recall が落ちない。
+**仮説**: Opus 5 の素の性能なら、低密度観点（comment-accuracy / pattern-consistency / config / dependency / type-design / ui-quality / cross-cutting / doc-substance / test-quality / api-design）は `medium` でも recall が落ちない。落ちなければ output/thinking ぶんを節約できる。
 
-**効果の見積もり（過大評価を避ける）**: effort が削るのは output/thinking トークン。コスト内訳は cache_read 45% + cache_write 38% + output 17%（本ファイル冒頭の基準値）なので、**削れるのは 17% の一部だけ＝ modest**。壁時計も wave 数と探索往復が支配で thinking 量ではないため、短縮も小さい。**「大きく効く」と期待しないこと**。
+**実測**（2026-08-25 / self-review / medium 帯 / reviewer 5 体を high 2 + medium 3 に割った 1 run 内の対照）:
 
-**A/B 手順（`differentiated` を採用してよいかの判定）**:
-1. **同一 PR・同一 diff** で 2 回流す。arm A = `uniform`（既定）/ arm B = `reviewer_effort_profile=differentiated`。`size_tier` は自動で揃う（同一 diff のため）
-2. 各 arm で計測を取る:
-   - **recall（最重要）**: レポートの severity 別件数と `pre_adjust_counts` の **blocker+critical**。`review:completed` payload の `reviewer_effort_profile` で arm を層別
-   - **トークン**: `scripts/measure-tokens.sh`（`## 17`。`sub.output` / `sub.cache_write` の差を見る。同一 PR・1 セッション 1 レビューで取る）
-   - **壁時計**: `duration_fleet_min`
-3. **判定基準**: arm B の **blocker+critical recall が arm A から落ちていない**ことが採用の必要条件。落ちていなければトークン/壁時計の差分を採用のうまみとして評価する。1 PR では足りず、`size_tier` を揃えた複数 PR（できれば high-risk surface を含む PR を 1 本以上）で確認する（このリポの流儀＝サンプルが貯まるまで判断しない）
-4. **結論後の後始末**:
-   - **採用**: `differentiated` を既定化するか検討し、実験フラグ（userConfig）と payload の `reviewer_effort_profile` の暫定注記を整理する
-   - **不採用**: フラグ・マップ（triage-guide.md `## 7.1`）・payload フィールド・本節を撤去する（実験スカフォールドを残さない）
+| 群 | 体数 | subagent tokens 中央値 | 実行時間 中央値 |
+|---|---:|---:|---:|
+| `high`（bug-detection / claude-md-compliance） | 2 | 201,532 | 9.7 分 |
+| `medium`（test-quality / doc-substance / comment-accuracy） | 3 | 197,907 | 10.4 分 |
 
-### 次の 1 回で取ること（2026-08-23 / 実行はまだ）
+**差が出なかった。** 事前見積もり（effort が削るのは output/thinking で、コスト内訳は cache_read 45% + cache_write 38% + output 17% なので**節約は modest**）と整合する。
 
-**arm B は 34 版・24 レビューで一度も走っていない**（`review:completed` の `reviewer_effort_profile` は uniform 24 / differentiated 0）。上の A/B 手順が「同一 PR で 2 回流す」を要求していて重いのが理由と思われるので、**先に 1 回だけ回して足場が動くかと効き目の桁を見る**。
+**recall は測っていない**（この回は BLOCKER / CRITICAL が 0 件で指標が存在せず、反証レイヤーも `no-eligible-findings` で未実施）。**それでも不採用にできる**のは、②で差が出ない以上 recall がどちらでも結論が変わらないため — recall が同じならコストが下がらないので採用する意味が無く、recall が落ちるなら当然不採用。
 
-- **やること**: 次に普通に回す self-review で userConfig `reviewer_effort_profile=differentiated` を指定するだけ（追加コストはゼロ）
-- **ペア実行は要らない**（この段階では）。**arm B は 1 回の run の中で高密度観点＝`high` / 低密度観点＝`medium` に割れる**ので、**同一 diff・同一セッションで対照比較ができる**。上の手順がペアを要求しているのは run 間の交絡を消すためで、run 内で割れる設計ならその交絡は最初から無い。ペアが要るのは recall の判定（落ちた指摘を数える）だけ
-- **1 回で分かること**: ①足場が動くか（payload に `differentiated` が載り、effort が実際に割れるか。現在 0/24 で完全に未検証）②per-agent の output トークンと実行時間が high 群と medium 群で差が出るか
-- **1 回では分からないこと**: recall。差が出たときに初めてペア実行へ投資する
-- **要る道具**: `measure-tokens.sh` は sub を合算しているので、**agent ごとの内訳**が要る（focus は `subagents/*.meta.json` の `description` から取れる。書式は不安定だが 1 run 内なら構成が既知なので同定できる）
-- **比較のベースライン**（`uniform` / `high` / `medium` / 全マシン dedup 後 n=10・fleet 実測 8 件）: `12 14 15 19 20 20 26 36`（中央値 19 分）。**範囲が 3 倍あるので、fleet だけを 1 点比べても分布に埋もれる** — 判断材料は上の②（run 内比較）が主
-- **「走らせていないから畳む」はしない**（本節の不採用条項は「走らせて payが無かった」用）。②で差が出なければ、そこで初めて根拠つきで撤去できる
+**再検討の条件**: **無い。** 「effort を focus 別に差別化する」という発想を再び持ち出すときは、まず**コスト内訳のどの項に効くのか**を確かめること（この案は 17% の項の一部にしか効かず、それが実測で観測限界を下回った）。**「走らせていないから畳む」で畳んだのではない** — 34 版寝ていた実験を 1 回走らせた結果として畳んだ。
 
-**注意**: 高密度観点（bug-detection / security / spec-compliance / claude-md-compliance / error-handling / migration / performance）と specialist を `medium` に混ぜて測らないこと。難所の recall を落とすと A/B の結論が「安く見えて実は劣化」に倒れる。検証層（meta / skeptic / 反証）は 1 体固定なので profile 対象外のまま。
+**副産物**: この 1 回で `models`（#169）と `appendix`（#168）の初の実サンプルが取れ、`waves` の変数上書きによる恒常的な偽陽性（v2.84.0 で混入 / v2.88.2 で修正）を検出した。**実験フラグの決着そのものより、走らせたこと自体の収穫が大きかった。**
 
 ## 4. explorer wave の廃止（直列 wave −1）— **採らないで決着**（v2.78.2 / GitHub issue #155）
 

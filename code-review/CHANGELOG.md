@@ -2,6 +2,37 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.89.0] - 2026-08-25
+
+**reviewer effort profile の A/B を実測して不採用で決着し、実験スカフォールドを撤去した**（GitHub issue #171）。
+
+v2.51.0（2026-08-07）で仕込んでから 38 版・18 日・24 レビューで arm B の実行が 0 回だった。本セッション末に 1 回実行した結果:
+
+| 群 | 体数 | subagent tokens 中央値 | 実行時間 中央値 |
+|---|---:|---:|---:|
+| `high`（bug-detection / claude-md-compliance） | 2 | 201,532 | 9.7 分 |
+| `medium`（test-quality / doc-substance / comment-accuracy） | 3 | 197,907 | 10.4 分 |
+
+**差が出なかった。** 事前見積もり（effort が削るのは output/thinking で、コスト内訳は cache_read 45% + cache_write 38% + output 17%）と整合する。
+
+### Removed
+
+- **userConfig `reviewer_effort_profile`**（`plugin.json`）
+- **`triage-guide.md ## 7.1`**（高密度 / 低密度観点のマップ）と、それを指す `orchestration-guide.md ## 5` の注記・SSoT pin
+- **両 SKILL の reviewer 起動時の effort 分岐**
+- **payload テンプレート 2 箇所の `reviewer_effort_profile`**
+
+### Changed
+
+- **`orchestration-measurement.md ## 16` の `reviewer_effort_profile` 行を「廃止」に書き換えて残した**。v2.51.0〜v2.88.2 のサンプルにのみ載るので、**旧サンプルの層別のために語彙が要る**。フィールドの不在が v2.89.0 以降の版マーカーになる
+- **`design-notes/pending-optimizations.md ## 5` を決着の記録に書き換えた**（`## 4` と同じ流儀）。実測値・recall を測っていない理由・**再検討の条件は「無い」**ことを残す
+
+### 補足
+
+- **recall は測っていない**（この回は BLOCKER / CRITICAL が 0 件で指標が存在せず、反証レイヤーも `no-eligible-findings` で未実施）。それでも不採用にできるのは、**コスト差が無い以上 recall がどちらでも結論が変わらない**ため — recall が同じなら採用する意味が無く、落ちるなら当然不採用
+- **「走らせていないから畳む」で畳んだのではない**（それは循環だと 2026-08-23 のレポートが棄却済み）。34 版寝ていた実験を 1 回走らせた結果として畳んだ
+- **副産物の方が大きかった**: この 1 回で `models`（#169）/ `appendix`（#168）の初の実サンプルが取れ、`waves` の変数上書きによる恒常的な偽陽性（v2.84.0 混入 / v2.88.2 修正）を検出した
+
 ## [2.88.2] - 2026-08-25
 
 セルフレビュー（v2.88.1 の差分を `reviewer_effort_profile=differentiated` で実行）で検出した欠陥の修正。

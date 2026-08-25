@@ -21,7 +21,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @5160f531 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @efa4c320 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @4eac2029 -->
 
 ## 前提
@@ -266,7 +266,7 @@ Step 2 のダイジェスト `## agents-md` に出ている**パス一覧**を r
 
 **プロンプトテンプレートは Read しない。パスを渡して agent 自身に読ませる**（組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md`。共通指示だけで約 7.3k tokens あり、体数ぶん転記すると出力トークンが `(N-1) × 本文長` 膨らむ — orchestration-guide.md `## 3.5`）。
 
-Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する。effort は実行時 `${CLAUDE_EFFORT}` に連動させる（low/medium/high（既定）→ `high`、xhigh/max → `xhigh`。設計意図は orchestration-guide.md `## 5`）。**userConfig `reviewer_effort_profile` が `differentiated` のときは high 帯に限り低密度観点の reviewer を `medium` で起動する**（高密度観点・specialist・最小保証 2 体は `high` 維持。xhigh/max は無視。マップの正本は triage-guide.md `## 7.1`。A/B 実験フラグで既定 `uniform` は現行どおり）。プロンプトは **Read させるパスの列挙 + 可変部**だけで構成する:
+Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する。effort は実行時 `${CLAUDE_EFFORT}` に連動させる（low/medium/high（既定）→ `high`、xhigh/max → `xhigh`。設計意図は orchestration-guide.md `## 5`）。プロンプトは **Read させるパスの列挙 + 可変部**だけで構成する:
 
 - **必ず Read させる**: `prompts/reviewer-common.md` と `prompts/focus/<focus>.md`。review では `prompts/pr-context-rules.md` も常に加える。条件付きで加えるもの:
   - 観点バンドル時 → `prompts/bundle-rules.md` と束ねる focus ファイル群

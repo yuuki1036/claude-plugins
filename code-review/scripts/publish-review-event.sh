@@ -687,7 +687,7 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 体数相関を壊す（実測: 相関 r が 1.00 → 0.18）。**欠測は誤値より望ましい**
         gaps.append("tokens")
 
-    # **モデル世代**（GitHub issue #169）。`effort` / `size_tier` / `reviewer_effort_profile` で
+    # **モデル世代**（GitHub issue #169）。`effort` / `size_tier` で
     # 層別する設計だが、Opus 5 と 4.8 が混ざるとその層別が成立しない（実測: 2026-08-24 の
     # 1 日で 3 サンプル中 2 件が 4.8）。世代はユーザーが実行時に選ぶもので（エイリアスは
     # 親世代を継ぐ / `docs/pipeline-design.md`）、**事故ではなく層別キー**として扱う。

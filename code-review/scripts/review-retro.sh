@@ -258,7 +258,7 @@ report.append(("サンプル", "全 %d 件（直近 30 日 %d 件） / %s"
                   " ".join("%s=%d" % kv for kv in sorted(by_plugin.items())))))
 
 # ---- モデル世代の層別キー（GitHub issue #169） ------------------------------
-# `effort` / `size_tier` / `reviewer_effort_profile` の層別は、Opus 5 と 4.8 が混ざった
+# `effort` / `size_tier` の層別は、Opus 5 と 4.8 が混ざった
 # 瞬間に成立しなくなる（実測: 2026-08-24 の 1 日で 3 サンプル中 2 件が 4.8 で、
 # `sub_cache_read_k / sub_agents` の 7,853k と 3,7xx k の差が tier と世代で完全に交絡していた）。
 # 世代はユーザーが実行時に選ぶもの（エイリアスは親世代を継ぐ / `docs/pipeline-design.md`）
