@@ -197,7 +197,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 | `pre_adjust_counts` | `schema` | 2 |
 | `below_threshold_counts` | `schema` | 1 |
 | `appendix` | `schema` | 1 |
-| `adversarial_verify` | `calibration_schema` | 2 |
+| `adversarial_verify` | `calibration_schema` | 3 |
 | `adversarial_verify` | `gate_schema` | 2 |
 | `recall_skeptic` | `attribution_schema` | 2 |
 | `recall_skeptic` | `gate_schema` | 2 |
@@ -363,7 +363,8 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - `inflated_axes`: **`severity_inflated` の型別内訳**（GitHub issue #150）。反証エージェントが返す `axis` を `prompts/reviewer-common.md`「降格される典型パターン」の 4 型へ寄せて数える（`pre-existing` / `intended` → `base_derived` / `misread` → `misread` / `overstated-impact` → `overstated_impact` / `miscategorized` → `miscategorized`）。**`unreachable` / `pre-validated` / `none` は `severity-inflated` の軸ではない**ので寄せ先が無く、**それらと軸が返らなかった・語彙外だった件は `unknown`** に落とす（publish は合計が `severity_inflated` と一致することを fail-fast で確かめるので、型が取れなかった回も件数は失われない）。**ただし合計の突合では寄せ漏れを検出できない** — 語彙内の値を `unknown` に落としても合計は一致するため。そこで **`unknown` が 1 件以上ある回は `measurement_gaps` に `axis-unknown`**（`demoted_types` 側は `demoted-unknown`）**を立てる**（v2.87.0 / #167）。**対応表は payload を組み立てる側＝両 SKILL の Step 6 にも置いてある** — 本節にしか無かったとき、実運用で `intended` 2 件が `unknown` に落ちた。**このフィールドの用途は打ち手の選択**で、`base_derived` が支配的なら直すのはプロンプトの表現ではなく**reviewer に渡る base 側の情報**になる（review は PR diff から復元するしかなく、self-review は変更意図をメインコンテキストが知っている — その非対称が実測で `severity_inflated` 84-90% vs 50% として出ている）
 - `gate_schema`: **起動ゲートの版**（v2.65.0 / `meta_reviewer.gate_schema` と同じ流儀）。**`publish-review-event.sh` が注入する**（1 = `fired` を持たない v2.64.x 以前 = 発火を記録していない版 / 2 = 非対称ゾーン + surface-aware 例外 + 追加バッチの confidence 上乗せゲート = v2.65.0 以降）。**旧サンプルは「起動しなかった」ではなく「記録していない」**なので、発火率を出すときは必ず `gate_schema >= 2` で濾す
   - **版マーカーだけでは記録漏れを落とせない**（注入方式の帰結。全 3 層に共通）。版マーカーはスクリプトが入れるので、**`fired` を落とした現行版 payload にも最新版が入る**。「フィールドの有無が版マーカー」の層別は旧版にしか効かないため、**現行版の記録漏れは `measurement_gaps` の `payload:<field>.fired` で外す**（`review-retro.sh` の `layer_stats` が `dropped_unrecorded` として実装）。外さないと記録漏れが `skip_reason=unknown` として分母に混ざり、発火率が実態より薄まる／「1 度も起動していない」という偽のロールバックシグナルまで点灯しうる
-- `calibration_schema`: **上流 severity 較正ガードの版**（v2.62.0 / `pre_adjust_counts.schema` と同じ流儀）。**`publish-review-event.sh` が注入する**（1 = base 状態の確認だけを課していた v2.55.0〜v2.61.x / 2 = `prompts/reviewer-common.md` に「降格される典型パターン」の 4 型を明示した v2.62.0 以降）。**これが無いと A の効果を測れない** — `severity_inflated` 比率は累計で読むと施策前サンプルに薄められ、上流ガードが効いたかどうかが判定できなくなる（issue #123 A）。日付では切らない（配布ラグ）
+- `calibration_schema`: **上流 severity 較正ガードの版**（v2.62.0 / `pre_adjust_counts.schema` と同じ流儀）。**`publish-review-event.sh` が注入する**（1 = base 状態の確認だけを課していた v2.55.0〜v2.61.x / 2 = `prompts/reviewer-common.md` に「降格される典型パターン」の 4 型を明示した v2.62.0〜v2.89.x / **3 = 同じ 4 型のまま `カテゴリの取り違え` の判別条件を変え、「実行時挙動が変わらない指摘は MINOR 既定・MAJOR を主張するなら発現経路を `file:line` まで書く」を課した v2.90.0 以降**）。**これが無いと A の効果を測れない** — `severity_inflated` 比率は累計で読むと施策前サンプルに薄められ、上流ガードが効いたかどうかが判定できなくなる（issue #123 A）。日付では切らない（配布ラグ）
+  - **型の語彙が同じでも版を上げる**（v2.90.0 / #150）。3 は 2 とキー（`base_derived` / `misread` / `overstated_impact` / `miscategorized` / `unknown`）が同一なので**層を跨いで足し合わせたくなる**が、`miscategorized` の判別条件そのものを変えているため**同じキーの意味が違う**。プロンプトの手順追加はゲート変更ではないと読んで版を据え置き、後から差分を切り出せなくなったのが #123 A の失敗（同じ節の `## 16` 冒頭「ゲートを動かす変更には必ず版マーカーを足す」）。**語彙の同一性は合算してよい根拠にならない**
 
 **`meta_reviewer`** — meta-reviewer ラウンドの実行記録（GitHub issue #121）。**帯連動ゲート（`triage-guide.md ## 6.3` の「削らない」判断）を再評価するための計測**で、これが無いと価値率を出せず `## 7` の流儀（「サンプルが無いうちは判断しない」）に従うと永久に判断できない:
 

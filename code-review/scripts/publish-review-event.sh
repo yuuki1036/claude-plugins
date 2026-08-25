@@ -589,7 +589,7 @@ SCHEMA_MARKERS = {
     "pre_adjust_counts":  {"schema": 2},
     "below_threshold_counts": {"schema": 1},
     "appendix":           {"schema": 1},
-    "adversarial_verify": {"calibration_schema": 2, "gate_schema": 2},
+    "adversarial_verify": {"calibration_schema": 3, "gate_schema": 2},
     "recall_skeptic":     {"attribution_schema": 2, "gate_schema": 2},
     "meta_reviewer":      {"gate_schema": 3},
 }

@@ -2,6 +2,29 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.90.0] - 2026-08-25
+
+**「実行時挙動が変わらない指摘」を MAJOR に留める条件を立証責任つきで規定した**（GitHub issue #150 / **n=1 の暫定措置**）。
+
+`calibration_schema: 2` の review サンプル 1 件（2026-08-24 / PR 398）で、#150 の期待動作 3（仮説「base 由来が支配的なら打ち手は review 側に base 情報を渡すこと」）が**棄却**された。`severity_inflated` 13 件の内訳は `miscategorized` 7 件（54%）が支配で、base 由来は補正後 3 件（23%）。降格根拠の共通項は「実行時挙動への影響がいずれも現時点でゼロ」だった。
+
+### Changed
+
+- **`prompts/reviewer-common.md`「降格される典型パターン」の `カテゴリの取り違え` 行**: 旧記述の「実行時影響なし = **MINOR〜MAJOR**」が抜け道だった（既定 `{{SEVERITY_THRESHOLD}}` が `MAJOR` なので、MAJOR に置いた瞬間に本文へ出る。旧記述は CRITICAL → MAJOR の降格しか要求しておらず**閾値を跨ぐ側を規定していなかった**）。**実行時挙動が変わらない指摘は MINOR を既定**とし、MAJOR を主張するなら「どの変更が入ったときに、どの経路で、何が壊れるか」を `file:line` まで書くことを求める
+  - 兆候欄に実測 2 型を追加: **命名・コメント・型表現の不備**（重複した述語 / コメントの陳腐化 / スキーマで排他が未表現）と、**担保を破る呼び出し元が実在しないのに「型で担保されていない」を MAJOR にする**型
+  - **発見段階の自己間引きは引き続き禁止**。変えたのは MAJOR を主張するときの立証責任だけで、判定された降格は `## below-threshold` の件数に残る。ただし立証責任で reviewer が**そもそも MAJOR 主張を形成しなくなった**分は #117 と同じ計数の盲点に入る（形成段階の recall 低下は測れない / `scoring-rationale.md`）
+- **`prompts/adversarial-verify.md` の `miscategorized` 定義**を同じ判別条件に揃えた。MAJOR で「実行時挙動は現時点で変わらない」ものは、**発現経路の記載が無ければこの型**（記載があれば経路の成否で `confirmed` / `misread` / `overstated-impact` に振る）
+- **降格典型の語彙は 4 型のまま**据え置いた。`inflated_axes` の合計 == `severity_inflated` は publish 側で fail-fast なので、キーを増やすと publish が壊れる
+- **`adversarial_verify.calibration_schema` を 2 → 3 に上げた**（`publish-review-event.sh` の注入定数 / `orchestration-measurement.md ## 16` の版マーカー表）。**語彙が同じでも版を上げる** — `miscategorized` の判別条件そのものを変えたので、キーが同一でも意味が違う。据え置くと v2.90.0 以降のサンプルが PR 398 の回と同じ層 2 に入り、下記「効果の測り方」が原理的に実行できなくなる（#123 A で「プロンプト変更はゲート変更ではない」と読んで版を足し忘れ、差分を切り出せなくなったのと同一の失敗）
+  - **`review-retro.sh` の `demote_rows()` を層別対応させた**（セルフレビューで検出）。`severity_inflated` 比率シグナル（`verdict_layers` / `newest_layer`）は元から `calibration_schema` で層別していたが、**効果測定の主指標である型別内訳テーブル（`inflated_axes` / `demoted_types`）は層別しておらず**、層 2（PR 398 世代）と層 3 の `miscategorized` を skill ごとに合算していた。版を上げた目的が層別なのにテーブルが混ぜるとバンプが無意味になるので、`with_gen` と同じ「2 層以上あるときだけキーへ足す」パターンで `/calib<N>` を付ける。`CALIB_MIN = 2` は据え置き — あれは `verdict_layers` 側の「4 型の語彙が存在する層か」の下限で、本テーブルとは無関係
+
+### 補足
+
+- **n=1 の暫定措置**である。#150 のコメント自身が「n=1 なので即当てはせず、次の review サンプルで同じ構成なら根拠にする」と書いており、それを承知で先に当てている
+- **効果の測り方**: `inflated_axes` の `miscategorized` が下がり、かつ `demoted_types`（上流降格）の `miscategorized` が増えるのが「効いた」形。**両方下がったら recall を削っただけ**なので戻す
+- **効果測定は層別が前提**: `calibration_schema` を 3 に上げ、`review-retro.sh` の型別内訳テーブルも `/calib<N>` で層別するようにしたので、層 2（PR 398）と層 3（本変更以降）の `miscategorized` は別行で比較できる。累計で合算した比率を効果測定に使わない（`orchestration-measurement.md ## 16`「ゲートを動かす変更には必ず版マーカーを足す」）
+- 根拠の詳細は `design-notes/scoring-rationale.md`「仮説 3 は棄却され、打ち手は『挙動ゼロの MAJOR』に移った」
+
 ## [2.89.0] - 2026-08-25
 
 **reviewer effort profile の A/B を実測して不採用で決着し、実験スカフォールドを撤去した**（GitHub issue #171）。

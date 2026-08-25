@@ -444,14 +444,27 @@ DEMOTE_TYPES = ("base_derived", "misread", "overstated_impact", "miscategorized"
 
 
 def demote_rows(field, key):
-    """`{plugin: {n, total, <type>...}}`。内訳を持たない回は分母にも入れない。"""
-    rows = {}
+    """`{rowkey: {n, total, <type>...}}`。内訳を持たない回は分母にも入れない。
+    **`calibration_schema` で層別する**（#150 / v2.90.0）— `miscategorized` の判別条件は版で
+    変わる（挙動ゼロの MAJOR に発現経路の立証責任を課したのが層 3）ので、層を跨いで合算すると
+    **同じキーの意味の違う値**が混ざり、CHANGELOG が指定する効果測定（`miscategorized` の推移）が
+    読めなくなる。`with_gen` と同じく**2 層以上あるときだけ**キーへ足す（1 層しか無い間は
+    キーを砕かない）。層マーカーは `adversarial_verify.calibration_schema` で、これは
+    「上流較正ガードの版」なので下流（`inflated_axes`）・上流（`demoted_types`）の両テーブルに効く。"""
+    contrib = []
     for e in events:
         parent = e["p"].get(field)
         d = parent.get(key) if isinstance(parent, dict) else None
-        if not isinstance(d, dict):
-            continue
-        row = rows.setdefault(with_gen(e["p"], e["plugin"]),
+        if isinstance(d, dict):
+            contrib.append((e, d, schema_of(e["p"].get("adversarial_verify"),
+                                            "calibration_schema")))
+    calib_split = len({layer for _, _, layer in contrib}) > 1
+    rows = {}
+    for e, d, layer in contrib:
+        rk = with_gen(e["p"], e["plugin"])
+        if calib_split:
+            rk += "/calib" + str(layer)
+        row = rows.setdefault(rk,
                               dict({"n": 0, "total": 0}, **{k: 0 for k in DEMOTE_TYPES}))
         row["n"] += 1
         for k in DEMOTE_TYPES:

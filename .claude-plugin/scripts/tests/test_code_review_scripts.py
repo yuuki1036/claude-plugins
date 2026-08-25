@@ -1475,7 +1475,7 @@ class SchemaMarkerInjectionTest(ScriptTestBase):
         self.publish()
         p = self.last_payload()
         self.assertEqual(p["adversarial_verify"]["gate_schema"], 2)
-        self.assertEqual(p["adversarial_verify"]["calibration_schema"], 2)
+        self.assertEqual(p["adversarial_verify"]["calibration_schema"], 3)
         self.assertEqual(p["meta_reviewer"]["gate_schema"], 3)
         self.assertEqual(p["findings_class"]["schema"], 1)
 
@@ -1971,13 +1971,13 @@ class RetroTest(ScriptTestBase):
         self.assertNotIn("本文を書いた ", out)
 
     # ---- 降格の型別内訳（issue #150）----------------------------------------
-    def _axes_row(self, plugin: str, **types) -> dict:
+    def _axes_row(self, plugin: str, calib: int = 2, **types) -> dict:
         d = {k: 0 for k in ("base_derived", "misread", "overstated_impact",
                             "miscategorized", "unknown")}
         d.update(types)
         return {"_plugin": plugin, "effort": "high", "measurement_gaps": [],
                 "adversarial_verify": {"fired": True, "skip_reason": None, "gate_schema": 2,
-                                       "calibration_schema": 2, "confirmed": 0, "refuted": 0,
+                                       "calibration_schema": calib, "confirmed": 0, "refuted": 0,
                                        "uncertain": 0, "contested": 0,
                                        "severity_inflated": sum(d.values()),
                                        "inflated_axes": d}}
@@ -2003,6 +2003,21 @@ class RetroTest(ScriptTestBase):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("上流降格（`## below-threshold` 跨ぎ）の型別内訳", out)
         self.assertIn("| review | 1 | 3 | 0% | 100% | 0% | 0% | 0% |", out)
+
+    def test_demote_types_split_across_calibration_layers(self):
+        """`miscategorized` の判別条件は版で変わるので層 2 と層 3 を合算しない（#150 / v2.90.0）.
+
+        版を上げた目的が層別なのに、効果測定の主指標である型別内訳テーブルが層を混ぜると
+        バンプが無意味になる。単一層のとき（他テスト）はキーを砕かず、2 層あるときだけ分割する.
+        """
+        self._events([self._axes_row("code-review:review", calib=2, miscategorized=7, base_derived=3),
+                      self._axes_row("code-review:review", calib=3, miscategorized=1, base_derived=1)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        # 層 2（PR 398 世代・旧判別条件）と層 3（新判別条件）が別行に分かれる
+        self.assertIn("| review/calib2 | 1 | 10 |", out)
+        self.assertIn("| review/calib3 | 1 | 2 |", out)
+        # 合算した「| review | 1 | 12 |」は出てはならない（同じキーの意味の違う値の混合）
+        self.assertNotIn("| review | 1 | 12 |", out)
 
     def test_missing_breakdown_says_it_is_waiting(self):
         """黙ると「型は取れている」と読まれる（#131 と同じ型の誤読）."""

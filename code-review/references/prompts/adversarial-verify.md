@@ -54,6 +54,7 @@ reviewer が出した指摘を、それを形成していない独立エージ�
 - `misread` … **読み違え**（到達経路・型・制約を読み違えている）
 - `overstated-impact` … **影響の過大見積もり**（発現に必要な前提を端点まで具体化できない / 縮退・リトライで吸収される / 影響が単一経路に閉じる）
 - `miscategorized` … **カテゴリの取り違え**（当面動く負債・実行時挙動に影響しない不備を高 severity にしている）
+  - **MAJOR で「実行時挙動は現時点で変わらない」ものは、発現経路の記載が無ければこの型**（GitHub issue #150）。`reviewer-common.md` は MAJOR を主張する条件として「どの変更が入ったときに、どの経路で、何が壊れるか」を `file:line` まで書くことを求めている。**その記載が無い**なら `suggested_severity: MINOR` でこの型を返す。記載があるなら経路の成否で `confirmed` / `misread` / `overstated-impact` に振る（書かれていない = 即降格、が判別条件）
 
 **`severity-inflated` で `none` を返さない**。型を選べないなら、それは降格の根拠が無いということなので `confirmed` か `uncertain` にする。
 
