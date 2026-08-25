@@ -452,7 +452,14 @@ def check_demote_types(d, parent, field):
 # **この値は LLM の自己申告**（レポート本文の判断そのもの）で、機械計測へ寄せる経路が無い。
 # 検証できるのは構造の不変条件だけ ＝ `recommended` は `listed` を超えない
 apx = payload.get("appendix")
-if isinstance(apx, dict):
+if apx is not None:
+    # **非 dict は fail-fast**（既存 3 フィールドと同じ形 / v2.88.2）。`isinstance` の通過条件で
+    # 書くと `"appendix": 18` が素通りし、値が payload に残ったまま `payload:appendix` gap
+    # ＝「フィールドごと落ちた回」に化ける。#168 が消そうとした「推した指摘が無かった」と
+    # 「数えなかった」の潰れを、型の穴から再生産することになる
+    if not isinstance(apx, dict):
+        sys.stderr.write("appendix が JSON オブジェクトでない（{listed, recommended} が必要）\n")
+        sys.exit(1)
     bad = [k for k in ("listed", "recommended")
            if not isinstance(apx.get(k), int) or isinstance(apx.get(k), bool) or apx.get(k) < 0]
     if bad:
@@ -537,18 +544,23 @@ payload.update(json.loads(os.environ["REVIEW_DURS"]))
 
 # agents.explorer_waves も同じくマーカー由来の値で上書きする（自己申告させない）。
 # 一括発行が守られていれば explorer 起動時 1 / 未起動 0。2 以上は wave 1 本ぶんの損失
-waves = int(os.environ.get("REVIEW_EXPLORER_WAVES") or 0)
+# **変数名を `waves` にしない**（v2.88.2 / セルフレビューで実測）。下の dispatch ブロックが
+# `waves = disp.get("waves")`（**総** wave 数）で同名変数を上書きするため、末尾の
+# 「explorer wave が N 本ある」WARN が総 wave 数を読んでいた。explorer + reviewer の
+# 2 wave は設計上正当なので、**layered な全レビューで偽陽性が出続けていた**（v2.84.0 で混入）。
+# しかも `elif "explorer-wave" in gaps:` の本物の打点漏れ警告が到達不能になっていた
+explorer_waves = int(os.environ.get("REVIEW_EXPLORER_WAVES") or 0)
 agents = payload.get("agents")
 if not isinstance(agents, dict):
     agents = {}
     payload["agents"] = agents
-agents["explorer_waves"] = waves
+agents["explorer_waves"] = explorer_waves
 launched = agents.get("explorer")
 
 # 欠測マーカーの識別子。explorer wave の欠測だけは「起動したのに打点が無い」ときのみ
 # gap であり、explorer 未起動なら該当なしなので、体数を知っているここで足す
 gaps = [g for g in os.environ.get("REVIEW_MEASUREMENT_GAPS", "").split() if g]
-if isinstance(launched, int) and launched >= 1 and waves == 0:
+if isinstance(launched, int) and launched >= 1 and explorer_waves == 0:
     gaps.append("explorer-wave")
 
 # 上の語彙検証を「フィールドを消す」で回避されると、綴り割れの代わりに**静かな全欠測**になる。
@@ -615,6 +627,24 @@ if isinstance(av, dict) and "inflated_axes" not in av:
 if isinstance(bt, dict) and "demoted_types" not in bt and sum(bt[k] for k in SEVS) > 0:
     gaps.append("payload:below_threshold_counts.demoted_types")
 
+# **軸を寄せ損ねた回を可視化する**（GitHub issue #167）。**`tok` を参照しない gap 判定は
+# `REVIEW_TOKENS_WANTED` ブロックに置かない**（v2.88.2 / セルフレビュー）— 置くと
+# publish するプラグイン名が増えた瞬間に、この検出だけが何のエラーも出さずに消える。`inflated_axes` / `demoted_types` は
+# 反証 agent・reviewer が返す語彙を 4 型へ寄せて数える契約だが、**寄せ漏れは静かに通る** —
+# 合計の突合（上の fail-fast）は `unknown` に落としても一致するので検出できない。
+# 実測: `intended` 2 件が `base_derived` に寄らず `unknown` に落ち、review 側の唯一の
+# 型付きサンプルで `base_derived` を 8% と読むか 23% と読むかが変わった（#150 の判断材料）。
+#
+# **fail-fast にしない**。`unknown` は「軸が返らなかった」正当な回にも立つ値で、止めると
+# その回の計測が丸ごと消える（`agents-mismatch` と同じ判断。合計不一致を落とすのとは非対称で、
+# あちらは内訳が本体とずれた時点で切り分けという用途自体が消えるので落とす側）
+for _parent, _field, _gap in (("adversarial_verify", "inflated_axes", "axis-unknown"),
+                              ("below_threshold_counts", "demoted_types", "demoted-unknown")):
+    _d = payload.get(_parent)
+    _d = _d.get(_field) if isinstance(_d, dict) else None
+    if isinstance(_d, dict) and isinstance(_d.get("unknown"), int) and _d["unknown"] > 0:
+        gaps.append(_gap)
+
 # ---- トークン消費と発行パターン（issue #126 / #142 / #143） -----------------
 if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
     try:
@@ -674,22 +704,6 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 世代が引けない回を黙って落とさない。**「単一世代だった」に倒さない**のが要点で、
         # 倒すと交絡したサンプルが単一世代の分布に混ざる（`tokens` の 0 と同じ理由）
         gaps.append("models")
-
-    # **軸を寄せ損ねた回を可視化する**（GitHub issue #167）。`inflated_axes` / `demoted_types` は
-    # 反証 agent・reviewer が返す語彙を 4 型へ寄せて数える契約だが、**寄せ漏れは静かに通る** —
-    # 合計の突合（上の fail-fast）は `unknown` に落としても一致するので検出できない。
-    # 実測: `intended` 2 件が `base_derived` に寄らず `unknown` に落ち、review 側の唯一の
-    # 型付きサンプルで `base_derived` を 8% と読むか 23% と読むかが変わった（#150 の判断材料）。
-    #
-    # **fail-fast にしない**。`unknown` は「軸が返らなかった」正当な回にも立つ値で、止めると
-    # その回の計測が丸ごと消える（`agents-mismatch` と同じ判断。合計不一致を落とすのとは非対称で、
-    # あちらは内訳が本体とずれた時点で切り分けという用途自体が消えるので落とす側）
-    for _parent, _field, _gap in (("adversarial_verify", "inflated_axes", "axis-unknown"),
-                                  ("below_threshold_counts", "demoted_types", "demoted-unknown")):
-        _d = payload.get(_parent)
-        _d = _d.get(_field) if isinstance(_d, dict) else None
-        if isinstance(_d, dict) and isinstance(_d.get("unknown"), int) and _d["unknown"] > 0:
-            gaps.append(_gap)
 
     # **発行パターンは tokens とは独立に載せる**（GitHub issue #142 / 判定単位は #149）。
     # 窓が空振りして `tokens` が欠測になった回でも、agent の発行元は拾えていることがある。
@@ -815,12 +829,12 @@ payload["derived_markers"] = [m for m in (os.environ.get("REVIEW_DERIVED_MARKERS
 # **独立した観測者（Agent の PostToolUse hook）が本命の解**だが未検証なので、当面は
 # 「気づかず通過する」のを止める側に倒す — レポートへの追記を明示的に指示する
 # （→ design-notes/pending-optimizations.md `## 8`）
-if waves >= 2:
+if explorer_waves >= 2:
     sys.stderr.write(
         "WARN: explorer wave が %d 本ある（一括発行が破られた）。1 メッセージにまとめていれば "
         "wave 内最長の 1 本で済む — orchestration-guide.md `## 0`\n"
         "  → **レポート末尾に 1 行追記すること**: "
-        "`⚠️ 計測: explorer を %d wave に分けて発行した（一括発行の規約違反 / #135）`\n" % (waves, waves)
+        "`⚠️ 計測: explorer を %d wave に分けて発行した（一括発行の規約違反 / #135）`\n" % (explorer_waves, explorer_waves)
     )
 elif "explorer-wave" in gaps:
     sys.stderr.write(

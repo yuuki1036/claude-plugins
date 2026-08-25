@@ -717,6 +717,37 @@ class AppendixCountTest(ScriptTestBase):
         r = self.publish(dict(BASE_PAYLOAD, appendix={"listed": 0}))
         self.assertNotEqual(r.returncode, 0, "recommended の欠落が通っている")
 
+    def test_zero_counts_are_accepted(self):
+        """**通る側の境界**（`< 0` → `<= 0` の変異を殺す）.
+
+        `{0,0}` は「付録に 1 件も出なかった回」＝最も頻度の高い入力。ここで fail-fast
+        すると `review:completed` が丸ごと欠測し、#168 で足した計測が消える。
+        """
+        r = self.publish(dict(BASE_PAYLOAD, appendix={"listed": 0, "recommended": 0}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.last_payload()["appendix"],
+                         {"listed": 0, "recommended": 0, "schema": 1})
+
+    def test_all_listed_items_may_be_recommended(self):
+        """**等号は通る**（`> listed` → `>= listed` の変異を殺す）.
+
+        全件を推す回は正当（`AppendixRetroTest` の推奨率 100% ケースがその形）。
+        """
+        r = self.publish(dict(BASE_PAYLOAD, appendix={"listed": 5, "recommended": 5}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_a_non_object_appendix_is_rejected(self):
+        """非 dict は fail-fast（既存 3 フィールドと同じ形 / セルフレビュー指摘）.
+
+        素通しすると値が payload に残ったまま `payload:appendix` gap ＝「フィールドごと
+        落ちた回」に化け、#168 が消そうとした潰れを型の穴から再生産する。
+        """
+        for bad in (18, "18", [18, 4]):
+            with self.subTest(bad=bad):
+                r = self.publish(dict(BASE_PAYLOAD, appendix=bad))
+                self.assertNotEqual(r.returncode, 0, "非 dict の appendix が通っている")
+                self.assertIn("appendix", r.stderr)
+
     def test_a_boolean_is_not_accepted_as_a_count(self):
         """`True` は `int` の派生なので素の isinstance を素通りする.
 
@@ -790,6 +821,39 @@ class AppendixRetroTest(ScriptTestBase):
         self.assertIn("n=1", out, "壊れた行を母数に入れている")
         self.assertIn("列挙 18 件 / うち人間に推した 4 件", out)
 
+    def test_each_new_gap_identifier_names_its_own_fix(self):
+        """新識別子は**それぞれ別の是正先**を出す（既定の「打点箇所の見直し」に落とさない）.
+
+        `gap_hint` の docstring どおり gap の種類で是正先が違う。既定に落ちると
+        `models`（transcript の引き当て）にも語彙の寄せ漏れにも「打点を見直せ」と言う。
+        #167 が上流と下流で識別子を分けた目的が、読む側で消える。
+        """
+        cases = [("models", "transcript の引き当て"),
+                 ("axis-unknown", "axis 語彙"),
+                 ("demoted-unknown", "降格型名")]
+        for ident, expected in cases:
+            with self.subTest(ident=ident):
+                # GAP_MIN_N=5 / GAP_RATIO=20 を超える母集団を作る
+                self._events([dict(self._row(1, 0, 1), measurement_gaps=[ident])
+                              for _ in range(6)])
+                out = self.run_script(RETRO, env=self._env()).stdout
+                self.assertIn(ident, out, "gap がシグナルに出ていない")
+                self.assertIn(expected, out, "是正先が既定文言に落ちている")
+                self.assertNotIn("打点箇所の見直し", out)
+
+    def test_an_empty_appendix_does_not_break_the_rate_line(self):
+        """`listed` 合計 0 でゼロ割しない（`if tot_listed:` → `if True:` の変異を殺す）.
+
+        付録 0 件は毎回起きる形。ガードが外れると `ZeroDivisionError` で **retro が
+        途中で死ぬ**（付録節より後ろの出力が全部消える）。
+        """
+        self._events([self._row(0, 0, 0)])
+        r = self.run_script(RETRO, env=self._env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("列挙 0 件", r.stdout)
+        self.assertNotIn("推奨率", r.stdout, "分母 0 で推奨率を出している")
+        self.assertIn("計測の健全性", r.stdout, "付録節より後ろが出力されていない")
+
     def test_an_absent_field_is_not_read_as_no_recommendations(self):
         """旧版（`appendix` 無し）を「推奨なし」に潰さない."""
         self._events([{"effort": "high", "measurement_gaps": [], "blocker_count": 0,
@@ -852,6 +916,58 @@ class AxisUnknownGapTest(ScriptTestBase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.last_payload()["adversarial_verify"]["inflated_axes"]["unknown"], 2,
                          "内訳そのものが落ちている")
+
+
+class ExplorerWaveWarnTest(ScriptTestBase):
+    """explorer wave の打点と WARN（セルフレビューで変数の上書きを実測 / v2.88.2）.
+
+    `waves` という変数名が dispatch ブロックの `waves = disp.get("waves")`（**総** wave 数）に
+    上書きされ、末尾の WARN が総 wave 数を読んでいた。explorer + reviewer の 2 wave は
+    設計上正当なので、**layered な全レビューで「一括発行が破られた」の偽陽性**が出続け、
+    かつ `elif "explorer-wave" in gaps:` の本物の打点漏れ警告が到達不能になっていた。
+    """
+
+    def _marks(self, we: int) -> None:
+        """`we` を指定本数だけ書く（`timeline` は kwargs なので同名キーを 2 本書けない）."""
+        path = Path(self.timing("start").stdout.strip())
+        rows = ["t0 1000\n", "t1 1100\n"] + ["we %d\n" % (1200 + i) for i in range(we)]
+        path.write_text("".join(rows + ["w 1400\n", "t2 1500\n"]), encoding="utf-8")
+
+    def _publish(self, explorer: int, we: int):
+        self._marks(we)
+        p = dict(BASE_PAYLOAD, agents={"explorer": explorer, "reviewer": 2})
+        return self.publish(p)
+
+    def test_one_wave_is_not_flagged(self):
+        """**一括発行できている回で鳴らさない**（偽陽性を出さないことが契約）."""
+        r = self._publish(explorer=2, we=1)
+        self.assertEqual(self.last_payload()["agents"]["explorer_waves"], 1)
+        self.assertNotIn("一括発行が破られた", r.stderr)
+        self.assertNotIn("explorer-wave", self.last_payload()["measurement_gaps"])
+
+    def test_two_waves_are_flagged(self):
+        """explorer を 2 wave に分けた回だけ鳴る（境界は 2）."""
+        r = self._publish(explorer=2, we=2)
+        self.assertEqual(self.last_payload()["agents"]["explorer_waves"], 2)
+        self.assertIn("explorer wave が 2 本ある", r.stderr)
+
+    def test_a_missing_mark_raises_the_gap_when_explorers_ran(self):
+        """explorer を起動したのに打点 0 なら gap（打点漏れは違反の証拠も消す / #135）."""
+        r = self._publish(explorer=1, we=0)
+        self.assertIn("explorer-wave", self.last_payload()["measurement_gaps"])
+        self.assertIn("打点が無い", r.stderr)
+
+    def test_no_explorer_means_no_gap(self):
+        """explorer 未起動なら打点 0 は**該当なし**（欠測ではない）."""
+        r = self._publish(explorer=0, we=0)
+        self.assertNotIn("explorer-wave", self.last_payload()["measurement_gaps"])
+        self.assertNotIn("打点が無い", r.stderr)
+
+    def test_the_count_defaults_to_zero_when_unset(self):
+        """環境変数が空でも 0 に倒れる（`or 0` の既定）."""
+        r = self._publish(explorer=0, we=0)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.last_payload()["agents"]["explorer_waves"], 0)
 
 
 class ModelGenerationTest(TranscriptFixture):
@@ -2614,6 +2730,12 @@ class ReviewBackfillTest(TranscriptFixture):
         self.write_transcript([[120], [200], [280, 290]], base=self.BASE,
                               main_models=("claude-opus-4-8",))
         out = self.backfill(self.write_events(self.payload())).stdout
+        # **否定系の前に行の存在を表明する**（liveness ガード）。後付けが 1 行も成立しない
+        # 状態でも `assertNotIn` は真になるので、それだけだと恒久 pass になる
+        self.assertRegex(out, r"後付け成立 1 件",
+                         "前提: 後付けが 1 行も成立していない（注記の有無を見る意味が無い）")
+        self.assertIn("世代は opus-4-8 の 1 種のみ", out,
+                      "前提: 世代が解決できていない")
         self.assertNotIn("←", out, "単一世代の行に「比較に使わない」の注記が付いている")
 
     def test_a_missing_wave_end_does_not_abort_the_row(self):

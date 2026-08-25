@@ -2,6 +2,28 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.88.2] - 2026-08-25
+
+セルフレビュー（v2.88.1 の差分を `reviewer_effort_profile=differentiated` で実行）で検出した欠陥の修正。
+
+### Fixed
+
+- **`waves` の変数上書きで「一括発行が破られた」が恒常的な偽陽性になっていた**（v2.84.0 で混入）。explorer wave 数を入れた `waves` が、下の dispatch ブロックの `waves = disp.get("waves")`（**総** wave 数）に上書きされ、末尾の WARN が総 wave 数を読んでいた。explorer + reviewer の 2 wave は設計上正当なので、**layered な全レビューで鳴っていた**。しかも `elif "explorer-wave" in gaps:` の本物の打点漏れ警告が到達不能だった。`explorer_waves` に隔離した
+  - **記録データ（`agents.explorer_waves`）は正しかった** — 代入がブロックより前だったため。壊れていたのは WARN だけ
+  - リネームで露出した既存の未検証分岐 4 つ（`launched >= 1` / `explorer_waves == 0` / `>= 2` / `or 0`）にテストを足した。**変数の衝突がその分岐の未検証を隠していた**
+- **payload テンプレートの `appendix` が review 側に 2 行重複し、self-review 側に 0 行だった**（v2.88.0 の編集ミス）。self-review は `SCHEMA_MARKERS` により**恒常的に `payload:appendix` gap** が立つ状態で、#168 の計測が主経路で機能しなかった。重複を削って self-review 側へ移した
+- **`appendix` の非 dict を fail-fast にした**。`isinstance(apx, dict)` の通過条件で書いていたため `"appendix": 18` が素通りし、値が payload に残ったまま「フィールドごと落ちた回」の gap に化けていた。既存 3 フィールド（`missing_coverage` / `findings_class` / `below_threshold_counts`）と同じ形に揃えた
+- **`axis-unknown` / `demoted-unknown` の判定を `REVIEW_TOKENS_WANTED` ブロックの外へ出した**。この 2 つは `payload` しか見ておらず `tok` に触れないのに、トークン計測のゲートの内側にあった。publish するプラグイン名が増えた瞬間に**この検出だけが静かに消える**配置で、#167 が潰そうとした性質を機構自身が持っていた
+- **`gap_hint` に新識別子 3 つの分岐を追加**。既定の「打点箇所の見直しが要る」に落ちており、`models`（transcript の引き当て）にも語彙の寄せ漏れにも誤った是正先を提示していた。#167 が識別子を分けた目的が読む側で消えていた
+- **retro の出力文「費用対効果の分母に入れない」を「分子から落とさない」に訂正**（他 4 箇所は「分子」で書いている）
+- **テストの穴 4 件**: `appendix` の通る側の境界（`{0,0}` と `listed == recommended`）／retro のゼロ割ガード／`test_a_single_generation_row_is_not_marked_unusable` の liveness ガード（否定系だけで恒久 pass だった）／非 dict の表明
+
+### 補足
+
+- **`GEN_SPLIT` から `unrecorded` / `mixed` を除く修正は入れて差し戻した**。reviewer は confidence 95 + 実データ再現つきで「`models` 付きの 1 件目でバケツが砕ける」と指摘したが、除くと**世代不明の回が既知世代と同じバケツに入る** — #169 が防ごうとした当のプーリングで、回帰テスト 3 件がその不変条件を表明していた。「バケツが砕ける」は意図した対価であり、その旨をコメントに残した
+- この回の反証レイヤーは `no-eligible-findings` で未実施（`high` 帯の対象は BLOCKER / CRITICAL のみ・全指摘が MAJOR）。**独立検証を通っていない指摘をそのまま適用して回帰テストに止められた**
+- 回帰テスト **10 件追加**（`test_code_review_scripts.py` の `def test_` 行数で 234 → 244）。変異 10/10 killed / 生存 0%
+
 ## [2.88.1] - 2026-08-25
 
 ### Fixed

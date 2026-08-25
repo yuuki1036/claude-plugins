@@ -284,6 +284,13 @@ for _e in events:
     GEN_COUNTS[_g] = GEN_COUNTS.get(_g, 0) + 1
 GEN_KINDS = sorted(GEN_COUNTS)
 GEN_SPLIT = len(GEN_KINDS) > 1
+# **`unrecorded` / `mixed` も分割の根拠に数える**（セルフレビューで一度外して差し戻した / v2.88.2）。
+# 外すと「世代不明の回」と「既知世代の回」が同じバケツに入り、**#169 が防ごうとした当の
+# プーリング**が起きる（`test_unrecorded_generation_is_not_folded_into_a_known_one` ほか 2 件が
+# 表明している不変条件）。**既知の副作用**: `unrecorded` は retro が全履歴を読む限り消えないので、
+# `models` 付きの 1 件目が publish された時点で既存バケツが `/unrecorded` 側に分かれ、
+# 新しい観測は当面 n=1 で溜まる。これは可読性の劣化であって誤りではない — 世代不明の
+# 母数を既知世代の中央値に混ぜないことの対価として受け入れる
 
 
 def with_gen(p, key):
@@ -748,6 +755,16 @@ def gap_hint(g):
         return "transcript の引き当て（measure-tokens.sh のセッション選択・窓）を見直す"
     if g == "diff-digest":
         return "diff の突合キー算出（lib/review-paths.sh）を見直す"
+    # 新識別子を足したら**ここにも分岐を足す**（v2.88.2 / #167・#169）。既定に落とすと
+    # 「打点箇所の見直し」＝**確実に誤った是正先**を提示する（`models` は打点と無関係で、
+    # `axis-unknown` / `demoted-unknown` は語彙の寄せ漏れ）。識別子を分けた目的が
+    # シグナル欄で消えるので、分けた側と読む側は同時に直す
+    if g == "models":
+        return "transcript の引き当て（measure-tokens.sh のセッション選択・窓）を見直す"
+    if g == "axis-unknown":
+        return "反証 agent の axis 語彙（prompts/adversarial-verify.md）と両 SKILL Step 6 の対応表を見直す"
+    if g == "demoted-unknown":
+        return "reviewer の降格型名（prompts/reviewer-common.md の 4 型）と両 SKILL Step 6 の対応表を見直す"
     return "打点箇所の見直しが要る"
 
 
@@ -1133,7 +1150,7 @@ if apx_rows:
           % (len(apx_rows), tot_listed, tot_rec))
     if apx_silent:
         print("- **報告 0 件の回 %d 件のうち %d 件は推奨あり**（＝空振りではない）。"
-              "**この %d 件を「価値 0」として費用対効果の分母に入れない** — "
+              "**この %d 件を「価値 0」として費用対効果の分子から落とさない** — "
               "体数キャップ・effort profile・閾値の判断が過小評価に倒れる（issue #168）"
               % (apx_silent, apx_rescued, apx_rescued))
     if tot_listed:

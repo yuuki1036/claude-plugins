@@ -226,7 +226,6 @@ review 用（`--plugin code-review:review --pr <PR番号>`）:
     "inflated_axes":{"base_derived":<n>,"misread":<n>,"overstated_impact":<n>,"miscategorized":<n>,"unknown":<n>}},
   "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
   "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
-  "appendix":{"listed":<n>,"recommended":<n>},
   "appendix":{"listed":<n>,"recommended":<n>}
 }
 ```
@@ -250,6 +249,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
     "inflated_axes":{"base_derived":<n>,"misread":<n>,"overstated_impact":<n>,"miscategorized":<n>,"unknown":<n>}},
   "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
   "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
+  "appendix":{"listed":<n>,"recommended":<n>},
   "comment_polish":{"fired":<bool>,"suggested":<n>}
 }
 ```
