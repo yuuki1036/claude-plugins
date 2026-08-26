@@ -789,22 +789,40 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             n = m.get("findings_added")
             return isinstance(n, int) and not isinstance(n, bool) and n > 0
 
-        # **skeptic の fallback 起動は「末尾の単独 wave」1 本だけ控除する**（GitHub issue #172）。
-        # `recall_skeptic.fired` に無条件で +1 すると、実データで**偽陽性 1 件を消す代わりに
-        # 本物 3 件が消える**（08-25T08:32 / 08-25T13:42 / 08-26T06:07）。fallback 起動は
-        # `triage-dynamic-gates.md ## 8.5` で **reviewer 完了後の単独 1 体**と規約で決まって
-        # いるので、偽陽性の形は「**末尾が単独 wave**」に限られる。位置で切れば実測 6/6 を
-        # 正しく判定できる（偽陽性 0）。**控除は 1 本まで** — 末尾を控除しても他の位置に
-        # 単独 wave が残る回（08-25T08:32 は先頭に 2 本）を落とさないための要件。
+        # **skeptic の fallback 起動は「末尾が唯一の単独 wave」のときだけ 1 本控除する**
+        # （GitHub issue #172）。`recall_skeptic.fired` に無条件で +1 すると、実データで
+        # **偽陽性 1 件を消す代わりに本物 3 件が消える**（6 件中 3/6 しか当たらない）。
+        # fallback 起動は `triage-dynamic-gates.md ## 8.5` で **reviewer 完了後の単独 1 体**と
+        # 規約で決まっているので、偽陽性の形は「単独 wave がちょうど 1 本あり、それが末尾」に
+        # 限られる。
         #
-        # 根拠は分布のフィットではなく「fallback は末尾単独」という**構造の規約**だが、
-        # 6 サンプルへの後付けなので過学習の留保は残る（→ `design-notes/orchestration-rationale.md`）
+        # **`sizes[-1] == 1` だけで切ってはならない**（セルフレビューで検出 / v2.91.0 の初版が
+        # これで、08-25T08:32 の `[1,1,6,1]` = explorer が先頭で 2 wave に割れた**本物の違反**を
+        # 隠して 5/6 に落ちていた）。判定は総本数の比較（`waves > expected`）なので、
+        # 「先頭にも単独 wave が残っているから検出は続く」という理屈は**実装に対応しない** —
+        # 控除は残数ではなく総数を 1 増やすだけで、超過 1 の回はそれで消える。
+        # **他の位置に単独 wave が 1 本でもあれば控除しない**ことで、理屈と実装を一致させる。
+        # これで実測 6 サンプルが 6/6（偽陽性 0 / 取り逃し 0）になる。
+        #
+        # **既知の残存限界**（→ `design-notes/orchestration-rationale.md`）:
+        # ①skeptic の既定経路は fallback ではなく **reviewer wave への相乗り**なので、
+        #   `fired` は追加 wave の存在を含意しない ②fallback が走っても後ろに meta / 反証 wave が
+        #   付く回では fallback wave は末尾に来ない。どちらも位置ヒューリスティックでは分離
+        #   できず、構造的な解は `recall_skeptic` に起動経路を自己申告させること。
+        # 6 サンプルへの後付けである以上、過学習の留保も残る。
         def _skeptic_tail_solo():
             sk = payload.get("recall_skeptic")
             if not isinstance(sk, dict) or sk.get("fired") is not True:
                 return False
             sizes = disp.get("wave_sizes")
-            return isinstance(sizes, list) and len(sizes) > 0 and sizes[-1] == 1
+            # **本ブロックは `verdict not in (None, "unknown")` の内側**（上流の `if`）。
+            # `measure-tokens.sh` が `wave_sizes` を `None` のままにするのは `unresolved` の
+            # 回だけで、そのとき `verdict` は `"unknown"` に留まるので、ここへ None は届かない。
+            # 防御的に残すが**到達しないためテストで殺せない**（backfill 側は verdict ゲートが
+            # 無いので到達し、そちらの同条件は回帰テストが殺している）。
+            if not (isinstance(sizes, list) and len(sizes) > 0):  # mutation-ok: 上流の verdict ゲートで到達不能
+                return False  # mutation-ok: 同上（到達不能な防御分岐）
+            return sizes[-1] == 1 and 1 not in sizes[:-1]
 
         expected = ((1 if _agents_n("explorer") > 0 else 0) + 1
                     + (1 if _agents_n("verify") > 0 else 0)

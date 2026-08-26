@@ -2653,18 +2653,27 @@ class WaveSplitTest(TranscriptFixture):
         self.assertNotIn("wave-split", published["measurement_gaps"])
 
     def test_deduction_does_not_hide_a_leading_split(self):
-        """**控除は 1 本まで** — 末尾を引いても先頭に残る単独 wave は本物（実測 08-25T08:32）.
+        """**末尾が「唯一の」単独 wave のときだけ控除する**（実測 08-25T08:32 / `[1,1,6,1]`）.
 
-        `[1,1,6,1]` は explorer 2 体が先頭で 2 wave に割れた回。末尾控除で消してはならない。
+        explorer 2 体が先頭で 2 wave に割れた**本物の違反**。控除で消してはならない。
+
+        **fixture は実サンプルの記録 expected 3 を再現する**（`verify=1` を含む構成）。
+        v2.91.0 の初版はこのテストを `verify=0`（= 基礎 expected 2）で組んでいたため、
+        `sizes[-1] == 1` だけで控除する実装でも通ってしまい、**docstring が名指しした
+        当のサンプルが実装で消えている**ことを検出できなかった（セルフレビューで発覚）。
+        名指しした実測回を守るテストは、その回の**層構成まで**再現すること。
         """
+        # explorer 1+1（分割）/ reviewer 6 / verify 1 = 9 体。skeptic 発火の +1 込みで
+        # 申告も 9 に揃える（`agents-mismatch` が立つと wave 判定そのものが抑止される）
         self.write_transcript([[0], [100], [200, 210, 220, 230, 240, 250], [300]],
                               base=self.BASE)
-        p = dict(self.agents(explorer=2, reviewer=6, verify=0),
+        p = dict(self.agents(explorer=2, reviewer=5, verify=1),
                  recall_skeptic=self._skeptic())
         published = self.run_publish(p)
+        self.assertNotIn("agents-mismatch", published["measurement_gaps"], "前提: 申告が揃っている")
         self.assertEqual(published["dispatch"]["wave_sizes"], [1, 1, 6, 1])
         self.assertEqual(published["dispatch"]["waves_expected"], 3,
-                         "控除は 1 本まで（2 本引くと本物を取り逃す）")
+                         "先頭に単独 wave が残っているのに控除している")
         self.assertIn("wave-split", published["measurement_gaps"],
                       "先頭の explorer 分割を末尾控除で消している")
 
@@ -2690,6 +2699,7 @@ class WaveSplitTest(TranscriptFixture):
         p = dict(self.agents(explorer=2, reviewer=6, verify=0),
                  recall_skeptic=self._skeptic(fired=False))
         published = self.run_publish(p)
+        self.assertNotIn("agents-mismatch", published["measurement_gaps"], "前提: 申告が揃っている")
         self.assertEqual(published["dispatch"]["waves_expected"], 2)
         self.assertIn("wave-split", published["measurement_gaps"])
 
@@ -2703,11 +2713,20 @@ class WaveSplitTest(TranscriptFixture):
         self.assertIn("#172", r.stderr)
 
     def test_the_canonical_shape_stays_silent(self):
-        """正当な形では WARN も出さない（「⚠️ が出たときだけ行動する」契約）."""
+        """正当な形では WARN も出さない（「⚠️ が出たときだけ行動する」契約）.
+
+        **否定 2 本だけだと liveness ガードが無い** — 頭数が崩れて `agents-mismatch` に
+        落ちれば WARN 経路が丸ごと死んだまま緑になる（このファイル冒頭の `signals()` が
+        同じ教訓を持つ）。前提と実測値を先に表明してから否定を置く。
+        """
         self.write_transcript([[0], [100, 110, 120], [200]], base=self.BASE)
         self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
         r = self.publish(self.agents(), env=self.env_home())
-        self.assertNotIn("wave-split", self.last_payload()["measurement_gaps"])
+        published = self.last_payload()
+        self.assertNotIn("agents-mismatch", published["measurement_gaps"], "前提: 申告が揃っている")
+        self.assertEqual(published["dispatch"]["waves"], 3)
+        self.assertEqual(published["dispatch"]["waves_expected"], 3)
+        self.assertNotIn("wave-split", published["measurement_gaps"])
         self.assertNotIn("#172", r.stderr)
 
     def test_a_broken_headcount_suppresses_the_verdict(self):
@@ -3083,26 +3102,40 @@ class ReviewBackfillTest(TranscriptFixture):
 
         **1 形状だけでは乖離を捕まえられない**（実測）: skeptic 項（#172）を publish にだけ
         入れて後付けを直し忘れたとき、`recall_skeptic.fired=False` の単一 fixture では
-        両者が同じ値を出して**素通りした**。式に項が増えるたび、その項が効く形状を足すこと。
+        両者が同じ値を出して**素通りした**。式に項が増えるたび、**その項が効く形状と
+        効かない形状の両方**を足すこと（片側だけだと項の有無が値に出ない）。
+
+        **形状ごとに `agents-mismatch` が立たないことを確かめる**（セルフレビューで検出）:
+        申告と transcript 体数がずれると publish 側も後付け側も判定を抑止するので、
+        `wave_split` の比較が**両側 False で空虚に一致**し、ゲートの乖離が素通りする。
+        申告合計は `agents` の内訳 + `recall_skeptic` / `meta_reviewer` の `fired` ぶん。
         """
         # (label, agents, extra payload, wave の起動オフセット)
+        SK = {"recall_skeptic": {"fired": True, "skip_reason": None,
+                                 "attribution_schema": 2, "findings_added": 0}}
         shapes = [
             ("explorer+reviewer", {"explorer": 1, "reviewer": 3, "verify": 0}, {},
              [[120], [200], [280, 290]]),
-            # skeptic fallback の末尾単独 wave（#172 の控除項が効く形）
-            ("skeptic-tail-solo", {"explorer": 0, "reviewer": 3, "verify": 0},
-             {"recall_skeptic": {"fired": True, "skip_reason": None,
-                                 "attribution_schema": 2, "findings_added": 0}},
+            # skeptic fallback の末尾単独 wave（#172 の控除項が効く形 / 申告 3+1=4 体）
+            ("skeptic-tail-solo", {"explorer": 0, "reviewer": 3, "verify": 0}, SK,
              [[120, 130, 140], [280]]),
-            # 末尾が単独でない = 控除しない形（同じ項の裏側）
-            ("skeptic-tail-batch", {"explorer": 0, "reviewer": 4, "verify": 0},
-             {"recall_skeptic": {"fired": True, "skip_reason": None,
-                                 "attribution_schema": 2, "findings_added": 0}},
+            # 末尾が単独でない = 控除しない形（同じ項の裏側 / 申告 3+1=4 体）
+            ("skeptic-tail-batch", {"explorer": 0, "reviewer": 3, "verify": 0}, SK,
              [[120, 130], [280, 290]]),
+            # **末尾は単独だが他にも単独 wave がある** = 控除しない形（#172 のセルフレビュー修正）
+            ("skeptic-tail-solo-but-not-unique", {"explorer": 0, "reviewer": 3, "verify": 0}, SK,
+             [[120], [200, 210], [280]]),
             # meta が指摘を足した回（#166 の項が効く形）
             ("meta-added", {"explorer": 0, "reviewer": 3, "verify": 0},
              {"meta_reviewer": {"fired": True, "skip_reason": None, "findings_added": 2}},
              [[120, 130, 140], [280]]),
+            # **verify 項が効く形**（この形状が無かったため、backfill から verify 項を
+            # 削っても本テストが緑のままだった / セルフレビューで実測）
+            ("verify", {"explorer": 0, "reviewer": 3, "verify": 2}, {},
+             [[120, 130, 140], [280, 290]]),
+            # **round2 項（+2）が効く形**（同上）
+            ("round2", {"explorer": 0, "reviewer": 3, "verify": 0, "round2": 2}, {},
+             [[120, 130, 140], [280, 290]]),
         ]
         for label, agents, extra, waves in shapes:
             with self.subTest(shape=label):
@@ -3116,6 +3149,10 @@ class ReviewBackfillTest(TranscriptFixture):
                 payload = dict(BASE_PAYLOAD, agents=agents, **extra)
                 self.publish(payload, env=self.env_home())
                 published = self.last_payload()
+                # 立つと publish 側も後付け側も判定を抑止するので、両側 False で
+                # 空虚に一致する（ゲートの乖離が素通りする）
+                self.assertNotIn("agents-mismatch", published["measurement_gaps"],
+                                 "前提: 申告と transcript 体数が揃っている")
 
                 log = self.root / ".claude" / "events.jsonl"
                 self.assertTrue(log.is_file(), "前提: publish がイベントを書いている")

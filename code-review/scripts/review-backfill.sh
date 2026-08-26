@@ -233,12 +233,14 @@ for e in events:
                   and not isinstance(m.get("findings_added"), bool)
                   and m["findings_added"] > 0)
 
-    # skeptic fallback の**末尾単独 wave** 1 本の控除（#172）。**publish 側と同じ条件**にすること
+    # skeptic fallback の控除（#172）。**publish 側と同じ条件**にすること。
+    # 条件は「末尾が**唯一の**単独 wave」。`sizes[-1] == 1` だけで切ると本物の違反を隠す
+    # （`[1,1,6,1]` 型。判定は総本数の比較なので、他所に単独 wave が残っていても超過 1 は消える）
     sk = p.get("recall_skeptic")
     sizes = d.get("wave_sizes")
     skeptic_tail_solo = (isinstance(sk, dict) and sk.get("fired") is True
                          and isinstance(sizes, list) and len(sizes) > 0
-                         and sizes[-1] == 1)
+                         and sizes[-1] == 1 and 1 not in sizes[:-1])
 
     expected = ((1 if n_of("explorer") > 0 else 0) + 1
                 + (1 if n_of("verify") > 0 else 0)

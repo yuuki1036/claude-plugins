@@ -2,6 +2,28 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.91.1] - 2026-08-26
+
+**v2.91.0 の控除条件が本物の違反を隠していた欠陥を修正した**（GitHub issue #172 / セルフレビューで検出）。
+
+`wave_sizes[-1] == 1` だけで控除すると `[1,1,6,1]`（記録 expected 3 / waves 4 = 超過 1）で期待が 4 になり、**explorer が先頭で 2 wave に割れた本物の違反**が検出されなくなっていた（6/6 ではなく 5/6）。
+
+原因は**根拠文と実装の演算の不一致**。「控除は 1 本まで＝他の位置に単独 wave が残る回を落とさない」と*単独 wave の残数*で説明したが、判定は `waves > expected` という*総本数の比較*で、控除は総数の期待値を 1 増やすだけ。超過が 1 の回はそれで消える。起票時の #172 の検証表がこの理屈で「検出」としており、それをそのまま実装していた。
+
+### Fixed
+
+- **控除条件を「末尾が唯一の単独 wave」に変更**（`wave_sizes[-1] == 1` かつ `wave_sizes[:-1]` に 1 が無い）。実装ソースを切り出して 6 サンプルに当て直し **6/6・偽陽性 0・取り逃し 0** を確認。`review-backfill.sh` の複製も同時修正
+- **名指しした実測回を再現していない fixture を修正**。`test_deduction_does_not_hide_a_leading_split` は docstring で `08-25T08:32` を名指ししながら `verify=0`（基礎 expected 2）で組まれており、実サンプルの記録 expected 3 と 1 層ぶんずれていた。**この差が結論を反転させ、欠陥が素通りしていた**
+- **式の同期テストが `verify` / `round2` 項を通っていなかった** — backfill からその項を削っても**緑のまま**だった（実測）。7 形状に拡張し、片側だけ戻すと落ちることを確認
+- **`agents-mismatch` による空虚な pass を 3 箇所で潰した**。`skeptic-tail-batch` 形状が実際に該当していた（申告 5 / transcript 4）
+- **`test_the_canonical_shape_stays_silent` に liveness ガードを追加**（否定 2 本だけだと WARN 経路が死んでも緑）
+- **`orchestration-measurement.md ## 16` の式に skeptic 項が伝播していなかった**（payload 契約の正本が 5 項のまま）。式が 3 箇所（doc / publish / backfill）に複製されており **doc への伝播は回帰テストで縛れない**旨も明記
+
+### 補足
+
+- **残存限界を doc に明記した**: skeptic の既定経路は fallback ではなく reviewer wave への**相乗り**なので `fired` は追加 wave を含意せず、fallback が走っても後ろに meta / 反証 wave が付く回では末尾に来ない。位置ヒューリスティックでは分離できず、**構造的な解は起動経路の自己申告**（未実装）
+- 変異テストで生存した 2 件は `wave_sizes` が `None` のときの防御分岐で、**上流の `verdict not in (None, "unknown")` ゲートにより到達不能**（`measure-tokens.sh` が `wave_sizes` を `None` にするのは `unresolved` の回だけで、そのとき `verdict` は `"unknown"`）。`# mutation-ok:` で根拠つきで外した。`review-backfill.sh` 側は verdict ゲートが無いので到達し、同条件は回帰テストが殺している
+
 ## [2.91.0] - 2026-08-26
 
 **一括発行違反（`wave-split`）を WARN 化し、期待式に skeptic fallback の末尾単独 wave 控除を入れた**（GitHub issue #172）。
@@ -11,14 +33,14 @@
 ### Changed
 
 - **`wave-split` が WARN を出す**（stderr + レポート末尾への `⚠️ 計測:` 追記指示）。`agents.explorer_waves >= 2` の既存 WARN と同じ流儀（#135）
-- **期待 wave 本数の式に「skeptic fallback の末尾単独 wave 1 本の控除」を追加**（`recall_skeptic.fired` かつ `wave_sizes[-1] == 1`）。**無条件に +1 する案は実データで否定された** — 偽陽性 1 件を消す代わりに本物の違反 3 件が消える。fallback は規約上「reviewer 完了後の単独 1 体」なので偽陽性の形は末尾単独に限られ、位置で切ると**実測 6/6 正解・偽陽性 0**
-  - **控除は 1 本まで**。末尾を引いても他の位置に単独 wave が残る回（実測 `[1,1,6,1]` = explorer が先頭で 2 wave に割れた回）を落とさないための要件
+- **期待 wave 本数の式に「skeptic fallback の末尾単独 wave 1 本の控除」を追加**（`recall_skeptic.fired` かつ `wave_sizes[-1] == 1`）。**無条件に +1 する案は実データで否定された** — 偽陽性 1 件を消す代わりに本物の違反 3 件が消える
   - **層の同定はしない**（#166 の判断を維持）。`wave_sizes` の算術だけで済む
+  - **この条件は不十分だった**（本物の違反 1 件を隠す）。**v2.91.1 で「末尾が唯一の単独 wave」に修正**
 - `review-backfill.sh` の複製側の式も同時更新（正本は `publish-review-event.sh`）
 
 ### Fixed
 
-- **式の同期テストが 1 形状しか通しておらず、乖離を検出できなかった**（本変更の実装中に検出）。`test_waves_expected_agrees_with_publish` は `recall_skeptic.fired=False` の単一 fixture だったため、publish にだけ項を足して後付けを直し忘れても**素通りした**。4 形状（explorer+reviewer / skeptic 末尾単独 / skeptic 末尾バッチ / meta 追加）を通すよう強化し、**片側だけ戻すと実際に落ちること**を確認した
+- **式の同期テストが 1 形状しか通しておらず、乖離を検出できなかった**（本変更の実装中に検出）。`test_waves_expected_agrees_with_publish` は `recall_skeptic.fired=False` の単一 fixture だったため、publish にだけ項を足して後付けを直し忘れても**素通りした**。4 形状に強化し、片側だけ戻すと落ちることを確認した（**なお強化後も `verify` / `round2` 項を通っておらず、それは v2.91.1 で塞いだ**）
 - **`assertNotIn("wave-split")` 系のテストが `agents-mismatch` で空虚に pass しうる**（`agents-mismatch` の回は wave 判定そのものが抑止される契約のため）。新規テストに `assertNotIn("agents-mismatch")` の前提ガードを追加
 
 ### 補足
