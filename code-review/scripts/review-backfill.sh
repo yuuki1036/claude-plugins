@@ -233,10 +233,18 @@ for e in events:
                   and not isinstance(m.get("findings_added"), bool)
                   and m["findings_added"] > 0)
 
+    # skeptic fallback の**末尾単独 wave** 1 本の控除（#172）。**publish 側と同じ条件**にすること
+    sk = p.get("recall_skeptic")
+    sizes = d.get("wave_sizes")
+    skeptic_tail_solo = (isinstance(sk, dict) and sk.get("fired") is True
+                         and isinstance(sizes, list) and len(sizes) > 0
+                         and sizes[-1] == 1)
+
     expected = ((1 if n_of("explorer") > 0 else 0) + 1
                 + (1 if n_of("verify") > 0 else 0)
                 + (2 if n_of("round2") > 0 else 0)
-                + (1 if meta_added else 0))
+                + (1 if meta_added else 0)
+                + (1 if skeptic_tail_solo else 0))
     waves = d.get("waves")
     # publish 側と同じく **`agents` の申告が壊れている回では判定しない**
     split = (declared == (d.get("agents") or 0) and isinstance(waves, int)

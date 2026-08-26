@@ -760,10 +760,11 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 分類器を置くと**静かに何も検出しない**方向に倒れる。既存フィールドの算術だけで見る。
         #
         # 期待本数は**保守側**（見込みを増やす方向）に倒す。取り逃しは出るが偽陽性は出にくい。
-        # ただし skeptic の fallback 起動（`triage-dynamic-gates.md ## 8.5` / 真に単独 wave に
-        # なる唯一の正規経路）は見込まない — 見込むと実測済みの違反 2 件を両方取り逃す。
-        # **その偽陽性がどれだけ混ざるかを測るのが本 gap の目的**なので、まだ WARN は出さない
-        # （`agents-mismatch` と同じ「まず発生率を測る」段階）。
+        # skeptic の fallback 起動（`triage-dynamic-gates.md ## 8.5` / 真に単独 wave になる
+        # 唯一の正規経路）は、**無条件には見込まず「末尾の単独 wave」1 本だけ控除する**
+        # （下記 / #172）。無条件に +1 すると実測で本物の違反 3 件を取り逃す。
+        # **WARN は出す段階に入った**（v2.91.0 / #172）— 偽陽性 2 型（meta 項 = #166 /
+        # skeptic fallback = 末尾控除）が両方同定でき、直近 5 レビュー中 4 件が本物だった。
         #
         # `waves_expected` は**常に載せる**ので、フィールドの存在自体が版マーカーになる
         # （`derived_markers` と同じ流儀。`dispatch.schema` は `measure-tokens.sh` が持つ
@@ -788,10 +789,28 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             n = m.get("findings_added")
             return isinstance(n, int) and not isinstance(n, bool) and n > 0
 
+        # **skeptic の fallback 起動は「末尾の単独 wave」1 本だけ控除する**（GitHub issue #172）。
+        # `recall_skeptic.fired` に無条件で +1 すると、実データで**偽陽性 1 件を消す代わりに
+        # 本物 3 件が消える**（08-25T08:32 / 08-25T13:42 / 08-26T06:07）。fallback 起動は
+        # `triage-dynamic-gates.md ## 8.5` で **reviewer 完了後の単独 1 体**と規約で決まって
+        # いるので、偽陽性の形は「**末尾が単独 wave**」に限られる。位置で切れば実測 6/6 を
+        # 正しく判定できる（偽陽性 0）。**控除は 1 本まで** — 末尾を控除しても他の位置に
+        # 単独 wave が残る回（08-25T08:32 は先頭に 2 本）を落とさないための要件。
+        #
+        # 根拠は分布のフィットではなく「fallback は末尾単独」という**構造の規約**だが、
+        # 6 サンプルへの後付けなので過学習の留保は残る（→ `design-notes/orchestration-rationale.md`）
+        def _skeptic_tail_solo():
+            sk = payload.get("recall_skeptic")
+            if not isinstance(sk, dict) or sk.get("fired") is not True:
+                return False
+            sizes = disp.get("wave_sizes")
+            return isinstance(sizes, list) and len(sizes) > 0 and sizes[-1] == 1
+
         expected = ((1 if _agents_n("explorer") > 0 else 0) + 1
                     + (1 if _agents_n("verify") > 0 else 0)
                     + (2 if _agents_n("round2") > 0 else 0)
-                    + (1 if _meta_added_findings() else 0))
+                    + (1 if _meta_added_findings() else 0)
+                    + (1 if _skeptic_tail_solo() else 0))
         payload["dispatch"] = dict(disp, waves_expected=expected)
         waves = disp.get("waves")
         # **`agents-mismatch` の回では判定しない** — 期待本数は `agents` の自己申告から作るので、
@@ -799,6 +818,19 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         if ("agents-mismatch" not in gaps and isinstance(waves, int)
                 and not isinstance(waves, bool) and waves > expected):
             gaps.append("wave-split")
+            # **WARN 化した**（v2.91.0 / #172）。偽陽性 2 件の型が両方同定でき（meta 項 = #166 で
+            # 解決済み / skeptic fallback = 上の控除）、直近 5 レビュー中 4 件が**本物の違反**
+            # だったので「まず発生率を測る」段階を抜けた。既存 2 経路（`verdict: serial` は
+            # 単独 wave 3 連続を要求 / `explorer_waves` は explorer 層のみ）は 4 件とも
+            # 取り逃している（`explorer_waves` は全件 1）。
+            sys.stderr.write(
+                "WARN: wave が %s 本で期待 %d 本を超えた（一括発行の規約違反 / 全層検出）。"
+                "wave_sizes=%s。同一フェーズは 1 メッセージで一括発行すれば fleet は"
+                "**wave 内最長の 1 体**で済む — orchestration-guide.md `## 0`\n"
+                "  → **レポート末尾に 1 行追記すること**: "
+                "`⚠️ 計測: agent を %s wave に分けて発行した（期待 %d 本 / 一括発行の規約違反 / #172）`\n"
+                % (waves, expected, json.dumps(disp.get("wave_sizes")), waves, expected)
+            )
     else:
         # 判定できなかった（agent 0 体 / transcript や meta.json を引けない）。**「一括だった」
         # にも「逐次だった」にも倒さない** — 規約が守られたことの証拠が無い回として残す

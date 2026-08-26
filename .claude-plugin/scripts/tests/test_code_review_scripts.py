@@ -2630,6 +2630,86 @@ class WaveSplitTest(TranscriptFixture):
         self.assertIn("wave-split", published["measurement_gaps"],
                       "meta の項を足したせいで既知の違反を取り逃している")
 
+    # ---- skeptic fallback の末尾単独 wave 控除（issue #172）--------------------
+    def _skeptic(self, fired: bool = True) -> dict:
+        return {"fired": fired, "skip_reason": None if fired else "no-surface",
+                "attribution_schema": 2, "findings_added": 0}
+
+    def test_skeptic_fallback_tail_solo_wave_is_deducted(self):
+        """skeptic の fallback は**末尾の単独 wave**なので偽陽性（実測 08-24T05:40 / `[2,5,1]`）.
+
+        `triage-dynamic-gates.md ## 8.5` で reviewer 完了後の単独 1 体と規約で決まっている。
+        """
+        self.write_transcript([[0, 10], [100, 110, 120, 130, 140], [200]], base=self.BASE)
+        p = dict(self.agents(explorer=2, reviewer=5, verify=0),
+                 recall_skeptic=self._skeptic())
+        published = self.run_publish(p)
+        # **`agents-mismatch` が立つと wave 判定が抑止される** = 下の assertNotIn が
+        # 理由の違うまま通る（空虚な pass）。前提を明示的に縛る
+        self.assertNotIn("agents-mismatch", published["measurement_gaps"], "前提: 申告が揃っている")
+        self.assertEqual(published["dispatch"]["wave_sizes"], [2, 5, 1])
+        self.assertEqual(published["dispatch"]["waves_expected"], 3,
+                         "末尾の単独 wave 1 本を控除していない")
+        self.assertNotIn("wave-split", published["measurement_gaps"])
+
+    def test_deduction_does_not_hide_a_leading_split(self):
+        """**控除は 1 本まで** — 末尾を引いても先頭に残る単独 wave は本物（実測 08-25T08:32）.
+
+        `[1,1,6,1]` は explorer 2 体が先頭で 2 wave に割れた回。末尾控除で消してはならない。
+        """
+        self.write_transcript([[0], [100], [200, 210, 220, 230, 240, 250], [300]],
+                              base=self.BASE)
+        p = dict(self.agents(explorer=2, reviewer=6, verify=0),
+                 recall_skeptic=self._skeptic())
+        published = self.run_publish(p)
+        self.assertEqual(published["dispatch"]["wave_sizes"], [1, 1, 6, 1])
+        self.assertEqual(published["dispatch"]["waves_expected"], 3,
+                         "控除は 1 本まで（2 本引くと本物を取り逃す）")
+        self.assertIn("wave-split", published["measurement_gaps"],
+                      "先頭の explorer 分割を末尾控除で消している")
+
+    def test_no_deduction_when_the_tail_is_not_solo(self):
+        """末尾が単独でなければ控除しない（実測 08-25T13:42 `[2,2,4]` / 08-26T06:07 `[2,3]`）.
+
+        skeptic fallback は単独 1 体なので、末尾が 2 体以上ならその形では説明できない。
+        """
+        # 申告は transcript の 8 体と合わせる（skeptic 発火の +1 込み。
+        # `agents-mismatch` が立つと wave 判定そのものが抑止される）
+        self.write_transcript([[0, 10], [100, 110], [200, 210, 220, 230]], base=self.BASE)
+        p = dict(self.agents(explorer=2, reviewer=5, verify=0),
+                 recall_skeptic=self._skeptic())
+        published = self.run_publish(p)
+        self.assertNotIn("agents-mismatch", published["measurement_gaps"], "前提: 申告が揃っている")
+        self.assertEqual(published["dispatch"]["wave_sizes"], [2, 2, 4])
+        self.assertEqual(published["dispatch"]["waves_expected"], 2)
+        self.assertIn("wave-split", published["measurement_gaps"])
+
+    def test_no_deduction_when_skeptic_did_not_fire(self):
+        """未発火なら末尾が単独でも控除しない（形だけで引くと本物を取り逃す）."""
+        self.write_transcript([[0, 10], [100, 110, 120, 130, 140], [200]], base=self.BASE)
+        p = dict(self.agents(explorer=2, reviewer=6, verify=0),
+                 recall_skeptic=self._skeptic(fired=False))
+        published = self.run_publish(p)
+        self.assertEqual(published["dispatch"]["waves_expected"], 2)
+        self.assertIn("wave-split", published["measurement_gaps"])
+
+    def test_wave_split_now_warns(self):
+        """**WARN 化した**（#172）— 偽陽性 2 型が同定できたので測定段階を抜けた."""
+        self.write_transcript([[0], [100], [200, 210], [300]], base=self.BASE)
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        r = self.publish(self.agents(), env=self.env_home())
+        self.assertIn("wave-split", self.last_payload()["measurement_gaps"])
+        self.assertIn("一括発行の規約違反", r.stderr)
+        self.assertIn("#172", r.stderr)
+
+    def test_the_canonical_shape_stays_silent(self):
+        """正当な形では WARN も出さない（「⚠️ が出たときだけ行動する」契約）."""
+        self.write_transcript([[0], [100, 110, 120], [200]], base=self.BASE)
+        self.timeline(t0=self.epoch(-300), t1=self.epoch(-10), t2=self.epoch(1200))
+        r = self.publish(self.agents(), env=self.env_home())
+        self.assertNotIn("wave-split", self.last_payload()["measurement_gaps"])
+        self.assertNotIn("#172", r.stderr)
+
     def test_a_broken_headcount_suppresses_the_verdict(self):
         """`agents-mismatch` の回では判定しない.
 
@@ -3000,25 +3080,55 @@ class ReviewBackfillTest(TranscriptFixture):
         **意味から再構成すると静かにずれる**（実装中に `declared` を deny-list で書き直して
         偽の食い違いを出した）。publish が書いたイベントをそのまま後付けに読ませ、
         両者が同じ値を出すことを表明する。
-        """
-        base = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=20)
-        # 先頭 agent を t0 から離す（窓は分オーダーで丸まるので、境界に置くと外れる）
-        self.write_transcript([[120], [200], [280, 290]], base=base)
-        t0 = int(base.replace(tzinfo=timezone.utc).timestamp())
-        self.timeline(t0=t0, t1=t0 + 60, t2=t0 + 900)
-        payload = dict(BASE_PAYLOAD, agents={"explorer": 1, "reviewer": 3, "verify": 0})
-        self.publish(payload, env=self.env_home())
-        published = self.last_payload()
 
-        log = self.root / ".claude" / "events.jsonl"
-        self.assertTrue(log.is_file(), "前提: publish がイベントを書いている")
-        r = self.backfill(log, "--json")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        rows = json.loads(r.stdout)["backfilled"]
-        self.assertEqual(len(rows), 1, "後付けが窓を作れていない（fixture の時刻がずれた）")
-        self.assertEqual(rows[0]["waves_expected"], published["dispatch"]["waves_expected"])
-        self.assertEqual(rows[0]["wave_split"],
-                         "wave-split" in published["measurement_gaps"])
+        **1 形状だけでは乖離を捕まえられない**（実測）: skeptic 項（#172）を publish にだけ
+        入れて後付けを直し忘れたとき、`recall_skeptic.fired=False` の単一 fixture では
+        両者が同じ値を出して**素通りした**。式に項が増えるたび、その項が効く形状を足すこと。
+        """
+        # (label, agents, extra payload, wave の起動オフセット)
+        shapes = [
+            ("explorer+reviewer", {"explorer": 1, "reviewer": 3, "verify": 0}, {},
+             [[120], [200], [280, 290]]),
+            # skeptic fallback の末尾単独 wave（#172 の控除項が効く形）
+            ("skeptic-tail-solo", {"explorer": 0, "reviewer": 3, "verify": 0},
+             {"recall_skeptic": {"fired": True, "skip_reason": None,
+                                 "attribution_schema": 2, "findings_added": 0}},
+             [[120, 130, 140], [280]]),
+            # 末尾が単独でない = 控除しない形（同じ項の裏側）
+            ("skeptic-tail-batch", {"explorer": 0, "reviewer": 4, "verify": 0},
+             {"recall_skeptic": {"fired": True, "skip_reason": None,
+                                 "attribution_schema": 2, "findings_added": 0}},
+             [[120, 130], [280, 290]]),
+            # meta が指摘を足した回（#166 の項が効く形）
+            ("meta-added", {"explorer": 0, "reviewer": 3, "verify": 0},
+             {"meta_reviewer": {"fired": True, "skip_reason": None, "findings_added": 2}},
+             [[120, 130, 140], [280]]),
+        ]
+        for label, agents, extra, waves in shapes:
+            with self.subTest(shape=label):
+                self.setUp()  # 形状ごとにリポジトリと計測ファイルを作り直す
+                base = (datetime.now(timezone.utc).replace(tzinfo=None)
+                        - timedelta(minutes=20))
+                # 先頭 agent を t0 から離す（窓は分オーダーで丸まるので、境界に置くと外れる）
+                self.write_transcript(waves, base=base)
+                t0 = int(base.replace(tzinfo=timezone.utc).timestamp())
+                self.timeline(t0=t0, t1=t0 + 60, t2=t0 + 900)
+                payload = dict(BASE_PAYLOAD, agents=agents, **extra)
+                self.publish(payload, env=self.env_home())
+                published = self.last_payload()
+
+                log = self.root / ".claude" / "events.jsonl"
+                self.assertTrue(log.is_file(), "前提: publish がイベントを書いている")
+                r = self.backfill(log, "--json")
+                self.assertEqual(r.returncode, 0, r.stderr)
+                rows = json.loads(r.stdout)["backfilled"]
+                self.assertEqual(len(rows), 1,
+                                 "後付けが窓を作れていない（fixture の時刻がずれた）")
+                self.assertEqual(rows[0]["waves_expected"],
+                                 published["dispatch"]["waves_expected"],
+                                 "期待 wave 本数の式が publish と後付けでずれている")
+                self.assertEqual(rows[0]["wave_split"],
+                                 "wave-split" in published["measurement_gaps"])
 
     def test_unreadable_log_is_fatal(self):
         """**明示指定したログが読めなければ止める。** 黙って 0 件に倒すと、タイプミスが

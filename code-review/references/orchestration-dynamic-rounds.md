@@ -1,7 +1,7 @@
 # 動的ラウンド実行手順（条件付きフェーズ / orchestration-guide 分冊）
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#0 @0cd675ec -->
+<!-- SSOT: code-review/references/orchestration-guide.md#0 @01ec7691 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @34e7126b -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @3d150994 -->

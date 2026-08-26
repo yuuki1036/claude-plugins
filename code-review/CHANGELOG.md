@@ -2,6 +2,31 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.91.0] - 2026-08-26
+
+**一括発行違反（`wave-split`）を WARN 化し、期待式に skeptic fallback の末尾単独 wave 控除を入れた**（GitHub issue #172）。
+
+9 本のログを合算した母集団（`review:completed` n=99 / `dispatch.schema >= 2` が 17 件）で発火 6 件を人手判定したところ、**偽陽性 2 件の型が両方同定できた**ので「まず発生率を測る」段階を抜けた。**判定可能な直近 5 レビューのうち 4 件が本物の違反**で、既存 2 経路（`verdict: serial` は単独 wave 3 連続を要求 / `agents.explorer_waves` は explorer 層のみ）は **4 件とも取り逃していた**（`explorer_waves` は全件 `1`・`verdict` は 6 件すべて `layered`）。
+
+### Changed
+
+- **`wave-split` が WARN を出す**（stderr + レポート末尾への `⚠️ 計測:` 追記指示）。`agents.explorer_waves >= 2` の既存 WARN と同じ流儀（#135）
+- **期待 wave 本数の式に「skeptic fallback の末尾単独 wave 1 本の控除」を追加**（`recall_skeptic.fired` かつ `wave_sizes[-1] == 1`）。**無条件に +1 する案は実データで否定された** — 偽陽性 1 件を消す代わりに本物の違反 3 件が消える。fallback は規約上「reviewer 完了後の単独 1 体」なので偽陽性の形は末尾単独に限られ、位置で切ると**実測 6/6 正解・偽陽性 0**
+  - **控除は 1 本まで**。末尾を引いても他の位置に単独 wave が残る回（実測 `[1,1,6,1]` = explorer が先頭で 2 wave に割れた回）を落とさないための要件
+  - **層の同定はしない**（#166 の判断を維持）。`wave_sizes` の算術だけで済む
+- `review-backfill.sh` の複製側の式も同時更新（正本は `publish-review-event.sh`）
+
+### Fixed
+
+- **式の同期テストが 1 形状しか通しておらず、乖離を検出できなかった**（本変更の実装中に検出）。`test_waves_expected_agrees_with_publish` は `recall_skeptic.fired=False` の単一 fixture だったため、publish にだけ項を足して後付けを直し忘れても**素通りした**。4 形状（explorer+reviewer / skeptic 末尾単独 / skeptic 末尾バッチ / meta 追加）を通すよう強化し、**片側だけ戻すと実際に落ちること**を確認した
+- **`assertNotIn("wave-split")` 系のテストが `agents-mismatch` で空虚に pass しうる**（`agents-mismatch` の回は wave 判定そのものが抑止される契約のため）。新規テストに `assertNotIn("agents-mismatch")` の前提ガードを追加
+
+### 補足
+
+- 支えているのは分布のフィットではなく**構造の規約**（fallback は `triage-dynamic-gates.md ## 8.5` で単独 1 体と決まっている）。ただし 6 サンプルへの後付けなので**過学習の留保は残る**
+- **実損は idle だけでは測れない** — 4 件の `inter_wave_idle_sec` は 269 / 36 / 31 / 73 秒（`span_sec` の 3〜20%）だが、wave が増えた分の agent 実行時間（`inter_wave_agent_sec` 中央値 279 秒）の方が大きい
+- 根拠の詳細は `design-notes/orchestration-rationale.md`「`wave-split` を WARN 化した根拠」
+
 ## [2.90.0] - 2026-08-25
 
 **「実行時挙動が変わらない指摘」を MAJOR に留める条件を立証責任つきで規定した**（GitHub issue #150 / **n=1 の暫定措置**）。
