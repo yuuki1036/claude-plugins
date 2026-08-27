@@ -1233,6 +1233,33 @@ class HookScriptRefsTest(unittest.TestCase):
         v.check_hook_script_refs(self.root / "no-hooks", errors)
         self.assertEqual(errors, [])
 
+    # ---- 解決側（`_hook_script_paths`）---------------------------------------
+    def test_resolution_returns_the_existing_scripts(self):
+        """**空のリストを返していないこと**を直接見る.
+
+        ここが空になると `check_hooks_safety` と `check_hook_self_judgement` が
+        無言で対象ゼロになる — 検査は緑のまま hook だけが無検証で配布される。
+        """
+        _write(self.plugin, "hooks/hooks.json", json.dumps({"hooks": {"SessionStart": [
+            {"hooks": [{"type": "command", "command": "bash",
+                        "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/a.sh"]},
+                       {"type": "command", "command": "bash",
+                        "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/b.sh"]}]}]}}))
+        self._script("hooks/scripts/a.sh")
+        self._script("hooks/scripts/b.sh")
+        found = v._hook_script_paths(self.plugin, None)
+        self.assertEqual([p.name for p in found], ["a.sh", "b.sh"])
+
+    def test_resolution_dedups_repeated_references(self):
+        """同じスクリプトを 2 イベントから参照しても 1 回だけ返す."""
+        entry = {"hooks": [{"type": "command", "command": "bash",
+                            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/a.sh"]}]}
+        _write(self.plugin, "hooks/hooks.json", json.dumps({
+            "hooks": {"SessionStart": [entry], "PostCompact": [entry]}}))
+        self._script("hooks/scripts/a.sh")
+        found = v._hook_script_paths(self.plugin, None)
+        self.assertEqual([p.name for p in found], ["a.sh"])
+
 
 class CheckScopeTest(unittest.TestCase):
     """検査の走査範囲が正本の宣言どおりか（GitHub issue #177）.

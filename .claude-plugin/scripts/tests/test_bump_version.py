@@ -226,6 +226,29 @@ class ChangelogHeadingAndVnextTest(BumpVersionSandbox):
         self.assertIn("CHANGELOG は見出しのみ挿入した", r.stdout)
         self.assertIn("## [1.2.4]", cl.read_text())
 
+    def test_the_heading_note_is_absent_when_no_heading_was_inserted(self):
+        """見出しを挿入していない実行で「見出しのみ挿入した」と言わない.
+
+        報告と実物の一致は双方向で要る（挿入したのに言わない／言ったのに挿入しない）。
+        `--sync` は CHANGELOG を正とするので見出しを触らない。
+        """
+        self._write("references/note.md", "この挙動は vNEXT で入った\n")
+        self._commit_all()
+        r = self._bump("--sync")
+        self.assertNotIn("CHANGELOG は見出しのみ挿入した", r.stdout,
+                         "挿入していないのに挿入したと報告している")
+
+    def test_the_heading_note_is_absent_when_the_heading_already_exists(self):
+        """既に同じ版の見出しがある next 実行でも報告しない."""
+        cl = self.root / self.PLUGIN / "CHANGELOG.md"
+        cl.write_text("# Changelog\n\n## [1.2.4] - 2026-01-02\n\n- 先に書いた\n\n"
+                      "## [1.2.3] - 2026-01-01\n\n- 初版\n", encoding="utf-8")
+        self._write("references/note.md", "この挙動は vNEXT で入った\n")
+        self._commit_all()
+        r = self._bump("patch")
+        self.assertNotIn("CHANGELOG は見出しのみ挿入した", r.stdout,
+                         "既存見出しを挿入したと報告している")
+
     def test_changelog_without_placeholder_is_unaffected(self):
         """`vNEXT` を含まない CHANGELOG の挙動は変わらない（畳み込みの副作用が無いこと）."""
         cl = self.root / self.PLUGIN / "CHANGELOG.md"
@@ -255,9 +278,17 @@ class SyncResolvesVnextTest(BumpVersionSandbox):
         """解決のついでに版を動かさない（--sync は CHANGELOG を正とする契約）."""
         self._write("references/note.md", "vNEXT\n")
         self._commit_all()
-        self._bump("--sync")
+        r = self._bump("--sync")
         self.assertEqual(json.loads(
             (self.root / self.PLUGIN / ".claude-plugin" / "plugin.json").read_text())["version"], "1.2.3")
+        self.assertIn("版は据え置き", r.stdout, "版が動いたかのように報告している")
+
+    def test_a_real_bump_reports_the_transition(self):
+        """版が動く実行では遷移を出す（据え置きの文言と取り違えない）."""
+        self._commit_all()
+        r = self._bump("patch")
+        self.assertIn("1.2.3 → 1.2.4", r.stdout)
+        self.assertNotIn("版は据え置き", r.stdout)
 
     def test_sync_dry_run_writes_nothing(self):
         f = self._write("references/note.md", "この挙動は vNEXT で入った\n")

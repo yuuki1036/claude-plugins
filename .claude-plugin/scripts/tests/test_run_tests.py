@@ -154,6 +154,8 @@ class RunTestsTest(unittest.TestCase):
         """
         res = self.run_wrapper()          # tests/ に test_*.py を 1 つも置かない
         self.assertEqual(res.returncode, 5, res.stdout + res.stderr)
+        self.assertIn("1 件も収集されなかった", res.stderr,
+                      "「測れていない」を黙って返している（通知が出る条件が死んでいる）")
 
     def test_failing_tests_keep_their_exit_code(self):
         self.write_test(FAILING)
@@ -298,6 +300,20 @@ class RanCountTest(unittest.TestCase):
         """集計行が無い（収集前にクラッシュした等）＝走ったと見なさない."""
         self.assertEqual(
             self._module()._ran_count(b"Traceback (most recent call last):\n"), 0)
+
+    # ---- 終了コードの決定（rc と件数の組み合わせ）--------------------------
+    def test_green_with_no_tests_becomes_unmeasured(self):
+        self.assertEqual(self._module()._exit_code(0, b"Ran 0 tests in 0.0s\n"), 5)
+
+    def test_green_with_tests_stays_green(self):
+        self.assertEqual(self._module()._exit_code(0, b"Ran 7 tests in 0.1s\n"), 0)
+
+    def test_a_failure_keeps_its_own_code_even_with_no_tests(self):
+        """失敗の rc を 5 に塗り潰さない（直しどころが分からなくなる）."""
+        self.assertEqual(self._module()._exit_code(1, b"Ran 0 tests in 0.0s\n"), 1)
+
+    def test_a_failure_with_tests_keeps_its_code(self):
+        self.assertEqual(self._module()._exit_code(1, b"Ran 7 tests in 0.1s\n"), 1)
 
 
 if __name__ == "__main__":

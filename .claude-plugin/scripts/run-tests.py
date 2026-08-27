@@ -188,6 +188,21 @@ def _ran_count(out: bytes) -> int:
     return int(m.group(1)) if m else 0
 
 
+def _exit_code(rc: int, out: bytes) -> int:
+    """返す終了コードを決める.
+
+    **「1 件も収集されなかった」を Python の版差に任せない**（GitHub issue #176）:
+    unittest が no-tests で 5 を返すのは 3.12 以降で、それ以前は 0（実測: 3.9 は 0 /
+    3.14 は 5）。古い python3 の開発機では収集ゼロが緑に見えるので自分で 5 に倒す。
+
+    **失敗した実行の rc は握り潰さない**: `rc` が非ゼロなら、収集数に関わらず
+    そのまま返す（失敗の理由を 5 に塗り潰すと直しどころが分からなくなる）。
+    """
+    if rc == 0 and _ran_count(out) == 0:
+        return 5
+    return rc
+
+
 def main(argv: list[str]) -> int:
     cmd = [sys.executable, "-m", "unittest", "discover", "-s", TESTS_DIR, *argv]
     out = b""
@@ -210,16 +225,16 @@ def main(argv: list[str]) -> int:
                 # なり、緑のテストが pre-commit のブロックに化ける（実測で 1 度踏んだ）
                 print("[run-tests] 残留の回収に失敗した: %r"
                       "（テストの結果には影響させない）" % (exc,), file=sys.stderr)
-    # **「1 件も走らなかった」を Python の版差に任せない**（GitHub issue #176）:
-    # unittest が no-tests で exit 5 を返すのは 3.12 以降で、それ以前は 0 を返す
-    # （実測: 3.9 は 0 / 3.14 は 5）。古い python3 の開発機では**収集ゼロが緑に見える**ので、
-    # 集計行から自分で判定して 5（測れなかった）に倒す。machine-layer はこれを
-    # 「判定不能」として扱う契約になっている
-    if rc == 0 and _ran_count(out) == 0:
+    # 判定は `_exit_code`（版差の吸収。machine-layer はこの 5 を「判定不能」として扱う）
+    #
+    # **`rc != 5` で通知を絞らないこと**: unittest 自身が 5 を返す Python 3.12 以降では
+    # その条件が常に偽になり、**通知が一度も出ない**（「測れていない」を黙って返すのは
+    # この 5 を入れた目的そのものに反する）
+    final = _exit_code(rc, out)
+    if final == 5:
         print("[run-tests] テストが 1 件も収集されなかった（緑ではなく『測れていない』）",
               file=sys.stderr)
-        return 5
-    return rc
+    return final
 
 
 if __name__ == "__main__":
