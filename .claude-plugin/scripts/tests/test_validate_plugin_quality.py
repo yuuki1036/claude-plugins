@@ -1356,6 +1356,69 @@ class DocAnchorFormsTest(unittest.TestCase):
             "改行をまたいで見出しを参照と誤認している")
 
 
+class PluginDescriptionSizeTest(unittest.TestCase):
+    """`plugin.json` の description 上限（設計 20260610-plugin-description-diet の Phase 3）.
+
+    規約に「短く書け」と書いても再発したので機械強制に昇格させた検査
+    （実測: code-review が 915 → 2177 字までリリースノート化した）。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+        (self.plugin / ".claude-plugin").mkdir(parents=True)
+
+    def _desc(self, n: int) -> list[str]:
+        (self.plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "demo", "description": "あ" * n}), encoding="utf-8")
+        warnings: list[str] = []
+        v.check_plugin_description_size(self.plugin, warnings)
+        return warnings
+
+    def test_over_the_limit_warns(self):
+        self.assertEqual(len(self._desc(v.PLUGIN_DESC_CHAR_LIMIT + 1)), 1)
+
+    def test_exactly_at_the_limit_is_accepted(self):
+        """境界の片側だけ測ると `>` と `>=` の取り違えが素通りする."""
+        self.assertEqual(self._desc(v.PLUGIN_DESC_CHAR_LIMIT), [])
+
+    def test_a_short_description_is_silent(self):
+        self.assertEqual(self._desc(50), [])
+
+    def test_a_missing_description_is_silent(self):
+        (self.plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "demo"}), encoding="utf-8")
+        warnings: list[str] = []
+        v.check_plugin_description_size(self.plugin, warnings)
+        self.assertEqual(warnings, [])
+
+    def test_a_broken_plugin_json_is_left_to_the_ssot_check(self):
+        (self.plugin / ".claude-plugin" / "plugin.json").write_text("{ not json",
+                                                                   encoding="utf-8")
+        warnings: list[str] = []
+        v.check_plugin_description_size(self.plugin, warnings)
+        self.assertEqual(warnings, [])
+
+    def test_the_repository_itself_is_within_the_limit(self):
+        """**この検査を入れた時点で全プラグインが上限内**であること.
+
+        既存 corpus で鳴り続ける warning は「⚠️ が出たときだけ行動する」契約を壊す
+        （`docs/rule-placement.md`）。閾値を下げるなら先にリライトする。
+        """
+        v.ROOT = self._orig
+        offenders = []
+        for pj in sorted(self._orig.glob("*/.claude-plugin/plugin.json")):
+            warnings: list[str] = []
+            v.check_plugin_description_size(pj.parent.parent, warnings)
+            offenders += warnings
+        self.assertEqual(offenders, [], "上限を超えるプラグインが残っている")
+
+
 class WarningChannelTest(unittest.TestCase):
     """warning の出し分け（GitHub issue #182）.
 

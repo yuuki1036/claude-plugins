@@ -66,6 +66,10 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     を参照しているか. hooks.json の if:/matcher は実行環境で評価されないことが実測
     されており（2026-07 push-reminder 暴発）, フィルタ単独依存の注入 hook は全ツール
     呼び出しへの暴発リスクになる.
+  - plugin description サイズ: `plugin.json` の description 上限（400 字）. 「これは何の
+    プラグインか」を伝える 1〜2 文にバージョンアップごとの機能詳細が積層してリリースノート化
+    する（実測: code-review が 915 → 2177 字）. 閾値は実測の分布から導く
+    （設計: `.claude/designs/20260610-plugin-description-diet.md`）.
   - コンテキスト予算: skill description の単体上限（600 chars）と全プラグイン合計上限
     （15,000 chars）. description は毎セッションのシステムプロンプトに常駐するため,
     肥大化は合計で判断品質を劣化させる.
@@ -1447,6 +1451,37 @@ def check_agent_sync_launch_repo_local(warnings: list[str]) -> None:
     _check_agent_sync_in(targets, "repo-local", warnings)
 
 
+#: `plugin.json` の description 上限（超過は warning）.
+#:
+#: **設計 `.claude/designs/20260610-plugin-description-diet.md` の Phase 3**。description は
+#: 「これは何のプラグインか」を伝える 1〜2 文だが、バージョンアップごとに機能詳細を積層して
+#: リリースノート化する（実測: code-review が 915 → 2177 字）。規約に「短く書け」と書いても
+#: 再発したので機械強制に昇格させる（CLAUDE.md「ルール配置の意思決定」の昇格基準）。
+#:
+#: **値は実測から導く**（`docs/rule-placement.md`「昇格を決める前に発火数を測る」）。
+#: 設計時（2026-06）の 160 字は当時の分布に合わせた値で、2026-08 に測り直すと 17 中 14 件が
+#: 超過して警告の壁になる。現在の分布は 358 字と 502 字の間に自然な切れ目があり、
+#: **400 なら太った 5 件だけが対象**になる（設計の「太ったものだけを対象にする」意図と同じ）。
+#: 全プラグインが健全域へ寄ったら段階的に下げてよい。
+PLUGIN_DESC_CHAR_LIMIT = 400
+
+
+def check_plugin_description_size(plugin_dir: Path, warnings: list[str]) -> None:
+    """`plugin.json` の description が上限を超えていないか（非ブロッキング）."""
+    pj = plugin_dir / ".claude-plugin" / "plugin.json"
+    try:
+        data = json.loads(read_text(pj))
+    except (OSError, json.JSONDecodeError):
+        return  # 読めない plugin.json は SSoT 検査（validate_ssot）の領分
+    desc = data.get("description") or ""
+    if len(desc) > PLUGIN_DESC_CHAR_LIMIT:
+        warnings.append(
+            f"[desc-size:{plugin_dir.name}] plugin.json の description が {len(desc)} 字"
+            f"（上限 {PLUGIN_DESC_CHAR_LIMIT}）。機能詳細は CHANGELOG / README / SKILL.md へ"
+            f" — .claude/designs/20260610-plugin-description-diet.md"
+        )
+
+
 #: 「人手で 1 度確認すれば済むが、確認したことを記録する口が無い」助言のタグ.
 #: 既定では**件数だけ**を出す（GitHub issue #182）。2026-06-01 の導入以来 42〜73 件が
 #: 毎回そのまま出続け、**行動につながる警告（skill-size 等）を埋めていた**。
@@ -1529,6 +1564,7 @@ def main() -> int:
         check_allowed_tools_minimality(plugin_dir, warnings)
         check_agent_sync_launch(plugin_dir, warnings)
         check_hook_self_judgement(plugin_dir, warnings)
+        check_plugin_description_size(plugin_dir, warnings)
 
     check_routing_axes_sync(errors)
     check_schema_markers_sync(errors)

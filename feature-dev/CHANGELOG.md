@@ -5,6 +5,17 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.6] - 2026-08-28
+
+### Changed
+
+- **`plugin.json` の description を 502 → 201 字に圧縮した**（GitHub issue #183 /
+  設計 `.claude/designs/20260610-plugin-description-diet.md`）。description は「これは何の
+  プラグインか」を伝える 1〜2 文だが、バージョンアップごとに機能詳細を積層してリリースノート化
+  していた。落とした詳細は CHANGELOG / README / SKILL.md に既出で情報は失われない。
+  あわせて `validate_plugin_quality.py` に 400 字の上限検査（非ブロッキング warning）を追加し、
+  再発を機械強制に寄せた
+
 ## [2.11.5] - 2026-08-17
 
 ### Changed
