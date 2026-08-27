@@ -71,6 +71,7 @@ fi
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が必要" >&2; exit 2; }
 
 REVIEW_SINCE="$SINCE" REVIEW_LAST="${LAST:-0}" REVIEW_JSON="$AS_JSON" \
+  REVIEW_LOGS_EXPLICIT="$([ ${#EXPLICIT_LOGS[@]} -gt 0 ] && echo 1 || echo 0)" \
   python3 - ${REVIEW_EVENT_LOGS[@]+"${REVIEW_EVENT_LOGS[@]}"} <<'PY'
 import json, os, sys
 from datetime import datetime, timedelta, timezone
@@ -78,6 +79,8 @@ from datetime import datetime, timedelta, timezone
 since_raw = os.environ.get("REVIEW_SINCE") or ""
 last_n = int(os.environ.get("REVIEW_LAST") or 0)
 as_json = os.environ.get("REVIEW_JSON") == "1"
+#: `--logs` で明示指定されたか（0 なら今いるリポジトリ由来の自動探索 / GitHub issue #173）
+logs_explicit = os.environ.get("REVIEW_LOGS_EXPLICIT") == "1"
 
 since = None
 if since_raw:
@@ -154,8 +157,35 @@ def source_rows(rows):
 
 def sources_line():
     extra = "（同一ファイルの重複指定 %d 本を除外）" % dup_paths if dup_paths else ""
-    return ("**母集団**: ログ %d 本%s / 重複イベント除外 %d 件"
-            % (len(source_paths), extra, dup_dropped))
+    return ("**母集団**: ログ %d 本%s / 重複イベント除外 %d 件%s"
+            % (len(source_paths), extra, dup_dropped,
+               "" if logs_explicit else "（**このリポジトリのログのみ**）"))
+
+
+# **読んだものだけを書くと「これが全部」と読まれる**（GitHub issue #173）。自動探索は
+# 今いるリポジトリ由来の 2 候補しか見ないので、他リポジトリのレビューは**構造的に母集団へ
+# 入らない**。実測ではプラグインを開発しているリポジトリが最も母数を持たず、素の実行が
+# n=2 になって出力が「サンプル待ち」で埋まり、**判定可能なデータがあるのに 2 セッション
+# 判断が先送りされた**（`--logs` で合算すると n=99 だった）。
+#
+# **探索は既定にしない**（#160 で「探索範囲が暗黙になる」として `--all-repos` を見送った
+# 判断を維持）。消すのは誤読だけなので、**事実を 1 行足す**。
+#
+# 閾値は置かない — 「n が小さいときだけ」にすると閾値の下で黙る区間ができ、そこが
+# まさに誤読の起きる帯になる。自動探索なら常に出す（`--logs` 指定時は利用者が範囲を
+# 決めているので出さない）。
+def scope_note():
+    if logs_explicit:
+        return None
+    return ("> **母集団はこのリポジトリのログに限られている。** 他リポジトリのレビューは"
+            "含まれていない（`.claude/events.jsonl` はリポジトリごとに分かれる）。"
+            "**「サンプル待ち」と出ていても、他リポジトリを合算すれば判定できることがある** — "
+            "`review-retro.sh --logs <path>...` で明示合算する。\n"
+            ">\n"
+            "> 合算するログの一覧を作る:\n"
+            "> ```bash\n"
+            "> find ~ -maxdepth 6 -name events.jsonl -path '*/.claude/*' -not -path '*/node_modules/*' 2>/dev/null\n"
+            "> ```")
 
 
 if not events:
@@ -163,7 +193,8 @@ if not events:
         print(json.dumps({"n": 0, "reason": "no-samples-in-range", "signals": [],
                           "sources": source_rows(events),
                           "sources_dropped_duplicates": dup_dropped,
-                          "sources_dropped_paths": dup_paths},
+                          "sources_dropped_paths": dup_paths,
+                          "sources_scope": "explicit" if logs_explicit else "this-repo"},
                          ensure_ascii=False))
     else:
         print("## レビュー振り返り")
@@ -172,6 +203,10 @@ if not events:
         print(sources_line())
         for row in source_rows(events):
             print("- `%s` … %d 件" % (row["path"], row["n"]))
+        note = scope_note()
+        if note:
+            print()
+            print(note)
     sys.exit(0)
 
 now = datetime.now(timezone.utc)
@@ -842,6 +877,8 @@ if as_json:
         # 母集団の再現性（どのログから何件採ったか / issue #160）
         "sources": source_rows(events), "sources_dropped_duplicates": dup_dropped,
         "sources_dropped_paths": dup_paths,
+        # 母集団の**範囲**（#173）。`this-repo` は自動探索 = 他リポジトリを含まない
+        "sources_scope": "explicit" if logs_explicit else "this-repo",
         "tiers": [{"key": k, "n": n, "fleet_median": f, "agents_median": a}
                   for k, n, f, a in tier_rows],
         # 層別なしは交絡を含む参考値（後方互換のため残す）。判定は by_tier 側で行う
@@ -880,6 +917,10 @@ print()
 print(sources_line())
 for row in source_rows(events):
     print("- `%s` … %d 件" % (row["path"], row["n"]))
+_note = scope_note()
+if _note:
+    print()
+    print(_note)
 print()
 for label, value in report:
     print("- **%s**: %s" % (label, value))

@@ -2499,6 +2499,20 @@ class RetroExplicitLogsTest(ScriptTestBase):
         self.assertEqual(res.returncode, 2)
         self.assertIn("読めない", res.stderr)
 
+    # ---- 母集団の範囲を明示する（issue #173）--------------------------------
+    def test_explicit_logs_do_not_get_the_scope_note(self):
+        """`--logs` は利用者が範囲を決めているので注記を出さない（ノイズにしない）."""
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
+        out = self.retro("--logs", str(a))
+        self.assertNotIn("母集団はこのリポジトリのログに限られている", out)
+        self.assertNotIn("このリポジトリのログのみ", out)
+
+    def test_explicit_logs_report_scope_in_json(self):
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
+        got = json.loads(self.retro("--logs", str(a), "--json"))
+        self.assertEqual(got["sources_scope"], "explicit")
+
+
     def test_logs_without_a_value_is_fatal(self):
         res = self.run_script(RETRO, "--logs", env=self._env())
         self.assertEqual(res.returncode, 2)
@@ -2518,6 +2532,62 @@ class RetroExplicitLogsTest(ScriptTestBase):
         out = self.retro()
         self.assertIn("ログ 1 本", out)
         self.assertIn(".claude/events.jsonl` … 3 件", out)
+
+
+class RetroScopeNoteTest(ScriptTestBase):
+    """自動探索の回に**母集団の範囲**を明示する（GitHub issue #173）.
+
+    読んだものだけを書くと「これが全部」と読まれる。実測では、プラグインを開発している
+    リポジトリが最も母数を持たず（素の実行で n=2 / `--logs` 合算で n=99）、出力が
+    「サンプル待ち」で埋まったため**判定可能なデータがあるのに 2 セッション判断が
+    先送りされた**。探索は既定にしない（#160 の判断を維持）ので、消すのは誤読だけ。
+    """
+
+    def _write(self, rows: list[dict]) -> None:
+        log = self.root / ".claude" / "events.jsonl"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("\n".join(
+            json.dumps({"ts": "2026-08-%02dT00:00:00Z" % (i + 1),
+                        "plugin": "code-review:self-review",
+                        "event": "review:completed", "payload": r}, ensure_ascii=False)
+            for i, r in enumerate(rows)) + "\n", encoding="utf-8")
+
+    def _retro(self, *args: str):
+        # `run_script` は `cwd=self.root` 固定なので、自動探索は使い捨てリポジトリ側を見る
+        res = self.run_script(RETRO, *args, env=self._env())
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout
+
+    def test_auto_discovery_says_the_population_is_this_repo_only(self):
+        self._write([{"effort": "high", "size_tier": "medium", "measurement_gaps": []}
+                     for _ in range(3)])
+        out = self._retro()
+        self.assertIn("このリポジトリのログのみ", out, "母集団の行に範囲が出ていない")
+        self.assertIn("母集団はこのリポジトリのログに限られている", out)
+        self.assertIn("--logs", out, "合算する手段を案内していない")
+        self.assertIn("events.jsonl", out, "パス一覧の作り方を出していない")
+
+    def test_the_note_also_appears_when_there_are_no_samples(self):
+        """**0 件の回が最も誤読されやすい**（「まだ回っていない」と読まれる）."""
+        self._write([])
+        out = self._retro()
+        self.assertIn("母集団はこのリポジトリのログに限られている", out)
+
+    def test_auto_discovery_reports_scope_in_json(self):
+        self._write([{"effort": "high", "size_tier": "medium", "measurement_gaps": []}])
+        got = json.loads(self._retro("--json"))
+        self.assertEqual(got["sources_scope"], "this-repo")
+
+    def test_the_note_is_not_gated_on_sample_count(self):
+        """**閾値を置かない** — 下で黙る区間がまさに誤読の起きる帯になる.
+
+        件数が多い回でも他リポジトリを含まないことは変わらないので、常に出す。
+        """
+        self._write([{"effort": "high", "size_tier": "medium", "measurement_gaps": []}
+                     for _ in range(30)])
+        out = self._retro()
+        self.assertIn("n=30", out, "前提: 件数の多い母集団になっている")
+        self.assertIn("母集団はこのリポジトリのログに限られている", out)
 
 
 class WaveSplitTest(TranscriptFixture):

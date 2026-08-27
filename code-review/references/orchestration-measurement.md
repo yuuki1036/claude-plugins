@@ -477,6 +477,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh"              # publish 直�
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --last 20    # 直近 N 件だけ
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --json       # 機械可読
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --logs ~/Projects/*/.claude/events.jsonl   # 合算
+
+# 合算するログの一覧を作る（**探索はスクリプトに入れない** — 範囲は利用者が決める / #160）
+find ~ -maxdepth 6 -name events.jsonl -path '*/.claude/*' -not -path '*/node_modules/*' 2>/dev/null
 ```
 
 **`--logs` は複数リポジトリの合算**（issue #160）。**シグナルのサンプル数下限は 1 リポジトリ単独では構造的に届かない**（skeptic は `fired >= 15`、meta は `fired >= 10`。実測ではマシン全体 91 件のうち 70 件が単一リポジトリに偏り、他は各 1〜6 件）。一方でプラグインの改善判断に使う指標は発火率・verdict 分布・歩留まりが中心で、**どのリポジトリで回したかに依存しない**ため合算が正しい母集団になる場面が多い。
@@ -485,6 +488,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --logs ~/Projects/*/.claude
 - **読めないパスは exit 2**（判定不能）。タイプミスを「サンプルが少ない」に化けさせない
 - **重複は 2 段で落とす** — 同一ファイルの重複指定（glob の重なり）はパスの実体で、同一イベントが別ファイルにある場合（worktree へコピーされた `events.jsonl`）は `ts` + `plugin` + payload 全体で
 - **出力は必ず「どのログから何件」を出す**（`--logs` の有無を問わず）。⚠️ シグナルの契約は母集団が言えて初めて成立するので、件数だけでは再現できない
+- **素の実行（自動探索）では「このリポジトリのログのみ」と明示する**（v2.92.0 / #173）。読んだものだけを書くと**「これが全部」と読まれる**。実測ではプラグインを開発しているリポジトリが最も母数を持たず（素の実行 n=2 / `--logs` 合算 n=99）、出力が「サンプル待ち」で埋まったため**判定可能なデータがあるのに 2 セッション判断が先送りされた**。注記に**合算コマンドとパス一覧の作り方**を添える（毎セッション `find` を組み直していた / #150 本文・#160 本文・#173 本文で 3 回）。**閾値は置かない** — 「n が小さいときだけ」にすると下で黙る区間ができ、そこがまさに誤読の起きる帯になる。`--logs` 指定時は利用者が範囲を決めているので出さない。JSON では `sources_scope`（`this-repo` / `explicit`）
 - **マシン間の合算は別問題**（`events.jsonl` は gitignored でマシンローカル / #141）。**自分の見えている範囲を全体と誤認しない** — 実測で、別マシンから見た本リポジトリの `review:completed` が 2 件だったため「publish が落ちている」と読まれた回がある（同時点で開発機側には 30 件あった / #159）
 
 **出力の読み方**（本ファイルの他節が正本である解釈をここに複製しない。以下は「どの節に戻るか」の対応表）:
