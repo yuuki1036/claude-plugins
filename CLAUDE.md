@@ -24,6 +24,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #  ① 検証スクリプト自身（test_validate_plugin_quality.py / test_mutation_test.py）
                                  #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
                                  #     （`test_<plugin>_*.py`。bats を入れず依存ゼロで 3 経路に載せる）
+                                 #     `skills/*/scripts/` 配下も対象（test_claude_meta_scripts.py）
+                                 #     evals/runner.py は判定部だけ純関数として見る（test_evals_runner.py）
                                  #  ③ repo 直下スクリプトの CLI テスト（使い捨てリポジトリを立てる）。
                                  #     ゲートの判断（何を止めるか / 判定不能を通すか）は stub を置いて
                                  #     exit code の契約だけを見る: test_machine_layer.py /
