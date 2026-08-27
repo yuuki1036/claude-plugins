@@ -2,6 +2,31 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.0] - 2026-08-27
+
+### Fixed
+
+- **不正 payload での暗黙の fail-open を塞いだ**（GitHub issue #178）。`jq` の呼び出しに
+  `|| true` が無く、切り詰められた JSON などで `jq` が exit 5 を返すと safe-hook の
+  ERR trap を踏み、**ガードを通り抜けたことに誰も気づけないまま exit 0** していた
+  （実測: 正常 payload の `git commit --no-verify` は rc=2 でブロックされるのに、
+  同じコマンドを切り詰めた payload に入れると rc=0 で素通りした）。通す方向自体は
+  従来どおり（壊れた入力で作業を止める方が高コスト）だが、**明示的に選んだ結果**として通す
+- **`pre-config-guard.sh` が `tool_name` を判定に使うようにした**（同 issue）。以前は取得
+  するだけでエラー文面にしか使っておらず、ブロック判定は `file_path` だけだった。
+  hooks.json の matcher が唯一のツール種別フィルタになっており、matcher が評価されない
+  環境（CLAUDE.md Gotchas に実測記録あり）では**保護対象ファイルの `Read` まで**
+  「Refusing to edit」でブロックされていた。`tool_name` が無い payload では従来どおり
+  検査する（載せない CC 版でガードごと無効化しないため）
+- README の制限事項で「`Bash` 経由の編集はブロックしない（matcher の対象外）」としていた
+  機構説明を訂正。`Bash` matcher の hook は存在し、通していたのは前段フィルタの働き
+
+### Added
+
+- `pre-config-guard.sh` の hook テストクラスを新設（従来はテストが 1 件も無かった）。
+  「Read はブロックしない」「自己保護は Write だけ止める」「不正 payload で ERR trap に
+  落ちない」を表明する
+
 ## [0.2.2] - 2026-08-07
 
 ### Fixed

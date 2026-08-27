@@ -62,8 +62,14 @@ class HookTestCase(unittest.TestCase):
     def plugin_root(self) -> Path:
         return ROOT / self.PLUGIN
 
-    def run_hook(self, payload: dict, cwd: Path | None = None,
-                 env_extra: dict | None = None) -> HookResult:
+    def run_hook(self, payload: dict | None = None, cwd: Path | None = None,
+                 env_extra: dict | None = None, raw: str | None = None) -> HookResult:
+        """hook を 1 回叩く.
+
+        `raw` は **JSON として壊れた stdin** を流すための逃がし口（`payload` の代わり）。
+        不正 payload で hook がどちらへ倒れるかは block 系 hook の要の挙動なのに、
+        `json.dumps` を通す経路だけでは**構造上テストできなかった**（GitHub issue #178）。
+        """
         # git hook 由来の変数を落とす（正本と理由は `git_env` の docstring）
         env = scrub()
         env["CLAUDE_PLUGIN_ROOT"] = str(self.plugin_root)
@@ -84,7 +90,8 @@ class HookTestCase(unittest.TestCase):
         env.update(env_extra or {})
         proc = subprocess.run(
             ["bash", str(self.plugin_root / self.SCRIPT)],
-            input=json.dumps(payload), capture_output=True, text=True,
+            input=raw if raw is not None else json.dumps(payload or {}),
+            capture_output=True, text=True,
             cwd=str(cwd or ROOT), env=env, timeout=30,
         )
         return HookResult(proc)

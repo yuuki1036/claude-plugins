@@ -24,8 +24,19 @@ safe_hook_init "guardrail-protect:pre-config-guard"
 command -v jq >/dev/null 2>&1 || safe_hook_error Unexpected "jq not installed; config guard cannot function"
 
 input=$(safe_hook_input)
-tool_name=$(jq -r '.tool_name // empty' <<< "$input" 2>/dev/null)
-target_path=$(jq -r '.tool_input.file_path // empty' <<< "$input" 2>/dev/null)
+# **jq の失敗を暗黙の fail-open にしない**（GitHub issue #178。理由は pre-commit-guard と同じ）
+tool_name=$(jq -r '.tool_name // empty' <<< "$input" 2>/dev/null || true)
+target_path=$(jq -r '.tool_input.file_path // empty' <<< "$input" 2>/dev/null || true)
+
+# **tool_name を判定に使う**（GitHub issue #178）: 以前は取得するだけでエラー文面にしか
+# 使っておらず、ブロック判定は file_path だけだった。hooks.json の matcher が唯一の
+# ツール種別フィルタになっており、matcher が評価されない環境（実測あり）では
+# **保護対象ファイルの Read まで「Refusing to edit」でブロック**される。
+# tool_name が無いときは弾かない（載せない CC 版でガードを殺さないため）
+case "$tool_name" in
+  ""|Edit|Write|MultiEdit) ;;
+  *) safe_hook_error Validation "not an edit tool: $tool_name" ;;
+esac
 
 [ -z "$target_path" ] && safe_hook_error Validation "no file_path in tool_input"
 

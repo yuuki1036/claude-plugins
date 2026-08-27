@@ -23,10 +23,22 @@ command -v jq   >/dev/null 2>&1 || safe_hook_error Unexpected "jq not installed;
 command -v perl >/dev/null 2>&1 || safe_hook_error Unexpected "perl not installed; guard cannot inspect command"
 
 input=$(safe_hook_input)
-tool_name=$(jq -r '.tool_name // empty' <<< "$input" 2>/dev/null)
-cmd=$(jq -r '.tool_input.command // empty' <<< "$input" 2>/dev/null)
+# **jq の失敗を暗黙の fail-open にしない**（GitHub issue #178）: `|| true` が無いと
+# 不正 JSON での jq exit 5 が safe-hook の ERR trap を踏み、**ガードを通り抜けたことに
+# 誰も気づけないまま exit 0** する。通す方向自体は決まっている
+# （`test_malformed_input_does_not_block`: 壊れた入力で作業を止める方が高コスト）が、
+# それは**明示的に選んだ結果**であるべきで、事故で通るのとは別物
+tool_name=$(jq -r '.tool_name // empty' <<< "$input" 2>/dev/null || true)
+cmd=$(jq -r '.tool_input.command // empty' <<< "$input" 2>/dev/null || true)
 
-[ -z "$cmd" ] && exit 0
+# **matcher 単独に依存しない**（CLAUDE.md Gotchas の二重ゲート規約）。ただし
+# **tool_name が無いときは弾かない** — payload に tool_name を載せない CC 版で
+# ガードごと無効化するのは、防ごうとしている暴発より悪い
+if [ -n "$tool_name" ] && [ "$tool_name" != "Bash" ]; then
+  safe_hook_error Validation "not a Bash tool: $tool_name"
+fi
+
+[ -z "$cmd" ] && safe_hook_error Validation "no command in tool_input"
 
 # 安価な事前フィルタ: git commit 迂回か guardrail-protect.json 改変に関係しなければ即 return
 case "$cmd" in
