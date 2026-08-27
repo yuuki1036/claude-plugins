@@ -7,7 +7,9 @@ safe_hook_init "issue-workflow:on-knowledge-change"
 
 payload=$(safe_hook_input)
 
-file_path=$(printf '%s' "$payload" | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*:[[:space:]]*"([^"]+)"/\1/')
+# **`|| true` は必須**（GitHub issue #179。理由は on-issue-change.sh と同じ）:
+# キーが無いと grep の exit 1 が ERR trap を踏み、下の自己判定ガードへ到達しない
+file_path=$(printf '%s' "$payload" | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*:[[:space:]]*"([^"]+)"/\1/' || true)
 
 # knowledge ファイル以外（matcher 暴発時の任意ファイル）では何もしない
 if [ -z "$file_path" ] \

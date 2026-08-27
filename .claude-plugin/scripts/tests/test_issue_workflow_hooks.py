@@ -36,6 +36,26 @@ def issue_file(root: Path, *, slug: str = "demo", name: str = "ISS-1.md",
     return p
 
 
+def design_issue_file(root: Path, *, slug: str = "demo", name: str = "ISS-2.md",
+                      scope: str = "small", tasks: int = 0, backend: str = "indie",
+                      issue_id: str = "ISS-2") -> Path:
+    """issue-design の 9 セクションテンプレ形式（チェックリストは `## 完了条件`）.
+
+    テンプレ系統が 2 つあり、`## 進捗` だけを数えると**この形式の Issue で
+    スコープ警告が無言で無効化**される（GitHub issue #179）。
+    """
+    p = root / ".claude" / backend / slug / "issues" / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    checks = "\n".join("- [ ] todo" for _ in range(tasks))
+    p.write_text(
+        f"---\nid: {issue_id}\nscope_size: {scope}\n---\n\n"
+        "## Why\n\n背景\n\n"
+        f"## 完了条件\n\n{checks}\n\n"
+        "## スコープ外\n\n- [ ] これは別節なので数えない\n"
+    )
+    return p
+
+
 class CheckScopeSizeTest(HookTestCase):
     PLUGIN = "issue-workflow"
     SCRIPT = "hooks/scripts/check-scope-size.sh"
@@ -74,6 +94,31 @@ class CheckScopeSizeTest(HookTestCase):
         """`## 進捗` 以外のチェックリストは数えない."""
         with TempGitRepo() as root:
             f = issue_file(root, scope="small", tasks=3)   # + メモ節に 1 件ある
+            self.assertSilent(self.run_hook(self.edit_payload(f)))
+
+    # --- テンプレ系統が 2 つある（GitHub issue #179）---
+    def test_the_nine_section_template_is_counted(self):
+        """`## 完了条件` のチェックリストも数える.
+
+        `## 進捗` だけを見ていたため、`/issue-design` でリライトした Issue では
+        COUNT=0 になり**警告が無言で無効化**されていた（issue-create/SKILL.md は
+        「スコープサイズは全 type で必須」と宣言していた）。
+        """
+        with TempGitRepo() as root:
+            f = design_issue_file(root, scope="small", tasks=4)   # 上限 3 を超過
+            self.assertFired(self.run_hook(self.edit_payload(f)), "scope-size")
+
+    def test_the_nine_section_template_respects_the_limit(self):
+        """上限内なら鳴らない（新しい節を数え始めて誤爆させない）."""
+        with TempGitRepo() as root:
+            f = design_issue_file(root, scope="small", tasks=3)
+            self.assertSilent(self.run_hook(self.edit_payload(f)))
+
+    def test_sections_are_not_summed_when_both_exist(self):
+        """両方の節があるとき足し合わせない（移行途中のファイルを誤って警告しない）."""
+        with TempGitRepo() as root:
+            f = issue_file(root, scope="small", tasks=3)
+            f.write_text(f.read_text() + "\n## 完了条件\n\n- [ ] a\n- [ ] b\n")
             self.assertSilent(self.run_hook(self.edit_payload(f)))
 
     def test_issue_id_appears_in_message(self):
@@ -180,6 +225,19 @@ class OnIssueChangeTest(HookTestCase):
             res = self.run_hook({}, cwd=root)
             self.assertNotEqual(res.returncode, 2)
 
+    def test_a_payload_without_file_path_reaches_the_guard(self):
+        """キー欠損で ERR trap に落ちない（GitHub issue #179）.
+
+        `|| true` が無いと grep の exit 1 が safe-hook の ERR trap を踏み、**自己判定
+        ガードが永久に unreachable** になる。正常系が silent exit 0 なので rc だけでは
+        「ガードで黙った」と「途中で死んだ」を区別できない — stderr で見分ける。
+        """
+        with TempGitRepo() as root:
+            res = self.run_hook({"tool_name": "Edit", "tool_input": {}}, cwd=root)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr, "ERR trap で落ちている")
+            self.assertIn("not an issue file", res.stderr, "自己判定ガードに到達していない")
+
 
 class InjectRulesTest(HookTestCase):
     PLUGIN = "issue-workflow"
@@ -209,6 +267,19 @@ class SetSessionTitleTest(HookTestCase):
     def test_malformed_input_does_not_crash(self):
         self.assertNotEqual(self.run_hook({}).returncode, 2)
 
+    def test_an_issue_without_a_title_reaches_the_guard(self):
+        """`title:` を欠く issue ファイルで ERR trap に落ちない（GitHub issue #179）."""
+        repo = TempGitRepo()
+        with repo as root:
+            repo.branch("ISS-1-work")
+            p = root / ".claude" / "indie" / "demo" / "issues" / "ISS-1.md"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("---\nid: ISS-1\n---\n\n本文だけで title 行が無い\n")
+            res = self.run_hook({"prompt": "作業する"}, cwd=root)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr, "ERR trap で落ちている")
+            self.assertIn("title empty", res.stderr, "Validation ガードに到達していない")
+
 
 class OnKnowledgeChangeTest(HookTestCase):
     PLUGIN = "issue-workflow"
@@ -222,6 +293,14 @@ class OnKnowledgeChangeTest(HookTestCase):
 
     def test_malformed_input_does_not_crash(self):
         self.assertNotEqual(self.run_hook({}).returncode, 2)
+
+    def test_a_payload_without_file_path_reaches_the_guard(self):
+        """キー欠損で ERR trap に落ちない（GitHub issue #179。on-issue-change と同型）."""
+        with TempGitRepo() as root:
+            res = self.run_hook({"tool_name": "Edit", "tool_input": {}}, cwd=root)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr, "ERR trap で落ちている")
+            self.assertIn("not a knowledge file", res.stderr, "自己判定ガードに到達していない")
 
 
 if __name__ == "__main__":

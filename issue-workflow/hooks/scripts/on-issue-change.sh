@@ -8,7 +8,11 @@ safe_hook_init "issue-workflow:on-issue-change"
 payload=$(safe_hook_input)
 
 # Claude Code の FileChanged hook payload から変更ファイルパスを抽出
-file_path=$(printf '%s' "$payload" | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*:[[:space:]]*"([^"]+)"/\1/')
+# **`|| true` は必須**（GitHub issue #179）: payload に file_path キーが無いと grep が
+# exit 1 を返し、`set -euo pipefail`（safe-hook）の ERR trap を踏んで**以降を実行せず
+# exit 0** する。正常系が silent exit 0 なので、下の自己判定ガードが永久に unreachable に
+# なっていることを外から区別できない（payload の形が変われば publish ごと黙って止まる）
+file_path=$(printf '%s' "$payload" | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*:[[:space:]]*"([^"]+)"/\1/' || true)
 
 # Issue ファイル以外（matcher 暴発時の任意ファイル）では何もしない
 if [ -z "$file_path" ] || [ ! -f "$file_path" ] \

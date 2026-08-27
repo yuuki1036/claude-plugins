@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # check-scope-size.sh — PostToolUse hook (Edit|Write|MultiEdit)
-# .claude/{indie,linear}/*/issues/*.md の進捗チェックリスト数が scope_size 上限を超えたら警告
+# .claude/{indie,linear}/*/issues/*.md のチェックリスト数が scope_size 上限を超えたら警告
+# （対象節は `## 進捗` と `## 完了条件` の両方 — テンプレ系統が 2 つあるため）
 # 上限: small:3 / medium:7 / large:15（Issue #30 参照）
 # issue-maintain の膨張閾値（5/8/16）とは別物で、こちらはリアルタイム初動警告
 
@@ -45,13 +46,22 @@ case "$SCOPE_SIZE" in
   *) safe_hook_error Validation "unknown scope_size: $SCOPE_SIZE" ;;
 esac
 
-# ## 進捗 セクションのチェックリスト行数をカウント
-# 次の ## セクションが来るまでの範囲で `- [ ]` / `- [x]` を数える
+# チェックリスト行数をカウントする。
+#
+# **テンプレ系統が 2 つある**（GitHub issue #179）: issue-create の型別テンプレは
+# `## 進捗`、issue-design の 9 セクションテンプレは `## 完了条件` にチェックリストを置く。
+# `## 進捗` だけを数えていたため、**`/issue-design` でリライトした Issue では COUNT=0 に
+# なり警告が無言で無効化**されていた（skills/issue-create/SKILL.md は「スコープサイズは
+# 全 type で必須」と宣言しており、宣言と実装が食い違っていた）。
+#
+# 両方あるときは `## 進捗` を優先する（**足し合わせない** — 同じタスクが両節に現れる
+# 移行途中のファイルで二重に数えると、上限超過を誤って警告する）
 COUNT=$(awk '
-  /^## 進捗[[:space:]]*$/ { in_section=1; next }
-  /^## / && in_section { exit }
-  in_section && /^[[:space:]]*-[[:space:]]*\[[[:space:]xX]\]/ { n++ }
-  END { print n+0 }
+  /^## 進捗[[:space:]]*$/     { sec="p"; next }
+  /^## 完了条件[[:space:]]*$/ { sec="d"; next }
+  /^## /                      { sec="";  next }
+  sec != "" && /^[[:space:]]*-[[:space:]]*\[[[:space:]xX]\]/ { n[sec]++ }
+  END { print (n["p"] > 0 ? n["p"] : n["d"]) + 0 }
 ' "$FILE_PATH")
 
 if [[ "$COUNT" -le "$LIMIT" ]]; then

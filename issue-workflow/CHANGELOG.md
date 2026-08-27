@@ -2,6 +2,29 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.3] - 2026-08-27
+
+### Fixed
+
+- **hook の自己判定ガードが unreachable だった 3 箇所を直した**（GitHub issue #179）。
+  `$(... | grep ...)` に `|| true` が無く、対象キーを欠く payload では grep の exit 1 が
+  safe-hook の ERR trap を踏み、**以降を実行せず exit 0** していた。正常系が silent exit 0
+  なので、外からは「ガードで黙った」と「途中で死んだ」を区別できない:
+  - `on-issue-change.sh` — `file_path` キーが無い payload で自己判定に到達しない。
+    FileChanged の payload 形が変われば `issue:completed` の publish ごと黙って止まる
+  - `on-knowledge-change.sh` — 同型
+  - `set-session-title.sh` — `title:` 行を欠く issue ファイルで Validation に到達しない
+    （同ファイルの他 3 箇所は `|| true` 済みで、この 1 行だけ漏れていた）
+- **`check-scope-size` が 9 セクションテンプレを数えられなかった**（同 issue）。
+  チェックリストを `## 進捗` 節だけで数えていたため、`/issue-design` でリライトした Issue
+  （チェックリストは `## 完了条件`）では COUNT=0 になり、**スコープ超過の警告が無言で
+  無効化**されていた。`issue-create/SKILL.md` は「スコープサイズは全 type で必須
+  （check-scope-size hook のリアルタイム警告の前提）」と宣言しており食い違っていた。
+  両節を対象にし、両方あるときは `## 進捗` を優先する（移行途中のファイルで二重に
+  数えて誤警告しないため）
+- `set-session-title.sh` のヘッダが実在しないイベント名 `SessionTitle` を名乗っていたのを
+  実際の配線（`UserPromptSubmit` / `once`）に合わせた
+
 ## [1.4.2] - 2026-08-17
 
 ### Changed

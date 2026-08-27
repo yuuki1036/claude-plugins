@@ -135,6 +135,16 @@ class TempGitRepo:
     def __exit__(self, *exc):
         self._tmp.cleanup()
 
+    def branch(self, name: str) -> None:
+        """新しいブランチを切って移る.
+
+        **テスト側に `git` を直接叩かせない**ための口。直接呼ぶと
+        `test_git_env_isolation` の「git を叩くモジュールは汚染環境の代表テストを持つ」
+        規約に引っかかり、隔離の担保が harness の外へ漏れる（GitHub issue #158 の網）。
+        """
+        subprocess.run(["git", "checkout", "-qb", name], cwd=self.path,
+                       capture_output=True, env=self.ENV)
+
     def commit(self, message: str, filename: str = "f.txt", body: str = "x") -> str:
         (self.path / filename).write_text(body)
         subprocess.run(["git", "add", "-A"], cwd=self.path, capture_output=True, env=self.ENV)
