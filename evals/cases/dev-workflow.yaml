@@ -11,7 +11,8 @@ cases:
 
   - id: pr-ja
     prompt: PR作って
-    expected_skill: dev-workflow:pr-creator
+    # コマンド名 /pr とスキル名 pr-creator が非対称なため両方を許容（#186）
+    expected_skill: [dev-workflow:pr-creator, dev-workflow:pr]
     k: 3
     graders:
       - type: text

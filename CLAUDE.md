@@ -49,6 +49,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 docs/                            # 横断設計指針（pipeline-design / rule-placement / skill-writing / event-bus /
                                  # shared-state / issue-workflow-migration + session-reports/）
 evals/                           # スキル起動回帰テスト（runner.py + cases/*.yaml。README に Gotchas）
+                                 # fixtures/recall/ は別ハーネス（code-review の見落とし回帰）
 INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の表と同期検証される）
 {plugin-name}/                   # 各プラグイン（独立したディレクトリ）
   .claude-plugin/plugin.json     # プラグインマニフェスト

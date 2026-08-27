@@ -15,12 +15,21 @@ grader を重ねられる。タグによる hold-out 機構と複数モデルの
 
 ```
 evals/
-├── cases/              # プラグインごとの YAML ケース
+├── cases/              # プラグインごとの YAML ケース（スキル起動の回帰）
 │   └── {plugin}.yaml
 ├── runner.py           # 実行ランナー（Python）
+├── fixtures/
+│   └── recall/         # **別ハーネス**: code-review の見落とし（recall）回帰 fixture
+│       ├── setup.sh    #   base/ → changed/ から検証用の使い捨てリポジトリを組む
+│       ├── expected.yaml
+│       └── {case}/     #   01-value-flow-insert / 07-handler-bypass / 90-precision-minor-unit
 ├── reports/            # レポート出力先（gitignore）
 └── README.md
 ```
+
+`cases/` は**スキル起動**（トリガーフレーズ → 期待スキル）の回帰、`fixtures/recall/` は
+**レビューの見落とし**の回帰で、走らせ方も判定も別物（後者の詳細は
+`fixtures/recall/README.md`）。
 
 ## ケースフォーマット
 
@@ -150,7 +159,7 @@ python3 evals/runner.py --exclude-tag holdout,slow
 - ローカル実行（Max plan / subscription）: 通常セッションと同じ枠
 - CI 実行: 現時点では非対応（API key 課金が発生するため）
 
-詳細は `/knowledge` や `.claude/knowledge/` を参照。
+詳細は各ケース YAML の冒頭コメントを参照。
 
 ## 依存
 
@@ -160,6 +169,8 @@ python3 evals/runner.py --exclude-tag holdout,slow
 
 ## Gotchas（CLAUDE.md から移設）
 
-- **eval のプロンプトにスラッシュコマンドを使わない**: `evals/runner.py` は headless の `claude -p` を呼ぶが、**headless はプラグインのコマンドを登録しない**ため `/living-spec` `/adr` `/design-doc` はいずれも `Unknown command` で必ず落ちる。**認証の有無とは無関係**（`claude auth status` が `loggedIn: true` でも再現するので、`Failed to authenticate` が同時に出ていても認証切れのせいだと誤診しないこと）。トリガーは自然言語のプロンプトで測る。`evals/cases/notebooklm-workflow.yaml` の `add-source-slash` がこの理由で恒常 fail している（未修正）
+- **eval のプロンプトにスラッシュコマンドを使わない**: `evals/runner.py` は headless の `claude -p` を呼ぶが、**headless はプラグインのコマンドを登録しない**ため `/living-spec` `/adr` `/design-doc` はいずれも `Unknown command` で必ず落ちる。**認証の有無とは無関係**（`claude auth status` が `loggedIn: true` でも再現するので、`Failed to authenticate` が同時に出ていても認証切れのせいだと誤診しないこと）。トリガーは自然言語のプロンプトで測る。かつて `notebooklm-workflow.yaml` の `add-source-slash` /
+`query-slash` がこの理由で恒常 fail していたが、2026-07-15 に自然言語トリガーへ置き換えて解消した
+（`evals/cases/notebooklm-workflow.yaml` 冒頭にその旨のコメントがある）
 - **eval の fail はまず「プラグイン選択」と「skill id の綴り」を分けて読む**: モデルが実在しない skill id を綴る fail が一定率で出る（`adr-keeper:adr` を `adr-keeper:adr-keeper`、`notebook-source-adder` を `notebooklm-add-source`、`notebook-query-assistant` を `notebook-summarizer` 等）。プラグインの選択自体が正しいなら、それは harness 側の性質でスキル description の問題ではない。**expected に実在しない id を列挙して緑にしない**（eval が意味を失う）。誤発火の有無は「どのプラグインが選ばれたか」で判定する
 - **eval の判定に k=1 の結果を使わない**: 上の id 捏造は**確率的**で、k=1 で落ちたケースが k=3 では通ることがある（notebooklm-workflow は k=1 で 3 件落ちたが k=3 では 1 件に減った）。`--k 1` は配線確認（ケースが読めるか・プラグインが解決するか）専用で、**恒常的に落ちる／description が悪い の根拠にはならない**。判定は既定の pass^k=3 で行う

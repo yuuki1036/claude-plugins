@@ -2,7 +2,8 @@ plugin: claude-meta
 cases:
   - id: catch-up-ja
     prompt: Claude Codeの最新アップデートをキャッチアップして
-    expected_skill: claude-meta:cc-catch-up
+    # コマンド名 /catch-up とスキル名 cc-catch-up が非対称なため両方を許容（#186）
+    expected_skill: [claude-meta:cc-catch-up, claude-meta:catch-up]
     k: 3
   - id: claude-md-audit-ja
     prompt: CLAUDE.mdを監査して
