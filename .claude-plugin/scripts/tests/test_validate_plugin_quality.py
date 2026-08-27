@@ -1356,6 +1356,55 @@ class DocAnchorFormsTest(unittest.TestCase):
             "改行をまたいで見出しを参照と誤認している")
 
 
+class WarningChannelTest(unittest.TestCase):
+    """warning の出し分け（GitHub issue #182）.
+
+    人手確認の助言は 2026-06-01 の導入以来 42〜73 件が毎回そのまま出続け、
+    **行動につながる警告を埋めていた**（実測: skill-size 2 件が 8 日間・毎日リリースの
+    中で放置）。既定では件数だけにして S/N を戻す。
+    """
+
+    ADVISORY = "[minimality:demo] 要確認 'Read'（本文に直接言及なし）: demo/skills/s/SKILL.md"
+    ACTIONABLE = "[skill-size] SKILL.md 本文 505 行（references へ）: demo/skills/s/SKILL.md"
+
+    def _render(self, warnings: list[str], *, verbose: bool) -> str:
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            v._print_warnings(warnings, verbose=verbose)
+        return buf.getvalue()
+
+    def test_advisories_are_summarised_by_default(self):
+        out = self._render([self.ADVISORY] * 42, verbose=False)
+        self.assertIn("42 件", out)
+        self.assertNotIn("要確認 'Read'", out, "既定で全件出している")
+
+    def test_actionable_warnings_are_always_listed(self):
+        out = self._render([self.ADVISORY] * 42 + [self.ACTIONABLE], verbose=False)
+        self.assertIn("SKILL.md 本文 505 行", out, "行動できる警告が助言に埋もれている")
+
+    def test_verbose_lists_every_advisory(self):
+        out = self._render([self.ADVISORY] * 3, verbose=True)
+        self.assertEqual(out.count("要確認 'Read'"), 3)
+
+    def test_only_advisory_tags_are_summarised(self):
+        """助言として畳むのは既知のタグだけ（新しい検査を黙って隠さない）."""
+        out = self._render(["[agent-sync:demo] 要確認: run_in_background 未言及"], verbose=False)
+        self.assertIn("run_in_background", out)
+
+    def test_the_verbose_flag_is_not_mistaken_for_a_plugin_name(self):
+        """`--verbose` を付けても全プラグインを検査する（CLI 境界越しに見る）.
+
+        フラグを引数リストから落とし損ねると、`--verbose` がプラグイン名として
+        解決されて「指定されたプラグインが無い」で落ちる。
+        """
+        r = subprocess.run([sys.executable, str(SCRIPT), "--verbose"],
+                           capture_output=True, text=True, cwd=str(v.ROOT))
+        self.assertEqual(r.returncode, 0, r.stderr[-2000:])
+        self.assertNotIn("[args]", r.stderr, "フラグをプラグイン名として解決している")
+
+
 class ResolvePluginsTest(unittest.TestCase):
     """引数のプラグイン解決（GitHub issue #176）.
 

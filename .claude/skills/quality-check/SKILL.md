@@ -178,7 +178,7 @@ Permission Pruning の原則に基づき、宣言されているツールが必�
 
 **14b. 未使用ツール検出（決定的スクリプトに委譲）**
 
-中核は `validate_plugin_quality.py` の `check_allowed_tools_minimality()` が決定的に実行する（非ブロッキング warning として出力。exit code には影響しない）。`/quality-check` 実行時はこのスクリプト出力を読み、`要確認` 項目のみ LLM/人手で最終判断する。
+中核は `validate_plugin_quality.py` の `check_allowed_tools_minimality()` が決定的に実行する（非ブロッキング warning として出力。exit code には影響しない）。**既定の出力では件数のみ**に畳まれるので、`/quality-check` 実行時は `--verbose` を付けて全件を読み、`要確認` 項目のみ LLM/人手で最終判断する（既定で全件出すと行動につながる警告を埋めるため / GitHub issue #182）。
 
 - frontmatter で宣言されたツール名が、ファイル本文で一度も言及されていない場合に warning
 - 検出方法（スクリプトが実装）:

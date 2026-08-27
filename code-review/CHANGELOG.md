@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.93.0] - 2026-08-28
+
+### Changed
+
+- **self-review の worktree teardown 連携（Step 8）を references へ移した**（GitHub issue #182）。
+  `--embed` では実行しない branch 限定の手順で、`docs/skill-writing.md` が references へ
+  出すべきとする対象そのもの。SKILL 本文は 508 → 484 行になり、`skill-size` 警告
+  （閾値 500 行）を解消した。発動条件の判断は SKILL 側に残し、**発動が確定してから**
+  `references/worktree-teardown-flow.md` を Read する（起動タイミングの判断に
+  遅延読み込みを挟まない）。
+  なお `review` 側（505 行）は据え置き。抽出候補として最大なのはレポートテンプレートだが、
+  これは**毎回使う**ので「一部 branch しか使わない定義・表」という基準に合わず、
+  移すとレポート生成という最重要フェーズに Read 依存が増える
+
 ## [2.92.1] - 2026-08-27
 
 ### Fixed

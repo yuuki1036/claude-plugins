@@ -1447,6 +1447,46 @@ def check_agent_sync_launch_repo_local(warnings: list[str]) -> None:
     _check_agent_sync_in(targets, "repo-local", warnings)
 
 
+#: 「人手で 1 度確認すれば済むが、確認したことを記録する口が無い」助言のタグ.
+#: 既定では**件数だけ**を出す（GitHub issue #182）。2026-06-01 の導入以来 42〜73 件が
+#: 毎回そのまま出続け、**行動につながる警告（skill-size 等）を埋めていた**。
+#: `docs/rule-placement.md`「真陽性ゼロの警告は既存の全警告の信頼度を下げる」の運用側の答え。
+ADVISORY_WARNING_TAGS = ("minimality:",)
+
+
+def _is_advisory(warning: str) -> bool:
+    return any(warning.startswith(f"[{tag}") for tag in ADVISORY_WARNING_TAGS)
+
+
+def _print_warnings(warnings: list[str], *, verbose: bool) -> None:
+    """warnings を「行動できるもの」と「助言」に分けて出す.
+
+    行動できるものは**常に全件**出す。助言は既定で件数のみ（`--verbose` で全件）—
+    毎回同じ数十行が出ると「⚠️ が出たときだけ行動する」契約が成り立たなくなる。
+    """
+    advisory = [w for w in warnings if _is_advisory(w)]
+    actionable = [w for w in warnings if not _is_advisory(w)]
+
+    if actionable:
+        print("Plugin quality warnings (非ブロッキング / 要対応):", file=sys.stderr)
+        print("", file=sys.stderr)
+        for w in actionable:
+            print(f"  - {w}", file=sys.stderr)
+        print("", file=sys.stderr)
+
+    if advisory:
+        if verbose:
+            print("Plugin quality advisories (人手確認 / 非ブロッキング):", file=sys.stderr)
+            print("", file=sys.stderr)
+            for w in advisory:
+                print(f"  - {w}", file=sys.stderr)
+            print("", file=sys.stderr)
+        else:
+            print(f"  （人手確認の助言 {len(advisory)} 件は省略。全件は --verbose）",
+                  file=sys.stderr)
+            print("", file=sys.stderr)
+
+
 def resolve_plugins(args: list[str]) -> list[Path]:
     """引数のプラグイン名 / パスを解決する（引数なしなら全プラグイン）.
 
@@ -1463,7 +1503,8 @@ def resolve_plugins(args: list[str]) -> list[Path]:
 def main() -> int:
     args = sys.argv[1:]
     update_pins = "--update-ssot-pins" in args
-    args = [a for a in args if a != "--update-ssot-pins"]
+    verbose = "--verbose" in args
+    args = [a for a in args if a not in ("--update-ssot-pins", "--verbose")]
     if update_pins:
         print("Updating SSoT pins (正本を確認済みとして打ち直す):", file=sys.stderr)
         # errors を捨てない: 打ち直しは pin 記法のミスが最も起きる操作なので,
@@ -1501,14 +1542,7 @@ def main() -> int:
     check_skill_body_size(warnings)
 
     if warnings:
-        # 助言（非ブロッキング）. errors と分離して常に出力する.
-        print("Plugin quality warnings (allowed-tools 最小性 / 非ブロッキング):", file=sys.stderr)
-        print("", file=sys.stderr)
-        for w in warnings:
-            print(f"  - {w}", file=sys.stderr)
-        print("", file=sys.stderr)
-        print(f"  total: {len(warnings)} warning(s)", file=sys.stderr)
-        print("", file=sys.stderr)
+        _print_warnings(warnings, verbose=verbose)
 
     if errors:
         print("Plugin quality validation failed:", file=sys.stderr)
