@@ -98,9 +98,13 @@ class MachineLayerTest(unittest.TestCase):
         「指摘なし」と区別できなかった。stub が壊れていても**テストは緑に見える**型なので、
         `test_..._reported_per_plugin` の assert が唯一の防壁になる。
         """
+        self.write_claude_stub_rc(0, *findings)
+
+    def write_claude_stub_rc(self, code: int, *findings: str) -> None:
+        """終了コードも指定できる `claude` stub（rc を捨てていないかの検証用）."""
         stub = self.bin / "claude"
         args = " ".join("'%s'" % f.replace("'", "'\\''") for f in findings) or "''"
-        stub.write_text("#!/usr/bin/env bash\nprintf '%%s\\n' %s\nexit 0\n" % args,
+        stub.write_text("#!/usr/bin/env bash\nprintf '%%s\\n' %s\nexit %d\n" % (args, code),
                         encoding="utf-8")
         stub.chmod(0o755)
 
@@ -245,6 +249,32 @@ class MachineLayerTest(unittest.TestCase):
         """`claude` が無い環境ではこの検査だけ skip（1〜3 は判定済みなので 0 でよい）."""
         self.with_tests_dir(passing=True)
         res = self.run_layer(env=self.env(with_claude=False))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_a_failing_cli_that_reports_nothing_is_unknown_not_green(self):
+        """rc を捨てない（GitHub issue #176）.
+
+        指摘の抽出は出力の `❯` 行に依存しているので、CLI が出力形式を変えた版では
+        **1 行も拾えず無言で常時緑**になる。rc が非ゼロなのに抽出が空なら
+        「違反なし」ではなく「読めなかった」（exit 2）に倒す。
+        """
+        (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
+        (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+        self.with_tests_dir(passing=True)
+        env = self.env(with_claude=True)
+        self.write_claude_stub_rc(1, "PLUGIN ERROR: name is required")  # `❯` を含まない書式
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 2, "rc を捨てて緑に倒している: " + res.stdout)
+        self.assertIn("指摘行を抽出できなかった", res.stdout)
+
+    def test_a_successful_cli_with_no_findings_stays_green(self):
+        """rc=0 で指摘も無ければ従来どおり緑（判定不能に倒しすぎない）."""
+        (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
+        (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+        self.with_tests_dir(passing=True)
+        env = self.env(with_claude=True)
+        self.write_claude_stub_rc(0)
+        res = self.run_layer(env=env)
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
     def test_every_plugin_is_validated_not_just_the_first(self):

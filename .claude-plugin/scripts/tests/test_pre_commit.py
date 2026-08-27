@@ -181,6 +181,44 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("[run-tests]", res.stdout)
 
+    # ---- ゲート自体の欠落（GitHub issue #176）--------------------------------
+    def test_a_missing_ssot_gate_blocks(self):
+        """検査スクリプトの欠落は「違反なし」ではなく「検査していない」.
+
+        以前は `[ -f ]` で存在しなければ黙って通していたため、**検査を消すだけで
+        commit が素通り**した。同じリポジトリの他の検査（INDEX.md 欠落を error にする）と
+        流儀を揃える。
+        """
+        self.stage("docs/note.md")
+        (self.root / ".claude-plugin" / "scripts" / "validate-ssot.sh").unlink()
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 1, "ゲートの欠落が素通りしている")
+        self.assertIn("validate-ssot.sh", res.stdout)
+        self.assertEqual(self.test_runs, 0, "前提が崩れている状態で先へ進まない")
+
+    def test_a_missing_quality_gate_blocks(self):
+        self.stage("docs/note.md")
+        (self.root / ".claude-plugin" / "scripts" / "validate_plugin_quality.py").unlink()
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 1, "ゲートの欠落が素通りしている")
+        self.assertIn("validate_plugin_quality.py", res.stdout)
+
+    def test_a_missing_tests_directory_blocks(self):
+        self.stage("docs/note.md")
+        (self.root / ".claude-plugin" / "scripts" / "run-tests.py").unlink()
+        (self.root / ".claude-plugin" / "scripts" / "tests").rmdir()
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 1, "テストディレクトリの欠落が素通りしている")
+        self.assertIn("tests", res.stdout)
+
+    def test_uncollected_tests_are_not_reported_as_a_failure(self):
+        """exit 5（1 件も収集されなかった）は「失敗」ではなく「測れていない」と伝える."""
+        self.stage("docs/note.md")
+        self.set_tests(5, "Ran 0 tests")
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 1, "収集ゼロを通している")
+        self.assertIn("1 件も走っていません", res.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

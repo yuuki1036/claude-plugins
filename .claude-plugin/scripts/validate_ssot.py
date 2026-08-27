@@ -31,9 +31,42 @@ SCHEMA_DIR = ROOT / ".claude-plugin" / "schema"
 MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
 
 
+class Undecidable(Exception):
+    """検査を**実行できなかった**（違反の検出ではない）. main が exit 2 に写す."""
+
+
+class MalformedJson(Exception):
+    """リポジトリ内の JSON が壊れている＝**直せる違反**. main が exit 1 に写す."""
+
+
 def load_json(path: Path) -> dict:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+    """JSON を読む.
+
+    **例外を素通しにしない**（GitHub issue #176）: 以前は JSONDecodeError が traceback の
+    まま抜けて exit 1 になっており、pre-commit と machine-layer は traceback を
+    「SSoT 違反」として提示していた。`check_hooks_json` だけが JSONDecodeError を握って
+    読める指摘に変えており、扱いが非対称だった。
+
+    振り分けの基準は**利用者が直せるか**:
+      - 壊れた JSON（`MalformedJson`）… リポジトリの中身の問題なので**違反**（exit 1）。
+        `check_hooks_json` が hooks.json に対して既にこの扱いをしている
+      - 読み込み自体の失敗（`Undecidable`）… 権限・I/O は前提の欠落なので**判定不能**（exit 2）
+    """
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        raise MalformedJson(f"{_rel(path)}: invalid JSON ({e})") from None
+    except OSError as e:
+        raise Undecidable(f"読み込みに失敗: {_rel(path)} ({e})") from None
+
+
+def _rel(path: Path) -> str:
+    """ROOT 相対で見せる（絶対パスは指摘欄で読みにくい）."""
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
 
 
 #: jsonschema が無くスキーマ検証を skip したか（最終判定を「pass」に倒さないために見る）
@@ -253,6 +286,22 @@ def check_docs_sync(manifests: dict[str, dict], errors: list[str]) -> None:
 
 
 def main() -> int:
+    # 例外を traceback のまま外に出さない（`load_json` の docstring / issue #176）
+    try:
+        return _run()
+    except MalformedJson as e:
+        print("SSoT validation failed:", file=sys.stderr)
+        print("", file=sys.stderr)
+        print(f"  - [json] {e}", file=sys.stderr)
+        return 1
+    except Undecidable as e:
+        print(f"SSoT validation undecidable: {e}", file=sys.stderr)
+        print("  前提のファイルを読めないため検査を実行できませんでした（違反の検出ではありません）",
+              file=sys.stderr)
+        return 2
+
+
+def _run() -> int:
     errors: list[str] = []
     manifests = collect_plugin_manifests()
     if not manifests:

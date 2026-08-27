@@ -88,52 +88,74 @@ if [ ${#changelog_errors[@]} -gt 0 ]; then
   exit 1
 fi
 
-# SSoT 同期チェック: plugin.json ↔ marketplace.json / _requirements ↔ check-deps.sh
-if [ -f .claude-plugin/scripts/validate-ssot.sh ]; then
-  bash .claude-plugin/scripts/validate-ssot.sh && ssot_rc=0 || ssot_rc=$?
-  if [ "$ssot_rc" = "1" ]; then
-    echo ""
-    echo "  plugin.json が SSoT。派生物 (marketplace.json / check-deps.sh) を同期してください"
-    exit 1
-  elif [ "$ssot_rc" != "0" ]; then
-    # 判定不能（jsonschema 不在等）。**通さない**: ここを素通しすると
-    # 「ローカルは緑・CI は赤」の非対称が push まで見えない（GitHub issue #140）
-    echo ""
-    echo "  SSoT 検査が判定不能（exit ${ssot_rc}）。前提を入れてから再実行してください"
-    echo "  この検査は CI では前提込みで走るため、ここで通すと差が push まで残ります"
+# **ゲートスクリプトの欠落は「違反なし」ではなく「検査していない」**（GitHub issue #176）。
+# 以前は `[ -f ]` / `[ -d ]` で存在しなければ黙って通していたが、それだと検査を消すだけで
+# commit が素通りする。同じリポジトリの他の検査（INDEX.md 欠落を error にする等）と流儀を揃える
+for gate in \
+  .claude-plugin/scripts/validate-ssot.sh \
+  .claude-plugin/scripts/validate_plugin_quality.py
+do
+  if [ ! -f "$gate" ]; then
+    echo "❌ 検査スクリプトが見つかりません: $gate"
+    echo "  検査を実行できないため commit を止めます（欠落を「違反なし」として通さない）"
     exit 1
   fi
+done
+if [ ! -d .claude-plugin/scripts/tests ]; then
+  echo "❌ 回帰テストのディレクトリが見つかりません: .claude-plugin/scripts/tests"
+  echo "  検査を実行できないため commit を止めます（欠落を「違反なし」として通さない）"
+  exit 1
+fi
+
+# SSoT 同期チェック: plugin.json ↔ marketplace.json / _requirements ↔ check-deps.sh
+bash .claude-plugin/scripts/validate-ssot.sh && ssot_rc=0 || ssot_rc=$?
+if [ "$ssot_rc" = "1" ]; then
+  echo ""
+  echo "  plugin.json が SSoT。派生物 (marketplace.json / check-deps.sh) を同期してください"
+  exit 1
+elif [ "$ssot_rc" != "0" ]; then
+  # 判定不能（jsonschema 不在・JSON 破損等）。**通さない**: ここを素通しすると
+  # 「ローカルは緑・CI は赤」の非対称が push まで見えない（GitHub issue #140）
+  echo ""
+  echo "  SSoT 検査が判定不能（exit ${ssot_rc}）。前提を入れてから再実行してください"
+  echo "  この検査は CI では前提込みで走るため、ここで通すと差が push まで残ります"
+  exit 1
 fi
 
 # プラグイン品質チェック（errors のみブロック。warnings は通す）
 # CI と同じ検査を commit 前に走らせ、「pre-commit は通るが CI で落ちる」非対称を塞ぐ
-if [ -f .claude-plugin/scripts/validate_plugin_quality.py ]; then
-  if ! python3 .claude-plugin/scripts/validate_plugin_quality.py > /dev/null 2>&1; then
-    python3 .claude-plugin/scripts/validate_plugin_quality.py 2>&1 | grep -v "^warning:" || true
-    echo ""
-    echo "  validate_plugin_quality.py の errors を解消してください"
-    exit 1
-  fi
+# **出力は 1 回の実行から取る**（回帰テスト側と同じ理由。以前は落ちたときだけ 2 回払っていた）
+quality_out=$(python3 .claude-plugin/scripts/validate_plugin_quality.py 2>&1) && quality_rc=0 || quality_rc=$?
+if [ "$quality_rc" != "0" ]; then
+  # warnings ブロックは常時数十件出るので errors の提示から外す
+  # （`^warning:` は別スクリプトの書式で、ここには 1 行もマッチしない / issue #182）
+  echo "$quality_out" | sed -n '/^Plugin quality validation failed/,$p'
+  echo ""
+  echo "  validate_plugin_quality.py の errors を解消してください"
+  exit 1
 fi
 
 # 検証スクリプト自身の回帰テスト（stdlib unittest / 依存なし）
 # SSoT pin は「pin の初期値」も検証と同じ関数で作るため, 切り出しが壊れていても
 # 実リポジトリに対する検証は全 pin pass になる（v2.63.1 で実際に起きた）。
 # 期待値を独立に構築するテストだけがこの自己整合の盲点を塞ぐ
-if [ -d .claude-plugin/scripts/tests ]; then
-  # 起動口は run-tests.py（テストが置き去りにしたプロセスをここで回収する / issue #140）。
-  # **出力は 1 回の実行から取る** — 以前は「静かに実行 → 失敗したらもう一度実行して表示」
-  # で、落ちたときだけ実測 100 秒規模を 2 回払っていた
-  test_out=$(python3 .claude-plugin/scripts/run-tests.py 2>&1)
-  test_rc=$?
-  if [ "$test_rc" != "0" ]; then
-    echo "$test_out" | tail -30
-    echo ""
+# 起動口は run-tests.py（テストが置き去りにしたプロセスをここで回収する / issue #140）。
+# **出力は 1 回の実行から取る** — 以前は「静かに実行 → 失敗したらもう一度実行して表示」
+# で、落ちたときだけ実測 100 秒規模を 2 回払っていた
+test_out=$(python3 .claude-plugin/scripts/run-tests.py 2>&1)
+test_rc=$?
+if [ "$test_rc" != "0" ]; then
+  echo "$test_out" | tail -30
+  echo ""
+  if [ "$test_rc" = "5" ]; then
+    # 5 = 1 件も収集されなかった（失敗ではなく**測れていない**）
+    echo "  回帰テストが 1 件も走っていません。収集できない原因を解消してください"
+  else
     echo "  .claude-plugin/scripts/tests の失敗を解消してください"
-    exit 1
   fi
-  # 残留プロセスの警告は緑判定に含めないが表示はする
-  # （`|| true` は grep 非マッチの exit 1 を hook の終了コードへ漏らさないため）
-  echo "$test_out" | grep -F "[run-tests" || true
+  exit 1
 fi
+# 残留プロセスの警告は緑判定に含めないが表示はする
+# （`|| true` は grep 非マッチの exit 1 を hook の終了コードへ漏らさないため）
+echo "$test_out" | grep -F "[run-tests" || true
 

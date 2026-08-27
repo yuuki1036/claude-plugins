@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import signal
@@ -144,6 +145,16 @@ class RunTestsTest(unittest.TestCase):
         res = self.run_wrapper()
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
+    def test_collecting_nothing_never_looks_green(self):
+        """1 件も収集されなかったら 5（測れていない）を返す（GitHub issue #176）.
+
+        machine-layer は 5 を「判定不能」として扱う契約。**この終了コードは Python の版に
+        依存してはいけない** — unittest 自身が no-tests で 5 を返すのは 3.12 以降で、
+        それ以前は 0 なので、版差に任せると古い開発機だけ収集ゼロが緑に見える。
+        """
+        res = self.run_wrapper()          # tests/ に test_*.py を 1 つも置かない
+        self.assertEqual(res.returncode, 5, res.stdout + res.stderr)
+
     def test_failing_tests_keep_their_exit_code(self):
         self.write_test(FAILING)
         res = self.run_wrapper()
@@ -257,6 +268,36 @@ class RunTestsTest(unittest.TestCase):
         res = self.run_wrapper(env={**os.environ, "PATH": str(empty_bin)})
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("skip", res.stderr)
+
+
+class RanCountTest(unittest.TestCase):
+    """集計行から件数を読む処理（GitHub issue #176）.
+
+    E2E では新しい Python が自前で 5 を返すため**この判定を一度も通らない**ので、
+    版差を吸収する当の処理はここで直接表明する（期待値はテスト側で独立に組む）。
+    """
+
+    @staticmethod
+    def _module():
+        spec = importlib.util.spec_from_file_location("_run_tests_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_reads_the_summary_line(self):
+        self.assertEqual(self._module()._ran_count(b"Ran 12 tests in 1.2s\n\nOK\n"), 12)
+
+    def test_a_single_test_uses_the_singular_form(self):
+        self.assertEqual(self._module()._ran_count(b"Ran 1 test in 0.1s\n\nOK\n"), 1)
+
+    def test_zero_is_zero(self):
+        self.assertEqual(
+            self._module()._ran_count(b"Ran 0 tests in 0.000s\n\nNO TESTS RAN\n"), 0)
+
+    def test_a_missing_summary_counts_as_zero(self):
+        """集計行が無い（収集前にクラッシュした等）＝走ったと見なさない."""
+        self.assertEqual(
+            self._module()._ran_count(b"Traceback (most recent call last):\n"), 0)
 
 
 if __name__ == "__main__":

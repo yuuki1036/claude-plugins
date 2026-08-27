@@ -10,7 +10,9 @@
 それは同じ原因を塞いだだけで、**次に同種の後始末漏れを入れたときには効かない**。
 
 契約:
-  - 終了コードは**テストのものをそのまま返す**（緑判定を変えない）
+  - 終了コードは**テストのものをそのまま返す**（緑判定を変えない）。唯一の例外が
+    「1 件も収集されなかった」で、これは 5（測れなかった）に倒す — unittest 自身が 5 を
+    返すのは Python 3.12 以降で、それ以前は 0 なので**古い開発機だけ緑に見える**（#176）
   - 残留プロセスは stderr に **`[run-tests:leak]`** で警告して kill する。
     **exit code には反映しない** —
     残留は「テストの失敗」ではなく後始末の漏れで、ここで赤にすると commit が通らない
@@ -37,6 +39,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -175,8 +178,19 @@ def _spawn(cmd: list[str], log) -> subprocess.Popen:
     return subprocess.Popen(cmd, **kwargs)
 
 
+#: unittest の集計行（`Ran 12 tests in 0.4s`）。**版差を吸収するために自分で数える**
+_RAN_RE = re.compile(rb"^Ran (\d+) tests? in ", re.M)
+
+
+def _ran_count(out: bytes) -> int:
+    """走ったテスト件数を出力から読む（集計行が無ければ 0 とみなす）."""
+    m = _RAN_RE.search(out)
+    return int(m.group(1)) if m else 0
+
+
 def main(argv: list[str]) -> int:
     cmd = [sys.executable, "-m", "unittest", "discover", "-s", TESTS_DIR, *argv]
+    out = b""
     with tempfile.TemporaryFile("w+b") as log:
         proc = _spawn(cmd, log)
         pgid = proc.pid   # グループリーダーなので pgid == pid
@@ -186,7 +200,8 @@ def main(argv: list[str]) -> int:
         finally:
             # **回収は必ず通す**（例外・中断で飛ばさない）。出力も必ず流す
             log.seek(0)
-            sys.stderr.buffer.write(log.read())
+            out = log.read()
+            sys.stderr.buffer.write(out)
             sys.stderr.flush()
             try:
                 sweep(pgid, proc.pid)
@@ -195,6 +210,15 @@ def main(argv: list[str]) -> int:
                 # なり、緑のテストが pre-commit のブロックに化ける（実測で 1 度踏んだ）
                 print("[run-tests] 残留の回収に失敗した: %r"
                       "（テストの結果には影響させない）" % (exc,), file=sys.stderr)
+    # **「1 件も走らなかった」を Python の版差に任せない**（GitHub issue #176）:
+    # unittest が no-tests で exit 5 を返すのは 3.12 以降で、それ以前は 0 を返す
+    # （実測: 3.9 は 0 / 3.14 は 5）。古い python3 の開発機では**収集ゼロが緑に見える**ので、
+    # 集計行から自分で判定して 5（測れなかった）に倒す。machine-layer はこれを
+    # 「判定不能」として扱う契約になっている
+    if rc == 0 and _ran_count(out) == 0:
+        print("[run-tests] テストが 1 件も収集されなかった（緑ではなく『測れていない』）",
+              file=sys.stderr)
+        return 5
     return rc
 
 

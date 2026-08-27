@@ -90,12 +90,18 @@ fi
 #    全体を判定不能に倒さない）
 if command -v claude >/dev/null 2>&1; then
   while IFS= read -r plugin_dir; do
-    VAL_OUT="$(claude plugin validate "$plugin_dir" 2>&1 || true)"
+    # **rc を捨てないこと**（issue #176）: 指摘の抽出は出力の `❯` 行に依存しているので、
+    # CLI が出力形式を変えた版では**無言で常時緑**になる。rc が非ゼロなのに 1 行も
+    # 拾えなかったら「違反なし」ではなく「読めなかった」に倒す
+    VAL_OUT="$(claude plugin validate "$plugin_dir" 2>&1)" && VAL_RC=0 || VAL_RC=$?
     # `_requirements` / `_superseded_by` は SSoT 用の独自フィールドなので CLI 警告から除外する。
     # CC のバージョンで警告文言が変わるため、文言ではなくフィールド名の有無で除外する
     FILTERED="$(printf '%s' "$VAL_OUT" | grep -E '^\s*❯' | grep -Ev '_requirements|_superseded_by' || true)"
     if [ -n "$FILTERED" ]; then
       add "[schema:$(basename "$plugin_dir")] ${FILTERED}"
+    elif [ "$VAL_RC" -ne 0 ]; then
+      UNKNOWN=1
+      add "[machine-layer] claude plugin validate が exit ${VAL_RC} だが指摘行を抽出できなかった（出力形式が変わった？）: $(basename "$plugin_dir")"$'\n'"$VAL_OUT"
     fi
   # 空行はパイプライン側で落とす（ループ内で `[ -z ] && continue` と書くと、
   # その 1 行が反転したときに**全プラグインを黙って skip する**経路になる）

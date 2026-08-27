@@ -290,6 +290,28 @@ class ValidateSsotTest(unittest.TestCase):
         self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
         self.assertIn("python3", res.stderr)
 
+    # ---- 壊れた JSON を traceback で出さない（GitHub issue #176）-----------
+    def test_broken_plugin_json_is_reported_as_a_readable_violation(self):
+        """壊れた plugin.json は**読める指摘**として exit 1（traceback ではない）.
+
+        以前は JSONDecodeError が素通しで抜け、pre-commit と machine-layer が
+        traceback をそのまま「SSoT 違反」として提示していた。`check_hooks_json` は
+        hooks.json に対して既に「invalid JSON」の指摘に変えており、扱いが非対称だった。
+        """
+        self.write("demo/.claude-plugin/plugin.json", "{ not json")
+        res = self.run_ssot()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertNotIn("Traceback", res.stderr, "traceback が利用者に出ている")
+        self.assertIn("invalid JSON", res.stderr)
+        self.assertIn("plugin.json", res.stderr)
+
+    def test_broken_marketplace_json_is_reported_as_a_readable_violation(self):
+        self.write(".claude-plugin/marketplace.json", "{ not json")
+        res = self.run_ssot()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertNotIn("Traceback", res.stderr, "traceback が利用者に出ている")
+        self.assertIn("invalid JSON", res.stderr)
+
     # ---- スキーマ検証そのもの（jsonschema がある環境） ----------------------
     @unittest.skipUnless(HAS_JSONSCHEMA, "jsonschema 未導入（CI では pip install 済み）")
     def test_schema_violation_is_detected_when_jsonschema_is_available(self):

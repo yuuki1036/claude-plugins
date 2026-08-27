@@ -9,6 +9,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - allowed-tools 存在: 全 SKILL.md に allowed-tools が定義されているか
   - allowed-tools 一致: command <-> skill ペアの allowed-tools が完全一致か
   - hooks 安全性: hook スクリプトが safe_hook_init を呼んでいるか
+  - hook 参照の実在: hooks.json が参照する `.sh` が実在するか. 実在しない参照は解決側が
+    黙って落とすので, パスのタイポやスクリプト移動で hooks 安全性 / hook 自己判定の検査が
+    **無言で対象ゼロ**になる（hook は配布されたまま検査だけ消える / issue #176）.
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
   - schema-markers 同期: code-review の版マーカー定数（publish-review-event.sh の SCHEMA_MARKERS）が
@@ -1112,23 +1115,18 @@ def check_allowed_tools_minimality(plugin_dir: Path, warnings: list[str]) -> Non
                 warnings.append(f"[minimality:{name}] 未使用候補 '{tool}'（frontmatter 宣言だが本文に言及なし）: {rel}")
 
 
-def _hook_script_paths(plugin_dir: Path, events: tuple[str, ...] | None) -> list[Path]:
-    """hooks.json から指定イベントの hook スクリプトパスを解決する（args[] / legacy command 両対応）.
-
-    events=None で全イベントを対象にする. 同一スクリプトの重複参照は 1 回に dedup する.
-    """
+def _hook_script_decls(plugin_dir: Path, events: tuple[str, ...] | None):
+    """hooks.json の宣言から `.sh` 参照を (宣言文字列, 解決先) で順に返す（**実在は見ない**）."""
     hooks_json = plugin_dir / "hooks" / "hooks.json"
     if not hooks_json.is_file():
-        return []
+        return
     try:
         data = json.loads(read_text(hooks_json))
     except json.JSONDecodeError:
-        return []  # JSON 破損は schema 検証（validate_ssot）の領分
+        return  # JSON 破損は schema 検証（validate_ssot）の領分
     hooks = data.get("hooks", {})
     if not isinstance(hooks, dict):
-        return []
-    scripts: list[Path] = []
-    seen: set[Path] = set()
+        return
     for event in (events if events is not None else tuple(hooks.keys())):
         entries = hooks.get(event, [])
         if not isinstance(entries, list):
@@ -1141,11 +1139,42 @@ def _hook_script_paths(plugin_dir: Path, events: tuple[str, ...] | None) -> list
                 for c in candidates:
                     if not c.endswith(".sh"):
                         continue
-                    script = plugin_dir / c.replace("${CLAUDE_PLUGIN_ROOT}/", "")
-                    if script.is_file() and script not in seen:
-                        seen.add(script)
-                        scripts.append(script)
+                    yield c, plugin_dir / c.replace("${CLAUDE_PLUGIN_ROOT}/", "")
+
+
+def _hook_script_paths(plugin_dir: Path, events: tuple[str, ...] | None) -> list[Path]:
+    """hooks.json から指定イベントの hook スクリプトパスを解決する（args[] / legacy command 両対応）.
+
+    events=None で全イベントを対象にする. 同一スクリプトの重複参照は 1 回に dedup する.
+    **実在しない参照はここで落ちる** — 宣言と実体のずれは `check_hook_script_refs` が error にする.
+    """
+    scripts: list[Path] = []
+    seen: set[Path] = set()
+    for _raw, script in _hook_script_decls(plugin_dir, events):
+        if script.is_file() and script not in seen:
+            seen.add(script)
+            scripts.append(script)
     return scripts
+
+
+def check_hook_script_refs(plugin_dir: Path, errors: list[str]) -> None:
+    """hooks.json が参照する `.sh` が実在すること（GitHub issue #176）.
+
+    実在しない参照は `_hook_script_paths` が**黙って落とす**ので、パスのタイポや
+    スクリプトの移動で `check_hooks_safety`（safe_hook_init 必須）と
+    `check_hook_self_judgement`（自己判定）が無言で対象ゼロになる。
+    hook は配布されたまま、検査だけが消える型なのでここで止める.
+    """
+    name = plugin_dir.name
+    for raw, script in _hook_script_decls(plugin_dir, None):
+        if script.is_file():
+            continue
+        try:
+            shown = script.relative_to(ROOT)
+        except ValueError:
+            shown = script
+        errors.append(
+            f"[hook-ref:{name}] hooks.json が参照するスクリプトが無い: {raw} → {shown}")
 
 
 def check_hook_self_judgement(plugin_dir: Path, warnings: list[str]) -> None:
@@ -1284,6 +1313,7 @@ CHECKS = [
     check_allowed_tools_exists,
     check_allowed_tools_pair,
     check_hooks_safety,
+    check_hook_script_refs,
     check_safe_hook_sync,
     check_references,
     check_doc_anchors,
@@ -1352,8 +1382,15 @@ def check_agent_sync_launch_repo_local(warnings: list[str]) -> None:
 
 
 def resolve_plugins(args: list[str]) -> list[Path]:
+    """引数のプラグイン名 / パスを解決する（引数なしなら全プラグイン）.
+
+    **相対パスは CWD ではなく ROOT 基準で解く**（GitHub issue #176）: CWD 相対だと
+    リポジトリ外から `validate_plugin_quality.py code-review` を起動したときに
+    存在しないディレクトリへ解決され、**プラグイン別検査を 1 つも走らせずに passed** になる.
+    """
     if args:
-        return [Path(a).resolve() for a in args]
+        return [Path(a).resolve() if Path(a).is_absolute() else (ROOT / a).resolve()
+                for a in args]
     return sorted(p.parent.parent for p in ROOT.glob("*/.claude-plugin/plugin.json"))
 
 
@@ -1376,6 +1413,9 @@ def main() -> int:
     warnings: list[str] = []
     for plugin_dir in plugins:
         if not (plugin_dir / ".claude-plugin" / "plugin.json").is_file():
+            # **黙って飛ばさない**（GitHub issue #176）: 綴り間違いや別 cwd からの起動で
+            # 「検査を 1 つも走らせずに passed」になる。指定したのに見つからないのは違反
+            errors.append(f"[args] 指定されたプラグインが無い（plugin.json を見つけられない）: {plugin_dir}")
             continue
         for check in CHECKS:
             check(plugin_dir, errors)

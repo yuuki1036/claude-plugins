@@ -1169,5 +1169,108 @@ class VersionBaseTest(unittest.TestCase):
         self.assertEqual(self._base_with_env("origin/main"), "origin/main")
 
 
+class HookScriptRefsTest(unittest.TestCase):
+    """hooks.json が参照する `.sh` の実在検査（GitHub issue #176）.
+
+    実在しない参照は解決側が黙って落とすので、パスのタイポやスクリプト移動で
+    hooks 安全性 / hook 自己判定の検査が**無言で対象ゼロ**になる（hook は配布された
+    ままで検査だけ消える）。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+        (self.plugin / "hooks" / "scripts").mkdir(parents=True)
+
+    def _hooks_json(self, script_ref: str) -> None:
+        _write(self.plugin, "hooks/hooks.json", json.dumps({
+            "hooks": {"SessionStart": [{"hooks": [
+                {"type": "command", "command": "bash", "args": [script_ref]}]}]}}))
+
+    def _script(self, rel: str) -> None:
+        _write(self.plugin, rel, "#!/usr/bin/env bash\nsource lib/safe-hook.sh\n")
+
+    def test_an_existing_reference_is_accepted(self):
+        self._hooks_json("${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ok.sh")
+        self._script("hooks/scripts/ok.sh")
+        errors: list[str] = []
+        v.check_hook_script_refs(self.plugin, errors)
+        self.assertEqual(errors, [])
+
+    def test_a_missing_reference_is_an_error(self):
+        self._hooks_json("${CLAUDE_PLUGIN_ROOT}/hooks/scripts/gone.sh")
+        errors: list[str] = []
+        v.check_hook_script_refs(self.plugin, errors)
+        self.assertEqual(len(errors), 1, "実在しない参照を黙って落としている")
+        self.assertIn("gone.sh", errors[0])
+
+    def test_a_renamed_script_is_caught(self):
+        """スクリプトを改名すると宣言だけが残る（この型が検査を無言で消す）."""
+        self._hooks_json("${CLAUDE_PLUGIN_ROOT}/hooks/scripts/old-name.sh")
+        self._script("hooks/scripts/new-name.sh")
+        errors: list[str] = []
+        v.check_hook_script_refs(self.plugin, errors)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("old-name.sh", errors[0])
+
+    def test_the_legacy_command_form_is_also_checked(self):
+        """`command: "bash <path>"` の旧記法も対象（新旧が混在している）."""
+        _write(self.plugin, "hooks/hooks.json", json.dumps({
+            "hooks": {"SessionStart": [{"hooks": [
+                {"type": "command",
+                 "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/gone.sh"}]}]}}))
+        errors: list[str] = []
+        v.check_hook_script_refs(self.plugin, errors)
+        self.assertEqual(len(errors), 1)
+
+    def test_a_plugin_without_hooks_is_silent(self):
+        errors: list[str] = []
+        v.check_hook_script_refs(self.root / "no-hooks", errors)
+        self.assertEqual(errors, [])
+
+
+class ResolvePluginsTest(unittest.TestCase):
+    """引数のプラグイン解決（GitHub issue #176）.
+
+    CWD 相対で解くと、リポジトリ外から起動したときに存在しないパスへ解決され、
+    **プラグイン別検査を 1 つも走らせずに passed** になる。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self._cwd = os.getcwd()
+        self.addCleanup(lambda: os.chdir(self._cwd))
+
+    def test_a_relative_name_resolves_against_the_repo_not_the_cwd(self):
+        (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
+        other = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: other.rmdir())
+        os.chdir(other)
+        self.assertEqual(v.resolve_plugins(["demo"]), [self.root / "demo"])
+
+    def test_an_absolute_path_is_kept(self):
+        (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
+        target = self.root / "demo"
+        self.assertEqual(v.resolve_plugins([str(target)]), [target])
+
+    def test_no_arguments_lists_every_plugin(self):
+        for name in ("alpha", "beta"):
+            d = self.root / name / ".claude-plugin"
+            d.mkdir(parents=True)
+            (d / "plugin.json").write_text("{}", encoding="utf-8")
+        self.assertEqual(v.resolve_plugins([]),
+                         [self.root / "alpha", self.root / "beta"])
+
+
 if __name__ == "__main__":
     unittest.main()
