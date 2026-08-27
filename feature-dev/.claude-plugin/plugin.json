@@ -1,6 +1,6 @@
 {
   "name": "feature-dev",
-  "version": "2.11.6",
+  "version": "2.11.7",
   "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。code-explorer / code-architect の 2 agent を内包し、型・テスト・lint の決定的オラクルゲートを高コストレビューの前に置く。Phase 6 は code-review:self-review へ --embed 委譲する。",
   "_requirements": [
     {

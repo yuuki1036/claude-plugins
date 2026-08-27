@@ -3,6 +3,7 @@ name: discover
 description: >
   プロジェクトを AI が多観点でスキャンし、取り組むべき課題（バグ・未実装機能・技術的負債）を発見して issue として自動起票する。優先度上位を起票し、残りは backlog に蓄積する。
   トリガー: 「課題を見つけて」「issue を自動で作って」「やることを洗い出して」「バグを探して起票」「タスク発掘」「何かやることない？」「課題発見」「/discover」
+effort: high
 allowed-tools:
   - Read
   - Write

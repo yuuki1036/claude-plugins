@@ -201,7 +201,7 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
   ],
   "preservedConstraints": [
     {
-      "id": "indie-workflow/SKILL.md/scope-size-warning",
+      "id": "issue-workflow/SKILL.md/scope-size-warning",
       "reason": "プロジェクト固有のドメインルール",
       "at": "2026-04-22"
     }

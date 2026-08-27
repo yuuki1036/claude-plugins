@@ -39,7 +39,7 @@ Issue 粒度の `issue-design` は `issue-workflow:issue-design` を起動する
 
 ## signal → 軸
 
-共有 3 軸コア（正本: `.claude-plugin/lib/routing-axes.md`。issue-create（linear/indie）と同期・quality-check が検証）:
+共有 3 軸コア（正本: `.claude-plugin/lib/routing-axes.md`。issue-workflow の issue-create と同期・quality-check が検証）:
 
 <!-- ROUTING-AXES:START -->
 | 軸 | シグナル | 委譲先 | 出力先 |

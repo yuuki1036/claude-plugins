@@ -21,7 +21,7 @@ marketplace エントリに `_superseded_by: "<後継名>"` を持つ deprecated
 2. 後継プラグインを install（既に install 済みなら uninstall のみ = 併存解消）
 3. 後継の install 失敗時は旧プラグインを再 install してロールバック
 
-併存が禁止されているプラグイン群（hook 二重発火・トリガー衝突）を中間状態なしで入れ替えるための機構。`~/.claude/plugin-manager/config.json` の `auto_migrate: false` で無効化できる。
+併存が禁止されているプラグイン群（hook 二重発火・トリガー衝突）を中間状態なしで入れ替えるための機構。`~/.claude/plugin-manager/config.json` の `auto_migrate: false` で無効化できる（既定は有効）。
 
 ## SessionStart 通知
 

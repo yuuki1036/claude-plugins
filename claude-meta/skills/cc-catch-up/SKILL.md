@@ -216,7 +216,7 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
     {"id": "dev-workflow/rules/no-grep-bash", "category": "C-1", "reason": "...", "at": "2026-03-29"}
   ],
   "preservedConstraints": [
-    {"id": "indie-workflow/SKILL.md/scope-size-warning", "reason": "...", "at": "2026-03-29"}
+    {"id": "issue-workflow/SKILL.md/scope-size-warning", "reason": "...", "at": "2026-03-29"}
   ]
 }
 ```

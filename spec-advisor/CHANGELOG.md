@@ -2,6 +2,14 @@
 
 spec-advisor の変更履歴。[Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) 形式、[SemVer](https://semver.org/lang/ja/) に従う。
 
+## [0.1.6] - 2026-08-28
+
+### Fixed
+
+- **doc と実装の乖離を掃引した**（GitHub issue #185）。旧 linear-workflow / indie-workflow の
+  死んだ参照の張り替え、README が実装と食い違っていた記述（欠落していた表の行・設定キー・
+  引数・エラー文言）の訂正が主な内容。挙動の変更は無い
+
 ## [0.1.5] - 2026-08-17
 
 ### Changed

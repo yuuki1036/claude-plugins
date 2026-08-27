@@ -173,6 +173,9 @@ Claude Code の hook を **Pub/Sub Message Bus** として運用するための�
 
 - イベントログ: `.claude/events.jsonl`（プロジェクトローカル、gitignored、JSON Lines 形式）
 - 1 行 = 1 イベント: `{"ts":"<ISO8601>","plugin":"<name>","event":"<name>","payload":<obj>}`
+- `plugin` は `SAFE_HOOK_NAME` がそのまま入る。hook 系は `dev-workflow:on-commit` のような
+  `<plugin>:<hook>` 複合値、skill / command 系は素のプラグイン名になる（書式は publisher 依存）。
+  **subscriber 側はプラグイン名の完全一致で絞らない** — 前方一致か event 名で絞る
 
 ### API（`safe-hook.sh` に含まれる）
 

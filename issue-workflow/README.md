@@ -31,6 +31,27 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 | dashboard | Linear プロジェクトのダッシュボード表示（linear backend 専用） |
 | linear-maintain | Linear MCP と同期してローカル管理ファイルを最新化（linear backend 専用） |
 
+## agents
+
+スキルから起動される内包 agent（単体では起動しない）。
+
+| agent | 役割 |
+|--------|------|
+| code-context | Issue が言及するソースの現状と Git ブランチの作業状態を収集 |
+| doc-resolver | Issue の参照リンクを辿って関連ドキュメントを読み込む |
+| discover-verifier | discover の起票候補を、発見者の推論を渡さず独立にコードから検証する |
+| linear-sync | Linear API から最新情報を取得しローカル Issue との差分を検出（linear backend 専用） |
+
+## hooks
+
+| イベント | スクリプト | 動作 |
+|---|---|---|
+| SessionStart / PostCompact | `inject-rules.sh` | backend を判定し、プロジェクト管理ルール・knowledge インデックス・**7 日以上更新の無い in-progress Issue** を注入する（backend 衝突時は解消手順のみ） |
+| UserPromptSubmit（once） | `set-session-title.sh` | feature ブランチ名から Issue ID を拾い、セッション名を `<ID>: <title>` にする |
+| PostToolUse | `check-scope-size.sh` | Issue 編集時にチェックリスト数が `scope_size` 上限を超えたら警告 |
+| FileChanged | `on-issue-change.sh` / `on-knowledge-change.sh` | 外部変更を通知し、status が completed に遷移したら `issue:completed` を publish |
+| SessionStart | `check-deps.sh` | 依存（Linear MCP 等）の充足を確認 |
+
 ## 主な機能
 
 - 放置 Issue 検知・スコープ管理（`scope_size`: small 3 / medium 7 / large 15。超過はリアルタイム警告）

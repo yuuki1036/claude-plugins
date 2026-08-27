@@ -5,10 +5,11 @@ BDD spec 駆動の scaffold プラグイン。user story ディレクトリ + ep
 ## 使い方
 
 ```
-/bdd-spec-create
+/bdd-spec-create                                                    # 対話ヒアリング
+/bdd-spec-create role=契約管理者 want=契約書を一括承認 why=月末処理短縮   # 非対話（ヒアリング skip）
 ```
 
-ヒアリングで `{role}` / `{want}` / `{why}` を入力すると、以下が生成される:
+ヒアリングで `{role}` / `{want}` / `{why}` を入力すると（または上の key=value で渡すと）、以下が生成される:
 
 ```
 features/
@@ -25,9 +26,13 @@ Windows MAX_PATH や CI 環境向けに **短縮モード**を切り替え可能
 ```json
 // .claude/bdd-spec.json
 {
-  "shortPath": true
+  "shortPath": true,
+  "featuresDir": "features",
+  "language": "ja"
 }
 ```
+
+`featuresDir` は spec の配置先（既定 `features`）、`language` は生成言語（既定 `ja`）。
 
 - `shortPath: false`（デフォルト）: `features/Userは、{role}として、{want}したい/`
 - `shortPath: true`: `features/{role}-{verb}-{object}/`
@@ -62,6 +67,7 @@ scaffold した spec を埋めた後、`bdd-spec-evaluate` で 5 観点の静的
 ```
 /bdd-spec-evaluate                          # features/*/spec.md を選択して評価
 /bdd-spec-evaluate features/{story}/spec.md # 対象を明示
+/bdd-spec-evaluate spec=features/{story}/spec.md --embed  # 他プラグインからの非対話委譲（feature-dev Phase 1.4）
 ```
 
 - **Gherkin 構文妥当性**（機械・ファネル第 1 段）: Feature / Scenario の Given-When-Then 構造・Scenario Outline の Examples・プレースホルダ対応

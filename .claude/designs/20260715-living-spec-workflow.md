@@ -424,7 +424,7 @@ Issue 1-6 は**全て実装完了**（Issue 5 は分解粒度の注記どおり 
 - 関連 Issue: [#87 living spec 運用の仕組み化（新規プラグイン）](https://github.com/yuuki1036/claude-plugins/issues/87)
 - 関連 spec: なし（振る舞い仕様は本 doc の「採用案」が兼ねる）
 - 関連 ADR: 未切り出し（`[→ADR候補]` 2 件）
-- 関連 design doc: [20260708-spec-routing-ssot.md](.claude/designs/20260708-spec-routing-ssot.md)（spec ルーティングの 3 軸と、未解決事項 4 の spec-advisor 連携で接続しうる）
+- 関連 design doc: [[20260708-spec-routing-ssot]]（spec ルーティングの 3 軸と、未解決事項 4 の spec-advisor 連携で接続しうる）
 - 踏襲元: `adr-keeper/skills/adr/SKILL.md`（append-only / 採番 / supersede 思想）
 - 委譲先: `doc-freshness/skills/doc-freshness/references/frontmatter-spec.md`（ファイル単位の鮮度契約）
 - 回避対象: `linear-workflow/skills/linear-maintain/SKILL.md:63,94`（projects/ の上書き・削除）

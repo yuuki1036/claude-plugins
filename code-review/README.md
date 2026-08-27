@@ -68,6 +68,8 @@ diff の特性を分析し、エージェント構成を動的に決定する。
 | branch-impact | 条件分岐の既存動作と新条件の影響調査 |
 | history-context | git blame/履歴による文脈収集 |
 | shared-module-impact | 共通モジュールの影響範囲調査 |
+| value-flow-trace | 層をまたぐ値の流れ追跡（cross-layer。triage-guide が最優先とする一級 focus） |
+| re-explore | Round 2 の追加探索（unmet_information 起点で不足箇所だけを埋める） |
 
 ### レビューフェーズ: reviewer（2-10 体 / high 既定は上限 6・冗長ペアなし）
 
@@ -91,6 +93,7 @@ diff の特性を分析し、エージェント構成を動的に決定する。
 | pattern-consistency | 変更ファイル数 ≥ 10 |
 | spec-compliance | Issue/knowledge が存在する時 |
 | ui-quality | UI/フロントエンドの変更時 |
+| doc-substance | 高価値 doc（CLAUDE.md / ADR / design doc / README）の prose 変更、または実質 prose 変更が概ね 10 行以上のとき |
 
 React/Next.js プロジェクトでは ui-quality に modern-web-checklist の観点が自動追加される。
 
@@ -103,7 +106,10 @@ React/Next.js プロジェクトでは ui-quality に modern-web-checklist の�
 - **Phase 5.5 Adaptive deepening**: reviewer の `unmet_information` 申告をトリガーに Round 2 を 1 回実行（high 既定は該当 reviewer 再起動のみの 1 段圧縮・再起動 reviewer が自力探索 / xhigh・max は追加 explorer → reviewer 再起動の 2 段）
 - **Phase 5.6 Meta-reviewer**: BLOCKER / CRITICAL 検出時、または報告見込みの MAJOR が 3 件以上あるときに、他 reviewer の見落とし観点を探すメタレビューを 1 ラウンド実行（effort xhigh/max のみ）。**反証レイヤー (Phase 5.9) と同一 wave で発行**し、meta が足した指摘だけを上限 5 件の追加反証バッチに回す（v2.61.0）。MAJOR 経路は v2.62.0 で追加 — 高 severity の存在だけを条件にしていた旧ゲートは実測 14 件中 1 回しか起動せず、価値率を測るサンプルすら貯まらなかった
 
-どちらも `plugin.json` の userConfig（`enable_adaptive_rounds` / `enable_meta_reviewer`）で無効化できる。
+- **Phase 5.8 冷や読み skeptic**: high-risk surface（DB 書込 / 金銭・数量 / 認可）を含む変更に限り、findings を渡さない独立 reviewer を 1 体起動して fleet 共通の盲点を探す（effort xhigh/max）。reviewer wave に相乗りで発火する（findings 非注入なので reviewer 出力に依存しない）
+- **Phase 5.9 反証レイヤー**: reviewer の指摘を独立エージェントが 5 件ずつのバッチで反証し、偽陽性を先回りで摘出する（effort high 以上）。**高 severity は消さず係争注記**にとどめ、MAJOR 以下のみ取り下げる
+
+いずれも `plugin.json` の userConfig（`enable_adaptive_rounds` / `enable_meta_reviewer` / `enable_adversarial_verify` / `enable_recall_skeptic`）で無効化できる。
 
 ## severity × confidence の 2 軸スコアリング
 
@@ -140,6 +146,8 @@ confidence は explorer の裏付け（+10）・冗長ペア合意（+10）・CL
 | `review_confidence_threshold` | `80` | CRITICAL 以下の最低 confidence（後方互換のため残置） |
 | `enable_adaptive_rounds` | `true` | Phase 5.5 Round 2（adaptive deepening）の有効化 |
 | `enable_meta_reviewer` | `true` | Phase 5.6 meta-reviewer ラウンドの有効化 |
+| `enable_adversarial_verify` | `true` | Phase 5.9/4.9 反証レイヤーの有効化（effort high 以上で動作） |
+| `enable_recall_skeptic` | `true` | Phase 5.8/4.8 冷や読み skeptic の有効化（effort xhigh/max で動作） |
 
 ## Event Bus 連携
 

@@ -54,6 +54,6 @@ CLAUDE.md に書いたルールが守られていない事象が以下いずれ�
 
 | 検査案 | 実測 | 記録 |
 |---|---|---|
-| 公開記録（issue 本文）の典拠パス実在検証 | 4 述語すべて真陽性 0 / 発火率 34〜100% | `.claude/adr/20260817120000-citation-guard-not-mechanizable.md` |
+| 公開記録（issue 本文）の典拠パス実在検証 | 5 述語すべて真陽性 0 / 発火率 19〜86% | `.claude/adr/20260817120000-citation-guard-not-mechanizable.md` |
 | 版ラベルの追随漏れ検出 | 6/6 偽陽性 | `code-review/references/design-notes/pending-optimizations.md` `## 9` |
 | 未リリース版を参照している行の検出 | 429 件中 147 件（34%）が偽陽性 | 同上 |

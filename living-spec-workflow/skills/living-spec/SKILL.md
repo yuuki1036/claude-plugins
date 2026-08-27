@@ -29,7 +29,7 @@ Issue 化する前段の「設計収束ドキュメント」(living spec) を `.
 | Issue 1 件の作業設計（9 セクション） | `issue-workflow:issue-design` |
 | 設計から実装まで一気通貫で進める | `feature-dev` |
 
-> living spec で確度が `確定` に寄った塊ができたら、それを Issue 化する。living spec 側からプラグインは呼ばない（疎結合）。ユーザーが `/issue-create` / `/indie-issue-create` に手で渡す。
+> living spec で確度が `確定` に寄った塊ができたら、それを Issue 化する。living spec 側からプラグインは呼ばない（疎結合）。ユーザーが `/issue-create`（issue-workflow）に手で渡す。
 
 ## 参照する規範（references）
 
@@ -315,7 +315,7 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    ```
 4. **セッション再開の導線**として、open な OQ と `未定` / `方向性(仮)` の項目を提示する。ここが「新規セッションで living spec の未確定から再開する」ゴールの実装
 
-> 確定した塊ができていたら、報告の末尾に「確定した項目が <n> 件あります。Issue 化するなら `/issue-create` / `/indie-issue-create` に渡してください」と添える。**living spec 側からプラグインは呼ばない**（疎結合）。
+> 確定した塊ができていたら、報告の末尾に「確定した項目が <n> 件あります。Issue 化するなら `/issue-create` に渡してください」と添える。**living spec 側からプラグインは呼ばない**（疎結合）。
 
 ---
 

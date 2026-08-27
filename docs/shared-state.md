@@ -22,10 +22,14 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 
 | type | 配置 | producer | 主な consumers | 永続性 |
 |---|---|---|---|---|
-| `session` | `.claude/session-context.md` | issue-workflow | code-review / feature-dev / dev-workflow | セッション単位（gitignored） |
-| `follow-up` | `.claude/{linear\|indie}/{slug}/follow-ups/*.md` | issue-workflow | dashboard / issue-maintain | 永続（committed） |
-| `knowledge` | `.claude/{linear\|indie}/{slug}/knowledge/**/*.md` | issue-workflow | knowledge / knowledge-lint / start (related mode) | 永続（committed）。knowledge は共通契約フィールドではなくドメイン固有 frontmatter（kind/status/verified/updated/tags）で代替し、consumer 側も契約フィールド（shared_state_type 等）を読まない |
+| `session` | `.claude/session-context.md` | issue-workflow | code-review | セッション単位（gitignored） |
+| `follow-up` | `{DATA_DIR}/{slug}/follow-ups/*.md` | issue-workflow | issue-workflow（dashboard / issue-maintain） | 永続（committed） |
+| `knowledge` | `{DATA_DIR}/{slug}/knowledge/**/*.md` | issue-workflow | issue-workflow（knowledge / knowledge-lint / start） | 永続（committed）。knowledge は共通契約フィールドではなくドメイン固有 frontmatter（kind/status/verified/updated/tags）で代替し、consumer 側も契約フィールド（shared_state_type 等）を読まない |
 | `event-cache` | （予約。events.jsonl の集計結果キャッシュ用） | - | - | - |
+
+`{DATA_DIR}` は backend で決まる（local: `.claude/indie` / linear: `.claude/linear`）。
+issue-workflow の backend 分岐規約に合わせた表記で、consumers は**プラグイン名**で書く
+（frontmatter の `consumers` がプラグイン名を取るため。括弧内は主に読む skill）。
 
 ## Producer の責務
 
@@ -41,11 +45,14 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 
 ## 設計判断: なぜ frontmatter？なぜ flat な `.claude/shared/` に移行しない？
 
-- 既存ファイルは **slug-scoped** な構造（`.claude/{workflow}/{slug}/knowledge/`）を持っており、flat 移行は 30+ 箇所のパス参照書き換えが必要でリスク高
+- 既存ファイルは **slug-scoped** な構造（`.claude/{workflow}/{slug}/knowledge/`）を持っており、flat 移行は 100+ 箇所のパス参照書き換えが必要でリスク高（2026-08 実測 114 箇所）
 - frontmatter 規約だけなら配置はそのままで producer/consumer を明示でき、移行コストが極小
 - 必要性が顕在化したタイミング（例: cross-plugin で同名ファイル衝突が頻発したら）に flat 移行を再検討する
 
 ## Gotcha
 
 - session-context.md は **gitignored** なので frontmatter 不在のまま動くケースがある。consumer は frontmatter 必須を前提にしない
-- follow-up / knowledge は **committed** なので新規ファイルは frontmatter 付き必須。既存ファイルは移行されるまで knowledge-lint で warning
+- follow-up は **committed** なので新規ファイルは frontmatter 付き必須
+- **knowledge に共通契約フィールドの検査は無い**（GitHub issue #185）。`knowledge-lint` の 9 項目は
+  broken link / 孤立知見 / index 不整合 / tags 表記ゆれ / 重複概念を見るもので、`shared_state_type` 等は
+  対象外。上表のとおり knowledge はドメイン固有 frontmatter で代替する設計なので、これは欠落ではなく仕様

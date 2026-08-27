@@ -50,7 +50,7 @@
 
 ## 他プラグインとの連携（soft 委譲）
 
-`pr-creator` / `git-commit-helper` / `issue-design`（linear / indie）が、本文をユーザー提示する直前に `--embed` 付きで writing-polish を呼べる。writing-polish 未インストール時は各プラグインは従来どおり動作する（dormant・後方互換）。
+`pr-creator` / `git-commit-helper` / `issue-design`（issue-workflow）が、本文をユーザー提示する直前に `--embed` 付きで writing-polish を呼べる。writing-polish 未インストール時は各プラグインは従来どおり動作する（dormant・後方互換）。
 
 ## ライセンス
 

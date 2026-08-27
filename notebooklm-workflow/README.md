@@ -75,7 +75,7 @@ SessionStart 時に以下が表示された場合：
 
 ```
 - [ERROR] notebooklm-mcp-cli ... がインストールされていません
-- [ERROR] NotebookLM MCP サーバー（notebooklm-mcp）が設定されていません
+- [ERROR] NotebookLM MCP サーバー（notebooklm-mcp）が起動できません（nlm バイナリが PATH 上に見つかりません）
 ```
 
 → セットアップ手順 1〜3 を再確認。

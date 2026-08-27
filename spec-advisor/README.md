@@ -11,7 +11,7 @@
 | WHAT | ユーザー可視な振る舞い・受け入れ条件 | `bdd-spec:create-spec` |
 | HOW | 技術方式の選定・代替案比較（面の設計） | `design-doc:design-doc` |
 | WHY | 単一の重要な設計判断（点の記録） | `adr-keeper:adr` |
-| Issue 粒度 | 1 Issue の作業設計（9 セクション） | `issue-design`（linear / indie） |
+| Issue 粒度 | 1 Issue の作業設計（9 セクション） | `issue-design`（issue-workflow） |
 | 実装一気通貫 | 設計から実装まで進める | `feature-dev` |
 
 判定の正本は [`skills/spec-advise/references/routing-rubric.md`](skills/spec-advise/references/routing-rubric.md)。

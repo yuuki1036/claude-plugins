@@ -8,7 +8,7 @@
 /design-doc 決済リトライ基盤の設計      # 新規作成（grill → 代替案比較 → 永続化）
 /design-doc list                        # 一覧表示（id 降順）
 /design-doc supersede <old-id> <title>  # 方式転換（旧 doc は superseded として残す）
-/design-doc export title=... content=... # 他プラグイン連携用の非対話書き出し
+/design-doc mode=export title=... content=... # 他プラグイン連携用の非対話書き出し（先頭語 export も後方互換で受理）
 /design-review [doc-id] [--focus <視点>] # 複数視点の静的レビュー（実装前の品質ゲート）
 ```
 

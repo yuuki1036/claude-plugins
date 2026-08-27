@@ -52,7 +52,7 @@
 | 6 | Quality Review | code-review:self-review に委譲 + 致命指摘を自動 fix |
 | 7 | Summary | 成果のサマリ + イベント発行 |
 
-> Phase 1.3 / 1.6 / 4.5 は連携先プラグイン（または外部 CLI）が無ければ完全に skip される dormant な連携。後方互換を壊さない。
+> Phase 1.3 / 1.4 / 1.6 / 4.5 は連携先プラグイン（または外部 CLI）が無ければ完全に skip される dormant な連携。後方互換を壊さない。
 
 ### Phase 1: Discovery
 
@@ -62,7 +62,11 @@
 
 `bdd-spec` プラグインがインストールされている場合のみ、Phase 1 直後に BDD `spec.md`（Feature / Scenario / Examples / 同値分割表）を生成し、Phase 4 architect の **authoritative requirements** として使う。`bdd-spec:create-spec` を非対話 API（`role` / `want` / `why` / `shortPath`）で呼ぶ。未インストール時は skip し、既存の Issue 解釈フローに fallback する。
 
-### Phase 1.5: Issue Context Detection（linear / indie 連携）
+### Phase 1.4: BDD Spec Evaluation（bdd-spec 連携 / dormant）
+
+Phase 1.3 で spec を生成したときだけ、`bdd-spec:evaluate-spec` に `spec=<path>` + `--embed` で品質ゲートを委譲する（5 観点の静的レビュー）。Phase 1.3 が skip された（bdd-spec 未インストール /spec 未生成）場合は Phase 1.5 へ進む。
+
+### Phase 1.5: Issue Context Detection（issue-workflow 連携）
 
 `Issue ファイル:` パスや `feature_dev_plan:` frontmatter を検出すると、issue-workflow からの引き継ぎ context を読み込む。Issue context が完備なら Phase 1.7 に「explorer 0 体」を信号して Phase 2 を実質 skip し、context を Phase 4 architect に直接渡す。
 
