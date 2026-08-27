@@ -48,15 +48,33 @@ esac
 CONFIG="${PROJECT_DIR}/.claude/doc-freshness.json"
 DEFAULT_TARGETS=".claude/designs/ .claude/adr/ .claude/living-specs/"
 TARGETS="$DEFAULT_TARGETS"
-if [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
-  # **`// true` を使わない**: jq の `//` は左辺が `false` でも「無い」扱いにするので、
-  # `postToolUseCheck: false` が既定の true に化けて **opt-out が効かなくなる**。
-  # 素で読んで文字列比較する（キーが無ければ jq は "null" を返す＝有効のまま）
-  if [ "$(jq -r '.postToolUseCheck' "$CONFIG" 2>/dev/null)" = "false" ]; then
-    safe_hook_error Validation "postToolUseCheck disabled by config"
+if [ -f "$CONFIG" ]; then
+  if command -v jq >/dev/null 2>&1; then
+    # **`// true` を使わない**: jq の `//` は左辺が `false` でも「無い」扱いにするので、
+    # `postToolUseCheck: false` が既定の true に化けて **opt-out が効かなくなる**。
+    # 素で読んで文字列比較する（キーが無ければ jq は "null" を返す＝有効のまま）
+    if [ "$(jq -r '.postToolUseCheck' "$CONFIG" 2>/dev/null)" = "false" ]; then
+      safe_hook_error Validation "postToolUseCheck disabled by config"
+    fi
+    CUSTOM=$(jq -r '.hookTargets[]? // empty' "$CONFIG" 2>/dev/null | tr '\n' ' ' || true)
+    [ -n "$CUSTOM" ] && TARGETS="$CUSTOM"
+  else
+    # **jq が無くても設定を無視しない**（GitHub issue #181）: 以前は設定の読み込み全体を
+    # jq の有無で囲っていたため、**`postToolUseCheck: false` も `hookTargets` も無言で
+    # 無視されて既定のまま動き続けた**（利用者が opt-out したつもりで警告が出続ける）。
+    #
+    # opt-out は最優先で尊重する。JSON の入れ子は grep では読めないが、真偽値 1 個の
+    # 判定に限れば行の形は事実上 1 通りなので取りこぼさない
+    if grep -qE '"postToolUseCheck"[[:space:]]*:[[:space:]]*false' "$CONFIG"; then
+      safe_hook_error Validation "postToolUseCheck disabled by config (jq 不在のため grep で判定)"
+    fi
+    # `hookTargets` は配列なので grep では正しく読めない。**宣言されているのに読めない
+    # ときは既定の広い対象で走らせない** — 利用者が対象を絞っているのに既定で警告するのは
+    # 誤警告そのもので、「⚠️ が出たときだけ行動する」契約を壊す
+    if grep -q '"hookTargets"' "$CONFIG"; then
+      safe_hook_error Dependency "hookTargets is configured but jq is unavailable"
+    fi
   fi
-  CUSTOM=$(jq -r '.hookTargets[]? // empty' "$CONFIG" 2>/dev/null | tr '\n' ' ' || true)
-  [ -n "$CUSTOM" ] && TARGETS="$CUSTOM"
 fi
 
 # 対象 prefix 配下か判定（そうでなければ no-op）

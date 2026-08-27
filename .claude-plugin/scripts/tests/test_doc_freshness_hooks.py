@@ -97,6 +97,44 @@ class FrontmatterGuardTest(HookTestCase):
             self.assertFired(self._run(root, self._doc(root, "docs/a.md", "# a\n")))
             self.assertSilent(self._run(root, self._doc(root, ".claude/designs/b.md", "# b\n")))
 
+    # --- `jq` が引けない環境（GitHub issue #181）--------------------------
+    def _run_without_jq(self, root: Path, p: Path):
+        return self.run_hook(self.payload(p), cwd=root,
+                             env_extra={"CLAUDE_PROJECT_DIR": str(root),
+                                        "PATH": self.path_with_only()})
+
+    def test_opt_out_is_honored_without_jq(self):
+        """`jq` が無くても `postToolUseCheck: false` は効く.
+
+        以前は設定の読み込み全体を `jq` の有無で囲っていたため、opt-out が**無言で
+        無視されて既定のまま動き続けた**（利用者は止めたつもりで警告が出続ける）。
+        """
+        with TempGitRepo() as root:
+            (root / ".claude").mkdir(exist_ok=True)
+            (root / ".claude" / "doc-freshness.json").write_text(
+                json.dumps({"postToolUseCheck": False}))
+            p = self._doc(root, ".claude/designs/x.md", "# 見出し\n")
+            self.assertSilent(self._run_without_jq(root, p))
+
+    def test_configured_targets_are_not_ignored_without_jq(self):
+        """`hookTargets` を読めないときは既定の広い対象で走らせない.
+
+        利用者が対象を絞っているのに既定で警告するのは誤警告そのもので、
+        「⚠️ が出たときだけ行動する」契約を壊す。
+        """
+        with TempGitRepo() as root:
+            (root / ".claude").mkdir(exist_ok=True)
+            (root / ".claude" / "doc-freshness.json").write_text(
+                json.dumps({"hookTargets": ["docs/"]}))
+            p = self._doc(root, ".claude/designs/x.md", "# 見出し\n")
+            self.assertSilent(self._run_without_jq(root, p))
+
+    def test_without_a_config_the_defaults_still_apply_without_jq(self):
+        """設定ファイルが無ければ従来どおり既定で走る（倒しすぎの禁止）."""
+        with TempGitRepo() as root:
+            p = self._doc(root, ".claude/designs/x.md", "# 見出し\n")
+            self.assertFired(self._run_without_jq(root, p), "frontmatter")
+
     def test_missing_file_is_silent(self):
         with TempGitRepo() as root:
             self.assertSilent(self._run(root, root / ".claude/designs/none.md"))

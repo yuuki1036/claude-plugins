@@ -69,7 +69,9 @@ class ValidateSsotTest(unittest.TestCase):
                     for n, m in sorted(self.plugins.items())
                 ],
             }, ensure_ascii=False, indent=2), encoding="utf-8")
-        index = ["| プラグイン | version | 説明 |", "|---|---|---|"]
+        # ヘッダの「プラグイン数」も派生情報として検証されるので fixture に持たせる
+        index = ["# INDEX", "", "- プラグイン数: %d" % len(self.plugins), "",
+                 "| プラグイン | version | 説明 |", "|---|---|---|"]
         index += ["| [%s](#%s) | %s | 説明 |" % (n, n, m["version"])
                   for n, m in sorted(self.plugins.items())]
         (self.root / "INDEX.md").write_text("\n".join(index) + "\n", encoding="utf-8")
@@ -268,6 +270,23 @@ class ValidateSsotTest(unittest.TestCase):
         self.assertDetects(self.run_ssot(), "requires 'command'")
 
     # ---- INDEX.md / CLAUDE.md ----------------------------------------------
+    def test_a_stale_plugin_count_in_the_index_header_is_detected(self):
+        """ヘッダの「プラグイン数」も派生情報として照合する（GitHub issue #184）.
+
+        一覧表の行だけを見ていたため、実リポジトリではヘッダが 19 のまま実体 17 で
+        2 ヶ月放置されていた。
+        """
+        index = (self.root / "INDEX.md").read_text(encoding="utf-8")
+        self.write("INDEX.md", index.replace("プラグイン数: 1", "プラグイン数: 99"))
+        self.assertDetects(self.run_ssot(), "ヘッダのプラグイン数が実体と違う")
+
+    def test_a_missing_plugin_count_line_is_detected(self):
+        """行ごと消して検査を無効化できないようにする（欠落を「違反なし」にしない）."""
+        index = (self.root / "INDEX.md").read_text(encoding="utf-8")
+        self.write("INDEX.md", "\n".join(
+            l for l in index.splitlines() if "プラグイン数" not in l) + "\n")
+        self.assertDetects(self.run_ssot(), "プラグイン数: N」の行が無い")
+
     def test_stale_index_version_is_detected(self):
         self.write("INDEX.md", "| [demo](#demo) | 0.0.1 | 説明 |\n")
         self.assertDetects(self.run_ssot(), "version mismatch")

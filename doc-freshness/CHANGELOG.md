@@ -2,6 +2,27 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.3] - 2026-08-28
+
+### Fixed
+
+- **`jq` が無い環境で設定が無言で無視されていたのを直した**（GitHub issue #181）。
+  `frontmatter-guard.sh` は設定の読み込み全体を `jq` の有無で囲っていたため、
+  **`postToolUseCheck: false`（opt-out）も `hookTargets` の上書きも無視され、hook は
+  既定のまま動き続けていた** — 利用者は止めたつもりで警告が出続ける。`stale-check.sh` は
+  `jq` 不在で明示的に skip しており、同一プラグイン内で扱いが非対称だった。
+  - opt-out は `jq` が無くても grep で尊重する（真偽値 1 個の判定なので取りこぼさない）
+  - `hookTargets` は配列を grep で正しく読めないため、**宣言されているのに読めないときは
+    既定の広い対象で走らせずに no-op** する（対象を絞っている利用者に既定で警告するのは
+    誤警告そのもので、「⚠️ が出たときだけ行動する」契約を壊す）
+- README の記述を実装に揃えた（同 issue）:
+  - hook 対象 dir の列挙から `.claude/living-specs/` が漏れていた（本文と表で矛盾）
+  - チェック表の phase 別 stale 判定が「error」固定だったのを `current` は warn /
+    `target` は error に訂正（本文側は正しかった）
+  - 設定例の `thresholds.current` が v0.5.0 で 60 に変えた前の値（5）のままだった
+  - 設定例・キー表に `hookTargets` / `postToolUseCheck` / `sessionStartCheck` を追加
+- `references/hook-config.md` に `jq` の有無で解釈の深さが変わる旨を明記
+
 ## [0.5.2] - 2026-08-17
 
 ### Fixed

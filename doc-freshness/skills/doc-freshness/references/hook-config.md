@@ -29,8 +29,14 @@ doc-freshness は手動走査（`/doc-freshness-check` スキル）に加えて�
 | `postToolUseCheck` | `true` | `false` で PostToolUse frontmatter 警告を無効化 |
 | `sessionStartCheck` | `false` | `true` で SessionStart の stale 一括警告を有効化（opt-in） |
 
-- stale 閾値（`thresholds.current` / `thresholds.target`）は skill と共有する（thresholds.md 参照）。
+- stale 閾値（`thresholds.current` / `thresholds.target`）は skill と共有する（thresholds.md 参照）。`stale-check.sh` は hook 側でもこの 2 キーを読む。
 - `hookTargets` を指定すると両 hook の対象がその配列で**置き換わる**（部分追加ではない）。
+- **`jq` の有無で解釈の深さが変わる**（GitHub issue #181）:
+  - `jq` あり — 上表のすべてを解釈する
+  - `jq` なし — `postToolUseCheck: false` の opt-out だけを grep で尊重する。`hookTargets` は
+    配列を正しく読めないため、**宣言されている場合は既定の対象で走らせずに no-op** する
+    （利用者が対象を絞っているのに既定の広い対象で警告するのは誤警告になるため）。
+    `stale-check.sh` は `jq` 不在で明示的に skip する（そちらは設定必須の opt-in なので）
 
 ## 対象範囲の設計判断
 

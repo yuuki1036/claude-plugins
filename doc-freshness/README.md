@@ -43,7 +43,7 @@ phase: current               # current | target | superseded
 | 1 | frontmatter 必須スキーマ（last-validated / phase） | error |
 | 2 | 行数上限（CLAUDE.md / AGENTS.md: 40 warn / 65 error） | warn / error |
 | 3 | internal link 検証（相対リンク先の実在） | error |
-| 4 | phase 別 stale 判定（`append_only: true` は免除） | error |
+| 4 | phase 別 stale 判定（`append_only: true` は免除） | `current` は warn / `target` は error |
 | 5 | superseded への active doc からの参照禁止 | error |
 | 6 | 新規 doc grace period（デフォルト 7 日。frontmatter 欠落は warn、他は info） | info / warn |
 
@@ -54,7 +54,7 @@ phase: current               # current | target | superseded
 ```json
 {
   "thresholds": {
-    "current": 5,
+    "current": 60,
     "target": 15
   },
   "gracePeriodDays": 7,
@@ -62,14 +62,19 @@ phase: current               # current | target | superseded
     "warn": 40,
     "error": 65
   },
-  "harnessDocs": ["CLAUDE.md", "AGENTS.md"]
+  "harnessDocs": ["CLAUDE.md", "AGENTS.md"],
+  "hookTargets": [".claude/designs/", ".claude/adr/", ".claude/living-specs/"],
+  "postToolUseCheck": true,
+  "sessionStartCheck": false
 }
 ```
+
+`hookTargets` / `postToolUseCheck` / `sessionStartCheck` は hook 側が読む（`references/hook-config.md`）。**`jq` があれば設定を完全に解釈する**。`jq` が無い環境では `postToolUseCheck: false` の opt-out だけを grep で尊重し、`hookTargets` が宣言されている場合は（配列を正しく読めないため）既定の広い対象で走らせずに no-op する。
 
 ## 設計判断
 
 - **PreToolUse hook は採用しない**: 新規 doc 作成時に last-validated 不在で即 error になる failure mode を回避（観察事例あり）。frontmatter 検知は PostToolUse（書き込み後・非ブロッキング）のみ
-- **hook 対象は project doc に限定**: `.claude/designs/` `.claude/adr/` のみ。プラグイン内部 doc（SKILL.md / references/ / README）は含めない（version + CHANGELOG で鮮度管理され、`last-validated` を付けると恒常 stale 化するため）
+- **hook 対象は project doc に限定**: 既定は `.claude/designs/` `.claude/adr/` `.claude/living-specs/`（`hookTargets` で上書き可）。プラグイン内部 doc（SKILL.md / references/ / README）は含めない（version + CHANGELOG で鮮度管理され、`last-validated` を付けると恒常 stale 化するため）
 - **SessionStart stale-check は opt-in**: 毎セッションの stale 通知はノイズになりうるため既定 off。継続監視したいプロジェクトだけ `sessionStartCheck: true` で有効化する
 - **knowledge-lint との責務分離**: broken wikilink / orphan は knowledge-lint、frontmatter 鮮度は doc-freshness
 - **append-only 履歴文書の stale 免除**: `append_only: true` で ADR のような「作成後に内容が固定される文書」を stale error から守る。`phase: current` の閾値を当てると作成直後から恒常 stale になる委譲破綻を回避する（design doc は生きた文書なので付けない）

@@ -268,6 +268,18 @@ def check_docs_sync(manifests: dict[str, dict], errors: list[str]) -> None:
         errors.append("[docs:INDEX.md] not found: 一覧表の同期を検証できない")
     else:
         text = index_path.read_text(encoding="utf-8")
+        # ヘッダの「プラグイン数」も派生情報なので照合する（GitHub issue #184）。
+        # 一覧表の行だけを見ていたため、**ヘッダは 19 のまま実体 17** で 2 ヶ月放置された
+        count_m = re.search(r"^-\s*プラグイン数:\s*(\d+)\s*$", text, re.MULTILINE)
+        if count_m is None:
+            errors.append("[docs:INDEX.md] ヘッダに「プラグイン数: N」の行が無い")
+        elif int(count_m.group(1)) != len(plugin_names):
+            # **文面に比較演算子を書かない**: 変異テストが等価変異として必ず拾い、
+            # 挙動が変わらないので必ず生存する（CLAUDE.md「散文に >= / <= を書かない」と同型）
+            errors.append(
+                f"[docs:INDEX.md] ヘッダのプラグイン数が実体と違う: "
+                f"ヘッダ {count_m.group(1)} / 実体 {len(plugin_names)}"
+            )
         found: dict[str, str] = {}
         row_re = re.compile(
             r"^\|\s*\[([a-z][a-z0-9-]*)\]\([^)]*\)\s*\|\s*(\d+\.\d+\.\d+)\s*\|",
