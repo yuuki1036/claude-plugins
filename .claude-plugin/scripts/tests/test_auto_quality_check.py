@@ -374,6 +374,58 @@ class AutoQualityCheckTest(unittest.TestCase):
         self.run_hook()
         self.assertTrue(self.layer_ran, "untracked の中身の変化を拾えていない")
 
+    def test_editing_a_renamed_file_invalidates_the_cache(self):
+        """rename したファイルの編集を拾う（GitHub issue #175）.
+
+        既定の porcelain は rename を `old -> new` の 1 行で返すので、パスとして扱うと
+        実ファイルに解決できず**中身が指紋に入らない**。しかも status 行は XY（先頭 2 文字）が
+        `R ` → `RM` と変わるだけなので、`cut -c4-` 後の文字列は同一 — つまり rename 済みの
+        ファイルをいくら編集しても指紋が動かず、**機械層を一度も再走させない**。
+        """
+        self.modify("demo/skills/s/SKILL.md")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "baseline")
+        self.git("mv", "demo/skills/s/SKILL.md", "demo/skills/s/RENAMED.md")
+        renamed = self.root / "demo" / "skills" / "s" / "RENAMED.md"
+        self.run_hook()
+        self.assertTrue(self.layer_ran, "前提: rename 自体で 1 回は走る")
+        self.marker.unlink()
+        renamed.write_text("edited after the rename\n", encoding="utf-8")
+        self.run_hook()
+        self.assertTrue(self.layer_ran, "rename 済みファイルの編集で再走していない")
+
+    def test_editing_a_non_ascii_filename_invalidates_the_cache(self):
+        """非 ASCII 名の編集を拾う（GitHub issue #175）.
+
+        既定の porcelain は非 ASCII 名を `"\\346\\227\\245..."` とクオート付き 8 進
+        エスケープで返すため、そのままではファイルに解決できず中身が指紋に入らない。
+        """
+        self.modify("demo/skills/s/SKILL.md")
+        target = self.root / "demo" / "skills" / "s" / "日本語ノート.md"
+        target.write_text("初版\n", encoding="utf-8")
+        self.run_hook()
+        self.assertTrue(self.layer_ran, "前提: 追加で 1 回は走る")
+        self.marker.unlink()
+        target.write_text("改訂\n", encoding="utf-8")
+        self.run_hook()
+        self.assertTrue(self.layer_ran, "非 ASCII 名ファイルの編集で再走していない")
+
+    def test_backslashes_in_findings_are_delivered_verbatim(self):
+        """検出内容のバックスラッシュをエスケープとして解釈しない（GitHub issue #175）.
+
+        機械層の出力には unittest の失敗 diff（`'a\\nb' != 'a\\nc'` のような repr）が入る。
+        `printf %b` に通すと実改行に化け、`\\c` が現れると**そこから先を丸ごと捨てる**ので、
+        通知本文が黙って切れる。ユーザー向け（stderr）と Claude 向け（additionalContext）の
+        両方で原文が保たれることを表明する。
+        """
+        finding = r"[unit-tests] AssertionError: 'a\nb' != 'a\nc' / tail\cAFTER"
+        self.set_layer(1, finding)
+        self.modify("demo/skills/s/SKILL.md")
+        res = self.run_hook()
+        self.assertIn(finding, res.stderr, "stderr の検出内容が原文と違う（%b で壊れている）")
+        self.assertIn(finding, self.context(res),
+                      "additionalContext の検出内容が原文と違う（%b で壊れている）")
+
     def test_without_cksum_the_layer_always_runs(self):
         """指紋を採れない環境では**走る側に倒す**（検査を飛ばす方に倒さない）."""
         self.modify("demo/skills/s/SKILL.md")

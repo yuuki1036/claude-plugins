@@ -71,27 +71,41 @@ fi
 # **前回の検出は握り潰さない**: clean だったときに黙るだけだと、検出のあったターンの次に
 # 何も出なくなり「直った」と読めてしまう。結果ごとキャッシュして**再走せずに出し直す**。
 #
-# 指紋は「status の行 + 変更ファイルの中身」。`git diff` を使わないのは untracked の中身の
+# 指紋は「変更ファイルのパス + その中身」。`git diff` を使わないのは untracked の中身の
 # 変化を拾うため。`cksum` が引けない環境では**キャッシュを使わない**（毎回走る側に倒す）
 CACHE=""
 FINGERPRINT=""
 if command -v cksum >/dev/null 2>&1; then
   CACHE="${TMPDIR:-/tmp}/claude-auto-quality-check-$(printf '%s' "$REPO_ROOT" | cksum | cut -d' ' -f1)"
-  # **`[ -f ] && cksum` と書かないこと**: status にはディレクトリ（`?? dir/` の畳み込み）や
-  # rename の `old -> new` が来るので `-f` は普通に偽になる。偽の AND リストは終了コード 1 で
-  # 終わり、`set -e`（safe-hook が張る）が**サブシェルをそこで殺す** — 指紋が空のまま
-  # ERR trap で exit 0 し、**検査を一度も走らせずに「問題なし」に見える**（実測）。
+  # **パスは `-z`（NUL 区切り）で取る**。既定の porcelain は rename を `old -> new`、
+  # 非 ASCII 名を `"\346\227\245..."` のクオート付き 8 進エスケープで返すので `[ -f ]` が
+  # 偽になり、**中身が指紋に入らない**。しかも status 行は XY（先頭 2 文字）が `R ` → `RM`
+  # と変わるだけなので、rename したファイルを編集し続けても指紋が動かず、**機械層を一度も
+  # 再実行せずキャッシュを再生し続ける**（issue #175）。`-z` は生パスをそのまま返す
+  #
+  # **`[ -f ] && cksum` と書かないこと**: 偽の AND リストは終了コード 1 で終わり、
+  # `set -e`（safe-hook が張る）が**サブシェルをそこで殺す** — 指紋が空のまま ERR trap で
+  # exit 0 し、**検査を一度も走らせずに「問題なし」に見える**（実測）。
   # `if` は条件が偽でも 0 で終わるのでこの形にする
   # 指紋には **`-uall`** の status を使う（既定は中身が全部 untracked な dir を `?? demo/` に
   # 畳むので、その下のファイルを編集しても指紋が動かない ＝ 新規スクリプトを書いている間
   # ずっと再走しない）。トリガー判定側の `$CHANGED` は既存の挙動のまま触らない
-  CHANGED_ALL="$(git -C "$REPO_ROOT" status --porcelain -uall 2>/dev/null | cut -c4-)"
-  FINGERPRINT="$({
-    printf '%s\n' "$CHANGED_ALL"
-    while IFS= read -r _f; do
+  # **`case` を `$( )` の中に書かないこと**: bash 3.2（macOS 既定）はコマンド置換の中の
+  # `pattern)` の `)` を置換の閉じ括弧と誤読して構文エラーになる。関数に切り出して外に出す
+  _fingerprint_stream() {
+    local _rec _old _f
+    while IFS= read -r -d '' _rec; do
+      # rename / copy は「新パス」「旧パス」の 2 レコードで来る。旧パスを読み飛ばす
+      case "${_rec:0:2}" in
+        *R*|*C*) IFS= read -r -d '' _old || true ;;
+      esac
+      _f="${_rec:3}"
+      printf '%s\n' "$_f"
       if [ -f "$REPO_ROOT/$_f" ]; then cksum < "$REPO_ROOT/$_f"; fi
-    done <<< "$CHANGED_ALL"
-  } | cksum | cut -d' ' -f1)"
+    done
+  }
+  FINGERPRINT="$(git -C "$REPO_ROOT" status --porcelain -z -uall 2>/dev/null \
+    | _fingerprint_stream | cksum | cut -d' ' -f1)"
   # 指紋を採れなかったらキャッシュを使わない（**走る側に倒す**）
   [ -n "$FINGERPRINT" ] || CACHE=""
 fi
@@ -103,7 +117,10 @@ emit() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "⚠️  auto-quality-check: 修正が必要な問題があります"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    printf "%b" "$1"
+    # **`%b` を使わないこと**: 検査の出力には unittest の失敗 diff（`'a\nb' != 'a\nc'` の
+    # ような repr）が入る。`%b` はそれを実改行に化けさせ、`\c` が現れると**そこから先を
+    # 丸ごと捨てる**（＝通知本文が黙って切れる / issue #175）。改行は `$'\n'` で組む
+    printf '%s' "$1"
     echo ""
     echo "詳細確認は /quality-check を実行してください"
   } >&2
@@ -112,7 +129,7 @@ emit() {
   # Claude がその場で品質問題（SSoT drift / バージョンバンプ忘れ等）を修復できるようにする。
   # JSON 文字列エスケープは確実なエンコーダ（python3 → jq）に委譲。
   # どちらも無い環境では additionalContext は出さず stderr 通知のみ（後方互換）。
-  MESSAGE="$(printf "%b" "auto-quality-check が修正の必要な品質問題を検出しました。以下を修正するか /quality-check で詳細を確認してください:\n${1}")"
+  MESSAGE="auto-quality-check が修正の必要な品質問題を検出しました。以下を修正するか /quality-check で詳細を確認してください:"$'\n'"${1}"
   if command -v python3 >/dev/null 2>&1; then
     printf '%s' "$MESSAGE" | python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":sys.stdin.read()}}))'
   elif command -v jq >/dev/null 2>&1; then
@@ -141,8 +158,8 @@ ISSUES=""
 ML_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/machine-layer.sh" 2>&1)" && ML_RC=0 || ML_RC=$?
 case "$ML_RC" in
   0) ;;
-  1) ISSUES="${ML_OUT}\n" ;;
-  *) ISSUES="[machine-layer] 判定不能（exit ${ML_RC}）:\n${ML_OUT}\n" ;;
+  1) ISSUES="${ML_OUT}"$'\n' ;;
+  *) ISSUES="[machine-layer] 判定不能（exit ${ML_RC}）:"$'\n'"${ML_OUT}"$'\n' ;;
 esac
 
 if [ -n "$ISSUES" ]; then
@@ -152,8 +169,7 @@ fi
 # 次のターンで作業ツリーが同じなら再走しないための記録（検出内容ごと残す）。
 # 書けなくても検査自体は済んでいるので握り潰してよい
 if [ -n "$CACHE" ]; then
-  # **展開前の生テキストで持つ**（再生側も `emit` の `%b` を通るので、ここで展開すると
-  # `\n` が二重に処理される）
+  # 1 行目が指紋、2 行目以降が検出内容そのもの（`emit` は `%s` で出すのでエスケープ無し）
   { printf '%s\n' "$FINGERPRINT"; printf '%s' "$ISSUES"; } > "$CACHE" 2>/dev/null || true
 fi
 
