@@ -106,11 +106,22 @@ else:
     if doc_only and level != "patch":
         print("⚠️  変更が *.md のみだが %s bump を指定している。CLAUDE.md の規約では PATCH（続行する）" % level.upper())
 
-changes = []
+# 変更の集約。**同じファイルに 2 つの変更が乗ることがある** — CHANGELOG の見出し挿入（4）と、
+# その本文に書かれた `vNEXT` の解決（5）。リストに 2 エントリ積むと書き込みループが後勝ちになり、
+# 先に積んだ見出し挿入が**「挿入した」と表示したまま消える**（issue #174）。パスをキーに
+# (原本, 最新) で畳んで 1 ファイル 1 エントリを保つ
+changes = {}
+
+def stage(path, before, after):
+    """path の変更を積む。既にあれば「最新」だけ差し替え、原本は最初のものを保つ。"""
+    if path in changes:
+        changes[path][1] = after
+    else:
+        changes[path] = [before, after]
 
 # 1) plugin.json — 書式を保つため生テキストを 1 箇所だけ置換する
 pj_new = pj_text[:m.start()] + '"version": "%s"' % new_s + pj_text[m.end():]
-changes.append((pj_path, pj_text, pj_new))
+stage(pj_path, pj_text, pj_new)
 
 # 2) marketplace.json — 該当プラグインのエントリ内だけを置換する（全体の再整形を避ける）
 mk_text = mk_path.read_text()
@@ -122,7 +133,7 @@ if not ver_m:
     sys.exit("FATAL: marketplace.json の %s エントリに version が無い" % plugin)
 s0 = name_m.end() + ver_m.start(); s1 = name_m.end() + ver_m.end()
 mk_new = mk_text[:s0] + '"version": "%s"' % new_s + mk_text[s1:]
-changes.append((mk_path, mk_text, mk_new))
+stage(mk_path, mk_text, mk_new)
 
 # 3) INDEX.md — 一覧テーブルの version セル
 idx_text = idx_path.read_text()
@@ -130,9 +141,10 @@ idx_pat = re.compile(r'(\| \[%s\]\(#%s\) \| )\d+\.\d+\.\d+( \|)' % (re.escape(pl
 if not idx_pat.search(idx_text):
     sys.exit("FATAL: INDEX.md に %s の行が無い（SSoT 検証で落ちるので中止）" % plugin)
 idx_new = idx_pat.sub(r'\g<1>%s\g<2>' % new_s, idx_text, count=1)
-changes.append((idx_path, idx_text, idx_new))
+stage(idx_path, idx_text, idx_new)
 
 # 4) CHANGELOG — next モードで見出しが無いときだけ挿入する。**本文は書かない**
+cl_heading_inserted = False
 if mode == "next" and top != new_s:
     today = datetime.date.today().isoformat()
     entry = "## [%s] - %s\n\n" % (new_s, today)
@@ -141,28 +153,24 @@ if mode == "next" and top != new_s:
         cl_new = cl_text[:anchor.start()] + entry + cl_text[anchor.start():]
     else:
         cl_new = cl_text.rstrip() + "\n\n" + entry
-    changes.append((cl_path, cl_text, cl_new))
-
-touched = [(p, a, b) for p, a, b in changes if a != b]
-if not touched:
-    print("変更なし（%s は既に %s）" % (plugin, new_s))
-    sys.exit(0)
-
-print("%s: %s → %s%s" % (plugin, cur_s, new_s, "  [dry-run]" if dry else ""))
-for p, _, _ in touched:
-    print("  %s" % p)
-if mode == "next" and any(p == cl_path for p, _, _ in touched):
-    print("  ↑ CHANGELOG は見出しのみ挿入した。本文は自分で書くこと")
+    stage(cl_path, cl_text, cl_new)
+    cl_heading_inserted = True
 
 # 5) `vNEXT` プレースホルダの解決（プラグイン配下のみ）.
 # **repo 直下の共通スクリプト / doc は対象外** — あれらはプラグイン版に属さないので、
 # 版ラベルではなく issue 番号で参照する（複数プラグインを同時に bump したとき
 # どちらの版に解決すべきか決まらない）。
+#
+# **起点はディスクの原本ではなく 1〜4 の適用後テキスト**。CHANGELOG のように 4 までで既に
+# 書き換わっているファイルを読み直すと、その変更を巻き戻したテキストを積むことになる（#174）
 placeholder_hits = []
 for f in sorted(pathlib.Path(plugin).rglob("*")):
     if f.suffix not in (".md", ".sh", ".py") or not f.is_file():
         continue
-    text = f.read_text(encoding="utf-8", errors="replace")
+    if f in changes:
+        orig, text = changes[f]
+    else:
+        orig = text = f.read_text(encoding="utf-8", errors="replace")
     if "vNEXT" not in text:
         continue
     # **行内コード / フェンス内の `vNEXT` は置換しない**（SSoT pin と同じ規約 /
@@ -195,7 +203,23 @@ for f in sorted(pathlib.Path(plugin).rglob("*")):
     if hits == 0:
         continue
     placeholder_hits.append((f, hits))
-    touched.append((f, text, "".join(out_lines)))
+    stage(f, orig, "".join(out_lines))
+
+# **打ち切りの判定は 5 まで済ませてから**。ここより前で「変更なし」と決めると、4 ファイルが
+# 既に同期しているプラグインでは `--sync` が `vNEXT` を永久に解決できない（issue #174）
+touched = [(p, a, b) for p, (a, b) in changes.items() if a != b]
+if not touched:
+    print("変更なし（%s は既に %s）" % (plugin, new_s))
+    sys.exit(0)
+
+if new_s != cur_s:
+    print("%s: %s → %s%s" % (plugin, cur_s, new_s, "  [dry-run]" if dry else ""))
+else:
+    print("%s: %s（版は据え置き。vNEXT の解決のみ）%s" % (plugin, new_s, "  [dry-run]" if dry else ""))
+for p, _, _ in touched:
+    print("  %s" % p)
+if cl_heading_inserted:
+    print("  ↑ CHANGELOG は見出しのみ挿入した。本文は自分で書くこと")
 
 # **全部読み終えてから書く**（two-phase）。1〜4 と 5 で書き込み位置が分かれていると,
 # 途中の失敗（権限 / ディスク / 読めないファイル）で「版は上がったが vNEXT は残った」
