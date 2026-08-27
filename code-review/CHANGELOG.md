@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.92.1] - 2026-08-27
+
+### Fixed
+
+- `_requirements` に `python3` の宣言を追加（GitHub issue #177）。`check-deps.sh` は以前から
+  `check_cli "python3" "true"` と**必須依存として検査**していたのに、`plugin.json` の宣言に
+  無かった。SSoT 検査が `_requirements` → `check-deps.sh` の片方向しか見ておらず素通りしていた
+  （逆方向の検査を追加したことで検出された）。宣言はインストール前の判断材料なので、
+  実行時にだけ現れる依存は利用者から見えない
+
 ## [2.92.0] - 2026-08-27
 
 **`review-retro.sh` の素の実行が「母集団はこのリポジトリのログのみ」と明示するようにした**（GitHub issue #173）。

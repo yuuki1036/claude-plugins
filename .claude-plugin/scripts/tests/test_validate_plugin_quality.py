@@ -1234,6 +1234,101 @@ class HookScriptRefsTest(unittest.TestCase):
         self.assertEqual(errors, [])
 
 
+class CheckScopeTest(unittest.TestCase):
+    """検査の走査範囲が正本の宣言どおりか（GitHub issue #177）.
+
+    範囲の穴は「検出ゼロ」と見分けがつかない — 対象に入っていないファイルは
+    何を書いても緑になる。**範囲そのものを表明する**テストで塞ぐ。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+
+    def test_skill_bundled_scripts_are_syntax_checked(self):
+        """`skills/*/scripts/` は配布物なのに `scripts/**` にも `hooks/**` にも掛からない."""
+        _write(self.plugin, "skills/s/scripts/broken.sh", "#!/usr/bin/env bash\nif [ 1 ; then\n")
+        errors: list[str] = []
+        v.check_shell_syntax(self.plugin, errors)
+        self.assertEqual(len(errors), 1, "skill 同梱スクリプトが構文検査の外にある")
+        self.assertIn("broken.sh", errors[0])
+
+    def test_skill_bundled_scripts_are_multibyte_checked(self):
+        _write(self.plugin, "skills/s/scripts/x.sh", '#!/usr/bin/env bash\necho "$VAR（説明）"\n')
+        errors: list[str] = []
+        v.check_shell_multibyte_expansion(self.plugin, errors)
+        self.assertEqual(len(errors), 1, "skill 同梱スクリプトが多バイト検査の外にある")
+
+    def test_skill_bundled_references_are_doc_linted(self):
+        """`skills/*/references/` は実測 76 ファイルが doc lint の外にあった."""
+        _write(self.plugin, "skills/s/references/note.md", """
+            ## 1. あ
+
+            ## 1. い
+            """)
+        errors: list[str] = []
+        v.check_doc_structure(self.plugin, errors)
+        self.assertTrue(errors, "skill 配下 references が doc lint の外にある")
+
+    def test_repo_local_scripts_are_checked(self):
+        """repo 直下の共通スクリプトはプラグイン版に属さないが、壊れるとゲートが死ぬ."""
+        _write(self.root, ".claude-plugin/scripts/gate.sh", "#!/usr/bin/env bash\nif [ 1 ; then\n")
+        errors: list[str] = []
+        v.check_shell_repo_local(errors)
+        self.assertTrue(any("gate.sh" in e for e in errors),
+                        "repo 直下スクリプトが構文検査の外にある")
+
+    def test_repo_local_scripts_are_multibyte_checked(self):
+        _write(self.root, ".claude/oracles.sh", '#!/usr/bin/env bash\necho "$OUT（結果）"\n')
+        errors: list[str] = []
+        v.check_shell_repo_local(errors)
+        self.assertTrue(any("shell-multibyte" in e for e in errors),
+                        "repo 直下スクリプトが多バイト検査の外にある")
+
+
+class DocAnchorFormsTest(unittest.TestCase):
+    """節参照の書き方ごとの拾い漏れ（GitHub issue #177）."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+        _write(self.plugin, "references/target.md", "## 8.5 実在する節\n\n本文\n")
+
+    def _refs(self, body: str) -> list[str]:
+        _write(self.plugin, "references/src.md", body)
+        errors: list[str] = []
+        v.check_doc_anchors(self.plugin, errors)
+        return errors
+
+    def test_a_section_title_after_the_number_is_still_checked(self):
+        """`foo.md \\`## 9 反証レイヤー\\`` 形式（実測 14 箇所が無検証だった）."""
+        self.assertTrue(self._refs("詳細は `target.md `## 9 反証レイヤー`` を読む\n"),
+                        "節番号の後ろに節タイトルが続く形を拾えていない")
+
+    def test_a_bare_reference_is_checked(self):
+        self.assertTrue(self._refs("詳細は target.md ## 9 を読む\n"),
+                        "裸形式を拾えていない")
+
+    def test_an_existing_section_is_accepted(self):
+        self.assertEqual(self._refs("詳細は `target.md `## 8.5 実在する節`` を読む\n"), [])
+
+    def test_a_reference_does_not_span_a_newline(self):
+        """ファイル名で終わる行の次に来る**自ファイルの見出し**を参照と誤認しない."""
+        self.assertEqual(
+            self._refs("→ 根拠: `target.md`\n\n## 9. この見出しは src.md 自身のもの\n"), [],
+            "改行をまたいで見出しを参照と誤認している")
+
+
 class ResolvePluginsTest(unittest.TestCase):
     """引数のプラグイン解決（GitHub issue #176）.
 

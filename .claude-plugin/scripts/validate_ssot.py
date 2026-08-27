@@ -197,15 +197,26 @@ def check_requirements_vs_check_deps(manifests: dict[str, dict], errors: list[st
         if not reqs:
             continue
         text = check_deps.read_text(encoding="utf-8")
-        for req in reqs:
-            req_name = req.get("name")
-            if not req_name:
-                continue
+        declared = {req["name"] for req in reqs if req.get("name")}
+        for req_name in sorted(declared):
             pattern = rf'check_(mcp|cli|plugin)\s+"{re.escape(req_name)}"'
             if not re.search(pattern, text):
                 errors.append(
                     f"[deps:{name}] requirement '{req_name}' not found in check-deps.sh "
                     f"(expected: check_xxx \"{req_name}\" ...)"
+                )
+        # **逆方向も見る**（GitHub issue #177）: CLAUDE.md は「`check_xxx \"<name>\"` 形式の
+        # **一致**を検証する」と宣言しているが、実装は _requirements → check-deps.sh の
+        # 片方向だけだった（逆は `_requirements` が完全に空のときのみ）。そのため
+        # 「スクリプトは必須依存として検査するのに宣言が無い」型が素通りしていた
+        # （実例: code-review の check-deps.sh が python3 を required で検査しているのに
+        # _requirements に無かった）。宣言はインストール前の判断材料なので、
+        # 実行時にだけ現れる依存は利用者から見えない
+        for checked in sorted(set(re.findall(r'check_(?:mcp|cli|plugin)\s+"([^"]+)"', text))):
+            if checked not in declared:
+                errors.append(
+                    f"[deps:{name}] check-deps.sh checks '{checked}' but plugin.json "
+                    f"_requirements does not declare it"
                 )
 
 
@@ -214,7 +225,9 @@ def check_hooks_json(errors: list[str]) -> None:
         plugin = hooks_json.parts[-3]
         try:
             data = load_json(hooks_json)
-        except json.JSONDecodeError as e:
+        except MalformedJson as e:
+            # **プラグイン単位で拾って続ける**（全体を中断しない）: ここで抜けると
+            # 2 つ目以降の hooks.json が検査されず、指摘も `[hooks:<plugin>]` で出なくなる
             errors.append(f"[hooks:{plugin}] invalid JSON: {e}")
             continue
         try_validate_schema(data, "hooks.schema.json", errors, f"hooks:{plugin}")

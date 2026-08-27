@@ -31,6 +31,10 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - event-bus 同期: 実 publish される event（grep 実測=正本）と、それを記載する doc が一致するか
     （CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md publishes 行の plugin×event ペア）
   - references 参照整合性: SKILL.md / commands/*.md / agents/*.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
+  - doc-anchor: `<file>.md ## <番号>` の相互参照が実在の見出しを指すか. 分冊すると節番号を
+    保ったまま本文だけが別ファイルへ移るので, ファイル名の張り替え漏れは
+    「ファイルは実在する」ぶん references 検査を素通りする（v2.47.0 の分割で 11 箇所発生）.
+    参照は**同一行**で拾い, 節番号の直後に節タイトルが続く形も対象にする（issue #177）.
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
   - doc 構造: 番号見出しの重複（他 doc からの番号参照が曖昧になる）と, blockquote を
     分断した孤立 `>` 行. どちらもセルフレビューが見逃した / agent 8 体を要した型で,
@@ -41,7 +45,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     「この変更が入る版」を書くためのもので bump 時に解決される（版ラベルを手書きすると
     書いた時点で値が未確定＝構造的に古くなる。3 回再発し検出側の機械化も 2 度失敗した）.
     **開発中の残存は正常**なので bump が起きた作業ツリーでだけ判定する.
-  - シェル構文: 同梱スクリプト（*/scripts/**.sh, */hooks/**.sh）が `bash -n` を通るか.
+  - シェル構文: 同梱スクリプト（*/scripts/**.sh, */hooks/**.sh, */skills/*/scripts/**.sh）と
+    repo 直下の共通スクリプト（.claude-plugin/scripts, .claude-plugin/lib, .claude, .githooks）が
+    `bash -n` を通るか. 後者はプラグイン版に属さないが**壊れるとゲートが丸ごと死ぬ**（#177）.
     CI は manifest と doc しか見ておらず, LLM が書いたスクリプトは構文検証を一度も
     経ずに配布されていた（issue #123 の meta-review）.
   - シェル多バイト展開: `"$VAR（..."` のような**波括弧なしの展開 + 直後の非 ASCII**.
@@ -53,6 +59,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - allowed-tools 最小性 (#14b): frontmatter 宣言ツールが本文で未言及（未使用候補）.
     Read/Write/Edit/Glob/Grep/Bash や MCP ツールは日本語表現・記述的言及の偽陽性が
     あるため『要確認』に留め, LLM/人手の最終判断を残す (#14b の偽陽性除外規約に準拠).
+  - agent 同期起動: 並列 Agent 起動の記述があるのに `run_in_background` へ一度も言及が
+    無い skill / command / agent（CC 2.1.198 で Agent tool の既定が background になったため,
+    結果を待つ設計なら明示が要る）. repo ローカルの .claude/skills・.claude/commands も対象.
   - hook 自己判定: PreToolUse/PostToolUse の hook スクリプトが stdin（safe_hook_input）
     を参照しているか. hooks.json の if:/matcher は実行環境で評価されないことが実測
     されており（2026-07 push-reminder 暴発）, フィルタ単独依存の注入 hook は全ツール
@@ -672,7 +681,10 @@ HEADING_NUM_RE = re.compile(r"^#{2,6}\s+(\d+(?:\.\d+)*)\.?\s")
 ORPHAN_QUOTE_RE = re.compile(r"^>\s*$")
 # 「この doc は番号見出しで参照される」規約が効く範囲. SKILL / references は
 # `## 16` のような番号で相互参照するので, 重複は SSoT pin の anchor 曖昧一致と同型の実害になる.
-DOC_LINT_GLOBS = ["*/references/**/*.md", "*/skills/*/SKILL.md"]
+#: doc lint の対象。**`skills/*/references/` を落とさない**（GitHub issue #177）:
+#: 実測 76 ファイルが番号見出しの重複・孤立 `>` の検査外にあった
+DOC_LINT_GLOBS = ["*/references/**/*.md", "*/skills/*/SKILL.md",
+                  "*/skills/*/references/**/*.md"]
 
 
 def check_doc_structure(plugin_dir: Path, errors: list[str]) -> None:
@@ -983,8 +995,15 @@ def check_doc_anchors(plugin_dir: Path, errors: list[str]) -> None:
     anchors: dict[str, set[str]] = {}
     for md in ref_dir.rglob("*.md"):
         anchors[md.name] = set(heading_re.findall(read_text(md)))
-    # 参照側: `foo.md ## 8.5` / `foo.md \`## 8.5\`` の両形式
-    ref_re = re.compile(r"([a-z][a-z0-9-]*\.md)\s*`?##\s+(\d+(?:\.\d+)?)`")
+    # 参照側。**節番号を読み終えた時点で打ち切る**（GitHub issue #177）: 以前は末尾の
+    # バッククォートを必須にしていたため、`foo.md ## 9 反証レイヤー` のように
+    # **節番号の後ろに節タイトルが続く**形を 1 件も拾えていなかった（実測 14 箇所が
+    # 無検証のまま）。裸形式（`foo.md ## 8.5`）も同じ理由で取りこぼしていた。
+    # 番号の直後は「区切り（空白 / 記号 / 行末）」であることだけ要求して誤検出を抑える
+    # **改行をまたがせない**（`[ \t]` であって `\s` ではない）: またぐと「ファイル名で終わる
+    # 行」の次に来る**自ファイルの見出し**を参照と誤認する（実測でこれが唯一の偽陽性だった）
+    ref_re = re.compile(
+        r"([a-z][a-z0-9-]*\.md)[ \t`]*##[ \t]+(\d+(?:\.\d+)?|\d+[ab])(?=[\s.、。）)`]|$)")
     targets = sorted(ref_dir.rglob("*.md"))
     targets += sorted((plugin_dir / "skills").glob("*/SKILL.md"))
     targets += sorted((plugin_dir / "scripts").glob("*.sh"))
@@ -1255,6 +1274,49 @@ def check_skill_body_size(warnings: list[str]) -> None:
             )
 
 
+#: 同梱シェルスクリプトの走査対象。**`skills/*/scripts/` を落とさない**（GitHub issue #177）:
+#: skill 同梱の配布物でありながら `scripts/**` にも `hooks/**` にも掛からない位置にある
+PLUGIN_SHELL_GLOBS = ("scripts/**/*.sh", "hooks/**/*.sh", "skills/*/scripts/**/*.sh")
+
+#: repo 直下の共通スクリプト。**どのプラグイン版にも属さない**が、壊れるとゲートが丸ごと
+#: 死ぬので同じ検査を通す（プラグイン配下だけを見ていた / GitHub issue #177）
+REPO_LOCAL_SHELL_GLOBS = (".claude-plugin/scripts/*.sh", ".claude-plugin/lib/*.sh",
+                          ".claude/*.sh", ".githooks/pre-commit")
+
+
+def _dedup(paths) -> list[Path]:
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for p in paths:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def _plugin_shell_scripts(plugin_dir: Path) -> list[Path]:
+    return _dedup(sh for g in PLUGIN_SHELL_GLOBS for sh in sorted(plugin_dir.glob(g)))
+
+
+def _repo_local_shell_scripts() -> list[Path]:
+    return _dedup(p for g in REPO_LOCAL_SHELL_GLOBS for p in sorted(ROOT.glob(g)) if p.is_file())
+
+
+def _check_shell_syntax_in(scripts: list[Path], errors: list[str]) -> None:
+    if not shutil.which("bash"):
+        return
+    for sh in scripts:
+        proc = subprocess.run(
+            ["bash", "-n", str(sh)], capture_output=True, text=True, check=False
+        )
+        if proc.returncode != 0:
+            detail = (proc.stderr or "").strip().splitlines()
+            errors.append(
+                "[shell-syntax] bash -n が失敗: %s%s"
+                % (sh.relative_to(ROOT), (" — " + detail[0]) if detail else "")
+            )
+
+
 def check_shell_syntax(plugin_dir: Path, errors: list[str]) -> None:
     """同梱シェルスクリプトの構文を `bash -n` で検証する.
 
@@ -1263,19 +1325,7 @@ def check_shell_syntax(plugin_dir: Path, errors: list[str]) -> None:
     `bash -n` は決定的・高速なので errors 扱いにする（CLAUDE.md「決定的 hook > LLM 判定」）.
     shellcheck のような深い解析は未導入環境があるため対象外.
     """
-    if not shutil.which("bash"):
-        return
-    for sh in sorted(plugin_dir.glob("scripts/**/*.sh")) + sorted(plugin_dir.glob("hooks/**/*.sh")):
-        rel = sh.relative_to(ROOT)
-        proc = subprocess.run(
-            ["bash", "-n", str(sh)], capture_output=True, text=True, check=False
-        )
-        if proc.returncode != 0:
-            detail = (proc.stderr or "").strip().splitlines()
-            errors.append(
-                "[shell-syntax] bash -n が失敗: %s%s"
-                % (rel, (" — " + detail[0]) if detail else "")
-            )
+    _check_shell_syntax_in(_plugin_shell_scripts(plugin_dir), errors)
 
 
 # `"$VAR（..."` のように**裸の変数展開の直後が非 ASCII**だと、UTF-8 ロケールの bash が
@@ -1292,7 +1342,23 @@ BARE_EXPANSION_BEFORE_MULTIBYTE_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*(?=[^\
 
 def check_shell_multibyte_expansion(plugin_dir: Path, errors: list[str]) -> None:
     """`${VAR}` の波括弧が無い展開の直後に非 ASCII 文字が来る箇所を検出する."""
-    for sh in sorted(plugin_dir.glob("scripts/**/*.sh")) + sorted(plugin_dir.glob("hooks/**/*.sh")):
+    _check_shell_multibyte_in(_plugin_shell_scripts(plugin_dir), errors)
+
+
+def check_shell_repo_local(errors: list[str]) -> None:
+    """repo 直下の共通スクリプトにも構文・多バイト展開の検査を当てる（GitHub issue #177）.
+
+    プラグイン配下ではないので per-plugin の CHECKS には乗らないが、**壊れると
+    ゲートが丸ごと死ぬ**のはこちらの方。CLAUDE.md は多バイト展開の罠を repo 全体の
+    規約として書いているのに、強制はプラグイン配下だけに掛かっていた.
+    """
+    scripts = _repo_local_shell_scripts()
+    _check_shell_syntax_in(scripts, errors)
+    _check_shell_multibyte_in(scripts, errors)
+
+
+def _check_shell_multibyte_in(scripts: list[Path], errors: list[str]) -> None:
+    for sh in scripts:
         for lineno, line in enumerate(read_text(sh).splitlines(), start=1):
             stripped = line.lstrip()
             if stripped.startswith("#"):
@@ -1429,6 +1495,7 @@ def main() -> int:
     check_duplicate_test_bodies(errors)
     check_ssot_pins(errors)
     check_event_bus_sync(errors)
+    check_shell_repo_local(errors)
     check_agent_sync_launch_repo_local(warnings)
     check_context_budget(warnings)
     check_skill_body_size(warnings)

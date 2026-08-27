@@ -209,6 +209,32 @@ class ValidateSsotTest(unittest.TestCase):
         (self.root / "demo" / "hooks").mkdir()
         self.assertDetects(self.run_ssot(), "check-deps.sh missing")
 
+    def test_an_undeclared_check_is_detected_even_when_others_are_declared(self):
+        """双方向で突合する（GitHub issue #177）.
+
+        以前は `_requirements` → check-deps.sh の片方向だけで、逆は `_requirements` が
+        **完全に空のとき**しか見ていなかった。そのため「1 つでも宣言があれば、スクリプトが
+        別の依存を必須として検査していても素通り」になっていた（実例: code-review の
+        check-deps.sh が python3 を required で検査しているのに宣言が無かった）。
+        宣言はインストール前の判断材料なので、実行時にだけ現れる依存は利用者から見えない。
+        """
+        self.plugins["demo"]["_requirements"] = [
+            {"name": "gh", "type": "cli_tool", "required": True, "description": "GitHub CLI"}]
+        self.sync()
+        self.write("demo/hooks/scripts/check-deps.sh",
+                   '#!/usr/bin/env bash\ncheck_cli "gh" "x"\ncheck_cli "python3" "y"\n')
+        self.assertDetects(self.run_ssot(), "_requirements does not declare it")
+
+    def test_a_fully_declared_pair_passes(self):
+        """双方向にしても正しく揃っているものは通る（倒しすぎの禁止）."""
+        self.plugins["demo"]["_requirements"] = [
+            {"name": "gh", "type": "cli_tool", "required": True, "description": "GitHub CLI"},
+            {"name": "jq", "type": "cli_tool", "required": True, "description": "JSON"}]
+        self.sync()
+        self.write("demo/hooks/scripts/check-deps.sh",
+                   '#!/usr/bin/env bash\ncheck_cli "gh" "x"\ncheck_cli "jq" "y"\n')
+        self.assertEqual(self.run_ssot().returncode, 0)
+
     def test_invalid_requirement_type_is_detected(self):
         self.plugins["demo"]["_requirements"] = [
             {"name": "gh", "type": "binary", "required": True, "description": "x"}]
@@ -219,6 +245,22 @@ class ValidateSsotTest(unittest.TestCase):
     def test_broken_hooks_json_is_detected(self):
         self.write("demo/hooks/hooks.json", "{ not json")
         self.assertDetects(self.run_ssot(), "invalid JSON")
+
+    def test_a_broken_hooks_json_is_attributed_to_its_plugin(self):
+        """指摘は `[hooks:<plugin>]` で出す（どのプラグインか分からないと直せない）."""
+        self.write("demo/hooks/hooks.json", "{ not json")
+        self.assertDetects(self.run_ssot(), "[hooks:demo]")
+
+    def test_every_broken_hooks_json_is_reported_not_just_the_first(self):
+        """1 つ目で中断しない（2 つ目以降が黙って検査されない状態を作らない）."""
+        self.plugins["other"] = manifest("other")
+        self.sync()
+        self.write("demo/hooks/hooks.json", "{ not json")
+        self.write("other/hooks/hooks.json", "{ not json either")
+        res = self.run_ssot()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("[hooks:demo]", res.stderr)
+        self.assertIn("[hooks:other]", res.stderr)
 
     def test_command_hook_without_command_is_detected(self):
         self.write("demo/hooks/hooks.json", json.dumps(
