@@ -3,7 +3,7 @@ id: 20260623-review-adversarial-verify-layer
 title: review系スキルへの反証レイヤー（adversarial verification）導入
 status: approved
 phase: current
-last-validated: 2026-06-23
+last-validated: 2026-08-28
 supersedes: []
 superseded-by: null
 issue: null
@@ -205,6 +205,16 @@ verdict 反映ステップ（既存の加減算より前）:
 - [local] `pre-existing` と `intended` の鮮度のみ git で決定判定し LLM 反証の前段に置く。
 
 ## 未解決事項 (open)
+
+> **2026-08-28 追記（GitHub issue #184）**: 実装から 2 ヶ月経ち、下の 4 項目は**決着済みと
+> 据え置きが混在している**。doc 上で区別がつかず「全部未決」と読めてしまうので、現状を注記する。
+>
+> | 項目 | 現状 |
+> |---|---|
+> | 反証エージェントのモデル | **決着**（opus。`triage-dynamic-gates.md` の反証レイヤー節が正本） |
+> | パネル（max で BLOCKER 3 体多数決） | **据え置き**。`design-notes/scoring-rationale.md` が「現行は全 effort で 1 指摘 1 verdict、パネルは event bus 計測後に拡張判断」と明記 |
+> | verdict→delta の数値 | **決着**（実測に基づき確定。`design-notes/scoring-rationale.md` に 19 サンプル / 67 verdict の集計） |
+> | design-review への展開 | **据え置き**（design-notes に言及なし＝着手されていない） |
 
 - 反証エージェントのモデル: (a) opus — Pros: reviewer 同等の読解 / Cons: コスト高 (b) sonnet — Pros: 安い / Cons: uncertain 連発の恐れ。現時点 (a) opus が有力（反証は読解の質が直結）。確定タイミング: 実装後に uncertain 率を観測して判断。
 - パネル（max で BLOCKER 3 体多数決）の要否: (a) 初版は全 effort で 1 体 — Pros: 単純・計測先行 / Cons: 1 体の誤却下耐性なし (b) max で 3 体パネル — Pros: 誤却下耐性 / Cons: 計測前は YAGNI。現時点 (a) が有力（1 体の uncertain 率すら未観測、design-review minimal/risk）。確定タイミング: event bus で 1 体の誤却下が観測された後。集計規則は採用案に既述。

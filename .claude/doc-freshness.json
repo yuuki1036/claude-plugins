@@ -1,0 +1,7 @@
+{
+  "sessionStartCheck": true,
+  "thresholds": {
+    "current": 60,
+    "target": 15
+  }
+}

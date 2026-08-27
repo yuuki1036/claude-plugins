@@ -3,10 +3,10 @@ id: 20260722-issue-workflow-unification
 title: linear/indie ワークフロープラグインの単一プラグイン統合（backend 分岐）
 status: approved
 phase: current
-last-validated: 2026-07-23
+last-validated: 2026-08-28
 supersedes: []
 superseded-by: null
-issue: null
+issue: 94
 spec: null
 adrs: [20260722164106]
 tags: [architecture, plugin-consolidation, linear-workflow, indie-workflow]
@@ -183,6 +183,8 @@ issue-workflow/
 
 - 関連 Issue: なし（本 doc が起点。実装ブリッジの Issue 分解案から起票する）
 - 移行チェックリスト: `docs/issue-workflow-migration.md`（手順 7〜8 の全マシン移行管理。実装は手順 0〜6 まで完了済み = 2026-07-23）
+- **手順 8（旧 2 ディレクトリの削除）完了**: `314413c`（2026-08-17 / GitHub issue #94）。
+  hash の追記は本 doc が §「実装ブリッジ」で課していた義務だが 11 日間漏れていた（#184 で補完）
 - 関連 spec: なし
 - 関連 ADR: [[20260722164106-backend-branch-over-plugin-mirror]]（ミラー規約廃止の決定）
 - 関連 design doc: [[20260708-spec-routing-ssot]]（routing-axes 消費サイトが 4→3 に減る影響あり）

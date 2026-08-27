@@ -3,7 +3,7 @@ id: 20260624-code-review-doc-substance-perspective
 title: code-review への doc-substance（内容妥当性）レビュー観点の追加
 status: approved
 phase: current
-last-validated: 2026-06-24
+last-validated: 2026-08-28
 supersedes: []
 superseded-by: null
 issue: null
@@ -150,6 +150,11 @@ self-review SKILL（Phase 4.x）も同じ重要度ゲート・effort 制御・do
 - [→ADR候補] docs の内容妥当性は「決定的検証 > LLM 判定」の例外として LLM 観点を正式採用する（リポジトリの配置哲学への明示的な線引き。**LLM 観点の偽陽性抑制が effort に依存する**制約も併記する）
 
 ## 未解決事項 (open)
+
+> **2026-08-28 追記（GitHub issue #184）**: 下の項目のうち少なくとも 2 つは実装時に決着し、
+> 正本は本 doc ではなく `code-review/references/triage-guide.md` に移っている
+> （「実質 prose 変更」の行数閾値 / design-review への soft 委譲は dormant として同 doc に記載）。
+> 本節は**設計時点の検討の記録**であり、現在の挙動を知りたいときは triage-guide を読むこと。
 
 - **「実質 prose 変更」の閾値（目安 10 行）の妥当性**
   - (a) 固定行数閾値 / (b) prose 行比率 / (c) LLM 判定のみ
