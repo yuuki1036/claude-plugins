@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.4] - 2026-08-27
+
+### Fixed
+
+- `check-scope-size.sh` の `jq` 不在 fallback にも `|| true` を付けた（GitHub issue #180）。
+  jq 分岐は付与済みだったが grep fallback 側に無く、対象キーを欠く payload で
+  ERR trap を踏んで自己判定に到達しなかった（dev-workflow の 5 本と同型）
+
 ## [1.4.3] - 2026-08-27
 
 ### Fixed

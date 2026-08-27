@@ -405,6 +405,60 @@ class TddPhaseGateTest(HookTestCase):
             src = root / "a.ts"; src.write_text("x\n")
             self.assertNotEqual(self.run_hook(self.payload(src), cwd=root).returncode, 2)
 
+    # --- 場所 × 命名の直積（GitHub issue #180）---
+    def test_every_documented_layout_silences_the_gate(self):
+        """README が宣言する「場所 × 命名」の全組み合わせで黙ること.
+
+        以前は手書きの 9 通りで直積になっておらず、`tests/` 配下は `.test.` と `test_`
+        しか探していなかった。**`tests/foo.spec.ts` 構成はテストが実在しても常に警告**
+        が出る状態で、恒常的な誤警告は「⚠️ が出たときだけ行動する」契約を壊す。
+        """
+        layouts = [(d, n) for d in ("", "__tests__", "tests")
+                   for n in ("a.test.ts", "a.spec.ts", "test_a.ts", "a_test.ts")]
+        layouts += [("__tests__", "a.ts"), ("tests", "a.ts")]   # ミラー配置
+        for subdir, test_name in layouts:
+            with self.subTest(layout=f"{subdir or '.'}/{test_name}"), TempGitRepo() as root:
+                self._enable(root)
+                src = root / "a.ts"; src.write_text("x\n")
+                target = root / subdir if subdir else root
+                target.mkdir(exist_ok=True)
+                (target / test_name).write_text("t\n")
+                self.assertSilent(self.run_hook(self.payload(src), cwd=root))
+
+
+class JqAbsentFallbackTest(HookTestCase):
+    """`jq` を引けない環境での自己判定（GitHub issue #180）.
+
+    jq 分岐は `|| true` 済みだったが、grep fallback 側に無かった。対象キーを欠く
+    payload（**まさに自己判定が受け持つべきケース**）で grep の exit 1 が safe-hook の
+    ERR trap を踏み、自己判定ごと死んでいた。`rc` は同じ 0 なので stderr で見分ける。
+    """
+
+    PLUGIN = "dev-workflow"
+
+    SCRIPTS = {
+        "hooks/scripts/on-commit.sh": {"tool_input": {}},
+        "hooks/scripts/push-reminder.sh": {"tool_input": {}},
+        "hooks/scripts/ui-verify-gate.sh": {"tool_input": {}},
+        "hooks/scripts/tdd-phase-gate.sh": {"tool_input": {}},
+        "hooks/scripts/ui-change-reminder.sh": {"tool_input": {}},
+    }
+
+    def test_a_missing_key_does_not_trip_the_err_trap(self):
+        path = self.path_with_only()          # jq を含めない
+        for script, payload in self.SCRIPTS.items():
+            with self.subTest(script=script), TempGitRepo() as root:
+                # tdd-phase-gate / ui-verify-gate は opt-in なので有効化して経路に入れる
+                d = root / ".claude"; d.mkdir(exist_ok=True)
+                (d / ".tdd-phase-gate-enabled").touch()
+                (d / ".ui-verify-enabled").touch()
+                self.SCRIPT = script
+                res = self.run_hook(payload, cwd=root, env_extra={"PATH": path})
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertNotIn("Unexpected", res.stderr,
+                                 f"{script}: ERR trap で落ちている（自己判定に到達しない）")
+
+
 class PostFormatLintTest(HookTestCase):
     """opt-in の 3 段チェーン（fmt → lint → check）。**check だけが block を出す**."""
 

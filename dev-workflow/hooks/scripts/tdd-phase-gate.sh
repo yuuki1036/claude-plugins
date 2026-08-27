@@ -18,8 +18,8 @@ if command -v jq &>/dev/null; then
   TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)
   FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
 else
-  TOOL_NAME=$(echo "$INPUT" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]+"' | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
-  FILE_PATH=$(echo "$INPUT" | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"[^"]+"' | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
+  TOOL_NAME=$(echo "$INPUT" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[^"]+"' | sed 's/.*"\([^"]*\)"$/\1/' | head -1 || true)
+  FILE_PATH=$(echo "$INPUT" | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"[^"]+"' | sed 's/.*"\([^"]*\)"$/\1/' | head -1 || true)
 fi
 
 case "$TOOL_NAME" in
@@ -55,17 +55,24 @@ esac
 STEM="${BASENAME%.*}"
 EXT="${BASENAME##*.}"
 
-# 対応テストファイルの候補パターン
-TEST_CANDIDATES=(
-  "${DIRNAME}/${STEM}.test.${EXT}"
-  "${DIRNAME}/${STEM}.spec.${EXT}"
-  "${DIRNAME}/__tests__/${STEM}.test.${EXT}"
-  "${DIRNAME}/__tests__/${STEM}.spec.${EXT}"
+# 対応テストファイルの候補。**場所 × 命名の直積で作る**（GitHub issue #180）:
+# 以前は手書きの 9 通りで直積になっておらず、`tests/` 配下は `.test.` と `test_` しか
+# 探していなかった。そのため **`tests/foo.spec.ts` 構成のプロジェクトはテストが実在しても
+# 常に警告**が出ていた（README は直積を宣言しており、実装だけが狭かった）。
+# 恒常的な誤警告は「⚠️ が出たときだけ行動する」契約を壊す（docs/rule-placement.md）
+TEST_CANDIDATES=()
+for _dir in "${DIRNAME}" "${DIRNAME}/__tests__" "${DIRNAME}/tests"; do
+  TEST_CANDIDATES+=(
+    "${_dir}/${STEM}.test.${EXT}"
+    "${_dir}/${STEM}.spec.${EXT}"
+    "${_dir}/test_${STEM}.${EXT}"
+    "${_dir}/${STEM}_test.${EXT}"
+  )
+done
+# ミラー配置（テスト用ディレクトリに同名で置く流儀）
+TEST_CANDIDATES+=(
   "${DIRNAME}/__tests__/${BASENAME}"
-  "${DIRNAME}/test_${STEM}.${EXT}"
-  "${DIRNAME}/${STEM}_test.${EXT}"
-  "${DIRNAME}/tests/${STEM}.test.${EXT}"
-  "${DIRNAME}/tests/test_${STEM}.${EXT}"
+  "${DIRNAME}/tests/${BASENAME}"
 )
 
 for candidate in "${TEST_CANDIDATES[@]}"; do

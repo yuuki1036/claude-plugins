@@ -2,6 +2,23 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.26.1] - 2026-08-27
+
+### Fixed
+
+- **`tdd-phase-gate` の恒常的な誤警告を消した**（GitHub issue #180）。テストファイルの
+  探索候補が手書きの 9 通りで「場所 × 命名」の直積になっておらず、`tests/` 配下は
+  `.test.` と `test_` しか探していなかった。そのため **`tests/foo.spec.ts` 構成の
+  プロジェクトはテストが実在しても常に警告**が出ていた（README は直積を宣言しており、
+  実装だけが狭かった）。恒常的な偽警告は「⚠️ が出たときだけ行動する」契約を壊す
+  （`docs/rule-placement.md`）
+- **`jq` 不在時の fallback で自己判定が死んでいたのを直した**（同 issue）。jq 分岐は
+  `|| true` 済みだったが grep fallback 側に無く、対象キーを欠く payload
+  （**まさに自己判定二重ゲートが受け持つべきケース**）で grep の exit 1 が safe-hook の
+  ERR trap を踏み、以降を実行せず exit 0 していた。対象は `on-commit.sh` /
+  `push-reminder.sh` / `ui-verify-gate.sh` / `tdd-phase-gate.sh` / `ui-change-reminder.sh`
+  の 5 本。`doc-freshness` の同型 fallback は `|| true` 済みで、書き方が割れていた
+
 ## [1.26.0] - 2026-08-20
 
 ### Removed

@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -95,6 +96,28 @@ class HookTestCase(unittest.TestCase):
             cwd=str(cwd or ROOT), env=env, timeout=30,
         )
         return HookResult(proc)
+
+    #: PATH を絞るときに最低限引けるようにするもの（safe-hook 自身が使う）
+    BASE_TOOLS = ("bash", "cat", "grep", "sed", "head", "cut", "dirname", "basename", "git")
+
+    def path_with_only(self, *extra: str) -> str:
+        """**指定したコマンドだけ**を引ける PATH を作って返す（`jq` 不在の再現などに使う）.
+
+        **「このディレクトリには無いはず」に頼らない**（CLAUDE.md Gotchas）: Linux の
+        `/bin` は `/usr/bin` の symlink で、CI には `jq` も `python3` も入っている。
+        **引ける側を列挙する**方向で作る。
+        """
+        if getattr(self, "_tool_bin_path", None) is None:
+            tmp = tempfile.TemporaryDirectory()
+            self.addCleanup(tmp.cleanup)
+            self._tool_bin_path = Path(tmp.name)
+        for name in (*self.BASE_TOOLS, *extra):
+            real = shutil.which(name)
+            self.assertIsNotNone(real, "%s が見つからない（テストの前提）" % name)
+            dest = self._tool_bin_path / name
+            if not dest.exists():
+                dest.symlink_to(real)
+        return str(self._tool_bin_path)
 
     def isolated_project_dir(self) -> Path:
         """`CLAUDE_PROJECT_DIR` の逃がし先（テストごとに 1 つ・使い捨て）."""
