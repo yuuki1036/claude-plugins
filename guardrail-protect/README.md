@@ -1,8 +1,8 @@
 # guardrail-protect
 
-lint / hook / static check の「骨抜き」変更と `git commit --no-verify` を PreToolUse hook で機械的にブロックする単機能 plugin。
+lint / hook / static check の「骨抜き」変更、`git commit --no-verify`、そして **`gh` で公開する本文の裏取り漏れ**を PreToolUse hook で機械的にブロックする単機能 plugin。
 
-AI agent が「赤を消すために linter を緩める」「hook がうるさいから `--no-verify` する」逃げ道を構造的に塞ぐ。
+AI agent が「赤を消すために linter を緩める」「hook がうるさいから `--no-verify` する」「典拠を確認せずに公開文書へ書く」逃げ道を構造的に塞ぐ。
 
 ## 機能
 
@@ -29,6 +29,35 @@ AI agent が「赤を消すために linter を緩める」「hook がうるさ�
 `guardrail-protect.json` 自体を Bash（リダイレクト / `sed -i` / `tee` / `cp` / `mv` / `rm` 等）で改変する試みもブロックする（Edit/Write 経路は `pre-config-guard.sh` の自己保護でカバー）。
 
 `jq` / `perl` が無い環境では**無言で無効化せず** stderr に通知する（fail-loud）。
+
+### 3. 実在しない見出しへの参照ブロック (Bash on gh write)
+
+`gh issue create|comment|edit|close` / `gh pr create|comment|edit|review` の本文に
+``` `<file>.md ## <見出し>` ``` 形式の参照があり、**ファイルは実在するのにその見出しが無い**
+場合に `exit 2` でブロックする（常時有効・opt-in 不要）。
+
+節番号の取り違え（分冊で番号が引き継がれている / 節が増減した）が典型で、公開後の訂正コストが高い。
+
+- 本文の取り出しはコマンド文字列をそのまま検査する方式（参照はバッククォート付きで現れるため
+  `--body` / `-b` / heredoc を覆う）。`--body-file` / `-F` はファイル内容を読み足す。
+  **コマンド置換 `--body "$(cat x.md)"`・変数展開・`-F -`（stdin）で渡された本文は検査されない**
+- ファイルの解決は**末尾一致も許容**する（`references/orchestration-guide.md` で
+  `code-review/references/orchestration-guide.md` を指すプラグインルート相対の慣習に対応）
+- **判定できない条件では必ず黙る**: ファイル名が複数に一致する / repo 内に見つからない /
+  git 管理下でない
+- `jq` / `python3` が無い環境では**無言で無効化せず** stderr に通知する（fail-loud）
+
+**パスの実在は検証しない。** 過去 issue 188 件 + コメント 213 件を母集団に実測したところ、
+パス実在検証は**真の検出 0 件・偽陽性 41 件**（正当なプラグインルート相対参照 / placeholder /
+他リポジトリのパス / 実行時生成ファイル / `React/Next.js` のような非パス）**だった**。
+同じ母集団で見出し実在の検証は**真の検出 8 件・偽陽性 0 件だった**。
+
+**この数値は導入前の issue 本文に閉じた観測であって、検出器の性質ではない。** 実際に hook が
+掛かる入力（今後書く本文・リポジトリ内 md の引用）では 5 系統の偽陽性が見つかり、いずれも修正した
+（下記「制限事項」）。現在は**このリポジトリの実 md 297 件・実在見出し 3401 件で偽陽性 0**
+（回帰テスト `RealRepositoryRegressionTest` が毎回検証する）。
+測定の一次記録: `docs/session-reports/2026-08-28-gh-ref-guard-measurement.md`
+
 
 ## opt-in セットアップ
 
@@ -110,6 +139,10 @@ git commit -m "fix" && git log -n 5            → PASS（他コマンドの -n 
 - git hook 迂回の検出は `git commit` コマンド自体に埋め込まれたパターンが対象。以下の**別コマンドによる無効化**は検出しない（既知の穴。必要なら該当ファイル/コマンドを permissions 側で塞ぐ）:
   - `git config core.hooksPath ...`（commit と別コマンドで hooksPath を変更）
   - `rm .git/hooks/*` / `chmod -x .git/hooks/*`（hook スクリプトの削除・無効化）
+- **見出し参照の検証はバッククォートで囲まれた ``` `<file>.md ## <見出し>` ``` だけが対象**。散文中の参照・URL の fragment・`.md` 以外のファイルは見ない。また**数値主張（「N 件」「X%」）の検算は行わない** — 数値を含むだけで鳴らすと偽陽性が常態化するため、規約側の領分として分けている
+- **意図的に判定しないもの**（黙って通す）: 複数節をまとめて指す参照（`` `f.md ## 6 / ## 8` ``）／ファイル名が repo 内の複数ファイルに一致する／repo 内に見つからない／閉じないコードフェンスを含む doc（見出し一覧が壊れるため判定不能とする）／git 管理下でない／`git ls-files` が空
+- **検査されない渡し方**: コマンド置換（`--body "$(cat x.md)"`）・変数展開・`-F -`（stdin）。`gh api` / `gh release` / `gh gist` も対象外
+- **ブロックされたときの回避**: 参照の書き方を変えるか、guardrail-protect を無効化する（**プラグイン単位**。commit 迂回ガードも同時に外れる）。`.claude/guardrail-protect.json` はこの hook を制御しない（設定ファイル保護のみ）
 - **config 自己保護**: `guardrail-protect.json` 自体は Edit/Write/MultiEdit（`pre-config-guard.sh`）と Bash 書き込み（`detect-commit-bypass.pl`）の両経路で常にブロック対象。保護スコープを変える場合は Claude 外で人間が編集する
 
 ## CHANGELOG

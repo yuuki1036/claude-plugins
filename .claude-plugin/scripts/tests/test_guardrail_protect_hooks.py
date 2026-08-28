@@ -19,7 +19,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from hook_harness import HookTestCase, ROOT
+from hook_harness import HookTestCase, ROOT, TempGitRepo
 
 DETECTOR = ROOT / "guardrail-protect" / "hooks" / "scripts" / "detect-commit-bypass.pl"
 
@@ -234,6 +234,378 @@ class PreConfigGuardTest(HookTestCase):
         self.assertEqual(res.returncode, 0, "壊れた入力でブロック側に倒れている")
         self.assertNotIn("Unexpected", res.stderr,
                          "ERR trap で落ちている（明示的に通したのではない）")
+
+
+
+STALE_REF_DETECTOR = ROOT / "guardrail-protect" / "hooks" / "scripts" / "detect-stale-refs.py"
+
+#: 参照先として使う doc。節番号が飛んでいる（分冊で番号を引き継ぐ本リポジトリの慣習）
+SAMPLE_DOC = """# 計測（guide 分冊）
+
+## 13. Event Bus publish 先の固定
+
+```bash
+# 合算するログの一覧を作る
+#
+```
+
+``` `<file>.md ## <見出し>` ``` 形式の参照（行頭のインラインコードスパン）
+
+## 15. 区間・wave 単価の実測ベースライン
+
+#### P.1: 剪定候補スキャン
+
+## 版マーカーの現行値
+
+## 計測の基準値（改修効果はここと比べる）
+"""
+
+
+class StaleRefDetectorTest(unittest.TestCase):
+    """見出し実在の判定本体を CLI 境界越しに叩く.
+
+    **パス実在は検証しない**という設計判断がここの要。過去 issue 188 件 +
+    コメント 213 件の実測で、パス実在検証は真の検出 0 件・偽陽性 41 件だった
+    （正当なプラグインルート相対参照 / placeholder / 他リポジトリのパス /
+    実行時生成ファイル / `React/Next.js` のような非パス）。**未解決パスで黙る**
+    テストを消すと、その 41 件がそのまま block として復活する。
+    """
+
+    def setUp(self):
+        self._repo = TempGitRepo()
+        self.repo = self._repo.__enter__()
+        self.addCleanup(self._repo.__exit__)
+        (self.repo / "code-review" / "references").mkdir(parents=True)
+        (self.repo / "code-review" / "references" / "measurement.md").write_text(
+            SAMPLE_DOC, encoding="utf-8")
+        self._repo.commit("add doc", filename="README.md", body="x")
+
+    def detect(self, body: str) -> str:
+        proc = subprocess.run(
+            ["python3", str(STALE_REF_DETECTOR), str(self.repo)],
+            input=body, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, f"判定器は常に exit 0: {proc.stderr}")
+        return proc.stdout.strip()
+
+    # ---- 検出する側 --------------------------------------------------------
+    def test_missing_heading_is_detected(self):
+        self.assertIn("measurement.md ## 5", self.detect("典拠は `measurement.md ## 5` にある"))
+
+    def test_a_numeric_anchor_must_not_match_a_longer_number(self):
+        """`## 1` を `## 13` に一致させない（番号違いが素通りするため）."""
+        detected = self.detect("`measurement.md ## 1`")
+        self.assertTrue(detected.startswith("measurement.md ## 1\t"),
+                        f"`## 1` が `## 13` に吸われている: {detected!r}")
+
+    def test_detected_across_plugin_root_relative_path(self):
+        """プラグインルート相対（末尾一致）でも解決して見出しを見る."""
+        self.assertIn("references/measurement.md ## 5",
+                      self.detect("`references/measurement.md ## 5`"))
+
+
+    def test_a_fenced_comment_is_not_a_heading(self):
+        """コードフェンス内の `#` 行を見出しに採らない.
+
+        採ると `## <番号>` 参照がシェルコメントに前方一致して**検出が黙って
+        無効化される**。本リポジトリの `orchestration-measurement.md` は
+        フェンス内に 2 本持っており、実際に採取されていた。
+        """
+        self.assertIn("measurement.md ## 合算",
+                      self.detect("`measurement.md ## 合算するログの一覧を作る`"))
+
+    def test_an_empty_heading_does_not_disable_detection(self):
+        """裸の `#` 行（空見出し）で検出が丸ごと死なない.
+
+        両方向の前方一致のうち `anchor.startswith(head)` に境界条件が無いと、
+        空文字の見出しに**全参照が一致**してそのファイルの検出が消える。
+        壊れ方が「黙って無効化」なので、テストが緑でも気づけない型。
+        """
+        detected = self.detect("`measurement.md ## 999`")
+        self.assertTrue(detected.startswith("measurement.md ## 999\t"),
+                        f"空見出しに吸われている: {detected!r}")
+
+    def test_a_heading_after_an_inline_code_span_is_found(self):
+        """行頭のインラインコードスパンをフェンス開始と誤認しない.
+
+        誤認すると以降の実在見出しが全部消え、**正しい参照が block される**。
+        実測でこのリポジトリ自身の README が該当し、`## 制限事項` への参照が
+        exit 2 になっていた（fixture のフェンスが必ず閉じていたため未検知）。
+        """
+        for ref in ("measurement.md ## 15", "measurement.md ## 計測の基準値"):
+            with self.subTest(ref=ref):
+                self.assertEqual(self.detect(f"`{ref}`"), "")
+
+    def test_an_unterminated_fence_makes_the_file_undecidable(self):
+        """閉じないフェンスがある doc は「判定不能」として黙る.
+
+        壊れた見出し一覧を正しい一覧として使うと偽陽性になる。
+        """
+        (self.repo / "broken.md").write_text(
+            "# T\n\n```\n# not a heading\n\n## 実在する見出し\n", encoding="utf-8")
+        self._repo.commit("add broken", filename="README.md", body="b")
+        self.assertEqual(self.detect("`broken.md ## 実在する見出し`"), "")
+        self.assertEqual(self.detect("`broken.md ## 存在しないZZZ`"), "",
+                         "判定不能なファイルで検出している")
+
+    def test_a_deep_heading_is_matched(self):
+        """H4 以上（`####`）への正しい参照を検出しない.
+
+        `#` を 3 個で打ち切ると 4 個目が anchor 側に漏れ、必ず不一致になる。
+        """
+        self.assertEqual(self.detect("`measurement.md #### P.1: 剪定候補スキャン`"), "")
+
+    def test_a_compound_reference_is_silent(self):
+        """複数節をまとめて指す書き方は判定しない（anchor が見出しになりえない）.
+
+        この記法は `code-review/CHANGELOG.md` に実在する。
+        """
+        for ref in ("measurement.md ## 15 / ## 13", "measurement.md ## 6 / ## 8 / ## 2"):
+            with self.subTest(ref=ref):
+                self.assertEqual(self.detect(f"`{ref}`"), "")
+
+    def test_a_github_anchor_slug_is_matched(self):
+        """GitHub 標準の anchor slug（小文字ハイフン）を見出しに対応づける."""
+        (self.repo / "en.md").write_text("# T\n\n## Installation Guide\n", encoding="utf-8")
+        self._repo.commit("add en", filename="README.md", body="c")
+        self.assertEqual(self.detect("`en.md#installation-guide`"), "")
+        self.assertIn("en.md ## nope", self.detect("`en.md#nope`"))
+
+    def test_an_exact_heading_match_is_silent(self):
+        """見出しを 1 文字違わず引用した形（最も丁寧な書き方）を弾かない."""
+        self.assertEqual(self.detect("`measurement.md ## 版マーカーの現行値`"), "")
+
+    def test_a_path_with_spaces_or_non_ascii_resolves(self):
+        """`git ls-files` の既定エスケープ・空白分割で解決不能にならない.
+
+        `split()` のままだと非 ASCII パスは永久に解決できず**黙って無検査**になり、
+        空白入りパスは 2 つに割れて無関係な参照の検出まで殺す。
+        """
+        (self.repo / "計測メモ.md").write_text("# T\n\n## 実在\n", encoding="utf-8")
+        (self.repo / "my notes.md").write_text("# T\n\n## 実在\n", encoding="utf-8")
+        self._repo.commit("add odd names", filename="README.md", body="d")
+        self.assertIn("計測メモ.md ## 無いZZZ", self.detect("`計測メモ.md ## 無いZZZ`"))
+        self.assertEqual(self.detect("`計測メモ.md ## 実在`"), "")
+        self.assertEqual(self.detect("`measurement.md ## 15`"), "",
+                         "空白入りパスが無関係な参照の検出を壊している")
+
+    # ---- 黙る側（こちらが厚い。偽陽性 0 を維持する境界）--------------------
+    def test_existing_heading_is_silent(self):
+        for ref in ("measurement.md ## 15", "measurement.md ## 13",
+                    "measurement.md ## 計測の基準値"):
+            with self.subTest(ref=ref):
+                self.assertEqual(self.detect(f"`{ref}`"), "")
+
+    def test_a_heading_prefix_is_silent(self):
+        self.assertEqual(self.detect("`measurement.md ## 15. 区間`"), "")
+
+    def test_a_reference_longer_than_the_heading_is_silent(self):
+        """参照が見出しより長い向きの前方一致（見出しを丸ごと含んで補足を足した形）."""
+        self.assertEqual(
+            self.detect("`measurement.md ## 13. Event Bus publish 先の固定 の話`"), "")
+
+    def test_without_an_argument_it_falls_back_to_the_working_directory(self):
+        """root 引数なしでも落ちない（既定は cwd）."""
+        proc = subprocess.run(["python3", str(STALE_REF_DETECTOR)],
+                              input="`measurement.md ## 5`", cwd=str(self.repo),
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, f"引数なしで落ちている: {proc.stderr}")
+        self.assertIn("measurement.md ## 5", proc.stdout)
+
+    def test_an_unresolvable_path_is_silent(self):
+        """**パス実在は検証しない**（実測で偽陽性 41 件 / 真の検出 0 件だった）."""
+        for ref in ("path/to/doc.md ## 1", "evals/reports/recall-YYYYMMDD.md ## x",
+                    "src/lib/prisma.ts.md ## 3"):
+            with self.subTest(ref=ref):
+                self.assertEqual(self.detect(f"`{ref}`"), "")
+
+    def test_an_ambiguous_filename_is_silent(self):
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "measurement.md").write_text("# other\n", encoding="utf-8")
+        self._repo.commit("add dup", filename="README.md", body="y")
+        self.assertEqual(self.detect("`measurement.md ## 5`"), "",
+                         "複数に一致するファイル名で判定している")
+
+    def test_a_url_fragment_is_silent(self):
+        self.assertEqual(
+            self.detect("`https://example.com/blob/main/measurement.md#5`"), "")
+
+    def test_a_non_markdown_reference_is_silent(self):
+        self.assertEqual(self.detect("`code-review/scripts/foo.sh ## 5`"), "")
+
+    def test_outside_a_git_repository_it_is_silent(self):
+        proc = subprocess.run(
+            ["python3", str(STALE_REF_DETECTOR), "/"],
+            input="`measurement.md ## 5`", capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout.strip(), "")
+
+
+class GhRefGuardTest(HookTestCase):
+    """hook 本体: `gh` の外向き書き込みだけを検査し、それ以外は素通りする."""
+
+    PLUGIN = "guardrail-protect"
+    SCRIPT = "hooks/scripts/gh-ref-guard.sh"
+
+    def setUp(self):
+        self._repo = TempGitRepo()
+        self.repo = self._repo.__enter__()
+        self.addCleanup(self._repo.__exit__)
+        (self.repo / "code-review" / "references").mkdir(parents=True)
+        (self.repo / "code-review" / "references" / "measurement.md").write_text(
+            SAMPLE_DOC, encoding="utf-8")
+        self._repo.commit("add doc", filename="README.md", body="x")
+
+    def gh(self, command: str):
+        return self.run_hook(self.bash_payload(command), cwd=self.repo)
+
+    # ---- ブロックする側 ----------------------------------------------------
+    def test_blocks_a_missing_heading_in_an_issue_comment(self):
+        res = self.gh("gh issue comment 1 --body '典拠は `measurement.md ## 5`'")
+        self.assertEqual(res.returncode, 2, f"ブロックするべき: {res!r}")
+        self.assertIn("heading that does not exist", res.stderr)
+
+    def test_blocks_across_gh_write_subcommands(self):
+        for sub in ("gh issue create --title t --body",
+                    "gh pr create --title t --body",
+                    "gh pr comment 1 --body",
+                    "gh issue close 1 --comment"):
+            with self.subTest(sub=sub):
+                res = self.gh(f"{sub} '`measurement.md ## 5`'")
+                self.assertEqual(res.returncode, 2, f"{sub} を検査していない")
+
+    def test_body_file_contents_are_inspected(self):
+        (self.repo / "body.md").write_text("典拠は `measurement.md ## 5`", encoding="utf-8")
+        res = self.gh(f"gh issue comment 1 --body-file {self.repo / 'body.md'}")
+        self.assertEqual(res.returncode, 2, "--body-file の中身を読んでいない")
+
+    def test_a_command_that_only_looks_like_gh_is_not_inspected(self):
+        """`gh` が単語の一部として現れるだけのコマンドを検査しない.
+
+        部分文字列 glob（`*gh*issue*create*`）だと `hi(gh)light ... issue ... create` が
+        一致し、**gh を呼んでいないコマンドを block** していた（実測）。
+        """
+        for cmd in ('echo "highlight the issue then create a note: `measurement.md ## ZZZ`"',
+                    'echo "insight: issue tracking, then create `measurement.md ## ZZZ`"',
+                    'grep -r "gh pr review" docs/'):
+            with self.subTest(cmd=cmd):
+                res = self.gh(cmd)
+                self.assertEqual(res.returncode, 0, f"gh を呼ばないコマンドを止めた: {res.stderr}")
+
+    def test_read_only_gh_subcommands_are_not_inspected(self):
+        """`--comments` / `--json reviews` を持つ読み取り専用 gh を検査しない."""
+        for cmd in ("gh issue view 1 --comments", "gh pr view 1 --comments",
+                    "gh pr view 1 --json reviews", "gh issue list"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(
+                    self.gh(f'{cmd} # `measurement.md ## ZZZ`').returncode, 0)
+
+    def test_body_file_equals_form_is_inspected(self):
+        """`--body-file=path` の `=` 形式も読み足す（gh が受け付ける形）."""
+        (self.repo / "body.md").write_text("`measurement.md ## ZZZ`", encoding="utf-8")
+        res = self.gh(f"gh issue comment 1 --body-file={self.repo / 'body.md'}")
+        self.assertEqual(res.returncode, 2, "`=` 形式の --body-file を読んでいない")
+
+    def test_a_broken_detector_is_loud(self):
+        """検出器が壊れたら**黙って通さない**（rc だけでなく stderr を見る）.
+
+        以前は `2>/dev/null || true` が握り潰し、検出器を消しても
+        rc=0 / 出力 0 バイトでガードが黙って無効化されていた（実測）。
+        """
+        import shutil
+        alt = self.isolated_project_dir() / "plugin-copy"
+        if not alt.exists():
+            shutil.copytree(ROOT / "guardrail-protect", alt)
+        (alt / "hooks" / "scripts" / "detect-stale-refs.py").unlink()
+        res = self.run_hook(
+            self.bash_payload("gh issue comment 1 --body '`measurement.md ## ZZZ`'"),
+            cwd=self.repo, env_extra={"CLAUDE_PLUGIN_ROOT": str(alt)})
+        self.assertIn("Unexpected", res.stderr,
+                      "検出器が壊れても無音で通している（ガードの silent 無効化）")
+
+    # ---- 黙る側 ------------------------------------------------------------
+    def test_allows_an_existing_heading(self):
+        res = self.gh("gh issue comment 1 --body '典拠は `measurement.md ## 15`'")
+        self.assertEqual(res.returncode, 0, f"正当な参照を止めた: {res.stderr}")
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr,
+                         "ERR trap で落ちている（黙ったのではなく死んでいる）")
+
+    def test_read_only_gh_commands_are_not_inspected(self):
+        for cmd in ("gh issue view 1", "gh issue list", "gh pr list",
+                    "gh api repos/x/y"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.gh(f"{cmd} # `measurement.md ## 5`").returncode, 0)
+
+    def test_unrelated_commands_are_not_inspected(self):
+        for cmd in ("ls", "npm test", "git commit -m '`measurement.md ## 5`'"):
+            with self.subTest(cmd=cmd):
+                res = self.gh(cmd)
+                self.assertEqual(res.returncode, 0)
+                self.assertSilent(res)
+
+    def test_empty_command_is_ignored(self):
+        self.assertEqual(
+            self.run_hook({"tool_name": "Bash", "tool_input": {}}, cwd=self.repo).returncode, 0)
+
+    def test_malformed_input_does_not_block(self):
+        self.assertEqual(self.run_hook({}, cwd=self.repo).returncode, 0)
+
+    def test_invalid_json_passes_deliberately_not_by_accident(self):
+        res = self.run_hook(
+            raw='{"tool_name":"Bash","tool_input":{"command":"gh issue comment 1 --body',
+            cwd=self.repo)
+        self.assertEqual(res.returncode, 0, "壊れた入力でブロック側に倒れている")
+        self.assertNotIn("Unexpected", res.stderr,
+                         "ERR trap で落ちている（明示的に通したのではない）")
+
+    def test_a_non_bash_tool_is_not_inspected(self):
+        res = self.run_hook(
+            {"tool_name": "Read",
+             "tool_input": {"command": "gh issue comment 1 --body '`measurement.md ## 5`'"}},
+            cwd=self.repo)
+        self.assertEqual(res.returncode, 0, "Bash 以外のツールを検査している")
+
+    def test_a_missing_tool_name_does_not_disable_the_guard(self):
+        res = self.run_hook(
+            {"tool_input": {"command": "gh issue comment 1 --body '`measurement.md ## 5`'"}},
+            cwd=self.repo)
+        self.assertEqual(res.returncode, 2, "tool_name が無いだけでガードが死んでいる")
+
+
+class RealRepositoryRegressionTest(unittest.TestCase):
+    """**このリポジトリの実 md に当てる回帰テスト**（合成 fixture の代替ではなく補完）.
+
+    新規 26 テストをすり抜けたバグ 5 件は、すべて「参照先 doc の形」に起因していた
+    （フェンス未終端 / 行頭インラインコードスパン / H4 / 複合参照 / slug）。
+    参照テキスト側をいくら増やしても再現しない型で、**実データに当てる 1 本**が
+    最も安く覆う。doc の記法が増えるたび母数が自動で増える点も合成 fixture に勝る。
+
+    実測（修正前）: 実在見出し 3396 件中 87 件が偽陽性。
+    """
+
+    def test_every_real_heading_in_this_repository_is_accepted(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("d", STALE_REF_DETECTOR)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        root = str(ROOT)
+        md_files = [f for f in mod.repo_files(root) if f.endswith(".md")]
+        self.assertGreater(len(md_files), 50, "母集団が小さすぎる（走査に失敗している）")
+
+        refs = []
+        for path in md_files:
+            for head in mod.headings(root, path):
+                if "`" in head:          # 参照記法自体を壊すのでこのテストの対象外
+                    continue
+                refs.append(f"`{path} ## {head}`")
+        self.assertGreater(len(refs), 500, "見出しが採れていない")
+
+        hits = mod.detect("\n".join(refs), root)
+        self.assertEqual(
+            hits, [],
+            "実在する見出しへの正しい参照を %d 件 block している（偽陽性 0 が設計要件）: %s"
+            % (len(hits), [r for r, _ in hits[:5]]))
 
 
 if __name__ == "__main__":

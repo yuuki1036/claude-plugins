@@ -21,7 +21,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [doc-freshness](#doc-freshness) | 0.5.3 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.3.1 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.11.7 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
-| [guardrail-protect](#guardrail-protect) | 0.3.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify を機械ブロック |
+| [guardrail-protect](#guardrail-protect) | 0.4.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照を機械ブロック |
 | [issue-workflow](#issue-workflow) | 1.4.5 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [living-spec-workflow](#living-spec-workflow) | 0.3.4 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.8 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
@@ -95,7 +95,7 @@ Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環
 - **依存**: code-review（Phase 6、未インストール時 fail-fast）
 
 ### guardrail-protect
-`git commit` の hook 迂回（`--no-verify`/`-n`・git 省略形・`-c core.hooksPath` 上書き・変数間接・`sh -c` スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック。config 自己保護・fail-loud（jq/perl 不在時に無言で無効化しない）付き。
+`git commit` の hook 迂回（`--no-verify`/`-n`・git 省略形・`-c core.hooksPath` 上書き・変数間接・`sh -c` スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック + `gh` の外向き書き込み（issue / PR の create・comment・edit・close・review）で **ファイルは実在するのに見出しが無い参照**を常時ブロック。パスの実在は検証しない（過去 issue 188 件 + コメント 213 件の実測で真の検出 0 件・偽陽性 41 件だったため）。実 md 297 件・実在見出し 3401 件の回帰テストで偽陽性 0 を毎回検証する。測定の一次記録は `docs/session-reports/2026-08-28-gh-ref-guard-measurement.md`。config 自己保護・fail-loud（jq/perl/python3 不在時に無言で無効化しない）付き。
 - **hooks**: PreToolUse
 
 ### issue-workflow
