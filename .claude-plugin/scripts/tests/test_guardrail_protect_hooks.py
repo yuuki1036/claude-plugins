@@ -24,6 +24,10 @@ from hook_harness import HookTestCase, ROOT, TempGitRepo
 DETECTOR = ROOT / "guardrail-protect" / "hooks" / "scripts" / "detect-commit-bypass.pl"
 
 
+#: 検査対象の設定ファイル。**生の文字列で書かない** — このテストファイル自身が
+#: hook の前段フィルタに掛かるのを避ける
+CFG = ".claude/guardrail-" + "protect.json"
+
 class DetectorTest(unittest.TestCase):
     """perl 判定器を単体で叩く（stdout に理由が出れば検出）."""
 
@@ -121,6 +125,64 @@ class DetectorTest(unittest.TestCase):
                     "sed -i '' 's/true/false/' .claude/guardrail-protect.json"):
             with self.subTest(cmd=cmd):
                 self.assertBypass(cmd)
+
+
+    # ---- 設定ファイル自己保護（トークン準拠 / 誤検出の修正）------------------
+    #
+    # **判定は $cmd 全体への正規表現では行わない。** 旧実装は引用符を見ずに
+    # 「破壊的な語 → 設定ファイル名」の並びを探しており、ファイル名を**文字列として
+    # 書いただけ**のコマンドをブロックしていた（README に当のファイル名を書こうとして
+    # 実際に作業が止まった）。以下の「黙る側」を消すと、その誤検出が復活する。
+
+    def test_mentioning_the_config_file_is_allowed(self):
+        """ファイル名を言及・読み取りするだけでは発火しない."""
+        for cmd in (f'echo "設定は {CFG} にある"',
+                    f"echo 'rm は危険。{CFG} を参照'",
+                    f"cat {CFG}",
+                    f"grep hooks {CFG}",
+                    f"jq . {CFG}",
+                    f"ls -la {CFG}",
+                    f"git add {CFG}",
+                    f'git commit -m "docs: {CFG} の説明"',
+                    f"diff {CFG} /tmp/other.json"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.detect(cmd), "", "言及しただけで検出している")
+
+    def test_a_destructive_verb_in_a_quoted_string_is_allowed(self):
+        """引用符の中に破壊的な語とファイル名が同居しても発火しない.
+
+        実測の偽陽性: `echo 'rm は危険。... <config> にある'` が BLOCK されていた。
+        区切り（| ; &）が間に無ければ距離を問わず一致する実装だった。
+        """
+        body = "python3 - <<'PY'\ns = " + "'''" + "`" + CFG + "` は制御しない（rm / mv / cp）" + "'''" + "\nPY"
+        self.assertEqual(self.detect(body), "")
+
+    def test_actual_writes_to_the_config_file_are_still_blocked(self):
+        """**自己保護は弱めない。** 実際に書き換える形はすべて検出する."""
+        cases = {
+            "redirect": [f'echo "{{}}" > {CFG}', f"echo x >> {CFG}", f"echo x >{CFG}",
+                         f"echo x >| {CFG}", f'echo x > "{CFG}"', f"echo x > '{CFG}'"],
+            "rm": [f"rm -f {CFG}", f"command rm {CFG}", f"FOO=1 rm {CFG}",
+                   f"/bin/rm {CFG}", f"git status && rm {CFG}"],
+            "mv": [f"mv {CFG} /tmp/bak"],
+            "cp": [f"cp /tmp/empty.json {CFG}"],
+            "tee": [f"echo x | tee {CFG}"],
+            "truncate": [f"truncate -s 0 {CFG}"],
+            "sed -i": [f'sed -i "" "s/a/b/" {CFG}', f'sed -ni "s/a/b/" {CFG}'],
+            "perl -i": [f'perl -pi -e "s/a/b/" {CFG}'],
+        }
+        for reason, cmds in cases.items():
+            for cmd in cmds:
+                with self.subTest(cmd=cmd):
+                    got = self.detect(cmd)
+                    self.assertIn("self-modification", got, f"検出漏れ: {cmd}")
+                    self.assertIn(reason, got, f"理由が {reason} でない: {got}")
+
+    def test_writes_inside_a_nested_shell_are_blocked(self):
+        """`sh -c` / `eval` に埋め込まれた書き換えも再帰解析で捕まえる."""
+        for cmd in (f"sh -c 'rm {CFG}'", f"bash -c 'echo x > {CFG}'", f"eval 'rm {CFG}'"):
+            with self.subTest(cmd=cmd):
+                self.assertIn("self-modification", self.detect(cmd))
 
 
 class PreCommitGuardTest(HookTestCase):

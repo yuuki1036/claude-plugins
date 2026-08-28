@@ -13,6 +13,7 @@
 #   - `command git` / `\git` 等の前置
 #   - バックスラッシュ改行継続で分割された迂回
 #   - guardrail-protect.json 自体を Bash（リダイレクト/sed -i/mv/rm 等）で改変する試み
+#     （**ファイル名の言及では発火しない** — トークン準拠で判定する）
 #
 # 設計:
 #   1. シェル準拠のトークナイザ（'...' / "..." / $'...' / バックスラッシュを解釈し、
@@ -85,7 +86,14 @@ sub tokenize_segments {
         }
         if ($ch eq ';' || $ch eq "\n") { $flush_seg->(); $i++; next; }
         if ($ch eq '&') { $flush_seg->(); $i++; $i++ if $i < $n && substr($s, $i, 1) eq '&'; next; }
-        if ($ch eq '|') { $flush_seg->(); $i++; $i++ if $i < $n && substr($s, $i, 1) eq '|'; next; }
+        if ($ch eq '|') {
+            # `>|`（clobber 強制リダイレクト）は pipe ではない。直前の word が
+            # リダイレクト演算子で終わっていれば、区切らずに演算子の一部として繋ぐ
+            # （分割すると `echo x >| cfg` のリダイレクト先が次セグメントへ落ち、
+            #  自己保護の検出が漏れる）
+            if (defined $word && $word =~ /^>>?$/) { $word .= '|'; $i++; next; }
+            $flush_seg->(); $i++; $i++ if $i < $n && substr($s, $i, 1) eq '|'; next;
+        }
         if ($ch =~ /\s/) { $flush_word->(); $i++; next; }
         $word = '' unless defined $word; $word .= $ch; $i++;
     }
@@ -165,12 +173,56 @@ sub git_commit_reasons {
 
 my @all_reasons;
 
-# guardrail-protect.json 自体を Bash で改変する試みを検出（自己保護の Bash 経路）
-if ($cmd =~ /guardrail-protect\.json/) {
-    if ($cmd =~ /(>>?|>\||\btee\b|\bsed\b[^|;&]*?-i|\bcp\b|\bmv\b|\brm\b|\bdd\b|\btruncate\b|\bln\b|\bmktemp\b)[^|;&]*guardrail-protect\.json/s
-        || $cmd =~ /guardrail-protect\.json[^|;&]*(>>?|>\|)/s) {
-        push @all_reasons, 'guardrail-protect.json self-modification via Bash';
+# --- 設定ファイル自体を Bash で改変する試みの検出（自己保護の Bash 経路）---
+#
+# **$cmd 全体への正規表現で判定しないこと。** 旧実装は引用符を一切見ずに
+# 「破壊的な語 → 設定ファイル名」の並びを探しており、**ファイル名を文字列として
+# 書いただけのコマンドをブロック**していた。実測の偽陽性:
+#
+#   echo 'rm は危険。設定は .claude/guardrail-protect.json にある'   → BLOCK
+#
+# 区切り（| ; &）が間に無ければ距離を問わず一致するため、doc を書く・説明する・
+# ログに残すといった無害な操作が止まる。実際に README へ当のファイル名を書こうと
+# して作業がブロックされた（GitHub issue #162 の実装中）。
+#
+# 判定はトークナイザの出力（引用符を除去済みの word 列）に対して行う。
+# `sh -c '...'` の中身も analyze() の再帰でここへ届く。
+my $CFG_RE = qr{(?:^|/)guardrail-protect\.json$};
+
+#: 内容を書き換え・破壊しうるコマンド（旧正規表現の語彙を踏襲）
+my %DESTRUCTIVE = map { $_ => 1 } qw(rm cp mv tee dd truncate ln mktemp install shred);
+
+sub config_write_reasons {
+    my (@w) = @_;
+    my @reasons;
+
+    # ① リダイレクト先が設定ファイル（`> cfg` / `>>cfg` / `>| cfg`）
+    for my $k (0 .. $#w) {
+        my $t = $w[$k];
+        if ($t =~ /^>>?\|?$/) {                       # 演算子が単独トークン
+            push @reasons, 'redirect' if defined $w[$k + 1] && $w[$k + 1] =~ $CFG_RE;
+        } elsif ($t =~ /^>>?\|?(.+)$/) {              # `>cfg` のように連結
+            push @reasons, 'redirect' if $1 =~ $CFG_RE;
+        }
     }
+
+    my ($cmd0, @args) = cmd_and_args(@w);
+    return @reasons unless defined $cmd0;
+    my $base = $cmd0; $base =~ s{.*/}{};
+
+    # ② 破壊的コマンドの**引数**が設定ファイル
+    if ($DESTRUCTIVE{$base} && grep { $_ =~ $CFG_RE } @args) {
+        push @reasons, $base;
+    }
+
+    # ③ in-place 書き換え（sed -i / perl -i）
+    if (($base eq 'sed' || $base eq 'perl')
+        && (grep { /^-[A-Za-z]*i/ } @args)
+        && (grep { $_ =~ $CFG_RE } @args)) {
+        push @reasons, "$base -i";
+    }
+
+    return @reasons;
 }
 
 sub analyze {
@@ -179,6 +231,10 @@ sub analyze {
     for my $seg (tokenize_segments($src)) {
         my @w = @$seg;
         next unless @w;
+        # **`next unless defined $cmd0` より前に置く** — リダイレクトだけのセグメント
+        # （`> cfg` 単独）でも自己保護は効かせる
+        push @all_reasons, map { "guardrail-protect.json self-modification via Bash ($_)" }
+            config_write_reasons(@w);
         my ($cmd0, @args) = cmd_and_args(@w);
         next unless defined $cmd0;
         if (is_shell($cmd0)) {                              # sh -c '<script>' を再帰
