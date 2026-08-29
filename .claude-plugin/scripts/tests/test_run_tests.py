@@ -354,6 +354,21 @@ class MutationGuardTest(RunTestsTest):
         self.assertIn("git checkout-index", err, "回避手順が出ていない")
         self.assertIn("Ctrl-C で殺さないこと", err, "復元が飛ぶ注意が出ていない")
 
+    def test_the_message_falls_back_when_the_path_is_missing(self):
+        """`path` を持たない journal でもメッセージを出せる（欠測で落とさない）.
+
+        journal は外部が書く JSON なので、フィールドの有無は保証されない。
+        ここで例外になると**ガード自体が落ちてテストが素通りする**。
+        """
+        (self.root / ".mutation-test-journal.json").write_text(
+            json.dumps({"pid": os.getpid()}), encoding="utf-8")   # path なし
+        self.write_test("import unittest\n")
+        r = self.run_wrapper()
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("変異テストの実行中", r.stderr)
+        self.assertIn("?", r.stderr, "path 欠測のフォールバックが出ていない")
+        self.assertNotIn("Traceback", r.stderr, "ガードが例外で落ちている")
+
     def test_a_dead_mutation_run_does_not_block(self):
         """書いた run が既に死んでいれば止めない（変異は復元済み or 次回起動で復旧）.
 
