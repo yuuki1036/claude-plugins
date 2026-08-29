@@ -439,25 +439,30 @@ if os.environ.get("PER_AGENT") == "1":
     import statistics as _st
     rows = []
     for fpath, pa in per_agent.items():
-        meta_p = fpath[:-6] + ".meta.json" if fpath.endswith(".jsonl") else None
+        # `fpath` は `agent-*.jsonl` の glob 由来なので拡張子の分岐は要らない
+        meta_p = fpath[: -len(".jsonl")] + ".meta.json"
         desc = depth = None
-        if meta_p and os.path.exists(meta_p):
-            try:
-                mj = json.load(open(meta_p))
-                desc, depth = mj.get("description"), mj.get("spawnDepth")
-            except (ValueError, OSError):
-                pass
+        try:
+            mj = json.load(open(meta_p))
+            desc, depth = mj.get("description"), mj.get("spawnDepth")
+        except (ValueError, OSError):
+            pass          # meta が無い / 壊れている回は focus 名なしで出す
         rows.append((desc or os.path.basename(fpath), depth, pa))
     if not rows:
         print("体ごとの内訳: 窓内に subagent が無い")
     else:
         rows.sort(key=lambda r: -r[2]["cr"])
-        print(f"{'focus':<34}{'depth':>6}{'往復':>6}{'cache_read':>13}{'/往復':>9}")
-        print("-" * 68)
+        # `cache_write` / `output` も出す。重み付けは output x5 / cache_write x1.25 /
+        # cache_read x0.1 なので、read だけ見ると単価の高い項を取りこぼす
+        # （`design-notes/pending-optimizations.md` の計測の基準値）
+        print(f"{'focus':<32}{'depth':>6}{'往復':>6}{'cache_read':>12}"
+              f"{'/往復':>9}{'cache_write':>13}{'output':>10}")
+        print("-" * 88)
         for desc, depth, pa in rows:
             per = pa["cr"] / pa["n"] if pa["n"] else 0
-            print(f"{str(desc)[:33]:<34}{str(depth if depth is not None else '?'):>6}"
-                  f"{pa['n']:>6}{k(pa['cr']):>13}{k(per):>9}")
+            print(f"{str(desc)[:31]:<32}{str(depth if depth is not None else '?'):>6}"
+                  f"{pa['n']:>6}{k(pa['cr']):>12}{k(per):>9}"
+                  f"{k(pa['cw']):>13}{k(pa['out']):>10}")
         crs = [r[2]["cr"] for r in rows]
         if len(crs) > 1:
             lo, hi = min(crs), max(crs)

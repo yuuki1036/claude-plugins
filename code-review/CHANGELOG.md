@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.94.1] - 2026-08-29
+
+### Fixed
+
+- **`--per-agent` が `cache_write` / `output` を集計だけして表示していなかった**（加算が死んでいた）。
+  重み付けは output x5 / cache_write x1.25 / cache_read x0.1 なので、`cache_read` だけ見ると
+  単価の高い項を取りこぼす。表に追加した。CI の変異テスト（`--strict`）が生存として検出した
+- meta パス導出の冗長な分岐を削除（`agent-*.jsonl` の glob 由来で常に真だった）
+
 ## [2.94.0] - 2026-08-29
 
 ### Added

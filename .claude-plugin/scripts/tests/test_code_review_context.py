@@ -641,7 +641,8 @@ class PerAgentTest(MeasureTokensTest):
                              self.usage_row("2026-08-28T00:04:00Z", cr=1000)])
         self.write_meta(session_id, "agent-aaa", "reviewer bug-detection")
         self.write_subagent(session_id, "agent-bbb",
-                            [self.usage_row("2026-08-28T00:01:00Z", cr=1000)])
+                            [self.usage_row("2026-08-28T00:01:00Z", cr=1000,
+                                            cw=2000, out=3000)])
         self.write_meta(session_id, "agent-bbb", "reviewer security")
 
     def per_agent(self, *args: str) -> str:
@@ -664,6 +665,19 @@ class PerAgentTest(MeasureTokensTest):
         # 4 往復 x 1000 = 4,000（往復数と cache_read の両方が体ごとに分かれていること）
         self.assertRegex(rows["reviewer bug-detection"], r"\b4\b.*4\.0k")
         self.assertRegex(rows["reviewer security"], r"\b1\b.*1\.0k")
+
+    def test_cache_write_and_output_are_reported_per_agent(self):
+        """`cache_read` だけでなく `cache_write` / `output` も体ごとに出す.
+
+        重み付けは output x5 / cache_write x1.25 / cache_read x0.1 なので、
+        read だけ見ると**単価の高い項を取りこぼす**。集計して表示しないなら
+        その加算は死んだコードで、変異テストが生存として拾う。
+        """
+        self.setup_run()
+        line = [l for l in self.per_agent().splitlines()
+                if l.startswith("reviewer security")][0]
+        self.assertIn("2.0k", line, "cache_write が出ていない")
+        self.assertIn("3.0k", line, "output が出ていない")
 
     def test_within_run_spread_is_reported(self):
         """回内分散（最大最小・変動係数）を出す — これが判断材料そのもの."""
