@@ -2,6 +2,42 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.96.0] - 2026-08-29
+
+### Added
+
+- **`agents` を「完了 / 捨てられた試行 / 入れ子起動」に分解した**（GitHub issue #154 期待動作 2・3）。
+  `dispatch` に `agents_completed` / `agents_abandoned` / `agents_nested` / `waves_effective` を
+  追加し、`dispatch.schema` を 4 に上げた。不変条件は
+  「completed + abandoned + nested == agents」。
+
+  **差の正体は「層の計上漏れ」ではなく体数の重複計上だった。** 実測（申告 10 体の回）で
+  `agents` 23 = completed 10 + abandoned 12 + nested 1 に割れ、completed 10 が申告と
+  層ごとに一致した（explorer 2 / reviewer 5 / specialist 2 / skeptic 1）。起票時の候補
+  （Round 2 の申告漏れ / review 固有の層 / verify の定義）はこの回では原因ではない。
+
+  **判定に `description` を使わない。** 自由文で書式が安定しないうえ、Round 2 は仕様上
+  同じ reviewer を再起動して出力を置換するので、字面では正当な再起動と再試行を区別できない
+  （実測: 重複 38 件中 26 件が正当な別起動）。代わりに **`tool_result` の到達**（`is_error`
+  でないこと）と **`spawnDepth`** で切る。既存の「層の同定はしない」方針と衝突しない
+
+### Changed
+
+- **突合の相手を `agents_completed` に差し替えた。** 申告は「オーケストレーターが起動を
+  決めた層」なので、決定でない再試行と、sub が自分で決めた孫を混ぜると恒常的にずれる。
+  旧 schema のログは従来どおり `agents` と比べる（フィールドの有無が版マーカー）
+- **`agents` は減らさない。** sub 側トークン集計と同じファイル集合で、「1 体あたり
+  cache_read」の分母として正しい唯一の値（捨てられた試行も孫も実コストを食っている）。
+  実測でユニーク数を分母にすると 4,941k が 11,364k ＝ **2.30 倍**に化け、起きていない
+  退行として読める
+- **一括発行の判定を `waves_effective` で行う。** 再試行は wave 本数・`span_sec` も
+  膨らませるので、`agents` だけ直すと汚れた本数のまま判定が走る。実測の回では
+  `waves` 8 に対し `waves_effective` 5 で、**清掃後も期待 2 本を超える本物の違反が
+  残っていた**（`agents-mismatch` による抑止が違反を隠していた / #192）
+- 分解で説明が付いた分は別識別子（`agents-abandoned` / `agents-nested`）で載せ、
+  それぞれに是正先を用意した。`agents-mismatch` と同じ語で呼ぶと「申告が壊れている」と
+  読まれ、是正先を誤らせる
+
 ## [2.95.1] - 2026-08-29
 
 ### Fixed

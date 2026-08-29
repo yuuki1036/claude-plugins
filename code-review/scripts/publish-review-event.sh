@@ -742,11 +742,31 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
                        and isinstance(v, int) and not isinstance(v, bool))
         declared += sum(1 for f in ("recall_skeptic", "meta_reviewer")
                         if isinstance(payload.get(f), dict) and payload[f].get("fired") is True)
-        measured = disp.get("agents")
+        # **突合の相手は `agents_completed`**（GitHub issue #154）。`dispatch.agents` は
+        # 窓内 transcript の総数で、**捨てられた試行と孫 agent を含む**。申告は
+        # 「オーケストレーターが起動を決めた層」なので、決定でない再試行と、
+        # sub が自分で決めた孫を混ぜると恒常的にずれる。
+        #
+        # 実測（このリポジトリの回）: agents 23 = completed 10 + abandoned 12 + nested 1 で、
+        # completed 10 が申告 10（explorer 2 + reviewer 5 + specialist 2 + skeptic 1）と
+        # 層ごとに一致した。#154 が候補に挙げた「層の計上漏れ」はこの回では原因ではない。
+        #
+        # **`agents` は減らさない** — sub 側トークン集計と同じファイル集合で、
+        # 「1 体あたり cache_read」の分母として正しい唯一の値（捨てられた試行も実コスト）
+        measured = disp.get("agents_completed")
+        if measured is None:            # schema 3 以前は分解が無いので総数と比べる
+            measured = disp.get("agents")
         # **差の大きさは gap に載せない**（`measurement_gaps` は識別子の配列という契約）。
         # 両フィールドが payload に残っているので、下流はいつでも引き算し直せる
         if isinstance(measured, int) and not isinstance(measured, bool) and measured != declared:
             gaps.append("agents-mismatch")
+        # 分解で説明が付いた分は**別識別子**で載せる。`agents-mismatch` と同じ語で
+        # 呼ぶと「申告が壊れている」と読まれ、是正先（申告の直し方）を誤らせる
+        for _k, _id in (("agents_abandoned", "agents-abandoned"),
+                        ("agents_nested", "agents-nested")):
+            _v = disp.get(_k)
+            if isinstance(_v, int) and not isinstance(_v, bool) and _v > 0:
+                gaps.append(_id)
 
         # ---- wave 本数の期待値との突合（一括発行違反の全層検出 / GitHub issue #153 の続き） ----
         # 上の `serial` 判定は**単独 wave が 3 連続**を要求するので、「reviewer 5 体のうち
@@ -833,6 +853,13 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         waves = disp.get("waves")
         # **`agents-mismatch` の回では判定しない** — 期待本数は `agents` の自己申告から作るので、
         # 申告が壊れている回に重ねると**原因の違う 2 つの信号**が混ざって是正先を指せなくなる
+        # **判定は `waves_effective`（捨てられた試行・孫を除いた本数）で行う**（#154 / #192）。
+        # 再試行は wave 本数を膨らませるので、`waves` のままだと存在しない違反を作る。
+        # 逆に「再試行があったから」で抑止すると**本物の違反を隠す**（実測: このリポジトリの
+        # 唯一の発火例では、清掃後も 5 本 > 期待 2 本で違反が残っていた）
+        _we = disp.get("waves_effective")
+        if isinstance(_we, int) and not isinstance(_we, bool):
+            waves = _we
         if ("agents-mismatch" not in gaps and isinstance(waves, int)
                 and not isinstance(waves, bool) and waves > expected):
             gaps.append("wave-split")

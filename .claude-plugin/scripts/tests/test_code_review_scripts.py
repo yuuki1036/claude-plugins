@@ -478,7 +478,7 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         self.write_transcript([[0, 0], [1000]], ends={0: 500, 1: 600, 2: 1200})
         self.publish(env=self.env_home())
         d = self.last_payload()["dispatch"]
-        self.assertEqual(d["schema"], 3, "schema を上げずにフィールドだけ足している")
+        self.assertEqual(d["schema"], 4, "schema を上げずにフィールドだけ足している")
         self.assertEqual(d["max_inter_wave_sec"], 1000)
         self.assertEqual(d["inter_wave_agent_sec"], 600, "wave 内の**最後**の終了で測る")
         self.assertEqual(d["inter_wave_idle_sec"], 400)
@@ -576,7 +576,7 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         # **現行値をリテラルで固定する**（`>= 2` に緩めない）。集計側は `>=` で前方互換に
         # 読むが、publisher 側は版を上げたときにここが落ちて「集計の層別と契約 doc も
         # 直したか」を問う trip wire になる（実測: #153 で schema 3 に上げた回に発火した）
-        self.assertEqual(p["dispatch"]["schema"], 3, "schema を上げたら retro の層別と契約 doc も直したか")
+        self.assertEqual(p["dispatch"]["schema"], 4, "schema を上げたら retro の層別と契約 doc も直したか")
         self.assertIn("逐次発行", res.stderr)
         self.assertIn("#142", res.stderr)
 

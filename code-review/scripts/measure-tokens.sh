@@ -127,6 +127,11 @@ tool_of = {}      # tool_use_id -> ツール名（main のみ）
 # 5 体が `uuid` 別・`message.id` 共通で、各行の content は 1 ブロックだけ）。`uuid` で束ねると
 # **一括発行した回まで「1 体ずつの wave」に見え、全件が serial に落ちる**
 agent_dispatch = {}
+# toolUseId -> 結果が返り、かつ `is_error` でないか（GitHub issue #154）。
+# **`description` は読まない** — 自由文で書式が安定しないうえ、Round 2 は仕様上
+# 同じ reviewer を再起動して出力を置換するので、字面では再試行と区別できない
+result_ok = {}
+sub_depth = {}      # subagent transcript -> meta.json の spawnDepth
 
 
 def _wave_key(entry):
@@ -203,6 +208,12 @@ for fpath, side in targets:
                             name = tool_of.get(blk.get("tool_use_id"), "?")
                             intake[name] = intake.get(name, 0) + len(body)
                             intake_n[name] = intake_n.get(name, 0) + 1
+                            # **結果が返ったか**を記録する（GitHub issue #154）。
+                            # 返っていない体＝割り込み等で捨てられた試行で、
+                            # オーケストレーターの申告には現れない
+                            _rid = blk.get("tool_use_id")
+                            if _rid:
+                                result_ok[_rid] = not blk.get("is_error")
             elif e.get("type") == "assistant":
                 # sub 側は取り込み内訳を採らない（main の負荷が論点）が、**Agent の発行だけは
                 # 拾う**。入れ子起動（`spawnDepth >= 2`）を親メッセージに寄せると wave の
@@ -210,9 +221,21 @@ for fpath, side in targets:
                 blocks = (e.get("message") or {}).get("content")
                 if isinstance(blocks, list):
                     for blk in blocks:
-                        if (isinstance(blk, dict) and blk.get("type") == "tool_use"
-                                and blk.get("name") == "Agent"):
+                        if not isinstance(blk, dict):
+                            continue
+                        if blk.get("type") == "tool_use" and blk.get("name") == "Agent":
                             agent_dispatch[blk.get("id")] = (_wave_key(e), ts)
+            elif side and e.get("type") == "user":  # mutation-ok: main 側の tool_result は上のブロックで記録済みなので or でも結果は同じ
+                # **孫 agent の結果は親の sub transcript 側にある**ので、そこからも
+                # 到達を拾う（main 限定だと孫が全部「捨てられた」に落ちる）。
+                # `tool_result` は **`user` メッセージ**に載る（`assistant` ではない）
+                blocks = (e.get("message") or {}).get("content")
+                if isinstance(blocks, list):
+                    for blk in blocks:
+                        if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                            _rid = blk.get("tool_use_id")
+                            if _rid:
+                                result_ok[_rid] = not blk.get("is_error")
             # **usage を持つ行に限らない**（起動直後のメタ行が先に来る）。窓の適用は
             # 上の `since` フィルタで済んでいるので、ここに来た時点で窓内
             if side and ts:
@@ -275,7 +298,7 @@ agents = sub_files
 # **agent が回っていた時間**と**オーケストレーターの統合・dedup・scoring 時間**が
 # 合算されている。どちらが支配的かで打ち手が正反対（前者なら wave を減らす / 後者なら
 # 往復を減らす）なので、分離しないまま是正すると「wave を消したのに fleet が縮まない」を踏む
-DISPATCH_SCHEMA = 3
+DISPATCH_SCHEMA = 4
 # **連続する単独 wave が何本続いたら違反と呼ぶか**。1 体だけの wave 自体は正当（設計上 1 体
 # しか起動しないフェーズがある）。2 連続も skeptic → meta のような別ゲートの並びで説明が
 # つく。**3 連続以上はこのパイプラインの層構造では説明できない**ので、そこを閾値にする。
@@ -295,6 +318,7 @@ def _epoch(ts):
 # あれば判定しない** — 一部だけで wave を組むと wave 数が実態より小さく出て、`batched` 寄りの
 # 誤判定になる。#142 が持っていた原則（「一括だった」に倒さない）を**両側**に効かせる
 waves_by_msg = {}
+waves_completed = {}
 unresolved = 0
 for fpath, ts in sub_first.items():
     started = _epoch(ts)
@@ -307,6 +331,9 @@ for fpath, ts in sub_first.items():
                 meta = json.load(mfh)
             if isinstance(meta, dict):
                 tool_use_id = meta.get("toolUseId")
+                _sd = meta.get("spawnDepth")
+                if isinstance(_sd, int) and not isinstance(_sd, bool):
+                    sub_depth[fpath] = _sd
         except (OSError, ValueError):
             tool_use_id = None
     owner = agent_dispatch.get(tool_use_id) if tool_use_id else None
@@ -319,8 +346,67 @@ for fpath, ts in sub_first.items():
     # 内訳 2 本だけ / #153）
     ended = _epoch(sub_last.get(fpath) or "") if sub_rows.get(fpath, 0) >= 2 else None
     waves_by_msg.setdefault(owner[0], []).append((started, ended))
+    # **捨てられた試行・孫を除いた wave も同時に組む**（GitHub issue #154 / #192）。
+    # 再試行は wave 本数・`wave_sizes`・`span_sec` も膨らませるので、`agents` だけを
+    # 直すと一括発行の判定が汚れた本数のまま走る（実測: 8 本のうち 3 本が同一 6 体の再発行）
+    if result_ok.get(tool_use_id) and sub_depth.get(fpath, 1) <= 1:
+        waves_completed.setdefault(owner[0], []).append(started)
 
-dispatch = {"schema": DISPATCH_SCHEMA, "agents": len(sub_first), "waves": None,
+# ---- agents の分解（GitHub issue #154）--------------------------------------
+# **`agents` は据え置く。** これは sub 側のトークン集計と同じファイル集合で、
+# 「1 体あたり cache_read」の分母として正しい唯一の値（捨てられた試行も孫も実コストを
+# 食っている）。実測でユニーク数を分母にすると 4,941k が 11,364k ＝ 2.30 倍に化け、
+# 起きていない退行として読める。**減らすのではなく内訳を足し、突合の相手だけ差し替える**。
+#
+# 分解の軸は `description` ではない。自由文で書式が安定しないうえ、**Round 2 は仕様上
+# 同じ reviewer を再起動して出力を置換する**ので、字面では正当な再起動と再試行を
+# 区別できない（実測: 重複 38 件中 26 件が正当な別起動）。代わりに
+# **結果が返ったか**（`tool_result` の到達）と `spawnDepth` で切る。
+#
+#   agents_completed … depth==1 かつ結果が返った（`is_error` でない）体
+#   agents_abandoned … 結果が返っていない / `is_error` の体（深さ不問）
+#   agents_nested    … depth>=2 かつ結果が返った体（オーケストレーターは申告しようがない）
+#
+# 不変条件: completed + abandoned + nested == agents
+# **`tool_result` を 1 件も引けなかったら分解しない。** 引けない理由は「全部捨てられた」
+# ではなく「結果の所在が変わった / 窓の外にある」の可能性があり、0 と欠測を潰すと
+# **毎回 `agents_completed = 0` になって突合が常時ずれる**（＝ agents-mismatch が
+# 恒常的に立ち、信号として死ぬ）。判定できないときは分解ごと出さず、突合は
+# 従来どおり `agents` で行う（publish 側がフォールバックする）
+agents_completed = agents_abandoned = agents_nested = None
+if result_ok:
+    agents_completed = agents_abandoned = agents_nested = 0
+for _f in (sub_first if result_ok else ()):
+    # `_f` は `agent-*.jsonl` の glob 由来なので拡張子の分岐は要らない
+    _mp = _f[: -len(".jsonl")] + ".meta.json"
+    _tid = None
+    if os.path.exists(_mp):
+        try:
+            _m = json.load(open(_mp))
+            if isinstance(_m, dict):
+                _tid = _m.get("toolUseId")
+        except (OSError, ValueError):
+            _tid = None
+    # **結果の有無が不明なら `abandoned` に倒す**（引き当てられなかった体を
+    # 「完了した」と数えると、突合が黙って通る方向に倒れる）
+    if not _tid or not result_ok.get(_tid):
+        agents_abandoned += 1
+    elif sub_depth.get(_f, 1) > 1:
+        agents_nested += 1
+    else:
+        agents_completed += 1
+
+dispatch = {"schema": DISPATCH_SCHEMA, "agents": len(sub_first),
+            "agents_completed": agents_completed,
+            "agents_abandoned": agents_abandoned,
+            "agents_nested": agents_nested,
+            # **捨てられた試行・孫を除いた wave 本数**。一括発行の判定はこちらを使う。
+            # `waves` / `wave_sizes` は据え置き（実際に走った本数として意味がある）
+            # 分解が成立した回だけ出す（同上）
+            # `waves_completed` は `result_ok` を引けた体しか入らないので、
+            # `result_ok` の空判定は要らない（分岐を残すと死んだ条件になる）
+            "waves_effective": (len(waves_completed) if waves_completed else None),
+            "waves": None,
             "wave_sizes": None, "max_solo_run": None, "max_inter_wave_sec": None,
             "inter_wave_agent_sec": None, "inter_wave_idle_sec": None,
             "span_sec": None, "verdict": "unknown"}

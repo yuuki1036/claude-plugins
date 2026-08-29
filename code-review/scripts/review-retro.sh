@@ -866,6 +866,14 @@ def gap_denom(g):
         return n_gapfield_review
     if g == "late-publish":            # publish が `*self-review` でのみ判定する
         return n_gapfield_selfreview
+    if g == "agents-abandoned":
+        return ("結果が返らなかった agent がある（割り込み・API エラーで捨てられた試行）。"
+                "**申告の誤りではない** — 体数と wave 本数が実態より膨らむので、"
+                "コスト集計は総数、突合は `agents_completed` を見る")
+    if g == "agents-nested":
+        return ("subagent がさらに agent を起動した回（`spawnDepth >= 2`）。"
+                "**オーケストレーターは申告しようがない**ので突合から外している。"
+                "コストには含まれる")
     if g == "wave-split":              # **wave 判定が成立した回**だけが母集団（#192）
         return n_wave_judged
     return n_gapfield

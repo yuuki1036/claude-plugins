@@ -722,6 +722,7 @@ class PerAgentTest(MeasureTokensTest):
         self.assertIn("2", line, "spawnDepth が出ていない")
 
 
+
 class DispatchPatternTest(MeasureTokensTest):
     """agent を**どのメッセージから発行したか**で一括発行が守られたかを判定する.
 
@@ -912,6 +913,206 @@ class DispatchPatternTest(MeasureTokensTest):
                                     base.isoformat()).stdout)["dispatch"]
         self.assertEqual(d["agents"], 1, "窓の外で起動した agent を数えている")
         self.assertEqual(d["verdict"], "single", d)
+
+
+class AgentsDecompositionTest(DispatchPatternTest):
+    """agents を「完了 / 捨てられた試行 / 入れ子起動」に分解する（GitHub issue #154）.
+
+    `dispatch.agents` は窓内 transcript の総数で、**捨てられた試行と孫 agent を含む**。
+    自己申告は「オーケストレーターが起動を決めた層」なので、決定でない再試行と、
+    sub が自分で決めた孫を混ぜると恒常的にずれる。
+
+    **`description` は判定に使わない** — 自由文で書式が安定しないうえ、Round 2 は仕様上
+    同じ reviewer を再起動して出力を置換するので、字面では正当な再起動と区別できない
+    （実測: 重複 38 件中 26 件が正当な別起動）。代わりに **結果が返ったか**
+    （`tool_result` の到達）と `spawnDepth` で切る。
+    """
+
+    def build(self, waves: list[list[int]], results: dict[int, bool] | None = None,
+              depths: dict[int, int] | None = None, session: str = "d1") -> dict:
+        """wave 構成 + 体ごとの「結果が返ったか」「入れ子か」を指定して dispatch を返す.
+
+        `results[i]` を省略した体は**結果が返っていない**（捨てられた試行）扱い。
+        """
+        results = results or {}
+        depths = depths or {}
+        base = datetime(2026, 8, 18, 1, 0, 0)
+        rows = [self.usage_row(base.isoformat() + "Z", out=10)]
+        idx = 0
+        for wave_no, offsets in enumerate(waves):
+            for off in offsets:
+                ts = (base + timedelta(seconds=off)).isoformat() + "Z"
+                rows.append(self.agent_call_row(ts, "msg-%d" % wave_no, "tu-%d" % idx))
+                path = self.write_subagent(session, "agent-%d" % idx,
+                                           [self.usage_row(ts, out=5)])
+                path.with_suffix(".meta.json").write_text(
+                    json.dumps({"agentType": "general-purpose",
+                                "toolUseId": "tu-%d" % idx,
+                                "spawnDepth": depths.get(idx, 1)}), encoding="utf-8")
+                idx += 1
+        # `tool_result` は **`user` メッセージ**に載る（`assistant` ではない）
+        blocks = [{"type": "tool_result", "tool_use_id": "tu-%d" % i,
+                   "content": "ok", "is_error": (not ok)}
+                  for i, ok in sorted(results.items())]
+        if blocks:
+            rows.append(json.dumps({
+                "type": "user",
+                "timestamp": (base + timedelta(seconds=900)).isoformat() + "Z",
+                "message": {"content": blocks}}))
+        self.write_session(session, rows)
+        return self.as_json()["dispatch"]
+
+    def test_the_three_buckets_sum_to_the_total(self):
+        """不変条件: completed + abandoned + nested == agents."""
+        d = self.build([[1, 2, 3]], results={0: True, 2: True}, depths={2: 2})
+        self.assertEqual(d["agents"], 3)
+        self.assertEqual(
+            d["agents_completed"] + d["agents_abandoned"] + d["agents_nested"],
+            d["agents"], "分解の合計が総数と合わない: %s" % d)
+
+    def test_an_agent_without_a_result_is_abandoned(self):
+        """結果が返っていない体を「完了」に数えない（割り込みで捨てられた試行）."""
+        d = self.build([[1, 2]], results={0: True})
+        self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (1, 1))
+
+    def test_an_errored_result_is_abandoned(self):
+        """`is_error` の体を完了に数えない（API エラーで落ちた回）."""
+        d = self.build([[1, 2]], results={0: True, 1: False})
+        self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (1, 1),
+                         "is_error を完了に数えている")
+
+    def test_a_nested_agent_is_counted_separately(self):
+        """孫 agent（`spawnDepth >= 2`）を完了から外す（申告しようがない）."""
+        d = self.build([[1, 2]], results={0: True, 1: True}, depths={1: 2})
+        self.assertEqual((d["agents_completed"], d["agents_nested"]), (1, 1))
+
+    def test_abandoned_takes_precedence_over_nested(self):
+        """結果が返っていない孫は `abandoned` 側に倒す（突合が通らない安全側）."""
+        d = self.build([[1, 2]], results={0: True}, depths={1: 2})
+        self.assertEqual((d["agents_abandoned"], d["agents_nested"]), (1, 0))
+
+    def test_the_total_is_not_reduced(self):
+        """**`agents` は減らさない** — sub トークンと同じファイル集合（コスト分母）.
+
+        ユニーク数を 1 体あたり cache_read の分母にすると、実測で 4,941k が 11,364k ＝
+        2.30 倍に化け、起きていない退行として読める。
+        """
+        d = self.build([[1, 2]], results={0: True})
+        self.assertEqual(d["agents"], 2, "総数を減らしている")
+
+    def test_a_nested_result_recorded_in_the_parent_transcript_is_found(self):
+        """孫 agent の `tool_result` は**親の sub transcript** にある（実データの形）.
+
+        main 側だけを見ると孫が全部「捨てられた」に落ちる。`tool_result` は
+        `user` メッセージに載るので、sub 側でもそこを読む必要がある。
+        """
+        session = "nested1"
+        base = datetime(2026, 8, 18, 1, 0, 0)
+        rows = [self.usage_row(base.isoformat() + "Z", out=10),
+                self.agent_call_row((base + timedelta(seconds=1)).isoformat() + "Z",
+                                    "msg-0", "tu-0"),
+                json.dumps({"type": "user",
+                            "timestamp": (base + timedelta(seconds=600)).isoformat() + "Z",
+                            "message": {"content": [
+                                {"type": "tool_result", "tool_use_id": "tu-0",
+                                 "content": "ok"}]}})]
+        self.write_session(session, rows)
+        d = self.project_dir() / session / "subagents"
+        d.mkdir(parents=True, exist_ok=True)
+        # 親 subagent: 自分の transcript に孫の tool_use と **tool_result** を書く
+        (d / "agent-0.jsonl").write_text("\n".join([
+            self.usage_row((base + timedelta(seconds=2)).isoformat() + "Z", out=5),
+            json.dumps({"type": "assistant",
+                        "timestamp": (base + timedelta(seconds=3)).isoformat() + "Z",
+                        "message": {"id": "m-sub", "content": [
+                            {"type": "tool_use", "id": "tu-1", "name": "Agent"}]}}),
+            json.dumps({"type": "user",
+                        "timestamp": (base + timedelta(seconds=300)).isoformat() + "Z",
+                        "message": {"content": [
+                            {"type": "tool_result", "tool_use_id": "tu-1",
+                             "content": "ok"}]}}),
+        ]) + "\n", encoding="utf-8")
+        (d / "agent-0.meta.json").write_text(
+            json.dumps({"toolUseId": "tu-0", "spawnDepth": 1}), encoding="utf-8")
+        # 孫
+        (d / "agent-1.jsonl").write_text(
+            self.usage_row((base + timedelta(seconds=4)).isoformat() + "Z", out=5) + "\n",
+            encoding="utf-8")
+        (d / "agent-1.meta.json").write_text(
+            json.dumps({"toolUseId": "tu-1", "spawnDepth": 2}), encoding="utf-8")
+
+        dd = self.as_json()["dispatch"]
+        self.assertEqual(dd["agents"], 2)
+        self.assertEqual(dd["agents_nested"], 1,
+                         "親の transcript にある孫の tool_result を拾えていない")
+        self.assertEqual(dd["agents_abandoned"], 0)
+
+    def test_a_non_tool_result_block_in_a_sub_user_message_is_ignored(self):
+        """sub 側の `user` メッセージにある `tool_result` 以外のブロックを拾わない."""
+        session = "nested2"
+        base = datetime(2026, 8, 18, 1, 0, 0)
+        rows = [self.usage_row(base.isoformat() + "Z", out=10),
+                self.agent_call_row((base + timedelta(seconds=1)).isoformat() + "Z",
+                                    "msg-0", "tu-0")]
+        self.write_session(session, rows)
+        d = self.project_dir() / session / "subagents"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "agent-0.jsonl").write_text("\n".join([
+            self.usage_row((base + timedelta(seconds=2)).isoformat() + "Z", out=5),
+            # `text` ブロックしか無い user メッセージ。ここから結果を捏造しない
+            # **非 dict のブロックを混ぜる**（実 transcript は文字列要素を持つことがある）。
+            # `isinstance` ガードを緩めると `.get` で AttributeError になり計測が消える
+            json.dumps({"type": "user",
+                        "timestamp": (base + timedelta(seconds=5)).isoformat() + "Z",
+                        "message": {"content": ["plain string",
+                                                {"type": "text", "text": "tu-0"}]}}),
+        ]) + "\n", encoding="utf-8")
+        (d / "agent-0.meta.json").write_text(
+            json.dumps({"toolUseId": "tu-0", "spawnDepth": 1}), encoding="utf-8")
+        dd = self.as_json()["dispatch"]
+        self.assertIsNone(dd["agents_completed"],
+                          "tool_result が無いのに分解を出している")
+
+    def test_a_non_integer_spawn_depth_does_not_crash(self):
+        """`spawnDepth` が非 int の meta でも落ちない（型ガードが要る）.
+
+        ガードを外すと `str` と `int` の比較で TypeError になり、**dispatch ごと
+        計測が消える**（変異テストが検出）。meta は外部が書く JSON なので型は保証されない。
+        """
+        d = self.build([[1, 2]], results={0: True, 1: True}, depths={1: "2"})
+        self.assertEqual(d["agents"], 2)
+        # 非 int は深さ不明として depth 1 扱い（＝完了側）に倒す
+        self.assertEqual(d["agents_completed"], 2)
+        self.assertEqual(d["agents_nested"], 0)
+
+    def test_the_decomposition_is_absent_when_no_result_was_resolved(self):
+        """`tool_result` を 1 件も引けない回は分解を出さない（判定不能）.
+
+        「全部捨てられた」と読むと `agents_completed` が毎回 0 になり、
+        **突合が常時ずれて信号として死ぬ**。0 と欠測を潰さない。
+        """
+        d = self.build([[1, 2]], results={})
+        self.assertIsNone(d["agents_completed"], "判定不能なのに 0 を載せている")
+        self.assertIsNone(d["agents_abandoned"])
+        self.assertIsNone(d["agents_nested"])
+        self.assertIsNone(d["waves_effective"])
+        self.assertEqual(d["agents"], 2, "総数は載せ続ける（コストの分母）")
+
+    def test_effective_waves_exclude_abandoned_launches(self):
+        """捨てられた試行だけの wave を本数から除く（一括発行の判定に使う）.
+
+        再試行は wave 本数・span も膨らませるので、`agents` だけ直すと判定が汚れた
+        本数のまま走る。逆に「再試行があったから」で抑止すると本物の違反を隠す
+        （実測: 唯一の発火例では清掃後も 5 本 > 期待 2 本で違反が残っていた）。
+        """
+        d = self.build([[1], [60]], results={0: True})
+        self.assertEqual(d["waves"], 2, "実際に走った本数は据え置く")
+        self.assertEqual(d["waves_effective"], 1, "捨てられた wave を除いていない")
+
+    def test_effective_waves_equal_waves_when_nothing_was_abandoned(self):
+        """捨てられた試行が無ければ両者は一致する（黙って減らさない）."""
+        d = self.build([[1, 2], [60]], results={0: True, 1: True, 2: True})
+        self.assertEqual(d["waves"], d["waves_effective"])
 
 
 if __name__ == "__main__":

@@ -247,9 +247,19 @@ for e in events:
                 + (2 if n_of("round2") > 0 else 0)
                 + (1 if meta_added else 0)
                 + (1 if skeptic_tail_solo else 0))
-    waves = d.get("waves")
+    # **判定は `waves_effective`（捨てられた試行・孫を除いた本数）**。無ければ `waves`
+    # にフォールバックする（旧 schema / 分解が成立しなかった回）。
+    # **式の複製は publish-review-event.sh とこの 2 箇所にある** — 片方だけ変えると
+    # 「後付けと publish が一致する」を縛る回帰テストが落ちる（実際に落とした）
+    waves = d.get("waves_effective")
+    if not isinstance(waves, int) or isinstance(waves, bool):
+        waves = d.get("waves")
     # publish 側と同じく **`agents` の申告が壊れている回では判定しない**
-    split = (declared == (d.get("agents") or 0) and isinstance(waves, int)
+    # 突合の相手も publish に揃える（`agents_completed` → 無ければ `agents`）
+    _measured = d.get("agents_completed")
+    if not isinstance(_measured, int) or isinstance(_measured, bool):
+        _measured = d.get("agents") or 0
+    split = (declared == _measured and isinstance(waves, int)
              and not isinstance(waves, bool) and waves > expected)
 
     sub, n_ag = tok.get("sub") or {}, tok.get("sub_agents") or 0
