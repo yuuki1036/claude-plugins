@@ -659,6 +659,24 @@ for e in events:
         derived_counts[str(m)] = derived_counts.get(str(m), 0) + 1
 
 n_gapfield = sum(1 for e in events if isinstance(e["p"].get("measurement_gaps"), list))
+# **`wave-split` の分母は他の gap と意味が違う**（GitHub issue #192）。他は「フィールドが
+# 載っていたか」なので `n_gapfield` でよいが、`wave-split` は**wave 判定が成立した回**が
+# 母集団になる。判定は `dispatch.waves` と `waves_expected` が揃い、かつ
+# `agents-mismatch` で抑止されていない回でだけ行われる（publish-review-event.sh）。
+# 全 gap 保持者を分母にすると比率が薄まり、実測 50% が 18% に見えて閾値を下回っていた
+n_wave_judged = 0
+n_wave_suppressed = 0     # `agents-mismatch` で判定が抑止された回（分母にも分子にも入らない）
+for _e in events:
+    _p = _e["p"]
+    _d = _p.get("dispatch")
+    if not isinstance(_d, dict):
+        continue
+    if not isinstance(_d.get("waves"), int) or not isinstance(_d.get("waves_expected"), int):
+        continue
+    if "agents-mismatch" in (_p.get("measurement_gaps") or []):
+        n_wave_suppressed += 1
+        continue
+    n_wave_judged += 1
 # `tokens` gap の分母。review だけが計測対象なので self-review を混ぜない
 n_gapfield_review = sum(1 for e in events
                         if isinstance(e["p"].get("measurement_gaps"), list)
@@ -848,6 +866,8 @@ def gap_denom(g):
         return n_gapfield_review
     if g == "late-publish":            # publish が `*self-review` でのみ判定する
         return n_gapfield_selfreview
+    if g == "wave-split":              # **wave 判定が成立した回**だけが母集団（#192）
+        return n_wave_judged
     return n_gapfield
 
 
@@ -873,6 +893,10 @@ def gap_hint(g):
         return "反証 agent の axis 語彙（prompts/adversarial-verify.md）と両 SKILL Step 6 の対応表を見直す"
     if g == "demoted-unknown":
         return "reviewer の降格型名（prompts/reviewer-common.md の 4 型）と両 SKILL Step 6 の対応表を見直す"
+    if g == "wave-split":
+        # **打点とは無関係**。既定に落ちると確実に誤った是正先を指す（#192）
+        return ("同一フェーズの agent を 1 メッセージで一括発行する"
+                "（orchestration-guide.md `## 0`）。打点の問題ではない")
     return "打点箇所の見直しが要る"
 
 
@@ -884,8 +908,14 @@ for g, cnt in gap_counts.items():
 # 欠測率の高い順。**上位 2 件まで**（全部並べるとシグナル欄が表になって「⚠️ が出たときだけ
 # 行動する」契約の可読性が落ちる。残りは「計測の健全性」行の欠測内訳で見える）
 for ratio_g, g, cnt, d in sorted(gap_hits, reverse=True)[:2]:
-    signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。%s"
-                   % (g, ratio_g, cnt, d, gap_hint(g)))
+    # **`wave-split` は「欠測」ではなく規約違反**（#192）。`measurement_gaps` に積まれる
+    # だけで、計測が取れなかったわけではない。同じ語で呼ぶと是正先を誤読させる
+    if g == "wave-split":
+        signals.append("一括発行の規約違反が %.0f%%（%d/%d・wave 判定が成立した回のみ）。%s"
+                       % (ratio_g, cnt, d, gap_hint(g)))
+    else:
+        signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。%s"
+                       % (g, ratio_g, cnt, d, gap_hint(g)))
 # 指摘の分類（v2.68.0）。**機械で捕まる層を agent に探させている**割合が高いままなら、
 # lint / テストを足す方が安い（CLAUDE.md「決定的 hook > LLM 判定」を自分の保守に適用する）
 # **下限は「レビュー回数」と「指摘件数」の二重**。他のシグナル（skeptic の `fired >= 15` /
@@ -1128,6 +1158,18 @@ if verdict_layers:
         print("上流較正（v2.62.0）の効果判定は **層 %s を蓄積中**（%d/%d verdict）。"
               "この件数ではシグナルを出さない — triage-dynamic-gates.md `## 9`"
               % (newest_layer, verdict_layers[newest_layer]["total"], VERDICT_MIN))
+        # **「待てば貯まる」とは限らない**（GitHub issue #191）。対策後の層が特定の世代に
+        # 偏っていると、比率が下がっても打ち手の効果か世代の副作用かを分離できない。
+        # さらに上流の MAJOR がほぼゼロだと反証対象が無く、分子も分母も増えない。
+        # **その状態を「蓄積中」と出すと、達成不能な条件を待ち続けることになる**
+        if GEN_SPLIT:
+            _cal = verdict_layers[newest_layer]["calib"]
+            _same = [k for k, v in verdict_layers.items() if v["calib"] == _cal]
+            if len(_same) == 1:
+                print("  - ⚠️ **層 %d は世代 %s にしか存在しない**。比率が動いても"
+                      "打ち手の効果と世代の副作用を分離できない。**この待ち行は"
+                      "他世代のサンプルが出るまで達成不能**（#191）"
+                      % (_cal, newest_layer.split("/", 1)[-1]))
 
 for _title, _rows, _note in (
         ("反証 `severity_inflated` の型別内訳", inflated_axes, "下流（反証レイヤー）の降格"),
@@ -1332,6 +1374,16 @@ else:
           % (n_modern, n_all, modern_synthesis, n_modern, waves_txt)
           + ("" if not gap_counts else " / 欠測内訳 " + " ".join(
               "%s=%d" % kv for kv in sorted(gap_counts.items(), key=lambda kv: -kv[1]))))
+    # **`wave-split` の分母を明示する**（#192）。他の gap と母集団の意味が違ううえ、
+    # `agents-mismatch` で判定を抑止された回は分母にも分子にも入らない。黙って落とすと
+    # 「一括発行は守られている」と読まれる
+    if n_wave_judged or n_wave_suppressed:
+        _ws = gap_counts.get("wave-split", 0)
+        print("  - 一括発行: 判定できた %d 件中 %d 件が wave-split"
+              % (n_wave_judged, _ws)
+              + ("" if not n_wave_suppressed else
+                 "。**別に %d 件は `agents-mismatch` で判定を抑止**（分母にも分子にも"
+                 "入らない — 守られたのではなく**測れていない**）" % n_wave_suppressed))
     # **補完の待ち行を出し分ける**（issue #161）。「フィールドを持つ回が 0」（旧版のみ）と
     # 「持っているが 1 件も補完していない」（打点が守られた or 補完条件を満たさなかった）は
     # 別の状態で、潰すと「補完機構が入っているのに効いていない」を見逃す

@@ -6,6 +6,8 @@
 
 v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR 1 件・effort xhigh・規模 medium・23 体（GitHub issue #104 のセッション）:
 
+> **世代は Opus 5 期の実測**（`models` を payload に載せる前なので retro 上は `unrecorded` に落ちる / GitHub issue #191）。世代を踏み下げると 1 体あたりのコストも recall も動くので、**別世代の実測をこの表と直接比べない**。比べるなら世代を明記したサンプル同士で行う
+
 | | msgs | tool calls | output | cache_write | cache_read |
 |---|---:|---:|---:|---:|---:|
 | main | 167 | — | 675k | 3,126k | 43,152k |

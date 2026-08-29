@@ -2569,6 +2569,110 @@ class RetroGenerationRecallTest(RetroTest):
         self.assertNotIn("版マーカー × 閾値 × 世代で層別", out)
 
 
+class RetroWaveSplitDenominatorTest(RetroTest):
+    """wave-split の分母と是正先（GitHub issue #192）.
+
+    wave-split は measurement_gaps に積まれるが、**他の gap と母集団の意味が違う**。
+    他は「フィールドが載っていたか」なので gap 保持者全体でよいが、wave-split は
+    「wave 判定が成立した回」が母集団。全体を分母にすると比率が薄まり、実測 50% が
+    18% に見えて閾値を下回っていた。
+    """
+
+    def _run(self, waves: int, expected: int, gaps: list[str],
+             agents: int = 3) -> dict:
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": gaps,
+                "dispatch": {"schema": 3, "agents": agents, "waves": waves,
+                             "wave_sizes": [1] * waves, "max_solo_run": 1,
+                             "max_inter_wave_sec": 60, "span_sec": 120,
+                             "verdict": "layered", "waves_expected": expected}}
+
+    def test_the_denominator_is_the_number_of_judged_runs(self):
+        """分母は wave 判定が成立した回（gap 保持者全体ではない）."""
+        rows = [self._run(3, 2, ["wave-split"]), self._run(2, 2, [])]
+        # 判定が成立しない回（dispatch を持たない）を混ぜても分母は増えない
+        rows += [{"effort": "high", "measurement_gaps": ["t1"]} for _ in range(8)]
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("判定できた 2 件中 1 件が wave-split", out)
+
+    def test_a_run_missing_waves_expected_is_not_judged(self):
+        """`waves` と `waves_expected` の**両方**が揃った回だけを判定対象にする.
+
+        片方だけで判定成立とみなすと、期待本数が無いのに分母へ入る。
+        """
+        rows = [self._run(3, 2, ["wave-split"]) for _ in range(2)]
+        half = self._run(3, 2, [])
+        del half["dispatch"]["waves_expected"]          # 期待本数が載っていない回
+        rows.append(half)
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("判定できた 2 件中 2 件が wave-split", out,
+                      "waves_expected の無い回を分母に入れている")
+
+    def test_suppressed_runs_are_reported_not_silently_dropped(self):
+        """agents-mismatch で判定を抑止された回を明示する.
+
+        分母にも分子にも入らないので、黙って落とすと「守られている」と読まれる
+        （#154 のコメントが求めた処理が実装されていなかった）。
+        """
+        self._events([self._run(3, 2, ["wave-split"]),
+                      self._run(8, 2, ["agents-mismatch"])])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("判定できた 1 件中 1 件が wave-split", out)
+        self.assertIn("1 件は `agents-mismatch` で判定を抑止", out)
+        self.assertIn("測れていない", out, "抑止を「守られた」と読ませない注記が無い")
+
+    def test_the_remediation_hint_is_not_the_default(self):
+        """是正先が既定の「打点箇所の見直し」に落ちない（打点とは無関係）.
+
+        シグナル欄は `GAP_MIN_N = 5`（単発点灯の防止）を要求するので、判定が成立する回を
+        下限以上そろえる。
+        """
+        self._events([self._run(3, 2, ["wave-split"]) for _ in range(6)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("1 メッセージで一括発行", out)
+        self.assertNotIn("打点箇所の見直しが要る", out, "既定の是正先に落ちている")
+        # **「欠測」と呼ばない**（規約違反であって計測は取れている / #192）
+        self.assertIn("一括発行の規約違反が 100%", out)
+        self.assertNotIn("計測マーカー `wave-split` の欠測", out)
+
+
+class RetroUnreachableWaitTest(RetroTest):
+    """達成不能な待ち行を明示する（GitHub issue #191 期待動作 2）."""
+
+    def _v(self, gen: str, calib: int, total: int = 1) -> dict:
+        r = {"effort": "high", "measurement_gaps": [],
+             "models": self._models("claude-%s" % gen),
+             "adversarial_verify": {"fired": True, "skip_reason": None, "gate_schema": 2,
+                                    "calibration_schema": calib, "confirmed": total,
+                                    "refuted": 0, "uncertain": 0,
+                                    "severity_inflated": 0, "contested": 0}}
+        return r
+
+    def test_a_layer_present_in_only_one_generation_is_flagged(self):
+        """対策後の層が 1 世代にしか無いとき、待つだけでは分離できないと出す."""
+        self._events([self._v("opus-5", 2), self._v("opus-4-8", 3)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("にしか存在しない", out)
+        self.assertIn("達成不能", out)
+
+    def test_the_flag_counts_layers_of_the_same_calibration(self):
+        """同じ calib の層を数える（別 calib を数えると判定が逆転する）.
+
+        calib=2 が 1 世代・calib=3 が 2 世代にあるとき、最新層 calib=3 は
+        両世代に存在するので**警告は出ない**。別 calib を数えると 1 件になり誤って出る。
+        """
+        self._events([self._v("opus-5", 2), self._v("opus-5", 3), self._v("opus-4-8", 3)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("達成不能", out, "別 calib の層を数えている")
+
+    def test_a_layer_present_in_both_generations_is_not_flagged(self):
+        """両世代にサンプルがあるなら分離できるので警告を出さない."""
+        self._events([self._v("opus-5", 3), self._v("opus-4-8", 3)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("達成不能", out)
+
+
 class RetroExplicitLogsTest(ScriptTestBase):
     """`--logs` による複数ログの合算（GitHub issue #160）.
 
