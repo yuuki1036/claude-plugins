@@ -584,6 +584,29 @@ class GhRefGuardTest(HookTestCase):
         self.assertIn("Unexpected", res.stderr,
                       "検出器が壊れても無音で通している（ガードの silent 無効化）")
 
+    def test_a_write_with_only_equals_flags_is_inspected(self):
+        """位置引数を持たない書き込みも検査する（`--body-file=` と `--title=` だけの形）.
+
+        prefilter は `gh` の後ろの**非フラグ**トークンで `<issue|pr> <write>` を判定する。
+        `=` 形式のフラグは非フラグ扱いにならないので、この形では判定材料が
+        ちょうど 2 個になる。境界を 1 つ狭めると**検査ごとスキップ**される
+        （nightly の変異テストが検出 / GitHub issue #189）。
+        """
+        (self.repo / "body.md").write_text("`measurement.md ## ZZZ`", encoding="utf-8")
+        res = self.gh(f"gh issue create --body-file={self.repo / 'body.md'} --title=t")
+        self.assertEqual(res.returncode, 2, "位置引数の無い書き込みを検査していない")
+
+    def test_an_unrelated_token_that_names_a_file_is_not_read(self):
+        """`--body-file` / `-F` の**直後**以外のトークンをファイルとして読まない.
+
+        読むと、たまたま実在するファイル名がどこかに現れただけで中身が検査対象に入り、
+        **本文がきれいでも誤ブロック**する（nightly の変異テストが検出 / GitHub issue #189）。
+        """
+        (self.repo / "notes.md").write_text("`measurement.md ## ZZZ`", encoding="utf-8")
+        res = self.gh("gh issue create --title notes.md --body clean")
+        self.assertEqual(res.returncode, 0,
+                         f"無関係なトークンをファイルとして読んでいる: {res.stderr}")
+
     # ---- 黙る側 ------------------------------------------------------------
     def test_allows_an_existing_heading(self):
         res = self.gh("gh issue comment 1 --body '典拠は `measurement.md ## 15`'")
