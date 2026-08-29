@@ -46,6 +46,34 @@ journal の手前に置くステージングファイル。SessionStart 注入�
 
 > tag は「同じ失敗を別の機会に踏んだとき、同一の tag に collapse できる」ことが目的。具体的すぎると集計で別 tag に散り、抽象的すぎると無関係な失敗が混ざる。現象の「型」を表す粒度を狙う。
 
+## umbrella tag の分割（retro で閾値を超え続けるとき）
+
+**同一 tag が還流のたびに別の機構を出してくるなら、それは 1 つの失敗型ではなく複数を束ねている。**
+分割せずに還流を重ねても、対策は毎回「今回の 1 件」にしか当たらず、閾値だけが鳴り続ける。
+
+判定の目安（retro の Phase 4 で使う）:
+
+- 閾値を超えた tag の内訳を書き出したとき、**還流先が 2 つ以上に割れる**（hook / 規約 / skill）
+- 既に還流した対策が、**次の発生を止めていない**（発生が対策より後で、かつ別の機構）
+
+分割するときは**新しい発生から新 tag を使い、既存 journal は書き換えない**（append-only）。
+過去ぶんは umbrella のまま残るので、集計は「umbrella + 新 tag の合計」で読む。
+
+### 実例: `claimed-fact-without-source`（全期間 17 件・窓内 9 件で最多）
+
+内訳が 4 機構に割れ、還流先もばらけた:
+
+| サブ tag | 機構 | 還流先 |
+|---|---|---|
+| `stale-record-read-as-current` | 記録（title / コミットメッセージ / 過去コメント）から現在値を断定 | 規約（CLAUDE.md） |
+| `cited-passage-not-verified` | 引用先に該当記述が実在するか確認しない | hook（guardrail-protect） |
+| `mechanism-asserted-unread` | 正本のコードを読まずに機構・原因を断定 | 規約 |
+| `unassigned-id-written-as-fixed` | 未確定の識別子（issue 番号・版・ハッシュ）を確定として書く | 規約 |
+
+**`unassigned-id-written-as-fixed` は存在検査では止まらない**（実測: 起票前に書いた issue 番号が
+実在する別の issue を指しており、存在検査を通ってしまう）。`vNEXT` プレースホルダと同じく
+**書く側の手順**で消す型。
+
 ## append 手順（正準）
 
 ```bash
