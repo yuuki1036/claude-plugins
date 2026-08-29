@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shutil
 import signal
@@ -314,6 +315,83 @@ class RanCountTest(unittest.TestCase):
 
     def test_a_failure_with_tests_keeps_its_code(self):
         self.assertEqual(self._module()._exit_code(1, b"Ran 7 tests in 0.1s\n"), 1)
+
+
+class MutationGuardTest(RunTestsTest):
+    """変異テストの実行中は測らない（GitHub issue #154 のセルフレビューで踏んだ誤診）.
+
+    `mutation-test.py` は変異体を**作業ツリーの実ファイルへ in-place で書き込み**、
+    1 変異ごとにフルスイートを回してから復元する。つまりファイルはほぼ 100% の時間
+    mutant 状態で、その間に別セッションで測った結果は**緑にも赤にも化ける**。
+
+    実測: 48 分の run 中、3 秒間隔 44 サンプルすべてが変異体だった。そこで測った失敗は
+    「テスト間の順序干渉」に見え、二分探索に時間を溶かした（フルスイート 6 回 +
+    診断ワークフロー 1 本）。`pgrep` 1 回で判別できたものを、確認せずに進んだ結果。
+    """
+
+    def write_journal(self, pid: int, path: str = "code-review/scripts/x.sh") -> None:
+        (self.root / ".mutation-test-journal.json").write_text(
+            json.dumps({"path": path, "mode": 420, "original_b64": "", "pid": pid}),
+            encoding="utf-8")
+
+    def test_a_live_mutation_run_blocks_the_suite(self):
+        """生存している run の journal があれば走らせない（判定不能で返す）."""
+        self.write_test("import unittest\n\n"
+                        "class T(unittest.TestCase):\n"
+                        "    def test_ok(self):\n        pass\n")
+        self.write_journal(os.getpid())          # このテスト自身は生きている
+        r = self.run_wrapper()
+        self.assertEqual(r.returncode, 2, "判定不能（2）で返していない: %r" % (r,))
+        self.assertIn("変異テストの実行中", r.stderr)
+        self.assertNotIn("Ran 1 test", r.stderr + r.stdout,
+                         "止めると言いながらテストを走らせている")
+
+    def test_the_message_names_the_recovery_path(self):
+        """**何をすればよいか**を出す（待つ / クローンで測る / 殺さない）."""
+        self.write_test("import unittest\n")
+        self.write_journal(os.getpid())
+        err = self.run_wrapper().stderr
+        self.assertIn("git checkout-index", err, "回避手順が出ていない")
+        self.assertIn("Ctrl-C で殺さないこと", err, "復元が飛ぶ注意が出ていない")
+
+    def test_a_dead_mutation_run_does_not_block(self):
+        """書いた run が既に死んでいれば止めない（変異は復元済み or 次回起動で復旧）.
+
+        止めると**永久にテストが走らなくなる**（journal は中断時に残る）。
+        """
+        self.write_test("import unittest\n\n"
+                        "class T(unittest.TestCase):\n"
+                        "    def test_ok(self):\n        pass\n")
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        self.write_journal(dead.pid)
+        r = self.run_wrapper()
+        self.assertIn("Ran 1 test", r.stderr + r.stdout,
+                      "死んだ pid の journal で止めている: %r" % (r,))
+
+    def test_a_broken_journal_does_not_block(self):
+        """壊れた / pid の無い journal では止めない（fail-open）.
+
+        ここで止めると、journal の書式が変わっただけでテストが走らなくなる。
+        """
+        self.write_test("import unittest\n\n"
+                        "class T(unittest.TestCase):\n"
+                        "    def test_ok(self):\n        pass\n")
+        for body in ("{ broken", '{"path": "x"}', "[]"):
+            with self.subTest(body=body):
+                (self.root / ".mutation-test-journal.json").write_text(
+                    body, encoding="utf-8")
+                r = self.run_wrapper()
+                self.assertIn("Ran 1 test", r.stderr + r.stdout,
+                              "壊れた journal で止めている: %r" % (body,))
+
+    def test_no_journal_does_not_block(self):
+        """journal が無ければ従来どおり走る（既定経路を塞がない）."""
+        self.write_test("import unittest\n\n"
+                        "class T(unittest.TestCase):\n"
+                        "    def test_ok(self):\n        pass\n")
+        r = self.run_wrapper()
+        self.assertIn("Ran 1 test", r.stderr + r.stdout)
 
 
 if __name__ == "__main__":

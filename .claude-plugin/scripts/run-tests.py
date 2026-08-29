@@ -38,6 +38,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import signal
@@ -203,7 +204,53 @@ def _exit_code(rc: int, out: bytes) -> int:
     return rc
 
 
+#: `mutation-test.py` が「変異を当てている区間」を示す状態ファイル（正本はあちら側）。
+#: **パスを複製しているのは依存を作らないため** — run-tests は mutation-test を import せず、
+#: ファイルの有無と pid の生存だけを見る
+MUTATION_JOURNAL = ".mutation-test-journal.json"
+
+
+def mutation_in_progress() -> str | None:
+    """変異テストが対象ファイルを書き換えている最中なら、その説明を返す.
+
+    **変異が乗っている間に走らせたテスト結果は緑にも赤にも化ける。** 実測では、
+    別セッションが `mutation-test.py` を回している 48 分の間、作業ツリーはほぼ 100% の
+    時間 mutant 状態で、3 秒間隔 44 サンプルすべてが変異体だった。そこで測った結果は
+    「テスト間の干渉」に見え、順序の二分探索に時間を溶かす（実測: 誤診 1 件）。
+
+    journal が残っていても**書いた run が既に死んでいれば**変異は復元済みか、
+    次回の `mutation-test.py` 起動時に復旧される。生存している pid のときだけ止める。
+    """
+    j = ROOT / MUTATION_JOURNAL
+    try:
+        data = json.loads(j.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None            # 無い / 壊れている journal では止めない（fail-open）
+    if not isinstance(data, dict):
+        return None            # 形が違う journal でも止めない（書式が変わっただけで
+                               # テストが走らなくなる方が高くつく）
+    pid = data.get("pid")
+    if not isinstance(pid, int) or isinstance(pid, bool):
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None            # 書いた run は終了済み
+    except PermissionError:
+        pass                   # 別ユーザーの生存プロセス。止める側に倒す
+    return "pid %d が %s に変異を当てている" % (pid, data.get("path") or "?")
+
+
 def main(argv: list[str]) -> int:
+    busy = mutation_in_progress()
+    if busy:
+        print("[run-tests] **変異テストの実行中**（%s）。\n"
+              "  この状態で測った結果は緑にも赤にも化けるので走らせない。\n"
+              "  完走を待つか、index の内容を使い捨てクローンへ取り出して測ること:\n"
+              "    git checkout-index -a --prefix=/tmp/clone/\n"
+              "  **Ctrl-C で殺さないこと** — 復元が飛んで変異が作業ツリーに残る。"
+              % busy, file=sys.stderr)
+        return 2               # 判定不能（machine-layer と同じ流儀）
     cmd = [sys.executable, "-m", "unittest", "discover", "-s", TESTS_DIR, *argv]
     out = b""
     with tempfile.TemporaryFile("w+b") as log:
