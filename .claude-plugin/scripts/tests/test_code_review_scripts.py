@@ -2409,6 +2409,166 @@ class FindingsClassSignalTest(ScriptTestBase):
         self.assertNotIn("持つサンプルが 0 件", out)
 
 
+class RetroGenerationRecallTest(RetroTest):
+    """検出・報告側の世代層別（GitHub issue #191）.
+
+    #169 は世代キーを**コスト側だけ**に入れたため、報告 0 件率・歩留まり・反証 verdict は
+    世代をまたいで累計されていた。実測で踏み下げの前後に大きな落差が出ており
+    （`pre_adjust` の MAJOR 中央値 7 → 0 / 報告 0 件率 42% → 91%）、累計すると平均に
+    埋もれる。**「安くなった」だけが見えて「効かなくなった」が見えない**非対称になる。
+    """
+
+    def _row(self, gen: str | None, pre_major: int | None, reported: int | None,
+             calib: int = 2, inflated: int = 1) -> dict:
+        """`reported=None` で**報告件数フィールドを 1 つも持たない回**（旧版 payload）を作る。
+        `pre_major=None` で `pre_adjust_counts.major` の欠測を作る。"""
+        r = {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+             "severity_threshold": "MAJOR",
+             "pre_adjust_counts": {"schema": 2, "blocker": 0, "critical": 0,
+                                   "minor": 0},
+             "adversarial_verify": {"fired": True, "skip_reason": None, "gate_schema": 2,
+                                    "calibration_schema": calib, "confirmed": 1,
+                                    "refuted": 0, "uncertain": 0,
+                                    "severity_inflated": inflated, "contested": 0}}
+        if pre_major is not None:
+            r["pre_adjust_counts"]["major"] = pre_major
+        if reported is not None:
+            r["major_count"] = reported
+        if gen is not None:
+            r["models"] = self._models("claude-%s" % gen)
+        return r
+
+    def test_zero_report_rate_is_split_by_generation(self):
+        """報告 0 件率を世代別に出す（recall の粗い代理）."""
+        self._events([self._row("opus-5", 8, 3), self._row("opus-5", 7, 2),
+                      self._row("opus-4-8", 0, 0), self._row("opus-4-8", 0, 0)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("報告 0 件率", out)
+        rows = {l.split("|")[1].strip(): l for l in out.splitlines()
+                if l.startswith("| opus-")}
+        self.assertIn("0（0%）", rows["opus-5"], "Opus 5 側が 0 件率 0% になっていない")
+        self.assertIn("2（100%）", rows["opus-4-8"], "4.8 側が 0 件率 100% になっていない")
+
+    def test_yield_is_split_by_generation(self):
+        """歩留まり（pre_adjust → 報告）の層別キーに世代が入る."""
+        self._events([self._row("opus-5", 8, 3), self._row("opus-4-8", 0, 0)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("threshold=MAJOR/opus-5", out)
+        self.assertIn("threshold=MAJOR/opus-4-8", out)
+
+    def test_verdict_layers_are_split_by_generation(self):
+        """反証 verdict の層キーに世代が入る（calib と世代の交絡を切る）."""
+        self._events([self._row("opus-5", 8, 3, calib=2),
+                      self._row("opus-4-8", 0, 0, calib=3)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("2/opus-5", out)
+        self.assertIn("3/opus-4-8", out)
+
+    def test_the_newest_layer_is_chosen_by_calibration_not_by_string_order(self):
+        """層キーが複合文字列でも `calib` 最大の層を代表に取る.
+
+        単純な `max()` だと辞書順で `unrecorded` が勝ち、**対策前の層を「最新」として
+        扱ってしまう**。閾値比較（`>= CALIB_MIN`）も文字列では TypeError になる。
+        """
+        self._events([self._row(None, 8, 3, calib=1),          # unrecorded / 対策前
+                      self._row("opus-5", 8, 3, calib=3)])     # 最新の層
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("Traceback", out)
+        self.assertIn("層 3/opus-5 を蓄積中", out,
+                      "calib 最大の層が代表に選ばれていない")
+
+    def test_a_single_generation_does_not_split_the_keys(self):
+        """世代が 1 種しか無い母集団ではキーを割らない（既存の流儀を踏襲）."""
+        self._events([self._row("opus-5", 8, 3), self._row("opus-5", 7, 2)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("threshold=MAJOR", out)
+        self.assertNotIn("threshold=MAJOR/opus-5", out,
+                         "1 世代しか無いのにキーを割っている")
+
+    # ---- レビューで見つかった欠陥を pin する（#191 のセルフレビュー）----------
+
+    def test_missing_report_counts_are_excluded_not_counted_as_zero(self):
+        """報告件数フィールドを 1 つも持たない回を「報告 0 件」として数えない.
+
+        **実データで陽性セルの 3/3 が偽陽性だった。** 0 件率は構造的に上振れし、
+        しかも古い版ほど欠測が多いので「新しい世代ほど recall が落ちた」を機構が
+        自分で作り出す（CLAUDE.md「0 と欠測を潰さない」）。
+        """
+        self._events([self._row("opus-5", 8, 3), self._row("opus-5", 7, 2),
+                      self._row("opus-5", 9, None)])          # 旧版 = 報告件数なし
+        out = self.run_script(RETRO, env=self._env()).stdout
+        line = [l for l in out.splitlines() if l.startswith("| opus-5")][0]
+        self.assertIn("| 2 |", line, "欠測の回を母数に入れている")
+        self.assertIn("0（0%）", line, "欠測を報告 0 件として数えている")
+        self.assertIn("1 件は母数から外した", out, "除外件数を黙って落としている")
+
+    def test_a_generation_with_only_missing_counts_gets_no_row(self):
+        """全件が欠測の世代に n=0 の行を作らない（比率が 0/0 になる）."""
+        self._events([self._row("opus-5", 8, 3), self._row("opus-4-8", 9, None)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("| opus-4-8 |", out, "n=0 の行が出ている")
+
+    def test_the_table_is_shown_for_a_single_generation(self):
+        """世代が 1 種でも表を出す（平常状態で指標が消えると劣化を見る手段が無い）."""
+        self._events([self._row("opus-5", 8, 0), self._row("opus-5", 7, 0)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("報告 0 件率", out, "世代 1 種で表が消えている")
+        self.assertIn("2（100%）", out)
+
+    def test_the_median_column_shows_its_own_denominator(self):
+        """中央値の分母は行の n と違う（`pre_adjust_counts.major` の欠測がある）."""
+        self._events([self._row("opus-5", 8, 3), self._row("opus-5", None, 2)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        line = [l for l in out.splitlines() if l.startswith("| opus-5")][0]
+        self.assertIn("| 2 |", line)
+        self.assertIn("n=1", line, "中央値の分母が併記されていない")
+
+    def test_a_generation_without_any_pre_major_shows_a_dash(self):
+        """`pre_adjust_counts.major` が全件欠測なら中央値欄はハイフン."""
+        self._events([self._row("opus-5", None, 3), self._row("opus-5", None, 2)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        line = [l for l in out.splitlines() if l.startswith("| opus-5")][0]
+        self.assertTrue(line.rstrip().endswith("| - |"), "欠測が数値に化けている: %s" % line)
+
+    def test_every_qualifying_layer_emits_a_signal(self):
+        """閾値を超えた層は**すべて**シグナルに出す（代表 1 層だけ見ない）.
+
+        層キーに世代が入って同じ calib に複数層が並ぶので、代表だけを見ると
+        条件を満たした別世代が黙って落ちる。
+        """
+        rows = []
+        for gen in ("opus-5", "opus-4-8"):
+            for _ in range(10):
+                rows.append(self._row(gen, 8, 3, calib=2, inflated=1))
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("層=2/opus-5", out)
+        self.assertIn("層=2/opus-4-8", out, "片方の世代のシグナルが落ちている")
+
+    def test_the_split_table_matches_the_yield_table_granularity(self):
+        """内訳（splits）の粒度を歩留まり（yields）に揃える.
+
+        片方だけ割ると、隣り合う 2 表のどの行を分解した数字なのか対応付かない。
+        """
+        rows = []
+        for gen in ("opus-5", "opus-4-8"):
+            r = self._row(gen, 8, 3)
+            r["below_threshold_counts"] = {"blocker": 0, "critical": 0,
+                                           "major": 0, "minor": 5}
+            rows.append(r)
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("threshold=MAJOR/opus-5: n=1 / 本文を書いた", out)
+        self.assertIn("threshold=MAJOR/opus-4-8: n=1 / 本文を書いた", out)
+
+    def test_the_heading_does_not_claim_a_generation_split_when_there_is_none(self):
+        """世代が 1 種のときは見出しで「× 世代で層別」と言わない（中身と矛盾する）."""
+        self._events([self._row("opus-5", 8, 3), self._row("opus-5", 7, 2)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("（版マーカー × 閾値で層別", out)
+        self.assertNotIn("版マーカー × 閾値 × 世代で層別", out)
+
+
 class RetroExplicitLogsTest(ScriptTestBase):
     """`--logs` による複数ログの合算（GitHub issue #160）.
 

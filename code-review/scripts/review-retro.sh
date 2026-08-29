@@ -384,15 +384,21 @@ tier_r_judged = [(t, n_t, rr) for t, n_t, rr in tier_r_rows
 spans = [(k, median(measured(events, "duration_%s_min" % k)), len(measured(events, "duration_%s_min" % k)))
          for k in ("triage", "explore", "fleet", "synthesis", "closing")]
 
-# ---- 5. pre_adjust → 報告の歩留まり（版マーカー × 閾値で層別） --------------
+# ---- 5. pre_adjust → 報告の歩留まり（版マーカー × 閾値 × 世代で層別）--------
 # `>= 2` にするのは前方互換のため（`== 2` だと schema 3 でセクションが無音で消える）
+#
+# **世代キーを入れる**（GitHub issue #191）。#169 は世代を**コスト側だけ**に入れたため、
+# 検出・報告側は世代をまたいで累計されていた。実測では踏み下げの前後で `pre_adjust` の
+# MAJOR 中央値が 7 → 0・報告 0 件率が 42% → 91% に動いており、累計するとこれが平均に
+# 埋もれる。**「安くなった」だけが見えて「効かなくなった」が見えない**非対称になる
 yields = {}
 for e in events:
     p = e["p"]
     pre = p.get("pre_adjust_counts")
     if not isinstance(pre, dict) or schema_of(pre, "schema") < 2:
         continue
-    key = "schema>=%d/threshold=%s" % (schema_of(pre, "schema"), p.get("severity_threshold") or "?")
+    key = with_gen(p, "schema>=%d/threshold=%s" % (
+        schema_of(pre, "schema"), p.get("severity_threshold") or "?"))
     y = yields.setdefault(key, {"n": 0, "pre": 0, "post": 0})
     y["n"] += 1
     for sev in ("blocker", "critical", "major", "minor"):
@@ -416,7 +422,10 @@ for e in events:
     bt = p.get("below_threshold_counts")
     if not isinstance(pre, dict) or schema_of(pre, "schema") < 2 or not isinstance(bt, dict):
         continue
-    key = "schema>=%d/threshold=%s" % (schema_of(pre, "schema"), p.get("severity_threshold") or "?")
+    # **歩留まり（yields）と同じ粒度にする**。片方だけ割ると、隣り合う 2 表のどの行を
+    # 分解した数字なのかが対応付かない（#191 のセルフレビュー指摘）
+    key = with_gen(p, "schema>=%d/threshold=%s" % (
+        schema_of(pre, "schema"), p.get("severity_threshold") or "?"))
     sp = splits.setdefault(key, {"n": 0, "pre": 0, "below": 0, "post": 0})
     sp["n"] += 1
     for sev in ("blocker", "critical", "major", "minor"):
@@ -425,6 +434,39 @@ for e in events:
     for sev in ("blocker_count", "critical_count", "major_count", "minor_count"):
         sp["post"] += num(p.get(sev)) or 0
 
+
+# ---- 5.15 報告 0 件率（世代別 / GitHub issue #191）-------------------------
+# **recall の最も粗い代理指標**。踏み下げの前後で 42% → 91% に動いた実測があり、
+# 累計では見えない。
+#
+# **母数は「報告件数フィールドを実際に持つ回」に限る。** `pre_adjust_counts` の版マーカー
+# だけで濾すと、`*_count` を 1 つも持たない旧版の回が `sum(... or 0)` で 0 と評価され、
+# **欠測が「報告 0 件」に化ける**。このリポジトリの実データではそれで陽性セルの
+# 3/3 が偽陽性になっていた（0 件率が構造的に上振れし、しかも古い版ほど欠測が多いので
+# 「新しい世代ほど recall が落ちた」を機構が自分で作り出す）。
+# **除外件数は表に出す** — 黙って落とすと「該当が無かった」と読まれる
+zero_rows = {}
+zero_missing = 0        # 報告件数フィールドを 1 つも持たず母数から外した回
+for e in events:
+    p = e["p"]
+    pre = p.get("pre_adjust_counts")
+    if not isinstance(pre, dict) or schema_of(pre, "schema") < 2:
+        continue
+    counts = [num(p.get(k)) for k in
+              ("blocker_count", "critical_count", "major_count", "minor_count")]
+    # **`setdefault` より前に弾く**。後ろに置くと除外された回でも空バケツができ、
+    # n=0 の行が表に並ぶ（比率は 0/0）
+    if all(v is None for v in counts):
+        zero_missing += 1
+        continue
+    g = gen_of(p)
+    z = zero_rows.setdefault(g, {"n": 0, "zero": 0, "pre_major": []})
+    z["n"] += 1
+    if sum(v or 0 for v in counts) == 0:
+        z["zero"] += 1
+    pm = num(pre.get("major"))
+    if pm is not None:
+        z["pre_major"].append(pm)
 
 # ---- 5.2 「報告 0 件」と「価値 0」の分離（GitHub issue #168） ---------------
 # 報告 0 件の回は**空振りとは限らない**。閾値の外に落ちた指摘を付録で人間に推している回が
@@ -461,9 +503,17 @@ for e in events:
                 ("confirmed", "refuted", "uncertain", "severity_inflated", "contested"))
     if total <= 0:
         continue
-    layer = schema_of(av, "calibration_schema")
+    # **世代キーを足す**（#191）。`calibration_schema` × 世代が完全交絡している回が
+    # あり（calib=3 が片方の世代に偏る）、層別しないと打ち手の効果と世代の副作用を
+    # 分離できない
+    calib = schema_of(av, "calibration_schema")
+    layer = with_gen(e["p"], str(calib))
+    # **`calib` を層に持たせる**。キーが `"3/opus-5"` のような複合文字列になったので、
+    # 下流の閾値比較（`>= CALIB_MIN`）を文字列で行うと Python 3 では TypeError になる。
+    # キーから数値を切り出し直す実装は `with_gen` の書式に依存するので持たない
     L = verdict_layers.setdefault(layer, {"n": 0, "total": 0, "confirmed": 0, "refuted": 0,
-                                          "uncertain": 0, "severity_inflated": 0, "contested": 0})
+                                          "uncertain": 0, "severity_inflated": 0,
+                                          "contested": 0, "calib": calib})
     L["n"] += 1
     L["total"] += total
     for k in ("confirmed", "refuted", "uncertain", "severity_inflated", "contested"):
@@ -734,7 +784,12 @@ fc_total = sum(fc.values())
 # ---- シグナル判定（ロールバック条件・再監視条件のトリガー） ----------------
 # **すべて「サンプル数下限 × 比率」で判定する**。1 件でも点灯する条件を混ぜると
 # シグナル欄が常時点灯し、「⚠️ が出たときだけ行動する」という契約が壊れる
-newest_layer = max(verdict_layers) if verdict_layers else None
+# **calib が最大の層**を代表に取り、同じ calib が世代で割れているときは verdict の
+# 多い方を選ぶ（#191 で層キーに世代が入ったため、単純な `max()` では辞書順で
+# `unrecorded` が勝ってしまう）
+newest_layer = (max(verdict_layers,
+                    key=lambda k: (verdict_layers[k]["calib"], verdict_layers[k]["total"]))
+                if verdict_layers else None)
 # 上流較正（`prompts/reviewer-common.md` の「降格される典型パターン」= v2.62.0）の効果は
 # **対策後のサンプルでしか測れない**（orchestration-measurement.md `## 16` / triage-dynamic-gates.md
 # `## 9`「この 52% を上流対策の効果測定に使わないこと」）。`calibration_schema` が未注入だった
@@ -742,13 +797,18 @@ newest_layer = max(verdict_layers) if verdict_layers else None
 # いた**（issue #131）。層 1 しか無いうちは黙る
 CALIB_MIN = 2
 VERDICT_MIN = 20     # 層内の verdict 件数の下限（これ未満では層の比率を解釈しない）
-if newest_layer is not None:
-    L = verdict_layers[newest_layer]
+# **該当する層をすべて出す**。層キーに世代が入って同じ calib に複数層が並ぶように
+# なったので、代表 1 層だけを見ると**条件を満たした別世代が黙って落ちる**
+# （「⚠️ が出たときだけ行動する」契約では「該当なし」と読まれる）
+for _lk in sorted(verdict_layers):
+    L = verdict_layers[_lk]
     ratio = pct(L["severity_inflated"], L["total"])
-    if L["total"] >= VERDICT_MIN and ratio >= 45 and newest_layer >= CALIB_MIN:
-        signals.append("severity_inflated が %.0f%%（calibration_schema=%s / %d verdict）。"
+    if L["total"] >= VERDICT_MIN and ratio >= 45 and L["calib"] >= CALIB_MIN:
+        # ラベルは**その層のキー**を出す（`newest_layer` を出すと別層の名前が付く）。
+        # キーには世代が入っているので `層=` と呼ぶ
+        signals.append("severity_inflated が %.0f%%（層=%s / %d verdict）。"
                        "上流較正（prompts/reviewer-common.md の降格典型）が効いていない疑い"
-                       % (ratio, newest_layer, L["total"]))
+                       % (ratio, _lk, L["total"]))
     # 下の 2 つは `CALIB_MIN` で絞らない。**反証レイヤー自身の設定**（effort / バッチサイズ）の
     # 再監視条件であって上流較正の効果測定ではないので、較正版で層別する理由が無い
     if L["total"] >= VERDICT_MIN and pct(L["uncertain"], L["total"]) >= 15:
@@ -973,10 +1033,50 @@ print("**区間の中央値**: " + " / ".join(
 
 if yields:
     print()
-    print("**pre_adjust → 報告の歩留まり**（版マーカー × 閾値で層別）")
+    print("**pre_adjust → 報告の歩留まり**（%sで層別 / #191）"
+          % ("版マーカー × 閾値 × 世代" if GEN_SPLIT else "版マーカー × 閾値"))
     for key, y in sorted(yields.items()):
         print("- %s: n=%d / 検出 %d → 報告 %d（%.1f%%）"
               % (key, y["n"], y["pre"], y["post"], pct(y["post"], y["pre"])))
+
+# **報告 0 件率（世代別）** — recall の最も粗い代理指標（GitHub issue #191）。
+# コスト側だけ世代で層別して報告側を累計すると、「安くなった」だけが見えて
+# 「効かなくなった」が見えない非対称になる
+# **世代が 1 種でも出す。** この表は世代**間**の比較だけでなく「今どれだけ空振りして
+# いるか」自体が指標なので、1 行でも意味がある（世代が 1 種のリポジトリは平常状態で、
+# そこで指標が消えると recall の劣化を見る手段が無くなる）。`with_gen` の
+# 「2 種以上のときだけ足す」規則は**追加キーが既存バケツを砕く**のを避けるためのもので、
+# ここは世代が行そのものなので当てはまらない
+if zero_rows:
+    print()
+    print("**報告 0 件率**（世代別 / 報告件数フィールドを持つ回。**recall の粗い代理**"
+          " — 付録に救われた回は 0 件でも空振りとは限らない / #168・#191）")
+    print()
+    print("| 世代 | n | 報告 0 件 | pre_adjust MAJOR 中央値（n） |")
+    print("|---|---:|---:|---:|")
+    for g in sorted(zero_rows):
+        z = zero_rows[g]
+        pm = median(z["pre_major"])
+        # **中央値の分母は行の n と違う**（`pre_adjust_counts.major` が欠測の回がある）。
+        # 併記しないと同じ母数の統計だと読まれる
+        pm_s = ("%g（n=%d）" % (pm, len(z["pre_major"]))) if pm is not None else "-"
+        print("| %s | %d | %d（%.0f%%） | %s |"
+              % (g, z["n"], z["zero"], pct(z["zero"], z["n"]), pm_s))
+    if zero_missing:
+        print()
+        print("> 報告件数フィールドを 1 つも持たない **%d 件は母数から外した**"
+              "（旧版の payload。**0 件と欠測を潰さない** — 混ぜると 0 件率が"
+              "構造的に上振れし、欠測の多い古い版ほど「recall が落ちた」に見える）"
+              % zero_missing)
+    print()
+    print("> `unrecorded` は**世代が記録されていない回**であって「古い世代」ではない。"
+          "既知の世代と同じバケツに入れない（#169）")
+    if len(zero_rows) > 1:
+        print()
+        print("**世代間で差が出ていたら、コスト側の層別（fleet / 体数 / cache_read）だけでは"
+              "見えない。** 踏み下げは制御点だが recall 側の代償があり、"
+              "その量はここでしか観測できない（#170・#191）")
+    print()
 
 if splits:
     print()
@@ -1000,9 +1100,11 @@ elif yields:
 
 if verdict_layers:
     print()
-    print("**反証 verdict 分布**（calibration_schema で層別 — 累計で読むと施策の効果が薄まる）")
+    print("**反証 verdict 分布**（%sで層別 — 累計で読むと施策の効果が薄まる / #191）"
+          % ("calibration_schema × 世代" if GEN_SPLIT else "calibration_schema"))
     print()
-    print("| calib | サンプル | verdict | confirmed | severity_inflated | refuted | uncertain | contested |")
+    print("| %s | サンプル | verdict | confirmed | severity_inflated | refuted | uncertain | contested |"
+          % ("calib/世代" if GEN_SPLIT else "calib"))
     print("|---|---:|---:|---:|---:|---:|---:|---:|")
     for layer in sorted(verdict_layers):
         L = verdict_layers[layer]
@@ -1016,14 +1118,14 @@ if verdict_layers:
     # `calibration_schema: 2` を常に注入するので層 2 は 1 件目ですぐ現れる一方、シグナルは
     # `VERDICT_MIN` を要求する。層で切るだけだと**蓄積中（1〜19 verdict）が無言区間**になり、
     # まさに避けたかった誤読を作る
-    if newest_layer is not None and newest_layer < CALIB_MIN:
+    if newest_layer is not None and verdict_layers[newest_layer]["calib"] < CALIB_MIN:
         print()
         print("上流較正（v2.62.0）の効果判定は **`calibration_schema >= %d` のサンプル待ち**"
               "（現在は層 %s のみ = 対策前）。累計の severity_inflated 比率を効果測定に使わない"
               " — triage-dynamic-gates.md `## 9`" % (CALIB_MIN, newest_layer))
     elif newest_layer is not None and verdict_layers[newest_layer]["total"] < VERDICT_MIN:
         print()
-        print("上流較正（v2.62.0）の効果判定は **層 %d を蓄積中**（%d/%d verdict）。"
+        print("上流較正（v2.62.0）の効果判定は **層 %s を蓄積中**（%d/%d verdict）。"
               "この件数ではシグナルを出さない — triage-dynamic-gates.md `## 9`"
               % (newest_layer, verdict_layers[newest_layer]["total"], VERDICT_MIN))
 
