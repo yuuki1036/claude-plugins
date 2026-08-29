@@ -615,6 +615,99 @@ class MeasureTokensTest(ScriptTestBase):
         self.assertEqual(self.intake_row(self.measure().stdout, "?"), 20)
 
 
+class PerAgentTest(MeasureTokensTest):
+    """`--per-agent`: 体ごとの cache_read と往復数（GitHub issue #156）.
+
+    **回内分散を取るための粒度**。層別（tier x effort x 世代）でサンプル 5 件を待つと
+    世代キーが入った時点で下限に届かなくなったため、1 run 内で対照を取る方式に切り替えた。
+    同一 run なら tier / effort / 世代が定義上そろうので交絡しない。
+    """
+
+    def write_meta(self, session_id: str, name: str, description: str,
+                   depth: int = 1) -> None:
+        d = self.project_dir() / session_id / "subagents"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / ("%s.meta.json" % name)).write_text(
+            json.dumps({"description": description, "spawnDepth": depth,
+                        "agentType": "general-purpose"}), encoding="utf-8")
+
+    def setup_run(self, session_id: str = "s1") -> None:
+        self.write_session(session_id, [self.usage_row("2026-08-28T00:00:00Z", out=10)])
+        # 往復数の違う 2 体（cache_read は往復数に比例する想定）
+        self.write_subagent(session_id, "agent-aaa",
+                            [self.usage_row("2026-08-28T00:01:00Z", cr=1000),
+                             self.usage_row("2026-08-28T00:02:00Z", cr=1000),
+                             self.usage_row("2026-08-28T00:03:00Z", cr=1000),
+                             self.usage_row("2026-08-28T00:04:00Z", cr=1000)])
+        self.write_meta(session_id, "agent-aaa", "reviewer bug-detection")
+        self.write_subagent(session_id, "agent-bbb",
+                            [self.usage_row("2026-08-28T00:01:00Z", cr=1000)])
+        self.write_meta(session_id, "agent-bbb", "reviewer security")
+
+    def per_agent(self, *args: str) -> str:
+        res = self.measure("--per-agent", *args)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout
+
+    def test_reports_each_agent_with_its_focus(self):
+        self.setup_run()
+        out = self.per_agent()
+        self.assertIn("reviewer bug-detection", out)
+        self.assertIn("reviewer security", out)
+
+    def test_round_trips_are_counted_per_agent(self):
+        """往復数を体ごとに数える（1 体あたりの cache_read を決めているのはこれ）."""
+        self.setup_run()
+        out = self.per_agent()
+        rows = {l.split()[0] + " " + l.split()[1]: l for l in out.splitlines()
+                if l.startswith("reviewer ")}
+        # 4 往復 x 1000 = 4,000（往復数と cache_read の両方が体ごとに分かれていること）
+        self.assertRegex(rows["reviewer bug-detection"], r"\b4\b.*4\.0k")
+        self.assertRegex(rows["reviewer security"], r"\b1\b.*1\.0k")
+
+    def test_within_run_spread_is_reported(self):
+        """回内分散（最大最小・変動係数）を出す — これが判断材料そのもの."""
+        self.setup_run()
+        out = self.per_agent()
+        self.assertIn("回内分散", out)
+        self.assertIn("倍", out)
+
+    def test_duplicate_focus_is_flagged(self):
+        """同一 focus の重複起動を警告する.
+
+        再試行で捨てられた試行も glob に載るため、`sub_agents` と総量が膨らむ
+        （実測: 6 focus が 3 回ずつ起動し、総 cache_read の 48% が破棄ぶんだった）。
+        黙って平均すると「1 体あたり」が実態より小さく出る。
+        """
+        self.setup_run()
+        self.write_subagent("s1", "agent-ccc",
+                            [self.usage_row("2026-08-28T00:01:00Z", cr=1000)])
+        self.write_meta("s1", "agent-ccc", "reviewer security")     # bbb と同じ focus
+        out = self.per_agent()
+        self.assertIn("重複起動", out)
+
+    def test_no_subagents_is_explicit(self):
+        """体が無い回は無言で空表を出さない（欠測と 0 を潰さない）."""
+        self.write_session("s2", [self.usage_row("2026-08-28T00:00:00Z", out=10)])
+        self.assertIn("subagent が無い", self.per_agent())
+
+    def test_the_window_applies(self):
+        """`--since` は体ごとの内訳にも効く（窓外の agent を数えない）."""
+        self.setup_run()
+        out = self.per_agent("--since", "2099-01-01T00:00:00Z")
+        self.assertIn("subagent が無い", out)
+
+    def test_nested_agents_are_labelled_by_depth(self):
+        """孫 agent（`spawnDepth: 2`）を体数に混ぜず、depth で見分けられるようにする."""
+        self.setup_run()
+        self.write_subagent("s1", "agent-ddd",
+                            [self.usage_row("2026-08-28T00:05:00Z", cr=500)])
+        self.write_meta("s1", "agent-ddd", "nested helper", depth=2)
+        out = self.per_agent()
+        line = [l for l in out.splitlines() if l.startswith("nested helper")][0]
+        self.assertIn("2", line, "spawnDepth が出ていない")
+
+
 class DispatchPatternTest(MeasureTokensTest):
     """agent を**どのメッセージから発行したか**で一括発行が守られたかを判定する.
 

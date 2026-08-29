@@ -2,6 +2,31 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.94.0] - 2026-08-29
+
+### Added
+
+- **`measure-tokens.sh --per-agent`**（GitHub issue #156 Phase 2）。体ごとの
+  `cache_read` と往復数を出す。層別（`size_tier` x `effort` x 世代）でサンプル 5 件を
+  待つ方式は #169 で世代キーが入った時点で下限に届かなくなったため、**1 run 内で対照を
+  取る**方式に切り替えた。同一 run なら tier / effort / 世代が定義上そろうので交絡しない
+- 同機能の回帰テスト 7 本（`PerAgentTest`）。往復数と `cache_read` が体ごとに分かれること /
+  回内分散の表示 / 重複起動の警告 / 窓の適用 / `spawnDepth` の区別 / 体ゼロの明示
+
+### Changed
+
+- **Phase 2 の判断材料が揃った。実測（n=22 / 1 run 内）で `cache_read` を決めているのは
+  往復回数だった**（相関 r = 0.978。1 往復あたり 63k〜124k とほぼ一定で、focus や
+  担当ファイル量では変わらない）。したがって:
+  - **担当ファイルの絞り込みは効かない** — 往復数を減らさない限り総量は変わらず、
+    recall だけを削る。`pending-optimizations.md` の `## 10` を採らなかった判断と整合する
+  - **効くのは探索予算**（reviewer 1 体あたりの Read / Grep 回数上限）。線形に効く
+  - **体数は 1 体あたりには効かない**（総量には効く。規模キャップで既に入っている）
+- **`sub_agents` は再試行で膨らむ**ことが分かった。同一 focus が別 `toolUseId` で複数回
+  起動された回は捨てられた試行ぶんも glob に載る（実測: 6 focus が 3 回ずつ起動し、
+  総 `cache_read` の 48% が破棄された試行だった）。`--per-agent` は focus 名を出すので
+  重複が目視でき、検出時は警告を出す
+
 ## [2.93.2] - 2026-08-28
 
 ### Fixed

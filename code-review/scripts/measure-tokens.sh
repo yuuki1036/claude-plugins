@@ -27,9 +27,10 @@
 #   measure-tokens.sh --list               # セッション候補を新しい順に表示
 #   measure-tokens.sh --since 2026-08-06T10:00Z # その時刻以降だけ集計（**UTC**。transcript が UTC のため）
 #   measure-tokens.sh --json               # 機械可読（publish-review-event.sh が payload に載せる）
+#   measure-tokens.sh --per-agent          # 体ごとの cache_read と往復数（回内分散 / GitHub issue #156）
 set -uo pipefail
 
-SESSION=""; SINCE=""; LIST=0; AS_JSON=0
+SESSION=""; SINCE=""; LIST=0; AS_JSON=0; PER_AGENT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     # `$2` を素で読むと `set -u` の生エラー（`$2: unbound variable`）だけが出て、
@@ -38,6 +39,7 @@ while [ $# -gt 0 ]; do
     --since)   [ $# -ge 2 ] || { echo "FATAL: --since に値が必要" >&2; exit 2; }; SINCE="$2"; shift 2 ;;
     --list)    LIST=1; shift ;;
     --json)    AS_JSON=1; shift ;;
+    --per-agent) PER_AGENT=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -88,7 +90,7 @@ fi
 SESSION_ID=$(basename "$SESSION" .jsonl)
 SUBGLOB="$HOME/.claude/projects/*/${SESSION_ID}/subagents"
 
-SESSION="$SESSION" SINCE="$SINCE" SUBDIR="$SUBGLOB" AS_JSON="$AS_JSON" python3 <<'PY'
+SESSION="$SESSION" SINCE="$SINCE" SUBDIR="$SUBGLOB" AS_JSON="$AS_JSON" PER_AGENT="$PER_AGENT" python3 <<'PY'
 import glob, json, os, sys
 
 path, since = os.environ["SESSION"], os.environ.get("SINCE") or None
@@ -104,6 +106,7 @@ first_ts = last_ts = None
 # glob したファイル数をそのまま体数にすると窓の外で起動した agent まで数えてしまう（実測:
 # `--since 2099-01-01` で `sub.n=0` なのに `sub_agents=8`）。窓と体数の意味を揃える
 sub_seen = set()
+per_agent = {}   # subagent transcript -> 窓内の内訳（`--per-agent` 用）
 sub_first = {}    # サブエージェント transcript -> 窓内で最初の timestamp（= 起動時刻）
 # 同 -> 窓内で**最も新しい** timestamp（= 終了時刻 / GitHub issue #153）。wave 間ギャップを「wave N の agent が回っていた時間」と
 # 「オーケストレーターが次の wave を出すまでの時間」に割るのに要る
@@ -239,6 +242,14 @@ for fpath, side in targets:
             b = buckets[side]
             if side:
                 sub_seen.add(fpath)
+                # 体ごとの内訳（回内分散 / GitHub issue #156）。**層別サンプルを待たずに
+                # 1 run 内で対照が取れる**のがこの粒度の値打ちで、tier / effort / 世代が
+                # 定義上そろうため交絡しない
+                pa = per_agent.setdefault(fpath, {"cr": 0, "cw": 0, "out": 0, "n": 0})
+                pa["n"] += 1
+                pa["cr"] += u.get("cache_read_input_tokens") or 0
+                pa["cw"] += u.get("cache_creation_input_tokens") or 0
+                pa["out"] += u.get("output_tokens") or 0
             b["n"] += 1
             b["out"] += u.get("output_tokens") or 0
             b["cw"] += u.get("cache_creation_input_tokens") or 0
@@ -414,6 +425,55 @@ models_out = {
 # **機械可読モード**（GitHub issue #126）: publish-review-event.sh が review の publish 時に
 # 呼んで `tokens` フィールドへ載せる。取り込み内訳は payload に載せない（文字数であって
 # トークンではなく、集計側で混ぜると桁が合わない — 上の `## 17` の注記と同じ理由）
+# ---- `--per-agent`: 体ごとの cache_read と往復数（GitHub issue #156）--------
+#
+# **1 体あたりの読む量を決めているのは往復回数**（実測 r = 0.978 / n=22・1 run 内）。
+# 1 往復あたりの cache_read は 63k〜124k とほぼ一定で、focus や担当ファイル量では
+# 変わらない。したがって「担当ファイルを絞る」は往復数を減らさない限り効かず、
+# 効くのは**探索予算（Read/Grep の回数上限）**の側。
+#
+# **`sub_agents` は再試行で膨らむ**。同一 focus が別 `toolUseId` で複数回起動された回は、
+# 捨てられた試行ぶんも glob に載る（実測: 6 focus が 3 回ずつ起動し、総 cache_read の
+# 48% が破棄された試行だった）。`--per-agent` は description を出すので重複が目視できる。
+if os.environ.get("PER_AGENT") == "1":
+    import statistics as _st
+    rows = []
+    for fpath, pa in per_agent.items():
+        meta_p = fpath[:-6] + ".meta.json" if fpath.endswith(".jsonl") else None
+        desc = depth = None
+        if meta_p and os.path.exists(meta_p):
+            try:
+                mj = json.load(open(meta_p))
+                desc, depth = mj.get("description"), mj.get("spawnDepth")
+            except (ValueError, OSError):
+                pass
+        rows.append((desc or os.path.basename(fpath), depth, pa))
+    if not rows:
+        print("体ごとの内訳: 窓内に subagent が無い")
+    else:
+        rows.sort(key=lambda r: -r[2]["cr"])
+        print(f"{'focus':<34}{'depth':>6}{'往復':>6}{'cache_read':>13}{'/往復':>9}")
+        print("-" * 68)
+        for desc, depth, pa in rows:
+            per = pa["cr"] / pa["n"] if pa["n"] else 0
+            print(f"{str(desc)[:33]:<34}{str(depth if depth is not None else '?'):>6}"
+                  f"{pa['n']:>6}{k(pa['cr']):>13}{k(per):>9}")
+        crs = [r[2]["cr"] for r in rows]
+        if len(crs) > 1:
+            lo, hi = min(crs), max(crs)
+            cv = _st.pstdev(crs) / _st.mean(crs) if _st.mean(crs) else 0
+            print()
+            print(f"回内分散: 中央値 {k(_st.median(crs))} / 最小 {k(lo)} / 最大 {k(hi)}"
+                  f" / 最大最小 {hi / lo:.1f} 倍 / 変動係数 {cv:.2f}")
+        dup = {}
+        for desc, depth, _ in rows:
+            dup[desc] = dup.get(desc, 0) + 1
+        repeated = {d: c for d, c in dup.items() if c > 1}
+        if repeated:
+            print(f"⚠️ 同一 focus の重複起動: {len(repeated)} 種"
+                  f"（再試行ぶんが体数と総量を膨らませている / #156）")
+    raise SystemExit(0)
+
 if os.environ.get("AS_JSON") == "1":
     print(json.dumps({
         "session": os.path.basename(path),
