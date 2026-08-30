@@ -19,6 +19,9 @@ if ! mkdir -p "$journal_dir" 2>/dev/null; then
 fi
 [ -f "$journal_dir/journal.jsonl" ] || : > "$journal_dir/journal.jsonl"
 [ -f "$journal_dir/candidates.jsonl" ] || : > "$journal_dir/candidates.jsonl"
+# 還流の実施記録（GitHub issue #193）。retro の閾値判定がこの記録以降の発生だけを
+# 分子に取る。無いときは「還流ゼロ」＝従来どおりの集計になる
+[ -f "$journal_dir/remediations.jsonl" ] || : > "$journal_dir/remediations.jsonl"
 
 # 自己訂正の候補記録ルールを注入
 RULES_DIR="${CLAUDE_PLUGIN_ROOT}/rules"

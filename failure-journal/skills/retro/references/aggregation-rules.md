@@ -6,56 +6,67 @@ retro スキルの集計仕様。
 
 | 項目 | デフォルト | 説明 |
 |---|---|---|
-| 集計窓 | 直近 30 日 | `timestamp >= (now - 30d)` のレコードのみ対象 |
-| 閾値 | 同一 tag 3 回以上 | `count >= 3` の tag を「再発パターン」として抽出 |
+| 集計窓 | 直近 30 日 | `timestamp` が窓境界以降のレコードを**分母**にする |
+| 有効境界 | 窓境界と最後の還流日の**遅い方** | この境界以降の発生だけを**分子**にする（GitHub issue #193） |
+| 閾値 | 同一 tag 3 回以上 | `count_effective` が閾値に達した tag を「再発パターン」として抽出 |
 
 引数で窓日数を上書きできる（例: `/retro 60` → 直近 60 日）。閾値は Phase 1 では固定。
 
-## 30 日境界の算出（OS 両対応）
+### なぜ分子を還流日以降に限るか
 
-macOS の BSD date と Linux の GNU date でオプションが異なるため、フォールバックで両対応する:
+**還流済みの発生を分子に残すと、対策を打った後も窓を抜けるまで同じ tag が鳴り続け、次の retro が同じ手を再提案する。** 実際に 2026-08-30 の retro で、前日の還流（`ac8214d`）とほぼ同じ内容の issue を起票する直前まで進んだ（GitHub issue #193）。retro のレポートには「この tag には既に手を打った」が現れないので、同型の再提案は検出が難しい。
 
-```bash
-# macOS BSD date を先に試し、失敗したら Linux GNU date
-since="$(date -u -v-30d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-  || date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)"
-```
+**ただし分母と除外件数は必ず併記する。** 黙って分子を減らすと「収まった」と誤読される（`code-review` の `review-retro.sh` が抑止件数を明示するのと同じ扱い）。
 
-日数を可変にする場合:
+## 集計コマンド
+
+集計は同梱スクリプトで行う。窓境界の算出（BSD / GNU date 差の吸収）・不正行のスキップ・還流記録との join がまとまっている:
 
 ```bash
-days=30
-since="$(date -u -v-"${days}"d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-  || date -u -d "${days} days ago" +%Y-%m-%dT%H:%M:%SZ)"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh" --days 60 --threshold 3
 ```
 
-> `timestamp` は ISO8601 UTC（`Z` 終端）なので、文字列比較 `>=` で時系列フィルタが成立する（辞書順 = 時系列順）。
+| オプション | 既定 |
+|---|---|
+| `--journal PATH` | `.claude/failure-journal/journal.jsonl` |
+| `--remediations PATH` | `.claude/failure-journal/remediations.jsonl` |
+| `--days N` / `--threshold N` | 30 / 3 |
+| `--now ISO8601` | `date -u`（テストで窓を固定するため） |
 
-## tag 別集計（jq）
+exit code は **0 集計成功 / 2 判定不能**（jq 不在・引数不正）。2 のときは「失敗 0 件」と読まずに原因を報告する。
 
-```bash
-jq -s --arg since "$since" '
-  map(select(.timestamp >= $since))   # 窓内に絞る
-  | group_by(.tag)                    # tag でグルーピング
-  | map({tag: .[0].tag, count: length})
-  | sort_by(-.count)                  # 多い順
-' .claude/failure-journal/journal.jsonl
+### 出力の読み方
+
+```json
+{
+  "window": {"days": 30, "since": "2026-07-31T12:00:00Z", "now": "2026-08-30T12:00:00Z"},
+  "threshold": 3,
+  "tags": [
+    {"tag": "delegated-run-without-isolation",
+     "count_window": 3, "count_effective": 3, "excluded_by_remediation": 0,
+     "last_remediated_at": null, "over_threshold": true, "quiet_since_remediation": false},
+    {"tag": "claimed-fact-without-source",
+     "count_window": 9, "count_effective": 0, "excluded_by_remediation": 9,
+     "effective_since": "2026-08-28T00:00:00Z", "last_remediated_at": "2026-08-28T00:00:00Z",
+     "days_since_remediation": 2, "remediations": [{"target": "convention", "ref": "ac8214d"}],
+     "over_threshold": false, "quiet_since_remediation": true}
+  ]
+}
 ```
 
-閾値超えだけ抽出する場合:
+| フィールド | 意味 |
+|---|---|
+| `count_window` | 窓内の全発生（**分母**。必ずレポートに出す） |
+| `count_effective` | 有効境界以降の発生（**分子**。閾値判定はこれ） |
+| `excluded_by_remediation` | 還流日以前として分子から外した件数（**必ず併記**） |
+| `over_threshold` | `count_effective` が閾値に達した → Phase 4 の還流先提案の対象 |
+| `quiet_since_remediation` | 還流実績があり、その後の発生が 0 件 → **対策が効いている可能性のシグナル** |
+| `remediations` | その tag への還流実績（全期間）。Phase 4 で必ず併記する |
 
-```bash
-jq -s --arg since "$since" '
-  map(select(.timestamp >= $since))
-  | group_by(.tag)
-  | map({tag: .[0].tag, count: length})
-  | map(select(.count >= 3))
-  | sort_by(-.count)
-' .claude/failure-journal/journal.jsonl
-```
+> `quiet_since_remediation` は「鳴らない」とは意味が違う。**還流していない tag の 0 件は無情報**（発生していないだけ）だが、**還流後の 0 件は対策の観測**になる。両者を同じ「該当なし」に潰さない。
 
-- `jq -s`（slurp）で JSON Lines 全行を配列として読む
-- 不正な行が混ざっても落ちにくいよう、必要なら `jq -R 'fromjson? // empty'` で前処理してから slurp する
+> 還流実績があって窓内の発生が 0 件の tag も行として出る。**シグナルはそこにしか現れない**ので、`count_window` が 0 の行を落とさない。
 
 ## 還流先判定ルール
 

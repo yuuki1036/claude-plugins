@@ -20,6 +20,41 @@ journal の手前に置くステージングファイル。SessionStart 注入�
 - journal との違い: append-only ではない（verdict の書き戻しのみ許可。行削除・summary 書き換えは禁止）
 - Read 制約は journal と同じ（**retro 実行中のみ Read**。append はいつでもよい）
 
+## remediations.jsonl（還流の実施記録）
+
+閾値超え tag に対して**実際に打った手**の記録。`/retro` Phase 3 の閾値判定は、この記録より後の発生だけを分子に取る（GitHub issue #193）。
+
+- パス: `.claude/failure-journal/remediations.jsonl`
+- 書き込み: **append-only**（journal と同じ。訂正は新しい行で行う）
+- 永続性: journal と同じくローカル（gitignore 推奨）
+
+```json
+{"timestamp":"2026-08-28T00:00:00Z","tag":"claimed-fact-without-source","target":"convention","ref":"ac8214d"}
+```
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `timestamp` | string (ISO8601 UTC) | yes | **還流を実施した日時**（起票日ではなくコミット日時） |
+| `tag` | string | yes | 対象 tag。journal の tag 規約に準拠 |
+| `target` | string | yes | 還流先の層: `convention` / `hook` / `skill` |
+| `ref` | string | yes | 還流先の特定子（commit hash / ファイルパス） |
+| `note` | string | no | 補足（何を入れたか 1 行） |
+
+> **実施していない還流を書かない。** この記録より前の発生は次の retro の分子から外れるため、
+> 提案しただけ・着手しただけの段階で書くと**再発を見逃す**。書くのは還流が landed した後。
+
+> **umbrella tag の分割宣言とは別物。** 分割は tag の粒度を変える操作（下記）、還流は
+> 対策を打つ操作。分割と同時に還流したなら、両方を記録する。
+
+### append 手順
+
+```bash
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"   # または還流コミットの日時
+jq -nc --arg ts "$ts" --arg tag "$tag" --arg target "$target" --arg ref "$ref" \
+  '{timestamp:$ts,tag:$tag,target:$target,ref:$ref}' \
+  >> .claude/failure-journal/remediations.jsonl
+```
+
 ## スキーマ
 
 各行は次の構造の単一 JSON オブジェクト:

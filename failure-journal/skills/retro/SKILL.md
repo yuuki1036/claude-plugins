@@ -97,32 +97,34 @@ log-failure は手動起票のため、**Claude が自己訂正した失敗は�
 
 ---
 
-## Phase 2: tag 別集計（Bash + jq）
+## Phase 2: tag 別集計（同梱スクリプト）
 
-30 日境界を算出し、窓内のレコードを tag で group して count する。境界算出は macOS BSD date / Linux GNU date 両対応:
+集計は同梱スクリプトで行う。窓境界の算出（BSD / GNU date 差の吸収）・不正行のスキップ・**還流記録との join** がまとまっている:
 
 ```bash
-# 30 日前の境界（macOS / Linux 両対応）
-since="$(date -u -v-30d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-  || date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)"
-
-jq -s --arg since "$since" '
-  map(select(.timestamp >= $since))
-  | group_by(.tag)
-  | map({tag: .[0].tag, count: length})
-  | sort_by(-.count)
-' .claude/failure-journal/journal.jsonl
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
 ```
 
-詳細・代替コマンドは `references/aggregation-rules.md`。
+- 窓日数の上書きは `--days N`（Phase 1 で決めた値）
+- **exit 2 は判定不能**（jq 不在・引数不正）で「失敗 0 件」ではない。原因を報告して終了する
+
+出力フィールドの意味は `references/aggregation-rules.md`。
 
 ---
 
 ## Phase 3: 閾値超え tag の抽出
 
-Phase 2 の集計結果から `count >= 3` の tag を抽出する。0 件なら「閾値超えの再発パターンはありません」と報告して終了（Phase 5 で空レポート）。
+`over_threshold: true` の tag を抽出する。**閾値判定の分子は `count_effective`（最後の還流日以降の発生）** で、還流済みの発生は分子から外れる（GitHub issue #193）。還流を打った後も窓を抜けるまで鳴り続けると、次の retro が同じ手を再提案する。
 
-閾値超えが 0 件で、かつ Phase 0.5 のサルベージ候補も 0 件だった場合は、**「失敗が少ない」ではなく「検知できていない」可能性**に触れる（`references/transcript-salvage.md` の「制約と既知の穴」）。無言で直した失敗・英語セッションはシグナルが残らない。
+抽出した tag には**必ず**次を併記する:
+
+- **分母**（`count_window`）と**除外件数**（`excluded_by_remediation`）。黙って分子を減らすと「収まった」と誤読される
+- **還流実績**（`last_remediated_at` / `remediations`）。還流後に再発したという事実そのものが Phase 4 の判断材料になる
+
+閾値超えが 0 件なら「閾値超えの再発パターンはありません」と報告して Phase 5 へ。ただし **0 件でも黙らないケースが 2 つある**:
+
+1. **`quiet_since_remediation: true` の tag** — 「還流後 N 日で再発なし」を**シグナルとして出す**。還流していない tag の 0 件は無情報（発生していないだけ）だが、**還流後の 0 件は対策が効いている可能性の観測**で、意味が違う。同じ「該当なし」に潰さない
+2. **閾値超え 0 件かつ Phase 0.5 の候補も 0 件** — 「失敗が少ない」ではなく**「検知できていない」可能性**に触れる（`references/transcript-salvage.md` の「制約と既知の穴」）。無言で直した失敗・英語セッションはシグナルが残らない
 
 ---
 
@@ -130,12 +132,13 @@ Phase 2 の集計結果から `count >= 3` の tag を抽出する。0 件なら
 
 閾値超え tag ごとに、以下を生成する:
 
-1. **還流先の判定**: AGENTS.md/CLAUDE.md（規約・背景）/ hook（決定的検証）/ skill（文脈判断）のどれに反映すべきか
+1. **既存の還流実績の併記（必須）**: `remediations` が空でないなら「この tag には <target>（<ref>）で既に手を打っている。それでも <count_effective> 件再発した」の形で書き出す。**この項を飛ばすと、既に入れた対策とほぼ同じ提案を再度出す**（GitHub issue #193 の実害はこれ）。還流実績があるのに再発しているなら、打ち手の候補は「同じ層の強化」ではなく**層の変更**（規約 → hook）か**tag の分割**を先に検討する
+2. **還流先の判定**: AGENTS.md/CLAUDE.md（規約・背景）/ hook（決定的検証）/ skill（文脈判断）のどれに反映すべきか
    - 決定的検証で判定可能（文字列・ファイル存在・exit code 等） → hook
    - 自然言語判断が必要（意図推定・レビュー等） → skill
    - 恒常的に参照したい規約・背景 → AGENTS.md/CLAUDE.md
-2. **既存ガードレールでカバーできていない理由**: なぜ既存の hook/skill/規約で防げなかったのか
-3. **umbrella tag の判定**: 内訳を書き出して**還流先が 2 つ以上に割れる**か、**既に還流した対策より後に別機構で再発している**なら、その tag は複数の失敗型を束ねている。1 つの還流先を選ばず、**tag の分割を提案する**（規約と実例は `../log-failure/references/journal-schema.md`）。分割せずに還流を重ねると、対策は毎回「今回の 1 件」にしか当たらず閾値だけが鳴り続ける
+3. **既存ガードレールでカバーできていない理由**: なぜ既存の hook/skill/規約で防げなかったのか
+4. **umbrella tag の判定**: 内訳を書き出して**還流先が 2 つ以上に割れる**か、**既に還流した対策より後に別機構で再発している**なら、その tag は複数の失敗型を束ねている。1 つの還流先を選ばず、**tag の分割を提案する**（規約と実例は `../log-failure/references/journal-schema.md`）。分割せずに還流を重ねると、対策は毎回「今回の 1 件」にしか当たらず閾値だけが鳴り続ける
 
 判定ロジックの詳細は `references/aggregation-rules.md`。
 
@@ -146,25 +149,31 @@ Phase 2 の集計結果から `count >= 3` の tag を抽出する。0 件なら
 ```
 ## Failure Retro Report (直近 30 日)
 
-### 再発パターン（閾値: 3 回以上）
-| tag | count | 還流先提案 |
-|-----|-------|-----------|
-| spec-skipped-without-rationale | 4 | hook (PreToolUse で spec.md 不在を検出) |
-| version-bump-omitted | 3 | hook (pre-commit で version 差分を検証) |
+### 再発パターン（閾値: 3 回以上 / 分子は最後の還流日以降）
+| tag | 分子 | 分母 | 除外 | 還流実績 | 還流先提案 |
+|-----|-----:|-----:|-----:|---------|-----------|
+| delegated-run-without-isolation | 3 | 3 | 0 | なし | hook (PreToolUse で隔離なしの実行を検出) |
+| version-bump-omitted | 3 | 5 | 2 | 規約 (ac8214d) | hook 昇格 (規約では止まらなかった) |
+
+### 還流後に再発していない tag
+- claimed-fact-without-source: 窓内 9 件はすべて還流前。**還流後 2 日で再発 0 件**（convention / ac8214d）
 
 ### 詳細
 
-🔁 spec-skipped-without-rationale (4 回)
+🔁 delegated-run-without-isolation (3 回 / 分母 3・除外 0)
+  還流実績: なし
   還流先: hook (PreToolUse)
-  理由: 既存 skill は spec 生成を促すが強制力がない（遵守率 ~80%）。
-        決定的に spec.md 不在を検出できるので hook 昇格が ROI 高。
+  理由: 指示ベースの隔離は守られない。実行前に決定的に判定できる。
 
-🔁 version-bump-omitted (3 回)
-  還流先: hook (pre-commit)
-  理由: CLAUDE.md に明記済みだが読み落としで再発。diff で検証可能。
+🔁 version-bump-omitted (3 回 / 分母 5・除外 2)
+  還流実績: 規約 ac8214d (2026-08-28) — **打った後に 3 件再発**
+  還流先: hook (pre-commit) ← 層を変える
+  理由: 規約は入っているが読み落としで再発。diff で検証可能。
 ```
 
-閾値超え 0 件なら「再発パターンはありません」と報告する。
+**分母・除外件数・還流実績は省略しない。** 分子だけを出すと、還流で減ったのか発生が止まったのかが読めない。
+
+閾値超え 0 件でも、`quiet_since_remediation` の tag があれば「還流後に再発していない tag」の節は出す（Phase 3 の 1）。両方 0 件なら「再発パターンはありません」と報告する。
 
 ---
 
@@ -177,9 +186,18 @@ Phase 2 の集計結果から `count >= 3` の tag を抽出する。0 件なら
 - options:
   1. label: "提案のみ" / description: "レポートを残し、還流は手動で実施"
   2. label: "Issue 化" / description: "閾値超え tag を plugin-feedback / Issue 管理へ連携（別途実行）"
-  3. label: "対応しない" / description: "レポート確認のみ"
+  3. label: "還流を記録" / description: "既に手を打った tag を remediations.jsonl へ記録し、次回以降の分子から外す"
+  4. label: "対応しない" / description: "レポート確認のみ"
 
 > 実際の AGENTS.md/hook/skill 編集は本スキルの責務外（還流先の判断と提案に専念）。編集は対応する plugin/手動で行う。
+
+### 還流の記録（option 3）
+
+**閾値超えの tag が、実は既に還流済みだったと分かったとき**（記録が漏れていた場合を含む）に append する。スキーマと手順は `../log-failure/references/journal-schema.md` の remediations.jsonl 節。
+
+- `timestamp` は**還流が landed した日時**（コミット日時）。retro の実行時刻ではない
+- **提案しただけ・着手しただけでは書かない。** この記録より前の発生は次回の分子から外れるため、先に書くと再発を見逃す
+- 対象 tag・還流先の層・commit / ファイルパスを提示し、**承認を得てから append** する（副作用は承認後のみ）
 
 ---
 
@@ -190,20 +208,22 @@ Phase 2 の集計結果から `count >= 3` の tag を抽出する。0 件なら
 2. Phase 0.5: 候補レビュー（candidates.jsonl → 承認 → journal 昇格 → verdict 書き戻し）
 3. Phase 0.6: transcript サルベージ（フォールバック: --salvage 明示 or 候補 0 件のみ）
 4. Phase 1:   窓・閾値の決定（30 日 / 3 回）
-5. Phase 2:   tag 別集計（jq、30 日境界フィルタ → group → count）
-6. Phase 3:   閾値超え tag 抽出（count >= 3）
+5. Phase 2:   tag 別集計（retro-aggregate.sh: 窓フィルタ → 還流記録と join → count）
+6. Phase 3:   閾値超え tag 抽出（分子は最後の還流日以降の発生。分母・除外件数を併記）
 7. Phase 4:   還流先提案（hook / skill / 規約 + 未カバー理由）
 8. Phase 5:   レポート出力
-9. Phase 6:   還流アクション確認（任意、AskUserQuestion）
+9. Phase 6:   還流アクション確認（任意、AskUserQuestion。還流の記録もここ）
 ```
 
 ---
 
 ## 注意事項
 
-- **副作用は承認後のみ**: Phase 0.5 / 0.6 の journal append・verdict 書き戻しと Phase 6 の還流アクションのみが書き込み。いずれも承認を経る。Phase 1〜5 は read-only
+- **副作用は承認後のみ**: Phase 0.5 / 0.6 の journal append・verdict 書き戻しと Phase 6 の還流アクション・remediations append のみが書き込み。いずれも承認を経る。Phase 1〜5 は read-only
 - **サルベージの自動 append 禁止**: 検知は grep で決定的だが precision は約 35%。誤起票は閾値集計を直接汚すため、必ず一覧提示 → 承認を挟む
 - **journal / candidates は retro 実行中のみ Read**: 集計のために読むのは本スキル実行中だけ。常時 Read すると fingerprint が AI の出力に汚染され集計が不安定になる（candidates への **append** はセッション中いつでもよい — 自己申告ルールの責務。Read だけを禁じる）
 - **還流先の判断のみ**: 実際の AGENTS.md/hook/skill 編集は責務外。「どこに何を反映すべきか」の提案までを担う
-- **date の OS 差異**: 30 日境界算出は macOS BSD date (`-v-30d`) と Linux GNU date (`-d '30 days ago'`) を両対応でフォールバックする
+- **還流済みの発生は分子から外す**: 対策を打った後も窓を抜けるまで鳴り続けると、次の retro が同じ手を再提案する（GitHub issue #193）。ただし**分母と除外件数を必ず併記**する — 黙って分子を減らすと「収まった」と誤読される
+- **「還流後 0 件」と「鳴らない」を分ける**: 還流していない tag の 0 件は無情報だが、還流後の 0 件は対策の観測。同じ「該当なし」に潰さない
+- **date の OS 差異**: 窓境界の算出は `retro-aggregate.sh` が jq 側で行うため、BSD / GNU date の差を呼び出し側が意識する必要はない
 - **retrospective との責務分離**: 主観的なセッション振り返り・見積もり精度分析は `issue-workflow:retrospective`。本スキルは機械集計による再発検出に専念する
