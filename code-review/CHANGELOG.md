@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.97.0] - 2026-08-30
+
+### Added
+
+- **`publish-review-event.sh` に `--dry-run` を足した**（GitHub issue #194）。payload の
+  組み立てまでを本番と同じ経路で走らせ、publish だけを行わない。stdout は payload 1 行だけに
+  して `| jq .` で読めるようにし、書込先・event 名・plugin は stderr へ出す。
+
+  **動作確認のたびに計測の母集団が汚れていた**（実測 1 件）。書込先は worktree 対策で
+  `--git-common-dir` から導出した `MAIN_ROOT` に固定されるため、**`CLAUDE_PROJECT_DIR` を
+  前置きしても隔離できない** — `:947` が publish 時に自分で上書きする。この上書き自体は
+  正しい（review は `EnterWorktree` 後に呼ばれ、cwd 相対だと直後の `ExitWorktree` で計測ごと
+  消える）ので、env を尊重する方向には直さず**専用の口**を足した。
+
+  dry-run は publish 済みマークを打たず一時ファイルも消さない（本番の状態を進めない）。
+
+  回帰テスト 6 本追加。肯定・否定の両側を置いてある（片側だけだと `[ "$DRY_RUN" = "1" ]` の
+  条件反転が生き残る）。実装を 2 通りに壊して両方でテストが落ちることを確認済み。
+
 ## [2.96.0] - 2026-08-29
 
 ### Added

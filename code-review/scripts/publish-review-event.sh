@@ -10,9 +10,15 @@
 # 使い方:
 #   publish-review-event.sh --plugin code-review:review --pr 123 --payload '<json object>'
 #   publish-review-event.sh --plugin code-review:self-review --payload-file /path/to.json
+#
+# **動作確認は `--dry-run` で行う**（GitHub issue #194）。書込先は cwd の git リポジトリに
+# 固定される（下の MAIN_ROOT）ため、実リポジトリで素のまま叩くと計測の母集団に検証用の行が
+# 混入する（実測 1 件。`CLAUDE_PROJECT_DIR` を前置きしても MAIN_ROOT が上書きするので効かない）。
+# `--dry-run` は payload の組み立てまでを本番と同じ経路で走らせ、publish だけを行わない。
+#   publish-review-event.sh --plugin code-review:self-review --payload '<json>' --dry-run
 set -uo pipefail
 
-PLUGIN=""; PR=""; PAYLOAD=""; PAYLOAD_FILE=""; KEEP=0
+PLUGIN=""; PR=""; PAYLOAD=""; PAYLOAD_FILE=""; KEEP=0; DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --plugin)       [ $# -ge 2 ] || { echo "FATAL: --plugin に値が必要" >&2; exit 2; }; PLUGIN="$2"; shift 2 ;;
@@ -20,6 +26,7 @@ while [ $# -gt 0 ]; do
     --payload)      [ $# -ge 2 ] || { echo "FATAL: --payload に値が必要" >&2; exit 2; }; PAYLOAD="$2"; shift 2 ;;
     --payload-file) [ $# -ge 2 ] || { echo "FATAL: --payload-file に値が必要" >&2; exit 2; }; PAYLOAD_FILE="$2"; shift 2 ;;
     --keep-temp)    KEEP=1; shift ;;
+    --dry-run)      DRY_RUN=1; shift ;;
     *) echo "FATAL: 未知の引数: $1" >&2; exit 2 ;;
   esac
 done
@@ -939,6 +946,23 @@ PY
 case "$MERGED" in
   *$'\n'*) echo "FATAL: payload に改行が残っている（publish 中止）" >&2; exit 1 ;;
 esac
+
+# ---- dry-run: publish せずに組み立て結果だけ返す（GitHub issue #194） -------
+# **動作確認の経路をここで打ち切る。** payload の組み立てまでは本番と同じ経路を通って
+# いるので、検証したいものはこの時点で出揃っている。publish 済みマークも打たず、一時
+# ファイルも消さない（dry-run が本番の状態を進めてしまわないようにする）。
+# stdout は payload 1 行だけにして `| jq .` で読めるようにし、説明は stderr へ回す。
+if [ "$DRY_RUN" = "1" ]; then
+  {
+    echo "dry-run: publish しない"
+    echo "  書込先 : $MAIN_ROOT/.claude/events.jsonl"
+    echo "  event  : review:completed"
+    echo "  plugin : $PLUGIN"
+    echo "  注記   : 一時ファイルは残し、publish 済みマークも打っていない"
+  } >&2
+  echo "$MERGED"
+  exit 0
+fi
 
 # ---- publish（best-effort。失敗してもレビュー自体は成功扱い） ---------------
 PUBLISHED=0

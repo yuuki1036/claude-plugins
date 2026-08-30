@@ -238,6 +238,77 @@ class CleanupTest(ScriptTestBase):
         self.assertEqual(len(self.events()), 1)
 
 
+
+class DryRunTest(ScriptTestBase):
+    """`--dry-run` は組み立てまで走らせて publish だけしない（GitHub issue #194）.
+
+    動機は実測の汚染: 動作確認のため実リポジトリでこのスクリプトを素のまま叩き、計測の
+    母集団に検証用の行が 1 件混入した。**`CLAUDE_PROJECT_DIR` を前置きしても効かない** —
+    書込先は worktree 対策で `--git-common-dir` から導出した `MAIN_ROOT` に固定される。
+
+    **肯定・否定の両側を置く**（片側だけだと `[ "$DRY_RUN" = "1" ]` の条件反転が生き残る）。
+    """
+
+    def dry(self, **kw) -> subprocess.CompletedProcess[str]:
+        """`publish()` は第 1・2 引数が payload / plugin なので、追加フラグはその後ろに置く."""
+        return self.publish(None, "code-review:self-review", "--dry-run", **kw)
+
+    def test_dry_run_writes_no_event(self):
+        self.full_run()
+        r = self.dry()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.events(), [], "dry-run なのに events.jsonl に書かれている")
+
+    def test_without_dry_run_still_publishes(self):
+        """否定側。フラグを足したことで本番経路が壊れていないこと."""
+        self.full_run()
+        r = self.publish()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(self.events()), 1)
+
+    def test_dry_run_prints_the_payload_as_one_json_line_on_stdout(self):
+        """stdout は payload 1 行だけ（`| jq .` で読める契約）."""
+        self.full_run()
+        out = self.dry().stdout.strip()
+        self.assertEqual(len(out.splitlines()), 1, "stdout が 1 行でない: %r" % out)
+        json.loads(out)  # 壊れていれば例外で落ちる
+
+    def test_dry_run_payload_matches_what_a_real_publish_would_store(self):
+        """**dry-run の出力が本番と同じであること**が、この経路で検証する意味の前提.
+
+        期待値を dry-run 自身から作らない（生成と検証が同じ経路を共有すると自己整合で
+        通ってしまう / v2.63.1 の SSoT pin と同型）。実 publish の結果と突き合わせる。
+        """
+        self.full_run()
+        dry = json.loads(self.dry().stdout.strip())
+        self.full_run()
+        self.publish()
+        real = self.last_payload()
+        # 実行ごとに変わる値は除いて比べる（所要時間・タイムスタンプ由来）
+        volatile = {k for k in real if k.startswith("duration_")}
+        for key in volatile:
+            dry.pop(key, None)
+            real.pop(key, None)
+        self.assertEqual(dry, real, "dry-run の payload が本番と違う")
+
+    def test_dry_run_does_not_consume_the_timing_file(self):
+        """publish 済みマークも掃除もしない（dry-run が本番の状態を進めない）."""
+        path = self.full_run()
+        self.dry()
+        self.assertTrue(path.exists(), "dry-run が計測ファイルを消している")
+        # 続けて本番 publish が成立する = 状態が進んでいない
+        self.assertEqual(self.publish().returncode, 0)
+        self.assertEqual(len(self.events()), 1)
+        self.assertFalse(path.exists(), "本番 publish 後は消える")
+
+    def test_dry_run_reports_the_destination_it_skipped(self):
+        """書込先を出す（どこを汚さずに済んだかが読めないと確認にならない）."""
+        self.full_run()
+        err = self.dry().stderr
+        self.assertIn("dry-run", err)
+        self.assertIn(str(self.root), err, "書込先が出ていない: %r" % err)
+
+
 class MissingCoverageValidationTest(ScriptTestBase):
     """`missing_coverage` の語彙検証（GitHub issue #132）."""
 
