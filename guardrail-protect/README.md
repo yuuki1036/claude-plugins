@@ -58,6 +58,36 @@ AI agent が「赤を消すために linter を緩める」「hook がうるさ�
 （回帰テスト `RealRepositoryRegressionTest` が毎回検証する）。
 測定の一次記録: `docs/session-reports/2026-08-28-gh-ref-guard-measurement.md`
 
+### 4. 隔離なしの hook スクリプト実行ブロック (Bash)
+
+hook の entry point を**隔離せずに直接実行**しようとしたら `exit 2` でブロックする（常時有効・opt-in 不要）。
+
+hook スクリプトは書き込み先を `${CLAUDE_PROJECT_DIR:-$PWD}` から導出するため、検証やデバッグの
+つもりで実プロジェクトのまま走らせると `.claude/events.jsonl` などに**本物と区別できない行**が
+混入する（計測の母集団が静かに汚れる）。実測 2 件あり、うち 1 件は「隔離せよ」と prompt に
+明記した並列 agent の一部が守らなかったもの — **指示ベースの隔離は守られない**。
+
+通し方は、同一コマンドに値つきの `CLAUDE_PROJECT_DIR=<使い捨て dir>` を前置きすること:
+
+```bash
+CLAUDE_PROJECT_DIR=/tmp/scratch-repo bash path/to/hooks/scripts/x.sh < payload.json
+```
+
+**判定はパスの glob ではなく中身で行う。** リポジトリ実測で `*/hooks/scripts/*.sh` は 27 本あり、
+26 本が `safe_hook_init` を呼ぶ真の entry point、1 本は skill から意図的に Bash で叩かれる
+ユーティリティだった。パスで切るとその 1 本が偽陽性になるため、`safe_hook_init` を持つものだけを
+対象にしている（この基準での偽陽性は実測 0 件）。
+
+**実行位置だけを見る。** パスが現れただけでは止めない — `cat` / `grep` / `wc` / `shellcheck`
+のような読むだけの操作は通す。セグメントのコマンド位置か、インタプリタの最初の非フラグ引数に
+あるものだけを実行と見なす。隔離の判定もセグメント単位で、`CLAUDE_PROJECT_DIR=/tmp/x bash a.sh
+&& bash b.sh` の `b.sh` は隔離されていないと判定する。
+
+**読めないものは通す**（fail-open を明示的に選んでいる箇所）: 未展開の変数を含んで解決できない
+パス、トークン化できないコマンド。読めないことを理由に止めると、偽陽性 0 の水準を自分で壊す。
+
+`jq` / `python3` が無い環境では**無言で無効化せず** stderr に通知する（fail-loud）。
+
 
 ## opt-in セットアップ
 

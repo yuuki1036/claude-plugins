@@ -32,6 +32,14 @@
               "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/gh-ref-guard.sh"
             ],
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-isolation-guard.sh"
+            ],
+            "timeout": 5
           }
         ]
       }

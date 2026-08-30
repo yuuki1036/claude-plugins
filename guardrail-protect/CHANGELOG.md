@@ -2,6 +2,46 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.0] - 2026-08-30
+
+### Added
+
+- **隔離なしの hook スクリプト実行をブロックする PreToolUse (Bash) ガードを足した**
+  （GitHub issue #194）。`hook-isolation-guard.sh` + 判定器 `detect-unisolated-hook-run.py`。
+
+  検証・デバッグのために hook の entry point を実プロジェクトのまま走らせ、
+  `.claude/events.jsonl` に本物と区別できない行が混入する事故が**実測 2 件**あった。
+  2 件目は「隔離せよ」と prompt に明記した並列 agent の一部が守らなかったもので、
+  **指示ベースの隔離が守られない**ことは実測済み。通すには同一コマンドに値つきの
+  `CLAUDE_PROJECT_DIR=<使い捨て dir>` を前置きする。
+
+  **判定はパスの glob ではなく中身で行う。** リポジトリ実測で `*/hooks/scripts/*.sh` は
+  27 本あり、26 本が `safe_hook_init` を呼ぶ真の entry point、1 本
+  （`dev-workflow` の `upload-screenshots.sh`）は skill から意図的に Bash で叩かれる
+  ユーティリティだった。**パスで切るとこの 1 本が偽陽性**になる。`safe_hook_init` を
+  持つものだけを対象にすると、既存リポジトリでの偽陽性は 0 件。
+
+  **実行位置だけを見る。** パスが現れただけでは検出しない — `cat` / `grep` / `wc` /
+  `shellcheck` のような読むだけの操作を止めるとガードがただの邪魔になる。セグメントの
+  コマンド位置（env 代入を除いた先頭）か、インタプリタの最初の非フラグ引数にあるものだけを
+  実行と見なす（`bash -x x.sh` も拾う）。
+
+  **隔離の判定はセグメント単位。** `CLAUDE_PROJECT_DIR=/tmp/x bash a.sh && bash b.sh` の
+  b.sh は隔離されていない。**空値は隔離と見なさない**（`CLAUDE_PROJECT_DIR=` だけだと
+  `${VAR:-$PWD}` の `:-` が効いて $PWD に倒れる）。**読めないものは通す** — 未展開の変数を
+  含むパスとトークン化できないコマンドは判定材料が無いので fail-open に倒す（読めないことを
+  理由に止めると偽陽性 0 の水準を自分で壊す）。
+
+  回帰テスト 20 本追加（判定器 13 / hook 7）。**黙る条件を厚く**書いてある（読むだけの操作・
+  事前フィルタ・非 Bash ツール・不正 JSON）。実装を 4 通りに壊して全部でテストが落ちることを
+  確認済み。
+
+  **新規スクリプトにした理由**（`claude-meta:component-addition-advisor` の退路確保）:
+  既存 3 本はいずれも事前フィルタと失敗メッセージが別の関心事に固定されており
+  （`*git*commit*` / `*gh*` / Edit 系 matcher）、実行の書き込み先という軸を混ぜると
+  是正先が誤読される。`_requirements` への記録は見送った — advisor が示す object 形式は
+  `validate_ssot.py` が要求する array 形式（依存宣言用）と食い違い、従うと検証が落ちる。
+
 ## [0.4.2] - 2026-08-29
 
 ### Added

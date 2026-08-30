@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -691,6 +692,148 @@ class RealRepositoryRegressionTest(unittest.TestCase):
             hits, [],
             "実在する見出しへの正しい参照を %d 件 block している（偽陽性 0 が設計要件）: %s"
             % (len(hits), [r for r, _ in hits[:5]]))
+
+
+ISOLATION_DETECTOR = ROOT / "guardrail-protect" / "hooks" / "scripts" / "detect-unisolated-hook-run.py"
+
+#: 実測で唯一「hook ディレクトリにあるが hook entry point ではない」もの（GitHub issue #194）。
+#: skill から意図的に Bash で叩かれるので、パスで切ると偽陽性になる
+MEASURED_UTILITY = ROOT / "dev-workflow" / "hooks" / "scripts" / "upload-screenshots.sh"
+
+
+class UnisolatedHookRunDetectorTest(unittest.TestCase):
+    """`detect-unisolated-hook-run.py` を単体で叩く（stdout にパスが出れば検出）."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        self.entry = self._write("entry.sh", 'source lib/safe-hook.sh\nsafe_hook_init "x:y"\n')
+        self.util = self._write("util.sh", 'echo "just a helper"\n')
+
+    def _write(self, name: str, body: str) -> Path:
+        path = self.dir / name
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def detect(self, command: str) -> str:
+        proc = subprocess.run(["python3", str(ISOLATION_DETECTOR)], input=command,
+                              capture_output=True, text=True, timeout=20)
+        self.assertEqual(proc.returncode, 0, "呼び出し側の set -e を踏まないため常に exit 0")
+        return proc.stdout.strip()
+
+    # --- 検出すべき ---
+    def test_bare_run_of_a_hook_entry_point(self):
+        self.assertEqual(self.detect(f"bash {self.entry}"), str(self.entry))
+
+    def test_empty_env_value_is_not_isolation(self):
+        """`CLAUDE_PROJECT_DIR=` だけだと `${VAR:-$PWD}` の `:-` が効いて $PWD に倒れる."""
+        self.assertEqual(self.detect(f"CLAUDE_PROJECT_DIR= bash {self.entry}"), str(self.entry))
+
+    def test_redirected_payload_still_detected(self):
+        self.assertEqual(self.detect(f"bash {self.entry} < payload.json"), str(self.entry))
+
+    # --- 検出してはいけない（偽陽性はガードの信用を直接壊す） ---
+    def test_isolated_run_is_allowed(self):
+        self.assertEqual(self.detect(f"CLAUDE_PROJECT_DIR=/tmp/x bash {self.entry}"), "")
+
+    def test_utility_without_the_hook_marker_is_allowed(self):
+        """**実測の偽陽性を固定する。** hook ディレクトリにあってもユーティリティは対象外."""
+        self.assertEqual(self.detect(f"bash {self.util}"), "")
+
+    def test_unresolvable_path_is_allowed(self):
+        """未展開の変数を含むパスは中身を読めない。読めないことを理由に止めない（fail-open）."""
+        self.assertEqual(self.detect("bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/x.sh"), "")
+
+    def test_unparsable_command_is_allowed(self):
+        """クォート未閉じ。判定材料が無いので通す."""
+        self.assertEqual(self.detect(f"bash {self.entry} 'unclosed"), "")
+
+    # --- 実行位置だけを見る（参照は止めない） ---
+    def test_reading_the_script_is_not_execution(self):
+        """**`cat` / `grep` / `wc` は副作用が無い。** ここを止めるとガードがただの邪魔になる."""
+        for reader in ("cat", "head -20", "wc -l", "grep -n safe_hook_init"):
+            with self.subTest(reader=reader):
+                self.assertEqual(self.detect(f"{reader} {self.entry}"), "")
+
+    def test_interpreter_flags_are_skipped(self):
+        self.assertEqual(self.detect(f"bash -x {self.entry}"), str(self.entry))
+
+    def test_direct_execution_without_an_interpreter(self):
+        self.assertEqual(self.detect(str(self.entry)), str(self.entry))
+
+    def test_isolation_does_not_leak_across_segments(self):
+        """**env 代入の作用範囲はセグメント単位**。前段だけ隔離しても後段は隔離されていない."""
+        cmd = f"CLAUDE_PROJECT_DIR=/tmp/x bash {self.entry} && bash {self.entry}"
+        self.assertEqual(self.detect(cmd), str(self.entry))
+
+    def test_a_script_passed_as_a_plain_argument_is_not_execution(self):
+        """インタプリタ以外のコマンドの引数に現れただけでは実行ではない."""
+        self.assertEqual(self.detect(f"shellcheck {self.entry}"), "")
+
+    def test_the_measured_utility_still_lacks_the_hook_marker(self):
+        """実測の前提が今も成立しているか（崩れたら偽陽性 0 の水準を測り直す合図）."""
+        self.assertTrue(MEASURED_UTILITY.is_file(), "実測対象が消えている: %s" % MEASURED_UTILITY)
+        self.assertNotIn("safe_hook_init", MEASURED_UTILITY.read_text(encoding="utf-8"))
+
+
+class HookIsolationGuardTest(HookTestCase):
+    """PreToolUse 本体。**黙る条件を厚く見る**（暴発の blast radius が最大）."""
+
+    PLUGIN = "guardrail-protect"
+    SCRIPT = "hooks/scripts/hook-isolation-guard.sh"
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.entry = Path(tmp.name) / "hooks" / "scripts" / "entry.sh"
+        self.entry.parent.mkdir(parents=True)
+        self.entry.write_text('safe_hook_init "x:y"\n', encoding="utf-8")
+
+    def test_blocks_a_bare_hook_run(self):
+        res = self.run_hook(self.bash_payload(f"bash {self.entry}"))
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("without isolation", res.stderr)
+        self.assertIn(str(self.entry), res.stderr, "どのスクリプトかを出す")
+
+    def test_allows_an_isolated_run(self):
+        res = self.run_hook(self.bash_payload(f"CLAUDE_PROJECT_DIR=/tmp/x bash {self.entry}"))
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+
+    # --- 黙るべき条件 ---
+    def test_silent_when_command_has_no_hook_path(self):
+        """事前フィルタ。無関係な Bash 呼び出しで走らせない."""
+        res = self.run_hook(self.bash_payload("ls -la && git status"))
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_silent_when_the_script_is_only_read(self):
+        """事前フィルタは通るが実行ではないケース（ガードが読む操作を止めない）."""
+        res = self.run_hook(self.bash_payload(f"cat {self.entry}"))
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+
+    def test_silent_for_non_bash_tool(self):
+        """**matcher 単独に依存しない**二重ゲート（CLAUDE.md Gotchas）."""
+        res = self.run_hook({"tool_name": "Edit",
+                             "tool_input": {"command": f"bash {self.entry}"}})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+
+    def test_malformed_input_does_not_block(self):
+        """壊れた入力で作業を止める方が高コスト。**明示的に通す方へ倒している**（#178 と同じ）."""
+        res = self.run_hook(raw="{ this is not json")
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr, "正常系の分岐で ERR trap を踏んでいる")
+
+    def test_missing_python3_is_loud(self):
+        """fail-loud: 判定できないときに黙って無効化しない（他 2 本と同じ方針）."""
+        res = self.run_hook(self.bash_payload(f"bash {self.entry}"),
+                            env_extra={"PATH": self.path_with_only("jq")})
+        self.assertIn("Unexpected", res.stderr, res)
 
 
 if __name__ == "__main__":
