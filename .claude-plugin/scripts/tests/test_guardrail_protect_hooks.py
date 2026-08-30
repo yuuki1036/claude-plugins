@@ -767,6 +767,14 @@ class UnisolatedHookRunDetectorTest(unittest.TestCase):
         cmd = f"CLAUDE_PROJECT_DIR=/tmp/x bash {self.entry} && bash {self.entry}"
         self.assertEqual(self.detect(cmd), str(self.entry))
 
+    def test_a_segment_of_only_assignments_is_handled(self):
+        """**境界の反対側**: env 代入だけでコマンドが無いセグメント（`index >= len` の側）.
+
+        片側だけだと `>=` を `>` に変える変異が生き残り、範囲外アクセスで落ちる実装が通る。
+        """
+        self.assertEqual(self.detect("FOO=bar"), "")
+        self.assertEqual(self.detect(f"FOO=bar && bash {self.entry}"), str(self.entry))
+
     def test_a_script_passed_as_a_plain_argument_is_not_execution(self):
         """インタプリタ以外のコマンドの引数に現れただけでは実行ではない."""
         self.assertEqual(self.detect(f"shellcheck {self.entry}"), "")
