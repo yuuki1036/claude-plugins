@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.1] - 2026-08-31
+
+### Changed
+
+- **判定器の fail-open が 3 ケースであることを docstring に明記した**（GitHub issue #197）。
+  「開けるが読めないファイル（権限・I/O エラー）を通す」という選択だけが文書化されておらず、
+  nightly の変異テストで `except OSError` 節を fail-closed に倒す変異が生存した
+  ＝ この選択を**何も検証していなかった**。回帰テスト 2 本を足して固定した
+  （実物の権限で踏む 1 本 + 権限が効かない環境でも走る in-process の 1 本）
+
 ## [0.5.0] - 2026-08-30
 
 ### Added

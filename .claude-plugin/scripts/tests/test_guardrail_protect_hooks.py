@@ -15,6 +15,9 @@
 
 from __future__ import annotations
 
+import errno
+import importlib.util
+import os
 import subprocess
 import tempfile
 import unittest
@@ -745,6 +748,20 @@ class UnisolatedHookRunDetectorTest(unittest.TestCase):
         """未展開の変数を含むパスは中身を読めない。読めないことを理由に止めない（fail-open）."""
         self.assertEqual(self.detect("bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/x.sh"), "")
 
+    def test_unreadable_script_is_allowed(self):
+        """**stat はできるが read できないファイル**も fail-open（GitHub issue #197）.
+
+        `safe_hook_init` を持つか判定できないので通す。実物の権限で踏む経路。
+        権限が効かない環境（root）ではスキップされるので、常に走る側は
+        下の `IsHookEntryPointFailOpenTest` が持つ。
+        """
+        blocked = self._write("blocked.sh", 'safe_hook_init "x:y"\n')
+        blocked.chmod(0o000)
+        self.addCleanup(blocked.chmod, 0o600)
+        if os.access(blocked, os.R_OK):
+            self.skipTest("権限が読取を止めない環境（root 等）")
+        self.assertEqual(self.detect(f"bash {blocked}"), "")
+
     def test_unparsable_command_is_allowed(self):
         """クォート未閉じ。判定材料が無いので通す."""
         self.assertEqual(self.detect(f"bash {self.entry} 'unclosed"), "")
@@ -783,6 +800,47 @@ class UnisolatedHookRunDetectorTest(unittest.TestCase):
         """実測の前提が今も成立しているか（崩れたら偽陽性 0 の水準を測り直す合図）."""
         self.assertTrue(MEASURED_UTILITY.is_file(), "実測対象が消えている: %s" % MEASURED_UTILITY)
         self.assertNotIn("safe_hook_init", MEASURED_UTILITY.read_text(encoding="utf-8"))
+
+
+class IsHookEntryPointFailOpenTest(unittest.TestCase):
+    """`is_hook_entry_point` の **read が落ちる分岐**を権限に依存せず踏む（GitHub issue #197）.
+
+    nightly の変異テストで `except OSError` 節の `return False` を `return True` に
+    変える変異が生存した ＝ 「読めないファイルを通す」という選択を**何も検証していなかった**。
+    ここを fail-closed に倒すと、判定材料が無いだけのファイルで正当な実行が止まる。
+
+    権限（chmod 000）で踏む実物のテストは root ではスキップされ、スキップされた環境では
+    変異が再び生き残る。**環境の不在に頼らない**ため、判定器を直接 import して
+    read が OSError で落ちる状況を決定的に作る。
+    """
+
+    def load(self):
+        spec = importlib.util.spec_from_file_location("_isolation_detector", ISOLATION_DETECTOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_read_error_is_not_a_hook_entry_point(self):
+        mod = self.load()
+        seen: list[str] = []
+
+        class Unreadable:
+            def __init__(self, token: str) -> None:
+                self.token = token
+
+            def is_file(self) -> bool:
+                seen.append(self.token)
+                return True
+
+            def read_text(self, **kwargs):
+                raise OSError(errno.EIO, "I/O error")
+
+        mod.Path = Unreadable      # テストごとに読み直すので後始末は不要
+
+        self.assertFalse(mod.is_hook_entry_point("x.sh"), "読めないファイルは通す（fail-open）")
+        self.assertEqual(mod.detect("bash x.sh"), [], "検出まで上がってはいけない")
+        self.assertEqual(seen, ["x.sh", "x.sh"],
+                         "判定器が Path を経由しなくなっている（このテストが空振りしている）")
 
 
 class HookIsolationGuardTest(HookTestCase):
