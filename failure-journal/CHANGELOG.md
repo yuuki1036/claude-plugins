@@ -2,6 +2,31 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.0] - 2026-08-31
+
+### Added
+
+- **umbrella tag の分割宣言**（`.claude/failure-journal/splits.jsonl`）と照会スクリプト
+  `scripts/tag-split-lookup.sh`（GitHub issue #195）。**分割を doc の表に書くだけでは
+  起票側に降りない** — log-failure Phase 2 が寄せ先候補として見るのは「journal に実在する
+  tag」だけで、宣言直後のサブ tag は 0 件だから構造的に候補にならず、次の発生もまた
+  umbrella に寄る。宣言を機械が引ける場所へ移し、Phase 2 が起票のたびに照会する。
+  照会は**壊れた行で止める**（捨てると「分割なし」に化けて元の状態へ静かに戻るため）
+- log-failure Phase 2 に分割宣言の照会ステップ。`redirects` で「umbrella に見えるが
+  別ファミリへ送る型」も降ろす（例: 他者の出力を検算せず採用した型は
+  `misread-or-trusted-bad-output` へ）
+- `retro-aggregate.sh` に `--splits` と 4 フィールド（`split_declared_at` / `sub_tags` /
+  `count_after_split` / `split_not_adopted`）。**分割は分子を動かさない** —
+  `remediations.jsonl` に相乗りさせると対策を打っていないのにアラームが消え、
+  「還流後に再発なし」として報告される
+- retro Phase 4 の先頭に「分割宣言の確認」。宣言済みの tag に分割を再提案せず、
+  `split_not_adopted` なら打ち手を skill 層（起票側）に向ける。Phase 5 に
+  「分割が降りていない tag」の節、Phase 6 に分割の記録
+
+### Changed
+
+- SessionStart / PostCompact hook が `splits.jsonl` も初期化する
+
 ## [0.5.0] - 2026-08-30
 
 ### Added

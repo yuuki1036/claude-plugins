@@ -136,6 +136,7 @@ class FailureJournalInitTest(HookTestCase):
             self.assertTrue((d / "journal.jsonl").is_file())
             self.assertTrue((d / "candidates.jsonl").is_file())
             self.assertTrue((d / "remediations.jsonl").is_file())
+            self.assertTrue((d / "splits.jsonl").is_file())
 
     def test_injects_self_report_rule(self):
         with TempGitRepo() as root:
@@ -149,10 +150,12 @@ class FailureJournalInitTest(HookTestCase):
             (d / "journal.jsonl").write_text('{"ts":"x","summary":"既存"}\n')
             (d / "candidates.jsonl").write_text('{"ts":"y"}\n')
             (d / "remediations.jsonl").write_text('{"tag":"z"}\n')
+            (d / "splits.jsonl").write_text('{"umbrella":"w"}\n')
             self._run(root)
             self.assertIn("既存", (d / "journal.jsonl").read_text())
             self.assertIn('"y"', (d / "candidates.jsonl").read_text())
             self.assertIn('"z"', (d / "remediations.jsonl").read_text())
+            self.assertIn('"w"', (d / "splits.jsonl").read_text())
 
     def test_is_idempotent(self):
         with TempGitRepo() as root:

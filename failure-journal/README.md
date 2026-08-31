@@ -57,6 +57,21 @@ candidates 方式を採る理由: 失敗の大半は Claude の自己訂正で�
 
 なぜ要るか: 記録が無いと、対策を打った後も 30 日窓を抜けるまで同じ tag が鳴り続け、次の retro が**既に入れた対策とほぼ同じ手を再提案**します（実測で起票直前まで進んだ / GitHub issue #193）。
 
+### umbrella tag の分割宣言（splits.jsonl）
+
+1 つの tag が複数の失敗型を束ねていると分かったとき、その分割を `.claude/failure-journal/splits.jsonl` に append-only で宣言します。`/log-failure` は起票のたびにこの宣言を照会し、該当するサブ tag へ寄せます。
+
+```json
+{"declared_at":"2026-08-31T00:00:00Z","umbrella":"claimed-fact-without-source","sub_tags":[{"tag":"stale-record-read-as-current","mechanism":"記録から現在値を断定"}]}
+```
+
+なぜ要るか: 分割を doc の表に書くだけでは**起票側に降りません**。Phase 2 が寄せ先候補として見るのは「journal に実在する tag」だけで、宣言直後のサブ tag は 0 件だから構造的に候補にならず、次の発生もまた umbrella に寄ります（実測 / GitHub issue #195）。
+
+- **`mechanism` は必須**: 起票側が読むのはこの 1 行だけです
+- **`declared_at` は遡って書かない**: 宣言前の umbrella 起票は append-only の規約どおり正しいので、遡ると「分割が降りていない」の誤検出になります
+- **還流ではないので `remediations.jsonl` には書かない**: 分割で分子が動くと、対策を打っていないのにアラームが消えます
+- `/retro` は宣言後も umbrella へ起票され続けている tag を「分割が降りていない」として報告します（打ち手は新しい規約ではなく起票側の skill）
+
 ### gitignore 推奨
 
 `.claude/failure-journal/` は **ディレクトリごと `.gitignore` への追加を推奨** します。journal / candidates の中身を毎セッションで AI に読ませると fingerprint が AI の出力に汚染され、集計が不安定になるためです。commit せずローカルに留めてください。

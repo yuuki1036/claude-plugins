@@ -17,6 +17,7 @@ set -euo pipefail
 
 JOURNAL=".claude/failure-journal/journal.jsonl"
 REMED=".claude/failure-journal/remediations.jsonl"
+SPLITS=".claude/failure-journal/splits.jsonl"
 DAYS=30
 THRESHOLD=3
 NOW=""
@@ -27,6 +28,7 @@ usage: retro-aggregate.sh [options]
 
   --journal PATH        journal.jsonl のパス（既定: .claude/failure-journal/journal.jsonl）
   --remediations PATH   remediations.jsonl のパス（既定: .claude/failure-journal/remediations.jsonl）
+  --splits PATH         splits.jsonl のパス（既定: .claude/failure-journal/splits.jsonl）
   --days N              集計窓の日数（既定: 30）
   --threshold N         閾値（既定: 3）
   --now ISO8601         現在時刻。省略時は date -u。テストで窓を固定するために使う
@@ -37,6 +39,10 @@ usage: retro-aggregate.sh [options]
   excluded_by_remediation 還流日以前として分子から外した件数
   over_threshold          count_effective が閾値に達した
   quiet_since_remediation 還流実績があり、その後の発生が 0 件
+  split_declared_at       分割を宣言した日時（同一 umbrella が複数行なら最も古いもの）
+  sub_tags                宣言した寄せ先のサブ tag
+  count_after_split       宣言日以降の窓内発生。**分子には影響しない**
+  split_not_adopted       分割を宣言したのに宣言日以降も umbrella へ起票されている
 USAGE
 }
 
@@ -52,6 +58,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --journal)      _need_value "$1" $#; JOURNAL="$2";   shift 2 ;;
     --remediations) _need_value "$1" $#; REMED="$2";     shift 2 ;;
+    --splits)       _need_value "$1" $#; SPLITS="$2";    shift 2 ;;
     --days)         _need_value "$1" $#; DAYS="$2";      shift 2 ;;
     --threshold)    _need_value "$1" $#; THRESHOLD="$2"; shift 2 ;;
     --now)          _need_value "$1" $#; NOW="$2";       shift 2 ;;
@@ -91,14 +98,19 @@ jq -n \
   --argjson threshold "$THRESHOLD" \
   --arg now "$NOW" \
   --slurpfile occ_raw <(_stream "$JOURNAL") \
-  --slurpfile rem_raw <(_stream "$REMED") '
+  --slurpfile rem_raw <(_stream "$REMED") \
+  --slurpfile spl_raw <(_stream "$SPLITS") '
 def ok: type == "object" and ((.tag? | type) == "string") and ((.timestamp? | type) == "string");
+def ok_split: type == "object"
+  and ((.umbrella? | type) == "string")
+  and ((.declared_at? | type) == "string");
 def iso: try fromdateiso8601 catch null;
 
 ($now | iso) as $now_epoch
 | ((($now_epoch - ($days * 86400)) | todateiso8601)) as $since
 | ($occ_raw | map(select(ok))) as $occ
 | ($rem_raw | map(select(ok))) as $rem
+| ($spl_raw | map(select(ok_split))) as $spl
 | {
     window: {days: $days, since: $since, now: $now},
     threshold: $threshold,
@@ -114,6 +126,13 @@ def iso: try fromdateiso8601 catch null;
           # 両者が同値のとき境界変異が等価になり、変異テストで必ず生き残る
           | ([$since] + (if $last == null then [] else [$last] end) | max) as $eff
           | ($ow | map(select(.timestamp >= $eff))) as $oe
+          # 分割は語彙の宣言であって還流ではない。分子（$oe）も有効境界（$eff）も動かさない
+          # — 動かすと対策を打っていないのにアラームが消える（GitHub issue #195）
+          | ($spl | map(select(.umbrella == $t))) as $s
+          | (if ($s | length) == 0 then null
+             else ($s | map(.declared_at) | min) end) as $sdecl
+          | (if $sdecl == null then null
+             else ($ow | map(select(.timestamp >= $sdecl)) | length) end) as $after
           | {
               tag: $t,
               count_all_time: ($o | length),
@@ -136,7 +155,13 @@ def iso: try fromdateiso8601 catch null;
                 note: (.note // null)
               })),
               over_threshold: (($oe | length) >= $threshold),
-              quiet_since_remediation: ($last != null and ($oe | length) == 0)
+              quiet_since_remediation: ($last != null and ($oe | length) == 0),
+              split_declared_at: $sdecl,
+              sub_tags: (if $sdecl == null then null
+                         else ($s | sort_by(.declared_at) | last | (.sub_tags // [])
+                               | map(.tag)) end),
+              count_after_split: $after,
+              split_not_adopted: ($sdecl != null and $after != 0)
             })
       | sort_by(-.count_effective, -.count_window, .tag)
     )

@@ -31,6 +31,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh" --days 60 --threshold 3
 |---|---|
 | `--journal PATH` | `.claude/failure-journal/journal.jsonl` |
 | `--remediations PATH` | `.claude/failure-journal/remediations.jsonl` |
+| `--splits PATH` | `.claude/failure-journal/splits.jsonl` |
 | `--days N` / `--threshold N` | 30 / 3 |
 | `--now ISO8601` | `date -u`（テストで窓を固定するため） |
 
@@ -63,10 +64,24 @@ exit code は **0 集計成功 / 2 判定不能**（jq 不在・引数不正）�
 | `over_threshold` | `count_effective` が閾値に達した → Phase 4 の還流先提案の対象 |
 | `quiet_since_remediation` | 還流実績があり、その後の発生が 0 件 → **対策が効いている可能性のシグナル** |
 | `remediations` | その tag への還流実績（全期間）。Phase 4 で必ず併記する |
+| `split_declared_at` | 分割を宣言した日時（同一 umbrella が複数行なら最も古いもの）。null なら未宣言 |
+| `sub_tags` | 宣言した寄せ先のサブ tag（最新の宣言行の内容） |
+| `count_after_split` | 宣言日以降の窓内発生 |
+| `split_not_adopted` | 宣言したのに宣言日以降も umbrella へ起票されている → **分割が起票側に降りていない** |
 
 > `quiet_since_remediation` は「鳴らない」とは意味が違う。**還流していない tag の 0 件は無情報**（発生していないだけ）だが、**還流後の 0 件は対策の観測**になる。両者を同じ「該当なし」に潰さない。
 
 > 還流実績があって窓内の発生が 0 件の tag も行として出る。**シグナルはそこにしか現れない**ので、`count_window` が 0 の行を落とさない。
+
+### 分割は分子を動かさない
+
+**分割は語彙の宣言であって還流ではない。** `split_*` フィールドは `count_effective` / `over_threshold` / `excluded_by_remediation` / `quiet_since_remediation` のいずれにも影響しない（GitHub issue #195）。
+
+分割を `remediations.jsonl` に相乗りさせると有効境界が動き、**対策を何も打っていないのに分子が下がって「還流後に再発なし」として報告される**。これは #193 の設計が避けている失敗そのものなので、宣言は別ファイル（`splits.jsonl`）に置く。
+
+`split_not_adopted` は窓スコープで判定する（全期間にすると一度 true になった tag が永久に鳴り、「⚠️ が出たときだけ行動する」契約を壊す）。宣言日以降の発生だけを見るので、**宣言直後は定義上 false** になる。
+
+> 壊れた行の扱いは照会側（`tag-split-lookup.sh`）と非対称で、集計側は飛ばして続行する。集計で 1 行落ちてもレポートの 1 フィールドが欠けるだけだが、照会で 1 行落ちると「分割なし」に化けて起票側が umbrella へ寄せてしまうため。
 
 ## 還流先判定ルール
 

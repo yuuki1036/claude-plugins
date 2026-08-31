@@ -132,13 +132,17 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
 
 閾値超え tag ごとに、以下を生成する:
 
+0. **分割宣言の確認（他のどのステップより先）**: `split_declared_at` が非 null なら、その tag は**既に分割宣言済み**。内訳から分割の要否を再導出しない（宣言済みの分割を再提案するのは、`remediations` を見ずに同じ還流を再提案するのと同型の失敗）
+   - `split_not_adopted: true` → 報告すべきは失敗型そのものではなく**「分割が起票側に降りていない」**。還流先は新しい規約ではなく **log-failure Phase 2（skill 層）**。宣言後の umbrella 発生の内訳を書き出し、既存 `sub_tags` のどれにも当たらないものが多いなら**新しいサブ tag の宣言**を提案する（GitHub issue #195）
+   - `split_not_adopted: false` → 分割は機能している。`sub_tags` の各行を集計から拾い、**サブ tag ごとに**還流先を判定する（umbrella 1 行に 1 つの還流先を選ばない）
+   - **宣言済みの tag には下の 4「umbrella tag の判定」を適用しない**
 1. **既存の還流実績の併記（必須）**: `remediations` が空でないなら「この tag には <target>（<ref>）で既に手を打っている。それでも <count_effective> 件再発した」の形で書き出す。**この項を飛ばすと、既に入れた対策とほぼ同じ提案を再度出す**（GitHub issue #193 の実害はこれ）。還流実績があるのに再発しているなら、打ち手の候補は「同じ層の強化」ではなく**層の変更**（規約 → hook）か**tag の分割**を先に検討する
 2. **還流先の判定**: AGENTS.md/CLAUDE.md（規約・背景）/ hook（決定的検証）/ skill（文脈判断）のどれに反映すべきか
    - 決定的検証で判定可能（文字列・ファイル存在・exit code 等） → hook
    - 自然言語判断が必要（意図推定・レビュー等） → skill
    - 恒常的に参照したい規約・背景 → AGENTS.md/CLAUDE.md
 3. **既存ガードレールでカバーできていない理由**: なぜ既存の hook/skill/規約で防げなかったのか
-4. **umbrella tag の判定**: 内訳を書き出して**還流先が 2 つ以上に割れる**か、**既に還流した対策より後に別機構で再発している**なら、その tag は複数の失敗型を束ねている。1 つの還流先を選ばず、**tag の分割を提案する**（規約と実例は `../log-failure/references/journal-schema.md`）。分割せずに還流を重ねると、対策は毎回「今回の 1 件」にしか当たらず閾値だけが鳴り続ける
+4. **umbrella tag の判定**: 内訳を書き出して**還流先が 2 つ以上に割れる**か、**既に還流した対策より後に別機構で再発している**なら、その tag は複数の失敗型を束ねている。1 つの還流先を選ばず、**tag の分割を提案する**（規約と実例は `../log-failure/references/journal-schema.md`）。分割せずに還流を重ねると、対策は毎回「今回の 1 件」にしか当たらず閾値だけが鳴り続ける。**ただし 0 で分割宣言が見つかった tag は対象外**（提案ではなく採用状況の報告に切り替える）
 
 判定ロジックの詳細は `references/aggregation-rules.md`。
 
@@ -158,6 +162,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
 ### 還流後に再発していない tag
 - claimed-fact-without-source: 窓内 9 件はすべて還流前。**還流後 2 日で再発 0 件**（convention / ac8214d）
 
+### 分割が降りていない tag
+- claimed-fact-without-source: 分割宣言 2026-08-31 / 宣言後の umbrella 起票 2 件
+  → 打ち手は新しい規約ではなく log-failure Phase 2 の照会（サブ tag が現象を覆えているか）
+
 ### 詳細
 
 🔁 delegated-run-without-isolation (3 回 / 分母 3・除外 0)
@@ -173,7 +181,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
 
 **分母・除外件数・還流実績は省略しない。** 分子だけを出すと、還流で減ったのか発生が止まったのかが読めない。
 
-閾値超え 0 件でも、`quiet_since_remediation` の tag があれば「還流後に再発していない tag」の節は出す（Phase 3 の 1）。両方 0 件なら「再発パターンはありません」と報告する。
+閾値超え 0 件でも、`quiet_since_remediation` の tag があれば「還流後に再発していない tag」の節は出す（Phase 3 の 1）。**`split_not_adopted: true` の tag があれば「分割が降りていない tag」の節も閾値と無関係に出す**（分割の非追随は閾値には現れない）。すべて 0 件なら「再発パターンはありません」と報告する。
 
 ---
 
@@ -186,18 +194,24 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
 - options:
   1. label: "提案のみ" / description: "レポートを残し、還流は手動で実施"
   2. label: "Issue 化" / description: "閾値超え tag を plugin-feedback / Issue 管理へ連携（別途実行）"
-  3. label: "還流を記録" / description: "既に手を打った tag を remediations.jsonl へ記録し、次回以降の分子から外す"
+  3. label: "還流 / 分割を記録" / description: "打った手を remediations.jsonl へ、宣言した分割を splits.jsonl へ append する"
   4. label: "対応しない" / description: "レポート確認のみ"
 
 > 実際の AGENTS.md/hook/skill 編集は本スキルの責務外（還流先の判断と提案に専念）。編集は対応する plugin/手動で行う。
 
-### 還流の記録（option 3）
+### 還流 / 分割の記録（option 3）
 
 **閾値超えの tag が、実は既に還流済みだったと分かったとき**（記録が漏れていた場合を含む）に append する。スキーマと手順は `../log-failure/references/journal-schema.md` の remediations.jsonl 節。
 
 - `timestamp` は**還流が landed した日時**（コミット日時）。retro の実行時刻ではない
 - **提案しただけ・着手しただけでは書かない。** この記録より前の発生は次回の分子から外れるため、先に書くと再発を見逃す
 - 対象 tag・還流先の層・commit / ファイルパスを提示し、**承認を得てから append** する（副作用は承認後のみ）
+
+分割を宣言する場合は `.claude/failure-journal/splits.jsonl` へ append する（スキーマと手順は `../log-failure/references/journal-schema.md` の splits.jsonl 節）。
+
+- `declared_at` は**宣言した日**。遡って書かない（宣言前の umbrella 起票は append-only の規約どおり正しく、遡ると初回から偽陽性が出る）
+- **サブ tag には `mechanism` を必ず書く** — 起票側が読むのはその 1 行だけ
+- 分割は還流ではないので `remediations.jsonl` には書かない（分子が動いてアラームが消える）
 
 ---
 
@@ -210,7 +224,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
 4. Phase 1:   窓・閾値の決定（30 日 / 3 回）
 5. Phase 2:   tag 別集計（retro-aggregate.sh: 窓フィルタ → 還流記録と join → count）
 6. Phase 3:   閾値超え tag 抽出（分子は最後の還流日以降の発生。分母・除外件数を併記）
-7. Phase 4:   還流先提案（hook / skill / 規約 + 未カバー理由）
+7. Phase 4:   還流先提案（分割宣言の確認 → hook / skill / 規約 + 未カバー理由）
 8. Phase 5:   レポート出力
 9. Phase 6:   還流アクション確認（任意、AskUserQuestion。還流の記録もここ）
 ```
@@ -224,6 +238,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
 - **journal / candidates は retro 実行中のみ Read**: 集計のために読むのは本スキル実行中だけ。常時 Read すると fingerprint が AI の出力に汚染され集計が不安定になる（candidates への **append** はセッション中いつでもよい — 自己申告ルールの責務。Read だけを禁じる）
 - **還流先の判断のみ**: 実際の AGENTS.md/hook/skill 編集は責務外。「どこに何を反映すべきか」の提案までを担う
 - **還流済みの発生は分子から外す**: 対策を打った後も窓を抜けるまで鳴り続けると、次の retro が同じ手を再提案する（GitHub issue #193）。ただし**分母と除外件数を必ず併記**する — 黙って分子を減らすと「収まった」と誤読される
+- **分割済み tag に分割を再提案しない**: `split_declared_at` が非 null なら宣言済み。`split_not_adopted: true` は「失敗が続いている」ではなく「**宣言が起票側に降りていない**」で、打ち手は skill 層（GitHub issue #195）
 - **「還流後 0 件」と「鳴らない」を分ける**: 還流していない tag の 0 件は無情報だが、還流後の 0 件は対策の観測。同じ「該当なし」に潰さない
 - **date の OS 差異**: 窓境界の算出は `retro-aggregate.sh` が jq 側で行うため、BSD / GNU date の差を呼び出し側が意識する必要はない
 - **retrospective との責務分離**: 主観的なセッション振り返り・見積もり精度分析は `issue-workflow:retrospective`。本スキルは機械集計による再発検出に専念する

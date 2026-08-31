@@ -1,6 +1,6 @@
 {
   "name": "failure-journal",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "再発する失敗を JSON Lines に append し、30日×3回閾値超えのパターンを retro で抽出して AGENTS.md/hook/skill へ還流。retro は transcript を走査して未起票の失敗もサルベージする。SessionStart で journal 初期化、failure:logged を event bus に publish",
   "author": {
     "name": "yuki"

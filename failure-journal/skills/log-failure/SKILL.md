@@ -55,7 +55,21 @@ allowed-tools:
 | 現象主体 | 「何をしくじったか」を抽象化（例: `spec-skipped-without-rationale`） |
 
 - 規約違反（長すぎ / 固有名詞混入 / camelCase 等）を検出したら、**AI が修正案を提示して rewrite を要求**する。ユーザーが指定した tag をそのまま使わない
-- 既存 journal に類似 tag があれば（Read で確認）、表記揺れを避けるため既存 tag への寄せを提案する
+- **寄せ先を決める前に分割宣言を照会する**（journal ではなく宣言だけを読む）:
+
+  ```bash
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/tag-split-lookup.sh"
+  ```
+
+  | 出力 | Phase 3 へ渡す tag |
+  |---|---|
+  | `{"splits":[]}` | 追加手順なし（従来どおり） |
+  | `sub_tags[].mechanism` のどれかが今回の現象に当たる | **そのサブ tag を使う**。journal に 0 件でも正当な寄せ先 |
+  | `redirects[].when` に当たる | umbrella でもサブ tag でもなく `redirects[].tag` を使う（別ファミリ） |
+  | どの `mechanism` にも当たらない | 無理に既存サブ tag へ寄せず、新しいサブ tag を tag 規約に沿って提案して使う。Phase 5 で「分割済み umbrella に当てはまるサブ tag が無かった（現象: …）」と報告する（宣言の追加は `/retro` のレビューで行う） |
+  | exit 2（判定不能） | **append は止めない。**「分割なし」と読まず、理由（jq 不在 / 壊れた行）を Phase 5 で報告する |
+
+- 既存 journal に類似 tag があれば（Read で確認）、表記揺れを避けるため既存 tag への寄せを提案する。**ただし上の照会で `umbrella` として挙がった tag には寄せない** — 宣言済みサブ tag は journal に 0 件なので、journal だけを見ると構造的に umbrella しか候補にならない（GitHub issue #195）
 
 詳細は `references/journal-schema.md`。
 
@@ -120,7 +134,7 @@ tag: spec-skipped-without-rationale
 ```
 1. Phase 0: journal パス確認（無ければ作成）
 2. Phase 1: 再発性判定（「同じ状況で再発しうるか」の単一基準）
-3. Phase 2: tag 生成・検証（規約違反なら rewrite 要求）
+3. Phase 2: tag 生成・検証（規約違反なら rewrite 要求 / 分割宣言を照会してサブ tag へ寄せる）
 4. Phase 3: append（Bash + jq、append-only）
 5. Phase 4: failure:logged event publish（tag のみ）
 6. Phase 5: 完了報告
@@ -133,5 +147,6 @@ tag: spec-skipped-without-rationale
 - **単一基準で迷わせない**: 判断軸は「再発しうるか」のみ。重大度や工数では判定しない
 - **append-only**: 既存行の編集・削除は禁止。修正したい場合も新規行を追記する
 - **journal は retro 実行中のみ Read**: log-failure は append が主目的で、集計のために journal 全体を読む必要はない（fingerprint の AI 出力汚染を避ける）。Phase 0/2 での既存 tag 参照は表記揺れ防止の最小限に留める
+- **分割宣言の照会は journal の Read ではない**: `tag-split-lookup.sh` が読むのは `splits.jsonl`（承認済みの語彙宣言）だけで、発生件数を 1 つも出力しない。上の Read 制約の対象外であり、この照会はむしろ journal の Read を減らす（寄せ先の判断根拠が実データから宣言へ移るため）
 - **event payload は最小**: tag のみ。本文を含めると Event Bus 規約（最小 JSON）違反になる
 - **retrospective との責務分離**: 主観的なセッション振り返りは `issue-workflow:retrospective` の責務。本スキルは機械集計可能な fingerprint の記録に専念する

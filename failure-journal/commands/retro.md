@@ -28,7 +28,7 @@ retro スキルを使って、再発する失敗パターンを集計し還流�
 4. Phase 1: 窓・閾値の決定（30 日 / 3 回）
 5. Phase 2: tag 別集計（Bash + jq、30 日境界フィルタ → group → count）
 6. Phase 3: 閾値超え tag の抽出
-7. Phase 4: 還流先提案（AGENTS.md/CLAUDE.md・hook・skill のどれに反映するか + 既存ガードレール未カバー理由）
+7. Phase 4: 還流先提案（分割宣言の確認 → AGENTS.md/CLAUDE.md・hook・skill のどれに反映するか + 既存ガードレール未カバー理由）
 8. Phase 5: レポート出力
 9. Phase 6: 還流アクション確認（任意、AskUserQuestion）
 

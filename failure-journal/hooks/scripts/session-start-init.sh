@@ -22,6 +22,9 @@ fi
 # 還流の実施記録（GitHub issue #193）。retro の閾値判定がこの記録以降の発生だけを
 # 分子に取る。無いときは「還流ゼロ」＝従来どおりの集計になる
 [ -f "$journal_dir/remediations.jsonl" ] || : > "$journal_dir/remediations.jsonl"
+# umbrella tag の分割宣言（GitHub issue #195）。log-failure Phase 2 が寄せ先候補として
+# 読む唯一の機械可読な宣言。無いときは「分割なし」＝従来どおりの起票になる
+[ -f "$journal_dir/splits.jsonl" ] || : > "$journal_dir/splits.jsonl"
 
 # 自己訂正の候補記録ルールを注入
 RULES_DIR="${CLAUDE_PLUGIN_ROOT}/rules"

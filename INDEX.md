@@ -19,7 +19,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [design-doc](#design-doc) | 0.4.5 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.26.2 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.3 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
-| [failure-journal](#failure-journal) | 0.5.0 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
+| [failure-journal](#failure-journal) | 0.6.0 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.11.7 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.5.1 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行を機械ブロック |
 | [issue-workflow](#issue-workflow) | 1.4.5 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
@@ -80,7 +80,7 @@ Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環
 - **hooks**: PostToolUse（frontmatter-guard）, SessionStart（stale-check, opt-in）
 
 ### failure-journal
-再発する失敗を JSON Lines に append し、30 日 × 3 回閾値超のパターンを retro で抽出して AGENTS.md/hook/skill へ還流。SessionStart hook が自己申告ルールを注入し、Claude が自己訂正した瞬間に candidates.jsonl へ候補を 1 行 append → retro が承認レビューで journal に昇格（verdict 書き戻しで却下候補の再浮上を防止）。候補が無い期間は transcript サルベージにフォールバック（実測値と測定条件は `skills/retro/references/transcript-salvage.md`）。閾値の分子は **最後の還流日以降の発生**（`remediations.jsonl`）で、対策を打った後も窓を抜けるまで鳴り続けて同じ手を再提案するのを防ぐ（分母・除外件数は併記／集計は `scripts/retro-aggregate.sh`）。
+再発する失敗を JSON Lines に append し、30 日 × 3 回閾値超のパターンを retro で抽出して AGENTS.md/hook/skill へ還流。SessionStart hook が自己申告ルールを注入し、Claude が自己訂正した瞬間に candidates.jsonl へ候補を 1 行 append → retro が承認レビューで journal に昇格（verdict 書き戻しで却下候補の再浮上を防止）。候補が無い期間は transcript サルベージにフォールバック（実測値と測定条件は `skills/retro/references/transcript-salvage.md`）。閾値の分子は **最後の還流日以降の発生**（`remediations.jsonl`）で、対策を打った後も窓を抜けるまで鳴り続けて同じ手を再提案するのを防ぐ（分母・除外件数は併記／集計は `scripts/retro-aggregate.sh`）。umbrella tag の分割は `splits.jsonl` に宣言し、log-failure Phase 2 が `scripts/tag-split-lookup.sh` で照会してサブ tag へ寄せる（doc の表に書くだけでは起票側に降りない／retro は宣言後も umbrella へ起票され続ける tag を報告する）。
 - **commands**: `log-failure`, `retro`
 - **skills**: `log-failure`, `retro`
 - **hooks**: SessionStart, PostCompact（自己申告ルール再注入）
