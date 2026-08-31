@@ -11,6 +11,7 @@ allowed-tools:
   - mcp__plugin_dev-workflow_chrome-devtools__list_console_messages
   - mcp__plugin_dev-workflow_chrome-devtools__list_network_requests
   - mcp__plugin_dev-workflow_chrome-devtools__resize_page
+  - mcp__plugin_dev-workflow_chrome-devtools__emulate
   - mcp__plugin_dev-workflow_chrome-devtools__click
   - mcp__plugin_dev-workflow_chrome-devtools__hover
   - mcp__plugin_dev-workflow_chrome-devtools__fill

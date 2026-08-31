@@ -176,6 +176,97 @@ class OnCommitTest(HookTestCase):
             self.assertSilent(self.run_hook(self.bash_payload("git commit -m x"), cwd=repo_path))
 
 
+class CheckDepsUiVerifyTest(HookTestCase):
+    """`check-deps.sh` の ui-verify 依存検査.
+
+    元の実装は **設定の有無しか見ておらず、起動可能性を一度も見ていなかった**:
+    `check_mcp` の探索対象に同梱 `${CLAUDE_PLUGIN_ROOT}/.mcp.json` が入っているため
+    `found` が恒真になり、`check_cli` は `required=false` の else が無く完全に無言だった。
+    結果、npx を持たない機体で chrome-devtools が ENOENT で落ちているのに
+    **ERROR も WARN も 0 件**という状態が成立していた。
+
+    ここで見るのは 2 つ。**Web プロジェクトでだけ鳴る**こと（node の無い機体で毎セッション
+    鳴らすと「WARN が出たときだけ行動する」契約が壊れる）と、**設定済みでも launcher が
+    引けなければ鳴る**こと。
+    """
+
+    PLUGIN = "dev-workflow"
+    SCRIPT = "hooks/scripts/check-deps.sh"
+
+    def _project(self, *, ui_verify_enabled: bool) -> Path:
+        """使い捨ての作業ディレクトリ（実リポジトリの .claude を見に行かせない）."""
+        proj = self.isolated_project_dir()
+        flag = proj / ".claude" / ".ui-verify-enabled"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        if ui_verify_enabled:
+            flag.write_text("1\n", encoding="utf-8")
+        elif flag.exists():
+            flag.unlink()
+        return proj
+
+    def _run(self, *, ui_verify_enabled: bool, with_npx: bool, with_jq: bool = True):
+        # **引ける側を列挙する**（環境に npx が無いことに頼らない / 有ることにも頼らない）。
+        # `path_with_only` は同一テスト内で `_tool_bin_path` を memo 共有するので、stub の
+        # 有無を **with_npx で必ず対称に**する（片方向だけ書くと、1 テスト内で
+        # `with_npx=True` → `False` の順に呼んだ 2 回目が前の stub を掴んで静かに壊れる）。
+        # `with_jq=False` は launcher 検査の graceful skip（jq 不在で丸ごと無効化）を突く。
+        # 各テストは with_jq を 1 値でしか使わない（memo dir に jq が混ざらないため）。
+        path = self.path_with_only("jq") if with_jq else self.path_with_only()
+        stub = Path(path) / "npx"
+        if with_npx:
+            if not stub.exists():
+                stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                stub.chmod(0o755)
+        elif stub.exists():
+            stub.unlink()
+        return self.run_hook(
+            {"hook_event_name": "SessionStart"},
+            cwd=self._project(ui_verify_enabled=ui_verify_enabled),
+            env_extra={"PATH": path},
+        )
+
+    # --- 黙るべきとき（こちらを先に固定する） ---
+    def test_silent_about_ui_verify_when_not_a_web_project(self):
+        """`.ui-verify-enabled` が無ければ chrome-devtools / node には一切触れない."""
+        out = self._run(ui_verify_enabled=False, with_npx=False).stdout
+        self.assertNotIn("chrome-devtools", out)
+        self.assertNotIn("Node.js", out)
+
+    def test_silent_about_launcher_when_it_resolves(self):
+        """launcher が PATH から引けるなら起動不能の警告は出さない."""
+        out = self._run(ui_verify_enabled=True, with_npx=True).stdout
+        self.assertNotIn("起動できません", out)
+
+    # --- 鳴るべきとき ---
+    def test_warns_when_bundled_mcp_launcher_is_missing(self):
+        """同梱設定されていても launcher が引けなければ鳴る（これが元の穴）."""
+        out = self._run(ui_verify_enabled=True, with_npx=False).stdout
+        self.assertIn("chrome-devtools", out)
+        self.assertIn("起動できません", out)
+
+    def test_optional_cli_absence_is_reported(self):
+        """`check_cli` の `required=false` が無言だった回帰（node が落ちても黙っていた）."""
+        out = self._run(ui_verify_enabled=True, with_npx=False).stdout
+        self.assertIn("Node.js", out)
+
+    # --- graceful skip（jq 不在で launcher 検査を丸ごと無効化する経路） ---
+    def test_launcher_check_skips_silently_without_jq(self):
+        """jq が引けなければ launcher 検査は素通りする（クラッシュも誤警告も出さない）.
+
+        `check_bundled_mcp_launcher` の `command -v jq || return 0` ガードの回帰。
+        jq 不在時に launcher を検査できないのは仕様だが、**「起動できません」を誤って
+        出さない / 落ちない**ことを固定する（jq 不在機で静かに壊れる型を塞ぐ）。
+        """
+        res = self._run(ui_verify_enabled=True, with_npx=False, with_jq=False)
+        self.assertEqual(res.returncode, 0)
+        self.assertNotIn("起動できません", res.stdout)
+
+    def test_never_blocks(self):
+        """依存不足でも起動は止めない（safe-hook は exit 0 に収束する）."""
+        # rc≠2 では緩い（rc=1 でも通る）。safe-hook が正常系を exit 0 にするので == 0 で固定する。
+        self.assertEqual(self._run(ui_verify_enabled=True, with_npx=False).returncode, 0)
+
+
 class DetectWebProjectTest(HookTestCase):
     """SessionStart: package.json の依存で ui-verify 連携フラグを管理する（無音）."""
 

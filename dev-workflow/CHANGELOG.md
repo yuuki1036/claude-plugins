@@ -2,6 +2,39 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.27.0] - 2026-08-31
+
+### Fixed
+
+- **`check-deps.sh` の chrome-devtools 検査が構造的に嘘をついていたのを直した**。
+  `check_mcp` の探索対象に同梱 `${CLAUDE_PLUGIN_ROOT}/.mcp.json` が入っている（v1.23.1 で
+  「同梱を検知できず常時 WARN」を直した際に追加）ため `found` が**恒真**で、`check_cli` は
+  `required=false` の else が無く**完全に無言**だった。結果、npx を持たない機体で
+  chrome-devtools が ENOENT で起動に失敗しているのに、SessionStart の依存チェックは
+  **ERROR も WARN も 0 件**になっていた。設定の有無（`check_mcp`）と起動可能性を分離し、
+  同梱 MCP の launcher が PATH から引けなければ警告する `check_bundled_mcp_launcher` を追加。
+  あわせて `check_cli` に else を足してオプション依存の不在も報告する。
+  検査は `.claude/.ui-verify-enabled` があるときだけ走らせる（node の無い機体で毎セッション
+  鳴らすと「WARN が出たときだけ行動する」契約が壊れるため — `docs/rule-placement.md`）
+- **`ui-verify` SKILL.md Step 2 の `wait_for` 誤用を修正**。「`wait_for` で HTTP が応答するまで
+  待機」と書いていたが、実体は `waitForTextOnPage`（**ページ上のテキスト出現待ち**）で疎通待ちには
+  使えない。dev server の起動待ちを Bash の curl ループに置き換えた
+- **cheatsheet の `wait_for` 呼び出し例が schema 違反だったのを修正**。`text` は
+  `array(string).min(1)` が必須で、初出時から誤って文字列単体を渡す例を載せていた
+- **cheatsheet の「既定で headless Chrome を起動」を訂正**。`--headless` は既定 false で
+  実際には画面に Chrome ウィンドウが開く。プロファイルも `--isolated` 既定 false のため
+  `$HOME/.cache/chrome-devtools-mcp/chrome-profile` に永続し、「毎回まっさらで安全」ではない
+
+### Added
+
+- **`emulate` を `ui-verify` の allowed-tools に復帰**（skill / command 同時。12 → 13）。
+  v1.10.0 の Permission Pruning（28 → 15）で落としていたが、`--viewports=light,dark` の
+  テーマ撮影は `emulate(colorScheme:)` が唯一のプロジェクト非依存な経路で、
+  撮影機能が「UI トグルを操作できる場合のみ動く」degraded 状態になっていた。
+  SKILL.md のテーマ撮影手順と cheatsheet の `emulate` 節（`colorScheme` / `viewport`）も具体化
+- `check-deps.sh` の ui-verify 依存検査に回帰テストを追加
+  （`test_dev_workflow_hooks.py::CheckDepsUiVerifyTest`。黙る条件 2 本 + 鳴る条件 3 本）
+
 ## [1.26.2] - 2026-08-28
 
 ### Changed

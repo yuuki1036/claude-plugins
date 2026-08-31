@@ -17,6 +17,7 @@ allowed-tools:
   - mcp__plugin_dev-workflow_chrome-devtools__list_console_messages
   - mcp__plugin_dev-workflow_chrome-devtools__list_network_requests
   - mcp__plugin_dev-workflow_chrome-devtools__resize_page
+  - mcp__plugin_dev-workflow_chrome-devtools__emulate
   - mcp__plugin_dev-workflow_chrome-devtools__click
   - mcp__plugin_dev-workflow_chrome-devtools__hover
   - mcp__plugin_dev-workflow_chrome-devtools__fill
@@ -87,7 +88,15 @@ lsof -nP -iTCP:${DEV_PORT} -sTCP:LISTEN 2>/dev/null
 2. パッケージマネージャを推定（`pnpm-lock.yaml`→pnpm / `yarn.lock`→yarn / `bun.lockb`→bun / else npm）
 3. **ユーザーに起動許可を確認**（勝手に port を占有しない）
 4. 許可されたら background で起動: `pnpm dev &` 相当を Bash の `run_in_background: true` で実行
-5. `mcp__plugin_dev-workflow_chrome-devtools__wait_for` で HTTP が応答するまで待機（最大30秒）
+5. HTTP が応答するまで Bash で待機する（`wait_for` は**ページ上のテキスト出現待ち**であって
+   疎通待ちではないので使えない）:
+   ```bash
+   for _ in $(seq 30); do
+     curl -sSf -o /dev/null "http://localhost:${DEV_PORT}/" && break
+     sleep 1
+   done
+   ```
+   疎通後、ページ描画の完了は `wait_for(text: ["..."])` で待つ
 
 **認証や環境変数が必要な場合:**
 - `.env` / `.env.local` が存在するか確認
@@ -195,7 +204,17 @@ PR タイプ判定はブランチ名・コミットメッセージ・差分か�
 
 **テーマ撮影:**
 
-`--viewports=light,dark` 指定時は viewport を desktop 固定にし、テーマトグルを操作して 2 枚撮影する。テーマ切り替え方法はプロジェクト固有のため、`prefers-color-scheme` の `emulate` または UI 上のトグルボタン操作のいずれかをユーザーに確認する。
+`--viewports=light,dark` 指定時は viewport を desktop 固定にし、テーマを切り替えて 2 枚撮影する。
+
+既定は `emulate` による `prefers-color-scheme` のエミュレート（プロジェクト非依存で決定的）:
+
+```
+mcp__plugin_dev-workflow_chrome-devtools__emulate(colorScheme: "light")  # → light.png
+mcp__plugin_dev-workflow_chrome-devtools__emulate(colorScheme: "dark")   # → dark.png
+mcp__plugin_dev-workflow_chrome-devtools__emulate(colorScheme: "auto")   # 撮影後に解除
+```
+
+アプリが `prefers-color-scheme` ではなく自前のトグル（class / localStorage 等）でテーマを持つ場合は emulate が効かないため、その場合のみ UI 上のトグル操作に切り替える（どちらを使うかをユーザーに確認する）。
 
 ### Step 4: 撮影結果の後処理
 

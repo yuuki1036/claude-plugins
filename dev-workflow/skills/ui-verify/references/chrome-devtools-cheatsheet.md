@@ -62,11 +62,18 @@ mcp__plugin_dev-workflow_chrome-devtools__fill(uid: "67890", value: "test input"
 
 ### wait_for
 
-要素やテキストの出現を待つ。SPA の初期描画や遷移後に必須。
+**ページ上にテキストが出現するのを待つ**（`waitForTextOnPage`）。SPA の初期描画や遷移後に必須。
+
+`text` は**文字列の配列が必須**（`array(string).min(1)`）。いずれか 1 つが出現した時点で解決する。
+文字列を単体で渡すと schema 違反で失敗する。
 
 ```
-mcp__plugin_dev-workflow_chrome-devtools__wait_for(text: "Dashboard")
+mcp__plugin_dev-workflow_chrome-devtools__wait_for(text: ["Dashboard"])
+mcp__plugin_dev-workflow_chrome-devtools__wait_for(text: ["Dashboard", "ダッシュボード"])
 ```
+
+**dev server の疎通待ちには使えない** — 見ているのは描画済みページのテキストであって
+HTTP レスポンスではない。起動待ちは Bash の curl ループで行う（SKILL.md Step 2 参照）。
 
 ## 観測
 
@@ -105,7 +112,22 @@ mcp__plugin_dev-workflow_chrome-devtools__resize_page(width: 375, height: 812)
 
 ### emulate
 
-デバイス・ネットワーク・CPU throttle。レスポンシブ確認に使う。
+1 つの tool で複数のエミュレートを担う（`colorScheme` / `viewport` / `networkConditions` /
+`cpuThrottlingRate` / `geolocation` / `userAgent` / `extraHttpHeaders`）。
+
+**テーマ撮影の正規経路**。`prefers-color-scheme` をプロジェクト非依存に切り替えられる:
+
+```
+mcp__plugin_dev-workflow_chrome-devtools__emulate(colorScheme: "dark")   # dark / light / auto
+```
+
+`viewport` は `resize_page` と違い devicePixelRatio や touch / mobile まで指定できる:
+
+```
+mcp__plugin_dev-workflow_chrome-devtools__emulate(viewport: "375x812x3,mobile,touch")
+```
+
+撮影が終わったら `colorScheme: "auto"` で解除する（設定はページに残る）。
 
 ## JavaScript 実行
 
@@ -156,7 +178,7 @@ for viewport in [mobile, tablet, desktop]:
 
 ## 認証突破ガイド
 
-chrome-devtools-mcp は既定で独立した headless Chrome を起動するため、普段のブラウザのログイン状態は引き継がれない。プロジェクト固有の認証（SSO / OAuth / form login / Cookie session / Bearer）を突破する手段を、推奨度順に列挙する。
+chrome-devtools-mcp は既定で**専用プロファイルの Chrome を新規起動する**ため、普段のブラウザのログイン状態は引き継がれない。なお `--headless` は既定 false なので、**画面には実際に Chrome が開く**（headless ではない）。プロファイルは `--isolated` も既定 false のため `$HOME/.cache/chrome-devtools-mcp/chrome-profile` に**永続**し、一度ログインすると Cookie が残る（＝「毎回まっさらで安全」ではない）。プロジェクト固有の認証（SSO / OAuth / form login / Cookie session / Bearer）を突破する手段を、推奨度順に列挙する。
 
 ### 大原則：id/pass をファイル化しない
 
@@ -215,7 +237,7 @@ Chrome を別途起動せず、MCP に永続プロファイルパスだけ伝え
 
 `--isolated=false`（既定）で永続化される。プロジェクトごとに別パスを指定すれば認証コンテキストを分離できる。
 
-### パターン 3: `--autoConnect`（Chrome 146+ のみ）
+### パターン 3: `--autoConnect`（Chrome 144+ のみ）
 
 普段使いの Chrome に自動接続する新方式。`--user-data-dir` 不要で Google アカウントログイン状態もそのまま使える。
 
@@ -223,7 +245,7 @@ Chrome を別途起動せず、MCP に永続プロファイルパスだけ伝え
 "args": ["-y", "chrome-devtools-mcp@latest", "--autoConnect"]
 ```
 
-Chrome 146 未満では使えない。バージョン確認は `/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version`。
+Chrome 144 未満では使えない。バージョン確認は `/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version`。
 
 ### パターン 4: `--wsHeaders` で Bearer トークン注入
 
@@ -261,7 +283,7 @@ export TOKEN=$(security find-generic-password -s chrome-debug-token -w)
 プロジェクト固有の認証あり？
   └─ Yes
        │
-       ├─ Chrome 146+ で普段の Chrome に依存して良い → パターン 3 (--autoConnect)
+       ├─ Chrome 144+ で普段の Chrome に依存して良い → パターン 3 (--autoConnect)
        ├─ MCP 起動だけで完結させたい → パターン 2 (--userDataDir)
        ├─ SSO / OAuth で社内ツール多数 → パターン 1 (--browserUrl + 専用プロファイル)
        └─ Bearer ヘッダー認証 → パターン 4 (--wsHeaders + Keychain)
@@ -272,7 +294,7 @@ export TOKEN=$(security find-generic-password -s chrome-debug-token -w)
 - **stdin/stdout**: MCP server 側で管理されるので気にしなくて良い
 - **page の状態永続**: 同一セッションでは new_page しない限りタブが残る。tune モードのループでは navigate_page で遷移するか、既存タブを使う
 - **filePath は絶対パス**: 相対パスだと MCP server の CWD 基準になり意図しない場所に保存される
-- **Chrome 起動**: 初回呼び出し時に chrome-devtools-mcp が headless Chrome を起動する。少し時間がかかる
+- **Chrome 起動**: 初回呼び出し時に chrome-devtools-mcp が Chrome を起動する。少し時間がかかる。`--headless` は既定 false なので画面に Chrome ウィンドウが開く。撮影を裏で回したいなら `.mcp.json` の args に `--headless` を明示する
 - **HMR 待ち**: `wait_for` で特定テキストを待つのが確実。sleep は不確実
 - **認証**: 上記「認証突破ガイド」セクションを参照。`.env` への平文 credentials 保存は避け、専用プロファイルか Keychain 経由で扱う
 - **Chrome 136+ のセキュリティ変更**: デフォルトプロファイルでは `--remote-debugging-port` が遮断される。`--browserUrl` を使うなら専用 `--user-data-dir` 必須
