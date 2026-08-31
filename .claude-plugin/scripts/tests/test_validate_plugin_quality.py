@@ -1506,5 +1506,163 @@ class ResolvePluginsTest(unittest.TestCase):
                          [self.root / "alpha", self.root / "beta"])
 
 
+class CommentRuleSyncTest(unittest.TestCase):
+    """コードコメント規約の区間同期（`ROOT` と定数を一時ディレクトリへ差し替える）.
+
+    **消したら黙って通る**のがこの手の検査の壊れ方なので、マーカー欠落・重複・逆順を
+    個別に固定する。区間がフェンスの中にあっても拾うことも固定する — 消費サイトの片方
+    （reviewer プロンプト）は本文がフェンス内にあり、将来 `_iter_unfenced_lines` を
+    挟むと**検査対象が静かにゼロになる**。
+    """
+
+    REGION = "軸は 2 つだけ。\n\n観点 1 — 必要な情報のみか\n観点 2 — 冗長表現の排除"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("ROOT", "CANONICAL_COMMENT_RULE", "COMMENT_RULE_CONSUMERS"):
+            self.addCleanup(lambda n=name, o=getattr(v, name): setattr(v, n, o))
+        v.ROOT = self.root
+        v.CANONICAL_COMMENT_RULE = self.root / "lib" / "comment-rule.md"
+        v.COMMENT_RULE_CONSUMERS = [self.root / "CLAUDE.md", self.root / "prompt.md"]
+
+    def _block(self, region: str | None = None, indent: str = "") -> str:
+        body = self.REGION if region is None else region
+        lines = [v.COMMENT_RULE_START, *body.split("\n"), v.COMMENT_RULE_END]
+        return "\n".join(indent + l if l else l for l in lines)
+
+    def _setup(self, *, canonical: str | None = None, claude: str | None = None,
+               prompt: str | None = None) -> list[str]:
+        _write(self.root, "lib/comment-rule.md", "# 正本\n\n" + (canonical or self._block()) + "\n")
+        _write(self.root, "CLAUDE.md", "# 規約\n\n" + (claude or self._block()) + "\n")
+        _write(self.root, "prompt.md", "### B 系統\n\n```\n" + (prompt or self._block()) + "\n```\n")
+        errors: list[str] = []
+        v.check_comment_rule_sync(errors)
+        return errors
+
+    def test_identical_regions_pass(self):
+        self.assertEqual(self._setup(), [])
+
+    def test_region_inside_a_fence_is_still_compared(self):
+        """フェンス内でも拾う（拾わなくなると prompt.md 側の検査が黙って消える）."""
+        errors = self._setup(prompt=self._block("軸は 2 つだけ。\n\n観点 1 — 別物\n観点 2 — 別物"))
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("prompt.md", errors[0])
+
+    def test_one_character_difference_in_claude_md_is_caught(self):
+        errors = self._setup(claude=self._block(self.REGION.replace("2 つ", "3 つ")))
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("CLAUDE.md", errors[0])
+
+    def test_uniform_indent_is_allowed(self):
+        """消費サイトはリスト内などで一様なインデントを付けてよい（dedent の契約）."""
+        self.assertEqual(self._setup(claude=self._block(indent="   ")), [])
+
+    def test_non_uniform_indent_is_a_divergence(self):
+        body = "\n".join(("  " + l if i == 0 else l) for i, l in enumerate(self.REGION.split("\n")))
+        errors = self._setup(claude=self._block(body))
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_missing_markers_are_an_error(self):
+        errors = self._setup(claude="規約は無い")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("marker count invalid", errors[0])
+
+    def test_duplicated_start_marker_is_an_error(self):
+        errors = self._setup(claude=v.COMMENT_RULE_START + "\n" + self._block())
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("marker count invalid", errors[0])
+
+    def test_reversed_markers_are_an_error(self):
+        errors = self._setup(claude=v.COMMENT_RULE_END + "\n本文\n" + v.COMMENT_RULE_START)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("precedes", errors[0])
+
+    def test_missing_consumer_file_is_an_error(self):
+        self._setup()
+        (self.root / "CLAUDE.md").unlink()
+        errors: list[str] = []
+        v.check_comment_rule_sync(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("consumer missing", errors[0])
+
+    def test_missing_canonical_is_an_error(self):
+        errors: list[str] = []
+        v.check_comment_rule_sync(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("canonical missing", errors[0])
+
+    def test_extracted_region_matches_an_independently_built_expectation(self):
+        """期待値を `_extract_marked_region` で作らない.
+
+        検証機構の期待値をその機構自身で生成すると、壊れていても全件 pass する（v2.63.1）。
+        """
+        self._setup()
+        got = v._extract_marked_region(self.root / "CLAUDE.md", v.COMMENT_RULE_START,
+                                       v.COMMENT_RULE_END, "t", [])
+        self.assertEqual(got, self.REGION)
+
+
+class CommentPolishWiringTest(unittest.TestCase):
+    """B 系統の連結宣言（消失 = silent な不発 / 混入 = 他人の PR への越権）."""
+
+    ATTACH = "- <!-- COMMENT-POLISH: attach --> reviewer に prompts/focus/comment-polish.md を渡す\n"
+    DETACH = "- <!-- COMMENT-POLISH: detach --> prompts/focus/comment-polish.md は渡さない\n"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("ROOT", "COMMENT_POLISH_WIRING"):
+            self.addCleanup(lambda n=name, o=getattr(v, name): setattr(v, n, o))
+        v.ROOT = self.root
+        self.self_review = self.root / "self.md"
+        self.review = self.root / "review.md"
+        v.COMMENT_POLISH_WIRING = {self.self_review: "attach", self.review: "detach"}
+
+    def _run(self, attach: str | None = None, detach: str | None = None) -> list[str]:
+        _write(self.root, "self.md", "# self-review\n\n" + (self.ATTACH if attach is None else attach))
+        _write(self.root, "review.md", "# review\n\n" + (self.DETACH if detach is None else detach))
+        errors: list[str] = []
+        v.check_comment_polish_wiring(errors)
+        return errors
+
+    def test_correct_wiring_passes(self):
+        self.assertEqual(self._run(), [])
+
+    def test_spacing_variants_are_accepted(self):
+        self.assertEqual(
+            self._run(attach="<!--COMMENT-POLISH:attach--> prompts/focus/comment-polish.md\n"), [])
+
+    def test_missing_declaration_is_an_error(self):
+        errors = self._run(attach="- reviewer に prompts/focus/comment-polish.md を渡す\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("ちょうど 1 個", errors[0])
+
+    def test_attach_without_the_prompt_path_is_an_error(self):
+        """**silent 不発の本体**: 宣言はあるが実際には渡していない."""
+        errors = self._run(attach="- <!-- COMMENT-POLISH: attach --> 連結する\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("silent", errors[0])
+
+    def test_review_declaring_attach_is_an_error(self):
+        errors = self._run(detach=self.ATTACH)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("期待 detach", errors[0])
+
+    def test_duplicated_marker_is_an_error(self):
+        errors = self._run(attach=self.ATTACH + self.ATTACH)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("ちょうど 1 個", errors[0])
+
+    def test_missing_skill_file_is_an_error(self):
+        self._run()
+        self.self_review.unlink()
+        errors: list[str] = []
+        v.check_comment_polish_wiring(errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("SKILL.md missing", errors[0])
+
 if __name__ == "__main__":
     unittest.main()

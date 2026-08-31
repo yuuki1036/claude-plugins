@@ -272,7 +272,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
   - 観点バンドル時 → `prompts/bundle-rules.md` と束ねる focus ファイル群
   - **ペア条件が成立したとき → `prompts/angles.md`**（xhigh/max の実ペアだけでなく、**high 以下の angle 内挿でも渡す**。渡さないと「ペアを削った代償を angle で補う」という縮小の前提が空振りする）
   - セッションコンテキストが有効なとき → `prompts/session-context.md`（confidence −30 の規約はここにある。パスだけ渡しても規約は届かない）
-- **`prompts/focus/comment-polish.md` は Read 対象に入れない**（self-review 限定。他人の PR に文面の推敲を投稿するのは越権になりやすい）
+- <!-- COMMENT-POLISH: detach --> **`prompts/focus/comment-polish.md` は Read 対象に入れない**（self-review 限定。他人の PR に文面の推敲を投稿するのは越権になりやすい。混入は comment-polish 連結チェックが Critical で止める）
 - **可変部の共通ブロック（全 agent 共通の実値集合）は 1 ファイルに落としてパス渡しする**: Step 2 の `## meta` が出す `agent_ctx_file=` のパスに **Write で 1 回だけ**書き出し、各プロンプトには「まず `<agent_ctx_file>` を Read せよ」の 1 行だけを置く。**入れる項目・残す項目・フォールバックの正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**（`{{PLUGIN_ROOT}}` / PR 番号 / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` / `$DIFF_FILE` / `$PR_CTX_FILE` / AGENTS.md パス / 確定事実 など。実測で reviewer 5 + skeptic 1 + meta 1 + 反証 3 の計 10 本に手書きしていた — #124 (c)）
 - **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）
 - **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 4 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `prompts/reviewer-common.md` 側（#122）

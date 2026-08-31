@@ -8,6 +8,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/marketplace.json  # マーケットプレイスマニフェスト（plugin.json から派生）
 .claude-plugin/lib/safe-hook.sh  # hook 共通ラッパー（正本）
 .claude-plugin/lib/routing-axes.md # spec ルーティング 3 軸コア（正本。ROUTING-AXES 区間を消費サイトに複製）
+.claude-plugin/lib/comment-rule.md  # コードコメント規約 2 観点（正本。COMMENT-RULE 区間を消費サイトに複製）
 .claude-plugin/schema/           # JSON Schema（plugin.json / marketplace.json / hooks.json）
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
                                  # validate_plugin_quality.py（品質検証。検査項目の正本は冒頭 docstring）
@@ -141,6 +142,30 @@ bash .claude-plugin/scripts/bump-version.sh {plugin-name} patch   # 次版を計
 - Conventional Commits: `<type>(<scope>): <日本語description>`
 - scope はプラグイン名（例: `feat(issue-workflow): ...`）
 - 複数プラグインにまたがる場合は scope 省略
+
+## コードコメントの規約（2 観点のみ）
+
+正本は `.claude-plugin/lib/comment-rule.md`。下の区間はその複製で、`validate_plugin_quality.py` の comment-rule 同期チェックが byte 一致を検証する（**この区間を直接編集しない**。正本を直して全消費サイトへ反映する）。
+
+<!-- COMMENT-RULE:START -->
+コードコメントは次の 2 観点だけで評価する。**他の軸を足さない**（「what ではなく why」のような二分法も使わない）。**適用範囲はコード内コメント（`//` `#` `/* */` と docstring）に限る** — md 散文（doc / SKILL.md / README / CHANGELOG）は対象外。
+
+観点 1 — **読み手にとって必要な情報のみか**:
+- コードを読めば即座に分かることを言い換えているだけではないか（`count++` に「カウンタを増やす」等）
+- その行が無いと読み手が困るか。困らないなら書かない / 消す
+- 主語・目的が曖昧で、結局何を伝えたいのか読み取れない記述になっていないか
+
+観点 2 — **冗長表現の排除**:
+- 同じ内容を 2 回言っていないか（1 コメント内 / 直前直後のコメントとの間）
+- 前置き・修飾が長く結論が後ろに来ていないか
+- 1 語で足りる箇所を句で書いていないか
+
+**上の 2 観点に該当しないことを理由に、削除・短縮を求めてはならない。長さは違反の根拠にならない。** 非自明な why / TODO・FIXME の背景 / regex・算術・境界条件の意図 / 外部制約（API 仕様・互換性・既知バグの回避）への言及 / 実測値・却下した代替案・ハマりどころの警告は、長くても観点 1 を満たす。**判断に迷ったら残す側に倒す。**
+<!-- COMMENT-RULE:END -->
+
+- **機械が強制するのは経路だけ**（正本と複製の一致・reviewer への連結）。内容判定は決定的にできない（候補 4 案とも真陽性 0。根拠は正本の冒頭）。書いた後の内容チェックは `/code-review:self-review` のコメント推敲が全件出す（severity を持たない別枠出力。採否は人間が決める）
+- 既存の表記規約（散文に比較演算子を書かない・版ラベルは `vNEXT`。どちらも Gotchas）は**表記の話であって本節の軸ではない**。3 つ目の観点として数えない
+- 既存コメントの一括推敲はしない。対象は**その変更で追加・変更した行のみ**
 
 ## プラグイン開発ルール
 

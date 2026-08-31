@@ -26,7 +26,7 @@ allowed-tools:
 
 - PR 不要。ローカルのみで完結
 - コミット前・PR 作成前の品質ゲートとして使用
-- **コメント推敲（B 系統）を出すのは self-review だけ**（v2.45.0）。diff で追加・変更したコメントを「読み手に必要な情報のみか / 冗長表現が無いか」の 2 観点で推敲し、severity マトリクスを通さない別枠セクションに before→after で出す。他人の PR に文面の推敲を投稿するのは越権になりやすいため review 側には入れない
+- **コメント推敲（B 系統）を出すのは self-review だけ**（v2.45.0）。diff で追加・変更したコメントを**コードコメント規約の 2 観点**（正本: `.claude-plugin/lib/comment-rule.md` / 連結先の複製: `prompts/focus/comment-polish.md`）で推敲し、severity マトリクスを通さない別枠セクションに before→after で出す。他人の PR に文面の推敲を投稿するのは越権になりやすいため review 側には入れない（**観点をここに書き下ろさない** — 軸の複製が増えると「2 観点のみ」が崩れる）
 
 ## コスト×精度パイプライン設計（採用/不採用）
 
@@ -245,7 +245,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
   - 観点バンドル時 → `prompts/bundle-rules.md` と束ねる focus ファイル群
   - **ペア条件が成立したとき → `prompts/angles.md`**（xhigh/max の実ペアだけでなく、**high 以下の angle 内挿でも渡す**）
   - セッションコンテキストが有効なとき → `prompts/session-context.md`（confidence −30 の規約はここにある）
-- **`comment-accuracy` を担当する reviewer には `prompts/focus/comment-polish.md` を Read 対象に追加する**（単独起動・バンドル相乗りのどちらでも追加。B 系統は Focus テンプレートではないので前項では拾われない。追加漏れは機能の silent な不発になる）
+- <!-- COMMENT-POLISH: attach --> **`comment-accuracy` を担当する reviewer には `prompts/focus/comment-polish.md` を Read 対象に追加する**（単独起動・バンドル相乗りのどちらでも追加。B 系統は Focus テンプレートではないので前項では拾われない。追加漏れは機能の silent な不発になるため、comment-polish 連結チェックが宣言とパスの両方を Critical で検証する）
 - **可変部の共通ブロック（全 agent 共通の実値集合）は 1 ファイルに落としてパス渡しする**: Step 1 の `## meta` が出す `agent_ctx_file=` のパスに **Write で 1 回だけ**書き出し、各プロンプトには「まず `<agent_ctx_file>` を Read せよ」の 1 行だけを置く。**入れる項目・残す項目・フォールバックの正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**（`{{PLUGIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` / `$DIFF_FILE` / AGENTS.md パス / session-context パス / 確定事実 など。#124 (c)）
   - **self-review 固有**: **PR 番号・HEAD SHA・`{{MAIN_ROOT}}` は入れない**（PR を持たず worktree も使わないので、テンプレートの worktree セットアップ節は適用外である旨を共通ブロックに明記する）
 - **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）

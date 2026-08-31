@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.98.0] - 2026-08-31
+
+### Changed
+
+- **コードコメント規約の 2 観点を正本化した**（`.claude-plugin/lib/comment-rule.md` の
+  COMMENT-RULE 区間）。`focus/comment-polish.md` はその複製になり、リポジトリ側の CLAUDE.md にも
+  同じ区間が入る。**書く側と見る側で軸が食い違わない**ことを quality-check が byte 一致で検証する
+- **`focus/comment-accuracy.md`（A 系統）から文体系の項目を外した**（what/why・冗長コメント・
+  自明コメント）。A 系統は「コメントが実装について嘘をついている」ケースだけを担当し、文体は
+  B 系統（severity を持たない別枠経路）が唯一の担当になる。
+  **他人の PR のレビューでは冗長コメントが severity 付きで指摘されなくなる**（意図した縮小。
+  文面の推敲を他人の PR に投稿するのは越権になりやすい、という既存の設計判断と揃えた）
+- B 系統の連結可否を `<!-- COMMENT-POLISH: attach|detach -->` マーカーで宣言するようにした。
+  可否が散文 1 行でしか表現されておらず、消せば silent な不発・混入すれば越権になるため
+  （どちらもレポートを見て気づけない）
+
 ## [2.97.0] - 2026-08-30
 
 ### Added

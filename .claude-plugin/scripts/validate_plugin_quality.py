@@ -14,6 +14,13 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     **無言で対象ゼロ**になる（hook は配布されたまま検査だけ消える / issue #176）.
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
+  - comment-rule 同期: コードコメント規約 2 観点の delimiter 区間が正本と一致するか（dedent 比較）.
+    内容の良し悪しは決定的に判定できない（候補 4 案とも真陽性 0）ので, 機械層は「規約が届く経路」
+    だけを止める. 区間は CLAUDE.md（書く側）と reviewer プロンプト（見る側）の両方にあり,
+    片側だけ直すと「書く側と見る側で軸が違う」状態が静かに成立する.
+  - comment-polish 連結: コメント推敲（B 系統）の連結可否が self-review=attach / review=detach で
+    宣言され, attach 側が実際にプロンプトのパスを渡しているか. 可否は散文 1 行だけで表現されており,
+    消せば silent な不発, 混入すれば他人の PR への越権になる（どちらもレポートを見ても気づけない）.
   - schema-markers 同期: code-review の版マーカー定数（publish-review-event.sh の SCHEMA_MARKERS）が
     orchestration-measurement.md `## 16`「版マーカーの現行値」表と同値か. 注入方式（v2.65.0）で
     「2 箇所を人手で揃える」関係が script <-> doc へ移ったが, SSoT pin は md 限定でこの関係を
@@ -112,6 +119,28 @@ ROUTING_AXES_CONSUMERS = [
 ]
 ROUTING_AXES_START = "<!-- ROUTING-AXES:START -->"
 ROUTING_AXES_END = "<!-- ROUTING-AXES:END -->"
+
+# コードコメント規約 2 観点の正本と消費サイト. routing-axes と同型（区間を dedent 比較）.
+# 内容判定は機械化できない（候補 4 案とも真陽性 0。測定は正本ファイルに記録）ので, 機械層が
+# 強制するのは「規約が届く経路」= 正本と複製の一致 だけ. 消費サイトは CLAUDE.md（書く側）と
+# reviewer プロンプト（見る側）で, 片側だけ直すと軸が食い違ったまま静かに運用される.
+CANONICAL_COMMENT_RULE = ROOT / ".claude-plugin" / "lib" / "comment-rule.md"
+COMMENT_RULE_CONSUMERS = [
+    ROOT / "CLAUDE.md",
+    ROOT / "code-review" / "references" / "prompts" / "focus" / "comment-polish.md",
+]
+COMMENT_RULE_START = "<!-- COMMENT-RULE:START -->"
+COMMENT_RULE_END = "<!-- COMMENT-RULE:END -->"
+
+# コメント推敲（B 系統）の連結可否. self-review にだけ連結し review には連結しない, という設計が
+# 散文 1 行ずつでしか表現されておらず, SKILL.md 自身が「追加漏れは機能の silent な不発」と書いている.
+# 文面に依存しないマーカーで宣言させ, 消失（不発）と混入（他人の PR への越権）の両方を error にする.
+COMMENT_POLISH_PROMPT = "prompts/focus/comment-polish.md"
+COMMENT_POLISH_WIRING = {
+    ROOT / "code-review" / "skills" / "self-review" / "SKILL.md": "attach",
+    ROOT / "code-review" / "skills" / "review" / "SKILL.md": "detach",
+}
+COMMENT_POLISH_MARKER_RE = re.compile(r"<!--\s*COMMENT-POLISH:\s*(?P<mode>attach|detach)\s*-->")
 
 # 版マーカー定数（`SCHEMA_MARKERS`）の script <-> doc 同期.
 # SSoT pin は md 限定なのでこの関係を宣言できない（Gotchas / ADR-20260813223000）.
@@ -513,26 +542,36 @@ def check_ssot_pins(errors: list[str], update: bool = False) -> int:
     return updated
 
 
-def _extract_routing_axes(path: Path, errors: list[str]) -> str | None:
-    """ROUTING-AXES マーカー区間の内容を dedent して返す（マーカー行は含めない）.
+def _extract_marked_region(path: Path, start: str, end: str, tag: str,
+                           errors: list[str]) -> str | None:
+    """マーカー行に挟まれた区間を dedent して返す（マーカー行は含めない）.
 
     消費サイトはリスト内などで一様なインデントを付けてよいため、
     textwrap.dedent で共通インデントを外してから比較する（それ以外の差分は fail）.
+
+    マーカーは**行の完全一致**で拾う. フェンス内でも拾うのが仕様 —
+    comment-polish.md の区間は reviewer に渡すプロンプト本文, すなわちフェンスの中にある.
+    ここに `_iter_unfenced_lines` を挟むと検査対象が静かにゼロになる（テストで固定済み）.
     """
     rel = path.relative_to(ROOT)
     lines = read_text(path).splitlines()
-    starts = [i for i, l in enumerate(lines) if l.strip() == ROUTING_AXES_START]
-    ends = [i for i, l in enumerate(lines) if l.strip() == ROUTING_AXES_END]
+    starts = [i for i, l in enumerate(lines) if l.strip() == start]
+    ends = [i for i, l in enumerate(lines) if l.strip() == end]
     if len(starts) != 1 or len(ends) != 1:
         errors.append(
-            f"[routing-axes-sync] marker count invalid (START={len(starts)}, END={len(ends)}, 期待は各1): {rel}"
+            f"[{tag}] marker count invalid (START={len(starts)}, END={len(ends)}, 期待は各1): {rel}"
         )
         return None
     if ends[0] <= starts[0]:
-        errors.append(f"[routing-axes-sync] END marker precedes START: {rel}")
+        errors.append(f"[{tag}] END marker precedes START: {rel}")
         return None
     region = lines[starts[0] + 1 : ends[0]]
     return textwrap.dedent("\n".join(region))
+
+
+def _extract_routing_axes(path: Path, errors: list[str]) -> str | None:
+    return _extract_marked_region(path, ROUTING_AXES_START, ROUTING_AXES_END,
+                                  "routing-axes-sync", errors)
 
 
 def check_routing_axes_sync(errors: list[str]) -> None:
@@ -554,6 +593,58 @@ def check_routing_axes_sync(errors: list[str]) -> None:
             errors.append(
                 f"[routing-axes-sync] diverged from canonical "
                 f"({CANONICAL_ROUTING_AXES.relative_to(ROOT)}): {consumer.relative_to(ROOT)}"
+            )
+
+
+def check_comment_rule_sync(errors: list[str]) -> None:
+    """コードコメント規約 2 観点の区間が正本と一致するかを検証する（CLAUDE.md / plugin 跨ぎ）."""
+    tag = "comment-rule-sync"
+    if not CANONICAL_COMMENT_RULE.is_file():
+        errors.append(f"[{tag}] canonical missing: {CANONICAL_COMMENT_RULE.relative_to(ROOT)}")
+        return
+    canonical = _extract_marked_region(CANONICAL_COMMENT_RULE, COMMENT_RULE_START,
+                                       COMMENT_RULE_END, tag, errors)
+    if canonical is None:
+        return
+    for consumer in COMMENT_RULE_CONSUMERS:
+        if not consumer.is_file():
+            errors.append(f"[{tag}] consumer missing: {consumer.relative_to(ROOT)}")
+            continue
+        region = _extract_marked_region(consumer, COMMENT_RULE_START, COMMENT_RULE_END, tag, errors)
+        if region is None:
+            continue
+        if region != canonical:
+            errors.append(
+                f"[{tag}] diverged from canonical "
+                f"({CANONICAL_COMMENT_RULE.relative_to(ROOT)}): {consumer.relative_to(ROOT)}"
+            )
+
+
+def check_comment_polish_wiring(errors: list[str]) -> None:
+    """B 系統の連結可否が self-review=attach / review=detach で宣言されているか."""
+    tag = "comment-polish-wiring"
+    for path, expected in COMMENT_POLISH_WIRING.items():
+        if not path.is_file():
+            errors.append(f"[{tag}] SKILL.md missing: {path.relative_to(ROOT)}")
+            continue
+        text = read_text(path)
+        modes = COMMENT_POLISH_MARKER_RE.findall(text)
+        if len(modes) != 1:
+            errors.append(
+                f"[{tag}] COMMENT-POLISH マーカーは各 SKILL.md にちょうど 1 個"
+                f"（実際 {len(modes)} 個）: {path.relative_to(ROOT)}"
+            )
+            continue
+        if modes[0] != expected:
+            errors.append(
+                f"[{tag}] 宣言が期待と違う（期待 {expected} / 実際 {modes[0]}）: "
+                f"{path.relative_to(ROOT)}"
+            )
+            continue
+        if expected == "attach" and COMMENT_POLISH_PROMPT not in text:
+            errors.append(
+                f"[{tag}] attach を宣言しているのにプロンプトのパスを Read 対象に渡していない"
+                f"（B 系統が silent に不発する）: {path.relative_to(ROOT)}"
             )
 
 
@@ -1567,6 +1658,8 @@ def main() -> int:
         check_plugin_description_size(plugin_dir, warnings)
 
     check_routing_axes_sync(errors)
+    check_comment_rule_sync(errors)
+    check_comment_polish_wiring(errors)
     check_schema_markers_sync(errors)
     check_test_collection(errors)
     check_duplicate_test_bodies(errors)
