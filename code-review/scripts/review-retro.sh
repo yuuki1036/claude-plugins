@@ -267,9 +267,15 @@ def agents_dict(p):
     """`payload.agents` を dict として読む（非 dict・欠測は空 dict / GitHub issue #200）.
 
     retro は `--logs` で他マシン・他リポジトリ由来の異形ログも読むので、`agents` が dict
-    である保証は無い。素で `(p.get("agents") or {}).get(...)` と書くと、`agents` が truthy な
-    非 dict（list / 非空文字列 / 正の int）のとき `.get()` が AttributeError になり、
-    **retro が出力 0 行・終了コード 0 で沈黙死する**（末尾の無条件 `exit 0` が例外を握る）。
+    である保証は無い。欠測だけを空 dict に倒す書き方（フォールバック演算子で `{}` を挟む形）
+    では、`agents` が truthy な非 dict（list / 非空文字列 / 正の int）のとき `.get()` が
+    AttributeError になり、**retro が出力 0 行・終了コード 0 で沈黙死する**
+    （末尾の無条件 `exit 0` が例外を握る）。**型で判定すること。**
+
+    **この docstring に演算子や真偽リテラルを地の文で書かないこと**（CLAUDE.md Gotchas）。
+    `.sh` 内の python ヒアドキュメントは `#` で始まらないので変異ツールの除外に掛からず、
+    説明文中の字面がそのまま書き換えられて**必ず生存し CI（`--strict`）を落とす**。
+    行内コードに入れても効かない — 除外はコメント判定であって markdown 記法の解釈ではない。
     """
     a = p.get("agents")
     return a if isinstance(a, dict) else {}
