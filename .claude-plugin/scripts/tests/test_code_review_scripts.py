@@ -637,6 +637,29 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         self.assertNotIn("tokens", p)
         self.assertIn("tokens", p["measurement_gaps"])
 
+    def test_a_bad_pre_adjust_vocabulary_raises_a_gap_without_blocking(self):
+        """**契約外の `pre_adjust_counts` を可視化する**（GitHub issue #203）.
+
+        `below_threshold_counts` は 4 severity 必須で `exit 1` するのに、対になる
+        `pre_adjust_counts` は無検証だった。**fail-fast にはしない**（止めるとその回の計測が
+        丸ごと消える / `agents-mismatch` と同じ判断）ので、gap を立てて集計側が外せる形にする。
+        """
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        # 実データにあった形（2026-08-28T05:09:04Z）
+        p["pre_adjust_counts"] = {"threshold": "MAJOR", "pre_major": 11, "pre_minor": 10}
+        r = self.publish(p, env=self.env_home())
+        self.assertEqual(r.returncode, 0, "fail-fast にしている（計測が丸ごと消える）")
+        pub = self.last_payload()
+        self.assertIn("payload:pre_adjust_counts.vocab", pub["measurement_gaps"])
+        self.assertIn("pre_adjust_counts の語彙が契約外", r.stderr)
+        self.assertIn("pre_major", r.stderr, "実際のキーを出していない（直す先が分からない）")
+
+    def test_a_contract_shaped_pre_adjust_raises_no_vocab_gap(self):
+        """契約どおりの回では立てない（**偽陽性を出さない**）."""
+        self.publish(env=self.env_home())
+        self.assertNotIn("payload:pre_adjust_counts.vocab",
+                         self.last_payload()["measurement_gaps"])
+
     def test_a_sub_blank_run_falls_the_sub_side_to_null(self):
         """**sub 側の空振りを欠測に倒す**（GitHub issue #199）.
 
@@ -2820,6 +2843,89 @@ class RetroGenerationRecallTest(RetroTest):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("（版マーカー × 閾値で層別", out)
         self.assertNotIn("版マーカー × 閾値 × 世代で層別", out)
+
+
+class PreAdjustVocabTest(RetroTest):
+    """`pre_adjust_counts` の語彙違反（GitHub issue #203）.
+
+    契約は `{blocker, critical, major, minor}`。`below_threshold_counts` には厳密な検証が
+    あるのに **対になる `pre_adjust_counts` には無く**、契約外のキー（実データに
+    `{threshold, pre_major, pre_minor}` の例がある）が素通りしていた。しかも `schema` は
+    publish が無条件に注入するので、下流からは「旧版の回」と区別が付かない。
+    結果、`pre_major: 11` ＝ MAJOR 11 件の検出が `pre.get("major")` → **0 として計上**される。
+    """
+
+    #: 実データにあった契約外のキー体系（2026-08-28T05:09:04Z）
+    BAD_PRE = {"threshold": "MAJOR", "pre_major": 11, "pre_minor": 10}
+
+    def _ok(self, major: int, reported: int, below: int = 0) -> dict:
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "severity_threshold": "MAJOR",
+                "pre_adjust_counts": {"schema": 2, "blocker": 0, "critical": 0,
+                                      "major": major, "minor": 0},
+                "below_threshold_counts": {"blocker": 0, "critical": 0,
+                                           "major": below, "minor": 0},
+                "major_count": reported}
+
+    def _bad(self) -> dict:
+        r = self._ok(0, 0)
+        r["pre_adjust_counts"] = dict(self.BAD_PRE, schema=2)
+        r["below_threshold_counts"] = {"blocker": 0, "critical": 0, "major": 0, "minor": 10}
+        return r
+
+    def test_a_bad_vocab_run_is_excluded_from_the_yield(self):
+        """**語彙違反を歩留まりの分母・分子に入れない**（実数が 0 として計上される）."""
+        self._events([self._ok(10, 4), self._ok(10, 4), self._bad()])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("n=2 / 検出 20 → 報告 8", out, "語彙違反を歩留まりに混ぜている")
+        self.assertIn("1 件は `pre_adjust_counts` の語彙が契約外で母集団から外した", out,
+                      "除外を silent に落としている")
+
+    def test_a_bad_vocab_run_is_excluded_from_the_split(self):
+        """検出内訳からも外す。**混ぜると `本文を書いた` が負に振れる**（実測 -10）."""
+        self._events([self._ok(10, 4, below=2), self._bad()])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("本文を書いた -", out, "語彙違反由来の負値が残っている")
+        self.assertIn("1 件は `pre_adjust_counts` の語彙が契約外で母集団から外した", out)
+
+    def test_a_negative_written_shows_no_percentage(self):
+        """**負の分母に百分率を出さない**（`pct(-10, -10)` は 100.0% を返す）.
+
+        負値そのものは残す（0 に丸めると「捨てていない」と読める）。正当な負値は
+        「手順 1 の後に走る層が足したぶん」で、語彙違反は上で母集団から外してある。
+        """
+        # `below` が `pre` を超える形は publish が落とすので、集計側だけを直接叩く
+        r = self._ok(0, 0)
+        r["below_threshold_counts"] = {"blocker": 0, "critical": 0, "major": 0, "minor": 5}
+        self._events([r])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("本文を書いた -5", out, "前提: 負の written が出ている")
+        self.assertIn("本文を書いてから捨てた: -5 件（-）", out,
+                      "負の分母に百分率を出している")
+        self.assertNotIn("-5 件（100.0%）", out)
+
+    def test_a_zero_written_shows_no_percentage_either(self):
+        """**分母 0 でも百分率を出さない**（`pct` のゼロガードが `0.0%` に化ける）.
+
+        `written == 0` は「本文を書いた指摘が 1 件も無い」= 比率が定義できない状態。
+        `0.0%` と出すと「書いたうち 0% を捨てた」と読め、`-`（判定不能）と区別が付かない。
+        """
+        r = self._ok(0, 0)
+        r["pre_adjust_counts"] = {"schema": 2, "blocker": 0, "critical": 0,
+                                  "major": 0, "minor": 5}
+        r["below_threshold_counts"] = {"blocker": 0, "critical": 0, "major": 0, "minor": 5}
+        self._events([r])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("本文を書いた 0（検出 5 − 件数のみ 5）", out, "前提: written が 0")
+        self.assertIn("本文を書いてから捨てた: 0 件（-）", out, "分母 0 に百分率を出している")
+
+    def test_the_remediation_hint_is_vocabulary_not_omission(self):
+        """是正先が `payload:` の既定（記述漏れ）に落ちない（語彙違反は直し方が違う）."""
+        rows = [dict(self._ok(1, 0),
+                     measurement_gaps=["payload:pre_adjust_counts.vocab"]) for _ in range(6)]
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("記述漏れではなく語彙違反", out, "既定の是正先に落ちている")
 
 
 class RetroLayerTableCapTest(RetroTest):

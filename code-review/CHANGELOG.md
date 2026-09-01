@@ -2,6 +2,28 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.104.0] - 2026-09-01
+
+### Fixed
+
+- **`pre_adjust_counts` の語彙検証が無く、契約外のキーが 0 として集計されていた**
+  （GitHub issue #203）。`below_threshold_counts` は 4 severity 必須で `exit 1` するのに、
+  **対になる `pre_adjust_counts` は無検証**という非対称。実データに
+  `{threshold, pre_major, pre_minor}` と埋めた回があり、`pre_major: 11` ＝ MAJOR 11 件の検出が
+  `pre.get("major")` → **0 として計上**されていた。`schema` は publish が無条件に注入するため、
+  下流からは「旧版で publish された回」と区別が付かない（層別の原則「フィールドの有無が
+  版マーカー」が契約外 payload に対して成立しなくなる）
+  - **publish**: 語彙違反に `measurement_gaps` の `payload:pre_adjust_counts.vocab` を立てて
+    WARN を出す。**fail-fast にしない** — 止めるとその回の計測が丸ごと消える
+    （`agents-mismatch` と同じ判断。`below_threshold_counts` とは意図的に非対称）
+  - **retro**: 歩留まり・検出内訳の母集団から外し、除外件数を表に出す（**構造で判定**するので
+    publish が gap を立てる前に焼かれた回にも効く）。`gap_hint` は `payload:` の既定
+    （記述漏れ）ではなく語彙違反の是正先を返す
+  - **負の `本文を書いた` に百分率を出さないようにした**。`pct(-10, -10)` は 100.0% を返すが
+    負の分母に対する百分率は意味を持たない。負値そのものは残す（0 に丸めると「捨てていない」と
+    読める）。語彙違反を母集団から外したので、残る負値は正当な経路（手順 1 の後に走る層が
+    足したぶん）だけになる
+
 ## [2.103.1] - 2026-09-01
 
 ### Changed

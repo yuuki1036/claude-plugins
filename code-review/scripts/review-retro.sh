@@ -316,6 +316,24 @@ def wave_split_kind(p, sizes):
     return "layer"
 
 
+#: `pre_adjust_counts` の契約語彙（`orchestration-measurement.md ## 16` の payload テンプレート）
+PRE_SEVS = ("blocker", "critical", "major", "minor")
+
+
+def pre_vocab_ok(pre):
+    """`pre_adjust_counts` が契約どおりの語彙か（GitHub issue #203）.
+
+    契約外のキー（実データに `{threshold, pre_major, pre_minor}` の例がある）で来た回は、
+    `pre.get("major")` が `None` になるので**実数が 0 として計上される**。`schema` は publish が
+    無条件に注入するため、下流からは「旧版で publish された回」と区別が付かない。
+    **0 件と語彙違反を潰さないよう、集計の母集団から外して件数を出す。**
+
+    publish は v2.104.0 以降 `payload:pre_adjust_counts.vocab` を立てるが、それ以前に焼かれた
+    回にも効かせるため**構造で判定する**（`tokens-sub` と同じ流儀）。
+    """
+    return isinstance(pre, dict) and all(num(pre.get(k)) is not None for k in PRE_SEVS)
+
+
 def wave_split_kinds_txt():
     """違反の型ごとの件数を並べる（多い順）。0 件なら「該当なし」."""
     if not wave_split_kinds:
@@ -490,10 +508,16 @@ spans = [(k, median(measured(events, "duration_%s_min" % k)), len(measured(event
 # MAJOR 中央値が 7 → 0・報告 0 件率が 42% → 91% に動いており、累計するとこれが平均に
 # 埋もれる。**「安くなった」だけが見えて「効かなくなった」が見えない**非対称になる
 yields = {}
+yields_bad_vocab = 0    # 語彙違反で外した回（#203）
 for e in events:
     p = e["p"]
     pre = p.get("pre_adjust_counts")
     if not isinstance(pre, dict) or schema_of(pre, "schema") < 2:
+        continue
+    # **語彙違反は母集団から外す**（#203）。混ぜると実数が 0 として分子に入り、歩留まりを
+    # 下振れさせる（実測: `pre_major: 11` の回が `検出 0 → 報告 0` として計上されていた）
+    if not pre_vocab_ok(pre):
+        yields_bad_vocab += 1
         continue
     key = with_gen(p, "schema>=%d/threshold=%s" % (
         schema_of(pre, "schema"), p.get("severity_threshold") or "?"))
@@ -514,11 +538,18 @@ for e in events:
 # #117（閾値注入）が効いたのかを判定できない。`below_threshold_counts` を持つ回**だけ**を
 # 別に集計する — 持たない回を混ぜると `pre` の母数だけが増えて (a) が過大に出る。
 splits = {}
+splits_bad_vocab = 0    # 語彙違反で外した回（#203）
 for e in events:
     p = e["p"]
     pre = p.get("pre_adjust_counts")
     bt = p.get("below_threshold_counts")
     if not isinstance(pre, dict) or schema_of(pre, "schema") < 2 or not isinstance(bt, dict):
+        continue
+    # 語彙違反は歩留まりと同じく外す（#203）。ここは `pre − below` を引くので、混ぜると
+    # **`本文を書いた` が負に振れる**（実測 -10）。負値は「手順 1 の後に走る層が足したぶん」
+    # という別経路の指標なので、語彙違反を混ぜるとその読みごと壊れる
+    if not pre_vocab_ok(pre):
+        splits_bad_vocab += 1
         continue
     # **歩留まり（yields）と同じ粒度にする**。片方だけ割ると、隣り合う 2 表のどの行を
     # 分解した数字なのかが対応付かない（#191 のセルフレビュー指摘）
@@ -1042,6 +1073,13 @@ def gap_denom(g):
 def gap_hint(g):
     """**gap の種類で是正先が違う**（issue #128 のセルフレビュー指摘）。
     全部を「打点箇所の見直し」と言うと、payload の記述漏れに対して誤った是正先を指す。"""
+    # **`startswith("payload:")` より前に置く**（後ろだと到達しない）。記述漏れではなく
+    # 語彙違反なので是正先が違う — キーを足すのではなく契約どおりの名前に直す（#203）
+    if g == "payload:pre_adjust_counts.vocab":
+        return ("`pre_adjust_counts` のキーが契約外。**記述漏れではなく語彙違反**なので"
+                "キーを足すのではなく名前を直す — 正しくは `blocker` / `critical` / `major` / "
+                "`minor` の 4 つ（正本の payload テンプレート: orchestration-measurement.md "
+                "`## 16`。**SKILL 本文にはキー名が書かれていない**ので、埋める側はここを引く）")
     if g.startswith("payload:"):
         return "payload テンプレートの記述漏れ（両 SKILL の publish 節）を見直す"
     if g == "late-publish":
@@ -1254,6 +1292,10 @@ if yields:
     for key, y in sorted(yields.items()):
         print("- %s: n=%d / 検出 %d → 報告 %d（%.1f%%）"
               % (key, y["n"], y["pre"], y["post"], pct(y["post"], y["pre"])))
+    if yields_bad_vocab:
+        print("  - **%d 件は `pre_adjust_counts` の語彙が契約外で母集団から外した**"
+              "（`%s` の 4 つが揃っていない回。混ぜると実数が 0 として分子に入る / #203）"
+              % (yields_bad_vocab, "` / `".join(PRE_SEVS)))
 
 # **報告 0 件率（世代別）** — recall の最も粗い代理指標（GitHub issue #191）。
 # コスト側だけ世代で層別して報告側を累計すると、「安くなった」だけが見えて
@@ -1304,10 +1346,17 @@ if splits:
               % (key, sp["n"], written, sp["pre"], sp["below"], sp["post"]))
         # **負を丸めない**（0 に丸めると「捨てていない」と読める）。手順 1 の後に走る層
         # （recall_skeptic / meta_reviewer の findings_added）が足すと負になりうる
-        print("  - **本文を書いてから捨てた: %d 件（%.1f%%）**%s"
-              % (dropped, pct(dropped, written),
+        # **負に百分率を出さない**（#203）。`pct(-10, -10)` は 100.0% を返すが、負の分母に
+        # 対する百分率は意味を持たない。負値そのものは残す（0 に丸めると「捨てていない」と
+        # 読める）。**語彙違反は上で母集団から外してあるので、ここに残る負値は正当な経路**
+        # （手順 1 の後に走る層が足したぶん）だけになる
+        print("  - **本文を書いてから捨てた: %d 件（%s）**%s"
+              % (dropped, "-" if written <= 0 else "%.1f%%" % pct(dropped, written),
                  "" if dropped >= 0 else
                  " — 負は手順 1 の後に走る層が足したぶん（recall_skeptic / meta_reviewer）"))
+    if splits_bad_vocab:
+        print("  - **%d 件は `pre_adjust_counts` の語彙が契約外で母集団から外した**"
+              "（#203。混ぜると `本文を書いた` が負に振れる）" % splits_bad_vocab)
 elif yields:
     print()
     print("**検出 → 報告の内訳**は `below_threshold_counts` を持つサンプル待ち（#146）"

@@ -625,6 +625,32 @@ for field, marks in SCHEMA_MARKERS.items():
         # （空の dict は retro の母集団に「起動記録なし」として混ざる）。可視化だけする
         gaps.append("payload:%s" % field)
 
+# **`pre_adjust_counts` の語彙違反を可視化する**（GitHub issue #203）。契約は
+# `{blocker, critical, major, minor}`（`orchestration-measurement.md ## 16` の payload
+# テンプレート）だが、**対になる `below_threshold_counts` にしか検証が無かった**。
+# 実データで `{threshold, pre_major, pre_minor}` と埋めた回が素通りし、`pre_major: 11`
+# ＝ MAJOR 11 件の検出が、集計側で `pre.get("major")` → **0 として計上されていた**。
+#
+# **`schema` は上のループで既に注入されている**のがこの穴の質の悪いところで、下流からは
+# 「旧版で publish された回」と「語彙を間違えた回」が区別できない。層別の原則
+# （「フィールドの有無が版マーカー」）が、契約外の payload に対して成立しなくなる。
+#
+# **fail-fast にしない**（`below_threshold_counts` とは非対称にする）。あちらは
+# 「本文を書いてから捨てた」と「件数だけ返した」の分離が唯一の用途なので汚染を通すと
+# 意味が消えるが、こちらは**止めるとその回の計測が丸ごと消える**（`agents-mismatch` /
+# `axis-unknown` と同じ判断）。gap を立てて集計側が母集団から外せる形にする。
+_pre = payload.get("pre_adjust_counts")
+if isinstance(_pre, dict) and not all(
+        isinstance(_pre.get(k), int) and not isinstance(_pre.get(k), bool) for k in SEVS):
+    gaps.append("payload:pre_adjust_counts.vocab")
+    sys.stderr.write(
+        "WARN: pre_adjust_counts の語彙が契約外（%s の 4 つとも非負整数で必須 / 実際のキー: %s）。"
+        "集計側はこの回を歩留まり・検出内訳の母集団から外す — 件数は失われる\n"
+        "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`"
+        "（SKILL 本文にはキー名が無いので、埋める側はそちらを引く）\n"
+        % (" / ".join(SEVS), ", ".join(sorted(k for k in _pre if k != "schema")) or "(なし)")
+    )
+
 # 発火記録（`fired` / `skip_reason`）は実行時の事実なのでスクリプトからは注入できない。
 # **落ちたことだけは検知する** — `fired` が無いと retro は「走らなかった」と「走れる対象が
 # 無かった」を区別できず、ゲート設計の妥当性を計測で判断できなくなる（issue #129）
