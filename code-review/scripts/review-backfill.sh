@@ -78,9 +78,15 @@ fi
 REVIEW_LOGS=$(printf '%s\n' "${LOGS[@]}") \
 REVIEW_PROJS=$(printf '%s\n' "${PROJ_DIRS[@]}") \
 REVIEW_MEASURE="$HERE/measure-tokens.sh" \
+REVIEW_LIB_DIR="$HERE/lib" \
 REVIEW_JSON="$AS_JSON" \
 python3 <<'PY'
-import glob, json, os, subprocess
+import glob, json, os, subprocess, sys
+
+# 期待 wave 本数の式は `lib/wave_expect.py` が正本（publish / backfill / retro が共有）
+sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pycache__` を作らせないだけで、判定にも出力にも効かない
+sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
+from wave_expect import expected_waves
 from datetime import datetime, timezone
 
 MEASURE = os.environ["REVIEW_MEASURE"]
@@ -219,38 +225,13 @@ for e in events:
     declared += sum(1 for f in ("recall_skeptic", "meta_reviewer")
                     if isinstance(p.get(f), dict) and p[f].get("fired") is True)
 
-    # 期待 wave 本数。**式の正本は `publish-review-event.sh`**（`wave-split` を立てる側）。
-    # ここは同じ式を後付け用に持つ複製で、**両者の一致は回帰テストで縛っている**
-    # （`declared` を意味から再構成して偽の食い違いを出した実例があるため）
-    def n_of(key):
-        v = a.get(key)
-        return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
-
-    # meta が指摘を足した回の追加反証 wave（#166）。**publish 側と同じ条件**にすること
-    m = p.get("meta_reviewer")
-    meta_added = (isinstance(m, dict) and m.get("fired") is True
-                  and isinstance(m.get("findings_added"), int)
-                  and not isinstance(m.get("findings_added"), bool)
-                  and m["findings_added"] > 0)
-
-    # skeptic fallback の控除（#172）。**publish 側と同じ条件**にすること。
-    # 条件は「末尾が**唯一の**単独 wave」。`sizes[-1] == 1` だけで切ると本物の違反を隠す
-    # （`[1,1,6,1]` 型。判定は総本数の比較なので、他所に単独 wave が残っていても超過 1 は消える）
-    sk = p.get("recall_skeptic")
-    sizes = d.get("wave_sizes")
-    skeptic_tail_solo = (isinstance(sk, dict) and sk.get("fired") is True
-                         and isinstance(sizes, list) and len(sizes) > 0
-                         and sizes[-1] == 1 and 1 not in sizes[:-1])
-
-    expected = ((1 if n_of("explorer") > 0 else 0) + 1
-                + (1 if n_of("verify") > 0 else 0)
-                + (2 if n_of("round2") > 0 else 0)
-                + (1 if meta_added else 0)
-                + (1 if skeptic_tail_solo else 0))
+    # 期待 wave 本数。**式の正本は `lib/wave_expect.py`**（publish / retro と共有する）。
+    # 以前はここに publish の式の複製を置き、一致を回帰テストで縛っていた（`declared` を
+    # 意味から再構成して偽の食い違いを出した実例がある）。#200 で正本へ寄せた。
+    expected = expected_waves(p, d.get("wave_sizes"))
     # **判定は `waves_effective`（捨てられた試行・孫を除いた本数）**。無ければ `waves`
-    # にフォールバックする（旧 schema / 分解が成立しなかった回）。
-    # **式の複製は publish-review-event.sh とこの 2 箇所にある** — 片方だけ変えると
-    # 「後付けと publish が一致する」を縛る回帰テストが落ちる（実際に落とした）
+    # にフォールバックする（旧 schema / 分解が成立しなかった回）。式は上の
+    # `expected_waves`（`lib/wave_expect.py`）と共有するので、この行の順序を publish と揃える。
     waves = d.get("waves_effective")
     if not isinstance(waves, int) or isinstance(waves, bool):
         waves = d.get("waves")

@@ -313,8 +313,14 @@ MERGED=$(
   REVIEW_TOKENS_WANTED="$TOKENS_WANTED" \
   REVIEW_TOKENS_WINDOW="$TOKENS_WINDOW" \
   REVIEW_LATE_PUBLISH="$LATE_PUBLISH" \
+  REVIEW_LIB_DIR="$HERE/lib" \
   python3 - "$PAYLOAD" <<'PY'
 import json, os, re, sys
+
+# 期待 wave 本数の式は `lib/wave_expect.py` が正本（publish / backfill / retro が共有）
+sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pycache__` を作らせないだけで、判定にも出力にも効かない
+sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
+from wave_expect import expected_waves
 try:
     payload = json.loads(sys.argv[1])
 except ValueError as e:
@@ -564,6 +570,16 @@ if not isinstance(agents, dict):
 agents["explorer_waves"] = explorer_waves
 launched = agents.get("explorer")
 
+# **申告体数**（自己申告の `agents` 内訳の合計）。tokens ブロックの sub 空振り判定と
+# 下の dispatch ブロックの `agents-mismatch` 突合が同じ値を要るので、一度だけ出して共有する。
+# 突合の allow-list は `orchestration-measurement.md ## 16`（`agents` は動的層を含まない
+# 契約なので、meta / skeptic は別フィールドの `fired` から足す）。
+declared_agents = sum(v for k, v in agents.items()
+                      if k in ("explorer", "reviewer", "specialist", "round2", "verify")
+                      and isinstance(v, int) and not isinstance(v, bool))
+declared_agents += sum(1 for f in ("recall_skeptic", "meta_reviewer")
+                       if isinstance(payload.get(f), dict) and payload[f].get("fired") is True)
+
 # 欠測マーカーの識別子。explorer wave の欠測だけは「起動したのに打点が無い」ときのみ
 # gap であり、explorer 未起動なら該当なしなので、体数を知っているここで足す
 gaps = [g for g in os.environ.get("REVIEW_MEASUREMENT_GAPS", "").split() if g]
@@ -687,6 +703,17 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             # 載せない。同じオブジェクトに窓ありと窓なしを混在させない）
             "sub_agents": tok.get("sub_agents"),
         }
+        # **sub 側の空振りを欠測に倒す**（GitHub issue #199）。`main.n > 0` を通っても、
+        # 申告体数が 1 以上あるのに `sub_agents == 0` なら**窓が sub の transcript を覆って
+        # いない**（セッション再開・窓の開始遅れ）。ゼロを実測値として載せると retro の
+        # sub 中央値と体数相関を壊す — main 側は `main.n == 0` で同じガードがあるのに、sub 側は
+        # `main.n > 0` でありさえすれば 0 が素通りしていた（**非対称**）。`main_*` は生かして
+        # `sub_*` だけ None に倒し、別識別子で理由を残す（0 と「測れていない」を潰さない）。
+        _sub_n = tok.get("sub_agents")
+        if declared_agents >= 1 and isinstance(_sub_n, int) and _sub_n == 0:
+            for _f in ("sub_output_k", "sub_cache_write_k", "sub_cache_read_k"):
+                payload["tokens"][_f] = None
+            gaps.append("tokens-sub")
     else:
         # **`main.n == 0` は「トークンが 0 だった」ではない。** review は必ずメインループの
         # メッセージを出してから publish するので、0 は「transcript を引けなかった」か
@@ -744,11 +771,7 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # **`agents` は動的層を含まない契約**（`## 16`: meta / skeptic は専用フィールドで
         # 観測する）なので、突合の前に `fired` の数を足す。この補正なしで比べると
         # self-review まで恒常的にずれ、**review 固有の欠陥という信号がノイズに埋もれる**。
-        declared = sum(v for k, v in agents.items()
-                       if k in ("explorer", "reviewer", "specialist", "round2", "verify")
-                       and isinstance(v, int) and not isinstance(v, bool))
-        declared += sum(1 for f in ("recall_skeptic", "meta_reviewer")
-                        if isinstance(payload.get(f), dict) and payload[f].get("fired") is True)
+        declared = declared_agents      # 上で計算済み（tokens ブロックと共有 / #199）
         # **突合の相手は `agents_completed`**（GitHub issue #154）。`dispatch.agents` は
         # 窓内 transcript の総数で、**捨てられた試行と孫 agent を含む**。申告は
         # 「オーケストレーターが起動を決めた層」なので、決定でない再試行と、
@@ -786,76 +809,21 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 書式が安定しておらず（実測 25 セッションで大半が分類不能。日英混在・命名バラバラ）、
         # 分類器を置くと**静かに何も検出しない**方向に倒れる。既存フィールドの算術だけで見る。
         #
-        # 期待本数は**保守側**（見込みを増やす方向）に倒す。取り逃しは出るが偽陽性は出にくい。
-        # skeptic の fallback 起動（`triage-dynamic-gates.md ## 8.5` / 真に単独 wave になる
-        # 唯一の正規経路）は、**無条件には見込まず「末尾の単独 wave」1 本だけ控除する**
-        # （下記 / #172）。無条件に +1 すると実測で本物の違反 3 件を取り逃す。
+        # 期待本数の式の**正本は `lib/wave_expect.py`**（publish / backfill / retro の 3 経路が
+        # 共有する）。見込みを保守側へ倒す方針・meta 項（#166）・skeptic fallback の控除
+        # （#172 / #200）はすべてモジュール側の docstring にある。以前は publish と backfill に
+        # 式の複製を置いて一致を回帰テストで縛っていたが、retro が**集計時に再計算する**
+        # ようになって 3 つ目の消費者ができた（#200）ので、複製を持たせる理由が消えた。
+        #
         # **WARN は出す段階に入った**（v2.91.0 / #172）— 偽陽性 2 型（meta 項 = #166 /
         # skeptic fallback = 末尾控除）が両方同定でき、直近 5 レビュー中 4 件が本物だった。
         #
         # `waves_expected` は**常に載せる**ので、フィールドの存在自体が版マーカーになる
         # （`derived_markers` と同じ流儀。`dispatch.schema` は `measure-tokens.sh` が持つ
-        # 版なので、publish 側の追加で上げると出所が 2 つに割れる）。
-        def _agents_n(key):
-            v = agents.get(key)
-            return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
-
-        # **meta が指摘を足した回は反証 wave が 1 本増える**（GitHub issue #166）。
-        # meta 由来の `[meta]` タグ付き指摘を反証にかける追加バッチは、**meta の出力が
-        # 存在しない時点では発行できない**ので構造的な直列であって一括発行違反ではない。
-        # `meta_reviewer` は `agents` に計上しない契約（`## 16`）なので、この 1 本は
-        # 既存の式のどの項にも現れず、実運用で初めて `wave-split` が立ったとき偽陽性だった。
-        #
-        # **`findings_added` が 1 以上**を条件にする。実際の追加バッチは「足した指摘のうち
-        # 反証ゲートに該当する分があるとき」だけ起動するので、これは見込みの上側（保守側）。
-        # 本ブロックの方針どおり、取り逃しを許して偽陽性を出さない方へ倒す
-        def _meta_added_findings():
-            m = payload.get("meta_reviewer")
-            if not isinstance(m, dict) or m.get("fired") is not True:
-                return False
-            n = m.get("findings_added")
-            return isinstance(n, int) and not isinstance(n, bool) and n > 0
-
-        # **skeptic の fallback 起動は「末尾が唯一の単独 wave」のときだけ 1 本控除する**
-        # （GitHub issue #172）。`recall_skeptic.fired` に無条件で +1 すると、実データで
-        # **偽陽性 1 件を消す代わりに本物 3 件が消える**（6 件中 3/6 しか当たらない）。
-        # fallback 起動は `triage-dynamic-gates.md ## 8.5` で **reviewer 完了後の単独 1 体**と
-        # 規約で決まっているので、偽陽性の形は「単独 wave がちょうど 1 本あり、それが末尾」に
-        # 限られる。
-        #
-        # **`sizes[-1] == 1` だけで切ってはならない**（セルフレビューで検出 / v2.91.0 の初版が
-        # これで、08-25T08:32 の `[1,1,6,1]` = explorer が先頭で 2 wave に割れた**本物の違反**を
-        # 隠して 5/6 に落ちていた）。判定は総本数の比較（`waves > expected`）なので、
-        # 「先頭にも単独 wave が残っているから検出は続く」という理屈は**実装に対応しない** —
-        # 控除は残数ではなく総数を 1 増やすだけで、超過 1 の回はそれで消える。
-        # **他の位置に単独 wave が 1 本でもあれば控除しない**ことで、理屈と実装を一致させる。
-        # これで実測 6 サンプルが 6/6（偽陽性 0 / 取り逃し 0）になる。
-        #
-        # **既知の残存限界**（→ `design-notes/orchestration-rationale.md`）:
-        # ①skeptic の既定経路は fallback ではなく **reviewer wave への相乗り**なので、
-        #   `fired` は追加 wave の存在を含意しない ②fallback が走っても後ろに meta / 反証 wave が
-        #   付く回では fallback wave は末尾に来ない。どちらも位置ヒューリスティックでは分離
-        #   できず、構造的な解は `recall_skeptic` に起動経路を自己申告させること。
-        # 6 サンプルへの後付けである以上、過学習の留保も残る。
-        def _skeptic_tail_solo():
-            sk = payload.get("recall_skeptic")
-            if not isinstance(sk, dict) or sk.get("fired") is not True:
-                return False
-            sizes = disp.get("wave_sizes")
-            # **本ブロックは `verdict not in (None, "unknown")` の内側**（上流の `if`）。
-            # `measure-tokens.sh` が `wave_sizes` を `None` のままにするのは `unresolved` の
-            # 回だけで、そのとき `verdict` は `"unknown"` に留まるので、ここへ None は届かない。
-            # 防御的に残すが**到達しないためテストで殺せない**（backfill 側は verdict ゲートが
-            # 無いので到達し、そちらの同条件は回帰テストが殺している）。
-            if not (isinstance(sizes, list) and len(sizes) > 0):  # mutation-ok: 上流の verdict ゲートで到達不能
-                return False  # mutation-ok: 同上（到達不能な防御分岐）
-            return sizes[-1] == 1 and 1 not in sizes[:-1]
-
-        expected = ((1 if _agents_n("explorer") > 0 else 0) + 1
-                    + (1 if _agents_n("verify") > 0 else 0)
-                    + (2 if _agents_n("round2") > 0 else 0)
-                    + (1 if _meta_added_findings() else 0)
-                    + (1 if _skeptic_tail_solo() else 0))
+        # 版なので、publish 側の追加で上げると出所が 2 つに割れる）。**式そのものには版を
+        # 持たせない** — 集計側が payload の値ではなく再計算した値で判定するので、式を直した
+        # 時点で過去のイベントの判定も揃う（#200: 旧式の値が違反として残り続けていた）。
+        expected = expected_waves(payload, disp.get("wave_sizes"))
         payload["dispatch"] = dict(disp, waves_expected=expected)
         waves = disp.get("waves")
         # **`agents-mismatch` の回では判定しない** — 期待本数は `agents` の自己申告から作るので、

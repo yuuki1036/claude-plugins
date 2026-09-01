@@ -637,6 +637,64 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         self.assertNotIn("tokens", p)
         self.assertIn("tokens", p["measurement_gaps"])
 
+    def test_a_sub_blank_run_falls_the_sub_side_to_null(self):
+        """**sub 側の空振りを欠測に倒す**（GitHub issue #199）.
+
+        `main.n > 0` を通っても、申告体数が 1 以上あるのに `sub_agents == 0` なら**窓が
+        sub の transcript を覆っていない**。main 側は `main.n == 0` で守られているのに、
+        sub 側は `main.n > 0` でありさえすれば `sub_output_k: 0.0` が素通りしていた（非対称）。
+        `main_*` は生かし `sub_*` だけ None に倒し、`tokens-sub` で理由を残す。
+        """
+        # main セッションに usage 行はあるが sub agent は 1 体も窓に無い（`waves=[]`）。
+        # `BASE_PAYLOAD` の `agents` は explorer 0 + reviewer 2 = 申告 2 体
+        self.write_transcript([], scale=1000)
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertIn("tokens", p, "main 側が生きているので tokens ごと落とさない")
+        self.assertEqual(p["tokens"]["sub_agents"], 0, "前提: sub が空振りしている")
+        self.assertIsNone(p["tokens"]["sub_output_k"], "sub 側の 0 を実値として載せている")
+        self.assertIsNone(p["tokens"]["sub_cache_read_k"])
+        self.assertIsNone(p["tokens"]["sub_cache_write_k"])
+        self.assertIsNotNone(p["tokens"]["main_output_k"], "main 側まで落としている")
+        self.assertIn("tokens-sub", p["measurement_gaps"])
+        self.assertNotIn("tokens", p["measurement_gaps"], "main が生きているので tokens gap は立てない")
+
+    def test_a_single_agent_review_still_flags_a_sub_blank(self):
+        """**申告体数ちょうど 1 でも sub 空振りを倒す**（`>= 1` の境界 / GitHub issue #199）.
+
+        reviewer 1 体だけの回（explorer なし）。ガードが `> 1` に狭まると、最小構成の
+        レビューで sub 空振りが素通りする。
+        """
+        self.write_transcript([], scale=1000)
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        p["agents"] = {"explorer": 0, "reviewer": 1}     # 申告 1 体ちょうど
+        self.publish(p, env=self.env_home())
+        pub = self.last_payload()
+        self.assertEqual(pub["tokens"]["sub_agents"], 0, "前提: sub が空振りしている")
+        self.assertIn("tokens-sub", pub["measurement_gaps"])
+
+    def test_a_zero_agent_review_does_not_flag_a_sub_blank(self):
+        """申告 0 体の回では倒さない（sub を測る意味が無い ＝ ガードの下側）.
+
+        `agents` が空 / 全ゼロの退化した回。sub が 0 なのは当然で、欠測ではない。
+        """
+        self.write_transcript([], scale=1000)
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        p["agents"] = {"explorer": 0, "reviewer": 0}
+        self.publish(p, env=self.env_home())
+        pub = self.last_payload()
+        self.assertNotIn("tokens-sub", pub["measurement_gaps"],
+                         "申告 0 体の回で sub 空振りを立てている")
+
+    def test_a_healthy_sub_run_keeps_its_values(self):
+        """sub が窓内にいる回では倒さない（**空振り判定が正常系を巻き込まない**）."""
+        self.write_transcript([[0, 5]], scale=1000)
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertEqual(p["tokens"]["sub_agents"], 2)
+        self.assertEqual(p["tokens"]["sub_output_k"], 20.0)
+        self.assertNotIn("tokens-sub", p["measurement_gaps"])
+
     def test_serial_dispatch_lands_and_warns(self):
         """1 体ずつ別メッセージで発行した回（単独 wave が 3 連続）."""
         self.write_transcript([[0], [600], [1300]])
@@ -1596,6 +1654,61 @@ class RetroTest(ScriptTestBase):
                 "tokens": {"schema": schema, "window": "since-t0",
                            "main_output_k": 100.0, "sub_output_k": 200.0,
                            "sub_cache_read_k": cache_read_k, "sub_agents": agents}}
+
+    def _tokens_full(self, sub_output_k, sub_agents, main_output_k=100.0,
+                     window: str = "since-t0", schema: int = 2,
+                     sub_cache_read_k=100.0) -> dict:
+        """sub 側の値と体数を明示できる tokens 行（GitHub issue #199）.
+
+        publish が sub 空振りを倒した回は `sub_*` 系がすべて None になるので、その形を
+        再現したいときは `sub_output_k` と `sub_cache_read_k` の両方に None を渡す。
+        """
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "agents": {"explorer": 0, "reviewer": 2},
+                "tokens": {"schema": schema, "window": window,
+                           "main_output_k": main_output_k, "sub_output_k": sub_output_k,
+                           "sub_cache_read_k": sub_cache_read_k, "sub_agents": sub_agents}}
+
+    def test_a_sub_blank_run_is_excluded_from_the_sub_median(self):
+        """**sub 空振りの回を sub 中央値の分母から外す**（GitHub issue #199）.
+
+        publish は #199 以降 `sub_output_k` を None に倒すが、それ以前に焼かれた回は
+        `sub_output_k: 0.0` が残っているので、集計側は `sub_agents == 0` を見て弾く。
+        0 を混ぜると中央値が下振れする。
+        """
+        rows = [self._tokens_full(200.0, 2), self._tokens_full(220.0, 2),
+                self._tokens_full(0.0, 0)]            # 旧データの 0（sub 空振り）
+        self._events(rows)
+        out = self.run_script(RETRO, "--json", env=self._env()).stdout
+        tok = json.loads(out)["tokens"]
+        self.assertEqual(tok["sub_output_k_median"], 210.0,
+                         "sub 空振りの 0 を中央値の分母に入れている")
+
+    def test_a_null_sub_output_is_also_excluded(self):
+        """publish が None に倒した回も分母に入れない（`sub_*` が 3 つとも None の実形）."""
+        rows = [self._tokens_full(200.0, 2), self._tokens_full(220.0, 2),
+                self._tokens_full(None, 0, sub_cache_read_k=None)]
+        self._events(rows)
+        tok = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)["tokens"]
+        self.assertEqual(tok["sub_output_k_median"], 210.0)
+
+    def test_a_sub_blank_run_is_excluded_from_the_agent_correlation(self):
+        """体数 vs sub.output の相関の分母からも外す（#199）.
+
+        `sub_agents == 0` の回を残すと (体数, 0) の点が相関に混ざる。
+        """
+        rows = [self._tokens_full(200.0, 2), self._tokens_full(400.0, 4),
+                self._tokens_full(0.0, 0)]
+        self._events(rows)
+        tok = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)["tokens"]
+        self.assertEqual(tok["agents_sub_output_n"], 2, "sub 空振りを相関の分母に入れている")
+
+    def test_a_healthy_sub_run_still_counts(self):
+        """**空振り判定が正常系を落とさない**（sub_agents > 0 は分母に残る）."""
+        self._events([self._tokens_full(200.0, 2), self._tokens_full(220.0, 3)])
+        tok = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)["tokens"]
+        self.assertEqual(tok["sub_output_k_median"], 210.0)
+        self.assertEqual(tok["agents_sub_output_n"], 2)
 
     # ---- モデル世代による層別（GitHub issue #169） --------------------------
 
@@ -2647,15 +2760,57 @@ class RetroWaveSplitDenominatorTest(RetroTest):
     他は「フィールドが載っていたか」なので gap 保持者全体でよいが、wave-split は
     「wave 判定が成立した回」が母集団。全体を分母にすると比率が薄まり、実測 50% が
     18% に見えて閾値を下回っていた。
+
+    **fixture は `agents` まで整合させること**（#200）。集計側は payload の
+    `waves_expected` ではなく `agents` から**現行式で再計算**して判定するので、
+    `waves_expected` だけ立てた fixture は再計算値（reviewer 層の 1 本のみ）で
+    判定され、**テストが意図と違う形で通る / 落ちる**。
     """
+
+    @staticmethod
+    def _agents_for(expected: int) -> dict:
+        """再計算後の期待本数が `expected` になる `agents` を作る（#200）.
+
+        reviewer 層の 1 本は常に見込まれるので、そこからの差分を層で埋める。
+        """
+        assert 1 <= expected <= 3, "この構成で作れるのは 1〜3 本"
+        a = {"reviewer": 3}
+        if expected >= 2:
+            a["explorer"] = 2
+        if expected >= 3:
+            a["verify"] = 1
+        return a
 
     def _run(self, waves: int, expected: int, gaps: list[str],
              agents: int = 3) -> dict:
         return {"effort": "high", "size_tier": "medium", "measurement_gaps": gaps,
+                "agents": self._agents_for(expected),
                 "dispatch": {"schema": 3, "agents": agents, "waves": waves,
                              "wave_sizes": [1] * waves, "max_solo_run": 1,
                              "max_inter_wave_sec": 60, "span_sec": 120,
                              "verdict": "layered", "waves_expected": expected}}
+
+    def test_a_non_dict_agents_does_not_crash_retro(self):
+        """**異形ログの非 dict `agents` で retro が沈黙死しない**（GitHub issue #200 のセルフレビュー）.
+
+        retro は `--logs` で他マシン・他リポジトリのログも読むので `agents` が dict である
+        保証は無い。`(agents or {}).get(...)` は truthy な非 dict で AttributeError になり、
+        末尾の無条件 `exit 0` が例外を握って**出力 0 行・終了コード 0**（＝「該当なし」と
+        区別がつかない沈黙死）に倒れる。`agents_dict` で正規化して防ぐ。
+        """
+        broken = self._run(3, 2, ["wave-split"])
+        broken["agents"] = ["explorer"]          # dict でない agents（違反も立っている回）
+        self._events([broken] + [self._run(3, 2, ["wave-split"]) for _ in range(4)])
+        r = self.run_script(RETRO, env=self._env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("一括発行", r.stdout, "retro が途中で沈黙死している（出力が欠けている）")
+
+    def test_the_signal_stays_silent_below_the_sample_floor(self):
+        """`GAP_MIN_N = 5` の直下（n=4）では点灯しない（`>= 5` → `>= 4` 変異を殺す）."""
+        self._events([self._run(3, 2, ["wave-split"]) for _ in range(4)])
+        self.assertNotIn("一括発行の規約違反が",
+                         self.run_script(RETRO, env=self._env()).stdout,
+                         "下限直下の 4 件で点灯している")
 
     def test_the_denominator_is_the_number_of_judged_runs(self):
         """分母は wave 判定が成立した回（gap 保持者全体ではない）."""
@@ -2664,7 +2819,7 @@ class RetroWaveSplitDenominatorTest(RetroTest):
         rows += [{"effort": "high", "measurement_gaps": ["t1"]} for _ in range(8)]
         self._events(rows)
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("判定できた 2 件中 1 件が wave-split", out)
+        self.assertIn("判定できた 2 件中 1 件が規約違反", out)
 
     def test_a_run_missing_waves_expected_is_not_judged(self):
         """`waves` と `waves_expected` の**両方**が揃った回だけを判定対象にする.
@@ -2677,7 +2832,7 @@ class RetroWaveSplitDenominatorTest(RetroTest):
         rows.append(half)
         self._events(rows)
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("判定できた 2 件中 2 件が wave-split", out,
+        self.assertIn("判定できた 2 件中 2 件が規約違反", out,
                       "waves_expected の無い回を分母に入れている")
 
     def test_suppressed_runs_are_reported_not_silently_dropped(self):
@@ -2689,9 +2844,96 @@ class RetroWaveSplitDenominatorTest(RetroTest):
         self._events([self._run(3, 2, ["wave-split"]),
                       self._run(8, 2, ["agents-mismatch"])])
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("判定できた 1 件中 1 件が wave-split", out)
+        self.assertIn("判定できた 1 件中 1 件が規約違反", out)
         self.assertIn("1 件は `agents-mismatch` で判定を抑止", out)
         self.assertIn("測れていない", out, "抑止を「守られた」と読ませない注記が無い")
+
+    def test_the_verdict_is_recomputed_not_read_from_the_payload(self):
+        """**判定は payload の `waves_expected` ではなく現行式の再計算**（GitHub issue #200）.
+
+        `waves_expected` は publish 時点の式で焼き付くが**式の版マーカーが無い**ので、
+        式を直しても過去のイベントは旧値のまま数え続けられ、**一度出た偽陽性が固定化する**
+        （実測: `[6,10,4,1]` の回が #166 で解決済みの偽陽性なのに違反として残っていた）。
+        """
+        # 現行式なら 2 本（explorer + reviewer）＝ 実 2 本で違反にならない回に、
+        # 旧式の値 1 が焼かれている形
+        stale = self._run(2, 2, [])
+        stale["dispatch"]["waves_expected"] = 1
+        self._events([stale] + [self._run(3, 2, ["wave-split"]) for _ in range(4)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("判定できた 5 件中 4 件が規約違反", out,
+                      "payload の旧い `waves_expected` で判定している")
+        self.assertIn("1 件は payload の `waves_expected` と判定が食い違う", out,
+                      "食い違いを黙って飲み込んでいる")
+
+    def test_the_stale_note_is_absent_when_nothing_disagrees(self):
+        """食い違いが無ければ注記も出さない（常時出ると注記が読み飛ばされる）."""
+        self._events([self._run(3, 2, ["wave-split"]) for _ in range(5)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertNotIn("判定が食い違う", out)
+
+    def test_a_single_explorer_leading_solo_is_a_layer_split_not_explorer(self):
+        """explorer 1 体の先頭単独 wave は「explorer を 1 体ずつ」ではない（`>= 2` の境界）.
+
+        explorer の 1 体ずつ発行は**2 体以上を別 wave に割った**形。explorer 1 体で先頭が
+        単独 wave なのは通常の explorer wave であって、分割は別の層で起きている ＝「同一層の
+        wave 分割」。閾値が `>= 1` に緩むとこれを explorer 型に誤分類する。
+        """
+        row = self._run(3, 2, ["wave-split"])
+        row["agents"] = {"explorer": 1, "reviewer": 3}   # explorer ちょうど 1 体
+        row["dispatch"]["wave_sizes"] = [1, 2, 4]         # 先頭が単独 wave・違反（3 > 2）
+        self._events([row] + [self._run(2, 2, []) for _ in range(4)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("判定できた 5 件中 1 件が規約違反", out, "前提: この回だけが違反")
+        self.assertIn("同一層の wave 分割 1 件", out)
+        self.assertNotIn("explorer を 1 体ずつ発行", out,
+                         "explorer 1 体を「1 体ずつ発行」に誤分類している")
+
+    def test_the_violation_kinds_are_broken_out(self):
+        """**違反の型ごとに件数を出す**（GitHub issue #200 の期待動作 3）.
+
+        検知は #172 / #192 で整ったが、打ち手は型で違う（explorer を 1 体ずつ出したのか、
+        同一層の wave が割れたのか）。層の割り当ては payload に無いので**推定**と名乗る。
+        """
+        # 先頭が単独 wave かつ explorer 2 体 → explorer 型 / 先頭が 2 体 → 層の分割型
+        explorer_split = self._run(3, 2, ["wave-split"])
+        explorer_split["dispatch"]["wave_sizes"] = [1, 1, 4]
+        layer_split = self._run(3, 2, ["wave-split"])
+        layer_split["dispatch"]["wave_sizes"] = [2, 2, 4]
+        self._events([explorer_split] + [layer_split for _ in range(4)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("内訳（**推定**）: 同一層の wave 分割 4 件 / "
+                      "explorer を 1 体ずつ発行 1 件", out)
+
+    def test_a_non_list_wave_sizes_degrades_to_unknown(self):
+        """`wave_sizes` がリストでない回で**型判定を諦める**（retro ごと落とさない）.
+
+        retro は `--logs` で他マシン・他リポジトリのログも読むので、形の保証は無い。
+        ガードが外れると添字アクセスで `TypeError` になり、**retro が出力 0 行 / 終了コード 0**
+        で死ぬ（例外は python 側で起きるがシェルは `exit 0` する）。
+        """
+        broken = self._run(3, 2, ["wave-split"])
+        broken["dispatch"]["wave_sizes"] = 3           # 数値（壊れた / 別実装のログ）
+        empty = self._run(3, 2, ["wave-split"])
+        empty["dispatch"]["wave_sizes"] = []
+        self._events([broken, empty] + [self._run(3, 2, ["wave-split"]) for _ in range(3)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("判定できた 5 件中 5 件が規約違反", out, "retro が途中で死んでいる")
+        self.assertIn("型不明", out, "型を判定できない回を既定の型に混ぜている")
+
+    def test_the_signal_needs_the_sample_floor(self):
+        """シグナル欄は `GAP_MIN_N = 5` ちょうどで点く（単発点灯の防止と両立させる）."""
+        self._events([self._run(3, 2, ["wave-split"]) for _ in range(5)])
+        self.assertIn("一括発行の規約違反が 100%",
+                      self.run_script(RETRO, env=self._env()).stdout,
+                      "下限ちょうどの回で点灯しない")
+
+    def test_the_signal_needs_both_the_floor_and_the_ratio(self):
+        """**件数と比率の両方**を要求する（片方だけで点くと 0 件でもシグナルが出る）."""
+        self._events([self._run(2, 2, []) for _ in range(5)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("判定できた 5 件中 0 件が規約違反", out, "前提: 違反 0 件で判定は成立している")
+        self.assertNotIn("一括発行の規約違反が", out, "違反 0 件でシグナルが点いている")
 
     def test_the_remediation_hint_is_not_the_default(self):
         """是正先が既定の「打点箇所の見直し」に落ちない（打点とは無関係）.
@@ -3081,6 +3323,27 @@ class WaveSplitTest(TranscriptFixture):
                          "先頭に単独 wave が残っているのに控除している")
         self.assertIn("wave-split", published["measurement_gaps"],
                       "先頭の explorer 分割を末尾控除で消している")
+
+    def test_a_verify_wave_after_the_skeptic_still_deducts(self):
+        """**skeptic の後ろに反証 wave が付いても控除する**（実測 08-28T00:28 / `[2,5,1,1]`）.
+
+        初版（v2.91.0）の条件は「末尾が**唯一の**単独 wave」だったので、後ろに反証 wave が
+        1 本付いた瞬間に効かなくなり偽陽性を出していた（GitHub issue #200 / #172 が
+        「既知の残存限界②」として予告していた形）。末尾から連続する単独 wave は
+        **入力が揃うまで発行できない層**が並ぶ場所なので、そこは控除の対象にする。
+        """
+        # explorer 2 / reviewer 5 / 反証 1 / skeptic 1 = 9 体。申告も skeptic 込みで 9 に揃える
+        # （`agents-mismatch` が立つと wave 判定そのものが抑止される）
+        self.write_transcript([[0, 10], [100, 110, 120, 130, 140], [200], [300]],
+                              base=self.BASE)
+        p = dict(self.agents(explorer=2, reviewer=5, verify=1),
+                 recall_skeptic=self._skeptic())
+        published = self.run_publish(p)
+        self.assertNotIn("agents-mismatch", published["measurement_gaps"], "前提: 申告が揃っている")
+        self.assertEqual(published["dispatch"]["wave_sizes"], [2, 5, 1, 1])
+        self.assertEqual(published["dispatch"]["waves_expected"], 4,
+                         "末尾に連なる単独 wave のうち 1 本を控除していない")
+        self.assertNotIn("wave-split", published["measurement_gaps"])
 
     def test_no_deduction_when_the_tail_is_not_solo(self):
         """末尾が単独でなければ控除しない（実測 08-25T13:42 `[2,2,4]` / 08-26T06:07 `[2,3]`）.
@@ -3500,7 +3763,7 @@ class ReviewBackfillTest(TranscriptFixture):
     def test_waves_expected_agrees_with_publish(self):
         """**期待 wave 本数の式が publish と後付けで一致する**（複製の乖離を縛る）.
 
-        式の正本は `publish-review-event.sh`。後付け側は同じ式の複製なので、
+        式の正本は `lib/wave_expect.py`（publish / backfill / retro が共有）。後付け側も同じ関数を呼ぶので、
         **意味から再構成すると静かにずれる**（実装中に `declared` を deny-list で書き直して
         偽の食い違いを出した）。publish が書いたイベントをそのまま後付けに読ませ、
         両者が同じ値を出すことを表明する。

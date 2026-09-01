@@ -2,6 +2,62 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.101.0] - 2026-09-01
+
+### Fixed
+
+- **トークン計測の sub 側が「窓が空振りした 0」を実値として載せていた**（GitHub issue #199）。
+  main 側は `main.n == 0` を欠測として `tokens` gap に倒すガードがあるのに、sub 側は
+  `main.n > 0` でありさえすれば `sub_output_k: 0.0` が素通りしていた（**非対称**）。セッション
+  再開・窓の開始遅れで sub agent の transcript が `since-t0` の窓の外にある回で混入する
+  - **publish 側**: 申告体数が 1 以上あるのに `sub_agents == 0` なら `sub_*` 系を `null` に倒し、
+    `measurement_gaps` に `tokens-sub` を立てる。`main_*` は生かす（main は測れているため）
+  - **retro 側**: sub 中央値・体数 vs sub.output 相関の分母から `sub_agents == 0` の回を外す。
+    publish が `null` に倒す前に焼かれた既存データの `0.0` にも `sub_agents` を見て効く
+  - `gap_hint` に `tokens-sub` の是正先（打点ではなく窓の被覆 = measure-tokens.sh の窓の起点）
+    を追加
+
+## [2.100.0] - 2026-09-01
+
+### Fixed
+
+- **一括発行違反（`wave-split`）の偽陽性 2 型を潰した**（GitHub issue #200）。母集団 108 件で
+  違反 8 件を 1 件ずつ検算したところ 2 件が偽陽性で、本物は 6/16 ＝ 38%（報告値は 50%）。
+  ⚠️ シグナルの閾値 20% は依然超えるので**結論は変わらない**が、この数字が打ち手の見積もりに
+  使われる位置にある
+  - **集計側が期待 wave 本数を現行式で再計算するようにした**。`waves_expected` は publish
+    時点の式で payload に焼き付くが**式の版マーカーが無い**ため、式を直しても過去のイベントは
+    旧値のまま数え続けられ、**一度出た偽陽性が固定化していた**（実測: `[6,10,4,1]` の回が
+    #166 で解決済みなのに違反として残っていた）。payload の値は残し、再計算と判定が食い違った
+    件数を「payload の `waves_expected` と判定が食い違う N 件」として出す
+  - **skeptic fallback の控除条件を「末尾が*唯一の*単独 wave」から「末尾から連続する単独 wave の
+    並びがあり、その手前に単独 wave が無い」へ緩めた**。skeptic wave の後ろに反証 wave が 1 本
+    付く回（`[2,5,1,1]`）で控除が効かず偽陽性になっていた — #172 が「既知の残存限界②」として
+    予告していた形の初実サンプル。控除は**常に 1 本だけ**なので、`[1,1,6,1]`（explorer の
+    先頭分割 ＝ 本物）は従来どおり違反として残る
+
+- **異形ログの非 dict `agents` で retro が沈黙死しないようにした**（#200 のセルフレビュー）。
+  retro は `--logs` で他マシン・他リポジトリのログも読むが、`agents` が truthy な非 dict の回で
+  `.get()` が `AttributeError` になり、末尾の無条件 `exit 0` が例外を握って**出力 0 行・
+  終了コード 0**（＝「該当なし」と区別がつかない沈黙死）に倒れていた。`agents_dict()` ヘルパで
+  正規化し、`wave_split_kind` と既存 4 箇所（`round2_scope` ほか）を一斉に通した
+
+### Added
+
+- **違反の型ごとの内訳を出すようにした**（#200 期待動作 3）。検知は #172 / #192 で整ったが
+  打ち手は型で違う（explorer を 1 体ずつ発行 / 同一層の wave 分割）。層の割り当ては payload に
+  無いので `wave_sizes` の形と申告体数からの**推定**と名乗る。`--json` は `wave_split`
+  （`n` / `judged` / `suppressed` / `stale` / `marker` / `kinds`）で返す
+
+### Changed
+
+- **期待 wave 本数の式の正本を `scripts/lib/wave_expect.py` に寄せた**。`publish-review-event.sh`
+  と `review-backfill.sh` に複製があり一致を回帰テストで縛っていたが、`review-retro.sh` が
+  3 つ目の消費者になったので複製をやめた
+- **`wave-split` を「計測の健全性」の欠測内訳から外した**（#192 期待動作 1 の残り）。規約違反は
+  計測の穴ではないので同じ表に並べず、⚠️ シグナルでも欠測の上位 2 件枠と競合させない
+  （枠から溢れると是正先ごと消える）
+
 ## [2.99.0] - 2026-09-01
 
 ### Changed

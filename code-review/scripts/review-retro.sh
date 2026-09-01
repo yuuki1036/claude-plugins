@@ -72,9 +72,16 @@ command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が必要" >&2; exi
 
 REVIEW_SINCE="$SINCE" REVIEW_LAST="${LAST:-0}" REVIEW_JSON="$AS_JSON" \
   REVIEW_LOGS_EXPLICIT="$([ ${#EXPLICIT_LOGS[@]} -gt 0 ] && echo 1 || echo 0)" \
+  REVIEW_LIB_DIR="$HERE/lib" \
   python3 - ${REVIEW_EVENT_LOGS[@]+"${REVIEW_EVENT_LOGS[@]}"} <<'PY'
 import json, os, sys
 from datetime import datetime, timedelta, timezone
+
+# 期待 wave 本数の式は `lib/wave_expect.py` が正本（publish / backfill / retro が共有）。
+# **集計側は payload の `waves_expected` をそのまま使わず再計算する**（GitHub issue #200）
+sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pycache__` を作らせないだけで、判定にも出力にも効かない
+sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
+from wave_expect import expected_waves
 
 since_raw = os.environ.get("REVIEW_SINCE") or ""
 last_n = int(os.environ.get("REVIEW_LAST") or 0)
@@ -256,6 +263,18 @@ def pearson(xs, ys):
     return cov / (vx ** 0.5 * vy ** 0.5)
 
 
+def agents_dict(p):
+    """`payload.agents` を dict として読む（非 dict・欠測は空 dict / GitHub issue #200）.
+
+    retro は `--logs` で他マシン・他リポジトリ由来の異形ログも読むので、`agents` が dict
+    である保証は無い。素で `(p.get("agents") or {}).get(...)` と書くと、`agents` が truthy な
+    非 dict（list / 非空文字列 / 正の int）のとき `.get()` が AttributeError になり、
+    **retro が出力 0 行・終了コード 0 で沈黙死する**（末尾の無条件 `exit 0` が例外を握る）。
+    """
+    a = p.get("agents")
+    return a if isinstance(a, dict) else {}
+
+
 def total_agents(p):
     """fleet の実体数。1 体固定の検証層（meta / skeptic）も起動していれば足す。"""
     a = p.get("agents")
@@ -271,6 +290,38 @@ def total_agents(p):
         if isinstance(d, dict) and d.get("fired") is True:
             extra += 1
     return sum(vals) + extra
+
+
+#: 一括発行違反の型ラベル（**推定** / GitHub issue #200 の内訳）。是正先が型で違う。
+WAVE_SPLIT_KINDS = {
+    "explorer": "explorer を 1 体ずつ発行",
+    "layer": "同一層の wave 分割",
+    "unknown": "型不明（`wave_sizes` が無い）",
+}
+
+
+def wave_split_kind(p, sizes):
+    """違反 1 件の型を**推定**する（GitHub issue #200）.
+
+    検知は #172 / #192 で整ったが、**違反を減らす打ち手**は型ごとに違う（explorer を
+    1 体ずつ出したのか、同一層の wave が割れたのか）。層の割り当ては payload に無いので
+    （publish は「層の同定はしない」を維持している）、`wave_sizes` の形と申告体数からの
+    **推定**にとどめ、出力でもそう名乗る。
+    """
+    if not isinstance(sizes, list) or len(sizes) == 0:
+        return "unknown"
+    # **`agents` を dict と決めつけない**（`agents_dict` で正規化 / GitHub issue #200）
+    if sizes[0] == 1 and (num(agents_dict(p).get("explorer")) or 0) >= 2:
+        return "explorer"
+    return "layer"
+
+
+def wave_split_kinds_txt():
+    """違反の型ごとの件数を並べる（多い順）。0 件なら「該当なし」."""
+    if not wave_split_kinds:
+        return "該当なし"
+    return " / ".join("%s %d 件" % (WAVE_SPLIT_KINDS.get(k, k), v)
+                      for k, v in sorted(wave_split_kinds.items(), key=lambda kv: -kv[1]))
 
 
 def pct(part, whole):
@@ -627,9 +678,9 @@ adversarial = layer_stats("adversarial_verify", "gate_schema", 2, value_of=verdi
 # round2 は専用オブジェクトを持たないので `agents.round2` の**キー存在**を版プロキシにする
 # （`agents` を持たない旧サンプルを分母に入れると発火率が構造的に薄まる。#127 と同型）
 round2_scope = [e for e in events
-                if num((e["p"].get("agents") or {}).get("round2")) is not None]
+                if num(agents_dict(e["p"]).get("round2")) is not None]
 round2_fired = sum(1 for e in round2_scope
-                   if (num((e["p"]["agents"]).get("round2")) or 0) > 0)
+                   if (num(agents_dict(e["p"]).get("round2")) or 0) > 0)
 
 # ---- 8. 計測の欠測率 -------------------------------------------------------
 n_all = len(events)
@@ -639,11 +690,16 @@ for e in events:
     if isinstance(gaps, list):
         for g in gaps:
             gap_counts[str(g)] = gap_counts.get(str(g), 0) + 1
+# **`wave-split` は「欠測」ではなく行動の逸脱**（#192）なので、欠測内訳の表から外す。
+# しかも payload のマーカーは**publish 時点の式**で立っており、集計は現行式で再計算した
+# `n_wave_split` を使う（#200）ので、同じ表に並べると 2 つの数が食い違って見える。
+# **黙って捨てない** — 生のマーカー件数は `--json` の `wave_split.marker` に残す
+n_wave_split_marker = gap_counts.pop("wave-split", 0)
 have_synthesis = len(measured(events, "duration_synthesis_min"))
 have_waves = sum(1 for e in events
-                 if num((e["p"].get("agents") or {}).get("explorer_waves")) is not None)
+                 if num(agents_dict(e["p"]).get("explorer_waves")) is not None)
 split_waves = sum(1 for e in events
-                  if (num((e["p"].get("agents") or {}).get("explorer_waves")) or 0) >= 2)
+                  if (num(agents_dict(e["p"]).get("explorer_waves")) or 0) >= 2)
 # **打点漏れのうち実測時刻で埋まった分**（GitHub issue #161）。`measurement_gaps` と
 # **排他ではない** — 補完できた回は両方に載る。「打点規約が守られているか」（gap 側）と
 # 「区間が使えるか」（`duration_*` 側）は別の量なので混ぜない。
@@ -664,8 +720,17 @@ n_gapfield = sum(1 for e in events if isinstance(e["p"].get("measurement_gaps"),
 # 母集団になる。判定は `dispatch.waves` と `waves_expected` が揃い、かつ
 # `agents-mismatch` で抑止されていない回でだけ行われる（publish-review-event.sh）。
 # 全 gap 保持者を分母にすると比率が薄まり、実測 50% が 18% に見えて閾値を下回っていた
+#
+# **判定は payload の `waves_expected` ではなく現行式で再計算する**（GitHub issue #200）。
+# `waves_expected` は publish 時点の式で焼き付くが**式の版マーカーが無い**ので、式を直しても
+# 過去のイベントは旧値のまま数え続けられ、**一度出た偽陽性が固定化する**（実測: `[6,10,4,1]`
+# の回が #166 で解決済みの偽陽性なのに違反として残っていた）。再計算に必要な入力はすべて
+# payload にある。payload の値は消さない — 食い違った件数を `stale` として出す。
 n_wave_judged = 0
 n_wave_suppressed = 0     # `agents-mismatch` で判定が抑止された回（分母にも分子にも入らない）
+n_wave_split = 0          # 現行式で再計算した違反
+n_wave_split_stale = 0    # payload の `waves_expected` と判定が食い違った回
+wave_split_kinds = {}     # 違反の型ごとの件数（**推定** / 是正先の出し分け）
 for _e in events:
     _p = _e["p"]
     _d = _p.get("dispatch")
@@ -677,6 +742,19 @@ for _e in events:
         n_wave_suppressed += 1
         continue
     n_wave_judged += 1
+    _sizes = _d.get("wave_sizes")
+    # **判定は `waves_effective`（捨てられた試行・孫を除いた本数）**。無ければ `waves` に
+    # 落とす。publish 側と同じ順序にすること（違うと再計算が別の量になる）
+    _w = _d.get("waves_effective")
+    if not isinstance(_w, int) or isinstance(_w, bool):
+        _w = _d["waves"]
+    _hit = _w > expected_waves(_p, _sizes)
+    if _hit != (_w > _d["waves_expected"]):
+        n_wave_split_stale += 1
+    if _hit:
+        n_wave_split += 1
+        _kind = wave_split_kind(_p, _sizes)
+        wave_split_kinds[_kind] = wave_split_kinds.get(_kind, 0) + 1
 # `tokens` gap の分母。review だけが計測対象なので self-review を混ぜない
 n_gapfield_review = sum(1 for e in events
                         if isinstance(e["p"].get("measurement_gaps"), list)
@@ -702,7 +780,7 @@ n_modern = len(modern)
 modern_synthesis = len(measured(modern, "duration_synthesis_min"))
 # explorer 未起動の回は「該当なし」なので分母から外す（欠測ではない）
 modern_waves_scope = [e for e in modern
-                      if (num((e["p"].get("agents") or {}).get("explorer")) or 0) >= 1]
+                      if (num(agents_dict(e["p"]).get("explorer")) or 0) >= 1]
 modern_waves = sum(1 for e in modern_waves_scope
                    if "explorer-wave" not in (e["p"].get("measurement_gaps") or []))
 
@@ -726,10 +804,29 @@ for e in tok_raw:
         tok_rows.append(e)
 
 
+#: `sub_*` 系のキー（sub 側の集計が空振りした回は分母から外す / GitHub issue #199）
+_SUB_KEYS = ("sub_output_k", "sub_cache_write_k", "sub_cache_read_k")
+
+
+def _sub_is_blank(t):
+    """sub 側の計測が空振りした回か（GitHub issue #199）.
+
+    sub の体数が 0 なのは「窓が sub の transcript を覆っていない」を意味する（申告体数が
+    1 以上ある前提。レビューは必ず sub agent を起動する）。**publish は v2.101.0 以降 sub_* を
+    None に倒して `tokens-sub` を立てる**が、それ以前に焼かれた回は `sub_output_k: 0.0` が
+    残っているので、集計側でも `sub_agents` を見て弾く（旧データにも効かせる）。
+    """
+    n = num(t.get("sub_agents"))
+    return n is not None and n == 0
+
+
 def tok_vals(key):
     out = []
     for e in tok_rows:
-        v = num((e["p"]["tokens"] or {}).get(key))
+        t = e["p"]["tokens"] or {}
+        if key in _SUB_KEYS and _sub_is_blank(t):
+            continue
+        v = num(t.get(key))
         if v is not None and v >= 0:
             out.append(v)
     return out
@@ -741,7 +838,10 @@ tok_sub = tok_vals("sub_output_k")
 # 「体数を減らせばトークンが減る」という triage-guide `## 7` の前提を見直す信号になる
 txs, tys = [], []
 for e in tok_rows:
-    ta, so = total_agents(e["p"]), num((e["p"]["tokens"] or {}).get("sub_output_k"))
+    t = e["p"]["tokens"] or {}
+    if _sub_is_blank(t):                 # sub 空振りの回は相関の分母に入れない（#199）
+        continue
+    ta, so = total_agents(e["p"]), num(t.get("sub_output_k"))
     if ta is not None and so is not None and so >= 0:
         txs.append(ta)
         tys.append(so)
@@ -874,8 +974,8 @@ def gap_denom(g):
         return ("subagent がさらに agent を起動した回（`spawnDepth >= 2`）。"
                 "**オーケストレーターは申告しようがない**ので突合から外している。"
                 "コストには含まれる")
-    if g == "wave-split":              # **wave 判定が成立した回**だけが母集団（#192）
-        return n_wave_judged
+    # **`wave-split` はここに来ない** — 欠測ではないので `gap_counts` から外してあり
+    # （#192）、分母 `n_wave_judged` と分子は専用の判定ブロックが持つ（#200）
     return n_gapfield
 
 
@@ -889,6 +989,11 @@ def gap_hint(g):
                 "`review-timing.sh publish-pending` のガード位置を見直す")
     if g == "tokens":
         return "transcript の引き当て（measure-tokens.sh のセッション選択・窓）を見直す"
+    if g == "tokens-sub":
+        # **打点ではなく窓の被覆**（#199）。sub agent の transcript が窓の外にある
+        return ("sub 側の計測が空振りした（`sub_agents == 0`。セッション再開・窓の開始遅れで "
+                "sub agent の transcript が `since-t0` の窓の外にある）。measure-tokens.sh の "
+                "窓の起点（t0 の打点・セッション選択）を見直す")
     if g == "diff-digest":
         return "diff の突合キー算出（lib/review-paths.sh）を見直す"
     # 新識別子を足したら**ここにも分岐を足す**（v2.88.2 / #167・#169）。既定に落とすと
@@ -916,14 +1021,17 @@ for g, cnt in gap_counts.items():
 # 欠測率の高い順。**上位 2 件まで**（全部並べるとシグナル欄が表になって「⚠️ が出たときだけ
 # 行動する」契約の可読性が落ちる。残りは「計測の健全性」行の欠測内訳で見える）
 for ratio_g, g, cnt, d in sorted(gap_hits, reverse=True)[:2]:
-    # **`wave-split` は「欠測」ではなく規約違反**（#192）。`measurement_gaps` に積まれる
-    # だけで、計測が取れなかったわけではない。同じ語で呼ぶと是正先を誤読させる
-    if g == "wave-split":
-        signals.append("一括発行の規約違反が %.0f%%（%d/%d・wave 判定が成立した回のみ）。%s"
-                       % (ratio_g, cnt, d, gap_hint(g)))
-    else:
-        signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。%s"
-                       % (g, ratio_g, cnt, d, gap_hint(g)))
+    signals.append("計測マーカー `%s` の欠測が %.0f%%（%d/%d）。%s"
+                   % (g, ratio_g, cnt, d, gap_hint(g)))
+# **一括発行の規約違反は欠測と別枠で出す**（#192）。`measurement_gaps` に積まれるだけで
+# 計測は取れており、「計測が取れなかった」と「規約が守られなかった」では読む人の次の一手が
+# 違う。**上の上位 2 件枠とも競合させない** — 枠から溢れると是正先ごと消える。
+# 分子は現行式での再計算（#200）で、payload の `waves_expected` は使わない
+if n_wave_judged >= GAP_MIN_N and pct(n_wave_split, n_wave_judged) >= GAP_RATIO:
+    signals.append("一括発行の規約違反が %.0f%%（%d/%d・wave 判定が成立した回のみ）。%s"
+                   "。内訳（**推定** / 型で是正先が違う）: %s"
+                   % (pct(n_wave_split, n_wave_judged), n_wave_split, n_wave_judged,
+                      gap_hint("wave-split"), wave_split_kinds_txt()))
 # 指摘の分類（v2.68.0）。**機械で捕まる層を agent に探させている**割合が高いままなら、
 # lint / テストを足す方が安い（CLAUDE.md「決定的 hook > LLM 判定」を自分の保守に適用する）
 # **下限は「レビュー回数」と「指摘件数」の二重**。他のシグナル（skeptic の `fired >= 15` /
@@ -997,6 +1105,11 @@ if as_json:
                    "main_output_k_median": median(tok_main),
                    "sub_output_k_median": median(tok_sub),
                    "agents_sub_output_r": tok_r, "agents_sub_output_n": len(txs)},
+        # **一括発行は欠測と別枠**（#192 / #200）。`marker` は payload に焼かれた
+        # publish 時点の判定の生カウントで、`n` は現行式での再計算。食い違いは `stale`
+        "wave_split": {"n": n_wave_split, "judged": n_wave_judged,
+                       "suppressed": n_wave_suppressed, "stale": n_wave_split_stale,
+                       "marker": n_wave_split_marker, "kinds": wave_split_kinds},
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
                         "split_explorer_waves": split_waves,
@@ -1384,14 +1497,18 @@ else:
               "%s=%d" % kv for kv in sorted(gap_counts.items(), key=lambda kv: -kv[1]))))
     # **`wave-split` の分母を明示する**（#192）。他の gap と母集団の意味が違ううえ、
     # `agents-mismatch` で判定を抑止された回は分母にも分子にも入らない。黙って落とすと
-    # 「一括発行は守られている」と読まれる
+    # 「一括発行は守られている」と読まれる。**件数は現行式での再計算**（#200）
     if n_wave_judged or n_wave_suppressed:
-        _ws = gap_counts.get("wave-split", 0)
-        print("  - 一括発行: 判定できた %d 件中 %d 件が wave-split"
-              % (n_wave_judged, _ws)
+        print("  - 一括発行: 判定できた %d 件中 %d 件が規約違反（**現行式で再計算**）"
+              % (n_wave_judged, n_wave_split)
+              + ("" if not n_wave_split else "。内訳（**推定**）: %s" % wave_split_kinds_txt())
               + ("" if not n_wave_suppressed else
                  "。**別に %d 件は `agents-mismatch` で判定を抑止**（分母にも分子にも"
-                 "入らない — 守られたのではなく**測れていない**）" % n_wave_suppressed))
+                 "入らない — 守られたのではなく**測れていない**）" % n_wave_suppressed)
+              + ("" if not n_wave_split_stale else
+                 "。**%d 件は payload の `waves_expected` と判定が食い違う**"
+                 "（publish 時点の式で焼かれた値。再計算した側が現行の判定 / #200）"
+                 % n_wave_split_stale))
     # **補完の待ち行を出し分ける**（issue #161）。「フィールドを持つ回が 0」（旧版のみ）と
     # 「持っているが 1 件も補完していない」（打点が守られた or 補完条件を満たさなかった）は
     # 別の状態で、潰すと「補完機構が入っているのに効いていない」を見逃す
