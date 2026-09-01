@@ -3200,6 +3200,84 @@ class RetroWaveSplitDenominatorTest(RetroTest):
         self.assertNotIn("計測マーカー `wave-split` の欠測", out)
 
 
+class RetroAgentFieldDenominatorTest(RetroTest):
+    """`agents` を版プロキシに使う分母と、その境界（GitHub issue #204）.
+
+    ここは **`--json` にしか出ない数**で、本文には比率としてしか現れない。変異が 5 件
+    生存していた区間で、どれも「分母が静かに入れ替わる」型の壊れ方をする — 母集団が
+    反転しても出力の体裁は変わらず数字だけ動くので、目視では気づけない。
+    """
+
+    @staticmethod
+    def _row(agents: dict | None = None, gaps: list[str] | None = None) -> dict:
+        p = {"effort": "high", "size_tier": "medium",
+             "measurement_gaps": [] if gaps is None else gaps}
+        if agents is not None:
+            p["agents"] = agents
+        return p
+
+    def _json(self) -> dict:
+        r = self.run_script(RETRO, "--json", env=self._env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    # ---- round2（`agents.round2` のキー存在が版プロキシ / #127 と同型）---------
+
+    def test_round2_scope_holds_only_runs_that_record_the_field(self):
+        """分母は `agents.round2` を**記録している回**だけ.
+
+        キーごと無い旧版を混ぜると「起動しなかった」と同じ扱いになり、発火率が構造的に
+        薄まる。母集団が反転しても件数の体裁は変わらないので、**両側の件数を非対称に**
+        して向きまで固定する。
+        """
+        self._events([self._row({"reviewer": 2}), self._row({"reviewer": 2}),
+                      self._row({"reviewer": 2, "round2": 1})])
+        out = self._json()
+        self.assertEqual(out["round2_scope"], 1, "記録の無い旧版を分母に入れている")
+        self.assertEqual(out["round2_fired"], 1)
+
+    def test_round2_fired_counts_positive_values_only(self):
+        """発火は「1 本以上起動した回」。0 本の回は分母に残して分子から外す."""
+        self._events([self._row({"round2": 2}), self._row({"round2": 0})])
+        out = self._json()
+        self.assertEqual(out["round2_scope"], 2)
+        self.assertEqual(out["round2_fired"], 1, "起動本数が正の回を数えていない")
+
+    # ---- explorer_waves（欠測率の生カウント）----------------------------------
+
+    def test_have_explorer_waves_counts_runs_that_record_the_field(self):
+        """`have_explorer_waves` は**フィールドを持つ回**。0 も「記録あり」に数える.
+
+        打点が無くても 0 が必ず入るフィールドなので、値ではなく存在で数える。ここが
+        反転すると欠測率の分母が旧版だけになる。
+        """
+        self._events([self._row({"reviewer": 2}), self._row({"reviewer": 2}),
+                      self._row({"reviewer": 2, "explorer_waves": 0})])
+        self.assertEqual(self._json()["measurement"]["have_explorer_waves"], 1,
+                         "記録の無い旧版を「記録あり」と数えている")
+
+    def test_two_waves_already_counts_as_split(self):
+        """境界は「2 波以上」。3 波以上に狭めない（2 波が最頻の分割形）."""
+        self._events([self._row({"explorer_waves": 1}), self._row({"explorer_waves": 2})])
+        m = self._json()["measurement"]
+        self.assertEqual(m["have_explorer_waves"], 2, "前提: どちらも記録はある")
+        self.assertEqual(m["split_explorer_waves"], 1, "2 波を分割として数えていない")
+
+    # ---- modern 側の explorer 起動回（健全性表示の分母）------------------------
+
+    def test_a_single_explorer_run_is_in_the_health_denominator(self):
+        """explorer を **1 体でも**起動した回は分母に入る（未起動だけを外す）.
+
+        「該当なし」として外すのは 0 体の回だけ。1 体の回まで落とすと、explorer を絞った
+        セッションの打点漏れが健全性表示から丸ごと消える。
+        """
+        self._events([self._row({"explorer": 0}), self._row({"explorer": 1})])
+        m = self._json()["measurement"]
+        self.assertEqual(m["modern_explorer_waves_scope"], 1,
+                         "explorer 1 体の回を分母から落としている")
+        self.assertEqual(m["modern_explorer_waves"], 1)
+
+
 class RetroUnreachableWaitTest(RetroTest):
     """達成不能な待ち行を明示する（GitHub issue #191 期待動作 2）."""
 
