@@ -2753,6 +2753,81 @@ class RetroGenerationRecallTest(RetroTest):
         self.assertNotIn("版マーカー × 閾値 × 世代で層別", out)
 
 
+class RetroLayerTableCapTest(RetroTest):
+    """層別表の表示上限と省略の可視化（GitHub issue #198）.
+
+    `effort × size_tier` と `1 体あたり cache_read` の 2 表は上位 8 層で切られていたが、
+    **落とした層数も件数もどこにも出ていなかった**。切ると落ちるのは必ず n の小さい層 ＝
+    **新しい世代**なので、世代交絡を消すための層別（#191）が新世代の観測を消していた
+    （実測 n=108 で opus-5 が 2 表とも 0 行）。
+    """
+
+    def _row(self, effort: str, tier: str, gen: str, fleet: int) -> dict:
+        return {"effort": effort, "size_tier": tier, "measurement_gaps": [],
+                "duration_fleet_min": fleet,
+                "agents": {"explorer": 2, "reviewer": 5},
+                "models": {"schema": 1, "main": "claude-" + gen,
+                           "main_distinct": ["claude-" + gen], "sub_distinct": []},
+                "tokens": {"schema": 2, "window": "since-t0", "main_output_k": 100.0,
+                           "sub_output_k": 200.0, "sub_cache_read_k": 7550.0,
+                           "sub_agents": 2}}
+
+    #: 上限（8 層）を超えるだけの層を作る effort × tier の組
+    TIERS = [("high", "medium"), ("high", "small"), ("high", "large"),
+             ("xhigh", "medium"), ("xhigh", "small"), ("xhigh", "large"),
+             ("medium", "medium"), ("medium", "small"), ("low", "small")]
+
+    def _population(self, old_gen: str = "opus-4-8", new_gen: str | None = "opus-5"):
+        """旧世代を各層 n=5 で 9 層 + 新世代を n=1 で 1 層（新世代は必ず上限外に落ちる形）."""
+        rows = []
+        for i, (e, t) in enumerate(self.TIERS):
+            rows += [self._row(e, t, old_gen, 20 + i) for _ in range(5)]
+        if new_gen:
+            rows.append(self._row("xhigh", "large", new_gen, 42))
+        return rows
+
+    def test_the_dropped_layers_are_reported(self):
+        """**切ったら省略行を出す**（層数と件数の両方）.
+
+        「どのログから何件採ったかは必ず出力する」という本スクリプトの流儀に、この 2 表だけが
+        従っていなかった。母集団が言えないと「⚠️ が出たときだけ行動する」契約が成立しない。
+        """
+        self._events(self._population())
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("他 1 層（計 5 件）を省略", out, "省略を silent に落としている")
+
+    def test_a_new_generation_survives_the_cap(self):
+        """**世代ごとに最低 1 行は残す**（#198 の本題）.
+
+        新世代は必ず n が小さいので、裸の上限では旧世代 9 層（各 n=5）に押し出されて
+        表から丸ごと消える。世代比較のための層別が世代の観測を消しては本末転倒。
+        """
+        self._events(self._population())
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("| xhigh/large/opus-5 | 1 |", out,
+                      "新世代の層が上限で落ちている（fleet 表）")
+        self.assertIn("| xhigh/large/opus-5 | 1 | 3775 k |", out,
+                      "新世代の層が上限で落ちている（1 体あたり cache_read 表）")
+
+    def test_no_omission_note_when_nothing_is_dropped(self):
+        """上限に収まる母集団では省略行を出さない（常時出ると読み飛ばされる）."""
+        self._events([self._row("high", "medium", "opus-5", 20) for _ in range(3)])
+        self.assertNotIn("を省略", self.run_script(RETRO, env=self._env()).stdout)
+
+    def test_the_cap_still_applies_without_a_generation_split(self):
+        """世代が 1 種のときも上限は効き、省略行は出る（救済だけが無効になる）.
+
+        `GEN_SPLIT` が偽なら層別キーに世代が入らないので救済対象が無い。上限そのものは
+        可読性のために残す。
+        """
+        self._events(self._population(old_gen="opus-4-8", new_gen=None))
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("1 種のみなので層別しない", out, "前提: 世代が 1 種")
+        self.assertIn("他 1 層（計 5 件）を省略", out)
+        self.assertNotIn("世代ごとの最低 1 行", out,
+                         "世代を層別していないのに救済を名乗っている")
+
+
 class RetroWaveSplitDenominatorTest(RetroTest):
     """wave-split の分母と是正先（GitHub issue #192）.
 

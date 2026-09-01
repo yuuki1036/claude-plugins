@@ -379,9 +379,56 @@ GEN_SPLIT = len(GEN_KINDS) > 1
 # 母数を既知世代の中央値に混ぜないことの対価として受け入れる
 
 
+#: 層別キー → その層の世代（`GEN_SPLIT` のときだけ埋まる）。表示上限で世代を丸ごと
+#: 落とさないための逆引き（GitHub issue #198）。**キーを `/` で割り戻して世代を取らない** —
+#: `effort` / `size_tier` は payload 由来の自由文で `/` を含みうる
+LAYER_GEN = {}
+
+#: 層別表の表示上限（可読性のための上限で、母集団の定義ではない）。**超えたら省略行を出す**
+#: — 「どのログから何件採ったか」を必ず出す本スクリプトの流儀（冒頭）に、この 2 表だけが
+#: 従っていなかった（#198）。裸で切ると落ちるのは必ず n の小さい層 ＝ 新しい世代になる
+LAYER_ROWS_MAX = 8
+
+
 def with_gen(p, key):
     """世代が 2 種以上ある母集団でだけ層別キーへ世代を足す。"""
-    return key + "/" + gen_of(p) if GEN_SPLIT else key
+    if not GEN_SPLIT:
+        return key
+    full = key + "/" + gen_of(p)
+    LAYER_GEN[full] = gen_of(p)
+    return full
+
+
+def cap_layer_rows(rows):
+    """層別表を上限で切る。**世代ごとに最低 1 行は残す**（GitHub issue #198）。
+
+    `rows` は `(key, n, ...)` の n 降順。返り値は `(表示する行, 省略した層数, 省略した件数)`。
+
+    世代キーを層別に足すと層数がほぼ倍になり（#191）、裸の上限では**新しい世代が丸ごと
+    表から消える**（実測: n=108 で opus-5 が 2 表とも 0 行）。世代比較のための層別が世代の
+    観測を消しては本末転倒なので、上限を超えても各世代の最大の層 1 つは救う。
+    """
+    shown = list(rows[:LAYER_ROWS_MAX])
+    if GEN_SPLIT:
+        seen = {LAYER_GEN.get(r[0]) for r in shown}
+        for r in rows[LAYER_ROWS_MAX:]:
+            g = LAYER_GEN.get(r[0])
+            if g not in seen:
+                seen.add(g)
+                shown.append(r)
+    keys = {r[0] for r in shown}
+    dropped = [r for r in rows if r[0] not in keys]
+    shown.sort(key=lambda r: -r[1])
+    return shown, len(dropped), sum(r[1] for r in dropped)
+
+
+def layer_omission_note(dropped_layers, dropped_n):
+    """省略行。**0 件のときは何も出さない**（常時出ると読み飛ばされる）。"""
+    if not dropped_layers:
+        return None
+    return ("_他 %d 層（計 %d 件）を省略（表示は n の多い順 上限 %d 層%s）_"
+            % (dropped_layers, dropped_n, LAYER_ROWS_MAX,
+               " + 世代ごとの最低 1 行" if GEN_SPLIT else ""))
 
 
 # ---- 2. effort × size_tier 別の fleet 時間・体数 ---------------------------
@@ -1147,9 +1194,14 @@ print("**effort × size_tier**（fleet 中央値 / 体数中央値）")
 print()
 print("| effort/tier | n | fleet 中央値 | 体数中央値 |")
 print("|---|---:|---:|---:|")
-for key, n, f, a in tier_rows[:8]:
+_tier_shown, _tier_dropped, _tier_dropped_n = cap_layer_rows(tier_rows)
+for key, n, f, a in _tier_shown:
     print("| %s | %d | %s | %s |" % (key, n, "-" if f is None else "%g 分" % f,
                                      "-" if a is None else "%g" % a))
+_note = layer_omission_note(_tier_dropped, _tier_dropped_n)
+if _note:
+    print()
+    print(_note)
 if tier_r_rows:
     print()
     print("**体数 vs fleet 時間の相関**（size_tier 内。tier が体数と fleet の両方を"
@@ -1451,8 +1503,13 @@ else:
         print()
         print("| effort/tier | n | 1 体あたり中央値 |")
         print("|---|---:|---:|")
-        for key, n, m in per_agent_rows[:8]:
+        _pa_shown, _pa_dropped, _pa_dropped_n = cap_layer_rows(per_agent_rows)
+        for key, n, m in _pa_shown:
             print("| %s | %d | %s |" % (key, n, "-" if m is None else "%.0f k" % m))
+        _pa_note = layer_omission_note(_pa_dropped, _pa_dropped_n)
+        if _pa_note:
+            print()
+            print(_pa_note)
     else:
         print("**1 体あたり cache_read**: 実測 0 件（`tokens.schema >= %d` 未満で除外 %d・"
               "`sub_agents` が 0 / 欠測で除算不可 %d）。**「まだ載っていない」と「載ったが"
