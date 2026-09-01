@@ -679,7 +679,13 @@ def layer_stats(field, schema_key, min_schema, value_of=None):
     """
     if value_of is None:
         value_of = lambda d: num(d.get("findings_added")) or 0  # noqa: E731
-    st = {"n_raw": 0, "n": 0, "fired": 0, "valuable": 0,
+    # **`by_gen` は世代別の内訳**（GitHub issue #191 期待動作 1 の 3 項目目）。
+    # コスト側（fleet / 体数 / cache_read）と検出側（歩留まり / 報告 0 件率）は世代で
+    # 層別済みだが、**動的層の発火率と skip 理由だけが全世代の累計**のまま残っていた。
+    # 踏み下げの崩壊はここに最も鋭く出る — 上流の MAJOR がほぼゼロになると反証は
+    # `no-eligible-findings` で不発になり（#191 の実測: calib=3 の 7 件中 6 件）、
+    # 累計すると「ゲート幅が広すぎる」という**別の是正先**に見える
+    st = {"n_raw": 0, "n": 0, "fired": 0, "valuable": 0, "by_gen": {},
           "skips": {}, "dropped_schema": 0, "dropped_scope": 0, "dropped_unrecorded": 0,
           "schema_key": schema_key, "min_schema": min_schema}
     for e in events:
@@ -705,13 +711,20 @@ def layer_stats(field, schema_key, min_schema, value_of=None):
             st["skips"][reason] = st["skips"].get(reason, 0) + 1
             continue
         st["n"] += 1
+        # 分母は `n` と同じ（スコープ外スキップは上で除外済み）。集計と内訳で母集団を
+        # ずらすと、世代別の合計が本体と合わずに読み手が原因を探すことになる
+        g = st["by_gen"].setdefault(gen_of(e["p"]),
+                                    {"n": 0, "fired": 0, "skips": {}})
+        g["n"] += 1
         if d.get("fired") is True:
             st["fired"] += 1
+            g["fired"] += 1
             if value_of(d) > 0:
                 st["valuable"] += 1
         else:
             key = reason or "unknown"
             st["skips"][key] = st["skips"].get(key, 0) + 1
+            g["skips"][key] = g["skips"].get(key, 0) + 1
     return st
 
 
@@ -1388,6 +1401,16 @@ for name, st in (("skeptic", skeptic), ("meta", meta), ("反証", adversarial)):
     if st["skips"]:
         print("  - %s skip 理由: %s" % (name, " / ".join(
             "%s=%d" % kv for kv in sorted(st["skips"].items(), key=lambda kv: -kv[1]))))
+    # **世代別の内訳**（GitHub issue #191 期待動作 1）。世代が 1 種の母集団では本体の
+    # 1 行と同じ内容になるので出さない（no-op の行を足さない）
+    if GEN_SPLIT and len(st["by_gen"]) > 1:
+        for _g in sorted(st["by_gen"]):
+            _b = st["by_gen"][_g]
+            _sk = (" / skip: " + " ".join(
+                "%s=%d" % kv for kv in sorted(_b["skips"].items(), key=lambda kv: -kv[1]))
+                if _b["skips"] else "")
+            print("    - %s / %s: 発火 %d/%d（%.0f%%）%s"
+                  % (name, _g, _b["fired"], _b["n"], pct(_b["fired"], _b["n"]), _sk))
 
 print()
 if fc_rows:

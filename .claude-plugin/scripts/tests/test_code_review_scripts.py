@@ -2622,6 +2622,75 @@ class RetroGenerationRecallTest(RetroTest):
             r["models"] = self._models("claude-%s" % gen)
         return r
 
+    def _layer_row(self, gen: str, fired: bool, reason: str | None = None) -> dict:
+        """反証層の発火 / skip を持つ 1 回（世代つき）."""
+        av = {"gate_schema": 2, "calibration_schema": 3, "fired": fired,
+              "skip_reason": reason}
+        if fired:
+            av.update({"confirmed": 2, "refuted": 0, "uncertain": 0,
+                       "severity_inflated": 1, "contested": 0})
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "models": self._models("claude-%s" % gen),
+                "adversarial_verify": av}
+
+    def test_dynamic_layer_firing_is_split_by_generation(self):
+        """**動的層の発火率と skip 理由も世代で層別する**（#191 期待動作 1 の 3 項目目）.
+
+        踏み下げの崩壊はここに最も鋭く出る — 上流の MAJOR がほぼゼロになると反証は
+        `no-eligible-findings` で不発になる（実測: calib=3 の 7 件中 6 件）。累計だけだと
+        「反証 7/13 = 54%」に見え、**ゲート幅が広すぎる**という別の是正先を指してしまう。
+        """
+        rows = [self._layer_row("opus-4-8", i == 4,
+                                None if i == 4 else "no-eligible-findings")
+                for i in range(7)]
+        rows += [self._layer_row("opus-5", True) for _ in range(6)]
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("反証 7/13", out, "前提: 累計では落差が見えない")
+        self.assertIn("反証 / opus-4-8: 発火 1/7（14%） / skip: no-eligible-findings=6", out,
+                      "踏み下げ側の不発が世代別に出ていない")
+        self.assertIn("反証 / opus-5: 発火 6/6（100%）", out)
+
+    def test_no_generation_breakdown_when_a_single_generation(self):
+        """世代が 1 種なら内訳を出さない（本体の 1 行と同じ内容になる / no-op 行を足さない）."""
+        self._events([self._layer_row("opus-5", True) for _ in range(4)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("反証 4/4", out, "前提: 本体の集計は出ている")
+        self.assertNotIn("反証 / opus-5:", out, "世代 1 種なのに内訳行を出している")
+
+    def test_no_breakdown_when_only_one_generation_reaches_the_layer(self):
+        """**母集団は 2 世代でも、その層に 1 世代しか届かなければ内訳を出さない**.
+
+        層のフィールド自体を持たない回（旧版 payload）は `layer_stats` の母集団に入らないので、
+        `GEN_SPLIT` が真でも `by_gen` が 1 世代になりうる。そこで内訳を出すと本体の 1 行と
+        同じ内容が 2 度並ぶ（`GEN_SPLIT` だけを条件にすると起きる）。
+        """
+        # 旧世代側は `adversarial_verify` を持たない = 層の母集団に入らないが、世代の
+        # 種類数（`GEN_SPLIT`）には数えられる
+        rows = [{"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                 "models": self._models("claude-opus-4-8")} for _ in range(3)]
+        rows += [self._layer_row("opus-5", True) for _ in range(4)]
+        self._events(rows)
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("層別キーに含めている", out, "前提: 母集団は 2 世代（GEN_SPLIT が真）")
+        self.assertIn("反証 4/4", out, "前提: 層の集計は出ている")
+        self.assertNotIn("反証 / opus-5:", out,
+                         "その層に 1 世代しか届いていないのに内訳行を出している")
+
+    def test_the_generation_breakdown_sums_to_the_aggregate(self):
+        """世代別の分母の合計が本体の `n` と一致する（母集団をずらさない）.
+
+        ずれると読み手が原因を探すことになる。スコープ外スキップは本体でも内訳でも
+        分母から外れる。
+        """
+        rows = [self._layer_row("opus-4-8", False, "no-eligible-findings") for _ in range(3)]
+        rows += [self._layer_row("opus-5", True) for _ in range(2)]
+        self._events(rows)
+        d = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        adv = d["adversarial_verify"]
+        self.assertEqual(sum(g["n"] for g in adv["by_gen"].values()), adv["n"])
+        self.assertEqual(sum(g["fired"] for g in adv["by_gen"].values()), adv["fired"])
+
     def test_zero_report_rate_is_split_by_generation(self):
         """報告 0 件率を世代別に出す（recall の粗い代理）."""
         self._events([self._row("opus-5", 8, 3), self._row("opus-5", 7, 2),
