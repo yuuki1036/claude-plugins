@@ -199,7 +199,7 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
   - **高 severity は仮に降格で消えても「🔁 報告閾値を割った指摘」には出さない**（**反証由来の脱落に限った話**。あの節の① = `refuted` の −40 と `severity-inflated` の降格 / issue #109）。高 severity は係争注記付きで本文に残すのが唯一の正しい扱い。**② の加減算由来には高 severity の保護が無いので、そちらは severity を問わず記録する**（`## 報告閾値を割った指摘の記録` / issue #128）
 - **security specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**（triage-dynamic-gates.md `## 9` のゲートで除外）。万一 verdict が付いても confidence / severity は据え置き、反証メモも付さない（誤反証の代償が非対称に大きい）
 - 係争メモは `[...]` タグ語彙を増やさず本文の `⚠️ 反証メモ:` で表す（reviewer 自己申告タグ `[scope:out]` 等はオーケストレーターでなく reviewer が付与する系統。producer を記法で区別する）
-- verdict が付いていない指摘（反証レイヤー未起動・対象外・反証失敗）は本ステップを no-op として素通りする（後方互換）
+- verdict が付いていない指摘（反証レイヤー未起動・対象外・反証失敗）は本ステップを no-op として素通りする（後方互換）。**no-op なのは confidence 計算だけで、「検証済み」を意味しない** — 層が動いた回で対象帯の外だった指摘には指摘単位のマーカーが付く（`orchestration-dynamic-rounds.md ## 10` 手順 4 / GitHub issue #196）
 
 > **バッチはパネルではない**: 現行は全 effort で **1 指摘 1 verdict**（反証エージェント 1 体が最大 5 件を担当するバッチ運用）。同じ指摘に複数 verdict が付くことは無いので、**バッチ内の verdict 同士を合算・相殺してはならない**（triage-dynamic-gates.md `## 9`）。パネル運用（1 指摘を複数体で反証）は将来拡張で、集計規則は `design-notes/scoring-rationale.md`。
 

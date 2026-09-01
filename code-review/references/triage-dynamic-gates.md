@@ -2,7 +2,7 @@
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @a70a602f -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @f09710f8 -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @1db019f1 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#5 @a959d6b9 -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
@@ -258,6 +258,8 @@ reviewer の指摘を独立エージェントが反証し、過大な指摘の p
 **再監視の条件**: `gate_schema >= 2` の母集団が **10 件**貯まった時点で、`skip_reason="no-eligible-findings"` が **50% 以上**なら本節のゲート幅を再検討する（`review-retro.sh` が自動で ⚠️ シグナルを出す）。検討の選択肢は「high の非対称ゾーンに MAJOR の一部帯を足す」だが、**足すこと自体が結論ではない** — 上表の設計意図（「詰めると取り下がるのは不確実だが報告される非対称ゾーン」）と、下の xhigh / max 節が記録しているトレードオフ（最も取り下がりにくい層に wave 1 本を使う）を併せて判断する。
 
 - **狭いこと自体はまだ問題だと言えない。** 本 issue が直したのは**測れないこと**であって、ゲート幅ではない
+- **再監視の条件は点灯済み。再検討した結果、今は広げない**（v2.105.0 / GitHub issue #196 期待動作 2）。実測で `no-eligible-findings` は 73%（8/11）で上の条件（10 件・50%）を超えている。それでも広げないのは、**不発率が世代と交絡している**ため（#191: 踏み下げ期は上流の MAJOR 中央値が 7 → 0 で、*上流に指摘が無いから帯に入らない* のか *帯が狭いから入らない* のかを分離できない）。世代別の層別が入ったのは v2.105.0 なので、分離できるサンプルはこれから貯まる。**再検討の条件と却下の根拠は `design-notes/scoring-rationale.md`**
+- **帯の外だった指摘は指摘単位でマークする**（v2.105.0 / #196）。ゲート幅を触らずに「この指摘は独立検証を通っていない」を採用段へ伝える経路で、書式は `orchestration-dynamic-rounds.md ## 10` 手順 4
 - **不発回のレポート文言は「未実施」と書く**（v2.67.0 / GitHub issue #136）。`反証: 対象 0 件` は「検証したが問題なし」と読まれ、**確信度の表示が実態より高く出る**。書式の正本は `orchestration-dynamic-rounds.md ## 10` 手順 4
 - **「加減算で報告閾値を超えた MAJOR」を high の対象に足す案は保留**（#136 の本命案）。`scoring-guide.md` の「複数エージェント検出 +15」は MAJOR を単独で 95 へ押し上げられるのに押し上げの妥当性が未検証、という指摘自体は妥当だが、**既定 high では meta が走らないため反証 wave がそもそも無い回が多く、足すと直列 wave が 1 本生える**（xhigh / max は既に MAJOR 全件が対象なので効くのは high 限定）。上の再監視条件が点灯してから併せて判断する → `design-notes/pending-optimizations.md ## 7`
 - 分母の作り方: `skip_reason` の 5 値のうち **`"no-eligible-findings"` だけは設計上の非該当ではない**ので、下流の分母から外さない（`effort` / `config` / `scope` / `emergency` は外す）。`review-retro.sh` の `OUT_OF_SCOPE_SKIPS` がこの区別を持つ
