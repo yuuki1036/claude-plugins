@@ -53,7 +53,7 @@ Step 6（severity×confidence の機械フィルタ）と Phase 5.9 反証レイ
 
 ## 3. 投稿コメントのドラフト生成
 
-生成する全文面は `reply-tone-guide.md` `## 0 必須ルール`（Claude 署名 / 作成者・他レビュアーへの敬意 / 簡潔さ / 良い点を 1 文 / メタ行 / 著者配慮チェックリスト）を**厳守**する。
+生成する全文面は `reply-tone-guide.md` `## 0 必須ルール`（Claude 署名 / 作成者・他レビュアーへの敬意 / 簡潔さ / 良い点に触れない / メタ行 / 著者配慮チェックリスト）を**厳守**する。
 
 精査（1）・解説（2）の確定後に **AskUserQuestion** で要否を確認する（options は状態に応じて提示する）:
 
@@ -62,7 +62,7 @@ Step 6（severity×confidence の機械フィルタ）と Phase 5.9 反証レイ
 - multiSelect: false
 - options:
   1. label: "不要" / description: "ドラフトは生成しない（既定）"
-  2. label: "承認コメント" / description: "簡潔な承認 + 良い点 1 文 + 署名"（**総合判定が Approve / Approve with nits のときのみ提示**）
+  2. label: "承認コメント" / description: "簡潔な承認 + 署名"（**総合判定が Approve / Approve with nits のときのみ提示**）
   3. label: "重要指摘のみ" / description: "severity BLOCKER / CRITICAL の返答ドラフト"（**BLOCKER / CRITICAL が 1 件以上あるときのみ提示**。Approve with nits は定義上 BLOCKER/CRITICAL が無く本選択肢が空振りするため、残存指摘の有無では条件付けない）
   4. label: "全件" / description: "全残存指摘 ＋ 該当すれば承認コメント"（残存指摘があるときのみ）
   5. label: "個別選択" / description: "対象の指摘番号を入力する"（残存指摘があるときのみ）
@@ -78,7 +78,7 @@ Step 6（severity×confidence の機械フィルタ）と Phase 5.9 反証レイ
 「不要」なら 4 へ。それ以外は以下を実行:
 
 - `${CLAUDE_PLUGIN_ROOT}/references/reply-tone-guide.md` を Read で読み込む
-- **承認コメント**（総合判定 Approve / Approve with nits、かつ「承認コメント」または「全件」選択時）: reply-tone-guide.md `### 2.7 承認メッセージ` のテンプレで生成。良い点は「良かった点」セクションから **1 文に圧縮**（file:line 添え）。Needs work では生成しない。**承認メッセージ本文で触れた nit は指摘返答ドラフトと重複させない**（全体コメントは要点のみ・詳細は inline スレッド側へ。reply-tone-guide 2.7「nits は詳述しない」と整合）
+- **承認コメント**（総合判定 Approve / Approve with nits、かつ「承認コメント」または「全件」選択時）: reply-tone-guide.md `### 2.7 承認メッセージ` のテンプレで生成。**レポートの「良かった点」セクションは転記しない**（投稿文面で良い点に触れない → 0.4）。Needs work では生成しない。**承認メッセージ本文で触れた nit は指摘返答ドラフトと重複させない**（全体コメントは要点のみ・詳細は inline スレッド側へ。reply-tone-guide 2.7「nits は詳述しない」と整合）
 - **指摘への返答**（残存指摘が対象。「個別選択」なら AskUserQuestion で「対象の指摘番号（例: 1,3,5）」を free-text 入力）: 対象指摘ごとにパターンと **voice（文面の声＝誰の発言か）** を選ぶ。voice はメタ行の要否を決める唯一の判定軸なので、パターン番号と**必ず対で**決める:
 
   | 状況 | パターン | voice | メタ行（0.5） |
@@ -106,7 +106,7 @@ Step 6（severity×confidence の機械フィルタ）と Phase 5.9 反証レイ
      ```
      `WRITING_POLISH=0` → 本ステップを skip。
   2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を呼ぶ。`--embed` を必ず付け、`--tone review` を伝え、生成した全ドラフト文面を渡す。
-  3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは含めない）を採用する。ただし **reply-tone-guide.md `## 0 必須ルール` を満たすこと**（メタ行 0.5・署名 0.1・謝辞・敬称・**締めの一文**が推敲で落ちていないか確認する）。満たさない結果は破棄して元案を使う。
+  3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは含めない）を採用する。ただし **reply-tone-guide.md `## 0 必須ルール` を満たすこと**（メタ行 0.5・署名 0.1・謝辞・敬称・**締めの一文**（2.4 / 2.5 / 残存指摘のある 2.6 のみ。他は元から置かない）が推敲で落ちていないか確認する）。満たさない結果は破棄して元案を使う。
   4. fallback: 呼び出しが失敗したら warning を出し、推敲前のドラフトで続行する。
 
 - **投稿は行わない**。ドラフト出力のみ。ユーザーが GitHub UI で手動投稿する
@@ -117,7 +117,6 @@ Step 6（severity×confidence の機械フィルタ）と Phase 5.9 反証レイ
 
 ### 承認コメント（PR 全体コメント）
 > レビューしました。大筋問題なく、Approve とさせてください。
-> src/parser.ts:40-58 の境界値テストが手厚く、回帰検知が効きそうです。
 > 細かい点として変数名の統一がありますが、対応は任意で問題ありません（src/api.ts:12）。
 > — Created by Claude
 
@@ -127,7 +126,6 @@ Step 6（severity×confidence の機械フィルタ）と Phase 5.9 反証レイ
 
 > ご指摘ありがとうございます。
 > src/auth.ts:67 で null チェックを追加しました（{commit-sha}）。
-> 認識に誤りがあればご指摘ください。
 > — Created by Claude
 
 ### 指摘 #4 への返答
