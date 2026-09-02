@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.27.1] - 2026-09-02
+
+### Fixed
+
+- **`pr-creator` の Linear 連携でコメントも取得するようにした**（GitHub issue #202）。
+  `get_issue` だけで description を生成していたため、実装中に決まった仕様変更・スコープ削減
+  （Linear では本文に反映されずコメントに残る）が PR の説明に載らず、**実際の差分とずれた
+  説明**が出ていた。`list_comments` をセットで呼んで description 生成の材料に含める。
+  返却が上限に達した回は古いコメントを読めていないとレポートに添える。
+  Linear MCP 未接続時のフォールバック（コミット履歴から生成）はそのまま
+
 ## [1.27.0] - 2026-08-31
 
 ### Fixed

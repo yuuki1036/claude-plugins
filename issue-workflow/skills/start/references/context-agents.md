@@ -190,8 +190,11 @@ Issue ファイルの frontmatter と比較:
 
 ### 3. 最新コメントの確認
 
-mcp__linear__list_comments(issueId={issueId}, limit=5) を実行する。
+mcp__linear__list_comments(issueId={issueId}, limit=50) を実行する。
 Issue ファイルの最終更新日（更新履歴の最新日付 or last_active）以降のコメントを抽出する。
+**limit を絞らない** — 最新数件だけ読むと、最終更新から間が空いた Issue で新着コメントを
+取りこぼす（決定がコメント欄の上流に沈む）。返却が limit に達した回は「上限に当たった」と
+出力に明記して、読めていない範囲があることを呼び出し側に伝える。
 
 ## 出力フォーマット
 

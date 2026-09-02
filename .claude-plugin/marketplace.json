@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git 操作・PR 作成・UI 動作確認・バグ診断・worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、承認ゲート付き PR 作成、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断、worktree 単位の DB / port 分離を提供する。",
-      "version": "1.27.0",
+      "version": "1.27.1",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "issue-workflow",
       "description": "Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。却下記録（kind: rejected）で見送り提案の再提案を discover が概念類似照合で抑止。",
-      "version": "1.4.5",
+      "version": "1.4.6",
       "author": {
         "name": "yuki"
       },

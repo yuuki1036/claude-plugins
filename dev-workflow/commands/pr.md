@@ -6,6 +6,7 @@ allowed-tools:
   - AskUserQuestion
   - Skill
   - mcp__linear__get_issue
+  - mcp__linear__list_comments
   - mcp__github__create_pull_request
   - mcp__github__update_pull_request
 ---

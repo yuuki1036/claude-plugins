@@ -4,7 +4,7 @@ description: |
   PRを作成し、差分とコミット履歴からdescriptionを自動生成する。
   ドラフトPRとして作成し、リポジトリのPRテンプレート・PR作成ルールがあれば自動準拠する。
   PR本文はユーザー承認を得てから作成する（人間確認必須）。
-  Linear Issue連携: ブランチ名からIssue IDを抽出し、タイトル・説明を取得する。
+  Linear Issue連携: ブランチ名からIssue IDを抽出し、タイトル・説明とコメントを取得する。
   トリガー: ユーザーが「PR作って」「/pr-creator」「プルリクエスト作成」と言った時。
 effort: medium
 allowed-tools:
@@ -13,6 +13,7 @@ allowed-tools:
   - AskUserQuestion
   - Skill
   - mcp__linear__get_issue
+  - mcp__linear__list_comments
   - mcp__github__create_pull_request
   - mcp__github__update_pull_request
 ---
@@ -58,7 +59,7 @@ diff のファイル数・行数を把握する。目安（400 行超 または 
 ### 3. Linear Issue連携（該当する場合）
 
 ブランチ名からIssue ID（`[A-Z]+-[0-9]+`パターン）を抽出し：
-- `mcp__linear__get_issue` でタイトル・説明を取得
+- `mcp__linear__get_issue` でタイトル・説明を取得し、`mcp__linear__list_comments(issueId, limit=50)` でコメントも取得する。**本文だけで description を書かない** — 実装中に決まった仕様変更・スコープ削減は Linear では本文に反映されずコメント側に残るので、本文だけを材料にすると PR の説明が実際の差分とずれる。返却が limit に達した回は古いコメントを読めていないとレポートに一言添える
 - `.claude/plans/{issueId}.md` があれば Claude が読んで description 生成の参考にする。ローカルパス自体は PR 本文に出力しない（レビュアーからクリックできないため）
 
 **Linear MCP が利用できない場合のフォールバック:**

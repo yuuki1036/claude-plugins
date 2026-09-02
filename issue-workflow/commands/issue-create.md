@@ -2,6 +2,7 @@
 description: Issue 作成 + ブランチ自動作成
 allowed-tools:
   - mcp__linear__get_issue
+  - mcp__linear__list_comments
   - Read
   - Write
   - Glob

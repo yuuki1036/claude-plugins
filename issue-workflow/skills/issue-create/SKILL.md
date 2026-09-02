@@ -7,6 +7,7 @@ description: >
 effort: medium
 allowed-tools:
   - mcp__linear__get_issue
+  - mcp__linear__list_comments
   - Read
   - Write
   - Glob
@@ -66,7 +67,9 @@ allowed-tools:
 #### BACKEND=linear: Linear から取得
 
 1. Issue ID をユーザーから受け取る（start から渡される場合もある。採番は Linear 側が持つため counter.txt は使わない）
-2. Linear MCP `get_issue` でタイトル・説明・プロジェクト情報を取得する（Phase 0.7 で取得済みの場合は再利用する）
+2. Linear MCP `get_issue` でタイトル・説明・プロジェクト情報を取得し、続けて `list_comments(issueId={issueId}, limit=50)` でコメントも取得する（Phase 0.7 で取得済みの場合は再利用する）
+   - **本文だけで判断しない**。Linear の description は起票時のスナップショットで、その後の仕様変更・スコープ削減・保留理由はコメント側に書かれる。本文だけを見て状態を断定すると、誤った前提のまま Issue ファイルに固定される
+   - コメント件数が `limit` に達した回は「上限に当たったので古いコメントは読んでいない」と明示する。黙って最新 50 件だけで Issue を組み立てない
 3. 取得できない場合（手動入力経路）はユーザーに手動入力を依頼する
 
 ### Phase 4: テンプレート選択
@@ -107,7 +110,7 @@ allowed-tools:
 1. ユーザーにタイトルを確認する
 2. ユーザーに概要（説明）を確認する
 3. 既にユーザーが説明している場合はそれを使い、重複して聞かない
-4. BACKEND=linear で `get_issue` からタイトル・説明を取得できている場合はそれを使い、ヒアリングをスキップする
+4. BACKEND=linear で `get_issue` からタイトル・説明を取得できている場合はそれを使い、ヒアリングをスキップする。**このとき Phase 3 で取得したコメントも材料に含める** — 本文と食い違う記述（仕様変更・スコープ削減・保留）がコメントにあれば後発のコメント側を採り、どのコメントを採ったかを 1 行で示してユーザーに確認する
 
 ### Phase 5.4: コードベース現状確認
 
