@@ -1,8 +1,9 @@
 ---
 name: issue-create
 description: >
-  Issue ファイルの新規作成。テンプレート選択、ブランチ自動作成、feature-dev への接続まで
-  一貫サポート。backend=linear では Linear MCP から Issue 情報を取得して取り込む。
+  Issue ファイルを 1 件、新規に作る。テンプレート選択・ブランチ自動作成・feature-dev への
+  接続まで通す。Linear 連携時は、指定した既存 Issue 1 件を Linear MCP から取得してファイル化
+  する（Linear からの取り込み＝1 件ぶんの新規起票）。
   トリガー: 「タスク作成」「Issue起票」「新しいタスク」「Issueファイル作成」「Linear の Issue をローカルに取り込む」「/issue-create」
 effort: medium
 allowed-tools:

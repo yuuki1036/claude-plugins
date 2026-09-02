@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.4.7] - 2026-09-02
+
+### Fixed
+
+- **「Linear の Issue をローカルに取り込んで」が `linear-maintain` に流れていたのを直した**
+  （GitHub issue #205）。eval `issue-create-linear-import` が 6/6 で fail していた。
+  原因は description の僅差ではなく**情報の非対称**だった — **command 名と skill 名が同じとき、
+  スキル選択の一覧に載るのは `commands/*.md` の description で、`SKILL.md` の description は
+  載らない**（headless の `claude -p` に自分の見えている description を引用させて確認）。
+  issue-workflow は 13 スキルすべてが同名なので、`SKILL.md` に書いてあった逐語トリガー
+  「Linear の Issue をローカルに取り込む」は**そもそもモデルの視界に無く**、
+  `Issue 作成 + ブランチ自動作成`（Linear 要素ゼロ）と
+  `Linear MCP と同期してローカルの Issue/プロジェクト管理ファイルを最新化する`
+  が比較されていた。勝負になっていなかったので 6/6 という完全な決定性も説明がつく。
+  `commands/issue-create.md` / `commands/linear-maintain.md` の description に
+  **1 件の新規作成 ↔ 全件の更新**という対比を入れて解いた。`SKILL.md` 側も同じ対比に揃えている
+  （router には出ないが、次に読む人が同じ誤診をしないため）
+
+### Added
+
+- eval ケース 2 件（`evals/cases/issue-workflow.yaml`。プラグイン外だが本修正の回帰用）:
+  `issue-create-linear-import-natural`（逐語トリガーに依らない汎化の確認）と
+  `linear-maintain-bulk`（過剰補正で一括同期まで `issue-create` に流れないことの確認）
+
 ## [1.4.6] - 2026-09-02
 
 ### Fixed

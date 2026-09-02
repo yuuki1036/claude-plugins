@@ -1,7 +1,8 @@
 ---
 name: linear-maintain
 description: >
-  Linear MCP と同期してローカルの Issue/プロジェクト管理ファイルを最新化する。
+  Linear MCP と全件同期して、ローカルに既にある Issue/プロジェクト管理ファイルを最新化する
+  （更新のみ）。Issue を新規に 1 件起こす操作は扱わない（issue-create の担当）。
   トリガー: 「/linear-maintain」「Linear同期」「Linearステータス同期」「プロジェクトdoc最新化」「プロジェクト整理」
   引数: [プロジェクトスラッグ（省略時は .claude/linear/ 配下の全スラッグ対象）]
 effort: medium

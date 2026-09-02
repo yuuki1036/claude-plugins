@@ -1,5 +1,5 @@
 ---
-description: Linear MCP と同期してローカルの Issue/プロジェクト管理ファイルを最新化する
+description: Linear MCP と全件同期して、ローカルに既にある Issue/プロジェクト管理ファイルを最新化する（更新のみ。新規 1 件の作成は issue-create）
 allowed-tools:
   - mcp__linear__list_issues
   - mcp__linear__list_projects

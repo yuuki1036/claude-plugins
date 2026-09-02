@@ -1,5 +1,5 @@
 ---
-description: Issue 作成 + ブランチ自動作成
+description: Issue を 1 件 新規作成 + ブランチ自動作成。Linear 連携時は既存 Issue 1 件を取り込んでファイル化する
 allowed-tools:
   - mcp__linear__get_issue
   - mcp__linear__list_comments

@@ -85,3 +85,16 @@ cases:
     prompt: Linear と同期してローカルの Issue 管理ファイルを最新化して
     expected_skill: issue-workflow:linear-maintain
     k: 3
+  # #205: 逐語トリガーに依らず「1 件の取り込み＝新規作成」の gist で issue-create に着地するか。
+  # issue-create-linear-import は description のトリガー行と逐語一致するので、表現を変えて汎化を測る
+  - id: issue-create-linear-import-natural
+    prompt: Linear の LIN-123 をこのリポジトリの Issue ファイルにして
+    expected_skill: issue-workflow:issue-create
+    k: 3
+    tags: [issue-design]
+  # #205 の過剰補正ガード。linear-maintain を「更新のみ・全件」へ絞ったことで、
+  # 一括同期の依頼まで issue-create に流れないことを linear-maintain-ja と別表現で確認する
+  - id: linear-maintain-bulk
+    prompt: Linear のステータスをまとめて反映して、ローカルのプロジェクト doc を全部更新して
+    expected_skill: issue-workflow:linear-maintain
+    k: 3
