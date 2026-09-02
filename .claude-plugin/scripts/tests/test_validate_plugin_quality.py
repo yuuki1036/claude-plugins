@@ -1133,6 +1133,22 @@ class VersionPlaceholderTest(unittest.TestCase):
         v.check_pending_version_placeholder(self.plugin, errors)
         self.assertEqual(errors, [])
 
+class TextAtBaseTest(unittest.TestCase):
+    """比較基準時点のファイル内容の取得.
+
+    **`git show` の失敗を空文字として返すと、差分検査が「基準では空だった」と読んで
+    全ファイルを『新規追加』扱いする**（鳴りっぱなしか、逆に沈黙しっぱなしになる）。
+    不在と取得失敗は None で表現する契約をここで固定する。
+    """
+
+    def test_a_tracked_file_comes_back(self):
+        self.assertIn("claude-plugins", v.text_at_base(v.ROOT / "CLAUDE.md") or "")
+
+    def test_a_path_absent_from_the_base_is_none(self):
+        """空文字ではなく None（`git show` の非ゼロ終了を値として通さない）."""
+        self.assertIsNone(v.text_at_base(v.ROOT / "no-such-file-for-tests.md"))
+
+
 class VersionBaseTest(unittest.TestCase):
     """比較基準の解決（`QUALITY_VERSION_BASE`）.
 
@@ -1663,6 +1679,282 @@ class CommentPolishWiringTest(unittest.TestCase):
         v.check_comment_polish_wiring(errors)
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("SKILL.md missing", errors[0])
+
+
+class RouterVisibleDescriptionsTest(unittest.TestCase):
+    """スキル選択の一覧に実際に載る description の集合（GitHub issue #206）.
+
+    **期待値は実装を呼ばずにテスト側で組み立てる**（このファイル冒頭の要件）。
+    同名判定を実装から借りると「同名なら commands 側」という当の契約が
+    自己整合して素通りする。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+
+    def _plugin(self, name: str) -> Path:
+        d = self.root / name
+        (d / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+        (d / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": name, "version": "1.0.0"}), encoding="utf-8")
+        return d
+
+    def _command(self, plugin: Path, stem: str, desc: str) -> None:
+        _write(plugin, f"commands/{stem}.md", f"---\ndescription: {desc}\n---\n\nbody\n")
+
+    def _skill(self, plugin: Path, name: str, desc: str) -> None:
+        _write(plugin, f"skills/{name}/SKILL.md",
+               f"---\nname: {name}\ndescription: {desc}\n---\n\nbody\n")
+
+    def _visible(self) -> dict[str, str]:
+        return {label: text for label, _path, text in v.router_visible_descriptions()}
+
+    def test_same_name_hides_the_skill_description(self):
+        """同名ペアで載るのは commands 側だけ（#205 の 6/6 恒常 fail の原因）."""
+        plug = self._plugin("demo")
+        self._command(plug, "thing", "COMMAND SIDE")
+        self._skill(plug, "thing", "SKILL SIDE")
+        self.assertEqual(self._visible(), {"demo:thing": "COMMAND SIDE"})
+
+    def test_differently_named_pairs_expose_both(self):
+        """名前が衝突しなければ両方載る（同名時の非対称の裏取りになっている観測）."""
+        plug = self._plugin("demo")
+        self._command(plug, "do-thing", "COMMAND SIDE")
+        self._skill(plug, "thing-doer", "SKILL SIDE")
+        self.assertEqual(self._visible(),
+                         {"demo:do-thing": "COMMAND SIDE", "demo:thing-doer": "SKILL SIDE"})
+
+    def test_a_command_without_a_skill_is_counted(self):
+        """command 単独のプラグイン（feature-dev / plugin-manager）も常駐する."""
+        plug = self._plugin("demo")
+        self._command(plug, "solo", "COMMAND SIDE")
+        self.assertEqual(self._visible(), {"demo:solo": "COMMAND SIDE"})
+
+    def test_a_directory_without_a_manifest_is_skipped(self):
+        """docs/ や evals/ をプラグインとして数えない."""
+        (self.root / "docs" / "commands").mkdir(parents=True)
+        _write(self.root / "docs", "commands/x.md", "---\ndescription: NOT A PLUGIN\n---\n")
+        self.assertEqual(self._visible(), {})
+
+    def test_a_block_scalar_description_drops_the_indicator(self):
+        """`description: >` の `>` は値ではないので字数に数えない."""
+        plug = self._plugin("demo")
+        _write(plug, "skills/folded/SKILL.md",
+               "---\nname: folded\ndescription: >\n  first line\n  second line\n---\n\nbody\n")
+        self.assertEqual(self._visible(), {"demo:folded": "first line second line"})
+
+
+class ContextBudgetTest(unittest.TestCase):
+    """常駐 description の予算（GitHub issue #206 で分母を実態に合わせた）.
+
+    旧実装は `SKILL.md` だけを数えていたので、**同名 26 スキルぶんを過大計上する一方
+    commands 側には上限が一つも掛かっていなかった**。そのずれは実際に空振りを生んで
+    いる（`6138179` は削減 1,564 chars の 88%、`fa16377` は 722 chars の 80% が
+    そもそも常駐しないテキストだった）。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+        (self.plugin / ".claude-plugin").mkdir(parents=True)
+        (self.plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "demo", "version": "1.0.0"}), encoding="utf-8")
+
+    def _run(self) -> list[str]:
+        warnings: list[str] = []
+        v.check_context_budget(warnings)
+        return warnings
+
+    def _pair(self, name: str, cmd_len: int, skill_len: int) -> None:
+        _write(self.plugin, f"commands/{name}.md",
+               "---\ndescription: " + "c" * cmd_len + "\n---\n\nbody\n")
+        _write(self.plugin, f"skills/{name}/SKILL.md",
+               f"---\nname: {name}\ndescription: " + "s" * skill_len + "\n---\n\nbody\n")
+
+    def test_a_shadowed_skill_description_is_not_measured(self):
+        """同名 skill の description は常駐しないので上限を超えても鳴らない."""
+        self._pair("thing", cmd_len=10, skill_len=v.SKILL_DESC_CHAR_LIMIT + 1)
+        self.assertEqual(self._run(), [])
+
+    def test_a_command_description_is_measured(self):
+        """commands 側にも単体上限が掛かる（旧実装はここを一切見ていなかった）."""
+        self._pair("thing", cmd_len=v.SKILL_DESC_CHAR_LIMIT + 1, skill_len=10)
+        warnings = self._run()
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("commands/thing.md", warnings[0])
+
+    def test_exactly_at_the_limit_is_accepted(self):
+        """境界の片側だけ測ると `>` と `>=` の取り違えが素通りする."""
+        self._pair("thing", cmd_len=v.SKILL_DESC_CHAR_LIMIT, skill_len=10)
+        self.assertEqual(self._run(), [])
+
+    def test_an_unshadowed_skill_description_is_measured(self):
+        _write(self.plugin, "skills/solo/SKILL.md",
+               "---\nname: solo\ndescription: " + "s" * (v.SKILL_DESC_CHAR_LIMIT + 1)
+               + "\n---\n\nbody\n")
+        warnings = self._run()
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("skills/solo/SKILL.md", warnings[0])
+
+    def test_the_total_counts_only_what_resides(self):
+        """合計は「commands 全部 + 非同名 skill」。同名 skill は分母に入れない."""
+        self._pair("thing", cmd_len=100, skill_len=v.SKILL_DESC_TOTAL_LIMIT)
+        self.assertEqual([w for w in self._run() if "合計" in w], [])
+
+    def test_the_total_exactly_at_the_limit_is_accepted(self):
+        """合計側も境界の片側だけ測ると `>` と `>=` の取り違えが素通りする."""
+        half = v.SKILL_DESC_TOTAL_LIMIT // 2
+        _write(self.plugin, "commands/a.md", "---\ndescription: " + "c" * half + "\n---\n")
+        _write(self.plugin, "commands/b.md",
+               "---\ndescription: " + "c" * (v.SKILL_DESC_TOTAL_LIMIT - half) + "\n---\n")
+        self.assertEqual([w for w in self._run() if "合計" in w], [])
+
+    def test_the_total_over_the_limit_warns(self):
+        for i in range(3):
+            _write(self.plugin, f"commands/c{i}.md",
+                   "---\ndescription: " + "c" * (v.SKILL_DESC_TOTAL_LIMIT // 2) + "\n---\n")
+        self.assertEqual(len([w for w in self._run() if "合計" in w]), 1)
+
+    def test_the_repository_itself_is_within_the_budget(self):
+        """**この分母に切り替えた時点で** repo 全体が予算内であること."""
+        v.ROOT = self._orig
+        self.assertEqual(self._run(), [])
+
+
+class RouterTriggerDriftTest(unittest.TestCase):
+    """同名ペアで `SKILL.md` のトリガーフレーズだけを直した変更の検出（issue #206 案 B）.
+
+    水準は履歴で測って決めた: 素朴な案（トリガー代表語が command description にあるか）は
+    同名 26 件中 12 件で鳴る一方、実害の無い対照群でも 10 件中 6 件で鳴って判別して
+    いなかった。本検査は 498 コミット中 9 コミット・15 ペアで鳴り、**うち 1 件が
+    #205 の混入コミット `a3c6ad3` そのもの**。
+
+    比較基準の取得（`text_at_base`）は差し替える。ここで確かめたいのは git の引き方では
+    なく「何に鳴って何に黙るか」の判断。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+        (self.plugin / ".claude-plugin").mkdir(parents=True)
+        (self.plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "demo", "version": "1.0.0"}), encoding="utf-8")
+        self.base: dict[str, str] = {}
+        self._orig_base = v.text_at_base
+        v.text_at_base = lambda path: self.base.get(path.relative_to(v.ROOT).as_posix())
+        self.addCleanup(lambda: setattr(v, "text_at_base", self._orig_base))
+
+    def _md(self, desc: str) -> str:
+        return f"---\ndescription: {desc}\n---\n\nbody\n"
+
+    def _setup(self, *, cmd_now, cmd_base, skill_now, skill_base, name="thing",
+               skill_dir=None) -> None:
+        skill_dir = skill_dir or name
+        _write(self.plugin, f"commands/{name}.md", self._md(cmd_now))
+        _write(self.plugin, f"skills/{skill_dir}/SKILL.md", self._md(skill_now))
+        if cmd_base is not None:
+            self.base[f"demo/commands/{name}.md"] = self._md(cmd_base)
+        if skill_base is not None:
+            self.base[f"demo/skills/{skill_dir}/SKILL.md"] = self._md(skill_base)
+
+    def _run(self) -> list[str]:
+        warnings: list[str] = []
+        v.check_router_trigger_drift(warnings)
+        return warnings
+
+    def test_a_trigger_added_only_to_the_skill_warns(self):
+        """#205 の型: 逐語トリガーを SKILL.md にだけ足した変更."""
+        self._setup(cmd_now="取り込む", cmd_base="取り込む",
+                    skill_now="説明 トリガー: 「A」「B」", skill_base="説明 トリガー: 「A」")
+        warnings = self._run()
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("router-drift", warnings[0])
+        self.assertIn("'B'", warnings[0])
+        self.assertIn("commands/thing.md", warnings[0])
+
+    def test_a_trigger_removed_only_from_the_skill_warns(self):
+        self._setup(cmd_now="取り込む", cmd_base="取り込む",
+                    skill_now="説明 トリガー: 「A」", skill_base="説明 トリガー: 「A」「B」")
+        self.assertEqual(len(self._run()), 1)
+
+    def test_editing_both_sides_is_silent(self):
+        """対で直したなら黙る（案 A で決めた規約を満たしている）."""
+        self._setup(cmd_now="取り込む NEW", cmd_base="取り込む",
+                    skill_now="説明 トリガー: 「A」「B」", skill_base="説明 トリガー: 「A」")
+        self.assertEqual(self._run(), [])
+
+    def test_an_unchanged_trigger_set_is_silent(self):
+        """散文だけ直したのは対象外（鳴らすと 44 件に膨らんで判別が落ちる）."""
+        self._setup(cmd_now="取り込む", cmd_base="取り込む",
+                    skill_now="説明を書き直した トリガー: 「A」", skill_base="説明 トリガー: 「A」")
+        self.assertEqual(self._run(), [])
+
+    def test_reordering_the_same_triggers_is_silent(self):
+        """集合で比べる（並べ替えは選択挙動を変えない）."""
+        self._setup(cmd_now="取り込む", cmd_base="取り込む",
+                    skill_now="説明 トリガー: 「B」「A」", skill_base="説明 トリガー: 「A」「B」")
+        self.assertEqual(self._run(), [])
+
+    def test_a_differently_named_pair_is_silent(self):
+        """非同名なら SKILL.md の description も router に載るので実害が無い."""
+        self._setup(cmd_now="c", cmd_base="c",
+                    skill_now="説明 トリガー: 「A」「B」", skill_base="説明 トリガー: 「A」",
+                    name="do-thing", skill_dir="thing-doer")
+        self.assertEqual(self._run(), [])
+
+    def test_a_new_skill_is_silent(self):
+        """基準に無い新規 skill は「直した」ではないので黙る."""
+        self._setup(cmd_now="c", cmd_base="c",
+                    skill_now="説明 トリガー: 「A」", skill_base=None)
+        self.assertEqual(self._run(), [])
+
+    def test_a_skill_without_a_trigger_section_is_silent(self):
+        """`トリガー:` を持たない側は比較できない（不在は error 側の担当）."""
+        self._setup(cmd_now="c", cmd_base="c",
+                    skill_now="説明だけ", skill_base="説明 トリガー: 「A」")
+        self.assertEqual(self._run(), [])
+
+    def test_the_repository_is_clean_against_head(self):
+        """作業ツリーと HEAD が同じなら鳴らない（毎ターン鳴る warning にしない）."""
+        v.ROOT = self._orig
+        v.text_at_base = self._orig_base
+        self.assertEqual(self._run(), [])
+
+
+class TriggerPhrasesTest(unittest.TestCase):
+    """`トリガー:` 節の逐語フレーズ抽出."""
+
+    def test_missing_section_is_none(self):
+        self.assertIsNone(v.trigger_phrases("説明だけ"))
+
+    def test_none_input_is_none(self):
+        self.assertIsNone(v.trigger_phrases(None))
+
+    def test_phrases_before_the_section_are_ignored(self):
+        """`トリガー:` より前の鉤括弧はトリガーではない."""
+        self.assertEqual(v.trigger_phrases("「用語」の説明 トリガー: 「A」"), frozenset({"A"}))
+
+    def test_double_angle_brackets_are_collected(self):
+        self.assertEqual(v.trigger_phrases("x トリガー: 『A』「B」"), frozenset({"A", "B"}))
+
+    def test_a_section_without_phrases_is_an_empty_set(self):
+        """空集合と None を潰さない（前者は「宣言はあるが空」）."""
+        self.assertEqual(v.trigger_phrases("x トリガー: なし"), frozenset())
 
 if __name__ == "__main__":
     unittest.main()

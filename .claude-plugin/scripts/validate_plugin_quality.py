@@ -77,9 +77,15 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     プラグインか」を伝える 1〜2 文にバージョンアップごとの機能詳細が積層してリリースノート化
     する（実測: code-review が 915 → 2177 字）. 閾値は実測の分布から導く
     （設計: `.claude/designs/20260610-plugin-description-diet.md`）.
-  - コンテキスト予算: skill description の単体上限（600 chars）と全プラグイン合計上限
-    （15,000 chars）. description は毎セッションのシステムプロンプトに常駐するため,
-    肥大化は合計で判断品質を劣化させる.
+  - コンテキスト予算: **常駐する** description の単体上限（600 chars）と全プラグイン
+    合計上限（15,000 chars）. description は毎セッションのシステムプロンプトに常駐する
+    ため, 肥大化は合計で判断品質を劣化させる. 数える対象は commands 全部と, 同名 command
+    を持たない skill（同名なら一覧に載るのは commands 側 / issue #206）. 旧実装は
+    SKILL.md だけを数えており, 常駐しないテキストを削る作業を 2 度誘発していた.
+  - router-drift: 同名ペアで SKILL.md のトリガーフレーズ**だけ**を直した変更
+    （commands 側が据え置き）. トリガーフレーズの編集はルーティング意図そのものだが,
+    同名ペアではその description が router に届かないので選択挙動が変わらない（#205 の
+    6/6 恒常 fail がこれ）. 比較基準は `QUALITY_VERSION_BASE`.
   - skill 本文サイズ: SKILL.md 本文の行数上限（500 行）. 超過は references への
     progressive disclosure を促す（規模目安の正本は component-addition-advisor,
     執筆指針は docs/skill-writing.md）.
@@ -921,18 +927,27 @@ def read_plugin_version(plugin_dir: Path) -> str | None:
 VERSION_BASE = os.environ.get("QUALITY_VERSION_BASE") or "HEAD"
 
 
-def _version_at_head(plugin_dir: Path) -> str | None:
-    """比較基準時点の plugin.json の version（取れなければ None）."""
-    rel = (plugin_dir / ".claude-plugin" / "plugin.json").relative_to(ROOT).as_posix()
+def text_at_base(path: Path) -> str | None:
+    """比較基準時点のファイル内容（基準に無い / git が引けなければ None）.
+
+    基準は `VERSION_BASE`（版バンプ検知と共用。CI は push / PR 範囲の起点を渡す）.
+    """
+    rel = path.relative_to(ROOT).as_posix()
     try:
         proc = subprocess.run(["git", "show", f"{VERSION_BASE}:{rel}"], cwd=ROOT,
                               capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
-    if proc.returncode != 0:
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def _version_at_head(plugin_dir: Path) -> str | None:
+    """比較基準時点の plugin.json の version（取れなければ None）."""
+    raw = text_at_base(plugin_dir / ".claude-plugin" / "plugin.json")
+    if raw is None:
         return None
     try:
-        return json.loads(proc.stdout).get("version")
+        return json.loads(raw).get("version")
     except ValueError:
         return None
 
@@ -1319,29 +1334,134 @@ SKILL_DESC_CHAR_LIMIT = 600
 SKILL_DESC_TOTAL_LIMIT = 15000
 DESC_RE = re.compile(r"^description:(.*?)(?=^\S|\Z)", re.MULTILINE | re.DOTALL)
 
+#: `description: >` / `|` のブロックスカラー指示子。値ではないので字数に数えない
+BLOCK_SCALAR_RE = re.compile(r"^[>|][+-]?\s*")
+
+
+def description_in(text: str) -> str | None:
+    """frontmatter を持つ md の description を 1 行に畳んで返す. 無ければ None."""
+    m = FRONTMATTER_RE.match(text)
+    if m is None:
+        return None
+    dm = DESC_RE.search(m.group(1))
+    if not dm:
+        return None
+    return BLOCK_SCALAR_RE.sub("", re.sub(r"\s+", " ", dm.group(1)).strip())
+
+
+def description_of(path: Path) -> str | None:
+    return description_in(read_text(path)) if path.is_file() else None
+
+
+def router_visible_descriptions() -> list[tuple[str, Path, str]]:
+    """スキル選択の一覧に**実際に載る** description を (label, path, text) で列挙する.
+
+    **command 名と skill 名が同名のとき、一覧に載るのは `commands/*.md` 側だけで
+    `SKILL.md` の description は載らない**（GitHub issue #206。headless の router 自身に
+    「見えている description を一字一句引用しろ」と聞いて確認した一次ソース。名前が
+    衝突しないペアだけが両方の entry を持つ、という非対称からも裏が取れる）.
+
+    常駐コンテキストの予算はこの集合で数えないと実態と合わない. 旧実装は `SKILL.md`
+    だけを数えており, **同名 26 スキルぶんを過大計上する一方 commands 側 38 本には
+    上限が一つも掛かっていなかった**（実測 9,585 chars 対 実際 5,360 chars）. その
+    ずれは既に空振りを 2 回生んでいる — 「description 上位 10 件を圧縮し常駐コンテキストを
+    削減」（6138179）は削減 1,564 chars の 88%, 「250 文字上限超過を修正」（fa16377）は
+    722 chars の 80% が, そもそも常駐しないテキストに費やされていた.
+    """
+    out: list[tuple[str, Path, str]] = []
+    for plugin_dir in sorted(ROOT.iterdir()):
+        if not (plugin_dir / ".claude-plugin" / "plugin.json").is_file():
+            continue
+        commands = sorted((plugin_dir / "commands").glob("*.md"))
+        shadowed = {c.stem for c in commands}
+        for cmd_md in commands:
+            desc = description_of(cmd_md)
+            if desc is not None:
+                out.append((f"{plugin_dir.name}:{cmd_md.stem}", cmd_md, desc))
+        for skill_md in sorted((plugin_dir / "skills").glob("*/SKILL.md")):
+            if skill_md.parent.name in shadowed:
+                continue
+            desc = description_of(skill_md)
+            if desc is not None:
+                out.append((f"{plugin_dir.name}:{skill_md.parent.name}", skill_md, desc))
+    return out
+
 
 def check_context_budget(warnings: list[str]) -> None:
-    """skill description の常駐コンテキスト予算を検証する（非ブロッキング warning）."""
+    """常駐 description のコンテキスト予算を検証する（非ブロッキング warning）."""
     total = 0
-    for skill_md in sorted(ROOT.glob("*/skills/*/SKILL.md")):
-        fm = parse_frontmatter(skill_md)
-        if fm is None:
-            continue
-        dm = DESC_RE.search(fm)
-        if not dm:
-            continue
-        desc = re.sub(r"\s+", " ", dm.group(1)).strip()
+    for _label, path, desc in router_visible_descriptions():
         total += len(desc)
         if len(desc) > SKILL_DESC_CHAR_LIMIT:
             warnings.append(
-                f"[context-budget] description {len(desc)} chars > {SKILL_DESC_CHAR_LIMIT}"
-                f"（ルーティングに不要な設計背景は本文へ）: {skill_md.relative_to(ROOT)}"
+                f"[context-budget] description {len(desc)} chars"
+                f"（上限 {SKILL_DESC_CHAR_LIMIT} を超過。ルーティングに不要な設計背景は本文へ）"
+                f": {path.relative_to(ROOT)}"
             )
     if total > SKILL_DESC_TOTAL_LIMIT:
         warnings.append(
-            f"[context-budget] 全 skill description 合計 {total} chars > {SKILL_DESC_TOTAL_LIMIT}"
-            "（常駐コンテキスト予算超過。上位の description をダイエットすること）"
+            f"[context-budget] 常駐 description 合計 {total} chars"
+            f"（上限 {SKILL_DESC_TOTAL_LIMIT} を超過。上位の description をダイエットすること）"
         )
+
+
+#: description の `トリガー:` 以降に現れる逐語フレーズ（鉤括弧で囲われたもの）
+TRIGGER_PHRASE_RE = re.compile(r"[「『]([^」』]+)[」』]")
+
+
+def trigger_phrases(desc: str | None) -> frozenset[str] | None:
+    """description のトリガーフレーズ集合. `トリガー:` 節が無ければ None."""
+    if not desc or "トリガー:" not in desc:
+        return None
+    tail = desc.split("トリガー:", 1)[1]
+    return frozenset(p.strip() for p in TRIGGER_PHRASE_RE.findall(tail) if p.strip())
+
+
+def check_router_trigger_drift(warnings: list[str]) -> None:
+    """同名ペアで `SKILL.md` のトリガーフレーズ**だけ**を直した変更を検出する（warning）.
+
+    同名ペアでは router が読むのは `commands/*.md` 側なので（`router_visible_descriptions`）,
+    `SKILL.md` のトリガーフレーズをいくら足しても**スキル選択は 1 ミリも変わらない**.
+    トリガーフレーズの編集は定義からしてルーティング意図なので, この組み合わせは
+    「意図はあったが届かなかった」変更を名指しできる.
+
+    実害の実例が #205: `a3c6ad3` が「Linear の Issue をローカルに取り込む」を `SKILL.md`
+    にだけ足し, その eval が 6/6 で別スキルへ流れ続けた. 効いた修正は `commands` 側の 1 行.
+
+    **水準は履歴で測って決めた**（issue #206 / 案 B）. 素朴な案（skill のトリガー代表語が
+    command description にあるか）は同名 26 件中 12 件で鳴る一方, 名前が衝突せず実害の
+    無い対照群でも 10 件中 6 件で鳴り, 判別していなかった. eval を突き合わせる案は精度
+    18%（7 件の fail のうち 5 件を捕捉する代わりに 23 件の pass にも鳴る）. 本検査は
+    498 コミット中 9 コミット・15 ペアで鳴り, **15 件すべてがルーティングに届かない編集**
+    だった（うち 4 コミットはメッセージ自体が「トリガーフレーズを改善」と宣言している）.
+
+    `SKILL.md` を読む人向けに対比を書き足す変更（f045e15 がやったこと）は正当なので
+    **error にしない**. command 側も同じ変更で直っていれば「対で直した」とみなして黙る.
+    """
+    for plugin_dir in sorted(ROOT.iterdir()):
+        if not (plugin_dir / ".claude-plugin" / "plugin.json").is_file():
+            continue
+        for skill_md in sorted((plugin_dir / "skills").glob("*/SKILL.md")):
+            cmd_md = plugin_dir / "commands" / f"{skill_md.parent.name}.md"
+            if not cmd_md.is_file():
+                continue
+            base_text = text_at_base(skill_md)
+            if base_text is None:
+                continue
+            now = trigger_phrases(description_of(skill_md))
+            before = trigger_phrases(description_in(base_text))
+            if now is None or before is None or now == before:
+                continue
+            cmd_base = text_at_base(cmd_md)
+            if cmd_base is None or description_in(cmd_base) != description_of(cmd_md):
+                continue
+            moved = sorted(now ^ before)
+            warnings.append(
+                f"[router-drift] トリガーフレーズを直したが router には届かない"
+                f"（同名ペアで一覧に載るのは commands 側 / issue #206）: "
+                f"{skill_md.relative_to(ROOT)} — 差分 {moved}。"
+                f"同じ意図を {cmd_md.relative_to(ROOT)} の description にも反映すること"
+            )
 
 
 # SKILL.md 本文は起動時に全文ロードされる. 500 行以上は references への
@@ -1668,6 +1788,7 @@ def main() -> int:
     check_shell_repo_local(errors)
     check_agent_sync_launch_repo_local(warnings)
     check_context_budget(warnings)
+    check_router_trigger_drift(warnings)
     check_skill_body_size(warnings)
 
     if warnings:

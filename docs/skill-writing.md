@@ -64,8 +64,9 @@ Opus 5 世代で逆効果になる足場 3 種（委譲促進 / 自己ダブル�
 | 観点 | 強制手段 | レベル |
 |------|---------|--------|
 | description に `トリガー:` が存在 | `validate_plugin_quality.py` | error |
-| description 単体 600 字 / 合計 15,000 字 | 同上（context-budget） | warning |
+| description 単体 600 字 / 合計 15,000 字 | 同上（context-budget）。**数えるのは常駐する側**＝ commands 全部と、同名 command を持たない skill | warning |
 | SKILL.md 本文 500 行以上 | 同上（skill-size） | warning |
 | トリガーフレーズ → 期待スキル起動の回帰 | `evals/runner.py`（pass^k=3） | 手動実行 |
-| 同名 command と skill の description 乖離 | **機械強制なし** — 対で直す規約のみ（#206）。同名時に router が読むのは commands 側 | — |
+| 同名ペアで **トリガーフレーズだけ** SKILL.md 側を直した | 同上（router-drift）。トリガーの編集はルーティング意図そのものなので「意図はあったが届かなかった」を名指しできる（#206 案 B） | warning |
+| 同名 command と skill の description の**内容**乖離 | **機械強制なし** — 対で直す規約のみ（#206）。素朴な判定式は実測で判別しなかった（同名 26 件中 12 件で鳴る一方、実害の無い対照群でも 10 件中 6 件で鳴る） | — |
 | description の質（branch 重複・no-op） | **機械強制なし** — 本 doc を執筆・レビュー時の観点として使う | — |
