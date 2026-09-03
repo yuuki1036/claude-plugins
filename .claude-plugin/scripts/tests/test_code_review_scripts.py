@@ -4229,5 +4229,109 @@ class ReviewBackfillTest(TranscriptFixture):
         self.assertIn("原理的に後付けできない", r.stdout)
 
 
+class RetroSilentDeathTest(ScriptTestBase):
+    """`review-retro.sh` が **rc 0 のまま黙って死ぬ**経路（GitHub issue #211）.
+
+    **rc を見るテストは構造上いつも緑になる** — retro は `set -uo pipefail` に `-e` が無く
+    末尾が無条件 `exit 0` なので、python ブロックが例外で落ちても 0 を返していた。しかも
+    top-level の最初の `print` は集計を全部済ませたあとなので、**途中で落ちると stdout が
+    丸ごと空**になり「⚠️ が出なかった」が「該当なし」と読まれる。
+    ここで見るのは **印字そのもの**（liveness）と、**落ちたときに鳴ること**（FATAL / rc 2）。
+    """
+
+    BASE = {"effort": "high", "size_tier": "medium", "measurement_gaps": []}
+
+    def _log(self, rows: list[dict]) -> Path:
+        path = self.root / "events.jsonl"
+        path.write_text("\n".join(json.dumps(
+            {"ts": "2026-08-%02dT00:00:00Z" % (i + 1), "plugin": "code-review:self-review",
+             "event": "review:completed", "payload": r}, ensure_ascii=False)
+            for i, r in enumerate(rows)) + "\n", encoding="utf-8")
+        return path
+
+    def _retro(self, rows: list[dict], *args: str) -> subprocess.CompletedProcess[str]:
+        """**rc を assert しない**（上の docstring）。生存の証拠は印字と traceback の不在."""
+        r = self.run_script(RETRO, "--logs", str(self._log(rows)), *args)
+        self.assertNotIn("Traceback", r.stderr, "python ブロックが例外で死んでいる")
+        self.assertTrue(r.stdout.strip(), "stdout が空（rc 0 のまま黙って死んでいる）")
+        return r
+
+    def _rows(self, n: int, **extra) -> list[dict]:
+        return [dict(self.BASE, **extra) for _ in range(n)]
+
+    def test_an_abandoned_agent_marker_does_not_kill_the_run(self):
+        """`agents-abandoned` の marker で落ちない（`gap_denom` が str を返していた）."""
+        out = self._retro(self._rows(6, measurement_gaps=["agents-abandoned"])).stdout
+        self.assertIn("捨てられた試行がある回 6 件", out)
+
+    def test_a_nested_agent_marker_does_not_kill_the_run(self):
+        """`agents-nested` も同じ経路（識別子が違うだけ）."""
+        out = self._retro(self._rows(6, measurement_gaps=["agents-nested"])).stdout
+        self.assertIn("孫 agent がある回 6 件", out)
+
+    def test_the_decomposition_is_never_called_a_missing_measurement(self):
+        """**分解は欠測ではない**ので、欠測の分母にも ⚠️ の枠にも入れない（#211 / #154）.
+
+        入れると ①シグナル文言が「計測マーカー … の**欠測**が」で固定なので呼称が誤りになり
+        ②上位 2 件枠を両方占有して**本物の欠測を締め出す**（実測: `pre_adjust_counts.vocab`
+        の 30% がシグナル欄から消えた）。ここでは②を直接表明する。
+        """
+        rows = (self._rows(6, measurement_gaps=["agents-abandoned", "agents-nested"])
+                + self._rows(3, measurement_gaps=["payload:pre_adjust_counts.vocab"])
+                + self._rows(1))
+        r = self._retro(rows, "--json")
+        payload = json.loads(r.stdout)
+        self.assertEqual(payload["agents_decomposition"],
+                         {"abandoned_marker": 6, "nested_marker": 6})
+        self.assertNotIn("agents-abandoned", payload["measurement"]["gaps"],
+                         "欠測の分母に混ぜている")
+        signals = " ".join(payload["signals"])
+        self.assertIn("pre_adjust_counts.vocab", signals, "本物の欠測が枠から締め出されている")
+        self.assertNotIn("agents-abandoned", signals)
+
+    def test_demoted_types_without_the_verify_layer_does_not_kill_the_run(self):
+        """`below_threshold_counts` はあるが `adversarial_verify` が無い payload（#211 経路 B）.
+
+        publish は層オブジェクトの欠落を `payload:<field>` の gap にして**通す**設計なので、
+        この形は正規に作られる。`schema_of(None)` の `AttributeError` は
+        except（`TypeError` / `ValueError`）をすり抜けていた。
+        **行を落として黙って分母を減らさない**ことも併せて表明する。
+        """
+        rows = self._rows(3, below_threshold_counts={
+            "blocker": 0, "critical": 0, "major": 0, "minor": 2,
+            "demoted_types": {"base_derived": 1, "misread": 0, "overstated_impact": 0,
+                              "miscategorized": 1, "unknown": 0}})
+        payload = json.loads(self._retro(rows, "--json").stdout)
+        row = payload["demoted_types"]["code-review:self-review"]
+        self.assertEqual((row["n"], row["total"]), (3, 6), "層が落ちた回を母数から外している")
+
+    def test_a_crash_inside_the_python_block_is_loud(self):
+        """**未捕捉例外を rc 0 に潰さない**（#211 期待動作 4 / クラスごと塞ぐ側）.
+
+        fixture は `dispatch.agents` が str の回（他マシン・旧版のログで起こりうる形）で、
+        retro はここで割り算に入り `TypeError` になる。**この経路が将来ガードされたら、
+        別の落ちる payload に差し替える** — assertion を消すとガード自体が無検証に戻る。
+        """
+        rows = self._rows(3, dispatch={"agents": "9", "waves": 3, "wave_sizes": [3, 3, 3],
+                                       "schema": 3, "verdict": "batched", "span_sec": 900,
+                                       "max_solo_run": 1, "max_inter_wave_sec": 60})
+        r = self.run_script(RETRO, "--logs", str(self._log(rows)))
+        self.assertEqual(r.returncode, 2, "異常終了を rc 0 に潰している")
+        self.assertIn("FATAL", r.stderr)
+        self.assertTrue(r.stdout.strip(), "部分出力まで捨てている")
+
+    def test_the_fatal_guard_stays_on_the_heredoc_line(self):
+        """`||` を改行して `{ }` に展開すると**中身がヒアドキュメント本体に食われる**.
+
+        実際にそれで構文エラーになった（`bash -n` が捕捉）。同じ物理行に置く制約を固定する。
+        """
+        lines = RETRO.read_text(encoding="utf-8").splitlines()
+        heredoc = [l for l in lines if "<<'PY'" in l]
+        self.assertEqual(len(heredoc), 1, "ヒアドキュメントの開始行が 1 本でない")
+        self.assertIn("|| retro_fatal", heredoc[0], "ガードが同じ行から外れている")
+        self.assertTrue(any(l.startswith("retro_fatal()") for l in lines),
+                        "retro_fatal が定義されていない")
+
+
 if __name__ == "__main__":
     unittest.main()

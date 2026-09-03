@@ -2,6 +2,47 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.106.0] - 2026-09-03
+
+### Fixed
+
+- **`review-retro.sh` が rc 0 のまま黙って死ぬ経路を 2 本塞いだ**（GitHub issue #211）。
+  本体は 1 つの python ヒアドキュメントで、`set -uo pipefail` に `-e` が無く末尾が
+  無条件 `exit 0`、しかも top-level の最初の `print` は集計を全部済ませたあとなので、
+  **途中で落ちると rc 0 のまま stdout が丸ごと空**になる。「⚠️ が出なかった」が
+  「該当なし」と読まれる最悪の壊れ方で、後続の判断がすべてこの出力に乗っている。
+  - `gap_denom` が `agents-abandoned` / `agents-nested` に**分母ではなく説明文の str** を
+    返しており、`d` と `GAP_MIN_N` の比較で `TypeError`。識別子は publish が
+    `dispatch.agents_abandoned` / `agents_nested` が正のときに実際に立てる
+  - `demote_rows` が `schema_of(None)` を呼びうり、`AttributeError` が
+    except（`TypeError` / `ValueError`）をすり抜けていた。publish は層オブジェクトの
+    欠落を `payload:<field>` の gap にして**通す**設計なので、`below_threshold_counts` は
+    あるが `adversarial_verify` が無い payload は正規に作られる。`verdict_layers` 側は
+    同じ値を isinstance で濾しており、**ここだけが非対称**だった
+  - どちらも**このリポジトリの実ログ 43 件では未発火**（地雷であって出血ではない）。
+    ただし `agents-abandoned` はセッション再開で試行が捨てられた回を publish した時点で踏む
+- **`agents-abandoned` / `agents-nested` を「欠測」として数えるのをやめた**（#211 / #154）。
+  publish は `agents` の分解で説明が付いた分を別識別子で載せているだけで、打点漏れでも
+  申告の誤りでもない。`wave-split` と同じ理由（#192）で欠測内訳と ⚠️ 判定から外す:
+  ①シグナルの文言が「計測マーカー … の**欠測**が」で固定なので呼称が誤りになる
+  ②判定に載せると上位 2 件枠を両方占有して**本物の欠測を締め出す**（実測: 両識別子が
+  100% で並び `payload:pre_adjust_counts.vocab` の 30% がシグナル欄から消えた）
+
+### Added
+
+- **python ブロックの異常終了を `exit 2` にする**（#211 の期待動作 4 = 個別の型ミスではなく
+  「黙って死ぬ」クラスごと塞ぐ）。`exit 2` は既存の「python3 が無い」と同じ
+  **実行できなかった＝判定不能**の意味で、新しい契約ではない。**部分出力は保持する**
+  （実測: `dispatch.agents` が str の回は 63 行出したあと ⚠️ 欄だけが消えていた）。
+  **`||` はヒアドキュメントと同じ物理行に置く** — 改行して `{ }` に展開すると中身が
+  本体として食われて構文エラーになる（実際に踏んで `bash -n` が捕捉）。構造テストで固定した
+- `--json` に `agents_decomposition`（`abandoned_marker` / `nested_marker`）。欠測内訳から
+  外した分を**黙って捨てない**（#192 の `wave_split.marker` と同じ流儀）。人間向けには
+  立った回があるときだけ「計測の健全性」に 1 行出す
+- 回帰テスト 6 本（`RetroSilentDeathTest`）。**rc を assert しない** — 正常系も例外も
+  `exit 0` だったので rc を見るテストは構造上いつも緑になる。印字と traceback の不在で
+  生存を見る。修正前の HEAD で 6/6 が落ちることを確認済み。変異 1/1 killed
+
 ## [2.105.1] - 2026-09-01
 
 ### Fixed

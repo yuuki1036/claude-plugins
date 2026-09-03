@@ -70,10 +70,21 @@ fi
 
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が必要" >&2; exit 2; }
 
+# **集計が黙って死ぬのを防ぐ**（GitHub issue #211）。本体は 1 つの python ヒアドキュメントで、
+# 未捕捉例外が出ても `set -uo pipefail` に `-e` が無く末尾が無条件 `exit 0` なので、
+# **rc 0 のまま stdout が空**になり「⚠️ が出なかった」が「該当なし」と読まれていた。
+# `exit 2` は既存の「python3 が無い」と同じ**実行できなかった＝判定不能**の意味。
+# **`||` は heredoc と同じ物理行に置くこと** — 改行して `{ }` に展開すると、その中身が
+# ヒアドキュメント本体として食われて構文エラーになる
+retro_fatal() {
+  echo "FATAL: 集計が異常終了した（stderr の traceback を参照。出力は途中まで出ていることがある）" >&2
+  exit 2
+}
+
 REVIEW_SINCE="$SINCE" REVIEW_LAST="${LAST:-0}" REVIEW_JSON="$AS_JSON" \
   REVIEW_LOGS_EXPLICIT="$([ ${#EXPLICIT_LOGS[@]} -gt 0 ] && echo 1 || echo 0)" \
   REVIEW_LIB_DIR="$HERE/lib" \
-  python3 - ${REVIEW_EVENT_LOGS[@]+"${REVIEW_EVENT_LOGS[@]}"} <<'PY'
+  python3 - ${REVIEW_EVENT_LOGS[@]+"${REVIEW_EVENT_LOGS[@]}"} <<'PY' || retro_fatal
 import json, os, sys
 from datetime import datetime, timedelta, timezone
 
@@ -676,7 +687,16 @@ def demote_rows(field, key):
         parent = e["p"].get(field)
         d = parent.get(key) if isinstance(parent, dict) else None
         if isinstance(d, dict):
-            contrib.append((e, d, schema_of(e["p"].get("adversarial_verify"),
+            # **層のオブジェクトは丸ごと落ちうる** — publish は欠落を `payload:<field>` の
+            # gap にして**通す**設計なので、`below_threshold_counts` はあるが
+            # `adversarial_verify` が無い payload が正規に作られる。ガード無しで渡すと
+            # `None.get` の `AttributeError` が `schema_of` の except（`TypeError` /
+            # `ValueError`）をすり抜け、**retro が rc 0 のまま出力ごと消える**（issue #211）。
+            # `verdict_layers` 側は同じ値を isinstance で濾しており、ここだけが非対称だった。
+            # 空 dict に倒して**層 1（最古の版）として残す** — 行ごと落とすと
+            # `demoted_types` の分母が黙って減る
+            _av = e["p"].get("adversarial_verify")
+            contrib.append((e, d, schema_of(_av if isinstance(_av, dict) else {},
                                             "calibration_schema")))
     calib_split = len({layer for _, _, layer in contrib}) > 1
     rows = {}
@@ -792,6 +812,17 @@ for e in events:
 # `n_wave_split` を使う（#200）ので、同じ表に並べると 2 つの数が食い違って見える。
 # **黙って捨てない** — 生のマーカー件数は `--json` の `wave_split.marker` に残す
 n_wave_split_marker = gap_counts.pop("wave-split", 0)
+# **`agents-abandoned` / `agents-nested` も「欠測」ではない**（GitHub issue #211 / #154）。
+# publish は `agents` の分解で説明が付いた分を別識別子で載せているだけで、打点漏れでも
+# 申告の誤りでもない（捨てられた試行と孫 agent。孫はオーケストレーターが申告しようがない）。
+# 外す理由は `wave-split` と同じ 2 つ:
+#   ① シグナルの文言が「計測マーカー `%s` の**欠測**が」で固定なので呼称が誤りになる
+#   ② 判定に載せると上位 2 件枠（下の `[:2]`）を両方占有し、**本物の欠測を締め出す**
+#      （実測: 両識別子が 100% で並び、`payload:pre_adjust_counts.vocab` の 30% が消える）
+# **黙って捨てない** — 生のマーカー件数は `--json` の `agents_decomposition` に残し、
+# 立った回があれば「計測の健全性」に 1 行出す
+n_agents_abandoned_marker = gap_counts.pop("agents-abandoned", 0)
+n_agents_nested_marker = gap_counts.pop("agents-nested", 0)
 have_synthesis = len(measured(events, "duration_synthesis_min"))
 have_waves = sum(1 for e in events
                  if num(agents_dict(e["p"]).get("explorer_waves")) is not None)
@@ -1063,15 +1094,7 @@ def gap_denom(g):
         return n_gapfield_review
     if g == "late-publish":            # publish が `*self-review` でのみ判定する
         return n_gapfield_selfreview
-    if g == "agents-abandoned":
-        return ("結果が返らなかった agent がある（割り込み・API エラーで捨てられた試行）。"
-                "**申告の誤りではない** — 体数と wave 本数が実態より膨らむので、"
-                "コスト集計は総数、突合は `agents_completed` を見る")
-    if g == "agents-nested":
-        return ("subagent がさらに agent を起動した回（`spawnDepth >= 2`）。"
-                "**オーケストレーターは申告しようがない**ので突合から外している。"
-                "コストには含まれる")
-    # **`wave-split` はここに来ない** — 欠測ではないので `gap_counts` から外してあり
+    # **`agents-abandoned` / `agents-nested` / `wave-split` はここに来ない** — 欠測ではないので `gap_counts` から外してあり
     # （#192）、分母 `n_wave_judged` と分子は専用の判定ブロックが持つ（#200）
     return n_gapfield
 
@@ -1214,6 +1237,10 @@ if as_json:
         "wave_split": {"n": n_wave_split, "judged": n_wave_judged,
                        "suppressed": n_wave_suppressed, "stale": n_wave_split_stale,
                        "marker": n_wave_split_marker, "kinds": wave_split_kinds},
+        # **`agents` の分解は欠測ではない**ので下の `measurement.gaps` から外してある
+        # （#211）。**黙って捨てない** — 生のマーカー件数をここに残す
+        "agents_decomposition": {"abandoned_marker": n_agents_abandoned_marker,
+                                 "nested_marker": n_agents_nested_marker},
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
                         "split_explorer_waves": split_waves,
@@ -1644,6 +1671,12 @@ else:
                  "。**%d 件は payload の `waves_expected` と判定が食い違う**"
                  "（publish 時点の式で焼かれた値。再計算した側が現行の判定 / #200）"
                  % n_wave_split_stale))
+    # **欠測内訳から外した分を黙って消さない**（#211 / #192 と同じ流儀）。立った回が
+    # 無ければ 1 行も出さない（「⚠️ が出たときだけ行動する」契約の可読性を守る）
+    if n_agents_abandoned_marker or n_agents_nested_marker:
+        print("  - `agents` の分解: 捨てられた試行がある回 %d 件 / 孫 agent がある回 %d 件"
+              "（**欠測ではない** — コスト集計は総数、突合は `agents_completed` を見る）"
+              % (n_agents_abandoned_marker, n_agents_nested_marker))
     # **補完の待ち行を出し分ける**（issue #161）。「フィールドを持つ回が 0」（旧版のみ）と
     # 「持っているが 1 件も補完していない」（打点が守られた or 補完条件を満たさなかった）は
     # 別の状態で、潰すと「補完機構が入っているのに効いていない」を見逃す
