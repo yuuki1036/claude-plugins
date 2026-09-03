@@ -9,7 +9,7 @@
     {
       "name": "code-review",
       "description": "Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity の 2 軸で報告閾値を制御し、diff の性質と effort に応じて explorer → reviewer → 反証レイヤーを構成する。PR レビュー（/review）とコミット前セルフレビュー（/self-review。--embed で他プラグインから委譲可）に対応。",
-      "version": "2.108.0",
+      "version": "2.109.0",
       "author": {
         "name": "yuki"
       },

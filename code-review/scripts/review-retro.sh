@@ -808,18 +808,82 @@ def layer_stats(field, schema_key, min_schema, value_of=None):
         # 分母は `n` と同じ（スコープ外スキップは上で除外済み）。集計と内訳で母集団を
         # ずらすと、世代別の合計が本体と合わずに読み手が原因を探すことになる
         g = st["by_gen"].setdefault(gen_of(e["p"]),
-                                    {"n": 0, "fired": 0, "skips": {}})
+                                    {"n": 0, "fired": 0, "valuable": 0, "skips": {}})
         g["n"] += 1
         if d.get("fired") is True:
             st["fired"] += 1
             g["fired"] += 1
             if value_of(d) > 0:
                 st["valuable"] += 1
+                # **価値率も層別で判定する**（GitHub issue #209）。累計だけだと世代の
+                # 違う母集団を平均することになり、崩れている層が薄まって鳴らない
+                g["valuable"] += 1
         else:
             key = reason or "unknown"
             st["skips"][key] = st["skips"].get(key, 0) + 1
             g["skips"][key] = g["skips"].get(key, 0) + 1
     return st
+
+
+# 保留として出すときの分母の下限。**単発点灯の防止**（`GAP_MIN_N` と同じ流儀 / #209）。
+# これが無いと n=1 の層が毎回「閾値を超えている」として並び、「⚠️ が出たときだけ行動する」
+# 契約の可読性が落ちる（実測: 既定母集団で n=1 の層が 3 本並んだ）
+LAYER_PENDING_MIN_N = 5
+
+
+def layered_signal(st, numer_of, denom_of, min_n, is_hot, render, pending=None):
+    """**世代層ごとに閾値を評価し、超えた層だけを鳴らす**（GitHub issue #209）。
+
+    表は既に世代別に出ているのに判定だけ累計のままだと、母集団の違う層を平均する
+    ことになり、崩れている層が薄まって鳴らない（実測: 反証レイヤーの不発が opus-4-8 で
+    78% あったのに、累計 43% では閾値の 50 に届かなかった）。
+
+    **閾値を超えた層が 1 つも無ければ累計で評価する。** 分岐を「判定できた層の有無」で
+    切ってはならない — 判定できた層が健全なだけのとき、下限に届かない層が崩れていても
+    行が 1 本も出なくなる。このリポジトリでは実際に到達する経路で、`unrecorded` 層は
+    現行版が必ず世代を記録するため増えず、伸びるのは最新世代だけだから、最新世代が
+    下限に達した瞬間に**いま鳴っている行が消えて代わりに何も出ない**。#209 が直そうと
+    した「表には出ているが鳴らない」を裏返しで再生産する。
+
+    累計で鳴らすときは**なぜ層別で判定していないか**を必ず添える（黙ると層別が効いて
+    いると読まれる）。**分母はシグナルごとに違う**ので注記も同じ関数から取り直す
+    （skeptic の分母は起動回数であって母集団ではない）。
+    """
+    by_gen = st.get("by_gen") or {}
+    hot = []
+    judged = []
+    for key in sorted(by_gen):
+        g = by_gen[key]
+        d = denom_of(g)
+        if d < min_n:
+            continue
+        judged.append(key)
+        if is_hot(numer_of(g), d):
+            hot.append(render("`%s` 層" % key, numer_of(g), d, ""))
+    if hot:
+        return hot
+    total = denom_of(st)
+    if total < min_n or not is_hot(numer_of(st), total):
+        # **どこも鳴らなかったときだけ、下限未満で閾値を超えている層を控える**（#209）。
+        # 累計は層を平均するので、判定できる層が健全だと**崩れている少数層が希釈されて
+        # 消える**（実測の形: 健全な層 n=10 と崩れた層 n=8 で累計 28% ＝ 閾値 50 に届かない）。
+        # ⚠️ には出さない — 下限未満は「行動する根拠がまだ無い」という判断そのもの。
+        # 代わりに「計測の健全性」へ保留として出し、**黙って落ちる状態を作らない**
+        if pending is not None:
+            for key in sorted(by_gen):
+                g = by_gen[key]
+                d = denom_of(g)
+                if LAYER_PENDING_MIN_N <= d < min_n and is_hot(numer_of(g), d):
+                    pending.append((key, numer_of(g), d, min_n))
+        return []
+    if judged:
+        note = ("。**累計で判定**（層別では %s が下限に達したが閾値に届かない）"
+                % " / ".join("`%s`" % k for k in judged))
+    else:
+        top = max(((denom_of(g), k) for k, g in by_gen.items()), default=(0, "-"))
+        note = ("。**累計で判定**（層別では判定不能 — 最大層 `%s` の分母 %d・下限 %d）"
+                % (top[1], top[0], min_n))
+    return [render("累計", numer_of(st), total, note)]
 
 
 # ロールバック条件の層別要件の正本: triage-dynamic-gates.md `## 8`（meta） / `## 8.5`（skeptic）
@@ -1243,29 +1307,48 @@ if len(fc_rows) >= FC_MIN_ROWS and fc_total >= FC_MIN_N and pct(fc["test"], fc_t
     signals.append("報告した指摘の %.0f%%（%d/%d 件 / %d 回）が **回帰テストで捕まる層**。"
                    "同梱スクリプトのテストが足りていない"
                    % (pct(fc["test"], fc_total), fc["test"], fc_total, len(fc_rows)))
-if skeptic["fired"] >= 15 and pct(skeptic["valuable"], skeptic["fired"]) < 25:
-    signals.append("冷や読み skeptic の価値率が %.0f%%（fired %d 件 / attribution_schema>=2）。"
-                   "high 起点への昇格を戻すロールバック条件"
-                   "（triage-dynamic-gates.md `## 8.5`）に該当"
-                   % (pct(skeptic["valuable"], skeptic["fired"]), skeptic["fired"]))
+# 下限未満で閾値を超えた層の控え（#209）。⚠️ が 1 本も出なかったシグナルだけ後で出す
+layer_pending = {}
+signals.extend(layered_signal(
+    skeptic, lambda d: d.get("valuable", 0), lambda d: d.get("fired", 0), 15,
+    lambda v, f: pct(v, f) < 25,
+    lambda label, v, f, note:
+        "冷や読み skeptic の価値率が %.0f%%（%s / fired %d 件 / attribution_schema>=2）。"
+        "high 起点への昇格を戻すロールバック条件"
+        "（triage-dynamic-gates.md `## 8.5`）に該当%s" % (pct(v, f), label, f, note),
+    pending=layer_pending.setdefault("skeptic 価値率", [])))
 # 反証レイヤーのゲート幅（issue #129）。**「走らなかった」ではなく「対象が構造的に 0 件」**
 # が常態化しているかを見る。既定 high のゲートは BLOCKER 60-94 / CRITICAL 80-94 だけなので、
 # MAJOR しか出ないレビューが続くと層ごと不発になる（実測: `pre_adjust_counts` を持つ 6 件中
 # 3 件が不発。いずれも BLOCKER + CRITICAL = 0 で MAJOR は 6〜8 件出ていた）
-if adversarial["n"] >= 10:
-    _dry = adversarial["skips"].get("no-eligible-findings", 0)
-    if pct(_dry, adversarial["n"]) >= 50:
-        signals.append("反証レイヤーがゲート該当 0 件で不発だった回が %.0f%%（%d/%d / "
-                       "gate_schema>=2）。既定 high のゲート幅を再検討する条件"
-                       "（triage-dynamic-gates.md `## 9`）に該当"
-                       % (pct(_dry, adversarial["n"]), _dry, adversarial["n"]))
-if meta["n"] >= 8 and meta["fired"] == 0:
-    signals.append("meta-reviewer が起動対象 %d 件（gate_schema>=3・effort 帯内）で 1 度も"
-                   "起動していない。起動ゲートの再検討が要る" % meta["n"])
-elif meta["fired"] >= 10 and pct(meta["valuable"], meta["fired"]) < 20:
-    signals.append("meta-reviewer の価値率が %.0f%%（fired %d 件 / gate_schema>=3）。"
-                   "層を畳むロールバック条件（triage-dynamic-gates.md `## 8`）に該当"
-                   % (pct(meta["valuable"], meta["fired"]), meta["fired"]))
+signals.extend(layered_signal(
+    adversarial, lambda d: (d.get("skips") or {}).get("no-eligible-findings", 0),
+    lambda d: d.get("n", 0), 10,
+    lambda dry, n: pct(dry, n) >= 50,
+    lambda label, dry, n, note:
+        "反証レイヤーがゲート該当 0 件で不発だった回が %.0f%%（%s / %d/%d / "
+        "gate_schema>=2）。既定 high のゲート幅を再検討する条件"
+        "（triage-dynamic-gates.md `## 9`）に該当%s" % (pct(dry, n), label, dry, n, note),
+    pending=layer_pending.setdefault("反証レイヤーの不発", [])))
+# **起動ゼロと価値率は排他のまま**（1 度も起動していない層に価値率を出しても意味が無い）
+_meta_dead = layered_signal(
+    meta, lambda d: d.get("fired", 0), lambda d: d.get("n", 0), 8,
+    lambda fired, n: fired == 0,
+    lambda label, fired, n, note:
+        "meta-reviewer が起動対象 %d 件（%s / gate_schema>=3・effort 帯内）で 1 度も"
+        "起動していない。起動ゲートの再検討が要る%s" % (n, label, note),
+    pending=layer_pending.setdefault("meta の起動ゼロ", []))
+if _meta_dead:
+    signals.extend(_meta_dead)
+else:
+    signals.extend(layered_signal(
+        meta, lambda d: d.get("valuable", 0), lambda d: d.get("fired", 0), 10,
+        lambda v, f: pct(v, f) < 20,
+        lambda label, v, f, note:
+            "meta-reviewer の価値率が %.0f%%（%s / fired %d 件 / gate_schema>=3）。"
+            "層を畳むロールバック条件（triage-dynamic-gates.md `## 8`）に該当%s"
+            % (pct(v, f), label, f, note),
+        pending=layer_pending.setdefault("meta 価値率", [])))
 
 # ---- 出力 -----------------------------------------------------------------
 if as_json:
@@ -1738,6 +1821,15 @@ else:
                  "。**%d 件は payload の `waves_expected` と判定が食い違う**"
                  "（publish 時点の式で焼かれた値。再計算した側が現行の判定 / #200）"
                  % n_wave_split_stale))
+    # **下限未満で閾値を超えた層を保留として出す**（#209）。⚠️ が 1 本も出なかった
+    # シグナルに限る — 鳴っているなら行動の根拠は既にあり、重ねると枠を食う。
+    # **⚠️ には出さない**（下限未満は「まだ行動しない」という判断そのもの）が、
+    # 黙ると「該当なし」と読まれるので、判定の保留として残す
+    for _sig in sorted(layer_pending):
+        for _k, _num, _den, _min in layer_pending[_sig][:2]:
+            print("  - %s: `%s` 層が閾値を超えている（%d/%d）が、下限 %d に届かないので"
+                  "**判定を保留**（累計では閾値に届かず ⚠️ も出ていない）"
+                  % (_sig, _k, _num, _den, _min))
     # **分母を明示する**（#207 / `wave-split` と同じ流儀）。判定できた回が少ないうちは
     # 比率が閾値に届かず ⚠️ が出ないので、黙ると「fleet の打点は守られている」と読まれる
     if n_fleet_span_judged:

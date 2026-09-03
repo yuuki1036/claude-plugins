@@ -1643,8 +1643,13 @@ class SchemaMarkerInjectionTest(ScriptTestBase):
         self.assertIn("payload:meta_reviewer", self.last_payload()["measurement_gaps"])
 
 
-class RetroTest(ScriptTestBase):
-    """`review-retro.sh` の層別と分母（issue #131 / v2.66.0 のセルフレビュー指摘）."""
+class RetroFixture(ScriptTestBase):
+    """`review-retro.sh` 用の fixture だけを持つ土台（**テストは持たない**）.
+
+    `RetroTest` は自前のテストを 52 本持つので、**そこを継承すると 52 本が子の名前で
+    もう一度走る**（`TranscriptFixture` の docstring が記録している失敗と同型）。
+    新しいテストクラスはこちらを継承する。
+    """
 
     def _events(self, rows: list[dict]) -> None:
         (self.root / ".claude").mkdir(exist_ok=True)
@@ -1745,6 +1750,10 @@ class RetroTest(ScriptTestBase):
         return {"schema": 1, "main": main,
                 "main_distinct": [main] if main else ["claude-opus-4-8", "claude-opus-5"],
                 "sub_distinct": [main] if main else []}
+
+
+class RetroTest(RetroFixture):
+    """`review-retro.sh` の層別と分母（issue #131 / v2.66.0 のセルフレビュー指摘）."""
 
     def test_generation_is_not_a_key_while_the_population_is_uniform(self):
         """**1 種しか無い期間は層別しない**（既存バケツを n=1 に砕かない）.
@@ -4503,7 +4512,7 @@ class FleetSpanGuardTest(TranscriptFixture):
                          "窓のゲートが効いていない")
 
 
-class RetroFleetSpanTest(RetroTest):
+class RetroFleetSpanTest(RetroFixture):
     """矛盾した回を中央値・相関の分母から外す（GitHub issue #207 の期待動作 4）.
 
     **既に publish 済みの回にも効かせる** — publish 側のガードはこれから publish する回に
@@ -4624,6 +4633,137 @@ class RetroFleetSpanTest(RetroTest):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("fleet-span-mismatch", out, "シグナルに出ていない（分母が壊れている）")
         self.assertIn("t2 を全 agent の回収後に", out, "是正先が既定文言に落ちている")
+
+
+class RetroLayeredSignalTest(RetroFixture):
+    """⚠️ の発火判定を世代で層別する（GitHub issue #209）.
+
+    表は #191 で世代別になったが**判定だけ累計のまま**で、母集団の違う層を平均する形が
+    残っていた（実測: 反証不発が opus-4-8 で 78% あったのに累計 43% で閾値 50 に届かず、
+    9 日 18 レビューの検出崩壊が一度もシグナルに載らなかった）。
+
+    **累計フォールバックを消さない**のがこの実装の核心。既定母集団ではどの層も下限に
+    届かないので、層別だけにすると**いま鳴っている行が消えて「該当なし」と読まれる**。
+    """
+
+    def _adv(self, gen: str, dry: bool) -> dict:
+        """反証層の 1 回。`dry` が真なら `no-eligible-findings` で不発."""
+        av = {"gate_schema": 2, "calibration_schema": 3,
+              "fired": not dry, "skip_reason": "no-eligible-findings" if dry else None}
+        if not dry:
+            av.update({"confirmed": 2, "refuted": 0, "uncertain": 0,
+                       "severity_inflated": 0, "contested": 0})
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "models": self._models("claude-%s" % gen), "adversarial_verify": av}
+
+    def _rows(self, spec: list[tuple[str, int, int]]) -> None:
+        """`(世代, 総数, 不発数)` の並びからイベントを作る."""
+        rows = []
+        for gen, total, dry in spec:
+            rows += [self._adv(gen, True) for _ in range(dry)]
+            rows += [self._adv(gen, False) for _ in range(total - dry)]
+        self._events(rows)
+
+    def _out(self) -> str:
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        self.assertTrue(r.stdout.strip(), "stdout が空（沈黙死）")
+        return r.stdout
+
+    def test_a_broken_layer_fires_even_when_the_total_is_diluted(self):
+        """**層別判定の本体**。崩れた層が健全な層に薄められて消えない.
+
+        累計 8/30 = 27% は閾値 50 に届かないが、`opus-4-8` 層は 80% で超えている。
+        """
+        self._rows([("opus-4-8", 10, 8), ("opus-5", 20, 0)])
+        out = self._out()
+        self.assertIn("不発だった回が 80%（`opus-4-8` 層", out, "崩れた層が鳴っていない")
+        self.assertNotIn("累計で判定", out, "層で鳴ったのに累計へ落ちている")
+
+    def test_every_layer_over_the_threshold_is_reported(self):
+        """閾値を超えた層は全部出す（1 層だけ出すと残りが黙って落ちる）."""
+        self._rows([("opus-4-8", 10, 9), ("fable-5", 12, 11), ("opus-5", 20, 0)])
+        out = self._out()
+        self.assertIn("`opus-4-8` 層", out)
+        self.assertIn("`fable-5` 層", out)
+
+    def test_the_total_still_fires_when_no_layer_is_judgeable(self):
+        """**利用者が決めた方針の核心**。層別で判定できない間は累計で鳴らす.
+
+        ここを落とすと、既定母集団では全層が下限未満なのでシグナルが丸ごと消える。
+        """
+        self._rows([("opus-4-8", 8, 6), ("opus-5", 4, 3)])
+        out = self._out()
+        self.assertIn("累計 / 9/12", out, "累計フォールバックが消えている")
+        self.assertIn("層別では判定不能", out, "なぜ累計で判定したかを言っていない")
+        self.assertIn("最大層 `opus-4-8` の分母 8・下限 10", out)
+
+    def test_the_note_says_below_threshold_when_a_layer_was_judgeable(self):
+        """判定できた層があったが閾値に届かなかった回は、注記の理由が変わる.
+
+        「判定不能」と「判定したが閾値未満」は別の状態で、潰すと次に何を待てばよいかが
+        読めなくなる。
+        """
+        self._rows([("opus-5", 10, 4), ("opus-4-8", 2, 2)])
+        out = self._out()
+        self.assertIn("累計 / 6/12", out)
+        self.assertIn("`opus-5` が下限に達したが閾値に届かない", out)
+
+    def test_a_hot_but_small_layer_is_held_rather_than_dropped(self):
+        """**判定できる層が健全だと、崩れた少数層が累計にも埋もれる**（反証で検出）.
+
+        `opus-5` は n=10 で健全、`unrecorded` は n=8 で全件不発。累計 8/18 = 44% は
+        閾値に届かないので ⚠️ は出ない。**⚠️ に出さないのは正しい**（下限未満は
+        「まだ行動しない」という判断）が、黙ると「該当なし」と読まれるので保留として残す。
+        """
+        self._rows([("opus-5", 10, 0)])
+        rows = [self._adv("opus-5", False) for _ in range(10)]
+        bare = self._adv("opus-5", True)
+        del bare["models"]
+        rows += [dict(bare) for _ in range(8)]
+        self._events(rows)
+        out = self._out()
+        self.assertNotIn("既定 high のゲート幅を再検討", out, "下限未満の層で ⚠️ を出している")
+        self.assertIn("判定を保留", out, "崩れた層が黙って落ちている")
+        self.assertIn("`unrecorded` 層が閾値を超えている（8/8）", out)
+
+    def test_the_hold_floor_is_inclusive(self):
+        """保留の下限は「その値を含む」（境界を 1 つ狭める変異を殺す）.
+
+        下限ちょうどの層を落とすと、単発点灯を防ぐつもりで**拾うべき層まで捨てる**。
+        """
+        self._rows([("opus-5", 10, 0), ("opus-4-8", 5, 5)])
+        out = self._out()
+        self.assertNotIn("既定 high のゲート幅を再検討", out, "前提: ⚠️ は出ない（累計 33%）")
+        self.assertIn("`opus-4-8` 層が閾値を超えている（5/5）", out, "下限ちょうどの層を捨てている")
+
+    def _meta(self, gen: str, fired: bool) -> dict:
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "models": self._models("claude-%s" % gen),
+                "meta_reviewer": {"gate_schema": 3, "fired": fired,
+                                  "skip_reason": None if fired else "effort-band",
+                                  "findings_added": 1 if fired else 0}}
+
+    def test_a_layer_that_never_fired_meta_is_reported(self):
+        """meta の起動ゼロも層別で判定する（`== 0` を反転する変異を殺す）."""
+        self._events([self._meta("opus-4-8", False) for _ in range(8)]
+                     + [self._meta("opus-5", True) for _ in range(8)])
+        out = self._out()
+        self.assertIn("起動対象 8 件（`opus-4-8` 層", out, "起動ゼロの層が鳴っていない")
+
+    def test_a_layer_that_did_fire_meta_is_not_reported_as_dead(self):
+        """起動している層を「1 度も起動していない」と言わない（判定の反転を殺す）."""
+        self._events([self._meta("opus-5", True) for _ in range(12)])
+        self.assertNotIn("1 度も起動していない", self._out())
+
+    def test_a_single_sample_layer_is_not_held(self):
+        """保留にも下限を置く（**単発点灯の防止** / `GAP_MIN_N` と同じ流儀）.
+
+        置かないと n=1 の層が毎回並び、「⚠️ が出たときだけ行動する」契約の可読性が落ちる
+        （実測: 既定母集団で n=1 の層が 3 本並んだ）。
+        """
+        self._rows([("opus-5", 10, 0), ("opus-4-8", 2, 2)])
+        self.assertNotIn("判定を保留", self._out(), "単発の層を保留に出している")
 
 
 if __name__ == "__main__":
