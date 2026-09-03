@@ -4766,5 +4766,72 @@ class RetroLayeredSignalTest(RetroFixture):
         self.assertNotIn("判定を保留", self._out(), "単発の層を保留に出している")
 
 
+class RetroMissingReportCountTest(RetroFixture):
+    """報告件数の欠測を「報告 0」と読まない（GitHub issue #212）.
+
+    #203 が `pre_adjust_counts` の語彙違反について同じ理由で母集団から外したのと同型。
+    そちらのコメントが失敗の形をそのまま書いている（実数が 0 として分子に入り歩留まりを
+    下振れさせる）。**縮退先は欠測であって誤値ではない**（`## 13.1`）。
+
+    実害の実例: このリポジトリの唯一の opus-4-8 サンプルが、報告件数フィールドを
+    持たないだけで**歩留まり 0.0%** として表に出ていた（#210 の「4.8 で検出が死んでいる」
+    という読みを裏付ける形で）。
+    """
+
+    def _row(self, pre_major: int, reported: int | None, appendix: bool = False) -> dict:
+        r = {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+             "severity_threshold": "MAJOR",
+             "pre_adjust_counts": {"schema": 2, "blocker": 0, "critical": 0,
+                                   "major": pre_major, "minor": 0}}
+        if reported is not None:
+            r.update({"blocker_count": 0, "critical_count": 0,
+                      "major_count": reported, "minor_count": 0})
+        if appendix:
+            r["appendix"] = {"schema": 1, "listed": 3, "recommended": 1}
+        return r
+
+    def _out(self) -> str:
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        self.assertTrue(r.stdout.strip(), "stdout が空（沈黙死）")
+        return r.stdout
+
+    def test_a_run_without_report_counts_is_not_a_zero_yield(self):
+        """**欠測の回を歩留まりの母集団に入れない**（検出したのに全部捨てた回に化ける）."""
+        self._events([self._row(9, None), self._row(10, 5)])
+        out = self._out()
+        self.assertNotIn("検出 9 → 報告 0", out, "欠測の回が 0% の行を作っている")
+        self.assertIn("1 件は報告件数を 1 つも申告しておらず母集団から外した", out,
+                      "除外した事実を残していない")
+        # **判定できた行があるなら「判定対象なし」を出さない**。両方出ると、
+        # 除外の通知が「歩留まりを測れていない」という別の意味に読まれる
+        self.assertNotIn("歩留まり**: 判定対象なし", out,
+                         "行があるのに判定対象なしを併記している")
+
+    def test_a_genuinely_zero_report_is_still_counted(self):
+        """**本当に 0 件の回は従来どおり数える**（非退行の表明）.
+
+        ここを一緒に落とすと、recall が落ちた回まで母集団から消えて
+        「歩留まりは健全」に見える — 直そうとしている誤読の裏返しになる。
+        """
+        self._events([self._row(9, 0), self._row(10, 5)])
+        out = self._out()
+        self.assertIn("検出 19 → 報告 5", out, "本当に 0 件の回まで外している")
+        self.assertNotIn("報告件数を 1 つも申告しておらず", out)
+
+    def test_a_missing_count_is_not_counted_as_a_silent_run(self):
+        """付録側も同じ（`apx_silent` は #210 の看板の数字の分子）."""
+        self._events([self._row(9, None, appendix=True) for _ in range(2)])
+        out = self._out()
+        self.assertIn("報告件数を 1 つも申告しておらず母集団から外した", out)
+        self.assertNotIn("報告 0 件の回 2 件", out, "欠測を空振りに数えている")
+
+    def test_a_genuinely_silent_run_with_an_appendix_is_still_counted(self):
+        """付録側でも本当に 0 件の回は数える（#168 の「付録に救われた回」の判定）."""
+        self._events([self._row(9, 0, appendix=True) for _ in range(2)])
+        out = self._out()
+        self.assertIn("報告 0 件の回 2 件のうち 2 件は推奨あり", out)
+
+
 if __name__ == "__main__":
     unittest.main()

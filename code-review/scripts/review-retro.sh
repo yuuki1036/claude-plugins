@@ -253,6 +253,20 @@ def measured(rows, key):
     return out
 
 
+REPORT_KEYS = ("blocker_count", "critical_count", "major_count", "minor_count")
+
+
+def reported_missing(p):
+    """報告件数を**1 つも申告していない回**か（GitHub issue #212）。
+
+    欠測を 0 として足すと「検出したのに 1 件も報告しなかった」に化ける。#203 が
+    `pre_adjust_counts` の語彙違反について同じ理由で母集団から外したのと同型で、
+    そちらのコメントが失敗の形をそのまま書いている（実数が 0 として分子に入り
+    歩留まりを下振れさせる）。**縮退先は欠測であって誤値ではない**（`## 13.1`）。
+    """
+    return all(p.get(k) is None for k in REPORT_KEYS)
+
+
 def _fleet_span_judgeable(p):
     """fleet 区間と agent 起動スパンの突合ができる回か（GitHub issue #207）.
 
@@ -562,7 +576,8 @@ spans = [(k, median(measured(events, "duration_%s_min" % k)), len(measured(event
 # MAJOR 中央値が 7 → 0・報告 0 件率が 42% → 91% に動いており、累計するとこれが平均に
 # 埋もれる。**「安くなった」だけが見えて「効かなくなった」が見えない**非対称になる
 yields = {}
-yields_bad_vocab = 0    # 語彙違反で外した回（#203）
+yields_bad_vocab = 0
+yields_missing_post = 0   # 報告件数を 1 つも申告していない回（#212）    # 語彙違反で外した回（#203）
 for e in events:
     p = e["p"]
     pre = p.get("pre_adjust_counts")
@@ -572,6 +587,13 @@ for e in events:
     # 下振れさせる（実測: `pre_major: 11` の回が `検出 0 → 報告 0` として計上されていた）
     if not pre_vocab_ok(pre):
         yields_bad_vocab += 1
+        continue
+    # **報告側の欠測も同じ理由で外す**（#212）。`if v:` は `None` を飛ばすので、
+    # 4 つとも欠測の回は `post` に 0 を足しつつ `pre` は加算され、**検出したのに
+    # 全部捨てた回**として歩留まりを押し下げる（実測 3/43 件。うち 1 件は
+    # critical 2 / major 13 を検出していた）
+    if reported_missing(p):
+        yields_missing_post += 1
         continue
     key = with_gen(p, "schema>=%d/threshold=%s" % (
         schema_of(pre, "schema"), p.get("severity_threshold") or "?"))
@@ -659,7 +681,7 @@ for e in events:
 # **`appendix` を持つ回だけを母数にする**（旧版を混ぜると「推奨なし」が水増しされる）。
 # 版マーカーで切る流儀は `## 9` の cache_read と同じ。
 APPENDIX_MIN_SCHEMA = 1
-apx_rows, apx_silent, apx_rescued = [], 0, 0
+apx_rows, apx_silent, apx_rescued, apx_missing = [], 0, 0, 0
 for e in events:
     p = e["p"]
     a = p.get("appendix")
@@ -668,8 +690,12 @@ for e in events:
     listed, rec = num(a.get("listed")), num(a.get("recommended"))
     if listed is None or listed < 0 or rec is None or rec < 0:
         continue
-    reported = sum(num(p.get(k)) or 0 for k in
-                   ("blocker_count", "critical_count", "major_count", "minor_count"))
+    # **報告件数の欠測を「報告 0」と読まない**（#212）。`or 0` で化けた回が
+    # `apx_silent`（＝真の空振りの分子）に入る。#210 はこの数字の上に打ち手を求めている
+    if reported_missing(p):
+        apx_missing += 1
+        continue
+    reported = sum(num(p.get(k)) or 0 for k in REPORT_KEYS)
     apx_rows.append((listed, rec, reported))
     if reported == 0:
         apx_silent += 1
@@ -1468,6 +1494,12 @@ print()
 print("**区間の中央値**: " + " / ".join(
     "%s %s（n=%d）" % (k, "-" if m is None else "%g 分" % m, c) for k, m, c in spans))
 
+# **全件除外でも通知は出す**（#212）。ガードの内側に置くと、除外した結果 0 行になった
+# ときに通知ごと消えて「該当なし」と読まれる — 直そうとしている誤読の同型
+if not yields and yields_missing_post:
+    print()
+    print("**pre_adjust → 報告の歩留まり**: 判定対象なし（**%d 件は報告件数を 1 つも"
+          "申告しておらず母集団から外した** / #212）" % yields_missing_post)
 if yields:
     print()
     print("**pre_adjust → 報告の歩留まり**（%sで層別 / #191）"
@@ -1479,6 +1511,12 @@ if yields:
         print("  - **%d 件は `pre_adjust_counts` の語彙が契約外で母集団から外した**"
               "（`%s` の 4 つが揃っていない回。混ぜると実数が 0 として分子に入る / #203）"
               % (yields_bad_vocab, "` / `".join(PRE_SEVS)))
+    # **除外した事実を残す**（`zero_missing` と同じ流儀）。黙って外すと母数が減った
+    # 理由が読めなくなり、今度は「レビュー回数が減った」と誤読される
+    if yields_missing_post:
+        print("  - **%d 件は報告件数を 1 つも申告しておらず母集団から外した**"
+              "（欠測を 0 と足すと**検出したのに全部捨てた回**に化ける / #212）"
+              % yields_missing_post)
 
 # **報告 0 件率（世代別）** — recall の最も粗い代理指標（GitHub issue #191）。
 # コスト側だけ世代で層別して報告側を累計すると、「安くなった」だけが見えて
@@ -1774,11 +1812,18 @@ else:
 
 print()
 # ---- 🔁 付録（「報告 0 件」と「価値 0」の分離 / GitHub issue #168） ----------
+if not apx_rows and apx_missing:
+    print("**🔁 付録**: 判定対象なし（**%d 件は報告件数を 1 つも申告しておらず母集団から"
+          "外した** — 欠測を「報告 0」と読むと真の空振りの分子が膨らむ / #212）"
+          % apx_missing)
 if apx_rows:
     tot_listed = sum(r[0] for r in apx_rows)
     tot_rec = sum(r[1] for r in apx_rows)
     print("**🔁 付録**（n=%d / `appendix.schema` を持つ回だけ）: 列挙 %d 件 / うち人間に推した %d 件"
           % (len(apx_rows), tot_listed, tot_rec))
+    if apx_missing:
+        print("- **%d 件は報告件数を 1 つも申告しておらず母集団から外した**"
+              "（欠測を「報告 0」と読むと真の空振りの分子が膨らむ / #212）" % apx_missing)
     if apx_silent:
         print("- **報告 0 件の回 %d 件のうち %d 件は推奨あり**（＝空振りではない）。"
               "**この %d 件を「価値 0」として費用対効果の分子から落とさない** — "
