@@ -982,7 +982,12 @@ class AppendixRetroTest(ScriptTestBase):
         """
         cases = [("models", "transcript の引き当て"),
                  ("axis-unknown", "axis 語彙"),
-                 ("demoted-unknown", "降格型名")]
+                 ("demoted-unknown", "降格型名"),
+                 # #208。**`startswith("payload:")` の既定に落ちてはならない** — 置き場所と
+                 # 語彙の話なので「テンプレートの記述漏れ」は誤った是正先になる
+                 ("payload:demoted_types.misplaced", "ネストの誤り"),
+                 ("payload:agents.vocab", "語彙違反"),
+                 ("payload:agents.empty", "体数のキーが 1 つも無い")]
         for ident, expected in cases:
             with self.subTest(ident=ident):
                 # GAP_MIN_N=5 / GAP_RATIO=20 を超える母集団を作る
@@ -4331,6 +4336,294 @@ class RetroSilentDeathTest(ScriptTestBase):
         self.assertIn("|| retro_fatal", heredoc[0], "ガードが同じ行から外れている")
         self.assertTrue(any(l.startswith("retro_fatal()") for l in lines),
                         "retro_fatal が定義されていない")
+
+
+class MisplacedAndVocabGapTest(ScriptTestBase):
+    """payload の**置き場所**と**語彙**の検証（GitHub issue #208）.
+
+    どちらも「記述漏れ」とは是正先が違うので別識別子で立てる。**fail-fast にしない**
+    （止めるとその回の計測が丸ごと消える / `pre_adjust_counts` と同じ判断）。
+    """
+
+    def _payload(self, **extra) -> dict:
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        p.update(extra)
+        return p
+
+    TYPES = {"base_derived": 1, "misread": 0, "overstated_impact": 0,
+             "miscategorized": 0, "unknown": 0}
+
+    def test_a_misplaced_demoted_types_is_not_called_a_missing_record(self):
+        """トップレベル誤置は `.misplaced`。**不在 gap は立てない**（排他）.
+
+        排他にしないと、欠測内訳の最多項目が是正先の違う 2 系統に割れて読めなくなる
+        （#208 が観測した当の症状）。
+        """
+        self.publish(self._payload(
+            demoted_types=dict(self.TYPES),
+            below_threshold_counts={"blocker": 0, "critical": 0, "major": 1, "minor": 0}))
+        gaps = self.last_payload()["measurement_gaps"]
+        self.assertIn("payload:demoted_types.misplaced", gaps)
+        self.assertNotIn("payload:below_threshold_counts.demoted_types", gaps,
+                         "誤置と不在の両方を立てている（是正先が 2 系統に割れる）")
+
+    def test_a_misplaced_inflated_axes_is_detected_too(self):
+        """同型の穴を一巡する（#208 の期待動作 3）— `inflated_axes` 側も塞ぐ."""
+        self.publish(self._payload(
+            inflated_axes=dict(self.TYPES),
+            adversarial_verify={"fired": True, "skip_reason": None, "severity_inflated": 1}))
+        gaps = self.last_payload()["measurement_gaps"]
+        self.assertIn("payload:inflated_axes.misplaced", gaps)
+        self.assertNotIn("payload:adversarial_verify.inflated_axes", gaps)
+
+    def test_a_genuinely_missing_breakdown_is_still_recorded(self):
+        """誤置の排他を足しても、**本当に不在の回の gap は残る**（#150 の記録漏れ検知）.
+
+        排他条件の付け方を誤ると「内訳が要る回なのに記録が無い」が丸ごと鳴らなくなる。
+        """
+        self.publish(self._payload(
+            adversarial_verify={"fired": True, "skip_reason": None, "severity_inflated": 1}))
+        self.assertIn("payload:adversarial_verify.inflated_axes",
+                      self.last_payload()["measurement_gaps"])
+
+    def test_the_warning_names_the_parent_the_value_belongs_in(self):
+        """**是正先を名指しする**（#208 の目的そのもの）— 親を取り違えると誘導が逆になる."""
+        res = self.publish(self._payload(inflated_axes=dict(self.TYPES)))
+        self.assertIn("adversarial_verify", res.stderr)
+        self.assertNotIn("below_threshold_counts の中", res.stderr, "親を取り違えている")
+
+    def test_the_misplaced_value_is_not_moved_into_place(self):
+        """**値は救わない**。publish が直すと埋める側は誤りに気づかず誤置を続ける.
+
+        `missing_coverage` の「黙って正規化はしない」に揃えた判断。
+        """
+        self.publish(self._payload(demoted_types=dict(self.TYPES)))
+        p = self.last_payload()
+        self.assertIn("demoted_types", p, "トップレベルの値を消している")
+        self.assertNotIn("demoted_types", p["below_threshold_counts"], "黙って移送している")
+
+    def test_a_correctly_nested_payload_raises_neither_gap(self):
+        """正しくネストした回では両方とも立たない（偽陽性の契約表明）."""
+        self.publish(self._payload(
+            below_threshold_counts={"blocker": 0, "critical": 0, "major": 1, "minor": 0,
+                                    "demoted_types": dict(self.TYPES)}))
+        gaps = self.last_payload()["measurement_gaps"]
+        self.assertNotIn("payload:demoted_types.misplaced", gaps)
+        self.assertNotIn("payload:below_threshold_counts.demoted_types", gaps)
+
+    def test_the_contract_vocabulary_has_seven_keys_not_five(self):
+        """**体数 5 キーを語彙 allow-list に流用しない**（#208 の最大の落とし穴）.
+
+        `explorer_waves` は publish 自身が注入し、`verify_findings` は件数として契約内。
+        5 キーで判定すると**将来のすべての publish が偽陽性**になる（実測: ローカルの
+        判定対象 15 件すべてが 5 キー外を持ち 100%。7 キー契約なら 2 件）。
+        """
+        self.publish(self._payload(
+            agents={"explorer": 2, "reviewer": 5, "verify": 1, "verify_findings": 7}))
+        gaps = self.last_payload()["measurement_gaps"]
+        self.assertNotIn("payload:agents.vocab", gaps,
+                         "契約内のキー（verify_findings / explorer_waves）で発火している")
+
+    def test_an_out_of_contract_agent_key_is_named_a_vocabulary_violation(self):
+        """契約外のキーは黙って 0 として集計される（`agents` は全分母の分母）."""
+        res = self.publish(self._payload(
+            agents={"explorer": 2, "reviewer": 5, "skeptic": 1, "meta": 1}))
+        self.assertIn("payload:agents.vocab", self.last_payload()["measurement_gaps"])
+        self.assertIn("skeptic", res.stderr, "どのキーが契約外かを言っていない")
+
+    def test_no_count_key_at_all_is_recorded_rather_than_silently_dropped(self):
+        """体数キーが 1 つも無い回。集計側は落とすが、**落ちた事実**を残す（#208）."""
+        self.publish(self._payload(agents={}))
+        self.assertIn("payload:agents.empty", self.last_payload()["measurement_gaps"])
+
+    def test_a_normal_payload_raises_no_agents_gap(self):
+        """既定の payload では `agents` 系の gap が 1 つも立たない（偽陽性の契約表明）."""
+        self.publish()
+        gaps = self.last_payload()["measurement_gaps"]
+        self.assertNotIn("payload:agents.vocab", gaps)
+        self.assertNotIn("payload:agents.empty", gaps)
+
+
+class FleetSpanGuardTest(TranscriptFixture):
+    """fleet 区間が agent の起動スパンを覆えていない回（GitHub issue #207）.
+
+    `dispatch.span_sec` は transcript 由来の実測なので自己申告ではない。覆えていない回は
+    t1 か t2 の打点が区間の外にあり、**汚染は欠測ではなく「もっともらしい小さい値」**
+    として入る（`## 13.1`）ので、0 のまま中央値と相関の分母に混ざる。
+    """
+
+    def _marks(self, t0: int, t1: int, t2: int) -> None:
+        self.ts_file().write_text("t0 %d\nt1 %d\nw %d\nt2 %d\n" % (t0, t1, t1 + 1, t2),
+                                  encoding="utf-8")
+
+    def _run(self, fleet_sec: int, span_sec: int, t2_ago: int = 60) -> dict:
+        now = int(time.time())
+        t2 = now - t2_ago
+        t1 = t2 - fleet_sec
+        t0 = t1 - 600
+        base = datetime.fromtimestamp(t0 + 10, tz=timezone.utc).replace(tzinfo=None)
+        self.write_transcript([[0], [span_sec]], base=base)
+        self._marks(t0, t1, t2)
+        self.publish(env=self.env_home())
+        return self.last_payload()
+
+    def test_a_contradicting_fleet_is_dropped_to_missing(self):
+        """0 を実値として載せない。**警告だけでは分母から外れない**."""
+        p = self._run(fleet_sec=10, span_sec=2457)
+        self.assertEqual(p["tokens"]["window"], "since-t0", "前提: 判定対象の窓")
+        self.assertEqual(p["duration_fleet_min"], -1, "0 が実値として残っている")
+        self.assertIn("fleet-span-mismatch", p["measurement_gaps"])
+
+    def test_a_consistent_fleet_keeps_its_value(self):
+        """正常な回は倒さない（偽陽性は「⚠️ が出たときだけ行動する」契約を壊す）."""
+        p = self._run(fleet_sec=3600, span_sec=2457)
+        self.assertEqual(p["duration_fleet_min"], 60)
+        self.assertNotIn("fleet-span-mismatch", p["measurement_gaps"])
+
+    def test_the_rounding_margin_is_one_minute(self):
+        """区間の分は秒を 60 で割って切り捨てるので、真に等しい回でも最大 59 秒はみ出す.
+
+        丸めぶんの余裕を取らないと、**打点が正しい回を欠測に倒す**。
+        """
+        p = self._run(fleet_sec=2400, span_sec=2459)          # 40 分ちょうど + 59 秒
+        self.assertEqual(p["duration_fleet_min"], 40, "余裕の内側で倒している")
+        self.assertNotIn("fleet-span-mismatch", p["measurement_gaps"])
+
+    def test_one_second_past_the_margin_fires(self):
+        """境界の外側は倒す（`+ 1` を削る変異・比較の向きを反転する変異を殺す）."""
+        p = self._run(fleet_sec=2400, span_sec=2460)
+        self.assertEqual(p["duration_fleet_min"], -1)
+        self.assertIn("fleet-span-mismatch", p["measurement_gaps"])
+
+    def test_a_late_publish_window_is_not_judged(self):
+        """`since-t0-late` は締めのあとに起動した agent が窓へ入るので判定しない."""
+        p = self._run(fleet_sec=10, span_sec=2457, t2_ago=1800)
+        self.assertIn("late-publish", p["measurement_gaps"], "前提: 遅延 publish")
+        self.assertNotIn("fleet-span-mismatch", p["measurement_gaps"],
+                         "窓のゲートが効いていない")
+
+
+class RetroFleetSpanTest(RetroTest):
+    """矛盾した回を中央値・相関の分母から外す（GitHub issue #207 の期待動作 4）.
+
+    **既に publish 済みの回にも効かせる** — publish 側のガードはこれから publish する回に
+    しか掛からないが、汚染された値はもう集計に入っている（#199 と同じ理由）。
+    """
+
+    def _row(self, fleet: int, span: int, agents: int = 8, window: str = "since-t0",
+             gaps: list | None = None) -> dict:
+        return {"effort": "high", "size_tier": "medium",
+                "measurement_gaps": [] if gaps is None else gaps,
+                "duration_fleet_min": fleet,
+                "agents": {"explorer": 2, "reviewer": agents - 2},
+                "tokens": {"schema": 2, "window": window, "main_output_k": 10.0,
+                           "sub_output_k": 20.0, "sub_cache_read_k": 30.0, "sub_agents": agents},
+                "dispatch": {"agents": agents, "waves": 2, "wave_sizes": [2, agents - 2],
+                             "schema": 4, "verdict": "batched", "span_sec": span,
+                             "max_solo_run": 1, "max_inter_wave_sec": 60}}
+
+    def _json(self) -> dict:
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        return json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+
+    def test_a_contradicting_row_is_kept_in_the_denominator_of_the_gap(self):
+        """**倒したあとの回も判定母数に残す** — 外すと分子だけ消えて欠測率が常に 0 になる."""
+        self._events([self._row(-1, 2457, gaps=["fleet-span-mismatch"]),
+                      self._row(46, 1902)])
+        self.assertEqual(self._json()["fleet_span"]["judged"], 2,
+                         "倒した回が分母から抜けている（自己参照で欠測率が 0 になる）")
+
+    def test_an_already_published_contradiction_is_excluded_from_the_medians(self):
+        """publish 前に焼かれた 0 も集計から外す（ガードだけでは既存データが直らない）."""
+        self._events([self._row(0, 2457), self._row(40, 2400), self._row(42, 2400)])
+        j = self._json()
+        self.assertEqual(j["fleet_span"]["conflict"], 1, "矛盾を検出できていない")
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("判定できた 3 件中 1 件", out, "分母と矛盾件数を出していない")
+
+    def test_a_session_window_is_never_judged(self):
+        """窓が `session` の回は起点に下限が無いので突合できない（判定対象にしない）."""
+        self._events([self._row(0, 2457, window="session") for _ in range(3)])
+        self.assertEqual(self._json()["fleet_span"], {"judged": 0, "conflict": 0})
+
+    def test_a_dropped_row_without_the_marker_is_not_judgeable(self):
+        """欠測（-1）でマーカーも無い回は**判定できていない**（判定して問題無しではない）.
+
+        ここを緩めると、別の理由で欠測に倒れた回（late-publish 等）が分母に入り、
+        欠測率が実際より低く出る。`and` を `or` に緩める変異 2 つを殺す。
+        """
+        self._events([self._row(-1, 2457, gaps=[]),
+                      self._row(-1, 2457, gaps=["late-publish"])])
+        self.assertEqual(self._json()["fleet_span"], {"judged": 0, "conflict": 0})
+
+    def test_a_row_without_dispatch_is_not_judgeable(self):
+        """突合の材料（`dispatch`）が無い回は判定対象にしない."""
+        rows = []
+        for _ in range(3):
+            r = self._row(0, 2457)
+            del r["dispatch"]
+            rows.append(r)
+        self._events(rows)
+        self.assertEqual(self._json()["fleet_span"]["judged"], 0)
+
+    def test_a_zero_span_is_not_judgeable(self):
+        """`span_sec` が 0 の回（agent 1 体 = `verdict: single`）は突合できない.
+
+        幅が 0 なら「区間が覆えていない」は原理的に成立しない。境界を 1 つ狭める変異を殺す。
+        """
+        self._events([self._row(0, 0) for _ in range(3)])
+        self.assertEqual(self._json()["fleet_span"], {"judged": 0, "conflict": 0})
+
+    def test_a_non_integer_span_does_not_kill_the_run(self):
+        """`--logs` は他マシン・他版のログも読むので型の保証が無い（#211 と同型）.
+
+        ガードが緩むと `span_sec` の比較で `TypeError` になり、**retro が rc 0 のまま
+        出力ごと消える**。判定を諦めて集計は続ける。
+        """
+        self._events([self._row(0, 0) | {"dispatch": dict(self._row(0, 0)["dispatch"],
+                                                          span_sec="2457")}
+                      for _ in range(3)])
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "型判定が緩んで retro が死んでいる")
+        self.assertTrue(r.stdout.strip(), "stdout が空（沈黙死）")
+        self.assertEqual(self._json()["fleet_span"]["judged"], 0)
+
+    def test_an_already_dropped_row_is_not_counted_as_a_conflict(self):
+        """倒し済みの回を矛盾として二重に数えない（`measured` が既に外している）.
+
+        数えると「publish 後も矛盾が残っている」と読まれ、ガードが効いていないように見える。
+        """
+        self._events([self._row(-1, 2457, gaps=["fleet-span-mismatch"]),
+                      self._row(46, 1902)])
+        self.assertEqual(self._json()["fleet_span"]["conflict"], 0,
+                         "倒し済みの回を矛盾として再計上している")
+
+    def test_the_conflict_boundary_is_inclusive(self):
+        """スパンが余裕ちょうどに等しい回は矛盾（`>=` を `>` に狭める変異を殺す）.
+
+        publish 側の境界（`FleetSpanGuardTest`）と同じ式を集計側でも持つので、
+        片方だけ緩むと publish 済みデータと再計算がずれる。
+        """
+        self._events([self._row(40, 2460), self._row(40, 2459), self._row(40, 2400)])
+        self.assertEqual(self._json()["fleet_span"]["conflict"], 1,
+                         "境界ちょうどの回を矛盾として数えていない")
+
+    def test_a_zero_minute_fleet_is_still_a_measurement(self):
+        """fleet が 0 分の回は**実測**であって欠測ではない（相関の分母に入れる）.
+
+        `fleet >= 0` を `fleet > 0` に狭める変異を殺す。0 を落とすと「速い回」だけが
+        構造的に相関から消える。
+        """
+        self._events([self._row(0, 30), self._row(10, 300), self._row(20, 600)])
+        self.assertEqual(self._json()["agents_fleet_n"], 3, "fleet 0 分の回を落としている")
+
+    def test_the_denominator_is_an_integer(self):
+        """`gap_denom` は int を返す契約（#211 — str を返すと retro が沈黙死する）."""
+        self._events([self._row(-1, 2457, gaps=["fleet-span-mismatch"]) for _ in range(6)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("fleet-span-mismatch", out, "シグナルに出ていない（分母が壊れている）")
+        self.assertIn("t2 を全 agent の回収後に", out, "是正先が既定文言に落ちている")
 
 
 if __name__ == "__main__":

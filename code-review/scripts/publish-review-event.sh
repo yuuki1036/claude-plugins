@@ -651,6 +651,40 @@ if isinstance(_pre, dict) and not all(
         % (" / ".join(SEVS), ", ".join(sorted(k for k in _pre if k != "schema")) or "(なし)")
     )
 
+# **`agents` の語彙も検証する**（GitHub issue #208）。`pre_adjust_counts` と対称で、
+# **fail-fast にしない**理由も同じ（止めるとその回の計測が丸ごと消える）。
+#
+# **契約は 7 キーで、体数はそのうち先頭 5 つだけ**（`orchestration-measurement.md ## 16`）。
+# `verify_findings` は件数・`explorer_waves` は wave 本数で、どちらも体数ではないが契約内。
+# **上の突合用 allow-list（体数 5 キー）をここへ流用しないこと** — `explorer_waves` は
+# このスクリプト自身が注入するので、5 キーで判定すると**将来のすべての publish が
+# 偽陽性**になる（実測: ローカル 15 件の判定対象すべてが 5 キー外を持ち 100%。
+# 7 キー契約なら 2 件 ＝ 13%）
+AGENT_KEYS = ("explorer", "reviewer", "specialist", "round2", "verify",
+              "verify_findings", "explorer_waves")
+_extra = sorted(k for k in agents if k not in AGENT_KEYS)
+if _extra:
+    gaps.append("payload:agents.vocab")
+    sys.stderr.write(
+        "WARN: agents に契約外のキーがある（%s）。契約は %s の 7 つで、動的層は専用フィールド"
+        "（`recall_skeptic` / `meta_reviewer` の `fired`）から数える。**キーを足すのではなく"
+        "契約どおりの名前に直す** — 綴り違いは黙って 0 として集計され、`agents` は体数中央値・"
+        "fleet 相関・1 体あたり cache_read のすべての分母になる\n"
+        "  → 正本は orchestration-measurement.md `## 16`\n"
+        % (", ".join(_extra), " / ".join(AGENT_KEYS))
+    )
+
+# **体数キーが 1 つも無い回**（#208）。retro の `total_agents()` が `None` を返して
+# その回を黙って母集団から落とす。落とすこと自体は正しいが、**落ちた事実が残らない**ので
+# 「体数を申告し忘れた回」と「そもそも旧版で agents が無い回」を後から区別できない
+if not any(isinstance(agents.get(k), int) and not isinstance(agents.get(k), bool)
+           for k in AGENT_KEYS[:5]):
+    gaps.append("payload:agents.empty")
+    sys.stderr.write(
+        "WARN: agents に体数キー（%s）が 1 つも無い。集計側はこの回を体数・相関の母集団から"
+        "外す — 起動した体数は失われる\n" % " / ".join(AGENT_KEYS[:5])
+    )
+
 # 発火記録（`fired` / `skip_reason`）は実行時の事実なのでスクリプトからは注入できない。
 # **落ちたことだけは検知する** — `fired` が無いと retro は「走らなかった」と「走れる対象が
 # 無かった」を区別できず、ゲート設計の妥当性を計測で判断できなくなる（issue #129）
@@ -669,11 +703,36 @@ for field in ("adversarial_verify", "recall_skeptic", "meta_reviewer"):
 # 型別内訳の記録漏れ（issue #150）。**「その型が無かった」と「数えなかった」を潰さない**ため、
 # 内訳が要る回（降格が実際に起きた回）に限って gap を立てる。層ごとスキップした回や
 # 閾値未満が 0 件の回まで gap にすると、記録漏れの信号がノイズに埋もれる
-if isinstance(av, dict) and "inflated_axes" not in av:
+#
+# **ネストを 1 段間違えた回を「欠測」と呼ばない**（GitHub issue #208）。埋める側は
+# `## 16` のテンプレートを見て親オブジェクトの外へ書いてしまうことがあり（実測 5 件）、
+# 上の不在判定は親の中しか見ないので**同じ回が「記録漏れ」として集計され、是正先
+# （ネストを戻す）が読めなくなる**。別識別子で立てて `gap_hint` を分ける。
+#
+# **値は救わない**（正しい位置へ移さない）。`missing_coverage` の「黙って正規化はしない」
+# と `pre_adjust_counts` を fail-fast にしなかった判断に揃える — publish が書き換えると、
+# 埋める側は誤りに気づかないまま同じ誤置を続ける。
+#
+# **不在 gap と違って条件を付けない**（上の 2 つは「内訳が要る回に限る」）。誤置は
+# 件数に関係なく契約違反で、しかも件数は誤った場所にあるので参照できない
+_misplaced = [c for c in ("inflated_axes", "demoted_types") if c in payload]
+for _c in _misplaced:
+    gaps.append("payload:%s.misplaced" % _c)
+    sys.stderr.write(
+        "WARN: %s が payload のトップレベルにある。正しい位置は %s の中で、**この値は"
+        "集計されない**（ネストを 1 段戻す）\n"
+        "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
+        % (_c, "adversarial_verify" if _c == "inflated_axes" else "below_threshold_counts")
+    )
+
+# **誤置と不在は排他にする** — 同じ回で 2 つ立てると、欠測内訳の最多項目が是正先の違う
+# 2 系統に割れて読めなくなる（#208 が観測した当の症状）
+if isinstance(av, dict) and "inflated_axes" not in av and "inflated_axes" not in _misplaced:
     infl = av.get("severity_inflated")
     if isinstance(infl, int) and not isinstance(infl, bool) and infl > 0:
         gaps.append("payload:adversarial_verify.inflated_axes")
-if isinstance(bt, dict) and "demoted_types" not in bt and sum(bt[k] for k in SEVS) > 0:
+if (isinstance(bt, dict) and "demoted_types" not in bt
+        and "demoted_types" not in _misplaced and sum(bt[k] for k in SEVS) > 0):
     gaps.append("payload:below_threshold_counts.demoted_types")
 
 # **軸を寄せ損ねた回を可視化する**（GitHub issue #167）。**`tok` を参照しない gap 判定は
@@ -851,6 +910,43 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 時点で過去のイベントの判定も揃う（#200: 旧式の値が違反として残り続けていた）。
         expected = expected_waves(payload, disp.get("wave_sizes"))
         payload["dispatch"] = dict(disp, waves_expected=expected)
+
+        # **打点位置を誤った回の `duration_fleet_min` を実値として載せない**
+        # （GitHub issue #207）。`span_sec` は transcript 由来の実測（agent の起動時刻の
+        # 幅 / measure-tokens.sh）なので自己申告ではなく、fleet 区間がそれを覆えていない
+        # 回は t1 か t2 の打点が区間の外にある。**汚染は欠測ではなく「もっともらしい
+        # 小さい値」として入る**（`## 13.1`）ので、0 のまま中央値と相関の分母に混ざる。
+        #
+        # **窓が `since-t0` の回だけ判定する**。`session` は t0 が無く窓に下限が無い、
+        # `since-t0-late` は t2 の後の修正作業で起動した agent が窓に入るため、
+        # どちらも span が fleet を超えるのが正常。
+        #
+        # **丸め 1 分ぶんの余裕を見る**。区間の分は `review-timing.sh` が秒を 60 で割って
+        # 切り捨てるので、真に等しい回でも span が最大 59 秒はみ出す。
+        #
+        # **倒すのは `duration_fleet_min` だけ**。矛盾が示すのは「区間 t1 から t2 が
+        # agent の起動スパンを覆っていない」ことだけで、t1 と t2 のどちらが誤っているかは
+        # 特定できない。t2 を早く打った回では triage と explore は正しいので、
+        # そこまで倒すと**正しい実測を捨てる**ことになる。
+        #
+        # 副作用: `review-backfill.sh` は 3 区間から計測窓を再構成するので、-1 に倒した回は
+        # 後付けの対象から外れる（もともと窓が壊れている回なので許容する）
+        _fleet = payload.get("duration_fleet_min")
+        _span = disp.get("span_sec")
+        if (os.environ.get("REVIEW_TOKENS_WINDOW") == "since-t0"
+                and isinstance(_fleet, int) and not isinstance(_fleet, bool) and _fleet >= 0
+                and isinstance(_span, int) and not isinstance(_span, bool) and _span > 0
+                and _span >= (_fleet + 1) * 60):
+            payload["duration_fleet_min"] = -1
+            gaps.append("fleet-span-mismatch")
+            sys.stderr.write(
+                "WARN: fleet 区間（%d 分）が agent の起動スパン（%d 秒）を覆えていない。"
+                "t1 を一括発行の直前に、t2 を全 agent の回収後に打てているか確認する"
+                "（→ orchestration-measurement.md `## 14`）。**この回の "
+                "`duration_fleet_min` は欠測（-1）に倒した** — 0 のまま集計に入ると"
+                "「体数のわりに速い回」として中央値と相関を歪める\n"
+                % (_fleet, _span)
+            )
         waves = disp.get("waves")
         # **`agents-mismatch` の回では判定しない** — 期待本数は `agents` の自己申告から作るので、
         # 申告が壊れている回に重ねると**原因の違う 2 つの信号**が混ざって是正先を指せなくなる

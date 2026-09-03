@@ -253,6 +253,43 @@ def measured(rows, key):
     return out
 
 
+def _fleet_span_judgeable(p):
+    """fleet 区間と agent 起動スパンの突合ができる回か（GitHub issue #207）.
+
+    **publish が欠測に倒した回も分母に残す** — 倒した回を外すと分子だけが消えて
+    欠測率が恒久的にゼロになる（判定した結果が分母から抜ける自己参照）。
+    """
+    tok, disp = p.get("tokens"), p.get("dispatch")
+    if not isinstance(tok, dict) or not isinstance(disp, dict):
+        return False
+    # 窓が `since-t0` の回だけ。`session` は起点に下限が無く、`since-t0-late` は
+    # 締めのあとに起動した agent が窓へ入るので、スパンが区間を超えるのが正常
+    if tok.get("window") != "since-t0":
+        return False
+    span = disp.get("span_sec")
+    if not isinstance(span, int) or isinstance(span, bool) or span <= 0:
+        return False
+    f = p.get("duration_fleet_min")
+    if isinstance(f, int) and not isinstance(f, bool) and f >= 0:
+        return True
+    g = p.get("measurement_gaps")
+    return isinstance(g, list) and "fleet-span-mismatch" in g
+
+
+def _fleet_span_conflict(p):
+    """**既に publish 済みの回にも効かせる**（#199 と同じ理由）.
+
+    publish 側のガードはこれから publish する回にしか掛からないが、汚染された値は
+    もう集計に入っている。倒し済みの回は `measured` が外すのでここでは扱わない。
+    """
+    if not _fleet_span_judgeable(p):
+        return False
+    f = p.get("duration_fleet_min")
+    if not (isinstance(f, int) and not isinstance(f, bool) and f >= 0):
+        return False
+    return p["dispatch"]["span_sec"] >= (f + 1) * 60
+
+
 def median(xs):
     if not xs:
         return None
@@ -471,7 +508,7 @@ buckets = {}
 for e in events:
     p = e["p"]
     fleet = num(p.get("duration_fleet_min"))
-    if fleet is None or fleet < 0:
+    if fleet is None or fleet < 0 or _fleet_span_conflict(p):
         continue
     key = with_gen(p, "%s/%s" % (p.get("effort", "?"), p.get("size_tier", "?")))
     buckets.setdefault(key, {"fleet": [], "agents": []})
@@ -496,7 +533,7 @@ tier_xy = {}
 for e in events:
     p = e["p"]
     fleet, ta = num(p.get("duration_fleet_min")), total_agents(p)
-    if fleet is not None and fleet >= 0 and ta is not None:
+    if fleet is not None and fleet >= 0 and ta is not None and not _fleet_span_conflict(p):
         xs.append(ta)
         ys.append(fleet)
         tx, ty = tier_xy.setdefault(str(p.get("size_tier", "?")), ([], []))
@@ -892,6 +929,11 @@ n_gapfield_review = sum(1 for e in events
 n_gapfield_selfreview = sum(1 for e in events
                             if isinstance(e["p"].get("measurement_gaps"), list)
                             and str(e["plugin"]).endswith(":self-review"))
+# `fleet-span-mismatch` gap の分母（#207）。**判定できた回だけ**を数える — 突合には
+# `dispatch.span_sec` と `since-t0` 窓が要り、揃う回は実測でごく一部（ローカル 15 件中 2 件）。
+# `n_gapfield` に載せると #127 と同型に薄まって、比率が構造的に閾値へ届かなくなる
+n_fleet_span_judged = sum(1 for e in events if _fleet_span_judgeable(e["p"]))
+n_fleet_span_conflict = sum(1 for e in events if _fleet_span_conflict(e["p"]))
 
 # 健全性表示の母集団は `measurement_gaps` を持つ回（= v2.62.0 以降）に絞る（issue #127）.
 # フィールド不在は「そのサンプルは旧版で publish された」という identification であって
@@ -1094,6 +1136,8 @@ def gap_denom(g):
         return n_gapfield_review
     if g == "late-publish":            # publish が `*self-review` でのみ判定する
         return n_gapfield_selfreview
+    if g == "fleet-span-mismatch":     # 突合の材料が揃った回でのみ判定できる（#207）
+        return n_fleet_span_judged
     # **`agents-abandoned` / `agents-nested` / `wave-split` はここに来ない** — 欠測ではないので `gap_counts` から外してあり
     # （#192）、分母 `n_wave_judged` と分子は専用の判定ブロックが持つ（#200）
     return n_gapfield
@@ -1109,6 +1153,21 @@ def gap_hint(g):
                 "キーを足すのではなく名前を直す — 正しくは `blocker` / `critical` / `major` / "
                 "`minor` の 4 つ（正本の payload テンプレート: orchestration-measurement.md "
                 "`## 16`。**SKILL 本文にはキー名が書かれていない**ので、埋める側はここを引く）")
+    # **記述漏れではなく置き場所の誤り**（#208）。テンプレートを見てネストを 1 段外へ
+    # 書いた回で、値は誤った場所にあるので集計されない。是正先はキーを足すことではない
+    if g.endswith(".misplaced"):
+        return ("`%s` が payload のトップレベルにある。**記述漏れではなくネストの誤り**で、"
+                "値は集計されない — 親オブジェクトの中へ 1 段戻す（正本の payload "
+                "テンプレート: orchestration-measurement.md `## 16`）"
+                % g[len("payload:"):-len(".misplaced")])
+    if g == "payload:agents.vocab":
+        return ("`agents` のキーが契約外。**記述漏れではなく語彙違反**なので名前を直す — "
+                "契約は `explorer` / `reviewer` / `specialist` / `round2` / `verify` / "
+                "`verify_findings` / `explorer_waves` の 7 つで、動的層は専用フィールドの "
+                "`fired` から数える（orchestration-measurement.md `## 16`）")
+    if g == "payload:agents.empty":
+        return ("`agents` に体数のキーが 1 つも無い。集計側はこの回を体数中央値・fleet 相関・"
+                "1 体あたり cache_read の母集団から外す — 起動した体数は失われる")
     if g.startswith("payload:"):
         return "payload テンプレートの記述漏れ（両 SKILL の publish 節）を見直す"
     if g == "late-publish":
@@ -1133,6 +1192,11 @@ def gap_hint(g):
         return "反証 agent の axis 語彙（prompts/adversarial-verify.md）と両 SKILL Step 6 の対応表を見直す"
     if g == "demoted-unknown":
         return "reviewer の降格型名（prompts/reviewer-common.md の 4 型）と両 SKILL Step 6 の対応表を見直す"
+    if g == "fleet-span-mismatch":
+        # **打点の話だが区間が特定できる**ので、既定より具体的に言える（#207）
+        return ("fleet 区間が agent の起動スパンを覆えていない。t1 を一括発行の直前に、"
+                "t2 を全 agent の回収後に打てているか見直す（orchestration-measurement.md "
+                "`## 14`）。**該当回の `duration_fleet_min` は欠測に倒してある**")
     if g == "wave-split":
         # **打点とは無関係**。既定に落ちると確実に誤った是正先を指す（#192）
         return ("同一フェーズの agent を 1 メッセージで一括発行する"
@@ -1241,6 +1305,9 @@ if as_json:
         # （#211）。**黙って捨てない** — 生のマーカー件数をここに残す
         "agents_decomposition": {"abandoned_marker": n_agents_abandoned_marker,
                                  "nested_marker": n_agents_nested_marker},
+        # **判定できた回の数を出す**（#207）。分母が小さいうちは ⚠️ が出ないので、
+        # 出ないことを「該当なし」と読ませないために母数そのものを見せる
+        "fleet_span": {"judged": n_fleet_span_judged, "conflict": n_fleet_span_conflict},
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
                         "split_explorer_waves": split_waves,
@@ -1671,6 +1738,12 @@ else:
                  "。**%d 件は payload の `waves_expected` と判定が食い違う**"
                  "（publish 時点の式で焼かれた値。再計算した側が現行の判定 / #200）"
                  % n_wave_split_stale))
+    # **分母を明示する**（#207 / `wave-split` と同じ流儀）。判定できた回が少ないうちは
+    # 比率が閾値に届かず ⚠️ が出ないので、黙ると「fleet の打点は守られている」と読まれる
+    if n_fleet_span_judged:
+        print("  - fleet 区間: 判定できた %d 件中 %d 件が agent の起動スパンと矛盾"
+              "（矛盾した回の `duration_fleet_min` は中央値・相関の分母から外す）"
+              % (n_fleet_span_judged, n_fleet_span_conflict))
     # **欠測内訳から外した分を黙って消さない**（#211 / #192 と同じ流儀）。立った回が
     # 無ければ 1 行も出さない（「⚠️ が出たときだけ行動する」契約の可読性を守る）
     if n_agents_abandoned_marker or n_agents_nested_marker:
