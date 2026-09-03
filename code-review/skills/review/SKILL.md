@@ -122,7 +122,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" --pr <PR番号>
 
 | セクション | 内容 | 使う場所 |
 |---|---|---|
-| `## meta` | `diff_file=` / **`agent_ctx_file=`** の**パス**、base ref | 以降の全 agent へ渡す |
+| `## meta` | `diff_file=` / **`agent_ctx_file=`** の**パス**、base ref、`models=`（**実行世代** / #210。引けなければ行ごと出ない） | 以降の全 agent へ渡す。**ただし `models=` だけは渡さない** — 世代を伝えるとレビュー挙動が変わりうる（#210 のスコープ外）。人が回す前に見るための表示 |
 | `## size` | `core_files` / `core_lines` / `size_tier` / `md_ratio` / `generated_ratio` / `migration_files` | Stage 0 のモード判定・Stage 2 の規模キャップ |
 | `## files` | 変更ファイルの `class`(core/test/doc/gen) × 増減行数 | 担当ファイルの割り当て |
 | `## hunks` | core ファイルの `@@` 行（関数コンテキスト付き） | 変更の性質の把握 |

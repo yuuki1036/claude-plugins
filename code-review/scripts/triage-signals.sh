@@ -113,6 +113,46 @@ echo "agent_ctx_file=$(review_path agentctx)"
 echo "base=${BASE:-unknown}"
 echo "worktree=$WT"
 
+# **実行世代を Phase 0 で見せる**（GitHub issue #210）。踏み下げた世代で回した回は検出が
+# 落ちるが（実測: opus-4-8 の 18 レビューで真の空振り 44%）、**それが分かるのは publish 後の
+# 集計まで待たないといけなかった**。ここで見えれば、回す前に世代を確認できる。
+#
+# **警告も中止もしない。** 出すのは事実だけで、どう扱うかは利用者の判断（#210 が明示的に
+# 利用者側へ残した部分）。
+#
+# **誤値を出さないための縮退が 3 段**（`## 13.1`「縮退先は欠測であって誤値ではない」）:
+#   ① セッション id が無い → 行ごと出さない
+#   ② その id の transcript を引けない → 行ごと出さない。**`--session` を省いて `ls -t` の
+#      最新に倒さない** — 同一リポジトリで並行セッションがあると他セッションの世代を出す
+#   ③ main 側の実モデル名が 1 つも引けない → 行ごと出さない（`<synthetic>` 等の
+#      プレースホルダは measure-tokens.sh 側が既に除外している）
+# 混在は単一世代に倒さず `混在（A/B）` として出す（#169）。
+#
+# **`sub` 側は出さない。** Phase 0 では fleet がまだ起動していないので、値が入るのは
+# **前回の fleet の世代**であって、これから起動する世代ではない。
+MODELS_TS=""
+# `&&` の両側は**どちらが偽でも結果は同じ**（行を出さない）。python3 が無ければ下の抽出が
+# 空を返し、id が無ければ glob が解決しない。ガードは早期に降りるためのもので、
+# 正しさを担っていない。**`ls` 側も既定値つきで参照する** — `set -u` 下で素の展開にすると
+# 未設定時に unbound variable になり、そのガードが唯一の防壁になってしまう
+if command -v python3 >/dev/null 2>&1 && [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then  # mutation-ok: どちらが偽でも「行を出さない」で一致するので、片方だけを偽にする入力で出力を変えられない
+  MODELS_TS=$(ls -1 "$HOME"/.claude/projects/*/"${CLAUDE_CODE_SESSION_ID:-}".jsonl 2>/dev/null     | head -1) || MODELS_TS=""
+fi
+if [ -n "$MODELS_TS" ]; then
+  MODELS_VAL=$(bash "$HERE/measure-tokens.sh" --json --session "$MODELS_TS" 2>/dev/null     | python3 -c 'import json, sys
+try:
+    m = (json.load(sys.stdin) or {}).get("models") or {}
+except Exception:
+    sys.exit(0)
+d = sorted(x for x in (m.get("main_distinct") or []) if isinstance(x, str) and x)  # mutation-ok: 上流（measure-tokens.sh）が空文字と非 str を既に落としているので、and/or の差を観測できる入力を作れない
+if not d:
+    sys.exit(0)
+print(m["main"] if m.get("main") else "混在（%s）" % "/".join(d))') || MODELS_VAL=""
+  if [ -n "$MODELS_VAL" ]; then
+    echo "models=$MODELS_VAL"
+  fi
+fi
+
 # ---- ファイル分類と規模 ---------------------------------------------------
 # 分類: gen（lock・生成物）/ test / doc / core。core の定義は triage-guide `## 6.1`
 if [ -n "$PR" ]; then

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import subprocess
+import json
 import unittest
 from pathlib import Path
 
@@ -764,6 +765,98 @@ class TriageStartDirTest(DiffScriptTestBase):
         rows = self.section(self.digest_from(self.root / "sub"), "## agents-md")
         self.assertIn("CLAUDE.md", rows)
         self.assertIn("src/CLAUDE.md", rows)
+
+
+class TriageModelGenerationTest(DiffScriptTestBase):
+    """Phase 0 に実行世代を出す（GitHub issue #210）.
+
+    踏み下げた世代で回した回は検出が落ちるが、それが分かるのは publish 後の集計まで
+    待たないといけなかった。ここで見えれば回す前に人が決められる。
+    **警告も中止もしない** — どう扱うかは #210 が利用者側へ残した判断。
+
+    測るのは「誤値を出さないこと」に寄せてある。**引けないより誤って引く方が悪い**
+    （`orchestration-measurement.md ## 13.1`「縮退先は欠測であって誤値ではない」）。
+    """
+
+    SID = "11111111-2222-3333-4444-555555555555"
+
+    def setUp(self) -> None:
+        super().setUp()
+        # triage は diff が空だと exit 1 なので、判定対象を 1 つ置く
+        self.write("src/a.ts", "export const a = 1\n")
+        self.add()
+
+    def _env_with(self, *models: str, sid: str | None = None, write: bool = True) -> dict:
+        """偽 HOME に transcript を置き、そこを指す env を返す.
+
+        **実 transcript を掴ませない** — `git_env.scrub()` は `GIT_*` しか落とさないので、
+        `HOME` と `CLAUDE_CODE_SESSION_ID` を明示しないとテストが開発機の実セッションを
+        読んでしまう（環境の不在に頼らない / docs/testing-pitfalls.md）。
+        """
+        home = self.root / "home"
+        if write:
+            d = home / ".claude" / "projects" / "proj"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / ("%s.jsonl" % self.SID)).write_text("\n".join(
+                json.dumps({"type": "assistant", "timestamp": "2026-09-03T00:0%d:00Z" % i,
+                            "message": {"model": m, "usage": {"output_tokens": 1}}})
+                for i, m in enumerate(models)) + "\n", encoding="utf-8")
+        else:
+            home.mkdir(parents=True, exist_ok=True)
+        env = self._env(HOME=str(home))
+        if sid is not None:
+            env["CLAUDE_CODE_SESSION_ID"] = sid
+        else:
+            env.pop("CLAUDE_CODE_SESSION_ID", None)
+        return env
+
+    def _models(self, env: dict) -> str | None:
+        res = self.run_in(TRIAGE, "--base", "HEAD", env=env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return self.kv(res.stdout, "## meta").get("models")
+
+    def test_a_single_generation_is_reported(self):
+        """引けたときは世代をそのまま出す."""
+        self.assertEqual(
+            self._models(self._env_with("claude-opus-5", sid=self.SID)), "claude-opus-5")
+
+    def test_a_mixed_session_is_not_collapsed_to_one_generation(self):
+        """途中で `/model` を切り替えた回を単一世代に倒さない（#169）."""
+        got = self._models(self._env_with("claude-opus-4-8", "claude-opus-5", sid=self.SID))
+        self.assertEqual(got, "混在（claude-opus-4-8/claude-opus-5）")
+
+    def test_no_session_id_stays_silent(self):
+        """縮退①: セッションを特定できない回は**行ごと出さない**."""
+        self.assertIsNone(self._models(self._env_with("claude-opus-5", sid=None)))
+
+    def test_an_unresolvable_session_stays_silent(self):
+        """縮退②: id が transcript に解決しない回。
+
+        **`ls -t` の最新へ倒さない** — 同一リポジトリで並行セッションがあると
+        他セッションの世代を誤値として出す。
+        """
+        self.assertIsNone(self._models(
+            self._env_with("claude-opus-5", sid="99999999-0000-0000-0000-000000000000")))
+
+    def test_placeholder_models_stay_silent(self):
+        """縮退③: 実モデル名が 1 つも無い回（`<synthetic>` 等のプレースホルダのみ）."""
+        self.assertIsNone(self._models(self._env_with("<synthetic>", sid=self.SID)))
+
+    def test_the_value_never_carries_the_sub_generation(self):
+        """**Phase 0 の `sub` は「前回の fleet の世代」**なので値に混ぜない.
+
+        混ぜると、これから起動する fleet の世代だと読まれる。
+        """
+        got = self._models(self._env_with("claude-opus-5", sid=self.SID))
+        self.assertNotIn("sub", got or "")
+        self.assertNotIn("/", got or "", "sub 側が値に漏れている")
+
+    def test_the_run_survives_a_missing_transcript_directory(self):
+        """transcript ディレクトリごと無い環境でも Phase 0 は完走する."""
+        env = self._env_with(sid=self.SID, write=False)
+        res = self.run_in(TRIAGE, "--base", "HEAD", env=env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("## size", res.stdout, "後続セクションが出ていない")
 
 
 if __name__ == "__main__":
