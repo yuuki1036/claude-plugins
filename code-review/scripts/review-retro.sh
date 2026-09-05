@@ -615,6 +615,7 @@ for e in events:
 # 別に集計する — 持たない回を混ぜると `pre` の母数だけが増えて (a) が過大に出る。
 splits = {}
 splits_bad_vocab = 0    # 語彙違反で外した回（#203）
+splits_missing_post = 0  # 報告件数を 1 つも申告していない回（#213 / #212 と同型の 3 箇所目）
 for e in events:
     p = e["p"]
     pre = p.get("pre_adjust_counts")
@@ -626,6 +627,13 @@ for e in events:
     # という別経路の指標なので、語彙違反を混ぜるとその読みごと壊れる
     if not pre_vocab_ok(pre):
         splits_bad_vocab += 1
+        continue
+    # **報告側の欠測も外す**（#213）。`or 0` で `post` が 0 に化けると `written − post` が
+    # 全部 `dropped` に計上され、「申告していない」回が「本文を書いてから捨てた 100%」に
+    # なる（実測: mixed 世代の 1 行がこのアーティファクトだけで構成されていた）。
+    # 歩留まりが #212 で同じ回を外しているので、**隣り合う 2 表の同一層の n もここで揃う**
+    if reported_missing(p):
+        splits_missing_post += 1
         continue
     # **歩留まり（yields）と同じ粒度にする**。片方だけ割ると、隣り合う 2 表のどの行を
     # 分解した数字なのかが対応付かない（#191 のセルフレビュー指摘）
@@ -1578,6 +1586,16 @@ if splits:
     if splits_bad_vocab:
         print("  - **%d 件は `pre_adjust_counts` の語彙が契約外で母集団から外した**"
               "（#203。混ぜると `本文を書いた` が負に振れる）" % splits_bad_vocab)
+    if splits_missing_post:
+        print("  - **%d 件は報告件数を 1 つも申告しておらず母集団から外した**"
+              "（欠測を 0 と足すと「本文を書いてから捨てた 100%%」に化ける / #213）"
+              % splits_missing_post)
+elif splits_missing_post:
+    # **全件除外でも通知は出す**（#212 のコメントが踏んだ「ガードの内側に置くと通知ごと
+    # 消える」を繰り返さない）
+    print()
+    print("**検出 → 報告の内訳**: 判定対象なし（**%d 件は報告件数を 1 つも申告しておらず"
+          "母集団から外した** / #213）" % splits_missing_post)
 elif yields:
     print()
     print("**検出 → 報告の内訳**は `below_threshold_counts` を持つサンプル待ち（#146）"

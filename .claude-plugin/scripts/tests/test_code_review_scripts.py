@@ -4819,6 +4819,42 @@ class RetroMissingReportCountTest(RetroFixture):
         self.assertIn("検出 19 → 報告 5", out, "本当に 0 件の回まで外している")
         self.assertNotIn("報告件数を 1 つも申告しておらず", out)
 
+    def _row_bt(self, pre_major: int, below_major: int, reported: int | None) -> dict:
+        r = self._row(pre_major, reported)
+        r["below_threshold_counts"] = {"blocker": 0, "critical": 0, "major": below_major,
+                                       "minor": 0}
+        return r
+
+    def test_a_missing_count_is_not_a_written_then_dropped_finding(self):
+        """内訳（#146）でも欠測を「本文を書いてから捨てた」に数えない（#213 / 3 箇所目）.
+
+        `or 0` で `post` が 0 に化けると `written − post` が全部 `dropped` になり、
+        申告していないだけの回が 100% の行を作る（実測: mixed 世代の 1 行）。
+        """
+        self._events([self._row_bt(7, 6, None), self._row_bt(10, 4, 5)])
+        out = self._out()
+        self.assertNotIn("本文を書いてから捨てた: 1 件（100.0%）", out, "欠測が dropped に入っている")
+        self.assertIn("本文を書いてから捨てた: 1 件（16.7%）", out, "本当の値が出ていない")
+        self.assertIn("1 件は報告件数を 1 つも申告しておらず母集団から外した", out)
+
+    def test_yield_and_breakdown_share_the_same_n_per_layer(self):
+        """**隣り合う 2 表の同一層の n を揃える**（#191 のセルフレビュー指摘 / #213 の発見経緯）.
+
+        欠測ゲートが片方にしか無いと、同一層で n=21 と n=23 のように割れる。
+        """
+        self._events([self._row_bt(7, 6, None), self._row_bt(10, 4, 5), self._row_bt(3, 1, 2)])
+        out = self._out()
+        y = re.search(r"schema>=2/threshold=MAJOR: n=(\d+) / 検出", out)
+        b = re.search(r"schema>=2/threshold=MAJOR: n=(\d+) / 本文を書いた", out)
+        self.assertTrue(y and b, "両表の行が出ていない")
+        self.assertEqual(y.group(1), b.group(1), "歩留まりと内訳で同一層の n が割れている")
+
+    def test_the_breakdown_notice_survives_total_exclusion(self):
+        """全件除外で 0 行になっても通知は出す（#212 が踏んだ穴を繰り返さない）."""
+        self._events([self._row_bt(7, 6, None), self._row_bt(5, 5, None)])
+        out = self._out()
+        self.assertIn("検出 → 報告の内訳**: 判定対象なし（**2 件は報告件数を", out)
+
     def test_a_missing_count_is_not_counted_as_a_silent_run(self):
         """付録側も同じ（`apx_silent` は #210 の看板の数字の分子）."""
         self._events([self._row(9, None, appendix=True) for _ in range(2)])
