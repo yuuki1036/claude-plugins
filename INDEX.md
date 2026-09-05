@@ -12,23 +12,23 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 
 | プラグイン | version | cmd | skill | agent | hooks | mcp | 概要 |
 |-----------|---------|----:|------:|-------|-------|-----|------|
-| [adr-keeper](#adr-keeper) | 0.3.0 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
+| [adr-keeper](#adr-keeper) | 0.3.1 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.2 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [claude-meta](#claude-meta) | 1.13.5 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.112.0 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
-| [design-doc](#design-doc) | 0.4.5 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
-| [dev-workflow](#dev-workflow) | 1.27.1 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
+| [code-review](#code-review) | 2.112.1 | 2 | 2 | - | SessionStart | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [design-doc](#design-doc) | 0.4.6 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
+| [dev-workflow](#dev-workflow) | 1.27.2 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.3 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
-| [failure-journal](#failure-journal) | 0.6.0 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
+| [failure-journal](#failure-journal) | 0.6.1 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.11.7 | 1 | - | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.5.1 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行を機械ブロック |
-| [issue-workflow](#issue-workflow) | 1.4.7 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
-| [living-spec-workflow](#living-spec-workflow) | 0.3.4 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
+| [issue-workflow](#issue-workflow) | 1.4.8 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
+| [living-spec-workflow](#living-spec-workflow) | 0.3.5 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.8 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.2.9 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.8.3 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
-| [spec-advisor](#spec-advisor) | 0.1.6 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
-| [writing-polish](#writing-polish) | 0.8.3 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
+| [spec-advisor](#spec-advisor) | 0.1.7 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
+| [writing-polish](#writing-polish) | 0.8.4 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
 旧 `indie-workflow` / `linear-workflow` は `issue-workflow` に統合され、2026-08-17 にリポジトリから削除した（移行の経緯: `docs/issue-workflow-migration.md`）。
 

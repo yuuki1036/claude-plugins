@@ -1,5 +1,5 @@
 ---
-description: 個人開発の振り返り・見積もり精度分析
+description: "個人開発の振り返り・見積もり精度分析 トリガー: 「振り返り」「ふりかえり」「retrospective」「レトロ」「/retrospective」"
 allowed-tools:
   - Read
   - Write

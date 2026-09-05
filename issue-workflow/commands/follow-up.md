@@ -1,5 +1,5 @@
 ---
-description: Follow-up タスクの作成・一覧・Issue昇格
+description: "Follow-up タスクの作成・一覧・Issue昇格 トリガー: 「follow-up」「後でやる」「別タスク」「切り出し」「todo メモ」 「フォローアップ記録」「/follow-up」「/follow-up list」「/follow-up promote」"
 allowed-tools:
   - mcp__linear__save_issue
   - mcp__linear__get_issue

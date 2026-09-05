@@ -1,5 +1,5 @@
 ---
-description: 再発しうる失敗を journal (JSON Lines) に append する
+description: "再発しうる失敗を journal (JSON Lines) に append する トリガー: 「失敗を記録」「log-failure」「再発しそうな失敗」「journal に追記」 「また同じミスした」「failure journal」「/log-failure」"
 user_invocable: true
 allowed-tools:
   - Read

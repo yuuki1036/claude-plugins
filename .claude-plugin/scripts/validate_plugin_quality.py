@@ -1171,6 +1171,19 @@ def check_trigger_phrases(plugin_dir: Path, errors: list[str]) -> None:
             errors.append(
                 f"[trigger:{name}] description missing 'トリガー:' — {skill_md.relative_to(ROOT)}"
             )
+        # **同名の command があるとき、router に載るのは commands 側だけ**（GitHub issue #206 /
+        # `router_visible_descriptions`）。SKILL.md にだけ `トリガー:` があっても選択挙動は
+        # 変わらないので、同名ペアでは commands 側にも必須にする。**SKILL 側の必須は残す** —
+        # `check_router_trigger_drift` が SKILL.md の `トリガー:` を入力にしており、
+        # 移動すると案 B で入れた唯一の機械ガードが沈黙する（複製であって移動ではない）
+        cmd_md = plugin_dir / "commands" / f"{skill_md.parent.name}.md"
+        if cmd_md.is_file():
+            cdesc = description_of(cmd_md)
+            if cdesc is not None and "トリガー:" not in cdesc:
+                errors.append(
+                    f"[trigger-cmd:{name}] 同名 command の description に 'トリガー:' が無い"
+                    f"（router に載るのはこちら側 / issue #206） — {cmd_md.relative_to(ROOT)}"
+                )
 
 
 # 未使用検出で『要確認』に留めるツール（日本語のファイル操作表現で間接言及されうる）.

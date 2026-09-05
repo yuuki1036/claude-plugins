@@ -1,5 +1,5 @@
 ---
-description: プロジェクトの初期セットアップ（backend 選択 + データディレクトリ作成）
+description: "プロジェクトの初期セットアップ（backend 選択 + データディレクトリ作成） トリガー: 「プロジェクト初期化」「issue 管理セットアップ」「プロジェクトセットアップ」「/issue-workflow:init」"
 allowed-tools:
   - mcp__linear__list_projects
   - mcp__linear__get_project

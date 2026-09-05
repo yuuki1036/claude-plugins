@@ -1,5 +1,5 @@
 ---
-description: "厄介なバグ・性能劣化を feedback loop 駆動の 6 Phase 診断規律で原因特定・修正する"
+description: "厄介なバグ・性能劣化を feedback loop 駆動の 6 Phase 診断規律で原因特定・修正する トリガー: 「バグ診断」「デバッグして」「原因を調べて」「再現しない」「直したはずが直らない」「なぜか動かない」「性能が劣化した」「遅くなった原因」「/diagnose」「debug this」 引数: [症状・再現手順・対象箇所]"
 allowed-tools:
   - Bash
   - Read

@@ -1,5 +1,5 @@
 ---
-description: design doc を複数視点（minimal/clean/pragmatic/risk）で静的レビューする
+description: "design doc を複数視点（minimal/clean/pragmatic/risk）で静的レビューする トリガー: 「設計レビュー」「設計書をレビュー」「design review」「design doc をレビュー」 「設計案の穴を見つけて」「実装前にレビュー」「/design-review」"
 user_invocable: true
 allowed-tools:
   - Read

@@ -1,5 +1,5 @@
 ---
-description: candidates（自己訂正の自己申告）をレビューして journal に昇格し、30日×3回閾値超えのパターンを規約還流提案に変換する。候補が無い期間は transcript サルベージにフォールバック
+description: "candidates（自己訂正の自己申告）をレビューして journal に昇格し、30日×3回閾値超えのパターンを規約還流提案に変換する。候補が無い期間は transcript サルベージにフォールバック トリガー: 「retro」「振り返り集計」「再発パターン抽出」「failure 集計」 「同じ失敗を何回踏んだ」「規約還流」「未起票の失敗を拾って」「/retro」"
 user_invocable: true
 allowed-tools:
   - Read

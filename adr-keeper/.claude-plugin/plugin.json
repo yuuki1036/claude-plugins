@@ -1,6 +1,6 @@
 {
   "name": "adr-keeper",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。new 時は記録価値 3 条件セルフゲート（覆すコスト大 × 文脈なしで不可解 × 実在のトレードオフ、supersede 経由は除外）で ADR の希釈を防止。",
   "_requirements": [
     {

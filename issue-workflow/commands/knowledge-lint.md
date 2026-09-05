@@ -1,5 +1,5 @@
 ---
-description: "プロジェクトの knowledge の健全性をチェックする（broken link / 孤立知見 / index 不整合 / tags 表記ゆれ / 重複概念）"
+description: "プロジェクトの knowledge の健全性をチェックする（broken link / 孤立知見 / index 不整合 / tags 表記ゆれ / 重複概念） トリガー: 「knowledge lint」「ナレッジ点検」「リンク切れチェック」「リンク切れ」「孤立した知見」「knowledge の健全性」「knowledge を整理」「knowledge の鮮度」「stale な知見」「/knowledge-lint」"
 allowed-tools:
   - Read
   - Glob

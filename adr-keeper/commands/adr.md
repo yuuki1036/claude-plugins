@@ -1,5 +1,5 @@
 ---
-description: 設計判断 (ADR) を append-only で記録・一覧・supersede する
+description: "設計判断 (ADR) を append-only で記録・一覧・supersede する トリガー: 「ADR作成」「設計判断記録」「アーキテクチャ決定記録」「ADR supersede」「ADR一覧」 「決定の理由を残す」「/adr」「architecture decision record」"
 user_invocable: true
 allowed-tools:
   - Read

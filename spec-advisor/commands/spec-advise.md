@@ -1,5 +1,5 @@
 ---
-description: 開発タスクから適切な設計・計画系成果物（bdd-spec / design-doc / adr-keeper / issue-design / feature-dev）を判断して提案する
+description: "開発タスクから適切な設計・計画系成果物（bdd-spec / design-doc / adr-keeper / issue-design / feature-dev）を判断して提案する トリガー: 「何から設計する」「spec 選択」「どの設計手法を選ぶ」「設計いる?」「先に仕様書く?」「bdd と design-doc どっち」「実装前に何を用意する」「/spec-advise」「spec advisor」"
 allowed-tools:
   - Skill
   - AskUserQuestion

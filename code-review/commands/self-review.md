@@ -1,5 +1,5 @@
 ---
-description: "コミット前のセルフレビューを実行する（2フェーズ構成・PR不要・ローカル完結）"
+description: "コミット前のセルフレビューを実行する（2フェーズ構成・PR不要・ローカル完結） トリガー: 「セルフレビュー」「/self-review」「自分の変更を確認」「コミット前にチェック」 引数: [base branch] [--staged] [--focus <観点>] [--exclude <観点1,観点2>] [--embed] (省略時は自動検出)"
 allowed-tools:
   - Bash
   - Read

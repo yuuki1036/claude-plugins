@@ -1831,6 +1831,61 @@ class ContextBudgetTest(unittest.TestCase):
         self.assertEqual(self._run(), [])
 
 
+class SameNameCommandTriggerTest(unittest.TestCase):
+    """同名 command の description にも `トリガー:` を必須にする（GitHub issue #206）.
+
+    同名ペアでは router に載るのは `commands/*.md` 側だけ（`router_visible_descriptions`）。
+    SKILL.md にだけ `トリガー:` があっても選択挙動は変わらない。**SKILL 側の必須は残す** —
+    `check_router_trigger_drift` が SKILL.md の `トリガー:` を入力にしており、移動すると
+    その機械ガードが沈黙する（複製であって移動ではない）。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.plugin = Path(self._tmp.name) / "demo"
+        _write(self.plugin, ".claude-plugin/plugin.json", '{"name": "demo", "version": "0.0.1"}')
+        # エラー文は `relative_to(ROOT)` で相対化するので、一時ディレクトリを ROOT に向ける
+        self._orig_root = v.ROOT
+        v.ROOT = Path(self._tmp.name)
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig_root))
+
+    def _md(self, desc: str) -> str:
+        return f"---\ndescription: {desc}\n---\n\nbody\n"
+
+    def _run(self) -> list[str]:
+        errors: list[str] = []
+        v.check_trigger_phrases(self.plugin, errors)
+        return errors
+
+    def test_a_same_name_command_without_a_trigger_is_an_error(self):
+        _write(self.plugin, "skills/thing/SKILL.md", self._md("説明 トリガー: 「A」"))
+        _write(self.plugin, "commands/thing.md", self._md("説明だけ"))
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("trigger-cmd:demo", errors[0])
+        self.assertIn("commands/thing.md", errors[0])
+
+    def test_a_same_name_command_with_a_trigger_is_clean(self):
+        _write(self.plugin, "skills/thing/SKILL.md", self._md("説明 トリガー: 「A」"))
+        _write(self.plugin, "commands/thing.md", self._md("説明 トリガー: 「A」"))
+        self.assertEqual(self._run(), [])
+
+    def test_a_command_without_a_same_name_skill_is_not_checked(self):
+        """非同名の command は SKILL.md が router に見えるので対象外（欠陥が無い）."""
+        _write(self.plugin, "skills/thing/SKILL.md", self._md("説明 トリガー: 「A」"))
+        _write(self.plugin, "commands/other.md", self._md("説明だけ"))
+        self.assertEqual(self._run(), [])
+
+    def test_the_skill_side_requirement_is_kept(self):
+        """複製であって移動ではない — SKILL 側の必須は残る（drift 検査の入力を消さない）."""
+        _write(self.plugin, "skills/thing/SKILL.md", self._md("説明だけ"))
+        _write(self.plugin, "commands/thing.md", self._md("説明 トリガー: 「A」"))
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("[trigger:demo]", errors[0])
+
+
 class RouterTriggerDriftTest(unittest.TestCase):
     """同名ペアで `SKILL.md` のトリガーフレーズだけを直した変更の検出（issue #206 案 B）.
 

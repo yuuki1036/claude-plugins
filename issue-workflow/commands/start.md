@@ -1,5 +1,5 @@
 ---
-description: セッション開始。main ではダッシュボード、feature ブランチでは Issue コンテキスト読み込み
+description: "セッション開始。main ではダッシュボード、feature ブランチでは Issue コンテキスト読み込み トリガー: 「作業開始」「セッション開始」「今日の作業」「/start」"
 allowed-tools:
   - Agent
   - Skill

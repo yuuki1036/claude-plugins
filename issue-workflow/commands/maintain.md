@@ -1,5 +1,5 @@
 ---
-description: 全プロジェクトの棚卸し。放置 Issue・frozen Issue・技術的負債の検出とクリーンアップを行う
+description: "全プロジェクトの棚卸し。放置 Issue・frozen Issue・技術的負債の検出とクリーンアップを行う トリガー: 「プロジェクト整理」「棚卸し」「メンテナンス」「/maintain」"
 allowed-tools:
   - Read
   - Write

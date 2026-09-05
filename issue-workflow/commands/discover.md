@@ -1,5 +1,5 @@
 ---
-description: AI が課題を発見して issue を自動起票
+description: "AI が課題を発見して issue を自動起票 トリガー: 「課題を見つけて」「issue を自動で作って」「やることを洗い出して」「バグを探して起票」「タスク発掘」「何かやることない？」「課題発見」「/discover」"
 allowed-tools:
   - Read
   - Write

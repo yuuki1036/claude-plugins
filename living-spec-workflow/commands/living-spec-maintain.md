@@ -1,5 +1,5 @@
 ---
-description: living spec の整合と鮮度を 8 段のファネルで検証する
+description: "living spec の整合と鮮度を 8 段のファネルで検証する トリガー: 「living spec の整合チェック」「living spec を点検」「OQ と Decision の参照が合ってるか」 「確度ラベルの塩漬けを検出」「living spec の鮮度チェック」「living spec lint」「/living-spec-maintain」"
 user_invocable: true
 allowed-tools:
   - AskUserQuestion

@@ -1,5 +1,5 @@
 ---
-description: 技術設計書 (design doc) を作成・一覧・supersede・export する
+description: "技術設計書 (design doc) を作成・一覧・supersede・export する トリガー: 「設計書作って」「design doc」「技術設計書」「RFC 書きたい」「設計ドキュメント作成」 「実装せず設計だけ詰めたい」「設計を文書化」「design doc supersede」「設計書一覧」「/design-doc」"
 user_invocable: true
 allowed-tools:
   - Read

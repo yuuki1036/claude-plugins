@@ -5,6 +5,21 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.8.4] - 2026-09-05
+
+### Fixed
+
+- **同名 command の description に `トリガー:` を複製した**（GitHub issue #206）。command 名と skill 名が
+  同名だと、スキル選択の一覧に載るのは `commands/*.md` の description だけで **`SKILL.md` 側は
+  router に届かない**。`トリガー:` 必須の規約は SKILL.md にだけ掛かっていたので、字面は通るが
+  ルーティングには効いていなかった。対象: `writing-polish`。
+  - **移動ではなく複製**（SKILL.md 側は残す） — `check_router_trigger_drift` が SKILL.md の
+    `トリガー:` を入力にしており、移動するとその機械ガードが沈黙する
+  - 引用符なしの description に `トリガー:` を足すと YAML の `key: value` と解釈されて frontmatter が
+    壊れるので、二重引用符で囲んだ（既存の書式に揃えた）
+  - `validate_plugin_quality.py` が同名ペアの commands 側にも `トリガー:` 必須を error で強制する
+    （`[trigger-cmd]`）
+
 ## [0.8.3] - 2026-08-28
 
 ### Fixed

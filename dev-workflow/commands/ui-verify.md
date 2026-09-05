@@ -1,5 +1,5 @@
 ---
-description: "Web UI の動作確認・スタイル調整・スクリーンショット取得を chrome-devtools MCP で自動化する"
+description: "Web UI の動作確認・スタイル調整・スクリーンショット取得を chrome-devtools MCP で自動化する トリガー: 「動作確認」「UIチェック」「スクリーンショット」「スタイル調整」「見た目確認」「レスポンシブ確認」「/ui-verify」「visual check」「screenshot」「UI verification」「responsive check」 引数: [verify|tune|snap] [target-url-or-path]"
 allowed-tools:
   - Bash
   - Read
