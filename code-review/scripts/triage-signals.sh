@@ -150,6 +150,20 @@ if not d:
 print(m["main"] if m.get("main") else "混在（%s）" % "/".join(d))') || MODELS_VAL=""
   if [ -n "$MODELS_VAL" ]; then
     echo "models=$MODELS_VAL"
+    # **踏み下げ世代なら警告する**（GitHub issue #210 候補 1a）。中止も確認もしない —
+    # 出すのは事実と、それが何を意味するか（実測: opus-4-8 で報告 0 件が 81%・真の空振り
+    # 43% / gist 集約 n=183）。回すかどうかは利用者の判断。
+    #
+    # 述語は「ベースラインと違う」ではなく **4 系世代**（`-4-8` / `-4-5` のような版）。
+    # 「≠ opus-5」にすると、より新しい世代（fable-5-1 等）で回した回まで鳴る。
+    # 混在（`混在（A/B）`）は現在どちらで走っているか決められないので鳴らさない。
+    # 5 系が踏み下げになる日が来たら黙る側に倒れる（誤爆しない・保守は 1 行）
+    case "$MODELS_VAL" in
+      混在*) ;;
+      *-4-*|*-4)
+        echo "WARN: ⚠️ 世代: 実行世代 ${MODELS_VAL} は踏み下げ世代。実測（gist 集約 n=183）では opus-4-8 の報告 0 件率 81%・真の空振り 43%・pre_adjust MAJOR 中央値 0（GitHub issue #210）。このまま回すか、/model で 5 系へ戻すかを決めてから進む。Phase 0 のレポート冒頭に「⚠️ 世代: ${MODELS_VAL}」を 1 行追記する（triage-guide.md \`### 5.2\`）" >&2
+        ;;
+    esac
   fi
 fi
 

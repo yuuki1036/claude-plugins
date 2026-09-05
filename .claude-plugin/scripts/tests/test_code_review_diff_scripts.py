@@ -851,6 +851,31 @@ class TriageModelGenerationTest(DiffScriptTestBase):
         self.assertNotIn("sub", got or "")
         self.assertNotIn("/", got or "", "sub 側が値に漏れている")
 
+    def _stderr(self, env: dict) -> str:
+        res = self.run_in(TRIAGE, "--base", "HEAD", env=env)
+        self.assertEqual(res.returncode, 0, "警告は rc を変えない（FATAL ではない）")
+        return res.stderr
+
+    def test_a_stepped_down_generation_warns_on_stderr(self):
+        """4 系世代なら `⚠️ 世代:` を stderr に出す（#210 候補 1a）。rc は 0 のまま."""
+        err = self._stderr(self._env_with("claude-opus-4-8", sid=self.SID))
+        self.assertIn("⚠️ 世代: 実行世代 claude-opus-4-8", err)
+        self.assertIn("### 5.2", err, "転記先の正本を指していない")
+
+    def test_the_baseline_generation_does_not_warn(self):
+        """5 系では鳴らない（毎回出るノイズにしない）."""
+        self.assertNotIn("⚠️ 世代", self._stderr(self._env_with("claude-opus-5", sid=self.SID)))
+
+    def test_a_newer_generation_does_not_warn(self):
+        """述語は「ベースラインと違う」ではない — より新しい世代で鳴ると誤爆になる."""
+        self.assertNotIn("⚠️ 世代",
+                         self._stderr(self._env_with("claude-fable-5-1", sid=self.SID)))
+
+    def test_a_mixed_session_does_not_warn(self):
+        """混在は現在どちらで走っているか決められないので鳴らさない（誤値より欠測）."""
+        env = self._env_with("claude-opus-4-8", "claude-opus-5", sid=self.SID)
+        self.assertNotIn("⚠️ 世代", self._stderr(env))
+
     def test_the_run_survives_a_missing_transcript_directory(self):
         """transcript ディレクトリごと無い環境でも Phase 0 は完走する."""
         env = self._env_with(sid=self.SID, write=False)
