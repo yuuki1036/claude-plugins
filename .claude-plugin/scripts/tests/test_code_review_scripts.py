@@ -4978,5 +4978,74 @@ class RetroMissingCountAttributionTest(RetroFixture):
         self.assertIn("4 つとも必須で 0 件でも省かない", out, "是正先が既定文言に落ちている")
 
 
+class RetroAppendixLayerTest(RetroFixture):
+    """付録（真の空振り）を世代で層別し ⚠️ に載せる（GitHub issue #214）.
+
+    #210 の判定基準「preMAJ 中央値 1 以上 かつ 真の空振り率 20% 未満」のうち、後者だけが
+    機械化されていなかった（表にも出ず、読み手が引き算していた）。#209 の趣旨どおり、
+    表に出ていても鳴らなければ行動につながらない。
+    """
+
+    def _row(self, gen: str, reported: int, recommended: int) -> dict:
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "models": self._models("claude-%s" % gen),
+                "blocker_count": 0, "critical_count": 0, "major_count": reported, "minor_count": 0,
+                "appendix": {"schema": 1, "listed": 3, "recommended": recommended}}
+
+    def _out(self) -> str:
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        self.assertTrue(r.stdout.strip(), "stdout が空（沈黙死）")
+        return r.stdout
+
+    def test_a_hot_layer_fires_with_its_name(self):
+        """閾値超えの層が層名つきで鳴る（opus-4-8 10 件中 5 件が真の空振り = 50%）."""
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(5)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)] \
+             + [self._row("opus-5", 1, 0) for _ in range(12)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", out)
+
+    def test_the_threshold_is_inclusive_at_twenty_percent(self):
+        """#210 の回復サインは「20% **未満**」なので、ちょうど 20% はまだ鳴る（境界を狭める変異を殺す）."""
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(2)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(8)] \
+             + [self._row("opus-5", 1, 0) for _ in range(12)]
+        self._events(rows)
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 20%（`opus-4-8` 層 / 2/10）",
+                      self._out(), "境界ちょうどで鳴っていない")
+
+    def test_a_rescued_run_is_not_a_true_silent_one(self):
+        """報告 0 でも推奨があれば空振りではない（#168）— 分子に入れない."""
+        rows = [self._row("opus-4-8", 0, 1) for _ in range(10)]
+        self._events(rows)
+        out = self._out()
+        self.assertNotIn("真の空振り率", out.split("⚠️ シグナル")[-1], "救われた回を空振りに数えている")
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["appendix_by_gen"]["opus-4-8"],
+                         {"n": 10, "silent": 10, "rescued": 10, "true_silent": 0})
+
+    def test_a_layer_below_the_floor_does_not_fire_alone(self):
+        """下限未満の層だけでは鳴らない（n=4 で 100% でも判定しない）."""
+        self._events([self._row("opus-4-8", 0, 0) for _ in range(4)])
+        self.assertNotIn("真の空振り率", self._out().split("⚠️ シグナル")[-1])
+
+    def test_the_generation_table_is_shown_when_layers_differ(self):
+        """世代が 2 種以上あれば表を割って出す（読み手に引き算させない）."""
+        rows = [self._row("opus-4-8", 0, 0), self._row("opus-4-8", 0, 1), self._row("opus-5", 1, 0)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("| 世代 | n | 報告 0 件 | うち推奨あり | 真の空振り |", out)
+        self.assertIn("| opus-4-8 | 2 | 2 | 1 | 1（50%） |", out)
+
+    def test_the_json_carries_per_generation_values(self):
+        rows = [self._row("opus-4-8", 0, 0), self._row("opus-5", 1, 0)]
+        self._events(rows)
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["appendix_by_gen"]["opus-4-8"]["true_silent"], 1)
+        self.assertEqual(j["appendix_by_gen"]["opus-5"]["true_silent"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

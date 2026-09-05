@@ -696,6 +696,7 @@ for e in events:
 # 版マーカーで切る流儀は `## 9` の cache_read と同じ。
 APPENDIX_MIN_SCHEMA = 1
 apx_rows, apx_silent, apx_rescued, apx_missing = [], 0, 0, 0
+apx_stats = {"n": 0, "true_silent": 0, "by_gen": {}}   # 世代別の真の空振り（#214）
 for e in events:
     p = e["p"]
     a = p.get("appendix")
@@ -711,10 +712,22 @@ for e in events:
         continue
     reported = sum(num(p.get(k)) or 0 for k in REPORT_KEYS)
     apx_rows.append((listed, rec, reported))
+    # **世代で層別する**（GitHub issue #214）。#210 の判定基準「真の空振り率 20% 未満」の
+    # 片方だけが機械化されていなかった。`報告 0 件率（世代別）` と同じ母数の扱い
+    # （欠測は上で外し、`appendix` を持つ回だけ）。**真の空振り = 報告 0 かつ推奨 0**（#168）
+    _g = apx_stats["by_gen"].setdefault(gen_of(p), {"n": 0, "silent": 0, "rescued": 0,
+                                                    "true_silent": 0})
+    _g["n"] += 1
+    apx_stats["n"] += 1
     if reported == 0:
         apx_silent += 1
+        _g["silent"] += 1
         if rec > 0:
             apx_rescued += 1
+            _g["rescued"] += 1
+        else:
+            _g["true_silent"] += 1
+            apx_stats["true_silent"] += 1
 
 # ---- 6. 反証 verdict 分布（calibration_schema で層別） ---------------------
 verdict_layers = {}
@@ -1395,6 +1408,19 @@ else:
             % (pct(v, f), label, f, note),
         pending=layer_pending.setdefault("meta 価値率", [])))
 
+# **真の空振り率**（GitHub issue #214）。#210 の判定基準の片方で、表に出ていても鳴らなければ
+# 行動につながらない（#209）。閾値 20 は #210 本文が「回復のサイン」として先に固定した値で、
+# 下限 10 は反証の不発と同じ。実測（gist 集約 n=183）: opus-4-8 で 43%（9/21）が閾値超え、
+# 他の層は下限未満 ＝ 新しい ⚠️ として鳴るのは 1 層だけで、初回から鳴りっぱなしにはならない
+signals.extend(layered_signal(
+    apx_stats, lambda d: d.get("true_silent", 0), lambda d: d.get("n", 0), 10,
+    lambda ts, n: pct(ts, n) >= 20,
+    lambda label, ts, n, note:
+        "真の空振り率（報告 0 件かつ付録推奨 0）が %.0f%%（%s / %d/%d）。#210 の回復サイン"
+        "（20%% 未満）を満たしていない — 実行世代を見直す（triage-guide.md `### 5.2`）%s"
+        % (pct(ts, n), label, ts, n, note),
+    pending=layer_pending.setdefault("真の空振り率", [])))
+
 # ---- 出力 -----------------------------------------------------------------
 if as_json:
     print(json.dumps({
@@ -1436,6 +1462,8 @@ if as_json:
         # **判定できた回の数を出す**（#207）。分母が小さいうちは ⚠️ が出ないので、
         # 出ないことを「該当なし」と読ませないために母数そのものを見せる
         "fleet_span": {"judged": n_fleet_span_judged, "conflict": n_fleet_span_conflict},
+        # 世代別の真の空振り（#214）。`報告 0 件率（世代別）` と同じ母数の扱い
+        "appendix_by_gen": apx_stats["by_gen"],
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
                         "split_explorer_waves": split_waves,
@@ -1863,6 +1891,18 @@ if apx_rows:
     tot_rec = sum(r[1] for r in apx_rows)
     print("**🔁 付録**（n=%d / `appendix.schema` を持つ回だけ）: 列挙 %d 件 / うち人間に推した %d 件"
           % (len(apx_rows), tot_listed, tot_rec))
+    # **世代別の真の空振り**（#214）。#210 の判定基準「20% 未満」を人が引き算せずに読める形。
+    # 世代が 1 種しか無い母集団では表を割らない（`with_gen` と同じ方針）
+    if len(apx_stats["by_gen"]) > 1:
+        print()
+        print("| 世代 | n | 報告 0 件 | うち推奨あり | 真の空振り |")
+        print("|---|---:|---:|---:|---:|")
+        for _gk in sorted(apx_stats["by_gen"]):
+            _gv = apx_stats["by_gen"][_gk]
+            print("| %s | %d | %d | %d | %d（%.0f%%） |"
+                  % (_gk, _gv["n"], _gv["silent"], _gv["rescued"],
+                     _gv["true_silent"], pct(_gv["true_silent"], _gv["n"])))
+        print()
     if apx_missing:
         print("- **%d 件は報告件数を 1 つも申告しておらず母集団から外した**"
               "（欠測を「報告 0」と読むと真の空振りの分子が膨らむ / #212）" % apx_missing)
