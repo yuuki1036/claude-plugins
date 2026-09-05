@@ -2641,7 +2641,7 @@ class FindingsClassSignalTest(ScriptTestBase):
         self.assertNotIn("持つサンプルが 0 件", out)
 
 
-class RetroGenerationRecallTest(RetroTest):
+class RetroGenerationRecallTest(RetroFixture):
     """検出・報告側の世代層別（GitHub issue #191）.
 
     #169 は世代キーを**コスト側だけ**に入れたため、報告 0 件率・歩留まり・反証 verdict は
@@ -2870,7 +2870,7 @@ class RetroGenerationRecallTest(RetroTest):
         self.assertNotIn("版マーカー × 閾値 × 世代で層別", out)
 
 
-class PreAdjustVocabTest(RetroTest):
+class PreAdjustVocabTest(RetroFixture):
     """`pre_adjust_counts` の語彙違反（GitHub issue #203）.
 
     契約は `{blocker, critical, major, minor}`。`below_threshold_counts` には厳密な検証が
@@ -2953,7 +2953,7 @@ class PreAdjustVocabTest(RetroTest):
         self.assertIn("記述漏れではなく語彙違反", out, "既定の是正先に落ちている")
 
 
-class RetroLayerTableCapTest(RetroTest):
+class RetroLayerTableCapTest(RetroFixture):
     """層別表の表示上限と省略の可視化（GitHub issue #198）.
 
     `effort × size_tier` と `1 体あたり cache_read` の 2 表は上位 8 層で切られていたが、
@@ -3028,7 +3028,7 @@ class RetroLayerTableCapTest(RetroTest):
                          "世代を層別していないのに救済を名乗っている")
 
 
-class RetroWaveSplitDenominatorTest(RetroTest):
+class RetroWaveSplitDenominatorTest(RetroFixture):
     """wave-split の分母と是正先（GitHub issue #192）.
 
     wave-split は measurement_gaps に積まれるが、**他の gap と母集団の意味が違う**。
@@ -3225,7 +3225,7 @@ class RetroWaveSplitDenominatorTest(RetroTest):
         self.assertNotIn("計測マーカー `wave-split` の欠測", out)
 
 
-class RetroAgentFieldDenominatorTest(RetroTest):
+class RetroAgentFieldDenominatorTest(RetroFixture):
     """`agents` を版プロキシに使う分母と、その境界（GitHub issue #204）.
 
     ここは **`--json` にしか出ない数**で、本文には比率としてしか現れない。変異が 5 件
@@ -3303,7 +3303,7 @@ class RetroAgentFieldDenominatorTest(RetroTest):
         self.assertEqual(m["modern_explorer_waves"], 1)
 
 
-class RetroUnreachableWaitTest(RetroTest):
+class RetroUnreachableWaitTest(RetroFixture):
     """達成不能な待ち行を明示する（GitHub issue #191 期待動作 2）."""
 
     def _v(self, gen: str, calib: int, total: int = 1) -> dict:
