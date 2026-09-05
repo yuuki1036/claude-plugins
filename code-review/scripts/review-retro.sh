@@ -660,6 +660,7 @@ for e in events:
 # **除外件数は表に出す** — 黙って落とすと「該当が無かった」と読まれる
 zero_rows = {}
 zero_missing = 0        # 報告件数フィールドを 1 つも持たず母数から外した回
+zero_missing_current = 0  # うち現行版の埋め落とし（publish が gap を立てた回 / #215）
 for e in events:
     p = e["p"]
     pre = p.get("pre_adjust_counts")
@@ -671,6 +672,11 @@ for e in events:
     # n=0 の行が表に並ぶ（比率は 0/0）
     if all(v is None for v in counts):
         zero_missing += 1
+        # **旧版と現行版の埋め落としを分ける**（#215）。publish が gap を立てるようになった
+        # 版以降の回は「テンプレートを埋め落とした」＝ サンプルの損失で、増えるなら
+        # SKILL 側を直す根拠になる。旧版（gap を持たない）は identification であって損失ではない
+        if "payload:report_counts.missing" in (p.get("measurement_gaps") or []):
+            zero_missing_current += 1
         continue
     g = gen_of(p)
     z = zero_rows.setdefault(g, {"n": 0, "zero": 0, "pre_major": []})
@@ -1263,6 +1269,11 @@ def gap_hint(g):
                 "契約は `explorer` / `reviewer` / `specialist` / `round2` / `verify` / "
                 "`verify_findings` / `explorer_waves` の 7 つで、動的層は専用フィールドの "
                 "`fired` から数える（orchestration-measurement.md `## 16`）")
+    if g == "payload:report_counts.missing":
+        return ("報告件数（`blocker_count` / `critical_count` / `major_count` / `minor_count`）が"
+                "揃っていない。**4 つとも必須で 0 件でも省かない** — 埋め落とした回は歩留まり・"
+                "報告 0 件率・真の空振りの母集団から外れる（サンプルの損失 / #215）。"
+                "正本の payload テンプレート: orchestration-measurement.md `## 16`")
     if g == "payload:agents.empty":
         return ("`agents` に体数のキーが 1 つも無い。集計側はこの回を体数中央値・fleet 相関・"
                 "1 体あたり cache_read の母集団から外す — 起動した体数は失われる")
@@ -1534,6 +1545,15 @@ if yields:
 # そこで指標が消えると recall の劣化を見る手段が無くなる）。`with_gen` の
 # 「2 種以上のときだけ足す」規則は**追加キーが既存バケツを砕く**のを避けるためのもので、
 # ここは世代が行そのものなので当てはまらない
+# **全件除外でも注記は出す**（#212 / #213 と同じ穴の 4 箇所目 / #215）。ガードの内側に
+# 置くと、除外した結果 0 行になった回は注記ごと消えて「該当なし」と読まれる
+if not zero_rows and zero_missing:
+    print()
+    print("**報告 0 件率**: 判定対象なし（報告件数フィールドを 1 つも持たない **%d 件は母数から"
+          "外した**%s）" % (zero_missing,
+                             "" if not zero_missing_current else
+                             "。うち %d 件は現行版の埋め落とし ＝ サンプルの損失 / #215"
+                             % zero_missing_current))
 if zero_rows:
     print()
     print("**報告 0 件率**（世代別 / 報告件数フィールドを持つ回。**recall の粗い代理**"
@@ -1552,9 +1572,13 @@ if zero_rows:
     if zero_missing:
         print()
         print("> 報告件数フィールドを 1 つも持たない **%d 件は母数から外した**"
-              "（旧版の payload。**0 件と欠測を潰さない** — 混ぜると 0 件率が"
-              "構造的に上振れし、欠測の多い古い版ほど「recall が落ちた」に見える）"
-              % zero_missing)
+              "（**0 件と欠測を潰さない** — 混ぜると 0 件率が構造的に上振れし、欠測の多い"
+              "古い版ほど「recall が落ちた」に見える）%s"
+              % (zero_missing,
+                 "" if not zero_missing_current else
+                 "。**うち %d 件は現行版の埋め落とし**（publish が `payload:report_counts.missing` "
+                 "を立てた回 ＝ サンプルの損失。旧版の identification ではない / #215）"
+                 % zero_missing_current))
     print()
     print("> `unrecorded` は**世代が記録されていない回**であって「古い世代」ではない。"
           "既知の世代と同じバケツに入れない（#169）")

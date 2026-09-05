@@ -51,6 +51,9 @@ BASE_PAYLOAD = {
     "recall_skeptic": {"fired": False, "skip_reason": "no-surface"},
     "meta_reviewer": {"fired": False, "skip_reason": "effort"},
     "findings_class": {"lint": 0, "test": 0, "judgement": 1},
+    # **報告件数 4 つは必須で 0 件でも省かない**（#215）。無いと publish が
+    # `payload:report_counts.missing` を立てるので、既定の fixture は契約どおりにしておく
+    "blocker_count": 0, "critical_count": 0, "major_count": 1, "minor_count": 0,
     "agents": {"explorer": 0, "reviewer": 2},
 }
 
@@ -2369,11 +2372,19 @@ class FindingsClassValidationTest(ScriptTestBase):
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_counts_missing_skips_the_sum_check(self):
-        """件数フィールドが揃っていない回は突合しない（型検証だけ効く）."""
+        """件数フィールドが揃っていない回は突合しない（型検証だけ効く）.
+
+        `BASE_PAYLOAD` は #215 以降 4 つとも持つ（契約準拠）ので、**この経路は明示的に
+        落として作る**。欠測は fail-fast ではなく gap（`payload:report_counts.missing`）で残る。
+        """
         p = dict(BASE_PAYLOAD)
+        for k in ("blocker_count", "critical_count", "major_count", "minor_count"):
+            p.pop(k, None)
         p["findings_class"] = {"lint": 9, "test": 9, "judgement": 9}
         r = self.publish(p)
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"],
+                      "突合をスキップした事実が gap に残っていない（#215）")
 
     def test_schema_marker_is_injected(self):
         self.publish(self._payload({"lint": 1, "test": 2, "judgement": 1}))
@@ -4867,6 +4878,104 @@ class RetroMissingReportCountTest(RetroFixture):
         self._events([self._row(9, 0, appendix=True) for _ in range(2)])
         out = self._out()
         self.assertIn("報告 0 件の回 2 件のうち 2 件は推奨あり", out)
+
+
+class ReportCountContractTest(ScriptTestBase):
+    """報告件数 4 フィールドの契約（GitHub issue #215）.
+
+    `below_threshold_counts` / `appendix` / `findings_class` は fail-fast で検証しているのに、
+    **全指標の分子であるこの 4 つだけ検証が無かった**。#203 と同じく fail-fast にはしない
+    （止めるとその回の計測が丸ごと消える）。
+    """
+
+    def _payload(self, **counts) -> dict:
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        for k in ("blocker_count", "critical_count", "major_count", "minor_count"):
+            p.pop(k, None)
+        p.update(counts)
+        # `findings_class` の合計は報告件数と一致させる契約（不一致は fail-fast）。
+        # ここで測りたいのは欠測の検出なので、突合の方は常に整合させておく
+        total = sum(v for v in counts.values() if isinstance(v, int) and not isinstance(v, bool))
+        p["findings_class"] = {"lint": 0, "test": 0, "judgement": total}
+        return p
+
+    def test_a_missing_count_raises_a_gap_not_a_fatal(self):
+        """欠測は gap + WARN。publish は止めない."""
+        res = self.publish(self._payload(blocker_count=0, critical_count=0, major_count=1))
+        self.assertEqual(res.returncode, 0, "欠測で publish を止めている")
+        self.assertIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"])
+        self.assertIn("minor_count", res.stderr, "どのフィールドが欠けたかを言っていない")
+
+    def test_zero_is_not_missing(self):
+        """**0 件は欠測ではない**（4 つとも 0 の回は正当）."""
+        self.publish(self._payload(blocker_count=0, critical_count=0, major_count=0,
+                                   minor_count=0))
+        self.assertNotIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"])
+
+    def test_a_complete_payload_raises_no_gap(self):
+        self.publish(self._payload(blocker_count=0, critical_count=1, major_count=2,
+                                   minor_count=3))
+        self.assertNotIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"])
+
+    def test_a_boolean_is_not_a_count(self):
+        """`true` は件数ではない（JSON の bool を int と読まない）."""
+        self.publish(self._payload(blocker_count=0, critical_count=0, major_count=True,
+                                   minor_count=0))
+        self.assertIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"])
+
+
+class RetroMissingCountAttributionTest(RetroFixture):
+    """除外した欠測を「旧版」と「現行版の埋め落とし」に分けて出す（#215）.
+
+    除外は正しいが説明が誤っていた（全部「旧版の payload」）。現行版の埋め落としは
+    **サンプルの損失**で、増えるなら SKILL 側を直す根拠になる。
+    """
+
+    def _row(self, gaps: list) -> dict:
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": gaps,
+                "severity_threshold": "MAJOR",
+                "pre_adjust_counts": {"schema": 2, "blocker": 0, "critical": 0,
+                                      "major": 3, "minor": 0}}
+
+    def _out(self) -> str:
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertTrue(r.stdout.strip())
+        return r.stdout
+
+    def test_current_version_omissions_are_named_separately(self):
+        self._events([self._row([]), self._row(["payload:report_counts.missing"]),
+                      self._row(["payload:report_counts.missing"])])
+        out = self._out()
+        self.assertIn("3 件は母数から外した", out)
+        self.assertIn("うち 2 件は現行版の埋め落とし", out, "旧版と現行版を分けていない")
+
+    def test_the_table_and_the_empty_notice_are_exclusive(self):
+        """判定できた行があるなら「判定対象なし」を併記しない（`and` を `or` に緩める変異を殺す）.
+
+        両方出ると、除外の注記が「報告 0 件率を測れていない」という別の意味に読まれる。
+        """
+        with_counts = dict(self._row([]), blocker_count=0, critical_count=0,
+                           major_count=1, minor_count=0)
+        self._events([with_counts, self._row(["payload:report_counts.missing"])])
+        out = self._out()
+        self.assertIn("| 世代 | n | 報告 0 件 |", out, "前提: 表が出ている")
+        self.assertIn("1 件は母数から外した", out)
+        self.assertNotIn("報告 0 件率**: 判定対象なし", out, "行があるのに判定対象なしを併記している")
+
+    def test_legacy_only_exclusions_do_not_claim_a_loss(self):
+        """gap を持たない旧版だけなら「埋め落とし」とは言わない."""
+        self._events([self._row([]), self._row([])])
+        out = self._out()
+        self.assertIn("2 件は母数から外した", out)
+        self.assertNotIn("現行版の埋め落とし", out)
+
+    def test_the_gap_names_its_own_fix(self):
+        """`gap_hint` が既定の「テンプレートの記述漏れ」ではなく 4 つ必須の是正先を返す."""
+        self._events([self._row(["payload:report_counts.missing"]) for _ in range(6)])
+        out = self._out()
+        self.assertIn("payload:report_counts.missing", out)
+        self.assertIn("4 つとも必須で 0 件でも省かない", out, "是正先が既定文言に落ちている")
 
 
 if __name__ == "__main__":

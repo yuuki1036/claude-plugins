@@ -651,6 +651,28 @@ if isinstance(_pre, dict) and not all(
         % (" / ".join(SEVS), ", ".join(sorted(k for k in _pre if k != "schema")) or "(なし)")
     )
 
+# **報告件数 4 フィールドの欠測を検出する**（GitHub issue #215）。`below_threshold_counts` /
+# `appendix` / `findings_class` は fail-fast で検証しているのに、**歩留まり・報告 0 件率・
+# 真の空振り・`findings_class` 突合のすべての分子であるこの 4 つだけ検証が無かった**。
+# 実測（gist 集約 n=183）: 欠測 7 件のうち 4 件は現行版で、LLM がテンプレートを埋め落としている。
+# 集計側は #212 / #213 で欠測を母集団から外したが、**外すことと「なぜ欠けたか」が残ることは別**。
+#
+# **fail-fast にしない**（#203 と同じ判断 — 止めるとその回の計測が丸ごと消える）。
+# **0 件は欠測ではない**（`0` は非負整数として通る）。1 つでも欠ければ契約違反として立てる —
+# 揃っていない回は下の `findings_class` 突合も黙ってスキップするので、その事実も同じ識別子で残る
+REPORT_KEYS = ("blocker_count", "critical_count", "major_count", "minor_count")
+_missing_counts = [k for k in REPORT_KEYS
+                   if not isinstance(payload.get(k), int) or isinstance(payload.get(k), bool)]
+if _missing_counts:
+    gaps.append("payload:report_counts.missing")
+    sys.stderr.write(
+        "WARN: 報告件数が揃っていない（欠測: %s）。**4 つとも必須で、0 件でも省かない**。"
+        "集計側はこの回を歩留まり・報告 0 件率・真の空振りの母集団から外す — 報告件数は失われ、"
+        "`findings_class` との突合もこの回はスキップされる\n"
+        "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
+        % ", ".join(_missing_counts)
+    )
+
 # **`agents` の語彙も検証する**（GitHub issue #208）。`pre_adjust_counts` と対称で、
 # **fail-fast にしない**理由も同じ（止めるとその回の計測が丸ごと消える）。
 #
