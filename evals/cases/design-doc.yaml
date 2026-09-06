@@ -43,10 +43,14 @@ cases:
     prompt: さっきの設計判断を記録しておいて
     expected_skill: adr-keeper:adr
     k: 3
-  # design-review <-> code-review の弁別（「コード」のレビューは code-review へ）
+  # design-review <-> code-review の弁別（「コード」のレビューは code-review へ）。
+  # 趣旨は「design-review が誤発火しない」なので code-review 側の 2 スキルはどちらも正解。
+  # headless の eval は dirty tree で走るため router は PR 指定の無いこの prompt を
+  # self-review と読む（#206 の前後比較で k=3 ともそう判定。理由は妥当）。review だけを
+  # 期待すると環境依存で恒常 FAIL になる。両方とも実在する id（README Gotchas）
   - id: design-review-nofire-code-review
     prompt: コードをレビューして
-    expected_skill: code-review:review
+    expected_skill: [code-review:review, code-review:self-review]
     k: 3
   - id: design-doc-nofire-bdd-spec
     prompt: この機能の BDD spec 作って

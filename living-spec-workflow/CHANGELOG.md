@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.6] - 2026-09-05
+
+### Fixed
+
+- **`living-spec` と `living-spec-maintain` の境界を description に明示した**。eval
+  `living-spec-trigger-status`（「収束率と残ってる open OQ を見せて」）が router に
+  `living-spec-maintain` へ寄せられていた（#206 の前後比較で k=3 中 1〜2 回）。`status`
+  サブコマンド（収束率 = 確定 ÷ 全項目 / open OQ の残数）は `living-spec` の責務なので、
+  両側の description に**対比の 1 文**を足した — 「収束率や open OQ を見るのは living-spec
+  の status / 壊れていないかの検証は maintain」。逐語トリガーも表示系の言い回し
+  （「収束率を見せて」「open OQ を見せて」「残ってる OQ」「living spec の現在地」）を追加。
+  同名ペアなので `commands/*.md` 側にも同じ内容を複製している（#206）
+
 ## [0.3.5] - 2026-09-05
 
 ### Fixed

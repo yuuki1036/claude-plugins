@@ -1,7 +1,7 @@
 ---
 name: living-spec-maintain
 description: >
-  living spec の整合と鮮度を 8 段のファネルで検証するスキル。表スキーマ・採番・OQ ⇔ Decision の双方向参照を機械判定し、死リンク・確度ラベルの塩漬けを検出する。通過したら last-validated を更新する。
+  living spec の整合と鮮度を 8 段のファネルで検証するスキル。表スキーマ・採番・OQ ⇔ Decision の双方向参照を機械判定し、死リンク・確度ラベルの塩漬けを検出する。通過したら last-validated を更新する。**収束率や open OQ を見るだけなら living-spec の status**（こちらは壊れていないかの検証）。
   トリガー: 「living spec の整合チェック」「living spec を点検」「OQ と Decision の参照が合ってるか」
   「確度ラベルの塩漬けを検出」「living spec の鮮度チェック」「living spec lint」「/living-spec-maintain」
 effort: medium

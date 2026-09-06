@@ -1,5 +1,5 @@
 ---
-description: "Issue 化前の設計収束ドキュメント (living spec) を作成・運用する トリガー: 「living spec」「リビングスペック」「living spec 作る」「OQ 台帳」「Open Questions 台帳」 「OQ 追加」「Decision log」「決定を記録して OQ を閉じる」「確度ラベル」「収束率」 「Issue 化前に未確定を詰めたい」「設計を収束させたい」「/living-spec」"
+description: "Issue 化前の設計収束ドキュメント (living spec) を作成・運用する。収束率や open OQ の残数を見る（status）のもこちら（整合・鮮度の検証は living-spec-maintain） トリガー: 「living spec」「リビングスペック」「living spec 作る」「OQ 台帳」「Open Questions 台帳」 「OQ 追加」「Decision log」「決定を記録して OQ を閉じる」「確度ラベル」「収束率」「収束率を見せて」 「open OQ を見せて」「残ってる OQ」「living spec の現在地」「living spec status」 「Issue 化前に未確定を詰めたい」「設計を収束させたい」「/living-spec」"
 user_invocable: true
 allowed-tools:
   - AskUserQuestion
