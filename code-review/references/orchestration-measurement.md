@@ -132,7 +132,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 - `duration_triage_min` = t0→t1: PR/diff 収集・Phase 0・起動前検算。**メイン思考量の代理指標として使わない**（explorer 未配置なら reviewer プロンプト構築が丸ごとここに入り、配置していても explorer プロンプトの構築が入る）
 - `duration_fleet_min` = t1→t2: 最初の agent 発火から初回レポートまで。**agent wave の実時間 + プロンプト構築 + scoring/レポート生成**。プロンプト構築コストはここに含まれる（上記のとおり分離できない）
 - `duration_explore_min` = t1→ 最後の explorer wave 打点: explorer wave の実時間（`duration_fleet_min` の内数）。explorer 未起動時は `-1`。**wave 単価の実測値**として triage-guide.md `## 5.1` の目安時間を裏付けるのに使う（集計後の値の置き場は `## 15`）
-- `duration_synthesis_min` = 最後の agent wave 打点→t2: **最後の agent wave 回収から初回レポートまで**（`duration_fleet_min` の内数 / v2.60.0）。scoring・dedup・verdict 反映・レポート生成で、**agent 非稼働が構造的に保証される唯一の区間**。オーケストレーター時間の**下限値**として読む（wave 間のプロンプト構築・分冊 Read は wave 区間側に残るため全量ではない）。打点欠測時は `-1`（**ただし `wave` は agent の実測時刻で補完されうる** → 上の「打点漏れの補完」）
+- `duration_synthesis_min` = 最後の agent wave 打点→t2: **最後の agent wave 回収から初回レポートまで**（`duration_fleet_min` の内数 / v2.60.0）。scoring・dedup・verdict 反映・レポート生成で、**agent 非稼働が構造的に保証される唯一の区間**。オーケストレーター時間の**下限値**として読む（wave 間のプロンプト構築・分冊 Read は wave 区間側に残るため全量ではない）。打点欠測時は `-1`（**ただし `wave` は agent の実測時刻で補完されうる** → 上の「打点漏れの補完」）。**支配率（syn ÷ fleet）は `review-retro.sh` が世代別に出す**（v2.114.0 / GitHub issue #218）: 30% 以上の回を「支配的」とし、その割合が 10% 以上の層で ⚠️。閾値は実測（n=71: 中央値 5% / 75% 点 15% / 90% 点 35%）の 90% 点付近に置いた。中央値だけでは fleet 92 分中 40 分が synthesis だった回（PR #469）が見えず、`## 7` が禁じる体数削減に誘導される
   - **用途**: `duration_fleet_min` が大きいときの打ち手の切り分け。`duration_synthesis_min` が支配的なら打ち手は**メイン側**（分冊の遅延読み込み・可変部の圧縮・scoring の機械化）であって体数削減ではない。逆に小さければ wave 側（直列 wave 数・1 体あたりの探索量）を見る
   - **`duration_explore_min` と同じく fleet の内数**なので、区間の和を `duration_fleet_min` と一致させる検算をしない
 - `duration_closing_min` = t2→t3: 締めフロー（精査・解説・ドラフト）。**大半が人間の応答待ち**なので、他の 2 区間と混ぜて比較しない
@@ -527,6 +527,7 @@ find ~ -maxdepth 6 -name events.jsonl -path '*/.claude/*' -not -path '*/node_mod
 |---|---|
 | effort × size_tier の fleet / 体数、体数 vs fleet の相関 | triage-guide.md `## 7`（**体数を壁時計のレバーとして扱わない**）。**結論文は `r` と n で分岐する** — n < 10 は解釈しない / `|r| < 0.3` は上記主張を支持 / 0.3〜0.6 は effort の交絡を疑って帯別に見る / `|r| >= 0.6` は ⚠️ シグナルとして同主張の**再監視条件**に該当。低いこと自体は打ち手にならないが、**高いことは打ち手になる** |
 | 区間の中央値（triage / explore / fleet / synthesis / closing） | `## 14`（synthesis が支配的ならメイン側、そうでなければ wave 側） |
+| synthesis の支配率（分布・世代別・支配的だった回の列挙） | `## 14`（30% 以上を支配的とみなす根拠と打ち手の出し分け / #218）。**⚠️ が鳴った層の打ち手はメイン側**で、体数削減ではない |
 | pre_adjust → 報告の歩留まり | `## 16` の `pre_adjust_counts`（**schema 2 同士・同一 `severity_threshold` でのみ比較**） |
 | 反証 verdict 分布（`calibration_schema` 層別） | triage-dynamic-gates.md `## 9` / `prompts/reviewer-common.md`「降格される典型パターン」 |
 | 動的層の発火率と skip 理由 | 同 `## 8`（meta）/ `## 8.5`（skeptic）/ `## 9`（反証のゲート幅） |

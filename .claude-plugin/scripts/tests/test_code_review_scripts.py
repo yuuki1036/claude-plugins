@@ -5096,6 +5096,97 @@ class RetroSkepticLaunchGapTest(RetroFixture):
         self.assertNotIn("集計は位置ヒューリスティックに落ちる", out)
 
 
+class RetroSynthesisDominanceTest(RetroFixture):
+    """synthesis の支配率（syn ÷ fleet）を分布・世代別・⚠️ で出す（GitHub issue #218）.
+
+    `## 14` の判断基準「支配的ならメイン側 / そうでなければ wave 側」は回ごとの比率で決まるのに、
+    retro は区間の中央値しか出していなかった。閾値は実測から: 支配的 = 30% 以上、⚠️ = その割合が
+    10% 以上（分母の下限 10）。
+    """
+
+    def _row(self, gen: str, syn, fleet) -> dict:
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "models": self._models("claude-%s" % gen),
+                "duration_synthesis_min": syn, "duration_fleet_min": fleet}
+
+    def _out(self, *args) -> str:
+        r = self.run_script(RETRO, *args, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        self.assertTrue(r.stdout.strip(), "stdout が空（沈黙死）")
+        return r.stdout
+
+    def test_the_distribution_and_the_dominant_runs_are_listed(self):
+        rows = [self._row("opus-5", 2, 40) for _ in range(8)] \
+             + [self._row("opus-5", 20, 40), self._row("opus-5", 24, 40)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("**synthesis の支配率**（syn ÷ fleet / 両区間を実測で持つ回 n=10）: "
+                      "中央値 5% / 75% 点 5% / 最大 60% / 30% 以上 **2 件（20%）**", out)
+        self.assertIn("支配的だった回（上位 2）: 60% ", out, "支配的な回が列挙されていない")
+        self.assertIn("self-review/medium/opus-5（syn 24 / fleet 40 分）", out, "列挙の tier / 世代が落ちている")
+        self.assertIn("打ち手は**メイン側**", out)
+
+    def test_a_hot_layer_fires_with_its_name(self):
+        """opus-4-8 10 件中 2 件が支配的（20%）で、opus-5 は健全（0/12）→ 層名つきで 1 本だけ鳴る."""
+        rows = [self._row("opus-4-8", 20, 40) for _ in range(2)] \
+             + [self._row("opus-4-8", 2, 40) for _ in range(8)] \
+             + [self._row("opus-5", 2, 40) for _ in range(12)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("synthesis が fleet の 30% 以上を占めた回が 20%（`opus-4-8` 層 / 2/10）", out)
+        self.assertNotIn("`opus-5` 層 / 0/12", out)
+        self.assertIn("| opus-4-8 | 10 | 2（20%） |", out, "世代別の表が出ていない")
+
+    def test_both_thresholds_are_inclusive(self):
+        """ちょうど 30%（12/40）は支配的、ちょうど 10%（1/10）は鳴る（境界を狭める変異を殺す）."""
+        rows = [self._row("opus-4-8", 12, 40)] + [self._row("opus-4-8", 2, 40) for _ in range(9)] \
+             + [self._row("opus-5", 2, 40) for _ in range(12)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("synthesis が fleet の 30% 以上を占めた回が 10%（`opus-4-8` 層 / 1/10）",
+                      out, "境界ちょうどで鳴っていない")
+        self.assertIn("支配的だった回（上位 1）: 30% ", out, "境界ちょうどの回が列挙から落ちている")
+
+    def test_a_healthy_population_does_not_fire(self):
+        rows = [self._row("opus-4-8", 2, 40) for _ in range(10)] \
+             + [self._row("opus-5", 11, 40) for _ in range(12)]     # 27.5% は支配的ではない
+        self._events(rows)
+        out = self._out()
+        self.assertIn("30% 以上 **0 件（0%）**", out)
+        self.assertNotIn("synthesis が fleet の", out.split("⚠️ シグナル")[-1])
+        self.assertNotIn("支配的だった回", out)
+
+    def test_runs_without_both_intervals_are_excluded_and_inconsistent_ones_are_counted(self):
+        """欠測（-1）・fleet 0・syn が fleet を超えた回は母数に入れない."""
+        # **キー不在（旧版）と -1（欠測）の両方を置く** — 片方だけだと `or` を `and` に狭めた
+        # 変異（None の回が素通りして `None < 0` で死ぬ）を検知できない
+        only_fleet = {k: v for k, v in self._row("opus-4-8", 0, 40).items()
+                      if k != "duration_synthesis_min"}
+        only_syn = {k: v for k, v in self._row("opus-4-8", 20, 0).items()
+                    if k != "duration_fleet_min"}
+        rows = [self._row("opus-4-8", 20, 40) for _ in range(2)] \
+             + [self._row("opus-4-8", -1, 40), self._row("opus-4-8", 20, -1),
+                self._row("opus-4-8", 20, 0), self._row("opus-4-8", 50, 40),
+                only_fleet, only_syn]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("両区間を実測で持つ回 n=2）", out, "欠測・矛盾の回を母数に入れている")
+        self.assertIn("1 件は synthesis が fleet を超えており母数から外した", out)
+        j = json.loads(self._out("--json"))
+        self.assertEqual(j["synthesis_dominance"]["n"], 2)
+        self.assertEqual(j["synthesis_dominance"]["inconsistent"], 1)
+        self.assertEqual(j["synthesis_dominance"]["dominant"], 2)
+        self.assertEqual(j["synthesis_dominance"]["threshold_pct"], 30)
+
+    def test_no_section_when_nothing_is_measured(self):
+        self._events([self._row("opus-4-8", -1, -1) for _ in range(3)])
+        out = self._out()
+        self.assertNotIn("synthesis の支配率", out)
+        j = json.loads(self._out("--json"))
+        self.assertEqual(j["synthesis_dominance"]["n"], 0)
+        self.assertIsNone(j["synthesis_dominance"]["median_pct"])
+
+
 class RetroAppendixLayerTest(RetroFixture):
     """付録（真の空振り）を世代で層別し ⚠️ に載せる（GitHub issue #214）.
 

@@ -568,6 +568,54 @@ tier_r_judged = [(t, n_t, rr) for t, n_t, rr in tier_r_rows
 spans = [(k, median(measured(events, "duration_%s_min" % k)), len(measured(events, "duration_%s_min" % k)))
          for k in ("triage", "explore", "fleet", "synthesis", "closing")]
 
+# ---- 4b. synthesis の支配率（GitHub issue #218） ------------------------------
+# `## 14` は `duration_synthesis_min` の用途を**打ち手の切り分け**として書いている（支配的なら
+# メイン側 / そうでなければ wave 側）のに、retro は区間の中央値 1 行しか出していなかった。
+# 中央値 5% の分布で 43% の回（PR #469 / fleet 92 分中 40 分）が起きても、目に入るのは
+# fleet と体数だけで、triage-guide `## 7` が禁じる「時間が長いから体数を減らす」に誘導される。
+# 判断基準が doc にあって機械層に無い形は #209 / #214 と同型。
+#
+# 閾値は**実データから決めた**（CLAUDE.md「水準を先に測ってから入れる」/ gist + ローカル合算
+# n=71・2026-09-06）: 中央値 5% / 75% 点 15% / 90% 点 35% / 最大 59%。`SYN_DOMINANT_PCT` 30 は
+# 90% 点付近で、超えたのは 9 件（13%）。⚠️ の水準 `SYN_RATE_HOT` 10 は初回から鳴るが、
+# これは #218 が「外れ値の領域」と呼んだ回そのものなので偽陽性ではない
+SYN_DOMINANT_PCT = 30   # 1 回の syn ÷ fleet がこれ以上なら「支配的」
+SYN_RATE_HOT = 10       # 支配的な回の割合がこれ以上で ⚠️
+SYN_MIN_N = 10          # 層 / 累計の分母の下限（他のシグナルの 8〜15 に揃える）
+SYN_TOP = 5             # 本文に列挙する支配的な回の上限
+syn_stats = {"n": 0, "dominant": 0, "by_gen": {}}
+syn_ratios = []                 # (支配率 %, ts, plugin, tier, 世代, syn, fleet)
+syn_inconsistent = 0            # syn が fleet を超えた回（打点の矛盾。内数の契約に反する）
+for e in events:
+    p = e["p"]
+    syn, fleet = num(p.get("duration_synthesis_min")), num(p.get("duration_fleet_min"))
+    # **両区間を実測で持つ回だけ**（-1 は欠測 / fleet 0 は割れない / `fleet-span-mismatch` の
+    # 回は publish が fleet を -1 に倒しているのでここで落ちる）
+    if syn is None or fleet is None or syn < 0 or fleet <= 0:
+        continue
+    if syn > fleet:
+        syn_inconsistent += 1
+        continue
+    ratio = pct(syn, fleet)
+    syn_ratios.append((ratio, e["ts"], e["plugin"], p.get("size_tier") or "?", gen_of(p), syn, fleet))
+    _g = syn_stats["by_gen"].setdefault(gen_of(p), {"n": 0, "dominant": 0})
+    _g["n"] += 1
+    syn_stats["n"] += 1
+    if ratio >= SYN_DOMINANT_PCT:
+        _g["dominant"] += 1
+        syn_stats["dominant"] += 1
+
+
+def quantile(xs, q):
+    """最近傍順位法の分位点（n が小さいので補間しない）。"""
+    if not xs:
+        return None
+    s = sorted(xs)
+    return s[int(round(q * (len(s) - 1)))]
+
+
+syn_pcts = [r[0] for r in syn_ratios]
+
 # ---- 5. pre_adjust → 報告の歩留まり（版マーカー × 閾値 × 世代で層別）--------
 # `>= 2` にするのは前方互換のため（`== 2` だと schema 3 でセクションが無音で消える）
 #
@@ -1426,6 +1474,17 @@ signals.extend(layered_signal(
         % (pct(ts, n), label, ts, n, note),
     pending=layer_pending.setdefault("真の空振り率", [])))
 
+# **synthesis の支配率**（GitHub issue #218）。閾値の根拠は上の 4b。層別は他と同じ流儀
+signals.extend(layered_signal(
+    syn_stats, lambda d: d.get("dominant", 0), lambda d: d.get("n", 0), SYN_MIN_N,
+    lambda dom, n: pct(dom, n) >= SYN_RATE_HOT,
+    lambda label, dom, n, note:
+        "synthesis が fleet の %d%% 以上を占めた回が %.0f%%（%s / %d/%d）。打ち手はメイン側"
+        "（分冊の遅延読み込み・可変部の圧縮・scoring の機械化 / orchestration-measurement.md "
+        "`## 14`）— 体数削減では縮まない（triage-guide.md `## 7`）%s"
+        % (SYN_DOMINANT_PCT, pct(dom, n), label, dom, n, note),
+    pending=layer_pending.setdefault("synthesis の支配率", [])))
+
 # ---- 出力 -----------------------------------------------------------------
 if as_json:
     print(json.dumps({
@@ -1469,6 +1528,12 @@ if as_json:
         "fleet_span": {"judged": n_fleet_span_judged, "conflict": n_fleet_span_conflict},
         # 世代別の真の空振り（#214）。`報告 0 件率（世代別）` と同じ母数の扱い
         "appendix_by_gen": apx_stats["by_gen"],
+        # synthesis の支配率（#218）。比率は % の整数ではなく実数（丸めは表示側）
+        "synthesis_dominance": {
+            "n": syn_stats["n"], "dominant": syn_stats["dominant"],
+            "inconsistent": syn_inconsistent, "threshold_pct": SYN_DOMINANT_PCT,
+            "median_pct": median(syn_pcts), "p75_pct": quantile(syn_pcts, 0.75),
+            "max_pct": max(syn_pcts) if syn_pcts else None, "by_gen": syn_stats["by_gen"]},
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
                         "split_explorer_waves": split_waves,
@@ -1545,6 +1610,35 @@ if tier_r_rows:
 print()
 print("**区間の中央値**: " + " / ".join(
     "%s %s（n=%d）" % (k, "-" if m is None else "%g 分" % m, c) for k, m, c in spans))
+
+# **synthesis の支配率**（#218）。中央値だけでは「支配的だった回」が見えない — 打ち手の
+# 切り分け（`## 14`）は回ごとの比率で決まるので、分布と上位の回を出す
+if syn_pcts:
+    print()
+    print("**synthesis の支配率**（syn ÷ fleet / 両区間を実測で持つ回 n=%d）: 中央値 %.0f%% / "
+          "75%% 点 %.0f%% / 最大 %.0f%% / %d%% 以上 **%d 件（%.0f%%）**"
+          % (syn_stats["n"], median(syn_pcts), quantile(syn_pcts, 0.75), max(syn_pcts),
+             SYN_DOMINANT_PCT, syn_stats["dominant"], pct(syn_stats["dominant"], syn_stats["n"])))
+    if len(syn_stats["by_gen"]) > 1:
+        print()
+        print("| 世代 | n | %d%% 以上 |" % SYN_DOMINANT_PCT)
+        print("|---|---:|---:|")
+        for _gk in sorted(syn_stats["by_gen"]):
+            _gv = syn_stats["by_gen"][_gk]
+            print("| %s | %d | %d（%.0f%%） |" % (_gk, _gv["n"], _gv["dominant"],
+                                                 pct(_gv["dominant"], _gv["n"])))
+        print()
+    _top = [r for r in sorted(syn_ratios, reverse=True) if r[0] >= SYN_DOMINANT_PCT][:SYN_TOP]
+    if _top:
+        print("- 支配的だった回（上位 %d）: " % len(_top) + " / ".join(
+            "%.0f%% %s %s/%s/%s（syn %g / fleet %g 分）"
+            % (r[0], r[1][5:16], r[2].split(":")[-1], r[3], r[4], r[5], r[6]) for r in _top))
+    print("- 読み方: 支配的なら打ち手は**メイン側**（分冊の遅延読み込み・可変部の圧縮・scoring の"
+          "機械化）で、**体数削減では縮まない**。そうでなければ wave 側（直列 wave 数・1 体あたりの"
+          "探索量）を見る（orchestration-measurement.md `## 14` / triage-guide.md `## 7`）")
+    if syn_inconsistent:
+        print("- **%d 件は synthesis が fleet を超えており母数から外した**（内数の契約に反する = "
+              "打点の矛盾。`fleet-span-mismatch` と同じ扱い）" % syn_inconsistent)
 
 # **全件除外でも通知は出す**（#212）。ガードの内側に置くと、除外した結果 0 行になった
 # ときに通知ごと消えて「該当なし」と読まれる — 直そうとしている誤読の同型
