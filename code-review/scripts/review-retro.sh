@@ -1290,6 +1290,11 @@ def gap_hint(g):
     if g == "payload:agents.empty":
         return ("`agents` に体数のキーが 1 つも無い。集計側はこの回を体数中央値・fleet 相関・"
                 "1 体あたり cache_read の母集団から外す — 起動した体数は失われる")
+    if g == "payload:recall_skeptic.launch":
+        return ("skeptic が起動したのに起動経路（`launch`: `rider` = 相乗り / `fallback` = 単独）の"
+                "自己申告が無い。集計は位置ヒューリスティックに落ちる — 同じ層構成でも反証 wave の"
+                "体数で wave-split の判定が反転する（#216）。値は両 SKILL の skeptic 相乗り / "
+                "fallback 段落が決めている（orchestration-measurement.md `## 16`）")
     if g.startswith("payload:"):
         return "payload テンプレートの記述漏れ（両 SKILL の publish 節）を見直す"
     if g == "late-publish":

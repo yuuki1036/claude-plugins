@@ -250,7 +250,7 @@ review 用（`--plugin code-review:review --pr <PR番号>`）:
   "findings_class":{"lint":<n>,"test":<n>,"judgement":<n>},
   "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>,
     "inflated_axes":{"base_derived":<n>,"misread":<n>,"overstated_impact":<n>,"miscategorized":<n>,"unknown":<n>}},
-  "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
+  "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"launch":<"rider"|"fallback"|null>,"findings_added":<n>,"findings_overlap":<n>},
   "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
   "appendix":{"listed":<n>,"recommended":<n>}
 }
@@ -272,7 +272,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
   "findings_class":{"lint":<n>,"test":<n>,"judgement":<n>},
   "adversarial_verify":{"fired":<bool>,"skip_reason":<string|null>,"confirmed":<n>,"refuted":<n>,"uncertain":<n>,"severity_inflated":<n>,"contested":<n>,
     "inflated_axes":{"base_derived":<n>,"misread":<n>,"overstated_impact":<n>,"miscategorized":<n>,"unknown":<n>}},
-  "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>,"findings_overlap":<n>},
+  "recall_skeptic":{"surface":<bool>,"fired":<bool>,"skip_reason":<string|null>,"launch":<"rider"|"fallback"|null>,"findings_added":<n>,"findings_overlap":<n>},
   "meta_reviewer":{"fired":<bool>,"skip_reason":<string|null>,"findings_added":<n>},
   "appendix":{"listed":<n>,"recommended":<n>},
   "comment_polish":{"fired":<bool>,"suggested":<n>}
@@ -409,6 +409,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - `surface`: high-risk surface 判定の結果（bool）。**skeptic が effort / userConfig でスキップされた場合も、正規表現部分の判定だけは payload 構築時に必ず実施して記録する** — 「surface=true なのに effort ゲートで走らなかった頻度」が昇格判断の核心メトリクスのため
 - `fired`: skeptic agent が実際に起動したか（bool）
 - `skip_reason`: `fired=false` のときの理由。`"effort"` / `"config"` / `"no-surface"` / `"emergency"`（self-review は `"scope"` = `--focus`/`--exclude` 指定も取りうる）。`fired=true` なら `null`
+- `launch`: **起動経路の自己申告**（v2.113.0 / GitHub issue #216）。`"rider"` = reviewer 一括発行に相乗り（review Step 5 / self-review Step 4）/ `"fallback"` = reviewer の `[surface:high-risk]` フラグ由来で reviewer 完了後に単独起動（triage-dynamic-gates.md `## 8.5` の例外経路）。`fired=false` なら `null`。**期待 wave 本数の skeptic 控除はこの値だけで決める**（`fallback` のときだけ 1 本。位置は見ない）。無いと `payload:recall_skeptic.launch` gap が立ち、集計は位置ヒューリスティック（`lib/wave_expect.py` の `skeptic_tail_solo`）に落ちる — 同じ層構成でも反証 wave の体数で判定が反転する暫定措置（実測 `[3,1,3]` は違反 / `[4,11,4,1]` は控除）。語彙外は publish が落とす（`skip_reason` と同型）。**違反の自覚と無関係な事実なので自己申告してよい** — wave 本数の自己申告を退けた理由（破った自覚があれば最初から破らない）がここには当たらない（design-notes/orchestration-rationale.md）
 - `gate_schema`: **起動ゲートの版**（GitHub issue #115）。**`publish-review-event.sh` が注入する**（2 = high 起点に昇格した v2.52.0 以降）。`attribution_schema` が由来タグの版であるのに対し、こちらは**どの effort で起動する構成だったか**を識別する。**これが無いと `## 8.5` の監視クエリ①（「昇格後は `skip_reason="effort"` が消えるはず」）が昇格前の残骸を拾い続け、永久に偽の「信号あり」を返す** — 実装バグが起きても検知できない。日付では切れない（配布ラグで未更新マシンは旧ゲートで publish し続ける）
 - `attribution_schema`: 由来帰属の規約バージョン。**`publish-review-event.sh` が注入する**（2 = 由来タグがレポート書式に規定され dedup のタグ生存も定義された版 = 2.35.1 以降）。schema 1 相当の旧サンプルは `findings_added` が記憶依存で系統的に 0 へ潰れており判断に使えないため下流はこれで濾す。**日付では切れない**（配布ラグで未更新マシンは修正日以降も schema 1 を publish する）
 - `findings_added`: **skeptic 単独由来**（`[recall-skeptic]` タグ）の指摘のうち報告マトリクスを通過した件数。**レポート「動的ラウンド」行の `実行（N 件追加）` の N と同値**（N はヘッダに置かれるが**本文確定後に数えてヘッダへ反映する**。二重管理にしない）。**価値率の分子はこれのみ**
@@ -452,6 +453,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - **動的層を足すときは `fired` / `skip_reason` / `gate_schema` の 3 点セットを必ず持たせる**（v2.65.0 / issue #129 の一般化）。verdict や件数だけでは **「走らなかった」と「走れる対象が無かった」を区別できず**、ゲート設計の妥当性が永久に測れない。`skip_reason` の語彙には**「設計上の非該当」（effort / config / scope / emergency）と「ゲートに該当する対象が 0 件」を別の値で**入れること（前者だけが下流の分母から外れる）
 - **`skip_reason` の語彙は `publish-review-event.sh` が検証し、外れたら publish せず落とす**（v2.79.0 / `missing_coverage` と同型）。各層の許容値は上の 3 節（`adversarial_verify` / `recall_skeptic` / `meta_reviewer`）が正本で、**スクリプトの `SKIP_REASONS` と同値でなければならない** — 語彙を増やすときは両方を直す。規約だけでは守られなかった: 実測で `no-surface` が `surface-none` / `surface-not-detected` に割れており（全リポジトリ 91 件中 3 件。**うち 1 件は #132 の対策より後**）、retro の skip 理由集計は `group_by` なので**綴りが割れた件数ぶんだけ「どのゲートで落ちているか」が消える**。しかも別バケツとして出るため集計上は欠測に見えない。**黙って正規化はしない**（どの識別子に寄せるかを推測すると別の綴り割れを作る / #132 と同じ判断）
   - **`fired=false` なのに `skip_reason` が無い回は落とさず `measurement_gaps` の `payload:<field>.skip_reason` に倒す**（実測 8/49 件）。語彙外と違い**寄せ先を推測できない**ので、可視化する側に置く（`payload:<field>.fired` と同じ流儀）
+  - **`fired=true` なのに `recall_skeptic.launch` が無い回も同じく `payload:recall_skeptic.launch` に倒す**（v2.113.0 / #216）。語彙（`rider` / `fallback`）は `lib/wave_expect.py` の `SKEPTIC_LAUNCH` と同値で、語彙外は `skip_reason` と同じく publish が落とす
 - 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の起動ゲートの版は `meta_reviewer.gate_schema`**）・`agents.explorer_waves` の存在が v2.61.0 以降・`measurement_gaps` / `diff_digest` の存在が v2.62.0 以降（**上流 severity 較正の版は `adversarial_verify.calibration_schema`**）・`adversarial_verify.fired` / `tokens` の存在が v2.65.0 以降（**反証の起動ゲートの版は `adversarial_verify.gate_schema`**）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
 - **集計は `scripts/review-retro.sh` が行う**（v2.62.0 / issue #123 E）。上の層別ルール（版マーカーで切る / 累計で読まない / 区間を混ぜない）をスクリプト側に閉じてあるので、**jq を毎回組み立てない**。人間向けレポートは publish の直後に自動で出る（review 締めフロー 4 / self-review Step 6.4）。`--json` で機械可読、`--since` / `--last` で範囲を絞れる
 

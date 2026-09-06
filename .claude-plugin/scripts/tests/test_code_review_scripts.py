@@ -441,6 +441,56 @@ class SkipReasonValidationTest(ScriptTestBase):
                          "同じ欠落に 2 つの是正先が立っている")
 
 
+
+class SkepticLaunchValidationTest(ScriptTestBase):
+    """`recall_skeptic.launch` の語彙検証と書き忘れの gap（GitHub issue #216）.
+
+    **期待値は doc（`## 16`）から独立に書く**（`SkipReasonValidationTest` と同じ理由）。
+    """
+
+    def _payload(self, launch, *, fired=True) -> dict:
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        p["recall_skeptic"] = {"fired": fired, "skip_reason": None if fired else "no-surface"}
+        if launch is not ...:                     # `...` はキーごと落とす
+            p["recall_skeptic"]["launch"] = launch
+        return p
+
+    def test_canonical_vocabulary_passes_without_a_gap(self):
+        for launch in ("rider", "fallback"):
+            with self.subTest(launch=launch):
+                r = self.publish(self._payload(launch))
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertNotIn("payload:recall_skeptic.launch",
+                                 self.last_payload()["measurement_gaps"])
+
+    def test_out_of_vocabulary_is_rejected(self):
+        """綴り割れ・大文字違い・自由文を落とす（`skip_reason` と同型）."""
+        for bad in ("serial", "Rider", "相乗り"):
+            with self.subTest(bad=bad):
+                r = self.publish(self._payload(bad))
+                self.assertEqual(r.returncode, 1)
+                self.assertIn("語彙外", r.stderr)
+                self.assertIn(bad, r.stderr)
+                self.assertEqual(self.events(), [], "FATAL なのに publish されている")
+
+    def test_a_missing_report_on_a_fired_skeptic_becomes_a_gap(self):
+        """書き忘れは落とさず可視化する — 集計は位置判定に落ちるので、暫定措置だと分かるように."""
+        for value in (None, ...):
+            with self.subTest(value=value):
+                r = self.publish(self._payload(value))
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("payload:recall_skeptic.launch",
+                              self.last_payload()["measurement_gaps"])
+
+    def test_an_unfired_skeptic_needs_no_report(self):
+        """`fired=false` はテンプレートどおり `null`（キー無しも可）で、gap にも語彙外にもならない."""
+        for value in (None, ...):
+            with self.subTest(value=value):
+                r = self.publish(self._payload(value, fired=False))
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertNotIn("payload:recall_skeptic.launch",
+                                 self.last_payload()["measurement_gaps"])
+
 class TranscriptFixture(ScriptTestBase):
     """transcript fixture の組み立てだけを持つ土台（**テストは持たない**）.
 
@@ -3635,6 +3685,41 @@ class WaveSplitTest(TranscriptFixture):
         return {"fired": fired, "skip_reason": None if fired else "no-surface",
                 "attribution_schema": 2, "findings_added": 0}
 
+    def test_a_self_reported_fallback_is_deducted_wherever_it_sits(self):
+        """**実測 09-06T05:04 の `[3,1,3]`**（GitHub issue #216 / review / opus-5）.
+
+        reviewer 3 → skeptic fallback 1 → 反証 3。位置判定は末尾が 3 体なので `tail=0` で
+        控除できず違反にしていた。自己申告 `launch="fallback"` があれば位置を見ずに 1 本引く。
+        """
+        # reviewer 3 / skeptic 1 / 反証 3 = 7 体。申告は skeptic 込みで 7
+        self.write_transcript([[0, 10, 20], [100], [200, 210, 220]], base=self.BASE)
+        p = dict(self.agents(explorer=0, reviewer=3, verify=3),
+                 recall_skeptic=dict(self._skeptic(), launch="fallback"))
+        published = self.run_publish(p)
+        self.assertNotIn("agents-mismatch", published["measurement_gaps"], "前提: 申告が揃っている")
+        self.assertEqual(published["dispatch"]["wave_sizes"], [3, 1, 3])
+        self.assertEqual(published["dispatch"]["waves_expected"], 3,
+                         "自己申告の fallback を控除していない（位置で判定している）")
+        self.assertNotIn("wave-split", published["measurement_gaps"])
+        self.assertNotIn("payload:recall_skeptic.launch", published["measurement_gaps"])
+
+    def test_a_self_reported_rider_is_not_deducted_even_at_the_tail(self):
+        """相乗りは wave を増やさない — 末尾がたまたま単独でも控除しない（位置判定の残存限界①）.
+
+        `[2,5,1]` は位置判定なら控除される形（下の `test_skeptic_fallback_tail_solo_wave_is_deducted`
+        と同じ transcript）。申告が `rider` なら末尾の 1 体は skeptic ではないので、その wave は
+        説明が付かず違反として残る。
+        """
+        self.write_transcript([[0, 10], [100, 110, 120, 130, 140], [200]], base=self.BASE)
+        p = dict(self.agents(explorer=2, reviewer=5, verify=0),
+                 recall_skeptic=dict(self._skeptic(), launch="rider"))
+        published = self.run_publish(p)
+        self.assertNotIn("agents-mismatch", published["measurement_gaps"], "前提: 申告が揃っている")
+        self.assertEqual(published["dispatch"]["wave_sizes"], [2, 5, 1])
+        self.assertEqual(published["dispatch"]["waves_expected"], 2,
+                         "相乗りの申告があるのに末尾の単独 wave を控除している")
+        self.assertIn("wave-split", published["measurement_gaps"])
+
     def test_skeptic_fallback_tail_solo_wave_is_deducted(self):
         """skeptic の fallback は**末尾の単独 wave**なので偽陽性（実測 08-24T05:40 / `[2,5,1]`）.
 
@@ -4976,6 +5061,39 @@ class RetroMissingCountAttributionTest(RetroFixture):
         out = self._out()
         self.assertIn("payload:report_counts.missing", out)
         self.assertIn("4 つとも必須で 0 件でも省かない", out, "是正先が既定文言に落ちている")
+
+
+class RetroSkepticLaunchGapTest(RetroFixture):
+    """`payload:recall_skeptic.launch` の是正ヒント（GitHub issue #216）.
+
+    既定の「テンプレートの記述漏れ」だと、埋める側は `## 16` を見て値を足すだけで済むと読む。
+    この gap は集計が位置判定に落ちる暫定措置の合図なので、ヒントにそれを書く。
+    """
+
+    def _row(self, gaps: list) -> dict:
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": gaps,
+                "severity_threshold": "MAJOR",
+                "recall_skeptic": {"fired": True, "skip_reason": None, "gate_schema": 2,
+                                   "attribution_schema": 2, "findings_added": 1}}
+
+    def _out(self) -> str:
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertTrue(r.stdout.strip())
+        return r.stdout
+
+    def test_the_gap_names_the_position_fallback(self):
+        self._events([self._row(["payload:recall_skeptic.launch"]) for _ in range(6)])
+        out = self._out()
+        self.assertIn("payload:recall_skeptic.launch", out)
+        self.assertIn("集計は位置ヒューリスティックに落ちる", out, "是正先が既定文言に落ちている")
+
+    def test_the_hint_is_specific_to_this_gap(self):
+        """別の gap にこのヒントを付けない（`==` を `!=` に反転する変異を殺す）."""
+        self._events([self._row(["payload:report_counts.missing"]) for _ in range(6)])
+        out = self._out()
+        self.assertIn("payload:report_counts.missing", out, "前提: 別の gap が出ている")
+        self.assertNotIn("集計は位置ヒューリスティックに落ちる", out)
 
 
 class RetroAppendixLayerTest(RetroFixture):

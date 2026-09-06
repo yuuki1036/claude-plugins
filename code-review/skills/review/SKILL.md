@@ -21,7 +21,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @d8fa8276 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @2032e7fb -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @4eac2029 -->
 
 ## 前提
@@ -278,7 +278,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 4 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `prompts/reviewer-common.md` 側（#122）
 - 全エージェントを `isolation: "worktree"` で起動する
 - 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
-- **冷や読み skeptic の相乗り**: Step 3.4 で surface=true かつ Phase 5.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `prompts/recall-skeptic.md` をパス渡し）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 5.8 で行う
+- **冷や読み skeptic の相乗り**: Step 3.4 で surface=true かつ Phase 5.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `prompts/recall-skeptic.md` をパス渡し）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 5.8 で行う。**publish の `recall_skeptic.launch` は `"rider"`**（起動経路の自己申告 / #216）
 - **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}`・`{{SEVERITY_THRESHOLD}}` は共通ブロックに含める（必須）**: 値の意味と欠落時の影響は orchestration-guide.md `## 1` / `## 1.1` / `## 2`（MAIN_ROOT を欠かすと「検証不能」の誤申告で wave を 1 本失う #113、SEVERITY_THRESHOLD を欠かすと閾値未満を書かせて捨てる #117）。**プロンプトに再掲しない**
 
 一括発行の**直前**に fleet 区間の開始マーカーを記録する（orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式で決める。Step 4 で explorer を起動していれば記録済みなので `grep` ガードで二重記録を防ぐ。`||` 形なのでガードが偽でもブロックは成功終了する）:
@@ -335,7 +335,7 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
 
 **実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 9` の手順に従う。**起動は Step 5 の reviewer 一括発行に相乗り済み**（Step 3.4 で surface 判定・ゲート通過を確認している）なので、本フェーズで行うのは **結果の統合**（`[recall-skeptic]` / `[recall-skeptic:dup]` タグ付き指摘を dedup して統合し、反証レイヤー(5.9)の対象にも含める）。**この統合は 5.6 + 5.9 の同一 wave 発行より前に済ませる**（skeptic の指摘を反証対象に含めるため。統合はメインコンテキストの作業で agent を要さない）。
 
-**fallback（直列起動）**: reviewer の `[surface:high-risk]` フラグ由来で**ここで初めて** surface=true になった場合のみ、skeptic を 1 体 `model: opus`, `effort: max` で単独起動する（**findings / reviewer の推論は渡さない**のが独立性の核）。正規表現・PR 自己申告で事前に HIT していれば相乗り済みなのでこの経路は走らない。**この経路で起動した場合は回収した直後に `mark wave` を記録する**。
+**fallback（直列起動）**: reviewer の `[surface:high-risk]` フラグ由来で**ここで初めて** surface=true になった場合のみ、skeptic を 1 体 `model: opus`, `effort: max` で単独起動する（**findings / reviewer の推論は渡さない**のが独立性の核）。正規表現・PR 自己申告で事前に HIT していれば相乗り済みなのでこの経路は走らない。**この経路で起動した場合は回収した直後に `mark wave` を記録し、publish の `recall_skeptic.launch` を `"fallback"` にする**（相乗りは `"rider"`。期待 wave 本数の skeptic 控除はこの自己申告だけで決まり、`wave_sizes` の位置からは推定しない / #216）。
 
 **失敗時 / スキップ時**: skeptic の失敗は `missing_coverage` に追記して続行。**起動条件（high-risk surface）を満たしたのに未実行だった事実は、失敗・effort/config/emergency スキップのいずれでも Step 7 レポートに必ず出す**（silent skip で「守ったつもり」の偽の安心を防ぐ）。
 

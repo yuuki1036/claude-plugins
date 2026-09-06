@@ -22,11 +22,19 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "code-review" / "scripts" / "lib"))
 
-from wave_expect import expected_waves, meta_added_findings, skeptic_tail_solo  # noqa: E402
+from wave_expect import (  # noqa: E402
+    SKEPTIC_LAUNCH, expected_waves, meta_added_findings, skeptic_fallback, skeptic_tail_solo)
 
 
 def _sk(fired: bool = True) -> dict:
     return {"recall_skeptic": {"fired": fired, "skip_reason": None if fired else "no-surface"}}
+
+
+def _sk_launch(launch, fired: bool = True) -> dict:
+    """起動経路を自己申告した回（GitHub issue #216）."""
+    p = _sk(fired)
+    p["recall_skeptic"]["launch"] = launch
+    return p
 
 
 class LayerTermsTest(unittest.TestCase):
@@ -205,6 +213,69 @@ class RealShapesTest(unittest.TestCase):
                 self.assertEqual(len(sizes) > expected_waves(p, sizes), violates,
                                  "期待本数 %d / 実 %d" % (expected_waves(p, sizes), len(sizes)))
 
+
+class SkepticLaunchTest(unittest.TestCase):
+    """起動経路の自己申告で控除を決める（GitHub issue #216）. **位置は見ない**.
+
+    位置ヒューリスティックは同じ層構成でも反証 wave の体数で判定が反転していた
+    （`[3,1,3]` は違反 / `[4,11,4,1]` は控除）。申告があればどちらも同じ判定になる。
+    """
+
+    def test_a_reported_fallback_is_deducted_wherever_it_sits(self):
+        """**実測 09-06T05:04 の `[3,1,3]`**（PR #472 / review / opus-5）.
+
+        reviewer 3 → skeptic fallback 1 → 反証 3。末尾が 3 体なので位置判定は `tail=0` で
+        即 False になり、違反として数えられていた。
+        """
+        p = dict(_sk_launch("fallback"), agents={"reviewer": 3, "verify": 3})
+        self.assertFalse(skeptic_tail_solo(p, [3, 1, 3]), "前提: 位置判定では控除されない形")
+        self.assertTrue(skeptic_fallback(p, [3, 1, 3]))
+        self.assertEqual(expected_waves(p, [3, 1, 3]), 3)
+
+    def test_the_same_layers_get_the_same_verdict_regardless_of_the_verify_wave_size(self):
+        """**対照サンプル 09-06T07:18 の `[4,11,4,1]`**（PR #469）. #472 と違うのは反証が単独で終わったかだけ.
+
+        申告があれば反証 wave の体数を入れ替えても期待本数は動かない。
+        """
+        p = dict(_sk_launch("fallback"),
+                 agents={"explorer": 4, "reviewer": 10, "verify": 4},
+                 meta_reviewer={"fired": True, "findings_added": 4})
+        self.assertEqual(expected_waves(p, [4, 11, 4, 1]), 5)
+        self.assertEqual(expected_waves(p, [4, 11, 1, 4]), 5, "位置で判定が動いている")
+
+    def test_a_reported_rider_is_not_deducted_even_at_the_tail(self):
+        """相乗りは wave を増やさない — 末尾がたまたま単独でも控除しない（位置判定の残存限界①がここで消える）."""
+        p = _sk_launch("rider")
+        self.assertTrue(skeptic_tail_solo(p, [2, 5, 1]), "前提: 位置判定なら控除される形")
+        self.assertFalse(skeptic_fallback(p, [2, 5, 1]))
+        self.assertEqual(expected_waves(dict(p, agents={"explorer": 2, "reviewer": 5}), [2, 5, 1]), 2)
+
+    def test_a_missing_report_falls_back_to_the_position_heuristic(self):
+        """申告の無い旧イベント（#216 より前の publisher）は位置で判定し続ける."""
+        self.assertTrue(skeptic_fallback(_sk(), [2, 5, 1]))
+        self.assertFalse(skeptic_fallback(_sk(), [3, 1, 3]))
+        # テンプレートどおり `null` を書いた回も「申告なし」
+        self.assertTrue(skeptic_fallback(_sk_launch(None), [2, 5, 1]))
+
+    def test_an_out_of_vocabulary_report_is_treated_as_missing(self):
+        """語彙外は publish が落とすので新規イベントには来ないが、手書きの旧イベントには備える.
+
+        **語彙内の値だけで確かめない** — `"serial"` を `fallback` 扱いにする実装でも
+        `fallback` のテストは通る。
+        """
+        self.assertTrue(skeptic_fallback(_sk_launch("serial"), [2, 5, 1]))
+        self.assertFalse(skeptic_fallback(_sk_launch("serial"), [3, 1, 3]))
+        self.assertFalse(skeptic_fallback(_sk_launch("Fallback"), [3, 1, 3]), "大文字違いを語彙内に読んでいる")
+        self.assertFalse(skeptic_fallback(_sk_launch(True), [3, 1, 3]))
+
+    def test_an_unfired_skeptic_is_not_deducted_even_if_reported(self):
+        """発火が優先（`fired=false` に `launch` が残っていても引かない）."""
+        self.assertFalse(skeptic_fallback(_sk_launch("fallback", fired=False), [3, 1, 3]))
+        self.assertFalse(skeptic_fallback({}, [3, 1, 3]))
+
+    def test_the_vocabulary_is_exactly_rider_and_fallback(self):
+        """**期待値は doc `## 16` から独立に書く** — publish の語彙検証と同値でなければならない."""
+        self.assertEqual(tuple(SKEPTIC_LAUNCH), ("rider", "fallback"))
 
 if __name__ == "__main__":
     unittest.main()

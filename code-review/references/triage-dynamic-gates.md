@@ -118,7 +118,7 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 
 根拠: **findings 非注入がこのレイヤーの設計の核**であり、skeptic は reviewer の出力に一切依存しない。にもかかわらず reviewer の後に直列配置されていたため、依存関係が無いのに 1 wave 分の実時間（opus 1 体の全所要）を積み増していた。同時発火なら壁時計への追加はゼロ（wave 内最長が伸びない限り）。
 
-**例外（fallback / 従来どおり直列）**: surface 判定が **reviewer の `[surface:high-risk]` フラグ由来**で事後に true になった場合のみ、reviewer 完了後の 5.8 位置で単独起動する。この経路だけは reviewer 出力に依存するため同時発火できない（正規表現・PR 自己申告で事前に HIT していれば相乗り済みなので、fallback が走るのは正規表現が取り逃した ORM 抽象越えのケースに限られる）。
+**例外（fallback / 従来どおり直列）**: surface 判定が **reviewer の `[surface:high-risk]` フラグ由来**で事後に true になった場合のみ、reviewer 完了後の 5.8 位置で単独起動する。この経路だけは reviewer 出力に依存するため同時発火できない（正規表現・PR 自己申告で事前に HIT していれば相乗り済みなので、fallback が走るのは正規表現が取り逃した ORM 抽象越えのケースに限られる）。**どちらの経路で起動したかは payload の `recall_skeptic.launch`（`rider` / `fallback`）に自己申告する**（orchestration-measurement.md `## 16` / #216。期待 wave 本数の skeptic 控除はこれで決まり、`wave_sizes` の位置からは推定しない）。
 
 ### high-risk surface 判定
 

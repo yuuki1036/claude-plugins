@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.113.0] - 2026-09-06
+
+### Added
+
+- **`recall_skeptic.launch` — skeptic の起動経路（`rider` = reviewer wave に相乗り / `fallback` = reviewer
+  完了後の単独 1 体）を payload に自己申告する**（GitHub issue #216）。期待 wave 本数の skeptic 控除は
+  この値だけで決め、`wave_sizes` の位置ヒューリスティック（`skeptic_tail_solo`）は申告の無い旧イベント
+  専用に降格した。
+  - 契機: 同じ層構成（reviewer → skeptic fallback → 反証）でも**反証 wave の体数で判定が反転していた** —
+    実測 09-06 の `[3,1,3]` は末尾が 3 体なので控除されず違反、対照の `[4,11,4,1]` は反証が単独で
+    終わったので控除。#200 が救った `[2,5,1,1]` も反証がたまたま 1 体だったから通った形
+  - 語彙は `publish-review-event.sh` が検証し語彙外は落とす（`skip_reason` と同型。`null` は語彙外ではない）。
+    `fired=true` で申告が無い回は `payload:recall_skeptic.launch` gap で可視化し、集計は位置判定に落ちる
+    （retro の是正ヒントもこの gap 専用に持つ）
+  - 自己申告を採る根拠: 起動経路は**違反の自覚と無関係な事実**なので、wave 本数の自己申告を退けた理由
+    （`design-notes/orchestration-rationale.md`）がここには当たらない
+  - 値の決め方は両 SKILL の相乗り / fallback 段落・`triage-dynamic-gates.md ## 8.5`・`## 16` のテンプレートに書いた
+
 ## [2.112.1] - 2026-09-05
 
 ### Fixed

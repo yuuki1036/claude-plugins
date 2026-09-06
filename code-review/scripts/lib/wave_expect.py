@@ -72,8 +72,13 @@ def skeptic_tail_solo(payload, wave_sizes):
     **残る限界**（→ `design-notes/orchestration-rationale.md`）: skeptic の既定経路は
     fallback ではなく **reviewer wave への相乗り**なので、`fired` は追加 wave の存在を
     含意しない。また末尾に固まった単独 wave が本当に構造的な直列かは位置からは決まらない
-    （末尾で分割された reviewer wave を控除で 1 本ぶん見逃す余地がある）。構造的な解は
-    `recall_skeptic` に起動経路を自己申告させること。
+    （末尾で分割された reviewer wave を控除で 1 本ぶん見逃す余地がある）。
+
+    **v2.113.0 からは `recall_skeptic.launch` の自己申告が正で、この関数は申告の無い旧イベント
+    専用**（GitHub issue #216 / `skeptic_fallback`）。位置判定は同じ層構成でも反証 wave の
+    体数で判定が反転していた — 実測 09-06 の `[3,1,3]`（reviewer → skeptic fallback →
+    反証 3 体）は末尾が 3 体なので `tail=0` で違反、対照の `[4,11,4,1]` は反証が単独で
+    終わったので控除。#200 が救った `[2,5,1,1]` も反証がたまたま 1 体だったから通った形。
     """
     sk = payload.get("recall_skeptic")
     if not isinstance(sk, dict) or sk.get("fired") is not True:
@@ -88,6 +93,36 @@ def skeptic_tail_solo(payload, wave_sizes):
     return 1 not in wave_sizes[:len(wave_sizes) - tail]
 
 
+#: `recall_skeptic.launch` の語彙（起動経路の自己申告 / GitHub issue #216）。
+#: `publish-review-event.sh` の語彙検証と `orchestration-measurement.md ## 16` は
+#: これと同値でなければならない（ずれると publish が通した値を集計が「申告なし」と読み、
+#: 位置判定に落ちて自己申告が静かに無効になる）
+SKEPTIC_LAUNCH = ("rider", "fallback")
+
+
+def skeptic_fallback(payload, wave_sizes):
+    """skeptic が fallback（reviewer 完了後の単独 1 体）で起動した回か（GitHub issue #216）。
+
+    `recall_skeptic.launch` の自己申告があれば**それだけで決める**（位置は見ない）。
+    `rider`（reviewer wave への相乗り）は wave を増やさないので控除しない。
+
+    自己申告が無い回（v2.113.0 より前の publisher / 書き忘れ = `payload:recall_skeptic.launch`
+    gap）は位置ヒューリスティック `skeptic_tail_solo` に落とす。**語彙外の値も同じ扱い**
+    （publish は語彙外を落とすので新しいイベントには来ない。旧イベントの手書きに備える）。
+
+    自己申告を採る根拠: 起動経路は**違反の自覚と無関係な事実**（どちらの経路でも規約違反では
+    ない）なので、wave 本数の自己申告を退けた理由（破った自覚があれば最初から破らない =
+    系統的に「1」へ潰れる）がここには当たらない。
+    """
+    sk = payload.get("recall_skeptic")
+    if not isinstance(sk, dict) or sk.get("fired") is not True:
+        return False
+    launch = sk.get("launch")
+    if launch in SKEPTIC_LAUNCH:
+        return launch == "fallback"
+    return skeptic_tail_solo(payload, wave_sizes)
+
+
 def expected_waves(payload, wave_sizes):
     """payload から期待 wave 本数を出す。
 
@@ -99,7 +134,7 @@ def expected_waves(payload, wave_sizes):
     - 反証層（`verify`）があれば 1 本
     - Round 2 は再起動なので 2 本（`triage-dynamic-gates.md ## 8`）
     - meta が指摘を足した回は追加の反証バッチで 1 本
-    - skeptic の fallback 起動で 1 本
+    - skeptic の fallback 起動で 1 本（`recall_skeptic.launch` の自己申告 / 無ければ位置判定）
     """
     agents = payload.get("agents")
     if not isinstance(agents, dict):
@@ -108,4 +143,4 @@ def expected_waves(payload, wave_sizes):
             + (1 if _layer_n(agents, "verify") > 0 else 0)
             + (2 if _layer_n(agents, "round2") > 0 else 0)
             + (1 if meta_added_findings(payload) else 0)
-            + (1 if skeptic_tail_solo(payload, wave_sizes) else 0))
+            + (1 if skeptic_fallback(payload, wave_sizes) else 0))

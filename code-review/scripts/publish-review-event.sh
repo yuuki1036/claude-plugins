@@ -320,7 +320,7 @@ import json, os, re, sys
 # 期待 wave 本数の式は `lib/wave_expect.py` が正本（publish / backfill / retro が共有）
 sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pycache__` を作らせないだけで、判定にも出力にも効かない
 sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
-from wave_expect import expected_waves
+from wave_expect import expected_waves, SKEPTIC_LAUNCH
 try:
     payload = json.loads(sys.argv[1])
 except ValueError as e:
@@ -552,6 +552,25 @@ for field, allowed in SKIP_REASONS.items():
         )
         sys.exit(1)
 
+# ---- `recall_skeptic.launch` の語彙検証（v2.113.0 / GitHub issue #216） ----
+# 起動経路の自己申告（`rider` = reviewer wave に相乗り / `fallback` = reviewer 完了後の単独 1 体）。
+# 期待 wave 本数の skeptic 控除はこれだけで決め、位置ヒューリスティック（`lib/wave_expect.py`
+# の `skeptic_tail_solo`）は申告の無い旧イベント専用に降格した。語彙外は `skip_reason` と同じ
+# 理由で fail-fast（正しい値は呼び出し側が知っている）。**`null` は語彙外ではない**
+# （`fired=false` の回はテンプレートどおり `null` を書く。`fired=true` で `null` なら下の gap）
+_sk_launch_obj = payload.get("recall_skeptic")
+if isinstance(_sk_launch_obj, dict) and _sk_launch_obj.get("launch") is not None \
+        and _sk_launch_obj.get("launch") not in SKEPTIC_LAUNCH:
+    sys.stderr.write(
+        "recall_skeptic.launch が語彙外: %s\n"
+        "許容値は %s（正本: references/orchestration-measurement.md `## 16`）。"
+        "**フィールドごと落として通さないこと**（欠落は measurement_gaps に記録され、"
+        "集計は位置判定に落ちる）\n"
+        % (json.dumps(_sk_launch_obj.get("launch"), ensure_ascii=False),
+           " / ".join(SKEPTIC_LAUNCH))
+    )
+    sys.exit(1)
+
 # duration_* は常にスクリプト側の値で上書きする（呼び出し側が渡していても勝つ）
 payload.update(json.loads(os.environ["REVIEW_DURS"]))
 
@@ -721,6 +740,12 @@ for field in ("adversarial_verify", "recall_skeptic", "meta_reviewer"):
     # 上の語彙検証が語彙外を落とすので、**残る汚染はこの経路だけ**になる
     elif d.get("fired") is False and d.get("skip_reason") is None:
         gaps.append("payload:%s.skip_reason" % field)
+    # **skeptic が起動したのに起動経路の申告が無い回**（v2.113.0 / #216）。集計は位置判定に
+    # 落ちるが、それが暫定措置であることを可視化する（語彙外は上で落としてあるので、残るのは
+    # 書き忘れだけ）
+    elif field == "recall_skeptic" and d.get("fired") is True \
+            and d.get("launch") not in SKEPTIC_LAUNCH:
+        gaps.append("payload:recall_skeptic.launch")
 
 # 型別内訳の記録漏れ（issue #150）。**「その型が無かった」と「数えなかった」を潰さない**ため、
 # 内訳が要る回（降格が実際に起きた回）に限って gap を立てる。層ごとスキップした回や
