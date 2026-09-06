@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.116.0] - 2026-09-07
+
+### Changed
+
+- **体数 vs fleet の相関を ⚠️ から外し、表と注記に降格した**（GitHub issue #217）。この ⚠️ は
+  「`## 7` の『体数と fleet は無相関』を再監視せよ」というトリガーで、3 回鳴って 3 回とも
+  調べ切った（tier 交絡 = #151 / 世代・effort・wave 数の統制 = #217 / synthesis の減算 = #217）。
+  **どれでも消えない＝この指標から次に調べる先が無い**ので、鳴らし続ける方が「⚠️ が出たときだけ
+  行動する」契約を壊す。計測と表示は続ける（高い層は「高い（既知 / #217）」と表示し、注記で
+  どの層が高いかを名指しする）。再開の条件は指標ではなく #190 の A/B
+- **相関の層別キーを `size_tier` から `size_tier × 世代` に変えた**（同 issue）。tier 中央値表は
+  `with_gen` なのに相関だけ tier 単独で、同じ ⚠️ の中で粒度が混ざっていた。`--json` の
+  `agents_fleet_by_tier` も層別キーになる
+- **`triage-guide.md ## 7` の事実主張を差し替えた**: 「体数と `duration_fleet_min` は無相関」
+  （review 13 件・medium 帯のみ）は n=213 では成り立たない（medium/unrecorded 0.16 /
+  large/unrecorded 0.67 / small/opus-4-8 0.69）。**規範は残すが根拠を組み替えた** — 相関は因果では
+  なく、体数削減は recall を削る（`## 5.2` の実測: 報告 0 件率 42% → 91%）。採らなかった案
+  （層ごとの水準 / 偏相関での判定）は `design-notes/triage-rationale.md` に記録した
+
 ## [2.115.0] - 2026-09-06
 
 ### Added

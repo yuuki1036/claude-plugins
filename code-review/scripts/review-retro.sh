@@ -550,7 +550,11 @@ for e in events:
     if fleet is not None and fleet >= 0 and ta is not None and not _fleet_span_conflict(p):
         xs.append(ta)
         ys.append(fleet)
-        tx, ty = tier_xy.setdefault(str(p.get("size_tier", "?")), ([], []))
+        # **層別キーを tier 中央値表と揃える**（GitHub issue #217）。相関だけ `size_tier`
+        # 単独で、上の表は `with_gen` という食い違いがあり、同じ ⚠️ の中で粒度が混ざっていた。
+        # 世代を足しても small/opus-4-8 は 0.687 のままで交絡ではない（#217 で確認済み）が、
+        # **どの層で見ているかは読み手に見えていなければならない**
+        tx, ty = tier_xy.setdefault(with_gen(p, str(p.get("size_tier", "?"))), ([], []))
         tx.append(ta)
         ty.append(fleet)
 r = pearson(xs, ys)
@@ -1270,13 +1274,17 @@ for _lk in sorted(verdict_layers):
     if L["total"] >= VERDICT_MIN and pct(L["refuted"], L["total"]) >= 20:
         signals.append("refuted が %.0f%%。反証バッチサイズ 5 → 3 の再検討条件に該当"
                        % pct(L["refuted"], L["total"]))
-# **層別なしの r では発火させない**（tier 交絡で常時点灯した / issue #151）
+# **相関は ⚠️ に出さない**（GitHub issue #217 で再監視を終了した）。この行はもともと
+# 「`## 7` の『体数と fleet は無相関』を再監視せよ」というトリガーで、実際に 3 回鳴って
+# 3 回とも調べ切った: tier 交絡（#151）/ 世代・effort・wave 数の統制（#217）/ synthesis の
+# 混入（#217）。**どれでも消えない＝もう調べる先が無い**ので、鳴らし続けると「⚠️ が出た
+# ときだけ行動する」契約の方が壊れる。規範自体は残るが根拠が変わった（無相関だから、では
+# なく**相関は因果ではなく体数削減は recall を削るから** / `## 7`）。
+#
+# **再開の条件は指標ではなく実験**: #190 の A/B が「体数削減で fleet が縮み、かつ MAJOR が
+# 減らない」を示したときに `## 7` ごと見直す。閾値を層ごとに動かして黙らせる案（#217 候補①）は
+# 採らない — データに合わせて水準を動かすのは検出力を捨てるのと同じ。
 r_strong_tiers = [(t, n_t, rr) for t, n_t, rr in tier_r_judged if abs(rr) >= R_STRONG]
-if r_strong_tiers:
-    signals.append("体数と fleet 時間の相関が tier 内で高い（%s）。"
-                   "「体数は壁時計のレバーではない」（triage-guide.md `## 7`）の再監視条件に該当"
-                   % " / ".join("%s r=%.2f n=%d" % (t, rr, n_t)
-                                for t, n_t, rr in r_strong_tiers))
 if have_waves >= 10 and pct(split_waves, have_waves) >= 20:
     signals.append("explorer wave が 2 本以上に割れた回が %.0f%%（%d/%d）。一括発行の規約"
                    "（orchestration-guide.md `## 0`）が守られていない"
@@ -1581,10 +1589,10 @@ if _note:
     print(_note)
 if tier_r_rows:
     print()
-    print("**体数 vs fleet 時間の相関**（size_tier 内。tier が体数と fleet の両方を"
-          "決めるため層別しない r は交絡する / issue #151）")
+    print("**体数 vs fleet 時間の相関**（size_tier × 世代。tier が体数と fleet の両方を"
+          "決めるため層別しない r は交絡する / issue #151・#217）")
     print()
-    print("| tier | n | r | 判定 |")
+    print("| 層 | n | r | 判定 |")
     print("|---|---:|---:|---|")
     for t, n_t, rr in tier_r_rows:
         if rr is None or n_t < R_MIN_N:
@@ -1594,7 +1602,7 @@ if tier_r_rows:
         elif abs(rr) < R_STRONG:
             verdict = "弱〜中（effort の交絡を疑う）"
         else:
-            verdict = "⚠️ 高い"
+            verdict = "高い（既知 / #217）"
         print("| %s | %d | %s | %s |" % (t, n_t, "-" if rr is None else "%.3f" % rr, verdict))
     print()
     if not tier_r_judged:
@@ -1603,6 +1611,17 @@ if tier_r_rows:
         print("判定できる全 tier で |r| < %.1f。**体数は壁時計のレバーではない**"
               "（triage-guide.md `## 7`）— 時間が長いときの打ち手は synthesis / wave 側で"
               "切り分ける。" % R_FLAT)
+    if r_strong_tiers:
+        # **鳴らさないが黙りもしない**（#217）。この行を消すと「測っていない」と読まれる
+        print("|r| が %.1f 以上の層がある（%s）が、**⚠️ には出さない** — tier / 世代 / effort / "
+              "wave 数の統制 / synthesis の減算のどれでも消えないことまで確認済みで、"
+              "**再監視は終了している**（GitHub issue #217）。相関は因果ではなく、体数と一緒に"
+              "動く未観測の変数（diff の難しさ・1 体あたりの探索量）が両方を押していると読む。"
+              "規範「体数を壁時計のレバーとして扱わない」は残るが、根拠は無相関ではなく"
+              "**体数削減が recall を削ること**（triage-guide.md `## 7`）。次の判断材料は"
+              "#190 の A/B。"
+              % (R_STRONG, " / ".join("%s r=%.2f n=%d" % (t, rr, n_t)
+                                      for t, n_t, rr in r_strong_tiers)))
     if r is not None:
         print("層別なしの r = %.3f（n=%d）は **tier 交絡を含むので発火条件には使わない**"
               "（参考値）。" % (r, len(xs)))

@@ -2325,16 +2325,20 @@ class RetroTest(RetroFixture):
         self.assertIn("発火条件には使わない", out)
         self.assertNotIn("体数と fleet 時間の相関が tier 内で高い", self.signals(out))
 
-    def test_strong_correlation_inside_a_tier_still_fires(self):
-        """層別で黙らせすぎない liveness — tier 内で高ければ従来どおり鳴る."""
+    def test_strong_correlation_inside_a_tier_is_reported_but_never_warned(self):
+        """層別で黙らせすぎない liveness — tier 内で高ければ**表と注記には出る**.
+
+        **⚠️ には出さない**（GitHub issue #217 で再監視を終了）。この liveness は
+        「層別しすぎて何も見えなくなっていないか」を守るためのもので、警告の有無ではない。
+        """
         rows = [{"effort": "high", "measurement_gaps": [], "size_tier": "medium",
                  "duration_fleet_min": 10 + 3 * i, "agents": {"reviewer": 2 + i}}
                 for i in range(12)]
         self._events(rows)
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("| medium | 12 | 1.000 | ⚠️ 高い |", out)
-        self.assertIn("体数と fleet 時間の相関が tier 内で高い（medium r=1.00 n=12）",
-                      self.signals(out))
+        self.assertIn("| medium | 12 | 1.000 | 高い（既知 / #217） |", out)
+        self.assertIn("が 0.6 以上の層がある（medium r=1.00 n=12）", out)
+        self.assertNotIn("体数と fleet 時間の相関が tier 内で高い", self.signals(out))
 
     def test_tier_at_exactly_the_minimum_is_judged(self):
         """`n == R_MIN_N` は判定する側（境界を 1 つ狭めると 10 件貯めても黙る）."""
@@ -2343,8 +2347,8 @@ class RetroTest(RetroFixture):
         self.assertIn("| small | 10 | 0.232 | 体数はレバーではない |", out)
         self.assertNotIn("体数と壁時計の関係は判定しない", out)
 
-    def test_correlation_exactly_at_the_strong_threshold_fires(self):
-        """`|r| == R_STRONG` は発火する側（`>` に狭めると閾値ちょうどが漏れる）.
+    def test_correlation_exactly_at_the_strong_threshold_is_marked_strong(self):
+        """`|r|` がちょうど `R_STRONG` なら「高い」側（`>` に狭めると閾値ちょうどが漏れる）.
 
         fixture は **r がちょうど 0.6 になる**ように作ってある（偏差平方和 100 / 100・
         積和 60 で `60/(10*10)`）。乱数で近い値を取ると境界を跨いだか分からない
@@ -2355,9 +2359,9 @@ class RetroTest(RetroFixture):
                        "duration_fleet_min": f, "agents": {"reviewer": a}}
                       for a, f in zip(agents, fleet)])
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("| medium | 10 | 0.600 | ⚠️ 高い |", out)
-        self.assertIn("体数と fleet 時間の相関が tier 内で高い（medium r=0.60 n=10）",
-                      self.signals(out))
+        self.assertIn("| medium | 10 | 0.600 | 高い（既知 / #217） |", out)
+        self.assertIn("が 0.6 以上の層がある（medium r=0.60 n=10）", out)
+        self.assertNotIn("体数と fleet 時間の相関が tier 内で高い", self.signals(out))
 
     def test_thin_tier_is_undecidable_rather_than_a_signal(self):
         """n < 10 の tier は r が 1.0 でも判定不能に倒す（単発点灯の防止）."""
@@ -5094,6 +5098,75 @@ class RetroSkepticLaunchGapTest(RetroFixture):
         out = self._out()
         self.assertIn("payload:report_counts.missing", out, "前提: 別の gap が出ている")
         self.assertNotIn("集計は位置ヒューリスティックに落ちる", out)
+
+
+class RetroCorrelationLayerTest(RetroFixture):
+    """体数 vs fleet の相関を tier × 世代で層別し、⚠️ には出さない（GitHub issue #217）.
+
+    相関だけ `size_tier` 単独で層別されており、tier 中央値表（`with_gen`）と粒度が食い違っていた。
+    ⚠️ は 3 回鳴って 3 回とも調べ切った（tier 交絡 / 世代・effort・wave 数 / synthesis）ので、
+    表と注記に降格した — 鳴らし続ける方が「⚠️ が出たときだけ行動する」契約を壊す。
+    """
+
+    def _row(self, gen: str, agents: int, fleet: int, tier: str = "small") -> dict:
+        return {"effort": "xhigh", "size_tier": tier, "measurement_gaps": [],
+                "models": self._models("claude-%s" % gen),
+                "agents": {"explorer": 0, "reviewer": agents, "specialist": 0,
+                           "round2": 0, "verify": 0},
+                "duration_fleet_min": fleet}
+
+    def _correlated(self, gen: str, n: int = 12, tier: str = "small") -> list:
+        """体数と fleet が完全に連動する層（r=1.0 になる）."""
+        return [self._row(gen, 3 + i % 6, 10 + (i % 6) * 8, tier) for i in range(n)]
+
+    def _flat(self, gen: str, n: int = 12, tier: str = "medium") -> list:
+        """体数が動いても fleet が動かない層（r=0 付近）."""
+        return [self._row(gen, 3 + i % 6, 40 if i % 2 else 38, tier) for i in range(n)]
+
+    def _out(self, *args) -> str:
+        r = self.run_script(RETRO, *args, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        self.assertTrue(r.stdout.strip(), "stdout が空（沈黙死）")
+        return r.stdout
+
+    def test_the_table_is_layered_by_tier_and_generation(self):
+        self._events(self._correlated("opus-4-8") + self._flat("opus-5"))
+        out = self._out()
+        self.assertIn("| 層 | n | r | 判定 |", out)
+        self.assertIn("| small/opus-4-8 | 12 |", out, "世代で層別していない")
+        self.assertIn("| medium/opus-5 | 12 |", out)
+
+    def test_a_strong_layer_is_marked_known_and_never_warned(self):
+        """高い層は表に出るが ⚠️ には出さない（撤去した ⚠️ 文言が復活したら落ちる）."""
+        self._events(self._correlated("opus-4-8") + self._flat("opus-5"))
+        out = self._out()
+        self.assertIn("高い（既知 / #217）", out)
+        tail = out.split("⚠️ シグナル")[-1]
+        self.assertNotIn("体数と fleet 時間の相関が tier 内で高い", tail, "撤去した ⚠️ が復活している")
+        self.assertNotIn("再監視条件に該当", tail)
+
+    def test_the_note_names_the_settlement_when_a_layer_is_strong(self):
+        """**鳴らさないが黙りもしない** — 消すと「測っていない」と読まれる."""
+        self._events(self._correlated("opus-4-8") + self._flat("opus-5"))
+        out = self._out()
+        self.assertIn("が 0.6 以上の層がある", out)
+        self.assertIn("small/opus-4-8 r=1.00 n=12", out, "どの層が高いかを名指ししていない")
+        self.assertIn("再監視は終了している", out)
+
+    def test_no_note_when_every_judged_layer_is_flat(self):
+        """高い層が無ければ注記も出さない（常時表示にしない）."""
+        self._events(self._flat("opus-4-8") + self._flat("opus-5"))
+        out = self._out()
+        self.assertNotIn("再監視は終了している", out)
+        self.assertIn("**体数は壁時計のレバーではない**", out)
+
+    def test_the_json_keeps_the_layered_rows(self):
+        self._events(self._correlated("opus-4-8") + self._flat("opus-5"))
+        j = json.loads(self._out("--json"))
+        keys = {row["tier"]: row for row in j["agents_fleet_by_tier"]}
+        self.assertIn("small/opus-4-8", keys, "--json が層別キーを持っていない")
+        self.assertEqual(keys["small/opus-4-8"]["n"], 12)
+        self.assertNotIn("体数と fleet 時間の相関", " ".join(j["signals"]))
 
 
 class RetroSynthesisDominanceTest(RetroFixture):
