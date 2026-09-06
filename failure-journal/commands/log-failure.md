@@ -6,6 +6,8 @@ allowed-tools:
   - Bash
 ---
 
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/log-failure/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `failure-journal@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+
 log-failure スキルを使って、再発しうる失敗を journal に記録してください。
 
 ## 引数

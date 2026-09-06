@@ -1,6 +1,6 @@
 {
   "name": "living-spec-workflow",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Issue 化前の設計収束ドキュメント (living spec) を作成・運用する。OQ 台帳と Decision log を append-only の表として持ち、情報の move を設計から除くことで移動漏れによる消失を構造的に防ぐ。確度ラベルと since 日付でセクション粒度の収束を追跡し、maintain が整合と鮮度を 8 段のファネルで検証する。",
   "_requirements": [
     {

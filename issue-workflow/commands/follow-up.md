@@ -13,6 +13,8 @@ allowed-tools:
 argument-hint: "[new|list|promote [FILE]]"
 ---
 
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/follow-up/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `issue-workflow@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+
 follow-up スキルを使って、follow-up タスクの管理を行ってください。引数に応じてサブコマンドを選択します:
 - 引数なし または "new": 新規 follow-up を作成
 - "list": 未処理の follow-up 一覧を表示

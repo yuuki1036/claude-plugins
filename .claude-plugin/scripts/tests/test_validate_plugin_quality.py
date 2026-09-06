@@ -1831,6 +1831,59 @@ class ContextBudgetTest(unittest.TestCase):
         self.assertEqual(self._run(), [])
 
 
+class SameNameCommandSkillHopTest(unittest.TestCase):
+    """同名 command の本文に SKILL.md への Read 誘導を必須にする（GitHub issue #219）.
+
+    同名ペアは `Skill` tool で呼んでも command 本文が返る（#206 の本文版）。誘導が無いと
+    model が記憶で手順を再現するか cache を `ls | head -1` で辞書順に掴む。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.plugin = Path(self._tmp.name) / "demo"
+        _write(self.plugin, ".claude-plugin/plugin.json", '{"name": "demo", "version": "0.0.1"}')
+        self._orig_root = v.ROOT
+        v.ROOT = Path(self._tmp.name)
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig_root))
+        _write(self.plugin, "skills/thing/SKILL.md", "---\ndescription: 説明 トリガー: 「A」\n---\n\n手順\n")
+
+    def _cmd(self, body: str) -> None:
+        _write(self.plugin, "commands/thing.md", f"---\ndescription: 説明 トリガー: 「A」\n---\n\n{body}\n")
+
+    def _run(self) -> list[str]:
+        errors: list[str] = []
+        v.check_same_name_command_reads_skill(self.plugin, errors)
+        return errors
+
+    def test_a_thin_wrapper_without_the_path_is_an_error(self):
+        self._cmd("thing スキルを使って作業してください。")
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("[skill-hop-cmd:demo]", errors[0])
+        self.assertIn("commands/thing.md", errors[0])
+
+    def test_a_body_that_reads_the_skill_passes(self):
+        self._cmd("**まず `${CLAUDE_PLUGIN_ROOT}/skills/thing/SKILL.md` を Read し、その手順に従う**")
+        self.assertEqual(self._run(), [])
+
+    def test_the_path_must_name_this_skill(self):
+        """別 skill のパスでは通らない（`skills/` を含むだけでは足りない）."""
+        self._cmd("`${CLAUDE_PLUGIN_ROOT}/skills/other/SKILL.md` を Read する")
+        self.assertEqual(len(self._run()), 1)
+
+    def test_the_path_in_the_frontmatter_does_not_count(self):
+        """description に書いても本文には無いので誘導にならない."""
+        _write(self.plugin, "commands/thing.md",
+               "---\ndescription: skills/thing/SKILL.md を読む\n---\n\nthing スキルを使って\n")
+        self.assertEqual(len(self._run()), 1)
+
+    def test_a_command_without_a_same_name_skill_is_not_checked(self):
+        _write(self.plugin, "commands/alone.md", "---\ndescription: x\n---\n\nalone スキルを使って\n")
+        self._cmd("`${CLAUDE_PLUGIN_ROOT}/skills/thing/SKILL.md` を Read")
+        self.assertEqual(self._run(), [])
+
+
 class SameNameCommandTriggerTest(unittest.TestCase):
     """同名 command の description にも `トリガー:` を必須にする（GitHub issue #206）.
 

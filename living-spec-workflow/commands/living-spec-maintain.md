@@ -9,6 +9,8 @@ allowed-tools:
   - Read
 ---
 
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/living-spec-maintain/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `living-spec-workflow@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+
 `living-spec-maintain` スキルを使って、living spec の整合と鮮度を検証してください。
 
 ## 引数

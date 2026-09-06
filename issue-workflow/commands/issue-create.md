@@ -13,4 +13,6 @@ allowed-tools:
 argument-hint: "[PROJECT-SLUG]"
 ---
 
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/issue-create/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `issue-workflow@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+
 issue-create スキルを使って、Issue ファイルを新規作成してください。引数でプロジェクトスラッグが指定されていればそれを使用し、未指定ならブランチ名から推定するかユーザーに確認してください。

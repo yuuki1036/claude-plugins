@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.115.0] - 2026-09-06
+
+### Added
+
+- **`publish-guard.sh`（Stop hook）**: `review-timing.sh start` の打点ファイルが「t0 あり・pub なし」の
+  ままターンが終わったら 1 回だけ鳴らす（GitHub issue #219）。SKILL.md 側の `publish-pending` ガードは
+  SKILL.md が読まれた回にしか効かず、記憶で手順を再現した回は `mark t2` も publish も落ちて計測に
+  「起きたこと」すら残らない。判定はファイルの行を見るだけなので hook に置く（決定的 hook > LLM 判定）。
+  打点ファイルごとに `nag` 行で 1 回に抑え、`pub` があれば黙る。テスト 7 本（`test_code_review_hooks.py`）
+
+### Fixed
+
+- **同名 command の本文に SKILL.md への Read 誘導を置いた**（GitHub issue #219）。command 名と skill 名が
+  同名だと `Skill plugin:name` で呼んでも**注入されるのは command 本文**で、SKILL.md には到達しない
+  （#206 の本文版）。本文が「X スキルを使って」だけだと model は記憶で手順を再現するか cache を
+  `ls | head -1` で掴む — 実測（2026-09-06）では辞書順で旧版を掴み、publish まで丸ごと落ちた。
+  `${CLAUDE_PLUGIN_ROOT}` が展開されていない場合の解決先（`installed_plugins.json` の `installPath`）も
+  本文に書いた。`validate_plugin_quality.py` の `skill-hop-cmd` が error で強制する。対象: `review` / `self-review`
+
 ## [2.114.0] - 2026-09-06
 
 ### Added

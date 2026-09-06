@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.2] - 2026-09-06
+
+### Fixed
+
+- **同名 command の本文に SKILL.md への Read 誘導を置いた**（GitHub issue #219）。command 名と skill 名が
+  同名だと `Skill plugin:name` で呼んでも**注入されるのは command 本文**で、SKILL.md には到達しない
+  （#206 の本文版）。本文が「X スキルを使って」だけだと model は記憶で手順を再現するか cache を
+  `ls | head -1` で掴む — 実測（2026-09-06）では辞書順で旧版を掴み、publish まで丸ごと落ちた。
+  `${CLAUDE_PLUGIN_ROOT}` が展開されていない場合の解決先（`installed_plugins.json` の `installPath`）も
+  本文に書いた。`validate_plugin_quality.py` の `skill-hop-cmd` が error で強制する。対象: `log-failure` / `retro`
+
 ## [0.6.1] - 2026-09-05
 
 ### Fixed

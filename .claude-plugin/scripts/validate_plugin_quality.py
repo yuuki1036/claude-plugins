@@ -43,6 +43,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     「ファイルは実在する」ぶん references 検査を素通りする（v2.47.0 の分割で 11 箇所発生）.
     参照は**同一行**で拾い, 節番号の直後に節タイトルが続く形も対象にする（issue #177）.
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
+  - skill-hop-cmd: 同名ペアの command 本文が `skills/<name>/SKILL.md` への Read 誘導を持つか
+    （同名だと `Skill` tool で呼んでも command 本文が返り SKILL.md に到達しない. 誘導が無いと
+    model が cache を `ls | head -1` で辞書順に掴み旧版で走る / GitHub issue #219）
   - doc 構造: 番号見出しの重複（他 doc からの番号参照が曖昧になる）と, blockquote を
     分断した孤立 `>` 行. どちらもセルフレビューが見逃した / agent 8 体を要した型で,
     判定は行走査だけで決まる（「lint が見つけるべきものを agent に探させない」）.
@@ -1545,6 +1548,31 @@ def _check_shell_syntax_in(scripts: list[Path], errors: list[str]) -> None:
             )
 
 
+def check_same_name_command_reads_skill(plugin_dir: Path, errors: list[str]) -> None:
+    """同名ペアの command 本文は SKILL.md への Read 誘導を持つ（GitHub issue #219）.
+
+    command 名と skill 名が同名だと、`/plugin:name` でも `Skill plugin:name` でも**注入されるのは
+    `commands/*.md` の本文**で、SKILL.md には到達しない（#206 の本文版）。本文が「X スキルを
+    使って」だけの薄いラッパだと、model は手順を記憶から再現するか cache を `ls | head -1`
+    で掴む — 実測（2026-09-06 / yatima）では辞書順で旧版 2.105.1 を掴み、publish まで丸ごと
+    落ちた。**`skills/<name>/SKILL.md` のパスが本文にあること**だけを見る（書き方は縛らない）。
+    """
+    name = plugin_dir.name
+    for skill_md in sorted((plugin_dir / "skills").glob("*/SKILL.md")):
+        sname = skill_md.parent.name
+        cmd_md = plugin_dir / "commands" / f"{sname}.md"
+        if not cmd_md.is_file():
+            continue
+        text = read_text(cmd_md)
+        body = text.split("\n---\n", 2)[-1] if text.startswith("---\n") else text
+        if f"skills/{sname}/SKILL.md" not in body:
+            errors.append(
+                f"[skill-hop-cmd:{name}] 同名 command の本文が SKILL.md への Read 誘導を持たない"
+                f"（`${{CLAUDE_PLUGIN_ROOT}}/skills/{sname}/SKILL.md` を Read する 1 行を本文に置く / "
+                f"GitHub issue #219）— {cmd_md.relative_to(ROOT)}"
+            )
+
+
 def check_shell_syntax(plugin_dir: Path, errors: list[str]) -> None:
     """同梱シェルスクリプトの構文を `bash -n` で検証する.
 
@@ -1612,6 +1640,7 @@ CHECKS = [
     check_references,
     check_doc_anchors,
     check_trigger_phrases,
+    check_same_name_command_reads_skill,
     check_shell_syntax,
     check_shell_multibyte_expansion,
     check_doc_structure,

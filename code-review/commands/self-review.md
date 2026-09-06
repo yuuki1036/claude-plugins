@@ -10,6 +10,8 @@ allowed-tools:
 argument-hint: "[--staged | base branch] [--focus <観点>] [--exclude <観点1,観点2>] [--embed] (省略時はデフォルトブランチとの差分)"
 ---
 
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/self-review/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `code-review@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+
 self-review スキルを使用して、現在の変更のセルフレビューを実行してください。
 
 引数に `--staged` が指定されている場合は、ステージ済みの変更のみを対象にしてください。

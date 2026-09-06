@@ -9,7 +9,7 @@
     {
       "name": "code-review",
       "description": "Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity の 2 軸で報告閾値を制御し、diff の性質と effort に応じて explorer → reviewer → 反証レイヤーを構成する。PR レビュー（/review）とコミット前セルフレビュー（/self-review。--embed で他プラグインから委譲可）に対応。",
-      "version": "2.114.0",
+      "version": "2.115.0",
       "author": {
         "name": "yuki"
       },
@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git 操作・PR 作成・UI 動作確認・バグ診断・worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、承認ゲート付き PR 作成、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断、worktree 単位の DB / port 分離を提供する。",
-      "version": "1.27.2",
+      "version": "1.27.3",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "issue-workflow",
       "description": "Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。却下記録（kind: rejected）で見送り提案の再提案を discover が概念類似照合で抑止。",
-      "version": "1.4.8",
+      "version": "1.4.9",
       "author": {
         "name": "yuki"
       },
@@ -108,7 +108,7 @@
     {
       "name": "adr-keeper",
       "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。new 時は記録価値 3 条件セルフゲート（覆すコスト大 × 文脈なしで不可解 × 実在のトレードオフ、supersede 経由は除外）で ADR の希釈を防止。",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "author": {
         "name": "yuki"
       },
@@ -117,7 +117,7 @@
     {
       "name": "failure-journal",
       "description": "再発する失敗を JSON Lines に append し、30日×3回閾値超えのパターンを retro で抽出して AGENTS.md/hook/skill へ還流。retro は transcript を走査して未起票の失敗もサルベージする。SessionStart で journal 初期化、failure:logged を event bus に publish",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "author": {
         "name": "yuki"
       },
@@ -135,7 +135,7 @@
     {
       "name": "design-doc",
       "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱（confidence フィルタ + high 以上で敵対的反証 phase）",
-      "version": "0.4.6",
+      "version": "0.4.7",
       "author": {
         "name": "yuki"
       },
@@ -144,7 +144,7 @@
     {
       "name": "spec-advisor",
       "description": "開発タスクの内容から適切な設計・計画系成果物（WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / Issue粒度=issue-design / 実装一気通貫=feature-dev）を判断し、実装着手前に提案する。判定の SSoT を routing-rubric に一元化し、SessionStart hook で ambient ルールを注入（対象プラグインが1つも未導入なら inert）＋ spec-advise skill / command で明示起動の2経路。over-suggestion guard で bugfix/typo/設定変更には黙り、dormant 判定で未導入プラグインは提案肢から除外する。全連携先 optional でプラグイン独立",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "author": {
         "name": "yuki"
       },
@@ -153,7 +153,7 @@
     {
       "name": "living-spec-workflow",
       "description": "Issue 化前の設計収束ドキュメント (living spec) を作成・運用する。OQ 台帳と Decision log を append-only の表として持ち、情報の move を設計から除くことで移動漏れによる消失を構造的に防ぐ。確度ラベルと since 日付でセクション粒度の収束を追跡し、maintain が整合と鮮度を 8 段のファネルで検証する。",
-      "version": "0.3.6",
+      "version": "0.3.7",
       "author": {
         "name": "yuki"
       },

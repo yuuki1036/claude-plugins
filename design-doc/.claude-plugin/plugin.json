@@ -1,6 +1,6 @@
 {
   "name": "design-doc",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱（confidence フィルタ + high 以上で敵対的反証 phase）",
   "_requirements": [
     {
