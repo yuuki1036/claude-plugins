@@ -748,7 +748,15 @@ for e in events:
 # 版マーカーで切る流儀は `## 9` の cache_read と同じ。
 APPENDIX_MIN_SCHEMA = 1
 apx_rows, apx_silent, apx_rescued, apx_missing = [], 0, 0, 0
-apx_stats = {"n": 0, "true_silent": 0, "by_gen": {}}   # 世代別の真の空振り（#214）
+# **真の空振りを「検出 0」と「検出はあったが全部閾値未満」に割る**（GitHub issue #210）。
+# 打ち手が違う: 前者は recall（reviewer が何も見つけていない）、後者は閾値・付録の方針
+# （見つけているが `## below-threshold` に件数だけ返るので、報告にも付録にも出ない —
+# 付録の対象は「reviewer が列挙した指摘」だけという契約 / scoring-guide）。
+# 実測（opus-4-8 / n=21）では真の空振り 9 件のうち**検出 0 は 2 件だけ**で、残り 7 件は
+# MINOR を 2〜6 件見つけていた。混ぜたままだと #210 の回復サイン「20% 未満」が
+# **どちらの改善を求めているのか決まらない**
+apx_stats = {"n": 0, "true_silent": 0, "true_silent_empty": 0, "true_silent_below": 0,
+             "true_silent_unknown": 0, "by_gen": {}}   # 世代別の真の空振り（#214 / #210）
 for e in events:
     p = e["p"]
     a = p.get("appendix")
@@ -768,7 +776,9 @@ for e in events:
     # 片方だけが機械化されていなかった。`報告 0 件率（世代別）` と同じ母数の扱い
     # （欠測は上で外し、`appendix` を持つ回だけ）。**真の空振り = 報告 0 かつ推奨 0**（#168）
     _g = apx_stats["by_gen"].setdefault(gen_of(p), {"n": 0, "silent": 0, "rescued": 0,
-                                                    "true_silent": 0})
+                                                    "true_silent": 0, "true_silent_empty": 0,
+                                                    "true_silent_below": 0,
+                                                    "true_silent_unknown": 0})
     _g["n"] += 1
     apx_stats["n"] += 1
     if reported == 0:
@@ -780,6 +790,18 @@ for e in events:
         else:
             _g["true_silent"] += 1
             apx_stats["true_silent"] += 1
+            # **検出の有無で割る**（#210）。`pre_adjust_counts` を持たない回・語彙違反の回は
+            # どちらとも言えないので `unknown` に置く（0 に丸めると「検出が無かった」に化ける）
+            _pre = p.get("pre_adjust_counts")
+            if (isinstance(_pre, dict) and schema_of(_pre, "schema") >= 2
+                    and pre_vocab_ok(_pre)):
+                _kind = ("true_silent_below"
+                         if sum(num(_pre.get(_k)) or 0 for _k in PRE_SEVS) > 0
+                         else "true_silent_empty")
+            else:
+                _kind = "true_silent_unknown"
+            _g[_kind] += 1
+            apx_stats[_kind] += 1
 
 # ---- 6. 反証 verdict 分布（calibration_schema で層別） ---------------------
 verdict_layers = {}
@@ -1473,13 +1495,29 @@ else:
 # 行動につながらない（#209）。閾値 20 は #210 本文が「回復のサイン」として先に固定した値で、
 # 下限 10 は反証の不発と同じ。実測（gist 集約 n=183）: opus-4-8 で 43%（9/21）が閾値超え、
 # 他の層は下限未満 ＝ 新しい ⚠️ として鳴るのは 1 層だけで、初回から鳴りっぱなしにはならない
+# **⚠️ にも内訳を載せる**（GitHub issue #210）。行動する人が見るのはこの 1 行なので、
+# 表にだけ内訳があっても「どちらを直すのか」が伝わらない。`layered_signal` は層の dict を
+# render へ渡さないので、label から引ける対応表を先に作る（label の書式は同関数の正本）
+_ts_split = {"`%s` 層" % _k: (_v.get("true_silent_empty", 0), _v.get("true_silent_below", 0))
+             for _k, _v in apx_stats["by_gen"].items()}
+_ts_split["累計"] = (apx_stats["true_silent_empty"], apx_stats["true_silent_below"])
+
+
+def _ts_breakdown(label):
+    """⚠️ に付ける内訳（対応表に無い label では黙る = 数字を捏造しない）。"""
+    if label not in _ts_split:
+        return ""
+    empty, below = _ts_split[label]
+    return "（検出 0 が %d 件 / 検出はあったが全部閾値未満が %d 件 — **打ち手が違う**）" % (empty, below)
+
+
 signals.extend(layered_signal(
     apx_stats, lambda d: d.get("true_silent", 0), lambda d: d.get("n", 0), 10,
     lambda ts, n: pct(ts, n) >= 20,
     lambda label, ts, n, note:
-        "真の空振り率（報告 0 件かつ付録推奨 0）が %.0f%%（%s / %d/%d）。#210 の回復サイン"
+        "真の空振り率（報告 0 件かつ付録推奨 0）が %.0f%%（%s / %d/%d）%s。#210 の回復サイン"
         "（20%% 未満）を満たしていない — 実行世代を見直す（triage-guide.md `### 5.2`）%s"
-        % (pct(ts, n), label, ts, n, note),
+        % (pct(ts, n), label, ts, n, _ts_breakdown(label), note),
     pending=layer_pending.setdefault("真の空振り率", [])))
 
 # **synthesis の支配率**（GitHub issue #218）。閾値の根拠は上の 4b。層別は他と同じ流儀
@@ -1536,6 +1574,10 @@ if as_json:
         "fleet_span": {"judged": n_fleet_span_judged, "conflict": n_fleet_span_conflict},
         # 世代別の真の空振り（#214）。`報告 0 件率（世代別）` と同じ母数の扱い
         "appendix_by_gen": apx_stats["by_gen"],
+        # 真の空振りの内訳（#210）。`empty` = 検出 0 / `below` = 検出はあったが全部閾値未満
+        "true_silent_split": {"empty": apx_stats["true_silent_empty"],
+                              "below": apx_stats["true_silent_below"],
+                              "unknown": apx_stats["true_silent_unknown"]},
         # synthesis の支配率（#218）。比率は % の整数ではなく実数（丸めは表示側）
         "synthesis_dominance": {
             "n": syn_stats["n"], "dominant": syn_stats["dominant"],
@@ -2013,13 +2055,29 @@ if apx_rows:
     # 世代が 1 種しか無い母集団では表を割らない（`with_gen` と同じ方針）
     if len(apx_stats["by_gen"]) > 1:
         print()
-        print("| 世代 | n | 報告 0 件 | うち推奨あり | 真の空振り |")
-        print("|---|---:|---:|---:|---:|")
+        print("| 世代 | n | 報告 0 件 | うち推奨あり | 真の空振り | うち検出 0 | うち閾値未満のみ |")
+        print("|---|---:|---:|---:|---:|---:|---:|")
         for _gk in sorted(apx_stats["by_gen"]):
             _gv = apx_stats["by_gen"][_gk]
-            print("| %s | %d | %d | %d | %d（%.0f%%） |"
+            _unk = _gv.get("true_silent_unknown", 0)
+            print("| %s | %d | %d | %d | %d（%.0f%%） | %d | %d%s |"
                   % (_gk, _gv["n"], _gv["silent"], _gv["rescued"],
-                     _gv["true_silent"], pct(_gv["true_silent"], _gv["n"])))
+                     _gv["true_silent"], pct(_gv["true_silent"], _gv["n"]),
+                     _gv.get("true_silent_empty", 0), _gv.get("true_silent_below", 0),
+                     "" if not _unk else "（判定不能 %d）" % _unk))
+        print()
+    # **内訳を読ませる**（#210）。混ぜたままだと回復サインがどちらの改善を求めているのか
+    # 決まらない。**検出 0 = recall の問題 / 閾値未満のみ = 閾値・付録の方針の問題**
+    if apx_stats["true_silent"]:
+        print("- **真の空振りの内訳**: 検出 0 が %d 件 / 検出はあったが全部閾値未満が %d 件"
+              "%s。**打ち手が違う** — 前者は reviewer が何も見つけていない（recall）、"
+              "後者は見つけたものが `## below-threshold` に件数だけ返り、報告にも付録にも"
+              "出ない（閾値と付録の方針。付録の対象は「reviewer が列挙した指摘」だけという"
+              "契約 / scoring-guide.md）。**#210 の回復サインはこの内訳を見てから読む**"
+              % (apx_stats["true_silent_empty"], apx_stats["true_silent_below"],
+                 "" if not apx_stats["true_silent_unknown"]
+                 else " / 判定不能が %d 件（`pre_adjust_counts` 不在・語彙違反）"
+                      % apx_stats["true_silent_unknown"]))
         print()
     if apx_missing:
         print("- **%d 件は報告件数を 1 つも申告しておらず母集団から外した**"

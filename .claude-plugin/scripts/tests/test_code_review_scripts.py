@@ -5100,6 +5100,105 @@ class RetroSkepticLaunchGapTest(RetroFixture):
         self.assertNotIn("集計は位置ヒューリスティックに落ちる", out)
 
 
+class RetroTrueSilentSplitTest(RetroFixture):
+    """真の空振りを「検出 0」と「検出はあったが全部閾値未満」に割る（GitHub issue #210）.
+
+    打ち手が違う: 前者は recall（reviewer が何も見つけていない）、後者は閾値・付録の方針
+    （`## below-threshold` に件数だけ返った分は付録の対象外という契約 / scoring-guide）。
+    混ぜたままだと #210 の回復サイン「20% 未満」がどちらの改善を求めているのか決まらない。
+    """
+
+    def _row(self, gen: str, reported: int, recommended: int, *, minor: int = 0,
+             pre: bool = True) -> dict:
+        r = {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+             "models": self._models("claude-%s" % gen), "severity_threshold": "MAJOR",
+             "blocker_count": 0, "critical_count": 0, "major_count": reported,
+             "minor_count": 0,
+             "appendix": {"schema": 1, "listed": 3, "recommended": recommended}}
+        if pre:
+            r["pre_adjust_counts"] = {"schema": 2, "blocker": 0, "critical": 0,
+                                      "major": 0, "minor": minor}
+        return r
+
+    def _out(self, *args) -> str:
+        r = self.run_script(RETRO, *args, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        self.assertTrue(r.stdout.strip(), "stdout が空（沈黙死）")
+        return r.stdout
+
+    def _population(self) -> list:
+        """真の空振り 5 件（検出 0 が 2・閾値未満のみが 3）＋ 報告ありが 5 件.
+
+        **世代を 2 つ入れる** — 表は世代が 1 種の母集団では割らない（`with_gen` と同じ方針）
+        ので、1 世代だけの fixture では表そのものが出ない。
+        """
+        return ([self._row("opus-4-8", 0, 0) for _ in range(2)]
+                + [self._row("opus-4-8", 0, 0, minor=4) for _ in range(3)]
+                + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+                + [self._row("opus-5", 2, 0, minor=4) for _ in range(12)])
+
+    def test_the_table_carries_the_split(self):
+        self._events(self._population())
+        out = self._out()
+        self.assertIn("| 世代 | n | 報告 0 件 | うち推奨あり | 真の空振り | うち検出 0 | うち閾値未満のみ |", out)
+        self.assertIn("| opus-4-8 | 10 | 5 | 0 | 5（50%） | 2 | 3 |", out)
+
+    def test_the_breakdown_line_names_both_remedies(self):
+        self._events(self._population())
+        out = self._out()
+        self.assertIn("**真の空振りの内訳**: 検出 0 が 2 件 / 検出はあったが全部閾値未満が 3 件", out)
+        self.assertIn("recall", out)
+
+    def test_the_warning_carries_the_split(self):
+        """**行動する人が見るのは ⚠️ の 1 行**なので、表にだけ内訳があっても届かない."""
+        self._events(self._population())
+        sig = self.signals(self._out())
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）"
+                      "（検出 0 が 2 件 / 検出はあったが全部閾値未満が 3 件", sig)
+
+    def test_a_run_without_pre_adjust_counts_is_unknown_not_empty(self):
+        """**0 に丸めない** — 判定材料が無い回を「検出が無かった」に化けさせない."""
+        rows = ([self._row("opus-4-8", 0, 0, pre=False) for _ in range(3)]
+                + [self._row("opus-4-8", 0, 0) for _ in range(2)]
+                + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+                + [self._row("opus-5", 2, 0, minor=4) for _ in range(12)])
+        self._events(rows)
+        out = self._out()
+        self.assertIn("判定不能が 3 件", out)
+        self.assertIn("| opus-4-8 | 10 | 5 | 0 | 5（50%） | 2 | 0（判定不能 3） |", out)
+        j = json.loads(self._out("--json"))
+        self.assertEqual(j["true_silent_split"], {"empty": 2, "below": 0, "unknown": 3})
+
+    def test_a_vocabulary_violating_pre_adjust_is_unknown_not_empty(self):
+        """語彙違反（実データにある `{threshold, pre_major, pre_minor}`）を「検出 0」に化けさせない.
+
+        契約外のキーだと `pre.get("major")` が `None` になり、合計が 0 として計上される。
+        **`schema` は publish が無条件に注入する**ので版では弾けない（#203 と同型）。
+        """
+        bad = {"schema": 2, "threshold": "MAJOR", "pre_major": 3, "pre_minor": 5}
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(10)]
+        for r in rows[:4]:
+            r["pre_adjust_counts"] = bad
+        self._events(rows + [self._row("opus-5", 2, 0, minor=4) for _ in range(12)])
+        j = json.loads(self._out("--json"))
+        self.assertEqual(j["true_silent_split"], {"empty": 6, "below": 0, "unknown": 4},
+                         "語彙違反を『検出 0』として数えている")
+
+    def test_a_rescued_run_is_not_split_at_all(self):
+        """推奨があれば空振りではない（#168）— 内訳の分母にも入れない."""
+        self._events([self._row("opus-4-8", 0, 2, minor=4) for _ in range(10)])
+        j = json.loads(self._out("--json"))
+        self.assertEqual(j["true_silent_split"], {"empty": 0, "below": 0, "unknown": 0})
+        self.assertNotIn("**真の空振りの内訳**", self._out())
+
+    def test_the_json_split_matches_the_layers(self):
+        self._events(self._population())
+        j = json.loads(self._out("--json"))
+        self.assertEqual(j["true_silent_split"], {"empty": 2, "below": 3, "unknown": 0})
+        self.assertEqual(j["appendix_by_gen"]["opus-4-8"]["true_silent_empty"], 2)
+        self.assertEqual(j["appendix_by_gen"]["opus-4-8"]["true_silent_below"], 3)
+
+
 class RetroCorrelationLayerTest(RetroFixture):
     """体数 vs fleet の相関を tier × 世代で層別し、⚠️ には出さない（GitHub issue #217）.
 
@@ -5305,8 +5404,11 @@ class RetroAppendixLayerTest(RetroFixture):
         out = self._out()
         self.assertNotIn("真の空振り率", out.split("⚠️ シグナル")[-1], "救われた回を空振りに数えている")
         j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        # **内訳キー（#210）は 0 で並ぶ** — 救われた回は内訳の分母にも入れない
         self.assertEqual(j["appendix_by_gen"]["opus-4-8"],
-                         {"n": 10, "silent": 10, "rescued": 10, "true_silent": 0})
+                         {"n": 10, "silent": 10, "rescued": 10, "true_silent": 0,
+                          "true_silent_empty": 0, "true_silent_below": 0,
+                          "true_silent_unknown": 0})
 
     def test_a_layer_below_the_floor_does_not_fire_alone(self):
         """下限未満の層だけでは鳴らない（n=4 で 100% でも判定しない）."""
