@@ -1,7 +1,7 @@
 # 動的ラウンド実行手順（条件付きフェーズ / orchestration-guide 分冊）
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#0 @01ec7691 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#0 @dc4308c9 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @34e7126b -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @1ff41917 -->
@@ -16,7 +16,7 @@
 | `## 9` | 冷や読み skeptic | Phase 5.8 / 4.8 |
 | `## 10` | 反証レイヤー | Phase 5.9 / 4.9 |
 
-同期起動（`run_in_background: false`）と並列発行（同一メッセージ内で一括発行）のルールは `orchestration-guide.md ## 0` が正本で、本ファイルの全起動手順に適用される。
+同期起動（`run_in_background: false`）と並列発行（同一メッセージ内で一括発行）、および**発行直前チェックポイント**（直前の単独ステップの応答でこの wave に出す Agent call を列挙してから発行する / 列挙後に足したくなった観点は同じ層へ後追いしない）のルールは `orchestration-guide.md ## 0` が正本で、本ファイルの全起動手順に適用される。
 
 **すべての agent wave の回収点に適用（本ファイルの全フェーズ + orchestration-guide.md `## 5` の auto-retry）: agent の結果を回収した直後に `mark wave` を記録する**（v2.60.0）。打点は**後勝ち**なので、どのフェーズがそのレビューの最後の wave になったかを判断しなくてよい — **回収したら毎回書く**のが正しい運用。動的ラウンドは起動可否が実行時に決まるため、「最後の wave の後だけ書く」規約にするとスキップ時に書き忘れて欠測になる。区間の意味は `orchestration-measurement.md ## 14`（`duration_synthesis_min`）:
 

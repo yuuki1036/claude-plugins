@@ -2,6 +2,27 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.119.0] - 2026-09-07
+
+### Added
+
+- **一括発行の「発行直前チェックポイント」を規約に入れた**（GitHub issue #220 候補 1）。
+  一括発行の直前には既に「1 回だけやるステップ」がある（reviewer 層は `agent_ctx_file` の
+  書き出し / 他の層は `review-timing.sh mark` の打点）ので、そこへ **この wave に出す
+  Agent call を列挙してから発行に移る**を紐づけた。新しいステップも新しい bash も増やしていない。
+  - **列挙するのは Phase 0 で確定済みの構成**（reviewer 全行 + 相乗りする skeptic + specialist）で、
+    **wave 本数の自己申告ではない**（#135 で外した案。破った自覚を前提にするので「1」へ潰れる）
+  - **列挙より後に足したくなった観点は同じ層へ後追い発行しない** — 次の wave へ回すか、
+    列挙をやり直して 1 メッセージで出し直す。実測の違反 7 件中 6 件がこの「後から足す」型
+  - 実測（gist 集約 n=215 / 判定成立 33 件）: 本物の違反 **7 件（21%）**。検知は #172 / #192 /
+    #200 / #216 の 4 回直したが、**違反そのものを減らす打ち手は一度も入っていなかった**。
+    publish 時の `wave-split` WARN（v2.91.0）より後にも 3 件出ており、事後の警告は次の回に効いていない
+  - **判定基準（先に決めた / 撤去条件つき）**: 判定成立 10 件以上で違反率が 10% を下回ること。
+    下回らなければ撤去する。根拠・却下した代替（PreToolUse hook / 自己申告 / `serial` 判定）は
+    `design-notes/orchestration-rationale.md`
+  - 正本は `orchestration-guide.md ## 0`。両 SKILL は explorer 発行と reviewer 発行の
+    既存 bullet に紐づけた（**行を増やしていない** — review/SKILL.md は skill-size 上限超過中）
+
 ## [2.118.0] - 2026-09-07
 
 ### Changed
