@@ -1504,11 +1504,36 @@ _ts_split["累計"] = (apx_stats["true_silent_empty"], apx_stats["true_silent_be
 
 
 def _ts_breakdown(label):
-    """⚠️ に付ける内訳（対応表に無い label では黙る = 数字を捏造しない）。"""
+    """⚠️ に付ける内訳と**処方**（GitHub issue #210）。
+
+    **率そのものは絞らない**（報告 0 かつ推奨 0 = 利用者から見た「何も返ってこなかった」割合で、
+    これが体感そのもの）。分母を「検出 0」だけに絞れば基準を満たすが、それは #217 で却下したのと
+    同じ形 — データに合わせて定義を動かして基準を通すことになる。**動かすのは処方の側**:
+
+    - 検出 0 が主 … reviewer が何も見つけていない ＝ recall の問題。世代を見直す
+    - 閾値未満のみが主 … 見つけたものに出口が無い ＝ 閾値と付録の方針の問題。
+      **世代を上げても同じ結果になりうる**ので、世代だけを指すのは誤った是正先
+    - 同数・判定不能 … 絞らずに両方を出す（推測で片方に倒さない）
+
+    対応表に無い label では黙る（数字を捏造しない）。
+    """
     if label not in _ts_split:
         return ""
     empty, below = _ts_split[label]
-    return "（検出 0 が %d 件 / 検出はあったが全部閾値未満が %d 件 — **打ち手が違う**）" % (empty, below)
+    if empty > below:
+        why = ("**検出 0 が主**なので打ち手は recall 側 — 実行世代を見直す"
+               "（triage-guide.md `### 5.2`）")
+    elif below > empty:
+        why = ("**閾値未満のみが主**なので打ち手は閾値と付録の方針 — reviewer は見つけており、"
+               "`## below-threshold` に件数だけ返って報告にも付録にも出ていない。"
+               "**世代を上げても同じ結果になりうる**（triage-guide.md `### 5.2` / scoring-guide.md）")
+    elif empty or below:  # mutation-ok: ここに来る時点で empty == below なので or と and は同値
+        why = ("検出 0 と閾値未満のみが同数なので**打ち手を 1 つに絞れない** — "
+               "実行世代と、閾値・付録の方針の両方を見る（triage-guide.md `### 5.2`）")
+    else:
+        why = ("内訳が判定不能（`pre_adjust_counts` の不在・語彙違反）なので**打ち手を絞れない** — "
+               "まず payload の欠測を潰す（orchestration-measurement.md `## 16`）")
+    return "（検出 0 が %d 件 / 検出はあったが全部閾値未満が %d 件）。%s" % (empty, below, why)
 
 
 signals.extend(layered_signal(
@@ -1516,7 +1541,7 @@ signals.extend(layered_signal(
     lambda ts, n: pct(ts, n) >= 20,
     lambda label, ts, n, note:
         "真の空振り率（報告 0 件かつ付録推奨 0）が %.0f%%（%s / %d/%d）%s。#210 の回復サイン"
-        "（20%% 未満）を満たしていない — 実行世代を見直す（triage-guide.md `### 5.2`）%s"
+        "（20%% 未満）を満たしていない%s"
         % (pct(ts, n), label, ts, n, _ts_breakdown(label), note),
     pending=layer_pending.setdefault("真の空振り率", [])))
 

@@ -5154,7 +5154,51 @@ class RetroTrueSilentSplitTest(RetroFixture):
         self._events(self._population())
         sig = self.signals(self._out())
         self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）"
-                      "（検出 0 が 2 件 / 検出はあったが全部閾値未満が 3 件", sig)
+                      "（検出 0 が 2 件 / 検出はあったが全部閾値未満が 3 件）", sig)
+
+    def test_the_remedy_follows_the_split_not_the_generation(self):
+        """**率は絞らず処方だけ内訳で分岐する**（GitHub issue #210）.
+
+        分母を「検出 0」に絞れば基準を満たすが、それは #217 で却下したのと同じ形
+        （データに合わせて定義を動かして基準を通す）。動かすのは処方の側。
+        """
+        self._events(self._population())            # 閾値未満のみ 3 > 検出 0 が 2
+        sig = self.signals(self._out())
+        self.assertIn("**閾値未満のみが主**なので打ち手は閾値と付録の方針", sig)
+        self.assertIn("世代を上げても同じ結果になりうる", sig)
+        self.assertNotIn("**検出 0 が主**", sig)
+        self.assertIn("50%（`opus-4-8` 層 / 5/10）", sig, "率まで絞っている")
+
+    def test_an_empty_dominated_layer_points_at_the_generation(self):
+        rows = ([self._row("opus-4-8", 0, 0) for _ in range(4)]
+                + [self._row("opus-4-8", 0, 0, minor=4)]
+                + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+                + [self._row("opus-5", 2, 0, minor=4) for _ in range(12)])
+        self._events(rows)
+        sig = self.signals(self._out())
+        self.assertIn("**検出 0 が主**なので打ち手は recall 側 — 実行世代を見直す", sig)
+        self.assertNotIn("**閾値未満のみが主**", sig)
+
+    def test_a_tie_names_both_remedies(self):
+        """**推測で片方に倒さない**（同数のときに世代へ寄せると誤った是正先を指す）."""
+        rows = ([self._row("opus-4-8", 0, 0) for _ in range(3)]
+                + [self._row("opus-4-8", 0, 0, minor=4) for _ in range(3)]
+                + [self._row("opus-4-8", 1, 0) for _ in range(4)]
+                + [self._row("opus-5", 2, 0, minor=4) for _ in range(12)])
+        self._events(rows)
+        sig = self.signals(self._out())
+        self.assertIn("同数なので**打ち手を 1 つに絞れない**", sig)
+
+    def test_an_all_unknown_layer_refuses_to_prescribe(self):
+        """内訳が判定不能なら打ち手を絞らず、先に欠測を潰せと言う."""
+        rows = ([self._row("opus-4-8", 0, 0, pre=False) for _ in range(4)]
+                + [self._row("opus-4-8", 1, 0) for _ in range(6)]
+                + [self._row("opus-5", 2, 0, minor=4) for _ in range(12)])
+        self._events(rows)
+        sig = self.signals(self._out())
+        self.assertIn("内訳が判定不能", sig)
+        self.assertIn("まず payload の欠測を潰す", sig)
+        self.assertNotIn("実行世代を見直す", sig)
 
     def test_a_run_without_pre_adjust_counts_is_unknown_not_empty(self):
         """**0 に丸めない** — 判定材料が無い回を「検出が無かった」に化けさせない."""
