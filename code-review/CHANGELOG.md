@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.119.2] - 2026-09-11
+
+### Fixed
+
+- **`recall_skeptic.skip_reason` の書き忘れを publish が `surface` から導出する**（GitHub issue #222）。
+  `measurement_gaps` の欠測 3 位（`payload:recall_skeptic.skip_reason` 9 件・すべて self-review）で、
+  **9 件とも `surface=false`**。2.119.1 は SKILL の書き方を直す経路だけで、その後も同型が出うる
+  （9 回破られて if で判定できる ＝ `docs/rule-placement.md` の昇格基準に該当）。
+  - `fired=false` かつ `skip_reason` が無く、`surface` が厳密に `false` の回だけ `no-surface` を入れる
+    （`## 16` の対応表は `surface=false` を最初に評価するので、申告されるべき値と一致する）
+  - **gap は消さない**（案 A）。「gap あり かつ 値あり」が導出由来の印になり、書き忘れ率は引き続き測れる
+  - `surface=true` / `surface` 欠落の回、他の層、申告済みの値は触らない（#132「黙って正規化しない」）
+  - 回帰テスト 5 本（導出 + gap 維持 / surface=true / surface 欠落 / 申告値を上書きしない / 他の層）
+
 ## [2.119.1] - 2026-09-10
 
 ### Fixed

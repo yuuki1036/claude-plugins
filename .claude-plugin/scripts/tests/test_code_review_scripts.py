@@ -430,6 +430,47 @@ class SkipReasonValidationTest(ScriptTestBase):
         # gap 欄そのものが消えていたら上の assertNotIn は恒真になる
         self.assertIsInstance(gaps, list)
 
+    # ---- `surface` からの導出（GitHub issue #222） ---------------------------
+    def _skeptic(self, **fields) -> dict:
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        p["recall_skeptic"] = {"fired": False, **fields}
+        return p
+
+    def test_surface_false_derives_no_surface_and_keeps_the_gap(self):
+        """`surface=false` の書き忘れは `no-surface` で埋める。**gap は残す**（書き忘れ率を測るため）."""
+        r = self.publish(self._skeptic(surface=False, skip_reason=None))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertEqual(p["recall_skeptic"]["skip_reason"], "no-surface")
+        self.assertIn("payload:recall_skeptic.skip_reason", p["measurement_gaps"],
+                      "導出で gap を消している（導出由来と申告由来を区別できなくなる）")
+
+    def test_surface_true_is_not_derived(self):
+        """`surface=true` の回は effort / config / scope のどれか判別できないので埋めない."""
+        self.publish(self._skeptic(surface=True, skip_reason=None))
+        p = self.last_payload()
+        self.assertIsNone(p["recall_skeptic"]["skip_reason"])
+        self.assertIn("payload:recall_skeptic.skip_reason", p["measurement_gaps"])
+
+    def test_missing_surface_is_not_derived(self):
+        """`surface` の欠落を false と読まない（欠落は判定材料が無い回）."""
+        self.publish(self._skeptic(skip_reason=None))
+        self.assertIsNone(self.last_payload()["recall_skeptic"]["skip_reason"])
+
+    def test_declared_reason_is_not_overwritten(self):
+        """**申告済みの値は `surface=false` でも書き換えない**（#132「黙って正規化しない」）."""
+        self.publish(self._skeptic(surface=False, skip_reason="effort"))
+        p = self.last_payload()
+        self.assertEqual(p["recall_skeptic"]["skip_reason"], "effort")
+        self.assertNotIn("payload:recall_skeptic.skip_reason", p["measurement_gaps"])
+
+    def test_other_layers_are_not_derived(self):
+        """導出は `recall_skeptic` 限定（他の層には `surface` に相当する導出元が無い）."""
+        p = self._skeptic(skip_reason="no-surface")
+        p["meta_reviewer"] = {"fired": False, "surface": False}
+        self.publish(p)
+        self.assertNotIn("skip_reason", self.last_payload()["meta_reviewer"])
+
     def test_fired_missing_keeps_the_fired_gap(self):
         """`fired` ごと落ちた回は `.fired` 側の gap のまま（是正先が違う）."""
         p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}

@@ -740,6 +740,20 @@ for field in ("adversarial_verify", "recall_skeptic", "meta_reviewer"):
     # 上の語彙検証が語彙外を落とすので、**残る汚染はこの経路だけ**になる
     elif d.get("fired") is False and d.get("skip_reason") is None:
         gaps.append("payload:%s.skip_reason" % field)
+        # **`recall_skeptic` だけは `surface` から理由を導出する**（v2.119.2 / GitHub issue #222。
+        # 実測の欠測 9 件はすべて `surface=false`）。`## 16` の対応表は `surface=false` を最初に
+        # 評価して `no-surface` を採るので、導出結果は申告されるべき値と一致する。
+        # **gap は消さない** — 書き忘れ率は引き続き観測対象で、「gap あり かつ 値あり」が
+        # 導出由来の印になる（下流が「書き忘れが直った」と読まないため）。
+        # **`surface=true` の回は導出しない**（effort / config / scope / emergency を判別できない）。
+        # `surface` の欠落・非 bool も同じ扱いで、推測で埋めると別の汚染を作る。
+        # 申告済みの値は触らない（この分岐は欠落時だけ通る。#132「黙って正規化しない」）
+        if field == "recall_skeptic" and d.get("surface") is False:
+            d["skip_reason"] = "no-surface"
+            sys.stderr.write(
+                "WARN: recall_skeptic.skip_reason が無いので surface=false から no-surface を"
+                "導出した（gap は残す / #222）。payload テンプレートでは fired=false なら理由を埋める\n"
+            )
     # **skeptic が起動したのに起動経路の申告が無い回**（v2.113.0 / #216）。集計は位置判定に
     # 落ちるが、それが暫定措置であることを可視化する（語彙外は上で落としてあるので、残るのは
     # 書き忘れだけ）
