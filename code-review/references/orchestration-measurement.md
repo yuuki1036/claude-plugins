@@ -408,7 +408,10 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 
 - `surface`: high-risk surface 判定の結果（bool）。**skeptic が effort / userConfig でスキップされた場合も、正規表現部分の判定だけは payload 構築時に必ず実施して記録する** — 「surface=true なのに effort ゲートで走らなかった頻度」が昇格判断の核心メトリクスのため
 - `fired`: skeptic agent が実際に起動したか（bool）
-- `skip_reason`: `fired=false` のときの理由。`"effort"` / `"config"` / `"no-surface"` / `"emergency"`（self-review は `"scope"` = `--focus`/`--exclude` 指定も取りうる）。`fired=true` なら `null`
+- `skip_reason`: `fired=false` のときの理由。**`fired=false` なら必ずどれか 1 つを入れる（`null` にしない）**。条件→値の対応は次のとおりで、上から評価して最初に当たった値を採る:
+  - `surface=false`（high-risk surface を含まない）→ **`"no-surface"`**。**レポートの「非該当（surface なし）」がこの payload 値**。「skip ではない」と読んで `null` を入れると `payload:recall_skeptic.skip_reason` gap に落ちる（実測 1 件）ので、surface が false でも理由フィールドは `no-surface` で埋める
+  - `surface=true` だが起動ゲートで落ちた → 落とした条件の値。`"effort"`（effort が low/medium）/ `"config"`（userConfig `enable_recall_skeptic=false`）/ `"emergency"`（`--emergency`）/ `"scope"`（self-review の `--focus`/`--exclude` 指定）
+  - `fired=true`（起動した）→ `null`
 - `launch`: **起動経路の自己申告**（v2.113.0 / GitHub issue #216）。`"rider"` = reviewer 一括発行に相乗り（review Step 5 / self-review Step 4）/ `"fallback"` = reviewer の `[surface:high-risk]` フラグ由来で reviewer 完了後に単独起動（triage-dynamic-gates.md `## 8.5` の例外経路）。`fired=false` なら `null`。**期待 wave 本数の skeptic 控除はこの値だけで決める**（`fallback` のときだけ 1 本。位置は見ない）。無いと `payload:recall_skeptic.launch` gap が立ち、集計は位置ヒューリスティック（`lib/wave_expect.py` の `skeptic_tail_solo`）に落ちる — 同じ層構成でも反証 wave の体数で判定が反転する暫定措置（実測 `[3,1,3]` は違反 / `[4,11,4,1]` は控除）。語彙外は publish が落とす（`skip_reason` と同型）。**違反の自覚と無関係な事実なので自己申告してよい** — wave 本数の自己申告を退けた理由（破った自覚があれば最初から破らない）がここには当たらない（design-notes/orchestration-rationale.md）
 - `gate_schema`: **起動ゲートの版**（GitHub issue #115）。**`publish-review-event.sh` が注入する**（2 = high 起点に昇格した v2.52.0 以降）。`attribution_schema` が由来タグの版であるのに対し、こちらは**どの effort で起動する構成だったか**を識別する。**これが無いと `## 8.5` の監視クエリ①（「昇格後は `skip_reason="effort"` が消えるはず」）が昇格前の残骸を拾い続け、永久に偽の「信号あり」を返す** — 実装バグが起きても検知できない。日付では切れない（配布ラグで未更新マシンは旧ゲートで publish し続ける）
 - `attribution_schema`: 由来帰属の規約バージョン。**`publish-review-event.sh` が注入する**（2 = 由来タグがレポート書式に規定され dedup のタグ生存も定義された版 = 2.35.1 以降）。schema 1 相当の旧サンプルは `findings_added` が記憶依存で系統的に 0 へ潰れており判断に使えないため下流はこれで濾す。**日付では切れない**（配布ラグで未更新マシンは修正日以降も schema 1 を publish する）

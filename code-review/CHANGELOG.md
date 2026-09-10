@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.119.1] - 2026-09-10
+
+### Fixed
+
+- **`recall_skeptic.skip_reason` の surface=false 時の値を明示した**。payload 契約（orchestration-measurement.md
+  `## 16`）は `no-surface` を語彙に持ち publish スクリプトも受け付けるのに、条件→値の対応が書かれておらず、
+  両 SKILL の report テンプレートが「非該当（surface なし）」とだけ表記していた。オーケストレーターが
+  「非該当＝skip ではない」と読んで `skip_reason` を `null` にし、`payload:recall_skeptic.skip_reason` gap に
+  落ちる実測が 1 件（surface=false でも `fired=false` なら理由フィールドは埋める必要がある）。正本に
+  条件→値のマッピング（surface=false → `no-surface`）を明記し、両 SKILL の report テンプレートに payload 値を橋渡しした。
+  publish スクリプトの語彙・検証は変更なし（元から `no-surface` を受け付ける）
+
 ## [2.119.0] - 2026-09-07
 
 ### Added
