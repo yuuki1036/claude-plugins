@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.2] - 2026-09-10
+
+### Fixed
+
+- `detect-unisolated-hook-run.py` の docstring が、dev-workflow の `gh --attach` 移行で削除された
+  `upload-screenshots.sh` を「hook でない唯一のユーティリティ」の現存例として名指ししたまま
+  stale 化していたのを修正。実測（issue #194 時点）の記録である旨と削除済みである旨を明記した。
+  判定ロジック・挙動は不変
+
 ## [0.5.1] - 2026-08-31
 
 ### Changed

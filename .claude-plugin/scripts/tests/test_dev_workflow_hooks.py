@@ -642,30 +642,5 @@ class PostFormatLintTest(HookTestCase):
             self.assertNotEqual(self.run_hook(self.payload(src), cwd=root).returncode, 2)
 
 
-class UploadScreenshotsTest(unittest.TestCase):
-    """引数バリデーションのみ（本体は gh 経由の network I/O なので対象外）.
-
-    `hooks/scripts/` に置かれているが hooks.json から呼ばれる hook ではなく CLI。
-    それでも「引数無しで走ると何をするか」は決まっているべきなので、そこだけ固定する。
-    """
-
-    SCRIPT = Path(__file__).resolve().parents[3] / "dev-workflow/hooks/scripts/upload-screenshots.sh"
-
-    def _run(self, *args):
-        import subprocess
-        return subprocess.run(["bash", str(self.SCRIPT), *args],
-                              capture_output=True, text=True, timeout=30)
-
-    def test_usage_without_arguments(self):
-        res = self._run()
-        self.assertEqual(res.returncode, 1)
-        self.assertIn("Usage:", res.stderr)
-
-    def test_usage_for_missing_directory(self):
-        res = self._run("/nonexistent/dir")
-        self.assertEqual(res.returncode, 1)
-        self.assertIn("Usage:", res.stderr)
-
-
 if __name__ == "__main__":
     unittest.main()

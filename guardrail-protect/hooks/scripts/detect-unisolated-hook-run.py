@@ -6,10 +6,13 @@ stdin にコマンド文字列を受け取り、検出したスクリプトの�
 
 ## 何を対象にするか
 
-**パスの glob ではなく中身で切る。** リポジトリ実測（GitHub issue #194）で
+**パスの glob ではなく中身で切る。** リポジトリ実測（GitHub issue #194 時点）で
 `*/hooks/scripts/*.sh` は 27 本あり、うち 26 本が `safe_hook_init` を呼ぶ真の hook
 entry point、残り 1 本（`upload-screenshots.sh`）は skill から意図的に Bash で叩かれる
 ユーティリティだった。パスで切ると**この 1 本が偽陽性になる**。
+（`upload-screenshots.sh` はその後 dev-workflow が `gh --attach` へ移行して削除済み。
+今は全 hook スクリプトが marker を持つが、hook でないユーティリティが再び置かれても
+中身で切る設計なら偽陽性にならない、という判断は変わらない。）
 
 `safe_hook_init` を呼ぶスクリプトは stdin を hook payload として消費し、書き込み先を
 `${CLAUDE_PROJECT_DIR:-$PWD}` から導出する。したがって隔離せずに実行すると、実プロジェクトの

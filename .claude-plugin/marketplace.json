@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git 操作・PR 作成・UI 動作確認・バグ診断・worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、承認ゲート付き PR 作成、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断、worktree 単位の DB / port 分離を提供する。",
-      "version": "1.27.3",
+      "version": "1.28.0",
       "author": {
         "name": "yuki"
       },
@@ -54,7 +54,7 @@
     {
       "name": "plugin-feedback",
       "description": "プラグインへの改善要望・バグ報告を GitHub Issue として作成。コマンドと自然言語の両方で起動",
-      "version": "1.2.9",
+      "version": "1.3.0",
       "author": {
         "name": "yuki"
       },
@@ -81,7 +81,7 @@
     {
       "name": "guardrail-protect",
       "description": "git commit の hook 迂回（--no-verify/-n・git 省略形・-c core.hooksPath 上書き・変数間接・sh -c スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック + gh の外向き書き込みで実在しない見出しへの参照をブロック + 隔離なしの hook スクリプト実行をブロックする PreToolUse hook。config 自己保護・fail-loud（jq/perl/python3 不在時に無言で無効化しない）付き",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "author": {
         "name": "yuki"
       },

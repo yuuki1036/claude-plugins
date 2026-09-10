@@ -699,10 +699,6 @@ class RealRepositoryRegressionTest(unittest.TestCase):
 
 ISOLATION_DETECTOR = ROOT / "guardrail-protect" / "hooks" / "scripts" / "detect-unisolated-hook-run.py"
 
-#: 実測で唯一「hook ディレクトリにあるが hook entry point ではない」もの（GitHub issue #194）。
-#: skill から意図的に Bash で叩かれるので、パスで切ると偽陽性になる
-MEASURED_UTILITY = ROOT / "dev-workflow" / "hooks" / "scripts" / "upload-screenshots.sh"
-
 
 class UnisolatedHookRunDetectorTest(unittest.TestCase):
     """`detect-unisolated-hook-run.py` を単体で叩く（stdout にパスが出れば検出）."""
@@ -795,11 +791,6 @@ class UnisolatedHookRunDetectorTest(unittest.TestCase):
     def test_a_script_passed_as_a_plain_argument_is_not_execution(self):
         """インタプリタ以外のコマンドの引数に現れただけでは実行ではない."""
         self.assertEqual(self.detect(f"shellcheck {self.entry}"), "")
-
-    def test_the_measured_utility_still_lacks_the_hook_marker(self):
-        """実測の前提が今も成立しているか（崩れたら偽陽性 0 の水準を測り直す合図）."""
-        self.assertTrue(MEASURED_UTILITY.is_file(), "実測対象が消えている: %s" % MEASURED_UTILITY)
-        self.assertNotIn("safe_hook_init", MEASURED_UTILITY.read_text(encoding="utf-8"))
 
 
 class IsHookEntryPointFailOpenTest(unittest.TestCase):

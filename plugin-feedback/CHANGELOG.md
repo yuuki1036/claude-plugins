@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.0] - 2026-09-10
+
+### Added
+
+- **Issue にスクリーンショット・録画を添付できるようにした**（`gh issue create --attach`、gh 2.99.0 以降）。
+  ユーザーが示したファイルだけを添付候補にし、プレビューに並べて承認を取る。アップロードには
+  マーケットプレイスリポジトリへの WRITE 以上が要り、コラボレーター以外は READ しか持たないので、
+  gh の対応と権限を確認してから `--attach` を付ける。満たさなければ添付なしで起票し、
+  ブラウザでの手動添付を案内する（`commands/feedback.md` / `skills/feedback-issue/SKILL.md`）
+
 ## [1.2.9] - 2026-07-22
 
 ### Fixed

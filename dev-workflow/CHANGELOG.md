@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.28.0] - 2026-09-10
+
+### Changed
+
+- **pr-creator の Screenshots 添付を `gh pr create --attach` に切り替えた**（gh 2.99.0 で追加）。
+  従来は `upload-screenshots.sh` が専用ブランチ `cc-screenshots` に Contents API で画像を push し、
+  raw URL を本文に埋めていた。この方式は private repo で描画されず、承認前にアップロードするので
+  「中止」後もリモートに画像が残っていた。新方式は本文にローカルパスで画像参照を書き、PR 作成時に gh が
+  アップロード先 URL へ書き換える。承認後に 1 コマンドで送るのでリモートに残骸が出ず、
+  動画（mp4 / mov / webm）も添付できる
+  - 前提条件に「gh が `--attach` に対応」「base リポジトリへの WRITE 以上」を追加。満たさなければ添付を skip し、手動添付を案内する
+  - Step 4.9 の gitignored パス検出は、`--attach` に渡したパスへの参照だけを検査対象から外す（渡し忘れた参照は引き続き検出する）
+  - `--attach` 付きで exit 非ゼロになった場合に二重作成を避ける確認手順と、github MCP フォールバック時（アップロード不可）の再承認を追加
+
+### Removed
+
+- `hooks/scripts/upload-screenshots.sh` と `cc-screenshots` ブランチ運用。既存リポジトリの `cc-screenshots` ブランチは自動削除しないので、不要なら手動で消す
+
 ## [1.27.3] - 2026-09-06
 
 ### Fixed

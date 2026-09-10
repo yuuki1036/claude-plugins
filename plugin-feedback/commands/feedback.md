@@ -50,6 +50,7 @@ allowed-tools:
 2. 詳細を決定する
 3. 既にユーザーが説明している場合はそれを使い、重複して聞かない
 4. 会話中に出てきた改善要望の場合、そのコンテキストを自動で要約する
+5. ユーザーがスクリーンショット・録画のファイルを示していれば添付候補にする（`png` / `jpg` / `jpeg` / `gif` / `webp` / `svg` / `mp4` / `mov` / `webm`、50 件まで）。自分から撮影を求めない。添付の可否は Phase 6 の判定で決まる
 
 ### Phase 5: プレビューと承認
 
@@ -63,6 +64,7 @@ Issue 本文は `feedback-issue` スキルの `references/issue-template.md`（�
 **リポジトリ**: yuuki1036/claude-plugins
 **タイトル**: [{plugin-name}] {title}
 **ラベル**: {label}
+**添付**: {添付候補のファイル名。無ければ行ごと省略}
 
 **本文**:
 {references/issue-template.md の種別別テンプレートで組み立てた本文}
@@ -77,12 +79,23 @@ gh issue create \
   --repo yuuki1036/claude-plugins \
   --title "[{plugin-name}] {title}" \
   --label "{label}" \
-  --body "{body}"
+  --body "{body}" \
+  --attach "{file}"   # 添付する場合のみ。1 ファイル 1 フラグ
 ```
 
 - ラベルが存在しない場合は `--label` を省略する
 - `--repo yuuki1036/claude-plugins` は意図的な固定値（フィードバック先はユーザーの CWD に関係なく常にマーケットプレイス本体リポジトリ。marketplace.json には repo URL フィールドが無いため導出不可）
 - 作成された Issue URL を報告する
+- 添付候補がある場合、`--attach` を付けるのは次の両方を満たすときだけ。満たさなければ `--attach` 無しで作成し、報告時に「Issue ページを開いて画像をドラッグ&ドロップで追加して」と案内する:
+
+  ```bash
+  # --attach は gh 2.99.0 以降
+  gh issue create --help 2>/dev/null | grep -q -- '--attach'
+  # アップロードには WRITE 以上が要る。コラボレーター以外は READ なので添付できない
+  gh repo view yuuki1036/claude-plugins --json viewerPermission -q .viewerPermission   # WRITE / MAINTAIN / ADMIN
+  ```
+
+- `--attach` 付きで exit 非ゼロになっても、途中までのアップロード分で Issue が作成され URL が出力されていることがある。**再実行する前に出力に Issue URL が無いか確認する**（二重起票を防ぐ）
 
 ### Phase 7: 報告
 

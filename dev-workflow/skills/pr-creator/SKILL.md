@@ -115,6 +115,19 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 - PR 差分（`git diff <base>...HEAD --name-only`）に UI 拡張子ファイル（tsx/jsx/vue/svelte/css/scss/html/astro/mdx）が含まれる
 - `gh` が認証済み
 - ユーザー引数に `--no-screenshots` が含まれない
+- `gh` が `--attach` に対応し、base リポジトリへの書き込み権限がある:
+
+  ```bash
+  # --attach は gh 2.99.0 で入った。GitHub.com / GHE.com のみ（GHES と GitHub App トークンは非対応）
+  gh pr create --help 2>/dev/null | grep -q -- '--attach' && ATTACH_OK=1 || ATTACH_OK=0
+  # アップロードには WRITE / MAINTAIN / ADMIN が要る（fork から upstream への PR では通常満たさない）
+  case "$(gh repo view --json viewerPermission -q .viewerPermission 2>/dev/null)" in
+    WRITE|MAINTAIN|ADMIN) ;;
+    *) ATTACH_OK=0 ;;
+  esac
+  ```
+
+  `ATTACH_OK=0` なら本ステップを skip し、Step 5 のレポートで理由（gh が古い → `gh upgrade` 等で 2.99.0 以降へ / 権限不足）と「PR 作成後にブラウザで画像を手動添付」を一言添える
 
 #### PR タイプ判定（撮影枚数の調整）
 
@@ -140,35 +153,31 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
    LATEST=$(ls -1dt .claude/screenshots/{snap,commit}-* 2>/dev/null | head -1)
    ```
 2. **撮影内容の機密チェック**（次節「機密 UI チェックリスト」を実施）。問題があれば中止
-3. `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/upload-screenshots.sh <dir>` を実行して画像を専用ブランチ (`cc-screenshots`) に Contents API でアップロード（**GitHub Release / tag は作らない** — tag はリリース運用に予約。raw URL は public repo でのみ PR 上に描画される）
-4. 標準出力の `<filename><TAB><url>` を解析
-5. PR body に以下を追記（テンプレート既存セクションの末尾 or 新規 `## Screenshots` として）。**1 枚のみの場合は table ではなく単独画像で添付する**:
+3. 添付ファイルを `ATTACH` 配列に集める。対象は `png` / `jpg` / `jpeg` / `gif` / `webp` / `svg` と、録画があれば `mp4` / `mov` / `webm`（gh が受け付ける形式はこの 9 種のみ）。**1 回の gh 呼び出しで 50 件まで**
+4. PR body に以下を追記（テンプレート既存セクションの末尾 or 新規 `## Screenshots` として）。画像の参照先は **`ATTACH` に入れたローカルパスをそのまま書く** — `gh pr create --attach` がアップロード時に同じパスの Markdown 参照を GitHub 上の URL へ書き換える（alt text は保持される）。**1 枚のみの場合は table ではなく単独画像で添付する**:
 
    ```markdown
    <!-- 1 枚の場合 -->
    ## Screenshot
 
-   ![desktop](<url>)
+   ![desktop](<ATTACH のパス>)
 
    <!-- 複数枚の場合 -->
    ## Screenshots
 
    | viewport | preview |
    |----------|---------|
-   | mobile   | ![mobile](<url>) |
-   | desktop  | ![desktop](<url>) |
+   | mobile   | ![mobile](<ATTACH のパス>) |
+   | desktop  | ![desktop](<ATTACH のパス>) |
    ```
 
-   viewport 名はファイル名から推定（`mobile.png` / `desktop.png` 等）。不明なものは `<name> | ![<name>](<url>)` 形式。
+   viewport 名はファイル名から推定（`mobile.png` / `desktop.png` 等）。不明なものは `<name> | ![<name>](<ATTACH のパス>)` 形式。動画は alt text を持てないので table に入れず `![recording](<ATTACH のパス>)` を単独行で置く（単独行は動画プレーヤーの URL に書き換わる。reference 形式 `![x][id]` は gh が拒否する）
 
-**アップロード失敗時のフォールバック:**
-- `gh` 未認証、ネットワークエラー、権限なし等で失敗した場合、`## Screenshots` セクションは PR 本文に含めない（ローカルパスは PR 本文に書かない方針）
-- ユーザーに「PR 作成後に画像をドラッグ&ドロップで手動添付してください」と口頭で案内する
-- PR 作成自体は継続する
+アップロードは Step 5 の `gh pr create` 実行時に行われる（本ステップではまだ何も送信しない）。したがって Step 4.95 で「中止」してもリモートに画像は残らない。
 
 #### 機密 UI チェックリスト（撮影前必須）
 
-`cc-screenshots` ブランチは public repo では誰でも閲覧可能（raw URL が公開される）。以下のいずれかに該当する撮影は **アップロードしない**:
+添付した画像は PR 本文に埋め込まれ、PR を閲覧できる人全員（public repo なら誰でも）が見られる。以下のいずれかに該当する撮影は **添付しない**:
 
 - ログイン画面・認証画面（OAuth プロバイダ名・社内 SSO ボタン等のメタ情報を含む）
 - 顧客データ・実名ユーザー情報・実メールアドレス・実電話番号
@@ -178,11 +187,11 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 
 判定不能な場合は AskUserQuestion でユーザーに確認:
 
-- question: "撮影内容に機密情報は含まれていない？（public ブランチにアップロード）"
+- question: "撮影内容に機密情報は含まれていない？（PR 本文に添付）"
 - header: "機密チェック"
 - options:
-  1. label: "問題なし、アップロード" / description: "撮影内容を確認済み"
-  2. label: "アップロードせずスキップ" / description: "Screenshots セクションを PR 本文から省略し、手動添付をユーザーに口頭案内"
+  1. label: "問題なし、添付する" / description: "撮影内容を確認済み"
+  2. label: "添付せず手動に回す" / description: "Screenshots セクションを PR 本文から省略し、手動添付をユーザーに口頭案内"
   3. label: "Screenshots を省略" / description: "PR body から Screenshots セクション自体を削除"
 
 ### 4.7 概要の三要素セルフチェック
@@ -202,21 +211,26 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 `gh pr create` を実行する直前に、生成した body から gitignored パスを検出して fail-fast する。一度 PR が public になると内部パス参照は外部から見えてしまうため、文書ルール（厳守ルール参照）だけでなく機械チェックで橋渡しする。
 
 ```bash
-# $pr_body に生成済みの PR 本文が入っている前提
+# $pr_body に生成済みの PR 本文、$ATTACH に Step 4.5 の添付パスが入っている前提
+# 0) --attach で URL に書き換わる参照 `](<ATTACH のパス>)` だけを検査対象から外す。
+#    ATTACH に入れ忘れた参照はローカルパスのまま公開されるので、ここで外さず (1)(2) に掛ける
+check_body=$pr_body
+for p in "${ATTACH[@]}"; do check_body=${check_body//"]($p)"/"](attached)"}; done
+
 # 1) 代表的な gitignore 対象パスの即時検出（regex）
-violations=$(printf '%s\n' "$pr_body" | grep -E '(\.claude/|\.next/|node_modules/|dist/|build/|coverage/|\.env)' || true)
+violations=$(printf '%s\n' "$check_body" | grep -E '(\.claude/|\.next/|node_modules/|dist/|build/|coverage/|\.env)' || true)
 
 # 2) リポジトリ固有の gitignore も尊重（動的判定）
 while read -r path; do
   [ -n "$path" ] && git check-ignore -q "$path" 2>/dev/null && violations="${violations}"$'\n'"gitignored: $path"
-done < <(printf '%s\n' "$pr_body" | grep -oE '[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+')
+done < <(printf '%s\n' "$check_body" | grep -oE '[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+')
 
 [ -n "$violations" ] && { echo "PR body に gitignored パスが含まれています:"; printf '%s\n' "$violations"; }
 
 # 3) パス文字列を伴わないローカル限定ドキュメント参照の検出（advisory・非 fail-fast）
 #    「knowledge に詳細」「設計メモ参照」のように regex (1)(2) をすり抜ける自然言語の言及を拾う。
 #    誤検知が出やすい（一般語としての knowledge / plan を含む）ため warning のみで PR は止めない。
-soft=$(printf '%s\n' "$pr_body" | grep -nE '(knowledge|設計メモ|実装メモ|作業メモ|ローカル(の)?(メモ|ノート|ドキュメント|ファイル)|plans?/|issues?/).{0,12}(参照|に詳細|を参照|参考|see|詳しくは)' || true)
+soft=$(printf '%s\n' "$check_body" | grep -nE '(knowledge|設計メモ|実装メモ|作業メモ|ローカル(の)?(メモ|ノート|ドキュメント|ファイル)|plans?/|issues?/).{0,12}(参照|に詳細|を参照|参考|see|詳しくは)' || true)
 [ -n "$soft" ] && { echo "[advisory] レビュアーが開けないローカル限定ドキュメントへの言及かもしれません。要点を本文にインライン要約できないか確認してください:"; printf '%s\n' "$soft"; }
 ```
 
@@ -233,6 +247,7 @@ regex (1)(2) で検出された場合は **PR を作成せず**、該当箇所�
 提示内容:
 - title / base ブランチ / draft か否か
 - body 全文（Screenshots 節を含む最終形。**承認内容と異なる body への差し替えをしない**。gh 失敗時の github MCP フォールバックで同一 body のまま作成・更新するのは差し替えに当たらない）
+- 添付ファイル一覧（`ATTACH`）。本文中のローカルパスは作成時にアップロード先 URL へ書き換わる旨を添える
 - Step 1 でリポジトリ規約により本スキル既定を上書きした点があればその旨
 
 提示後、`AskUserQuestion` で確認する:
@@ -244,8 +259,6 @@ regex (1)(2) で検出された場合は **PR を作成せず**、該当箇所�
   2. label: "修正したい" / description: "修正点をチャットで指示（修正後に再提示・再確認）"
   3. label: "中止" / description: "PR を作成せず終了（feature ブランチの push もしない）"
 
-「中止」を選択した場合の後処理: Step 4.5 で screenshots を `cc-screenshots` ブランチにアップロード済みなら、**その画像はリモートに残っている**（public repo では閲覧可能）。アップロード済みファイルのリモートパスを提示し、削除するかを確認する（削除は `gh api -X DELETE "repos/{owner}/{repo}/contents/{path}" -f message="chore: remove screenshot" -f sha="{sha}" -f branch="cc-screenshots"`）。
-
 「修正したい」の場合は指示を反映したうえで、修正内容に応じた地点からやり直し、**再度この確認を通す**（修正版を無確認で作成しない）:
 
 - body 本文に及ぶ修正 → **Step 4.3（推敲）→ 4.7（三要素セルフチェック）→ 4.9（機械検証）→ 4.95** の順で再適用。ただしユーザーが明示的に指定した文言は推敲で上書きしない（推敲対象から除外する）
@@ -256,12 +269,24 @@ regex (1)(2) で検出された場合は **PR を作成せず**、該当箇所�
 
 ```bash
 git push -u origin <current-branch>
-gh pr create --draft --title "<title>" --body "<description>"
+gh pr create --draft --title "<title>" --body "<description>" \
+  --attach <ATTACH[0]> --attach <ATTACH[1]>   # Step 4.5 で添付がある場合のみ。1 ファイル 1 フラグ
 ```
 
-リポジトリ規約（Step 1）が draft 以外を指定している場合は `--draft` を外す。**Step 4.95 で提示した種別どおりに実行する**（提示と実作成を食い違わせない）。
+リポジトリ規約（Step 1）が draft 以外を指定している場合は `--draft` を外す。**Step 4.95 で提示した種別どおりに実行する**（提示と実作成を食い違わせない）。`--attach` は `--web` / `--dry-run` と併用できない。
 
 作成後はURLを表示する。
+
+#### `--attach` 付きで exit 非ゼロになった場合
+
+gh は最初のアップロード失敗で止まるが、**それ以前に上がった分を書き込んだうえで PR を作成し、URL を出力してから非ゼロで終わる**ことがある。再実行すると PR が二重にできるので、先に作成済みかを確かめる:
+
+```bash
+gh pr view --json url,body -q '.url, .body' 2>/dev/null
+```
+
+- PR が無い → 失敗理由を確認し、添付なし（Screenshots 節を除いた body）で作り直すなら **body が変わるので Step 4.9 → 4.95 をやり直す**
+- PR がある → body にローカルパスの参照（アップロードに失敗した分）が残っていないか見る。残っていれば該当行を除いた body を提示し、承認を得てから `gh pr edit --body` で更新する。未添付のファイルはレポートに列挙して手動添付を案内する
 
 #### gh pr create / edit が失敗した場合のフォールバック
 
@@ -281,6 +306,8 @@ mcp__github__create_pull_request({ owner, repo, head, base, title, body, draft: 
 mcp__github__update_pull_request({ owner, repo, pullNumber, body })
 ```
 
+github MCP はファイルをアップロードできない。**`ATTACH` が空でないときは Screenshots 節を除いた body になり承認内容と変わる**ので、その body を提示して改めて承認を得てから作成し、作成後に `gh pr comment <番号> --attach ...` で画像をコメントとして添付するかを確認する（コメント投稿も外部公開なので承認を取る）。
+
 github MCP も未設定の場合は、**承認済み body で作成できないため PR を作成しない**（Step 4.95 の承認と異なる内容を公開しないため）。承認済みの title / body をチャットに再掲し、ユーザーに手動作成を案内して終了する。どうしても最小 body での作成が必要な場合は、その旨（最小 body で作成し手動更新が必要になること）を提示して**改めて承認を得てから**作成する。gh CLI 側にパッチが入って `projectCards` 取得を回避するようになれば、このフォールバックは不要になる。
 
 ## 厳守ルール
@@ -298,7 +325,7 @@ github MCP も未設定の場合は、**承認済み body で作成できない�
 - 本文量の上限を数値で守る（質的記述だけだと冗長化するため数値で制限）: **概要は 1〜2 文 / 「変更点」は 1〜5 bullet / 「レビューしてほしいところ」は 1〜3 件**。上限を超える場合は情報を圧縮するか PR 分割を検討する。Screenshots 節は frontend（UI 拡張子）変更を含む場合のみ追加する（Step 4.5 の判定に従う）
 - 概要の 1〜2 文制約は **What / Why / Outcome のどれかを省く理由にしない**。3 要素を各々明示したうえで 1 文に畳んで収める。brevity を優先して Why / Outcome を暗黙化するのは違反。生成後に Step 4.7 のセルフチェックで 3 要素の充足を確認する
 - PR title に Issue ID prefix（`TEAM-123:` 等）を含めない。Issue ID は PR 本文側にリンク・参照として記載する
-- PR 本文（本文・`<details>` 折りたたみ問わず）にローカルパス（`.claude/plans/...` / `.claude/screenshots/...` 等）を出力しない。GitHub からクリックできないため
+- PR 本文（本文・`<details>` 折りたたみ問わず）にローカルパス（`.claude/plans/...` / `.claude/screenshots/...` 等）を出力しない。GitHub からクリックできないため。唯一の例外は `--attach` に渡したファイルへの Markdown 画像参照で、作成時に gh がアップロード先 URL へ書き換える（Step 4.5 / 4.9）
 - レビュアーがアクセスできないローカル限定ドキュメント（`.claude/` 配下の knowledge / plans / issues 等）は、**パス文字列の有無に関わらず**本文で参照しない。「knowledge に詳細」「設計メモ参照」のような自然言語の言及も含む。必要な情報は本文へインライン要約する（参照させるのではなく要点を書き写す）
-- Screenshots は `cc-screenshots` 専用ブランチに Contents API でアップロードする運用。**GitHub Release / tag は作らない**（tag はリリース運用に予約）
-- 機密情報（ログイン画面、社内 URL、実データ等）が写っていないか撮影前に確認する。public repo では raw URL が公開されるので漏洩リスクあり
+- Screenshots は `gh pr create --attach` で PR 作成と同時にアップロードする。独自のアセットブランチ・GitHub Release・tag は作らない
+- 機密情報（ログイン画面、社内 URL、実データ等）が写っていないか撮影前に確認する。添付は PR を閲覧できる人全員に見える（public repo なら誰でも）
