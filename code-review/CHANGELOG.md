@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.120.0] - 2026-09-11
+
+### Added
+
+- **計測結果にマシン ID と plugin 版を必須化した**。issue コメントに貼られた再集計の数字が食い違っても
+  （実測: #220 の判定成立が 51 件 / 42 件）、どのマシン・どの版で測ったかを payload からもコメントからも
+  復元できなかった。
+  - publish が `machine_id`（`hostname -s`。gist 集約のファイル名と同じ値）と `plugin_version`
+    （スクリプト自身の `plugin.json`）を注入する。呼び出し側の値は上書き。取れなければ `null` + gap
+    `machine-id` / `plugin-version`（fail-fast にしない）
+  - `plugin_version` で**配布ラグの交絡を外せる**（#220 が「版マーカーを持たない打ち手なので交絡が残る」と
+    留保していた点）
+  - retro は出力の先頭に「集計」行（retro の版 @ マシン）と「マシン / 版」行（母集団のマシン × plugin 版の
+    件数）を常に出す。`--json` は `provenance`。0 件の回も出す
+  - `orchestration-measurement.md ## 18` に「計測結果を引用するときはこの 2 行を必ず含める」を追記
+  - 古いイベントは `未記録` に置く（日付やファイル名から推測して埋めない）
+  - 回帰テスト 12 本（publish 6 / retro 6）。変更行の変異 15 個はテスト追加後に全件殺した
+
 ## [2.119.2] - 2026-09-11
 
 ### Fixed

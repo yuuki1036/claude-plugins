@@ -302,7 +302,15 @@ fi
 #      「後勝ち」で注入値が負ける
 #   ③ カンマ正規化 sed が JSON の文字列値の中身まで書き換える
 # 再シリアライズなら 3 つとも構造的に起きない。
+# ---- 計測の出所（v2.120.0）--------------------------------------------------
+# マシンは `hostname -s`（gist 集約 #61 のファイル名 `<hostname>.jsonl` と同じ値にして突合できるようにする）。
+# 版は `CLAUDE_PLUGIN_ROOT` ではなく**このスクリプトの位置**から引く — 実際に走ったファイルの版を
+# 指すのはこちら。SKILL 本文と本スクリプトは同じ版ディレクトリから読まれるので、ここで読む版が
+# 「その回がどの版の規約で走ったか」になる
+MACHINE_ID=$(hostname -s 2>/dev/null) || MACHINE_ID=""
 MERGED=$(
+  REVIEW_MACHINE_ID="$MACHINE_ID" \
+  REVIEW_PLUGIN_JSON="$HERE/../.claude-plugin/plugin.json" \
   REVIEW_DURS="{\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"duration_explore_min\":$DUR_EXPLORE,\"duration_synthesis_min\":$DUR_SYNTHESIS}" \
   REVIEW_EXPLORER_WAVES="$EXPLORER_WAVES" \
   REVIEW_MEASUREMENT_GAPS="$MEASUREMENT_GAPS" \
@@ -1049,6 +1057,25 @@ else:
     # 突合キーを作れなかった＝重複検出が事後に効かない。**該当なしと区別できるよう
     # gap を立てる**（この経路を黙らせると「検出できなかった」が「重複が無かった」に潰れる）
     gaps.append("diff-digest")
+
+# ---- 計測の出所: マシンとプラグイン版（v2.120.0） ----------------------------
+# **結果の読みがマシン間・版間で食い違ったとき、payload だけで出所を言うため**。無いと
+# 「打ち手を入れた日以降」を日付で切るしかなく、`claude plugin update` 前のマシンで旧版の
+# 規約のまま走った回が混ざる（#220 の留保）。呼び出し側が渡していてもスクリプト側が勝つ
+# （版マーカーと同じ方式）。**取れなければ null + gap** — 推測で埋めると誤った層に入る
+_machine = (os.environ.get("REVIEW_MACHINE_ID") or "").strip()
+payload["machine_id"] = _machine or None
+if not _machine:
+    gaps.append("machine-id")
+try:
+    with open(os.environ.get("REVIEW_PLUGIN_JSON") or "", encoding="utf-8") as _f:
+        _version = json.load(_f).get("version")
+except (OSError, ValueError, AttributeError):
+    _version = None
+if not (isinstance(_version, str) and _version):
+    _version = None
+    gaps.append("plugin-version")
+payload["plugin_version"] = _version
 
 # gaps の確定はここ（append する経路をすべて通した後に代入する）
 payload["measurement_gaps"] = gaps

@@ -84,6 +84,8 @@ retro_fatal() {
 REVIEW_SINCE="$SINCE" REVIEW_LAST="${LAST:-0}" REVIEW_JSON="$AS_JSON" \
   REVIEW_LOGS_EXPLICIT="$([ ${#EXPLICIT_LOGS[@]} -gt 0 ] && echo 1 || echo 0)" \
   REVIEW_LIB_DIR="$HERE/lib" \
+  REVIEW_RETRO_MACHINE_ID="$(hostname -s 2>/dev/null)" \
+  REVIEW_RETRO_PLUGIN_JSON="$HERE/../.claude-plugin/plugin.json" \
   python3 - ${REVIEW_EVENT_LOGS[@]+"${REVIEW_EVENT_LOGS[@]}"} <<'PY' || retro_fatal
 import json, os, sys
 from datetime import datetime, timedelta, timezone
@@ -206,9 +208,72 @@ def scope_note():
             "> ```")
 
 
+# ---- 計測の出所（v2.120.0）----------------------------------------------------
+# **引用された数字の食い違いを出所で切り分けるため**、集計した retro の版・マシンと、母集団の
+# マシン × plugin 版の内訳を必ず出す。実測で同じ issue への再集計が判定成立 51 件 / 42 件に
+# 割れ、どのマシン・どの版で測ったかをコメントから復元できなかった（#220）。
+# 古いイベントは `machine_id` / `plugin_version` を持たないので `None`（未記録）に置く —
+# ログのファイル名や日付から推測して埋めない
+def _read_version(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            v = json.load(f).get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return v if isinstance(v, str) and v else None
+
+
+retro_version = _read_version(os.environ.get("REVIEW_RETRO_PLUGIN_JSON") or "")
+retro_machine = (os.environ.get("REVIEW_RETRO_MACHINE_ID") or "").strip() or None
+
+
+def _str_or_none(v):
+    return v if isinstance(v, str) and v else None
+
+
+def _version_key(v):
+    """新しい版を先に並べる。数値で比べる（文字列比較だと 2.9.0 が 2.10.0 より上に来る）."""
+    if v is None:
+        return (1, ())
+    return (0, tuple(-(int(x) if x.isdigit() else 0) for x in v.split(".")))
+
+
+def machine_rows(rows):
+    """母集団をマシン × plugin 版で数える（未記録のマシンは末尾）."""
+    by = {}
+    for e in rows:
+        vers = by.setdefault(_str_or_none(e["p"].get("machine_id")), {})
+        ver = _str_or_none(e["p"].get("plugin_version"))
+        vers[ver] = vers.get(ver, 0) + 1
+    out = [{"machine_id": mid, "n": sum(vers.values()),
+            "plugin_versions": [{"version": v, "n": vers[v]}
+                                for v in sorted(vers, key=_version_key)]}
+           for mid, vers in by.items()]
+    out.sort(key=lambda r: (r["machine_id"] is None, -r["n"], r["machine_id"] or ""))
+    return out
+
+
+def provenance_of(rows):
+    return {"retro_version": retro_version, "retro_machine_id": retro_machine,
+            "machines": machine_rows(rows)}
+
+
+def provenance_lines(rows):
+    head = ("**集計**: review-retro %s @ %s"
+            % ("v" + retro_version if retro_version else "版不明",
+               "`%s`" % retro_machine if retro_machine else "マシン不明"))
+    parts = []
+    for r in machine_rows(rows):
+        vers = " / ".join("%s %d" % ("v" + x["version"] if x["version"] else "版未記録", x["n"])
+                          for x in r["plugin_versions"])
+        parts.append("`%s` %d 件（%s）" % (r["machine_id"] or "未記録", r["n"], vers))
+    return [head, "**マシン / 版**: %s" % (" / ".join(parts) if parts else "なし（0 件）")]
+
+
 if not events:
     if as_json:
         print(json.dumps({"n": 0, "reason": "no-samples-in-range", "signals": [],
+                          "provenance": provenance_of(events),
                           "sources": source_rows(events),
                           "sources_dropped_duplicates": dup_dropped,
                           "sources_dropped_paths": dup_paths,
@@ -217,6 +282,9 @@ if not events:
     else:
         print("## レビュー振り返り")
         print("対象サンプルが 0 件。")
+        print()
+        for _line in provenance_lines(events):
+            print("- " + _line)
         print()
         print(sources_line())
         for row in source_rows(events):
@@ -1402,6 +1470,12 @@ def gap_hint(g):
         return ("fleet 区間が agent の起動スパンを覆えていない。t1 を一括発行の直前に、"
                 "t2 を全 agent の回収後に打てているか見直す（orchestration-measurement.md "
                 "`## 14`）。**該当回の `duration_fleet_min` は欠測に倒してある**")
+    if g == "machine-id":
+        return ("publish 時に `hostname -s` が値を返さなかった。どのマシンの回か payload から"
+                "言えず、マシン間の読み違いを切り分けられない（publish-review-event.sh の出所注入）")
+    if g == "plugin-version":
+        return ("publish スクリプト自身の `plugin.json` を読めなかった（プラグインの配置が壊れている"
+                "疑い）。その回がどの版の規約で走ったかが分からず、配布ラグの交絡を外せない")
     if g == "wave-split":
         # **打点とは無関係**。既定に落ちると確実に誤った是正先を指す（#192）
         return ("同一フェーズの agent を 1 メッセージで一括発行する"
@@ -1565,6 +1639,8 @@ if as_json:
         "sources_dropped_paths": dup_paths,
         # 母集団の**範囲**（#173）。`this-repo` は自動探索 = 他リポジトリを含まない
         "sources_scope": "explicit" if logs_explicit else "this-repo",
+        # 計測の出所（集計した retro の版・マシン / 母集団のマシン × plugin 版）
+        "provenance": provenance_of(events),
         "tiers": [{"key": k, "n": n, "fleet_median": f, "agents_median": a}
                   for k, n, f, a in tier_rows],
         # 層別なしは交絡を含む参考値（後方互換のため残す）。判定は by_tier 側で行う
@@ -1623,6 +1699,9 @@ if as_json:
     sys.exit(0)
 
 print("## レビュー振り返り（review:completed n=%d）" % n_all)
+print()
+for _line in provenance_lines(events):
+    print("- " + _line)
 print()
 print(sources_line())
 for row in source_rows(events):

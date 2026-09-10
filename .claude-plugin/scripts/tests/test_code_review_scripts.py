@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime, timedelta, timezone
 import subprocess
 import sys
@@ -481,6 +482,96 @@ class SkipReasonValidationTest(ScriptTestBase):
         self.assertNotIn("payload:recall_skeptic.skip_reason", gaps,
                          "同じ欠落に 2 つの是正先が立っている")
 
+
+
+def stub_hostname_env(base_env: dict[str, str], root: Path, body: str) -> dict[str, str]:
+    """`hostname` を stub に差し替えた env（PATH の先頭に足すだけなので他のコマンドは引ける）."""
+    bin_dir = root / "stub-bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "hostname"
+    stub.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    stub.chmod(0o755)
+    env = dict(base_env)
+    env["PATH"] = "%s:%s" % (bin_dir, env.get("PATH", ""))
+    return env
+
+
+SHORT_HOSTNAME_STUB = 'if [ "$1" = "-s" ]; then echo %s; else echo %s.example.com; fi\n'
+
+
+def detached_plugin(root: Path, manifest: dict | None) -> Path:
+    """`scripts/` だけを別の場所へ複製したプラグイン配置（`manifest` が None なら plugin.json を置かない）."""
+    base = root / "detached"
+    shutil.copytree(PLUGIN / "scripts", base / "scripts")
+    if manifest is not None:
+        (base / ".claude-plugin").mkdir()
+        (base / ".claude-plugin" / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return base / "scripts"
+
+
+def plugin_version() -> str:
+    """期待値はスクリプトの読み方を真似ず、plugin.json を直接読んで作る."""
+    return json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
+
+
+class ProvenanceInjectionTest(ScriptTestBase):
+    """計測の出所（`machine_id` / `plugin_version`）の注入.
+
+    同じ issue への再集計が判定成立 51 件 / 42 件に割れ、どのマシン・どの版で測ったかを
+    復元できなかった（#220）。マシンは `hostname` を stub にして固定する.
+    """
+
+    def test_plugin_version_comes_from_the_scripts_own_plugin_json(self):
+        r = self.publish()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertEqual(p["plugin_version"], plugin_version())
+        self.assertNotIn("plugin-version", p["measurement_gaps"])
+
+    def test_machine_id_is_the_short_hostname(self):
+        """gist 集約のファイル名（`hostname -s`）と同じ値にする。FQDN だと突合できない."""
+        env = stub_hostname_env(self._env(), self.root, SHORT_HOSTNAME_STUB % ("test-host", "test-host"))
+        r = self.publish(env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertEqual(p["machine_id"], "test-host")
+        self.assertNotIn("machine-id", p["measurement_gaps"])
+
+    def test_unavailable_hostname_is_a_gap_not_a_failure(self):
+        """取れない回は null + gap。**止めると計測が丸ごと消える**."""
+        env = stub_hostname_env(self._env(), self.root, "exit 1\n")
+        r = self.publish(env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertIsNone(p["machine_id"])
+        self.assertIn("machine-id", p["measurement_gaps"])
+
+    def test_caller_supplied_values_are_overwritten(self):
+        """**自己申告させない**（版マーカーと同じ方式）。渡されてもスクリプト側が勝つ."""
+        env = stub_hostname_env(self._env(), self.root, "echo test-host\n")
+        self.publish(dict(BASE_PAYLOAD, machine_id="fake", plugin_version="0.0.0"), env=env)
+        p = self.last_payload()
+        self.assertEqual(p["machine_id"], "test-host")
+        self.assertEqual(p["plugin_version"], plugin_version())
+
+    def _publish_detached(self, manifest: dict | None) -> dict:
+        scripts = detached_plugin(self.root, manifest)
+        r = self.run_script(scripts / "publish-review-event.sh", "--plugin", "code-review:self-review",
+                            "--payload", json.dumps(BASE_PAYLOAD))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return self.last_payload()
+
+    def test_missing_plugin_json_is_a_gap_not_a_failure(self):
+        """plugin.json の無い配置（壊れたインストール相当）は null + gap。推測で埋めない."""
+        p = self._publish_detached(None)
+        self.assertIsNone(p["plugin_version"])
+        self.assertIn("plugin-version", p["measurement_gaps"])
+
+    def test_plugin_json_without_a_usable_version_is_a_gap(self):
+        """`version` が空文字の plugin.json も「版が取れた」と扱わない（空の版で層が 1 つ増える）."""
+        p = self._publish_detached({"version": ""})
+        self.assertIsNone(p["plugin_version"])
+        self.assertIn("plugin-version", p["measurement_gaps"])
 
 
 class SkepticLaunchValidationTest(ScriptTestBase):
@@ -3557,6 +3648,99 @@ class RetroExplicitLogsTest(ScriptTestBase):
         out = self.retro()
         self.assertIn("ログ 1 本", out)
         self.assertIn(".claude/events.jsonl` … 3 件", out)
+
+
+class RetroProvenanceTest(ScriptTestBase):
+    """retro の出力に計測の出所（集計した版・マシン / 母集団のマシン × 版）を必ず出す.
+
+    **引用すれば出所が付いてくる形**にする — 要約されても先頭の 2 行が残れば、食い違った
+    数字をどのマシン・どの版で測ったかが言える（#220 の 51 件 / 42 件）.
+    """
+
+    ROWS = [
+        {"machine_id": "a", "plugin_version": "2.10.0"},
+        {"machine_id": "a", "plugin_version": "2.9.0"},
+        {"machine_id": "a", "plugin_version": "2.10.0"},
+        # 件数が同じマシンは名前順。**挿入順を名前の逆にしておく**（挿入順のままでも通る並べ方を殺す）
+        {"machine_id": "c", "plugin_version": "2.10.0"},
+        {"machine_id": "b", "plugin_version": "2.10.0"},
+        {},                                   # 出所フィールドを持たない旧イベント
+        {"machine_id": "", "plugin_version": 7},   # 空文字・非文字列も「未記録」に倒す
+    ]
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.env = stub_hostname_env(self._env(), self.root,
+                                     SHORT_HOSTNAME_STUB % ("retro-host", "retro-host"))
+
+    def _log(self, rows: list[dict]) -> Path:
+        path = self.root / "logs" / "events.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(
+            json.dumps({"ts": "2026-08-%02dT00:00:00Z" % (i + 1), "plugin": "code-review:self-review",
+                        "event": "review:completed",
+                        "payload": {"effort": "high", "size_tier": "medium",
+                                    "measurement_gaps": [], **r}}, ensure_ascii=False)
+            for i, r in enumerate(rows)) + "\n", encoding="utf-8")
+        return path
+
+    def _retro(self, *args: str) -> str:
+        res = self.run_script(RETRO, *args, env=self.env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout
+
+    def test_header_names_the_retro_version_and_machine(self):
+        out = self._retro("--logs", str(self._log(self.ROWS)))
+        self.assertIn("- **集計**: review-retro v%s @ `retro-host`" % plugin_version(), out)
+
+    def test_population_is_broken_down_by_machine_and_version(self):
+        """版は数値順で新しい方から（文字列順だと 2.9.0 が 2.10.0 の上に来る）。未記録は末尾."""
+        out = self._retro("--logs", str(self._log(self.ROWS)))
+        self.assertIn("- **マシン / 版**: `a` 3 件（v2.10.0 2 / v2.9.0 1） / `b` 1 件（v2.10.0 1）"
+                      " / `c` 1 件（v2.10.0 1） / `未記録` 2 件（版未記録 2）", out)
+
+    def test_json_carries_the_provenance(self):
+        got = json.loads(self._retro("--logs", str(self._log(self.ROWS)), "--json"))
+        prov = got["provenance"]
+        self.assertEqual(prov["retro_version"], plugin_version())
+        self.assertEqual(prov["retro_machine_id"], "retro-host")
+        self.assertEqual(prov["machines"][0],
+                         {"machine_id": "a", "n": 3,
+                          "plugin_versions": [{"version": "2.10.0", "n": 2},
+                                              {"version": "2.9.0", "n": 1}]})
+        self.assertEqual([m["machine_id"] for m in prov["machines"]], ["a", "b", "c", None])
+        self.assertEqual(prov["machines"][-1],
+                         {"machine_id": None, "n": 2, "plugin_versions": [{"version": None, "n": 2}]})
+
+    def test_missing_provenance_gaps_point_to_their_own_fix(self):
+        """出所の欠測は既定の「打点箇所の見直し」ではなく出所注入を指す（打点とは無関係）."""
+        rows = [{"measurement_gaps": ["machine-id", "plugin-version"]} for _ in range(5)]
+        sig = self.signals(self._retro("--logs", str(self._log(rows))))
+        self.assertIn("計測マーカー `machine-id` の欠測が 100%（5/5）。publish 時に `hostname -s` が"
+                      "値を返さなかった", sig)
+        self.assertIn("計測マーカー `plugin-version` の欠測が 100%（5/5）。publish スクリプト自身の "
+                      "`plugin.json` を読めなかった", sig)
+
+    def test_unusable_retro_version_is_reported_not_guessed(self):
+        """retro 自身の plugin.json に使える版が無ければ「版不明」と出す（推測で埋めない）."""
+        scripts = detached_plugin(self.root, {"version": ""})
+        res = self.run_script(scripts / "review-retro.sh", "--logs", str(self._log(self.ROWS)),
+                              env=self.env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("- **集計**: review-retro 版不明 @ `retro-host`", res.stdout)
+        # テキストでは空文字も「版不明」に見えるので、機械可読側で null に倒れていることまで見る
+        res = self.run_script(scripts / "review-retro.sh", "--logs", str(self._log(self.ROWS)),
+                              "--json", env=self.env)
+        self.assertIsNone(json.loads(res.stdout)["provenance"]["retro_version"])
+
+    def test_empty_population_still_reports_provenance(self):
+        """0 件の回も出所は出す（「このマシン・この版で見たら 0 件だった」も引用される）."""
+        log = self._log(self.ROWS)
+        out = self._retro("--logs", str(log), "--since", "2099-01-01")
+        self.assertIn("対象サンプルが 0 件", out)
+        self.assertIn("- **集計**: review-retro v%s @ `retro-host`" % plugin_version(), out)
+        got = json.loads(self._retro("--logs", str(log), "--since", "2099-01-01", "--json"))
+        self.assertEqual(got["provenance"]["machines"], [])
 
 
 class RetroScopeNoteTest(ScriptTestBase):
