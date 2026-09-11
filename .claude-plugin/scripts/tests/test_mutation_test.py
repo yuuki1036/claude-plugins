@@ -621,5 +621,55 @@ class RootContainmentTest(unittest.TestCase):
         self.assertEqual(mt._rel(Path("/nowhere/x.py")), "/nowhere/x.py")
         self.assertEqual(mt._rel(mt.ROOT / "a/b.py"), "a/b.py")
 
+class ShellCmdGuardTest(unittest.TestCase):
+    """`--test-cmd` の shell 構文を弾く（実測 2026-09-11）.
+
+    `cd x && ...` は先頭の `cd` が exit 0 で終わるので、split して直接 spawn すると
+    baseline が 0.0s で緑・全変異 SURVIVED という嘘の結果になる。**黙って緑にする経路**
+    なので、baseline チェックの前に落とす。
+    """
+
+    def test_a_plain_unittest_command_is_accepted(self):
+        for cmd in (mt.DEFAULT_TEST_CMD,
+                    "python3 -m unittest discover -s x -p test_y.py -k SomeTest"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(mt.shell_cmd_reason(cmd.split()))
+
+    def test_leading_cd_is_rejected(self):
+        """`cd x && ...` / `cd x; ...` の両方を先頭 cd で捕まえる（演算子の綴りに依らない）."""
+        self.assertIsNotNone(mt.shell_cmd_reason("cd x && python3 -m unittest".split()))
+        self.assertIsNotNone(mt.shell_cmd_reason("cd x; python3 -m unittest".split()))
+
+    def test_shell_operators_are_rejected(self):
+        for cmd in ("pytest | tee log", "a && b", "a || b", "run > out.txt"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(mt.shell_cmd_reason(cmd.split()))
+
+    def test_empty_command_is_rejected(self):
+        self.assertIsNotNone(mt.shell_cmd_reason([]))
+
+    def test_main_rejects_shell_cmd_before_touching_files(self):
+        """main() が shell 構文を **file 処理より前に** FATAL で落とす（順序の回帰）.
+
+        repo 外のパスを渡すので、ガードを素通りした場合は「リポジトリ外」で落ちる。
+        **stderr で判定する** — どちらの経路も exit 2 なので rc だけでは分岐の反転
+        （`is not None` → `is None`）を殺せない。ガード非通過側も baseline を走らせない
+        （SCRIPT 自身を --file にすると変異機構が再帰起動して結果が不安定になる）。
+        """
+        import contextlib
+        import io
+        with tempfile.TemporaryDirectory() as d:
+            outside = Path(d) / "x.py"
+            outside.write_text("x = 1 > 2\n")
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc = mt.main(["--file", str(outside),
+                              "--test-cmd", "cd foo && python3 -m unittest"])
+            self.assertEqual(rc, 2)
+            # shell ガードが先に鳴る（file 処理の「リポジトリ外」ではない）
+            self.assertIn("shell 演算子", err.getvalue())
+            self.assertNotIn("リポジトリ外", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

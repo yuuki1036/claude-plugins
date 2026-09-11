@@ -23,10 +23,16 @@ checkout すると作業が飛ぶ。元のバイト列をメモリに持ち `try
 使い方:
   mutation-test.py                     # HEAD との差分の追加行を変異させる
   mutation-test.py --base origin/main  # 起点を変える
-  mutation-test.py --file a.py b.sh    # ファイル全体を対象にする（差分ではなく全行）
+  mutation-test.py --file a.py b.sh    # **ファイル全体**を対象にする（差分ではなく全行）
   mutation-test.py --max 40            # 変異の上限（既定 25。超過分は件数を報告する）
   mutation-test.py --strict            # 生存変異があれば exit 1（CI / gate 用）
   mutation-test.py --test-cmd "..."    # テストコマンドを差し替える
+
+**`--test-cmd` は shell を通さず `split()` で直接 spawn する。** `cd x && ...` や `|` を
+書くと先頭コマンドだけが実行され（`cd` は exit 0）、baseline が緑・全変異 SURVIVED という
+**嘘の結果**になる（実測 2026-09-11）。shell 演算子と先頭 `cd` は exit 2 で弾く。
+ディレクトリ移動やテスト絞り込みは unittest の引数で表す:
+  --test-cmd "python3 -m unittest discover -s .claude-plugin/scripts/tests -p test_x.py -k SomeTest"
 
 出力: 生存した変異（= テストが検証していない挙動）を file:line と変異内容つきで列挙する。
 Exit code: 0（既定。`--strict` 指定時のみ生存で 1）/ 2（引数エラー・テストが最初から赤）
@@ -104,6 +110,27 @@ class Mutant:
 
 
 OWNER_ENV = "MUTATION_TEST_OWNER_PID"
+
+# **`--test-cmd` は shell を通さず `split()` して直接 spawn する**（`run` / `run_group`）。
+# `cd foo && pytest` のような shell 構文を渡すと、先頭の `cd`（macOS の `/usr/bin/cd`）が
+# 引数を無視して **exit 0** で終わり、baseline が 0.0s で緑・全変異 SURVIVED という嘘の
+# 結果が出る（実測 2026-09-11）。**shell 演算子と先頭 cd を弾く** — split したトークンに
+# 単独で現れるものだけを見る（`>>foo` のような連結は spawn しても無害に失敗して baseline が
+# 赤になり既存のガードが拾う）。ディレクトリ移動は `--test-cmd "python3 -m unittest
+# discover -s <dir> ..."` の `-s` で表す。
+SHELL_OPERATOR_TOKENS = frozenset({"&&", "||", ";", "|", "&", ">", ">>", "<", "<<"})
+
+
+def shell_cmd_reason(tokens: list[str]) -> str | None:
+    """`--test-cmd` に shell を要する構文があれば理由を返す（無ければ None）."""
+    if not tokens:
+        return "空"
+    bad = sorted({t for t in tokens if t in SHELL_OPERATOR_TOKENS})
+    if bad:
+        return "shell 演算子 %s を含む" % " ".join(bad)
+    if tokens[0] == "cd":
+        return "先頭が cd（ディレクトリ移動は discover の -s で表す）"
+    return None
 
 
 def run(cmd: list[str], cwd: Path, timeout: int = 600) -> subprocess.CompletedProcess[str]:
@@ -539,6 +566,15 @@ def main(argv: list[str] | None = None) -> int:
     recover_from_journal()
 
     test_cmd = args.test_cmd.split()
+    # **shell 構文は spawn では効かず、嘘の緑を返す**（上の SHELL_OPERATOR_TOKENS を参照）。
+    # baseline チェックの前に弾く — 通すと baseline が 0.0s で緑になり全変異 SURVIVED になる
+    _shell_reason = shell_cmd_reason(test_cmd)
+    if _shell_reason is not None:
+        print(f"FATAL: --test-cmd が {_shell_reason}。shell を通さず直接 spawn するので、"
+              "shell 構文は静かに空振りして「全変異が生存」という嘘の結果になる。\n"
+              '  例: --test-cmd "python3 -m unittest discover -s .claude-plugin/scripts/tests '
+              '-p test_foo.py -k SomeTest"', file=sys.stderr)
+        return 2
     if args.file:
         targets: dict[Path, set[int]] = {}
         for f in args.file:
