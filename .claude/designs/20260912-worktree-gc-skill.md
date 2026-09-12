@@ -196,6 +196,7 @@ tags: [dev-workflow, worktree, gc, skill-design]
 3. **code-review 締めフロー 7 の案内文**: 残骸が複数見つかったとき「`/worktree-gc` で一括」を案内に足すか — (a) 足す（案内のみで依存にならない） (b) 足さない。現時点では (a) が有力。確定タイミング: dev-workflow リリース後、code-review 側の別コミットで
 4. **DB エンジンの判別（open 1 で逆算列挙を残す場合のみ）**: F1 採用で marker のある行は engine を marker から取れるため、判別が要るのは open 1(b)（逆算列挙）を残したときだけ。その場合のみ — (a) main env の `DATABASE_URL` スキームから (b) 3 つ試す。現時点では open 1 が (a) 有力なので**この open ごと消える見込み**。確定タイミング: open 1 の確定と同時
 5. **`--all` の submodule 除外の実装手段**（design review MINOR）: `git worktree list` に現れる worktree のみを対象にする方針は確定。実装で `find` の結果を worktree 一覧で filter するか、最初から各 main repo の `git worktree list` だけを信頼源にするか。現時点では後者が有力（`find` は main repo の発見にだけ使い、worktree 列挙は git に委ねる）。確定タイミング: scan.sh 実装時
+6. **review 残骸（detached）が常に keep に倒れる**（実装後 self-review の related-observation / issue #223 の主目的に直結）: review worktree は `git checkout --detach` で作られ **branch が null**。安全ゲート 6（`pr` が null かつ merged false → keep）に必ず該当し、さらに親 review worktree はネスト agent dir を untracked として抱えて dirty keep になる。結果、MVP の scan は **review 残骸（issue #223 の 18 + 4 件）をほぼ全て keep** にし、掃除できない（安全側なのでデータ損失は無いが feature の有効性が出ない）。掃除するには — (a) review worktree は path から `.claude/worktrees/<name>` を取り、対応 PR が merged/closed なら reap（detached でも path から復元） — Pros: #223 の主目的が回る / Cons: review 命名規約への依存 (b) review worktree は「対象 PR が閉じている」を別経路（cleanup-agent-worktrees.sh の判定流用）で確かめる。現時点では (a) が有力。確定タイミング: MVP リリース後、review 残骸掃除を次段 issue で。**MVP では dev worktree（marker 持ち）の GC が主で、review 残骸は当面 code-review 締めフローと手動に委ねる**
 
 ## 実装ブリッジ (Implementation Bridge)
 

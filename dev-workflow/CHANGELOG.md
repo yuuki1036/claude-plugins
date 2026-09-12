@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.29.0] - 2026-09-12
+
+### Added
+
+- **worktree-gc スキルを追加**（GitHub issue #223）。散らばった git worktree を横断検出・分類・安全確認して一括削除する棚卸し。
+  `scan.sh`（副作用なしの列挙・1 行 1 JSON）→ 承認 → `reap.sh`（承認済み行のみ削除）の 2 段構成で、
+  承認の表に出したものだけが消えることを入力契約で担保する（列挙と実行の分離: ADR-20260912142858）。
+  - 安全ゲート（self / primary-worktree / dirty / 生存プロセス / PR open / 未マージ / ahead）を 1 つでも満たせば keep。
+    PR が merged/closed なら ahead が正でも reap（統合ブランチ経由 merge の落とし穴）
+  - DB drop は marker（`envs/.backend.env.worktree` の `DB_NAME`）のある行のみ。名前一致は所有権を証明しないため
+    marker 無し行の DB には触れない
+  - reap は削除直前に生存プロセスを再取得（became-live race）し、scan 後に消えた path は SKIP する。
+    branch / path 等の外部入力はシェルで再評価しない（`detect-dev-worktree.sh` と同じ脅威モデル）
+  - MVP は現リポのみ。PC 全体を横断する `--all` は未実装（設計は `.claude/designs/20260912-worktree-gc-skill.md` の open に記載）
+
 ## [1.28.0] - 2026-09-10
 
 ### Changed

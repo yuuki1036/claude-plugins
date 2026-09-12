@@ -17,7 +17,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [claude-meta](#claude-meta) | 1.13.5 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.121.0 | 2 | 2 | - | SessionStart, Stop | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.4.7 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
-| [dev-workflow](#dev-workflow) | 1.28.0 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
+| [dev-workflow](#dev-workflow) | 1.29.0 | 4 | 7 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.3 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.6.2 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.12.1 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
@@ -68,7 +68,7 @@ Phase 0 トリアージ + 動的エージェント構成のコードレビュー
 ### dev-workflow
 Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環境セットアップ。原子性重視コミット、Linear Issue 連携 PR、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断（diagnose）、PostToolUse 自動 lint チェーン（opt-in）。
 - **commands**: `commit`, `diagnose`, `pr`, `ui-verify`
-- **skills**: `diagnose`, `git-commit-helper`, `pr-creator`, `ui-verify`, `worktree-setup`, `worktree-teardown`
+- **skills**: `diagnose`, `git-commit-helper`, `pr-creator`, `ui-verify`, `worktree-setup`, `worktree-teardown`, `worktree-gc`
 - **hooks**: PreToolUse, PostToolUse, SessionStart
 - **mcp**: chrome-devtools（同梱）
 - **publishes**: `commit:created`（Event Bus）

@@ -92,6 +92,17 @@ git worktree ベースの並列開発環境をセットアップするスキル�
 
 **トリガー例**: 「worktree 破棄」「worktree 削除」「並列開発環境クリーンアップ」「/worktree-teardown」
 
+### worktree-gc
+
+散らばった git worktree を横断検出・分類・安全確認して一括削除する棚卸し (GC) スキル。`worktree-teardown` が 1 worktree の丁寧な破棄なのに対し、こちらは複数 worktree の GC を main clone / 任意の場所から扱う。
+
+- `scan.sh`（副作用なし・1 行 1 JSON）→ 承認 → `reap.sh`（承認済み行のみ削除）の 2 段構成。表に出したものだけが消える（ADR-20260912142858）
+- 安全ゲート（self / primary / dirty / 生存プロセス / PR open / 未マージ / ahead）を 1 つでも満たせば keep。PR が merged/closed なら ahead が正でも reap
+- DB drop は marker のある行のみ（名前一致は所有権を証明しないため marker 無し行の DB には触れない）
+- MVP は現リポのみ（PC 全体を横断する `--all` は未実装）
+
+**トリガー例**: 「worktree 棚卸し」「worktree 一括削除」「worktree GC」「残骸 worktree を掃除」「/worktree-gc」
+
 ## chrome-devtools MCP の同梱
 
 ui-verify が使う chrome-devtools MCP は `.mcp.json` で同梱配布される。プラグインインストールで自動的に MCP サーバーが有効化され、起動時のツールロード往復を抑えるため `alwaysLoad: true` を設定している。

@@ -24,7 +24,8 @@ cases:
     expected_skill: dev-workflow:ui-verify
     k: 3
 
-  # worktree setup <-> teardown の逆発火防止
+  # worktree setup <-> teardown <-> gc の逆発火防止
+  # （単数の「破棄」は teardown、複数の「棚卸し・一括」は gc に振り分く）
   - id: worktree-setup-ja
     prompt: worktree 作成して
     expected_skill: dev-workflow:worktree-setup
@@ -32,6 +33,10 @@ cases:
   - id: worktree-teardown-ja
     prompt: worktree を破棄して
     expected_skill: dev-workflow:worktree-teardown
+    k: 3
+  - id: worktree-gc-ja
+    prompt: 散らばった worktree を棚卸しして一括で掃除して
+    expected_skill: dev-workflow:worktree-gc
     k: 3
 
   # diagnose の正発火と ui-verify との誤発火防止

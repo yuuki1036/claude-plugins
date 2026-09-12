@@ -21,6 +21,8 @@ allowed-tools:
 
 main の clone 上では実行不可。worktree 内から実行する。
 
+> 散らばった**複数の** worktree をまとめて棚卸し・削除したいときは `worktree-gc`（main clone / 任意の場所から横断して扱う）。本スキルは 1 worktree の丁寧な破棄が対象。
+
 ## 実行手順
 
 ### Step 1: 状態確認

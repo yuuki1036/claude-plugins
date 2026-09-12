@@ -52,6 +52,8 @@ REPRESENTATIVES = {
         "test_finds_the_transcript_of_the_main_repository_from_a_worktree",
     "hook_harness.py":
         "test_dev_workflow_hooks.OnCommitTest.test_publishes_commit_created",
+    "test_dev_workflow_scripts.py":
+        "test_dev_workflow_scripts.ScanKeepTest.test_primary_worktree_is_kept",
 }
 
 #: 直接 git を叩くファイルの検出（この 2 ファイル自身は対象外）
