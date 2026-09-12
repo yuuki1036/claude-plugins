@@ -10,7 +10,7 @@ shared state markdown の冒頭に YAML frontmatter を置く。各 type のド�
 
 ```yaml
 ---
-shared_state_type: session | follow-up | knowledge | event-cache
+shared_state_type: session | follow-up | knowledge | verification | event-cache
 producer: <plugin-name>           # 主な書き込み元
 consumers: [<plugin>, ...]        # 読み出し側プラグイン
 schema_version: 1                 # フィールド変更時に bump
@@ -25,6 +25,7 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 | `session` | `.claude/session-context.md` | issue-workflow | code-review | セッション単位（gitignored） |
 | `follow-up` | `{DATA_DIR}/{slug}/follow-ups/*.md` | issue-workflow | issue-workflow（dashboard / issue-maintain） | 永続（committed） |
 | `knowledge` | `{DATA_DIR}/{slug}/knowledge/**/*.md` | issue-workflow | issue-workflow（knowledge / knowledge-lint / start） | 永続（committed）。knowledge は共通契約フィールドではなくドメイン固有 frontmatter（kind/status/verified/updated/tags）で代替し、consumer 側も契約フィールド（shared_state_type 等）を読まない |
+| `verification` | `.claude/verification/<branch>.md` | dev-workflow（ui-verify） | dev-workflow（pr-creator） | ブランチ単位（gitignored）。実機 E2E の実施ケース・合否・証跡パスを残し pr-creator が動作確認セクションに読む |
 | `event-cache` | （予約。events.jsonl の集計結果キャッシュ用） | - | - | - |
 
 `{DATA_DIR}` は backend で決まる（local: `.claude/indie` / linear: `.claude/linear`）。

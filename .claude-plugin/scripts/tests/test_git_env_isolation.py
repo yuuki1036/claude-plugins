@@ -54,6 +54,10 @@ REPRESENTATIVES = {
         "test_dev_workflow_hooks.OnCommitTest.test_publishes_commit_created",
     "test_dev_workflow_scripts.py":
         "test_dev_workflow_scripts.ScanKeepTest.test_primary_worktree_is_kept",
+    "test_code_review_hooks.py":
+        "test_code_review_hooks.ExternalIdReminderTest.test_fires_on_staged_linear_id_in_comment",
+    "test_code_review_detect_external_ids.py":
+        "test_code_review_detect_external_ids.DetectExternalIdsTest.test_detects_linear_id_in_comment",
 }
 
 #: 直接 git を叩くファイルの検出（この 2 ファイル自身は対象外）
