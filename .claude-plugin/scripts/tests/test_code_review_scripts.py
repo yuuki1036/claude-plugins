@@ -3749,6 +3749,39 @@ class RetroProvenanceTest(ScriptTestBase):
         self.assertIn("計測マーカー `plugin-version` の欠測が 100%（5/5）。publish スクリプト自身の "
                       "`plugin.json` を読めなかった", sig)
 
+    # ---- 版で絞る（GitHub issue #210） ------------------------------------------
+    def test_min_plugin_version_keeps_that_version_and_newer(self):
+        """数値で比べ、ちょうどの版は残す。版なしの回は推測で入れない."""
+        out = self._retro("--logs", str(self._log(self.ROWS)), "--min-plugin-version", "2.10.0")
+        self.assertIn("review:completed n=4）", out)
+        self.assertIn(" / 絞り込み: plugin_version 2.10.0 以上（版なし 2 件・それより古い 1 件を除外）", out)
+        self.assertIn("- **マシン / 版**: `a` 2 件（v2.10.0 2） / `b` 1 件（v2.10.0 1） / `c` 1 件（v2.10.0 1）",
+                      out)
+
+    def test_a_short_version_is_padded(self):
+        """`2.10` は `2.10.0` と同じ（桁の違いで境界の回を落とさない）."""
+        got = json.loads(self._retro("--logs", str(self._log(self.ROWS)),
+                                     "--min-plugin-version", "2.10", "--json"))
+        self.assertEqual(got["n"], 4)
+
+    def test_last_applies_after_the_version_filter(self):
+        """`--last N` は版で絞った後の直近 N 件（先に掛けると N 件に満たない）."""
+        got = json.loads(self._retro("--logs", str(self._log(self.ROWS)),
+                                     "--min-plugin-version", "2.10.0", "--last", "3", "--json"))
+        self.assertEqual(got["n"], 3)
+        self.assertEqual(got["provenance"]["filters"],
+                         {"since": None, "last": 3, "min_plugin_version": "2.10.0",
+                          "dropped_unversioned": 2, "dropped_older": 1})
+
+    def test_a_malformed_version_is_fatal(self):
+        """数字とドット以外を 0 に丸めると全件が残るので、判定不能（exit 2）で止める."""
+        for bad in ("v2.10.0", "2.10.", "latest", ""):
+            with self.subTest(bad=bad):
+                res = self.run_script(RETRO, "--logs", str(self._log(self.ROWS)),
+                                      "--min-plugin-version", bad, env=self.env)
+                self.assertEqual(res.returncode, 2)
+                self.assertIn("--min-plugin-version", res.stderr)
+
     def test_unusable_retro_version_is_reported_not_guessed(self):
         """retro 自身の plugin.json に使える版が無ければ「版不明」と出す（推測で埋めない）."""
         scripts = detached_plugin(self.root, {"version": ""})
@@ -5693,6 +5726,24 @@ class RetroAppendixLayerTest(RetroFixture):
         self._events(rows)
         self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 20%（`opus-4-8` 層 / 2/10）",
                       self._out(), "境界ちょうどで鳴っていない")
+
+    def test_the_signal_points_recovery_to_a_version_window(self):
+        """累計には打ち手より前の回が残り続けるので、回復は版で絞って読むと ⚠️ に添える（#210）."""
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(5)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+        self._events(rows)
+        self.assertIn("回復は打ち手を入れた版以降に絞って読む", self._out())
+
+    def test_a_version_filtered_run_names_its_window(self):
+        """絞った集計では案内ではなく絞り込み条件を名乗る（同じ案内を出し続けない）."""
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(5)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+        for r in rows:
+            r["plugin_version"] = "2.121.0"
+        self._events(rows)
+        out = self.run_script(RETRO, "--min-plugin-version", "2.121.0", env=self._env()).stdout
+        self.assertIn("（plugin_version 2.121.0 以上に絞った集計）", out)
+        self.assertNotIn("回復は打ち手を入れた版以降に絞って読む", out)
 
     def test_a_rescued_run_is_not_a_true_silent_one(self):
         """報告 0 でも推奨があれば空振りではない（#168）— 分子に入れない."""

@@ -10,6 +10,7 @@
 #   review-retro.sh                     # 全期間 + 直近 30 日を集計
 #   review-retro.sh --since 2026-07-01  # 起点を指定
 #   review-retro.sh --last 20           # 直近 N 件だけ
+#   review-retro.sh --min-plugin-version <版>   # その版以上で publish された回だけ（#210）
 #   review-retro.sh --json              # 機械可読（**0 件・ログ不在でも必ず JSON を返す**）
 #   review-retro.sh --logs ~/Projects/*/.claude/events.jsonl   # 複数ログを合算（issue #160）
 #
@@ -26,12 +27,20 @@
 # `== N` にすると次の版 bump でセクションが無音で消える）。
 set -uo pipefail
 
-SINCE=""; LAST=""; AS_JSON=0; EXPLICIT_LOGS=()
+SINCE=""; LAST=""; AS_JSON=0; EXPLICIT_LOGS=(); MIN_PV=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --since) [ $# -ge 2 ] || { echo "FATAL: --since に値が必要" >&2; exit 2; }; SINCE="$2"; shift 2 ;;
     --last)  [ $# -ge 2 ] || { echo "FATAL: --last に値が必要" >&2; exit 2; }; LAST="$2"; shift 2 ;;
     --json)  AS_JSON=1; shift ;;
+    --min-plugin-version)
+      [ $# -ge 2 ] || { echo "FATAL: --min-plugin-version に値が必要" >&2; exit 2; }
+      # 数字とドットだけ（`v2.10.0` / `2.10.` / `latest` を黙って 0 に丸めると全件が残る）
+      case "$2" in
+        ''|.*|*.|*..*|*[!0-9.]*)
+          echo "FATAL: --min-plugin-version は数字とドットの版で指定する（受領: '$2'）" >&2; exit 2 ;;
+      esac
+      MIN_PV="$2"; shift 2 ;;
     # **後続の非フラグ引数をすべて取る**（`--logs ~/Projects/*/.claude/events.jsonl` のように
     # シェルの glob をそのまま渡せる形にする。`--log` の繰り返しだと glob が使えない）
     --logs)
@@ -82,6 +91,7 @@ retro_fatal() {
 }
 
 REVIEW_SINCE="$SINCE" REVIEW_LAST="${LAST:-0}" REVIEW_JSON="$AS_JSON" \
+  REVIEW_MIN_PLUGIN_VERSION="$MIN_PV" \
   REVIEW_LOGS_EXPLICIT="$([ ${#EXPLICIT_LOGS[@]} -gt 0 ] && echo 1 || echo 0)" \
   REVIEW_LIB_DIR="$HERE/lib" \
   REVIEW_RETRO_MACHINE_ID="$(hostname -s 2>/dev/null)" \
@@ -164,8 +174,8 @@ for path in source_paths:
 events.sort(key=lambda e: e["ts"])
 if since:
     events = [e for e in events if e["when"] and e["when"] >= since]
-if last_n:
-    events = events[-last_n:]
+# `--last` は版の絞り込み（下の「版で絞る」）の後で掛ける。先に掛けると「直近 N 件のうち
+# 版を満たすもの」になり、指定した N 件に満たない
 
 def source_rows(rows):
     """**集計に実際に入った件数**をログごとに返す（0 件のログも母集団の一部として残す）."""
@@ -231,11 +241,17 @@ def _str_or_none(v):
     return v if isinstance(v, str) and v else None
 
 
+def _version_tuple(v):
+    """版を数値の組にする（文字列比較だと 2.9.0 が 2.10.0 より上に来る）。3 桁に揃える."""
+    t = tuple(int(x) if x.isdigit() else 0 for x in v.split("."))
+    return t + (0,) * (3 - len(t))
+
+
 def _version_key(v):
-    """新しい版を先に並べる。数値で比べる（文字列比較だと 2.9.0 が 2.10.0 より上に来る）."""
+    """新しい版を先に並べる（未記録は末尾）."""
     if v is None:
         return (1, ())
-    return (0, tuple(-(int(x) if x.isdigit() else 0) for x in v.split(".")))
+    return (0, tuple(-x for x in _version_tuple(v)))
 
 
 def machine_rows(rows):
@@ -253,9 +269,16 @@ def machine_rows(rows):
     return out
 
 
+def filters_of():
+    """母集団の絞り込み条件（引用した数字の範囲を後から言えるように出所と一緒に出す）."""
+    return {"since": since_raw if since else None, "last": last_n or None,
+            "min_plugin_version": min_pv_raw or None,
+            "dropped_unversioned": dropped_unversioned, "dropped_older": dropped_older}
+
+
 def provenance_of(rows):
     return {"retro_version": retro_version, "retro_machine_id": retro_machine,
-            "machines": machine_rows(rows)}
+            "machines": machine_rows(rows), "filters": filters_of()}
 
 
 def provenance_lines(rows):
@@ -267,7 +290,39 @@ def provenance_lines(rows):
         vers = " / ".join("%s %d" % ("v" + x["version"] if x["version"] else "版未記録", x["n"])
                           for x in r["plugin_versions"])
         parts.append("`%s` %d 件（%s）" % (r["machine_id"] or "未記録", r["n"], vers))
-    return [head, "**マシン / 版**: %s" % (" / ".join(parts) if parts else "なし（0 件）")]
+    narrowed = []
+    if since:
+        narrowed.append("--since %s" % since_raw)
+    if min_pv_raw:
+        narrowed.append("plugin_version %s 以上（版なし %d 件・それより古い %d 件を除外）"
+                        % (min_pv_raw, dropped_unversioned, dropped_older))
+    if last_n:
+        narrowed.append("--last %d" % last_n)
+    if narrowed:
+        head += " / 絞り込み: " + " / ".join(narrowed)
+    return [head,"**マシン / 版**: %s" % (" / ".join(parts) if parts else "なし（0 件）")]
+
+
+# ---- 版で絞る（v2.121.0 / GitHub issue #210）----------------------------------
+# **日付や直近 N 件ではなく版で切る**（冒頭「層別の原則」— 配布ラグで未更新マシンが旧仕様の
+# まま publish し続けるので、日付で切ると旧版の回が混ざる）。打ち手を入れた版以降だけで
+# 回復を読むための窓で、累計には打ち手より前の回が残り続ける。版を持たない回は推測で入れない
+min_pv_raw = os.environ.get("REVIEW_MIN_PLUGIN_VERSION") or ""
+dropped_unversioned = dropped_older = 0
+if min_pv_raw:
+    _min_pv = _version_tuple(min_pv_raw)
+    _kept = []
+    for e in events:
+        _v = _str_or_none(e["p"].get("plugin_version"))
+        if _v is None:
+            dropped_unversioned += 1
+        elif _version_tuple(_v) < _min_pv:
+            dropped_older += 1
+        else:
+            _kept.append(e)
+    events = _kept
+if last_n:
+    events = events[-last_n:]
 
 
 if not events:
@@ -1622,13 +1677,21 @@ def _ts_breakdown(label):
     return "（検出 0 が %d 件 / 検出はあったが全部閾値未満が %d 件）。%s" % (empty, below, why)
 
 
+def _recovery_window_hint():
+    """回復の読み方を添える（#210）。累計には打ち手より前の回が残り続け、率が構造的に下がりにくい."""
+    if min_pv_raw:
+        return "（plugin_version %s 以上に絞った集計）" % min_pv_raw
+    return ("。**回復は打ち手を入れた版以降に絞って読む** — 累計には打ち手より前の回が残り続ける"
+            "（`--min-plugin-version <版>`）")
+
+
 signals.extend(layered_signal(
     apx_stats, lambda d: d.get("true_silent", 0), lambda d: d.get("n", 0), 10,
     lambda ts, n: pct(ts, n) >= 20,
     lambda label, ts, n, note:
         "真の空振り率（報告 0 件かつ付録推奨 0）が %.0f%%（%s / %d/%d）%s。#210 の回復サイン"
-        "（20%% 未満）を満たしていない%s"
-        % (pct(ts, n), label, ts, n, _ts_breakdown(label), note),
+        "（20%% 未満）を満たしていない%s%s"
+        % (pct(ts, n), label, ts, n, _ts_breakdown(label), note, _recovery_window_hint()),
     pending=layer_pending.setdefault("真の空振り率", [])))
 
 # **synthesis の支配率**（GitHub issue #218）。閾値の根拠は上の 4b。層別は他と同じ流儀

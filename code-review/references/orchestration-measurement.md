@@ -460,7 +460,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
   - **`fired=false` なのに `skip_reason` が無い回は落とさず `measurement_gaps` の `payload:<field>.skip_reason` に倒す**（実測 8/49 件）。語彙外と違い**寄せ先を推測できない**ので、可視化する側に置く（`payload:<field>.fired` と同じ流儀）
   - **`fired=true` なのに `recall_skeptic.launch` が無い回も同じく `payload:recall_skeptic.launch` に倒す**（v2.113.0 / #216）。語彙（`rider` / `fallback`）は `lib/wave_expect.py` の `SKEPTIC_LAUNCH` と同値で、語彙外は `skip_reason` と同じく publish が落とす
 - 版マーカー: **`duration_triage_min` の存在が v2.41.0 以降・`duration_explore_min` の存在が v2.43.0 以降・`pre_adjust_counts` の存在が v2.44.0 以降（**算出方法の版は `pre_adjust_counts.schema`**）・`comment_polish` の存在が v2.45.0 以降（self-review のみ）・`severity_threshold` の存在が v2.58.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降（**meta の起動ゲートの版は `meta_reviewer.gate_schema`**）・`agents.explorer_waves` の存在が v2.61.0 以降・`measurement_gaps` / `diff_digest` の存在が v2.62.0 以降（**上流 severity 較正の版は `adversarial_verify.calibration_schema`**）・`adversarial_verify.fired` / `tokens` の存在が v2.65.0 以降（**反証の起動ゲートの版は `adversarial_verify.gate_schema`**）**。層別は必ずフィールドの有無で行い、日付では切らない。**v2.43.0 未満の `duration_*` は並行セッション汚染を受けうる**（issue #99）ためロールバック判断の基準側に使わない
-- **集計は `scripts/review-retro.sh` が行う**（v2.62.0 / issue #123 E）。上の層別ルール（版マーカーで切る / 累計で読まない / 区間を混ぜない）をスクリプト側に閉じてあるので、**jq を毎回組み立てない**。人間向けレポートは publish の直後に自動で出る（review 締めフロー 4 / self-review Step 6.4）。`--json` で機械可読、`--since` / `--last` で範囲を絞れる
+- **集計は `scripts/review-retro.sh` が行う**（v2.62.0 / issue #123 E）。上の層別ルール（版マーカーで切る / 累計で読まない / 区間を混ぜない）をスクリプト側に閉じてあるので、**jq を毎回組み立てない**。人間向けレポートは publish の直後に自動で出る（review 締めフロー 4 / self-review Step 6.4）。`--json` で機械可読、`--since` / `--last` / `--min-plugin-version` で範囲を絞れる
 
 ## 17. トークン消費の計測（改修の前後比較 / v2.48.0）
 
@@ -510,6 +510,7 @@ Claude Code の transcript（`~/.claude/projects/<slug>/*.jsonl`）は各アシ�
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh"              # publish 直後に毎回実行する
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --last 20    # 直近 N 件だけ
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --min-plugin-version <版>   # その版以上で publish された回だけ
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --json       # 機械可読
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh" --logs ~/Projects/*/.claude/events.jsonl   # 合算
 
@@ -526,6 +527,7 @@ find ~ -maxdepth 6 -name events.jsonl -path '*/.claude/*' -not -path '*/node_mod
 - **素の実行（自動探索）では「このリポジトリのログのみ」と明示する**（v2.92.0 / #173）。読んだものだけを書くと**「これが全部」と読まれる**。実測ではプラグインを開発しているリポジトリが最も母数を持たず（素の実行 n=2 / `--logs` 合算 n=99）、出力が「サンプル待ち」で埋まったため**判定可能なデータがあるのに 2 セッション判断が先送りされた**。注記に**合算コマンドとパス一覧の作り方**を添える（毎セッション `find` を組み直していた / #150 本文・#160 本文・#173 本文で 3 回）。**閾値は置かない** — 「n が小さいときだけ」にすると下で黙る区間ができ、そこがまさに誤読の起きる帯になる。`--logs` 指定時は利用者が範囲を決めているので出さない。JSON では `sources_scope`（`this-repo` / `explicit`）
 - **マシン間の合算は別問題**（`events.jsonl` は gitignored でマシンローカル / #141）。**自分の見えている範囲を全体と誤認しない** — 実測で、別マシンから見た本リポジトリの `review:completed` が 2 件だったため「publish が落ちている」と読まれた回がある（同時点で開発機側には 30 件あった / #159）
 - **計測結果を引用するときは `集計` 行と `マシン / 版` 行を必ず含める**（v2.120.0）。retro は出力の先頭にこの 2 行を常に出す（`--json` では `provenance`。0 件の回も出す）。issue コメント・レポートに数字を貼るとき、**要約してこの 2 行を落とさない** — 実測で同じ issue への再集計が判定成立 51 件 / 42 件に割れ、どのマシンの retro で、どの版で publish された回を測ったかをコメントから復元できなかった（#220）。`machine_id` / `plugin_version` を持たない古いイベントは `未記録` に入る
+- **打ち手の効果（回復）は `--min-plugin-version <版>` で版を絞って読む**（v2.121.0 / GitHub issue #210）。累計には打ち手より前の回が残り続けるので、率が閾値を切ることが構造的に難しい（実測: opus-4-8 の真の空振り 9/30。昔の 9 件が残る限り 20% 未満には 46 件以上要る）。**日付・直近 N 件では切らない** — 冒頭の層別の原則（配布ラグで未更新マシンが旧仕様のまま publish し続ける）と、#210 の判断（データに合わせて定義を動かして基準を通さない）に反するため。`plugin_version` を持たない回は除外し、除外件数を「集計」行と `provenance.filters` に出す。`--last` は版で絞った後に掛かる。真の空振り率の ⚠️ は、絞っていない集計では回復の読み方を添え、絞った集計では絞り込み条件を名乗る
 
 **出力の読み方**（本ファイルの他節が正本である解釈をここに複製しない。以下は「どの節に戻るか」の対応表）:
 
