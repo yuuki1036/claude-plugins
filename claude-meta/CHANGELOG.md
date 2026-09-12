@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.6] - 2026-09-12
+
+### Fixed
+
+- **component-addition-advisor の `_requirements` 記述例を実スキーマに合わせた**（GitHub issue #225）。
+  従来はフォールバック/ブロッカーを `_requirements` へ object map 形式（`preferred`/`fallback`/`blocker`/`added_at`）で
+  書くよう指示していたが、`plugin.schema.json` の `_requirements` は array 形式（`{name, type, required, description}`・
+  `type` は `mcp_server|cli_tool|plugin`・`additionalProperties: false`）の外部依存宣言専用で、object map を書くと
+  `validate-ssot.sh` / `claude plugin validate` に落ちる。blocker/fallback の記録先を CHANGELOG / ADR に改め、
+  `_requirements` は外部依存宣言専用である旨を明記した
+
 ## [1.13.5] - 2026-08-28
 
 ### Fixed

@@ -3,7 +3,7 @@ name: component-addition-advisor
 description: >
   プラグインに新 skill / agent / hook / command を追加する前の「退路確保」判断。
   既存拡張で解けないかを最初に検証し、ブロッカーが出た場合のみ新規追加する。
-  _requirements にフォールバック手順を書く規約をガイドする。
+  ブロッカー理由とフォールバック手順を CHANGELOG / ADR に記録する規約をガイドする。
   トリガー: 「新しいskill追加」「新しいagent追加」「新しいhook追加」「skill追加判断」
   「退路確保」「component addition」「追加前チェック」「最小構成」「skill 分割すべき？」
 effort: medium
@@ -92,22 +92,20 @@ NO の場合、「なぜ既存で解けないか」を 1 行で書ける必要�
 
 ### Step 3: フォールバック設計
 
-新規追加する場合、`_requirements` にフォールバック手順を書く。
+新規追加する場合、**ブロッカー理由とフォールバック手順を記録する**。
 
-```json
-{
-  "_requirements": {
-    "new_skill_name": {
-      "preferred": "new_skill_name",
-      "fallback": "既存 skill A の workflow Phase 2 を流用",
-      "why": "Phase 2 では十分だが、X のケースで新 skill が必要"
-    }
-  }
-}
-```
+> **記録先は `plugin.json` の `_requirements` ではない。** `_requirements` は `.claude-plugin/schema/plugin.schema.json` で **array 形式**（各要素 `{name, type, required, description}`・`type` は `mcp_server|cli_tool|plugin`・`additionalProperties: false`）と定義された **外部依存の宣言専用**で、`check-deps.sh` との同期検証に使われる。コンポーネントのフォールバック根拠を object map で書くと SSoT 検証（`validate-ssot.sh` / `claude plugin validate`）に落ちる。
 
-**フォールバック記述のメリット:**
-- 新 skill がロードされない環境でも退路がある
+記録先:
+- **CHANGELOG の該当バージョンエントリ**（`### Added` に blocker / fallback を 1〜2 行）
+- 後戻りしにくい設計判断なら **ADR**（`adr-keeper`）。design doc がある場合はその「設計判断ログ」
+
+記録する内容:
+- **blocker**: なぜ既存で解けないか（1 行）
+- **fallback**: 新コンポーネントが無い環境での退路（既存 skill の Phase 流用など）
+
+**記録のメリット:**
+- 新 skill がロードされない環境でも退路が残る
 - 後から「やっぱり既存で足りた」と分かった場合に削除しやすい
 - レビュー時に「なぜ追加したか」の根拠が残る
 
@@ -162,13 +160,13 @@ options:
 
 「新 skill 追加」を選んだ場合、ブロッカー理由を 1 行で記録させる。
 
-記録先:
-- `plugin.json` の `_requirements.{skill}.why`
+記録先（`_requirements` ではない。Step 3 の注記参照）:
 - CHANGELOG の該当バージョンエントリ
+- 後戻りしにくい判断なら ADR / design doc の設計判断ログ
 
 ### Phase 4: フォールバック明示
 
-新規追加時は `_requirements.{skill}.fallback` 欄を必ず埋める。空欄のまま追加しない（将来の剪定で判断材料になる）。
+新規追加時はフォールバック（退路）を必ず記録する。空欄のまま追加しない（将来の剪定で判断材料になる）。記録先は blocker と同じ（CHANGELOG / ADR）。
 
 ## Red Flags（追加を見送るサイン）
 
@@ -189,34 +187,29 @@ options:
 | 多段推論 + 自律実行 | 新 Agent |
 | 参照情報の追加のみ | references/ に追記 |
 
-## _requirements フォールバック規約
+## フォールバック記録の規約
 
-プラグインの `plugin.json` に以下フォーマットで追加する（既存 `_requirements` がある場合は拡張）。
+新コンポーネント追加時に blocker / fallback を記録する。**`plugin.json` の `_requirements` には書かない** — そこは array 形式の外部依存宣言専用で、object map を足すと schema 検証に落ちる（Step 3 の注記）。
 
-```json
-{
-  "_requirements": {
-    "{component-name}": {
-      "type": "skill|agent|hook|command",
-      "preferred": "{plugin}:{component-name}",
-      "fallback": "既存 {other-component} で代替可能、{条件} の場合のみ新コンポーネント必須",
-      "blocker": "なぜ既存で解けないかの 1 行説明",
-      "added_at": "YYYY-MM-DD"
-    }
-  }
-}
+記録は **CHANGELOG の該当バージョンエントリ**を基本とし、後戻りしにくい判断なら **ADR**（`adr-keeper`）に残す。書く内容:
+
+```markdown
+### Added
+- **<component-name> を追加**。
+  - blocker: なぜ既存で解けないか（1 行）
+  - fallback: 新コンポーネントが無い環境での退路（既存 {other-component} の Phase 流用など）
 ```
 
 **利点:**
 - コンポーネント乱立を抑制
 - 後から削除・統合する判断材料になる
-- `cc-catch-up` の剪定モードで使える
+- `cc-catch-up` の剪定モードで CHANGELOG / ADR から根拠を引ける
 
 ## 他スキルとの連携
 
 - **`/quality-check` + `validate_plugin_quality.py`**: 構造検証・スキーマ・SSoT 同期はこちらに任せる
 - **`docs/skill-writing.md` + `claude-meta:eval-runner`**: 作成後の品質点検（執筆観点の自己レビュー + トリガー回帰テスト）はこちらに任せる
-- **`claude-meta:cc-catch-up`**: Phase P（剪定モード）の判定材料として本 skill の `_requirements` を参照する
+- **`claude-meta:cc-catch-up`**: Phase P（剪定モード）の判定材料として、本 skill が CHANGELOG / ADR に残した blocker / fallback を参照する
 - **`claude-meta:claude-md-improver`**: Skill Coordination セクションで新 skill を参照すべきかを判定する
 
 本 skill は **追加前のゲート** を担当。作成後の検証は `/quality-check`（構造・同期）と `docs/skill-writing.md` + evals（執筆品質・トリガー回帰）に委譲する。
@@ -252,12 +245,12 @@ Advisor:
 
   → 判定フロー Step 2 で "決定的検証 YES" なので Hook が妥当
   → 新 skill ではなく hook として追加
-  → _requirements に fallback 記述
+  → blocker / fallback を CHANGELOG に記述
 ```
 
 ## 要点
 
 - 既存拡張が第一選択。新規追加はブロッカーが出たときのみ
 - 「あると便利」では追加しない（context / 保守コストが増える）
-- `_requirements` にフォールバックと blocker 理由を記録する
+- フォールバックと blocker 理由を CHANGELOG / ADR に記録する（`_requirements` は外部依存宣言専用）
 - 判断は診断 → 提示 → AskUserQuestion。自動追加はしない
