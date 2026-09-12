@@ -50,16 +50,15 @@ check_cli() {
 # 設定の有無と起動可能性は別物で、launcher が PATH に無ければ MCP は ENOENT で
 # 落ちる。実際 npx 不在の機体で chrome-devtools が起動せず、依存チェックは
 # ERROR も WARN も 0 件だった。設定とは独立に launcher の実在を見る。
+# chrome-devtools は command="bash" + launcher スクリプト経由で起動するため、
+# command の PATH 確認（bash は必ず在る）では不十分。launcher の --check で
+# npx が実際に解決できるかを見る（mise / nvm / volta 経路を含めて）。
 check_bundled_mcp_launcher() {
   local name="$1" desc="$2"
-  local cfg="${CLAUDE_PLUGIN_ROOT}/.mcp.json"
-  [ -f "$cfg" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  local cmd=""
-  cmd="$(jq -r --arg n "$name" '(.mcpServers[$n].command) // empty' "$cfg" 2>/dev/null)" || return 0
-  [ -n "$cmd" ] || return 0
-  if ! command -v "$cmd" &>/dev/null; then
-    warnings="${warnings}\n- [WARN] ${desc}（${name}）は同梱設定されていますが、起動コマンド ${cmd} が PATH に無いため起動できません"
+  local launcher="${CLAUDE_PLUGIN_ROOT}/scripts/launch-${name}.sh"
+  [ -f "$launcher" ] || return 0
+  if ! bash "$launcher" --check >/dev/null 2>&1; then
+    warnings="${warnings}\n- [WARN] ${desc}（${name}）は同梱設定されていますが、npx を解決できないため起動できません（Node.js を入れるか PATH を通す）"
   fi
 }
 
@@ -76,8 +75,21 @@ check_plugin() {
   fi
 }
 
+# gh の版下限。pr-creator の Screenshots 添付は `gh pr create --attach`（gh 2.99.0 で追加）に
+# 依存する。未満だと添付が skip され手動添付になるので WARN で気づかせる。
+check_gh_version() {
+  command -v gh >/dev/null 2>&1 || return 0
+  local ver
+  ver="$(gh --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  [ -n "$ver" ] || return 0
+  if [ "$(printf '%s\n2.99.0\n' "$ver" | sort -V | head -1)" != "2.99.0" ]; then
+    warnings="${warnings}\n- [WARN] gh ${ver} は \`--attach\`（2.99.0 で追加）に非対応です。pr-creator の Screenshots 添付が手動になります（\`brew upgrade gh\` 等で更新）"
+  fi
+}
+
 # --- チェック実行 ---
 check_cli "gh" "true" "GitHub CLI"
+check_gh_version
 check_mcp "linear" "false" "Linear MCP サーバー"
 
 # ui-verify 系は Web プロジェクトでのみ検査する。node の無い機体で毎セッション

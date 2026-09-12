@@ -2,8 +2,11 @@
   "mcpServers": {
     "chrome-devtools": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["chrome-devtools-mcp@latest"],
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/launch-chrome-devtools.sh"],
+      "env": {
+        "DEV_WORKFLOW_BROWSER_CONNECT": "${user_config.browser_connect}"
+      },
       "alwaysLoad": true
     }
   }

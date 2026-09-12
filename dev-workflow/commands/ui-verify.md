@@ -1,9 +1,11 @@
 ---
-description: "Web UI の動作確認・スタイル調整・スクリーンショット取得を chrome-devtools MCP で自動化する トリガー: 「動作確認」「UIチェック」「スクリーンショット」「スタイル調整」「見た目確認」「レスポンシブ確認」「/ui-verify」「visual check」「screenshot」「UI verification」「responsive check」 引数: [verify|tune|snap] [target-url-or-path]"
+description: "Web UI の動作確認（実機 E2E）・スタイル調整・スクリーンショット取得を自動化する。verify は正常・準正常・異常系を実機ブラウザで通し合否と証跡を残す トリガー: 「動作確認」「UIチェック」「E2E」「スクリーンショット」「スタイル調整」「見た目確認」「レスポンシブ確認」「/ui-verify」「visual check」「screenshot」「UI verification」「responsive check」 引数: [verify|tune|snap] [target-url-or-path]"
 allowed-tools:
   - Bash
   - Read
   - Edit
+  - AskUserQuestion
+  - Skill
   - mcp__plugin_dev-workflow_chrome-devtools__navigate_page
   - mcp__plugin_dev-workflow_chrome-devtools__new_page
   - mcp__plugin_dev-workflow_chrome-devtools__take_screenshot
@@ -17,6 +19,24 @@ allowed-tools:
   - mcp__plugin_dev-workflow_chrome-devtools__fill
   - mcp__plugin_dev-workflow_chrome-devtools__press_key
   - mcp__plugin_dev-workflow_chrome-devtools__wait_for
+  - mcp__Claude_Browser__navigate
+  - mcp__Claude_Browser__computer
+  - mcp__Claude_Browser__find
+  - mcp__Claude_Browser__read_page
+  - mcp__Claude_Browser__form_input
+  - mcp__Claude_Browser__read_console_messages
+  - mcp__Claude_Browser__read_network_requests
+  - mcp__Claude_Browser__preview_start
+  - mcp__Claude_Browser__preview_logs
+  - mcp__claude-in-chrome__navigate
+  - mcp__claude-in-chrome__computer
+  - mcp__claude-in-chrome__find
+  - mcp__claude-in-chrome__read_page
+  - mcp__claude-in-chrome__form_input
+  - mcp__claude-in-chrome__read_console_messages
+  - mcp__claude-in-chrome__read_network_requests
+  - mcp__claude-in-chrome__tabs_context_mcp
+  - mcp__claude-in-chrome__tabs_create_mcp
 ---
 
 **まず `${CLAUDE_PLUGIN_ROOT}/skills/ui-verify/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `dev-workflow@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。

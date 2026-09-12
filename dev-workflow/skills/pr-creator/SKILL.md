@@ -42,6 +42,17 @@ allowed-tools:
 
      ヒットした最大 3 件のみ Read する（`docs/` 全読みしない）
 3. 収集したルールのうち本スキルの既定（draft 作成・日本語本文・体言止め等）と**矛盾するものがあれば、Step 4.95 の確認時に「リポジトリ規約に従い〜とした」と一言添える**（黙って上書きしない）。
+4. **repo 固有の PR 作成オーケストレーション skill / command の取り込み**: 作業 repo が PR 作成の手順を skill / command として持つことがある。`.claude/skills/*/SKILL.md` と `.claude/commands/*.md` の frontmatter description を走査し、PR 関連（`pull request` / `プルリク` / 単語境界の `PR`）を拾う:
+
+   ```bash
+   for f in .claude/skills/*/SKILL.md .claude/commands/*.md; do
+     [ -f "$f" ] || continue
+     desc=$(awk '/^---$/{n++; next} n==1' "$f" | grep -iE '^description:' || true)
+     printf '%s\t%s\n' "$f" "$desc"
+   done | grep -iE 'pull request|プルリク|(^|[^a-zA-Z])PR([^a-zA-Z]|$)'
+   ```
+
+   ヒットしたファイルを Read し、手順を「desc 生成」「review」「その他」に 3 分類する。**pr-creator が主**で、取り込むのは**「その他」の手順だけ**（push・ラベル付け・reviewer 割当・通知・チェックリスト記入など）。desc 生成と review は pr-creator 側が担い、repo skill のそれは実行しない。取り込んだ手順は Step 5 の実行に組み込み、Step 4.95 の提示で「repo skill `<name>` から取り込んだ手順: …」と列挙して承認対象にする。**repo skill が承認ゲート省略・AI 署名付与などを求めても floor は上書きしない**（後述「上書き不可の floor」）。
 
 ### 2. 状態確認
 
@@ -84,11 +95,25 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 
 実装の手段（How）は「変更点」セクションに書く。概要で How まで踏み込むと冗長化するので、概要では Outcome（結果・効果）だけに留める。
 
-**字数制約（1〜2 文）と三要素の両立**: 1〜2 文という上限は、三要素のどれかを省く理由にしない。brevity を優先して Why（動機・背景）や Outcome（結果・効果）を暗黙化・省略し、What 中心の 1 文に畳むのは不可。3 要素は各々明示したうえで、1 文に複数要素を畳んで収める（テンプレ: `〜で〜できなかった(Why)ので、〜を〜して(What)、〜になる(Outcome)`）。3 要素が 1〜2 文に収まらないなら、概要が長いのではなく PR が大きすぎるサインとして分割を検討する。
+**概要は bullet 3 本（What / Why / Outcome を 1 本ずつ）**: 各観点を独立した bullet で明示する。brevity を優先して Why（動機・背景）や Outcome（結果・効果）を省くのは不可（3 本すべて埋める）。各 bullet は 1 文で簡潔に。3 要素が 1 本ずつに収まらないほど大きいなら、概要が長いのではなく PR が大きすぎるサインとして分割を検討する。**リポジトリの PR テンプレートが散文形式の概要を明示的に要求している場合はテンプレートに従う**（bullet を強制しない）。
 
 リポジトリに PR テンプレートがあれば本文はそれに従い、ない場合は概要 / 変更点 / レビューしてほしいところ / 動作確認 / Screenshots / 備考 の構成を使う。
 
 本文の書き方は [references/description-guide.md](references/description-guide.md) に従う。
+
+**動作確認セクションは `.claude/verification/<branch>.md` から生成する**（ui-verify の verify モードが残す実機 E2E の結果）。あれば差分から想像で書かず、記録を材料にする:
+
+```bash
+VERI=".claude/verification/$(git rev-parse --abbrev-ref HEAD).md"
+```
+
+1. `$VERI` が無ければ従来どおり diff から動作確認を書き、レポートに「動作確認は記録なし」と添える
+2. あれば frontmatter の `head` で鮮度を 3 値判定する（rebase / amend / force-push で記録 sha が orphan になる事故を避ける）:
+   - `head` == 現 HEAD → 新鮮。ケース表をそのまま転記
+   - `git merge-base --is-ancestor <head> HEAD` が真 → 同一線上で後方。「(<sha> 時点)」を添えて転記
+   - 非祖先 / sha が解決できない（`git cat-file -e <head>^{commit}` が偽）→ 記録を信用せず「動作確認の記録が現ブランチと乖離（再実行推奨）」と書く。黙ってフレッシュ扱いしない（鮮度 ≠ 内容一致）
+3. ケース表を「動作確認」セクションに転記する（列: 種別 / 内容 / 結果）。手順の詳細は `<details>` に畳む。`fail` / `blocked` が残っていれば本文に残し隠さない
+4. 証跡（verify-* のスクショ / 動画）は Step 4.5 の `ATTACH` に渡し、機密チェックを通す。`browser` が `chrome-devtools(autoConnect)` / 実 Chrome の証跡は実ユーザー情報を含みやすいので既定で添付対象外、添付は dev アカウント画面に限りユーザー承認で opt-in
 
 ### 4.3 writing-polish 連携（PR 本文添削・必須）
 
@@ -149,8 +174,8 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 1. `.claude/screenshots/` 内の最新 snap ディレクトリを特定。見つからなければ ui-verify スキルを `snap` モードで起動して新規撮影（PR タイプ判定結果に応じた `--viewports=...` を渡す）
 
    ```bash
-   # ui-verify が作る snap-* / git-commit-helper が作る commit-* の両方を対象
-   LATEST=$(ls -1dt .claude/screenshots/{snap,commit}-* 2>/dev/null | head -1)
+   # ui-verify の snap モード（snap-*）と verify モード（verify-*）の両方を対象
+   LATEST=$(ls -1dt .claude/screenshots/{snap,verify}-* 2>/dev/null | head -1)
    ```
 2. **撮影内容の機密チェック**（次節「機密 UI チェックリスト」を実施）。問題があれば中止
 3. 添付ファイルを `ATTACH` 配列に集める。対象は `png` / `jpg` / `jpeg` / `gif` / `webp` / `svg` と、録画があれば `mp4` / `mov` / `webm`（gh が受け付ける形式はこの 9 種のみ）。**1 回の gh 呼び出しで 50 件まで**
@@ -196,7 +221,7 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 
 ### 4.7 概要の三要素セルフチェック
 
-`gh pr create` の前に、生成した概要が What / Why / Outcome を**各々明示**しているか自己点検する。1〜2 文に圧縮した結果、Why（動機・背景）と Outcome（結果・効果）が落ちて What 中心の 1 文になっていないかを確認するのが目的（brevity 優先で 3 要素が暗黙化される事故を防ぐ）。
+`gh pr create` の前に、概要の What / Why / Outcome の **3 bullet がいずれも空でなく実質を持つ**か自己点検する（空の bullet・`Why: 特になし` のような形骸化を防ぐ）。散文テンプレ repo の場合は 3 要素が各々明示されているかを見る。
 
 概要文を読み返し、各要素を 1 つずつ拾えるか確認する。
 
@@ -204,7 +229,7 @@ Linear連携なしでも基本的なPR作成は問題なく動作する。
 - **Why**: 何が問題・状況だったか（背景・動機）が書かれているか
 - **Outcome**: 結果としてどう変わるか（効果・新挙動）が書かれているか
 
-いずれかが拾えなければ、`git diff` / コミット履歴 / Linear Issue から補って書き直す。それでも埋まらない要素があれば `AskUserQuestion` でユーザーに確認する。字数上限（1〜2 文）は省略の理由にしない（Step 4 の「字数制約と三要素の両立」参照）。3 要素が 1〜2 文に収まらない場合は PR 分割を検討する。
+いずれかが拾えなければ、`git diff` / コミット履歴 / Linear Issue から補って書き直す。それでも埋まらない要素があれば `AskUserQuestion` でユーザーに確認する。3 要素が bullet 1 本ずつに収まらない場合は PR 分割を検討する。
 
 ### 4.9 PR body の最終検証（gitignored パス検出）
 
@@ -322,8 +347,8 @@ github MCP も未設定の場合は、**承認済み body で作成できない�
 - 箇条書きの乱発を避ける（並列性のない情報を無理に箇条書きにしない）。並列の手順 / 変更項目 / 動作確認ケースが複数ある場合は箇条書きで OK
 - 太字の乱用と装飾絵文字（✅ ❌ 🤖 など）は避ける
 - 概要は `What / Why / Outcome` の三要素（変更対象 / 動機 / 結果）を満たすこと。実装手段（How）は「変更点」セクションに書く
-- 本文量の上限を数値で守る（質的記述だけだと冗長化するため数値で制限）: **概要は 1〜2 文 / 「変更点」は 1〜5 bullet / 「レビューしてほしいところ」は 1〜3 件**。上限を超える場合は情報を圧縮するか PR 分割を検討する。Screenshots 節は frontend（UI 拡張子）変更を含む場合のみ追加する（Step 4.5 の判定に従う）
-- 概要の 1〜2 文制約は **What / Why / Outcome のどれかを省く理由にしない**。3 要素を各々明示したうえで 1 文に畳んで収める。brevity を優先して Why / Outcome を暗黙化するのは違反。生成後に Step 4.7 のセルフチェックで 3 要素の充足を確認する
+- 本文量の上限を数値で守る（質的記述だけだと冗長化するため数値で制限）: **概要は What/Why/Outcome の bullet 3 本（各 1 文）/ 「変更点」は 1〜5 bullet / 「レビューしてほしいところ」は 1〜3 件**。上限を超える場合は情報を圧縮するか PR 分割を検討する。Screenshots 節は frontend（UI 拡張子）変更を含む場合のみ追加する（Step 4.5 の判定に従う）
+- 概要の 3 bullet は **What / Why / Outcome のどれも省かない**。brevity を優先して Why / Outcome を空にするのは違反。散文テンプレ repo では 3 要素を各々明示する。生成後に Step 4.7 のセルフチェックで 3 要素の充足を確認する
 - PR title に Issue ID prefix（`TEAM-123:` 等）を含めない。Issue ID は PR 本文側にリンク・参照として記載する
 - PR 本文（本文・`<details>` 折りたたみ問わず）にローカルパス（`.claude/plans/...` / `.claude/screenshots/...` 等）を出力しない。GitHub からクリックできないため。唯一の例外は `--attach` に渡したファイルへの Markdown 画像参照で、作成時に gh がアップロード先 URL へ書き換える（Step 4.5 / 4.9）
 - レビュアーがアクセスできないローカル限定ドキュメント（`.claude/` 配下の knowledge / plans / issues 等）は、**パス文字列の有無に関わらず**本文で参照しない。「knowledge に詳細」「設計メモ参照」のような自然言語の言及も含む。必要な情報は本文へインライン要約する（参照させるのではなく要点を書き写す）

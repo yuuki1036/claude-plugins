@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -219,10 +221,16 @@ class CheckDepsUiVerifyTest(HookTestCase):
                 stub.chmod(0o755)
         elif stub.exists():
             stub.unlink()
+        # **HOME も隔離する**: launcher は npx を mise / nvm / volta から引くので、実 HOME だと
+        # 実マシンの mise 経由で npx が解決され（`/opt/homebrew/bin/mise` を絶対パスで拾う）、
+        # with_npx=False でも「起動できません」が出ない。HOME を temp にして mise の global node を
+        # 中和する（`path_with_only` が環境の不在に頼らないのと同じ思想で、HOME 経路も列挙で閉じる）。
+        home = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(home, ignore_errors=True))
         return self.run_hook(
             {"hook_event_name": "SessionStart"},
             cwd=self._project(ui_verify_enabled=ui_verify_enabled),
-            env_extra={"PATH": path},
+            env_extra={"PATH": path, "HOME": home},
         )
 
     # --- 黙るべきとき（こちらを先に固定する） ---
@@ -249,17 +257,17 @@ class CheckDepsUiVerifyTest(HookTestCase):
         out = self._run(ui_verify_enabled=True, with_npx=False).stdout
         self.assertIn("Node.js", out)
 
-    # --- graceful skip（jq 不在で launcher 検査を丸ごと無効化する経路） ---
-    def test_launcher_check_skips_silently_without_jq(self):
-        """jq が引けなければ launcher 検査は素通りする（クラッシュも誤警告も出さない）.
+    # --- jq 非依存（launcher 検査は jq を使わず launcher --check に委ねる） ---
+    def test_launcher_check_is_jq_independent(self):
+        """launcher 検査は jq を使わない（`bash launcher --check` に委ねる）.
 
-        `check_bundled_mcp_launcher` の `command -v jq || return 0` ガードの回帰。
-        jq 不在時に launcher を検査できないのは仕様だが、**「起動できません」を誤って
-        出さない / 落ちない**ことを固定する（jq 不在機で静かに壊れる型を塞ぐ）。
+        旧実装は `.mcp.json` を jq で parse して command を読んでいたため jq 不在で
+        検査を丸ごと skip していた（silent な穴）。新実装は jq なしでも launcher --check が
+        npx 解決可否を返すので、jq 不在でも正しく警告する（穴が塞がった）。
         """
         res = self._run(ui_verify_enabled=True, with_npx=False, with_jq=False)
         self.assertEqual(res.returncode, 0)
-        self.assertNotIn("起動できません", res.stdout)
+        self.assertIn("起動できません", res.stdout)
 
     def test_never_blocks(self):
         """依存不足でも起動は止めない（safe-hook は exit 0 に収束する）."""

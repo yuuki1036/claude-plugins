@@ -2,6 +2,39 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.30.0] - 2026-09-12
+
+### Changed
+
+- **ui-verify の verify モードを実機 E2E に置き換え**。console/network の smoke test から、正常・準正常・異常系を
+  実機ブラウザで通して合否（pass/fail/blocked）と証跡を `.claude/verification/<branch>.md` に残す形にした。
+  設計: `.claude/designs/20260912-e2e-verify-comment-polish-pr-flow.md` (A)。
+  - **ブラウザ基盤の優先順位**: 認証不要=chrome-devtools / 認証必要=chrome-devtools `--autoConnect`（実 Chrome の
+    ログイン状態を再利用）→ Claude Browser → Claude in Chrome → ログインだけ人間。allowed-tools に 3 系統を追加。
+  - **ケース列挙**: spec.md → Issue 本文 → diff 推定 → 固定 5 項目（入力エラー/空状態/権限なし/通信失敗/二重送信）を
+    重ねる。`${CLAUDE_EFFORT}` で diff 推定の有無を段階化。提示して確認してから実行。
+  - **書き込み系の歯止めを 2 段に**: 本番 URL 不可に加え、autoConnect/実 Chrome 基盤では破壊的操作を既定 blocked とし、
+    dev backend が隔離環境であることをユーザー確認したときだけ解禁する。
+  - **証跡**: E2E の合否は実機のみ。スクショは chrome-devtools / Storybook、動画は Playwright recordVideo で撮る
+    （撮影係であって E2E 代替にしない）。autoConnect 証跡は実ユーザー情報を含みやすいので既定で PR 添付対象外。
+  - **アカウント切替対策**: 起動時に `expected_user` を確定・記録し、表示ユーザー名と照合して違えば停止。
+- **pr-creator が動作確認セクションを `.claude/verification/<branch>.md` から生成**。差分からの推測をやめ、実機 E2E の
+  ケース・合否・証跡を転記する。`head` の鮮度を 3 値判定（新鮮 / 祖先（(sha 時点) 注記）/ 乖離（再実行推奨））し、
+  rebase・amend・force-push で記録 sha が orphan になった場合に黙ってフレッシュ扱いしない。
+- **pr-creator の概要を What/Why/Outcome の bullet 3 本に変更**（散文 1〜2 文から）。テンプレが散文を要求する repo は
+  テンプレ優先。Step 4.7 のセルフチェックを「3 bullet が空でないか」に単純化。
+- **pr-creator が repo 固有の PR オーケストレーション skill/command を取り込む**。`.claude/skills` / `.claude/commands` の
+  description から PR 関連を拾い、desc 生成と review 以外の手順（push・ラベル・reviewer 割当・通知）を取り込む。
+  floor（承認ゲート・機密チェック・ローカルパス非出力・AI 署名禁止）は repo 規約でも上書きしない。
+
+### Fixed
+
+- **chrome-devtools MCP の起動ラッパ `scripts/launch-chrome-devtools.sh` を追加**。GUI app の痩せた PATH で `npx` が
+  ENOENT になる問題に対し、mise / nvm / volta 経路から npx を解決する。`.mcp.json` を `command: "bash"` +
+  `${CLAUDE_PLUGIN_ROOT}/scripts/...` 経由に変更し、`userConfig.browser_connect` を `env` 展開で渡す。
+- **check-deps に gh の版下限（2.99.0）チェックを追加**。未満だと pr-creator の `--attach` が使えず添付が手動になる旨を WARN。
+  launcher 検査を `--check`（npx 解決可否）方式に変更（`command: "bash"` では素通りするため）。
+
 ## [1.29.0] - 2026-09-12
 
 ### Added

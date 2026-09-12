@@ -1,6 +1,6 @@
 {
   "name": "dev-workflow",
-  "version": "1.29.0",
+  "version": "1.30.0",
   "description": "Git 操作・PR 作成・UI 動作確認・バグ診断・worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、承認ゲート付き PR 作成、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断、worktree 単位の DB / port 分離を提供する。",
   "author": {
     "name": "yuki"
@@ -12,6 +12,13 @@
       "type": "string",
       "required": false,
       "default": "ja"
+    },
+    "browser_connect": {
+      "title": "UI 動作確認のブラウザ接続方式",
+      "description": "ui-verify が認証あり画面を E2E するときの chrome-devtools 接続方式。default=専用プロファイル / autoConnect=実 Chrome のログイン状態を再利用（Chrome 144+） / userDataDir=<path>=指定プロファイル。launcher が .claude/dev-workflow.json の browser_connect も参照する（userConfig 到達経路が未確定なため。設計 open 1）",
+      "type": "string",
+      "required": false,
+      "default": "default"
     }
   },
   "_requirements": [
