@@ -2,6 +2,14 @@
 
 spec-advisor の変更履歴。[Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) 形式、[SemVer](https://semver.org/lang/ja/) に従う。
 
+## [0.1.9] - 2026-09-12
+
+### Fixed
+
+- **`feature-dev` が skill 化されたのに追随して、委譲手段の記述を直した**。routing-rubric と
+  SKILL.md が「feature-dev は command 専用で `Skill` tool では起動できない」と書いていたが、
+  5 軸とも `Skill` tool で統一できるようになった
+
 ## [0.1.8] - 2026-09-06
 
 ### Fixed

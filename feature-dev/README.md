@@ -4,7 +4,8 @@
 
 ## Overview
 
-`/feature-dev` コマンドで起動する 8 phase のワークフロー。いきなりコードを書き始めるのではなく、コードベース理解 → 要件の grill → アーキテクチャ設計 → 実装 → runtime 検証 → 品質レビューの順で進めることで、既存コードに馴染む設計を作る。
+`/feature-dev` コマンド、または「機能開発」「新機能を実装」「実装計画を立てて」等の自然言語から起動する
+8 phase のワークフロー（command と skill の同名ペア。本体は `skills/feature-dev/SKILL.md`）。いきなりコードを書き始めるのではなく、コードベース理解 → 要件の grill → アーキテクチャ設計 → 実装 → runtime 検証 → 品質レビューの順で進めることで、既存コードに馴染む設計を作る。
 
 各 phase は `${CLAUDE_EFFORT}`（実行時 effort）と feature の特性に応じて動的に構成される。Phase 1.7 のトリアージが explorer / architect / reviewer の体数と focus を決め、低 effort では phase を圧縮し、高 effort では多角的に検証する。
 
@@ -19,7 +20,11 @@
 
 これらを構造化したワークフローに埋め込み、`/feature-dev` で自動的に走らせる。
 
-## Command: `/feature-dev`
+**適用範囲**: 新機能を設計から作るためのワークフロー。typo・設定変更・原因既知の小さな bugfix・
+既存 spec どおりに書くだけのタスクでは 8 phase を回さず、その旨を 1 文断って通常実装に移る
+（SKILL.md 冒頭の「適用範囲」節）。
+
+## Command / Skill: `/feature-dev`
 
 8 phase の機能開発ワークフローを起動する。
 
@@ -27,11 +32,17 @@
 /feature-dev Add user authentication with OAuth
 ```
 
-引数なしでも起動でき、対話的に要件を詰めていく。
+引数なしでも起動でき、対話的に要件を詰めていく。Issue ID を渡すと Phase 1.5 が該当 Issue
+ファイルを読み、そこを要件の出発点にする。
 
 ```bash
 /feature-dev
+/feature-dev TEAM-123
 ```
+
+スキルとしても起動する（`Skill feature-dev:feature-dev`、または自然言語トリガー）。
+なお同名ペアではルーターに載るのは `commands/feature-dev.md` の description なので、
+トリガーフレーズを変えるときは command と SKILL.md を対で直すこと（GitHub issue #206）。
 
 ## Phase 構成
 

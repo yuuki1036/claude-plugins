@@ -18,7 +18,7 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 | スキル | 説明 |
 |--------|------|
 | init | プロジェクト初期セットアップ（backend 選択 + ディレクトリ作成） |
-| start | セッション開始。main ではダッシュボード、feature ブランチでは Issue コンテキスト読み込み |
+| start | セッション開始。引数の Issue ID を優先し、無ければブランチ名から判定（main ならダッシュボード）。未着手なら feature-dev を案内 |
 | issue-create | Issue 作成 + ブランチ自動作成 |
 | issue-design | Issue 本文を 9 セクションテンプレと設計判断ルールで設計・リライト |
 | issue-maintain | Issue ファイルのセッション内容反映・品質整理・knowledge 切り出し |

@@ -1,13 +1,16 @@
 ---
 name: start
 description: >
-  セッション開始時の作業準備。main ブランチではダッシュボードモード（全プロジェクト状況表示）、
-  feature ブランチでは Issue コンテキスト読み込み。
+  セッション開始時の作業準備。引数の Issue ID を優先し、無ければブランチ名から判定する
+  （main ブランチではダッシュボードモード、feature ブランチでは Issue コンテキスト読み込み）。
+  第 2 引数以降の「今回の意図」が新規着手なら feature-dev 起動の確認を必ず出す。
   トリガー: 「作業開始」「セッション開始」「今日の作業」「/start」
+  引数: [Issue ID] [今回の意図]（省略可）
 effort: high
 allowed-tools:
   - Agent
   - Skill
+  - AskUserQuestion
   - mcp__linear__get_issue
   - mcp__linear__list_issues
   - Read
@@ -48,9 +51,27 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
    - 「続行」選択時: Linear MCP を使う Phase（1.5, Q2, P1〜P2, F3.5 の Linear Sync Agent）をスキップし、ローカルファイルのみで進行する
 3. 正常に応答が返った場合: そのまま Phase 1 に進む
 
-### Phase 1: ブランチ名の取得と分岐
+### Phase 1: 対象 Issue の決定と分岐
 
-1. `git branch --show-current` でカレントブランチ名を取得する（Bash）
+0. **引数が最優先**: 呼び出し元から渡された引数を次のように解釈する。
+
+   ```
+   {ISSUE-ID} [今回の意図（自由記述）]
+   ```
+
+   - **第 1 トークン**: Issue ID（`[A-Z]+-\d+` 形式）。あればそれを対象 Issue ID として採用し、**ブランチ名を見ずに Feature ブランチモード（Phase F2 以降）へ直行する**（Phase F1 の抽出は skip）。ブランチが main/master のままでも同様（ブランチを切る前に Issue のコンテキストだけ読みたい、が典型）。この場合 Phase F7 では「ブランチ未作成」として `git checkout -b` の案内も添える
+   - **残りの文字列**: 今回のセッションの意図（`TASK_INTENT`）。次の 3 値に分類して Phase F7 の分岐に使う:
+
+     | TASK_INTENT | 判定 | 例 |
+     |---|---|---|
+     | `new` | これから着手する宣言。「新規タスク」「新規」「new」「これから作る」「着手する」など、**やることの中身を含まない着手宣言** | `TEAM-123 新規タスク` |
+     | `continue` | 具体的なやることが書かれている（中身がある） | `TEAM-123 ログイン画面のバリデーション直す` |
+     | `auto` | 意図の記述が無い（Issue ID のみ、または引数なし） | `TEAM-123` |
+
+     判別は「やることの中身が書かれているか」で行う。書かれていなければ `new`、書かれていれば `continue`。
+     `continue` の文言は Phase F6 の報告で「今回のセッションでやること」として明示し、F3.7 の knowledge 検索キーワードにも加える。
+
+1. 引数に Issue ID が無い場合: `git branch --show-current` でカレントブランチ名を取得する（Bash）
 2. **BACKEND=local の場合:**
    - ブランチ名が `main` または `master` → **ダッシュボードモード**（Phase D1〜D4）へ進む
    - それ以外 → **Feature ブランチモード**（Phase F1〜F7）へ進む
@@ -301,9 +322,10 @@ Issue ファイルが存在しない場合:
 
 ### Phase F6: 作業準備完了報告
 
-Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する:
+Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する。**Phase F7 の連携案内があれば Issue 情報の直後に差し込む**（末尾に置くと読まれない）:
 
 - **Issue 情報**: タイトル・ステータス
+- **今回のセッションでやること**: `TASK_INTENT = continue` のとき、引数で渡された意図をそのまま再掲する
 - **未完了タスク一覧**: Issue ファイルのチェックリストから未完了項目を抽出（あれば）
 - **前回セッションからの継続ポイント**: 更新履歴の最新エントリや進行中の作業内容
 - **親 Issue コンテキスト**: Agent #1 の結果（親 Issue の背景・計画・スコープ外）（あれば）
@@ -318,16 +340,42 @@ Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する
 
 ### Phase F7: feature-dev 連携案内
 
-Issue ファイルの状態と Git 状態に応じて案内を分岐する:
+Phase 1 で分類した `TASK_INTENT` と Git 状態で分岐する。
 
-1. **進捗がプレースホルダ + コミット0件**（ブランチ作成直後）:
-   - 「`feature-dev` で実装計画を立てますか？」と案内する
-2. **進捗がプレースホルダ + コミット1件以上**（計画未記入のまま作業が進行）:
-   - 「コミットがありますが計画が未記入です。`/issue-maintain` で Issue ファイルを更新しますか？」と案内する
-3. **具体的なタスクが定義済み**:
+**`TASK_INTENT = new` のとき（`start {ISSUE-ID} 新規タスク` 等）: 必ず AskUserQuestion を出す。**
+コミット数も `feature_dev_plan:` も見ない。着手宣言が明示されている以上、「使うか使わないか」を
+ユーザーに決めさせるのが正しく、こちらで先回りして黙る理由が無い（黙る判定を足した結果
+この導線が実質死んでいたのが元の設計）:
+
+```
+AskUserQuestion(
+  question: "{ISSUE-ID} に着手します。feature-dev（8 phase: コードベース理解 → 設計 → 実装 → 検証）で通しますか？",
+  header: "feature-dev",
+  multiSelect: false,
+  options: [
+    { label: "はい",   description: "feature-dev で設計から実装まで通す（explorer/architect + spec ゲート + self-review）" },
+    { label: "いいえ", description: "8 phase を回さず直接実装に入る（小さい変更・方針が既に決まっている場合）" },
+  ]
+)
+```
+
+- 「はい」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**先に** `git checkout -b {type}/{ISSUE-ID}-{desc}` を案内してから起動する
+- 「いいえ」→ 何も起動せず通常の作業に入る。同一セッションで再提案しない
+- 起動後、`feature_dev_plan:` frontmatter への記載をユーザーに案内する（手動更新、または `/issue-maintain` で反映）
+
+**`TASK_INTENT = continue` のとき**: feature-dev の案内は出さない（やることが決まっているので選択 UI で止めるのは邪魔）。Phase F6 で「今回のセッションでやること」として意図を再掲するに留める。
+
+**`TASK_INTENT = auto` のとき**: 従来どおり Git 状態で判定する。判定に使うのは **Issue ブランチ上のコミット数**（`git rev-list --count {default-branch}..HEAD`）であり、Issue ファイルに計画が書かれているかではない。`issue-create` は起票時に計画・タスクを埋めるので、「計画が書いてあるか」で切ると未着手の Issue でも案内が出なくなる。
+
+1. **コミット0件**（ブランチ作成直後 / ブランチ未作成）:
+   - 上と同じ AskUserQuestion を出す
+   - ただし `feature_dev_plan:` frontmatter が既に埋まっている場合は、実行済みとみなしてスキップする
+2. **コミット1件以上 + 進捗がプレースホルダのまま**（作業が進んでいるのに Issue が未更新）:
+   - 「コミットがありますが Issue の進捗が未記入です。`/issue-maintain` で更新しますか？」とテキストで案内する（選択 UI は使わない）
+3. **コミット1件以上 + 進捗も更新済み**:
    - この案内をスキップする
 
-ユーザーが承諾したら、該当スキルの実行を提案する（直接実行はしない。案内のみ）。
+**表示位置**: テキスト案内（`auto` の 2）は Phase F6 の報告の**末尾ではなく冒頭**（Issue 情報の直後）に置く。F6 の報告は knowledge / git / Linear 同期まで含めて長く、末尾の 1 行は読まれない。AskUserQuestion は F6 の報告を出し切った**後**に呼ぶ（選択 UI が出ると報告が読めなくなるため）。
 
 > ブランチ作成直後（コミット0件）で実装前に仕様を固めたい場合は、仕様系プラグインの利用も案内できる（導入済みのもののみ・案内のみ）: bdd-spec=振る舞い仕様 (WHAT) / design-doc=技術設計 (HOW) / adr-keeper=設計判断 (WHY)。詳細なルーティングは `issue-create` の spec 選択フェーズに従う。
 

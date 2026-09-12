@@ -2,6 +2,34 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.5.0] - 2026-09-12
+
+### Added
+
+- **`/start` が `{Issue ID} [今回の意図]` の 2 引数を受け取るようになった**。従来は `$ARGUMENTS` を
+  一切参照せず**ブランチ名からしか** Issue ID を取らなかったため、`/start TEAM-123` と打っても
+  渡した ID は仕様上どこにも入らず、ブランチが main のままだと Quick Pick モードに落ちていた。
+  引数があればブランチ名より優先し、ブランチ未作成でも Feature ブランチモードで読み込む
+- **第 2 引数以降を `TASK_INTENT` として分類する**（`new` / `continue` / `auto`）。やることの中身が
+  書かれていなければ新規着手（`TEAM-123 新規タスク`）、書かれていれば継続作業
+  （`TEAM-123 ログイン画面のバリデーション直す`）。`continue` の文言は Phase F6 の報告で
+  「今回のセッションでやること」として再掲し、F3.7 の knowledge 検索キーワードにも加える
+- **新規着手なら Phase F7 で feature-dev 起動の確認（AskUserQuestion）を必ず出す**。
+  コミット数・`feature_dev_plan:` を理由にスキップしない。「はい」で `Skill` tool から
+  `feature-dev:feature-dev` を直接起動する（従来は案内のみで直接実行しない設計だった）。
+  これに伴い `allowed-tools` に `AskUserQuestion` を追加した
+
+### Fixed
+
+- **Phase F7 の feature-dev 連携案内がほぼ必ず黙っていたのを直した**。判定が「Issue の進捗が
+  プレースホルダのままか」だったが、`issue-create` は起票時に計画・タスクを埋めるので、
+  典型的な経路では常に「具体タスク定義済み → スキップ」に落ちていた。`TASK_INTENT = auto`
+  （意図の記述なし）の判定を**ブランチ上のコミット数**に変え、未着手（0 件）なら計画の記入有無に
+  関わらず確認を出す。実行済み判定は `feature_dev_plan:` frontmatter で行う
+- **連携案内の表示位置を整理した**。テキスト案内は Phase F6 報告の冒頭（末尾では knowledge / git /
+  Linear 同期を含む長い報告に埋もれる）、AskUserQuestion は報告を出し切った後（選択 UI が出ると
+  報告が読めなくなる）
+
 ## [1.4.9] - 2026-09-06
 
 ### Fixed

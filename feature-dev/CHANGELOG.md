@@ -5,6 +5,26 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2026-09-12
+
+### Added
+
+- **`feature-dev` を skill 化してスキル選択に載せた**。これまで command 専用だったため、
+  ユーザーが `/feature-dev` と明示的に打たない限り**原理的に起動しなかった**（router は
+  skills しか見ない）。本体を `skills/feature-dev/SKILL.md` へ移し、command は #219 規約の
+  hop 形式（SKILL.md を Read する 1 行 + 引数の受け渡し）に縮めた。`トリガー:` は
+  「機能開発」「新機能を実装」「この機能を作りたい」「実装計画を立てて」「設計から実装まで」
+  「一気通貫で実装」。素の「実装して」は過剰起動を招くので入れていない
+- **冒頭に「適用範囲」節を置いた**（no-op 剪定）。typo・設定変更・原因既知の小さな bugfix・
+  既存 spec どおりに書くだけのタスクでは 8 phase を回さず 1 文断って通常実装へ抜ける。
+  skill 化でトリガー面が広がるぶん、足切りを本文の先頭に置いた
+
+### Changed
+
+- **`$ARGUMENTS` 直参照をやめた**（skill 経由では展開されないため）。初期リクエストは
+  command 本文が展開して渡す形にし、SKILL 側は「初期リクエスト」として受ける。
+  Issue ID / `spec=<path>` の解釈も command 側に明記した
+
 ## [2.11.7] - 2026-08-28
 
 ### Fixed

@@ -40,7 +40,7 @@ effort: medium
    - HOW → `Skill` tool で `design-doc:design-doc`
    - WHY → `Skill` tool で `adr-keeper:adr`
    - Issue 粒度 → `Skill` tool で `issue-workflow:issue-design`
-   - 実装 → `feature-dev` は **command 専用**プラグイン（skill を持たない）。`Skill` tool では起動できないので、`/feature-dev` の実行を案内する。
+   - 実装 → `Skill` tool で `feature-dev:feature-dev`
    - 「不要」→ 起動せず実装へ。
 8. **提案は 1 回のみ。** 断られたら同一タスクで再提案しない（作業の流れを止めない）。
 

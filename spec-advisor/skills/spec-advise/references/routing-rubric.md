@@ -19,10 +19,10 @@ Critical 検証する（safe-hook.sh と同型）。**この区間を編集す�
 | **HOW** | 技術方式の選定・代替案比較（面の設計） | `design-doc:design-doc` | `.claude/designs/` |
 | **WHY** | 単一の重要な設計判断を理由ごと（点の記録） | `adr-keeper:adr` | `.claude/adr/` |
 | **Issue 粒度** | 1 Issue の作業設計（9 セクション・決定/open の仕分け） | `issue-design` | Issue 本文 |
-| **実装一気通貫** | 設計から実装まで進める意思が明確 | `/feature-dev`（command。skill ではない） | 8 phase フロー |
+| **実装一気通貫** | 設計から実装まで進める意思が明確 | `feature-dev:feature-dev` | 8 phase フロー |
 
-軸は排他ではない（後述の組み合わせを参照）。委譲手段は軸ごとに異なる: WHAT/HOW/WHY/Issue 粒度は
-`Skill` tool で skill 起動、**実装のみ `/feature-dev` command の実行を案内**する（feature-dev は skill を持たない）。
+軸は排他ではない（後述の組み合わせを参照）。委譲手段は 5 軸とも `Skill` tool で統一する
+（feature-dev も skill 化済み。command 専用ではない）。
 Issue 粒度の `issue-design` は `issue-workflow:issue-design` を起動する。
 
 ## 判定フロー（ファネル: 先に「不要」を落とす）
