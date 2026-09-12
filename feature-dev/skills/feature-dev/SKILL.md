@@ -16,6 +16,8 @@ allowed-tools:
   - TodoWrite
   - AskUserQuestion
   - Skill
+  - EnterWorktree
+  - ExitWorktree
 ---
 
 
@@ -321,6 +323,27 @@ if grep -q '"design-doc@' "$HOME/.claude/settings.json" 2>/dev/null; then DESIGN
 
 ---
 
+## Phase 4.8: 実装環境の分離（worktree・opt-in）
+
+**Goal**: 並列開発・メインツリーを汚さない実装のために、実装フェーズ以降を worktree 内で回す。設計（Phase 1〜4）は読み取りのみなので、書き込みが始まる Phase 5 の手前で環境を確定させる。
+
+**起動条件**: ユーザーが「worktree」を明示した（引数・会話）か、プロジェクト指示（CLAUDE.md / memory）が worktree 作業を指示している場合のみ。**自分の判断では作らない**（`EnterWorktree` の利用条件）。
+
+```bash
+# メインの clone か linked worktree か
+[ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ] && POS=main || POS=worktree
+```
+
+| 状態 | アクション |
+|---|---|
+| `main` + 明示要求なし | **Phase 4.8 を skip** して Phase 5 へ（従来の挙動・何も報告しない） |
+| `main` + 明示要求あり | `${CLAUDE_PLUGIN_ROOT}/references/worktree-flow.md` を Read し、Step 1（作成・移動）から従う |
+| `worktree`（すでに worktree 内） | 同 doc を Read し、Step 2（環境セットアップ）から従う |
+
+**Output**: worktree 内で続行する場合、doc の Step 3「引き継ぎ規約」が Phase 5.3 / 5.5 / 6 / 7 の挙動に効く（特に Phase 7 の publish 先）。
+
+---
+
 ## Phase 5: Implementation
 
 **Goal**: Build the feature (Normal Mode) or apply targeted fixes (Fix Mode)
@@ -515,6 +538,8 @@ self-review 内部の動き（詳細は `code-review:self-review` skill の SKIL
 - Phase 6.5（**code-review ≥ 2.18.0**）で `--embed` 時に **構造化 findings JSON ブロック**を markdown レポート直後に出力（`<!-- FINDINGS_JSON_START -->` / `<!-- FINDINGS_JSON_END -->` で囲む）
 - Phase 7 は `--embed` 指定により skip（末尾 marker `[embed-mode: findings-only, no-prompt]` を確認）
 
+**`--embed` が落とすもの（構造的な穴の埋め戻し）**: self-review の Step 7 には**コメント推敲（B 系統）の適用**が入っているため、`--embed` ではコードコメント精査が実行されない。feature-dev 側は **Phase 6.7** で独立ステップとして必ず通す（GitHub issue #227）。B 系統の提案自体は `--embed` でも Step 6 のレポートに `## コメント推敲提案` ブロックとして出るので、Phase 6.7 でそれを材料にする。
+
 **embed mode の利点**: ユーザー操作が 1 回減り、findings をそのまま Step 3 の G-V loop と Step 4 の集約処理に流せる。`--embed` 未対応の旧 code-review (< 2.17.0) では Step 7 の AskUserQuestion がそのまま出るが、Step 0 は **存在チェックのみ**で version は確認していない。旧版が混在しうる前提で、JSON ブロック不在時は markdown フォールバックへ、AskUserQuestion 出力時はそれを findings 提示として吸収する（version ゲートは張らない）。
 
 **構造化 findings の消費（dual format）**: Step 3 / Step 4 は self-review 出力を、`<!-- FINDINGS_JSON_START -->`〜`END` の JSON ブロックがあれば決定的にパースし、無ければ markdown を正規表現でフォールバックパースする。schema 契約と詳細は `${CLAUDE_PLUGIN_ROOT}/references/review-loop.md` を参照。
@@ -550,6 +575,25 @@ self-review の出力を severity × confidence で auto-fix トリガーに変�
 
 ---
 
+## Phase 6.7: コードコメント精査（comment-polish 委譲）
+
+**Goal**: diff で追加・変更したコード内コメントを 2 観点（読み手に必要な情報か / 冗長表現の排除）で精査し、git 外の参照 ID を除去する。
+
+**Why this phase exists**: Phase 6 は self-review を `--embed` で呼ぶため、self-review Step 7 のコメント推敲（B 系統）適用が skip され、標準フローの精査が feature-dev 経由では丸ごと落ちていた（GitHub issue #227）。Phase 6 の G-V ループ（Fix Mode）が**新しいコメントを追加しうる**ので、本 phase は Phase 6 の完了後に置く。
+
+**Skip 条件**: `code-review` 未インストール（Phase 6 Step 0 が fail-fast するので通常は到達しない）。それ以外は必ず実行する — diff にコメント変更が無ければ comment-polish 側が「精査対象のコメント変更なし」を返して no-op で終わる。
+
+**手順**: `Skill` tool で `code-review:comment-polish` を呼ぶ。入力は Phase 6 の self-review レポートで分岐する:
+
+- `## コメント推敲提案` ブロックがある → そのブロックを一時ファイル（例: `.claude/.comment-polish-findings.txt`）へ書き出し、`--embed --from-findings <path>` で起動（comment-polish は再推敲せず全件適用）
+- ブロックが無い（`comment-accuracy` が Phase 6 Step 1 の focus に入らなかった / Fix Mode でコメントが増えた） → `--embed` 単独で起動（diff から精査して全件適用）
+
+どちらも `--embed` を付ける（一気通貫フローなので適用の是非を個別に聞き返さない。結果は Phase 7 summary と最終 diff で可視化される）。
+
+**結果の確認**: 適用件数と ID を除去した行（file:line）を受け取る。`git diff --stat` で**コメント以外のコード行が変わっていたら scope 逸脱として報告**し、その場合のみ Phase 5.3 を再走させる（コメントのみなら再走不要）。呼び出しが失敗したら warning を出して Phase 7 へ進む。
+
+---
+
 ## Phase 7: Summary
 
 **Goal**: Document what was accomplished
@@ -561,6 +605,8 @@ self-review の出力を severity × confidence で auto-fix トリガーに変�
    - Key decisions made
    - Files modified
    - Suggested next steps
+   - **コメント精査の結果** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
+   - **worktree** (Phase 4.8 で分離した場合のみ): worktree のパスとブランチ、後片付けは teardown / worktree-gc に委ねる旨
    - **Design doc follow-up** (Phase 4.5 で `DESIGN_DOC_PATH` がある場合のみ): 実装が完了したので、doc の frontmatter を `phase: target → current` に更新するよう案内する（実装と設計が乖離した箇所があれば doc への追記 or supersede も）。更新は design-doc プラグイン側の運用（ユーザー操作）に委ねる
 3. **G-V loop summary** (if Step 3 of Phase 6 ran):
    - Read `/tmp/feature-dev-loop-state.json`
@@ -571,10 +617,14 @@ self-review の出力を severity × confidence で auto-fix トリガーに変�
    - feature-dev は `hooks/lib/safe-hook.sh` を同梱しているため、`event_bus_publish` 経由で追記する（規約どおり 1 行 1 イベント）。`SAFE_HOOK_NAME` を `feature-dev` に上書きして publisher を識別する
    - payload は最小限の JSON: `{"feature":"<short description>","files_changed":<count>,"phases_completed":[...]}`
    - `feature` は 80 文字以内・ダブルクオート/バックスラッシュ/改行は除去。`files_changed` は今セッションで触ったファイル数（git diff の `--name-only` を `wc -l`）。`phases_completed` は実際に走った phase 番号の JSON 配列
+   - **worktree 内で実行している場合は書き込み先をメインリポジトリのルートに固定する**（`event_bus_publish` は `CLAUDE_PROJECT_DIR` 未設定時に cwd 相対で書くため、worktree 相対に書くと teardown で worktree ごと消える。`--git-common-dir` は linked worktree からもメインの `.git` を返すので、その親がメインルート）
    - 実行コマンド例（`<...>` を Phase 7 のサマリ情報で埋めてから走らせる）:
      ```bash
+     GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+     MAIN_ROOT=${GCD:+$(dirname "$GCD")}
      source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
-       SAFE_HOOK_NAME="feature-dev" event_bus_publish "feature:implemented" \
+       CLAUDE_PROJECT_DIR="${MAIN_ROOT:-$PWD}" SAFE_HOOK_NAME="feature-dev" \
+       event_bus_publish "feature:implemented" \
        '{"feature":"<sanitized desc>","files_changed":<n>,"phases_completed":["1","2","..."]}'
      ```
    - 失敗しても Phase 7 全体は成功扱い（イベント送信は best-effort）

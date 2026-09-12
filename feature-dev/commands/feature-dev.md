@@ -12,6 +12,8 @@ allowed-tools:
   - TodoWrite
   - AskUserQuestion
   - Skill
+  - EnterWorktree
+  - ExitWorktree
 ---
 
 **まず `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `feature-dev@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
@@ -23,3 +25,4 @@ feature-dev スキルを使用して、機能開発ワークフローを実行�
 - 引数が Issue ID（`[A-Z]+-\d+` 形式）なら Phase 1.5 の Issue Context Detection で該当 Issue ファイルを読み、そこを要件の出発点にしてください。
 - 引数が空なら Phase 1 でユーザーに何を作るのかをヒアリングしてください。
 - 引数に `spec=<path>` が含まれていれば Phase 1.3 の BDD spec 作成を skip し、そのパスを spec として Phase 4 へ渡してください。
+- 引数や会話で `worktree` が明示されていれば Phase 4.8 で worktree を作成し、実装以降をその中で進めてください（明示がなければ worktree は作らない）。

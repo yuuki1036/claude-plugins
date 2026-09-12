@@ -17,10 +17,10 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [claude-meta](#claude-meta) | 1.13.6 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.122.0 | 3 | 3 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.4.7 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
-| [dev-workflow](#dev-workflow) | 1.30.0 | 4 | 7 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
+| [dev-workflow](#dev-workflow) | 1.31.0 | 4 | 7 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.3 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.6.2 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
-| [feature-dev](#feature-dev) | 2.12.1 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
+| [feature-dev](#feature-dev) | 2.13.0 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.5.2 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行を機械ブロック |
 | [issue-workflow](#issue-workflow) | 1.5.0 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [living-spec-workflow](#living-spec-workflow) | 0.3.7 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
@@ -87,7 +87,7 @@ Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環
 - **publishes**: `failure:logged`（Event Bus）
 
 ### feature-dev
-コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec から spec.md 生成、Phase 1.4 で bdd-spec:evaluate-spec に品質ゲート委譲（dormant）、Phase 4.5 で採用設計を design-doc に export（dormant）、Phase 6 は code-review:self-review に `--embed` 委譲。
+コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。Phase 1.3 で bdd-spec から spec.md 生成、Phase 1.4 で bdd-spec:evaluate-spec に品質ゲート委譲（dormant）、Phase 4.5 で採用設計を design-doc に export（dormant）、Phase 4.8 で worktree 分離（明示要求時のみ・worktree-setup 連携）、Phase 6 は code-review:self-review に `--embed` 委譲、Phase 6.7 で code-review:comment-polish にコメント精査を委譲（`--embed` が落とす B 系統の埋め戻し）。
 - **commands**: `feature-dev`
 - **skills**: `feature-dev`（command と同名の hop ペア。本体は SKILL.md 側）
 - **agents**: `code-explorer`, `code-architect`

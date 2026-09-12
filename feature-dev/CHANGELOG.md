@@ -5,6 +5,34 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.0] - 2026-09-13
+
+### Added
+
+- **Phase 6.7「コードコメント精査」を追加**（GitHub issue #227）。Phase 6 は self-review を `--embed` で呼ぶため
+  self-review Step 7 の B 系統（コメント推敲）適用が skip され、一気通貫フローからコメント精査が丸ごと落ちていた。
+  Phase 6 完了後（G-V ループの Fix Mode が追加したコメントも対象に入る位置）に `code-review:comment-polish` を
+  独立ステップとして挟む。self-review レポートに `## コメント推敲提案` があれば `--embed --from-findings` で
+  全件適用、無ければ `--embed` 単独で diff から精査して適用する。コード行が変わっていたら scope 逸脱として報告し、
+  その場合のみ Phase 5.3 を再走させる。呼び出し失敗時は warning を出して Phase 7 へ進む
+- **Phase 4.8「実装環境の分離（worktree・opt-in）」を追加**。実装ワークフローを worktree 内で回せるようにした。
+  書き込みが始まる Phase 5 の手前に置き、3 状態（メイン clone + 要求なし / メイン clone + 明示要求 /
+  すでに worktree 内）で分岐する:
+  - worktree を作るのは**ユーザーが「worktree」を明示したとき、またはプロジェクト指示があるときだけ**
+    （`EnterWorktree` の利用条件。推測で分離しない）。要求が無ければ従来どおり現ディレクトリで続行
+  - すでに worktree 内なら、dev-workflow が有効かつ worktree-setup のマーカーが無く DB / dev server を持つ
+    プロジェクトに限り `dev-workflow:worktree-setup` の起動を確認する（それ以外は何も聞かない）
+  - 引き継ぎ規約: Phase 5.3 / 5.5 は worktree の cwd で走らせる / Phase 6 は `self-review` のまま
+    （`review` は自前で `EnterWorktree` するため二重進入になる）/ worktree は Phase 7 で畳まず
+    teardown・worktree-gc に委ねる
+  - 詳細手順は `references/worktree-flow.md`（起動条件を満たした回だけ Read する progressive disclosure）。
+  - allowed-tools に `EnterWorktree` / `ExitWorktree` を追加（command 側も同期）
+
+### Fixed
+
+- **Phase 7 の `feature:implemented` publish が worktree 内では worktree 相対に書かれ、teardown で消える問題**。
+  `--git-common-dir` の親をメインルートとして `CLAUDE_PROJECT_DIR` に渡す形にした（code-review の同型事例と同じ対処）
+
 ## [2.12.1] - 2026-09-12
 
 ### Changed
