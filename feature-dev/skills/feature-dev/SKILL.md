@@ -78,99 +78,26 @@ Initial request: 呼び出し元から渡された引数（`/feature-dev` 経由
 
 ## Phase 1.3: BDD Spec Creation (bdd-spec plugin handoff)
 
-**Goal**: If `bdd-spec` plugin is installed, create a BDD `spec.md` (Feature / Scenario / Examples) as the authoritative requirements for downstream phases, then pass its path forward.
-
-**Why this phase exists**: 「曖昧な Issue から実装が暴走する」失敗パターンを構造的に潰すため、Phase 4 architect が **spec.md を真実として読む** 構造に切り替える。bdd-spec 未インストール時は何もしない（後方互換）。
-
-### Step 1: Detect bdd-spec plugin
+**Goal**: bdd-spec が入っていれば BDD `spec.md` を生成し、Phase 4 architect が読む真実にする（曖昧な Issue から実装が暴走する失敗を構造的に潰す）。未インストール時は何もしない（後方互換）。
 
 ```bash
-# settings.json 経由でインストール確認（check-deps.sh と同じ判定）
-if grep -q '"bdd-spec@' "$HOME/.claude/settings.json" 2>/dev/null; then
-  BDD_SPEC_AVAILABLE=1
-else
-  BDD_SPEC_AVAILABLE=0
-fi
+if grep -q '"bdd-spec@' "$HOME/.claude/settings.json" 2>/dev/null; then BDD_SPEC_AVAILABLE=1; else BDD_SPEC_AVAILABLE=0; fi
 ```
 
-- `BDD_SPEC_AVAILABLE=0` → **Phase 1.3 を skip して Phase 1.5 へ**。fallback として既存の Issue 解釈フローがそのまま動く
-- `BDD_SPEC_AVAILABLE=1` → 次の Step へ
+- `BDD_SPEC_AVAILABLE=0` → **skip して Phase 1.5 へ**（既存の Issue 解釈フローがそのまま動く）
+- 初期リクエストに `spec=<path>` があれば生成せずそれを `BDD_SPEC_PATH` に採用し Phase 4 へ渡す
+- それ以外で `BDD_SPEC_AVAILABLE=1` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.3」を読み、その手順（既存 spec 確認 → AskUserQuestion → `bdd-spec:create-spec` 非対話呼び出し → fallback）に従う
 
-### Step 2: Check existing spec
-
-ユーザーが既に spec.md を持っている場合は再生成しない:
-
-1. 初期リクエストに `spec=<path>` が含まれていればそれを採用（Phase 4 へそのまま渡す）
-2. 引数から user story の要素（`role` / `want` / `why`）が推測可能なら次の Step へ
-3. 推測できない場合は Phase 1 で集めた discovery 情報から要素を抽出してユーザーに確認
-
-### Step 3: Propose create-spec invocation
-
-`AskUserQuestion` で確認:
-
-- question: "bdd-spec plugin が利用可能です。BDD spec.md を Phase 4 architect の入力として生成しますか？"
-- header: "BDD spec 生成"
-- options:
-  1. label: "生成する (推奨)" / description: "bdd-spec:create-spec を呼んで spec.md を作成。architect は spec を真実として読む"
-  2. label: "skip" / description: "BDD spec を生成せず既存の Issue 解釈フローで進む"
-
-### Step 4: Invoke bdd-spec:create-spec
-
-ユーザーが「生成する」を選んだら `Skill` tool で `bdd-spec:create-spec` を呼ぶ。
-
-**非対話 API（bdd-spec の安定保証セクション参照）に従い引数で値を渡す**:
-
-- `role=<discovery で得た role>`
-- `want=<discovery で得た want>`
-- `why=<discovery で得た why、不明なら省略>`
-- `shortPath=<true / false>` (省略時は bdd-spec 側設定に従う)
-
-引数で全要素が埋まっていれば bdd-spec 側は AskUserQuestion を発火せず非対話実行する。
-
-**Skill 呼び出し後**:
-- 生成された spec.md のパス（`features/{dirname}/spec.md`）を `BDD_SPEC_PATH` 変数に保持
-- Phase 1.7 トリアージへの signal: spec.md 完備 → explorer count を控えめに（spec の Scenario が要件を明確化しているため）
-
-### Step 5: Fallback handling
-
-- bdd-spec:create-spec が失敗（例: bdd-spec plugin の version 不整合、内部エラー）→ warning を出して fallback。Phase 1.5 以降は既存フローで継続
-- ユーザーが skip を選択 → そのまま Phase 1.5 へ
-
-### Output
-
-- `BDD_SPEC_PATH=<path>` または `BDD_SPEC_PATH=""`（未生成）
-- Phase 4 architect prompt の "BDD Spec Injection" に `BDD_SPEC_PATH` を渡す
-- Phase 1.7 トリアージで Issue context completeness の判定材料に使う
+**Output**: `BDD_SPEC_PATH=<path>` または `""`（未生成）。Phase 4 architect の "BDD Spec Injection" と Phase 1.7 の Issue context completeness 判定に使う。
 
 ---
 
 ## Phase 1.4: BDD Spec Evaluation (bdd-spec:evaluate-spec handoff)
 
-**Goal**: Phase 1.3 で spec.md を生成した場合、それを architect の入力にする前に品質ゲートを通す。網羅性（同値分割表 ⇔ Scenario）・トレーサビリティ（epic AC ⇔ Scenario）の穴を実装着手前に潰す。
+**Goal**: Phase 1.3 で spec.md を生成した場合、architect の入力にする前に品質ゲート（網羅性・トレーサビリティ）を通す。穴のある spec を真実として渡すと穴が実装に伝播するため、安いオラクルを実装前に挟む。
 
-**Why this phase exists**: 生成直後の spec は「もっともらしいが穴がある」状態になりやすい（AC に対応する Scenario 欠落・同値クラスの未カバー）。穴のある spec を真実として Phase 4 architect に渡すと、その穴が実装に伝播する。安いオラクル（機械的なリンク・表セル検証）を実装の前に挟む（Clearwing 原則 8）。bdd-spec 未インストール、または Phase 1.3 を skip した場合は何もしない（後方互換）。
-
-### Step 1: Applicability check
-
-- Phase 1.3 で `BDD_SPEC_PATH` が空（spec 未生成 / bdd-spec 未インストール / ユーザーが skip） → **Phase 1.4 を skip して Phase 1.5 へ**
-- `BDD_SPEC_PATH` がセットされている → 次の Step へ
-
-### Step 2: Invoke bdd-spec:evaluate-spec (embed)
-
-`Skill` tool で `bdd-spec:evaluate-spec` を呼ぶ。安定 API に従い引数で対象と embed を渡す:
-
-- `spec=<BDD_SPEC_PATH>`（Phase 0 の対象選択をスキップ）
-- `--embed`（evaluate-spec 側の Phase 6 AskUserQuestion をスキップし、Phase 5 レポートをそのまま返す）
-
-### Step 3: Gate on findings
-
-- 🔴 critical（未カバー AC・リンク切れ・構文破綻）が 1 件以上 → **ユーザーに提示して確認**する。AskUserQuestion で「spec を修正してから設計に進む（推奨）/ このまま進む」を選ばせる。spec の穴は architect が読む前に埋めるのが安いため、修正を既定に置く
-- 🟡 major 以下のみ → レポートを情報として提示し、そのまま Phase 1.5 へ進む（ブロックしない）
-- 指摘 0 件 → 「spec は契約として妥当」と一言添えて Phase 1.5 へ
-
-### Step 4: Fallback handling
-
-- bdd-spec:evaluate-spec が失敗（version 不整合・内部エラー）→ warning を出して fallback。評価をスキップして Phase 1.5 へ継続する（評価は best-effort。設計フロー自体はブロックしない）
+- `BDD_SPEC_PATH` が空（未生成 / 未インストール / skip） → **Phase 1.4 を skip して Phase 1.5 へ**
+- `BDD_SPEC_PATH` がセット済み → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.4」を読み、その手順（`bdd-spec:evaluate-spec --embed` 呼び出し → 🔴 critical があれば AskUserQuestion で修正を既定に、🟡 以下は情報提示のみ → fallback）に従う
 
 ---
 
@@ -198,18 +125,12 @@ fi
 
 ## Phase 1.6: Vault Recall (knowledge vault retrieval handoff)
 
-**Goal**: 過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を knowledge vault から recall し、Phase 4 architect の入力に注入する。
+**Goal**: 過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を knowledge vault から recall し、Phase 4 architect に advisory 注入する。recall をモデルの文脈判断に委ねると省略されうるため、設計着手直前の必須ステップとして埋め込み「引き忘れ」を構造的に防ぐ。注入知見は advisory で、現コードベースのパターンと矛盾する場合は現コードベースを優先する。
 
-**Why this phase exists**: recall 系の tool 呼び出しはモデルの文脈判断に任せると省略されうる（Opus 4.8 世代で顕著。Opus 5 でも「引くかどうか」を毎回モデル判断に委ねる理由はない）。設計着手の直前に **必須ステップ** として埋め込むことで「引き忘れ」を構造的に防ぐ。注入された知見は authoritative ではなく **advisory（参考情報）** で、現コードベースのパターンと矛盾する場合は現コードベースを優先する。
-
-### Step 1: Detect kvault availability（外部 CLI 依存の存在確認）
-
-**Phase 1.3 (BDD Spec) の detect→skip パターンを踏襲**。ただし依存先は plugin ではなく **feature-dev の外にある外部 app (`kvault` CLI)** なので、CLI 本体と vault ディレクトリの **二段で存在確認** する。いずれか欠けたら skip し、後方互換を壊さない。
+kvault は feature-dev 外の外部 CLI。CLI 本体 + vault dir の二段で存在確認し、いずれか欠けたら skip する（後方互換）:
 
 ```bash
-# kvault は feature-dev plugin 外の外部 app。CLI 本体 + vault dir の両方が揃って初めて利用可能とみなす。
-# vault の場所は環境変数 KNOWLEDGE_VAULT_ROOT で明示的に指定する（個人環境パスをハードコードしない）。
-# 未設定なら Phase 1.6 全体を skip する。
+# vault の場所は KNOWLEDGE_VAULT_ROOT で指定（個人環境パスをハードコードしない）。未設定なら skip。
 if [ -n "$KNOWLEDGE_VAULT_ROOT" ] && command -v kvault >/dev/null 2>&1 && [ -d "$KNOWLEDGE_VAULT_ROOT" ]; then
   VAULT_AVAILABLE=1
 else
@@ -217,46 +138,10 @@ else
 fi
 ```
 
-- `VAULT_AVAILABLE=0` → **Phase 1.6 を skip して Phase 1.7 へ**。skip 理由を 1 行で notify（`KNOWLEDGE_VAULT_ROOT` 未設定 / `kvault` 未導入 / vault dir 不在 のいずれか）。注入なしでも既存フローはそのまま動く（後方互換）
-- `VAULT_AVAILABLE=1` → 次の Step へ
+- `VAULT_AVAILABLE=0` → **Phase 1.6 を skip して Phase 1.7 へ**。skip 理由を 1 行 notify（未設定 / 未導入 / vault dir 不在）
+- `VAULT_AVAILABLE=1` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.6」を読み、その手順（キーワード列クエリ構築 → `kvault recall` → rank+gap で関連判定 → advisory 注入。絶対閾値で足切りしない等の運用知見つき）に従う
 
-### Step 2: Build a keyword query（自然文ではなくキーワード寄せ）
-
-Phase 1 discovery + Phase 1.5 Issue context から、設計判断に効きそうな **名詞・技術語を空白区切りで並べる**。
-
-**運用知見（必読）**: vault の embedding は **JP の自然文クエリに弱い実測がある**。文章ではなく「`Prisma 初期化 マイグレーション ロールバック`」のような **キーワード列** にする。フレームワーク名・モジュール名・課題ドメイン語を優先する。
-
-### Step 3: Execute recall
-
-```bash
-# stderr（HF token warning / weights loading progress）は捨て、stdout の JSON のみ取得する
-kvault recall "<キーワード列>" --top 5 --min-sim 0 2>/dev/null
-```
-
-出力は JSON: `{ "query", "count", "results": [ { "path", "title", "similarity", "tags", "excerpt" }, ... ] }`。`--min-sim 0` で足切りせず top 5 を全件取得する（足切りは次の Step で rank ベースに行う）。
-
-### Step 4: Relevance judgment（rank + gap、絶対閾値で切らない）
-
-**運用知見（必読）**: `similarity` の絶対値は **クエリによって水準が変わる**（あるクエリでは 1 位が 60、別クエリでは 1 位が 35 のように）。だから **絶対閾値で足切りしない**。
-
-判断は **rank + 1 位からの similarity gap** で行う:
-
-- 1 位を基準に、後続の similarity が **大きく gap を開けて落ちたところ** を関連の切れ目とみなす
-- gap が開かず緩やかに下がるだけなら top 全件を関連候補として残す
-- 1 位ですら excerpt が明らかに無関係（別ドメイン）なら 0 件として扱ってよい
-
-関連ありと判断した知見の `path` / `title` / `excerpt` を保持する。
-
-### Step 5: Hand to Phase 4
-
-- 関連知見を `VAULT_KNOWLEDGE` として保持（各エントリ: `path` + `title` + `excerpt` の 1〜2 行要約）
-- 関連 0 件なら `VAULT_KNOWLEDGE=""`（注入なし）として Phase 1.7 へ
-- Phase 4 architect prompt の "Vault Knowledge Injection" に `VAULT_KNOWLEDGE` を渡す
-
-### Output
-
-- `VAULT_KNOWLEDGE=<関連知見の要約>` または `VAULT_KNOWLEDGE=""`（未取得 / 関連なし / skip）
-- Phase 1.7 へ進む
+**Output**: `VAULT_KNOWLEDGE=<関連知見の要約>` または `""`（未取得 / 関連なし / skip）。Phase 4 architect の "Vault Knowledge Injection" に渡す。
 
 ---
 
@@ -423,29 +308,16 @@ Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2
 
 ## Phase 4.5: Design Doc Export (design-doc plugin handoff)
 
-**Goal**: Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を design doc として `.claude/designs/` に永続化する
+**Goal**: Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を design doc として `.claude/designs/` に永続化する。後続の同領域開発の参照元・実装後の as-built 記録（`phase: target → current`）として再利用できる。design-doc 未インストール時は何もしない（後方互換）。
 
-**Why this phase exists**: architect 出力（代替案トレードオフ比較・採用案 blueprint）はセッション終了で消える。design doc 化しておくと、後続の同領域開発の参照元・実装後の as-built 記録（`phase: target → current`）として再利用できる。design-doc 未インストール時は何もしない（後方互換）。
+```bash
+if grep -q '"design-doc@' "$HOME/.claude/settings.json" 2>/dev/null; then DESIGN_DOC=1; else DESIGN_DOC=0; fi
+```
 
-**Actions**:
+- `DESIGN_DOC=0` → 本 Phase を skip して Phase 5 へ
+- `DESIGN_DOC=1` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 4.5」を読み、その手順（AskUserQuestion → `design-doc:design-doc` の export 非対話呼び出し → fallback）に従う
 
-1. design-doc plugin の存在を判定:
-   ```bash
-   if grep -q '"design-doc@' "$HOME/.claude/settings.json" 2>/dev/null; then DESIGN_DOC=1; else DESIGN_DOC=0; fi
-   ```
-   `DESIGN_DOC=0` → 本 Phase を skip して Phase 5 へ
-2. `DESIGN_DOC=1` のとき **AskUserQuestion** で確認:
-   - question: "採用した設計を design doc として永続化しますか？"
-   - header: "design doc"
-   - options:
-     1. label: "永続化する (Recommended)" / description: "採用案 + 代替案比較を .claude/designs/ に export（後続開発の参照元・実装後の as-built 記録になる）"
-     2. label: "skip" / description: "doc 化せず実装に進む（architect 出力はセッション限り）"
-3. 「永続化する」選択時、`Skill` tool で `design-doc:design-doc` を **export 非対話 API**（design-doc の export API 安定保証セクション参照）で呼ぶ:
-   - `mode=export` / `title=<feature の要約タイトル>` / `content=<採用案 blueprint + 全 architect 案のトレードオフ比較 + Phase 3 grill で確定した前提>`
-   - `spec=<BDD_SPEC_PATH>`（Phase 1.3 で設定済みなら）/ `issue=<Issue ファイルパス>`（Phase 1.5 で検出済みなら）
-   - 引数が全て埋まっていれば design-doc 側は AskUserQuestion を発火しない（非対話実行）
-4. 生成された doc パスを `DESIGN_DOC_PATH` として保持し、Phase 7 のサマリに含める
-5. fallback: 呼び出し失敗時は warning を出して Phase 5 へ続行する（doc 化は任意機能。実装フローを止めない）
+**Output**: `DESIGN_DOC_PATH=<path>`（生成時）。Phase 7 サマリに含め、実装完了後の `phase: target → current` 更新案内に使う。
 
 ---
 
@@ -539,70 +411,12 @@ fi
 
 **Why this phase exists**: Past incidents (e.g. Prisma v7 adapter requirement) showed bugs that pass all static checks but fail on first request — proxy lazy-init, env var loading, middleware misconfiguration, DB client initialization. Catching these before Phase 6 prevents "review passes but deploy blocks" loops.
 
-### Step 0: Self-lock guard (PostToolUse 自己再帰防止)
+### Step 0-1: Self-lock guard と runtime-sensitive 検出
 
-**目的**: 将来 feature-dev に PostToolUse hook が入って Phase 5.5 を自動トリガーする構成になった場合、Phase 5.5 内の Edit / Bash が再度 PostToolUse を発火させ、無限ループに陥る可能性がある。TTL ベースの self-lock を持つことで、同一プロジェクトで短期間に Phase 5.5 が重複起動するのを防ぐ。
+詳細な bash は `${CLAUDE_PLUGIN_ROOT}/references/smoke-test.md` にある。本文では判定結果だけ使う:
 
-**現状の振る舞い**: command 経由の手動実行ではループは発生しないが、PostToolUse hook を将来導入する際に lock 機構が無いと事故るため、template を先に入れる。lock が active な場合は Phase 5.5 全体を skip して Phase 6 へ進む（hook 経由起動の場合は `exit 0` 相当でハーネス側が早期復帰）。
-
-```bash
-TARGET_PATH=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-HASH=$(echo "$TARGET_PATH" | shasum | cut -c1-12)
-LOCK=/tmp/feature-dev-${HASH}.lock
-TTL=600
-
-if [ -f "$LOCK" ]; then
-  # macOS BSD: stat -f %m / Linux GNU: stat -c %Y の dual path で portability 確保
-  MTIME=$(stat -f %m "$LOCK" 2>/dev/null || stat -c %Y "$LOCK" 2>/dev/null || echo 0)
-  AGE=$(($(date +%s) - MTIME))
-  if [ "$AGE" -lt "$TTL" ]; then
-    echo "[self-lock] active (age=${AGE}s < ttl=${TTL}s), skipping Phase 5.5"
-    # command 内実行時は Phase 6 へ進む / hook 経由起動時は ハーネスが exit 0 として扱う
-    SKIP_PHASE_5_5=1
-  fi
-fi
-
-if [ -z "$SKIP_PHASE_5_5" ]; then
-  touch "$LOCK"   # 新規取得 or TTL 切れ → 取り直し
-fi
-```
-
-`SKIP_PHASE_5_5` が `1` の場合は Step 1〜4 を skip して **Phase 6** へ進む。
-
-### Step 1: Deterministic Detection (gate check)
-
-Run the following Bash check to decide whether smoke test is **required** or **optional**:
-
-```bash
-# Detect runtime-sensitive changes in the working tree
-git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-changed-files.txt
-git diff HEAD 2>/dev/null > /tmp/feature-dev-diff.txt
-
-REQUIRED_REASONS=()
-
-# Pattern 1: DB client / ORM initialization
-grep -qE "(PrismaClient|createClient|drizzle\(|new Sequelize|mongoose\.connect|TypeORM)" /tmp/feature-dev-diff.txt && \
-  REQUIRED_REASONS+=("DB client / ORM 初期化変更")
-
-# Pattern 2: Environment variable wiring
-grep -qE "(process\.env\.|import\.meta\.env\.|getEnv\()" /tmp/feature-dev-diff.txt && \
-  REQUIRED_REASONS+=("環境変数依存の追加・変更")
-
-# Pattern 3: Middleware / proxy / lazy-init
-grep -qE "(middleware|Proxy\(|defineProxy|lazy\(|createServer|app\.use)" /tmp/feature-dev-diff.txt && \
-  REQUIRED_REASONS+=("middleware / proxy / lazy-init 変更")
-
-# Pattern 4: New route files (Next.js / SvelteKit / Remix / generic routes)
-grep -qE "(pages/.*\.(tsx?|jsx?)$|app/.*/(page|route)\.(tsx?|jsx?)$|routes/.*\.(ts|js)$)" /tmp/feature-dev-changed-files.txt && \
-  REQUIRED_REASONS+=("新規 route の追加・変更")
-
-if [ ${#REQUIRED_REASONS[@]} -gt 0 ]; then
-  echo "REQUIRED: smoke test 必須"
-  printf '  - %s\n' "${REQUIRED_REASONS[@]}"
-else
-  echo "OPTIONAL: 静的変換のみの変更。skip 候補だがユーザ判断"
-fi
-```
+1. **Self-lock guard**（将来 PostToolUse hook で自動トリガーする構成に備えた TTL ベースの自己再帰防止）を評価する。lock が active なら `SKIP_PHASE_5_5=1` として Step 2〜4 を skip し **Phase 6** へ進む（command 経由の手動実行では通常 active にならない）。
+2. **Deterministic detection**: 作業ツリーの diff を references の pattern（DB/ORM 初期化・環境変数 wiring・middleware/proxy/lazy-init・新規 route）と照合し、1 つでも当たれば **REQUIRED**、無ければ **OPTIONAL** と判定する。判定理由（当たった pattern）を保持して Step 2 の確認に添える。
 
 ### Step 2: User Confirmation
 
@@ -703,18 +517,13 @@ self-review 内部の動き（詳細は `code-review:self-review` skill の SKIL
 
 **embed mode の利点**: ユーザー操作が 1 回減り、findings をそのまま Step 3 の G-V loop と Step 4 の集約処理に流せる。`--embed` 未対応の旧 code-review (< 2.17.0) では Step 7 の AskUserQuestion がそのまま出るが、Step 0 は **存在チェックのみ**で version は確認していない。旧版が混在しうる前提で、JSON ブロック不在時は markdown フォールバックへ、AskUserQuestion 出力時はそれを findings 提示として吸収する（version ゲートは張らない）。
 
-**構造化 findings の消費（dual format）**: Step 3 / Step 4 は self-review 出力を次の優先順で解釈する:
-
-1. **`<!-- FINDINGS_JSON_START -->` 〜 `<!-- FINDINGS_JSON_END -->` の JSON ブロックがあれば、それを決定的にパース**して `findings[]` を取得する（`severity` / `confidence` / `focus` / `file` / `line` / `suggested_fix`）。markdown の正規表現パースに依存しない
-2. **JSON ブロックが無い場合**（code-review < 2.18.0）は従来通り markdown レポートの `[confidence: XX][severity: YY]` と `ファイル: path:line` を正規表現パースする（後方互換フォールバック）
-
-消費する schema 契約は self-review SKILL.md 「6.5. 構造化 findings JSON」が SSoT（`schema_version: 1`）。`schema_version` が未知の上位値だった場合は warning を出しつつ既知フィールドのみ読む。
+**構造化 findings の消費（dual format）**: Step 3 / Step 4 は self-review 出力を、`<!-- FINDINGS_JSON_START -->`〜`END` の JSON ブロックがあれば決定的にパースし、無ければ markdown を正規表現でフォールバックパースする。schema 契約と詳細は `${CLAUDE_PLUGIN_ROOT}/references/review-loop.md` を参照。
 
 **Partial failure tolerance**: self-review 自体が失敗した場合は warning を出して Step 3 を skip し、Step 4 で「Phase 6 not executed」状態をユーザー提示する。
 
 ### Step 3: Generator-Verifier Loop (automatic critical-issue fix)
 
-self-review の出力（severity × confidence）を以下マッピングで auto-fix トリガーに変換する:
+self-review の出力を severity × confidence で auto-fix トリガーに変換し、致命指摘を Phase 5 Fix Mode で自動修正して再レビューするループ。
 
 | self-review 出力 | feature-dev 扱い |
 |---|---|
@@ -723,68 +532,9 @@ self-review の出力（severity × confidence）を以下マッピングで aut
 | `CRITICAL && confidence < 90` | 報告のみ（Step 4 で提示） |
 | `MAJOR` / `MINOR` (any confidence) | 報告のみ |
 
-**Rationale**: BLOCKER は security/data-loss class なので confidence を問わず即修正。CRITICAL は従来の confidence ≥ 90 閾値を維持して誤検知を防ぐ。
+**Rationale**: BLOCKER は security/data-loss class なので confidence を問わず即修正。CRITICAL は confidence ≥ 90 閾値を維持して誤検知を防ぐ。
 
-詳細なループ予算ルールは `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` Section 10 を参照。
-
-#### Step 3.1: Initialize loop state
-
-Determine `max_iterations` based on `${CLAUDE_EFFORT}`:
-
-| effort | max_iterations |
-|---|---|
-| `low` | 0 (skip Step 3 entirely — go straight to Step 4) |
-| `medium` | 1 |
-| `high` | 2 |
-| `xhigh` | 3 |
-| `max` | 3 |
-
-If `max_iterations == 0`, skip Step 3 and proceed to Step 4. Otherwise initialize the loop state file:
-
-```bash
-cat > /tmp/feature-dev-loop-state.json <<EOF
-{
-  "run_id": "$(uuidgen 2>/dev/null || date +%s)",
-  "max_iterations": <N>,
-  "current_iteration": 0,
-  "iterations": []
-}
-EOF
-```
-
-#### Step 3.2: Loop
-
-Repeat the following until a termination condition fires:
-
-1. **Filter**: self-review 出力から auto-fix 対象を抽出。**まず構造化 findings JSON ブロック（`<!-- FINDINGS_JSON_START -->` 〜 END）を決定的にパースし `findings[]` を得る**。JSON が無ければ markdown を正規表現フォールバックでパース（dual format、Step 2 参照）。得た findings に上記マッピング（BLOCKER any / CRITICAL ≥90）を適用。0 件なら **terminate with success** → Step 4。
-2. **Fingerprint**: 各 issue から `fingerprint = "{file}:{line}:{focus}"` を算出し、current iteration の `fingerprints` 配列に append。`file` / `line` / `focus` は JSON findings の同名フィールドを使う（focus は安定 focus キー。markdown フォールバック時は `ファイル: path:line` と `[カテゴリ]` から抽出）。
-3. **Regression check**: 現 iteration の `fingerprints` と前 iteration の `fingerprints` が 1 件以上 overlap したら **terminate with "regression detected"** → Step 4。
-4. **Budget check**: `current_iteration >= max_iterations` なら **terminate with "budget exhausted"** → Step 4。
-5. **Notify user**: 1 行 update — `🔄 Iteration {N+1}/{max}: auto-fixing {K} critical issues...`
-6. **Fix** (Phase 5 Fix Mode):
-   - 各 issue について flagged file:line を読み、JSON findings の `suggested_fix`（無ければ markdown の影響説明から推定）を Edit で適用
-   - 設計レベル変更が必要なら `code-architect` を `delta-proposal` focus で起動（1 iteration 消費）
-7. **Re-review**: `Skill code-review:self-review` を再呼び出し。引数:
-   - `--focus <persisting issue の focus 集合>`
-   - `--exclude <既に解決した focus 集合>` で重複検査をスキップ可
-   - `--embed`（loop 中も AskUserQuestion を skip させる）
-8. **Update loop state**: `current_iteration` をインクリメントし、新 iteration エントリを append。
-9. Return to step 1。
-
-#### Step 3.3: Loop termination logging
-
-ループ終了時に loop state file へ集約を append:
-
-```json
-{
-  "terminated_at": "<timestamp>",
-  "termination_reason": "success | regression | budget | manual",
-  "remaining_critical": <count>,
-  "auto_fixed_count": <count>
-}
-```
-
-このファイルは Phase 7 summary で参照される。
+ループの初期化（`${CLAUDE_EFFORT}` → `max_iterations`）・実行（filter → fingerprint → regression/budget チェック → Fix → 再レビュー）・終了ログの手順は `${CLAUDE_PLUGIN_ROOT}/references/review-loop.md` に従う。`low` effort は `max_iterations=0` で Step 3 を skip し Step 4 へ直行する。
 
 ### Step 4: Consolidate and present
 

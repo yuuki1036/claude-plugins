@@ -20,7 +20,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [dev-workflow](#dev-workflow) | 1.28.0 | 4 | 6 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.3 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.6.2 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
-| [feature-dev](#feature-dev) | 2.12.0 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
+| [feature-dev](#feature-dev) | 2.12.1 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.5.2 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行を機械ブロック |
 | [issue-workflow](#issue-workflow) | 1.5.0 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [living-spec-workflow](#living-spec-workflow) | 0.3.7 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |

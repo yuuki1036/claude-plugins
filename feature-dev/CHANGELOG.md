@@ -5,6 +5,18 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.1] - 2026-09-12
+
+### Changed
+
+- **SKILL.md を 832 → 582 行に縮めた**（progressive disclosure / `skill-size` 警告対策）。
+  挙動は不変。本文は「検出 → 該当すれば references を読んで従う」に薄くし、詳細を分離した:
+  - `references/plugin-handoffs.md` — bdd-spec / kvault / design-doc の dormant handoff
+    （Phase 1.3 / 1.4 / 1.6 / 4.5。該当プラグインがある時だけ通る branch）
+  - `references/review-loop.md` — Phase 6 の Generator-Verifier ループ詳細と findings 消費契約（dual format）
+  - `references/smoke-test.md` — Phase 5.5 の self-lock guard と runtime-sensitive 検出 bash
+  本文には各 Phase の検出・skip 条件・後続 Phase が読む Output 契約を残した
+
 ## [2.12.0] - 2026-09-12
 
 ### Added
