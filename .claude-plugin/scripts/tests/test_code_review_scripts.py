@@ -3302,12 +3302,40 @@ class RetroWaveSplitDenominatorTest(RetroFixture):
         分母にも分子にも入らないので、黙って落とすと「守られている」と読まれる
         （#154 のコメントが求めた処理が実装されていなかった）。
         """
+        # 抑止側の回は上限（7 本）以下にしておく（上限超過は #220 で違反へ移る）
         self._events([self._run(3, 2, ["wave-split"]),
-                      self._run(8, 2, ["agents-mismatch"])])
+                      self._run(3, 2, ["agents-mismatch"])])
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("判定できた 1 件中 1 件が規約違反", out)
         self.assertIn("1 件は `agents-mismatch` で判定を抑止", out)
         self.assertIn("測れていない", out, "抑止を「守られた」と読ませない注記が無い")
+
+    # ---- 上限超過は申告が壊れていても違反と確定する（GitHub issue #220） ------
+    def test_a_mismatched_run_over_the_maximum_is_a_confirmed_violation(self):
+        """全層起動の上限（7 本）を超えた回は `agents-mismatch` でも抑止しない（実測 `[1×14]`）."""
+        self._events([self._run(8, 2, ["agents-mismatch"])]
+                     + [self._run(2, 2, []) for _ in range(4)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("判定できた 5 件中 1 件が規約違反", out)
+        self.assertIn("`agents-mismatch` の回で全層起動の上限を超過 1 件", out)
+        self.assertNotIn("`agents-mismatch` で判定を抑止", out, "上限超過の回を抑止に残している")
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)["wave_split"]
+        self.assertEqual((j["judged"], j["n"], j["suppressed"]), (5, 1, 0))
+        self.assertEqual(j["kinds"].get("over-max"), 1)
+
+    def test_a_mismatched_run_at_the_maximum_stays_suppressed(self):
+        """ちょうど 7 本は正当な構成でも起こりうるので確定しない（境界を広げる変異を殺す）."""
+        self._events([self._run(7, 2, ["agents-mismatch"])])
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)["wave_split"]
+        self.assertEqual((j["judged"], j["n"], j["suppressed"]), (0, 0, 1))
+
+    def test_the_maximum_is_compared_with_effective_waves(self):
+        """捨てられた試行を除いた `waves_effective` で比べる（生の `waves` は再試行で膨らむ）."""
+        row = self._run(9, 2, ["agents-mismatch"])
+        row["dispatch"]["waves_effective"] = 3
+        self._events([row])
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)["wave_split"]
+        self.assertEqual((j["n"], j["suppressed"]), (0, 1), "再試行で膨らんだ本数で違反にしている")
 
     def test_the_verdict_is_recomputed_not_read_from_the_payload(self):
         """**判定は payload の `waves_expected` ではなく現行式の再計算**（GitHub issue #200）.

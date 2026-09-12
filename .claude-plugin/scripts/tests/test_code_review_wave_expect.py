@@ -23,7 +23,23 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "code-review" / "scripts" / "lib"))
 
 from wave_expect import (  # noqa: E402
-    SKEPTIC_LAUNCH, expected_waves, meta_added_findings, skeptic_fallback, skeptic_tail_solo)
+    MAX_EXPECTED_WAVES, SKEPTIC_LAUNCH, expected_waves, meta_added_findings, skeptic_fallback,
+    skeptic_tail_solo)
+
+
+class MaxExpectedWavesTest(unittest.TestCase):
+    """全層が起動した場合の上限（GitHub issue #220）.
+
+    retro は `agents-mismatch` の回でもこれを超えたら違反と確定するので、**式に項を足して
+    上限を上げ忘れると正当な構成を違反と数える**。全項を立てた payload を独立に組んで突き合わせる.
+    """
+
+    def test_every_layer_active_reaches_the_maximum(self):
+        payload = {"agents": {"explorer": 2, "reviewer": 5, "verify": 2, "round2": 3},
+                   "meta_reviewer": {"fired": True, "findings_added": 1},
+                   "recall_skeptic": {"fired": True, "launch": "fallback"}}
+        self.assertEqual(expected_waves(payload, [2, 5, 1, 2, 3, 1, 1]), 7)
+        self.assertEqual(MAX_EXPECTED_WAVES, 7)
 
 
 def _sk(fired: bool = True) -> dict:

@@ -144,3 +144,10 @@ def expected_waves(payload, wave_sizes):
             + (2 if _layer_n(agents, "round2") > 0 else 0)
             + (1 if meta_added_findings(payload) else 0)
             + (1 if skeptic_fallback(payload, wave_sizes) else 0))
+
+
+#: 全層が起動した場合の期待 wave 本数（explorer 1 + reviewer 1 + 反証 1 + Round 2 の 2 +
+#: meta 追加反証 1 + skeptic fallback 1）。**`expected_waves` に項を足したらここも上げる**。
+#: retro は `agents-mismatch`（申告が壊れて期待本数を作れない回）でも、これを超えた回だけは
+#: 違反と確定する（GitHub issue #220）。上げ忘れると正当な構成を違反と数える
+MAX_EXPECTED_WAVES = 7

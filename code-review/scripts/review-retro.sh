@@ -94,7 +94,7 @@ from datetime import datetime, timedelta, timezone
 # **集計側は payload の `waves_expected` をそのまま使わず再計算する**（GitHub issue #200）
 sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pycache__` を作らせないだけで、判定にも出力にも効かない
 sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
-from wave_expect import expected_waves
+from wave_expect import MAX_EXPECTED_WAVES, expected_waves
 
 since_raw = os.environ.get("REVIEW_SINCE") or ""
 last_n = int(os.environ.get("REVIEW_LAST") or 0)
@@ -433,6 +433,8 @@ WAVE_SPLIT_KINDS = {
     "explorer": "explorer を 1 体ずつ発行",
     "layer": "同一層の wave 分割",
     "unknown": "型不明（`wave_sizes` が無い）",
+    # 申告が壊れているので型は推定しない（#220）
+    "over-max": "`agents-mismatch` の回で全層起動の上限を超過",
 }
 
 
@@ -1162,16 +1164,26 @@ for _e in events:
         continue
     if not isinstance(_d.get("waves"), int) or not isinstance(_d.get("waves_expected"), int):
         continue
-    if "agents-mismatch" in (_p.get("measurement_gaps") or []):
-        n_wave_suppressed += 1
-        continue
-    n_wave_judged += 1
     _sizes = _d.get("wave_sizes")
     # **判定は `waves_effective`（捨てられた試行・孫を除いた本数）**。無ければ `waves` に
     # 落とす。publish 側と同じ順序にすること（違うと再計算が別の量になる）
     _w = _d.get("waves_effective")
     if not isinstance(_w, int) or isinstance(_w, bool):
         _w = _d["waves"]
+    if "agents-mismatch" in (_p.get("measurement_gaps") or []):
+        # 申告が壊れた回は期待本数を作れないので抑止する。**ただし全層が起動した場合の上限すら
+        # 超えた回は、申告に依らず違反と確定できる**（v2.120.1 / GitHub issue #220。実測で
+        # `[1×14]` と `[1,1,1,1,6,6,1,6]` という最悪の逐次発行が抑止の側に隠れていた）。
+        # 確定できた回だけを判定成立に入れる — 上限以下の回は守られたとも破られたとも言えない。
+        # `verdict: serial` で数えないのは、単独 wave の連続だけで決まり期待本数を見ないため
+        if _w > MAX_EXPECTED_WAVES:
+            n_wave_judged += 1
+            n_wave_split += 1
+            wave_split_kinds["over-max"] = wave_split_kinds.get("over-max", 0) + 1
+        else:
+            n_wave_suppressed += 1
+        continue
+    n_wave_judged += 1
     _hit = _w > expected_waves(_p, _sizes)
     if _hit != (_w > _d["waves_expected"]):
         n_wave_split_stale += 1
