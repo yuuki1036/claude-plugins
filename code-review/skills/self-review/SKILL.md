@@ -399,7 +399,7 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
 
 4. [confidence: 95][severity: MAJOR][設計] ...
 
-### ✏️ コメント推敲（severity 対象外・採否はあなたが決める）
+### ✏️ コメント推敲（severity 対象外・Step 7 で「修正」を選ぶと comment-polish が適用する）
 {`comment-accuracy` が構成に入っていれば（**バンドル相乗りを含む**）必ず見出しを出す（0 件なら「該当なし」。省略すると silent skip と区別できない）。構成に無ければ見出しごと省略し、**diff にコメントの追加・変更があるのに未起動だった場合のみ** `comment-accuracy` を欠損観点に記録する（トリガ不成立の未起動は正常系。記録すると `missing_coverage` の偏り集計が潰れる）。掲載上限 10 件、超過分は末尾に「他 N 件」}
 
 1. src/foo.ts:12 [不要]
@@ -488,6 +488,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 - **すべて修正**: 全指摘を一覧化し、ファイルごとにまとめて修正を実施する
 - **BLOCKER/CRITICAL のみ**: 該当 severity の指摘のみ再表示し、ファイルごとにまとめて修正を実施する
 - **このまま**: 完了（BLOCKER 指摘が 1 件以上残っている場合は「BLOCKER 指摘を残したままコミットしますか？」と AskUserQuestion で再確認する）
+
+**コメント推敲（B 系統）の適用**: 「すべて修正」または「BLOCKER/CRITICAL のみ」を選んだときは、上の指摘修正を終えた後に `## コメント推敲提案` ブロック（Step 6 で出力済み）を適用する。`code-review` がインストールされているので `Skill` tool で `code-review:comment-polish` を呼ぶ:
+- 提案を一時ファイル（例: `.claude/.comment-polish-findings.txt`）に書き出してから、`comment-polish --embed --from-findings <path>`（+ 現在の base / `--staged` があれば同値）で起動する
+- comment-polish 側は再推敲せず、渡した提案を**全件 Edit で適用**する（オプションなしで適用。提案が 0 件 or「該当なし」なら no-op）
+- 「このまま」を選んだときは適用しない（修正方針の選択と矛盾させない）
+- `comment-accuracy` が構成に無く `## コメント推敲提案` が出ていない回は本処理を skip する
 
 **訂正の伝播前ガード（over-correction 防止 / GitHub issue #71）**: findings をコード/文書本文に**反映する前に**、その修正が依拠する load-bearing な事実主張を一次ソースで再確認する。**反証レイヤーが覆っていない指摘**（`反証: 未実施` の回の全件 / `⚠️ 反証未実施（対象帯外）` 付き）では、**load-bearing かの判定より先に一次ソースを引く** — 絞り込みの判定自体が指摘を書いた同じ 1 体の推論に乗っているため（#196）。判定ルール（repo で確認できる/できない主張の扱い・暫定入力の非伝播・1 箇所先行確認・複数観点の独立一致）の詳細: → orchestration-optional-flows.md `## 12`
 

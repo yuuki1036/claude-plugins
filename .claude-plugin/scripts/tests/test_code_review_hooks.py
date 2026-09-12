@@ -97,5 +97,63 @@ class PublishGuardTest(HookTestCase):
         self.assertEqual(self._timing_files()[0].read_text(), before)
 
 
+class ExternalIdReminderTest(HookTestCase):
+    """external-id-reminder.sh（PreToolUse: git commit）.
+
+    staged なコード内コメントに git 外 ID が残っていたら 1 回通知する。**黙る条件を厚く** —
+    git commit 以外・検出 0 件・git 外では必ず黙る（PreToolUse の暴発は全 Bash 呼び出しに及ぶ）。
+    """
+
+    PLUGIN = "code-review"
+    SCRIPT = "hooks/scripts/external-id-reminder.sh"
+
+    def setUp(self) -> None:
+        self._repo = TempGitRepo()
+        self.repo = self._repo.__enter__()
+        self.addCleanup(self._repo.__exit__, None, None, None)
+        self._repo.commit("init")  # base を作る（staged diff が取れるように）
+
+    def _stage(self, filename: str, body: str) -> None:
+        (self.repo / filename).write_text(body)
+        subprocess.run(["git", "add", filename], cwd=str(self.repo),
+                       capture_output=True, env=scrub())
+
+    def _commit_hook(self, command: str = "git commit -m x"):
+        return self.run_hook(self.bash_payload(command), cwd=self.repo)
+
+    def test_fires_on_staged_linear_id_in_comment(self):
+        self._stage("f.ts", "// ABC-123 対応\nconst x = 1;\n")
+        res = self._commit_hook()
+        self.assertFired(res, "comment-polish")
+        self.assertIn("1 件", res.context or "")
+
+    def test_silent_when_no_external_id(self):
+        self._stage("f.ts", "// 普通のコメント\nconst x = 1;\n")
+        res = self._commit_hook()
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_silent_when_id_in_code_not_comment(self):
+        # コメントでないコード行の ID 様文字列は拾わない
+        self._stage("f.ts", 'const u = "ABC-123";\n')
+        res = self._commit_hook()
+        self.assertSilent(res)
+
+    def test_silent_on_non_commit_bash(self):
+        self._stage("f.ts", "// ABC-123\n")
+        res = self._commit_hook("git status")
+        self.assertSilent(res)
+
+    def test_silent_on_non_git_repo(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        res = self.run_hook(self.bash_payload("git commit -m x"), cwd=Path(tmp.name))
+        self.assertSilent(res)
+
+    def test_malformed_stdin_is_silent(self):
+        res = self.run_hook(cwd=self.repo, raw="{not json")
+        self.assertNotIn("Unexpected", res.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

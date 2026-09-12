@@ -29,6 +29,22 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/external-id-reminder.sh"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

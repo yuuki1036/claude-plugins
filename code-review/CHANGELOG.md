@@ -2,6 +2,28 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.122.0] - 2026-09-12
+
+### Added
+
+- **comment-polish スキルを新設**（コメント精査の「適用」担当）。diff で追加・変更したコード内コメントを
+  2 観点（読み手に必要な情報か / 冗長表現の排除。正本 `.claude-plugin/lib/comment-rule.md`）で推敲し、
+  git 外の参照 ID（Linear Issue ID / Linear URL）を除去する。self-review の B 系統が提案で止まっていたのに対し、
+  承認を得て Edit で適用するところまでを担う。単独起動（AskUserQuestion）と self-review からの `--embed` 全件適用の両経路。
+  設計: `.claude/designs/20260912-e2e-verify-comment-polish-pr-flow.md` (B)。
+- **`scripts/detect-external-ids.sh`（+ `lib/detect_external_ids.py`）を追加**。diff の追加コメント行から
+  git 外参照 ID を決定的に検出する（JSON Lines / exit 1=検出あり）。既定は Linear ID + Linear URL。
+  GitHub `#N` は本 repo 実測で 759/759 が正当な why 参照（100% 偽陽性）だったため既定から外し、`--github` で opt-in。
+- **commit 前 hook `external-id-reminder.sh`（PreToolUse: git commit）を追加**。staged なコメントに git 外 ID が
+  残っていたら非ブロッキングで通知する（ブロックしない。除去は comment-polish が人間承認で行う）。`safe_hook_input` で
+  git commit を自己判定する二重ゲート。
+
+### Changed
+
+- **self-review Step 7 にコメント推敲（B 系統）の適用を組み込み**。「すべて修正」「BLOCKER/CRITICAL のみ」を選んだ回は、
+  指摘修正後に `code-review:comment-polish --embed --from-findings <path>` を呼んで B 系統提案を全件適用する
+  （「このまま」は適用しない）。Step 6 の見出しを「Step 7 で修正を選ぶと comment-polish が適用する」に更新。
+
 ## [2.121.0] - 2026-09-11
 
 ### Added
