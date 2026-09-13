@@ -360,7 +360,11 @@ Phase 5 has two modes — check the invocation context:
 **DO NOT START WITHOUT USER APPROVAL**
 
 **Actions**:
-1. Wait for explicit user approval
+1. Wait for explicit user approval. 承認を求めるメッセージは次の 2 つで構成する（設計と実装でメインモデルを分ける運用の切り替え点。Phase 5 に入ると承認待ちで止まる箇所はここしか無い）:
+   - **設計の引き継ぎ要約**: 採用した設計案とその理由、Phase 3 Step 5 の設計契約（確定した前提 + ユーザー決定）、実装で触るファイルと build sequence を**本文として**書き出す。モデルを切り替えると、切り替え先は切り替え前のモデルの思考過程を読めない（API 仕様上、読める向きが決まっている）ため、実装に必要な判断は可視テキストに残っていないと失われる。Phase 4.5 で design doc を書き出した場合もそのパスを添えたうえで要約を省略しない
+   - 末尾に次の案内を**必ずそのまま**添える:
+
+   > 🔀 **モデル切り替えポイント**: 設計（Phase 1〜4.8）と実装で別のモデルを使う場合は、**この承認に返信する前に**アプリのモデル選択で実装用モデルへ切り替えてください。切り替えた後の返信から、そのモデルで Phase 5 以降を実行します。切り替え先には上の要約（と design doc）だけが引き継がれるので、足りない判断があれば承認と一緒に書き足してください。
 2. Read all relevant files identified in previous phases
 3. Implement following chosen architecture
 4. Follow codebase conventions strictly
@@ -474,6 +478,12 @@ If the user chose to execute:
 ## Phase 6: Quality Review
 
 **Goal**: `code-review:self-review` skill に委譲して品質ゲートを通し、致命指摘を Generator-Verifier ループで自動 fix する
+
+**モデル切り替えの停止点（Step 0 の前）**: 実行中のメインモデルが**現行世代の Opus より前の世代**（例: Opus 4.8 で実装した）なら、Phase 6 に入る前にここで止まり、次のメッセージを出してターンを終える。ユーザーの返信を待ってから Step 0 へ進む。現行世代（またはそれより上位）で動いているなら止まらず、何も出さずに Step 0 へ進む:
+
+> 🔀 **モデル切り替えポイント**: これから Phase 6（self-review）に入ります。self-review 内の `opus` 指定の reviewer・検証役はメインモデルの世代に解決されるため、前の世代のままだと見落としが増えます。**現行世代の Opus へ切り替えてから**「続けて」と返信してください。このまま進める場合もそのまま返信で構いません。
+
+選択 UI（`AskUserQuestion`）ではなく通常メッセージで止めるのは、ユーザーがモデル選択を操作してから返信する必要があるため。
 
 **設計判断**: v2.0.0 で feature-dev 内蔵の `code-reviewer` agent を廃止し、`code-review` plugin の `self-review` skill に品質基準を一本化した。理由は (a) 同リポジトリ内で reviewer ロジックが二重化していた DRY 違反、(b) `code-review` の 2 軸スコアリング × 15 観点 × specialist × meta-reviewer 構造の方が遥かに堅牢だから。`code-review` plugin は `_requirements` で `required: false` 宣言（claude-plugins 規約で plugin 間の強制依存を避ける）だが、Phase 6 では fail-fast する。
 

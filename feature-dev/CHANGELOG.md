@@ -5,6 +5,19 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.0] - 2026-09-13
+
+### Added
+
+- **設計と実装でメインモデルを分ける運用のため、切り替えポイントを明示するメッセージを追加**。skill は phase ごとに
+  モデルを指定できず、切り替えはユーザーがアプリで行うしかないが、どこで切り替えればよいかが本文から読み取れなかった
+  - Phase 5 Normal Mode の承認待ちメッセージに「この承認に返信する前に実装用モデルへ切り替える」案内を必ず添える
+  - 同メッセージに**設計の引き継ぎ要約**（採用案と理由・設計契約・触るファイルと build sequence）を本文として必須化。
+    切り替え先のモデルは切り替え前のモデルの思考過程を読めない場合があり、可視テキストに残っていない判断は失われるため
+  - Phase 6 の手前: メインモデルが現行世代の Opus より前の世代なら通常メッセージで止まり、切り替えを促して返信を待つ
+    （self-review 内の `opus` 指定の reviewer がメインの世代に解決され、世代を下げると見落としが増えるため）。
+    現行世代以上なら止まらない
+
 ## [2.13.0] - 2026-09-13
 
 ### Added
