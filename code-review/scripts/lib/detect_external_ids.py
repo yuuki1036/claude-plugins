@@ -72,7 +72,7 @@ def main() -> int:
             new_line += 1
 
     for f, ln, tok in found:
-        print(json.dumps({"file": f, "line": ln, "match": tok}, ensure_ascii=False))
+        print(json.dumps({"file": f, "line": ln, "match": tok}, ensure_ascii=False))  # mutation-ok: 検出対象（Linear ID / URL）と行番号は ASCII のみ。ensure_ascii の True/False で出力は不変
 
     return 1 if found else 0
 

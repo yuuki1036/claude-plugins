@@ -101,7 +101,7 @@ emit() {
 
   # dirty / untracked（prunable は dir が無いので判定不能→ false 固定で無条件 reap に乗る）
   local dirty=false untracked=false status_out=""
-  if [ "$prunable" != "1" ] && [ -d "$path" ]; then
+  if [ "$prunable" != "1" ] && [ -d "$path" ]; then  # mutation-ok: prunable=1 は dir 消失が前提なので [ -d path ] は常に偽。&& / || で net 不変
     status_out=$(git -C "$path" status --porcelain 2>/dev/null || echo "")
     [ -n "$status_out" ] && dirty=true
     printf '%s\n' "$status_out" | grep -q '^??' && untracked=true
@@ -109,7 +109,7 @@ emit() {
 
   # ahead_of_main
   local ahead=0
-  if [ -n "$MAIN_REF" ] && [ -n "$branch" ]; then
+  if [ -n "$MAIN_REF" ] && [ -n "$branch" ]; then  # mutation-ok: 片方空なら rev-list の range が不正になり || echo 0 で ahead=0。&& / || で net 不変
     ahead=$(git rev-list --count "${MAIN_REF}..${branch}" 2>/dev/null || echo 0)
     case "$ahead" in ''|*[!0-9]*) ahead=0 ;; esac
   fi
@@ -122,7 +122,7 @@ emit() {
 
   # pr 状態（gh があるときだけ）。branch は --arg 相当で gh に渡す（シェル再評価しない）
   local pr_number="" pr_state=""
-  if [ "$HAVE_GH" = "1" ] && [ -n "$branch" ]; then
+  if [ "$HAVE_GH" = "1" ] && [ -n "$branch" ]; then  # mutation-ok: 分岐差は HAVE_GH=1 かつ branch 空（detached）で gh が空 head に PR を返す時のみ。実シナリオ外
     local pr_json
     pr_json=$(gh pr list --head "$branch" --state all --json number,state --limit 1 2>/dev/null || echo "[]")
     pr_number=$(printf '%s' "$pr_json" | jq -r '.[0].number // empty' 2>/dev/null || echo "")

@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.31.1] - 2026-09-13
+
+### Changed
+
+- **worktree-gc（scan.sh / reap.sh）と launch-chrome-devtools.sh の変異テスト耐性を強化**（GitHub issue #229）。
+  mutation-nightly が拾った生存変異を潰すため CLI 回帰テストを追加した（挙動は不変）:
+  - scan.sh: verdict 境界（origin/main 基準の merged / ahead / dirty）・primary 判定・live_unknown・
+    JSON フィールド（branch / nested_parent / marker / db_guess / live_pids）の契約テスト
+  - reap.sh: clean は dirty WARN を出さない / became-live（lsof 再確認で SKIP）のテスト
+  - launch-chrome-devtools.sh: mise known-path 解決・project config からの browser_connect 読み取り・
+    env が file に勝つことのテスト
+  - 決定的に検証できない presence プローブ（lsof / psql）と等価変異には `# mutation-ok` を理由つきで付与
+- **check-deps.sh の gh 版下限（2.99.0）判定にテストを追加**（#229）。gh スタブで古い版→WARN / 新しい版→無警告を検証
+
 ## [1.31.0] - 2026-09-13
 
 ### Added

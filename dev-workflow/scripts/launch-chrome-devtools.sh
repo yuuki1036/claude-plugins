@@ -25,7 +25,7 @@ resolve_npx() {
   local mise
   if mise=$(resolve_mise); then
     local p
-    p="$("$mise" which npx 2>/dev/null)" && [ -n "$p" ] && { printf '%s\n' "$p"; return 0; }
+    p="$("$mise" which npx 2>/dev/null)" && [ -n "$p" ] && { printf '%s\n' "$p"; return 0; }  # mutation-ok: 先頭 && の反転は代入成否と [ -n p ] が相関し net 不変（print ガードの && は mise 経路テストが押さえる）
   fi
   # nvm / volta の install 済み bin を直接探す（最初に見つかったものを使う。版は問わない）
   local d

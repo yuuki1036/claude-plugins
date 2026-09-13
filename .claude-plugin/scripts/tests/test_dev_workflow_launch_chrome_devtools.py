@@ -97,6 +97,64 @@ class LaunchWrapperTest(unittest.TestCase):
         self.assertIn("autoConnect", res.stderr)         # 落とした旨の警告
         self.assertNotIn("--autoConnect", res.stdout)    # 実起動引数に付いていない
 
+    def test_check_resolves_mise_from_known_install_path(self) -> None:
+        # mise は PATH に無いが ~/.local/bin/mise に在る（GUI app の痩せた PATH を模す）。
+        # resolve_mise の known-path ループ `[ -x "$c" ] && { print; return }` が死ぬと
+        # 実行可能な mise を拾えず npx 解決に失敗する。
+        local_bin = self.root / ".local" / "bin"
+        local_bin.mkdir(parents=True)
+        fake_npx = self.bin / "real-npx"
+        fake_npx.write_text("#!/usr/bin/env bash\n")
+        fake_npx.chmod(0o755)
+        mise = local_bin / "mise"
+        mise.write_text(f'#!/usr/bin/env bash\n[ "$1" = which ] && echo "{fake_npx}" && exit 0\nexit 1\n')
+        mise.chmod(0o755)
+        res = self._run("--check", env=self._env())  # HOME=self.root なので ~/.local/bin = local_bin
+        self.assertEqual(res.returncode, 0, res.stderr)
+
+    def test_connect_read_from_project_config_when_env_unset(self) -> None:
+        # DEV_WORKFLOW_BROWSER_CONNECT 未設定でも .claude/dev-workflow.json の
+        # browser_connect を読む（55 の `[ -z CONNECT ] && [ -f json ] && command -v jq` 連鎖）。
+        # jq スタブと新しめの npx スタブを置き、autoConnect が実起動引数に乗ることを測る。
+        self._stub("jq", 'echo autoConnect\n')  # .browser_connect の値として返す
+        self._stub("npx", r'''
+            for a in "$@"; do
+              if [ "$a" = "--version" ]; then echo "1.7.0"; exit 0; fi
+            done
+            echo "ARGS: $*"
+            exit 0
+        ''')
+        cfg = self.root / ".claude"
+        cfg.mkdir()
+        (cfg / "dev-workflow.json").write_text('{"browser_connect":"autoConnect"}\n')
+        env = self._env()  # DEV_WORKFLOW_BROWSER_CONNECT は入れない
+        res = subprocess.run(["bash", str(LAUNCHER)], cwd=str(self.root),
+                             capture_output=True, text=True, env=env, timeout=30)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("--autoConnect", res.stdout)
+
+    def test_env_connect_wins_over_project_config(self) -> None:
+        # 環境変数 DEV_WORKFLOW_BROWSER_CONNECT が設定済みなら .claude/dev-workflow.json は
+        # 読まない（55 の `[ -z CONNECT ] && ...` 連鎖の先頭 &&）。env=default なのに
+        # file の autoConnect を拾うと env より file が勝ってしまう。
+        self._stub("jq", 'echo autoConnect\n')
+        self._stub("npx", r'''
+            for a in "$@"; do
+              if [ "$a" = "--version" ]; then echo "1.7.0"; exit 0; fi
+            done
+            echo "ARGS: $*"
+            exit 0
+        ''')
+        cfg = self.root / ".claude"
+        cfg.mkdir()
+        (cfg / "dev-workflow.json").write_text('{"browser_connect":"autoConnect"}\n')
+        env = self._env(DEV_WORKFLOW_BROWSER_CONNECT="default")  # 明示 default（file を読ませない）
+        res = subprocess.run(["bash", str(LAUNCHER)], cwd=str(self.root),
+                             capture_output=True, text=True, env=env, timeout=30)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("ARGS:", res.stdout)            # exec 到達
+        self.assertNotIn("--autoConnect", res.stdout)  # env=default が file の autoConnect に勝つ
+
     def test_autoconnect_kept_on_new_npx_version(self) -> None:
         self._stub("npx", r'''
             for a in "$@"; do

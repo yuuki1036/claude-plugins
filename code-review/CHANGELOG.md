@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.122.1] - 2026-09-13
+
+### Changed
+
+- **detect-external-ids.sh / detect_external_ids.py の変異テスト耐性を強化**（GitHub issue #229）。
+  mutation-nightly の生存変異を潰す CLI 回帰テストを追加した（挙動は不変）:
+  - 削除行（先頭 -）の Linear ID を拾わない（追加行のみ対象）テスト
+  - base 未指定・origin/HEAD 不在時に BASE を main へフォールバックして diff を取るテスト
+  - `ensure_ascii=False`（検出対象は ASCII のみで出力不変）と external-id-reminder.sh の
+    防御的二重確認（RC=1 ⟺ 出力非空で相関）の等価変異に `# mutation-ok` を付与
+
 ## [2.122.0] - 2026-09-12
 
 ### Added

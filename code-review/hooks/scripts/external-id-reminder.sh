@@ -35,7 +35,7 @@ DETECT="${CLAUDE_PLUGIN_ROOT}/scripts/detect-external-ids.sh"
 # staged diff に対して検出（exit 1 = 検出あり）。set -e 下で非ゼロを握り潰す。
 COUNT=0
 OUT="$(bash "$DETECT" --staged 2>/dev/null)" && RC=0 || RC=$?
-if [ "$RC" = 1 ] && [ -n "$OUT" ]; then
+if [ "$RC" = 1 ] && [ -n "$OUT" ]; then  # mutation-ok: detect の契約上 RC=1 ⟺ OUT 非空。2 条件は相関し && と || で結果不変（防御的二重確認）
   COUNT=$(printf '%s\n' "$OUT" | grep -c . || true)
 fi
 [ "$COUNT" -eq 0 ] && safe_hook_error NotFound "no external id in staged comments"

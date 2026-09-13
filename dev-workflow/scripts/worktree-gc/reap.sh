@@ -48,7 +48,7 @@ LIVE_WORKTREES=$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{p
 have_lsof=0
 command -v lsof >/dev/null 2>&1 && have_lsof=1
 have_psql=0
-command -v psql >/dev/null 2>&1 && have_psql=1
+command -v psql >/dev/null 2>&1 && have_psql=1  # mutation-ok: presence プローブ。DB drop の実行は live な DB を要し unit テストで踏めない
 
 removed=0; skipped=0; failed=0; db_dropped=0; db_warned=0
 
@@ -77,7 +77,7 @@ while IFS= read -r row; do
   fi
 
   # 削除直前の live_pids 再取得（became-live race）
-  if [ "$have_lsof" = "1" ] && [ -d "$path" ]; then
+  if [ "$have_lsof" = "1" ] && [ -d "$path" ]; then  # mutation-ok: have_lsof=0 のとき lsof 不在でブロックが no-op になり net 不変（have_lsof=1 経路は became-live テストが押さえる）
     live=$(lsof -d cwd -a +D "$path" -t 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
     if [ -n "$live" ]; then
       echo "  SKIP   ${path} （生存プロセス: ${live}。scan 後に使い始めた）" >&2
@@ -112,7 +112,7 @@ while IFS= read -r row; do
     if ! printf '%s' "$db_name" | grep -qE '^[A-Za-z_][A-Za-z0-9_]*$'; then
       echo "    WARN DB 名 '${db_name}' が識別子として不正。自動 drop しない（手動確認）" >&2
       db_warned=$((db_warned+1))
-    elif [ "$have_psql" = "1" ] && psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" 2>/dev/null | grep -q 1; then
+    elif [ "$have_psql" = "1" ] && psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" 2>/dev/null | grep -q 1; then  # mutation-ok: DB 存在確認は live な DB を要し unit テストで踏めない（presence 無しは else 節へ）
       if [ "$DRY" = "1" ]; then
         echo "    would drop db  $db_name"; db_dropped=$((db_dropped+1))
       elif psql -U postgres -c "DROP DATABASE IF EXISTS ${db_name};" >/dev/null 2>&1; then

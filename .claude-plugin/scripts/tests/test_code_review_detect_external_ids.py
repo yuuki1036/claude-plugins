@@ -104,6 +104,44 @@ class DetectExternalIdsTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(rows, [])
 
+    def test_base_falls_back_to_main_when_no_origin_head(self):
+        """base 未指定・origin/HEAD 不在のとき BASE を main に解決して diff を取る.
+
+        `[ -z "$BASE" ] && { ... BASE=main || BASE=master; }` の `&&` が死ぬと BASE が空の
+        まま `git diff ...HEAD` になり、main から分岐した追加コメントの ID を拾えなくなる。
+        --staged を付けずに呼び、main より ahead のコメントが検出されることを測る。
+        """
+        # main 上に ID を含まない初期コミット
+        (self.root / "f.ts").write_text("const x = 1;\n")
+        self._git("add", "f.ts")
+        self._git("commit", "-q", "-m", "init")
+        self._git("branch", "-M", "main")
+        # feat ブランチで Linear ID コメントを追加（main より ahead。origin/HEAD は張らない）
+        self._git("checkout", "-q", "-b", "feat")
+        (self.root / "f.ts").write_text("// ABC-123 対応\nconst x = 1;\n")
+        self._git("add", "f.ts")
+        self._git("commit", "-q", "-m", "feat")
+        res = subprocess.run(["bash", str(SCRIPT)],  # --staged なし・base 引数なし
+                             cwd=str(self.root), capture_output=True, text=True,
+                             env=scrub(), timeout=30)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("ABC-123", res.stdout)
+
+    def test_removed_comment_line_is_not_flagged(self):
+        """削除行（先頭 -）の Linear ID は拾わない（追加行のみ対象）.
+
+        `line.startswith("+") and not line.startswith("+++")` の `and` が `or` に倒れると
+        削除行・コンテキスト行まで走査され、消したコメントの ID を誤検出する。
+        一度コミットしてからコメント行を削除し、その削除 diff を拾わないことを測る。
+        """
+        self._stage("f.ts", "// ABC-123 対応\nconst x = 1;\n")
+        self._git("commit", "-q", "-m", "init")
+        (self.root / "f.ts").write_text("const x = 1;\n")  # コメント行を削除
+        self._git("add", "f.ts")
+        rc, rows = self._run()
+        self.assertEqual(rc, 0, rows)  # 削除された `// ABC-123` は検出対象外
+        self.assertEqual(rows, [])
+
 
 if __name__ == "__main__":
     unittest.main()

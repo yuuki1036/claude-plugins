@@ -353,5 +353,47 @@ class CheckMissingPluginsTest(HookTestCase):
             self.assertNotEqual(self._run(root, home).returncode, 2)
 
 
+class DevWorkflowGhVersionTest(unittest.TestCase):
+    """dev-workflow check-deps.sh の gh 版下限チェック（2.99.0 境界）.
+
+    gh < 2.99.0 は `gh pr create --attach` 非対応で pr-creator の Screenshots 添付が
+    手動になるため WARN を出す。バージョン比較 `!= "2.99.0"` が `==` に倒れると
+    判定が反転して「古い gh で無警告 / 新しい gh で誤警告」になる（mutation-nightly #229）。
+    """
+
+    SCRIPT = ROOT / "dev-workflow" / "hooks" / "scripts" / "check-deps.sh"
+
+    def _run_with_gh(self, version: str) -> str:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            bin_dir = Path(td) / "bin"
+            bin_dir.mkdir()
+            gh = bin_dir / "gh"
+            # `gh --version` は version を返す。その他のサブコマンド（pr list 等）は空で成功。
+            gh.write_text("#!/bin/sh\n"
+                          'case "$1" in --version) echo "gh version %s (2024-01-01)";;'
+                          " *) exit 0;; esac\n" % version)
+            gh.chmod(0o755)
+            env = dict(os.environ)
+            env["CLAUDE_PLUGIN_ROOT"] = str(self.SCRIPT.parents[2])
+            env["PATH"] = "%s:%s" % (bin_dir, env.get("PATH", ""))
+            res = subprocess.run(["/bin/bash", str(self.SCRIPT)],
+                                 input='{"hook_event_name":"SessionStart"}',
+                                 capture_output=True, text=True, cwd=str(ROOT),
+                                 env=env, timeout=20)
+            self.assertNotEqual(res.returncode, 2, res.stderr)
+            return res.stdout
+
+    def test_old_gh_version_warns_about_attach(self):
+        out = self._run_with_gh("2.40.0")
+        self.assertIn("--attach", out)
+        self.assertIn("2.40.0", out)
+
+    def test_new_gh_version_does_not_warn(self):
+        out = self._run_with_gh("2.99.0")
+        self.assertNotIn("--attach", out)
+
+
 if __name__ == "__main__":
     unittest.main()
