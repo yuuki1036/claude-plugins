@@ -1591,6 +1591,8 @@ if len(fc_rows) >= FC_MIN_ROWS and fc_total >= FC_MIN_N and pct(fc["test"], fc_t
                    % (pct(fc["test"], fc_total), fc["test"], fc_total, len(fc_rows)))
 # 下限未満で閾値を超えた層の控え（#209）。⚠️ が 1 本も出なかったシグナルだけ後で出す
 layer_pending = {}
+# 保留行の「累計では」は、母集団を絞った実行では誤読になる（絞った後の全体であって累計ではない）
+pending_filtered = bool(since or last_n or min_pv_raw)
 signals.extend(layered_signal(
     skeptic, lambda d: d.get("valuable", 0), lambda d: d.get("fired", 0), 15,
     lambda v, f: pct(v, f) < 25,
@@ -1770,6 +1772,12 @@ if as_json:
                         "modern_explorer_waves": modern_waves,
                         "modern_explorer_waves_scope": len(modern_waves_scope)},
         "signals": signals,
+        # 下限未満で閾値を超えた層（#209）と、判定可能になるまでの件数（#230）。
+        # テキスト出力はシグナルごとに 2 層で切るが、こちらは全層を出す
+        "pending": [{"signal": sig, "layer": k, "numer": num, "denom": den,
+                     "min_n": mn, "remaining": mn - den}
+                    for sig in sorted(layer_pending)
+                    for k, num, den, mn in layer_pending[sig]],
     }, ensure_ascii=False, indent=2))
     sys.exit(0)
 
@@ -2306,12 +2314,16 @@ else:
     # **下限未満で閾値を超えた層を保留として出す**（#209）。⚠️ が 1 本も出なかった
     # シグナルに限る — 鳴っているなら行動の根拠は既にあり、重ねると枠を食う。
     # **⚠️ には出さない**（下限未満は「まだ行動しない」という判断そのもの）が、
-    # 黙ると「該当なし」と読まれるので、判定の保留として残す
+    # 黙ると「該当なし」と読まれるので、判定の保留として残す。
+    # **あと何件で判定できるかを添える**（#230）。版で絞った窓では保留が主要な出力になり、
+    # 件数が無いと「いつ読み直せばよいか」が決まらない。N は層の分母が下限に届くまでの件数で、
+    # 届いた時点で閾値を超えているとは限らない（判定が「できる」であって「鳴る」ではない）
+    _scope_txt = "絞り込んだ集計全体でも" if pending_filtered else "累計では"
     for _sig in sorted(layer_pending):
         for _k, _num, _den, _min in layer_pending[_sig][:2]:
             print("  - %s: `%s` 層が閾値を超えている（%d/%d）が、下限 %d に届かないので"
-                  "**判定を保留**（累計では閾値に届かず ⚠️ も出ていない）"
-                  % (_sig, _k, _num, _den, _min))
+                  "**判定を保留**（**あと %d 件で判定可能** / %s閾値に届かず ⚠️ も出ていない）"
+                  % (_sig, _k, _num, _den, _min, _min - _den, _scope_txt))
     # **分母を明示する**（#207 / `wave-split` と同じ流儀）。判定できた回が少ないうちは
     # 比率が閾値に届かず ⚠️ が出ないので、黙ると「fleet の打点は守られている」と読まれる
     if n_fleet_span_judged:

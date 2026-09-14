@@ -5050,8 +5050,8 @@ class RetroLayeredSignalTest(RetroFixture):
             rows += [self._adv(gen, False) for _ in range(total - dry)]
         self._events(rows)
 
-    def _out(self) -> str:
-        r = self.run_script(RETRO, env=self._env())
+    def _out(self, *args: str) -> str:
+        r = self.run_script(RETRO, *args, env=self._env())
         self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
         self.assertTrue(r.stdout.strip(), "stdout が空（沈黙死）")
         return r.stdout
@@ -5122,6 +5122,33 @@ class RetroLayeredSignalTest(RetroFixture):
         out = self._out()
         self.assertNotIn("既定 high のゲート幅を再検討", out, "前提: ⚠️ は出ない（累計 33%）")
         self.assertIn("`opus-4-8` 層が閾値を超えている（5/5）", out, "下限ちょうどの層を捨てている")
+
+    def test_the_hold_says_how_many_more_samples_are_needed(self):
+        """保留行に「あと N 件で判定可能」を出す（GitHub issue #230）.
+
+        版で絞った窓では保留が主要な出力になるので、件数が無いと読み直す時期が決まらない。
+        N は下限 − 層の分母（10 − 6 = 4）。分子ではなく分母から引くことを縛る。
+        """
+        self._rows([("opus-5", 10, 0), ("opus-4-8", 6, 5)])
+        out = self._out()
+        self.assertIn("`opus-4-8` 層が閾値を超えている（5/6）が、下限 10 に届かないので"
+                      "**判定を保留**（**あと 4 件で判定可能** / 累計では", out)
+
+    def test_the_hold_is_exported_to_json_with_the_remaining_count(self):
+        """`--json` の `pending` に全層と残り件数を出す（テキストの 2 層切りに依存しない）."""
+        self._rows([("opus-5", 10, 0), ("opus-4-8", 6, 5)])
+        r = self.run_script(RETRO, "--json", env=self._env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        pending = json.loads(r.stdout)["pending"]
+        self.assertIn({"signal": "反証レイヤーの不発", "layer": "opus-4-8", "numer": 5,
+                       "denom": 6, "min_n": 10, "remaining": 4}, pending)
+
+    def test_the_hold_does_not_call_a_narrowed_population_cumulative(self):
+        """母集団を絞った実行では「累計では」と言わない（絞った後の全体であって累計ではない）."""
+        self._rows([("opus-5", 10, 0), ("opus-4-8", 6, 5)])
+        out = self._out("--last", "16")
+        self.assertIn("あと 4 件で判定可能** / 絞り込んだ集計全体でも閾値に届かず", out)
+        self.assertNotIn("/ 累計では閾値に届かず", out)
 
     def _meta(self, gen: str, fired: bool) -> dict:
         return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
