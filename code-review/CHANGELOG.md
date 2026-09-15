@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.126.0] - 2026-09-15
+
+### Added
+
+- **review-triage（command + skill）を追加**（GitHub issue #235）。PR に既に付いたレビューコメント（bot / 人間）を集め、指摘ごとに
+  HEAD のコードで妥当性を確かめて、帰属（this-diff / pre-existing / cross-cutting）と対応（fix now / follow-up / 返信のみ / 要確認）に
+  仕分け、`reply-tone-guide.md` に沿った返信の下書きと follow-up の起票文面を出す。投稿・push・修正・起票はしない。
+  - 取得は `fetch-pr-context.sh`、文面は `reply-tone-guide.md`、推敲は `closing-flow-guide.md` `## 3` を参照で流用し、複製しない
+  - effort 分岐: low / medium はメインで精査、high は「直さない」判定の根拠を開き直す、xhigh / max は独立 opus agent（上限 3 体・判定と推論を渡さない）が反証する
+  - blocker: review skill は新規レビュー用の骨組み（worktree 移動・計測 start / t2 / publish・多体 reviewer）で、`--triage` として足すと手順の大半を分岐で飛ばすうえ、計測ファイルが publish-guard に拾われる
+  - fallback: review-triage が無い環境では、review の締めフロー 3（投稿コメントのドラフト生成）で受けた指摘への返信を下書きし、仕分けは手で行う
+
 ## [2.125.0] - 2026-09-15
 
 ### Added

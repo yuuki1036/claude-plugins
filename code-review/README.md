@@ -27,6 +27,20 @@ PR ベースのコードレビュー。PR が必須（`gh pr diff` で差分を�
 - `--exclude <観点1,観点2>` — 同一セッションで既に検証済みの観点をスキップする
 - `--embed` — 他 plugin からの呼び出し用。終端の修正方針確認 AskUserQuestion を skip し、レポート + 機械可読 findings JSON を return する（feature-dev Phase 6 等で使用）
 
+### review-triage
+
+PR に既に付いているレビューコメント（AI レビュー bot・人間の inline / 全体コメント）への対応を仕分ける。review / self-review が指摘を出す側なのに対し、こちらは受け取った指摘に応える側。
+
+- 指摘ごとに HEAD のコードで妥当性を確かめ（コメントの主張をそのまま採用しない）、帰属（this-diff / pre-existing / cross-cutting）と対応（fix now / follow-up / 返信のみ / 要確認）を決める
+- fix now 以外には `reply-tone-guide.md` に沿った返信の下書きを付け、follow-up には起票文面を付ける
+- effort が xhigh / max のときは、「直さない」判定（誤指摘・据置・pre-existing）を独立した opus agent が反証する
+- 投稿・push・コード修正・Issue 起票は行わない
+
+**トリガー**: 「レビューコメントを精査」「レビュー対応を仕分けて」「review comment 精査」「/review-triage」
+
+**引数**:
+- `[PR番号]` — 省略時は現在のブランチに紐づく PR を自動取得
+
 ## 機械層の先行実行（self-review のみ / opt-in）
 
 **agent の担当を「機械が決められないもの」に限る**ための前段。プロジェクトのリポジトリルートに `.claude/review-oracles.sh` を置くと、self-review は Phase 0 の**前に**それを実行する。置かなければ何も起きない（完全 no-op）。

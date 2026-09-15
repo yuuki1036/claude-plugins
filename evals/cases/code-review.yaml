@@ -17,3 +17,12 @@ cases:
     prompt: この PR をレビューして
     expected_skill: code-review:review
     k: 3
+  # review <-> review-triage の弁別境界（「レビューする」は review、「付いたコメントに対応する」は triage）
+  - id: review-triage-ja
+    prompt: PR に付いたレビューコメントを精査して、対応するか仕分けて
+    expected_skill: code-review:review-triage
+    k: 3
+  - id: review-triage-bot-ja
+    prompt: レビュー bot のコメントに返信したいので、どれを直すべきか見て
+    expected_skill: code-review:review-triage
+    k: 3
