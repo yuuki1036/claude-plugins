@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.124.0] - 2026-09-15
+
+### Added
+
+- **comment-polish がコメント内の Markdown 太字（`**...**`）を除去する**（GitHub issue #231）。コードコメントは
+  レンダリングされず記号がそのまま残るが、校正の対象に入っていなかった。
+  - `detect-external-ids.sh` に `--markdown` を追加し、追加コメント行の太字を `kind: "markdown"` で拾う。
+    comment-polish は常に付ける。出力の各行に `kind`（`id` / `markdown`）を足した
+  - JSDoc の `/**` `*/`・指数演算子（`a ** b` / `2**3`）・`**kwargs`・md 系ファイルは検出しない
+  - 一覧のラベルに `[装飾]` を追加。2 観点とは別の表記の扱いで、記号だけを落とし語句は残す
+  - commit 前 hook（external-id-reminder）には載せていない。本 repo の追加コメントに太字が多く（直近 80 コミットで 299 件）、鳴りっぱなしになるため
+  - 回帰テスト 8 本
+
 ## [2.123.0] - 2026-09-14
 
 ### Added

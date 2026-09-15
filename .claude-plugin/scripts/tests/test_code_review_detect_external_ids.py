@@ -127,6 +127,69 @@ class DetectExternalIdsTest(unittest.TestCase):
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("ABC-123", res.stdout)
 
+    def test_markdown_bold_off_by_default(self):
+        # commit 前 hook は --markdown を付けない。付けない限り太字は拾わない
+        self._stage("f.ts", "// **重要**: 先に閉じる\n")
+        rc, rows = self._run()
+        self.assertEqual(rc, 0, rows)
+
+    def test_markdown_bold_detected_with_flag(self):
+        self._stage("f.ts", "// **重要**: 先に閉じる\n# を**必ず**通す\n")
+        rc, rows = self._run("--markdown")
+        self.assertEqual(rc, 1)
+        self.assertEqual([(r["line"], r["match"], r["kind"]) for r in rows],
+                         [(1, "**重要**", "markdown"), (2, "**必ず**", "markdown")])
+
+    def test_markdown_match_is_readable_in_raw_stdout(self):
+        # comment-polish は JSON を読み戻さず生の stdout を読む。json.loads では \\uXXXX も
+        # 元に戻るので、ensure_ascii=True への退行は生の出力でしか見えない
+        self._stage("f.ts", "// **重要**: 先に閉じる\n")
+        res = subprocess.run(["bash", str(SCRIPT), "--staged", "--markdown"],
+                             cwd=str(self.root), capture_output=True, text=True,
+                             env=scrub(), timeout=30)
+        self.assertIn("**重要**", res.stdout)
+
+    def test_id_rows_carry_kind_id(self):
+        self._stage("f.ts", "// ABC-123 と **強調**\n")
+        rc, rows = self._run("--markdown")
+        self.assertEqual(rc, 1)
+        self.assertEqual(sorted((r["kind"], r["match"]) for r in rows),
+                         [("id", "ABC-123"), ("markdown", "**強調**")])
+
+    def test_markdown_bold_not_confused_with_code(self):
+        # JSDoc の開閉 / 指数演算子 / **kwargs / 空白で囲まれた ** は装飾ではない
+        body = (
+            "/** JSDoc の説明 */\n"
+            "/**\n"
+            " * 本文\n"
+            " */\n"
+            "const p = a ** b; // 累乗\n"
+            "const q = 2**3**4; // 累乗の連鎖\n"
+            "# def f(**kwargs): 可変長\n"
+            "// 片側だけ ** のコメント\n"
+        )
+        self._stage("f.ts", body)
+        rc, rows = self._run("--markdown")
+        self.assertEqual(rc, 0, rows)
+
+    def test_markdown_bold_in_non_comment_code_ignored(self):
+        self._stage("f.ts", 'const s = "**bold**";\n')
+        rc, rows = self._run("--markdown")
+        self.assertEqual(rc, 0, rows)
+
+    def test_markdown_files_are_excluded(self):
+        # md では太字は正当な記法。`# 見出し` がコメント判定に掛かっても拾わない
+        self._stage("README.md", "# 見出し **太字**\n")
+        rc, rows = self._run("--markdown")
+        self.assertEqual(rc, 0, rows)
+
+    def test_markdown_bold_detected_on_safe_ref_line(self):
+        # Refs 行の除外は ID 用。装飾は同じ行でも拾う
+        self._stage("f.ts", "// Refs ABC-1 **注意**\n")
+        rc, rows = self._run("--markdown")
+        self.assertEqual(rc, 1)
+        self.assertEqual([(r["kind"], r["match"]) for r in rows], [("markdown", "**注意**")])
+
     def test_removed_comment_line_is_not_flagged(self):
         """削除行（先頭 -）の Linear ID は拾わない（追加行のみ対象）.
 

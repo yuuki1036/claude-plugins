@@ -43,13 +43,14 @@ BASE="${1:-$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/nu
 
 `--staged` 指定時は `git diff --cached`、無ければ `git diff <BASE>...HEAD` で追加・変更コメントを把握する。
 
-### 2. git 外 ID の機械検出
+### 2. git 外 ID と Markdown 太字の機械検出
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-external-ids.sh" "$BASE" ${STAGED:+--staged} ${GITHUB:+--github}
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-external-ids.sh" "$BASE" ${STAGED:+--staged} ${GITHUB:+--github} --markdown
 ```
 
-- 既定は Linear Issue ID（`ABC-123`）と Linear URL を検出する（JSON Lines: `file` / `line` / `match`）
+- 既定は Linear Issue ID（`ABC-123`）と Linear URL を検出する（JSON Lines: `file` / `line` / `match` / `kind`。ID は `kind: "id"`）
+- `--markdown` は**常に付ける**。コメント内の Markdown 太字（`**重要**`）を `kind: "markdown"` で拾う。コードコメントはレンダリングされないので記号がそのまま残る（GitHub issue #231）。JSDoc の `/**`、指数演算子 `a ** b` / `2**3`、`**kwargs` は検出側で除外済み
 - GitHub `#N` は既定で拾わない（正当な why 参照が多く偽陽性になりやすい。実測で確定。`--github` で opt-in）
 - exit 1 = 検出あり / 0 = なし / 2 = 判定不能（git/python 不在。その旨を報告して ID 除去は skip、推敲は続行）
 
@@ -61,20 +62,23 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-external-ids.sh" "$BASE" ${STAGED:+--
 - 観点 2: 冗長表現の排除（重複・長い前置き・1 語で足りる句）
 - **判断に迷ったら残す側に倒す**。非自明な why / 外部制約 / 実測値 / ハマりどころは長くても残す
 
-各コメントについて、2 観点の推敲結果と Step 2 の ID 検出結果を統合し、before → after の一覧を作る。ID 除去は「ID だけ落として背景の文は残す」を既定にする（背景ごと消さない）。
+各コメントについて、2 観点の推敲結果と Step 2 の検出結果を統合し、before → after の一覧を作る。ID 除去は「ID だけ落として背景の文は残す」を既定にする（背景ごと消さない）。
+
+Markdown 装飾の除去は 2 観点とは別の**表記**の扱いで、3 つ目の観点ではない（削除・短縮の根拠にしない）。記号だけを落とし語句は残す（`**重要**: 〜` → `重要: 〜`）。Step 2 が拾うのは太字だけなので、同じコメント内に `__bold__`・`*italic*`・行頭の `#` 見出しがあれば目視で同様に落とす。行頭の `- ` 箇条書きや `` `code` `` はコメントでも読みやすさに寄与するので残す。
 
 ### 4. 提示と適用
 
 一覧を次の形式で出す（1 件 4 行）:
 
 ```
-<file>:<line> [不要|冗長|ID]
+<file>:<line> [不要|冗長|ID|装飾]
   before: <現在のコメント全文>
   after:  <推敲後> または (削除)
   理由:   <1 行>
 ```
 
-- `[不要]` = 観点 1 / `[冗長]` = 観点 2 / `[ID]` = git 外 ID の除去
+- `[不要]` = 観点 1 / `[冗長]` = 観点 2 / `[ID]` = git 外 ID の除去 / `[装飾]` = Markdown 装飾の除去
+- 1 行に複数該当するときはラベルを並べて 1 件にまとめる（`[冗長|装飾]`）
 
 **適用の分岐**:
 
@@ -95,9 +99,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-external-ids.sh" "$BASE" ${STAGED:+--
 - md 散文は対象外
 - 2 観点の定義を本文に複製しない（正本 → prompts/focus/comment-polish.md の区間を Read）
 - ID 除去は背景の文を残し ID だけ落とす。`Refs #N` 等の正当な参照は検出側で除外済み
+- Markdown 装飾は記号だけ落とす。コード（`a ** b`・JSDoc の `/**` `*/`）には触れない
 - 意味が変わらない同義変換（「〜する」↔「〜を行う」）は出さない
 
 ## Additional Resources
 
 - `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md` — 2 観点の正本複製（COMMENT-RULE 区間）
-- `${CLAUDE_PLUGIN_ROOT}/scripts/detect-external-ids.sh` — git 外 ID の機械検出
+- `${CLAUDE_PLUGIN_ROOT}/scripts/detect-external-ids.sh` — git 外 ID と Markdown 太字の機械検出

@@ -8,9 +8,10 @@
 #
 # 対象: diff の追加行（先頭 +）のうちコメント構文を含む行。Refs/Closes/Fixes 行は除外。
 # GitHub #N は既定で拾わない（本 repo 実測で 100% 偽陽性。--github で opt-in）。
-# 出力: file:line:match の JSON Lines。exit: 0=なし / 1=あり / 2=判定不能。
+# --markdown でコメント内の Markdown 太字も kind=markdown で拾う（comment-polish だけが付ける / #231）。
+# 出力: file / line / match / kind の JSON Lines。exit: 0=なし / 1=あり / 2=判定不能。
 #
-# 使い方: detect-external-ids.sh [base-ref] [--staged] [--github]
+# 使い方: detect-external-ids.sh [base-ref] [--staged] [--github] [--markdown]
 
 set -uo pipefail
 
@@ -27,6 +28,7 @@ for a in "$@"; do
   case "$a" in
     --staged) STAGED=1 ;;
     --github) PYARGS+=(--github) ;;
+    --markdown) PYARGS+=(--markdown) ;;
     *) BASE="$a" ;;
   esac
 done

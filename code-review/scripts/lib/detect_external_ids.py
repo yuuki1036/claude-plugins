@@ -12,7 +12,12 @@ GitHub #N は既定から外す。本 repo の HEAD~80 範囲で 759 件すべ�
 100% 偽陽性だった（code-review は本 repo 自身にも掛かるため、既定にすると commit 前 hook が
 ノイズを撒き「⚠️ が出たときだけ行動」契約を壊す）。#N を拾いたい repo は --github で opt-in する。
 
-出力: file:line:match の JSON Lines。exit 1=検出あり / 0=なし。
+--markdown を付けると、コメント内の Markdown 太字（**...**）も kind=markdown で拾う。コードコメントは
+レンダリングされず記号がそのまま残る（GitHub issue #231）。commit 前 hook は付けない — 本 repo は
+コメントで太字を多用しており（HEAD~80 の追加コメントで 299 件）、hook に載せると鳴りっぱなしになる。
+md 系ファイルでは太字が正当な記法なので対象外。
+
+出力: file / line / match / kind（id|markdown）の JSON Lines。exit 1=検出あり / 0=なし。
 """
 
 from __future__ import annotations
@@ -34,16 +39,22 @@ SAFE_REF = re.compile(r"\b(Refs|Closes|Fixes|Close|Fix|Resolves|Resolve)\b", re.
 # コメント構文シグナル（行のどこかに出ればコメント行とみなす軽量判定）
 COMMENT = re.compile(r"(//|/\*|\*/|<!--|\"\"\"|'''|(^|\s)#)")
 HUNK = re.compile(r"^@@ .*\+(\d+)(?:,(\d+))? @@")
+# 前後を ASCII 英数字・* ・/ で挟まれた ** は除外する: JSDoc の /** 、指数演算子 2**3 、**kwargs
+# （閉じが無い）を巻き込まないため。\w は日本語にも一致し「を**重要**」を落とすので使わない。
+# 内側の先頭末尾が空白の `a ** b` も除外する。
+MD_BOLD = re.compile(r"(?<![A-Za-z0-9_*/])\*\*(?=[^\s*])[^*\n]*?[^\s*]\*\*(?![A-Za-z0-9_*])")
+MARKDOWN_FILE = re.compile(r"\.(md|markdown|mdx)$", re.I)
 
 
 def main() -> int:
     patterns = [LINEAR_ID, LINEAR_URL]
     if "--github" in sys.argv[1:]:
         patterns.append(GH_REF)
+    markdown = "--markdown" in sys.argv[1:]
 
     cur_file: str | None = None
     new_line = 0
-    found: list[tuple[str, int, str]] = []
+    found: list[tuple[str, int, str, str]] = []
 
     for raw in sys.stdin:
         line = raw.rstrip("\n")
@@ -61,18 +72,24 @@ def main() -> int:
             continue
         if line.startswith("+") and not line.startswith("+++"):
             content = line[1:]
-            if cur_file and COMMENT.search(content) and not SAFE_REF.search(content):
-                for pat in patterns:
-                    for mt in pat.finditer(content):
-                        tok = mt.group(0)
-                        # 規格トークン（UTF-8 等）の誤検出を弾く。prefix が stopword のものだけ落とす
-                        if pat is LINEAR_ID and tok.split("-", 1)[0] in ID_STOPWORDS:
-                            continue
-                        found.append((cur_file, new_line, tok))
+            if cur_file and COMMENT.search(content):
+                if not SAFE_REF.search(content):
+                    for pat in patterns:
+                        for mt in pat.finditer(content):
+                            tok = mt.group(0)
+                            # 規格トークン（UTF-8 等）の誤検出を弾く。prefix が stopword のものだけ落とす
+                            if pat is LINEAR_ID and tok.split("-", 1)[0] in ID_STOPWORDS:
+                                continue
+                            found.append((cur_file, new_line, tok, "id"))
+                # SAFE_REF はコミット規約の参照を守るための除外で、装飾とは無関係なので掛けない
+                if markdown and not MARKDOWN_FILE.search(cur_file):
+                    for mt in MD_BOLD.finditer(content):
+                        found.append((cur_file, new_line, mt.group(0), "markdown"))
             new_line += 1
 
-    for f, ln, tok in found:
-        print(json.dumps({"file": f, "line": ln, "match": tok}, ensure_ascii=False))  # mutation-ok: 検出対象（Linear ID / URL）と行番号は ASCII のみ。ensure_ascii の True/False で出力は不変
+    for f, ln, tok, kind in found:
+        # 太字の中身は日本語を含む。comment-polish は生の stdout を読むので \uXXXX にしない
+        print(json.dumps({"file": f, "line": ln, "match": tok, "kind": kind}, ensure_ascii=False))
 
     return 1 if found else 0
 
