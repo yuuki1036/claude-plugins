@@ -39,13 +39,16 @@ PR に**既に付いている**レビューコメントを受け取る側の ski
 ### 0. PR とローカル HEAD の確認
 
 ```bash
-PR="${1:-}"
-gh pr view ${PR:+"$PR"} --json number,url,headRefName,headRefOid,baseRefName
-git rev-parse HEAD
+# 引数の PR 指定（省略時は現ブランチの PR）から番号・base・head を確定し、以降で使う変数に入れる
+META=$(gh pr view ${1:+"$1"} --json number,url,headRefName,headRefOid,baseRefName)
+PR_NUMBER=$(printf '%s' "$META" | jq -r '.number')
+BASE=$(printf '%s' "$META" | jq -r '.baseRefName')
+PR_HEAD=$(printf '%s' "$META" | jq -r '.headRefOid')
+HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-- PR が無ければ「対象 PR なし」と出して終了
-- ローカル HEAD が `headRefOid` と違えば、**checkout はせず**レポート冒頭に「ローカル HEAD が PR head と異なる（精査は HEAD `<sha7>` のコードで行った）」と書く。作業ツリーを勝手に切り替えない
+- PR が無ければ（`gh pr view` が失敗）「対象 PR なし」と出して終了
+- `HEAD_SHA` が `PR_HEAD` と違えば、**checkout はせず**レポート冒頭に「ローカル HEAD が PR head と異なる（精査は HEAD `<sha7>` のコードで行った）」と書く。作業ツリーを勝手に切り替えない
 
 **完了基準**: PR 番号・base・head SHA・HEAD 一致の有無が確定している。
 

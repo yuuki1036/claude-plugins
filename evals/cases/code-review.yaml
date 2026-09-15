@@ -26,3 +26,8 @@ cases:
     prompt: レビュー bot のコメントに返信したいので、どれを直すべきか見て
     expected_skill: code-review:review-triage
     k: 3
+  # 逆方向の回帰: review-triage 追加で comment-polish の「コメント精査」が奪われないか
+  - id: comment-polish-not-stolen-ja
+    prompt: 追加したコード内コメントを精査して直して
+    expected_skill: code-review:comment-polish
+    k: 3

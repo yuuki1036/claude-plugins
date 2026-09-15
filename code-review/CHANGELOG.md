@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.126.1] - 2026-09-15
+
+### Fixed
+
+- **review-triage のセルフレビュー指摘 2 件を修正**（#235 の self-review）。
+  - Step 0 で `PR_NUMBER` / `BASE` / `PR_HEAD` / `HEAD_SHA` を明示代入する（Step 1 の `$PR_NUMBER`・Step 2 の `$BASE` が未定義参照だった）
+  - eval に逆方向の回帰ケースを追加（review-triage 追加で comment-polish の「コメント精査」が奪われないかを固定）
+
 ## [2.126.0] - 2026-09-15
 
 ### Added
