@@ -59,6 +59,16 @@ features/common_spec.md # 横断 Background / 共通閾値 / エラーメッセ�
 
 BDD spec context absent の場合は通常の "Issue Context Injection" または standard discovery にフォールバック。
 
+## Required Docs Injection
+
+If the prompt includes a `Required Docs:` block (Phase 1.8 found the project's "task type → required docs" declaration), **Read every listed doc (or the named section) before designing**. These are the project's own conventions for this kind of task:
+
+- **Authoritative for how to build it**: component choice, error / warning display, naming, layout rules. Precedence: **BDD spec (what to build) > Required Docs (how the project builds it) > current codebase patterns > vault knowledge**.
+- **Map each UI element to the design-system component the docs specify** and state the mapping in "Critical Details". Do not hand-roll markup where the docs name a component.
+- **Inherited decisions do not override the docs silently**: the design contract from Phase 3 records which inherited decisions were premise-checked. If you still find a conflict between an inherited decision and a Required Doc, surface it in "Critical Details" as an open conflict instead of choosing one.
+
+Required Docs absent の場合は通常の設計プロセスを継続する（注入なしが既定）。
+
 ## Vault Knowledge Injection
 
 If the prompt includes a `Vault Knowledge:` block (typical when the external `kvault` CLI is available and Phase 1.6 recalled relevant cross-project knowledge), treat it as **advisory reference**, NOT authoritative requirements:

@@ -214,6 +214,26 @@ Subsequent phases consume this table directly.
 
 ---
 
+## Phase 1.8: プロジェクト宣言の必読 doc（fail-closed / explorer 0 体でも skip しない）
+
+**Goal**: プロジェクトが「タスク種別 → 必読 doc」を宣言していれば、該当する doc を**全部**読み、Phase 3 grill と Phase 4 architect の入力にする。一部の doc だけを選んで渡すと、読まなかった doc の規約（例: 警告は設計システムの `<Alert>` を使う）を設計が破り、人間レビューまで見つからない（GitHub issue #233）。Phase 2 は explorer 0 体で丸ごと skip されるので、ここは独立 phase に置く。
+
+1. 宣言を探す。`AGENTS.md` / `CLAUDE.md` をリポジトリ直下と、変更対象ディレクトリから直下までの各階層で探し、「必読」「must read」「required reading」や、タスク種別と doc パスを対応させた表・箇条書きを拾う:
+
+   ```bash
+   for f in AGENTS.md CLAUDE.md .claude/CLAUDE.md; do [ -f "$f" ] && grep -n -iE '必読|must read|required reading|読むこと' "$f"; done
+   ```
+
+   変更対象ディレクトリ配下の `AGENTS.md` / `CLAUDE.md` も同じ grep に掛ける（Phase 1 で分かっている範囲だけでよい）
+2. ヒットした節を Read し、今回のタスクに**当てはまる行をすべて**選ぶ。1 つのタスクが複数の種別に当たる（UI 実装かつエラー表示など）ときは全行を採る。当てはまるか迷う行は採る側に倒す
+3. 選んだ行が指す doc を全部 Read する。節の指定があればその節を読む
+
+**Output**: `REQUIRED_DOCS=<doc パス / 節 / 当てはまった種別の一覧>` または `""`（宣言なし）。宣言が無ければ「必読 doc の宣言なし」と 1 行 notify して Phase 2 へ。宣言はあるが当てはまる行が無い場合も、その旨と見た種別を 1 行残す（黙って空にしない）。
+
+`REQUIRED_DOCS` は Phase 3（grill の分岐）と Phase 4（architect 注入）に**全件**渡す。要約して一部だけ渡さない。
+
+---
+
 ## Phase 2: Codebase Exploration
 
 **Goal**: Understand relevant existing code and patterns at both high and low levels
@@ -253,9 +273,17 @@ Subsequent phases consume this table directly.
 
 Review the Phase 2 codebase findings + original request. List every underspecified aspect: edge cases, error handling, integration points, scope boundaries, design preferences, backward compatibility, performance needs.
 
+Always add these **premise checks** as candidates too (full rules: grill-protocol.md「採用する決定の前提を問う」):
+
+- **設計システムとの対応**（UI を含むタスク）: 各 UI 要素が設計システム / `REQUIRED_DOCS` のどのコンポーネントに当たり、設計がそれに一致するか
+- **引き継いだ決定の前提**: Issue / spec / living spec の既存決定（決定番号つきのもの等）が置いた前提が、今回の実装コンテキスト（コンテナ・画面種別・呼び出し経路など）でまだ成り立つか
+- **標準規約との衝突**: 引き継いだ決定が `REQUIRED_DOCS` やプロジェクト規約とぶつからないか
+
 ### Step 2: Self-resolve from the codebase (grill principle ①)
 
 For each candidate, ask "can this be answered by what we already know?" — Phase 2 explorer findings, a quick `Grep` / `Glob`, the BDD spec (Phase 1.3), or the Issue context (Phase 1.5). If yes, **resolve it yourself, drop it from the list, and record it as a 確定した前提** to surface in Step 5. Do NOT ask the user something the code already answers.
+
+**Exception — conflicts are not self-resolvable**: when a premise check finds that an inherited decision's premise no longer holds, or that it conflicts with `REQUIRED_DOCS`, do not pick a side yourself. Keep it as a question for Step 4 (recommend the option that follows the standard convention unless the decision explicitly overrides it for a stated reason).
 
 ### Step 3: Order by design-tree dependency
 
@@ -273,7 +301,7 @@ Stop when no open branch remains. **Proportionality**: if only 1-2 questions rem
 
 ### Step 5: Confirm the design contract
 
-Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2, (b) every user decision from Step 4. This is the implicit contract the Phase 4 architects must honor.
+Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2, (b) every user decision from Step 4, (c) each inherited decision with its premise-check result (成立 / 衝突を解消した結果). This is the implicit contract the Phase 4 architects must honor. An inherited decision enters the contract only after its premise check — it is not an unconditional contract just because the Issue states it.
 
 ---
 
@@ -293,6 +321,8 @@ Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2
    - `BDD spec path: <BDD_SPEC_PATH>` — architect は冒頭でこのファイルを Read し、Feature / Scenario / Examples / 同値分割表を **authoritative requirements** として扱う
    - 設計は spec.md の AC ↔ Scenario マッピングを保つこと（架空の Scenario を増やさない、削らない）
    - 詳細は `agents/code-architect.md` の "BDD Spec Injection" セクション
+
+   **Required docs injection**: Phase 1.8 で `REQUIRED_DOCS` が非空の場合、各 architect の prompt に `Required Docs:` ブロックとして**全件**（パス / 節 / 当てはまった種別）を列挙する。architect 自身に Read させる。一部だけ選んで渡さない。詳細は `agents/code-architect.md` の "Required Docs Injection" セクション
 
    **Vault knowledge injection**: Phase 1.6 で `VAULT_KNOWLEDGE` が非空の場合、各 architect の prompt に以下を追加する:
    - `Vault Knowledge:` ブロックとして関連知見（`path` / `title` / `excerpt`）を列挙する

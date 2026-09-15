@@ -91,6 +91,10 @@ feature の特性（種別・スコープ・リスク因子）× `${CLAUDE_EFFOR
 
 最小保証: architect ≥ 1、reviewer ≥ 1（bug-detection 必須）、explorer は 0 可（Issue context 完備時）。
 
+### Phase 1.8: プロジェクト宣言の必読 doc
+
+`AGENTS.md` / `CLAUDE.md` に「タスク種別 → 必読 doc」の宣言があれば、今回のタスクに当てはまる doc を**全件**読み、Phase 3 grill と Phase 4 architect に渡す。一部だけを選んで渡さない。explorer 0 体で Phase 2 が skip されても、この phase は走る。
+
 ### Phase 2: Codebase Exploration
 
 Phase 1.7 が指定した N 体の `code-explorer` agent を並列起動する。各 agent は割り当てられた focus（similar-features / architecture-mapping / shared-modules / history-context / dependency-trace / layer-mapping）と対象スコープを受け取り、読むべき主要ファイル 5-10 件を返す。agent 完了後、特定されたファイルを読んで理解を深める。
@@ -105,13 +109,15 @@ Phase 1.7 が指定した N 体の `code-explorer` agent を並列起動する�
 2. コードで答えられる問い（Phase 2 explorer 結果 / Grep / BDD spec / Issue context）は自己解決し、質問から落とす
 3. 残りを design tree の依存順にソート（上流の決定を先に）
 4. `AskUserQuestion` で 1 問ずつ確認。各問いに推奨案を先頭に `(Recommended)` 付きで提示
-5. 確定した前提 + ユーザー決定を design contract として集約
+5. 確定した前提 + ユーザー決定 + 引き継いだ決定の前提確認結果を design contract として集約
+
+候補には常に前提確認の 3 分岐（設計システムとの対応 / 引き継いだ決定の前提が今も成り立つか / 必読 doc との衝突）を含める。前提の崩れや衝突は自己解決せずユーザーに聞く。
 
 残り 1-2 問で方向が明らかな場合は 1 回の質問にまとめる（過剰質問の抑制）。
 
 ### Phase 4: Architecture Design
 
-Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する。各 agent は focus（minimal-changes / clean-architecture / pragmatic-balance / migration-strategy / delta-proposal）を受け取る。Phase 1.3 の `BDD_SPEC_PATH` があれば各 architect に注入し、spec を真実として読ませる。Phase 1.6 の `VAULT_KNOWLEDGE` があれば advisory として注入する。
+Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する。各 agent は focus（minimal-changes / clean-architecture / pragmatic-balance / migration-strategy / delta-proposal）を受け取る。Phase 1.3 の `BDD_SPEC_PATH` があれば各 architect に注入し、spec を真実として読ませる。Phase 1.8 の `REQUIRED_DOCS` があれば全件を渡し、設計前に読ませる。Phase 1.6 の `VAULT_KNOWLEDGE` があれば advisory として注入する。
 
 全案をレビューして推奨案を形成し、各案のトレードオフ比較 + 推奨理由をユーザーに提示し、どの案で進めるかを聞く。全 architect 失敗時は `minimal-changes` focus で単体起動して fallback する。
 

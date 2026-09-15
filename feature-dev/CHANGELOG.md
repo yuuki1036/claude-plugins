@@ -5,6 +5,20 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.0] - 2026-09-15
+
+### Added
+
+- **Phase 1.8: プロジェクトが宣言した必読 doc を設計前に全件読む**（GitHub issue #233）。`AGENTS.md` / `CLAUDE.md` の
+  「タスク種別 → 必読 doc」宣言を探し、当てはまる行の doc をすべて読んで Phase 3 grill と Phase 4 architect に渡す。
+  以前は architect に一部の doc しか渡らず、読まれなかった doc の規約（警告は設計システムの `<Alert>` 等）を破った設計が
+  人間レビューまで見つからなかった。Phase 2 は explorer 0 体で skip されるため独立 phase にした
+- **Phase 3 grill に前提確認の 3 分岐を追加**: 設計システムとの対応（UI を含むとき）/ 引き継いだ決定の前提が今の実装コンテキストで
+  成り立つか / 必読 doc・規約との衝突。前提の崩れや衝突は自己解決せずユーザーに聞き、引き継いだ決定は前提確認を経てから設計契約に入れる。
+  規範は `references/grill-protocol.md`「採用する決定の前提を問う」
+- **code-architect に "Required Docs Injection" を追加**: 列挙された doc を設計前に全件読み、UI 要素と設計システムのコンポーネントの
+  対応を "Critical Details" に書く。残った衝突は片方を選ばず未解決として出す
+
 ## [2.14.0] - 2026-09-13
 
 ### Added
