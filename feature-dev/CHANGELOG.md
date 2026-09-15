@@ -5,6 +5,14 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.1] - 2026-09-15
+
+### Fixed
+
+- **Phase 6 で self-review の定型レポートと publish が省かれることがあった**（GitHub issue #232）。self-review の手順を feature-dev の
+  コンテキストで回すため実行主体が曖昧になり、定型を独自要約に置き換えたり publish を踏まずに Step 3 へ進んだりした。
+  `--embed` を外して呼んだ場合も含め、定型レポート → `mark t2` → publish を済ませてから Step 3 に進み、集約は定型の後に足すと明記した
+
 ## [2.15.0] - 2026-09-15
 
 ### Added

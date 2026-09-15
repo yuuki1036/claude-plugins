@@ -96,6 +96,67 @@ class PublishGuardTest(HookTestCase):
         self._stop()
         self.assertEqual(self._timing_files()[0].read_text(), before)
 
+    # --- PreToolUse 経路（#232）: t2 後・publish 前に次のフェーズへ進むとその場で鳴る ---
+
+    def _pre(self, tool: str):
+        return self.run_hook({"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": {}},
+                             cwd=self.repo, env_extra={"TMPDIR": self.tmpdir})
+
+    def test_pre_tool_fires_once_after_t2_without_publish(self):
+        self._timing("start")
+        self._timing("mark", "t2")
+        res = self._pre("Skill")
+        self.assertFired(res, "publish")
+        self.assertIn("Skill", res.context or "")
+        self.assertIn("定型", res.context or "")
+        self.assertIn("PreToolUse", res.stdout)  # Stop として注入すると PreToolUse では捨てられる
+        self.assertSilent(self._pre("Edit"), "同じ打点ファイルで 2 度鳴っている")
+        # Stop とも nag を共有する（ターン終端で重ねて鳴らさない）
+        self.assertSilent(self._stop(), "PreToolUse で鳴らした後に Stop でも鳴っている")
+
+    def test_pre_tool_fires_for_each_phase_advancing_tool(self):
+        for tool in ("Edit", "Write", "MultiEdit", "NotebookEdit", "Skill", "Agent", "Task"):
+            with self.subTest(tool=tool):
+                for f in self._timing_files():
+                    f.unlink()
+                self._timing("start")
+                self._timing("mark", "t2")
+                self.assertTrue(self._pre(tool).fired, tool)
+
+    def test_pre_tool_silent_on_bash(self):
+        # publish 自体が Bash なので、Bash で鳴らすと publish を止める誘導になる
+        self._timing("start")
+        self._timing("mark", "t2")
+        self.assertSilent(self._pre("Bash"))
+        self.assertNotIn("nag ", self._timing_files()[0].read_text())
+
+    def test_pre_tool_silent_before_t2(self):
+        # レポート前の Agent 起動（reviewer fan-out）では鳴らない
+        self._timing("start")
+        res = self._pre("Agent")
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr)
+        # 黙った回に nag を立てると、後の本当の脱落で鳴らなくなる
+        self.assertNotIn("nag ", self._timing_files()[0].read_text())
+
+    def test_pre_tool_silent_after_publish(self):
+        # self-review Step 7 の comment-polish（Skill）は publish 後
+        self._timing("start")
+        self._timing("mark", "t2")
+        self._timing("mark", "published")
+        self.assertSilent(self._pre("Skill"))
+
+    def test_pre_tool_silent_without_timing_file(self):
+        res = self._pre("Edit")
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_pre_tool_ignores_pr_scoped_review(self):
+        # review は t2 と publish の間に締めフロー（writing-polish を Skill で呼ぶ）がある
+        self._timing("start", "--pr", "42")
+        self._timing("mark", "t2", "--pr", "42")
+        self.assertSilent(self._pre("Skill"))
+
 
 class ExternalIdReminderTest(HookTestCase):
     """external-id-reminder.sh（PreToolUse: git commit）.

@@ -578,6 +578,8 @@ self-review 内部の動き（詳細は `code-review:self-review` skill の SKIL
 - Phase 6.5（**code-review ≥ 2.18.0**）で `--embed` 時に **構造化 findings JSON ブロック**を markdown レポート直後に出力（`<!-- FINDINGS_JSON_START -->` / `<!-- FINDINGS_JSON_END -->` で囲む）
 - Phase 7 は `--embed` 指定により skip（末尾 marker `[embed-mode: findings-only, no-prompt]` を確認）
 
+**self-review の Step 6 定型レポートと Step 6.4 publish は feature-dev が省かない**（GitHub issue #232）: self-review の手順をこのコンテキストで回すので、実行主体が曖昧になると定型を独自要約に置き換えたり、publish を踏まずに Step 3 へ進んだりしやすい。`--embed` を外して呼んだ場合も含め、self-review の定型レポート → `mark t2` → publish を済ませてから Step 3 に進む。feature-dev の集約（Step 4）は定型レポートの後に足し、置き換えない。publish 前に Edit / Skill 等を呼ぶと code-review の publish-guard hook が鳴る。
+
 **`--embed` が落とすもの（構造的な穴の埋め戻し）**: self-review の Step 7 には**コメント推敲（B 系統）の適用**が入っているため、`--embed` ではコードコメント精査が実行されない。feature-dev 側は **Phase 6.7** で独立ステップとして必ず通す（GitHub issue #227）。B 系統の提案自体は `--embed` でも Step 6 のレポートに `## コメント推敲提案` ブロックとして出るので、Phase 6.7 でそれを材料にする。
 
 **embed mode の利点**: ユーザー操作が 1 回減り、findings をそのまま Step 3 の G-V loop と Step 4 の集約処理に流せる。`--embed` 未対応の旧 code-review (< 2.17.0) では Step 7 の AskUserQuestion がそのまま出るが、Step 0 は **存在チェックのみ**で version は確認していない。旧版が混在しうる前提で、JSON ブロック不在時は markdown フォールバックへ、AskUserQuestion 出力時はそれを findings 提示として吸収する（version ゲートは張らない）。

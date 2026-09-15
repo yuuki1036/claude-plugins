@@ -120,6 +120,9 @@ case "$CMD" in
         # publish」と書くと review の締めフロー 1〜3（精査・解説・ドラフト）を飛ばす誘導になる
         echo "t2 記録。レポート後の締めは **publish（self-review Step 6.4 / review 締めフロー 4）で終わる**。"
         echo "publish を踏まずに次のフェーズ（指摘の修正 / worktree 掃除）へ進まないこと。"
+        # レポート定型の逸脱も実行中は誰も気づかない（他 skill がオーケストレーションすると独自要約に
+        # 置き換わった実例 / GitHub issue #232）。t2 はレポート直後なので、ここなら出し直せる
+        echo "レポートを skill の Step 6 の定型（総合判定 / 総合評価 / レビュー構成 / 動的ラウンド / 指摘件数 / 反証）以外で出していたら、publish の前に定型で出し直す。"
         ;;
       # publish 成功の記録（v2.66.0 / GitHub issue #133）。**`publish-pending` の判定根拠**で、
       # `publish-review-event.sh` が `event_bus_publish` に成功したときだけ打つ。

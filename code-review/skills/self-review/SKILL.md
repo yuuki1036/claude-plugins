@@ -355,6 +355,8 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
 
 ### 6. レポート出力
 
+**他 skill からオーケストレーションされても定型と publish は省かない**（GitHub issue #232）: feature-dev 等の親 skill が self-review を呼び、手順を親のコンテキストで回す場合でも、**下のテンプレートどおりのレポート → `mark t2` → 6.4 の publish** は self-review の手順として踏む（`--embed` の有無を問わない）。親の集約・要約はこの定型レポートを**出した後に**足すもので、置き換えない。publish を踏まずに Edit / Write / Skill / Agent を呼ぶと publish-guard hook（PreToolUse）が鳴る。
+
 `missing_coverage` リストが空でない場合は「⚠️ 欠損観点」セクションを追加する（空なら省略）。**理由・補足はこのセクション本文に書き、payload の `missing_coverage` 配列には識別子のみを入れる**（語彙は orchestration-measurement.md `## 16`。自由文を入れると綴りが割れて集計不能になる）。
 
 **冷や読み skeptic の観測可能性（issue #85）**: high-risk surface を含む変更では、冷や読み skeptic（Phase 4.8）の起動有無を「動的ラウンド」行に **必ず** 出す（起動＝追加件数 / 未起動＝skip 理由）。surface HIT かつ未起動の silent skip を作らない。

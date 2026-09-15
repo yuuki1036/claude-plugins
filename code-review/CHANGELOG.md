@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.125.0] - 2026-09-15
+
+### Added
+
+- **self-review の publish 脱落をその場で鳴らす PreToolUse 経路を publish-guard に追加**（GitHub issue #232）。
+  他 skill（feature-dev 等）が self-review を回して同じターンのまま次のフェーズへ進むと、Stop 経路はターン終端でしか
+  鳴らず、気づいたときには duration が欠測（10 分超）に倒れていた。
+  - self-review の打点ファイルに `t2` があり `pub` が無い状態で Edit / Write / MultiEdit / NotebookEdit / Skill / Agent / Task を
+    呼ぶと、1 回だけ additionalContext で publish と定型レポートを促す。Stop 経路と `nag` を共有し、重ねて鳴らさない
+  - Bash は対象外（publish 自体が Bash）。review（`-prN` 付きの打点）は t2 と publish の間に締めフロー（Skill で writing-polish）があるので対象外
+  - matcher が評価されない環境に備え、`tool_name` を自己判定する。取れなければ従来の Stop 経路
+  - 回帰テスト 7 本（黙る条件: Bash / t2 前 / publish 後 / 打点ファイルなし / review の打点）
+
+### Changed
+
+- **`mark t2` の出力に、レポートを Step 6 の定型で出したかの確認を追加**（#232）。オーケストレーター側の独自要約に置き換わった実例があった
+- **self-review Step 6 冒頭に「他 skill からオーケストレーションされても定型と publish は省かない」を明記**（#232）。`--embed` の有無を問わない
+
 ## [2.124.0] - 2026-09-15
 
 ### Added
