@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.127.0] - 2026-09-16
+
+### Added
+
+- **review-guide（command + skill）を追加**（GitHub issue #239 / design doc `20260916-code-review-review-guide-skill`）。
+  PR（または `--base <ref>` のローカル diff）を人間が後から理解するための読み順ガイドを出す読み取り専用 skill。
+  指摘を出す review / self-review、付いた指摘に応える review-triage とは別に、**どこをどの順で読むか**を案内する。
+  - `triage-signals.sh` の分類（core/test/doc/generated）+ red-flag/surface の代表加点で精読を上位 N 件（既定 5・`--top N`）に絞り、
+    残りは流し読み / 不要（理由 1 行）に振る。core は「不要」に落とさず同点は core 優先
+  - explorer（`sonnet`・`${CLAUDE_EFFORT}` で 0/2/3 体）が function-flow / dependency-trace / value-flow-trace で呼び出し関係を辿り、
+    「入口 → ロジック → 永続化 → テスト」のスレッド単位に並べる。統合執筆はメインコンテキスト（`opus`）
+  - 各精読ファイルに 4 項目（この PR で何をした / 難点 / 見る行 file:line / レビュー観点）+ 主張 vs diff 突合 + テスト対応表 +
+    人間の判断が効く箇所（既存コメント + 同一セッションの review 閾値割れ）。severity は付けない
+  - 読み取り専用（Edit / Write / Skill を持たない）。ファイル作成・コメント投稿・コード修正・永続化はしない。出力はセッション内のみ
+  - 取得は `triage-signals.sh` / `fetch-pr-context.sh` / `diff-slice.sh`、観点は `triage-guide.md ## 3`、explorer 起動は
+    `explorer-prompts.md` を参照で流用し複製しない。レポート形式の正本は新規 `references/review-guide-format.md`
+  - design-review（minimal / pragmatic / risk + 独立反証）でスコアリングの MAJOR 3 件を反映済み: fan-in の独自 Grep を落とし
+    分類 + 代表加点の 2 要素に単純化（triage-signals の誤カウント対策を捨てない）
+
 ## [2.126.2] - 2026-09-16
 
 ### Fixed

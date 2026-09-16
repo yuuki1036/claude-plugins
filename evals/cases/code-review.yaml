@@ -31,3 +31,17 @@ cases:
     prompt: 追加したコード内コメントを精査して直して
     expected_skill: code-review:comment-polish
     k: 3
+  # review-guide の起動（PR を理解するための読み順）
+  - id: review-guide-ja
+    prompt: この PR を後から理解したいので読み順を教えて
+    expected_skill: code-review:review-guide
+    k: 3
+  - id: review-guide-walkthrough-ja
+    prompt: この PR が何をやっているか、重要なファイルから順に解説して
+    expected_skill: code-review:review-guide
+    k: 3
+  # 逆方向の回帰: review-guide 追加で review（指摘を出す）が奪われないか
+  - id: review-not-stolen-by-guide-ja
+    prompt: この PR をレビューして問題を指摘して
+    expected_skill: code-review:review
+    k: 3
