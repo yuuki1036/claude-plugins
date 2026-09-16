@@ -12,6 +12,7 @@
 #
 # 使い方:
 #   bump-version.sh <plugin> --sync              # CHANGELOG 先頭の版を正として他 3 つを揃える（主経路）
+#                                                # 先頭が `## [vNEXT]` なら patch の次版へ見出しごと解決する
 #   bump-version.sh <plugin> major|minor|patch   # 次版を計算し、CHANGELOG に見出しだけ挿入する
 #   bump-version.sh <plugin> ... --dry-run       # 差分を表示するだけ
 #
@@ -83,25 +84,43 @@ cur = tuple(int(x) for x in m.groups())
 cur_s = "%d.%d.%d" % cur
 
 cl_text = cl_path.read_text()
-heads = re.findall(r'^## \[(\d+\.\d+\.\d+)\]', cl_text, re.M)
-top = heads[0] if heads else None
+# 見出しは `## [x.y.z]` か `## [vNEXT]`（CHANGELOG のエントリも版ラベル規約で書けるようにする /
+# issue #237）。以前は数値版しか見ておらず、`## [vNEXT]` は不可視 → 先頭が前版と判定されて
+# 「既に同期済み」分岐に入り、5) の一括置換で `## [v1.2.3]` という前版の重複見出しに化けていた
+# （exit 0 で成功に見える）
+head_pat = re.compile(r'^## \[(\d+\.\d+\.\d+|vNEXT)\][^\n]*$', re.M)
+head_ms = list(head_pat.finditer(cl_text))
+top = head_ms[0].group(1) if head_ms else None
+top_is_vnext = top == "vNEXT"
+if any(hm.group(1) == "vNEXT" for hm in head_ms[1:]):
+    sys.exit("FATAL: CHANGELOG の先頭以外に `## [vNEXT]` 見出しがある（解決先の版が決まらない）")
+
+def key(v): return tuple(int(x) for x in v.split("."))
+major, minor, patch = cur
+nexts = {"major": (major + 1, 0, 0), "minor": (major, minor + 1, 0), "patch": (major, minor, patch + 1)}
 
 if mode == "sync":
     if top is None:
-        sys.exit("FATAL: CHANGELOG に `## [x.y.z]` の見出しが無い（--sync は CHANGELOG を正とする）")
-    new_s = top
-    if new_s == cur_s:
-        print("既に同期済み: %s は %s" % (plugin, cur_s))
-    def key(v): return tuple(int(x) for x in v.split("."))
-    if key(new_s) < key(cur_s):
-        sys.exit("FATAL: CHANGELOG 先頭 %s が plugin.json %s より古い（取り違え防止のため中止）" % (new_s, cur_s))
+        sys.exit("FATAL: CHANGELOG に `## [x.y.z]` / `## [vNEXT]` の見出しが無い（--sync は CHANGELOG を正とする）")
+    if top_is_vnext:
+        # 見出しが vNEXT なら bump 種別の情報が無いので patch 相当。minor / major にしたければ
+        # `bump-version.sh <plugin> minor` を使う（vNEXT 見出しはその版へ解決される）
+        new_s = "%d.%d.%d" % nexts["patch"]
+        print("CHANGELOG 先頭が `## [vNEXT]` — patch として %s に解決する（minor/major なら level 指定で実行）" % new_s)
+    else:
+        new_s = top
+        if new_s == cur_s:
+            print("既に同期済み: %s は %s" % (plugin, cur_s))
+        if key(new_s) < key(cur_s):
+            sys.exit("FATAL: CHANGELOG 先頭 %s が plugin.json %s より古い（取り違え防止のため中止）" % (new_s, cur_s))
 else:
-    major, minor, patch = cur
-    new = {"major": (major + 1, 0, 0), "minor": (major, minor + 1, 0), "patch": (major, minor, patch + 1)}[level]
+    new = nexts[level]
     new_s = "%d.%d.%d" % new
-    if top == new_s:
+    if top_is_vnext:
+        pass  # 4) で見出しを new_s に解決する（挿入しない）
+    elif top == new_s:
         print("注意: CHANGELOG に既に %s の見出しがある（見出しの挿入はスキップする）" % new_s)
-    elif top is not None and tuple(int(x) for x in top.split(".")) >= new:
+    elif top is not None and key(top) > new:
         sys.exit("FATAL: CHANGELOG 先頭 %s が計算結果 %s 以上（--sync のつもりでは？）" % (top, new_s))
     if doc_only and level != "patch":
         print("⚠️  変更が *.md のみだが %s bump を指定している。CLAUDE.md の規約では PATCH（続行する）" % level.upper())
@@ -143,9 +162,15 @@ if not idx_pat.search(idx_text):
 idx_new = idx_pat.sub(r'\g<1>%s\g<2>' % new_s, idx_text, count=1)
 stage(idx_path, idx_text, idx_new)
 
-# 4) CHANGELOG — next モードで見出しが無いときだけ挿入する。**本文は書かない**
+# 4) CHANGELOG — 先頭が `## [vNEXT]` ならその行を実版 + 今日の日付に解決し、next モードで
+# 見出しが無いときだけ挿入する。**本文は書かない**
 cl_heading_inserted = False
-if mode == "next" and top != new_s:
+if top_is_vnext:
+    today = datetime.date.today().isoformat()
+    hm = head_ms[0]
+    cl_new = cl_text[:hm.start()] + "## [%s] - %s" % (new_s, today) + cl_text[hm.end():]
+    stage(cl_path, cl_text, cl_new)
+elif mode == "next" and top != new_s:
     today = datetime.date.today().isoformat()
     entry = "## [%s] - %s\n\n" % (new_s, today)
     anchor = re.search(r'^## \[', cl_text, re.M)

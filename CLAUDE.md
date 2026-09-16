@@ -132,7 +132,8 @@ claude plugin tag {plugin-name}
 claude plugin prune
 
 # バージョンバンプ（plugin.json / marketplace.json / INDEX.md / CHANGELOG.md を同時更新）
-# CHANGELOG のエントリを書いてから --sync するのが主経路（CHANGELOG が版の正本）
+# CHANGELOG のエントリを書いてから --sync するのが主経路（CHANGELOG が版の正本）。
+# 見出しは `## [vNEXT]` と書けば patch の次版へ解決される（minor/major は level 指定）
 bash .claude-plugin/scripts/bump-version.sh {plugin-name} --sync
 bash .claude-plugin/scripts/bump-version.sh {plugin-name} patch   # 次版を計算して見出しだけ挿入
 ```

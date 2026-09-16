@@ -270,9 +270,10 @@ class SyncResolvesVnextTest(BumpVersionSandbox):
     def test_sync_resolves_vnext_when_versions_already_match(self):
         f = self._write("references/note.md", "この挙動は vNEXT で入った\n")
         self._commit_all()
-        self._bump("--sync")
+        r = self._bump("--sync")
         self.assertEqual(f.read_text(), "この挙動は v1.2.3 で入った\n",
                          "同期済みを理由に打ち切られ vNEXT が残っている")
+        self.assertIn("既に同期済み", r.stdout)
 
     def test_sync_does_not_move_the_version(self):
         """解決のついでに版を動かさない（--sync は CHANGELOG を正とする契約）."""
@@ -337,6 +338,109 @@ class VnextAgreesWithResidualCheckTest(BumpVersionSandbox):
         live = "\n".join(vq.INLINE_CODE_RE.sub("", line) for _, line in vq._iter_unfenced_lines(lines))
         self.assertNotIn("vNEXT", live, "置換されない形は検査側も鳴らさない（偽陽性の禁止）")
         self.assertEqual(errors, [])
+
+
+class VnextHeadingTest(BumpVersionSandbox):
+    """CHANGELOG 先頭の `## [vNEXT]` 見出しを実版へ解決する（issue #237）.
+
+    以前は数値版の見出ししか見ておらず、`## [vNEXT]` を書いて `--sync` すると先頭が前版と
+    判定され、「既に同期済み」＋ 一括置換で `## [v1.2.3]`（前版・v 接頭辞・日付なし）に
+    化けていた。exit 0 で成功に見えるのが最悪だったので、結果の見出しと版を直接見る。
+    """
+
+    def _changelog(self) -> Path:
+        return self.root / self.PLUGIN / "CHANGELOG.md"
+
+    def _write_vnext_changelog(self, body: str = "- 新しい何か\n"):
+        self._changelog().write_text(
+            "# Changelog\n\n## [vNEXT]\n\n" + body + "\n## [1.2.3] - 2026-01-01\n\n- 初版\n",
+            encoding="utf-8")
+
+    def _plugin_version(self) -> str:
+        return json.loads(
+            (self.root / self.PLUGIN / ".claude-plugin" / "plugin.json").read_text())["version"]
+
+    def test_sync_resolves_vnext_heading_to_next_patch(self):
+        self._write_vnext_changelog()
+        self._commit_all()
+        r = self._bump("--sync")
+        text = self._changelog().read_text()
+        self.assertEqual(self._plugin_version(), "1.2.4")
+        self.assertIn("1.2.3 → 1.2.4", r.stdout)
+        self.assertNotIn("## [vNEXT]", text)
+        self.assertNotIn("## [v1.2.4]", text, "v 接頭辞つきの不正な見出しに化けている")
+        self.assertEqual(text.count("## [1.2.3]"), 1, "前版の見出しが重複している")
+        self.assertRegex(text, r"(?m)^## \[1\.2\.4\] - \d{4}-\d{2}-\d{2}$")
+
+    def test_sync_keeps_body_below_resolved_heading(self):
+        """見出し行だけを書き換え、本文は動かさない."""
+        self._write_vnext_changelog("- 本文 A\n- 本文 B\n")
+        self._commit_all()
+        self._bump("--sync")
+        text = self._changelog().read_text()
+        self.assertLess(text.index("## [1.2.4]"), text.index("- 本文 A"))
+        self.assertLess(text.index("- 本文 B"), text.index("## [1.2.3]"))
+
+    def test_level_resolves_vnext_heading_instead_of_inserting(self):
+        """`minor` 指定なら vNEXT 見出しがその版になり、見出しは増えない."""
+        self._write_vnext_changelog()
+        self._commit_all()
+        r = self._bump("minor")
+        text = self._changelog().read_text()
+        self.assertEqual(self._plugin_version(), "1.3.0")
+        self.assertRegex(text, r"(?m)^## \[1\.3\.0\] - \d{4}-\d{2}-\d{2}$")
+        self.assertEqual(len([l for l in text.splitlines() if l.startswith("## [")]), 2,
+                         "見出しが挿入されて 3 つになっている")
+        self.assertNotIn("見出しのみ挿入した", r.stdout)
+
+    def test_vnext_heading_and_body_placeholder_resolve_to_the_same_version(self):
+        self._write_vnext_changelog("- この挙動は vNEXT で入った\n")
+        self._commit_all()
+        self._bump("--sync")
+        text = self._changelog().read_text()
+        self.assertNotIn("vNEXT", text)
+        self.assertIn("この挙動は v1.2.4 で入った", text)
+
+    def test_sync_dry_run_leaves_vnext_heading(self):
+        self._write_vnext_changelog()
+        self._commit_all()
+        r = self._bump("--sync", "--dry-run")
+        self.assertIn("## [vNEXT]", self._changelog().read_text())
+        self.assertEqual(self._plugin_version(), "1.2.3")
+        self.assertIn("1.2.4", r.stdout)
+
+    def test_vnext_heading_below_top_is_fatal(self):
+        """先頭以外の vNEXT 見出しは解決先が決まらないので止める."""
+        self._changelog().write_text(
+            "# Changelog\n\n## [1.2.3] - 2026-01-01\n\n- 初版\n\n## [vNEXT]\n\n- 迷子\n",
+            encoding="utf-8")
+        self._commit_all()
+        r = self._bump("--sync", expect_ok=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("FATAL", r.stderr)
+        self.assertEqual(self._plugin_version(), "1.2.3")
+        self.assertIn("## [vNEXT]", self._changelog().read_text(), "止めたのに書き換わっている")
+
+    def test_level_with_a_newer_numeric_heading_is_fatal(self):
+        """`patch` の計算結果より新しい見出しが先頭にあれば --sync の取り違えとして止める."""
+        self._changelog().write_text(
+            "# Changelog\n\n## [1.2.5] - 2026-02-02\n\n- x\n\n## [1.2.3] - 2026-01-01\n\n- 初版\n",
+            encoding="utf-8")
+        self._commit_all()
+        r = self._bump("patch", expect_ok=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--sync のつもりでは", r.stderr)
+        self.assertEqual(self._plugin_version(), "1.2.3")
+
+    def test_numeric_heading_sync_is_unchanged(self):
+        """従来の数値見出しの --sync 経路は影響を受けない."""
+        self._changelog().write_text(
+            "# Changelog\n\n## [1.2.4] - 2026-02-02\n\n- x\n\n## [1.2.3] - 2026-01-01\n\n- 初版\n",
+            encoding="utf-8")
+        self._commit_all()
+        self._bump("--sync")
+        self.assertEqual(self._plugin_version(), "1.2.4")
+        self.assertIn("## [1.2.4] - 2026-02-02", self._changelog().read_text())
 
 
 if __name__ == "__main__":
