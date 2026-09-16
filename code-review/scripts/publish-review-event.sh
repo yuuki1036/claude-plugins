@@ -345,6 +345,31 @@ if not isinstance(payload, dict):
 # 救う / 救わないの判断は `lib/report_counts.py` の冒頭
 _nested_parent = lift_nested_report_counts(payload)
 
+# ---- 報告件数 4 フィールドの欠測は fail-fast（GitHub issue #238） ---------------------
+# v2.111.0（#215）は gap `payload:report_counts.missing` を立てるだけで、「止めるとその回の
+# 計測が丸ごと消える」（#203 と同じ判断）を理由に fail-fast にしなかった。**その判断を覆す**:
+# - 検知だけでは欠測が止まらなかった（現行版でも 5 件中 2 件が count キーそのものを持たない）
+# - この 4 つは歩留まり・報告 0 件率・真の空振り・`findings_class` 突合の**すべての分子**で、
+#   欠けた回は集計側が #212 / #213 で母集団から外す ＝ 通しても歩留まり系の計測は既に消えている
+# - 止めて失うのは区間・トークン・dispatch の計測だが、publish は締めの 1 コマンドで、
+#   埋め直して再実行すれば同じ transcript から同じ値が取れる（打点ファイルは残る）
+# つまり「通す」は失うものを増やさず、「止める」は失うものを取り戻せる。#203 / #208 の
+# 語彙違反・誤置で fail-fast にしなかった判断は変えない（そちらは他の分子が生きている）。
+#
+# **0 件は欠測ではない**（`0` は非負整数として通る）。入れ子は上で昇格済みなので、ここで
+# 落ちるのは完全欠落と部分欠測だけ。`payload:report_counts.missing` は旧版のイベントにだけ残る
+_missing_counts = [k for k in REPORT_KEYS
+                   if not isinstance(payload.get(k), int) or isinstance(payload.get(k), bool)]
+if _missing_counts:
+    sys.stderr.write(
+        "報告件数が揃っていない（欠測: %s）。**4 つとも必須で、0 件でも省かない** — "
+        "`blocker_count` / `critical_count` / `major_count` / `minor_count` をトップレベルに"
+        "揃えて publish をやり直す（この回の計測は書き込んでいない。打点ファイルは残っている）\n"
+        "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
+        % ", ".join(_missing_counts)
+    )
+    sys.exit(1)
+
 # ---- `missing_coverage` の語彙検証（GitHub issue #132） ---------------------
 # 規約は「識別子のみ」（正本: references/orchestration-measurement.md `## 16` の
 # 「`missing_coverage` の記法」）なのに検証が無く、実データに理由つき自由文が 12 種混入して
@@ -394,19 +419,17 @@ if fc is not None:
             % ", ".join(bad)
         )
         sys.exit(1)
+    # 件数 4 フィールドは上（#238）で fail-fast 済みなので、ここでは揃っている
     counts = [payload.get(k) for k in REPORT_KEYS]
-    # **件数フィールドが揃っている回だけ突合する**（揃っていない回を落とすと、
-    # 契約の範囲外まで publish を止めることになる）
-    if all(isinstance(c, int) and not isinstance(c, bool) for c in counts):
-        total = fc["lint"] + fc["test"] + fc["judgement"]
-        if total != sum(counts):
-            sys.stderr.write(
-                "findings_class の合計 %d が報告件数 %d と一致しない"
-                "（blocker %d / critical %d / major %d / minor %d）。"
-                "**分類は報告した指摘だけを数える** — 閾値を割った指摘は含めない\n"
-                % (total, sum(counts), *counts)
-            )
-            sys.exit(1)
+    total = fc["lint"] + fc["test"] + fc["judgement"]
+    if total != sum(counts):
+        sys.stderr.write(
+            "findings_class の合計 %d が報告件数 %d と一致しない"
+            "（blocker %d / critical %d / major %d / minor %d）。"
+            "**分類は報告した指摘だけを数える** — 閾値を割った指摘は含めない\n"
+            % (total, sum(counts), *counts)
+        )
+        sys.exit(1)
 
 # ---- `below_threshold_counts` の検証（v2.71.0 / GitHub issue #146） ------------
 # **`pre_adjust_counts` に足し込んだぶんの再掲**なので、元より大きい値は定義上ありえない
@@ -684,20 +707,10 @@ if isinstance(_pre, dict) and not all(
         % (" / ".join(SEVS), ", ".join(sorted(k for k in _pre if k != "schema")) or "(なし)")
     )
 
-# **報告件数 4 フィールドの欠測を検出する**（GitHub issue #215）。`below_threshold_counts` /
-# `appendix` / `findings_class` は fail-fast で検証しているのに、**歩留まり・報告 0 件率・
-# 真の空振り・`findings_class` 突合のすべての分子であるこの 4 つだけ検証が無かった**。
-# 実測（gist 集約 n=183）: 欠測 7 件のうち 4 件は現行版で、LLM がテンプレートを埋め落としている。
-# 集計側は #212 / #213 で欠測を母集団から外したが、**外すことと「なぜ欠けたか」が残ることは別**。
-#
-# **fail-fast にしない**（#203 と同じ判断 — 止めるとその回の計測が丸ごと消える）。
-# **0 件は欠測ではない**（`0` は非負整数として通る）。1 つでも欠ければ契約違反として立てる —
-# 揃っていない回は下の `findings_class` 突合も黙ってスキップするので、その事実も同じ識別子で残る
-#
-# **入れ子から昇格した回は `missing` ではなく `nested` を立てる**（GitHub issue #238）。
-# 昇格は冒頭で済んでいるので 4 キーは揃っており、下の判定は通る。値は救われたが
-# フラット規約は破られている — その事実を別識別子で残し、`missing` と排他にする
-# （同じ回で 2 つ立てると欠測内訳の是正先が割れる / `.misplaced` と同じ流儀）
+# **入れ子から昇格した回は `payload:report_counts.nested` を立てる**（GitHub issue #238）。
+# 昇格は冒頭で済んでおり、欠測はそこで fail-fast しているので、ここに来る回は 4 キーが揃っている。
+# 値は救われたがフラット規約は破られている — その事実を別識別子で残す
+# （旧版の `report_counts.missing` とは排他。同じ回で 2 つ立てると欠測内訳の是正先が割れる）
 if _nested_parent is not None:
     gaps.append("payload:report_counts.nested")
     sys.stderr.write(
@@ -705,17 +718,6 @@ if _nested_parent is not None:
         "契約は**フラットな `blocker_count` / `critical_count` / `major_count` / `minor_count`**\n"
         "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
         % _nested_parent
-    )
-_missing_counts = [k for k in REPORT_KEYS
-                   if not isinstance(payload.get(k), int) or isinstance(payload.get(k), bool)]
-if _missing_counts:
-    gaps.append("payload:report_counts.missing")
-    sys.stderr.write(
-        "WARN: 報告件数が揃っていない（欠測: %s）。**4 つとも必須で、0 件でも省かない**。"
-        "集計側はこの回を歩留まり・報告 0 件率・真の空振りの母集団から外す — 報告件数は失われ、"
-        "`findings_class` との突合もこの回はスキップされる\n"
-        "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
-        % ", ".join(_missing_counts)
     )
 
 # **`agents` の語彙も検証する**（GitHub issue #208）。`pre_adjust_counts` と対称で、

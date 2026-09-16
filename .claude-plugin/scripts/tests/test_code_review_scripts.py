@@ -52,8 +52,8 @@ BASE_PAYLOAD = {
     "recall_skeptic": {"fired": False, "skip_reason": "no-surface"},
     "meta_reviewer": {"fired": False, "skip_reason": "effort"},
     "findings_class": {"lint": 0, "test": 0, "judgement": 1},
-    # **報告件数 4 つは必須で 0 件でも省かない**（#215）。無いと publish が
-    # `payload:report_counts.missing` を立てるので、既定の fixture は契約どおりにしておく
+    # **報告件数 4 つは必須で 0 件でも省かない**（#215 / #238 で fail-fast）。無いと publish が
+    # 止まるので、既定の fixture は契約どおりにしておく
     "blocker_count": 0, "critical_count": 0, "major_count": 1, "minor_count": 0,
     "agents": {"explorer": 0, "reviewer": 2},
 }
@@ -2557,20 +2557,20 @@ class FindingsClassValidationTest(ScriptTestBase):
         r = self.publish(self._payload(None))
         self.assertEqual(r.returncode, 0, r.stderr)
 
-    def test_counts_missing_skips_the_sum_check(self):
-        """件数フィールドが揃っていない回は突合しない（型検証だけ効く）.
+    def test_counts_missing_stops_before_the_sum_check(self):
+        """件数フィールドが揃っていない回は突合に到達しない（#238 の欠測 fail-fast が先に止める）.
 
         `BASE_PAYLOAD` は #215 以降 4 つとも持つ（契約準拠）ので、**この経路は明示的に
-        落として作る**。欠測は fail-fast ではなく gap（`payload:report_counts.missing`）で残る。
+        落として作る**。止まる理由が「合計の不一致」ではなく「欠測」と言われることを見る。
         """
         p = dict(BASE_PAYLOAD)
         for k in ("blocker_count", "critical_count", "major_count", "minor_count"):
             p.pop(k, None)
         p["findings_class"] = {"lint": 9, "test": 9, "judgement": 9}
         r = self.publish(p)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"],
-                      "突合をスキップした事実が gap に残っていない（#215）")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("報告件数が揃っていない", r.stderr)
+        self.assertNotIn("findings_class の合計", r.stderr, "欠測なのに合計の不一致として止めている")
 
     def test_schema_marker_is_injected(self):
         self.publish(self._payload({"lint": 1, "test": 2, "judgement": 1}))
@@ -5283,11 +5283,12 @@ class RetroMissingReportCountTest(RetroFixture):
 
 
 class ReportCountContractTest(ScriptTestBase):
-    """報告件数 4 フィールドの契約（GitHub issue #215）.
+    """報告件数 4 フィールドの契約（GitHub issue #215 → #238 で fail-fast に格上げ）.
 
-    `below_threshold_counts` / `appendix` / `findings_class` は fail-fast で検証しているのに、
-    **全指標の分子であるこの 4 つだけ検証が無かった**。#203 と同じく fail-fast にはしない
-    （止めるとその回の計測が丸ごと消える）。
+    #215 は gap `payload:report_counts.missing` を立てるだけだった（#203 と同じ「止めると
+    計測が丸ごと消える」判断）が、検知だけでは欠測が止まらず現行版でも count キーそのものを
+    持たない回が出続けた。**publish は書き込まずに止め、埋め直して再実行させる**（打点ファイルは
+    残るので同じ値が取れる）。`missing` の gap は旧版のイベントにだけ残る。
     """
 
     def _payload(self, **counts) -> dict:
@@ -5301,29 +5302,47 @@ class ReportCountContractTest(ScriptTestBase):
         p["findings_class"] = {"lint": 0, "test": 0, "judgement": total}
         return p
 
-    def test_a_missing_count_raises_a_gap_not_a_fatal(self):
-        """欠測は gap + WARN。publish は止めない."""
+    def test_a_missing_count_is_fatal_and_writes_nothing(self):
+        """部分欠測でも止める。**イベントは書かない**（欠測回を母集団に入れない）."""
         res = self.publish(self._payload(blocker_count=0, critical_count=0, major_count=1))
-        self.assertEqual(res.returncode, 0, "欠測で publish を止めている")
-        self.assertIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"])
+        self.assertNotEqual(res.returncode, 0, "欠測で publish を通している")
+        self.assertEqual(self.events(), [], "止めたのにイベントを書いている")
         self.assertIn("minor_count", res.stderr, "どのフィールドが欠けたかを言っていない")
+        self.assertIn("publish をやり直す", res.stderr, "再実行を促していない")
+
+    def test_a_fully_absent_payload_is_fatal(self):
+        """実データの型（2026-09-09 / 09-16T11:33）: count キーそのものが無い."""
+        res = self.publish(self._payload())
+        self.assertNotEqual(res.returncode, 0)
+        self.assertEqual(self.events(), [])
+        for k in ("blocker_count", "critical_count", "major_count", "minor_count"):
+            self.assertIn(k, res.stderr)
 
     def test_zero_is_not_missing(self):
         """**0 件は欠測ではない**（4 つとも 0 の回は正当）."""
-        self.publish(self._payload(blocker_count=0, critical_count=0, major_count=0,
-                                   minor_count=0))
+        res = self.publish(self._payload(blocker_count=0, critical_count=0, major_count=0,
+                                         minor_count=0))
+        self.assertEqual(res.returncode, 0, "0 件を欠測として止めている")
         self.assertNotIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"])
 
     def test_a_complete_payload_raises_no_gap(self):
-        self.publish(self._payload(blocker_count=0, critical_count=1, major_count=2,
-                                   minor_count=3))
+        res = self.publish(self._payload(blocker_count=0, critical_count=1, major_count=2,
+                                         minor_count=3))
+        self.assertEqual(res.returncode, 0)
         self.assertNotIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"])
 
     def test_a_boolean_is_not_a_count(self):
         """`true` は件数ではない（JSON の bool を int と読まない）."""
-        self.publish(self._payload(blocker_count=0, critical_count=0, major_count=True,
+        res = self.publish(self._payload(blocker_count=0, critical_count=0, major_count=True,
+                                         minor_count=0))
+        self.assertNotEqual(res.returncode, 0)
+        self.assertEqual(self.events(), [])
+
+    def test_the_missing_gap_is_never_written_by_the_current_publish(self):
+        """`missing` は旧版のイベントにだけ残る識別子 — 現行 publish が焼くことはない."""
+        self.publish(self._payload(blocker_count=0, critical_count=0, major_count=1,
                                    minor_count=0))
-        self.assertIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"])
+        self.assertNotIn("report_counts.missing", json.dumps(self.events()))
 
 
 class ReportCountNestedTest(ScriptTestBase):
@@ -5373,11 +5392,12 @@ class ReportCountNestedTest(ScriptTestBase):
         self.assertEqual(self._gaps(), ["payload:report_counts.nested"])
         self.assertIn("`report_counts` の入れ子", res.stderr)
 
-    def test_a_partial_nest_stays_missing(self):
-        """3 つしか無い入れ子は救わない — 従来どおり `missing`."""
-        self.publish(self._payload(counts={"blocker": 0, "critical": 0, "major": 1}))
-        self.assertEqual(self._top(), [None] * 4)
-        self.assertEqual(self._gaps(), ["payload:report_counts.missing"])
+    def test_a_partial_nest_is_not_lifted_and_is_fatal(self):
+        """3 つしか無い入れ子は救わない — 欠測として止まる（書き込みなし）."""
+        res = self.publish(self._payload(counts={"blocker": 0, "critical": 0, "major": 1}))
+        self.assertNotEqual(res.returncode, 0)
+        self.assertEqual(self.events(), [])
+        self.assertIn("blocker_count", res.stderr, "昇格せずに欠測として報告していない")
 
     def test_a_flat_payload_raises_neither_gap(self):
         self.publish(self._payload(blocker_count=0, critical_count=0, major_count=1,
