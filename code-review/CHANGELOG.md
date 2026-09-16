@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.127.1] - 2026-09-16
+
+### Fixed
+
+- **報告件数 4 フィールドの入れ子を publish / retro が受理する**（GitHub issue #238）。#215 は欠測の検知だけで防止になっておらず、
+  現行版でも同日 4 件中 2 件が `counts: {…}` / `report_counts: {…}` の入れ子で弾かれ、歩留まり・報告 0 件率・真の空振り・
+  `findings_class` 突合のすべての分子から落ちていた（サンプルの純損失）。
+  - `lib/report_counts.py`（新規・publish / retro 共有）: トップレベルに 4 キーが 1 つも無いとき、`report_counts` / `counts` の
+    入れ子を大文字小文字・`_count` 接尾辞を無視して正規化しトップレベルへ昇格する。**4 つ揃った入れ子だけ**（部分欠測は従来どおり
+    `report_counts.missing`）。`.misplaced`（#208）が値を救わないのと方向が逆になる理由はモジュール冒頭に記録
+  - publish: 昇格した回は `payload:report_counts.nested` を立てて WARN を出す（`missing` とは排他）。フラット規約が破られた事実は残る
+  - retro: 旧版で焼かれた入れ子も読み側で回収する（gist は append-only で過去行を直せない）。回収件数を「計測の健全性」と
+    `--json` の `measurement.nested_report_counts_recovered` に出す。実測（gist 合算 n=250）: 3 件が母集団に戻り、
+    現行版の埋め落としは 5 → 2 件（残る 2 件は count キーそのものが無い完全欠落で、この打ち手の対象外）
+  - `orchestration-measurement.md ## 16` の契約表と `measurement_gaps` 語彙に `.nested` を追記
+
 ## [2.127.0] - 2026-09-16
 
 ### Added

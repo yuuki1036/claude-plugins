@@ -329,6 +329,7 @@ import json, os, re, sys
 sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pycache__` を作らせないだけで、判定にも出力にも効かない
 sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
 from wave_expect import expected_waves, SKEPTIC_LAUNCH
+from report_counts import REPORT_KEYS, lift_nested_report_counts
 try:
     payload = json.loads(sys.argv[1])
 except ValueError as e:
@@ -337,6 +338,12 @@ except ValueError as e:
 if not isinstance(payload, dict):
     sys.stderr.write("payload が JSON オブジェクトでない\n")
     sys.exit(1)
+
+# ---- 報告件数の入れ子を昇格する（GitHub issue #238） ---------------------------
+# **下の `findings_class` 突合と #215 の欠測検出より前に置く**（どちらもトップレベルの
+# 4 キーを読む）。gap は `measurement_gaps` を組む段（#215 のブロック）で立てる。
+# 救う / 救わないの判断は `lib/report_counts.py` の冒頭
+_nested_parent = lift_nested_report_counts(payload)
 
 # ---- `missing_coverage` の語彙検証（GitHub issue #132） ---------------------
 # 規約は「識別子のみ」（正本: references/orchestration-measurement.md `## 16` の
@@ -387,8 +394,7 @@ if fc is not None:
             % ", ".join(bad)
         )
         sys.exit(1)
-    counts = [payload.get(k) for k in
-              ("blocker_count", "critical_count", "major_count", "minor_count")]
+    counts = [payload.get(k) for k in REPORT_KEYS]
     # **件数フィールドが揃っている回だけ突合する**（揃っていない回を落とすと、
     # 契約の範囲外まで publish を止めることになる）
     if all(isinstance(c, int) and not isinstance(c, bool) for c in counts):
@@ -687,7 +693,19 @@ if isinstance(_pre, dict) and not all(
 # **fail-fast にしない**（#203 と同じ判断 — 止めるとその回の計測が丸ごと消える）。
 # **0 件は欠測ではない**（`0` は非負整数として通る）。1 つでも欠ければ契約違反として立てる —
 # 揃っていない回は下の `findings_class` 突合も黙ってスキップするので、その事実も同じ識別子で残る
-REPORT_KEYS = ("blocker_count", "critical_count", "major_count", "minor_count")
+#
+# **入れ子から昇格した回は `missing` ではなく `nested` を立てる**（GitHub issue #238）。
+# 昇格は冒頭で済んでいるので 4 キーは揃っており、下の判定は通る。値は救われたが
+# フラット規約は破られている — その事実を別識別子で残し、`missing` と排他にする
+# （同じ回で 2 つ立てると欠測内訳の是正先が割れる / `.misplaced` と同じ流儀）
+if _nested_parent is not None:
+    gaps.append("payload:report_counts.nested")
+    sys.stderr.write(
+        "WARN: 報告件数が `%s` の入れ子で渡された。トップレベルへ昇格して集計には載せるが、"
+        "契約は**フラットな `blocker_count` / `critical_count` / `major_count` / `minor_count`**\n"
+        "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
+        % _nested_parent
+    )
 _missing_counts = [k for k in REPORT_KEYS
                    if not isinstance(payload.get(k), int) or isinstance(payload.get(k), bool)]
 if _missing_counts:

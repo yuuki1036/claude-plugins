@@ -105,6 +105,7 @@ from datetime import datetime, timedelta, timezone
 sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pycache__` を作らせないだけで、判定にも出力にも効かない
 sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
 from wave_expect import MAX_EXPECTED_WAVES, expected_waves
+from report_counts import lift_nested_report_counts
 
 since_raw = os.environ.get("REVIEW_SINCE") or ""
 last_n = int(os.environ.get("REVIEW_LAST") or 0)
@@ -137,6 +138,9 @@ for _path in sys.argv[1:]:
     _seen_real.add(_real)
     source_paths.append(_path)
 dup_dropped = 0
+#: 報告件数を入れ子から昇格して母集団へ戻した件数（#238）。publish 側で昇格済みの回は
+#: トップレベルに 4 キーがあるので数えない — ここに乗るのは旧版で焼かれた行だけ
+nested_recovered = 0
 for path in source_paths:
     try:
         # errors="replace" は必須。既定の strict だと UnicodeDecodeError（OSError ではなく
@@ -162,6 +166,12 @@ for path in source_paths:
             dup_dropped += 1        # （候補パスの重なり / worktree へコピーされた events.jsonl）
             continue
         seen.add(key)
+        # **publish が昇格を知らない版で焼かれた入れ子も読み側で回収する**（GitHub issue #238）。
+        # gist は append-only の生イベント保管庫なので過去行は書き換えられない — 読む側で
+        # 同じ正規化を掛ければ、既に載っている入れ子形が母集団へ戻る。dedup キーは正規化前の
+        # payload で作ってある（上）ので、同じ生行は同じキーに畳まれる
+        if lift_nested_report_counts(ev.get("payload") or {}) is not None:
+            nested_recovered += 1
         try:
             when = datetime.fromisoformat(ts.replace("Z", "+00:00"))
             if when.tzinfo is None:
@@ -1495,6 +1505,13 @@ def gap_hint(g):
                 "契約は `explorer` / `reviewer` / `specialist` / `round2` / `verify` / "
                 "`verify_findings` / `explorer_waves` の 7 つで、動的層は専用フィールドの "
                 "`fired` から数える（orchestration-measurement.md `## 16`）")
+    # **欠測ではなく形の違反**（#238）。値は昇格して集計に載っているので、是正先は
+    # キーを足すことではなくフラットに書くこと
+    if g == "payload:report_counts.nested":
+        return ("報告件数が `report_counts` / `counts` の入れ子で渡された。publish がトップレベルへ"
+                "昇格したので**集計には載っている**が、契約はフラットな `blocker_count` / "
+                "`critical_count` / `major_count` / `minor_count`（正本の payload テンプレート: "
+                "orchestration-measurement.md `## 16`）")
     if g == "payload:report_counts.missing":
         return ("報告件数（`blocker_count` / `critical_count` / `major_count` / `minor_count`）が"
                 "揃っていない。**4 つとも必須で 0 件でも省かない** — 埋め落とした回は歩留まり・"
@@ -1763,6 +1780,7 @@ if as_json:
             "median_pct": median(syn_pcts), "p75_pct": quantile(syn_pcts, 0.75),
             "max_pct": max(syn_pcts) if syn_pcts else None, "by_gen": syn_stats["by_gen"]},
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
+                        "nested_report_counts_recovered": nested_recovered,  # #238（読み側の回収）
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
                         "split_explorer_waves": split_waves,
                         # 健全性判定に使うのは下の modern 側。上の have_* は全サンプル母数の
@@ -2297,6 +2315,11 @@ else:
           % (n_modern, n_all, modern_synthesis, n_modern, waves_txt)
           + ("" if not gap_counts else " / 欠測内訳 " + " ".join(
               "%s=%d" % kv for kv in sorted(gap_counts.items(), key=lambda kv: -kv[1]))))
+    # **読み側で回収した入れ子を黙って母集団へ混ぜない**（#238）。publish が昇格を知らない
+    # 版で焼かれた行で、gap を持たないので欠測内訳には出ない。0 件なら出さない（⚠️ 契約）
+    if nested_recovered:
+        print("  - 報告件数: %d 件は入れ子（`report_counts` / `counts`）からトップレベルへ"
+              "昇格して母集団に戻した（旧版の publish が弾いていた回 / #238）" % nested_recovered)
     # **`wave-split` の分母を明示する**（#192）。他の gap と母集団の意味が違ううえ、
     # `agents-mismatch` で判定を抑止された回は分母にも分子にも入らない。黙って落とすと
     # 「一括発行は守られている」と読まれる。**件数は現行式での再計算**（#200）

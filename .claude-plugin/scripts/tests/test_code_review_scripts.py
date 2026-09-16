@@ -5326,6 +5326,131 @@ class ReportCountContractTest(ScriptTestBase):
         self.assertIn("payload:report_counts.missing", self.last_payload()["measurement_gaps"])
 
 
+class ReportCountNestedTest(ScriptTestBase):
+    """報告件数の入れ子を publish が昇格して受理する（GitHub issue #238）.
+
+    #215 の検知は防止になっておらず、現行版でも `counts: {…}` / `report_counts: {…}` の形が
+    `missing` で弾かれていた（同日 4 件中 2 件）。**昇格した回は `nested` を立てる**（`missing`
+    とは排他）— 値は救うが、フラット規約が破られた事実は残す。
+    """
+
+    def _payload(self, **extra) -> dict:
+        p = {k: (dict(v) if isinstance(v, dict) else v) for k, v in BASE_PAYLOAD.items()}
+        for k in ("blocker_count", "critical_count", "major_count", "minor_count"):
+            p.pop(k, None)
+        p.update(extra)
+        # `findings_class` の合計は報告件数と一致させる契約。ここで見たいのは形なので常に整合させる
+        p["findings_class"] = {"lint": 0, "test": 0, "judgement": 1}
+        return p
+
+    def _gaps(self) -> list:
+        return [g for g in self.last_payload()["measurement_gaps"] if "report_counts" in g]
+
+    def _top(self) -> list:
+        p = self.last_payload()
+        return [p.get(k) for k in ("blocker_count", "critical_count", "major_count", "minor_count")]
+
+    def test_counts_nest_is_lifted_and_flagged_nested(self):
+        res = self.publish(self._payload(counts={"blocker": 0, "critical": 0, "major": 1,
+                                                 "minor": 0}))
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(self._top(), [0, 0, 1, 0], "入れ子をトップレベルへ昇格していない")
+        self.assertEqual(self._gaps(), ["payload:report_counts.nested"],
+                         "`nested` だけを立てる（`missing` と排他）")
+        self.assertIn("`counts` の入れ子", res.stderr, "どの親キーだったかを言っていない")
+
+    def test_uppercase_counts_nest_is_lifted(self):
+        """実データの形（2026-09-12）."""
+        self.publish(self._payload(counts={"BLOCKER": 0, "CRITICAL": 0, "MAJOR": 1, "MINOR": 0}))
+        self.assertEqual(self._top(), [0, 0, 1, 0])
+        self.assertEqual(self._gaps(), ["payload:report_counts.nested"])
+
+    def test_report_counts_nest_with_suffix_is_lifted(self):
+        """gap 識別子の名前を構造化した形（2026-09-16T07:19）."""
+        res = self.publish(self._payload(report_counts={"blocker_count": 0, "critical_count": 0,
+                                                        "major_count": 1, "minor_count": 0}))
+        self.assertEqual(self._top(), [0, 0, 1, 0])
+        self.assertEqual(self._gaps(), ["payload:report_counts.nested"])
+        self.assertIn("`report_counts` の入れ子", res.stderr)
+
+    def test_a_partial_nest_stays_missing(self):
+        """3 つしか無い入れ子は救わない — 従来どおり `missing`."""
+        self.publish(self._payload(counts={"blocker": 0, "critical": 0, "major": 1}))
+        self.assertEqual(self._top(), [None] * 4)
+        self.assertEqual(self._gaps(), ["payload:report_counts.missing"])
+
+    def test_a_flat_payload_raises_neither_gap(self):
+        self.publish(self._payload(blocker_count=0, critical_count=0, major_count=1,
+                                   minor_count=0))
+        self.assertEqual(self._gaps(), [])
+
+    def test_the_lifted_counts_feed_the_findings_class_check(self):
+        """昇格は `findings_class` 突合より前に効く（不一致なら fail-fast する）."""
+        p = self._payload(counts={"blocker": 0, "critical": 0, "major": 2, "minor": 0})
+        res = self.publish(p)
+        self.assertNotEqual(res.returncode, 0, "昇格後の件数と findings_class の不一致を通している")
+        self.assertIn("findings_class の合計", res.stderr)
+
+
+class RetroNestedRecoveryTest(RetroFixture):
+    """旧版の publish が弾いた入れ子を retro が読み側で回収する（#238）.
+
+    gist は append-only の生イベント保管庫で過去行を直せない。publish 側で昇格済みの回は
+    トップレベルに 4 キーがあるので、ここで数えるのは旧版で焼かれた行だけ。
+    """
+
+    def _row(self, **extra) -> dict:
+        r = {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+             "severity_threshold": "MAJOR",
+             "pre_adjust_counts": {"schema": 2, "blocker": 0, "critical": 0,
+                                   "major": 3, "minor": 0}}
+        r.update(extra)
+        return r
+
+    def _out(self, *args) -> str:
+        r = self.run_script(RETRO, *args, env=self._env())
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertTrue(r.stdout.strip())
+        return r.stdout
+
+    def test_a_nested_row_rejoins_the_zero_rate_population(self):
+        nested = self._row(counts={"blocker": 0, "critical": 0, "major": 0, "minor": 0})
+        flat = self._row(blocker_count=0, critical_count=0, major_count=1, minor_count=0)
+        self._events([nested, flat])
+        out = self._out()
+        self.assertNotIn("母数から外した", out, "入れ子の回を欠測として外している")
+        self.assertIn("報告件数: 1 件は入れ子", out, "回収した件数を出していない")
+        j = json.loads(self._out("--json"))
+        self.assertEqual(j["measurement"]["nested_report_counts_recovered"], 1)
+        # 回収した回は報告 0 件（4 つとも 0）として分子に入る＝ 2 件中 1 件が 0 件
+        self.assertIn("| unrecorded | 2 | 1（50%） |", out, "回収した回が報告 0 件率の表に入っていない")
+
+    def test_flat_rows_are_not_counted_as_recovered(self):
+        self._events([self._row(blocker_count=0, critical_count=0, major_count=1, minor_count=0)
+                      for _ in range(2)])
+        out = self._out()
+        self.assertNotIn("件は入れ子", out, "回収 0 件なのに行を出している")
+        self.assertEqual(json.loads(self._out("--json"))["measurement"]
+                         ["nested_report_counts_recovered"], 0)
+
+    def test_a_row_already_lifted_by_publish_is_not_double_counted(self):
+        """publish が昇格済み（トップレベル 4 キー + 親も残る + `nested` gap）の行は数えない."""
+        lifted = self._row(blocker_count=0, critical_count=0, major_count=1, minor_count=0,
+                           counts={"blocker": 0, "critical": 0, "major": 1, "minor": 0},
+                           measurement_gaps=["payload:report_counts.nested"])
+        self._events([lifted])
+        self.assertEqual(json.loads(self._out("--json"))["measurement"]
+                         ["nested_report_counts_recovered"], 0)
+
+    def test_the_nested_gap_names_its_own_fix(self):
+        self._events([self._row(blocker_count=0, critical_count=0, major_count=1, minor_count=0,
+                                measurement_gaps=["payload:report_counts.nested"])
+                      for _ in range(6)])
+        out = self._out()
+        self.assertIn("payload:report_counts.nested", out)
+        self.assertIn("集計には載っている", out, "是正先が既定文言に落ちている")
+
+
 class RetroMissingCountAttributionTest(RetroFixture):
     """除外した欠測を「旧版」と「現行版の埋め落とし」に分けて出す（#215）.
 
