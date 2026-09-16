@@ -23,7 +23,7 @@ diff で追加・変更した**コード内コメント**を 2 観点で推敲�
 self-review はレビュー時にコメント推敲提案（B 系統）を**出す**が、適用はしない。本 skill は:
 
 - **単独起動**: self-review を通さない小さな変更で、コメントだけ精査したいとき
-- **self-review からの委譲**: self-review Step 7 で修正を選ぶと `--embed --from-findings <path>` で呼ばれ、B 系統の提案を**全件適用**する（再推敲しない）
+- **self-review からの委譲**: self-review Step 7 のコメント推敲確認で「適用する」を選ぶと `--embed --from-findings <path>` で呼ばれ、B 系統の提案を**全件適用**する（再推敲しない。A 系統 findings が 0 件の回でも呼ばれる / GitHub issue #236）
 
 ## 適用範囲（厳守）
 
@@ -82,7 +82,7 @@ Markdown 装飾の除去は 2 観点とは別の**表記**の扱いで、3 つ�
 
 **適用の分岐**:
 
-- **`--embed` 指定時（self-review からの委譲）**: 提示のみ簡潔にして**全件を Edit で適用**する。AskUserQuestion は出さない（self-review Step 7 で既に修正方針の承認が済んでいる）。`--from-findings <path>` があれば self-review が書き出した B 系統提案を読み、再推敲せずそれを適用する
+- **`--embed` 指定時（self-review からの委譲）**: 提示のみ簡潔にして**全件を Edit で適用**する。AskUserQuestion は出さない（self-review Step 7 で既にコメント推敲適用の承認が済んでいる）。`--from-findings <path>` があれば self-review が書き出した B 系統提案を読み、再推敲せずそれを適用する
 - **単独起動時**: AskUserQuestion で確認する
   - question: 「コメント精査の適用方針は？」
   - header: 「コメント精査」
