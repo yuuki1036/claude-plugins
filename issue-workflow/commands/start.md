@@ -11,6 +11,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - TodoWrite
 argument-hint: "[Issue ID] [今回の意図（「新規タスク」or やること）]（すべて省略可）"
 ---
 
@@ -24,5 +25,5 @@ start スキルを使って、セッション開始時の作業準備をして�
 
 - 第 1 トークンが Issue ID（`[A-Z]+-\d+` 形式）なら、**ブランチ名より優先**してその Issue を対象にしてください（ブランチが main のままでも Feature ブランチモードで読み込む）。
 - 残りの文字列は「今回の意図」です。**やることの中身が書かれていなければ新規着手**（例: `TEAM-123 新規タスク`）、**書かれていれば継続作業**（例: `TEAM-123 ログイン画面のバリデーション直す`）として Phase 1 の `TASK_INTENT` に分類してください。
-- 新規着手の場合、Phase F7 で **feature-dev を使うかの確認（AskUserQuestion）を必ず出す**こと。コミット数や `feature_dev_plan:` を理由にスキップしないでください。
+- 新規着手の場合、Phase F7 で **進め方の確認（feature-dev / 軽量フロー / 自分で進める の AskUserQuestion）を必ず出す**こと。コミット数や `feature_dev_plan:` を理由にスキップしないでください。
 - 引数が空なら従来どおりブランチ名から判定してください。

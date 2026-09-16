@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.6.0] - 2026-09-16
+
+### Added
+
+- **start Phase F7 に「軽量フロー」を追加**。feature-dev を実行しなくても、実装 → 検証 → self-review →
+  commit → push + CI 確認 → Issue 更新の一連を最後まで通せる第 3 の進め方。手順の正本は
+  `skills/start/references/lightweight-flow.md`（選択時のみ Read する progressive disclosure）。
+  - 委譲先（code-review:self-review / dev-workflow:commit）は settings.json の導入判定で dormant 分岐し、
+    未導入なら手動手順にフォールバック（プラグイン間依存なし）
+  - feature-dev 未導入時は AskUserQuestion の選択肢から feature-dev を外す（未導入プラグインを提案肢に出さない）
+  - 旧「はい / いいえ」の 2 択を「feature-dev / 軽量フロー / 自分で進める」の 3 択に変更
+
 ## [1.5.0] - 2026-09-12
 
 ### Added

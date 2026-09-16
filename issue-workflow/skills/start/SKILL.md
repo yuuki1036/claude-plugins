@@ -18,6 +18,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - TodoWrite
 ---
 
 # Session Start
@@ -338,30 +339,32 @@ Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する
 - **放置 Issue 警告**: 該当があれば表示（Phase F5）
 - **debt サマリー**: `type: debt` の Issue 件数
 
-### Phase F7: feature-dev 連携案内
+### Phase F7: 進め方の確認（feature-dev / 軽量フロー）
 
 Phase 1 で分類した `TASK_INTENT` と Git 状態で分岐する。
 
 **`TASK_INTENT = new` のとき（`start {ISSUE-ID} 新規タスク` 等）: 必ず AskUserQuestion を出す。**
-コミット数も `feature_dev_plan:` も見ない。着手宣言が明示されている以上、「使うか使わないか」を
+コミット数も `feature_dev_plan:` も見ない。着手宣言が明示されている以上、どの進め方にするかを
 ユーザーに決めさせるのが正しく、こちらで先回りして黙る理由が無い（黙る判定を足した結果
 この導線が実質死んでいたのが元の設計）:
 
 ```
 AskUserQuestion(
-  question: "{ISSUE-ID} に着手します。feature-dev（8 phase: コードベース理解 → 設計 → 実装 → 検証）で通しますか？",
-  header: "feature-dev",
+  question: "{ISSUE-ID} に着手します。進め方を選んでください",
+  header: "進め方",
   multiSelect: false,
   options: [
-    { label: "はい",   description: "feature-dev で設計から実装まで通す（explorer/architect + spec ゲート + self-review）" },
-    { label: "いいえ", description: "8 phase を回さず直接実装に入る（小さい変更・方針が既に決まっている場合）" },
+    { label: "feature-dev", description: "8 phase で設計から実装まで通す（explorer/architect + spec ゲート + self-review）" },
+    { label: "軽量フロー",   description: "8 phase なしで 実装 → 検証 → self-review → commit → push → CI 確認 → Issue 更新 の一連をガイドする（方針が決まっている変更向け）" },
+    { label: "自分で進める", description: "ガイドなしで通常の作業に入る" },
   ]
 )
 ```
 
-- 「はい」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**先に** `git checkout -b {type}/{ISSUE-ID}-{desc}` を案内してから起動する
-- 「いいえ」→ 何も起動せず通常の作業に入る。同一セッションで再提案しない
-- 起動後、`feature_dev_plan:` frontmatter への記載をユーザーに案内する（手動更新、または `/issue-maintain` で反映）
+- 「feature-dev」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**先に** `git checkout -b {type}/{ISSUE-ID}-{desc}` を案内してから起動する。**feature-dev が未導入**（`grep -q '"feature-dev@' "$HOME/.claude/settings.json"` が偽）**なら、この選択肢を option から外す**（dormant。未導入プラグインを提案肢に出さない）
+- 「軽量フロー」→ `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 6 Step（実装 → 検証 → self-review → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、self-review / commit の委譲先も導入済みのときだけ使う
+- 「自分で進める」→ 何も起動せず通常の作業に入る。同一セッションで再提案しない
+- feature-dev 起動後は、`feature_dev_plan:` frontmatter への記載をユーザーに案内する（手動更新、または `/issue-maintain` で反映）
 
 **`TASK_INTENT = continue` のとき**: feature-dev の案内は出さない（やることが決まっているので選択 UI で止めるのは邪魔）。Phase F6 で「今回のセッションでやること」として意図を再掲するに留める。
 
