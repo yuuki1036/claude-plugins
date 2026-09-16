@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.127.3] - 2026-09-17
+
+### Changed
+
+- **発行直前チェックポイント（v2.119.0 / GitHub issue #220）の初回判定を記録し、判定窓を切り直した**（`design-notes/orchestration-rationale.md`）。
+  `--min-plugin-version 2.120.0` で違反 6/21（29%）＝ 事前基準（10% 未満）未達だが、v2.120〜2.121 の 5/8 と v2.122.0 以降の 1/13 に割れており
+  原因不明のまま撤去しない判断を採った。新基準は `--min-plugin-version 2.122.0` で判定成立 20 件以上・10% 未満（基準の後付け変更であることを明記。
+  次は動かさない）。あわせて「PreToolUse hook で同一メッセージ内の兄弟 tool_use を数える」案を transcript の実測（tool_use は実行と交互に書かれる）で却下した記録を追加。
+  規約本文・SKILL は変更なし
+
 ## [2.127.2] - 2026-09-16
 
 ### Changed
