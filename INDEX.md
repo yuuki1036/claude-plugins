@@ -28,7 +28,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [plugin-feedback](#plugin-feedback) | 1.3.0 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.8.3 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
-| [writing-polish](#writing-polish) | 0.9.0 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
+| [writing-polish](#writing-polish) | 0.10.0 | 1 | 1 | - | SessionStart | - | 文章を語句レベルで推敲・添削 |
 
 旧 `indie-workflow` / `linear-workflow` は `issue-workflow` に統合され、2026-08-17 にリポジトリから削除した（移行の経緯: `docs/issue-workflow-migration.md`）。
 
@@ -143,9 +143,10 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 - **dormant 連携**: bdd-spec / design-doc / adr-keeper / feature-dev / issue-design（issue-workflow）— すべて optional
 
 ### writing-polish
-文章を語句レベルで推敲・添削する汎用スキル。最小差分 diff → 採否フロー。校正ルールは textlint（preset-ja-technical-writing/japanese/ai-writing/JTF-style）と Vale 由来のカテゴリを tone-guide 正本に内蔵、日英両対応。over-correction 抑制を中核原則に。
+文章を語句レベルで推敲・添削する汎用スキル。最小差分 diff → 採否フロー。校正ルールは textlint（preset-ja-technical-writing/japanese/ai-writing/ai-words-ja/JTF-style）と Vale 由来のカテゴリを tone-guide 正本に内蔵、日英両対応。over-correction 抑制を中核原則に。
 - **commands**: `writing-polish`
 - **skills**: `writing-polish`
+- **hooks**: SessionStart（check-deps: textlint 本体 + 同梱 textlintrc のルール解決可否）
 - **soft 連携**: pr-creator / git-commit-helper / issue-design が `--embed` で dormant 委譲
 
 ---

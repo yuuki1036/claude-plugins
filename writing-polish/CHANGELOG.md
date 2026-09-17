@@ -5,6 +5,21 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.10.0] - 2026-09-17
+
+### Added
+
+- **SessionStart hook `check-deps.sh` を追加**（初の hook）。textlint 本体の有無に加えて、
+  **同梱 textlintrc のルールパッケージが解決できるか**を probe する。textlint v15 は 1 つでも
+  欠けると全ルールを黙って drop して `No rules found` を exit 0 で返すため、`command -v` では
+  「入っているのに効いていない」を検出できない（実測: 開発機で `ja-no-redundant-expression`
+  1 つの欠落により 4 preset 全部が効いていなかった）
+  - config 全体で失敗したときだけルールごとに切り分け、**欠落パッケージ名と
+    `npm i -g` コマンド**を WARN で出す。揃っていれば無音、`once: true`
+  - 契約テスト（`test_misc_hooks.py` の check-deps 共通契約）に自動で載る。加えて stub textlint で
+    「欠落 1 件を名指しする」「全部解決なら黙る」を `WritingPolishCheckDepsTest` で直接見る
+- plugin.json の `_requirements` 導入コマンドに `textlint-rule-preset-ai-words-ja` を追記
+
 ## [0.9.0] - 2026-09-17
 
 ### Added

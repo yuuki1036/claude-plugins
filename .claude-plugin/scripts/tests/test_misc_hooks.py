@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -393,6 +395,61 @@ class DevWorkflowGhVersionTest(unittest.TestCase):
     def test_new_gh_version_does_not_warn(self):
         out = self._run_with_gh("2.99.0")
         self.assertNotIn("--attach", out)
+
+
+class WritingPolishCheckDepsTest(HookTestCase):
+    """textlint の**ルール解決**まで見る check-deps（本体の有無だけでは足りない）.
+
+    textlint v15 は config のルールが 1 つでも解決できないと全ルールを drop して
+    `== No rules found ==` を **exit 0** で返す。本物の textlint を欠落状態に持ち込むのは
+    環境依存なので、stub の textlint を PATH 先頭に置いて出力の形だけを再現する。
+    """
+
+    PLUGIN = "writing-polish"
+    SCRIPT = "hooks/scripts/check-deps.sh"
+
+    def _stub_textlint(self, missing_rule: str | None) -> str:
+        """`--config` では全 drop、`--rule <key>` では missing_rule だけ usage を返す stub."""
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        if missing_rule is None:
+            body = 'echo \'[{"messages":[],"filePath":"probe.md"}]\'\n'
+        else:
+            body = (
+                'case "$*" in\n'
+                f'  *"--rule {missing_rule} "*|*"--rule {missing_rule}") echo "textlint [options] file.md"; exit 0;;\n'
+                '  *--config*) echo "== No rules found, textlint hasn\'t done anything =="; exit 0;;\n'
+                '  *) echo \'[{"messages":[],"filePath":"probe.md"}]\';;\n'
+                'esac\n'
+            )
+        (d / "textlint").write_text("#!/bin/bash\n" + body)
+        (d / "textlint").chmod(0o755)
+        return str(d)
+
+    def _run(self, stub_dir: str):
+        return self.run_hook({"hook_event_name": "SessionStart"},
+                             env_extra={"PATH": stub_dir + os.pathsep + os.environ["PATH"]})
+
+    def test_names_missing_package_and_install_command(self):
+        res = self._run(self._stub_textlint("preset-ai-words-ja"))
+        self.assertIn("依存チェック", res.stdout)
+        self.assertIn("textlint-rule-preset-ai-words-ja", res.stdout)
+        self.assertIn("npm i -g", res.stdout)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_scoped_rule_maps_to_scoped_package(self):
+        """`@textlint-ja/preset-ai-writing` → `@textlint-ja/textlint-rule-preset-ai-writing`."""
+        res = self._run(self._stub_textlint("@textlint-ja/preset-ai-writing"))
+        self.assertIn("@textlint-ja/textlint-rule-preset-ai-writing", res.stdout)
+
+    def test_silent_when_config_resolves(self):
+        self.assertSilent(self._run(self._stub_textlint(None)))
+
+    def test_warns_without_blocking_when_textlint_absent(self):
+        res = self.run_hook({"hook_event_name": "SessionStart"},
+                            env_extra={"PATH": self.path_with_only("python3")})
+        self.assertNotEqual(res.returncode, 2)
+        self.assertIn("textlint", res.stdout)
 
 
 if __name__ == "__main__":
