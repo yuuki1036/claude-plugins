@@ -51,13 +51,15 @@ command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が必要" >&2; exi
 # bump 種別の助言（CLAUDE.md「バージョニング規約」の判定基準）。
 # **ブロックしない** — 著者の方が事情を知っている場合があるので警告に留める。
 # 今日の実測で誤ったのはこの 1 パターンだけ（docs-only なのに MINOR を当てた）。
-CHANGED=$(git diff --cached --name-only -- "$PLUGIN"; git diff --name-only -- "$PLUGIN")
+# untracked も数える。新規の .sh / .py を足した回が「*.md のみ」に見えて MINOR に誤警告していた
+CHANGED=$(git diff --cached --name-only -- "$PLUGIN"; git diff --name-only -- "$PLUGIN"
+          git ls-files --others --exclude-standard -- "$PLUGIN")
 DOC_ONLY=1
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in
     *.md|"$PLUGIN"/.claude-plugin/plugin.json) ;;
-    *) DOC_ONLY=0; break ;;
+    *) DOC_ONLY=0; break ;;  # mutation-ok: continue でも DOC_ONLY=0 は確定済みで結果は同じ（break は打ち切りの節約）
   esac
 done <<< "$CHANGED"
 [ -n "$CHANGED" ] || DOC_ONLY=0   # 変更が無いなら助言しない

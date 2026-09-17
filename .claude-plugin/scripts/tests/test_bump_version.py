@@ -443,5 +443,34 @@ class VnextHeadingTest(BumpVersionSandbox):
         self.assertIn("## [1.2.4] - 2026-02-02", self._changelog().read_text())
 
 
+class DocOnlyAdviceTest(BumpVersionSandbox):
+    """docs-only 助言（「変更が *.md のみだが MINOR」）の判定は untracked も見る."""
+
+    ADVICE = "変更が *.md のみ"
+
+    def test_untracked_script_is_not_doc_only(self):
+        """新規 .sh を足した回（git diff には出ない）を *.md のみと誤警告しない."""
+        self._commit_all()
+        self._write("scripts/new.sh", "#!/bin/sh\n")
+        self._write("references/note.md", "x\n")
+        r = self._bump("minor")
+        self.assertNotIn(self.ADVICE, r.stdout)
+
+    def test_md_only_change_still_advises(self):
+        self._commit_all()
+        self._write("references/note.md", "x\n")
+        r = self._bump("minor")
+        self.assertIn(self.ADVICE, r.stdout)
+
+    def test_ignored_untracked_file_does_not_count(self):
+        """.gitignore 対象（ビルド生成物等）はコード変更として数えない."""
+        (self.root / ".gitignore").write_text("*.log\n")
+        self._commit_all()
+        self._write("scripts/debug.log", "noise\n")
+        self._write("references/note.md", "x\n")
+        r = self._bump("minor")
+        self.assertIn(self.ADVICE, r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
