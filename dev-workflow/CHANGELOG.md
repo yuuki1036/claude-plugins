@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.32.0] - 2026-09-17
+
+### Added
+
+- **ui-verify に Step 0「実行対象の checkout 判定」を追加**。main の clone か git worktree かを最初に判定し、
+  dev server の port と「その port で LISTEN している process がこの checkout のものか」を確定してから進む。
+  worktree で起動すると main（や別 worktree）が立てた dev server が同じ port に見え、port の占有だけで
+  「起動中 → そのまま使う」と判定すると**別のコードを検証して pass を書く**。LISTEN process の cwd を
+  checkout の toplevel と突き合わせて `ours` / `foreign` / `none` / `unknown` に分け、`foreign` は流用も kill もしない
+  - 判定は同梱の `scripts/detect-checkout.sh` が行う（`KEY=VALUE` 出力。回帰テスト 18 件）
+  - port は 引数 → worktree-setup の `envs/.frontend.env.worktree`（`FRONTEND_PORT`）→ `package.json` → 3000 の順
+  - `worktree-unconfigured` では worktree-setup を 1 回提案する
+  - verification.md の frontmatter に `checkout` / `toplevel` / `dev_port` / `server_match` を追加（`schema_version: 2`。
+    pr-creator は追加フィールドを読まないので後方互換）
+
 ## [1.31.2] - 2026-09-15
 
 ### Fixed

@@ -78,6 +78,28 @@ Web UI の動作確認（実機 E2E）・スタイル調整・スクリーンシ
 
 ## 実行手順
 
+### Step 0: 実行対象の checkout 判定（main か worktree か）
+
+**最初に**、いま居る checkout が main の clone か git worktree かを判定し、dev server の port と「その port で LISTEN している process がこの checkout のものか」を確定する。判定は同梱スクリプトが行う（記憶や `lsof` の目視で決めない）:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-checkout.sh" [--port N]
+```
+
+出力は `KEY=VALUE`（`CHECKOUT` / `WORKTREE_STATE` / `TOPLEVEL` / `BRANCH` / `DEV_PORT` / `PORT_SOURCE` / `SERVER_PID` / `SERVER_CWD` / `SERVER_MATCH`）。`DEV_PORT` は引数 → worktree-setup の `envs/.frontend.env.worktree`（`FRONTEND_PORT`）→ `package.json` の `scripts.dev` → 3000 の順で決まる。**`SERVER_MATCH` が判定の要**: port が生きているだけでは「自分の server」と言えない。worktree で起動すると main（や別 worktree）が立てた server も同じ port に見え、それを流用すると**別のコードを検証して pass を書く**。
+
+| `CHECKOUT` / `WORKTREE_STATE` | `SERVER_MATCH` | 対応 |
+|---|---|---|
+| `main` | `none` | Step 2 の通常経路（起動許可を取って `DEV_PORT` で起動） |
+| `main` | `ours` | 起動中の server をそのまま使う |
+| `worktree-ready` | `none` | `DEV_PORT`（worktree-setup が割り当てた port）で起動。起動コマンドは env を読む形にする（`envs/.frontend.env.worktree` を経由。読み込み方は worktree-setup の `references/env-templates.md`） |
+| `worktree-ready` | `ours` | そのまま使う |
+| `worktree-unconfigured` | `none` | `DEV_PORT` は main と共有の値なので**衝突しうる**。`worktree-setup` の実行を 1 回提案し、断られたら `DEV_PORT` が空いていることを確認したうえで起動する |
+| どれでも | `foreign` | **流用も kill もしない**。`SERVER_CWD` を示して「別 checkout の server が port を占有している」と報告し、worktree なら `DEV_PORT + 10` から空きを探して（worktree-setup の `allocate_port` と同じ刻み）その port で起動する許可を取る。main なら占有側の停止か別 port での起動かをユーザーに選んでもらう |
+| どれでも | `unknown` | cwd が取れない（`lsof` / procfs 不在）。`ours` と見なさず、ユーザーに「`SERVER_PID` はこの checkout の server か」を確認してから進む |
+
+判定結果（`CHECKOUT` / `TOPLEVEL` / `DEV_PORT` / `SERVER_MATCH`）は Step 3 (e) の verification.md frontmatter に書く。pr-creator は同じ checkout の `.claude/verification/<branch>.md` を読むので、worktree で検証した記録は worktree 側に残る（main 側には残らない）。
+
 ### Step 1: 対象プロジェクトの Web 判定
 
 プロジェクトが Web フロントエンドを持つか判定する。該当しないプロジェクトで起動された場合は中止し、理由をユーザーに伝える。
@@ -92,16 +114,7 @@ jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | .[]' package.js
 
 ### Step 2: dev server の確保
 
-起動中のポートを lsof で確認し、未起動なら立ち上げる。
-
-```bash
-# 候補ポート（package.json の scripts.dev から推定 → fallback: 3000, 5173, 4321, 8080）
-DEV_PORT=$(jq -r '.scripts.dev // empty' package.json 2>/dev/null | grep -oE '\-\-port[= ][0-9]+|PORT=[0-9]+' | grep -oE '[0-9]+' | head -1)
-DEV_PORT=${DEV_PORT:-3000}
-
-# 起動中か確認
-lsof -nP -iTCP:${DEV_PORT} -sTCP:LISTEN 2>/dev/null
-```
+port と起動中判定は Step 0 の `DEV_PORT` / `SERVER_MATCH` を使う（ここで `lsof` を引き直さない）。`ours` ならそのまま使い、`none` なら立ち上げる。`foreign` / `unknown` は Step 0 の表に従う。
 
 **起動してない場合の対応:**
 
@@ -129,6 +142,7 @@ lsof -nP -iTCP:${DEV_PORT} -sTCP:LISTEN 2>/dev/null
 dev server はセッション開始時に **1 回だけ** 起動し、以後は **保持** する。タスク完了ごとに停止・再起動しない。再起動を繰り返すと HMR WebSocket 断（`ERR_CONNECTION_REFUSED`）、認証セッションの再ハンドシェイク、ユーザーが並行で開いている server との二重起動衝突、port 競合解消ループ（1 サイクル ~10s）が発生する。1 セッション内で 4 回の再起動が観測された実例あり。
 
 - セッション開始時に **1 回だけ** 起動。以後は **保持** する
+- 保持して使い回すのは `SERVER_MATCH=ours` の server だけ。`foreign`（別 checkout の server）は使わず、止めもしない
 - コード変更は **HMR** で反映 / chrome-devtools `navigate_page reload` で手動 reload
 - `TaskStop`（server 停止）するのは下記のみ:
   1. ユーザーが明示的に「dev server 止めて」と言ったとき
@@ -138,17 +152,11 @@ dev server はセッション開始時に **1 回だけ** 起動し、以後は 
 
 ##### 検出ロジック
 
-- 起動前: `lsof -i :$DEV_PORT -t` が空なら起動
-- 起動中: そのまま使う、止めない
+Step 0 の `detect-checkout.sh` が正本（port の占有ではなく LISTEN process の cwd で判定する）:
 
-```bash
-# 1 行で判定
-if [ -z "$(lsof -i :${DEV_PORT} -t 2>/dev/null)" ]; then
-  : # 未起動 → 起動許可をユーザーに確認してから background 起動
-else
-  : # 起動中 → そのまま使う（kill / restart 禁止）
-fi
-```
+- `SERVER_MATCH=none`: 未起動 → 起動許可をユーザーに確認してから background 起動
+- `SERVER_MATCH=ours`: 起動中 → そのまま使う（kill / restart 禁止）
+- `SERVER_MATCH=foreign`: 別 checkout の server → 使わない・止めない。別 port で起動する（Step 0 の表）
 
 E2E への昇格（`webapp-testing` / Playwright）時も、Playwright の `webServer.reuseExistingServer: true` 相当で起動中 server を再利用する方針に揃える。
 
@@ -235,11 +243,15 @@ E2E への昇格（`webapp-testing` / Playwright）時も、Playwright の `webS
 shared_state_type: verification
 producer: dev-workflow:ui-verify
 consumers: [dev-workflow:pr-creator]
-schema_version: 1
+schema_version: 2
 last_updated: <ISO8601>
 branch: <branch>
 base: <base-branch>
 head: <commit sha>
+checkout: main | worktree
+toplevel: <Step 0 の TOPLEVEL>
+dev_port: <Step 0 の DEV_PORT>
+server_match: ours | none（自分で起動した）
 browser: chrome-devtools(autoConnect) | chrome-devtools | browser-pane | claude-in-chrome
 expected_user: <起動時に確定した期待ユーザー or null>
 signed_in_as: <表示ユーザー名 or null>
@@ -373,6 +385,7 @@ chrome-devtools MCP のツール一覧と典型的な呼び出しパターンは
 - dev server の勝手な起動禁止。必ずユーザー確認を取る
 - `verify` は列挙した全ケースに verdict（pass / fail / blocked）を付けるまで完了にしない。準正常 / 異常が 0 件または未実施なら、verification.md とサマリに `未カバー` を理由つきで明記する（正常系だけの完了を黙って通さない）
 - 一度起動した dev server をタスク完了ごとに停止・再起動しない。セッション中は保持する（詳細は Step 2「dev server ライフサイクル」）
+- 別 checkout（main / 他 worktree）の dev server を流用しない・kill しない。`SERVER_MATCH=ours` 以外の server で E2E を回さない（Step 0）
 - 認証情報やシークレットを screenshot に含めないよう、撮影前にログアウト状態 or masked 状態を確認
 - 本番環境 URL に対する `verify` 実行時は書き込み系操作（フォーム送信等）を行わない
 - `.claude/screenshots/` 以外への screenshot 保存禁止（プロジェクトに不要ファイルを残さない）
