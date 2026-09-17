@@ -7,7 +7,7 @@ writing-polish が文章を推敲・添削するときに参照する校正ル�
 
 校正カテゴリは以下の公開ルールセット・スタイルガイドを統合したもの。各カテゴリ末尾に出典を記す。
 
-- textlint-ja: `preset-japanese` / `preset-ja-technical-writing` / `preset-ai-writing` / `preset-JTF-style`
+- textlint-ja: `preset-japanese` / `preset-ja-technical-writing` / `preset-ai-writing` / `preset-JTF-style` / `preset-ai-words-ja`
 - Vale（style-guide-as-code）: 11 種の固定チェックタイプ
 - Google developer documentation style guide / Microsoft Writing Style Guide
 - 過剰修正（over-correction）・最小編集に関する一次研究（arXiv 2512.12544 HyperEdit / 2502.13358 FineEdit）
@@ -28,6 +28,7 @@ writing-polish が文章を推敲・添削するときに参照する校正ル�
 - しきい値（文長 / 読点過剰 / 連続漢字）✅（`preset-ja-technical-writing`）
 - 差別的表現ブラックリスト（alex 系）⚠️ 同梱外（alex は textlint ルールではない。別途導入が必要）
 - AI 生成 tell の決定的パターン（装飾絵文字・リスト項目の機械的な太字+区切り・過剰強調・hype 表現）— textlint `preset-ai-writing` ✅
+- AI 生成 tell の語彙（直訳調の動詞・硬い名詞。約 50 語の辞書 + 形態素解析）— textlint `preset-ai-words-ja` ✅（同梱 config の `allows` で除外した語は LLM も指摘しない）
 
 **LLM が担う（文脈・行為主体・自然さの判断が必須）**
 - 名詞化の良性/悪性判定（given-new 結束は温存、動作隠蔽のみ直す）

@@ -28,7 +28,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [plugin-feedback](#plugin-feedback) | 1.3.0 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.8.3 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
-| [writing-polish](#writing-polish) | 0.8.4 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
+| [writing-polish](#writing-polish) | 0.9.0 | 1 | 1 | - | - | - | 文章を語句レベルで推敲・添削 |
 
 旧 `indie-workflow` / `linear-workflow` は `issue-workflow` に統合され、2026-08-17 にリポジトリから削除した（移行の経緯: `docs/issue-workflow-migration.md`）。
 

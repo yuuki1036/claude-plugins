@@ -5,6 +5,20 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.9.0] - 2026-09-17
+
+### Added
+
+- **`textlint-rule-preset-ai-words-ja` を同梱 textlintrc に追加**。既存の `preset-ai-writing` が
+  書式の tell（絵文字・機械的リスト・hype）を見るのに対し、こちらは語彙の tell（「効く」「壊れる」
+  「見張る」等 約 50 語。形態素解析で活用形も拾う）を見る。tone-guide カテゴリ 4 に `no-ai-words` を
+  マップした
+  - **`allows` で 8 語を除外**（実測 / 正本 / 経路 / 漏れ / 走る / 効く / 検査 / ゲート）。
+    本リポジトリの CLAUDE.md（305 行）に素で当てると 65 件、除外後 23 件。上位 2 語だけで 30 件が
+    house 語彙だったため。severity は warning（採否は LLM 側）
+  - 導入コマンド・ルール未解決時の警告文にパッケージ名を追記。`no-short-topic-comma` は上流既定の
+    無効のまま
+
 ## [0.8.4] - 2026-09-05
 
 ### Fixed

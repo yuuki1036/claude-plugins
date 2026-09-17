@@ -47,7 +47,7 @@ printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
 
 ### ルール解決失敗の検出（導入済みだがルールパッケージ欠落）
 
-`command -v textlint` は通るが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が global install されていないと、textlint はルール解決に失敗し JSON を返さない。**失敗形は複数ある**: 旧来はルール解決エラーを stderr に出すが、**textlint v15 は欠落時に全ルールを黙って drop し、stdout に `== No rules found, textlint hasn't done anything ==`（非 JSON）を出して stderr は空**になる（1 ルールでも解決不能だと全ルールが drop されるため、preset 1 つの欠落で全決定的チェックが無効化される）。黙ってフォールバックすると決定的チェックが落ちたことに気づけないので、検出して一度だけ警告する（「未導入時の確認フロー」と同じ思想で、textlint 本体はあるがルールが欠けるケースをカバーする）。
+`command -v textlint` は通るが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` / `preset-ai-words-ja` 等）が global install されていないと、textlint はルール解決に失敗し JSON を返さない。**失敗形は複数ある**: 旧来はルール解決エラーを stderr に出すが、**textlint v15 は欠落時に全ルールを黙って drop し、stdout に `== No rules found, textlint hasn't done anything ==`（非 JSON）を出して stderr は空**になる（1 ルールでも解決不能だと全ルールが drop されるため、preset 1 つの欠落で全決定的チェックが無効化される）。黙ってフォールバックすると決定的チェックが落ちたことに気づけないので、検出して一度だけ警告する（「未導入時の確認フロー」と同じ思想で、textlint 本体はあるがルールが欠けるケースをカバーする）。
 
 判定は **stdout が valid JSON かどうかに一本化**する（exit code は lint 指摘ありでも非 0 になるため単独では使えず、stderr 文字列マッチは v15 の `No rules found` 失敗形〔stderr 空〕を取りこぼすため使わない）。`--format json` 成功時は必ず JSON（指摘ゼロでも `[]` 相当）を返すので、**JSON でなければ＝ルール解決失敗**と決定的に判定できる。
 
@@ -72,7 +72,7 @@ rm -f "$err"
 
 未解決時の警告（一度だけ出し、その後は LLM フォールバックで続行する。fail させない）:
 
-> textlint は導入済みですが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が未解決です。決定的チェックの一部が効いていません。`npm i -g @textlint-ja/textlint-rule-preset-ai-writing` で導入してください（mise 環境は install 後に `mise reshim`）。今回は LLM 判定で続行します。
+> textlint は導入済みですが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が未解決です。決定的チェックの一部が効いていません。`npm i -g @textlint-ja/textlint-rule-preset-ai-writing textlint-rule-preset-ai-words-ja` で導入してください（mise 環境は install 後に `mise reshim`）。今回は LLM 判定で続行します。
 
 警告を出さず silent フォールバックする退路（「未導入時の確認フロー」と共通）:
 
@@ -105,8 +105,11 @@ rm -f "$err"
 | `no-ai-emphasis-patterns` | カテゴリ 4（AIっぽさ・過剰強調） |
 | `no-ai-hype-expressions` | カテゴリ 4（AIっぽさ・hype 表現） |
 | `ai-tech-writing-guideline` | カテゴリ 1/5（冗長・態・明瞭・一貫性） |
+| `no-ai-words` | カテゴリ 4（AIっぽさ・語彙。直訳調の動詞・硬い名詞） |
 
 > `@textlint-ja/preset-ai-writing`（5 ルール）は装飾絵文字・リスト項目の機械的な太字+区切り・過剰強調・hype を決定的に拾う。tone-guide カテゴリ 4 の記号 tell のうち機械化できる分をここに委譲し、LLM は preset が拾えない情感ダッシュ「──」連発・中黒「・」3 項並列の density 判断に集中する。文中の `──`・`A・B・C` まで決定的に拾いたい場合は prh ルール（辞書同梱）で将来拡張できる（現状は LLM 判定）。表の ruleId は preset プレフィックス（`@textlint-ja/preset-ai-writing/`）を省いた表記。
+
+> `preset-ai-words-ja` の `no-ai-words` は語彙レベルの tell（「効く」「壊れる」「死活」「見張る」等 約 50 語。形態素解析で活用形も拾う）を見る。上の preset-ai-writing が書式の tell を見るのと直交する。**同梱 config は `allows` で 8 語を除外している**（実測 / 正本 / 経路 / 漏れ / 走る / 効く / 検査 / ゲート）— 本リポジトリの規約文書に対して素で走らせると 305 行の CLAUDE.md で 65 件、うち上位 2 語（実測・正本）だけで 30 件がこの house 語彙だった。除外後は 23 件。プロジェクト固有の語彙が指摘され続けるときは `allows` に足す（正規表現も可）。severity は warning に落としてある（採否は LLM 側で判断するので error にする意味がない）。同 preset の `no-short-topic-comma` は上流既定で無効（誤検出多）のまま触らない。
 
 ### 重要: 機械判定を盲従しない
 
@@ -119,7 +122,7 @@ textlint が決定的に拾った指摘は、提示の理由文に「textlint �
 ### 導入方法
 
 ```bash
-npm i -g textlint textlint-rule-preset-ja-technical-writing textlint-rule-ja-no-redundant-expression @textlint-ja/textlint-rule-preset-ai-writing
+npm i -g textlint textlint-rule-preset-ja-technical-writing textlint-rule-ja-no-redundant-expression @textlint-ja/textlint-rule-preset-ai-writing textlint-rule-preset-ai-words-ja
 ```
 
 **mise / nvm 等で node を管理している環境への注意**: global install 後も `command -v textlint` が false のままになることがある。これは shim/PATH の解決が済んでいないため。
