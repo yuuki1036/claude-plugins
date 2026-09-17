@@ -2,8 +2,8 @@
 id: 20260912-worktree-gc-skill
 title: dev-workflow に worktree-gc skill を新設する（PC 横断の worktree 棚卸し・一括削除）
 status: approved
-phase: target
-last-validated: 2026-09-12
+phase: current
+last-validated: 2026-09-17
 supersedes: []
 superseded-by: null
 issue: https://github.com/yuuki1036/claude-plugins/issues/223
@@ -53,6 +53,10 @@ tags: [dev-workflow, worktree, gc, skill-design]
 | 7 | 削除は不可逆なので「起動＝実行確定」例外の対象外。AskUserQuestion での承認が必須。走査系なので `${CLAUDE_EFFORT}` 分岐も必須 | CLAUDE.md プラグイン開発ルール |
 | 8 | ユーザー確定（2026-09-12）: 既定は現リポ・`--all [root]` で横断 / 承認はリポ単位で 1 回 / DB は逆算して候補提示 → 承認後 drop / 構成は scan・reap の 2 段 | grill 回答 |
 | 9 | 統合ブランチ経由で merge された PR は `ahead_of_main` が正でも安全（issue #223 の落とし穴） | issue #223 本文 |
+| 10 | （旧 open 2）`--all` の root 既定は `DEV_WORKFLOW_WORKTREE_GC_ROOT` → `.claude/dev-workflow.json` の `worktree_gc_root` → `$HOME`（`maxdepth 4`・`--depth` で変更）。`userConfig.worktree_gc_root` を plugin.json に宣言するが到達経路が未確定なので browser_connect と同じ fallback 構成 | 実装（2026-09-17 / issue #224） |
+| 11 | （旧 open 5）`--all` の submodule 除外は「find は main repo の発見にだけ使い、worktree 列挙は各 repo の `git worktree list` に委ねる」。gitlink は common-dir が `<repo>/.git` の形のときだけ main repo に採用する（submodule は `.git/modules/<name>` で除外される） | 実装（2026-09-17 / issue #224） |
+| 12 | （旧 open 6）review 残骸（detached）は path の命名規約に頼らず **HEAD の sha から `gh api commits/<sha>/pulls` で PR を引く**（(a) の「path から復元」でも (b) の cleanup 流用でもない第 3 案。名前に PR 番号が無い EnterWorktree 由来でも引ける）。merged / closed なら reap、gh 不在 / PR 不明は keep。親 review worktree のネスト agent dir は dirty に数えない | 実装（2026-09-17 / issue #224） |
+| 13 | PR 無しブランチは Issue ID を `--issue-status <file>` の状態で補う。scan は外部サービスを叩かず、Linear MCP の呼び出しは SKILL Step 1.5（LLM 側）に置く。判定は Linear の state type（`completed` / `canceled`）が正 | 実装（2026-09-17 / issue #240） |
 
 ## 採用案
 
@@ -192,11 +196,11 @@ tags: [dev-workflow, worktree, gc, skill-design]
 ## 未解決事項 (open)
 
 1. **`sanitize_db_name` の要否**（design review F1 で縮小）: F1 採用で marker のある行は `db_name` を直読みするため、drop 経路に sanitize / hash 逆算は要らなくなった。逆算列挙（非 drop の「残っているかも」表示）を残すかどうかで決まる — (a) 逆算列挙も落とし db-name.sh を作らない — Pros: 実装最小・所有権問題の残滓ゼロ / Cons: marker 消失 DB の存在に気づけない (b) 逆算列挙だけ残し db-name.sh を小さく新設 — Pros: 気づける / Cons: lib 1 本増える。現時点では (a) が有力（#223 の実績は DB drop を伴わず、逆算列挙の実需が未確認）。確定タイミング: 実装着手時
-2. **`--all` の root 既定**: (a) `$HOME/Projects` 固定 — Pros: 引数不要 / Cons: 利用者固有の値を plugin に埋める (b) `userConfig.worktree_gc_root`（既定 `$HOME`、`maxdepth 4`） — Pros: 規約どおり / Cons: 初回に設定が要る。現時点では (b) が有力（「プロジェクト固有の情報を含めない」規約）。確定タイミング: 実装時
+2. **【確定 → 前提 10】`--all` の root 既定**: (a) `$HOME/Projects` 固定 — Pros: 引数不要 / Cons: 利用者固有の値を plugin に埋める (b) `userConfig.worktree_gc_root`（既定 `$HOME`、`maxdepth 4`） — Pros: 規約どおり / Cons: 初回に設定が要る。現時点では (b) が有力（「プロジェクト固有の情報を含めない」規約）。確定タイミング: 実装時
 3. **code-review 締めフロー 7 の案内文**: 残骸が複数見つかったとき「`/worktree-gc` で一括」を案内に足すか — (a) 足す（案内のみで依存にならない） (b) 足さない。現時点では (a) が有力。確定タイミング: dev-workflow リリース後、code-review 側の別コミットで
 4. **DB エンジンの判別（open 1 で逆算列挙を残す場合のみ）**: F1 採用で marker のある行は engine を marker から取れるため、判別が要るのは open 1(b)（逆算列挙）を残したときだけ。その場合のみ — (a) main env の `DATABASE_URL` スキームから (b) 3 つ試す。現時点では open 1 が (a) 有力なので**この open ごと消える見込み**。確定タイミング: open 1 の確定と同時
-5. **`--all` の submodule 除外の実装手段**（design review MINOR）: `git worktree list` に現れる worktree のみを対象にする方針は確定。実装で `find` の結果を worktree 一覧で filter するか、最初から各 main repo の `git worktree list` だけを信頼源にするか。現時点では後者が有力（`find` は main repo の発見にだけ使い、worktree 列挙は git に委ねる）。確定タイミング: scan.sh 実装時
-6. **review 残骸（detached）が常に keep に倒れる**（実装後 self-review の related-observation / issue #223 の主目的に直結）: review worktree は `git checkout --detach` で作られ **branch が null**。安全ゲート 6（`pr` が null かつ merged false → keep）に必ず該当し、さらに親 review worktree はネスト agent dir を untracked として抱えて dirty keep になる。結果、MVP の scan は **review 残骸（issue #223 の 18 + 4 件）をほぼ全て keep** にし、掃除できない（安全側なのでデータ損失は無いが feature の有効性が出ない）。掃除するには — (a) review worktree は path から `.claude/worktrees/<name>` を取り、対応 PR が merged/closed なら reap（detached でも path から復元） — Pros: #223 の主目的が回る / Cons: review 命名規約への依存 (b) review worktree は「対象 PR が閉じている」を別経路（cleanup-agent-worktrees.sh の判定流用）で確かめる。現時点では (a) が有力。確定タイミング: MVP リリース後、review 残骸掃除を次段 issue で。**MVP では dev worktree（marker 持ち）の GC が主で、review 残骸は当面 code-review 締めフローと手動に委ねる**
+5. **【確定 → 前提 11】`--all` の submodule 除外の実装手段**（design review MINOR）: `git worktree list` に現れる worktree のみを対象にする方針は確定。実装で `find` の結果を worktree 一覧で filter するか、最初から各 main repo の `git worktree list` だけを信頼源にするか。現時点では後者が有力（`find` は main repo の発見にだけ使い、worktree 列挙は git に委ねる）。確定タイミング: scan.sh 実装時
+6. **【確定 → 前提 12】review 残骸（detached）が常に keep に倒れる**（実装後 self-review の related-observation / issue #223 の主目的に直結）: review worktree は `git checkout --detach` で作られ **branch が null**。安全ゲート 6（`pr` が null かつ merged false → keep）に必ず該当し、さらに親 review worktree はネスト agent dir を untracked として抱えて dirty keep になる。結果、MVP の scan は **review 残骸（issue #223 の 18 + 4 件）をほぼ全て keep** にし、掃除できない（安全側なのでデータ損失は無いが feature の有効性が出ない）。掃除するには — (a) review worktree は path から `.claude/worktrees/<name>` を取り、対応 PR が merged/closed なら reap（detached でも path から復元） — Pros: #223 の主目的が回る / Cons: review 命名規約への依存 (b) review worktree は「対象 PR が閉じている」を別経路（cleanup-agent-worktrees.sh の判定流用）で確かめる。現時点では (a) が有力。確定タイミング: MVP リリース後、review 残骸掃除を次段 issue で。**MVP では dev worktree（marker 持ち）の GC が主で、review 残骸は当面 code-review 締めフローと手動に委ねる**
 
 ## 実装ブリッジ (Implementation Bridge)
 

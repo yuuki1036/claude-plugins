@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.33.0] - 2026-09-17
+
+### Added
+
+- **worktree-gc の `--all [root]` 横断走査**（GitHub issue #224）。find は main repo の発見にだけ使い、
+  worktree の列挙は各 repo の `git worktree list` に委ねる（submodule の gitlink は common-dir が
+  `.git/modules/` 配下なので main repo に採用されない）。root の既定は `DEV_WORKFLOW_WORKTREE_GC_ROOT` →
+  `.claude/dev-workflow.json` の `worktree_gc_root` → `$HOME`。`--depth` で走査の深さを変える（effort xhigh / max は 6）。
+  reap は行の `repo` を見て remove / prune するので、`--all` の出力をそのまま渡せる
+- **review 残骸（detached）の掃除**（同 #224 / #223 の主目的）。ブランチを持たない worktree は HEAD の sha から
+  `gh api commits/<sha>/pulls` で PR を引き、merged / closed なら reap 候補に載せる。親 review worktree が
+  ネストした agent dir（`.claude/worktrees/`）を untracked として抱えて dirty keep になっていた点も直した
+  （ネスト側は自分の行で dirty を持つ）。gh が無い / PR に紐づかない detached は従来どおり keep
+- **PR 無しブランチの Issue 状態による判定補助**（GitHub issue #240）。ブランチ名の Issue ID（`PRE-1` 型）を
+  `issue.id` に載せ、`--issue-status <file>` で渡された状態（Linear の workflow state type が
+  `completed` / `canceled`）なら「PR 無し・未マージ」ゲートを外して reap 候補に載せる。reasons に
+  `issue-closed:<ID>:<状態>` / `issue-open:<ID>:<状態>` を添えるので Issue を開かずに判断できる。
+  状態の取得は SKILL の Step 1.5 が Linear MCP で行い、未接続なら飛ばす（scan 自身は外部サービスを叩かない）
+
+### Changed
+
+- worktree-gc の scan はリポごとに `gh pr list --state all --limit 200` を 1 回引いて辞書化し、worktree ごとの
+  `--head` 呼び出しは辞書に無いときだけにした
+
 ## [1.32.0] - 2026-09-17
 
 ### Added

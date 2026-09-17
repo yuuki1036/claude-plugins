@@ -99,7 +99,9 @@ git worktree ベースの並列開発環境をセットアップするスキル�
 - `scan.sh`（副作用なし・1 行 1 JSON）→ 承認 → `reap.sh`（承認済み行のみ削除）の 2 段構成。表に出したものだけが消える（ADR-20260912142858）
 - 安全ゲート（self / primary / dirty / 生存プロセス / PR open / 未マージ / ahead）を 1 つでも満たせば keep。PR が merged/closed なら ahead が正でも reap
 - DB drop は marker のある行のみ（名前一致は所有権を証明しないため marker 無し行の DB には触れない）
-- MVP は現リポのみ（PC 全体を横断する `--all` は未実装）
+- `--all [root]` で PC 横断（find は main repo の発見だけ、worktree 列挙は各 repo の git に委ねる）
+- review 残骸（`.claude/worktrees/` 配下・detached）は HEAD に紐づく PR を引き、merged / closed なら reap 候補。ネストした agent dir は親の dirty に数えない
+- PR 無しブランチは Issue ID を Linear で引き（`--issue-status`）、Done / Canceled なら reap 候補。Linear 未接続なら従来どおり keep
 
 **トリガー例**: 「worktree 棚卸し」「worktree 一括削除」「worktree GC」「残骸 worktree を掃除」「/worktree-gc」
 

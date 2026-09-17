@@ -42,8 +42,16 @@ if ! printf '%s\n' "$INPUT" | jq -e -s 'all(.[]; type=="object" and .verdict=="r
   exit 2
 fi
 
-# 現在の worktree 一覧（実在チェック用。stale な承認を弾く）
-LIVE_WORKTREES=$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{print substr($0,10)}')
+# worktree 一覧（実在チェック用。stale な承認を弾く）。行の `repo`（--all で他リポの行が混じる）ごとに引く。
+# `repo` の無い行（旧版 scan の出力）は cwd のリポで見る
+worktrees_of_repo() {
+  local repo=$1
+  if [ -n "$repo" ]; then
+    git -C "$repo" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print substr($0,10)}'
+  else
+    git worktree list --porcelain 2>/dev/null | awk '/^worktree /{print substr($0,10)}'
+  fi
+}
 
 have_lsof=0
 command -v lsof >/dev/null 2>&1 && have_lsof=1
@@ -51,6 +59,7 @@ have_psql=0
 command -v psql >/dev/null 2>&1 && have_psql=1  # mutation-ok: presence プローブ。DB drop の実行は live な DB を要し unit テストで踏めない
 
 removed=0; skipped=0; failed=0; db_dropped=0; db_warned=0
+PRUNE_REPOS=""
 
 # nested（agent）を先に、親を後に。sort_by(.nested_parent == null) は
 # false(nested あり) < true(nested なし) で nested が先に来る
@@ -62,6 +71,9 @@ while IFS= read -r row; do
   [ -n "$row" ] || continue
   path=$(printf '%s' "$row" | jq -r '.path')
   kind=$(printf '%s' "$row" | jq -r '.kind')
+  repo=$(printf '%s' "$row" | jq -r '.repo // empty')
+  # prune はリポごとに 1 回（remove 後の残骸回収）。対象リポを集めておく
+  case "$PRUNE_REPOS" in *"|${repo}|"*) ;; *) PRUNE_REPOS="${PRUNE_REPOS}|${repo}|" ;; esac
   db_name=$(printf '%s' "$row" | jq -r '.db_guess[0] // empty')
 
   # prunable は dir が無いので prune に任せる（remove しない）
@@ -71,7 +83,7 @@ while IFS= read -r row; do
   fi
 
   # 実在チェック（stale な承認を弾く）
-  if ! printf '%s\n' "$LIVE_WORKTREES" | grep -qxF "$path"; then
+  if ! worktrees_of_repo "$repo" | grep -qxF "$path"; then
     echo "  SKIP   $path （worktree list に無い。scan 後に消えた可能性）" >&2
     skipped=$((skipped+1)); continue
   fi
@@ -96,7 +108,7 @@ while IFS= read -r row; do
     echo "  would remove  $path${force:+ (--force)}"
     removed=$((removed+1))
   else
-    if git worktree remove ${force:+$force} "$path" 2>/dev/null; then
+    if git ${repo:+-C "$repo"} worktree remove ${force:+$force} "$path" 2>/dev/null; then
       echo "  removed  $path"
       removed=$((removed+1))
     else
@@ -133,7 +145,11 @@ while IFS= read -r row; do
 done <<< "$SORTED"
 
 # prune は repo ごとに 1 回（remove 後の残骸回収）
-[ "$DRY" = "1" ] || git worktree prune 2>/dev/null || true
+if [ "$DRY" != "1" ]; then
+  printf '%s' "$PRUNE_REPOS" | tr '|' '\n' | sort -u | while IFS= read -r repo; do
+    git ${repo:+-C "$repo"} worktree prune 2>/dev/null || true
+  done
+fi
 
 printf '完了: %d 件%s / SKIP %d 件 / 失敗 %d 件、DB: %d drop / %d 手動案内\n' \
   "$removed" "$([ "$DRY" = 1 ] && echo ' (dry-run)' || echo ' 削除')" \

@@ -530,5 +530,345 @@ class ReapDirtyForceTest(GcTestBase):
         self.assertTrue(wt.is_dir(), "became-live なのに消えた")
 
 
+class ScanDetachedReviewTest(GcTestBase):
+    """detached な review worktree（branch=null）の PR 解決（GitHub issue #224）.
+
+    review worktree は `git checkout --detach FETCH_HEAD` で作られブランチを持たない。
+    旧版はゲート 6（pr null かつ未マージ）で必ず keep に落ち、#223 の主目的（review 残骸の掃除）が
+    回らなかった。HEAD sha → PR（commits/<sha>/pulls）で状態を引き、閉じていれば reap する。
+    **gh が無い / PR が引けない detached は従来どおり keep**（消さない側を厚く）。
+    """
+
+    def _detached_review(self, name: str = "review-x") -> Path:
+        path = self.root / ".claude" / "worktrees" / name
+        res = self.git("worktree", "add", "-q", "--detach", str(path))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return path
+
+    def _gh_env(self, api_json: str) -> dict[str, str]:
+        """`gh api` には api_json を、`gh pr list` には空配列を返すスタブ."""
+        self.stub_bin("lsof", "exit 0\n")
+        return self.stub_bin(
+            "gh",
+            'case "$1" in api) printf \'%s\' \'' + api_json + '\' ;; *) printf "[]" ;; esac\n')
+
+    def test_detached_without_gh_is_kept(self):
+        """gh 不在なら detached は PR 不明 → no-pr-not-merged で keep（origin/main より先の HEAD）."""
+        self.set_origin_main()
+        wt = self._detached_review()
+        (wt / "f.txt").write_text("x\n")
+        self.git("add", "f.txt", cwd=wt)
+        self.git("commit", "-q", "-m", "ahead", cwd=wt)
+        self.stub_bin("lsof", "exit 0\n")
+        env = self.stub_bin("gh", "exit 1\n")  # gh が使えない（未認証等）を PATH を絞らず stub で再現
+        rows = self.scan_env(env, cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertIsNone(row["branch"])
+        self.assertEqual(row["kind"], "review")
+        self.assertEqual(row["verdict"], "keep", row)
+        self.assertIn("no-pr-not-merged", row["reasons"])
+
+    def test_detached_with_merged_pr_is_reaped(self):
+        """HEAD sha に紐づく PR が merged なら detached review worktree は reap."""
+        self.set_origin_main()
+        wt = self._detached_review()
+        (wt / "f.txt").write_text("x\n")
+        self.git("add", "f.txt", cwd=wt)
+        self.git("commit", "-q", "-m", "pr head", cwd=wt)  # origin/main に無い = 未マージ扱い
+        env = self._gh_env('[{"number":42,"state":"closed","merged_at":"2026-09-01T00:00:00Z"}]')
+        rows = self.scan_env(env, cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["pr"], {"number": 42, "state": "MERGED"})
+        self.assertEqual(row["verdict"], "reap", row)
+        self.assertIsNotNone(row["head"])
+
+    def test_detached_with_open_pr_is_kept(self):
+        """PR が open なら pr-open で keep（merged_at 無し・state open）."""
+        self.set_origin_main()
+        wt = self._detached_review()
+        env = self._gh_env('[{"number":43,"state":"open","merged_at":null}]')
+        rows = self.scan_env(env, cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["pr"], {"number": 43, "state": "OPEN"})
+        self.assertEqual(row["verdict"], "keep", row)
+        self.assertIn("pr-open", row["reasons"])
+
+    def test_detached_with_closed_unmerged_pr_is_reaped(self):
+        """PR が closed（未マージ）でも review 残骸は reap（PR 側に履歴が残る）."""
+        self.set_origin_main()
+        wt = self._detached_review()
+        env = self._gh_env('[{"number":44,"state":"closed","merged_at":null}]')
+        rows = self.scan_env(env, cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["pr"]["state"], "CLOSED")
+        self.assertEqual(row["verdict"], "reap", row)
+
+    def test_parent_review_is_not_dirty_because_of_nested_agent_dirs(self):
+        """親 review worktree はネスト agent dir（.claude/worktrees/）を untracked に数えない."""
+        self.set_origin_main()
+        parent = self._detached_review("review-p")
+        agent = parent / ".claude" / "worktrees" / "agent-a"
+        res = self.git("worktree", "add", "-q", "--detach", str(agent))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        env = self._gh_env('[{"number":45,"state":"closed","merged_at":"2026-09-01T00:00:00Z"}]')
+        rows = self.scan_env(env, cwd=self.root)
+        prow = self.row_for(rows, parent)
+        self.assertFalse(prow["dirty"], prow)
+        self.assertFalse(prow["untracked"], prow)
+        self.assertEqual(prow["verdict"], "reap", prow)
+        arow = self.row_for(rows, agent)
+        self.assertEqual(arow["kind"], "agent")
+        self.assertEqual(arow["nested_parent"], str(parent))
+
+    def test_parent_review_with_real_untracked_file_is_still_dirty(self):
+        """ネスト dir 以外の untracked（本物の作業）は従来どおり dirty keep."""
+        self.set_origin_main()
+        parent = self._detached_review("review-d")
+        (parent / ".claude" / "worktrees").mkdir(parents=True)
+        (parent / "scratch.txt").write_text("work\n")
+        env = self._gh_env('[{"number":46,"state":"closed","merged_at":"2026-09-01T00:00:00Z"}]')
+        rows = self.scan_env(env, cwd=self.root)
+        prow = self.row_for(rows, parent)
+        self.assertTrue(prow["dirty"], prow)
+        self.assertEqual(prow["verdict"], "keep", prow)
+
+
+class ScanIssueStatusTest(GcTestBase):
+    """`--issue-status` による Issue 状態の取り込み（GitHub issue #240）.
+
+    調査だけで完結し PR を作らない Issue の worktree は「PR 無し・未マージ」で keep に
+    落ち続ける。ブランチ名の Issue ID に閉じた状態（Done / Canceled）が付いていれば
+    ゲート 6 / 7 を外す。**状態が open / 不明なら従来どおり keep**。
+    """
+
+    def _lsof_empty_env(self) -> dict[str, str]:
+        return self.stub_bin("lsof", "exit 0\n")
+
+    def _ahead_worktree(self, rel: str, branch: str) -> Path:
+        wt = self.add_worktree(rel, branch=branch)
+        (wt / "f.txt").write_text("x\n")
+        self.git("add", "f.txt", cwd=wt)
+        self.git("commit", "-q", "-m", "research", cwd=wt)
+        return wt
+
+    def _status_file(self, mapping: dict) -> Path:
+        f = self.root / "tmp" / "issues.json"
+        f.write_text(json.dumps(mapping), encoding="utf-8")
+        return f
+
+    def test_issue_id_is_extracted_from_branch(self):
+        """ブランチ名の `PRE-1` を issue.id に載せる（状態ファイル無しなら state null）."""
+        self.set_origin_main()
+        wt = self._ahead_worktree("wt-pre1", "feat/PRE-1-research")
+        rows = self.scan_env(self._lsof_empty_env(), cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["issue"], {"id": "PRE-1", "state": None, "closed": False})
+        self.assertEqual(row["verdict"], "keep", row)
+        self.assertIn("no-pr-ahead", row["reasons"])
+
+    def test_closed_issue_lifts_no_pr_gates(self):
+        """Issue が completed なら no-pr-* を外して reap（reasons に issue-closed を添える）."""
+        self.set_origin_main()
+        wt = self._ahead_worktree("wt-pre2", "feat/PRE-2-research")
+        f = self._status_file({"PRE-2": {"state": "Done", "type": "completed"}})
+        rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["verdict"], "reap", row)
+        self.assertIn("issue-closed:PRE-2:Done", row["reasons"])
+        self.assertNotIn("no-pr-ahead", row["reasons"])
+        self.assertTrue(row["issue"]["closed"])
+        self.assertTrue(wt.is_dir())  # scan は副作用なし
+
+    def test_open_issue_keeps_and_annotates(self):
+        """Issue が started なら keep のまま、reasons に issue-open を添える."""
+        self.set_origin_main()
+        wt = self._ahead_worktree("wt-pre3", "feat/PRE-3-research")
+        f = self._status_file({"PRE-3": {"state": "In Progress", "type": "started"}})
+        rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["verdict"], "keep", row)
+        self.assertIn("no-pr-ahead", row["reasons"])
+        self.assertIn("issue-open:PRE-3:In Progress", row["reasons"])
+
+    def test_type_wins_over_state_name(self):
+        """type があれば名前より優先（名前が Done でも type が started なら open 扱い）."""
+        self.set_origin_main()
+        wt = self._ahead_worktree("wt-pre4", "feat/PRE-4")
+        f = self._status_file({"PRE-4": {"state": "Done", "type": "started"}})
+        rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["verdict"], "keep", row)
+
+    def test_string_value_is_matched_by_name(self):
+        """値が文字列なら名前で判定（"Canceled" は閉じている）."""
+        self.set_origin_main()
+        wt = self._ahead_worktree("wt-pre5", "feat/PRE-5")
+        f = self._status_file({"PRE-5": "Canceled"})
+        rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["verdict"], "reap", row)
+
+    def test_closed_issue_does_not_override_other_gates(self):
+        """Issue が閉じていても dirty なら keep（外すのはゲート 6 / 7 だけ）."""
+        self.set_origin_main()
+        wt = self._ahead_worktree("wt-pre6", "feat/PRE-6")
+        (wt / "scratch.txt").write_text("uncommitted\n")
+        f = self._status_file({"PRE-6": {"state": "Done", "type": "completed"}})
+        rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["verdict"], "keep", row)
+        self.assertIn("dirty", row["reasons"])
+
+    def test_unreadable_status_file_is_fatal(self):
+        """状態ファイルが読めない / オブジェクトでないなら exit 2（黙って無視しない）."""
+        f = self._status_file({})
+        f.write_text("[1,2]", encoding="utf-8")
+        res = subprocess.run(["bash", str(SCAN), "--no-lsof", "--issue-status", str(f)],
+                             cwd=str(self.root), capture_output=True, text=True,
+                             env=self._env(), timeout=60)
+        self.assertEqual(res.returncode, 2, res.stderr)
+        res = subprocess.run(["bash", str(SCAN), "--no-lsof", "--issue-status",
+                              str(self.root / "tmp" / "missing.json")],
+                             cwd=str(self.root), capture_output=True, text=True,
+                             env=self._env(), timeout=60)
+        self.assertEqual(res.returncode, 2, res.stderr)
+
+
+class ScanAllTest(GcTestBase):
+    """`--all [root]` の横断走査（GitHub issue #224）.
+
+    find は main repo の発見にだけ使い、worktree の列挙は各 repo の git に委ねる
+    （design doc open 5）。submodule の gitlink は common-dir が `.git/modules/<name>` なので
+    main repo として採用されない。
+    """
+
+    def _init_repo(self, rel: str) -> Path:
+        path = self.root / rel
+        path.mkdir(parents=True)
+        env = self._env()
+        subprocess.run(["git", "init", "-q"], cwd=path, check=True, env=env)
+        for key, value in (("user.email", "t@example.com"), ("user.name", "t")):
+            subprocess.run(["git", "config", key, value], cwd=path, check=True, env=env)
+        subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "init"],
+                       cwd=path, check=True, env=env)
+        return path
+
+    def test_all_scans_every_repo_under_root(self):
+        """root 配下の 2 リポの worktree が両方出て、各行の repo が自分のリポを指す."""
+        a = self._init_repo("proj/a")
+        b = self._init_repo("proj/b")
+        wa = a / "wt-a"
+        wb = b.parent / "b-wt"
+        self.assertEqual(self.git("worktree", "add", "-q", "-b", "fa", str(wa), cwd=a).returncode, 0)
+        self.assertEqual(self.git("worktree", "add", "-q", "-b", "fb", str(wb), cwd=b).returncode, 0)
+        rows = self.scan("--no-lsof", "--all", str(self.root / "proj"), cwd=self.root)
+        paths = {r["path"] for r in rows}
+        self.assertIn(str(wa), paths)
+        self.assertIn(str(wb), paths)
+        self.assertEqual(self.row_for(rows, wa)["repo"], str(a))
+        self.assertEqual(self.row_for(rows, wb)["repo"], str(b))
+        # 自分のリポ（self.root）は proj 配下ではないので出ない
+        self.assertNotIn(str(self.root), paths)
+
+    def test_all_does_not_treat_submodule_gitlink_as_repo(self):
+        """submodule の `.git` ファイルは main repo に採用しない（他人のリポを候補に混ぜない）."""
+        sup = self._init_repo("proj/super")
+        sub = self._init_repo("proj/sublib")
+        env = self._env()
+        env["GIT_ALLOW_PROTOCOL"] = "file"
+        res = subprocess.run(["git", "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+                              str(sub), "vendor/sublib"], cwd=sup, capture_output=True,
+                             text=True, env=env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        rows = self.scan("--no-lsof", "--all", str(self.root / "proj"), cwd=self.root)
+        repos = {r["repo"] for r in rows}
+        self.assertIn(str(sup), repos)
+        self.assertIn(str(sub), repos)
+        self.assertNotIn(str(sup / "vendor" / "sublib"), repos)
+        self.assertNotIn(str(sup / "vendor" / "sublib"), {r["path"] for r in rows})
+
+    def test_all_root_defaults_to_env(self):
+        """root 省略時は DEV_WORKFLOW_WORKTREE_GC_ROOT を使う."""
+        a = self._init_repo("proj2/a")
+        env = self._env(DEV_WORKFLOW_WORKTREE_GC_ROOT=str(self.root / "proj2"))
+        rows = self.scan_env(env, "--no-lsof", "--all", cwd=self.root)
+        self.assertEqual({r["repo"] for r in rows}, {str(a)})
+
+    def test_depth_limits_the_search(self):
+        """`--depth N` は find の深さ。浅すぎると見つからず、足りれば見つかる（値の受け取りも測る）."""
+        deep = self._init_repo("proj3/x/y/z/deep")
+        rows = self.scan("--no-lsof", "--all", str(self.root / "proj3"), "--depth", "2", cwd=self.root)
+        self.assertNotIn(str(deep), {r["repo"] for r in rows})
+        rows = self.scan("--no-lsof", "--all", str(self.root / "proj3"), "--depth", "5", cwd=self.root)
+        self.assertIn(str(deep), {r["repo"] for r in rows})
+
+    def test_depth_without_value_is_usage_error(self):
+        res = subprocess.run(["bash", str(SCAN), "--no-lsof", "--all", str(self.root), "--depth"],
+                             cwd=str(self.root), capture_output=True, text=True,
+                             env=self._env(), timeout=60)
+        self.assertEqual(res.returncode, 2, res.stderr)
+
+    def test_all_with_bad_root_is_fatal(self):
+        res = subprocess.run(["bash", str(SCAN), "--no-lsof", "--all", str(self.root / "nope")],
+                             cwd=str(self.root), capture_output=True, text=True,
+                             env=self._env(), timeout=60)
+        self.assertEqual(res.returncode, 2, res.stderr)
+
+
+class ReapCrossRepoTest(GcTestBase):
+    """reap が行の `repo` を見て他リポの worktree を扱う（--all の出力を受ける）."""
+
+    def _init_repo(self, rel: str) -> Path:
+        path = self.root / rel
+        path.mkdir(parents=True)
+        env = self._env()
+        subprocess.run(["git", "init", "-q"], cwd=path, check=True, env=env)
+        for key, value in (("user.email", "t@example.com"), ("user.name", "t")):
+            subprocess.run(["git", "config", key, value], cwd=path, check=True, env=env)
+        subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "init"],
+                       cwd=path, check=True, env=env)
+        return path
+
+    def test_removes_worktree_of_another_repo(self):
+        """cwd と別リポの行でも repo を見て実在確認・remove できる."""
+        other = self._init_repo("other")
+        wt = other.parent / "other-wt"
+        self.assertEqual(self.git("worktree", "add", "-q", "-b", "fo", str(wt), cwd=other).returncode, 0)
+        row = json.dumps({"repo": str(other), "path": str(wt), "kind": "other",
+                          "nested_parent": None, "db_guess": [], "verdict": "reap"})
+        res = self.reap(row + "\n", cwd=self.root)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("SKIP", res.stderr)
+        self.assertFalse(wt.is_dir(), "他リポの worktree が reap されなかった")
+        listed = self.git("worktree", "list", "--porcelain", cwd=other).stdout
+        self.assertNotIn(str(wt), listed, "prune が other リポで走っていない")
+
+    def test_prunable_row_is_pruned_only_on_real_run(self):
+        """prunable 行は実行時だけ prune され、dry-run では worktree list に残る."""
+        import shutil
+
+        wt = self.add_worktree("wt-prune", branch="feat-prune")
+        shutil.rmtree(wt)
+        row = json.dumps({"repo": str(self.root), "path": str(wt), "kind": "prunable",
+                          "nested_parent": None, "db_guess": [], "verdict": "reap"})
+        res = self.reap(row + "\n", "--dry-run")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn(str(wt), self.git("worktree", "list", "--porcelain").stdout,
+                      "dry-run なのに prune された")
+        res = self.reap(row + "\n")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn(str(wt), self.git("worktree", "list", "--porcelain").stdout,
+                         "prune が走っていない")
+
+    def test_row_without_repo_uses_cwd_repo(self):
+        """repo の無い行（旧版 scan）は cwd のリポで見る（後方互換）."""
+        wt = self.add_worktree("wt-legacy", branch="feat-legacy")
+        row = json.dumps({"path": str(wt), "kind": "other",
+                          "nested_parent": None, "db_guess": [], "verdict": "reap"})
+        res = self.reap(row + "\n")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertFalse(wt.is_dir())
+
+
 if __name__ == "__main__":
     unittest.main()

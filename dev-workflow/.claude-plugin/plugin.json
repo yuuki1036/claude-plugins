@@ -1,6 +1,6 @@
 {
   "name": "dev-workflow",
-  "version": "1.32.0",
+  "version": "1.33.0",
   "description": "Git 操作・PR 作成・UI 動作確認・バグ診断・worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、承認ゲート付き PR 作成、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断、worktree 単位の DB / port 分離を提供する。",
   "author": {
     "name": "yuki"
@@ -19,6 +19,13 @@
       "type": "string",
       "required": false,
       "default": "default"
+    },
+    "worktree_gc_root": {
+      "title": "worktree-gc の --all 走査 root",
+      "description": "worktree-gc を --all で起動したときに find する root。scan.sh は環境変数 DEV_WORKFLOW_WORKTREE_GC_ROOT → .claude/dev-workflow.json の worktree_gc_root → $HOME の順で読む（userConfig 到達経路が未確定なため browser_connect と同じ fallback 構成）",
+      "type": "string",
+      "required": false,
+      "default": ""
     }
   },
   "_requirements": [
