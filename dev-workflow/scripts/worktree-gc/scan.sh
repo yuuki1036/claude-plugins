@@ -200,7 +200,7 @@ emit() {
   local merged=false
   if [ -n "$branch" ]; then
     printf '%s\n' "$MERGED_SET" | grep -qxF "$branch" && merged=true
-  elif [ -n "$MAIN_REF" ] && [ -n "$head" ]; then
+  elif [ -n "$MAIN_REF" ] && [ -n "$head" ]; then  # mutation-ok: 片方が空なら merge-base が非ゼロで落ち merged=false のまま。&& / || で net 不変
     git -C "$REPO" merge-base --is-ancestor "$head" "$MAIN_REF" 2>/dev/null && merged=true
   fi
 

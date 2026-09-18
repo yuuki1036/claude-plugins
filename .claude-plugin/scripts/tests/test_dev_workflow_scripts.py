@@ -480,6 +480,26 @@ class ScanPrStateTest(GcTestBase):
         self.assertNotIn("pr-open", row["reasons"])
 
 
+class ScanPrDictTest(GcTestBase):
+    """PR 辞書（リポごとに 1 回の `gh pr list`）が効いていること（`--head` を worktree ごとに叩かない）."""
+
+    def test_branch_found_in_dict_skips_per_branch_call(self):
+        self.set_origin_main()
+        wt = self.add_worktree("wt-dict", branch="feat-dict")
+        log = self.root / "tmp" / "gh.log"
+        self.stub_bin("lsof", "exit 0\n")
+        env = self.stub_bin("gh", 'echo "$@" >> "%s"\n'
+                            'printf \'%%s\' \'[{"number":9,"state":"MERGED","headRefName":"feat-dict"}]\'\n' % log)
+        rows = self.scan_env(env, cwd=self.root)
+        row = self.row_for(rows, wt)
+        self.assertEqual(row["pr"], {"number": 9, "state": "MERGED"})
+        calls = log.read_text().splitlines()
+        self.assertTrue(any("--limit 200" in c for c in calls), calls)
+        # primary の `main` は辞書に無いので --head が走る。辞書にある feat-dict だけを見る
+        self.assertFalse(any("--head feat-dict" in c for c in calls),
+                         "辞書にあるのに --head を叩いた: %s" % calls)
+
+
 class ReapDirtyForceTest(GcTestBase):
     """reap の dirty 再確認（clean は WARN を出さない / dirty は --force で消す）."""
 
@@ -567,6 +587,9 @@ class ScanDetachedReviewTest(GcTestBase):
         self.assertEqual(row["kind"], "review")
         self.assertEqual(row["verdict"], "keep", row)
         self.assertIn("no-pr-not-merged", row["reasons"])
+        # detached の ahead は HEAD sha で測る（branch が無いと 0 に潰れる経路を塞ぐ）
+        self.assertEqual(row["ahead_of_main"], 1, row)
+        self.assertIn("no-pr-ahead", row["reasons"])
 
     def test_detached_with_merged_pr_is_reaped(self):
         """HEAD sha に紐づく PR が merged なら detached review worktree は reap."""
@@ -665,6 +688,8 @@ class ScanIssueStatusTest(GcTestBase):
         self.assertEqual(row["issue"], {"id": "PRE-1", "state": None, "closed": False})
         self.assertEqual(row["verdict"], "keep", row)
         self.assertIn("no-pr-ahead", row["reasons"])
+        # 状態が無いのに `issue-open:PRE-1:` のような空注記を付けない
+        self.assertFalse([r for r in row["reasons"] if r.startswith("issue-")], row["reasons"])
 
     def test_closed_issue_lifts_no_pr_gates(self):
         """Issue が completed なら no-pr-* を外して reap（reasons に issue-closed を添える）."""
@@ -782,10 +807,31 @@ class ScanAllTest(GcTestBase):
         self.assertEqual(res.returncode, 0, res.stderr)
         rows = self.scan("--no-lsof", "--all", str(self.root / "proj"), cwd=self.root)
         repos = {r["repo"] for r in rows}
-        self.assertIn(str(sup), repos)
-        self.assertIn(str(sub), repos)
+        # `.git/modules/<name>` の親（`<super>/.git/modules`）を repo に採用しないこと
+        self.assertEqual(repos, {str(sup), str(sub)}, repos)
         self.assertNotIn(str(sup / "vendor" / "sublib"), repos)
         self.assertNotIn(str(sup / "vendor" / "sublib"), {r["path"] for r in rows})
+
+    def test_all_explicit_root_wins_over_config_file(self):
+        """root を引数で渡したら `.claude/dev-workflow.json` の値では上書きしない."""
+        a = self._init_repo("projA/a")
+        self._init_repo("projB/b")
+        (self.root / ".claude").mkdir()
+        (self.root / ".claude" / "dev-workflow.json").write_text(
+            json.dumps({"worktree_gc_root": str(self.root / "projB")}), encoding="utf-8")
+        rows = self.scan("--no-lsof", "--all", str(self.root / "projA"), cwd=self.root)
+        self.assertEqual({r["repo"] for r in rows}, {str(a)})
+
+    def test_all_root_falls_back_to_config_file(self):
+        """root 省略・環境変数なしなら `.claude/dev-workflow.json` の worktree_gc_root を使う."""
+        b = self._init_repo("projB/b")
+        (self.root / ".claude").mkdir()
+        (self.root / ".claude" / "dev-workflow.json").write_text(
+            json.dumps({"worktree_gc_root": str(self.root / "projB")}), encoding="utf-8")
+        env = self._env()
+        env.pop("DEV_WORKFLOW_WORKTREE_GC_ROOT", None)
+        rows = self.scan_env(env, "--no-lsof", "--all", cwd=self.root)
+        self.assertEqual({r["repo"] for r in rows}, {str(b)})
 
     def test_all_root_defaults_to_env(self):
         """root 省略時は DEV_WORKFLOW_WORKTREE_GC_ROOT を使う."""

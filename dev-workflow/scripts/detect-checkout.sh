@@ -59,6 +59,14 @@ else
   CHECKOUT="worktree"; WORKTREE_STATE="worktree-unconfigured"
 fi
 
+# package.json の dev script から port を読む。ファイル / jq が無い・書式が合わないときは空
+package_json_port() {
+  [ -f "$TOPLEVEL/package.json" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  jq -r '.scripts.dev // empty' "$TOPLEVEL/package.json" 2>/dev/null \
+    | grep -oE -- '(--port[= ]|-p |PORT=)[0-9]+' | grep -oE '[0-9]+$' | head -1
+}
+
 # port の解決。worktree-setup が割り当てた FRONTEND_PORT を package.json より優先する
 # （package.json の値は main と共有なので、worktree ではそのまま使うと main と衝突する）
 DEV_PORT=""; PORT_SOURCE=""
@@ -67,9 +75,7 @@ if [ -n "$PORT_ARG" ]; then
 elif [ "$WORKTREE_STATE" = "worktree-ready" ] \
      && p=$(sed -n 's/^FRONTEND_PORT=\([0-9][0-9]*\).*/\1/p' "$MARKER" | head -1) && [ -n "$p" ]; then
   DEV_PORT="$p"; PORT_SOURCE="worktree-env"
-elif [ -f "$TOPLEVEL/package.json" ] && command -v jq >/dev/null 2>&1 \
-     && p=$(jq -r '.scripts.dev // empty' "$TOPLEVEL/package.json" 2>/dev/null \
-            | grep -oE -- '(--port[= ]|-p |PORT=)[0-9]+' | grep -oE '[0-9]+$' | head -1) && [ -n "$p" ]; then
+elif p=$(package_json_port) && [ -n "$p" ]; then  # mutation-ok: package_json_port は port が取れない全経路で空を返し [ -n ] が偽。&& / || で net 不変
   DEV_PORT="$p"; PORT_SOURCE="package.json"
 else
   DEV_PORT="3000"; PORT_SOURCE="default"

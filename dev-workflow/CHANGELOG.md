@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.33.1] - 2026-09-18
+
+### Fixed
+
+- mutation-nightly（GitHub issue #241）で生存した変異 7 件を潰した。worktree-gc scan の
+  detached ahead / Issue 注記の空値 / PR 辞書の利用 / `--all` root の優先順位 / submodule 除外の 5 件は
+  テストを追加し、等価変異 2 件（detached の merged 判定・detect-checkout の package.json 経路）は
+  理由つき `mutation-ok` で外した（後者は 1 行に置けるよう port 読み取りを関数に切り出した。挙動は同じ）
+
 ## [1.33.0] - 2026-09-17
 
 ### Added
