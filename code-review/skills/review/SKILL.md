@@ -22,7 +22,7 @@ allowed-tools:
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @1c904d2e -->
-<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @4eac2029 -->
+<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @edfe50cc -->
 
 ## 前提
 
@@ -440,6 +440,10 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
 ### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
 - reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
 - explorer-<focus>: timeout → 依存していた reviewer-<focus> には探索結果なしで実行
+
+### 🔎 閾値未満の候補
+{**報告が 4 バケツすべて 0 件 かつ `below_threshold_counts` の合計が 1 件以上の回だけ出す**（それ以外は見出しごと省略）。件数だけ返った閾値未満は 🔁 付録に載らないので、この 1 行が無いと「何も見つからなかった回」と区別がつかない → scoring-guide.md `### 閾値未満の件数通知`}
+- 報告閾値 {実効 `review_severity_threshold`} 未満の候補が N 件あります（CRITICAL a / MAJOR b / MINOR c。本文は reviewer が書いていないため省略）。見る場合は `review_severity_threshold` を下げて再実行してください
 
 ### 🔁 報告閾値を割った指摘（参考・人間が覆せる）
 {reviewer が列挙した指摘が報告マトリクスを通過しなかった場合に載る。**経路（反証 verdict / 加減算）を問わず記録し、severity 別の扱いは正本に従う** → scoring-guide.md `## 報告閾値を割った指摘の記録`。0 件なら省略}
