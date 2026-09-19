@@ -13,7 +13,7 @@ allowed-tools:
 
 対象: $ARGUMENTS
 
-校正手順とルールは `writing-polish` skill に従う（`skills/writing-polish/SKILL.md`、校正ルールの正本は `references/tone-guide.md`、提示・採否 UX の正本は `references/presentation-guide.md`）。
+校正手順は `${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/SKILL.md` を `Read` して従う。校正ルールの正本は `${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/tone-guide.md`、提示・採否 UX の正本は同ディレクトリの `presentation-guide.md`。**どちらも Glob で探さず、この絶対パスを `Read` する**（プラグインは cwd の外にあり、Glob は権限で拒否される）。
 
 - 引数がテキストならそれを、ファイルパスなら読み込んだ内容を、省略なら直近の自分の生成テキストを対象にする。
 - `--embed` 指定時は採否確認を出さず推敲結果のみ返す（他プラグインからの呼び出し用）。

@@ -16,6 +16,8 @@ allowed-tools:
 
 文章を語句レベルで推敲・添削する。RFC / Issue / PR 本文 / コミットメッセージ / レビューコメントを対象に、冗長・曖昧・トーンのぶれを直す。校正ルール（何を直すか）の正本は `references/tone-guide.md`、提示・採否 UX（どう見せて採否させるか）の正本は `references/presentation-guide.md`。
 
+**references/ の読み方**: 本文中の `references/<name>.md` はすべて `${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/<name>.md` を指す。**Glob で探さず、この絶対パスを `Read` する**（プラグインは cwd の外にあり、Glob は権限で拒否される。実測: eval サンドボックスで tone-guide を読めないまま推敲していた）。
+
 ## 中核原則（最優先・絶対）
 
 文章生成ではなく**編集**として扱う。以下は tone-guide のどのカテゴリよりも優先する。出典は tone-guide「アンチパターン」節。
@@ -56,7 +58,7 @@ allowed-tools:
 
 ## 2. tone-guide に照らして候補を抽出
 
-`references/tone-guide.md` を読み、対象テキストに該当する指摘を**カテゴリ単位**で集める。
+`${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/tone-guide.md` を `Read` し、対象テキストに該当する指摘を**カテゴリ単位**で集める。
 
 - **コードコメント種別のとき**は `references/code-comment-guide.md` を主正本にする。観点 A（what 削除）・B（残す情報のフィルタ）・subtype 別保全境界で候補を集め、冗長（カテゴリ 1）・AI っぽさ（カテゴリ 4）だけ tone-guide を併用する。削除提案は常に `[任意][要確認]` に倒し、単体自明性テストを越えて「コードとの矛盾」までは判定しない（code-comment-guide「提示・採否での扱い」「やってはいけない」）。以降のカテゴリ列挙は散文種別に適用する。
 - カテゴリ 1 冗長・密度 / 2 曖昧さ / 3 トーン・姿勢 / 4 AI っぽさ / 5 用語・正確性 / 6 英語（対象が英語のとき）/ 7 平易性・過剰抽象

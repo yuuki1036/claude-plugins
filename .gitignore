@@ -6,3 +6,5 @@
 __pycache__/
 # mutation-test.py が実行中に原本を退避する場所（中断時の復元用。作業ファイルなので追跡しない）
 .mutation-test-journal.json
+# claude plugin eval の実行ログ（再実行で作り直せる。ケース定義だけを追跡する）
+*/evals/results/

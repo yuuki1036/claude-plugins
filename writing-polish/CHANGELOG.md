@@ -5,6 +5,17 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.10.1] - 2026-09-19
+
+### Fixed
+
+- **references/ を Glob で探して読めないまま推敲していた**。SKILL.md / command 本文の
+  `references/tone-guide.md` が相対表記だったため、model が cwd 配下を Glob し権限で拒否され、
+  校正ルールの正本を読まずに SKILL.md の要点だけで推敲していた（実測: `claude plugin eval` の
+  サンドボックスで「tone-guide.md は cwd 外にあり Glob が拒否されたため読めませんでした」と
+  自己申告して続行）。参照点を `${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/` の
+  絶対パス + `Read` 指示に改め、冒頭に「Glob で探さない」を明記した
+
 ## [0.10.0] - 2026-09-17
 
 ### Added
