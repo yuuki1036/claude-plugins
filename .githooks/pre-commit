@@ -93,7 +93,8 @@ fi
 # commit が素通りする。同じリポジトリの他の検査（INDEX.md 欠落を error にする等）と流儀を揃える
 for gate in \
   .claude-plugin/scripts/validate-ssot.sh \
-  .claude-plugin/scripts/validate_plugin_quality.py
+  .claude-plugin/scripts/validate_plugin_quality.py \
+  .claude-plugin/scripts/plugin-eval.sh
 do
   if [ ! -f "$gate" ]; then
     echo "❌ 検査スクリプトが見つかりません: $gate"
@@ -105,6 +106,60 @@ if [ ! -d .claude-plugin/scripts/tests ]; then
   echo "❌ 回帰テストのディレクトリが見つかりません: .claude-plugin/scripts/tests"
   echo "  検査を実行できないため commit を止めます（欠落を「違反なし」として通さない）"
   exit 1
+fi
+
+# plugin eval の鮮度チェック: eval ケース（`<plugin>/evals/`）を持つプラグインで、eval の
+# 入力（skills / commands / agents / references / evals）に staged 変更があるなら、
+# **その内容に対して `claude plugin eval` を回して閾値を満たした記録**が要る。
+#
+# 判定は `plugin-eval.sh` が eval 実行時に残す `.last-eval` の指紋（入力ファイル内容の
+# cksum）と、いま同じ関数で取り直した指紋の一致。mtime や results/ の存在は見ない
+# （results/ は gitignore で、別マシンには無い。指紋なら「この内容を測った」と言える）。
+# 実行は paid（子 claude が自分の認証で走る）なので **ここでは回さない**。止めて、
+# 回すコマンドを示すだけ。`PLUGIN_EVAL_SKIP=1` で 1 回だけ迂回できる
+# （別マシンで小さな typo を直すときなど。CI には eval が無いので迂回しても落ちない）
+if [ "${PLUGIN_EVAL_SKIP:-}" != "1" ]; then
+  eval_errors=()
+  for plugin_json in */.claude-plugin/plugin.json; do
+    [ -f "$plugin_json" ] || continue
+    plugin_dir=$(echo "$plugin_json" | cut -d'/' -f1)
+    [ -d "${plugin_dir}/evals" ] || continue
+    # ケース定義が 1 つも無い evals/（results/ だけ等）は対象外
+    if ! find "${plugin_dir}/evals" -type f \( -name prompt.md -o -name case.yaml \) \
+         -not -path "*/evals/results/*" 2>/dev/null | grep -q .; then
+      continue
+    fi
+    eval_inputs=$(echo "$staged_files" \
+      | grep -E "^${plugin_dir}/(skills|commands|agents|references|evals)/" || true)
+    [ -n "$eval_inputs" ] || continue
+
+    marker="${plugin_dir}/evals/results/.last-eval"
+    current_fp=$(bash .claude-plugin/scripts/plugin-eval.sh --fingerprint "$plugin_dir")
+    recorded_fp=""; recorded_rc=""
+    if [ -f "$marker" ]; then
+      recorded_fp=$(sed -n 's/^fingerprint=//p' "$marker")
+      recorded_rc=$(sed -n 's/^exit=//p' "$marker")
+    fi
+    if [ "$recorded_fp" != "$current_fp" ]; then
+      eval_errors+=("${plugin_dir}: この内容で eval を回していない（記録 ${recorded_fp:-なし} / 現在 ${current_fp}）")
+    elif [ "$recorded_rc" != "0" ]; then
+      eval_errors+=("${plugin_dir}: 直近の eval が閾値未満で終わっている（exit ${recorded_rc}）")
+    fi
+  done
+  if [ ${#eval_errors[@]} -gt 0 ]; then
+    echo "plugin eval required:"
+    echo ""
+    for e in "${eval_errors[@]}"; do
+      echo "  ${e}"
+    done
+    echo ""
+    echo "  スキル本文 / command / references / eval ケースを変えたら、その内容で eval を回してから commit する:"
+    for e in "${eval_errors[@]}"; do
+      echo "    bash .claude-plugin/scripts/plugin-eval.sh ${e%%:*}"
+    done
+    echo "  結果は <plugin>/evals/results/<timestamp>/report.html（gitignore）。迂回は PLUGIN_EVAL_SKIP=1 git commit ..."
+    exit 1
+  fi
 fi
 
 # SSoT 同期チェック: plugin.json ↔ marketplace.json / _requirements ↔ check-deps.sh

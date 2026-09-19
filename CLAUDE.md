@@ -21,6 +21,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  # run-tests.py（回帰テストの起動口。新セッションで走らせ、
                                  #   終了後に残ったプロセスを検出・回収する。pre-commit / CI /
                                  #   machine-layer はここを呼ぶ）
+                                 # plugin-eval.sh（`claude plugin eval` の起動口。入力の指紋を
+                                 #   `<plugin>/evals/results/.last-eval` に残し、pre-commit が突合する）
 .claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。4 系統:
                                  #  ① 検証スクリプト自身（test_validate_plugin_quality.py / test_mutation_test.py）
                                  #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
@@ -33,12 +35,12 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #     test_auto_quality_check.py / test_pre_commit.py
                                  #     本物を使い捨てリポジトリに向けて走らせ生成物まで見る:
                                  #     test_bump_version.py / test_validate_ssot.py /
-                                 #     test_run_tests.py（#139 / #140）
+                                 #     test_run_tests.py（#139 / #140）/ test_plugin_eval.py（claude は stub）
                                  #  git を叩くテストは git_env.py（GIT_HOOK_ENV スクラブの正本）を通す
                                  #  ④ hook スクリプト（hook_harness.py + test_<plugin>_hooks.py。
                                  #     stdin に JSON を流し「発火するか / 黙るか」を直接見る）
                                  # python3 .claude-plugin/scripts/run-tests.py
-.githooks/pre-commit             # バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・回帰テスト
+.githooks/pre-commit             # バージョンバンプ・CHANGELOG・plugin eval の鮮度・SSoT 同期・プラグイン品質 (errors)・回帰テスト
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
                                  #   変異テストは `--max 5` のスモークだけ（深い検証は nightly）
 .github/workflows/mutation-nightly.yml # 変異テストの深い方（03:00 JST / 直近 24h の変更行を
@@ -74,6 +76,9 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
   rules/                         # SessionStart 等で注入されるルール（一部プラグインのみ）
     project-rules.md             # プロジェクト全体の作業ルール（SessionStart hook で注入）
                                  # 別名もある: self-report-rule.md / advisor-rule.md
+  evals/                         # `claude plugin eval` のケース（`<case>/prompt.md` + `graders/*.md`。
+                                 # 一部プラグインのみ）。`results/` は実行ログで gitignore。
+                                 # repo 直下の evals/（スキル選択の回帰）とは別物
   CHANGELOG.md                   # 変更履歴（Keep a Changelog 形式）
   README.md
 ```
@@ -272,6 +277,7 @@ event_bus_clear
 - **${CLAUDE_EFFORT} skill 適応分岐 (CC 2.1.120+)**: SKILL.md / コマンド本文に `${CLAUDE_EFFORT}` を書くと実行時 effort (low/medium/high/xhigh/max) が展開される。深掘り skill では `low/medium → 速度優先、xhigh/max → 多重 agent` のような条件分岐を入れる。frontmatter の `effort:` は宣言（既定値）、本文の `${CLAUDE_EFFORT}` は実行時値
 - **Agent tool の background 既定 (CC 2.1.198+)**: fanout して結果を待つスキル（explorer/reviewer/verifier 等）では **①各 Agent call に `run_in_background: false` を明示**（省略＝background 起動で結果を取りこぼす）し、**②全 Agent call を同一メッセージ内で一括発行**する（1 体ずつ別メッセージだと実時間が体数分の合計になる）。**①は取りこぼし防止・②は並列性で、直交する独立の要件**（①だけでは並列にならない）。根拠と実測は `orchestration-guide.md ## 0`（正本・issue #95）。取り漏れは `validate_plugin_quality.py` の agent-sync チェックが非ブロッキング warning で検知する
 - **command 名と skill 名が同名なら、スキル選択に載るのは `commands/*.md` の description**（`SKILL.md` 側は載らない / GitHub issue #206）。**description を直すときは commands と SKILL.md を必ず対で直す** — `SKILL.md` だけ直しても選択挙動は 1 ミリも変わらない。確認は router 本人に聞くのが早い: `claude -p '<plugin>:<skill> について、あなたに見えている description を一字一句そのまま引用して' --permission-mode plan`。該当は **9 プラグイン 26 スキル**（issue-workflow は 13/13 全部）で、`トリガー:` 必須規約（error 強制）はそこで**字面は通るが router には届かない**。実例: #205 は「description の leading words で負けている」と誤診したが、実際は逐語トリガーがそもそも視界に無く、効いた修正は `commands/*.md` の 1 行だけだった。**本文も同じ**（#219）: 同名ペアは `Skill plugin:name` で呼んでも**注入されるのは command 本文**で SKILL.md には到達しない。本文が「X スキルを使って」だけだと model は記憶で手順を再現するか cache を `ls | head -1` で掴む（辞書順で旧版 2.105.1 を掴み publish まで落ちた実測）。同名 command の本文には `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md` を Read する 1 行を置く（`validate_plugin_quality.py` の `skill-hop-cmd` が error で強制）
+- **`evals/` は 2 種類ある**: repo 直下 `evals/` は `runner.py` のスキル選択回帰（cases/*.yaml）、`<plugin>/evals/` は `claude plugin eval` の出力品質回帰（`<case>/prompt.md`）。どちらもローカル実行のみ・paid・自然言語プロンプト必須は同じだが、**起動口と pre-commit の扱いが違う**（後者だけ鮮度ゲートがある。「品質チェック」節）。`<plugin>/evals/results/` は書き込み先が eval 自身なので指紋の入力から外してある — ここに手で何か置いても pre-commit は反応しない
 - **eval を実行・修正する前に `evals/README.md` の Gotchas を読む**: スラッシュコマンドは headless で必ず落ちる（自然言語プロンプトで測る）/ fail は「プラグイン選択」と「skill id の綴り」を分けて読む（id 捏造は harness 側の性質）/ 判定は k=1 でなく pass^k=3 で行う — 詳細と実例は README 側に集約
 
 - **版ラベルは `vNEXT` と書く**（プラグイン配下の md / sh / py）。`bump-version.sh` が実版へ置換し、`validate_plugin_quality.py` が「bump 済みなのに残っている」を error にする。**具体的な版番号を手書きしない** — 書く時点では正しい値が確定しておらず、実測で 3 回再発した。**行内コード・フェンス内は置換も検出もされない**ので、規約の説明はそこに入れ、`references/prompts/*.md` のようにフェンスで丸ごと囲われた doc では版ラベルを使わずissue 番号で参照する。repo 直下の共通スクリプト・doc はプラグイン版に属さないので版ラベルを持たせない。経緯: `code-review/references/design-notes/pending-optimizations.md ## 9`
@@ -299,6 +305,18 @@ event_bus_clear
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
 
 スキルの description / トリガーフレーズを変更した場合は `evals/runner.py` で回帰テストを実行する（`claude-meta:eval-runner` スキル経由も可）。pass^k=3 基準でスキル選択の安定性を検証できる。**evals だけはローカル実行のみ**（`.github/workflows/validate.yml` は SSoT・品質・回帰テスト・バージョンバンプを検証するが evals は回さない。通常セッション枠を消費するため）。
+
+**出力品質の回帰（`claude plugin eval`）**: 上の runner が「正しいスキルが選ばれるか」を測るのに対し、こちらは「スキルが効いて回答が良くなったか」を**プラグインあり / なしの 2 アーム**で測る（Δ = with − without。judge は LLM 3 票の多数決）。ケースは `<plugin>/evals/<case>/prompt.md` + `graders/*.md`（`cd <plugin> && claude plugin eval init --bare <case>` で雛形。プロンプトは**自然言語で書く** — スラッシュコマンドは headless で落ちる）。実行は必ず起動口を通す:
+
+```bash
+bash .claude-plugin/scripts/plugin-eval.sh <plugin>            # 既定: --no-publish --trust-plugin、runs は tool 既定の 3
+bash .claude-plugin/scripts/plugin-eval.sh <plugin> --runs 1   # 追加引数はそのまま渡る
+```
+
+- **pre-commit が鮮度を強制する**: ケースを持つプラグインで `skills/ commands/ agents/ references/ evals/` に staged 変更があると、起動口が残した `.last-eval` の指紋（入力ファイル内容の cksum）と現在の指紋が一致し、かつ exit 0 でなければ commit を止める。**pre-commit 自身は eval を回さない**（paid。1 ケース 2 アーム × 3 runs で実測 $1 前後 / 2〜3 分）。迂回は `PLUGIN_EVAL_SKIP=1 git commit ...`
+- **結果はスコアより evidence を読む**。with が 1.00 に張り付くのは「壊れていない」の意味しかなく、改善点はケースが落ちたときの judge 向け本文にしか出ない。grader は **1 基準 1 ファイル**に分ける（どの基準で落ちたかが見えないと直せない）。スキル固有の作法（採否フロー等）を基準に入れると baseline が構造的に負けて Δ が質の差を隠すので、質を測りたいケースからは外す
+- **定期実行しない**。回帰テストなので走らせる意味があるのは入力を変えたときだけで、それは pre-commit が捕まえる。CI にも載せない（子 claude が自分の認証で走る）。`results/` は gitignore なので**別マシンでは記録が無い** — そのマシンで初めて入力を変えたときに 1 回回す（typo 修正なら迂回でよい）
+- 実測の効用: 初回のケース 1 本で「サンドボックスでは `references/` を Glob で探せず、正本を読まずに推敲していた」を検出した（writing-polish 0.10.1）。スコアではなく evidence 冒頭の自己申告に出ていた
 
 ## ブランチ運用
 

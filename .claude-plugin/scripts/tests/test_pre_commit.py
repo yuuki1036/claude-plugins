@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ from git_env import scrub
 
 ROOT = Path(__file__).resolve().parents[3]
 HOOK = ROOT / ".githooks" / "pre-commit"
+PLUGIN_EVAL = ROOT / ".claude-plugin" / "scripts" / "plugin-eval.sh"
 
 
 class PreCommitTest(unittest.TestCase):
@@ -38,6 +40,11 @@ class PreCommitTest(unittest.TestCase):
         self.set_ssot(0)
         self.set_quality(0)
         self.set_tests(0)
+        # plugin eval の鮮度ゲートは指紋の算法を plugin-eval.sh から借りる。stub にすると
+        # 「指紋が一致するか」の判断そのものが消えるので**実物**を置く（eval 自体は
+        # pre-commit から呼ばれないので claude CLI は要らない）
+        shutil.copy(PLUGIN_EVAL, self.scripts / "plugin-eval.sh")
+        (self.scripts / "plugin-eval.sh").chmod(0o755)
 
     # ---- fixture ------------------------------------------------------------
     def git(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -90,9 +97,27 @@ class PreCommitTest(unittest.TestCase):
         if changelog:
             self.stage("demo/CHANGELOG.md", "# Changelog\n\n## 1.0.1\n")
 
-    def run_hook(self) -> subprocess.CompletedProcess[str]:
+    def run_hook(self, **extra_env: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["bash", str(HOOK)], cwd=str(self.root), capture_output=True,
-                              text=True, env=self.env(), timeout=60)
+                              text=True, env=self.env() | extra_env, timeout=60)
+
+    # ---- plugin eval ゲートの fixture ----------------------------------------
+    def stage_eval_plugin_change(self, rel: str = "demo/skills/s/SKILL.md") -> None:
+        """eval ケースを持つプラグインの、eval 入力に当たるファイルを bump 込みで stage する."""
+        self.write("demo/evals/c/prompt.md", "do it\n")
+        self.write("demo/evals/c/graders/g.md", "good\n")
+        self.stage_plugin_change()
+        if rel != "demo/skills/s/SKILL.md":
+            self.stage(rel, "変更\n")
+
+    def fingerprint(self, plugin: str = "demo") -> str:
+        res = subprocess.run(["bash", str(self.scripts / "plugin-eval.sh"), "--fingerprint", plugin],
+                             cwd=str(self.root), capture_output=True, text=True, check=True)
+        return res.stdout.strip()
+
+    def record_eval(self, fingerprint: str, code: int = 0) -> None:
+        self.write("demo/evals/results/.last-eval",
+                   "fingerprint=%s\nexit=%d\nat=2026-01-01T00:00:00Z\n" % (fingerprint, code))
 
     # ---- 通す側 -------------------------------------------------------------
     def test_nothing_staged_is_a_no_op(self):
@@ -180,6 +205,71 @@ class PreCommitTest(unittest.TestCase):
         res = self.run_hook()
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("[run-tests]", res.stdout)
+
+    # ---- plugin eval の鮮度 ---------------------------------------------------
+    def test_an_eval_input_change_without_a_matching_eval_blocks(self):
+        """スキル本文を変えたのに、その内容で `claude plugin eval` を回していない."""
+        self.stage_eval_plugin_change()
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("plugin eval required", res.stdout)
+        self.assertIn("plugin-eval.sh demo", res.stdout, "回すコマンドを示す")
+        self.assertEqual(self.test_runs, 0, "paid な検査の前で止める")
+
+    def test_a_stale_eval_record_blocks(self):
+        """一度回した後に SKILL.md を直した — 記録の指紋は古い内容のもの."""
+        self.stage_eval_plugin_change()
+        self.record_eval("0000000000")
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("回していない", res.stdout)
+
+    def test_a_matching_passing_eval_passes(self):
+        self.stage_eval_plugin_change()
+        self.record_eval(self.fingerprint())
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_a_matching_but_failing_eval_blocks(self):
+        """回してはいるが閾値未満（exit 1）のまま — 「回した」だけでは通さない."""
+        self.stage_eval_plugin_change()
+        self.record_eval(self.fingerprint(), code=1)
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("閾値未満", res.stdout)
+
+    def test_the_eval_gate_can_be_bypassed_explicitly(self):
+        self.stage_eval_plugin_change()
+        res = self.run_hook(PLUGIN_EVAL_SKIP="1")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_a_plugin_without_eval_cases_is_not_gated(self):
+        """evals/ を持たないプラグイン（大半）は従来どおり. results/ だけの evals/ も同じ."""
+        self.stage_plugin_change()
+        self.write("demo/evals/results/old/report.html", "<html>")
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_a_non_input_change_is_not_gated(self):
+        """hooks / CHANGELOG / README の変更は eval の結果に効かないので要求しない."""
+        self.write("demo/evals/c/prompt.md", "do it\n")
+        self.write("demo/.claude-plugin/plugin.json", '{"name":"demo","version":"1.0.0"}')
+        self.write("demo/CHANGELOG.md", "# Changelog\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "baseline")
+        self.stage("demo/hooks/scripts/h.sh", "echo\n")
+        self.stage("demo/.claude-plugin/plugin.json", '{"name":"demo","version":"1.0.1"}')
+        self.stage("demo/CHANGELOG.md", "# Changelog\n\n## 1.0.1\n")
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_an_eval_case_change_is_gated_too(self):
+        """grader を変えたら判定基準が変わっているので、同じく回し直す."""
+        self.write("demo/evals/c/prompt.md", "do it\n")
+        self.stage_eval_plugin_change(rel="demo/evals/c/graders/g.md")
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("plugin eval required", res.stdout)
 
     # ---- ゲート自体の欠落（GitHub issue #176）--------------------------------
     def test_a_missing_ssot_gate_blocks(self):
