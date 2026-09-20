@@ -319,7 +319,8 @@ bash .claude-plugin/scripts/plugin-eval.sh <plugin> --runs 1   # 追加引数は
   - **fixture はプロンプトに埋め込む**。`case.yaml` の `context.add_dirs` で渡したディレクトリは、サンドボックスの cwd の外に置かれ Read / Glob とも Permission denied になった（両アームとも「ファイルに到達できない」で全 grader FAIL）。cwd 内の状態（`.claude/indie/` 等）を前提にするスキル（issue-workflow の大半）は `scaffold_script` 無しでは測れない — 今はケースを置いていない
   - **閾値は起動口が 0.8 に下げている**。tool 既定の 1.0 は全 run・全 grader の通過を要求するが、judge は同じ基準で票が割れる（PASS PASS PASS の次の run が FAIL PASS FAIL）。0.8 は weight 1 の grader が 3 run 中 1 回落ちるのを通し、weight 2 の grader が全 run で落ちる退行を止める水準
   - **「〜を捏造していない」型の grader は、fixture に正当な指摘の余地があると機能しない**。bdd-spec では judge がテンプレ書式への正当な指摘（アンカー不一致）を「無い欠陥の報告」と読み、基準の文面を 5 回書き換えても全 run で 3 票とも FAIL だった（同じ基準・同じ回答を手元の haiku に渡すと PASS）。**judge の判定理由は `--json` にも出ない**ので、落ち続ける grader は文面を直すより外す。claude-meta の同型 grader が機能しているのは、fixture が 3 ファイルで「存在するもの」が閉じているため
-  - **Δ が 0 でもケースは無駄ではない**が、意味は「壊れていない」に限られる。bdd-spec のケースは baseline も仕込んだ欠陥を全部拾う（with 1.00 / without 1.00）。プラグインの効果を見たいなら、baseline が落とす基準（claude-meta の「既存拡張を第一推奨にする」は without が 3 回中 1 回落とす）を含める
+  - **Δ が 0 でもケースは無駄ではない**が、意味は「壊れていない」に限られる。bdd-spec に置いたケースは baseline も仕込んだ欠陥を全部拾い（with 1.00 / without 1.00）、利用頻度の低さもあって削除した。プラグインの効果を見たいなら、baseline が落とす基準（claude-meta の「既存拡張を第一推奨にする」は without が 3 回中 1 回落とす）を含める
+- **ケースを足す前に、そのプラグインの利用頻度と見込みコストを並べる**。ケースを持つプラグインは以後、入力を変える commit のたびに約 1.5〜3 USD / ケースを払う。ほぼ使っていないプラグインには置かない（bdd-spec に置いて外した実例）。起動口は実行前に概算を stderr へ出す
 - **定期実行しない**。回帰テストなので走らせる意味があるのは入力を変えたときだけで、それは pre-commit が捕まえる。CI にも載せない（子 claude が自分の認証で走る）。`results/` は gitignore なので**別マシンでは記録が無い** — そのマシンで初めて入力を変えたときに 1 回回す（typo 修正なら迂回でよい）
 - 実測の効用: 初回のケース 1 本で「サンドボックスでは `references/` を Glob で探せず、正本を読まずに推敲していた」を検出した（writing-polish 0.10.1）。スコアではなく evidence 冒頭の自己申告に出ていた
 

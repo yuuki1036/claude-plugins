@@ -137,6 +137,25 @@ class PluginEvalTest(unittest.TestCase):
             self.assertEqual(sum(a.startswith("--threshold") for a in args), 1, args)
             self.assertNotIn("0.8", args)
 
+    def test_the_cost_estimate_is_shown_before_the_run(self):
+        """paid な実行を黙って始めない. 既定は 1 ケース × 2 アーム × 3 runs = 6 run."""
+        res = self.run_script("demo")
+        self.assertIn("1 ケース × 2 アーム × 3 runs = 6 run", res.stderr)
+        self.assertIn("1.5〜3.0 USD", res.stderr)
+
+    def test_the_cost_estimate_follows_runs_and_ablation(self):
+        for extra in (["--runs", "1", "--ablation", "none"], ["--runs=1", "--ablation=none"]):
+            res = self.run_script("demo", *extra)
+            self.assertIn("1 ケース × 1 アーム × 1 runs = 1 run", res.stderr, extra)
+
+    def test_the_cost_estimate_counts_each_case_once(self):
+        """prompt.md と case.yaml を両方持つケースを 2 と数えない. results/ 配下も数えない."""
+        self.write("demo/evals/c/case.yaml", "schema_version: '1.1'\n")
+        self.write("demo/evals/d/prompt.md", "another\n")
+        self.write("demo/evals/results/old/prompt.md", "stale\n")
+        res = self.run_script("demo")
+        self.assertIn("2 ケース × 2 アーム × 3 runs = 12 run", res.stderr)
+
     def test_a_failing_eval_is_recorded_and_propagated(self):
         """閾値未満（exit 1）を握り潰すと pre-commit が「回して通った」と読む."""
         self.set_claude(1)

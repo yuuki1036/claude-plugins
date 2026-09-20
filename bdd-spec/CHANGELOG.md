@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.4] - 2026-09-20
+
+### Removed
+
+- **`claude plugin eval` のケース `evals/evaluate-planted-defects/` を削除**（0.3.3 で追加）。ケースを持つと
+  skill / references を変える commit のたびに pre-commit が paid な eval（1 回 約 3 USD）を要求するが、
+  このプラグインは利用頻度が低く、コストに見合わない。ケース自体も baseline が仕込んだ欠陥を全部拾うため
+  （with 1.00 / without 1.00）、得られる情報は「壊れていない」に限られていた
+
 ## [0.3.3] - 2026-09-20
 
 ### Added

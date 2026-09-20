@@ -94,11 +94,33 @@ fi
 FP="$(fingerprint "$PLUGIN")"
 
 THRESHOLD_ARGS=(--threshold 0.8)
+RUNS=3
+ARMS=2
+PREV=""
 for arg in "$@"; do
   case "$arg" in
     --threshold|--threshold=*) THRESHOLD_ARGS=() ;;
+    --runs=*) RUNS="${arg#--runs=}" ;;
+    --ablation=none) ARMS=1 ;;
   esac
+  case "$PREV" in
+    --runs) RUNS="$arg" ;;
+    --ablation) if [ "$arg" = "none" ]; then ARMS=1; fi ;;
+  esac
+  PREV="$arg"
 done
+
+# 実行前に概算コストを出す（paid。黙って走らせない）。1 run あたりの単価は実測の幅
+# （0.25〜0.5 USD。references を読むスキルほど高い）で、judge の分も含む。`--case` で
+# 絞った場合は実際より多く出る（ケース数は絞り込み前で数える）ので「最大」と書く
+CASES="$(find "$REPO_ROOT/$PLUGIN/evals" -type f \( -name prompt.md -o -name case.yaml \) \
+           -not -path "*/evals/results/*" 2>/dev/null \
+         | while IFS= read -r f; do dirname "$f"; done | LC_ALL=C sort -u | grep -c . || true)"
+case "$RUNS" in ''|*[!0-9]*) RUNS=3 ;; esac
+TOTAL_RUNS=$((CASES * ARMS * RUNS))
+echo "plugin-eval: ${PLUGIN} — 最大 ${CASES} ケース × ${ARMS} アーム × ${RUNS} runs = ${TOTAL_RUNS} run。" \
+     "目安 $(awk -v n="$TOTAL_RUNS" 'BEGIN { printf "%.1f〜%.1f USD / 約 %d 分", n*0.25, n*0.5, (n+1)/2 }')" \
+     "（Ctrl-C で中止できる）" >&2
 
 # `${arr[@]+"${arr[@]}"}`: bash 3.2（macOS 既定）は `set -u` 下で空配列の展開を unbound 扱いする
 (cd "$REPO_ROOT/$PLUGIN" && claude plugin eval . --no-publish --trust-plugin \

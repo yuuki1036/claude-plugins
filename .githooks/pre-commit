@@ -157,6 +157,7 @@ if [ "${PLUGIN_EVAL_SKIP:-}" != "1" ]; then
     for e in "${eval_errors[@]}"; do
       echo "    bash .claude-plugin/scripts/plugin-eval.sh ${e%%:*}"
     done
+    echo "  これは paid な実行（目安: 1 ケースあたり 1.5〜3 USD / 約 3〜5 分。起動口が実行前に概算を出す）"
     echo "  結果は <plugin>/evals/results/<timestamp>/report.html（gitignore）。迂回は PLUGIN_EVAL_SKIP=1 git commit ..."
     exit 1
   fi

@@ -1,4 +1,0 @@
-schema_version: "1.1"
-name: evaluate-planted-defects
-description: 欠陥を 4 つ仕込んだ spec.md / epic.md（プロンプトに埋め込み）を評価させ、仕込んだ欠陥を 4 つとも拾うかを見る
-tags: [evaluate-spec]
