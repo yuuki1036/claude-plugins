@@ -123,6 +123,20 @@ class PluginEvalTest(unittest.TestCase):
         self.assertIn("--trust-plugin", args)
         self.assertEqual(args[-2:], ["--runs", "1"], "追加引数がそのまま渡っていない")
 
+    def test_the_default_threshold_tolerates_judge_flake(self):
+        """tool 既定の 1.0 だと LLM judge の票割れ 1 回で pre-commit が止まる."""
+        self.run_script("demo")
+        args = (self.root / "claude.log").read_text().splitlines()[1:]
+        self.assertEqual(args[args.index("--threshold") + 1], "0.8")
+
+    def test_an_explicit_threshold_replaces_the_default(self):
+        """両方渡すと後勝ちかどうかが CLI 実装依存になるので、既定の方を引っ込める."""
+        for extra in (["--threshold", "1.0"], ["--threshold=1.0"]):
+            self.run_script("demo", *extra)
+            args = (self.root / "claude.log").read_text().splitlines()[1:]
+            self.assertEqual(sum(a.startswith("--threshold") for a in args), 1, args)
+            self.assertNotIn("0.8", args)
+
     def test_a_failing_eval_is_recorded_and_propagated(self):
         """閾値未満（exit 1）を握り潰すと pre-commit が「回して通った」と読む."""
         self.set_claude(1)

@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.7] - 2026-09-20
+
+### Added
+
+- **`claude plugin eval` のケース `evals/advisor-extend-existing/` を追加**。commit skill を 1 つ持つ
+  fixture プラグインに対する「blame-check を新 skill で足したい」相談を component-addition-advisor に
+  判断させ、既存拡張を第一推奨にするか・fixture の実物（allowed-tools / phase 名）を根拠にするか・
+  ブロッカー条件を具体的に言うか・存在しないコンポーネントを捏造しないかを grader 4 本で見る。
+  実行は `bash .claude-plugin/scripts/plugin-eval.sh claude-meta`
+
 ## [1.13.6] - 2026-09-12
 
 ### Fixed

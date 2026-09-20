@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: advisor-extend-existing
+description: 既存 skill の phase 追加で解ける「新 skill 追加」の相談（対象プラグインはプロンプトに埋め込み）。既存拡張を勧め、実物を根拠にするかを見る
+tags: [component-addition-advisor]

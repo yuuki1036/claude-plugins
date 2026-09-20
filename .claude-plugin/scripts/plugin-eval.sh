@@ -20,6 +20,11 @@
 # 既定フラグ:
 #   --no-publish   … レポートを claude.ai に上げない（結果は手元の HTML で読む）
 #   --trust-plugin … 自作プラグインなので初回の信頼確認を出さない
+#   --threshold 0.8 … tool 既定の 1.0 は「全 run で全 grader が通る」を要求するが、LLM judge は
+#     同じ回答に票が割れる（実測: 同一基準で PASS PASS PASS の次の run が FAIL PASS FAIL）。
+#     1.0 のままだと pre-commit の鮮度ゲートが judge の揺れで commit を止める。0.8 は
+#     「weight 1 の grader が 3 run 中 1 回落ちる（0.94 前後）」を通し、「weight 2 の grader が
+#     全 run で落ちる（0.67 前後）＝本物の退行」を止める水準。引数に --threshold があればそちらを使う
 #   追加引数はそのまま `claude plugin eval` に渡す（`--runs 1` / `--case` / `--threshold` 等）
 #
 # 終了コード: `claude plugin eval` のものをそのまま返す（0 全 case 閾値以上 / 1 閾値未満あり /
@@ -88,7 +93,16 @@ fi
 # 次の pre-commit でずれて止まる。それが望ましい）
 FP="$(fingerprint "$PLUGIN")"
 
-(cd "$REPO_ROOT/$PLUGIN" && claude plugin eval . --no-publish --trust-plugin "$@") && RC=0 || RC=$?
+THRESHOLD_ARGS=(--threshold 0.8)
+for arg in "$@"; do
+  case "$arg" in
+    --threshold|--threshold=*) THRESHOLD_ARGS=() ;;
+  esac
+done
+
+# `${arr[@]+"${arr[@]}"}`: bash 3.2（macOS 既定）は `set -u` 下で空配列の展開を unbound 扱いする
+(cd "$REPO_ROOT/$PLUGIN" && claude plugin eval . --no-publish --trust-plugin \
+   ${THRESHOLD_ARGS[@]+"${THRESHOLD_ARGS[@]}"} "$@") && RC=0 || RC=$?
 
 mkdir -p "$REPO_ROOT/$PLUGIN/evals/results"
 {

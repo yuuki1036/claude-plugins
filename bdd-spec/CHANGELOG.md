@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.3] - 2026-09-20
+
+### Added
+
+- **`claude plugin eval` のケース `evals/evaluate-planted-defects/` を追加**。欠陥を 4 つ仕込んだ
+  spec.md / epic.md（未カバー AC / 存在しない Scenario を指す同値クラス / Examples 列見出しの不一致 /
+  複合 When）をプロンプトに埋め込み、evaluate-spec が 4 つとも拾うかを grader 4 本（1 基準 1 ファイル）+
+  レポートの型を見る with-only 1 本で見る。「無い欠陥を作らない」の grader は入れていない — judge が
+  テンプレ書式への正当な指摘（アンカー不一致等）を捏造と区別できず、内容によらず毎回 FAIL した。
+  実行は `bash .claude-plugin/scripts/plugin-eval.sh bdd-spec`
+
 ## [0.3.2] - 2026-08-28
 
 ### Fixed
