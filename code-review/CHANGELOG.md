@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.129.2] - 2026-09-23
+
+### Changed
+
+- 計測の基準値の節に、後付けに使ったマシン（`machine_id`）を明記した。`review-retro.sh` と `review-backfill.sh` が
+  1 体あたり cache_read を出すとき、旧基準値 5,039k とは比べられない旨に加えて、比べる先（同じ世代の新算法の値 /
+  `pending-optimizations.md ## 計測の基準値`）を案内するようにした
+
 ## [2.129.1] - 2026-09-23
 
 ### Changed

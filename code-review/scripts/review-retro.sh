@@ -2230,8 +2230,8 @@ else:
     print()
     if per_agent_rows:
         print("**1 体あたり cache_read**（effort × size_tier。旧基準値の 1 体 5,039k は"
-              "行ごとの重複計上込みで**この表と直接比べられない** / "
-              "`pending-optimizations.md ## 計測の基準値`。**体数キャップは広さを切っただけで"
+              "行ごとの重複計上込みで**この表と直接比べられない**。比べるなら同じ世代の"
+              "新算法の値（`pending-optimizations.md ## 計測の基準値`）。**体数キャップは広さを切っただけで"
               "ここには手が入っていない** / issue #156）")
         print()
         print("| effort/tier | n | 1 体あたり中央値 |")

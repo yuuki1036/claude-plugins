@@ -23,7 +23,7 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 
 ### 新算法（`tokens.schema` 3）での取り直し（2026-09-23）
 
-`scripts/review-backfill.sh` で、残っている agent transcript から新算法の値を後付けした（publish 済み payload にも retro にも混ぜていない）。母集団は開発機 1 台の `review:completed` 161 件（7 リポジトリ。うち非公開リポジトリ 1 つが 135 件）で、後付けが成立したのは 59 件。
+`scripts/review-backfill.sh` で、残っている agent transcript から新算法の値を後付けした（publish 済み payload にも retro にも混ぜていない）。母集団は 1 台（`machine_id` FMWRV7G6KN）の `review:completed` 161 件（7 リポジトリ。うち非公開リポジトリ 1 つが 135 件）で、後付けが成立したのは 59 件。
 
 | 世代 | n | 1 体あたり cache_read 中央値 |
 |---|---:|---:|
