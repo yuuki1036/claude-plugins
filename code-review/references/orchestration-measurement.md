@@ -230,7 +230,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 | `recall_skeptic` | `gate_schema` | 2 |
 | `meta_reviewer` | `gate_schema` | 3 |
 
-- **`tokens.schema` は本表に載せない**（＝ `SCHEMA_MARKERS` に入れない）。`SCHEMA_MARKERS` は「層のオブジェクトが無ければ `payload:<field>` gap を立てる」経路と対になっているが、`tokens` は **transcript を引けたかどうかで載る回と載らない回がある**（欠測は専用の `tokens` gap で表現済み）。二重に gap が立つのを避けるため、この種のフィールドは構築ブロック側のリテラルで持つ（現行 `tokens.schema: 2`）。**`dispatch.schema` / `models.schema` も同様に本表に載せない** — こちらは版を `measure-tokens.sh` が持つので、publish 側で上げると出所が 2 つに割れる。**v2.70.0 より前は「review 限定だから」が理由だった**が、self-review にも載るようになったので理由が変わった（結論は同じ / GitHub issue #143）
+- **`tokens.schema` は本表に載せない**（＝ `SCHEMA_MARKERS` に入れない）。`SCHEMA_MARKERS` は「層のオブジェクトが無ければ `payload:<field>` gap を立てる」経路と対になっているが、`tokens` は **transcript を引けたかどうかで載る回と載らない回がある**（欠測は専用の `tokens` gap で表現済み）。二重に gap が立つのを避けるため、この種のフィールドは構築ブロック側のリテラルで持つ（現行 `tokens.schema: 3`）。**`dispatch.schema` / `models.schema` も同様に本表に載せない** — こちらは版を `measure-tokens.sh` が持つので、publish 側で上げると出所が 2 つに割れる。**v2.70.0 より前は「review 限定だから」が理由だった**が、self-review にも載るようになったので理由が変わった（結論は同じ / GitHub issue #143）
 - 値を変えるときは**本表と `SCHEMA_MARKERS` を同時に直す**。片方だけ直すと publish の実データ（スクリプトが正）と doc の解釈（本表が正）がずれ、下流の層別が静かに誤る
 
 review 用（`--plugin code-review:review --pr <PR番号>`）:
@@ -433,7 +433,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 
 | サブフィールド | 内容 |
 |---|---|
-| `schema` | 算出方法の版（現行 `2` = `cache_read` 系を含む / #156）。スクリプトが注入する |
+| `schema` | 算出方法の版。スクリプトが注入する。`2` = `cache_read` 系を含む（#156）/ **`3` = usage を API メッセージ（`message.id`）単位で重複排除**（v2.129.0）。**2 以下は transcript の行ごとに足した値**で、1 メッセージが content ブロックごとに複数行へ分かれて書かれるぶん膨らんでいる（Opus 5 期で main.output 約 2.4 倍・main.cache_read 約 1.8 倍・sub.cache_read 約 2.2 倍。倍率は 1 メッセージあたりのブロック数＝世代で違う）。**スケールが違うので retro は 3 未満をトークン集計に混ぜない** |
 | `window` | `"since-t0"`（`t0` マーカー以降だけを集計）/ `"session"`（`t0` を撮れずセッション全体を集計）。**集計側は `since-t0` だけを使う** |
 | `session` / `first_ts` | どの transcript のどこからを数えたか（取り違えの事後検出用。下記） |
 | `main_output_k` | メインループの `output_tokens` / 1000。**プロンプト複製の単価が最も高い項**（`## 17` の表） |
@@ -441,7 +441,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 | `main_cache_read_k` | 同 `cache_read_input_tokens` / 1000（v2.76.0）。**往復回数 × その時点の文脈量**なので、絶対値ではなく往復を減らした前後で読む（#147） |
 | `sub_output_k` | サブエージェント側の `output_tokens` / 1000。**体数と 1 体あたりの探索量が出る**。**申告体数が 1 以上あるのに `sub_agents == 0` の回は `sub_*` 系すべて `null`**（sub 側の空振り = 窓が sub の transcript を覆っていない / v2.101.0・#199。`measurement_gaps` に `tokens-sub` が立つ） |
 | `sub_cache_write_k` | 同 `cache_creation_input_tokens` / 1000（v2.76.0） |
-| `sub_cache_read_k` | 同 `cache_read_input_tokens` / 1000（v2.76.0）。**重み付けコスト（output×5 / cache_write×1.25 / cache_read×0.1）で最大の項**。実測で sub のこれ単独が 1 レビューの総コストの 38% を占めた。`sub_cache_read_k / sub_agents` が **1 体あたりの読む量**で、`design-notes/pending-optimizations.md ## 計測の基準値` の 1 体平均 5,039k と比べる（#156） |
+| `sub_cache_read_k` | 同 `cache_read_input_tokens` / 1000（v2.76.0）。**重み付けコスト（output×5 / cache_write×1.25 / cache_read×0.1）で最大の項**。実測で sub のこれ単独が 1 レビューの総コストの 38% を占めた（38% と下の 5,039k は旧算法＝`schema` 2 以下の重複計上込みの値で、重みも Opus 5 期の単価比。schema 3 の値と直接比べない）。`sub_cache_read_k / sub_agents` が **1 体あたりの読む量**で、`design-notes/pending-optimizations.md ## 計測の基準値` の 1 体平均 5,039k が旧基準（#156） |
 | `sub_agents` | **窓内に usage を持つ**サブエージェント transcript の本数。**`measure-tokens.sh --json` の `sub_files`（glob 総数・窓非適用）は載せない** — 同じオブジェクトに窓ありと窓なしを混在させると、`sub_output_k / sub_agents`（1 体あたりの探索量）が窓外の体数で薄まる |
 
 - **なぜ載せるのか**: triage-guide.md `## 7` の核心テーゼは「**体数削減が確実に効くのは壁時計ではなくトークン**」なのに、payload は所要時間しか持たず、`## 18` の自動集計も時間だけを見ていた。つまり**主要レバーが効かない指標を自動集計し、効く指標を集計していなかった**（issue #126）
@@ -485,7 +485,7 @@ Claude Code の transcript（`~/.claude/projects/<slug>/*.jsonl`）は各アシ�
 | `main.cache_write` | オーケストレーターが**新規に読んだ**量 | 参照 doc の読み込み **+ agent 出力の取り込み**（下記の交絡に注意） |
 | **取り込み内訳** | main の `tool_result` を経由別に分解した**文字数** | `main.cache_write` の内訳。Agent 経由の占有を見てから `cache_write` を読む |
 | `sub.*` | サブエージェント側 | 体数・1 体あたりの探索量 |
-| `cache_read` | 再利用ぶん（往復回数 × その時点の文脈量） | **単価は低いが重み付けコストでは最大の項**（`output×5 / cache_write×1.25 / cache_read×0.1` で 45% / `design-notes/pending-optimizations.md ## 計測の基準値`）。**総量の絶対値だけで前後比較しない**（往復数と体数の両方で動くため）。比べるなら `## 16` の `sub_cache_read_k / sub_agents`（**1 体あたり**）を `effort` × `size_tier` で層別する（#156） |
+| `cache_read` | 再利用ぶん（往復回数 × その時点の文脈量） | **単価は低いが重み付けコストでは最大の項**（`output×5 / cache_write×1.25 / cache_read×0.1` で 45% / `design-notes/pending-optimizations.md ## 計測の基準値`。45% は旧算法＝行ごとの重複計上込みで、Opus 5 期の単価比での値）。**総量の絶対値だけで前後比較しない**（往復数と体数の両方で動くため）。比べるなら `## 16` の `sub_cache_read_k / sub_agents`（**1 体あたり**）を `effort` × `size_tier` で層別する（#156） |
 
 > **`main.cache_write` で分冊・遅延読み込みの効果を判定してはならない**（GitHub issue #118）。**参照 doc の読み込みと agent 出力の取り込みが同じバケツに入る**ため、fleet が大きい review では後者が支配的になりうる。実測（agent 13 体）では `main.cache_write` が 1,501.9k だったが、この内訳は分離できていなかった。**分冊を進めても値が下がらない / 体数が増えると値が上がる**という交絡した数字で判断してしまう。
 >
@@ -540,7 +540,7 @@ find ~ -maxdepth 6 -name events.jsonl -path '*/.claude/*' -not -path '*/node_mod
 | 反証 verdict 分布（`calibration_schema` 層別） | triage-dynamic-gates.md `## 9` / `prompts/reviewer-common.md`「降格される典型パターン」 |
 | 動的層の発火率と skip 理由 | 同 `## 8`（meta）/ `## 8.5`（skeptic）/ `## 9`（反証のゲート幅） |
 | トークン（main.output / sub.output / 体数との相関） | `## 17` と triage-guide.md `## 7`（**体数が効くのはこちら側**。壁時計の結論と混ぜない） |
-| 1 体あたり cache_read（effort × size_tier） | `## 16` の `sub_cache_read_k` と `design-notes/pending-optimizations.md ## 計測の基準値`（基準 1 体 5,039k / #156） |
+| 1 体あたり cache_read（effort × size_tier） | `## 16` の `sub_cache_read_k` と `design-notes/pending-optimizations.md ## 計測の基準値`（旧基準 1 体 5,039k は重複計上込みで `tokens.schema` 3 と比べられない / #156） |
 | 発行パターン（batched / layered / serial） | `## 16` の `dispatch` と orchestration-guide.md `## 0`（判定単位は wave / #149） |
 | 最大ギャップの内訳（agent 実行 / オーケストレーター） | `## 16` の `dispatch` と issue #153（**打ち手の提示は n >= 5 から**） |
 | 計測の健全性（欠測内訳） | `## 14` の打点規約 |

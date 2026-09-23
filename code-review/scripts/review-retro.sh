@@ -1300,9 +1300,14 @@ modern_waves = sum(1 for e in modern_waves_scope
 # 全回 `window=session` になったとき「機能が新しい」と「計測が壊れている」を判別できない
 tok_raw = [e for e in events if isinstance(e["p"].get("tokens"), dict)]
 tok_rows, tok_dropped_window, tok_dropped_schema = [], 0, 0
+# **tokens.schema 3 で usage の算法が変わり、スケールがおよそ半分になった**（transcript の行ごと
+# → message.id 単位の重複排除）。schema 2 以下は行数ぶん膨らんだ値で、倍率も世代で違うので、
+# 中央値・体数相関・1 体あたり cache_read のどれにも混ぜない（下限を上げる＝冒頭の層別の原則の
+# 想定どおりの使い方）
+TOK_SCALE_MIN_SCHEMA = 3
 for e in tok_raw:
     t = e["p"]["tokens"] or {}
-    if schema_of(t, "schema") < 1:      # 今は恒真だが、次の版で無言の混入を防ぐ
+    if schema_of(t, "schema") < TOK_SCALE_MIN_SCHEMA:
         tok_dropped_schema += 1
     elif t.get("window") != "since-t0":
         tok_dropped_window += 1
@@ -1355,21 +1360,18 @@ tok_r = pearson(txs, tys)
 
 # **1 体あたりの cache_read**（GitHub issue #156）。体数キャップ（#96）は「広さ」を切ったが
 # 1 体あたりの読む量には手が入っておらず、`pending-optimizations.md ## 計測の基準値` の
-# 1 体平均 cache_read 5,039k と比べる先がここ。**effort × size_tier で層別する** — tier は
+# 1 体平均 cache_read 5,039k と比べる先がここ（ただし 5,039k は旧算法＝重複計上込みの値で、
+# schema 3 の中央値とは直接比べられない）。**effort × size_tier で層別する** — tier は
 # 担当ファイル数を、effort は 1 体あたりの探索量を決めるので、混ぜた中央値は両方の交絡を負う。
 # **除算は `sub_agents` が正のときだけ**（0 で割れば `ZeroDivisionError`、欠測なら
 # `TypeError` で、その回だけ静かに落ちるのではなく集計全体が死ぬ）。
-# **版マーカーで先に切る** — フィールドの在否で代用すると、将来 `sub_cache_read_k` の窓や
-# 単位を変えて schema を上げたとき旧版が無言で同じ中央値に混ざる（冒頭の層別の原則）。
-# 今は schema 2 とフィールド追加が同一版なので等価だが、等価なうちに揃えておく
-TOK_CACHE_READ_MIN_SCHEMA = 2
+# **版マーカーは `tok_rows` の時点で切ってある**（`TOK_SCALE_MIN_SCHEMA`）。`sub_cache_read_k` の
+# 追加は schema 2 で、下限の 3 はそれより上なのでここで別の門は要らない。フィールドの在否で
+# 代用すると、窓や単位を変えて schema を上げたとき旧版が無言で同じ中央値に混ざる（冒頭の層別の原則）
 per_agent_buckets = {}
-per_agent_old_schema = per_agent_undividable = 0
+per_agent_undividable = 0
 for e in tok_rows:
     t = e["p"]["tokens"] or {}
-    if schema_of(t, "schema") < TOK_CACHE_READ_MIN_SCHEMA:
-        per_agent_old_schema += 1
-        continue
     cr, na = num(t.get("sub_cache_read_k")), num(t.get("sub_agents"))
     if cr is None or cr < 0 or na is None or na <= 0:
         per_agent_undividable += 1
@@ -2211,13 +2213,15 @@ else:
 print()
 if not tok_rows:
     print("**トークン**: 判定対象なし（`tokens` を持つサンプル %d 件 / うち "
-          "`window=session` / `since-t0-late` で除外 %d 件。**v2.70.0 より前は review でしか"
+          "`window=session` / `since-t0-late` で除外 %d 件・`tokens.schema` %d 未満"
+          "（行ごとの重複計上込みの旧算法）で除外 %d 件。**v2.70.0 より前は review でしか"
           "載らなかった**ので、それ以前のサンプルには構造的に無い / GitHub issue #143）"
-          % (len(tok_raw), tok_dropped_window))
+          % (len(tok_raw), tok_dropped_window, TOK_SCALE_MIN_SCHEMA, tok_dropped_schema))
 else:
-    line = ("**トークン**（t0 以降の窓 / n=%d/%d・`window=session` / `since-t0-late` で除外 %d）: "
+    line = ("**トークン**（t0 以降の窓 / n=%d/%d・`window=session` / `since-t0-late` で除外 %d・"
+            "旧算法の `tokens.schema` で除外 %d）: "
             "main.output 中央値 %s / sub.output 中央値 %s"
-            % (len(tok_rows), len(tok_raw), tok_dropped_window,
+            % (len(tok_rows), len(tok_raw), tok_dropped_window, tok_dropped_schema,
                "-" if median(tok_main) is None else "%g k" % median(tok_main),
                "-" if median(tok_sub) is None else "%g k" % median(tok_sub)))
     if tok_r is not None:
@@ -2225,7 +2229,8 @@ else:
     print(line + "。**壁時計の結論と混ぜない**（体数が効くのはこちら側 — triage-guide.md `## 7`）")
     print()
     if per_agent_rows:
-        print("**1 体あたり cache_read**（effort × size_tier。基準値は 1 体 5,039k / "
+        print("**1 体あたり cache_read**（effort × size_tier。旧基準値の 1 体 5,039k は"
+              "行ごとの重複計上込みで**この表と直接比べられない** / "
               "`pending-optimizations.md ## 計測の基準値`。**体数キャップは広さを切っただけで"
               "ここには手が入っていない** / issue #156）")
         print()
@@ -2239,11 +2244,10 @@ else:
             print()
             print(_pa_note)
     else:
-        print("**1 体あたり cache_read**: 実測 0 件（`tokens.schema >= %d` 未満で除外 %d・"
-              "`sub_agents` が 0 / 欠測で除算不可 %d）。**「まだ載っていない」と「載ったが"
-              "除算できない」を区別すること** — 前者は publisher、後者は "
-              "`measure-tokens.sh` の窓・引き当てが原因（issue #156）"
-              % (TOK_CACHE_READ_MIN_SCHEMA, per_agent_old_schema, per_agent_undividable))
+        print("**1 体あたり cache_read**: 実測 0 件（`sub_cache_read_k` または `sub_agents` が"
+              "欠測・0 で除算不可 %d）。旧算法の schema で落とした回はここではなくトークン行の"
+              "除外件数に出る。除算不可が続くなら `measure-tokens.sh` の窓・引き当てが原因"
+              "（issue #156）" % per_agent_undividable)
 
 print()
 # ---- 🔁 付録（「報告 0 件」と「価値 0」の分離 / GitHub issue #168） ----------

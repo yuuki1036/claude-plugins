@@ -858,8 +858,11 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             # （output×5 / cache_write×1.25 / cache_read×0.1）では cache_read が最大**
             # （`pending-optimizations.md ## 計測の基準値` で 45%）なのに、schema 1 は
             # output と main の cache_write しか載せていなかった＝主要項が観測の外にあった。
-            # `measure-tokens.sh --json` は元から返しているので取得経路の追加は無い
-            "schema": 2,
+            # `measure-tokens.sh --json` は元から返しているので取得経路の追加は無い。
+            # schema 3: usage を message.id 単位で重複排除した（**スケール変更**。schema 2 までは
+            # transcript の行ごとに足していて main.output 2.2〜2.8 倍・sub.cache_read 1.9〜2.4 倍に
+            # 膨らんでいた）。retro は下限を 3 に上げて旧値を同じ中央値に混ぜない
+            "schema": 3,
             # 窓の種類。`session` は t0 を撮れずセッション全体を集計した回で、レビュー外の
             # 作業が混ざる。**集計側は since-t0 だけを使う**（混ぜると体数との対応が消える）
             "window": os.environ.get("REVIEW_TOKENS_WINDOW") or "session",

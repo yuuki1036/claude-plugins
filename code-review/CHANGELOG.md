@@ -2,6 +2,36 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.129.0] - 2026-09-23
+
+### Fixed
+
+- **`measure-tokens.sh` が usage を transcript の行ごとに重複計上していた**。transcript は 1 つの API メッセージを
+  content ブロックごとに複数行へ分けて書き、main 側は全行が同じ usage、sub 側は streaming 途中の行が途中までの
+  `output_tokens` を持つ。行ごとに足していたため、実セッションで main.output が 2.8 倍（1,115,259 → 401,666）、
+  sub.cache_read が 2.2 倍（121.7M → 55.7M）に膨らんでいた。**倍率は 1 メッセージあたりのブロック数＝モデル世代で
+  違う**（sub.cache_read は opus-4-8 で約 2.4 倍、opus-5-5 で約 1.9 倍）ので、世代間のトークン比較が歪んでいた
+  （直さずに 4.8 と 5.5 を比べると、数え方の差だけで 5.5 が約 2 割安く見える）。
+  usage を `message.id` → `requestId` の順（ファイル横断）でメッセージ単位に集約し、フィールドごとの最大値＝最終値を
+  1 回だけ数える。どちらも無い旧形式の行だけ (ファイル, 行番号) で区別する。`--per-agent` の「往復」も
+  メッセージ数になった（sub では旧値が約 2.3 倍）。fixture が 1 行 1 メッセージの形で重複を再現できなかったので、
+  実データの形の fixture（`UsageDedupTest`）と、ファイルをまたぐ複製・`requestId` への fallback を踏むテスト
+  （`UsageDedupKeyTest`）を足した
+
+### Changed
+
+- **`tokens.schema` を 3 に上げた（スケール変更）**。schema 2 以下の payload はすべて重複計上込みで、
+  `review-retro.sh` はトークン集計（main / sub の中央値・体数相関・1 体あたり cache_read）の母集団を
+  schema 3 以上に限る（除外件数はトークン行に出す）。**既存の gist の tokens 値は比較対象から外れる**ので、
+  次の publish から新しいサンプルが溜まるまでトークン行は「判定対象なし」になる
+- `--json` の main / sub に監査値 `usage_rows`（usage を持つ行数。`n` との比が重複排除の効き）と
+  `usage_msgs_no_stop`（stop_reason 付きの確定行を持たないメッセージ数。多いほど output が下限寄り）を足した。
+  人間向け出力にも sub の確定行なしの割合を出す
+- 旧算法の数値（`pending-optimizations.md ## 計測の基準値` の #104 基準・`## 11` の往復と cap 値、
+  `orchestration-measurement.md` の 38% / 45% / 1 体 5,039k）に「重複計上込みで直接比べない」と注記した。
+  retro と backfill が実行時に印字する旧基準値 5,039k にも同じ注記を付けた。「バッチ率 1.00」は行単位の数え方の
+  産物（transcript の 1 行は tool_use を 1 つしか持たない）だったことも明記した
+
 ## [2.128.0] - 2026-09-18
 
 ### Added

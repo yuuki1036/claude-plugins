@@ -137,6 +137,16 @@ sub_depth = {}      # subagent transcript -> meta.json の spawnDepth
 def _wave_key(entry):
     msg = entry.get("message") or {}
     return msg.get("id") or entry.get("requestId") or entry.get("uuid")
+# **usage は API メッセージ単位で 1 回だけ数える**（tokens.schema 3）。transcript は 1 メッセージを
+# content ブロックごとに別行へ分けて書き、main 側は全行が同じ usage を、sub 側は streaming 途中の
+# 行が途中までの output_tokens を持つ（cache / input は全行同じ）。行ごとに足すと main.output が
+# 2.2〜2.8 倍・sub.cache_read が 1.9〜2.4 倍に膨らみ、**倍率が 1 メッセージあたりのブロック数＝
+# 世代で違う**ので世代間比較が歪む（schema 2 までの値はすべてこの重複計上込み）。
+# キーは message.id → requestId（ファイル横断。fork / resume で親のメッセージが複製されても
+# 二重に数えない）。どちらも無い行だけ (fpath, 行番号) に落とす（None を共通キーにすると
+# 無関係な行が 1 件に潰れる）。値はフィールドごとの max ＝ 最終値（途中行で減る例は実測 0 件）。
+# 帰属（main / sub・per_agent のファイル）は最初に見た行に従う
+usage_by_msg = {}
 intake = {}       # ツール名 -> tool_result の総文字数
 intake_n = {}     # ツール名 -> tool_result の件数
 
@@ -151,7 +161,7 @@ for fpath, side in targets:
     except OSError:
         continue
     with fh:
-        for line in fh:
+        for lineno, line in enumerate(fh):
             try:
                 e = json.loads(line)
             except ValueError:
@@ -262,22 +272,42 @@ for fpath, side in targets:
             if ts:
                 first_ts = ts if first_ts is None else min(first_ts, ts)
                 last_ts = ts if last_ts is None else max(last_ts, ts)
-            b = buckets[side]
             if side:
                 sub_seen.add(fpath)
-                # 体ごとの内訳（回内分散 / GitHub issue #156）。**層別サンプルを待たずに
-                # 1 run 内で対照が取れる**のがこの粒度の値打ちで、tier / effort / 世代が
-                # 定義上そろうため交絡しない
-                pa = per_agent.setdefault(fpath, {"cr": 0, "cw": 0, "out": 0, "n": 0})
-                pa["n"] += 1
-                pa["cr"] += u.get("cache_read_input_tokens") or 0
-                pa["cw"] += u.get("cache_creation_input_tokens") or 0
-                pa["out"] += u.get("output_tokens") or 0
-            b["n"] += 1
-            b["out"] += u.get("output_tokens") or 0
-            b["cw"] += u.get("cache_creation_input_tokens") or 0
-            b["cr"] += u.get("cache_read_input_tokens") or 0
-            b["inp"] += u.get("input_tokens") or 0
+            msg = e.get("message") or {}
+            mkey = msg.get("id") or e.get("requestId") or (fpath, lineno)
+            agg = usage_by_msg.get(mkey)
+            if agg is None:
+                agg = usage_by_msg[mkey] = {"side": side, "fpath": fpath, "rows": 0, "stop": False,
+                                            "out": 0, "cw": 0, "cr": 0, "inp": 0}
+            agg["rows"] += 1
+            # **stop_reason を持つ行＝確定値の行**。sub では 1 行も持たないメッセージがあり
+            # （CC 版で 1〜85%）、その output は途中値＝下限にとどまる。件数を監査値で出す
+            if msg.get("stop_reason"):
+                agg["stop"] = True
+            for fld, src in (("out", "output_tokens"), ("cw", "cache_creation_input_tokens"),
+                             ("cr", "cache_read_input_tokens"), ("inp", "input_tokens")):
+                agg[fld] = max(agg[fld], u.get(src) or 0)
+
+usage_rows = {False: 0, True: 0}
+usage_no_stop = {False: 0, True: 0}
+for agg in usage_by_msg.values():
+    side = agg["side"]
+    b = buckets[side]
+    b["n"] += 1
+    for fld in ("out", "cw", "cr", "inp"):
+        b[fld] += agg[fld]
+    usage_rows[side] += agg["rows"]
+    if not agg["stop"]:
+        usage_no_stop[side] += 1
+    if side:
+        # 体ごとの内訳（回内分散 / GitHub issue #156）。**層別サンプルを待たずに
+        # 1 run 内で対照が取れる**のがこの粒度の値打ちで、tier / effort / 世代が
+        # 定義上そろうため交絡しない。`n` は往復＝メッセージ数（行数ではない）
+        pa = per_agent.setdefault(agg["fpath"], {"cr": 0, "cw": 0, "out": 0, "n": 0})
+        pa["n"] += 1
+        for fld in ("cr", "cw", "out"):
+            pa[fld] += agg[fld]
 agents = sub_files
 
 # **発行パターンの判定**（GitHub issue #142 / 判定単位の是正が #149）。
@@ -515,7 +545,8 @@ models_out = {
 #
 # **1 体あたりの読む量を決めているのは往復回数**（実測 r = 0.978 / n=22・1 run 内）。
 # 1 往復あたりの cache_read は 63k〜124k とほぼ一定で、focus や担当ファイル量では
-# 変わらない。したがって「担当ファイルを絞る」は往復数を減らさない限り効かず、
+# 変わらない（r と 63k〜124k は旧算法＝行単位の実測。往復も cache_read も行数ぶん膨らんで
+# いたので、schema 3 の値と数値を直接比べない）。したがって「担当ファイルを絞る」は往復数を減らさない限り効かず、
 # 効くのは**探索予算（Read/Grep の回数上限）**の側。
 #
 # **`sub_agents` は再試行で膨らむ**。同一 focus が別 `toolUseId` で複数回起動された回は、
@@ -569,12 +600,17 @@ if os.environ.get("AS_JSON") == "1":
     print(json.dumps({
         "session": os.path.basename(path),
         "since": since, "first_ts": first_ts, "last_ts": last_ts,
+        # `n` は API メッセージ数。`usage_rows` は usage を持つ行数で、n との比が重複排除の
+        # 効き（行ごとに足していたら何倍に膨らんでいたか）。`usage_msgs_no_stop` は確定行を
+        # 持たないメッセージ数で、多いほど `output` が下限寄り（主に sub 側）
         "main": {"n": buckets[False]["n"], "output": buckets[False]["out"],
                  "cache_write": buckets[False]["cw"], "cache_read": buckets[False]["cr"],
-                 "input": buckets[False]["inp"]},
+                 "input": buckets[False]["inp"],
+                 "usage_rows": usage_rows[False], "usage_msgs_no_stop": usage_no_stop[False]},
         "sub": {"n": buckets[True]["n"], "output": buckets[True]["out"],
                 "cache_write": buckets[True]["cw"], "cache_read": buckets[True]["cr"],
-                "input": buckets[True]["inp"]},
+                "input": buckets[True]["inp"],
+                "usage_rows": usage_rows[True], "usage_msgs_no_stop": usage_no_stop[True]},
         # **2 つは別物**。`sub_agents` は窓内に usage を持つ本数（他フィールドと同じ窓）、
         # `sub_files` は glob した総数（**窓非適用**）。後者は「transcript は在るのに窓内が
         # 空」＝引き当て失敗の検出に要る（呼び出し側が縮退判定に使う）
@@ -603,6 +639,9 @@ for side, label in ((False, "main"), (True, "sub")):
 tot_out = buckets[False]["out"] + buckets[True]["out"]
 tot_cw = buckets[False]["cw"] + buckets[True]["cw"]
 print(f"{'合計':<9}{buckets[False]['n']+buckets[True]['n']:>7}{k(tot_out):>12}{k(tot_cw):>14}")
+if buckets[True]["n"]:
+    print("sub の確定行なしメッセージ: %d / %d（%.0f%%。output はこの分だけ下限寄り）"
+          % (usage_no_stop[True], buckets[True]["n"], usage_no_stop[True] / buckets[True]["n"] * 100))
 if agents:
     print(f"\nサブエージェント: {len(agents)} 体（{os.path.basename(subdir)}/ から集計）")
 elif buckets[False]["n"]:
@@ -646,7 +685,9 @@ if intake:
     print(f"→ Agent 経由は**取り込み全体の** {agent_share:.1f}%（`main.cache_write` に占める比率ではない）")
 
 print("""
-読み方: main.output = オーケストレーターが書いた量（プロンプト複製はここ・単価最大）
+読み方: msgs = API メッセージ数（transcript の行数ではない。1 メッセージは content ブロックごとに
+               複数行へ分かれて書かれるので、行で足すと 2 倍前後に膨らむ）
+        main.output = オーケストレーターが書いた量（プロンプト複製はここ・単価最大）
         main.cache_write = 新規に読み込んだ量。取り込み（参照 doc も agent 出力も）はここへ
                            合流するが、**大半はターンごとに再キャッシュされるプロンプト前半**で、
                            取り込みぶんは実測で 1 割前後にとどまる（#118）。分冊・遅延読み込みの

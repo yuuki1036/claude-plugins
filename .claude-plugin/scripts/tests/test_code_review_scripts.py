@@ -702,6 +702,152 @@ class TranscriptFixture(ScriptTestBase):
         (d / "s1.jsonl").write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
+class UsageDedupTest(TranscriptFixture):
+    """usage を API メッセージ単位で 1 回だけ数える（tokens.schema 3）.
+
+    実 transcript は 1 メッセージを content ブロックごとに別行へ分けて書き、main は全行が
+    同じ usage、sub は streaming 途中の行が途中までの output を持つ（cache / input は全行同じ）。
+    既存 fixture は usage 行に `message.id` が無い 1 行 1 メッセージの形で、行ごとに足しても
+    正しく見えてしまう（重複計上を検出できなかった）。ここでは実データの形を再現し、
+    期待値はテスト内の手計算で持つ（実装を通して作らない）。
+    """
+
+    def write_realistic_transcript(self) -> Path:
+        d = self.home / ".claude" / "projects" / "realistic"
+        sub = d / "s2" / "subagents"
+        sub.mkdir(parents=True)
+
+        def row(ts: int, out: int, cw: int, cr: int, inp: int = 0, msg_id: str | None = None,
+                req: str | None = None, stop: str | None = None, block: str = "text") -> str:
+            msg: dict = {"model": "claude-opus-5", "content": [{"type": block}],
+                         "stop_reason": stop,
+                         "usage": {"output_tokens": out, "cache_creation_input_tokens": cw,
+                                   "cache_read_input_tokens": cr, "input_tokens": inp}}
+            if msg_id:
+                msg["id"] = msg_id
+            e: dict = {"type": "assistant", "timestamp": "2026-09-20T01:00:%02dZ" % ts,
+                       "message": msg}
+            if req:
+                e["requestId"] = req
+            return json.dumps(e)
+
+        main = [
+            # M1: 3 行（thinking / text / tool_use）で全行同じ usage
+            row(0, 100, 1000, 5000, 3, "msg_m1", stop="tool_use", block="thinking"),
+            row(0, 100, 1000, 5000, 3, "msg_m1", stop="tool_use", block="text"),
+            row(0, 100, 1000, 5000, 3, "msg_m1", stop="tool_use", block="tool_use"),
+            # M2: 2 行
+            row(1, 50, 200, 6000, 1, "msg_m2", stop="end_turn", block="thinking"),
+            row(1, 50, 200, 6000, 1, "msg_m2", stop="end_turn"),
+            # id も requestId も無い旧形式の行（1 行 1 メッセージ扱い）
+            row(2, 7, 0, 0, 0, stop="end_turn"),
+        ]
+        path = d / "s2.jsonl"
+        path.write_text("\n".join(main) + "\n", encoding="utf-8")
+        (sub / "agent-a.jsonl").write_text("\n".join([
+            # S1: streaming で output が 5→5→259 と増え、最終行が丸ごと重複している
+            row(3, 5, 700, 0, 2, "msg_s1", "req_s1", block="thinking"),
+            row(3, 5, 700, 0, 2, "msg_s1", "req_s1"),
+            row(4, 259, 700, 0, 2, "msg_s1", "req_s1", stop="tool_use", block="tool_use"),
+            row(4, 259, 700, 0, 2, "msg_s1", "req_s1", stop="tool_use", block="tool_use"),
+            # S2: 確定行（stop_reason 付き）を 1 行も持たない
+            row(5, 1, 10, 700, 1, "msg_s2", "req_s2", block="thinking"),
+            row(5, 1, 10, 700, 1, "msg_s2", "req_s2"),
+        ]) + "\n", encoding="utf-8")
+        (sub / "agent-a.meta.json").write_text(
+            json.dumps({"description": "focus-a", "spawnDepth": 1}), encoding="utf-8")
+        # id を持たない 2 ファイル。どちらも 1 行目＝行番号が重なる（ファイルで区別できないと潰れる）
+        (sub / "agent-b.jsonl").write_text(row(6, 11, 20, 30, stop="end_turn") + "\n",
+                                           encoding="utf-8")
+        (sub / "agent-c.jsonl").write_text(row(7, 13, 40, 50, stop="end_turn") + "\n",
+                                           encoding="utf-8")
+        return path
+
+    def measure(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return self.run_script(MEASURE, "--session", str(self.write_realistic_transcript()),
+                               *args, env=self.env_home())
+
+    def test_main_counts_each_message_once(self):
+        """main は全行が同じ usage。行ごとに足すと output 407 になる（手計算: 3×100 + 2×50 + 7）."""
+        r = self.measure("--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        m = json.loads(r.stdout)["main"]
+        self.assertEqual(m["n"], 3)
+        self.assertEqual(m["output"], 157)            # 100 + 50 + 7
+        self.assertEqual(m["cache_write"], 1200)
+        self.assertEqual(m["cache_read"], 11000)
+        self.assertEqual(m["input"], 4)
+        self.assertEqual(m["usage_rows"], 6)
+        self.assertEqual(m["usage_msgs_no_stop"], 0)
+
+    def test_sub_takes_the_final_value_of_a_streamed_message(self):
+        """sub は途中行の output を足さずに最終値を採り、重複した最終行も 1 回だけ数える."""
+        s = json.loads(self.measure("--json").stdout)["sub"]
+        self.assertEqual(s["n"], 4)                   # S1 / S2 / b / c
+        self.assertEqual(s["output"], 284)            # 259 + 1 + 11 + 13
+        self.assertEqual(s["cache_write"], 770)       # 700 + 10 + 20 + 40
+        self.assertEqual(s["cache_read"], 780)        # 0 + 700 + 30 + 50
+        self.assertEqual(s["input"], 3)               # 2 + 1 + 0 + 0
+        self.assertEqual(s["usage_rows"], 8)
+        self.assertEqual(s["usage_msgs_no_stop"], 1, "確定行を持たない S2 を数えていない")
+
+    def test_rows_without_ids_in_different_files_stay_separate(self):
+        """id を持たない行はファイルと行番号で区別する（行番号だけだと b と c が 1 件に潰れる）."""
+        d = json.loads(self.measure("--json").stdout)
+        self.assertEqual(d["sub_agents"], 3)
+        self.assertEqual(d["sub"]["n"], 4)
+
+    def test_per_agent_round_trips_are_messages(self):
+        """`--per-agent` の往復はメッセージ数（agent-a は 6 行・2 メッセージ）."""
+        out = self.measure("--per-agent").stdout
+        self.assertRegex(out, r"(?m)^focus-a\s+1\s+2\s", "往復を行数で数えている")
+
+    def test_cli_reports_the_no_stop_share(self):
+        """人間向け出力に sub の確定行なしメッセージの割合を出す（output が下限寄りになる度合い）."""
+        out = self.measure().stdout
+        self.assertIn("sub の確定行なしメッセージ: 1 / 4（25%", out)
+
+
+class UsageDedupKeyTest(TranscriptFixture):
+    """重複排除キーのうち、`UsageDedupTest` の fixture では踏まない 2 経路（tokens.schema 3）."""
+
+    @staticmethod
+    def _row(out: int, cr: int, msg_id: str | None = None, req: str | None = None) -> str:
+        msg: dict = {"model": "claude-opus-5", "stop_reason": "end_turn", "content": [],
+                     "usage": {"output_tokens": out, "cache_read_input_tokens": cr}}
+        if msg_id:
+            msg["id"] = msg_id
+        e: dict = {"type": "assistant", "timestamp": "2026-09-20T01:00:00Z", "message": msg}
+        if req:
+            e["requestId"] = req
+        return json.dumps(e)
+
+    def _measure(self, main_rows: list[str], sub_rows: list[str]) -> dict:
+        d = self.home / ".claude" / "projects" / "keys"
+        (d / "s3" / "subagents").mkdir(parents=True)
+        (d / "s3.jsonl").write_text("\n".join(main_rows) + "\n", encoding="utf-8")
+        (d / "s3" / "subagents" / "agent-x.jsonl").write_text("\n".join(sub_rows) + "\n",
+                                                             encoding="utf-8")
+        r = self.run_script(MEASURE, "--session", str(d / "s3.jsonl"), "--json",
+                            env=self.env_home())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_a_message_copied_across_files_counts_once_on_the_first_side(self):
+        """fork / resume で親のメッセージが sub 側に複製されても二重に数えず、先に見た main に帰属する."""
+        got = self._measure([self._row(100, 1000, "msg_dup")],
+                            [self._row(100, 1000, "msg_dup"), self._row(7, 70, "msg_own")])
+        self.assertEqual((got["main"]["n"], got["main"]["output"]), (1, 100))
+        self.assertEqual((got["sub"]["n"], got["sub"]["output"], got["sub"]["cache_read"]),
+                         (1, 7, 70), "複製を sub 側でもう一度数えている")
+
+    def test_rows_without_message_id_fall_back_to_request_id(self):
+        """`message.id` が無くても `requestId` が同じ行は 1 メッセージ（行番号に落とすと 2 件になる）."""
+        got = self._measure([self._row(40, 400, req="req_1"), self._row(40, 400, req="req_1")],
+                            [])
+        self.assertEqual((got["main"]["n"], got["main"]["output"]), (1, 40))
+
+
 class TokenAndDispatchPayloadTest(TranscriptFixture):
     """publish が `tokens` / `dispatch` を payload に載せる（GitHub issue #142 / #143）.
 
@@ -806,7 +952,8 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         self.write_transcript([[0, 5]], scale=1000)
         self.publish(env=self.env_home())
         t = self.last_payload()["tokens"]
-        self.assertEqual(t["schema"], 2, "schema を上げずにフィールドだけ足している")
+        # 3 = usage を message.id 単位で重複排除（スケール変更。フィールドは 2 から同じ）
+        self.assertEqual(t["schema"], 3, "算法を変えたのに schema を上げていない")
         # main は 1 メッセージ / sub は 2 体 × 1 メッセージ
         self.assertEqual(t["main_cache_read_k"], 30.0)
         self.assertEqual(t["sub_cache_read_k"], 60.0)
@@ -1867,14 +2014,14 @@ class RetroFixture(ScriptTestBase):
         return {"effort": "high", "measurement_gaps": [], "dispatch": d}
 
     def _tokens(self, tier: str, cache_read_k, agents, effort: str = "high",
-                schema: int = 2) -> dict:
+                schema: int = 3) -> dict:
         return {"effort": effort, "size_tier": tier, "measurement_gaps": [],
                 "tokens": {"schema": schema, "window": "since-t0",
                            "main_output_k": 100.0, "sub_output_k": 200.0,
                            "sub_cache_read_k": cache_read_k, "sub_agents": agents}}
 
     def _tokens_full(self, sub_output_k, sub_agents, main_output_k=100.0,
-                     window: str = "since-t0", schema: int = 2,
+                     window: str = "since-t0", schema: int = 3,
                      sub_cache_read_k=100.0) -> dict:
         """sub 側の値と体数を明示できる tokens 行（GitHub issue #199）.
 
@@ -2079,16 +2226,31 @@ class RetroTest(RetroFixture):
         """待ち行は**落とした理由を件数で出し分ける**（セルフレビューで検出）.
 
         旧実装は「`sub_cache_read_k` を持つサンプル待ち（schema 2）」と原因を版マーカーに
-        断定していたが、この else には ①版が古い ②`sub_agents` が 0 / 欠測で除算不可 の
-        2 経路が落ちる。②を①と報告すると publisher を直しにいく誤診になる。
+        断定していた。tokens.schema 3 以降、版が古い回は `tok_rows` の時点で落ちてトークン行の
+        除外件数に出るので、この else に来るのは除算不可の回だけになった。版の件数を待ち行で
+        報告すると publisher を直しにいく誤診になる。
         """
-        self._events([self._tokens("medium", None, 5, schema=1),        # 版が古い
+        self._events([self._tokens("medium", None, 5, schema=2),        # 旧算法
                       self._tokens("medium", 50000.0, 0)])              # 除算不可
         out = self.run_script(RETRO, env=self._env()).stdout
         self.signals(out)
-        self.assertIn("`tokens.schema >= 2` 未満で除外 1", out)
+        # 版で落とした件数はトークン行に出る（tok_rows の時点で切るので待ち行には来ない）
+        self.assertIn("旧算法の `tokens.schema` で除外 1", out)
         self.assertIn("除算不可 1", out)
         self.assertNotIn("**1 体あたり cache_read**（effort", out, "表が出てしまっている")
+
+    def test_only_old_schema_rows_report_why_nothing_was_judged(self):
+        """既存の events が全部 schema 2 の状態（リリース直後は全員ここを通る）で落ちずに理由を出す.
+
+        書式の引数がずれると TypeError で出力が途中で切れ、rc 0 のまま後続の集計が消える。
+        """
+        self._events([self._tokens("medium", 5000.0, 2, schema=2),
+                      self._tokens("medium", 6000.0, 3, schema=2)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.signals(out)
+        self.assertIn("**トークン**: 判定対象なし", out)
+        self.assertIn("`tokens.schema` 3 未満", out)
+        self.assertIn("除外 2 件", out)
 
     def test_per_agent_cache_read_survives_a_half_missing_payload(self):
         """`sub_cache_read_k` だけ `null` の回で**落ちない**（nightly 変異 #157）.
@@ -2096,8 +2258,8 @@ class RetroTest(RetroFixture):
         `cr < 0` を `cr is None` より先に評価すると `TypeError`。retro は
         `set -uo pipefail`（`-e` なし）+ 末尾 `exit 0` なので **rc 0 のまま出力が途中で
         切れる**。dispatch 側（`test_wave_gap_survives_a_half_missing_payload`）と同じ型で、
-        そちらだけ塞いで**こちらを塞いでいなかった**。版ゲートを通る schema 2 で作る
-        （schema 1 だと先に `continue` してこの行に到達しない）。
+        そちらだけ塞いで**こちらを塞いでいなかった**。版ゲートを通る schema 3 で作る
+        （2 以下だと `tok_rows` の時点で落ちてこの行に到達しない）。
         """
         self._events([self._tokens("medium", None, 5),
                       self._tokens("medium", 20000.0, 4)])
@@ -2107,10 +2269,26 @@ class RetroTest(RetroFixture):
 
     def test_per_agent_cache_read_gates_on_schema(self):
         """版マーカーで先に切る（フィールド在否で代用しない / 冒頭の層別の原則）."""
-        self._events([self._tokens("medium", 99999.0, 1, schema=1),   # 旧版は混ぜない
+        self._events([self._tokens("medium", 99999.0, 1, schema=2),   # 旧算法は混ぜない
                       self._tokens("medium", 20000.0, 4)])
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("| high/medium | 1 | 5000 k |", out, "旧 schema を分母に入れている")
+
+    def test_token_medians_exclude_the_double_counted_schema(self):
+        """schema 2 以下（行ごとの重複計上込み）を中央値と体数相関に混ぜない（tokens.schema 3）.
+
+        スケールが約半分に変わったので、混ぜると「消費が半分になった」を改善と誤読する。
+        1 体あたり cache_read だけでなく、main / sub の中央値と相関にも同じ門を効かせる。
+        """
+        self._events([self._tokens_full(999.0, 9, main_output_k=999.0, schema=2),
+                      self._tokens_full(200.0, 4, main_output_k=100.0),
+                      self._tokens_full(300.0, 6, main_output_k=120.0)])
+        tok = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)["tokens"]
+        self.assertEqual(tok["n"], 2)
+        self.assertEqual(tok["dropped_schema"], 1)
+        self.assertEqual(tok["main_output_k_median"], 110.0, "旧算法の値が中央値に混ざっている")
+        self.assertEqual(tok["sub_output_k_median"], 250.0)
+        self.assertEqual(tok["agents_sub_output_n"], 2, "旧算法の回が体数相関の分母に入っている")
 
     def test_wave_gap_breakdown_is_reported(self):
         """最大ギャップの内訳を出す（GitHub issue #153）— 支配側で打ち手が正反対になる."""
@@ -3154,7 +3332,7 @@ class RetroLayerTableCapTest(RetroFixture):
                 "agents": {"explorer": 2, "reviewer": 5},
                 "models": {"schema": 1, "main": "claude-" + gen,
                            "main_distinct": ["claude-" + gen], "sub_distinct": []},
-                "tokens": {"schema": 2, "window": "since-t0", "main_output_k": 100.0,
+                "tokens": {"schema": 3, "window": "since-t0", "main_output_k": 100.0,
                            "sub_output_k": 200.0, "sub_cache_read_k": 7550.0,
                            "sub_agents": 2}}
 
@@ -4911,7 +5089,7 @@ class RetroFleetSpanTest(RetroFixture):
                 "measurement_gaps": [] if gaps is None else gaps,
                 "duration_fleet_min": fleet,
                 "agents": {"explorer": 2, "reviewer": agents - 2},
-                "tokens": {"schema": 2, "window": window, "main_output_k": 10.0,
+                "tokens": {"schema": 3, "window": window, "main_output_k": 10.0,
                            "sub_output_k": 20.0, "sub_cache_read_k": 30.0, "sub_agents": agents},
                 "dispatch": {"agents": agents, "waves": 2, "wave_sizes": [2, agents - 2],
                              "schema": 4, "verdict": "batched", "span_sec": span,

@@ -7,6 +7,8 @@
 v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR 1 件・effort xhigh・規模 medium・23 体（GitHub issue #104 のセッション）:
 
 > **世代は Opus 5 期の実測**（`models` を payload に載せる前なので retro 上は `unrecorded` に落ちる / GitHub issue #191）。世代を踏み下げると 1 体あたりのコストも recall も動くので、**別世代の実測をこの表と直接比べない**。比べるなら世代を明記したサンプル同士で行う
+>
+> **この表は旧算法（transcript の行ごとの重複計上込み）の値**（`tokens.schema` 3 で是正 / v2.129.0）。1 メッセージが content ブロックごとに複数行へ分かれて書かれるので、msgs・output・cache_write・cache_read のすべてが行数ぶん膨らんでいる（Opus 5 期の倍率はおよそ main.output 2.4 倍・main.cache_read 1.8 倍・sub.cache_read 2.2 倍）。**`measure-tokens.sh` の現行値と直接比べない**。「バッチ率 1.00」も行単位の数え方の産物で、transcript の 1 行が tool_use を 2 つ以上持つことは無いので構造上必ず 1.00 になる（メッセージ単位では tool を使った sub メッセージの約 3 割が複数呼び出しを束ねている）。コスト比の重みも Opus 5 期の単価比で、現行モデルの単価比ではない
 
 | | msgs | tool calls | output | cache_write | cache_read |
 |---|---:|---:|---:|---:|---:|
@@ -156,6 +158,8 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 （見落としが増えたことに気づく手段が無いまま「安くなった」と読めてしまう）。
 
 ### 往復単価の一定性は独立な run で再現した
+
+> **この節の往復・cache_read・cap の値はすべて旧算法（行単位）**（`tokens.schema` 3 で是正 / v2.129.0）。sub の「往復」は実メッセージの約 2.3 倍に数えられていたので、**cap 50 / 40 往復をそのまま実往復の上限として実装すると誰も打ち切られない**。上限を決めるときは現行の `measure-tokens.sh --per-agent` で取り直した値を使う
 
 #156（n=22 / 1 run 内）の `cache_read` 対 往復回数の相関 r = 0.978 を、**別の run で再現**した
 （v2.103.1 のセルフレビュー / explorer 2 + reviewer 5 / 再試行なし ＝ `agents_completed` 7・

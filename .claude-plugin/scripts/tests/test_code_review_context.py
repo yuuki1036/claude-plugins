@@ -436,8 +436,10 @@ class MeasureTokensTest(ScriptTestBase):
             self.usage_row("2026-08-17T10:01:00Z", out=20, cw=200, cr=2000, inp=6),
         ])
         got = self.as_json()
+        # id を持たない旧形式の行は 1 行 1 メッセージ。stop_reason も無いので 2 件とも確定行なし
         self.assertEqual(got["main"], {"n": 2, "output": 30, "cache_write": 300,
-                                       "cache_read": 3000, "input": 11})
+                                       "cache_read": 3000, "input": 11,
+                                       "usage_rows": 2, "usage_msgs_no_stop": 2})
         self.assertEqual(got["sub"]["n"], 0)
         self.assertEqual(got["first_ts"], "2026-08-17T10:00:00Z")
         self.assertEqual(got["last_ts"], "2026-08-17T10:01:00Z")
