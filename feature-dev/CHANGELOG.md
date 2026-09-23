@@ -5,6 +5,18 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.2] - 2026-09-24
+
+### Fixed
+
+- **Phase 5.3 の静的ゲートが、プロジェクトの宣言したオラクル（`.claude/review-oracles.sh`）を使っていなかった**。
+  `package.json` からの推測しかせず、Phase 6 の self-review は `--embed` で機械層を skip するので、宣言オラクルが
+  feature-dev の中で一度も走らなかった（package.json の無いリポジトリでは何も検査せずに通っていた）。宣言が
+  あればそれだけを使い、推測は宣言が無いときに限る。exit 2（判定不能）は緑と区別し、Fix Mode に渡さず
+  ユーザーに判断を委ねる
+- `references/grill-protocol.md` の #233 の実例を feature-dev 以外でも読める形に直し（architect → 設計の契約）、
+  翻案元と MIT の表示を足した。design-doc の複製と byte-identical に保つための変更
+
 ## [2.15.1] - 2026-09-15
 
 ### Fixed

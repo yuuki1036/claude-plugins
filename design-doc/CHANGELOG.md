@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.8] - 2026-09-24
+
+### Fixed
+
+- **`references/grill-protocol.md` の複製が正本（feature-dev）より古かった**。「byte-identical 複製」と宣言していたが、
+  正本に #233 で足された「採用する決定の前提を問う」節（14 行）が入っていなかった。正本と同期し、
+  以後のずれは `validate_plugin_quality.py` の byte-replica 検査が error で止める
+
 ## [0.4.7] - 2026-09-06
 
 ### Fixed

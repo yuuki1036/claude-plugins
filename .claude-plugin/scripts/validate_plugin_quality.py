@@ -13,6 +13,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     黙って落とすので, パスのタイポやスクリプト移動で hooks 安全性 / hook 自己判定の検査が
     **無言で対象ゼロ**になる（hook は配布されたまま検査だけ消える / issue #176）.
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
+  - byte-replica 同期: プラグイン間でファイルごと複製している md（grill-protocol.md）が正本と
+    byte-identical か. 複製側は「byte-identical 複製」と宣言していたのに検査が無く, 正本にだけ
+    #233 の節（14 行）が入ったまま複製が古くなっていた. 言い換えの消費サイトは SSoT pin が担う
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
   - comment-rule 同期: コードコメント規約 2 観点の delimiter 区間が正本と一致するか（dedent 比較）.
     内容の良し悪しは決定的に判定できない（候補 4 案とも真陽性 0）ので, 機械層は「規約が届く経路」
@@ -116,6 +119,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CANONICAL_SAFE_HOOK = ROOT / ".claude-plugin" / "lib" / "safe-hook.sh"
+
+# プラグイン間依存禁止のためファイルごと複製している md（正本 → 複製）. safe-hook.sh と同じく
+# byte 比較する. 言い換え・要約の消費サイトは一致比較にできないので SSoT pin の担当
+# （2 機構の使い分け: ADR-20260813223000）.
+BYTE_REPLICAS = {
+    ROOT / "feature-dev" / "references" / "grill-protocol.md": [
+        ROOT / "design-doc" / "skills" / "design-doc" / "references" / "grill-protocol.md",
+    ],
+}
 
 # spec ルーティング 3 軸コア（WHAT/HOW/WHY → プラグイン対応）の正本と消費サイト.
 # 各ファイルの ROUTING-AXES:START / END マーカー区間を dedent 後に比較する
@@ -329,6 +341,24 @@ def check_safe_hook_sync(plugin_dir: Path, errors: list[str]) -> None:
         return
     if replica.read_bytes() != CANONICAL_SAFE_HOOK.read_bytes():
         errors.append(f"[safe-hook-sync:{name}] diverged from canonical: {replica.relative_to(ROOT)}")
+
+
+def check_byte_replicas(errors: list[str]) -> None:
+    """ファイルごと複製した md が正本と byte-identical かを検証する（plugin 跨ぎ）."""
+    tag = "byte-replica"
+    for canonical, replicas in BYTE_REPLICAS.items():
+        if not canonical.is_file():
+            errors.append(f"[{tag}] canonical missing: {canonical.relative_to(ROOT)}")
+            continue
+        body = canonical.read_bytes()
+        for replica in replicas:
+            if not replica.is_file():
+                errors.append(f"[{tag}] replica missing: {replica.relative_to(ROOT)}")
+            elif replica.read_bytes() != body:
+                errors.append(
+                    f"[{tag}] diverged from canonical ({canonical.relative_to(ROOT)}): "
+                    f"{replica.relative_to(ROOT)}"
+                )
 
 
 def _normalize_section(text: str) -> str:
@@ -1819,6 +1849,7 @@ def main() -> int:
         check_hook_self_judgement(plugin_dir, warnings)
         check_plugin_description_size(plugin_dir, warnings)
 
+    check_byte_replicas(errors)
     check_routing_axes_sync(errors)
     check_comment_rule_sync(errors)
     check_comment_polish_wiring(errors)

@@ -1522,6 +1522,73 @@ class ResolvePluginsTest(unittest.TestCase):
                          [self.root / "alpha", self.root / "beta"])
 
 
+class ByteReplicaSyncTest(unittest.TestCase):
+    """ファイルごと複製した md の byte 比較（`ROOT` と `BYTE_REPLICAS` を一時ディレクトリへ差し替える）.
+
+    壊れ方は「消したら黙って通る」なので、欠落を error にすることと、末尾の改行 1 つの差でも
+    拾うことを固定する。fixture は `_write` を通さず bytes で書く（dedent / lstrip が差を消すため）。
+    """
+
+    BODY = "# Grill\n\n## 採用する決定の前提を問う\n\n本文\n".encode("utf-8")
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("ROOT", "BYTE_REPLICAS"):
+            self.addCleanup(lambda n=name, o=getattr(v, name): setattr(v, n, o))
+        v.ROOT = self.root
+        self.canonical = self.root / "feature-dev" / "grill.md"
+        self.replica = self.root / "design-doc" / "grill.md"
+        v.BYTE_REPLICAS = {self.canonical: [self.replica]}
+
+    def _run(self, *, canonical: bytes | None = BODY, replica: bytes | None = BODY) -> list[str]:
+        for path, body in ((self.canonical, canonical), (self.replica, replica)):
+            if body is not None:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(body)
+        errors: list[str] = []
+        v.check_byte_replicas(errors)
+        return errors
+
+    def test_identical_replica_passes(self):
+        self.assertEqual(self._run(), [])
+
+    def test_missing_section_in_replica_is_caught(self):
+        """実際に起きた型: 正本にだけ節が足され、複製が古いまま残る."""
+        errors = self._run(replica="# Grill\n".encode("utf-8"))
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("diverged", errors[0])
+        self.assertIn("design-doc/grill.md", errors[0])
+
+    def test_trailing_newline_difference_is_caught(self):
+        errors = self._run(replica=self.BODY + b"\n")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_missing_replica_is_an_error(self):
+        errors = self._run(replica=None)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("replica missing", errors[0])
+
+    def test_missing_canonical_is_an_error(self):
+        errors = self._run(canonical=None)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("canonical missing", errors[0])
+
+    def test_real_config_still_declares_the_grill_protocol_pair(self):
+        """表から行を消すと検査が黙って対象ゼロになるので、実設定の中身も固定する."""
+        real = _load_module()
+        pairs = {
+            (c.relative_to(real.ROOT).as_posix(), r.relative_to(real.ROOT).as_posix())
+            for c, rs in real.BYTE_REPLICAS.items() for r in rs
+        }
+        self.assertIn(
+            ("feature-dev/references/grill-protocol.md",
+             "design-doc/skills/design-doc/references/grill-protocol.md"),
+            pairs,
+        )
+
+
 class CommentRuleSyncTest(unittest.TestCase):
     """コードコメント規約の区間同期（`ROOT` と定数を一時ディレクトリへ差し替える）.
 

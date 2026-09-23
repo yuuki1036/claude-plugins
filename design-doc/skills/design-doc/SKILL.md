@@ -247,4 +247,4 @@ allowed-tools:
 - **コードを編集しない**: Write / Edit の対象は原則 `.claude/designs/` 配下のみ。実装は feature-dev の領分。唯一の例外は Phase 6 の ADR 相互リンク追記（`.claude/adr/*.md` の「関連」該当行のみ Edit）
 - **doc-freshness との住み分け**: 本スキルは作成・命名・supersede 整合のみ担当。鮮度 lint は doc-freshness が `.claude/designs/` を走査して担う。frontmatter（`last-validated` / `phase`）は doc-freshness 互換
 - **status と phase は別次元**: `status` は合意状態（draft → approved → superseded）、`phase` はライフサイクル（target = 未実装 → current = 実装済 → superseded）。設計中の塩漬けは `phase: target` の stale 閾値（15 日）で doc-freshness が検出する
-- **grill-protocol.md は複製**: 正本は feature-dev の `references/grill-protocol.md`。プラグイン間依存禁止のため byte-identical に複製している（safe-hook.sh と同じ運用）。正本が更新されたら同期する
+- **grill-protocol.md は複製**: 正本は feature-dev の `references/grill-protocol.md`。プラグイン間依存禁止のため byte-identical に複製している（safe-hook.sh と同じ運用）。正本が更新されたら同期する（ずれは `validate_plugin_quality.py` の byte-replica 検査が error で止める）

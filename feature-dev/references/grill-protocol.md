@@ -1,6 +1,6 @@
 # Grill プロトコル
 
-コミット（実装・設計確定）の前に、プランや設計を **1 問ずつ容赦なく質問して詰める**ための対話規範。Frederick Brooks『The Design of Design』の design tree（コードに落とす前に設計木の全分岐を歩く）と、Matt Pocock の "grill-me" skill に由来する。
+コミット（実装・設計確定）の前に、プランや設計を **1 問ずつ容赦なく質問して詰める**ための対話規範。Frederick Brooks『The Design of Design』の design tree（コードに落とす前に設計木の全分岐を歩く）と、Matt Pocock の "grill-me" skill に由来する（翻案元: [mattpocock/skills](https://github.com/mattpocock/skills)、Copyright (c) 2026 Matt Pocock / MIT License。許諾文は repo 直下の NOTICE）。
 
 > 狙い: plan mode が「共通理解の前にプラン文書を吐く」問題を防ぐ。一括の質問リストではなく、design tree の依存を 1 分岐ずつ解きほぐして合意に到達する。
 
@@ -44,7 +44,7 @@
 
 前提が崩れている・規約と衝突している問いは、原則①の「自分で解決する」対象にしない。どちらを採るかはユーザーに聞く（推奨は、決定側が理由を明示して規約を上書きしていない限り規約に従う案）。
 
-> 実例: Issue の決定「Alert で囲まない」はダイアログのタイトルがエラーを伝える前提だったが、実装はタイトルの無いサイドパネルだった。必読 doc は「エラー寄りの警告は `<Alert>`」と定めていたが読まれず、決定が無検証のまま契約として architect に渡り、人間レビューで初めて見つかった（GitHub issue #233）。
+> 実例: Issue の決定「Alert で囲まない」はダイアログのタイトルがエラーを伝える前提だったが、実装はタイトルの無いサイドパネルだった。必読 doc は「エラー寄りの警告は `<Alert>`」と定めていたが読まれず、決定が無検証のまま設計の契約（feature-dev では architect への入力）になり、人間レビューで初めて見つかった（GitHub issue #233）。
 
 ---
 
