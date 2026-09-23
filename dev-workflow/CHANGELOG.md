@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.1] - 2026-09-24
+
+### Fixed
+
+- worktree-teardown: DB の drop 確認が取れないうちは Step 8 の `git worktree remove` にも進まない、を足した
+  （1.34.0 の「マーカーを消さない」だけでは、gitignore された `envs/` ごと worktree が消えてマーカーも失われた）
+
 ## [1.34.0] - 2026-09-24
 
 ### Added

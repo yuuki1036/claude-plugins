@@ -23,6 +23,9 @@ allowed-tools:
 
 # Feature Development
 
+<!-- 正本依存（SSoT pin）。Phase 5.3 の宣言オラクルの契約は code-review の machine-layer.md が正本（プラグイン間依存禁止のため要約で持つ）。正本が変わったら Phase 5.3 を確認して pin を打ち直す -->
+<!-- SSOT: code-review/references/machine-layer.md#5 @737549d4 -->
+
 You are helping a developer implement a new feature. Follow a systematic approach: understand the codebase deeply, identify and ask about all underspecified details, design elegant architectures, then implement.
 
 ## 適用範囲（起動したらまずここで足切りする）
@@ -427,13 +430,10 @@ Phase 5 has two modes — check the invocation context:
 
 ### Step 1: オラクル検出（無ければ graceful skip）
 
-プロジェクトが `.claude/review-oracles.sh` でオラクルを宣言していれば、**それだけを使い、下の推測はしない**。何を安いオラクルとするかはプロジェクトの判断で、推測より宣言を優先する（契約は code-review の machine-layer と同じ: exit 0 = 緑 / 1 = 検出あり / 2 = 判定不能）。Phase 6 の self-review は `--embed` で機械層を skip するので、宣言オラクルが feature-dev の中で走るのはここだけ。
+プロジェクトが `.claude/review-oracles.sh` でオラクルを宣言していれば、**それだけを使い、下の推測はしない**。何を安いオラクルとするかはプロジェクトの判断で、推測より宣言を優先する（契約の正本は code-review の `machine-layer.md` `## 5`: exit 0 = 緑 / 1 = 検出あり / 2 = 判定不能。実行は数分以内）。Phase 6 の self-review は `--embed` で機械層を skip するので、宣言オラクルが feature-dev の中で走るのはここだけ。
 
 ```bash
-ORACLE_DECL="$(git rev-parse --show-toplevel 2>/dev/null)/.claude/review-oracles.sh"
-if [ -f "$ORACLE_DECL" ]; then
-  bash "$ORACLE_DECL"; ORACLE_DECL_RC=$?
-fi
+test -f "$(git rev-parse --show-toplevel 2>/dev/null)/.claude/review-oracles.sh" && echo "oracle=declared"
 ```
 
 宣言が無いときだけ、次の推測で検出する:
@@ -458,7 +458,11 @@ fi
 
 ### Step 2: 実行（変更範囲に絞る。全ビルド/全テストは重いので避ける）
 
-- 宣言オラクルは範囲を絞らず、そのまま 1 回実行する（何を回すかはプロジェクトが決めている）。以下は推測で検出したときの出し分け
+- **宣言オラクル**は範囲を絞らず、repo ルートから 1 回実行する。**Bash の `timeout` に 600000 を指定する**（既定の 120 秒では、この repo の宣言でも実測 130 秒以上かかって打ち切られる）。exit code は出力に出す（代入で終わると Bash の終了ステータスが 0 に潰れ、Step 3 が判定できない）:
+  ```bash
+  ( cd "$(git rev-parse --show-toplevel)" && bash .claude/review-oracles.sh ); echo "oracle_exit=$?"
+  ```
+- 以下は推測で検出したときの出し分け
 - 型チェック・lint は常時実行（安い）。テストは effort に応じて出し分ける（`triage-guide.md` の effort 予算に接続）:
   - `low` / `medium`: 型チェック（+ lint）のみ。テストは Phase 5.5 と Phase 6 に委ねる
   - `high` 以上: 型チェック + lint + テスト。テストは可能なら**変更ファイルに関連するもののみ**（例: jest なら `npx jest --findRelatedTests $(cat /tmp/feature-dev-changed-files.txt)`、他は最小スコープ）
@@ -467,8 +471,8 @@ fi
 ### Step 3: 判定（fail-closed）
 
 - **全て緑（exit 0）**: Phase 5.5 へ進む。この結果は Phase 6 の focus 判定でも「静的検証済み」として扱ってよい。
-- **いずれか赤（exit≠0）**: Phase 5.5 / Phase 6 へ**進まず**、エラー出力を Phase 5 Fix Mode に渡して決定的に修正 → 本ゲートを再実行。
-- **宣言オラクルが exit 2（判定不能）**: 緑として扱わない。前提の欠落（依存ライブラリが無い等）はコードの修正では直らないので Fix Mode には渡さず、出力を添えて `AskUserQuestion` で「前提を整えて再実行 / 承知の上で Phase 5.5 へ進む」を委ねる。進んだ場合は Phase 7 summary に「静的オラクル判定不能」と明記する。
+- **いずれか赤（exit≠0。下の exit 2 と打ち切りを除く）**: Phase 5.5 / Phase 6 へ**進まず**、エラー出力を Phase 5 Fix Mode に渡して決定的に修正 → 本ゲートを再実行。
+- **宣言オラクルが exit 2（判定不能）/ 126・127（実行不能）/ Bash の timeout で打ち切り**: 緑として扱わない。前提の欠落（依存ライブラリが無い等）はコードの修正では直らないので Fix Mode には渡さず、出力を添えて `AskUserQuestion` で「前提を整えて再実行 / 承知の上で Phase 5.5 へ進む」を委ねる。進んだ場合は Phase 7 summary に「静的オラクル判定不能」（打ち切りなら「静的オラクル打ち切り」）と明記する。
 - **オラクル不在（検出ゼロ）**: gate できないので Phase 5.5 へ進むが、Phase 7 summary に「静的オラクル無し（型/テスト未検証）」と明記する（fail-open は「検証手段が無い」ときだけ許容。曖昧・実行エラー時は赤扱いで保留に倒す）。
 
 **暴走ガード**: 本ゲート ↔ Fix Mode の往復は**最大 2 回**まで。2 回修正しても赤が残る場合はループを止め、`AskUserQuestion` で「手動修正して再開 / 承知の上で Phase 5.5 へ進む / abandon」をユーザーに委ねる（同一エラーの無限往復を防ぐ）。`low` effort では本ゲート自体を skip 可（速度優先。ただし skip した旨は summary に残す）。

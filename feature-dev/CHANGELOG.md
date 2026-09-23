@@ -5,6 +5,19 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.3] - 2026-09-24
+
+### Fixed
+
+- **Phase 5.3 の宣言オラクルの実行が、結果を判定に届けていなかった**（2.15.2 で入れた経路。セルフレビューで検出）。
+  `bash X; RC=$?` を if の中で代入で終えると Bash の終了ステータスが常に 0 になり、変数も次の呼び出しに残らない。
+  exit code を `oracle_exit=` として出力し、repo ルートから実行し、Bash の timeout に 600000 を指定する（既定の 120 秒では
+  この repo の宣言でも打ち切られる）。126・127 と打ち切りは exit 2 と同じ判定不能として Fix Mode に渡さない。
+  検出（Step 1）と実行（Step 2）を分け、二重実行の余地を消した。契約の正本（code-review の machine-layer.md `## 5`）への
+  SSoT pin を置いた
+- 2.15.2 の記述「package.json の無いリポジトリでは何も検査せずに通っていた」は不正確だった（tsconfig・Cargo.toml・go.mod・
+  pyproject.toml へのフォールバックがある）。正しくは「宣言オラクルが一度も走らなかった」
+
 ## [2.15.2] - 2026-09-24
 
 ### Fixed

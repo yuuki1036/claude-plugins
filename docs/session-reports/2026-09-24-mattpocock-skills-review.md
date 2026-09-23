@@ -28,6 +28,8 @@
 - `~/.claude/scripts/env-check.sh`（マシンごとの環境点検、読み取り専用）を追加。`~/.claude/skills` の旧コピー 6 件と
   `commands/revise-claude-md.md` の撤去はユーザーが手で行う（auto mode の分類器が削除を止めたため）
 
+- セルフレビュー（/code-review:self-review、MAJOR 1 件 + 付録の推奨 3 件）を受けた修正: S3 の宣言オラクルの実行が exit code を判定に届けず、既定 120 秒の Bash timeout で打ち切られる問題（feature-dev 2.15.3。契約の正本 machine-layer.md `## 5` への SSoT pin も追加）/ teardown が Step 8 でマーカーごと worktree を消す問題（dev-workflow 1.34.1）/ living-spec README の行数（0.4.1）
+
 **未着手**（統合レポートの ID）: S4・S5・S7〜S17、A3〜A5・A7、B 群、C 群（C1 を除く）。
 
 ---
