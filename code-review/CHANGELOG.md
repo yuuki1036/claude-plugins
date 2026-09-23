@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.129.1] - 2026-09-23
+
+### Changed
+
+- **計測の基準値を新算法（`tokens.schema` 3）で取り直した**（`design-notes/pending-optimizations.md ## 計測の基準値`）。
+  `review-backfill.sh` で開発機 1 台の `review:completed` 161 件から 59 件を後付けし、1 体あたり cache_read の中央値は
+  opus-4-8 が 958.2k（n=17）、opus-5 が 3,007.5k（n=25）。旧基準の 5,039k（Opus 5 期・重複計上込み）とは比べない旨と、
+  backfill の既定は今いるリポジトリしか見ないので他リポジトリのログは `--logs` / `--projects` で明示する旨を添えた。規約本文・SKILL は変更なし
+
 ## [2.129.0] - 2026-09-23
 
 ### Fixed

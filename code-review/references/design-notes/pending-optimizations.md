@@ -19,7 +19,23 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 - 1 体平均: 52 msgs / 24 tool calls / cache_write 334k / cache_read 5,039k / peak context 142〜185k
 - **バッチ率 1.00**（558 回のツール呼び出しが 100% 単発）、**Read の範囲指定率 16%**、**Bash の `cd` 始まり 61%**
 
-次に実 review を流したら `scripts/measure-tokens.sh` で同じ指標を取り、この表と比較する。
+次に実 review を流したら `scripts/measure-tokens.sh` で同じ指標を取り、下の新算法の値（同じ世代のもの）と比較する。
+
+### 新算法（`tokens.schema` 3）での取り直し（2026-09-23）
+
+`scripts/review-backfill.sh` で、残っている agent transcript から新算法の値を後付けした（publish 済み payload にも retro にも混ぜていない）。母集団は開発機 1 台の `review:completed` 161 件（7 リポジトリ。うち非公開リポジトリ 1 つが 135 件）で、後付けが成立したのは 59 件。
+
+| 世代 | n | 1 体あたり cache_read 中央値 |
+|---|---:|---:|
+| opus-4-8 | 17 | 958.2k |
+| opus-5 | 25 | 3,007.5k |
+| mixed（世代混在・引き当て失敗） | 17 | 1,202.5k |
+
+- 除外 102 件の内訳: 区間欠測で窓を作れない 45 / 窓の外にも同セッションの agent がある 38 / transcript が残っていない 14 / 窓が別レビューを内包している 5
+- **上の旧算法の表（23 体・5,039k）とは数え方が違うので比べない**。以後の改修効果は、同じ世代・新算法の値同士で比べる。mixed は単一世代の比較に使わない
+- **4-8 と 5 の差（約 3.1 倍）を世代差と断定しない**。4-8 のサンプルは 2026-08-25 以降に偏っており、effort / 規模 tier の構成も違う。窓は payload の `duration_*` からの逆算なので分オーダーの誤差が乗る
+- サンプルの大半はプラグイン開発以外のリポジトリで取ったもの。別マシン・別リポジトリの値と並べるときは母集団の違いを明記する
+- 再現: `review-backfill.sh --logs <各リポジトリの .claude/events.jsonl> --projects <対応する ~/.claude/projects/ の slug>`。**既定は今いるリポジトリしか見ない**ので、他リポジトリで回したレビューは明示しないと母集団に入らない（このリポジトリ単独では 2 件・成立 0 件だった）
 
 > **1.（meta-reviewer と反証レイヤーの並列化）は v2.61.0 で実装した**（GitHub issue #122）。根拠は `orchestration-rationale.md`「meta-reviewer と反証レイヤーを同一 wave にした経緯」へ移した。
 
