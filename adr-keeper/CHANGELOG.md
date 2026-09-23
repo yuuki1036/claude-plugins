@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.3] - 2026-09-24
+
+### Changed
+
+- 記録価値 3 条件の翻案元（mattpocock/skills の domain-modeling）と MIT の表示を足した（許諾文は repo 直下の NOTICE）。
+  挙動は変わらない
+
 ## [0.3.2] - 2026-09-06
 
 ### Fixed

@@ -83,6 +83,8 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
 2. **文脈なしでは不可解** — 将来の読者が「なぜこうしたのか」と疑問に思う
 3. **実在したトレードオフの結果** — 本物の代替案があり、理由を持って選んだ
 
+（3 条件は mattpocock/skills の domain-modeling「Offer ADRs sparingly」を翻案。Copyright (c) 2026 Matt Pocock / MIT License、許諾文は repo 直下の NOTICE）
+
 3 つすべて YES なら黙って手順 1 へ進む。**1 つでも NO なら** AskUserQuestion で 1 回だけ確認する（再確認はしない。ユーザーが「記録する」を選んだらそれ以上異を唱えない）:
 - question: "この判断は {満たさない条件} を満たさないように見えます。ADR として記録しますか？"
 - header: "ADR ゲート"

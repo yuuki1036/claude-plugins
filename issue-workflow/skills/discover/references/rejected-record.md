@@ -1,5 +1,7 @@
 # 却下記録（`kind: rejected`）フォーマット正本
 
+> 翻案元: [mattpocock/skills](https://github.com/mattpocock/skills) の triage の `.out-of-scope/`（Copyright (c) 2026 Matt Pocock / MIT License。許諾文は repo 直下の NOTICE）
+
 人間が「対応しない」と明示判断した提案・課題を概念単位で永続化する knowledge の書式。writer は discover（Phase 7.5）と maintain（破棄時の却下記録）、reader は discover の重複除外（Phase 4）と knowledge の一覧表示。
 
 ## ファイル書式

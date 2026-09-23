@@ -1,0 +1,38 @@
+このリポジトリの一部は、mattpocock/skills（https://github.com/mattpocock/skills）のスキルを
+翻案している。翻案したファイルと翻案元は次のとおり。各ファイルの冒頭または該当箇所にも出典を 1 行置いている
+（プラグインとして配布されるのは各ファイルだけで、この NOTICE は配布物に含まれないため）。
+
+| 翻案したファイル | 翻案元 |
+|---|---|
+| dev-workflow/skills/diagnose/SKILL.md | skills/engineering/diagnosing-bugs |
+| feature-dev/references/grill-protocol.md | skills/productivity/grill-me（当時） |
+| design-doc/skills/design-doc/references/grill-protocol.md | 同上（feature-dev 版の複製） |
+| issue-workflow/skills/issue-design/references/design-rules.md のルール 5 | skills/productivity/grill-me（当時） |
+| issue-workflow/skills/issue-design/references/design-rules.md のルール 6 | to-issues（現 skills/engineering/to-tickets） |
+| issue-workflow/skills/discover/references/rejected-record.md | skills/engineering/triage の .out-of-scope |
+| adr-keeper/skills/adr/SKILL.md の記録価値 3 条件 | skills/engineering/domain-modeling |
+| docs/skill-writing.md | writing-great-skills（現 skills/productivity/writing-for-agents） |
+
+翻案元のライセンス:
+
+MIT License
+
+Copyright (c) 2026 Matt Pocock
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

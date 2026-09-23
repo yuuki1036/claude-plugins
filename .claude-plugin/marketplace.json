@@ -36,7 +36,7 @@
     {
       "name": "issue-workflow",
       "description": "Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。却下記録（kind: rejected）で見送り提案の再提案を discover が概念類似照合で抑止。",
-      "version": "1.6.1",
+      "version": "1.6.2",
       "author": {
         "name": "yuki"
       },
@@ -108,7 +108,7 @@
     {
       "name": "adr-keeper",
       "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。new 時は記録価値 3 条件セルフゲート（覆すコスト大 × 文脈なしで不可解 × 実在のトレードオフ、supersede 経由は除外）で ADR の希釈を防止。",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "author": {
         "name": "yuki"
       },

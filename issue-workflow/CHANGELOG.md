@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.6.2] - 2026-09-24
+
+### Changed
+
+- 翻案した箇所に翻案元と MIT の表示を足した（issue-design の design-rules.md ルール 5・6、discover の
+  rejected-record.md。いずれも mattpocock/skills 由来。許諾文は repo 直下の NOTICE）。挙動は変わらない
+
 ## [1.6.1] - 2026-09-16
 
 ### Fixed

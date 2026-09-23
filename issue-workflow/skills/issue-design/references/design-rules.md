@@ -48,7 +48,7 @@ open でも放置しない。各 open 論点に「現時点ではどれが有力
 
 ## ルール5: open は grill で詰める（独断列挙で終えない）
 
-ルール2 の「現時点の方向性」やルール4 の「確定タイミング」は、スキルが独断で埋めると主観的な open になりがち。コミット前に **1 問ずつ grill して詰める**ことで、選択肢の網羅性とユーザー合意を担保する（Brooks の design tree / "grill-me" に由来）。
+ルール2 の「現時点の方向性」やルール4 の「確定タイミング」は、スキルが独断で埋めると主観的な open になりがち。コミット前に **1 問ずつ grill して詰める**ことで、選択肢の網羅性とユーザー合意を担保する（Brooks の design tree / mattpocock/skills の "grill-me" に由来。Copyright (c) 2026 Matt Pocock / MIT License、許諾文は repo 直下の NOTICE）。
 
 grill の 3 原則:
 
@@ -60,7 +60,7 @@ grill の 3 原則:
 
 ## ルール6: 分割は縦に切る（vertical slice / expand–contract）
 
-スコープ超過などで Issue を分割するときは、層（schema だけ・API だけ・UI だけ）で横に切らず、**完了時に単独でデモ・検証可能な縦のスライス**（tracer bullet）で切る。
+スコープ超過などで Issue を分割するときは、層（schema だけ・API だけ・UI だけ）で横に切らず、**完了時に単独でデモ・検証可能な縦のスライス**（tracer bullet）で切る（mattpocock/skills の to-issues（現 to-tickets）を翻案。Copyright (c) 2026 Matt Pocock / MIT License、許諾文は repo 直下の NOTICE）。
 
 - 縦切りされた各 Issue は、それ単体で客観的な完了条件（動作確認）が書ける
 - 横切りは「全部揃うまで何も動かない」Issue 群を生み、完了条件が主観的になり、途中で止まると価値ゼロの仕掛品が残る
