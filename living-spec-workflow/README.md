@@ -97,6 +97,8 @@ OQ を close するとき、台帳から行を消して Decision へ移す設計
 | Issue 1 件の作業設計（9 セクション） | `issue-workflow` の issue-design |
 | 設計から実装まで一気通貫 | `feature-dev` |
 
+使い分けの軸は「何セッションかかるか」。未確定が 1 セッションの grill で片付くなら `design-doc` / `feature-dev` で足り、複数セッションに跨って決めていくときに living spec を使う。
+
 living spec で確度が `確定` に寄った塊ができたら Issue 化する。living spec 側からプラグインは呼ばない（疎結合）。ユーザーが `/issue-create`（issue-workflow）に手で渡す。
 
 ## doc-freshness との住み分け

@@ -30,6 +30,10 @@ Issue 化する前段の「設計収束ドキュメント」(living spec) を `.
 | Issue 1 件の作業設計（9 セクション） | `issue-workflow:issue-design` |
 | 設計から実装まで一気通貫で進める | `feature-dev` |
 
+**使い分けの軸は「何セッションかかるか」**。未確定が 1 セッションの grill（数問で、互いの依存が浅い）で片付くなら living spec は要らない — `design-doc` か `feature-dev` の grill で足りる。複数セッションに跨って決めていくときに使う。
+
+living spec は**決める場所で、実装はしない**。実装に手を付けたくなったら到達点に着いた合図なので、Issue 化するか `feature-dev` に渡す。
+
 > living spec で確度が `確定` に寄った塊ができたら、それを Issue 化する。living spec 側からプラグインは呼ばない（疎結合）。ユーザーが `/issue-create`（issue-workflow）に手で渡す。
 
 ## 参照する規範（references）
@@ -89,7 +93,7 @@ Issue 化する前段の「設計収束ドキュメント」(living spec) を `.
    - question: 「living spec を作成します。この内容でよいですか？」
    - header: 「slug 確認」
    - options:
-     1. label: 「この内容で作成 (Recommended)」 / description: 「slug: `<推定 slug>` / タイトル: `<推定タイトル>` で `.claude/living-specs/<slug>.md` を作成する」
+     1. label: 「この内容で作成 (Recommended)」 / description: 「slug: `<推定 slug>` / タイトル: `<推定タイトル>` で `.claude/living-specs/<slug>.md` を作成する」。会話から見て未確定が 1 セッションで片付きそうなら、「1 セッションで決まりそうなら design-doc / feature-dev の grill で足ります」と 1 文だけ添える（止めない。選ばれればそのまま作る）
      2. label: 「slug を指定する」 / description: 「別の slug / タイトルをチャットで指定する」
 
 > **既存時に上書き / 改訂 / supersede を問わない**のは design-doc Phase 1 との**意図的な非対称**。living spec は 1 プロジェクト = 1 ファイルで、supersede の概念を持たない（収束の履歴は Decision log が線形に持つ）。誤って別プロジェクトの living spec を潰す事故のほうが重いので、中止に倒す。
@@ -249,9 +253,12 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    ✅ D<n> を追加しました（.claude/living-specs/<slug>.md）
      <見出し>
 
-   close した OQ: OQ1, OQ3（双方向参照を検証済み）
+   close した OQ: OQ1（<問いの先頭 20 字程度>）, OQ3（<同>）（双方向参照を検証済み）
    残る open な OQ: <残数> 件
    ```
+   OQ は番号だけでは読めないので、問いの先頭を添える。
+
+> **スコープ外と分かった OQ**も decision で閉じる。見出しを `### D<n>: スコープ外: <要約>` にし、`根拠` に到達点の外だと判断した理由を書く。あわせて「進め方フェーズ」の「スコープ外」小見出しに 1 行残す（template.md のコメント参照）。
 
 > **OQ の reopen は許容しない**（`format-spec.md` 3 節）。close 後に議論が再燃したら、`/living-spec oq` で**新しい OQ を起票**し、その問いの中で旧 OQ / D# を参照する。決定の履歴を線形に保つため。
 
@@ -316,7 +323,7 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    ```
 4. **セッション再開の導線**として、open な OQ と `未定` / `方向性(仮)` の項目を提示する。ここが「新規セッションで living spec の未確定から再開する」ゴールの実装
 
-> 確定した塊ができていたら、報告の末尾に「確定した項目が <n> 件あります。Issue 化するなら `/issue-create` に渡してください」と添える。**living spec 側からプラグインは呼ばない**（疎結合）。
+> 確定した塊ができていたら、報告の末尾に「確定した項目が <n> 件あります」と添え、次の渡し先を 1 行で示す: 実装方式（HOW）を詰めるなら `design-doc`、振る舞い（WHAT）を固めるなら `bdd-spec`、作業に落とすなら `/issue-create`（issue-workflow）。**living spec 側からプラグインは呼ばない**（疎結合）。
 
 ---
 
