@@ -2,6 +2,26 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.0] - 2026-09-24
+
+### Added
+
+- **diagnose に「秘密情報を伏せる」節を追加**。mattpocock/skills の diagnosing-bugs が翻案後に足した Redact 節の翻案で、
+  対象を広げた: トークン・認証ヘッダ・cookie などに加えて個人情報も伏せる。提示する出力だけでなく、残すもの
+  （loop スクリプト・回帰テスト・コミットメッセージ・Phase 6 の journal / Issue）にも効かせる。loop は資格情報を
+  環境変数で参照し、人間参加ループでは観測結果だけを貼ってもらう（サインインはユーザー側の手順に残す）
+- diagnose の冒頭に翻案元と MIT の表示を 1 行置いた（許諾文は repo 直下の NOTICE）
+
+### Fixed
+
+- **git-commit-helper の staging-patterns が未ステージの変更を消す手順を指示していた**。パッチ適用に失敗したら
+  `git checkout -- <file>` で「ステージをリセット」とあったが、これは index の内容で作業ツリーを上書きする。
+  `git apply --cached` は失敗しても index を変えないので、戻す操作は要らないと書き直した。`--3way` の衝突だけは
+  `git restore --staged <file>` で index を戻す。`git checkout -- <file>` と `--staged` なしの `git restore` は禁止と明記した
+- worktree-setup / worktree-teardown が、DB クライアント（`psql` など）を permissions の deny で止めている環境で
+  DB の作成・drop に進めなかった。拒否されたら回避せず、コマンドを提示してユーザーに手動で実行してもらう。
+  teardown では drop の確認が取れるまでマーカーを消さない
+
 ## [1.33.1] - 2026-09-18
 
 ### Fixed

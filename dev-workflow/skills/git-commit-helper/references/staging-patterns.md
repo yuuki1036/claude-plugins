@@ -33,7 +33,9 @@ git diff --cached <file>
 ### 注意事項
 
 - hunk が隣接・重複している場合はパッチ適用が失敗する可能性がある。その場合は `git apply --cached --3way /tmp/full.patch` を試す
-- パッチ適用失敗時は `git checkout -- <file>` でステージをリセットし、別の分割方法を検討する
+- パッチ適用が失敗しても index は変わらない（`git apply` は全体が当たるか何もしないか）ので、戻す操作は要らない。別の分割方法を検討する
+  - `--3way` で衝突した場合だけ index に衝突ステージが残る。`git restore --staged <file>` で index だけを HEAD に戻す（作業ツリーは変わらない。そのファイルに積んだ他の部分ステージも外れる）
+  - **`git checkout -- <file>` / `git restore <file>`（`--staged` なし）は使わない**。index の内容で作業ツリーを上書きし、まだステージしていない変更が消える
 - 分割が複雑すぎる場合は無理に分けず、ファイル単位のコミットに妥協する
 
 ## 分割判断の具体例

@@ -97,6 +97,8 @@ fi
 
 DB drop は破壊的操作のため必ずユーザー確認を取る。drop に失敗した場合は **必ず警告** を出す（漏れると次回 setup で「既に存在」エラーになる）。
 
+DB クライアント（`psql` / `mysql` など）が permissions の deny や hook で拒否されたら、別の手段で回避しない。存在確認と drop のコマンド（DB 名を埋めたもの）を提示してユーザーに手動で実行してもらい、drop できたかを聞く。確認が取れるまでチェック 2 は未完了として扱い、マーカーファイルを消さない（消すと DB 名が分からなくなる）。
+
 ```bash
 if ! psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
   echo "OK: DB ${DB_NAME} drop 完了"
