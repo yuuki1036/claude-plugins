@@ -121,8 +121,9 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 
 同一セッションで既に reviewer agent を走らせた後（コミット前並列レビュー等）に self-review を再実行する場合、既検証の観点を再報告しないよう以下の引数でスコープを制御する:
 
-- `--focus <観点>`: レビュー対象を特定の観点に絞る（例: `--focus "comment-conciseness"`, `--focus "type-safety"`）。複数指定はカンマ区切り
+- `--focus <観点>`: レビュー対象を特定の観点に絞る（例: `--focus "comment-accuracy"`, `--focus "type-design"`）。複数指定はカンマ区切り
 - `--exclude <観点1,観点2>`: 既に他 agent でカバー済みの観点をスキップする
+- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `prompts/focus/<key>.md` のファイル名）に限る**。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える
 
 適用先:
 - **Phase 0 (Step 2)**: `--focus` 指定時は該当観点の reviewer のみ構成する（最小保証の reviewer-bugs / reviewer-claude-md も `--focus` に含まれない限り起動しない）。`--exclude` 指定時は該当観点の reviewer を構成から外す
@@ -132,6 +133,10 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
   review focus: {{ focus or "全件" }}
   already verified (do not re-report): {{ exclude or "none" }}
   ```
+
+**`--spec <path>` / `--spec=<path>`（仕様ファイルの明示 / 他 plugin からの呼び出し向け）:**
+
+呼び出し側が仕様ファイル（BDD `spec.md`・design doc など）のパスを渡したときは、Phase 0 で `spec-compliance` を起動条件に入れ、その reviewer にパスを渡して Read させる（本文は転記しない）。session-context / Issue / knowledge が無い repo でも、spec と実装の照合が起きる。ファイルが実在しなければ無視し、レポートの「⚠️ 欠損観点」に `--spec のファイルが無い: <path>` と書く。`--focus` を併用する場合、`spec-compliance` が focus に含まれていなければ起動しない（呼び出し側が focus に入れる）
 
 **コンテキスト収集（並列で実行）:**
 - CLAUDE.md・規約ファイル: `CLAUDE.md`, `.github/CONTRIBUTING.md`, `.eslintrc.*`, `prettier.config.*`
@@ -166,7 +171,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 diff の特性を分析し、必要なエージェントタイプを判定する:
 - **explorer**: 巨大ファイル、複数関数、条件分岐追加、共通モジュール変更のいずれかに該当するか
 - **reviewer**: 常に必要。diff パターンマッチでどの観点が必要かを判定
-- **spec-compliance**: session-context / Issue / knowledge が存在するか
+- **spec-compliance**: session-context / Issue / knowledge が存在するか、`--spec` で仕様ファイルが渡されたか
 
 #### 2.2 Stage 2: 体数・フォーカス・冗長度決定
 
@@ -248,7 +253,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - <!-- COMMENT-POLISH: attach --> **`comment-accuracy` を担当する reviewer には `prompts/focus/comment-polish.md` を Read 対象に追加する**（単独起動・バンドル相乗りのどちらでも追加。B 系統は Focus テンプレートではないので前項では拾われない。追加漏れは機能の silent な不発になるため、comment-polish 連結チェックが宣言とパスの両方を Critical で検証する）
 - **可変部の共通ブロック（全 agent 共通の実値集合）は 1 ファイルに落としてパス渡しする**: Step 1 の `## meta` が出す `agent_ctx_file=` のパスに **Write で 1 回だけ**書き出し、各プロンプトには「まず `<agent_ctx_file>` を Read せよ」の 1 行だけを置く。**入れる項目・残す項目・フォールバックの正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**（`{{PLUGIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` / `$DIFF_FILE` / AGENTS.md パス / session-context パス / 確定事実 など。#124 (c)）。**書き出したら、その応答の中でこの wave に出す Agent call（reviewer 全行 + 相乗りする skeptic + specialist）を列挙してから発行に移る**（発行直前チェックポイント / orchestration-guide.md `## 0`。列挙より後に思いついた観点は同じ層へ後追いせず Round 2 へ回す — #220）
   - **self-review 固有**: **PR 番号・HEAD SHA・`{{MAIN_ROOT}}` は入れない**（PR を持たず worktree も使わないので、テンプレートの worktree セットアップ節は適用外である旨を共通ブロックに明記する）
-- **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）
+- **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）。`--spec` があれば **spec-compliance 担当にだけ**「仕様ファイル: `<path>`（Read して照合元にする）」を添える
 - **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 3 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `prompts/reviewer-common.md` 側（#122）
 - **Vault 注入**: Step 1.5 で関連ありと判断した知見があれば、各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する。reviewer には「過去に同種コードで指摘された観点を優先的に確認せよ。ただし現在の diff に該当しなければ無視してよい」と添える
 - `isolation: "worktree"` は使用しない

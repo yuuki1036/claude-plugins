@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.130.0] - 2026-09-24
+
+### Added
+
+- **self-review に `--spec <path>`（`--spec=<path>` も可）を追加**。呼び出し側（feature-dev の Phase 6 など）が仕様ファイル
+  （BDD `spec.md`・design doc）を渡すと、spec-compliance を起動条件に入れ、その reviewer にだけパスを渡して照合元にする。
+  session-context / Issue / knowledge が無い repo でも spec と実装の照合が起きる。description は変えていない（`argument-hint` と本文のみ）
+
+### Fixed
+
+- **`--focus` / `--exclude` の語彙外の値を黙って捨てていた**。値は triage-guide `## 3` のキー（`prompts/focus/<key>.md`）に限ると明記し、
+  語彙外の値はレポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない）。呼び出し側の
+  名前違い（feature-dev が渡していた `migration-safety` 等）が「その観点は問題なし」に見えていた。SKILL の例（`comment-conciseness` /
+  `type-safety`）も語彙外だったので `comment-accuracy` / `type-design` に直した
+
 ## [2.129.2] - 2026-09-23
 
 ### Changed

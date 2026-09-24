@@ -6,6 +6,7 @@
 - session-context.md（設計判断、スコープ定義）
 - Issue ファイル（要件定義、受入条件）
 - knowledge ファイル（ドメイン知識、技術的制約）
+- 呼び出し側が渡した仕様ファイル（self-review の `--spec`。BDD spec.md なら Scenario / Examples / 同値分割表を受入条件として読む。design doc なら採用案と設計判断）
 
 検出対象:
 - 仕様で定義された要件の実装漏れ
