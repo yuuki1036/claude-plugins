@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-09-24
+
+### Changed
+
+- **`.mcp.json` の `alwaysLoad: true` を外した**。notebooklm-mcp の 39 ツールすべてのスキーマが、ツール検索の遅延ロードを経ずに
+  毎セッション常駐していた（スキルが使うのは `notebook_list` / `notebook_query` / `source_add` の 3 つ）。セッション開始も
+  このサーバーのツールを最大 5 秒待っていた。外すと他の MCP と同じく名前だけが載り、使うときに読み込まれる（初回の呼び出しに
+  読み込みの 1 往復が入る）。スキルの「MCP 未起動」の判定は、関数一覧に無いだけで未導入と案内せず、先に `ToolSearch` で読み込む形にした
+
 ## [0.2.8] - 2026-08-28
 
 ### Fixed

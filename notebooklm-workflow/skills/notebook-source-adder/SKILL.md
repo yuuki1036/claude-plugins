@@ -68,7 +68,7 @@ NotebookLM への認証が失敗しました。以下を実行して再ログイ
 
 ### MCP 未起動
 
-`mcp__plugin_notebooklm-workflow_notebooklm-mcp__*` tool が見つからない場合は SessionStart 時の依存チェック（[ERROR] メッセージ）を再確認するよう案内する。`pip install notebooklm-mcp-cli` 未実行の可能性が高い。
+`mcp__plugin_notebooklm-workflow_notebooklm-mcp__*` の tool は、セッション開始時には名前だけが載り、スキーマは使うときに読み込まれる（`.mcp.json` で `alwaysLoad` を使っていない）。関数一覧に無くても未導入とは限らないので、まず `ToolSearch` で `select:mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_list,mcp__plugin_notebooklm-workflow_notebooklm-mcp__source_add` を読み込む。ToolSearch でも出てこないときだけ、SessionStart 時の依存チェック（[ERROR] メッセージ）を確認するよう案内する（`pip install notebooklm-mcp-cli` 未実行の可能性が高い）。
 
 ## 絶対厳守ルール
 
