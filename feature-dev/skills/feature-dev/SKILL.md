@@ -314,6 +314,11 @@ Stop when no open branch remains. **Proportionality**: if only 1-2 questions rem
 
 Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2, (b) every user decision from Step 4 (and any question left open, with when / where it gets settled), (c) each inherited decision with its premise-check result (成立 / 衝突を解消した結果). This is the implicit contract the Phase 4 architects must honor. An inherited decision enters the contract only after its premise check — it is not an unconditional contract just because the Issue states it.
 
+Then confirm it with **one** `AskUserQuestion` before launching the architects (they are opus agents, up to 3, and a misunderstanding baked in here propagates into every blueprint): question "この設計契約で Phase 4（設計）に進みますか？", options "進む (Recommended)" / "直す" (the user states what to change via the free-text option). On "直す", update the contract, show the changed lines, and continue — do not re-ask unless the correction itself opened a new decision (grill that one per Step 4).
+
+- **Skip the question** when (b) and (c) contain nothing the user decided or left open — a contract made only of auto-resolved facts has nothing for the user to confirm. Still show the summary.
+- An answer that auto-continued on idle (`askUserQuestionTimeout`) counts as "進む", but note in the Phase 7 summary that the contract was not explicitly confirmed.
+
 ---
 
 ## Phase 4: Architecture Design

@@ -5,6 +5,15 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.1] - 2026-09-24
+
+### Added
+
+- **Phase 3 Step 5 の設計契約を、architect を起動する前に 1 問で確認するようにした**（mattpocock/skills grilling の
+  「共通理解に達したと確認するまで動かない」を翻案）。opus の architect（最大 3 体）に誤解を持ち込む前に止められる。
+  「直す」なら契約を直して変わった行を見せ、そのまま進む。ユーザーが決めた事項も未決も無い（自動で確定した前提だけの）
+  契約では聞かない。無操作の自動継続は「進む」として扱い、Phase 7 の summary に未確認と残す
+
 ## [2.17.0] - 2026-09-24
 
 ### Added
