@@ -48,6 +48,8 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
 
 ### Phase 0: backend 検出（全スキル共通）
 
+**issue-design の例外（先に読む）**: 下の手順 4（どちらも無効）でも終了せず、`BACKEND=none` として Phase 0.1 に進む。終了するのは、Issue ファイルを指定したリライトだけ（Phase 0.1 で判別する）。新規本文の設計や、本文を貼り付けて頼まれたリライトは、`{DATA_DIR}` が無くても成り立つ（knowledge と他 Issue の照合を省くだけ）。spec-advisor は backend の無い repo でも issue-design を提案するので、ここで終了すると案内された先で止まる
+
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
 2. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
 3. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
@@ -57,14 +59,15 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
 
 ### Phase 0.1: 対象の特定
 
-1. 新規本文の設計か、既存 Issue のリライトかを判別する
-2. 既存 Issue の場合: 対象ファイルを特定して Read する
-   - ブランチ名から Issue ID を抽出し `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md`
-   - 特定できなければユーザーに対象を確認する
-3. 意図が曖昧（新規起票なのか設計なのか不明）なら **AskUserQuestion** で確認:
+1. 新規本文の設計か、既存 Issue のリライトかを判別する。意図が曖昧（新規起票なのか設計なのか不明）なら、先に手順 3 で確かめてから手順 2 へ進む
+2. 既存 Issue の場合:
+   - Issue ファイル（引数の Issue ID・ブランチ名）で指定されていて `BACKEND=none` なら、リライト対象のファイルが無いので終了する。ファイル化してから直すなら「`/issue-workflow:init` → issue-create（local: 起票 / linear: その Issue ID を取り込む）→ issue-design を再実行」と案内する
+   - 本文が会話に貼り付けられている場合は、`BACKEND=none` でも新規本文と同じく続ける（提示で完了する）
+   - それ以外は対象ファイルを特定して Read する: ブランチ名から Issue ID を抽出し `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md`。特定できなければユーザーに対象を確認する
+3. 意図が曖昧なときの **AskUserQuestion**:
    - question: 「Issue を新規起票しますか、既存の設計・リライトをしますか？」
    - options: 「新規起票（issue-create に切替）」/「設計・リライト（このまま続行）」
-   - 「新規起票」選択時は issue-create に案内して終了する
+   - 「新規起票」選択時は issue-create に案内して終了する（`BACKEND=none` なら先に `/issue-workflow:init` で backend を作ってから issue-create）
 
 ### Phase 0.5: BDD bilayer モード（bdd-spec 連携・opt-in）
 
@@ -87,6 +90,7 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
      - `role=<Issue から得た役割>` / `want=<実現したいこと>` / `why=<背景、不明なら省略>` / `shortPath=<true/false 省略可>`
    - 引数で全要素が埋まっていれば bdd-spec 側は AskUserQuestion を発火せず非対話実行する
    - 生成された `spec.md` のパスを Issue 本文の「成果物」または「参考資料」に相対パスのファイルリンクで記録する（human 層 → AI 層のポインタ）
+   - Issue ファイルがまだ無い新規本文（`BACKEND=none` を含む）では、Phase 4 で提示する**前に** AI 層を生成し、spec.md のパスを入れた本文を提示する（提示の後では書き足す先が無い）
 4. fallback: bdd-spec:create-spec が失敗（version 不整合・内部エラー等）したら warning を出し、9 セクション本文のみで完了する（後方互換 100%）
 
 ### Phase 1: 9 セクション構造で設計
@@ -106,7 +110,7 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
    - **現時点の方向性**（有力案 + 理由）
    - **確定タイミング**（いつ・どこで確定するか）
 4. **open を grill で詰める（design-rules.md ルール5）**: open を独断列挙で終えず、コミット前に 1 つずつ詰める:
-   1. **自己解決**: 各 open について「既存 ADR / 他 Issue の決定事項 / knowledge の決定で決着済みでは？」を `Grep` / `Skill` の `knowledge` /（adr-keeper があれば）`adr` で確認する。明示的な決定記録が直接答えていれば open から決定事項へ移す（ユーザーに聞かない）。コードに前例があるだけなら決着済みとせず、「現時点の方向性」の根拠にして聞く
+   1. **自己解決**: 各 open について「既存 ADR / 他 Issue の決定事項 / knowledge の決定で決着済みでは？」を `Grep` / `Skill` の `knowledge` /（adr-keeper があれば）`adr` で確認する（`BACKEND=none` なら knowledge と他 Issue は無いので、ADR と BDD spec だけを調べる）。明示的な決定記録が直接答えていれば open から決定事項へ移す（ユーザーに聞かない）。コードに前例があるだけなら決着済みとせず、「現時点の方向性」の根拠にして聞く
    2. **1 問ずつ確認**: 残った open を依存順（先行 open が後続の選択肢を変える順）に並べ、**AskUserQuestion で 1 問ずつ**確認する。各質問は「現時点の方向性」を推奨案として先頭に置き `(Recommended)` を付ける
    3. ユーザーが「おまかせ」なら推奨案で確定する。無操作で自動継続した回答と「分からない / 他の人が決める」は確定せず、open のまま確定タイミング（ルール4）を書く。前の回答で後続 open が解消・変形したら畳み直す
    - **過剰質問を避ける**: open が 1〜2 個かつ方向性が明確なら、grill を 1 回の提示にまとめてよい
@@ -143,6 +147,10 @@ Issue は `{DATA_DIR}/{slug}/issues/*.md` のローカル Markdown ファイル�
 3. open の pros/cons はインライン圧縮形式（`— Pros: … / Cons: …`）で書く
 4. 重複表現を除去して一望性を高める
 
+#### BACKEND=none: 標準 Markdown（ファイルは作らない）
+
+BACKEND=local と同じ記法で書く。他 Issue はまだファイルが無いので、相対パスではなく件名で参照する。spec.md・design doc へのリンクは repo ルートからのパスで書き、ファイル化するときに Issue ファイルからの相対パスへ直す。
+
 #### BACKEND=linear: Linear 記法
 
 1. `references/linear-syntax.md` を Read する
@@ -165,7 +173,7 @@ Phase 1〜3 で設計した 9 セクション本文の散文部分は、ユー�
    ```
    `WRITING_POLISH=0` → 本 Phase を skip。
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。
-3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **9 セクション構造・collapsible（local: `<details>` / linear: `+++`）・Issue リンク（local: 相対パス / linear: `<issue id>`）は変更しない（各セクション内の散文のみ推敲）。構造を壊す結果は破棄し元案を使う**。変更があれば何を変えたか一言添える。
+3. 返ってきた推敲済みテキスト（`POLISH_RESULT_START`〜`POLISH_RESULT_END` マーカー間のみ抽出。サマリ・変更点リストは本文に含めない）を本文の代わりに使う。ただし **9 セクション構造・collapsible（local: `<details>` / linear: `+++`）・Issue リンク（local: 相対パス / linear: `<issue id>` / none: 件名）は変更しない（各セクション内の散文のみ推敲）。構造を壊す結果は破棄し元案を使う**。変更があれば何を変えたか一言添える。
 4. fallback: 呼び出し失敗時は warning を出し、添削前の本文で従来どおり完了する。
 
 > 対象は human 層の散文。bdd-spec bilayer で生成する AI 層 spec.md は添削対象外。
@@ -175,7 +183,7 @@ Phase 1〜3 で設計した 9 セクション本文の散文部分は、ユー�
 1. 設計した本文をユーザーに提示する
 2. 承認を得てから反映する:
    - 既存 Issue ファイルのリライト → Write で更新
-   - 新規本文のみ設計した場合 → 本文を提示し、ファイル化が必要なら issue-create に案内する
+   - 新規本文のみ設計した場合 → 本文を提示し、ファイル化が必要なら issue-create に案内する。issue-create は type 別テンプレートで本文を組み直すので、起票後にそのファイルを対象に issue-design を再実行し、この本文を素材として渡す。`BACKEND=none` なら先に `/issue-workflow:init` で backend を作る（local を選べば issue-create で起票できる。linear なら Linear に Issue を作ってから issue-create でその ID を取り込む）
 3. リライトで削った情報がある場合は「何を削ったか」を一言添える（ノイズ削減であって情報損失でないことを示す）
 
 ---

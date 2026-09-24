@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.2] - 2026-09-24
+
+### Fixed
+
+- **issue-design が、backend の無い repo では新規本文の設計でも init を案内して終了していた**（Phase 0 の共通手順 4）。
+  新規本文の設計は `{DATA_DIR}` が無くても成り立つ（knowledge と他 Issue の照合を省くだけ）のに、spec-advisor が backend の無い
+  repo でも issue-design を提案するので、案内された先で止まっていた。どちらも無効なら `BACKEND=none` として続け、終了するのは
+  Issue ファイルを指定したリライトだけにした（本文を貼り付けたリライトは続ける）。`BACKEND=none` の記法（他 Issue は件名、
+  spec.md などは repo ルートからのパス）、bilayer の AI 層を提示前に生成する順序、ファイル化の手順（init → issue-create →
+  issue-design を再実行）を足した。全スキル共通の Phase 0 の本文は変えず、例外は見出しの直下に置いた
+- design-rules.md の grill 原則 1 で、knowledge を「あれば」調べる形にした（adr と同じ書き方）
+
 ## [1.7.1] - 2026-09-24
 
 ### Fixed

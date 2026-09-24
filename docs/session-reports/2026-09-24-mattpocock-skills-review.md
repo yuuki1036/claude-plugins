@@ -44,7 +44,9 @@
 
 - S8: bdd-spec の glossary-ssot.md から、実装の無い「evaluate が別名に warning を出す」を外し、事実に合わせた。既存プロジェクトの all_spec.md は手で直す
 
-**未着手**（統合レポートの ID）: S9〜S17、B 群、C 群（C1 を除く）。
+- S9: issue-design が backend の無い repo でも新規本文の設計を続けるようにした（BACKEND=none）。独立検証 2 体の指摘（新規起票の案内・貼り付けたリライト・記法・順序）も取り込んだ
+
+**未着手**（統合レポートの ID）: S10〜S17、B 群、C 群（C1 を除く）。
 
 ---
 
