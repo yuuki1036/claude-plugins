@@ -50,7 +50,7 @@ tags: []
 | サブコマンド | 挙動 |
 |---|---|
 | `list` | `.claude/adr/*.md` を Glob → frontmatter 解析 → id / title / status / phase / last-validated の表を id 降順で表示。0 件なら「ADR がまだありません」 |
-| `new <title>` | timestamp 取得 → kebab タイトル生成 → `.claude/adr/`（無ければ作成）に template から Write。status 既定 `accepted` |
+| `new <title>` | timestamp 取得 → kebab タイトル生成 → `.claude/adr/`（無ければ作成）に template から Write。本文の節は会話文脈から埋め、埋められない節は完了報告に未記入として挙げる。status 既定 `accepted` |
 | `supersede <old-id> <new-title>` | 新 ADR 作成（`supersedes: [<old-id>]`）+ 旧 ADR を Edit（`status` / `phase` / `superseded-by` / `last-validated`）+ 両方を Read で相互参照確認 |
 
 ## doc-freshness との住み分け

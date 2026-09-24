@@ -53,7 +53,9 @@
 
 - S12: 「推測を含む」とされていた前提を独立調査 3 体 + 反証 1 体で確かめた。実害は `ts`: 過去に入った原因を診断した時刻で書くと、retro が還流前の失敗を還流後の再発に数え、窓の外の古い失敗を窓内に戻す（`retro-aggregate.sh` は `timestamp` だけで数える）。diagnose は原因 commit（`Co-Authored-By: Claude` があるものだけ）の author date を `ts` にし、特定できなければ書かない（dev-workflow 1.34.4。手順は `skills/diagnose/references/journal-candidate.md`）。failure-journal 側は `ts` を発生時刻と定義し、retro が `（由来 <sha>）` で diagnose の行を見分けて同じ原因をまとめる（0.6.3）。差分レビュー（3 観点・37 件 → 反証後 22 件、major 1: `log.showSignature=true` で `ts` が壊れる）を反映した。残したもの: dev-workflow 1.34.3 以前の diagnose が書いた行（由来なし・`ts` は診断時刻）は見分けられない / retro の description の「自己訂正の候補」は据え置き（ルーティングに効かず、変えると evals の再実行が要る）
 
-**未着手**（統合レポートの ID）: S13〜S17、B 群、C 群（C1 を除く）。
+- S13: adr-keeper の SKILL.md を README の「本文の節はすべて必須」に合わせた（0.3.4）。埋められない節は推測で埋めず完了報告に挙げる。差分レビュー（2 観点・24 件 → 反証後 8 件、すべて minor 以下）を反映した。id の丸め（秒が 00 の 4 件）は transcript で由来を確かめた: 残っている 3 件はどれも adr スキルを通さず直接 Write され、`date` も走っていない（節の構成もテンプレと違い、適用方法の節が無いものがある）。スキルの外で書かれる経路にはスキル本文が届かないので、記述の修正では塞げない。塞ぐなら `.claude/adr/` への新規 Write を見る hook（id と現在時刻の差・必須節）で、新しい component になるため未着手。既存 ADR の id は相互参照のキーなので直さない
+
+**未着手**（統合レポートの ID）: S14〜S17、B 群、C 群（C1 を除く）。
 
 ---
 

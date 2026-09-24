@@ -105,7 +105,7 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
    - options:
      1. label: "accepted（決定済み）" / description: "既に採用が決まった判断を記録する（既定。phase: current）"
      2. label: "proposed（提案）" / description: "まだ決定していない案を記録する（phase: current のまま、後で accepted に更新）"
-6. `references/template.md` を Read し、以下を置換して Write:
+6. `references/template.md` を Read し、以下を置換したうえで手順 7 のとおり本文を埋めて Write する:
    - `{ID}` → `<timestamp>`
    - `{TITLE}` → `<title>`（原文ママ）
    - `{STATUS}` → 上記で確定した `accepted` / `proposed`
@@ -114,7 +114,11 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
    - `{SUPERSEDES}` → `[]`
    - `{SUPERSEDED_BY}` → `null`
    - `append_only: true` はテンプレの固定値（置換不要）。doc-freshness に stale 判定を免除させるマーカーとして必ず残す
-7. **適用方法 (Enforcement) セクションは必ず埋めるよう促す**: 「この決定を lint / test / hook で機械強制できないか」を検討した結果を本文に残す（できない場合はその理由）
+7. **本文の節はすべて必須**: `references/template.md` のコンテキスト / 背景・決定・影響・適用方法・検討した代替案・関連。会話文脈から埋め、テンプレのコメントは本文に置き換える:
+   - **適用方法 (Enforcement)**: 「この決定を lint / test / hook で機械強制できないか」を検討した結果を書く（できない場合はその理由）
+   - **検討した代替案**: 採らなかった案と理由（new では 3 条件の 3 で確かめた代替案。supersede では覆される旧 ADR の決定も代替案に含める）。3 条件の 3 が NO のまま記録した場合は、実在の代替案が無いまま記録した旨を書く
+   - **関連**: テンプレの 4 項目（ADR / Issue / design doc / knowledge）のラベル行は残す。確かめて無い項目は「なし」と書く。関連 ADR は `.claude/adr/*.md` の見出しから当たりを付ける
+   - 文脈から埋められない節・項目は推測で埋めない。テンプレのコメントを残し、Phase 5 で未記入として挙げる（コメントが 1 つでも残る節は未記入）
 
 ---
 
@@ -154,10 +158,11 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
   status: accepted
   phase: current
 
-次のアクション:
-- 「## 適用方法 (Enforcement)」を埋める（lint / test / hook 強制の可否を検討）
-- 「## 検討した代替案」「## 関連」を必要に応じて補完
+未記入の節（すべて必須）:
+- 「## <節名>」: <埋めるのに何が要るか>
 ```
+
+未記入の節が無ければ「未記入の節」のブロックごと省く。
 
 supersede 時は旧 ADR の更新結果も併記する。
 
@@ -169,9 +174,9 @@ supersede 時は旧 ADR の更新結果も併記する。
 1. Phase 0: .claude/adr/ 存在確認（無ければ mkdir）
 2. Phase 1: サブコマンド判定（list / new / supersede）
 3. Phase 2: list → frontmatter 解析 → id 降順の表
-4. Phase 3: new → 記録価値 3 条件ゲート（supersede 経由は除外）→ date +%Y%m%d%H%M%S → kebab → template Write
+4. Phase 3: new → 記録価値 3 条件ゲート（supersede 経由は除外）→ date +%Y%m%d%H%M%S → kebab → template の本文を文脈で埋めて Write（埋められない節は推測で埋めない）
 5. Phase 4: supersede → 新 ADR 作成 + 旧 ADR 4 フィールド更新 + 相互参照確認
-6. Phase 5: 完了報告
+6. Phase 5: 完了報告（未記入の節があれば挙げる）
 ```
 
 ---
