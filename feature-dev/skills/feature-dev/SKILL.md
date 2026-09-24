@@ -25,6 +25,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。Phase 5.3 の宣言オラクルの契約は code-review の machine-layer.md が正本（プラグイン間依存禁止のため要約で持つ）。正本が変わったら Phase 5.3 を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/machine-layer.md#5 @737549d4 -->
+<!-- SSOT: feature-dev/references/grill-protocol.md @d09de1e7 -->
 
 You are helping a developer implement a new feature. Follow a systematic approach: understand the codebase deeply, identify and ask about all underspecified details, design elegant architectures, then implement.
 
@@ -42,7 +43,7 @@ You are helping a developer implement a new feature. Follow a systematic approac
 
 ## Core Principles
 
-- **Grill, don't list**: Identify all ambiguities, edge cases, and underspecified behaviors, then resolve them as a grill (Phase 3) — self-answer what the codebase answers, ask the rest one at a time in dependency order, each with a recommended answer. Don't dump a flat question list. Grill early (after understanding the codebase, before designing architecture). See `${CLAUDE_PLUGIN_ROOT}/references/grill-protocol.md`.
+- **Grill, don't list**: Identify all ambiguities, edge cases, and underspecified behaviors, then resolve them as a grill (Phase 3) — self-answer facts the codebase answers, leave decisions to the user unless an explicit decision record (ADR / Issue decision / spec) answers them, ask the rest one at a time in dependency order, each with a recommended answer. Don't dump a flat question list. Grill early (after understanding the codebase, before designing architecture). See `${CLAUDE_PLUGIN_ROOT}/references/grill-protocol.md`.
 - **Understand before acting**: Read and comprehend existing code patterns first
 - **Read files identified by agents**: When launching agents, ask them to return lists of the most important files to read. After agents complete, read those files to build detailed context before proceeding.
 - **Simple and elegant**: Prioritize readable, maintainable, architecturally sound code
@@ -270,7 +271,7 @@ Subsequent phases consume this table directly.
 
 **CRITICAL**: This is one of the most important phases. DO NOT SKIP.
 
-**Why grill instead of a list**: A flat list forces the user to answer everything at once — including questions the codebase already answers — and hides the dependency order between decisions. The grill protocol resolves the design tree one branch at a time, self-answering what the code can answer and recommending an answer for the rest. Full protocol: `${CLAUDE_PLUGIN_ROOT}/references/grill-protocol.md`.
+**Why grill instead of a list**: A flat list forces the user to answer everything at once — including questions the codebase already answers — and hides the dependency order between decisions. The grill protocol resolves the design tree one branch at a time, self-answering facts the code can answer and recommending an answer for the rest. Full protocol: `${CLAUDE_PLUGIN_ROOT}/references/grill-protocol.md`.
 
 ### Step 1: Enumerate candidate ambiguities
 
@@ -281,10 +282,14 @@ Always add these **premise checks** as candidates too (full rules: grill-protoco
 - **設計システムとの対応**（UI を含むタスク）: 各 UI 要素が設計システム / `REQUIRED_DOCS` のどのコンポーネントに当たり、設計がそれに一致するか
 - **引き継いだ決定の前提**: Issue / spec / living spec の既存決定（決定番号つきのもの等）が置いた前提が、今回の実装コンテキスト（コンテナ・画面種別・呼び出し経路など）でまだ成り立つか
 - **標準規約との衝突**: 引き継いだ決定が `REQUIRED_DOCS` やプロジェクト規約とぶつからないか
+- **説明とコードの食い違い**: ユーザーの説明が Phase 2 の調査結果と食い違っていたら、該当箇所（file:line）を示してどちらが正しいか聞く
 
-### Step 2: Self-resolve from the codebase (grill principle ①)
+### Step 2: Self-resolve facts, not decisions (grill principle ①)
 
-For each candidate, ask "can this be answered by what we already know?" — Phase 2 explorer findings, a quick `Grep` / `Glob`, the BDD spec (Phase 1.3), or the Issue context (Phase 1.5). If yes, **resolve it yourself, drop it from the list, and record it as a 確定した前提** to surface in Step 5. Do NOT ask the user something the code already answers.
+Split each candidate into a **fact** (how things are now) or a **decision** (how things should be).
+
+- **Facts**: if Phase 2 explorer findings or a quick `Grep` / `Glob` answer it, **resolve it yourself, drop it from the list, and record it as a 確定した前提** to surface in Step 5. Do NOT ask the user something the code already answers.
+- **Decisions**: self-resolve only when an **explicit decision record** answers the question directly — the BDD spec (Phase 1.3), the decisions in the Issue context (Phase 1.5), an ADR, or a knowledge decision. A precedent in the code is not a decision record: use it as the basis for your recommendation in Step 4, and still ask.
 
 **Exception — conflicts are not self-resolvable**: when a premise check finds that an inherited decision's premise no longer holds, or that it conflicts with `REQUIRED_DOCS`, do not pick a side yourself. Keep it as a question for Step 4 (recommend the option that follows the standard convention unless the decision explicitly overrides it for a stated reason).
 
@@ -298,13 +303,14 @@ For each remaining question, in dependency order:
 
 1. Ask it with `AskUserQuestion` — **one question per call** — with a **recommended answer as the first option suffixed `(Recommended)`** plus a one-line rationale.
 2. After the answer, re-evaluate the remaining questions: a prior answer may resolve, reshape, or reveal a downstream branch. Collapse resolved ones; insert newly-revealed ones.
-3. If the user says "whatever you think is best", take the recommended option and continue.
+3. If the user says "whatever you think is best", take the recommended option and continue. An answer that auto-continued on idle (`askUserQuestionTimeout`) is **not** that — keep the question open instead of settling it.
+4. If the user says they don't know or someone else decides, do not fill it with your recommendation. Keep it open and record when / where / by whom it gets settled; list it in Step 5 as an open decision the architects must not assume.
 
 Stop when no open branch remains. **Proportionality**: if only 1-2 questions remain and the direction is obvious, batch them into a single `AskUserQuestion` rather than grilling serially (avoid over-questioning).
 
 ### Step 5: Confirm the design contract
 
-Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2, (b) every user decision from Step 4, (c) each inherited decision with its premise-check result (成立 / 衝突を解消した結果). This is the implicit contract the Phase 4 architects must honor. An inherited decision enters the contract only after its premise check — it is not an unconditional contract just because the Issue states it.
+Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2, (b) every user decision from Step 4 (and any question left open, with when / where it gets settled), (c) each inherited decision with its premise-check result (成立 / 衝突を解消した結果). This is the implicit contract the Phase 4 architects must honor. An inherited decision enters the contract only after its premise check — it is not an unconditional contract just because the Issue states it.
 
 ---
 

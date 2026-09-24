@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.0] - 2026-09-24
+
+### Changed
+
+- **grill の原則①を「事実は自分で調べ、決定はユーザーに委ねる」に改めた**（正本 feature-dev と同期した
+  `references/grill-protocol.md` と Phase 3）。mattpocock/skills の grilling の一般則（`e5932a7`: 事実と決定の分離）の翻案。これまでは「コードで答えられる問いは聞かない」で、コードに前例があるだけの決定まで自分で決めていた。Phase 3 に「未決を埋めない」（自動継続・分からない・他者が決める
+  問いは未解決事項として確定のタイミングと担当を書く）を足し、正本への SSoT pin を置いた
+
 ## [0.4.8] - 2026-09-24
 
 ### Fixed

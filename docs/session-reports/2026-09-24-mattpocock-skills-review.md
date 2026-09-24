@@ -30,7 +30,9 @@
 
 - セルフレビュー（/code-review:self-review、MAJOR 1 件 + 付録の推奨 3 件）を受けた修正: S3 の宣言オラクルの実行が exit code を判定に届けず、既定 120 秒の Bash timeout で打ち切られる問題（feature-dev 2.15.3。契約の正本 machine-layer.md `## 5` への SSoT pin も追加）/ teardown が Step 8 でマーカーごと worktree を消す問題（dev-workflow 1.34.1）/ living-spec README の行数（0.4.1）
 
-**未着手**（統合レポートの ID）: S4・S5・S7〜S17、A3〜A5・A7、B 群、C 群（C1 を除く）。
+- A3: grill の一般則（事実と決定の分離・未決を埋めない・説明とコードの食い違い）を feature-dev / design-doc / issue-design に取り込み、要約している 4 か所に正本への SSoT pin を置いた（2026-09-24、ユーザー指示）
+
+**未着手**（統合レポートの ID）: S4・S5・S7〜S17、A4・A5・A7、B 群、C 群（C1 を除く）。
 
 ---
 

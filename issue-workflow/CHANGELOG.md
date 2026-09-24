@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.0] - 2026-09-24
+
+### Changed
+
+- **issue-design の grill（design-rules.md ルール5 / Phase 2）の自己解決を、明示的な決定記録が答えている場合に限った**。
+  mattpocock/skills の grilling の一般則（`e5932a7`: 事実と決定の分離）の翻案。これまでは「コードで答えられる問いは聞かない」で、コードに前例があるだけの決定まで自分で決めていた。コードの前例は「現時点の方向性」の根拠にして聞く。自動継続した回答と「分からない / 他の人が決める」は確定せず、
+  open のままルール4 の確定タイミングを書く。ユーザーの説明とコードの食い違いは該当箇所を示して聞く。正本（feature-dev の
+  grill-protocol.md）への SSoT pin を置いた
+
 ## [1.6.2] - 2026-09-24
 
 ### Changed

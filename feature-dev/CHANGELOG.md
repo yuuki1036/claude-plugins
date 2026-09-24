@@ -5,6 +5,18 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.16.0] - 2026-09-24
+
+### Changed
+
+- **grill の原則①を「事実は自分で調べ、決定はユーザーに委ねる」に改めた**（`references/grill-protocol.md` と Phase 3）。
+  mattpocock/skills の grilling の一般則（`e5932a7`: 事実と決定の分離）の翻案。これまでは「コードで答えられる問いは聞かない」で、コードに前例があるだけの決定まで自分で決めていた。自分で解決してよいのは事実と、明示的な決定記録（ADR・Issue の決定事項・BDD spec・knowledge の決定）が
+  直接答えている決定だけで、コードの前例は推奨の根拠にとどめて聞く
+- 原則③に 2 点を足した: 無操作で自動継続した回答（`askUserQuestionTimeout`）は「おまかせ」と区別して未決に残す /
+  「分からない」「他の人が決める」は推奨で埋めず、いつ・どこで・誰が確定するかを残す（Step 5 の設計契約にも載せる）
+- 前提確認に「ユーザーの説明とコードの食い違い」を足した（4 分岐）。食い違いは該当箇所を示して聞く
+- Phase 3 の要約から正本（grill-protocol.md）への SSoT pin を置いた
+
 ## [2.15.3] - 2026-09-24
 
 ### Fixed

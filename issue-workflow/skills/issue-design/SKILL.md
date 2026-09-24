@@ -16,6 +16,9 @@ allowed-tools:
 
 # Issue Design
 
+<!-- 正本依存（SSoT pin）。grill の原則は feature-dev/references/grill-protocol.md が正本で、ここは要約。正本が変わったら grill の節を確認して pin を打ち直す -->
+<!-- SSOT: feature-dev/references/grill-protocol.md @d09de1e7 -->
+
 Issue documentation pattern の規範を提供し、Issue 本文を 9 セクション構造で設計・リライトするスキル。
 「どんな構造で・どんな判断軸で Issue を書くべきか」を定義し、ユーザーの素材や既存 Issue をその構造に落とし込む。
 
@@ -103,9 +106,9 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
    - **現時点の方向性**（有力案 + 理由）
    - **確定タイミング**（いつ・どこで確定するか）
 4. **open を grill で詰める（design-rules.md ルール5）**: open を独断列挙で終えず、コミット前に 1 つずつ詰める:
-   1. **自己解決**: 各 open について「既存 ADR / 他 Issue / コードで決着済みでは？」を `Grep` / `Skill` の `knowledge` /（adr-keeper があれば）`adr` で確認する。決着済みなら open から決定事項へ移す（ユーザーに聞かない）
+   1. **自己解決**: 各 open について「既存 ADR / 他 Issue の決定事項 / knowledge の決定で決着済みでは？」を `Grep` / `Skill` の `knowledge` /（adr-keeper があれば）`adr` で確認する。明示的な決定記録が直接答えていれば open から決定事項へ移す（ユーザーに聞かない）。コードに前例があるだけなら決着済みとせず、「現時点の方向性」の根拠にして聞く
    2. **1 問ずつ確認**: 残った open を依存順（先行 open が後続の選択肢を変える順）に並べ、**AskUserQuestion で 1 問ずつ**確認する。各質問は「現時点の方向性」を推奨案として先頭に置き `(Recommended)` を付ける
-   3. ユーザーが「おまかせ」なら推奨案で確定する。前の回答で後続 open が解消・変形したら畳み直す
+   3. ユーザーが「おまかせ」なら推奨案で確定する。無操作で自動継続した回答と「分からない / 他の人が決める」は確定せず、open のまま確定タイミング（ルール4）を書く。前の回答で後続 open が解消・変形したら畳み直す
    - **過剰質問を避ける**: open が 1〜2 個かつ方向性が明確なら、grill を 1 回の提示にまとめてよい
    - **effort 適応（grill の掘り下げ）**: 実行時 effort = `${CLAUDE_EFFORT}` に応じて grill の深さを調整する（1. の自己解決は effort によらず必ず行う）:
 
