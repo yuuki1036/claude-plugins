@@ -34,7 +34,9 @@
 
 - S4: feature-dev の Phase 6 が spec-compliance と BDD spec（`--spec`）を self-review に渡す。focus 名を code-review の語彙に揃え（`migration-safety` に加え `vercel-best-practices` も語彙外だった）、self-review 側は語彙外の focus を欠損観点に出す / S5: 有効判定を feature-dev の `scripts/plugin-enabled.sh` に寄せた（同じ型の判定は他 5 プラグインに約 24 か所残る）
 
-**未着手**（統合レポートの ID）: S7〜S17、A4・A5・A7、B 群、C 群（C1 を除く）。
+- A4: `docs/skill-writing.md` を MP `c55ee46` の writing-for-agents / SKILL-MECHANICS / docs ページと再同期した。翻案時の取りこぼし（variance bug・co-location・後続を隠す対策が効く条件・統合の逆向き・legwork・relevance の 2 経路・no-op はモデル依存）と、前回以降の差分（cache・分割の基準・over-fitting・終わりの目安・長さでなく挙動で判定）を入れた。claude-meta に入れる C03 / C14（eval の鮮度ゲートに掛かる）は C8 の束に残した
+
+**未着手**（統合レポートの ID）: S7〜S17、A5・A7、B 群、C 群（C1 を除く）。
 
 ---
 
