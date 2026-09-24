@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.1] - 2026-09-24
+
+### Fixed
+
+- living-spec-maintain の check-rules.md 段 1 の表で、0.5.0 で足した子 bullet の説明段落が表の途中に入り、
+  「両方」の行が表から外れていた。行を表に戻し、段落を表の後ろに置いた（内容は変えていない）
+
 ## [0.5.0] - 2026-09-24
 
 ### Changed
