@@ -21,7 +21,7 @@ allowed-tools:
 
 厄介なバグと性能劣化のための診断規律。核心は 1 つ: **バグを赤く点灯させる tight な feedback loop を先に作る**。loop さえあれば二分探索・仮説検証・計装はそれを消費するだけの機械的作業になり、loop が無ければコードをいくら眺めても原因には辿り着けない。Phase の省略は、省略する理由を明示できるときだけ許される。
 
-探索を始める前に、プロジェクトに蓄積された文脈があれば先に読む: issue-workflow の knowledge（`.claude/indie/*/knowledge/` または `.claude/linear/*/knowledge/`）と ADR（`.claude/adr/`）のうち対象領域に関わるもの（無ければ黙ってスキップ）。
+探索を始める前に、プロジェクトに蓄積された文脈があれば先に読む: issue-workflow の knowledge（`.claude/indie/*/knowledge/` または `.claude/linear/*/knowledge/`）と ADR（`.claude/adr/`）のうち対象領域に関わるもの（無ければ黙ってスキップ）。仮説や修正方針が読んだ ADR とぶつかるなら、ADR の id を挙げて明示する（黙って上書きしない）。
 
 ## 秘密情報を伏せる
 

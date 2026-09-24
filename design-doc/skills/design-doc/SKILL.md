@@ -19,7 +19,7 @@ allowed-tools:
 # Design Doc
 
 <!-- 正本依存（SSoT pin）。grill の原則は feature-dev/references/grill-protocol.md が正本で、ここは要約。正本が変わったら grill の節を確認して pin を打ち直す -->
-<!-- SSOT: feature-dev/references/grill-protocol.md @d09de1e7 -->
+<!-- SSOT: feature-dev/references/grill-protocol.md @f90e4324 -->
 
 技術設計書 (design doc) を **実装フェーズなし**で作成・永続化するスキル。代替案比較と設計判断を `.claude/designs/` に面で残し、ADR（点の決定記録）・spec.md（WHAT）・実装（feature-dev）への接続点を機械的に埋めさせる。
 
@@ -101,7 +101,7 @@ allowed-tools:
 
 `references/grill-protocol.md` を Read して適用する。
 
-1. **自己解決（原則①）**: 事実（コードで確かめられるもの）と、既存 ADR・spec.md・Issue の決定事項が直接答えている決定は、自分で調べて「確定した前提」に移す（ユーザーに聞かない。黙って仮定もしない）。コードに前例があるだけの決定は推奨の根拠にとどめて聞く。前提の崩れ・規約との衝突・ユーザーの説明とコードの食い違いは自分で解決しない
+1. **自己解決（原則①）**: 事実（コードで確かめられるもの）と、既存 ADR・spec.md・Issue の決定事項が直接答えている決定は、自分で調べて「確定した前提」に移す（ユーザーに聞かない。黙って仮定もしない）。コードに前例があるだけの決定は推奨の根拠にとどめて聞く。前提の崩れ・規約との衝突・ユーザーの説明とコードの食い違い・既存 ADR との矛盾は自分で解決しない（ADR とぶつかるなら id を挙げて明示する）
 2. **1 問ずつ依存順（原則②）**: 残った問いを design tree の依存順に並べ、AskUserQuestion で 1 問ずつ確認する。回答のたびに残りの問いを再評価する
 3. **推奨つき（原則③）**: 各質問の先頭 option に推奨案 + `(Recommended)` + 1 行理由を添える
 4. **過剰質問を避ける**: 残 1〜2 問で方向が明確なら 1 回の提示にまとめる
@@ -152,7 +152,7 @@ allowed-tools:
    ```bash
    if grep -q '"adr-keeper@' "$HOME/.claude/settings.json" 2>/dev/null; then ADR_KEEPER=1; else ADR_KEEPER=0; fi
    ```
-3. `ADR_KEEPER=1` かつ候補が 1 件以上 → AskUserQuestion で切り出す候補を確認（multiSelect）し、承認分を `Skill` tool で `adr-keeper:adr` の `new <title>` として作成する。作成した ADR の id を doc 側 frontmatter の `adrs:` に追記し、ADR 側「関連」にも doc パスを記録する（相互リンク）
+3. `ADR_KEEPER=1` かつ候補が 1 件以上 → AskUserQuestion で切り出す候補を確認（multiSelect）し、承認分を `Skill` tool で `adr-keeper:adr` の `new <title>` として作成する（ここで選別を済ませているので、adr 側の記録価値 3 条件ゲートは掛からない）。作成した ADR の id を doc 側 frontmatter の `adrs:` に追記し、ADR 側「関連」にも doc パスを記録する（相互リンク）
 4. `ADR_KEEPER=0` → 切り出しは skip。`[→ADR候補]` マーカーは doc に残す（後から adr-keeper 導入時に拾える）
 
 ---

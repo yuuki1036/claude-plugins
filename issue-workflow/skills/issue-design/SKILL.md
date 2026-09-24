@@ -17,7 +17,7 @@ allowed-tools:
 # Issue Design
 
 <!-- 正本依存（SSoT pin）。grill の原則は feature-dev/references/grill-protocol.md が正本で、ここは要約。正本が変わったら grill の節を確認して pin を打ち直す -->
-<!-- SSOT: feature-dev/references/grill-protocol.md @d09de1e7 -->
+<!-- SSOT: feature-dev/references/grill-protocol.md @f90e4324 -->
 
 Issue documentation pattern の規範を提供し、Issue 本文を 9 セクション構造で設計・リライトするスキル。
 「どんな構造で・どんな判断軸で Issue を書くべきか」を定義し、ユーザーの素材や既存 Issue をその構造に落とし込む。

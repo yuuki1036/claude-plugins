@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.4] - 2026-09-24
+
+### Changed
+
+- **issue-create Phase 5.5 で、Issue の内容が提示した ADR とぶつかるなら備考に明記するようにした**（ADR の id・ぶつかる点・
+  見直す理由を 1 行）。issue-design の design-rules にも、既存 ADR とぶつかる決定は id を挙げて明示すると足した
+
 ## [1.7.3] - 2026-09-24
 
 ### Fixed

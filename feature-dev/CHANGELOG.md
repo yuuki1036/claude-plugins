@@ -5,6 +5,15 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.4] - 2026-09-24
+
+### Changed
+
+- **grill の前提確認に「既存 ADR との矛盾」を足した**（grill-protocol.md と要約）。ぶつかるなら ADR の id を挙げて明示し、
+  従うか見直すかを聞く。黙って上書きしない（翻案元: mattpocock/skills の「Flag ADR conflicts」）
+- **Phase 3 Step 5 の要約に ADR 候補を並べるようにした**。adr-keeper が有効なとき、ユーザーの決定のうち記録価値の
+  3 条件を満たすものだけを挙げる（0 件が普通）。記録するかはユーザーが決める
+
 ## [2.17.3] - 2026-09-24
 
 ### Changed

@@ -72,7 +72,9 @@
 
 - B5: code-review の test-quality に名前付きアンチパターン（実装への結合・同語反復・境界外の mock）を足し、起動条件に「新しいソースがあるのにテストの変更が 0」を足した（code-review と feature-dev の triage を対で直した）
 
-**未着手**（統合レポートの ID）: B6〜B13、C 群（C1 を除く）。
+- B6: ADR まわり。adr-keeper の記入例に 7 類型、grill の前提確認（正本・複製・要約 3 か所）と diagnose・issue-create・issue-design に「既存 ADR との矛盾を明示する」、3 条件ゲートを design-doc Phase 6 経由で免除、feature-dev Step 5 に ADR 候補の列挙（adr-keeper 有効時のみ・0 件が普通）
+
+**未着手**（統合レポートの ID）: B7〜B13、C 群（C1 を除く）。
 
 ---
 

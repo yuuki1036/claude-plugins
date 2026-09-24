@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.2] - 2026-09-24
+
+### Changed
+
+- **grill の前提確認に「既存 ADR との矛盾」を足した**（grill-protocol.md の複製と Phase 3）
+- **Phase 6 から adr を呼ぶときは、adr 側の記録価値 3 条件ゲートが掛からない**と明記した（候補の選別はここで済んでいる）
+
 ## [0.5.1] - 2026-09-24
 
 ### Fixed

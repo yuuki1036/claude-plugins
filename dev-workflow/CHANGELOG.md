@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.7] - 2026-09-24
+
+### Changed
+
+- **diagnose で、仮説や修正方針が読んだ ADR とぶつかるなら id を挙げて明示するようにした**（黙って上書きしない）
+
 ## [1.34.6] - 2026-09-24
 
 ### Changed

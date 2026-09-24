@@ -25,7 +25,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。Phase 5.3 の宣言オラクルの契約は code-review の machine-layer.md が正本（プラグイン間依存禁止のため要約で持つ）。正本が変わったら Phase 5.3 を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/machine-layer.md#5 @737549d4 -->
-<!-- SSOT: feature-dev/references/grill-protocol.md @d09de1e7 -->
+<!-- SSOT: feature-dev/references/grill-protocol.md @f90e4324 -->
 
 You are helping a developer implement a new feature. Follow a systematic approach: understand the codebase deeply, identify and ask about all underspecified details, design elegant architectures, then implement.
 
@@ -285,6 +285,7 @@ Always add these **premise checks** as candidates too (full rules: grill-protoco
 - **引き継いだ決定の前提**: Issue / spec / living spec の既存決定（決定番号つきのもの等）が置いた前提が、今回の実装コンテキスト（コンテナ・画面種別・呼び出し経路など）でまだ成り立つか
 - **標準規約との衝突**: 引き継いだ決定が `REQUIRED_DOCS` やプロジェクト規約とぶつからないか
 - **説明とコードの食い違い**: ユーザーの説明が Phase 2 の調査結果と食い違っていたら、該当箇所（file:line）を示してどちらが正しいか聞く
+- **既存 ADR との矛盾**: 採ろうとしている決定が `.claude/adr/` の ADR とぶつかるなら、ADR の id を挙げて明示し、従うか見直すかを聞く（黙って上書きしない）
 
 ### Step 2: Self-resolve facts, not decisions (grill principle ①)
 
@@ -313,6 +314,8 @@ Stop when no open branch remains. **Proportionality**: if only 1-2 questions rem
 ### Step 5: Confirm the design contract
 
 Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2, (b) every user decision from Step 4 (and any question left open, with when / where it gets settled), (c) each inherited decision with its premise-check result (成立 / 衝突を解消した結果). This is the implicit contract the Phase 4 architects must honor. An inherited decision enters the contract only after its premise check — it is not an unconditional contract just because the Issue states it.
+
+If `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" adr-keeper` prints `1`, also list as **ADR 候補** the user decisions in (b) that meet all three of adr-keeper's conditions (hard to reverse / puzzling without context / the result of a real trade-off). Zero is the normal case — list nothing then. Only list them; recording one is the user's call (`/adr new <title>`). Print nothing about ADRs when adr-keeper is not enabled.
 
 Then confirm it with **one** `AskUserQuestion` before launching the architects (they are opus agents, up to 3, and a misunderstanding baked in here propagates into every blueprint): question "この設計契約で Phase 4（設計）に進みますか？", options "進む (Recommended)" / "直す" (the user states what to change via the free-text option). On "直す", update the contract, show the changed lines, and continue — do not re-ask unless the correction itself opened a new decision (grill that one per Step 4).
 

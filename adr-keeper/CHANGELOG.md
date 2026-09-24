@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.1] - 2026-09-24
+
+### Changed
+
+- **記入例に「ADR にする判断の 7 類型」を足した**（翻案元: mattpocock/skills domain-modeling の ADR-FORMAT.md）
+- **記録価値の 3 条件ゲートを design-doc Phase 6 からの切り出しでも掛けないようにした**。design doc の `[→ADR候補]` から
+  ユーザーが選んだ時点で選別が済んでいる
+
 ## [0.4.0] - 2026-09-24
 
 ### Added

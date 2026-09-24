@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git 操作・PR 作成・UI 動作確認・バグ診断・worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、承認ゲート付き PR 作成、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断、worktree 単位の DB / port 分離を提供する。",
-      "version": "1.34.6",
+      "version": "1.34.7",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "issue-workflow",
       "description": "Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。却下記録（kind: rejected）で見送り提案の再提案を discover が概念類似照合で抑止。",
-      "version": "1.7.3",
+      "version": "1.7.4",
       "author": {
         "name": "yuki"
       },
@@ -63,7 +63,7 @@
     {
       "name": "feature-dev",
       "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。code-explorer / code-architect の 2 agent を内包し、型・テスト・lint の決定的オラクルゲートを高コストレビューの前に置く。Phase 6 は code-review:self-review へ --embed 委譲する。",
-      "version": "2.17.3",
+      "version": "2.17.4",
       "author": {
         "name": "yuki"
       },
@@ -108,7 +108,7 @@
     {
       "name": "adr-keeper",
       "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。new 時は記録価値 3 条件セルフゲート（覆すコスト大 × 文脈なしで不可解 × 実在のトレードオフ、supersede 経由は除外）で ADR の希釈を防止。スキルを通さない ADR の新規 Write は PreToolUse hook が id・命名・必須見出しを検査して止める。",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "author": {
         "name": "yuki"
       },
@@ -135,7 +135,7 @@
     {
       "name": "design-doc",
       "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱（confidence フィルタ + high 以上で敵対的反証 phase）",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "author": {
         "name": "yuki"
       },
