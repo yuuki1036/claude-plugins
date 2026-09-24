@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.0] - 2026-09-24
+
+### Added
+
+- **adr-write-guard（PreToolUse hook）を追加**。`.claude/adr/` 直下への新規作成（Write と、old_string 空の Edit）で、
+  ファイル名が `<YYYYMMDDhhmmss>-<kebab-slug>.md` か・frontmatter の `id` と `# ADR-<id>` の id がその timestamp と
+  一致するか・`id` が現在時刻の 5 分前から 1 分後までに入るか・テンプレの見出しがすべてあるかを検査し、外れていれば
+  exit 2 で止めて理由を返す。既存 ADR の上書き・Edit（supersede の旧 ADR 更新）・`README.md` / `index.md`・Bash 経由の
+  作成は見ない。jq が無いと検査せずに通す（SessionStart の check-deps がそのときだけ知らせる。jq を
+  `_requirements` に任意依存として足した）。シェルと hook で TZ が違うと `date` を取り直しても合わないので、
+  止めるメッセージに hook 側の現在時刻を出し、それを使ってよいとした
+  - blocker: スキルを通さず ADR を直接 Write する経路にはスキル本文が届かない。実測で既存 9 件中 4 件の id が
+    `date` を通らない丸め値（秒が 00）、3 件でテンプレの節（適用方法など）が落ちており、transcript で確認できた
+    3 件はどれもスキルを通していなかった。doc-freshness の frontmatter-guard を拡張する案は、adr-keeper の規約を
+    別プラグインが抱え込み、かつ PostToolUse で書き込みを止められないので採らなかった
+  - fallback: hook が無い環境ではこれまでどおりスキルの手順（`date` で id を取る・テンプレを埋める）だけが頼り
+  - 時刻の窓は丸めを全部は拾わない（丸めた時刻から 5 分以内に書けば通る）。秒が 00 の id を一律に止める案は、
+    `date` が偶然 00 秒を返した正規の Write も 60 回に 1 回止めるので採らなかった
+
+### Changed
+
+- **new の手順で `date` を Write の直前に取るようにした**。これまでは最初に取っていたので、status の確認で待つ間に
+  古くなりえた（hook が現在時刻との差を見るようになったため）
+
 ## [0.3.4] - 2026-09-24
 
 ### Fixed

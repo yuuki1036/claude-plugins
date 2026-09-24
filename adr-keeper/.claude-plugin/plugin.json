@@ -1,13 +1,19 @@
 {
   "name": "adr-keeper",
-  "version": "0.3.4",
-  "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。new 時は記録価値 3 条件セルフゲート（覆すコスト大 × 文脈なしで不可解 × 実在のトレードオフ、supersede 経由は除外）で ADR の希釈を防止。",
+  "version": "0.4.0",
+  "description": "設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名、適用方法セクション必須化、supersede 時の新規作成+旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。new 時は記録価値 3 条件セルフゲート（覆すコスト大 × 文脈なしで不可解 × 実在のトレードオフ、supersede 経由は除外）で ADR の希釈を防止。スキルを通さない ADR の新規 Write は PreToolUse hook が id・命名・必須見出しを検査して止める。",
   "_requirements": [
     {
       "name": "doc-freshness",
       "type": "plugin",
       "required": false,
       "description": "ADR の鮮度 lint（last-validated stale 判定）を委譲。テンプレの append_only: true で stale 免除。未インストール時は鮮度 lint なしで動作"
+    },
+    {
+      "name": "jq",
+      "type": "cli_tool",
+      "required": false,
+      "description": "ADR 新規作成の検査（adr-write-guard）が使う。未導入時は検査せずに通す"
     }
   ],
   "author": {

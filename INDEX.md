@@ -12,7 +12,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 
 | プラグイン | version | cmd | skill | agent | hooks | mcp | 概要 |
 |-----------|---------|----:|------:|-------|-------|-----|------|
-| [adr-keeper](#adr-keeper) | 0.3.4 | 1 | 1 | - | - | - | 設計判断 (ADR) を append-only 蓄積 |
+| [adr-keeper](#adr-keeper) | 0.4.0 | 1 | 1 | - | PreToolUse, SessionStart | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.5 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [claude-meta](#claude-meta) | 1.13.7 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.130.1 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
@@ -40,6 +40,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 設計判断 (ADR) を append-only で蓄積。YYYYMMDDhhmmss 秒精度命名 + 適用方法 (Enforcement) セクション必須。new 時は記録価値 3 条件ゲート（覆すコスト大 × 文脈なしで不可解 × 実在のトレードオフ。欠けたら 1 回だけ確認、supersede 経由は除外）。supersede 時は新規作成 + 旧 ADR 4フィールド更新（status/phase/superseded-by/last-validated）を機械化。append_only frontmatter で doc-freshness の stale 判定を免除。
 - **commands**: `adr`
 - **skills**: `adr`
+- **hooks**: PreToolUse（adr-write-guard: `.claude/adr/` への新規作成で id・ファイル名・現在時刻・必須見出しを検査し、外れたら止める）, SessionStart（check-deps）
 
 ### bdd-spec
 BDD spec 駆動の scaffold + 評価。create で user story dir + epic.md（Why/What 散文）+ spec.md（Feature/Scenario/Examples + 同値分割表 + 状態遷移表（stateful のみ・任意））を生成、evaluate で構文/粒度/網羅性（同値分割表⇔Scenario 双方向トレース）/トレーサビリティ/遷移カバレッジ（状態遷移表⇔Scenario、stateful のみ dormant）の 5 観点を severity×confidence で静的レビュー。

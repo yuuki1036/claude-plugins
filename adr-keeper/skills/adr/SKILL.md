@@ -92,21 +92,17 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
   1. label: "記録しない (Recommended)" / description: "design doc の決定事項・knowledge・コミットメッセージ等の軽い置き場で足りる"
   2. label: "ADR として記録する" / description: "3 条件の判定に誤りがある、または記録する独自の理由がある"
 
-1. **タイムスタンプ取得**（必ず Bash で取る。擬似時刻を作らない）:
-   ```bash
-   date +%Y%m%d%H%M%S
-   ```
-2. **kebab タイトル生成**: `<title>` を小文字 kebab-case に変換（日本語タイトルは romaji 化せず、英語の要約 slug をユーザー意図から作る。語間はハイフン）
-3. **ファイル名**: `<timestamp>-<kebab-title>.md`（保存先 `.claude/adr/`）
-4. **id**: frontmatter の `id` は `<timestamp>` をそのまま使う（命名規約は `references/naming.md`）
-5. **status 確定**: 会話文脈から決定済み（accepted）か検討中（proposed）かが自明ならそれを使う。曖昧なら **AskUserQuestion** で確認する:
+1. **kebab タイトル生成**: `<title>` を小文字 kebab-case に変換（日本語タイトルは romaji 化せず、英語の要約 slug をユーザー意図から作る。語間はハイフン）
+2. **ファイル名**: `<timestamp>-<kebab-title>.md`（保存先 `.claude/adr/`。`<timestamp>` は手順 7 で取る）
+3. **id**: frontmatter の `id` は `<timestamp>` をそのまま使う（命名規約は `references/naming.md`）
+4. **status 確定**: 会話文脈から決定済み（accepted）か検討中（proposed）かが自明ならそれを使う。曖昧なら **AskUserQuestion** で確認する:
    - question: "この ADR は決定済みですか、まだ検討中（提案）ですか？"
    - header: "ADR status"
    - options:
      1. label: "accepted（決定済み）" / description: "既に採用が決まった判断を記録する（既定。phase: current）"
      2. label: "proposed（提案）" / description: "まだ決定していない案を記録する（phase: current のまま、後で accepted に更新）"
-6. `references/template.md` を Read し、以下を置換したうえで手順 7 のとおり本文を埋めて Write する:
-   - `{ID}` → `<timestamp>`
+5. `references/template.md` を Read し、以下を置換したうえで手順 6 のとおり本文を埋める:
+   - `{ID}` → `<timestamp>`（手順 7 で取る値。frontmatter の id と H1 の 2 か所）
    - `{TITLE}` → `<title>`（原文ママ）
    - `{STATUS}` → 上記で確定した `accepted` / `proposed`
    - `{PHASE}` → `current`
@@ -114,11 +110,16 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
    - `{SUPERSEDES}` → `[]`
    - `{SUPERSEDED_BY}` → `null`
    - `append_only: true` はテンプレの固定値（置換不要）。doc-freshness に stale 判定を免除させるマーカーとして必ず残す
-7. **本文の節はすべて必須**: `references/template.md` のコンテキスト / 背景・決定・影響・適用方法・検討した代替案・関連。会話文脈から埋め、テンプレのコメントは本文に置き換える:
+6. **本文の節はすべて必須**: `references/template.md` のコンテキスト / 背景・決定・影響・適用方法・検討した代替案・関連。会話文脈から埋め、テンプレのコメントは本文に置き換える:
    - **適用方法 (Enforcement)**: 「この決定を lint / test / hook で機械強制できないか」を検討した結果を書く（できない場合はその理由）
    - **検討した代替案**: 採らなかった案と理由（new では 3 条件の 3 で確かめた代替案。supersede では覆される旧 ADR の決定も代替案に含める）。3 条件の 3 が NO のまま記録した場合は、実在の代替案が無いまま記録した旨を書く
    - **関連**: テンプレの 4 項目（ADR / Issue / design doc / knowledge）のラベル行は残す。確かめて無い項目は「なし」と書く。関連 ADR は `.claude/adr/*.md` の見出しから当たりを付ける
    - 文脈から埋められない節・項目は推測で埋めない。テンプレのコメントを残し、Phase 5 で未記入として挙げる（コメントが 1 つでも残る節は未記入）
+7. **タイムスタンプを取って Write する**（必ず Bash で取る。擬似時刻を作らない）。取るのは **Write の直前** — 手順 4 の確認で待つ間に古くならないように。hook（adr-write-guard）が、現在時刻の 5 分前から 1 分後に入らない id と、テンプレの見出しの欠けた新規 ADR を止める:
+   ```bash
+   date +%Y%m%d%H%M%S
+   ```
+   取った値を `<timestamp>` としてファイル名・`{ID}` に入れ、`.claude/adr/<timestamp>-<kebab-title>.md` に Write する。hook に止められたら、表示された理由を直して `date` から取り直す（本文は書き直さず id とファイル名だけ差し替えてよい。取り直しても合わないときは、止めたメッセージにある hook 側の現在時刻を使う）
 
 ---
 
@@ -174,7 +175,7 @@ supersede 時は旧 ADR の更新結果も併記する。
 1. Phase 0: .claude/adr/ 存在確認（無ければ mkdir）
 2. Phase 1: サブコマンド判定（list / new / supersede）
 3. Phase 2: list → frontmatter 解析 → id 降順の表
-4. Phase 3: new → 記録価値 3 条件ゲート（supersede 経由は除外）→ date +%Y%m%d%H%M%S → kebab → template の本文を文脈で埋めて Write（埋められない節は推測で埋めない）
+4. Phase 3: new → 記録価値 3 条件ゲート（supersede 経由は除外）→ kebab → template の本文を文脈で埋める（埋められない節は推測で埋めない）→ 直前に date +%Y%m%d%H%M%S → Write（hook が id・見出しを検査）
 5. Phase 4: supersede → 新 ADR 作成 + 旧 ADR 4 フィールド更新 + 相互参照確認
 6. Phase 5: 完了報告（未記入の節があれば挙げる）
 ```

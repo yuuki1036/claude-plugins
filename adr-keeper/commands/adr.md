@@ -28,6 +28,6 @@ allowed-tools:
 1. Phase 0: 保存先確認（`.claude/adr/`、無ければ作成）
 2. Phase 1: サブコマンド判定（list / new / supersede）
 3. Phase 2 (list): frontmatter を解析して id / title / status / phase / last-validated の表を id 降順で表示
-4. Phase 3 (new): 記録価値 3 条件ゲート（supersede 経由は除外）→ Bash で `date +%Y%m%d%H%M%S` → kebab タイトル生成 → template の本文の節を会話文脈から埋めて Write（埋められない節は推測で埋めず、完了報告で未記入として挙げる）
+4. Phase 3 (new): 記録価値 3 条件ゲート（supersede 経由は除外）→ kebab タイトル生成 → template の本文の節を会話文脈から埋める（埋められない節は推測で埋めず、完了報告で未記入として挙げる）→ Write の直前に Bash で `date +%Y%m%d%H%M%S` → Write
 5. Phase 4 (supersede): 新 ADR 作成 + 旧 ADR 4 フィールド更新（status / phase / superseded-by / last-validated）+ 両方を Read で確認
 6. Phase 5: 完了報告（未記入の節があれば挙げる）
