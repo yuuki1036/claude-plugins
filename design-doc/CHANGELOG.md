@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.1] - 2026-09-24
+
+### Fixed
+
+- **実装ブリッジの `feature-dev ... spec=<path>` が、何のパスを書くのか曖昧だった**（SKILL.md・section-guide.md・template.md・完了報告）。
+  feature-dev の `spec=` は BDD spec.md のパスで、渡されると Phase 1.3 の BDD spec 生成を飛ばし、設計と spec-compliance の照合元に使う。
+  design doc のパスを入れると生成が誤って飛ばされる。4 か所とも「BDD spec.md のパス（無ければ省く）」と明記し、design doc のパスは
+  要約の文中に書くよう添えた。既に作った design doc の実装ブリッジは書き換わらない
+
 ## [0.5.0] - 2026-09-24
 
 ### Changed
