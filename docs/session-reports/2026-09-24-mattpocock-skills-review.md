@@ -68,7 +68,9 @@
 - B2: 見送り（ユーザー判断。確認は 1 問ずつの方針と衝突する）
 - B3: feature-dev の Phase 3 Step 5 で、設計契約を architect 起動前に 1 問で確認するようにした。ラウンドへの相乗りではなく独立した 1 問にした（1 問ずつの方針に合わせた）。ユーザーの決定も未決も無い契約では聞かない
 
-**未着手**（統合レポートの ID）: B4〜B13、C 群（C1 を除く）。
+- B4: feature-dev に `references/testing-discipline.md`（Phase 5 がテスト基盤のあるときだけ読む）と `references/module-design.md`（clean-architecture の architect に渡す語彙・4 原則・依存の 4 分類）を足し、architect の出力に Test Seams、Phase 4 の比較に depth・locality・seam の位置を足した。トートロジーは plugin 独立のため testing-pitfalls を参照せず本文に書いた。design-doc への複製は同期検査を入れるまで見送り
+
+**未着手**（統合レポートの ID）: B5〜B13、C 群（C1 を除く）。
 
 ---
 

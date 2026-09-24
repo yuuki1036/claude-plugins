@@ -328,7 +328,7 @@ Then confirm it with **one** `AskUserQuestion` before launching the architects (
 **Actions**:
 1. Launch the N code-architect agents specified by the Phase 1.7 configuration table in parallel (each with `run_in_background: false` — same rationale as Phase 2). Each agent receives its assigned `focus`:
    - `minimal-changes`: smallest change, maximum reuse of existing code
-   - `clean-architecture`: maintainability, elegant abstractions, long-term evolvability
+   - `clean-architecture`: maintainability, elegant abstractions, long-term evolvability. Pass `Module design vocabulary: ${CLAUDE_PLUGIN_ROOT}/references/module-design.md` in its prompt (the agent Reads it; do not paste the body)
    - `pragmatic-balance`: speed + quality tradeoff explicitly weighed
    - `migration-strategy`: phased migration steps with rollback points (migration tasks only)
    - `delta-proposal`: when Issue context provides existing `feature_dev_plan:` — propose deltas only, do not redesign
@@ -347,7 +347,7 @@ Then confirm it with **one** `AskUserQuestion` before launching the architects (
    - 詳細は `agents/code-architect.md` の "Vault Knowledge Injection" セクション
 
 2. Review all approaches and form your opinion on which fits best for this specific task
-3. Present to user: brief summary of each approach, trade-offs comparison, **your recommendation with reasoning**, concrete implementation differences
+3. Present to user: brief summary of each approach, trade-offs comparison (include **depth / locality / seam placement** per approach — the axes in `${CLAUDE_PLUGIN_ROOT}/references/module-design.md`), **your recommendation with reasoning**, concrete implementation differences
 4. **Ask user which approach they prefer**
 
 **Partial failure tolerance**: If individual architects fail and at least 1 succeeded, continue with the successful results. If all architects failed, fall back to a single architect invocation with `minimal-changes` focus before surfacing the issue.
@@ -412,7 +412,7 @@ Phase 5 has two modes — check the invocation context:
 
    > 🔀 **モデル切り替えポイント**: 設計（Phase 1〜4.8）と実装で別のモデルを使う場合は、**この承認に返信する前に**アプリのモデル選択で実装用モデルへ切り替えてください。切り替えた後の返信から、そのモデルで Phase 5 以降を実行します。切り替え先には上の要約（と design doc）だけが引き継がれるので、足りない判断があれば承認と一緒に書き足してください。
 2. Read all relevant files identified in previous phases
-3. Implement following chosen architecture
+3. Implement following chosen architecture. If the project has a test setup (a test runner and existing tests), Read `${CLAUDE_PLUGIN_ROOT}/references/testing-discipline.md` first and put tests at the **Test Seams** from the chosen blueprint
 4. Follow codebase conventions strictly
 5. Write clean, well-documented code
 6. Update todos as you progress

@@ -69,7 +69,7 @@ architect は常に最低 1 体必要。複数観点を起動する条件:
 | 観点 | 起動条件 |
 |---|---|
 | **minimal-changes** | 常時必須（最小変更案を必ず 1 つ提示） |
-| **clean-architecture** | new-feature / refactor タイプ、または cross-cutting |
+| **clean-architecture** | new-feature / refactor タイプ、または cross-cutting（prompt に `references/module-design.md` のパスを渡す） |
 | **pragmatic-balance** | high effort 以上、かつ minimal vs clean のトレードオフが顕著 |
 | **migration-strategy** | migration タイプ専用（段階移行・ロールバック戦略） |
 

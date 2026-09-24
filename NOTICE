@@ -12,6 +12,8 @@
 | issue-workflow/skills/discover/references/rejected-record.md | skills/engineering/triage の .out-of-scope |
 | adr-keeper/skills/adr/SKILL.md の記録価値 3 条件 | skills/engineering/domain-modeling |
 | docs/skill-writing.md | writing-great-skills（現 skills/productivity/writing-for-agents） |
+| feature-dev/references/testing-discipline.md | skills/engineering/tdd |
+| feature-dev/references/module-design.md | skills/engineering/codebase-design |
 
 翻案元のライセンス:
 

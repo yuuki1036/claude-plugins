@@ -5,6 +5,20 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.2] - 2026-09-24
+
+### Added
+
+- **テストの規律（`references/testing-discipline.md`）を足した**。Phase 5 にはテストについての指示が 1 行も無かった。
+  テスト基盤があるときだけ Normal Mode が読み、architect が決めた Test Seams にテストを置く。良いテスト・seam・
+  アンチパターン（実装への結合・同語反復・水平分割）・mock はシステム境界だけ・ループの規則（赤が先 / 1 回に 1 切れ）。
+  翻案元は mattpocock/skills の tdd。スタック固有のテスト戦略は GitHub issue #89 の領分として書かない
+- **モジュール設計の語彙（`references/module-design.md`）を足した**。module / interface / depth / seam / adapter /
+  leverage / locality の語彙、4 原則（depth は interface の性質・削除テスト・interface がテストの面・adapter 2 つで
+  本物の seam）、依存の 4 分類とテスト方法。clean-architecture の architect に渡し、Phase 4 の比較に depth・locality・
+  seam の位置を足した。翻案元は mattpocock/skills の codebase-design
+- **architect の出力に Test Seams を足した**（テストを置く公開 seam と、そこを越える依存の分類）
+
 ## [2.17.1] - 2026-09-24
 
 ### Added
