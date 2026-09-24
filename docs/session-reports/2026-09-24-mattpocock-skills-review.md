@@ -55,7 +55,9 @@
 
 - S13: adr-keeper の SKILL.md を README の「本文の節はすべて必須」に合わせた（0.3.4）。埋められない節は推測で埋めず完了報告に挙げる。差分レビュー（2 観点・24 件 → 反証後 8 件、すべて minor 以下）を反映した。id の丸め（秒が 00 の 4 件）は transcript で由来を確かめた: 残っている 3 件はどれも adr スキルを通さず直接 Write され、`date` も走っていない（節の構成もテンプレと違い、適用方法の節が無いものがある）。スキルの外で書かれる経路にはスキル本文が届かないので、記述の修正では塞げない。既存 ADR の id は相互参照のキーなので直さない。続けて、ユーザー判断で adr-keeper に PreToolUse hook（adr-write-guard）を足した（0.4.0。component-addition-advisor で doc-freshness 拡張と比べ、新 hook を選んだ）: `.claude/adr/` 直下への新規作成で id・ファイル名・現在時刻との差・必須見出しを検査して止める。差分レビュー（3 観点・32 件 → 反証後 28 件、major 2: 64KB 超の本文で pipefail の SIGPIPE により誤ブロック / 素通り、シェルと hook の TZ 差で止まり続ける）を反映し、本文の解析を jq 1 回にまとめた。同じ SIGPIPE の型が他の hook 4 本にあり、別タスクに切り出した
 
-**未着手**（統合レポートの ID）: S14〜S17、B 群、C 群（C1 を除く）。
+- S14: issue-workflow の template-9sections.md から廃止済みのミラー指示（両プラグインへの反映）を外し、design-rules.md と同じ書き方に揃えた。プラグイン配下に同じ型の残りは無い（`.claude/designs/` の旧記述は S15）
+
+**未着手**（統合レポートの ID）: S15〜S17、B 群、C 群（C1 を除く）。
 
 ---
 

@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.3] - 2026-09-24
+
+### Fixed
+
+- **template-9sections.md に廃止済みの指示が残っていた**。「編集したら両プラグインに同じ内容を反映すること」は
+  ミラー規約の廃止（ADR-20260722164106）と linear-workflow の削除で対象が無くなっている。design-rules.md と同じ
+  書き方に揃え、「記法固有の要素はここに書かない」だけを残した
+
 ## [1.7.2] - 2026-09-24
 
 ### Fixed
