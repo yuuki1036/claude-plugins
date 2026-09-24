@@ -352,6 +352,7 @@ closed が蓄積して 1 ファイルが読みにくくなる可能性がある�
 
 - 現状: living spec → Issue 化はユーザーの手渡し（疎結合）
 - (a) issue-create が living spec を検出して確定塊を提案 — pros: 導線が繋がる / cons: linear/indie 両方に対称実装が必要（ミラー規約）＝実装量 2 倍
+  - 追記（2026-09-24）: この cons はもう成り立たない。ミラー規約は廃止され（ADR-20260722164106）、linear / indie は issue-workflow に統合された。issue-create は 1 か所に実装すれば両 backend に効くので、(a) の実装量は (b) と同程度まで下がった。再評価のときはこの前提で比べる
 - (b) spec-advisor の routing-rubric に living spec を提案肢として追加 — pros: 変更が spec-advisor に閉じる / cons: 提案止まり
 - **現時点の方向性**: v1 では両方やらない。(b) が低コストなので v1 運用後に検討
 - **確定タイミング**: v1 を 1 プロジェクトで運用してから

@@ -57,7 +57,9 @@
 
 - S14: issue-workflow の template-9sections.md から廃止済みのミラー指示（両プラグインへの反映）を外し、design-rules.md と同じ書き方に揃えた。プラグイン配下に同じ型の残りは無い（`.claude/designs/` の旧記述は S15）
 
-**未着手**（統合レポートの ID）: S15〜S17、B 群、C 群（C1 を除く）。
+- S15: living-spec の design doc（`.claude/designs/20260715-living-spec-workflow.md`）の未決 4(a) に、ミラー規約の廃止で「実装量 2 倍」の cons が成り立たなくなった旨を追記した（元の記述は判断の経緯として残した）
+
+**未着手**（統合レポートの ID）: S16〜S17、B 群、C 群（C1 を除く）。
 
 ---
 
