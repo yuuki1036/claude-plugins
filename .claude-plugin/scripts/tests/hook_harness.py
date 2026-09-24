@@ -168,10 +168,13 @@ class TempGitRepo:
         subprocess.run(["git", "checkout", "-qb", name], cwd=self.path,
                        capture_output=True, env=self.ENV)
 
-    def commit(self, message: str, filename: str = "f.txt", body: str = "x") -> str:
+    def commit(self, message: str, filename: str = "f.txt", body: str = "x",
+               committed_at: str | None = None) -> str:
+        """`committed_at`（例: "2020-01-01T00:00:00"）は commit と HEAD の reflog の両方の時刻になる."""
         (self.path / filename).write_text(body)
         subprocess.run(["git", "add", "-A"], cwd=self.path, capture_output=True, env=self.ENV)
+        env = self.ENV if committed_at is None else {**self.ENV, "GIT_COMMITTER_DATE": committed_at}
         subprocess.run(["git", "commit", "-qm", message], cwd=self.path, capture_output=True,
-                       env=self.ENV)
+                       env=env)
         return subprocess.run(["git", "log", "-1", "--format=%h"], cwd=self.path,
                               capture_output=True, text=True, env=self.ENV).stdout.strip()

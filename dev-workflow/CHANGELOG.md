@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.2] - 2026-09-24
+
+### Fixed
+
+- **on-commit hook が、別リポジトリでの commit や失敗した commit でも `commit:created` を発行していた**。
+  コマンド文字列に `git commit` があるだけで、この repo の古い HEAD を発行していた（`cd <別 repo> && git commit` /
+  `git -C <別 repo> commit` / nothing to commit。実測で重複 6 件）。HEAD の reflog の最新エントリが直近 600 秒以内の
+  commit（amend を除く）であるときだけ発行し、同じ sha を発行済みなら出さない。commit の時刻（`%ct`）は pre-commit
+  hook の前に刻まれる（hook が長い repo では古く見える）ので使わず、hook の後に刻まれる reflog の時刻を使う
+
 ## [1.34.1] - 2026-09-24
 
 ### Fixed

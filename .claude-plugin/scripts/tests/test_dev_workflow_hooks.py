@@ -170,6 +170,52 @@ class OnCommitTest(HookTestCase):
             self.assertSilent(res)
             self.assertNotEqual(res.returncode, 2)
 
+    # --- このコマンドがこの repo に commit を作っていないとき（別 repo / 失敗）は黙る ---
+    def test_stale_head_is_not_republished(self):
+        """`cd <別 repo> && git commit` / 失敗した commit: HEAD の reflog が古いので出さない.
+
+        以前はコマンド文字列だけで判定し、この repo の古い HEAD を commit:created として発行していた。
+        """
+        with TempGitRepo() as repo_path:
+            repo = TempGitRepo.__new__(TempGitRepo); repo.path = repo_path
+            repo.commit("feat: 昔のコミット", committed_at="2020-01-01T00:00:00")
+            for cmd in ("cd /tmp/other-repo && git commit -qm init",
+                        "git -C /tmp/other-repo commit -m x",
+                        "git commit -m 'nothing to commit'"):
+                with self.subTest(cmd=cmd):
+                    self.assertSilent(self.run_hook(self.bash_payload(cmd), cwd=repo_path), cmd)
+            self.assertEqual(self._events(repo_path), [])
+
+    def test_latest_reflog_entry_must_be_a_commit(self):
+        """commit の直後でも、最新の reflog がブランチ切り替えなら新しい commit とは扱わない."""
+        with TempGitRepo() as repo_path:
+            repo = TempGitRepo.__new__(TempGitRepo); repo.path = repo_path
+            repo.commit("feat: x")
+            repo.branch("other")
+            self.run_hook(self.bash_payload("git commit -m x"), cwd=repo_path)
+            self.assertEqual(self._events(repo_path), [])
+
+    def test_same_sha_is_published_once(self):
+        """窓の中で別 repo の commit が続いても、同じ sha を 2 度出さない."""
+        with TempGitRepo() as repo_path:
+            repo = TempGitRepo.__new__(TempGitRepo); repo.path = repo_path
+            sha = repo.commit("feat: x")
+            for _ in range(2):
+                self.run_hook(self.bash_payload('git commit -m "feat: x"'), cwd=repo_path)
+            events = self._events(repo_path)
+            self.assertEqual(len(events), 1, events)
+            self.assertEqual(events[0]["payload"]["sha"], sha)
+
+    def test_new_commit_after_a_published_one_is_published(self):
+        """発行済み判定が「過去に何か発行したら以後黙る」に化けていないこと."""
+        with TempGitRepo() as repo_path:
+            repo = TempGitRepo.__new__(TempGitRepo); repo.path = repo_path
+            first = repo.commit("feat: a", filename="a.txt")
+            self.run_hook(self.bash_payload("git commit -m a"), cwd=repo_path)
+            second = repo.commit("fix: b", filename="b.txt")
+            self.run_hook(self.bash_payload("git commit -m b"), cwd=repo_path)
+            self.assertEqual([e["payload"]["sha"] for e in self._events(repo_path)], [first, second])
+
     def test_post_tool_use_emits_nothing_to_context(self):
         """PostToolUse なので stdout 注入しない（無音が仕様）."""
         with TempGitRepo() as repo_path:
