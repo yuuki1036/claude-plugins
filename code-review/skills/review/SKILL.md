@@ -22,7 +22,7 @@ allowed-tools:
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @20ec0413 -->
-<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @edfe50cc -->
+<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @48f8d681 -->
 
 ## 前提
 
@@ -370,7 +370,7 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
    - 複数エージェント検出 / explorer 裏付け / セッションコンテキスト等の加減算
    - 最終 confidence を 0-100 にクランプ
 4. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（反証 `severity-inflated` もこのルールに統合。二重降格しない）。**BLOCKER / CRITICAL の `severity-inflated` は降格後に報告マトリクスを割る場合のみ据え置き + 反証メモ**（scoring-guide の不変条件。高 severity を silent に消さない）。**MAJOR / MINOR が `severity-inflated` の降格で報告閾値を割って脱落する場合は、`refuted` の −40 脱落と同じく 🔁 付録に取り下げ理由を記録する**（scoring-guide.md `## 反証レイヤーの verdict 反映` / issue #109。降格で消える指摘が silent に落ちない）
-4.5. **加減算で報告閾値を割った指摘を控える**（issue #128）: 手順 3〜4 の減算・クランプ・降格の結果、手順 5 の報告マトリクスを通過しなくなる指摘は、**severity を問わず** 🔁 付録に「調整前の (severity, confidence) / 適用した規則名 / 遷移後の値」を記録する。反証由来の脱落（手順 2）と同じ枠に、経路が分かる形で並べる。正本: scoring-guide.md `## 報告閾値を割った指摘の記録`
+4.5. **加減算で報告閾値を割った指摘を控える**（issue #128）: 手順 3〜4 の減算・クランプ・降格の結果、手順 5 の報告マトリクスを通過しなくなる指摘は、**severity を問わず** 🔁 付録に「調整前の (severity, confidence) / 適用した規則名 / 遷移後の値」を記録する。反証由来の脱落（手順 2）と同じ枠に、経路が分かる形で並べる。**加減算を受けずに reviewer の付けた値のまま閾値を割っている指摘（③）も同じ枠に記録する**。正本: scoring-guide.md `## 報告閾値を割った指摘の記録`
 5. **報告マトリクスでフィルタ**:
 
    | severity \ confidence | <60 | 60-79 | 80-94 | 95+ |
@@ -446,10 +446,10 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
 - 報告閾値 {実効 `review_severity_threshold`} 未満の候補が N 件あります（CRITICAL a / MAJOR b / MINOR c。本文は reviewer が書いていないため省略）。見る場合は `review_severity_threshold` を下げて再実行してください
 
 ### 🔁 報告閾値を割った指摘（参考・人間が覆せる）
-{reviewer が列挙した指摘が報告マトリクスを通過しなかった場合に載る。**経路（反証 verdict / 加減算）を問わず記録し、severity 別の扱いは正本に従う** → scoring-guide.md `## 報告閾値を割った指摘の記録`。0 件なら省略}
+{reviewer が列挙した指摘が報告マトリクスを通過しなかった場合に載る。**経路（反証 verdict / 加減算 / 最初から閾値未満）を問わず記録し、severity 別の扱いは正本に従う** → scoring-guide.md `## 報告閾値を割った指摘の記録`。0 件なら省略}
 - [調整前: confidence XX / severity MAJOR] xxx の指摘
   ファイル: path/to/file:行番号
-  脱落理由: <verdict: refuted | severity-inflated> — <軸>（反証根拠 file:line）／ <加減算: 規則名> — confidence XX → YY
+  脱落理由: <verdict: refuted | severity-inflated> — <軸>（反証根拠 file:line）／ <加減算: 規則名> — confidence XX → YY ／ <調整なし: reviewer の値のまま閾値未満>
   ※ 判断が誤りと思えばこの指摘は有効。再評価してよい
   ※ 推奨: <見送るのが惜しい理由。修正コストが小さい項目にだけ付ける。閾値を割った理由は上の欄にあるので繰り返さない>
 
