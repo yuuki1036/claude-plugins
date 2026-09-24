@@ -62,6 +62,53 @@ class PushReminderTest(HookTestCase):
             with self.subTest(cmd=cmd):
                 self.assertSilent(self.run_hook(self.bash_payload(cmd)), cmd)
 
+    def test_push_at_command_positions(self):
+        """区切りの直後・環境変数の代入や env / command を挟んだ位置の push も拾う."""
+        for cmd in ("git status; git push", "true || git push", "(cd x && git push)",
+                    "out=$(git push 2>&1)", "if true; then git push; fi",
+                    "GIT_TRACE=1 git push", "env GIT_TRACE=1 git push", "command git push",
+                    "git --no-pager push", "echo start\ngit push origin main"):
+            with self.subTest(cmd=cmd):
+                self.assertFired(self.run_hook(self.bash_payload(cmd)))
+
+    def test_push_as_argument_is_silent(self):
+        """クオートの外でも、引数として並んだだけの `git push` では鳴らさない（S16 の誤発火）."""
+        for cmd in ("echo git push", "printf '%s' x; echo run git push later",
+                    "grep -rn git push docs/", "man git push"):
+            with self.subTest(cmd=cmd):
+                self.assertSilent(self.run_hook(self.bash_payload(cmd)), cmd)
+
+    def test_push_in_heredoc_body_is_silent(self):
+        """heredoc の本文（コミットメッセージ・ファイル内容）に行頭の git push があっても鳴らさない."""
+        cmds = (
+            "git commit -F - <<'EOF'\nfix: 手順を直す\n\ngit push は後で行う\nEOF",
+            'git commit -m "$(cat <<EOF\ndocs: 説明\ngit push origin main\nEOF\n)"',
+            "cat > notes.md <<-DOC\n\tgit push\n\tDOC",
+        )
+        for cmd in cmds:
+            with self.subTest(cmd=cmd):
+                self.assertSilent(self.run_hook(self.bash_payload(cmd)), cmd)
+
+    def test_push_after_heredoc_still_fires(self):
+        """heredoc が閉じた後の git push は拾う（本文の除去が後続まで飲み込まない）."""
+        cmd = "cat > f <<'EOF'\nbody\nEOF\ngit push"
+        self.assertFired(self.run_hook(self.bash_payload(cmd)))
+        self.assertFired(self.run_hook(self.bash_payload("x=$(cat <<< word)\ngit push")))
+        # `<<-` はタブ付きの終端行で閉じる
+        self.assertFired(self.run_hook(self.bash_payload("cat > f <<-DOC\n\tbody\n\tDOC\ngit push")))
+
+    def test_push_in_multiline_quote_is_silent(self):
+        """複数行にまたがるクオートの中の行頭 git push で鳴らさない."""
+        cmd = 'git commit -m "fix: 直す\n\ngit push は CI 後に"'
+        self.assertSilent(self.run_hook(self.bash_payload(cmd)), cmd)
+
+    def test_large_command_still_fires(self):
+        """64KB を超えるコマンドでも拾う（pipefail 下で grep -q にパイプすると SIGPIPE で「一致なし」に化けた）."""
+        cmd = "git push\n" + "echo " + "x" * 200_000
+        res = self.run_hook(self.bash_payload(cmd))
+        self.assertFired(res)
+        self.assertNotIn("Unexpected", res.stderr)
+
     def test_word_boundary(self):
         """`push` を部分文字列に含むだけのコマンドで発火しない."""
         for cmd in ("npm run pushall", "git pushx", "./pusher.sh", "git push-all-the-things"):

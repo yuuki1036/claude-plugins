@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.5] - 2026-09-24
+
+### Fixed
+
+- **push-reminder がクオートの外の「git push」という並びで誤って鳴っていた**。除外していたのはクオートの中だけで、
+  正規表現が行頭（コマンドの位置）を求めていなかったので、`echo git push`・`grep -rn git push docs/` や、
+  heredoc の本文（コミットメッセージに書いた行頭の `git push` など）でも注入していた。heredoc の本文を除き、
+  複数行にまたがるクオートも除いたうえで、行頭か区切り（`;` `&` `|` `(` `$(` と then/do/else）の直後に来る
+  `git ... push` だけを拾うようにした（環境変数の代入・`env` / `command` を挟む形は拾う）
+- **64KB を超えるコマンドで push を見落としていた**。pipefail の下でコマンド文字列を `grep -q` にパイプで流していたので、
+  grep が一致で抜けると printf が SIGPIPE で死に「一致なし」になっていた。here-string で渡すようにした
+
 ## [1.34.4] - 2026-09-24
 
 ### Fixed
