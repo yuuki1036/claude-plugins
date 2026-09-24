@@ -42,7 +42,9 @@
 
 - S7: start のダッシュボード（D2）に backlog の件数と古い順 3 件を出すようにし、discover の記述を合わせた（issue-workflow）
 
-**未着手**（統合レポートの ID）: S8〜S17、B 群、C 群（C1 を除く）。
+- S8: bdd-spec の glossary-ssot.md から、実装の無い「evaluate が別名に warning を出す」を外し、事実に合わせた。既存プロジェクトの all_spec.md は手で直す
+
+**未着手**（統合レポートの ID）: S9〜S17、B 群、C 群（C1 を除く）。
 
 ---
 

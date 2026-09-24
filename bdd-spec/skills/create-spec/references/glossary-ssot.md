@@ -46,7 +46,7 @@ phase: current
 ## 別名禁止メタルール
 
 1. **同義語を見つけたら左カラムに正規形を残し、右カラムに別名を列挙**
-2. epic.md / spec.md 執筆時、別名を使った時点で `bdd-spec-evaluate`（Phase 2）が warning を出す
+2. 別名が使われていないかは**機械では検査しない**。`bdd-spec-create` が story 作成時（Phase 6）に role / want の語を照合して表記揺れの疑いを提案するだけで、epic.md / spec.md の本文は `bdd-spec-evaluate` も検査しない。本文の別名はレビューで見る
 3. **新規用語は spec.md / epic.md の「用語」セクションで導入** → 確定後に all_spec.md へ昇格
 
 ## 用語追加フロー

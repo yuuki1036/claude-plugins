@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.5] - 2026-09-24
+
+### Fixed
+
+- **`references/glossary-ssot.md`（`all_spec.md` の初期化テンプレート）が、実装の無い検査を約束していた**。「別名を使った時点で
+  `bdd-spec-evaluate`（Phase 2）が warning を出す」とあったが、evaluate-spec に別名の検査は無い（v0.1.0 の計画にあったが、
+  evaluate-spec の出荷時に入らなかった）。実際に見ているのは create-spec の Phase 6 が story 作成時に role / want の語を照合して
+  表記揺れを提案するところだけ、と事実に合わせた。検査を実装する案は採らなかった（実データでは一般語が大量に当たる）
+- 既存プロジェクトの `features/all_spec.md` には旧い 1 行が残るので、「別名禁止メタルール」の 2 番目を手で同じ文に直す
+
 ## [0.3.4] - 2026-09-20
 
 ### Removed
