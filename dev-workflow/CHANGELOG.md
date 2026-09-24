@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.3] - 2026-09-24
+
+### Fixed
+
+- **ui-verify を chrome-devtools-mcp 1.8.0〜1.10.0 の変更に追従させた**。同梱ラッパは `@latest` で起動するので本体は
+  最新（1.10.1）で動いていたが、スキル側が古いままだった
+  - 1.8.0 でページを操作するツールの `pageId` が既定で必須になったのに、SKILL.md / cheatsheet の呼び出し例が
+    `pageId` なしだった。例に `pageId` を足し、ID の取り方（`new_page` / `navigate_page` の応答、`list_pages`）を明記。
+    既存タブの ID を引く `list_pages` を allowed-tools に戻した（#28 で未使用として外していた）
+  - tune モードで直す場所を `get_css_styles`（1.10.0 で追加）で特定するようにした。効いているルールと定義位置
+    （ファイル:行）・上書きされたルールが返るので、grep で当たりを付けて効いていないルールを直す手戻りを防ぐ。
+    これまで cheatsheet が案内していた `evaluate_script` + `getComputedStyle` は allowed-tools 外で許可確認が出ていた
+
 ## [1.34.2] - 2026-09-24
 
 ### Fixed

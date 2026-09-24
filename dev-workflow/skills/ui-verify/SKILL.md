@@ -15,8 +15,10 @@ allowed-tools:
   - Skill
   - mcp__plugin_dev-workflow_chrome-devtools__navigate_page
   - mcp__plugin_dev-workflow_chrome-devtools__new_page
+  - mcp__plugin_dev-workflow_chrome-devtools__list_pages
   - mcp__plugin_dev-workflow_chrome-devtools__take_screenshot
   - mcp__plugin_dev-workflow_chrome-devtools__take_snapshot
+  - mcp__plugin_dev-workflow_chrome-devtools__get_css_styles
   - mcp__plugin_dev-workflow_chrome-devtools__list_console_messages
   - mcp__plugin_dev-workflow_chrome-devtools__list_network_requests
   - mcp__plugin_dev-workflow_chrome-devtools__resize_page
@@ -289,7 +291,7 @@ backend_isolation: confirmed | unconfirmed
 
 1. 初回の `take_screenshot` を `.claude/screenshots/tune-{timestamp}/before.png` に保存
 2. ユーザーに調整内容を確認（例: 「ヘッダーの余白を広げたい」「ボタンの色を primary に」）
-3. 該当 CSS/tsx ファイルを特定し Edit で修正
+3. 直す場所を `get_css_styles` で特定してから Edit で修正する。`take_snapshot` で対象要素の uid を取り、`get_css_styles(pageId, uid)` で**効いているルールと定義位置（ファイル:行）・上書きされたプロパティ**を読む（source map が効くので dev server ではソースのファイル名が出る）。grep でクラス名を探して当たりを付けない — 上書きされて効いていないルールを直す手戻りになる
 4. dev server の HMR 反映を待つ（`wait_for` + 短い sleep）
 5. `take_screenshot` で after.png を保存
 6. 差分をユーザーに提示し、OK なら終了、NG ならループ
@@ -346,9 +348,9 @@ PR タイプ判定はブランチ名・コミットメッセージ・差分か�
 既定は `emulate` による `prefers-color-scheme` のエミュレート（プロジェクト非依存で決定的）:
 
 ```
-mcp__plugin_dev-workflow_chrome-devtools__emulate(colorScheme: "light")  # → light.png
-mcp__plugin_dev-workflow_chrome-devtools__emulate(colorScheme: "dark")   # → dark.png
-mcp__plugin_dev-workflow_chrome-devtools__emulate(colorScheme: "auto")   # 撮影後に解除
+mcp__plugin_dev-workflow_chrome-devtools__emulate(pageId: 1, colorScheme: "light")  # → light.png
+mcp__plugin_dev-workflow_chrome-devtools__emulate(pageId: 1, colorScheme: "dark")   # → dark.png
+mcp__plugin_dev-workflow_chrome-devtools__emulate(pageId: 1, colorScheme: "auto")   # 撮影後に解除
 ```
 
 アプリが `prefers-color-scheme` ではなく自前のトグル（class / localStorage 等）でテーマを持つ場合は emulate が効かないため、その場合のみ UI 上のトグル操作に切り替える（どちらを使うかをユーザーに確認する）。
@@ -379,6 +381,8 @@ mcp__plugin_dev-workflow_chrome-devtools__emulate(colorScheme: "auto")   # 撮�
 ## MCP Tool の使い方
 
 chrome-devtools MCP のツール一覧と典型的な呼び出しパターンは `references/chrome-devtools-cheatsheet.md` を参照。
+
+**ページを操作するツールはすべて `pageId` が必須**（`new_page` / `list_pages` 以外。chrome-devtools-mcp 1.8.0 で既定になった）。ID は `new_page` / `navigate_page` の応答に出るページ一覧から取る。既に開いているタブを使うときや ID を見失ったときは `list_pages` で引き直す。本文の呼び出し例で `pageId` を省いているものも、実際の呼び出しでは付ける。
 
 ## 絶対厳守ルール
 

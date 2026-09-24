@@ -8,8 +8,10 @@ allowed-tools:
   - Skill
   - mcp__plugin_dev-workflow_chrome-devtools__navigate_page
   - mcp__plugin_dev-workflow_chrome-devtools__new_page
+  - mcp__plugin_dev-workflow_chrome-devtools__list_pages
   - mcp__plugin_dev-workflow_chrome-devtools__take_screenshot
   - mcp__plugin_dev-workflow_chrome-devtools__take_snapshot
+  - mcp__plugin_dev-workflow_chrome-devtools__get_css_styles
   - mcp__plugin_dev-workflow_chrome-devtools__list_console_messages
   - mcp__plugin_dev-workflow_chrome-devtools__list_network_requests
   - mcp__plugin_dev-workflow_chrome-devtools__resize_page

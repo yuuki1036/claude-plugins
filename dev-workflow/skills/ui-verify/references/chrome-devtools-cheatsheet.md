@@ -2,11 +2,19 @@
 
 ui-verify スキルから参照される MCP tool の使い方メモ。
 
+## pageId（ページを操作するツールは必須）
+
+`new_page` / `list_pages` 以外のツールは `pageId` を渡さないと schema 違反で失敗する（chrome-devtools-mcp 1.8.0 で既定になった。`--no-page-id-routing` で旧挙動に戻せるが、同梱ラッパは付けていない）。
+
+- ID は `new_page` / `navigate_page` の応答に出るページ一覧（`1: http://localhost:3000/ [selected]` の先頭の数字）から取る
+- 既に開いているタブを使う / ID を見失ったら `list_pages` で引き直す
+- 以下の例は `pageId: 1` で書いている。実際には応答で得た ID を入れる
+
 ## ページ管理
 
 ### new_page
 
-新しいタブでページを開く。最初のページを開くときはこれを使う。
+新しいタブでページを開く。最初のページを開くときはこれを使う。応答にページ一覧（ID 付き）が返る。
 
 ```
 mcp__plugin_dev-workflow_chrome-devtools__new_page(url: "http://localhost:3000/")
@@ -14,9 +22,17 @@ mcp__plugin_dev-workflow_chrome-devtools__new_page(url: "http://localhost:3000/"
 
 ### navigate_page
 
-現在のページを別 URL に遷移させる。リロードにも使う（同じ URL を渡す）。
+指定したページを別 URL に遷移させる。リロードにも使う（同じ URL を渡す）。
 
-### list_pages / select_page / close_page
+```
+mcp__plugin_dev-workflow_chrome-devtools__navigate_page(pageId: 1, type: "url", url: "http://localhost:3000/settings")
+```
+
+### list_pages
+
+開いているページの一覧（ID 付き）。既存タブの `pageId` を取るのに使う。
+
+### select_page / close_page
 
 複数タブを扱うとき用。基本は1タブで足りる。使い終わりに close_page でクリーンアップする。
 
@@ -28,6 +44,7 @@ mcp__plugin_dev-workflow_chrome-devtools__new_page(url: "http://localhost:3000/"
 
 ```
 mcp__plugin_dev-workflow_chrome-devtools__take_screenshot(
+  pageId: 1,
   filePath: "/absolute/path/.claude/screenshots/snap-20260418/desktop.png",
   fullPage: true
 )
@@ -50,10 +67,10 @@ DOM のアクセシビリティツリーを取得。click/fill する要素の u
 
 ```
 # 先に snapshot
-snapshot = mcp__plugin_dev-workflow_chrome-devtools__take_snapshot()
+snapshot = mcp__plugin_dev-workflow_chrome-devtools__take_snapshot(pageId: 1)
 # uid を抽出して操作
-mcp__plugin_dev-workflow_chrome-devtools__click(uid: "12345")
-mcp__plugin_dev-workflow_chrome-devtools__fill(uid: "67890", value: "test input")
+mcp__plugin_dev-workflow_chrome-devtools__click(pageId: 1, uid: "12345")
+mcp__plugin_dev-workflow_chrome-devtools__fill(pageId: 1, uid: "67890", value: "test input")
 ```
 
 ### fill_form
@@ -68,8 +85,8 @@ mcp__plugin_dev-workflow_chrome-devtools__fill(uid: "67890", value: "test input"
 文字列を単体で渡すと schema 違反で失敗する。
 
 ```
-mcp__plugin_dev-workflow_chrome-devtools__wait_for(text: ["Dashboard"])
-mcp__plugin_dev-workflow_chrome-devtools__wait_for(text: ["Dashboard", "ダッシュボード"])
+mcp__plugin_dev-workflow_chrome-devtools__wait_for(pageId: 1, text: ["Dashboard"])
+mcp__plugin_dev-workflow_chrome-devtools__wait_for(pageId: 1, text: ["Dashboard", "ダッシュボード"])
 ```
 
 **dev server の疎通待ちには使えない** — 見ているのは描画済みページのテキストであって
@@ -83,7 +100,7 @@ HTTP レスポンスではない。起動待ちは Bash の curl ループで行
 
 ```
 # エラーだけ抽出するのは返り値側でフィルタ
-messages = mcp__plugin_dev-workflow_chrome-devtools__list_console_messages()
+messages = mcp__plugin_dev-workflow_chrome-devtools__list_console_messages(pageId: 1)
 # error level のみをユーザーに報告
 ```
 
@@ -107,7 +124,7 @@ messages = mcp__plugin_dev-workflow_chrome-devtools__list_console_messages()
 viewport サイズ変更。
 
 ```
-mcp__plugin_dev-workflow_chrome-devtools__resize_page(width: 375, height: 812)
+mcp__plugin_dev-workflow_chrome-devtools__resize_page(pageId: 1, width: 375, height: 812)
 ```
 
 ### emulate
@@ -118,25 +135,41 @@ mcp__plugin_dev-workflow_chrome-devtools__resize_page(width: 375, height: 812)
 **テーマ撮影の正規経路**。`prefers-color-scheme` をプロジェクト非依存に切り替えられる:
 
 ```
-mcp__plugin_dev-workflow_chrome-devtools__emulate(colorScheme: "dark")   # dark / light / auto
+mcp__plugin_dev-workflow_chrome-devtools__emulate(pageId: 1, colorScheme: "dark")   # dark / light / auto
 ```
 
 `viewport` は `resize_page` と違い devicePixelRatio や touch / mobile まで指定できる:
 
 ```
-mcp__plugin_dev-workflow_chrome-devtools__emulate(viewport: "375x812x3,mobile,touch")
+mcp__plugin_dev-workflow_chrome-devtools__emulate(pageId: 1, viewport: "375x812x3,mobile,touch")
 ```
 
 撮影が終わったら `colorScheme: "auto"` で解除する（設定はページに残る）。
+
+## スタイル調査
+
+### get_css_styles
+
+要素に効いている CSS ルール（inline / 継承 / 疑似要素 / @media 等を含む）を、定義位置（`ファイル:行`）付きで返す。上書きされて効いていないルールは `[inactive]` と出る。tune モードで「どのファイルのどのルールを直すか」を決めるのに使う（chrome-devtools-mcp 1.10.0 で追加）。
+
+```
+# uid は take_snapshot で取る
+mcp__plugin_dev-workflow_chrome-devtools__get_css_styles(pageId: 1, uid: "12345")
+```
+
+- 10 ルールずつページングされる。続きは `pageIdx: 1, 2, …`（`pageSize` で件数を変えられる）
+- source map が既定で有効なので、dev server ではバンドル後ではなくソースのファイル名が出る
+- 返るのは**ルール**であって計算後の値ではない。最終的な px 値だけが欲しいときは下の `evaluate_script` を使う
 
 ## JavaScript 実行
 
 ### evaluate_script
 
-任意の JS を実行。scroll 位置調整、data 確認、実 CSS 値取得などに便利。
+任意の JS を実行。scroll 位置調整、data 確認、計算後の CSS 値の取得などに使う。ui-verify の allowed-tools には入れていないので、呼ぶと許可確認が出る。
 
 ```
 mcp__plugin_dev-workflow_chrome-devtools__evaluate_script(
+  pageId: 1,
   function: "() => window.getComputedStyle(document.querySelector('.header')).padding"
 )
 ```
@@ -158,13 +191,14 @@ mcp__plugin_dev-workflow_chrome-devtools__evaluate_script(
 ### tune フロー
 
 ```
-1. new_page(対象 URL)
+1. new_page(対象 URL) → 応答の ID を pageId に使う
 2. take_screenshot(before.png)
-3. [CSS/tsx ファイル Edit]
-4. wait_for(HMR 反映) or navigate_page(reload)
-5. take_screenshot(after.png)
-6. 差分をユーザーに提示
-7. NG なら 3 に戻る
+3. take_snapshot → 対象要素の uid → get_css_styles(uid) で直すルールと定義位置を特定
+4. [CSS/tsx ファイル Edit]
+5. wait_for(HMR 反映) or navigate_page(reload)
+6. take_screenshot(after.png)
+7. 差分をユーザーに提示
+8. NG なら 3 に戻る
 ```
 
 ### snap フロー
@@ -291,6 +325,7 @@ export TOKEN=$(security find-generic-password -s chrome-debug-token -w)
 
 ## Gotchas
 
+- **pageId の付け忘れ**: `new_page` / `list_pages` 以外は必須。同梱ラッパは `chrome-devtools-mcp@latest` で起動するので、上流の既定変更（1.8.0 の pageId 必須化など）はバージョンを上げる操作なしに入ってくる。呼び出しが schema 違反で落ちたら、まず上流の CHANGELOG を疑う
 - **stdin/stdout**: MCP server 側で管理されるので気にしなくて良い
 - **page の状態永続**: 同一セッションでは new_page しない限りタブが残る。tune モードのループでは navigate_page で遷移するか、既存タブを使う
 - **filePath は絶対パス**: 相対パスだと MCP server の CWD 基準になり意図しない場所に保存される
