@@ -117,7 +117,7 @@ diff パターンマッチで各観点の必要性を判定する。
 | claude-md-compliance | **常時必須** |
 | error-handling | try-catch/catch ブロック/エラー処理の変更がある |
 | comment-accuracy | diff にコメント（`//`, `/*`, `#`, `<!--` 等）の追加・変更がある。**self-review ではコメント推敲（B 系統）も同じ 1 体に相乗りさせる**（体数を増やさない。`prompts/focus/comment-polish.md`） |
-| test-quality | テストファイル（`.test.`, `.spec.`, `__tests__/`）の変更がある |
+| test-quality | テストファイル（`.test.`, `.spec.`, `__tests__/`）の変更がある、**または**テスト以外の新しいソースファイルが足されているのにテストファイルの変更が 0（severity 目安の「テスト欠如」を見るため。設定・ドキュメント・型定義だけの新規ファイルは数えない） |
 | type-design | 型定義（`type`, `interface`, `enum`）の追加・変更がある |
 | security | セキュリティ関連ファイル（`auth/`, `security/`, `crypto/`, `middleware/auth*`）の変更、または diff 内に `password`, `secret`, `token`, `api_key`, `eval(`, `innerHTML`, `dangerouslySetInnerHTML`, `` sql` ``, `query(` がある |
 | performance | DB 関連ファイル、キャッシュ、キュー、ワーカーの変更、または diff 内に `SELECT`/`INSERT`/`UPDATE`/`DELETE`, `.find(`, `.findMany(`, `Promise.all`, ループ内の `await` がある |

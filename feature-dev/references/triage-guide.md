@@ -167,7 +167,7 @@ Phase 6 は **実装 diff が確定した後** に走るため、Phase 1.7 の�
 1. `git diff` で実装後の差分を取得
 2. code-review の Phase 0 ロジック（`triage-guide.md` of code-review）に準じて diff パターンマッチ:
    - try-catch 追加 → error-handling 観点を追加
-   - テストファイル変更 → test-quality 観点を追加
+   - テストファイル変更、または新しいソースファイルがあるのにテストファイルの変更が 0 → test-quality 観点を追加
    - 型定義変更 → type-design 観点を追加
    - 認証関連ファイル変更 → security 観点を昇格・冗長化
    - DB / migration ファイル変更 → migration 観点を追加

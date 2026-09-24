@@ -70,7 +70,9 @@
 
 - B4: feature-dev に `references/testing-discipline.md`（Phase 5 がテスト基盤のあるときだけ読む）と `references/module-design.md`（clean-architecture の architect に渡す語彙・4 原則・依存の 4 分類）を足し、architect の出力に Test Seams、Phase 4 の比較に depth・locality・seam の位置を足した。トートロジーは plugin 独立のため testing-pitfalls を参照せず本文に書いた。design-doc への複製は同期検査を入れるまで見送り
 
-**未着手**（統合レポートの ID）: B5〜B13、C 群（C1 を除く）。
+- B5: code-review の test-quality に名前付きアンチパターン（実装への結合・同語反復・境界外の mock）を足し、起動条件に「新しいソースがあるのにテストの変更が 0」を足した（code-review と feature-dev の triage を対で直した）
+
+**未着手**（統合レポートの ID）: B6〜B13、C 群（C1 を除く）。
 
 ---
 

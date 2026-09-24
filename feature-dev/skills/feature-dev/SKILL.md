@@ -576,7 +576,7 @@ git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-final-files.txt
 Apply diff-based pattern matching:
 
 - try-catch / catch ブロック追加 → add `error-handling`
-- テストファイル（`.test.` / `.spec.` / `__tests__/`）変更 → add `test-quality`
+- テストファイル（`.test.` / `.spec.` / `__tests__/`）変更、または新しいソースファイル（設定・ドキュメント・型定義だけのものを除く）があるのにテストファイルの変更が 0 → add `test-quality`（code-review の triage-guide と同じ条件）
 - 型定義（`type` / `interface` / `enum`）追加 → add `type-design`
 - 認証・暗号関連ファイル変更 → upgrade `security`
 - DB / migration ファイル変更 → add `migration`
