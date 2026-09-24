@@ -40,7 +40,9 @@
 
 - A7: notebooklm-workflow の `.mcp.json` から `alwaysLoad` を外した（0.2.9）。スキルは関数一覧に無いだけで未導入と案内せず、先に ToolSearch で読み込む
 
-**未着手**（統合レポートの ID）: S7〜S17、B 群、C 群（C1 を除く）。
+- S7: start のダッシュボード（D2）に backlog の件数と古い順 3 件を出すようにし、discover の記述を合わせた（issue-workflow）
+
+**未着手**（統合レポートの ID）: S8〜S17、B 群、C 群（C1 を除く）。
 
 ---
 

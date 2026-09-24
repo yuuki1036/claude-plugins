@@ -162,9 +162,17 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 
 1. `{DATA_DIR}/*/issues/*.md` を Glob でスキャンする
 2. 各 Issue ファイルを Read し、`status: in-progress` の Issue をプロジェクト別にリスト表示する
-3. 放置 Issue（`last_active` フィールドが7日以上前）を警告付きで表示する
-4. `{DATA_DIR}/*/follow-ups/*.md` を Glob で列挙し、各ファイルを Read して frontmatter の `status: open` を抽出する
-5. open な follow-up があるプロジェクトのみ、件名・滞留日数付きで表示する（各プロジェクト最新 5 件まで、`created` が古い順に並べる）:
+3. 2 の in-progress のうち、放置 Issue（`last_active` フィールドが7日以上前）を警告付きで表示する（放置の定義は maintain・SessionStart hook と同じ in-progress 限定。backlog は放置扱いにしない）
+4. `status: backlog` の Issue（discover の自動起票はすべてここに入る）がある**プロジェクトのみ**、件数と `created` が古い順に 3 件を表示する。maintain の件数表を除けば、backlog を表に出すのはここだけなので省かない（出していなかった間、自動起票の Issue が 3 か月近く backlog のまま残っていた実例がある）:
+   ```
+   **Backlog（未着手）:**
+   - {slug}: {N}件
+     - {ID} {件名}（{M}日前に起票）
+     - ...（残り {X}件）
+   ```
+   - 経過日数 = 現在日 - frontmatter の `created`
+5. `{DATA_DIR}/*/follow-ups/*.md` を Glob で列挙し、各ファイルを Read して frontmatter の `status: open` を抽出する
+6. open な follow-up があるプロジェクトのみ、件名・滞留日数付きで表示する（各プロジェクト最新 5 件まで、`created` が古い順に並べる）:
    ```
    **Follow-up:**
    - {slug}: {N}件
@@ -175,7 +183,7 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
    - 件名は frontmatter の `title` または先頭 H1 から取得
    - 滞留日数 = 現在日 - frontmatter の `created`
    - 5 件を超える場合は「...（残り {X}件）」を末尾に表示
-6. プロジェクト横断で open な follow-up の合計が 5 件を超える場合は警告を追加表示する:
+7. プロジェクト横断で open な follow-up の合計が 5 件を超える場合は警告を追加表示する:
    ```
    WARNING: open な follow-up が合計 {total}件あります。棚卸しを推奨します。
    `/follow-up list` で一覧、`/follow-up promote` で Issue 化できます。
@@ -203,6 +211,8 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 
 - 放置 Issue がある場合:
   - 「放置 Issue に対応しませんか？ブランチ: `{type}/{SLUG-N}-{desc}`」
+- backlog がある場合:
+  - 「古い backlog から着手しますか？（`/start {ID}`）見送るなら `/maintain` で canceled に（二度と取り組まないなら却下記録を残す）」
 - 新規タスクを作りたい場合:
   - 「`/issue-create` で新しいタスクを作成」
 - メンテナンスが必要な場合:

@@ -188,7 +188,7 @@ fi
 2. **先に `counter.txt` を +1 して Write（採番を確定）**。issue ファイル Write より前に確定することで、途中中断時に同じ番号が再採番されてファイルを上書きするのを防ぐ
 3. type 別テンプレートを Read: `${CLAUDE_PLUGIN_ROOT}/skills/issue-create/references/` 配下の `{type}.md`（`bugfix.md` / `feature.md` / `investigation.md` / `debt.md`）
 4. **frontmatter**（テンプレートに準拠。自動起票特有の差分に注意）:
-   - `status: backlog` ← **必ず backlog**（自動起票は未着手。in-progress にしない）。`backlog` は正式 status 値で、`maintain` の status 表に「未着手・将来やる」として定義されている（`backlog.md` アイデア帳ファイルとは別物）。`start` ダッシュボードもこの status を集計する。in-progress にすると放置検知（in-progress × last_active 7日超）に誤爆するため避ける
+   - `status: backlog` ← **必ず backlog**（自動起票は未着手。in-progress にしない）。`backlog` は正式 status 値で、`maintain` の status 表に「未着手・将来やる」として定義されている（`backlog.md` アイデア帳ファイルとは別物）。`start` ダッシュボード（main ブランチで起動したときの Phase D2）が、プロジェクトごとの件数と起票の古い順に 3 件を表示する。in-progress にすると放置検知（in-progress × last_active 7日超）に誤爆するため避ける
    - `id` / `type` / `created`（今日）/ `last_active`（今日）
    - `scope_size`: **全 type で付与する**（bugfix/investigation/debt も省略しない。テンプレ同梱の既定値を下回らせず、`check-scope-size` のリアルタイム警告を有効に保つため）。effort から導出: `small→small / medium→medium / large→large`（bugfix の既定は small）
    - `pr: ""`

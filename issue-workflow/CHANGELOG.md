@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.1] - 2026-09-24
+
+### Fixed
+
+- **start のダッシュボードが backlog を表示していなかった**（discover は「start ダッシュボードもこの status を集計する」と書いていたが、
+  D2 は in-progress しか挙げていなかった）。discover の自動起票はすべて `status: backlog` に入るので、maintain の件数表を除けば表に出る
+  経路が無く、自動起票の Issue が 3 か月近く backlog のまま残っていた実例がある。D2 に backlog のあるプロジェクトだけ件数と起票の
+  古い順 3 件を出し、D4 に「古い backlog から着手するか、見送るなら maintain で canceled に」を足した。discover の記述を表示内容に合わせた
+- start D2 の放置 Issue を「in-progress のうち」と明記した（maintain・SessionStart hook と同じ定義。backlog を放置扱いにしない）
+
 ## [1.7.0] - 2026-09-24
 
 ### Changed
