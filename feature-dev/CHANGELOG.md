@@ -5,6 +5,28 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.0] - 2026-09-24
+
+### Added
+
+- **Phase 6 の self-review に spec-compliance と BDD spec を渡すようにした**。Issue context / `.claude/session-context.md` /
+  `BDD_SPEC_PATH` のいずれかがあれば focus に `spec-compliance` を入れ、BDD spec があれば `--spec=<path>` で照合元として
+  渡す（G-V ループの再レビューも同じ）。これまでは spec-compliance を起動せず、BDD spec と実装の照合が一度も起きていなかった
+  （code-review の spec-compliance は session-context / Issue / knowledge しか読まない）。`=` でつなぐのは、`--spec` を知らない
+  旧版の self-review がパスを base branch と読み違えないため
+- プラグインの有効判定を `scripts/plugin-enabled.sh` に寄せた（下の Fixed）
+
+### Fixed
+
+- **self-review に渡す focus 名が code-review の語彙とずれていた**。`migration-safety`（正しくは `migration`）と、reviewer 側の
+  `vercel-best-practices`（code-review に無い。React / Next.js の観点は `ui-quality` の modern-web チェックリストが持つ）を渡すと、
+  self-review はその reviewer を起動できなかった。Phase 6 Step 1 に語彙を明記し、Phase 1.7 と triage-guide の名前を揃えた。
+  語彙が code-review の focus ファイルとずれたら落ちる回帰テストを足した
+- **プラグインの有効判定がキーの有無しか見ていなかった**（Phase 1.3 の bdd-spec / Phase 4.5 の design-doc / Phase 6 の code-review）。
+  `false` で無効化したプラグインを有効と誤認し、project だけで有効化したものを取りこぼしていた（spec-advisor の #74 と同型）。
+  `scripts/plugin-enabled.sh` が user → project → local の順に settings を読み、`true` / `false` の明示値を後のファイルが上書きする。
+  worktree-flow の dev-workflow 判定も同じスクリプトに寄せた（project の `false` が user の `true` を上書きする向きを扱えていなかった）
+
 ## [2.16.0] - 2026-09-24
 
 ### Changed

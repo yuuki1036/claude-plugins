@@ -32,7 +32,9 @@
 
 - A3: grill の一般則（事実と決定の分離・未決を埋めない・説明とコードの食い違い）を feature-dev / design-doc / issue-design に取り込み、要約している 4 か所に正本への SSoT pin を置いた（2026-09-24、ユーザー指示）
 
-**未着手**（統合レポートの ID）: S4・S5・S7〜S17、A4・A5・A7、B 群、C 群（C1 を除く）。
+- S4: feature-dev の Phase 6 が spec-compliance と BDD spec（`--spec`）を self-review に渡す。focus 名を code-review の語彙に揃え（`migration-safety` に加え `vercel-best-practices` も語彙外だった）、self-review 側は語彙外の focus を欠損観点に出す / S5: 有効判定を feature-dev の `scripts/plugin-enabled.sh` に寄せた（同じ型の判定は他 5 プラグインに約 24 か所残る）
+
+**未着手**（統合レポートの ID）: S7〜S17、A4・A5・A7、B 群、C 群（C1 を除く）。
 
 ---
 

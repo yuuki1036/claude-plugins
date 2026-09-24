@@ -22,14 +22,11 @@ SKILL.md 本文の Phase 4.8 は「3 状態判定 → 該当すればここを�
 dev-workflow が**有効**で、かつ worktree-setup のマーカーが無い場合に限り提案する:
 
 ```bash
-DEV_WORKFLOW=0
-for f in "$HOME/.claude/settings.json" ".claude/settings.json" ".claude/settings.local.json"; do
-  grep -Eq '"dev-workflow@[^"]*"[[:space:]]*:[[:space:]]*true' "$f" 2>/dev/null && DEV_WORKFLOW=1
-done
-[ -f envs/.backend.env.worktree ] && WT_READY=1 || WT_READY=0
+echo "DEV_WORKFLOW=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" dev-workflow)"
+if [ -f envs/.backend.env.worktree ]; then echo "WT_READY=1"; else echo "WT_READY=0"; fi
 ```
 
-キー存在だけを見る grep は使わない（`": false"` の無効化済みを導入済みと誤判定し、project-scoped 有効化を取りこぼす）。
+有効判定は同梱の `scripts/plugin-enabled.sh` に寄せている（キー存在だけを見る grep は `": false"` の無効化済みを導入済みと誤判定し、project だけの有効化を取りこぼす。project の `false` が user の `true` を上書きする向きも扱う）。
 
 - `DEV_WORKFLOW=1` かつ `WT_READY=0` かつプロジェクトが dev server / DB を持つ（`package.json` の `scripts.dev`、`docker-compose.y*ml`、`prisma/`、Rails / Django の DB 設定など）→ `AskUserQuestion` で「DB / port を worktree 用に分離する？」を確認し、「する」なら `Skill` tool で `dev-workflow:worktree-setup` を起動する
 - それ以外（マーカー済み / dev-workflow 無効 / DB も dev server も持たない）→ **何も聞かず skip**（no-op を報告しない）

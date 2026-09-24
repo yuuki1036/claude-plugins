@@ -87,14 +87,15 @@ Phase 6 開始時に **diff を見て再判定**する（後述 Section 6）。
 | **security** | 認証・認可・暗号・PII を扱う feature の場合 |
 | **performance** | DB クエリ・キャッシュ・大量データ処理を含む場合 |
 | **api-design** | 新規 API / 既存 API 変更を含む場合 |
-| **migration-safety** | migration タイプの場合 |
+| **migration** | migration タイプの場合 |
+| **spec-compliance** | Issue context（Phase 1.5）・`.claude/session-context.md`・BDD spec（Phase 1.3）のいずれかがある場合 |
 | **ui-quality** | フロントエンド変更を含む場合（`.tsx`/`.jsx`/`.vue`/`.svelte` 等） |
 | **type-design** | 新規型・interface・schema の追加を含む場合 |
 
 ### React/Next.js 判定
 
 `package.json` に `react` / `next` が含まれる場合:
-- architect / reviewer に **vercel-best-practices** 観点を追加（UI 変更のレビュー観点は code-review 委譲時にそちらの modern-web チェックリストでカバーされる）
+- architect に **vercel-best-practices** 観点を追加する。reviewer 側は `ui-quality` を足す（code-review の ui-quality が modern-web チェックリストでこの観点を持つ。`vercel-best-practices` という reviewer focus は code-review に無い）
 
 ### 外部ライブラリ最新仕様の参照
 
@@ -131,7 +132,7 @@ architect / reviewer に公式 skill `context7` を経由した最新仕様確�
 | 単純 bugfix | 1-2 | bug-detection [+ claude-md-compliance] |
 | 標準的な機能追加 | 2-3 | + 1 観点（security / performance / api-design / ui-quality のうち該当） |
 | cross-cutting 機能 | 3-4 | + cross-cutting 観点 |
-| migration / 高リスク | 4-5 | + migration-safety + security |
+| migration / 高リスク | 4-5 | + migration + security |
 
 ### 冗長ペアの angle
 
@@ -169,7 +170,9 @@ Phase 6 は **実装 diff が確定した後** に走るため、Phase 1.7 の�
    - テストファイル変更 → test-quality 観点を追加
    - 型定義変更 → type-design 観点を追加
    - 認証関連ファイル変更 → security 観点を昇格・冗長化
-3. Phase 1.7 の暫定構成と diff 結果をマージし、最終 reviewer 構成を確定
+   - DB / migration ファイル変更 → migration 観点を追加
+   - Issue context / session-context / BDD spec がある → spec-compliance 観点を追加
+3. Phase 1.7 の暫定構成と diff 結果をマージし、最終 reviewer 構成を確定（focus 名は code-review の `references/prompts/focus/` の語彙に限る。語彙外の名前は self-review が起動できない）
 4. effort 上限は維持（暫定で 3 体予測 → diff で 5 観点必要なら effort=high の上限 3 体に絞る）
 
 **最小保証**: bug-detection + claude-md-compliance（存在時）の 2 体は Phase 1.7 / Phase 6 再判定の判断に関わらず常に起動。
@@ -230,7 +233,7 @@ Phase 1.7 が明確な判断を下せない場合のデフォルト構成（effo
 
 - explorer: 3 体（+ cross-cutting / history-context）
 - architect: 2-3 体（+ pragmatic-balance or migration-strategy）
-- reviewer 暫定: 4-5 体（+ security, migration-safety）
+- reviewer 暫定: 4-5 体（+ security, migration）
 
 ## 9. 最小保証とフェーズ上限
 

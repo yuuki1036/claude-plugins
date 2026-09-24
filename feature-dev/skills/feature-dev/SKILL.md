@@ -84,10 +84,12 @@ Initial request: 呼び出し元から渡された引数（`/feature-dev` 経由
 
 ## Phase 1.3: BDD Spec Creation (bdd-spec plugin handoff)
 
-**Goal**: bdd-spec が入っていれば BDD `spec.md` を生成し、Phase 4 architect が読む真実にする（曖昧な Issue から実装が暴走する失敗を構造的に潰す）。未インストール時は何もしない（後方互換）。
+**Goal**: bdd-spec が有効なら BDD `spec.md` を生成し、Phase 4 architect が読む真実にする（曖昧な Issue から実装が暴走する失敗を構造的に潰す）。未インストール・無効時は何もしない（後方互換）。
+
+有効判定は同梱スクリプトで行う（user / project / local の settings を優先順位どおりに読み、`true` の明示値だけを有効とする。出力は `1` / `0`。以下の Phase 4.5 / 6 と worktree-flow も同じ）:
 
 ```bash
-if grep -q '"bdd-spec@' "$HOME/.claude/settings.json" 2>/dev/null; then BDD_SPEC_AVAILABLE=1; else BDD_SPEC_AVAILABLE=0; fi
+echo "BDD_SPEC_AVAILABLE=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" bdd-spec)"
 ```
 
 - `BDD_SPEC_AVAILABLE=0` → **skip して Phase 1.5 へ**（既存の Issue 解釈フローがそのまま動く）
@@ -169,10 +171,10 @@ Identify:
 - **Feature type**: bugfix / extension / new-feature / refactor / migration / cross-cutting (multiple allowed)
 - **Explorer necessity**: skip if Issue context provides a complete `feature_dev_plan:` AND the feature is isolated; otherwise required
 - **Architect focuses**: always include `minimal-changes`; add `clean-architecture` / `pragmatic-balance` / `migration-strategy` per the guide
-- **Reviewer focuses (provisional)**: `bug-detection` always; add `claude-md-compliance` / `security` / `performance` / `api-design` / `ui-quality` / `type-design` / `migration-safety` per the guide
+- **Reviewer focuses (provisional)**: `bug-detection` always; add `claude-md-compliance` / `security` / `performance` / `api-design` / `ui-quality` / `type-design` / `migration` / `spec-compliance` per the guide. Use only code-review's focus keys (the file names under code-review's `references/prompts/focus/`) — self-review has no reviewer for any other name
 
 Consider these signals:
-- `package.json` major dependencies (React/Next.js → vercel-best-practices, etc.)
+- `package.json` major dependencies (React/Next.js → vercel-best-practices for architects; the reviewer side is `ui-quality`, whose modern-web checklist covers it)
 - CLAUDE.md presence
 - Issue context content (if Phase 1.5 detected one)
 
@@ -349,10 +351,10 @@ Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2
 
 ## Phase 4.5: Design Doc Export (design-doc plugin handoff)
 
-**Goal**: Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を design doc として `.claude/designs/` に永続化する。後続の同領域開発の参照元・実装後の as-built 記録（`phase: target → current`）として再利用できる。design-doc 未インストール時は何もしない（後方互換）。
+**Goal**: Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を design doc として `.claude/designs/` に永続化する。後続の同領域開発の参照元・実装後の as-built 記録（`phase: target → current`）として再利用できる。design-doc 未インストール・無効時は何もしない（後方互換）。
 
 ```bash
-if grep -q '"design-doc@' "$HOME/.claude/settings.json" 2>/dev/null; then DESIGN_DOC=1; else DESIGN_DOC=0; fi
+echo "DESIGN_DOC=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" design-doc)"
 ```
 
 - `DESIGN_DOC=0` → 本 Phase を skip して Phase 5 へ
@@ -542,11 +544,11 @@ If the user chose to execute:
 
 ### Step 0: Existence Check (code-review plugin)
 
-Phase 6 は `code-review:self-review` skill に依存する。冒頭で plugin の存在を確認し、未インストール時は **fail-fast** する:
+Phase 6 は `code-review:self-review` skill に依存する。冒頭で plugin が有効かを確認し、未インストール・無効時は **fail-fast** する:
 
 ```bash
-if ! grep -q '"code-review@' "$HOME/.claude/settings.json" 2>/dev/null; then
-  echo "❌ Phase 6 は code-review plugin に依存します。先にインストール:"
+if [ "$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" code-review)" != 1 ]; then
+  echo "❌ Phase 6 は code-review plugin に依存します（未インストールか無効）。インストール・有効化:"
   echo "   claude plugin install code-review@yuuki1036-claude-plugins"
   echo ""
   echo "Phase 5 までの成果物は維持されています。インストール後、Phase 6 から再開してください。"
@@ -572,8 +574,11 @@ Apply diff-based pattern matching:
 - テストファイル（`.test.` / `.spec.` / `__tests__/`）変更 → add `test-quality`
 - 型定義（`type` / `interface` / `enum`）追加 → add `type-design`
 - 認証・暗号関連ファイル変更 → upgrade `security`
-- DB / migration ファイル変更 → add `migration-safety`
+- DB / migration ファイル変更 → add `migration`
 - フロントエンド変更 → add `ui-quality`
+- Issue context（Phase 1.5）/ `.claude/session-context.md` / `BDD_SPEC_PATH` のいずれかがある → add `spec-compliance`（実装が仕様・受入条件・設計判断どおりかを見る reviewer。仕様のソースが無いと起動しても空振りする）
+
+**focus 名は code-review の語彙に限る**: `bug-detection` / `claude-md-compliance` / `security` / `performance` / `api-design` / `type-design` / `error-handling` / `test-quality` / `ui-quality` / `migration` / `spec-compliance` / `config` / `dependency` / `cross-cutting` / `pattern-consistency` / `comment-accuracy` / `doc-substance`（code-review の `references/prompts/focus/` のファイル名）。語彙外の名前（旧 `migration-safety` / `vercel-best-practices` 等）を渡すと self-review はその reviewer を起動できない
 
 Merge with the Phase 1.7 provisional list, then cap by the current effort upper bound (`triage-guide.md` Section 5).
 
@@ -587,6 +592,7 @@ Merge with the Phase 1.7 provisional list, then cap by the current effort upper 
 
 - `--focus <comma-separated focus list from Step 1>`
 - `--embed`（**必須**: feature-dev は自前で findings を集約するため、self-review 終端の修正方針確認 AskUserQuestion を skip させる）
+- `--spec=<BDD_SPEC_PATH>`（`BDD_SPEC_PATH` があるときだけ）: spec-compliance reviewer に BDD spec を読ませる。self-review の spec-compliance は session-context / Issue / knowledge しか読まないので、渡さないと Phase 1.3 の spec と実装の照合が起きない。`=` でつないで 1 語にする（`--spec` を知らない旧版の self-review がパスを base branch と読み違えないため）
 - base branch は省略（self-review が `git remote show origin | grep "HEAD branch"` で自動検出）
 - 未コミット diff は self-review 側で `git diff` / `git diff --cached` を併用して取得
 

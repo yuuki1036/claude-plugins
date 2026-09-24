@@ -69,6 +69,7 @@ Repeat the following until a termination condition fires:
    - `--focus <persisting issue の focus 集合>`
    - `--exclude <既に解決した focus 集合>` で重複検査をスキップ可
    - `--embed`（loop 中も AskUserQuestion を skip させる）
+   - `--spec=<BDD_SPEC_PATH>`（persisting issue に `spec-compliance` があり、`BDD_SPEC_PATH` があるとき。初回と同じ照合元を渡す）
 8. **Update loop state**: `current_iteration` をインクリメントし、新 iteration エントリを append。
 9. Return to step 1。
 

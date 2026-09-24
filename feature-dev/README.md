@@ -152,9 +152,9 @@ tsc / lint / build では検知できない runtime 初期化バグ（DB client 
 
 `code-review:self-review` skill に委譲して品質ゲートを通し、致命指摘を Generator-Verifier ループで自動 fix する。v2.0.0 で feature-dev 内蔵の `code-reviewer` agent を廃止し、品質基準を code-review プラグインに一本化した（DRY 違反の解消 + 2 軸スコアリング × 多観点 × specialist × meta-reviewer 構造への統一）。
 
-- Step 0: code-review プラグインの存在確認。未インストール時は **fail-fast**（Phase 5 までの成果物は維持。`_requirements` では `required: false` 宣言だが Phase 6 では事実上必須）
+- Step 0: code-review プラグインが有効かを確認（`scripts/plugin-enabled.sh`）。未インストール・無効時は **fail-fast**（Phase 5 までの成果物は維持。`_requirements` では `required: false` 宣言だが Phase 6 では事実上必須）
 - Step 1: 実装 diff を読んで reviewer focus list を refine（mini-triage）
-- Step 2: `Skill code-review:self-review --focus <list> --embed` を 1 回呼ぶ（`--embed` で self-review 終端の AskUserQuestion を skip）。出力は構造化 findings JSON ブロックを優先パース、無ければ markdown フォールバック（dual format）
+- Step 2: `Skill code-review:self-review --focus <list> --embed` を 1 回呼ぶ（`--embed` で self-review 終端の AskUserQuestion を skip）。Issue context / session-context / BDD spec があれば focus に `spec-compliance` を入れ、BDD spec があれば `--spec=<path>` で照合元として渡す。focus 名は code-review の語彙に限る（語彙外の名前は reviewer が起動しない）。出力は構造化 findings JSON ブロックを優先パース、無ければ markdown フォールバック（dual format）
 - Step 3: Generator-Verifier ループ。`BLOCKER`（any confidence）/ `CRITICAL && confidence ≥ 90` を auto-fix 対象とし、effort 別 max_iterations で fix → 再 review を反復。regression 検知（同一 fingerprint）/ budget で終了
 - Step 4: 集約結果を `[auto-fixed]` / `[persisting]` タグ付きで提示し、残課題はユーザー判断
 
