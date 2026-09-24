@@ -51,7 +51,9 @@
 - S10: 実際のコミットは 4eb10e3（別セッションとの index 共有でコミットが混線し、そちらで amend して分けた）
 - S11: `docs/shared-state.md` の登録簿を実態に合わせた。knowledge の consumers に code-review（spec-compliance）・dev-workflow（diagnose）・feature-dev / design-doc（grill）を足し、`glossary`（`all_spec.md`。producer: bdd-spec）の行を足した
 
-**未着手**（統合レポートの ID）: S12〜S17、B 群、C 群（C1 を除く）。
+- S12: 「推測を含む」とされていた前提を独立調査 3 体 + 反証 1 体で確かめた。実害は `ts`: 過去に入った原因を診断した時刻で書くと、retro が還流前の失敗を還流後の再発に数え、窓の外の古い失敗を窓内に戻す（`retro-aggregate.sh` は `timestamp` だけで数える）。diagnose は原因 commit（`Co-Authored-By: Claude` があるものだけ）の author date を `ts` にし、特定できなければ書かない（dev-workflow 1.34.4。手順は `skills/diagnose/references/journal-candidate.md`）。failure-journal 側は `ts` を発生時刻と定義し、retro が `（由来 <sha>）` で diagnose の行を見分けて同じ原因をまとめる（0.6.3）。差分レビュー（3 観点・37 件 → 反証後 22 件、major 1: `log.showSignature=true` で `ts` が壊れる）を反映した。残したもの: dev-workflow 1.34.3 以前の diagnose が書いた行（由来なし・`ts` は診断時刻）は見分けられない / retro の description の「自己訂正の候補」は据え置き（ルーティングに効かず、変えると evals の再実行が要る）
+
+**未着手**（統合レポートの ID）: S13〜S17、B 群、C 群（C1 を除く）。
 
 ---
 

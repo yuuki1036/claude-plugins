@@ -9,12 +9,15 @@ failure-journal の永続フォーマット定義。
 - 書き込み: **append-only**（既存行の編集・削除を禁止）
 - 永続性: **gitignore 推奨**（fingerprint を AI の出力に汚染させないため、commit せずローカルに留める。README 参照）
 
-## candidates.jsonl（自己申告の候補置き場）
+## candidates.jsonl（候補置き場）
 
 journal の手前に置くステージングファイル。SessionStart 注入ルール（`rules/self-report-rule.md`）により、Claude が自己訂正した瞬間に 1 行 append する。`/retro` Phase 0.5 が承認レビューで journal に昇格する。
 
+もう 1 つの書き手は dev-workflow の diagnose（Phase 6）で、診断したバグの原因がそのセッションより前の commit（`Co-Authored-By: Claude` の trailer があるもの）で入っていたときに 1 行書く。summary の末尾に `（由来 <短縮 sha>）` が付く。
+
 - パス: `.claude/failure-journal/candidates.jsonl`
 - スキーマ: `{"ts":"<ISO8601 UTC>","summary":"<何をどう間違えたか 1 行>","verdict":null}`
+  - `ts` は**失敗が起きた時刻**。自己申告では訂正したターンの時刻（発生とほぼ同時）、diagnose では原因を入れた commit の author date（squash merge の commit ではマージ時刻）。`/retro` はこれをそのまま journal の `timestamp` にし、30 日窓と「最後の還流より後の発生」をこの値で数えるので、記録した時刻を書くと還流前の失敗が還流後の再発に数えられる。形式は `YYYY-MM-DDTHH:MM:SSZ`（UTC・`Z` 終端）に揃える — `scripts/retro-aggregate.sh` は窓の境界と文字列で比較する
   - `verdict` は起票時 `null`。`/retro` のレビュー後に `"accepted"` / `"rejected"` が書き戻される（再浮上防止）
   - `summary` は自由文。固有名詞可（tag 化・抽象化は retro のレビューで行う）
 - journal との違い: append-only ではない（verdict の書き戻しのみ許可。行削除・summary 書き換えは禁止）

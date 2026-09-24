@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.4] - 2026-09-24
+
+### Fixed
+
+- **diagnose の Phase 6 が、過去に入った原因を「診断した時刻」で failure-journal の candidates に書いていた**。
+  retro は候補の `ts` をそのまま失敗の発生時刻として 30 日窓と「最後の還流より後の発生」を数えるので、
+  還流前に入った失敗が還流後の再発に数えられ、窓の外の古い失敗が窓内に戻っていた。手順を
+  `skills/diagnose/references/journal-candidate.md` に移して次のようにした:
+  - 書くのは、このセッションより前の commit で入った原因で、その commit に `Co-Authored-By: Claude` があるものだけ
+    （failure-journal が集めるのは Claude 自身の失敗）。このセッションで入れた原因は自己申告ルールの対象
+  - `ts` は原因 commit の author date。`git show` の差分に欠陥が入っていることを確かめ、整形・移動だけの commit・
+    merge commit・blame の `^` 付き（root か shallow clone の境界）は特定できていない扱いで書かない
+  - append は `&&` で連結し、commit を解決できない・trailer が無い・日時が取れないときは何も書かない
+    （旧手順は空の `ts` を書き込めた）。日時は `%at` を jq の `todate` で UTC・`Z` 終端に直し、
+    `--no-show-signature` を付ける（`log.showSignature=true` の環境では署名の検証結果が日付の前に出る）
+  - summary の末尾に `（由来 <短縮 sha>）` を付け、retro が diagnose の行を見分けて同じ原因の重複をまとめられるようにした
+  - 候補の形式は failure-journal の journal-schema.md に SSoT pin で結んだ
+
 ## [1.34.3] - 2026-09-24
 
 ### Fixed

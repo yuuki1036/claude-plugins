@@ -141,5 +141,5 @@ seam があるなら: ①最小 repro をその seam の失敗テストに変換
 
 **最後に自問する: このバグを防げたものは何か。** 答えに応じて還流する（いずれも対象が未導入なら黙ってスキップ）:
 
-- **再発しうる作業パターン起因**（検証せず断定した・ツール出力を読み違えた等）→ failure-journal 導入済み（`.claude/failure-journal/` が存在）なら candidates.jsonl に 1 行 append（自己申告ルールと同形式・確認不要）
+- **再発しうる作業パターン起因**（検証せず断定した・ツール出力を読み違えた等）→ failure-journal 導入済み（`.claude/failure-journal/` が存在）なら、[references/journal-candidate.md](references/journal-candidate.md) の手順で candidates.jsonl に 1 行 append する（確認不要）。自己申告ルールの jq をそのまま使わない — `ts` を今の時刻にすると、過去に入った原因が retro で「還流後の再発」に数えられる。`ts` は原因を入れた commit の日時にし、その commit を特定できなければ書かない
 - **アーキテクチャ起因**（テスト seam の欠如・呼び出し元の絡まり・隠れた結合）→ issue-workflow 導入済みならユーザーに follow-up / issue 起票を提案する。提案は修正が入った**後**に行う — 着手前より今のほうが判断材料が多い

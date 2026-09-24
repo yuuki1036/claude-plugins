@@ -36,11 +36,13 @@ failure journal を集計し、再発する失敗パターンを検出して規�
 
 ## Phase 0.5: 候補レビュー（candidates → journal 昇格）
 
-log-failure は手動起票のため、**Claude が自己訂正した失敗は人間の目に触れず journal に入らない**（実測の起票率 ≒2.5%）。このギャップは SessionStart hook が注入する自己申告ルール（`rules/self-report-rule.md`）で埋める: Claude は自己訂正した瞬間に `.claude/failure-journal/candidates.jsonl` へ候補を 1 行 append しており、本 Phase はその候補を承認レビューで journal に昇格する。
+log-failure は手動起票のため、**Claude が自己訂正した失敗は人間の目に触れず journal に入らない**（実測の起票率 ≒2.5%）。このギャップは SessionStart hook が注入する自己申告ルール（`rules/self-report-rule.md`）で埋める: Claude は自己訂正した瞬間に `.claude/failure-journal/candidates.jsonl` へ候補を 1 行 append しており、本 Phase はその候補を承認レビューで journal に昇格する。summary が `（由来 <短縮 sha>）` で終わる行は dev-workflow の diagnose が書いたもので、その場の自己訂正ではなく、過去のセッションで Claude が入れた原因（`ts` はその commit の日時）。書き手と `ts` の意味は `../log-failure/references/journal-schema.md` の candidates 節。
 
 1. `candidates.jsonl` の `verdict: null` 行を読み込む（ファイル不在・0 件なら Phase 0.6 へ）
 2. 各候補を log-failure と同じ単一基準（**同じ状況で再発しうるか**）で REAL / NOISE に分類し、一覧提示して承認を得る
 3. 承認された REAL は tag 規約（`../log-failure/references/journal-schema.md`）に従って tag を付与し journal へ append する。`timestamp` は候補の `ts` を使う。既存 journal とは tag の意味的一致で重複排除する
+   - tag は `bash "${CLAUDE_PLUGIN_ROOT}/scripts/tag-split-lookup.sh"` の分割宣言に従い、umbrella ではなくサブ tag に寄せる。diagnose の行は `ts` が宣言より前になりうるので、umbrella に寄せても集計の split_not_adopted に出ない
+   - diagnose の行は phenomenon の末尾に `（由来 <短縮 sha>）` を残す。同じ sha の行は、同じバッチ内でも既存 journal とも 1 件として扱う（同じバグを別のセッションで診断し直すと、同じ原因の行がもう 1 つ書かれる）
 4. **レビューした全行に verdict を書き戻す**（`accepted` / `rejected`）。却下候補が次回 retro で再浮上するのを防ぐ（旧 transcript サルベージ設計の既知の穴への対処）
    - `candidates.jsonl` は journal と違い append-only ではない。ただし許可されるのは **verdict フィールドの書き戻しのみ**（行の削除・summary の書き換えはしない）
 

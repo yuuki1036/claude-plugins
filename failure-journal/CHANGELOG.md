@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.3] - 2026-09-24
+
+### Changed
+
+- **candidates.jsonl の `ts` を「失敗が起きた時刻」と定義し、2 つ目の書き手を明記した**（journal-schema.md）。
+  dev-workflow の diagnose が、過去のセッションで Claude が入れた原因を、その commit の日時を `ts` にして書く。
+  retro は `ts` をそのまま journal の `timestamp` にするので、記録した時刻を書くと還流前の失敗が還流後の再発に
+  数えられる。形式は `retro-aggregate.sh` の文字列比較に合わせて UTC・`Z` 終端に揃える。見出しを
+  「candidates.jsonl（候補置き場）」に改めた
+- **retro Phase 0.5 に diagnose の行の扱いを足した**。summary が `（由来 <短縮 sha>）` で終わる行は diagnose が書いた
+  過去の原因で、同じ sha の行はバッチ内でも既存 journal とも 1 件にまとめる（同じバグを別のセッションで
+  診断し直すと同じ原因の行がもう 1 つ書かれる）。昇格時の tag は `tag-split-lookup.sh` の分割宣言に従う —
+  diagnose の行は `ts` が宣言より前になりうるので、umbrella に寄せても split_not_adopted に出ない
+
 ## [0.6.2] - 2026-09-06
 
 ### Fixed
