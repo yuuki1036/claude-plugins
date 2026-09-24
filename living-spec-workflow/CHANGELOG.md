@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.0] - 2026-09-24
+
+### Changed
+
+- **Decision log の 6 bullet の下に子 bullet を置けるようにした**（format-spec 4 節・9 節）。補足・内訳・但し書きを
+  書く場所が無く、実運用の living spec で 44 エントリ・249 行がインデントした子 bullet になり、maintain 段 1 が
+  全部 Critical にしていた。子 bullet は半角空白 2 個以上のインデント + `- ` で始め、6 bullet の個数・順序には
+  数えず中身も読まない。見出しと `日付` の間には置けない。散文の段落・引用ブロックは引き続き段 1 の Critical
+- 子 bullet にも append-only が掛かることと、子 bullet の中の OQ / D 番号は相互参照（段 3）の対象外で、close する
+  OQ は親の `関連 OQ` に書くことを明記した。decision の追記手順とテンプレのコメントにも子 bullet を足した
+
 ## [0.4.1] - 2026-09-24
 
 ### Fixed
