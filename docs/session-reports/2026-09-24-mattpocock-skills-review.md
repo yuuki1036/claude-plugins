@@ -48,7 +48,10 @@
 
 - S10: design-doc の実装ブリッジの `spec=` を「BDD spec.md のパス（無ければ省く）」と 4 か所で明記した
 
-**未着手**（統合レポートの ID）: S11〜S17、B 群、C 群（C1 を除く）。
+- S10: 実際のコミットは 4eb10e3（別セッションとの index 共有でコミットが混線し、そちらで amend して分けた）
+- S11: `docs/shared-state.md` の登録簿を実態に合わせた。knowledge の consumers に code-review（spec-compliance）・dev-workflow（diagnose）・feature-dev / design-doc（grill）を足し、`glossary`（`all_spec.md`。producer: bdd-spec）の行を足した
+
+**未着手**（統合レポートの ID）: S12〜S17、B 群、C 群（C1 を除く）。
 
 ---
 
