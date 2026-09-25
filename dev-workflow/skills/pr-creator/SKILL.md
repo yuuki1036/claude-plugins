@@ -180,8 +180,8 @@ VERI=".claude/verification/$(git rev-parse --abbrev-ref HEAD).md"
 1. `.claude/screenshots/` 内の最新 snap ディレクトリを特定。見つからなければ ui-verify スキルを `snap` モードで起動して新規撮影（PR タイプ判定結果に応じた `--viewports=...` を渡す）
 
    ```bash
-   # ui-verify の snap モード（snap-*）と verify モード（verify-*）の両方を対象
-   LATEST=$(ls -1dt .claude/screenshots/{snap,verify}-* 2>/dev/null | head -1)
+   # ui-verify の snap モード（snap-*）・verify モード（verify-*）・tune モード（tune-*）を対象
+   LATEST=$(ls -1dt .claude/screenshots/{snap,verify,tune}-* 2>/dev/null | head -1)
    ```
 2. **撮影内容の機密チェック**（次節「機密 UI チェックリスト」を実施）。問題があれば中止
 3. 添付ファイルを `ATTACH` 配列に集める。対象は `png` / `jpg` / `jpeg` / `gif` / `webp` / `svg` と、録画があれば `mp4` / `mov` / `webm`（gh が受け付ける形式はこの 9 種のみ）。**1 回の gh 呼び出しで 50 件まで**
@@ -200,6 +200,14 @@ VERI=".claude/verification/$(git rev-parse --abbrev-ref HEAD).md"
    |----------|---------|
    | mobile   | ![mobile](<ATTACH のパス>) |
    | desktop  | ![desktop](<ATTACH のパス>) |
+   ```
+
+   **tune モードのディレクトリ（`before.png` / `after.png`）は対で出す** — 変更前後を並べないと、何が変わったかがレビュアーに伝わらない:
+
+   ```markdown
+   | before | after |
+   |--------|-------|
+   | ![before](<before のパス>) | ![after](<after のパス>) |
    ```
 
    viewport 名はファイル名から推定（`mobile.png` / `desktop.png` 等）。不明なものは `<name> | ![<name>](<ATTACH のパス>)` 形式。動画は alt text を持てないので table に入れず `![recording](<ATTACH のパス>)` を単独行で置く（単独行は動画プレーヤーの URL に書き換わる。reference 形式 `![x][id]` は gh が拒否する）

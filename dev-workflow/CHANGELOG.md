@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.8] - 2026-09-25
+
+### Changed
+
+- **pr-creator の証跡を足した**（考え方は mattpocock/skills の in-progress `pr` から。文面は転載していない）:
+  - 添付する撮影に ui-verify の tune モード（`tune-*`）を含め、`before.png` / `after.png` は対で並べる
+  - バグ修正で diagnose の feedback loop を使ったなら、その 1 コマンドと修正前に赤・修正後に緑を「動作確認」に引用する
+  - 備考に、列・公開 API・データの削除など取り返しのつかない変更だけ `不可逆: <何が>（<理由>）` を書く。意図的に
+    やらないことは `このPRではやらない: <X>（<理由>）` の形にする（code-review がスコープ外として扱う）
+  - 構造の変化が箇条書きで伝わらないときだけ、最小の図を 1 つ置く
+
 ## [1.34.7] - 2026-09-24
 
 ### Changed
