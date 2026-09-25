@@ -1362,6 +1362,63 @@ class SeverityThresholdPublishTest(ScriptTestBase):
         self.assertEqual(self.last_payload()["severity_threshold"], "MAJOR")
 
 
+class BodyBoundPublishTest(ScriptTestBase):
+    """付録と報告件数が「本文を書いた指摘の数」を超えた回に gap を立てる（GitHub issue #248）.
+
+    `BASE_PAYLOAD` は pre MAJOR 1・below 0・報告 MAJOR 1 なので、本文を書いたのは 1 件で
+    付録の上限は 0。**WARN も fail-fast もしない**（既存データで 86 回中 39 回が該当する）。
+    """
+
+    def _payload(self, listed: int, **extra) -> dict:
+        p = json.loads(json.dumps(BASE_PAYLOAD))
+        p["appendix"] = {"listed": listed, "recommended": 0}
+        p.update(extra)
+        return p
+
+    def _gaps(self, payload: dict) -> list[str]:
+        r = self.publish(payload)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        # 汎用の「計測マーカーの欠測」WARN にも載せない（欠測ではなく契約違反 / 鳴りっぱなしになる）
+        self.assertNotIn("exceeds-body", r.stderr, "WARN を出さない契約")
+        return self.last_payload()["measurement_gaps"]
+
+    def test_exactly_at_the_bound_is_not_flagged(self):
+        self.assertNotIn("payload:appendix.exceeds-body", self._gaps(self._payload(0)))
+
+    def test_one_past_the_bound_is_flagged(self):
+        self.assertIn("payload:appendix.exceeds-body", self._gaps(self._payload(1)))
+
+    def test_findings_added_do_not_raise_the_bound(self):
+        """skeptic / meta の指摘は手順 1 より前に統合され `pre_adjust_counts` に入っている.
+
+        上限に足すと二重計上で緩み、違反を見逃す（既存データで 4 回）。
+        """
+        for layer in ("recall_skeptic", "meta_reviewer"):
+            with self.subTest(layer=layer):
+                p = self._payload(1)
+                p[layer] = dict(p[layer], fired=True, findings_added=1)
+                if layer == "recall_skeptic":
+                    p[layer].update(skip_reason=None, launch="rider", findings_overlap=0)
+                else:
+                    p[layer].update(skip_reason=None)
+                self.assertIn("payload:appendix.exceeds-body", self._gaps(p))
+
+    def test_rows_missing_an_input_are_not_judged(self):
+        """`below_threshold_counts` が無い回は本文を書いた数が決まらない."""
+        p = self._payload(5)
+        del p["below_threshold_counts"]
+        self.assertNotIn("payload:appendix.exceeds-body", self._gaps(p))
+
+    def test_reported_counts_over_the_bound_raise_their_own_gap(self):
+        """兄弟ケース（09-24T01:31 の型）: 報告件数が本文を書いた数を超える."""
+        p = self._payload(0, major_count=2)
+        p["findings_class"] = {"lint": 0, "test": 0, "judgement": 2}
+        gaps = self._gaps(p)
+        self.assertIn("payload:report_counts.exceeds-body", gaps)
+        p = self._payload(0)
+        self.assertNotIn("payload:report_counts.exceeds-body", self._gaps(p))
+
+
 class AppendixCountTest(ScriptTestBase):
     """🔁 付録の件数を payload に載せる（GitHub issue #168）.
 
@@ -2729,18 +2786,22 @@ class RetroTest(RetroFixture):
         self.assertIn("検出 30 − 件数のみ 20", out)
 
     def test_negative_drop_is_not_rounded(self):
-        """0 に丸めると「捨てていない」と読める（手順 1 の後で足す層があるため負が出る）."""
+        """0 に丸めると「捨てていない」と読める（報告件数が本文を書いた数を超えた回で負が出る）.
+
+        旧版はこれを「手順 1 の後で足す層（skeptic / meta）のぶん」と説明していたが、両 SKILL は
+        その層を手順 1 より前に統合するので pre に入っている（#248）。
+        """
         self._events([self._yield_row((0, 0, 5, 0), (0, 0, 8, 0), below=(0, 0, 0, 0))])
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("本文を書いてから捨てた: -3 件", out)
-        self.assertIn("recall_skeptic / meta_reviewer", out, "負の理由を言わずに出さない")
+        self.assertIn("負は報告件数が本文を書いた数を超えた回のぶん", out, "負の理由を言わずに出さない")
 
     def test_zero_drop_is_not_labelled_as_negative(self):
         """捨てた 0 件は「負」ではない（注記が付くと後段の層が足したと誤読される）."""
         self._events([self._yield_row((0, 0, 4, 6), (0, 0, 4, 0), below=(0, 0, 0, 6))])
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("本文を書いてから捨てた: 0 件（0.0%）", out)
-        self.assertNotIn("recall_skeptic / meta_reviewer", out)
+        self.assertNotIn("負は報告件数が", out)
 
     def test_no_sample_says_it_cannot_be_judged_yet(self):
         """歩留まりだけ出して黙ると「分離できている」と読める（#131 と同じ型）."""
@@ -5946,7 +6007,9 @@ class RetroTrueSilentSplitTest(RetroFixture):
              "models": self._models("claude-%s" % gen), "severity_threshold": "MAJOR",
              "blocker_count": 0, "critical_count": 0, "major_count": reported,
              "minor_count": 0,
-             "appendix": {"schema": 1, "listed": 3, "recommended": recommended}}
+             # 付録は推奨した行だけにする（#248 の契約 (a) どおりの形。閾値未満のみの回に付録の
+             # 行を持たせると「付録には出た」側に分かれ、この #210 の内訳とは別の軸になる）
+             "appendix": {"schema": 1, "listed": recommended, "recommended": recommended}}
         if pre:
             r["pre_adjust_counts"] = {"schema": 2, "blocker": 0, "critical": 0,
                                       "major": 0, "minor": minor}
@@ -6043,7 +6106,7 @@ class RetroTrueSilentSplitTest(RetroFixture):
         self.assertIn("判定不能が 3 件", out)
         self.assertIn("| opus-4-8 | 10 | 5 | 0 | 5（50%） | 2 | 0（判定不能 3） |", out)
         j = json.loads(self._out("--json"))
-        self.assertEqual(j["true_silent_split"], {"empty": 2, "below": 0, "unknown": 3})
+        self.assertEqual(j["true_silent_split"], {"empty": 2, "below": 0, "below_listed": 0, "below_over": 0, "unknown": 3})
 
     def test_a_vocabulary_violating_pre_adjust_is_unknown_not_empty(self):
         """語彙違反（実データにある `{threshold, pre_major, pre_minor}`）を「検出 0」に化けさせない.
@@ -6057,20 +6120,20 @@ class RetroTrueSilentSplitTest(RetroFixture):
             r["pre_adjust_counts"] = bad
         self._events(rows + [self._row("opus-5", 2, 0, minor=4) for _ in range(12)])
         j = json.loads(self._out("--json"))
-        self.assertEqual(j["true_silent_split"], {"empty": 6, "below": 0, "unknown": 4},
+        self.assertEqual(j["true_silent_split"], {"empty": 6, "below": 0, "below_listed": 0, "below_over": 0, "unknown": 4},
                          "語彙違反を『検出 0』として数えている")
 
     def test_a_rescued_run_is_not_split_at_all(self):
         """推奨があれば空振りではない（#168）— 内訳の分母にも入れない."""
         self._events([self._row("opus-4-8", 0, 2, minor=4) for _ in range(10)])
         j = json.loads(self._out("--json"))
-        self.assertEqual(j["true_silent_split"], {"empty": 0, "below": 0, "unknown": 0})
+        self.assertEqual(j["true_silent_split"], {"empty": 0, "below": 0, "below_listed": 0, "below_over": 0, "unknown": 0})
         self.assertNotIn("**真の空振りの内訳**", self._out())
 
     def test_the_json_split_matches_the_layers(self):
         self._events(self._population())
         j = json.loads(self._out("--json"))
-        self.assertEqual(j["true_silent_split"], {"empty": 2, "below": 3, "unknown": 0})
+        self.assertEqual(j["true_silent_split"], {"empty": 2, "below": 3, "below_listed": 0, "below_over": 0, "unknown": 0})
         self.assertEqual(j["appendix_by_gen"]["opus-4-8"]["true_silent_empty"], 2)
         self.assertEqual(j["appendix_by_gen"]["opus-4-8"]["true_silent_below"], 3)
 
@@ -6302,7 +6365,10 @@ class RetroAppendixLayerTest(RetroFixture):
         self.assertEqual(j["appendix_by_gen"]["opus-4-8"],
                          {"n": 10, "silent": 10, "rescued": 10, "true_silent": 0,
                           "true_silent_empty": 0, "true_silent_below": 0,
-                          "true_silent_unknown": 0})
+                          "true_silent_below_listed": 0, "true_silent_below_over": 0,
+                          "true_silent_unknown": 0,
+                          # #248。この fixture は上限の判定に要る値を持たないので 0
+                          "rescued_judged": 0, "rescued_uncontracted": 0})
 
     def test_a_layer_below_the_floor_does_not_fire_alone(self):
         """下限未満の層だけでは鳴らない（n=4 で 100% でも判定しない）."""
@@ -6569,6 +6635,135 @@ class SeverityThresholdRetroTest(RetroFixture):
         j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
         self.assertEqual(j["measurement"]["severity_threshold"],
                          {"nested_recovered": 0, "missing": 0})
+
+
+class BodyBoundRetroTest(RetroFixture):
+    """retro が付録・報告件数の上限超えを契約 (a) どおりに読む（GitHub issue #248）.
+
+    契約 (a): 閾値未満は本文を書かず件数だけ返し、付録に載せるのは閾値以上で列挙された指摘だけ。
+    だから `本文を書いた`（pre − below）は下限で、付録と報告件数から見た下限と並べて読む。
+    """
+
+    def _row(self, major: int = 1, minor_below: int = 5, reported: int = 0, listed: int = 0,
+             rec: int = 0, added: int = 0) -> dict:
+        # `added` は skeptic の `findings_added`。上限には足さない（pre に入っている / body_bound.py）
+        """pre は MAJOR `major` 件 + MINOR `minor_below` 件、below は MINOR `minor_below` 件."""
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "severity_threshold": "MAJOR",
+                "pre_adjust_counts": {"blocker": 0, "critical": 0, "major": major,
+                                      "minor": minor_below, "schema": 2},
+                "below_threshold_counts": {"blocker": 0, "critical": 0, "major": 0,
+                                           "minor": minor_below},
+                "blocker_count": 0, "critical_count": 0, "major_count": reported,
+                "minor_count": 0,
+                "recall_skeptic": {"fired": added > 0, "findings_added": added},
+                "appendix": {"schema": 1, "listed": listed, "recommended": rec}}
+
+    def _out(self) -> str:
+        return self.run_script(RETRO, env=self._env()).stdout
+
+    def _json(self) -> dict:
+        return json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+
+    def test_the_lower_bound_is_shown_next_to_the_written_count(self):
+        """本文を書いた 1（pre 6 − below 5）なのに付録が 3 行 → 下限は 3."""
+        self._events([self._row(listed=3)])
+        out = self._out()
+        self.assertIn("本文を書いた 1（検出 6 − 件数のみ 5）", out, "`本文を書いた` の値は変えない")
+        self.assertIn("上限超え 1/1 回**（付録 1 回 / 報告件数 0 回", out)
+        self.assertIn("本文を書いたのは **3 件以上**で、書いた後の破棄率は **100.0% 以上**", out)
+
+    def test_rows_without_an_appendix_still_add_their_written_count(self):
+        """付録を持たない回（判定できない回）の下限は `pre − below` のまま足す."""
+        no_apx = self._row(major=2)
+        del no_apx["appendix"]
+        self._events([self._row(listed=3), no_apx])
+        self.assertIn("上限超え 1/1 回", self._out())
+        self.assertIn("本文を書いたのは **5 件以上**", self._out())
+
+    def test_a_non_positive_lower_bound_has_no_rate(self):
+        """below が pre を超えた旧データ（本文を書いた数が負）では分母が無いので率を出さない."""
+        row = self._row(major=0, minor_below=5)
+        row["below_threshold_counts"]["minor"] = 6
+        self._events([row])
+        out = self._out()
+        self.assertIn("本文を書いたのは **0 件以上**。", out)
+        self.assertNotIn("破棄率は **0.0%", out)
+
+    def test_exactly_at_the_bound_says_nothing(self):
+        """境界: 付録が上限ちょうど（本文を書いた 1 − 報告 0 = 1 行）なら上限超えではない."""
+        self._events([self._row(listed=1)])
+        self.assertNotIn("上限超え", self._out())
+        self._events([self._row(listed=2)])
+        self.assertIn("上限超え 1/1 回", self._out())
+
+    def test_reported_counts_over_the_bound_also_count(self):
+        """兄弟ケース: 報告件数が本文を書いた数を超える（付録 0 行でも上限超え）."""
+        self._events([self._row(reported=2)])
+        out = self._out()
+        self.assertIn("上限超え 1/1 回**（付録 0 回 / 報告件数 1 回", out)
+        # 下限は付録 + 報告（本文を書いた 1 より報告 2 の方が大きい）
+        self.assertIn("本文を書いたのは **2 件以上**", out)
+
+    def test_findings_added_do_not_raise_the_bound(self):
+        """skeptic の指摘は pre に入っているので上限にも下限にも足さない（二重計上しない）."""
+        self._events([self._row(listed=2, added=1)])
+        out = self._out()
+        self.assertIn("上限超え 1/1 回", out)
+        self.assertIn("本文を書いたのは **2 件以上**", out)
+
+    def test_below_only_true_silence_is_split_by_the_appendix(self):
+        """「閾値未満のみ」の真の空振りのうち、付録には出た回（推奨なし）を分ける."""
+        self._events([self._row(major=0, listed=2), self._row(major=0, listed=0)])
+        j = self._json()
+        self.assertEqual(j["true_silent_split"]["below"], 2)
+        self.assertEqual(j["true_silent_split"]["below_listed"], 1)
+        self.assertEqual(j["true_silent_split"]["below_over"], 1)
+        self.assertIn("うち 1 件は付録には出た", self._out())
+
+    def test_appendix_rows_within_the_bound_are_not_called_uncontracted(self):
+        """上限内の付録行（閾値以上で書かれて報告マトリクスで落ちた指摘）は契約 (a) どおり.
+
+        本文を書いた 2 件（MAJOR 2・below 0）が付録 2 行に出た回は、付録には出たが契約外ではない。
+        """
+        self._events([self._row(major=2, minor_below=0, listed=2) for _ in range(10)])
+        j = self._json()
+        self.assertEqual((j["true_silent_split"]["below_listed"],
+                          j["true_silent_split"]["below_over"]), (10, 0))
+        sig = self.signals(self._out())
+        self.assertIn("残る 10 件は付録に出たが推奨なし", sig)
+        self.assertNotIn("契約外", sig)
+
+    def test_the_prescription_does_not_say_absent_from_the_appendix_when_it_was_listed(self):
+        """⚠️ の処方文は「付録にも出ていない」と言い切るのを、付録に無い回だけにする."""
+        self._events([self._row(major=0, listed=1) for _ in range(4)]
+                     + [self._row(major=0) for _ in range(6)])
+        out = self.signals(self._out())
+        self.assertIn("付録にも出ていないのは 6 件", out)
+        self.assertIn("残る 4 件は付録に出たが推奨なし。うち 4 件は付録が上限を超えた", out)
+        self._events([self._row(major=0) for _ in range(10)])
+        self.assertIn("報告にも付録にも出ていない", self.signals(self._out()))
+
+    def test_rescues_by_uncontracted_rows_are_counted(self):
+        """上限 0 の回の推奨は、閾値未満に数えた指摘の本文から来ている（契約外の行に救われた）."""
+        # 上限 0 を 2 回・上限 2 を 1 回にする（1 対 1 だと判定を反転しても件数が同じになる）
+        self._events([self._row(major=0, listed=1, rec=1), self._row(major=0, listed=1, rec=1),
+                      self._row(major=2, listed=1, rec=1)])
+        j = self._json()
+        self.assertEqual(j["appendix_bound"], {"rescued_judged": 3, "rescued_uncontracted": 2})
+        self.assertIn("上限を判定できた 3 件中 2 件は付録の上限が 0", self._out())
+
+    def test_the_markers_are_not_counted_as_missing_measurements(self):
+        """上限超えは欠測ではなく契約違反。欠測内訳にも ⚠️ にも入れない."""
+        rows = [self._row(listed=1) for _ in range(6)]
+        for r in rows:
+            r["measurement_gaps"] = ["payload:appendix.exceeds-body",
+                                     "payload:report_counts.exceeds-body"]
+        self._events(rows)
+        j = self._json()
+        self.assertNotIn("payload:appendix.exceeds-body", j["measurement"]["gaps"])
+        self.assertEqual(j["body_bound_marker"], {"appendix": 6, "report": 6})
+        self.assertNotIn("exceeds-body", self.signals(self._out()))
 
 
 if __name__ == "__main__":

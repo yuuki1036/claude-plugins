@@ -339,6 +339,7 @@ sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
 from wave_expect import expected_waves, SKEPTIC_LAUNCH
 from report_counts import REPORT_KEYS, lift_nested_report_counts
 from severity_threshold import THRESHOLDS, lift_nested_threshold
+from body_bound import body_bound
 try:
     payload = json.loads(sys.argv[1])
 except ValueError as e:
@@ -755,6 +756,18 @@ elif payload.get("severity_threshold") is None:
         "歩留まり・検出内訳で `threshold=?` 層に入り、主層から外れる — 実効閾値をトップレベルに書く\n"
         "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
     )
+
+# **付録と報告件数が、本文を書いた指摘の数を超えた回**（GitHub issue #248）。上限の式と契約 (a) は
+# `lib/body_bound.py`。**fail-fast にも WARN にもしない** — 止めるとその回の計測が丸ごと消え
+# （`agents-mismatch` と同じ判断）、WARN は既存データで 89 回中 43 回が該当するので鳴りっぱなしになる。
+# 判定に要る値が揃わない回は立てない（0 を埋めると上限が下がって違反を作る）。下の汎用の
+# 「計測マーカーの欠測」WARN にも載せない（欠測ではなく契約違反で、載せると鳴りっぱなしになる）
+_bound = body_bound(payload)
+if _bound is not None:
+    if _bound["appendix_over"]:
+        gaps.append("payload:appendix.exceeds-body")
+    if _bound["report_over"]:
+        gaps.append("payload:report_counts.exceeds-body")
 
 if _nested_parent is not None:
     gaps.append("payload:report_counts.nested")
@@ -1187,12 +1200,15 @@ elif "explorer-wave" in gaps:
 # **打点漏れの警告自体は消さない** — 埋まったかどうかと、規約が守られたかは別の話
 derived_note = ("。うち %s は agent の実測時刻で補完済み（derived_markers）"
                 % ", ".join(payload["derived_markers"])) if payload["derived_markers"] else ""
-if gaps:
+#: 汎用 WARN に載せない gap（欠測ではない / #248）。payload の `measurement_gaps` には残す
+NOT_MISSING_GAPS = ("payload:appendix.exceeds-body", "payload:report_counts.exceeds-body")
+_warn_gaps = [g for g in gaps if g not in NOT_MISSING_GAPS]
+if _warn_gaps:
     sys.stderr.write(
         "WARN: 計測マーカーの欠測: %s（打点由来は agent の実測時刻で埋まらなければ "
         "duration_* が -1 / `payload:*` は payload 側の欠落 / `session-unresolved` は transcript を "
         "session id から引けなかった回 / `tokens` は引けたが main のメッセージを数えられなかった回）%s\n"
-        % (", ".join(gaps), derived_note)
+        % (", ".join(_warn_gaps), derived_note)
     )
 # separators で空白・改行を排除し、1 行に収める
 sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))

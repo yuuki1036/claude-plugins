@@ -107,6 +107,7 @@ sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
 from wave_expect import MAX_EXPECTED_WAVES, expected_waves
 from report_counts import lift_nested_report_counts
 from severity_threshold import lift_nested_threshold
+from body_bound import body_bound
 
 since_raw = os.environ.get("REVIEW_SINCE") or ""
 last_n = int(os.environ.get("REVIEW_LAST") or 0)
@@ -918,13 +919,29 @@ for e in events:
     # 分解した数字なのかが対応付かない（#191 のセルフレビュー指摘）
     key = with_gen(p, "schema>=%d/threshold=%s" % (
         schema_of(pre, "schema"), p.get("severity_threshold") or "?"))
-    sp = splits.setdefault(key, {"n": 0, "pre": 0, "below": 0, "post": 0})
+    sp = splits.setdefault(key, {"n": 0, "pre": 0, "below": 0, "post": 0, "judged": 0,
+                                 "over": 0, "over_appendix": 0, "over_report": 0, "lower": 0})
     sp["n"] += 1
+    _written = 0
     for sev in ("blocker", "critical", "major", "minor"):
         sp["pre"] += num(pre.get(sev)) or 0
         sp["below"] += num(bt.get(sev)) or 0
+        _written += (num(pre.get(sev)) or 0) - (num(bt.get(sev)) or 0)
     for sev in ("blocker_count", "critical_count", "major_count", "minor_count"):
         sp["post"] += num(p.get(sev)) or 0
+    # **`本文を書いた` は下限でしかない**（GitHub issue #248）。付録と報告件数が `pre − below` を
+    # 超えた回は、閾値未満に数えた指摘にも本文が書かれていた（契約 (a) の違反）。値は変えずに、
+    # 付録と報告から見た下限 Σmax(pre − below, 付録 + 報告) を並べる。違反した回を
+    # 母集団から外すと opus-4-8 では大半が消えるので外さない。式の根拠は `lib/body_bound.py`
+    _b = body_bound(p)
+    if _b is None:
+        sp["lower"] += _written
+    else:
+        sp["judged"] += 1
+        sp["over"] += 1 if (_b["appendix_over"] or _b["report_over"]) else 0
+        sp["over_appendix"] += 1 if _b["appendix_over"] else 0
+        sp["over_report"] += 1 if _b["report_over"] else 0
+        sp["lower"] += max(_b["written"], _b["listed"] + _b["reported"])
 
 
 # ---- 5.15 報告 0 件率（世代別 / GitHub issue #191）-------------------------
@@ -983,7 +1000,10 @@ apx_rows, apx_silent, apx_rescued, apx_missing = [], 0, 0, 0
 # MINOR を 2〜6 件見つけていた。混ぜたままだと #210 の回復サイン「20% 未満」が
 # **どちらの改善を求めているのか決まらない**
 apx_stats = {"n": 0, "true_silent": 0, "true_silent_empty": 0, "true_silent_below": 0,
-             "true_silent_unknown": 0, "by_gen": {}}   # 世代別の真の空振り（#214 / #210）
+             "true_silent_below_listed": 0, "true_silent_below_over": 0,
+             "true_silent_unknown": 0,
+             "rescued_judged": 0, "rescued_uncontracted": 0,
+             "by_gen": {}}   # 世代別の真の空振り（#214 / #210）
 for e in events:
     p = e["p"]
     a = p.get("appendix")
@@ -1003,8 +1023,12 @@ for e in events:
     # 片方だけが機械化されていなかった。`報告 0 件率（世代別）` と同じ母数の扱い
     # （欠測は上で外し、`appendix` を持つ回だけ）。**真の空振り = 報告 0 かつ推奨 0**（#168）
     _g = apx_stats["by_gen"].setdefault(gen_of(p), {"n": 0, "silent": 0, "rescued": 0,
+                                                    "rescued_judged": 0,
+                                                    "rescued_uncontracted": 0,
                                                     "true_silent": 0, "true_silent_empty": 0,
                                                     "true_silent_below": 0,
+                                                    "true_silent_below_listed": 0,
+                                                    "true_silent_below_over": 0,
                                                     "true_silent_unknown": 0})
     _g["n"] += 1
     apx_stats["n"] += 1
@@ -1014,6 +1038,14 @@ for e in events:
         if rec > 0:
             apx_rescued += 1
             _g["rescued"] += 1
+            # **契約外の行に救われた回を分ける**（GitHub issue #248）。上限が 0 の回は、契約 (a)
+            # どおりなら付録に 1 行も載らない ＝ 推奨は閾値未満に数えた指摘の本文から来ている。
+            # 真の空振り率はこの混入が増えるか減るかだけでも動く（opus-4-8 で 33% から最大 60%）
+            _b = body_bound(p)
+            if _b is not None:
+                for _d in (_g, apx_stats):
+                    _d["rescued_judged"] += 1
+                    _d["rescued_uncontracted"] += 1 if _b["appendix_cap"] == 0 else 0
         else:
             _g["true_silent"] += 1
             apx_stats["true_silent"] += 1
@@ -1029,6 +1061,14 @@ for e in events:
                 _kind = "true_silent_unknown"
             _g[_kind] += 1
             apx_stats[_kind] += 1
+            # 「閾値未満のみ」のうち付録には出た回（推奨なし / #248）。処方文の「報告にも付録にも
+            # 出ていない」はこちらには当たらない。**契約外と言えるのは上限を超えた回だけ** —
+            # 上限内の付録行は閾値以上で書かれて報告マトリクスで落ちた指摘で、契約 (a) どおり
+            if _kind == "true_silent_below" and listed > 0:
+                _b = body_bound(p)
+                for _d in (_g, apx_stats):
+                    _d["true_silent_below_listed"] += 1
+                    _d["true_silent_below_over"] += 1 if (_b and _b["appendix_over"]) else 0
 
 # ---- 6. 反証 verdict 分布（calibration_schema で層別） ---------------------
 verdict_layers = {}
@@ -1278,6 +1318,12 @@ n_wave_split_marker = gap_counts.pop("wave-split", 0)
 # 立った回があれば「計測の健全性」に 1 行出す
 n_agents_abandoned_marker = gap_counts.pop("agents-abandoned", 0)
 n_agents_nested_marker = gap_counts.pop("agents-nested", 0)
+# **付録・報告件数の上限超え（#248）も欠測ではなく契約 (a) の違反**なので、同じ理由で外す
+# （「欠測が N%」という呼称が誤りになり、既存データの約半数で上位 2 件枠を占有する）。
+# 上限超えは「検出 → 報告の内訳」が payload から再計算して層ごとに出す（旧版の回にも効く）。
+# 生のマーカー件数は `--json` の `body_bound_marker` に残す
+n_exceeds_marker = {"appendix": gap_counts.pop("payload:appendix.exceeds-body", 0),
+                    "report": gap_counts.pop("payload:report_counts.exceeds-body", 0)}
 # 取り違え疑いで外した回（#246）。publish の gap ではなく読み側の判定なので欠測内訳には混ぜない
 session_suspects = {}
 for e in events:
@@ -1771,9 +1817,12 @@ else:
 # **⚠️ にも内訳を載せる**（GitHub issue #210）。行動する人が見るのはこの 1 行なので、
 # 表にだけ内訳があっても「どちらを直すのか」が伝わらない。`layered_signal` は層の dict を
 # render へ渡さないので、label から引ける対応表を先に作る（label の書式は同関数の正本）
-_ts_split = {"`%s` 層" % _k: (_v.get("true_silent_empty", 0), _v.get("true_silent_below", 0))
+_ts_split = {"`%s` 層" % _k: (_v.get("true_silent_empty", 0), _v.get("true_silent_below", 0),
+                              _v.get("true_silent_below_listed", 0),
+                              _v.get("true_silent_below_over", 0))
              for _k, _v in apx_stats["by_gen"].items()}
-_ts_split["累計"] = (apx_stats["true_silent_empty"], apx_stats["true_silent_below"])
+_ts_split["累計"] = (apx_stats["true_silent_empty"], apx_stats["true_silent_below"],
+                   apx_stats["true_silent_below_listed"], apx_stats["true_silent_below_over"])
 
 
 def _ts_breakdown(label):
@@ -1792,14 +1841,22 @@ def _ts_breakdown(label):
     """
     if label not in _ts_split:
         return ""
-    empty, below = _ts_split[label]
+    empty, below, below_listed, below_over = _ts_split[label]
     if empty > below:
         why = ("**検出 0 が主**なので打ち手は recall 側 — 実行世代を見直す"
                "（triage-guide.md `### 5.2`）")
     elif below > empty:
+        # 付録に出た回には「付録にも出ていない」と言い切らない（#248）
+        where = ("報告にも付録にも出ていない" if not below_listed else
+                 "報告には出ていない（付録にも出ていないのは %d 件。残る %d 件は付録に出たが推奨なし"
+                 "%s / #248）"
+                 % (below - below_listed, below_listed,
+                    "" if not below_over else
+                    "。うち %d 件は付録が上限を超えた ＝ 閾値未満の本文が混ざった回（契約外）" % below_over))
         why = ("**閾値未満のみが主**なので打ち手は閾値と付録の方針 — reviewer は見つけており、"
-               "`## below-threshold` に件数だけ返って報告にも付録にも出ていない。"
-               "**世代を上げても同じ結果になりうる**（triage-guide.md `### 5.2` / scoring-guide.md）")
+               "`## below-threshold` に件数だけ返って%s。"
+               "**世代を上げても同じ結果になりうる**（triage-guide.md `### 5.2` / scoring-guide.md）"
+               % where)
     elif empty or below:  # mutation-ok: ここに来る時点で empty == below なので or と and は同値
         why = ("検出 0 と閾値未満のみが同数なので**打ち手を 1 つに絞れない** — "
                "実行世代と、閾値・付録の方針の両方を見る（triage-guide.md `### 5.2`）")
@@ -1885,7 +1942,19 @@ if as_json:
         # 真の空振りの内訳（#210）。`empty` = 検出 0 / `below` = 検出はあったが全部閾値未満
         "true_silent_split": {"empty": apx_stats["true_silent_empty"],
                               "below": apx_stats["true_silent_below"],
+                              # #248。`below` のうち付録には出た回（推奨なし）
+                              "below_listed": apx_stats["true_silent_below_listed"],
+                              "below_over": apx_stats["true_silent_below_over"],
                               "unknown": apx_stats["true_silent_unknown"]},
+        # 推奨で救われた回のうち、付録の上限が 0 だった回（契約外の行に救われた / #248）
+        "appendix_bound": {"rescued_judged": apx_stats["rescued_judged"],
+                           "rescued_uncontracted": apx_stats["rescued_uncontracted"]},
+        "body_bound_marker": n_exceeds_marker,
+        "splits_bound": {k: {"judged": v["judged"], "over": v["over"],
+                             "over_appendix": v["over_appendix"], "over_report": v["over_report"],
+                             "lower": v["lower"], "written": v["pre"] - v["below"],
+                             "post": v["post"]}
+                         for k, v in splits.items()},
         # synthesis の支配率（#218）。比率は % の整数ではなく実数（丸めは表示側）
         "synthesis_dominance": {
             "n": syn_stats["n"], "dominant": syn_stats["dominant"],
@@ -2117,7 +2186,17 @@ if splits:
         print("  - **本文を書いてから捨てた: %d 件（%s）**%s"
               % (dropped, "-" if written <= 0 else "%.1f%%" % pct(dropped, written),
                  "" if dropped >= 0 else
-                 " — 負は手順 1 の後に走る層が足したぶん（recall_skeptic / meta_reviewer）"))
+                 " — 負は報告件数が本文を書いた数を超えた回のぶん（閾値未満に数えた指摘にも本文が"
+                 "書かれていた / #248）"))
+        if sp["over"]:
+            # 下限が 0 以下になるのは below が pre を超えた旧データだけ。分母が無いので率は出さない
+            _rate = ("" if sp["lower"] <= 0 else "で、書いた後の破棄率は **%.1f%% 以上**"
+                     % pct(sp["lower"] - sp["post"], sp["lower"]))
+            print("  - **上限超え %d/%d 回**（付録 %d 回 / 報告件数 %d 回。本文を書いた数を超えた回 ＝ "
+                  "閾値未満に数えた指摘にも本文が書かれていた / #248）。付録と報告から見ると本文を"
+                  "書いたのは **%d 件以上**%s。上の `本文を書いた` は下限として読む"
+                  % (sp["over"], sp["judged"], sp["over_appendix"], sp["over_report"],
+                     sp["lower"], _rate))
     if splits_bad_vocab:
         print("  - **%d 件は `pre_adjust_counts` の語彙が契約外で母集団から外した**"
               "（#203。混ぜると `本文を書いた` が負に振れる）" % splits_bad_vocab)
@@ -2385,24 +2464,40 @@ if apx_rows:
         for _gk in sorted(apx_stats["by_gen"]):
             _gv = apx_stats["by_gen"][_gk]
             _unk = _gv.get("true_silent_unknown", 0)
-            print("| %s | %d | %d | %d | %d（%.0f%%） | %d | %d%s |"
+            _unc = _gv.get("rescued_uncontracted", 0)
+            _bl = _gv.get("true_silent_below_listed", 0)
+            print("| %s | %d | %d | %d%s | %d（%.0f%%） | %d | %d%s%s |"
                   % (_gk, _gv["n"], _gv["silent"], _gv["rescued"],
+                     "" if not _unc else "（上限 0 が %d）" % _unc,
                      _gv["true_silent"], pct(_gv["true_silent"], _gv["n"]),
                      _gv.get("true_silent_empty", 0), _gv.get("true_silent_below", 0),
+                     "" if not _bl else "（付録あり %d）" % _bl,
                      "" if not _unk else "（判定不能 %d）" % _unk))
         print()
     # **内訳を読ませる**（#210）。混ぜたままだと回復サインがどちらの改善を求めているのか
     # 決まらない。**検出 0 = recall の問題 / 閾値未満のみ = 閾値・付録の方針の問題**
     if apx_stats["true_silent"]:
         print("- **真の空振りの内訳**: 検出 0 が %d 件 / 検出はあったが全部閾値未満が %d 件"
-              "%s。**打ち手が違う** — 前者は reviewer が何も見つけていない（recall）、"
-              "後者は見つけたものが `## below-threshold` に件数だけ返り、報告にも付録にも"
-              "出ない（閾値と付録の方針。付録の対象は「reviewer が列挙した指摘」だけという"
-              "契約 / scoring-guide.md）。**#210 の回復サインはこの内訳を見てから読む**"
+              "%s%s。**打ち手が違う** — 前者は reviewer が何も見つけていない（recall）、"
+              "後者は見つけたものが `## below-threshold` に件数だけ返り、報告に出ない"
+              "（閾値と付録の方針。契約 (a) では付録にも出ない — 付録の対象は「reviewer が列挙した"
+              "指摘」だけ / scoring-guide.md）。**#210 の回復サインはこの内訳を見てから読む**"
               % (apx_stats["true_silent_empty"], apx_stats["true_silent_below"],
+                 "" if not apx_stats["true_silent_below_listed"]
+                 else "（うち %d 件は付録には出た — 推奨なし。付録が上限を超えた ＝ 閾値未満の本文が"
+                      "混ざった回は %d 件 / #248）"
+                      % (apx_stats["true_silent_below_listed"], apx_stats["true_silent_below_over"]),
                  "" if not apx_stats["true_silent_unknown"]
                  else " / 判定不能が %d 件（`pre_adjust_counts` 不在・語彙違反）"
                       % apx_stats["true_silent_unknown"]))
+        print()
+    # **契約外の行に救われた回**（#248）。真の空振り率の分母側（救われた回）がこの混入に支えられて
+    # いると、混入が増えるか減るかだけで #210 の回復サインが動く
+    if apx_stats["rescued_uncontracted"]:
+        print("- **推奨で救われた回のうち、上限を判定できた %d 件中 %d 件は付録の上限が 0**（契約上は"
+              "付録に 1 行も載らない回 ＝ 閾値未満に数えた指摘の本文に救われた / #248）。"
+              "真の空振り率はこの混入が増えるか減るかだけでも動く"
+              % (apx_stats["rescued_judged"], apx_stats["rescued_uncontracted"]))
         print()
     if apx_missing:
         print("- **%d 件は報告件数を 1 つも申告しておらず母集団から外した**"

@@ -15,7 +15,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [adr-keeper](#adr-keeper) | 0.4.1 | 1 | 1 | - | PreToolUse, SessionStart | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.5 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [claude-meta](#claude-meta) | 1.13.8 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.130.8 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [code-review](#code-review) | 2.130.9 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.5.3 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.34.9 | 4 | 7 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.3 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
