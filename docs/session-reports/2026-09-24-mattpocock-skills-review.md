@@ -95,7 +95,9 @@
 
 - C4: 見送り（ユーザー判断。issue-create の利用が 1 回、design doc → Issue 分解の流れも未使用で、description 変更に有料の回帰テストが要る。使う場面が出たら再検討）
 
-**未着手**（統合レポートの ID）: B9、B10、C2、C6、C7、C8。
+- C8: §8-4 はユーザー判断で「三段防御を保つ」。claude-meta の 4 か所（claude-md-improver の no-op 行とキャッシュ・advisor の description 常駐コスト・setup の guardrail / 配線漏れ検出・revise-claude-md の振り分け）を 1 回の bump にまとめた。plugin eval を再実行した
+
+**未着手**（統合レポートの ID）: B9、B10、C2、C6、C7。
 
 ---
 

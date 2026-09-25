@@ -92,6 +92,7 @@ For each CLAUDE.md file, evaluate against quality criteria. See [references/qual
 | Three-tier defense | High | Are critical rules duplicated across CLAUDE.md / skill / hook layers? See [references/three-tier-defense.md](references/three-tier-defense.md) |
 | Priority resolution | Medium | Is there an explicit document priority order with non-negotiable lines? See [references/priority-template.md](references/priority-template.md) |
 | Static check preference | Medium | Are "○○ 禁止" rules candidates for linter / ast-grep rather than prose? See [references/meta-rules.md](references/meta-rules.md) section 2 |
+| No-op lines | Medium | Are there lines that do not change Claude's behavior (it would do this anyway / generic advice)? See Common Issues 9 |
 
 > **Why skill coordination matters:** Vercel の eval では Skill が 56% 未呼出。description マッチだけでは不十分で、CLAUDE.md に「このタスクでは X スキルを使う」と明示することで呼び出し率が改善する。自動生成 AGENTS.md は -3%、人間作成は +4% という結果もあり、人間レビュー誘導型の診断が重要。
 
@@ -286,6 +287,8 @@ See [references/templates.md](references/templates.md) for CLAUDE.md templates b
 6. **Undocumented gotchas**: Non-obvious patterns not captured
 7. **Missing skill invocation guidance**: インストール済み skill が CLAUDE.md から参照されていない、または「このタスクでは X を使う」という明示ガイドが欠落している
 8. **Auto-generated boilerplate**: 人間レビューを経ていない自動生成風の記述（一般論の羅列、プロジェクト固有性の欠如）
+9. **挙動を変えない行（no-op）**: 書かなくても Claude が同じように振る舞う行（「読みやすいコードを書く」「テストを書く」のような一般論、言語やツールの既定の挙動の説明）。削除候補として挙げる。**次は削除対象にしない**: 三段防御の CLAUDE.md 層（hook や skill が強制している規約の Why 行 — 重ねること自体が設計。[references/three-tier-defense.md](references/three-tier-defense.md)）、事故や実測から生まれた Gotchas、実例・理由の行（why は挙動を変えなくても判断の根拠として読まれる）。迷ったら残す
+10. **キャッシュを崩す書き方**: CLAUDE.md は毎セッション常駐し、プロンプトキャッシュの先頭に乗る。日付・件数・版番号のような頻繁に変わる値を本文に書くと、変えるたびにキャッシュが崩れる。変わりやすい値は参照先（doc やスクリプトの出力）に逃がし、編集はまとめて行うよう提案する
 
 ## User Tips to Share
 

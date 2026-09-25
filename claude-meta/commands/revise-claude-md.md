@@ -31,7 +31,15 @@ find . -name "CLAUDE.md" -o -name ".claude.local.md" 2>/dev/null | head -20
 - `CLAUDE.md` — チーム共有（git にコミット）
 - `.claude.local.md` — 個人・ローカル専用（gitignore 対象）
 
-## Step 3: 追加内容の下書き
+## Step 3: 置き場所の振り分け
+
+各学びを、CLAUDE.md に書く前にどこに置くべきか振り分ける（CLAUDE.md は毎セッション常駐するので、置けるものは他へ置く）。
+
+- **機械的に判定できる**（決まった構文・禁止 API・ファイル配置・コマンドの形）→ lint のルール・pre-commit・hook を提案する。CLAUDE.md には入れないか、入れるなら三段防御の Why の 1 行だけにする
+- **特定の作業のときだけ要る手順・知識** → その作業の skill や `references/`・`docs/` に置き、CLAUDE.md には「X をするときは Y を読む」のポインタだけ
+- **毎回効く規約・落とし穴** → CLAUDE.md（下の Step 4）
+
+## Step 4: 追加内容の下書き
 
 **簡潔に保つ** — 1 概念 1 行。CLAUDE.md はプロンプトの一部なので、簡潔さが重要。
 
@@ -43,7 +51,7 @@ find . -name "CLAUDE.md" -o -name ".claude.local.md" 2>/dev/null | head -20
 - 自明な情報
 - 再発しそうにない一度きりの修正
 
-## Step 4: 変更案の提示
+## Step 5: 変更案の提示
 
 各追加内容について以下の形式で提示する。
 
@@ -57,6 +65,6 @@ find . -name "CLAUDE.md" -o -name ".claude.local.md" 2>/dev/null | head -20
 \`\`\`
 ```
 
-## Step 5: 承認を得て適用
+## Step 6: 承認を得て適用
 
 ユーザーに変更を適用してよいか確認する。承認されたファイルのみ編集する。

@@ -171,6 +171,7 @@ options:
 ## Red Flags（追加を見送るサイン）
 
 - 「あると便利そう」だけで具体的ブロッカーがない
+- 新しい skill の description は**毎セッション常駐して context を食う**。分けてよいのは、独立したトリガー語で発火させる必要があるときか、他の skill から Skill tool で呼ぶ必要があるときだけ。どちらでもなければ既存 skill の phase に足す
 - 既存 skill とトリガーフレーズが 70% 以上重複する
 - 使うのは 1 回限りの特殊ケース
 - 既存 skill の workflow phase 追加で 30 行以内に収まる

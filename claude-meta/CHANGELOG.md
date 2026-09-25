@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.8] - 2026-09-25
+
+### Changed
+
+- **claude-md-improver に「挙動を変えない行」と「キャッシュを崩す書き方」の判定を足した**（Common Issues 9・10 と
+  チェックリスト）。三段防御の CLAUDE.md 層（hook / skill が強制する規約の Why 行）、事故由来の Gotchas、実例・理由の行は
+  削除対象にしない（三段防御を保つ方針。ユーザー判断）
+- **component-addition-advisor の Red Flags に、description の常駐コストを足した**。分けてよいのは独立したトリガー語で
+  発火させるときか、他の skill から Skill tool で呼ぶときだけ
+- **claude-code-setup の Phase 1 で guardrail の有無と配線されていない検査を見るようにした**。guardrail が無いこと自体を
+  所見として最初に挙げ、lint / test のスクリプトが pre-commit にも CI にも呼ばれていなければ新しい検査より先に配線を勧める
+- **revise-claude-md に置き場所の振り分けを足した**（Step 3）: 機械的に判定できるものは lint / hook へ、特定の作業だけの
+  知識は skill / docs へ置いてポインタだけ残し、毎回効く規約だけを CLAUDE.md に書く
+  （翻案元: mattpocock/skills の writing-for-agents / retro）
+
 ## [1.13.7] - 2026-09-20
 
 ### Added

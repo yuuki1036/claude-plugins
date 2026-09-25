@@ -92,7 +92,18 @@ ls .claude/agents/ 2>/dev/null
 
 # プロジェクト構造の分析
 ls -la src/ app/ lib/ tests/ components/ pages/ api/ 2>/dev/null
+
+# guardrail（lint / typecheck / test を自動で回す仕組み）の有無
+ls -la .husky/ lefthook.yml .pre-commit-config.yaml 2>/dev/null
+git config core.hooksPath 2>/dev/null; ls .git/hooks 2>/dev/null | grep -v '\.sample$'
+ls .github/workflows/ 2>/dev/null && grep -lE 'lint|typecheck|test' .github/workflows/* 2>/dev/null
+cat package.json 2>/dev/null | grep -E '"(lint|typecheck|test|check)"'
 ```
+
+**guardrail の所見（推奨の前に必ず見る）:**
+
+- **guardrail が無い**（pre-commit hook も、lint / typecheck / test を回す CI も無い）こと自体を所見として最初に挙げる。無いのは中立な既定ではなく、毎回取り逃している機会
+- **配線されていない検査**: `package.json` 等に lint / typecheck / test のスクリプトがあるのに、pre-commit にも CI にも呼ばれていない・呼ばれていても結果を見ていない（`|| true` 等）なら、新しい検査を勧める前にその配線を勧める
 
 **キーインジケーター:**
 
