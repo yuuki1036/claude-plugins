@@ -182,6 +182,84 @@ for path in source_paths:
                        "p": ev.get("payload") or {}, "src": path})
 
 events.sort(key=lambda e: e["ts"])
+
+# ---- 旧版の transcript 取り違え疑い（GitHub issue #246） --------------------------
+# `tokens.session_source` を持たない回は、publish が transcript を「候補 dir の最新 .jsonl」で
+# 推定していた。並行セッションや publish 前の `cd` で**別セッションの tokens / models / dispatch を
+# gap も立てずに**載せており（publish 元 transcript と照合できた 105 件中 3 件）、値はもっともらしい
+# ので層別にそのまま入る。gist は append-only で過去行を直せないので、読み側で外す。
+#   ① 同じ `tokens.session` で `since-t0` 系の窓（`first_ts` から publish まで）が重なる 2 回 →
+#      推定で引いた側すべて。どちらが正しい側かは payload だけでは決まらない。id で引いた回は
+#      相手としてだけ数える。`session` 窓は `first_ts` がセッションの先頭なので、同じセッションで
+#      順に回した正常な 2 回でも重なる — 突合に入れない
+#   ② explorer / reviewer / specialist / verify を 1 体以上起動したのに、`tokens.sub_agents` が 0
+#      （`sub_agents` を持たない回は `models.sub_distinct` が空）
+# 既存データ 115 件で ① 2 件・② 2 件を拾い、混入 3 件を全部含む（誤検出は ① の巻き添え 1 件だけ）。
+# **窓の絞り込みより前に全件で判定する** — ① の相手が `--since` / 版の窓の外にあっても疑いは同じ
+SUSPECT_LAUNCH_KEYS = ("explorer", "reviewer", "specialist", "verify")
+#: 同じ transcript の計測から publish が導いた gap。外した値の上に立っているので一緒に外す
+#: （残すと、外した `dispatch` から出た `agents-mismatch` が欠測内訳にだけ数えられる）
+SUSPECT_DERIVED_GAPS = {"tokens", "tokens-sub", "models", "dispatch", "agents-mismatch",
+                        "agents-abandoned", "agents-nested", "wave-split", "fleet-span-mismatch"}
+#: 打点を transcript の時刻で補完した回（`derived_markers`）で、境界が補完値になりうる区間。
+#: `duration_min`（t0 → t2）と closing（t2 → publish）は補完しない打点だけで決まる
+SUSPECT_DERIVED_DURATIONS = ("duration_triage_min", "duration_explore_min",
+                             "duration_fleet_min", "duration_synthesis_min")
+
+
+def _utc(s):
+    try:
+        w = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return w if w.tzinfo else w.replace(tzinfo=timezone.utc)
+
+
+def _count(v):
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+_by_session = {}
+for _e in events:
+    _t = _e["p"].get("tokens")
+    if not isinstance(_t, dict):
+        continue
+    _estimated = _t.get("session_source") is None
+    _s, _first = _t.get("session"), _utc(_t.get("first_ts"))
+    if (isinstance(_s, str) and _s and _first is not None and _e["when"] is not None
+            and _t.get("window") in ("since-t0", "since-t0-late")):
+        _by_session.setdefault(_s, []).append((_first, _e, _estimated))
+    if not _estimated:
+        continue
+    _a = _e["p"].get("agents")
+    _launched = sum(_count(_a.get(k)) or 0 for k in SUSPECT_LAUNCH_KEYS) if isinstance(_a, dict) else 0
+    _m = _e["p"].get("models")
+    # `sub_distinct` は `sub_agents` を持たない回の代わりにだけ使う。sub が走った回
+    # （`sub_agents` が 1 以上）で世代だけ空なのは model 名を引けなかっただけで、取り違えの証拠ではない
+    _sub_n = _count(_t.get("sub_agents"))
+    if _launched >= 1 and (_sub_n == 0 if _sub_n is not None
+                           else isinstance(_m, dict) and not _m.get("sub_distinct")):
+        _e["session_suspect"] = "sub-blank"
+for _rows in _by_session.values():
+    for _i, (_f1, _e1, _est1) in enumerate(_rows):
+        for _f2, _e2, _est2 in _rows[_i + 1:]:
+            if _f1 <= _e2["when"] and _f2 <= _e1["when"]:  # mutation-ok: 左辺の等号が効くのは `_f1` と 2 回の publish 時刻がすべて一致するときだけ（`_e2` は時刻順で `_e1` 以降、`_f1` は `_e1` の publish 以前）
+                for _e, _est in ((_e1, _est1), (_e2, _est2)):
+                    if _est:
+                        _e.setdefault("session_suspect", "overlap")
+for _e in events:
+    if not _e.get("session_suspect"):
+        continue
+    _p = {k: v for k, v in _e["p"].items() if k not in ("tokens", "models", "dispatch")}
+    if isinstance(_p.get("measurement_gaps"), list):
+        _p["measurement_gaps"] = [g for g in _p["measurement_gaps"]
+                                  if g not in SUSPECT_DERIVED_GAPS]
+    if _p.get("derived_markers"):
+        for _k in SUSPECT_DERIVED_DURATIONS:
+            if _k in _p:
+                _p[_k] = -1
+    _e["p"] = _p
+
 if since:
     events = [e for e in events if e["when"] and e["when"] >= since]
 # `--last` は版の絞り込み（下の「版で絞る」）の後で掛ける。先に掛けると「直近 N 件のうち
@@ -1186,6 +1264,11 @@ n_wave_split_marker = gap_counts.pop("wave-split", 0)
 # 立った回があれば「計測の健全性」に 1 行出す
 n_agents_abandoned_marker = gap_counts.pop("agents-abandoned", 0)
 n_agents_nested_marker = gap_counts.pop("agents-nested", 0)
+# 取り違え疑いで外した回（#246）。publish の gap ではなく読み側の判定なので欠測内訳には混ぜない
+session_suspects = {}
+for e in events:
+    if e.get("session_suspect"):
+        session_suspects[e["session_suspect"]] = session_suspects.get(e["session_suspect"], 0) + 1
 have_synthesis = len(measured(events, "duration_synthesis_min"))
 have_waves = sum(1 for e in events
                  if num(agents_dict(e["p"]).get("explorer_waves")) is not None)
@@ -1533,7 +1616,9 @@ def gap_hint(g):
         return ("publish が t2 から 10 分以上遅れた回が常態化している（self-review Step 6.4）。"
                 "`review-timing.sh publish-pending` のガード位置を見直す")
     if g == "tokens":
-        return "transcript の引き当て（measure-tokens.sh のセッション選択・窓）を見直す"
+        # transcript を引けなかった回は v2.130.6 から `session-unresolved` に分かれた（#246）
+        return ("transcript は引けたが main のメッセージを数えられなかった（窓の空振り・"
+                "measure-tokens.sh の失敗）。窓の起点（t0 の打点）を見直す")
     if g == "tokens-sub":
         # **打点ではなく窓の被覆**（#199）。sub agent の transcript が窓の外にある
         return ("sub 側の計測が空振りした（`sub_agents == 0`。セッション再開・窓の開始遅れで "
@@ -1546,7 +1631,15 @@ def gap_hint(g):
     # `axis-unknown` / `demoted-unknown` は語彙の寄せ漏れ）。識別子を分けた目的が
     # シグナル欄で消えるので、分けた側と読む側は同時に直す
     if g == "models":
-        return "transcript の引き当て（measure-tokens.sh のセッション選択・窓）を見直す"
+        return ("transcript の窓内に実モデル名が無かった（窓の空振り・プレースホルダのみ）。"
+                "窓の起点（t0 の打点）を見直す")
+    if g == "session-unresolved":
+        # **窓でも打点でもなく id の解決**（#246）。推定には倒していないので値は欠測で、誤値は無い
+        return ("publish 時に `CLAUDE_CODE_SESSION_ID` から transcript を引けなかった（env が無い / "
+                "id が英数字・`_`・`-` 以外を含む / `~/.claude/projects/*/<id>.jsonl` が無い）。"
+                "`tokens` / `models` / `dispatch` は"
+                "欠測にしてある — Claude Code が env を渡しているか、transcript の置き場所が"
+                "変わっていないかを見る（lib/review-paths.sh の `review_session_transcript`）")
     if g == "axis-unknown":
         return "反証 agent の axis 語彙（prompts/adversarial-verify.md）と両 SKILL Step 6 の対応表を見直す"
     if g == "demoted-unknown":
@@ -1783,6 +1876,8 @@ if as_json:
             "max_pct": max(syn_pcts) if syn_pcts else None, "by_gen": syn_stats["by_gen"]},
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
                         "nested_report_counts_recovered": nested_recovered,  # #238（読み側の回収）
+                        # #246（読み側で外した回。キーは規則 `overlap` / `sub-blank`）
+                        "session_suspect": session_suspects,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
                         "split_explorer_waves": split_waves,
                         # 健全性判定に使うのは下の modern 側。上の have_* は全サンプル母数の
@@ -2324,6 +2419,14 @@ else:
     if nested_recovered:
         print("  - 報告件数: %d 件は入れ子（`report_counts` / `counts`）からトップレベルへ"
               "昇格して母集団に戻した（旧版の publish が弾いていた回 / #238）" % nested_recovered)
+    # **外した回を黙って消さない**（#246）。0 件なら出さない（⚠️ 契約）
+    if session_suspects:
+        print("  - transcript の取り違え疑い: %d 件（同じ transcript で窓が重なる %d 件 / "
+              "agent を起動したのに sub が空 %d 件）。旧版の publish が「候補 dir の最新 .jsonl」で"
+              "推定した回で、**`tokens` / `models` / `dispatch` を集計から外した**（世代は "
+              "unrecorded に入る / #246）"
+              % (sum(session_suspects.values()), session_suspects.get("overlap", 0),
+                 session_suspects.get("sub-blank", 0)))
     # **`wave-split` の分母を明示する**（#192）。他の gap と母集団の意味が違ううえ、
     # `agents-mismatch` で判定を抑止された回は分母にも分子にも入らない。黙って落とすと
     # 「一括発行は守られている」と読まれる。**件数は現行式での再計算**（#200）

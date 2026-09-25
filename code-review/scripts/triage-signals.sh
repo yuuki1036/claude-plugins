@@ -131,12 +131,11 @@ echo "worktree=$WT"
 # **`sub` 側は出さない。** Phase 0 では fleet がまだ起動していないので、値が入るのは
 # **前回の fleet の世代**であって、これから起動する世代ではない。
 MODELS_TS=""
-# `&&` の両側は**どちらが偽でも結果は同じ**（行を出さない）。python3 が無ければ下の抽出が
-# 空を返し、id が無ければ glob が解決しない。ガードは早期に降りるためのもので、
-# 正しさを担っていない。**`ls` 側も既定値つきで参照する** — `set -u` 下で素の展開にすると
-# 未設定時に unbound variable になり、そのガードが唯一の防壁になってしまう
-if command -v python3 >/dev/null 2>&1 && [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then  # mutation-ok: どちらが偽でも「行を出さない」で一致するので、片方だけを偽にする入力で出力を変えられない
-  MODELS_TS=$(ls -1 "$HOME"/.claude/projects/*/"${CLAUDE_CODE_SESSION_ID:-}".jsonl 2>/dev/null     | head -1) || MODELS_TS=""
+# ①② の引き方は `lib/review-paths.sh` の `review_session_transcript` が正本（publish と共有 /
+# GitHub issue #246。2 箇所で引き方がずれると、Phase 0 と payload で別の世代を名乗る）。
+# python3 のガードは早期に降りるためのもので、正しさを担っていない（無ければ下の抽出が空を返す）
+if command -v python3 >/dev/null 2>&1; then
+  MODELS_TS=$(review_session_transcript) || MODELS_TS=""
 fi
 if [ -n "$MODELS_TS" ]; then
   MODELS_VAL=$(bash "$HERE/measure-tokens.sh" --json --session "$MODELS_TS" 2>/dev/null     | python3 -c 'import json, sys

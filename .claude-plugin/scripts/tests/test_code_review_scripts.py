@@ -20,6 +20,7 @@ pre-commit / CI / Stop hook の 3 経路に**設定変更なしで**乗る。
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -93,6 +94,10 @@ class ScriptTestBase(unittest.TestCase):
         # 取りこぼす。LC_ALL があると LC_CTYPE を上書きするので落とす
         env.pop("LC_ALL", None)
         env["LC_CTYPE"] = "C.UTF-8"
+        # **実行中の Claude Code セッションの id を継承させない**（GitHub issue #246）。publish は
+        # この id から transcript を引くので、継承すると開発機の実 transcript を読んでしまう。
+        # 引かせたいテストは `extra` で明示する（`TranscriptFixture.env_home`）
+        env.pop("CLAUDE_CODE_SESSION_ID", None)
         env.update(extra)
         return env
 
@@ -636,7 +641,18 @@ class TranscriptFixture(ScriptTestBase):
         (self.home / ".claude" / "projects").mkdir(parents=True)
 
     def env_home(self) -> dict[str, str]:
-        return self._env(HOME=str(self.home))
+        # `write_transcript` が書く transcript の id（publish は id で引く / #246）
+        return self._env(HOME=str(self.home), CLAUDE_CODE_SESSION_ID="s1")
+
+    def slug(self) -> str:
+        """cwd に対応する transcript の project slug（Claude Code の正規化と同じ）."""
+        return "".join(c if c.isalnum() else "-" for c in str(self.root))
+
+    def write_empty_transcript(self) -> None:
+        """id では引けるが中身が空の transcript（main のメッセージが 0 件の回）."""
+        d = self.home / ".claude" / "projects" / self.slug()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "s1.jsonl").write_text("", encoding="utf-8")
 
     def write_transcript(self, waves: list[list[int]], scale: int = 1,
                          ends: dict[int, int] | None = None,
@@ -649,8 +665,7 @@ class TranscriptFixture(ScriptTestBase):
         transcript は 1 メッセージを tool_use ブロックごとに別行へ分解して書くので、
         fixture も「行は別・`message.id` は共通」の形に揃える（GitHub issue #149）。
         """
-        slug = "".join(c if c.isalnum() else "-" for c in str(self.root))
-        d = self.home / ".claude" / "projects" / slug
+        d = self.home / ".claude" / "projects" / self.slug()
         d.mkdir(parents=True, exist_ok=True)
         # `base` を差し替えられるのは**打点との整合を実際に通すため**（GitHub issue #161）。
         # 補完値は `t0 <= v <= t2` を満たさないと採られないので、計測ファイルの時刻と
@@ -963,7 +978,11 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         self.assertEqual(t["sub_agents"], 2)
 
     def test_missing_transcript_is_a_gap_not_a_zero(self):
-        """transcript を引けない回に 0 を載せない（retro の中央値と相関を壊すため）."""
+        """main のメッセージを 1 件も数えられない回に 0 を載せない（retro の中央値と相関を壊すため）.
+
+        transcript そのものを引けない回は別の gap になる（`PublishSessionResolutionTest`）。
+        """
+        self.write_empty_transcript()
         self.publish(env=self.env_home())
         p = self.last_payload()
         self.assertNotIn("tokens", p)
@@ -1166,10 +1185,89 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
 
     def test_undeterminable_dispatch_does_not_raise_the_mismatch_gap(self):
         """発行パターンを引けない回は `dispatch` gap のまま（是正先が違う）."""
+        self.write_empty_transcript()
         self.publish(self._with_agents({"explorer": 0, "reviewer": 2}), env=self.env_home())
         gaps = self.last_payload()["measurement_gaps"]
         self.assertIn("dispatch", gaps, "前提: 判定不能な回")
         self.assertNotIn("agents-mismatch", gaps)
+
+
+class PublishSessionResolutionTest(TranscriptFixture):
+    """publish は transcript を `CLAUDE_CODE_SESSION_ID` から引く（GitHub issue #246）.
+
+    旧版は「候補 dir の最新 `.jsonl`」で推定しており、並行セッションがあると別セッションの
+    `tokens` / `models` / `dispatch` をもっともらしい値として載せていた（照合できた 105 件中 6 件）。
+    **引けないときは推定に倒さず欠測にする** — 混入は gap にも出ないので欠測より害が大きい。
+    """
+
+    def _newer_parallel_session(self) -> None:
+        """同じ slug に**より新しい**別セッションを置く（09-01 の型: cwd が合っていても外れる）."""
+        path = self.home / ".claude" / "projects" / self.slug() / "s9.jsonl"
+        path.write_text("\n".join(
+            json.dumps({"type": "assistant", "timestamp": "2026-08-18T01:00:0%dZ" % i,
+                        "message": {"model": "claude-opus-4-8",
+                                    "usage": {"output_tokens": 999}}})
+            for i in range(3)) + "\n", encoding="utf-8")
+        later = time.time() + 60
+        os.utime(path, (later, later))
+
+    def _unmeasured(self, p: dict) -> None:
+        for field in ("tokens", "models", "dispatch"):
+            self.assertNotIn(field, p, "引けなかった回に `%s` が載っている" % field)
+        self.assertIn("session-unresolved", p["measurement_gaps"])
+        # 原因は 1 つなので識別子も 1 つ（`tokens` / `models` / `dispatch` を重ねて立てない）
+        for gap in ("tokens", "models", "dispatch"):
+            self.assertNotIn(gap, p["measurement_gaps"])
+
+    def test_a_newer_parallel_session_is_not_picked(self):
+        self.write_transcript([[0, 5]])
+        self._newer_parallel_session()
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertEqual(p["tokens"]["session"], "s1.jsonl", "並行セッションの値を載せている")
+        self.assertEqual(p["tokens"]["session_source"], "env")
+        self.assertEqual(p["models"]["main"], "claude-opus-5")
+        self.assertEqual(p["dispatch"]["agents"], 2)
+
+    def test_a_transcript_outside_the_candidate_dirs_is_found(self):
+        """publish 前に `cd` した回（09-18 / 09-20 / 09-25 の型）。候補 slug に自分が居ない."""
+        self.write_transcript([[0, 5]])
+        projects = self.home / ".claude" / "projects"
+        (projects / self.slug()).rename(projects / "-started-elsewhere")
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertEqual(p["tokens"]["session"], "s1.jsonl")
+        self.assertEqual(p["tokens"]["sub_agents"], 2, "sub transcript を id で辿れていない")
+
+    def test_no_session_id_is_not_estimated(self):
+        """id が無ければ、候補 dir に transcript があっても推定しない."""
+        self.write_transcript([[0, 5]])
+        env = self.env_home()
+        del env["CLAUDE_CODE_SESSION_ID"]
+        self.publish(env=env)
+        self._unmeasured(self.last_payload())
+
+    def test_an_id_without_a_transcript_is_not_estimated(self):
+        self.write_transcript([[0, 5]])
+        self.publish(env=self._env(HOME=str(self.home), CLAUDE_CODE_SESSION_ID="s0"))
+        self._unmeasured(self.last_payload())
+
+    def test_an_id_that_is_not_a_single_path_component_is_rejected(self):
+        """id は glob に入るので、`/` を含む値でプロジェクト dir の外を指させない."""
+        self.write_transcript([[0, 5]])
+        self.publish(env=self._env(HOME=str(self.home),
+                                   CLAUDE_CODE_SESSION_ID="../%s/s1" % self.slug()))
+        self._unmeasured(self.last_payload())
+
+    def test_caller_supplied_measurements_are_dropped_when_unresolved(self):
+        """呼び出し側が書いた値を機械計測のふりで残さない（`models` の fail-closed と同じ）."""
+        self.write_transcript([[0, 5]])
+        payload = dict(BASE_PAYLOAD, tokens={"schema": 3}, models={"main": "claude-opus-5"},
+                       dispatch={"agents": 2})
+        env = self.env_home()
+        del env["CLAUDE_CODE_SESSION_ID"]
+        self.publish(payload, env=env)
+        self._unmeasured(self.last_payload())
 
 
 class AppendixCountTest(ScriptTestBase):
@@ -1312,7 +1410,7 @@ class AppendixRetroTest(ScriptTestBase):
         `models`（transcript の引き当て）にも語彙の寄せ漏れにも「打点を見直せ」と言う。
         #167 が上流と下流で識別子を分けた目的が、読む側で消える。
         """
-        cases = [("models", "transcript の引き当て"),
+        cases = [("models", "実モデル名が無かった"),
                  ("axis-unknown", "axis 語彙"),
                  ("demoted-unknown", "降格型名"),
                  # #208。**`startswith("payload:")` の既定に落ちてはならない** — 置き場所と
@@ -2027,10 +2125,14 @@ class RetroFixture(ScriptTestBase):
 
         publish が sub 空振りを倒した回は `sub_*` 系がすべて None になるので、その形を
         再現したいときは `sub_output_k` と `sub_cache_read_k` の両方に None を渡す。
+
+        **transcript は id で引いた回にする**（`session_source`）。推定で引いた旧版の回だと、
+        sub 空振りの行は #246 の取り違え疑い（規則②）で `tokens` ごと外れ、#199 の除外経路を
+        通らないまま緑になる。
         """
         return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
                 "agents": {"explorer": 0, "reviewer": 2},
-                "tokens": {"schema": schema, "window": window,
+                "tokens": {"schema": schema, "window": window, "session_source": "env",
                            "main_output_k": main_output_k, "sub_output_k": sub_output_k,
                            "sub_cache_read_k": sub_cache_read_k, "sub_agents": sub_agents}}
 
@@ -6127,6 +6229,176 @@ class RetroAppendixLayerTest(RetroFixture):
         j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
         self.assertEqual(j["appendix_by_gen"]["opus-4-8"]["true_silent"], 1)
         self.assertEqual(j["appendix_by_gen"]["opus-5"]["true_silent"], 0)
+
+
+class RetroSessionSuspectTest(RetroFixture):
+    """旧版の publish が別セッションの値を載せた回を読み側で外す（GitHub issue #246）.
+
+    `_events` は i 行目の publish 時刻を `2026-08-10T00:<i>:00Z` にする。窓は `first_ts` から
+    publish 時刻まで。
+    """
+
+    def _row(self, session: str = "sX.jsonl", first_ts: str = "2026-08-09T23:58:00Z",
+             sub_agents: int | None = 2, sub_distinct: list | None = None, reviewer: int = 2,
+             source: str | None = None, gen: str = "claude-opus-5") -> dict:
+        """`sub_agents=None` で `sub_agents` を持たない回を作る."""
+        tokens = {"schema": 3, "window": "since-t0", "session": session, "first_ts": first_ts,
+                  "main_output_k": 100.0, "sub_output_k": 200.0, "sub_cache_read_k": 100.0}
+        if sub_agents is not None:
+            tokens["sub_agents"] = sub_agents
+        if source is not None:
+            tokens["session_source"] = source
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "agents": {"explorer": 0, "reviewer": reviewer},
+                "tokens": tokens,
+                "models": {"schema": 1, "main": gen, "main_distinct": [gen],
+                           "sub_distinct": [gen] if sub_distinct is None else sub_distinct}}
+
+    def _json(self) -> dict:
+        return json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+
+    def test_two_runs_on_one_transcript_with_overlapping_windows_are_both_dropped(self):
+        """① 09-24T01:26 と 01:31 の型。どちらが正しい側かは payload だけでは決まらない."""
+        self._events([self._row(), self._row(first_ts="2026-08-09T23:59:30Z"),
+                      self._row(session="sY.jsonl")])
+        j = self._json()
+        self.assertEqual(j["measurement"]["session_suspect"], {"overlap": 2})
+        self.assertEqual(j["tokens"]["n_raw"], 1, "疑いの回の tokens を集計に残している")
+
+    def test_windows_that_only_touch_still_overlap(self):
+        """境界: 後の回の窓が前の回の publish 時刻ちょうどに始まる（同じ瞬間を 2 回が数えている）."""
+        self._events([self._row(), self._row(first_ts="2026-08-10T00:00:00Z")])
+        self.assertEqual(self._json()["measurement"]["session_suspect"], {"overlap": 2})
+
+    def test_consecutive_runs_on_one_transcript_are_kept(self):
+        """同じセッションで 2 回回すのは正常。窓が重ならなければ疑わない."""
+        self._events([self._row(), self._row(first_ts="2026-08-10T00:00:30Z")])
+        j = self._json()
+        self.assertEqual(j["measurement"]["session_suspect"], {})
+        self.assertEqual(j["tokens"]["n_raw"], 2)
+
+    def test_runs_resolved_by_session_id_are_not_suspected(self):
+        """`session_source` を持つ回は id で引いているので、窓が重なっても推定の取り違えではない."""
+        self._events([self._row(source="env"), self._row(first_ts="2026-08-09T23:59:30Z",
+                                                        source="env")])
+        self.assertEqual(self._json()["measurement"]["session_suspect"], {})
+
+    def test_a_fleet_without_sub_transcripts_is_dropped(self):
+        """② 08-21 / 09-01 の型（どちらも `sub_agents` 0）。`sub_agents` を持たない回は `sub_distinct` で見る."""
+        self._events([self._row(session="a.jsonl", sub_agents=0),
+                      self._row(session="b.jsonl", sub_agents=None, sub_distinct=[]),
+                      self._row(session="c.jsonl")])
+        j = self._json()
+        self.assertEqual(j["measurement"]["session_suspect"], {"sub-blank": 2})
+        self.assertEqual(j["tokens"]["n_raw"], 1)
+
+    def test_a_fleet_whose_sub_ran_without_model_names_is_kept(self):
+        """sub が走った回（`sub_agents` 1 以上）で世代だけ空なのは model 名を引けなかっただけ."""
+        self._events([self._row(sub_distinct=[])])
+        self.assertEqual(self._json()["measurement"]["session_suspect"], {})
+
+    def test_sub_distinct_is_read_only_when_it_is_empty(self):
+        """`sub_agents` を持たない回でも、sub の世代が引けていれば疑わない."""
+        self._events([self._row(sub_agents=None)])
+        self.assertEqual(self._json()["measurement"]["session_suspect"], {})
+
+    def test_a_single_launched_agent_is_enough(self):
+        """境界: 起動 1 体でも sub が空なら疑う."""
+        self._events([self._row(sub_agents=0, reviewer=1)])
+        self.assertEqual(self._json()["measurement"]["session_suspect"], {"sub-blank": 1})
+
+    def test_non_integer_agent_counts_are_not_launches(self):
+        """`agents` は LLM が埋めるので bool / 文字列が来うる。体数として数えない（落ちもしない）."""
+        for bad in (True, "2"):
+            with self.subTest(bad=bad):
+                row = self._row(sub_agents=0, reviewer=0)
+                row["agents"]["specialist"] = bad
+                self._events([row])
+                self.assertEqual(self._json()["measurement"]["session_suspect"], {})
+
+    def test_a_run_without_a_window_start_is_not_paired(self):
+        """`first_ts` を読めない回は窓が決まらないので ① の突合に入れない（落ちもしない）."""
+        self._events([self._row(), self._row(first_ts="broken")])
+        self.assertEqual(self._json()["measurement"]["session_suspect"], {})
+
+    def test_an_unresolved_session_signal_points_at_the_id(self):
+        """`session-unresolved` の ⚠️ は打点ではなく id の解決を是正先に挙げる."""
+        self._events([{"effort": "high", "size_tier": "medium",
+                       "measurement_gaps": ["session-unresolved"]} for _ in range(5)])
+        out = self.signals(self.run_script(RETRO, env=self._env()).stdout)
+        self.assertIn("`session-unresolved`", out)
+        self.assertIn("`CLAUDE_CODE_SESSION_ID` から transcript を引けなかった", out)
+
+    def test_a_run_without_agents_is_not_a_blank_fleet(self):
+        """agent を起動していない回の sub が空なのは正常."""
+        self._events([self._row(sub_agents=0, sub_distinct=[], reviewer=0)])
+        self.assertEqual(self._json()["measurement"]["session_suspect"], {})
+
+    def test_the_dropped_run_leaves_every_generation_layer(self):
+        """`models` も外す — 09-01 は実際は 4.8 なのに opus-5 と記録されていた."""
+        self._events([self._row(session="a.jsonl", sub_agents=0, gen="claude-opus-4-8"),
+                      self._row(session="b.jsonl")])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**モデル世代**: `opus-5` 1 件 / `unrecorded` 1 件", out)
+        self.assertIn("transcript の取り違え疑い: 1 件", out)
+
+    def test_the_dropped_run_leaves_the_dispatch_judgement(self):
+        """`dispatch` も外す — 09-24T01:26 の `agents-mismatch` は別セッションの 3 体から出ていた."""
+        row = self._row(sub_agents=0)
+        row["dispatch"] = {"schema": 4, "agents": 3, "waves": 1, "wave_sizes": [3],
+                           "waves_expected": 1, "verdict": "batched"}
+        self._events([row])
+        self.assertEqual(self._json()["wave_split"]["judged"], 0)
+
+    def test_gaps_derived_from_the_dropped_measurement_leave_too(self):
+        """外した値から publish が立てた gap を欠測内訳に残さない（打点の gap は残す）.
+
+        残すと、同じレポートで `agents-mismatch` が欠測内訳には数えられ、一括発行の抑止件数には
+        入らない（外した `dispatch` が無いので）という食い違いになる。
+        """
+        row = self._row(sub_agents=0)
+        row["measurement_gaps"] = ["agents-mismatch", "agents-abandoned", "tokens-sub",
+                                   "fleet-span-mismatch", "wave"]
+        self._events([row])
+        j = self._json()
+        self.assertEqual(j["measurement"]["gaps"], {"wave": 1})
+        self.assertEqual(j["agents_decomposition"]["abandoned_marker"], 0)
+
+    def test_intervals_filled_from_the_dropped_transcript_are_dropped(self):
+        """打点を transcript の時刻で補完した回は、補完値が境界になりうる区間も外す."""
+        row = self._row(sub_agents=0)
+        row.update({"derived_markers": ["wave"], "duration_min": 30, "duration_triage_min": 5,
+                    "duration_explore_min": 5, "duration_fleet_min": 15,
+                    "duration_synthesis_min": 5, "duration_closing_min": 2})
+        clean = dict(row, derived_markers=[])
+        self._events([row, dict(clean, tokens=dict(clean["tokens"], session="other.jsonl",
+                                                    sub_agents=2))])
+        j = self._json()
+        self.assertEqual(j["spans"]["fleet"]["n"], 1, "補完した区間を中央値に残している")
+        self.assertEqual(j["spans"]["closing"]["n"], 2, "補完と無関係な区間まで外している")
+
+    def test_session_windows_are_not_paired(self):
+        """`session` 窓の `first_ts` はセッションの先頭なので、同じセッションの正常な 2 回でも重なる."""
+        rows = [self._row(), self._row(first_ts="2026-08-09T23:59:30Z")]
+        for r in rows:
+            r["tokens"]["window"] = "session"
+        self._events(rows)
+        self.assertEqual(self._json()["measurement"]["session_suspect"], {})
+
+    def test_a_run_resolved_by_id_still_exposes_its_estimated_partner(self):
+        """id で引いた回は疑わないが、窓が重なる推定側の相手としては数える."""
+        self._events([self._row(source="env"), self._row(first_ts="2026-08-09T23:59:30Z")])
+        j = self._json()
+        self.assertEqual(j["measurement"]["session_suspect"], {"overlap": 1})
+        self.assertEqual(j["tokens"]["n_raw"], 1, "id で引いた回まで外している")
+
+    def test_suspicion_is_judged_before_the_version_window(self):
+        """① の相手が版の窓の外にあっても疑いは変わらない（絞り込みより前に全件で判定する）."""
+        old, new = self._row(), self._row(first_ts="2026-08-09T23:59:30Z")
+        new["plugin_version"] = "9.0.0"
+        self._events([old, new])
+        out = self.run_script(RETRO, "--min-plugin-version", "9.0.0", "--json", env=self._env())
+        self.assertEqual(json.loads(out.stdout)["measurement"]["session_suspect"], {"overlap": 1})
 
 
 if __name__ == "__main__":

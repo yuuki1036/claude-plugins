@@ -329,7 +329,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 | # | 条件 | なぜ黙るか |
 |---|---|---|
 | ① | `CLAUDE_CODE_SESSION_ID` が無い | セッションを特定できない |
-| ② | その id の transcript を引けない | **`--session` を省いて `ls -t` の最新に倒さない** — 同一リポジトリで並行セッションがあると他セッションの世代を出す |
+| ② | その id の transcript を引けない | **`--session` を省いて `ls -t` の最新に倒さない** — 同一リポジトリで並行セッションがあると他セッションの世代を出す。引き方は publish と共有（`lib/review-paths.sh` の `review_session_transcript` / #246） |
 | ③ | main 側の実モデル名が 1 つも引けない | `<synthetic>` 等のプレースホルダは `measure-tokens.sh` が既に除外する |
 
 実行コストは transcript 1 本の走査で **0.06 秒**（Phase 0 全体で 0.31 秒）。

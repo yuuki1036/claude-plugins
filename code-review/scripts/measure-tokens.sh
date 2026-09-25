@@ -49,7 +49,8 @@ command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が必要" >&2; exi
 # transcript ディレクトリの slug 導出は `lib/review-paths.sh` の `review_project_dirs`
 # が正本（cwd 側とメイン側の 2 候補を返す理由・片方に決め打ちできない理由はそちら）。
 # ここでは候補ディレクトリを受け取って「最も新しい .jsonl」を採るだけ
-# （実行中のセッションが最新であることを使う）。
+# （実行中のセッションが最新であることを使う）。**並行セッションがあると外れる**ので、publish は
+# `--session` に id から引いた transcript を渡す（`review_session_transcript` / GitHub issue #246）。
 HERE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=lib/review-paths.sh
 . "$HERE/lib/review-paths.sh"

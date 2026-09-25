@@ -109,7 +109,15 @@ case "$PLUGIN" in
         fi
         ;;
     esac
-    TOKENS_JSON=$(bash "$HERE/measure-tokens.sh" --json ${TOK_ARGS[@]+"${TOK_ARGS[@]}"} 2>/dev/null)
+    # **transcript はセッション id で確定させる**（GitHub issue #246）。`--session` を省くと
+    # measure-tokens.sh は候補 dir の最新 `.jsonl` を採り、publish 前に `cd` した回や並行
+    # セッションがある回で別セッションの値を載せる。引けなければ計測せず gap だけ立てる
+    if SESSION_TRANSCRIPT=$(review_session_transcript); then
+      TOKENS_JSON=$(bash "$HERE/measure-tokens.sh" --json --session "$SESSION_TRANSCRIPT" \
+        ${TOK_ARGS[@]+"${TOK_ARGS[@]}"} 2>/dev/null)
+    else
+      MEASUREMENT_GAPS="${MEASUREMENT_GAPS:+$MEASUREMENT_GAPS }session-unresolved"
+    fi
     ;;
 esac
 
@@ -843,7 +851,13 @@ for _parent, _field, _gap in (("adversarial_verify", "inflated_axes", "axis-unkn
         gaps.append(_gap)
 
 # ---- トークン消費と発行パターン（issue #126 / #142 / #143） -----------------
-if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
+if os.environ.get("REVIEW_TOKENS_WANTED") == "1" and "session-unresolved" in gaps:
+    # **transcript を id から引けなかった回は計測していない**（GitHub issue #246）。原因は 1 つ
+    # なので `tokens` / `models` / `dispatch` の gap を重ねて立てない。呼び出し側が書いた値も
+    # 捨てる — 残すと LLM が書いた値が機械計測のふりをして残る（下の `models` と同じ fail-closed）
+    for _f in ("tokens", "models", "dispatch"):
+        payload.pop(_f, None)
+elif os.environ.get("REVIEW_TOKENS_WANTED") == "1":
     try:
         tok = json.loads(os.environ.get("REVIEW_TOKENS") or "")
     except ValueError:
@@ -866,10 +880,13 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             # 窓の種類。`session` は t0 を撮れずセッション全体を集計した回で、レビュー外の
             # 作業が混ざる。**集計側は since-t0 だけを使う**（混ぜると体数との対応が消える）
             "window": os.environ.get("REVIEW_TOKENS_WINDOW") or "session",
-            # **どの transcript のどこからを数えたか**を残す（セッションの選択は「候補 dir の
-            # 最新 .jsonl」という推定で、worktree 並列運用では取り違えうる）。値そのものは
-            # もっともらしいので、この 2 つが無いと取り違えを事後に検出する手段が消える
+            # **どの transcript のどこからを数えたか**を残す。値そのものはもっともらしいので、
+            # この 2 つが無いと取り違えを事後に検出する手段が消える
             "session": tok.get("session"), "first_ts": tok.get("first_ts"),
+            # **transcript の選び方の版マーカー**（GitHub issue #246）。`env` = `CLAUDE_CODE_SESSION_ID`
+            # から引いた。**無い回は旧版の「候補 dir の最新 .jsonl」推定**で、並行セッションや
+            # publish 前の `cd` で別セッションの値を載せうる（retro が取り違え疑いを外す）
+            "session_source": "env",
             "main_output_k": _k("main", "output"),
             "main_cache_write_k": _k("main", "cache_write"),
             "main_cache_read_k": _k("main", "cache_read"),
@@ -1135,8 +1152,9 @@ derived_note = ("。うち %s は agent の実測時刻で補完済み（derived
 if gaps:
     sys.stderr.write(
         "WARN: 計測マーカーの欠測: %s（打点由来は agent の実測時刻で埋まらなければ "
-        "duration_* が -1 / `payload:*` は payload 側の欠落 / `tokens` は transcript を"
-        "引けなかった回）%s\n" % (", ".join(gaps), derived_note)
+        "duration_* が -1 / `payload:*` は payload 側の欠落 / `session-unresolved` は transcript を"
+        "session id から引けなかった回 / `tokens` は引けたが main のメッセージを数えられなかった回）%s\n"
+        % (", ".join(gaps), derived_note)
     )
 # separators で空白・改行を排除し、1 行に収める
 sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))

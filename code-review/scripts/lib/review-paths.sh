@@ -102,6 +102,8 @@ review_event_logs() {
 # 保つため）。ここを `review_main_root` に寄せると、submodule 構成で従来引けていた
 # transcript が引けなくなる方向へ動く。
 #
+# **自分のセッションを測る用途には使わない** — 下の `review_session_transcript` を使う（理由はそちら）。
+#
 # 呼び出し側は `${REVIEW_PROJECT_DIRS[@]+"${REVIEW_PROJECT_DIRS[@]}"}` で展開すること
 # （bash 3.2 + `set -u` では空配列の素の展開が落ちる）。
 review_project_dirs() {
@@ -118,6 +120,25 @@ review_project_dirs() {
   # 上の `review_event_logs` の同じ書き方とは意味が違う — あちらは実在チェックを
   # 通すので本当に空になりうる
   [ ${#REVIEW_PROJECT_DIRS[@]} -gt 0 ]  # mutation-ok: roots は必ず $PWD を含むので空にならない（到達しない防御）
+}
+
+# **このセッションの** main transcript のパスを返す（引けなければ空 + rc=1 / GitHub issue #246）。
+#
+# 上の `review_project_dirs` は「候補 dir の最新 `.jsonl`」を採る推定で、publish 前に `cd` した回と
+# 同じ slug に並行セッションがある回で外れる（実測: 照合できた 105 件中 6 件。うち 3 件は別セッションの
+# 値を、gap も立てずに載せていた）。session id は slug をまたいで一意なので、id が引ければ推定は要らない。
+#
+# **引けないときに推定へ倒さないこと** — 縮退先は欠測であって誤値ではない
+# （orchestration-measurement.md `## 13.1`）。
+# id は glob に入るので、1 つのパス要素に収まらない値は引けなかった扱いにする
+# （`../<slug>/<id>` のような値で projects の外や別セッションを指させない）。
+review_session_transcript() {
+  local sid="${CLAUDE_CODE_SESSION_ID:-}" f
+  case "$sid" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+  for f in "$HOME"/.claude/projects/*/"$sid".jsonl; do
+    if [ -f "$f" ]; then printf '%s' "$f"; return 0; fi
+  done
+  return 1
 }
 
 # diff ファイルの突合キーを 2 本出力する（`<digest> <files-key>`。算出不能なら空 + rc=1）。

@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.130.6] - 2026-09-26
+
+### Fixed
+
+- **publish が transcript を `CLAUDE_CODE_SESSION_ID` から引くようにした**（#246）。旧版は「候補 dir の最新 `.jsonl`」で
+  推定しており、publish 前に `cd` した回は `tokens` / `models` / `dispatch` が欠測し、同じ slug に並行セッションがある回は
+  **別セッションの値を gap も立てずに載せていた**（publish 元 transcript と照合できた 105 件中、欠測 3 件・混入 3 件）。
+  引けないときは推定に倒さず、3 フィールドを載せずに `measurement_gaps` へ `session-unresolved` を立てる。
+  `tokens.session_source: "env"` が新しい引き方の版マーカー。引き方は Phase 0 の世代表示と共通化した
+- **retro が旧版の取り違え疑いを集計から外すようにした**。`session_source` を持たない回のうち、同じ transcript で
+  `since-t0` 系の窓が重なる回と、agent を起動したのに sub が空の回の `tokens` / `models` / `dispatch` を外し、件数を
+  「計測の健全性」に出す。同じ計測から publish が立てた gap（`agents-mismatch` / `wave-split` など）と、打点を補完した
+  区間も一緒に外す。既存データでは混入 3 件を全部拾い、誤検出は窓が重なった相手側の 1 件だけだった
+- **`tokens` / `models` gap の是正先を「窓の起点」に直した**（retro の ⚠️ と publish の WARN）。transcript を
+  引けなかった回は `session-unresolved` に分かれたので、「セッション選択を見直す」は当たらなくなった
+
 ## [2.130.5] - 2026-09-25
 
 ### Changed
