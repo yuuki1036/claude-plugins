@@ -56,6 +56,8 @@ BASE_PAYLOAD = {
     # **報告件数 4 つは必須で 0 件でも省かない**（#215 / #238 で fail-fast）。無いと publish が
     # 止まるので、既定の fixture は契約どおりにしておく
     "blocker_count": 0, "critical_count": 0, "major_count": 1, "minor_count": 0,
+    # 層別キー。欠けると `payload:severity_threshold` が立つ（#252）
+    "severity_threshold": "MAJOR",
     "agents": {"explorer": 0, "reviewer": 2},
 }
 
@@ -1275,6 +1277,91 @@ class PublishSessionResolutionTest(TranscriptFixture):
         self._unmeasured(self.last_payload())
 
 
+class SeverityThresholdPublishTest(ScriptTestBase):
+    """publish が `severity_threshold` を検証する（GitHub issue #252）.
+
+    retro の歩留まり・検出内訳の層別キーなのに、publish は検証も gap も持っていなかった。
+    `below_threshold_counts` の直後に 1 段深く書いた回が理由なしに `threshold=?` 層へ落ち、
+    #210 が追う opus-4-8 層では版絞り窓 9 件中 3 件がそうだった。
+    """
+
+    def _without(self, **nested) -> dict:
+        p = json.loads(json.dumps(BASE_PAYLOAD))
+        del p["severity_threshold"]
+        for parent, value in nested.items():
+            p[parent]["severity_threshold"] = value
+        return p
+
+    def test_a_value_nested_in_below_threshold_counts_is_lifted(self):
+        """5 件中 4 件がこの形だった（`below_threshold_counts` の直後に書く）."""
+        r = self.publish(self._without(below_threshold_counts="MAJOR"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertEqual(p["severity_threshold"], "MAJOR")
+        self.assertIn("payload:severity_threshold.nested", p["measurement_gaps"])
+        self.assertNotIn("payload:severity_threshold", p["measurement_gaps"])
+        self.assertIn("below_threshold_counts", r.stderr, "WARN が置き場所を言っていない")
+
+    def test_a_value_nested_in_pre_adjust_counts_is_lifted(self):
+        r = self.publish(self._without(pre_adjust_counts="MINOR"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertEqual(p["severity_threshold"], "MINOR")
+        self.assertIn("payload:severity_threshold.nested", p["measurement_gaps"])
+        self.assertIn("`pre_adjust_counts` の中にあった", r.stderr, "WARN が置き場所を言っていない")
+
+    def test_a_missing_value_raises_a_gap_but_is_published(self):
+        """報告件数と違って他の分子は生きているので止めない（#203 / #208 と同じ判断）."""
+        r = self.publish(self._without())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertNotIn("severity_threshold", p)
+        self.assertIn("payload:severity_threshold", p["measurement_gaps"])
+        # 末尾の gap 要約行にも識別子が出るので、専用 WARN の文言で測る
+        self.assertIn("WARN: severity_threshold が無い", r.stderr)
+
+    def test_an_out_of_vocabulary_value_is_fatal(self):
+        """正しい値は呼び出し側（userConfig の実効値）が知っているので黙って正規化しない."""
+        for bad in ("major", "HIGH", "", 3, "重大"):
+            with self.subTest(bad=bad):
+                p = json.loads(json.dumps(BASE_PAYLOAD))
+                p["severity_threshold"] = bad
+                r = self.publish(p)
+                self.assertEqual(r.returncode, 1, r.stderr)
+                self.assertIn("severity_threshold", r.stderr)
+                # 受け取った値をそのまま見せる（`\u` エスケープにすると何を書いたか読めない）
+                self.assertIn(json.dumps(bad, ensure_ascii=False), r.stderr)
+                self.assertEqual(self.events(), [], "FATAL なのに publish されている")
+
+    def test_every_contract_value_passes(self):
+        for ok in ("BLOCKER", "CRITICAL", "MAJOR", "MINOR"):
+            with self.subTest(ok=ok):
+                r = self.publish(dict(BASE_PAYLOAD, severity_threshold=ok))
+                self.assertEqual(r.returncode, 0, r.stderr)
+                gaps = self.last_payload()["measurement_gaps"]
+                self.assertFalse([g for g in gaps if g.startswith("payload:severity_threshold")])
+
+    def test_nested_values_are_not_guessed(self):
+        """語彙外や、2 つの親で食い違う値は昇格しない（どれが正しいか決められない）."""
+        cases = {"out-of-vocabulary": {"below_threshold_counts": "major"},
+                 "conflicting": {"below_threshold_counts": "MAJOR", "pre_adjust_counts": "MINOR"},
+                 # 語彙外の方を捨ててから比べると 1 値に見えて昇格してしまう形
+                 "conflicting-with-out-of-vocabulary": {"below_threshold_counts": "MAJOR",
+                                                        "pre_adjust_counts": "minor"}}
+        for name, nested in cases.items():
+            with self.subTest(name):
+                r = self.publish(self._without(**nested))
+                self.assertEqual(r.returncode, 0, r.stderr)
+                p = self.last_payload()
+                self.assertNotIn("severity_threshold", p)
+                self.assertIn("payload:severity_threshold", p["measurement_gaps"])
+
+    def test_the_same_value_in_both_parents_is_lifted(self):
+        r = self.publish(self._without(below_threshold_counts="MAJOR", pre_adjust_counts="MAJOR"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.last_payload()["severity_threshold"], "MAJOR")
+
+
 class AppendixCountTest(ScriptTestBase):
     """🔁 付録の件数を payload に載せる（GitHub issue #168）.
 
@@ -1422,7 +1509,9 @@ class AppendixRetroTest(ScriptTestBase):
                  # 語彙の話なので「テンプレートの記述漏れ」は誤った是正先になる
                  ("payload:demoted_types.misplaced", "ネストの誤り"),
                  ("payload:agents.vocab", "語彙違反"),
-                 ("payload:agents.empty", "体数のキーが 1 つも無い")]
+                 ("payload:agents.empty", "体数のキーが 1 つも無い"),
+                 # #252。昇格済みなので「記述漏れ」は誤った是正先
+                 ("payload:severity_threshold.nested", "層別には使われている")]
         for ident, expected in cases:
             with self.subTest(ident=ident):
                 # GAP_MIN_N=5 / GAP_RATIO=20 を超える母集団を作る
@@ -6404,6 +6493,82 @@ class RetroSessionSuspectTest(RetroFixture):
         self._events([old, new])
         out = self.run_script(RETRO, "--min-plugin-version", "9.0.0", "--json", env=self._env())
         self.assertEqual(json.loads(out.stdout)["measurement"]["session_suspect"], {"overlap": 1})
+
+
+class SeverityThresholdRetroTest(RetroFixture):
+    """retro は旧版で焼かれた入れ子の `severity_threshold` も読み側で回収する（GitHub issue #252）."""
+
+    def _row(self, where: str | None = "top") -> dict:
+        r = {"effort": "high", "measurement_gaps": [],
+             "pre_adjust_counts": {"blocker": 0, "critical": 0, "major": 10, "minor": 20,
+                                   "schema": 2},
+             "below_threshold_counts": {"blocker": 0, "critical": 0, "major": 0, "minor": 20},
+             "blocker_count": 0, "critical_count": 0, "major_count": 4, "minor_count": 0}
+        if where == "top":
+            r["severity_threshold"] = "MAJOR"
+        elif where is not None:
+            r[where]["severity_threshold"] = "MAJOR"
+        return r
+
+    def test_a_nested_value_joins_the_main_layer(self):
+        self._events([self._row(), self._row("below_threshold_counts"),
+                      self._row("pre_adjust_counts")])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("schema>=2/threshold=MAJOR: n=3", out)
+        self.assertNotIn("schema>=2/threshold=?", out)
+
+    def test_the_health_section_says_what_was_recovered_and_what_is_missing(self):
+        self._events([self._row(), self._row("below_threshold_counts"), self._row(None)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("1 件は入れ子からトップレベルへ回収 / 1 件は欠落で `threshold=?` に置いた", out)
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["measurement"]["severity_threshold"],
+                         {"nested_recovered": 1, "missing": 1})
+
+    def test_either_count_alone_is_reported(self):
+        """回収だけ・欠落だけの窓でも行を出す（片方が 0 でも黙らない）."""
+        for rows, recovered, missing in (([self._row("below_threshold_counts")], 1, 0),
+                                         ([self._row(None)], 0, 1)):
+            with self.subTest(recovered=recovered, missing=missing):
+                self._events(rows)
+                out = self.run_script(RETRO, env=self._env()).stdout
+                self.assertIn("%d 件は入れ子からトップレベルへ回収 / %d 件は欠落"
+                              % (recovered, missing), out)
+
+    def test_nothing_is_said_when_every_row_has_it(self):
+        self._events([self._row(), self._row()])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("## レビュー振り返り", out)
+        self.assertNotIn("severity_threshold:", out)
+
+    def test_recovery_is_counted_inside_the_version_window(self):
+        """回収件数は `--min-plugin-version` で絞った後の窓で数える（欠落の件数と母集団を揃える）."""
+        old = self._row("below_threshold_counts")
+        new = dict(self._row(), plugin_version="9.0.0")
+        self._events([old, new])
+        out = self.run_script(RETRO, "--min-plugin-version", "9.0.0", "--json", env=self._env())
+        self.assertEqual(json.loads(out.stdout)["measurement"]["severity_threshold"],
+                         {"nested_recovered": 0, "missing": 0})
+
+    def test_recovery_is_counted_in_the_same_population_as_the_missing(self):
+        """報告件数が無く歩留まりから外れる回は、回収しても「回収」に数えない（表が動かないので）."""
+        row = self._row("below_threshold_counts")
+        for k in ("blocker_count", "critical_count", "major_count", "minor_count"):
+            del row[k]
+        self._events([row])
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["measurement"]["severity_threshold"],
+                         {"nested_recovered": 0, "missing": 0})
+
+    def test_a_row_lifted_by_publish_is_not_counted_as_recovered(self):
+        """publish が昇格済み（トップレベル + 親にも残る + `.nested` gap）の行は数えない."""
+        row = self._row("below_threshold_counts")
+        row["severity_threshold"] = "MAJOR"
+        row["measurement_gaps"] = ["payload:severity_threshold.nested"]
+        self._events([row])
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["measurement"]["severity_threshold"],
+                         {"nested_recovered": 0, "missing": 0})
 
 
 if __name__ == "__main__":

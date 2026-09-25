@@ -106,6 +106,7 @@ sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pyca
 sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
 from wave_expect import MAX_EXPECTED_WAVES, expected_waves
 from report_counts import lift_nested_report_counts
+from severity_threshold import lift_nested_threshold
 
 since_raw = os.environ.get("REVIEW_SINCE") or ""
 last_n = int(os.environ.get("REVIEW_LAST") or 0)
@@ -172,6 +173,9 @@ for path in source_paths:
         # payload で作ってある（上）ので、同じ生行は同じキーに畳まれる
         if lift_nested_report_counts(ev.get("payload") or {}) is not None:
             nested_recovered += 1
+        # `severity_threshold` の入れ子も同じ（GitHub issue #252）。歩留まり・検出内訳の層別キーで、
+        # 落ちた回は主層から `threshold=?` へ理由なしに外れていた。件数は窓で絞った後に数える
+        threshold_lifted = lift_nested_threshold(ev.get("payload") or {}) is not None
         try:
             when = datetime.fromisoformat(ts.replace("Z", "+00:00"))
             if when.tzinfo is None:
@@ -179,7 +183,8 @@ for path in source_paths:
         except ValueError:
             when = None
         events.append({"ts": ts, "when": when, "plugin": ev.get("plugin", "?"),
-                       "p": ev.get("payload") or {}, "src": path})
+                       "p": ev.get("payload") or {}, "src": path,
+                       "threshold_lifted": threshold_lifted})
 
 events.sort(key=lambda e: e["ts"])
 
@@ -843,6 +848,11 @@ syn_pcts = [r[0] for r in syn_ratios]
 yields = {}
 yields_bad_vocab = 0
 yields_missing_post = 0   # 報告件数を 1 つも申告していない回（#212）    # 語彙違反で外した回（#203）
+#: 歩留まりの母集団のうち、入れ子から回収した回と、回収しても無く `threshold=?` 層に入った回（#252）。
+#: **同じ母集団で数える**（回収の方だけ全件で数えると、どの表にも入らない回まで「回収」に数え、
+#: 表の動きと件数が合わない）。検出内訳は歩留まりの部分集合（`below_threshold_counts` を持つ回）
+threshold_missing = 0
+threshold_recovered = 0
 for e in events:
     p = e["p"]
     pre = p.get("pre_adjust_counts")
@@ -860,6 +870,10 @@ for e in events:
     if reported_missing(p):
         yields_missing_post += 1
         continue
+    if not p.get("severity_threshold"):
+        threshold_missing += 1
+    elif e["threshold_lifted"]:
+        threshold_recovered += 1
     key = with_gen(p, "schema>=%d/threshold=%s" % (
         schema_of(pre, "schema"), p.get("severity_threshold") or "?"))
     y = yields.setdefault(key, {"n": 0, "pre": 0, "post": 0})
@@ -1597,6 +1611,10 @@ def gap_hint(g):
                 "昇格したので**集計には載っている**が、契約はフラットな `blocker_count` / "
                 "`critical_count` / `major_count` / `minor_count`（正本の payload テンプレート: "
                 "orchestration-measurement.md `## 16`）")
+    if g == "payload:severity_threshold.nested":
+        return ("`severity_threshold` が `below_threshold_counts` / `pre_adjust_counts` の中に書かれた。"
+                "publish がトップレベルへ昇格したので**層別には使われている**が、契約はトップレベルの "
+                "1 キー（正本の payload テンプレート: orchestration-measurement.md `## 16` / #252）")
     if g == "payload:report_counts.missing":
         return ("報告件数（`blocker_count` / `critical_count` / `major_count` / `minor_count`）が"
                 "揃っていない。**4 つとも必須で 0 件でも省かない** — 埋め落とした回は歩留まり・"
@@ -1876,6 +1894,9 @@ if as_json:
             "max_pct": max(syn_pcts) if syn_pcts else None, "by_gen": syn_stats["by_gen"]},
         "measurement": {"gaps": gap_counts, "n_with_gap_field": n_gapfield,
                         "nested_report_counts_recovered": nested_recovered,  # #238（読み側の回収）
+                        # #252。どちらも歩留まりの母集団で数える（`missing` は `threshold=?` に入った回）
+                        "severity_threshold": {"nested_recovered": threshold_recovered,
+                                               "missing": threshold_missing},
                         # #246（読み側で外した回。キーは規則 `overlap` / `sub-blank`）
                         "session_suspect": session_suspects,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
@@ -2419,6 +2440,12 @@ else:
     if nested_recovered:
         print("  - 報告件数: %d 件は入れ子（`report_counts` / `counts`）からトップレベルへ"
               "昇格して母集団に戻した（旧版の publish が弾いていた回 / #238）" % nested_recovered)
+    # **層別キーの回収と欠落も黙らない**（#252）。欠落した回は歩留まりの表に理由の無い
+    # `threshold=?` 行として出るので、その内訳をここで言う。0 件なら出さない（⚠️ 契約）
+    if threshold_recovered or threshold_missing:
+        print("  - severity_threshold（歩留まりの母集団 / #252）: %d 件は入れ子からトップレベルへ回収 / "
+              "%d 件は欠落で `threshold=?` に置いた"
+              % (threshold_recovered, threshold_missing))
     # **外した回を黙って消さない**（#246）。0 件なら出さない（⚠️ 契約）
     if session_suspects:
         print("  - transcript の取り違え疑い: %d 件（同じ transcript で窓が重なる %d 件 / "

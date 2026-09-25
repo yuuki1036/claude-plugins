@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.130.8] - 2026-09-26
+
+### Fixed
+
+- **publish が `severity_threshold` を検証するようにした**（#252）。歩留まり・検出内訳の層別キーなのに検証も gap も無く、
+  `below_threshold_counts` / `pre_adjust_counts` の中に 1 段深く書いた回（版付き 47 件中 5 件）と欠落した回が、理由なしに
+  主層から `threshold=?` 層へ落ちていた（#210 が追う opus-4-8 層では版絞り窓 9 件中 3 件）。語彙外は fail-fast、
+  入れ子に語彙内の値が 1 つに決まればトップレベルへ昇格して `payload:severity_threshold.nested`、どこにも無ければ
+  `payload:severity_threshold` を立てて publish はする。どちらも WARN を出す
+- **retro が旧版で焼かれた入れ子の `severity_threshold` も読み側で回収するようにした**。回収した件数と、欠落で
+  `threshold=?` に置いた件数を「計測の健全性」に出す。既存ログ（`--min-plugin-version 2.126.1`）では `threshold=?` 層が
+  5 件から 1 件（完全に欠落していた回）になった
+
 ## [2.130.7] - 2026-09-26
 
 ### Fixed

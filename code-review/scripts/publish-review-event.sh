@@ -338,6 +338,7 @@ sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pyca
 sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
 from wave_expect import expected_waves, SKEPTIC_LAUNCH
 from report_counts import REPORT_KEYS, lift_nested_report_counts
+from severity_threshold import THRESHOLDS, lift_nested_threshold
 try:
     payload = json.loads(sys.argv[1])
 except ValueError as e:
@@ -352,6 +353,8 @@ if not isinstance(payload, dict):
 # 4 キーを読む）。gap は `measurement_gaps` を組む段（#215 のブロック）で立てる。
 # 救う / 救わないの判断は `lib/report_counts.py` の冒頭
 _nested_parent = lift_nested_report_counts(payload)
+# `severity_threshold` の入れ子も同じ段で昇格する（GitHub issue #252）。判断は `lib/severity_threshold.py`
+_threshold_parent = lift_nested_threshold(payload)
 
 # ---- 報告件数 4 フィールドの欠測は fail-fast（GitHub issue #238） ---------------------
 # v2.111.0（#215）は gap `payload:report_counts.missing` を立てるだけで、「止めるとその回の
@@ -375,6 +378,22 @@ if _missing_counts:
         "揃えて publish をやり直す（この回の計測は書き込んでいない。打点ファイルは残っている）\n"
         "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
         % ", ".join(_missing_counts)
+    )
+    sys.exit(1)
+
+# ---- `severity_threshold` の語彙検証（GitHub issue #252） --------------------
+# 歩留まり・検出内訳の層別キー。**語彙外は fail-fast**（`missing_coverage` / `skip_reason` と同じ）—
+# 正しい値は呼び出し側（userConfig の実効値）が知っているので、黙って正規化しない。既存データ
+# （schema 2 の 144 件）に語彙外は 0 件なので、止めても過去の運用は止まらない。
+# 値が無い回は落とさず gap に倒す（下の gaps の段。報告件数と違って他の分子は生きている）
+_threshold = payload.get("severity_threshold")
+if _threshold is not None and _threshold not in THRESHOLDS:
+    sys.stderr.write(
+        "FATAL: severity_threshold が語彙外: %s（許容値: %s）。実効閾値（userConfig の "
+        "`review_severity_threshold`）をそのまま書いて publish をやり直す"
+        "（この回の計測は書き込んでいない。打点ファイルは残っている）\n"
+        "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
+        % (json.dumps(_threshold, ensure_ascii=False), " / ".join(THRESHOLDS))
     )
     sys.exit(1)
 
@@ -719,6 +738,24 @@ if isinstance(_pre, dict) and not all(
 # 昇格は冒頭で済んでおり、欠測はそこで fail-fast しているので、ここに来る回は 4 キーが揃っている。
 # 値は救われたがフラット規約は破られている — その事実を別識別子で残す
 # （旧版の `report_counts.missing` とは排他。同じ回で 2 つ立てると欠測内訳の是正先が割れる）
+# `severity_threshold` も同じ扱い（GitHub issue #252）。**入れ子と欠落は排他**（昇格できた回は
+# 欠落ではない）。どちらも WARN を出す — 誤置は埋める側に届かないと直らない（#208 と同じ理由）
+if _threshold_parent is not None:
+    gaps.append("payload:severity_threshold.nested")
+    sys.stderr.write(
+        "WARN: severity_threshold が `%s` の中にあった。トップレベルへ昇格して層別に使うが、"
+        "契約は**トップレベルの 1 キー**\n"
+        "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
+        % _threshold_parent
+    )
+elif payload.get("severity_threshold") is None:
+    gaps.append("payload:severity_threshold")
+    sys.stderr.write(
+        "WARN: severity_threshold が無い（入れ子にも語彙内の値が 1 つに決まらない）。この回は"
+        "歩留まり・検出内訳で `threshold=?` 層に入り、主層から外れる — 実効閾値をトップレベルに書く\n"
+        "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
+    )
+
 if _nested_parent is not None:
     gaps.append("payload:report_counts.nested")
     sys.stderr.write(
