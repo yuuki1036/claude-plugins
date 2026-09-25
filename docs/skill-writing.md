@@ -1,6 +1,6 @@
 # スキル執筆指針（description 設計と本文の情報設計）
 
-1 つのスキルを「書く」ときの共通指針。多段 agent パイプラインの設計は `docs/pipeline-design.md` が担い、このファイルはその手前 — SKILL.md というテキストそのものの品質を扱う（元ネタ: mattpocock/skills の writing-great-skills（現 writing-for-agents と SKILL-MECHANICS）。Copyright (c) 2026 Matt Pocock / MIT License、許諾文は repo 直下の NOTICE。本リポジトリの規約に合わせて翻案。2026-09-24 に MP `c55ee46` と再同期した — 次に差分を見るときはここから）。cache と context pointer の節は CLAUDE.md や `references/*.md` など、エージェントが読む文書全般にも当てはまる。
+1 つのスキルを「書く」ときの共通指針。多段 agent パイプラインの設計は `docs/pipeline-design.md` が担い、このファイルはその手前 — SKILL.md というテキストそのものの品質を扱う（元ネタ: mattpocock/skills の writing-great-skills（現 writing-for-agents と SKILL-MECHANICS）。Copyright (c) 2026 Matt Pocock / MIT License、許諾文は repo 直下の NOTICE。本リポジトリの規約に合わせて翻案。2026-09-24 に MP `c55ee46` と再同期した — 次に差分を見るときはここから）。**対象は SKILL.md だけではない** — rules（SessionStart で注入するルール）・agents の定義・`references/prompts/*.md`・CLAUDE.md も、エージェントが読む文書として同じ観点（情報階層・no-op 剪定・leading words・cache と context pointer）で書く。とくに CLAUDE.md と rules は毎セッション常駐するので、特定の作業でしか使わない節は `docs/` などに移してポインタだけ残す（事故から生まれた Gotchas の規範は残す）。
 
 核心は 1 語: **予測可能性 (predictability)**。スキルは確率的なシステムから決定性を絞り出す装置であり、「毎回同じ出力」ではなく「毎回同じ**プロセス**」を取らせることが根本の徳。以下の道具はすべてこれに奉仕する。
 

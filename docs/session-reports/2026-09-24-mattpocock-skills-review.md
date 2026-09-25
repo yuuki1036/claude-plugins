@@ -76,7 +76,9 @@
 
 - B7: Issue 系の規範。完了条件の悪い 3 つの形（discover・template-9sections）、出典の無い決定を open に・デモ点検・prefactor 先行（design-rules）、同義語で探して探した場所を報告（issue-create）、起票前に既存 Issue を open / closed で検索（plugin-feedback）
 
-**未着手**（統合レポートの ID）: B8〜B13、C 群（C1 を除く）。
+- B8: CLAUDE.md の常駐量を約 55KB から 50KB に減らした。plugin eval のケース作成・運用の詳細を `docs/plugin-eval.md` へ、Event Bus の永続化と API を `docs/event-bus.md` へ移し、ポインタを残した（イベント表は機械照合の対象なので残した）。`docs/skill-writing.md` の対象を rules / agents / prompts / CLAUDE.md に広げた。Gotchas は事故由来なので手を付けていない
+
+**未着手**（統合レポートの ID）: B9〜B13、C 群（C1 を除く）。
 
 ---
 

@@ -1,6 +1,28 @@
 # Event Bus 規約 — 詳細（責務・デバッグ・設計判断）
 
-CLAUDE.md「Event Bus 規約」の詳細版。永続化フォーマット・API・イベント命名規約・イベント表（機械照合対象）は CLAUDE.md 側が正本。
+CLAUDE.md「Event Bus 規約」の詳細版。イベント命名規約とイベント表（機械照合対象）は CLAUDE.md 側が正本。永続化フォーマットと API はここが正本（CLAUDE.md の常駐量を減らすため移した）。
+
+## 永続化
+
+- イベントログ: `.claude/events.jsonl`（プロジェクトローカル、gitignored、JSON Lines 形式）
+- 1 行 = 1 イベント: `{"ts":"<ISO8601>","plugin":"<name>","event":"<name>","payload":<obj>}`
+- `plugin` は `SAFE_HOOK_NAME` がそのまま入る。hook 系は `dev-workflow:on-commit` のような
+  `<plugin>:<hook>` 複合値、skill / command 系は素のプラグイン名になる（書式は publisher 依存）。
+  **subscriber 側はプラグイン名の完全一致で絞らない** — 前方一致か event 名で絞る
+
+## API（`safe-hook.sh` に含まれる）
+
+```bash
+# 発行
+event_bus_publish "<event-name>" '<json-payload>'
+
+# 直近 N 件取得（オプションで event 名フィルタ）
+event_bus_tail "<event-name>" 10
+event_bus_tail "" 20  # 全イベント
+
+# ログクリア（テスト用）
+event_bus_clear
+```
 
 ## Publisher の責務
 
