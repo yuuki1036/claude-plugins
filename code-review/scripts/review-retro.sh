@@ -1556,9 +1556,36 @@ fc_total = sum(fc.values())
 # **calib が最大の層**を代表に取り、同じ calib が世代で割れているときは verdict の
 # 多い方を選ぶ（#191 で層キーに世代が入ったため、単純な `max()` では辞書順で
 # `unrecorded` が勝ってしまう）
-newest_layer = (max(verdict_layers,
-                    key=lambda k: (verdict_layers[k]["calib"], verdict_layers[k]["total"]))
-                if verdict_layers else None)
+#
+# **代表と「他世代」の数え上げから `unrecorded` / `mixed` を外す**（GitHub issue #251）。表の行は
+# 残す（既知世代と同じバケツに入れない v2.88.2 の判断は変えない）が、世代が分からない層を
+# 1 世代として扱うと、版窓では欠測した 1 回が代表になり「達成不能」の誤った ⚠️ を出していた
+# （実測: 7 窓中 6 窓で代表が unrecorded。唯一の標本は transcript で見ると opus-5-5 だった）。
+# **最新の calib は verdict の有無ではなく走行から取る** — verdict 0 件の世代も「走った」ことは
+# payload に残っている（`adversarial_verify.fired` / `skip_reason`）。同点は層キーで決定的に割る
+UNKNOWN_GENS = ("unrecorded", "mixed")
+#: calib → 世代 → {runs, fired, verdicts, skips}（verdict 0 件の世代を黙らせないために使う / #251）。
+#: **世代は `gen_of` で直接引く** — 層キーの世代（`LAYER_GEN`）は `GEN_SPLIT` のときしか埋まらず、
+#: 単一世代の母集団で「verdict 0 件の世代」が数えられなくなる
+calib_runs = {}
+for _e in events:
+    _av = _e["p"].get("adversarial_verify")
+    if not isinstance(_av, dict):
+        continue
+    _r = calib_runs.setdefault(schema_of(_av, "calibration_schema"), {}).setdefault(
+        gen_of(_e["p"]), {"runs": 0, "fired": 0, "verdicts": 0, "skips": {}})
+    _r["runs"] += 1
+    _r["verdicts"] += sum(num(_av.get(k)) or 0 for k in
+                          ("confirmed", "refuted", "uncertain", "severity_inflated", "contested"))
+    if _av.get("fired") is True:
+        _r["fired"] += 1
+    elif isinstance(_av.get("skip_reason"), str) and _av["skip_reason"]:
+        _r["skips"][_av["skip_reason"]] = _r["skips"].get(_av["skip_reason"], 0) + 1
+latest_calib = max(calib_runs) if calib_runs else None
+_latest_known = [k for k, v in verdict_layers.items()
+                 if v["calib"] == latest_calib and LAYER_GEN.get(k) not in UNKNOWN_GENS]
+newest_layer = (max(_latest_known, key=lambda k: (verdict_layers[k]["total"], k))
+                if _latest_known else None)
 # 上流較正（`prompts/reviewer-common.md` の「降格される典型パターン」= v2.62.0）の効果は
 # **対策後のサンプルでしか測れない**（orchestration-measurement.md `## 16` / triage-dynamic-gates.md
 # `## 9`「この 52% を上流対策の効果測定に使わないこと」）。`calibration_schema` が未注入だった
@@ -1572,7 +1599,14 @@ VERDICT_MIN = 20     # 層内の verdict 件数の下限（これ未満では層
 for _lk in sorted(verdict_layers):
     L = verdict_layers[_lk]
     ratio = pct(L["severity_inflated"], L["total"])
-    if L["total"] >= VERDICT_MIN and ratio >= 45 and L["calib"] >= CALIB_MIN:
+    # **最新より古い calib の層では鳴らさない**（GitHub issue #251 提案 3）。publish は現行の
+    # `calibration_schema` を固定で注入するので、古い層はもう増えず、鳴っても行動の先が無い
+    # （#221 で「鳴っていること自体は新しい情報ではない」と確認済み）。古さは母集団の最新と
+    # 比べる — 最新が古い calib しか無い母集団では従来どおり鳴る。表の行と注記は残す
+    # **世代が分からない層でも鳴らさない**（#251）。節が「世代が分からないので効果判定に使わない」と
+    # 言う層で「効いていない疑い」を出すと、同じ出力の中で表示が食い違う
+    if (L["total"] >= VERDICT_MIN and ratio >= 45 and L["calib"] >= CALIB_MIN
+            and L["calib"] == latest_calib and LAYER_GEN.get(_lk) not in UNKNOWN_GENS):
         # ラベルは**その層のキー**を出す（`newest_layer` を出すと別層の名前が付く）。
         # キーには世代が入っているので `層=` と呼ぶ
         signals.append("severity_inflated が %.0f%%（層=%s / %d verdict）。"
@@ -2236,11 +2270,52 @@ if verdict_layers:
     # `calibration_schema: 2` を常に注入するので層 2 は 1 件目ですぐ現れる一方、シグナルは
     # `VERDICT_MIN` を要求する。層で切るだけだと**蓄積中（1〜19 verdict）が無言区間**になり、
     # まさに避けたかった誤読を作る
-    if newest_layer is not None and verdict_layers[newest_layer]["calib"] < CALIB_MIN:
+    _older = sorted({v["calib"] for v in verdict_layers.values() if v["calib"] < latest_calib})
+    if _older and latest_calib >= CALIB_MIN:
+        print()
+        print("層 %s は旧較正（この母集団の最新は層 %d。publish は現行の calib を注入するので"
+              "旧較正の層はもう増えない）。**severity_inflated の ⚠️ は層 %d だけで判定する**（#251）"
+              % (" / ".join(str(c) for c in _older), latest_calib, latest_calib))
+
+    def _runs_txt(r):
+        return "%d 回（反証発火 %d 回%s）" % (
+            r["runs"], r["fired"], "" if not r["skips"] else ": " + " / ".join(
+                "%s %d" % kv for kv in sorted(r["skips"].items(), key=lambda kv: (-kv[1], kv[0]))))
+
+    # 同じ最新層を走ったが verdict 0 件の既知世代と、世代が分からない回（#251）。**黙らせない** —
+    # 待ちを止めているのが「他世代のサンプル」ではなく「現行世代で反証が発火していないこと」
+    # だと、この行が無いと読めない（#131 の無言区間）
+    _runs_latest = calib_runs.get(latest_calib, {})
+    _zero_gens = sorted(g for g, r in _runs_latest.items()
+                        if g not in UNKNOWN_GENS and r["verdicts"] == 0)
+    _unknown_runs = sum(_runs_latest[g]["runs"] for g in UNKNOWN_GENS if g in _runs_latest)
+    _unknown_verdicts = sum(_runs_latest[g]["verdicts"] for g in UNKNOWN_GENS if g in _runs_latest)
+
+    def _print_runs_lines():
+        if _zero_gens:
+            print("  - 層 %d を走ったが verdict 0 件の世代: %s"
+                  % (latest_calib, " / ".join("%s %s" % (g, _runs_txt(_runs_latest[g]))
+                                              for g in _zero_gens)))
+        if _unknown_runs:
+            print("  - 世代を記録できなかった回（unrecorded / mixed）: %d 回・%d verdict — "
+                  "世代が分からないので効果判定に使わない（#246 の transcript 取り違えでも生じる）"
+                  % (_unknown_runs, _unknown_verdicts))
+
+    if latest_calib is not None and latest_calib < CALIB_MIN:
         print()
         print("上流較正（v2.62.0）の効果判定は **`calibration_schema >= %d` のサンプル待ち**"
               "（現在は層 %s のみ = 対策前）。累計の severity_inflated 比率を効果測定に使わない"
-              " — triage-dynamic-gates.md `## 9`" % (CALIB_MIN, newest_layer))
+              " — triage-dynamic-gates.md `## 9`" % (CALIB_MIN, newest_layer or latest_calib))
+    elif newest_layer is None and latest_calib is not None:
+        # **原因は言い切らない**（#251 のセルフレビュー）。世代不明の回が発火して verdict を出して
+        # いることも、既知世代が 1 回も走っていないこともある。事実（走行・発火・verdict）は下の行に出す
+        print()
+        print("上流較正（v2.62.0）の効果判定は **層 %d で世代を記録できた verdict が 0 件**"
+              "（効果判定には世代の分かる verdict が要る）— triage-dynamic-gates.md `## 9`"
+              % latest_calib)
+        if not _zero_gens:
+            print("  - 層 %d を走った回のうち世代を記録できたものは 0 件" % latest_calib)
+        _print_runs_lines()
     elif newest_layer is not None and verdict_layers[newest_layer]["total"] < VERDICT_MIN:
         print()
         print("上流較正（v2.62.0）の効果判定は **層 %s を蓄積中**（%d/%d verdict）。"
@@ -2251,13 +2326,16 @@ if verdict_layers:
         # さらに上流の MAJOR がほぼゼロだと反証対象が無く、分子も分母も増えない。
         # **その状態を「蓄積中」と出すと、達成不能な条件を待ち続けることになる**
         if GEN_SPLIT:
-            _cal = verdict_layers[newest_layer]["calib"]
-            _same = [k for k, v in verdict_layers.items() if v["calib"] == _cal]
-            if len(_same) == 1:
-                print("  - ⚠️ **層 %d は世代 %s にしか存在しない**。比率が動いても"
+            # **世代が分からない層は他世代に数えない**（#251）。中身は同じ世代でありうるので、
+            # 数えると「分離できない」のに「分離できる」と読まれて警告が黙る
+            if len(_latest_known) == 1:
+                # 「層が 1 世代にしか存在しない」とは言わない — verdict 0 件で走った世代は
+                # 下の行に出る（#251 で「opus-5-5 で 14 回走っているのに存在しないと出た」）
+                print("  - ⚠️ **層 %d の verdict は世代 %s にしか無い**。比率が動いても"
                       "打ち手の効果と世代の副作用を分離できない。**この待ち行は"
-                      "他世代のサンプルが出るまで達成不能**（#191）"
-                      % (_cal, newest_layer.split("/", 1)[-1]))
+                      "他世代の verdict が出るまで達成不能**（#191）"
+                      % (latest_calib, LAYER_GEN.get(newest_layer)))
+        _print_runs_lines()
 
 for _title, _rows, _note in (
         ("反証 `severity_inflated` の型別内訳", inflated_axes, "下流（反証レイヤー）の降格"),

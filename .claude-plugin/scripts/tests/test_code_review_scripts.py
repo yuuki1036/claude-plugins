@@ -3968,7 +3968,7 @@ class RetroUnreachableWaitTest(RetroFixture):
         """対策後の層が 1 世代にしか無いとき、待つだけでは分離できないと出す."""
         self._events([self._v("opus-5", 2), self._v("opus-4-8", 3)])
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("にしか存在しない", out)
+        self.assertIn("にしか無い", out)
         self.assertIn("達成不能", out)
 
     def test_the_flag_counts_layers_of_the_same_calibration(self):
@@ -3986,6 +3986,169 @@ class RetroUnreachableWaitTest(RetroFixture):
         self._events([self._v("opus-5", 3), self._v("opus-4-8", 3)])
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertNotIn("達成不能", out)
+
+
+class RetroCalibrationRepresentativeTest(RetroFixture):
+    """上流較正の代表層と世代の数え上げから `unrecorded` / `mixed` を外す（GitHub issue #251）.
+
+    表の行は残す（v2.88.2 の判断は変えない）。問題は「代表を選ぶとき」と「世代を数えるとき」に
+    世代欠測のバケツを 1 世代として扱っていたことで、版窓では欠測した 1 回が代表になり、
+    「達成不能」の誤った ⚠️ が出ていた。
+    """
+
+    def _v(self, gen: str | None, calib: int = 3, total: int = 1, inflated: int = 0,
+           fired: bool = True, skip: str | None = None) -> dict:
+        av = {"fired": fired, "skip_reason": skip, "gate_schema": 2,
+              "calibration_schema": calib}
+        if fired:
+            av.update({"confirmed": total - inflated, "refuted": 0, "uncertain": 0,
+                       "severity_inflated": inflated, "contested": 0})
+        r = {"effort": "high", "measurement_gaps": [], "adversarial_verify": av}
+        if gen is not None:
+            r["models"] = self._models("claude-%s" % gen)
+        return r
+
+    def _out(self) -> str:
+        return self.run_script(RETRO, env=self._env()).stdout
+
+    def test_unrecorded_with_more_verdicts_is_not_the_representative(self):
+        """(a) 版窓 2.123.0 の型: 欠測側の verdict が多くても代表は既知世代."""
+        self._events([self._v("opus-4-8", total=1), self._v(None, total=2)])
+        out = self._out()
+        self.assertIn("層 3/opus-4-8 を蓄積中", out)
+        self.assertNotIn("3/unrecorded を蓄積中", out)
+        self.assertIn("| 3/unrecorded |", out, "表の行は残す")
+        # 世代不明の verdict だけを数える（既知世代の 1 件を混ぜない）
+        self.assertIn("世代を記録できなかった回（unrecorded / mixed）: 1 回・2 verdict", out)
+
+    def test_a_zero_verdict_generation_is_shown_instead_of_unrecorded_only(self):
+        """(b) 版窓 2.128.0 の型: verdict を持つのが unrecorded だけで、既知世代は走ったが 0 件."""
+        self._events([self._v(None, total=2)]
+                     + [self._v("opus-5-5", fired=False, skip="no-eligible-findings")
+                        for _ in range(3)]
+                     + [self._v("opus-5-5", fired=False, skip="effort")])
+        out = self._out()
+        self.assertIn("層 3 で世代を記録できた verdict が 0 件", out)
+        self.assertIn("opus-5-5 4 回（反証発火 0 回: no-eligible-findings 3 / effort 1）", out)
+        self.assertIn("世代を記録できなかった回（unrecorded / mixed）: 1 回・2 verdict", out)
+        self.assertNotIn("にしか無い", out)
+        self.assertNotIn("3/unrecorded を蓄積中", out)
+
+    def test_unrecorded_is_not_counted_as_another_generation(self):
+        """(c) 両方に verdict があっても unrecorded は他世代に数えない（中身は同じ世代でありうる）."""
+        self._events([self._v("opus-5", total=1), self._v(None, total=2)])
+        out = self._out()
+        self.assertIn("層 3 の verdict は世代 opus-5 にしか無い", out)
+        self.assertIn("達成不能", out)
+
+    def test_mixed_is_excluded_like_unrecorded(self):
+        row = self._v("opus-5", total=5)
+        row["models"] = self._models(None)          # main が混在（`mixed`）
+        self._events([self._v("opus-4-8", total=1), row])
+        self.assertIn("層 3/opus-4-8 を蓄積中", self._out())
+
+    def test_a_tie_is_broken_deterministically(self):
+        """同点を dict の挿入順で決めない（ログの並びで代表が入れ替わらない）."""
+        outs = []
+        for rows in ([self._v("opus-4-8"), self._v("opus-5")],
+                     [self._v("opus-5"), self._v("opus-4-8")]):
+            self._events(rows)
+            outs.append([l for l in self._out().splitlines() if "を蓄積中" in l])
+        self.assertEqual(outs[0], outs[1])
+        self.assertTrue(outs[0], "前提: 蓄積中の行が出ている")
+
+    def test_the_zero_verdict_line_also_appears_next_to_a_known_representative(self):
+        """代表がいても、同じ層を走って verdict 0 件の世代は黙らせない（#131 の無言区間）."""
+        self._events([self._v("opus-5", total=1),
+                      self._v("opus-5-5", fired=False, skip="no-eligible-findings")])
+        self.assertIn("層 3 を走ったが verdict 0 件の世代: opus-5-5 1 回", self._out())
+
+    def test_the_latest_calibration_comes_from_runs_not_from_verdicts(self):
+        """層 3 を走ったのが verdict 0 件の回だけでも、最新は層 3（層 2 を代表にしない）."""
+        self._events([self._v("opus-5", calib=2, total=10, inflated=6) for _ in range(2)]
+                     + [self._v("opus-5-5", fired=False, skip="effort")])
+        out = self._out()
+        self.assertIn("層 3 で世代を記録できた verdict が 0 件", out)
+        self.assertIn("opus-5-5 1 回（反証発火 0 回: effort 1）", out)
+        self.assertNotIn("層=2", self.signals(out))
+
+    def test_a_single_generation_population_lists_its_zero_verdict_runs(self):
+        """世代が 1 種の母集団でも「verdict 0 件の世代」を数える（層キーは割られていない）."""
+        self._events([self._v("opus-5", calib=2), self._v("opus-5", fired=False, skip="effort")])
+        self.assertIn("層 3 を走ったが verdict 0 件の世代: opus-5 1 回（反証発火 0 回: effort 1）",
+                      self._out())
+
+    def test_a_generation_with_verdicts_is_not_listed_as_zero(self):
+        self._events([self._v("opus-5"), self._v("opus-5")])
+        self.assertNotIn("verdict 0 件の世代", self._out())
+
+    def test_a_fired_run_without_verdicts_is_counted_as_fired(self):
+        """発火したのに verdict が 0 件の回を「発火していない」と区別する."""
+        fired_empty = self._v("opus-5-5", total=0)
+        self._events([self._v("opus-5"), fired_empty])
+        self.assertIn("opus-5-5 1 回（反証発火 1 回）", self._out())
+
+    def test_unknown_verdicts_are_counted_only_in_the_latest_layer(self):
+        """旧較正の層の unrecorded の verdict を足し込まない."""
+        self._events([self._v(None, calib=2, total=50), self._v(None, total=2),
+                      self._v("opus-5", total=1)])
+        self.assertIn("世代を記録できなかった回（unrecorded / mixed）: 1 回・2 verdict", self._out())
+
+    def test_no_known_run_in_the_latest_layer_is_said_as_such(self):
+        """最新の層を既知世代が 1 回も走っていないときは、発火の有無ではなくそう言う."""
+        self._events([self._v("opus-5", calib=2), self._v(None, total=2)])
+        out = self._out()
+        self.assertIn("層 3 を走った回のうち世代を記録できたものは 0 件", out)
+        self.assertNotIn("発火していない", out)
+
+    def test_an_unknown_generation_layer_does_not_ring(self):
+        """節が「効果判定に使わない」と言う世代不明の層で ⚠️ を鳴らさない."""
+        self._events([self._v(None, total=10, inflated=6) for _ in range(3)]
+                     + [self._v("opus-5", total=1)])
+        out = self._out()
+        self.assertIn("効果判定に使わない", out)
+        self.assertNotIn("severity_inflated が", self.signals(out))
+
+    def test_a_known_low_calibration_layer_with_more_verdicts_loses_to_the_latest(self):
+        """代表は calib 優先（対抗馬が既知世代でも、verdict の多い古い層を選ばない）."""
+        self._events([self._v("opus-4-8", calib=1, total=8), self._v("opus-5", total=1)])
+        self.assertIn("層 3/opus-5 を蓄積中", self._out())
+
+    def test_severity_inflated_does_not_ring_for_an_older_calibration(self):
+        """提案 3: 最新より古い calib の層は publish では増えないので ⚠️ を鳴らさない."""
+        old = [self._v("opus-5", calib=2, total=10, inflated=6) for _ in range(2)]
+        new = [self._v("opus-5", calib=3, total=10, inflated=6) for _ in range(2)]
+        self._events(old + new)
+        sig = self.signals(self._out())
+        self.assertNotIn("層=2", sig)
+        self.assertIn("層=3", sig)
+        self.assertIn("旧較正", self._out())
+
+    def test_severity_inflated_still_rings_when_the_older_one_is_the_latest(self):
+        """最新の層が calib 2 なら鳴る（古いかどうかは母集団の最新と比べる）."""
+        self._events([self._v("opus-5", calib=2, total=10, inflated=6) for _ in range(2)])
+        out = self._out()
+        self.assertIn("severity_inflated が 60%", self.signals(out))
+        self.assertNotIn("旧較正", out, "古い層が無いのに注記を出している")
+
+    def test_the_older_calibration_note_names_layers_below_the_latest(self):
+        """境界: 最新が層 2（`CALIB_MIN` ちょうど）でも、層 1 を旧較正と言う."""
+        self._events([self._v("opus-5", calib=1), self._v("opus-5", calib=2)])
+        self.assertIn("層 1 は旧較正（この母集団の最新は層 2", self._out())
+
+    def test_runs_without_a_skip_reason_are_counted_without_one(self):
+        """`skip_reason` が無い / 空の不発回も走行には数え、理由の内訳には入れない."""
+        bare = self._v("opus-5-5", fired=False)
+        del bare["adversarial_verify"]["skip_reason"]
+        self._events([self._v("opus-5", total=1), bare,
+                      self._v("opus-5-5", fired=False, skip="")])
+        self.assertIn("verdict 0 件の世代: opus-5-5 2 回（反証発火 0 回）", self._out())
+
+    def test_a_pre_calibration_window_without_known_verdicts_names_the_layer(self):
+        """層 1 しか無く、verdict を持つのが unrecorded だけでも「層 1 のみ」と層を言う."""
+        self._events([self._v(None, calib=1, total=2),
+                      self._v("opus-5", calib=1, fired=False, skip="effort")])
+        self.assertIn("（現在は層 1 のみ = 対策前）", self._out())
 
 
 class RetroExplicitLogsTest(ScriptTestBase):
