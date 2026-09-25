@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.1] - 2026-09-25
+
+### Added
+
+- **起票の前に既存 Issue を open / closed の両方で探すようにした**（Step 3.5）。同じものがあれば、既存 Issue への
+  コメント（既定）・新規起票・中止を選ばせる（翻案元: mattpocock/skills triage の redundancy チェック）
+
 ## [1.3.0] - 2026-09-10
 
 ### Added

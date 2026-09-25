@@ -74,7 +74,9 @@
 
 - B6: ADR まわり。adr-keeper の記入例に 7 類型、grill の前提確認（正本・複製・要約 3 か所）と diagnose・issue-create・issue-design に「既存 ADR との矛盾を明示する」、3 条件ゲートを design-doc Phase 6 経由で免除、feature-dev Step 5 に ADR 候補の列挙（adr-keeper 有効時のみ・0 件が普通）
 
-**未着手**（統合レポートの ID）: B7〜B13、C 群（C1 を除く）。
+- B7: Issue 系の規範。完了条件の悪い 3 つの形（discover・template-9sections）、出典の無い決定を open に・デモ点検・prefactor 先行（design-rules）、同義語で探して探した場所を報告（issue-create）、起票前に既存 Issue を open / closed で検索（plugin-feedback）
+
+**未着手**（統合レポートの ID）: B8〜B13、C 群（C1 を除く）。
 
 ---
 

@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.5] - 2026-09-25
+
+### Changed
+
+- **完了条件が何も判定しない 3 つの形を避けるようにした**（discover の起票・template-9sections）: 着手前から真 / 他の
+  Issue でしか満たせない / 依頼の言い換え。各条件に「偽だと示す観測」を挙げさせる
+- **issue-design の規範に足した**: 出典の無い決定は open に回す。分割した Issue ごとに「何をデモできるか」を問う。
+  下準備のリファクタ（prefactor）は先行 Issue にする
+- **issue-create の実装済み確認で、同じ概念の別名でも探し、探した場所と語を 1 行で報告するようにした**
+  （翻案元: mattpocock/skills の to-tickets / to-spec / triage）
+
 ## [1.7.4] - 2026-09-24
 
 ### Changed

@@ -64,6 +64,25 @@ GitHub Issue として起票しますか？
 
 `gh auth status` で確認。未認証なら案内して中止。
 
+### Step 3.5: 既存 Issue の確認
+
+同じ要望・不具合が既に起票されていないかを、**open と closed の両方**で探す。要望の言葉だけでなく、同じ概念の別名でも探す:
+
+```bash
+gh issue list --repo yuuki1036/claude-plugins --state all --search "<キーワード> in:title,body" \
+  --limit 10 --json number,title,state,url
+```
+
+- 見つからなければ、探した語を 1 行添えて Step 4 へ進む
+- 同じものが見つかったら、番号・タイトル・状態を示し、**AskUserQuestion** で確認する:
+  - question: "同じ内容の Issue が既にあります。どうしますか？"
+  - header: "既存 Issue"
+  - options:
+    1. label: "既存 Issue にコメントする (Recommended)" / description: "open なら状況や再現例を足す。closed なら再発・未解決の報告として足す"
+    2. label: "新しく起票する" / description: "別の観点・別の不具合として起票する"
+    3. label: "やめる" / description: "起票しない"
+  - コメントするときは本文をプレビューして承認を得てから `gh issue comment <番号> --repo yuuki1036/claude-plugins --body "{body}"` で投稿する
+
 ### Step 4: プレビューと承認
 
 Issue の内容（添付候補があればファイル名も）をプレビュー表示し、ユーザー承認を得る。
