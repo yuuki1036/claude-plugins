@@ -127,7 +127,7 @@ diff パターンマッチで各観点の必要性を判定する。
 | config | `.env*`, `*.config.*`, `Dockerfile`, `docker-compose.*`, `.github/workflows/**` の変更 |
 | cross-cutting | 共通モジュール（`utils/`, `helpers/`, `shared/`, `common/`, `lib/`）の変更 |
 | pattern-consistency | 変更ファイル数 >= 10 |
-| spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する、または self-review に `--spec` で仕様ファイルが渡された |
+| spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する、self-review に `--spec` で仕様ファイルが渡された、または review で PR に紐づく Issue（`closingIssuesReferences`）がある |
 | ui-quality | フロントエンド変更（`.tsx`/`.jsx`/`.vue`/`.svelte`/`components/`/`pages/`/`app/`）、または diff に `aria-`/`role=`/`<img`/`<button`/`tabindex`/`onClick`/`onKeyDown` 等のアクセシビリティ・インタラクション関連の変更がある |
 | doc-substance | **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む、**または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）。混在 PR（`*.md` < 80%）で doc 内容が無観点で素通りするのを防ぐ。詳細・effort 制御は下記「doc-substance の起動（重要度ゲート）」 |
 
@@ -237,6 +237,7 @@ SKILL.md Step 1 が保存した PR コンテキスト（`$PR_CTX_FILE`）の内�
 他の観点も必要に応じて angle を設定する。
 
 - **reviewer 上限**: `## 7` の effort 適応表と `## 6.2` の規模キャップの **min**（effort 側は high 6 体 / xhigh・max 10 体、規模側は small 3 体 / medium 5 体。最小保証の 2 体は規模キャップより優先）
+- **単独維持の観点が上限に収まらないときの順**（small の 3 体など）: 最小保証の 2 体（bug-detection・claude-md-compliance）→ **仕様ソースがあれば spec-compliance** → security → 残りは束ねる。仕様ソースのある回で spec-compliance を落とすと、Issue や spec との照合がその回まるごと起きない。落ちた観点は従来どおり `missing_coverage` に記録する
 
 ## 5. 出力フォーマット
 

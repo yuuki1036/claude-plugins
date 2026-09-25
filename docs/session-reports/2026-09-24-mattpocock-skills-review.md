@@ -82,7 +82,9 @@
 
 - B12: pr-creator に tune の before / after の対・diagnose の red→green の引用・「不可逆:」と「このPRではやらない:」の定型文・構造変化の最小の図を足した（show-me の文面は転載せず考え方だけ）
 
-**未着手**（統合レポートの ID）: B9、B10、B13、C 群（C1 を除く）。
+- B13: review で PR に紐づく Issue を 1 段取得して spec-compliance の仕様ソースに（信頼しない入力として同梱）、単独観点の優先順（最小保証 → spec-compliance → security）、レポートに「仕様整合」の 1 行、CONTRIBUTING.md / CODING_STANDARDS.md を規約ソースに。レポートが挙げた triage-guide と orchestration-measurement の食い違いは、該当行が別の記述に変わっていて現行では再現しなかった（spec-compliance の起動条件の正本は triage-guide の 1 か所だけ）
+
+**未着手**（統合レポートの ID）: B9、B10、C 群（C1 を除く）。
 
 ---
 

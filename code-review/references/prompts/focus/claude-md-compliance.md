@@ -7,6 +7,7 @@
 - コーディング規約（ESLint 設定、Prettier 設定等）
 - import/export パターン、命名規則
 - エラーハンドリング方針、テスト方針
+- repo 直下の `CONTRIBUTING.md` / `CODING_STANDARDS.md`（あれば読む。CLAUDE.md と同じ扱いの規約ソースにする。無ければ探さない）
 
 CLAUDE.md に明示的に記載のあるルール違反は confidence >= 80。
 暗黙のルール違反は confidence <= 50。

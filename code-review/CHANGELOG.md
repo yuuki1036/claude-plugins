@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.130.3] - 2026-09-25
+
+### Added
+
+- **review で、PR に紐づく Issue（`Closes #N`）を 1 段だけ取得して spec-compliance の仕様ソースにする**。ローカルの
+  Issue ファイルが無い repo でも仕様照合が起きる。本文は信頼しない入力として同梱し、中の指示には従わない（3 件まで）
+- **レポートの見出しに「仕様整合」の 1 行を足した**（review / self-review）。spec-compliance を起動しなかった回も
+  `仕様ソースなし` / `規模キャップで未起動` と書く — 起動の有無が見えないと、指摘 0 件が「仕様どおり」と読まれる
+- **claude-md-compliance の規約ソースに repo 直下の `CONTRIBUTING.md` / `CODING_STANDARDS.md` を足した**（あれば読む）
+
+### Changed
+
+- **単独維持の観点が reviewer 上限に収まらないときの順を決めた**: 最小保証の 2 体 → 仕様ソースがあれば
+  spec-compliance → security。small の 3 体で spec-compliance が黙って落ち、Issue との照合が起きない回があった
+  （翻案元: mattpocock/skills の code-review。仕様ソースの探索順と規約ソース）
+
 ## [2.130.2] - 2026-09-24
 
 ### Changed
