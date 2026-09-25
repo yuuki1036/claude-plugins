@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.130.4] - 2026-09-25
+
+### Fixed
+
+- **PR に紐づく Issue の取得を review SKILL.md の手順から呼ぶようにした**。2.130.3 では手順を参照文書に書いただけで、
+  SKILL.md 側はローカルの Issue ファイルがあるときしかこの節を読ませていなかった
+
 ## [2.130.3] - 2026-09-25
 
 ### Added

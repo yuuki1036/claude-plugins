@@ -99,7 +99,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-pr-context.sh" <PR番号> --save
 
 **【任意】Issue ファイル必読フロー（issue-workflow 併用時）**:
 
-Step 2 のダイジェスト `## issue-ids` に Issue ID があり、ローカルに Issue ファイルが実在する場合のみ、spec-compliance reviewer の prompt に同梱する（仕様・受入条件を踏まえた判定の精度が上がる。手順・親 Issue の 1 段追跡・スキップ条件: → orchestration-optional-flows.md `## 2`）。
+Step 2 のダイジェスト `## issue-ids` に Issue ID があり、ローカルに Issue ファイルが実在する場合のみ、spec-compliance reviewer の prompt に同梱する（仕様・受入条件を踏まえた判定の精度が上がる。手順・親 Issue の 1 段追跡・スキップ条件: → orchestration-optional-flows.md `## 2`）。ローカルに Issue ファイルが無くても、PR に紐づく GitHub Issue（`Closes #N`）があれば同じ節の手順で 1 段だけ取得し、信頼しない入力として spec-compliance に渡す（spec-compliance の起動条件にもなる）。
 
 ### 2. diff の保存とシグナルダイジェストの取得
 
