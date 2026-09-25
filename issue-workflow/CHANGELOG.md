@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.6] - 2026-09-25
+
+### Changed
+
+- **Phase 0（backend 検出）の共通手順を正本と同期検査に載せた**。10 スキルに同じ手順が複製されており、片方だけ直すと
+  backend の判定がスキルごとに食い違う。正本は repo の `.claude-plugin/lib/backend-detect.md` で、各スキルの
+  `BACKEND-DETECT` 区間を `validate_plugin_quality.py` が byte 比較する。手順の中身は変えていない
+- **discover の観点 D（テスト欠落）の優先順位付けにだけ git log のホットスポットを使うようにした**。走査範囲は絞らない
+  （翻案元: mattpocock/skills の improve-codebase-architecture）
+
 ## [1.7.5] - 2026-09-25
 
 ### Changed

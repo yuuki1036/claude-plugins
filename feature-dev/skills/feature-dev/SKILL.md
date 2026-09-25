@@ -413,6 +413,8 @@ Phase 5 has two modes — check the invocation context:
    - **設計の引き継ぎ要約**: 採用した設計案とその理由、Phase 3 Step 5 の設計契約（確定した前提 + ユーザー決定）、実装で触るファイルと build sequence を**本文として**書き出す。モデルを切り替えると、切り替え先は切り替え前のモデルの思考過程を読めない（API 仕様上、読める向きが決まっている）ため、実装に必要な判断は可視テキストに残っていないと失われる。Phase 4.5 で design doc を書き出した場合もそのパスを添えたうえで要約を省略しない
    - 末尾に次の案内を**必ずそのまま**添える:
 
+   設計から実装へは**同じセッションで続けるのが既定**（実装は設計の推論を一次ソースのまま使える）。`/compact` は最後の手段 — 要約で決定が平らになり、新しい文脈がその決定について自信を持って誤る。
+
    > 🔀 **モデル切り替えポイント**: 設計（Phase 1〜4.8）と実装で別のモデルを使う場合は、**この承認に返信する前に**アプリのモデル選択で実装用モデルへ切り替えてください。切り替えた後の返信から、そのモデルで Phase 5 以降を実行します。切り替え先には上の要約（と design doc）だけが引き継がれるので、足りない判断があれば承認と一緒に書き足してください。
 2. Read all relevant files identified in previous phases
 3. Implement following chosen architecture. If the project has a test setup (a test runner and existing tests), Read `${CLAUDE_PLUGIN_ROOT}/references/testing-discipline.md` first and put tests at the **Test Seams** from the chosen blueprint

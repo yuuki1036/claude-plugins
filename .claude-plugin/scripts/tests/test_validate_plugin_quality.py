@@ -1589,6 +1589,63 @@ class ByteReplicaSyncTest(unittest.TestCase):
         )
 
 
+class BackendDetectSyncTest(unittest.TestCase):
+    """issue-workflow の Phase 0 区間同期. 消費サイトは走査で集めるので、最低件数の下限も固定する."""
+
+    REGION = "1. Glob で確認する\n2. 片方だけ有効なら採用\n\n以後の `{DATA_DIR}` は検出結果"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("ROOT", "CANONICAL_BACKEND_DETECT", "BACKEND_DETECT_MIN_CONSUMERS"):
+            self.addCleanup(lambda n=name, o=getattr(v, name): setattr(v, n, o))
+        v.ROOT = self.root
+        v.CANONICAL_BACKEND_DETECT = self.root / "lib" / "backend-detect.md"
+        v.BACKEND_DETECT_MIN_CONSUMERS = 2
+
+    def _block(self, region: str | None = None) -> str:
+        body = self.REGION if region is None else region
+        return "\n".join([v.BACKEND_DETECT_START, *body.split("\n"), v.BACKEND_DETECT_END])
+
+    def _run(self, skills: dict[str, str]) -> list[str]:
+        _write(self.root, "lib/backend-detect.md", "# 正本\n\n" + self._block() + "\n")
+        for name, body in skills.items():
+            _write(self.root, f"issue-workflow/skills/{name}/SKILL.md", "## Phase 0\n\n" + body + "\n")
+        errors: list[str] = []
+        v.check_backend_detect_sync(errors)
+        return errors
+
+    def test_identical_regions_pass(self):
+        self.assertEqual(self._run({"a": self._block(), "b": self._block()}), [])
+
+    def test_divergent_consumer_is_caught(self):
+        errors = self._run({"a": self._block(), "b": self._block(self.REGION.replace("採用", "停止"))})
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("skills/b/SKILL.md", errors[0])
+
+    def test_skills_without_the_region_are_ignored(self):
+        """init / dashboard のように意図的に別の形を持つスキルは対象外（区間を持たない）."""
+        self.assertEqual(self._run({"a": self._block(), "b": self._block(), "init": "別の手順"}), [])
+
+    def test_dropping_below_the_minimum_is_an_error(self):
+        """マーカーを消して走査から外れると黙って通るので、件数の下限で止める."""
+        errors = self._run({"a": self._block(), "b": "マーカーを消した"})
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("1 件", errors[0])
+
+    def test_orphan_end_marker_is_an_error(self):
+        """END だけ残っても走査に拾い、壊れた区間として止める（START だけで拾うと黙って外れる）."""
+        errors = self._run({"a": self._block(), "b": self._block(), "c": "本文\n" + v.BACKEND_DETECT_END})
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("marker count invalid", errors[0])
+
+    def test_orphan_start_marker_is_an_error(self):
+        errors = self._run({"a": self._block(), "b": self._block(), "c": v.BACKEND_DETECT_START + "\n本文"})
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("marker count invalid", errors[0])
+
+
 class CommentRuleSyncTest(unittest.TestCase):
     """コードコメント規約の区間同期（`ROOT` と定数を一時ディレクトリへ差し替える）.
 

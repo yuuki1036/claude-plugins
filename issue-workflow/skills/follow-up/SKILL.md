@@ -26,12 +26,14 @@ follow-up ファイルは `{DATA_DIR}/{slug}/follow-ups/` に配置する。
 
 ## Phase 0: backend 検出（全スキル共通）
 
+<!-- BACKEND-DETECT:START -->
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
 2. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
 3. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
 4. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
 
 以後の `{DATA_DIR}` は検出したデータディレクトリ、`BACKEND` は判定結果を指す。
+<!-- BACKEND-DETECT:END -->
 
 ## コマンド
 

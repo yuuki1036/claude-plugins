@@ -21,12 +21,14 @@ allowed-tools:
 
 ## Phase 0: backend 検出（全スキル共通）
 
+<!-- BACKEND-DETECT:START -->
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
 2. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
 3. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
 4. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
 
 以後の `{DATA_DIR}` は検出したデータディレクトリ、`BACKEND` は判定結果を指す。
+<!-- BACKEND-DETECT:END -->
 
 既存機能（`maintain` の放置/負債検出、`failure-journal` の再発パターン、`backlog`）は課題を**検出・列挙するが起票は手動**だった。このスキルはその「発見 → 起票」のラストワンマイルを自動化する。
 
@@ -104,6 +106,7 @@ backend 検出（冒頭の Phase 0）で確定した `{DATA_DIR}` の slug 一�
 
 **観点 D — テスト欠落**
 - `src/` 配下のモジュール/コンポーネントに対応するテストファイルが無いもの（重要パスを優先）
+- 候補が多いときの**優先順位付けにだけ** git log のホットスポット（直近の変更回数が多いファイル。例: `git log --since=90.days --name-only --format= | sort | uniq -c | sort -rn | head -20`）を使う。走査範囲は絞らない — 変更の少ないファイルのテスト欠落も候補に残す
 
 **観点 E — 既存シグナルの集約（再利用・重複実装しない）**
 - `failure-journal` の再発失敗: `event_bus_tail "failure:logged" 200` で取得し、同一 tag が 3 回以上のものを課題化候補に（events.jsonl / failure-journal 無しなら graceful に skip）

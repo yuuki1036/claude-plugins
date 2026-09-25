@@ -9,6 +9,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/lib/safe-hook.sh  # hook 共通ラッパー（正本）
 .claude-plugin/lib/routing-axes.md # spec ルーティング 3 軸コア（正本。ROUTING-AXES 区間を消費サイトに複製）
 .claude-plugin/lib/comment-rule.md  # コードコメント規約 2 観点（正本。COMMENT-RULE 区間を消費サイトに複製）
+.claude-plugin/lib/backend-detect.md # issue-workflow Phase 0 の backend 検出（正本。BACKEND-DETECT 区間を 10 スキルに複製）
 .claude-plugin/schema/           # JSON Schema（plugin.json / marketplace.json / hooks.json）
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
                                  # validate_plugin_quality.py（品質検証。検査項目の正本は冒頭 docstring）
@@ -185,7 +186,7 @@ bash .claude-plugin/scripts/bump-version.sh {plugin-name} patch   # 次版を計
   - **例外（起動＝実行確定なスキル）**: ユーザーがコマンド起動した時点で実行意思が確定しているメンテナンス系スキル（maintain 系等）では、起動時の実行可否確認・モード選択や実行中の承認を `AskUserQuestion` で問い直さない。選択 UI で通常のチャット入力が奪われる UX コストを避けるため、止まらず最後まで実行し**結果は実行後レポートで報告**する。判断が要る検出（削除・status 遷移等）は AskUserQuestion で止めず**レポートに列挙してチャットで指示**を受ける。前提は「操作対象が git 管理下で復元可能」かつ「実行後に全件レポートで可視化される」こと。この前提を満たさない不可逆操作（外部送信・本番影響等）は従来どおり `AskUserQuestion` で確認する
 - 新 skill / agent / hook / command を追加する前は `claude-meta:component-addition-advisor` で退路確保（既存拡張で解けないか）を判定する
 - **深掘り系スキルには `${CLAUDE_EFFORT}` 実行時分岐を必須とする**。深掘り系 = 走査・分析・レビュー・多段 agent など「かける深さで結果の質が変わる」スキル（maintain / discover / review / retrospective / design 系）。単純 CRUD・scaffold・単発記録系（init / follow-up / log-failure 等）には不要
-- **issue-workflow の backend 分岐規約**: 旧 linear-workflow / indie-workflow のミラー規約は廃止した（ADR-20260722164106）。共通機能は issue-workflow 内の backend 分岐（`BACKEND=local|linear` / `{DATA_DIR}` 変数化 / 「BACKEND=linear のときのみ」の条件付き Phase）で表現する。backend 判定述語は「データ dir が存在し、かつ slug サブディレクトリを 1 つ以上持つ」で SKILL（Phase 0）と hook（`hooks/lib/detect-backend.sh`）を統一する。プラグイン間依存禁止の制約下で複製が発生したら、それは分割単位の誤りを示すシグナルとして扱う
+- **issue-workflow の backend 分岐規約**: 旧 linear-workflow / indie-workflow のミラー規約は廃止した（ADR-20260722164106）。共通機能は issue-workflow 内の backend 分岐（`BACKEND=local|linear` / `{DATA_DIR}` 変数化 / 「BACKEND=linear のときのみ」の条件付き Phase）で表現する。backend 判定述語は「データ dir が存在し、かつ slug サブディレクトリを 1 つ以上持つ」で SKILL（Phase 0）と hook（`hooks/lib/detect-backend.sh`）を統一する。Phase 0 の手順は `.claude-plugin/lib/backend-detect.md` が正本で、各スキルの `BACKEND-DETECT` 区間を `validate_plugin_quality.py` が byte 比較する（片方だけ直すとスキルごとに判定が食い違う）。プラグイン間依存禁止の制約下で複製が発生したら、それは分割単位の誤りを示すシグナルとして扱う
 - **プラグイン内部 doc（SKILL.md / references/ / README）には doc-freshness frontmatter を付けない**: これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理されており、`last-validated`（current 閾値）を付けると恒常 stale 化して逆効果。doc-freshness の対象はプロジェクト側の doc（CLAUDE.md / `.claude/adr/` / `.claude/designs/` 等）
 
 ## ルール配置の意思決定（決定的 hook > LLM 判定）

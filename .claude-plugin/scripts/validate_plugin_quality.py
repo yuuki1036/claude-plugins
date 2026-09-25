@@ -17,6 +17,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     byte-identical か. 複製側は「byte-identical 複製」と宣言していたのに検査が無く, 正本にだけ
     #233 の節（14 行）が入ったまま複製が古くなっていた. 言い換えの消費サイトは SSoT pin が担う
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
+  - backend-detect 同期: issue-workflow の Phase 0（backend 検出）区間が正本と一致するか（dedent 比較・区間を持つ SKILL.md を走査）
   - comment-rule 同期: コードコメント規約 2 観点の delimiter 区間が正本と一致するか（dedent 比較）.
     内容の良し悪しは決定的に判定できない（候補 4 案とも真陽性 0）ので, 機械層は「規約が届く経路」
     だけを止める. 区間は CLAUDE.md（書く側）と reviewer プロンプト（見る側）の両方にあり,
@@ -152,6 +153,16 @@ COMMENT_RULE_CONSUMERS = [
 ]
 COMMENT_RULE_START = "<!-- COMMENT-RULE:START -->"
 COMMENT_RULE_END = "<!-- COMMENT-RULE:END -->"
+
+# issue-workflow の Phase 0（backend 検出）の正本と消費サイト. routing-axes と同型（区間を dedent 比較）.
+# 同じ手順が 10 スキルに複製されており, 片方だけ直すと backend の判定がスキルごとに食い違う.
+# 消費サイトは「区間を持つ SKILL.md」を走査して集める — 一覧を手で持つと, 新しいスキルが
+# 区間を複製したまま検査の外に出る. 最低件数を下回ったら（マーカーが消えた）error にする.
+CANONICAL_BACKEND_DETECT = ROOT / ".claude-plugin" / "lib" / "backend-detect.md"
+BACKEND_DETECT_GLOB = "issue-workflow/skills/*/SKILL.md"
+BACKEND_DETECT_MIN_CONSUMERS = 10
+BACKEND_DETECT_START = "<!-- BACKEND-DETECT:START -->"
+BACKEND_DETECT_END = "<!-- BACKEND-DETECT:END -->"
 
 # コメント推敲（B 系統）の連結可否. self-review にだけ連結し review には連結しない, という設計が
 # 散文 1 行ずつでしか表現されておらず, SKILL.md 自身が「追加漏れは機能の silent な不発」と書いている.
@@ -656,6 +667,34 @@ def check_comment_rule_sync(errors: list[str]) -> None:
             errors.append(
                 f"[{tag}] diverged from canonical "
                 f"({CANONICAL_COMMENT_RULE.relative_to(ROOT)}): {consumer.relative_to(ROOT)}"
+            )
+
+
+def check_backend_detect_sync(errors: list[str]) -> None:
+    """issue-workflow の Phase 0（backend 検出）区間が正本と一致するかを検証する."""
+    tag = "backend-detect-sync"
+    if not CANONICAL_BACKEND_DETECT.is_file():
+        errors.append(f"[{tag}] canonical missing: {CANONICAL_BACKEND_DETECT.relative_to(ROOT)}")
+        return
+    canonical = _extract_marked_region(CANONICAL_BACKEND_DETECT, BACKEND_DETECT_START,
+                                       BACKEND_DETECT_END, tag, errors)
+    if canonical is None:
+        return
+    consumers = [p for p in sorted(ROOT.glob(BACKEND_DETECT_GLOB))
+                 if BACKEND_DETECT_START in read_text(p) or BACKEND_DETECT_END in read_text(p)]
+    if len(consumers) < BACKEND_DETECT_MIN_CONSUMERS:
+        errors.append(
+            f"[{tag}] 区間を持つ SKILL.md が {len(consumers)} 件（期待は {BACKEND_DETECT_MIN_CONSUMERS} 件以上）。"
+            f"マーカーを消していないか確認する: {BACKEND_DETECT_GLOB}"
+        )
+    for consumer in consumers:
+        region = _extract_marked_region(consumer, BACKEND_DETECT_START, BACKEND_DETECT_END, tag, errors)
+        if region is None:
+            continue
+        if region != canonical:
+            errors.append(
+                f"[{tag}] diverged from canonical "
+                f"({CANONICAL_BACKEND_DETECT.relative_to(ROOT)}): {consumer.relative_to(ROOT)}"
             )
 
 
@@ -1852,6 +1891,7 @@ def main() -> int:
     check_byte_replicas(errors)
     check_routing_axes_sync(errors)
     check_comment_rule_sync(errors)
+    check_backend_detect_sync(errors)
     check_comment_polish_wiring(errors)
     check_schema_markers_sync(errors)
     check_test_collection(errors)

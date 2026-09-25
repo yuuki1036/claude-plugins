@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.130.5] - 2026-09-25
+
+### Changed
+
+- **reviewer の共通指示に「Skill / Agent tool は呼ばない」を足した**。再委譲の入れ子は体数上限を素通りする
+
 ## [2.130.4] - 2026-09-25
 
 ### Fixed

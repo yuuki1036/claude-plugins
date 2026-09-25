@@ -84,7 +84,12 @@
 
 - B13: review で PR に紐づく Issue を 1 段取得して spec-compliance の仕様ソースに（信頼しない入力として同梱）、単独観点の優先順（最小保証 → spec-compliance → security）、レポートに「仕様整合」の 1 行、CONTRIBUTING.md / CODING_STANDARDS.md を規約ソースに。レポートが挙げた triage-guide と orchestration-measurement の食い違いは、該当行が別の記述に変わっていて現行では再現しなかった（spec-compliance の起動条件の正本は triage-guide の 1 か所だけ）
 
-**未着手**（統合レポートの ID）: B9、B10、C 群（C1 を除く）。
+- C5: feature-dev の実装承認前に「同じセッションで続けるのが既定、`/compact` は最後の手段」（150k の数値は書き写していない）
+- C9: `docs/pipeline-design.md` の原則 5 に再委譲させない旨、reviewer 共通指示に「Skill / Agent tool は呼ばない」
+- C11: issue-workflow の Phase 0 を `.claude-plugin/lib/backend-detect.md` を正本にした `BACKEND-DETECT` 区間にし、`validate_plugin_quality.py` で byte 比較する（10 スキル。消費サイトは走査で集め、件数の下限で消失も止める）
+- C12: discover の観点 D の優先順位付けにだけ git log のホットスポット
+
+**未着手**（統合レポートの ID）: B9、B10、C2、C3、C4、C6、C7、C8、C10。
 
 ---
 

@@ -5,6 +5,13 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.5] - 2026-09-25
+
+### Changed
+
+- **Phase 5 の承認前に、設計から実装へは同じセッションで続けるのが既定と書いた**。`/compact` は最後の手段 — 要約で
+  決定が平らになり、新しい文脈が自信を持って誤る（翻案元: mattpocock/skills の PHASE-BOUNDARIES）
+
 ## [2.17.4] - 2026-09-24
 
 ### Changed

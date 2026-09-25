@@ -50,12 +50,14 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
 
 **issue-design の例外（先に読む）**: 下の手順 4（どちらも無効）でも終了せず、`BACKEND=none` として Phase 0.1 に進む。終了するのは、Issue ファイルを指定したリライトだけ（Phase 0.1 で判別する）。新規本文の設計や、本文を貼り付けて頼まれたリライトは、`{DATA_DIR}` が無くても成り立つ（knowledge と他 Issue の照合を省くだけ）。spec-advisor は backend の無い repo でも issue-design を提案するので、ここで終了すると案内された先で止まる
 
+<!-- BACKEND-DETECT:START -->
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
 2. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
 3. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
 4. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
 
 以後の `{DATA_DIR}` は検出したデータディレクトリ、`BACKEND` は判定結果を指す。
+<!-- BACKEND-DETECT:END -->
 
 ### Phase 0.1: 対象の特定
 
