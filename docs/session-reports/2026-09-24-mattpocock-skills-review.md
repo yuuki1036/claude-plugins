@@ -91,7 +91,9 @@
 
 - C3: feature-dev に `design=<path>` を足し、feature_dev_plan と同じ baseline 経路で受ける（architect は delta 1 体、Phase 3 は前提確認だけ、Phase 4.5 の export は skip）。design-doc の実装ブリッジを `design=` を使う形に直した
 
-**未着手**（統合レポートの ID）: B9、B10、C2、C4、C6、C7、C8、C10。
+- C10: §8-6 はユーザー判断で「両方残す」（このマシンでは knowledge の glossary の利用は 0 件、all_spec.md は yatima で使用）。読む側だけ入れた: feature-dev の grill 前提確認に用語の別名、diagnose の読み先に all_spec.md。shared-state の登録簿の consumers も更新
+
+**未着手**（統合レポートの ID）: B9、B10、C2、C4、C6、C7、C8。
 
 ---
 

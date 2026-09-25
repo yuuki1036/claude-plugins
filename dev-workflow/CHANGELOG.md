@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.9] - 2026-09-25
+
+### Changed
+
+- **diagnose が探索前に読む文脈に、bdd-spec の用語集 `features/all_spec.md` を足した**（無ければ黙る）
+
 ## [1.34.8] - 2026-09-25
 
 ### Changed

@@ -288,6 +288,7 @@ Always add these **premise checks** as candidates too (full rules: grill-protoco
 - **標準規約との衝突**: 引き継いだ決定が `REQUIRED_DOCS` やプロジェクト規約とぶつからないか
 - **説明とコードの食い違い**: ユーザーの説明が Phase 2 の調査結果と食い違っていたら、該当箇所（file:line）を示してどちらが正しいか聞く
 - **既存 ADR との矛盾**: 採ろうとしている決定が `.claude/adr/` の ADR とぶつかるなら、ADR の id を挙げて明示し、従うか見直すかを聞く（黙って上書きしない）
+- **用語の別名**: bdd-spec の用語集 `features/all_spec.md`（`featuresDir` を変えていればその下）があれば読み、要求や決定に「別名禁止リスト」の語が使われていたら正規の語を示して指摘する（無ければ黙る）
 
 ### Step 2: Self-resolve facts, not decisions (grill principle ①)
 
