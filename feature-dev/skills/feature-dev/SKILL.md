@@ -117,6 +117,7 @@ echo "BDD_SPEC_AVAILABLE=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh
 
 - `Issue ファイル:` followed by `.claude/linear/*/issues/*.md` or `.claude/indie/*/issues/*.md` path
 - A frontmatter block with `feature_dev_plan:` already populated
+- `design=<path>` in the 初期リクエスト (a design doc under `.claude/designs/`, typically copied from its 実装ブリッジ)
 - Sections labeled "Phase 2.5 関連 Knowledge" / "Phase 5.4" / "Phase 5.5" / "親 Issue サマリー"
 
 **Actions when detected**:
@@ -124,6 +125,7 @@ echo "BDD_SPEC_AVAILABLE=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh
 1. Notify the user: "Linear/Indie からの upfront 引き継ぎを検出しました。Discovery と Codebase Exploration（Phase 2 探索）はスキップしますが、Phase 1.6 (Vault Recall) → Phase 1.7 (Triage) は通過し、引き継ぎ context を起点に Phase 3 へ進みます。"（引き継ぎ context が揃っているケースこそ横断知見が効くため、detected 経路でも Phase 1.6 は skip しない）
 2. Read the Issue file to extract: title, summary, parent issue summary, related knowledge, existing `feature_dev_plan:`.
 3. **If `feature_dev_plan:` already exists**: Treat it as a baseline. Propose deltas rather than redesigning from scratch. Confirm with user whether to reuse or revise.
+   **If `design=<path>` was passed**: Read the design doc. Its adopted approach, 決定事項 and 実装ブリッジ are the baseline in the same way (Phase 4 runs one `delta-proposal` architect against it). If its `status` is not `approved` (draft / superseded), say so and ask whether to proceed. Phase 3 then asks **only the premise checks** (grill-protocol.md「採用する決定の前提を問う」) — do not reopen what the design doc decided, but do not treat it as an unconditional contract either: a broken premise or a conflict with `REQUIRED_DOCS` / ADRs is still asked (GitHub issue #233). Set `DESIGN_DOC_PATH=<path>` so Phase 4.5 skips exporting a new doc and Phase 7 points the as-built update (`phase: target → current`) at this one.
 4. Signal Phase 1.7 that **Issue context is complete** (Phase 1.7 will likely assign 0 explorers, effectively skipping Phase 2). If the Issue context is sparse or contradicts the user's request, signal `partial` so Phase 1.7 can still launch 1-2 explorers for validation.
 5. Pass the Issue context verbatim into Phase 4 architect prompts (the architect's "Issue Context Injection" section will consume it).
 
@@ -334,7 +336,7 @@ Then confirm it with **one** `AskUserQuestion` before launching the architects (
    - `clean-architecture`: maintainability, elegant abstractions, long-term evolvability. Pass `Module design vocabulary: ${CLAUDE_PLUGIN_ROOT}/references/module-design.md` in its prompt (the agent Reads it; do not paste the body)
    - `pragmatic-balance`: speed + quality tradeoff explicitly weighed
    - `migration-strategy`: phased migration steps with rollback points (migration tasks only)
-   - `delta-proposal`: when Issue context provides existing `feature_dev_plan:` — propose deltas only, do not redesign
+   - `delta-proposal`: when Issue context provides existing `feature_dev_plan:` or `design=` passed a design doc — propose deltas only, do not redesign
 
    **BDD spec injection**: Phase 1.3 で `BDD_SPEC_PATH` が設定された場合、各 architect の prompt に以下を追加する:
    - `BDD spec path: <BDD_SPEC_PATH>` — architect は冒頭でこのファイルを Read し、Feature / Scenario / Examples / 同値分割表を **authoritative requirements** として扱う
@@ -365,6 +367,7 @@ Then confirm it with **one** `AskUserQuestion` before launching the architects (
 echo "DESIGN_DOC=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" design-doc)"
 ```
 
+- `design=` で design doc を受け取った回（`DESIGN_DOC_PATH` が既にある）→ 本 Phase を skip する（同じ設計の doc を二重に作らない）
 - `DESIGN_DOC=0` → 本 Phase を skip して Phase 5 へ
 - `DESIGN_DOC=1` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 4.5」を読み、その手順（AskUserQuestion → `design-doc:design-doc` の export 非対話呼び出し → fallback）に従う
 

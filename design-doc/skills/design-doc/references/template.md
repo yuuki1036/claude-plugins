@@ -91,7 +91,7 @@ tags: []
 
 1. 実装着手の単位:
    - Issue 分解案（タイトル列挙）、または
-   - feature-dev 起動引数: `/feature-dev <要約> spec=<BDD spec.md のパス>` （コピペ可能な形式で。BDD spec が無ければ `spec=` ごと省く。design doc のパスは要約の文中に書く）
+   - feature-dev 起動引数: `/feature-dev <要約> design=<この doc のパス> spec=<BDD spec.md のパス>` （コピペ可能な形式で。BDD spec が無ければ `spec=` ごと省く）
 2. 検証方法: 実装とこの doc の一致をどう確認するか（テスト / smoke / レビュー観点）
 3. 実装完了時の doc 更新手順:
    - frontmatter の `phase: target` → `current` に更新、`last-validated` を更新

@@ -65,7 +65,7 @@ issue-design の open ルールと同じ。各 open に必ず:
 
 必ず埋める 3 点:
 
-1. **実装着手の単位**: Issue 分解案（タイトル列挙）または `/feature-dev <要約> spec=<BDD spec.md のパス>` のコピペ可能な起動引数。`spec=` には BDD spec.md（`features/**/spec.md`）のパスだけを書き、無ければ省く。design doc のパスは入れない（feature-dev は `spec=` を BDD spec とみなして Phase 1.3 の生成を飛ばし、設計と spec-compliance の照合元にする）。design doc を読ませたいときは要約の文中にパスを書く
+1. **実装着手の単位**: Issue 分解案（タイトル列挙）または `/feature-dev <要約> design=<この doc のパス> spec=<BDD spec.md のパス>` のコピペ可能な起動引数。`spec=` には BDD spec.md（`features/**/spec.md`）のパスだけを書き、無ければ省く。この design doc のパスは `design=` に書く（feature-dev は `design=` の doc の採用案を baseline にして再設計せず、Phase 3 は前提確認だけにする。`spec=` は BDD spec とみなして Phase 1.3 の生成を飛ばし、spec-compliance の照合元にする）
 2. **検証方法**: 実装とこの doc の一致をどう確認するか
 3. **実装完了時の doc 更新手順**: `phase: target → current` + 乖離時の追記 or supersede
 

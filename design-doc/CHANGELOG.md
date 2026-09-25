@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.3] - 2026-09-25
+
+### Changed
+
+- **実装ブリッジの feature-dev 起動引数に `design=<この doc のパス>` を入れるようにした**（feature-dev が `design=` を
+  受けるようになったため）。これまでは design doc のパスを要約の文中に書くしかなく、feature-dev は再設計から始めていた
+
 ## [0.5.2] - 2026-09-24
 
 ### Changed

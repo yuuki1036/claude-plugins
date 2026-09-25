@@ -5,6 +5,16 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.6] - 2026-09-25
+
+### Added
+
+- **`design=<path>` 引数を足した**。design-doc で固めた設計を、既存の `feature_dev_plan:` と同じ baseline の経路で受ける:
+  Phase 4 は delta 提案の architect 1 体、Phase 3 は前提確認だけにして設計を開き直さない（ただし前提の崩れ・必読 doc や
+  ADR との衝突は聞く — GitHub issue #233）。受け取った doc が `approved` でなければ確認する。Phase 4.5 の export は
+  skip し、Phase 7 の as-built 更新はその doc を指す（翻案元の考え方: mattpocock/skills の「計画を開き直さない」を、
+  #233 とぶつからない範囲で）
+
 ## [2.17.5] - 2026-09-25
 
 ### Changed

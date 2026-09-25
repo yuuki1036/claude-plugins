@@ -25,4 +25,5 @@ feature-dev スキルを使用して、機能開発ワークフローを実行�
 - 引数が Issue ID（`[A-Z]+-\d+` 形式）なら Phase 1.5 の Issue Context Detection で該当 Issue ファイルを読み、そこを要件の出発点にしてください。
 - 引数が空なら Phase 1 でユーザーに何を作るのかをヒアリングしてください。
 - 引数に `spec=<path>` が含まれていれば Phase 1.3 の BDD spec 作成を skip し、そのパスを spec として Phase 4 へ渡してください。
+- 引数に `design=<path>` が含まれていれば Phase 1.5 でその design doc を baseline として読み、Phase 3 は前提確認だけ、Phase 4 は delta 提案にしてください。
 - 引数や会話で `worktree` が明示されていれば Phase 4.8 で worktree を作成し、実装以降をその中で進めてください（明示がなければ worktree は作らない）。

@@ -130,7 +130,7 @@ allowed-tools:
 2. **kebab slug 生成**: タイトルから英語の要約 slug を作る（`references/naming.md`）。`.claude/designs/<YYYYMMDD>-<slug>.md` の衝突を Glob で確認し、衝突時は `-2` サフィックス
 3. `references/template.md` を Read し、プレースホルダを置換して Write する
 4. **実装ブリッジ (Implementation Bridge) は必ず埋める**（空欄禁止）:
-   - 実装着手の単位（Issue 分解案、または `feature-dev <要約> spec=<BDD spec.md のパス>` 形式のコピペ可能な起動引数。`spec=` には BDD spec.md（`features/**/spec.md`）のパスだけを書き、無ければ省く。design doc のパスは入れない（feature-dev は `spec=` を BDD spec とみなして Phase 1.3 の生成を飛ばし、設計と spec-compliance の照合元にする）。design doc を読ませたいときは要約の文中にパスを書く）
+   - 実装着手の単位（Issue 分解案、または `feature-dev <要約> design=<この doc のパス> spec=<BDD spec.md のパス>` 形式のコピペ可能な起動引数。`spec=` には BDD spec.md（`features/**/spec.md`）のパスだけを書き、無ければ省く。この design doc のパスは `design=` に書く（feature-dev は `design=` の doc の採用案を baseline にして再設計せず、Phase 3 は前提確認だけにする。`spec=` は BDD spec とみなして Phase 1.3 の生成を飛ばし、spec-compliance の照合元にする））
    - 実装と doc の一致をどう検証するか
    - 実装完了時の doc 更新手順（`phase: target → current`）
    - 書けない場合は**書けない理由と確定タイミング**を残す（例: 「PoC 未了のため Issue 分解不能。確定タイミング: PoC 後」）

@@ -89,7 +89,9 @@
 - C11: issue-workflow の Phase 0 を `.claude-plugin/lib/backend-detect.md` を正本にした `BACKEND-DETECT` 区間にし、`validate_plugin_quality.py` で byte 比較する（10 スキル。消費サイトは走査で集め、件数の下限で消失も止める）
 - C12: discover の観点 D の優先順位付けにだけ git log のホットスポット
 
-**未着手**（統合レポートの ID）: B9、B10、C2、C3、C4、C6、C7、C8、C10。
+- C3: feature-dev に `design=<path>` を足し、feature_dev_plan と同じ baseline 経路で受ける（architect は delta 1 体、Phase 3 は前提確認だけ、Phase 4.5 の export は skip）。design-doc の実装ブリッジを `design=` を使う形に直した
+
+**未着手**（統合レポートの ID）: B9、B10、C2、C4、C6、C7、C8、C10。
 
 ---
 

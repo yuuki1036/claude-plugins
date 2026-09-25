@@ -120,7 +120,7 @@ architect / reviewer に公式 skill `context7` を経由した最新仕様確�
 
 | feature 特性 | 体数 | focus の切り方 |
 |---|---|---|
-| Issue context に既存 `feature_dev_plan:` あり | 1 | delta 提案（再設計しない） |
+| Issue context に既存 `feature_dev_plan:` あり、または `design=` で design doc を受け取った | 1 | delta 提案（再設計しない） |
 | 標準的な機能追加 | 1-2 | minimal-changes [+ clean-architecture] |
 | トレードオフが顕著 | 2-3 | + pragmatic-balance |
 | migration タイプ | 2 | migration-strategy + minimal-changes |
