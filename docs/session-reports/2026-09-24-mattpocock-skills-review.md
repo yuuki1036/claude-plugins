@@ -93,7 +93,9 @@
 
 - C10: §8-6 はユーザー判断で「両方残す」（このマシンでは knowledge の glossary の利用は 0 件、all_spec.md は yatima で使用）。読む側だけ入れた: feature-dev の grill 前提確認に用語の別名、diagnose の読み先に all_spec.md。shared-state の登録簿の consumers も更新
 
-**未着手**（統合レポートの ID）: B9、B10、C2、C4、C6、C7、C8。
+- C4: 見送り（ユーザー判断。issue-create の利用が 1 回、design doc → Issue 分解の流れも未使用で、description 変更に有料の回帰テストが要る。使う場面が出たら再検討）
+
+**未着手**（統合レポートの ID）: B9、B10、C2、C6、C7、C8。
 
 ---
 
