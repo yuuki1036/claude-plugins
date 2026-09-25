@@ -1140,10 +1140,11 @@ if explorer_waves >= 2:
     )
 elif "explorer-wave" in gaps:
     sys.stderr.write(
-        "WARN: explorer を %s 体起動したのに explorer wave の打点が無い（explorer_waves が欠測）。"
-        "回収直後の `review-timing.sh mark wave --explorer` を打ち忘れている\n"
-        "  → **打点漏れは一括発行違反の証拠も同時に消す**（#135）。レポート末尾に 1 行追記すること: "
-        "`⚠️ 計測: explorer wave の打点漏れ（一括発行が守られたか事後に検証できない / #135）`\n" % launched
+        "WARN: explorer を %s 体起動したのに explorer wave の打点が見つからない（explorer_waves が欠測）。"
+        "回収直後の `review-timing.sh mark wave --explorer` を打ち忘れたか、session id の無い環境で"
+        "別の toplevel（`cd` 先）に打って打点ファイルが割れた（#247）\n"
+        "  → **打点の欠測は一括発行違反の証拠も同時に消す**（#135）。レポート末尾に 1 行追記すること: "
+        "`⚠️ 計測: explorer wave の打点が欠測（一括発行が守られたか事後に検証できない / #135）`\n" % launched
     )
 # 補完できた回は「打点漏れ ＝ 欠測」ではないので、警告と同じ行で言う（issue #161）。
 # **打点漏れの警告自体は消さない** — 埋まったかどうかと、規約が守られたかは別の話
@@ -1152,7 +1153,7 @@ derived_note = ("。うち %s は agent の実測時刻で補完済み（derived
 if gaps:
     sys.stderr.write(
         "WARN: 計測マーカーの欠測: %s（打点由来は agent の実測時刻で埋まらなければ "
-        "duration_* が -1 / `payload:*` は payload 側の欠落 / `session-unresolved` は transcript を"
+        "duration_* が -1 / `payload:*` は payload 側の欠落 / `session-unresolved` は transcript を "
         "session id から引けなかった回 / `tokens` は引けたが main のメッセージを数えられなかった回）%s\n"
         % (", ".join(gaps), derived_note)
     )

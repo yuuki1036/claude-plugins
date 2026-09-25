@@ -11,8 +11,11 @@
 #   review_paths_init "$PR"          # PR 番号（空可）を検証して SLUG / TMPROOT を用意
 #   echo "$(review_path diff)"       # → $TMPROOT/review-diff-<slug>[-prN].diff
 #
-# 識別子は「今いる worktree のルート」(+ PR 番号)。`--git-common-dir` は全 worktree で
-# 同じ値を返すので識別子にならず、ブランチ名は detached HEAD で "HEAD" に潰れる。
+# 識別子は「セッション id」(+ PR 番号)。id が無いときだけ「今いる worktree のルート」を使う。
+# **Bash tool は呼び出しのたびに cwd をセッション開始 dir へ戻す**ので、toplevel 由来だと
+# 一部の呼び出しにだけ `cd <別 toplevel>` が付いた回に start / mark / publish が別ファイルへ
+# 割れる（打点欠測 16 件中 6 件 / GitHub issue #247）。`--git-common-dir` は全 worktree で
+# 同じ値を返すので識別子にならず、ブランチ名は detached HEAD で "HEAD" に潰れる（#99）。
 # 導出に失敗したときの縮退先は「別ファイル = 欠測」であって「他セッションの値」ではない。
 
 # 一時ファイルは 0700 の専用ディレクトリに閉じ込める。
@@ -30,7 +33,17 @@ review_paths_init() {
   fi
   REVIEW_PR="$pr"
   REVIEW_WT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-  REVIEW_SLUG=$(printf %s "$REVIEW_WT" | cksum | cut -d' ' -f1)
+  # セッション id はセッションごとに違うので、#99 の要件（並行セッションの分離）はそのまま満たす。
+  # 既知の限界: subagent は親と同じ id を持つので、1 セッションの中で self-review を並行に回す
+  # （subagent を worktree で並べる等）と diff・agentctx・打点が 1 ファイルに潰れ、reviewer が
+  # 別 worktree の diff を黙って読む。SKILL はこの形を想定していない（どの呼び出し元も逐次）。
+  # `CLAUDE_CODE_CHILD_SESSION` はメインセッションにも立つので subagent の判別には使えない
+  local sid
+  if sid=$(review_session_id); then
+    REVIEW_SLUG="sid-$sid"
+  else
+    REVIEW_SLUG=$(printf %s "$REVIEW_WT" | cksum | cut -d' ' -f1)
+  fi
   REVIEW_TMPROOT="${TMPDIR:-/tmp}/claude-code-review-$(id -u)"
   mkdir -p "$REVIEW_TMPROOT" 2>/dev/null && chmod 700 "$REVIEW_TMPROOT" 2>/dev/null
   umask 077
@@ -49,8 +62,8 @@ review_paths_init() {
 # 名乗る誤値が agent プロンプトへ注入される（#113 の失敗が無シグナルで再発する）。
 # 呼び出し側は空を受け取ったら**その行ごと出力しない**こと。
 #
-# 注: 上の `review_paths_init` が一時ファイル名に `--show-toplevel` を使うのとは
-# 目的が違う（あちらは worktree ごとに異なる識別子が要る。こちらは全 worktree で
+# 注: 上の `review_paths_init` の識別子（session id。無ければ `--show-toplevel`）とは
+# 目的が違う（あちらは並行セッションを分ける識別子が要る。こちらは全 worktree で
 # 同じメインルートを指す必要がある）。両者を取り違えないこと。
 review_main_root() {
   local root
@@ -122,6 +135,17 @@ review_project_dirs() {
   [ ${#REVIEW_PROJECT_DIRS[@]} -gt 0 ]  # mutation-ok: roots は必ず $PWD を含むので空にならない（到達しない防御）
 }
 
+# `CLAUDE_CODE_SESSION_ID` を検証して返す（無い / 不正なら空 + rc=1）。
+#
+# id はファイル名と glob に入るので、英数字・`_`・`-` 以外を含む値は採らない
+# （`../<slug>/<id>` のような値で別の場所を指させない。`--pr` を数値に絞るのと同じ扱い）。
+# hook は env に頼らず stdin の `session_id` をこの変数へ入れてから呼ぶ（publish-guard.sh）。
+review_session_id() {
+  local sid="${CLAUDE_CODE_SESSION_ID:-}"
+  case "$sid" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+  printf '%s' "$sid"
+}
+
 # **このセッションの** main transcript のパスを返す（引けなければ空 + rc=1 / GitHub issue #246）。
 #
 # 上の `review_project_dirs` は「候補 dir の最新 `.jsonl`」を採る推定で、publish 前に `cd` した回と
@@ -130,11 +154,9 @@ review_project_dirs() {
 #
 # **引けないときに推定へ倒さないこと** — 縮退先は欠測であって誤値ではない
 # （orchestration-measurement.md `## 13.1`）。
-# id は glob に入るので、1 つのパス要素に収まらない値は引けなかった扱いにする
-# （`../<slug>/<id>` のような値で projects の外や別セッションを指させない）。
 review_session_transcript() {
-  local sid="${CLAUDE_CODE_SESSION_ID:-}" f
-  case "$sid" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+  local sid f
+  sid=$(review_session_id) || return 1
   for f in "$HOME"/.claude/projects/*/"$sid".jsonl; do
     if [ -f "$f" ]; then printf '%s' "$f"; return 0; fi
   done

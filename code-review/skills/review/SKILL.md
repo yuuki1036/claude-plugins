@@ -62,6 +62,8 @@ allowed-tools:
 # 所要時間計測の開始マーカー t0 を記録（締めフロー 4 の payload で使用）。
 # 以降 t1（一括発行の直前）/ wave --explorer（explorer 回収直後）/ wave（agent wave 回収の直後・毎回）/ t2（初回レポート直後）を
 # 同じスクリプトで追記する。パス導出・区間の意味の正本: orchestration-measurement.md `## 13.1` `## 14`
+# 以降の中止経路（ExitWorktree して終了）では、抜ける前に同じスクリプトの discard --pr <PR番号> で
+# 打点ファイルを捨てる（publish しない回を Stop hook が「publish 漏れ」と拾わないように / #247）
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" start --pr <PR番号>
 
 # PR 番号指定時: worktree 内で checkout（作業ブランチに影響なし）。
@@ -502,7 +504,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
 
    **publish の直後に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh"` を実行する**（→ 同 `## 18`）。出力は**そのままレポートの後ろに出す**（要約・再解釈をしない）。**⚠️ シグナル行が出たときだけ**戻り先ドキュメントを示して 1〜2 行の所見を添え、無い回は集計表だけ出す。失敗しても続行（best-effort）。
 
-5. **agent worktree の掃除（ExitWorktree の直前 / 必須）**: agent は `isolation: "worktree"` で起動するため体数ぶんの worktree が配下に残り、**この状態では `ExitWorktree(remove)` が state 検証に失敗して worktree を畳めない**（GitHub issue #105）。**同じブロックで publish 済みかを確認する**（4 の publish は副作用のみで出力に何も足さないため、脱落しても実行中は気づけない。ここは必須ステップなので通過が保証される / GitHub issue #133。**警告が出たら ExitWorktree の前に 4 へ戻る** — `TS_FILE` の slug は worktree のパス由来なので、抜けた後では同じ計測ファイルを引けなくなる / orchestration-measurement.md `## 13.1`）:
+5. **agent worktree の掃除（ExitWorktree の直前 / 必須）**: agent は `isolation: "worktree"` で起動するため体数ぶんの worktree が配下に残り、**この状態では `ExitWorktree(remove)` が state 検証に失敗して worktree を畳めない**（GitHub issue #105）。**同じブロックで publish 済みかを確認する**（4 の publish は副作用のみで出力に何も足さないため、脱落しても実行中は気づけない。ここは必須ステップなので通過が保証される / GitHub issue #133。**警告が出たら ExitWorktree の前に 4 へ戻る** — session id が無い環境では `TS_FILE` の slug が worktree のパス由来になり、抜けた後では同じ計測ファイルを引けなくなる / orchestration-measurement.md `## 13.1`）:
 
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" publish-pending --pr <PR番号>

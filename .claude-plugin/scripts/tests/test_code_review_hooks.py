@@ -32,11 +32,16 @@ class PublishGuardTest(HookTestCase):
         self.repo = self._repo.__enter__()
         self.addCleanup(self._repo.__exit__, None, None, None)
 
-    def _timing(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def _timing(self, *args: str, cwd: Path | None = None,
+                sid: str | None = None) -> subprocess.CompletedProcess[str]:
         env = scrub(TMPDIR=self.tmpdir)
+        # 実行中のセッションの id を継承させない（識別子になる / #247）
+        env.pop("CLAUDE_CODE_SESSION_ID", None)
+        if sid is not None:
+            env["CLAUDE_CODE_SESSION_ID"] = sid
         return subprocess.run(
             ["bash", str(self.plugin_root / "scripts" / "review-timing.sh"), *args],
-            cwd=str(self.repo), capture_output=True, text=True, env=env, timeout=30)
+            cwd=str(cwd or self.repo), capture_output=True, text=True, env=env, timeout=30)
 
     def _stop(self, raw: str | None = None):
         return self.run_hook({"hook_event_name": "Stop"} if raw is None else None,
@@ -98,9 +103,89 @@ class PublishGuardTest(HookTestCase):
 
     # --- PreToolUse 経路（#232）: t2 後・publish 前に次のフェーズへ進むとその場で鳴る ---
 
-    def _pre(self, tool: str):
-        return self.run_hook({"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": {}},
+    def _pre(self, tool: str, cwd: Path | None = None, session_id: str | None = None):
+        payload = {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": {}}
+        if session_id is not None:
+            payload["session_id"] = session_id
+        return self.run_hook(payload, cwd=cwd or self.repo, env_extra={"TMPDIR": self.tmpdir})
+
+    # --- セッション単位の識別子（#247）: cd 先が混ざっても 1 レビュー = 1 ファイル ---
+
+    SID = "aaaaaaaa-1111-2222-3333-444444444444"
+
+    def test_pre_tool_silent_after_a_split_run_was_published(self):
+        """start / publish は main、t2 は worktree で打った回（09-18 の型）。publish 済みなら鳴らない.
+
+        toplevel 由来の識別子では worktree 側に「t2 あり・pub なし」のファイルが残り、publish の
+        8 分後に誤った nag が出ていた。hook は env ではなく stdin の `session_id` で同じ識別子を作る。
+        """
+        wt = self._repo.worktree("wt")
+        self._timing("start", sid=self.SID)
+        self._timing("mark", "t2", cwd=wt, sid=self.SID)
+        self._timing("mark", "published", sid=self.SID)
+        # **囮**: id 無し（toplevel 由来）の wt 側に「t2 あり・pub なし」を置く。hook が stdin の
+        # id を拾えないとこちらを見て鳴るので、「黙る」が id を拾えた結果だと言える
+        self._timing("start", cwd=wt)
+        self._timing("mark", "t2", cwd=wt)
+        res = self._pre("Edit", cwd=wt, session_id=self.SID)
+        self.assertSilent(res, "publish 済みなのに鳴っている（id を拾えず toplevel 側を見た）")
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_pre_tool_still_fires_for_this_session_across_worktrees(self):
+        """識別子を変えても本来の脱落（t2 あり・pub なし）は cd 先からでも拾う."""
+        wt = self._repo.worktree("wt")
+        self._timing("start", sid=self.SID)
+        self._timing("mark", "t2", sid=self.SID)
+        self.assertTrue(self._pre("Edit", cwd=wt, session_id=self.SID).fired)
+
+    def test_session_id_is_read_from_stdin_without_jq(self):
+        """jq の無い環境でも stdin の `session_id` を拾う.
+
+        **鳴る側で測る** — 拾えなかった回は cwd の toplevel 由来の識別子に落ちてファイルが
+        見つからず黙るので、「黙る」を期待にすると拾えても拾えなくても緑になる。
+        """
+        wt = self._repo.worktree("wt")
+        self._timing("start", sid=self.SID)
+        self._timing("mark", "t2", sid=self.SID)
+        path = self.path_with_only("cksum", "id", "mkdir", "chmod", "date", "awk")
+        res = self.run_hook({"hook_event_name": "PreToolUse", "tool_name": "Edit",
+                             "tool_input": {}, "session_id": self.SID},
+                            cwd=wt, env_extra={"TMPDIR": self.tmpdir, "PATH": path})
+        self.assertTrue(res.fired, "jq が無いと session_id を拾えていない")
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_stop_is_silent_after_an_aborted_review_was_discarded(self):
+        """中止した review（start の後に publish せず ExitWorktree）は discard で捨てれば鳴らない.
+
+        識別子がセッション単位になったので、worktree を抜けた後の Stop からも中止した回の
+        打点ファイルが見える。捨てないと中止したレビューを publish させる誘導になる。
+        """
+        wt = self._repo.worktree("wt")
+        self._timing("start", "--pr", "5", cwd=wt, sid=self.SID)
+        stop = {"hook_event_name": "Stop", "session_id": self.SID}
+        self._timing("discard", "--pr", "5", cwd=wt, sid=self.SID)
+        res = self.run_hook(stop, cwd=self.repo, env_extra={"TMPDIR": self.tmpdir})
+        self.assertSilent(res, "捨てた打点ファイルで鳴っている")
+        self.assertEqual(self._timing_files(), [])
+
+    def test_the_stop_message_offers_discard_for_an_aborted_review(self):
+        """鳴ったときの文言に「中止したなら publish せず捨てる」経路がある."""
+        self._timing("start", "--pr", "5", sid=self.SID)
+        res = self.run_hook({"hook_event_name": "Stop", "session_id": self.SID},
+                            cwd=self.repo, env_extra={"TMPDIR": self.tmpdir})
+        self.assertTrue(res.fired)
+        self.assertIn("discard", res.context or "")
+
+    def test_stop_only_looks_at_this_sessions_files(self):
+        """並行セッションの打点ファイルで鳴らない（識別子がセッション単位になったので分けられる）."""
+        self._timing("start", sid="bbbbbbbb-1111-2222-3333-444444444444")
+        res = self.run_hook({"hook_event_name": "Stop", "session_id": self.SID},
+                            cwd=self.repo, env_extra={"TMPDIR": self.tmpdir})
+        self.assertSilent(res, "別セッションの打点ファイルで鳴っている")
+        mine = self.run_hook({"hook_event_name": "Stop",
+                              "session_id": "bbbbbbbb-1111-2222-3333-444444444444"},
                              cwd=self.repo, env_extra={"TMPDIR": self.tmpdir})
+        self.assertTrue(mine.fired, "自分のセッションの打点ファイルを拾えていない")
 
     def test_pre_tool_fires_once_after_t2_without_publish(self):
         self._timing("start")

@@ -73,6 +73,8 @@ self-review では `isolation: "worktree"` を使わない等の差分は orches
 # 所要時間計測の開始マーカー t0 を記録（Step 6.4 の payload で使用）。
 # 以降 t1（一括発行の直前）/ wave --explorer（explorer 回収直後）/ wave（agent wave 回収の直後・毎回）/ t2（レポート出力直後）を
 # 同じスクリプトで追記する。パス導出・区間の意味の正本: orchestration-measurement.md `## 13.1` `## 14`
+# 1.4 で「中止する」を選んだ回は同じスクリプトの discard で打点ファイルを捨てる
+# （publish しない回を Stop hook が「publish 漏れ」と拾わないように / #247）
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" start
 
 # base branch: 引数指定があればそれを使い、無ければデフォルトブランチを自動検出する

@@ -21,6 +21,7 @@
 #   review-timing.sh gaps [--pr N]                         # 欠測マーカーの識別子（空白区切り。無ければ空行）
 #   review-timing.sh publish-pending [--pr N]              # t2 あり & pub なしなら警告（それ以外は無言）
 #   review-timing.sh cleanup [--pr N]                      # t2 がある場合のみ削除
+#   review-timing.sh discard [--pr N]                      # 中止した回の打点ファイルを捨てる（#247）
 #
 # **打点の規約は 1 本にまとめてある**（v2.62.0 / GitHub issue #123 B）: 「agent wave を
 # 回収したら `mark wave` を打つ。explorer wave なら `--explorer` を付ける」だけ。旧来の
@@ -215,7 +216,13 @@ case "$CMD" in
     # 「掃除より他セッションの計測を優先する」ための二段目
     { grep -q '^t2 ' "$TS_FILE" 2>/dev/null && rm -f "$TS_FILE"; } || true
     ;;
+  discard)
+    # publish せずに中止した回（PR を checkout できない / 重複検出で「中止する」等）の打点ファイル。
+    # 識別子がセッション単位なので（#247）、残すと Stop hook が同じセッションのターン終端で
+    # 「publish 漏れ」として拾い、中止したレビューを publish させる誘導になる
+    rm -f "$TS_FILE"
+    ;;
   *)
-    echo "usage: review-timing.sh <start|mark|durations|t0|epochs|waves|gaps|publish-pending|cleanup> [--pr N]" >&2; exit 2 ;;
+    echo "usage: review-timing.sh <start|mark|durations|t0|epochs|waves|gaps|publish-pending|cleanup|discard> [--pr N]" >&2; exit 2 ;;
 esac
 exit 0

@@ -88,6 +88,10 @@ class HookTestCase(unittest.TestCase):
         # stdout しか見ない `assertSilent` が通るので**緑のまま**気づけない）。
         # 指定が無ければテスト専用の使い捨てディレクトリへ逃がす
         env["CLAUDE_PROJECT_DIR"] = str(cwd) if cwd else str(self.isolated_project_dir())
+        # **実行中の Claude Code セッションの id も継承させない**（GitHub issue #247）。一時ファイルの
+        # 識別子になるので、継承すると開発機のセッションの打点を読む / CI と手元で別の経路を通る。
+        # 要るテストは `env_extra` か stdin の `session_id` で渡す
+        env.pop("CLAUDE_CODE_SESSION_ID", None)
         env.update(env_extra or {})
         proc = subprocess.run(
             ["bash", str(self.plugin_root / self.SCRIPT)],
@@ -167,6 +171,16 @@ class TempGitRepo:
         """
         subprocess.run(["git", "checkout", "-qb", name], cwd=self.path,
                        capture_output=True, env=self.ENV)
+
+    def worktree(self, name: str) -> Path:
+        """linked worktree を `name` ブランチで張ってパスを返す（HEAD が無ければ先に commit する）."""
+        if subprocess.run(["git", "rev-parse", "-q", "--verify", "HEAD"], cwd=self.path,
+                          capture_output=True, env=self.ENV).returncode != 0:
+            self.commit("init")
+        path = self.path / name
+        subprocess.run(["git", "worktree", "add", "-q", "-b", name, str(path)], cwd=self.path,
+                       capture_output=True, env=self.ENV)
+        return path
 
     def commit(self, message: str, filename: str = "f.txt", body: str = "x",
                committed_at: str | None = None) -> str:

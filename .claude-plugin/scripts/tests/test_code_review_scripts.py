@@ -63,8 +63,9 @@ BASE_PAYLOAD = {
 class ScriptTestBase(unittest.TestCase):
     """一時 git repo + 専用 TMPDIR で各テストを隔離する.
 
-    `review-paths.sh` は `--show-toplevel` の cksum でパスを作るので、
-    **テストごとに別ディレクトリなら計測ファイルも自動的に分かれる**（並行実行しても衝突しない）。
+    計測ファイルは `TMPDIR` 配下に作られるので、**テストごとに `TMPDIR` を分ければ自動的に
+    分かれる**（並行実行しても衝突しない）。識別子（session id / 無ければ `--show-toplevel` /
+    #247）が同じでも、置き場所が別なので衝突しない。
     """
 
     def setUp(self) -> None:
@@ -640,9 +641,13 @@ class TranscriptFixture(ScriptTestBase):
         self.home = self.root / "home"
         (self.home / ".claude" / "projects").mkdir(parents=True)
 
+    def _env(self, **extra: str) -> dict[str, str]:
+        # `write_transcript` が書く transcript の id。publish は id で transcript を引き（#246）、
+        # 打点ファイルの識別子も id から作る（#247）ので、打点と publish の全呼び出しで揃える
+        return super()._env(**{"CLAUDE_CODE_SESSION_ID": "s1", **extra})
+
     def env_home(self) -> dict[str, str]:
-        # `write_transcript` が書く transcript の id（publish は id で引く / #246）
-        return self._env(HOME=str(self.home), CLAUDE_CODE_SESSION_ID="s1")
+        return self._env(HOME=str(self.home))
 
     def slug(self) -> str:
         """cwd に対応する transcript の project slug（Claude Code の正規化と同じ）."""
@@ -1542,13 +1547,13 @@ class ExplorerWaveWarnTest(ScriptTestBase):
         """explorer を起動したのに打点 0 なら gap（打点漏れは違反の証拠も消す / #135）."""
         r = self._publish(explorer=1, we=0)
         self.assertIn("explorer-wave", self.last_payload()["measurement_gaps"])
-        self.assertIn("打点が無い", r.stderr)
+        self.assertIn("打点が見つからない", r.stderr)
 
     def test_no_explorer_means_no_gap(self):
         """explorer 未起動なら打点 0 は**該当なし**（欠測ではない）."""
         r = self._publish(explorer=0, we=0)
         self.assertNotIn("explorer-wave", self.last_payload()["measurement_gaps"])
-        self.assertNotIn("打点が無い", r.stderr)
+        self.assertNotIn("打点が見つからない", r.stderr)
 
     def test_the_count_defaults_to_zero_when_unset(self):
         """環境変数が空でも 0 に倒れる（`or 0` の既定）."""

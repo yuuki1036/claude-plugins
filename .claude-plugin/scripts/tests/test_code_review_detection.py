@@ -19,7 +19,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from test_code_review_scripts import BASE_PAYLOAD, PLUGIN, ScriptTestBase
+from test_code_review_scripts import BASE_PAYLOAD, PLUGIN, PUBLISH, TIMING, ScriptTestBase
 
 CLEANUP = PLUGIN / "scripts" / "cleanup-agent-worktrees.sh"
 DETECT_DEV = PLUGIN / "scripts" / "detect-dev-worktree.sh"
@@ -509,6 +509,109 @@ class DetectRecentReviewTest(ScriptTestBase):
         # **新しい順**（直近を先に見せる。打ち切りが「古い 5 件」になると意味が反転する）
         stamps = [l.split()[1] for l in rows]
         self.assertEqual(stamps, sorted(stamps, reverse=True))
+
+
+class TimingSessionSlugTest(WorktreeTestBase):
+    """一時ファイルの識別子をセッション単位にする（GitHub issue #247）.
+
+    Bash tool は呼び出しのたびに cwd をセッション開始 dir へ戻すので、一部の呼び出しにだけ
+    `cd <別 toplevel>` が付くと、toplevel 由来の識別子では start / mark / publish が別ファイルに
+    割れる（打点欠測 16 件中 6 件）。publish は割れた側の打点を「打ち忘れ」と誤診していた。
+    """
+
+    SID = "aaaaaaaa-1111-2222-3333-444444444444"
+
+    def setUp(self) -> None:
+        super().setUp()
+        # publish は id から transcript も引くので、開発機の実 transcript に届かない HOME にする
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.wt = self.add_worktree("wt", branch="feature")
+
+    def env_sid(self, sid: str | None = SID) -> dict[str, str]:
+        env = self._env(HOME=str(self.home))
+        if sid is not None:
+            env["CLAUDE_CODE_SESSION_ID"] = sid
+        return env
+
+    def timing(self, *args: str, cwd: Path | None = None, sid: str | None = SID):
+        res = self.run_in(TIMING, *args, cwd=cwd, env=self.env_sid(sid))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res
+
+    def split_run(self, sid: str | None = SID) -> None:
+        """start だけ main で、以降の打点を worktree で打つ（09-18 / 09-20 の並び）."""
+        self.timing("start", sid=sid)
+        for args in (("mark", "t1"), ("mark", "wave", "--explorer"), ("mark", "wave"),
+                     ("mark", "t2")):
+            self.timing(*args, cwd=self.wt, sid=sid)
+
+    def timing_files(self) -> list[Path]:
+        root = self.root / "tmp" / ("claude-code-review-%d" % os.getuid())
+        return sorted(root.glob("review-start-*"))
+
+    def test_markers_split_across_worktrees_land_in_one_file(self):
+        self.split_run()
+        self.assertEqual(len(self.timing_files()), 1, "cd 先で打点ファイルが割れている")
+        self.assertEqual(self.timing("gaps").stdout.strip(), "")
+
+    def test_publish_does_not_call_a_split_run_a_missed_marker(self):
+        """割れた回を「打ち忘れ」と断定しない（09-18 / 09-20 は打点を実際に打っていた）."""
+        self.split_run()
+        payload = dict(BASE_PAYLOAD, agents={"explorer": 2, "reviewer": 2})
+        res = self.run_in(PUBLISH, "--plugin", "code-review:self-review", "--dry-run",
+                          "--payload", json.dumps(payload), env=self.env_sid())
+        self.assertEqual(res.returncode, 0, res.stderr)
+        gaps = json.loads(res.stdout)["measurement_gaps"]
+        for marker in ("start", "t1", "wave", "t2", "explorer-wave"):
+            self.assertNotIn(marker, gaps)
+        self.assertNotIn("explorer wave の打点が見つからない", res.stderr)
+
+    def test_the_diff_written_in_one_worktree_is_found_from_the_other(self):
+        """triage（diff を書く）と publish が別 toplevel で走っても突合キーが載る（09-07 / 09-09）."""
+        (self.wt / "a.ts").write_text("export const a = 1\n", encoding="utf-8")
+        self.git("add", "a.ts", cwd=self.wt)
+        res = self.run_in(PLUGIN / "scripts" / "triage-signals.sh", "--base", "HEAD",
+                          cwd=self.wt, env=self.env_sid())
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.timing("start")
+        res = self.run_in(PUBLISH, "--plugin", "code-review:self-review", "--dry-run",
+                          "--payload", json.dumps(BASE_PAYLOAD), env=self.env_sid())
+        payload = json.loads(res.stdout)
+        self.assertTrue(payload.get("diff_digest"), "diff を見つけられず突合キーが欠けている")
+        self.assertNotIn("diff-digest", payload["measurement_gaps"])
+
+    def test_two_sessions_in_one_worktree_stay_apart(self):
+        """#99 の不変条件: 並行セッションが同じ worktree で互いの t0 を消さない."""
+        self.timing("start", sid=self.SID)
+        self.timing("start", sid="bbbbbbbb-1111-2222-3333-444444444444")
+        self.assertEqual(len(self.timing_files()), 2)
+
+    def test_without_a_session_id_the_worktree_root_decides(self):
+        """env が無ければ従来どおり toplevel から作る（割れうるが、他セッションの値は拾わない）."""
+        self.split_run(sid=None)
+        self.assertEqual(len(self.timing_files()), 2)
+        self.assertIn("t1", self.timing("gaps", sid=None).stdout.split())
+
+    def test_a_split_run_without_a_session_id_is_not_called_a_missed_marker(self):
+        """env が無い経路ではまだ割れうるので、WARN は「打ち忘れ」と断定しない."""
+        self.split_run(sid=None)
+        payload = dict(BASE_PAYLOAD, agents={"explorer": 2, "reviewer": 2})
+        res = self.run_in(PUBLISH, "--plugin", "code-review:self-review", "--dry-run",
+                          "--payload", json.dumps(payload), env=self.env_sid(None))
+        self.assertIn("explorer wave の打点が見つからない", res.stderr, "前提: 割れた回")
+        self.assertNotIn("打ち忘れている", res.stderr)
+        self.assertIn("#247", res.stderr, "割れた可能性を是正先に挙げていない")
+
+    def test_an_id_that_is_not_a_single_path_component_falls_back(self):
+        """id はファイル名に入るので、英数字・`_`・`-` 以外を含む値は採らない."""
+        self.timing("start", sid="../x")
+        files = self.timing_files()
+        self.assertEqual(len(files), 1)
+        self.assertNotIn("x", files[0].name.replace("review-start-", ""),
+                         "不正な id をファイル名に使っている")
+        self.assertTrue(self.timing("t0", sid=None).stdout.strip(),
+                        "不正な id の回が toplevel の識別子に落ちていない")
 
 
 if __name__ == "__main__":

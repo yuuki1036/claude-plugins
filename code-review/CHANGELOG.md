@@ -2,6 +2,26 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.130.7] - 2026-09-26
+
+### Fixed
+
+- **一時ファイル（打点・diff・agentctx 等）の識別子をセッション id にした**（#247）。toplevel 由来だったので、Bash の
+  cwd が毎回セッション開始 dir に戻る中で一部の呼び出しにだけ `cd` を付けた回は、start / mark / publish が別ファイルに
+  割れていた（打点欠測 16 件中 6 件）。publish はそれを「打ち忘れ」と誤診し、diff を見つけられず突合キーも欠け、
+  publish-guard は publish 済みの 8 分後に誤った nag を出していた。`CLAUDE_CODE_SESSION_ID` が無いときだけ従来の
+  toplevel に落ちる。publish-guard は stdin の `session_id` から同じ識別子を作るので、並行セッションの打点ファイルでは
+  鳴らなくなった
+- **explorer wave の打点が見つからない WARN から「打ち忘れている」の断定を外した**。session id の無い経路では
+  まだ割れうるので、割れた可能性も是正先に挙げる
+
+### Added
+
+- **`review-timing.sh discard` を足し、review / self-review の中止経路で打点ファイルを捨てるようにした**。識別子が
+  セッション単位になったので、publish せずに中止した回（PR を checkout できない / 重複検出で「中止する」等）を残すと、
+  worktree を抜けた後の Stop hook が「publish 漏れ」と拾い、中止したレビューを publish させる誘導になる。Stop hook の
+  文言にも同じ経路を足した
+
 ## [2.130.6] - 2026-09-26
 
 ### Fixed

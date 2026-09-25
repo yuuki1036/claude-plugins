@@ -36,11 +36,14 @@
 
 これが厄介なのは、汚染が**欠測（`-1`）ではなく「もっともらしい小さい値」**として入る点（同型の別経路として、t1 / t2 の打点位置を誤ると fleet 区間が agent の起動スパンを覆えなくなる。`dispatch.span_sec` との突合で検出し `-1` に倒す / v2.107.0 / `## 16` の `fleet-span-mismatch`）。`duration_fleet_min` は orchestration-guide.md `## 5` / triage-guide.md `## 7` / triage-dynamic-gates.md `## 9` のロールバック判断の一次指標なのに、並行開発環境では静かに過小報告される（実測: 52 分のレビューが約 8 分と出た。43 分後に別 worktree のセッションが `t0` を上書きしていた）。`dev-workflow:worktree-setup` で worktree を並列運用する前提のマーケットプレイスなので、この衝突は例外ではなく常態になりうる。
 
-**パスの識別子は `--show-toplevel`（= その worktree 自身のパス）から作る**。`--git-common-dir` が全 worktree で同じ値を返すのに対し、`--show-toplevel` は**worktree ごとに異なる**ので、これ 1 つで並行セッションを分離できる。同一セッション内では Step 1 と publish の両方が同じ worktree の中で走る（review は ExitWorktree より前に publish する）ため、決定性も保たれる:
+**パスの識別子はセッション id（`CLAUDE_CODE_SESSION_ID`）から作り、id が無いときだけ `--show-toplevel`（= その worktree 自身のパス）を使う**（v2.130.7 / #247）。どちらも並行セッションを分離できる（`--git-common-dir` は全 worktree で同じ値を返すので分離できない）。toplevel だけで作っていた版は「同一セッション内では Step 1 と publish が同じ worktree の中で走る」ことを決定性の前提にしていたが、**Bash tool は呼び出しのたびに cwd をセッション開始 dir へ戻す**ので、一部の呼び出しにだけ `cd <別 toplevel>` を付けた回（作業用 worktree で開いて main checkout で作業する / main で開いて兄弟 worktree を self-review する）は start / mark / publish が別ファイルに割れていた（打点欠測 16 件中 6 件。publish は割れた側を「打ち忘れ」と誤診し、publish-guard は publish 済みの 8 分後に誤った nag を出した）:
 
-**実装は `scripts/review-timing.sh` が持ち、パス導出は `scripts/lib/review-paths.sh` が正本**（`start` / `mark`（`t1` / `wave` / `t2` / `published`）/ `durations` / `t0` / `epochs` / `waves` / `gaps` / `publish-pending` / `cleanup` の 9 サブコマンド。SKILL からはこれを呼ぶだけで、パスの組み立てを本文に書かない。**`t0` と `epochs` は publish 専用の内部用で SKILL からは呼ばない** — `t0` はトークン計測の窓を絞るため、`epochs` は補完値の整合を検算するため）。識別子の仕様:
+**実装は `scripts/review-timing.sh` が持ち、パス導出は `scripts/lib/review-paths.sh` が正本**（`start` / `mark`（`t1` / `wave` / `t2` / `published`）/ `durations` / `t0` / `epochs` / `waves` / `gaps` / `publish-pending` / `cleanup` / `discard`（中止した回の打点ファイルを捨てる / #247）の 10 サブコマンド。SKILL からはこれを呼ぶだけで、パスの組み立てを本文に書かない。**`t0` と `epochs` は publish 専用の内部用で SKILL からは呼ばない** — `t0` はトークン計測の窓を絞るため、`epochs` は補完値の整合を検算するため）。識別子の仕様:
 
-- **worktree のルート**（`--show-toplevel`）を cksum で slug 化する。review はさらに `--pr N` で PR 番号を混ぜる（`--pr` は数値のみ受理する）
+- **セッション id** を `sid-<id>` として slug にする。id は英数字・`_`・`-` だけを受理し、それ以外（`/` や `..` を含む値）は無いものとして扱う。**id が無いときは worktree のルート**（`--show-toplevel`）を cksum で slug 化する（この経路では cd 先で割れうるので、publish の WARN は「打ち忘れ」と断定しない）。review はさらに `--pr N` で PR 番号を混ぜる（`--pr` は数値のみ受理する）
+- **hook は stdin の `session_id` から同じ識別子を作る**（`publish-guard.sh`）。hook の env に `CLAUDE_CODE_SESSION_ID` が載ることは保証されていないため
+- **中止した回は `discard` で打点ファイルを捨てる**。識別子がセッション単位になったので、publish せずに終えた回（PR を checkout できない / 重複検出で「中止する」等）を残すと、Stop hook が同じセッションのターン終端で「publish 漏れ」と拾う
+- 既知の限界: subagent は親と同じ id を持つので、1 セッションの中で self-review を並行に回す（subagent を worktree で並べる等）と diff・agentctx・打点が 1 ファイルに潰れ、reviewer が別 worktree の diff を黙って読む。SKILL はこの形を想定していない（呼び出し元はどれも逐次）
 - `--git-common-dir` は使わない（全 worktree で同じ値を返すので識別子にならない）
 - **一時ファイルは `$TMPDIR/claude-code-review-<uid>/`（0700・umask 077）に閉じ込める**。`$TMPDIR` 直下に固定名で置くと、`TMPDIR` 未設定の環境（Linux / CI の多く）で world-writable な `/tmp` に落ち、symlink 先置きによる上書きと未コミットコードの読み取りが成立する
 - **この式を他所へ複製しないこと**。以前は 4 スクリプト + ガイドのスニペットに散っており、`fetch-pr-context.sh` だけ空値ハンドリングが違うという乖離が実際に起きていた
@@ -53,7 +56,7 @@
   grep -q '^t2 ' "$TS_FILE" 2>/dev/null && rm -f "$TS_FILE"
   ```
 
-  これは**所有権チェックではなく、そう振る舞う近似**である。ファイルの中身は `t0/t1/we/w/t2 <epoch>` だけで書き手を識別しないため、パスが衝突した場合には「他セッションが書いた `t2`」にヒットしうる。衝突自体は上の `WT` 識別子で塞いでおり、このガードは**万一の衝突時に掃除より他セッションの計測を優先する**ための二段目。「自分が書いたファイルにのみ効く」と読まないこと
+  これは**所有権チェックではなく、そう振る舞う近似**である。ファイルの中身は `t0/t1/we/w/t2 <epoch>` だけで書き手を識別しないため、パスが衝突した場合には「他セッションが書いた `t2`」にヒットしうる。衝突自体は上の識別子で塞いでおり、このガードは**万一の衝突時に掃除より他セッションの計測を優先する**ための二段目。「自分が書いたファイルにのみ効く」と読まないこと
 
 ## 14. 所要時間の区間分割計測（review / self-review 共通 / v2.41.0 で 3 分割・v2.43.0 で explore 追加・v2.60.0 で synthesis 追加）
 
@@ -124,7 +127,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 
 > **explorer wave 打点の行数が `agents.explorer_waves` になる（v2.61.0 / GitHub issue #122）**: explorer は「同一メッセージ内で一括発行する」規約（orchestration-guide.md `## 0`）だが、**破ったことが計測に現れないため事後に気づけなかった**（実測: 1 体を単独発行してから残り 3 体を次のメッセージで出したため `duration_explore_min` が 18 分 = 7.7 + 9.2 になった。一括なら wave 内最長の約 9 分で済んでいた）。**wave ごとに `mark wave --explorer` を打てば行数がそのまま wave 本数になる**ので、追加のマーカー種別を増やさずに検知できる。`durations` は最後の explorer 打点を採るため、分割しても `duration_explore_min` は全 wave を覆う。
 >
-> 値の注入と警告は `publish-review-event.sh` が行う（**SKILL 側は `agents.explorer_waves` を渡さない**）。`>= 2` なら「一括発行が破られた」、`agents.explorer >= 1` かつ `0` なら「マーカーの打ち忘れ」を stderr に WARN し、**どちらもレポート末尾に `⚠️ 計測: ...` を 1 行追記するよう指示する**（v2.67.0 / GitHub issue #135。Round 2 の追加 explorer には `--explorer` を付けない規約があるので、`>= 2` は初回 wave の分割を意味する＝断定してよい）。
+> 値の注入と警告は `publish-review-event.sh` が行う（**SKILL 側は `agents.explorer_waves` を渡さない**）。`>= 2` なら「一括発行が破られた」、`agents.explorer >= 1` かつ `0` なら「打点が見つからない」を stderr に WARN し（打ち忘れのほか、session id の無い環境で打点ファイルが割れた回も含むので「打ち忘れ」とは断定しない / v2.130.7 / #247）、**どちらもレポート末尾に `⚠️ 計測: ...` を 1 行追記するよう指示する**（v2.67.0 / GitHub issue #135。Round 2 の追加 explorer には `--explorer` を付けない規約があるので、`>= 2` は初回 wave の分割を意味する＝断定してよい）。
 
 **publish 時の算出**（欠測は `-1`。ファイルが無い / マーカーが欠け**かつ補完もできない**場合も 0 と混同しない）は `scripts/publish-review-event.sh` が `review-timing.sh durations` 経由で行い、`duration_*` フィールドを payload に注入する。**SKILL 側は `duration_*` を渡さない**（LLM に時刻計算をさせない）。
 
