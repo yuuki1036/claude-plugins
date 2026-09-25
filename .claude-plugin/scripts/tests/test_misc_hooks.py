@@ -165,6 +165,72 @@ class FailureJournalInitTest(HookTestCase):
             self.assertEqual(
                 (root / ".claude" / "failure-journal" / "journal.jsonl").read_text(), "")
 
+    # --- 未レビュー候補の /retro 催促 ---
+    NUDGE = "未レビューの候補が"
+
+    def _candidates(self, root: Path, pending: int, age_days: int, reviewed: int = 0):
+        import datetime
+        d = root / ".claude" / "failure-journal"
+        d.mkdir(parents=True, exist_ok=True)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        rows = []
+        for i in range(pending):
+            ts = now - datetime.timedelta(days=age_days if i == 0 else 0, hours=1)
+            rows.append({"ts": ts.strftime("%Y-%m-%dT%H:%M:%SZ"), "summary": "x", "verdict": None})
+        for _ in range(reviewed):
+            rows.append({"ts": "2020-01-01T00:00:00Z", "summary": "x", "verdict": "accepted"})
+        (d / "candidates.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+    def test_nudges_when_many_pending(self):
+        """件数の境界: 15 件で促す・14 件（どれも新しい）では黙る."""
+        for n, fires in ((15, True), (14, False)):
+            with self.subTest(n=n), TempGitRepo() as root:
+                self._candidates(root, n, 0)
+                out = self._run(root).stdout
+                (self.assertIn if fires else self.assertNotIn)(self.NUDGE, out)
+
+    def test_nudges_when_oldest_pending_is_old(self):
+        """最古の未レビュー候補の境界: 14 日で促す・13 日では黙る（件数は少なくても）."""
+        for days, fires in ((14, True), (13, False)):
+            with self.subTest(days=days), TempGitRepo() as root:
+                self._candidates(root, 1, days)
+                out = self._run(root).stdout
+                (self.assertIn if fires else self.assertNotIn)(self.NUDGE, out)
+
+    def test_reviewed_candidates_do_not_count(self):
+        """verdict の付いた（レビュー済みの）候補は、古くても数えない."""
+        with TempGitRepo() as root:
+            self._candidates(root, 0, 0, reviewed=40)
+            self.assertNotIn(self.NUDGE, self._run(root).stdout)
+
+    def test_no_nudge_on_post_compact(self):
+        """PostCompact のたびに繰り返さない."""
+        with TempGitRepo() as root:
+            self._candidates(root, 30, 30)
+            res = self.run_hook({"hook_event_name": "PostCompact"}, cwd=root,
+                                env_extra={"CLAUDE_PROJECT_DIR": str(root)})
+            self.assertIn("candidates.jsonl", res.stdout)
+            self.assertNotIn(self.NUDGE, res.stdout)
+
+    def test_unparseable_ts_is_not_treated_as_old(self):
+        """読めない ts を「大昔」と数えない（件数が少なければ黙る）."""
+        with TempGitRepo() as root:
+            d = root / ".claude" / "failure-journal"
+            d.mkdir(parents=True)
+            (d / "candidates.jsonl").write_text('{"ts":"y","verdict":null}\n')
+            self.assertNotIn(self.NUDGE, self._run(root).stdout)
+
+    def test_nudge_tolerates_malformed_rows(self):
+        """壊れた ts が混ざっても落ちない（ERR trap に落ちて規則の注入ごと消えない）."""
+        with TempGitRepo() as root:
+            d = root / ".claude" / "failure-journal"
+            d.mkdir(parents=True)
+            (d / "candidates.jsonl").write_text('{"ts":"y","verdict":null}\n' * 20)
+            res = self._run(root)
+            self.assertIn("candidates.jsonl", res.stdout)
+            self.assertIn(self.NUDGE, res.stdout)
+            self.assertNotIn("Unexpected", res.stderr)
+
     def test_never_blocks(self):
         with TempGitRepo() as root:
             self.assertNotEqual(self._run(root).returncode, 2)

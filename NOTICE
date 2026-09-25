@@ -12,6 +12,7 @@
 | issue-workflow/skills/discover/references/rejected-record.md | skills/engineering/triage の .out-of-scope |
 | issue-workflow の完了条件の 3 つの悪い形（discover / template-9sections）と design-rules のデモ点検・prefactor | skills/engineering/to-tickets とその docs |
 | plugin-feedback/skills/feedback-issue/SKILL.md の Step 3.5（既存 Issue の確認） | skills/engineering/triage の redundancy チェック |
+| failure-journal/skills/retro/references/aggregation-rules.md の還流先（配線されていない検査・ポインタ） | skills/in-progress/retro |
 | adr-keeper/skills/adr/SKILL.md の記録価値 3 条件 | skills/engineering/domain-modeling |
 | adr-keeper/skills/adr/references/examples.md の 7 類型 | skills/engineering/domain-modeling の ADR-FORMAT.md |
 | docs/skill-writing.md | writing-great-skills（現 skills/productivity/writing-for-agents） |

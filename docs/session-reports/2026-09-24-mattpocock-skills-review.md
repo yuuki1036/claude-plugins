@@ -78,7 +78,9 @@
 
 - B8: CLAUDE.md の常駐量を約 55KB から 50KB に減らした。plugin eval のケース作成・運用の詳細を `docs/plugin-eval.md` へ、Event Bus の永続化と API を `docs/event-bus.md` へ移し、ポインタを残した（イベント表は機械照合の対象なので残した）。`docs/skill-writing.md` の対象を rules / agents / prompts / CLAUDE.md に広げた。Gotchas は事故由来なので手を付けていない
 
-**未着手**（統合レポートの ID）: B9〜B13、C 群（C1 を除く）。
+- B11: 候補の昇格が止まった原因は retro が 08-30 以降回っていないこと（未レビュー 39 件、レビュー済み 39 件は全件採用・却下 0。数えたのは verdict と ts だけ）。SessionStart で未レビューが 15 件以上か最古 14 日以上なら `/retro` を提案させる 1 行を足した。還流先の判定に「配線されていない検査の修理」と「ナビゲーション用のポインタ」を足した
+
+**未着手**（統合レポートの ID）: B9、B10、B12、B13、C 群（C1 を除く）。
 
 ---
 
