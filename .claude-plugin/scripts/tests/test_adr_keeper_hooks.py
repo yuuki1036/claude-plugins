@@ -255,6 +255,19 @@ class AdrWriteGuardTest(HookTestCase):
             body = adr_body(i).replace(f"id: {i}\n", "")
             self.assertBlocked(self._write(root, f".claude/adr/{i}-x.md", body), "id が無い")
 
+    def test_frontmatter_is_read_only_from_the_first_line(self):
+        """frontmatter は 1 行目の `---` から読む。本文にある `id:` 行と区切り線を frontmatter と取り違えない."""
+        with TempGitRepo() as root:
+            i = ts()
+            fm = f"---\nid: {i}\nstatus: accepted\nphase: current\nappend_only: true\n---\n\n"
+            self.assertTrue(adr_body(i).startswith(fm))
+            # frontmatter を外し、本文の途中に `id:` 行と区切り線を置く
+            body = adr_body(i)[len(fm):].replace("## ステータス\n", f"## ステータス\nid: {i}\n---\n", 1)
+            self.assertBlocked(self._write(root, f".claude/adr/{i}-x.md", body), "frontmatter に id が無い")
+            # 1 行目が空行でも frontmatter とは見なさない
+            self.assertBlocked(self._write(root, f".claude/adr/{i}-y.md", "\n" + adr_body(i)),
+                               "frontmatter に id が無い")
+
     def test_blocks_bad_filename(self):
         with TempGitRepo() as root:
             for name in ("2026-09-24-x.md", "adr-x.md", f"{ts()}_Upper_Case.md"):

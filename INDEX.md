@@ -12,7 +12,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 
 | プラグイン | version | cmd | skill | agent | hooks | mcp | 概要 |
 |-----------|---------|----:|------:|-------|-------|-----|------|
-| [adr-keeper](#adr-keeper) | 0.4.1 | 1 | 1 | - | PreToolUse, SessionStart | - | 設計判断 (ADR) を append-only 蓄積 |
+| [adr-keeper](#adr-keeper) | 0.4.2 | 1 | 1 | - | PreToolUse, SessionStart | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.5 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [claude-meta](#claude-meta) | 1.13.8 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.130.12 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |

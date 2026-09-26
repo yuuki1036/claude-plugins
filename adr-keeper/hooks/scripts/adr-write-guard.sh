@@ -49,8 +49,8 @@ esac
 # `/./` と `//` を畳む（`.claude/adr/./x.md` で素通りさせない）。パターンと置換は変数で渡す —
 # bash 3.2 は置換側の `\/` をバックスラッシュごと残す
 SEG_DOT="/./"; SEG_DBL="//"; SEP="/"
-while [[ "$ABS_PATH" == *"$SEG_DOT"* ]]; do ABS_PATH="${ABS_PATH//"$SEG_DOT"/$SEP}"; done
-while [[ "$ABS_PATH" == *"$SEG_DBL"* ]]; do ABS_PATH="${ABS_PATH//"$SEG_DBL"/$SEP}"; done
+while [[ "$ABS_PATH" == *"$SEG_DOT"* ]]; do ABS_PATH="${ABS_PATH//"$SEG_DOT"/$SEP}"; done  # mutation-ok: 反転すると `/./` を含まないパス（ほぼ全件）で置換が空回りして無限ループになる。hook のテストは全件 timeout で落ちるが、変異テスト全体の timeout を超えて TIMEOUT に分類される
+while [[ "$ABS_PATH" == *"$SEG_DBL"* ]]; do ABS_PATH="${ABS_PATH//"$SEG_DBL"/$SEP}"; done  # mutation-ok: 上の行と同じ（`//` を含まないパスで無限ループ）
 
 # 対象は `.claude/adr/` 直下の .md だけ（大文字小文字を区別しない FS があるので小文字で比べる）
 DIR_LC=$(tr '[:upper:]' '[:lower:]' <<< "$(dirname "$ABS_PATH")")
