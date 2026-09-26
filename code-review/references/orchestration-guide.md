@@ -29,12 +29,13 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 | diff の取得 | `triage-signals.sh --pr <N>`（内部で `gh pr diff`＝ GitHub 上の正しい差分） | `triage-signals.sh --base <ref>`（内部で `git diff`。base 差分 + staged + unstaged。`--staged` で staged のみ） |
 | レビュー中止時 | ExitWorktree してから終了 | そのまま終了 |
 | 動的ラウンドの Phase 番号 | 5.5 / 5.6 / 5.7 / 5.8 / 5.9 | 4.5 / 4.6 / 4.7 / 4.8 / 4.9 |
+| Markdown 推敲 agent | 起動しない | 条件を満たせば reviewer wave に 1 体相乗り（体数の上限の外。正本は `md-polish-guide.md`） |
 
-**同期起動の明示（両 skill・全 agent 起動に適用）**: explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / 冷や読み skeptic / 反証エージェントのすべてで、Agent call に `run_in_background: false` を必ず明示する。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、省略するとオーケストレーターが結果を待たずに次フェーズへ進み、完了通知の遅れた agent の出力を取りこぼす（「反応が返ってこない agent」の正体）。`orchestration-dynamic-rounds.md` の各起動手順にもこのルールが適用される。
+**同期起動の明示（両 skill・全 agent 起動に適用）**: explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / 冷や読み skeptic / 反証エージェント / Markdown 推敲 agent（self-review のみ）のすべてで、Agent call に `run_in_background: false` を必ず明示する。CC 2.1.198 で Agent tool の既定が background 実行に変わったため、省略するとオーケストレーターが結果を待たずに次フェーズへ進み、完了通知の遅れた agent の出力を取りこぼす（「反応が返ってこない agent」の正体）。`orchestration-dynamic-rounds.md` の各起動手順にもこのルールが適用される。
 
-**並列発行の明示（複数体を起動する全フェーズに適用）**: `run_in_background: false` は「1 体ずつ順に起動する」ことを意味**しない**。複数体を起動するフェーズでは、**同一アシスタントメッセージ内に対象フェーズの全 Agent call を並べて一括発行し、その 1 応答で全結果を待つ**。**2 つは直交する独立の要件**（前者は取りこぼし防止、後者は並列性）。**1 体しか起動しないフェーズも「他フェーズと同一 wave」なら適用対象**である（冷や読み skeptic は reviewer wave に相乗り / **meta-reviewer は反証バッチと同一メッセージ** — v2.61.0。起動タイミングの正本は triage-dynamic-gates.md `## 8` / `## 8.5`）。真に単独 wave になるのは skeptic の fallback 起動だけ。**守られたかは publish 時に事後計測される** — `meta.json` の `toolUseId` から wave を復元し、**単独 wave が 3 連続以上**なら payload の `dispatch.verdict` が `serial` になり WARN が出る（orchestration-measurement.md `## 16` / GitHub issue #142・#149）。層ごとに wave が分かれること自体（explorer → reviewer → 反証）は `layered` で、違反ではない。**ただし `serial` は 3 連続を要求するので「reviewer 5 体のうち 1 体だけ先に出した」型を取り逃す**（実測: fleet span の 20% ＝ 9 分を失った回が `layered` 判定だった）。`agents.explorer_waves` も explorer 層しか数えない。**全層を見るのは `measurement_gaps` の `wave-split`**（v2.85.1 / 期待 wave 本数との突合 / `## 16`）で、**v2.91.0 から WARN を出す**（偽陽性 2 型が同定できたので測定段階を抜けた / #172。実測では判定可能な直近 5 レビュー中 4 件が本物の違反で、既存 2 経路は 4 件とも取り逃していた）。**3 経路とも事後計測で、実行中には止まらない**（実行中の歯止めは下の発行直前チェックポイント）。→ 根拠と実測: `design-notes/orchestration-rationale.md`
+**並列発行の明示（複数体を起動する全フェーズに適用）**: `run_in_background: false` は「1 体ずつ順に起動する」ことを意味**しない**。複数体を起動するフェーズでは、**同一アシスタントメッセージ内に対象フェーズの全 Agent call を並べて一括発行し、その 1 応答で全結果を待つ**。**2 つは直交する独立の要件**（前者は取りこぼし防止、後者は並列性）。**1 体しか起動しないフェーズも「他フェーズと同一 wave」なら適用対象**である（冷や読み skeptic と Markdown 推敲 agent は reviewer wave に相乗り / **meta-reviewer は反証バッチと同一メッセージ** — v2.61.0。起動タイミングの正本は triage-dynamic-gates.md `## 8` / `## 8.5`）。真に単独 wave になるのは skeptic の fallback 起動だけ。**守られたかは publish 時に事後計測される** — `meta.json` の `toolUseId` から wave を復元し、**単独 wave が 3 連続以上**なら payload の `dispatch.verdict` が `serial` になり WARN が出る（orchestration-measurement.md `## 16` / GitHub issue #142・#149）。層ごとに wave が分かれること自体（explorer → reviewer → 反証）は `layered` で、違反ではない。**ただし `serial` は 3 連続を要求するので「reviewer 5 体のうち 1 体だけ先に出した」型を取り逃す**（実測: fleet span の 20% ＝ 9 分を失った回が `layered` 判定だった）。`agents.explorer_waves` も explorer 層しか数えない。**全層を見るのは `measurement_gaps` の `wave-split`**（v2.85.1 / 期待 wave 本数との突合 / `## 16`）で、**v2.91.0 から WARN を出す**（偽陽性 2 型が同定できたので測定段階を抜けた / #172。実測では判定可能な直近 5 レビュー中 4 件が本物の違反で、既存 2 経路は 4 件とも取り逃していた）。**3 経路とも事後計測で、実行中には止まらない**（実行中の歯止めは下の発行直前チェックポイント）。→ 根拠と実測: `design-notes/orchestration-rationale.md`
 
-**発行直前チェックポイント（複数体を起動する全フェーズ / GitHub issue #220）**: 一括発行の**直前には必ず単独のステップがある**（reviewer 層は `agent_ctx_file` の書き出し ＝ `## 3.5` / 他の層は `review-timing.sh mark` の打点）。**そのステップの応答でこの wave に出す Agent call を列挙し、次の応答で列挙どおりに発行する。** 列挙するのは Phase 0 で確定済みの構成（reviewer 全行 + 相乗りする skeptic + specialist）であって、**wave 本数の自己申告ではない**（申告は破った自覚を前提にするので系統的に「1」へ潰れる / #135）。**列挙より後に足したくなった観点は、同じ層へ後追いで発行しない** — 次の wave（Round 2）へ回すか、列挙をやり直して 1 メッセージで出し直す。実測の違反 7 件は 1 件を除いて全部「同一層が複数 wave に割れた」型で、`[2,3]`（先に 2 体出してから残りを次のメッセージ）が典型。→ 判定基準・撤去条件・却下した代替: `design-notes/orchestration-rationale.md`
+**発行直前チェックポイント（複数体を起動する全フェーズ / GitHub issue #220）**: 一括発行の**直前には必ず単独のステップがある**（reviewer 層は `agent_ctx_file` の書き出し ＝ `## 3.5` / 他の層は `review-timing.sh mark` の打点）。**そのステップの応答でこの wave に出す Agent call を列挙し、次の応答で列挙どおりに発行する。** 列挙するのは Phase 0 で確定済みの構成（reviewer 全行 + 相乗りする skeptic + specialist。self-review では Markdown 推敲 agent も）であって、**wave 本数の自己申告ではない**（申告は破った自覚を前提にするので系統的に「1」へ潰れる / #135）。**列挙より後に足したくなった観点は、同じ層へ後追いで発行しない** — 次の wave（Round 2）へ回すか、列挙をやり直して 1 メッセージで出し直す。実測の違反 7 件は 1 件を除いて全部「同一層が複数 wave に割れた」型で、`[2,3]`（先に 2 体出してから残りを次のメッセージ）が典型。→ 判定基準・撤去条件・却下した代替: `design-notes/orchestration-rationale.md`
 
 ## 1. PR 番号・期待 HEAD SHA 注入（review のみ / agent 起動時に必須）
 
@@ -91,7 +92,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 | 対象 | 渡し方 | 備考 |
 |---|---|---|
-| **プロンプトテンプレート**（reviewer / explorer / specialist / meta / 反証 / skeptic） | `prompts/` 配下の**パスのみ**注入し、agent 自身に Read させる。**オーケストレーターは Read しない** | 複製係数が最大（同一の共通指示が全 agent に付く）。共通指示だけで約 7.3k tokens あり、6 体構成では約 44k tokens の出力複製になっていた。索引は reviewer-prompts.md / explorer-prompts.md |
+| **プロンプトテンプレート**（reviewer / explorer / specialist / meta / 反証 / skeptic / Markdown 推敲） | `prompts/` 配下の**パスのみ**注入し、agent 自身に Read させる。**オーケストレーターは Read しない** | 複製係数が最大（同一の共通指示が全 agent に付く）。共通指示だけで約 7.3k tokens あり、6 体構成では約 44k tokens の出力複製になっていた。索引は reviewer-prompts.md / explorer-prompts.md |
 | **diff**（`gh pr diff` / `git diff`） | `triage-signals.sh` が `$DIFF_FILE` に保存し、**パス + 担当ファイル名**を注入。agent は `diff-slice.sh` で担当ぶんを切り出す | メインコンテキストは diff 全文を**一度も読まない**（Phase 0 はシグナルダイジェストで回す）。large PR ほど効く |
 | PR コンテキストブロック | `fetch-pr-context.sh` の出力を `$PR_CTX_FILE` に保存し、**パスのみ**注入 | メインコンテキストは Phase 0 のタイプ判定のために 1 回だけ Read する |
 | AGENTS.md / CLAUDE.md（`## 4`） | **元ファイルのパスをそのまま**注入（コピーを作らない） | 既にディスク上にあるので追加コストゼロ。パスは `triage-signals.sh` の `## agents-md` が出す |
@@ -154,6 +155,7 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 | meta-reviewer | 1 体・1 round（triage-dynamic-gates.md `## 8`） | `max` | しない（xhigh/max 起点） |
 | 冷や読み skeptic | PR あたり 1 体・1 round（triage-dynamic-gates.md `## 8.5`） | `max` | **する**（high 起点 / surface=true のときだけ。v2.52.0 で昇格） |
 | 反証エージェント | **5 件ごと 1 体・本体上限 3 体 ＋ meta 由来の追加バッチ 1 体**（計 4 体 20 件 / v2.61.0。triage-dynamic-gates.md `## 9`）＝唯一の変動費 | **`high`**（v2.41.0 で `max` から引き下げ） | **する**（非対称ゾーンに限定） |
+| Markdown 推敲（self-review のみ / v2.131.0） | 1 体（reviewer wave に相乗り。体数の上限の外） | `high`（**実行時 effort に連動させない**。推敲の厚みを揺らさない） | **する**（effort を問わない。md の散文の追加・変更があり writing-polish が有効なとき。`md-polish-guide.md`） |
 
 > **反証 effort の引き下げは scoring-guide の不変条件に依存している**（BLOCKER / CRITICAL は `refuted` でも `severity-inflated` でも報告から消さず係争注記を付ける）。**不変条件を緩める変更をするときは、反証 effort を `max` に戻すかどうかを同時に判断すること。**
 
@@ -175,7 +177,7 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 
 ### 出力形式の検証と auto-retry（GitHub issue #69）
 
-各 reviewer の出力が「レビュー結果」として妥当か機械的に検証する。以下のいずれも欠く出力は **非レビュー出力**（空応答・system-reminder / skill 案内の断片・tool_use ゼロでの早期終了等）とみなす:
+各 reviewer の出力が「レビュー結果」として妥当か機械的に検証する（**Markdown 推敲 agent は対象外** — `### レビュー結果` を出さない。妥当性の条件と失敗時の扱いは `md-polish-guide.md` の 3 節）。以下のいずれも欠く出力は **非レビュー出力**（空応答・system-reminder / skill 案内の断片・tool_use ゼロでの早期終了等）とみなす:
 
 - `### レビュー結果` 見出し（または `#### 指摘事項` / `#### 総括` のいずれか）
 - 指摘が 1 件以上ある場合、`[confidence: XX]` と `[severity: ...]` タグを含む行が存在する
@@ -240,7 +242,7 @@ reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検
 
 ### 8b. 事後突合（review Phase 5.7・self-review Phase 4.7 / logging のみ・agent 追加起動なし）
 
-スコアリング直前に、8a で確定した構成テーブルと **実際に起動・完走した focus** をメインコンテキストで突合し、差分（未起動・失敗・非レビュー出力で欠損した focus）を `missing_coverage` に追記する。**本フェーズで agent は追加起動しない**（観点漏れの検出は 8a へ前倒し済み。目的はレポートの「欠損観点」セクションを確定させること）。`## 5` の部分失敗耐性による記録と重複してよい（dedup してレポートに出す）
+スコアリング直前に、8a で確定した構成テーブルと **実際に起動・完走した focus** をメインコンテキストで突合し、差分（未起動・失敗・非レビュー出力で欠損した focus）を `missing_coverage` に追記する（self-review で Markdown 推敲 agent を起動して結果が欠けた回は `md-polish`。`md-polish-guide.md` の 3 節）。**本フェーズで agent は追加起動しない**（観点漏れの検出は 8a へ前倒し済み。目的はレポートの「欠損観点」セクションを確定させること）。`## 5` の部分失敗耐性による記録と重複してよい（dedup してレポートに出す）
 
 > **失敗 reviewer の補完起動は v2.39.0 で廃止した**（直列 wave 削減とのトレードオフ）。失敗 focus は `missing_coverage` として欠損観点セクションに必ず明示され、必要ならユーザーが再実行を指示する。auto-retry（`## 5` の出力形式検証）は形式不正のみが対象でハード失敗は救わない — **この差は仕様であり見落としではない**。→ 経緯: `design-notes/orchestration-rationale.md`
 

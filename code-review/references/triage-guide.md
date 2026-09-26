@@ -158,7 +158,7 @@ doc の内容妥当性を **2 軸**（A 主張の真偽: コード整合・論�
 
 **design-review への soft 委譲（dormant）**: 決定系 doc（`.claude/adr/**` / `.claude/designs/**`）は `design-doc` プラグイン導入時のみ、doc-substance プロンプトに design-review の minimal / risk チェックリストを内挿して借りる。判定は `grep -q '"design-doc@' "$HOME/.claude/settings.json"`。未導入なら doc-substance が内製で代替する（スキル間呼び出しには依存しない）。
 
-**境界**: frontmatter / link の鮮度は `doc-freshness`、**語句・トーン・冗長（最小差分の言い換えで直るもの）は `writing-polish`**、**doc 本文の主張の真偽・論理 ＋ 文書としての構造的成立性（完全性・doc 種別適合・読み手前提・WHY・ナビ。内容の追加・再配置・根拠補完が要るもの）は doc-substance**。判別線は「**語句を最小差分で言い換えれば済むか**」: 済む → writing-polish、内容・構造の変更が要る → doc-substance。決定系 doc（`.claude/adr/**` / `.claude/designs/**`）の設計妥当性は前述の design-review soft 委譲が優先。表現の好みは reviewer が自己削除せず低 confidence で申告し、scoring の ≤40 クランプが機械的に除外する（scoring-guide.md。B 軸の構造指摘は doc:line + 破られた期待を示せばクランプ対象外）。
+**境界**: frontmatter / link の鮮度は `doc-freshness`、**語句・トーン・冗長（最小差分の言い換えで直るもの）は `writing-polish`**、**doc 本文の主張の真偽・論理 ＋ 文書としての構造的成立性（完全性・doc 種別適合・読み手前提・WHY・ナビ。内容の追加・再配置・根拠補完が要るもの）は doc-substance**。判別線は「**語句を最小差分で言い換えれば済むか**」: 済む → writing-polish、内容・構造の変更が要る → doc-substance。決定系 doc（`.claude/adr/**` / `.claude/designs/**`）の設計妥当性は前述の design-review soft 委譲が優先。表現の好みは reviewer が自己削除せず低 confidence で申告し、scoring の ≤40 クランプが機械的に除外する（scoring-guide.md。B 軸の構造指摘は doc:line + 破られた期待を示せばクランプ対象外）。 **self-review では、diff の md の散文に対するこの領分を Markdown 推敲 agent が実際に担当する**（writing-polish を embed で呼ぶ別枠 / `md-polish-guide.md`）。review には経路が無く、従来どおり低 confidence の申告がクランプで落ちる。
 
 ### React/Next.js 判定
 
@@ -250,6 +250,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 - 規模: {small|medium|large}（core {N} ファイル / {N} 行、全体 {N} ファイル / {N} 行）
 - 実効上限: explorer {N} / reviewer {N} / specialist {N}（effort {値} 上限 {N}/{N}/{N} と規模キャップ {N}/{N}/{N} の min。`## 6.2`）
 - 直列 wave: {下限}〜{上限}（{explorer → }reviewer+skeptic{ → [Round 2 ×{1|2}]}{ → [meta+反証]}{ → [追加反証]}）／目安 explorer wave 約 6 min・以降の wave 14〜34 min
+- Markdown 推敲（self-review のみ）: {reviewer wave に相乗り | skip（理由: `no-md-prose` / `embed` / `scope` / `not-installed`）}（`md-polish-guide.md` の 1 節。直列 wave の本数は変えない）
 - リスク因子: [巨大ファイル, 条件分岐追加, 共通モジュール変更, ...]
 - コンテキスト: [session-context, issue-files, knowledge, ...]
 
@@ -277,7 +278,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 | wave | 条件 | 本数 |
 |---|---|:---:|
 | explorer | explorer を 1 体以上配置した場合 | 0 / 1 |
-| reviewer（+ 冷や読み skeptic の相乗り・triage-dynamic-gates.md `## 8.5`） | 常時 | 1 |
+| reviewer（+ 冷や読み skeptic の相乗り・triage-dynamic-gates.md `## 8.5` / self-review は + Markdown 推敲 agent の相乗り・`md-polish-guide.md`） | 常時 | 1 |
 | Round 2（triage-dynamic-gates.md `## 8` Phase 5.5） | effort ≥ high かつ unmet_information あり | 0 / 1（high・規模キャップ帯）/ 2（xhigh・max の 2 段） |
 | **meta-reviewer + 反証（Phase 5.6 / 5.9 を同一 wave で一括発行**・v2.61.0） | いずれかが起動条件を満たす（meta: effort が xhigh / max かつ BLOCKER/CRITICAL あり（**`small` 帯は BLOCKER 有りのみ**・`## 6.3`）／反証: effort ≥ high かつ対象指摘あり） | 0 / 1 |
 | 追加反証バッチ（meta 由来指摘が反証ゲートに該当したときのみ・triage-dynamic-gates.md `## 9`） | meta が起動し、かつ meta 単独由来の指摘が反証ゲートに該当 | 0 / 1 |
@@ -371,7 +372,7 @@ core が 0（テスト・doc のみの PR）の場合は `## 2.5` のモード�
 規模キャップが削るのは **breadth（並べる体数）だけ**。depth を担う層は帯に関わらず effort の指定どおり動かす。
 
 - **削る**: explorer / reviewer / specialist の体数、冗長ペア、Round 2 の追加 explorer（**規模キャップが effort 上限を下回った帯では、Round 2 は effort に関わらず triage-dynamic-gates.md `## 8` の 1 段圧縮経路を使う**）
-- **削らない**: reviewer 個々の effort（`## 7` の連動表どおり。xhigh 指定なら reviewer は `xhigh` のまま）、冷や読み skeptic（5.8）、反証レイヤー（5.9）。いずれも 1〜数体で、小さな diff ほど 1 体あたりの費用対効果が高い
+- **削らない**: reviewer 個々の effort（`## 7` の連動表どおり。xhigh 指定なら reviewer は `xhigh` のまま）、冷や読み skeptic（5.8）、反証レイヤー（5.9）、self-review の Markdown 推敲 agent（体数の上限の外。core が 0 行の doc だけの変更でも起動する）。いずれも 1〜数体で、小さな diff ほど 1 体あたりの費用対効果が高い
 - **例外 1 つだけ: meta-reviewer（5.6）は `small` 帯かつ BLOCKER 不在のときスキップする**（v2.60.0 / triage-dynamic-gates.md `## 8`）。**この原則に対する唯一の例外**であり、根拠が n=1 と弱いためロールバック条件つきの暫定措置として入れてある（`design-notes/triage-rationale.md`）。**他の depth 層へ横展開しないこと** — skeptic / 反証は帯連動させない
 
 xhigh / max を明示指定したユーザーが求めているのは「小さな diff を深く読むこと」であって「小さな diff に 17 体並べること」ではない。**ただし meta-reviewer は「深く読む」層ではなく「他の reviewer の見落としを探す」層**で、reviewer の体数が規模キャップで 3 体まで絞られた帯では**探す相手そのものが小さい**（実測: `small` 帯で meta が出した 4 件は報告マトリクスを 1 件も通らなかった）。上の例外はこの非対称に基づく。
@@ -398,6 +399,8 @@ diff シグナルが読めず観点を決められない場合の既定構成（
 | reviewer | 4 | 6 | 10 |
 | specialist | 3（束ね起動） | 3（束ね起動） | 6（個別起動） |
 | 冗長ペア（x2） | なし | なし（angle 両内挿） | 積極投入 |
+
+- **self-review の Markdown 推敲 agent はこの表の枠の外**（reviewer にも specialist にも数えない。条件を満たせば effort を問わず 1 体。起動条件の正本は `md-polish-guide.md` の 1 節）。観点バンドルにも入らない
 
 - **冗長ペアは xhigh / max 専用**。high 以下ではペア条件（`## 4` の冗長度判定）成立時も 1 体とし、Angle A / B を両方その 1 体のプロンプトに内挿する（`prompts/angles.md`）
   - **補償の実態を正確に**: 反証レイヤーの `confirmed` は「複数エージェント検出 +15」と同じ発火源だが（scoring-guide.md）、反証対象は**報告マトリクス通過見込みの指摘に限られる**（triage-dynamic-gates.md `## 9`）。つまり **閾値直下の指摘（通常 surface の CRITICAL 70 台・MAJOR 80-94）をペアの +15 が報告側へ押し上げていた効果は補償されない**。この帯の recall 低下は縮小のコストとして許容し、severity 別件数（下記ロールバック条件）で監視する

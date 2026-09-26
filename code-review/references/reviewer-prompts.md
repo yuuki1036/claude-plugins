@@ -1,9 +1,9 @@
 # Reviewer プロンプト索引
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @90899a7e -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22bc4df2 -->
 
-reviewer / specialist / meta-reviewer / 反証 / skeptic の各プロンプト本体は `references/prompts/` 配下に **1 観点 1 ファイル**で置く。
+reviewer / specialist / meta-reviewer / 反証 / skeptic / Markdown 推敲の各プロンプト本体は `references/prompts/` 配下に **1 観点 1 ファイル**で置く。
 
 **オーケストレーター（メインコンテキスト）はこのファイルも `prompts/` の中身も Read しない。** agent プロンプトには**ファイルパスだけ**を渡し、agent 自身に Read させる（orchestration-guide.md `## 3.5`）。本文をプロンプトへ転記すると同一テキストを起動体数ぶん書き出すことになり、出力トークンが `(N-1) × 本文長` 膨らむ。共通指示だけで約 7.3k tokens あるため、6 体構成では約 44k tokens の複製になっていた。
 
@@ -21,9 +21,11 @@ reviewer / specialist / meta-reviewer / 反証 / skeptic の各プロンプト�
 | `## 6` Meta-reviewer | `prompts/meta-reviewer.md` | Phase 5.6 / 4.6 |
 | `## 7` Adversarial-verify | `prompts/adversarial-verify.md` | Phase 5.9 / 4.9（反証レイヤー） |
 | `## 8` 冷や読み skeptic | `prompts/recall-skeptic.md` | Phase 5.8 / 4.8（recall 補強） |
+| - Markdown 推敲 | `prompts/md-polish.md` | **self-review のみ**（Step 4 の reviewer wave に相乗り）。reviewer ではないので `reviewer-common.md` は読ませない。起動条件・結果の扱いは `md-polish-guide.md` |
 
 - focus キーの語彙は triage-guide.md `## 3` の観点判定表と一致する（`prompts/focus/<focus キー>.md` で一意に引ける）
 - **`focus/comment-polish.md` は Focus テンプレートではない** — `comment-accuracy` reviewer に self-review のときだけ連結する追加ブロック
+- **`md-polish.md` は `focus/` の外に置く**（`--focus` の語彙に入れない。観点ではなく別枠の agent）。出力は `### レビュー結果` を持たないので、reviewer 用の出力形式の検証と auto-retry を当てない
 - **specialist** は triage-guide.md `## 3`「Red-flag pattern による specialist 自動起動」で起動される別カテゴリ。**指摘の大半が BLOCKER / CRITICAL になる前提**で動作する（人間判断を促すのが目的なので、低 confidence でも報告マトリクスで届く）。specialist agent も `reviewer-common.md` を最初に Read する
 
 ## プロンプトの組み立て方（オーケストレーター向け）

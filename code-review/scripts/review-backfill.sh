@@ -222,7 +222,7 @@ for e in events:
     declared = sum(v for k, v in a.items()
                    if k in ("explorer", "reviewer", "specialist", "round2", "verify")
                    and isinstance(v, int) and not isinstance(v, bool))
-    declared += sum(1 for f in ("recall_skeptic", "meta_reviewer")
+    declared += sum(1 for f in ("recall_skeptic", "meta_reviewer", "md_polish")
                     if isinstance(p.get(f), dict) and p[f].get("fired") is True)
 
     # 期待 wave 本数。**式の正本は `lib/wave_expect.py`**（publish / retro と共有する）。

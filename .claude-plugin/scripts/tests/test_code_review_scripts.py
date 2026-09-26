@@ -59,6 +59,8 @@ BASE_PAYLOAD = {
     # 層別キー。欠けると `payload:severity_threshold` が立つ（#252）
     "severity_threshold": "MAJOR",
     "agents": {"explorer": 0, "reviewer": 2},
+    # self-review だけの層（#243）。既定の publish は self-review なので、無いと `payload:md_polish` が立つ
+    "md_polish": {"fired": False, "skip_reason": "no-md-prose", "suggested": 0},
 }
 
 
@@ -380,7 +382,8 @@ class SkipReasonValidationTest(ScriptTestBase):
                  ("effort", "config", "scope", "emergency", "no-eligible-findings")),
                 ("recall_skeptic", ("effort", "config", "no-surface", "emergency", "scope")),
                 ("meta_reviewer", ("effort", "config", "no-high-severity", "size-tier",
-                                   "emergency", "scope"))):
+                                   "emergency", "scope")),
+                ("md_polish", ("no-md-prose", "embed", "scope", "not-installed"))):
             for reason in allowed:
                 with self.subTest(field=field, reason=reason):
                     r = self.publish(self._payload(field, reason))
@@ -401,6 +404,21 @@ class SkipReasonValidationTest(ScriptTestBase):
         self.assertEqual(r.returncode, 1, "meta の語彙が skeptic で通っている")
         r = self.publish(self._payload("meta_reviewer", "no-surface"))
         self.assertEqual(r.returncode, 1, "skeptic の語彙が meta で通っている")
+
+    def test_md_polish_has_its_own_vocabulary(self):
+        """Markdown 推敲は effort を起動条件に使わないので `effort` を持たない（#243）."""
+        r = self.publish(self._payload("md_polish", "effort"))
+        self.assertEqual(r.returncode, 1, "起動条件に無い effort が通っている")
+        r = self.publish(self._payload("meta_reviewer", "no-md-prose"))
+        self.assertEqual(r.returncode, 1, "md_polish の語彙が meta で通っている")
+
+    def test_md_polish_without_fired_or_reason_becomes_a_gap(self):
+        p = self._payload("md_polish", ...)
+        del p["md_polish"]["fired"]
+        self.publish(p)
+        self.assertIn("payload:md_polish.fired", self.last_payload()["measurement_gaps"])
+        self.publish(self._payload("md_polish", ...))
+        self.assertIn("payload:md_polish.skip_reason", self.last_payload()["measurement_gaps"])
 
     def test_free_text_is_rejected(self):
         bad = "effort（high 以下のため）"
@@ -1167,6 +1185,31 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         self.assertEqual(p["dispatch"]["agents"], 4, "前提: 機械計測が 4 体")
         self.assertNotIn("agents-mismatch", p["measurement_gaps"],
                          "動的層を足さずに比べている")
+
+    def _with_md_polish(self, reviewer: int, fired: bool) -> dict:
+        p = self._with_agents({"explorer": 0, "reviewer": reviewer})
+        p["md_polish"] = ({"fired": True, "skip_reason": None, "suggested": 2} if fired
+                          else {"fired": False, "skip_reason": "no-md-prose", "suggested": 0})
+        return p
+
+    def test_md_polish_agent_is_added_before_comparing(self):
+        """Markdown 推敲 agent は `agents` に数えない契約なので `md_polish.fired` ぶんを足す（#243）."""
+        self.write_transcript([[0, 5, 9]])                  # reviewer 2 + 推敲 1
+        self.publish(self._with_md_polish(2, True), env=self.env_home())
+        p = self.last_payload()
+        self.assertEqual(p["dispatch"]["agents"], 3, "前提: 機械計測が 3 体")
+        self.assertNotIn("agents-mismatch", p["measurement_gaps"], "推敲 agent を足さずに比べている")
+
+    def test_md_polish_counted_as_a_reviewer_is_a_mismatch(self):
+        """推敲 agent を `reviewer` に含めて申告すると `fired` と二重に数える（doc が禁じている形）."""
+        self.write_transcript([[0, 5, 9]])
+        self.publish(self._with_md_polish(3, True), env=self.env_home())
+        self.assertIn("agents-mismatch", self.last_payload()["measurement_gaps"])
+
+    def test_unfired_md_polish_is_not_added(self):
+        self.write_transcript([[0, 5]])
+        self.publish(self._with_md_polish(2, False), env=self.env_home())
+        self.assertNotIn("agents-mismatch", self.last_payload()["measurement_gaps"])
 
     def test_non_headcount_keys_are_not_summed(self):
         """`verify_findings` / `explorer_waves` は**体数ではない**ので足さない.
@@ -2378,6 +2421,20 @@ class SchemaMarkerInjectionTest(ScriptTestBase):
         payload = {k: v for k, v in BASE_PAYLOAD.items() if k != "meta_reviewer"}
         self.publish(payload)
         self.assertIn("payload:meta_reviewer", self.last_payload()["measurement_gaps"])
+
+    def test_md_polish_marker_is_injected(self):
+        self.publish()
+        self.assertEqual(self.last_payload()["md_polish"]["gate_schema"], 1)
+
+    def test_missing_md_polish_is_a_gap_only_for_self_review(self):
+        """self-review だけの層。review の publish で毎回 gap と WARN を出さない（#243）."""
+        payload = {k: v for k, v in BASE_PAYLOAD.items() if k != "md_polish"}
+        self.publish(payload)
+        self.assertIn("payload:md_polish", self.last_payload()["measurement_gaps"])
+        self.publish(payload, "code-review:review")
+        p = self.last_payload()
+        self.assertNotIn("payload:md_polish", p["measurement_gaps"])
+        self.assertNotIn("md_polish", p, "無い層を捏造している")
 
 
 class RetroFixture(ScriptTestBase):
@@ -5350,6 +5407,15 @@ class ReviewBackfillTest(TranscriptFixture):
         self.assertEqual(rows[0]["declared"], 2, "allow-list 外のキーを足している")
         self.assertEqual(rows[0]["agents_diff"], 0)
 
+    def test_declared_counts_a_fired_md_polish(self):
+        """Markdown 推敲 agent も publish と同じく `md_polish.fired` から足す（#243）."""
+        self.write_transcript([[60], [300]], ends={0: 180, 1: 420}, base=self.BASE)
+        p = self.payload(agents={"explorer": 1}, md_polish={"fired": True})
+        rows = json.loads(self.backfill(self.write_events(p), "--json").stdout)["backfilled"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["declared"], 2, "推敲 agent を足していない")
+        self.assertEqual(rows[0]["agents_diff"], 0)
+
     def test_agents_outside_the_window_exclude_the_run(self):
         """**窓の外にも同セッションの agent がいる回は使わない。** `measure-tokens.sh` の
         `--since` に上限が無いので、別レビューの agent が `wave_clock` の末尾に入る
@@ -7236,6 +7302,68 @@ class RetroAdversarialEffortTest(RetroFixture):
         out = self._out()
         self.assertIn("- high: 不発 0/1", out)
         self.assertNotIn("報告見込みの MAJOR への verdict", out)
+
+
+class RetroMdPolishTest(RetroFixture):
+    """Markdown 推敲（`md_polish` / self-review のみ）の集計（GitHub issue #243）."""
+
+    def _row(self, fired: bool, reason=None, suggested=0, gaps=(), plugin=None) -> dict:
+        r = {"effort": "high", "measurement_gaps": list(gaps),
+             "md_polish": {"fired": fired, "skip_reason": reason, "suggested": suggested,
+                           "gate_schema": 1}}
+        if plugin:
+            r["_plugin"] = plugin
+        return r
+
+    def _out(self) -> str:
+        return self.run_script(RETRO, env=self._env()).stdout
+
+    def test_fired_and_valuable_runs_are_counted(self):
+        """提案が 1 件以上の回だけを価値ありと数える。`-1`（測定不能）は数えない."""
+        self._events([self._row(True, suggested=2), self._row(True, suggested=0),
+                      self._row(True, suggested=-1), self._row(False, "no-md-prose"),
+                      self._row(False, "not-installed")])
+        out = self._out()
+        self.assertIn("Markdown 推敲（self-review のみ / #243）: 起動 3 回（提案あり 1 回）", out)
+        self.assertIn("no-md-prose=1", out)
+        self.assertIn("not-installed=1", out)
+
+    def test_skip_reasons_are_out_of_scope_for_the_denominator(self):
+        """起動しなかった理由はどれも設計上の非該当。判定対象（分母）に入れない."""
+        self._events([self._row(True, suggested=1)] + [self._row(False, r)
+                      for r in ("no-md-prose", "embed", "scope", "not-installed")])
+        md = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)["md_polish"]
+        self.assertEqual((md["n"], md["fired"], md["dropped_scope"]), (1, 1, 4))
+
+    def test_no_line_for_a_population_without_the_field(self):
+        self._events([{"_plugin": "code-review:review", "effort": "high", "measurement_gaps": []}
+                      for _ in range(3)])
+        self.assertNotIn("Markdown 推敲", self._out())
+
+    def test_total_agents_counts_a_fired_md_polish(self):
+        """体数の中央値（fleet・トークンとの相関の x 軸）に推敲 agent を入れる."""
+        rows = []
+        for fired in (True, False):
+            r = self._row(fired, None if fired else "no-md-prose", 1 if fired else 0)
+            r.update({"size_tier": "small" if fired else "large", "duration_fleet_min": 10,
+                      "agents": {"explorer": 0, "reviewer": 2}})
+            rows.append(r)
+        self._events(rows)
+        tiers = {t["key"]: t["agents_median"]
+                 for t in json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)["tiers"]}
+        self.assertEqual(tiers["high/small"], 3, "起動した推敲 agent を体数に足していない")
+        self.assertEqual(tiers["high/large"], 2, "起動していない推敲 agent を足している")
+
+    def test_md_polish_gaps_use_the_self_review_denominator(self):
+        """self-review でしか立たない gap。review の回で薄めない（`late-publish` と同じ扱い）."""
+        rows = [self._row(False, "no-md-prose", gaps=["payload:md_polish.skip_reason"])
+                for _ in range(6)]
+        rows += [{"_plugin": "code-review:review", "effort": "high", "measurement_gaps": []}
+                 for _ in range(30)]
+        self._events(rows)
+        sig = self.signals(self._out())
+        self.assertIn("payload:md_polish.skip_reason", sig, "review の回で薄めている")
+        self.assertIn("self-review の publish 節", sig, "是正先が両 SKILL の既定に落ちている")
 
 
 if __name__ == "__main__":

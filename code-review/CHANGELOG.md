@@ -2,6 +2,31 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.131.0] - 2026-09-26
+
+### Added
+
+- **self-review が diff の Markdown の散文を writing-polish に通し、推敲提案を別枠に出すようにした**（#243）。
+  語句・トーン・冗長は writing-polish の領分と境界を引いていたのに、diff 内の md をそこへ渡す経路が無く、
+  コメント推敲（B 系統）はコード内コメントだけ、doc-substance は語句の指摘を好みクランプに落とすので、
+  md の文面はどの担当からも漏れていた（実例: 仕様書の 1 箇条で太字の範囲を長い句に広げたまま通過した）
+  - 推敲 agent を reviewer wave に 1 体相乗りさせる（`model: opus` / `effort: high`。体数の上限の外）。
+    起動は effort を問わず、推敲してよい md の追加・変更行が 1 行以上あり writing-polish が有効なとき。
+    `--embed`・`--focus`・`--exclude md-polish` では起動しない。review には入れない
+  - 対象行は新スクリプト `md-prose-lines.sh` が決定的に切り出す（フェンス内のコード・frontmatter・
+    HTML コメント・見出し・表の区切り・リンクだけの行・未追跡のファイルを外す。行番号は最終状態のファイル）。
+    agent は断片を一時ファイルに書いて writing-polish を `--embed` で呼び、戻りを file:line に戻せない提案と
+    行内コード・リンク・`${...}`・`vNEXT`・表の `|` などを崩す提案を捨てる
+  - 結果は severity マトリクスの外の `📝 Markdown 推敲` 節に before→after で出し、Step 7 の質問 3
+    （確実のみ / 全件 / 適用しない）で選ぶとメインが Edit で当てる（位置は行番号ではなく行の全文で決める。
+    A 系統の修正で行がずれても別の行を書き換えない）。self-review の allowed-tools に Edit を足した
+  - `--exclude md-polish` は推敲だけを止め、他の層（規模キャップ・skeptic・反証）にとってはスコープの絞り込みに数えない
+  - payload に self-review 限定の `md_polish`（`fired` / `skip_reason` / `suggested` / `gate_schema`）を足した。
+    推敲 agent は `agents` に数えず、publish・backfill・retro の申告体数に `md_polish.fired` を足して
+    `agents-mismatch` を防ぐ。review の publish では `payload:md_polish` の gap を立てない。
+    retro は起動回数と提案のあった回数を「動的層の発火」に出す
+  - 手順の正本は `references/md-polish-guide.md`、agent のプロンプトは `references/prompts/md-polish.md`
+
 ## [2.130.12] - 2026-09-26
 
 ### Changed

@@ -59,8 +59,8 @@ check_cli "python3" "true" "payload の整形・検証（publish-review-event.sh
 check_mcp "github" "true" "GitHub MCP サーバー"
 # kvault は self-review Step 1.5 の Vault 照合で使う任意の外部 CLI（未導入時は skip）
 check_cli "kvault" "false" "knowledge vault CLI（self-review Vault 照合。未導入時は skip）"
-# writing-polish は review 締めフロー 3 のドラフト推敲で使う dormant 連携（未導入時は skip）
-check_plugin "writing-polish" "false" "writing-polish プラグイン（返答ドラフトの提示前推敲。未インストール時は skip）"
+# writing-polish は review 締めフロー 3 のドラフト推敲と self-review の Markdown 推敲で使う dormant 連携（未導入時は skip）
+check_plugin "writing-polish" "false" "writing-polish プラグイン（返答ドラフトの提示前推敲と self-review の Markdown 推敲。未インストール時は skip）"
 check_plugin "dev-workflow" "false" "dev-workflow プラグイン（self-review 完了後の worktree-teardown 起動。未インストール時は skip）"
 
 # --- 結果出力 ---

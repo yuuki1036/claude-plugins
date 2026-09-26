@@ -331,6 +331,7 @@ fi
 MACHINE_ID=$(hostname -s 2>/dev/null) || MACHINE_ID=""
 MERGED=$(
   REVIEW_MACHINE_ID="$MACHINE_ID" \
+  REVIEW_PLUGIN="$PLUGIN" \
   REVIEW_PLUGIN_JSON="$HERE/../.claude-plugin/plugin.json" \
   REVIEW_DURS="{\"duration_min\":$DUR,\"duration_triage_min\":$DUR_TRIAGE,\"duration_fleet_min\":$DUR_FLEET,\"duration_closing_min\":$DUR_CLOSING,\"duration_explore_min\":$DUR_EXPLORE,\"duration_synthesis_min\":$DUR_SYNTHESIS}" \
   REVIEW_EXPLORER_WAVES="$EXPLORER_WAVES" \
@@ -612,6 +613,7 @@ SKIP_REASONS = {
     "recall_skeptic":     ("effort", "config", "no-surface", "emergency", "scope"),
     "meta_reviewer":      ("effort", "config", "no-high-severity", "size-tier",
                            "emergency", "scope"),
+    "md_polish":          ("no-md-prose", "embed", "scope", "not-installed"),
 }
 for field, allowed in SKIP_REASONS.items():
     d = payload.get(field)
@@ -675,7 +677,7 @@ launched = agents.get("explorer")
 declared_agents = sum(v for k, v in agents.items()
                       if k in ("explorer", "reviewer", "specialist", "round2", "verify")
                       and isinstance(v, int) and not isinstance(v, bool))
-declared_agents += sum(1 for f in ("recall_skeptic", "meta_reviewer")
+declared_agents += sum(1 for f in ("recall_skeptic", "meta_reviewer", "md_polish")
                        if isinstance(payload.get(f), dict) and payload[f].get("fired") is True)
 
 # 欠測マーカーの識別子。explorer wave の欠測だけは「起動したのに打点が無い」ときのみ
@@ -713,11 +715,18 @@ SCHEMA_MARKERS = {
     "adversarial_verify": {"calibration_schema": 3, "gate_schema": 2},
     "recall_skeptic":     {"attribution_schema": 2, "gate_schema": 2},
     "meta_reviewer":      {"gate_schema": 3},
+    "md_polish":          {"gate_schema": 1},
 }
+#: self-review だけに載るフィールド。review の publish では不在が正常なので gap を立てない
+#: （立てると review の毎回に `payload:<field>` と欠測の WARN が出る）
+SELF_REVIEW_ONLY = ("md_polish",)
+is_self_review = os.environ.get("REVIEW_PLUGIN") == "code-review:self-review"
 for field, marks in SCHEMA_MARKERS.items():
     d = payload.get(field)
     if isinstance(d, dict):
         d.update(marks)          # 呼び出し側が渡していてもスクリプト側が勝つ
+    elif field in SELF_REVIEW_ONLY and not is_self_review:
+        continue
     else:
         # 層のオブジェクトごと落ちた回。版マーカーだけ作っても中身が無いので**注入しない**
         # （空の dict は retro の母集団に「起動記録なし」として混ざる）。可視化だけする
@@ -808,7 +817,7 @@ if _extra:
     gaps.append("payload:agents.vocab")
     sys.stderr.write(
         "WARN: agents に契約外のキーがある（%s）。契約は %s の 7 つで、動的層は専用フィールド"
-        "（`recall_skeptic` / `meta_reviewer` の `fired`）から数える。**キーを足すのではなく"
+        "（`recall_skeptic` / `meta_reviewer` / `md_polish` の `fired`）から数える。**キーを足すのではなく"
         "契約どおりの名前に直す** — 綴り違いは黙って 0 として集計され、`agents` は体数中央値・"
         "fleet 相関・1 体あたり cache_read のすべての分母になる\n"
         "  → 正本は orchestration-measurement.md `## 16`\n"
@@ -829,7 +838,7 @@ if not any(isinstance(agents.get(k), int) and not isinstance(agents.get(k), bool
 # 発火記録（`fired` / `skip_reason`）は実行時の事実なのでスクリプトからは注入できない。
 # **落ちたことだけは検知する** — `fired` が無いと retro は「走らなかった」と「走れる対象が
 # 無かった」を区別できず、ゲート設計の妥当性を計測で判断できなくなる（issue #129）
-for field in ("adversarial_verify", "recall_skeptic", "meta_reviewer"):
+for field in ("adversarial_verify", "recall_skeptic", "meta_reviewer", "md_polish"):
     d = payload.get(field)
     if not isinstance(d, dict):
         continue

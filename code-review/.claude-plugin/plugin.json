@@ -1,6 +1,6 @@
 {
   "name": "code-review",
-  "version": "2.130.12",
+  "version": "2.131.0",
   "description": "Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity の 2 軸で報告閾値を制御し、diff の性質と effort に応じて explorer → reviewer → 反証レイヤーを構成する。PR レビュー（/review）とコミット前セルフレビュー（/self-review。--embed で他プラグインから委譲可）に対応。",
   "author": {
     "name": "yuki"
@@ -34,7 +34,7 @@
       "name": "writing-polish",
       "type": "plugin",
       "required": false,
-      "description": "review 締めフロー 3 の投稿コメントドラフト推敲。インストール時のみ --embed --tone review で soft 委譲し冗長な初稿を圧縮、未導入時は skip して推敲前ドラフトを提示（dormant・後方互換）"
+      "description": "review 締めフロー 3 の投稿コメントドラフト推敲と、self-review の Markdown 推敲（diff の md の散文を --embed で通し before→after を別枠に出す）。インストール時のみ soft 委譲し、未導入時は skip（dormant・後方互換）"
     },
     {
       "name": "dev-workflow",

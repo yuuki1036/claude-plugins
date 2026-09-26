@@ -561,7 +561,7 @@ def agents_dict(p):
 
 
 def total_agents(p):
-    """fleet の実体数。1 体固定の検証層（meta / skeptic）も起動していれば足す。"""
+    """fleet の実体数。`agents` に数えない層（meta / skeptic / Markdown 推敲）も起動していれば足す。"""
     a = p.get("agents")
     if not isinstance(a, dict):
         return None
@@ -570,7 +570,7 @@ def total_agents(p):
     if not vals:
         return None
     extra = 0
-    for field in ("meta_reviewer", "recall_skeptic"):
+    for field in ("meta_reviewer", "recall_skeptic", "md_polish"):
         d = p.get(field)
         if isinstance(d, dict) and d.get("fired") is True:
             extra += 1
@@ -636,7 +636,10 @@ def pct(part, whole):
 # 「設計上そもそも起動しない」スキップ理由。**価値率とゲート判定の分母から外す**。
 # これを分母に入れると、既定 effort で回しただけのサンプルが「起動していない」として
 # 積み上がり、ゲートの実装バグと運用上の非該当を区別できなくなる
-OUT_OF_SCOPE_SKIPS = {"effort", "config", "emergency", "scope"}
+# `no-md-prose` / `embed` / `not-installed` は Markdown 推敲（`md_polish`）だけの値（#243）。
+# md の変更がある回にだけ意味を持つ層なので、対象が無い回も分母に入れない
+OUT_OF_SCOPE_SKIPS = {"effort", "config", "emergency", "scope",
+                      "no-md-prose", "embed", "not-installed"}
 
 report, signals = [], []
 
@@ -1335,6 +1338,10 @@ def layered_signal(st, numer_of, denom_of, min_n, is_hot, render, pending=None):
 # / `## 9`（反証）
 skeptic = layer_stats("recall_skeptic", "attribution_schema", 2)
 meta = layer_stats("meta_reviewer", "gate_schema", 3)
+# Markdown 推敲（self-review のみ / #243）。価値は「提案が 1 件以上あった」（`suggested` の -1 は
+# 測定不能なので価値に数えない）
+md_polish = layer_stats("md_polish", "gate_schema", 1,
+                        value_of=lambda d: num(d.get("suggested")) or 0)
 # 反証も他 2 層と同じ流儀で絞る（issue #129）。**旧版は `fired` を持たない**ので
 # `gate_schema >= 2` で落ちる — 「起動しなかった」ではなく「発火を記録していない版」
 adversarial = layer_stats("adversarial_verify", "gate_schema", 2, value_of=verdict_total,
@@ -1719,6 +1726,8 @@ def gap_denom(g):
         return n_gapfield_selfreview
     if g == "fleet-span-mismatch":     # 突合の材料が揃った回でのみ判定できる（#207）
         return n_fleet_span_judged
+    if g.startswith("payload:md_polish"):  # self-review だけのフィールド（#243）
+        return n_gapfield_selfreview
     # **`agents-abandoned` / `agents-nested` / `wave-split` はここに来ない** — 欠測ではないので `gap_counts` から外してあり
     # （#192）、分母 `n_wave_judged` と分子は専用の判定ブロックが持つ（#200）
     return n_gapfield
@@ -1770,6 +1779,12 @@ def gap_hint(g):
                 "自己申告が無い。集計は位置ヒューリスティックに落ちる — 同じ層構成でも反証 wave の"
                 "体数で wave-split の判定が反転する（#216）。値は両 SKILL の skeptic 相乗り / "
                 "fallback 段落が決めている（orchestration-measurement.md `## 16`）")
+    if g.startswith("payload:md_polish"):
+        # `.skip_reason` は判定材料（`## md-polish`）が出なかった回にも立つ（guide 1 節）。
+        # そちらは `missing_coverage` に `md-polish` が並ぶので是正先を併記する
+        return ("self-review の publish 節（Step 6.4）の `md_polish` の記述漏れ。**起動しなかった回も** "
+                "`fired: false` と `skip_reason` で入れる（md-polish-guide.md の 5 節 / #243）。"
+                "`missing_coverage` に `md-polish` がある回は記述漏れではなく `md-prose-lines.sh` の失敗")
     if g.startswith("payload:"):
         return "payload テンプレートの記述漏れ（両 SKILL の publish 節）を見直す"
     if g == "late-publish":
@@ -2017,6 +2032,7 @@ if as_json:
                            "dropped_schema": fc_dropped_schema, "total": fc_total, **fc},
         "recall_skeptic": skeptic, "meta_reviewer": meta,
         "adversarial_verify": adversarial,
+        "md_polish": md_polish,
         "round2_fired": round2_fired, "round2_scope": len(round2_scope),
         "tokens": {"n": len(tok_rows), "n_raw": len(tok_raw),
                    "dropped_window": tok_dropped_window,
@@ -2439,7 +2455,11 @@ print("**動的層の発火**（**層ごとに分母が違う** — 各層の版
          meta["fired"], meta["n"], meta["valuable"],
          adversarial["fired"], adversarial["n"], adversarial["valuable"],
          round2_fired, len(round2_scope)))
-for name, st in (("skeptic", skeptic), ("meta", meta), ("反証", adversarial)):
+if md_polish["n_raw"]:   # review だけの母集団では出さない（self-review のみの層）
+    print("  - Markdown 推敲（self-review のみ / #243）: 起動 %d 回（提案あり %d 回）"
+          % (md_polish["fired"], md_polish["valuable"]))
+for name, st in (("skeptic", skeptic), ("meta", meta), ("反証", adversarial),
+                 ("md 推敲", md_polish)):
     if st["dropped_schema"] or st["dropped_scope"] or st["dropped_unrecorded"]:
         print("  - %s 母集団: 全 %d 件 → 判定対象 %d 件（版マーカー %s>=%d で除外 %d / "
               "設計上非該当で除外 %d / 発火記録の欠落で除外 %d）"

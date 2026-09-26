@@ -125,7 +125,7 @@ findings をコード/文書本文に**反映する前に**、その修正が依
 | `missing_coverage` | string[] | yes | 欠損観点（空配列可） |
 
 - **findings は Step 6 で報告された指摘と 1:1**（報告マトリクスで skip されたものは含めない）。`id` は Step 6 のレポート連番に一致させる
-- **「✏️ コメント推敲」（B 系統）は findings に含めない**（v2.45.0）。severity / confidence を持たない別枠出力であり、呼び出し元（feature-dev Phase 6 等）の auto-fix は severity 駆動で動くため。推敲は人間が採否を決める性質のもので、自動適用の対象にしない
+- **「✏️ コメント推敲」（B 系統）と「📝 Markdown 推敲」は findings に含めない**（v2.45.0・v2.131.0。Markdown 推敲は `--embed` では起動しないので通常は出ない）。severity / confidence を持たない別枠出力であり、呼び出し元（feature-dev Phase 6 等）の auto-fix は severity 駆動で動くため。推敲は人間が採否を決める性質のもので、自動適用の対象にしない
 - **反証レイヤー（Phase 4.9）の効果は `severity` / `confidence` に反映済み**（Step 5 で verdict 反映を適用してから報告するため、JSON には最終値が入る）。`refuted` で取り下げた MAJOR/MINOR は findings に含まれない。**係争中の BLOCKER/CRITICAL は通常通り findings に残り、`title` または `impact` に `⚠️ 反証メモ:` を含める**（schema_version は据え置き 1。新フィールドは追加しない＝consumer 後方互換）
 - JSON として valid であること（末尾カンマ禁止、ダブルクオート、改行は文字列内で `\n`）
 - このブロックの**後**に `[embed-mode: findings-only, no-prompt]` marker を置く
