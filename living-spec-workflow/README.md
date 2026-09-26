@@ -11,6 +11,7 @@ Issue 化する前段の「設計収束ドキュメント」(living spec) を作
 /living-spec decision 認証は OAuth 2.0 を採用       # D1 を append し、関連 OQ を close
 /living-spec oq list                               # open な OQ の一覧（--all で closed 込み）
 /living-spec status                                # 収束率 + open OQ 残数 + 次に決めるもの
+/living-spec spec --freeze D12                     # 仕様表を凍結（D12 に凍結の経緯を書いてから）
 /living-spec                                       # usage
 ```
 
@@ -49,6 +50,8 @@ sync: null                     # v1 未使用（予約）
 ---
 ```
 
+仕様表を凍結している間だけ、`spec_table: frozen` と `spec_table_frozen_by: D<n>` の 2 行が加わる（下の「仕様表の凍結」）。
+
 本文は 7 セクション構成。うち機械パース対象は「仕様」「Open Questions」「Decision log」の 3 つ。
 
 | セクション | 役割 |
@@ -68,6 +71,22 @@ OQ を close するとき、台帳から行を消して Decision へ移す設計
 
 つまり move をやめることで消えるのは消失であって、不整合ではない。不整合の検知器を持つのはそのため。
 
+## 仕様表の凍結
+
+仕様の正本を別の文書へ移したあとも、living spec を Decision log と OQ 台帳として使い続けることがある。このとき仕様表は更新しなくなるので、表全体を凍結する。
+
+```text
+/living-spec decision 仕様の正本を docs/product-specs/ に移した   # 経緯を D12 として残す
+/living-spec spec --freeze D12                                # 仕様表を凍結
+/living-spec spec --unfreeze D15                              # 解除（D15 に再開の経緯を書いてから）
+```
+
+- 凍結中は `/living-spec-maintain` の段 6 が塩漬けを判定しない（skip した理由をレポートに出す）。凍結後に表を手で触った行（`since` が凍結の Decision より新しい）だけを Warning にする
+- `spec` は凍結中の追加・更新を拒否し、凍結を宣言した Decision を案内する
+- `status` は収束率を数えず「凍結済み」と出す（表の内訳は参考として出す）。「次に決めるもの」には open な OQ だけを挙げる
+- 凍結の 2 行が壊れている（書式違反・Decision log に無い D# を指す）ときは、`--unfreeze` を D# なしで実行すると消せる（書き損じの修正なので Decision は要らない）
+- 凍結の Decision は表の最後の更新以降に書いたもの、解除の Decision は凍結の Decision より後のものに限る。行単位では凍結しない。確度ラベルに 4 つ目の値を足す案は、3 値の契約と段 1 の正規表現を変えることになるので採らなかった
+
 ## 点検（/living-spec-maintain）
 
 整合と鮮度を 8 段のファネルで検証する。**安い機械判定を先頭に置き、LLM 判断は通過分にだけ当てる**。
@@ -79,7 +98,7 @@ OQ を close するとき、台帳から行を消して Decision へ移す設計
 | 3 | OQ ⇔ Decision の双方向参照 | Critical |
 | 4 | 「参照ソース」の外部 URL の死リンク | Warning |
 | 5 | OQ の `status` と `関連 D#` の行内整合 | Warning |
-| 6 | 確度ラベルの塩漬け | Warning |
+| 6 | 確度ラベルの塩漬け（仕様表が凍結済みなら、凍結後の更新だけを見る） | Warning |
 | 7 | frontmatter `last_updated` の整合 | Info |
 | 8 | 現在地サマリと実態のズレ（LLM 判断・`high` 以上） | Info |
 
@@ -128,7 +147,7 @@ claude plugin install /path/to/claude-plugins/living-spec-workflow    # ロー�
 
 | 種別 | 名前 | 説明 |
 |---|---|---|
-| コマンド | `/living-spec` | init / oq / oq list / decision / spec / status |
+| コマンド | `/living-spec` | init / oq / oq list / decision / spec（`--freeze` / `--unfreeze`）/ status |
 | コマンド | `/living-spec-maintain` | 整合・鮮度の 8 段検証（`--spec` / `--all`） |
 | スキル | `living-spec` | living spec の作成・運用（CRUD 系） |
 | スキル | `living-spec-maintain` | 整合・鮮度の検証（深掘り系・`${CLAUDE_EFFORT}` 分岐あり） |

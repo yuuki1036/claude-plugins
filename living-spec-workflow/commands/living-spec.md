@@ -23,6 +23,7 @@ allowed-tools:
 - `oq list [--all]` → OQ 一覧（既定は open のみ。`--all` で closed 込み）
 - `decision <text>` → Decision log に append（`D<max+1>` を機械採番）し、関連 OQ を close して双方向参照を成立させる
 - `spec <項目> <確度>` → 仕様表の確度ラベル（`確定` / `方向性(仮)` / `未定`）を更新し `since` を機械付与
+- `spec --freeze D<n>` / `spec --unfreeze D<n>` → 仕様表を凍結 / 解除する（正本を別の文書へ移したとき。先に `decision` で経緯を残し、その D# を渡す。壊れた凍結の宣言は `--unfreeze` を D# なしで実行して消す）
 - `status` → 進捗ビュー（収束率 + open OQ 残数 + セッション再開導線）
 
 `init` 以外は `--spec <slug>` で対象ファイルを明示指定できます（省略時: 1 件なら自動 / 複数なら選択 / 0 件なら init を案内）。
@@ -36,8 +37,8 @@ allowed-tools:
 1. Phase 0: 保存先確認（`.claude/living-specs/`、無ければ作成）+ サブコマンド判定 + 対象ファイル特定
 2. Phase 1-3: init（slug の命名規則検証 / 既存なら中止 → `date` 取得 → 衝突確認 → template 置換 → Write）
 3. Phase 4: oq（採番 → append）/ oq list（読むだけ）
-4. Phase 5: decision（採番 → 関連 OQ を選ばせる → append → OQ を close → 双方向参照を Read で検証）
-5. Phase 6: spec（確度の 3 値検証 → 項目で引き当て → 確度と since を更新）
-6. Phase 7: status（収束率と open OQ 残数を集計）
+4. Phase 5: decision（採番（その番号を壊れた凍結の宣言が指していたら止める）→ 関連 OQ を選ばせる → append → OQ を close → 双方向参照を Read で検証）
+5. Phase 6: spec（凍結中なら拒否 → 確度の 3 値検証 → 項目で引き当て → 確度と since を更新）/ `--freeze`・`--unfreeze`（D# の実在と順序を確かめて frontmatter の凍結の 2 行を書く・消す。壊れた宣言は `--unfreeze` が D# なしで消す）
+6. Phase 7: status（収束率と open OQ 残数を集計。仕様表が凍結されていれば収束率は数えない）
 
 書式の正本は `skills/living-spec/references/format-spec.md` です（表スキーマ・確度ラベル 3 値・採番規約・パース正規表現）。日付は必ず Bash の `date` で取得し、擬似日付を作らないでください。**採番の前に HTML コメント区間を除去する**こと（コメント内の記入例を実在 ID として数えないため）。

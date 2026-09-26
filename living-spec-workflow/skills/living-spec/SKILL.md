@@ -58,7 +58,7 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 | `oq` | `<text> [--spec <slug>]` | Phase 4 |
 | `oq list` | `[--all] [--spec <slug>]` | Phase 4 |
 | `decision` | `<text> [--spec <slug>]` | Phase 5 |
-| `spec` | `<項目> <確度> [--spec <slug>]` | Phase 6 |
+| `spec` | `<項目> <確度> [--spec <slug>]` / `--freeze D<n>` / `--unfreeze [D<n>]` | Phase 6 |
 | `status` | `[--spec <slug>]` | Phase 7 |
 | `maintain` | - | 案内のみ（整合・鮮度チェックは `/living-spec-maintain` の領分） |
 
@@ -161,6 +161,8 @@ perl -0777 -pe 's/<!--.*?-->//gs' "$F" | grep -oE '^### D([0-9]+): ' | grep -oE 
 
 Edit は **append と in-place 更新のみ**。行の削除を含む編集をしない（仕様表の行削除だけは項目の撤回として許容。2 節）。この規律があるので、Edit が部分適用で止まっても情報は消えない。
 
+frontmatter の凍結の 2 行（`spec_table` / `spec_table_frozen_by`）は対象外で、`spec --unfreeze` が消す（2.1 節・10 節。有効な宣言の解除では経緯が Decision log に残る。壊れた宣言の除去は書き損じの修正で、残す経緯が無い）。
+
 ### W4. 書き込んだら `last_updated` を更新する
 
 frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validated` は触らない**（人が maintain を回したときに更新するフィールド。10 節）。
@@ -216,7 +218,10 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 **このサブコマンドが双方向参照を成立させる唯一の場所**。ここが片方向で止まると maintain 段 3 が Critical を出す。
 
 1. 対象ファイルを Read する
-2. W2 で `D<max+1>` を採番する
+2. W2 で `D<max+1>` を採番する。**採番した番号が frontmatter の `spec_table_frozen_by` と同じなら、書き込まずに報告して終了する**（凍結の宣言が、まだ無い Decision を指していた＝手編集の誤記。このまま書くと、この Decision が凍結の根拠として読まれる）:
+   ```
+   frontmatter の凍結の宣言が、まだ無い D<n> を指しています（壊れた宣言）。先に /living-spec spec --unfreeze を D# なしで実行して消してください。凍結し直すなら、そのあと --freeze D<凍結の経緯を書いた Decision> を実行します（無ければ先に /living-spec decision で残す）。
+   ```
 3. **関連 OQ を選ばせる**。コメント除去後に `status: open` の OQ を列挙し、AskUserQuestion で確認する（multiSelect）:
    - question: 「この決定が close する OQ を選んでください」
    - header: 「関連 OQ」
@@ -265,15 +270,29 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 
 ---
 
-## Phase 6: spec — 仕様表の確度更新
+## Phase 6: spec — 仕様表の確度更新 / 凍結
 
-`since` の発生源を機械に寄せるためのサブコマンド。手編集に委ねると「確度だけ変えて `since` を据え置く」（実際は動いているのに stale 警告）と「`since` だけ触る」（塩漬けなのに沈黙）が両方起こる。
+`since` の発生源を機械に寄せるためのサブコマンド。手編集に委ねると「確度だけ変えて `since` を据え置く」（実際は動いているのに stale 警告）と「`since` だけ触る」（塩漬けなのに沈黙）が両方起こる。仕様表の凍結（`format-spec.md` 2.1 節）の宣言と解除も、同じ理由でここから書く。
 
+**`spec` に続く引数で分岐する**（`--spec <slug>` は位置を問わず先に取り除く）: `--freeze` があれば 6b、`--unfreeze` があれば 6c、どちらも無ければ 6a。
+
+**凍結の判定**: frontmatter に `spec_table:` か `spec_table_frozen_by:` の行が 1 つでもあれば「凍結している」と扱う（6a の拒否・6b の二重宣言の拒否・6c・Phase 5 の歯止め・Phase 7 のすべてで同じ判定を使う）。
+
+**壊れた宣言**: 凍結しているが、次のどれかに当たるもの — 2 行の片方しか無い / どちらかが `format-spec.md` 10 節の正規表現に一致しない / `spec_table_frozen_by` の `D<n>` が Decision log に無い（maintain の段 1・段 3 が Critical にするものと同じ）。壊れた宣言は `spec --unfreeze` を **D# なしで**実行すると消せる（6c）。解除ではなく書き損じの修正なので Decision を要さない（Decision を書いて番号を合わせると、無関係な Decision が凍結の根拠として読まれる）。
+
+### 6a. `spec <項目> <確度>` — 確度の更新
+
+0. **凍結の確認**: 対象ファイルを Read し、frontmatter と Decision log の見出しを見る。凍結していれば、**更新せず報告して終了する**（追加も同じ）:
+   ```
+   仕様表は凍結されています（D<n>: <凍結の Decision の見出し>）。正本は別の文書にあるため、ここでは追加・更新しません。
+   表を再び使うなら、経緯を /living-spec decision で残してから /living-spec spec --unfreeze D<新しい番号> を実行してください。
+   ```
+   壊れた宣言なら、代わりに「凍結の宣言が壊れています（<当たった条件>）。/living-spec spec --unfreeze を D# なしで実行して消してください。正本が別の文書のままなら、そのあと --freeze D<凍結の経緯を書いた Decision> で凍結し直します（無ければ先に /living-spec decision で残す）」と報告して終了する
 1. **確度の検証**: `<確度>` が `確定` / `方向性(仮)` / `未定` の 3 値でなければ、報告して終了する（**勝手に正規化しない**）。括弧は**半角**（5 節）
    ```
    `<確度>` は不正な確度ラベルです。確定 / 方向性(仮) / 未定 のいずれかを指定してください（括弧は半角）。
    ```
-2. 対象ファイルを Read し、コメント除去後に仕様表を 9 節の正規表現でパースする
+2. step 0 で Read したファイルから、コメント除去後に仕様表を 9 節の正規表現でパースする
 3. `<項目>` に**完全一致**する行を探す:
 
 | 一致数 | 挙動 |
@@ -296,17 +315,80 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 
 > **確度の逆行（`確定` → `方向性(仮)`）は許容し、警告しない**（3 節）。決定が覆るのは正常な事象。ただし対応する Decision が既にある場合は、報告の末尾に「この項目に関する決定を覆すなら `/living-spec decision` で経緯を残してください」と 1 行添える。
 
+### 6b. `spec --freeze D<n>` — 仕様表の凍結
+
+1. `D<n>` が `D<数値>` の形でなければ報告して終了する
+2. 対象ファイルを Read し、コメント除去後に frontmatter・仕様表・Decision log をパースする
+3. **既に凍結していれば**、上書きせず報告して終了する。宣言が有効なら「仕様表は既に凍結されています（D<n>）」、壊れた宣言なら「凍結の宣言が壊れています（<当たった条件>）。/living-spec spec --unfreeze を D# なしで実行して消してから凍結し直してください」
+4. `### D<n>: ` の見出しが Decision log に無ければ、報告して終了する:
+   ```
+   D<n> が Decision log にありません。先に /living-spec decision で凍結の経緯（なぜ表を使わなくなるか・正本はどこか）を残し、その番号を渡してください。
+   ```
+5. **D<n> の `日付` が仕様表の最新の `since` より古ければ**、報告して終了する（2.1 節。凍結後に手で触った行を `since` で見分けるため）。`日付` が `YYYY-MM-DD` として読めないときも比較できないので、凍結せずに報告して終了する（/living-spec-maintain の段 1 で確認できる）:
+   ```
+   D<n>（<日付>）より後に仕様表が更新されています（<項目>: <since>）。凍結の経緯を新しい Decision で残してから凍結してください。
+   ```
+6. frontmatter の `sync` の行の直後に 2 行を足す（10 節。引用符で囲まない）:
+   ```yaml
+   spec_table: frozen
+   spec_table_frozen_by: D<n>
+   ```
+7. W4 で `last_updated` を更新する
+8. 報告:
+   ```
+   ✅ 仕様表を凍結しました（D<n>: <見出し>）（.claude/living-specs/<slug>.md）
+     /living-spec-maintain の段 6 は塩漬けを判定しなくなり、/living-spec spec は追加・更新を拒否します。
+     凍結時点の内訳: <確定> 確定 / <仮> 方向性(仮) / <未定> 未定
+     解除: 経緯を /living-spec decision で残してから /living-spec spec --unfreeze D<新しい番号>
+   ```
+
+### 6c. `spec --unfreeze [D<m>]` — 凍結の解除 / 壊れた宣言の除去
+
+1. 対象ファイルを Read し、コメント除去後に frontmatter と Decision log をパースする
+2. 凍結していなければ「仕様表は凍結されていません」と報告して終了する
+3. **壊れた宣言なら、D# の有無にかかわらず消す**（Phase 6 冒頭の定義。書き損じの修正なので Decision を要さない）: frontmatter から `spec_table:` と `spec_table_frozen_by:` の行を**あるだけ**消し（W3 の対象外）、W4 で `last_updated` を更新して報告し、終了する:
+   ```
+   ✅ 壊れた凍結の宣言を消しました（<当たった条件>）（.claude/living-specs/<slug>.md）
+     仕様表は凍結していない状態に戻りました。正本が別の文書のままなら、/living-spec spec --freeze D<凍結の経緯を書いた Decision> で凍結し直してください（無ければ先に /living-spec decision で残す）。
+   ```
+4. 宣言が有効（`spec_table_frozen_by: D<n>` の `D<n>` が Decision log にある）なら、**解除には D<m> が要る**。無い・`D<数値>` の形でなければ報告して終了する:
+   ```
+   解除には、解除の経緯（なぜ表を再び使うか）を書いた Decision の番号が要ります。/living-spec decision で残してから /living-spec spec --unfreeze D<その番号> を実行してください。
+   ```
+5. `### D<m>: ` の見出しが Decision log に無ければ、報告して終了する:
+   ```
+   D<m> が Decision log にありません。先に /living-spec decision で解除の経緯（なぜ表を再び使うか）を残し、その番号を渡してください。
+   ```
+6. **m が n 以下なら**、報告して終了する（2.1 節。凍結と解除を同じ Decision で説明しない）:
+   ```
+   解除には、凍結の Decision（D<n>）より後の Decision が要ります。解除の経緯を新しい Decision で残してください。
+   ```
+7. frontmatter から `spec_table:` と `spec_table_frozen_by:` の 2 行を消す（W3 の対象外）
+8. W4 で `last_updated` を更新する
+9. 報告:
+   ```
+   ✅ 仕様表の凍結を解除しました（D<m>: <見出し>）（.claude/living-specs/<slug>.md）
+     /living-spec-maintain の段 6 が塩漬けの判定を再開します。
+     未確定の行（<方向性(仮) と 未定 の数> 件）は since が凍結の前のままなら塩漬けとして出ます。/living-spec spec <項目> <確度> で見直してください。
+   ```
+
 ---
 
 ## Phase 7: status — 進捗ビュー
 
 **読むだけ**（W1-W5 の書き込み規律は適用しない）。
 
-1. 対象ファイルを Read し、コメント除去後に仕様表と OQ 台帳をパースする
+1. 対象ファイルを Read し、コメント除去後に frontmatter・仕様表・OQ 台帳をパースする
 2. 集計する:
    - **収束率 = `確定` の数 ÷ 全項目数**（`format-spec.md` の重み付けはしない。単純な比）。項目 0 件なら「項目なし」と表示し、0 除算しない
    - 確度ラベル別の内訳（`確定` / `方向性(仮)` / `未定`）
    - **open OQ 残数**
+   - **仕様表が凍結されていれば（Phase 6 冒頭の「凍結の判定」）収束率を出さない**（`format-spec.md` 2.1 節）。正本が別の文書に移った表の確定率は、収束の度合いを表さない。下の「収束率」の行を次に置き換え、内訳は参考として残す:
+     ```
+     仕様表: 凍結済み（D<n>: <凍結の Decision の見出し>）。収束率は数えない
+       表の内訳（参考）: <確定> 確定 / <仮> 方向性(仮) / <未定> 未定
+     ```
+     内訳は今の表から数える（凍結後に表が手で触られていれば、凍結した時点の値とは限らない）。壊れた宣言（Phase 6 冒頭の定義）のときは、括弧の中を「凍結の宣言が壊れています。/living-spec spec --unfreeze を D# なしで実行して消せます」にする
 3. 出す:
    ```
    ## <プロジェクト名> の現在地
@@ -323,8 +405,9 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    <「## 現在地サマリ」セクションの本文>
    ```
 4. **セッション再開の導線**として、open な OQ と `未定` / `方向性(仮)` の項目を提示する。ここが「新規セッションで living spec の未確定から再開する」ゴールの実装
+   - 仕様表が凍結されていれば、「次に決めるもの」には open な OQ だけを挙げる（凍結した表の項目はここで決めない）
 
-> 確定した塊ができていたら、報告の末尾に「確定した項目が <n> 件あります」と添え、次の渡し先を 1 行で示す: 実装方式（HOW）を詰めるなら `design-doc`、振る舞い（WHAT）を固めるなら `bdd-spec`、作業に落とすなら `/issue-create`（issue-workflow）。**living spec 側からプラグインは呼ばない**（疎結合）。
+> 確定した塊ができていたら（仕様表が凍結されていれば、この案内は出さない）、報告の末尾に「確定した項目が <n> 件あります」と添え、次の渡し先を 1 行で示す: 実装方式（HOW）を詰めるなら `design-doc`、振る舞い（WHAT）を固めるなら `bdd-spec`、作業に落とすなら `/issue-create`（issue-workflow）。**living spec 側からプラグインは呼ばない**（疎結合）。
 
 ---
 
@@ -351,8 +434,9 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 3. Phase 2: date 取得 → 衝突確認 → template 置換 → Write
 4. Phase 3: init の完了報告
 5. Phase 4: oq → 採番（コメント除去 → max+1）→ append / oq list は読むだけ
-6. Phase 5: decision → 採番 → 関連 OQ を選ばせる → append → OQ を close → 双方向参照を Read で検証
-7. Phase 6: spec → 確度の 3 値検証 → 項目で引き当て（重複は倒す）→ 確度と since を更新
+6. Phase 5: decision → 採番（その番号を壊れた凍結の宣言が指していたら止める）→ 関連 OQ を選ばせる → append → OQ を close → 双方向参照を Read で検証
+7. Phase 6: spec → 凍結中なら拒否 → 確度の 3 値検証 → 項目で引き当て（重複は倒す）→ 確度と since を更新
+   / --freeze・--unfreeze → D# の実在と順序を確かめて frontmatter の凍結の 2 行を書く・消す（壊れた宣言は --unfreeze が D# なしで消す）
 8. Phase 7: status → 収束率と open OQ 残数を集計（読むだけ）
 ```
 

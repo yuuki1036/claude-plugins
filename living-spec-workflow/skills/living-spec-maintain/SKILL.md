@@ -118,7 +118,7 @@ frontmatter・セクション見出しの抽出に失敗したら、**その時�
 | 3 | OQ ⇔ Decision の双方向参照 | Critical |
 | 4 | 「参照ソース」の外部 URL の死リンク（内部相対リンクは doc-freshness に委譲） | Warning |
 | 5 | OQ の `status` と `関連 D#` の行内整合 | Warning |
-| 6 | 確度ラベル stale（N は `.claude/doc-freshness.json` の `thresholds.target`、無ければ 15） | Warning |
+| 6 | 確度ラベル stale（N は `.claude/doc-freshness.json` の `thresholds.target`、無ければ 15）。仕様表が凍結済みなら塩漬けは判定せず、凍結後に更新された行だけを見る | Warning |
 | 7 | frontmatter `last_updated` がファイル内の最新日付より古い | Info |
 
 **段 1-3 で Critical が 1 件でも出たら、段 8 に進まない**（ファネル）。段 4-7 は実行してよい（独立した観点で、まとめて直せるほうが手戻りが少ない）。
@@ -147,7 +147,7 @@ frontmatter・セクション見出しの抽出に失敗したら、**その時�
 **判定**: <問題なし | 要修正>
 **指摘件数**: Critical <n> 件 / Warning <n> 件 / Info <n> 件
 **実行した段**: 1-7（機械判定）<+ 8（LLM 判断）>
-**skip した段**: <あれば理由つきで。例: 段 8: skip（effort=medium）>
+**skip した段**: <あれば理由つきで。例: 段 8: skip（effort=medium） / 段 6（塩漬け判定）: skip（仕様表は凍結済み / D129）>
 
 ### Critical
 1. [段 2][採番] OQ2 が欠番（OQ1, OQ3 は存在）
