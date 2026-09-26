@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.130.11] - 2026-09-26
+
+### Added
+
+- **publish がレポート出力の定型（self-review Step 6 / review Step 7）を出したかを transcript で見て、出していない回に
+  `report-template` gap と WARN を出すようにした**（#250）。定型の省略は payload に載らず、publish は通るので正常な回と
+  区別できなかった（v2.125.0 以降の self-review 26 件中 6 件）。判定は hook ではなく publish 本体で行う — PreToolUse の
+  時点では実行中のメッセージがまだ transcript に書き出されていない（実測: tool の開始から約 0.06 秒後）。止めはしない。
+  判定は payload の `report_template` にも載せ、retro の「計測の健全性」に skill 別の率を出す
+
+### Changed
+
+- **review / self-review の command 本文に、SKILL.md を Bash の `cat` / `sed` で読まないことを足した**。出力超過で先頭
+  2KB しか残らず、レポートのテンプレートに届かない（テンプレートがコンテキストに入らないまま締めた回は 3/3 で定型を
+  出さなかった）
+
 ## [2.130.10] - 2026-09-26
 
 ### Fixed

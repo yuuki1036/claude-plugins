@@ -1324,6 +1324,16 @@ n_agents_nested_marker = gap_counts.pop("agents-nested", 0)
 # 生のマーカー件数は `--json` の `body_bound_marker` に残す
 n_exceeds_marker = {"appendix": gap_counts.pop("payload:appendix.exceeds-body", 0),
                     "report": gap_counts.pop("payload:report_counts.exceeds-body", 0)}
+# **定型レポートの判定**（#250）。gap は定型なしの回にしか立たないので、率は payload の
+# `report_template`（present / absent。判定できなかった回は null）を分母にして skill 別に数える
+report_template_rates = {}
+for e in events:
+    _rt = e["p"].get("report_template")
+    if _rt in ("present", "absent"):
+        _s = str(e["plugin"]).split(":")[-1]
+        _d = report_template_rates.setdefault(_s, {"judged": 0, "absent": 0})
+        _d["judged"] += 1
+        _d["absent"] += 1 if _rt == "absent" else 0
 # 取り違え疑いで外した回（#246）。publish の gap ではなく読み側の判定なので欠測内訳には混ぜない
 session_suspects = {}
 for e in events:
@@ -1731,6 +1741,12 @@ def gap_hint(g):
     if g == "models":
         return ("transcript の窓内に実モデル名が無かった（窓の空振り・プレースホルダのみ）。"
                 "窓の起点（t0 の打点）を見直す")
+    if g == "report-template":
+        # 打点でも payload でもなく、レポートの出し方（#250）
+        return ("レポート出力の定型（self-review Step 6 / review Step 7。`**指摘件数**: BLOCKER …` の行）を"
+                "publish の前に出していない。SKILL.md を Bash の cat / sed で読んで切り詰められていないか"
+                "（Read の offset でテンプレートまで読む）、他 skill から回したときに進捗報告で置き換えて"
+                "いないかを見る。skill 別の率は「計測の健全性」の定型レポートの行")
     if g == "session-unresolved":
         # **窓でも打点でもなく id の解決**（#246）。推定には倒していないので値は欠測で、誤値は無い
         return ("publish 時に `CLAUDE_CODE_SESSION_ID` から transcript を引けなかった（env が無い / "
@@ -2000,6 +2016,8 @@ if as_json:
                         # #252。どちらも歩留まりの母集団で数える（`missing` は `threshold=?` に入った回）
                         "severity_threshold": {"nested_recovered": threshold_recovered,
                                                "missing": threshold_missing},
+                        # #250。skill → {judged, absent}（判定できた回だけを分母にする）
+                        "report_template": report_template_rates,
                         # #246（読み側で外した回。キーは規則 `overlap` / `sub-blank`）
                         "session_suspect": session_suspects,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
@@ -2619,6 +2637,11 @@ else:
         print("  - severity_threshold（歩留まりの母集団 / #252）: %d 件は入れ子からトップレベルへ回収 / "
               "%d 件は欠落で `threshold=?` に置いた"
               % (threshold_recovered, threshold_missing))
+    # **定型レポートの率**（#250）。判定できた回が 1 件も無ければ出さない（⚠️ 契約）
+    if report_template_rates:
+        print("  - 定型レポート（publish の前に出したか / #250）: %s"
+              % " / ".join("%s 判定 %d 件中 %d 件で定型なし" % (k, v["judged"], v["absent"])
+                           for k, v in sorted(report_template_rates.items())))
     # **外した回を黙って消さない**（#246）。0 件なら出さない（⚠️ 契約）
     if session_suspects:
         print("  - transcript の取り違え疑い: %d 件（同じ transcript で窓が重なる %d 件 / "

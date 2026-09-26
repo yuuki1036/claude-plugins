@@ -87,7 +87,7 @@ fi
 # まだ transcript に存在しない）。除外が正当なのは**遅れて publish した回だけ**で、そこは
 # `LATE_PUBLISH`（t2 から 10 分以上）で既に判定できているので `window` を分けて表現する。
 # 実測: 除外していた間、このマシンの review:completed 37 件すべてで `tokens` が欠測だった。
-TOKENS_JSON=""; TOKENS_WANTED=0; TOKENS_WINDOW="session"
+TOKENS_JSON=""; TOKENS_WANTED=0; TOKENS_WINDOW="session"; TEMPLATE_STATE=""
 TOK_ARGS=()
 case "$PLUGIN" in
   *:review|*self-review)
@@ -115,6 +115,19 @@ case "$PLUGIN" in
     if SESSION_TRANSCRIPT=$(review_session_transcript); then
       TOKENS_JSON=$(bash "$HERE/measure-tokens.sh" --json --session "$SESSION_TRANSCRIPT" \
         ${TOK_ARGS[@]+"${TOK_ARGS[@]}"} 2>/dev/null)
+      # **レポート出力の定型を publish の前に出したか**（GitHub issue #250）。省いた回が正常な回と
+      # 区別できなかった。判定と待ちの理由は `lib/report_template.py`。判定は payload の
+      # `report_template` にも載せる（率の分母）。判定できない回（unknown）は gap を立てない。
+      # **止めない** — 鳴らして、集計してから決める
+      TEMPLATE_STATE=$(python3 "$HERE/lib/report_template.py" "$SESSION_TRANSCRIPT" \
+        "${REVIEW_TEMPLATE_WAIT_SEC:-3}" 2>/dev/null) || TEMPLATE_STATE=""
+      if [ "$TEMPLATE_STATE" = "absent" ]; then
+        MEASUREMENT_GAPS="${MEASUREMENT_GAPS:+$MEASUREMENT_GAPS }report-template"
+        echo "WARN: レポート出力の定型（self-review Step 6 / review Step 7。\`**指摘件数**: BLOCKER …\`" \
+          "の行を含む）が、計測開始（review-timing.sh start）から publish までの出力に見当たらない。" \
+          "**今からでも SKILL のテンプレートどおりに出す**（行を省かない）。進捗報告や 1 行の要約で" \
+          "置き換えない — 他 skill から回した場合も同じ（GitHub issue #250 / #232）" >&2
+      fi
     else
       MEASUREMENT_GAPS="${MEASUREMENT_GAPS:+$MEASUREMENT_GAPS }session-unresolved"
     fi
@@ -328,6 +341,7 @@ MERGED=$(
   REVIEW_TOKENS="$TOKENS_JSON" \
   REVIEW_TOKENS_WANTED="$TOKENS_WANTED" \
   REVIEW_TOKENS_WINDOW="$TOKENS_WINDOW" \
+  REVIEW_TEMPLATE_STATE="${TEMPLATE_STATE:-}" \
   REVIEW_LATE_PUBLISH="$LATE_PUBLISH" \
   REVIEW_LIB_DIR="$HERE/lib" \
   python3 - "$PAYLOAD" <<'PY'
@@ -908,6 +922,10 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1" and "session-unresolved" in gap
     for _f in ("tokens", "models", "dispatch"):
         payload.pop(_f, None)
 elif os.environ.get("REVIEW_TOKENS_WANTED") == "1":
+    # **定型の判定を載せる**（GitHub issue #250）。gap は定型なしの回にしか立たないので、率の分母
+    # （判定できた回）はこのフィールドで数える。呼び出し側が書いた値は捨てる（機械判定の値だけ）
+    _tpl = os.environ.get("REVIEW_TEMPLATE_STATE")
+    payload["report_template"] = _tpl if _tpl in ("present", "absent") else None
     try:
         tok = json.loads(os.environ.get("REVIEW_TOKENS") or "")
     except ValueError:

@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.7] - 2026-09-26
+
+### Changed
+
+- **start の軽量フロー Step 3 に、self-review の Step 6 レポートを定型のまま出すことを足した**。Step ごとの 1 行報告は
+  その後に足すもので、定型の代わりにしない。軽量フロー経由の self-review は 3/3 で定型を 1 行に畳み、指摘件数も
+  閾値未満の候補もユーザーに届いていなかった（code-review 側の #250）。self-review の手順は複製しない
+
 ## [1.7.6] - 2026-09-25
 
 ### Changed

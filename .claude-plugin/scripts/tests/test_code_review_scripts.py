@@ -1419,6 +1419,162 @@ class BodyBoundPublishTest(ScriptTestBase):
         self.assertNotIn("payload:report_counts.exceeds-body", self._gaps(p))
 
 
+class ReportTemplatePublishTest(TranscriptFixture):
+    """publish が Step 6 の定型レポートを出したかを transcript で見る（GitHub issue #250）.
+
+    定型の省略は payload に載らないので、publish は通るのに正常な回と区別がつかなかった
+    （v2.125.0 以降の self-review 26 件中 6 件）。**判定は publish 本体で行う** — PreToolUse の
+    時点では実行中のメッセージ（直前の本文と publish の呼び出し）がまだ transcript に書き出されて
+    いない（実測: tool の開始から約 0.06 秒後）。publish は session id で transcript を確定できる（#246）。
+    """
+
+    TEMPLATE = ("**総合判定**: Approve\n**指摘件数**: BLOCKER 0 件 / CRITICAL 0 件 / "
+                "MAJOR 1 件 / MINOR 0 件\n")
+    START = 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" start'
+    PUBLISH = ('bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" '
+               '--plugin code-review:self-review --payload \'{}\'')
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._n = 0
+        self._lines: list[str] = []
+
+    def _assistant(self, *blocks: dict, msg: str | None = None, age: int = 0) -> None:
+        """1 メッセージを content ブロックごとに別行へ分けて書く（実 transcript の形）.
+
+        時刻は今に寄せる（publish は 5 分より古い呼び出しを今回の publish と見なさない）。
+        `age` 秒だけ過去にずらせる。compact JSON で書く（実 transcript の形）
+        """
+        self._n += 1
+        mid = msg or "msg-%d" % self._n
+        ts = (datetime.now(timezone.utc) - timedelta(seconds=age)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        for b in blocks:
+            self._lines.append(json.dumps({
+                "type": "assistant", "timestamp": ts,
+                "message": {"id": mid, "model": "claude-opus-5",
+                            "usage": {"output_tokens": 1}, "content": [b]}},
+                ensure_ascii=False, separators=(",", ":")))
+
+    def text(self, body: str, msg: str | None = None, age: int = 0) -> None:
+        self._assistant({"type": "text", "text": body}, msg=msg, age=age)
+
+    def bash(self, command: str, msg: str | None = None, age: int = 0) -> None:
+        self._assistant({"type": "tool_use", "id": "tu-%d" % len(self._lines), "name": "Bash",
+                         "input": {"command": command}}, msg=msg, age=age)
+
+    def tool_result(self, body: str) -> None:
+        self._lines.append(json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "x", "content": body}]}}))
+
+    def _publish(self, env: dict | None = None):
+        d = self.home / ".claude" / "projects" / self.slug()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "s1.jsonl").write_text("\n".join(self._lines) + "\n", encoding="utf-8")
+        env = env or self.env_home()
+        env["REVIEW_TEMPLATE_WAIT_SEC"] = "0.3"
+        r = self.publish(env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r, self.last_payload()["measurement_gaps"]
+
+    def test_a_template_before_publish_is_silent(self):
+        self.bash(self.START)
+        self.text("レビューします")
+        self.text(self.TEMPLATE)
+        self.bash(self.PUBLISH)
+        r, gaps = self._publish()
+        self.assertNotIn("report-template", gaps)
+        self.assertNotIn("レポート出力の定型", r.stderr)
+        self.assertEqual(self.last_payload()["report_template"], "present")
+
+    def test_a_missing_template_raises_the_gap_and_warns(self):
+        """軽量フローの型: 「指摘 0 件で完了」の 1 文だけで publish した."""
+        self.bash(self.START)
+        self.text("Step 3 セルフレビュー: 済。指摘 0 件で Approve")
+        self.bash(self.PUBLISH)
+        r, gaps = self._publish()
+        self.assertIn("report-template", gaps)
+        self.assertIn("レポート出力の定型", r.stderr)
+        self.assertIn("#250", r.stderr)
+        self.assertEqual(self.last_payload()["report_template"], "absent")
+
+    def test_the_template_in_the_same_message_as_publish_counts(self):
+        """本文と publish の呼び出しが同じメッセージ（mark t2 と連結した 29 件中 9 件の型）."""
+        self.bash(self.START)
+        self.text(self.TEMPLATE, msg="m-last")
+        self.bash("bash review-timing.sh mark t2 && " + self.PUBLISH, msg="m-last")
+        _, gaps = self._publish()
+        self.assertNotIn("report-template", gaps)
+
+    def test_a_template_after_publish_does_not_count(self):
+        """順序違い（publish の後に定型）も「レポート → t2 → publish」の契約に反する."""
+        self.bash(self.START)
+        self.bash(self.PUBLISH)
+        self.text(self.TEMPLATE)
+        _, gaps = self._publish()
+        self.assertIn("report-template", gaps)
+
+    def test_the_template_read_from_skill_md_does_not_count(self):
+        """SKILL.md を Read した tool_result の中のテンプレートは、出したことにならない."""
+        self.bash(self.START)
+        self.tool_result("**指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件")
+        self.bash(self.PUBLISH)
+        _, gaps = self._publish()
+        self.assertIn("report-template", gaps)
+
+    def test_only_the_last_review_is_judged(self):
+        """前のレビューで出した定型を、次のレビューの分として数えない."""
+        self.bash(self.START)
+        self.text(self.TEMPLATE)
+        self.bash(self.PUBLISH)
+        self.bash(self.START)
+        self.text("済")
+        self.bash(self.PUBLISH)
+        _, gaps = self._publish()
+        self.assertIn("report-template", gaps)
+
+    def test_no_start_in_the_transcript_is_not_judged_and_does_not_wait(self):
+        """計測の起点が無い回は判定しない。**待たない**（start は前の呼び出しなので書き出されてこない）."""
+        self.text("済")
+        self.bash(self.PUBLISH)
+        env = self.env_home()
+        env["REVIEW_TEMPLATE_WAIT_SEC"] = "5"
+        d = self.home / ".claude" / "projects" / self.slug()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "s1.jsonl").write_text("\n".join(self._lines) + "\n", encoding="utf-8")
+        t0 = time.monotonic()
+        r = self.publish(env=env)
+        self.assertLess(time.monotonic() - t0, 4.5, "起点が無いのに待ち切っている")
+        self.assertNotIn("report-template", self.last_payload()["measurement_gaps"])
+        self.assertIsNone(self.last_payload()["report_template"])
+
+    def test_a_publish_not_yet_in_the_transcript_is_not_judged(self):
+        """publish の呼び出しが書き出されないまま待ちが切れた回は判定しない（誤って鳴らさない）."""
+        self.bash(self.START)
+        self.text("済")
+        r, gaps = self._publish()
+        self.assertNotIn("report-template", gaps)
+        self.assertNotIn("レポート出力の定型", r.stderr)
+
+    def test_an_old_pair_in_the_parent_transcript_is_not_reused(self):
+        """subagent から publish すると親の main transcript が引かれる。古い組の判定を流用しない."""
+        self.bash(self.START, age=3600)
+        self.text("済", age=3600)
+        self.bash(self.PUBLISH, age=3600)
+        _, gaps = self._publish()
+        self.assertNotIn("report-template", gaps)
+        self.assertIsNone(self.last_payload()["report_template"])
+
+    def test_an_unresolved_session_is_not_judged(self):
+        self.bash(self.START)
+        self.text("済")
+        self.bash(self.PUBLISH)
+        env = self.env_home()
+        del env["CLAUDE_CODE_SESSION_ID"]
+        _, gaps = self._publish(env=env)
+        self.assertNotIn("report-template", gaps)
+        self.assertIn("session-unresolved", gaps)
+
+
 class AppendixCountTest(ScriptTestBase):
     """🔁 付録の件数を payload に載せる（GitHub issue #168）.
 
@@ -6927,6 +7083,32 @@ class BodyBoundRetroTest(RetroFixture):
         self.assertNotIn("payload:appendix.exceeds-body", j["measurement"]["gaps"])
         self.assertEqual(j["body_bound_marker"], {"appendix": 6, "report": 6})
         self.assertNotIn("exceeds-body", self.signals(self._out()))
+
+
+class ReportTemplateRetroTest(RetroFixture):
+    """retro が定型レポートの率を skill 別に、判定できた回を分母にして出す（GitHub issue #250）."""
+
+    def _row(self, state, plugin: str = "code-review:self-review") -> dict:
+        gaps = ["report-template"] if state == "absent" else []
+        return {"_plugin": plugin, "effort": "high", "measurement_gaps": gaps,
+                "report_template": state}
+
+    def test_rates_are_per_skill_over_judged_runs(self):
+        self._events([self._row("absent"), self._row("present"), self._row(None),
+                      self._row("present", "code-review:review")])
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["measurement"]["report_template"],
+                         {"self-review": {"judged": 2, "absent": 1},
+                          "review": {"judged": 1, "absent": 0}})
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("定型レポート（publish の前に出したか / #250）: review 判定 1 件中 0 件で定型なし / "
+                      "self-review 判定 2 件中 1 件で定型なし", out)
+
+    def test_nothing_is_said_without_judged_runs(self):
+        self._events([self._row(None), {"effort": "high", "measurement_gaps": []}])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("## レビュー振り返り", out)
+        self.assertNotIn("定型レポート（", out)
 
 
 if __name__ == "__main__":
