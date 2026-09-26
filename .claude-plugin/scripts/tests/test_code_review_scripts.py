@@ -5786,22 +5786,28 @@ class RetroLayeredSignalTest(RetroFixture):
     届かないので、層別だけにすると**いま鳴っている行が消えて「該当なし」と読まれる**。
     """
 
-    def _adv(self, gen: str, dry: bool) -> dict:
-        """反証層の 1 回。`dry` が真なら `no-eligible-findings` で不発."""
-        av = {"gate_schema": 2, "calibration_schema": 3,
-              "fired": not dry, "skip_reason": "no-eligible-findings" if dry else None}
-        if not dry:
-            av.update({"confirmed": 2, "refuted": 0, "uncertain": 0,
-                       "severity_inflated": 0, "contested": 0})
-        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
-                "models": self._models("claude-%s" % gen), "adversarial_verify": av}
+    # **題材は真の空振りの ⚠️**（#249 以前は反証の不発だったが、反証の不発は ⚠️ から外した）。
+    # 検証しているのは層別判定の共通の仕組み（`layered_signal`）で、題材の意味ではない。
+    # 閾値は 20%・判定の下限は 10 件（`## 9` ではなく #210 の回復サイン）
+    SIG = "真の空振り率（報告 0 件かつ付録推奨 0）が "
+
+    def _silent(self, gen: str | None, silent: bool) -> dict:
+        """1 回。`silent` が真なら報告 0 件かつ付録推奨 0（真の空振り）."""
+        r = {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+             "pre_adjust_counts": {"schema": 2, "blocker": 0, "critical": 0, "major": 1,
+                                   "minor": 0},
+             "blocker_count": 0, "critical_count": 0, "major_count": 0 if silent else 1,
+             "minor_count": 0, "appendix": {"schema": 1, "listed": 0, "recommended": 0}}
+        if gen is not None:
+            r["models"] = self._models("claude-%s" % gen)
+        return r
 
     def _rows(self, spec: list[tuple[str, int, int]]) -> None:
-        """`(世代, 総数, 不発数)` の並びからイベントを作る."""
+        """`(世代, 総数, 真の空振り数)` の並びからイベントを作る."""
         rows = []
-        for gen, total, dry in spec:
-            rows += [self._adv(gen, True) for _ in range(dry)]
-            rows += [self._adv(gen, False) for _ in range(total - dry)]
+        for gen, total, silent in spec:
+            rows += [self._silent(gen, True) for _ in range(silent)]
+            rows += [self._silent(gen, False) for _ in range(total - silent)]
         self._events(rows)
 
     def _out(self, *args: str) -> str:
@@ -5813,16 +5819,16 @@ class RetroLayeredSignalTest(RetroFixture):
     def test_a_broken_layer_fires_even_when_the_total_is_diluted(self):
         """**層別判定の本体**。崩れた層が健全な層に薄められて消えない.
 
-        累計 8/30 = 27% は閾値 50 に届かないが、`opus-4-8` 層は 80% で超えている。
+        累計 3/30 = 10% は閾値 20 に届かないが、`opus-4-8` 層は 30% で超えている。
         """
-        self._rows([("opus-4-8", 10, 8), ("opus-5", 20, 0)])
+        self._rows([("opus-4-8", 10, 3), ("opus-5", 20, 0)])
         out = self._out()
-        self.assertIn("不発だった回が 80%（`opus-4-8` 層", out, "崩れた層が鳴っていない")
+        self.assertIn(self.SIG + "30%（`opus-4-8` 層", out, "崩れた層が鳴っていない")
         self.assertNotIn("累計で判定", out, "層で鳴ったのに累計へ落ちている")
 
     def test_every_layer_over_the_threshold_is_reported(self):
         """閾値を超えた層は全部出す（1 層だけ出すと残りが黙って落ちる）."""
-        self._rows([("opus-4-8", 10, 9), ("fable-5", 12, 11), ("opus-5", 20, 0)])
+        self._rows([("opus-4-8", 10, 5), ("fable-5", 12, 6), ("opus-5", 20, 0)])
         out = self._out()
         self.assertIn("`opus-4-8` 層", out)
         self.assertIn("`fable-5` 層", out)
@@ -5844,26 +5850,23 @@ class RetroLayeredSignalTest(RetroFixture):
         「判定不能」と「判定したが閾値未満」は別の状態で、潰すと次に何を待てばよいかが
         読めなくなる。
         """
-        self._rows([("opus-5", 10, 4), ("opus-4-8", 2, 2)])
+        self._rows([("opus-5", 10, 1), ("opus-4-8", 2, 2)])
         out = self._out()
-        self.assertIn("累計 / 6/12", out)
+        self.assertIn("累計 / 3/12", out)
         self.assertIn("`opus-5` が下限に達したが閾値に届かない", out)
 
     def test_a_hot_but_small_layer_is_held_rather_than_dropped(self):
         """**判定できる層が健全だと、崩れた少数層が累計にも埋もれる**（反証で検出）.
 
-        `opus-5` は n=10 で健全、`unrecorded` は n=8 で全件不発。累計 8/18 = 44% は
+        `opus-5` は n=40 で健全、`unrecorded` は n=8 で全件が真の空振り。累計 8/48 = 17% は
         閾値に届かないので ⚠️ は出ない。**⚠️ に出さないのは正しい**（下限未満は
         「まだ行動しない」という判断）が、黙ると「該当なし」と読まれるので保留として残す。
         """
-        self._rows([("opus-5", 10, 0)])
-        rows = [self._adv("opus-5", False) for _ in range(10)]
-        bare = self._adv("opus-5", True)
-        del bare["models"]
-        rows += [dict(bare) for _ in range(8)]
+        rows = [self._silent("opus-5", False) for _ in range(40)]
+        rows += [self._silent(None, True) for _ in range(8)]
         self._events(rows)
         out = self._out()
-        self.assertNotIn("既定 high のゲート幅を再検討", out, "下限未満の層で ⚠️ を出している")
+        self.assertNotIn(self.SIG, self.signals(out), "下限未満の層で ⚠️ を出している")
         self.assertIn("判定を保留", out, "崩れた層が黙って落ちている")
         self.assertIn("`unrecorded` 層が閾値を超えている（8/8）", out)
 
@@ -5872,9 +5875,9 @@ class RetroLayeredSignalTest(RetroFixture):
 
         下限ちょうどの層を落とすと、単発点灯を防ぐつもりで**拾うべき層まで捨てる**。
         """
-        self._rows([("opus-5", 10, 0), ("opus-4-8", 5, 5)])
+        self._rows([("opus-5", 30, 0), ("opus-4-8", 5, 5)])
         out = self._out()
-        self.assertNotIn("既定 high のゲート幅を再検討", out, "前提: ⚠️ は出ない（累計 33%）")
+        self.assertNotIn(self.SIG, self.signals(out), "前提: ⚠️ は出ない（累計 14%）")
         self.assertIn("`opus-4-8` 層が閾値を超えている（5/5）", out, "下限ちょうどの層を捨てている")
 
     def test_the_hold_says_how_many_more_samples_are_needed(self):
@@ -5883,24 +5886,24 @@ class RetroLayeredSignalTest(RetroFixture):
         版で絞った窓では保留が主要な出力になるので、件数が無いと読み直す時期が決まらない。
         N は下限 − 層の分母（10 − 6 = 4）。分子ではなく分母から引くことを縛る。
         """
-        self._rows([("opus-5", 10, 0), ("opus-4-8", 6, 5)])
+        self._rows([("opus-5", 30, 0), ("opus-4-8", 6, 5)])
         out = self._out()
         self.assertIn("`opus-4-8` 層が閾値を超えている（5/6）が、下限 10 に届かないので"
                       "**判定を保留**（**あと 4 件で判定可能** / 累計では", out)
 
     def test_the_hold_is_exported_to_json_with_the_remaining_count(self):
         """`--json` の `pending` に全層と残り件数を出す（テキストの 2 層切りに依存しない）."""
-        self._rows([("opus-5", 10, 0), ("opus-4-8", 6, 5)])
+        self._rows([("opus-5", 30, 0), ("opus-4-8", 6, 5)])
         r = self.run_script(RETRO, "--json", env=self._env())
         self.assertEqual(r.returncode, 0, r.stderr)
         pending = json.loads(r.stdout)["pending"]
-        self.assertIn({"signal": "反証レイヤーの不発", "layer": "opus-4-8", "numer": 5,
+        self.assertIn({"signal": "真の空振り率", "layer": "opus-4-8", "numer": 5,
                        "denom": 6, "min_n": 10, "remaining": 4}, pending)
 
     def test_the_hold_does_not_call_a_narrowed_population_cumulative(self):
         """母集団を絞った実行では「累計では」と言わない（絞った後の全体であって累計ではない）."""
-        self._rows([("opus-5", 10, 0), ("opus-4-8", 6, 5)])
-        out = self._out("--last", "16")
+        self._rows([("opus-5", 30, 0), ("opus-4-8", 6, 5)])
+        out = self._out("--last", "36")
         self.assertIn("あと 4 件で判定可能** / 絞り込んだ集計全体でも閾値に届かず", out)
         self.assertNotIn("/ 累計では閾値に届かず", out)
 
@@ -7109,6 +7112,130 @@ class ReportTemplateRetroTest(RetroFixture):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("## レビュー振り返り", out)
         self.assertNotIn("定型レポート（", out)
+
+
+class RetroAdversarialEffortTest(RetroFixture):
+    """反証の不発を effort 帯で割り、⚠️ にしない（GitHub issue #249）.
+
+    high のゲートは BLOCKER 60-94 / CRITICAL 80-94 だけで、不発率は「上流に MAJOR も無かった」回と
+    「MAJOR はあったが帯の外」の回の和になる（率からは行動が決まらない）。xhigh 以上の不発は報告見込みの
+    指摘 0 件に近く、報告 0 件率と同じものを測る。どちらも「既定 high のゲート幅を再検討」の ⚠️ として
+    出すと是正先を誤る。
+    """
+
+    VERDICTS = {"confirmed": 1, "refuted": 0, "uncertain": 0, "severity_inflated": 0, "contested": 0}
+
+    def _adv(self, effort, gen: str | None, dry: bool, reported: int = 0,
+             pre: dict | None = None, threshold: str | None = None,
+             verdicts: dict | None = None) -> dict:
+        av = {"gate_schema": 2, "calibration_schema": 3, "fired": not dry,
+              "skip_reason": "no-eligible-findings" if dry else None}
+        if not dry:
+            av.update(verdicts or self.VERDICTS)
+        r = {"size_tier": "medium", "measurement_gaps": [], "adversarial_verify": av,
+             "blocker_count": 0, "critical_count": 0, "major_count": reported, "minor_count": 0,
+             "pre_adjust_counts": dict({"schema": 2, "blocker": 0, "critical": 0, "major": 1,
+                                        "minor": 0}, **(pre or {})),
+             "appendix": {"schema": 1, "listed": 0, "recommended": 0}}
+        if effort is not None:
+            r["effort"] = effort
+        if gen is not None:
+            r["models"] = self._models("claude-%s" % gen)
+        if threshold is not None:
+            r["severity_threshold"] = threshold
+        return r
+
+    def _out(self) -> str:
+        return self.run_script(RETRO, env=self._env()).stdout
+
+    def _adv_json(self) -> dict:
+        return json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)[
+            "adversarial_verify"]
+
+    def test_a_high_only_population_does_not_ring(self):
+        """high だけの母集団では、全件不発でも ⚠️ を 1 本も出さない（帯の定義で決まる不発）."""
+        self._events([self._adv("high", "opus-5-5", True, reported=1) for _ in range(12)])
+        out = self._out()
+        self.assertEqual(self.signals(out), "")
+        self.assertIn("- high: 不発 12/12（100%）。ゲートが BLOCKER 60-94 / CRITICAL 80-94 だけ", out)
+
+    def test_xhigh_non_firing_is_left_to_the_true_silent_signal(self):
+        """xhigh 以上の不発は報告 0 件と同じ現象。⚠️ は真の空振りの 1 本だけ（2 本鳴らさない）."""
+        self._events([self._adv("xhigh", "opus-4-8", True) for _ in range(12)])
+        out = self._out()
+        sig = self.signals(out)
+        bullets = [ln for ln in sig.splitlines() if ln.startswith("- ")]
+        self.assertEqual(len(bullets), 1, sig)
+        self.assertIn("真の空振り率", bullets[0])
+        # high の帯が無くても、後ろの帯を出す
+        self.assertIn("- xhigh+: 不発 12/12（100%）", out)
+
+    def test_bands_and_generations_are_listed(self):
+        """帯ごとに不発率を出し、帯の中に世代が 2 種以上あるときだけ世代別を添える."""
+        self._events([self._adv("high", "opus-4-8", True) for _ in range(3)]
+                     + [self._adv("xhigh", "opus-4-8", True), self._adv("xhigh", "opus-4-8", False),
+                        self._adv("max", "opus-5", False)]
+                     + [self._adv(None, "opus-5", True)])
+        out = self._out()
+        self.assertIn("- high: 不発 3/3（100%）", out)
+        self.assertNotIn("opus-4-8 3/3", out, "世代が 1 つの帯に同じ数字を繰り返している")
+        self.assertIn("- xhigh+: 不発 1/3（33%）", out, "max を xhigh 以上に入れていない")
+        self.assertIn("opus-4-8 1/2 / opus-5 0/1", out)
+        self.assertIn("- other: 不発 1/1（100%）。effort 未記録など", out)
+
+    def test_no_band_lines_without_an_in_scope_run(self):
+        """判定対象の回が無ければ、帯の見出しも出さない."""
+        r = self._adv("low", "opus-5", True)
+        r["adversarial_verify"]["skip_reason"] = "effort"
+        self._events([r, self._adv("high", "opus-5", True)])
+        self.assertIn("effort 帯別", self._out())
+        self._events([r])
+        self.assertNotIn("effort 帯別", self._out())
+
+    def test_the_band_breakdown_sums_to_the_aggregate(self):
+        self._events([self._adv("high", "opus-5", True), self._adv("xhigh", "opus-5", False),
+                      self._adv("medium", "opus-5", True)])
+        adv = self._adv_json()
+        self.assertEqual(sum(b["n"] for b in adv["by_effort"].values()), adv["n"])
+        self.assertEqual(sum(b["fired"] for b in adv["by_effort"].values()), adv["fired"])
+        self.assertEqual(adv["by_effort"]["xhigh+"]["by_gen"]["opus-5"],
+                         {"n": 1, "fired": 1, "skips": {}})
+        self.assertEqual(adv["valuable"], 1, "verdict が返った回を価値ありと数えていない")
+
+    # ---- 報告見込みの MAJOR への verdict（再検討条件の後半の代理） ----
+
+    MAJOR_VERDICTS = {"confirmed": 1, "refuted": 1, "uncertain": 0, "severity_inflated": 2,
+                      "contested": 0}
+
+    def test_major_only_verdicts_are_summed_under_the_xhigh_band(self):
+        """上流の BLOCKER + CRITICAL が 0 件・閾値 MAJOR の発火回だけを合算する."""
+        mo = dict(verdicts=self.MAJOR_VERDICTS, threshold="MAJOR")
+        self._events([self._adv("xhigh", "opus-5", False, **mo),
+                      self._adv("max", "opus-5", False, **mo),
+                      # 以下は MAJOR 以外が反証にかかりうる / そう言えないので入れない
+                      self._adv("xhigh", "opus-5", False, pre={"critical": 1}, **mo),
+                      self._adv("xhigh", "opus-5", False, pre={"blocker": 1}, **mo),
+                      # 閾値の欠けた回・MINOR の回は verdict の内訳を変えておく（取り違えても合計が
+                      # 一致して通ってしまわないように）
+                      self._adv("xhigh", "opus-5", False),
+                      self._adv("xhigh", "opus-5", False, threshold="MINOR"),
+                      self._adv("xhigh", "opus-5", False, pre={"minor": None}, **mo),
+                      self._adv("xhigh", "opus-5", True, threshold="MAJOR")])
+        out = self._out()
+        self.assertIn("報告見込みの MAJOR への verdict", out)
+        self.assertIn("2 回・8 件のうち refuted 2（25%）/ severity_inflated 4（50%）/ "
+                      "confirmed 2（25%）", out)
+        self.assertEqual(self._adv_json()["by_effort"]["xhigh+"]["major_only"],
+                         {"n": 2, "confirmed": 2, "refuted": 2, "uncertain": 0,
+                          "severity_inflated": 4, "contested": 0})
+
+    def test_major_only_line_is_not_printed_for_the_high_band(self):
+        """high の MAJOR だけの発火は high-risk surface の 85-94 帯で、報告された MAJOR の代理ではない."""
+        self._events([self._adv("high", "opus-5", False, verdicts=self.MAJOR_VERDICTS,
+                                threshold="MAJOR")])
+        out = self._out()
+        self.assertIn("- high: 不発 0/1", out)
+        self.assertNotIn("報告見込みの MAJOR への verdict", out)
 
 
 if __name__ == "__main__":

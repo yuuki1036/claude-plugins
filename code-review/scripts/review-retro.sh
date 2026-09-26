@@ -1149,13 +1149,45 @@ inflated_axes = demote_rows("adversarial_verify", "inflated_axes")
 demoted_types = demote_rows("below_threshold_counts", "demoted_types")
 
 # ---- 7. 動的層の発火率と skip 理由（版マーカー + スコープで層別） -----------
+VERDICT_KEYS = ("confirmed", "refuted", "uncertain", "severity_inflated", "contested")
+
+
 def verdict_total(d):
     """反証レイヤーの「価値」は verdict が返った件数（findings_added を持たない層）。"""
-    return sum(num(d.get(k)) or 0 for k in
-               ("confirmed", "refuted", "uncertain", "severity_inflated", "contested"))
+    return sum(num(d.get(k)) or 0 for k in VERDICT_KEYS)
 
 
-def layer_stats(field, schema_key, min_schema, value_of=None):
+def major_only_verdicts(p, d):
+    """反証の verdict がすべて MAJOR についてのものと言える回なら、その内訳を返す（GitHub issue #249）。
+
+    payload の verdict は severity 別に分かれていない。上流（`pre_adjust_counts`。skeptic / meta の
+    指摘も統合済み）に BLOCKER / CRITICAL が 0 件で閾値が MAJOR なら、反証にかかったのは MAJOR だけ
+    （MINOR は閾値未満でゲートの外）なので、この回の verdict を MAJOR の verdict として読める。
+    上流の件数か閾値が欠けた回は None（MAJOR 以外が混ざっていないと言えない）。
+    """
+    pre = p.get("pre_adjust_counts")
+    if not isinstance(pre, dict) or not pre_vocab_ok(pre) or p.get("severity_threshold") != "MAJOR":
+        return None
+    if num(pre.get("blocker")) != 0 or num(pre.get("critical")) != 0:
+        return None
+    return {k: num(d.get(k)) or 0 for k in VERDICT_KEYS}
+
+
+#: effort 帯の並び（表示順）。`other` は low / medium / 未記録（反証は low / medium を
+#: `effort` の設計上非該当で外すので、ここに残るのは主に未記録の回）
+EFFORT_BANDS = ("high", "xhigh+", "other")
+
+
+def effort_band(p):
+    e = p.get("effort")
+    if e == "high":
+        return "high"
+    if e in ("xhigh", "max"):
+        return "xhigh+"
+    return "other"
+
+
+def layer_stats(field, schema_key, min_schema, value_of=None, major_only_of=None):
     """版マーカーで濾し、設計上非該当のスキップを分母から外して集計する。
 
     `n_raw` は全サンプル、`n` は判定に使える母集団（層別後 × スコープ内）。
@@ -1164,6 +1196,9 @@ def layer_stats(field, schema_key, min_schema, value_of=None):
     `value_of` は「その回に価値が出たか」を測る関数（既定は `findings_added`）。
     **層ごとに価値の定義が違う**ので固定しない — 反証は指摘を足す層ではないため
     `findings_added` を持たず、既定のままだと価値率が恒常 0% に潰れる。
+
+    `major_only_of` は発火した回の verdict を MAJOR のものとして取り出す関数（反証だけが渡す）。
+    返した内訳を effort 帯ごとに `major_only` へ合算する。
     """
     if value_of is None:
         value_of = lambda d: num(d.get("findings_added")) or 0  # noqa: E731
@@ -1173,7 +1208,10 @@ def layer_stats(field, schema_key, min_schema, value_of=None):
     # 踏み下げの崩壊はここに最も鋭く出る — 上流の MAJOR がほぼゼロになると反証は
     # `no-eligible-findings` で不発になり（#191 の実測: calib=3 の 7 件中 6 件）、
     # 累計すると「ゲート幅が広すぎる」という**別の是正先**に見える
-    st = {"n_raw": 0, "n": 0, "fired": 0, "valuable": 0, "by_gen": {},
+    # **`by_effort` は effort 帯別の内訳**（GitHub issue #249）。反証のゲートは effort で定義が
+    # 違う（high は BLOCKER 60-94 / CRITICAL 80-94 だけ、xhigh 以上は報告見込みの全 severity）ので、
+    # 不発率を 1 つの分母に混ぜると世代差に見えるものが effort の構成差になる
+    st = {"n_raw": 0, "n": 0, "fired": 0, "valuable": 0, "by_gen": {}, "by_effort": {},
           "skips": {}, "dropped_schema": 0, "dropped_scope": 0, "dropped_unrecorded": 0,
           "schema_key": schema_key, "min_schema": min_schema}
     for e in events:
@@ -1204,9 +1242,21 @@ def layer_stats(field, schema_key, min_schema, value_of=None):
         g = st["by_gen"].setdefault(gen_of(e["p"]),
                                     {"n": 0, "fired": 0, "valuable": 0, "skips": {}})
         g["n"] += 1
+        eb = st["by_effort"].setdefault(effort_band(e["p"]), {"n": 0, "fired": 0, "by_gen": {}})
+        ebg = eb["by_gen"].setdefault(gen_of(e["p"]), {"n": 0, "fired": 0, "skips": {}})
+        eb["n"] += 1
+        ebg["n"] += 1
         if d.get("fired") is True:
             st["fired"] += 1
             g["fired"] += 1
+            eb["fired"] += 1
+            ebg["fired"] += 1
+            mo = major_only_of(e["p"], d) if major_only_of else None
+            if mo is not None:
+                acc = eb.setdefault("major_only", dict.fromkeys(("n",) + VERDICT_KEYS, 0))
+                acc["n"] += 1
+                for k, v in mo.items():
+                    acc[k] += v
             if value_of(d) > 0:
                 st["valuable"] += 1
                 # **価値率も層別で判定する**（GitHub issue #209）。累計だけだと世代の
@@ -1216,6 +1266,7 @@ def layer_stats(field, schema_key, min_schema, value_of=None):
             key = reason or "unknown"
             st["skips"][key] = st["skips"].get(key, 0) + 1
             g["skips"][key] = g["skips"].get(key, 0) + 1
+            ebg["skips"][key] = ebg["skips"].get(key, 0) + 1
     return st
 
 
@@ -1286,7 +1337,8 @@ skeptic = layer_stats("recall_skeptic", "attribution_schema", 2)
 meta = layer_stats("meta_reviewer", "gate_schema", 3)
 # 反証も他 2 層と同じ流儀で絞る（issue #129）。**旧版は `fired` を持たない**ので
 # `gate_schema >= 2` で落ちる — 「起動しなかった」ではなく「発火を記録していない版」
-adversarial = layer_stats("adversarial_verify", "gate_schema", 2, value_of=verdict_total)
+adversarial = layer_stats("adversarial_verify", "gate_schema", 2, value_of=verdict_total,
+                          major_only_of=major_only_verdicts)
 # round2 は専用オブジェクトを持たないので `agents.round2` の**キー存在**を版プロキシにする
 # （`agents` を持たない旧サンプルを分母に入れると発火率が構造的に薄まる。#127 と同型）
 round2_scope = [e for e in events
@@ -1827,19 +1879,15 @@ signals.extend(layered_signal(
         "high 起点への昇格を戻すロールバック条件"
         "（triage-dynamic-gates.md `## 8.5`）に該当%s" % (pct(v, f), label, f, note),
     pending=layer_pending.setdefault("skeptic 価値率", [])))
-# 反証レイヤーのゲート幅（issue #129）。**「走らなかった」ではなく「対象が構造的に 0 件」**
-# が常態化しているかを見る。既定 high のゲートは BLOCKER 60-94 / CRITICAL 80-94 だけなので、
-# MAJOR しか出ないレビューが続くと層ごと不発になる（実測: `pre_adjust_counts` を持つ 6 件中
-# 3 件が不発。いずれも BLOCKER + CRITICAL = 0 で MAJOR は 6〜8 件出ていた）
-signals.extend(layered_signal(
-    adversarial, lambda d: (d.get("skips") or {}).get("no-eligible-findings", 0),
-    lambda d: d.get("n", 0), 10,
-    lambda dry, n: pct(dry, n) >= 50,
-    lambda label, dry, n, note:
-        "反証レイヤーがゲート該当 0 件で不発だった回が %.0f%%（%s / %d/%d / "
-        "gate_schema>=2）。既定 high のゲート幅を再検討する条件"
-        "（triage-dynamic-gates.md `## 9`）に該当%s" % (pct(dry, n), label, dry, n, note),
-    pending=layer_pending.setdefault("反証レイヤーの不発", [])))
+# 反証レイヤーの不発（`no-eligible-findings`）は **⚠️ にしない**（GitHub issue #249）。以前は世代別に
+# 50% 以上で鳴らしていたが、分母に effort の違う回が混ざっていた:
+#   - high 帯は世代が分かる 31 回中 30 回が不発で、opus-4-8 / opus-5 / opus-5-5 のどれも 9 割超。
+#     ただし率は「上流に MAJOR も無かった」（30 回中 17 回）と「MAJOR はあったが帯の外」（12 回）の
+#     和で、率からはどちらかを読めない。行動（ゲート幅の再検討）は率ではなく
+#     `design-notes/scoring-rationale.md` の再検討条件で決める
+#   - xhigh 以上の不発は「報告見込みの指摘が 0 件」とほぼ同じ現象（実測: 報告件数が取れる 17 件は
+#     全件 BLOCKER + CRITICAL + MAJOR = 0）で、報告 0 件率の表が既に測っている
+# 数字は「動的層の発火」の effort 帯別の行に残す（黙らせない）
 # **起動ゼロと価値率は排他のまま**（1 度も起動していない層に価値率を出しても意味が無い）
 _meta_dead = layered_signal(
     meta, lambda d: d.get("fired", 0), lambda d: d.get("n", 0), 8,
@@ -1862,7 +1910,8 @@ else:
 
 # **真の空振り率**（GitHub issue #214）。#210 の判定基準の片方で、表に出ていても鳴らなければ
 # 行動につながらない（#209）。閾値 20 は #210 本文が「回復のサイン」として先に固定した値で、
-# 下限 10 は反証の不発と同じ。実測（gist 集約 n=183）: opus-4-8 で 43%（9/21）が閾値超え、
+# 下限 10（#249 で外した反証の不発シグナルと同じ値だった）。
+# 実測（gist 集約 n=183）: opus-4-8 で 43%（9/21）が閾値超え、
 # 他の層は下限未満 ＝ 新しい ⚠️ として鳴るのは 1 層だけで、初回から鳴りっぱなしにはならない
 # **⚠️ にも内訳を載せる**（GitHub issue #210）。行動する人が見るのはこの 1 行なので、
 # 表にだけ内訳があっても「どちらを直すのか」が伝わらない。`layered_signal` は層の dict を
@@ -2409,6 +2458,40 @@ for name, st in (("skeptic", skeptic), ("meta", meta), ("反証", adversarial)):
                 if _b["skips"] else "")
             print("    - %s / %s: 発火 %d/%d（%.0f%%）%s"
                   % (name, _g, _b["fired"], _b["n"], pct(_b["fired"], _b["n"]), _sk))
+
+# **反証の不発を effort 帯で割って出す**（GitHub issue #249）。⚠️ にはしない（上のシグナル判定の
+# 注記）。帯ごとに意味が違うので、帯の後に読み方を 1 句添える
+_adv_bands = adversarial["by_effort"]
+if _adv_bands:   # 判定対象の回が 1 件でもあれば帯の内訳も埋まる（`layer_stats`）
+    _band_note = {"high": "ゲートが BLOCKER 60-94 / CRITICAL 80-94 だけなので、MAJOR しか出ない回は"
+                          "構造的に不発（high-risk surface の MAJOR 85-94 / CRITICAL 70-79 を除く）",
+                  "xhigh+": "ゲートは報告見込みの全 severity。不発は報告見込みの指摘 0 件に近く、"
+                            "報告 0 件率の表で見る",
+                  "other": "effort 未記録など"}
+    print("  - 反証の不発（`no-eligible-findings`）を effort 帯別に（⚠️ にしない / #249）:")
+    for _band in EFFORT_BANDS:
+        _eb = _adv_bands.get(_band)
+        if not _eb:
+            continue
+        _dry = sum(g["skips"].get("no-eligible-findings", 0) for g in _eb["by_gen"].values())
+        # 世代が 1 つしか無い帯は、帯の行と同じ数字を繰り返すだけになる
+        _gens = (" — " + " / ".join(
+            "%s %d/%d" % (_g, _v["skips"].get("no-eligible-findings", 0), _v["n"])
+            for _g, _v in sorted(_eb["by_gen"].items()))) if GEN_SPLIT and len(_eb["by_gen"]) > 1 else ""
+        print("    - %s: 不発 %d/%d（%.0f%%）。%s%s"
+              % (_band, _dry, _eb["n"], pct(_dry, _eb["n"]), _band_note[_band], _gens))
+        # **報告見込みの MAJOR の verdict**（`scoring-rationale.md` の再検討条件の後半の代理）。
+        # high はこの帯（confidence 95 以上の MAJOR）を反証にかけないので、xhigh 以上でしか見えない。
+        # high の発火回にも MAJOR だけの回はあるが、それは high-risk surface の 85-94 帯で対象が違う
+        _mo = _eb.get("major_only")
+        if _band == "xhigh+" and _mo:
+            _mv = sum(_mo[k] for k in VERDICT_KEYS)
+            print("      - 報告見込みの MAJOR への verdict（上流の BLOCKER + CRITICAL が 0 件・閾値 MAJOR の"
+                  "発火回。high はこの帯を反証にかけない）: %d 回・%d 件のうち refuted %d（%.0f%%）/ "
+                  "severity_inflated %d（%.0f%%）/ confirmed %d（%.0f%%）"
+                  % (_mo["n"], _mv, _mo["refuted"], pct(_mo["refuted"], _mv),
+                     _mo["severity_inflated"], pct(_mo["severity_inflated"], _mv),
+                     _mo["confirmed"], pct(_mo["confirmed"], _mv)))
 
 print()
 if fc_rows:

@@ -117,13 +117,15 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 
 - meta-reviewer は xhigh / max 起点なので、**既定 high では 4.6 + 4.9 の wave がそもそも存在しない**回が多い。BLOCKER / CRITICAL 不在の回にこのゲートを足すと、**今まで wave が無かったところに wave が生える**（生えるのは reviewer 以降の wave なので実測 14〜34 分 / `orchestration-measurement.md ## 15`）。token だけの増加ではない
 - **xhigh / max では既に MAJOR 全件が対象**（`triage-dynamic-gates.md ## 9` の表）。つまり本案が効くのは high 限定で、そこがちょうど wave を新設する帯にあたる
-- **`## 9` には既にゲート幅の再監視条件がある**（閾値の正本は `triage-dynamic-gates.md ## 9`。**ここに数値を書き写さない** — 閾値が動いたときに片方だけ古くなる）。v2.65.0 で `fired` / `skip_reason` を記録し始めたばかりで**実測は 3/3 件**。判断の材料は揃いつつあるので、**先に条件を満たすまで待つ**のが repo の流儀（「サンプルが無いうちは判断しない」/ `triage-guide.md ## 7`）
+- **`## 9` には既にゲート幅の再監視条件がある**（閾値の正本は `triage-dynamic-gates.md ## 9`。**ここに数値を書き写さない** — 閾値が動いたときに片方だけ古くなる）。v2.65.0 で `fired` / `skip_reason` を記録し始めたばかりで**実測は 3/3 件**。判断の材料は揃いつつあるので、**先に条件を満たすまで待つ**のが repo の流儀（「サンプルが無いうちは判断しない」/ `triage-guide.md ## 7`）。**v2.130.12 / #249 で再監視は不発率ではなく `scoring-rationale.md` の再検討条件で行うことになった**（下の「再判断の材料」）
 
 **issue の前提の訂正（実データで確認）**: #136 は実例を「self-review・xhigh / medium・MAJOR 7 件で `no-eligible-findings`」としているが、`.claude/events.jsonl` で `skip_reason` を持つサンプルは **3 件とも effort=high / size_tier=medium**（`2026-08-13T23:49:52Z` `major_count=8` / `2026-08-15T06:14:04Z` `major_count=6` / `2026-08-16T09:09:55Z` `major_count=8`。いずれも `pre_adjust_counts.major=9`）で、**issue の挙げる「xhigh・MAJOR 7 件」に一致する回は存在しない**。MAJOR 7 件・high・medium の回は実在するが `blocker_count=1` で反証は実際に発火しており、別種の回。3 件はいずれも既定 high で BLOCKER / CRITICAL 不在＝**設計どおりの不発**で、xhigh で MAJOR が対象外になっていた事実は無い。**この照合はこのマシンの `events.jsonl` に対するもの**（gitignored でマシン間同期されないため、別マシンに該当サンプルがある可能性は排除できない）。
 
 **先に入れたもの**: レポート文言（`no-eligible-findings` のとき「未実施（対象帯に該当なし。MAJOR 以下の severity は較正されていない）」）。誤読（「対象 0 件」＝「検証したが問題なし」）はゲート幅と独立に潰せるため、コストゼロの側だけ先に採った。
 
-**再判断の材料**: `review-retro.sh` の反証シグナル（条件は `triage-dynamic-gates.md ## 9` が正本）。点灯したらこの案と「high の非対称ゾーンに MAJOR の一部帯を足す」案（`triage-dynamic-gates.md ## 9`）を併せて検討する。
+**再判断の材料**: ~~`review-retro.sh` の反証シグナル~~（v2.130.12 / #249 で ⚠️ から外した。不発率は「上流に MAJOR が無い」回と「帯の外」の回の和で、率からは判断できない）。代わりに `scoring-rationale.md` の再検討条件の後半（MAJOR の偽陽性）を xhigh 以上の verdict で代理観測できるようになった（retro の「動的層の発火」）。代理の実測は **refuted 8% / severity_inflated 72%**（26 回・124 件）で、報告された MAJOR の主な問題は偽陽性ではなく severity の過大。**本案の対象（+15 で 95 に届いた MAJOR）は代理の対象（報告見込みの MAJOR 全体）の一部で、押し上げで届いた回だけを切り出す手段はまだ無い**。**本案は据え置く**（#249 で再判断した結果）。「high の非対称ゾーンに MAJOR の一部帯を足す」案（`triage-dynamic-gates.md ## 9`）と併せ、判断は `scoring-rationale.md` の再検討条件の「判断は保留」に残す
+
+**2 つの案の対象を混ぜない**（#249）: 本案の対象は「+15 で 95 に届いて**報告された** MAJOR」で、目的は押し上げの妥当性の検証（精度）。一方、付録に落ちた confidence 80〜94 帯の MAJOR を反証にかけると、confirmed の +15 で報告へ戻す **recall 回復**になる。`## 9` 冒頭の設計意図（「不確実だが報告される」非対称ゾーンを詰める）とは目的が違うので、同じ判断で扱わない
 
 ## 8. explorer の一括発行と wave 打点を Agent hook（独立した観測者）へ移す
 
