@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from test_code_review_diff_scripts import DiffScriptTestBase
+from test_code_review_diff_scripts import DiffBaseFixture, DiffScriptTestBase
 from test_code_review_scripts import PLUGIN
 
 MD = PLUGIN / "scripts" / "md-prose-lines.sh"
@@ -379,8 +379,23 @@ class MdProseArgumentTest(MdProseTestBase):
 
     def test_unknown_base_fails_loudly(self):
         res = self.run_md("--base", "no-such-ref")
-        self.assertEqual(res.returncode, 1)
-        self.assertIn("FATAL", res.stderr)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("base ref を解決できない", res.stderr)
+
+
+class MdProseDiffBaseTest(DiffBaseFixture, MdProseTestBase):
+    """起点は triage-signals.sh と同じ分岐点（GitHub issue #253）。ずれると推敲の対象行が別の diff を指す."""
+
+    def test_stale_local_base_takes_the_origin_merge_base(self):
+        self.advance_origin("others.md")
+        self.git("checkout", "-qb", "feature", "refs/remotes/origin/main")
+        self.write("mine.md", "自分の段落。\n")
+        self.add()
+        self.git("branch", "-f", "main", self.init)
+        res = self.run_md("--base", "main")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual({line.split("\t", 1)[0] for line in res.stdout.splitlines()},
+                         {"mine.md"})
 
 
 if __name__ == "__main__":

@@ -108,13 +108,14 @@ fi
 
 **diff 全文をメインコンテキストに載せない。** `triage-signals.sh` が diff（コミット済み + 未コミット）をファイルへ保存し、Phase 0 に必要な**事実だけ**を compact に出力する。diff は reviewer / explorer へ**パスで渡す**（本文を転記しない。orchestration-guide.md `## 3.5`）。
 
-出力セクション（`## meta` / `## size` / `## files` / `## hunks` / `## focus-signals` / `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`）の意味と使い道の正本 → review SKILL.md `### 2`。self-review では `## issue-ids` はブランチ名から抽出され、`## meta` の `base` は指定した base branch になる。**`## md-polish`**（`md_prose_lines=` / `writing_polish=`）は self-review だけにあり、Markdown 推敲の起動判定（Step 2.1）に使う。
+出力セクション（`## meta` / `## size` / `## files` / `## hunks` / `## focus-signals` / `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`）の意味と使い道の正本 → review SKILL.md `### 2`。self-review では `## issue-ids` はブランチ名から抽出され、`## meta` の `base` は指定した base branch になる（ローカルの base が origin より遅れていれば `origin/<base>`。以降の agent にはこの値を渡す）。**`## md-polish`**（`md_prose_lines=` / `writing_polish=`）は self-review だけにあり、Markdown 推敲の起動判定（Step 2.1）に使う。
 
 - **`size_tier`** はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。GitHub issue #96）。Phase 0 の構成テーブル・Step 6 レポート冒頭・Step 6.4 の `size_tier` に記録する
 - **シグナルは事実であって判定ではない**。観点採否・体数は triage-guide が決める。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む
 - **`diff_file=` と `agent_ctx_file=` の値はパス文字列そのものを控えておく**（後者は Step 4 の共通ブロック書き出し先。**slug は不透明な cksum 値なので、控え損ねると復元できない**）（シェル変数は Bash 呼び出し間で消えるため、`$DIFF_FILE` として引き回さず実パスを毎回書く）
 - **判断が付かない場合のみ** `diff-slice.sh "<diff_file の実パス>" <path>` で必要なファイルの diff だけを読む（全文 Read はしない）
-- **スクリプトが失敗した場合**は `git diff "${BASE}..HEAD" --name-only` と `--stat` でファイル一覧と規模を取り、triage-guide.md `## 6.4` のフォールバック構成に落とす。**diff 全文の Read はこの経路でも行わない**
+- **diff の起点は base branch の先端ではなく HEAD との分岐点**で、ローカルの base と `origin/<base>` のうち HEAD に近い方から取る（正本: `scripts/lib/diff-base.sh` / GitHub issue #253）。ローカルの base が遅れていて origin 側を使った回は stderr に `WARN: ⚠️ base:` が出る。止めずに続け、Phase 0 の出力にその 1 行を載せる
+- **スクリプトが失敗した場合**は `git diff "origin/${BASE}...HEAD" --name-only`（取れなければ `"${BASE}...HEAD"`）と `--stat` でファイル一覧と規模を取り、triage-guide.md `## 6.4` のフォールバック構成に落とす。**diff 全文の Read はこの経路でも行わない**
 
 `## size` の `total_files` が 0 なら変更なしとして終了。
 

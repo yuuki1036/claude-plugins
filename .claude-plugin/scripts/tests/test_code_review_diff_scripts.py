@@ -884,5 +884,136 @@ class TriageModelGenerationTest(DiffScriptTestBase):
         self.assertIn("## size", res.stdout, "後続セクションが出ていない")
 
 
+class DiffBaseFixture(DiffScriptTestBase):
+    """origin を立てずに `refs/remotes/origin/*` を直接置いて、base の食い違いを作る."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # 既定ブランチ名は git の設定で変わるので固定する
+        self.git("branch", "-M", "main")
+        self.init = self.head()
+
+    def head(self) -> str:
+        return self.git("rev-parse", "HEAD").stdout.strip()
+
+    def commit_file(self, rel: str) -> str:
+        # 中身をファイルごとに変える。同じだと git が削除 + 追加を rename にまとめ、
+        # 逆向きに混ざった変更が b/ 側の 1 パスに隠れる
+        self.write(rel, f"{rel}\n")
+        self.add()
+        self.git("commit", "-qm", rel)
+        return self.head()
+
+    def set_origin(self, branch: str, sha: str) -> None:
+        self.git("update-ref", f"refs/remotes/origin/{branch}", sha)
+
+    def advance_origin(self, *rels: str) -> str:
+        """HEAD から一時ブランチでコミットを積み、その先端を origin/main にする（HEAD は動かさない）."""
+        back = self.git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        self.git("checkout", "-qb", "tmp-origin")
+        for rel in rels:
+            tip = self.commit_file(rel)
+        self.set_origin("main", tip)
+        self.git("checkout", "-q", back)
+        self.git("branch", "-D", "tmp-origin")
+        return tip
+
+    def stale_local_main(self) -> None:
+        """origin/main から切ったブランチで作業し、ローカルの main だけが 2 commits 遅れている状態."""
+        self.advance_origin("others1.txt", "others2.txt")
+        self.git("checkout", "-qb", "feature", "refs/remotes/origin/main")
+        self.commit_file("mine.txt")
+        self.git("branch", "-f", "main", self.init)
+
+    def diff_paths(self, out: str) -> set[str]:
+        """diff に現れるパス（削除側の a/ も含める）. テストのパスは空白を含まない."""
+        diff = Path(self.kv(out, "## meta")["diff_file"]).read_text(encoding="utf-8")
+        paths: set[str] = set()
+        for line in diff.splitlines():
+            if line.startswith("diff --git "):
+                _, _, a, b = line.split(" ")
+                paths.update((a[2:], b[2:]))
+        return paths
+
+    def triage(self, base: str) -> subprocess.CompletedProcess[str]:
+        res = self.run_in(TRIAGE, "--base", base)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res
+
+
+class TriageDiffBaseTest(DiffBaseFixture):
+    """diff の起点（GitHub issue #253）。**起点を誤っても diff は出る**ので、中身で見る."""
+
+    def test_stale_local_base_takes_the_origin_merge_base(self):
+        """issue の再現: ローカルの main が遅れていると、他で取り込まれた変更まで混ざっていた."""
+        self.stale_local_main()
+        res = self.triage("main")
+        self.assertEqual(self.diff_paths(res.stdout), {"mine.txt"})
+        self.assertEqual(self.kv(res.stdout, "## meta")["base"], "origin/main",
+                         "agent の `git show <base>:<file>` が遅れた main を読む")
+        self.assertIn("⚠️ base: ローカルの main が origin/main より 2 commits 遅れている", res.stderr)
+
+    def test_unpushed_local_base_is_not_replaced_by_origin(self):
+        """origin を無条件に優先すると、未 push のコミットが逆向きに混ざる."""
+        self.set_origin("main", self.init)
+        self.commit_file("unpushed.txt")
+        self.git("checkout", "-qb", "feature")
+        self.commit_file("mine.txt")
+        res = self.triage("main")
+        self.assertEqual(self.diff_paths(res.stdout), {"mine.txt"})
+        self.assertEqual(self.kv(res.stdout, "## meta")["base"], "main")
+        self.assertNotIn("⚠️ base", res.stderr)
+
+    def test_base_advanced_after_branching_is_not_reverse_diffed(self):
+        """直接比較（`main..HEAD`）だと、切った後に main へ入った変更が削除として混ざる."""
+        self.git("checkout", "-qb", "feature")
+        self.commit_file("mine.txt")
+        self.git("checkout", "-q", "main")
+        self.commit_file("later.txt")
+        self.git("checkout", "-q", "feature")
+        res = self.triage("main")
+        self.assertEqual(self.diff_paths(res.stdout), {"mine.txt"})
+
+    def test_equal_merge_bases_keep_the_local_ref_without_warning(self):
+        """base ブランチ上で未コミットの変更だけを見る回。origin が先にいても分岐点は同じ."""
+        self.advance_origin("others.txt")
+        self.write("mine.txt", "x\n")
+        self.add()
+        res = self.triage("main")
+        self.assertEqual(self.diff_paths(res.stdout), {"mine.txt"})
+        self.assertEqual(self.kv(res.stdout, "## meta")["base"], "main")
+        self.assertNotIn("⚠️ base", res.stderr)
+
+    def test_branch_only_on_origin_resolves_without_warning(self):
+        """ローカルに無いブランチ名も origin 側で解決する（遅れを比べる相手が無いので鳴らさない）."""
+        self.set_origin("develop", self.init)
+        self.commit_file("mine.txt")
+        res = self.triage("develop")
+        self.assertEqual(self.diff_paths(res.stdout), {"mine.txt"})
+        self.assertEqual(self.kv(res.stdout, "## meta")["base"], "origin/develop")
+        self.assertNotIn("⚠️ base", res.stderr)
+
+    def test_rev_expression_is_not_resolved_on_origin(self):
+        """`HEAD~1` を `refs/remotes/origin/HEAD~1` として解決させない.
+
+        origin/HEAD が HEAD より先にいると、そちらの分岐点が HEAD 自身になり diff が空になる。
+        """
+        self.commit_file("mine.txt")
+        self.advance_origin("others1.txt", "others2.txt")
+        self.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        res = self.triage("HEAD~1")
+        self.assertEqual(self.diff_paths(res.stdout), {"mine.txt"})
+
+    def test_unrelated_history_falls_back_to_a_direct_comparison(self):
+        """共通の履歴が無い base は従来どおり先端と直接比べる（解決できない扱いにしない）."""
+        self.git("checkout", "-q", "--orphan", "other")
+        self.git("rm", "-rqf", "--ignore-unmatch", ".")
+        self.commit_file("theirs.txt")
+        self.git("checkout", "-q", "main")
+        self.commit_file("mine.txt")
+        res = self.triage("other")
+        self.assertIn("mine.txt", self.diff_paths(res.stdout))
+
+
 if __name__ == "__main__":
     unittest.main()

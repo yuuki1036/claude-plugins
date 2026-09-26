@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.131.1] - 2026-09-27
+
+### Fixed
+
+- **self-review の diff をローカルの base ref の先端から取らず、HEAD との分岐点から取るようにした**（#253）。
+  ローカルの main が origin/main より遅れていると、origin/main から切ったブランチの diff に他で取り込まれた
+  変更まで混ざっていた（実測: 変更 4 files が 161 files に膨張。ローカルの main は 135 commits 遅れていた。
+  ほかに 7 → 188 files / 46 → 345 files）
+  - 起点はローカルの `<base>` と `origin/<base>` のそれぞれで HEAD との分岐点（merge-base）を取り、HEAD に近い方を使う。
+    origin を無条件に優先しないのは、ローカルの base に未 push のコミットがあってそこから切ったブランチでは、
+    origin 側の分岐点が古く未 push のコミットが混ざるため。2 ドットの直接比較もやめた（ブランチを切った後に
+    base が進むと、base 側の新しい変更が逆向きの差分として混ざる）。共通の履歴が無い base は従来どおり先端と直接比べる
+  - origin 側を使った回は `## meta` の `base=` が `origin/<base>` になり（agent の `git show <base>:<file>` も同じ起点を見る）、
+    ローカルが遅れていれば stderr に `WARN: ⚠️ base:` を出す。止めない
+  - 起点の決め方は新しい `scripts/lib/diff-base.sh` に置き、`triage-signals.sh` と `md-prose-lines.sh` が共有する
+    （ずれると Phase 0 の規模と Markdown 推敲の対象行が別の diff を指す）。`md-prose-lines.sh` は解決できない base で
+    exit 2 を返すようにした（従来は `git diff` の失敗で exit 1。`triage-signals.sh` と揃えた）
+  - `origin/<base>` を見るのは base がブランチ名のときだけ。`HEAD~1` のような式を origin の先端から数えて解決しない
+
 ## [2.131.0] - 2026-09-26
 
 ### Added

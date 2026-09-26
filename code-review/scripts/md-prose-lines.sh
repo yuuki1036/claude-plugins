@@ -10,8 +10,8 @@
 # コード片まで推敲へ流れる。
 #
 # 行番号は**最終状態のファイル**に対する番号。self-review の diff ファイルは 3 本の連結
-# （BASE..HEAD / --cached / unstaged）で、同じファイルの hunk が別の版の行番号で並ぶため
-# 使えない。ここでは `git diff <base>`（作業ツリー対 base）を取り直す。`--staged` のときは
+# （分岐点..HEAD / --cached / unstaged）で、同じファイルの hunk が別の版の行番号で並ぶため
+# 使えない。ここでは `git diff <分岐点>`（作業ツリー対 base の分岐点）を取り直す。`--staged` のときは
 # `git diff --cached` と index の内容を使う。
 #
 # 使い方:
@@ -41,6 +41,9 @@ fi
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 が無い" >&2; exit 2; }
 
 TOP=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "FATAL: git リポジトリの外" >&2; exit 2; }
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=lib/diff-base.sh
+. "$HERE/lib/diff-base.sh"
 
 # 非 ASCII パスを C クォートさせない（triage-signals.sh と同じ理由）。接頭辞は明示して固定する —
 # `diff.noprefix` / `diff.mnemonicPrefix` を設定した環境では `+++ b/` が付かず、全ファイルを落とす
@@ -49,8 +52,10 @@ if [ "$STAGED" = "1" ]; then
   DIFF=$(git -C "$TOP" $GDIFF --cached -- '*.md') \
     || { echo "FATAL: git diff --cached に失敗した" >&2; exit 1; }
 else
-  DIFF=$(git -C "$TOP" $GDIFF "$BASE" -- '*.md') \
-    || { echo "FATAL: git diff ${BASE} に失敗した" >&2; exit 1; }
+  # 起点は triage-signals.sh と同じ分岐点（lib/diff-base.sh）。遅れの WARN は triage-signals.sh が出す
+  review_diff_base "$BASE" || { echo "FATAL: base ref を解決できない: ${BASE}" >&2; exit 2; }
+  DIFF=$(git -C "$TOP" $GDIFF "$REVIEW_BASE_COMMIT" -- '*.md') \
+    || { echo "FATAL: git diff ${BASE} の分岐点に失敗した" >&2; exit 1; }
 fi
 
 # writing-polish が有効か。**優先順位の高い設定から見て、最初に値を持つファイルで決める**

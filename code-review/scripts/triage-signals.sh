@@ -11,7 +11,7 @@
 #
 # 使い方:
 #   triage-signals.sh --pr <N> [--out <diff path>]      # review: gh pr diff で取得
-#   triage-signals.sh --base <ref> [--out <diff path>]  # self-review: base..HEAD + staged + unstaged
+#   triage-signals.sh --base <ref> [--out <diff path>]  # self-review: 分岐点..HEAD + staged + unstaged
 #   triage-signals.sh --base <ref> --staged             # self-review --staged: staged のみ
 #
 # 出力は stdout（セクション区切りの plain text）。diff 本体は stdout に出さない。
@@ -31,6 +31,8 @@ done
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib/review-paths.sh
 . "$HERE/lib/review-paths.sh"
+# shellcheck source=lib/diff-base.sh
+. "$HERE/lib/diff-base.sh"
 review_paths_init "$PR" || exit 2
 WT="$REVIEW_WT"
 
@@ -62,12 +64,16 @@ else
   # base ref を先に解決する。ブレースグループの終了ステータスは**最後のコマンド**の
   # ものになるため、1 本目が fatal でも 3 本目が成功すれば `&&` が通ってしまい、
   # コミット済み分が欠落した部分 diff が「正常な diff」として確定していた
-  git rev-parse --verify -q "${BASE}^{commit}" >/dev/null \
-    || { echo "FATAL: base ref を解決できない: ${BASE}" >&2; exit 2; }
-  # base..HEAD（2 ドット = 直接比較。従来挙動）+ staged + unstaged の 3 系統。
+  review_diff_base "$BASE" || { echo "FATAL: base ref を解決できない: ${BASE}" >&2; exit 2; }
+  if [ -n "$REVIEW_BASE_BEHIND" ]; then
+    echo "WARN: ⚠️ base: ローカルの ${BASE} が origin/${BASE} より ${REVIEW_BASE_BEHIND} commits 遅れているので、diff は origin/${BASE} との分岐点から取った（ローカルの ${BASE} から取ると、他で取り込まれた変更がレビュー対象に混ざる / GitHub issue #253）。止めずに続け、Phase 0 の出力にこの 1 行を載せる" >&2
+  fi
+  # `## meta` の `base=` は agent が `git show <base>:<file>` に使うので、実際に使った ref を出す
+  BASE="$REVIEW_BASE_REF"
+  # 分岐点..HEAD + staged + unstaged の 3 系統（起点の決め方は lib/diff-base.sh）。
   # 3 系統が重なるファイルは行数が重複計上されうるが、帯を分けるには十分な粗さ
   : > "$OUT.tmp"
-  git $QP diff "${BASE}..HEAD" >> "$OUT.tmp" || { echo "FATAL: git diff ${BASE}..HEAD に失敗した" >&2; exit 1; }
+  git $QP diff "${REVIEW_BASE_COMMIT}..HEAD" >> "$OUT.tmp" || { echo "FATAL: git diff ${BASE} の分岐点..HEAD に失敗した" >&2; exit 1; }
   git $QP diff --cached      >> "$OUT.tmp" || { echo "FATAL: git diff --cached に失敗した" >&2; exit 1; }
   git $QP diff               >> "$OUT.tmp" || { echo "FATAL: git diff に失敗した" >&2; exit 1; }
   mv "$OUT.tmp" "$OUT"
@@ -174,7 +180,7 @@ if [ -n "$PR" ]; then
 elif [ "$STAGED" = "1" ]; then
   NUMSTAT=$(git $QP diff --cached --numstat 2>/dev/null)
 else
-  NUMSTAT=$({ git $QP diff --numstat "${BASE}..HEAD"; git $QP diff --cached --numstat; git $QP diff --numstat; } 2>/dev/null | grep -v '^$')
+  NUMSTAT=$({ git $QP diff --numstat "${REVIEW_BASE_COMMIT}..HEAD"; git $QP diff --cached --numstat; git $QP diff --numstat; } 2>/dev/null | grep -v '^$')
 fi
 
 # 同一パスが複数系統（base..HEAD / staged / unstaged）に現れるため、パス単位で集約する。
