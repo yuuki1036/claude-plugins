@@ -402,7 +402,7 @@ class MeasureTokensTest(ScriptTestBase):
                 self.assertIn("値が必要", res.stderr)
                 self.assertNotIn("unbound variable", res.stderr)
 
-    def test_missing_transcript_exits_1_and_lists_searched_dirs(self):
+    def test_missing_transcript_exits_1_and_describes_the_candidates(self):
         # cwd に**最新の**無関係ファイルを置く。候補が空のときガードを外すと
         # `ls -t` が引数なしで cwd を列挙し、その先頭を transcript と誤認する
         decoy = self.root / "decoy.jsonl"
@@ -411,18 +411,37 @@ class MeasureTokensTest(ScriptTestBase):
         res = self.measure()
         self.assertEqual(res.returncode, 1, res.stdout)
         self.assertIn("transcript が見つからない", res.stderr)
-        self.assertIn(self.slug(self.root), res.stderr)
-        # 診断は貼られることがあるので `$HOME` は `~` で出す（ユーザー名入りの絶対パスを残さない）
-        self.assertIn("  ~/.claude/projects/%s" % self.slug(self.root), res.stderr)
-        self.assertNotIn(str(self.home), res.stderr)
+        self.assertIn("探索した候補 1 件", res.stderr)
+        self.assertIn("  - 今の dir の slug: dir が無い", res.stderr)
+        self.assert_no_slug(res.stderr)
 
-    def test_searched_dirs_outside_home_are_printed_as_is(self):
-        """`$HOME` が空なら `~` に置き換えない（`/` 始まりの全パスを `~` と出さない）."""
+    def assert_no_slug(self, text: str) -> None:
+        """診断にリポジトリのパス由来の slug を出さない（`~` に縮めてもリポジトリ名が読める）."""
+        self.assertNotIn(self.slug(self.root), text)
+        self.assertNotIn(self.root.name, text)
+        self.assertNotIn(str(self.home), text)
+
+    def test_the_candidates_are_described_by_role_and_state(self):
+        """worktree からは今の dir とメインの worktree の 2 候補を、パスではなく役割と状態で出す."""
+        wt = self.root / "wt"
+        subprocess.run(["git", "worktree", "add", "-q", "--detach", str(wt)],
+                       cwd=self.root, capture_output=True, env=self.env(), check=True)
+        (self.project_dir() / "not-a-transcript.txt").write_text("", encoding="utf-8")
+        res = self.measure(cwd=wt)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("探索した候補 2 件", res.stderr)
+        self.assertIn("  - 今の dir の slug: dir が無い\n  - メインの worktree の slug: .jsonl 0 本",
+                      res.stderr)
+        self.assert_no_slug(res.stderr)
+        self.assertNotIn(self.slug(wt), res.stderr)
+
+    def test_the_slug_is_not_printed_without_home_either(self):
+        """`$HOME` が空（候補が `/.claude/projects/<slug>`）でも slug を出さない."""
         res = subprocess.run(["bash", str(MEASURE)], cwd=str(self.root), capture_output=True,
                              text=True, env=self._env(HOME=""), timeout=60)
         self.assertEqual(res.returncode, 1, res.stdout)
-        self.assertIn("  /.claude/projects/%s" % self.slug(self.root), res.stderr)
-        self.assertNotIn("~", res.stderr)
+        self.assertIn("  - 今の dir の slug: dir が無い", res.stderr)
+        self.assert_no_slug(res.stderr)
 
     def test_explicitly_missing_session_exits_1(self):
         res = self.measure("--session", str(self.root / "nope.jsonl"))
@@ -433,8 +452,8 @@ class MeasureTokensTest(ScriptTestBase):
         res = self.measure("--list")
         self.assertEqual(res.returncode, 0)
         self.assertIn("セッションが見つからない", res.stderr)
-        self.assertIn("  ~/.claude/projects/%s" % self.slug(self.root), res.stderr)
-        self.assertNotIn(str(self.home), res.stderr)
+        self.assertIn("  - 今の dir の slug: dir が無い", res.stderr)
+        self.assert_no_slug(res.stderr)
 
     def test_list_shows_the_candidates(self):
         self.write_session("s1", [self.usage_row("2026-08-17T10:00:00Z", out=1)])

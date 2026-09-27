@@ -60,17 +60,24 @@ DIRS=(${REVIEW_PROJECT_DIRS[@]+"${REVIEW_PROJECT_DIRS[@]}"})
 # 候補ディレクトリ横断で .jsonl を集める（`ls -t` に全件渡して大域的な新しい順にする。
 # ディレクトリごとに `ls -t | head -1` すると候補間の順序が失われる）
 FILES=()
-# 診断に出すディレクトリは `$HOME` を `~` にする（貼られた診断にユーザー名入りの絶対パスを残さない。
-# slug にはリポジトリのパスが入るので、診断出力そのものも公開先には貼らない）
-_tilde_dirs() {
-  local _d _home="${HOME:-}"
-  _home="${_home%/}"   # HOME=/ は空に倒す（`/` 配下を全部 `~` と出さない）
+# 診断には探索した候補の**役割と状態だけ**を出し、パスは出さない。候補は `~/.claude/projects/<slug>` で、
+# slug はリポジトリの絶対パス（ユーザー名とリポジトリ名を含む）をそのまま変換したものなので、`~` に
+# 縮めても貼られた診断からリポジトリ名が読める。HMAC に伏せても利用者が照合できないので、件数と状態にした。
+# 候補は `review_project_dirs` の順で、1 本目が今の dir、2 本目があればメインの worktree
+_describe_dirs() {
+  local _d _f _n _i=0 _role
+  printf '  探索した候補 %d 件（パスはリポジトリ名を含むので出さない。~/.claude/projects/ の下で確かめる）:\n' \
+    "${#DIRS[@]}"
   for _d in ${DIRS[@]+"${DIRS[@]}"}; do
-    if [ -n "$_home" ] && [ "${_d#"$_home"/}" != "$_d" ]; then
-      printf '  ~/%s\n' "${_d#"$_home"/}"
-    else
-      printf '  %s\n' "$_d"
+    _i=$((_i + 1))
+    if [ "$_i" = 1 ]; then _role="今の dir の slug"; else _role="メインの worktree の slug"; fi
+    if [ ! -d "$_d" ]; then
+      printf '  - %s: dir が無い\n' "$_role"
+      continue
     fi
+    _n=0
+    for _f in "$_d"/*.jsonl; do [ -f "$_f" ] && _n=$((_n + 1)); done
+    printf '  - %s: .jsonl %d 本\n' "$_role" "$_n"
   done
 }
 for _d in "${DIRS[@]}"; do
@@ -82,7 +89,7 @@ if [ "$LIST" = "1" ]; then
     ls -lt "${FILES[@]}" | head -20
   else
     printf 'セッションが見つからない:\n' >&2
-    _tilde_dirs >&2
+    _describe_dirs >&2
   fi
   exit 0
 fi
@@ -90,8 +97,8 @@ if [ -z "$SESSION" ] && [ ${#FILES[@]} -gt 0 ]; then
   SESSION=$(ls -t "${FILES[@]}" | head -1)
 fi
 [ -n "$SESSION" ] && [ -f "$SESSION" ] || {
-  echo "FATAL: transcript が見つからない（--session で指定するか --list で確認）。探索したディレクトリ:" >&2
-  _tilde_dirs >&2
+  echo "FATAL: transcript が見つからない（--session で指定するか --list で確認）" >&2
+  _describe_dirs >&2
   exit 1; }
 
 # **サブエージェントの transcript は別の project slug にあることがある**（GitHub issue #104）。

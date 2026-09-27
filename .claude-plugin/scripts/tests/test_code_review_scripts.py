@@ -24,6 +24,7 @@ import hmac
 import json
 import os
 import re
+import select
 import shutil
 from datetime import datetime, timedelta, timezone
 import subprocess
@@ -628,6 +629,23 @@ class ProvenanceInjectionTest(ScriptTestBase):
         self.publish(env=env)
         self.assertEqual(self.last_payload()["machine_id"], first)
 
+    def test_an_empty_salt_is_recreated_not_a_silent_gap(self):
+        """空の salt（作成直後の書き込み失敗・旧版の並行作成の残骸）を黙って使わない.
+
+        以前は label が決まらないまま WARN も出ず、以後の publish が毎回 `null` + gap になっていた
+        """
+        (self.review_config / "salt").write_text("", encoding="ascii")
+        env = stub_hostname_env(self._env(), self.root, SHORT_HOSTNAME_STUB % ("test-host", "test-host"))
+        r = self.publish(env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        salt = (self.review_config / "salt").read_text(encoding="ascii").strip()
+        self.assertRegex(salt, r"^[0-9a-f]{64}$")
+        p = self.last_payload()
+        self.assertEqual(p["machine_id"], "m-" + hmac8("test-host", salt))
+        self.assertNotIn("machine-id", p["measurement_gaps"])
+        self.assertIn("WARN", r.stderr)
+        self.assertIn("作り直す", r.stderr)
+
     def test_an_unsavable_salt_is_a_gap_not_a_throwaway_label(self):
         """salt を保存できない回は null + gap。**その場限りの乱数で label を作らない**（回ごとに別マシンに見える）."""
         blocker = self.root / "not-a-dir"
@@ -742,6 +760,40 @@ echo done >> "{marker}"
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(len(self.events()), 1)
         self.assertFalse(self._wait_for(self.marker, seconds=1.5), "実行権の無いフックを起動した")
+
+    def test_a_hook_without_a_shebang_runs_under_sh(self):
+        """shebang の無いスクリプトはシェルと同じく /bin/sh で読む（execv の ENOEXEC で黙って何も起きない、にしない）."""
+        self._install("printf '%%s\\n' \"$1\" > \"%s\"\n" % self.marker)
+        r = self.publish()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self._wait_for(self.marker), "shebang の無いフックが起動していない")
+        self.assertEqual(self.marker.read_text(encoding="utf-8").splitlines(),
+                         [str(self.root / ".claude" / "events.jsonl")], "書込先を引数で渡していない")
+
+    def test_the_hook_does_not_hold_the_callers_other_fds(self):
+        """呼び出し側から継いだ 3 番以降の fd をフックに渡さない.
+
+        0〜2 だけ /dev/null にしても、呼び出し側のパイプ（ここでは pass_fds で渡した書き込み端）を
+        フックが握っていると、その EOF を待つ呼び出し側がフックの終了まで返らない。
+        **フックが居座っている間に** EOF が届くことで確かめる
+        """
+        self._install(self.HOOK.format(marker=self.marker, release=self.release))
+        read_end, write_end = os.pipe()
+        self.addCleanup(os.close, read_end)
+        try:
+            r = subprocess.run(
+                ["bash", str(PUBLISH), "--plugin", "code-review:self-review",
+                 "--payload", json.dumps(BASE_PAYLOAD)],
+                cwd=self.root, capture_output=True, text=True, env=self._env(), timeout=60,
+                pass_fds=(write_end,))
+        finally:
+            os.close(write_end)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self._wait_for(self.marker), "フックが起動していない")
+        self.assertFalse(self.release.exists(), "前提: フックが居座っている間に確かめる")
+        ready, _, _ = select.select([read_end], [], [], 5)
+        self.assertTrue(ready, "フックが呼び出し側のパイプを握っている（EOF が届かない）")
+        self.assertEqual(os.read(read_end, 1), b"")
 
     def test_dry_run_does_not_run_the_hook(self):
         """publish していない回は同期を蹴らない（dry-run・publish 失敗）."""
@@ -4590,6 +4642,100 @@ class RetroExplicitLogsTest(ScriptTestBase):
         out = self.retro("--logs", str(a), "./" + str(a.relative_to(self.root)))
         self.assertIn("n=3", out)
         self.assertIn("ログ 1 本（同一ファイルの重複指定 1 本を除外）", out)
+
+    # ---- 計測ストア（サニタイズ済み）とローカルの生のログの合算 ----------------------
+    def write_events(self, rel: str, events: list[dict]) -> Path:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps(dict({"event": "review:completed"}, **e), ensure_ascii=False)
+                                + "\n" for e in events), encoding="utf-8")
+        return path
+
+    @staticmethod
+    def raw_and_sanitized(i: int) -> tuple[dict, dict]:
+        """同じイベントの生の行と、計測ストアのサニタイザが落とした行（`pr` を落とし、`machine_id` を
+        label にし、語彙外の文字列を `other` に、`missing_coverage` は語ごとに `other` に置き換える）."""
+        ts, plugin = "2026-08-%02dT00:00:00Z" % (i + 1), "code-review:self-review"
+        raw = {"pr": "4%02d" % i, "machine_id": "AcmeCorp-host", "effort": "high", "size_tier": "medium",
+               "measurement_gaps": [], "missing_coverage": ["reviewer:acme-internal-doc"],
+               "meta_reviewer": {"fired": False, "skip_reason": "free text %d" % i}}
+        san = {"machine_id": "m1", "effort": "high", "size_tier": "medium", "measurement_gaps": [],
+               "missing_coverage": ["reviewer:other"],
+               "meta_reviewer": {"fired": False, "skip_reason": "other"}}
+        return ({"ts": ts, "plugin": plugin, "payload": raw},
+                {"ts": ts, "plugin": plugin, "payload": san})
+
+    def test_a_store_line_and_its_raw_line_are_one_event(self):
+        """**計測ストアとローカルを合算しても二重に数えない**（キーは計測ストアの union と同じ `(ts, plugin)`）.
+
+        以前はキーに payload 全体を含めていたので、`pr` を落とした行と生の行が別物として 2 回数えられた
+        （実測: 生のデータで n=282 の組み合わせが 335 になった）。**生の側を採る**（`other` を層に入れない）
+        """
+        pairs = [self.raw_and_sanitized(i) for i in range(3)]
+        store = self.write_events("review-metrics/events/m1.jsonl", [s for _, s in pairs])
+        local = self.write_events("repo-a/.claude/events.jsonl", [r for r, _ in pairs])
+        for order in ((store, local), (local, store)):
+            with self.subTest(first=order[0].name):
+                res = self.run_script(RETRO, "--logs", *map(str, order), "--json", env=self._env())
+                self.assertEqual(res.returncode, 0, res.stderr)
+                got = json.loads(res.stdout)
+                self.assertEqual(got["n"], 3)
+                self.assertEqual(got["sources_dropped_duplicates"], 3)
+                self.assertEqual(got["sources_conflicting_duplicates"], 0)
+                self.assertNotIn("食い違", res.stderr)
+                by_path = {row["path"]: row["n"] for row in got["sources"]}
+                self.assertEqual(by_path[self.shown(local)], 3, "生の側を採っていない")
+                self.assertEqual(sum(by_path.values()), 3)
+
+    def test_lines_that_disagree_are_counted_once_with_a_warning(self):
+        """同じ `(ts, plugin)` で中身が食い違う行は**片方だけ**を数え、WARN と母集団行に件数を出す.
+
+        採るのは計測ストアの union と同じ規則（正規形の JSON が長い方）で、`--logs` の並びに依存しない
+        """
+        ts, plugin = "2026-08-01T00:00:00Z", "code-review:self-review"
+        short = {"effort": "high", "size_tier": "medium", "measurement_gaps": []}
+        longer = {"effort": "low", "size_tier": "medium", "measurement_gaps": [], "agents": {"reviewer": 2}}
+        a = self.write_events("repo-a/.claude/events.jsonl", [{"ts": ts, "plugin": plugin, "payload": short}])
+        b = self.write_events("repo-b/.claude/events.jsonl", [{"ts": ts, "plugin": plugin, "payload": longer}])
+        for order in ((a, b), (b, a)):
+            with self.subTest(first=order[0].parent.parent.name):
+                res = self.run_script(RETRO, "--logs", *map(str, order), "--json", env=self._env())
+                self.assertEqual(res.returncode, 0, res.stderr)
+                got = json.loads(res.stdout)
+                self.assertEqual(got["n"], 1)
+                self.assertEqual(got["sources_dropped_duplicates"], 1)
+                self.assertEqual(got["sources_conflicting_duplicates"], 1)
+                self.assertEqual({row["path"]: row["n"] for row in got["sources"]},
+                                 {self.shown(a): 0, self.shown(b): 1}, "長い方を採っていない")
+                self.assertIn("WARN: 同じ (ts, plugin) で中身の食い違う行が 1 件", res.stderr)
+                self.assertIn("ts=%s plugin=%s 採用: %s / 不採用: %s"
+                              % (ts, plugin, self.shown(b), self.shown(a)), res.stderr)
+                self.assertNotIn(str(self.root), res.stderr, "WARN に生のパスを出している")
+        out = self.retro("--logs", str(a), str(b))
+        self.assertIn("重複イベント除外 1 件（うち中身の食い違い 1 件は片方を採用）", out)
+
+    def test_only_the_machine_id_differs_is_not_a_disagreement(self):
+        """`machine_id` はサニタイザが label に付け替えるので突合で見ない（WARN を出さない）."""
+        ts, plugin = "2026-08-01T00:00:00Z", "code-review:self-review"
+        rows = [{"ts": ts, "plugin": plugin, "payload": dict(self.base_rows(1)[0], machine_id=m)}
+                for m in ("m1", "AcmeCorp-host")]
+        a = self.write_events("repo-a/.claude/events.jsonl", rows[:1])
+        b = self.write_events("repo-b/.claude/events.jsonl", rows[1:])
+        res = self.run_script(RETRO, "--logs", str(a), str(b), "--json", env=self._env())
+        got = json.loads(res.stdout)
+        self.assertEqual((got["n"], got["sources_conflicting_duplicates"]), (1, 0))
+        self.assertNotIn("食い違", res.stderr)
+
+    def test_lines_without_a_timestamp_are_not_merged_by_plugin_alone(self):
+        """`ts` の無い行は時刻でイベントを識別できないので、payload 全体で見る（別のイベントを 1 件に畳まない）."""
+        plugin = "code-review:self-review"
+        a = self.write_events("repo-a/.claude/events.jsonl", [
+            {"plugin": plugin, "payload": {"effort": "high"}},
+            {"plugin": plugin, "payload": {"effort": "low"}}])
+        copy = self.write_events("repo-b/.claude/events.jsonl", [{"plugin": plugin, "payload": {"effort": "high"}}])
+        got = json.loads(self.retro("--logs", str(a), str(copy), "--json"))
+        self.assertEqual(got["n"], 2)
+        self.assertEqual((got["sources_dropped_duplicates"], got["sources_conflicting_duplicates"]), (1, 0))
 
     def test_json_carries_the_population(self):
         a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))

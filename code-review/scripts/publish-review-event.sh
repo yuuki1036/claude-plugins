@@ -1290,24 +1290,53 @@ fi
 # **切り離して**起動する。計測ストア（private リポジトリ review-metrics）への送り出しを
 # 手で回すと反映が中央値 7 日遅れていたため、publish を契機に同期を蹴る口を 1 つだけ置く。
 # 中身（例: 同期ジョブの `launchctl kickstart`）はマシンごとの設定で、リポジトリには置かない。
-# **待たない・結果を見ない** — 別セッションにして標準入出力を /dev/null へ付け替えるので、
-# フックが遅くても失敗しても publish は成功のまま終わる（呼び出し側のパイプも握らない）。
-# 引数 1 に書き込んだ events.jsonl のパスを渡す
+# **待たない・結果を見ない** — 別セッションにして標準入出力を /dev/null へ付け替え、3 番以降の fd も
+# 閉じるので、フックが遅くても失敗しても publish は成功のまま終わる（呼び出し側のパイプを握らない。
+# 0〜2 だけ付け替えても、呼び出し側から継いだ 3 番以降のパイプをフックが握ると、その EOF を待つ
+# 呼び出し側がフックの終了まで返らない）。
+# 引数 1 に書き込んだ events.jsonl のパスを渡す。shebang の無いスクリプトはシェルと同じく /bin/sh で読む
 if [ "$PUBLISHED" = "1" ]; then
   POST_PUBLISH="$(python3 "$HERE/lib/machine_label.py" config-dir 2>/dev/null)/post-publish"
   # 実行権の無いファイル・dir は execv が失敗して何も起きない（publish には影響しない）
   if [ -x "$POST_PUBLISH" ]; then
     python3 - "$POST_PUBLISH" "$MAIN_ROOT/.claude/events.jsonl" <<'PY' >/dev/null 2>&1 || true
-import os, sys
+import errno, os, sys
+
+
+def close_inherited():
+    """3 番以降の fd を閉じる（開いている fd を列挙できなければ上限まで閉じる）."""
+    for fd_dir in ("/proc/self/fd", "/dev/fd"):
+        try:
+            fds = [int(name) for name in os.listdir(fd_dir)]
+        except (OSError, ValueError):
+            continue
+        for fd in fds:
+            if fd > 2:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass             # 列挙に使った dir の fd（列挙後に閉じている）
+        return
+    os.closerange(3, 4096)
+
+
 # 子を setsid で publish のセッション・プロセスグループから切り離し、親は待たずに終わる
 # （子は init に引き取られる）
 if os.fork() == 0:
-    os.setsid()
-    null = os.open(os.devnull, os.O_RDWR)
-    for fd in (0, 1, 2):
-        os.dup2(null, fd)
     try:
-        os.execv(sys.argv[1], sys.argv[1:])
+        os.setsid()
+        null = os.open(os.devnull, os.O_RDWR)
+        for fd in (0, 1, 2):
+            os.dup2(null, fd)
+        close_inherited()
+        hook, args = sys.argv[1], sys.argv[1:]
+        try:
+            os.execv(hook, args)
+        except OSError as e:
+            if e.errno != errno.ENOEXEC:
+                raise
+        # shebang の無いスクリプト（ENOEXEC）。シェルが外部コマンドを起動するときと同じく /bin/sh で読む
+        os.execv("/bin/sh", ["/bin/sh", hook] + args[1:])
     finally:
         os._exit(127)
 PY

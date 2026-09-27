@@ -22,9 +22,11 @@
 #
 # **`--logs` は明示指定のみ**（探索はしない）。指定したファイルが読めなければ exit 2 で止める
 # — 手作業の連結を置き換えるのが目的なので、**タイプミスを「サンプルが少ない」に化けさせない**。
-# 同一イベントが複数ファイルに現れる（worktree のコピー等）場合は `ts` + `plugin` + payload 全体
-# で dedup する。**どのログから何件採ったかは必ず出力する**（母集団が言えないと
-# 「⚠️ が出たときだけ行動する」契約が成立しない）。
+# 同一イベントが複数ファイルに現れる（worktree のコピー・計測ストアとローカルの合算）場合は
+# `(ts, plugin)` で dedup する（計測ストアの union キーと同じ。サニタイズ済みの行と生の行を同じイベントと
+# 見て生の側を採り、中身が食い違う行は片方だけを数えて WARN と母集団行に件数を出す / `lib/event_dedup.py`）。
+# **どのログから何件採ったかは必ず出力する**（母集団が言えないと「⚠️ が出たときだけ行動する」契約が
+# 成立しない）。
 #
 # **層別の原則**: 版マーカー（`pre_adjust_counts.schema` / `*.gate_schema` /
 # `attribution_schema` / `calibration_schema`）で切り、日付では切らない。マーケットプレイス
@@ -117,6 +119,8 @@ from severity_threshold import lift_nested_threshold
 from body_bound import body_bound
 # マシンの label と母集団行のパスの伏せ字化（生の hostname・リポジトリのパスを出さない）
 from machine_label import Aliaser, RAW_PATHS_WARNING
+# 複数ログの重複除去（キーは計測ストアと同じ `(ts, plugin)`）
+from event_dedup import EventDeduper
 
 since_raw = os.environ.get("REVIEW_SINCE") or ""
 last_n = int(os.environ.get("REVIEW_LAST") or 0)
@@ -136,7 +140,7 @@ if since_raw:
     except ValueError:
         sys.stderr.write("WARN: --since を解釈できないので無視する: %s\n" % since_raw)
 
-events, seen = [], set()
+events = []
 #: どのログから何件採ったか（母集団の再現性 / issue #160）。dedup で落ちた件数も数える
 #
 # **同一ファイルの重複指定は先に畳む**（glob が重なる / `.` 付きパスを混ぜる）。畳まないと
@@ -151,10 +155,7 @@ for _path in sys.argv[1:]:
         continue
     _seen_real.add(_real)
     source_paths.append(_path)
-dup_dropped = 0
-#: 報告件数を入れ子から昇格して母集団へ戻した件数（#238）。publish 側で昇格済みの回は
-#: トップレベルに 4 キーがあるので数えない — ここに乗るのは旧版で焼かれた行だけ
-nested_recovered = 0
+dedup = EventDeduper()
 for path in source_paths:
     try:
         # errors="replace" は必須。既定の strict だと UnicodeDecodeError（OSError ではなく
@@ -174,30 +175,44 @@ for path in source_paths:
             continue              # 壊れた 1 行で集計全体を落とさない
         if ev.get("event") != "review:completed":
             continue
-        ts = ev.get("ts") or ""
-        key = (ts, ev.get("plugin"), json.dumps(ev.get("payload"), sort_keys=True))
-        if key in seen:           # 同一イベントが複数ログに現れる場合の重複除去
-            dup_dropped += 1        # （候補パスの重なり / worktree へコピーされた events.jsonl）
-            continue
-        seen.add(key)
-        # **publish が昇格を知らない版で焼かれた入れ子も読み側で回収する**（GitHub issue #238）。
-        # 計測ストアは append-only の生イベント保管庫なので過去行は書き換えられない — 読む側で
-        # 同じ正規化を掛ければ、既に載っている入れ子形が母集団へ戻る。dedup キーは正規化前の
-        # payload で作ってある（上）ので、同じ生行は同じキーに畳まれる
-        if lift_nested_report_counts(ev.get("payload") or {}) is not None:
-            nested_recovered += 1
-        # `severity_threshold` の入れ子も同じ（GitHub issue #252）。歩留まり・検出内訳の層別キーで、
-        # 落ちた回は主層から `threshold=?` へ理由なしに外れていた。件数は窓で絞った後に数える
-        threshold_lifted = lift_nested_threshold(ev.get("payload") or {}) is not None
-        try:
-            when = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            if when.tzinfo is None:
-                when = when.replace(tzinfo=timezone.utc)
-        except ValueError:
-            when = None
-        events.append({"ts": ts, "when": when, "plugin": ev.get("plugin", "?"),
-                       "p": ev.get("payload") or {}, "src": path,
-                       "threshold_lifted": threshold_lifted})
+        # 同一イベントが複数ログに現れる場合の重複除去（候補パスの重なり / worktree へコピーされた
+        # events.jsonl / 計測ストアのサニタイズ済みの行とローカルの生の行）。**全ファイルを読んでから採る** —
+        # 同じイベントのどちらの行を採るかは、後から来た行を見るまで決まらない
+        dedup.add(ev, path)
+dup_dropped = dedup.dropped
+dup_conflicts = len(dedup.conflicts)
+if dup_conflicts:
+    # 値は出さない（ts と plugin とログの表示名だけ）。ログの表示名は母集団行と同じ伏せ方
+    sys.stderr.write("WARN: 同じ (ts, plugin) で中身の食い違う行が %d 件あった。片方だけを数えた"
+                     "（正規形の JSON が長い方。計測ストアの union と同じ規則）:\n" % dup_conflicts)
+    for _ts, _plugin, _kept, _lost in dedup.conflicts[:5]:
+        sys.stderr.write("  ts=%s plugin=%s 採用: %s / 不採用: %s\n"
+                         % (_ts, _plugin, *(p if show_paths else aliaser.path(p) for p in (_kept, _lost))))
+    if dup_conflicts > 5:
+        sys.stderr.write("  ほか %d 件\n" % (dup_conflicts - 5))
+#: 報告件数を入れ子から昇格して母集団へ戻した件数（#238）。publish 側で昇格済みの回は
+#: トップレベルに 4 キーがあるので数えない — ここに乗るのは旧版で焼かれた行だけ
+nested_recovered = 0
+for ev, path in dedup.events():
+    ts = ev.get("ts") or ""
+    # **publish が昇格を知らない版で焼かれた入れ子も読み側で回収する**（GitHub issue #238）。
+    # 計測ストアは append-only の生イベント保管庫なので過去行は書き換えられない — 読む側で
+    # 同じ正規化を掛ければ、既に載っている入れ子形が母集団へ戻る。重複の判定は正規化前の
+    # payload で済ませてある（上）ので、同じ生行は同じキーに畳まれる
+    if lift_nested_report_counts(ev.get("payload") or {}) is not None:
+        nested_recovered += 1
+    # `severity_threshold` の入れ子も同じ（GitHub issue #252）。歩留まり・検出内訳の層別キーで、
+    # 落ちた回は主層から `threshold=?` へ理由なしに外れていた。件数は窓で絞った後に数える
+    threshold_lifted = lift_nested_threshold(ev.get("payload") or {}) is not None
+    try:
+        when = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+    except ValueError:
+        when = None
+    events.append({"ts": ts, "when": when, "plugin": ev.get("plugin", "?"),
+                   "p": ev.get("payload") or {}, "src": path,
+                   "threshold_lifted": threshold_lifted})
 
 events.sort(key=lambda e: e["ts"])
 
@@ -297,8 +312,10 @@ def source_rows(rows):
 
 def sources_line():
     extra = "（同一ファイルの重複指定 %d 本を除外）" % dup_paths if dup_paths else ""
-    return ("**母集団**: ログ %d 本%s / 重複イベント除外 %d 件%s"
-            % (len(source_paths), extra, dup_dropped,
+    # 中身の食い違う重複は「同じイベントだった」と言い切れないので、件数を分けて出す
+    conflicts = "（うち中身の食い違い %d 件は片方を採用）" % dup_conflicts if dup_conflicts else ""
+    return ("**母集団**: ログ %d 本%s / 重複イベント除外 %d 件%s%s"
+            % (len(source_paths), extra, dup_dropped, conflicts,
                "" if logs_explicit else "（**このリポジトリのログのみ**）"))
 
 
@@ -463,6 +480,7 @@ if not events:
                           "provenance": provenance_of(events),
                           "sources": source_rows(events),
                           "sources_dropped_duplicates": dup_dropped,
+                          "sources_conflicting_duplicates": dup_conflicts,
                           "sources_dropped_paths": dup_paths,
                           "sources_scope": "explicit" if logs_explicit else "this-repo"},
                          ensure_ascii=False))
@@ -2055,6 +2073,8 @@ if as_json:
         "n": n_all, "n_recent_30d": len(recent), "by_plugin": by_plugin,
         # 母集団の再現性（どのログから何件採ったか / issue #160）
         "sources": source_rows(events), "sources_dropped_duplicates": dup_dropped,
+        # 上の内数。同じ (ts, plugin) で中身が食い違い、片方だけを数えた行
+        "sources_conflicting_duplicates": dup_conflicts,
         "sources_dropped_paths": dup_paths,
         # 母集団の**範囲**（#173）。`this-repo` は自動探索 = 他リポジトリを含まない
         "sources_scope": "explicit" if logs_explicit else "this-repo",
