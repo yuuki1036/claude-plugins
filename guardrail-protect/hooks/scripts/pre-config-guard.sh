@@ -58,6 +58,39 @@ EOF
   exit 2
 fi
 
+# 自己保護（public-leak-guard）: 辞書・設定・visibility キャッシュ。書き換えると公開先ガードが
+# 黙って外れる（語を消す / 宛先を private と書き込む）。場所を環境変数で変えた場合はその先も守る
+plg_self=0
+case "$target_path" in
+  */.config/guardrail-protect/*|*/.cache/guardrail-protect/*|*/public-leak-guard.json) plg_self=1 ;;
+esac
+for plg_env_path in "${GUARDRAIL_SENSITIVE_DICT:-}" "${GUARDRAIL_PUBLIC_LEAK_CONFIG:-}"; do
+  if [ -n "$plg_env_path" ] && [ "$target_path" = "$plg_env_path" ]; then plg_self=1; fi
+done
+
+# ガードの制御変数（GUARDRAIL_*）をシェル設定・settings に書き込んで迂回する経路
+plg_env_inject=0
+case "$target_basename" in
+  .zshrc|.zshenv|.zprofile|.zlogin|.bashrc|.bash_profile|.profile|.envrc|settings.json|settings.local.json|.claude.json)
+    plg_new_text=$(jq -r '[.tool_input.content?, .tool_input.new_string?, (.tool_input.edits[]?.new_string)] | map(select(. != null)) | join("\n")' <<< "$input" 2>/dev/null || true)
+    if grep -Eq 'GUARDRAIL_[A-Za-z0-9_]*' <<< "$plg_new_text"; then plg_env_inject=1; fi
+    ;;
+esac
+
+if [ "$plg_self" = "1" ] || [ "$plg_env_inject" = "1" ]; then
+  cat >&2 <<EOF
+[guardrail-protect] Refusing to edit the public-leak-guard dictionary / config / cache
+
+公開先ガード（public-leak-guard）の辞書・設定・visibility キャッシュ、または
+GUARDRAIL_* 変数を Claude から変えると、ガードが黙って外れる。
+変える必要があるなら、人が Claude の外で編集する。
+
+Tool: ${tool_name}
+Path: ${target_path}
+EOF
+  exit 2
+fi
+
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 CONFIG_FILE="${PROJECT_DIR}/.claude/guardrail-protect.json"
 

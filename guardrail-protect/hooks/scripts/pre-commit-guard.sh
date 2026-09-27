@@ -40,10 +40,20 @@ fi
 
 [ -z "$cmd" ] && safe_hook_error Validation "no command in tool_input"
 
-# 安価な事前フィルタ: git commit 迂回か guardrail-protect.json 改変に関係しなければ即 return
+# 安価な事前フィルタ: git commit 迂回か guardrail の設定・辞書・キャッシュ改変に関係しなければ即 return
+# （辞書を環境変数で別の場所に置いた場合は、そのファイル名も対象にする）
+plg_dict_base=""
+if [ -n "${GUARDRAIL_SENSITIVE_DICT:-}" ]; then plg_dict_base=$(basename "${GUARDRAIL_SENSITIVE_DICT}"); fi
+plg_cfg_base=""
+if [ -n "${GUARDRAIL_PUBLIC_LEAK_CONFIG:-}" ]; then plg_cfg_base=$(basename "${GUARDRAIL_PUBLIC_LEAK_CONFIG}"); fi
 case "$cmd" in
-  *git*commit*|*guardrail-protect.json*) ;;
-  *) exit 0 ;;
+  *git*commit*|*guardrail-protect*|*public-leak-guard*) ;;
+  *)
+    if { [ -z "$plg_dict_base" ] || [[ "$cmd" != *"$plg_dict_base"* ]]; } \
+       && { [ -z "$plg_cfg_base" ] || [[ "$cmd" != *"$plg_cfg_base"* ]]; }; then
+      exit 0
+    fi
+    ;;
 esac
 
 # 検出ロジックは別ファイルの perl に委譲（bash 3.2 は $() 内 heredoc の

@@ -40,6 +40,27 @@
               "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-isolation-guard.sh"
             ],
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/public-leak-guard.sh"
+            ],
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*[Gg]it[Hh]ub.*__.*|mcp__terminal__run_in_terminal|mcp__.*([Cc]hrome|[Bb]rowser).*__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/public-leak-guard.sh"
+            ],
+            "timeout": 10
           }
         ]
       }
