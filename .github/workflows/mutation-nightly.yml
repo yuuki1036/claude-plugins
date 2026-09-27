@@ -25,8 +25,10 @@ permissions:
 jobs:
   mutation:
     runs-on: ubuntu-latest
-    # `--max 60 × フルスイート` は伸びうる（実測 1 変異 113 秒 → 上限で約 2 時間）。
-    # 既定の 6 時間まで走らせる理由が無いので切っておく（打ち切られたら --max を下げる）
+    # `--max 60 × フルスイート` は伸び続ける（1 変異 113 秒 → 2026-09 には約 200 秒）。
+    # 既定の 6 時間まで走らせる理由が無いので切っておく。**ここに当たると cancelled になり、
+    # 結果もログも残らず report も走らない**（2026-09-26 の実測）ので、mutation-test.py 側の
+    # `--budget-sec` をこれより手前に置いて、回せた分の結果を出して終わらせる
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -54,13 +56,18 @@ jobs:
           fi
 
       # `--max 60` は「1 日ぶんの変更行なら実質全部」を狙った値。上限に当たった回は
-      # ログに「N 個を対象外にした」と出るので、恒常的に当たるようなら分割を検討する
+      # ログに「N 個を対象外にした」と出るので、恒常的に当たるようなら分割を検討する。
+      # `--budget-sec 9000`（150 分）は job の timeout（180 分）から準備の数分と 1 変異ぶんを引いた値。
+      # 打ち切った回はログに「予算で未実行 N」と出る
+      # PYTHONUNBUFFERED: パイプ越しだと出力がバッファされ、途中で殺された回のログが空になる
       - name: mutation-test
         if: env.SKIP != '1'
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
           set -o pipefail
           python3 .claude-plugin/scripts/mutation-test.py \
-            --base "$MUT_BASE" --max 60 --strict 2>&1 | tee mutation.log
+            --base "$MUT_BASE" --max 60 --budget-sec 9000 --strict 2>&1 | tee mutation.log
 
       # **失敗を黙って流さない**。Actions の赤は見に行かないと気づけないので issue にする
       - name: report

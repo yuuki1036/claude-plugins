@@ -671,5 +671,62 @@ class ShellCmdGuardTest(unittest.TestCase):
             self.assertNotIn("リポジトリ外", err.getvalue())
 
 
+class BudgetTest(unittest.TestCase):
+    """`--budget-sec`（実測: nightly が job timeout 180 分で cancelled になり、結果もログも残らなかった）."""
+
+    def test_zero_budget_is_unlimited(self):
+        self.assertFalse(mt.over_budget(10_000.0, [100.0], 100.0, 0))
+
+    def test_estimate_before_any_mutant_is_the_baseline(self):
+        self.assertTrue(mt.over_budget(5.0, [], 6.0, 10.0))
+        self.assertFalse(mt.over_budget(5.0, [], 4.0, 10.0))
+
+    def test_estimate_is_the_mean_of_executed_mutants(self):
+        """baseline ではなく実行済みの平均で見積もる（baseline 1 秒でも 1 変異 6 秒なら止まる）."""
+        self.assertTrue(mt.over_budget(5.0, [4.0, 8.0], 1.0, 10.0))
+        self.assertFalse(mt.over_budget(5.0, [2.0, 4.0], 100.0, 10.0))
+
+    def test_landing_exactly_on_the_budget_still_runs(self):
+        self.assertFalse(mt.over_budget(8.0, [2.0], 2.0, 10.0))
+
+
+class BudgetMainTest(unittest.TestCase):
+    """main() が予算で打ち切った分を「予算で未実行」として数える（配線の確認）."""
+
+    def setUp(self) -> None:
+        import signal
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name).resolve()
+        self._orig_root = mt.ROOT
+        mt.ROOT = self.root
+        self.addCleanup(lambda: setattr(mt, "ROOT", self._orig_root))
+        # main() は変異を書く区間の前に SIGTERM / SIGHUP の handler を差し替える
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            self.addCleanup(signal.signal, sig, signal.getsignal(sig))
+        (self.root / "t.py").write_text("x = 1 > 2\ny = 3 < 4\n", encoding="utf-8")
+
+    def _main(self, *extra: str) -> tuple[int, str]:
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = mt.main(["--file", "t.py", "--test-cmd", "true", *extra])
+        return rc, out.getvalue()
+
+    def test_exhausted_budget_counts_the_rest_as_unexecuted(self):
+        rc, out = self._main("--budget-sec", "0.000001")
+        self.assertEqual(rc, 0)
+        self.assertIn("殺した 0 / 生存 0", out)
+        self.assertIn("予算で未実行 2", out)
+        self.assertNotIn("SURVIVED", out, "打ち切ったのに変異を当てている")
+
+    def test_without_budget_every_mutant_runs(self):
+        rc, out = self._main()
+        self.assertEqual(rc, 0)
+        self.assertIn("生存 2", out)
+        self.assertNotIn("予算", out)
+
+
 if __name__ == "__main__":
     unittest.main()

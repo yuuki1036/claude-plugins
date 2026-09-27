@@ -536,6 +536,19 @@ def apply_and_test(mutant: Mutant, test_cmd: list[str], timeout: int) -> str:
     return verdict
 
 
+def over_budget(elapsed: float, durations: list[float], baseline_sec: float,
+                budget: float) -> bool:
+    """次の 1 変異を始めると時間予算を超えるか（`budget` が 0 以下なら無制限）.
+
+    1 変異の見積もりは実行済みの平均、まだ無ければ baseline。**予算は起動からの経過で測る**
+    （baseline も含む）— 呼び出し側の上限（CI の job timeout）は壁時計で効くため。
+    """
+    if budget <= 0:
+        return False
+    estimate = sum(durations) / len(durations) if durations else baseline_sec
+    return elapsed + estimate > budget
+
+
 def _install_signal_handlers() -> None:
     """SIGTERM / SIGHUP で復元してから既定の終了に落とす.
 
@@ -560,7 +573,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--test-cmd", default=DEFAULT_TEST_CMD)
     ap.add_argument("--timeout", type=int, default=0,
                     help="1 変異あたりの秒数（既定 0 = baseline 実測の 5 倍・最低 30 秒）")
+    ap.add_argument("--budget-sec", type=float, default=0,
+                    help="起動からの経過秒数の上限（既定 0 = 無制限）。次の 1 変異で超える見込みになったら"
+                         "打ち切り、残りを「予算で未実行」として数える")
     args = ap.parse_args(argv)
+    t_start = time.monotonic()
 
     # **変更行を数える前に**戻す（残った変異は diff に混ざり、対象行そのものを歪める）
     recover_from_journal()
@@ -632,7 +649,15 @@ def main(argv: list[str] | None = None) -> int:
     timed_out: list[Mutant] = []
     killed = invalid = 0
     aborted = False
+    # **CI の job timeout に殺されると結果が 1 件も残らない**（実測: nightly が 180 分で cancelled、
+    # ログも空）。予算内で回せた分の結果を出して終わる
+    durations: list[float] = []
+    budget_left = 0
     for i, m in enumerate(mutants, 1):
+        if over_budget(time.monotonic() - t_start, durations, baseline_sec, args.budget_sec):
+            budget_left = len(mutants) - (i - 1)
+            break
+        t_m = time.monotonic()
         try:
             verdict = apply_and_test(m, test_cmd, timeout)
         except ExternalEditError as e:
@@ -641,6 +666,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  実行済み {i - 1}/{len(mutants)} 件までの結果を出す", file=sys.stderr)
             aborted = True
             break
+        durations.append(time.monotonic() - t_m)
         mark = {"survived": "SURVIVED", "killed": "killed",
                 "invalid": "invalid", "timeout": "TIMEOUT"}[verdict]
         print(f"  [{i}/{len(mutants)}] {mark:9s} {_rel(m.path)}:{m.lineno} — {m.rule}")
@@ -657,7 +683,11 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print(f"殺した {killed} / 生存 {len(survived)} / 構文エラーで対象外 {invalid}"
           + (f" / タイムアウト {len(timed_out)}" if timed_out else "")
-          + (f" / 上限で未実行 {dropped}" if dropped else ""))
+          + (f" / 上限で未実行 {dropped}" if dropped else "")
+          + (f" / 予算で未実行 {budget_left}" if budget_left else ""))
+    if budget_left:
+        print(f"時間予算 --budget-sec={args.budget_sec:g} で打ち切った（未実行の {budget_left} 個は"
+              "検証していない。予算を延ばすか --max を下げる）")
     if timed_out:
         print("タイムアウトした変異（**無限ループ化した可能性**。`--timeout` を延ばすか"
               "`# mutation-ok:` で外す）:")
