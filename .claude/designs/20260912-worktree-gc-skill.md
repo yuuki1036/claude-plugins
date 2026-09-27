@@ -20,7 +20,7 @@ tags: [dev-workflow, worktree, gc, skill-design]
 
 ## 背景 / 課題
 
-- GitHub issue #223: next repo 24 件 + 他リポの review 残骸 18 件 + agent worktree 4 件 + 空 dir / temp を**手作業で**棚卸しして消した。手順は 6 段（検出 → 分類 → 安全確認 → 削除 → 付随掃除 → 承認）で毎回同じ
+- GitHub issue #223: あるリポジトリの 24 件 + 他リポの review 残骸 18 件 + agent worktree 4 件 + 空 dir / temp を**手作業で**棚卸しして消した。手順は 6 段（検出 → 分類 → 安全確認 → 削除 → 付随掃除 → 承認）で毎回同じ
 - 既存の `worktree-setup` / `worktree-teardown` は **1 worktree の作成・破棄**が対象。teardown は Step 1 で `GIT_DIR == GIT_COMMON` なら `exit 1`（main clone では実行不可）で、厳守ルールでも「現 worktree の env に書かれた port のみを対象にする」と定める。複数 worktree を横断する用途には前提が反転する（`dev-workflow/skills/worktree-teardown/SKILL.md`）
 - `claude-meta:component-addition-advisor` のゲートは通過済み（2026-09-12）。既存拡張で解けない blocker は上の 2 点。新 skill として追加する
 - review 用 worktree（`.claude/worktrees/` 配下）は code-review 締めフロー 5 が正常時に掃除するため、残るのは**レビューが途中で死んだ回**に限られる（`code-review/skills/review/SKILL.md:505-511`）

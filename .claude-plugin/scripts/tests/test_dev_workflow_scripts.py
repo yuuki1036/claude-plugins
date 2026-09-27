@@ -680,26 +680,26 @@ class ScanIssueStatusTest(GcTestBase):
         return f
 
     def test_issue_id_is_extracted_from_branch(self):
-        """ブランチ名の `PRE-1` を issue.id に載せる（状態ファイル無しなら state null）."""
+        """ブランチ名の `TEAM-1` を issue.id に載せる（状態ファイル無しなら state null）."""
         self.set_origin_main()
-        wt = self._ahead_worktree("wt-pre1", "feat/PRE-1-research")
+        wt = self._ahead_worktree("wt-team1", "feat/TEAM-1-research")
         rows = self.scan_env(self._lsof_empty_env(), cwd=self.root)
         row = self.row_for(rows, wt)
-        self.assertEqual(row["issue"], {"id": "PRE-1", "state": None, "closed": False})
+        self.assertEqual(row["issue"], {"id": "TEAM-1", "state": None, "closed": False})
         self.assertEqual(row["verdict"], "keep", row)
         self.assertIn("no-pr-ahead", row["reasons"])
-        # 状態が無いのに `issue-open:PRE-1:` のような空注記を付けない
+        # 状態が無いのに `issue-open:TEAM-1:` のような空注記を付けない
         self.assertFalse([r for r in row["reasons"] if r.startswith("issue-")], row["reasons"])
 
     def test_closed_issue_lifts_no_pr_gates(self):
         """Issue が completed なら no-pr-* を外して reap（reasons に issue-closed を添える）."""
         self.set_origin_main()
-        wt = self._ahead_worktree("wt-pre2", "feat/PRE-2-research")
-        f = self._status_file({"PRE-2": {"state": "Done", "type": "completed"}})
+        wt = self._ahead_worktree("wt-team2", "feat/TEAM-2-research")
+        f = self._status_file({"TEAM-2": {"state": "Done", "type": "completed"}})
         rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
         row = self.row_for(rows, wt)
         self.assertEqual(row["verdict"], "reap", row)
-        self.assertIn("issue-closed:PRE-2:Done", row["reasons"])
+        self.assertIn("issue-closed:TEAM-2:Done", row["reasons"])
         self.assertNotIn("no-pr-ahead", row["reasons"])
         self.assertTrue(row["issue"]["closed"])
         self.assertTrue(wt.is_dir())  # scan は副作用なし
@@ -707,19 +707,19 @@ class ScanIssueStatusTest(GcTestBase):
     def test_open_issue_keeps_and_annotates(self):
         """Issue が started なら keep のまま、reasons に issue-open を添える."""
         self.set_origin_main()
-        wt = self._ahead_worktree("wt-pre3", "feat/PRE-3-research")
-        f = self._status_file({"PRE-3": {"state": "In Progress", "type": "started"}})
+        wt = self._ahead_worktree("wt-team3", "feat/TEAM-3-research")
+        f = self._status_file({"TEAM-3": {"state": "In Progress", "type": "started"}})
         rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
         row = self.row_for(rows, wt)
         self.assertEqual(row["verdict"], "keep", row)
         self.assertIn("no-pr-ahead", row["reasons"])
-        self.assertIn("issue-open:PRE-3:In Progress", row["reasons"])
+        self.assertIn("issue-open:TEAM-3:In Progress", row["reasons"])
 
     def test_type_wins_over_state_name(self):
         """type があれば名前より優先（名前が Done でも type が started なら open 扱い）."""
         self.set_origin_main()
-        wt = self._ahead_worktree("wt-pre4", "feat/PRE-4")
-        f = self._status_file({"PRE-4": {"state": "Done", "type": "started"}})
+        wt = self._ahead_worktree("wt-team4", "feat/TEAM-4")
+        f = self._status_file({"TEAM-4": {"state": "Done", "type": "started"}})
         rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
         row = self.row_for(rows, wt)
         self.assertEqual(row["verdict"], "keep", row)
@@ -727,8 +727,8 @@ class ScanIssueStatusTest(GcTestBase):
     def test_string_value_is_matched_by_name(self):
         """値が文字列なら名前で判定（"Canceled" は閉じている）."""
         self.set_origin_main()
-        wt = self._ahead_worktree("wt-pre5", "feat/PRE-5")
-        f = self._status_file({"PRE-5": "Canceled"})
+        wt = self._ahead_worktree("wt-teamb1", "feat/TEAMB-1")
+        f = self._status_file({"TEAMB-1": "Canceled"})
         rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
         row = self.row_for(rows, wt)
         self.assertEqual(row["verdict"], "reap", row)
@@ -736,9 +736,9 @@ class ScanIssueStatusTest(GcTestBase):
     def test_closed_issue_does_not_override_other_gates(self):
         """Issue が閉じていても dirty なら keep（外すのはゲート 6 / 7 だけ）."""
         self.set_origin_main()
-        wt = self._ahead_worktree("wt-pre6", "feat/PRE-6")
+        wt = self._ahead_worktree("wt-team6", "feat/TEAM-6")
         (wt / "scratch.txt").write_text("uncommitted\n")
-        f = self._status_file({"PRE-6": {"state": "Done", "type": "completed"}})
+        f = self._status_file({"TEAM-6": {"state": "Done", "type": "completed"}})
         rows = self.scan_env(self._lsof_empty_env(), "--issue-status", str(f), cwd=self.root)
         row = self.row_for(rows, wt)
         self.assertEqual(row["verdict"], "keep", row)

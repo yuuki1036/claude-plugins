@@ -28,18 +28,18 @@ Issue メンテナンスで「削除・残す・圧縮」を判定する詳細�
 
 **Before:**
 ```md
-- [x] IntensitySearchInput コンポーネントの実装
-  - props: modelValue, placeholder, disabled, ideaVersions
+- [x] SearchInput コンポーネントの実装
+  - props: modelValue, placeholder, disabled, options
   - emit: update:modelValue, select
   - El-Autocomplete ベースで実装
   - fetchSuggestions で API 呼び出し
-  - IDEA バージョンラベルをドロップダウン内に表示
+  - バージョンラベルをドロップダウン内に表示
   - テスト作成済み
 ```
 
 **After:**
 ```md
-- [x] IntensitySearchInput コンポーネント実装（PR #84）
+- [x] SearchInput コンポーネント実装（PR #12）
 ```
 
 ## 更新履歴の統合

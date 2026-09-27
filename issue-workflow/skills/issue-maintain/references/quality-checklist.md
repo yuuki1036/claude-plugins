@@ -7,9 +7,9 @@
 **問題パターン:**
 ```md
 ## 進捗
-- [x] 根本原因の特定（renderHeader 内の9,516個の el-option + IntensityName）
-- [x] 対策1: ローディング追加（showPageLoading + tableData = []）
-- [x] 対策2: 遅延レンダリング（ideaNamePopoverOpen フラグ）
+- [x] 根本原因の特定（ヘッダ描画内で数千個の option 要素を生成していた）
+- [x] 対策1: ローディング追加（isLoading + tableData = []）
+- [x] 対策2: 遅延レンダリング（popover の開閉フラグ）
 ...
 ```
 上記のように全サブタスク完了済みの場合、本文の詳細セクションを1行サマリーに圧縮する。

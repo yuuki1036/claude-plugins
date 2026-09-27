@@ -82,7 +82,7 @@ live_pids_of() {
   lsof -d cwd -a +D "$path" -t 2>/dev/null | tr '\n' ' ' | sed 's/ *$//'
 }
 
-# ブランチ名から Issue ID（`PRE-1` / `CFP-1878` 型）を 1 つ取る。無ければ空
+# ブランチ名から Issue ID（`TEAM-1` / `TEAMB-123` 型）を 1 つ取る。無ければ空
 issue_ref_of() {
   printf '%s' "$1" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -1
 }

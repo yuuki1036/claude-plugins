@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.7.8] - 2026-09-27
+
+### Changed
+
+- **issue-maintain の references にある Before/After 例を汎用の名前に替えた**（`cleanup-criteria.md` の圧縮例、
+  `quality-checklist.md` の完了サブタスク例）。実務の Issue から写したコンポーネント名・変数名・ドメイン語が
+  公開リポジトリに残っていた。判定基準の中身は変えていない
+
 ## [1.7.7] - 2026-09-26
 
 ### Changed

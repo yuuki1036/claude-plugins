@@ -33,7 +33,7 @@ allowed-tools:
 - `git worktree list` に prunable な残骸（dir を消したが git 管理に残っている）がある
 - PC 全体を横断したい（`--all [root]`。root の既定は環境変数 `DEV_WORKFLOW_WORKTREE_GC_ROOT` → `.claude/dev-workflow.json` の `worktree_gc_root` → `$HOME`）
 - review 残骸（`.claude/worktrees/` 配下・detached）が溜まっている。HEAD に紐づく PR が merged / closed なら reap 候補に載る
-- 調査だけで完結し PR を作らなかった Issue の worktree が残っている。ブランチ名の Issue ID（`PRE-1` 型）を Linear で引き、Done / Canceled なら reap 候補に載る（Step 1.5）
+- 調査だけで完結し PR を作らなかった Issue の worktree が残っている。ブランチ名の Issue ID（`TEAM-1` 型）を Linear で引き、Done / Canceled なら reap 候補に載る（Step 1.5）
 
 ## 実行手順
 
@@ -64,7 +64,7 @@ scan の出力に `issue.id` を持ち、かつ reasons に `no-pr-not-merged` /
 3. 状態ファイルを書く。**値は jq に `--arg` で渡す**（Issue 名・状態名は外部入力）:
 
 ```bash
-jq -n --arg id "PRE-1" --arg state "Done" --arg type "completed" \
+jq -n --arg id "TEAM-1" --arg state "Done" --arg type "completed" \
   '{($id): {state: $state, type: $type}}' > /tmp/wtgc-issues.json
 # 複数件は `jq -s 'add'` でまとめる
 ```

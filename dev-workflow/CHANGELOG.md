@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.34.10] - 2026-09-27
+
+### Changed
+
+- **worktree-gc の Issue ID の例を架空の接頭辞（`TEAM-1` / `TEAMB-123`）に替えた**（`scan.sh` のコメント・SKILL の
+  Step 1.5 の例・この CHANGELOG の既存エントリ）。実運用のブランチ名から取った接頭辞が、公開リポジトリに業務の
+  Issue トラッカーのチーム名として残っていた。抽出の正規表現と挙動は変えていない
+
 ## [1.34.9] - 2026-09-25
 
 ### Changed
@@ -138,7 +146,7 @@
   `gh api commits/<sha>/pulls` で PR を引き、merged / closed なら reap 候補に載せる。親 review worktree が
   ネストした agent dir（`.claude/worktrees/`）を untracked として抱えて dirty keep になっていた点も直した
   （ネスト側は自分の行で dirty を持つ）。gh が無い / PR に紐づかない detached は従来どおり keep
-- **PR 無しブランチの Issue 状態による判定補助**（GitHub issue #240）。ブランチ名の Issue ID（`PRE-1` 型）を
+- **PR 無しブランチの Issue 状態による判定補助**（GitHub issue #240）。ブランチ名の Issue ID（`TEAM-1` 型）を
   `issue.id` に載せ、`--issue-status <file>` で渡された状態（Linear の workflow state type が
   `completed` / `canceled`）なら「PR 無し・未マージ」ゲートを外して reap 候補に載せる。reasons に
   `issue-closed:<ID>:<状態>` / `issue-open:<ID>:<状態>` を添えるので Issue を開かずに判断できる。
