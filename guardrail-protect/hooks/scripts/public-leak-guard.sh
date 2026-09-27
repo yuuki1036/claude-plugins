@@ -13,7 +13,8 @@
 # 判定できないときに exit 2 を返さないとガードごと外れる。
 #
 # 事前フィルタ: 引用符とバックスラッシュを除いた入力に gh / git / GUARDRAIL / 辞書・設定名 /
-# mcp__ のどれも無ければ検出器を起動しない（全 Bash 呼び出しに python の起動を足さないため）。
+# claude-review（publish 設定 dir）/ mcp__ のどれも無ければ検出器を起動しない
+# （全 Bash 呼び出しに python の起動を足さないため）。
 
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "guardrail-protect:public-leak-guard"
@@ -29,10 +30,16 @@ plg_relevant() {
     | tr -d '"'"'"'\\' 2>/dev/null) || flat="$input"
   case "$flat" in
     *gh*|*git*|*GUARDRAIL*|*guardrail-protect*|*sensitive-terms*|*public-leak*|*mcp__*) return 0 ;;
+    *claude-review*|*CLAUDE_REVIEW_CONFIG_DIR*|*REVIEW_METRICS_CONFIG_DIR*) return 0 ;;
   esac
-  if [ -n "${GUARDRAIL_SENSITIVE_DICT:-}" ]; then
-    case "$flat" in *"$(basename "${GUARDRAIL_SENSITIVE_DICT}")"*) return 0 ;; esac
-  fi
+  local plg_env_path plg_env_base
+  for plg_env_path in "${GUARDRAIL_SENSITIVE_DICT:-}" "${CLAUDE_REVIEW_CONFIG_DIR:-}" "${REVIEW_METRICS_CONFIG_DIR:-}"; do
+    plg_env_path=${plg_env_path%/}
+    if [ -n "$plg_env_path" ]; then
+      plg_env_base=$(basename "$plg_env_path")
+      case "$flat" in *"$plg_env_base"*) return 0 ;; esac
+    fi
+  done
   return 1
 }
 

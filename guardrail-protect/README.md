@@ -150,7 +150,7 @@ CLAUDE_PROJECT_DIR=/tmp/scratch-repo bash path/to/hooks/scripts/x.sh < payload.j
 |---|---|
 | 辞書の語（1 行 1 語・`#` コメント・`w:` 接頭辞は語境界・3 文字未満は無視・大小文字と全角半角は区別しない） | 止める |
 | このマシンのホスト名（`hostname -s`。辞書に書かなくても常に対象） | 止める |
-| 許可リスト外のチーム形式の ID（`[A-Z]{2,6}-数字`。`UTF-8`・`ADR-1`・`TEAM-123` など規格名・例示語は除外） | 確認 |
+| 許可リスト外のチーム形式の ID（`[A-Z]{2,6}-数字`。組み込みの許可リストと `allowed_id_prefixes` の接頭辞は除外。下の「許可リスト」） | 確認 |
 | `/Users/<name>/` のパス（`/Users/Shared/` と `<name>` のような例示は除外） | 確認 |
 | `<別リポジトリ名> PR #N`（宛先と同名は除外） | 確認 |
 | 画像・動画の添付（`--attach`）、バイナリのリリースアセット | 確認 |
@@ -159,6 +159,18 @@ CLAUDE_PROJECT_DIR=/tmp/scratch-repo bash path/to/hooks/scripts/x.sh < payload.j
 汎用パターンは prose（本文・commit メッセージ・ref 名・tag メッセージ）にだけ当てる。push の
 追加行（コード）・ファイル名・作者には辞書とホスト名だけを当てる。照合の前に SRI の integrity 値・
 長い base64・16 進ハッシュを消す（3 文字の語が `sha512-…` に偶然入って push が止まる誤検知の対策）。
+
+**チーム形式の ID の許可リスト**: 次の 2 つを合わせたものに当たる接頭辞は確認に回さない。
+設定の `allowed_id_prefixes` は組み込みに**足す**（置き換えない。組み込みを外す設定は無い）。
+照合は接頭辞全体の一致で、`TEAM` を許しても `TEAMB-1` は許さない。
+
+- 組み込み（規格名・例示語。設定が無くても効く）: `ADR` `UTF` `SHA` `ISO` `RFC` `CVE` `CWE` `GHSA`
+  `HTTP` `TLS` `SSL` `IPV` `ES` `ECMA` `GPT` `AES` `RSA` `PEP` `WCAG` `JSR` `JEP` `KEP` `MD` `ARM`
+  `TEAM` `PROJ` `ABC` `XXX` `FOO` `BAR` `MYAPP` `EXAMPLE` `ISSUE` `ID` `PR`
+  （`PR` は `業務 PR-3` のように PR 番号を伏せた呼び名のため）
+- 設定の `allowed_id_prefixes`（既定は空）: 自分のチームの接頭辞と、公開 issue で業務の ID を
+  置き換えるのに使う架空の接頭辞。**入れないと自分の commit メッセージやブランチ名の `YAT-83` でも止まる**
+  （推奨設定は下の「セットアップ 2」）
 
 **「確認」は既定で止める（`confirm_action: "block"`）**。公式 docs（hooks の PreToolUse decision control）
 によると `permissionDecision: "ask"` は、対話ユーザーがいないとき（`-p`、auto mode、dontAsk、
@@ -182,6 +194,15 @@ subagent は見分けられるが、**`-p` は見分けられない**。`confirm
 （`cd` してからの相対パスも解決する）。Edit / Write 経路は `pre-config-guard.sh`、Bash 経路は
 `detect-commit-bypass.pl` の自己保護にも同じ対象を足した。
 
+**code-review の publish 設定 dir（`~/.config/claude-review/`）も同じ扱い**。中の `post-publish` は
+review の publish のたびに切り離して実行されるので、agent が置くと以後の publish で黙って走る。
+`machine-label`・`salt` は計測に載るマシンの label を決める（計測リポジトリの `forbid-terms.txt` も
+この dir にある）。dir の中への Edit / Write と Bash での書き換え、dir そのものの置き換え、
+場所を変える変数（`CLAUDE_REVIEW_CONFIG_DIR`・`REVIEW_METRICS_CONFIG_DIR`）をシェル設定・settings に
+書き込む操作を止める。hook の環境でその変数が設定されていれば、指した先も守る。読むだけの操作
+（`cat`・`ls`）と、テストの隔離のためにコマンドの前に `CLAUDE_REVIEW_CONFIG_DIR=<使い捨て dir>` を
+置く実行は止めない。これらのファイルは人が Claude の外で置く（手順は code-review と計測リポジトリの README）。
+
 
 ## public-leak-guard のセットアップ
 
@@ -202,11 +223,39 @@ w:acm
 - 辞書が無い・有効な語が 0 件のときは、公開先宛てを止める（`on_missing_dict: "warn"` なら警告して通す）
 - ホスト名は辞書に書かなくても常に対象
 
+辞書と設定の有無による挙動（「書き込み」は上の「対象の操作」。読み取り系の gh（`issue view`・
+`api` の GET など）、送信しない git（`status`・`log`・`commit` など）、gh / git を含まないコマンドは、
+どの状態でも止めない）:
+
+| 状態 | 公開先への書き込み | private と確定した宛先への書き込み |
+|---|---|---|
+| 辞書あり | 語・ホスト名に当たれば止める。汎用パターンは確認（既定は止める） | 通す |
+| 辞書が無い・有効な語が 0 件（既定の `on_missing_dict: "block"`） | 本文が清潔でも止め、辞書の置き場所を案内する | 通す |
+| 同上で `on_missing_dict: "warn"` | 警告（`systemMessage`）を付けて通す。ホスト名と汎用パターンは引き続き見る | 通す |
+| 設定ファイルが無い | 下の「すべてのキーと既定値」で動く（`allowed_id_prefixes` は空なので組み込みの許可リストだけ） | 通す |
+| 辞書・設定を読めない（壊れた JSON・ディレクトリ・権限） | 止める | **止める**（宛先を判定する前に止める） |
+
 ### 2. 設定 `~/.config/guardrail-protect/public-leak-guard.json`（任意）
+
+推奨設定（このリポジトリの持ち主の例）。書くのは既定から変えるキーだけでよい:
 
 ```json
 {
-  "allowed_id_prefixes": ["YAT"],
+  "allowed_id_prefixes": ["YAT", "TEAM", "TEAMB", "TEAMC", "TEAMD", "TEAME"]
+}
+```
+
+- `YAT`: 自分のプロジェクトの Linear の接頭辞。commit メッセージ・ブランチ名・PR 本文に `YAT-83` を書ける
+- `TEAM`〜`TEAME`: 公開 issue で業務チームの ID を置き換えるときの架空の接頭辞（`TEAM-123`・`TEAMB-45`）。
+  `TEAM` は組み込みにもあるが、置き換え用の組として並べておく。業務チームの本物の接頭辞は**入れない**
+- `業務 PR-3` のような PR 番号の呼び名は組み込みの `PR` で通る。`m2.jsonl`・`~/<work>/` のような
+  置き換え済みの表記はどのパターンにも当たらない
+
+すべてのキーと既定値:
+
+```json
+{
+  "allowed_id_prefixes": [],
   "confirm_action": "block",
   "on_missing_dict": "block",
   "pass_visibilities": ["private"],
@@ -220,7 +269,7 @@ w:acm
 
 | キー | 意味 |
 |---|---|
-| `allowed_id_prefixes` | 公開してよい自分のチームの ID 接頭辞（例: `YAT`）。入れないと commit メッセージやブランチ名の `YAT-83` でも止まる |
+| `allowed_id_prefixes` | 確認に回さないチーム形式の ID の接頭辞。組み込みの許可リスト（上の「照合」）に足される。入れないと commit メッセージやブランチ名の `YAT-83` でも止まる |
 | `confirm_action` | 確認の扱い。`block`（既定）/ `ask`（対話セッションでだけ ask。上の注意を参照） |
 | `on_missing_dict` | 辞書が無いとき `block`（既定）/ `warn` |
 | `pass_visibilities` | 素通しする visibility。組織の `internal` を素通ししたいなら足す |
@@ -348,7 +397,7 @@ git commit -m "fix" && git log -n 5            → PASS（他コマンドの -n 
 - **public-leak-guard の既知の誤検知の型**: GitHub 以外の push 先（visibility を引けないので常に検査）、
   `gh` から見えない private リポジトリ（同上）、コマンド名が変数で次の語が `issue` / `push` 等の呼び出し
 - **ブロックされたときの回避**: 参照の書き方を変えるか、guardrail-protect を無効化する（**プラグイン単位**。commit 迂回ガードも同時に外れる）。`.claude/guardrail-protect.json` はこの hook を制御しない（設定ファイル保護のみ）
-- **config 自己保護**: `guardrail-protect.json` 自体は Edit/Write/MultiEdit（`pre-config-guard.sh`）と Bash 書き込み（`detect-commit-bypass.pl`）の両経路で常にブロック対象。保護スコープを変える場合は Claude 外で人間が編集する。public-leak-guard の辞書・設定・visibility キャッシュ（`~/.config/guardrail-protect/`・`~/.cache/guardrail-protect/`・`public-leak-guard.json`・`$GUARDRAIL_SENSITIVE_DICT` / `$GUARDRAIL_PUBLIC_LEAK_CONFIG` の指す先）も同じ扱い
+- **config 自己保護**: `guardrail-protect.json` 自体は Edit/Write/MultiEdit（`pre-config-guard.sh`）と Bash 書き込み（`detect-commit-bypass.pl`）の両経路で常にブロック対象。保護スコープを変える場合は Claude 外で人間が編集する。public-leak-guard の辞書・設定・visibility キャッシュ（`~/.config/guardrail-protect/`・`~/.cache/guardrail-protect/`・`public-leak-guard.json`・`$GUARDRAIL_SENSITIVE_DICT` / `$GUARDRAIL_PUBLIC_LEAK_CONFIG` の指す先）と、code-review の publish 設定 dir（`~/.config/claude-review/` の `post-publish`・`machine-label`・`salt` など。`$CLAUDE_REVIEW_CONFIG_DIR` / `$REVIEW_METRICS_CONFIG_DIR` の指す先）も同じ扱い。Bash 経路の `detect-commit-bypass.pl` は `cd` してからの相対パスと `chmod` を見ない（`detect-public-leak.py` 側が止める）
 
 ## CHANGELOG
 

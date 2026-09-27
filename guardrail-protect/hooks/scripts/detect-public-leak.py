@@ -20,6 +20,10 @@
 自分で打ち切って exit 2 にする。
 
 **語そのものは出力しない**。辞書の行番号と本文の行番号、置き換え例だけを出す。
+
+**自己保護**（宛先に関係なく止める）: 辞書・設定・visibility キャッシュと `GUARDRAIL_*` 変数、
+code-review の publish 設定 dir（`~/.config/claude-review/`。`post-publish` は publish のたびに
+実行される）の Bash での書き換えと、その場所を指す変数をシェル設定・settings に書き込む操作。
 """
 
 from __future__ import annotations
@@ -70,7 +74,7 @@ CONFIG_DEFAULTS = {
 BUILTIN_ID_PREFIXES = {
     "ADR", "UTF", "SHA", "ISO", "RFC", "CVE", "CWE", "GHSA", "HTTP", "TLS", "SSL", "IPV",
     "ES", "ECMA", "GPT", "AES", "RSA", "PEP", "WCAG", "JSR", "JEP", "KEP", "MD", "ARM",
-    "TEAM", "PROJ", "ABC", "XXX", "FOO", "BAR", "MYAPP", "EXAMPLE", "ISSUE", "ID",
+    "TEAM", "PROJ", "ABC", "XXX", "FOO", "BAR", "MYAPP", "EXAMPLE", "ISSUE", "ID", "PR",
 }
 
 #: 置き換え例（出力に添える。語そのものは出さない代わりにこれを示す）
@@ -78,7 +82,7 @@ REPLACEMENTS = (
     "業務リポジトリ名 → 「業務リポジトリ A」（issue をまたいで同じ記号を使う）",
     "業務チームの Linear ID → 「TEAM-123」",
     "マシン名 → 会社 PC は「m2」、個人機は「m1」",
-    "業務の PR 番号 → 「PR #N」",
+    "業務の PR 番号 → 「PR #N」（同じ PR を何度も指すなら「業務 PR-3」のような固定の呼び名）",
     "ローカルの絶対パス → 「~/…」か「<repo>/…」",
     "業務コードの識別子 → 「canDoX のような boolean 命名」のように一般化する",
 )
@@ -90,6 +94,14 @@ RC_FILE_RE = re.compile(r"(?:^|/)(?:\.zshrc|\.zshenv|\.zprofile|\.zlogin|\.bashr
 #: 自己保護するパス（辞書・設定・visibility キャッシュ）
 PROTECTED_DIR_RE = re.compile(r"(?:^|/)\.(?:config|cache)/guardrail-protect(?:/|$)")
 PROTECTED_BASENAMES = ("public-leak-guard.json",)
+#: code-review の publish 設定 dir（post-publish・machine-label・salt）。post-publish は publish の
+#: たびに切り離して実行されるので、agent が置くと以後の publish で黙って走る
+REVIEW_CONFIG_DIR_RE = re.compile(r"(?:^|/)\.config/claude-review(?:/|$)")
+#: その dir の場所を変える変数（code-review と計測リポジトリの同期スクリプトが読む）
+REVIEW_CONFIG_ENVS = ("CLAUDE_REVIEW_CONFIG_DIR", "REVIEW_METRICS_CONFIG_DIR")
+#: シェル設定・settings に書き込まれると迂回になる変数
+RC_VAR_TEXT_RE = re.compile(r"(?:GUARDRAIL_[A-Za-z0-9_]*|CLAUDE_REVIEW_CONFIG_DIR|"
+                            r"REVIEW_METRICS_CONFIG_DIR)\s*=")
 #: gh / git push を含みうるインラインスクリプト（中身を解けないので公開の可能性として扱う）
 MENTIONS_PUBLISH_RE = re.compile(
     r"(?<![\w.-])gh(?![\w.-])[\s\S]{0,80}?\b(issue|pr|api|gist|release|repo|project|label)\b"
@@ -760,19 +772,30 @@ def check_guard_assign(name, ctx, how):
         ctx.bypass.append("ガードの制御変数を %s している" % how)
 
 
-def protected_path(path):
+def protected_kind(path):
+    """自己保護の対象なら出力に使う名前、対象外なら None."""
     if not path:
-        return False
+        return None
+    guard = "ガードの辞書・設定・キャッシュ"
     if PROTECTED_DIR_RE.search(path):
-        return True
+        return guard
     base = os.path.basename(path)
     if base in PROTECTED_BASENAMES:
-        return True
+        return guard
+    norm = os.path.normpath(path)
     for env_name in ("GUARDRAIL_SENSITIVE_DICT", "GUARDRAIL_PUBLIC_LEAK_CONFIG"):
         v = os.environ.get(env_name)
-        if v and os.path.normpath(os.path.expanduser(v)) == os.path.normpath(path):
-            return True
-    return False
+        if v and os.path.normpath(os.path.expanduser(v)) == norm:
+            return guard
+    review = "code-review の publish 設定（post-publish・machine-label・salt）"
+    if REVIEW_CONFIG_DIR_RE.search(path):
+        return review
+    for env_name in REVIEW_CONFIG_ENVS:
+        v = os.environ.get(env_name)
+        d = os.path.normpath(os.path.expanduser(v)) if v else ""
+        if len(d) > 1 and (norm == d or norm.startswith(d + "/")):
+            return review
+    return None
 
 
 def walk(cmds, ctx, depth=0):
@@ -812,16 +835,17 @@ def _unresolved_op(what, reason):
 def check_redirect_targets(cmd, ctx, env):
     texts = [w.literal_text() for w in cmd.words]
     texts += [r.heredoc.body or "" for r in cmd.redirs if r.heredoc is not None]
-    mentions_guard_var = any(GUARD_VAR_TEXT_RE.search(t) for t in texts)
+    mentions_guard_var = any(RC_VAR_TEXT_RE.search(t) for t in texts)
     for r in cmd.redirs:
         if r.op in (">", ">>", ">|") or (r.op == ">&" and r.target is not None and
                                           not re.fullmatch(r"\d+|-", r.target.raw)):
             v = word_value(r.target, ctx, env)
             p = ctx.abspath(v) if v else None
-            if p and protected_path(p):
-                ctx.bypass.append("ガードの辞書・設定・キャッシュをリダイレクトで書き換えている")
+            kind = protected_kind(p)
+            if kind:
+                ctx.bypass.append("%sをリダイレクトで書き換えている" % kind)
             if p and mentions_guard_var and RC_FILE_RE.search(p):
-                ctx.bypass.append("ガードの制御変数をシェル設定・settings に書き込んでいる")
+                ctx.bypass.append("ガードの制御変数か publish 設定の場所をシェル設定・settings に書き込んでいる")
 
 
 def track_writes(cmd, ctx, env):
@@ -1062,8 +1086,9 @@ def analyze_command(cmd, words, env, ctx, depth):
         return
     if base in WRITERS:
         for v in vals:
-            if v and not v.startswith("-") and protected_path(ctx.abspath(v) or v):
-                ctx.bypass.append("ガードの辞書・設定・キャッシュを %s で書き換えている" % base)
+            kind = protected_kind(ctx.abspath(v) or v) if v and not v.startswith("-") else None
+            if kind:
+                ctx.bypass.append("%sを %s で書き換えている" % (kind, base))
                 break
     if base in SHELLS:
         analyze_shell(cmd, args, vals, env, ctx, depth)
@@ -2269,11 +2294,12 @@ def relevant_text(command):
     # 引用符・バックスラッシュで語を割る形（`"g"h` / `g''h` / `\gh`）も拾う
     flat = re.sub(r"[\"'\\\\]", "", command)
     if re.search(r"(?<![\w-])(gh|git)(?![\w-])|GUARDRAIL_|guardrail-protect|"
-                 r"sensitive-terms|public-leak|github\.com", flat):
+                 r"sensitive-terms|public-leak|github\.com|claude-review|"
+                 r"CLAUDE_REVIEW_CONFIG_DIR|REVIEW_METRICS_CONFIG_DIR", flat):
         return True
-    for env_name in ("GUARDRAIL_SENSITIVE_DICT", "GUARDRAIL_PUBLIC_LEAK_CONFIG"):
-        v = os.environ.get(env_name)
-        if v and os.path.basename(v) and os.path.basename(v) in command:
+    for env_name in ("GUARDRAIL_SENSITIVE_DICT", "GUARDRAIL_PUBLIC_LEAK_CONFIG") + REVIEW_CONFIG_ENVS:
+        base = os.path.basename((os.environ.get(env_name) or "").rstrip("/"))
+        if base and base in command:
             return True
     return False
 
@@ -2331,7 +2357,8 @@ def hook_main(raw):
     if bypass:
         lines = ["[guardrail-protect] ガードの迂回を止めた（public-leak-guard）", ""]
         lines += ["  - " + b for b in dict.fromkeys(bypass)]
-        lines += ["", "辞書・設定・キャッシュと GUARDRAIL_* 変数は Claude から変えない。",
+        lines += ["", "辞書・設定・キャッシュと GUARDRAIL_* 変数、code-review の publish 設定",
+                  "（~/.config/claude-review/ の post-publish・machine-label・salt）は Claude から変えない。",
                   "変える必要があるなら、人が Claude の外で編集する。"]
         sys.stderr.write("\n".join(lines) + "\n")
         return 2

@@ -68,12 +68,27 @@ for plg_env_path in "${GUARDRAIL_SENSITIVE_DICT:-}" "${GUARDRAIL_PUBLIC_LEAK_CON
   if [ -n "$plg_env_path" ] && [ "$target_path" = "$plg_env_path" ]; then plg_self=1; fi
 done
 
-# ガードの制御変数（GUARDRAIL_*）をシェル設定・settings に書き込んで迂回する経路
+# 自己保護（code-review の publish 設定）: `post-publish` は publish のたびに切り離して実行されるので、
+# agent が置くと以後の publish で黙って走る。machine-label・salt は計測に載るマシンの label を決める。
+# 場所を変える変数（CLAUDE_REVIEW_CONFIG_DIR / REVIEW_METRICS_CONFIG_DIR）が hook の環境にあればその先も守る
+review_self=0
+case "$target_path" in
+  */.config/claude-review|*/.config/claude-review/*) review_self=1 ;;
+esac
+for review_dir in "${CLAUDE_REVIEW_CONFIG_DIR:-}" "${REVIEW_METRICS_CONFIG_DIR:-}"; do
+  review_dir=${review_dir%/}
+  if [ -n "$review_dir" ] && { [ "$target_path" = "$review_dir" ] || [[ "$target_path" == "$review_dir"/* ]]; }; then
+    review_self=1
+  fi
+done
+
+# ガードの制御変数（GUARDRAIL_*）と publish 設定の場所を変える変数をシェル設定・settings に書き込んで
+# 迂回する経路
 plg_env_inject=0
 case "$target_basename" in
   .zshrc|.zshenv|.zprofile|.zlogin|.bashrc|.bash_profile|.profile|.envrc|settings.json|settings.local.json|.claude.json)
     plg_new_text=$(jq -r '[.tool_input.content?, .tool_input.new_string?, (.tool_input.edits[]?.new_string)] | map(select(. != null)) | join("\n")' <<< "$input" 2>/dev/null || true)
-    if grep -Eq 'GUARDRAIL_[A-Za-z0-9_]*' <<< "$plg_new_text"; then plg_env_inject=1; fi
+    if grep -Eq 'GUARDRAIL_[A-Za-z0-9_]*|CLAUDE_REVIEW_CONFIG_DIR|REVIEW_METRICS_CONFIG_DIR' <<< "$plg_new_text"; then plg_env_inject=1; fi
     ;;
 esac
 
@@ -82,8 +97,23 @@ if [ "$plg_self" = "1" ] || [ "$plg_env_inject" = "1" ]; then
 [guardrail-protect] Refusing to edit the public-leak-guard dictionary / config / cache
 
 公開先ガード（public-leak-guard）の辞書・設定・visibility キャッシュ、または
-GUARDRAIL_* 変数を Claude から変えると、ガードが黙って外れる。
+GUARDRAIL_* 変数・publish 設定の場所を変える変数（CLAUDE_REVIEW_CONFIG_DIR 等）を
+Claude から変えると、ガードが黙って外れる。
 変える必要があるなら、人が Claude の外で編集する。
+
+Tool: ${tool_name}
+Path: ${target_path}
+EOF
+  exit 2
+fi
+
+if [ "$review_self" = "1" ]; then
+  cat >&2 <<EOF
+[guardrail-protect] Refusing to edit the code-review publish config (~/.config/claude-review/)
+
+post-publish は review の publish のたびに自動で実行される。Claude が置くと以後の publish で
+黙って走る。machine-label・salt は計測に載るマシンの label を決める。
+置く・変える必要があるなら、人が Claude の外で編集する（手順は code-review と計測リポジトリの README）。
 
 Tool: ${tool_name}
 Path: ${target_path}

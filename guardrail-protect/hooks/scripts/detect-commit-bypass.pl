@@ -17,6 +17,9 @@
 #   - public-leak-guard の辞書・設定・visibility キャッシュ（~/.config/guardrail-protect/・
 #     ~/.cache/guardrail-protect/・public-leak-guard.json・$GUARDRAIL_SENSITIVE_DICT /
 #     $GUARDRAIL_PUBLIC_LEAK_CONFIG の指す先）を Bash で改変する試み
+#   - code-review の publish 設定 dir（~/.config/claude-review/ と $CLAUDE_REVIEW_CONFIG_DIR /
+#     $REVIEW_METRICS_CONFIG_DIR の指す先）を Bash で改変する試み。post-publish は publish の
+#     たびに実行されるので、置かれると以後の publish で黙って走る
 #
 # 設計:
 #   1. シェル準拠のトークナイザ（'...' / "..." / $'...' / バックスラッシュを解釈し、
@@ -190,11 +193,16 @@ my @all_reasons;
 #
 # 判定はトークナイザの出力（引用符を除去済みの word 列）に対して行う。
 # `sh -c '...'` の中身も analyze() の再帰でここへ届く。
-my $CFG_RE = qr{(?:^|/)(?:guardrail-protect|public-leak-guard)\.json$|(?:^|/)\.(?:config|cache)/guardrail-protect(?:/|$)};
+my $CFG_RE = qr{(?:^|/)(?:guardrail-protect|public-leak-guard)\.json$|(?:^|/)\.(?:config|cache)/guardrail-protect(?:/|$)|(?:^|/)\.config/claude-review(?:/|$)};
 
 #: 環境変数で場所を変えた辞書・設定（hook と同じ環境を見る）
 my @CFG_ENV_PATHS = grep { defined $_ && length $_ }
     map { $ENV{$_} } qw(GUARDRAIL_SENSITIVE_DICT GUARDRAIL_PUBLIC_LEAK_CONFIG);
+
+#: 環境変数で場所を変えた publish 設定 dir（その下すべてを守る）
+my @CFG_ENV_DIRS = grep { length $_ }
+    map { (my $d = $_) =~ s{/+$}{}; $d }
+    grep { defined $_ } map { $ENV{$_} } qw(CLAUDE_REVIEW_CONFIG_DIR REVIEW_METRICS_CONFIG_DIR);
 
 sub is_protected {
     my ($t) = @_;
@@ -204,6 +212,9 @@ sub is_protected {
         return 1 if $t eq $p;
         my $b = $p; $b =~ s{.*/}{};
         return 1 if length $b && ($t eq $b || $t =~ m{/\Q$b\E$});
+    }
+    for my $d (@CFG_ENV_DIRS) {
+        return 1 if $t eq $d || index($t, "$d/") == 0;
     }
     return 0;
 }

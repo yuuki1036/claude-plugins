@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.1] - 2026-09-27
+
+### Fixed
+
+- **自己保護の対象に code-review の publish 設定 dir（`~/.config/claude-review/`）を足した**。
+  中の `post-publish` は review の publish のたびに切り離して実行されるが、保護の対象外だったので、
+  agent が Write や Bash で置くと以後の publish で黙って走った。`machine-label`・`salt`（計測に載る
+  マシンの label を決める）と計測リポジトリの `forbid-terms.txt` も同じ dir にある。
+  Edit / Write は `pre-config-guard.sh`、Bash は `detect-public-leak.py` と `detect-commit-bypass.pl`
+  （`pre-commit-guard.sh` と `public-leak-guard.sh` の事前フィルタも拡張）で、dir の中への書き込みと
+  dir そのものの置き換えを止める。場所を変える `CLAUDE_REVIEW_CONFIG_DIR`・`REVIEW_METRICS_CONFIG_DIR` は、
+  hook の環境にあれば指した先も守り、シェル設定・settings への書き込みは止める。読むだけの操作と、
+  テストの隔離でコマンドの前に `CLAUDE_REVIEW_CONFIG_DIR=<使い捨て dir>` を置く実行は止めない
+- **`業務 PR-3` のような PR 番号の呼び名がチーム形式の ID として確認に回っていた**のを直した。
+  組み込みの許可リストに `PR` を足した。公開 issue の置き換えで使う固定の呼び名が、推奨設定でも
+  止まっていた。止めたときの置き換え例にもこの呼び名を足した
+
+### Changed
+
+- README に、チーム形式の ID の組み込みの許可リスト（`allowed_id_prefixes` は組み込みに足され、
+  置き換えない）、推奨設定（`YAT` と置き換え用の架空接頭辞 `TEAM`〜`TEAME`）、辞書・設定の有無による
+  挙動の表（読めないときは private 宛の書き込みも止まる）を足した。設定例の `allowed_id_prefixes` を
+  既定値（空）に揃えた
+
 ## [0.6.0] - 2026-09-27
 
 ### Added

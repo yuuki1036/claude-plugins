@@ -364,6 +364,15 @@ class BodyTest(PublicLeakBase):
             with self.subTest(cmd=cmd):
                 self.assertBlocked(self.bash(cmd))
 
+    def test_patch_with_an_input_file_written_beforehand(self):
+        """本文の書き換え手順（JSON を別の呼び出しで書き出し、`--input <file>` で PATCH）が通る."""
+        (self.plain / "clean.json").write_text('{"body": "書き換え後の本文"}', encoding="utf-8")
+        (self.plain / "dirty.json").write_text('{"body": "AcmeCorp の件"}', encoding="utf-8")
+        for ep in ("repos/acme-user/public-repo/issues/1", "repos/acme-user/public-repo/issues/comments/9"):
+            with self.subTest(ep=ep):
+                self.assertPassed(self.bash("gh api -X PATCH %s --input %s/clean.json" % (ep, self.plain)))
+                self.assertBlocked(self.bash("gh api -X PATCH %s --input %s/dirty.json" % (ep, self.plain)))
+
     def test_gist_is_always_checked(self):
         (self.plain / "g.md").write_text("AcmeCorp\n", encoding="utf-8")
         (self.plain / "clean.md").write_text("きれい\n", encoding="utf-8")
@@ -528,6 +537,14 @@ class PushTest(PublicLeakBase):
         self.commit(self.repo, "feat: x")
         self.assertBlocked(self.bash("git push -u origin feature/acmecorp-1"))
 
+    def test_own_team_ids_in_the_branch_and_message_pass_when_allowed(self):
+        self.git("checkout", "-qb", "fix/ZZT-83-timeout", cwd=self.repo)
+        self.commit(self.repo, "fix: timeout を直す（ZZT-83・ZZT-78）")
+        cmd = "git push -u origin fix/ZZT-83-timeout"
+        self.assertBlocked(self.bash(cmd), "チーム形式")
+        self.set_config(allowed_id_prefixes=["ZZT"])
+        self.assertPassed(self.bash(cmd))
+
     def test_tags(self):
         self.git("tag", "-a", "v1", "-m", "release for AcmeCorp", cwd=self.repo)
         for cmd in ("git push --tags", "git push --follow-tags", "git push --mirror",
@@ -664,6 +681,16 @@ class ConfirmTest(PublicLeakBase):
         self.set_config(allowed_id_prefixes=["ZZT"])
         self.assertPassed(self.bash("gh issue comment 1 %s --body 'ZZT-12'" % PUB))
 
+    def test_replacement_placeholders_pass_with_the_recommended_prefixes(self):
+        """README の推奨設定（自分の接頭辞 + 公開 issue の置き換え用の架空接頭辞）で置き換え済みの本文が通る."""
+        self.assertPassed(self.bash("gh issue comment 1 %s --body '業務 PR-3 と PR-4'" % PUB))
+        body = "業務 PR-3 と TEAM-123・TEAMB-45・TEAME-6 の件。計測は m2.jsonl、パスは ~/<work>/src/x.ts"
+        cmd = "gh issue comment 1 %s --body '%s'" % (PUB, body)
+        self.assertBlocked(self.bash(cmd), "チーム形式")
+        self.set_config(allowed_id_prefixes=["ZZT", "TEAM", "TEAMB", "TEAMC", "TEAMD", "TEAME"])
+        self.assertPassed(self.bash(cmd))
+        self.assertBlocked(self.bash("gh issue comment 1 %s --body 'ZZQ-12'" % PUB), "チーム形式")
+
     def test_user_paths_and_other_repository_prs(self):
         self.assertBlocked(self.bash("gh issue comment 1 %s --body '/Users/someone/x'" % PUB))
         self.assertPassed(self.bash("gh issue comment 1 %s --body '/Users/Shared/x'" % PUB))
@@ -745,6 +772,27 @@ class BypassTest(PublicLeakBase):
                     "mv ~/.config/guardrail-protect/sensitive-terms.txt /tmp/x"):
             with self.subTest(cmd=cmd):
                 self.assertBlocked(self.bash(cmd), "ガードの迂回を止めた")
+
+    def test_writing_the_review_publish_config(self):
+        """publish のたびに実行される post-publish を agent が置けないようにする（label・salt も）."""
+        for cmd in ("printf '#!/bin/sh\\n' > ~/.config/claude-review/post-publish",
+                    "chmod +x ~/.config/claude-review/post-publish",
+                    "echo m9 > $HOME/.config/claude-review/machine-label",
+                    "rm -f ~/.config/claude-review/salt",
+                    "cd ~/.config/claude-review && tee post-publish < /dev/null",
+                    "echo 'export CLAUDE_REVIEW_CONFIG_DIR=/tmp/x' >> ~/.zshrc"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd), "ガードの迂回を止めた")
+        cfg = self.tmp / "review-cfg"
+        res = self.bash("echo x > %s/post-publish" % cfg, _env={"CLAUDE_REVIEW_CONFIG_DIR": str(cfg)})
+        self.assertBlocked(res, "publish 設定")
+
+    def test_reading_the_review_config_and_isolated_runs_pass(self):
+        for cmd in ("cat ~/.config/claude-review/machine-label", "ls -la ~/.config/claude-review/",
+                    "CLAUDE_REVIEW_CONFIG_DIR=/tmp/x bash publish-review-event.sh --dry-run",
+                    "echo x > /tmp/claude-review-notes.txt"):
+            with self.subTest(cmd=cmd):
+                self.assertPassed(self.bash(cmd))
 
 
 class FailClosedTest(PublicLeakBase):
@@ -858,11 +906,40 @@ class SelfProtectionTest(unittest.TestCase):
         self.assertIn("self-modification", self.detect("rm /vault/terms-x.txt", env))
         self.assertEqual(self.detect("cat /vault/terms-x.txt", env), "")
 
+    def test_perl_detector_blocks_review_config_writes(self):
+        for cmd in ("echo x > ~/.config/claude-review/post-publish",
+                    "rm -f /h/.config/claude-review/salt",
+                    "cp /tmp/hook /h/.config/claude-review/post-publish",
+                    "mv /tmp/cfg /h/.config/claude-review"):
+            with self.subTest(cmd=cmd):
+                self.assertIn("self-modification", self.detect(cmd))
+        env = dict(os.environ, CLAUDE_REVIEW_CONFIG_DIR="/vault/review-cfg/")
+        self.assertIn("self-modification", self.detect("tee /vault/review-cfg/post-publish", env))
+        self.assertEqual(self.detect("cat /vault/review-cfg/salt", env), "")
+        self.assertEqual(self.detect("cat ~/.config/claude-review/machine-label"), "")
+        self.assertEqual(self.detect("echo x > /tmp/claude-review-notes.txt"), "")
+
     def test_perl_detector_allows_reads(self):
         for cmd in ("cat ~/.config/guardrail-protect/sensitive-terms.txt",
                     "grep x ~/.config/guardrail-protect/public-leak-guard.json"):
             with self.subTest(cmd=cmd):
                 self.assertEqual(self.detect(cmd), "")
+
+
+class PreCommitGuardPrefilterTest(HookTestCase):
+    """perl 層に届く前の事前フィルタが publish 設定 dir への書き込みを落とさない."""
+    PLUGIN = "guardrail-protect"
+    SCRIPT = "hooks/scripts/pre-commit-guard.sh"
+
+    def test_review_config_writes_reach_the_detector(self):
+        res = self.run_hook({"tool_name": "Bash", "tool_input": {"command": "rm -f ~/.config/claude-review/salt"}})
+        self.assertEqual(res.returncode, 2, res)
+        res = self.run_hook({"tool_name": "Bash", "tool_input": {"command": "tee /vault/review-cfg/post-publish"}},
+                            env_extra={"CLAUDE_REVIEW_CONFIG_DIR": "/vault/review-cfg"})
+        self.assertEqual(res.returncode, 2, res)
+        res = self.run_hook({"tool_name": "Bash", "tool_input": {"command": "cat ~/.config/claude-review/salt"}})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertNotIn("Unexpected", res.stderr)
 
 
 class PreConfigGuardProtectionTest(HookTestCase):
@@ -890,10 +967,27 @@ class PreConfigGuardProtectionTest(HookTestCase):
                                                     key: "export GUARDRAIL_SENSITIVE_DICT=/dev/null"}})
                 self.assertEqual(res.returncode, 2, res)
 
+    def test_review_publish_config_is_protected(self):
+        for path in ("/h/.config/claude-review/post-publish", "/h/.config/claude-review/machine-label",
+                     "/h/.config/claude-review/salt"):
+            with self.subTest(path=path):
+                res = self.run_hook({"tool_name": "Write", "tool_input": {"file_path": path, "content": "x"}})
+                self.assertEqual(res.returncode, 2, res)
+                self.assertIn("claude-review", res.stderr)
+        res = self.run_hook({"tool_name": "Write",
+                             "tool_input": {"file_path": "/vault/review-cfg/post-publish", "content": "x"}},
+                            env_extra={"CLAUDE_REVIEW_CONFIG_DIR": "/vault/review-cfg"})
+        self.assertEqual(res.returncode, 2, res)
+        res = self.run_hook({"tool_name": "Edit", "tool_input": {
+            "file_path": "/h/.zshrc", "new_string": "export CLAUDE_REVIEW_CONFIG_DIR=/tmp/x"}})
+        self.assertEqual(res.returncode, 2, res)
+
     def test_unrelated_edits_pass(self):
         for tin in ({"file_path": "/h/.zshrc", "new_string": "export PATH=/x:$PATH"},
                     {"file_path": "/p/src/terms.txt", "new_string": "x"},
-                    {"file_path": "/p/README.md", "new_string": "GUARDRAIL_SENSITIVE_DICT=~/x を設定する"}):
+                    {"file_path": "/p/README.md", "new_string": "GUARDRAIL_SENSITIVE_DICT=~/x を設定する"},
+                    {"file_path": "/p/README.md", "new_string": "CLAUDE_REVIEW_CONFIG_DIR=/tmp/x で隔離する"},
+                    {"file_path": "/h/.config/claude-review-notes/x.md", "new_string": "x"}):
             with self.subTest(tin=tin):
                 self.assertEqual(self.run_hook({"tool_name": "Edit", "tool_input": tin}).returncode, 0)
 
