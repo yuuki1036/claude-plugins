@@ -40,11 +40,19 @@ fi
 
 [ -z "$cmd" ] && safe_hook_error Validation "no command in tool_input"
 
-# 安価な事前フィルタ: git commit 迂回か guardrail-protect.json 改変に関係しなければ即 return
+# 安価な事前フィルタ: git commit 迂回か guardrail の設定・辞書・キャッシュ、code-review の
+# publish 設定 dir（claude-review）の改変に関係しなければ即 return
+# （環境変数で別の場所を指した場合は、その名前も対象にする）
+plg_mentioned=0
 case "$cmd" in
-  *git*commit*|*guardrail-protect.json*) ;;
-  *) exit 0 ;;
+  *git*commit*|*guardrail-protect*|*public-leak-guard*|*claude-review*) plg_mentioned=1 ;;
 esac
+for plg_env_path in "${GUARDRAIL_SENSITIVE_DICT:-}" "${GUARDRAIL_PUBLIC_LEAK_CONFIG:-}" \
+                    "${CLAUDE_REVIEW_CONFIG_DIR:-}" "${REVIEW_METRICS_CONFIG_DIR:-}"; do
+  plg_env_path=${plg_env_path%/}
+  if [ -n "$plg_env_path" ] && [[ "$cmd" == *"$(basename "$plg_env_path")"* ]]; then plg_mentioned=1; fi
+done
+if [ "$plg_mentioned" = "0" ]; then exit 0; fi
 
 # 検出ロジックは別ファイルの perl に委譲（bash 3.2 は $() 内 heredoc の
 # quote 追跡でバグるため、インライン heredoc ではなく独立スクリプトにする）。

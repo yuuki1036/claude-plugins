@@ -14,6 +14,12 @@
 #   - バックスラッシュ改行継続で分割された迂回
 #   - guardrail-protect.json 自体を Bash（リダイレクト/sed -i/mv/rm 等）で改変する試み
 #     （**ファイル名の言及では発火しない** — トークン準拠で判定する）
+#   - public-leak-guard の辞書・設定・visibility キャッシュ（~/.config/guardrail-protect/・
+#     ~/.cache/guardrail-protect/・public-leak-guard.json・$GUARDRAIL_SENSITIVE_DICT /
+#     $GUARDRAIL_PUBLIC_LEAK_CONFIG の指す先）を Bash で改変する試み
+#   - code-review の publish 設定 dir（~/.config/claude-review/ と $CLAUDE_REVIEW_CONFIG_DIR /
+#     $REVIEW_METRICS_CONFIG_DIR の指す先）を Bash で改変する試み。post-publish は publish の
+#     たびに実行されるので、置かれると以後の publish で黙って走る
 #
 # 設計:
 #   1. シェル準拠のトークナイザ（'...' / "..." / $'...' / バックスラッシュを解釈し、
@@ -187,7 +193,31 @@ my @all_reasons;
 #
 # 判定はトークナイザの出力（引用符を除去済みの word 列）に対して行う。
 # `sh -c '...'` の中身も analyze() の再帰でここへ届く。
-my $CFG_RE = qr{(?:^|/)guardrail-protect\.json$};
+my $CFG_RE = qr{(?:^|/)(?:guardrail-protect|public-leak-guard)\.json$|(?:^|/)\.(?:config|cache)/guardrail-protect(?:/|$)|(?:^|/)\.config/claude-review(?:/|$)};
+
+#: 環境変数で場所を変えた辞書・設定（hook と同じ環境を見る）
+my @CFG_ENV_PATHS = grep { defined $_ && length $_ }
+    map { $ENV{$_} } qw(GUARDRAIL_SENSITIVE_DICT GUARDRAIL_PUBLIC_LEAK_CONFIG);
+
+#: 環境変数で場所を変えた publish 設定 dir（その下すべてを守る）
+my @CFG_ENV_DIRS = grep { length $_ }
+    map { (my $d = $_) =~ s{/+$}{}; $d }
+    grep { defined $_ } map { $ENV{$_} } qw(CLAUDE_REVIEW_CONFIG_DIR REVIEW_METRICS_CONFIG_DIR);
+
+sub is_protected {
+    my ($t) = @_;
+    return 0 unless defined $t;
+    return 1 if $t =~ $CFG_RE;
+    for my $p (@CFG_ENV_PATHS) {
+        return 1 if $t eq $p;
+        my $b = $p; $b =~ s{.*/}{};
+        return 1 if length $b && ($t eq $b || $t =~ m{/\Q$b\E$});
+    }
+    for my $d (@CFG_ENV_DIRS) {
+        return 1 if $t eq $d || index($t, "$d/") == 0;
+    }
+    return 0;
+}
 
 #: 内容を書き換え・破壊しうるコマンド（旧正規表現の語彙を踏襲）
 my %DESTRUCTIVE = map { $_ => 1 } qw(rm cp mv tee dd truncate ln mktemp install shred);
@@ -200,9 +230,9 @@ sub config_write_reasons {
     for my $k (0 .. $#w) {
         my $t = $w[$k];
         if ($t =~ /^>>?\|?$/) {                       # 演算子が単独トークン
-            push @reasons, 'redirect' if defined $w[$k + 1] && $w[$k + 1] =~ $CFG_RE;
+            push @reasons, 'redirect' if defined $w[$k + 1] && is_protected($w[$k + 1]);
         } elsif ($t =~ /^>>?\|?(.+)$/) {              # `>cfg` のように連結
-            push @reasons, 'redirect' if $1 =~ $CFG_RE;
+            push @reasons, 'redirect' if is_protected($1);
         }
     }
 
@@ -211,14 +241,14 @@ sub config_write_reasons {
     my $base = $cmd0; $base =~ s{.*/}{};
 
     # ② 破壊的コマンドの**引数**が設定ファイル
-    if ($DESTRUCTIVE{$base} && grep { $_ =~ $CFG_RE } @args) {
+    if ($DESTRUCTIVE{$base} && grep { is_protected($_) } @args) {
         push @reasons, $base;
     }
 
     # ③ in-place 書き換え（sed -i / perl -i）
     if (($base eq 'sed' || $base eq 'perl')
         && (grep { /^-[A-Za-z]*i/ } @args)
-        && (grep { $_ =~ $CFG_RE } @args)) {
+        && (grep { is_protected($_) } @args)) {
         push @reasons, "$base -i";
     }
 
@@ -233,7 +263,7 @@ sub analyze {
         next unless @w;
         # **`next unless defined $cmd0` より前に置く** — リダイレクトだけのセグメント
         # （`> cfg` 単独）でも自己保護は効かせる
-        push @all_reasons, map { "guardrail-protect.json self-modification via Bash ($_)" }
+        push @all_reasons, map { "guardrail config self-modification via Bash ($_)" }
             config_write_reasons(@w);
         my ($cmd0, @args) = cmd_and_args(@w);
         next unless defined $cmd0;

@@ -2,6 +2,97 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.1] - 2026-09-27
+
+### Fixed
+
+- **自己保護の対象に code-review の publish 設定 dir（`~/.config/claude-review/`）を足した**。
+  中の `post-publish` は review の publish のたびに切り離して実行されるが、保護の対象外だったので、
+  agent が Write や Bash で置くと以後の publish で黙って走った。`machine-label`・`salt`（計測に載る
+  マシンの label を決める）と計測リポジトリの `forbid-terms.txt` も同じ dir にある。
+  Edit / Write は `pre-config-guard.sh`、Bash は `detect-public-leak.py` と `detect-commit-bypass.pl`
+  （`pre-commit-guard.sh` と `public-leak-guard.sh` の事前フィルタも拡張）で、dir の中への書き込みと
+  dir そのものの置き換えを止める。場所を変える `CLAUDE_REVIEW_CONFIG_DIR`・`REVIEW_METRICS_CONFIG_DIR` は、
+  hook の環境にあれば指した先も守り、シェル設定・settings への書き込みは止める。読むだけの操作と、
+  テストの隔離でコマンドの前に `CLAUDE_REVIEW_CONFIG_DIR=<使い捨て dir>` を置く実行は止めない
+- **`業務 PR-3` のような PR 番号の呼び名がチーム形式の ID として確認に回っていた**のを直した。
+  組み込みの許可リストに `PR` を足した。公開 issue の置き換えで使う固定の呼び名が、推奨設定でも
+  止まっていた。止めたときの置き換え例にもこの呼び名を足した
+
+### Changed
+
+- README に、チーム形式の ID の組み込みの許可リスト（`allowed_id_prefixes` は組み込みに足され、
+  置き換えない）、推奨設定（`YAT` と置き換え用の架空接頭辞 `TEAM`〜`TEAME`）、辞書・設定の有無による
+  挙動の表（読めないときは private 宛の書き込みも止まる）を足した。設定例の `allowed_id_prefixes` を
+  既定値（空）に揃えた
+
+## [0.6.0] - 2026-09-27
+
+### Added
+
+- **公開リポジトリ・gist への業務情報の送信を止める PreToolUse ガード `public-leak-guard` を足した**
+  （`hooks/scripts/public-leak-guard.sh` → `detect-public-leak.py` → `public_leak_shell.py`）。
+  公開 issue・コメントに業務リポジトリ名・製品名・会社 PC のホスト名が繰り返し載った事故の再発防止。
+  辞書の語とこのマシンのホスト名（`hostname -s`。辞書に無くても常に対象）に当たれば exit 2 で止める。
+  辞書は `$GUARDRAIL_SENSITIVE_DICT` → `~/.config/guardrail-protect/sensitive-terms.txt`
+  （1 行 1 語・`#` コメント・`w:` は語境界・3 文字未満は無視）で、リポジトリには入れない。
+
+  **宛先は owner ではなく visibility で判定する**（`gh api repos/<o>/<r>` を
+  `~/.cache/guardrail-protect/` に TTL 付きで保持）。owner で絞ると第三者の公開リポジトリへの
+  投稿を見逃す。private と確定した宛先だけ素通しし、`GH_REPO` / `gh repo set-default` /
+  upstream 優先の暗黙解決は cwd の GitHub remote 全部を候補にして全部 private のときだけ通す。
+  gist・graphql の mutation・`/repositories/<id>`・リポジトリ外の cwd・visibility を取得できない宛先は
+  公開先として検査する。
+
+  **対象**: Bash の gh（issue / pr の書き込み系、`pr merge`、release、gist、label、project、
+  `issue transfer`、`repo create --public --source --push`、`repo edit --visibility public`（常に止める）、
+  `repo sync --source`、`gh api` の書き込み系）と gh alias・`env` / `command` / 絶対パス / 引用符で
+  割った gh・`xargs` / `find -exec`・`bash -c` / `eval` / `$(…)`、`git push`（`--tags` /
+  `--follow-tags` / `--mirror`、git alias。rev-list 範囲の追加行・commit メッセージ・作者・
+  ファイル名・ブランチ名・annotated tag）と `gh pr create` の head push、GitHub MCP の書き込み系全部、
+  `mcp__terminal__run_in_terminal`。ブラウザ操作の入力は opt-in（`browser_input`）。
+
+  **本文の取り方**: 直書き・`--body-file`（hook 入力の cwd とコマンド内の `cd` で解決）・
+  `$(cat f)` / `$(< f)` / heredoc・標準入力（heredoc / here-string / `<` / パイプ）・
+  `gh api` の `-f` / `-F` / `@file` / `--input`。同じコマンド内で heredoc から書いてから
+  `--body-file` で読むファイルは**ディスクではなくコマンドの heredoc を読む**（TOCTOU 対策）。
+  解決できない本文（変数展開・任意のコマンド置換・標準入力）と、`git commit && git push` のように
+  push の前段で履歴が変わりうるものは、公開先なら止めて書き出し方を案内する。
+
+  **汎用パターン**（許可リスト外のチーム形式 ID・`/Users/<name>/`・`<別リポジトリ名> PR #N`）・
+  添付・「非公開で別 owner のリポジトリで作業中のセッションから公開先へ書く」文脈は**確認**扱い。
+  公式 docs では `permissionDecision: "ask"` は非対話（`-p`・auto・dontAsk・bypassPermissions・
+  subagent）で defer に落ちて通りうるうえ、`-p` は hook 入力から見分けられないので、
+  **既定は止める**（`confirm_action: "block"`）。`ask` にしても非対話と分かる入力では止める。
+
+  **fail-closed**: safe-hook.sh の縮退（exit 0）は流用せず、内部エラー・python3 不在・検出器の異常終了・
+  辞書 / 設定の読み込み失敗・壊れた入力・時間切れ（既定 7 秒で自分で打ち切る。hook の timeout は
+  10 秒で、timeout すると止めずに通るため）・push 走査の上限超過は、公開につながる入力なら止める。
+  辞書が無いときは既定で公開先宛てを止める（`on_missing_dict: "warn"` で警告に変えられる）。
+
+  出力には語そのものを出さず、辞書の行番号・本文の行番号・置き換え例だけを出す（語を含むパスは伏せ字）。
+  `GUARDRAIL_*` 変数の前置き・`export` / `env` / `unset` / `launchctl setenv`・シェル設定への書き込み、
+  辞書・設定・visibility キャッシュの Bash での書き換えは、宛先に関係なく止める。
+
+- **公開リポジトリ用の git pre-push `git-hooks/pre-push.sh` を同梱した**。同じ検出器を呼び、
+  人の手の push や他のツールの push も止める。公開リポジトリごとに手で入れる（global の
+  `core.hooksPath` は使わない。手順は README）。`detect-public-leak.py` には人が使う
+  `scan-git` / `scan-text` モードもある
+
+- 回帰テスト `test_guardrail_protect_public_leak.py` を足した（語はダミーのみ）。反証レビューで
+  見つかった突破パターンごとに止まること、private 宛・読み取り系・無関係なコマンドが素通しになること、
+  出力に語が出ないことを見る
+
+### Changed
+
+- **自己保護の対象に public-leak-guard の辞書・設定・visibility キャッシュを足した**
+  （`~/.config/guardrail-protect/`・`~/.cache/guardrail-protect/`・`public-leak-guard.json`・
+  `$GUARDRAIL_SENSITIVE_DICT` / `$GUARDRAIL_PUBLIC_LEAK_CONFIG` の指す先）。Edit / Write は
+  `pre-config-guard.sh`、Bash は `detect-commit-bypass.pl`（`pre-commit-guard.sh` の事前フィルタも拡張）。
+  `pre-config-guard.sh` はシェル設定・settings に `GUARDRAIL_*` を書き込む編集も止める。
+  Bash 経由の検出理由の文言は `guardrail-protect.json self-modification` から
+  `guardrail config self-modification` に変えた
+
 ## [0.5.2] - 2026-09-10
 
 ### Fixed
