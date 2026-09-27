@@ -11,7 +11,7 @@
 | 論点 | 決定 |
 |---|---|
 | MP スキルへの置き換え / プラグイン丸ごと導入 | しない（wayfinder は living-spec の上位互換ではない） |
-| living-spec-workflow の存廃 | **残す**。メイン機（会社 PC）で使っている。このマシンの transcript だけの利用頻度（0 回）は過小評価だった |
+| living-spec-workflow の存廃 | **残す**。メイン機（別マシン）で使っている。このマシンの transcript だけの利用頻度（0 回）は過小評価だった |
 | notebooklm-workflow の存廃 | 残す（A7 の alwaysLoad 解除は未実施） |
 | grill を「前提の決まった問いを最大 4 問ずつ」にするか（B2） | **しない**。1 問ずつを維持（GitHub issue #3 と同じ判断） |
 | `~/.claude` の設定（A6 ほか） | 破壊的 git 操作の `permissions.ask` 12 ルールと `Read(.env)` の deny を追加。psql の deny は残し、worktree 系はスキル側で対応（S6） |

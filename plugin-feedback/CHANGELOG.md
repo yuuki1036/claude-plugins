@@ -2,6 +2,27 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.3.2] - 2026-09-27
+
+### Changed
+
+- **起票・コメントの前に匿名化の手順を必須にした**（`skills/feedback-issue/references/anonymize.md` を新設し、
+  `commands/feedback.md` Phase 4.5 / `skills/feedback-issue/SKILL.md` Step 3.7 から読む。allowed-tools に `Read`
+  を足した）。業務のリポジトリ名・PR・Issue ID・端末名・コードの識別子・ローカルパスを汎用名へ置き換える表と
+  完了基準を持つ。公開 Issue は編集しても旧版が履歴とアーカイブに残るため、投稿前に止める。会話中の実例を本文に
+  写した起票から、業務の固有名が公開 Issue に出ていた
+- **cwd が公開リポジトリでないセッションからの起票は、本文の全文を見せて AskUserQuestion で匿名化の確認を取る**
+  （`gh repo view --json visibility`。`PUBLIC` 以外と取得失敗は「公開でない」側に倒す）
+- **添付は、業務の画面が写っていないとユーザーが答えたときだけ付ける**。既定は「添付しない」。画像は置き換えも
+  送信前の検査もできない
+
+### Fixed
+
+- **本文を `--body "{body}"` ではなく一時ファイル経由の `--body-file` で渡すようにした**（既存 Issue への
+  `gh issue comment` も同じ）。二重引用符の中の本文はバッククォートや `$(...)` がシェルに展開され、送信前に本文を
+  検査する hook からも読めなかった。ファイルは投稿と別の Bash 呼び出しで書く（同じコマンドで書くと、hook の検査時には
+  まだ中身が無い）
+
 ## [1.3.1] - 2026-09-25
 
 ### Added
