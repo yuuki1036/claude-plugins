@@ -68,7 +68,7 @@ else
   if [ -n "$REVIEW_BASE_BEHIND" ]; then
     echo "WARN: ⚠️ base: ローカルの ${BASE} が origin/${BASE} より ${REVIEW_BASE_BEHIND} commits 遅れているので、diff は origin/${BASE} との分岐点から取った（ローカルの ${BASE} から取ると、他で取り込まれた変更がレビュー対象に混ざる / GitHub issue #253）。止めずに続け、Phase 0 の出力にこの 1 行を載せる" >&2
   fi
-  # `## meta` の `base=` は agent が `git show <base>:<file>` に使うので、実際に使った ref を出す
+  # `## meta` の `base=` には実際に使った ref の名前を出す（diff の起点のコミットは `diff_base=`）
   BASE="$REVIEW_BASE_REF"
   # 分岐点..HEAD + staged + unstaged の 3 系統（起点の決め方は lib/diff-base.sh）。
   # 3 系統が重なるファイルは行数が重複計上されうるが、帯を分けるには十分な粗さ
@@ -117,6 +117,11 @@ echo "diff_file=$OUT"
 rm -f "$(review_path agentctx)"
 echo "agent_ctx_file=$(review_path agentctx)"
 echo "base=${BASE:-unknown}"
+# diff の変更前と一致するコミット（self-review の base 経路のみ）。agent の `git show <x>:<file>` と
+# base 検算はこちらを使う — `base=` の ref の先端は、ブランチを切った後に base が進むと diff とずれる
+if [ -n "${REVIEW_BASE_COMMIT:-}" ]; then
+  echo "diff_base=${REVIEW_BASE_COMMIT}"
+fi
 echo "worktree=$WT"
 
 # **実行世代を Phase 0 で見せる**（GitHub issue #210）。踏み下げた世代で回した回は検出が
@@ -183,7 +188,7 @@ else
   NUMSTAT=$({ git $QP diff --numstat "${REVIEW_BASE_COMMIT}..HEAD"; git $QP diff --cached --numstat; git $QP diff --numstat; } 2>/dev/null | grep -v '^$')
 fi
 
-# 同一パスが複数系統（base..HEAD / staged / unstaged）に現れるため、パス単位で集約する。
+# 同一パスが複数系統（分岐点..HEAD / staged / unstaged）に現れるため、パス単位で集約する。
 # 集約しないとファイル数が重複計上され size_tier が実態より大きく出る
 CLASSIFIED=$(printf '%s\n' "$NUMSTAT" | awk -F'\t' '
   NF>=3 && $1 ~ /^[0-9]+$/ { a[$3]+=$1; d[$3]+=$2 }

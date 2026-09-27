@@ -1,7 +1,7 @@
 # Reviewer プロンプト索引
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22bc4df2 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @99781aef -->
 
 reviewer / specialist / meta-reviewer / 反証 / skeptic / Markdown 推敲の各プロンプト本体は `references/prompts/` 配下に **1 観点 1 ファイル**で置く。
 

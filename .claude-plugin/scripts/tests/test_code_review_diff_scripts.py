@@ -947,10 +947,14 @@ class TriageDiffBaseTest(DiffBaseFixture):
     def test_stale_local_base_takes_the_origin_merge_base(self):
         """issue の再現: ローカルの main が遅れていると、他で取り込まれた変更まで混ざっていた."""
         self.stale_local_main()
+        origin = self.git("rev-parse", "refs/remotes/origin/main").stdout.strip()
         res = self.triage("main")
         self.assertEqual(self.diff_paths(res.stdout), {"mine.txt"})
-        self.assertEqual(self.kv(res.stdout, "## meta")["base"], "origin/main",
-                         "agent の `git show <base>:<file>` が遅れた main を読む")
+        # 規模は diff 本体と別の `git diff --numstat` で数える。片方だけ起点がずれても落とす
+        self.assertEqual(self.kv(res.stdout, "## size")["total_files"], "1")
+        meta = self.kv(res.stdout, "## meta")
+        self.assertEqual(meta["base"], "origin/main")
+        self.assertEqual(meta["diff_base"], origin)
         self.assertIn("⚠️ base: ローカルの main が origin/main より 2 commits 遅れている", res.stderr)
 
     def test_unpushed_local_base_is_not_replaced_by_origin(self):
@@ -973,6 +977,34 @@ class TriageDiffBaseTest(DiffBaseFixture):
         self.git("checkout", "-q", "feature")
         res = self.triage("main")
         self.assertEqual(self.diff_paths(res.stdout), {"mine.txt"})
+        self.assertEqual(self.kv(res.stdout, "## size")["total_files"], "1")
+
+    def test_diff_base_matches_the_pre_image_when_base_advanced(self):
+        """`base=` の ref の先端は切った後に進むので、agent の `git show` には `diff_base=` を渡す."""
+        self.write("f.txt", "a\nguard\n")
+        self.add()
+        self.git("commit", "-qm", "f")
+        branch_point = self.head()
+        self.git("checkout", "-qb", "feature")
+        self.commit_file("mine.txt")
+        self.git("checkout", "-q", "main")
+        self.write("f.txt", "a\n")
+        self.add()
+        self.git("commit", "-qm", "main drops guard")
+        self.git("checkout", "-q", "feature")
+        meta = self.kv(self.triage("main").stdout, "## meta")
+        self.assertEqual(meta["base"], "main")
+        self.assertEqual(meta["diff_base"], branch_point)
+        self.assertEqual(self.git("show", f"{meta['diff_base']}:f.txt").stdout, "a\nguard\n")
+
+    def test_staged_run_has_no_diff_base(self):
+        """`--staged` は起点を解決しないので `diff_base=` を出さない（前回値や空値を出さない）."""
+        self.write("mine.txt", "x\n")
+        self.add()
+        res = self.run_in(TRIAGE, "--base", "main", "--staged")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("diff_base", self.kv(res.stdout, "## meta"))
+        self.assertEqual(self.kv(res.stdout, "## meta")["base"], "main", "meta 自体は出ている")
 
     def test_equal_merge_bases_keep_the_local_ref_without_warning(self):
         """base ブランチ上で未コミットの変更だけを見る回。origin が先にいても分岐点は同じ."""

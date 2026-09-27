@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# self-review の diff の起点を決める（正本）。triage-signals.sh と md-prose-lines.sh が共有する —
-# 2 箇所で起点がずれると、Phase 0 の規模と Markdown 推敲の対象行が別の diff を指す。
+# self-review / comment-polish の diff の起点を決める（正本）。triage-signals.sh・md-prose-lines.sh・
+# detect-external-ids.sh が source し、comment-polish の手順 1 が直接実行する — 起点がずれると、
+# Phase 0 の規模・Markdown 推敲の対象行・ID 検出がそれぞれ別の diff を指す。
 #
 # **ローカルの base ref だけで取らない**（GitHub issue #253）。ローカルの main が origin/main より
 # 遅れていると、origin/main から切ったブランチの diff に、他で取り込まれた変更まで混ざる

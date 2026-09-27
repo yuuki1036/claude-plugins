@@ -19,7 +19,7 @@ allowed-tools:
 # Self Review
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22bc4df2 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @99781aef -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @26b5e357 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @70ac9c91 -->
 
@@ -108,7 +108,7 @@ fi
 
 **diff 全文をメインコンテキストに載せない。** `triage-signals.sh` が diff（コミット済み + 未コミット）をファイルへ保存し、Phase 0 に必要な**事実だけ**を compact に出力する。diff は reviewer / explorer へ**パスで渡す**（本文を転記しない。orchestration-guide.md `## 3.5`）。
 
-出力セクション（`## meta` / `## size` / `## files` / `## hunks` / `## focus-signals` / `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`）の意味と使い道の正本 → review SKILL.md `### 2`。self-review では `## issue-ids` はブランチ名から抽出され、`## meta` の `base` は指定した base branch になる（ローカルの base が origin より遅れていれば `origin/<base>`。以降の agent にはこの値を渡す）。**`## md-polish`**（`md_prose_lines=` / `writing_polish=`）は self-review だけにあり、Markdown 推敲の起動判定（Step 2.1）に使う。
+出力セクション（`## meta` / `## size` / `## files` / `## hunks` / `## focus-signals` / `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`）の意味と使い道の正本 → review SKILL.md `### 2`。self-review では `## issue-ids` はブランチ名から抽出され、`## meta` の `base` は指定した base branch になる（ローカルの base が origin より遅れていれば `origin/<base>`）。あわせて出る **`diff_base=`**（diff の起点のコミット）を、共通ブロックの base ref と base 検算に使う（`git show <diff_base>:<path>` が diff の変更前と一致する。`base` の ref の先端は、ブランチを切った後に base が進むとずれる / orchestration-guide.md `## 3.5`）。**`## md-polish`**（`md_prose_lines=` / `writing_polish=`）は self-review だけにあり、Markdown 推敲の起動判定（Step 2.1）に使う。
 
 - **`size_tier`** はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。GitHub issue #96）。Phase 0 の構成テーブル・Step 6 レポート冒頭・Step 6.4 の `size_tier` に記録する
 - **シグナルは事実であって判定ではない**。観点採否・体数は triage-guide が決める。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む
@@ -350,7 +350,7 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
    - reviewer 出力の `[confidence: XX]` と `[severity: BLOCKER|CRITICAL|MAJOR|MINOR]` をパース
    - severity が欠落している指摘は **CRITICAL とみなす**（後方互換 / 安全側デフォルト）。**ただし `## コメント推敲提案` と `## Markdown 推敲提案` のブロックはこの既定の対象外**（severity を持たないのが仕様。指摘として扱わず、手順 7 まで素通りさせる）
    - **この時点の severity 別件数を控える**（= `pre_adjust_counts`。統合・dedup 後、手順 2 以降の verdict 反映・加減算・降格・フィルタを**一切かける前**の生の分布）。Step 6.4 の publish で使う。**手順 5 通過後の件数との差が「調整で消えた分」**であり、これが無いと「reviewer が検出しなかった」と「検出したが調整で消えた」を事後に区別できない（orchestration-measurement.md `## 16`）
-   - **base 検算は `pre_adjust_counts` を控えた後に行う**（降格が「調整で消えた分」として会計されるため）。`退行` / 「変更前は X だった」を根拠にする指摘は `git show <base>:<path>` で base 側を検算する（orchestration-guide.md `## 5`「origin 主張の base 検算」。**冷や読み skeptic は reviewer 側の base 確認規約を継承しない**ため、この層の主張が主対象。反証レイヤーは effort ≥ high でしか走らないので、この検算だけが effort 非依存 / #124 (d)）
+   - **base 検算は `pre_adjust_counts` を控えた後に行う**（降格が「調整で消えた分」として会計されるため）。`退行` / 「変更前は X だった」を根拠にする指摘は `git show <diff_base>:<path>`（`## meta` の `diff_base=`）で base 側を検算する（orchestration-guide.md `## 5`「origin 主張の base 検算」。**冷や読み skeptic は reviewer 側の base 確認規約を継承しない**ため、この層の主張が主対象。反証レイヤーは effort ≥ high でしか走らないので、この検算だけが effort 非依存 / #124 (d)）
 2. **反証 verdict の反映**（Phase 4.9 が動いた場合のみ。scoring-guide.md `## 反証レイヤーの verdict 反映` に従う）
    - **BLOCKER / CRITICAL の `refuted` は confidence / severity を据え置き**、指摘本文先頭に `⚠️ 反証メモ: <軸>（<根拠 file:line>、要確認）` を付与（**報告から消さない**）
    - **MAJOR / MINOR の `refuted`** は confidence −40（取り下げ理由を付録に記録）、`confirmed` は既存「複数エージェント +15」の発火源（二重計上しない）、`uncertain` は −10

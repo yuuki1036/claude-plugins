@@ -11,7 +11,7 @@
 #
 # 行番号は**最終状態のファイル**に対する番号。self-review の diff ファイルは 3 本の連結
 # （分岐点..HEAD / --cached / unstaged）で、同じファイルの hunk が別の版の行番号で並ぶため
-# 使えない。ここでは `git diff <分岐点>`（作業ツリー対 base の分岐点）を取り直す。`--staged` のときは
+# 使えない。ここでは `git diff <分岐点>`（作業ツリー対分岐点）を取り直す。`--staged` のときは
 # `git diff --cached` と index の内容を使う。
 #
 # 使い方:

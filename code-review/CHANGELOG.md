@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.131.4] - 2026-09-27
+
+### Fixed
+
+- **self-review の `## meta` に diff の起点のコミット `diff_base=` を出し、agent の `git show` と base 検算がそれを使うようにした**
+  （2.131.1 の #253 修正で生じたずれ）。diff の起点を分岐点に変えた一方で、agent に渡す base ref は `base=` の ref 名の
+  ままだったので、ブランチを切った後に base が進んでいる回は `git show <base>:<file>` が diff の変更前ではなく ref の先端を
+  読んでいた（base 側で後から入った変更を「変更前からあった」と読み、この diff による退行の誤帰属を base 検算が支持しうる）。
+  `base=` は人が読む ref 名として残す。`--staged` と PR の経路は起点を解決しないので `diff_base=` を出さない
+  - 共通ブロックの base ref と base 検算は `diff_base=` を使う（orchestration-guide.md の 3.5 節と 5 節、self-review の Step 1 と Step 5）
+- **`## size` の規模を数える `git diff --numstat` の起点を回帰テストで守った**。diff 本体とは別に起点を書いているのに
+  テストが diff のパスしか見ておらず、numstat の起点を修正前に戻しても全テストが緑だった（規模の帯は agent の体数を決める）
+- 2.131.1 / 2.131.3 の本文とコメントの事実誤りを訂正した（旧 `detect-external-ids.sh` は解決できない base で exit 0 ではなく
+  exit 128 を返していた / `base=` の ref は diff の起点と同じではない）。`lib/diff-base.sh` 冒頭の共有元の一覧も実態に合わせた
+
 ## [2.131.3] - 2026-09-27
 
 ### Fixed
@@ -10,7 +25,8 @@
   `detect-external-ids.sh` と手順 1 でモデルが読む diff はどちらも `git diff <BASE>...HEAD` をローカルの ref で取っていたので、
   ローカルの main が遅れていると、他で取り込まれた変更のコメントまで ID 検出と推敲の対象に混ざっていた
   - `detect-external-ids.sh` は self-review と同じ `lib/diff-base.sh` で起点を決める。解決できない base は exit 2（判定不能）に
-    した（従来は `git diff` の失敗が捨てられ、「検出なし」の exit 0 になっていた）。commit 前 hook は `--staged` で呼ぶので影響しない
+    した（従来は `git diff` の失敗が pipefail で exit 128 として返り、0/1/2 の契約の外だった。当初「exit 0 になっていた」と
+    書いたのは誤りで、v2.131.4 で訂正した）。commit 前 hook は `--staged` で呼ぶので影響しない
   - `lib/diff-base.sh` を直接実行すると `base=` / `diff_base=` を出すようにした（ローカルが遅れていれば stderr に `WARN: ⚠️ base:`）。
     comment-polish の手順 1 はこの `diff_base=` で diff を取る
 
@@ -34,10 +50,11 @@
   ほかに 7 → 188 files / 46 → 345 files）
   - 起点はローカルの `<base>` と `origin/<base>` のそれぞれで HEAD との分岐点（merge-base）を取り、HEAD に近い方を使う。
     origin を無条件に優先しないのは、ローカルの base に未 push のコミットがあってそこから切ったブランチでは、
-    origin 側の分岐点が古く未 push のコミットが混ざるため。2 ドットの直接比較もやめた（ブランチを切った後に
+    origin 側の分岐点が古く、未 push のコミットが混ざるため。2 ドットの直接比較もやめた（ブランチを切った後に
     base が進むと、base 側の新しい変更が逆向きの差分として混ざる）。共通の履歴が無い base は従来どおり先端と直接比べる
-  - origin 側を使った回は `## meta` の `base=` が `origin/<base>` になり（agent の `git show <base>:<file>` も同じ起点を見る）、
-    ローカルが遅れていれば stderr に `WARN: ⚠️ base:` を出す。止めない
+  - origin 側を使った回は `## meta` の `base=` が `origin/<base>` になり、ローカルが遅れていれば stderr に `WARN: ⚠️ base:` を出す。
+    止めない（当初ここに「agent の `git show <base>:<file>` も同じ起点を見る」と書いたのは誤り。`base=` の ref の先端は
+    diff の起点の分岐点と一致しない。v2.131.4 で `diff_base=` を足して直した）
   - 起点の決め方は新しい `scripts/lib/diff-base.sh` に置き、`triage-signals.sh` と `md-prose-lines.sh` が共有する
     （ずれると Phase 0 の規模と Markdown 推敲の対象行が別の diff を指す）。`md-prose-lines.sh` は解決できない base で
     exit 2 を返すようにした（従来は `git diff` の失敗で exit 1。`triage-signals.sh` と揃えた）

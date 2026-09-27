@@ -234,7 +234,7 @@ class DetectExternalIdsTest(unittest.TestCase):
                          ["ABC-123"])
 
     def test_unresolvable_base_is_undeterminable(self):
-        """解決できない base は exit 2（判定不能）。`git diff` の失敗を「検出なし」の 0 にしない."""
+        """解決できない base は exit 2（判定不能）。旧版は git の 128 が pipefail でそのまま返っていた（契約の外）."""
         self._commit("f.ts", "// ABC-123 対応\n")
         res = self._run_base("no-such-ref")
         self.assertEqual(res.returncode, 2)

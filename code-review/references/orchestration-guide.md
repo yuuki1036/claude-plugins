@@ -108,7 +108,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 - `{{PLUGIN_ROOT}}` の実パス（テンプレート内の `${CLAUDE_PLUGIN_ROOT}` の読み替え指示を含む）
 - `$DIFF_FILE` のパスと `diff-slice.sh` の使い方
-- **base ref**（`## meta` の `base=`。skeptic / 反証 / base 検算がいずれも要求する）
+- **base ref**（`## meta` の `base=`。skeptic / 反証 / base 検算がいずれも要求する）。**`## meta` に `diff_base=` が出ている回（self-review の base 経路）はその値を base ref として書く** — diff の変更前と一致するコミットで、`base=` の ref の先端はブランチを切った後に base が進むと diff とずれる（agent の `git show <base>:<file>` が diff に無い変更を「変更前」として読む / GitHub issue #253）
 - `{{SEVERITY_THRESHOLD}}` の実効値
 - AGENTS.md / CLAUDE.md のパス一覧（`## 4`）
 - **review のみ**: `{{MAIN_ROOT}}` と `dep-dir` 一覧（`## 1.1`）、PR 番号と `{{HEAD_SHA}}`、`$PR_CTX_FILE` のパス
@@ -220,6 +220,7 @@ Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方と
 git show "origin/<base>:<path>" || git show "<base>:<path>"
 ```
 
+- **self-review で `## meta` に `diff_base=` が出ている回は、`<base>` にその値を入れる**（`git show "<diff_base>:<path>"` が diff の変更前と一致する。1 段目の `origin/<sha>` は解決できず 2 段目で読む）
 - **対象**: 指摘が `退行` / `regression` / 「変更前は X だった」/ `origin: this-diff` を load-bearing な根拠にしているもの。**severity と confidence に関わらず**掛ける（掲載前の 1 コマンドで決まる）
 - **base に同経路があれば pre-existing** として `scoring-guide.md`「severity 調整ルール」の**「オーケストレーターの base 検算で pre-existing と判定した場合」**に従う（reviewer 申告があるケースの項ではない — あちらは「reviewer が既に下げているので追加調整しない」なので、**申告の無い skeptic 指摘に当てると何も起きない**）。diff が周辺の前提を変えて潜在問題を顕在化させた場合は pre-existing としない（この区別は従来どおり）
 - **どちらのコマンドも解決できない場合は検算不能**として理由欄に `base 検算: 未実行（base ref 未解決）` を残す（silent に飛ばさない）

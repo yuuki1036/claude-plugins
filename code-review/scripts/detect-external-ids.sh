@@ -42,8 +42,8 @@ else
     BASE="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')"
     [ -z "$BASE" ] && { git rev-parse --verify --quiet main >/dev/null 2>&1 && BASE=main || BASE=master; }
   fi
-  # 起点はローカルの base の先端でなく HEAD との分岐点（self-review と同じ。lib/diff-base.sh）。
-  # 解決できない base を `git diff` の失敗として 2>/dev/null に流すと「検出なし」の exit 0 に化ける
+  # 起点はローカルの base と origin/<base> のうち HEAD に近い方の分岐点（self-review と同じ。lib/diff-base.sh）。
+  # 解決できない base を `git diff` に渡すと、pipefail で git の 128 が契約（0/1/2）の外の終了コードとして返る
   review_diff_base "$BASE" || { echo "detect-external-ids: base ref を解決できない: ${BASE}" >&2; exit 2; }
   DIFF_CMD=(git diff --unified=0 "${REVIEW_BASE_COMMIT}..HEAD")
 fi
