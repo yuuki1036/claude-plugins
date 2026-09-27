@@ -2,6 +2,40 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.132.0] - 2026-09-27
+
+### Changed
+
+- **payload の `machine_id` を生の hostname からマシンの label に変えた**。retro の「集計」行と「マシン / 版」行は
+  issue に貼る規約があり、そこからマシンの hostname が公開の場に出ていた
+  - label は `~/.config/claude-review/machine-label`（リポジトリの外）に置いた `m1` / `m2` のような値。未設定なら
+    `m-` + HMAC-SHA256(salt, `hostname -s`) の先頭 8 hex で、salt は初回に `~/.config/claude-review/salt` へ乱数で作る。
+    salt 無しの sha256 にしないのは、公開済みの生の値から計算して突合できるため。label の形でない値を label ファイルに
+    書いた回は使わず（値も出力しない）既定に倒す。決められなければ従来どおり `null` + gap `machine-id`
+  - 決め方は新しい `scripts/lib/machine_label.py` に置き、publish と retro が共有する
+  - retro は計測ストアに残る過去の生の値を表示の時点で置き換える（ストアは append-only で書き換えない）。自分の生の値と
+    既定 label は自分の label に合流し、label の形でない他の値は `m-` + HMAC で出る
+
+### Added
+
+- **`review-retro.sh --show-paths`**。母集団行のパスは既定で伏せるようにしたので（下の Fixed）、生のパスが要る手元の
+  調査用に足した。使うと出力の先頭（`--json` では先頭のキー `warning`）に「公開先に貼らない」と出す
+- **publish 直後の同期フック**。`~/.config/claude-review/post-publish` が実行可能なら、publish に成功した回だけ
+  別セッションに切り離して起動する（引数 1 は書き込んだ `events.jsonl`）。計測ストアへの同期を手で回していて反映が
+  遅れていたため。publish はフックを待たず、失敗しても成功のまま終わる
+
+### Fixed
+
+- **retro の母集団行が `--logs` に渡したパスをそのまま出していた**。`<repo>/.claude/events.jsonl` は
+  `<repo sha=xxxxxxxx>/.claude/events.jsonl`（リポジトリのパスを HMAC に）、計測ストア（`review-metrics/` と
+  `review-metrics/events/` の `*.jsonl`）は label のファイル名と `~`、それ以外は `<log sha=xxxxxxxx>` で出す。`--json` の
+  `sources[].path` も同じ
+- 自動探索の回の注記に、`find` の生のパスを公開先に貼らないことと、他リポジトリの実例はリポジトリ名・PR 番号・
+  ブランチ名・Linear ID を置き換えることを足した。orchestration-measurement.md の引用の規約（`## 18`）にも同じ規則を足し、
+  マシンをまたぐ合算の置き場を計測ストア（private リポジトリ `yuuki1036/review-metrics` の `events/<label>.jsonl`）にした
+- `measure-tokens.sh` が transcript を見つけられなかったときの診断で、探索したディレクトリを `~` 始まりで出すようにした
+- 参照文書・コメント・テストの実例に残っていた他リポジトリの PR 番号・ファイル名・マシン名を一般的な表記に置き換えた
+
 ## [2.131.4] - 2026-09-27
 
 ### Fixed
@@ -672,7 +706,7 @@
 - **`review-retro.sh` が synthesis の支配率（`duration_synthesis_min` ÷ `duration_fleet_min`）を出す**
   （GitHub issue #218）。`## 14` は「支配的ならメイン側、そうでなければ wave 側」を判断基準として
   書いていたのに、retro は区間の中央値 1 行しか出しておらず、fleet 92 分中 40 分が synthesis だった
-  回（PR #469）が見えなかった。#209 / #214 と同型の「判断基準が doc にあって機械層に無い」形。
+  回（他リポジトリの 1 回）が見えなかった。#209 / #214 と同型の「判断基準が doc にあって機械層に無い」形。
   - 分布（中央値 / 75% 点 / 最大 / 30% 以上の件数）・世代別の表・支配的だった回の上位 5 件・
     打ち手の出し分け 1 行を本文に出す。`--json` は `synthesis_dominance`
   - ⚠️: 30% 以上の回が 10% 以上の層で鳴る（`layered_signal` / 下限 10）。**閾値は実データから決めた**

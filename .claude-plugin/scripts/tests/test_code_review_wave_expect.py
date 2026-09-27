@@ -238,7 +238,7 @@ class SkepticLaunchTest(unittest.TestCase):
     """
 
     def test_a_reported_fallback_is_deducted_wherever_it_sits(self):
-        """**実測 09-06T05:04 の `[3,1,3]`**（PR #472 / review / opus-5）.
+        """**実測 09-06T05:04 の `[3,1,3]`**（他リポジトリの PR A / review / opus-5）.
 
         reviewer 3 → skeptic fallback 1 → 反証 3。末尾が 3 体なので位置判定は `tail=0` で
         即 False になり、違反として数えられていた。
@@ -249,7 +249,7 @@ class SkepticLaunchTest(unittest.TestCase):
         self.assertEqual(expected_waves(p, [3, 1, 3]), 3)
 
     def test_the_same_layers_get_the_same_verdict_regardless_of_the_verify_wave_size(self):
-        """**対照サンプル 09-06T07:18 の `[4,11,4,1]`**（PR #469）. #472 と違うのは反証が単独で終わったかだけ.
+        """**対照サンプル 09-06T07:18 の `[4,11,4,1]`**（同じリポジトリの PR B）. A と違うのは反証が単独で終わったかだけ.
 
         申告があれば反証 wave の体数を入れ替えても期待本数は動かない。
         """

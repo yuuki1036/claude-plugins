@@ -16,6 +16,9 @@
 # 混入する（実測 1 件。`CLAUDE_PROJECT_DIR` を前置きしても MAIN_ROOT が上書きするので効かない）。
 # `--dry-run` は payload の組み立てまでを本番と同じ経路で走らせ、publish だけを行わない。
 #   publish-review-event.sh --plugin code-review:self-review --payload '<json>' --dry-run
+#
+# publish に成功した回だけ、`~/.config/claude-review/post-publish` が実行可能なら切り離して起動する
+# （計測ストアへの同期を蹴る任意のフック。末尾の「publish 直後の同期フック」）。
 set -uo pipefail
 
 PLUGIN=""; PR=""; PAYLOAD=""; PAYLOAD_FILE=""; KEEP=0; DRY_RUN=0
@@ -324,11 +327,13 @@ fi
 #   ③ カンマ正規化 sed が JSON の文字列値の中身まで書き換える
 # 再シリアライズなら 3 つとも構造的に起きない。
 # ---- 計測の出所（v2.120.0）--------------------------------------------------
-# マシンは `hostname -s`（gist 集約 #61 のファイル名 `<hostname>.jsonl` と同じ値にして突合できるようにする）。
+# マシンは **label**（`lib/machine_label.py` が正本）。生の hostname は載せない — retro の「集計」行と
+# 「マシン / 版」行は issue に貼る規約があり、そこからマシンの hostname が公開の場に出ていた。
+# label は計測ストア（private リポジトリ review-metrics）のファイル名 `events/<label>.jsonl` と同じ値。
 # 版は `CLAUDE_PLUGIN_ROOT` ではなく**このスクリプトの位置**から引く — 実際に走ったファイルの版を
 # 指すのはこちら。SKILL 本文と本スクリプトは同じ版ディレクトリから読まれるので、ここで読む版が
 # 「その回がどの版の規約で走ったか」になる
-MACHINE_ID=$(hostname -s 2>/dev/null) || MACHINE_ID=""
+MACHINE_ID=$(python3 "$HERE/lib/machine_label.py" label) || MACHINE_ID=""
 MERGED=$(
   REVIEW_MACHINE_ID="$MACHINE_ID" \
   REVIEW_PLUGIN="$PLUGIN" \
@@ -1179,7 +1184,8 @@ else:
 # **結果の読みがマシン間・版間で食い違ったとき、payload だけで出所を言うため**。無いと
 # 「打ち手を入れた日以降」を日付で切るしかなく、`claude plugin update` 前のマシンで旧版の
 # 規約のまま走った回が混ざる（#220 の留保）。呼び出し側が渡していてもスクリプト側が勝つ
-# （版マーカーと同じ方式）。**取れなければ null + gap** — 推測で埋めると誤った層に入る
+# （版マーカーと同じ方式）。**取れなければ null + gap** — 推測で埋めると誤った層に入る。
+# マシンは label（`lib/machine_label.py`）で、生の hostname は入れない
 _machine = (os.environ.get("REVIEW_MACHINE_ID") or "").strip()
 payload["machine_id"] = _machine or None
 if not _machine:
@@ -1277,6 +1283,35 @@ if source "${CLAUDE_PLUGIN_ROOT:-$HERE/..}/hooks/lib/safe-hook.sh" 2>/dev/null; 
   fi
 else
   echo "WARN: safe-hook.sh を読み込めず publish をスキップした" >&2
+fi
+
+# ---- publish 直後の同期フック（任意） ------------------------------------------
+# `<設定 dir>/post-publish`（既定 `~/.config/claude-review/post-publish`）が実行可能なら、
+# **切り離して**起動する。計測ストア（private リポジトリ review-metrics）への送り出しを
+# 手で回すと反映が中央値 7 日遅れていたため、publish を契機に同期を蹴る口を 1 つだけ置く。
+# 中身（例: 同期ジョブの `launchctl kickstart`）はマシンごとの設定で、リポジトリには置かない。
+# **待たない・結果を見ない** — 別セッションにして標準入出力を /dev/null へ付け替えるので、
+# フックが遅くても失敗しても publish は成功のまま終わる（呼び出し側のパイプも握らない）。
+# 引数 1 に書き込んだ events.jsonl のパスを渡す
+if [ "$PUBLISHED" = "1" ]; then
+  POST_PUBLISH="$(python3 "$HERE/lib/machine_label.py" config-dir 2>/dev/null)/post-publish"
+  # 実行権の無いファイル・dir は execv が失敗して何も起きない（publish には影響しない）
+  if [ -x "$POST_PUBLISH" ]; then
+    python3 - "$POST_PUBLISH" "$MAIN_ROOT/.claude/events.jsonl" <<'PY' >/dev/null 2>&1 || true
+import os, sys
+# 子を setsid で publish のセッション・プロセスグループから切り離し、親は待たずに終わる
+# （子は init に引き取られる）
+if os.fork() == 0:
+    os.setsid()
+    null = os.open(os.devnull, os.O_RDWR)
+    for fd in (0, 1, 2):
+        os.dup2(null, fd)
+    try:
+        os.execv(sys.argv[1], sys.argv[1:])
+    finally:
+        os._exit(127)
+PY
+  fi
 fi
 
 # ---- 一時ファイルの掃除（**publish に成功したときだけ** / GitHub issue #133） -

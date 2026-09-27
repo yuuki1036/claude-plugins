@@ -412,6 +412,17 @@ class MeasureTokensTest(ScriptTestBase):
         self.assertEqual(res.returncode, 1, res.stdout)
         self.assertIn("transcript が見つからない", res.stderr)
         self.assertIn(self.slug(self.root), res.stderr)
+        # 診断は貼られることがあるので `$HOME` は `~` で出す（ユーザー名入りの絶対パスを残さない）
+        self.assertIn("  ~/.claude/projects/%s" % self.slug(self.root), res.stderr)
+        self.assertNotIn(str(self.home), res.stderr)
+
+    def test_searched_dirs_outside_home_are_printed_as_is(self):
+        """`$HOME` が空なら `~` に置き換えない（`/` 始まりの全パスを `~` と出さない）."""
+        res = subprocess.run(["bash", str(MEASURE)], cwd=str(self.root), capture_output=True,
+                             text=True, env=self._env(HOME=""), timeout=60)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("  /.claude/projects/%s" % self.slug(self.root), res.stderr)
+        self.assertNotIn("~", res.stderr)
 
     def test_explicitly_missing_session_exits_1(self):
         res = self.measure("--session", str(self.root / "nope.jsonl"))
@@ -422,6 +433,8 @@ class MeasureTokensTest(ScriptTestBase):
         res = self.measure("--list")
         self.assertEqual(res.returncode, 0)
         self.assertIn("セッションが見つからない", res.stderr)
+        self.assertIn("  ~/.claude/projects/%s" % self.slug(self.root), res.stderr)
+        self.assertNotIn(str(self.home), res.stderr)
 
     def test_list_shows_the_candidates(self):
         self.write_session("s1", [self.usage_row("2026-08-17T10:00:00Z", out=1)])

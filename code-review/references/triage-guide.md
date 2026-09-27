@@ -259,8 +259,8 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 #### 探索フェーズ（explorer）
 | # | focus | 対象 | 指示 |
 |---|---|---|---|
-| E1 | function-flow | src/components/add.vue | savetree() の全フロー追跡 |
-| E2 | branch-impact | src/components/add.vue | saveTreeTemp() の else ブランチ副作用調査 |
+| E1 | function-flow | src/components/EditForm.vue | save() の全フロー追跡 |
+| E2 | branch-impact | src/components/EditForm.vue | saveDraft() の else ブランチ副作用調査 |
 
 #### レビューフェーズ（reviewer）
 | # | focus | angle | explorer依存 | 指示 |

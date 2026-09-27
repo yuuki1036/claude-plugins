@@ -176,6 +176,9 @@ bash <plugin>/scripts/review-retro.sh              # 全期間 + 直近 30 日
 bash <plugin>/scripts/review-retro.sh --last 20    # 直近 N 件
 bash <plugin>/scripts/review-retro.sh --json       # 機械可読
 bash <plugin>/scripts/review-retro.sh --logs ~/Projects/*/.claude/events.jsonl   # 複数リポジトリを合算
+bash <plugin>/scripts/review-retro.sh --logs ... --show-paths   # 母集団行に生のパスを出す（手元の調査用。公開先に貼らない）
 ```
+
+出力にはマシンの生の名前とリポジトリのパスを出さない。マシンは label（`~/.config/claude-review/machine-label` に置いた `m1` などの値。未設定なら salt 付き HMAC の `m-xxxxxxxx`）で、`--logs` のパスは `<repo sha=xxxxxxxx>/.claude/events.jsonl` の形で出る。`~/.config/claude-review/post-publish` を実行可能にして置くと、publish が成功するたびに切り離して起動する（計測ストアへの同期を蹴る任意のフック。publish は待たない）。
 
 同一 diff への二重レビュー（self-review 直後に PR レビューを回す等）は `scripts/detect-recent-review.sh` が diff の内容ダイジェストで突合し、検出時に続行可否を確認する。

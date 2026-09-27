@@ -19,6 +19,8 @@ pre-commit / CI / Stop hook の 3 経路に**設定変更なしで**乗る。
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -40,6 +42,15 @@ PUBLISH = PLUGIN / "scripts" / "publish-review-event.sh"
 RETRO = PLUGIN / "scripts" / "review-retro.sh"
 BACKFILL = PLUGIN / "scripts" / "review-backfill.sh"
 MEASURE = PLUGIN / "scripts" / "measure-tokens.sh"
+
+#: 計測の設定 dir（label / salt / post-publish）に置く既定の salt。テストは実機の
+#: `~/.config/claude-review` に触れない（`CLAUDE_REVIEW_CONFIG_DIR` で使い捨ての dir へ向ける）
+TEST_SALT = "5a" * 32
+
+
+def hmac8(text: str, salt: str = TEST_SALT) -> str:
+    """期待値の HMAC はスクリプトの実装を import せず、ここで独立に計算する."""
+    return hmac.new(salt.encode("ascii"), text.encode("utf-8"), hashlib.sha256).hexdigest()[:8]
 
 # 最小構成の payload（層のオブジェクトは必ず入れる契約 / orchestration-measurement.md `## 16`）
 BASE_PAYLOAD = {
@@ -77,6 +88,14 @@ class ScriptTestBase(unittest.TestCase):
         self.root = Path(self._tmp.name).resolve()
         self.addCleanup(self._tmp.cleanup)
         (self.root / "tmp").mkdir()
+        # 計測の設定 dir（label / salt / post-publish）は**使い捨てリポジトリの外**に置く。中に置くと
+        # untracked のファイルとして diff の規模の数え上げに混ざる。salt は既知の値を置いておく
+        # （HMAC の期待値を独立に作るため）。salt の新規作成を見るテストは消してから走らせる
+        self._cfg_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._cfg_tmp.cleanup)
+        self.review_config = Path(self._cfg_tmp.name).resolve() / "review-config"
+        self.review_config.mkdir()
+        (self.review_config / "salt").write_text(TEST_SALT + "\n", encoding="ascii")
         # **ここも `_env()` を通す**。`_env()` にだけスクラブが入っていて `setUp` に
         # 入っていなかったため、linked worktree から commit すると `git init` 以降が
         # **実リポジトリ**に当たっていた（GitHub issue #158 / 詳細は `git_env` の docstring）
@@ -92,7 +111,10 @@ class ScriptTestBase(unittest.TestCase):
                        cwd=self.root, check=True, env=env)
 
     def _env(self, **extra: str) -> dict[str, str]:
-        env = scrub(TMPDIR=str(self.root / "tmp"), CLAUDE_PLUGIN_ROOT=str(PLUGIN))
+        # **実機の `~/.config/claude-review`（label / salt / post-publish）に触れない**。
+        # 触れると開発機に salt を作る・開発機の label がテストの期待値に混ざる・開発機の同期フックが走る
+        env = scrub(TMPDIR=str(self.root / "tmp"), CLAUDE_PLUGIN_ROOT=str(PLUGIN),
+                    CLAUDE_REVIEW_CONFIG_DIR=str(self.review_config))
         # **ctype は UTF-8 に固定する**（実利用の通常環境に揃える）。C ロケールでは
         # `"$VAR（"` のような日本語隣接の展開が**動いてしまう**ため、UTF-8 でのみ出る
         # `unbound variable`（実測: detect-recent-review.sh の WARN が exit 1 になっていた）を
@@ -554,17 +576,72 @@ class ProvenanceInjectionTest(ScriptTestBase):
         self.assertEqual(p["plugin_version"], plugin_version())
         self.assertNotIn("plugin-version", p["measurement_gaps"])
 
-    def test_machine_id_is_the_short_hostname(self):
-        """gist 集約のファイル名（`hostname -s`）と同じ値にする。FQDN だと突合できない."""
+    def test_machine_id_defaults_to_a_salted_hmac_of_the_short_hostname(self):
+        """label が未設定なら `m-` + HMAC(salt, `hostname -s`) の先頭 8 hex.
+
+        **生の hostname を載せない**（retro の出所行から公開 issue に出ていた）。**salt 無しの
+        sha256 にもしない** — 公開済みの生の値から誰でも計算して突合できる。FQDN ではなく短い名前を
+        使う（label 導入前の payload の生の値と同じ取り方にして、読み側で自分の行を合流させる）
+        """
         env = stub_hostname_env(self._env(), self.root, SHORT_HOSTNAME_STUB % ("test-host", "test-host"))
         r = self.publish(env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
         p = self.last_payload()
-        self.assertEqual(p["machine_id"], "test-host")
+        self.assertEqual(p["machine_id"], "m-" + hmac8("test-host"))
+        self.assertNotEqual(p["machine_id"],
+                            "m-" + hashlib.sha256(b"test-host").hexdigest()[:8], "salt が効いていない")
+        self.assertNotIn("test-host", (self.root / ".claude" / "events.jsonl").read_text(encoding="utf-8"))
         self.assertNotIn("machine-id", p["measurement_gaps"])
 
+    def test_machine_id_is_the_configured_label(self):
+        """明示 label（`m1` / `m2`）があればそれを使う。hostname が取れなくても決まる."""
+        (self.review_config / "machine-label").write_text("m2\n", encoding="utf-8")
+        env = stub_hostname_env(self._env(), self.root, "exit 1\n")
+        r = self.publish(env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertEqual(p["machine_id"], "m2")
+        self.assertNotIn("machine-id", p["measurement_gaps"])
+
+    def test_a_label_that_is_not_label_shaped_is_not_used_nor_echoed(self):
+        """hostname を label に書いてしまった回に生の値へ戻さない。値そのものも WARN に出さない."""
+        (self.review_config / "machine-label").write_text("AcmeCorp-host\n", encoding="utf-8")
+        env = stub_hostname_env(self._env(), self.root, SHORT_HOSTNAME_STUB % ("test-host", "test-host"))
+        r = self.publish(env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.last_payload()["machine_id"], "m-" + hmac8("test-host"))
+        self.assertIn("machine-label", r.stderr)
+        self.assertNotIn("AcmeCorp-host", r.stderr + r.stdout)
+
+    def test_the_salt_is_created_once_and_reused(self):
+        """salt が無ければ初回に乱数で作り（0600）、以後は同じ値を使う（label が回ごとに変わらない）."""
+        (self.review_config / "salt").unlink()
+        env = stub_hostname_env(self._env(), self.root, SHORT_HOSTNAME_STUB % ("test-host", "test-host"))
+        self.publish(env=env)
+        first = self.last_payload()["machine_id"]
+        salt_file = self.review_config / "salt"
+        salt = salt_file.read_text(encoding="ascii").strip()
+        self.assertRegex(salt, r"^[0-9a-f]{64}$")
+        self.assertNotEqual(salt, TEST_SALT)
+        self.assertEqual(salt_file.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(first, "m-" + hmac8("test-host", salt))
+        self.publish(env=env)
+        self.assertEqual(self.last_payload()["machine_id"], first)
+
+    def test_an_unsavable_salt_is_a_gap_not_a_throwaway_label(self):
+        """salt を保存できない回は null + gap。**その場限りの乱数で label を作らない**（回ごとに別マシンに見える）."""
+        blocker = self.root / "not-a-dir"
+        blocker.write_text("", encoding="utf-8")
+        env = stub_hostname_env(self._env(CLAUDE_REVIEW_CONFIG_DIR=str(blocker / "cfg")), self.root,
+                                SHORT_HOSTNAME_STUB % ("test-host", "test-host"))
+        r = self.publish(env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = self.last_payload()
+        self.assertIsNone(p["machine_id"])
+        self.assertIn("machine-id", p["measurement_gaps"])
+
     def test_unavailable_hostname_is_a_gap_not_a_failure(self):
-        """取れない回は null + gap。**止めると計測が丸ごと消える**."""
+        """label も無く hostname も取れない回は null + gap。**止めると計測が丸ごと消える**."""
         env = stub_hostname_env(self._env(), self.root, "exit 1\n")
         r = self.publish(env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -574,10 +651,10 @@ class ProvenanceInjectionTest(ScriptTestBase):
 
     def test_caller_supplied_values_are_overwritten(self):
         """**自己申告させない**（版マーカーと同じ方式）。渡されてもスクリプト側が勝つ."""
-        env = stub_hostname_env(self._env(), self.root, "echo test-host\n")
-        self.publish(dict(BASE_PAYLOAD, machine_id="fake", plugin_version="0.0.0"), env=env)
+        (self.review_config / "machine-label").write_text("m1\n", encoding="utf-8")
+        self.publish(dict(BASE_PAYLOAD, machine_id="fake", plugin_version="0.0.0"))
         p = self.last_payload()
-        self.assertEqual(p["machine_id"], "test-host")
+        self.assertEqual(p["machine_id"], "m1")
         self.assertEqual(p["plugin_version"], plugin_version())
 
     def _publish_detached(self, manifest: dict | None) -> dict:
@@ -598,6 +675,80 @@ class ProvenanceInjectionTest(ScriptTestBase):
         p = self._publish_detached({"version": ""})
         self.assertIsNone(p["plugin_version"])
         self.assertIn("plugin-version", p["measurement_gaps"])
+
+
+class PostPublishHookTest(ScriptTestBase):
+    """publish 直後の同期フック（`<設定 dir>/post-publish`）.
+
+    計測ストアへの送り出しを手で回していて反映が遅れていたので、publish を契機に同期を蹴る。
+    **publish はフックを待たない・結果を見ない**（遅くても失敗しても publish は成功のまま）。
+    """
+
+    #: 起動されたら引数を書き、`release` が置かれるまで（最大 20 秒）居座るフック
+    HOOK = """#!/bin/sh
+printf '%s\\n' "$1" > "{marker}"
+i=0
+while [ ! -f "{release}" ] && [ $i -lt 200 ]; do sleep 0.1; i=$((i + 1)); done
+echo done >> "{marker}"
+"""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.marker = self.root / "hook-ran"
+        self.release = self.root / "hook-release"
+        self.hook = self.review_config / "post-publish"
+        # 居座ったフックを残さない（run-tests.py が残留プロセスとして数える）
+        self.addCleanup(self.release.write_text, "", encoding="utf-8")
+
+    def _install(self, body: str, executable: bool = True) -> None:
+        self.hook.write_text(body, encoding="utf-8")
+        self.hook.chmod(0o755 if executable else 0o644)
+
+    def _wait_for(self, path: Path, seconds: float = 10.0) -> bool:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if path.is_file() and path.read_text(encoding="utf-8").strip():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_the_hook_runs_detached_and_publish_does_not_wait(self):
+        """フックが居座っている間に publish が返る（標準出力のパイプも握らない）."""
+        self._install(self.HOOK.format(marker=self.marker, release=self.release))
+        started = time.monotonic()
+        r = self.publish()
+        elapsed = time.monotonic() - started
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertLess(elapsed, 15, "publish がフックの終了を待っている")
+        self.assertTrue(self._wait_for(self.marker), "フックが起動していない")
+        self.assertEqual(self.marker.read_text(encoding="utf-8").splitlines(),
+                         [str(self.root / ".claude" / "events.jsonl")], "書込先を引数で渡していない")
+        self.release.write_text("", encoding="utf-8")
+        deadline = time.monotonic() + 10
+        while "done" not in self.marker.read_text(encoding="utf-8") and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(len(self.events()), 1)
+
+    def test_a_failing_hook_does_not_fail_publish(self):
+        self._install("#!/bin/sh\necho ran > \"%s\"\nexit 3\n" % self.marker)
+        r = self.publish()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self._wait_for(self.marker), "フックが起動していない")
+        self.assertEqual(len(self.events()), 1)
+
+    def test_a_non_executable_hook_is_not_run(self):
+        self._install("#!/bin/sh\necho ran > \"%s\"\n" % self.marker, executable=False)
+        r = self.publish()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(self.events()), 1)
+        self.assertFalse(self._wait_for(self.marker, seconds=1.5), "実行権の無いフックを起動した")
+
+    def test_dry_run_does_not_run_the_hook(self):
+        """publish していない回は同期を蹴らない（dry-run・publish 失敗）."""
+        self._install("#!/bin/sh\necho ran > \"%s\"\n" % self.marker)
+        r = self.publish(BASE_PAYLOAD, "code-review:self-review", "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self._wait_for(self.marker, seconds=1.5), "dry-run でフックを起動した")
 
 
 class SkepticLaunchValidationTest(ScriptTestBase):
@@ -4394,6 +4545,11 @@ class RetroExplicitLogsTest(ScriptTestBase):
         self.assertEqual(res.returncode, 0, res.stderr)
         return res.stdout
 
+    @staticmethod
+    def shown(log: Path) -> str:
+        """`<repo>/.claude/events.jsonl` の表示（リポジトリのパスを HMAC に伏せる）."""
+        return "<repo sha=%s>/.claude/events.jsonl" % hmac8(os.path.realpath(log.parent.parent))
+
     def test_sums_events_across_logs(self):
         a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
         b = self.write_log("repo-b/.claude/events.jsonl", self.base_rows(3), start=10)
@@ -4406,15 +4562,16 @@ class RetroExplicitLogsTest(ScriptTestBase):
         b = self.write_log("repo-b/.claude/events.jsonl", self.base_rows(3), start=10)
         out = self.retro("--logs", str(a), str(b))
         self.assertIn("ログ 2 本", out)
-        self.assertIn("`%s` … 2 件" % a, out)
-        self.assertIn("`%s` … 3 件" % b, out)
+        self.assertIn("`%s` … 2 件" % self.shown(a), out)
+        self.assertIn("`%s` … 3 件" % self.shown(b), out)
+        self.assertNotEqual(self.shown(a), self.shown(b), "リポジトリが別なのに同じ表示になっている")
 
     def test_a_log_with_no_samples_is_still_listed(self):
         """0 件のログを黙って消さない（「見ていない」と「見たが 0 件」は別）."""
         a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
         empty = self.write_log("repo-b/.claude/events.jsonl", [])
         out = self.retro("--logs", str(a), str(empty))
-        self.assertIn("`%s` … 0 件" % empty, out)
+        self.assertIn("`%s` … 0 件" % self.shown(empty), out)
 
     def test_the_same_event_in_two_files_is_counted_once(self):
         """worktree へコピーされた events.jsonl は同一イベントを持つ（実測: 3 本が同じ 70 件）."""
@@ -4425,7 +4582,7 @@ class RetroExplicitLogsTest(ScriptTestBase):
         out = self.retro("--logs", str(a), str(copy))
         self.assertIn("n=3", out)
         self.assertIn("重複イベント除外 3 件", out)
-        self.assertIn("`%s` … 0 件" % copy, out)
+        self.assertIn("`%s` … 0 件" % self.shown(copy), out)
 
     def test_the_same_path_twice_is_read_once(self):
         """**合計が n を超える表示を作らない**。glob が重なるだけで起きる."""
@@ -4439,7 +4596,8 @@ class RetroExplicitLogsTest(ScriptTestBase):
         b = self.write_log("repo-b/.claude/events.jsonl", self.base_rows(3), start=10)
         got = json.loads(self.retro("--logs", str(a), str(b), "--json"))
         self.assertEqual(got["n"], 5)
-        self.assertEqual(got["sources"], [{"path": str(a), "n": 2}, {"path": str(b), "n": 3}])
+        self.assertEqual(got["sources"], [{"path": self.shown(a), "n": 2}, {"path": self.shown(b), "n": 3}])
+        self.assertNotIn("warning", got)
         self.assertEqual(got["sources_dropped_duplicates"], 0)
 
     def test_flags_after_logs_are_still_parsed(self):
@@ -4479,14 +4637,91 @@ class RetroExplicitLogsTest(ScriptTestBase):
         a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(2))
         got = json.loads(self.retro("--logs", str(a), "--json"))
         self.assertEqual(got["n"], 2)
-        self.assertEqual([r["path"] for r in got["sources"]], [str(a)])
+        self.assertEqual([r["path"] for r in got["sources"]], [self.shown(a)])
 
     def test_discovery_still_reports_its_source(self):
         """`--logs` を使わない既定の経路でも母集団は出す."""
         self.write_log(".claude/events.jsonl", self.base_rows(3))
         out = self.retro()
         self.assertIn("ログ 1 本", out)
-        self.assertIn(".claude/events.jsonl` … 3 件", out)
+        self.assertIn("`%s` … 3 件" % self.shown(self.root / ".claude" / "events.jsonl"), out)
+
+    # ---- 母集団行のパスを伏せる（生のパスは `--show-paths` のときだけ）----------------
+    def test_raw_paths_are_not_printed(self):
+        """**母集団行は issue に貼られる**。リポジトリのパス（ホーム・リポジトリ名）を出さない."""
+        a = self.write_log("AcmeCorp-app/.claude/events.jsonl", self.base_rows(2))
+        for out in (self.retro("--logs", str(a)), self.retro("--logs", str(a), "--json")):
+            self.assertIn(self.shown(a), out)
+            self.assertNotIn("AcmeCorp-app", out)
+            self.assertNotIn(str(self.root), out)
+            self.assertNotIn("生のパスを出している", out)
+
+    def test_show_paths_prints_raw_paths_behind_a_warning(self):
+        """調査用の `--show-paths` は生のパスを出し、**出力の先頭**で公開先に貼らないと言う."""
+        a = self.write_log("AcmeCorp-app/.claude/events.jsonl", self.base_rows(2))
+        out = self.retro("--logs", str(a), "--show-paths")
+        self.assertTrue(out.startswith("> ⚠️ **生のパスを出している（--show-paths）"), out[:200])
+        self.assertIn("公開先に貼らない", out.splitlines()[0])
+        self.assertIn("`%s` … 2 件" % a, out)
+        got = json.loads(self.retro("--logs", str(a), "--show-paths", "--json"))
+        self.assertEqual(next(iter(got)), "warning", "JSON の先頭に注記が無い")
+        self.assertIn("公開先に貼らない", got["warning"])
+        self.assertEqual(got["sources"], [{"path": str(a), "n": 2}])
+
+    def test_show_paths_warns_on_an_empty_population_too(self):
+        a = self.write_log("repo-a/.claude/events.jsonl", self.base_rows(1))
+        out = self.retro("--logs", str(a), "--show-paths", "--since", "2099-01-01")
+        self.assertTrue(out.startswith("> ⚠️ **生のパスを出している"), out[:200])
+        self.assertIn("対象サンプルが 0 件", out)
+        self.assertIn("`%s` … 0 件" % a, out)
+        got = json.loads(self.retro("--logs", str(a), "--show-paths", "--since", "2099-01-01", "--json"))
+        self.assertEqual(next(iter(got)), "warning")
+
+    def test_store_files_are_shown_by_label_under_tilde(self):
+        """計測ストアのファイル（旧 gist の `<hostname>.jsonl` を含む）は label のファイル名と `~` で出す."""
+        home = self.root / "home"
+        store = home / ".claude" / "review-metrics"
+        own_raw = self.write_log(str((store / "retro-host.jsonl").relative_to(self.root)), self.base_rows(1))
+        other_raw = self.write_log(str((store / "AcmeHost01.jsonl").relative_to(self.root)),
+                                   self.base_rows(1), start=5)
+        labeled = self.write_log(str((store / "events" / "m2.jsonl").relative_to(self.root)),
+                                 self.base_rows(1), start=10)
+        (self.review_config / "machine-label").write_text("m1\n", encoding="utf-8")
+        env = stub_hostname_env(self._env(HOME=str(home)), self.root,
+                                SHORT_HOSTNAME_STUB % ("retro-host", "retro-host"))
+        res = self.run_script(RETRO, "--logs", str(own_raw), str(other_raw), str(labeled), env=env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        out = res.stdout
+        self.assertIn("`~/.claude/review-metrics/m1.jsonl` … 1 件", out)
+        self.assertIn("`~/.claude/review-metrics/m-%s.jsonl` … 1 件" % hmac8("AcmeHost01"), out)
+        self.assertIn("`~/.claude/review-metrics/events/m2.jsonl` … 1 件", out)
+        for raw in ("retro-host", "AcmeHost01", str(home)):
+            self.assertNotIn(raw, out)
+
+    def test_store_outside_home_keeps_its_absolute_dir(self):
+        """`$HOME` の外にある計測ストアは dir をそのまま出す（`~` に置き換えるのは HOME 配下だけ）."""
+        store = self.root / "elsewhere" / "review-metrics"
+        log = self.write_log(str((store / "m3.jsonl").relative_to(self.root)), self.base_rows(1))
+        res = self.run_script(RETRO, "--logs", str(log), env=self._env(HOME=str(self.root / "home")))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("`%s/m3.jsonl` … 1 件" % store, res.stdout)
+
+    def test_look_alike_paths_are_not_taken_for_repos_or_stores(self):
+        """`events.jsonl` でも `.claude/` 直下でなければリポジトリ扱いしない。`events/` でも計測ストアの下でなければ
+        ストア扱いしない（どちらもファイル名ごと伏せる）."""
+        for rel in ("logs/events.jsonl", "AcmeCorp/events/AcmeHost01.jsonl", "review-metrics/sub/m1.jsonl"):
+            with self.subTest(rel=rel):
+                log = self.write_log(rel, self.base_rows(1))
+                out = self.retro("--logs", str(log))
+                self.assertIn("`<log sha=%s>` … 1 件" % hmac8(str(log)), out)
+                self.assertNotIn("AcmeCorp", out)
+
+    def test_other_files_are_hidden_entirely(self):
+        """`.claude/events.jsonl` でも計測ストアでもないファイルは名前ごと伏せる（名前に何が入るか分からない）."""
+        log = self.write_log("AcmeCorp-merged.jsonl", self.base_rows(2))
+        out = self.retro("--logs", str(log))
+        self.assertIn("`<log sha=%s>` … 2 件" % hmac8(str(log)), out)
+        self.assertNotIn("AcmeCorp", out)
 
 
 class RetroProvenanceTest(ScriptTestBase):
@@ -4497,18 +4732,19 @@ class RetroProvenanceTest(ScriptTestBase):
     """
 
     ROWS = [
-        {"machine_id": "a", "plugin_version": "2.10.0"},
-        {"machine_id": "a", "plugin_version": "2.9.0"},
-        {"machine_id": "a", "plugin_version": "2.10.0"},
+        {"machine_id": "m1", "plugin_version": "2.10.0"},
+        {"machine_id": "m1", "plugin_version": "2.9.0"},
+        {"machine_id": "m1", "plugin_version": "2.10.0"},
         # 件数が同じマシンは名前順。**挿入順を名前の逆にしておく**（挿入順のままでも通る並べ方を殺す）
-        {"machine_id": "c", "plugin_version": "2.10.0"},
-        {"machine_id": "b", "plugin_version": "2.10.0"},
+        {"machine_id": "m3", "plugin_version": "2.10.0"},
+        {"machine_id": "m2", "plugin_version": "2.10.0"},
         {},                                   # 出所フィールドを持たない旧イベント
         {"machine_id": "", "plugin_version": 7},   # 空文字・非文字列も「未記録」に倒す
     ]
 
     def setUp(self) -> None:
         super().setUp()
+        (self.review_config / "machine-label").write_text("m7\n", encoding="utf-8")
         self.env = stub_hostname_env(self._env(), self.root,
                                      SHORT_HOSTNAME_STUB % ("retro-host", "retro-host"))
 
@@ -4530,24 +4766,25 @@ class RetroProvenanceTest(ScriptTestBase):
 
     def test_header_names_the_retro_version_and_machine(self):
         out = self._retro("--logs", str(self._log(self.ROWS)))
-        self.assertIn("- **集計**: review-retro v%s @ `retro-host`" % plugin_version(), out)
+        self.assertIn("- **集計**: review-retro v%s @ `m7`" % plugin_version(), out)
+        self.assertNotIn("retro-host", out)
 
     def test_population_is_broken_down_by_machine_and_version(self):
         """版は数値順で新しい方から（文字列順だと 2.9.0 が 2.10.0 の上に来る）。未記録は末尾."""
         out = self._retro("--logs", str(self._log(self.ROWS)))
-        self.assertIn("- **マシン / 版**: `a` 3 件（v2.10.0 2 / v2.9.0 1） / `b` 1 件（v2.10.0 1）"
-                      " / `c` 1 件（v2.10.0 1） / `未記録` 2 件（版未記録 2）", out)
+        self.assertIn("- **マシン / 版**: `m1` 3 件（v2.10.0 2 / v2.9.0 1） / `m2` 1 件（v2.10.0 1）"
+                      " / `m3` 1 件（v2.10.0 1） / `未記録` 2 件（版未記録 2）", out)
 
     def test_json_carries_the_provenance(self):
         got = json.loads(self._retro("--logs", str(self._log(self.ROWS)), "--json"))
         prov = got["provenance"]
         self.assertEqual(prov["retro_version"], plugin_version())
-        self.assertEqual(prov["retro_machine_id"], "retro-host")
+        self.assertEqual(prov["retro_machine_id"], "m7")
         self.assertEqual(prov["machines"][0],
-                         {"machine_id": "a", "n": 3,
+                         {"machine_id": "m1", "n": 3,
                           "plugin_versions": [{"version": "2.10.0", "n": 2},
                                               {"version": "2.9.0", "n": 1}]})
-        self.assertEqual([m["machine_id"] for m in prov["machines"]], ["a", "b", "c", None])
+        self.assertEqual([m["machine_id"] for m in prov["machines"]], ["m1", "m2", "m3", None])
         self.assertEqual(prov["machines"][-1],
                          {"machine_id": None, "n": 2, "plugin_versions": [{"version": None, "n": 2}]})
 
@@ -4555,8 +4792,8 @@ class RetroProvenanceTest(ScriptTestBase):
         """出所の欠測は既定の「打点箇所の見直し」ではなく出所注入を指す（打点とは無関係）."""
         rows = [{"measurement_gaps": ["machine-id", "plugin-version"]} for _ in range(5)]
         sig = self.signals(self._retro("--logs", str(self._log(rows))))
-        self.assertIn("計測マーカー `machine-id` の欠測が 100%（5/5）。publish 時に `hostname -s` が"
-                      "値を返さなかった", sig)
+        self.assertIn("計測マーカー `machine-id` の欠測が 100%（5/5）。publish 時にマシンの label を"
+                      "決められなかった", sig)
         self.assertIn("計測マーカー `plugin-version` の欠測が 100%（5/5）。publish スクリプト自身の "
                       "`plugin.json` を読めなかった", sig)
 
@@ -4566,7 +4803,7 @@ class RetroProvenanceTest(ScriptTestBase):
         out = self._retro("--logs", str(self._log(self.ROWS)), "--min-plugin-version", "2.10.0")
         self.assertIn("review:completed n=4）", out)
         self.assertIn(" / 絞り込み: plugin_version 2.10.0 以上（版なし 2 件・それより古い 1 件を除外）", out)
-        self.assertIn("- **マシン / 版**: `a` 2 件（v2.10.0 2） / `b` 1 件（v2.10.0 1） / `c` 1 件（v2.10.0 1）",
+        self.assertIn("- **マシン / 版**: `m1` 2 件（v2.10.0 2） / `m2` 1 件（v2.10.0 1） / `m3` 1 件（v2.10.0 1）",
                       out)
 
     def test_a_short_version_is_padded(self):
@@ -4599,7 +4836,7 @@ class RetroProvenanceTest(ScriptTestBase):
         res = self.run_script(scripts / "review-retro.sh", "--logs", str(self._log(self.ROWS)),
                               env=self.env)
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertIn("- **集計**: review-retro 版不明 @ `retro-host`", res.stdout)
+        self.assertIn("- **集計**: review-retro 版不明 @ `m7`", res.stdout)
         # テキストでは空文字も「版不明」に見えるので、機械可読側で null に倒れていることまで見る
         res = self.run_script(scripts / "review-retro.sh", "--logs", str(self._log(self.ROWS)),
                               "--json", env=self.env)
@@ -4610,9 +4847,97 @@ class RetroProvenanceTest(ScriptTestBase):
         log = self._log(self.ROWS)
         out = self._retro("--logs", str(log), "--since", "2099-01-01")
         self.assertIn("対象サンプルが 0 件", out)
-        self.assertIn("- **集計**: review-retro v%s @ `retro-host`" % plugin_version(), out)
+        self.assertIn("- **集計**: review-retro v%s @ `m7`" % plugin_version(), out)
         got = json.loads(self._retro("--logs", str(log), "--since", "2099-01-01", "--json"))
         self.assertEqual(got["provenance"]["machines"], [])
+
+
+class RetroMachineAliasTest(ScriptTestBase):
+    """計測ストアに残る生の `machine_id`（label 導入前の `hostname -s`）を**表示の時点で**置き換える.
+
+    ストアは append-only で過去行を書き換えないので、読み側が置き換えないと retro の出所行から
+    生の hostname が公開 issue に出続ける（実測で公開 issue の該当の大半がこの経路だった）.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.env = stub_hostname_env(self._env(), self.root,
+                                     SHORT_HOSTNAME_STUB % ("retro-host", "retro-host"))
+
+    def _log(self, rows: list[dict]) -> Path:
+        path = self.root / "logs" / "events.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(
+            json.dumps({"ts": "2026-08-%02dT00:00:00Z" % (i + 1), "plugin": "code-review:self-review",
+                        "event": "review:completed",
+                        "payload": {"effort": "high", "size_tier": "medium",
+                                    "measurement_gaps": [], **r}}, ensure_ascii=False)
+            for i, r in enumerate(rows)) + "\n", encoding="utf-8")
+        return path
+
+    def _retro(self, rows: list[dict], *args: str) -> str:
+        res = self.run_script(RETRO, "--logs", str(self._log(rows)), *args, env=self.env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout
+
+    def test_this_machines_raw_hostname_joins_its_label(self):
+        """自分の生の値は自分の label に合流する（同じマシンが 2 行に割れない）."""
+        (self.review_config / "machine-label").write_text("m1\n", encoding="utf-8")
+        rows = [{"machine_id": "retro-host", "plugin_version": "2.10.0"}] * 2 + \
+               [{"machine_id": "m1", "plugin_version": "2.10.0"}]
+        out = self._retro(rows)
+        self.assertIn("- **マシン / 版**: `m1` 3 件（v2.10.0 3）", out)
+        self.assertNotIn("retro-host", out)
+
+    def test_other_raw_hostnames_become_salted_hmacs(self):
+        """label の形でない他の生の値は `m-` + HMAC(自分の salt) に。テキストにも JSON にも生の値を出さない."""
+        rows = [{"machine_id": "AcmeHost01", "plugin_version": "2.10.0"}] * 2
+        alias = "m-" + hmac8("AcmeHost01")
+        out = self._retro(rows)
+        self.assertIn("`%s` 2 件" % alias, out)
+        self.assertNotEqual(alias, "m-" + hashlib.sha256(b"AcmeHost01").hexdigest()[:8])
+        got = self._retro(rows, "--json")
+        self.assertEqual([m["machine_id"] for m in json.loads(got)["provenance"]["machines"]], [alias])
+        for text in (out, got):
+            self.assertNotIn("AcmeHost01", text)
+
+    def test_the_default_label_and_the_raw_hostname_of_this_machine_merge(self):
+        """label 未設定のマシンでは、既定 label と label 導入前の生の値が同じ 1 行になる."""
+        own = "m-" + hmac8("retro-host")
+        rows = [{"machine_id": "retro-host", "plugin_version": "2.10.0"},
+                {"machine_id": own, "plugin_version": "2.10.0"}]
+        out = self._retro(rows)
+        self.assertIn("- **集計**: review-retro v%s @ `%s`" % (plugin_version(), own), out)
+        self.assertIn("- **マシン / 版**: `%s` 2 件（v2.10.0 2）" % own, out)
+
+    def test_a_label_set_later_absorbs_the_default_label_rows(self):
+        """既定 label で publish した後に明示 label を置いても、同じマシンの行は明示 label にまとまる."""
+        (self.review_config / "machine-label").write_text("m1\n", encoding="utf-8")
+        rows = [{"machine_id": "m-" + hmac8("retro-host"), "plugin_version": "2.10.0"},
+                {"machine_id": "m1", "plugin_version": "2.10.0"}]
+        self.assertIn("- **マシン / 版**: `m1` 2 件（v2.10.0 2）", self._retro(rows))
+
+    def test_retro_creates_the_salt_when_missing_and_keeps_aliases_stable(self):
+        (self.review_config / "salt").unlink()
+        rows = [{"machine_id": "AcmeHost01", "plugin_version": "2.10.0"}]
+        first = self._retro(rows)
+        salt = (self.review_config / "salt").read_text(encoding="ascii").strip()
+        self.assertIn("`m-%s` 1 件" % hmac8("AcmeHost01", salt), first)
+        self.assertEqual(self._retro(rows), first)
+
+    def test_an_unsavable_salt_still_hides_raw_values(self):
+        """salt を保存できない環境でも生の値は出さない（その実行の間だけの乱数で HMAC を取る）."""
+        blocker = self.root / "not-a-dir"
+        blocker.write_text("", encoding="utf-8")
+        env = stub_hostname_env(self._env(CLAUDE_REVIEW_CONFIG_DIR=str(blocker / "cfg")), self.root,
+                                SHORT_HOSTNAME_STUB % ("retro-host", "retro-host"))
+        rows = [{"machine_id": "retro-host"}, {"machine_id": "AcmeHost01"}, {"machine_id": "AcmeHost01"}]
+        res = self.run_script(RETRO, "--logs", str(self._log(rows)), env=env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertRegex(res.stdout, r"\*\*マシン / 版\*\*: `m-[0-9a-f]{8}` 2 件（版未記録 2） / "
+                                     r"`m-[0-9a-f]{8}` 1 件（版未記録 1）")
+        for raw in ("retro-host", "AcmeHost01"):
+            self.assertNotIn(raw, res.stdout)
 
 
 class RetroScopeNoteTest(ScriptTestBase):
@@ -4647,6 +4972,8 @@ class RetroScopeNoteTest(ScriptTestBase):
         self.assertIn("母集団はこのリポジトリのログに限られている", out)
         self.assertIn("--logs", out, "合算する手段を案内していない")
         self.assertIn("events.jsonl", out, "パス一覧の作り方を出していない")
+        self.assertIn("公開先（issue・PR・gist・チャット）に貼らない", out)
+        self.assertIn("リポジトリ名・PR 番号・ブランチ名・Linear ID を置き換える", out)
 
     def test_the_note_also_appears_when_there_are_no_samples(self):
         """**0 件の回が最も誤読されやすい**（「まだ回っていない」と読まれる）."""

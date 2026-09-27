@@ -60,6 +60,19 @@ DIRS=(${REVIEW_PROJECT_DIRS[@]+"${REVIEW_PROJECT_DIRS[@]}"})
 # 候補ディレクトリ横断で .jsonl を集める（`ls -t` に全件渡して大域的な新しい順にする。
 # ディレクトリごとに `ls -t | head -1` すると候補間の順序が失われる）
 FILES=()
+# 診断に出すディレクトリは `$HOME` を `~` にする（貼られた診断にユーザー名入りの絶対パスを残さない。
+# slug にはリポジトリのパスが入るので、診断出力そのものも公開先には貼らない）
+_tilde_dirs() {
+  local _d _home="${HOME:-}"
+  _home="${_home%/}"   # HOME=/ は空に倒す（`/` 配下を全部 `~` と出さない）
+  for _d in ${DIRS[@]+"${DIRS[@]}"}; do
+    if [ -n "$_home" ] && [ "${_d#"$_home"/}" != "$_d" ]; then
+      printf '  ~/%s\n' "${_d#"$_home"/}"
+    else
+      printf '  %s\n' "$_d"
+    fi
+  done
+}
 for _d in "${DIRS[@]}"; do
   for _f in "$_d"/*.jsonl; do [ -f "$_f" ] && FILES+=("$_f"); done
 done
@@ -69,7 +82,7 @@ if [ "$LIST" = "1" ]; then
     ls -lt "${FILES[@]}" | head -20
   else
     printf 'セッションが見つからない:\n' >&2
-    printf '  %s\n' "${DIRS[@]}" >&2
+    _tilde_dirs >&2
   fi
   exit 0
 fi
@@ -78,7 +91,7 @@ if [ -z "$SESSION" ] && [ ${#FILES[@]} -gt 0 ]; then
 fi
 [ -n "$SESSION" ] && [ -f "$SESSION" ] || {
   echo "FATAL: transcript が見つからない（--session で指定するか --list で確認）。探索したディレクトリ:" >&2
-  printf '  %s\n' "${DIRS[@]}" >&2
+  _tilde_dirs >&2
   exit 1; }
 
 # **サブエージェントの transcript は別の project slug にあることがある**（GitHub issue #104）。

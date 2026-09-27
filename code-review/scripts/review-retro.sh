@@ -13,6 +13,12 @@
 #   review-retro.sh --min-plugin-version <版>   # その版以上で publish された回だけ（#210）
 #   review-retro.sh --json              # 機械可読（**0 件・ログ不在でも必ず JSON を返す**）
 #   review-retro.sh --logs ~/Projects/*/.claude/events.jsonl   # 複数ログを合算（issue #160）
+#   review-retro.sh --logs ... --show-paths   # 母集団行に生のパスを出す（手元の調査用。公開先に貼らない）
+#
+# **出力にマシンの生の名前とリポジトリのパスを出さない**（issue に貼る規約がある行なので）。
+# マシンは label（`lib/machine_label.py`）で出し、計測ストアに残る過去の生の `machine_id` も表示の時点で
+# 置き換える。母集団行のパスは `<repo sha=xxxxxxxx>/.claude/events.jsonl`・計測ストアは label のファイル名で
+# 出す。生のパスが要るときだけ `--show-paths` を付ける（出力の先頭に「公開先に貼らない」と出す）。
 #
 # **`--logs` は明示指定のみ**（探索はしない）。指定したファイルが読めなければ exit 2 で止める
 # — 手作業の連結を置き換えるのが目的なので、**タイプミスを「サンプルが少ない」に化けさせない**。
@@ -27,12 +33,13 @@
 # `== N` にすると次の版 bump でセクションが無音で消える）。
 set -uo pipefail
 
-SINCE=""; LAST=""; AS_JSON=0; EXPLICIT_LOGS=(); MIN_PV=""
+SINCE=""; LAST=""; AS_JSON=0; EXPLICIT_LOGS=(); MIN_PV=""; SHOW_PATHS=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --since) [ $# -ge 2 ] || { echo "FATAL: --since に値が必要" >&2; exit 2; }; SINCE="$2"; shift 2 ;;
     --last)  [ $# -ge 2 ] || { echo "FATAL: --last に値が必要" >&2; exit 2; }; LAST="$2"; shift 2 ;;
     --json)  AS_JSON=1; shift ;;
+    --show-paths) SHOW_PATHS=1; shift ;;
     --min-plugin-version)
       [ $# -ge 2 ] || { echo "FATAL: --min-plugin-version に値が必要" >&2; exit 2; }
       # 数字とドットだけ（`v2.10.0` / `2.10.` / `latest` を黙って 0 に丸めると全件が残る）
@@ -94,7 +101,7 @@ REVIEW_SINCE="$SINCE" REVIEW_LAST="${LAST:-0}" REVIEW_JSON="$AS_JSON" \
   REVIEW_MIN_PLUGIN_VERSION="$MIN_PV" \
   REVIEW_LOGS_EXPLICIT="$([ ${#EXPLICIT_LOGS[@]} -gt 0 ] && echo 1 || echo 0)" \
   REVIEW_LIB_DIR="$HERE/lib" \
-  REVIEW_RETRO_MACHINE_ID="$(hostname -s 2>/dev/null)" \
+  REVIEW_SHOW_PATHS="$SHOW_PATHS" \
   REVIEW_RETRO_PLUGIN_JSON="$HERE/../.claude-plugin/plugin.json" \
   python3 - ${REVIEW_EVENT_LOGS[@]+"${REVIEW_EVENT_LOGS[@]}"} <<'PY' || retro_fatal
 import json, os, sys
@@ -108,12 +115,17 @@ from wave_expect import MAX_EXPECTED_WAVES, expected_waves
 from report_counts import lift_nested_report_counts
 from severity_threshold import lift_nested_threshold
 from body_bound import body_bound
+# マシンの label と母集団行のパスの伏せ字化（生の hostname・リポジトリのパスを出さない）
+from machine_label import Aliaser, RAW_PATHS_WARNING
 
 since_raw = os.environ.get("REVIEW_SINCE") or ""
 last_n = int(os.environ.get("REVIEW_LAST") or 0)
 as_json = os.environ.get("REVIEW_JSON") == "1"
 #: `--logs` で明示指定されたか（0 なら今いるリポジトリ由来の自動探索 / GitHub issue #173）
 logs_explicit = os.environ.get("REVIEW_LOGS_EXPLICIT") == "1"
+#: `--show-paths`（母集団行に生のパスを出す。手元の調査用）
+show_paths = os.environ.get("REVIEW_SHOW_PATHS") == "1"
+aliaser = Aliaser()
 
 since = None
 if since_raw:
@@ -169,7 +181,7 @@ for path in source_paths:
             continue
         seen.add(key)
         # **publish が昇格を知らない版で焼かれた入れ子も読み側で回収する**（GitHub issue #238）。
-        # gist は append-only の生イベント保管庫なので過去行は書き換えられない — 読む側で
+        # 計測ストアは append-only の生イベント保管庫なので過去行は書き換えられない — 読む側で
         # 同じ正規化を掛ければ、既に載っている入れ子形が母集団へ戻る。dedup キーは正規化前の
         # payload で作ってある（上）ので、同じ生行は同じキーに畳まれる
         if lift_nested_report_counts(ev.get("payload") or {}) is not None:
@@ -193,7 +205,7 @@ events.sort(key=lambda e: e["ts"])
 # `tokens.session_source` を持たない回は、publish が transcript を「候補 dir の最新 .jsonl」で
 # 推定していた。並行セッションや publish 前の `cd` で**別セッションの tokens / models / dispatch を
 # gap も立てずに**載せており（publish 元 transcript と照合できた 105 件中 3 件）、値はもっともらしい
-# ので層別にそのまま入る。gist は append-only で過去行を直せないので、読み側で外す。
+# ので層別にそのまま入る。計測ストアは append-only で過去行を直せないので、読み側で外す。
 #   ① 同じ `tokens.session` で `since-t0` 系の窓（`first_ts` から publish まで）が重なる 2 回 →
 #      推定で引いた側すべて。どちらが正しい側かは payload だけでは決まらない。id で引いた回は
 #      相手としてだけ数える。`session` 窓は `first_ts` がセッションの先頭なので、同じセッションで
@@ -272,11 +284,15 @@ if since:
 # 版を満たすもの」になり、指定した N 件に満たない
 
 def source_rows(rows):
-    """**集計に実際に入った件数**をログごとに返す（0 件のログも母集団の一部として残す）."""
+    """**集計に実際に入った件数**をログごとに返す（0 件のログも母集団の一部として残す）.
+
+    パスは表示用に伏せる（`lib/machine_label.py` の `Aliaser.path`）。生のパスは `--show-paths` のときだけ
+    """
     counted = {path: 0 for path in source_paths}
     for e in rows:
         counted[e["src"]] = counted.get(e["src"], 0) + 1
-    return [{"path": path, "n": counted[path]} for path in source_paths]
+    return [{"path": path if show_paths else aliaser.path(path), "n": counted[path]}
+            for path in source_paths]
 
 
 def sources_line():
@@ -309,7 +325,23 @@ def scope_note():
             "> 合算するログの一覧を作る:\n"
             "> ```bash\n"
             "> find ~ -maxdepth 6 -name events.jsonl -path '*/.claude/*' -not -path '*/node_modules/*' 2>/dev/null\n"
-            "> ```")
+            "> ```\n"
+            ">\n"
+            "> `find` が出す生のパスは `--logs` に渡すためだけに使い、**公開先（issue・PR・gist・チャット）に"
+            "貼らない**。リポジトリ別の件数や他リポジトリの実例を書くときは、リポジトリ名・PR 番号・"
+            "ブランチ名・Linear ID を置き換える（`リポジトリ A` / `PR #N` / `TEAM-123` のように）")
+
+
+def raw_paths_head():
+    """`--show-paths` の JSON の先頭に置く注記（生のパスが入っていることを機械可読出力でも言う）."""
+    return {"warning": RAW_PATHS_WARNING} if show_paths else {}
+
+
+def print_raw_paths_warning():
+    """`--show-paths` のときだけ、出力の先頭に「公開先に貼らない」を出す."""
+    if show_paths:
+        print("> ⚠️ **%s**" % RAW_PATHS_WARNING)
+        print()
 
 
 # ---- 計測の出所（v2.120.0）----------------------------------------------------
@@ -328,7 +360,8 @@ def _read_version(path):
 
 
 retro_version = _read_version(os.environ.get("REVIEW_RETRO_PLUGIN_JSON") or "")
-retro_machine = (os.environ.get("REVIEW_RETRO_MACHINE_ID") or "").strip() or None
+#: 集計したマシンの label（生の hostname は出さない / `lib/machine_label.py`）
+retro_machine = aliaser.local
 
 
 def _str_or_none(v):
@@ -349,10 +382,15 @@ def _version_key(v):
 
 
 def machine_rows(rows):
-    """母集団をマシン × plugin 版で数える（未記録のマシンは末尾）."""
+    """母集団をマシン × plugin 版で数える（未記録のマシンは末尾）.
+
+    `machine_id` は表示用の label に寄せてから数える。計測ストアには label 導入前の生の hostname が
+    残っているので、自分の生の値は自分の label に、他の生の値は `m-` + HMAC に置き換える（同じマシンの
+    生の値と label の行は 1 つに合流する）
+    """
     by = {}
     for e in rows:
-        vers = by.setdefault(_str_or_none(e["p"].get("machine_id")), {})
+        vers = by.setdefault(aliaser.machine(e["p"].get("machine_id")), {})
         ver = _str_or_none(e["p"].get("plugin_version"))
         vers[ver] = vers.get(ver, 0) + 1
     out = [{"machine_id": mid, "n": sum(vers.values()),
@@ -421,7 +459,7 @@ if last_n:
 
 if not events:
     if as_json:
-        print(json.dumps({"n": 0, "reason": "no-samples-in-range", "signals": [],
+        print(json.dumps({**raw_paths_head(), "n": 0, "reason": "no-samples-in-range", "signals": [],
                           "provenance": provenance_of(events),
                           "sources": source_rows(events),
                           "sources_dropped_duplicates": dup_dropped,
@@ -429,6 +467,7 @@ if not events:
                           "sources_scope": "explicit" if logs_explicit else "this-repo"},
                          ensure_ascii=False))
     else:
+        print_raw_paths_warning()
         print("## レビュー振り返り")
         print("対象サンプルが 0 件。")
         print()
@@ -797,11 +836,11 @@ spans = [(k, median(measured(events, "duration_%s_min" % k)), len(measured(event
 # ---- 4b. synthesis の支配率（GitHub issue #218） ------------------------------
 # `## 14` は `duration_synthesis_min` の用途を**打ち手の切り分け**として書いている（支配的なら
 # メイン側 / そうでなければ wave 側）のに、retro は区間の中央値 1 行しか出していなかった。
-# 中央値 5% の分布で 43% の回（PR #469 / fleet 92 分中 40 分）が起きても、目に入るのは
+# 中央値 5% の分布で 43% の回（fleet 92 分中 40 分）が起きても、目に入るのは
 # fleet と体数だけで、triage-guide `## 7` が禁じる「時間が長いから体数を減らす」に誘導される。
 # 判断基準が doc にあって機械層に無い形は #209 / #214 と同型。
 #
-# 閾値は**実データから決めた**（CLAUDE.md「水準を先に測ってから入れる」/ gist + ローカル合算
+# 閾値は**実データから決めた**（CLAUDE.md「水準を先に測ってから入れる」/ 計測ストア + ローカル合算
 # n=71・2026-09-06）: 中央値 5% / 75% 点 15% / 90% 点 35% / 最大 59%。`SYN_DOMINANT_PCT` 30 は
 # 90% 点付近で、超えたのは 9 件（13%）。⚠️ の水準 `SYN_RATE_HOT` 10 は初回から鳴るが、
 # これは #218 が「外れ値の領域」と呼んだ回そのものなので偽陽性ではない
@@ -1831,7 +1870,8 @@ def gap_hint(g):
                 "t2 を全 agent の回収後に打てているか見直す（orchestration-measurement.md "
                 "`## 14`）。**該当回の `duration_fleet_min` は欠測に倒してある**")
     if g == "machine-id":
-        return ("publish 時に `hostname -s` が値を返さなかった。どのマシンの回か payload から"
+        return ("publish 時にマシンの label を決められなかった（`~/.config/claude-review/machine-label` が無く、"
+                "`hostname -s` が値を返さないか salt を保存できない）。どのマシンの回か payload から"
                 "言えず、マシン間の読み違いを切り分けられない（publish-review-event.sh の出所注入）")
     if g == "plugin-version":
         return ("publish スクリプト自身の `plugin.json` を読めなかった（プラグインの配置が壊れている"
@@ -2011,6 +2051,7 @@ signals.extend(layered_signal(
 # ---- 出力 -----------------------------------------------------------------
 if as_json:
     print(json.dumps({
+        **raw_paths_head(),
         "n": n_all, "n_recent_30d": len(recent), "by_plugin": by_plugin,
         # 母集団の再現性（どのログから何件採ったか / issue #160）
         "sources": source_rows(events), "sources_dropped_duplicates": dup_dropped,
@@ -2103,6 +2144,7 @@ if as_json:
     }, ensure_ascii=False, indent=2))
     sys.exit(0)
 
+print_raw_paths_warning()
 print("## レビュー振り返り（review:completed n=%d）" % n_all)
 print()
 for _line in provenance_lines(events):
