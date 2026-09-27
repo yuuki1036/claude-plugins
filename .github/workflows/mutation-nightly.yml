@@ -16,7 +16,14 @@ name: mutation-nightly
 on:
   schedule:
     - cron: "0 18 * * *"   # 03:00 JST（前日 18:00 UTC）
-  workflow_dispatch:        # 手動起動（範囲は同じく直近 24h）
+  workflow_dispatch:        # 手動起動（範囲は既定で同じく直近 24h）
+    inputs:
+      base:
+        # 打ち切られた回（cancelled）の範囲は翌晩の 24h 窓から外れて二度と回らない。
+        # 取りこぼした範囲を回収するときにだけ起点を指定する
+        description: "比較起点のコミット（空なら直近 24h）"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -44,9 +51,19 @@ jobs:
 
       # 直近 24 時間に入った変更行を対象にする。**24h より古い最新のコミット**を base に
       # 置くことで「昨夜以降に触った行」だけを見る。24h 以内にコミットが無ければ何もしない
+      # 入力は env 経由で渡す（`${{ }}` を run に直接埋めるとシェルに解釈される）
       - name: resolve-base
+        env:
+          INPUT_BASE: ${{ inputs.base }}
         run: |
-          base=$(git rev-list -1 --before="24 hours ago" HEAD)
+          if [ -n "$INPUT_BASE" ]; then
+            if ! base=$(git rev-parse --verify -q "${INPUT_BASE}^{commit}"); then
+              echo "FATAL: 指定した起点を解決できない: ${INPUT_BASE}" >&2
+              exit 1
+            fi
+          else
+            base=$(git rev-list -1 --before="24 hours ago" HEAD)
+          fi
           if [ -z "$base" ] || [ "$base" = "$(git rev-parse HEAD)" ]; then
             echo "直近 24h に変更が無いので skip"
             echo "SKIP=1" >> "$GITHUB_ENV"
@@ -70,8 +87,9 @@ jobs:
             --base "$MUT_BASE" --max 60 --budget-sec 9000 --strict 2>&1 | tee mutation.log
 
       # **失敗を黙って流さない**。Actions の赤は見に行かないと気づけないので issue にする
+      # 起点を解決できずに落ちた回（MUT_BASE が空）は変異を回していないので起票しない
       - name: report
-        if: failure() && env.SKIP != '1'
+        if: failure() && env.SKIP != '1' && env.MUT_BASE != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
