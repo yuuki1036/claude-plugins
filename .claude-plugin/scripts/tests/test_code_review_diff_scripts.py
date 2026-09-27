@@ -1015,5 +1015,40 @@ class TriageDiffBaseTest(DiffBaseFixture):
         self.assertIn("mine.txt", self.diff_paths(res.stdout))
 
 
+DIFF_BASE = PLUGIN / "scripts" / "lib" / "diff-base.sh"
+
+
+class DiffBaseCliTest(DiffBaseFixture):
+    """`bash lib/diff-base.sh <base>` — SKILL 本文でモデルが読む diff を、スクリプトと同じ起点に揃える出口."""
+
+    def test_stale_local_base_prints_the_origin_merge_base_and_warns(self):
+        self.stale_local_main()
+        origin = self.git("rev-parse", "refs/remotes/origin/main").stdout.strip()
+        res = self.run_in(DIFF_BASE, "main")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.splitlines(), ["base=origin/main", f"diff_base={origin}"])
+        self.assertIn("⚠️ base: ローカルの main が origin/main より 2 commits 遅れている", res.stderr)
+
+    def test_up_to_date_base_is_silent(self):
+        self.git("checkout", "-qb", "feature")
+        self.commit_file("mine.txt")
+        res = self.run_in(DIFF_BASE, "main")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.splitlines(), ["base=main", f"diff_base={self.init}"])
+        self.assertEqual(res.stderr, "")
+
+    def test_unresolvable_base_exits_2_without_output(self):
+        res = self.run_in(DIFF_BASE, "no-such-ref")
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("base ref を解決できない", res.stderr)
+        self.assertEqual(res.stdout, "")
+
+    def test_sourcing_prints_nothing(self):
+        """source されたときは黙る（出すと triage-signals.sh の `## meta` に混ざる）. 直接実行の対は上の 3 本."""
+        res = subprocess.run(["bash", "-c", '. "$1" main', "sh", str(DIFF_BASE)], cwd=self.root,
+                             capture_output=True, text=True, env=self._env(), timeout=60)
+        self.assertEqual((res.returncode, res.stdout, res.stderr), (0, "", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

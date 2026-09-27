@@ -205,6 +205,41 @@ class DetectExternalIdsTest(unittest.TestCase):
         self.assertEqual(rc, 0, rows)  # 削除された `// ABC-123` は検出対象外
         self.assertEqual(rows, [])
 
+    def _commit(self, filename: str, body: str) -> str:
+        self._stage(filename, body)
+        self._git("commit", "-q", "-m", filename)
+        return self._git("rev-parse", "HEAD").stdout.strip()
+
+    def _run_base(self, base: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["bash", str(SCRIPT), base], cwd=str(self.root),
+                              capture_output=True, text=True, env=scrub(), timeout=30)
+
+    def test_stale_local_base_does_not_flag_others_comments(self):
+        """ローカルの main が origin/main より遅れていても、他で取り込まれたコメントを拾わない（#253）.
+
+        `main...HEAD` はローカルの main との分岐点から取るので、origin/main から切ったブランチでは
+        他で取り込まれた変更のコメントの ID まで検出していた。
+        """
+        init = self._commit("f.ts", "const x = 1;\n")
+        self._git("branch", "-M", "main")
+        self._git("checkout", "-q", "-b", "tmp")
+        others = self._commit("others.ts", "// OTH-1 他で取り込まれた変更\n")
+        self._git("update-ref", "refs/remotes/origin/main", others)
+        self._git("checkout", "-q", "-b", "feat")
+        self._commit("mine.ts", "// ABC-123 自分の変更\n")
+        self._git("branch", "-f", "main", init)
+        res = self._run_base("main")
+        self.assertEqual(res.returncode, 1, res.stderr)
+        self.assertEqual([json.loads(l)["match"] for l in res.stdout.splitlines() if l.strip()],
+                         ["ABC-123"])
+
+    def test_unresolvable_base_is_undeterminable(self):
+        """解決できない base は exit 2（判定不能）。`git diff` の失敗を「検出なし」の 0 にしない."""
+        self._commit("f.ts", "// ABC-123 対応\n")
+        res = self._run_base("no-such-ref")
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("base ref を解決できない", res.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

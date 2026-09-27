@@ -16,6 +16,8 @@
 # 使い方:
 #   . "$HERE/lib/diff-base.sh"
 #   review_diff_base "$BASE" || { echo "FATAL: ..."; exit 2; }   # どちらの ref も解決できなければ 2
+#   bash lib/diff-base.sh <base>   # 直接実行すると `base=` / `diff_base=` を出す（SKILL 本文で
+#                                  # モデル自身が diff を読む手順を、スクリプトと同じ起点に揃える）
 # 設定する変数:
 #   REVIEW_BASE_REF     使った ref（`<base>` か `origin/<base>`）
 #   REVIEW_BASE_COMMIT  diff の起点のコミット（分岐点。共通の履歴が無ければ ref の先端）
@@ -48,3 +50,12 @@ review_diff_base() {
   fi
   return 0
 }
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  review_diff_base "${1:-}" || { echo "FATAL: base ref を解決できない: ${1:-}" >&2; exit 2; }
+  echo "base=${REVIEW_BASE_REF}"
+  echo "diff_base=${REVIEW_BASE_COMMIT}"
+  if [ -n "$REVIEW_BASE_BEHIND" ]; then
+    echo "WARN: ⚠️ base: ローカルの ${1} が origin/${1} より ${REVIEW_BASE_BEHIND} commits 遅れているので、diff の起点は origin/${1} との分岐点にした（GitHub issue #253）" >&2
+  fi
+fi

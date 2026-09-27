@@ -16,6 +16,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/diff-base.sh
+. "$HERE/lib/diff-base.sh"
 
 command -v git >/dev/null 2>&1 || { echo "detect-external-ids: git not found" >&2; exit 2; }
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "detect-external-ids: not a git repository" >&2; exit 2; }
@@ -40,7 +42,10 @@ else
     BASE="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')"
     [ -z "$BASE" ] && { git rev-parse --verify --quiet main >/dev/null 2>&1 && BASE=main || BASE=master; }
   fi
-  DIFF_CMD=(git diff --unified=0 "${BASE}...HEAD")
+  # 起点はローカルの base の先端でなく HEAD との分岐点（self-review と同じ。lib/diff-base.sh）。
+  # 解決できない base を `git diff` の失敗として 2>/dev/null に流すと「検出なし」の exit 0 に化ける
+  review_diff_base "$BASE" || { echo "detect-external-ids: base ref を解決できない: ${BASE}" >&2; exit 2; }
+  DIFF_CMD=(git diff --unified=0 "${REVIEW_BASE_COMMIT}..HEAD")
 fi
 
 # 空配列の "${PYARGS[@]}" は set -u 下の bash 3.2 で unbound になるので ${arr[@]+...} で守る

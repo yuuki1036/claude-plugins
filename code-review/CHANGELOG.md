@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.131.3] - 2026-09-27
+
+### Fixed
+
+- **comment-polish の diff もローカルの base の先端でなく HEAD との分岐点から取るようにした**（#253 と同じ型）。
+  `detect-external-ids.sh` と手順 1 でモデルが読む diff はどちらも `git diff <BASE>...HEAD` をローカルの ref で取っていたので、
+  ローカルの main が遅れていると、他で取り込まれた変更のコメントまで ID 検出と推敲の対象に混ざっていた
+  - `detect-external-ids.sh` は self-review と同じ `lib/diff-base.sh` で起点を決める。解決できない base は exit 2（判定不能）に
+    した（従来は `git diff` の失敗が捨てられ、「検出なし」の exit 0 になっていた）。commit 前 hook は `--staged` で呼ぶので影響しない
+  - `lib/diff-base.sh` を直接実行すると `base=` / `diff_base=` を出すようにした（ローカルが遅れていれば stderr に `WARN: ⚠️ base:`）。
+    comment-polish の手順 1 はこの `diff_base=` で diff を取る
+
 ## [2.131.2] - 2026-09-27
 
 ### Changed

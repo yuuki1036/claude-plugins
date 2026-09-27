@@ -39,9 +39,12 @@ self-review はレビュー時にコメント推敲提案（B 系統）を**出�
 # base 検出（引数優先。--staged ならステージ済み）
 BASE="${1:-$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')}"
 [ -z "$BASE" ] && BASE=main
+# diff の起点（--staged のときは不要）。ローカルの base の先端ではなく HEAD との分岐点で、
+# ローカルが origin より遅れていれば origin 側から取る（GitHub issue #253）
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/lib/diff-base.sh" "$BASE"
 ```
 
-`--staged` 指定時は `git diff --cached`、無ければ `git diff <BASE>...HEAD` で追加・変更コメントを把握する。
+`--staged` 指定時は `git diff --cached`、無ければ出力の `diff_base=` の値で `git diff <diff_base>..HEAD` を取り、追加・変更コメントを把握する（`git diff <BASE>...HEAD` を直接取らない — ローカルの base が遅れていると、他で取り込まれた変更のコメントまで推敲の対象に混ざる）。`WARN: ⚠️ base:` が出たら報告にその 1 行を載せ、`FATAL:` なら base branch をユーザーに確認する。
 
 ### 2. git 外 ID と Markdown 太字の機械検出
 
@@ -52,7 +55,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-external-ids.sh" "$BASE" ${STAGED:+--
 - 既定は Linear Issue ID（`ABC-123`）と Linear URL を検出する（JSON Lines: `file` / `line` / `match` / `kind`。ID は `kind: "id"`）
 - `--markdown` は**常に付ける**。コメント内の Markdown 太字（`**重要**`）を `kind: "markdown"` で拾う。コードコメントはレンダリングされないので記号がそのまま残る（GitHub issue #231）。JSDoc の `/**`、指数演算子 `a ** b` / `2**3`、`**kwargs` は検出側で除外済み
 - GitHub `#N` は既定で拾わない（正当な why 参照が多く偽陽性になりやすい。実測で確定。`--github` で opt-in）
-- exit 1 = 検出あり / 0 = なし / 2 = 判定不能（git/python 不在。その旨を報告して ID 除去は skip、推敲は続行）
+- exit 1 = 検出あり / 0 = なし / 2 = 判定不能（git/python 不在・base ref を解決できない。その旨を報告して ID 除去は skip、推敲は続行）
 
 ### 3. コメントの推敲（2 観点）
 
