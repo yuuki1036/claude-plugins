@@ -98,6 +98,15 @@ class EventDeduperTest(unittest.TestCase):
         self.assertEqual(d.events(), [(ev({"a": 1}), "x")])
         self.assertEqual((d.dropped, d.conflicts), (1, []))
 
+    def test_lines_differing_only_in_key_order_are_one_event_in_either_order(self):
+        """正規形はキーを整列する。並びだけ違う行を食い違い扱いにして後の行へ差し替えない."""
+        ab, ba = ev({"a": 1, "b": 2}), ev({"b": 2, "a": 1})
+        for rows in (((ab, "x"), (ba, "y")), ((ba, "x"), (ab, "y"))):
+            with self.subTest(first=list(rows[0][0]["payload"])):
+                d = self.run_all(*rows)
+                self.assertEqual([src for _, src in d.events()], ["x"])
+                self.assertEqual((d.dropped, d.conflicts), (1, []))
+
     def test_the_key_is_ts_and_plugin(self):
         d = self.run_all((ev({"a": 1}), "x"), (ev({"a": 1}, ts="2026-08-02T00:00:00Z"), "x"),
                          (ev({"a": 1}, plugin="code-review:review"), "x"))

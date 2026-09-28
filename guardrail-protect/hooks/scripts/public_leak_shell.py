@@ -34,7 +34,7 @@ class Part:
 
     __slots__ = ("kind", "text", "script", "name", "quoted")
 
-    def __init__(self, kind, text="", script=None, name=None, quoted=False):
+    def __init__(self, kind, text="", script=None, name=None, quoted=False):  # mutation-ok: 既定値に頼るのは procsub と引用なしの `…` だけで、Part.quoted を読むのは lit 同士を結合する add_lit だけ
         self.kind = kind
         self.text = text          # lit: 値 / param: 元の表記
         self.script = script      # cmdsub / procsub: 中身の Script

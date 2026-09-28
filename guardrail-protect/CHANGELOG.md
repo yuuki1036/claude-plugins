@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.2] - 2026-09-28
+
+### Changed
+
+- **`public_leak_shell.py` の `Part` の既定値 `quoted=False` に `# mutation-ok` を付けた**（挙動は変わらない / #260）。
+  既定値に頼るのはプロセス置換と引用なしのバッククォートだけで、`Part.quoted` を読むのは lit 同士を結合する
+  `add_lit` だけなので、既定値を反転しても結果が変わらない等価変異だった。あわせて nightly で生存していた
+  残り 3 件（引用なし heredoc の展開判定 / 環境変数で指した場所の自己保護と事前フィルタ）に回帰テストを足した
+
 ## [0.6.1] - 2026-09-27
 
 ### Fixed

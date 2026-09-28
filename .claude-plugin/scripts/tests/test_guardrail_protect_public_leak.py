@@ -336,6 +336,12 @@ class BodyTest(PublicLeakBase):
             with self.subTest(cmd=cmd):
                 self.assertBlocked(self.bash(cmd), "静的に解決できない")
 
+    def test_an_unquoted_heredoc_expands_but_a_quoted_one_is_literal(self):
+        """引用なし区切りの heredoc は本文の `$(…)` を展開するので静的に決まらない。引用付きは字面のまま読む."""
+        cmd = "gh issue create %s -t t -F - <<%s\n$(cat notes.md)\nEOF"
+        self.assertBlocked(self.bash(cmd % (PUB, "EOF")), "静的に解決できない")
+        self.assertPassed(self.bash(cmd % (PUB, "'EOF'")))
+
     def test_unresolvable_body_to_private_passes(self):
         self.assertPassed(self.bash('gh issue create %s -t t --body "$BODY"' % PRIV))
 
@@ -941,6 +947,24 @@ class PreCommitGuardPrefilterTest(HookTestCase):
         self.assertEqual(res.returncode, 0, res)
         self.assertNotIn("Unexpected", res.stderr)
 
+    def test_an_env_path_lets_only_commands_naming_it_reach_the_detector(self):
+        """環境変数で場所を指しても、その名前を含まないコマンドは perl に渡さない（事前フィルタ）.
+
+        perl を「常に検出する」スタブに差し替えて、届いたかを exit code で見る。
+        """
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        alt = Path(tmp.name) / "plugin-copy"
+        shutil.copytree(PLUGIN_ROOT, alt)
+        (alt / "hooks" / "scripts" / "detect-commit-bypass.pl").write_text(
+            'print "stub-detected\\n";\n', encoding="utf-8")
+        env = {"CLAUDE_PLUGIN_ROOT": str(alt), "GUARDRAIL_SENSITIVE_DICT": "/vault/terms-x.txt"}
+        res = self.run_hook({"tool_name": "Bash", "tool_input": {"command": "ls -la"}}, env_extra=env)
+        self.assertEqual(res.returncode, 0, res)
+        res = self.run_hook({"tool_name": "Bash", "tool_input": {"command": "cat /vault/terms-x.txt"}},
+                            env_extra=env)
+        self.assertEqual(res.returncode, 2, "スタブに届いていない（差し替えが効いていない）: %r" % res)
+
 
 class PreConfigGuardProtectionTest(HookTestCase):
     PLUGIN = "guardrail-protect"
@@ -958,6 +982,9 @@ class PreConfigGuardProtectionTest(HookTestCase):
         res = self.run_hook({"tool_name": "Edit", "tool_input": {"file_path": "/vault/terms-x.txt"}},
                             env_extra={"GUARDRAIL_SENSITIVE_DICT": "/vault/terms-x.txt"})
         self.assertEqual(res.returncode, 2, res)
+        res = self.run_hook({"tool_name": "Edit", "tool_input": {"file_path": "/p/src/other.txt"}},
+                            env_extra={"GUARDRAIL_SENSITIVE_DICT": "/vault/terms-x.txt"})
+        self.assertEqual(res.returncode, 0, "変数が設定されているだけで無関係なパスを止めている: %r" % res)
 
     def test_guard_variables_in_shell_rc_or_settings_are_blocked(self):
         for path, key in (("/h/.zshrc", "new_string"), ("/h/.claude/settings.json", "content")):
