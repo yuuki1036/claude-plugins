@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.7.0] - 2026-09-28
+
+### Added
+
+- **zsh-trap-guard を追加**（PreToolUse / Bash / #254）。Bash tool のシェルが zsh のとき、bash の前提で書くと
+  エラーになるか黙って別の値になる書き方を止める: 波括弧なしの展開の直後の `:` + 修飾子の文字
+  （`"$sha:code-review/x"` の `:c`）/ `path`・`status` への代入 / 語頭の `=`（`[ a == b ]`・`echo =====`）/
+  オプション値の引用なしグロブ（`--include=*.sh`・`find -name *.py`）。echo の引数のエスケープは止めず、
+  コンテキストに警告だけ出す。修飾子として読まれる文字は zsh で総当たりして実測した。
+  過去の transcript の Bash 呼び出し 22,307 回で 4 規則は計 410 回当たり（うちグロブ 296 回中 292 回は
+  結果に no matches found）、目視で誤検出は 0 件。解析は public-leak-guard と同じ `public_leak_shell.py`
+  - blocker: 既存の Bash hook 4 本はどれも別の責務を持ち、無関係なコマンドは冒頭で抜ける。zsh の罠は
+    全コマンドが対象なので、同居させると責務と事前フィルタが混ざる
+  - fallback: この hook が無い環境では従来どおり。壊れたコマンドは失敗するか黙って誤った値を返すので、
+    結果を読む側で気づくしかない（fail-open を選んでいるのは、守るのが安全性ではなく結果の正しさだから）
+
 ## [0.6.2] - 2026-09-28
 
 ### Changed

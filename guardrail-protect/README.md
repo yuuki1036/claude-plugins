@@ -203,6 +203,26 @@ review の publish のたびに切り離して実行されるので、agent が�
 （`cat`・`ls`）と、テストの隔離のためにコマンドの前に `CLAUDE_REVIEW_CONFIG_DIR=<使い捨て dir>` を
 置く実行は止めない。これらのファイルは人が Claude の外で置く（手順は code-review と計測リポジトリの README）。
 
+### 6. zsh で壊れる書き方のブロック（zsh-trap-guard）
+
+Bash tool のシェルが zsh のとき（`CLAUDE_CODE_SHELL`、無ければ `SHELL` で判定）、bash の前提で書くと
+エラーになるか黙って別の値になる書き方を `exit 2` で止める（常時有効・opt-in 不要）。シェルが zsh で
+なければ何もしない。
+
+| 規則 | 例 | zsh で起きること |
+|---|---|---|
+| 波括弧なしの展開の直後の `:` + 修飾子の文字 | `git show "$sha:code-review/x"` | `:c` が修飾子として食われ、別のパスになる（空出力で黙る） |
+| `path` / `status` への代入 | `while read -r path; do git …` / `status=$(…)` | `path` は PATH と連動し以降が command not found、`status` は読み取り専用 |
+| 語頭の `=` | `[ "$a" == b ]` / `echo =====` | `=cmd` 展開で `= not found` |
+| オプション値の引用なしグロブ | `grep --include=*.sh` / `find -name *.py` | 一致しないグロブがエラー（`no matches found`） |
+| echo の引数のエスケープ（**止めずに警告だけ**） | `echo "a\nb"` | zsh の echo は `\n` などを解釈する |
+
+止めたときは箇所と書き直し方（`${VAR}` で囲む・引用する・別の名前にする）を stderr に出す。過去の
+transcript の Bash 呼び出し 22,307 回で測ると、上の 4 規則は計 410 回当たり、目視で誤検出は 0 件だった。
+echo だけは 3 回・実害を確認できなかったので止めていない。zsh が字面どおりに読む形（`"${sha}:code"`・
+`"$sha":code`・`$h:8080`・`[[ a == b ]]`・`ls *.md` のようなファイルのグロブ）は止めない。
+解析できないコマンドも通す。
+
 
 ## public-leak-guard のセットアップ
 

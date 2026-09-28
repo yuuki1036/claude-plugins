@@ -48,6 +48,14 @@
               "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/public-leak-guard.sh"
             ],
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/zsh-trap-guard.sh"
+            ],
+            "timeout": 5
           }
         ]
       },

@@ -893,5 +893,106 @@ class HookIsolationGuardTest(HookTestCase):
         self.assertIn("Unexpected", res.stderr, res)
 
 
+class ZshTrapGuardTest(HookTestCase):
+    """zsh-trap-guard（GitHub issue #254）。**黙る条件を厚く見る** — 全 Bash 呼び出しに効く.
+
+    シェルは env で渡す（開発機は zsh・CI は bash なので、継承させると結果が環境で変わる）。
+    """
+
+    PLUGIN = "guardrail-protect"
+    SCRIPT = "hooks/scripts/zsh-trap-guard.sh"
+
+    def run_cmd(self, command: str, shell: str = "/bin/zsh", **env):
+        return self.run_hook(self.bash_payload(command),
+                             env_extra={"SHELL": shell, "CLAUDE_CODE_SHELL": "", **env})
+
+    def assertBlocked(self, res, contains: str):
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn(contains, res.stderr)
+        self.assertSilent(res)
+
+    def assertPassedQuietly(self, res):
+        """rc 0・注入なし・**stderr も空**（検出器が例外で落ちて黙った回を通さない）."""
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+        self.assertEqual(res.stderr, "", res)
+
+    # --- 止める ---
+    def test_blocks_a_modifier_after_an_unbraced_expansion(self):
+        for cmd in ('git show "$h:code-review/x"', "git show $ref:readme.md", 'echo "$f:t"'):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.run_cmd(cmd), "修飾子")
+
+    def test_blocks_assignments_to_path_and_status(self):
+        for cmd in ("for path in a b; do git log; done", "while read -r path; do git x; done < f",
+                    "f() { local path; ls; }", "status=$(git status)", "if true; then path=1; fi",
+                    "path=/x cmd"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.run_cmd(cmd), "別の名前にする")
+
+    def test_blocks_a_leading_equals(self):
+        for cmd in ('[ "$a" == b ]', "echo =====", "test x == y", '[ "" == x ]'):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.run_cmd(cmd), "= not found")
+
+    def test_blocks_an_unquoted_glob_in_an_option_value(self):
+        for cmd in ("grep -rn x --include=*.sh .", "find . -name *.py", "rg x -g*.ts"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.run_cmd(cmd), "no matches found")
+
+    def test_every_hit_is_listed_not_only_the_first(self):
+        res = self.run_cmd("grep --include=*.sh --exclude=*.md x . && echo === ====")
+        self.assertBlocked(res, "--include=*.sh")
+        for part in ("--exclude=*.md", "=== —", "==== —"):
+            self.assertIn(part, res.stderr)
+
+    def test_traps_inside_a_command_substitution_are_found(self):
+        self.assertBlocked(self.run_cmd('v=$(git show "$c:code-review/p.json" | jq .)'), "修飾子")
+
+    def test_echo_escapes_only_warn(self):
+        """実害を確認できていない規則は止めずにコンテキストへ出す."""
+        res = self.run_cmd(r'echo "a\nb"')
+        self.assertEqual(res.returncode, 0, res)
+        self.assertFired(res, "printf")
+        # オプションは先頭の語だけ。引数の後ろの -E は zsh でも字面なので解釈は止まらない
+        self.assertFired(self.run_cmd(r'echo "a\nb" -E'), "printf")
+        self.assertFired(self.run_cmd(r'echo "a\n" "b\t"'), r"`\t`")
+
+    # --- 黙る ---
+    def test_silent_when_the_shell_is_not_zsh(self):
+        for shell in ("/bin/bash", "", "/usr/local/bin/fish"):
+            with self.subTest(shell=shell):
+                self.assertPassedQuietly(self.run_cmd('git show "$h:code/x"', shell=shell))
+
+    def test_claude_code_shell_wins_over_shell(self):
+        res = self.run_cmd('git show "$h:code/x"', shell="/bin/zsh", CLAUDE_CODE_SHELL="/bin/bash")
+        self.assertPassedQuietly(res)
+        res = self.run_cmd('git show "$h:code/x"', shell="/bin/bash", CLAUDE_CODE_SHELL="/bin/zsh")
+        self.assertBlocked(res, "修飾子")
+
+    def test_silent_for_forms_zsh_reads_literally(self):
+        """zsh で実測して字面どおりに動く形."""
+        for cmd in ('echo "${h}:code"', 'git show "$ref":code/x', 'echo "$h:8080"', 'echo "$h:b"',
+                    "echo '$h:code'", "[[ a == b ]]", "x=1; y=a=b", "grep --include='*.sh' x .",
+                    "find . -name '*.py'", "ls *.md", 'echo -e "a\\tb"', "printf 'a\\nb'",
+                    "PATH=/x:$PATH cmd", "mypath=1; echo $mypath", "git status", "echo hello",
+                    '[ "$a" = b ]', "for", "echo", "local", "read",
+                    # 事前フィルタ（echo）を通して検出器まで届かせる形
+                    '[ "$a" = b ] && echo ok', "echo x; for", "echo x; local",
+                    "cat <<'EOF'\n$h:code\nfor path in x\nEOF"):
+            with self.subTest(cmd=cmd):
+                self.assertPassedQuietly(self.run_cmd(cmd))
+
+    def test_silent_when_the_command_cannot_be_parsed(self):
+        self.assertPassedQuietly(self.run_cmd("echo 'unterminated $h:code"))
+
+    def test_silent_for_non_bash_tool(self):
+        """**matcher 単独に依存しない**二重ゲート（CLAUDE.md Gotchas）."""
+        res = self.run_hook({"tool_name": "Edit", "tool_input": {"command": 'git show "$h:c"'}},
+                            env_extra={"SHELL": "/bin/zsh", "CLAUDE_CODE_SHELL": ""})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+
+
 if __name__ == "__main__":
     unittest.main()
