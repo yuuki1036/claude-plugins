@@ -62,6 +62,8 @@ REPRESENTATIVES = {
         "test_code_review_detect_external_ids.DetectExternalIdsTest.test_detects_linear_id_in_comment",
     "test_guardrail_protect_public_leak.py":
         "test_guardrail_protect_public_leak.PushTest.test_commit_message",
+    "test_mutation_test.py":
+        "test_mutation_test.RunReportTest.test_file_mode_says_it_is_not_a_diff_and_counts_changed_lines",
 }
 
 #: 直接 git を叩くファイルの検出（この 2 ファイル自身は対象外）

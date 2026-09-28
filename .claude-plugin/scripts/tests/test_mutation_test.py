@@ -728,5 +728,128 @@ class BudgetMainTest(unittest.TestCase):
         self.assertNotIn("予算", out)
 
 
+class RunReportTest(unittest.TestCase):
+    """実行の冒頭に出す対象モード・変更行の内訳・走ったテストの件数（GitHub issue #256）.
+
+    どれも読み違えを結果の数字だけで気づけなかった実例への対策。main() を本物の git リポジトリで
+    回して出力を見る（git は hook 由来の変数を落とした env で叩く / `git_env`）。
+    """
+
+    def setUp(self) -> None:
+        import signal
+        import subprocess
+        from unittest import mock
+        from git_env import scrub
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name).resolve()
+        self._orig_root = mt.ROOT
+        mt.ROOT = self.root
+        self.addCleanup(lambda: setattr(mt, "ROOT", self._orig_root))
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            self.addCleanup(signal.signal, sig, signal.getsignal(sig))
+        patcher = mock.patch.dict(os.environ, scrub(), clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.git = lambda *a: subprocess.run(["git", *a], cwd=self.root, check=True,
+                                             capture_output=True)
+        self.git("init", "-q")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        (self.root / "t.py").write_text("a = 1 > 2\nb = 3 < 4\nc = 5 > 6\n", encoding="utf-8")
+        self.git("add", "t.py")
+        self.git("commit", "-qm", "init")
+        # unittest の出力を真似る小さなテストコマンド（件数と rc を env で決める）
+        (self.root / "fake_tests.py").write_text(
+            "import os, sys\n"
+            "n = int(os.environ.get('FAKE_RAN', '3'))\n"
+            "sys.stderr.write('-' * 70 + '\\nRan %d test%s in 0.001s\\n' % (n, '' if n == 1 else 's'))\n"
+            "sys.exit(5 if n == 0 else 0)\n", encoding="utf-8")
+
+    def _main(self, *args: str, ran: int = 3) -> tuple[int, str, str]:
+        import contextlib
+        import io
+        os.environ["FAKE_RAN"] = str(ran)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = mt.main(list(args))
+        return rc, out.getvalue(), err.getvalue()
+
+    CMD = ("--test-cmd", "python3 fake_tests.py")
+
+    def test_file_mode_says_it_is_not_a_diff_and_counts_changed_lines(self):
+        (self.root / "t.py").write_text("a = 1 > 2\nb = 3 <= 4\nc = 5 > 6\n", encoding="utf-8")
+        rc, out, _ = self._main("--file", "t.py", *self.CMD)
+        self.assertEqual(rc, 0)
+        self.assertIn("対象: ファイル全体（--file。差分ではない）", out)
+        # 2 行目（変更行）の <= に当たる変異が 1 個、1・3 行目の > が 2 個
+        self.assertIn("未追跡ファイル）1 個 / 既存行 2 個", out)
+        self.assertNotIn("変更行に当たる変異が 0 個", out)
+
+    def test_file_mode_warns_when_no_mutant_hits_a_changed_line(self):
+        rc, out, _ = self._main("--file", "t.py", *self.CMD)
+        self.assertIn("未追跡ファイル）0 個 / 既存行 3 個", out)
+        self.assertIn("変更行に当たる変異が 0 個", out)
+
+    def test_an_untracked_file_counts_every_line_as_changed(self):
+        (self.root / "new.py").write_text("x = 1 > 2\n", encoding="utf-8")
+        rc, out, _ = self._main("--file", "new.py", *self.CMD)
+        self.assertIn("未追跡ファイル）1 個 / 既存行 0 個", out)
+
+    def test_diff_mode_names_its_base_and_size(self):
+        (self.root / "t.py").write_text("a = 1 > 2\nb = 3 <= 4\nc = 5 >= 6\n", encoding="utf-8")
+        rc, out, _ = self._main(*self.CMD)
+        self.assertEqual(rc, 0)
+        self.assertIn("対象: 差分（--base HEAD）の追加行 — 1 ファイル・2 行", out)
+        self.assertNotIn("既存行", out, "差分モードに --file の内訳を出している")
+
+    def test_the_number_of_tests_ran_is_shown_with_the_k_filter(self):
+        rc, out, _ = self._main("--file", "t.py", "--max", "1", "--test-cmd",
+                                "python3 fake_tests.py -k Foo", ran=1)
+        self.assertEqual(rc, 0)
+        self.assertIn("・1 件 / timeout", out)
+        self.assertIn("-k Foo（部分一致）で 1 件", out)
+
+    def test_zero_tests_ran_is_fatal_and_names_the_k_filter(self):
+        rc, out, err = self._main("--file", "t.py", "--test-cmd", "python3 fake_tests.py -k Foo", ran=0)
+        self.assertEqual(rc, 2)
+        self.assertIn("1 件も走っていない", err)
+        self.assertIn("-k Foo", err)
+        self.assertNotIn("失敗している", err, "0 件を「テストが失敗」と誤って伝えている")
+        self.assertNotIn("変異", out.replace("全変異", ""), "0 件のまま変異を当てている")
+
+    def test_zero_tests_without_k_is_still_fatal(self):
+        rc, _, err = self._main("--file", "t.py", *self.CMD, ran=0)
+        self.assertEqual(rc, 2)
+        self.assertIn("1 件も走っていない", err)
+        self.assertNotIn("-k", err)
+
+    def test_every_option_has_help(self):
+        """`--help` にオプション名しか出ないと、実行時に意味が見えない（#256 の 3 件）."""
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            mt.main(["--help"])
+        for opt, words in (("--file", "差分ではなくファイル全体"), ("--test-cmd", "shell を通さず"),
+                           ("--base", "差分の起点"), ("--max", "上限"), ("--strict", "exit 1")):
+            with self.subTest(opt=opt):
+                self.assertIn(words, out.getvalue())
+
+
+class ReportHelperTest(unittest.TestCase):
+    def test_tests_ran_reads_unittest_output(self):
+        self.assertEqual(mt.tests_ran("...\nRan 12 tests in 0.5s\n\nOK\n"), 12)
+        self.assertEqual(mt.tests_ran("Ran 1 test in 0.1s\n"), 1)
+        self.assertEqual(mt.tests_ran("Ran 0 tests in 0.000s\n\nNO TESTS RAN\n"), 0)
+        self.assertIsNone(mt.tests_ran("5 passed in 0.12s"), "unittest 以外は判定しない")
+        self.assertIsNone(mt.tests_ran("log: Ran 3 tests in x"), "行頭でない Ran は拾わない")
+
+    def test_k_patterns(self):
+        self.assertEqual(mt.k_patterns("python3 -m unittest -k A -k B".split()), ["A", "B"])
+        self.assertEqual(mt.k_patterns("python3 -m unittest -k".split()), [])
+        self.assertEqual(mt.k_patterns("python3 -m unittest".split()), [])
+
+
 if __name__ == "__main__":
     unittest.main()

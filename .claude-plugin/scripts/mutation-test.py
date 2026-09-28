@@ -23,7 +23,8 @@ checkout すると作業が飛ぶ。元のバイト列をメモリに持ち `try
 使い方:
   mutation-test.py                     # HEAD との差分の追加行を変異させる
   mutation-test.py --base origin/main  # 起点を変える
-  mutation-test.py --file a.py b.sh    # **ファイル全体**を対象にする（差分ではなく全行）
+  mutation-test.py --file a.py b.sh    # **ファイル全体**を対象にする（差分ではなく全行）。
+                                       # 変異のうち --base との差分の追加行に当たる件数を冒頭に出す
   mutation-test.py --max 40            # 変異の上限（既定 25。超過分は件数を報告する）
   mutation-test.py --strict            # 生存変異があれば exit 1（CI / gate 用）
   mutation-test.py --test-cmd "..."    # テストコマンドを差し替える
@@ -33,6 +34,11 @@ checkout すると作業が飛ぶ。元のバイト列をメモリに持ち `try
 **嘘の結果**になる（実測 2026-09-11）。shell 演算子と先頭 `cd` は exit 2 で弾く。
 ディレクトリ移動やテスト絞り込みは unittest の引数で表す:
   --test-cmd "python3 -m unittest discover -s .claude-plugin/scripts/tests -p test_x.py -k SomeTest"
+
+**実行の冒頭に対象のモードと、baseline で走ったテストの件数を出す**（GitHub issue #256）。
+CLI の読み違えが 30 日で 5 回あった — `--file` を差分だと思い、上限が既存行に使われて変更行を
+1 件も検証しなかった回 / `-k` の部分一致が狙ったテストに当たらず、カバー済みの行が SURVIVED に
+見えた回。どちらも結果の数字だけでは気づけない。テストが 1 件も走らなかったら exit 2。
 
 出力: 生存した変異（= テストが検証していない挙動）を file:line と変異内容つきで列挙する。
 Exit code: 0（既定。`--strict` 指定時のみ生存で 1）/ 2（引数エラー・テストが最初から赤）
@@ -227,6 +233,40 @@ def changed_lines(base: str) -> dict[Path, set[int]]:
             result.setdefault(path, set()).add(lineno)
             lineno += 1
     return result
+
+
+def untracked(path: Path) -> bool:
+    """git 管理下のリポジトリで、まだ追跡されていないファイルか（全行が新規として数える）."""
+    return run(["git", "ls-files", "--error-unmatch", "--", _rel(path)], ROOT).returncode != 0
+
+
+def file_mode_breakdown(mutants: list[Mutant], base: str) -> str:
+    """`--file` の変異のうち、`base` との差分の追加行に当たる数（GitHub issue #256）."""
+    if run(["git", "rev-parse", "--is-inside-work-tree"], ROOT).returncode != 0:
+        return "変更行: 判定できない（git 管理外）"
+    changed = changed_lines(base)
+    new_files = {m.path for m in mutants if untracked(m.path)}
+    hit = sum(1 for m in mutants if m.path in new_files or m.lineno in changed.get(m.path, ()))
+    line = (f"変更行（--base {base} との差分の追加行・未追跡ファイル）{hit} 個 / "
+            f"既存行 {len(mutants) - hit} 個")
+    if not hit:
+        line += ("\n  **変更行に当たる変異が 0 個**。変更を検証したいなら --file を外して"
+                 f"差分モード（--base {base}）で回す")
+    return line
+
+
+TESTS_RAN_RE = re.compile(r"^Ran (\d+) tests? in ", re.M)
+
+
+def tests_ran(output: str) -> int | None:
+    """unittest の出力から走ったテストの件数を拾う（unittest 以外なら None）."""
+    m = TESTS_RAN_RE.search(output)
+    return int(m.group(1)) if m else None
+
+
+def k_patterns(test_cmd: list[str]) -> list[str]:
+    """`--test-cmd` の `-k` の値（unittest の -k は部分一致・大小区別あり）."""
+    return [test_cmd[i + 1] for i, t in enumerate(test_cmd[:-1]) if t == "-k"]
 
 
 def _looks_quoted(line: str, start: int) -> bool:
@@ -566,11 +606,17 @@ def _install_signal_handlers() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(add_help=True)
-    ap.add_argument("--base", default="HEAD")
-    ap.add_argument("--file", nargs="*", default=None)
-    ap.add_argument("--max", type=int, default=25)
-    ap.add_argument("--strict", action="store_true")
-    ap.add_argument("--test-cmd", default=DEFAULT_TEST_CMD)
+    ap.add_argument("--base", default="HEAD",
+                    help="差分の起点（既定 HEAD）。この差分の追加行だけを変異させる。"
+                         "--file と併用したときは、変更行に当たる変異の数を数える起点になる")
+    ap.add_argument("--file", nargs="*", default=None,
+                    help="差分ではなくファイル全体を対象にする。既存行にも --max の枠が使われる")
+    ap.add_argument("--max", type=int, default=25,
+                    help="実行する変異の上限（既定 25）。超えた分は「上限で未実行」として数える")
+    ap.add_argument("--strict", action="store_true", help="生存した変異があれば exit 1（CI 用）")
+    ap.add_argument("--test-cmd", default=DEFAULT_TEST_CMD,
+                    help="テストコマンド。shell を通さず split して直接 spawn する（&& / | / 先頭の cd は "
+                         "exit 2）。-k は unittest の部分一致なので、走った件数を baseline で確かめる")
     ap.add_argument("--timeout", type=int, default=0,
                     help="1 変異あたりの秒数（既定 0 = baseline 実測の 5 倍・最低 30 秒）")
     ap.add_argument("--budget-sec", type=float, default=0,
@@ -616,6 +662,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"変異対象の変更行が無い（base={args.base}）。"
               "**テストファイルの変更のみでも同じ表示になる**（テストは変異対象外）。")
         return 0
+    if args.file:
+        print("対象: ファイル全体（--file。差分ではない）")
+    else:
+        print(f"対象: 差分（--base {args.base}）の追加行 — {len(targets)} ファイル・"
+              f"{sum(len(v) for v in targets.values())} 行")
 
     # **最初にテストが緑であることを確認する**。赤い状態で変異させると全部 killed に見える
     clear_pycache()
@@ -629,6 +680,15 @@ def main(argv: list[str] | None = None) -> int:
     baseline_sec = time.monotonic() - t0
     # **固定 600 秒だと 1 個の hang に 10 分払う**。実測の 5 倍を既定にする
     timeout = args.timeout or max(30, int(baseline_sec * 5) + 1)
+    # **失敗判定より先に見る** — Python 3.12 以降の unittest は 0 件で exit 5 を返すので、
+    # 後に置くと「テストが失敗している」という別の原因の表示になる
+    n_ran = tests_ran(baseline.stdout + baseline.stderr)
+    patterns = k_patterns(test_cmd)
+    if n_ran == 0:
+        print("FATAL: 変異前のテストが 1 件も走っていない（この状態では全変異が生存に見える）"
+              + (f"。-k {' / '.join(patterns)} は unittest の部分一致で、どのテストにも当たらなかった"
+                 if patterns else ""), file=sys.stderr)
+        return 2
     if baseline.returncode != 0:
         print("FATAL: 変異前のテストが失敗している（この状態では生存判定に意味がない）",
               file=sys.stderr)
@@ -643,7 +703,13 @@ def main(argv: list[str] | None = None) -> int:
     mutants = mutants[: args.max]
     print(f"変異 {len(mutants)} 個を実行する"
           + (f"（上限 --max={args.max} により **{dropped} 個を対象外にした**）" if dropped else "")
-          + f" / テスト: {args.test_cmd}（baseline {baseline_sec:.1f}s / timeout {timeout}s）")
+          + f" / テスト: {args.test_cmd}（baseline {baseline_sec:.1f}s"
+          + (f"・{n_ran} 件" if n_ran is not None else "") + f" / timeout {timeout}s）")
+    if patterns:
+        print(f"  テストの絞り込み: -k {' / '.join(patterns)}（部分一致）で {n_ran} 件。"
+              "狙ったテストが入っていなければ、生存はテストの不足ではなく絞り込みの外れ")
+    if args.file:
+        print("  " + file_mode_breakdown(mutants, args.base))
 
     survived: list[Mutant] = []
     timed_out: list[Mutant] = []
