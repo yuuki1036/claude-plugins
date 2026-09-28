@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.132.2] - 2026-09-28
+### Changed
+
+- self-review の vault 照合（`references/orchestration-optional-flows.md`）の関連判定を、vault-recall skill §3 と feature-dev Phase 1.6 と同じ規則にそろえた。絶対値の目安（上位 `similarity` ≥ 50）をやめ、1 位からの gap で切れ目を決め、上位が団子なら注入しない。3 か所で目安が食い違っていたため（同じ検索結果でも plugin によって扱いが変わっていた）
+
+
 ## [2.132.1] - 2026-09-28
 
 ### Fixed

@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.8] - 2026-09-28
+### Fixed
+
+- Phase 1.6 Vault Recall の関連判定（`references/plugin-handoffs.md` Step 4）で、上位の similarity が団子（gap 数 pt 以内で横並び）のとき「top 全件を関連候補として残す」としていたのを「注入しない」に直した。vault-recall skill §3 と code-review の vault 照合は団子を関連なしとしており、同じ検索結果の扱いが逆になっていた。規則の正本は vault-recall skill §3 と明記した
+
+
 ## [2.17.7] - 2026-09-25
 
 ### Changed

@@ -57,7 +57,7 @@ command -v kvault >/dev/null 2>&1 && echo "kvault: available"
 
 1. Step 1 で収集した変更ファイルのパス・主要な識別子（関数名・型名・コンポーネント名）・技術語をクエリ語にする
 2. 代表的なクエリを 1〜3 個 `kvault recall "<query>"` で実行する（`/vault-recall` skill が使える場合はそちら経由でも可）。出力は `results[]`（`similarity` / `title` / `excerpt` / `path` / `tags`）の JSON
-3. 各結果の `similarity` と、上位ヒットと下位ヒットの **gap**（スコア差）で関連度を判断する。上位が明確に分離して高 similarity（目安: 上位 `similarity` ≥ 50 かつ次点との gap が明確）なら関連ありとみなす。全体が低 similarity で団子状なら関連なしと判断して注入しない（ノイズ注入を避ける）
+3. 各結果の `similarity` を、絶対値ではなく **1 位からの gap**（スコア差）で判断する（水準はクエリで変わるので絶対閾値で切らない）。後続が大きく落ちたところまでを関連ありとし、1 位が 2 位を明確に引き離す（1 位 ≳ 55% で頭抜ける）のは強いシグナル。上位が団子状（gap 数 pt 以内で横並び）なら関連なしと判断して注入しない（ノイズ注入を避ける）。1 位でも excerpt が明らかに別ドメインなら 0 件とする。規則の正本は vault 側の vault-recall skill §3 で、feature-dev の Phase 1.6 も同じ規則を使う
 4. 関連ありと判断した知見（`title` + `excerpt` + `path`）を reviewer 起動 step（self-review Step 4）の各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する
 
 **注意**:
