@@ -144,6 +144,22 @@ class FailureJournalInitTest(HookTestCase):
         with TempGitRepo() as root:
             self.assertIn("candidates.jsonl", self._run(root).stdout)
 
+    CONCRETE_VALUE = "永続成果物に書く具体値"
+
+    def test_injects_concrete_value_rule_after_nudge(self):
+        """還流規約は催促の行より後に出る（催促は自己申告ルールの末尾に付く行）."""
+        with TempGitRepo() as root:
+            self._candidates(root, 15, 0)
+            out = self._run(root).stdout
+            self.assertIn(self.CONCRETE_VALUE, out)
+            self.assertLess(out.index(self.NUDGE), out.index(self.CONCRETE_VALUE))
+
+    def test_concrete_value_rule_is_reinjected_on_post_compact(self):
+        with TempGitRepo() as root:
+            res = self.run_hook({"hook_event_name": "PostCompact"}, cwd=root,
+                                env_extra={"CLAUDE_PROJECT_DIR": str(root)})
+            self.assertIn(self.CONCRETE_VALUE, res.stdout)
+
     def test_does_not_truncate_existing_journal(self):
         """**既存の記録を消さない**（消すと失敗履歴が毎セッション消える）."""
         with TempGitRepo() as root:

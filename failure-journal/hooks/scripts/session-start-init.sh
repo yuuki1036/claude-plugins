@@ -58,3 +58,10 @@ if [ "$EVENT" = "SessionStart" ] && [ -s "$journal_dir/candidates.jsonl" ]; then
     fi
   fi
 fi
+
+# retro で閾値を超えた、プロジェクトをまたぐ型の還流規約（GitHub issue #259）。
+# 催促の行は自己申告ルールの末尾に付けるので、その後に置く。
+# 無くても自己申告ルールの注入は止めない
+if [ -f "${RULES_DIR}/concrete-value-rule.md" ]; then
+  cat "${RULES_DIR}/concrete-value-rule.md"
+fi

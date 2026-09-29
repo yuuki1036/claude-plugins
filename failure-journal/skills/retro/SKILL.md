@@ -143,6 +143,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
    - 決定的検証で判定可能（文字列・ファイル存在・exit code 等） → hook
    - 自然言語判断が必要（意図推定・レビュー等） → skill
    - 恒常的に参照したい規約・背景 → AGENTS.md/CLAUDE.md
+   - **規約層を選んだら置き場も書く**: その失敗型がこのプロジェクトのコード・運用に依存するならプロジェクトの AGENTS.md/CLAUDE.md。プロジェクトをまたいで起きる型なら failure-journal の注入ルール（`rules/`、SessionStart / PostCompact で注入）への追加を提案する — プラグインの変更になるので Issue 化して入れる。**グローバル CLAUDE.md（`~/.claude/CLAUDE.md`）は提案しない**（プラグインの範疇を超える）。注入ルールは毎セッション常駐するので、足す前に既存の注入ルールへ統合できないかを先に見る
 3. **既存ガードレールでカバーできていない理由**: なぜ既存の hook/skill/規約で防げなかったのか
 4. **umbrella tag の判定**: 内訳を書き出して**還流先が 2 つ以上に割れる**か、**既に還流した対策より後に別機構で再発している**なら、その tag は複数の失敗型を束ねている。1 つの還流先を選ばず、**tag の分割を提案する**（規約と実例は `../log-failure/references/journal-schema.md`）。分割せずに還流を重ねると、対策は毎回「今回の 1 件」にしか当たらず閾値だけが鳴り続ける。**ただし 0 で分割宣言が見つかった tag は対象外**（提案ではなく採用状況の報告に切り替える）
 
@@ -199,7 +200,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
   3. label: "還流 / 分割を記録" / description: "打った手を remediations.jsonl へ、宣言した分割を splits.jsonl へ append する"
   4. label: "対応しない" / description: "レポート確認のみ"
 
-> 実際の AGENTS.md/hook/skill 編集は本スキルの責務外（還流先の判断と提案に専念）。編集は対応する plugin/手動で行う。
+> 実際の AGENTS.md/hook/skill 編集は本スキルの責務外（還流先の判断と提案に専念）。編集は対応する plugin/手動で行う。規約層の還流は、Phase 4 で書いた置き場（プロジェクトの CLAUDE.md / failure-journal の注入ルール）へ入れる。
 
 ### 還流 / 分割の記録（option 3）
 

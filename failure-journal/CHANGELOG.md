@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.8.0] - 2026-09-29
+
+### Added
+
+- **「永続成果物に書く具体値は、そのターンで一次ソースから取得したものに限る」規約を SessionStart / PostCompact で
+  注入するようにした**（`rules/concrete-value-rule.md`）。retro で tag `guessed-value-written-as-fact` が閾値を超えた
+  （60 日で 3 回）。出力を絞って見ていない数値を実測値として書く・git log の並び順からマージ日を推測する・確認せずに
+  書いた issue ID が実在する別 issue と衝突する、の 3 件で、どれも特定のプロジェクトに依存しない。hook は不向き
+  （ID は存在検査を通ってしまい、日付・数値は文字列から真偽を判定できない）なので規約層に置いた（GitHub issue #259）
+
+### Changed
+
+- **retro が規約層を提案するとき、置き場も書くようにした**。プロジェクトのコード・運用に依存する型はプロジェクトの
+  AGENTS.md/CLAUDE.md、プロジェクトをまたぐ型は failure-journal の注入ルール（`rules/`）。グローバルの
+  `~/.claude/CLAUDE.md` はプラグインの範疇を超えるので提案しない。これまでは置き場の方針が決まっていなかった
+
 ## [0.7.0] - 2026-09-25
 
 ### Added
