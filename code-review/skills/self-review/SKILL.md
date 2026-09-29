@@ -21,7 +21,7 @@ allowed-tools:
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @99781aef -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @ac1fc9a3 -->
-<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @70ac9c91 -->
+<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @c01db33c -->
 
 ## review との違い
 
@@ -443,7 +443,7 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
 - 報告閾値 {実効 `review_severity_threshold`} 未満の候補が N 件あります（CRITICAL a / MAJOR b / MINOR c。本文は reviewer が書いていないため省略）。見る場合は `review_severity_threshold` を下げて再実行してください
 
 ### 🔁 報告閾値を割った指摘（参考・人間が覆せる）
-{reviewer が列挙した指摘が報告マトリクスを通過しなかった場合に載る。**経路（反証 verdict / 加減算 / 最初から閾値未満）を問わず記録し、severity 別の扱いは正本に従う** → scoring-guide.md `## 報告閾値を割った指摘の記録`。0 件なら省略}
+{reviewer が `#### 指摘事項` に列挙した指摘が報告マトリクスを通過しなかった場合に載る（総括・related-observations の記述からは起こさない）。**経路（反証 verdict / 加減算 / 最初から閾値未満）を問わず記録し、severity 別の扱いは正本に従う** → scoring-guide.md `## 報告閾値を割った指摘の記録`。0 件なら省略}
 - [調整前: confidence XX / severity MAJOR] xxx の指摘
   ファイル: path/to/file:行番号
   脱落理由: <verdict: refuted | severity-inflated> — <軸>（反証根拠 file:line）／ <加減算: 規則名> — confidence XX → YY ／ <調整なし: reviewer の値のまま閾値未満>

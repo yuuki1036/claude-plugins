@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.132.4] - 2026-09-29
+### Fixed
+
+- 閾値未満の指摘が、`#### 総括` と `## related-observations` を経由して 🔁 付録に載っていたのを塞いだ（#248 の続き）。v2.130.9 で件数行の後に本文を書くことは止めたが、reviewer が総括の「主要なリスク（すべて MINOR）」や related-observations に閾値未満の指摘を要旨として書き、オーケストレーターがそこから付録の行を起こす回が残っていた（v2.130.9 以降の 13 回中 4 回で付録が上限超え。transcript で経路を確かめた）
+  - reviewer 規約: 総括と related-observations にも閾値未満の指摘の中身を書かない（総括は件数と系統名まで）。related-observations は担当外の観点に渡す気づきに限る
+  - 付録の正本（`scoring-guide.md`）と両 SKILL の Step 6: 付録の出典は `#### 指摘事項` に列挙された指摘だけで、総括・related-observations の記述からは起こさない
+
 ## [2.132.3] - 2026-09-28
 ### Removed
 
