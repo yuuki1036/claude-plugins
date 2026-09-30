@@ -37,7 +37,8 @@ echo ""
 # ルール注入
 RULES_DIR="${CLAUDE_PLUGIN_ROOT}/rules"
 if [ -f "${RULES_DIR}/project-rules.md" ]; then
-  cat "${RULES_DIR}/project-rules.md"
+  # {PLUGIN_ROOT} は同梱スクリプトのパス。cat では展開されないので、そのまま実行できる形に置き換える
+  sed "s|{PLUGIN_ROOT}|${CLAUDE_PLUGIN_ROOT}|g" "${RULES_DIR}/project-rules.md"
 fi
 
 # Knowledge インデックス注入

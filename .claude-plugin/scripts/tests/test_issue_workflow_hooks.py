@@ -254,6 +254,16 @@ class InjectRulesTest(HookTestCase):
         with TempGitRepo() as root:
             self.assertNotEqual(self.run_hook({}, cwd=root).returncode, 2)
 
+    def test_plugin_root_placeholder_becomes_a_runnable_path(self):
+        """営業日スクリプトの `{PLUGIN_ROOT}` は実在するパスに置き換わる（GitHub issue #255）."""
+        with TempGitRepo() as root:
+            (root / ".claude" / "indie" / "demo").mkdir(parents=True)
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root)
+            self.assertNotIn("{PLUGIN_ROOT}", res.stdout)
+            script = self.plugin_root / "scripts" / "business-days.py"
+            self.assertIn(f"python3 {script} count", res.stdout)
+            self.assertTrue(script.is_file())
+
 
 class SetSessionTitleTest(HookTestCase):
     PLUGIN = "issue-workflow"

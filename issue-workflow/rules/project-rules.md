@@ -70,6 +70,20 @@ type: {推定タイプ}
 - `/knowledge` で一覧表示、`/knowledge search <キーワード>` で検索できる
 - 新しい知見は `/issue-maintain` の実行時に自動的に切り出される
 
+## 日程・ペースの計算
+
+期日・残り営業日・週ごとのベロシティは暗算せず、次のスクリプトで数える（日本の祝日・振替休日・国民の休日に対応）:
+
+```bash
+python3 {PLUGIN_ROOT}/scripts/business-days.py count 2026-10-01 2026-10-30   # 営業日数（既定は両端を含む）
+python3 {PLUGIN_ROOT}/scripts/business-days.py add today 10                 # 10 営業日後（起点は数えない）
+python3 {PLUGIN_ROOT}/scripts/business-days.py weeks 2026-09-14 2026-10-04  # 週ごとの営業日数と休日
+```
+
+- 起点・終点を含めるか（今日を 1 日と数えるか）は `--exclude-start` / `--exclude-end` で明示して決める
+- 基準日は実行した日（`today`）にする。計画を作った日のまま据え置かない
+- 週ごとのペースを比べるときは `weeks` で営業日数を揃えてから比べる（連休の週を通常週として扱わない）
+
 ## 作業フロー
 
 1. セッション開始 → `/start`

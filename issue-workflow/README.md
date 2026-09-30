@@ -60,6 +60,7 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 - AI 主導の課題発見（discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）
 - 振り返り（retrospective。完了実績・見積もり精度・反復テーマの concept 化提案）
 - issue 作業の全散文成果物に writing-polish 推敲を必須連携（未インストール時は skip）
+- 日本の祝日込みの営業日計算（`scripts/business-days.py`。営業日数 / N 営業日後 / 休日の列挙 / 週ごとの営業日数。2020〜2099 年）。期日・ペースを暗算せずこれで数えるよう、注入ルールが指示する
 
 ## 旧プラグインからの移行
 
