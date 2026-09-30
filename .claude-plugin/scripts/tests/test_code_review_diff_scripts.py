@@ -600,6 +600,15 @@ class TriageSignalTest(DiffScriptTestBase):
                 self.section(self.digest(), "## focus-signals") if l.count("\t") == 2}
         self.assertEqual(rows.get("layer-responsibility"), ["3", "src/CLAUDE.md"])
 
+    def test_layer_signal_evidence_skips_agents_md_without_rules(self):
+        """根拠には当たりのあるファイルを出す。並びで先にある src/CLAUDE.md が 0 件なら AGENTS.md."""
+        self.write("AGENTS.md", "- server/ の責務はドメイン判断\n")
+        self.write("src/CLAUDE.md", "テストを書く\n")
+        self.write("src/a.ts", "const x = 1\n")
+        rows = {l.split("\t")[0]: l.split("\t")[1:] for l in
+                self.section(self.digest(), "## focus-signals") if l.count("\t") == 2}
+        self.assertEqual(rows.get("layer-responsibility"), ["1", "AGENTS.md"])
+
     def test_guardrail_bypass_pattern_starting_with_dash_is_detected(self):
         """`--no-verify` は grep のオプションに見える。`-e` で渡していないと黙って 0 件になる."""
         self.write("src/a.ts", 'run("git commit --no-verify")\n')

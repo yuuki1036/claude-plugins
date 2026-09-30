@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.134.1] - 2026-09-30
+### Fixed
+
+- `layer-responsibility` のシグナルが、規約の行が 0 件の AGENTS.md / CLAUDE.md を根拠ファイルとして出しうる境界を変異テストで確かめ、テストで固定した。列挙元が実在ファイルだけなので不要だった存在判定を外した
+
+
 ## [2.134.0] - 2026-09-30
 ### Added
 

@@ -310,7 +310,8 @@ layer_rule_sig() {
   local f c n=0 ex=""
   printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core"' | grep -q . || return 0
   while IFS= read -r f; do
-    [ -n "$f" ] && [ -f "$WT/$f" ] || continue
+    # AGENTS_MD は実在ファイルだけを列挙しているので存在判定は要らない
+    [ -n "$f" ] || continue
     c=$(grep -E -e "$LAYER_DIR_RE" "$WT/$f" 2>/dev/null | grep -c -E -e "$LAYER_ROLE_RE" 2>/dev/null || true)
     [ "${c:-0}" -gt 0 ] || continue
     n=$((n + c))
