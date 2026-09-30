@@ -637,6 +637,11 @@ if os.environ.get("AS_JSON") == "1":
         # 空」＝引き当て失敗の検出に要る（呼び出し側が縮退判定に使う）
         "sub_agents": len(sub_seen),
         "sub_files": len(agents),
+        # **体ごとの往復数と cache_read**（`--per-agent` と同じ集計 / GitHub issue #265）。往復降順。
+        # description は載せない — 自由記述で業務の ID やファイル名が入る（実測）
+        "per_agent": sorted(({"turns": pa["n"], "cache_read": pa["cr"]}
+                             for pa in per_agent.values()),
+                            key=lambda r: (-r["turns"], -r["cache_read"])),
         # **窓内に起動した agent の発行パターン**（`sub_agents` と同じ窓）。publish が payload の
         # `dispatch` に載せ、`verdict == "serial"` のとき警告する（`layered` は層ごとの wave
         # ＝設計上正当なので警告しない / #149）

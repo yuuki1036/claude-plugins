@@ -1445,6 +1445,85 @@ class TokenAndDispatchPayloadTest(TranscriptFixture):
         self.assertNotIn("agents-mismatch", gaps)
 
 
+class InvocationPublishTest(TranscriptFixture):
+    """体ごとの往復数と呼び出し経路を payload に載せる（GitHub issue #265）.
+
+    transcript は計測ストアに同期しないので、payload に無い値はレビューを回したマシンでしか取れない。
+    どちらも transcript から機械的に取り、呼び出し側（SKILL）が書いた値は捨てる。
+    """
+
+    def _main(self) -> Path:
+        return self.home / ".claude" / "projects" / self.slug() / "s1.jsonl"
+
+    def _append(self, *entries: dict) -> None:
+        with self._main().open("a", encoding="utf-8") as f:
+            for e in entries:
+                f.write(json.dumps(e, ensure_ascii=False) + "\n")
+
+    @staticmethod
+    def _tool(name: str, inp: dict) -> dict:
+        return {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": name, "input": inp}]}}
+
+    def _start(self) -> dict:
+        return self._tool("Bash", {"command": 'bash "$R/scripts/review-timing.sh" start'})
+
+    @staticmethod
+    def _slash(name: str) -> dict:
+        return {"type": "user", "message": {"role": "user", "content":
+                "<command-message>%s</command-message>\n<command-name>/%s</command-name>"
+                % (name, name)}}
+
+    def test_turns_per_agent_are_the_per_agent_numbers(self):
+        self.write_transcript([[0, 5]], scale=1000, ends={0: 20})    # agent-0 は 2 往復・agent-1 は 1 往復
+        meta = self._main().parent / "s1" / "subagents" / "agent-0.meta.json"
+        meta.write_text(json.dumps({"toolUseId": "tu-0", "description": "TEAM-123 の関数 A を見る"},
+                                   ensure_ascii=False), encoding="utf-8")
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        tok = p["tokens"]
+        self.assertEqual(tok["sub_turns"], [2, 1])
+        self.assertEqual(tok["sub_turns_max"], 2)
+        self.assertEqual(tok["sub_turns_median"], 1.5)
+        self.assertEqual(tok["sub_cache_read_per_turn_k_median"], 30.0)
+        self.assertNotIn("TEAM-123", json.dumps(p, ensure_ascii=False), "agent の description が載っている")
+
+        out = self.run_script(MEASURE, "--per-agent", "--session", str(self._main()),
+                              env=self.env_home()).stdout
+        turns = sorted((int(line.split()[-5]) for line in out.splitlines()
+                        if line.startswith(("TEAM-123", "agent-"))), reverse=True)
+        self.assertEqual(turns, tok["sub_turns"], "`--per-agent` と数が違う")
+
+    def test_no_turns_without_subagents(self):
+        self.write_transcript([])
+        self.publish(env=self.env_home())
+        self.assertNotIn("sub_turns", self.last_payload()["tokens"])
+
+    def test_the_route_is_judged_from_the_transcript(self):
+        self.write_transcript([[0, 5]])
+        self._append(self._slash("issue-workflow:start"),
+                     self._tool("Skill", {"skill": "feature-dev:feature-dev"}),
+                     self._tool("Skill", {"skill": "code-review:self-review"}),
+                     self._start())
+        self.publish(env=self.env_home())
+        self.assertEqual(self.last_payload()["invocation"],
+                         {"via": "skill-tool", "parent": "feature-dev:feature-dev"})
+
+    def test_a_route_written_by_the_caller_is_discarded(self):
+        self.write_transcript([[0, 5]])
+        self.publish(dict(BASE_PAYLOAD, invocation={"via": "slash", "parent": "x"}),
+                     env=self.env_home())
+        self.assertEqual(self.last_payload()["invocation"], {"via": "unknown", "parent": None},
+                         "start が無い transcript なのに呼び出し側の値が残っている")
+
+    def test_an_unresolved_session_is_unknown(self):
+        self.write_transcript([[0, 5]])
+        env = self.env_home()
+        del env["CLAUDE_CODE_SESSION_ID"]
+        self.publish(env=env)
+        self.assertEqual(self.last_payload()["invocation"], {"via": "unknown", "parent": None})
+
+
 class PublishSessionResolutionTest(TranscriptFixture):
     """publish は transcript を `CLAUDE_CODE_SESSION_ID` から引く（GitHub issue #246）.
 
@@ -2905,6 +2984,28 @@ class RetroTest(RetroFixture):
         self.assertIn("**1 体あたり cache_read**", out)
         self.assertIn("| high/medium | 2 | 6000 k |", out)
         self.assertIn("| xhigh/small | 1 | 3000 k |", out)
+
+    def test_turns_per_agent_are_layered_with_the_cap_candidate(self):
+        """1 体あたりの往復の分布と、cap の候補値を超えた体の数（GitHub issue #265 / #190）."""
+        a = self._tokens("large", 9000.0, 3)
+        a["tokens"]["sub_turns"] = [31, 22, 9]
+        b = self._tokens("large", 6000.0, 2)
+        b["tokens"]["sub_turns"] = [20, 10]
+        c = self._tokens("small", 3000.0, 1)                   # sub_turns の無い旧版の回
+        self._events([a, b, c])
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["tokens"]["sub_turns"]["layers"],
+                         [{"layer": "high/large", "runs": 2, "agents": 5, "median": 20,
+                           "max": 31, "over_cap": 2}])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**1 体あたりの往復**", out)
+        self.assertIn("| high/large | 2 | 5 | 20 | 31 | 2（40%） |", out, "ちょうど 20 往復は超えに数えない")
+
+    def test_no_turns_table_without_sub_turns(self):
+        self._events([self._tokens("medium", 50000.0, 10)])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("**1 体あたり cache_read**", out)
+        self.assertNotIn("**1 体あたりの往復**", out)
 
     def test_per_agent_cache_read_never_divides_by_zero(self):
         """`sub_agents` が 0 / 欠測の回は**除算せず落とす**.
@@ -7680,6 +7781,27 @@ class ReportTemplateRetroTest(RetroFixture):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("## レビュー振り返り", out)
         self.assertNotIn("定型レポート（", out)
+
+    def test_rates_are_split_by_route(self):
+        """経路（`invocation`）を持つ回だけを via/parent で割る（GitHub issue #265）."""
+        def routed(state, via, parent=None):
+            return dict(self._row(state), invocation={"via": via, "parent": parent})
+        self._events([routed("present", "slash"), routed("absent", "skill-tool", "feature-dev:feature-dev"),
+                      routed("present", "skill-tool", "feature-dev:feature-dev"),
+                      routed(None, "inline"), self._row("absent")])
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["measurement"]["report_template_by_route"],
+                         {"slash/-": {"judged": 1, "absent": 0},
+                          "skill-tool/feature-dev:feature-dev": {"judged": 2, "absent": 1}})
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("定型レポートの経路別（via/parent / #265）: skill-tool/feature-dev:feature-dev "
+                      "判定 2 件中 1 件で定型なし / slash/- 判定 1 件中 0 件で定型なし", out)
+
+    def test_no_route_line_without_invocation(self):
+        self._events([self._row("absent"), self._row("present")])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("定型レポート（", out)
+        self.assertNotIn("経路別", out)
 
 
 class RetroAdversarialEffortTest(RetroFixture):

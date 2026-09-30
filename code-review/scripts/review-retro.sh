@@ -1450,6 +1450,15 @@ for e in events:
         _d = report_template_rates.setdefault(_s, {"judged": 0, "absent": 0})
         _d["judged"] += 1
         _d["absent"] += 1 if _rt == "absent" else 0
+# 同じ率を呼び出し経路で割る（#265）。`invocation` を持つ回だけ（v2.135.0 より前の回は経路が分からない）
+report_template_by_route = {}
+for e in events:
+    _rt, _inv = e["p"].get("report_template"), e["p"].get("invocation")
+    if _rt in ("present", "absent") and isinstance(_inv, dict):
+        _key = "%s/%s" % (_inv.get("via") or "?", _inv.get("parent") or "-")
+        _d = report_template_by_route.setdefault(_key, {"judged": 0, "absent": 0})
+        _d["judged"] += 1
+        _d["absent"] += 1 if _rt == "absent" else 0
 # 取り違え疑いで外した回（#246）。publish の gap ではなく読み側の判定なので欠測内訳には混ぜない
 session_suspects = {}
 for e in events:
@@ -1652,6 +1661,27 @@ per_agent_rows = []
 for key in sorted(per_agent_buckets, key=lambda k: -len(per_agent_buckets[k])):
     per_agent_rows.append((key, len(per_agent_buckets[key]),
                            median(per_agent_buckets[key])))
+
+# **1 体あたりの往復の分布**（GitHub issue #265 / #190）。往復数が cache_read を決める唯一の効くレバーで、
+# 平均（`sub_cache_read_k / sub_agents`）では cap の候補値で何体が打ち切られるかが分からない。
+# 層は上と同じ effort × size_tier × 世代。`sub_turns` は v2.135.0 以降の回にだけある
+TURN_CAP_CANDIDATE = 20   # #190 の 09-30 の計測で挙げた候補（新算法で 22 体中 5 体が超える値）
+turn_buckets = {}
+for e in tok_rows:
+    _ts = (e["p"]["tokens"] or {}).get("sub_turns")
+    if not isinstance(_ts, list):
+        continue
+    _ts = [v for v in _ts if isinstance(v, int) and v > 0]
+    if _ts:
+        key = with_gen(e["p"], "%s/%s" % (e["p"].get("effort", "?"), e["p"].get("size_tier", "?")))
+        _b = turn_buckets.setdefault(key, {"runs": 0, "turns": []})
+        _b["runs"] += 1
+        _b["turns"].extend(_ts)
+turn_rows = []
+for key in sorted(turn_buckets, key=lambda k: -turn_buckets[k]["runs"]):
+    _t = turn_buckets[key]["turns"]
+    turn_rows.append((key, turn_buckets[key]["runs"], len(_t), median(_t), max(_t),
+                      sum(1 for v in _t if v > TURN_CAP_CANDIDATE)))
 
 # ---- 9.5. 指摘の分類（何が捕まえるべきだったか / v2.68.0） ------------------
 # **目的は指摘を減らすことではない**（300 行の diff で 0 件の方が疑わしい）。見るのは構成比で、
@@ -2100,7 +2130,11 @@ if as_json:
                    "dropped_schema": tok_dropped_schema,
                    "main_output_k_median": median(tok_main),
                    "sub_output_k_median": median(tok_sub),
-                   "agents_sub_output_r": tok_r, "agents_sub_output_n": len(txs)},
+                   "agents_sub_output_r": tok_r, "agents_sub_output_n": len(txs),
+                   # #265。層 → 1 体あたりの往復の分布（`over_cap` は候補値を超えた体数）
+                   "sub_turns": {"cap_candidate": TURN_CAP_CANDIDATE, "layers": [
+                       {"layer": k, "runs": r, "agents": n, "median": m, "max": mx, "over_cap": oc}
+                       for k, r, n, m, mx, oc in turn_rows]}},
         # **一括発行は欠測と別枠**（#192 / #200）。`marker` は payload に焼かれた
         # publish 時点の判定の生カウントで、`n` は現行式での再計算。食い違いは `stale`
         "wave_split": {"n": n_wave_split, "judged": n_wave_judged,
@@ -2144,6 +2178,8 @@ if as_json:
                                                "missing": threshold_missing},
                         # #250。skill → {judged, absent}（判定できた回だけを分母にする）
                         "report_template": report_template_rates,
+                        # #265。"<via>/<parent>" → {judged, absent}（`invocation` を持つ回だけ）
+                        "report_template_by_route": report_template_by_route,
                         # #246（読み側で外した回。キーは規則 `overlap` / `sub-blank`）
                         "session_suspect": session_suspects,
                         "have_synthesis": have_synthesis, "have_explorer_waves": have_waves,
@@ -2699,6 +2735,21 @@ else:
         if _pa_note:
             print()
             print(_pa_note)
+        # 往復の分布（#265）。`sub_turns` を持つ回が 1 件も無ければ出さない（⚠️ 契約）
+        if turn_rows:
+            print()
+            print("**1 体あたりの往復**（effort × size_tier。往復数が cache_read を決める唯一の効くレバー / "
+                  "#190。cap の候補 %d 往復を超えた体の割合も出す / #265）" % TURN_CAP_CANDIDATE)
+            print()
+            print("| effort/tier | 回 | 体 | 往復 中央値 | 最大 | %d 超 |" % TURN_CAP_CANDIDATE)
+            print("|---|---:|---:|---:|---:|---:|")
+            _tr_shown, _tr_dropped, _tr_dropped_n = cap_layer_rows(turn_rows)
+            for key, runs, n, m, mx, oc in _tr_shown:
+                print("| %s | %d | %d | %g | %d | %d（%.0f%%） |" % (key, runs, n, m, mx, oc, oc / n * 100))
+            _tr_note = layer_omission_note(_tr_dropped, _tr_dropped_n)
+            if _tr_note:
+                print()
+                print(_tr_note)
     else:
         print("**1 体あたり cache_read**: 実測 0 件（`sub_cache_read_k` または `sub_agents` が"
               "欠測・0 で除算不可 %d）。旧算法の schema で落とした回はここではなくトークン行の"
@@ -2807,6 +2858,11 @@ else:
         print("  - 定型レポート（publish の前に出したか / #250）: %s"
               % " / ".join("%s 判定 %d 件中 %d 件で定型なし" % (k, v["judged"], v["absent"])
                            for k, v in sorted(report_template_rates.items())))
+    # 経路別（#265）。`invocation` を持つ回が無ければ出さない（⚠️ 契約）
+    if report_template_by_route:
+        print("  - 定型レポートの経路別（via/parent / #265）: %s"
+              % " / ".join("%s 判定 %d 件中 %d 件で定型なし" % (k, v["judged"], v["absent"])
+                           for k, v in sorted(report_template_by_route.items())))
     # **外した回を黙って消さない**（#246）。0 件なら出さない（⚠️ 契約）
     if session_suspects:
         print("  - transcript の取り違え疑い: %d 件（同じ transcript で窓が重なる %d 件 / "

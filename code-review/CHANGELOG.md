@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.135.0] - 2026-09-30
+### Added
+
+- publish が payload に、reviewer 1 体ごとの往復数と、レビューの呼び出し経路を載せる（#265）。どちらも transcript からしか取れず、transcript は計測ストアに同期しないので、これまではレビューを回したマシンでしか調べられなかった。SKILL からは渡さない（`tokens` / `dispatch` と同じく機械判定だけを載せる）
+  - `tokens.sub_turns`（体ごとの往復数、降順）/ `sub_turns_max` / `sub_turns_median` / `sub_cache_read_per_turn_k_median`。`measure-tokens.sh --per-agent` と同じ集計。agent の description は業務の ID が入るので載せない
+  - `invocation.via`（`slash` / `skill-tool` / `inline` / `unknown`）と `invocation.parent`（start の前に最後に起動した code-review 以外の skill。このマーケットプレイス以外の名前は `other`）。slash 起動の直後にモデルが同じ skill を `Skill` で呼び直す形があるので、slash を先に見る
+- retro に、1 体あたりの往復の分布（effort × size_tier。cap の候補 20 往復を超えた体の数つき）と、定型レポートの率の経路別の内訳を足した
+
+
 ## [2.134.2] - 2026-09-30
 ### Fixed
 

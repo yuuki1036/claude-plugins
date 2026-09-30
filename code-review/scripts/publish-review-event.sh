@@ -90,7 +90,7 @@ fi
 # まだ transcript に存在しない）。除外が正当なのは**遅れて publish した回だけ**で、そこは
 # `LATE_PUBLISH`（t2 から 10 分以上）で既に判定できているので `window` を分けて表現する。
 # 実測: 除外していた間、このマシンの review:completed 37 件すべてで `tokens` が欠測だった。
-TOKENS_JSON=""; TOKENS_WANTED=0; TOKENS_WINDOW="session"; TEMPLATE_STATE=""
+TOKENS_JSON=""; TOKENS_WANTED=0; TOKENS_WINDOW="session"; TEMPLATE_STATE=""; INVOCATION=""
 TOK_ARGS=()
 case "$PLUGIN" in
   *:review|*self-review)
@@ -124,6 +124,8 @@ case "$PLUGIN" in
       # **止めない** — 鳴らして、集計してから決める
       TEMPLATE_STATE=$(python3 "$HERE/lib/report_template.py" "$SESSION_TRANSCRIPT" \
         "${REVIEW_TEMPLATE_WAIT_SEC:-3}" 2>/dev/null) || TEMPLATE_STATE=""
+      # **どの経路で呼ばれたか**（slash / Skill ツール / SKILL を経由しない再現 / GitHub issue #265）
+      INVOCATION=$(python3 "$HERE/lib/invocation.py" "$SESSION_TRANSCRIPT" 2>/dev/null) || INVOCATION=""
       if [ "$TEMPLATE_STATE" = "absent" ]; then
         MEASUREMENT_GAPS="${MEASUREMENT_GAPS:+$MEASUREMENT_GAPS }report-template"
         echo "WARN: レポート出力の定型（self-review Step 6 / review Step 7。\`**指摘件数**: BLOCKER …\`" \
@@ -348,6 +350,7 @@ MERGED=$(
   REVIEW_TOKENS_WANTED="$TOKENS_WANTED" \
   REVIEW_TOKENS_WINDOW="$TOKENS_WINDOW" \
   REVIEW_TEMPLATE_STATE="${TEMPLATE_STATE:-}" \
+  REVIEW_INVOCATION="${INVOCATION:-}" \
   REVIEW_LATE_PUBLISH="$LATE_PUBLISH" \
   REVIEW_LIB_DIR="$HERE/lib" \
   python3 - "$PAYLOAD" <<'PY'
@@ -935,7 +938,18 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1" and "session-unresolved" in gap
     # 捨てる — 残すと LLM が書いた値が機械計測のふりをして残る（下の `models` と同じ fail-closed）
     for _f in ("tokens", "models", "dispatch"):
         payload.pop(_f, None)
+    payload["invocation"] = {"via": "unknown", "parent": None}
 elif os.environ.get("REVIEW_TOKENS_WANTED") == "1":
+    # **呼び出し経路**（GitHub issue #265）。機械判定の値だけを載せ、呼び出し側が書いた値は捨てる
+    try:
+        _inv = json.loads(os.environ.get("REVIEW_INVOCATION") or "")
+    except ValueError:
+        _inv = None
+    if not (isinstance(_inv, dict)
+            and _inv.get("via") in ("slash", "skill-tool", "inline", "unknown")
+            and (_inv.get("parent") is None or isinstance(_inv.get("parent"), str))):
+        _inv = {"via": "unknown", "parent": None}
+    payload["invocation"] = {"via": _inv["via"], "parent": _inv.get("parent")}
     # **定型の判定を載せる**（GitHub issue #250）。gap は定型なしの回にしか立たないので、率の分母
     # （判定できた回）はこのフィールドで数える。呼び出し側が書いた値は捨てる（機械判定の値だけ）
     _tpl = os.environ.get("REVIEW_TEMPLATE_STATE")
@@ -979,6 +993,24 @@ elif os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             # 載せない。同じオブジェクトに窓ありと窓なしを混在させない）
             "sub_agents": tok.get("sub_agents"),
         }
+        # **体ごとの往復数**（GitHub issue #265）。探索予算の唯一の効くレバーが往復数で（#190）、
+        # 合計値だけでは回の中のばらつきと最大値が分からない。transcript は同期しないので
+        # payload に載せないと、レビューを回したマシンでしか取れない
+        _pa = [r for r in (tok.get("per_agent") or [])
+               if isinstance(r, dict) and isinstance(r.get("turns"), int) and r["turns"] > 0]
+        if _pa:
+            import statistics as _st
+            _turns = sorted((r["turns"] for r in _pa), reverse=True)
+            _per_turn = [r["cache_read"] / r["turns"] for r in _pa
+                         if isinstance(r.get("cache_read"), (int, float))]
+            payload["tokens"].update({
+                "sub_turns": _turns,
+                "sub_turns_max": _turns[0],
+                "sub_turns_median": _st.median(_turns),
+                # 往復が増えたのか 1 往復の単価が上がったのかを分ける
+                "sub_cache_read_per_turn_k_median":
+                    round(_st.median(_per_turn) / 1000.0, 1) if _per_turn else None,
+            })
         # **sub 側の空振りを欠測に倒す**（GitHub issue #199）。`main.n > 0` を通っても、
         # 申告体数が 1 以上あるのに `sub_agents == 0` なら**窓が sub の transcript を覆って
         # いない**（セッション再開・窓の開始遅れ）。ゼロを実測値として載せると retro の
