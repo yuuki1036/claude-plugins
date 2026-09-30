@@ -10,7 +10,7 @@
 - unmet_information / related-observations / [surface:high-risk] の申告は観点ごとでなく出力末尾にまとめてよい
 ```
 
-1 体あたりのバンドルは 3 観点まで（attention 希釈の上限）。bug-detection / security / spec-compliance / claude-md-compliance は束ねない（triage-guide.md `## 7`）。
+1 体あたりのバンドルは 3 観点まで（attention 希釈の上限）。bug-detection / security / spec-compliance / claude-md-compliance / layer-responsibility は束ねない（triage-guide.md `## 7`）。
 
 
 ### specialist の束ね起動（high 以下 / triage-guide.md `## 7`）

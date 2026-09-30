@@ -279,6 +279,49 @@ sig() {
 # 同一 key の複数条件を 1 行に畳む（件数は合算、根拠は最初の 1 件）
 merge_sig() { awk -F'\t' '{n[$1]+=$2; if(!(($1) in e)) e[$1]=$3} END {for(k in n) printf "%s\t%s\t%s\n", k, n[k], e[k]}' | sort; }
 
+# ---- 注入対象の AGENTS.md / CLAUDE.md（`## agents-md` と層の規約シグナルの両方が使う） ----
+AGENTS_MD=$(
+# **実在判定は `$WT` 基準で行い、出力は repo ルート相対のまま**にする（agent 側は
+# repo ルートから読む）。cwd 相対で見ると、リポジトリルート以外から起動したときに
+# セクションが丸ごと空になり、reviewer の CLAUDE.md 準拠観点が入力なしで走る。
+# xargs は入力のクォートを解釈するため、`it's.ts` のようなパスで
+# `unterminated quote` を起こし、以降のファイルが丸ごと処理されない
+printf '%s\n' "$CLASSIFIED" | cut -f4 | while IFS= read -r p; do
+  [ -n "$p" ] && dirname -- "$p"
+done | sort -u | while read -r d; do
+  while [ "$d" != "." ] && [ "$d" != "/" ]; do  # mutation-ok: どちらを崩しても `dirname .` が `.` を返し続けて無限ループになる
+    [ -f "$WT/$d/AGENTS.md" ] && echo "$d/AGENTS.md"
+    [ -f "$WT/$d/CLAUDE.md" ] && echo "$d/CLAUDE.md"
+    d=$(dirname "$d")
+  done
+done | sort -u
+if [ -f "$WT/AGENTS.md" ]; then echo "AGENTS.md"; fi
+if [ -f "$WT/CLAUDE.md" ]; then echo "CLAUDE.md"; fi
+)
+
+# 層の規約シグナル（triage-guide `## 3` の layer-responsibility）。上の AGENTS.md / CLAUDE.md
+# のうち、**ディレクトリ名（`usecase/` 等）と役割語を同じ行に持つ行**を数える。
+# 規約の中身は読まない（層の区分と照合は reviewer の仕事）。ここで決めるのは「照合の相手が
+# 文書化されているか」だけで、core の変更が無い回（doc だけ等）は照合するコードが無いので出さない
+LAYER_DIR_RE='[A-Za-z0-9_-]+/'
+# `階層` は「情報階層」のような層の規約でない語に当たるので除く。`依存` 単独は「依存なし」に当たるので方向に限る
+LAYER_ROLE_RE='(^|[^階])層|レイヤ|[Ll]ayer|責務|役割|置く|置かない|置き場|禁止|import|依存方向'
+layer_rule_sig() {
+  local f c n=0 ex=""
+  printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core"' | grep -q . || return 0
+  while IFS= read -r f; do
+    [ -n "$f" ] && [ -f "$WT/$f" ] || continue
+    c=$(grep -E -e "$LAYER_DIR_RE" "$WT/$f" 2>/dev/null | grep -c -E -e "$LAYER_ROLE_RE" 2>/dev/null || true)
+    [ "${c:-0}" -gt 0 ] || continue
+    n=$((n + c))
+    [ -n "$ex" ] || ex="$f"
+  done <<EOF_AGENTS
+$AGENTS_MD
+EOF_AGENTS
+  [ "$n" -gt 0 ] || return 0
+  printf 'layer-responsibility\t%s\t%s\n' "$n" "$ex"
+}
+
 echo "## focus-signals"
 {
   sig error-handling   'try *\{|catch *\(|except |rescue |\.catch\('
@@ -301,6 +344,7 @@ echo "## focus-signals"
   # 大半で、除外すると doc-substance の起動閾値にほぼ届かなくなる。
   # 起動閾値（概ね 10 行以上）の判定は triage-guide `## 3` に委ね、ここは件数だけ出す
   sig doc-prose-lines  '[^[:space:]|>*+-]' doc
+  layer_rule_sig
 } | merge_sig
 
 echo "## red-flags"
@@ -361,22 +405,7 @@ printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core" {print $4}' | while read -r
 done | head -10
 
 echo "## agents-md"
-# **実在判定は `$WT` 基準で行い、出力は repo ルート相対のまま**にする（agent 側は
-# repo ルートから読む）。cwd 相対で見ると、リポジトリルート以外から起動したときに
-# セクションが丸ごと空になり、reviewer の CLAUDE.md 準拠観点が入力なしで走る。
-# xargs は入力のクォートを解釈するため、`it's.ts` のようなパスで
-# `unterminated quote` を起こし、以降のファイルが丸ごと処理されない
-printf '%s\n' "$CLASSIFIED" | cut -f4 | while IFS= read -r p; do
-  [ -n "$p" ] && dirname -- "$p"
-done | sort -u | while read -r d; do
-  while [ "$d" != "." ] && [ "$d" != "/" ]; do  # mutation-ok: どちらを崩しても `dirname .` が `.` を返し続けて無限ループになる
-    [ -f "$WT/$d/AGENTS.md" ] && echo "$d/AGENTS.md"
-    [ -f "$WT/$d/CLAUDE.md" ] && echo "$d/CLAUDE.md"
-    d=$(dirname "$d")
-  done
-done | sort -u
-[ -f "$WT/AGENTS.md" ] && echo "AGENTS.md"
-[ -f "$WT/CLAUDE.md" ] && echo "CLAUDE.md"
+if [ -n "$AGENTS_MD" ]; then printf '%s\n' "$AGENTS_MD"; fi
 
 echo "## host-deps"
 # 子 agent は `isolation: "worktree"` の worktree に入るため、gitignore 対象の依存

@@ -104,6 +104,7 @@ diff の特性を分析し、エージェント構成を動的に決定する。
 | migration | マイグレーションファイルの変更時 |
 | config | 設定ファイルの変更時 |
 | cross-cutting | 共通モジュールの変更時 |
+| layer-responsibility | AGENTS.md / CLAUDE.md が層（ディレクトリ）の役割を文書化しているとき。置き場所・判断の持ち場・層をまたぐ重複を見る |
 | pattern-consistency | 変更ファイル数 ≥ 10 |
 | spec-compliance | Issue/knowledge が存在する時 |
 | ui-quality | UI/フロントエンドの変更時 |

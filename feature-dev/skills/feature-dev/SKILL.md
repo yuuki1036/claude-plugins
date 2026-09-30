@@ -592,7 +592,7 @@ Apply diff-based pattern matching:
 - フロントエンド変更 → add `ui-quality`
 - Issue context（Phase 1.5）/ `.claude/session-context.md` / `BDD_SPEC_PATH` のいずれかがある → add `spec-compliance`（実装が仕様・受入条件・設計判断どおりかを見る reviewer。仕様のソースが無いと起動しても空振りする）
 
-**focus 名は code-review の語彙に限る**: `bug-detection` / `claude-md-compliance` / `security` / `performance` / `api-design` / `type-design` / `error-handling` / `test-quality` / `ui-quality` / `migration` / `spec-compliance` / `config` / `dependency` / `cross-cutting` / `pattern-consistency` / `comment-accuracy` / `doc-substance`（code-review の `references/prompts/focus/` のファイル名）。語彙外の名前（旧 `migration-safety` / `vercel-best-practices` 等）を渡すと self-review はその reviewer を起動できない
+**focus 名は code-review の語彙に限る**: `bug-detection` / `claude-md-compliance` / `security` / `performance` / `api-design` / `type-design` / `error-handling` / `test-quality` / `ui-quality` / `migration` / `spec-compliance` / `config` / `dependency` / `cross-cutting` / `layer-responsibility` / `pattern-consistency` / `comment-accuracy` / `doc-substance`（code-review の `references/prompts/focus/` のファイル名）。語彙外の名前（旧 `migration-safety` / `vercel-best-practices` 等）を渡すと self-review はその reviewer を起動できない
 
 Merge with the Phase 1.7 provisional list, then cap by the current effort upper bound (`triage-guide.md` Section 5).
 

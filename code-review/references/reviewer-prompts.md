@@ -14,7 +14,7 @@ reviewer / specialist / meta-reviewer / 反証 / skeptic / Markdown 推敲の各
 | `## 1` 共通指示 | `prompts/reviewer-common.md` | 全 reviewer / specialist 共通。**最初に Read する** |
 | `## 2` セッションコンテキスト | `prompts/session-context.md` | session-context.md が有効なときの注入規約 |
 | `## 2.5` PR コンテキスト | `prompts/pr-context-rules.md` | review のみ。`$PR_CTX_FILE` の検出ルール（re-flag / resolved / scope:out / D1-High） |
-| `## 3` Focus テンプレート | `prompts/focus/<focus>.md` | 観点ごと。`bug-detection` / `security` / `spec-compliance` ほか 17 種 |
+| `## 3` Focus テンプレート | `prompts/focus/<focus>.md` | 観点ごと。`bug-detection` / `security` / `spec-compliance` ほか 18 種 |
 | `## 3` バンドル起動 | `prompts/bundle-rules.md` | 1 体に複数観点を束ねるときの追加指示（reviewer / specialist 共通） |
 | `## 4` Angle | `prompts/angles.md` | 冗長ペア（xhigh / max のみ）の切り口 |
 | `## 5` Specialist | `prompts/specialist/<key>.md` | `injection` / `destructive-op` / `secret-handling` / `input-validation` / `guardrail-bypass` |

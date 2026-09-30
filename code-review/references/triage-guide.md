@@ -126,6 +126,7 @@ diff パターンマッチで各観点の必要性を判定する。
 | migration | マイグレーションファイル（`migrations/`, `prisma/migrations/`, `db/migrate/`）の変更 |
 | config | `.env*`, `*.config.*`, `Dockerfile`, `docker-compose.*`, `.github/workflows/**` の変更 |
 | cross-cutting | 共通モジュール（`utils/`, `helpers/`, `shared/`, `common/`, `lib/`）の変更 |
+| layer-responsibility | `## focus-signals` に `layer-responsibility` が出ている（注入対象の AGENTS.md / CLAUDE.md が、ディレクトリ名と役割語を同じ行に持つ = 層の役割を文書化している、かつ core の変更がある）。シグナルが出ていなくても、Phase 0 で読んだ規約に層の役割が書かれていれば起動してよい。**束ねず単独で起動する**（`## 7`） |
 | pattern-consistency | 変更ファイル数 >= 10 |
 | spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する、self-review に `--spec` で仕様ファイルが渡された、または review で PR に紐づく Issue（`closingIssuesReferences`）がある |
 | ui-quality | フロントエンド変更（`.tsx`/`.jsx`/`.vue`/`.svelte`/`components/`/`pages/`/`app/`）、または diff に `aria-`/`role=`/`<img`/`<button`/`tabindex`/`onClick`/`onKeyDown` 等のアクセシビリティ・インタラクション関連の変更がある |
@@ -237,7 +238,7 @@ SKILL.md Step 1 が保存した PR コンテキスト（`$PR_CTX_FILE`）の内�
 他の観点も必要に応じて angle を設定する。
 
 - **reviewer 上限**: `## 7` の effort 適応表と `## 6.2` の規模キャップの **min**（effort 側は high 6 体 / xhigh・max 10 体、規模側は small 3 体 / medium 5 体。最小保証の 2 体は規模キャップより優先）
-- **単独維持の観点が上限に収まらないときの順**（small の 3 体など）: 最小保証の 2 体（bug-detection・claude-md-compliance）→ **仕様ソースがあれば spec-compliance** → security → 残りは束ねる。仕様ソースのある回で spec-compliance を落とすと、Issue や spec との照合がその回まるごと起きない。落ちた観点は従来どおり `missing_coverage` に記録する
+- **単独維持の観点が上限に収まらないときの順**（small の 3 体など）: 最小保証の 2 体（bug-detection・claude-md-compliance）→ **仕様ソースがあれば spec-compliance** → security → layer-responsibility → 残りは束ねる。仕様ソースのある回で spec-compliance を落とすと、Issue や spec との照合がその回まるごと起きない。落ちた観点は従来どおり `missing_coverage` に記録する
 
 ## 5. 出力フォーマット
 
@@ -402,9 +403,9 @@ diff シグナルが読めず観点を決められない場合の既定構成（
 - **冗長ペアは xhigh / max 専用**。high 以下ではペア条件（`## 4` の冗長度判定）成立時も 1 体とし、Angle A / B を両方その 1 体のプロンプトに内挿する（`prompts/angles.md`）
   - **補償の実態を正確に**: 反証レイヤーの `confirmed` は「複数エージェント検出 +15」と同じ発火源だが（scoring-guide.md）、反証対象は**報告マトリクス通過見込みの指摘に限られる**（triage-dynamic-gates.md `## 9`）。つまり **閾値直下の指摘（通常 surface の CRITICAL 70 台・MAJOR 80-94）をペアの +15 が報告側へ押し上げていた効果は補償されない**。この帯の recall 低下は縮小のコストとして許容し、severity 別件数（下記ロールバック条件）で監視する
   - **angle 内挿時の scoring**: 1 体内で両 angle が同一問題に到達しても「ペア合意 +10」は付けず、「片方のみ検出 -5」も適用しない（独立性が担保されないため。scoring-guide.md の両項は冗長ペア実起動時＝xhigh/max のみ発火する）
-- **観点バンドル（high 以下）**: 起動条件を満たした観点数が reviewer 上限を超える場合、近接観点を 1 体に束ねて**可能な限り**吸収する（例: error-handling + comment-accuracy + type-design / config + dependency）。1 体あたり 3 観点まで。**bug-detection / security / spec-compliance / claude-md-compliance は束ねず単独を維持**する（指摘密度が高く attention 希釈の代償が大きい観点）。束ね時の出力規約（focus キーは原観点・観点ごとに独立列挙・自己フィルタ禁止）は `prompts/bundle-rules.md`を参照
+- **観点バンドル（high 以下）**: 起動条件を満たした観点数が reviewer 上限を超える場合、近接観点を 1 体に束ねて**可能な限り**吸収する（例: error-handling + comment-accuracy + type-design / config + dependency）。1 体あたり 3 観点まで。**bug-detection / security / spec-compliance / claude-md-compliance / layer-responsibility は束ねず単独を維持**する（指摘密度が高く attention 希釈の代償が大きい観点。layer-responsibility は探索量が結果を決める観点で、claude-md-compliance に同居させた版は 6 回とも層の指摘を本文に出せず、専任の reviewer だけが拾えた / GitHub issue #261）。束ね時の出力規約（focus キーは原観点・観点ごとに独立列挙・自己フィルタ禁止）は `prompts/bundle-rules.md`を参照
   - **`comment-accuracy` が束ねられた場合も、self-review のコメント推敲（B 系統）の `## コメント推敲提案` ブロックは省略しない**（v2.45.0）。束ねは attention の配分の話であって出力契約の削減ではない。該当なしなら「該当なし」と明記する（Step 6 の見出しが silent に消えると、推敲ゼロが「提案が無かった」のか「観点が薄まって見なかった」のか区別できなくなる）。**バンドル相乗りでも `comment_polish.fired` は `true`** — 専任 reviewer の有無で切ると high 既定で常に false になる（orchestration-measurement.md `## 16`）
-  - **容量と超過時の扱い**: 吸収容量は「単独 4 観点 +（reviewer 上限 − 4）× 3」＝ high で最大 10 観点。観点判定表は 17 観点あるため、フルスタックな大型 PR では超過しうる。**超過分は `missing_coverage` に「観点未起動: <focus>（reviewer 上限超過）」として必ず記録**し、レポートの欠損観点セクションに明示する（脱落を silent にしない）。超過が常態化する PR は xhigh への明示 escalation を促す
+  - **容量と超過時の扱い**: 吸収容量は、起動した単独維持の観点数を S として「S +（reviewer 上限 − S）× 3」（high で単独 4 観点なら 10 観点、layer-responsibility も起動して 5 観点なら 8 観点）。観点判定表は 18 観点あるため、フルスタックな大型 PR では超過しうる。**超過分は `missing_coverage` に「観点未起動: <focus>（reviewer 上限超過）」として必ず記録**し、レポートの欠損観点セクションに明示する（脱落を silent にしない）。超過が常態化する PR は xhigh への明示 escalation を促す
 - **specialist の束ね起動（high 以下）**: 複数 red-flag 同時ヒット時、specialist-guardrail-bypass のみ単独 1 体を維持し、残りを 1〜2 体に束ねて該当テンプレートを連結注入する（`## 3` Red-flag 節）。トリガー感度は変更しない
 - **縮小のロールバック条件（v2.39.0 の high 既定縮小）**: 効果は `review:completed` の `agents` / `duration_fleet_min` / blocker+critical 件数で監視する。**判定に使えるのは `agents` フィールドを持つサンプルのみ**（フィールドの有無が版マーカー。日付では切らない）。悪化の検証は旧データ比ではなく **xhigh/max の明示実行を対照群にした縮小後サンプル内の比較**で行い、`size_tier` を揃える。サンプルが無いうちは判断しない。→ 監視の jq・観測ログ・`review` 由来サンプルが v2.40.0 より前に存在しない理由: `design-notes/triage-rationale.md`
 - **体数を壁時計のレバーとして扱わない**。並列発行が効いている限り fleet 区間の実時間は「wave 内最長の 1 体」で決まるため体数削減の効果は線形ではない。**支配的なのは effort（= 直列 wave 数）**（review 13 件。`size_tier` を medium に揃えると high 平均 32 分 / xhigh 平均 61 分と **1.9 倍**なのに、体数レンジは 6〜10 と 6〜11 でほぼ重なる。`73 分 / 6 体` と `19 分 / 7 体` が併存する。GitHub issue #116 / 内訳: `design-notes/triage-rationale.md`）。**この節はかつて「体数と `duration_fleet_min` は無相関」を根拠にしていたが、その事実主張は取り下げた**（v2.116.0 / GitHub issue #217）— サンプルが増えると `small` / `large` で相関が出る（実測 n=213: medium/unrecorded 0.16 / large/unrecorded 0.67 / small/opus-4-8 0.69）。**規範は残る。根拠が変わった**: ①相関は因果ではない（tier・世代・effort・wave 数の統制・synthesis の減算のどれでも消えず、体数と一緒に動く未観測の変数 — diff の難しさ・1 体あたりの探索量 — が両方を押していると読む）②**体数削減は recall を削る**（`## 5.2` の実測: 踏み下げで報告 0 件率 42% → 91%）。**「相関があるから体数を減らせば速くなる」と読まないこと** — 因果の向きが確かめられていないうえ、削るのは recall の側になる。体数削減が確実に効くのは**トークンコスト**。壁時計を縮めたいときにまず触るのは ①1 体あたりの探索量（`prompts/reviewer-common.md` の探索予算）②直列 wave 数（`## 5.1`）③メインコンテキストの複製量（orchestration-guide.md `## 3.5`）。**この節のロールバック判断に「時間が長いから体数を減らす」を混ぜない**（recall だけ落ちて時間が変わらない改悪になる）

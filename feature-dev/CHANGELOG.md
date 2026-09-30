@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.9] - 2026-09-30
+### Changed
+
+- self-review に渡す focus 名の語彙に、code-review の新しい観点 `layer-responsibility` を足した
+
+
 ## [2.17.8] - 2026-09-28
 ### Fixed
 

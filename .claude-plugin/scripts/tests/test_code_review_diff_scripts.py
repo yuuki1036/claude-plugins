@@ -572,6 +572,34 @@ class TriageSignalTest(DiffScriptTestBase):
         self.write("src/a.ts", "const code = 1\nconst more = 2\n")
         self.assertNotIn("doc-prose-lines", self.sig(self.digest(), "## focus-signals"))
 
+    def test_layer_signal_fires_when_agents_md_names_a_directory_role(self):
+        """ディレクトリ名と役割語が同じ行にあれば、層の規約が文書化されているとみなす（#261）."""
+        self.write("AGENTS.md", "- usecase/ は 1 ファイル = 1 行為に限る。判定ロジックは domain/ に置く\n")
+        self.write("src/a.ts", "const x = 1\n")
+        got = self.sig(self.digest(), "## focus-signals")
+        self.assertEqual(got.get("layer-responsibility"), 1)
+
+    def test_layer_signal_stays_silent_without_a_directory_role(self):
+        """黙る条件: 役割語だけ・ディレクトリ名だけ・`階層` の行では出さない."""
+        self.write("AGENTS.md", "責務を明確にする\nsrc/ を見よ\ndocs/ の情報階層を整える\n")
+        self.write("src/a.ts", "const x = 1\n")
+        self.assertNotIn("layer-responsibility", self.sig(self.digest(), "## focus-signals"))
+
+    def test_layer_signal_stays_silent_without_core_changes(self):
+        """doc だけの変更には照合するコードが無いので出さない."""
+        self.write("AGENTS.md", "- usecase/ に判定ロジックを置かない\n")
+        self.write("docs/g.md", "prose\n")
+        self.assertNotIn("layer-responsibility", self.sig(self.digest(), "## focus-signals"))
+
+    def test_layer_signal_counts_rules_across_nested_agents_md(self):
+        """件数は変更ファイルの祖先にある AGENTS.md / CLAUDE.md の合算、根拠は `## agents-md` の並びで最初に当たった 1 件（下位ディレクトリが先）."""
+        self.write("AGENTS.md", "- server/ の責務はドメイン判断\n")
+        self.write("src/CLAUDE.md", "- features/ から server/ を import しない\n- shared/ の役割は型だけ\n")
+        self.write("src/a.ts", "const x = 1\n")
+        rows = {l.split("\t")[0]: l.split("\t")[1:] for l in
+                self.section(self.digest(), "## focus-signals") if l.count("\t") == 2}
+        self.assertEqual(rows.get("layer-responsibility"), ["3", "src/CLAUDE.md"])
+
     def test_guardrail_bypass_pattern_starting_with_dash_is_detected(self):
         """`--no-verify` は grep のオプションに見える。`-e` で渡していないと黙って 0 件になる."""
         self.write("src/a.ts", 'run("git commit --no-verify")\n')
