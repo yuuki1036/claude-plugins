@@ -154,13 +154,24 @@ review_session_id() {
 #
 # **引けないときに推定へ倒さないこと** — 縮退先は欠測であって誤値ではない
 # （orchestration-measurement.md `## 13.1`）。
+#
+# **同じ id のファイルが複数の dir にありうる**（セッション中に cwd が worktree ⇄ 本体を移った回 /
+# GitHub issue #263）。glob の先頭は辞書順で決まり、途中で止まった古いコピーを返すと publish の窓に
+# 1 行も入らず `tokens` / `dispatch` / `models` / `report_template` がまとめて欠測する（実測 375 本中 3 id が重複）。
+# 最終更新が最も新しいものを採り、同着で選べなければ欠測に倒す。
 review_session_transcript() {
-  local sid f
+  local sid f best="" tie=0
   sid=$(review_session_id) || return 1
   for f in "$HOME"/.claude/projects/*/"$sid".jsonl; do
-    if [ -f "$f" ]; then printf '%s' "$f"; return 0; fi
+    [ -f "$f" ] || continue
+    if [ -z "$best" ] || [ "$f" -nt "$best" ]; then
+      best="$f"; tie=0
+    elif ! [ "$best" -nt "$f" ]; then
+      tie=1
+    fi
   done
-  return 1
+  if [ -z "$best" ] || [ "$tie" -eq 1 ]; then return 1; fi
+  printf '%s' "$best"
 }
 
 # diff ファイルの突合キーを 2 本出力する（`<digest> <files-key>`。算出不能なら空 + rc=1）。

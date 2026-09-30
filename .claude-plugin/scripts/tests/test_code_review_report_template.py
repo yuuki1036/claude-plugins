@@ -84,6 +84,23 @@ class JudgeLinesTest(unittest.TestCase):
         self.assertTrue(verdict([bash(multi), text(TEMPLATE), bash(chained)]))
         self.assertFalse(verdict([bash(multi), text("済"), bash(chained)]))
 
+    def test_env_assignments_before_bash_are_still_calls(self):
+        """`CLAUDE_PLUGIN_ROOT=$R bash …` の形を取りこぼすと、定型が出ていても判定不能になる（#262）."""
+        start = "CLAUDE_PLUGIN_ROOT=$R " + START
+        publish = 'CLAUDE_PLUGIN_ROOT="$R" FOO=1 ' + PUBLISH
+        self.assertTrue(verdict([bash(start), text(TEMPLATE), bash(publish)]))
+        self.assertFalse(verdict([bash(start), text("済"), bash(publish)]))
+        self.assertEqual(judge_lines([text(TEMPLATE), bash(publish)]), (None, False),
+                         "前置き付きの start が無ければ起点は無い")
+
+    def test_env_prefixed_calls_inside_a_heredoc_are_not_calls(self):
+        heredoc = ("cat > x.py <<'PY'\n"
+                   "CLAUDE_PLUGIN_ROOT=$R " + START + "\n"
+                   "CLAUDE_PLUGIN_ROOT=$R " + PUBLISH + "\n"
+                   "PY")
+        self.assertIsNone(verdict([bash(heredoc), text(TEMPLATE)]))
+        self.assertTrue(verdict([bash(START), text(TEMPLATE), bash(heredoc), bash(PUBLISH)]))
+
     def test_the_last_publish_after_the_start_is_judged(self):
         """fail-fast で落ちた publish を直して再実行した回は、通した publish の前に定型があればよい."""
         self.assertTrue(verdict([bash(START), text("済"), bash(PUBLISH), text(TEMPLATE),

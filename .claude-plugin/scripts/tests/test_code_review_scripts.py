@@ -1492,6 +1492,35 @@ class PublishSessionResolutionTest(TranscriptFixture):
         self.assertEqual(p["tokens"]["session"], "s1.jsonl")
         self.assertEqual(p["tokens"]["sub_agents"], 2, "sub transcript を id で辿れていない")
 
+    def _stale_copy(self, mtime_offset: float) -> Path:
+        """同じ id の transcript を、辞書順で先に来る別 dir に置く（worktree ⇄ 本体を移ったセッション / #263）."""
+        stale = self.home / ".claude" / "projects" / "-aaa-worktree" / "s1.jsonl"
+        stale.parent.mkdir(parents=True)
+        stale.write_text(json.dumps({"type": "assistant", "timestamp": "2026-08-17T00:00:00Z",
+                                     "message": {"model": "claude-opus-4-8"}}) + "\n",
+                         encoding="utf-8")
+        real = self.home / ".claude" / "projects" / self.slug() / "s1.jsonl"
+        t = real.stat().st_mtime + mtime_offset
+        os.utime(stale, (t, t))
+        return stale
+
+    def test_the_newest_copy_of_the_same_id_is_picked(self):
+        """glob の先頭（辞書順）ではなく最終更新が新しい方を採る."""
+        self.write_transcript([[0, 5]])
+        self._stale_copy(-3600)
+        self.publish(env=self.env_home())
+        p = self.last_payload()
+        self.assertEqual(p["models"]["main"], "claude-opus-5", "古いコピーを引いている")
+        self.assertEqual(p["dispatch"]["agents"], 2)
+        self.assertNotIn("session-unresolved", p["measurement_gaps"])
+
+    def test_copies_that_cannot_be_ordered_are_not_estimated(self):
+        """最終更新が同じで選べないなら、どちらかに倒さず欠測にする."""
+        self.write_transcript([[0, 5]])
+        self._stale_copy(0)
+        self.publish(env=self.env_home())
+        self._unmeasured(self.last_payload())
+
     def test_no_session_id_is_not_estimated(self):
         """id が無ければ、候補 dir に transcript があっても推定しない."""
         self.write_transcript([[0, 5]])

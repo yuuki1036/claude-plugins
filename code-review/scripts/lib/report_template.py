@@ -35,8 +35,9 @@ import time
 from datetime import datetime
 
 MARKER = "**指摘件数**: BLOCKER"
-#: コマンドの位置（行頭・`&&` / `||` / `;` / `|` の後）にある `bash <path>` の呼び出しだけを数える
-_CMD_POS = r"(?:^|&&|\|\||[;|])\s*"
+#: コマンドの位置（行頭・`&&` / `||` / `;` / `|` の後）にある `bash <path>` の呼び出しだけを数える。
+#: 間に `NAME=value` の代入が挟まってもよい（`CLAUDE_PLUGIN_ROOT=$R bash …` を取りこぼしていた / #262）
+_CMD_POS = r"""(?:^|&&|\|\||[;|])\s*(?:[A-Za-z_]\w*=(?:"[^"\n]*"|'[^'\n]*'|\S*)\s+)*"""
 START_RE = re.compile(_CMD_POS + r'bash\s+"?[^\s"]*review-timing\.sh"?\s+start\b', re.M)
 PUBLISH_RE = re.compile(_CMD_POS + r'bash\s+"?[^\s"]*publish-review-event\.sh', re.M)
 #: heredoc の本文（`<<'EOF'` … `EOF`）。中の字面は実行されるコマンドではない

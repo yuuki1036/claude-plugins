@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.134.2] - 2026-09-30
+### Fixed
+
+- publish がレポート出力の定型を判定するとき、`CLAUDE_PLUGIN_ROOT=$R bash …/publish-review-event.sh` のように環境変数を前置きした start / publish の呼び出しを見落とし、定型が出ていても `report_template` が `null`（判定不能）になっていた（#262）。コマンドの位置と `bash` の間に `NAME=value` の代入があっても呼び出しとして数える
+- 同じ session id の transcript が複数の project dir にある（セッション中に worktree ⇄ 本体を移った）と、辞書順で先の古いコピーを引いて `tokens` / `dispatch` / `models` / `report_template` がまとめて欠測していた（#263）。最終更新が最も新しいものを採り、同着で選べなければ推定せず `session-unresolved` に倒す
+
+
 ## [2.134.1] - 2026-09-30
 ### Fixed
 
