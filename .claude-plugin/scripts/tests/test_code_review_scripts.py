@@ -1578,8 +1578,12 @@ class PublishSessionResolutionTest(TranscriptFixture):
         stale.write_text(json.dumps({"type": "assistant", "timestamp": "2026-08-17T00:00:00Z",
                                      "message": {"model": "claude-opus-4-8"}}) + "\n",
                          encoding="utf-8")
+        # 両方に**整数秒**を設定する。bash の `-nt` は Linux ではナノ秒・macOS の bash 3.2 では秒で比べるので、
+        # 本物の st_mtime（float）から作ると Linux では端数がずれて同着にならない（CI でだけ落ちた）
         real = self.home / ".claude" / "projects" / self.slug() / "s1.jsonl"
-        t = real.stat().st_mtime + mtime_offset
+        base = int(real.stat().st_mtime)
+        os.utime(real, (base, base))
+        t = base + int(mtime_offset)
         os.utime(stale, (t, t))
         return stale
 
