@@ -75,6 +75,13 @@ class ViaTest(unittest.TestCase):
         self.assertEqual(via([prompt("y"), skill("code-review:self-review")]), "unknown",
                          "start が無い")
 
+    def test_slash_in_list_content(self):
+        """発話の content が text ブロックの配列でも slash と読む（#267: `== "text"` の反転が生きていた）."""
+        body = slash("code-review:self-review")["message"]["content"]
+        listed = {"type": "user", "message": {"role": "user",
+                                              "content": [{"type": "text", "text": body}]}}
+        self.assertEqual(via([listed, expanded(), start()]), "slash")
+
     def test_slash_wins_over_the_skill_call_it_triggers(self):
         """slash の本文が「スキルを使って」と言うので、直後に同じ skill を Skill で呼び直す（実測）."""
         self.assertEqual(via([slash("code-review:self-review"), expanded(),

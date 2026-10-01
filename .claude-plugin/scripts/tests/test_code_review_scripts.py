@@ -1523,6 +1523,35 @@ class InvocationPublishTest(TranscriptFixture):
         self.publish(env=env)
         self.assertEqual(self.last_payload()["invocation"], {"via": "unknown", "parent": None})
 
+    def _publish_with_judge(self, judged: dict) -> dict:
+        """判定器（`lib/invocation.py`）の出力を差し替えて publish する.
+
+        publish は判定器の出力を検証してから載せる。判定器は正しい値しか出さないので、検証の分岐は
+        判定器を stub にしないと通らない（#267: 検証の `and` を `or` にした変異が生き残っていた）。
+        """
+        scripts = detached_plugin(self.root, {"name": "code-review", "version": plugin_version()})
+        (scripts / "lib" / "invocation.py").write_text(
+            "print(%r)\n" % json.dumps(judged), encoding="utf-8")
+        self.write_transcript([[0, 5]])
+        body = json.dumps(BASE_PAYLOAD, ensure_ascii=False)
+        r = self.run_script(scripts / "publish-review-event.sh", "--plugin", "code-review:self-review",
+                            "--payload", body, env=self.env_home())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return self.last_payload()["invocation"]
+
+    def test_a_valid_judgement_passes_through(self):
+        """前提: stub の値がそのまま載る経路が生きている（下 2 本が fallback を見ていることの裏付け）."""
+        self.assertEqual(self._publish_with_judge({"via": "slash", "parent": "other"}),
+                         {"via": "slash", "parent": "other"})
+
+    def test_an_unknown_via_falls_back(self):
+        self.assertEqual(self._publish_with_judge({"via": "bogus", "parent": None}),
+                         {"via": "unknown", "parent": None}, "語彙外の via が載っている")
+
+    def test_a_non_string_parent_falls_back(self):
+        self.assertEqual(self._publish_with_judge({"via": "slash", "parent": 5}),
+                         {"via": "unknown", "parent": None}, "文字列でない parent が載っている")
+
 
 class PublishSessionResolutionTest(TranscriptFixture):
     """publish は transcript を `CLAUDE_CODE_SESSION_ID` から引く（GitHub issue #246）.
