@@ -343,6 +343,8 @@ echo "## focus-signals"
   sig cross-cutting    '(^|/)(utils|helpers|shared|common|lib|core)/' paths
   sig ui-quality       '\.(tsx|jsx|vue|svelte)$|(^|/)(components|pages|app)/' paths
   sig ui-quality       'aria-|role=|<img|<button|tabindex|onClick|onKeyDown'
+  # 翻訳・文言ファイル（GitHub issue #272）。文言だけを変える diff は上の拡張子・ディレクトリに掛からない
+  sig ui-quality       '(^|/)(locales?|i18n|messages)/' paths
   sig doc-substance    '(^|/)(CLAUDE|AGENTS|CONTRIBUTING|README)|\.claude/(adr|designs)/' paths
   # 任意 *.md の**語を持つ行**（空行と、マーカー・区切りだけの行 — `---` / `|---|---|` /
   # `> ` / `* * *` — を除く）。**箇条書きの本文は数える**: 本文が箇条書きで書かれた doc が

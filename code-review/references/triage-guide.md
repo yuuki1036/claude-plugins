@@ -129,7 +129,7 @@ diff パターンマッチで各観点の必要性を判定する。
 | layer-responsibility | `## focus-signals` に `layer-responsibility` が出ている（注入対象の AGENTS.md / CLAUDE.md が、ディレクトリ名と役割語を同じ行に持つ = 層の役割を文書化している、かつ core の変更がある）。シグナルが出ていなくても、Phase 0 で読んだ規約に層の役割が書かれていれば起動してよい。**束ねず単独で起動する**（`## 7`） |
 | pattern-consistency | 変更ファイル数 >= 10 |
 | spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する、self-review に `--spec` で仕様ファイルが渡された、または review で PR に紐づく Issue（`closingIssuesReferences`）がある |
-| ui-quality | フロントエンド変更（`.tsx`/`.jsx`/`.vue`/`.svelte`/`components/`/`pages/`/`app/`）、または diff に `aria-`/`role=`/`<img`/`<button`/`tabindex`/`onClick`/`onKeyDown` 等のアクセシビリティ・インタラクション関連の変更がある |
+| ui-quality | フロントエンド変更（`.tsx`/`.jsx`/`.vue`/`.svelte`/`components/`/`pages/`/`app/`）・翻訳 / 文言ファイル（`locales/`/`locale/`/`i18n/`/`messages/`。文言の短縮で落ちた情報を見る / GitHub issue #272）、または diff に `aria-`/`role=`/`<img`/`<button`/`tabindex`/`onClick`/`onKeyDown` 等のアクセシビリティ・インタラクション関連の変更がある |
 | doc-substance | **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む、**または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）、**または** 既存の節の書き換え（`## focus-signals` の `doc-rewritten-lines` が 3 以上 = 消えた側の語を持つ行。変えた節と変えていない節の矛盾を照合する / GitHub issue #269）。混在 PR（`*.md` < 80%）で doc 内容が無観点で素通りするのを防ぐ。詳細・effort 制御は下記「doc-substance の起動（重要度ゲート）」 |
 
 ### doc-substance の起動（重要度ゲート）

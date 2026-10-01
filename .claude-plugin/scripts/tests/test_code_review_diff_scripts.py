@@ -609,6 +609,22 @@ class TriageSignalTest(DiffScriptTestBase):
         self.write("docs/g.md", "plain\n")
         self.assertNotIn("behavior-change", self.sig(self.digest(), "## focus-signals"))
 
+    def test_ui_quality_fires_on_locale_files(self):
+        """文言だけを変える diff でも ui-quality を起動する（GitHub issue #272）."""
+        for path in ("locales/ja.json", "src/i18n/en.yml", "app-x/locale/ja.json", "public/messages/ja.json"):
+            with self.subTest(path=path):
+                f = self.write(path, '{"tip": "上位の設定を継承します"}\n')
+                self.git("add", "-N", path)
+                self.assertIn("ui-quality", self.sig(self.digest(), "## focus-signals"))
+                self.git("rm", "-q", "--cached", path)
+                f.unlink()  # 次の subTest に残さない（前のファイルで当たったと取り違えない）
+
+    def test_ui_quality_stays_silent_on_lookalike_names(self):
+        """黙る条件: ディレクトリでない `messages.ts` / 語中の `mylocales/` は文言ファイルとみなさない."""
+        self.write("src/messages.ts", "export const a = 1\n")
+        self.write("src/mylocales/x.json", "{}\n")
+        self.assertNotIn("ui-quality", self.sig(self.digest(), "## focus-signals"))
+
     def test_doc_rewritten_lines_count_removed_prose_in_md(self):
         """既存の節を書き換えた行数（消えた側の語を持つ行。区切りだけの行は数えない / #269 の型 3）."""
         out = self._commit_then_rewrite("docs/spec.md", "rule one\nrule two\n---\nkeep\n",
