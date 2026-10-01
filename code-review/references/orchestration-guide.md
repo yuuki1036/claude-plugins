@@ -153,7 +153,7 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 | 層 | 体数 | effort | 既定 high で起動するか |
 |---|---|---|---|
 | meta-reviewer | 1 体・1 round（triage-dynamic-gates.md `## 8`） | `max` | しない（xhigh/max 起点） |
-| 冷や読み skeptic | PR あたり 1 体・1 round（triage-dynamic-gates.md `## 8.5`） | `max` | **する**（high 起点 / surface=true のときだけ。v2.52.0 で昇格） |
+| 冷や読み skeptic | PR あたり 1 体・1 round（triage-dynamic-gates.md `## 8.5`） | `max` | しない（xhigh/max 起点 / surface=true のときだけ。v2.52.0 で high 起点に昇格し、v2.136.0 で戻した / #264） |
 | 反証エージェント | **5 件ごと 1 体・本体上限 3 体 ＋ meta 由来の追加バッチ 1 体**（計 4 体 20 件 / v2.61.0。triage-dynamic-gates.md `## 9`）＝唯一の変動費 | **`high`**（v2.41.0 で `max` から引き下げ） | **する**（非対称ゾーンに限定） |
 | Markdown 推敲（self-review のみ / v2.131.0） | 1 体（reviewer wave に相乗り。体数の上限の外） | `high`（**実行時 effort に連動させない**。推敲の厚みを揺らさない） | **する**（effort を問わない。md の散文の追加・変更があり writing-polish が有効なとき。`md-polish-guide.md`） |
 

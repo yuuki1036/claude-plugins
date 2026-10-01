@@ -721,7 +721,7 @@ SCHEMA_MARKERS = {
     "below_threshold_counts": {"schema": 1},
     "appendix":           {"schema": 1},
     "adversarial_verify": {"calibration_schema": 3, "gate_schema": 2},
-    "recall_skeptic":     {"attribution_schema": 2, "gate_schema": 2},
+    "recall_skeptic":     {"attribution_schema": 2, "gate_schema": 3},
     "meta_reviewer":      {"gate_schema": 3},
     "md_polish":          {"gate_schema": 1},
 }

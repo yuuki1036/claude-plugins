@@ -78,6 +78,8 @@ v2.12.0 は「共通モジュールの変更は**行数や関数数に関わら�
 
 ## `## 8.5` 冷や読み skeptic を high 起点へ昇格した根拠（v2.52.0 / 2026-08-07）
 
+> **この昇格は v2.136.0 で戻した**（#264）。ロールバック条件（fired 15 件以上で価値率 25% 未満・世代の層ごと）に opus-5-5 層が該当した — fired 17 件で価値率 18%、うち high 13 件で 15%。n を倍にして半分を切ったので、下の根拠は崩れたとみなす。戻す範囲と実測の表は `triage-dynamic-gates.md ## 8.5`「high 起点のロールバック」。以下は昇格時点の記録として残す。
+
 `triage-dynamic-gates.md ## 8.5` が定めていた昇格基準は「直近で `skip_reason="effort"` の surface ヒットが**継続的に発生**し、かつ xhigh 実績の価値率（`findings_added > 0` 率）が**明確に非ゼロ**」。**両方とも満たしたので昇格した。**
 
 集計対象は 5 リポジトリの `.claude/events.jsonl` を横断した `review:completed` **50 件**（review 17 / self-review 33）。`recall_skeptic` を持ち `attribution_schema >= 2` のものは 33 件:

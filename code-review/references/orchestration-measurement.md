@@ -230,7 +230,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 | `adversarial_verify` | `calibration_schema` | 3 |
 | `adversarial_verify` | `gate_schema` | 2 |
 | `recall_skeptic` | `attribution_schema` | 2 |
-| `recall_skeptic` | `gate_schema` | 2 |
+| `recall_skeptic` | `gate_schema` | 3 |
 | `meta_reviewer` | `gate_schema` | 3 |
 | `md_polish` | `gate_schema` | 1 |
 
@@ -414,16 +414,16 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - **`findings_added` は meta の価値を捉えきらない**（フィールド設計時に認識済みの非対称）。meta は「単独起動されなかった観点を自分で当たって『指摘なし』と閉じる」という**指摘以外の価値**も出すが、それはこのフィールドに現れない。**価値率が低くても即座に撤去判断をしない** — 撤去を検討する段では、レポート本文で「閉じた観点」の有無も併せて読む
 - **v2.60.0 の帯連動ゲートは「撤去」ではなく「帯限定の縮小」**（`small` 帯かつ BLOCKER 不在のみスキップ / `medium`・`large` と BLOCKER 有りは従来どおり起動）。上の非対称を踏まえ、**指摘以外の価値が最も薄い帯に限って**止めている。**判断根拠は n=1 でこのリポジトリの通常の基準（`## 8.5` の skeptic は昇格を n=8 で判断しロールバック判定は n=15、`## 9` の反証縮小は n=19）を下回る** — ロールバック条件と経緯の正本は `design-notes/triage-rationale.md`
 
-**`recall_skeptic`** — 冷や読み skeptic の実行記録。high 昇格判断（triage-dynamic-gates.md `## 8.5`）の計測データ:
+**`recall_skeptic`** — 冷や読み skeptic の実行記録。effort ゲートの昇格・ロールバックと撤去の判断（triage-dynamic-gates.md `## 8.5`）の計測データ:
 
 - `surface`: high-risk surface 判定の結果（bool）。**skeptic が effort / userConfig でスキップされた場合も、正規表現部分の判定だけは payload 構築時に必ず実施して記録する** — 「surface=true なのに effort ゲートで走らなかった頻度」が昇格判断の核心メトリクスのため
 - `fired`: skeptic agent が実際に起動したか（bool）
 - `skip_reason`: `fired=false` のときの理由。**`fired=false` なら必ずどれか 1 つを入れる（`null` にしない）**。条件→値の対応は次のとおりで、上から評価して最初に当たった値を採る:
   - `surface=false`（high-risk surface を含まない）→ **`"no-surface"`**。**レポートの「非該当（surface なし）」がこの payload 値**。「skip ではない」と読んで `null` を入れると `payload:recall_skeptic.skip_reason` gap に落ちる（実測 9 件・すべて self-review / GitHub issue #222）ので、surface が false でも理由フィールドは `no-surface` で埋める。**書き忘れた回は publish が `surface=false` から `no-surface` を導出して入れる**（v2.119.2）。**gap は残す** — 「gap あり かつ 値あり」が導出由来の印で、書き忘れ率は引き続き測れる。`surface=true` の回と `surface` 自体が無い回は導出しない（下の 4 値を判別できない）。申告済みの値は書き換えない
-  - `surface=true` だが起動ゲートで落ちた → 落とした条件の値。`"effort"`（effort が low/medium）/ `"config"`（userConfig `enable_recall_skeptic=false`）/ `"emergency"`（`--emergency`）/ `"scope"`（self-review の `--focus`/`--exclude` 指定。`--exclude md-polish` 単独は含まない）
+  - `surface=true` だが起動ゲートで落ちた → 落とした条件の値。`"effort"`（effort が low/medium/high。`gate_schema` 2 の回は low/medium）/ `"config"`（userConfig `enable_recall_skeptic=false`）/ `"emergency"`（`--emergency`）/ `"scope"`（self-review の `--focus`/`--exclude` 指定。`--exclude md-polish` 単独は含まない）
   - `fired=true`（起動した）→ `null`
 - `launch`: **起動経路の自己申告**（v2.113.0 / GitHub issue #216）。`"rider"` = reviewer 一括発行に相乗り（review Step 5 / self-review Step 4）/ `"fallback"` = reviewer の `[surface:high-risk]` フラグ由来で reviewer 完了後に単独起動（triage-dynamic-gates.md `## 8.5` の例外経路）。`fired=false` なら `null`。**期待 wave 本数の skeptic 控除はこの値だけで決める**（`fallback` のときだけ 1 本。位置は見ない）。無いと `payload:recall_skeptic.launch` gap が立ち、集計は位置ヒューリスティック（`lib/wave_expect.py` の `skeptic_tail_solo`）に落ちる — 同じ層構成でも反証 wave の体数で判定が反転する暫定措置（実測 `[3,1,3]` は違反 / `[4,11,4,1]` は控除）。語彙外は publish が落とす（`skip_reason` と同型）。**違反の自覚と無関係な事実なので自己申告してよい** — wave 本数の自己申告を退けた理由（破った自覚があれば最初から破らない）がここには当たらない（design-notes/orchestration-rationale.md）
-- `gate_schema`: **起動ゲートの版**（GitHub issue #115）。**`publish-review-event.sh` が注入する**（2 = high 起点に昇格した v2.52.0 以降）。`attribution_schema` が由来タグの版であるのに対し、こちらは**どの effort で起動する構成だったか**を識別する。**これが無いと `## 8.5` の監視クエリ①（「昇格後は `skip_reason="effort"` が消えるはず」）が昇格前の残骸を拾い続け、永久に偽の「信号あり」を返す** — 実装バグが起きても検知できない。日付では切れない（配布ラグで未更新マシンは旧ゲートで publish し続ける）
+- `gate_schema`: **起動ゲートの版**（GitHub issue #115）。**`publish-review-event.sh` が注入する**（2 = high 起点に昇格した v2.52.0 以降 / 3 = xhigh/max 起点に戻した v2.136.0 以降 / #264）。`attribution_schema` が由来タグの版であるのに対し、こちらは**どの effort で起動する構成だったか**を識別する。**これが無いと `## 8.5` の監視クエリ①（「`gate_schema` 3 では high の起動が 0 件のはず」）が high 起点の時期の残骸を拾い続け、永久に偽の「信号あり」を返す** — 実装バグが起きても検知できない。日付では切れない（配布ラグで未更新マシンは旧ゲートで publish し続ける）
 - `attribution_schema`: 由来帰属の規約バージョン。**`publish-review-event.sh` が注入する**（2 = 由来タグがレポート書式に規定され dedup のタグ生存も定義された版 = 2.35.1 以降）。schema 1 相当の旧サンプルは `findings_added` が記憶依存で系統的に 0 へ潰れており判断に使えないため下流はこれで濾す。**日付では切れない**（配布ラグで未更新マシンは修正日以降も schema 1 を publish する）
 - `findings_added`: **skeptic 単独由来**（`[recall-skeptic]` タグ）の指摘のうち報告マトリクスを通過した件数。**レポート「動的ラウンド」行の `実行（N 件追加）` の N と同値**（N はヘッダに置かれるが**本文確定後に数えてヘッダへ反映する**。二重管理にしない）。**価値率の分子はこれのみ**
 - `findings_overlap`: **重複 survivor**（`[recall-skeptic:dup]` タグ）の件数。独立到達の記録としては残すが、盲点でなかった事例なので**価値率には算入しない**（混ぜると重複が常態のため価値率が 100% に張り付き、縮小分岐が原理的に発火しなくなる）

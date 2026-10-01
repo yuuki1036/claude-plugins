@@ -2729,6 +2729,7 @@ class SchemaMarkerInjectionTest(ScriptTestBase):
         self.assertEqual(p["adversarial_verify"]["gate_schema"], 2)
         self.assertEqual(p["adversarial_verify"]["calibration_schema"], 3)
         self.assertEqual(p["meta_reviewer"]["gate_schema"], 3)
+        self.assertEqual(p["recall_skeptic"]["gate_schema"], 3)
         self.assertEqual(p["findings_class"]["schema"], 1)
 
     def test_missing_layer_object_becomes_a_gap(self):
@@ -6953,6 +6954,51 @@ class RetroMissingCountAttributionTest(RetroFixture):
         out = self._out()
         self.assertIn("payload:report_counts.missing", out)
         self.assertIn("4 つとも必須で 0 件でも省かない", out, "是正先が既定文言に落ちている")
+
+
+class RetroSkepticRemovalSignalTest(RetroFixture):
+    """skeptic の価値率の ⚠️ は xhigh/max 起点の層（`gate_schema` 3）だけで判定する（#264）.
+
+    high 起点の時期（`gate_schema` 2）はロールバックで判断を終えている。そのサンプルで鳴らし続けると
+    「⚠️ が出たときだけ行動する」契約が壊れる。
+    """
+
+    SIGNAL = "冷や読み skeptic の価値率が"
+
+    def _row(self, gate: int, added: int) -> dict:
+        return {"effort": "xhigh", "size_tier": "medium", "measurement_gaps": [],
+                "severity_threshold": "MAJOR",
+                "recall_skeptic": {"surface": True, "fired": True, "skip_reason": None,
+                                   "launch": "rider", "gate_schema": gate,
+                                   "attribution_schema": 2, "findings_added": added}}
+
+    def _out(self) -> str:
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertTrue(r.stdout.strip())
+        return r.stdout
+
+    def test_rings_on_the_gated_layer(self):
+        """15 件中 3 件（20%）は閾値 25% を割るので鳴る."""
+        self._events([self._row(3, 1 if i < 3 else 0) for i in range(15)])
+        out = self._out()
+        self.assertIn(self.SIGNAL, out)
+        self.assertIn("層の撤去を検討する", out)
+
+    def test_silent_on_high_start_samples(self):
+        """同じ価値率でも `gate_schema` 2 のサンプルだけなら鳴らさない."""
+        self._events([self._row(2, 1 if i < 3 else 0) for i in range(15)])
+        self.assertNotIn(self.SIGNAL, self._out())
+
+    def test_silent_below_the_floor(self):
+        """下限 15 件に届かなければ鳴らさない（14 件・価値 0）."""
+        self._events([self._row(3, 0) for _ in range(14)])
+        self.assertNotIn(self.SIGNAL, self._out())
+
+    def test_silent_at_the_threshold(self):
+        """価値率がちょうど 25%（16 件中 4 件）は鳴らさない."""
+        self._events([self._row(3, 1 if i < 4 else 0) for i in range(16)])
+        self.assertNotIn(self.SIGNAL, self._out())
 
 
 class RetroSkepticLaunchGapTest(RetroFixture):

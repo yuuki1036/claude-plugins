@@ -1394,6 +1394,10 @@ def layered_signal(st, numer_of, denom_of, min_n, is_hot, render, pending=None):
 # ロールバック条件の層別要件の正本: triage-dynamic-gates.md `## 8`（meta） / `## 8.5`（skeptic）
 # / `## 9`（反証）
 skeptic = layer_stats("recall_skeptic", "attribution_schema", 2)
+# 撤去条件は xhigh/max 起点に戻した後（`gate_schema` 3 / #264）の層だけで判定する。high 起点の時期の
+# サンプルはロールバックで判断を終えており、混ぜると ⚠️ が鳴り止まない。3 を注入する publish は
+# `attribution_schema` 2 も注入するので、こちらの版で絞れば由来タグの層も揃う
+skeptic_gated = layer_stats("recall_skeptic", "gate_schema", 3)
 meta = layer_stats("meta_reviewer", "gate_schema", 3)
 # Markdown 推敲（self-review のみ / #243）。価値は「提案が 1 件以上あった」（`suggested` の -1 は
 # 測定不能なので価値に数えない）
@@ -1975,11 +1979,11 @@ layer_pending = {}
 # 保留行の「累計では」は、母集団を絞った実行では誤読になる（絞った後の全体であって累計ではない）
 pending_filtered = bool(since or last_n or min_pv_raw)
 signals.extend(layered_signal(
-    skeptic, lambda d: d.get("valuable", 0), lambda d: d.get("fired", 0), 15,
+    skeptic_gated, lambda d: d.get("valuable", 0), lambda d: d.get("fired", 0), 15,
     lambda v, f: pct(v, f) < 25,
     lambda label, v, f, note:
-        "冷や読み skeptic の価値率が %.0f%%（%s / fired %d 件 / attribution_schema>=2）。"
-        "high 起点への昇格を戻すロールバック条件"
+        "冷や読み skeptic の価値率が %.0f%%（%s / fired %d 件 / gate_schema 3 = xhigh/max 起点）。"
+        "層の撤去を検討する撤去条件"
         "（triage-dynamic-gates.md `## 8.5`）に該当%s" % (pct(v, f), label, f, note),
     pending=layer_pending.setdefault("skeptic 価値率", [])))
 # 反証レイヤーの不発（`no-eligible-findings`）は **⚠️ にしない**（GitHub issue #249）。以前は世代別に

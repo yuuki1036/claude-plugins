@@ -3,14 +3,14 @@
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @a70a602f -->
 <!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @1db019f1 -->
-<!-- SSOT: code-review/references/orchestration-guide.md#5 @32951067 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @095c6e5e -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
 
 | 節 | 内容 | フェーズ |
 |---|---|---|
 | `## 8` | 動的ラウンド（Round 2 / meta-reviewer）の起動条件・effort 適応・unmet の repo 内外分類 | 5.5 / 5.6（4.5 / 4.6） |
-| `## 8.5` | 冷や読み skeptic ラウンド（surface 判定・起動ゲート・high 昇格の判断基準） | 5.8（4.8） |
+| `## 8.5` | 冷や読み skeptic ラウンド（surface 判定・起動ゲート・high 起点のロールバックと撤去条件） | 5.8（4.8） |
 | `## 9` | 反証レイヤー（対象指摘の選定・バッチ化・effort 適応） | 5.9（4.9） |
 
 **surface 判定は Phase 0 で必要になるが、`scripts/triage-signals.sh` の `## surface` セクションが正規表現部分を機械適用済み**なので、Phase 0 の時点で本ファイルを読む必要はない（`## 8.5` は判定の定義と偽陰性の保険の正本）。
@@ -133,41 +133,53 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 
 ### 起動ゲート（暴走ガード）
 
-- **effort 適応**: **high 起点**で起動（v2.52.0 で xhigh/max 起点から昇格）。low / medium はスキップ。**meta-reviewer（`## 8`）は xhigh/max 起点のまま**で、skeptic だけ先に昇格している（skeptic は findings 非注入で reviewer wave に相乗りするため**直列 wave を増やさない**が、meta は reviewer 完了後に直列 wave を 1 本足していたため。**⚠️ この wave コストは v2.61.0 で消えた** — meta は反証レイヤーと同一 wave になり、反証が走る帯（effort ≥ high）では追加 wave が 0 本になる（`## 8` 起動タイミング）。**昇格を再検討する余地があり、判断軸は wave コストではなく `meta_reviewer.findings_added` の価値率**に移っている。ただし**その価値率を出すサンプルが無い**（xhigh 14 件で `fired=1`）ため、v2.62.0 では effort 昇格ではなく**severity ゲートの緩和**を先に入れて起動サンプルを貯めている（`## 8` の `gate_schema: 3`）。effort 昇格の判断はその後。昇格の実測根拠: `design-notes/triage-rationale.md`）
+- **effort 適応**: **xhigh/max 起点**で起動。low / medium / high はスキップ（v2.52.0 で high 起点に昇格し、v2.136.0 でロールバック条件に該当したため戻した / #264。下の「high 起点のロールバック」）。**meta-reviewer（`## 8`）も xhigh/max 起点**で、両者の effort ゲートは揃っている。skeptic の昇格を再び検討するときも、判断軸は wave コストではなく `findings_added` の価値率に置く（skeptic は reviewer wave に相乗りするので直列 wave を増やさず、効くのはトークンだけ）
   - **surface 判定は Phase 0 で先に行う**（相乗り発火の可否を reviewer 起動前に決めるため）。正規表現 + PR 自己申告 D1-High は Phase 0 で判定でき、effort ゲートを通過していれば reviewer 一括発行に skeptic を混ぜる
 - **上限**: **PR あたり skeptic 1 体・1 round のみ**（per-surface 起動ではない）。skeptic の指摘も通常の scoring・報告マトリクス・反証レイヤーの対象
 - **surface 非該当ならスキップ**: high-risk surface を含まない変更では起動しない（noise 爆発を避け high-risk に限定）
 - **計測（skip 時も surface 判定は記録する）**: effort / userConfig / scope でスキップした場合も、正規表現部分の surface 判定（diff への grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と独立に必ず実施し、`review:completed` payload の `recall_skeptic` に記録する（SKILL.md Step 7 / Step 6 の payload 規約参照）。加えて surface=true なら、`--embed` / event 発火の有無に依存しない **human レポート（Step 7 / Step 6 の「動的ラウンド」行）にも skeptic の起動有無（未起動時は skip_reason）を必ず出す**（headless 通常実行での silent skip を防ぐ・issue #85）
 
-### 昇格後の監視とロールバック条件（v2.52.0 で high 起点に昇格済み）
+### high 起点のロールバック（v2.136.0 / #264）と以後の監視
 
-**昇格の根拠は `design-notes/triage-rationale.md`**（需要 63% / 価値率 50%、n=8）。ここには昇格後に何を見るかだけを置く。
+**v2.52.0 の high 起点への昇格は、ロールバック条件に該当したので戻した。** 昇格の根拠は `design-notes/triage-rationale.md`（需要 63% / 価値率 50%、n=8）。v2.52.0 が置いたロールバック条件は「`fired=true` かつ `attribution_schema >= 2` のサンプルが 15 件以上貯まった時点で、価値率（`findings_added > 0`）が 25% を下回っていたら high を『スキップ』に戻す。下限と閾値は世代の層ごとに当てる」で、**n を倍にしても半分を切るなら昇格根拠が崩れた**とみなす、というもの。
+
+該当した実測（review-retro @ `m2` / 計測ストア 2 本 304 件 / 分母は起動回数）:
+
+| 世代 | fired | 価値あり | 価値率 | effort |
+|---|---:|---:|---:|---|
+| opus-4-8 | 23 | 7 | 30% | high 7 / xhigh 16 |
+| opus-5 | 4 | 3 | 75% | high 1 / xhigh 3 |
+| **opus-5-5** | **17** | **3** | **18%** | high 13 / xhigh 4 |
+
+- opus-5-5 を effort で割ると high 13 件で価値あり 2（15%）、xhigh 4 件で 1（25%）。ロールバックが止めるのはこの high 13 件
+- 価値は出ない一方、`findings_overlap > 0`（reviewer と同じ指摘に独立に到達）は 17 件中 8 件あった。overlap は価値率の分子に入れない（盲点ではなかった事例）
+- **戻す範囲は全世代にした（世代で分岐させない）。** 該当したのは opus-5-5 層だけだが、opus-4-8 の 30% は xhigh 16 件が主で high の起動は 7 件しかなく、high を残す根拠にならない。opus-5 は n=4。世代分岐は分岐点を増やし新しい世代のたびに見直しが要るので、規約の世代分岐を採らない既存の判断（#210 の候補 2）と揃えた
+- 戻したことで消えるのは high 帯の skeptic 1 体ぶんのトークンで、壁時計は変わらない（reviewer wave に相乗りしているため）
+
+**ゲートを動かしたので `recall_skeptic.gate_schema` を 3 に上げた**（2 = high 起点 / 3 = xhigh/max 起点。`orchestration-measurement.md ## 16`）。以後の監視は 3 の層だけで読む:
 
 ```bash
-# ① 実装が効いているか: 昇格後は skip_reason="effort" が消えるはず。
-#    消えなければ SKILL 側のスキップ条件が更新されていない信号。
-#    **gate_schema >= 2 の絞り込みは必須**（GitHub issue #115）。昇格前のサンプルは
-#    skip_reason="effort" を持ったまま永久に残るため、絞らないと常に「信号あり」を返し
-#    本物の実装バグを検知できない。日付では切らない（配布ラグ）
+# ① 実装が効いているか: gate_schema >= 3 では effort=high の起動が 0 件のはず。
+#    0 でなければ SKILL 側のスキップ条件が戻っていない信号。
+#    **gate_schema で絞るのは必須**（GitHub issue #115）。high 起点の時期のサンプルは
+#    high で起動したまま永久に残るため、絞らないと常に「信号あり」を返す。日付では切らない（配布ラグ）
 grep '"event":"review:completed"' .claude/events.jsonl | \
-  jq -s '[.[] | select(.payload.recall_skeptic.surface == true
-           and (.payload.recall_skeptic.gate_schema // 1) >= 2)] |
-    group_by(.payload.recall_skeptic.skip_reason // "fired") |
-    map({reason: .[0].payload.recall_skeptic.skip_reason // "fired", n: length})'
+  jq -s '[.[] | select(.payload.recall_skeptic.fired == true and .payload.effort == "high"
+           and (.payload.recall_skeptic.gate_schema // 1) >= 3)] | length'
 
-# ② 価値率が維持されているか（縮小・撤去の判断材料）
-#    attribution_schema >= 2 で絞るのは必須（schema 1 は findings_added が壊れている）
+# ② xhigh/max 起点の価値率（撤去の判断材料）
+#    gate_schema >= 3 は attribution_schema >= 2 を含む（同じ publish が両方を注入する）
 grep '"event":"review:completed"' .claude/events.jsonl | \
-  jq -s '[.[] | select(.payload.recall_skeptic.fired == true and (.payload.recall_skeptic.attribution_schema // 1) >= 2)] |
+  jq -s '[.[] | select(.payload.recall_skeptic.fired == true and (.payload.recall_skeptic.gate_schema // 1) >= 3)] |
     if length == 0 then "no data"
     else {n: length, valuable: ([.[] | select(.payload.recall_skeptic.findings_added > 0)] | length)} end'
 ```
 
-**ロールバック条件**: 昇格後のサンプル（`fired=true` かつ `attribution_schema >= 2`）が **15 件以上貯まった時点で価値率が 25% を下回っていたら**、high を「スキップ」に戻す。**下限と閾値は世代の層ごとに適用する**（v2.109.0 / #209）。**分母は起動回数であって母集団ではない** — 層別の但し書きに出る分母もこちらに揃う。**この層別は `scripts/review-retro.sh` が実装済み**（下の jq は手で確認したいときの控え）。昇格判断が n=8 の 50% だったので、**n を倍にしても半分を切る**なら昇格根拠が崩れたとみなす。
+**撤去条件**: `gate_schema >= 3` かつ `fired=true` のサンプルが **15 件以上貯まった時点で価値率が 25% を下回っていたら**、層の撤去を検討する（起動条件をさらに絞るのではない。xhigh/max より上の起点は無い）。**下限と閾値は世代の層ごとに適用する**（v2.109.0 / #209）。**分母は起動回数であって母集団ではない**。**この判定は `scripts/review-retro.sh` が実装済み**（上の jq は手で確認したいときの控え）。high 起点の時期（`gate_schema` 2）のサンプルは混ぜない — そちらはこのロールバックで判断を終えており、混ぜると ⚠️ が鳴り続けて「⚠️ が出たときだけ行動する」契約を壊す。
 
-- **昇格直後の数件で判断しない**（`findings_added=0` が 2〜3 件続くのは 50% の分布内）
+- **数件で判断しない**（`findings_added=0` が 2〜3 件続くのは分布内）
 - **`findings_overlap` を価値率の分子に混ぜない**（reviewer と重複した指摘は「盲点でなかった事例」なので、混ぜると価値率が 100% に張り付いて縮小分岐が原理的に発火しなくなる）
-- 戻すのは effort 適応行の 1 行だけ。ユーザー側は `enable_recall_skeptic: false` で個別に止められる
+- ユーザー側は `enable_recall_skeptic: false` で個別に止められる
 
 **⚠️ `attribution_schema` が無い（＝ schema 1 相当）サンプルの `findings_added` は判断に使えない**: code-review 2.35.1 より前は由来タグ `[recall-skeptic]` がレポート書式に規定されておらず、dedup 時のタグ生存も未規定だったため、publish 時点で由来を再構成できず `findings_added` が記憶依存で系統的に 0 へ潰れていた。**日付では切らないこと** — マーケットプレイス配布のため、未更新マシンは修正日以降も schema 1 の payload を publish し続ける。publish 側が自己申告する版マーカーだけが配布ラグに耐える。壊れた計測を根拠に不可逆な撤去をしない。
 

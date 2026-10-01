@@ -4,7 +4,7 @@
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @00b686bc -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @99781aef -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @34e7126b -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @1ff41917 -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @73c20f66 -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @dd266661 -->
 
 **このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は SKILL.md 側にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。

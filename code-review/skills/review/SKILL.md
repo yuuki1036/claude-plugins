@@ -21,7 +21,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @99781aef -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @b5f5a424 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @a4948715 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @c01db33c -->
 
 ## 前提
@@ -330,7 +330,7 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
 
 **スキップ条件**（いずれか満たせばスキップして 5.6 + 5.9 の一括発行へ）:
 - userConfig `enable_recall_skeptic` が `false`
-- 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`（**high は起動する**。v2.52.0 で昇格 — surface=true の 63% が effort ゲートで未起動だった一方、起動できた回の 50% が fleet 共通盲点を実際に破っていた。根拠: `design-notes/triage-rationale.md`）
+- 実行時 effort = `${CLAUDE_EFFORT}` が `low` / `medium` / `high`（**xhigh / max だけ起動する**。v2.52.0 で high 起点に昇格したが、ロールバック条件に該当したので戻した — opus-5-5 の high 起動 13 件で価値率 15%。根拠: triage-dynamic-gates.md `## 8.5` / #264）
 - `--emergency`（緊急モード）または `skip-mode`（生成物 PR）
 - high-risk surface（triage-dynamic-gates.md `## 8.5` の surface 判定）を含まない
 

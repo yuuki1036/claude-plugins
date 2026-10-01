@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.136.0] - 2026-10-01
+### Changed
+
+- 冷や読み skeptic の effort ゲートを xhigh/max 起点に戻した（v2.52.0 の high 起点への昇格のロールバック / #264）。ロールバック条件（fired 15 件以上で価値率 25% 未満・世代の層ごと）に opus-5-5 層が該当した。fired 17 件で価値率 18%、うち high 13 件で 15% だった。世代で分岐させず全世代で戻した。high では skeptic が起動しなくなり、`skip_reason` は `effort` になる
+- `recall_skeptic.gate_schema` を 3 に上げた（ゲートを動かしたため。2 = high 起点 / 3 = xhigh/max 起点）
+- retro の skeptic 価値率の ⚠️ を `gate_schema` 3 の層だけで判定するようにし、文言を「層の撤去を検討する」撤去条件に改めた。high 起点の時期のサンプルで鳴り続けるのを止める
+
+
 ## [2.135.0] - 2026-09-30
 ### Added
 
