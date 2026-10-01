@@ -43,6 +43,7 @@ exit code は **0 集計成功 / 2 判定不能**（jq 不在・引数不正）�
 {
   "window": {"days": 30, "since": "2026-07-31T12:00:00Z", "now": "2026-08-30T12:00:00Z"},
   "threshold": 3,
+  "skipped_invalid": {"journal": 0, "remediations": 0, "splits": 0},
   "tags": [
     {"tag": "delegated-run-without-isolation",
      "count_window": 3, "count_effective": 3, "excluded_by_remediation": 0,
@@ -68,6 +69,8 @@ exit code は **0 集計成功 / 2 判定不能**（jq 不在・引数不正）�
 | `sub_tags` | 宣言した寄せ先のサブ tag（最新の宣言行の内容） |
 | `count_after_split` | 宣言日以降の窓内発生 |
 | `split_not_adopted` | 宣言したのに宣言日以降も umbrella へ起票されている → **分割が起票側に降りていない** |
+
+**トップレベルの `skipped_invalid`** はファイル別の読み飛ばした行数（JSON として読めない行と、`tag` / `timestamp`（splits は `umbrella` / `declared_at`）を欠く行。空行は数えない）。**0 でなければレポートに件数を出す** — 旧スキーマ（`ts` / `tags[]`）で書かれた journal 行は黙って集計から漏れ、出力からは気づけなかった（実測 6 行 / GitHub issue #266）。
 
 > `quiet_since_remediation` は「鳴らない」とは意味が違う。**還流していない tag の 0 件は無情報**（発生していないだけ）だが、**還流後の 0 件は対策の観測**になる。両者を同じ「該当なし」に潰さない。
 

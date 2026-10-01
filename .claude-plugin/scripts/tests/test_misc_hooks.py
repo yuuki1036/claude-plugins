@@ -154,6 +154,11 @@ class FailureJournalInitTest(HookTestCase):
             self.assertIn(self.CONCRETE_VALUE, out)
             self.assertLess(out.index(self.NUDGE), out.index(self.CONCRETE_VALUE))
 
+    def test_injects_behavior_assertion_rule(self):
+        """挙動・因果の断定の規約も同じファイルから注入される（GitHub issue #266）."""
+        with TempGitRepo() as root:
+            self.assertIn("挙動・因果・深刻度の断定", self._run(root).stdout)
+
     def test_concrete_value_rule_is_reinjected_on_post_compact(self):
         with TempGitRepo() as root:
             res = self.run_hook({"hook_event_name": "PostCompact"}, cwd=root,

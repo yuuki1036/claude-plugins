@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.9.0] - 2026-10-01
+
+### Added
+
+- **「挙動・因果・深刻度は、観測した出力を示せるときだけ断定する」規約を、既存の `rules/concrete-value-rule.md` に統合して注入するようにした**（#266）。retro で `unverified-assertion` が閾値を超え、分割したサブ tag のうち `behavior-asserted-without-observing` だけがプロジェクトに依存しない型だった（ワークフロー再開で何が再実行されるかを確かめずに説明した / 旧実装に無いことから退行と断定した）。文脈判断が要るので hook では止められない。注入ルールは毎セッション常駐するので、新ファイルにせず近い規約へ節として足した
+- `retro-aggregate.sh` がトップレベルに `skipped_invalid`（ファイル別の読み飛ばした行数）を出す（#266）。旧スキーマ（`ts` / `tags[]`）の journal 行が 6 行、一度も集計されないまま出力からは気づけなかった。retro は 0 でなければ件数をレポートに出す
+
 ## [0.8.0] - 2026-09-29
 
 ### Added

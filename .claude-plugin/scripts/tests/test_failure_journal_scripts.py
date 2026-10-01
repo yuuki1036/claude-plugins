@@ -250,6 +250,21 @@ class MalformedInputTest(AggregateTestCase):
             ['{"timestamp":"2026-08-20T00:00:00Z"}', occ("2026-08-20T00:00:00Z", "alpha")], []))
         self.assertEqual(list(t), ["alpha"])
 
+    def test_skipped_lines_are_counted_per_file(self):
+        """読み飛ばした行を数えて出す（GitHub issue #266）。空行は数えない."""
+        proc = self.run_agg(
+            ["これは JSON ではない", "", '{"ts":"2026-08-20T00:00:00Z","tags":["alpha"]}',
+             occ("2026-08-20T00:00:00Z", "alpha")],
+            ['{"tag":"alpha"}'], splits=['{"umbrella":"alpha"}', "{"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["skipped_invalid"],
+                         {"journal": 2, "remediations": 1, "splits": 2})
+
+    def test_nothing_skipped_is_zero(self):
+        proc = self.run_agg([occ("2026-08-20T00:00:00Z", "alpha")], [], splits=[])
+        self.assertEqual(json.loads(proc.stdout)["skipped_invalid"],
+                         {"journal": 0, "remediations": 0, "splits": 0})
+
     def test_missing_journal_is_not_an_error(self):
         """初回実行（journal 未作成）は「失敗 0 件」であって判定不能ではない."""
         proc = subprocess.run(

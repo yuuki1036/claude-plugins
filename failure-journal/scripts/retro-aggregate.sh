@@ -43,6 +43,10 @@ usage: retro-aggregate.sh [options]
   sub_tags                宣言した寄せ先のサブ tag
   count_after_split       宣言日以降の窓内発生。**分子には影響しない**
   split_not_adopted       分割を宣言したのに宣言日以降も umbrella へ起票されている
+
+出力 JSON のトップレベル:
+  skipped_invalid         ファイル別の読み飛ばした行数（JSON でない / tag・timestamp・umbrella・
+                          declared_at の欠落）。0 でなければ集計から漏れた記録がある
 USAGE
 }
 
@@ -86,10 +90,13 @@ case "$NOW" in
   *) printf -- '--now は ISO8601 UTC（末尾 Z）で指定してください: %s\n' "$NOW" >&2; exit 2 ;;
 esac
 
-# 不正な行が混ざっても集計を落とさない（journal は手書き append される）
+# 不正な行が混ざっても集計を落とさない（journal は手書き append される）。**読み飛ばした行は
+# 数えて出す**（GitHub issue #266）— 旧スキーマ（`ts` / `tags[]`）の 6 行が一度も集計されて
+# いなかったのに、出力からは気づけなかった。JSON として読めない行は印を付けて流し、下の
+# `ok` / `ok_split` で落ちた行と同じ数え方にする。空行は数えない
 _stream() {
   if [ -f "$1" ]; then
-    jq -R 'fromjson? // empty' -- "$1"
+    jq -R 'select(test("\\S")) | (fromjson? // {"__unparsable": true})' -- "$1"
   fi
 }
 
@@ -114,6 +121,11 @@ def iso: try fromdateiso8601 catch null;
 | {
     window: {days: $days, since: $since, now: $now},
     threshold: $threshold,
+    skipped_invalid: {
+      journal: (($occ_raw | length) - ($occ | length)),
+      remediations: (($rem_raw | length) - ($rem | length)),
+      splits: (($spl_raw | length) - ($spl | length))
+    },
     tags: (
       (($occ + $rem) | map(.tag) | unique)
       | map(

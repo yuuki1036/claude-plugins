@@ -109,6 +109,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/retro-aggregate.sh"
 
 - 窓日数の上書きは `--days N`（Phase 1 で決めた値）
 - **exit 2 は判定不能**（jq 不在・引数不正）で「失敗 0 件」ではない。原因を報告して終了する
+- **`skipped_invalid` が 0 でなければ、ファイル別の件数をレポートに出す**（読み飛ばした行は集計に入っていない。旧スキーマの行が黙って漏れていた / GitHub issue #266）
 
 出力フィールドの意味は `references/aggregation-rules.md`。
 
