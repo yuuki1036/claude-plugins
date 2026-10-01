@@ -656,6 +656,90 @@ class ScanDetachedReviewTest(GcTestBase):
         self.assertEqual(prow["verdict"], "keep", prow)
 
 
+class ScanPushedCleanTest(GcTestBase):
+    """PR が無く未マージでも、全コミットが push 済みで clean なら reap（GitHub issue #268）.
+
+    `worktree remove` はブランチを消さず、コミットは remote にも残るので損失リスクが無い。
+    **消さない側を厚く**: 未 push が 1 件でも、dirty でも、detached で remote に無くても keep。
+    remote は `refs/remotes/origin/*` を直接張って模す（fetch 直後の状態）。
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.set_origin_main()
+        self.stub_bin("lsof", "exit 0\n")
+        self.env = self.stub_bin("gh", "exit 1\n")  # PR は引けない（PR の無い残骸を模す）
+
+    def _commit(self, wt: Path, name: str = "f.txt") -> str:
+        (wt / name).write_text("x\n")
+        self.git("add", name, cwd=wt)
+        self.git("commit", "-q", "-m", name, cwd=wt)
+        return self.git("rev-parse", "HEAD", cwd=wt).stdout.strip()
+
+    def _push(self, ref: str, sha: str) -> None:
+        res = self.git("update-ref", "refs/remotes/origin/%s" % ref, sha)
+        self.assertEqual(res.returncode, 0, res.stderr)
+
+    def test_pushed_branch_is_reaped(self):
+        wt = self.add_worktree(".claude/worktrees/rv", branch="feat-pushed")
+        self._push("feat-pushed", self._commit(wt))
+        row = self.row_for(self.scan_env(self.env, cwd=self.root), wt)
+        self.assertEqual(row["verdict"], "reap", row)
+        self.assertIn("pushed-clean", row["reasons"])
+        self.assertEqual(row["unpushed"], 0)
+        self.assertEqual(row["remote_branches"], ["origin/feat-pushed"])
+        self.assertRegex(row["last_commit"] or "", r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_one_unpushed_commit_keeps(self):
+        wt = self.add_worktree("wt-ahead", branch="feat-ahead")
+        self._push("feat-ahead", self._commit(wt, "a.txt"))
+        self._commit(wt, "b.txt")
+        row = self.row_for(self.scan_env(self.env, cwd=self.root), wt)
+        self.assertEqual(row["verdict"], "keep", row)
+        self.assertIn("unpushed:1", row["reasons"])
+        self.assertIn("no-pr-not-merged", row["reasons"], "Step 1.5 が拾う reason を残す")
+        self.assertNotIn("pushed-clean", row["reasons"])
+
+    def test_pushed_but_dirty_keeps_on_dirty(self):
+        wt = self.add_worktree("wt-dirty", branch="feat-dirty")
+        self._push("feat-dirty", self._commit(wt))
+        (wt / "scratch.txt").write_text("uncommitted\n")
+        row = self.row_for(self.scan_env(self.env, cwd=self.root), wt)
+        self.assertEqual(row["verdict"], "keep", row)
+        self.assertIn("dirty", row["reasons"])
+        self.assertNotIn("pushed-clean", row["reasons"])
+
+    def test_detached_head_on_a_remote_branch_is_reaped(self):
+        path = self.root / ".claude" / "worktrees" / "rv-d"
+        self.assertEqual(self.git("worktree", "add", "-q", "--detach", str(path)).returncode, 0)
+        self._push("someone-pr", self._commit(path))
+        row = self.row_for(self.scan_env(self.env, cwd=self.root), path)
+        self.assertIsNone(row["branch"])
+        self.assertEqual(row["verdict"], "reap", row)
+        self.assertIn("pushed-clean", row["reasons"])
+
+    def test_detached_head_not_on_a_remote_keeps_and_names_local_branches(self):
+        path = self.root / ".claude" / "worktrees" / "rv-l"
+        self.assertEqual(self.git("worktree", "add", "-q", "--detach", str(path)).returncode, 0)
+        sha = self._commit(path)
+        self.assertEqual(self.git("branch", "keep-me", sha).returncode, 0)
+        row = self.row_for(self.scan_env(self.env, cwd=self.root), path)
+        self.assertEqual(row["verdict"], "keep", row)
+        self.assertIn("detached-no-remote", row["reasons"])
+        self.assertEqual(row["local_branches"], ["keep-me"])
+        self.assertEqual(row["unpushed"], 1)
+
+    def test_closed_issue_is_not_relabelled(self):
+        """Issue が閉じた行は従来どおり issue-closed で reap し、pushed-clean を足さない."""
+        wt = self.add_worktree("wt-issue", branch="feat/TEAM-9-x")
+        self._push("feat/TEAM-9-x", self._commit(wt))
+        issues = self.root / "tmp" / "issues.json"
+        issues.write_text('{"TEAM-9": {"state": "Done", "type": "completed"}}', encoding="utf-8")
+        row = self.row_for(self.scan_env(self.env, "--issue-status", str(issues), cwd=self.root), wt)
+        self.assertEqual(row["verdict"], "reap", row)
+        self.assertNotIn("pushed-clean", row["reasons"])
+
+
 class ScanIssueStatusTest(GcTestBase):
     """`--issue-status` による Issue 状態の取り込み（GitHub issue #240）.
 

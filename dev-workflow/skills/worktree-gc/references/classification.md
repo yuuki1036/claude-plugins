@@ -23,6 +23,10 @@
 | `live_unknown` | bool | lsof を使わなかった（unknown 扱い） |
 | `marker` | `{db_name}` / null | `envs/.backend.env.worktree` の `DB_NAME` |
 | `db_guess` | string[] | drop 候補の DB 名（**marker のある行のみ**。無ければ `[]`） |
+| `unpushed` | int / null | HEAD（ブランチがあればその tip）から辿れて、どの remote 追跡ブランチにも無いコミット数（`git rev-list --count <tip> --not --remotes`）。数えられなければ null。**remote 追跡ブランチに対する判定なので、scan の直前に `git fetch --prune` しておく前提**（GitHub issue #268） |
+| `remote_branches` | string[] | HEAD を含む remote 追跡ブランチ（`origin/HEAD` を除き先頭 3 件）。表の判断材料 |
+| `local_branches` | string[] | **detached の行だけ**: HEAD を含むローカルブランチ（先頭 3 件）。`detached-no-remote` の行で、コミットがどこに残っているかを示す |
+| `last_commit` | `YYYY-MM-DD` / null | HEAD の最終コミット日 |
 | `verdict` | `reap` / `keep` | 分類結果 |
 | `reasons` | string[] | verdict の根拠 |
 
@@ -43,7 +47,7 @@ kind は表示と DB drop 要否にだけ使う。**安全ゲートは kind 別�
 3. `dirty` または `untracked`
 4. `live_pids` が空でない、または `live_unknown`（生存プロセスの有無が確認できない）
 5. `pr` が `OPEN`
-6. `pr` が null かつ `merged_into_main` が false — **ただし `issue.closed` が true なら適用しない**
+6. `pr` が null かつ `merged_into_main` が false — **ただし `issue.closed` が true、または `unpushed` が 0 なら適用しない**
 7. `pr` が null かつ `ahead_of_main` が正（gh 不在時の保守側フォールバック）— **同上**
 
 すべて通過したら `reap`。**`pr` が merged / closed なら `ahead_of_main` が正でも `reap`**（統合ブランチ経由 merge の落とし穴 / GitHub issue #223）。
@@ -51,6 +55,10 @@ kind は表示と DB drop 要否にだけ使う。**安全ゲートは kind 別�
 - **detached（review / agent worktree）** もゲートは同じ。ブランチが無いので PR は `head` から引く。gh が無い / PR に紐づかない detached はゲート 6 で keep に落ちる（消さない側）
 - **Issue が閉じている（`issue.closed`）** ブランチはゲート 6 / 7 を外す（調査だけで完結し PR を作らない Issue の worktree / GitHub issue #240）。`git worktree remove` はブランチを消さないので ahead のコミットは失われない。他のゲート（dirty / live / pr-open 等）は変えない
 - `reasons` の `issue-closed:<ID>:<状態>` / `issue-open:<ID>:<状態>` は**情報であって keep 要因ではない**（表で Issue を開かずに判断できるように添える）
+- **全コミットが push 済み（`unpushed` が 0）** の行もゲート 6 / 7 を外し、他のゲートを通れば `reap` + `pushed-clean`（GitHub issue #268）。`worktree remove` はブランチを消さず、コミットは remote にも残るので損失リスクが無い。review 残骸と通常の worktree で同じ基準を使う（ゲートは kind 別に変えない、の原則どおり）。dirty / live 等は従来どおり効くので、「main に含まれるが dirty」は `dirty` で keep になる
+  - push されていない行はゲート 6 / 7 の reason（Step 1.5 が拾う `no-pr-*`）に加えて、損失リスクの中身を 1 つ添える: `unpushed:<件数>`（ブランチあり。数えられなければ `unpushed:unknown`）/ `detached-no-remote`（detached。コミットを持つローカルブランチは `local_branches`）
+  - remote の無いリポは `--remotes` が空なので、`unpushed` は全コミット数になり keep に倒れる
+  - **remote 追跡ブランチが古いと誤判定する**。remote で消えたブランチが `--prune` されずに残っていると、push 済みに見える。detached でローカルブランチも持たない HEAD は、後の `fetch --prune` で到達不能になりうる。SKILL の Step 1 で scan の直前に fetch する
 
 - `prunable` は無条件で `reap`（`git worktree prune` が回収するだけ。dir は既に無い）
 - 判定に必要な情報が取れない行（path が dir でない等）は `keep` + `reasons: ["unclassified"]`。誤って残す方が誤って消すより安い

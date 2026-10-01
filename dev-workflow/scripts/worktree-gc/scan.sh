@@ -14,7 +14,8 @@
 #
 # 出力 1 行の JSON（フィールド）:
 #   repo path branch head kind nested_parent self primary dirty untracked
-#   ahead_of_main pr merged_into_main issue live_pids live_unknown marker db_guess verdict reasons
+#   ahead_of_main pr merged_into_main issue live_pids live_unknown marker db_guess
+#   unpushed remote_branches local_branches last_commit verdict reasons
 #
 # **外部由来文字列（branch / path / db 名 / Issue 状態）は jq に --arg で渡す**。シェルで再評価される
 # 経路を作らない（branch 名は PR 作者が制御する外部入力で、git ref 規則は
@@ -204,6 +205,25 @@ emit() {
     git -C "$REPO" merge-base --is-ancestor "$head" "$MAIN_REF" 2>/dev/null && merged=true
   fi
 
+  # push 済みか（GitHub issue #268）。PR が無く未マージの行でも、HEAD までのコミットが remote の
+  # どこかに載っていれば worktree を消しても失われない（`worktree remove` はブランチも消さない）。
+  # 判定は remote 追跡ブランチに対してなので、呼び出し側が直前に `git fetch --prune` しておく前提。
+  # 数えられなかったら -1（push 済みとは見なさない）
+  local unpushed=-1 remote_contains="" local_contains="" last_commit=""
+  if [ "$prunable" != "1" ] && [ -n "$ref" ]; then
+    local tip="$ref"
+    [ -n "$branch" ] && tip="refs/heads/$branch"
+    unpushed=$(git -C "$REPO" rev-list --count "$tip" --not --remotes 2>/dev/null || echo -1)
+    case "$unpushed" in ''|*[!0-9]*) unpushed=-1 ;; esac
+    remote_contains=$(git -C "$REPO" branch -r --contains "$tip" --format='%(refname:short)' 2>/dev/null \
+      | grep -v '/HEAD$' | head -3 | tr '\n' ' ' | sed 's/ *$//' || echo "")
+    if [ -z "$branch" ]; then
+      local_contains=$(git -C "$REPO" branch --contains "$tip" --format='%(refname:short)' 2>/dev/null \
+        | head -3 | tr '\n' ' ' | sed 's/ *$//' || echo "")
+    fi
+    last_commit=$(git -C "$REPO" log -1 --format=%cs "$tip" 2>/dev/null || echo "")
+  fi
+
   # pr 状態
   local pr_number="" pr_state="" pr_hit
   if [ "$prunable" != "1" ]; then
@@ -247,9 +267,25 @@ emit() {
   { [ "$dirty" = "true" ] || [ "$untracked" = "true" ]; } && reasons+=("dirty")
   { [ -n "$live" ] || [ "$live_unknown" = "true" ]; } && [ "$prunable" != "1" ] && reasons+=("live-or-unknown-process")
   [ "$pr_state" = "OPEN" ] && reasons+=("pr-open")
-  if [ "$issue_closed" != "true" ]; then
-    [ -z "$pr_state" ] && [ "$merged" != "true" ] && reasons+=("no-pr-not-merged")
-    [ -z "$pr_state" ] && [ "$ahead" -gt 0 ] && reasons+=("no-pr-ahead")
+  # PR が無く未マージでも、全コミットが push 済みなら keep 要因にしない（`pushed-clean` / #268）。
+  # dirty / live 等の他のゲートはそのまま効くので、「main に含まれるが dirty」は dirty で keep になる
+  local pushed_clean=false
+  if [ "$issue_closed" != "true" ] && [ -z "$pr_state" ] \
+     && { [ "$merged" != "true" ] || [ "$ahead" -gt 0 ]; }; then
+    if [ "$unpushed" = "0" ]; then
+      pushed_clean=true
+    else
+      [ "$merged" != "true" ] && reasons+=("no-pr-not-merged")
+      [ "$ahead" -gt 0 ] && reasons+=("no-pr-ahead")
+      # 損失リスクの中身を添える（表で worktree を開かずに判断できるように）
+      if [ -z "$branch" ]; then
+        reasons+=("detached-no-remote")
+      elif [ "$unpushed" = "-1" ]; then
+        reasons+=("unpushed:unknown")
+      else
+        reasons+=("unpushed:${unpushed}")
+      fi
+    fi
   fi
   # Issue の状態は keep / reap どちらでも reasons に添える（表で Issue を開かずに判断できるように）
   if [ -n "$issue_id" ] && [ -n "$issue_state" ]; then
@@ -274,6 +310,7 @@ emit() {
     else
       verdict="reap"
       # PR が merged / closed なら ahead が正でも reap（統合ブランチ経由 merge の落とし穴 / #223）
+      [ "$pushed_clean" = "true" ] && reasons=("pushed-clean" "${reasons[@]+"${reasons[@]}"}")
       reasons=("reapable" "${reasons[@]+"${reasons[@]}"}")
     fi
   fi
@@ -306,6 +343,10 @@ emit() {
     --arg live "$live" \
     --argjson live_unknown "$live_unknown" \
     --arg db_name "$db_name" \
+    --argjson unpushed "$unpushed" \
+    --arg remote_contains "$remote_contains" \
+    --arg local_contains "$local_contains" \
+    --arg last_commit "$last_commit" \
     --arg verdict "$verdict" \
     '{
       repo: $repo,
@@ -327,6 +368,10 @@ emit() {
       live_unknown: $live_unknown,
       marker: (if $db_name == "" then null else {db_name: $db_name} end),
       db_guess: (if $db_name == "" then [] else [$db_name] end),
+      unpushed: (if $unpushed < 0 then null else $unpushed end),
+      remote_branches: (if $remote_contains == "" then [] else ($remote_contains | split(" ")) end),
+      local_branches: (if $local_contains == "" then [] else ($local_contains | split(" ")) end),
+      last_commit: (if $last_commit == "" then null else $last_commit end),
       verdict: $verdict,
       reasons: $ARGS.positional
     }' \

@@ -33,6 +33,7 @@ allowed-tools:
 - `git worktree list` に prunable な残骸（dir を消したが git 管理に残っている）がある
 - PC 全体を横断したい（`--all [root]`。root の既定は環境変数 `DEV_WORKFLOW_WORKTREE_GC_ROOT` → `.claude/dev-workflow.json` の `worktree_gc_root` → `$HOME`）
 - review 残骸（`.claude/worktrees/` 配下・detached）が溜まっている。HEAD に紐づく PR が merged / closed なら reap 候補に載る
+- PR の無い worktree でも、clean で全コミットが push 済みなら reap 候補に載る（`pushed-clean`。損失リスクが無い）
 - 調査だけで完結し PR を作らなかった Issue の worktree が残っている。ブランチ名の Issue ID（`TEAM-1` 型）を Linear で引き、Done / Canceled なら reap 候補に載る（Step 1.5）
 
 ## 実行手順
@@ -43,7 +44,13 @@ main clone / worktree 内どちらから起動してもよい。scan は起動�
 
 ### Step 1: scan（列挙）
 
-`scan.sh` を実行し、現リポの全 worktree を 1 行 1 JSON で取得する（副作用なし）。
+**scan の直前に remote 追跡ブランチを更新する**。push 済みかどうか（`pushed-clean`）は remote 追跡ブランチに対して判定するので、古いままだと誤判定する（GitHub issue #268）。`--all` のときは scan 対象の各リポで同じことをする（失敗したリポは表でその旨を添える）:
+
+```bash
+git fetch --prune --quiet
+```
+
+`scan.sh` を実行し、現リポの全 worktree を 1 行 1 JSON で取得する（scan 自体は副作用なし）。
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-gc/scan.sh"
@@ -75,8 +82,8 @@ jq -n --arg id "TEAM-1" --arg state "Done" --arg type "completed" \
 
 scan の出力を読み、**削除候補（reap）と保持（keep）を理由つきの表**に整形してユーザーに提示する。
 
-- keep の行は `reasons`（self / primary-worktree / dirty / live-or-unknown-process / pr-open / no-pr-not-merged / no-pr-ahead。Issue 状態を引いた行は `issue-open:<ID>:<状態>` も）をそのまま添える
-- reap の行は path / branch（detached なら `head` の短縮 sha）/ kind / PR 状態 / Issue 状態（`issue-closed:<ID>:<状態>`）を並べる
+- keep の行は `reasons`（self / primary-worktree / dirty / live-or-unknown-process / pr-open / no-pr-not-merged / no-pr-ahead / `unpushed:<件数>` / detached-no-remote。Issue 状態を引いた行は `issue-open:<ID>:<状態>` も）をそのまま添える。`detached-no-remote` の行は `local_branches` も添える
+- reap の行は path / branch（detached なら `head` の短縮 sha）/ kind / PR 状態 / Issue 状態（`issue-closed:<ID>:<状態>`）/ `pushed-clean` の有無 / 最終コミット日（`last_commit`）/ HEAD を含むブランチ（`remote_branches`）を並べる
 - `--all` のときはリポ（`repo`）ごとに表を分ける
 - session 一覧が使える環境（ccd_session_mgmt 等）では、実行中 session に紐づく worktree を keep 側へ倒す（optional 信号。keep 方向にしか使わない）
 

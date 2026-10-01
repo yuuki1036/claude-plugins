@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.35.0] - 2026-10-01
+
+### Added
+
+- worktree-gc の scan が、PR が無く未マージの worktree でも **clean で全コミットが push 済みなら reap 候補**にする（reason `pushed-clean` / #268）。`worktree remove` はブランチを消さず、コミットは remote にも残るので損失リスクが無い。review 残骸と通常の worktree で同じ基準を使う。これまでは PR 状態か Issue 状態でしか reap に倒れず、手で精査して `git worktree remove` を打っていた（同じ実行で 9 件）
+  - push されていない行は keep のまま、損失リスクの中身を添える: `unpushed:<件数>` / `detached-no-remote`。dirty は従来どおり優先して keep
+  - 出力に `unpushed` / `remote_branches` / `local_branches`（detached のみ）/ `last_commit` を足し、SKILL の表に最終コミット日と HEAD を含むブランチを並べる
+  - 判定は remote 追跡ブランチに対してなので、SKILL の Step 1 で scan の直前に `git fetch --prune` する
+
 ## [1.34.10] - 2026-09-27
 
 ### Changed
