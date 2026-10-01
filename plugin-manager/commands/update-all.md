@@ -30,17 +30,13 @@ allowed-tools:
 Phase 0 で記録した対象プラグインの `name@marketplace` から、マーケットプレイス名（`@` 以降の部分）を抽出する。
 重複を除いた各マーケットプレイスに対して以下を順番に実行する:
 
-1. ローカルキャッシュを削除する（古いバージョンが残っていると install 時に反映されない）:
-
-```bash
-rm -rf ~/.claude/plugins/cache/<marketplace-name>
-```
-
-2. マーケットプレイスキャッシュをリモートから再取得する:
+マーケットプレイスのカタログをリモートから再取得する:
 
 ```bash
 claude plugin marketplace update <marketplace-name>
 ```
+
+**`~/.claude/plugins/cache/` は消さない**（GitHub issue #271）。`${CLAUDE_PLUGIN_ROOT}` は版ごとのディレクトリ（`cache/<marketplace>/<plugin>/<version>/`）を指し、実行中のセッションは起動時に読んだ旧版のパスを使い続ける。CLI は更新・アンインストールのとき旧版に `.orphaned_at` を付けて **14 日後に自分で消す**ので、その間は実行中のセッションが壊れない（公式: Plugin loading reference「Cleanup of previous versions」）。以前はここで marketplace のキャッシュを丸ごと `rm -rf` しており、並行セッションの skill が手順の途中で `No such file or directory` になっていた。新しい版は別ディレクトリに入るので、旧版が残っていても install の反映は妨げない。反映されなかった回は Phase 4 で検知する
 
 ### Phase 2: 対象プラグイン一覧とバージョンの記録
 
@@ -101,6 +97,12 @@ claude plugin install <name@marketplace>
 ### Phase 4: 更新後バージョンの取得
 
 `claude plugin list` を実行し、各プラグインの更新後バージョン（After）を取得する。
+
+**反映の確認**: After を、Phase 1 で再取得した marketplace の `marketplace.json`（Phase 2.5 と同じ `~/.claude/plugins/marketplaces/<mp-name>/.claude-plugin/marketplace.json`）にある版と突き合わせる。一致しない（marketplace の方が新しい）プラグインは「反映されていない」として Phase 5 の表の結果欄に `未反映（marketplace: <版>）` と出し、手動の対処（`claude plugin update <name@marketplace>` を実行して再確認）を添える。**キャッシュを消して直そうとしない**（実行中のセッションが参照している版を消すことになる / #271）
+
+```bash
+jq -r --arg n "<plugin-name>" '.plugins[] | select(.name == $n) | .version // empty' "$MP_JSON"
+```
 
 ### Phase 4.5: 更新内容の取得
 
@@ -172,6 +174,7 @@ fi
 | name@marketplace | 1.0.0 | 1.1.0 | 更新済み |
 | name@marketplace | 1.0.0 | 1.0.0 | 変更なし |
 | name@marketplace | 1.0.0 | - | エラー |
+| name@marketplace | 1.0.0 | 1.0.0 | 未反映（marketplace: 1.1.0） |
 
 ### 移行（deprecated → 後継）
 

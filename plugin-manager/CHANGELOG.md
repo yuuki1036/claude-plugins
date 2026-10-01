@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.8.4] - 2026-10-01
+
+### Fixed
+
+- **update-all が marketplace のキャッシュを丸ごと消し、実行中のセッションの skill を壊していた**（#271）。Phase 1 の `rm -rf ~/.claude/plugins/cache/<marketplace>` を外した。`${CLAUDE_PLUGIN_ROOT}` は版ごとのディレクトリを指し、実行中のセッションは起動時の旧版のパスを使い続けるため、並行セッションの skill が手順の途中で `No such file or directory` になっていた。CLI は旧版を 14 日間残してから自分で消す（公式の Plugin loading reference）ので、update-all が先に消す必要は無い
+  - この削除は v1.2.1 で「古いキャッシュが残り install に反映されない」への対処として入れたもの。新しい版は別ディレクトリに入るので今は反映を妨げないが、再発に気づけるよう Phase 4 で更新後の版を marketplace の版と突き合わせ、一致しなければ `未反映` として報告する（キャッシュは消さない）
+
 ## [1.8.3] - 2026-08-28
 
 ### Fixed
