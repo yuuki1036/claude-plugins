@@ -572,6 +572,53 @@ class TriageSignalTest(DiffScriptTestBase):
         self.write("src/a.ts", "const code = 1\nconst more = 2\n")
         self.assertNotIn("doc-prose-lines", self.sig(self.digest(), "## focus-signals"))
 
+    def _commit_then_rewrite(self, path: str, before: str, after: str) -> str:
+        self.write(path, before)
+        self.add()
+        self.git("commit", "-qm", "base")
+        self.write(path, after)
+        return self.digest()
+
+    def test_behavior_change_fires_when_an_existing_condition_is_rewritten(self):
+        """既存の判定を書き換えた（消えた側に条件がある）ら出す（GitHub issue #269 の型 2）."""
+        out = self._commit_then_rewrite("src/a.ts", "if (x > 0) {\n  run()\n}\n",
+                                        "if (x >= 1 && y) {\n  run()\n}\n")
+        self.assertEqual(self.sig(out, "## focus-signals").get("behavior-change"), 1)
+
+    def test_behavior_change_counts_a_rewritten_return(self):
+        out = self._commit_then_rewrite("src/a.ts", "  return a\n", "  return b\n")
+        self.assertEqual(self.sig(out, "## focus-signals").get("behavior-change"), 1)
+
+    def test_behavior_change_stays_silent_on_pure_additions(self):
+        """黙る条件: 判定を足しただけ（古い前提を述べる記述が無い）."""
+        self.write("src/a.ts", "if (x > 0) { run() }\nreturn y\n")
+        self.assertNotIn("behavior-change", self.sig(self.digest(), "## focus-signals"))
+
+    def test_behavior_change_stays_silent_on_rewritten_plain_lines(self):
+        """黙る条件: 消えた行に判定が無い（`interface` / `iffy` の語中一致も拾わない）."""
+        out = self._commit_then_rewrite("src/a.ts", "const iffy = returned\n", "const iffy = 2\n")
+        self.assertNotIn("behavior-change", self.sig(out, "## focus-signals"))
+
+    def test_behavior_change_ignores_tests_and_docs(self):
+        """テスト・doc の書き換えはコードの判定ではない."""
+        self.write("src/a.test.ts", "if (x) {}\n")
+        self.write("docs/g.md", "if x == 1 then y\n")
+        self.add()
+        self.git("commit", "-qm", "base")
+        self.write("src/a.test.ts", "plain()\n")
+        self.write("docs/g.md", "plain\n")
+        self.assertNotIn("behavior-change", self.sig(self.digest(), "## focus-signals"))
+
+    def test_doc_rewritten_lines_count_removed_prose_in_md(self):
+        """既存の節を書き換えた行数（消えた側の語を持つ行。区切りだけの行は数えない / #269 の型 3）."""
+        out = self._commit_then_rewrite("docs/spec.md", "rule one\nrule two\n---\nkeep\n",
+                                        "rule ONE\nrule TWO\n\nkeep\n")
+        self.assertEqual(self.sig(out, "## focus-signals").get("doc-rewritten-lines"), 2)
+
+    def test_doc_rewritten_lines_stay_silent_on_appends(self):
+        out = self._commit_then_rewrite("docs/spec.md", "rule one\n", "rule one\nrule two\n")
+        self.assertNotIn("doc-rewritten-lines", self.sig(out, "## focus-signals"))
+
     def test_layer_signal_fires_when_agents_md_names_a_directory_role(self):
         """ディレクトリ名と役割語が同じ行にあれば、層の規約が文書化されているとみなす（#261）."""
         self.write("AGENTS.md", "- usecase/ は 1 ファイル = 1 行為に限る。判定ロジックは domain/ に置く\n")

@@ -116,7 +116,7 @@ diff パターンマッチで各観点の必要性を判定する。
 | bug-detection | **常時必須** |
 | claude-md-compliance | **常時必須** |
 | error-handling | try-catch/catch ブロック/エラー処理の変更がある |
-| comment-accuracy | diff にコメント（`//`, `/*`, `#`, `<!--` 等）の追加・変更がある。**self-review ではコメント推敲（B 系統）も同じ 1 体に相乗りさせる**（体数を増やさない。`prompts/focus/comment-polish.md`） |
+| comment-accuracy | diff にコメント（`//`, `/*`, `#`, `<!--` 等）の追加・変更がある、**または** `## focus-signals` に `behavior-change` が出ている（既存の判定・戻り値を変えた = diff 外のコメント・文言が古くなりうる / GitHub issue #269。担当は `prompts/focus/comment-accuracy.md` の「挙動変更の波及」）。**self-review ではコメント推敲（B 系統）も同じ 1 体に相乗りさせる**（体数を増やさない。`prompts/focus/comment-polish.md`） |
 | test-quality | テストファイル（`.test.`, `.spec.`, `__tests__/`）の変更がある、**または**テスト以外の新しいソースファイルが足されているのにテストファイルの変更が 0（severity 目安の「テスト欠如」を見るため。設定・ドキュメント・型定義だけの新規ファイルは数えない） |
 | type-design | 型定義（`type`, `interface`, `enum`）の追加・変更がある |
 | security | セキュリティ関連ファイル（`auth/`, `security/`, `crypto/`, `middleware/auth*`）の変更、または diff 内に `password`, `secret`, `token`, `api_key`, `eval(`, `innerHTML`, `dangerouslySetInnerHTML`, `` sql` ``, `query(` がある |
@@ -130,7 +130,7 @@ diff パターンマッチで各観点の必要性を判定する。
 | pattern-consistency | 変更ファイル数 >= 10 |
 | spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する、self-review に `--spec` で仕様ファイルが渡された、または review で PR に紐づく Issue（`closingIssuesReferences`）がある |
 | ui-quality | フロントエンド変更（`.tsx`/`.jsx`/`.vue`/`.svelte`/`components/`/`pages/`/`app/`）、または diff に `aria-`/`role=`/`<img`/`<button`/`tabindex`/`onClick`/`onKeyDown` 等のアクセシビリティ・インタラクション関連の変更がある |
-| doc-substance | **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む、**または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）。混在 PR（`*.md` < 80%）で doc 内容が無観点で素通りするのを防ぐ。詳細・effort 制御は下記「doc-substance の起動（重要度ゲート）」 |
+| doc-substance | **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む、**または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）、**または** 既存の節の書き換え（`## focus-signals` の `doc-rewritten-lines` が 3 以上 = 消えた側の語を持つ行。変えた節と変えていない節の矛盾を照合する / GitHub issue #269）。混在 PR（`*.md` < 80%）で doc 内容が無観点で素通りするのを防ぐ。詳細・effort 制御は下記「doc-substance の起動（重要度ゲート）」 |
 
 ### doc-substance の起動（重要度ゲート）
 
@@ -139,6 +139,7 @@ doc の内容妥当性を **2 軸**（A 主張の真偽: コード整合・論�
 **起動条件（経路によらず共通）**: 次のいずれかを満たすとき起動する。満たさない doc 変更（typo 修正・整形・frontmatter のみ・link-only）には付けない。
 - **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む
 - **または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）
+- **または** 既存の doc の節の書き換え（`## focus-signals` の `doc-rewritten-lines` が 3 以上）。短い書き換えでも、変えた節が同じ文書の変えていない節と矛盾しうる（GitHub issue #269 / `prompts/focus/doc-substance.md` の「変えた節と変えていない節の照合」）。2 行以下は typo・言い回しの修正とみなして数えない
 
 この条件を 2 つの起動経路の両方に適用する:
 

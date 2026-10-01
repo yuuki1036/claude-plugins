@@ -106,6 +106,8 @@ REMOVED_ALL=$(extract '-')
 ADDED_CODE=$(printf '%s\n' "$ADDED_ALL" | awk -F'\t' '$1!="gen" && $1!="doc"')
 ADDED_DOC=$(printf '%s\n' "$ADDED_ALL" | awk -F'\t' '$1=="doc"')
 REMOVED_CODE=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1!="gen" && $1!="doc"')
+REMOVED_CORE=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1=="core"')
+REMOVED_DOC=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1=="doc"')
 
 echo "## meta"
 echo "diff_file=$OUT"
@@ -264,6 +266,8 @@ sig() {
     paths)   stream=$(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '{print "\t" $4 "\t" $4}') ;;
     doc)     stream="$ADDED_DOC" ;;
     removed) stream="$REMOVED_CODE" ;;
+    removed-core) stream="$REMOVED_CORE" ;;
+    removed-doc)  stream="$REMOVED_DOC" ;;
     *)       stream="$ADDED_CODE" ;;
   esac
   n=$(printf '%s\n' "$stream" | cut -f3- | grep -c -E -e "$re" 2>/dev/null || true)
@@ -345,6 +349,13 @@ echo "## focus-signals"
   # 大半で、除外すると doc-substance の起動閾値にほぼ届かなくなる。
   # 起動閾値（概ね 10 行以上）の判定は triage-guide `## 3` に委ね、ここは件数だけ出す
   sig doc-prose-lines  '[^[:space:]|>*+-]' doc
+  # 既存の判定・戻り値を変えた行（GitHub issue #269 の型 2）。**消えた側**（テスト以外のコード）で
+  # 数える — 足しただけの判定には「古い前提を述べている diff 外の記述」が無い。comment-accuracy の
+  # 起動条件（triage-guide `## 3`）に使い、中身の照合（diff 外の grep）は reviewer の仕事
+  sig behavior-change  '(^|[^A-Za-z0-9_])(if|elif|case|when|switch|return)([^A-Za-z0-9_]|$)|[!=<>]=|&&|\|\|' removed-core
+  # 既存の doc の節を書き換えた行数（#269 の型 3）。消えた側の語を持つ行で数える — 書き換えた節が
+  # 同じ文書の変えていない節と矛盾しうるのは、既存の記述に手を入れたときだけ。閾値は triage-guide
+  sig doc-rewritten-lines '[^[:space:]|>*+-]' removed-doc
   layer_rule_sig
 } | merge_sig
 
