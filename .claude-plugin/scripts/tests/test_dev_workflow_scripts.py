@@ -155,6 +155,9 @@ class ScanKeepTest(GcTestBase):
         row = self.row_for(rows, wt)
         self.assertEqual(row["verdict"], "keep")
         self.assertIn("no-pr-not-merged", row["reasons"])
+        # origin/main が無いので ahead は 0。ahead の reason は正のときだけ付く
+        self.assertEqual(row["ahead_of_main"], 0)
+        self.assertNotIn("no-pr-ahead", row["reasons"])
 
 
 class ScanReapTest(GcTestBase):
@@ -728,6 +731,19 @@ class ScanPushedCleanTest(GcTestBase):
         self.assertIn("detached-no-remote", row["reasons"])
         self.assertEqual(row["local_branches"], ["keep-me"])
         self.assertEqual(row["unpushed"], 1)
+
+    def test_prunable_row_does_not_compute_push_state(self):
+        """dir の消えた残骸は prune で回収するだけなので push 状態を引かない（null / 空のまま）."""
+        import shutil
+
+        wt = self.add_worktree("wt-gone", branch="feat-gone")
+        self._push("feat-gone", self._commit(wt))
+        shutil.rmtree(wt)
+        row = self.row_for(self.scan_env(self.env, cwd=self.root), wt)
+        self.assertEqual(row["kind"], "prunable")
+        self.assertIsNone(row["unpushed"], row)
+        self.assertEqual(row["remote_branches"], [])
+        self.assertIsNone(row["last_commit"])
 
     def test_closed_issue_is_not_relabelled(self):
         """Issue が閉じた行は従来どおり issue-closed で reap し、pushed-clean を足さない."""
