@@ -56,6 +56,14 @@
               "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/zsh-trap-guard.sh"
             ],
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/branch-drift-guard.sh"
+            ],
+            "timeout": 5
           }
         ]
       },
@@ -69,6 +77,21 @@
               "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/public-leak-guard.sh"
             ],
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/branch-drift-record.sh"
+            ],
+            "timeout": 5
           }
         ]
       }

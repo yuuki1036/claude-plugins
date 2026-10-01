@@ -994,5 +994,133 @@ class ZshTrapGuardTest(HookTestCase):
         self.assertSilent(res)
 
 
+
+class BranchDriftTest(HookTestCase):
+    """git の書き込みの前に、自分の知らない間にブランチが変わっていたら止める（GitHub issue #270）.
+
+    PostToolUse の record が「このセッションの直前のコマンドの後のブランチ」を記録し、
+    PreToolUse の guard がそれと照合する。**黙る条件を厚く見る**（正当な commit を止めると
+    作業が進まない）: 記録が無い・自分で切り替えた・別セッションの記録・書き込みでないコマンド。
+    """
+
+    PLUGIN = "guardrail-protect"
+    SCRIPT = "hooks/scripts/branch-drift-guard.sh"
+    RECORD = "hooks/scripts/branch-drift-record.sh"
+
+    def repo(self) -> tuple[TempGitRepo, Path]:
+        t = TempGitRepo()
+        path = t.__enter__()
+        self.addCleanup(t.__exit__, None, None, None)
+        return t, path
+
+    def record(self, repo: Path, sid: str = "s1") -> None:
+        saved = self.SCRIPT
+        self.SCRIPT = self.RECORD
+        try:
+            res = self.run_hook(self.bash_payload("ls", session_id=sid, cwd=str(repo)), cwd=repo)
+        finally:
+            self.SCRIPT = saved
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def guard(self, repo: Path, command: str = "git commit -m x", sid: str = "s1"):
+        return self.run_hook(self.bash_payload(command, session_id=sid, cwd=str(repo)), cwd=repo)
+
+    def test_blocks_a_write_after_someone_else_switched(self):
+        git, repo = self.repo()
+        git.branch("feat-a")
+        self.record(repo)
+        git.branch("feat-b")  # 別セッションが切り替えた
+        res = self.guard(repo, "git merge main")
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("feat-a", res.stderr)
+        self.assertIn("feat-b", res.stderr)
+        self.assertIn("worktree", res.stderr, "一時 worktree の案内を添える")
+
+    def test_retry_after_a_block_passes(self):
+        """止めたら記録を今のブランチに更新する — 意図を確かめた再実行は通す."""
+        git, repo = self.repo()
+        git.branch("feat-a")
+        self.record(repo)
+        git.branch("feat-b")
+        self.assertEqual(self.guard(repo).returncode, 2)
+        res = self.guard(repo)
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+
+    def test_each_write_subcommand_is_checked(self):
+        for cmd in ("git commit -m x", "git push", "git rebase main", "git reset --hard HEAD~1",
+                    "git -c user.name=x commit -m y", "cd sub && git pull", "git cherry-pick abc"):
+            with self.subTest(cmd=cmd):
+                git, repo = self.repo()
+                git.branch("feat-a")
+                self.record(repo)
+                git.branch("feat-b")
+                self.assertEqual(self.guard(repo, cmd).returncode, 2, cmd)
+
+    # --- 黙る条件 ---
+    def test_silent_without_a_record(self):
+        """照合元が無い（セッションの最初の書き込み）なら何もしない（後方互換）."""
+        with TempGitRepo() as repo:
+            res = self.guard(repo)
+            self.assertEqual(res.returncode, 0, res)
+            self.assertSilent(res)
+            self.assertNotIn("Unexpected", res.stderr)
+
+    def test_silent_when_the_branch_is_unchanged(self):
+        git, repo = self.repo()
+        git.branch("feat-a")
+        self.record(repo)
+        res = self.guard(repo)
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+
+    def test_silent_after_own_switch_was_recorded(self):
+        """自分の checkout は直後の PostToolUse で記録されるので止めない."""
+        git, repo = self.repo()
+        git.branch("feat-a")
+        self.record(repo)
+        git.branch("feat-b")  # 自分の Bash で切り替えた
+        self.record(repo)     # その Bash の PostToolUse
+        self.assertEqual(self.guard(repo).returncode, 0)
+
+    def test_silent_for_another_sessions_record(self):
+        """記録はセッションごと。別セッションの記録とは照合しない."""
+        git, repo = self.repo()
+        git.branch("feat-a")
+        self.record(repo, sid="other")
+        git.branch("feat-b")
+        self.assertEqual(self.guard(repo, sid="s1").returncode, 0)
+
+    def test_silent_for_read_only_git_and_lookalikes(self):
+        git, repo = self.repo()
+        git.branch("feat-a")
+        self.record(repo)
+        git.branch("feat-b")
+        for cmd in ("git status", "git log --oneline", "git diff", "git checkout feat-a",
+                    "git commitish", "git -C ../other commit -m x", "legit commit"):
+            with self.subTest(cmd=cmd):
+                res = self.guard(repo, cmd)
+                self.assertEqual(res.returncode, 0, (cmd, res))
+                self.assertSilent(res)
+
+    def test_silent_outside_a_git_repo_and_with_unsafe_session_ids(self):
+        with tempfile.TemporaryDirectory() as d:
+            res = self.guard(Path(d))
+            self.assertEqual(res.returncode, 0, res)
+            self.assertNotIn("Unexpected", res.stderr)
+        with TempGitRepo() as repo:
+            res = self.guard(repo, sid="../escape")
+            self.assertEqual(res.returncode, 0, res)
+
+    def test_silent_for_other_tools_and_broken_input(self):
+        with TempGitRepo() as repo:
+            res = self.run_hook({"tool_name": "Edit", "tool_input": {}}, cwd=repo)
+            self.assertEqual(res.returncode, 0, res)
+            res = self.run_hook(raw="{not json", cwd=repo)
+            self.assertEqual(res.returncode, 0, res)
+
+
 if __name__ == "__main__":
     unittest.main()

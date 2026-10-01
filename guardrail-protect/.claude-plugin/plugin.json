@@ -1,6 +1,6 @@
 {
   "name": "guardrail-protect",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "git commit の hook 迂回（--no-verify/-n・git 省略形・-c core.hooksPath 上書き・変数間接・sh -c スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック + gh の外向き書き込みで実在しない見出しへの参照・隔離なしの hook スクリプト実行・公開リポジトリ/gist への業務情報送信（辞書とホスト名で照合・宛先は visibility で判定・fail-closed）・zsh で壊れる Bash の書き方（$VAR:修飾子・path/status 代入・語頭の =・引用なしグロブ）をブロックする PreToolUse hook。config 自己保護・fail-loud 付き",
   "author": {
     "name": "yuki"

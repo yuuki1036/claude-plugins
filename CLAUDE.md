@@ -100,7 +100,7 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 | feature-dev | 1 | 1 | 2 | SessionStart | 8 phase 機能開発ワークフロー（spec 品質ゲート・G-V fix ループ・self-review 委譲） |
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（notebooklm-mcp-cli を .mcp.json で同梱） |
-| guardrail-protect | - | - | - | PreToolUse | git commit の hook 迂回・lint/hook 設定ファイルの骨抜き編集・隔離なしの hook スクリプト実行・公開先への業務情報送信・zsh で壊れる書き方をブロック |
+| guardrail-protect | - | - | - | PreToolUse, PostToolUse | git commit の hook 迂回・lint/hook 設定ファイルの骨抜き編集・隔離なしの hook スクリプト実行・公開先への業務情報送信・zsh で壊れる書き方・知らない間のブランチ切り替え後の git 書き込みをブロック |
 | doc-freshness | 1 | 1 | - | PostToolUse, SessionStart | frontmatter による project doc の鮮度機械強制（走査 + hook 検知 + stale 通知） |
 | bdd-spec | 2 | 2 | - | - | BDD spec の scaffold（create）と 5 観点静的レビュー（evaluate）の責務分離ペア |
 | adr-keeper | 1 | 1 | - | PreToolUse, SessionStart | 設計判断 (ADR) の append-only 蓄積と supersede 機械化 |

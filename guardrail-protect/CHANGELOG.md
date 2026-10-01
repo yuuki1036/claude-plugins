@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.8.0] - 2026-10-01
+
+### Added
+
+- **branch-drift-guard を追加**（PreToolUse / Bash + PostToolUse / Bash / #270）。共有チェックアウトで別のセッションがブランチを切り替えた後に、気づかず git の書き込み（commit / merge / push / pull / rebase / reset / cherry-pick / revert / am）を打つのを止める。実例では、別セッションが切り替えたブランチに自分の Issue ブランチのつもりで merge を打ち、未コミットの変更があったので中断して済んだ
+  - 照合元は PostToolUse の `branch-drift-record.sh` がセッション（`session_id`）ごとに記録する「直前のコマンドの後のブランチ」。このセッション自身の checkout は直後に記録されるので止めない
+  - `.claude/session-context.md` は照合元にしない（チェックアウト単位のファイルで最後に start したセッションの値になり、共有チェックアウトでは見逃しと誤検出の両方が起きる）
+  - 記録が無い・git でない・`git -C` で別の作業ツリーを指すときは何もしない。止めたら記録を更新し、確かめたうえでの再実行は通す。案内に一時 worktree を添える
+
 ## [0.7.0] - 2026-09-28
 
 ### Added

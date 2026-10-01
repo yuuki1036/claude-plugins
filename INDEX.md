@@ -21,7 +21,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [doc-freshness](#doc-freshness) | 0.5.3 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.9.0 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.17.9 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
-| [guardrail-protect](#guardrail-protect) | 0.7.0 | - | - | - | PreToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行・公開先への業務情報送信・zsh で壊れる書き方を機械ブロック |
+| [guardrail-protect](#guardrail-protect) | 0.8.0 | - | - | - | PreToolUse, PostToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行・公開先への業務情報送信・zsh で壊れる書き方・知らない間のブランチ切り替え後の git 書き込みを機械ブロック |
 | [issue-workflow](#issue-workflow) | 1.8.0 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [living-spec-workflow](#living-spec-workflow) | 0.6.0 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.9 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
@@ -99,8 +99,8 @@ Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環
 - **依存**: code-review（Phase 6、未インストール時 fail-fast）
 
 ### guardrail-protect
-`git commit` の hook 迂回（`--no-verify`/`-n`・git 省略形・`-c core.hooksPath` 上書き・変数間接・`sh -c` スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック + `gh` の外向き書き込み（issue / PR の create・comment・edit・close・review）で **ファイルは実在するのに見出しが無い参照**を常時ブロック。パスの実在は検証しない（過去 issue 188 件 + コメント 213 件の実測で真の検出 0 件・偽陽性 41 件だったため）。実 md 297 件・実在見出し 3401 件の回帰テストで偽陽性 0 を毎回検証する。測定の一次記録は `docs/session-reports/2026-08-28-gh-ref-guard-measurement.md`。公開リポジトリ・gist への書き込み（gh の書き込み系・`gh api`・`git push`・GitHub MCP・`run_in_terminal`）で辞書の語とこのマシンのホスト名を常時ブロックする public-leak-guard（宛先は owner ではなく visibility で判定し、private と確定した宛先だけ素通し。本文は heredoc・`--body-file`・コマンド置換・標準入力まで解析し、解決できなければ止める fail-closed。汎用パターン・添付・非公開リポジトリからの書き込みは確認扱い。公開リポジトリ用の git pre-push も同梱）。Bash tool のシェルが zsh のときに bash 前提で壊れる書き方（`$VAR:c` の修飾子・`path` / `status` への代入・語頭の `=`・オプション値の引用なしグロブ）を止める zsh-trap-guard（過去の Bash 呼び出し 22,307 回で計 410 回当たり、目視の誤検出 0。echo のエスケープは警告のみ）。config 自己保護・fail-loud（jq/perl/python3 不在時に無言で無効化しない）付き。
-- **hooks**: PreToolUse
+`git commit` の hook 迂回（`--no-verify`/`-n`・git 省略形・`-c core.hooksPath` 上書き・変数間接・`sh -c` スクリプト内）を常時ブロック + lint/hook/static check 設定ファイルの骨抜き編集を opt-in でブロック + `gh` の外向き書き込み（issue / PR の create・comment・edit・close・review）で **ファイルは実在するのに見出しが無い参照**を常時ブロック。パスの実在は検証しない（過去 issue 188 件 + コメント 213 件の実測で真の検出 0 件・偽陽性 41 件だったため）。実 md 297 件・実在見出し 3401 件の回帰テストで偽陽性 0 を毎回検証する。測定の一次記録は `docs/session-reports/2026-08-28-gh-ref-guard-measurement.md`。公開リポジトリ・gist への書き込み（gh の書き込み系・`gh api`・`git push`・GitHub MCP・`run_in_terminal`）で辞書の語とこのマシンのホスト名を常時ブロックする public-leak-guard（宛先は owner ではなく visibility で判定し、private と確定した宛先だけ素通し。本文は heredoc・`--body-file`・コマンド置換・標準入力まで解析し、解決できなければ止める fail-closed。汎用パターン・添付・非公開リポジトリからの書き込みは確認扱い。公開リポジトリ用の git pre-push も同梱）。Bash tool のシェルが zsh のときに bash 前提で壊れる書き方（`$VAR:c` の修飾子・`path` / `status` への代入・語頭の `=`・オプション値の引用なしグロブ）を止める zsh-trap-guard（過去の Bash 呼び出し 22,307 回で計 410 回当たり、目視の誤検出 0。echo のエスケープは警告のみ）。共有チェックアウトで別セッションがブランチを切り替えた後の git 書き込み（merge / commit / push / rebase / reset 等）を止める branch-drift-guard（照合元はセッションごとに記録した直前のブランチ。自分の checkout は止めない）。config 自己保護・fail-loud（jq/perl/python3 不在時に無言で無効化しない）付き。
+- **hooks**: PreToolUse, PostToolUse
 
 ### issue-workflow
 Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local: `.claude/indie/` / linear: `.claude/linear/`）をデータディレクトリの存在で自動判定し、単一のスキル群で両方を扱う。旧 indie 専用機能（discover / retrospective / scope_size）は両 backend に開放。knowledge に却下記録（`kind: rejected`）を持ち、人間が見送った提案の再提案を discover が概念類似照合で抑止する。
