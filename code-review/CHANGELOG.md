@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.136.1] - 2026-10-01
+### Fixed
+
+- `below_threshold_counts` に、列挙済みの指摘のうち反証・加減算・報告マトリクスで閾値を割ったものを足していた回があった（#248）。足すと「本文を書いた」数が過小になり、正規の付録行で `payload:appendix.exceeds-body` が偽陽性になる。どの層が足したかは未確認なので、両方を塞いだ
+  - 両 SKILL の Step 6 と `orchestration-measurement.md ## 16`: below に入れるのは reviewer の `## below-threshold` 件数行の数字だけ
+  - reviewer 規約: 1 つの指摘は本文か件数のどちらか一方にだけ出す（`#### 指摘事項` に本文を書いた指摘を件数にも数えない）
+
+
 ## [2.136.0] - 2026-10-01
 ### Changed
 
