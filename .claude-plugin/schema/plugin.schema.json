@@ -109,6 +109,11 @@
       "type": "string",
       "minLength": 1,
       "description": "後継プラグイン名（deprecated 時のみ）。plugin-manager の update-all が自動移行（旧 uninstall → 後継 install）に使う"
+    },
+    "types": {
+      "type": "string",
+      "pattern": "^\\./.+\\.d\\.ts$",
+      "description": "v2.1.287+（mods）: hooks モジュールが $.state に置く値の型の契約（.d.ts）。`claude plugin validate` がモジュールの state の読み書きと突き合わせる"
     }
   }
 }

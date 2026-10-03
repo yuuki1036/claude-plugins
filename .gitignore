@@ -8,3 +8,5 @@ __pycache__/
 .mutation-test-journal.json
 # claude plugin eval の実行ログ（再実行で作り直せる。ケース定義だけを追跡する）
 */evals/results/
+# mods: Claude Code が手元のフォルダから mod を読むたびにプラグイン内へ書く型宣言（版ごとに書き直される）
+*/.claude-plugin/types/

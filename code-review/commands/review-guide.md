@@ -11,6 +11,6 @@ argument-hint: "[PR番号 | --base <ref>] [--top N]"
 
 **まず `${CLAUDE_PLUGIN_ROOT}/skills/review-guide/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `code-review@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
 
-review-guide スキルを使用して、対象 PR（または `--base <ref>` のローカル diff）の読み順ガイドをセッションに出力してください。ファイル作成・コメント投稿・コード修正は行いません。
+review-guide スキルを使用して、対象 PR（または `--base <ref>` のローカル diff）の読み順ガイドをセッションに出力してください。ファイル作成・コメント投稿・コード修正は行いません（例外は base モードの読み順の記録 1 件。SKILL.md Step 5）。
 
 引数が渡されていればそれも考慮してください（PR 番号 / `--base <ref>` / `--top N`）。

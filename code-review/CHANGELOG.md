@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.141.0] - 2026-10-03
+
+### Added
+
+- **mod `/guide-diff`: review-guide の読み順で、分岐点からの diff を 1 ファイルずつペインに送る**（#274 の続き / `hooks/guide-diff.tsx`）。実装 → self-review → review-guide と回した後、タスクの diff を読むのに editor へ移り、比較先を手で合わせていた。組み込みの `/diff` は比較先を default branch までしか選べず、統合ブランチから切ったブランチでは統合ブランチの他の変更が混ざる。`n` / `p` で送り、`c` で比較先の commit をコピーする。`/guide-diff N` で N 番目から。ペインを描けない場所（VS Code・`-p`）では、読み順・行数・比較先をコマンドの答えのテキストで返す。Claude Code 2.1.287 以降の mods で動き、mods が無効でも review-guide は変わらない
+- **review-guide（base モード）が読み順を git dir に記録する**（`scripts/guide-order.sh`）。精読・流し読み・読まなくてよいの順と、比較先（分岐点のコミットに解決して残す）を作業ツリーごとに 1 ファイル。作業ツリーの外なので diff にも status にも出ない。読み取り専用の規則の唯一の例外として SKILL.md に明記した
+- **mod のテストを `claude plugin test` で回す**（`.claude-plugin/scripts/tests/test_plugin_mods.py`）。配布物にテストを混ぜないので、テストはリポジトリ側に置いてプラグインの複製へ重ねる。CI は Claude Code の CLI を版を固定して入れる
+
 ## [2.140.0] - 2026-10-03
 
 ### Changed

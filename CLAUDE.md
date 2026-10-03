@@ -40,6 +40,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #  git を叩くテストは git_env.py（GIT_HOOK_ENV スクラブの正本）を通す
                                  #  ④ hook スクリプト（hook_harness.py + test_<plugin>_hooks.py。
                                  #     stdin に JSON を流し「発火するか / 黙るか」を直接見る）
+                                 #  ⑤ mod（hooks.json の modules）: mods/<plugin>/ の *.test.ts を
+                                 #     test_plugin_mods.py がプラグインの複製へ重ねて `claude plugin test`
+                                 #     （CLI が無ければ skip。CI は版を固定して入れ、skip を失敗にする）
                                  # python3 .claude-plugin/scripts/run-tests.py
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・plugin eval の鮮度・SSoT 同期・プラグイン品質 (errors)・回帰テスト
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
@@ -72,7 +75,8 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
                                  # **実行時には読まない** — 規範は各ガイド本体に置き、根拠はここへ分ける
   scripts/                       # 同梱スクリプト（一部プラグインのみ）。SKILL 本文に bash を書き下ろさず
                                  # ここへ寄せる。lib/ に共通処理を置いてよい（複製を作らない）
-  hooks/                         # フック定義（hooks.json + scripts/）
+  hooks/                         # フック定義（hooks.json + scripts/）。hooks.json の `modules` は mods
+                                 # （CC 2.1.287+ の TS モジュール。code-review のみ。型の契約は types/）
     lib/safe-hook.sh             # 正本の byte-identical 複製（hook 持ちプラグインのみ）
   rules/                         # SessionStart 等で注入されるルール（一部プラグインのみ）
     project-rules.md             # プロジェクト全体の作業ルール（SessionStart hook で注入）

@@ -232,6 +232,8 @@ def check_hooks_json(errors: list[str]) -> None:
             continue
         try_validate_schema(data, "hooks.schema.json", errors, f"hooks:{plugin}")
         hooks = data.get("hooks")
+        if hooks is None and data.get("modules"):
+            continue  # mods（hooks モジュール）だけで settings 形式の hooks を持たない
         if not isinstance(hooks, dict):
             errors.append(f"[hooks:{plugin}] top-level 'hooks' must be object")
             continue

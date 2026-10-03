@@ -1,4 +1,7 @@
 {
+  "modules": [
+    "./guide-diff.tsx"
+  ],
   "hooks": {
     "SessionStart": [
       {

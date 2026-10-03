@@ -3,8 +3,15 @@
   "title": "Claude Code Plugin Hooks Manifest",
   "description": "{plugin}/hooks/hooks.json の検証スキーマ",
   "type": "object",
-  "required": ["hooks"],
+  "anyOf": [{ "required": ["hooks"] }, { "required": ["modules"] }],
   "properties": {
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": { "type": "string", "pattern": "^\\./.+\\.(ts|tsx|jsx|js|mjs|cjs|mts|cts)$" },
+      "description": "v2.1.287+（mods）: register を export する hooks モジュール。hooks.json からの相対パスで 1 つだけ。settings 形式の hooks と併存できる"
+    },
     "hooks": {
       "type": "object",
       "additionalProperties": {

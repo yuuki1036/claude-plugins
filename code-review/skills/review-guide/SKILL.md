@@ -22,12 +22,12 @@ PR を**読む人間**を支援する skill。指摘を出す（review / self-re
 ## review / self-review / review-triage との違い
 
 - review / self-review は severity 付き findings を**出す**。本 skill は findings を出さない。「レビュー観点」は「このファイルで何を見るか」の問いであって判定ではない
-- 出力は**セッション内のみ**。ファイルを書かない・コメントを投稿しない・コードを修正しない（Edit / Write / Skill を持たない）
+- 出力は**セッション内のみ**。ファイルを書かない・コメントを投稿しない・コードを修正しない（Edit / Write / Skill を持たない）。例外は base モードの読み順の記録 1 件だけ（Step 5）
 - 全ファイルは解説しない。精読は上位 N 件（既定 5・`--top N`）に絞り、残りは 1 行で流し読み / 不要に振る
 
 ## 絶対厳守ルール
 
-- **読み取り専用**。ファイル作成・コメント投稿・push・コード修正・Issue 起票を一切しない
+- **読み取り専用**。ファイル作成・コメント投稿・push・コード修正・Issue 起票を一切しない。**唯一の例外**は base モードの Step 5 で `guide-order.sh` が git dir（作業ツリーの外。diff にも status にも出ない）に書く読み順の記録 1 件で、`/guide-diff`（code-review の mod）の入力になる。毎回上書きし、mods が無い環境では読まれないだけ
 - **各主張に `file:line` を添える**。「この PR で何をした」「難点」「主張 vs diff」に書く事実は、確認した `file:line` を根拠にする。確かめられないことは書かない（「難点: 特になし」を許す）。記録・コミットメッセージ・PR 本文の主張をそのまま採用せず、diff とコードで確かめる
 - **精読 N で切っても core を落とさない**。上位 N の選抜で core は流し読みに落ちても「不要」には落とさない
 
@@ -58,7 +58,7 @@ fi
 ```
 
 - `FATAL:` が出たら（PR も base も決まらない）、base branch を指定して呼び直すよう案内して終了する
-- 出力の `base_branch=` / `base_source=`（`arg` 引数指定 / `reflog` このブランチを作った起点 / `default` default branch へのフォールバック）/ `base_refresh=` は Step 5 のレポート冒頭の「base」行にそのまま使う
+- 出力の `base_branch=` / `base_source=`（`arg` 引数指定 / `reflog` このブランチを作った起点 / `default` default branch へのフォールバック）/ `base_refresh=` は Step 5 のレポート冒頭の「base」行と読み順の記録にそのまま使う
 
 - **PR モード**（`PR_NUMBER` あり）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --pr "$PR_NUMBER"` で diff 収集とシグナル出力を得る
 - **base モード**（`BASE_REF` あり）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --base "$BASE_REF"`。この場合 Step 1 の PR コンテキストは無い。`## meta` の `diff_base=`（分岐点のコミット）と、stderr の `WARN: ⚠️ base:` をレポート冒頭の「base」行に使う
@@ -134,13 +134,26 @@ explorer 起動の共通詳細（プロンプト組み立て・2 ファイル Re
 
 `review-guide-format.md` のテンプレートで出力する。**ファイルは書かない**（セッション出力のみ）。base モードでは「主張 vs diff」「人間の判断が効く箇所」を「対象なし（ローカル diff）」と明記する。
 
-**完了基準**: レポートを出力した。ファイルへの書き込み・コメント投稿・コード修正を一切していない。
+**base モードのみ、出力の前に読み順を記録する**。editor に移らず、タスクの diff（分岐点から）を読み順どおりにペインで送れるようにするため（`/guide-diff` / GitHub issue #274 の続き）:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/guide-order.sh" --diff-base <## meta の diff_base> \
+  --base <base_branch> --source <base_source> \
+  --read '<精読 1>' '<精読 2>' … --skim '<流し読み>' … --skip '<読まなくてよい>' …
+```
+
+- `--read` は**レポートの精読と同じ順**（実装の流れ順）、`--skim` / `--skip` もレポートの並びのまま渡す。群が空ならそのオプションごと省く
+- **パスは 1 つずつシングルクォートで囲む**（diff 由来 = 信頼できない入力。Step 3 の diff-slice と同じ）
+- `guide_order=` が出たら、レポートの末尾に `/guide-diff` の 1 行を添える（`review-guide-format.md`）。exit 2（`FATAL:`）ならその 1 行を出さず、レポートはそのまま出す（記録は付随物で、ガイド本体を止めない）
+
+**完了基準**: レポートを出力した。base モードでは読み順を記録したか、記録できなかった理由が分かっている。読み順の記録の他に、ファイルへの書き込み・コメント投稿・コード修正を一切していない。
 
 ## Additional Resources
 
 - `${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh` — diff 収集と分類・リスク信号（`--pr` / `--base`）
 - `${CLAUDE_PLUGIN_ROOT}/scripts/fetch-pr-context.sh` — PR 本文・コメントの取得（`--save`）
 - `${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh` — 精読ファイルの hunk 切り出し
+- `${CLAUDE_PLUGIN_ROOT}/scripts/guide-order.sh` — base モードの読み順の記録（Step 5。`/guide-diff` の入力）
 - `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md` — explorer 起動の共通詳細（Step 3 の high 以上で Read）
 - `${CLAUDE_PLUGIN_ROOT}/references/review-guide-format.md` — レポート形式と 4 項目の書き方（Step 4 で Read）
 - `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` `## 3` — レビュー観点判定表（正本・複製しない）

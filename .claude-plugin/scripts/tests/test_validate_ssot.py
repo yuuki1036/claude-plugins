@@ -382,6 +382,38 @@ class ValidateSsotTest(unittest.TestCase):
         self.assertDetects(self.run_ssot(), "schema:")
 
     @unittest.skipUnless(HAS_JSONSCHEMA, "jsonschema 未導入（CI では pip install 済み）")
+    def test_mods_manifest_fields_pass(self):
+        """mods（CC 2.1.287+）: hooks.json の `modules` と plugin.json の `types`. modules だけの hooks.json も通す."""
+        self.edit_json("demo/.claude-plugin/plugin.json",
+                       lambda d: d.__setitem__("types", "./types/index.d.ts"))
+        for body in ({"modules": ["./mod.tsx"]},
+                     {"modules": ["./mod.ts"], "hooks": {"SessionStart": [{"hooks": [
+                         {"type": "command", "command": "bash", "args": ["x.sh"]}]}]}}):
+            with self.subTest(body=body):
+                self.write("demo/hooks/hooks.json", json.dumps(body))
+                res = self.run_ssot()
+                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_settings_hooks_beside_modules_are_still_checked(self):
+        """modules があっても、併存する settings 形式の hooks の検査は省かない."""
+        self.write("demo/hooks/hooks.json", json.dumps(
+            {"modules": ["./mod.tsx"], "hooks": {"SessionStart": [{"hooks": [{"type": "command"}]}]}}))
+        self.assertDetects(self.run_ssot(), "type=command requires 'command'")
+
+    @unittest.skipUnless(HAS_JSONSCHEMA, "jsonschema 未導入（CI では pip install 済み）")
+    def test_malformed_mods_fields_are_detected(self):
+        cases = {
+            "モジュールは 1 つだけ": {"modules": ["./a.tsx", "./b.tsx"]},
+            "相対パスで書く": {"modules": ["mod.tsx"]},
+            "TS/JS 以外は読まれない": {"modules": ["./mod.py"]},
+            "hooks も modules も無い": {},
+        }
+        for name, body in cases.items():
+            with self.subTest(name):
+                self.write("demo/hooks/hooks.json", json.dumps(body))
+                self.assertDetects(self.run_ssot(), "[hooks:demo] schema:")
+
+    @unittest.skipUnless(HAS_JSONSCHEMA, "jsonschema 未導入（CI では pip install 済み）")
     def test_missing_schema_file_is_detected(self):
         (self.root / ".claude-plugin" / "schema" / "plugin.schema.json").unlink()
         self.assertDetects(self.run_ssot(), "schema not found")

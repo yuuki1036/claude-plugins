@@ -41,6 +41,14 @@ PR に既に付いているレビューコメント（AI レビュー bot・人�
 **引数**:
 - `[PR番号]` — 省略時は現在のブランチに紐づく PR を自動取得
 
+## mod: `/guide-diff`（review-guide の読み順で diff を送る）
+
+review-guide を base モード（PR を作る前）で回すと、読み順と比較先（base branch との分岐点のコミット）が git dir に記録される。`/guide-diff` はそれを読み、**分岐点からの diff を読み順どおりに 1 ファイルずつ**ペインに出す（`n` 次へ / `p` 前へ / `c` 比較先の commit をコピー）。`/guide-diff N` で N 番目から開く。組み込みの `/diff` は比較先を default branch までしか選べないので、統合ブランチから切ったブランチでも統合ブランチの他の変更が混ざらない。
+
+- Claude Code 2.1.287 以降の mods（`hooks/hooks.json` の `modules`）で動く。ペインを描けるのは端末と Desktop。VS Code や `-p` では、コマンドの答えとして読み順・行数・比較先のテキストを返す
+- mods が無効（`disableAllHooks` / `--safe-mode` / 組織の `allowManagedModsOnly`）でも review-guide 自体は変わらない。記録は読まれないだけ
+- 実装: `hooks/guide-diff.tsx`（型の契約は `types/index.d.ts`）。記録を書くのは `scripts/guide-order.sh`
+
 ## 機械層の先行実行（self-review のみ / opt-in）
 
 **agent の担当を「機械が決められないもの」に限る**ための前段。プロジェクトのリポジトリルートに `.claude/review-oracles.sh` を置くと、self-review は Phase 0 の**前に**それを実行する。置かなければ何も起きない（完全 no-op）。

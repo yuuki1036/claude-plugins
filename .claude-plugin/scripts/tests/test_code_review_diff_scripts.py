@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import subprocess
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -1365,6 +1366,112 @@ class BaseBranchRefreshTest(DiffBaseFixture):
         self.git("remote", "remove", "origin")
         self.git("checkout", "-qb", "feat", "project/x")
         self.assertEqual(self.refresh()["base_refresh"], "no-origin")
+
+
+GUIDE_ORDER = PLUGIN / "scripts" / "guide-order.sh"
+
+
+class GuideOrderTest(DiffBaseFixture):
+    """`guide-order.sh` — review-guide の読み順を guide-diff mod へ渡す記録.
+
+    記録が誤っていても mod は何かを表示する（比較先を取り違えれば統合ブランチの変更が混ざった diff、
+    群を取り違えれば違う読み順）ので、書かれた中身で見る。
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.git("checkout", "-qb", "feat")
+        self.tip = self.commit_file("mine.txt")
+        self.git_dir = Path(self.git("rev-parse", "--absolute-git-dir").stdout.strip())
+
+    def record(self, *args: str, cwd: Path | None = None) -> dict:
+        res = self.run_in(GUIDE_ORDER, *args, cwd=cwd)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        line = res.stdout.strip()
+        self.assertTrue(line.startswith("guide_order="), res.stdout)
+        return json.loads(Path(line.partition("=")[2]).read_text(encoding="utf-8"))
+
+    def test_writes_the_order_and_the_resolved_merge_base_into_the_git_dir(self):
+        res = self.run_in(GUIDE_ORDER, "--diff-base", "main", "--base", "main", "--source", "reflog",
+                          "--read", "src/b.ts", "src/a.ts", "--skim", "test/a.test.ts",
+                          "--skip", "pnpm-lock.yaml", "docs/x.md")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        out = self.git_dir / "claude-review-guide.json"
+        self.assertEqual(res.stdout, f"guide_order={out}\n")
+        data = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(
+            {k: data[k] for k in ("schema", "base_branch", "base_source", "diff_base", "head")},
+            {"schema": 1, "base_branch": "main", "base_source": "reflog", "diff_base": self.init, "head": self.tip},
+            "比較先は ref 名ではなく commit に解決して残す（後で main が進んでも分岐点はずれない）",
+        )
+        self.assertEqual(data["files"], [
+            {"path": "src/b.ts", "group": "read"},
+            {"path": "src/a.ts", "group": "read"},
+            {"path": "test/a.test.ts", "group": "skim"},
+            {"path": "pnpm-lock.yaml", "group": "skip"},
+            {"path": "docs/x.md", "group": "skip"},
+        ], "読み順（実装の流れ順）を並べ替えない")
+        self.assertRegex(data["created_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertEqual(self.git("status", "--porcelain").stdout, "", "作業ツリーに何も足さない")
+
+    def test_each_option_may_come_last(self):
+        """値を取る 3 つのオプションは、引数の末尾に置いても値を読む."""
+        tail = {"--diff-base": self.init, "--base": "main", "--source": "arg"}
+        for last, value in tail.items():
+            with self.subTest(last=last):
+                rest = [x for k, v in tail.items() if k != last for x in (k, v)]
+                data = self.record("--read", "a.txt", *rest, last, value)
+                self.assertEqual(data["diff_base" if last == "--diff-base" else
+                                      "base_branch" if last == "--base" else "base_source"], value)
+
+    def test_paths_are_kept_verbatim(self):
+        odd = ['dir with space/a "q".txt', "back\\slash.md", "日本語.md", "-dash.md"]
+        data = self.record("--diff-base", "main", "--base", "main", "--read", *odd)
+        self.assertEqual([f["path"] for f in data["files"]], odd)
+        self.assertEqual(data["base_source"], "unknown", "--source を省いたときの既定")
+
+    def test_a_second_run_replaces_the_record(self):
+        self.record("--diff-base", "main", "--base", "main", "--read", "old.txt")
+        data = self.record("--diff-base", "main", "--base", "main", "--skim", "new.txt")
+        self.assertEqual(data["files"], [{"path": "new.txt", "group": "skim"}])
+
+    def test_linked_worktree_keeps_its_own_record(self):
+        """worktree ごとに別の作業なので、記録も分ける（共有の .git に置くと隣の worktree の読み順を開く）."""
+        wt = self.root.parent / f"{self.root.name}-wt"
+        self.git("worktree", "add", "-q", "-b", "other", str(wt), "main")
+        self.addCleanup(lambda: self.git("worktree", "remove", "--force", str(wt)))
+        self.record("--diff-base", "main", "--base", "main", "--read", "here.txt")
+        data = self.record("--diff-base", "main", "--base", "main", "--read", "there.txt", cwd=wt)
+        self.assertEqual(data["files"], [{"path": "there.txt", "group": "read"}])
+        mine = json.loads((self.git_dir / "claude-review-guide.json").read_text(encoding="utf-8"))
+        self.assertEqual(mine["files"], [{"path": "here.txt", "group": "read"}])
+
+    def test_rejects_bad_arguments_without_writing(self):
+        cases = {
+            "比較先が無い": ["--base", "main", "--read", "a"],
+            "base が無い": ["--diff-base", "main", "--read", "a"],
+            "ファイルが無い": ["--diff-base", "main", "--base", "main"],
+            "群の前のパス": ["--diff-base", "main", "--base", "main", "a", "--read", "b"],
+            "未知のオプション": ["--diff-base", "main", "--base", "main", "--read", "a", "--later", "b"],
+            "--diff-base に値が無い": ["--base", "main", "--read", "a", "--diff-base"],
+            "--base に値が無い": ["--diff-base", "main", "--read", "a", "--base"],
+            "--source に値が無い": ["--diff-base", "main", "--base", "main", "--read", "a", "--source"],
+            "commit でない比較先": ["--diff-base", "no-such-ref", "--base", "main", "--read", "a"],
+        }
+        for name, args in cases.items():
+            with self.subTest(name):
+                res = self.run_in(GUIDE_ORDER, *args)
+                self.assertEqual(res.returncode, 2, res.stderr)
+                self.assertIn("FATAL:", res.stderr)
+                self.assertEqual(res.stdout, "")
+                self.assertFalse((self.git_dir / "claude-review-guide.json").exists())
+
+    def test_outside_git_exits_2(self):
+        with tempfile.TemporaryDirectory() as d:
+            res = self.run_in(GUIDE_ORDER, "--diff-base", self.init, "--base", "main", "--read", "a",
+                              cwd=Path(d))
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("git の作業ツリーではない", res.stderr)
 
 
 if __name__ == "__main__":

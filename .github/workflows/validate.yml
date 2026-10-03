@@ -70,7 +70,17 @@ jobs:
       # テストがその自己整合の盲点を塞ぐ
       # 起動口は run-tests.py。テストが起動したプロセスの残留を検出・回収する
       # （テスト全件 green のまま 12 本が 4 時間回り続けた実績がある / issue #140）
+      # mod（hooks.json の `modules`）のテストは `claude plugin test` で走る（test_plugin_mods.py）。
+      # CLI は版を固定して入れる: mods は early access で、版ごとに API が変わりうる。上げるときは
+      # ここを変えて CI で確かめる。認証は要らない（テストの環境に fs / network / process は無く、
+      # engine の代わりはテスト自身が答える）
+      - name: install-claude-cli
+        run: npm install -g --no-audit --no-fund @anthropic-ai/claude-code@2.1.288
+
+      # CLAUDE_PLUGIN_TEST_REQUIRED: CLI が無いときの skip を失敗に変える（入れ損ねたまま緑にしない）
       - name: unit-tests
+        env:
+          CLAUDE_PLUGIN_TEST_REQUIRED: "1"
         run: python3 .claude-plugin/scripts/run-tests.py
 
       # 変更行の変異テスト。**テストが実は何も検証していない**（通るだけのテスト）を
