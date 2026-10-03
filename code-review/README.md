@@ -49,6 +49,15 @@ review-guide を base モード（PR を作る前）で回すと、読み順と�
 - mods が無効（`disableAllHooks` / `--safe-mode` / 組織の `allowManagedModsOnly`）でも review-guide 自体は変わらない。記録は読まれないだけ
 - 実装: `hooks/guide-diff.tsx`（型の契約は `types/index.d.ts`）。記録を書くのは `scripts/guide-order.sh`
 
+## mod: 計測の記録（`tokens_live`）
+
+review / self-review の publish に載せるトークン消費を、transcript から事後に読むだけでなく**イベントからその場で数える**。モデルへのリクエスト 1 回ごとの usage と subagent の起動を記録し、publish の直前に `~/.config/claude-review/live/<session id>.json` へ書き出す（`CLAUDE_REVIEW_CONFIG_DIR` で差し替え可）。publish はそれを `tokens_live` として transcript 由来の `tokens` と並べて載せ、一致したかを `agree` に残す。
+
+- transcript を引けない・取り違える回（#246 / #263）にも値が残る。`run_in_background` で起動した体の数も分かる
+- 記録は数値と agent の種類だけ。prompt・description・本文は持たない
+- mods が無効な環境では記録が無く、`tokens_live` も載らない（欠測扱いにもしない）。契約は `references/orchestration-measurement.md` `## 16`
+- 実装: `hooks/review-ledger.ts`。mods の入口は `hooks/mod.ts`（`modules` はプラグインに 1 つしか書けない）
+
 ## 機械層の先行実行（self-review のみ / opt-in）
 
 **agent の担当を「機械が決められないもの」に限る**ための前段。プロジェクトのリポジトリルートに `.claude/review-oracles.sh` を置くと、self-review は Phase 0 の**前に**それを実行する。置かなければ何も起きない（完全 no-op）。

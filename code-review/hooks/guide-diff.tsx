@@ -5,7 +5,7 @@
 // 統合ブランチの他の変更が混ざる。入力は scripts/guide-order.sh が git dir に残す読み順の記録で、
 // ここは git を読むだけ（書かない）。ペインを描けない場所では、同じ内容をコマンドの答えのテキストで返す
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, On } from 'claude-code'
 
 import type { GuideFile, GuideView } from '../types'
 import { GROUP_LABEL, baseLine, fileLine, parseNumstat, parseRecord, summaryText, trimDiff } from './guide-diff-lib'
@@ -93,7 +93,7 @@ async function show($: EngineInterface, move: (index: number, count: number) => 
   await update($, view, v => (v !== null && v.index === t.index ? { ...v, diff, isTruncated } : v))
 }
 
-export const register: Register = on => {
+export function registerGuideDiff(on: On) {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,

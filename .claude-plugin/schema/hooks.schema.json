@@ -10,7 +10,7 @@
       "minItems": 1,
       "maxItems": 1,
       "items": { "type": "string", "pattern": "^\\./.+\\.(ts|tsx|jsx|js|mjs|cjs|mts|cts)$" },
-      "description": "v2.1.287+（mods）: register を export する hooks モジュール。hooks.json からの相対パスで 1 つだけ。settings 形式の hooks と併存できる"
+      "description": "v2.1.287+（mods）: register を export する hooks モジュール。hooks.json からの相対パスで 1 つだけ（2 つ目は CC が読み込みで拒否する。複数の mod は入口のモジュールで束ねる）。settings 形式の hooks と併存できる"
     },
     "hooks": {
       "type": "object",

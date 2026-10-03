@@ -76,7 +76,8 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
   scripts/                       # 同梱スクリプト（一部プラグインのみ）。SKILL 本文に bash を書き下ろさず
                                  # ここへ寄せる。lib/ に共通処理を置いてよい（複製を作らない）
   hooks/                         # フック定義（hooks.json + scripts/）。hooks.json の `modules` は mods
-                                 # （CC 2.1.287+ の TS モジュール。code-review のみ。型の契約は types/）
+                                 # （CC 2.1.287+ の TS モジュール。code-review のみ。プラグインに 1 つしか書けないので
+                                 # 入口の hooks/mod.ts で束ねる。型の契約は types/）
     lib/safe-hook.sh             # 正本の byte-identical 複製（hook 持ちプラグインのみ）
   rules/                         # SessionStart 等で注入されるルール（一部プラグインのみ）
     project-rules.md             # プロジェクト全体の作業ルール（SessionStart hook で注入）

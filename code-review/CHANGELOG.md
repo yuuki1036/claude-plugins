@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.142.0] - 2026-10-03
+
+### Added
+
+- **mod: review / self-review のトークン消費をイベントからその場で数え、publish に `tokens_live` として載せる**（`hooks/review-ledger.ts` / `lib/live_ledger.py`）。publish の `tokens` は transcript を事後に読むので、引けない・取り違える回（#246 / #263）は欠測か誤値だった。mod はリクエスト 1 回ごとの usage と subagent の起動を記録し、publish の直前に設定 dir の `live/<session id>.json` へ書き出す。publish は transcript 由来の `tokens` と並べ、`agree` に一致したかを残す（どちらを正にするかは並走させて突き合わせてから決める）。`run_in_background` で起動した体の数（`background_spawns`）も載る。記録は数値と agent の種類だけで、prompt・description は持たない。mods が無効な環境ではフィールドごと無く、gap も立てない
+
+### Changed
+
+- mods の入口を `hooks/mod.ts` にまとめた（`hooks.json` の `modules` はプラグインに 1 つしか書けず、2 つ目は読み込みで拒否される）。`/guide-diff` の挙動は変わらない
+
 ## [2.141.0] - 2026-10-03
 
 ### Added

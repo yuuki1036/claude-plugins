@@ -139,6 +139,17 @@ case "$PLUGIN" in
     ;;
 esac
 
+# ---- mod がその場で数えた usage（`tokens_live` / hooks/review-ledger.ts） ---------
+# transcript とは別の経路（イベントから直接数えた値）。transcript を引けない回（session-unresolved）でも
+# 取れるよう、transcript の有無とは独立に読む。mods が無効な環境では記録が無いのが普通なので gap は立てない
+LIVE_JSON=""
+if [ "$TOKENS_WANTED" = 1 ]; then
+  case "${T0:-}" in
+    ''|*[!0-9]*) : ;;
+    *) LIVE_JSON=$(python3 "$HERE/lib/live_ledger.py" "$T0" 2>/dev/null) || LIVE_JSON="" ;;
+  esac
+fi
+
 # ---- 打点が落ちた区間を agent の実測時刻で埋める（GitHub issue #161） -------
 # 区間打点はオーケストレーターの記憶に依存しており、実測で **v2.62.0 以降の 10 件中
 # 5 件が 1 つ以上落としていた**（`t1` 1 / `wave` 2 / `explorer-wave` 2 / `t2` 1）。
@@ -351,6 +362,7 @@ MERGED=$(
   REVIEW_TOKENS_WINDOW="$TOKENS_WINDOW" \
   REVIEW_TEMPLATE_STATE="${TEMPLATE_STATE:-}" \
   REVIEW_INVOCATION="${INVOCATION:-}" \
+  REVIEW_LIVE="${LIVE_JSON:-}" \
   REVIEW_LATE_PUBLISH="$LATE_PUBLISH" \
   REVIEW_LIB_DIR="$HERE/lib" \
   python3 - "$PAYLOAD" <<'PY'
@@ -1200,6 +1212,28 @@ elif os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         # 判定できなかった（agent 0 体 / transcript や meta.json を引けない）。**「一括だった」
         # にも「逐次だった」にも倒さない** — 規約が守られたことの証拠が無い回として残す
         gaps.append("dispatch")
+
+# ---- mod がその場で数えた usage（`tokens_live`） ----------------------------------
+# **呼び出し側が書いた値は捨てる**（機械計測の値だけ / `models` と同じ fail-closed）。transcript から
+# 読んだ `tokens` と並べ、一致したかを `agree` に残す（どちらを正にするかは並走させて突き合わせてから決める）
+payload.pop("tokens_live", None)
+if os.environ.get("REVIEW_TOKENS_WANTED") == "1":
+    try:
+        _live = json.loads(os.environ.get("REVIEW_LIVE") or "")
+    except ValueError:
+        _live = None
+    if isinstance(_live, dict) and _live.get("schema") == 1:
+        _tk = payload.get("tokens")
+        if isinstance(_tk, dict):
+            _mo = _tk.get("main_output_k")
+            _live["agree"] = {
+                "sub_agents": _live.get("sub_agents") == _tk.get("sub_agents"),
+                # transcript 側は subagent が窓に居ない回にキーごと無い
+                "sub_turns": _live.get("sub_turns") == (_tk.get("sub_turns") or []),
+                "main_output_ratio": (round(_live.get("main_output_k", 0) / _mo, 2)
+                                      if isinstance(_mo, (int, float)) and _mo > 0 else None),
+            }
+        payload["tokens_live"] = _live
 
 digest = os.environ.get("REVIEW_DIFF_DIGEST") or ""
 files_key = os.environ.get("REVIEW_DIFF_FILES") or ""
