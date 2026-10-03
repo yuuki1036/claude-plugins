@@ -80,10 +80,12 @@ self-review では `isolation: "worktree"` を使わない等の差分は orches
 # （publish しない回を Stop hook が「publish 漏れ」と拾わないように / #247）
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" start
 
-# base branch: 引数指定があればそれを使い、無ければデフォルトブランチを自動検出する
-BASE="<引数で指定された base branch。指定が無ければ空のまま>"
-[ -n "$BASE" ] || BASE=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
-echo "base=$BASE"
+# base branch: 引数 → このブランチを作ったときの reflog（統合ブランチから切ったなら統合ブランチ）→
+# default branch の順で決める（正本: scripts/lib/base-branch.sh / GitHub issue #274）
+BASE_ARG="<引数で指定された base branch。指定が無ければ空のまま>"
+BASE_OUT=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/lib/base-branch.sh" ${BASE_ARG:+"$BASE_ARG"})
+printf '%s\n' "$BASE_OUT"
+BASE=$(printf '%s\n' "$BASE_OUT" | sed -n 's/^base_branch=//p')
 
 if [ -n "$BASE" ]; then
   # diff を $DIFF_FILE に保存し、シグナルダイジェストのみ stdout に出す
@@ -102,7 +104,9 @@ else
 fi
 ```
 
-**`set -e` を張らないこと**、そして**分岐を `[ 条件 ] && コマンド` で書かないこと**（どちらも CLAUDE.md Gotchas の ERR trap family）。base 検出の `grep` は非マッチで exit 1 を返すので、`set -e` 下では `BASE=$(... | grep ...)` を含む `||` リストがそこでシェルごと落ち、**以降の 3 本を実行せずに終わる**。`if` なら BASE が空でも 0 で終わり、`FATAL:` の 1 行が出力に残る。
+**`set -e` を張らないこと**、そして**分岐を `[ 条件 ] && コマンド` で書かないこと**（どちらも CLAUDE.md Gotchas の ERR trap family）。base が決まらないとき `base-branch.sh` は exit 2 を返すので、`set -e` 下では `BASE_OUT=$(...)` の行でシェルごと落ち、**以降の 3 本を実行せずに終わる**。`if` なら BASE が空でも 0 で終わり、`FATAL:` の 1 行が出力に残る。
+
+`base_source=` が `reflog` なら、このブランチを作った起点（統合ブランチ等）を base にしている。`default` なら起点が分からず default branch に倒した — 統合ブランチから切ったブランチでは、統合ブランチの他の変更まで対象に混ざるので、Phase 0 の出力にこの 1 行を載せる。
 
 `FATAL:` が出たら base branch を特定できていない（後続 3 本は走っていない）。ユーザーに base branch を確認してから呼び直す。
 

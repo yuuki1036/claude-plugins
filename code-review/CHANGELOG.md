@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.139.0] - 2026-10-03
+
+### Added
+
+- **base branch の決め方を共通化し、ブランチを作った起点を使う**（#274 / `scripts/lib/base-branch.sh`）。review-guide（PR 未作成時）・self-review・comment-polish は、引数が無ければ default branch（main）へ倒していた。統合ブランチから切ったブランチでは統合ブランチの他の変更まで diff に混ざり、editor でタスクの diff だけを見られなかった。決め方は「引数 → このブランチを作ったときの reflog（`Created from <base>`。起点なしで作ったなら作成時にいたブランチ）→ default branch」。reflog の候補は実在するブランチで、自分自身・自分の upstream でないものだけ採る
+- **review-guide（PR 未作成時）が base を origin から取り直し、ローカルの base を早送りできるときだけ進める**（#274）。ローカルの統合ブランチが origin より 33 commits 遅れていたのに気づけなかった。別の作業ツリーでチェックアウト中・未 push のコミットがあるときは進めず、レポートに理由を出す
+- **review-guide のレポート冒頭（base モード）に「base: 名前（決め方）・比較先: 分岐点のコミット」の 1 行を出す**（#274）。editor の比較先をこの commit にすると、タスクの diff だけが見える（base の先端と比べると、遅れていれば他の変更が、進んでいれば base 側の新しいコミットが逆向きに混ざる）
+
 ## [2.138.0] - 2026-10-01
 
 ### Added

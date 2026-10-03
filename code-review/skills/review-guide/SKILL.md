@@ -46,18 +46,22 @@ PR を**読む人間**を支援する skill。指摘を出す（review / self-re
 if [ -z "$BASE_REF" ]; then
   META=$(gh pr view ${PR_ARG:+"$PR_ARG"} --json number,title,url,headRefName,headRefOid,baseRefName,body 2>/dev/null) \
     && PR_NUMBER=$(printf '%s' "$META" | jq -r '.number') || PR_NUMBER=""
-  # PR が特定できないときは base モードへフォールバックする。BASE_REF が空なら
-  # default branch を解決して埋める（空のまま --base に渡すと triage-signals が FATAL で落ちる）
-  if [ -z "$PR_NUMBER" ]; then
-    BASE_REF=$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')
-    [ -n "$BASE_REF" ] || { echo "対象 PR も base ref も特定できない。base branch を指定して呼び直してください"; }
-  fi
+fi
+# base モード（--base 指定 / PR が特定できない）: base branch を決め、origin から取り直す。
+# 決め方は 引数 → このブランチを作ったときの reflog（統合ブランチから切ったなら統合ブランチ）→ default branch
+# （正本: scripts/lib/base-branch.sh / GitHub issue #274）。ローカルの base は早送りできるときだけ進める
+if [ -z "$PR_NUMBER" ]; then
+  BASE_OUT=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/lib/base-branch.sh" --refresh ${BASE_REF:+"$BASE_REF"})
+  printf '%s\n' "$BASE_OUT"
+  BASE_REF=$(printf '%s\n' "$BASE_OUT" | sed -n 's/^base_branch=//p')
 fi
 ```
 
-- `PR_NUMBER` が空でも `BASE_REF` が空なら、上の案内を出して終了する（PR も base も無い）
+- `FATAL:` が出たら（PR も base も決まらない）、base branch を指定して呼び直すよう案内して終了する
+- 出力の `base_branch=` / `base_source=`（`arg` 引数指定 / `reflog` このブランチを作った起点 / `default` default branch へのフォールバック）/ `base_refresh=` は Step 5 のレポート冒頭の「base」行にそのまま使う
+
 - **PR モード**（`PR_NUMBER` あり）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --pr "$PR_NUMBER"` で diff 収集とシグナル出力を得る
-- **base モード**（`BASE_REF` あり）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --base "$BASE_REF"`。この場合 Step 1 の PR コンテキストは無い
+- **base モード**（`BASE_REF` あり）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --base "$BASE_REF"`。この場合 Step 1 の PR コンテキストは無い。`## meta` の `diff_base=`（分岐点のコミット）と、stderr の `WARN: ⚠️ base:` をレポート冒頭の「base」行に使う
 - **diff 全文をメインコンテキストに載せない**。`triage-signals.sh` が diff をファイルへ保存し、`## meta` の `diff_file=` にパスが出る。**このパスの実値を控える**（シェル変数は Bash 呼び出し間で消える）
 
 出力の各セクション（`## files` = 分類 + 行数 / `## red-flags` `## surface` = リスク信号 / `## hunks` = core の関数コンテキスト / `## focus-signals` = 観点判定ヒット）を読む。**diff 全文の Read はしない**。

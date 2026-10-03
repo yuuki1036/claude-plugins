@@ -36,9 +36,9 @@ self-review はレビュー時にコメント推敲提案（B 系統）を**出�
 ### 1. diff 収集
 
 ```bash
-# base 検出（引数優先。--staged ならステージ済み）
-BASE="${1:-$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')}"
-[ -z "$BASE" ] && BASE=main
+# base 検出（引数 → このブランチを作ったときの reflog → default branch / scripts/lib/base-branch.sh）。
+# --staged ならステージ済みだけを見るので base は使わない
+BASE=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/lib/base-branch.sh" ${1:+"$1"} | sed -n 's/^base_branch=//p')
 # diff の起点（--staged のときは不要）。ローカルの base の先端ではなく HEAD との分岐点で、
 # ローカルが origin より遅れていれば origin 側から取る（GitHub issue #253）
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/lib/diff-base.sh" "$BASE"

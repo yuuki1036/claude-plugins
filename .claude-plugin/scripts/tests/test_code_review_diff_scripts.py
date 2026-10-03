@@ -1171,5 +1171,187 @@ class DiffBaseCliTest(DiffBaseFixture):
         self.assertEqual((res.returncode, res.stdout, res.stderr), (0, "", ""))
 
 
+BASE_BRANCH = PLUGIN / "scripts" / "lib" / "base-branch.sh"
+
+
+class BaseBranchCliTest(DiffBaseFixture):
+    """`bash lib/base-branch.sh [<base>]` — base branch の決め方（GitHub issue #274）.
+
+    統合ブランチから切ったブランチで default branch（main）を掴むと、統合ブランチの他の変更まで
+    diff に混ざり、editor でタスクの diff だけを見られない。**誤った候補を掴むより default に落ちる側を厚く見る**。
+    """
+
+    def resolve(self, *args: str) -> dict[str, str]:
+        res = self.run_in(BASE_BRANCH, *args)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return dict(l.split("=", 1) for l in res.stdout.splitlines())
+
+    def set_default(self, branch: str = "main") -> None:
+        self.set_origin(branch, self.init)
+        self.git("symbolic-ref", "refs/remotes/origin/HEAD", f"refs/remotes/origin/{branch}")
+
+    def test_explicit_argument_wins(self):
+        self.git("branch", "project/x")
+        self.git("checkout", "-qb", "feat", "project/x")
+        self.assertEqual(self.resolve("release"), {"base_branch": "release", "base_source": "arg"})
+
+    def test_branch_created_from_an_integration_branch(self):
+        self.set_default()
+        self.git("branch", "project/x")
+        self.git("checkout", "-qb", "feat", "project/x")
+        self.assertEqual(self.resolve(), {"base_branch": "project/x", "base_source": "reflog"})
+
+    def test_branch_created_from_the_remote_integration_branch(self):
+        """`origin/` を外したブランチ名にする（diff-base.sh がローカルと origin の両方を見る）."""
+        self.set_default()
+        self.set_origin("project/x", self.init)
+        self.git("checkout", "-qb", "feat", "refs/remotes/origin/project/x")
+        self.assertEqual(self.resolve()["base_branch"], "project/x")
+
+    def test_branch_created_without_a_start_point_uses_the_branch_it_was_on(self):
+        self.set_default()
+        self.git("checkout", "-qb", "project/x")
+        self.git("checkout", "-qb", "feat")
+        self.assertEqual(self.resolve(), {"base_branch": "project/x", "base_source": "reflog"})
+
+    def test_worktree_branch_records_its_start_point(self):
+        self.set_default()
+        self.git("branch", "project/x")
+        wt = self.root.parent / (self.root.name + "-wt")
+        self.git("worktree", "add", "-q", "-b", "feat", str(wt), "project/x")
+        self.addCleanup(lambda: self.git("worktree", "remove", "--force", str(wt)))
+        res = self.run_in(BASE_BRANCH, cwd=wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("base_branch=project/x", res.stdout.splitlines())
+
+    # --- default に落ちる条件 ---
+    def test_own_upstream_is_not_a_base(self):
+        """`git checkout -b feat origin/feat`（fetch で入ってきたブランチ）は自分自身を base にしない."""
+        self.set_default()
+        self.set_origin("feat", self.init)
+        self.git("checkout", "-qb", "feat", "refs/remotes/origin/feat")
+        self.assertEqual(self.resolve(), {"base_branch": "main", "base_source": "default"})
+
+    def test_deleted_start_branch_falls_back(self):
+        self.set_default()
+        self.git("branch", "gone")
+        self.git("checkout", "-qb", "feat", "gone")
+        self.git("branch", "-D", "gone")
+        self.assertEqual(self.resolve()["base_source"], "default")
+
+    def test_start_point_given_as_a_commit_falls_back(self):
+        self.set_default()
+        self.git("checkout", "-qb", "feat", self.init)
+        self.assertEqual(self.resolve()["base_source"], "default")
+
+    def test_branch_created_from_detached_head_falls_back(self):
+        self.set_default()
+        self.git("checkout", "-q", "--detach")
+        self.git("checkout", "-qb", "feat")
+        self.assertEqual(self.resolve()["base_source"], "default")
+
+    def test_detached_head_falls_back(self):
+        self.set_default()
+        self.git("checkout", "-q", "--detach")
+        self.assertEqual(self.resolve(), {"base_branch": "main", "base_source": "default"})
+
+    def test_nothing_resolvable_exits_2(self):
+        self.git("checkout", "-q", "--detach")
+        res = self.run_in(BASE_BRANCH)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("FATAL", res.stderr)
+        self.assertEqual(res.stdout, "")
+
+    def test_sourcing_prints_nothing(self):
+        res = subprocess.run(["bash", "-c", '. "$1"', "sh", str(BASE_BRANCH)], cwd=self.root,
+                             capture_output=True, text=True, env=self._env(), timeout=60)
+        self.assertEqual((res.returncode, res.stdout, res.stderr), (0, "", ""))
+
+
+class BaseBranchRefreshTest(DiffBaseFixture):
+    """`--refresh`: origin から取り直し、ローカルの base を早送りできるときだけ進める（GitHub issue #274）.
+
+    **ローカルを書き換えるのは早送りだけ**。別の作業ツリーでチェックアウト中・未 push のコミットがある・
+    ブランチでない指定は進めない。origin は使い捨ての bare リポジトリ。
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.origin_dir = self.root.parent / (self.root.name + "-origin.git")
+        subprocess.run(["git", "init", "-q", "--bare", str(self.origin_dir)], capture_output=True,
+                       env=self._env(), check=True)
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.origin_dir, ignore_errors=True))
+        self.git("remote", "add", "origin", str(self.origin_dir))
+        self.git("branch", "project/x")
+        self.git("push", "-q", "origin", "main", "project/x")
+
+    def advance_remote(self, branch: str) -> str:
+        """origin の branch にだけコミットを 2 つ積む（ローカルの branch は古いまま）."""
+        self.git("checkout", "-qb", "tmp", branch)
+        self.commit_file("o1.txt")
+        tip = self.commit_file("o2.txt")
+        self.git("push", "-q", "origin", f"tmp:{branch}")
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-D", "tmp")
+        return tip
+
+    def refresh(self, *args: str) -> dict[str, str]:
+        res = self.run_in(BASE_BRANCH, "--refresh", *args)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return dict(l.split("=", 1) for l in res.stdout.splitlines())
+
+    def local(self, branch: str) -> str:
+        return self.git("rev-parse", f"refs/heads/{branch}").stdout.strip()
+
+    def test_behind_local_base_is_fast_forwarded(self):
+        tip = self.advance_remote("project/x")
+        self.git("checkout", "-qb", "feat", "project/x")
+        self.assertEqual(self.refresh()["base_refresh"], "fast-forwarded:2")
+        self.assertEqual(self.local("project/x"), tip)
+
+    def test_base_checked_out_elsewhere_is_not_moved(self):
+        """別の作業ツリーで使っているブランチを動かすと、その作業ツリーの index とずれる."""
+        old = self.local("project/x")
+        self.advance_remote("project/x")
+        self.git("checkout", "-qb", "feat", "project/x")
+        wt = self.root.parent / (self.root.name + "-wt2")
+        self.git("worktree", "add", "-q", str(wt), "project/x")
+        self.addCleanup(lambda: self.git("worktree", "remove", "--force", str(wt)))
+        self.assertEqual(self.refresh()["base_refresh"], "behind-checked-out:2")
+        self.assertEqual(self.local("project/x"), old)
+
+    def test_up_to_date(self):
+        self.git("checkout", "-qb", "feat", "project/x")
+        self.assertEqual(self.refresh()["base_refresh"], "up-to-date")
+
+    def test_diverged_local_base_is_not_moved(self):
+        self.advance_remote("project/x")
+        self.git("checkout", "-q", "project/x")
+        mine = self.commit_file("unpushed.txt")
+        self.git("checkout", "-qb", "feat")
+        self.assertEqual(self.refresh()["base_refresh"], "diverged")
+        self.assertEqual(self.local("project/x"), mine)
+
+    def test_non_branch_base_is_not_fetched(self):
+        self.git("checkout", "-qb", "feat")
+        self.assertEqual(self.refresh("HEAD~0")["base_refresh"], "not-a-branch")
+
+    def test_local_only_base_is_reported_as_not_on_origin(self):
+        """origin に無いブランチは「取り直せなかった」ではなく、取り直す相手が無い."""
+        self.git("branch", "local-only")
+        self.git("checkout", "-qb", "feat", "local-only")
+        self.assertEqual(self.refresh()["base_refresh"], "not-on-origin")
+
+    def test_origin_only_base_is_fetched_without_a_local_branch(self):
+        self.git("checkout", "-qb", "feat", "project/x")
+        self.git("branch", "-D", "project/x")
+        self.assertEqual(self.refresh("project/x")["base_refresh"], "no-local")
+
+    def test_without_origin(self):
+        self.git("remote", "remove", "origin")
+        self.git("checkout", "-qb", "feat", "project/x")
+        self.assertEqual(self.refresh()["base_refresh"], "no-origin")
+
+
 if __name__ == "__main__":
     unittest.main()
