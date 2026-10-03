@@ -200,6 +200,10 @@ printf '%s\n' "$CLASSIFIED" | awk -F'\t' '
   END {
     printf "core_files=%d\ncore_lines=%d\ntotal_files=%d\ntotal_lines=%d\n", cf+0, cl+0, tf+0, tl+0
   }'
+# doc だけの diff か（GitHub issue #275）。1 以上のファイルがあり、すべて doc に分類されたときだけ 1。
+# 実効の報告閾値を MINOR に下げる判定に使う（orchestration-guide `## 2`）。文書では節の間のずれ・消し残しが
+# MINOR になり、そのまま実装者の誤読になるのに、既定の MAJOR では件数だけになって本文が読めない
+printf '%s\n' "$CLASSIFIED" | awk -F'\t' 'NF { n++; if ($1 != "doc") o++ } END { printf "doc_only=%d\n", (n > 0 && o == 0) ? 1 : 0 }'
 # size_tier は triage-guide.md `## 6.2` の帯定義を機械適用する。
 # **判定は large → medium → small の順**（条件が重なる場合は大きい帯が勝つ）。
 # large = ファイル > 10 **または** 行数 > 500。ここを OR で書かないと

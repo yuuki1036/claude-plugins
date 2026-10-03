@@ -158,6 +158,10 @@ tsc / lint / build では検知できない runtime 初期化バグ（DB client 
 - Step 3: Generator-Verifier ループ。`BLOCKER`（any confidence）/ `CRITICAL && confidence ≥ 90` を auto-fix 対象とし、effort 別 max_iterations で fix → 再 review を反復。regression 検知（同一 fingerprint）/ budget で終了
 - Step 4: 集約結果を `[auto-fixed]` / `[persisting]` タグ付きで提示し、残課題はユーザー判断
 
+### Phase 6.9: レビュー後の変更の確認
+
+Phase 6 の最後のレビュー直後に作業ツリーを記録し（`scripts/review-snapshot.sh save`。未追跡ファイルを含み、ref も index も動かさない）、Phase 7 の前に差を取る。ユーザーの判断で入れた修正や別の決定の反映など、レビューを通っていない変更があれば、もう一度 self-review を回すか、未レビューとして締めるかを聞く（GitHub issue #276）。
+
 ### Phase 7: Summary
 
 全 todo を完了にし、成果（作ったもの / 主要な決定 / 変更ファイル / 次の一手）をまとめる。Phase 4.5 で design doc を export した場合は `phase: target → current` 更新を案内する。Phase 6 で G-V ループが走った場合は iteration 数 / termination reason / auto-fixed count / persisting issues を報告する。最後に `.claude/events.jsonl` へ `feature:implemented` イベントを fire-and-forget で追記する。

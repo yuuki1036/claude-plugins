@@ -5,6 +5,13 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.0] - 2026-10-03
+
+### Added
+
+- **Phase 6.9: レビュー後の変更の確認**（#276）。Phase 6 の self-review の後に入った変更（ユーザーの判断で入れた修正・Phase 6.7 のコメント適用・別の決定の反映）は、G-V ループの再レビュー（auto-fix の対象だけ）を通らないまま Phase 7 で締められていた（実測: 仕様書の改訂で、レビュー後の変更が原因の食い違いが 6 件）。Phase 6 の最後のレビュー直後に作業ツリーを記録し（`scripts/review-snapshot.sh save`。未追跡ファイルを含み、ref も index も動かさない）、Phase 7 の前に差を取る。差があれば、もう一度 self-review を回すか、未レビューとして締めるかを聞く。Phase 7 のサマリに「レビュー後の変更」の行を出す
+  - 差分だけを self-review に通すことはできない（self-review は base との分岐点から作業ツリーまでを対象にする）ので、回し直すと diff 全体が対象になる
+
 ## [2.17.9] - 2026-09-30
 ### Changed
 

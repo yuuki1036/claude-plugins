@@ -18,6 +18,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from git_env import scrub
+
 REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "feature-dev" / "scripts" / "plugin-enabled.sh"
 
@@ -138,6 +140,110 @@ class ReviewerFocusVocabularyTest(unittest.TestCase):
         added = set(re.findall(r"→ (?:add|upgrade) `([a-z-]+)`", self.SKILL.read_text()))
         self.assertTrue(added, "Phase 6 Step 1 の追加ルールを拾えていない")
         self.assertLessEqual(added, self.code_review_vocabulary())
+
+
+
+SNAPSHOT = REPO / "feature-dev" / "scripts" / "review-snapshot.sh"
+
+
+class ReviewSnapshotTest(unittest.TestCase):
+    """`review-snapshot.sh save|check` — レビュー後に入った変更を出す（GitHub issue #276）.
+
+    **ref も index も動かさない**こと、未追跡の新規ファイルを数えること、.gitignore を数えないことを見る。
+    """
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.env = scrub()
+        for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "t"]):
+            self.git(*args)
+        (self.root / ".gitignore").write_text("build/\n", encoding="utf-8")
+        (self.root / "spec.md").write_text("rule 1\nrule 2\n", encoding="utf-8")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "init")
+
+    def git(self, *args: str) -> str:
+        res = subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True, env=self.env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout
+
+    def run_snap(self, mode: str, cwd: Path | None = None) -> dict:
+        res = subprocess.run(["bash", str(SNAPSHOT), mode], cwd=cwd or self.root, capture_output=True,
+                             text=True, env=self.env, timeout=60)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        out = {"rows": []}
+        for line in res.stdout.splitlines():
+            if "\t" in line:
+                out["rows"].append(line.split("\t"))
+            else:
+                k, _, v = line.partition("=")
+                out[k] = v
+        return out
+
+    def test_unchanged_after_save(self):
+        (self.root / "spec.md").write_text("rule 1\nrule 2 edited\n", encoding="utf-8")  # レビュー前の未コミット変更
+        self.run_snap("save")
+        got = self.run_snap("check")
+        self.assertEqual((got["changed_files"], got["changed_lines"]), ("0", "0"))
+
+    def test_edits_and_new_files_after_save_are_reported(self):
+        self.run_snap("save")
+        (self.root / "spec.md").write_text("rule 1\nrule 2 changed\nrule 3\n", encoding="utf-8")
+        (self.root / "new.md").write_text("added\n", encoding="utf-8")
+        got = self.run_snap("check")
+        self.assertEqual(got["changed_files"], "2")
+        self.assertEqual(got["changed_lines"], "4")  # spec.md +2 -1 / new.md +1
+        self.assertEqual(sorted(r[2] for r in got["rows"]), ["new.md", "spec.md"])
+
+    def test_deleted_file_is_reported(self):
+        self.run_snap("save")
+        (self.root / "spec.md").unlink()
+        self.assertEqual(self.run_snap("check")["changed_files"], "1")
+
+    def test_ignored_files_are_not_counted(self):
+        self.run_snap("save")
+        (self.root / "build").mkdir()
+        (self.root / "build" / "out.txt").write_text("x\n", encoding="utf-8")
+        self.assertEqual(self.run_snap("check")["changed_files"], "0")
+
+    def test_refs_and_index_are_untouched(self):
+        (self.root / "spec.md").write_text("unstaged\n", encoding="utf-8")
+        (self.root / "untracked.md").write_text("u\n", encoding="utf-8")
+        before = (self.git("rev-parse", "HEAD"), self.git("status", "--porcelain"), self.git("stash", "list"))
+        self.run_snap("save")
+        self.run_snap("check")
+        self.assertEqual((self.git("rev-parse", "HEAD"), self.git("status", "--porcelain"),
+                          self.git("stash", "list")), before)
+
+    def test_commit_after_save_without_content_change_is_not_a_change(self):
+        """レビュー後にコミットしただけなら中身は変わっていない（tree で比べる）."""
+        (self.root / "spec.md").write_text("reviewed\n", encoding="utf-8")
+        self.run_snap("save")
+        self.git("commit", "-qam", "commit reviewed state")
+        self.assertEqual(self.run_snap("check")["changed_files"], "0")
+
+    def test_check_from_a_subdirectory_sees_the_whole_tree(self):
+        (self.root / "docs").mkdir()
+        self.run_snap("save", cwd=self.root / "docs")
+        (self.root / "spec.md").write_text("changed\n", encoding="utf-8")
+        self.assertEqual(self.run_snap("check", cwd=self.root / "docs")["changed_files"], "1")
+
+    def test_missing_snapshot(self):
+        self.assertEqual(self.run_snap("check")["snapshot"], "missing")
+
+    def test_not_a_git_repo(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.run_snap("check", cwd=Path(d))["snapshot"], "unavailable")
+
+    def test_snapshots_are_per_worktree(self):
+        wt = self.root.parent / (self.root.name + "-wt")
+        self.git("worktree", "add", "-q", "-b", "other", str(wt))
+        self.addCleanup(lambda: subprocess.run(["git", "worktree", "remove", "--force", str(wt)],
+                                               cwd=self.root, capture_output=True, env=self.env))
+        self.run_snap("save")
+        self.assertEqual(self.run_snap("check", cwd=wt)["snapshot"], "missing")
 
 
 if __name__ == "__main__":

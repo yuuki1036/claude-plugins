@@ -17,12 +17,13 @@ Step 1 のダイジェストの `## md-polish`（`md-prose-lines.sh --count` の
 |---|---|---|
 | `md_prose_lines=0`（推敲してよい md の追加・変更行が無い） | しない | `no-md-prose` |
 | `--embed`（適用する Step 7 が無く、呼び出し元にも受け手が無い） | しない | `embed` |
-| `--focus` を指定した / `--exclude` に `md-polish` を含む | しない | `scope` |
+| `--exclude` に `md-polish` を含む | しない | `scope` |
 | `writing_polish=0`（writing-polish が有効でない） | しない | `not-installed` |
 | 上のどれでもない | **する（effort を問わない）** | `null` |
 
 - **`## md-polish` が出ていない（スクリプトが失敗した）回**: `--embed` か scope に当たるならその理由で skip する（表の 2・3 行目は `## md-polish` を使わずに決まる）。当たらなければ**起動せず**、`missing_coverage` に `md-polish` を記録し、`skip_reason` は空のままにする（判定できていないので `no-md-prose` にしない。publish が `payload:md_polish.skip_reason` を立てて可視化する）
 - `--exclude md-polish` 単独は他の層にとってスコープの絞り込みではない（SKILL.md の `--focus` / `--exclude` の節）
+- **`--focus` では止めない**（GitHub issue #275）。Markdown 推敲は観点ではなく severity の外の別枠で、観点を絞っても読みやすさを見る係は要る。以前は `--focus` でも `scope` で止めており、docs の改訂で観点を絞ると読みやすさを誰も見なくなっていた。止めたいときは `--exclude md-polish`
 
 - **体数の上限（effort 上限・規模キャップ）の外**。reviewer 枠にも specialist 枠にも数えず、最小保証の 2 体にも含めない。core が 0 行の doc だけの変更は small 帯になるが、そこでも起動する
 - Phase 0 の構成テーブルに `md-polish` の行を 1 行足す（起動するなら「reviewer wave に相乗り」、しないなら理由）。直列 wave の本数は増えない

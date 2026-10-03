@@ -609,6 +609,20 @@ class TriageSignalTest(DiffScriptTestBase):
         self.write("docs/g.md", "plain\n")
         self.assertNotIn("behavior-change", self.sig(self.digest(), "## focus-signals"))
 
+    def test_doc_only_is_1_when_every_file_is_a_doc(self):
+        """doc だけの diff で実効の報告閾値を MINOR に下げる判定（GitHub issue #275）."""
+        self.write("docs/spec.md", "rule\n")
+        self.write("README.md", "intro\n")
+        self.assertEqual(self.kv(self.digest(), "## size").get("doc_only"), "1")
+
+    def test_doc_only_is_0_with_any_non_doc_file(self):
+        for extra in ("src/a.ts", "tests/a.test.ts", "package-lock.json"):
+            with self.subTest(extra=extra):
+                self.write("docs/spec.md", "rule\n")
+                f = self.write(extra, "x\n")
+                self.assertEqual(self.kv(self.digest(), "## size").get("doc_only"), "0")
+                f.unlink()
+
     def test_ui_quality_fires_on_locale_files(self):
         """文言だけを変える diff でも ui-quality を起動する（GitHub issue #272）."""
         for path in ("locales/ja.json", "src/i18n/en.yml", "app-x/locale/ja.json", "public/messages/ja.json"):

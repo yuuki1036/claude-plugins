@@ -648,6 +648,7 @@ self-review の出力を severity × confidence で auto-fix トリガーに変�
 
 ### Step 4: Consolidate and present
 
+0. **レビューした時点を記録する**（GitHub issue #276）: Step 3 のループが終わった直後（skip した回は Step 2 の直後）に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" save` を実行する。この後に入る変更（下の 5. のユーザー判断の修正・Phase 6.7・別の決定の反映）は self-review を通らないので、Phase 6.9 で差を取る
 1. **集約**: self-review の最終出力（post-loop）を読み、全ての BLOCKER / CRITICAL / MAJOR / MINOR を列挙
 2. **タグ付け**: Step 3 で解決したものは `[auto-fixed]`、ループ後も残ったものは `[persisting]`
 3. **Recommend**: 手動修正を推奨する高 severity issue を identify
@@ -679,6 +680,23 @@ self-review の出力を severity × confidence で auto-fix トリガーに変�
 
 ---
 
+## Phase 6.9: レビュー後の変更の確認
+
+**Goal**: Phase 6 の self-review の後に入った変更を、未レビューのまま締めない（GitHub issue #276）。G-V ループが再レビューするのは auto-fix の対象だけで、ユーザーの判断で入れた修正・Phase 6.7 のコメント適用・別のセッションで決めたことの反映は通らない。仕様書のように節をまたいで同じ規則を参照する変更では、1 か所の修正が別の節との食い違いを作りやすい。
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
+```
+
+- `changed_files=0` → 何もせず Phase 7 へ
+- `changed_files` が 1 以上 → 変わったファイルと行数（出力の `<追加>\t<削除>\t<path>` 行）を示して、`AskUserQuestion` で聞く:
+  - 「self-review をもう一度回す（推奨）」— Phase 6 Step 2 を同じ引数で回し、指摘を Step 4 と同じ扱いで提示する。終わったら `save` で記録し直し、もう一度 `check` する
+  - 「回さずに締める」— Phase 7 のサマリに未レビューとして残す
+  - **差分だけを self-review に通すことはできない**。self-review は base との分岐点から作業ツリーまでを対象にするので、もう一度回すと diff 全体が対象になる
+- `snapshot=missing` / `unavailable`（Phase 6 が走らなかった・git の操作に失敗した）→ 聞かずに Phase 7 へ進み、サマリに「レビュー後の変更: 確認できなかった」と出す
+
+---
+
 ## Phase 7: Summary
 
 **Goal**: Document what was accomplished
@@ -691,6 +709,7 @@ self-review の出力を severity × confidence で auto-fix トリガーに変�
    - Files modified
    - Suggested next steps
    - **コメント精査の結果** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
+   - **レビュー後の変更** (Phase 6.9): 「なし」/「N ファイル・M 行（再レビュー済み）」/「**N ファイル・M 行（未レビュー）**」/「確認できなかった」。未レビューの回はファイル名も並べる
    - **worktree** (Phase 4.8 で分離した場合のみ): worktree のパスとブランチ、後片付けは teardown / worktree-gc に委ねる旨
    - **Design doc follow-up** (Phase 4.5 で `DESIGN_DOC_PATH` がある場合のみ): 実装が完了したので、doc の frontmatter を `phase: target → current` に更新するよう案内する（実装と設計が乖離した箇所があれば doc への追記 or supersede も）。更新は design-doc プラグイン側の運用（ユーザー操作）に委ねる
 3. **G-V loop summary** (if Step 3 of Phase 6 ran):
