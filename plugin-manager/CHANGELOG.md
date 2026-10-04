@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.0] - 2026-10-04
+
+### Added
+
+- **mod: `/update-all` をモデルを呼ばずにその場で実行する**（`hooks/update-all.ts`）。手順（スコープの判定・marketplace の再取得・deprecated の移行とロールバック・順次の再インストールと uninstall のフォールバック・反映の確認・CHANGELOG の抜粋・未インストールの検出・報告）は `commands/update-all.md` と同じで、トークンを使わず、モデルが手順を取り違える余地も無い（#271 のキャッシュ削除はその型だった）。mods が無効な環境・`claude` CLI を呼べない環境・一覧が読めない環境では、何も変えずに今までどおりモデルの手順へ渡す
+
 ## [1.8.4] - 2026-10-01
 
 ### Fixed

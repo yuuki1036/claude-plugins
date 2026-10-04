@@ -26,7 +26,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [living-spec-workflow](#living-spec-workflow) | 0.6.0 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.9 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.3.2 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
-| [plugin-manager](#plugin-manager) | 1.8.4 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
+| [plugin-manager](#plugin-manager) | 1.9.0 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.10.1 | 1 | 1 | - | SessionStart | - | 文章を語句レベルで推敲・添削 |
 
@@ -132,7 +132,7 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 - **hooks**: SessionStart
 
 ### plugin-manager
-インストール済みプラグインの一括更新と、マーケットプレイスの後発追加プラグイン取りこぼし通知。
+インストール済みプラグインの一括更新と、マーケットプレイスの後発追加プラグイン取りこぼし通知。mods が有効な環境では `/update-all` を mod がモデルを呼ばずにその場で実行する（無効なら従来どおりモデルが手順を実行する）。
 - **commands**: `update-all`
 - **hooks**: SessionStart
 
