@@ -10,3 +10,5 @@ __pycache__/
 */evals/results/
 # mods: Claude Code が手元のフォルダから mod を読むたびにプラグイン内へ書く型宣言（版ごとに書き直される）
 */.claude-plugin/types/
+# 同じく、手元のフォルダから mod を読んだときにプラグイン直下へ書かれる（上の types を extends するだけ）
+*/tsconfig.json
