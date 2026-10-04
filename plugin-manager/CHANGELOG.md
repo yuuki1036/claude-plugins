@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.1] - 2026-10-04
+
+### Fixed
+
+- 1.9.0 の配布物に、mod の読み込みで Claude Code が書いた `tsconfig.json` が紛れ込んでいたのを外した（追跡しない `.claude-plugin/types/` を extends するだけのファイルで、動作には関係しない）
+
 ## [1.9.0] - 2026-10-04
 
 ### Added
