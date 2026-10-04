@@ -7,7 +7,7 @@
 //
 // 記録するのは数値と agent の種類だけ。prompt・description・本文は持たない（自由記述で業務の ID が入る /
 // #265）。書き出しは publish の Bash を走らせる直前の 1 回だけで、mods が無い環境では何も起きない
-import type { EngineInterface, On, TurnUsage } from 'claude-code'
+import type { AgentSpawnInput, AgentSpawnResult, EngineInterface, On, TurnUsage } from 'claude-code'
 
 /** 書き出す 1 ファイルの上限の目安。超えた step は数えず truncated を立てる（fs.write は 4 MiB まで） */
 export const MAX_STEPS = 20000
@@ -101,24 +101,26 @@ async function flush($: EngineInterface) {
   await $.fs.write(path, JSON.stringify(ledger))
 }
 
+/**
+ * subagent が起動したとき。`agent.spawn` は matcher 無しでは 1 プラグインに 1 度しか登録できないので、
+ * 受けるのは review-progress で、ここは時刻と中身だけを受け取る（$ は import をまたいで渡せない）
+ */
+export function ledgerSpawned(t: number, e: AgentSpawnInput, r: AgentSpawnResult) {
+  if (r.deny !== undefined || r.agentId === undefined) return
+  if (started === null) started = t
+  agents[r.agentId] = {
+    t,
+    type: e.subagentType,
+    background: e.background,
+    fork: e.fork,
+    parent: e.parentAgentId ?? null,
+  }
+}
+
 export function registerLedger(on: On) {
   on('turn.step', async function* ($, e, next) {
     const r = yield* next(e)
     if (r?.usage) record(await now($), e.agentId, r.usage)
-    return r
-  })
-
-  on('agent.spawn', async ($, e, next) => {
-    const r = await next(e)
-    if (r.deny === undefined && r.agentId !== undefined) {
-      agents[r.agentId] = {
-        t: await now($),
-        type: e.subagentType,
-        background: e.background,
-        fork: e.fork,
-        parent: e.parentAgentId ?? null,
-      }
-    }
     return r
   })
 

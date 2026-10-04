@@ -49,6 +49,15 @@ review-guide を base モード（PR を作る前）で回すと、読み順と�
 - mods が無効（`disableAllHooks` / `--safe-mode` / 組織の `allowManagedModsOnly`）でも review-guide 自体は変わらない。記録は読まれないだけ
 - 実装: `hooks/guide-diff.tsx`（型の契約は `types/index.d.ts`）。記録を書くのは `scripts/guide-order.sh`
 
+## mod: レビューの進み具合（プロンプトの上の帯）
+
+review / self-review の間、プロンプトの上に 1 行で進み具合を出す。例: `self-review · agent 実行中（完了 4 / 起動 6） · 12 分`
+
+- 段階は「トリアージ中 → agent 実行中 → 統合中 → レポート出力済み・publish 待ち」。レビューが打つ計測の打点（`review-timing.sh` の start / t2）と、agent の起動・完了の数だけから決める（SKILL は変えていない）
+- agent を `run_in_background` で起動すると、その場でトーストと帯の警告で知らせる（結果を取りこぼすので `run_in_background: false` を明示する）
+- publish か `discard` で消える。2 時間何も起きなければ、止まったレビューとみなして消える。「隠す」で次のレビューまで消せる
+- 帯を描けるのは端末と Desktop。実装: `hooks/review-progress.tsx`
+
 ## mod: 計測の記録（`tokens_live`）
 
 review / self-review の publish に載せるトークン消費を、transcript から事後に読むだけでなく**イベントからその場で数える**。モデルへのリクエスト 1 回ごとの usage と subagent の起動を記録し、publish の直前に `~/.config/claude-review/live/<session id>.json` へ書き出す（`CLAUDE_REVIEW_CONFIG_DIR` で差し替え可）。publish はそれを `tokens_live` として transcript 由来の `tokens` と並べて載せ、一致したかを `agree` に残す。

@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.143.0] - 2026-10-04
+
+### Added
+
+- **mod: review / self-review の進み具合をプロンプトの上の帯に出す**（`hooks/review-progress.tsx`）。レビューは 10〜57 分かかり、その間に見えるのは agent の起動と途中の出力だけだった。段階（トリアージ中 → agent 実行中 → 統合中 → publish 待ち）・agent の完了数・経過分を 1 行で出す。SKILL は変えず、計測の打点（start / t2 / publish）と agent の起動・完了の数だけを見る — wave の打点は落ちることが多いので使わない（#161）。agent を `run_in_background` で起動したら、その場でトーストと帯で知らせる（結果を取りこぼす。transcript からは事後にしか分からなかった）
+
+### Changed
+
+- `agent.spawn` は matcher 無しでは 1 プラグインに 1 度しか登録できないので、review-progress が受けて計測の記録（review-ledger）へ渡す形にした。記録の中身は変わらない
+
 ## [2.142.1] - 2026-10-04
 
 ### Changed

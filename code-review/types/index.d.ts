@@ -29,8 +29,26 @@ export type GuideView = {
   isTruncated: boolean
 }
 
+/** review / self-review の進み具合（hooks/review-progress.tsx が帯に出す） */
+export type ReviewProgress = {
+  /** start に `--pr` が付いていれば review */
+  kind: 'review' | 'self-review'
+  startedAt: number
+  /** 経過時間の表示に使う今の時刻（1 分ごとに進める） */
+  now: number
+  /** 最後に何かが起きた時刻。長く何も起きなければ帯を消す */
+  lastEventAt: number
+  /** main が起動した agent の数と、そのうち終わった数 */
+  spawned: number
+  done: number
+  /** run_in_background で起動した agent の数 */
+  background: number
+  /** 初回レポートを出した（`mark t2`） */
+  isReported: boolean
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'code-review': { guideDiff: GuideView | null }
+    'code-review': { guideDiff: GuideView | null; progress: ReviewProgress | null; progressHidden: boolean }
   }
 }
