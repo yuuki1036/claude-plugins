@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.142.1] - 2026-10-04
+
+### Changed
+
+- **計測の契約（`orchestration-measurement.md ## 16`）に、`tokens` と `tokens_live` のどちらを正とするかを項目ごとに書いた**。会社 PC の self-review 2 件で突き合わせた結果、subagent の体数・往復数・入力量は両者が完全に一致し、subagent の出力量は transcript 側が下限（実際の 1/6〜1/12）だった。一方、main の量は `tokens_live` が publish を出した応答の 1 回分を常に欠く（ツールはそれを出した応答が終わる前に走るため。実セッションで確認）。sub の量は `tokens_live`、main の量は `tokens` を正とする。集計の切り替えはまだしない
+
 ## [2.142.0] - 2026-10-03
 
 ### Added
