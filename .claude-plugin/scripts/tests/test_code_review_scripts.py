@@ -126,6 +126,9 @@ class ScriptTestBase(unittest.TestCase):
         # この id から transcript を引くので、継承すると開発機の実 transcript を読んでしまう。
         # 引かせたいテストは `extra` で明示する（`TranscriptFixture.env_home`）
         env.pop("CLAUDE_CODE_SESSION_ID", None)
+        # **開発機の `~/.claude/settings.json` を読ませない**（publish は userConfig の報告閾値を
+        # そこから引く / GitHub issue #277）。読ませたいテストは `extra` で差し替える
+        env["CLAUDE_CONFIG_DIR"] = str(self.review_config / "cc-config")
         env.update(extra)
         return env
 
@@ -247,12 +250,12 @@ class CleanupTest(ScriptTestBase):
     def test_success_removes_every_temp_file_of_the_review(self):
         """**掃除の対象は種別を増やすたびに漏れる**（残ると TMPDIR に溜まり続ける）.
 
-        prctx / diff / agentctx / oracles を実在させてから publish し、全部消えることを見る。
+        prctx / diff / agentctx / oracles / size を実在させてから publish し、全部消えることを見る。
         """
         ts = self.full_run()
         # パスは `lib/review-paths.sh` に問い合わせる（命名規則をテスト側に複製しない）
         made = []
-        for kind in ("prctx", "diff", "agentctx", "oracles"):
+        for kind in ("prctx", "diff", "agentctx", "oracles", "size"):
             proc = subprocess.run(
                 ["bash", "-c", '. "$1/scripts/lib/review-paths.sh"; review_paths_init ""; '
                                'review_path "$2"', "_", str(PLUGIN), kind],
@@ -1747,6 +1750,104 @@ class SeverityThresholdPublishTest(ScriptTestBase):
         r = self.publish(self._without(below_threshold_counts="MAJOR", pre_adjust_counts="MAJOR"))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.last_payload()["severity_threshold"], "MAJOR")
+
+
+class ThresholdSourcePublishTest(ScriptTestBase):
+    """publish が報告閾値の出どころ（`severity_threshold_source`）を機械判定する（GitHub issue #277）.
+
+    v2.140.0（#275）から doc だけの diff は既定の MAJOR が MINOR に下がるが、payload は実効値しか
+    持たず、利用者が選んだ MINOR と自動の MINOR を区別できなかった。入力は triage-signals.sh が書く
+    `doc_only=` の一時ファイルと、user settings の `pluginConfigs`。
+    """
+
+    def _size_file(self) -> Path:
+        proc = subprocess.run(
+            ["bash", "-c", '. "$1/scripts/lib/review-paths.sh"; review_paths_init ""; '
+                           'review_path size', "_", str(PLUGIN)],
+            cwd=self.root, capture_output=True, text=True, env=self._env())
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return Path(proc.stdout.strip())
+
+    def _settings(self, configs: dict) -> None:
+        d = self.review_config / "cc-config"
+        d.mkdir(exist_ok=True)
+        (d / "settings.json").write_text(json.dumps({"pluginConfigs": configs}), encoding="utf-8")
+
+    def _source(self, threshold: str, doc_only: int | None = None, **payload_extra) -> str | None:
+        if doc_only is not None:
+            self._size_file().write_text("doc_only=%d\n" % doc_only, encoding="utf-8")
+        r = self.publish(dict(BASE_PAYLOAD, severity_threshold=threshold, **payload_extra))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return self.last_payload().get("severity_threshold_source")
+
+    def test_a_default_run_is_default(self):
+        self.assertEqual(self._source("MAJOR", doc_only=0), "default")
+
+    def test_a_doc_only_run_lowered_to_minor_is_doc_only(self):
+        self.assertEqual(self._source("MINOR", doc_only=1), "doc_only")
+
+    def test_an_explicit_major_is_still_lowered_by_doc_only(self):
+        """明示の MAJOR も「既定の MAJOR」として下げる規則（orchestration-guide `## 2`）."""
+        self._settings({"code-review@m": {"options": {"review_severity_threshold": "MAJOR"}}})
+        self.assertEqual(self._source("MINOR", doc_only=1), "doc_only")
+
+    def test_an_explicit_major_on_code_is_user_config(self):
+        self._settings({"code-review@m": {"options": {"review_severity_threshold": "MAJOR"}}})
+        self.assertEqual(self._source("MAJOR", doc_only=0), "user_config")
+
+    def test_a_user_minor_is_user_config_even_on_docs(self):
+        """利用者が MINOR を選んだ回は doc_only でも利用者の選択（下げる規則は効いていない）."""
+        self._settings({"code-review@m": {"options": {"review_severity_threshold": "MINOR"}}})
+        self.assertEqual(self._source("MINOR", doc_only=1), "user_config")
+
+    def test_a_user_critical_is_not_lowered(self):
+        self._settings({"code-review@m": {"options": {"review_severity_threshold": "CRITICAL"}}})
+        self.assertEqual(self._source("CRITICAL", doc_only=1), "user_config")
+
+    def test_a_threshold_that_breaks_the_rule_is_unknown(self):
+        """規則と実効値が食い違う回はどちらにも寄せない."""
+        cases = {"doc_only-not-applied": ("MAJOR", 1, None),
+                 "lowered-on-code": ("MINOR", 0, None),
+                 "user-critical-ignored": ("MAJOR", 0, "CRITICAL")}
+        for name, (threshold, doc_only, user) in cases.items():
+            with self.subTest(name):
+                self._settings({} if user is None else
+                               {"code-review@m": {"options": {"review_severity_threshold": user}}})
+                self.assertEqual(self._source(threshold, doc_only=doc_only), "unknown")
+
+    def test_without_the_size_file_only_a_lowered_minor_is_unknown(self):
+        """triage を経ていない回: MAJOR は下げていないと言えるが、MINOR は下げたかどうか分からない."""
+        self.assertEqual(self._source("MAJOR"), "default")
+        self.assertEqual(self._source("MINOR"), "unknown")
+
+    def test_conflicting_marketplaces_are_not_guessed(self):
+        self._settings({"code-review@a": {"options": {"review_severity_threshold": "MINOR"}},
+                        "code-review@b": {"options": {"review_severity_threshold": "CRITICAL"}},
+                        # 名前の前方一致で拾わない
+                        "code-review-x@a": {"options": {"review_severity_threshold": "MINOR"}}})
+        self.assertEqual(self._source("MAJOR", doc_only=0), "default")
+
+    def test_an_out_of_vocabulary_user_value_is_ignored(self):
+        """CC は userConfig の文字列を検証しない。`minor` を利用者の選択として採ると doc_only の回が unknown に化ける."""
+        self._settings({"code-review@m": {"options": {"review_severity_threshold": "minor"}}})
+        self.assertEqual(self._source("MINOR", doc_only=1), "doc_only")
+
+    def test_a_broken_settings_file_is_ignored(self):
+        d = self.review_config / "cc-config"
+        d.mkdir(exist_ok=True)
+        (d / "settings.json").write_text("{", encoding="utf-8")
+        self.assertEqual(self._source("MINOR", doc_only=1), "doc_only")
+
+    def test_a_caller_written_source_is_discarded(self):
+        self.assertEqual(self._source("MAJOR", doc_only=0, severity_threshold_source="user_config"),
+                         "default")
+
+    def test_no_source_without_a_threshold(self):
+        p = json.loads(json.dumps(BASE_PAYLOAD))
+        del p["severity_threshold"]
+        p["severity_threshold_source"] = "default"
+        self.assertEqual(self.publish(p).returncode, 0)
+        self.assertNotIn("severity_threshold_source", self.last_payload())
 
 
 class BodyBoundPublishTest(ScriptTestBase):
@@ -7439,6 +7540,41 @@ class RetroAppendixLayerTest(RetroFixture):
                           "true_silent_unknown": 0,
                           # #248。この fixture は上限の判定に要る値を持たないので 0
                           "rescued_judged": 0, "rescued_uncontracted": 0})
+
+    def test_minor_threshold_runs_do_not_dilute_the_main_layer(self):
+        """MINOR 閾値の回を世代の行に混ぜない（GitHub issue #277）.
+
+        混ぜると 3/20 = 15% で鳴らないが、MAJOR の回だけなら 3/10 = 30% で鳴る。v2.140.0 から
+        doc だけの diff は自動で MINOR になるので、docs の回が増えるだけで #210 の回復サインを満たしてしまう.
+        """
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(3)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(7)] \
+             + [dict(self._row("opus-4-8", 1, 0), severity_threshold="MINOR") for _ in range(10)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 30%（`opus-4-8` 層 / 3/10）", out)
+        self.assertIn("閾値が MAJOR でない 10 件は判定から外した（#277）", out)
+        self.assertIn("| opus-4-8（閾値 MINOR） | 10 |", out)
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["appendix_by_gen"]["opus-4-8"]["n"], 10)
+        self.assertEqual(j["appendix_by_gen"]["opus-4-8（閾値 MINOR）"]["n"], 10)
+
+    def test_a_minor_threshold_layer_never_fires(self):
+        """主層でない閾値の層は ⚠️ の判定に入れない（累計にも入れない）."""
+        rows = [dict(self._row("opus-4-8", 0, 0), severity_threshold="MINOR") for _ in range(10)] \
+             + [self._row("opus-5", 1, 0) for _ in range(10)]
+        self._events(rows)
+        self.assertNotIn("真の空振り率", self.signals(self._out()))
+
+    def test_an_explicit_major_and_a_missing_threshold_share_the_main_layer(self):
+        """値が無い回（#117 より前）は既定の MAJOR で走っていたので主層に置く."""
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(5)] \
+             + [dict(self._row("opus-4-8", 1, 0), severity_threshold="MAJOR") for _ in range(5)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", out)
+        self.assertNotIn("判定から外した（#277）", out)
+        self.assertNotIn("（閾値 ", out)
 
     def test_a_layer_below_the_floor_does_not_fire_alone(self):
         """下限未満の層だけでは鳴らない（n=4 で 100% でも判定しない）."""

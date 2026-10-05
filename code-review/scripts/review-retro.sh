@@ -755,6 +755,33 @@ LAYER_GEN = {}
 LAYER_ROWS_MAX = 8
 
 
+#: 報告 0 件率・真の空振りの主層の閾値（GitHub issue #277）。既定値で、#210 の回復サインはこの層で読む
+MAIN_THRESHOLD = "MAJOR"
+
+
+def gen_threshold_of(p):
+    """世代ラベルに、主層と違う報告閾値を添える（GitHub issue #277）。
+
+    MINOR 閾値の回は 4 バケツすべてが閾値以上になり「閾値未満のみ」の空振りが構造的に起きないので、
+    同じ世代の行に混ぜると **docs の回が増えるだけで**真の空振り率・報告 0 件率が下がる
+    （v2.140.0 / #275 から doc だけの diff は自動で MINOR）。
+
+    **値が無い回は主層に置く**。#117 より前の回は既定の MAJOR で走っており、外すと世代の行が
+    過去にさかのぼって動く。現行版の欠落は publish が `payload:severity_threshold` を立てる。
+    """
+    g = gen_of(p)
+    t = p.get("severity_threshold")
+    return g if t in (None, MAIN_THRESHOLD) else "%s（閾値 %s）" % (g, t)
+
+
+def is_main_threshold_key(key):
+    return "（閾値 " not in key
+
+
+THRESHOLD_SPLIT_NOTE = ("> `（閾値 X）` の行は報告閾値が MAJOR でない回（doc だけの diff の自動 MINOR を含む）。"
+                        "閾値未満のみの空振りが起きにくいので世代の行に混ぜず、⚠️ の判定からも外す（#277）")
+
+
 def with_gen(p, key):
     """世代が 2 種以上ある母集団でだけ層別キーへ世代を足す。"""
     if not GEN_SPLIT:
@@ -1034,7 +1061,7 @@ for e in events:
         if "payload:report_counts.missing" in (p.get("measurement_gaps") or []):
             zero_missing_current += 1
         continue
-    g = gen_of(p)
+    g = gen_threshold_of(p)
     z = zero_rows.setdefault(g, {"n": 0, "zero": 0, "pre_major": []})
     z["n"] += 1
     if sum(v or 0 for v in counts) == 0:
@@ -1082,7 +1109,8 @@ for e in events:
     # **世代で層別する**（GitHub issue #214）。#210 の判定基準「真の空振り率 20% 未満」の
     # 片方だけが機械化されていなかった。`報告 0 件率（世代別）` と同じ母数の扱い
     # （欠測は上で外し、`appendix` を持つ回だけ）。**真の空振り = 報告 0 かつ推奨 0**（#168）
-    _g = apx_stats["by_gen"].setdefault(gen_of(p), {"n": 0, "silent": 0, "rescued": 0,
+    # 閾値でも割る（#277）。主層と違う閾値の回は別の行にし、⚠️ の判定から外す（下の `apx_main`）
+    _g = apx_stats["by_gen"].setdefault(gen_threshold_of(p), {"n": 0, "silent": 0, "rescued": 0,
                                                     "rescued_judged": 0,
                                                     "rescued_uncontracted": 0,
                                                     "true_silent": 0, "true_silent_empty": 0,
@@ -2023,12 +2051,21 @@ else:
 # **⚠️ にも内訳を載せる**（GitHub issue #210）。行動する人が見るのはこの 1 行なので、
 # 表にだけ内訳があっても「どちらを直すのか」が伝わらない。`layered_signal` は層の dict を
 # render へ渡さないので、label から引ける対応表を先に作る（label の書式は同関数の正本）
+#
+# **判定は主層の閾値（MAJOR）の回だけで行う**（GitHub issue #277）。MINOR 閾値の回は「閾値未満のみ」の
+# 空振りが構造的に起きないので、混ぜると docs の回が増えるだけで率が下がり、#210 の回復サインを
+# 偽って満たす。累計も同じ回だけで組み直す（`apx_stats` の累計は表の内訳に使うので触らない）
+_TS_KEYS = ("n", "true_silent", "true_silent_empty", "true_silent_below",
+            "true_silent_below_listed", "true_silent_below_over")
+apx_main = {"by_gen": {_k: _v for _k, _v in apx_stats["by_gen"].items() if is_main_threshold_key(_k)}}
+for _f in _TS_KEYS:
+    apx_main[_f] = sum(_v.get(_f, 0) for _v in apx_main["by_gen"].values())
 _ts_split = {"`%s` 層" % _k: (_v.get("true_silent_empty", 0), _v.get("true_silent_below", 0),
                               _v.get("true_silent_below_listed", 0),
                               _v.get("true_silent_below_over", 0))
-             for _k, _v in apx_stats["by_gen"].items()}
-_ts_split["累計"] = (apx_stats["true_silent_empty"], apx_stats["true_silent_below"],
-                   apx_stats["true_silent_below_listed"], apx_stats["true_silent_below_over"])
+             for _k, _v in apx_main["by_gen"].items()}
+_ts_split["累計"] = (apx_main["true_silent_empty"], apx_main["true_silent_below"],
+                   apx_main["true_silent_below_listed"], apx_main["true_silent_below_over"])
 
 
 def _ts_breakdown(label):
@@ -2081,12 +2118,14 @@ def _recovery_window_hint():
 
 
 signals.extend(layered_signal(
-    apx_stats, lambda d: d.get("true_silent", 0), lambda d: d.get("n", 0), 10,
+    apx_main, lambda d: d.get("true_silent", 0), lambda d: d.get("n", 0), 10,
     lambda ts, n: pct(ts, n) >= 20,
     lambda label, ts, n, note:
         "真の空振り率（報告 0 件かつ付録推奨 0）が %.0f%%（%s / %d/%d）%s。#210 の回復サイン"
-        "（20%% 未満）を満たしていない%s%s"
-        % (pct(ts, n), label, ts, n, _ts_breakdown(label), note, _recovery_window_hint()),
+        "（20%% 未満）を満たしていない%s%s%s"
+        % (pct(ts, n), label, ts, n, _ts_breakdown(label), note, _recovery_window_hint(),
+           "" if apx_stats["n"] == apx_main["n"] else
+           "。閾値が MAJOR でない %d 件は判定から外した（#277）" % (apx_stats["n"] - apx_main["n"])),
     pending=layer_pending.setdefault("真の空振り率", [])))
 
 # **synthesis の支配率**（GitHub issue #218）。閾値の根拠は上の 4b。層別は他と同じ流儀
@@ -2381,6 +2420,8 @@ if zero_rows:
     print()
     print("> `unrecorded` は**世代が記録されていない回**であって「古い世代」ではない。"
           "既知の世代と同じバケツに入れない（#169）")
+    if not all(is_main_threshold_key(_k) for _k in zero_rows):
+        print(THRESHOLD_SPLIT_NOTE)
     if len(zero_rows) > 1:
         print()
         print("**世代間で差が出ていたら、コスト側の層別（fleet / 体数 / cache_read）だけでは"
@@ -2789,6 +2830,8 @@ if apx_rows:
                      _gv.get("true_silent_empty", 0), _gv.get("true_silent_below", 0),
                      "" if not _bl else "（付録あり %d）" % _bl,
                      "" if not _unk else "（判定不能 %d）" % _unk))
+        if not all(is_main_threshold_key(_k) for _k in apx_stats["by_gen"]):
+            print(THRESHOLD_SPLIT_NOTE)
         print()
     # **内訳を読ませる**（#210）。混ぜたままだと回復サインがどちらの改善を求めているのか
     # 決まらない。**検出 0 = recall の問題 / 閾値未満のみ = 閾値・付録の方針の問題**

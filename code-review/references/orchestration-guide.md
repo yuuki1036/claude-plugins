@@ -76,7 +76,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 **reviewer には userConfig `review_severity_threshold` の実効値を必ず渡す**（既定 `MAJOR`）。
 
-**doc だけの diff では実効値を `MINOR` に下げる**（GitHub issue #275）: Step 1 の `## size` が `doc_only=1` を出し、userConfig が既定の `MAJOR` のときは、実効値を `MINOR` にする（userConfig で `CRITICAL` 等を明示している回は下げない）。文書では節の間のずれ・消し残し・受入条件と本文のずれが MINOR になり、そのまま実装者の誤読になるのに、`MAJOR` では件数だけになって本文が読めない（実測: 仕様書 5 ファイルの self-review で閾値未満 8 件。人の精読で直した 18 件のうち 2 件以上がその中にあった）。閾値未満の本文を 🔁 付録に出す案は採らない — 付録は閾値以上で列挙された指摘だけ、という #248 の契約が崩れる。レポートの報告閾値の行には「MINOR（doc だけの diff のため既定の MAJOR から下げた）」と出し、payload の `severity_threshold` には下げた後の値を入れる（retro はこの値で層別する）
+**doc だけの diff では実効値を `MINOR` に下げる**（GitHub issue #275）: Step 1 の `## size` が `doc_only=1` を出し、userConfig が既定の `MAJOR` のときは、実効値を `MINOR` にする（userConfig で `CRITICAL` 等を明示している回は下げない）。文書では節の間のずれ・消し残し・受入条件と本文のずれが MINOR になり、そのまま実装者の誤読になるのに、`MAJOR` では件数だけになって本文が読めない（実測: 仕様書 5 ファイルの self-review で閾値未満 8 件。人の精読で直した 18 件のうち 2 件以上がその中にあった）。閾値未満の本文を 🔁 付録に出す案は採らない — 付録は閾値以上で列挙された指摘だけ、という #248 の契約が崩れる。レポートの報告閾値の行には「MINOR（doc だけの diff のため既定の MAJOR から下げた）」と出し、payload の `severity_threshold` には下げた後の値を入れる（retro はこの値で層別する）。下げたかどうか（出どころ）は**書かない** — publish が `doc_only` と userConfig から `severity_threshold_source` を機械判定して載せる（GitHub issue #277 / orchestration-measurement.md `## 16`）
 
 報告マトリクスと本閾値は**直列に掛かる 2 段のフィルタ**で、reviewer は後段を知らされていなかったため、構造的にほぼ報告されない severity に出力予算を使い続けていた（実測: MINOR 調整前 60 → 報告 9 件 = **85% 破棄**、うち confidence 95+ が 7 件）。
 

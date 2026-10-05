@@ -196,7 +196,7 @@ review_diff_keys() {
   printf '%s %s' "$digest" "$files"
 }
 
-# review_path <diff|prctx|timing|agentctx|oracles>
+# review_path <diff|prctx|timing|agentctx|oracles|size>
 review_path() {
   local kind="$1" suffix=""
   [ -n "${REVIEW_PR:-}" ] && suffix="-pr${REVIEW_PR}"
@@ -210,6 +210,9 @@ review_path() {
     # agentctx: 全 agent 共通の可変部（実値集合）。オーケストレーターが 1 回書き、
     # 各 agent はパスを受け取って自分で Read する（orchestration-guide.md `## 3.5`）
     agentctx) printf '%s/review-agentctx-%s%s.md' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
+    # size: triage-signals.sh の `## size` のうち publish が使う行（`doc_only=`）。報告閾値の
+    # 出どころ（`severity_threshold_source`）を publish が機械判定するために渡す（GitHub issue #277）
+    size)   printf '%s/review-size-%s%s.txt'  "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     *) echo "FATAL: 未知の一時ファイル種別: $kind" >&2; return 2 ;;
   esac
 }

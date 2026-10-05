@@ -365,6 +365,8 @@ MERGED=$(
   REVIEW_LIVE="${LIVE_JSON:-}" \
   REVIEW_LATE_PUBLISH="$LATE_PUBLISH" \
   REVIEW_LIB_DIR="$HERE/lib" \
+  REVIEW_SIZE_FILE="$(review_path size)" \
+  REVIEW_USER_SETTINGS="${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/settings.json" \
   python3 - "$PAYLOAD" <<'PY'
 import json, os, re, sys
 
@@ -373,7 +375,7 @@ sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pyca
 sys.path.insert(0, os.environ["REVIEW_LIB_DIR"])
 from wave_expect import expected_waves, SKEPTIC_LAUNCH
 from report_counts import REPORT_KEYS, lift_nested_report_counts
-from severity_threshold import THRESHOLDS, lift_nested_threshold
+from severity_threshold import THRESHOLDS, lift_nested_threshold, threshold_source, user_threshold
 from body_bound import body_bound
 try:
     payload = json.loads(sys.argv[1])
@@ -799,6 +801,30 @@ elif payload.get("severity_threshold") is None:
         "歩留まり・検出内訳で `threshold=?` 層に入り、主層から外れる — 実効閾値をトップレベルに書く\n"
         "  → 正本の payload テンプレートは orchestration-measurement.md `## 16`\n"
     )
+
+# ---- 閾値の出どころ（GitHub issue #277） ----------------------------------------
+# 判定の規則は `lib/severity_threshold.py` の `threshold_source`。呼び出し側が書いた値は捨てる
+# （`invocation` と同じく機械判定だけを載せる）。読めないものは欠測として扱い、gap は立てない —
+# 実効値（層別キー）は生きていて、出どころは #275 の効果測定にしか使わない
+payload.pop("severity_threshold_source", None)
+def _read_doc_only(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            m = re.search(r"^doc_only=([01])$", f.read(), re.M)
+    except OSError:
+        return None
+    return int(m.group(1)) if m else None
+def _read_user_threshold(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return user_threshold(json.load(f))
+    except (OSError, ValueError):
+        return None
+_source = threshold_source(payload.get("severity_threshold"),
+                           _read_user_threshold(os.environ["REVIEW_USER_SETTINGS"]),
+                           _read_doc_only(os.environ["REVIEW_SIZE_FILE"]))
+if _source is not None:
+    payload["severity_threshold_source"] = _source
 
 # **付録と報告件数が、本文を書いた指摘の数を超えた回**（GitHub issue #248）。上限の式と契約 (a) は
 # `lib/body_bound.py`。**fail-fast にも WARN にもしない** — 止めるとその回の計測が丸ごと消え
@@ -1419,7 +1445,7 @@ if [ "$PUBLISHED" = "1" ]; then
   if [ "$KEEP" = "0" ]; then
     bash "$HERE/review-timing.sh" cleanup ${PR_ARGS[@]+"${PR_ARGS[@]}"}
     rm -f "$(review_path prctx)" "$(review_path diff)" "$(review_path agentctx)" \
-          "$(review_path oracles)"
+          "$(review_path oracles)" "$(review_path size)"
   fi
 else
   echo "WARN: publish に失敗したので一時ファイルを残した（同じ引数で再実行すれば復旧できる。" >&2

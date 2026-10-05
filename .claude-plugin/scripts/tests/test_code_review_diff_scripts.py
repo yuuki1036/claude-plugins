@@ -624,6 +624,23 @@ class TriageSignalTest(DiffScriptTestBase):
                 self.assertEqual(self.kv(self.digest(), "## size").get("doc_only"), "0")
                 f.unlink()
 
+    def _size_file(self) -> Path:
+        proc = subprocess.run(
+            ["bash", "-c", '. "$1/scripts/lib/review-paths.sh"; review_paths_init ""; review_path size',
+             "_", str(PLUGIN)], cwd=str(self.root), capture_output=True, text=True, env=self._env())
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return Path(proc.stdout.strip())
+
+    def test_doc_only_is_handed_to_publish(self):
+        """publish が報告閾値の出どころを決めるのに使う（GitHub issue #277）。前回の値は残さない."""
+        size = self._size_file()
+        self.write("docs/spec.md", "rule\n")
+        self.digest()
+        self.assertEqual(size.read_text(encoding="utf-8"), "doc_only=1\n")
+        self.write("src/a.ts", "x\n")
+        self.digest()
+        self.assertEqual(size.read_text(encoding="utf-8"), "doc_only=0\n")
+
     def test_ui_quality_fires_on_locale_files(self):
         """文言だけを変える diff でも ui-quality を起動する（GitHub issue #272）."""
         for path in ("locales/ja.json", "src/i18n/en.yml", "app-x/locale/ja.json", "public/messages/ja.json"):

@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.145.0] - 2026-10-05
+
+### Added
+
+- **payload に報告閾値の出どころ `severity_threshold_source` を載せる**（#277）。`severity_threshold` は実効値しか持たず、利用者が選んだ MINOR と、doc だけの diff で自動に下がった MINOR（v2.140.0 / #275）を区別できなかった。値は `default` / `user_config` / `doc_only` / `unknown`（規則と実効値が食い違う回）。publish が triage-signals.sh の `doc_only` と user settings の `pluginConfigs` から機械判定する — SKILL からは渡さない（書いても捨てる）。triage-signals.sh は `doc_only=` の行を一時ファイルにも書く
+
+### Fixed
+
+- **retro の報告 0 件率と 🔁 付録の世代別の表が報告閾値で割られておらず、doc だけの diff の回が増えるだけで #210 の回復サイン（真の空振り率 20% 未満）を満たしてしまっていた**（#277）。MINOR 閾値の回は 4 バケツがすべて閾値以上になり「閾値未満のみ」の空振りが構造的に起きない。閾値が MAJOR でない回は `<世代>（閾値 <値>）` の別の行に出し、真の空振り率の ⚠️ は MAJOR の回だけで判定する（外した件数を ⚠️ に添える）。値が無い回は主層に置く（#117 より前は既定の MAJOR で走っていた）
+
 ## [2.144.1] - 2026-10-05
 
 ### Fixed
