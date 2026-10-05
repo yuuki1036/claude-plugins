@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.36.0] - 2026-10-04
+
+### Added
+
+- **mod: `/worktree-gc-pane` — worktree の棚卸しをモデルを呼ばずにペインで行う**（`hooks/worktree-gc.tsx`）。worktree-gc の scan と reap は同梱スクリプトが決定的に行い、モデルがしていたのは表に整えることと承認を取ることだけだった。fetch → `scan.sh` の結果をペインに並べ、削除候補の行を選んで「dry-run で確認」→「削除する」と押す（押すことが承認）。`reap.sh` には scan の行をそのまま渡す（入力契約）。dry-run の後に選び直したら、もう一度 dry-run するまで削除ボタンは出ない。`--all [root]` ではリポごとに fetch してから scan し直し、userConfig の `worktree_gc_root` を渡す。Linear の Issue 状態で補う段は行わない（MCP が要る。スキルの Step 1.5）。ペインを描けない場所では表をテキストで返すだけで削除しない
+
 ## [1.35.0] - 2026-10-01
 
 ### Added

@@ -1,4 +1,7 @@
 {
+  "modules": [
+    "./mod.ts"
+  ],
   "hooks": {
     "SessionStart": [
       {
@@ -7,14 +10,18 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-deps.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-deps.sh"
+            ],
             "timeout": 5,
             "once": true
           },
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/detect-web-project.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/detect-web-project.sh"
+            ],
             "timeout": 5,
             "once": true
           }
@@ -28,13 +35,17 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/post-format-lint.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/post-format-lint.sh"
+            ],
             "timeout": 30
           },
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ui-change-reminder.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ui-change-reminder.sh"
+            ],
             "timeout": 5
           }
         ]
@@ -46,7 +57,9 @@
             "type": "command",
             "if": "Bash(git commit *)",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-commit.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-commit.sh"
+            ],
             "timeout": 5
           }
         ]
@@ -60,14 +73,18 @@
             "type": "command",
             "if": "Bash(git push *)",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/push-reminder.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/push-reminder.sh"
+            ],
             "timeout": 5
           },
           {
             "type": "command",
             "if": "Bash(git commit *)",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ui-verify-gate.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ui-verify-gate.sh"
+            ],
             "timeout": 5
           }
         ]
@@ -78,7 +95,9 @@
           {
             "type": "command",
             "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/tdd-phase-gate.sh"],
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/tdd-phase-gate.sh"
+            ],
             "timeout": 5
           }
         ]

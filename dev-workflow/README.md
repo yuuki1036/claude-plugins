@@ -105,6 +105,8 @@ git worktree ベースの並列開発環境をセットアップするスキル�
 
 **トリガー例**: 「worktree 棚卸し」「worktree 一括削除」「worktree GC」「残骸 worktree を掃除」「/worktree-gc」
 
+**ペインで行う（mod `/worktree-gc-pane`）**: mods が有効な端末・Desktop（Claude Code 2.1.287 以降）では、`/worktree-gc-pane [--all [root]] [--no-lsof]` でモデルを呼ばずに棚卸しできる。fetch → `scan.sh` の結果をペインに並べ、削除候補の行を選んで「dry-run で確認」→「削除する」と押す（押すことが承認）。`reap.sh` には scan の行をそのまま渡す。Linear の Issue 状態で分類を補う段（`--issue-status`）は行わないので、それが要るときはスキルを使う。ペインを描けない場所では表をテキストで返すだけで、削除はしない。実装: `hooks/worktree-gc.tsx`
+
 ## chrome-devtools MCP の同梱
 
 ui-verify が使う chrome-devtools MCP は `.mcp.json` で同梱配布される。プラグインインストールで自動的に MCP サーバーが有効化され、起動時のツールロード往復を抑えるため `alwaysLoad: true` を設定している。
