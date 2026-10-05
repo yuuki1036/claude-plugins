@@ -58,6 +58,10 @@ review / self-review の間、プロンプトの上に 1 行で進み具合を�
 - publish か `discard` で消える。2 時間何も起きなければ、止まったレビューとみなして消える。「隠す」で次のレビューまで消せる
 - 帯を描けるのは端末と Desktop。実装: `hooks/review-progress.tsx`
 
+## mod: `/review-retro`（振り返り集計をモデルを呼ばずに出す）
+
+`/review-retro [引数]` で `scripts/review-retro.sh` をそのまま走らせ、出力を返す。手で集計を回すとき（`--logs ~/Projects/*/.claude/events.jsonl` で合算・`--min-plugin-version <版>` で版を絞る・`--last N`）にモデルを挟まない。引数はシェルで展開するので、`~` と glob は端末と同じに効く。読み方は `references/orchestration-measurement.md` `## 18`。publish の直後にレビューのレポートへ付ける集計は今までどおり SKILL の手順で出る。実装: `hooks/review-retro.ts`
+
 ## mod: 計測の記録（`tokens_live`）
 
 review / self-review の publish に載せるトークン消費を、transcript から事後に読むだけでなく**イベントからその場で数える**。モデルへのリクエスト 1 回ごとの usage と subagent の起動を記録し、publish の直前に `~/.config/claude-review/live/<session id>.json` へ書き出す（`CLAUDE_REVIEW_CONFIG_DIR` で差し替え可）。publish はそれを `tokens_live` として transcript 由来の `tokens` と並べて載せ、一致したかを `agree` に残す。

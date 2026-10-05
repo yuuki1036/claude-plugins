@@ -94,12 +94,18 @@ async function show($: EngineInterface, move: (index: number, count: number) => 
 }
 
 export function registerGuideDiff(on: On) {
+  // session.start は matcher 無しでは 1 プラグインに 1 度しか登録できないので、他の mod のコマンドもここで登録する
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
       description: 'review-guide の読み順で、base branch との分岐点からの diff をファイルごとに送る',
       argumentHint: '[N 番目から]',
       immediate: true,
+    })
+    await $.command.register({
+      name: 'review-retro',
+      description: 'review / self-review の振り返り集計（review-retro.sh）をモデルを呼ばずに出す',
+      argumentHint: '[--logs <paths>] [--min-plugin-version <版>] [--last N]',
     })
     return next(e)
   })

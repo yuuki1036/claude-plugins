@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.144.0] - 2026-10-05
+
+### Added
+
+- **mod: `/review-retro [引数]` — 振り返り集計（`scripts/review-retro.sh`）をモデルを呼ばずに出す**（`hooks/review-retro.ts`）。集計は決定的なスクリプトで、手で回すとき（`--logs` で合算・`--min-plugin-version` で版を絞る）にモデルを挟む理由が無かった。引数はシェルで展開するので `~` と glob が端末と同じに効く。publish 直後にレポートへ付ける集計は今までどおり SKILL の手順
+
 ## [2.143.0] - 2026-10-04
 
 ### Added
