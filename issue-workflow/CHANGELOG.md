@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.9.0] - 2026-10-05
+
+### Added
+
+- **mod: 作業中の Issue（ID・タイトル・状態・タスクの進み・ブランチ）をプロンプトの上の帯に出す**（`hooks/issue-band.tsx`）。どの Issue の作業中かは `/start` が書く `.claude/session-context.md` で決まるが、今まではテキストの注入でしか見えなかった。session-context のブランチが今のブランチと違えば出さない。scope_size の上限（`check-scope-size.sh` と同じ値）を超えたら帯でも警告する。読むだけで何も書かない
+
 ## [1.8.0] - 2026-09-30
 
 ### Added

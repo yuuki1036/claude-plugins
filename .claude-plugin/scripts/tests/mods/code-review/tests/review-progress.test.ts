@@ -25,7 +25,7 @@ function stub(on: On, w: World) {
     w.toasts.push(typeof e === 'string' ? e : JSON.stringify(e))
     return { value: undefined }
   })
-  on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Box', props: {}, children: [] }))
+  on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Text', props: {}, children: ['BELOW'] }) as never)
   // ledger の書き出し（publish の直前）に要る分
   on('session.id', () => ({ value: 's1' }))
 }
@@ -65,8 +65,9 @@ async function band($: Engine, surface: (typeof SURFACES)[number]) {
   })
   const line = (await ui.find({ type: 'Text', text: /分$/ }))?.text
   const warn = (await ui.find({ type: 'Text', text: /run_in_background/ }))?.text
+  const below = (await ui.find({ type: 'Text', text: 'BELOW' }))?.text
   await ui.unmount()
-  return { line, warn }
+  return { line, warn, below }
 }
 
 test('レビューが始まるまで帯は出ず、レビュー外の agent では知らせない', async ($, on) => {
@@ -77,14 +78,23 @@ test('レビューが始まるまで帯は出ず、レビュー外の agent で�
   await spawn($, 'early-bg', { background: true })
   expect(w.toasts).toEqual([])
   await bash($, 'git status')
-  for (const s of SURFACES) expect((await band($, s)).line).toBeUndefined()
+  for (const s of SURFACES) {
+    const b = await band($, s)
+    expect(b.line).toBeUndefined()
+    expect(b.below).toBe('BELOW')
+  }
 })
 
 test('段階: トリアージ → agent 実行中 → 統合中 → publish 待ち → 消える', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000 })
   stub(on, newWorld())
   await bash($, `${T} start`)
-  for (const s of SURFACES) expect((await band($, s)).line).toBe('self-review · トリアージ中 · 0 分')
+  for (const s of SURFACES) {
+    const b = await band($, s)
+    expect(b.line).toBe('self-review · トリアージ中 · 0 分')
+    // 他のプラグインの帯（下）を消さない
+    expect(b.below).toBe('BELOW')
+  }
 
   await spawn($, 'r1')
   await spawn($, 'r2')

@@ -114,9 +114,11 @@ export function registerProgress(on: On, onSpawn: SpawnListener) {
     return next(e)
   })
 
+  // 他のプラグインの帯の上に重ねる（next を呼ばずに返すと、下の帯が消える）
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const below = await next(e)
     const p = await read($, progress)
-    if (p === null || e.props.hasSurvey || (await read($, isHidden))) return next(e)
+    if (p === null || e.props.hasSurvey || (await read($, isHidden))) return below
     const { Box, Button, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
@@ -129,6 +131,7 @@ export function registerProgress(on: On, onSpawn: SpawnListener) {
             ⚠️ run_in_background で起動した agent が {p.background} 体（結果を取りこぼす。run_in_background: false を明示する）
           </Text>
         )}
+        {below}
       </Box>
     )
   })
