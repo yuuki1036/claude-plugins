@@ -1827,6 +1827,14 @@ class ThresholdSourcePublishTest(ScriptTestBase):
                         "code-review-x@a": {"options": {"review_severity_threshold": "MINOR"}}})
         self.assertEqual(self._source("MAJOR", doc_only=0), "default")
 
+    def test_other_plugins_and_entries_without_the_key_are_skipped(self):
+        """別プラグインの値を拾わない / キーを持たないエントリを「値が食い違う」に数えない."""
+        self._settings({"other@m": {"options": {"review_severity_threshold": "MINOR"}}})
+        self.assertEqual(self._source("MINOR", doc_only=1), "doc_only")
+        self._settings({"code-review@a": {"options": {}},
+                        "code-review@b": {"options": {"review_severity_threshold": "MINOR"}}})
+        self.assertEqual(self._source("MINOR", doc_only=1), "user_config")
+
     def test_an_out_of_vocabulary_user_value_is_ignored(self):
         """CC は userConfig の文字列を検証しない。`minor` を利用者の選択として採ると doc_only の回が unknown に化ける."""
         self._settings({"code-review@m": {"options": {"review_severity_threshold": "minor"}}})
