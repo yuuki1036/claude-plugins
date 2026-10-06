@@ -71,7 +71,7 @@ Step 1 のダイジェストの `## md-polish`（`md-prose-lines.sh --count` の
 
 ## 6. 適用（Step 7）
 
-提案が 1 件以上あるとき、Step 7 の AskUserQuestion（**1 回の呼び出し**）に質問を 1 つ足す。**質問 1・2 の回答とは独立に、この回答だけで決める**:
+提案が 1 件以上あるとき、Step 7 の AskUserQuestion（**1 回の呼び出し**）に質問を 1 つ足す。指摘が 0 件の回も同じ。足すかどうかは publish（Step 6.4）の出力の `Step 7 の AskUserQuestion に入れる質問:` の行に `質問 3` があるかで決める。**質問 1・2 の回答とは独立に、この回答だけで決める**:
 
 - question: 「Markdown 推敲（N 件。うち確実 M 件）を適用しますか？」
 - header: 「md 推敲」
