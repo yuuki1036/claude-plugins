@@ -93,6 +93,7 @@ allowed-tools:
 
 - 対象: 関連モジュールの構造、既存の類似パターン、依存ライブラリ、既存 ADR（`.claude/adr/*.md`）
 - ここで判明した事実は Phase 4 の「確定した前提」の材料になる
+- **knowledge vault（任意・後方互換）**: MCP ツール `search_knowledge`（server `knowledge-vault`。deferred なら ToolSearch で `select:mcp__knowledge-vault__search_knowledge` を読み込む）か `kvault` CLI があれば、テーマのキーワード列で過去の設計判断・落とし穴を引く（`purpose="design"`。CLI は `kvault recall "<キーワード列>" --top 5 --purpose design 2>/dev/null` の `relevant: true` の結果だけ）。どちらも無ければ飛ばす。関連の判定は vault 側が行う。得た知見は「検討した代替案」とリスクの材料にとどめ、doc に vault の title や本文を書き写さない（vault は別プロジェクト由来の知見を含み、doc は公開リポジトリに置かれることがある）
 - **agent は起動しない**。広範な探索（複数サブシステム横断）が必要なテーマと判明したら、feature-dev（explorer agent あり）への切替を案内する
 
 ---

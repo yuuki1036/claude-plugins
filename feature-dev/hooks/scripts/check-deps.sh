@@ -43,7 +43,7 @@ check_cli "kvault" "false" "knowledge vault CLI（Phase 1.6 Vault Recall。未�
 # kvault はあるのに KNOWLEDGE_VAULT_ROOT 未設定 → Phase 1.6 が黙って skip される（設定漏れの気づき）。
 # 環境変数は ~/.zshenv に書く必要がある（.zshrc は非対話 shell で読まれず hook / spawn shell に効かない）。
 if command -v kvault >/dev/null 2>&1 && [ -z "${KNOWLEDGE_VAULT_ROOT:-}" ]; then
-  warnings="${warnings}\n- [WARN] kvault CLI はありますが KNOWLEDGE_VAULT_ROOT が未設定のため Phase 1.6 (Vault Recall) は skip されます。\`~/.zshenv\` に \`export KNOWLEDGE_VAULT_ROOT=<vault パス>\` を設定してください（\`.zshrc\` は非対話 shell で読まれず効きません）"
+  warnings="${warnings}\n- [WARN] kvault CLI はありますが KNOWLEDGE_VAULT_ROOT が未設定のため、MCP ツール search_knowledge が無いセッションでは Phase 1.6 (Vault Recall) が skip されます。\`~/.zshenv\` に \`export KNOWLEDGE_VAULT_ROOT=<vault パス>\` を設定してください（\`.zshrc\` は非対話 shell で読まれず効きません）"
 fi
 
 # --- 結果出力 ---

@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.37.0] - 2026-10-06
+
+### Added
+
+- **diagnose の Phase 3（仮説）で、knowledge vault の過去の知見を引く手順を足す**（任意・後方互換）。MCP ツール `search_knowledge` か `kvault` CLI があれば、症状のキーワード列で `purpose=diagnose` の recall を行い、関連ありの結果だけを仮説の候補として並べる。どちらも無ければ飛ばす。過去の原因は検証を省く理由にしない
+
 ## [1.36.0] - 2026-10-04
 
 ### Added
