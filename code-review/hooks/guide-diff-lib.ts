@@ -3,9 +3,47 @@ import type { GuideFile, GuideGroup, GuideView } from '../types'
 
 /**
  * Code 要素の source の上限は 10,000 文字。余白を残して切る。
- * 切るのはハンクの境目で: ハンクの途中で切った diff は diff として読めず、ただのコードとして描かれる
+ * 切るのはハンクの境目で。最初のハンクだけで上限を超えるときは行の境目で切り、見出しの行数を残した行に
+ * 合わせる（見出しと行数が食い違う diff は diff として読まれず、行番号の無いただのコードとして描かれる）
  */
 export const MAX_SOURCE = 9800
+
+/** `@@ -a,b +c,d @@`。数を省いた範囲（`-a`）は 1 行 */
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/
+
+/** 0 行の範囲は直前の行を始点にする（`git diff` と同じ書き方。新規ファイルの `-0,0`） */
+function range(start: number, count: number, kept: number): string {
+  if (kept > 0) return `${start},${kept}`
+  return `${count === 0 ? start : start - 1},0`
+}
+
+/**
+ * room 文字に収まるところまでハンクを残し、見出しの行数をその行に合わせる。
+ * 本文の 1 行目すら入らないときは、その行を途中で切って 1 行だけ残す
+ */
+export function cutHunk(hunk: string[], room: number): string {
+  const header = hunk[0] ?? ''
+  const m = HUNK_HEADER.exec(header)
+  if (m === null) return hunk.join('\n').slice(0, Math.max(0, room))
+  // 書き直した見出しは、各側に `,0` が付くぶん（2 文字ずつ）元より長くなりうる
+  const budget = room - header.length - 1 - 4
+  const kept: string[] = []
+  let size = 0
+  for (const line of hunk.slice(1)) {
+    if (line === '') continue
+    if (size + line.length + 1 > budget) {
+      if (kept.length === 0) kept.push(line.slice(0, Math.max(1, budget)))
+      break
+    }
+    kept.push(line)
+    size += line.length + 1
+  }
+  const removed = kept.filter(l => l[0] === '-' || l[0] === ' ').length
+  const added = kept.filter(l => l[0] === '+' || l[0] === ' ').length
+  const [, a, b, c, d, rest] = m
+  const head = `@@ -${range(Number(a), b === undefined ? 1 : Number(b), removed)} +${range(Number(c), d === undefined ? 1 : Number(d), added)} @@${rest ?? ''}`
+  return [head, ...kept].join('\n')
+}
 
 export const GROUP_LABEL: Record<GuideGroup, string> = {
   read: '精読',
@@ -54,10 +92,7 @@ export function trimDiff(raw: string): { diff: string; isTruncated: boolean } {
     const text = hunk.join('\n')
     if (size + text.length + 1 > MAX_SOURCE) {
       isTruncated = true
-      if (hunks === 0) {
-        // 最初のハンクだけで上限を超える: 途中で切る（ただのコードとして描かれる）
-        out.push(text.slice(0, Math.max(0, MAX_SOURCE - size)))
-      }
+      if (hunks === 0) out.push(cutHunk(hunk, MAX_SOURCE - size))
       break
     }
     out.push(text)

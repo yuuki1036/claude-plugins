@@ -280,12 +280,65 @@ test('長い diff はハンクの境目で切って、そう書く', async ($, o
   await ui.unmount()
 })
 
-test('trimDiff: ハンク 1 つで上限を超えるときだけ途中で切る / 制御文字を落とす', () => {
-  const one = trimDiff(`--- a/x\n+++ b/x\n@@ -1 +1 @@\n+${'z'.repeat(MAX_SOURCE * 2)}\n`)
+/**
+ * diff を読む側と同じ数え方で、各ハンクの見出しの行数と本文の行数を突き合わせる。
+ * 食い違うと Code は diff として読まず、行番号の無いただのコードとして描く
+ */
+function hunkCounts(diff: string) {
+  const out: { header: string; declared: [number, number]; actual: [number, number] }[] = []
+  for (const line of diff.split('\n')) {
+    const m = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line)
+    if (m) {
+      out.push({ header: line, declared: [Number(m[1] ?? 1), Number(m[2] ?? 1)], actual: [0, 0] })
+      continue
+    }
+    const h = out[out.length - 1]
+    if (h === undefined) continue
+    if (line[0] === ' ' || line[0] === '-') h.actual[0]++
+    if (line[0] === ' ' || line[0] === '+') h.actual[1]++
+  }
+  return out
+}
+
+test('trimDiff: 最初のハンクで上限を超えるときは行の境目で切り、見出しの行数を残した行に合わせる', () => {
+  // 新規ファイル（ハンク 1 つ）。1 行 40 文字で、上限を大きく超える
+  const added = Array.from({ length: 500 }, (_, i) => `+${String(i + 1).padStart(4, '0')}${'x'.repeat(35)}`)
+  const created = trimDiff(['--- /dev/null', '+++ b/new.ts', '@@ -0,0 +1,500 @@', ...added, ''].join('\n'))
+  expect(created.isTruncated).toBe(true)
+  expect(created.diff.length).toBeLessThanOrEqual(MAX_SOURCE)
+  // 次の 1 行は入らないところまで残す
+  expect(created.diff.length + 41).toBeGreaterThan(MAX_SOURCE)
+  const kept = created.diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'))
+  expect(kept.every(l => l.length === 40)).toBe(true)
+  expect(created.diff).toContain(`\n@@ -0,0 +1,${kept.length} @@\n`)
+  expect(kept[kept.length - 1]).toStartWith(`+${String(kept.length).padStart(4, '0')}`)
+  expect(hunkCounts(created.diff)).toEqual([
+    { header: `@@ -0,0 +1,${kept.length} @@`, declared: [0, kept.length], actual: [0, kept.length] },
+  ])
+
+  // 変更（文脈・削除・追加が混ざる）。見出しの始点と関数名はそのまま
+  const mixed = Array.from({ length: 600 }, (_, i) => `${[' ', '-', '+'][i % 3]}${'y'.repeat(39)}`)
+  const changed = trimDiff(['--- a/m.ts', '+++ b/m.ts', '@@ -10,400 +12,400 @@ function f() {', ...mixed].join('\n'))
+  expect(changed.isTruncated).toBe(true)
+  expect(changed.diff.length).toBeLessThanOrEqual(MAX_SOURCE)
+  const [hunk] = hunkCounts(changed.diff)
+  expect(hunk?.declared).toEqual(hunk?.actual)
+  expect(hunk?.header).toMatch(/^@@ -10,\d+ \+12,\d+ @@ function f\(\) \{$/)
+
+  // 追加だけが残る（削除はハンクの後ろにある）: 削除側は 0 行の範囲になり、始点を直前の行にする
+  const tail = Array.from({ length: 400 }, () => `+${'z'.repeat(39)}`).concat(['-gone'])
+  const onlyAdded = trimDiff(['--- a/t.ts', '+++ b/t.ts', '@@ -5 +5,400 @@', ...tail].join('\n'))
+  expect(onlyAdded.diff).toMatch(/\n@@ -4,0 \+5,\d+ @@\n/)
+  expect(hunkCounts(onlyAdded.diff).every(h => h.declared[0] === h.actual[0] && h.declared[1] === h.actual[1])).toBe(true)
+
+  // 1 行だけで上限を超える: その行を途中で切って 1 行残す
+  const one = trimDiff(`--- a/x\n+++ b/x\n@@ -0,0 +1 @@\n+${'z'.repeat(MAX_SOURCE * 2)}\n`)
   expect(one.isTruncated).toBe(true)
   expect(one.diff.length).toBeLessThanOrEqual(MAX_SOURCE)
-  expect(one.diff).toStartWith('--- a/x')
+  expect(one.diff).toStartWith('--- a/x\n+++ b/x\n@@ -0,0 +1,1 @@\n+zzz')
+})
 
+test('trimDiff: 上限に収まる diff はそのまま / 制御文字を落とす / ハンクの無い差分はそのまま見せる', () => {
   const fits = trimDiff(`--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\r\n+b\u001b[31m\tc\n`)
   expect(fits.isTruncated).toBe(false)
   expect(fits.diff).toBe('--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b[31m\tc')
