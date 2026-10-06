@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# guardrail-protect の公開リポジトリ用 pre-push（人の push・他ツールの push も同じ検出器で止める）。
+# プラグインが入っていない clone では何もしない（検出器の解決は guardrail-protect 側の責務）。
+HOOK="$HOME/.claude/plugins/marketplaces/yuuki1036-claude-plugins/guardrail-protect/git-hooks/pre-push.sh"
+[ -x "$HOOK" ] || exit 0
+exec "$HOOK" "$@"
