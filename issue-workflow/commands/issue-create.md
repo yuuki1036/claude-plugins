@@ -10,6 +10,7 @@ allowed-tools:
   - Bash
   - Skill
   - AskUserQuestion
+  - EnterWorktree
 argument-hint: "[PROJECT-SLUG]"
 ---
 

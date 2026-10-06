@@ -4,6 +4,7 @@ allowed-tools:
   - Agent
   - Skill
   - AskUserQuestion
+  - EnterWorktree
   - mcp__linear__get_issue
   - mcp__linear__list_issues
   - Read

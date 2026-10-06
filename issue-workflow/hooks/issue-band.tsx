@@ -35,6 +35,17 @@ async function text($: EngineInterface, path: string): Promise<string | null> {
   }
 }
 
+/**
+ * linked worktree の中ならメインのチェックアウトの絶対パス、それ以外は null。
+ * Issue ファイルを gitignore している repo では worktree にデータ dir が無い（GitHub issue #280）
+ */
+async function mainCheckout($: EngineInterface, root: string): Promise<string | null> {
+  const gitDir = await git($, ['rev-parse', '--absolute-git-dir'], root)
+  const common = await git($, ['rev-parse', '--path-format=absolute', '--git-common-dir'], root)
+  if (gitDir === null || common === null || gitDir === common || !common.endsWith('/.git')) return null
+  return common.slice(0, -'/.git'.length)
+}
+
 /** 今の帯の中身。出すものが無ければ null */
 export async function load($: EngineInterface): Promise<IssueBand | null> {
   const cwd = await $.session.cwd()
@@ -44,16 +55,19 @@ export async function load($: EngineInterface): Promise<IssueBand | null> {
   const ctxText = await text($, `${root}/.claude/session-context.md`)
   const ctx = ctxText === null ? null : sessionContext(ctxText)
   if (ctx === null || ctx.branch !== branch) return null
-  for (const backend of ['indie', 'linear']) {
-    let slugs: { name: string }[]
-    try {
-      slugs = (await $.fs.list(`${root}/.claude/${backend}`)) as { name: string }[]
-    } catch {
-      continue
-    }
-    for (const s of slugs) {
-      const issue = await text($, `${root}/.claude/${backend}/${s.name}/issues/${ctx.issueId}.md`)
-      if (issue !== null) return issueSummary(issue, ctx.issueId, branch)
+  const main = await mainCheckout($, root)
+  for (const base of main === null ? [root] : [root, main]) {
+    for (const backend of ['indie', 'linear']) {
+      let slugs: { name: string }[]
+      try {
+        slugs = (await $.fs.list(`${base}/.claude/${backend}`)) as { name: string }[]
+      } catch {
+        continue
+      }
+      for (const s of slugs) {
+        const issue = await text($, `${base}/.claude/${backend}/${s.name}/issues/${ctx.issueId}.md`)
+        if (issue !== null) return issueSummary(issue, ctx.issueId, branch)
+      }
     }
   }
   // Issue ファイルが見つからなくても、どの Issue の作業中かは出す

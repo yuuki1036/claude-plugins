@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.10.0] - 2026-10-06
+
+### Added
+
+- **start / issue-create がブランチを切るとき、worktree に分けてセッションの作業ディレクトリごと移せるようにした**
+  （GitHub issue #280）。今のチェックアウトに未コミットの変更があると、`git checkout -b` で新しいブランチに
+  持ち越されるので worktree を推奨する。手順の正本は `references/branch-setup.md`。
+  `.claude/worktrees/<Issue ID>` に既定ブランチから作り（今いるブランチの上には積まない）、未追跡の `.env*` を写し、
+  lockfile に合わせて依存を入れ、作った直後に `EnterWorktree`（`path` 指定）で移る。worktree を手で作って
+  元のチェックアウトに残ったままだと、diff ペインが別の作業の差分を見せ、Bash の cwd・hook・CLAUDE.md も元の
+  チェックアウトの値で動いていた
+- **worktree の作成を `scripts/branch-setup.sh` に寄せた**。`status`（未コミットの変更の数・worktree の中か・
+  メインのチェックアウト）と `worktree`（作成・`.env*` の複製・依存を入れるコマンドの検出）の 2 つ。
+  `.claude/worktrees/` が gitignore されていなければ `.git/info/exclude` に足す（`.gitignore` は触らない）
+
+### Changed
+
+- **issue-create のブランチ作成を backend=linear でも行うようにした**。今のブランチ名に Issue ID が含まれない
+  ときだけ聞く。start → issue-create → feature-dev と進む linear の流れでは、どこもブランチを作っていなかった
+- **backend 検出（スキルの Phase 0 と hook）が、worktree にデータ dir が無いときメインのチェックアウトを見る**ようにした。
+  Issue ファイルを gitignore している repo では worktree の中に `.claude/linear` が無く、移った途端に backend が
+  「なし」になっていた。worktree にデータ dir があれば（追跡している repo）従来どおりそちらを使う
+- **作業中の Issue の帯（mod）も、worktree に無い Issue ファイルをメインのチェックアウトから読む**
+
 ## [1.9.0] - 2026-10-05
 
 ### Added

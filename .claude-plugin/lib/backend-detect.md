@@ -11,9 +11,10 @@ issue-workflow の各スキルの Phase 0 に置く backend 検出手順の正�
 
 <!-- BACKEND-DETECT:START -->
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
-2. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
-3. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
-4. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
+2. 1 で両方とも無効なら、linked worktree の中かを確かめる（`git rev-parse --absolute-git-dir` と `git rev-parse --path-format=absolute --git-common-dir` が違えば worktree）。worktree なら、メインのチェックアウト（後者の親 dir）の下の 2 つを同じ述語で確かめ直し、以降の判定はその結果で行う。その場合の DATA_DIR はメインのチェックアウト側の絶対パス（例: `/path/to/repo/.claude/linear`）にする — Issue ファイルを gitignore している repo では worktree の中にデータ dir が無いため
+3. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
+4. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
+5. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
 
 以後の `{DATA_DIR}` は検出したデータディレクトリ、`BACKEND` は判定結果を指す。
 <!-- BACKEND-DETECT:END -->

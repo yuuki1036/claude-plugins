@@ -16,6 +16,7 @@ allowed-tools:
   - Bash
   - Skill
   - AskUserQuestion
+  - EnterWorktree
 ---
 
 # Issue Create
@@ -28,9 +29,10 @@ allowed-tools:
 
 <!-- BACKEND-DETECT:START -->
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
-2. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
-3. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
-4. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
+2. 1 で両方とも無効なら、linked worktree の中かを確かめる（`git rev-parse --absolute-git-dir` と `git rev-parse --path-format=absolute --git-common-dir` が違えば worktree）。worktree なら、メインのチェックアウト（後者の親 dir）の下の 2 つを同じ述語で確かめ直し、以降の判定はその結果で行う。その場合の DATA_DIR はメインのチェックアウト側の絶対パス（例: `/path/to/repo/.claude/linear`）にする — Issue ファイルを gitignore している repo では worktree の中にデータ dir が無いため
+3. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
+4. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
+5. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
 
 以後の `{DATA_DIR}` は検出したデータディレクトリ、`BACKEND` は判定結果を指す。
 <!-- BACKEND-DETECT:END -->
@@ -215,15 +217,7 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
 ### Phase 7: 後処理
 
 1. 作成したファイルの絶対パスを報告する（採番は Phase 3 で確定済みのため、ここでは `counter.txt` を触らない）
-2. **ブランチ自動作成（BACKEND=local のみ）**: **AskUserQuestion** で確認してから `git checkout -b {type}/{SLUG-N}-{description}` を実行する（BACKEND=linear ではこのステップをスキップする）:
-   - question: "ブランチ `{type}/{SLUG-N}-{description}` を作成しますか？"
-   - header: "ブランチ"
-   - options:
-     1. label: "作成する" / description: "ブランチを作成してチェックアウト"
-     2. label: "スキップ" / description: "ブランチは自分で作る"
-   - `description` はタイトルから kebab-case で自動生成（短く、英語）
-   - 例: `feat/MYAPP-3-add-auth`, `fix/BLOG-2-fix-typo`
-   - type マッピング: bugfix → `fix`, feature → `feat`, investigation → `investigate`, debt → `chore`
+2. **ブランチ作成（両 backend）**: 今のブランチ名に Issue ID が含まれていなければ、`${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。ブランチ名の規則・worktree の作成・作業ディレクトリの移動・移動後の DATA_DIR の扱いは同 doc が正本
 3. **feature-dev 連携確認**: **AskUserQuestion** で確認する:
    - question: "feature-dev で実装計画を立てますか？（ブランチを切った直後が最もコンテキストがそろっています）"
    - header: "feature-dev"
@@ -251,6 +245,9 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
 
    ## 親 Issue（frontmatter の parent: に値がある場合）
    - [{PARENT-ID}] {タイトル} — 背景・計画のサマリー
+
+   ## 作業場所（ステップ 2 で worktree に分けた場合のみ）
+   - worktree: `{WORKTREE}`（作成・移動済み。新しく作らない）
 
    上記の context を前提に、実装計画を策定してください。
    ```
