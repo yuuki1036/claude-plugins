@@ -1,6 +1,6 @@
 {
   "name": "feature-dev",
-  "version": "2.18.0",
+  "version": "2.19.0",
   "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。code-explorer / code-architect の 2 agent を内包し、型・テスト・lint の決定的オラクルゲートを高コストレビューの前に置く。Phase 6 は code-review:self-review へ --embed 委譲する。",
   "_requirements": [
     {
@@ -25,7 +25,7 @@
       "name": "kvault",
       "type": "cli_tool",
       "required": false,
-      "description": "knowledge vault CLI。Phase 1.6 Vault Recall で横断知見を recall し architect に advisory 注入、未設定/未導入時は skip（KNOWLEDGE_VAULT_ROOT 環境変数で vault 位置を指定）"
+      "description": "knowledge vault CLI。Phase 1.6 Vault Recall で横断知見を recall し architect に advisory 注入（MCP ツール search_knowledge があればそちらを優先）、どちらも無ければ skip（KNOWLEDGE_VAULT_ROOT 環境変数で vault 位置を指定）"
     }
   ],
   "author": {

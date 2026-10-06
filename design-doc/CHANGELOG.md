@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.0] - 2026-10-06
+
+### Added
+
+- **design-doc の Phase 2 と design-review の Phase 1 で、knowledge vault の過去の設計判断・落とし穴を引く手順を足す**（任意・後方互換）。MCP ツール `search_knowledge` か `kvault` CLI があれば `purpose=design` で recall し、関連ありの結果だけを代替案・リスク・reviewer のコンテキストの材料にする。doc と findings には vault の title や本文を書き写さない
+
 ## [0.5.3] - 2026-09-25
 
 ### Changed

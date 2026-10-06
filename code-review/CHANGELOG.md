@@ -2,7 +2,7 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
-## [2.146.0] - 2026-10-06
+## [2.147.0] - 2026-10-06
 
 ### Added
 
@@ -18,6 +18,17 @@
     読むと、適用先 2 つの規則が 1 つに縮んだのを見落とす
   - 方式・前提の変更は語ではなく前提で追う: 旧前提を要約し、diff の中と外の理由の文（〜ので / 〜のため）が
     旧前提に依っていないかを読む。撤去語の grep では、語は消えても旧前提で書いた理由の文が 7 か所残った
+
+## [2.146.0] - 2026-10-06
+
+### Changed
+
+- **Vault 照合（self-review Step 1.5）を、MCP ツール `search_knowledge` → `kvault` CLI → skip の 3 段にし、関連判定を vault 側の `relevant` に任せる**。これまでは similarity の 1 位からの差で判定する規則を手順書に写していた。vault 側が判定をコードに移し（しきい値は埋め込みモデルごとに評価セットで較正）、数値の尺度もモデルで変わるため、手順書から判定規則を消した。CLI の出力に `relevant` が無い（vault 側が古い）ときは注入しない
+- 照合の注意に「vault の内容を公開先に書き写さない」を足した（PR コメント・指摘本文に知見の title・excerpt・path を引用しない）
+
+### Added
+
+- **review に Step 2.6 Vault 照合を足す**（self-review と同じ手順、`purpose=review`）。`--emergency` では skip する
 
 ## [2.145.0] - 2026-10-05
 

@@ -168,7 +168,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 
 ### 1.5 Vault 照合（過去の指摘・落とし穴の retrieval / 任意・後方互換）
 
-変更ファイルに関連する過去のレビュー指摘を vault から引いて reviewer に注入する（GitHub issue #68）。利用可否の検出（`kvault` / `/vault-recall` が無ければ skip）・照合手順・best-effort の注意事項 → orchestration-optional-flows.md `## 11`
+変更ファイルに関連する過去のレビュー指摘を vault から引いて reviewer に注入する（GitHub issue #68）。取得経路（MCP ツール `search_knowledge` → `kvault` → どちらも無ければ skip）・照合手順・公開先に書き写さない注意 → orchestration-optional-flows.md `## 11`
 
 ### 1.7 機械層の先行実行（原則 8 / `.claude/review-oracles.sh` を置いたプロジェクトのみ・`--embed` では skip）
 

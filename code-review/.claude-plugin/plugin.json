@@ -28,7 +28,7 @@
       "name": "kvault",
       "type": "cli_tool",
       "required": false,
-      "description": "knowledge vault CLI。self-review Step 1.5 の Vault 照合で使用、未導入時は skip（後方互換）"
+      "description": "knowledge vault CLI。self-review Step 1.5 / review Step 2.6 の Vault 照合で使用（MCP ツール search_knowledge があればそちらを優先）、どちらも無ければ skip（後方互換）"
     },
     {
       "name": "writing-polish",

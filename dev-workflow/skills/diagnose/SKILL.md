@@ -101,6 +101,8 @@ loop を回し、赤くなるのを確認する。
 
 ## Phase 3: 仮説
 
+**過去の知見を引く（任意・後方互換）**: 仮説を立てる前に、症状・エラー文言・技術語のキーワード列で knowledge vault を引く。MCP ツール `search_knowledge`（server `knowledge-vault`。deferred なら ToolSearch で `select:mcp__knowledge-vault__search_knowledge` を読み込む）があれば `search_knowledge(query="<キーワード列>", purpose="diagnose", top=5)`、無ければ `kvault` CLI（`kvault recall "<キーワード列>" --top 5 --purpose diagnose 2>/dev/null` の `relevant: true` の結果だけ）を使う。どちらも無ければ飛ばす。関連の判定は vault 側が行うので、`similarity` を見て判定し直さない。過去の原因は**仮説の候補として並べるだけ**で、検証を省く理由にしない。vault の内容を公開先（issue・PR・コメント）に書き写さない（別プロジェクト由来の知見を含む）。
+
 検証を始める前に**ランク付きの仮説を 3〜5 個**生成する（1 個ずつ出すと最初のもっともらしい案にアンカリングする）。
 
 各仮説は**反証可能**な形式で書く: 「もし <X> が原因なら、<Y を変える> とバグは消える / <Z を変える> と悪化する」。予測が書けない仮説は雰囲気であり、捨てるか鋭くする。

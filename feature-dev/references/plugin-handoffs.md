@@ -2,7 +2,7 @@
 
 feature-dev の Phase 1.3 / 1.4 / 1.6 / 4.5 は、対応する optional plugin（または外部 CLI）が利用可能なときだけ通る handoff branch。SKILL.md 本文はそれぞれ「検出 → 該当すれば本ファイルの該当節を読んで従う / 非該当なら skip」に留め、詳細手順をここに置く（大半のセッションでは読まれない dormant branch なので、progressive disclosure で本文から分離している）。
 
-本文が検出に使う変数（`BDD_SPEC_AVAILABLE` / `VAULT_AVAILABLE` / `DESIGN_DOC`）と、後続 Phase が消費する出力変数（`BDD_SPEC_PATH` / `VAULT_KNOWLEDGE` / `DESIGN_DOC_PATH`）は本文側に定義がある。ここではそれらがセット済み・該当プラグインが利用可能である前提で手順を書く。
+本文が検出に使う変数（`BDD_SPEC_AVAILABLE` / `VAULT_VIA` / `DESIGN_DOC`）と、後続 Phase が消費する出力変数（`BDD_SPEC_PATH` / `VAULT_KNOWLEDGE` / `DESIGN_DOC_PATH`）は本文側に定義がある。ここではそれらがセット済み・該当プラグインが利用可能である前提で手順を書く。
 
 ---
 
@@ -90,40 +90,42 @@ feature-dev の Phase 1.3 / 1.4 / 1.6 / 4.5 は、対応する optional plugin�
 
 ---
 
-## Phase 1.6: Vault Recall (kvault)
+## Phase 1.6: Vault Recall (knowledge vault)
 
 **Goal**: 過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を knowledge vault から recall し、Phase 4 architect の入力に注入する。
 
 **Why this phase exists**: recall 系の tool 呼び出しはモデルの文脈判断に任せると省略されうる（Opus 4.8 世代で顕著。Opus 5 でも「引くかどうか」を毎回モデル判断に委ねる理由はない）。設計着手の直前に **必須ステップ** として埋め込むことで「引き忘れ」を構造的に防ぐ。注入された知見は authoritative ではなく **advisory（参考情報）** で、現コードベースのパターンと矛盾する場合は現コードベースを優先する。
 
-### Step 2: Build a keyword query（自然文ではなくキーワード寄せ）
+### Step 2: Build keyword queries（自然文ではなくキーワード寄せ）
 
-Phase 1 discovery + Phase 1.5 Issue context から、設計判断に効きそうな **名詞・技術語を空白区切りで並べる**。
+Phase 1 discovery + Phase 1.5 Issue context から、設計判断に効きそうな **名詞・技術語を空白区切りで並べる**。観点が分かれるならクエリを 1〜3 個に分ける。
 
-**運用知見（必読）**: vault の embedding は **JP の自然文クエリに弱い実測がある**。文章ではなく「`Prisma 初期化 マイグレーション ロールバック`」のような **キーワード列** にする。フレームワーク名・モジュール名・課題ドメイン語を優先する。
+「`Prisma 初期化 マイグレーション ロールバック`」のような **キーワード列** にする。フレームワーク名・モジュール名・課題ドメイン語を優先する。
 
 ### Step 3: Execute recall
 
+`VAULT_VIA` に応じて引く。どちらも `purpose=design`（excerpt を設計判断の節から取る）:
+
+- `VAULT_VIA=mcp`: クエリごとに `search_knowledge(query="<キーワード列>", purpose="design", top=5)`。返るのは関連ありと判定済みの結果だけ（0 件なら関連なし）
+- `VAULT_VIA=cli`:
+
 ```bash
 # stderr（HF token warning / weights loading progress）は捨て、stdout の JSON のみ取得する
-kvault recall "<キーワード列>" --top 5 --min-sim 0 2>/dev/null
+# 複数クエリは --queries で 1 回にまとめる（埋め込みモデルの読み込みが 1 回で済む）
+kvault recall --queries "<クエリ1>" "<クエリ2>" --top 5 --purpose design 2>/dev/null
 ```
 
-出力は JSON: `{ "query", "count", "results": [ { "path", "title", "similarity", "tags", "excerpt" }, ... ] }`。`--min-sim 0` で足切りせず top 5 を全件取得する（足切りは次の Step で rank ベースに行う）。
+出力は JSON。各結果に `path` / `title` / `similarity` / `tags` / `excerpt` と、関連判定の `relevant` / `reason` が付く（複数クエリは `queries[]` にクエリごとの結果が並ぶ）。
 
-### Step 4: Relevance judgment（rank + gap、絶対閾値で切らない）
+### Step 4: Relevance judgment（vault 側の判定に従う）
 
-**運用知見（必読）**: `similarity` の絶対値は **クエリによって水準が変わる**（あるクエリでは 1 位が 60、別クエリでは 1 位が 35 のように）。だから **絶対閾値で足切りしない**。
+**関連判定は vault 側のコードが行う**（`relevant`）。`similarity` を見て判定し直さない（数値の尺度は vault 側のモデルで変わり、手で当てた閾値は外れる）。
 
-判断は **rank + 1 位からの similarity gap** で行う（規則の正本は vault 側の vault-recall skill §3。
-code-review の vault 照合も同じ規則。変えるときは 3 か所をそろえる）:
+- `relevant: true` の結果だけを使う。MCP ツールは既定でそれだけを返す
+- 例外は 1 つだけ: 関連ありでも excerpt が明らかに別ドメインなら外す
+- CLI の出力に `relevant` が無い（vault 側が古い）ときは注入しない。vault を更新すれば関連判定が使える旨を 1 行 notify する
 
-- 1 位を基準に、後続の similarity が **大きく gap を開けて落ちたところ** を関連の切れ目とみなす。
-  1 位が 2 位を明確に引き離す（1 位 ≳ 55% で頭抜ける）のは強いシグナル
-- 上位が団子（gap 数 pt 以内で横並び）なら関連薄いとみなし、**注入しない**（ノイズ回避）
-- 1 位ですら excerpt が明らかに無関係（別ドメイン）なら 0 件として扱う
-
-関連ありと判断した知見の `path` / `title` / `excerpt` を保持する。
+関連ありの知見の `path` / `title` / `excerpt` を保持する。**vault の内容を公開先（issue・PR・コメント・コミットメッセージ）に書き写さない**（別プロジェクト由来の知見を含む）。
 
 ### Step 5: Hand to Phase 4
 

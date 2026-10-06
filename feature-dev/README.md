@@ -51,7 +51,7 @@
 | 1 | Discovery | 何を作るかを把握する |
 | 1.3 | BDD Spec Creation | bdd-spec 連携。spec.md を architect の入力契約として生成（dormant） |
 | 1.5 | Issue Context Detection | issue-workflow からの引き継ぎ context を検出 |
-| 1.6 | Vault Recall | 外部 kvault CLI から横断知見を recall し architect に advisory 注入（dormant） |
+| 1.6 | Vault Recall | knowledge vault（MCP ツール `search_knowledge` か `kvault` CLI）から横断知見を recall し architect に advisory 注入（dormant） |
 | 1.7 | Triage | explorer / architect / reviewer の体数・focus を動的決定 |
 | 2 | Codebase Exploration | code-explorer で既存コードとパターンを把握 |
 | 3 | Clarifying Questions (Grill) | 曖昧点を 1 問ずつ依存順で解決 |
@@ -81,9 +81,9 @@ Phase 1.3 で spec を生成したときだけ、`bdd-spec:evaluate-spec` に `s
 
 `Issue ファイル:` パスや `feature_dev_plan:` frontmatter を検出すると、issue-workflow からの引き継ぎ context を読み込む。Issue context が完備なら Phase 1.7 に「explorer 0 体」を信号して Phase 2 を実質 skip し、context を Phase 4 architect に直接渡す。
 
-### Phase 1.6: Vault Recall（外部 kvault CLI 連携 / dormant）
+### Phase 1.6: Vault Recall（外部の knowledge vault 連携 / dormant）
 
-外部 app の `kvault` CLI と vault ディレクトリが揃っている場合のみ、過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を recall し、Phase 4 architect に **advisory（参考情報）** として注入する。注入知見は authoritative ではなく、現コードベースのパターンと矛盾する場合は現コードベースを優先する。CLI / vault dir のいずれかが欠けたら skip する。
+MCP ツール `search_knowledge`（server `knowledge-vault`）、または外部 app の `kvault` CLI と vault ディレクトリが揃っている場合のみ、過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を recall し、Phase 4 architect に **advisory（参考情報）** として注入する。関連の判定は vault 側が行い、関連ありの結果だけを使う。注入知見は authoritative ではなく、現コードベースのパターンと矛盾する場合は現コードベースを優先する。どの経路も無ければ skip する。
 
 ### Phase 1.7: Triage（動的エージェント構成決定）
 
