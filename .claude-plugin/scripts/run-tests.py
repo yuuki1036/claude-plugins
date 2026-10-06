@@ -89,6 +89,19 @@ def _signal(pid: int, sig: int) -> str:
     return "sent"
 
 
+def _is_zombie(pid: int) -> bool:
+    """`pid` がゾンビ（終了済みで、親の wait を待っているだけ）か。判定できなければ False.
+
+    孤児の親になる PID 1 がすぐ wait しない環境（コンテナ）では、SIGKILL で死んだ孫が
+    しばらくゾンビのまま残り、`pgrep` にも出る（実測: SIGKILL の 0.5 秒後に `Z`、3.5 秒後に消えた）。
+    """
+    try:
+        res = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    except (FileNotFoundError, OSError):
+        return False
+    return res.stdout.strip().startswith("Z")
+
+
 def reap(pgid: int, pids: list[int]) -> list[int]:
     """`pids` を落とす。**本当に生き残ったものだけ**を返す。
 
@@ -115,7 +128,9 @@ def reap(pgid: int, pids: list[int]) -> list[int]:
     time.sleep(KILL_CONFIRM_SEC)
 
     final = list_group(pgid)
-    survivors = set(hard) if final is None else set(hard) & set(final)
+    # ゾンビはもう動いていないので回収済みに数える（「手動で kill しろ」と言っても kill できない）
+    survivors = set(hard) if final is None else {
+        pid for pid in set(hard) & set(final) if not _is_zombie(pid)}
     return sorted(survivors | denied)
 
 

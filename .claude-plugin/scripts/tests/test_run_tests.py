@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -48,6 +49,7 @@ LEAKING = """import os
 import subprocess
 import time
 import unittest
+from unittest import mock
 
 MARKER = os.path.join(os.path.dirname(__file__), "leaked.pid")
 
@@ -138,7 +140,10 @@ class RunTestsTest(unittest.TestCase):
             os.kill(pid, 0)
         except ProcessLookupError:
             return False
-        return True
+        # ゾンビは死んでいる（PID 1 がすぐ wait しないコンテナでは、SIGKILL 後もしばらく残る）
+        stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                              capture_output=True, text=True).stdout.strip()
+        return not stat.startswith("Z")
 
     # ---- 終了コードは素通し（緑判定を変えない） -----------------------------
     def test_passing_tests_exit_0(self):
@@ -271,6 +276,60 @@ class RunTestsTest(unittest.TestCase):
         res = self.run_wrapper(env={**os.environ, "PATH": str(empty_bin)})
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("skip", res.stderr)
+
+
+class ReapZombieTest(unittest.TestCase):
+    """SIGKILL の後にゾンビで残った pid を「回収できなかった」に数えない.
+
+    孤児を引き取る PID 1 がすぐ wait しないコンテナでは、死んだ孫がしばらくゾンビで残り
+    `pgrep` にも出る。E2E（`RunTestsTest`）はその環境でしか再現しないので、親が wait しない
+    ゾンビをここで作って `reap` に直接渡す。
+    """
+
+    def setUp(self) -> None:
+        spec = importlib.util.spec_from_file_location("_run_tests_under_test", SCRIPT)
+        self.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.mod)
+        self.mod.GRACE_SEC = 0
+        self.mod.KILL_CONFIRM_SEC = 0
+
+    def zombie(self) -> int:
+        pid = os.fork()
+        if pid == 0:
+            os._exit(0)
+        self.addCleanup(os.waitpid, pid, 0)
+        for _ in range(100):
+            if self.mod._is_zombie(pid):
+                return pid
+            time.sleep(0.05)
+        self.fail("前提: 子がゾンビにならない")
+
+    def test_a_zombie_is_counted_as_reaped(self):
+        pid = self.zombie()
+        self.assertEqual(self.mod.reap(os.getpgid(0), [pid]), [])
+
+    def test_a_live_process_is_not_a_zombie(self):
+        self.assertFalse(self.mod._is_zombie(os.getpid()))
+
+    def test_a_waited_pid_is_not_a_zombie(self):
+        pid = os.fork()
+        if pid == 0:
+            os._exit(0)
+        os.waitpid(pid, 0)
+        self.assertFalse(self.mod._is_zombie(pid))
+
+    def test_without_ps_a_zombie_is_still_reported(self):
+        """`ps` が引けないときは判定できない側に倒す（生き残りとして人に渡す）."""
+        pid = self.zombie()
+        real_run = subprocess.run
+
+        def run(argv, *a, **kw):
+            if argv[0] == "ps":
+                raise FileNotFoundError(argv[0])
+            return real_run(argv, *a, **kw)
+
+        with mock.patch.object(self.mod.subprocess, "run", side_effect=run):
+            self.assertEqual(self.mod.reap(os.getpgid(0), [pid]), [pid])
 
 
 class RanCountTest(unittest.TestCase):

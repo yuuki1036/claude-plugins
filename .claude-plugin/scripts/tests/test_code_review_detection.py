@@ -196,13 +196,13 @@ class CleanupRemovalTest(WorktreeTestBase):
 
         報告が「0 件 削除」だけだと、残骸が積もっても誰も気づかない
         （worktree 側は `失敗 N 件` を報告しているので非対称だった）。
-        ref 置き場を書込不可にして `git branch -D` を実際に失敗させる。
+        ref の lock ファイルを先に置いて `git branch -D` を実際に失敗させる。ref 置き場を書込不可に
+        する手は root（クラウドのコンテナ）では権限を素通りして削除が通るので使わない。
         """
         self.git("branch", "agent-orphan")
         heads = self.root / ".git" / "refs" / "heads"
         self.assertTrue((heads / "agent-orphan").is_file(), "前提: loose ref として存在する")
-        heads.chmod(0o500)
-        self.addCleanup(heads.chmod, 0o700)
+        (heads / "agent-orphan.lock").write_text("", encoding="utf-8")
         res = self.run_in(CLEANUP, cwd=self.review)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("agent-orphan", self.branches(), "前提: 削除が失敗している")
