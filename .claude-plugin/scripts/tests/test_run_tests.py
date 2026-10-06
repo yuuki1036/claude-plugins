@@ -11,7 +11,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -49,7 +51,6 @@ LEAKING = """import os
 import subprocess
 import time
 import unittest
-from unittest import mock
 
 MARKER = os.path.join(os.path.dirname(__file__), "leaked.pid")
 
@@ -250,24 +251,6 @@ class RunTestsTest(unittest.TestCase):
         self.assertTrue(self.marker.exists(), "前提: 孫が残っている")
         self.assertTrue(self.leaked_pid_is_alive(), "前提: 回収されずに生きている")
 
-    def test_a_process_we_may_not_kill_is_reported_not_crashed(self):
-        """権限が無い相手は **traceback ではなく「回収できなかった」**として報告する（M2）.
-
-        `os.kill` の `PermissionError` を捕まえないと `main` を貫通し、**緑のテストが
-        traceback + exit 1** に化ける（「終了コードはテストのものをそのまま返す」契約違反）。
-        pid 1 を返す `pgrep` の stub で、その経路だけを再現する。
-        """
-        fake_bin = self.root / "fake-bin"
-        fake_bin.mkdir()
-        stub = fake_bin / "pgrep"
-        stub.write_text("#!/usr/bin/env bash\nprintf '1\\n'\nexit 0\n", encoding="utf-8")
-        stub.chmod(0o755)
-        self.write_test(PASSING)
-        res = self.run_wrapper(env={**os.environ, "PATH": "%s:%s" % (fake_bin, os.environ["PATH"])})
-        self.assertEqual(res.returncode, 0, "後始末の失敗をテストの結果に載せている")
-        self.assertNotIn("Traceback", res.stderr)
-        self.assertIn("回収できなかった", res.stderr, "落とせなかったものは人に渡す")
-
     def test_without_pgrep_detection_is_skipped_not_silently_passed(self):
         """`pgrep` が引けない環境では**判定を skip したと言う**（黙って緑にしない）."""
         empty_bin = self.root / "empty-bin"
@@ -278,12 +261,12 @@ class RunTestsTest(unittest.TestCase):
         self.assertIn("skip", res.stderr)
 
 
-class ReapZombieTest(unittest.TestCase):
-    """SIGKILL の後にゾンビで残った pid を「回収できなかった」に数えない.
+class ReapTest(unittest.TestCase):
+    """`reap` / `sweep` を直接呼ぶ（E2E の `RunTestsTest` では作れない状況を作る）.
 
-    孤児を引き取る PID 1 がすぐ wait しないコンテナでは、死んだ孫がしばらくゾンビで残り
-    `pgrep` にも出る。E2E（`RunTestsTest`）はその環境でしか再現しないので、親が wait しない
-    ゾンビをここで作って `reap` に直接渡す。
+    - ゾンビ: 孤児を引き取る PID 1 がすぐ wait しないコンテナでは、死んだ孫がしばらくゾンビで
+      残り `pgrep` にも出る。E2E はその環境でしか再現しないので、親が wait しないゾンビを作る
+    - kill の拒否: root ではどの pid に撃っても拒否されないので、`os.kill` を差し替えて起こす
     """
 
     def setUp(self) -> None:
@@ -307,6 +290,23 @@ class ReapZombieTest(unittest.TestCase):
     def test_a_zombie_is_counted_as_reaped(self):
         pid = self.zombie()
         self.assertEqual(self.mod.reap(os.getpgid(0), [pid]), [])
+
+    def test_a_process_we_may_not_kill_is_reported_not_crashed(self):
+        """権限が無い相手は **traceback ではなく「回収できなかった」**として報告する（M2）.
+
+        `os.kill` の `PermissionError` を捕まえないと `main` を貫通し、**緑のテストが
+        traceback + exit 1** に化ける（「終了コードはテストのものをそのまま返す」契約違反）。
+        **本物の pid には撃たない**: 以前は pid 1 を返す `pgrep` の stub で E2E にしていたが、
+        root で走らせると PID 1 に SIGTERM / SIGKILL が実際に届き、しかも拒否されないので
+        確かめたい経路を通っていなかった。`os.kill` を差し替えて、どのユーザーでも拒否を起こす。
+        """
+        pid = 4_000_000
+        with mock.patch.object(self.mod, "list_group", return_value=[pid]), \
+                mock.patch.object(self.mod.os, "kill", side_effect=PermissionError) as kill, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.mod.sweep(os.getpgid(0))
+        self.assertIn("回収できなかった: %d（" % pid, err.getvalue(), "落とせなかったものは人に渡す")
+        self.assertEqual({c.args[0] for c in kill.call_args_list}, {pid}, "対象外の pid に撃った")
 
     def test_a_live_process_is_not_a_zombie(self):
         self.assertFalse(self.mod._is_zombie(os.getpid()))
