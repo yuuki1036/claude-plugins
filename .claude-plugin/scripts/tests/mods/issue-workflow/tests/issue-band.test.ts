@@ -121,6 +121,46 @@ test('Issue ファイルが見つからなくても ID とブランチは出す 
   expect(b.line).toBe('TEAM-9 帯を出す · in-progress · feature · タスク 0/1 · feat/band')
 })
 
+test('worktree の中では、worktree に無い Issue をメインのチェックアウトから読む（GitHub issue #280）', async ($, on) => {
+  const MAIN = '/w/main'
+  const WT = `${MAIN}/.claude/worktrees/TEAM-9`
+  const files: Record<string, string> = {
+    [`${WT}/.claude/session-context.md`]: ctx('feat/TEAM-9-x', 'TEAM-9'),
+    [`${MAIN}/.claude/linear/team/issues/TEAM-9.md`]: issue('TEAM-9'),
+  }
+  const lists: Record<string, string[]> = { [`${MAIN}/.claude/linear`]: ['team'] }
+  let gitDir = `${MAIN}/.git/worktrees/TEAM-9`
+  on('session.cwd', () => ({ value: WT }))
+  on('process.run', (_$, e) => {
+    const a = e.argv.join(' ')
+    if (a === 'git rev-parse --show-toplevel') return { value: out(`${WT}\n`) }
+    if (a === 'git rev-parse --abbrev-ref HEAD') return { value: out('feat/TEAM-9-x\n') }
+    if (a === 'git rev-parse --absolute-git-dir') return { value: out(`${gitDir}\n`) }
+    if (a === 'git rev-parse --path-format=absolute --git-common-dir') return { value: out(`${MAIN}/.git\n`) }
+    return { value: out('', 2) }
+  })
+  on('fs.read', (_$, e) => {
+    const t = files[e.path]
+    return t === undefined ? { deny: `ENOENT ${e.path}` } : { value: t }
+  })
+  on('fs.list', (_$, e) => {
+    const names = lists[e.path]
+    return names ? { value: names.map(name => ({ name, isDirectory: true })) as never } : { deny: 'ENOENT' }
+  })
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Text', props: {}, children: ['BELOW'] }) as never)
+  await submit($)
+  let b = await band($)
+  expect(b.line).toBe('TEAM-9 帯を出す · in-progress · feature · feat/TEAM-9-x')
+  await b.ui.unmount()
+
+  // メインのチェックアウトそのもの（git dir = common dir）では、ほかのチェックアウトを探さない
+  gitDir = `${MAIN}/.git`
+  await submit($)
+  b = await band($)
+  expect(b.line).toBe('TEAM-9 · feat/TEAM-9-x')
+})
+
 test('scope_size の上限を超えたら知らせる（check-scope-size.sh と同じ上限）', async ($, on) => {
   const w = newWorld()
   w.files[`${ROOT}/.claude/indie/myapp/issues/MYAPP-3.md`] = issue('MYAPP-3', { scope: 'small', progress: ['- [ ] 1', '- [ ] 2', '- [ ] 3'] })

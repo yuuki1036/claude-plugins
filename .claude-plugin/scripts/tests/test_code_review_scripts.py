@@ -1667,6 +1667,72 @@ class PublishSessionResolutionTest(TranscriptFixture):
         self._unmeasured(self.last_payload())
 
 
+class ClosingQuestionsPublishTest(ScriptTestBase):
+    """publish が self-review Step 7 で聞く質問を件数から出す（GitHub issue #279）.
+
+    指摘の修正方針だけを聞き、Markdown 推敲の採否を聞き忘れた実例がある。質問の要否は
+    payload の件数だけで決まるので、記憶ではなくこの行に従わせる。
+    """
+
+    HEAD = "Step 7 の AskUserQuestion に入れる質問"
+
+    def _line(self, plugin: str = "code-review:self-review", *extra: str, **over) -> str:
+        p = json.loads(json.dumps(BASE_PAYLOAD))
+        p.update({"blocker_count": 0, "critical_count": 0, "major_count": 0, "minor_count": 0})
+        p.update(over)
+        # 分類の合計は報告件数と一致させる（publish が検証する）
+        p["findings_class"] = {"lint": 0, "test": 0, "judgement": sum(
+            p[k] for k in ("blocker_count", "critical_count", "major_count", "minor_count"))}
+        r = self.publish(p, plugin, *extra)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        lines = [l for l in r.stdout.splitlines() if l.startswith(self.HEAD)]
+        self.assertLessEqual(len(lines), 1, r.stdout)
+        return lines[0] if lines else ""
+
+    def test_all_zero_says_none(self):
+        self.assertIn("なし（指摘・コメント推敲・Markdown 推敲がすべて 0 件", self._line())
+
+    def test_one_finding_asks_question_1(self):
+        line = self._line(minor_count=1)
+        self.assertIn("質問 1（指摘 1 件）", line)
+        self.assertNotIn("質問 3", line)
+
+    def test_findings_are_summed_over_severities(self):
+        self.assertIn("質問 1（指摘 4 件）",
+                      self._line(blocker_count=1, critical_count=1, major_count=1, minor_count=1))
+
+    def test_md_polish_alone_is_not_dropped(self):
+        """指摘 0 件でも Markdown 推敲があれば質問 3 を出す（#279 の実例はこの形）."""
+        line = self._line(md_polish={"fired": True, "skip_reason": None, "suggested": 1})
+        self.assertIn("質問 3（Markdown 推敲 1 件）", line)
+        self.assertNotIn("質問 1", line)
+        self.assertNotIn("なし", line.split("（--embed")[0])
+
+    def test_findings_and_md_polish_are_both_listed(self):
+        line = self._line(major_count=2, md_polish={"fired": True, "skip_reason": None,
+                                                    "suggested": 4})
+        self.assertIn("質問 1（指摘 2 件） / 質問 3（Markdown 推敲 4 件）", line)
+
+    def test_comment_polish_asks_question_2(self):
+        self.assertIn("質問 2（コメント推敲 3 件）",
+                      self._line(comment_polish={"fired": True, "suggested": 3}))
+        self.assertIn("なし", self._line(comment_polish={"fired": True, "suggested": 0}))
+
+    def test_unmeasured_suggestions_are_flagged(self):
+        line = self._line(md_polish={"fired": True, "skip_reason": None, "suggested": -1})
+        self.assertIn("質問 3（Markdown 推敲の件数が測れていない", line)
+
+    def test_embed_says_no_questions(self):
+        line = self._line(major_count=1, md_polish={"fired": False, "skip_reason": "embed",
+                                                    "suggested": 0})
+        self.assertIn("なし（--embed の回", line)
+        self.assertNotIn("質問 1", line)
+
+    def test_review_and_dry_run_print_nothing(self):
+        self.assertEqual(self._line("code-review:review", "--pr", "1", major_count=1), "")
+        self.assertEqual(self._line("code-review:self-review", "--dry-run", major_count=1), "")
+
+
 class SeverityThresholdPublishTest(ScriptTestBase):
     """publish が `severity_threshold` を検証する（GitHub issue #252）.
 

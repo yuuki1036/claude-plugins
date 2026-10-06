@@ -42,9 +42,11 @@ if [ -f "${RULES_DIR}/project-rules.md" ]; then
 fi
 
 # Knowledge インデックス注入
-for index_file in ${IW_DATA_DIR}/*/knowledge/index.md; do
+# IW_DATA_DIR は worktree からメインのチェックアウトを指す絶対パスにもなる（空白を含みうるので引用する）
+for index_file in "${IW_DATA_DIR}"/*/knowledge/index.md; do
   [ -f "$index_file" ] || continue
-  slug=$(echo "$index_file" | sed "s|${IW_DATA_DIR}/\(.*\)/knowledge/index.md|\1|")
+  slug=${index_file#"${IW_DATA_DIR}"/}
+  slug=${slug%%/*}
   echo ""
   echo "---"
   echo "## Knowledge（${slug}）"
@@ -57,7 +59,7 @@ done
 # 放置 Issue 検知（7日以上 last_active が更新されていない in-progress Issue）
 # 検出 0 件のときはセクションごと省略する（ノイズ注入を避ける）
 stale_issues=""
-for issue_file in ${IW_DATA_DIR}/*/issues/*.md; do
+for issue_file in "${IW_DATA_DIR}"/*/issues/*.md; do
   [ -f "$issue_file" ] || continue
   # grep はマッチ 0 件で exit 1 を返す。set -euo pipefail 下で代入に伝播すると
   # ERR trap が発火しフック全体がサイレント終了するため、|| true で握る

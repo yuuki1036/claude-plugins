@@ -1377,6 +1377,39 @@ else
   echo "WARN: safe-hook.sh を読み込めず publish をスキップした" >&2
 fi
 
+# ---- self-review Step 7 で聞く質問（publish の成否に関わらず出す / GitHub issue #279） ----
+# 質問の要否は payload の件数だけで決まるので、ここで機械的に出す。記憶で選び直すと、指摘の
+# 修正方針だけを聞いて Markdown 推敲の採否を落とした実例がある。質問の文面の正本は self-review
+# SKILL Step 7 と md-polish-guide.md の 6 節
+if [ "$PLUGIN" = "code-review:self-review" ]; then
+  REVIEW_PAYLOAD="$MERGED" python3 - <<'PY' || true
+import json, os
+
+p = json.loads(os.environ["REVIEW_PAYLOAD"])
+md = p.get("md_polish") if isinstance(p.get("md_polish"), dict) else {}
+head = "Step 7 の AskUserQuestion に入れる質問"
+# no-md-prose が embed より先に判定されるので、embed で止まった回をすべては拾えない（下の注記で補う）
+if md.get("skip_reason") == "embed":
+    print(f"{head}: なし（--embed の回。Step 7 は質問を出さずに終える）")
+    raise SystemExit
+a = sum(p.get(k) if isinstance(p.get(k), int) else 0
+        for k in ("blocker_count", "critical_count", "major_count", "minor_count"))
+cp = p.get("comment_polish") if isinstance(p.get("comment_polish"), dict) else {}
+parts = []
+if a > 0:
+    parts.append(f"質問 1（指摘 {a} 件）")
+for label, n, num in (("コメント推敲", cp.get("suggested"), 2), ("Markdown 推敲", md.get("suggested"), 3)):
+    if n == -1:
+        parts.append(f"質問 {num}（{label}の件数が測れていない。レポートに提案があれば入れる）")
+    elif isinstance(n, int) and n > 0:
+        parts.append(f"質問 {num}（{label} {n} 件）")
+if parts:
+    print(f"{head}: " + " / ".join(parts) + "。1 回の呼び出しにまとめ、どれも落とさない（--embed の回は出さない）")
+else:
+    print(f"{head}: なし（指摘・コメント推敲・Markdown 推敲がすべて 0 件。「問題なし」で完了）")
+PY
+fi
+
 # ---- publish 直後の同期フック（任意） ------------------------------------------
 # `<設定 dir>/post-publish`（既定 `~/.config/claude-review/post-publish`）が実行可能なら、
 # **切り離して**起動する。計測ストア（private リポジトリ review-metrics）への送り出しを

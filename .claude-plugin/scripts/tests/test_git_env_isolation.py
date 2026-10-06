@@ -66,6 +66,9 @@ REPRESENTATIVES = {
         "test_mutation_test.RunReportTest.test_file_mode_says_it_is_not_a_diff_and_counts_changed_lines",
     "test_feature_dev_scripts.py":
         "test_feature_dev_scripts.ReviewSnapshotTest.test_edits_and_new_files_after_save_are_reported",
+    "test_issue_workflow_branch_setup.py":
+        "test_issue_workflow_branch_setup.WorktreeCreateTest."
+        "test_branches_from_the_default_branch_not_from_the_current_one",
 }
 
 #: 直接 git を叩くファイルの検出（この 2 ファイル自身は対象外）

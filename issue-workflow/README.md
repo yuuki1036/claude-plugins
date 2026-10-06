@@ -19,7 +19,7 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 |--------|------|
 | init | プロジェクト初期セットアップ（backend 選択 + ディレクトリ作成） |
 | start | セッション開始。引数の Issue ID を優先し、無ければブランチ名から判定（main ならダッシュボード）。未着手なら feature-dev を案内 |
-| issue-create | Issue 作成 + ブランチ自動作成 |
+| issue-create | Issue 作成 + ブランチ作成（未コミットの変更があれば worktree に分けてセッションごと移るのを推奨） |
 | issue-design | Issue 本文を 9 セクションテンプレと設計判断ルールで設計・リライト |
 | issue-maintain | Issue ファイルのセッション内容反映・品質整理・knowledge 切り出し |
 | follow-up | Follow-up タスクの作成・一覧・Issue 昇格 |
@@ -60,6 +60,15 @@ mods が有効な端末・Desktop（Claude Code 2.1.287 以降）では、作業
 - タスクの数は `## 進捗`（無ければ `## 完了条件`）のチェックリスト。scope_size の上限（small 3 / medium 7 / large 15。`check-scope-size.sh` と同じ）を超えたら警告も出す
 - 読み直すのは、プロンプトを送ったとき・Issue / session-context を Edit / Write したとき・`git checkout` / `git switch` の後。読むだけで何も書かない
 - 「隠す」で消え、別の Issue に移るとまた出る。実装: `hooks/issue-band.tsx`
+- worktree の中では、worktree に無い Issue ファイルをメインのチェックアウトから読む（Issue ファイルを gitignore している repo 向け）
+
+## worktree での作業
+
+start / issue-create がブランチを切るとき、今のチェックアウトに未コミットの変更があれば worktree に分けるのを推奨する（手順の正本: `references/branch-setup.md`）。
+
+- `.claude/worktrees/<Issue ID>` に既定ブランチから作り、未追跡の `.env*` を写し、lockfile に合わせて依存を入れる（`scripts/branch-setup.sh`）
+- 作った直後にセッションの作業ディレクトリを worktree へ移す（CLI は `EnterWorktree`）。diff ペイン・hook・CLAUDE.md が worktree 側の値になる
+- worktree にデータ dir（`.claude/indie` / `.claude/linear`）が無ければ、スキルの Phase 0 と hook はメインのチェックアウトのものを使う
 
 ## 主な機能
 

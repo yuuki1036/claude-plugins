@@ -11,6 +11,7 @@ allowed-tools:
   - Agent
   - Skill
   - AskUserQuestion
+  - EnterWorktree
   - mcp__linear__get_issue
   - mcp__linear__list_issues
   - Read
@@ -33,9 +34,10 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 
 <!-- BACKEND-DETECT:START -->
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
-2. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
-3. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
-4. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
+2. 1 で両方とも無効なら、linked worktree の中かを確かめる（`git rev-parse --absolute-git-dir` と `git rev-parse --path-format=absolute --git-common-dir` が違えば worktree）。worktree なら、メインのチェックアウト（後者の親 dir）の下の 2 つを同じ述語で確かめ直し、以降の判定はその結果で行う。その場合の DATA_DIR はメインのチェックアウト側の絶対パス（例: `/path/to/repo/.claude/linear`）にする — Issue ファイルを gitignore している repo では worktree の中にデータ dir が無いため
+3. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
+4. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
+5. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
 
 以後の `{DATA_DIR}` は検出したデータディレクトリ、`BACKEND` は判定結果を指す。
 <!-- BACKEND-DETECT:END -->
@@ -62,7 +64,7 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
    {ISSUE-ID} [今回の意図（自由記述）]
    ```
 
-   - **第 1 トークン**: Issue ID（`[A-Z]+-\d+` 形式）。あればそれを対象 Issue ID として採用し、**ブランチ名を見ずに Feature ブランチモード（Phase F2 以降）へ直行する**（Phase F1 の抽出は skip）。ブランチが main/master のままでも同様（ブランチを切る前に Issue のコンテキストだけ読みたい、が典型）。この場合 Phase F7 では「ブランチ未作成」として `git checkout -b` の案内も添える
+   - **第 1 トークン**: Issue ID（`[A-Z]+-\d+` 形式）。あればそれを対象 Issue ID として採用し、**ブランチ名を見ずに Feature ブランチモード（Phase F2 以降）へ直行する**（Phase F1 の抽出は skip）。ブランチが main/master のままでも同様（ブランチを切る前に Issue のコンテキストだけ読みたい、が典型）。この場合のブランチは Phase F7 で作る（「ブランチ未作成」の扱い）
    - **残りの文字列**: 今回のセッションの意図（`TASK_INTENT`）。次の 3 値に分類して Phase F7 の分岐に使う:
 
      | TASK_INTENT | 判定 | 例 |
@@ -122,7 +124,7 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 
 ### Phase Q3: アクション提案
 
-- Issue を選択 → ブランチ作成: `git checkout -b feat/{ISSUE-ID}-{desc}` + `/issue-create`
+- Issue を選択 → `/issue-create`（ブランチは issue-create の Phase 7 で作る。worktree に分けるかもそこで決める）
 - 詳細を確認 → `/dashboard`
 - プロジェクト同期 → `/linear-maintain`
 
@@ -373,10 +375,12 @@ AskUserQuestion(
 )
 ```
 
-- 「feature-dev」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**先に** `git checkout -b {type}/{ISSUE-ID}-{desc}` を案内してから起動する。**feature-dev が未導入**（`grep -q '"feature-dev@' "$HOME/.claude/settings.json"` が偽）**なら、この選択肢を option から外す**（dormant。未導入プラグインを提案肢に出さない）
-- 「軽量フロー」→ `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 6 Step（実装 → 検証 → self-review → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、self-review / commit の委譲先（code-review / dev-workflow）は導入済みなら委譲し、未導入なら手動手順にフォールバックする（この選択肢自体は委譲先の有無に関わらず提示する）
+- 「feature-dev」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**起動する前に**下の「ブランチ未作成のとき」に従ってブランチを作る。**feature-dev が未導入**（`grep -q '"feature-dev@' "$HOME/.claude/settings.json"` が偽）**なら、この選択肢を option から外す**（dormant。未導入プラグインを提案肢に出さない）
+- 「軽量フロー」→ ブランチ未作成なら先に下の「ブランチ未作成のとき」に従ってブランチを作る。そのうえで `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 6 Step（実装 → 検証 → self-review → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、self-review / commit の委譲先（code-review / dev-workflow）は導入済みなら委譲し、未導入なら手動手順にフォールバックする（この選択肢自体は委譲先の有無に関わらず提示する）
 - 「自分で進める」→ 何も起動せず通常の作業に入る。同一セッションで再提案しない
 - feature-dev 起動後は、`feature_dev_plan:` frontmatter への記載をユーザーに案内する（手動更新、または `/issue-maintain` で反映）
+
+**ブランチ未作成のとき**（今のブランチ名に `{ISSUE-ID}` が含まれない）: `${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。worktree に移した回は、feature-dev の引数に worktree のパスを添え、Phase CTX の書き出し先を worktree 側にする（同 doc の 5）
 
 **`TASK_INTENT = continue` のとき**: feature-dev の案内は出さない（やることが決まっているので選択 UI で止めるのは邪魔）。Phase F6 で「今回のセッションでやること」として意図を再掲するに留める。
 
@@ -439,4 +443,4 @@ issue_id: {Issue ID}
 
 **注意:**
 - `.claude/session-context.md` はセッション固有のファイルであり、git にコミットしない
-- Write ツールで `.claude/session-context.md` に書き出す
+- Write ツールで `.claude/session-context.md` に書き出す。Phase F7 で worktree に移した回は `{WORKTREE}/.claude/session-context.md`（絶対パス）に書く — 読む側（code-review・issue-band）は作業しているチェックアウトのものを見る

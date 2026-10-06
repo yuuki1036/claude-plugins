@@ -264,6 +264,54 @@ class InjectRulesTest(HookTestCase):
             self.assertIn(f"python3 {script} count", res.stdout)
             self.assertTrue(script.is_file())
 
+    def test_worktree_without_a_data_dir_reads_the_main_checkout(self):
+        """gitignore された Issue データは worktree に無いので、メインのチェックアウトを見る（GitHub issue #280）."""
+        repo = TempGitRepo()
+        with repo as root:
+            wt = repo.worktree("feat/TEAM-9-x")
+            index = root / ".claude" / "linear" / "team" / "knowledge" / "index.md"
+            index.parent.mkdir(parents=True)
+            index.write_text("| topic | tags |\n")
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=wt)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr)
+            data_dir = root.resolve() / ".claude" / "linear"
+            self.assertIn(f"backend: linear（DATA_DIR={data_dir}）", res.stdout)
+            self.assertIn("## Knowledge（team）", res.stdout)
+
+    def test_worktree_with_its_own_data_dir_ignores_the_main_checkout(self):
+        """worktree に追跡済みのデータ dir があればそれを使い、メイン側とは衝突させない."""
+        repo = TempGitRepo()
+        with repo as root:
+            (root / ".claude" / "indie" / "demo").mkdir(parents=True)
+            repo.commit("init", filename=".claude/indie/demo/project.md")
+            wt = repo.worktree("feat/DEMO-1-x")
+            (root / ".claude" / "linear" / "team").mkdir(parents=True)
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=wt)
+            self.assertIn("backend: local（DATA_DIR=.claude/indie）", res.stdout)
+            self.assertNotIn("backend 衝突", res.stdout)
+
+    def test_fallback_is_only_for_linked_worktrees(self):
+        """メインのチェックアウトの中では従来どおり cwd 基準で、サブディレクトリからルートを探さない."""
+        with TempGitRepo() as root:
+            (root / ".claude" / "linear" / "team").mkdir(parents=True)
+            sub = root / "sub"
+            sub.mkdir()
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=sub)
+            self.assertEqual(res.returncode, 0)
+            self.assertEqual(res.stdout, "")
+
+    def test_main_checkout_does_not_look_into_worktrees(self):
+        """メインのチェックアウトにデータ dir が無ければ、worktree 側にあっても黙る."""
+        repo = TempGitRepo()
+        with repo as root:
+            wt = repo.worktree("feat/TEAM-9-x")
+            (wt / ".claude" / "linear" / "team").mkdir(parents=True)
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root)
+            self.assertEqual(res.returncode, 0)
+            self.assertEqual(res.stdout, "")
+            self.assertNotIn("Unexpected", res.stderr)
+
 
 class SetSessionTitleTest(HookTestCase):
     PLUGIN = "issue-workflow"
@@ -289,6 +337,20 @@ class SetSessionTitleTest(HookTestCase):
             self.assertEqual(res.returncode, 0)
             self.assertNotIn("Unexpected", res.stderr, "ERR trap で落ちている")
             self.assertIn("title empty", res.stderr, "Validation ガードに到達していない")
+
+    def test_reads_the_issue_from_the_main_checkout_inside_a_worktree(self):
+        """worktree に Issue ファイルが無くても、メインのチェックアウトのものでタイトルを付ける（GitHub issue #280）."""
+        repo = TempGitRepo()
+        with repo as root:
+            wt = repo.worktree("feat/TEAM-9-x")
+            p = root / ".claude" / "linear" / "team" / "issues" / "TEAM-9.md"
+            p.parent.mkdir(parents=True)
+            p.write_text("---\nlinear: TEAM-9\ntitle: 帯を出す\n---\n")
+            res = self.run_hook({"prompt": "作業する"}, cwd=wt)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr)
+            self.assertEqual(json.loads(res.stdout)["hookSpecificOutput"]["sessionTitle"],
+                             "TEAM-9: 帯を出す")
 
 
 class OnKnowledgeChangeTest(HookTestCase):
