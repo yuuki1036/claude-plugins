@@ -56,6 +56,7 @@ allowed-tools:
 1. 対象 doc を Read する（frontmatter 含む全文）
 2. frontmatter の `spec:` / `issue:` / `adrs:` にパスがあれば Read する（reviewer へのコンテキスト）
 3. doc の「採用案」「確定した前提」から関連コードのパス・パターンを抽出する（reviewer の裏取り対象ヒント）
+4. **knowledge vault（任意・後方互換）**: MCP ツール `search_knowledge`（server `knowledge-vault`。deferred なら ToolSearch で `select:mcp__knowledge-vault__search_knowledge` を読み込む）か `kvault` CLI があれば、採用案のキーワード列で過去の設計判断・落とし穴を引き（`purpose="design"`。CLI は `kvault recall "<キーワード列>" --top 5 --purpose design 2>/dev/null` の `relevant: true` の結果だけ）、reviewer へのコンテキストに加える。どちらも無ければ飛ばす。関連の判定は vault 側が行う。findings と doc への反映に vault の title や本文を書き写さない（別プロジェクト由来の知見を含む）
 
 ## Phase 2: 視点トリアージ
 

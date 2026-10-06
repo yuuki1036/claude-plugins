@@ -137,19 +137,22 @@ echo "BDD_SPEC_AVAILABLE=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh
 
 **Goal**: 過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を knowledge vault から recall し、Phase 4 architect に advisory 注入する。recall をモデルの文脈判断に委ねると省略されうるため、設計着手直前の必須ステップとして埋め込み「引き忘れ」を構造的に防ぐ。注入知見は advisory で、現コードベースのパターンと矛盾する場合は現コードベースを優先する。
 
-kvault は feature-dev 外の外部 CLI。CLI 本体 + vault dir の二段で存在確認し、いずれか欠けたら skip する（後方互換）:
+vault は feature-dev 外の外部資源。取得経路を上から順に確かめ、使えるものを 1 つ使う。どれも無ければ skip する（後方互換）:
+
+1. **MCP ツール `search_knowledge`**（server `knowledge-vault`。deferred なら ToolSearch で `select:mcp__knowledge-vault__search_knowledge` を読み込む）がこのセッションにある → `VAULT_VIA=mcp`
+2. 無ければ `kvault` CLI と vault dir を確かめる:
 
 ```bash
 # vault の場所は KNOWLEDGE_VAULT_ROOT で指定（個人環境パスをハードコードしない）。未設定なら skip。
 if [ -n "$KNOWLEDGE_VAULT_ROOT" ] && command -v kvault >/dev/null 2>&1 && [ -d "$KNOWLEDGE_VAULT_ROOT" ]; then
-  VAULT_AVAILABLE=1
+  VAULT_VIA=cli
 else
-  VAULT_AVAILABLE=0
+  VAULT_VIA=none
 fi
 ```
 
-- `VAULT_AVAILABLE=0` → **Phase 1.6 を skip して Phase 1.7 へ**。skip 理由を 1 行 notify（未設定 / 未導入 / vault dir 不在）
-- `VAULT_AVAILABLE=1` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.6」を読み、その手順（キーワード列クエリ構築 → `kvault recall` → rank+gap で関連判定 → advisory 注入。絶対閾値で足切りしない等の運用知見つき）に従う
+- `VAULT_VIA=none` → **Phase 1.6 を skip して Phase 1.7 へ**。skip 理由を 1 行 notify（MCP ツール無し・CLI 未導入 / 未設定 / vault dir 不在）
+- `VAULT_VIA=mcp|cli` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.6」を読み、その手順（キーワード列クエリ構築 → recall → 関連ありの結果だけを advisory 注入。関連判定は vault 側が行うので判定し直さない）に従う
 
 **Output**: `VAULT_KNOWLEDGE=<関連知見の要約>` または `""`（未取得 / 関連なし / skip）。Phase 4 architect の "Vault Knowledge Injection" に渡す。
 

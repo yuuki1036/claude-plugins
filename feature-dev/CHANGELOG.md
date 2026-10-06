@@ -5,6 +5,13 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.0] - 2026-10-06
+
+### Changed
+
+- **Phase 1.6 Vault Recall を、MCP ツール `search_knowledge` → `kvault` CLI → skip の 3 段にし、関連判定を vault 側の `relevant` に任せる**。手順書から rank + gap の判定規則を消した（vault 側がコードで判定し、しきい値を埋め込みモデルごとに較正するため）。検出の変数は `VAULT_AVAILABLE` から `VAULT_VIA`（`mcp` / `cli` / `none`）に変えた。recall は `purpose=design` で引き、複数クエリは `--queries` で 1 回にまとめる
+- code-architect の Vault Knowledge Injection に「公開先に書き写さない」を足した
+
 ## [2.18.0] - 2026-10-03
 
 ### Added

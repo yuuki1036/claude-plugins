@@ -5,7 +5,7 @@
 | 節 | フロー | 適用条件 |
 |---|---|---|
 | `## 2` | Issue ファイル必読フロー | review。branch 名から Issue ID が取れ、ローカルに Issue ファイルがある（issue-workflow 併用時） |
-| `## 11` | Vault 照合 | self-review Step 1.5。`kvault` / `/vault-recall` が使える |
+| `## 11` | Vault 照合 | self-review Step 1.5 / review Step 2.6。MCP ツール `search_knowledge` か `kvault` が使える |
 | `## 12` | 訂正の伝播前ガード | self-review Step 7。findings を本文へ反映する段 |
 | `## 15` | embed mode の構造化 findings JSON | self-review に `--embed` が指定された |
 
@@ -42,27 +42,24 @@ gh pr view <PR番号> --json closingIssuesReferences -q '.closingIssuesReference
 - 紐づく Issue の先（Issue 本文中のリンク）は追わない。3 件を超えたら先頭 3 件に絞り、絞った旨を「⚠️ 欠損観点」に書く
 - 取得できない（gh 未認証・権限なし・紐づき無し）ときは黙ってスキップする
 
-## 11. Vault 照合手順（self-review Step 1.5 / 過去の指摘・落とし穴の retrieval）
+## 11. Vault 照合手順（self-review Step 1.5 / review Step 2.6 / 過去の指摘・落とし穴の retrieval）
 
-**利用可否の検出（未導入なら skip / 後方互換）**:
+**取得経路（上から順に、使えるものを 1 つ使う。どれも無ければ本ステップ全体を skip / 後方互換）**:
 
-```bash
-# kvault コマンド または /vault-recall skill のいずれかが使えれば実行
-command -v kvault >/dev/null 2>&1 && echo "kvault: available"
-```
-
-`kvault` も `/vault-recall` skill も使えない環境では本ステップ全体を skip する（vault 未導入リポジトリでは no-op）。
+1. **MCP ツール `search_knowledge`**（server `knowledge-vault`。deferred なら ToolSearch で `select:mcp__knowledge-vault__search_knowledge` を読み込む）: `search_knowledge(query=<クエリ>, purpose="review", top=5)`。返るのは関連ありと判定済みの結果だけ
+2. **`kvault` CLI**（`command -v kvault`）: `kvault recall --queries "<q1>" "<q2>" --top 5 --purpose review 2>/dev/null`。各クエリの `results[]` のうち `relevant: true` のものだけを使う。出力に `relevant` が無い（vault 側が古い）ときは注入せず、vault を更新すれば関連判定が使える旨を 1 行だけ添える
+3. どちらも無い → skip（vault 未導入リポジトリでは no-op）
 
 **照合手順**:
 
-1. Step 1 で収集した変更ファイルのパス・主要な識別子（関数名・型名・コンポーネント名）・技術語をクエリ語にする
-2. 代表的なクエリを 1〜3 個 `kvault recall "<query>"` で実行する（`/vault-recall` skill が使える場合はそちら経由でも可）。出力は `results[]`（`similarity` / `title` / `excerpt` / `path` / `tags`）の JSON
-3. 各結果の `similarity` を、絶対値ではなく **1 位からの gap**（スコア差）で判断する（水準はクエリで変わるので絶対閾値で切らない）。後続が大きく落ちたところまでを関連ありとし、1 位が 2 位を明確に引き離す（1 位 ≳ 55% で頭抜ける）のは強いシグナル。上位が団子状（gap 数 pt 以内で横並び）なら関連なしと判断して注入しない（ノイズ注入を避ける）。1 位でも excerpt が明らかに別ドメインなら 0 件とする。規則の正本は vault 側の vault-recall skill §3 で、feature-dev の Phase 1.6 も同じ規則を使う
-4. 関連ありと判断した知見（`title` + `excerpt` + `path`）を reviewer 起動 step（self-review Step 4）の各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する
+1. Step 1 で収集した変更ファイルのパス・主要な識別子（関数名・型名・コンポーネント名）・技術語をクエリ語にする。クエリは 1〜3 個（キーワード列）
+2. 上の経路で引く。**関連判定は vault 側のコードで済んでいる**ので、`similarity` を見て判定し直さない（数値の尺度は vault 側のモデルで変わる）。例外は 1 つだけ: 関連ありでも excerpt が明らかに別ドメインなら外す
+3. 関連ありの知見（`title` + `excerpt` + `path`）を reviewer 起動 step（self-review Step 4 / review Step 5）の各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する
 
 **注意**:
+- **vault の内容を公開先に書き写さない**。vault には別プロジェクト由来の知見が入っている。PR コメント・レポートの指摘本文には、知見の title・excerpt・path を引用しない（指摘はこの diff のコードで根拠を示す）。reviewer への注入セクションにもこの一文を添える
 - `--embed` 呼び出し（feature-dev Phase 6 等）でも本ステップは動作する（呼び出し元が retrieval 基盤を共有する前提）
-- vault 照合は best-effort。`kvault` 実行が失敗・タイムアウトしても `missing_coverage` には記録せず skip して続行する（レビュー本体をブロックしない）
+- vault 照合は best-effort。取得が失敗・タイムアウトしても `missing_coverage` には記録せず skip して続行する（レビュー本体をブロックしない）
 
 ## 12. 訂正の伝播前ガード（self-review Step 7 / over-correction 防止 / GitHub issue #71）
 
