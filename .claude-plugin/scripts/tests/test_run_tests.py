@@ -277,6 +277,12 @@ class ReapTest(unittest.TestCase):
         self.mod.KILL_CONFIRM_SEC = 0
 
     def zombie(self) -> int:
+        """ゾンビの pid を作る. 使う側は `list_group` を差し替えてグループに見える状態にする.
+
+        Linux の procps の `pgrep -g` はゾンビを列挙するが、macOS の `pgrep -g` は列挙しない
+        （実測: `ps -g` には `Z` で出るのに `pgrep -g` は 0 件）。本物の `pgrep` のままだと
+        macOS では `reap` の SIGTERM 後の再列挙からゾンビが消え、ゾンビ判定の経路を通らない。
+        """
         pid = os.fork()
         if pid == 0:
             os._exit(0)
@@ -289,7 +295,8 @@ class ReapTest(unittest.TestCase):
 
     def test_a_zombie_is_counted_as_reaped(self):
         pid = self.zombie()
-        self.assertEqual(self.mod.reap(os.getpgid(0), [pid]), [])
+        with mock.patch.object(self.mod, "list_group", return_value=[pid]):
+            self.assertEqual(self.mod.reap(os.getpgid(0), [pid]), [])
 
     def test_a_process_we_may_not_kill_is_reported_not_crashed(self):
         """権限が無い相手は **traceback ではなく「回収できなかった」**として報告する（M2）.
@@ -328,7 +335,8 @@ class ReapTest(unittest.TestCase):
                 raise FileNotFoundError(argv[0])
             return real_run(argv, *a, **kw)
 
-        with mock.patch.object(self.mod.subprocess, "run", side_effect=run):
+        with mock.patch.object(self.mod, "list_group", return_value=[pid]), \
+                mock.patch.object(self.mod.subprocess, "run", side_effect=run):
             self.assertEqual(self.mod.reap(os.getpgid(0), [pid]), [pid])
 
 
