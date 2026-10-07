@@ -782,6 +782,35 @@ THRESHOLD_SPLIT_NOTE = ("> `（閾値 X）` の行は報告閾値が MAJOR で�
                         "閾値未満のみの空振りが起きにくいので世代の行に混ぜず、⚠️ の判定からも外す（#277）")
 
 
+#: 真の空振りの主層の effort（GitHub issue #284）。既定の high 以上で、#210 の回復サインはこの層で読む
+MAIN_EFFORTS = ("high", "xhigh", "max")
+
+
+def apx_layer_of(p):
+    """🔁 付録の層キー。世代・報告閾値に加え、主層の閾値の回は effort でも割る（GitHub issue #284）。
+
+    effort は reviewer の effort と動的層（反証・skeptic・meta・Round 2）の起動を決めるので、
+    low / medium の回を混ぜると **どの effort で回したかの構成だけで**真の空振り率が動く
+    （実測: #210 の窓で high 1/11・medium 5/12。medium の割合が増えただけで 17% → 26%）。
+
+    **値が無い回は主層に置く**（`gen_threshold_of` と同じ扱い。既定の effort は high）。
+    主層でない閾値の回はもともと判定から外れているので、effort ではそれ以上割らない。
+    """
+    key = gen_threshold_of(p)
+    e = p.get("effort")
+    if not is_main_threshold_key(key) or e is None or e in MAIN_EFFORTS:
+        return key
+    return "%s（effort %s）" % (key, "low/medium" if e in ("low", "medium") else e)
+
+
+def is_main_effort_key(key):
+    return "（effort " not in key
+
+
+EFFORT_SPLIT_NOTE = ("> `（effort X）` の行は effort が high 未満の回。反証・skeptic・meta・Round 2 が effort で"
+                     "起動しないので世代の行に混ぜず、⚠️ の判定からも外す（#284）")
+
+
 def with_gen(p, key):
     """世代が 2 種以上ある母集団でだけ層別キーへ世代を足す。"""
     if not GEN_SPLIT:
@@ -1110,7 +1139,8 @@ for e in events:
     # 片方だけが機械化されていなかった。`報告 0 件率（世代別）` と同じ母数の扱い
     # （欠測は上で外し、`appendix` を持つ回だけ）。**真の空振り = 報告 0 かつ推奨 0**（#168）
     # 閾値でも割る（#277）。主層と違う閾値の回は別の行にし、⚠️ の判定から外す（下の `apx_main`）
-    _g = apx_stats["by_gen"].setdefault(gen_threshold_of(p), {"n": 0, "silent": 0, "rescued": 0,
+    # effort でも割る（#284）。high 未満の回は別の行にし、⚠️ の判定から外す
+    _g = apx_stats["by_gen"].setdefault(apx_layer_of(p), {"n": 0, "silent": 0, "rescued": 0,
                                                     "rescued_judged": 0,
                                                     "rescued_uncontracted": 0,
                                                     "true_silent": 0, "true_silent_empty": 0,
@@ -2055,9 +2085,12 @@ else:
 # **判定は主層の閾値（MAJOR）の回だけで行う**（GitHub issue #277）。MINOR 閾値の回は「閾値未満のみ」の
 # 空振りが構造的に起きないので、混ぜると docs の回が増えるだけで率が下がり、#210 の回復サインを
 # 偽って満たす。累計も同じ回だけで組み直す（`apx_stats` の累計は表の内訳に使うので触らない）
+# effort が high 未満の回も同じ扱い（GitHub issue #284）。effort の構成が変わるだけで率が動き、
+# 打ち手の効果と運用の変化を分けられなくなる
 _TS_KEYS = ("n", "true_silent", "true_silent_empty", "true_silent_below",
             "true_silent_below_listed", "true_silent_below_over")
-apx_main = {"by_gen": {_k: _v for _k, _v in apx_stats["by_gen"].items() if is_main_threshold_key(_k)}}
+apx_main = {"by_gen": {_k: _v for _k, _v in apx_stats["by_gen"].items()
+                        if is_main_threshold_key(_k) and is_main_effort_key(_k)}}
 for _f in _TS_KEYS:
     apx_main[_f] = sum(_v.get(_f, 0) for _v in apx_main["by_gen"].values())
 _ts_split = {"`%s` 層" % _k: (_v.get("true_silent_empty", 0), _v.get("true_silent_below", 0),
@@ -2109,6 +2142,17 @@ def _ts_breakdown(label):
     return "（検出 0 が %d 件 / 検出はあったが全部閾値未満が %d 件）。%s" % (empty, below, why)
 
 
+def _excluded_note():
+    """判定から外した件数を、外した理由ごとに添える（#277 / #284）."""
+    parts = []
+    for name, is_main, issue in (("閾値が MAJOR でない", is_main_threshold_key, "#277"),
+                                 ("effort が high 未満の", is_main_effort_key, "#284")):
+        n = sum(_v["n"] for _k, _v in apx_stats["by_gen"].items() if not is_main(_k))
+        if n:
+            parts.append("%s %d 件は判定から外した（%s）" % (name, n, issue))
+    return "".join("。" + x for x in parts)
+
+
 def _recovery_window_hint():
     """回復の読み方を添える（#210）。累計には打ち手より前の回が残り続け、率が構造的に下がりにくい."""
     if min_pv_raw:
@@ -2124,8 +2168,7 @@ signals.extend(layered_signal(
         "真の空振り率（報告 0 件かつ付録推奨 0）が %.0f%%（%s / %d/%d）%s。#210 の回復サイン"
         "（20%% 未満）を満たしていない%s%s%s"
         % (pct(ts, n), label, ts, n, _ts_breakdown(label), note, _recovery_window_hint(),
-           "" if apx_stats["n"] == apx_main["n"] else
-           "。閾値が MAJOR でない %d 件は判定から外した（#277）" % (apx_stats["n"] - apx_main["n"])),
+           _excluded_note()),
     pending=layer_pending.setdefault("真の空振り率", [])))
 
 # **synthesis の支配率**（GitHub issue #218）。閾値の根拠は上の 4b。層別は他と同じ流儀
@@ -2813,8 +2856,12 @@ if apx_rows:
     print("**🔁 付録**（n=%d / `appendix.schema` を持つ回だけ）: 列挙 %d 件 / うち人間に推した %d 件"
           % (len(apx_rows), tot_listed, tot_rec))
     # **世代別の真の空振り**（#214）。#210 の判定基準「20% 未満」を人が引き算せずに読める形。
-    # 世代が 1 種しか無い母集団では表を割らない（`with_gen` と同じ方針）
-    if len(apx_stats["by_gen"]) > 1:
+    # 世代が 1 種しか無い母集団では表を割らない（`with_gen` と同じ方針）。ただし判定から外した行
+    # （閾値・effort）だけの母集団では出す — 表が無いと ⚠️ が黙っている理由が見えない
+    # 下の `or` の右辺でしか効かず、そこではキーが 1 個なので all と any は同値
+    _all_main = all(is_main_threshold_key(_k) and is_main_effort_key(_k)  # mutation-ok: 上の注記
+                    for _k in apx_stats["by_gen"])
+    if len(apx_stats["by_gen"]) > 1 or not _all_main:
         print()
         print("| 世代 | n | 報告 0 件 | うち推奨あり | 真の空振り | うち検出 0 | うち閾値未満のみ |")
         print("|---|---:|---:|---:|---:|---:|---:|")
@@ -2832,6 +2879,8 @@ if apx_rows:
                      "" if not _unk else "（判定不能 %d）" % _unk))
         if not all(is_main_threshold_key(_k) for _k in apx_stats["by_gen"]):
             print(THRESHOLD_SPLIT_NOTE)
+        if not all(is_main_effort_key(_k) for _k in apx_stats["by_gen"]):
+            print(EFFORT_SPLIT_NOTE)
         print()
     # **内訳を読ませる**（#210）。混ぜたままだと回復サインがどちらの改善を求めているのか
     # 決まらない。**検出 0 = recall の問題 / 閾値未満のみ = 閾値・付録の方針の問題**

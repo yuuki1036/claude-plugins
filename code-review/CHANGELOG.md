@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.148.0] - 2026-10-07
+
+### Added
+
+- **retro の 🔁 付録の世代別の表を effort でも割り、真の空振り率の ⚠️ を effort high 以上の回だけで判定する**（#284）。
+  報告閾値が MAJOR の回のうち、effort が high 未満の回は `<世代>（effort low/medium）` の別の行に出す。effort は
+  reviewer の effort と動的層（反証・skeptic・meta・Round 2）の起動を決めるので、混ぜると**どの effort で回したかの
+  構成だけで**率が動き、#210 の回復サインで打ち手の効果と運用の変化を分けられなかった（#210 の窓で high 1/11・
+  medium 5/12。medium の割合が増えただけで 17% から 26% に戻り、⚠️ が鳴っていた）。累計も同じ回で組み直し、外した件数は
+  閾値で外した件数（#277）と並べて ⚠️ に添える。effort の値が無い回は主層に置く（既定の effort は high）。
+  判定から外した行しか無い母集団でも表を出す（⚠️ が黙っている理由を見せる）。#210 の回復サインは
+  「閾値 MAJOR・effort high 以上」の行で読む（orchestration-measurement.md `## 18`）
+
 ## [2.147.2] - 2026-10-07
 
 ### Fixed

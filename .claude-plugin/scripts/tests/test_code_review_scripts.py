@@ -7650,6 +7650,82 @@ class RetroAppendixLayerTest(RetroFixture):
         self.assertNotIn("判定から外した（#277）", out)
         self.assertNotIn("（閾値 ", out)
 
+    def test_effort_mix_does_not_move_the_main_layer(self):
+        """effort が high 未満の回を世代の行に混ぜない（GitHub issue #284）.
+
+        #210 の窓（opus-5-5・閾値 MAJOR）の形: high 1/11・medium 5/12。混ぜると 6/23 = 26% で鳴り、
+        medium の割合が増えただけで回復サインを外れたように見える。high 以上だけなら 1/11 = 9% で鳴らない.
+        """
+        rows = [self._row("opus-5-5", 0, 0)] \
+             + [self._row("opus-5-5", 1, 0) for _ in range(10)] \
+             + [dict(self._row("opus-5-5", 0, 0), effort="medium") for _ in range(5)] \
+             + [dict(self._row("opus-5-5", 1, 0), effort="medium") for _ in range(7)]
+        self._events(rows)
+        out = self._out()
+        self.assertNotIn("真の空振り率", self.signals(out))
+        self.assertIn("| opus-5-5 | 11 | 1 | 0 | 1（9%） |", out)
+        self.assertIn("| opus-5-5（effort low/medium） | 12 | 5 | 0 | 5（42%） |", out)
+        self.assertIn("`（effort X）` の行は effort が high 未満の回", out)
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["appendix_by_gen"]["opus-5-5"]["true_silent"], 1)
+        self.assertEqual(j["appendix_by_gen"]["opus-5-5（effort low/medium）"]["true_silent"], 5)
+
+    def test_a_medium_layer_never_fires(self):
+        """medium は主層に入らない（帯の境界。medium を主層に含める変異を殺す）."""
+        for effort in ("medium", "low"):
+            with self.subTest(effort):
+                self._events([dict(self._row("opus-4-8", 0, 0), effort=effort) for _ in range(10)]
+                             + [self._row("opus-5", 1, 0) for _ in range(10)])
+                out = self._out()
+                self.assertNotIn("真の空振り率", self.signals(out))
+                self.assertIn("| opus-4-8（effort low/medium） | 10 |", out)
+
+    def test_xhigh_max_and_a_missing_effort_share_the_main_layer(self):
+        """high 以上と、effort の値が無い回（既定の high で走っていた）は同じ主層で判定する."""
+        rows = [dict(self._row("opus-4-8", 0, 0), effort="xhigh") for _ in range(2)] \
+             + [dict(self._row("opus-4-8", 0, 0), effort="max") for _ in range(2)] \
+             + [{k: v for k, v in self._row("opus-4-8", 0, 0).items() if k != "effort"}] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", out)
+        self.assertNotIn("（effort ", out)
+        self.assertNotIn("判定から外した", out)
+
+    def test_the_signal_names_both_exclusions(self):
+        """閾値と effort で外した件数を、理由ごとに ⚠️ へ添える（#277 / #284）."""
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(5)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)] \
+             + [dict(self._row("opus-4-8", 1, 0), effort="medium") for _ in range(3)] \
+             + [dict(self._row("opus-4-8", 1, 0), severity_threshold="MINOR") for _ in range(2)]
+        self._events(rows)
+        sig = self.signals(self._out())
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", sig)
+        self.assertIn("閾値が MAJOR でない 2 件は判定から外した（#277）", sig)
+        self.assertIn("effort が high 未満の 3 件は判定から外した（#284）", sig)
+
+    def test_a_minor_threshold_run_is_not_split_again_by_effort(self):
+        """主層でない閾値の回はもともと判定外なので、effort ではそれ以上割らない."""
+        self._events([dict(self._row("opus-4-8", 1, 0), severity_threshold="MINOR", effort="medium")
+                      for _ in range(3)] + [self._row("opus-4-8", 1, 0) for _ in range(3)])
+        out = self._out()
+        self.assertIn("| opus-4-8（閾値 MINOR） | 3 |", out)
+        self.assertNotIn("（effort ", out)
+
+    def test_a_single_main_layer_keeps_the_table_folded(self):
+        """世代が 1 種で判定から外した行も無いなら、表を割らない（`with_gen` と同じ方針）."""
+        self._events([self._row("opus-5-5", 1, 0) for _ in range(10)])
+        out = self._out()
+        self.assertIn("**🔁 付録**", out)
+        self.assertNotIn("| 世代 | n | 報告 0 件 | うち推奨あり |", out)
+
+    def test_the_table_shows_when_only_excluded_rows_exist(self):
+        """世代が 1 種でも、判定から外した行だけなら表を出す（⚠️ が黙る理由を見せる）."""
+        self._events([dict(self._row("opus-5-5", 0, 0), effort="medium") for _ in range(10)])
+        out = self._out()
+        self.assertIn("| opus-5-5（effort low/medium） | 10 |", out)
+        self.assertNotIn("真の空振り率", self.signals(out))
+
     def test_a_layer_below_the_floor_does_not_fire_alone(self):
         """下限未満の層だけでは鳴らない（n=4 で 100% でも判定しない）."""
         self._events([self._row("opus-4-8", 0, 0) for _ in range(4)])
