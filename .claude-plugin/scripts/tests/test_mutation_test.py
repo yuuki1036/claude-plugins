@@ -930,6 +930,51 @@ class BudgetMainTest(unittest.TestCase):
         self.assertNotIn("予算", out)
 
 
+class SummaryJsonTest(unittest.TestCase):
+    """`--summary-json` が未実行の件数を残す（GitHub issue #288）.
+
+    nightly は生存が無ければ success で終わるので、予算で打ち切った分はログの 1 行にしか出なかった。
+    起票の判定（mutation-nightly-report.py）はこの JSON を読む。exit 0 の回は必ず書く。
+    """
+
+    # fixture だけ借りる（継承すると BudgetMainTest のテストがこの名前でもう一度走る）
+    setUp = BudgetMainTest.setUp
+    _main = BudgetMainTest._main
+
+    def _summary(self, *extra: str) -> tuple[int, dict]:
+        path = self.root / "s.json"
+        rc, _ = self._main("--summary-json", str(path), *extra)
+        return rc, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_budget_exhaustion_is_counted(self):
+        rc, s = self._summary("--budget-sec", "0.000001")
+        self.assertEqual(rc, 0)
+        self.assertEqual((s["generated"], s["executed"], s["unexecuted_budget"], s["unexecuted_max"]),
+                         (2, 0, 2, 0))
+
+    def test_max_cut_is_counted(self):
+        rc, s = self._summary("--max", "1")
+        self.assertEqual((s["generated"], s["executed"], s["unexecuted_max"], s["unexecuted_budget"]),
+                         (2, 1, 1, 0))
+        self.assertEqual(s["survived"], 1)
+
+    def test_a_full_run_has_nothing_unexecuted(self):
+        rc, s = self._summary()
+        self.assertEqual((s["generated"], s["executed"], s["survived"], s["killed"]), (2, 2, 2, 0))
+        self.assertEqual((s["unexecuted_max"], s["unexecuted_budget"], s["aborted"]), (0, 0, False))
+
+    def test_zero_mutants_still_writes_a_summary(self):
+        """exit 0 の早期 return でも書く（書かないと report が「集計が読めない」で起票する）."""
+        (self.root / "t.py").write_text("x = 1\n", encoding="utf-8")
+        rc, s = self._summary()
+        self.assertEqual(rc, 0)
+        self.assertEqual((s["generated"], s["executed"], s["aborted"]), (0, 0, False))
+
+    def test_no_summary_without_the_option(self):
+        self._main()
+        self.assertEqual(list(self.root.glob("*.json")), [])
+
+
 class RunReportTest(unittest.TestCase):
     """実行の冒頭に出す対象モード・変更行の内訳・走ったテストの件数（GitHub issue #256）.
 

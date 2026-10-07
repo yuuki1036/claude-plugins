@@ -28,6 +28,7 @@ checkout すると作業が飛ぶ。元のバイト列をメモリに持ち `try
   mutation-test.py --max 40            # 変異の上限（既定 25。超過分は件数を報告する）
   mutation-test.py --strict            # 生存変異があれば exit 1（CI / gate 用）
   mutation-test.py --test-cmd "..."    # テストコマンドを差し替える
+  mutation-test.py --summary-json s.json  # 集計を JSON でも書く（nightly の起票判定が読む）
 
 **`--test-cmd` は shell を通さず `split()` で直接 spawn する。** `cd x && ...` や `|` を
 書くと先頭コマンドだけが実行され（`cd` は exit 0）、baseline が緑・全変異 SURVIVED という
@@ -762,6 +763,24 @@ def _install_signal_handlers() -> None:
         signal.signal(sig, _handler)
 
 
+def write_summary(path: str | None, *, generated: int, executed: int = 0, killed: int = 0,
+                  survived: int = 0, invalid: int = 0, timeout: int = 0, unexecuted_max: int = 0,
+                  unexecuted_budget: int = 0, aborted: bool = False) -> None:
+    """集計を JSON で書く（GitHub issue #288）.
+
+    **未実行を件数として残す**のが目的。予算や上限で打ち切った変異は、生存が無ければ exit 0 で終わり、
+    件数はログの 1 行にしか出ない。翌晩の範囲（直近 24h の変更行）からも外れるので、誰も気づかないまま
+    検証されずに消える。中断（外部編集）で回らなかった分は `generated - executed - 未実行` に残る。
+    """
+    if not path:
+        return
+    Path(path).write_text(json.dumps({
+        "schema": 1, "generated": generated, "executed": executed, "killed": killed,
+        "survived": survived, "invalid": invalid, "timeout": timeout,
+        "unexecuted_max": unexecuted_max, "unexecuted_budget": unexecuted_budget, "aborted": aborted,
+    }, ensure_ascii=False) + "\n", encoding="utf-8")  # mutation-ok: 値は数と真偽値だけで非 ASCII を含まない
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(add_help=True)
     ap.add_argument("--base", default="HEAD",
@@ -780,6 +799,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--budget-sec", type=float, default=0,
                     help="起動からの経過秒数の上限（既定 0 = 無制限）。次の 1 変異で超える見込みになったら"
                          "打ち切り、残りを「予算で未実行」として数える")
+    ap.add_argument("--summary-json", default=None,
+                    help="集計（生成・実行・未実行の内訳）を JSON でこのパスに書く。exit 0 で終わる回は"
+                         "必ず書く（nightly が「打ち切りで検証しなかった変異」を起票する判定に使う / #288）")
     args = ap.parse_args(argv)
     t_start = time.monotonic()
 
@@ -819,6 +841,7 @@ def main(argv: list[str] | None = None) -> int:
     if not targets:
         print(f"変異対象の変更行が無い（base={args.base}）。"
               "**テストファイルの変更のみでも同じ表示になる**（テストは変異対象外）。")
+        write_summary(args.summary_json, generated=0)
         return 0
     # **ファイル横断で丸めてから切る**。先頭から切ると変更が複数ファイルにまたがる回で
     # 1 ファイルに偏る（push 側の CI は `--max` を小さくしてあるので特に効く）
@@ -836,6 +859,7 @@ def main(argv: list[str] | None = None) -> int:
         # 変異が無ければ baseline を回す意味も無い（CI では 1 回 約 5 分）
         print("変異 0 個: 対象の行はあるが、どの変異規則にも当たらなかった。"
               "**生存 0 ではなく未計測** — この変更をテストが検証しているかは分からない")
+        write_summary(args.summary_json, generated=0)
         return 0
 
     # **最初にテストが緑であることを確認する**。赤い状態で変異させると全部 killed に見える
@@ -937,6 +961,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {_rel(m.path)}:{m.lineno}  {m.rule}")
             print(f"    - {m.original.strip()}")
             print(f"    + {m.mutated.strip()}")
+    write_summary(args.summary_json, generated=len(mutants) + dropped,
+                  executed=killed + len(survived) + invalid + len(timed_out),
+                  killed=killed, survived=len(survived), invalid=invalid, timeout=len(timed_out),
+                  unexecuted_max=dropped, unexecuted_budget=budget_left, aborted=aborted)
     # **中断した回は必ず非ゼロ**（`--strict` 無しでも「全部走った」と読ませない）
     return 1 if (aborted or (survived and args.strict)) else 0
 
