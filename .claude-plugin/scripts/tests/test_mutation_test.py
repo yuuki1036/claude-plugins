@@ -355,13 +355,12 @@ class ApplyAndTestTest(unittest.TestCase):
         誤診断は原因の調査先を誤らせるうえ、`SystemExit` は CPython が特別扱いするので
         真の例外が表示されずに消える。書けていないなら整合ガードを通さず素通しする。
         """
-        sub = self.root / "ro"
-        sub.mkdir()
-        target = sub / "t.py"
+        target = self.root / "t.py"
         target.write_text("if a >= b:\n    pass\n", encoding="utf-8")
         before = target.read_bytes()
-        os.chmod(sub, stat.S_IRUSR | stat.S_IXUSR)          # ディレクトリを書込不可に
-        self.addCleanup(lambda: os.chmod(sub, stat.S_IRWXU))
+        # 一時ファイルの位置を、存在しない dir を指す symlink で塞ぐ。dir を書込不可にする手は
+        # root（クラウドのコンテナ）では権限を素通りして書けてしまうので使わない
+        (self.root / "t.py.mutant.tmp").symlink_to(self.root / "missing" / "x")
         m = mt.Mutant(target, 1, "if a >= b:", "if a > b:", "テスト用")
         with self.assertRaises(OSError) as cm:
             mt.apply_and_test(m, ["true"], 30)
