@@ -20,7 +20,7 @@ BLOCKER または CRITICAL 指摘が出た場合のみ起動される、「こ�
 
 ### 入力
 
-- **diff ファイルのパス（`$DIFF_FILE`）**（本文はプロンプトに含まれない。`scripts/diff-slice.sh` で切り出す）
+- **diff ファイルのパス（`$DIFF_FILE`）**（本文はプロンプトに含まれない。`{{PLUGIN_ROOT}}/scripts/diff-slice.sh` で切り出す）
 - 全 reviewer の指摘リスト（severity / confidence / 内容）
 - 起動された reviewer の focus 一覧
 - explorer 結果（あれば）

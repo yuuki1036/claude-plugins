@@ -41,7 +41,16 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     ここで error にする — 「宣言はあるが一度も検証されない」状態を作らないため.
   - event-bus 同期: 実 publish される event（grep 実測=正本）と、それを記載する doc が一致するか
     （CLAUDE.md 表 / INDEX.md 表の event 集合 + INDEX.md publishes 行の plugin×event ペア）
-  - references 参照整合性: SKILL.md / commands/*.md / agents/*.md 内 ${CLAUDE_PLUGIN_ROOT}/... が実在するか
+  - references 参照整合性: SKILL.md / commands/*.md / agents/*.md / references/**/*.md 内の
+    ${CLAUDE_PLUGIN_ROOT}/... が実在するか. `<focus>` 等のテンプレート表記を含むパスは,
+    表記より手前のディレクトリの実在を見る
+  - prompt-path: sub agent に Read させるプロンプトのパスを短い形（`prompts/...` と,
+    `focus/<name>.md` のように `prompts/` のサブディレクトリから始まる形）で書いていないか.
+    行内コードかどうかは問わない. オーケストレーターが短い形に `${CLAUDE_PLUGIN_ROOT}/` だけを
+    足して `references/` を落とし, agent が最初の Read に失敗してプロンプト探しに 2〜4 往復を
+    使っていた（reviewer 665 体中 39 体 / issue #282）. 対象は `references/prompts/` を持つ
+    プラグインの SKILL.md / commands / agents / references（プロンプト本体の `references/prompts/`
+    と実行時に読まない `references/design-notes/` は除く）
   - doc-anchor: `<file>.md ## <番号>` の相互参照が実在の見出しを指すか. 分冊すると節番号を
     保ったまま本文だけが別ファイルへ移るので, ファイル名の張り替え漏れは
     「ファイルは実在する」ぶん references 検査を素通りする（v2.47.0 の分割で 11 箇所発生）.
@@ -167,7 +176,8 @@ BACKEND_DETECT_END = "<!-- BACKEND-DETECT:END -->"
 # コメント推敲（B 系統）の連結可否. self-review にだけ連結し review には連結しない, という設計が
 # 散文 1 行ずつでしか表現されておらず, SKILL.md 自身が「追加漏れは機能の silent な不発」と書いている.
 # 文面に依存しないマーカーで宣言させ, 消失（不発）と混入（他人の PR への越権）の両方を error にする.
-COMMENT_POLISH_PROMPT = "prompts/focus/comment-polish.md"
+# 短い形（`prompts/...`）では agent の Read が失敗するので, フルパスで渡していることを見る（issue #282）
+COMMENT_POLISH_PROMPT = "${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md"
 COMMENT_POLISH_WIRING = {
     ROOT / "code-review" / "skills" / "self-review" / "SKILL.md": "attach",
     ROOT / "code-review" / "skills" / "review" / "SKILL.md": "detach",
@@ -202,7 +212,8 @@ INLINE_CODE_RE = re.compile(r"`[^`]*`")
 SSOT_PIN_LEN = 8
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
-REF_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}(/[^\s)`'\"]+)")
+# `{{PLUGIN_ROOT}}` は agent が読むプロンプト側の書き方（読み替え先はオーケストレーターが渡す）
+REF_RE = re.compile(r"(\$\{CLAUDE_PLUGIN_ROOT\}|\{\{PLUGIN_ROOT\}\})(/[^\s)`'\"]+)")
 
 # Event Bus: 実際に publish される event 名 ⇔ event を記載する doc の同期検証.
 # publisher は skill(SKILL.md) / command(commands/*.md) / hook スクリプト(hooks/scripts/*.sh)
@@ -718,6 +729,24 @@ def check_backend_detect_sync(errors: list[str]) -> None:
             )
 
 
+def _marker_item(text: str) -> str:
+    """COMMENT-POLISH マーカーを含む箇条（マーカーの行から, 字下げされた後続行まで）.
+
+    ファイル全体で探すと, 別の行（説明文など）にフルパスがあるだけで attach 行のパスが
+    短い形に戻っても通る（issue #282）. 継続行まで含めるのは, 長い箇条を折り返したときに
+    パスが次の行へ移っても誤って止めないため.
+    """
+    m = COMMENT_POLISH_MARKER_RE.search(text)
+    if not m:
+        return ""
+    lines = text.splitlines()
+    first = text.count("\n", 0, m.start())
+    last = text.count("\n", 0, m.end())
+    while last + 1 < len(lines) and lines[last + 1][:1] in (" ", "\t"):
+        last += 1
+    return "\n".join(lines[first:last + 1])
+
+
 def check_comment_polish_wiring(errors: list[str]) -> None:
     """B 系統の連結可否が self-review=attach / review=detach で宣言されているか."""
     tag = "comment-polish-wiring"
@@ -739,10 +768,11 @@ def check_comment_polish_wiring(errors: list[str]) -> None:
                 f"{path.relative_to(ROOT)}"
             )
             continue
-        if expected == "attach" and COMMENT_POLISH_PROMPT not in text:
+        if expected == "attach" and COMMENT_POLISH_PROMPT not in _marker_item(text):
             errors.append(
-                f"[{tag}] attach を宣言しているのにプロンプトのパスを Read 対象に渡していない"
-                f"（B 系統が silent に不発する）: {path.relative_to(ROOT)}"
+                f"[{tag}] attach を宣言しているのに, マーカーの箇条でプロンプトをフルパス "
+                f"`{COMMENT_POLISH_PROMPT}` で Read 対象に渡していない（無ければ B 系統が silent に"
+                f"不発し, 短い形では agent の Read が失敗する）: {path.relative_to(ROOT)}"
             )
 
 
@@ -1176,7 +1206,8 @@ def check_event_bus_sync(errors: list[str]) -> None:
         )
 
 
-# `<focus>` / `{{PLUGIN_ROOT}}` / `*` を含むパスはテンプレート表記なので実在検査から外す
+# `<focus>` / `{{X}}` / `*` をテンプレート表記とみなす. 表記より後ろは実在を問えないので,
+# check_references は表記の手前のディレクトリだけを見る
 PLACEHOLDER_RE = re.compile(r"[<>*]|\{\{")
 
 
@@ -1220,10 +1251,25 @@ def check_doc_anchors(plugin_dir: Path, errors: list[str]) -> None:
                 )
 
 
-def check_references(plugin_dir: Path, errors: list[str]) -> None:
-    """${CLAUDE_PLUGIN_ROOT}/... の参照切れを検査する.
+def _strip_ref_decoration(ref: str) -> str:
+    """REF_RE が拾ったパスから, パスの後ろに続く文字と Markdown の装飾を落とす.
 
-    対象: skills/*/SKILL.md, commands/*.md, agents/*.md.
+    落とさないと装飾をテンプレート表記（`*` `<` `>`）と取り違え, 実在しないファイルでも手前の
+    ディレクトリだけを見て通してしまう. 太字の `**` は落とすが, グロブの末尾 `*`（`run-*`）は残す.
+    """
+    ref = re.match(r"[!-~]*", ref).group(0)  # 日本語・全角記号から後ろはパスではない
+    ref = re.split(r"<br\s*/?>", ref)[0].rstrip(".,;:)")  # `<br>` は表のセル内の改行
+    if ref.endswith("**"):
+        ref = ref[:-2]
+    if ref.endswith(">") and "<" not in ref:  # autolink `<...>` の閉じ. `<focus>` の閉じは残す
+        ref = ref[:-1]
+    return ref.rstrip(".,;:)")
+
+
+def check_references(plugin_dir: Path, errors: list[str]) -> None:
+    """`${CLAUDE_PLUGIN_ROOT}/...` / `{{PLUGIN_ROOT}}/...` の参照切れを検査する.
+
+    対象: skills/*/SKILL.md, commands/*.md, agents/*.md, references/**/*.md.
     どのファイル種別でも同一規則（参照パスがプラグイン配下に実在するか）を適用する.
     """
     name = plugin_dir.name
@@ -1238,17 +1284,83 @@ def check_references(plugin_dir: Path, errors: list[str]) -> None:
         text = read_text(md)
         seen: set[str] = set()
         for m in REF_RE.finditer(text):
-            ref = m.group(1).rstrip(".,);")
-            if PLACEHOLDER_RE.search(ref):
-                continue  # `<focus>` 等のテンプレート表記は実在検査の対象外
-            if ref in seen:
+            root, ref = m.group(1), _strip_ref_decoration(m.group(2))
+            if root + ref in seen:
                 continue
-            seen.add(ref)
-            target = plugin_dir / ref.lstrip("/")
-            if not target.exists():
+            seen.add(root + ref)
+            # テンプレート表記（`<focus>` 等）はファイルの実在を問えないので, 表記より手前の
+            # ディレクトリだけを見る. 途中の `references/` が落ちた
+            # `${CLAUDE_PLUGIN_ROOT}/prompts/focus/<focus>.md` はここでしか捕まらない（issue #282）
+            ph = PLACEHOLDER_RE.search(ref)
+            checked = ref[: ph.start()].rsplit("/", 1)[0] if ph else ref
+            target = plugin_dir / checked.lstrip("/")
+            if not (target.is_dir() if ph else target.exists()):
+                where = f"（テンプレート表記の手前 {checked}/ が無い）" if ph else ""
                 errors.append(
-                    f"[refs:{name}] missing reference ${{CLAUDE_PLUGIN_ROOT}}{ref} "
+                    f"[refs:{name}] missing reference {root}{ref}{where} "
                     f"(in {md.relative_to(ROOT)})"
+                )
+
+
+# 短い形の 1 文字. ASCII の印字可能文字のうち, 散文や Markdown でパスを区切るものを除く.
+# 日本語・全角記号もパスの外とみなす（`prompts/a.mdの` の「の」をパスに含めない）
+_PROMPT_PATH_CHAR = r"(?![`'\"()|*,;:\[\]<>])[!-~]"
+
+
+def _short_prompt_path_re(prompts_dir: Path) -> re.Pattern[str]:
+    """`prompts/...` と, `prompts/` のサブディレクトリ（`focus/` 等）から始まる `*.md` の短い形.
+
+    - 先頭の `./` `../` は短い形に含める（どちらも agent の cwd から解決されて外れる）
+    - 直前が英数・`_`・`-`・`.`（`reviewer-prompts/` のような名前の一部）と `/`（`references/prompts/`
+      のような長いパスの途中）のものは除く. 日本語の直後は拾う（`\\w` は日本語にも当たるので ASCII で書く）
+    - `<focus キー>` のようなテンプレート表記は中に空白があっても 1 つのパスとして読む
+    - `prompts/` はディレクトリへの言及（`prompts/` 配下）も止める. 散文の語と紛れず, そこから
+      `${CLAUDE_PLUGIN_ROOT}/prompts/` を組み立てうるため. サブディレクトリ側は `explorer/reviewer`
+      のような散文の並記と紛れるので `*.md` で終わるものだけを拾う
+    """
+    subdirs = sorted(p.name for p in prompts_dir.iterdir() if p.is_dir())
+    body = rf"(?:<[^<>\n]*>|{_PROMPT_PATH_CHAR})*"
+    alts = [f"prompts/{body}"]
+    if subdirs:
+        alts.append(f"(?:{'|'.join(map(re.escape, subdirs))})/{body}\\.md")
+    return re.compile(rf"(?<![A-Za-z0-9_./-])(?:\.{{1,2}}/)*(?:{'|'.join(alts)})")
+
+
+def check_prompt_path_form(plugin_dir: Path, errors: list[str]) -> None:
+    """プロンプトのパスを短い形（`prompts/...` / `focus/<name>.md` 等）で書いていないか.
+
+    短い形を見たオーケストレーターは `${CLAUDE_PLUGIN_ROOT}/` だけを足して `references/` を落とし,
+    agent は最初の Read に失敗してプロンプト探しに 2〜4 往復を使う（reviewer 665 体中 39 体 /
+    issue #282）. 正しい形がフルパスの正本（reviewer-prompts.md）にしか無く,
+    オーケストレーターはその正本を読まない規約だった. 正しい形の実在は check_references が見る.
+
+    `references/prompts/` を持たないプラグインでは `prompts/` が何を指すか決まらないので見ない.
+    除外: `references/prompts/`（プロンプト本体. パスを組み立てて渡す側ではない）と
+    `references/design-notes/`（実行時に読まない）.
+    """
+    prompts_dir = plugin_dir / "references" / "prompts"
+    if not prompts_dir.is_dir():
+        return
+    name = plugin_dir.name
+    short_re = _short_prompt_path_re(prompts_dir)
+    excluded = (prompts_dir, plugin_dir / "references" / "design-notes")
+    targets: list[Path] = []
+    targets += sorted((plugin_dir / "skills").glob("*/SKILL.md"))
+    targets += sorted((plugin_dir / "commands").glob("*.md"))
+    targets += sorted((plugin_dir / "agents").glob("*.md"))
+    targets += [p for p in sorted((plugin_dir / "references").rglob("*.md"))
+                if not any(d in p.parents for d in excluded)]
+    for md in targets:
+        for lineno, line in enumerate(read_text(md).splitlines(), 1):
+            for m in short_re.finditer(line):
+                short = m.group(0)
+                rel = re.sub(r"^(?:\.{1,2}/)+", "", short)
+                if not rel.startswith("prompts/"):
+                    rel = f"prompts/{rel}"
+                errors.append(
+                    f"[prompt-path:{name}] {md.relative_to(ROOT)}:{lineno}: `{short}` は "
+                    f"`${{CLAUDE_PLUGIN_ROOT}}/references/{rel}` と書く"
+                    f"（短い形からは agent が references/ の落ちたパスを Read する / issue #282）"
                 )
 
 
@@ -1727,6 +1839,7 @@ CHECKS = [
     check_hook_script_refs,
     check_safe_hook_sync,
     check_references,
+    check_prompt_path_form,
     check_doc_anchors,
     check_trigger_phrases,
     check_same_name_command_reads_skill,

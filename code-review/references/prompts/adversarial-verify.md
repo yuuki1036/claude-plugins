@@ -14,8 +14,8 @@ reviewer が出した指摘を、それを形成していない独立エージ�
 ### 入力
 - 対象指摘（1〜5 件・各件に finding_id 付き）: severity / confidence / file:line / 指摘内容（修正案は任意）
 - **diff ファイルのパス（`$DIFF_FILE`）と担当ファイル名** / PR 番号
-  - diff 本文はプロンプトに含まれない。`scripts/diff-slice.sh "$DIFF_FILE" <path>...`（`--list` で一覧）で切り出して読む
-  - worktree 起動時は `reviewer-common.md` の「開始時の必須セットアップ」を先に実行する
+  - diff 本文はプロンプトに含まれない。`{{PLUGIN_ROOT}}/scripts/diff-slice.sh "$DIFF_FILE" <path>...`（`--list` で一覧）で切り出して読む
+  - worktree 起動時は `{{PLUGIN_ROOT}}/references/prompts/reviewer-common.md` の「開始時の必須セットアップ」を先に実行する
 - base ref（pre-existing 判定用）
 
 ### 検証手順（両方向に証拠を要求する / 指摘 1 件ごとに繰り返す）

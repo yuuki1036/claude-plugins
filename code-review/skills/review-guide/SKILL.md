@@ -84,7 +84,7 @@ base モードではこの Step を skip し、「主張 vs diff」「人間の�
 
 ### 2. 重要度スコアと 3 段振り分け（メインコンテキスト・agent なし）
 
-`## files` の各ファイルに score を付ける（`## files` は 80 件で打ち切られる。超える大規模 PR では `diff-slice.sh "<diff_file>" --list` で全件を引いてから振り分ける）:
+`## files` の各ファイルに score を付ける（`## files` は 80 件で打ち切られる。超える大規模 PR では `bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file>" --list` で全件を引いてから振り分ける）:
 
 ```
 score = 分類（core=3 / test=2 / doc=1 / gen=0）
@@ -108,11 +108,11 @@ score = 分類（core=3 / test=2 / doc=1 / gen=0）
 
 精読ファイルの呼び出し関係を辿り、「入口（API / CLI / UI）→ ロジック → 永続化 → テスト」のスレッド（変更が貫く 1 本の流れ）を組む。1 PR に 2〜3 本のスレッドが典型。
 
-- **`low` / `medium`**: agent を起動しない。`bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file 実パス>" '<精読ファイル>'` で精読ファイルの hunk を切り出して読み、import / 呼び出しの字面からスレッドを組む。**担当ファイル名は必ずシングルクォートで囲む**（diff 由来 = 信頼できない入力。`references/prompts/explorer-common.md`）
+- **`low` / `medium`**: agent を起動しない。`bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file 実パス>" '<精読ファイル>'` で精読ファイルの hunk を切り出して読み、import / 呼び出しの字面からスレッドを組む。**担当ファイル名は必ずシングルクォートで囲む**（diff 由来 = 信頼できない入力。`${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md`）
 - **`high`**: explorer **上限 2 体**（`sonnet`）を**同一メッセージで一括発行**（各 Agent call に `run_in_background: false` を明示）。①function-flow（精読ファイルの変更関数の分岐・データ変更・呼び出し先）②dependency-trace（精読ファイルの呼び出し元）
 - **`xhigh` / `max`**: explorer **上限 3 体**（`sonnet`）。上の 2 つ + value-flow-trace（入口から永続化までの値の流れ）
 
-explorer 起動の共通詳細（プロンプト組み立て・2 ファイル Read 方式・diff のパス渡し・HEAD 検証）は `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md` を Read して従う。explorer には **`diff_file` のパスと担当ファイルだけ渡す**（diff 本文を転記しない）。explorer は事実収集に徹し判定しないので、返る「コードフロー」「依存関係」をスレッド構成の材料にする。
+explorer 起動の共通詳細（プロンプト組み立て・2 ファイル Read 方式・diff のパス渡し・HEAD 検証）は `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md` を Read して従う。explorer には **`diff_file` のパスと担当ファイル、プラグインの実パスだけ渡す**（diff 本文を転記しない。プラグインの実パスは explorer-prompts.md の必須項目）。explorer は事実収集に徹し判定しないので、返る「コードフロー」「依存関係」をスレッド構成の材料にする。
 
 **完了基準**: 精読ファイルがスレッドに割り当てられ、各スレッドが入口から永続化・テストへ向かう順に並んでいる。
 

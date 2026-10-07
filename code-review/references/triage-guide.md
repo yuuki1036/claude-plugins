@@ -17,7 +17,7 @@ Phase 0 実行前に以下の情報を収集する:
 | 情報 | 取得方法 | 必須 |
 |---|---|---|
 | **シグナルダイジェスト** | `scripts/triage-signals.sh --pr <N>` / `--base <ref>`。規模・ファイル分類・hunk ヘッダ・観点判定シグナル・red-flag・surface・explorer シグナル・AGENTS.md・Issue ID を 1 回の Bash で取得 | Yes |
-| diff 全文 | **メインコンテキストでは読まない**。ダイジェストの `## meta` の `diff_file=` に保存済みで、agent へはパスで渡す。Phase 0 で個別に必要になったときだけ `scripts/diff-slice.sh "$DIFF_FILE" <path>` で該当ファイルぶんを読む | No（原則読まない） |
+| diff 全文 | **メインコンテキストでは読まない**。ダイジェストの `## meta` の `diff_file=` に保存済みで、agent へはパスで渡す。Phase 0 で個別に必要になったときだけ `${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh "$DIFF_FILE" <path>` で該当ファイルぶんを読む | No（原則読まない） |
 | PR コンテキスト（review skill のみ） | SKILL.md Step 1 が `$PR_CTX_FILE` に保存した原本（説明・issue コメント・レビューサマリ・行単位 review comment）。Phase 0 はメインコンテキストが Read した内容を使う | review skill で PR ありの場合 |
 | CLAUDE.md | プロジェクトルートから読み込み | 存在する場合 |
 | session-context.md | 存在チェック + ブランチ一致チェック | 存在する場合 |
@@ -116,7 +116,7 @@ diff パターンマッチで各観点の必要性を判定する。
 | bug-detection | **常時必須** |
 | claude-md-compliance | **常時必須** |
 | error-handling | try-catch/catch ブロック/エラー処理の変更がある |
-| comment-accuracy | diff にコメント（`//`, `/*`, `#`, `<!--` 等）の追加・変更がある、**または** `## focus-signals` に `behavior-change` が出ている（既存の判定・戻り値を変えた = diff 外のコメント・文言が古くなりうる / GitHub issue #269。担当は `prompts/focus/comment-accuracy.md` の「挙動変更の波及」）。**self-review ではコメント推敲（B 系統）も同じ 1 体に相乗りさせる**（体数を増やさない。`prompts/focus/comment-polish.md`） |
+| comment-accuracy | diff にコメント（`//`, `/*`, `#`, `<!--` 等）の追加・変更がある、**または** `## focus-signals` に `behavior-change` が出ている（既存の判定・戻り値を変えた = diff 外のコメント・文言が古くなりうる / GitHub issue #269。担当は `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-accuracy.md` の「挙動変更の波及」）。**self-review ではコメント推敲（B 系統）も同じ 1 体に相乗りさせる**（体数を増やさない。`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md`） |
 | test-quality | テストファイル（`.test.`, `.spec.`, `__tests__/`）の変更がある、**または**テスト以外の新しいソースファイルが足されているのにテストファイルの変更が 0（severity 目安の「テスト欠如」を見るため。設定・ドキュメント・型定義だけの新規ファイルは数えない） |
 | type-design | 型定義（`type`, `interface`, `enum`）の追加・変更がある |
 | security | セキュリティ関連ファイル（`auth/`, `security/`, `crypto/`, `middleware/auth*`）の変更、または diff 内に `password`, `secret`, `token`, `api_key`, `eval(`, `innerHTML`, `dangerouslySetInnerHTML`, `` sql` ``, `query(` がある |
@@ -139,7 +139,7 @@ doc の内容妥当性を **2 軸**（A 主張の真偽: コード整合・論�
 **起動条件（経路によらず共通）**: 次のいずれかを満たすとき起動する。満たさない doc 変更（typo 修正・整形・frontmatter のみ・link-only）には付けない。
 - **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む
 - **または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）
-- **または** 既存の doc の節の書き換え（`## focus-signals` の `doc-rewritten-lines` が 3 以上）。短い書き換えでも、変えた節が同じ文書の変えていない節と矛盾しうる（GitHub issue #269 / `prompts/focus/doc-substance.md` の「変えた節と変えていない節の照合」）。消した規範の適用範囲が狭まる・旧前提の理由の文が残る、も書き換えで起きる（GitHub issue #279）。2 行以下は typo・言い回しの修正とみなして数えない
+- **または** 既存の doc の節の書き換え（`## focus-signals` の `doc-rewritten-lines` が 3 以上）。短い書き換えでも、変えた節が同じ文書の変えていない節と矛盾しうる（GitHub issue #269 / `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/doc-substance.md` の「変えた節と変えていない節の照合」）。消した規範の適用範囲が狭まる・旧前提の理由の文が残る、も書き換えで起きる（GitHub issue #279）。2 行以下は typo・言い回しの修正とみなして数えない
 
 この条件を 2 つの起動経路の両方に適用する:
 
@@ -169,7 +169,7 @@ doc の内容妥当性を **2 軸**（A 主張の真偽: コード整合・論�
 
 ### 外部ライブラリ最新仕様の参照
 
-diff に外部ライブラリ（React, Next.js, Prisma, Vue, FastAPI 等）の API 利用変更が含まれ、その API の廃止・推奨パターン変更が指摘の核心となる場合、reviewer に公式 skill `context7` を経由した最新仕様確認を許可する（モデル学習データの cutoff を越える破壊的変更の誤判定を避けるため）。詳細は `prompts/reviewer-common.md` を参照。
+diff に外部ライブラリ（React, Next.js, Prisma, Vue, FastAPI 等）の API 利用変更が含まれ、その API の廃止・推奨パターン変更が指摘の核心となる場合、reviewer に公式 skill `context7` を経由した最新仕様確認を許可する（モデル学習データの cutoff を越える破壊的変更の誤判定を避けるため）。詳細は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` を参照。
 
 ### Red-flag pattern による specialist 自動起動（v2.12.0 追加）
 
@@ -185,9 +185,9 @@ diff に以下の **危険パターン** が検出された場合、対応する
 
 **判定の原則**:
 - 文字列マッチは false positive を伴うが、specialist の役割は「人間判断を促す」ことなので積極的に起動して問題ない。**トリガー感度（検出正規表現）は effort に関わらず変更しない**（recall 直撃のため）
-- specialist は対応する Focus テンプレート（`prompts/specialist/<key>.md`）を使用
+- specialist には `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` と、対応する Focus テンプレート `${CLAUDE_PLUGIN_ROOT}/references/prompts/specialist/<key>.md` を Read させる（reviewer の Focus テンプレートの位置に specialist のテンプレートが入る。渡し方は orchestration-guide.md `## 3.5`）
 - specialist の指摘は **大半が BLOCKER または CRITICAL** になるため、低 confidence でも報告マトリクスで人間に届く
-- specialist は reviewer 枠とは別カウント（specialist 起動で reviewer 枠を圧迫しない）。**体数は `## 7` の effort 適応表と `## 6.2` の規模キャップの min**（規模側は small 1 体 / medium 2 体）: high 以下では複数 red-flag ヒット時に 1〜2 体へ束ねて該当テンプレートを連結注入する（specialist-guardrail-bypass のみ単独 1 体を維持）。xhigh / max は個別起動・上限 6 体。束ね時の出力規約は `prompts/bundle-rules.md`を参照
+- specialist は reviewer 枠とは別カウント（specialist 起動で reviewer 枠を圧迫しない）。**体数は `## 7` の effort 適応表と `## 6.2` の規模キャップの min**（規模側は small 1 体 / medium 2 体）: high 以下では複数 red-flag ヒット時に 1〜2 体へ束ねて該当テンプレートを連結注入する（specialist-guardrail-bypass のみ単独 1 体を維持）。xhigh / max は個別起動・上限 6 体。束ね時の出力規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/bundle-rules.md`を参照
 
 ### PR コンテキストによる観点追加・冗長化（review skill のみ）
 
@@ -224,7 +224,7 @@ SKILL.md Step 1 が保存した PR コンテキスト（`$PR_CTX_FILE`）の内�
 - 複数モジュール間のデータフローに影響
 - explorer が「複雑」と報告した領域
 
-**冗長ペア（x2）の実起動は xhigh / max 専用**（`## 7`）。high 以下では上記条件を満たしても 1 体で起動し、Angle A / B を両方その 1 体のプロンプトに内挿する（`prompts/angles.md`）。条件判定自体は全 effort で行う（angle 内挿の要否を決めるため）。
+**冗長ペア（x2）の実起動は xhigh / max 専用**（`## 7`）。high 以下では上記条件を満たしても 1 体で起動し、Angle A / B を両方その 1 体のプロンプトに内挿する（`${CLAUDE_PLUGIN_ROOT}/references/prompts/angles.md`）。条件判定自体は全 effort で行う（angle 内挿の要否を決めるため）。
 
 ### 冗長ペアの angle（分析の切り口）
 
@@ -401,12 +401,12 @@ diff シグナルが読めず観点を決められない場合の既定構成（
 
 - **self-review の Markdown 推敲 agent はこの表の枠の外**（reviewer にも specialist にも数えない。条件を満たせば effort を問わず 1 体。起動条件の正本は `md-polish-guide.md` の 1 節）。観点バンドルにも入らない
 
-- **冗長ペアは xhigh / max 専用**。high 以下ではペア条件（`## 4` の冗長度判定）成立時も 1 体とし、Angle A / B を両方その 1 体のプロンプトに内挿する（`prompts/angles.md`）
+- **冗長ペアは xhigh / max 専用**。high 以下ではペア条件（`## 4` の冗長度判定）成立時も 1 体とし、Angle A / B を両方その 1 体のプロンプトに内挿する（`${CLAUDE_PLUGIN_ROOT}/references/prompts/angles.md`）
   - **補償の実態を正確に**: 反証レイヤーの `confirmed` は「複数エージェント検出 +15」と同じ発火源だが（scoring-guide.md）、反証対象は**報告マトリクス通過見込みの指摘に限られる**（triage-dynamic-gates.md `## 9`）。つまり **閾値直下の指摘（通常 surface の CRITICAL 70 台・MAJOR 80-94）をペアの +15 が報告側へ押し上げていた効果は補償されない**。この帯の recall 低下は縮小のコストとして許容し、severity 別件数（下記ロールバック条件）で監視する
   - **angle 内挿時の scoring**: 1 体内で両 angle が同一問題に到達しても「ペア合意 +10」は付けず、「片方のみ検出 -5」も適用しない（独立性が担保されないため。scoring-guide.md の両項は冗長ペア実起動時＝xhigh/max のみ発火する）
-- **観点バンドル（high 以下）**: 起動条件を満たした観点数が reviewer 上限を超える場合、近接観点を 1 体に束ねて**可能な限り**吸収する（例: error-handling + comment-accuracy + type-design / config + dependency）。1 体あたり 3 観点まで。**bug-detection / security / spec-compliance / claude-md-compliance / layer-responsibility は束ねず単独を維持**する（指摘密度が高く attention 希釈の代償が大きい観点。layer-responsibility は探索量が結果を決める観点で、claude-md-compliance に同居させた版は 6 回とも層の指摘を本文に出せず、専任の reviewer だけが拾えた / GitHub issue #261）。束ね時の出力規約（focus キーは原観点・観点ごとに独立列挙・自己フィルタ禁止）は `prompts/bundle-rules.md`を参照
+- **観点バンドル（high 以下）**: 起動条件を満たした観点数が reviewer 上限を超える場合、近接観点を 1 体に束ねて**可能な限り**吸収する（例: error-handling + comment-accuracy + type-design / config + dependency）。1 体あたり 3 観点まで。**bug-detection / security / spec-compliance / claude-md-compliance / layer-responsibility は束ねず単独を維持**する（指摘密度が高く attention 希釈の代償が大きい観点。layer-responsibility は探索量が結果を決める観点で、claude-md-compliance に同居させた版は 6 回とも層の指摘を本文に出せず、専任の reviewer だけが拾えた / GitHub issue #261）。束ね時の出力規約（focus キーは原観点・観点ごとに独立列挙・自己フィルタ禁止）は `${CLAUDE_PLUGIN_ROOT}/references/prompts/bundle-rules.md`を参照
   - **`comment-accuracy` が束ねられた場合も、self-review のコメント推敲（B 系統）の `## コメント推敲提案` ブロックは省略しない**（v2.45.0）。束ねは attention の配分の話であって出力契約の削減ではない。該当なしなら「該当なし」と明記する（Step 6 の見出しが silent に消えると、推敲ゼロが「提案が無かった」のか「観点が薄まって見なかった」のか区別できなくなる）。**バンドル相乗りでも `comment_polish.fired` は `true`** — 専任 reviewer の有無で切ると high 既定で常に false になる（orchestration-measurement.md `## 16`）
   - **容量と超過時の扱い**: 吸収容量は、起動した単独維持の観点数を S として「S +（reviewer 上限 − S）× 3」（high で単独 4 観点なら 10 観点、layer-responsibility も起動して 5 観点なら 8 観点）。観点判定表は 18 観点あるため、フルスタックな大型 PR では超過しうる。**超過分は `missing_coverage` に「観点未起動: <focus>（reviewer 上限超過）」として必ず記録**し、レポートの欠損観点セクションに明示する（脱落を silent にしない）。超過が常態化する PR は xhigh への明示 escalation を促す
 - **specialist の束ね起動（high 以下）**: 複数 red-flag 同時ヒット時、specialist-guardrail-bypass のみ単独 1 体を維持し、残りを 1〜2 体に束ねて該当テンプレートを連結注入する（`## 3` Red-flag 節）。トリガー感度は変更しない
 - **縮小のロールバック条件（v2.39.0 の high 既定縮小）**: 効果は `review:completed` の `agents` / `duration_fleet_min` / blocker+critical 件数で監視する。**判定に使えるのは `agents` フィールドを持つサンプルのみ**（フィールドの有無が版マーカー。日付では切らない）。悪化の検証は旧データ比ではなく **xhigh/max の明示実行を対照群にした縮小後サンプル内の比較**で行い、`size_tier` を揃える。サンプルが無いうちは判断しない。→ 監視の jq・観測ログ・`review` 由来サンプルが v2.40.0 より前に存在しない理由: `design-notes/triage-rationale.md`
-- **体数を壁時計のレバーとして扱わない**。並列発行が効いている限り fleet 区間の実時間は「wave 内最長の 1 体」で決まるため体数削減の効果は線形ではない。**支配的なのは effort（= 直列 wave 数）**（review 13 件。`size_tier` を medium に揃えると high 平均 32 分 / xhigh 平均 61 分と **1.9 倍**なのに、体数レンジは 6〜10 と 6〜11 でほぼ重なる。`73 分 / 6 体` と `19 分 / 7 体` が併存する。GitHub issue #116 / 内訳: `design-notes/triage-rationale.md`）。**この節はかつて「体数と `duration_fleet_min` は無相関」を根拠にしていたが、その事実主張は取り下げた**（v2.116.0 / GitHub issue #217）— サンプルが増えると `small` / `large` で相関が出る（実測 n=213: medium/unrecorded 0.16 / large/unrecorded 0.67 / small/opus-4-8 0.69）。**規範は残る。根拠が変わった**: ①相関は因果ではない（tier・世代・effort・wave 数の統制・synthesis の減算のどれでも消えず、体数と一緒に動く未観測の変数 — diff の難しさ・1 体あたりの探索量 — が両方を押していると読む）②**体数削減は recall を削る**（`## 5.2` の実測: 踏み下げで報告 0 件率 42% → 91%）。**「相関があるから体数を減らせば速くなる」と読まないこと** — 因果の向きが確かめられていないうえ、削るのは recall の側になる。体数削減が確実に効くのは**トークンコスト**。壁時計を縮めたいときにまず触るのは ①1 体あたりの探索量（`prompts/reviewer-common.md` の探索予算）②直列 wave 数（`## 5.1`）③メインコンテキストの複製量（orchestration-guide.md `## 3.5`）。**この節のロールバック判断に「時間が長いから体数を減らす」を混ぜない**（recall だけ落ちて時間が変わらない改悪になる）
+- **体数を壁時計のレバーとして扱わない**。並列発行が効いている限り fleet 区間の実時間は「wave 内最長の 1 体」で決まるため体数削減の効果は線形ではない。**支配的なのは effort（= 直列 wave 数）**（review 13 件。`size_tier` を medium に揃えると high 平均 32 分 / xhigh 平均 61 分と **1.9 倍**なのに、体数レンジは 6〜10 と 6〜11 でほぼ重なる。`73 分 / 6 体` と `19 分 / 7 体` が併存する。GitHub issue #116 / 内訳: `design-notes/triage-rationale.md`）。**この節はかつて「体数と `duration_fleet_min` は無相関」を根拠にしていたが、その事実主張は取り下げた**（v2.116.0 / GitHub issue #217）— サンプルが増えると `small` / `large` で相関が出る（実測 n=213: medium/unrecorded 0.16 / large/unrecorded 0.67 / small/opus-4-8 0.69）。**規範は残る。根拠が変わった**: ①相関は因果ではない（tier・世代・effort・wave 数の統制・synthesis の減算のどれでも消えず、体数と一緒に動く未観測の変数 — diff の難しさ・1 体あたりの探索量 — が両方を押していると読む）②**体数削減は recall を削る**（`## 5.2` の実測: 踏み下げで報告 0 件率 42% → 91%）。**「相関があるから体数を減らせば速くなる」と読まないこと** — 因果の向きが確かめられていないうえ、削るのは recall の側になる。体数削減が確実に効くのは**トークンコスト**。壁時計を縮めたいときにまず触るのは ①1 体あたりの探索量（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` の探索予算）②直列 wave 数（`## 5.1`）③メインコンテキストの複製量（orchestration-guide.md `## 3.5`）。**この節のロールバック判断に「時間が長いから体数を減らす」を混ぜない**（recall だけ落ちて時間が変わらない改悪になる）

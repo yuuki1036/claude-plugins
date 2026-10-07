@@ -37,12 +37,12 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 ### severity 付与の原則
 
 - **「もし指摘が真なら何が起きるか」で判定する**（confidence と独立）
-- **付与の前に base 状態を確認する**（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）。PR が触れていない不備は除外、PR 前から同じ・PR が意図した変更は 1 段階下げてから申告する。**影響を先に見積もってから base を見ると過大評価が入る**（実測値の正本: `design-notes/scoring-rationale.md`）
+- **付与の前に base 状態を確認する**（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）。PR が触れていない不備は除外、PR 前から同じ・PR が意図した変更は 1 段階下げてから申告する。**影響を先に見積もってから base を見ると過大評価が入る**（実測値の正本: `design-notes/scoring-rationale.md`）
 - **降格される典型 4 型**（同ファイルの「降格される典型パターン」/ v2.62.0・GitHub issue #123 A）: base 由来 / 読み違え / 影響の過大見積もり / カテゴリの取り違え。**反証レイヤーの verdict の過半が `severity_inflated`** という実測を受けて、下流で降格するより上流で severity 定義を精密にする方針。オーケストレーター側の調整規則（下記「severity 調整ルール」）は変えていない — reviewer が理由欄に降格の型を書くので、**二重適用ガードは従来どおり理由欄の記載で判別する**
 - セキュリティ・データ整合性・本番事故に直結するものは原則 BLOCKER または CRITICAL
 - 「動くけど将来困る」系は MAJOR
 - 「あれば良い」程度は MINOR
-- 観点ごとの目安は `prompts/focus/<focus>.md`に記載
+- 観点ごとの目安は `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<focus>.md`に記載
 
 ---
 
@@ -134,12 +134,12 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 - 規約違反・実害の証拠を伴う指摘はクランプ対象外（通常のスコアリングを行う）
 - **doc-substance の主観抑制もこのクランプで行う（2 軸で扱いを分ける）**:
   - **A 軸（主張の真偽）**: doc の論理 / 有用性 / 内容誤り指摘で根拠（code:line または内部矛盾の doc:line ×2）を示せないものは「表現の好み」とみなしてクランプする
-  - **B 軸（文書としての成立性 — 完全性 / doc 種別適合 / 読み手前提 / WHY 根拠 / ナビ）**: **doc:line（欠落・誤配置・孤立の発生箇所）＋ 破られた期待（doc 種別の契約 / その doc が宣言する対象読者・スコープ / 手順が参照する未記載の前提）を示せていればクランプしない**。裏取りの相手がコードではなく doc 種別の期待構造であるため、code:line が無いことだけを理由に「好み」とみなさない（`prompts/focus/doc-substance.md` の grounding 規則を参照）。逆に「**語句を最小差分で言い換えれば済む**」だけの指摘（writing-polish の領分）は B 軸を騙っていてもクランプする（self-review では diff の md の散文を Markdown 推敲 agent が別枠で拾う / `md-polish-guide.md`）
+  - **B 軸（文書としての成立性 — 完全性 / doc 種別適合 / 読み手前提 / WHY 根拠 / ナビ）**: **doc:line（欠落・誤配置・孤立の発生箇所）＋ 破られた期待（doc 種別の契約 / その doc が宣言する対象読者・スコープ / 手順が参照する未記載の前提）を示せていればクランプしない**。裏取りの相手がコードではなく doc 種別の期待構造であるため、code:line が無いことだけを理由に「好み」とみなさない（`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/doc-substance.md` の grounding 規則を参照）。逆に「**語句を最小差分で言い換えれば済む**」だけの指摘（writing-polish の領分）は B 軸を騙っていてもクランプする（self-review では diff の md の散文を Markdown 推敲 agent が別枠で拾う / `md-polish-guide.md`）
   - doc-substance の MAJOR は既定 effort（high）では反証レイヤー対象外（triage-dynamic-gates.md `## 9` のゲートは BLOCKER 60-94 / CRITICAL 80-94 限定）。この場合は「最小差分 reword か否か」のクランプが B 軸ノイズの唯一の抑制機構になる。`xhigh`/`max` に escalation した場合のみ B 軸 MAJOR も反証レイヤー（Phase 5.9、xhigh/max で MAJOR まで拡大）で独立検証され、クランプ（一次抑制）＋ 反証（偽陽性摘出）の二段構えになる
 
 ### 上限クランプ: 未検証の外部状態主張（claim grounding / GitHub issue #71）
 
-指摘冒頭に **`[unverified: <対象>]` タグ**が付いている場合（reviewer が「repo / 正本 doc では検証できない外部状態—DB/本番の現状態・外部数値・運用設定・環境依存—に依拠している」と申告したもの。`prompts/reviewer-common.md`「事実主張のツール接地」）は **confidence を 75 で上限クランプ**する。
+指摘冒頭に **`[unverified: <対象>]` タグ**が付いている場合（reviewer が「repo / 正本 doc では検証できない外部状態—DB/本番の現状態・外部数値・運用設定・環境依存—に依拠している」と申告したもの。`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「事実主張のツール接地」）は **confidence を 75 で上限クランプ**する。
 
 - 効果: BLOCKER 級の「重大な疑い」だけが報告マトリクスを通過し（BLOCKER は confidence 60+ で報告）、CRITICAL 以下の未検証断定は自動除外される
 - 目的: repo から確認できない主張を「事実」として高 confidence で報告させない（未検証断定の構造的抑止）。確証が必要なら reviewer は `## unmet_information` で正本確認を求める
@@ -162,9 +162,9 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 severity は基本的に reviewer の判定を尊重するが、以下の場合のみ Step 6 で調整する:
 
 - **タグ `[scope:out]` または `[resolved: ...]` が付いた指摘**: severity を 1 段階下げる（BLOCKER → CRITICAL、CRITICAL → MAJOR、MAJOR → MINOR、MINOR → そのまま）
-- **退行指摘で invariant が incidental と検算された場合**（`prompts/reviewer-common.md`「退行指摘の invariant 検算」: 隣接経路で同 invariant が未強制と確認）: severity を 1 段階下げる。reviewer が検算済みで既に下げている場合は二重適用しない（指摘理由の「incidental と判断」記載で判別）
-- **pre-existing / intended と申告された指摘**（`prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）: **reviewer が既に 1 段階下げているので追加調整しない**。理由欄の「pre-existing（`git blame` で PR 前のコミット由来）」「intended（典拠: …）」記載で判別する。**同じ軸で反証レイヤーが `severity-inflated` を返した場合も二重適用しない**（下記 `severity-inflated` の排他条件に合流させる）
-- **オーケストレーターの base 検算で pre-existing と判定した場合**（v2.63.0 / `orchestration-guide.md ## 5`「origin 主張の base 検算」/ GitHub issue #124 (d)）: **reviewer 側の申告が無ければここで 1 段階下げる**（PR がその行を触っていなければ降格ではなく**除外**）。理由欄に `base 検算: <結果>（git show ...）` と残す。**理由欄に既に `pre-existing` / `intended` の申告がある指摘には適用しない**（二重適用の防止。判別は上記の記載で行う）。**この項が要るのは冷や読み skeptic が `prompts/reviewer-common.md` の base 確認規約を継承しないため** — 直前の項（reviewer 申告あり）だけでは skeptic 由来の誤帰属が降格されない
+- **退行指摘で invariant が incidental と検算された場合**（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「退行指摘の invariant 検算」: 隣接経路で同 invariant が未強制と確認）: severity を 1 段階下げる。reviewer が検算済みで既に下げている場合は二重適用しない（指摘理由の「incidental と判断」記載で判別）
+- **pre-existing / intended と申告された指摘**（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」/ GitHub issue #114）: **reviewer が既に 1 段階下げているので追加調整しない**。理由欄の「pre-existing（`git blame` で PR 前のコミット由来）」「intended（典拠: …）」記載で判別する。**同じ軸で反証レイヤーが `severity-inflated` を返した場合も二重適用しない**（下記 `severity-inflated` の排他条件に合流させる）
+- **オーケストレーターの base 検算で pre-existing と判定した場合**（v2.63.0 / `orchestration-guide.md ## 5`「origin 主張の base 検算」/ GitHub issue #124 (d)）: **reviewer 側の申告が無ければここで 1 段階下げる**（PR がその行を触っていなければ降格ではなく**除外**）。理由欄に `base 検算: <結果>（git show ...）` と残す。**理由欄に既に `pre-existing` / `intended` の申告がある指摘には適用しない**（二重適用の防止。判別は上記の記載で行う）。**この項が要るのは冷や読み skeptic が `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` の base 確認規約を継承しないため** — 直前の項（reviewer 申告あり）だけでは skeptic 由来の誤帰属が降格されない
 - **複数 reviewer が同一指摘を BLOCKER と判定**: severity を BLOCKER のまま維持（混乱を防ぐ）
 - **doc-substance の裏取り済み内容誤りの CRITICAL 昇格（grounding ガード付き）**: doc の主張とコードが code:line で矛盾し裏取りできた指摘は CRITICAL に昇格する。**ただし昇格は、矛盾の相手が「doc が実際に参照する・実在する・現行の」コード経路である場合に限る**。次のいずれかでは昇格させず MAJOR に留める / 取り下げる:
   - (a) 矛盾の相手が doc の参照しない別経路や stale なパス（grounding 誤読。例: doc は `src/api` を指すのに未参照の `src/legacy` と突き合わせている）
@@ -209,7 +209,7 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 
 **🔁 付録の対象範囲（GitHub issue #128）。見出しに括弧を足さないこと** — 本節は SSoT pin の anchor として両 SKILL から参照されており、anchor は空白を含められず前方一致の区切りに `.` / 空白しか許さないため、括弧付きの見出しは pin で引けなくなる。
 
-**reviewer が列挙した指摘が報告マトリクスを通過しなかったら、経路に関わらず 🔁 付録に記録する。** 本リポジトリが各層に置いている「**削ったら痕跡を必ず残す**」の系列（`prompts/reviewer-common.md`「打ち切ったら痕跡を必ず残す（選択式ではない）」／ skeptic の silent skip 防止・issue #85 ／ 反証の予算超過を必ず出す・triage-dynamic-gates.md `## 9`）を、スコアリング段にも適用する。
+**reviewer が列挙した指摘が報告マトリクスを通過しなかったら、経路に関わらず 🔁 付録に記録する。** 本リポジトリが各層に置いている「**削ったら痕跡を必ず残す**」の系列（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「打ち切ったら痕跡を必ず残す（選択式ではない）」／ skeptic の silent skip 防止・issue #85 ／ 反証の予算超過を必ず出す・triage-dynamic-gates.md `## 9`）を、スコアリング段にも適用する。
 
 脱落の経路は 3 系統あり、**従来は ① しか記録されていなかった**。**番号は本ファイルの「適用順序」に揃える**:
 
@@ -222,7 +222,7 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 - **② は反証が効かない回にしか起きないわけではないが、効かない回では脱落の全量になる**。反証レイヤーの対象は **既定の high では非対称ゾーン（BLOCKER 60-94 / CRITICAL 80-94）限定で、xhigh / max では 95+ と MAJOR まで拡大する**（triage-dynamic-gates.md `## 9`）。したがって **既定 high で MAJOR しか出ない回では ① が一度も発火せず、記録経路が丸ごと存在しなかった**
 - **severity は問わない**。①は「高 severity を反証で消さない」不変条件があるので 🔁 に出ないが（本文に係争注記で残す）、②にその保護は無く、`[unverified]` の 75 クランプで CRITICAL が、好みクランプの 40 で任意の severity が落ちうる
 - **記録するのは「reviewer が列挙した指摘」だけ**。`## below-threshold` に件数だけ返った閾値未満は指摘として存在しないので対象外（`pre_adjust_counts` 側で数える。報告 0 件の回に限り件数だけ通知する → 「閾値未満の件数通知」）
-- **件数行の後や独自の節に本文が書かれていても、閾値未満の指摘は対象外**（**契約 (a)** / v2.130.9 / GitHub issue #248）。reviewer 規約（`prompts/reviewer-common.md`）で本文を書かせない側に倒し、書かれていても below に数えるだけで付録に載せない。「本文を認めて `with_body` で数える」案 (b) は採らなかった — 付録の行が契約外の本文に支えられると、真の空振り率（#210 の回復サイン）がこの混入の増減だけで動く（opus-4-8 で 33% から最大 60%）。付録と報告件数が本文を書いた数を超えた回は publish が `payload:appendix.exceeds-body` / `payload:report_counts.exceeds-body` を立てる（上限の式は `scripts/lib/body_bound.py`）
+- **件数行の後や独自の節に本文が書かれていても、閾値未満の指摘は対象外**（**契約 (a)** / v2.130.9 / GitHub issue #248）。reviewer 規約（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`）で本文を書かせない側に倒し、書かれていても below に数えるだけで付録に載せない。「本文を認めて `with_body` で数える」案 (b) は採らなかった — 付録の行が契約外の本文に支えられると、真の空振り率（#210 の回復サイン）がこの混入の増減だけで動く（opus-4-8 で 33% から最大 60%）。付録と報告件数が本文を書いた数を超えた回は publish が `payload:appendix.exceeds-body` / `payload:report_counts.exceeds-body` を立てる（上限の式は `scripts/lib/body_bound.py`）
 - **付録の出典は reviewer の `#### 指摘事項` に列挙された指摘だけ**（GitHub issue #248 の続き）。`#### 総括`・`## related-observations`・`## unmet_information` の記述から付録の行を起こさない。契約 (a) を入れた後も、reviewer が閾値未満の指摘を総括や related-observations に要旨として書き、それがここに載る回が残った（v2.130.9 以降の 13 回中 4 回）。related-observations は担当外の観点に渡す気づきなので、オーケストレーターが扱うのは Round 2 の判断材料としてだけ
 - 実測（2026-08-13 / self-review・effort=high）: 「テストコードでの指摘 −10」で MAJOR 2 件（confidence 100→90 / 95→85）が閾値 95 を割った。どちらも内容は正しく実際に修正されたが、**規則どおりに機械適用するとレポートのどこにも出なかった**
 
@@ -253,7 +253,7 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 
 ### 実効閾値を reviewer に伝える（GitHub issue #117）
 
-**実効値を `{{SEVERITY_THRESHOLD}}` として reviewer プロンプトに注入する**（規約の正本は `prompts/reviewer-common.md` の「実効報告閾値」）。閾値未満の指摘は reviewer が本文を書かず `## below-threshold` に件数だけ返す。
+**実効値を `{{SEVERITY_THRESHOLD}}` として reviewer プロンプトに注入する**（規約の正本は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` の「実効報告閾値」）。閾値未満の指摘は reviewer が本文を書かず `## below-threshold` に件数だけ返す。
 
 - 報告マトリクスと `review_severity_threshold` は**直列に掛かる 2 段のフィルタ**で、既定 `MAJOR` では MINOR が構造的にほぼ全滅する（実測: 調整前 60 → 報告 9 件 = 85% 破棄。うち confidence 95+ が 7 件）。reviewer は実効値を知らされていなかったため抑制もできず、**書かせて捨てるという最も損な組み合わせ**になっていた
 - **`pre_adjust_counts` は `## below-threshold` の件数を足して求める**（`orchestration-measurement.md ## 16`）。足さないと「reviewer が検出しなかった」と「閾値未満なので列挙しなかった」が 0 に潰れ、**この issue の根拠になった計測そのものが今後取れなくなる**

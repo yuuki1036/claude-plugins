@@ -19,15 +19,15 @@ allowed-tools:
 # Self Review
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @99781aef -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @968f1a26 -->
-<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @c01db33c -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @b9ce2561 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @26573c3c -->
+<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @81868d30 -->
 
 ## review との違い
 
 - PR 不要。ローカルのみで完結
 - コミット前・PR 作成前の品質ゲートとして使用
-- **コメント推敲（B 系統）を出すのは self-review だけ**（v2.45.0）。diff で追加・変更したコメントを**コードコメント規約の 2 観点**（正本: `.claude-plugin/lib/comment-rule.md` / 連結先の複製: `prompts/focus/comment-polish.md`）で推敲し、severity マトリクスを通さない別枠セクションに before→after で出す。他人の PR に文面の推敲を投稿するのは越権になりやすいため review 側には入れない（**観点をここに書き下ろさない** — 軸の複製が増えると「2 観点のみ」が崩れる）
+- **コメント推敲（B 系統）を出すのは self-review だけ**（v2.45.0）。diff で追加・変更したコメントを**コードコメント規約の 2 観点**（正本: `.claude-plugin/lib/comment-rule.md` / 連結先の複製: `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md`）で推敲し、severity マトリクスを通さない別枠セクションに before→after で出す。他人の PR に文面の推敲を投稿するのは越権になりやすいため review 側には入れない（**観点をここに書き下ろさない** — 軸の複製が増えると「2 観点のみ」が崩れる）
 - **Markdown 推敲を出すのも self-review だけ**（v2.131.0 / GitHub issue #243）。diff で追加・変更した md の散文を writing-polish（未導入なら skip）に通す推敲 agent を reviewer wave に 1 体足し、B 系統と同じく severity マトリクスの外に before→after で出す。review に入れない理由は B 系統と同じ。起動条件・結果の扱い・適用の正本は `${CLAUDE_PLUGIN_ROOT}/references/md-polish-guide.md`（**推敲の基準はここにも guide にも書かない** — writing-polish の規約が正本）
 
 ## コスト×精度パイプライン設計（採用/不採用）
@@ -117,7 +117,7 @@ fi
 - **`size_tier`** はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。GitHub issue #96）。Phase 0 の構成テーブル・Step 6 レポート冒頭・Step 6.4 の `size_tier` に記録する
 - **シグナルは事実であって判定ではない**。観点採否・体数は triage-guide が決める。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む
 - **`diff_file=` と `agent_ctx_file=` の値はパス文字列そのものを控えておく**（後者は Step 4 の共通ブロック書き出し先。**slug は不透明な cksum 値なので、控え損ねると復元できない**）（シェル変数は Bash 呼び出し間で消えるため、`$DIFF_FILE` として引き回さず実パスを毎回書く）
-- **判断が付かない場合のみ** `diff-slice.sh "<diff_file の実パス>" <path>` で必要なファイルの diff だけを読む（全文 Read はしない）
+- **判断が付かない場合のみ** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file の実パス>" <path>` で必要なファイルの diff だけを読む（全文 Read はしない）
 - **diff の起点は base branch の先端ではなく HEAD との分岐点**で、ローカルの base と `origin/<base>` のうち HEAD に近い方から取る（正本: `scripts/lib/diff-base.sh` / GitHub issue #253）。ローカルの base が遅れていて origin 側を使った回は stderr に `WARN: ⚠️ base:` が出る。止めずに続け、Phase 0 の出力にその 1 行を載せる
 - **スクリプトが失敗した場合**は `git diff "origin/${BASE}...HEAD" --name-only`（取れなければ `"${BASE}...HEAD"`）と `--stat` でファイル一覧と規模を取り、triage-guide.md `## 6.4` のフォールバック構成に落とす。**diff 全文の Read はこの経路でも行わない**
 
@@ -137,7 +137,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 
 - `--focus <観点>`: レビュー対象を特定の観点に絞る（例: `--focus "comment-accuracy"`, `--focus "type-design"`）。複数指定はカンマ区切り
 - `--exclude <観点1,観点2>`: 既に他 agent でカバー済みの観点をスキップする
-- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` だけで、Markdown 推敲を止める。観点ではないので `--focus` には書けない）。**`md-polish` はスコープの絞り込みに数えない** — 本ファイルと参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、`md-polish` 以外の値を 1 つ以上指定した場合だけを指す。`--exclude md-polish` 単独の回は、推敲を止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える
+- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` だけで、Markdown 推敲を止める。観点ではないので `--focus` には書けない）。**`md-polish` はスコープの絞り込みに数えない** — 本ファイルと参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、`md-polish` 以外の値を 1 つ以上指定した場合だけを指す。`--exclude md-polish` 単独の回は、推敲を止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える
 
 適用先:
 - **Phase 0 (Step 2)**: `--focus` 指定時は該当観点の reviewer のみ構成する（最小保証の reviewer-bugs / reviewer-claude-md も `--focus` に含まれない限り起動しない）。`--exclude` 指定時は該当観点の reviewer を構成から外す
@@ -232,8 +232,10 @@ Phase 0 の最後に、triage-dynamic-gates.md `## 8.5` の surface 判定（dif
 Phase 0 が explorer を 1 体以上配置した場合のみ実行。explorer が不要と判断された場合はスキップして Step 4 へ。
 
 Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並列起動する:
-- プロンプト冒頭で **`prompts/explorer-common.md` と `prompts/explorer/<focus>.md` の 2 パスを Read せよ**と指示する（本文は書かない。組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md`）
-- 可変部として Phase 0 が決定した focus・対象ファイル・関数、および **Step 1 の `$DIFF_FILE` のパスと担当ファイル名**を渡す（`diff-slice.sh` で自分の担当ぶんを切り出せることも明記する）
+- プロンプト冒頭で次の **2 パスを Read せよ**と指示する（本文は書かない。組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md`。パスの渡し方は Step 4 の冒頭と同じ）:
+  - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md`
+  - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/<focus>.md`
+- 可変部として Phase 0 が決定した focus・対象ファイル・関数、**プラグインの実パス**（explorer-common.md の `{{PLUGIN_ROOT}}` の読み替え先。explorer は共通ブロックを受け取らないので、ここで渡すのが唯一の経路）、および **Step 1 の `$DIFF_FILE` のパスと担当ファイル名**を渡す（`diff-slice.sh` で自分の担当ぶんを切り出せることも明記する）
 - `isolation: "worktree"` は使用しない（セルフレビューは未コミット変更を含むため）
 - 全エージェントに `run_in_background: false` を明示し、**全 explorer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0`。`run_in_background` 省略は取りこぼし、1 体ずつ別メッセージ発行は逐次実行＝実時間が合計に膨らむ。2 つは独立の要件）。**`mark t1` の応答で出す explorer を列挙してから発行に移る**（発行直前チェックポイント / `## 0`。実測の違反のうち 1 件は explorer を 1 体ずつ出した型 — #220）
 
@@ -261,22 +263,26 @@ Step 1 のダイジェスト `## agents-md` に出ている**パス一覧**を r
 
 **プロンプトテンプレートは Read しない。パスを渡して agent 自身に読ませる**（組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md`。共通指示だけで約 7.3k tokens あり、体数ぶん転記すると出力トークンが `(N-1) × 本文長` 膨らむ — orchestration-guide.md `## 3.5`）。
 
-Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する。effort は実行時 `${CLAUDE_EFFORT}` に連動させる（low/medium/high（既定）→ `high`、xhigh/max → `xhigh`。設計意図は orchestration-guide.md `## 5`）。プロンプトは **Read させるパスの列挙 + 可変部**だけで構成する:
+Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する。effort は実行時 `${CLAUDE_EFFORT}` に連動させる（low/medium/high（既定）→ `high`、xhigh/max → `xhigh`。設計意図は orchestration-guide.md `## 5`）。プロンプトは **Read させるパスの列挙 + 可変部**だけで構成する。**パスは `${CLAUDE_PLUGIN_ROOT}` の部分だけをプラグインの実パス（この SKILL.md を Read したパスの `skills/` より手前）に置き換え、`/references/prompts/...` 以降は下に書いたまま渡す**（agent の Read は変数を展開しない。`references/` を省いて短く書き直すと agent が最初の Read に失敗し、プロンプト探しに往復を使う — #282）:
 
-- **必ず Read させる**: `prompts/reviewer-common.md` と `prompts/focus/<focus>.md`（self-review は PR を持たないので `pr-context-rules.md` は渡さない）。条件付きで加えるもの:
-  - 観点バンドル時 → `prompts/bundle-rules.md` と束ねる focus ファイル群
-  - **ペア条件が成立したとき → `prompts/angles.md`**（xhigh/max の実ペアだけでなく、**high 以下の angle 内挿でも渡す**）
-  - セッションコンテキストが有効なとき → `prompts/session-context.md`（confidence −30 の規約はここにある）
-- <!-- COMMENT-POLISH: attach --> **`comment-accuracy` を担当する reviewer には `prompts/focus/comment-polish.md` を Read 対象に追加する**（単独起動・バンドル相乗りのどちらでも追加。B 系統は Focus テンプレートではないので前項では拾われない。追加漏れは機能の silent な不発になるため、comment-polish 連結チェックが宣言とパスの両方を Critical で検証する）
+- **必ず Read させる**:
+  - `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`
+  - `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<focus>.md`
+- **渡さない**: `pr-context-rules.md`（self-review は PR を持たない）
+- **条件付きで加える**:
+  - 観点バンドル時 → `${CLAUDE_PLUGIN_ROOT}/references/prompts/bundle-rules.md` と束ねる focus ファイル群
+  - **ペア条件が成立したとき → `${CLAUDE_PLUGIN_ROOT}/references/prompts/angles.md`**（xhigh/max の実ペアだけでなく、**high 以下の angle 内挿でも渡す**）
+  - セッションコンテキストが有効なとき → `${CLAUDE_PLUGIN_ROOT}/references/prompts/session-context.md`（confidence −30 の規約はここにある）
+- <!-- COMMENT-POLISH: attach --> **`comment-accuracy` を担当する reviewer には `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md` を Read 対象に追加する**（単独起動・バンドル相乗りのどちらでも追加。B 系統は Focus テンプレートではないので「必ず Read させる」の focus ファイルとしては拾われない。追加漏れは機能の silent な不発になるため、comment-polish 連結チェックが宣言とパスの両方を Critical で検証する）
 - **可変部の共通ブロック（全 agent 共通の実値集合）は 1 ファイルに落としてパス渡しする**: Step 1 の `## meta` が出す `agent_ctx_file=` のパスに **Write で 1 回だけ**書き出し、各プロンプトには「まず `<agent_ctx_file>` を Read せよ」の 1 行だけを置く。**入れる項目・残す項目・フォールバックの正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**（`{{PLUGIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` / `$DIFF_FILE` / AGENTS.md パス / session-context パス / 確定事実 など。#124 (c)）。**書き出したら、その応答の中でこの wave に出す Agent call（reviewer 全行 + 相乗りする skeptic + specialist + Markdown 推敲）を列挙してから発行に移る**（発行直前チェックポイント / orchestration-guide.md `## 0`。列挙より後に思いついた観点は同じ層へ後追いせず Round 2 へ回す — #220）
   - **self-review 固有**: **PR 番号・HEAD SHA・`{{MAIN_ROOT}}` は入れない**（PR を持たず worktree も使わないので、テンプレートの worktree セットアップ節は適用外である旨を共通ブロックに明記する）
 - **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）。`--spec` があれば **spec-compliance 担当にだけ**「仕様ファイル: `<path>`（Read して照合元にする）」を添える
-- **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 3 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `prompts/reviewer-common.md` 側（#122）
+- **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 3 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` 側（#122）
 - **Vault 注入**: Step 1.5 で関連ありと判断した知見があれば、各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する。reviewer には「過去に同種コードで指摘された観点を優先的に確認せよ。ただし現在の diff に該当しなければ無視してよい」と添える
 - `isolation: "worktree"` は使用しない
 - 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
-- **冷や読み skeptic の相乗り**: Step 2.4 で surface=true かつ Phase 4.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `prompts/recall-skeptic.md` をパス渡し）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 4.8 で行う。**publish の `recall_skeptic.launch` は `"rider"`**（起動経路の自己申告 / #216）
-- **Markdown 推敲の相乗り**: Step 2.1 で起動すると決めた回は、推敲 agent 1 体（`model: opus`, `effort: high`、プロンプトは `prompts/md-polish.md` をパス渡し）を **この一括発行に含める**（`run_in_background: false`）。`agents` の内訳には数えない。組み立てと結果の扱いは `md-polish-guide.md` の 2・3 節
+- **冷や読み skeptic の相乗り**: Step 2.4 で surface=true かつ Phase 4.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `${CLAUDE_PLUGIN_ROOT}/references/prompts/recall-skeptic.md` をパス渡し）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 4.8 で行う。**publish の `recall_skeptic.launch` は `"rider"`**（起動経路の自己申告 / #216）
+- **Markdown 推敲の相乗り**: Step 2.1 で起動すると決めた回は、推敲 agent 1 体（`model: opus`, `effort: high`、プロンプトは `${CLAUDE_PLUGIN_ROOT}/references/prompts/md-polish.md` をパス渡し）を **この一括発行に含める**（`run_in_background: false`）。`agents` の内訳には数えない。組み立てと結果の扱いは `md-polish-guide.md` の 2・3 節
 
 一括発行の**直前**に fleet 区間の開始マーカーを記録する（orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式で決める。Step 3 で explorer を起動していれば記録済みなので `grep` ガードで二重記録を防ぐ。`||` 形なのでガードが偽でもブロックは成功終了する）:
 
@@ -372,7 +378,7 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
    | MINOR | skip | skip | skip | 報告 |
 
 6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) の**実効値**より低い severity は除外（doc だけの diff = `## size` の `doc_only=1` では既定の `MAJOR` を `MINOR` に下げる / orchestration-guide.md `## 2` / #275）。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を同名 severity のバケツへ足し、`severity_threshold` を併せて記録する**（足し込む分は dedup されないため版で非可換。版マーカー `schema` は**スクリプトが注入する**ので書かない。orchestration-measurement.md `## 16`）。**足し込んだその件数を `below_threshold_counts` にも同じバケツで再掲し、`## below-threshold` の `demoted-across-threshold:` 行の型名を `below_threshold_counts.demoted_types` に型別で数える**（**親オブジェクトの中に置く** — トップレベルに書くと集計されない / GitHub issue #208）（どちらも 0 件でもキーを省かない / GitHub issue #146・#150）。合算しか残らないと **(a) 本文を書いてから捨てた**（出力トークンの純損失）と **(b) 件数だけ返した**（既に節約できている）が分離できず、閾値注入の効果を判定できない。**`pre_adjust_counts` を超える値は publish が fail-fast する**。**`below_threshold_counts` に入れるのは reviewer の `## below-threshold` 件数行の数字だけ**。`#### 指摘事項` に列挙された指摘は、反証・加減算・報告マトリクス（手順 2〜5）で閾値を割っても足さない — それらは 🔁 付録の側に載る指摘で、`pre_adjust − below` の「本文を書いた」に入る。足すと付録の上限が縮み、正規の付録行で `payload:appendix.exceeds-body` が偽陽性になる（実測 1 回 / GitHub issue #248）。**`## below-threshold` の件数行の後に reviewer が本文を書いていても、その指摘は below に数えるだけで本文にも 🔁 付録にも載せない**（付録の対象は閾値以上で列挙された指摘だけ ＝ 契約 (a)。載せると本文を書いた数の上限を超え、publish が `payload:appendix.exceeds-body` を立てる / GitHub issue #248）。**🔁 付録の件数は `appendix` に載せる**（`{listed, recommended}`。`listed` は付録に並べた行数、`recommended` はそのうち `※ 推奨:` を付けた行数。0 件でもキーを省かない / GitHub issue #168）— **付録に列挙しただけでは「報告 0 件の回」と「価値 0 の回」が payload 上で同じ形になる**（実測: severity 4 バケツすべて 0 なのに付録 18 件・うち 4 件を人間に推していた回がある）。`recommended` が `listed` を超えると publish が fail-fast する。マーカーの規約は scoring-guide.md `## 報告閾値を割った指摘の記録` の「推奨マーカー」。**`adversarial_verify.inflated_axes` は反証 agent の `axis` を同じ 4 型へ寄せて数える**（`pre-existing` / `intended` → `base_derived` / `misread` → `misread` / `overstated-impact` → `overstated_impact` / `miscategorized` → `miscategorized`。**`unknown` は「軸が返らなかった・語彙外だった」件だけ**で、`unreachable` / `pre-validated` / `none` は`severity-inflated` の軸ではないのでここに落ちる）。**語彙内の値を寄せ忘れても合計の突合は通る**ので、`unknown` が 1 件以上あると `measurement_gaps` に `axis-unknown` / `demoted-unknown` が立つ / GitHub issue #167
-7. **コメント推敲（B 系統）は本ステップを一切通さない**: `## コメント推敲提案` ブロックは手順 1〜6 と反証レイヤー（Phase 4.9）をすべてバイパスして Step 6 にそのまま流す。**severity / confidence を後付けしない**（付けた瞬間マトリクスの対象になり MINOR 95+ と好みクランプ 40 の 2 段で全滅する）。詳細は `prompts/focus/comment-polish.md`。**`review_severity_threshold` も B 系統には効かない**（severity を持たないため。推敲を止めるなら `--exclude comment-accuracy`）。オーケストレーター側で行う調整は次の 2 つだけ:
+7. **コメント推敲（B 系統）は本ステップを一切通さない**: `## コメント推敲提案` ブロックは手順 1〜6 と反証レイヤー（Phase 4.9）をすべてバイパスして Step 6 にそのまま流す。**severity / confidence を後付けしない**（付けた瞬間マトリクスの対象になり MINOR 95+ と好みクランプ 40 の 2 段で全滅する）。詳細は `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md`。**`review_severity_threshold` も B 系統には効かない**（severity を持たないため。推敲を止めるなら `--exclude comment-accuracy`）。オーケストレーター側で行う調整は次の 2 つだけ:
    - **二重掲載の除去**: **手順 5-6 を通過して Step 6 に残った指摘**と同一 file:line のコメントのみ B から落とす。**「A 系統が指摘として挙げた」だけでは落とさない** — A の冗長コメント指摘は MINOR 95+ で大半が skip されるため、それを理由に B からも消すと A でも B でも出ない（B 系統を作った理由そのものを打ち消す）
    - **掲載上限**: 10 件を超える場合はここで切り、末尾に「他 N 件」と添える（reviewer 側は全件出す規約。発見段階では間引かせない）。`comment_polish.suggested` には**切る前の総数**を入れる
 8. **Markdown 推敲も本ステップを一切通さない**（手順 7 と同じ扱い。二重掲載の除去・掲載上限・`md_polish.suggested` の数え方は `md-polish-guide.md` の 3 節）
