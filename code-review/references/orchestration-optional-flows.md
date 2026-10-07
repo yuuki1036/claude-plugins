@@ -26,7 +26,7 @@ for ID in $ISSUE_IDS; do
 done | sort -u
 ```
 
-- ヒットしたファイルを Read で読み込み、内容を spec-compliance reviewer の prompt に `## Issue ファイル` セクションとして同梱する（`prompts/session-context.md` と同じ要領）
+- ヒットしたファイルを Read で読み込み、内容を spec-compliance reviewer の prompt に `## Issue ファイル` セクションとして同梱する（`${CLAUDE_PLUGIN_ROOT}/references/prompts/session-context.md` と同じ要領）
 - Issue 本文内に「親 Issue: [FOO-1234](...)」「Parent: FOO-1234」のような親リンクがあれば **1 段だけ追跡** （深い再帰は禁止：トークン爆発防止）
 - Issue ID が抽出できない / ファイルが存在しない場合は本フローをスキップ（best-effort）
 - `.claude/linear/` と `.claude/indie/` 双方が無いリポジトリでは Glob が空配列を返すだけで no-op（後方互換）
@@ -63,7 +63,7 @@ gh pr view <PR番号> --json closingIssuesReferences -q '.closingIssuesReference
 
 ## 12. 訂正の伝播前ガード（self-review Step 7 / over-correction 防止 / GitHub issue #71）
 
-findings をコード/文書本文に**反映する前に**、その修正が依拠する load-bearing な事実主張を一次ソースで再確認する。修正を「探す」段だけでなく「書く」段にもツール接地を効かせる（`prompts/reviewer-common.md`「事実主張のツール接地」の対）。
+findings をコード/文書本文に**反映する前に**、その修正が依拠する load-bearing な事実主張を一次ソースで再確認する。修正を「探す」段だけでなく「書く」段にもツール接地を効かせる（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「事実主張のツール接地」の対）。
 
 - **repo で確認できる主張**(コード挙動・型・呼び出し関係）→ Read/Grep で現物を確認してから書き換える。記憶や推測で本文を直さない
 - **repo で確認できない主張**（DB/本番の現状態・外部数値・運用設定・「本番では解消済み」等）→ 「事実」として断定的に書かない。正本（spec / PR / Issue / ADR / コミットメッセージ）で裏が取れない限り **「要確認（典拠=X）」マーカーを残す**。reviewer 指摘が `[unverified: ...]` 付きなら、その不確実性を修正後の本文にも引き継ぐ

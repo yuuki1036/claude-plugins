@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import importlib.util
 import sys
 import tempfile
@@ -373,6 +374,28 @@ class CheckSsotPinsTest(unittest.TestCase):
         errors: list[str] = []
         v.check_ssot_pins(errors)
         self.assertIn("見つからない", errors[0])
+
+    def test_a_pin_inside_a_nested_checkout_is_ignored(self):
+        """`.claude/worktrees/` の別セッションの pin は本体の正本と突き合わせず, 打ち直しでも触らない.
+
+        直下の入れ子（`wt/`）と `.git` の中も同じく見ない.
+        """
+        nested = self.root / ".claude" / "worktrees" / "other"
+        _write(nested, ".git", "gitdir: /elsewhere\n")
+        _write(self.root / "wt", ".git", "gitdir: /elsewhere\n")
+        body = "# 消費サイト\n\n<!-- SSOT: canon.md#3.5 @00000000 -->\n"
+        consumer = _write(nested, "consumer.md", body)
+        _write(self.root / "wt", "consumer.md", body)
+        _write(self.root / ".git", "notes.md", body)
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertEqual(errors, [])
+        v.check_ssot_pins(errors, update=True)
+        self.assertEqual(consumer.read_text(encoding="utf-8"), body, "別セッションのファイルを書き換えた")
+        # 対照: 同じ pin を本体側に置けば検出される（入れ子の判定が何でも黙らせているのではない）
+        self._consumer("00000000")
+        v.check_ssot_pins(errors)
+        self.assertEqual(len(errors), 1, errors)
 
     def test_whole_file_pin_of_a_pinning_canonical_is_reported(self):
         """全ファイル pin の正本が自身も pin を持つと打ち直しが収束しないので error."""
@@ -904,6 +927,13 @@ class TestFileLintTest(unittest.TestCase):
         errors: list[str] = []
         v.check_test_collection(errors)
         self.assertEqual(errors, [])
+
+    def test_test_files_in_a_nested_checkout_are_not_collected(self):
+        self._test_file("import unittest\n")
+        nested = self.root / ".claude" / "worktrees" / "other"
+        _write(nested, ".git", "gitdir: /elsewhere\n")
+        _write(nested, "tests/test_copy.py", "import unittest\n")
+        self.assertEqual(v._test_files(), [self.root / "tests" / "test_demo.py"])
 
     def test_class_after_main_is_reported(self):
         self._test_file("""
@@ -1747,8 +1777,8 @@ class CommentRuleSyncTest(unittest.TestCase):
 class CommentPolishWiringTest(unittest.TestCase):
     """B 系統の連結宣言（消失 = silent な不発 / 混入 = 他人の PR への越権）."""
 
-    ATTACH = "- <!-- COMMENT-POLISH: attach --> reviewer に prompts/focus/comment-polish.md を渡す\n"
-    DETACH = "- <!-- COMMENT-POLISH: detach --> prompts/focus/comment-polish.md は渡さない\n"
+    ATTACH = "- <!-- COMMENT-POLISH: attach --> reviewer に ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md を渡す\n"
+    DETACH = "- <!-- COMMENT-POLISH: detach --> ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md は渡さない\n"
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -1773,16 +1803,48 @@ class CommentPolishWiringTest(unittest.TestCase):
 
     def test_spacing_variants_are_accepted(self):
         self.assertEqual(
-            self._run(attach="<!--COMMENT-POLISH:attach--> prompts/focus/comment-polish.md\n"), [])
+            self._run(attach="<!--COMMENT-POLISH:attach--> ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md\n"), [])
 
     def test_missing_declaration_is_an_error(self):
-        errors = self._run(attach="- reviewer に prompts/focus/comment-polish.md を渡す\n")
+        errors = self._run(attach="- reviewer に ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md を渡す\n")
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("ちょうど 1 個", errors[0])
 
     def test_attach_without_the_prompt_path_is_an_error(self):
         """**silent 不発の本体**: 宣言はあるが実際には渡していない."""
         errors = self._run(attach="- <!-- COMMENT-POLISH: attach --> 連結する\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("silent", errors[0])
+
+    def test_attach_with_only_the_short_path_is_an_error(self):
+        """短い形では agent の Read が失敗する（`references/` が落ちる / GitHub issue #282）."""
+        errors = self._run(attach="- <!-- COMMENT-POLISH: attach --> prompts/focus/comment-polish.md を渡す\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("silent", errors[0])
+        self.assertIn("フルパス `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md`", errors[0],
+                      "正しい形を示さないと直し方が分からない")
+
+    def test_a_path_on_a_continuation_line_is_accepted(self):
+        """長い箇条を折り返してパスが次の行へ移っても, 同じ箇条なら渡している."""
+        self.assertEqual(self._run(attach="- <!-- COMMENT-POLISH: attach --> **reviewer には\n"
+                                          "  ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md を渡す**\n"), [])
+
+    def test_a_marker_spanning_lines_is_accepted(self):
+        """箇条はマーカーの終わりの行まで含む（始まりの行だけを見るとパスに届かない）."""
+        self.assertEqual(self._run(attach="- <!--\nCOMMENT-POLISH: attach --> "
+                                          "${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md\n"), [])
+
+    def test_attach_with_the_path_missing_references_is_an_error(self):
+        """#282 で実際に agent へ渡っていた誤パス（`${CLAUDE_PLUGIN_ROOT}/prompts/...`）."""
+        errors = self._run(attach="- <!-- COMMENT-POLISH: attach --> "
+                                  "${CLAUDE_PLUGIN_ROOT}/prompts/focus/comment-polish.md を渡す\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("silent", errors[0])
+
+    def test_a_full_path_elsewhere_does_not_cover_the_attach_line(self):
+        """実物の SKILL.md は attach 行の外（説明文）にもフルパスを持つ. 見るのはマーカーの行."""
+        errors = self._run(attach="- <!-- COMMENT-POLISH: attach --> prompts/focus/comment-polish.md を渡す\n"
+                                  "- 正本は ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md\n")
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("silent", errors[0])
 
@@ -1803,6 +1865,277 @@ class CommentPolishWiringTest(unittest.TestCase):
         v.check_comment_polish_wiring(errors)
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("SKILL.md missing", errors[0])
+
+
+class ReferencesTest(unittest.TestCase):
+    """`${CLAUDE_PLUGIN_ROOT}/...` の参照切れ（テンプレート表記を含むパスは手前のディレクトリ）.
+
+    テンプレート表記の扱いは GitHub issue #282 で足した: オーケストレーターが `references/` を
+    落としたパスで agent を起動していた。`<focus>` を含むパスは丸ごと検査外だったので,
+    同じ形を SKILL.md に書いても素通りした。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self.addCleanup(lambda o=v.ROOT: setattr(v, "ROOT", o))
+        v.ROOT = self.root
+        self.plugin = self.root / "demo"
+        _write(self.plugin, "references/prompts/focus/bug.md", "# bug\n")
+        _write(self.plugin, "references/guide.md", "# guide\n")
+
+    def _run(self, body: str, rel: str = "skills/x/SKILL.md") -> list[str]:
+        _write(self.plugin, rel, body)
+        errors: list[str] = []
+        v.check_references(self.plugin, errors)
+        return errors
+
+    def test_an_existing_file_is_accepted(self):
+        self.assertEqual(self._run("`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/bug.md`\n"), [])
+
+    def test_a_missing_file_is_an_error(self):
+        errors = self._run("`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/gone.md`\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("gone.md", errors[0])
+
+    def test_a_path_without_references_is_an_error(self):
+        """#282 の誤パスそのもの（実在しない `prompts/` 直下）."""
+        errors = self._run("`${CLAUDE_PLUGIN_ROOT}/prompts/focus/bug.md`\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertNotIn("テンプレート表記の手前", errors[0], "テンプレート表記の無いパスに付けない")
+
+    def test_trailing_markdown_decoration_is_not_a_template(self):
+        """太字の `**` / autolink の `>` を表記と取り違えると, 実在しないファイルが手前のディレクトリだけで通る."""
+        self.assertEqual(self._run("**${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/bug.md**\n"), [])
+        for body in ("**${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/gone.md**\n",
+                     "<${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/gone.md>\n",
+                     "**${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/gone.md**（注）\n",
+                     "**${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/gone.md**。\n",
+                     "**${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/gone.md**. 次\n",
+                     "| ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/gone.md<br>x |\n"):
+            with self.subTest(body=body):
+                errors = self._run(body)
+                self.assertEqual(len(errors), 1, errors)
+                self.assertIn("/references/prompts/focus/gone.md", errors[0])
+                self.assertNotIn("テンプレート表記の手前", errors[0])
+
+    def test_text_right_after_a_path_is_not_part_of_it(self):
+        """日本語や句読点が空白なしで続いても, パスはそこで終わる."""
+        self.assertEqual(self._run("${CLAUDE_PLUGIN_ROOT}/references/guide.mdを Read する\n"
+                                   "${CLAUDE_PLUGIN_ROOT}/references/guide.md. 次に "
+                                   "${CLAUDE_PLUGIN_ROOT}/references/guide.md, "
+                                   "${CLAUDE_PLUGIN_ROOT}/references/guide.md: 説明\n"
+                                   "**参照: ${CLAUDE_PLUGIN_ROOT}/references/guide.md.**\n"), [])
+
+    def test_a_trailing_glob_is_still_a_template(self):
+        """太字の `**` は落とすが, グロブの末尾 `*` は残して手前のディレクトリを見る."""
+        _write(self.plugin, "scripts/run-a.sh", "echo\n")
+        self.assertEqual(self._run("`${CLAUDE_PLUGIN_ROOT}/scripts/run-*`\n"), [])
+
+    def test_a_file_in_front_of_a_template_is_an_error(self):
+        """表記の手前はディレクトリでなければならない（ファイルの下にファイルは置けない）."""
+        errors = self._run("`${CLAUDE_PLUGIN_ROOT}/references/guide.md/<x>.md`\n")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_a_template_under_an_existing_directory_is_accepted(self):
+        """`<focus>` は実在を問えないので, 手前のディレクトリがあれば黙る."""
+        self.assertEqual(self._run("`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<focus>.md`\n"), [])
+
+    def test_a_template_at_the_end_keeps_its_closing_bracket(self):
+        """`<focus>` の `>` は autolink の閉じではない. 剥がすとメッセージのパスが壊れる."""
+        errors = self._run("${CLAUDE_PLUGIN_ROOT}/prompts/focus/<focus>\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/prompts/focus/<focus>（テンプレート表記の手前", errors[0])
+
+    def test_the_same_path_under_both_roots_is_reported_for_each(self):
+        errors = self._run("${CLAUDE_PLUGIN_ROOT}/prompts/a.md と {{PLUGIN_ROOT}}/prompts/a.md\n")
+        self.assertEqual(len(errors), 2, errors)
+
+    def test_a_template_without_references_is_an_error(self):
+        """**テンプレート表記を丸ごと検査外にしていた頃は素通りした形.**"""
+        errors = self._run("`${CLAUDE_PLUGIN_ROOT}/prompts/focus/<focus>.md`\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("missing reference ${CLAUDE_PLUGIN_ROOT}/prompts/focus/<focus>.md"
+                      "（テンプレート表記の手前 /prompts/focus/ が無い）", errors[0])
+
+    def test_plugin_root_placeholder_paths_are_checked(self):
+        """agent が読むプロンプトの `{{PLUGIN_ROOT}}/...` も同じ規則で見る（#282 の誤パスはこちらにも書ける）."""
+        self.assertEqual(self._run("`{{PLUGIN_ROOT}}/references/prompts/focus/bug.md`\n",
+                                   rel="references/prompts/x.md"), [])
+        errors = self._run("`{{PLUGIN_ROOT}}/prompts/focus/bug.md`\n", rel="references/prompts/x.md")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("missing reference {{PLUGIN_ROOT}}/prompts/focus/bug.md", errors[0])
+
+    def test_a_template_inside_the_file_name_checks_its_directory(self):
+        self.assertEqual(self._run("`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/bug-<n>.md`\n"), [])
+        errors = self._run("`${CLAUDE_PLUGIN_ROOT}/references/promts/bug-<n>.md`\n")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_other_template_forms_are_handled_alike(self):
+        """`{{...}}` と `*` も `<...>` と同じくテンプレート表記として扱う."""
+        self.assertEqual(self._run("`${CLAUDE_PLUGIN_ROOT}/references/prompts/{{X}}.md` "
+                                   "`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/*.md`\n"), [])
+        errors = self._run("`${CLAUDE_PLUGIN_ROOT}/prompts/{{X}}.md`\n")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_a_template_in_the_first_segment_is_silent(self):
+        """手前にディレクトリが無い表記はプラグイン直下を指すだけで, 判定できない."""
+        self.assertEqual(self._run("`${CLAUDE_PLUGIN_ROOT}/<dir>/a.md`\n"), [])
+
+    def test_a_repeated_missing_reference_is_reported_once(self):
+        errors = self._run("`${CLAUDE_PLUGIN_ROOT}/prompts/a.md` `${CLAUDE_PLUGIN_ROOT}/prompts/a.md`\n")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_references_directory_files_are_scanned(self):
+        errors = self._run("`${CLAUDE_PLUGIN_ROOT}/prompts/focus/bug.md`\n", rel="references/flow.md")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("references/flow.md", errors[0])
+
+
+class PromptPathFormTest(unittest.TestCase):
+    """プロンプトのパスを短い形（`prompts/...` / `focus/<name>.md` 等）で書かない（GitHub issue #282）.
+
+    短い形に `${CLAUDE_PLUGIN_ROOT}/` だけを足すと `references/` が落ち, agent は最初の Read に
+    失敗してプロンプト探しに 2〜4 往復を使う（reviewer 665 体中 39 体）。
+    """
+
+    SHORT = "- Read させる: `prompts/reviewer-common.md`\n"
+    FULL = "- Read させる: `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`\n"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self.real_root = v.ROOT
+        self.addCleanup(lambda o=v.ROOT: setattr(v, "ROOT", o))
+        v.ROOT = self.root
+        self.plugin = self.root / "demo"
+        _write(self.plugin, "references/prompts/reviewer-common.md", "# common\n")
+        _write(self.plugin, "references/prompts/focus/bug.md", "# bug\n")
+        _write(self.plugin, "references/prompts/explorer/flow.md", "# flow\n")
+
+    def _run(self, files: dict[str, str]) -> list[str]:
+        for rel, body in files.items():
+            _write(self.plugin, rel, body)
+        errors: list[str] = []
+        v.check_prompt_path_form(self.plugin, errors)
+        return errors
+
+    def test_the_full_path_is_accepted(self):
+        self.assertEqual(self._run({"skills/x/SKILL.md": self.FULL}), [])
+
+    def test_the_short_path_in_skill_md_is_an_error(self):
+        errors = self._run({"skills/x/SKILL.md": "# x\n\n" + self.SHORT})
+        self.assertEqual(len(errors), 1, errors)
+        self.assertTrue(errors[0].startswith("[prompt-path:demo] "), errors[0])
+        self.assertIn("skills/x/SKILL.md:3", errors[0], "行番号が無いと直す場所が分からない")
+        self.assertIn("`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` と書く", errors[0])
+
+    def test_commands_agents_and_references_are_scanned(self):
+        rels = ["commands/c.md", "agents/a.md", "references/flow.md", "references/sub/deep.md"]
+        errors = self._run({rel: self.SHORT for rel in rels})
+        self.assertEqual(len(errors), 4, errors)
+        for rel in rels:
+            self.assertTrue(any(f"demo/{rel}:1:" in e for e in errors), (rel, errors))
+
+    def test_each_occurrence_is_reported(self):
+        errors = self._run({"skills/x/SKILL.md": "`prompts/a.md` と `prompts/focus/<focus>.md`\n"})
+        self.assertEqual(len(errors), 2, errors)
+
+    def test_bare_fenced_and_relative_short_paths_are_errors(self):
+        """散文・日本語の直後・フェンス内・`./` 始まりも, オーケストレーターが Read 先に使う."""
+        body = ("- 正本 → prompts/focus/bug.md の区間を Read\n"
+                "- 正本はprompts/a.md\n"
+                "```\nRead prompts/b.md\n```\n"
+                "- `./prompts/c.md`\n")
+        errors = self._run({"skills/x/SKILL.md": body})
+        self.assertEqual(len(errors), 4, errors)
+        self.assertIn(": `prompts/focus/bug.md` は ", errors[0], "空白で区切らないと後ろの散文まで巻き込む")
+        self.assertIn(": `prompts/a.md` は ", errors[1])
+        self.assertIn("`./prompts/c.md` は `${CLAUDE_PLUGIN_ROOT}/references/prompts/c.md` と書く", errors[3])
+
+    def test_a_path_starting_at_a_prompts_subdirectory_is_an_error(self):
+        """`focus/<name>.md` は `prompts/` 相対の短い形. 足すと `references/prompts/` の両方が落ちる."""
+        errors = self._run({"skills/x/SKILL.md": "`focus/<name>.md` と explorer/flow.md\n"})
+        self.assertEqual(len(errors), 2, errors)
+        self.assertIn("`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<name>.md` と書く", errors[0])
+        self.assertIn("`${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/flow.md` と書く", errors[1])
+
+    def test_subdirectory_names_in_prose_are_not_paths(self):
+        """サブディレクトリ名は散文の語と重なるので, `*.md` で終わらないもの（並記・ディレクトリへの言及）は拾わない."""
+        self.assertEqual(self._run({"skills/x/SKILL.md":
+                                    "explorer/reviewer の 2 層. `focus/` 配下. focus/angle の組\n"}), [])
+
+    def test_a_mention_of_the_prompts_directory_is_an_error(self):
+        """`prompts/` は語と紛れず, そこから `${CLAUDE_PLUGIN_ROOT}/prompts/` を組み立てうるのでディレクトリへの言及も止める."""
+        errors = self._run({"skills/x/SKILL.md": "本文は `prompts/` 配下に置く\n"})
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("`${CLAUDE_PLUGIN_ROOT}/references/prompts/` と書く", errors[0])
+
+    def test_templates_and_parent_relative_forms_are_short(self):
+        """テンプレート表記は中に空白があっても 1 つのパス. `../` 始まりも cwd から解決されて外れる."""
+        errors = self._run({"skills/x/SKILL.md": "`focus/<focus キー>.md` と ../prompts/a.md\n"})
+        self.assertEqual(len(errors), 2, errors)
+        self.assertIn("`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<focus キー>.md` と書く", errors[0])
+        self.assertIn("`../prompts/a.md` は `${CLAUDE_PLUGIN_ROOT}/references/prompts/a.md` と書く", errors[1])
+
+    def test_a_path_ends_at_prose_and_markdown_delimiters(self):
+        """パスの後ろの日本語・装飾・区切りを含めない（含めると修正案のパスが壊れる）."""
+        body = ("prompts/a.mdの区間\n（prompts/b.md）\nprompts/c.md・prompts/d.md\nprompts/e.md:12\n"
+                "**prompts/f.md**\n| prompts/g.md|\n[prompts/h.md]\nprompts/i.md, prompts/j.md;\n"
+                "(prompts/k.md)\n")
+        errors = self._run({"skills/x/SKILL.md": body})
+        tokens = [e.split(": `", 1)[1].split("` は ", 1)[0] for e in errors]
+        self.assertEqual(tokens, [f"prompts/{c}.md" for c in "abcdefghijk"])
+
+    def test_prompts_inside_a_longer_name_or_path_is_not_short(self):
+        """直前が英数・`_`・`-`・`.`（名前の一部）や `/`（長いパスの途中）の `prompts/` は短い形ではない."""
+        self.assertEqual(self._run({"skills/x/SKILL.md":
+                                    "`references/prompts/a.md` docs/prompts/b.md reviewer-prompts.md "
+                                    "${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/bug.md "
+                                    "subprompts/c.md v2prompts/c.md agent_prompts/c.md agent-prompts/d.md "
+                                    "my.prompts/d.md pre-focus/e.md\n"}), [])
+
+    def test_a_plugin_without_prompt_subdirectories_only_checks_prompts(self):
+        """サブディレクトリが無ければ `prompts/` 側だけを見る（空の選択肢から `/x.md` を拾わない）."""
+        shutil.rmtree(self.plugin / "references" / "prompts" / "focus")
+        shutil.rmtree(self.plugin / "references" / "prompts" / "explorer")
+        errors = self._run({"skills/x/SKILL.md": "see /tmp/x.md and focus/bug.md, `prompts/a.md`\n"})
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("`prompts/a.md`", errors[0])
+
+    def test_the_prompts_directory_itself_is_not_scanned(self):
+        """プロンプト本体. パスを組み立てて渡すのはオーケストレーターだけ."""
+        self.assertEqual(self._run({"references/prompts/focus/bug.md": self.SHORT}), [])
+
+    def test_design_notes_are_not_scanned(self):
+        """実行時には読まない（CLAUDE.md のリポジトリ構造）."""
+        self.assertEqual(self._run({"references/design-notes/why.md": self.SHORT}), [])
+
+    def test_a_plugin_without_a_prompts_directory_is_silent(self):
+        """`prompts/` が何を指すか決まらないので見ない."""
+        shutil.rmtree(self.plugin / "references" / "prompts")
+        self.assertEqual(self._run({"skills/x/SKILL.md": self.SHORT}), [])
+
+    def test_the_check_is_registered(self):
+        """直接呼ぶテストだけでは, CHECKS から外れて検査が丸ごと黙っても気づけない."""
+        self.assertIn(v.check_prompt_path_form, v.CHECKS)
+
+    def test_the_real_plugin_has_no_short_path(self):
+        """実リポジトリの code-review に短い形が残っていない（修正前は 107 件）.
+
+        前提も表明する: `references/prompts/` が改名されると検査は即 return し, 空の結果で通ってしまう.
+        """
+        plugin = self.real_root / "code-review"
+        self.assertTrue((plugin / "references" / "prompts").is_dir(), "前提: 検査対象のディレクトリ")
+        full = [p for p in plugin.glob("skills/*/SKILL.md")
+                if "${CLAUDE_PLUGIN_ROOT}/references/prompts/" in p.read_text(encoding="utf-8")]
+        self.assertTrue(full, "前提: 正しい形が実データ（SKILL.md）にある")
+        v.ROOT = self.real_root
+        errors: list[str] = []
+        v.check_prompt_path_form(plugin, errors)
+        self.assertEqual(errors, [])
 
 
 class RouterVisibleDescriptionsTest(unittest.TestCase):

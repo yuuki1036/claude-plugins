@@ -2,7 +2,7 @@
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 
-review / self-review SKILL.md の各フェーズから参照される実行詳細の正本。SKILL.md 本文は高レベルワークフロー（Phase 一覧・各 Phase の目的と入出力・分岐条件）を保持し、具体的な手順・bash・失敗時の扱いは本ファイル群に置く。エージェント構成の決定ロジック（起動条件・effort 適応・上限）は triage-guide.md、プロンプト本文は `prompts/` を参照。
+review / self-review SKILL.md の各フェーズから参照される実行詳細の正本。SKILL.md 本文は高レベルワークフロー（Phase 一覧・各 Phase の目的と入出力・分岐条件）を保持し、具体的な手順・bash・失敗時の扱いは本ファイル群に置く。エージェント構成の決定ロジック（起動条件・effort 適応・上限）は triage-guide.md、プロンプト本文は `${CLAUDE_PLUGIN_ROOT}/references/prompts/` を参照。
 
 ## この分割の読み方（必要になった節だけ Read する）
 
@@ -41,7 +41,7 @@ review / self-review SKILL.md の各フェーズから参照される実行詳�
 
 review skill が worktree で起動する **すべての agent**（explorer / reviewer / 追加 explorer / 再起動 reviewer / meta-reviewer / skeptic / 反証エージェント）に適用する。
 
-agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRefName>` / **期待 HEAD SHA: `<headRefOid>`**」を必ず明記し、`prompts/explorer-common.md` / `prompts/reviewer-common.md` の `{{PR_NUMBER}}` / `{{HEAD_REF}}` / `{{HEAD_SHA}}` プレースホルダを実数値に置換する。`isolation: "worktree"` の子 worktree は親 branch を継承せず origin/default-branch から派生するため、checkout 指示を欠かすと PR の変更を観測できず偽陽性を量産する（GitHub issue #56）。
+agent prompt の冒頭に「PR 番号: `<PR_NUMBER>` / 対象 head ref: `<headRefName>` / **期待 HEAD SHA: `<headRefOid>`**」を必ず明記し、`${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md` / `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` の `{{PR_NUMBER}}` / `{{HEAD_REF}}` / `{{HEAD_SHA}}` プレースホルダを実数値に置換する。`isolation: "worktree"` の子 worktree は親 branch を継承せず origin/default-branch から派生するため、checkout 指示を欠かすと PR の変更を観測できず偽陽性を量産する（GitHub issue #56）。
 
 ```bash
 # PR_NUMBER / HEAD_SHA は Step 1 で取得済み（gh pr view の --json で再取得可能）
@@ -52,7 +52,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 - **`HEAD_SHA` が空のまま agent を起動してはならない**。取得できない場合は PR コンテキスト取得失敗（review Step 1）と同格に扱い、ExitWorktree して中止する
 - **ブランチ名での checkout は使わない**。子 agent 側は `refs/pull/<N>/head` を fetch して **detach で入る**（親 worktree と競合しない）
-- **HEAD 検証は `{{HEAD_SHA}}` との突合で行う**（`{{HEAD_REF}}` はブランチ名なので detach 後の検証には使えず、プロンプト冒頭の文脈情報としてのみ残す）。セットアップ bash の正本は `prompts/reviewer-common.md` / `prompts/explorer-common.md`
+- **HEAD 検証は `{{HEAD_SHA}}` との突合で行う**（`{{HEAD_REF}}` はブランチ名なので detach 後の検証には使えず、プロンプト冒頭の文脈情報としてのみ残す）。セットアップ bash の正本は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` / `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md`
 
 ### 1.1 メインリポジトリのパス注入（`{{MAIN_ROOT}}` / GitHub issue #113）
 
@@ -66,9 +66,9 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 | `dep-dir <path>` | メイン側に実在する依存ディレクトリ（`node_modules` / `vendor` / `.venv` / `venv` / `.yarn`）。**symlink と `main-root` 配下に収まらない実体は除外済み**（CWE-59） | 冒頭に列挙して渡す。0 件なら列挙しない |
 | `lockfile-changed <path>` | PR が lockfile を変更している | **出ていれば冒頭に明記する**。メイン側の依存が PR 後の状態と一致しないため、agent は根拠にする際に confidence を下げる |
 
-- **`{{MAIN_ROOT}}` は「依存を読むための逃げ道」であって、レビュー対象を読む場所ではない**。メイン側はユーザーの作業ツリーで PR と無関係な未コミット変更を含みうる。この非対称はプロンプト側（`prompts/reviewer-common.md` / `prompts/explorer-common.md`）にも書いてあるが、注入時に潰さないこと
+- **`{{MAIN_ROOT}}` は「依存を読むための逃げ道」であって、レビュー対象を読む場所ではない**。メイン側はユーザーの作業ツリーで PR と無関係な未コミット変更を含みうる。この非対称はプロンプト側（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` / `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md`）にも書いてあるが、注入時に潰さないこと
 - self-review は `isolation: "worktree"` を使わない（依存はそのまま読める）ため**注入不要**
-- **`main-root` 行が出ない場合がある**（メイン作業ツリーを導出できないとき。スクリプトは stderr に WARN を出す）。そのときは `{{MAIN_ROOT}}` を未置換のまま渡さず、**プロンプトからこの節ごと省く**。agent 側は未注入時に本節を適用しない規約になっている（`prompts/reviewer-common.md`）
+- **`main-root` 行が出ない場合がある**（メイン作業ツリーを導出できないとき。スクリプトは stderr に WARN を出す）。そのときは `{{MAIN_ROOT}}` を未置換のまま渡さず、**プロンプトからこの節ごと省く**。agent 側は未注入時に本節を適用しない規約になっている（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`）
 
 → 空 SHA が「静かな品質劣化」に倒れる仕組みと、ブランチ名 checkout が構造的に必ず失敗する経緯（issue #98 / #69）: `design-notes/orchestration-rationale.md`
 
@@ -80,11 +80,11 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 報告マトリクスと本閾値は**直列に掛かる 2 段のフィルタ**で、reviewer は後段を知らされていなかったため、構造的にほぼ報告されない severity に出力予算を使い続けていた（実測: MINOR 調整前 60 → 報告 9 件 = **85% 破棄**、うち confidence 95+ が 7 件）。
 
-- 閾値未満と判定した指摘は reviewer が本文を書かず **`## below-threshold` に件数だけ**返す。規約の正本は `prompts/reviewer-common.md`「実効報告閾値」
+- 閾値未満と判定した指摘は reviewer が本文を書かず **`## below-threshold` に件数だけ**返す。規約の正本は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「実効報告閾値」
 - **オーケストレーターは `pre_adjust_counts` にこの件数を足す**（`orchestration-measurement.md ## 16`）。足さないと「検出しなかった」と「列挙しなかった」が 0 に潰れ、本施策の効果測定と再評価の根拠が同時に失われる
 - **足した件数は `below_threshold_counts` にも再掲する**（同 `## 16` / #146）。合算のままでは「本文を書いてから捨てた」と「件数だけ返した」を分離できず、**本施策が出力トークンを実際に節約できているか**が測れない
 - **抑制されるのは列挙だけで判定は従来どおり**。閾値未満を理由に severity を繰り上げさせない（較正が壊れ、`pre_adjust_counts` も歪む）
-- **self-review の B 系統（`## コメント推敲提案`）は severity を持たないため対象外**。閾値も抑制も効かない（`prompts/focus/comment-polish.md`）
+- **self-review の B 系統（`## コメント推敲提案`）は severity を持たないため対象外**。閾値も抑制も効かない（`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md`）
 
 ## 3.5. 大きい共有コンテキストはファイル経由で渡す（review / self-review 共通 / GitHub issue #100 A）
 
@@ -96,7 +96,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 | 対象 | 渡し方 | 備考 |
 |---|---|---|
-| **プロンプトテンプレート**（reviewer / explorer / specialist / meta / 反証 / skeptic / Markdown 推敲） | `prompts/` 配下の**パスのみ**注入し、agent 自身に Read させる。**オーケストレーターは Read しない** | 複製係数が最大（同一の共通指示が全 agent に付く）。共通指示だけで約 7.3k tokens あり、6 体構成では約 44k tokens の出力複製になっていた。索引は reviewer-prompts.md / explorer-prompts.md |
+| **プロンプトテンプレート**（reviewer / explorer / specialist / meta / 反証 / skeptic / Markdown 推敲） | `${CLAUDE_PLUGIN_ROOT}/references/prompts/` 配下の**パスのみ**注入し、agent 自身に Read させる。**オーケストレーターは Read しない**。**パスは SKILL.md / 本ファイル群に書かれたフルパスを、`${CLAUDE_PLUGIN_ROOT}` の部分だけプラグインの実パスに置き換えて渡す**（`references/` を省いて短く書き直さない。agent の Read は変数を展開しない） | 複製係数が最大（同一の共通指示が全 agent に付く）。共通指示だけで約 7.3k tokens あり、6 体構成では約 44k tokens の出力複製になっていた。索引は reviewer-prompts.md / explorer-prompts.md。**フルパスの理由**（GitHub issue #282）: 短い形に `${CLAUDE_PLUGIN_ROOT}/` だけを足すと `references/` が落ち、agent は最初の Read に失敗して 2〜4 往復をプロンプト探しに使う（reviewer 665 体中 39 体。往復は 1 体あたりの cache_read を決める唯一のレバー / #190）。短い形は `validate_plugin_quality.py` の prompt-path 検査が止める |
 | **diff**（`gh pr diff` / `git diff`） | `triage-signals.sh` が `$DIFF_FILE` に保存し、**パス + 担当ファイル名**を注入。agent は `diff-slice.sh` で担当ぶんを切り出す | メインコンテキストは diff 全文を**一度も読まない**（Phase 0 はシグナルダイジェストで回す）。large PR ほど効く |
 | PR コンテキストブロック | `fetch-pr-context.sh` の出力を `$PR_CTX_FILE` に保存し、**パスのみ**注入 | メインコンテキストは Phase 0 のタイプ判定のために 1 回だけ Read する |
 | AGENTS.md / CLAUDE.md（`## 4`） | **元ファイルのパスをそのまま**注入（コピーを作らない） | 既にディスク上にあるので追加コストゼロ。パスは `triage-signals.sh` の `## agents-md` が出す |
@@ -119,7 +119,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 - session-context が有効なときはそのパス
 - 全 agent 共通の重点指示（`--focus` / `--exclude` のスコープ等）
 
-**共通ブロックに入れないもの**（agent ごとに違う / 渡してはいけない）: Read させるテンプレートのパス（`focus/<name>.md` 等）、担当 focus と angle、担当ファイル、explorer 結果の選択的注入、Vault 注入、**explorer の確定事実**（上表のとおり reviewer 限定でインライン。specialist / skeptic には渡さない）、**findings**（反証エージェントに reviewer の理由文を渡さない規約）。
+**共通ブロックに入れないもの**（agent ごとに違う / 渡してはいけない）: Read させるテンプレートのパス（`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<name>.md` 等）、担当 focus と angle、担当ファイル、explorer 結果の選択的注入、Vault 注入、**explorer の確定事実**（上表のとおり reviewer 限定でインライン。specialist / skeptic には渡さない）、**findings**（反証エージェントに reviewer の理由文を渡さない規約）。
 
 - **書き出すのは explorer wave の回収後・reviewer 一括発行の直前に 1 回**（`## meta` はもっと早く出るが、パスを控えておくだけで書き出しはここ）。**explorer プロンプトは対象外**（explorer は共通ブロックより前に走るので従来どおりインライン可変部）
 - **20 行以内に収まるならインラインでよい**（Write / Read の往復の方が高くつく）。実運用では上記を並べると常に超えるので**ファイル化が既定**。この 20 行は**共通ブロック全体**の閾値で、上表の確定事実の 10 行とは別の数字
@@ -130,7 +130,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 `$PR_CTX_FILE` のパスは**スクリプトが導出する**（`fetch-pr-context.sh --save` が保存先パスを stdout に返す）。**パスの組み立てを SKILL 本文や doc に複製しないこと** — 正本は `scripts/lib/review-paths.sh` で、作成側と削除側が食い違うと一時ファイルが恒久的に残る。
 
 - **`WT` の導出を別ブロックの変数に頼らないこと**（orchestration-measurement.md `## 13.1` の `TS_FILE` と同じ理由）。シェル変数は Bash 呼び出し間で消えるため、空のまま `printf %s "" | cksum` を通すと**エラーにならず定数 `4294967295` が返り**、パスが「ホスト上の全リポジトリで共有される固定値」に潰れる。この経路は欠測ではなく**誤値**（別リポジトリの PR コンテキストを掴む）に倒れるので、orchestration-measurement.md `## 13.1` の「縮退先は欠測」原則の例外になってしまう。パスを組み立てる bash ブロックには必ず `WT=` の行を含める
-- **プロンプトには「このファイルを最初に Read せよ」と明示する**（パスだけ置いても読まない agent が出る）。テンプレートの正本は `prompts/pr-context-rules.md`
+- **プロンプトには「このファイルを最初に Read せよ」と明示する**（パスだけ置いても読まない agent が出る）。テンプレートの正本は `${CLAUDE_PLUGIN_ROOT}/references/prompts/pr-context-rules.md`
 - **`>` はスクリプトが失敗しても空ファイルを残す**。空・ヘッダ欠落のファイルは「読める」ため reviewer の「読めなかった場合」ガードをすり抜け、「過去指摘なし」と誤判定される。**一時ファイルに書いて成功時のみ `mv` する**こと（下記の bash はこの形にしてある）
 - ファイル書込に失敗した場合は**従来どおりインライン注入にフォールバックする**（レビュー本体をブロックしない）。フォールバックしたことは `missing_coverage` には記録しない（観点の欠損ではないため）
 - 掃除（review 締めフロー 4）も**同一ブロックで `WT` を再導出**してから消す。作成側と削除側でパスが食い違うと一時ファイルが恒久的に残る
@@ -167,7 +167,7 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 
 ### diff-first 原則
 
-各エージェントには **diff ファイルのパス（`$DIFF_FILE`）と担当ファイル名**を渡す（本文は渡さない。`## 3.5`）。agent 側は `scripts/diff-slice.sh "$DIFF_FILE" <path>...` で担当ぶんのハンクを切り出して読む。
+各エージェントには **diff ファイルのパス（`$DIFF_FILE`）と担当ファイル名**を渡す（本文は渡さない。`## 3.5`）。agent 側は `${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh "$DIFF_FILE" <path>...` で担当ぶんのハンクを切り出して読む。
 
 レビューの真のソースは diff であることは変わらない。エージェントのファイル Read は共通ユーティリティの仕様確認など、diff だけでは判断できない文脈把握に限定する。ただし、変更箇所を含む関数の全体確認は積極的に行うこと。
 
@@ -230,7 +230,7 @@ git show "origin/<base>:<path>" || git show "<base>:<path>"
 - **どちらのコマンドも解決できない場合は検算不能**として理由欄に `base 検算: 未実行（base ref 未解決）` を残す（silent に飛ばさない）
 - **確認できたら理由欄に `base 検算: <結果>（git show <base>:<path>）` と残す**（reviewer 側の申告と二重に降格しないため。判別規約は `scoring-guide.md`）
 
-**なぜオーケストレーター側にも要るか**: reviewer は `prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」で縛られているが、**冷や読み skeptic はこの規約を継承していない**（`prompts/recall-skeptic.md` が `reviewer-common.md` を参照するのは worktree セットアップと出力フォーマットの 2 点だけ）。実測（issue #124）では skeptic が「0 行取込でグリッドが全消えするのは本 diff 由来の退行」と主張し、オーケストレーターがそれを支持してユーザーに伝えたあと、反証レイヤーが `refuted`(axis: pre-existing) で覆した — **`git show <base>:<file>` 1 コマンドで決まる事実**だった。
+**なぜオーケストレーター側にも要るか**: reviewer は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」で縛られているが、**冷や読み skeptic はこの規約を継承していない**（`${CLAUDE_PLUGIN_ROOT}/references/prompts/recall-skeptic.md` が `reviewer-common.md` を参照するのは worktree セットアップと出力フォーマットの 2 点だけ）。実測（issue #124）では skeptic が「0 行取込でグリッドが全消えするのは本 diff 由来の退行」と主張し、オーケストレーターがそれを支持してユーザーに伝えたあと、反証レイヤーが `refuted`(axis: pre-existing) で覆した — **`git show <base>:<file>` 1 コマンドで決まる事実**だった。
 
 **影響の非対称**: 反証レイヤーは effort ≥ high でしか走らないので、**low / medium では誰も検算せず誤帰属がそのまま報告される**。本検算は effort に依存しない決定的な手順なので、その穴を塞ぐ位置にある。
 

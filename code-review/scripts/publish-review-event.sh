@@ -596,7 +596,7 @@ if isinstance(av, dict) and isinstance(av.get("inflated_axes"), dict):
         sys.stderr.write(
             "inflated_axes の合計 %d が severity_inflated %d と一致しない\n"
             "**軸が返らなかった・語彙外だった件は `unknown` に落とす**（型が取れなくても件数は"
-            "落とさない）。反証プロンプトの axis 語彙は prompts/adversarial-verify.md\n"
+            "落とさない）。反証プロンプトの axis 語彙はプラグインの references/prompts/adversarial-verify.md\n"
             % (axes_total, infl)
         )
         sys.exit(1)

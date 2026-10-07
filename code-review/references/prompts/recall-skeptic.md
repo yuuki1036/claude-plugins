@@ -9,8 +9,8 @@ high-risk surface を含む変更に対し、**他 reviewer の findings も推�
 
 ### 入力
 - **diff ファイルのパス（`$DIFF_FILE`）と担当ファイル名** / PR 番号
-  - diff 本文はプロンプトに含まれない。`scripts/diff-slice.sh "$DIFF_FILE" <path>...`（`--list` で一覧）で切り出して読む
-  - worktree 起動時は `reviewer-common.md` の「開始時の必須セットアップ」を先に実行する
+  - diff 本文はプロンプトに含まれない。`{{PLUGIN_ROOT}}/scripts/diff-slice.sh "$DIFF_FILE" <path>...`（`--list` で一覧）で切り出して読む
+  - worktree 起動時は `{{PLUGIN_ROOT}}/references/prompts/reviewer-common.md` の「開始時の必須セットアップ」を先に実行する
 - base ref
 - （focus は最小。特定観点に割らない。generalist として全体を冷や読みする）
 

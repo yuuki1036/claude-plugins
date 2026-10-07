@@ -1774,7 +1774,7 @@ _latest_known = [k for k, v in verdict_layers.items()
                  if v["calib"] == latest_calib and LAYER_GEN.get(k) not in UNKNOWN_GENS]
 newest_layer = (max(_latest_known, key=lambda k: (verdict_layers[k]["total"], k))
                 if _latest_known else None)
-# 上流較正（`prompts/reviewer-common.md` の「降格される典型パターン」= v2.62.0）の効果は
+# 上流較正（`references/prompts/reviewer-common.md` の「降格される典型パターン」= v2.62.0）の効果は
 # **対策後のサンプルでしか測れない**（orchestration-measurement.md `## 16` / triage-dynamic-gates.md
 # `## 9`「この 52% を上流対策の効果測定に使わないこと」）。`calibration_schema` が未注入だった
 # v2.64.x 以前のサンプルは全部 layer 1 に落ちるため、**対策前の累計値でシグナルが発火し続けて
@@ -1798,7 +1798,7 @@ for _lk in sorted(verdict_layers):
         # ラベルは**その層のキー**を出す（`newest_layer` を出すと別層の名前が付く）。
         # キーには世代が入っているので `層=` と呼ぶ
         signals.append("severity_inflated が %.0f%%（層=%s / %d verdict）。"
-                       "上流較正（prompts/reviewer-common.md の降格典型）が効いていない疑い"
+                       "上流較正（references/prompts/reviewer-common.md の降格典型）が効いていない疑い"
                        % (ratio, _lk, L["total"]))
     # 下の 2 つは `CALIB_MIN` で絞らない。**反証レイヤー自身の設定**（effort / バッチサイズ）の
     # 再監視条件であって上流較正の効果測定ではないので、較正版で層別する理由が無い
@@ -1941,9 +1941,9 @@ def gap_hint(g):
                 "欠測にしてある — Claude Code が env を渡しているか、transcript の置き場所が"
                 "変わっていないかを見る（lib/review-paths.sh の `review_session_transcript`）")
     if g == "axis-unknown":
-        return "反証 agent の axis 語彙（prompts/adversarial-verify.md）と両 SKILL Step 6 の対応表を見直す"
+        return "反証 agent の axis 語彙（references/prompts/adversarial-verify.md）と両 SKILL Step 6 の対応表を見直す"
     if g == "demoted-unknown":
-        return "reviewer の降格型名（prompts/reviewer-common.md の 4 型）と両 SKILL Step 6 の対応表を見直す"
+        return "reviewer の降格型名（references/prompts/reviewer-common.md の 4 型）と両 SKILL Step 6 の対応表を見直す"
     if g == "fleet-span-mismatch":
         # **打点の話だが区間が特定できる**ので、既定より具体的に言える（#207）
         return ("fleet 区間が agent の起動スパンを覆えていない。t1 を一括発行の直前に、"

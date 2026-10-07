@@ -265,7 +265,7 @@ class ReapTest(unittest.TestCase):
     """`reap` / `sweep` を直接呼ぶ（E2E の `RunTestsTest` では作れない状況を作る）.
 
     - ゾンビ: 孤児を引き取る PID 1 がすぐ wait しないコンテナでは、死んだ孫がしばらくゾンビで
-      残り `pgrep` にも出る。E2E はその環境でしか再現しないので、親が wait しないゾンビを作る
+      残り `pgrep` にも出る（Linux）。E2E はその環境でしか再現しないので、親が wait しないゾンビを作る
     - kill の拒否: root ではどの pid に撃っても拒否されないので、`os.kill` を差し替えて起こす
     """
 
@@ -277,11 +277,11 @@ class ReapTest(unittest.TestCase):
         self.mod.KILL_CONFIRM_SEC = 0
 
     def zombie(self) -> int:
-        """ゾンビの pid を作る. 使う側は `list_group` を差し替えてグループに見える状態にする.
+        """親が wait しないゾンビを作る. `list_group` がそれを列挙しない環境では列挙させる.
 
-        Linux の procps の `pgrep -g` はゾンビを列挙するが、macOS の `pgrep -g` は列挙しない
-        （実測: `ps -g` には `Z` で出るのに `pgrep -g` は 0 件）。本物の `pgrep` のままだと
-        macOS では `reap` の SIGTERM 後の再列挙からゾンビが消え、ゾンビ判定の経路を通らない。
+        macOS の `pgrep` はゾンビを列挙しない（実測: `ps` は `Z` を出すが `pgrep -g` には出ない）.
+        そのままではゾンビが最初から居ないことになり, ゾンビを数える分岐を通らない.
+        列挙する環境（Linux）では本物の `pgrep` のまま通す.
         """
         pid = os.fork()
         if pid == 0:
@@ -289,14 +289,21 @@ class ReapTest(unittest.TestCase):
         self.addCleanup(os.waitpid, pid, 0)
         for _ in range(100):
             if self.mod._is_zombie(pid):
-                return pid
+                break
             time.sleep(0.05)
-        self.fail("前提: 子がゾンビにならない")
+        else:
+            self.fail("前提: 子がゾンビにならない")
+        pgid = os.getpgid(0)
+        if pid not in (self.mod.list_group(pgid) or []):
+            patcher = mock.patch.object(
+                self.mod, "list_group", side_effect=lambda g: [pid] if g == pgid else [])
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return pid
 
     def test_a_zombie_is_counted_as_reaped(self):
         pid = self.zombie()
-        with mock.patch.object(self.mod, "list_group", return_value=[pid]):
-            self.assertEqual(self.mod.reap(os.getpgid(0), [pid]), [])
+        self.assertEqual(self.mod.reap(os.getpgid(0), [pid]), [])
 
     def test_a_process_we_may_not_kill_is_reported_not_crashed(self):
         """権限が無い相手は **traceback ではなく「回収できなかった」**として報告する（M2）.
@@ -335,8 +342,7 @@ class ReapTest(unittest.TestCase):
                 raise FileNotFoundError(argv[0])
             return real_run(argv, *a, **kw)
 
-        with mock.patch.object(self.mod, "list_group", return_value=[pid]), \
-                mock.patch.object(self.mod.subprocess, "run", side_effect=run):
+        with mock.patch.object(self.mod.subprocess, "run", side_effect=run):
             self.assertEqual(self.mod.reap(os.getpgid(0), [pid]), [pid])
 
 

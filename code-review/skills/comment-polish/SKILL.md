@@ -100,7 +100,7 @@ Markdown 装飾の除去は 2 観点とは別の**表記**の扱いで、3 つ�
 
 - diff で追加・変更したコメント以外は触らない（既存コメントの一括推敲・コード行の変更の禁止）
 - md 散文は対象外
-- 2 観点の定義を本文に複製しない（正本 → prompts/focus/comment-polish.md の区間を Read）
+- 2 観点の定義を本文に複製しない（正本 → `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md` の区間を Read）
 - ID 除去は背景の文を残し ID だけ落とす。`Refs #N` 等の正当な参照は検出側で除外済み
 - Markdown 装飾は記号だけ落とす。コード（`a ** b`・JSDoc の `/**` `*/`）には触れない
 - 意味が変わらない同義変換（「〜する」↔「〜を行う」）は出さない

@@ -2,6 +2,33 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.147.1] - 2026-10-07
+
+### Fixed
+
+- **sub agent に Read させるプロンプトのパスを、SKILL.md と reference で
+  `${CLAUDE_PLUGIN_ROOT}/references/prompts/...` のフルパスに揃えた**（#282）。これまで explorer と reviewer の
+  起動節（self-review Step 3・4 / review Step 4・5）と、反証・冷や読み skeptic・meta-reviewer・Round 2・
+  specialist・Markdown 推敲の起動手順は `prompts/reviewer-common.md` のような短い形で書いていた（説明文にも
+  `focus/<name>.md` の形が残っていた）。フルパスは組み立て方の正本（reviewer-prompts.md /
+  explorer-prompts.md）にしか無く、オーケストレーターはその正本を読まない規約だった。短い形に `${CLAUDE_PLUGIN_ROOT}/` だけを足すと
+  `references/` が落ち、agent は最初の Read に失敗して 2〜4 往復をプロンプト探しに使う（reviewer 665 体中
+  39 体・explorer 140 体中 10 体。直前の版でも発生）
+- **パスの渡し方を明文化した**: `${CLAUDE_PLUGIN_ROOT}` の部分だけをプラグインの実パスに置き換え、
+  `/references/prompts/...` 以降は書かれたまま渡す（orchestration-guide `## 3.5`・両 SKILL.md・組み立て例）。
+  SKILL.md も command 本文から Read で読まれるので変数は展開されず、agent の Read も展開しない。
+  初回の explorer は共通ブロック（`agent_ctx_file`）より前に走るので、可変部にプラグインの実パス
+  （review では `{{MAIN_ROOT}}` と依存 dir も）を必ず入れる
+- 起動節のパスを 1 行 1 本に割り、何本渡すかを読み取れるようにした
+- Read パスが書かれていなかった起動手順を補った: Round 2（再起動 reviewer には初回に渡したパスをすべて、
+  追加 explorer には `explorer-common.md` と `explorer/re-explore.md` の 2 本）と specialist（`reviewer-common.md` と
+  `specialist/<key>.md`）。反証・冷や読み skeptic のプロンプトが参照する `reviewer-common.md` にもルートを付けた
+- 反証・冷や読み skeptic・meta-reviewer のプロンプト、orchestration-guide / triage-guide、self-review /
+  review-guide の SKILL.md で、`diff-slice.sh` をプラグインのルート無しで書いていたのを
+  `{{PLUGIN_ROOT}}/scripts/diff-slice.sh`（オーケストレーター向けの SKILL.md / doc は `${CLAUDE_PLUGIN_ROOT}/...`）に
+  揃えた。publish-review-event.sh / review-retro.sh のメッセージ中のプロンプトのパスにも `references/` を付けた
+- reviewer-prompts.md で 2 行続けて重複していた「観点バンドル時は bundle-rules.md を足す」を 1 行にした
+
 ## [2.147.0] - 2026-10-06
 
 ### Added

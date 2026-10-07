@@ -1,9 +1,9 @@
 # 動的ラウンドの起動ゲート（triage-guide 分冊）
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @a70a602f -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @1db019f1 -->
-<!-- SSOT: code-review/references/orchestration-guide.md#5 @095c6e5e -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @2561c0d6 -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @1cc0aecf -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
 
@@ -82,7 +82,7 @@
 - **代償と補償**: meta が足した指摘は同一 wave の反証を受けられない。反証ゲートに該当する `[meta]` タグ付き指摘が出た場合に限り、**追加バッチ 1 体（上限 5 件）を直列で走らせる**（`## 9`）。meta が 0 件 / ゲート非該当なら wave は増えない
 
 **動作**:
-1. meta-reviewer agent (`prompts/meta-reviewer.md`) を 1 体起動（反証バッチと同一メッセージ）
+1. meta-reviewer agent (`${CLAUDE_PLUGIN_ROOT}/references/prompts/meta-reviewer.md`) を 1 体起動（反証バッチと同一メッセージ）
 2. 入力: 全 reviewer の指摘リスト（フィルタ前）、diff、explorer 結果
 3. 出力: 追加指摘（あれば。なくても OK）
 4. meta-reviewer の指摘も通常のスコアリング・フィルタリング対象に含める
@@ -127,9 +127,9 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 1. **DB 書込**: `INSERT` / `UPDATE` / `DELETE` を含む生 SQL、または ORM の書込 API（`.create(` / `.update(` / `.save(` / `.insert(` / `.upsert(` 等）。performance 観点の起動条件（triage-guide.md `## 3` の `INSERT|UPDATE` 正規表現）を surface 判定に転用する
 2. **金銭・数量計算**: `amount` / `price` / `balance` / `quantity` / `stock` / 通貨・丸め・課金に関わる numeric 演算
 3. **認可・認証**: 権限チェック / セッション / トークン / ロール判定に関わる変更
-4. **PR 自己申告 D1-High**: PR 本文・ラベルで著者が「高リスク」「D1-High」「要注意」と申告した変更（`prompts/pr-context-rules.md` の D1-High 検出で拾う。review skill のみ）
+4. **PR 自己申告 D1-High**: PR 本文・ラベルで著者が「高リスク」「D1-High」「要注意」と申告した変更（`${CLAUDE_PLUGIN_ROOT}/references/prompts/pr-context-rules.md` の D1-High 検出で拾う。review skill のみ）
 
-**偽陰性の保険**: 正規表現は ORM 抽象の深い経由（動的メソッド・ラッパー越しの書込）を取り逃しうる。reviewer はコード読解で high-risk surface に触れると判断したら `[surface:high-risk]` を申告する（`prompts/reviewer-common.md` の「high-risk surface フラグ」で全 reviewer に指示。PR 自己申告 `prompts/pr-context-rules.md` とは独立経路）。オーケストレーターは **正規表現ヒット ∨ reviewer フラグ ∨ PR 自己申告 D1-High で OR 判定**する。surface 偽陰性は recall 補強が丸ごと不発になるため、網羅は正規表現に依存しきらない。
+**偽陰性の保険**: 正規表現は ORM 抽象の深い経由（動的メソッド・ラッパー越しの書込）を取り逃しうる。reviewer はコード読解で high-risk surface に触れると判断したら `[surface:high-risk]` を申告する（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` の「high-risk surface フラグ」で全 reviewer に指示。PR 自己申告 `${CLAUDE_PLUGIN_ROOT}/references/prompts/pr-context-rules.md` とは独立経路）。オーケストレーターは **正規表現ヒット ∨ reviewer フラグ ∨ PR 自己申告 D1-High で OR 判定**する。surface 偽陰性は recall 補強が丸ごと不発になるため、網羅は正規表現に依存しきらない。
 
 ### 起動ゲート（暴走ガード）
 
@@ -194,7 +194,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 | model | **opus**（独立検証は強モデル: ルーティング表） | opus |
 | 起動ゲート | high-risk surface（事前所見・severe 非依存） | 非対称ゾーン |
 
-skeptic テンプレートは `prompts/recall-skeptic.md`。findings / reviewer 推論は渡さず、diff と最小 focus のみ渡す。#1（層跨ぎ値フロー）を独立でも捕捉できるよう、敵対的入力逆算の核（受理入力の端点を末端の永続層制約まで前進させる）をテンプレートに内挿し、独立性に「破り方」を持たせる。
+skeptic テンプレートは `${CLAUDE_PLUGIN_ROOT}/references/prompts/recall-skeptic.md`。findings / reviewer 推論は渡さず、diff と最小 focus のみ渡す。#1（層跨ぎ値フロー）を独立でも捕捉できるよう、敵対的入力逆算の核（受理入力の端点を末端の永続層制約まで前進させる）をテンプレートに内挿し、独立性に「破り方」を持たせる。
 
 ### userConfig / 失敗時
 
@@ -205,7 +205,7 @@ skeptic テンプレートは `prompts/recall-skeptic.md`。findings / reviewer 
 
 reviewer の指摘を独立エージェントが反証し、過大な指摘の prominence を下げるフェーズ。**冷や読み skeptic の統合後・scoring の前**に挿入する（review=Phase 5.9 / self-review=Phase 4.9）。**起動は meta-reviewer（`## 8` Phase 5.6）と同一 wave**（v2.61.0。両者は互いに独立 — 根拠は `## 8` の起動タイミング節）。meta-reviewer / skeptic が「見落とし（false negative）」を足す係なのに対し、本レイヤーは「独立読み直しで**severity を較正し、偽陽性を摘出する**」鏡像の係。skeptic が足した指摘も本レイヤーの反証対象に含める。
 
-> **実際の主機能は severity の較正であって偽陽性の除去ではない**（GitHub issue #114 / 累計 n=49・102 verdict）: `severity_inflated` **52%** / `confirmed` 37% / `refuted` **9%** / `uncertain` 0% / `contested` 2%。層の価値を否定するデータではない（実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている）が、**「偽陽性を潰す層」と読むと期待と実挙動がずれる**。過大 severity の上流対策は `prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」と、その直後の**「降格される典型パターン」**（v2.62.0 / issue #123 A）に置いた。
+> **実際の主機能は severity の較正であって偽陽性の除去ではない**（GitHub issue #114 / 累計 n=49・102 verdict）: `severity_inflated` **52%** / `confirmed` 37% / `refuted` **9%** / `uncertain` 0% / `contested` 2%。層の価値を否定するデータではない（実測 1 件では 9 件中 6 件を降格して報告を 1 件に絞れている）が、**「偽陽性を潰す層」と読むと期待と実挙動がずれる**。過大 severity の上流対策は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「severity を付ける前に: base 状態の確認」と、その直後の**「降格される典型パターン」**（v2.62.0 / issue #123 A）に置いた。
 >
 > **この 52% を上流対策の効果測定に使わないこと。** 累計値は対策前のサンプルを含むため、施策の効果が構造的に薄まる（`## 16` の「版マーカーで層別し日付で切らない」の一般則）。効果は `adversarial_verify.calibration_schema` で層別した内訳で見る — 集計は `scripts/review-retro.sh` が層別済みの表で出す。
 >
@@ -221,7 +221,7 @@ reviewer の指摘を独立エージェントが反証し、過大な指摘の p
 | high（既定） | 非対称ゾーンのみ: BLOCKER 60-94 / CRITICAL 80-94 | `ceil(対象件数 / 5)` 体・上限 3 体 |
 | xhigh / max | 上記 + BLOCKER/CRITICAL 95+ + MAJOR | 同上 |
 
-**バッチ化（v2.41.0）**: 反証は **1 体あたり最大 5 件**をまとめて渡す（旧: 指摘ごと 1 体）。反証に必要な独立性は「指摘を出した reviewer と別コンテキスト」であって「指摘同士が別コンテキスト」ではないため、同一 diff の読み直しを N 体で重複させる意味がない。反証は**かつて指摘数に比例する唯一の変動費**（triage-guide.md `## 7` の体数表で reviewer / specialist は上限が効くのに対し、旧構成の反証だけは指摘が増えるほど体数が増えた）であり、既定パスのコストの主要項だった。**本節のバッチ化で上限 3 体・15 件に頭打ちになり、他層と同じく上限で止まる**（v2.61.0 以降は下記の meta 由来追加バッチ 1 体を含めて **4 体・20 件**が実効上限）。バッチ内の相互汚染（1 件の verdict を別件の根拠にする）は `prompts/adversarial-verify.md` の鉄則で禁止する。
+**バッチ化（v2.41.0）**: 反証は **1 体あたり最大 5 件**をまとめて渡す（旧: 指摘ごと 1 体）。反証に必要な独立性は「指摘を出した reviewer と別コンテキスト」であって「指摘同士が別コンテキスト」ではないため、同一 diff の読み直しを N 体で重複させる意味がない。反証は**かつて指摘数に比例する唯一の変動費**（triage-guide.md `## 7` の体数表で reviewer / specialist は上限が効くのに対し、旧構成の反証だけは指摘が増えるほど体数が増えた）であり、既定パスのコストの主要項だった。**本節のバッチ化で上限 3 体・15 件に頭打ちになり、他層と同じく上限で止まる**（v2.61.0 以降は下記の meta 由来追加バッチ 1 体を含めて **4 体・20 件**が実効上限）。バッチ内の相互汚染（1 件の verdict を別件の根拠にする）は `${CLAUDE_PLUGIN_ROOT}/references/prompts/adversarial-verify.md` の鉄則で禁止する。
 
 **meta 由来指摘の追加バッチ（v2.61.0 / 同一 wave 化の補償）**: meta-reviewer と同一 wave で発行する以上、**`[meta]` タグ付きの追加指摘は本体バッチの対象に入らない**。統合後にゲート（上表）へ該当する `[meta]` 指摘があれば、**追加バッチ 1 体（上限 5 件）だけ**を直列で走らせる（本体の上限 3 体とは別枠で、`agents.verify` には加算する）。
 
@@ -256,7 +256,7 @@ reviewer の指摘を独立エージェントが反証し、過大な指摘の p
 | **`uncertain` 比率**（= 根拠を出せず判定できなかった割合） | **0 件 / 0%** | effort を `max` に戻す根拠なし |
 | **`refuted` 比率** | 4 件 / **6%** | バッチサイズを 5 → 3 に下げる根拠なし |
 
-`uncertain` が 0 なのは「反証エージェントが判定を避けている」のではなく**判定できている**と読んでよい（`prompts/adversarial-verify.md` は根拠を出せない場合に `uncertain` を選ぶよう指示しており、実測 1 件では 9 件すべてに `file:line` 付きの根拠が返っていた）。→ 実測の詳細と `severity_inflated` 60% の扱い: `design-notes/scoring-rationale.md`
+`uncertain` が 0 なのは「反証エージェントが判定を避けている」のではなく**判定できている**と読んでよい（`${CLAUDE_PLUGIN_ROOT}/references/prompts/adversarial-verify.md` は根拠を出せない場合に `uncertain` を選ぶよう指示しており、実測 1 件では 9 件すべてに `file:line` 付きの根拠が返っていた）。→ 実測の詳細と `severity_inflated` 60% の扱い: `design-notes/scoring-rationale.md`
 
 - **再監視の条件**: 反証プロンプト・ゲート・バッチサイズを変更したときは、`uncertain` が 0 のままかを再確認する（この判定は現行の 3 つの組み合わせに対するもの）
 - **`orchestration-guide.md ## 5` の注記（不変条件を緩めるときは反証 effort を `max` に戻すか同時に判断する）は本判定で閉じない。** あちらは verdict 分布とは独立の条件で、scoring-guide の「高 severity 非削除」不変条件に依存している
@@ -279,7 +279,7 @@ reviewer の指摘を独立エージェントが反証し、過大な指摘の p
 
 **除外（全 effort 共通）**:
 
-- **specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**。これらは「断定できなくても BLOCKER + 低 confidence で人間判断を促す」前提（`prompts/specialist/<key>.md`）であり、誤反証で人間の警戒度を下げる代償が非対称に大きい
+- **specialist 由来（specialist-injection / -secret-handling / -destructive-op / -input-validation / -guardrail-bypass）の指摘は反証対象外**。これらは「断定できなくても BLOCKER + 低 confidence で人間判断を促す」前提（`${CLAUDE_PLUGIN_ROOT}/references/prompts/specialist/<key>.md`）であり、誤反証で人間の警戒度を下げる代償が非対称に大きい
 - 95+ の高確証指摘は high では対象外（取り下がりにくい層）
 
 **high-risk surface 例外ゲート（surface-aware 閾値との吸収整合 / F4）**:
@@ -289,7 +289,7 @@ surface-aware 報告閾値（scoring-guide.md `## 報告マトリクス`）が h
 ### 動作
 
 1. 上表のゲートで対象指摘を選ぶ
-2. 対象指摘を 5 件ずつのバッチに分け、バッチごとに反証エージェント（`prompts/adversarial-verify.md`）を `model: opus`, `effort: high` で起動。指摘の主張のみ渡し reviewer 推論は渡さない
+2. 対象指摘を 5 件ずつのバッチに分け、バッチごとに反証エージェント（`${CLAUDE_PLUGIN_ROOT}/references/prompts/adversarial-verify.md`）を `model: opus`, `effort: high` で起動。指摘の主張のみ渡し reviewer 推論は渡さない
    - **effort は v2.41.0 で `max` → `high`**。effort 方針の正本は orchestration-guide.md `## 5`（「下げるのは『全レビューで走る』または『指摘数に比例する』レイヤー、据え置くのは 1 体固定の検証レイヤー」）。反証は誤判定コストの非対称性を **verdict の扱い側**（高 severity は `refuted` でも `severity-inflated` でも消さず係争注記 = scoring-guide の不変条件）で吸収しているため、effort での二重の保険は要らない
 3. `pre-existing` / `intended` の鮮度は LLM 前に `git show <base>:<file>` / `git blame` で機械判定
 4. verdict を scoring（scoring-guide.md `## 反証レイヤーの verdict 反映`）に渡す。**高 severity は消さず注記**、MAJOR/MINOR のみ取り下げ可（理由は付録に記録）
