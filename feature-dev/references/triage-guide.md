@@ -1,22 +1,21 @@
 # Phase 1.7 トリアージガイド（feature-dev）
 
 Phase 1.7 は実装開始前にメインコンテキストで feature 要件・Issue context・プロジェクト特性を分析し、
-explorer / architect / reviewer の構成を動的に決定するフェーズ。
+explorer / architect の構成を動的に決定するフェーズ。Phase 6 の reviewer 構成はここでは決めない（Section 6）。
 
 ## 1. Phase 1.7 概要
 
 - **メインコンテキストで実行する**（Agent ツールは使わない）
 - 2 段階判定: Stage 1（タイプ判定）→ Stage 2（体数・フォーカス・冗長度決定）
 - 出力はエージェント構成テーブル
-- code-review の Phase 0 トリアージと同じ思想だが、3 種 agent × 「実装前なので diff がない」差分に適応
+- code-review の Phase 0 トリアージと同じ思想だが、「実装前なので diff がない」差分に適応
 
 **code-review との違い:**
 
 | 観点 | code-review Phase 0 | feature-dev Phase 1.7 |
 |---|---|---|
 | 入力 | diff + PR コンテキスト | feature 要件 + Issue context + プロジェクト特性 |
-| Agent 種 | 2（explorer / reviewer） | 3（explorer / architect / reviewer） |
-| 再判定 | なし（1 回確定） | Phase 6 開始時に reviewer を **diff ベースで再判定** |
+| Agent 種 | 2（explorer / reviewer） | 2（explorer / architect） |
 
 ## 2. 入力情報
 
@@ -73,34 +72,15 @@ architect は常に最低 1 体必要。複数観点を起動する条件:
 | **pragmatic-balance** | high effort 以上、かつ minimal vs clean のトレードオフが顕著 |
 | **migration-strategy** | migration タイプ専用（段階移行・ロールバック戦略） |
 
-### reviewer の観点判定（Phase 1.7 時点は **暫定予測**）
-
-Phase 1.7 時点では実装 diff がないため、reviewer は **feature 要件から予測**して暫定構成を出す。
-Phase 6 開始時に **diff を見て再判定**する（後述 Section 6）。
-
-予測ルール:
-
-| 観点 | 予測条件 |
-|---|---|
-| **bug-detection** | 常時必須（最小保証） |
-| **claude-md-compliance** | CLAUDE.md が存在する場合に追加 |
-| **security** | 認証・認可・暗号・PII を扱う feature の場合 |
-| **performance** | DB クエリ・キャッシュ・大量データ処理を含む場合 |
-| **api-design** | 新規 API / 既存 API 変更を含む場合 |
-| **migration** | migration タイプの場合 |
-| **spec-compliance** | Issue context（Phase 1.5）・`.claude/session-context.md`・BDD spec（Phase 1.3）のいずれかがある場合 |
-| **ui-quality** | フロントエンド変更を含む場合（`.tsx`/`.jsx`/`.vue`/`.svelte` 等） |
-| **type-design** | 新規型・interface・schema の追加を含む場合 |
-
 ### React/Next.js 判定
 
 `package.json` に `react` / `next` が含まれる場合:
-- architect に **vercel-best-practices** 観点を追加する。reviewer 側は `ui-quality` を足す（code-review の ui-quality が modern-web チェックリストでこの観点を持つ。`vercel-best-practices` という reviewer focus は code-review に無い）
+- architect に **vercel-best-practices** 観点を追加する
 
 ### 外部ライブラリ最新仕様の参照
 
 新規・変更で外部ライブラリ（React, Next.js, Prisma, Vue, FastAPI 等）の利用が含まれる場合、
-architect / reviewer に公式 skill `context7` を経由した最新仕様確認を許可する
+architect に公式 skill `context7` を経由した最新仕様確認を許可する
 （モデル学習データの cutoff を越える破壊的変更の誤判定を避けるため）。
 
 ## 4. Stage 2: 体数・フォーカス決定
@@ -125,57 +105,27 @@ architect / reviewer に公式 skill `context7` を経由した最新仕様確�
 | トレードオフが顕著 | 2-3 | + pragmatic-balance |
 | migration タイプ | 2 | migration-strategy + minimal-changes |
 
-### reviewer の体数（暫定）と focus
-
-| feature 特性 | 暫定体数 | focus の切り方 |
-|---|---|---|
-| 単純 bugfix | 1-2 | bug-detection [+ claude-md-compliance] |
-| 標準的な機能追加 | 2-3 | + 1 観点（security / performance / api-design / ui-quality のうち該当） |
-| cross-cutting 機能 | 3-4 | + cross-cutting 観点 |
-| migration / 高リスク | 4-5 | + migration + security |
-
-### 冗長ペアの angle
-
-複雑度が高い場合に同一観点を 2 体に分けて並列起動する。
-
-**bug-detection の場合:**
-- A = データフローの正しさ
-- B = 制御フローの正しさ（分岐の全パス検証）
-
-**security の場合:**
-- A = 入力バリデーション・インジェクション
-- B = 認証・認可・アクセス制御
-
 ## 5. Effort 適応
 
 実行時 effort = `${CLAUDE_EFFORT}` に応じて上限を調整する:
 
-| effort | explorer 上限 | architect 上限 | reviewer 上限 | 備考 |
-|---|---|---|---|---|
-| `low` | **0**（Phase 2 skip） | 1 | 1 | 速度優先。clarifying questions も最小化 |
-| `medium` | 2 | 1 | 2 | 軽量だが explorer は許可 |
-| `high`（既定） | 3 | 2 | 3 | 標準構成 |
-| `xhigh` | 5 | 3 | 6 | 多角的検証・冗長ペア導入 |
-| `max` | 6 | 3 | 8 | 上限まで使い、深掘り優先 |
+| effort | explorer 上限 | architect 上限 | 備考 |
+|---|---|---|---|
+| `low` | **0**（Phase 2 skip） | 1 | 速度優先。clarifying questions も最小化 |
+| `medium` | 2 | 1 | 軽量だが explorer は許可 |
+| `high`（既定） | 3 | 2 | 標準構成 |
+| `xhigh` | 5 | 3 | 多角的検証 |
+| `max` | 6 | 3 | 上限まで使い、深掘り優先 |
 
-## 6. Phase 6 開始時の reviewer 再判定（mini-triage）
+Phase 6 の reviewer 体数は、self-review が同じ `${CLAUDE_EFFORT}` で code-review の上限を当てて決める。
 
-Phase 6 は **実装 diff が確定した後** に走るため、Phase 1.7 の暫定構成を diff ベースで再評価する。
+## 6. Phase 6 の reviewer 構成は code-review の triage に任せる
 
-再判定の手順:
+Phase 1.7 は reviewer の構成を決めない。Phase 6 の初回 self-review は `--focus` を付けずに呼び、観点の選定・体数・束ね方は self-review の Phase 0 triage（diff シグナル・規模・effort）が決める（GitHub issue #283）。
 
-1. `git diff` で実装後の差分を取得
-2. code-review の Phase 0 ロジック（`triage-guide.md` of code-review）に準じて diff パターンマッチ:
-   - try-catch 追加 → error-handling 観点を追加
-   - テストファイル変更、または新しいソースファイルがあるのにテストファイルの変更が 0 → test-quality 観点を追加
-   - 型定義変更 → type-design 観点を追加
-   - 認証関連ファイル変更 → security 観点を昇格・冗長化
-   - DB / migration ファイル変更 → migration 観点を追加
-   - Issue context / session-context / BDD spec がある → spec-compliance 観点を追加
-3. Phase 1.7 の暫定構成と diff 結果をマージし、最終 reviewer 構成を確定（focus 名は code-review の `references/prompts/focus/` の語彙に限る。語彙外の名前は self-review が起動できない）
-4. effort 上限は維持（暫定で 3 体予測 → diff で 5 観点必要なら effort=high の上限 3 体に絞る）
-
-**最小保証**: bug-detection + claude-md-compliance（存在時）の 2 体は Phase 1.7 / Phase 6 再判定の判断に関わらず常に起動。
+- **`--focus` を付けない理由**: self-review の `--focus` は「既に検証した観点の再評価を避ける」ための引数で、指定すると反証レイヤーと skeptic が `scope` でスキップされ、triage の `## focus-signals`（`layer-responsibility` など）も範囲外になる。Phase 6 の初回はその変更の最初のレビューなので、この前提が成り立たない。実測では feature-dev 経由の high 以上 5 回すべてで反証が `scope` でスキップされ、auto-fix 対象になる CRITICAL が反証を通らずに残った
+- **feature-dev が持つ情報の渡し方**: BDD spec は `--spec=<path>` で渡す（self-review の triage が spec-compliance を起動する）。Issue ファイル・`.claude/session-context.md` は self-review 側が自分で読んで spec-compliance の起動条件に使う
+- **`--focus` を使うのは G-V ループの再レビューだけ**（Section 10）。修正した指摘の観点を見直す回で、「既検証の再評価を避ける」本来の用途に当たる
 
 ## 7. 出力フォーマット
 
@@ -204,13 +154,6 @@ Phase 1.7 の出力はエージェント構成テーブルとして表示する�
 |---|---|---|
 | A1 | minimal-changes | 既存 middleware を再利用する最小案 |
 | A2 | clean-architecture | 新規 Provider 抽象を導入したクリーン案 |
-
-#### Phase 6 レビュー（reviewer）— 暫定（Phase 6 開始時に diff で再判定）
-| # | focus | angle | 指示 |
-|---|---|---|---|
-| R1 | bug-detection | data-flow | データフロー検証 |
-| R2 | claude-md-compliance | - | CLAUDE.md ルール照合 |
-| R3 | security | auth | 認証フロー検証 |
 ```
 
 ## 8. フォールバック構成
@@ -221,25 +164,21 @@ Phase 1.7 が明確な判断を下せない場合のデフォルト構成（effo
 
 - explorer: 1 体（similar-features）
 - architect: 1 体（minimal-changes）
-- reviewer 暫定: 2 体（bug-detection, claude-md-compliance）
 
 ### medium（複数ファイル、標準的な機能）
 
 - explorer: 2 体（similar-features, architecture-mapping）
 - architect: 2 体（minimal-changes, clean-architecture）
-- reviewer 暫定: 3 体（bug-detection, claude-md-compliance, + 1 観点）
 
 ### large（cross-cutting / migration）
 
 - explorer: 3 体（+ cross-cutting / history-context）
 - architect: 2-3 体（+ pragmatic-balance or migration-strategy）
-- reviewer 暫定: 4-5 体（+ security, migration）
 
 ## 9. 最小保証とフェーズ上限
 
 - **最小保証（全 effort 共通）**:
   - architect: ≥ 1 体
-  - reviewer: ≥ 1 体（bug-detection は常時必須）
   - explorer: 0 体 OK（Issue context 完備時）
 - **上限**: Section 5 の effort 別上限に従う
 

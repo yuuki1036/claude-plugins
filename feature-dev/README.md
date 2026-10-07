@@ -7,7 +7,7 @@
 `/feature-dev` コマンド、または「機能開発」「新機能を実装」「実装計画を立てて」等の自然言語から起動する
 8 phase のワークフロー（command と skill の同名ペア。本体は `skills/feature-dev/SKILL.md`）。いきなりコードを書き始めるのではなく、コードベース理解 → 要件の grill → アーキテクチャ設計 → 実装 → runtime 検証 → 品質レビューの順で進めることで、既存コードに馴染む設計を作る。
 
-各 phase は `${CLAUDE_EFFORT}`（実行時 effort）と feature の特性に応じて動的に構成される。Phase 1.7 のトリアージが explorer / architect / reviewer の体数と focus を決め、低 effort では phase を圧縮し、高 effort では多角的に検証する。
+各 phase は `${CLAUDE_EFFORT}`（実行時 effort）と feature の特性に応じて動的に構成される。Phase 1.7 のトリアージが explorer / architect の体数と focus を決め（Phase 6 の reviewer は code-review の triage が決める）、低 effort では phase を圧縮し、高 effort では多角的に検証する。
 
 ## Philosophy
 
@@ -52,7 +52,7 @@
 | 1.3 | BDD Spec Creation | bdd-spec 連携。spec.md を architect の入力契約として生成（dormant） |
 | 1.5 | Issue Context Detection | issue-workflow からの引き継ぎ context を検出 |
 | 1.6 | Vault Recall | knowledge vault（MCP ツール `search_knowledge` か `kvault` CLI）から横断知見を recall し architect に advisory 注入（dormant） |
-| 1.7 | Triage | explorer / architect / reviewer の体数・focus を動的決定 |
+| 1.7 | Triage | explorer / architect の体数・focus を動的決定 |
 | 2 | Codebase Exploration | code-explorer で既存コードとパターンを把握 |
 | 3 | Clarifying Questions (Grill) | 曖昧点を 1 問ずつ依存順で解決 |
 | 4 | Architecture Design | code-architect で複数案を設計・比較 |
@@ -87,9 +87,9 @@ MCP ツール `search_knowledge`（server `knowledge-vault`）、または外部
 
 ### Phase 1.7: Triage（動的エージェント構成決定）
 
-feature の特性（種別・スコープ・リスク因子）× `${CLAUDE_EFFORT}` を分析し、後続 phase で起動する explorer / architect / reviewer の体数・focus・冗長度を決める。メインコンテキストで実行し（Agent tool は使わない）、構成テーブルを出力する。後続 phase はこのテーブルを直接参照する。
+feature の特性（種別・スコープ・リスク因子）× `${CLAUDE_EFFORT}` を分析し、後続 phase で起動する explorer / architect の体数・focus を決める。Phase 6 の reviewer 構成はここでは決めず、self-review の triage に任せる。メインコンテキストで実行し（Agent tool は使わない）、構成テーブルを出力する。後続 phase はこのテーブルを直接参照する。
 
-最小保証: architect ≥ 1、reviewer ≥ 1（bug-detection 必須）、explorer は 0 可（Issue context 完備時）。
+最小保証: architect ≥ 1、explorer は 0 可（Issue context 完備時）。
 
 ### Phase 1.8: プロジェクト宣言の必読 doc
 
@@ -153,8 +153,8 @@ tsc / lint / build では検知できない runtime 初期化バグ（DB client 
 `code-review:self-review` skill に委譲して品質ゲートを通し、致命指摘を Generator-Verifier ループで自動 fix する。v2.0.0 で feature-dev 内蔵の `code-reviewer` agent を廃止し、品質基準を code-review プラグインに一本化した（DRY 違反の解消 + 2 軸スコアリング × 多観点 × specialist × meta-reviewer 構造への統一）。
 
 - Step 0: code-review プラグインが有効かを確認（`scripts/plugin-enabled.sh`）。未インストール・無効時は **fail-fast**（Phase 5 までの成果物は維持。`_requirements` では `required: false` 宣言だが Phase 6 では事実上必須）
-- Step 1: 実装 diff を読んで reviewer focus list を refine（mini-triage）
-- Step 2: `Skill code-review:self-review --focus <list> --embed` を 1 回呼ぶ（`--embed` で self-review 終端の AskUserQuestion を skip）。Issue context / session-context / BDD spec があれば focus に `spec-compliance` を入れ、BDD spec があれば `--spec=<path>` で照合元として渡す。focus 名は code-review の語彙に限る（語彙外の名前は reviewer が起動しない）。出力は構造化 findings JSON ブロックを優先パース、無ければ markdown フォールバック（dual format）
+- Step 1: 実装 diff を記録する。reviewer の観点は選ばない（self-review の triage に任せる）
+- Step 2: `Skill code-review:self-review --embed` を 1 回呼ぶ（`--embed` で self-review 終端の AskUserQuestion を skip）。初回は `--focus` を付けない — 付けると反証レイヤーと skeptic が `scope` でスキップされ、triage が出す観点（`layer-responsibility` など）も起動しない（GitHub issue #283）。BDD spec があれば `--spec=<path>` で照合元として渡す（Issue context / session-context は self-review が自分で読む）。`--focus` は Step 3 の再レビューだけで使う。出力は構造化 findings JSON ブロックを優先パース、無ければ markdown フォールバック（dual format）
 - Step 3: Generator-Verifier ループ。`BLOCKER`（any confidence）/ `CRITICAL && confidence ≥ 90` を auto-fix 対象とし、effort 別 max_iterations で fix → 再 review を反復。regression 検知（同一 fingerprint）/ budget で終了
 - Step 4: 集約結果を `[auto-fixed]` / `[persisting]` タグ付きで提示し、残課題はユーザー判断
 

@@ -114,33 +114,34 @@ class PluginEnabledTest(unittest.TestCase):
         self.assertIn("usage", res.stderr)
 
 
-class ReviewerFocusVocabularyTest(unittest.TestCase):
-    """feature-dev が self-review に渡す focus 名が、code-review の focus 語彙に収まっているか.
+class InitialSelfReviewScopeTest(unittest.TestCase):
+    """Phase 6 の初回 self-review に `--focus` を渡さない（GitHub issue #283）.
 
-    語彙外の名前（旧 `migration-safety` / `vercel-best-practices`）を渡すと、self-review は
-    その reviewer を起動できない。feature-dev は code-review を参照できない（プラグイン間依存禁止）ので
-    語彙を本文に書き写しており、片側だけ変わると同じずれが再発する。
+    `--focus` を付けると self-review は反証レイヤーと skeptic を `scope` でスキップし、triage が出す観点
+    （`layer-responsibility` など）も起動しない。初回は観点選定を code-review の triage に任せ、
+    `--focus` は G-V ループの再レビュー（既検証の観点の見直し）だけで使う。
     """
 
     SKILL = REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
-    FOCUS_DIR = REPO / "code-review" / "references" / "prompts" / "focus"
+    REVIEW_LOOP = REPO / "feature-dev" / "references" / "review-loop.md"
 
-    def code_review_vocabulary(self) -> set[str]:
-        # comment-polish は Focus テンプレートではなく comment-accuracy に連結する追加ブロック
-        return {p.stem for p in self.FOCUS_DIR.glob("*.md")} - {"comment-polish"}
+    @staticmethod
+    def section(text: str, start: str, end: str) -> str:
+        i = text.index(start)
+        return text[i:text.index(end, i)]
 
-    def test_declared_vocabulary_matches_code_review(self):
-        import re
-        line = next(l for l in self.SKILL.read_text().splitlines() if "focus 名は code-review の語彙に限る" in l)
-        declared = set(re.findall(r"`([a-z-]+)`", line.split("（code-review の")[0]))
-        self.assertEqual(declared, self.code_review_vocabulary())
+    def test_initial_call_does_not_pass_focus(self):
+        step2 = self.section(self.SKILL.read_text(), "### Step 2: Invoke code-review:self-review",
+                             "self-review 内部の動き")
+        args = [l for l in step2.splitlines() if l.startswith("- ")]
+        self.assertTrue(args, "Step 2 の引数の箇条書きを拾えていない")
+        self.assertFalse([l for l in args if l.startswith("- `--focus")], "初回の self-review に --focus を渡している")
+        self.assertTrue([l for l in args if "`--embed`" in l])
 
-    def test_every_focus_added_in_phase_6_is_in_the_vocabulary(self):
-        import re
-        added = set(re.findall(r"→ (?:add|upgrade) `([a-z-]+)`", self.SKILL.read_text()))
-        self.assertTrue(added, "Phase 6 Step 1 の追加ルールを拾えていない")
-        self.assertLessEqual(added, self.code_review_vocabulary())
-
+    def test_re_review_keeps_focus(self):
+        """再レビューは既検証の観点の見直しなので `--focus` を使う（初回の禁止を広げすぎない）."""
+        loop = self.section(self.REVIEW_LOOP.read_text(), "7. **Re-review**", "8. **Update loop state**")
+        self.assertIn("`--focus <persisting issue の focus 集合>`", loop)
 
 
 SNAPSHOT = REPO / "feature-dev" / "scripts" / "review-snapshot.sh"

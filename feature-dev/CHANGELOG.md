@@ -5,6 +5,13 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.2] - 2026-10-07
+
+### Fixed
+
+- **Phase 6 の初回 self-review に `--focus` を渡さないようにした**（GitHub issue #283）。self-review の `--focus` は「既に検証した観点の再評価を避ける」ための引数で、指定すると反証レイヤーと skeptic が `scope` でスキップされ、code-review の triage が出す観点（`layer-responsibility` など）も範囲外になる。Phase 6 の初回はその変更の最初のレビューなのにこの扱いを受け、auto-fix の対象になる CRITICAL が反証を通らないまま残っていた（feature-dev 経由の high 以上 5 回すべてで反証が `scope` でスキップ）。観点の選定・体数・束ね方は self-review の Phase 0 triage に任せ、BDD spec は従来どおり `--spec=<path>` で渡す。`--focus` は G-V ループの再レビューだけで使う
+- 上に伴い、Phase 1.7 の reviewer 暫定構成と Phase 6 Step 1 の mini-triage を外した（どちらも `--focus` を作るためだけにあった）。triage-guide の reviewer の観点判定・体数・冗長ペア・effort 別 reviewer 上限・フォールバック構成の reviewer 行と、README の該当箇所も同じく更新した
+
 ## [2.19.1] - 2026-10-07
 
 ### Fixed

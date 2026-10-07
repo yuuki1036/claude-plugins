@@ -54,15 +54,17 @@ You are helping a developer implement a new feature. Follow a systematic approac
 Current effort: `${CLAUDE_EFFORT}`. The exact agent count for each phase is determined at **Phase 1.7 (Triage)** based on feature characteristics × effort. See `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` Section 5 for the upper-bound table.
 
 Summary:
-- `low`: 4-phase compressed flow (Discovery → Design → Implementation → Smoke test). Explorer skipped, single architect, single reviewer.
-- `medium`: Light explorer (≤2), single architect, light reviewer (≤2).
-- `high` (default): Standard 8-phase flow with triage-driven counts (explorer ≤3, architect ≤2, reviewer ≤3).
-- `xhigh`: Multi-explorer (≤5), multi-architect (≤3), redundant reviewers (≤6).
-- `max`: Full upper bounds — explorer ≤6, architect ≤3, reviewer ≤8.
+- `low`: 4-phase compressed flow (Discovery → Design → Implementation → Smoke test). Explorer skipped, single architect.
+- `medium`: Light explorer (≤2), single architect.
+- `high` (default): Standard 8-phase flow with triage-driven counts (explorer ≤3, architect ≤2).
+- `xhigh`: Multi-explorer (≤5), multi-architect (≤3).
+- `max`: Full upper bounds — explorer ≤6, architect ≤3.
+
+Phase 6 reviewer counts are not decided here: self-review's own triage sizes the fleet from the diff under the same `${CLAUDE_EFFORT}`.
 
 ## Cost×Precision Pipeline Principles (adopted / dropped)
 
-Of the 10 principles in root CLAUDE.md「コスト×精度パイプライン設計指針」, this workflow **adopts: 1 (funnel = Phase 1.7 triage gates expensive explorer/architect/reviewer counts) / 3 (staged budget = `${CLAUDE_EFFORT}` → agent counts above) / 4 (model routing = explorer:sonnet / architect:opus / review delegated to code-review's routing) / 8 (external oracle + fail-closed = Phase 5.3 type/lint/test gate before LLM review, and Phase 6 fail-fast when code-review is not installed)**. **Dropped**: 2/10 (scoring lives in code-review:self-review, which Phase 6 delegates to), 5 (no unbounded iteration — the G-V fix loop has a fixed retry cap), 6 (evidence accumulation is failure-journal's role), 7 (adversarial verification is code-review's Phase 5.9, not duplicated here).
+Of the 10 principles in root CLAUDE.md「コスト×精度パイプライン設計指針」, this workflow **adopts: 1 (funnel = Phase 1.7 triage gates expensive explorer/architect counts; reviewer counts are gated by code-review's triage) / 3 (staged budget = `${CLAUDE_EFFORT}` → agent counts above) / 4 (model routing = explorer:sonnet / architect:opus / review delegated to code-review's routing) / 8 (external oracle + fail-closed = Phase 5.3 type/lint/test gate before LLM review, and Phase 6 fail-fast when code-review is not installed)**. **Dropped**: 2/10 (scoring lives in code-review:self-review, which Phase 6 delegates to), 5 (no unbounded iteration — the G-V fix loop has a fixed retry cap), 6 (evidence accumulation is failure-journal's role), 7 (adversarial verification is code-review's Phase 5.9, not duplicated here).
 
 ---
 
@@ -160,7 +162,7 @@ fi
 
 ## Phase 1.7: Triage（動的エージェント構成決定）
 
-**Goal**: Decide how many explorer / architect / reviewer agents to launch in subsequent phases, with concrete focus assignments.
+**Goal**: Decide how many explorer / architect agents to launch in subsequent phases, with concrete focus assignments. Phase 6 reviewers are left to code-review's triage (`triage-guide.md` Section 6).
 
 **Why this phase exists**: Static "always 2-3 explorers + 3 reviewers" configuration wastes tokens on simple tasks and under-covers complex ones. Phase 1.7 inspects feature characteristics × `${CLAUDE_EFFORT}` and produces an agent configuration table that subsequent phases read.
 
@@ -176,20 +178,18 @@ Identify:
 - **Feature type**: bugfix / extension / new-feature / refactor / migration / cross-cutting (multiple allowed)
 - **Explorer necessity**: skip if Issue context provides a complete `feature_dev_plan:` AND the feature is isolated; otherwise required
 - **Architect focuses**: always include `minimal-changes`; add `clean-architecture` / `pragmatic-balance` / `migration-strategy` per the guide
-- **Reviewer focuses (provisional)**: `bug-detection` always; add `claude-md-compliance` / `security` / `performance` / `api-design` / `ui-quality` / `type-design` / `migration` / `spec-compliance` per the guide. Use only code-review's focus keys (the file names under code-review's `references/prompts/focus/`) — self-review has no reviewer for any other name
 
 Consider these signals:
-- `package.json` major dependencies (React/Next.js → vercel-best-practices for architects; the reviewer side is `ui-quality`, whose modern-web checklist covers it)
+- `package.json` major dependencies (React/Next.js → vercel-best-practices for architects)
 - CLAUDE.md presence
 - Issue context content (if Phase 1.5 detected one)
 
-### Step 3: Stage 2 — Count, focus, redundancy
+### Step 3: Stage 2 — Count and focus
 
 Apply the count tables in `triage-guide.md` Section 4, capped by the effort upper bounds in Section 5.
 
 **Minimum guarantee** (across all effort levels):
 - architect ≥ 1
-- reviewer ≥ 1 (bug-detection is mandatory)
 - explorer may be 0 (when Issue context is complete)
 
 ### Step 4: Output the configuration table
@@ -215,10 +215,6 @@ Present the table in the format defined in `triage-guide.md` Section 7. Example:
 #### Phase 4 設計（architect）
 | # | focus | 指示 |
 | A1 | minimal-changes | ... |
-
-#### Phase 6 レビュー（reviewer）— 暫定（Phase 6 で diff 再判定）
-| # | focus | angle | 指示 |
-| R1 | bug-detection | data-flow | ... |
 ```
 
 Subsequent phases consume this table directly.
@@ -575,39 +571,21 @@ fi
 
 ユーザーに「インストールして再開 / Phase 6 を skip して Phase 7 へ / abandon」を `AskUserQuestion` で確認するのも可。SessionStart hook (`hooks/scripts/check-deps.sh`) が事前に warning を出しているはずだが、ここで再確認することでセッション中盤のインストールにも対応する。
 
-### Step 1: Mini-triage (diff-based focus list)
-
-Phase 1.7 は **provisional** な reviewer focus list を出している。実装後の diff を読んで focus を refine し、self-review に渡す `--focus` 引数を確定する。
+### Step 1: Capture the implementation diff
 
 ```bash
-# Capture the implementation diff (Phase 5.5 でも同じファイルを使う前提)
+# Phase 5.5 でも同じファイルを使う前提
 git diff HEAD 2>/dev/null > /tmp/feature-dev-final-diff.txt
 git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-final-files.txt
 ```
 
-Apply diff-based pattern matching:
-
-- try-catch / catch ブロック追加 → add `error-handling`
-- テストファイル（`.test.` / `.spec.` / `__tests__/`）変更、または新しいソースファイル（設定・ドキュメント・型定義だけのものを除く）があるのにテストファイルの変更が 0 → add `test-quality`（code-review の triage-guide と同じ条件）
-- 型定義（`type` / `interface` / `enum`）追加 → add `type-design`
-- 認証・暗号関連ファイル変更 → upgrade `security`
-- DB / migration ファイル変更 → add `migration`
-- フロントエンド変更 → add `ui-quality`
-- Issue context（Phase 1.5）/ `.claude/session-context.md` / `BDD_SPEC_PATH` のいずれかがある → add `spec-compliance`（実装が仕様・受入条件・設計判断どおりかを見る reviewer。仕様のソースが無いと起動しても空振りする）
-
-**focus 名は code-review の語彙に限る**: `bug-detection` / `claude-md-compliance` / `security` / `performance` / `api-design` / `type-design` / `error-handling` / `test-quality` / `ui-quality` / `migration` / `spec-compliance` / `config` / `dependency` / `cross-cutting` / `layer-responsibility` / `pattern-consistency` / `comment-accuracy` / `doc-substance`（code-review の `references/prompts/focus/` のファイル名）。語彙外の名前（旧 `migration-safety` / `vercel-best-practices` 等）を渡すと self-review はその reviewer を起動できない
-
-Merge with the Phase 1.7 provisional list, then cap by the current effort upper bound (`triage-guide.md` Section 5).
-
-**Minimum guarantee**: `bug-detection` + `claude-md-compliance` (when CLAUDE.md exists) を必ず含める。
-
-最終 focus list を `,` 区切りで整形（例: `bug-detection,claude-md-compliance,security,type-design`）。
+**reviewer の観点はここで選ばない。** 観点の選定・体数・束ね方は self-review の Phase 0 triage に任せる（`${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` Section 6 / GitHub issue #283）。初回のレビューに `--focus` を付けると、反証レイヤーと skeptic が `scope` でスキップされ、triage が出す観点（`layer-responsibility` など）も範囲外になる。
 
 ### Step 2: Invoke code-review:self-review
 
 `Skill` tool で `code-review:self-review` を呼ぶ。引数:
 
-- `--focus <comma-separated focus list from Step 1>`
+- **`--focus` は付けない**（Step 1）。`--focus` を使うのは Step 3 の G-V ループの再レビューだけ
 - `--embed`（**必須**: feature-dev は自前で findings を集約するため、self-review 終端の修正方針確認 AskUserQuestion を skip させる）
 - `--spec=<BDD_SPEC_PATH>`（`BDD_SPEC_PATH` があるときだけ）: spec-compliance reviewer に BDD spec を読ませる。self-review の spec-compliance は session-context / Issue / knowledge しか読まないので、渡さないと Phase 1.3 の spec と実装の照合が起きない。`=` でつないで 1 語にする（`--spec` を知らない旧版の self-review がパスを base branch と読み違えないため）
 - base branch は省略（self-review が `git remote show origin | grep "HEAD branch"` で自動検出）
@@ -675,7 +653,7 @@ self-review の出力を severity × confidence で auto-fix トリガーに変�
 **手順**: `Skill` tool で `code-review:comment-polish` を呼ぶ。入力は Phase 6 の self-review レポートで分岐する:
 
 - `## コメント推敲提案` ブロックがある → そのブロックを一時ファイル（例: `.claude/.comment-polish-findings.txt`）へ書き出し、`--embed --from-findings <path>` で起動（comment-polish は再推敲せず全件適用）
-- ブロックが無い（`comment-accuracy` が Phase 6 Step 1 の focus に入らなかった / Fix Mode でコメントが増えた） → `--embed` 単独で起動（diff から精査して全件適用）
+- ブロックが無い（self-review の triage が `comment-accuracy` を起動しなかった / Fix Mode でコメントが増えた） → `--embed` 単独で起動（diff から精査して全件適用）
 
 どちらも `--embed` を付ける（一気通貫フローなので適用の是非を個別に聞き返さない。結果は Phase 7 summary と最終 diff で可視化される）。
 
