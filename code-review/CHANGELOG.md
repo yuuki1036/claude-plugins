@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.147.1] - 2026-10-07
+
+### Fixed
+
+- **sub agent に Read させるプロンプトのパスを、SKILL.md と reference の全箇所で
+  `${CLAUDE_PLUGIN_ROOT}/references/prompts/...` のフルパスに揃えた**（#282）。これまで SKILL.md の
+  Step 3・4 と、反証・冷や読み skeptic・meta-reviewer・再探索・specialist・Markdown 推敲の起動手順は
+  `prompts/reviewer-common.md` のような短い形で書いていた。フルパスは組み立て方の正本（reviewer-prompts.md /
+  explorer-prompts.md）にしか無く、オーケストレーターはその正本を読まない規約だった。短い形に
+  `${CLAUDE_PLUGIN_ROOT}/` だけを足すと `references/` が落ち、agent は最初の Read に失敗して 2〜4 往復を
+  プロンプト探しに使う（reviewer 665 体中 39 体・explorer 140 体中 10 体。現行版でも発生）。
+  orchestration-guide `## 3.5` に「書かれたフルパスのまま渡す」を足した
+- reviewer-prompts.md で 2 行続けて重複していた「観点バンドル時は bundle-rules.md を足す」を 1 行にした
+
 ## [2.147.0] - 2026-10-06
 
 ### Added

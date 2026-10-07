@@ -8,8 +8,8 @@ explorer は事実収集に特化し、問題の判定（バグかどうか等�
 
 | 節 | ファイル | 用途 |
 |---|---|---|
-| 共通指示 | `prompts/explorer-common.md` | 全 explorer 共通。**最初に Read する** |
-| Focus | `prompts/explorer/<focus>.md` | `function-flow` / `value-flow-trace` / `dependency-trace` / `branch-impact` / `history-context` / `shared-module-impact` / `re-explore` |
+| 共通指示 | `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md` | 全 explorer 共通。**最初に Read する** |
+| Focus | `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/<focus>.md` | `function-flow` / `value-flow-trace` / `dependency-trace` / `branch-impact` / `history-context` / `shared-module-impact` / `re-explore` |
 
 focus キーの語彙は triage-guide.md `## 3`「explorer の必要性判定」と reviewer の `unmet_information.focus` に一致する。
 

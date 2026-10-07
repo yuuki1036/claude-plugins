@@ -20,9 +20,9 @@ allowed-tools:
 # Review
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @99781aef -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @968f1a26 -->
-<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @c01db33c -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @829814fb -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @26573c3c -->
+<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @81868d30 -->
 
 ## 前提
 
@@ -242,7 +242,7 @@ Phase 0 が explorer を 1 体以上配置した場合のみ実行。explorer �
 **プロンプトテンプレートは Read しない。パスを渡して agent 自身に読ませる**（組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md`。本文の転記は体数ぶんの複製になる — orchestration-guide.md `## 3.5`）。
 
 Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並列起動する:
-- プロンプト冒頭で **`prompts/explorer-common.md` と `prompts/explorer/<focus>.md` の 2 パスを Read せよ**と指示する（本文は書かない）
+- プロンプト冒頭で **`${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md` と `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/<focus>.md` の 2 パスを Read せよ**と指示する（本文は書かない）
 - 可変部として Phase 0 が決定した focus・対象ファイル・関数、および **Step 2 の `$DIFF_FILE` のパスと担当ファイル名**を渡す（`diff-slice.sh` で自分の担当ぶんを切り出せることも明記する）
 - 全エージェントを `isolation: "worktree"` で起動する（PR ブランチの状態でファイルを読むため）
 - 全エージェントに `run_in_background: false` を明示し、**全 explorer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0`。`run_in_background` 省略は取りこぼし、1 体ずつ別メッセージ発行は逐次実行＝実時間が合計に膨らむ。2 つは独立の要件）。**`mark t1` の応答で出す explorer を列挙してから発行に移る**（発行直前チェックポイント / `## 0`。実測の違反のうち 1 件は explorer を 1 体ずつ出した型 — #220）
@@ -272,20 +272,20 @@ Step 2 のダイジェスト `## agents-md` に出ている**パス一覧**を r
 
 **プロンプトテンプレートは Read しない。パスを渡して agent 自身に読ませる**（組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md`。共通指示だけで約 7.3k tokens あり、体数ぶん転記すると出力トークンが `(N-1) × 本文長` 膨らむ — orchestration-guide.md `## 3.5`）。
 
-Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する。effort は実行時 `${CLAUDE_EFFORT}` に連動させる（low/medium/high（既定）→ `high`、xhigh/max → `xhigh`。設計意図は orchestration-guide.md `## 5`）。プロンプトは **Read させるパスの列挙 + 可変部**だけで構成する:
+Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する。effort は実行時 `${CLAUDE_EFFORT}` に連動させる（low/medium/high（既定）→ `high`、xhigh/max → `xhigh`。設計意図は orchestration-guide.md `## 5`）。プロンプトは **Read させるパスの列挙 + 可変部**だけで構成する（パスは下に書いたフルパスのまま渡す。`references/` を省いて短く書き直すと agent が最初の Read に失敗し、プロンプト探しに往復を使う — #282）:
 
-- **必ず Read させる**: `prompts/reviewer-common.md` と `prompts/focus/<focus>.md`。review では `prompts/pr-context-rules.md` も常に加える。条件付きで加えるもの:
-  - 観点バンドル時 → `prompts/bundle-rules.md` と束ねる focus ファイル群
-  - **ペア条件が成立したとき → `prompts/angles.md`**（xhigh/max の実ペアだけでなく、**high 以下の angle 内挿でも渡す**。渡さないと「ペアを削った代償を angle で補う」という縮小の前提が空振りする）
-  - セッションコンテキストが有効なとき → `prompts/session-context.md`（confidence −30 の規約はここにある。パスだけ渡しても規約は届かない）
-- <!-- COMMENT-POLISH: detach --> **`prompts/focus/comment-polish.md` は Read 対象に入れない**（self-review 限定。他人の PR に文面の推敲を投稿するのは越権になりやすい。混入は comment-polish 連結チェックが Critical で止める）
-- **Markdown 推敲の agent（`prompts/md-polish.md`）も起動しない**（self-review 限定。理由は上と同じ。review の payload に `md_polish` は載らない）
+- **必ず Read させる**: `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` と `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<focus>.md`。review では `${CLAUDE_PLUGIN_ROOT}/references/prompts/pr-context-rules.md` も常に加える。条件付きで加えるもの:
+  - 観点バンドル時 → `${CLAUDE_PLUGIN_ROOT}/references/prompts/bundle-rules.md` と束ねる focus ファイル群
+  - **ペア条件が成立したとき → `${CLAUDE_PLUGIN_ROOT}/references/prompts/angles.md`**（xhigh/max の実ペアだけでなく、**high 以下の angle 内挿でも渡す**。渡さないと「ペアを削った代償を angle で補う」という縮小の前提が空振りする）
+  - セッションコンテキストが有効なとき → `${CLAUDE_PLUGIN_ROOT}/references/prompts/session-context.md`（confidence −30 の規約はここにある。パスだけ渡しても規約は届かない）
+- <!-- COMMENT-POLISH: detach --> **`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md` は Read 対象に入れない**（self-review 限定。他人の PR に文面の推敲を投稿するのは越権になりやすい。混入は comment-polish 連結チェックが Critical で止める）
+- **Markdown 推敲の agent（`${CLAUDE_PLUGIN_ROOT}/references/prompts/md-polish.md`）も起動しない**（self-review 限定。理由は上と同じ。review の payload に `md_polish` は載らない）
 - **可変部の共通ブロック（全 agent 共通の実値集合）は 1 ファイルに落としてパス渡しする**: Step 2 の `## meta` が出す `agent_ctx_file=` のパスに **Write で 1 回だけ**書き出し、各プロンプトには「まず `<agent_ctx_file>` を Read せよ」の 1 行だけを置く。**入れる項目・残す項目・フォールバックの正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**（`{{PLUGIN_ROOT}}` / PR 番号 / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` / `$DIFF_FILE` / `$PR_CTX_FILE` / AGENTS.md パス / 確定事実 など。実測で reviewer 5 + skeptic 1 + meta 1 + 反証 3 の計 10 本に手書きしていた — #124 (c)）。**書き出したら、その応答の中でこの wave に出す Agent call（reviewer 全行 + 相乗りする skeptic + specialist）を列挙してから発行に移る**（発行直前チェックポイント / orchestration-guide.md `## 0`。列挙より後に思いついた観点は同じ層へ後追いせず Round 2 へ回す — #220）
 - **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）
-- **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 4 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `prompts/reviewer-common.md` 側（#122）
+- **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 4 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` 側（#122）
 - 全エージェントを `isolation: "worktree"` で起動する
 - 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
-- **冷や読み skeptic の相乗り**: Step 3.4 で surface=true かつ Phase 5.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `prompts/recall-skeptic.md` をパス渡し）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 5.8 で行う。**publish の `recall_skeptic.launch` は `"rider"`**（起動経路の自己申告 / #216）
+- **冷や読み skeptic の相乗り**: Step 3.4 で surface=true かつ Phase 5.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `${CLAUDE_PLUGIN_ROOT}/references/prompts/recall-skeptic.md` をパス渡し）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 5.8 で行う。**publish の `recall_skeptic.launch` は `"rider"`**（起動経路の自己申告 / #216）
 - **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}`・`{{SEVERITY_THRESHOLD}}` は共通ブロックに含める（必須）**: 値の意味と欠落時の影響は orchestration-guide.md `## 1` / `## 1.1` / `## 2`（MAIN_ROOT を欠かすと「検証不能」の誤申告で wave を 1 本失う #113、SEVERITY_THRESHOLD を欠かすと閾値未満を書かせて捨てる #117）。**プロンプトに再掲しない**
 
 一括発行の**直前**に fleet 区間の開始マーカーを記録する（orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式で決める。Step 4 で explorer を起動していれば記録済みなので `grep` ガードで二重記録を防ぐ。`||` 形なのでガードが偽でもブロックは成功終了する）:
