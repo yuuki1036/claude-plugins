@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import io
 import json
 import os
 import re
@@ -100,6 +101,29 @@ RULES: list[tuple[str, str, str]] = [
     (r"(?<![<>=!\-])>(?![>=])", ">=", "> を >= に（境界を 1 つ広げる）"),
     (r"(?<![<>=!])<(?![<=])", "<=", "< を <= に（境界を 1 つ広げる）"),
 ]
+# **言語ごとの規則**。上の RULES は .py / .sh の別なく当てるが、ここから下は綴りが同じでも
+# 言語によって意味が違うので、`.py` と `.sh` に埋め込まれた python には PY_RULES、それ以外の
+# `.sh` には SH_RULES を当てる。上の RULES だけだった頃は `if not x:` / `any(...)` /
+# `continue` / 条件式のどれにも変異が出ず、Python の分岐 55 行に「変異 0 個」を返した
+# （実測 2026-10-07。手製の変異体 34 個を当てるとテストの穴が 4 個見つかった）。
+# `not` / 条件式 / `any` を .sh 全体に当てると jq の `if ... else` や `find -not` に当たる。
+# 導入前の実測（2026-09-30〜10-07 の差分・フルスイート）: 増える変異 81 個のうち生存 14、
+# 等価はそのうち 3（キャッシュの早期 return / 読む前の間引きの continue / 後段のガードが拾う
+# continue）。残り 11 はテストの穴だった。条件式の規則は 24 個とも殺された
+PY_RULES: list[tuple[str, str, str]] = [
+    # `not in` / `is not` は上の RULES が持つ（ここで外すと二重になる）。`-not` は find の述語
+    (r"(?<![-\w.])(?<!\bis )not\b(?!\s+in\b)\s*", "", "not を外す（条件を反転）"),
+    (r"(?<![.\w])any\(", "all(", "any を all に（存在を全称に）"),
+    (r"(?<![.\w])all\(", "any(", "all を any に（全称を存在に）"),
+    (r"\bcontinue\b", "pass", "continue を pass に（読み飛ばしを外す）"),
+    # 条件式 `a if c else b` の `c` を反転する。`if not` は上の not の規則が持つ。
+    # 直前が「非空白 + 空白」の `if` だけを見るので、行頭の if 文には当たらない
+    (r"(?<=\S )if\b(?!\s+not\b)(?=.*\belse\b)", "if not", "条件式の条件を反転（if → if not）"),
+]
+SH_RULES: list[tuple[str, str, str]] = [
+    (r"\bcontinue\b", ":", "continue を : に（読み飛ばしを外す）"),
+]
+EARLY_RETURN_RULE = "if 直下の return を pass に（早期 return を外す）"
 COMMENT_ONLY = re.compile(r"^\s*(#|//)")
 # 変異を意図的に除外する印（等価変異・到達不能な分岐に付ける）。理由を必ず書かせる。
 # **変異させたいコード行と同じ行に置く**（直前の行に書いても効かない）
@@ -338,20 +362,98 @@ def _py_masked_spans(path: Path) -> dict[int, list[tuple[int, int]]] | None:
     唯一の指標である生存率を汚染する（実測で 2 個混入）。`tokenize` は stdlib なので
     依存を増やさずに正確に取れる。
     """
-    spans: dict[int, list[tuple[int, int]]] = {}
     try:
         with open(path, "rb") as f:
-            for tok in tokenize.tokenize(f.readline):
-                if tok.type not in (tokenize.STRING, tokenize.COMMENT):
-                    continue
-                (srow, scol), (erow, ecol) = tok.start, tok.end
-                for ln in range(srow, erow + 1):
-                    lo = scol if ln == srow else 0
-                    hi = ecol if ln == erow else 10 ** 9
-                    spans.setdefault(ln, []).append((lo, hi))
+            return _masked_spans(tokenize.tokenize(f.readline))
     except (OSError, SyntaxError, tokenize.TokenError, UnicodeDecodeError):
         return None          # 取れないときは下の近似へフォールバック（黙って全許可にしない）
+
+
+# **Python 3.12 以降の f-string は STRING ではなく START / MIDDLE / END に分かれて出る**ので、
+# STRING だけを見ると f-string の中身（散文・正規表現）が変異対象に残る（3.14 で実測。CI は 3.12）。
+# 開始から終了までを丸ごと伏せる。`{式}` の部分も伏せる側に倒す（散文を変異させる偽の生存より、
+# 式の変異を取りこぼす方を選ぶ）。t-string（3.14）も同じ形で出る
+_FSTRING_START = {getattr(tokenize, n) for n in ("FSTRING_START", "TSTRING_START") if hasattr(tokenize, n)}
+_FSTRING_END = {getattr(tokenize, n) for n in ("FSTRING_END", "TSTRING_END") if hasattr(tokenize, n)}
+
+
+def _masked_spans(tokens) -> dict[int, list[tuple[int, int]]]:
+    spans: dict[int, list[tuple[int, int]]] = {}
+    opened: list[tuple[int, int]] = []       # 開いている f-string の開始位置（入れ子があるので積む）
+    for tok in tokens:
+        if tok.type in _FSTRING_START:
+            opened.append(tok.start)
+        elif tok.type in _FSTRING_END:
+            start = opened.pop()
+            if not opened:                   # 入れ子の内側は外側の範囲に含まれる
+                _add_span(spans, start, tok.end)
+        elif tok.type in (tokenize.STRING, tokenize.COMMENT) and not opened:
+            _add_span(spans, tok.start, tok.end)
     return spans
+
+
+def _add_span(spans: dict[int, list[tuple[int, int]]],
+              start: tuple[int, int], end: tuple[int, int]) -> None:
+    (srow, scol), (erow, ecol) = start, end
+    for ln in range(srow, erow + 1):
+        lo = scol if ln == srow else 0
+        hi = ecol if ln == erow else 10 ** 9
+        spans.setdefault(ln, []).append((lo, hi))
+
+
+# `.sh` に埋め込まれた python の始まり。ヒアドキュメント（`python3 - <<'PY'`）と、
+# 同じ行で閉じない `python3 -c '`（閉じる `'` のある行まで）の 2 形だけを見る。
+# `<<<`（here-string）は 1 行で終わるので対象外
+SH_PY_HEREDOC = re.compile(r"\bpython3?\b.*?(?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\1")
+SH_PY_DASH_C = re.compile(r"\bpython3?\b[^'#]*\s-c\s+'(?=[^']*$)")
+
+
+def _sh_python_lines(lines: list[str]) -> dict[int, list[tuple[int, int]] | None]:
+    """`.sh` に埋め込まれた python の行 → その行の文字列 / コメントの桁範囲.
+
+    **docstring の散文を変異させない**ためと、**python の規則を python にだけ当てる**ため。
+    行内の近似（`_code_end` / `_looks_quoted`）は複数行文字列を追えないので、ヒアドキュメントの
+    docstring にある `>=` や `not` が変異して定義上 100% 生存する（CLAUDE.md Gotchas
+    「散文に `>=` / `<=` を書かない」の原因）。埋め込み部分を切り出して tokenize する。
+
+    `python3 -c '...'` の開始行・終了行は bash と python が同居するので python の行に
+    数えない（近似のまま bash 側の規則だけが当たる）。tokenize できない塊（unquoted の
+    ヒアドキュメントで `$x` を展開している等）は値を None にして近似へ落とす。
+    """
+    result: dict[int, list[tuple[int, int]] | None] = {}
+    i = 0
+    while i < len(lines):
+        region = _python_region_at(lines, i)
+        if region is None:
+            i += 1
+        else:
+            body, offset, end = region
+            try:
+                spans = _masked_spans(tokenize.generate_tokens(
+                    io.StringIO("".join(b + "\n" for b in body)).readline))
+            except (SyntaxError, tokenize.TokenError):
+                spans = None
+            for j in range(i + 1, end):
+                # body 内の行番号は j - offset（heredoc は次の行が 1 行目、-c は開始行が 1 行目）
+                result[j + 1] = None if spans is None else spans.get(j - offset, [])
+            i = end + 1
+    return result
+
+
+def _python_region_at(lines: list[str], i: int) -> tuple[list[str], int, int] | None:
+    """`lines[i]` が埋め込み python の開始行なら (tokenize に渡す行, 行番号の差, 終端の添字)."""
+    code = lines[i][:_code_end(lines[i])]
+    heredoc = SH_PY_HEREDOC.search(code)
+    if heredoc:
+        end = next((j for j in range(i + 1, len(lines))
+                    if lines[j].strip() == heredoc.group(2)), len(lines))
+        return lines[i + 1:end], i, end
+    dash_c = SH_PY_DASH_C.search(code)
+    end = next((j for j in range(i + 1, len(lines)) if "'" in lines[j]), None) if dash_c else None
+    if end is None:
+        return None
+    # 開始行の残りと終了行の `'` より前も tokenize には渡す（文の途中で切ると落ちる）
+    return [lines[i][dash_c.end():], *lines[i + 1:end], lines[end][:lines[end].index("'")]], i - 1, end
 
 
 def spread(mutants: list[Mutant]) -> list[Mutant]:
@@ -373,29 +475,82 @@ def spread(mutants: list[Mutant]) -> list[Mutant]:
     return out
 
 
+RETURN_LINE = re.compile(r"^(\s*)return\b")
+IF_HEADER = re.compile(r"^\s*(?:if|elif)\b.*:$")
+INLINE_IF_RETURN = re.compile(r"^(\s*(?:if|elif)\b.*:\s*)return\b")
+BRACKET_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
+
+
+def _code_only(line: str, spans: list[tuple[int, int]] | None) -> str:
+    """文字列 / コメントを空白に潰した行（括弧の数え上げ用。spans が無ければ近似）."""
+    if spans is None:
+        return line[:_code_end(line)]
+    chars = list(line)
+    for lo, hi in spans:
+        for k in range(lo, min(hi, len(chars))):
+            chars[k] = " "
+    return "".join(chars)
+
+
+def _early_return(lines: list[str], lineno: int,
+                  py_spans: dict[int, list[tuple[int, int]] | None]) -> str | None:
+    """if 直下の `return` を `pass` にした行を返す（当たらなければ None）.
+
+    正規表現 1 本では書けない（直前の行が if であることを見る）ので RULES の外に置く。
+    **return の文がその行で閉じていることを要求する** — 複数行にまたがる return の
+    1 行目だけを `pass` にすると構文エラーの変異（invalid）になり、CI で 1 変異ぶんの
+    スイート実行（実測 約 5 分）を捨てる。
+    """
+    line = lines[lineno - 1]
+    code = _code_only(line, py_spans.get(lineno))
+    if sum(BRACKET_DEPTH.get(c, 0) for c in code) != 0 or code.rstrip().endswith("\\"):
+        return None
+    inline = INLINE_IF_RETURN.match(code)
+    if inline:
+        return line[:inline.end(1)] + "pass"     # `code` は文字列を潰してあるので元の行から切る
+    m = RETURN_LINE.match(code)
+    prev = next((k for k in range(lineno - 1, 0, -1)
+                 if lines[k - 1].strip() and not COMMENT_ONLY.match(lines[k - 1])), None)
+    if not m or prev is None:
+        return None
+    # インデントは比べない: 妥当な Python なら if ヘッダの次の文は必ずその本体
+    if not IF_HEADER.match(_code_only(lines[prev - 1], py_spans.get(prev)).rstrip()):
+        return None
+    return m.group(1) + "pass"
+
+
 def build_mutants(targets: dict[Path, set[int]]) -> list[Mutant]:
     mutants: list[Mutant] = []
     for path in sorted(targets):
         if not path.is_file():
             continue
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        masked = _py_masked_spans(path) if path.suffix == ".py" else None
+        # 行番号 → python の行ならその行の文字列 / コメントの桁範囲（tokenize できなければ None）。
+        # **キーに無い行は python ではない**（`.sh` の bash 部分）
+        if path.suffix == ".py":
+            masked = _py_masked_spans(path)
+            py_spans = {ln: None if masked is None else masked.get(ln, [])
+                        for ln in range(1, len(lines) + 1)}
+        else:
+            py_spans = _sh_python_lines(lines)
         for lineno in sorted(targets[path]):
             if lineno < 1 or lineno > len(lines):
                 continue
             line = lines[lineno - 1]
             if COMMENT_ONLY.match(line) or SKIP_MARK.search(line):
                 continue
-            code_end = len(line) if masked is not None else _code_end(line)
-            line_spans = (masked or {}).get(lineno, [])
-            for pattern, repl, desc in RULES:
+            is_py = lineno in py_spans
+            line_spans = py_spans.get(lineno)
+            code_end = len(line) if line_spans is not None else _code_end(line)
+            for pattern, repl, desc in RULES + (PY_RULES if is_py else SH_RULES):
                 for m in re.finditer(pattern, line):
-                    if masked is not None:
+                    if line_spans is not None:
                         if any(lo <= m.start() < hi for lo, hi in line_spans):
                             continue     # 文字列 / コメントの中（tokenize で確定）
                     elif m.start() >= code_end or _looks_quoted(line, m.start()):
-                        continue         # 近似（.sh とトークナイズ不能な .py）
-                    if m.group(0) in ("<", ">") and _is_shell_redirect(path, line, m.start()):
+                        continue         # 近似（bash とトークナイズ不能な python）
+                    if (m.group(0) in ("<", ">") and not is_py
+                            and _is_shell_redirect(path, line, m.start())):
                         continue
                     if (m.group(0) in SHELL_NUMERIC_OPS
                             and _is_numeric_op_outside_a_test(line, m.start())):
@@ -404,9 +559,12 @@ def build_mutants(targets: dict[Path, set[int]]) -> list[Mutant]:
                     if mutated == line:
                         continue
                     mutants.append(Mutant(path, lineno, line, mutated, desc))
-                    break        # **1 規則につき最初の 1 箇所だけ**。外側の RULES ループは回るので
-                                 # 1 行から規則数ぶんの変異が出る（実測 4 個 / 規則は 20 本）。
+                    break        # **1 規則につき最初の 1 箇所だけ**。外側の規則のループは回るので
+                                 # 1 行から規則数ぶんの変異が出る（実測 4 個 / RULES は 20 本）。
                                  # 同じ行に同一規則が 2 回あると 2 個目は未検証になる
+            mutated = _early_return(lines, lineno, py_spans) if is_py else None
+            if mutated is not None:
+                mutants.append(Mutant(path, lineno, line, mutated, EARLY_RETURN_RULE))
     return mutants
 
 
@@ -662,11 +820,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"変異対象の変更行が無い（base={args.base}）。"
               "**テストファイルの変更のみでも同じ表示になる**（テストは変異対象外）。")
         return 0
+    # **ファイル横断で丸めてから切る**。先頭から切ると変更が複数ファイルにまたがる回で
+    # 1 ファイルに偏る（push 側の CI は `--max` を小さくしてあるので特に効く）
+    mutants = spread(build_mutants(targets))
+    n_lines = sum(len(v) for v in targets.values())
+    n_hit = len({(m.path, m.lineno) for m in mutants})
     if args.file:
-        print("対象: ファイル全体（--file。差分ではない）")
+        print(f"対象: ファイル全体（--file。差分ではない）— {n_lines} 行のうち変異規則に当たった行 {n_hit}")
     else:
         print(f"対象: 差分（--base {args.base}）の追加行 — {len(targets)} ファイル・"
-              f"{sum(len(v) for v in targets.values())} 行")
+              f"{n_lines} 行のうち変異規則に当たった行 {n_hit}")
+    if not mutants:
+        # **0 個を「殺した 0 / 生存 0」とだけ出すと検証済みに見える**（実測 2026-10-07: Python の
+        # 分岐 55 行が変異 0 個のまま exit 0 で通った / PY_RULES の注記）。
+        # 変異が無ければ baseline を回す意味も無い（CI では 1 回 約 5 分）
+        print("変異 0 個: 対象の行はあるが、どの変異規則にも当たらなかった。"
+              "**生存 0 ではなく未計測** — この変更をテストが検証しているかは分からない")
+        return 0
 
     # **最初にテストが緑であることを確認する**。赤い状態で変異させると全部 killed に見える
     clear_pycache()
@@ -696,9 +866,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     _install_signal_handlers()   # ここから先が変異を書く区間
-    # **ファイル横断で丸めてから切る**。先頭から切ると変更が複数ファイルにまたがる回で
-    # 1 ファイルに偏る（push 側の CI は `--max` を小さくしてあるので特に効く）
-    mutants = spread(build_mutants(targets))
     dropped = max(0, len(mutants) - args.max)
     mutants = mutants[: args.max]
     print(f"変異 {len(mutants)} 個を実行する"

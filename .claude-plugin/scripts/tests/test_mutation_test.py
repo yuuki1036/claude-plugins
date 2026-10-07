@@ -98,9 +98,24 @@ class BuildMutantsTest(unittest.TestCase):
         """
         p = self._file("g.py", '\n            x = 1 if a >= b else """\n            散文の中の c >= d\n            """\n            ')
         # **行番号まで固定する**: 規則名だけ見ると、1 行目が除外されて 2 行目の散文から
-        # 同じ規則が出ても同一リストになり、境界の反転を検知できない（実測でここを踏んだ）
-        got = [(m.lineno, m.rule) for m in mt.build_mutants({p: {1, 2, 3}})]
+        # 同じ規則が出ても同一リストになり、境界の反転を検知できない（実測でここを踏んだ）。
+        # 1 行目の条件式には条件式の規則も当たるので `>=` の規則に絞る
+        got = [(m.lineno, m.rule) for m in mt.build_mutants({p: {1, 2, 3}})
+               if m.rule.startswith(">=")]
         self.assertEqual(got, [(1, ">= を > に（境界を 1 つ狭める）")])
+
+    def test_fstring_content_is_not_mutated(self):
+        """**f-string の中身も伏せる**（3.12 以降は STRING ではなく FSTRING_* で出る / 3.14 で実測）.
+
+        入れ子の f-string の後ろにも外側の散文が続く形にして、内側の終了で範囲を閉じないことも見る。
+        """
+        p = self._file("i.py", '''
+            x = f"{a} {f'{b}'} does not exist, a >= b"
+            y = rf"(?:<[^<>]*>)"
+            z = not w
+            ''')
+        got = [(m.lineno, m.rule) for m in mt.build_mutants({p: {1, 2, 3}})]
+        self.assertEqual(got, [(3, "not を外す（条件を反転）")])
 
     def test_sh_falls_back_to_the_approximation(self):
         """`.sh` は tokenize が使えないので近似（`_code_end`）に落ちること.
@@ -242,6 +257,194 @@ class ShellRedirectTest(unittest.TestCase):
             p = Path(d) / "x.sh"
             p.write_text('[ "$n" -gt 3 ] && echo big\n')
             self.assertTrue(any("-gt" in r for r in self._rules(p)))
+
+
+class PythonBranchRulesTest(unittest.TestCase):
+    """Python の分岐の形（`not` / 条件式 / `any`・`all` / `continue` / 早期 return）.
+
+    RULES が比較演算子と and/or だけだった頃、Python の分岐 55 行に「変異 0 個」を返し、
+    生存 0 が検証済みに見えた（実測 2026-10-07）。**変異が出ること**と、**同じ綴りの別物
+    （`not in` / `is not` / 行頭の if 文 / 複数行の return）に当たらないこと**の両側を見る。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def _mutants(self, name: str, body: str):
+        p = self.root / name
+        p.write_text(textwrap.dedent(body).lstrip("\n"), encoding="utf-8")
+        n = len(p.read_text().splitlines())
+        return [(m.lineno, m.rule, m.mutated.strip()) for m in mt.build_mutants({p: set(range(1, n + 1))})]
+
+    def _of(self, mutants, rule_prefix: str):
+        return [(ln, mutated) for ln, rule, mutated in mutants if rule.startswith(rule_prefix)]
+
+    def test_not_is_removed(self):
+        got = self._mutants("a.py", """
+            if not x:
+                pass
+            y = not(z)
+            """)
+        self.assertEqual(self._of(got, "not を外す"), [(1, "if x:"), (3, "y = (z)")])
+
+    def test_not_in_and_is_not_are_left_to_their_own_rules(self):
+        """`not in` / `is not` から `not` だけを外すと既存の規則と重複する（別物にもなる）."""
+        got = self._mutants("a.py", """
+            if a not in b:
+                pass
+            if a is not b:
+                pass
+            """)
+        self.assertEqual(self._of(got, "not を外す"), [])
+        self.assertEqual(len(self._of(got, "not in を in に")), 1)
+        self.assertEqual(len(self._of(got, "is not を is に")), 1)
+
+    def test_any_and_all_are_swapped(self):
+        got = self._mutants("a.py", """
+            ok = any(x for x in xs)
+            ng = all(x for x in xs)
+            ar = arr.any()
+            """)
+        self.assertEqual(self._of(got, "any を all に"), [(1, "ok = all(x for x in xs)")])
+        self.assertEqual(self._of(got, "all を any に"), [(2, "ng = any(x for x in xs)")])
+
+    def test_conditional_expression_is_inverted_but_if_statement_is_not(self):
+        got = self._mutants("a.py", """
+            if c:
+                y = a if c else b
+            z = a if not c else b
+            """)
+        self.assertEqual(self._of(got, "条件式の条件を反転"), [(2, "y = a if not c else b")],
+                         "行頭の if 文と、既に not の付いた条件式には当てない")
+
+    def test_continue_becomes_pass_in_python(self):
+        got = self._mutants("a.py", """
+            for x in xs:
+                if x:
+                    continue
+                if y: continue
+            """)
+        self.assertEqual(self._of(got, "continue を pass に"), [(3, "pass"), (4, "if y: pass")])
+
+    def test_early_return_directly_under_if_becomes_pass(self):
+        got = self._mutants("a.py", """
+            def f(x):
+                if x:
+                    # コメントを挟んでも if 直下とみなす
+                    return ")"
+                elif x is None: return 2
+                return 3
+            """)
+        self.assertEqual(self._of(got, "if 直下の return"),
+                         [(4, "pass"), (5, "elif x is None: pass")])
+
+    def test_return_not_directly_under_if_is_left_alone(self):
+        """if 直下でない return と、行で閉じない return は外さない（後者は構文エラーの変異になる）."""
+        got = self._mutants("a.py", """
+            def f(x):
+                if x:
+                    y = 1
+                    return y
+                else:
+                    return 0
+            def g(x):
+                if x:
+                    return (1,
+                            2)
+                if x: return \\
+                    3
+            """)
+        self.assertEqual(self._of(got, "if 直下の return"), [])
+
+    def test_return_on_the_first_line_has_no_header(self):
+        self.assertEqual(self._of(self._mutants("a.py", "return 1\n"), "if 直下の return"), [])
+
+    def test_untokenizable_python_still_gets_early_return(self):
+        """tokenize できない（閉じていない三重引用符がある）ファイルでも近似で当てる."""
+        got = self._mutants("a.py", """
+            if x:
+                return 1
+            s = '''
+            """)
+        self.assertEqual(self._of(got, "if 直下の return"), [(2, "pass")])
+
+    def test_python_rules_do_not_touch_bash(self):
+        """`find -not` / jq の `if ... else` / bash の英文は python の構文ではない."""
+        got = self._mutants("a.sh", """
+            find . -not -path '*/x/*'
+            jq '.a' f | if [ -n "$x" ]; then echo a; else echo b; fi
+            echo "does not exist" >&2
+            [ -f "$f" ] || continue
+            """)
+        rules = {rule for _, rule, _ in got}
+        for prefix in ("not を外す", "条件式", "any を", "all を", "continue を pass", "if 直下"):
+            self.assertFalse(any(r.startswith(prefix) for r in rules), prefix)
+        self.assertEqual(self._of(got, "continue を : に"), [(4, '[ -f "$f" ] || :')])
+
+
+class ShellEmbeddedPythonTest(unittest.TestCase):
+    """`.sh` に埋め込まれた python（ヒアドキュメント / `python3 -c '...'`）.
+
+    **docstring の散文を変異させない**（CLAUDE.md Gotchas「散文に `>=` / `<=` を書かない」の
+    原因: 行内の近似は複数行文字列を追えず、散文の比較演算子が定義上 100% 生存する）ことと、
+    **python の行には python の規則を当てる**ことを見る。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def _mutants(self, body: str):
+        p = self.root / "x.sh"
+        p.write_text(textwrap.dedent(body).lstrip("\n"), encoding="utf-8")
+        n = len(p.read_text().splitlines())
+        return [(m.lineno, m.rule) for m in mt.build_mutants({p: set(range(1, n + 1))})]
+
+    def test_heredoc_docstring_prose_is_not_mutated(self):
+        got = self._mutants('''
+            X="$1" python3 - "$2" <<'PY'
+            """説明.
+
+            a >= b のとき not で反転する（散文）。
+            """
+            if not x and a > b:
+                pass
+            PY
+            [ -f "$f" ] || continue
+            ''')
+        self.assertEqual([ln for ln, _ in got if ln in (2, 3, 4, 5)], [], "docstring を変異させている")
+        line6 = {rule for ln, rule in got if ln == 6}
+        self.assertIn("not を外す（条件を反転）", line6)
+        # bash のリダイレクト扱いにしない（python の `>` は比較）
+        self.assertIn("> を >= に（境界を 1 つ広げる）", line6)
+        self.assertIn((9, "continue を : に（読み飛ばしを外す）"), got, "終端の後は bash に戻る")
+
+    def test_dash_c_body_is_python_but_its_boundary_lines_are_not(self):
+        """`python3 -c '` の開始行・終了行は bash と同居するので python の行に数えない."""
+        lines = textwrap.dedent('''
+            V=$(printf x | python3 -c 'import sys
+            if not sys.argv:
+                pass
+            print(1 if x else 2)') || V=""
+            ''').lstrip("\n").splitlines()
+        self.assertEqual(sorted(mt._sh_python_lines(lines)), [2, 3])
+
+    def test_untokenizable_body_is_still_python(self):
+        """tokenize できない塊（`$x` を展開する unquoted のヒアドキュメント等）も python の規則で見る."""
+        lines = ["python3 <<PY", "x = '''", "if not y: pass", "PY"]
+        spans = mt._sh_python_lines(lines)
+        self.assertEqual(spans, {2: None, 3: None})
+
+    def test_unclosed_dash_c_is_not_a_region(self):
+        """閉じる `'` がどこにも無ければ領域にしない（その先の走査も止めない）."""
+        lines = ["python3 -c 'import sys", "print(1)", "python3 <<PY", "x = 1", "PY"]
+        self.assertEqual(mt._sh_python_lines(lines), {4: []})
+
+    def test_here_string_is_not_a_region(self):
+        self.assertEqual(mt._sh_python_lines(['python3 -c "$p" <<< "$x"', "if not y; then :; fi"]), {})
 
 
 class ApplyAndTestTest(unittest.TestCase):
@@ -799,8 +1002,22 @@ class RunReportTest(unittest.TestCase):
         (self.root / "t.py").write_text("a = 1 > 2\nb = 3 <= 4\nc = 5 >= 6\n", encoding="utf-8")
         rc, out, _ = self._main(*self.CMD)
         self.assertEqual(rc, 0)
-        self.assertIn("対象: 差分（--base HEAD）の追加行 — 1 ファイル・2 行", out)
+        self.assertIn("対象: 差分（--base HEAD）の追加行 — 1 ファイル・2 行のうち変異規則に当たった行 2", out)
         self.assertNotIn("既存行", out, "差分モードに --file の内訳を出している")
+
+    def test_zero_mutants_says_unmeasured_and_skips_the_baseline(self):
+        """**変異 0 個を「殺した 0 / 生存 0」と出さない**（検証済みに見える / 実測 2026-10-07）.
+
+        テストコマンドを `false` にしておく — baseline を回していれば「失敗している」で exit 2 になる。
+        """
+        (self.root / "t.py").write_text("a = 1 > 2\nb = 3\nc = 5 > 6\n", encoding="utf-8")
+        rc, out, err = self._main("--test-cmd", "false", "--strict")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("1 行のうち変異規則に当たった行 0", out)
+        self.assertIn("変異 0 個", out)
+        self.assertIn("未計測", out)
+        self.assertNotIn("殺した", out)
+        self.assertNotIn("失敗している", err, "変異が無いのに baseline を回している")
 
     def test_the_number_of_tests_ran_is_shown_with_the_k_filter(self):
         rc, out, _ = self._main("--file", "t.py", "--max", "1", "--test-cmd",
@@ -815,7 +1032,8 @@ class RunReportTest(unittest.TestCase):
         self.assertIn("1 件も走っていない", err)
         self.assertIn("-k Foo", err)
         self.assertNotIn("失敗している", err, "0 件を「テストが失敗」と誤って伝えている")
-        self.assertNotIn("変異", out.replace("全変異", ""), "0 件のまま変異を当てている")
+        self.assertNotRegex(out, r"変異 \d+ 個を実行する", "0 件のまま変異を当てている")
+        self.assertNotIn("殺した", out, "0 件のまま変異を当てている")
 
     def test_zero_tests_without_k_is_still_fatal(self):
         rc, _, err = self._main("--file", "t.py", *self.CMD, ran=0)
