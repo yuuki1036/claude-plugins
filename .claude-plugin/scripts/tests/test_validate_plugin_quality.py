@@ -1829,6 +1829,10 @@ class CommentPolishWiringTest(unittest.TestCase):
         self.assertEqual(self._run(attach="- <!-- COMMENT-POLISH: attach --> **reviewer には\n"
                                           "  ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md を渡す**\n"), [])
 
+    def test_the_item_of_a_text_without_a_marker_is_empty(self):
+        """呼び出し元はマーカーが 1 個あることを確かめてから呼ぶが, 単体で呼ばれても例外にしない."""
+        self.assertEqual(v._marker_item("# 見出し\n\n- 箇条\n  続き\n"), "")
+
     def test_a_marker_spanning_lines_is_accepted(self):
         """箇条はマーカーの終わりの行まで含む（始まりの行だけを見るとパスに届かない）."""
         self.assertEqual(self._run(attach="- <!--\nCOMMENT-POLISH: attach --> "
