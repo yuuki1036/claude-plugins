@@ -491,6 +491,28 @@ def _canonical_digest(path: Path, anchor: str | None) -> str | None:
     return None if section is None else _digest_section(section)
 
 
+def _outside_nested_checkouts(paths: list[Path]) -> list[Path]:
+    """`.git` 配下と, 入れ子の checkout（`.git` を持つ ROOT 配下のディレクトリ）の中を除く.
+
+    `.claude/worktrees/` には別セッションの作業ツリーが置かれ, 同じファイルの別版を持つ.
+    走査に入れると本体の正本と突き合わせて無関係な不一致を出し（pre-commit が止まる）,
+    `--update-ssot-pins` は別セッションのファイルを書き換えてしまう.
+    """
+    nested: dict[Path, bool] = {}
+
+    def inside(path: Path) -> bool:
+        parts = path.relative_to(ROOT).parts
+        for depth in range(1, len(parts)):
+            d = ROOT.joinpath(*parts[:depth])
+            if d not in nested:
+                nested[d] = (d / ".git").exists()
+            if nested[d]:
+                return True
+        return False
+
+    return [p for p in paths if ".git" not in p.relative_to(ROOT).parts and not inside(p)]
+
+
 def _iter_ssot_pins() -> tuple[list[tuple[Path, int, re.Match[str]]], list[str]]:
     """リポジトリ内の全 md から SSOT pin 宣言を収集する（配置場所で運用範囲を決める）.
 
@@ -500,9 +522,7 @@ def _iter_ssot_pins() -> tuple[list[tuple[Path, int, re.Match[str]]], list[str]]
     """
     hits: list[tuple[Path, int, re.Match[str]]] = []
     malformed: list[str] = []
-    for path in sorted(ROOT.rglob("*.md")):
-        if ".git" in path.parts:
-            continue
+    for path in _outside_nested_checkouts(sorted(ROOT.rglob("*.md"))):
         for i, raw in _iter_unfenced_lines(read_text(path).splitlines()):
             line = INLINE_CODE_RE.sub("", raw)
             found = list(SSOT_PIN_RE.finditer(line))
@@ -913,7 +933,7 @@ def check_doc_structure(plugin_dir: Path, errors: list[str]) -> None:
 
 
 def _test_files() -> list[Path]:
-    return sorted(p for p in ROOT.glob("**/tests/test_*.py") if ".git" not in p.parts)
+    return _outside_nested_checkouts(sorted(ROOT.glob("**/tests/test_*.py")))
 
 
 def check_test_collection(errors: list[str]) -> None:

@@ -374,6 +374,28 @@ class CheckSsotPinsTest(unittest.TestCase):
         v.check_ssot_pins(errors)
         self.assertIn("見つからない", errors[0])
 
+    def test_a_pin_inside_a_nested_checkout_is_ignored(self):
+        """`.claude/worktrees/` の別セッションの pin は本体の正本と突き合わせず, 打ち直しでも触らない.
+
+        直下の入れ子（`wt/`）と `.git` の中も同じく見ない.
+        """
+        nested = self.root / ".claude" / "worktrees" / "other"
+        _write(nested, ".git", "gitdir: /elsewhere\n")
+        _write(self.root / "wt", ".git", "gitdir: /elsewhere\n")
+        body = "# 消費サイト\n\n<!-- SSOT: canon.md#3.5 @00000000 -->\n"
+        consumer = _write(nested, "consumer.md", body)
+        _write(self.root / "wt", "consumer.md", body)
+        _write(self.root / ".git", "notes.md", body)
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertEqual(errors, [])
+        v.check_ssot_pins(errors, update=True)
+        self.assertEqual(consumer.read_text(encoding="utf-8"), body, "別セッションのファイルを書き換えた")
+        # 対照: 同じ pin を本体側に置けば検出される（入れ子の判定が何でも黙らせているのではない）
+        self._consumer("00000000")
+        v.check_ssot_pins(errors)
+        self.assertEqual(len(errors), 1, errors)
+
     def test_whole_file_pin_of_a_pinning_canonical_is_reported(self):
         """全ファイル pin の正本が自身も pin を持つと打ち直しが収束しないので error."""
         _write(self.root, "a.md", "# a\n\n<!-- SSOT: b.md#1 @00000000 -->\n")
@@ -904,6 +926,13 @@ class TestFileLintTest(unittest.TestCase):
         errors: list[str] = []
         v.check_test_collection(errors)
         self.assertEqual(errors, [])
+
+    def test_test_files_in_a_nested_checkout_are_not_collected(self):
+        self._test_file("import unittest\n")
+        nested = self.root / ".claude" / "worktrees" / "other"
+        _write(nested, ".git", "gitdir: /elsewhere\n")
+        _write(nested, "tests/test_copy.py", "import unittest\n")
+        self.assertEqual(v._test_files(), [self.root / "tests" / "test_demo.py"])
 
     def test_class_after_main_is_reported(self):
         self._test_file("""
