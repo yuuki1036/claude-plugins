@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.147.2] - 2026-10-07
+
+### Fixed
+
+- **review で worktree 起動した meta-reviewer が PR の HEAD に入る経路が無かった**。meta-reviewer.md の入力節に
+  `reviewer-common.md` の「開始時の必須セットアップ」への参照が無く、オーケストレーターも meta-reviewer.md
+  1 本だけを Read させるため、checkout の手順に到達できなかった。子 worktree は origin の既定ブランチから派生するので、
+  xhigh / max で BLOCKER / CRITICAL が出た回の meta は PR 前のツリーで見落としを探し、存在しない欠落を `[meta]`
+  指摘に足すか、PR で入った問題を見逃しうる。同じ wave の反証・冷や読み skeptic と同じく、入力節にセットアップの
+  参照を足した（パスは `references/` 付きのフルパス。#282）
+
 ## [2.147.1] - 2026-10-07
 
 ### Fixed

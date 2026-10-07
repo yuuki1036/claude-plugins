@@ -21,6 +21,7 @@ BLOCKER または CRITICAL 指摘が出た場合のみ起動される、「こ�
 ### 入力
 
 - **diff ファイルのパス（`$DIFF_FILE`）**（本文はプロンプトに含まれない。`{{PLUGIN_ROOT}}/scripts/diff-slice.sh` で切り出す）
+  - worktree 起動時は `{{PLUGIN_ROOT}}/references/prompts/reviewer-common.md` の「開始時の必須セットアップ」を先に実行する
 - 全 reviewer の指摘リスト（severity / confidence / 内容）
 - 起動された reviewer の focus 一覧
 - explorer 結果（あれば）
