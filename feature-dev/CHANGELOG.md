@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.1] - 2026-10-07
+
+### Fixed
+
+- triage-guide の clean-architecture 行が、architect の prompt に渡す module-design.md のパスを `references/module-design.md` と `${CLAUDE_PLUGIN_ROOT}` 無しの短い形で書いていた。SKILL.md Phase 4 と同じ `Module design vocabulary: ${CLAUDE_PLUGIN_ROOT}/references/module-design.md` に揃えた。短い形のまま渡すと architect の cwd（利用者のリポジトリ）から相対で解決され、最初の Read が失敗する（code-review で同型の欠落が reviewer の往復を増やしていた / GitHub issue #282）
+
 ## [2.19.0] - 2026-10-06
 
 ### Changed
