@@ -265,7 +265,7 @@ class ReapTest(unittest.TestCase):
     """`reap` / `sweep` を直接呼ぶ（E2E の `RunTestsTest` では作れない状況を作る）.
 
     - ゾンビ: 孤児を引き取る PID 1 がすぐ wait しないコンテナでは、死んだ孫がしばらくゾンビで
-      残り `pgrep` にも出る。E2E はその環境でしか再現しないので、親が wait しないゾンビを作る
+      残り `pgrep` にも出る（Linux）。E2E はその環境でしか再現しないので、親が wait しないゾンビを作る
     - kill の拒否: root ではどの pid に撃っても拒否されないので、`os.kill` を差し替えて起こす
     """
 
@@ -277,15 +277,29 @@ class ReapTest(unittest.TestCase):
         self.mod.KILL_CONFIRM_SEC = 0
 
     def zombie(self) -> int:
+        """親が wait しないゾンビを作る. `list_group` がそれを列挙しない環境では列挙させる.
+
+        macOS の `pgrep` はゾンビを列挙しない（実測: `ps` は `Z` を出すが `pgrep -g` には出ない）.
+        そのままではゾンビが最初から居ないことになり, ゾンビを数える分岐を通らない.
+        列挙する環境（Linux）では本物の `pgrep` のまま通す.
+        """
         pid = os.fork()
         if pid == 0:
             os._exit(0)
         self.addCleanup(os.waitpid, pid, 0)
         for _ in range(100):
             if self.mod._is_zombie(pid):
-                return pid
+                break
             time.sleep(0.05)
-        self.fail("前提: 子がゾンビにならない")
+        else:
+            self.fail("前提: 子がゾンビにならない")
+        pgid = os.getpgid(0)
+        if pid not in (self.mod.list_group(pgid) or []):
+            patcher = mock.patch.object(
+                self.mod, "list_group", side_effect=lambda g: [pid] if g == pgid else [])
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return pid
 
     def test_a_zombie_is_counted_as_reaped(self):
         pid = self.zombie()
