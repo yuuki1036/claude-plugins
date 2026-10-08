@@ -37,6 +37,7 @@ worktree-setup / worktree-teardown はコマンドを持たず、トリガーフ
 - ブランチ名から Linear Issue ID を抽出して情報を取得
 - 概要を What / Why / Outcome の三要素で記述（字数制約と両立）
 - gitignored パス・ローカル限定ドキュメント参照の検出
+- 処理の流れや集計の範囲を変える PR では、変更の要点を 1〜2 枚の図にして添付するかを提案（UI 変更の有無は問わない。SVG を `scripts/svg-to-png.sh` で PNG にする。`--no-diagrams` で止める）
 - 常にドラフト PR として作成
 
 **トリガー例**: 「PR 作って」「プルリクエスト作成」「/pr」

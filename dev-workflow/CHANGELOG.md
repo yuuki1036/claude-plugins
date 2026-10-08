@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.38.0] - 2026-10-09
+
+### Added
+
+- **pr-creator: 変更の要点を図にして PR に添付する Step 4.6 を足した**（GitHub issue #287）。Screenshots の添付（Step 4.5）は UI 変更を含む PR が対象で、添付するのも ui-verify で撮った画面だけだった。バックエンド中心で導出ロジックや集計の範囲を変える PR では、PR を作った後に手で図を作って `gh pr edit --attach` で足していた。差分の性質（処理の流れ・順序が変わる / レビューで判断が分かれる範囲がある / 層をまたぐ）から図が役立つと判定したら、根拠を添えて作るかを聞く（UI 変更の有無は問わない。`--no-diagrams` で止める）。作るなら 1〜2 枚の SVG を作業ツリーの外に書いて PNG にし、Step 4.5 と同じ `--attach` の経路で添付する。本文には「図で見る要点」の節を置き、各図の前に何についての図かを 1 行だけ書く。図に書いたテキストは Screenshots と同じ基準で機密を確認し（public repo なら業務の識別子も汎用の名前にする）、承認の提示（Step 4.95）に図の題とテキストを含める。pre-flight のチェックリストに説明図の行を足した
+- **`scripts/svg-to-png.sh`: SVG を PNG に書き出す**。rsvg-convert が無い環境が多いので headless Chrome を代わりに使う（`CHROME_BIN` → PATH の google-chrome 系 → macOS のアプリの順に探す）。headless Chrome は撮影後もプロセスが残ることがあるため、PNG の大きさが 2 回続けて同じになった時点で止め、起動ごとの専用プロファイルを指すプロセスをまとめて止める（既定 30 秒で打ち切り。`SVG_TO_PNG_TIMEOUT`）。撮影範囲はルートの `width` / `height`、無ければ `viewBox`。変換できなかった図は `failed=` で返し、呼び出し側が SVG のまま添付する
+
 ## [1.37.0] - 2026-10-06
 
 ### Added
