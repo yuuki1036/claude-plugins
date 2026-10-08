@@ -1,7 +1,7 @@
 # Reviewer プロンプト索引
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @b9ce2561 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @2b85a6c0 -->
 
 reviewer / specialist / meta-reviewer / 反証 / skeptic / Markdown 推敲の各プロンプト本体は `references/prompts/` 配下に **1 観点 1 ファイル**で置く。
 
@@ -43,7 +43,7 @@ agent に渡すのは以下だけ。本文は書かない。
 ```
 
 - 列挙するパスは `${CLAUDE_PLUGIN_ROOT}` の部分だけをプラグインの実パスに置き換えて渡す（`/references/prompts/...` 以降は書き換えない。orchestration-guide.md `## 3.5`）
-- **プレースホルダ実値（`{{PLUGIN_ROOT}}` / `{{PR_NUMBER}}` / `{{HEAD_REF}}` / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}`）・diff / PR ctx / AGENTS.md のパス・base ref・確定事実は、すべて共通ブロック（`agent_ctx_file`）に入れる**（v2.63.0 / GitHub issue #124 (c)）。プロンプトに再掲しない。**入れる項目・残す項目の正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**
+- **プレースホルダ実値（`{{PLUGIN_ROOT}}` / `{{PR_NUMBER}}` / `{{HEAD_REF}}` / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}`）・diff / PR ctx / 過去 PR のレビューコメント（あれば）/ AGENTS.md のパス・base ref・確定事実は、すべて共通ブロック（`agent_ctx_file`）に入れる**（v2.63.0 / GitHub issue #124 (c)）。プロンプトに再掲しない。**入れる項目・残す項目の正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**
 - 複数観点を束ねるときは `${CLAUDE_PLUGIN_ROOT}/references/prompts/bundle-rules.md` を Read 対象に追加し、focus ファイルを複数指定する
 
 ### 可変部の予算（v2.60.0 / パス渡しの効果を可変部で打ち消さないため）

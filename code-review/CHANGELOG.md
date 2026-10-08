@@ -2,6 +2,23 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.150.0] - 2026-10-08
+
+### Added
+
+- **同じファイルを触った過去の merged PR のレビューコメントを reviewer に渡す**（#286 の 1）。PR 会話の取得と
+  re-flag の判定は対象 PR の中だけを見るので、別の PR で指摘されて直した事柄をこの diff がまた壊しても拾う経路が
+  無かった。新しい `scripts/fetch-past-reviews.sh`（本体は `scripts/lib/past_reviews.py`）が、core の変更ファイル
+  （変更行の多い順に 8 件まで）ごとに base の履歴から直近 5 コミットを引き、そのコミットを含む merged PR
+  （ファイルあたり 3 件まで）の行単位レビューコメントのうち、同じファイルに付いたもの（返信を除く）を集める
+  （計 40 件まで・本文は 300 字で切る）。コメントがあった回だけファイルを作り、review / self-review は共通ブロックに
+  `past_reviews_file` として入れる。GitHub のリモートや gh の認証が無い repo では `skip:` を出して飛ばす
+- reviewer 規約に「過去 PR の指摘」の読み方を足した。過去の指摘が守らせた形を、この diff の変更行が外す・戻す・
+  再び入れるときだけ `[past-pr: #<番号>]` を付けて出す。過去のコメントは正解として扱わず、今のコードで成り立つかを
+  確かめる
+- core の分類を `triage-signals.sh` の外に複製しないため、triage が core の変更ファイルを変更行の多い順に
+  一時ファイル（`review_path corelist`）へ書き出すようにした。publish の掃除の対象にも足した
+
 ## [2.149.1] - 2026-10-08
 
 ### Changed

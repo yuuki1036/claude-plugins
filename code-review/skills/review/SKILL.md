@@ -20,7 +20,7 @@ allowed-tools:
 # Review
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @b9ce2561 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @2b85a6c0 -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @26573c3c -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
 
@@ -116,7 +116,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --pr <PR番号>
 
 # Step 2.4 の重複検出。triage-signals.sh が書いた diff ファイルを読むので**この順序**
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" --pr <PR番号>
+
+# 同じファイルを触った過去の merged PR のレビューコメント（GitHub issue #286）。triage-signals.sh が
+# 書いた core の一覧を読むのでこの順序。コメントがあったときだけパスを 1 行出す
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-past-reviews.sh" --pr <PR番号> --base "$(gh pr view <PR番号> --json baseRefName -q .baseRefName)" --save
 ```
+
+**`fetch-past-reviews.sh` がパスを出したら、Step 5 の共通ブロックに `past_reviews_file=<そのパス>` として入れる**（読み方の規約は reviewer-common.md「過去 PR の指摘」）。何も出さない回（コメント 0 件・GitHub に届かない repo）は入れない。`skip:` の 1 行は欠損観点ではないので `missing_coverage` に記録しない
 
 **`set -e` を張らないこと**（CLAUDE.md Gotchas の ERR trap family。前段が落ちても後段は無害に空で返る）。
 

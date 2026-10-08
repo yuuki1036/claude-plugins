@@ -50,6 +50,8 @@ REPRESENTATIVES = {
     "test_code_review_context.py":
         "test_code_review_context.MeasureTokensTest."
         "test_finds_the_transcript_of_the_main_repository_from_a_worktree",
+    "test_code_review_past_reviews.py":
+        "test_code_review_past_reviews.PastReviewsTest.test_origin_is_preferred_over_a_stale_local_base",
     "hook_harness.py":
         "test_dev_workflow_hooks.OnCommitTest.test_publishes_commit_created",
     "test_dev_workflow_scripts.py":

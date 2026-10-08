@@ -240,6 +240,13 @@ printf '%s\n' "$CLASSIFIED" | awk -F'\t' '
       (tf?md*100/tf:0), (tf?g*100/tf:0), mig+0
   }'
 
+# core の変更ファイルを変更行の多い順に書き出す（`fetch-past-reviews.sh` が読む / GitHub issue #286）。
+# 前回の残骸は配る前に消す（agentctx・size と同じ規約）
+CORE_LIST=$(review_path corelist)
+rm -f "$CORE_LIST"
+printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core" { printf "%d\t%s\n", $2+$3, $4 }' \
+  | sort -t "$(printf '\t')" -k1,1nr | cut -f2- > "$CORE_LIST" 2>/dev/null || true
+
 echo "## files"
 # 上限を切る。ファイル数に比例して伸びる唯一のセクションで、800 ファイルの PR では
 # ここだけで約 19k tokens に達し「ダイジェストを compact に保つ」目的を打ち消す。

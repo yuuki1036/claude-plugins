@@ -1478,7 +1478,8 @@ if [ "$PUBLISHED" = "1" ]; then
   if [ "$KEEP" = "0" ]; then
     bash "$HERE/review-timing.sh" cleanup ${PR_ARGS[@]+"${PR_ARGS[@]}"}
     rm -f "$(review_path prctx)" "$(review_path diff)" "$(review_path agentctx)" \
-          "$(review_path oracles)" "$(review_path size)"
+          "$(review_path oracles)" "$(review_path size)" "$(review_path corelist)" \
+          "$(review_path pastrev)"
   fi
 else
   echo "WARN: publish に失敗したので一時ファイルを残した（同じ引数で再実行すれば復旧できる。" >&2

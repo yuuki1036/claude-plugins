@@ -196,7 +196,7 @@ review_diff_keys() {
   printf '%s %s' "$digest" "$files"
 }
 
-# review_path <diff|prctx|timing|agentctx|oracles|size>
+# review_path <diff|prctx|timing|agentctx|oracles|size|corelist|pastrev>
 review_path() {
   local kind="$1" suffix=""
   [ -n "${REVIEW_PR:-}" ] && suffix="-pr${REVIEW_PR}"
@@ -213,6 +213,11 @@ review_path() {
     # size: triage-signals.sh の `## size` のうち publish が使う行（`doc_only=`）。報告閾値の
     # 出どころ（`severity_threshold_source`）を publish が機械判定するために渡す（GitHub issue #277）
     size)   printf '%s/review-size-%s%s.txt'  "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
+    # corelist: core に分類した変更ファイルのパス（変更行の多い順）。`fetch-past-reviews.sh` が読む
+    # （core の分類式を triage-signals.sh の外に複製しないため / GitHub issue #286）
+    corelist) printf '%s/review-corelist-%s%s.txt' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
+    # pastrev: 同じファイルを触った過去の merged PR のレビューコメント（`fetch-past-reviews.sh --save`）
+    pastrev) printf '%s/review-pastrev-%s%s.md' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     *) echo "FATAL: 未知の一時ファイル種別: $kind" >&2; return 2 ;;
   esac
 }

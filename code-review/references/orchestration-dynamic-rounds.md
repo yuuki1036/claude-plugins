@@ -2,7 +2,7 @@
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @00b686bc -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @b9ce2561 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @2b85a6c0 -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @b3b520a7 -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @3f7275c0 -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @c4dc5818 -->

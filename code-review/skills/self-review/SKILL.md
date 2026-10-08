@@ -19,7 +19,7 @@ allowed-tools:
 # Self Review
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @b9ce2561 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @2b85a6c0 -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @26573c3c -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
 
@@ -99,16 +99,22 @@ if [ -n "$BASE" ]; then
   # Step 1.4 の重複検出。**`--embed` のときはこの行を落とす**。triage-signals.sh が書いた
   # diff ファイルを読むので**この順序である必要がある**（パス引数は要らない / 自力導出する）
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh"
+
+  # 同じファイルを触った過去の merged PR のレビューコメント（GitHub issue #286）。triage-signals.sh が
+  # 書いた core の一覧を読むのでこの順序。コメントがあったときだけパスを 1 行出す
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-past-reviews.sh" --base "$BASE" --save
 else
-  echo "FATAL: base branch を特定できない（後続 3 本はスキップした）"
+  echo "FATAL: base branch を特定できない（後続 4 本はスキップした）"
 fi
 ```
 
-**`set -e` を張らないこと**、そして**分岐を `[ 条件 ] && コマンド` で書かないこと**（どちらも CLAUDE.md Gotchas の ERR trap family）。base が決まらないとき `base-branch.sh` は exit 2 を返すので、`set -e` 下では `BASE_OUT=$(...)` の行でシェルごと落ち、**以降の 3 本を実行せずに終わる**。`if` なら BASE が空でも 0 で終わり、`FATAL:` の 1 行が出力に残る。
+**`fetch-past-reviews.sh` がパスを出したら、Step 4 の共通ブロックに `past_reviews_file=<そのパス>` として入れる**（読み方の規約は reviewer-common.md「過去 PR の指摘」）。何も出さない回（コメント 0 件・GitHub に届かない repo）は入れない。`skip:` の 1 行は欠損観点ではないので `missing_coverage` に記録しない
+
+**`set -e` を張らないこと**、そして**分岐を `[ 条件 ] && コマンド` で書かないこと**（どちらも CLAUDE.md Gotchas の ERR trap family）。base が決まらないとき `base-branch.sh` は exit 2 を返すので、`set -e` 下では `BASE_OUT=$(...)` の行でシェルごと落ち、**以降の 4 本を実行せずに終わる**。`if` なら BASE が空でも 0 で終わり、`FATAL:` の 1 行が出力に残る。
 
 `base_source=` が `reflog` なら、このブランチを作った起点（統合ブランチ等）を base にしている。`default` なら起点が分からず default branch に倒した — 統合ブランチから切ったブランチでは、統合ブランチの他の変更まで対象に混ざるので、Phase 0 の出力にこの 1 行を載せる。
 
-`FATAL:` が出たら base branch を特定できていない（後続 3 本は走っていない）。ユーザーに base branch を確認してから呼び直す。
+`FATAL:` が出たら base branch を特定できていない（後続 4 本は走っていない）。ユーザーに base branch を確認してから呼び直す。
 
 **diff 全文をメインコンテキストに載せない。** `triage-signals.sh` が diff（コミット済み + 未コミット）をファイルへ保存し、Phase 0 に必要な**事実だけ**を compact に出力する。diff は reviewer / explorer へ**パスで渡す**（本文を転記しない。orchestration-guide.md `## 3.5`）。
 

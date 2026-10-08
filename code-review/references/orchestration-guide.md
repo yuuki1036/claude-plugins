@@ -117,6 +117,7 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 - AGENTS.md / CLAUDE.md のパス一覧（`## 4`）
 - **review のみ**: `{{MAIN_ROOT}}` と `dep-dir` 一覧（`## 1.1`）、PR 番号と `{{HEAD_SHA}}`、`$PR_CTX_FILE` のパス
 - session-context が有効なときはそのパス
+- **過去 PR のレビューコメントのパス**（`past_reviews_file=`。`fetch-past-reviews.sh --save` がパスを出した回だけ / GitHub issue #286）。読み方の規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「過去 PR の指摘」
 - 全 agent 共通の重点指示（`--focus` / `--exclude` のスコープ等）
 
 **共通ブロックに入れないもの**（agent ごとに違う / 渡してはいけない）: Read させるテンプレートのパス（`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<name>.md` 等）、担当 focus と angle、担当ファイル、explorer 結果の選択的注入、Vault 注入、**explorer の確定事実**（上表のとおり reviewer 限定でインライン。specialist / skeptic には渡さない）、**findings**（反証エージェントに reviewer の理由文を渡さない規約）。
