@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -294,6 +295,18 @@ class WorkflowWiringTest(unittest.TestCase):
     def test_the_token_can_read_runs_and_artifacts(self):
         perms = self.yml.split("\npermissions:\n", 1)[1].split("\n\n", 1)[0]
         self.assertRegex(perms, r"(?m)^  actions: read\b")
+
+    def test_the_budget_ends_before_the_job_timeout(self):
+        """予算が job の timeout に食い込むと cancelled になり、結果もログも report も残らない.
+
+        余裕（600 秒）は準備（checkout・依存・起点の解決）と、予算で切った後の後始末・artifact・起票の分.
+        """
+        minutes = int(re.search(r"(?m)^    timeout-minutes: (\d+)$", self.yml).group(1))
+        # **step の中から読む**（直前のコメントにも `--budget-sec 19000` と書いてあり、yml 全体の最初の一致は
+        # コメントの数字になる。引数だけ変えてコメントを直し忘れても通ってしまう）
+        step = self.yml.split("- name: mutation-test", 1)[1].split("- name:", 1)[0]
+        budget = float(re.search(r"--budget-sec (\d+)", step).group(1))
+        self.assertLessEqual(budget, minutes * 60 - 600)
 
     def test_resolve_base_is_wired_with_this_runs_id_and_repo(self):
         step = self.yml.split("- name: resolve-base", 1)[1].split("- name:", 1)[0]

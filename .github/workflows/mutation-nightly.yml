@@ -3,9 +3,9 @@ name: mutation-nightly
 # 変異テストの**深い方**。push 側（validate.yml）は `--max 5` のスモークに絞ってあり、
 # 網羅はこちらが持つ。
 #
-# **なぜ分けたか**: 変異テストは 1 変異ごとにフルスイートを回すので、所要は
-# `--max × スイート実行時間` にそのまま比例する（実測: `--max 15` で 960〜1065 秒 ＝
-# CI 全体の 94%）。スイートは伸び続ける（524 → 597 件）ので、push 側に深い検証を
+# **なぜ分けたか**: 変異テストは 1 変異ごとにフルスイートを回すので、所要は最大で
+# `--max × スイート実行時間`（落ちる変異は `-f` で最初の失敗で止まる。`-f` を入れる前の実測:
+# `--max 15` で 960〜1065 秒 ＝ CI 全体の 94%）。スイートは伸び続ける（524 → 597 件）ので、push 側に深い検証を
 # 置いたままだと**変更が大きい回ほど待たされる**構造が悪化する。
 # 待つ人が居ない時間帯に寄せて、push 側は即時性だけを担保する。
 #
@@ -39,11 +39,11 @@ permissions:
 jobs:
   mutation:
     runs-on: ubuntu-latest
-    # `--max 60 × フルスイート` は伸び続ける（1 変異 113 秒 → 2026-09 には約 200 秒）。
-    # 既定の 6 時間まで走らせる理由が無いので切っておく。**ここに当たると cancelled になり、
-    # 結果もログも残らず report も走らない**（2026-09-26 の実測）ので、mutation-test.py 側の
-    # `--budget-sec` をこれより手前に置いて、回せた分の結果を出して終わらせる
-    timeout-minutes: 180
+    # 1 変異 = フルスイートの所要は伸び続ける（1 変異 113 秒 → 2026-09 には約 200 秒 → 10-07 は約 428 秒で
+    # 1 晩 19 個 / #288）。**ここに当たると cancelled になり、結果もログも残らず report も走らない**
+    # （2026-09-26 の実測）ので、mutation-test.py 側の `--budget-sec` をこれより手前に置いて、回せた分の
+    # 結果を出して終わらせる。既定かつ上限の 6 時間（360 分）からは余裕を取る
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,10 +69,11 @@ jobs:
             --input-base "$INPUT_BASE" --run-id "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
             --env-file "$GITHUB_ENV"
 
-      # `--max 60` は「1 日ぶんの変更行なら実質全部」を狙った値。上限に当たった回は
-      # ログに「N 個を対象外にした」と出るので、恒常的に当たるようなら分割を検討する。
-      # `--budget-sec 9000`（150 分）は job の timeout（180 分）から準備の数分と 1 変異ぶんを引いた値。
-      # 打ち切った回はログに「予算で未実行 N」と出る
+      # 止めるのは予算（`--budget-sec`）で、`--max 500` は通常は予算より先に効かない大きさにしてある（`-f` で
+      # 落ちる変異が速い晩は先に効きうるが、どちらで打ち切っても未実行は起票される）。1 変異の timeout は mutation-test.py が予算の残りで頭打ちにする
+      # ので、最後の変異が hang しても予算を超えない。`--budget-sec 19000` は job の timeout（330 分 =
+      # 19800 秒）から準備・artifact・起票の分を引いた値。打ち切った回はログに「予算で未実行 N」と出る。
+      # テストコマンドは mutation-test.py の既定（`-f` 付き。落ちる変異は最初の失敗で止まる）
       # PYTHONUNBUFFERED: パイプ越しだと出力がバッファされ、途中で殺された回のログが空になる
       # `--summary-json` は未実行の件数を report に渡す（ログの 1 行を grep で拾わない）
       - name: mutation-test
@@ -83,7 +84,7 @@ jobs:
         run: |
           set -o pipefail
           python3 .claude-plugin/scripts/mutation-test.py \
-            --base "$MUT_BASE" --max 60 --budget-sec 9000 --strict \
+            --base "$MUT_BASE" --max 500 --budget-sec 19000 --strict \
             --summary-json mutation-summary.json 2>&1 | tee mutation.log
 
       # **集計の有無が「この晩の範囲を回した」印**（翌晩の resolve-base が読む）。集計が無い晩

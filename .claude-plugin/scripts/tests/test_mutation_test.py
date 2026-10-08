@@ -930,6 +930,83 @@ class BudgetMainTest(unittest.TestCase):
         self.assertNotIn("予算", out)
 
 
+class BudgetCapTest(unittest.TestCase):
+    """予算の残りで 1 変異の timeout を頭打ちにし、baseline の timeout を予算まで延ばす（GitHub issue #288）.
+
+    見積もりは平均なので、最後の 1 個が hang すると予算 + timeout まで走り、CI の job timeout に当たって
+    cancelled になる（結果もログも残らない）。
+    """
+
+    setUp = BudgetMainTest.setUp
+    _main = BudgetMainTest._main
+
+    def _hang_on_mutation(self) -> str:
+        """変異を当てた回だけ hang するテストコマンド（baseline は即座に緑）."""
+        (self.root / "check.py").write_text(textwrap.dedent("""\
+            import pathlib, time
+            if pathlib.Path("t.py").read_text() != "x = 1 > 2\\ny = 3 < 4\\n":
+                time.sleep(60)
+            """), encoding="utf-8")
+        return "python3 check.py"
+
+    def _summary(self, *extra: str) -> tuple[int, dict, float]:
+        path = self.root / "s.json"
+        t0 = time.monotonic()
+        rc, _ = self._main("--summary-json", str(path), *extra)
+        return rc, json.loads(path.read_text(encoding="utf-8")), time.monotonic() - t0
+
+    def test_a_hang_is_cut_at_the_budget_and_counted_as_unexecuted(self):
+        """本来の timeout（30 秒）に届く前に予算の残りで切り、timeout ではなく未実行に数える."""
+        rc, s, took = self._summary("--test-cmd", self._hang_on_mutation(), "--budget-sec", "1.5")
+        self.assertEqual(rc, 0)
+        self.assertEqual((s["executed"], s["timeout"], s["unexecuted_budget"]), (0, 0, 2))
+        self.assertLess(took, 20, "予算を超えて本来の timeout まで待った")
+
+    def test_the_mutant_cut_at_the_budget_is_named_in_the_log(self):
+        """どの変異で切ったかを残す（hang の疑いがある変異を回し直すときの手がかり）."""
+        _, out = self._main("--test-cmd", self._hang_on_mutation(), "--budget-sec", "1.5")
+        self.assertRegex(out, r"\[1/2\] 予算切れ .*t\.py:1 — ")
+
+    def test_a_timeout_within_the_budget_is_still_a_timeout(self):
+        """予算に余裕があれば、本来の timeout で切れた変異は従来どおり timeout（無限ループ化の疑い）."""
+        rc, s, _ = self._summary("--test-cmd", self._hang_on_mutation(), "--budget-sec", "100",
+                                 "--timeout", "1")
+        self.assertEqual(rc, 0)
+        self.assertEqual((s["executed"], s["timeout"], s["unexecuted_budget"]), (2, 2, 0))
+
+    def test_without_a_budget_a_slow_mutant_is_not_cut(self):
+        """予算なし（既定）では頭打ちにしない — 1 秒を超えて落ちる変異は killed のまま."""
+        (self.root / "check.py").write_text(textwrap.dedent("""\
+            import pathlib, sys, time
+            if pathlib.Path("t.py").read_text() != "x = 1 > 2\\ny = 3 < 4\\n":
+                time.sleep(1.2)
+                sys.exit(1)
+            """), encoding="utf-8")
+        rc, s, _ = self._summary("--test-cmd", "python3 check.py")
+        self.assertEqual(rc, 0)
+        self.assertEqual((s["executed"], s["killed"], s["unexecuted_budget"]), (2, 2, 0))
+
+    def test_the_baseline_timeout_follows_the_budget(self):
+        """固定のままだと、スイートが伸びて timeout を超えた晩から baseline が毎晩 FATAL になる."""
+        seen: list[int] = []
+        orig = mt.run
+
+        def spy(cmd, cwd, timeout=600):
+            if cmd == ["true"]:
+                seen.append(timeout)
+            return orig(cmd, cwd, timeout=timeout)
+
+        mt.run = spy
+        self.addCleanup(setattr, mt, "run", orig)
+        for extra in (("--budget-sec", "5000"), (), ("--budget-sec", "10")):
+            self._main(*extra)
+        self.assertEqual(seen, [5000, 1800, 1800])
+
+    def test_the_default_test_command_stops_at_the_first_failure(self):
+        """落ちる変異は最初の失敗で止める（1 変異 = フルスイートの所要を縮める / #288）."""
+        self.assertIn("-f", mt.DEFAULT_TEST_CMD.split())
+
+
 class SummaryJsonTest(unittest.TestCase):
     """`--summary-json` が未実行の件数を残す（GitHub issue #288）.
 

@@ -65,7 +65,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_TEST_CMD = "python3 -m unittest discover -s .claude-plugin/scripts/tests"
+# **`-f`（failfast）を付ける**。落ちる変異は最初の失敗で止まり、判定は killed のまま変わらない（生存は
+# スイート全体が緑のときだけ）。1 変異 = フルスイートなので所要がスイートの伸びに比例する（nightly の
+# 10-07 は 1 変異 約 428 秒・1 晩 19 個 / #288）。代償は、出力が最初の失敗の分だけになるので構文エラーの
+# 判定（invalid）を取りこぼし、killed に入りうること
+DEFAULT_TEST_CMD = "python3 -m unittest discover -s .claude-plugin/scripts/tests -f"
+# baseline（変異前のフルスイート）の timeout。手元（macOS）のフルスイートは約 650 秒、CI は 280〜457 秒で
+# 伸び続けている。600 秒だと既定のテストコマンドの baseline が手元で FATAL になり、CI でも push 側の
+# スモークが近く赤くなる（#288）。`--budget-sec` を指定した回は予算まで延ばす
+BASELINE_TIMEOUT = 1800
 TARGET_SUFFIXES = {".py", ".sh"}
 # **テストファイルは変異させない**。テストは判定者であって被験者ではなく、fixture を
 # 書き換えて「テストが通った」ことには意味がない（初回実行の生存 8 件が全部これだった）。
@@ -798,7 +806,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="1 変異あたりの秒数（既定 0 = baseline 実測の 5 倍・最低 30 秒）")
     ap.add_argument("--budget-sec", type=float, default=0,
                     help="起動からの経過秒数の上限（既定 0 = 無制限）。次の 1 変異で超える見込みになったら"
-                         "打ち切り、残りを「予算で未実行」として数える")
+                         "打ち切り、残りを「予算で未実行」として数える。1 変異の timeout は予算の残りで"
+                         "頭打ちにし、baseline の timeout は予算まで延ばす")
     ap.add_argument("--summary-json", default=None,
                     help="集計（生成・実行・未実行の内訳）を JSON でこのパスに書く。exit 0 で終わる回は"
                          "必ず書く（nightly が「打ち切りで検証しなかった変異」を起票する判定に使う / #288）")
@@ -866,7 +875,9 @@ def main(argv: list[str] | None = None) -> int:
     clear_pycache()
     t0 = time.monotonic()
     try:
-        baseline = run(test_cmd, ROOT)
+        # **予算があれば baseline の timeout も予算まで延ばす**。固定のままだと、スイートが伸びて timeout を
+        # 超えた晩から毎晩 FATAL になり、変異を 1 個も回せない（BASELINE_TIMEOUT の注記）
+        baseline = run(test_cmd, ROOT, timeout=max(BASELINE_TIMEOUT, int(args.budget_sec)))
     except subprocess.TimeoutExpired:
         print("FATAL: 変異前のテストがタイムアウトした（この状態では生存判定に意味がない）",
               file=sys.stderr)
@@ -915,13 +926,26 @@ def main(argv: list[str] | None = None) -> int:
             budget_left = len(mutants) - (i - 1)
             break
         t_m = time.monotonic()
+        # **1 変異の timeout を予算の残りで頭打ちにする**。見積もりは平均なので、最後の 1 個が hang すると
+        # 予算 + timeout（baseline の 5 倍）まで走り、CI の job timeout に当たって cancelled になる
+        # （結果もログも残らない。180 分 / 9000 秒の設定では余裕が 1 分も無かった / #288）
+        cap = timeout
+        if args.budget_sec > 0:
+            cap = min(timeout, max(1, int(args.budget_sec - (time.monotonic() - t_start))))
         try:
-            verdict = apply_and_test(m, test_cmd, timeout)
+            verdict = apply_and_test(m, test_cmd, cap)
         except ExternalEditError as e:
             # **ここまでの結果は捨てない**（残りが実行できないだけで、集計は意味を持つ）
             print(f"\nFATAL: {e}", file=sys.stderr)
             print(f"  実行済み {i - 1}/{len(mutants)} 件までの結果を出す", file=sys.stderr)
             aborted = True
+            break
+        if verdict == "timeout" and cap < timeout:
+            # 予算の残りで切った回は本来の timeout に届いていない（無限ループ化とは言えない）。
+            # 判定せず、この変異から後を予算で未実行に数える。どの変異で切ったかは回し直しの手がかりに残す
+            print(f"  [{i}/{len(mutants)}] {'予算切れ':9s} {_rel(m.path)}:{m.lineno} — {m.rule}"
+                  f"（予算の残り {cap}s で切った。未実行に数える）")
+            budget_left = len(mutants) - (i - 1)
             break
         durations.append(time.monotonic() - t_m)
         mark = {"survived": "SURVIVED", "killed": "killed",
