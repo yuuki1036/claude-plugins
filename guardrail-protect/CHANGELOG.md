@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.8.1] - 2026-10-08
+
+### Changed
+
+- 参照先のプラグイン名を `claude-meta` から `harness-keeper` に直した（README の連携先、`references/meta-rule.md` の
+  三段防御パターンのパス）。プラグインが予約名を避けて改名したため
+
 ## [0.8.0] - 2026-10-01
 
 ### Added

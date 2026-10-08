@@ -151,9 +151,18 @@ class ParentTest(unittest.TestCase):
 class MarketplaceListTest(unittest.TestCase):
     def test_the_allowlist_matches_the_plugins_in_this_repo(self):
         """プラグインを足したら `MARKETPLACE_PLUGINS` と計測ストアの語彙も足す（足さないと parent が other に落ちる）."""
-        from invocation import MARKETPLACE_PLUGINS
+        from invocation import CURRENT_PLUGINS
         plugins = {p.parent.parent.name for p in REPO.glob("*/.claude-plugin/plugin.json")}
-        self.assertEqual(set(MARKETPLACE_PLUGINS), plugins)
+        self.assertEqual(set(CURRENT_PLUGINS), plugins)
+
+    def test_a_former_name_is_still_a_parent(self):
+        """改名前の transcript の呼び出し元を other に落とさない（claude-meta → harness-keeper）."""
+        from invocation import CURRENT_PLUGINS, FORMER_PLUGINS
+        self.assertFalse(FORMER_PLUGINS & CURRENT_PLUGINS, "旧名がいまの名前と重なっている")
+        self.assertEqual(parent([prompt("x"), skill("claude-meta:eval-runner"), start()]),
+                         "claude-meta:eval-runner")
+        self.assertEqual(parent([prompt("x"), skill("harness-keeper:eval-runner"), start()]),
+                         "harness-keeper:eval-runner")
 
 
 class CliTest(unittest.TestCase):

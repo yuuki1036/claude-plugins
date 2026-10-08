@@ -64,8 +64,8 @@ class SkillInvocationGraderTest(unittest.TestCase):
 
     def test_any_of_several_expectations_passes(self):
         """エイリアスを列挙したケース（コマンド名 / スキル名の非対称）."""
-        g = r.SkillInvocationGrader(["claude-meta:cc-catch-up", "claude-meta:catch-up"])
-        self.assertTrue(g.grade(_obs(skill="claude-meta:catch-up")).passed)
+        g = r.SkillInvocationGrader(["harness-keeper:cc-catch-up", "harness-keeper:catch-up"])
+        self.assertTrue(g.grade(_obs(skill="harness-keeper:catch-up")).passed)
 
     def test_no_skill_detected_fails(self):
         self.assertFalse(r.SkillInvocationGrader(["a:b"]).grade(_obs(skill=None)).passed)

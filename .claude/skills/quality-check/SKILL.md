@@ -350,7 +350,7 @@ spec ルーティング 3 軸コア（WHAT→bdd-spec / HOW→design-doc / WHY�
 
 ## 関連: eval-runner（スキル起動の回帰テスト）
 
-品質チェックが静的検証（ファイル・frontmatter）であるのに対し、`evals/runner.py`（または `claude-meta:eval-runner` スキル）はランタイム検証を担当する。
+品質チェックが静的検証（ファイル・frontmatter）であるのに対し、`evals/runner.py`（または `harness-keeper:eval-runner` スキル）はランタイム検証を担当する。
 
 - スキルの description / トリガーフレーズを変更した後は eval-runner で pass^k=3 の回帰テストを推奨
 - `/quality-check` 自体では eval は自動実行しない（時間・API コストのため）

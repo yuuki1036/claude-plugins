@@ -1,24 +1,24 @@
-plugin: claude-meta
+plugin: harness-keeper
 cases:
   - id: catch-up-ja
     prompt: Claude Codeの最新アップデートをキャッチアップして
     # コマンド名 /catch-up とスキル名 cc-catch-up が非対称なため両方を許容（#186）
-    expected_skill: [claude-meta:cc-catch-up, claude-meta:catch-up]
+    expected_skill: [harness-keeper:cc-catch-up, harness-keeper:catch-up]
     k: 3
   - id: claude-md-audit-ja
     prompt: CLAUDE.mdを監査して
-    expected_skill: claude-meta:claude-md-improver
+    expected_skill: harness-keeper:claude-md-improver
     k: 3
   - id: setup-recommend-ja
     prompt: Claude Codeのセットアップを提案して
-    expected_skill: claude-meta:claude-code-setup
+    expected_skill: harness-keeper:claude-code-setup
     k: 3
   # 未カバー skill の回帰
   - id: component-addition-advisor-ja
     prompt: 新しい skill 追加していい？
-    expected_skill: claude-meta:component-addition-advisor
+    expected_skill: harness-keeper:component-addition-advisor
     k: 3
   - id: eval-runner-ja
     prompt: eval 実行して
-    expected_skill: claude-meta:eval-runner
+    expected_skill: harness-keeper:eval-runner
     k: 3

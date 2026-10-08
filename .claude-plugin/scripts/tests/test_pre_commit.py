@@ -52,7 +52,12 @@ class PreCommitTest(unittest.TestCase):
                               text=True, env=self.env(), check=True)
 
     def env(self) -> dict[str, str]:
-        return scrub()   # git hook 由来の変数を落とす（正本と理由は `git_env`）
+        env = scrub()   # git hook 由来の変数を落とす（正本と理由は `git_env`）
+        # 迂回の変数も継承しない。`PLUGIN_EVAL_SKIP=1 git commit` の pre-commit からこのスイートが
+        # 走ると、ゲートが止めることを見るテストまで迂回されて落ちる（2026-10-08 の実測）。
+        # 迂回を試すテストは `run_hook(PLUGIN_EVAL_SKIP="1")` で明示する
+        env.pop("PLUGIN_EVAL_SKIP", None)
+        return env
 
     def write(self, rel: str, body: str, mode: int = 0o644) -> Path:
         path = self.root / rel

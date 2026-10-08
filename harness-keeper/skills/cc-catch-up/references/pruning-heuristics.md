@@ -181,7 +181,7 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
 
 ## state file 拡張
 
-剪定モードは state file（`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json`）の以下のフィールドを使用/更新する:
+剪定モードは state file（`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json`）の以下のフィールドを使用/更新する:
 
 ```json
 {

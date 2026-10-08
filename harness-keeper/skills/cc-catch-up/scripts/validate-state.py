@@ -10,7 +10,7 @@ Phase 7 で state.json を書き換えた直後に実行し, schema drift を機
   items / enum / pattern / minLength / anyOf
 
 実行: python3 validate-state.py [state.json] [--schema state-schema.json]
-  引数無し: state.json は ${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json,
+  引数無し: state.json は ${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json,
             schema はスクリプトからの相対パス (references/state-schema.json) で解決
 Exit code: 0 (valid) / 1 (違反) / 2 (ファイル不在・JSON 構文エラー)
 """
@@ -29,7 +29,7 @@ SKILL_DIR = HERE.parent
 # (marketplace 更新で消えず, 個人の実行状態を git commit しないため).
 # CLAUDE_PROJECT_DIR 未設定時は $HOME にフォールバック.
 _STATE_BASE = os.environ.get("CLAUDE_PROJECT_DIR") or str(Path.home())
-DEFAULT_STATE = Path(_STATE_BASE) / ".claude" / "claude-meta" / "cc-catch-up-state.json"
+DEFAULT_STATE = Path(_STATE_BASE) / ".claude" / "harness-keeper" / "cc-catch-up-state.json"
 DEFAULT_SCHEMA = SKILL_DIR / "references" / "state-schema.json"
 
 JSON_TYPES = {

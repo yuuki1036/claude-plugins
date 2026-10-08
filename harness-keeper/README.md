@@ -1,4 +1,4 @@
-# claude-meta
+# harness-keeper
 
 Claude Code 自体の設定管理・改善を支援するプラグイン。コードベース分析によるセットアップ推奨、CLAUDE.md の品質監査・改善、CC アップデート追従、新コンポーネント追加前の判断、eval 回帰テスト、セッション学習の反映を行う。
 
@@ -20,7 +20,7 @@ Claude Code の最新アップデートからプラグイン開発に関連す�
 
 ### cc-catch-up
 
-Claude Code の最新アップデートをキャッチアップし、既存プラグインへの改善を提案・適用する。`references/plugin-features.md`（プラグイン関連機能カタログ）と `references/improvement-patterns.md`（機能 → 改善のデシジョンツリー）を参照し、`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/claude-meta/cc-catch-up-state.json` で前回キャッチアップ状態を追跡する（プラグイン本体には置かず、marketplace 更新で消えない場所に保存）。`catch-up` コマンドとペア。
+Claude Code の最新アップデートをキャッチアップし、既存プラグインへの改善を提案・適用する。`references/plugin-features.md`（プラグイン関連機能カタログ）と `references/improvement-patterns.md`（機能 → 改善のデシジョンツリー）を参照し、`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json` で前回キャッチアップ状態を追跡する（プラグイン本体には置かず、marketplace 更新で消えない場所に保存）。`catch-up` コマンドとペア。
 
 **トリガー例**: 「キャッチアップ」「CC更新確認」「プラグイン改善」「新機能適用」「リリースノート確認」
 

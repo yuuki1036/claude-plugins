@@ -29,7 +29,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #  ① 検証スクリプト自身（test_validate_plugin_quality.py / test_mutation_test.py）
                                  #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
                                  #     （`test_<plugin>_*.py`。bats を入れず依存ゼロで 3 経路に載せる）
-                                 #     `skills/*/scripts/` 配下も対象（test_claude_meta_scripts.py）
+                                 #     `skills/*/scripts/` 配下も対象（test_harness_keeper_scripts.py）
                                  #     evals/runner.py は判定部だけ純関数として見る（test_evals_runner.py）
                                  #  ③ repo 直下スクリプトの CLI テスト（使い捨てリポジトリを立てる）。
                                  #     ゲートの判断（何を止めるか / 判定不能を通すか）は stub を置いて
@@ -102,7 +102,7 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 |-----------|---------|-------|--------|-------|------|
 | code-review | 5 | 5 | - | SessionStart, Stop, PreToolUse | Phase 0 トリアージ + 動的エージェント構成のコードレビュー / セルフレビュー / コメント精査 / 受けたレビューコメントの仕分け / PR の読み順ガイド |
 | dev-workflow | 4 | 7 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認・バグ診断・worktree 並列開発 + 一括棚卸し（chrome-devtools MCP 同梱） |
-| claude-meta | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査・CC アップデート追従・eval 回帰テスト・コンポーネント追加前判断 |
+| harness-keeper | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査・CC アップデート追従・eval 回帰テスト・コンポーネント追加前判断 |
 | issue-workflow | 13 | 13 | 4 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | Issue 管理（旧 linear/indie の統合後継。backend 自動判定） |
 | plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + deprecated の自動移行（_superseded_by）+ 後発追加通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
@@ -192,7 +192,7 @@ bash .claude-plugin/scripts/bump-version.sh {plugin-name} patch   # 次版を計
 - commands/ と skills/ の allowed-tools は一致させる（コマンドとスキルがペアになっている場合のみ。独立したコマンドやスキルには適用されない。別名ペア（`commit`↔`git-commit-helper` 等）は `validate_plugin_quality.py` の `COMMAND_SKILL_ALIASES` に登録して検証対象に含める — 新しい別名ペアを作ったら対応表への追加も必須）
 - 後から変えにくい判断を伴う方針確認は `AskUserQuestion` で選択 UI を提示する（SKILL.md のワークフロー内に呼び出し仕様を直接記述する）
   - **例外（起動＝実行確定なスキル）**: ユーザーがコマンド起動した時点で実行意思が確定しているメンテナンス系スキル（maintain 系等）では、起動時の実行可否確認・モード選択や実行中の承認を `AskUserQuestion` で問い直さない。選択 UI で通常のチャット入力が奪われる UX コストを避けるため、止まらず最後まで実行し**結果は実行後レポートで報告**する。判断が要る検出（削除・status 遷移等）は AskUserQuestion で止めず**レポートに列挙してチャットで指示**を受ける。前提は「操作対象が git 管理下で復元可能」かつ「実行後に全件レポートで可視化される」こと。この前提を満たさない不可逆操作（外部送信・本番影響等）は従来どおり `AskUserQuestion` で確認する
-- 新 skill / agent / hook / command を追加する前は `claude-meta:component-addition-advisor` で退路確保（既存拡張で解けないか）を判定する
+- 新 skill / agent / hook / command を追加する前は `harness-keeper:component-addition-advisor` で退路確保（既存拡張で解けないか）を判定する
 - **深掘り系スキルには `${CLAUDE_EFFORT}` 実行時分岐を必須とする**。深掘り系 = 走査・分析・レビュー・多段 agent など「かける深さで結果の質が変わる」スキル（maintain / discover / review / retrospective / design 系）。単純 CRUD・scaffold・単発記録系（init / follow-up / log-failure 等）には不要
 - **issue-workflow の backend 分岐規約**: 旧 linear-workflow / indie-workflow のミラー規約は廃止した（ADR-20260722164106）。共通機能は issue-workflow 内の backend 分岐（`BACKEND=local|linear` / `{DATA_DIR}` 変数化 / 「BACKEND=linear のときのみ」の条件付き Phase）で表現する。backend 判定述語は「データ dir が存在し、かつ slug サブディレクトリを 1 つ以上持つ」で SKILL（Phase 0）と hook（`hooks/lib/detect-backend.sh`）を統一する。Phase 0 の手順は `.claude-plugin/lib/backend-detect.md` が正本で、各スキルの `BACKEND-DETECT` 区間を `validate_plugin_quality.py` が byte 比較する（片方だけ直すとスキルごとに判定が食い違う）。プラグイン間依存禁止の制約下で複製が発生したら、それは分割単位の誤りを示すシグナルとして扱う
 - **プラグイン内部 doc（SKILL.md / references/ / README）には doc-freshness frontmatter を付けない**: これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理されており、`last-validated`（current 閾値）を付けると恒常 stale 化して逆効果。doc-freshness の対象はプロジェクト側の doc（CLAUDE.md / `.claude/adr/` / `.claude/designs/` 等）
@@ -293,7 +293,7 @@ Claude Code の hook を **Pub/Sub Message Bus** として運用するための�
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
 
-スキルの description / トリガーフレーズを変更した場合は `evals/runner.py` で回帰テストを実行する（`claude-meta:eval-runner` スキル経由も可）。pass^k=3 基準でスキル選択の安定性を検証できる。**evals だけはローカル実行のみ**（`.github/workflows/validate.yml` は SSoT・品質・回帰テスト・バージョンバンプを検証するが evals は回さない。通常セッション枠を消費するため）。
+スキルの description / トリガーフレーズを変更した場合は `evals/runner.py` で回帰テストを実行する（`harness-keeper:eval-runner` スキル経由も可）。pass^k=3 基準でスキル選択の安定性を検証できる。**evals だけはローカル実行のみ**（`.github/workflows/validate.yml` は SSoT・品質・回帰テスト・バージョンバンプを検証するが evals は回さない。通常セッション枠を消費するため）。
 
 **出力品質の回帰（`claude plugin eval`）**: 上の runner が「正しいスキルが選ばれるか」を測るのに対し、こちらは「スキルが効いて回答が良くなったか」をプラグインあり / なしの 2 アームで測る。起動口は `bash .claude-plugin/scripts/plugin-eval.sh <plugin>`（paid。1 ケース約 1〜3 USD。走らせる前に概算を言う）。**pre-commit が鮮度を強制する** — ケースを持つプラグインの `skills/ commands/ agents/ references/ evals/` を変えると、最新の実行結果が無ければ commit を止める（迂回は `PLUGIN_EVAL_SKIP=1`）。定期実行・CI には載せない。**ケースを書く・足す・結果を読むときは `docs/plugin-eval.md` を読む**（fixture の渡し方・閾値・機能しない grader の型・ケースを足す前のコスト比較）
 

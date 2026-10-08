@@ -10,7 +10,7 @@ body:
       options:
         - adr-keeper
         - bdd-spec
-        - claude-meta
+        - harness-keeper
         - code-review
         - design-doc
         - dev-workflow

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`claude-meta` 同梱スクリプトの回帰テスト（CLI 境界越しの subprocess テスト）.
+"""`harness-keeper` 同梱スクリプトの回帰テスト（CLI 境界越しの subprocess テスト）.
 
 **なぜあるか**（GitHub issue #187）: どちらも「決定的検査で LLM 判断を代替する」ために
 置かれたスクリプトなのに、テストが 1 件も無かった。壊れても cc-catch-up の実行中にしか
@@ -22,10 +22,10 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPTS = ROOT / "claude-meta" / "skills" / "cc-catch-up" / "scripts"
+SCRIPTS = ROOT / "harness-keeper" / "skills" / "cc-catch-up" / "scripts"
 VALIDATE = SCRIPTS / "validate-state.py"
 SCAN = SCRIPTS / "scan-frontmatter.sh"
-SCHEMA = ROOT / "claude-meta" / "skills" / "cc-catch-up" / "references" / "state-schema.json"
+SCHEMA = ROOT / "harness-keeper" / "skills" / "cc-catch-up" / "references" / "state-schema.json"
 
 
 def _valid_state() -> dict:

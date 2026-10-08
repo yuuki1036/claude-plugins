@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.149.1] - 2026-10-08
+
+### Changed
+
+- 呼び出し経路（`invocation.parent`）が数えるマーケットプレイスのプラグイン名に `harness-keeper`（`claude-meta` の
+  新しい名前）を足した。改名前の transcript を読むので `claude-meta` も残す。設計ノートの
+  `claude-meta:component-addition-advisor` の参照も新しい名前に直した
+
 ## [2.149.0] - 2026-10-08
 
 ### Added

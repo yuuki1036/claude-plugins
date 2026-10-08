@@ -104,7 +104,7 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 **まだ入れていない理由**:
 
 - **誤検知の設計が未確定**。glob は**他セッション・他リポジトリのレビュー**の計測ファイルにも当たる（`TS_FILE` の slug は worktree ルート由来で、hook 側からは自分の回かどうかを判定できない）。並行レビューが常態のマーケットプレイス前提（`dev-workflow:worktree-setup`）では、鳴りっぱなしになって「⚠️ が出たときだけ行動する」契約を壊すリスクがある
-- code-review は現在 SessionStart hook しか持たず、**新規 hook の追加は `claude-meta:component-addition-advisor` の退路確保ゲートの対象**（CLAUDE.md）。既存拡張（SKILL 側のガード）で足りるかを先に測る
+- code-review は現在 SessionStart hook しか持たず、**新規 hook の追加は `harness-keeper:component-addition-advisor` の退路確保ゲートの対象**（CLAUDE.md）。既存拡張（SKILL 側のガード）で足りるかを先に測る
 - **判断材料**: `measurement_gaps` の `late-publish` の発生率（`review-retro.sh` が gap 種別ごとに自分の分母で判定する / v2.66.0）。SKILL 側ガードで頻度が落ちなければ hook へ上げる
 
 ## 7. 既定 high で「加減算で報告閾値を超えた MAJOR」を反証対象に含める
@@ -139,8 +139,8 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 - **セッション内での実験は偽陰性を返しうる**。`settings.json` に hook を足しても実行中セッションが再読込する保証が無く、「発火しなかった」がツール非対応なのか設定未反映なのか切り分けられない
 - **検証手順**: ①`.claude/settings.json` に `PostToolUse` / matcher `Agent` の hook（マーカーファイルに 1 行 append するだけ）を足す ②**セッションを再起動する** ③任意の agent を 1 体起動する ④マーカーが増えたか見る。発火するなら `tool_name` の実値（`Agent` / `Task`）も同時に控える
 - **repo の Gotchas「hooks.json の if:/matcher に単独依存しない」に従い、自己判定を必須にする**: `tool_name` を `safe_hook_input` で読み、さらに**レビュー中か**（`review_path timing` が存在するか）を見てから打点する。そうしないと全セッションの全 Agent 呼び出しで発火する
-- **`SubagentStop` を先に試す**（本 repo の `.claude-plugin/schema/hooks.schema.json` が正式イベントとして許可し、`claude-meta` の `cc-catch-up/references/plugin-features.md` に「v1.0.41+ / サブエージェント停止時」と記録がある）。**体数を数えるだけならこちらで足りる**ので「`Agent` で発火するか不明」は打ち手全体のブロッカーにはならない。ただし**発行時刻が取れない**ので、wave 推定は完了時刻のクラスタリング＝閾値が要る側に戻る。→ **打点漏れの検知は `SubagentStop`、一括発行違反の検知は `Agent` の PreToolUse**、と役割を分けるのが現時点の第一候補
-- **新規 hook の追加は `claude-meta:component-addition-advisor` の退路確保ゲートの対象**（CLAUDE.md）。code-review は現在 SessionStart hook しか持たないので、判定を経てから入れる
+- **`SubagentStop` を先に試す**（本 repo の `.claude-plugin/schema/hooks.schema.json` が正式イベントとして許可し、`harness-keeper` の `cc-catch-up/references/plugin-features.md` に「v1.0.41+ / サブエージェント停止時」と記録がある）。**体数を数えるだけならこちらで足りる**ので「`Agent` で発火するか不明」は打ち手全体のブロッカーにはならない。ただし**発行時刻が取れない**ので、wave 推定は完了時刻のクラスタリング＝閾値が要る側に戻る。→ **打点漏れの検知は `SubagentStop`、一括発行違反の検知は `Agent` の PreToolUse**、と役割を分けるのが現時点の第一候補
+- **新規 hook の追加は `harness-keeper:component-addition-advisor` の退路確保ゲートの対象**（CLAUDE.md）。code-review は現在 SessionStart hook しか持たないので、判定を経てから入れる
 
 **先に入れたもの（案 B / v2.67.0）**: publish の WARN に「レポート末尾に `⚠️ 計測: ...` を 1 行追記せよ」という具体指示を足し、両 SKILL に追記規約を書いた。stderr の警告をユーザーに見える場所へ移すだけで、**自己申告構造そのものは変わっていない**（本命は上の案）。
 

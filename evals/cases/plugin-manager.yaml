@@ -11,9 +11,9 @@ cases:
     k: 3
 
   # --- 誤発火防止 ---
-  # 「CC の新機能をプラグインに取り込む」は claude-meta:cc-catch-up の領分
+  # 「CC の新機能をプラグインに取り込む」は harness-keeper:cc-catch-up の領分
   # （プラグイン本体の一括更新 = update-all との弁別）
   - id: update-all-nofire-catch-up
     prompt: Claude Code の最新アップデートをキャッチアップしてプラグインを改善して
-    expected_skill: [claude-meta:cc-catch-up, claude-meta:catch-up]
+    expected_skill: [harness-keeper:cc-catch-up, harness-keeper:catch-up]
     k: 3

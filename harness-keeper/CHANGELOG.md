@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.0.0] - 2026-10-08
+
+### Changed
+
+- **プラグイン名を `claude-meta` から `harness-keeper` に改名した**（破壊的変更）。Claude Code 2.1.292 の
+  `claude plugin validate` が、`claude-` で始まるプラグイン名を Anthropic のものに見える予約名として error にする
+  ようになった（インストールと読み込みは 2.1.292 時点では通る）。スキルの呼び名は `harness-keeper:<skill>` になる
+  （例: `harness-keeper:component-addition-advisor` / `harness-keeper:eval-runner`）。インストール済みの環境は
+  `claude plugin uninstall claude-meta@yuuki1036-claude-plugins` のあと
+  `claude plugin install harness-keeper@yuuki1036-claude-plugins` で入れ替える（マーケットプレイスから旧名は消した）
+- cc-catch-up の state file の置き場所を `.claude/claude-meta/` から `.claude/harness-keeper/` に移した。新しい
+  置き場所に無く旧い置き場所にあれば、Phase 0 で新しい置き場所へ移してから読む
+- 以下の履歴は claude-meta 時代のもの
+
 ## [1.13.8] - 2026-09-25
 
 ### Changed

@@ -119,10 +119,10 @@ Anthropic / Vercel 公式が同梱・配布している skill のレコメンド
 | `plugin-dev:mcp-integration` | `mcp-builder` | プラグイン文脈で MCP 取込みを、サーバー実装は公式へ委譲 |
 | `dev-workflow:ui-verify` | `chrome-devtools`, `webapp-testing` | smoke は ui-verify、E2E は webapp-testing |
 | `feature-dev:code-architect` | `context7` | Phase 1 で外部ライブラリ採用判断時に必須参照 |
-| `claude-meta:claude-code-setup` | （本カタログを参照する側） | Phase 1/2 で検出シグナル ↔ skill レコメンド |
+| `harness-keeper:claude-code-setup` | （本カタログを参照する側） | Phase 1/2 で検出シグナル ↔ skill レコメンド |
 
 ## 更新ポリシー
 
 - 公式 skill は Anthropic / Vercel が随時更新する。本ファイルは「検出シグナル ↔ skill 名」のマッピングを正本として持つ
 - 実体パス（`~/.agents/skills/` 等）は環境依存なので、レコメンド時は skill 名のみを提示し、利用者が呼び出す
-- 新しい公式 skill が追加されたら本ファイルに追記し、`claude-meta` の version を bump する
+- 新しい公式 skill が追加されたら本ファイルに追記し、`harness-keeper` の version を bump する

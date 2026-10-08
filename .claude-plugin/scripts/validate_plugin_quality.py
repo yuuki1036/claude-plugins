@@ -292,8 +292,8 @@ def check_allowed_tools_exists(plugin_dir: Path, errors: list[str]) -> None:
 COMMAND_SKILL_ALIASES: dict[tuple[str, str], str] = {
     ("bdd-spec", "bdd-spec-create"): "create-spec",
     ("bdd-spec", "bdd-spec-evaluate"): "evaluate-spec",
-    ("claude-meta", "catch-up"): "cc-catch-up",
-    ("claude-meta", "revise-claude-md"): "claude-md-improver",
+    ("harness-keeper", "catch-up"): "cc-catch-up",
+    ("harness-keeper", "revise-claude-md"): "claude-md-improver",
     ("dev-workflow", "commit"): "git-commit-helper",
     ("dev-workflow", "pr"): "pr-creator",
     ("doc-freshness", "doc-freshness-check"): "doc-freshness",

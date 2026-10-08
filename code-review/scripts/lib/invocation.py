@@ -31,13 +31,18 @@ sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pyca
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from report_template import START_RE, _blocks, _command  # noqa: E402
 
-#: このマーケットプレイスのプラグイン名。`parent` はこの接頭辞を持つ名前だけを値にする
-MARKETPLACE_PLUGINS = frozenset((
-    "adr-keeper", "bdd-spec", "claude-meta", "code-review", "design-doc", "dev-workflow",
-    "doc-freshness", "failure-journal", "feature-dev", "guardrail-protect", "issue-workflow",
-    "living-spec-workflow", "notebooklm-workflow", "plugin-feedback", "plugin-manager",
-    "spec-advisor", "writing-polish",
+#: このマーケットプレイスのプラグイン名（いまの名前）
+CURRENT_PLUGINS = frozenset((
+    "adr-keeper", "bdd-spec", "code-review", "design-doc", "dev-workflow",
+    "doc-freshness", "failure-journal", "feature-dev", "guardrail-protect", "harness-keeper",
+    "issue-workflow", "living-spec-workflow", "notebooklm-workflow", "plugin-feedback",
+    "plugin-manager", "spec-advisor", "writing-polish",
 ))
+#: 改名した旧名。改名前の transcript を読むので残す（`claude-meta` → `harness-keeper` は
+#: Claude Code 2.1.292 の予約名を避けた改名）
+FORMER_PLUGINS = frozenset(("claude-meta",))
+#: `parent` はこの接頭辞を持つ名前だけを値にする
+MARKETPLACE_PLUGINS = CURRENT_PLUGINS | FORMER_PLUGINS
 _NAME_RE = re.compile(r"([a-z0-9-]+):([a-z0-9-]+)")
 _SLASH_RE = re.compile(r"<command-name>/([^<\s]+)</command-name>")
 

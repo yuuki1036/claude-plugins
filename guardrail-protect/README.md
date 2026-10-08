@@ -411,7 +411,7 @@ git commit -m "fix" && git log -n 5            → PASS（他コマンドの -n 
 ## 関連プラグイン
 
 - **code-review** の `specialist-guardrail-bypass`: hook で防げなかった diff レベルの骨抜きを reviewer が検出
-- **claude-meta:claude-md-improver**: CLAUDE.md に「ガードレール骨抜き禁止」セクションを suggest
+- **harness-keeper:claude-md-improver**: CLAUDE.md に「ガードレール骨抜き禁止」セクションを suggest
 
 ## 制限事項
 

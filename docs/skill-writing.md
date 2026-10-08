@@ -9,7 +9,7 @@
 - **context load**: model-invoked スキルの description は**毎セッションのシステムプロンプトに常駐**する（本文は遅延ロード）。description の 1 文字は全セッションで課金され続ける。`validate_plugin_quality.py` の単体 600 字 / 全体合計 15,000 字の warning はこの負債の機械化
 - **cognitive load**: description を持たない user-invoked スキル（`disable-model-invocation`）は context load ゼロだが、**存在を覚えておく索引が人間側に移る**
 
-**このリポジトリでは `disable-model-invocation` は採用しない。** トリガーフレーズ必須規約（error）・evals 回帰・commands↔skills ペアの文化が model-invoked 前提で組まれているため。負債の制御は「description のダイエット」と「スキルを増やさない判断（`claude-meta:component-addition-advisor`）」で行う。新しいスキルに分けてよいのは、**独立した leading word で発火すべきとき**か、**他のスキルから Skill tool で呼ぶ必要があるとき**だけ。どちらでもなければ、常駐する description 1 本分の context load に見合わない。
+**このリポジトリでは `disable-model-invocation` は採用しない。** トリガーフレーズ必須規約（error）・evals 回帰・commands↔skills ペアの文化が model-invoked 前提で組まれているため。負債の制御は「description のダイエット」と「スキルを増やさない判断（`harness-keeper:component-addition-advisor`）」で行う。新しいスキルに分けてよいのは、**独立した leading word で発火すべきとき**か、**他のスキルから Skill tool で呼ぶ必要があるとき**だけ。どちらでもなければ、常駐する description 1 本分の context load に見合わない。
 
 ## description の設計
 
