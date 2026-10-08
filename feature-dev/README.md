@@ -164,7 +164,7 @@ Phase 6 の最後のレビュー直後に作業ツリーを記録し（`scripts/
 
 ### Phase 7: Summary
 
-全 todo を完了にし、成果（作ったもの / 主要な決定 / 変更ファイル / 次の一手）をまとめる。Phase 4.5 で design doc を export した場合は `phase: target → current` 更新を案内する。Phase 6 で G-V ループが走った場合は iteration 数 / termination reason / auto-fixed count / persisting issues を報告する。最後に `.claude/events.jsonl` へ `feature:implemented` イベントを fire-and-forget で追記する。
+全 todo を完了にし、review-guide からは分からない申し送り（設計契約の決定と未決・静的オラクルの判定不能・G-V ループの persisting・未レビューの変更・design doc の `phase: target → current` 更新など。該当するものだけ）を短く出す。そのうえで、code-review が有効なら読み順ガイド（`code-review:review-guide --base <base>`）を出すかを聞く。人間がこの後にやるのは変更を自分で読んでコミット・PR に進めるかの判断なので、変更ファイルの列挙より読み順を渡す（GitHub issue #290）。code-review が無効・「出さない」・呼び出しの失敗のときは、従来のサマリ（作ったもの / 主要な決定 / 変更ファイル / 次の一手）を出す。最後に `.claude/events.jsonl` へ `feature:implemented` イベントを fire-and-forget で追記する。
 
 ## Agents
 

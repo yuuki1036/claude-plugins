@@ -144,6 +144,39 @@ class InitialSelfReviewScopeTest(unittest.TestCase):
         self.assertIn("`--focus <persisting issue の focus 集合>`", loop)
 
 
+class SummaryReadingGuideTest(unittest.TestCase):
+    """Phase 7 は独自サマリの代わりに code-review:review-guide を案内する（GitHub issue #290）.
+
+    PR がまだ無い段階なので base モード（`--base`）で呼ぶ。PR モードは PR に push 済みのコミットしか
+    見ないので、feature-dev が作った未コミットの変更が読み順から落ちる。`--base` は review-guide 側の
+    引数なので、向こうで名前が変わったらここで気づけるよう、review-guide の引数の宣言と突き合わせる。
+    """
+
+    SKILL = REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
+    GUIDE = REPO / "code-review" / "skills" / "review-guide" / "SKILL.md"
+
+    def phase7(self) -> str:
+        text = self.SKILL.read_text()
+        i = text.index("## Phase 7: Summary")
+        return text[i:text.index("**Event Bus publish", i)]
+
+    def test_invokes_review_guide_in_base_mode(self):
+        self.assertIn("`code-review:review-guide` を `--base <BASE>` 付きで呼ぶ", self.phase7())
+
+    def test_review_guide_still_accepts_base(self):
+        guide = self.GUIDE.read_text()
+        front = guide[:guide.index("\n---", 4)]
+        self.assertIn("--base <ref>", front, "review-guide の引数から --base が消えた")
+
+    def test_falls_back_to_plain_summary(self):
+        """code-review が無効・「出さない」・呼び出しの失敗のときは従来のサマリを出す."""
+        p7 = self.phase7()
+        fallback = p7[p7.index("**従来のサマリ**"):]
+        for cond in ("code-review が無効", "「出さない」", "呼び出しが失敗"):
+            self.assertIn(cond, fallback)
+        self.assertIn("Files modified", fallback)
+
+
 SNAPSHOT = REPO / "feature-dev" / "scripts" / "review-snapshot.sh"
 
 

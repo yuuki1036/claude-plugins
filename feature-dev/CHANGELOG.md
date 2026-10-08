@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.20.0] - 2026-10-09
+
+### Changed
+
+- **Phase 7 で、独自のサマリの代わりに読み順ガイド（`code-review:review-guide`）を案内するようにした**（GitHub issue #290）。この時点で人間がやりたいのは、変更を自分で読んでコミットや PR に進めるかを判断することで、変更ファイルを列挙するだけのサマリはどこから読むか・どこが難所かを伝えなかった。code-review が有効なら「出す / 出さない」を聞き、出すなら PR 未作成の段階なので `--base <Phase 6 の self-review が使った base>` で base モードとして呼ぶ（PR モードは push 済みのコミットしか見ず、未コミットの変更が落ちる）。feature-dev からは、review-guide が diff から知りえない申し送り（設計契約の決定と未決・探索の欠損・静的オラクルの判定不能・G-V ループの persisting・未レビューの変更・worktree・design doc の更新）だけを、該当するものに絞って添える。code-review が無効・「出さない」・呼び出しの失敗（review-guide を持たない旧版を含む）のときは、従来のサマリにフォールバックする
+
 ## [2.19.2] - 2026-10-07
 
 ### Fixed

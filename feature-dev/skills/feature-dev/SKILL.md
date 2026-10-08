@@ -680,24 +680,27 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
 
 ## Phase 7: Summary
 
-**Goal**: Document what was accomplished
+**Goal**: 人間が変更を自分で読み、コミットや PR に進めるかを判断できる状態で渡す（GitHub issue #290）。この時点で要るのは要約ではなく読み順なので、読み順は `code-review:review-guide` に任せ、feature-dev からは review-guide が diff から知りえない申し送りだけを短く添える。変更ファイルを列挙するだけの独自サマリは、どこから読むか・どこが難所かを伝えない。
 
 **Actions**:
 1. Mark all todos complete
-2. Summarize:
-   - What was built
-   - Key decisions made
-   - Files modified
-   - Suggested next steps
-   - **コメント精査の結果** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
-   - **レビュー後の変更** (Phase 6.9): 「なし」/「N ファイル・M 行（再レビュー済み）」/「**N ファイル・M 行（未レビュー）**」/「確認できなかった」。未レビューの回はファイル名も並べる
+2. **申し送り**（feature-dev だけが持つ情報。該当する項目だけ出し、無い項目は行ごと省く）:
+   - **設計契約** (Phase 3 Step 5): ユーザーが決めたことと、未決のまま残したこと（いつ・どこで決めるか）。契約が明示的に確認されなかった回（`askUserQuestionTimeout` で自動続行）はその旨
+   - **探索の欠損** (Phase 2): 失敗した explorer の `missing_coverage`
+   - **静的オラクル** (Phase 5.3): 「静的オラクル判定不能」「静的オラクル打ち切り」「静的オラクル無し（型/テスト未検証）」、`low` effort で skip した回だけ
+   - **G-V ループ** (Phase 6 Step 3 が走った回): `/tmp/feature-dev-loop-state.json` を読み、反復回数・終了理由・auto-fix 件数・persisting。終了理由が `regression` / `budget` なら persisting の fingerprint を目立たせる（人間の判断が要る）。self-review が失敗した・Phase 6 を skip した回はその旨
+   - **コメント精査** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
+   - **レビュー後の変更** (Phase 6.9): 「**N ファイル・M 行（未レビュー）**」（ファイル名も並べる）/「確認できなかった」の回だけ。「なし」「再レビュー済み」は省く
    - **worktree** (Phase 4.8 で分離した場合のみ): worktree のパスとブランチ、後片付けは teardown / worktree-gc に委ねる旨
    - **Design doc follow-up** (Phase 4.5 で `DESIGN_DOC_PATH` がある場合のみ): 実装が完了したので、doc の frontmatter を `phase: target → current` に更新するよう案内する（実装と設計が乖離した箇所があれば doc への追記 or supersede も）。更新は design-doc プラグイン側の運用（ユーザー操作）に委ねる
-3. **G-V loop summary** (if Step 3 of Phase 6 ran):
-   - Read `/tmp/feature-dev-loop-state.json`
-   - Report: iteration count, termination reason, auto-fixed issue count, persisting issues
-   - If `termination_reason: "regression"` or `"budget"`, surface the persisting fingerprints prominently — they need human attention
-4. **Event Bus publish (`feature:implemented`)**:
+3. **読み順ガイドの案内**: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" code-review` が `1` なら、`AskUserQuestion` で聞く:
+   - question: "変更を読む順のガイド（code-review:review-guide）を出す？"
+   - header: "読み順"
+   - options: "出す (Recommended)"（重要ファイルを実装の流れ順に並べ、ファイルごとに何をした・難点・見る行・レビュー観点を付ける）/ "出さない"（従来のサマリを出して終える）
+
+   「出す」なら `Skill` tool で `code-review:review-guide` を `--base <BASE>` 付きで呼ぶ。PR がまだ無い段階なので base モードで呼び、未コミットの変更まで読み順に入れる（PR モードは PR に push 済みのコミットしか見ない）。`<BASE>` は Phase 6 の self-review が冒頭で出した `base_branch=` の値を使う（同じ base から読ませる）。Phase 6 が走らなかった・値が分からないときは `--base` を付けずに呼ぶ（PR が無ければ review-guide が同じ順で base を決める）。ガイドの後に次の一手（コミット → PR）を 1 行添える。
+4. **従来のサマリ**（code-review が無効 / 「出さない」/ review-guide の呼び出しが失敗した回。review-guide を持たない旧版の code-review も含む）: What was built / Key decisions made / Files modified / Suggested next steps を出す。2. の申し送りはそのまま残す
+5. **Event Bus publish (`feature:implemented`)**:
    - 完了直前に `feature:implemented` イベントを `.claude/events.jsonl` へ追記する。subscriber がいなくても無害（fire-and-forget）
    - feature-dev は `hooks/lib/safe-hook.sh` を同梱しているため、`event_bus_publish` 経由で追記する（規約どおり 1 行 1 イベント）。`SAFE_HOOK_NAME` を `feature-dev` に上書きして publisher を識別する
    - payload は最小限の JSON: `{"feature":"<short description>","files_changed":<count>,"phases_completed":[...]}`
