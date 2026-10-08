@@ -1077,6 +1077,294 @@ class SkipKeysTest(unittest.TestCase):
         self.assertEqual(rc, 2)
 
 
+class JudgeTest(unittest.TestCase):
+    """2 段判定（関連テスト → フルスイート / GitHub issue #288 の E'）.
+
+    関連テストで落ちる変異はフルスイートでも落ちるので killed を確定してよい。生存と timeout は
+    フルスイートでだけ確定する（関連テストの漏れは遅くなるだけで、判定を変えない）。
+    """
+
+    setUp = ApplyAndTestTest.setUp
+    _mutant = ApplyAndTestTest._mutant
+
+    def sh(self, body: str) -> list[str]:
+        script = self.root / ("s%d.sh" % len(list(self.root.glob("s*.sh"))))
+        script.write_text(body, encoding="utf-8")
+        return ["bash", str(script)]
+
+    def second(self) -> list[str]:
+        """2 段目: 呼ばれたら印を残して落ちる."""
+        return self.sh('touch "%s"; exit 1\n' % (self.root / "second-ran"))
+
+    def test_a_kill_in_the_first_stage_is_final(self):
+        got = mt.judge(self._mutant(), [(["false"], 30), (self.second(), 30)], None)
+        self.assertEqual(got, ("killed", 0, False))
+        self.assertFalse((self.root / "second-ran").exists(), "関連テストで落ちたのにフルスイートを回した")
+        self.assertEqual(self.target.read_bytes(), self.original)
+
+    def test_a_pass_in_the_first_stage_is_checked_by_the_second(self):
+        self.assertEqual(mt.judge(self._mutant(), [(["true"], 30), (["true"], 30)], None), ("survived", 1, False))
+        self.assertEqual(mt.judge(self._mutant(), [(["true"], 30), (self.second(), 30)], None)[:2], ("killed", 1))
+
+    def test_a_first_stage_that_ran_nothing_is_not_a_kill(self):
+        """`-k` が当たらない unittest は 0 件で exit 5。落ちたと読むと変異を殺したことになる."""
+        empty = self.sh('echo "Ran 0 tests in 0.000s" >&2; exit 5\n')
+        self.assertEqual(mt.judge(self._mutant(), [(empty, 30), (["true"], 30)], None)[:2], ("survived", 1))
+        ran = self.sh('echo "Ran 3 tests in 0.010s" >&2; exit 1\n')
+        self.assertEqual(mt.judge(self._mutant(), [(ran, 30), (["true"], 30)], None)[:2], ("killed", 0))
+
+    def test_a_first_stage_timeout_is_settled_by_the_second(self):
+        self.assertEqual(mt.judge(self._mutant(), [(["sleep", "5"], 1), (["true"], 30)], None),
+                         ("survived", 1, False))
+        self.assertEqual(mt.judge(self._mutant(), [(["true"], 30), (["sleep", "5"], 1)], None),
+                         ("timeout", 1, False))
+
+    def test_a_syntax_error_in_the_first_stage_is_invalid(self):
+        broken = self.sh('echo "SyntaxError: invalid syntax" >&2; exit 1\n')
+        self.assertEqual(mt.judge(self._mutant(), [(broken, 30), (self.second(), 30)], None)[:2], ("invalid", 0))
+        self.assertFalse((self.root / "second-ran").exists())
+
+    def test_a_first_stage_cut_by_the_deadline_does_not_run_the_second(self):
+        """予算で切った段の後に次の段へ進んでも残りが無い。予算切れとしてその場で止める."""
+        got = mt.judge(self._mutant(), [(["sleep", "5"], 30), (self.second(), 30)], time.monotonic() + 1)
+        self.assertEqual(got, ("timeout", 0, True))
+        self.assertFalse((self.root / "second-ran").exists())
+
+    def test_the_deadline_caps_the_stage_and_says_so(self):
+        got = mt.judge(self._mutant(), [(["sleep", "5"], 30)], time.monotonic() + 1)
+        self.assertEqual(got, ("timeout", 0, True))
+        self.assertEqual(mt.judge(self._mutant(), [(["true"], 30)], time.monotonic() + 100), ("survived", 0, False))
+
+
+class RelatedModulesTest(unittest.TestCase):
+    """関連テストの選び方（外れても判定は変わらず、遅くなるだけ）."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name).resolve()
+        self._orig_root = mt.ROOT
+        mt.ROOT = self.root
+        self.addCleanup(lambda: setattr(mt, "ROOT", self._orig_root))
+        (self.root / "plug" / "lib").mkdir(parents=True)
+        (self.root / "plug" / "lib" / "a.sh").write_text("x=1\n", encoding="utf-8")
+        (self.root / "plug" / "b.sh").write_text('source "$(dirname "$0")/lib/a.sh"\n', encoding="utf-8")
+        (self.root / "other").mkdir()
+        (self.root / "other" / "c.sh").write_text("source a.sh\n", encoding="utf-8")
+        self.tests = self.root / "tests"
+        self.tests.mkdir()
+
+    def strings(self, **mods: str) -> dict[str, str]:
+        return {name: mt._strings_of(textwrap.dedent(src)) for name, src in mods.items()}
+
+    def test_docstrings_and_comments_are_not_references(self):
+        got = mt._strings_of(textwrap.dedent('''\
+            """実行: python3 a.py"""
+            # a.py を叩く
+            def f():
+                """a.py の docstring"""
+                return "scripts/b.py"
+            '''))
+        self.assertIn("scripts/b.py", got)
+        self.assertNotIn("a.py", got)
+        self.assertEqual(mt._strings_of("def ("), "")
+
+    def test_a_sourced_file_is_reached_through_its_caller_in_the_same_plugin(self):
+        strings = self.strings(test_b='SCRIPT = "plug/b.sh"\n', test_doc='"""a.sh を見る"""\n',
+                               test_c='SCRIPT = "other/c.sh"\n', test_a='SCRIPT = "lib/a.sh"\n')
+        got = mt.related_modules(self.root / "plug" / "lib" / "a.sh", strings)
+        self.assertEqual(got, ["test_a", "test_b"], "別のプラグインの c.sh はたどらない・docstring は数えない")
+
+    def test_only_source_files_are_followed(self):
+        """md・テスト・読めないもの（拡張子が .sh のディレクトリ）は、参照していても 1 段たどる先にしない."""
+        (self.root / "plug" / "README.md").write_text("a.sh を使う\n", encoding="utf-8")
+        (self.root / "plug" / "tests").mkdir()
+        (self.root / "plug" / "tests" / "test_helper.py").write_text('X = "a.sh"\n', encoding="utf-8")
+        (self.root / "plug" / "d.sh").mkdir()      # b.sh（a.sh を参照）の直後に並ぶ
+        strings = self.strings(test_readme='P = "plug/README.md"\n', test_th='P = "test_helper.py"\n',
+                               test_d='P = "plug/d.sh"\n', test_b='P = "plug/b.sh"\n')
+        self.assertEqual(mt.related_modules(self.root / "plug" / "lib" / "a.sh", strings), ["test_b"])
+
+    def test_discover_dir_is_read_from_the_test_command(self):
+        self.assertEqual(mt.discover_dir("python3 -m unittest discover -s x/tests -f".split()), "x/tests")
+        self.assertEqual(mt.discover_dir("python3 -m unittest discover -f -s x/tests".split()), "x/tests")
+        self.assertEqual(mt.discover_dir("python3 -m unittest discover -s x/tests".split()), "x/tests")
+        self.assertIsNone(mt.discover_dir("python3 -m unittest discover".split()))
+        self.assertIsNone(mt.discover_dir("pytest -s x y z w".split()))
+        self.assertIsNone(mt.discover_dir("python3 -m unittest discover -s".split()))
+
+    def test_a_narrowed_test_command_disables_it(self):
+        """1 段目は -k で組み直すので、利用者の絞り込みの外まで回して「絞った範囲では生存」を killed にする."""
+        for narrowed in ("-p test_x.py", "-k SomeTest", "-t .", "-v"):
+            with self.subTest(narrowed=narrowed):
+                cmd = ("python3 -m unittest discover -s x/tests -f " + narrowed).split()
+                self.assertIsNone(mt.discover_dir(cmd))
+
+    def test_a_python_file_is_found_through_its_imports(self):
+        """`from report_counts import ...` は名前（.py）を書かないので、文字列だけでは見つからない."""
+        (self.root / "plug" / "lib" / "rc.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+        (self.root / "plug" / "tool.sh").write_text("python3 - <<'PY'\nfrom rc import f\nPY\n", encoding="utf-8")
+        raws = {"test_rc": "from rc import f\n", "test_pkg": "from lib.rc import f\n",
+                "test_from": "from lib import rc\n", "test_tool": 'S = "plug/tool.sh"\n',
+                "test_other": "from rcx import f\nimport rc_more\n"}
+        strings = {mod: mt._strings_of(src) for mod, src in raws.items()}
+        got = mt.related_modules(self.root / "plug" / "lib" / "rc.py", strings, raws)
+        self.assertEqual(got, ["test_from", "test_pkg", "test_rc", "test_tool"])
+        self.assertEqual(mt.related_modules(self.root / "plug" / "lib" / "rc.py", strings), ["test_tool"],
+                         "raws が無ければ import では探さない")
+
+
+class RelatedFirstMainTest(unittest.TestCase):
+    """--related-first の配線（関連テストで決着した数とフルスイートの回数を集計に残す）."""
+
+    setUp = BudgetMainTest.setUp
+
+    def write_tests(self, check_y: bool) -> None:
+        # 境界上の値にする（`1 > 2` の `>=` 化は結果が同じで、どのテストでも殺せない等価変異になる）
+        (self.root / "t.py").write_text("x = 2 > 2\ny = 4 < 4\n", encoding="utf-8")
+        tests = self.root / "tests"
+        tests.mkdir(exist_ok=True)
+        body = textwrap.dedent("""\
+            import pathlib, unittest
+            SRC = pathlib.Path(__file__).resolve().parent.parent / "t.py"
+            class T(unittest.TestCase):
+                def ns(self):
+                    ns = {}
+                    exec(SRC.read_text(), ns)
+                    return ns
+                def test_x(self):
+                    self.assertIs(self.ns()["x"], False)
+            """)
+        if check_y:
+            body += "    def test_y(self):\n        self.assertIs(self.ns()[\"y\"], False)\n"
+        (tests / "test_t.py").write_text(body, encoding="utf-8")
+        # 関連しない重いモジュール（関連テストの組がフルスイートの半分を超えないようにする）
+        (tests / "test_other.py").write_text("import time, unittest\nclass O(unittest.TestCase):\n"
+                                             "    def test_o(self):\n        time.sleep(1)\n", encoding="utf-8")
+
+    def stage(self, name: str, cmd: str = "python3 -m unittest discover -s tests -f", full_sec: float = 1000.0,
+              timeout: int = 0, deadline: float | None = None):
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            got = mt.Related(cmd.split(), full_sec, timeout, deadline).stage(self.root / name)
+        return got, out.getvalue()
+
+    def run_main(self, *extra: str) -> tuple[int, str, dict]:
+        import contextlib
+        import io
+        path = self.root / "s.json"
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = mt.main(["--file", "t.py", "--test-cmd", "python3 -m unittest discover -s tests -f",
+                          "--summary-json", str(path), *extra])
+        return rc, out.getvalue(), json.loads(path.read_text(encoding="utf-8"))
+
+    def test_kills_are_settled_by_the_related_tests(self):
+        self.write_tests(check_y=True)
+        rc, out, s = self.run_main("--related-first")
+        self.assertEqual((s["killed"], s["survived"]), (2, 0))
+        self.assertEqual((s["related_decided"], s["full_runs"]), (2, 0))
+        self.assertIn("関連テスト test_t: baseline", out)
+        self.assertIn("（関連テスト）", out)
+
+    def test_a_survivor_of_the_related_tests_is_settled_by_the_full_suite(self):
+        self.write_tests(check_y=False)
+        rc, out, s = self.run_main("--related-first")
+        self.assertEqual((s["killed"], s["survived"], s["related_decided"], s["full_runs"]), (1, 1, 1, 1))
+        survivor = next(l for l in out.splitlines() if "SURVIVED" in l)
+        self.assertNotIn("（関連テスト）", survivor, "フルスイートで決めた変異を関連テストの決着と表示している")
+
+    def test_without_the_flag_every_mutant_runs_the_full_suite(self):
+        self.write_tests(check_y=True)
+        rc, out, s = self.run_main()
+        self.assertEqual((s["killed"], s["related_decided"], s["full_runs"]), (2, 0, 2))
+        self.assertNotIn("関連テスト", out)
+
+    def test_a_red_related_set_falls_back_to_the_full_suite(self):
+        """関連テストが変異前から赤い組を 1 段目に使うと、どの変異も「落ちた」に見える."""
+        self.write_tests(check_y=True)
+        (self.root / "tests" / "test_t.py").write_text(
+            (self.root / "tests" / "test_t.py").read_text(encoding="utf-8")
+            + "    def test_red(self):\n        if SRC.read_text() == 'x = 2 > 2\\ny = 4 < 4\\n':\n"
+              "            self.fail('baseline で赤い')\n", encoding="utf-8")
+        stage, out = self.stage("t.py")
+        self.assertIsNone(stage)
+        self.assertIn("変異前に緑でない", out)
+
+    def test_a_file_without_related_tests_goes_straight_to_the_full_suite(self):
+        """関連テストが無いファイルで 1 段目を組むと、-k の無い（＝全件の）コマンドを 2 回回すことになる."""
+        self.write_tests(check_y=True)
+        (self.root / "u.py").write_text("z = 1\n", encoding="utf-8")
+        stage, out = self.stage("u.py")
+        self.assertIsNone(stage)
+        self.assertIn("見つからない", out)
+        self.assertNotIn("baseline", out)
+
+    def test_a_test_command_that_is_not_discover_disables_it(self):
+        self.write_tests(check_y=True)
+        stage, out = self.stage("t.py", cmd="true")
+        self.assertIsNone(stage)
+        self.assertIn("WARN: --related-first", out)
+        self.assertNotIn("baseline", out)
+        self.assertNotIn("見つからない", out, "無効なのにファイルごとの対応付けを始めている")
+
+    def test_a_related_set_near_the_full_suite_cost_is_not_used(self):
+        """生存する変異は 1 段目とフルスイートの両方を払う。半分を超える組では速くならない."""
+        self.write_tests(check_y=True)
+        stage, out = self.stage("t.py", full_sec=0.0001)
+        self.assertIsNone(stage)
+        self.assertIn("フルスイートの半分を超える", out)
+
+    def test_the_stage_is_built_once_on_first_use(self):
+        """予算で手が届かないファイルの分まで、関連テストの baseline を先払いしない。同じ組は 1 回だけ回す."""
+        self.write_tests(check_y=True)
+        (self.root / "t2.py").write_text("w = 1\n", encoding="utf-8")
+        tt = self.root / "tests" / "test_t.py"
+        tt.write_text(tt.read_text(encoding="utf-8") + 'OTHER = "t2.py"\n', encoding="utf-8")
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rel = mt.Related("python3 -m unittest discover -s tests -f".split(), 1000.0, 0, None)
+            self.assertEqual(rel.by_set, {})
+            first = rel.stage(self.root / "t.py")
+            self.assertIs(rel.stage(self.root / "t.py"), first)
+            self.assertIs(rel.stage(self.root / "t2.py"), first, "同じ組の baseline を回し直している")
+        self.assertEqual(first[0][-2:], ["-k", "test_t.*"])
+        self.assertEqual(out.getvalue().count("baseline"), 1)
+
+    def test_an_unreadable_test_module_is_skipped(self):
+        """壊れたシンボリックリンクなど。読めないモジュールに前のモジュールの中身を当てない."""
+        self.write_tests(check_y=True)
+        (self.root / "tests" / "test_u_broken.py").symlink_to(self.root / "missing.py")
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            rel = mt.Related("python3 -m unittest discover -s tests -f".split(), 1000.0, 0, None)
+        self.assertIn("test_t", rel.strings)
+        self.assertNotIn("test_u_broken", rel.strings)
+        self.assertNotIn("test_u_broken", rel.raws)
+
+    def test_an_explicit_timeout_applies_to_the_first_stage(self):
+        self.write_tests(check_y=True)
+        stage, _ = self.stage("t.py", timeout=7)
+        self.assertEqual(stage[1], 7)
+        stage, _ = self.stage("t.py")
+        self.assertGreaterEqual(stage[1], 30)
+
+    def test_the_baseline_of_a_set_is_cut_at_the_deadline(self):
+        self.write_tests(check_y=True)
+        (self.root / "tests" / "test_t.py").write_text(
+            (self.root / "tests" / "test_t.py").read_text(encoding="utf-8")
+            + "    def test_slow(self):\n        import time\n        time.sleep(5)\n", encoding="utf-8")
+        t0 = time.monotonic()
+        stage, out = self.stage("t.py", deadline=time.monotonic() + 1)
+        self.assertIsNone(stage)
+        self.assertLess(time.monotonic() - t0, 4)
+
+
 class SummaryJsonTest(unittest.TestCase):
     """`--summary-json` が未実行の件数を残す（GitHub issue #288）.
 

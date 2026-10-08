@@ -591,6 +591,7 @@ class WorkflowWiringTest(unittest.TestCase):
         self.assertIn("id: base", self.step("resolve-base"))
         self.assertIn('--state-dir "$RUNNER_TEMP/mutation-state"', self.step("resolve-base"))
         self.assertIn('${MUT_SKIP_KEYS:+--skip-keys "$MUT_SKIP_KEYS"}', self.step("mutation-test"))
+        self.assertIn("--related-first", self.step("mutation-test"))
         adv = self.step("advance-state")
         for needle in ("id: state", "steps.base.outcome == 'success'", "env.STATE_HOLD != '1'",
                        "github.event_name == 'schedule'",

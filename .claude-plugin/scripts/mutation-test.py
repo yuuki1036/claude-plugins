@@ -49,6 +49,7 @@ Exit code: 0（既定。`--strict` 指定時のみ生存で 1）/ 2（引数エ�
 from __future__ import annotations
 
 import argparse
+import ast
 import base64
 import hashlib
 import io
@@ -731,7 +732,20 @@ def _atomic_write(path: Path, data: bytes) -> None:
 
 
 def apply_and_test(mutant: Mutant, test_cmd: list[str], timeout: int) -> str:
-    """変異を当ててテストを走らせ, `killed` / `survived` / `invalid` / `timeout` を返す.
+    """変異を当ててテストを走らせ, `killed` / `survived` / `invalid` / `timeout` を返す（1 段だけの judge）."""
+    return judge(mutant, [(test_cmd, timeout)], None)[0]
+
+
+def judge(mutant: Mutant, stages: list[tuple[list[str], int]],
+          deadline: float | None) -> tuple[str, int, bool]:
+    """変異を 1 回当てたまま `stages` を順に回し、(判定, 決めた段, その段の timeout を予算で削ったか) を返す.
+
+    **前の段は落ちたときだけ決着させる**（関連テストを先に回す 2 段判定 / GitHub issue #288）。テストが
+    決定的で他モジュールの副作用に依存しなければ「関連テストで落ちる ⇒ フルスイートでも落ちる」ので killed は
+    確定する（invalid と killed の分かれ方は、最初に落ちるテストが段で違うので変わりうる）。前の段が通った・
+    1 件も走らなかった（`-k` が当たらない）・時間切れのときは次の段へ進み、生存と timeout は最後の段
+    （フルスイート）でだけ確定する。構文エラーはどの段でも invalid で確定する。
+    `deadline`（monotonic）があれば、各段の timeout をその時点の残りで頭打ちにする。
 
     **復元は元バイト列の書き戻し**（`git checkout` は未コミット変更を飛ばす / 実測で事故）。
 
@@ -750,28 +764,40 @@ def apply_and_test(mutant: Mutant, test_cmd: list[str], timeout: int) -> str:
     lines[idx] = mutant.mutated + eol
     mutated_bytes = "".join(lines).encode("utf-8")
     wrote = tampered = False
-    verdict = "invalid"
+    verdict, decided, capped = "invalid", 0, False   # mutation-ok: 段は 1 つ以上あり、ループで必ず上書きする
     try:
         _journal_write(mutant.path, original_bytes)   # **書く前に**退避する（順序が肝）
         _atomic_write(mutant.path, mutated_bytes)
         wrote = True
         clear_pycache()
-        try:
-            # **プロセスグループごと起動する**（timeout 時に孫まで回収するため。`run` では
-            # 直接の子だけが死に、無限ループ化した被験スクリプトが残る — `run_group` の注記）
-            proc = run_group(test_cmd, ROOT, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            # **hang は想定内**: 変異規則に `break` → `continue`（打ち切りを外す）があり、
-            # 終端が `break` だけのループに当てると無限ループになる。1 個の hang で run 全体を
-            # 落とすと残りの変異が未実行のままサマリも出ない
-            verdict = "timeout"
-        else:
+        for decided, (test_cmd, timeout) in enumerate(stages):
+            last = decided == len(stages) - 1
+            effective = timeout if deadline is None else min(timeout, max(1, int(deadline - time.monotonic())))
+            capped = effective < timeout
+            try:
+                # **プロセスグループごと起動する**（timeout 時に孫まで回収するため。`run` では
+                # 直接の子だけが死に、無限ループ化した被験スクリプトが残る — `run_group` の注記）
+                proc = run_group(test_cmd, ROOT, timeout=effective)
+            except subprocess.TimeoutExpired:
+                # **hang は想定内**: 変異規則に `break` → `continue`（打ち切りを外す）があり、
+                # 終端が `break` だけのループに当てると無限ループになる。1 個の hang で run 全体を
+                # 落とすと残りの変異が未実行のままサマリも出ない
+                verdict = "timeout"
+                if capped:
+                    break    # 予算で切った。次の段に進んでも残りが無い
+                continue
+            blob = proc.stdout + proc.stderr
             if proc.returncode == 0:
                 verdict = "survived"
-            else:
-                # 構文エラーで落ちた変異は「テストが殺した」とは言えないので分けて数える
-                blob = proc.stdout + proc.stderr
-                verdict = "invalid" if ("SyntaxError" in blob or "syntax error" in blob) else "killed"
+                continue
+            # 構文エラーで落ちた変異は「テストが殺した」とは言えないので分けて数える
+            if "SyntaxError" in blob or "syntax error" in blob:
+                verdict = "invalid"
+                break
+            if not last and tests_ran(blob) == 0:
+                continue     # 関連テストが 1 件も走らなかった（unittest は 0 件で exit 5）
+            verdict = "killed"
+            break
     finally:
         if wrote:
             if mutant.path.read_bytes() == mutated_bytes:
@@ -793,7 +819,142 @@ def apply_and_test(mutant: Mutant, test_cmd: list[str], timeout: int) -> str:
             f"    変異: {mutant.mutated.strip()}\n"
             "  上の「元」に戻してから再実行すること。**実行中は対象ファイルを編集しない**。"
         )
-    return verdict
+    return verdict, decided, capped
+
+
+def discover_dir(test_cmd: list[str]) -> str | None:
+    """`--test-cmd` が素の `<python> -m unittest discover -s <dir> [-f]` なら dir、それ以外は None.
+
+    **絞り込み（`-p` / `-k` / `-t` / pattern）があるときは使わない**: 1 段目は `-k <関連モジュール>` で組み直すので、
+    利用者の絞り込みの外にあるテストまで回す。そこで落ちた変異を killed と確定すると、絞り込んだフルスイート
+    では生存するはずの変異が消える（unittest の `-k` は複数指定で OR になり、AND で足せない）。
+    """
+    core = [t for t in test_cmd if t != "-f"]
+    if len(core) == 6 and core[1:5] == ["-m", "unittest", "discover", "-s"]:
+        return core[5]
+    return None
+
+
+def _strings_of(text: str) -> str:
+    """python のソースから、docstring を除いた文字列定数を連結して返す（読めなければ空）.
+
+    テストがスクリプトを叩くときはパスを文字列で持つ（`ROOT / "scripts" / "x.py"`）。docstring とコメントの
+    言及（「実行: python3 x.py」）まで数えると、関係の無いモジュールを関連テストに入れて 1 段目が遅くなる。
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return ""
+    docs = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+                docs.add(id(first.value))
+    return "\n".join(n.value for n in ast.walk(tree)
+                     if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docs)
+
+
+def _imports(stem: str) -> re.Pattern[str]:
+    """`stem` を import する行（`from x import` / `import x` / `from pkg.x import` / `from pkg import x`）."""
+    s = re.escape(stem)
+    return re.compile(rf"(?m)^[ \t]*(?:from[ \t]+(?:[\w.]+\.)?{s}[ \t]+import\b|import[ \t]+(?:[\w.]+\.)?{s}\b"
+                      rf"|from[ \t]+[\w.]+[ \t]+import[ \t]+[^\n]*\b{s}\b)")
+
+
+def related_modules(path: Path, strings: dict[str, str], raws: dict[str, str] | None = None) -> list[str]:
+    """`path` を参照するテストモジュール（`strings` は モジュール名 → docstring を除いた文字列定数、
+    `raws` は モジュール名 → ソース全体。import の照合に使う）.
+
+    参照はファイル名と（`.py` なら）import で探し、同じ最上位ディレクトリ（プラグイン）の中で `path` を
+    参照しているファイルを 1 段たどる（`detect-backend.sh` はテストから直接は呼ばれず、`inject-rules.sh`
+    経由で効く。`lib/report_counts.py` は `review-retro.sh` の埋め込み python が import する）。
+    **外れても生存か killed かは変わらない** — 関連テストで落ちなければフルスイートで確かめる。外れると遅くなるだけ。
+    """
+    via = [path]
+    parts = path.relative_to(ROOT).parts if path.is_relative_to(ROOT) else ()
+    own = _imports(path.stem) if path.suffix == ".py" else None
+    for other in sorted((ROOT / parts[0]).rglob("*")) if parts else []:
+        if other.suffix not in TARGET_SUFFIXES or is_test_file(other):
+            continue
+        try:
+            text = other.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue       # 拡張子が .sh のディレクトリなど
+        if path.name in text or (own is not None and own.search(text)):
+            via.append(other)
+    names = {v.name for v in via}
+    imports = [_imports(v.stem) for v in via if v.suffix == ".py"]
+    raws = raws or {}
+    return sorted(mod for mod, text in strings.items()
+                  if any(n in text for n in names) or any(r.search(raws.get(mod, "")) for r in imports))
+
+
+class Related:
+    """変異したファイルごとの 1 段目（関連テストだけを -f で回すコマンドと timeout）を、初めて要るときに組む.
+
+    **関連テストの組ごとに、変異前に 1 回回して緑を確かめる**（赤い・1 件も走らない組を 1 段目に使うと、
+    どの変異も「落ちた」に見える）。**フルスイートの半分を超える組は使わない**（生存する変異は 1 段目と
+    フルスイートの両方を払うので、ほぼ 2 倍かかる）。予算で手が届かないファイルの分まで先払いしないよう、
+    組むのは初めてそのファイルの変異を回す直前にする。使えないファイルはフルスイートだけで判定する。
+    """
+
+    def __init__(self, test_cmd: list[str], full_sec: float, timeout: int, deadline: float | None) -> None:
+        self.tests_rel = discover_dir(test_cmd)
+        self.python, self.full_sec, self.timeout, self.deadline = test_cmd[0], full_sec, timeout, deadline
+        self.strings: dict[str, str] = {}
+        self.raws: dict[str, str] = {}
+        self.by_path: dict[Path, tuple[list[str], int] | None] = {}
+        self.by_set: dict[tuple[str, ...], tuple[list[str], int] | None] = {}
+        if self.tests_rel is None:
+            print("WARN: --related-first は --test-cmd が素の unittest discover -s <dir>（-f は可）のときだけ効く。"
+                  "フルスイートで判定する")
+            return
+        for f in sorted((ROOT / self.tests_rel).glob("test_*.py")):
+            try:
+                raw = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            self.raws[f.stem], self.strings[f.stem] = raw, _strings_of(raw)
+
+    def stage(self, path: Path) -> tuple[list[str], int] | None:
+        if self.tests_rel is None:
+            return None
+        if path not in self.by_path:
+            self.by_path[path] = self._build(path)
+        return self.by_path[path]
+
+    def _build(self, path: Path) -> tuple[list[str], int] | None:
+        mods = tuple(related_modules(path, self.strings, self.raws))
+        if not mods:
+            print(f"  関連テスト {_rel(path)}: 見つからない。フルスイートで判定する")
+            return None
+        if mods in self.by_set:
+            return self.by_set[mods]
+        cmd = [self.python, "-m", "unittest", "discover", "-s", self.tests_rel, "-f"]
+        for mod in mods:
+            cmd += ["-k", mod + ".*"]
+        limit = BASELINE_TIMEOUT if self.deadline is None else \
+            min(BASELINE_TIMEOUT, max(1, int(self.deadline - time.monotonic())))
+        t0 = time.monotonic()
+        try:
+            res = run_group(cmd, ROOT, timeout=limit)    # timeout で孫まで回収する（`run_group` の注記）
+        except subprocess.TimeoutExpired:
+            res = None
+        sec = time.monotonic() - t0
+        n = tests_ran(res.stdout + res.stderr) if res is not None else None
+        if res is None or res.returncode != 0 or not n:
+            got = None
+            print(f"  関連テスト {', '.join(mods)}: 変異前に緑でない・走らない。フルスイートで判定する")
+        elif sec > self.full_sec / 2:     # mutation-ok: 実測の秒数がちょうど半分に一致する境界は意味を持たない
+            got = None
+            print(f"  関連テスト {', '.join(mods)}: baseline {sec:.1f}s がフルスイートの半分を超える。"
+                  "フルスイートだけで判定する")
+        else:
+            got = (cmd, self.timeout or max(30, int(sec * 5) + 1))
+            print(f"  関連テスト {', '.join(mods)}: baseline {sec:.1f}s・{n} 件")
+        self.by_set[mods] = got
+        return got
 
 
 def over_budget(elapsed: float, durations: list[float], baseline_sec: float,
@@ -827,7 +988,8 @@ def _install_signal_handlers() -> None:
 def write_summary(path: str | None, *, generated: int, executed: int = 0, killed: int = 0,
                   survived: int = 0, invalid: int = 0, timeout: int = 0, unexecuted_max: int = 0,
                   unexecuted_budget: int = 0, aborted: bool = False, keys_all: list[str] | None = None,
-                  keys_executed: list[str] | None = None, skipped_done: int = 0) -> None:
+                  keys_executed: list[str] | None = None, skipped_done: int = 0, related_decided: int = 0,
+                  full_runs: int = 0) -> None:
     """集計を JSON で書く（GitHub issue #288）.
 
     `keys_all` は範囲内の全変異（済みで除外した分を含む）、`keys_executed` はこの回に判定まで回した変異の
@@ -845,6 +1007,7 @@ def write_summary(path: str | None, *, generated: int, executed: int = 0, killed
         "survived": survived, "invalid": invalid, "timeout": timeout,
         "unexecuted_max": unexecuted_max, "unexecuted_budget": unexecuted_budget, "aborted": aborted,
         "keys_all": keys_all or [], "keys_executed": keys_executed or [], "skipped_done": skipped_done,
+        "related_decided": related_decided, "full_runs": full_runs,
     }, ensure_ascii=False) + "\n", encoding="utf-8")  # mutation-ok: 値は数と真偽値だけで非 ASCII を含まない
 
 
@@ -867,6 +1030,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="起動からの経過秒数の上限（既定 0 = 無制限）。次の 1 変異で超える見込みになったら"
                          "打ち切り、残りを「予算で未実行」として数える。1 変異の timeout は予算の残りで"
                          "頭打ちにし、baseline の timeout は予算まで延ばす")
+    ap.add_argument("--related-first", action="store_true",
+                    help="変異ごとに、変異したファイルを参照するテストモジュールだけを先に -f で回し、落ちれば killed と"
+                         "確定する。通ったら --test-cmd で確かめる（テストが決定的で他モジュールの副作用に依存しなければ、"
+                         "生存か killed かはフルスイートだけのときと同じ。--test-cmd が素の unittest discover -s のときだけ"
+                         "効く / #288）")
     ap.add_argument("--skip-keys", default=None,
                     help="済みの変異のキー（1 行 1 つ）。範囲内でこれに当たる変異は回さない（nightly の"
                          "持ち越し / #288）")
@@ -999,10 +1167,13 @@ def main(argv: list[str] | None = None) -> int:
               "狙ったテストが入っていなければ、生存はテストの不足ではなく絞り込みの外れ")
     if args.file:
         print("  " + file_mode_breakdown(mutants, args.base))
+    deadline = t_start + args.budget_sec if args.budget_sec > 0 else None
+    related = Related(test_cmd, baseline_sec, args.timeout, deadline) if args.related_first else None
 
     survived: list[Mutant] = []
     timed_out: list[Mutant] = []
     executed_keys: list[str] = []
+    related_decided = full_runs = 0
     killed = invalid = 0
     aborted = False
     # **CI の job timeout に殺されると結果が 1 件も残らない**（実測: nightly が 180 分で cancelled、
@@ -1013,34 +1184,38 @@ def main(argv: list[str] | None = None) -> int:
         if over_budget(time.monotonic() - t_start, durations, baseline_sec, args.budget_sec):
             budget_left = len(mutants) - (i - 1)
             break
+        first = related.stage(m.path) if related else None     # 組の baseline は 1 変異の所要に数えない
         t_m = time.monotonic()
         # **1 変異の timeout を予算の残りで頭打ちにする**。見積もりは平均なので、最後の 1 個が hang すると
         # 予算 + timeout（baseline の 5 倍）まで走り、CI の job timeout に当たって cancelled になる
         # （結果もログも残らない。180 分 / 9000 秒の設定では余裕が 1 分も無かった / #288）
-        cap = timeout
-        if args.budget_sec > 0:
-            cap = min(timeout, max(1, int(args.budget_sec - (time.monotonic() - t_start))))
+        stages = ([first] if first else []) + [(test_cmd, timeout)]
         try:
-            verdict = apply_and_test(m, test_cmd, cap)
+            verdict, decided, capped = judge(m, stages, deadline)
         except ExternalEditError as e:
             # **ここまでの結果は捨てない**（残りが実行できないだけで、集計は意味を持つ）
             print(f"\nFATAL: {e}", file=sys.stderr)
             print(f"  実行済み {i - 1}/{len(mutants)} 件までの結果を出す", file=sys.stderr)
             aborted = True
             break
-        if verdict == "timeout" and cap < timeout:
+        if verdict == "timeout" and capped:
             # 予算の残りで切った回は本来の timeout に届いていない（無限ループ化とは言えない）。
             # 判定せず、この変異から後を予算で未実行に数える。どの変異で切ったかは回し直しの手がかりに残す
             print(f"  [{i}/{len(mutants)}] {'予算切れ':9s} {_rel(m.path)}:{m.lineno} — {m.rule}"
-                  f"（予算の残り {cap}s で切った。未実行に数える）")
+                  "（予算の残りで切った。未実行に数える）")
             budget_left = len(mutants) - (i - 1)
             break
         durations.append(time.monotonic() - t_m)
         if keys:
             executed_keys.append(keys[id(m)])
+        if decided == len(stages) - 1:
+            full_runs += 1
+        else:
+            related_decided += 1
         mark = {"survived": "SURVIVED", "killed": "killed",
                 "invalid": "invalid", "timeout": "TIMEOUT"}[verdict]
-        print(f"  [{i}/{len(mutants)}] {mark:9s} {_rel(m.path)}:{m.lineno} — {m.rule}")
+        where = "（関連テスト）" if decided < len(stages) - 1 else ""
+        print(f"  [{i}/{len(mutants)}] {mark:9s} {_rel(m.path)}:{m.lineno} — {m.rule}{where}")
         if verdict == "survived":
             survived.append(m)
         elif verdict == "killed":
@@ -1056,6 +1231,8 @@ def main(argv: list[str] | None = None) -> int:
           + (f" / タイムアウト {len(timed_out)}" if timed_out else "")
           + (f" / 上限で未実行 {dropped}" if dropped else "")
           + (f" / 予算で未実行 {budget_left}" if budget_left else ""))
+    if args.related_first:
+        print(f"関連テストで決着 {related_decided} 個 / フルスイートで判定 {full_runs} 個")
     if budget_left:
         print(f"時間予算 --budget-sec={args.budget_sec:g} で打ち切った（未実行の {budget_left} 個は"
               "検証していない。予算を延ばすか --max を下げる）")
@@ -1079,7 +1256,8 @@ def main(argv: list[str] | None = None) -> int:
                   executed=killed + len(survived) + invalid + len(timed_out),
                   killed=killed, survived=len(survived), invalid=invalid, timeout=len(timed_out),
                   unexecuted_max=dropped, unexecuted_budget=budget_left, aborted=aborted,
-                  keys_all=keys_all, keys_executed=sorted(set(executed_keys)), skipped_done=skipped_done)
+                  keys_all=keys_all, keys_executed=sorted(set(executed_keys)), skipped_done=skipped_done,
+                  related_decided=related_decided, full_runs=full_runs)
     # **中断した回は必ず非ゼロ**（`--strict` 無しでも「全部走った」と読ませない）
     return 1 if (aborted or (survived and args.strict)) else 0
 

@@ -77,7 +77,10 @@ jobs:
       # 落ちる変異が速い晩は先に効きうるが、どちらで打ち切っても未実行は翌晩に持ち越す）。1 変異の
       # timeout は mutation-test.py が予算の残りで頭打ちにするので、最後の変異が hang しても予算を超えない。`--budget-sec 19000` は job の timeout（330 分 =
       # 19800 秒）から準備・artifact・起票の分を引いた値。打ち切った回はログに「予算で未実行 N」と出る。
-      # テストコマンドは mutation-test.py の既定（`-f` 付き。落ちる変異は最初の失敗で止まる）
+      # テストコマンドは mutation-test.py の既定（`-f` 付き。落ちる変異は最初の失敗で止まる）。
+      # `--related-first` は変異したファイルを参照するテストモジュールだけを先に回し、落ちれば killed と
+      # 確定する。通った変異だけフルスイートで確かめるので、テストが決定的なら生存か killed かはフルスイート
+      # だけのときと同じ
       # PYTHONUNBUFFERED: パイプ越しだと出力がバッファされ、途中で殺された回のログが空になる
       # `--summary-json` は未実行の件数を report に、範囲内の変異と実行した変異のキーを advance-state に渡す。
       # `--skip-keys` は前の晩までに実行した変異（持ち越しの状態が無い晩は付けない）
@@ -89,7 +92,7 @@ jobs:
         run: |
           set -o pipefail
           python3 .claude-plugin/scripts/mutation-test.py \
-            --base "$MUT_BASE" --max 500 --budget-sec 19000 --strict \
+            --base "$MUT_BASE" --max 500 --budget-sec 19000 --strict --related-first \
             ${MUT_SKIP_KEYS:+--skip-keys "$MUT_SKIP_KEYS"} \
             --summary-json mutation-summary.json 2>&1 | tee mutation.log
 
