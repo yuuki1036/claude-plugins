@@ -592,8 +592,23 @@ class ChangedLinesTest(unittest.TestCase):
     def _diff(self, text: str) -> dict:
         class _P:
             stdout = textwrap.dedent(text).lstrip()
+            stderr = ""
+            returncode = 0
         mt.run = lambda *a, **k: _P()
         return {p.name: sorted(v) for p, v in mt.changed_lines("HEAD").items()}
+
+    def test_a_failing_diff_is_none_not_empty(self):
+        """「変更行が無い」（空）と「git diff が失敗した」（None）を分ける."""
+        class _Ok:
+            stdout, stderr, returncode = "", "", 0
+
+        class _Ng:
+            stdout, stderr, returncode = "", "fatal: bad revision", 128
+        mt.run = lambda cmd, *a, **k: _Ng() if cmd[:2] == ["git", "diff"] else _Ok()
+        self.assertIsNone(mt.changed_lines("nope"))
+        self.assertIn("判定できない（git diff nope が失敗）", mt.file_mode_breakdown([], "nope"))
+        mt.run = lambda cmd, *a, **k: _Ok()
+        self.assertEqual(mt.changed_lines("HEAD"), {})
 
     def test_multiple_hunks_keep_their_own_line_numbers(self):
         got = self._diff("""
@@ -1007,6 +1022,61 @@ class BudgetCapTest(unittest.TestCase):
         self.assertIn("-f", mt.DEFAULT_TEST_CMD.split())
 
 
+class SkipKeysTest(unittest.TestCase):
+    """`--skip-keys` と集計のキー（nightly が済みの変異を晩をまたいで持ち越す / GitHub issue #288）."""
+
+    setUp = BudgetMainTest.setUp
+    _main = BudgetMainTest._main
+
+    def _keys(self) -> list[str]:
+        """main と同じ方法で数えた、t.py の 2 変異のキー（行順）."""
+        ms = mt.build_mutants({self.root / "t.py": {1, 2}})
+        k = mt.mutant_keys(ms)
+        return [k[id(m)] for m in ms]
+
+    def _summary(self, *extra: str) -> tuple[int, dict]:
+        path = self.root / "s.json"
+        rc, _ = self._main("--summary-json", str(path), *extra)
+        return rc, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_a_full_run_records_every_key_as_executed(self):
+        keys = self._keys()
+        self.assertEqual(len(set(keys)), 2)
+        rc, s = self._summary()
+        self.assertEqual((s["schema"], s["keys_all"], s["keys_executed"], s["skipped_done"]),
+                         (2, sorted(keys), sorted(keys), 0))
+
+    def test_done_keys_are_skipped(self):
+        keys = self._keys()
+        (self.root / "done.txt").write_text(keys[0] + "\n", encoding="utf-8")
+        rc, s = self._summary("--skip-keys", str(self.root / "done.txt"))
+        self.assertEqual(rc, 0)
+        self.assertEqual((s["executed"], s["skipped_done"]), (1, 1))
+        self.assertEqual(s["keys_all"], sorted(keys), "範囲内の全キー（済みを含む）が無いと済み集合を刈り込めない")
+        self.assertEqual(s["keys_executed"], [keys[1]])
+
+    def test_when_everything_is_done_the_baseline_is_not_run(self):
+        """全部済みなら baseline（フルスイート 1 回）も回さない。赤いテストコマンドでも FATAL にならない."""
+        keys = self._keys()
+        (self.root / "done.txt").write_text("\n".join(keys), encoding="utf-8")
+        path = self.root / "s.json"
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = mt.main(["--file", "t.py", "--test-cmd", "false", "--skip-keys", str(self.root / "done.txt"),
+                          "--summary-json", str(path)])
+        s = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(rc, 0)
+        self.assertEqual((s["generated"], s["executed"], s["skipped_done"], s["keys_executed"]), (0, 0, 2, []))
+        self.assertEqual(s["keys_all"], sorted(keys))
+        self.assertIn("未実行の変異は無い", out.getvalue())
+
+    def test_an_unreadable_skip_file_stops(self):
+        rc, _ = self._main("--skip-keys", str(self.root / "missing.txt"))
+        self.assertEqual(rc, 2)
+
+
 class SummaryJsonTest(unittest.TestCase):
     """`--summary-json` が未実行の件数を残す（GitHub issue #288）.
 
@@ -1188,6 +1258,98 @@ class ReportHelperTest(unittest.TestCase):
         self.assertEqual(mt.k_patterns("python3 -m unittest -k A -k B".split()), ["A", "B"])
         self.assertEqual(mt.k_patterns("python3 -m unittest -k".split()), [])
         self.assertEqual(mt.k_patterns("python3 -m unittest".split()), [])
+
+
+class MutantKeyTest(unittest.TestCase):
+    """晩をまたいで同じ変異を同定するキー（行の由来 = blame / GitHub issue #288）."""
+
+    setUp = RunReportTest.setUp
+    _main = RunReportTest._main
+
+    def keys_of(self, path: str, lines: set[int]) -> dict[tuple[int, str], str]:
+        ms = mt.build_mutants({self.root / path: lines})
+        k = mt.mutant_keys(ms)
+        return {(m.lineno, m.mutated): k[id(m)] for m in ms}
+
+    def test_a_line_keeps_its_keys_when_lines_are_added_above(self):
+        before = self.keys_of("t.py", {1})
+        t = self.root / "t.py"
+        t.write_text("import os\n" + t.read_text(encoding="utf-8"), encoding="utf-8")
+        self.git("commit", "-qam", "add a line above")
+        after = self.keys_of("t.py", {2})
+        self.assertTrue(before)
+        self.assertEqual(sorted(before.values()), sorted(after.values()))
+
+    def test_a_renamed_file_keeps_its_keys(self):
+        before = self.keys_of("t.py", {1})
+        self.git("mv", "t.py", "u.py")
+        self.git("commit", "-qm", "rename")
+        self.assertEqual(sorted(before.values()), sorted(self.keys_of("u.py", {1}).values()))
+
+    def test_identical_lines_get_different_keys(self):
+        """内容で同定すると片方を回しただけで両方が済みになる."""
+        (self.root / "t.py").write_text("a = 1 > 2\na = 1 > 2\n", encoding="utf-8")
+        self.git("commit", "-qam", "duplicate")
+        k = self.keys_of("t.py", {1, 2})
+        first = {v for (ln, _), v in k.items() if ln == 1}
+        second = {v for (ln, _), v in k.items() if ln == 2}
+        self.assertTrue(first)
+        self.assertEqual(first & second, set())
+
+    def test_a_rewritten_line_gets_new_keys(self):
+        before = self.keys_of("t.py", {1})
+        (self.root / "t.py").write_text("a = 1 > 9\nb = 3 < 4\nc = 5 > 6\n", encoding="utf-8")
+        self.git("commit", "-qam", "rewrite")
+        self.assertEqual(set(before.values()) & set(self.keys_of("t.py", {1}).values()), set())
+
+    def test_the_same_line_in_two_files_gets_different_keys(self):
+        """同じコミットで同じ行番号に同じ内容を入れた 2 ファイルは、由来のパスで分かれる."""
+        for name in ("p.py", "q.py"):
+            (self.root / name).write_text("a = 1 > 2\n", encoding="utf-8")
+        self.git("add", "p.py", "q.py")
+        self.git("commit", "-qm", "twins")
+        p, q = self.keys_of("p.py", {1}), self.keys_of("q.py", {1})
+        self.assertTrue(p)
+        self.assertEqual(set(p.values()) & set(q.values()), set())
+
+    def test_a_failing_git_diff_is_fatal_not_an_empty_range(self):
+        """範囲 0 個で exit 0 すると、nightly は回し切ったと判定して持ち越しを捨てる."""
+        path = self.root / "s.json"
+        rc, out, err = self._main("--base", "no-such-ref", "--summary-json", str(path))
+        self.assertEqual(rc, 2)
+        self.assertIn("git diff --unified=0 no-such-ref が失敗した", err)
+        self.assertFalse(path.exists(), "集計を書くと advance が範囲を回し切ったと読む")
+        rc, out, _ = self._main("--base", "HEAD", "--summary-json", str(path))
+        self.assertEqual(rc, 0, "対: 存在する起点では変更行なしで正常に終わる")
+
+    def test_an_uncommitted_line_is_keyed_by_its_content(self):
+        import hashlib
+        (self.root / "t.py").write_text("a = 7 > 2\nb = 3 < 4\nc = 5 > 6\n", encoding="utf-8")
+        k = self.keys_of("t.py", {1})
+        self.assertTrue(k)
+        for (_, mutated), key in k.items():
+            want = hashlib.sha1("\0".join(("worktree", "t.py", "1", "a = 7 > 2", mutated)).encode()).hexdigest()[:16]
+            self.assertEqual(key, want)
+
+    def test_identical_uncommitted_lines_get_different_keys(self):
+        (self.root / "t.py").write_text("a = 7 > 2\na = 7 > 2\n", encoding="utf-8")
+        k = self.keys_of("t.py", {1, 2})
+        first = {v for (ln, _), v in k.items() if ln == 1}
+        self.assertTrue(first)
+        self.assertEqual(first & {v for (ln, _), v in k.items() if ln == 2}, set())
+
+    def test_a_file_that_cannot_be_blamed_is_warned(self):
+        import contextlib
+        import io
+        (self.root / "new.py").write_text("a = 1 > 2\n", encoding="utf-8")     # 未追跡
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertTrue(self.keys_of("new.py", {1}))
+        self.assertIn("WARN: new.py を blame できない", err.getvalue())
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.keys_of("t.py", {1})
+        self.assertEqual(err.getvalue(), "")
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #   pre-commit は検証のみで実行しない）
                                  # mutation-test.py（変更行の変異テスト。検証していない挙動を列挙）
                                  # mutation-nightly-report.py（nightly の起票判定と本文。生存・打ち切り）
-                                 # mutation-nightly-state.py（nightly の比較起点。集計を残した直近の nightly の head）
+                                 # mutation-nightly-state.py（nightly の比較起点と、打ち切った変異を翌晩へ持ち越す状態）
                                  # run-tests.py（回帰テストの起動口。新セッションで走らせ、
                                  #   終了後に残ったプロセスを検出・回収する。pre-commit / CI /
                                  #   machine-layer はここを呼ぶ）
@@ -50,8 +50,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・plugin eval の鮮度・SSoT 同期・プラグイン品質 (errors)・回帰テスト
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
                                  #   変異テストは `--max 5` のスモークだけ（深い検証は nightly）
-.github/workflows/mutation-nightly.yml # 変異テストの深い方（03:00 JST / 集計を残した直近の nightly の
-                                 #   head 以降の変更行を予算 19000 秒まで）。生存、または予算・上限で未実行の変異があれば
+.github/workflows/mutation-nightly.yml # 変異テストの深い方（03:00 JST / 全件を回し切った最後の head
+                                 #   以降の変更行を予算 19000 秒まで。打ち切った変異は artifact の状態で翌晩へ
+                                 #   持ち越す）。生存・持ち越しが 7 日以上解消しない・状態を失った晩に
                                  #   GitHub Issue を起票・追記する（#288）
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
   settings.json                  # Stop hook（auto-quality-check.sh）等の設定

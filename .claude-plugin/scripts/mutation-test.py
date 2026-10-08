@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import os
@@ -248,9 +249,16 @@ def is_test_file(path: Path) -> bool:
     return bool(TEST_PATH_RE.search(_rel(path)))
 
 
-def changed_lines(base: str) -> dict[Path, set[int]]:
-    """`git diff` の**追加行**の行番号を新ファイル側で拾う（変更していない行は変異させない）."""
-    out = run(["git", "diff", "--unified=0", base], ROOT).stdout
+def changed_lines(base: str) -> dict[Path, set[int]] | None:
+    """`git diff` の**追加行**の行番号を新ファイル側で拾う（変更していない行は変異させない）.
+
+    git diff が失敗したら None。**「変更行が無い」（空の dict）と区別する**: 範囲 0 個で exit 0 すると、
+    nightly は範囲を回し切ったと判定して持ち越していた変異を捨てる（push 側のスモークも黙って緑になる）。
+    """
+    res = run(["git", "diff", "--unified=0", base], ROOT)
+    if res.returncode != 0:
+        return None
+    out = res.stdout
     result: dict[Path, set[int]] = {}
     path: Path | None = None
     lineno = 0
@@ -278,6 +286,8 @@ def file_mode_breakdown(mutants: list[Mutant], base: str) -> str:
     if run(["git", "rev-parse", "--is-inside-work-tree"], ROOT).returncode != 0:
         return "変更行: 判定できない（git 管理外）"
     changed = changed_lines(base)
+    if changed is None:
+        return f"変更行: 判定できない（git diff {base} が失敗）"
     new_files = {m.path for m in mutants if untracked(m.path)}
     hit = sum(1 for m in mutants if m.path in new_files or m.lineno in changed.get(m.path, ()))
     line = (f"変更行（--base {base} との差分の追加行・未追跡ファイル）{hit} 個 / "
@@ -577,6 +587,49 @@ def build_mutants(targets: dict[Path, set[int]]) -> list[Mutant]:
     return mutants
 
 
+BLAME_HEADER = re.compile(r"^([0-9a-f]{40}) (\d+) (\d+)(?: \d+)?$")
+
+
+def _blame_origins(path: Path) -> dict[int, tuple[str, str, str]]:
+    """行番号 → (その行を入れたコミット, そのコミットでのパス, そのコミットでの行番号)。未コミットの行は含めない."""
+    res = run(["git", "blame", "--line-porcelain", "--", _rel(path)], ROOT)
+    if res.returncode != 0:
+        print(f"WARN: {_rel(path)} を blame できない（未追跡など）。行番号と内容で同定する（行がずれると"
+              "回し直しになる）", file=sys.stderr)
+        return {}
+    origins: dict[int, tuple[str, str, str]] = {}
+    header: tuple[str, str, int] | None = None
+    for line in res.stdout.splitlines():
+        m = BLAME_HEADER.match(line)
+        if m:
+            header = (m.group(1), m.group(2), int(m.group(3)))
+        elif line.startswith("filename ") and header is not None:
+            sha, orig, final = header
+            if sha.strip("0"):           # 全桁 0 は未コミットの行
+                origins[final] = (sha, line[len("filename "):], orig)
+    return origins
+
+
+def mutant_keys(mutants: list[Mutant]) -> dict[int, str]:
+    """id(変異) → 晩をまたいで同じ変異を同定するキー（nightly の持ち越し / GitHub issue #288）.
+
+    **行の由来（blame）で同定する**。行番号は上に行が足されるとずれ、行の内容は同じ文字列の行が複数
+    あると衝突する（片方を回すと残りが未検証のまま済み扱いになる）。由来のコミット・パス・行番号は行ごとに
+    一意で、ファイルの rename も blame が追う。行を書き換えた・整形した・履歴を書き換えたときは新しいキーに
+    なって再実行される（安全側）。未コミットの行（手元の実行）と blame できない行は行番号と内容で同定する
+    （内容だけだと同じ文字列の行が衝突する）。規則の説明文はキーに入れない（文言を直しただけで持ち越しが
+    全部回し直しになる）。
+    """
+    origins: dict[Path, dict[int, tuple[str, str, str]]] = {}
+    keys: dict[int, str] = {}
+    for m in mutants:
+        if m.path not in origins:
+            origins[m.path] = _blame_origins(m.path)
+        origin = origins[m.path].get(m.lineno) or ("worktree", _rel(m.path), str(m.lineno), m.original)
+        keys[id(m)] = hashlib.sha1("\0".join((*origin, m.mutated)).encode("utf-8")).hexdigest()[:16]
+    return keys
+
+
 class ExternalEditError(RuntimeError):
     """変異中に対象ファイルが外部から変更された（復元すると他所の編集を消すので中断する）."""
 
@@ -773,19 +826,25 @@ def _install_signal_handlers() -> None:
 
 def write_summary(path: str | None, *, generated: int, executed: int = 0, killed: int = 0,
                   survived: int = 0, invalid: int = 0, timeout: int = 0, unexecuted_max: int = 0,
-                  unexecuted_budget: int = 0, aborted: bool = False) -> None:
+                  unexecuted_budget: int = 0, aborted: bool = False, keys_all: list[str] | None = None,
+                  keys_executed: list[str] | None = None, skipped_done: int = 0) -> None:
     """集計を JSON で書く（GitHub issue #288）.
 
+    `keys_all` は範囲内の全変異（済みで除外した分を含む）、`keys_executed` はこの回に判定まで回した変異の
+    キー（`mutant_keys`）。nightly はこの 2 つで「済み」の集合を晩をまたいで持ち越す。
+    変異が 1 個も無い早期 return では両方とも空（範囲を回し切った）。
+
     **未実行を件数として残す**のが目的。予算や上限で打ち切った変異は、生存が無ければ exit 0 で終わり、
-    件数はログの 1 行にしか出ない。翌晩の範囲（この晩の head より後の変更行）からも外れるので、誰も気づかないまま
+    件数はログの 1 行にしか出ない。持ち越さなければ翌晩の範囲（この晩の head より後の変更行）からも外れ、誰も気づかないまま
     検証されずに消える。中断（外部編集）で回らなかった分は `generated - executed - 未実行` に残る。
     """
     if not path:
         return
     Path(path).write_text(json.dumps({
-        "schema": 1, "generated": generated, "executed": executed, "killed": killed,
+        "schema": 2, "generated": generated, "executed": executed, "killed": killed,
         "survived": survived, "invalid": invalid, "timeout": timeout,
         "unexecuted_max": unexecuted_max, "unexecuted_budget": unexecuted_budget, "aborted": aborted,
+        "keys_all": keys_all or [], "keys_executed": keys_executed or [], "skipped_done": skipped_done,
     }, ensure_ascii=False) + "\n", encoding="utf-8")  # mutation-ok: 値は数と真偽値だけで非 ASCII を含まない
 
 
@@ -808,6 +867,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="起動からの経過秒数の上限（既定 0 = 無制限）。次の 1 変異で超える見込みになったら"
                          "打ち切り、残りを「予算で未実行」として数える。1 変異の timeout は予算の残りで"
                          "頭打ちにし、baseline の timeout は予算まで延ばす")
+    ap.add_argument("--skip-keys", default=None,
+                    help="済みの変異のキー（1 行 1 つ）。範囲内でこれに当たる変異は回さない（nightly の"
+                         "持ち越し / #288）")
     ap.add_argument("--summary-json", default=None,
                     help="集計（生成・実行・未実行の内訳）を JSON でこのパスに書く。exit 0 で終わる回は"
                          "必ず書く（nightly が「打ち切りで検証しなかった変異」を起票する判定に使う / #288）")
@@ -846,22 +908,47 @@ def main(argv: list[str] | None = None) -> int:
             targets[p] = set(range(1, len(p.read_text(errors='replace').splitlines()) + 1))
     else:
         targets = changed_lines(args.base)
+        if targets is None:
+            print(f"FATAL: git diff --unified=0 {args.base} が失敗した（起点が無い・git 管理外など）。"
+                  "変更行なしとは読まない", file=sys.stderr)
+            return 2
 
     if not targets:
         print(f"変異対象の変更行が無い（base={args.base}）。"
               "**テストファイルの変更のみでも同じ表示になる**（テストは変異対象外）。")
         write_summary(args.summary_json, generated=0)
         return 0
+    every = build_mutants(targets)
+    # キーは持ち越す回（nightly）にだけ要る。blame を 1 ファイル 1 回呼ぶ
+    keys = mutant_keys(every) if (args.summary_json or args.skip_keys) else {}
+    skipped_done = 0
+    if args.skip_keys:
+        try:
+            done = set(Path(args.skip_keys).read_text(encoding="utf-8").split())
+        except OSError as e:
+            print(f"FATAL: --skip-keys を読めない: {e}", file=sys.stderr)
+            return 2
+        left = [m for m in every if keys[id(m)] not in done]
+        skipped_done = len(every) - len(left)
+    else:
+        left = every
+    keys_all = sorted(set(keys.values()))
     # **ファイル横断で丸めてから切る**。先頭から切ると変更が複数ファイルにまたがる回で
     # 1 ファイルに偏る（push 側の CI は `--max` を小さくしてあるので特に効く）
-    mutants = spread(build_mutants(targets))
+    mutants = spread(left)
     n_lines = sum(len(v) for v in targets.values())
-    n_hit = len({(m.path, m.lineno) for m in mutants})
+    n_hit = len({(m.path, m.lineno) for m in every})
     if args.file:
         print(f"対象: ファイル全体（--file。差分ではない）— {n_lines} 行のうち変異規則に当たった行 {n_hit}")
     else:
         print(f"対象: 差分（--base {args.base}）の追加行 — {len(targets)} ファイル・"
               f"{n_lines} 行のうち変異規則に当たった行 {n_hit}")
+    if skipped_done:
+        print(f"済みで除外: {skipped_done} 個（前の晩までに実行した変異 / --skip-keys）")
+    if not mutants and skipped_done:
+        print("未実行の変異は無い（範囲内の変異はすべて前の晩までに実行した）")
+        write_summary(args.summary_json, generated=0, keys_all=keys_all, skipped_done=skipped_done)
+        return 0
     if not mutants:
         # **0 個を「殺した 0 / 生存 0」とだけ出すと検証済みに見える**（実測 2026-10-07: Python の
         # 分岐 55 行が変異 0 個のまま exit 0 で通った / PY_RULES の注記）。
@@ -915,6 +1002,7 @@ def main(argv: list[str] | None = None) -> int:
 
     survived: list[Mutant] = []
     timed_out: list[Mutant] = []
+    executed_keys: list[str] = []
     killed = invalid = 0
     aborted = False
     # **CI の job timeout に殺されると結果が 1 件も残らない**（実測: nightly が 180 分で cancelled、
@@ -948,6 +1036,8 @@ def main(argv: list[str] | None = None) -> int:
             budget_left = len(mutants) - (i - 1)
             break
         durations.append(time.monotonic() - t_m)
+        if keys:
+            executed_keys.append(keys[id(m)])
         mark = {"survived": "SURVIVED", "killed": "killed",
                 "invalid": "invalid", "timeout": "TIMEOUT"}[verdict]
         print(f"  [{i}/{len(mutants)}] {mark:9s} {_rel(m.path)}:{m.lineno} — {m.rule}")
@@ -988,7 +1078,8 @@ def main(argv: list[str] | None = None) -> int:
     write_summary(args.summary_json, generated=len(mutants) + dropped,
                   executed=killed + len(survived) + invalid + len(timed_out),
                   killed=killed, survived=len(survived), invalid=invalid, timeout=len(timed_out),
-                  unexecuted_max=dropped, unexecuted_budget=budget_left, aborted=aborted)
+                  unexecuted_max=dropped, unexecuted_budget=budget_left, aborted=aborted,
+                  keys_all=keys_all, keys_executed=sorted(set(executed_keys)), skipped_done=skipped_done)
     # **中断した回は必ず非ゼロ**（`--strict` 無しでも「全部走った」と読ませない）
     return 1 if (aborted or (survived and args.strict)) else 0
 
