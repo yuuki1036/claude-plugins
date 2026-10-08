@@ -20,6 +20,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #   pre-commit は検証のみで実行しない）
                                  # mutation-test.py（変更行の変異テスト。検証していない挙動を列挙）
                                  # mutation-nightly-report.py（nightly の起票判定と本文。生存・打ち切り）
+                                 # mutation-nightly-state.py（nightly の比較起点。集計を残した直近の nightly の head）
                                  # run-tests.py（回帰テストの起動口。新セッションで走らせ、
                                  #   終了後に残ったプロセスを検出・回収する。pre-commit / CI /
                                  #   machine-layer はここを呼ぶ）
@@ -38,7 +39,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #     本物を使い捨てリポジトリに向けて走らせ生成物まで見る:
                                  #     test_bump_version.py / test_validate_ssot.py /
                                  #     test_run_tests.py（#139 / #140）/ test_plugin_eval.py（claude は stub）/
-                                 #     test_mutation_nightly_report.py（#288）
+                                 #     test_mutation_nightly_report.py / test_mutation_nightly_state.py（#288）
                                  #  git を叩くテストは git_env.py（GIT_HOOK_ENV スクラブの正本）を通す
                                  #  ④ hook スクリプト（hook_harness.py + test_<plugin>_hooks.py。
                                  #     stdin に JSON を流し「発火するか / 黙るか」を直接見る）
@@ -49,8 +50,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・plugin eval の鮮度・SSoT 同期・プラグイン品質 (errors)・回帰テスト
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
                                  #   変異テストは `--max 5` のスモークだけ（深い検証は nightly）
-.github/workflows/mutation-nightly.yml # 変異テストの深い方（03:00 JST / 直近 24h の変更行を
-                                 #   --max 60）。生存、または予算・上限で未実行の変異があれば
+.github/workflows/mutation-nightly.yml # 変異テストの深い方（03:00 JST / 集計を残した直近の nightly の
+                                 #   head 以降の変更行を --max 60）。生存、または予算・上限で未実行の変異があれば
                                  #   GitHub Issue を起票・追記する（#288）
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
   settings.json                  # Stop hook（auto-quality-check.sh）等の設定

@@ -13,23 +13,28 @@ name: mutation-nightly
 # nightly を単に fail させるだけだと Actions のタブが赤いまま放置されるので、
 # 生存した変異の一覧を本文に入れて起票し、同じ issue が open なら追記する。
 # **予算・上限で打ち切った回も起票する**（#288）。生存が無ければ success で終わり、
-# 打ち切った分は翌晩の 24h 窓からも外れて、検証されないまま消えていた。
+# 打ち切った分は翌晩の範囲からも外れて、検証されないまま消えていた。
+#
+# **比較起点は集計を残した直近の nightly の head**（#288）。以前は「24 時間前より古い最新のコミット」で、
+# 前の晩の head と 24h の境界の間に落ちたコミット（起動が 24h を超えて遅れた晩・遅れて
+# main に入った PR のマージ）がどちらの晩の範囲にも入らなかった（39 晩で 4 回）。
 
 on:
   schedule:
     - cron: "0 18 * * *"   # 03:00 JST（前日 18:00 UTC）
-  workflow_dispatch:        # 手動起動（範囲は既定で同じく直近 24h）
+  workflow_dispatch:        # 手動起動（範囲は既定で schedule と同じ。手動の run は起点の連鎖に入らない）
     inputs:
       base:
-        # 打ち切られた回（cancelled）の範囲は翌晩の 24h 窓から外れて二度と回らない。
+        # 予算・上限で打ち切った変異は、翌晩の範囲（この晩の head より後）から外れて二度と回らない。
         # 取りこぼした範囲を回収するときにだけ起点を指定する
-        description: "比較起点のコミット（空なら直近 24h）"
+        description: "比較起点のコミット（空なら集計を残した直近の nightly の head）"
         required: false
         default: ""
 
 permissions:
   contents: read
   issues: write
+  actions: read     # 前回の run と集計の artifact を引く（resolve-base）
 
 jobs:
   mutation:
@@ -51,28 +56,18 @@ jobs:
       - name: install-deps
         run: pip install jsonschema
 
-      # 直近 24 時間に入った変更行を対象にする。**24h より古い最新のコミット**を base に
-      # 置くことで「昨夜以降に触った行」だけを見る。24h 以内にコミットが無ければ何もしない
+      # 起点は「集計を artifact に残した最新の schedule run の headSha」。集計を残していない晩
+      # （変異前のテストが赤い・cancelled）の範囲は翌晩に繰り越す。引けなければ warning を出して
+      # 最新の run の head か 24h 窓に戻す。判定は mutation-nightly-state.py（YAML に書くとテストできない）。
       # 入力は env 経由で渡す（`${{ }}` を run に直接埋めるとシェルに解釈される）
       - name: resolve-base
         env:
           INPUT_BASE: ${{ inputs.base }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -n "$INPUT_BASE" ]; then
-            if ! base=$(git rev-parse --verify -q "${INPUT_BASE}^{commit}"); then
-              echo "FATAL: 指定した起点を解決できない: ${INPUT_BASE}" >&2
-              exit 1
-            fi
-          else
-            base=$(git rev-list -1 --before="24 hours ago" HEAD)
-          fi
-          if [ -z "$base" ] || [ "$base" = "$(git rev-parse HEAD)" ]; then
-            echo "直近 24h に変更が無いので skip"
-            echo "SKIP=1" >> "$GITHUB_ENV"
-          else
-            echo "比較起点: $base"
-            echo "MUT_BASE=$base" >> "$GITHUB_ENV"
-          fi
+          python3 .claude-plugin/scripts/mutation-nightly-state.py resolve-base \
+            --input-base "$INPUT_BASE" --run-id "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --env-file "$GITHUB_ENV"
 
       # `--max 60` は「1 日ぶんの変更行なら実質全部」を狙った値。上限に当たった回は
       # ログに「N 個を対象外にした」と出るので、恒常的に当たるようなら分割を検討する。
@@ -90,6 +85,17 @@ jobs:
           python3 .claude-plugin/scripts/mutation-test.py \
             --base "$MUT_BASE" --max 60 --budget-sec 9000 --strict \
             --summary-json mutation-summary.json 2>&1 | tee mutation.log
+
+      # **集計の有無が「この晩の範囲を回した」印**（翌晩の resolve-base が読む）。集計が無い晩
+      # （変異前のテストが赤く exit 2）は何も上げず、その範囲を翌晩に繰り越す。
+      # 生存で step が落ちた晩も集計はあるので `!cancelled()` で上げる
+      - name: upload-summary
+        if: ${{ !cancelled() && env.SKIP != '1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-summary
+          path: mutation-summary.json
+          if-no-files-found: ignore
 
       # **失敗も打ち切りも黙って流さない**。Actions の赤は見に行かないと気づけないので issue にする。
       # 起票するかと本文は mutation-nightly-report.py が決める（YAML に書くとテストできない / #288）。

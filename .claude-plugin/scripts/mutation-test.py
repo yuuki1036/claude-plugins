@@ -769,7 +769,7 @@ def write_summary(path: str | None, *, generated: int, executed: int = 0, killed
     """集計を JSON で書く（GitHub issue #288）.
 
     **未実行を件数として残す**のが目的。予算や上限で打ち切った変異は、生存が無ければ exit 0 で終わり、
-    件数はログの 1 行にしか出ない。翌晩の範囲（直近 24h の変更行）からも外れるので、誰も気づかないまま
+    件数はログの 1 行にしか出ない。翌晩の範囲（この晩の head より後の変更行）からも外れるので、誰も気づかないまま
     検証されずに消える。中断（外部編集）で回らなかった分は `generated - executed - 未実行` に残る。
     """
     if not path:

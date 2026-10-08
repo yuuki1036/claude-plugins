@@ -172,6 +172,11 @@ class TempGitRepo:
         subprocess.run(["git", "checkout", "-qb", name], cwd=self.path,
                        capture_output=True, env=self.ENV)
 
+    def checkout(self, name: str) -> None:
+        """既存のブランチへ移る（`branch` と同じく、テスト側に git を直接叩かせないための口）."""
+        subprocess.run(["git", "checkout", "-q", name], cwd=self.path,
+                       capture_output=True, env=self.ENV)
+
     def worktree(self, name: str) -> Path:
         """linked worktree を `name` ブランチで張ってパスを返す（HEAD が無ければ先に commit する）."""
         if subprocess.run(["git", "rev-parse", "-q", "--verify", "HEAD"], cwd=self.path,
