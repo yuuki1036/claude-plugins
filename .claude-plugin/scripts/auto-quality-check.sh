@@ -23,9 +23,12 @@
 #
 # 出力:
 #   - エラーなし: silent exit 0
-#   - エラーあり: stderr に要修正項目を通知（ユーザー向け）+ stdout に
-#     hookSpecificOutput.additionalContext で Claude にも注入（CC 2.1.163）。
-#     いずれも exit 0 で Stop はブロックしない。
+#   - エラーあり: stderr に要修正項目を通知 + stdout の JSON で次のどちらか。いずれも exit 0
+#     - **まだ Claude に伝えていない検出**: hookSpecificOutput.additionalContext で注入する（CC 2.1.163）
+#     - それ以外（キャッシュの再生・`stop_hook_active` が true）: systemMessage でユーザーにだけ出す
+#     **Stop の additionalContext は会話を継続させる**（hooks の docs。打ち切りは `stop_hook_active` と
+#     8 連続の上限だけ）。直らない検出を毎回注入すると、ターンを終えるたびに同じ注入でターンが
+#     再開し、何もせず終えるとまた注入される — 2026-10-08 に 15 回以上ループした
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -33,6 +36,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # safe-hook.sh で stdin 消費と trap 設定
 source "$REPO_ROOT/.claude-plugin/lib/safe-hook.sh"
 safe_hook_init "auto-quality-check"
+
+# 前の注入でターンが再開した回（hooks の docs: Stop hook の入力。ループ防止のために見る）
+# パイプにしない: `grep -q` が先に抜けると `pipefail` 下で左辺の SIGPIPE が条件を偽にする
+STOP_ACTIVE=0
+HOOK_INPUT="$(safe_hook_input)"
+if grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true' <<<"$HOOK_INPUT"; then
+  STOP_ACTIVE=1
+fi
 
 # Git 情報が取れないなら何もしない
 if ! git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -76,7 +87,8 @@ fi
 CACHE=""
 FINGERPRINT=""
 if command -v cksum >/dev/null 2>&1; then
-  CACHE="${TMPDIR:-/tmp}/claude-auto-quality-check-$(printf '%s' "$REPO_ROOT" | cksum | cut -d' ' -f1)"
+  # `-v2`: 2 行目に「Claude に伝えたか」を持つ書式（旧書式のキャッシュは読まない）
+  CACHE="${TMPDIR:-/tmp}/claude-auto-quality-check-v2-$(printf '%s' "$REPO_ROOT" | cksum | cut -d' ' -f1)"
   # **パスは `-z`（NUL 区切り）で取る**。既定の porcelain は rename を `old -> new`、
   # 非 ASCII 名を `"\346\227\245..."` のクオート付き 8 進エスケープで返すので `[ -f ]` が
   # 偽になり、**中身が指紋に入らない**。しかも status 行は XY（先頭 2 文字）が `R ` → `RM`
@@ -111,8 +123,8 @@ if command -v cksum >/dev/null 2>&1; then
 fi
 
 emit() {
-  # 検出内容（`$1`）をユーザーと Claude の両方へ出す。**キャッシュ再生にも使う**ので
-  # 検査の実行とは分けてある
+  # 検出内容（`$1`）をユーザーと Claude へ出す。`$2` が 1 なら Claude に注入する（additionalContext）、
+  # 0 ならユーザーにだけ出す（systemMessage）。**キャッシュ再生にも使う**ので検査の実行とは分けてある
   {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "⚠️  auto-quality-check: 修正が必要な問題があります"
@@ -125,23 +137,50 @@ emit() {
     echo "詳細確認は /quality-check を実行してください"
   } >&2
 
-  # stdout: Claude 向けに additionalContext で注入（CC 2.1.163, Stop hook）
-  # Claude がその場で品質問題（SSoT drift / バージョンバンプ忘れ等）を修復できるようにする。
-  # JSON 文字列エスケープは確実なエンコーダ（python3 → jq）に委譲。
-  # どちらも無い環境では additionalContext は出さず stderr 通知のみ（後方互換）。
-  MESSAGE="auto-quality-check が修正の必要な品質問題を検出しました。以下を修正するか /quality-check で詳細を確認してください:"$'\n'"${1}"
+  # stdout: 単一の JSON。JSON 文字列エスケープは確実なエンコーダ（python3 → jq）に委譲。
+  # どちらも無い環境では JSON を出さず stderr 通知のみ（後方互換）。
+  local key message
+  if [ "$2" = "1" ]; then
+    # Claude がその場で品質問題（SSoT drift / バージョンバンプ忘れ等）を修復できるようにする
+    key="additionalContext"
+    message="auto-quality-check が修正の必要な品質問題を検出しました。以下を修正するか /quality-check で詳細を確認してください:"$'\n'"${1}"
+  else
+    key="systemMessage"
+    message="auto-quality-check: 修正の必要な品質問題が残っています:"$'\n'"${1}"
+  fi
   if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$MESSAGE" | python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":sys.stdin.read()}}))'
+    printf '%s' "$message" | python3 -c '
+import json, sys
+key = sys.argv[1]
+msg = sys.stdin.read()
+out = {"hookSpecificOutput": {"hookEventName": "Stop", key: msg}} if key == "additionalContext" else {key: msg}
+print(json.dumps(out))' "$key"
   elif command -v jq >/dev/null 2>&1; then
-    printf '%s' "$MESSAGE" | jq -Rsc '{hookSpecificOutput:{hookEventName:"Stop",additionalContext:.}}'
+    if [ "$key" = "additionalContext" ]; then
+      printf '%s' "$message" | jq -Rsc '{hookSpecificOutput:{hookEventName:"Stop",additionalContext:.}}'
+    else
+      printf '%s' "$message" | jq -Rsc '{systemMessage:.}'
+    fi
   fi
 }
 
+# 検出を Claude に注入するのは、まだ伝えていない検出を、注入で再開したのではないターンで出すときだけ
+should_tell() {
+  if [ "$STOP_ACTIVE" = "1" ] || [ "$1" = "1" ]; then echo 0; else echo 1; fi
+}
+
 if [ -n "$CACHE" ] && [ -f "$CACHE" ]; then
-  CACHED_FP="$(head -1 "$CACHE")"
+  CACHED_FP="" CACHED_TOLD=""
+  { IFS= read -r CACHED_FP || true; IFS= read -r CACHED_TOLD || true; } < "$CACHE"
   if [ "$CACHED_FP" = "$FINGERPRINT" ]; then
-    CACHED_ISSUES="$(tail -n +2 "$CACHE")"
-    [ -n "$CACHED_ISSUES" ] && emit "$CACHED_ISSUES"
+    CACHED_ISSUES="$(tail -n +3 "$CACHE")"
+    if [ -n "$CACHED_ISSUES" ]; then
+      TELL="$(should_tell "$CACHED_TOLD")"
+      emit "$CACHED_ISSUES" "$TELL"
+      if [ "$TELL" = "1" ]; then
+        { printf '%s\n1\n' "$FINGERPRINT"; printf '%s' "$CACHED_ISSUES"; } > "$CACHE" 2>/dev/null || true
+      fi
+    fi
     exit 0
   fi
 fi
@@ -162,15 +201,18 @@ case "$ML_RC" in
   *) ISSUES="[machine-layer] 判定不能（exit ${ML_RC}）:"$'\n'"${ML_OUT}"$'\n' ;;
 esac
 
+TOLD=0
 if [ -n "$ISSUES" ]; then
-  emit "$ISSUES"
+  TOLD="$(should_tell 0)"
+  emit "$ISSUES" "$TOLD"
 fi
 
 # 次のターンで作業ツリーが同じなら再走しないための記録（検出内容ごと残す）。
 # 書けなくても検査自体は済んでいるので握り潰してよい
 if [ -n "$CACHE" ]; then
-  # 1 行目が指紋、2 行目以降が検出内容そのもの（`emit` は `%s` で出すのでエスケープ無し）
-  { printf '%s\n' "$FINGERPRINT"; printf '%s' "$ISSUES"; } > "$CACHE" 2>/dev/null || true
+  # 1 行目が指紋、2 行目が Claude に伝えたか（1 / 0）、3 行目以降が検出内容そのもの
+  # （`emit` は `%s` で出すのでエスケープ無し）
+  { printf '%s\n%s\n' "$FINGERPRINT" "$TOLD"; printf '%s' "$ISSUES"; } > "$CACHE" 2>/dev/null || true
 fi
 
 exit 0

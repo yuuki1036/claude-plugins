@@ -94,9 +94,20 @@ if command -v claude >/dev/null 2>&1; then
     # CLI が出力形式を変えた版では**無言で常時緑**になる。rc が非ゼロなのに 1 行も
     # 拾えなかったら「違反なし」ではなく「読めなかった」に倒す
     VAL_OUT="$(claude plugin validate "$plugin_dir" 2>&1)" && VAL_RC=0 || VAL_RC=$?
+    # **指摘は「Found N error(s) / warning(s)」の見出しの直後に並ぶ N 行の `❯` 行だけ**。
+    # CC 2.1.292 から、mod（hooks.json の `modules`）を持つプラグインでは件数に数えない情報行
+    # （mod の hooks / calls / env reads / state writes の一覧など）も `❯` 付きで出る（rc=0）。
+    # `❯` 行を全部拾うと、それが毎回「修正の必要な問題」として Stop hook に載り続けた
+    FINDINGS="$(printf '%s\n' "$VAL_OUT" | awk '
+      match($0, /Found [0-9]+ (error|warning)/) { n = substr($0, RSTART + 6) + 0; next }
+      n > 0 && /^[[:space:]]*❯/ { print; n-- }')"
+    if [ -z "$FINDINGS" ] && [ "$VAL_RC" -ne 0 ]; then
+      # 見出しの無い書式で落ちた回は `❯` 行を全部拾う（書式が変わった版への保険。拾えなければ下で判定不能）
+      FINDINGS="$(printf '%s' "$VAL_OUT" | grep -E '^\s*❯' || true)"
+    fi
     # `_requirements` / `_superseded_by` は SSoT 用の独自フィールドなので CLI 警告から除外する。
     # CC のバージョンで警告文言が変わるため、文言ではなくフィールド名の有無で除外する
-    FILTERED="$(printf '%s' "$VAL_OUT" | grep -E '^\s*❯' | grep -Ev '_requirements|_superseded_by' || true)"
+    FILTERED="$(printf '%s' "$FINDINGS" | grep -Ev '_requirements|_superseded_by' || true)"
     if [ -n "$FILTERED" ]; then
       add "[schema:$(basename "$plugin_dir")] ${FILTERED}"
     elif [ "$VAL_RC" -ne 0 ]; then

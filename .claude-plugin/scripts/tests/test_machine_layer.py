@@ -76,10 +76,10 @@ class MachineLayerTest(unittest.TestCase):
         else:
             link.unlink(missing_ok=True)
         # bash は常に要る。section 4（CLI スキーマ検査）は find / xargs / grep / sort /
-        # basename を使うので、python3 がある構成だけそれらを足す
+        # basename / awk（指摘行の切り出し）を使うので、python3 がある構成だけそれらを足す
         needed = ["bash"]
         if with_python:
-            needed += ["find", "xargs", "grep", "sort", "basename", "tail", "dirname"]
+            needed += ["find", "xargs", "grep", "sort", "basename", "tail", "dirname", "awk"]
         for name in needed:
             real = shutil.which(name)
             self.assertIsNotNone(real, "%s が見つからない" % name)
@@ -97,8 +97,18 @@ class MachineLayerTest(unittest.TestCase):
         実測: `cat <<EOF` の stub が `cat: command not found` で落ち、出力が空になったため
         「指摘なし」と区別できなかった。stub が壊れていても**テストは緑に見える**型なので、
         `test_..._reported_per_plugin` の assert が唯一の防壁になる。
+
+        **実物の書式で出す**: 指摘は `✘ Found N error(s):` の見出しの直後に N 行並ぶ（rc=1）。
+        機械層は見出しの件数ぶんだけを拾うので、見出しの無い stub では指摘にならない。
         """
-        self.write_claude_stub_rc(0, *findings)
+        if findings:
+            self.write_claude_stub_rc(1, "", "✘ Found %d error:" % len(findings), "", *findings)
+        else:
+            self.write_claude_stub_rc(0)
+
+    def write_claude_warn_stub(self, *lines: str, count: int) -> None:
+        """`⚠ Found N warning:` の見出しで出す stub（rc=0）。`lines` の先頭 `count` 行が警告."""
+        self.write_claude_stub_rc(0, "", "⚠ Found %d warning:" % count, "", *lines)
 
     def write_claude_stub_rc(self, code: int, *findings: str) -> None:
         """終了コードも指定できる `claude` stub（rc を捨てていないかの検証用）."""
@@ -240,7 +250,8 @@ class MachineLayerTest(unittest.TestCase):
         (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
         self.with_tests_dir(passing=True)
         env = self.env(with_claude=True)
-        self.write_claude_stub("  ❯ _requirements: Unknown field", "  ❯ _superseded_by: Unknown")
+        self.write_claude_warn_stub("  ❯ _requirements: Unknown field", "  ❯ _superseded_by: Unknown",
+                                    count=2)
         res = self.run_layer(env=env)
         self.assertEqual(res.returncode, 0, res.stdout)
         self.assertEqual(res.stdout, "")
@@ -276,6 +287,69 @@ class MachineLayerTest(unittest.TestCase):
         self.write_claude_stub_rc(0)
         res = self.run_layer(env=env)
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    # ---- 情報行を拾わない（CC 2.1.292 の mod の一覧行）----------------------
+    def _demo(self) -> dict[str, str]:
+        (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
+        (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+        self.with_tests_dir(passing=True)
+        return self.env(with_claude=True)
+
+    INFO = ("  ❯ ./mod.ts hooks: session.start, tool.call{tool=Bash}",
+            "  ❯ ./mod.ts gating hook without .catch: tool.call{tool=Bash}",
+            "  ❯ ./mod.ts calls: $.state.get, $.state.set",
+            "  ❯ ./mod.ts env reads: HOME")
+
+    def test_info_lines_of_a_passing_validate_are_not_findings(self):
+        """件数に数えない情報行を「修正の必要な問題」にしない（毎ターン Stop hook に載り続けた）."""
+        env = self._demo()
+        self.write_claude_stub_rc(0, "Validating hooks: demo/hooks/hooks.json", "", *self.INFO, "",
+                                  "✔ Validation passed")
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(res.stdout, "")
+
+    def test_only_the_counted_warning_is_reported(self):
+        """見出しの件数ぶんだけ拾う（後ろに続く情報行は拾わない）."""
+        env = self._demo()
+        self.write_claude_warn_stub("  ❯ author: 推奨フィールドが無い", "", *self.INFO, count=1)
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("author: 推奨フィールドが無い", res.stdout)
+        self.assertNotIn("mod.ts", res.stdout)
+
+    def test_errors_and_warnings_are_both_reported(self):
+        env = self._demo()
+        self.write_claude_stub_rc(1, "✘ Found 2 errors:", "", "  ❯ name: 予約名", "  ❯ version: 不正",
+                                  "", "⚠ Found 1 warning:", "", "  ❯ author: 推奨", "", *self.INFO)
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        for want in ("name: 予約名", "version: 不正", "author: 推奨"):
+            self.assertIn(want, res.stdout)
+        self.assertNotIn("mod.ts", res.stdout)
+
+    def test_a_count_of_zero_reports_nothing(self):
+        """境界: 0 件の見出しの後ろの `❯` 行は拾わない."""
+        env = self._demo()
+        self.write_claude_stub_rc(0, "⚠ Found 0 warnings:", "", *self.INFO)
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 0, res.stdout)
+
+    def test_a_failing_cli_without_a_count_header_still_reports_its_lines(self):
+        """見出しの無い書式で落ちた回は `❯` 行を全部拾う（書式が変わった版で黙らない）."""
+        env = self._demo()
+        self.write_claude_stub_rc(1, "  ❯ name: 必須フィールドが無い")
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("[schema:demo]", res.stdout)
+
+    def test_a_passing_cli_without_a_count_header_reports_nothing(self):
+        """rc=0 で見出しが無ければ `❯` 行は情報行として扱う."""
+        env = self._demo()
+        self.write_claude_stub_rc(0, *self.INFO)
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 0, res.stdout)
+        self.assertEqual(res.stdout, "")
 
     def test_every_plugin_is_validated_not_just_the_first(self):
         """空行スキップを「非空スキップ」に取り違えると**全件が黙って飛ぶ**."""

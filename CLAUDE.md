@@ -284,7 +284,7 @@ Claude Code の hook を **Pub/Sub Message Bus** として運用するための�
 プラグインの新規作成・変更時は `/quality-check` で全プラグインの品質バリデーションを実行する。
 個別のスキル開発時は `docs/skill-writing.md` の観点（description の branch 設計・情報階層・no-op 剪定・失敗モードカタログ）で自己点検し、description / トリガーフレーズを変えたら evals で回帰を確認する。
 
-**自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/agents/` / `*/references/` / `*/scripts/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を stderr（ユーザー向け）と `hookSpecificOutput.additionalContext`（Claude 向け、CC 2.1.163）の両方に通知する（Stop はブロックしない）。`.claude/settings.json` で設定。
+**自動チェック（Stop hook）**: プラグイン関連ファイル（`*/plugin.json` / `*/skills/` / `*/commands/` / `*/hooks/` / `*/agents/` / `*/references/` / `*/scripts/` / `marketplace.json` / `*/CHANGELOG.md`）を変更した状態でターン終了を迎えると、`.claude-plugin/scripts/auto-quality-check.sh` が以下を自動実行し、問題を通知する（Stop はブロックしない）。`.claude/settings.json` で設定。**Claude に注入する（`hookSpecificOutput.additionalContext`）のは、まだ伝えていない検出を最初に出すときだけ**で、作業ツリーが前回と同じ回（キャッシュの再生）と、注入で再開したターン（`stop_hook_active`）はユーザーにだけ出す（`systemMessage`）。Stop の additionalContext は会話を継続させるので、直らない検出を毎回注入するとターンが終わらなくなる（2026-10-08 に 15 回以上ループした）
 
 - `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期
 - `validate_plugin_quality.py`: allowed-tools / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ / Event Bus 同期 / hook 自己判定 / コンテキスト予算ほか — **検査項目の正本はスクリプト冒頭 docstring**（ここに列挙を複製しない）

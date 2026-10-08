@@ -170,6 +170,21 @@ class AutoQualityCheckTest(unittest.TestCase):
         self.assertEqual(hso["hookEventName"], "Stop")
         return hso["additionalContext"]
 
+    def user_message(self, res: subprocess.CompletedProcess[str]) -> str:
+        """stdout を systemMessage（ユーザーにだけ出す・ターンを再開させない）として読む."""
+        self.assertTrue(res.stdout.strip(), "ユーザー向けの通知が無い: %r" % res.stdout)
+        data = json.loads(res.stdout)
+        self.assertNotIn("hookSpecificOutput", data, "ターンを再開させる注入をしている")
+        return data["systemMessage"]
+
+    ACTIVE = '{"hook_event_name":"Stop","stop_hook_active":true}'
+
+    def turn(self, payload: str = '{"hook_event_name":"Stop"}') -> subprocess.CompletedProcess[str]:
+        """1 ターン分の hook。stub の呼び出し記録はリポジトリの中にあり指紋を変えるので、毎回消す."""
+        res = self.run_hook(payload)
+        self.marker.unlink(missing_ok=True)
+        return res
+
     # ---- いつ走らせるか -----------------------------------------------------
     def test_clean_tree_never_runs_the_layer(self):
         res = self.run_hook()
@@ -342,7 +357,11 @@ class AutoQualityCheckTest(unittest.TestCase):
         self.assertFalse(self.layer_ran, "作業ツリーが同じなのに再走している")
 
     def test_a_cached_detection_is_replayed_without_rerunning(self):
-        """**黙るだけにしない**: 検出のあった次のターンで無言になると「直った」と読める."""
+        """**黙るだけにしない**: 検出のあった次のターンで無言になると「直った」と読める.
+
+        ただし再生は Claude に注入しない（ユーザーにだけ出す）。Stop の additionalContext は
+        会話を継続させるので、直らない検出を毎回注入するとターンが終わらなくなる（下のループのテスト）.
+        """
         self.modify("demo/skills/s/SKILL.md")
         self.set_layer(1, "[quality] SSoT pin がずれている")
         first = self.run_hook()
@@ -350,8 +369,51 @@ class AutoQualityCheckTest(unittest.TestCase):
         self.marker.unlink()
         second = self.run_hook()
         self.assertFalse(self.layer_ran, "キャッシュがあるのに再走している")
-        self.assertIn("SSoT pin がずれている", self.context(second), "検出が消えている")
+        self.assertIn("SSoT pin がずれている", self.user_message(second), "検出が消えている")
         self.assertIn("SSoT pin がずれている", second.stderr)
+
+    # ---- ループさせない（Stop の additionalContext はターンを再開させる）--------
+    def test_a_continuation_turn_is_not_injected_again(self):
+        """注入で再開したターン（`stop_hook_active`）では注入しない（hooks の docs のループ防止）.
+
+        2026-10-08 に、直らない検出が毎ターン注入されて 15 回以上ループした.
+        """
+        self.modify("demo/skills/s/SKILL.md")
+        self.set_layer(1, "[quality] SSoT pin がずれている")
+        self.context(self.turn())
+        again = self.turn(self.ACTIVE)
+        self.assertFalse(self.layer_ran, "前提: 2 回目はキャッシュの再生")
+        self.assertIn("SSoT pin がずれている", self.user_message(again))
+
+    def test_a_fresh_detection_in_a_continuation_turn_is_told_later(self):
+        """再開ターンで初めて見つけた検出は、次の通常のターンで 1 回だけ Claude に伝える."""
+        self.modify("demo/skills/s/SKILL.md")
+        self.set_layer(1, "[quality] 新しい検出")
+        self.user_message(self.turn(self.ACTIVE))
+        self.assertIn("新しい検出", self.context(self.turn()), "再開ターンの検出を伝えずに捨てている")
+        self.user_message(self.turn())
+
+    def test_stop_hook_active_tolerates_whitespace_and_false(self):
+        self.modify("demo/skills/s/SKILL.md")
+        self.set_layer(1, "[quality] x")
+        self.user_message(self.turn('{"hook_event_name": "Stop", "stop_hook_active": true}'))
+        self.context(self.turn('{"hook_event_name":"Stop","stop_hook_active":false}'))
+
+    def test_the_first_run_does_not_read_a_missing_cache(self):
+        """キャッシュが無い初回に読みに行かない（読みに行くと stderr にシェルのエラーが混ざる）."""
+        self.modify("demo/skills/s/SKILL.md")
+        self.set_layer(1, "[quality] x")
+        res = self.turn()
+        self.assertNotIn("No such file", res.stderr)
+        self.context(res)
+
+    def test_a_cache_written_before_the_tell_flag_is_not_misread(self):
+        """2 行目に「伝えたか」が無い旧書式のキャッシュは読まない（ファイル名を変えてある）."""
+        self.modify("demo/skills/s/SKILL.md")
+        self.set_layer(1, "[quality] x")
+        self.run_hook()
+        names = [p.name for p in self.cache_dir.iterdir()]
+        self.assertTrue(any(n.startswith("claude-auto-quality-check-v2-") for n in names), names)
 
     def test_changing_a_tracked_file_invalidates_the_cache(self):
         self.modify("demo/skills/s/SKILL.md")
