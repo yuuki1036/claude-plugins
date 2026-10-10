@@ -143,7 +143,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-past-reviews.sh" --pr <PR番号> --bas
 
 **`size_tier` はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値**をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。テスト 5 + doc 1 を含む 9 ファイルの PR が実質 3 ファイル `+22 -13` なのに large 扱いで 17 体起動する事故を防ぐ。GitHub issue #96）。Phase 0 の構成テーブル・Step 7 レポート冒頭・締めフロー 4 の `size_tier` に記録する。
 
-**シグナルは事実であって判定ではない。** モード決定・観点採否・体数は triage-guide が決める（スクリプトは policy を持たない）。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む。
+**シグナルは事実であって判定ではない。** モード決定・観点採否・体数は triage-guide が決める（スクリプトは policy を持たない）。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む。**例外はスクリプトが見ない条件だけ**: 常時必須の `bug-detection` / `claude-md-compliance`、仕様ソースの有無で決まる `spec-compliance`、`performance` の「ループ内の await」。この 3 つは Step 3.3 の起動前検算で自分で評価する（それ以外の行は、表の条件をスクリプトが出すことをテストが固定している / GitHub issue #295）
 
 **`diff_file=` と `agent_ctx_file=` の値は以降ずっと使うので、パス文字列そのものを控えておく**（後者は Step 5 の共通ブロック書き出し先。**slug は不透明な cksum 値なので、控え損ねると復元できない**）（シェル変数は Bash 呼び出し間で消えるため、`$DIFF_FILE` として引き回さず実パスを毎回書く）。
 
@@ -398,6 +398,8 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
    | CRITICAL | skip | skip | 報告 | 報告 |
    | MAJOR | skip | skip | skip | 報告 |
    | MINOR | skip | skip | skip | 報告 |
+
+   **実効報告閾値が `MINOR` の回は MINOR 行を 80+ で通す**（手順 6 の実効値。scoring-guide.md `### 実効報告閾値が MINOR の回` / GitHub issue #295）。95+ のままだと、閾値を下げて reviewer に本文を書かせた MINOR が付録に落ちる
 
 6. **userConfig 適用**: `review_severity_threshold` (default: `MAJOR`) の**実効値**より低い severity は除外（doc だけの diff = `## size` の `doc_only=1` では既定の `MAJOR` を `MINOR` に下げる / orchestration-guide.md `## 2` / #275）。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を同名 severity のバケツへ足し、`severity_threshold` を併せて記録する**（足し込む分は dedup されないため版で非可換。版マーカー `schema` は**スクリプトが注入する**ので書かない。orchestration-measurement.md `## 16`）。**足し込んだその件数を `below_threshold_counts` にも同じバケツで再掲し、`## below-threshold` の `demoted-across-threshold:` 行の型名を `below_threshold_counts.demoted_types` に型別で数える**（**親オブジェクトの中に置く** — トップレベルに書くと集計されない / GitHub issue #208）（どちらも 0 件でもキーを省かない / GitHub issue #146・#150）。合算しか残らないと **(a) 本文を書いてから捨てた**（出力トークンの純損失）と **(b) 件数だけ返した**（既に節約できている）が分離できず、閾値注入の効果を判定できない。**`pre_adjust_counts` を超える値は publish が fail-fast する**。**`below_threshold_counts` に入れるのは reviewer の `## below-threshold` 件数行の数字だけ**。`#### 指摘事項` に列挙された指摘は、反証・加減算・報告マトリクス（手順 2〜5）で閾値を割っても足さない — それらは 🔁 付録の側に載る指摘で、`pre_adjust − below` の「本文を書いた」に入る。足すと付録の上限が縮み、正規の付録行で `payload:appendix.exceeds-body` が偽陽性になる（実測 1 回 / GitHub issue #248）。**`## below-threshold` の件数行の後に reviewer が本文を書いていても、その指摘は below に数えるだけで本文にも 🔁 付録にも載せない**（付録の対象は閾値以上で列挙された指摘だけ ＝ 契約 (a)。載せると本文を書いた数の上限を超え、publish が `payload:appendix.exceeds-body` を立てる / GitHub issue #248）。**🔁 付録の件数は `appendix` に載せる**（`{listed, recommended}`。`listed` は付録に並べた行数、`recommended` はそのうち `※ 推奨:` を付けた行数。0 件でもキーを省かない / GitHub issue #168）— **付録に列挙しただけでは「報告 0 件の回」と「価値 0 の回」が payload 上で同じ形になる**（実測: severity 4 バケツすべて 0 なのに付録 18 件・うち 4 件を人間に推していた回がある）。`recommended` が `listed` を超えると publish が fail-fast する。マーカーの規約は scoring-guide.md `## 報告閾値を割った指摘の記録` の「推奨マーカー」。**`adversarial_verify.inflated_axes` は反証 agent の `axis` を同じ 4 型へ寄せて数える**（`pre-existing` / `intended` → `base_derived` / `misread` → `misread` / `overstated-impact` → `overstated_impact` / `miscategorized` → `miscategorized`。**`unknown` は「軸が返らなかった・語彙外だった」件だけ**で、`unreachable` / `pre-validated` / `none` は`severity-inflated` の軸ではないのでここに落ちる）。**語彙内の値を寄せ忘れても合計の突合は通る**ので、`unknown` が 1 件以上あると `measurement_gaps` に `axis-unknown` / `demoted-unknown` が立つ / GitHub issue #167
 7. **出力**: タグ（`[re-flag: @user]` 等）と severity ラベルを指摘文冒頭にそのまま残す。`⚠️ 反証メモ:` が付いた係争指摘は本文にメモを残したまま出力する

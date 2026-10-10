@@ -175,7 +175,7 @@ React/Next.js プロジェクトでは ui-quality に modern-web-checklist の�
 | **MINOR** | skip | skip | skip | 報告 |
 
 - BLOCKER は confidence 60+ で報告（見落としの代償が大きいため不確実でも人間判断を促す）
-- MAJOR / MINOR は confidence 95+ のみ報告（根拠の薄い nitpick を自動除外）
+- MAJOR / MINOR は confidence 95+ のみ報告（根拠の薄い nitpick を自動除外）。報告閾値を `MINOR` に下げた回は MINOR を 80+ で報告する
 
 confidence は explorer の裏付け（+10）・冗長ペア合意（+10）・CLAUDE.md 記載（+20）等で加減算する。根拠が個人的好みのみの指摘は 40 で、repo で検証できない外部状態に依拠する指摘は 75 で上限クランプする。詳細は `references/scoring-guide.md` を参照。
 

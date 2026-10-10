@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.152.1] - 2026-10-10
+
+### Fixed
+
+- **変更ファイルが 10 以上の diff で pattern-consistency が起動しなかったのを直した**（#295）。triage-guide の
+  観点判定表は「変更ファイル数 >= 10」で起動するとしているのに、`triage-signals.sh` の `## focus-signals` に
+  この行を出す処理が無く、オーケストレーターは「出ていない観点は条件不成立」と読んで落としていた。欠損観点にも
+  載らず、14 ファイル以上の self-review 2 回で 2 回とも起動しなかった（後から指定して回すと命名の揺れが 9 件
+  出た）。コードのファイル（core と test）が 10 以上なら `pattern-consistency` を件数付きで出す。閾値は表の
+  複製で、テストが表の値と突き合わせる
+- **観点判定表の他の欠けも埋めた**（#295）。表とシグナルを突き合わせると、test-quality の「新規ソースがあって
+  テストの変更が 0」、performance の「DB・キャッシュ・キュー・ワーカー」、api-design の「API・ルート・
+  コントローラ・GraphQL・proto」もシグナルが出ていなかった。新規ソースは diff の `new file mode` で見分け
+  （設定・型定義だけのファイルは数えない）、ディレクトリの条件は doc・テストを除いたパスで見る。表のどの行も
+  条件を満たす diff で `## focus-signals` に出ることをテストで固定した。diff から決まらない 3 つ（常時必須の
+  2 観点・spec-compliance）と performance の「ループ内の await」は、起動前検算で評価すると review SKILL に
+  明記した
+- **報告閾値を MINOR に下げても MINOR が本文に出なかったのを直した**（#295）。閾値を MINOR にすると reviewer は
+  MINOR の本文を書いて返すのに、後段の報告マトリクスが MINOR を confidence 95 以上でしか通さず、40〜85 の
+  9 件がすべて付録へ落ちて「MINOR 0 件」・Step 7 の修正方針確認なし、で終わっていた。doc だけの diff で
+  自動的に MINOR へ下げる回（#275）も同じ形で効きが弱かった。実効報告閾値が MINOR の回だけ、MINOR 行を
+  80 以上で通す。根拠の無い好み（40）と `[unverified]`（75）の頭打ちは 80 に届かないので、それらは従来どおり
+  落ちる
+
 ## [2.152.0] - 2026-10-09
 
 ### Added

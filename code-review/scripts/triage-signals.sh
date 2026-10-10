@@ -279,6 +279,8 @@ sig() {
   local key="$1" re="$2" src="${3:-code}" stream n ex
   case "$src" in
     paths)   stream=$(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '{print "\t" $4 "\t" $4}') ;;
+    # doc・テストを除いたパス。`docs/api/` のような doc の置き場所の名前でコードの観点を起こさない
+    core-paths) stream=$(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core" {print "\t" $4 "\t" $4}') ;;
     doc)     stream="$ADDED_DOC" ;;
     removed) stream="$REMOVED_CODE" ;;
     removed-core) stream="$REMOVED_CORE" ;;
@@ -342,6 +344,41 @@ EOF_AGENTS
   printf 'layer-responsibility\t%s\t%s\n' "$n" "$ex"
 }
 
+# pattern-consistency（triage-guide `## 3`）。中身ではなく変更ファイル数の閾値で決まる観点なので、
+# 閾値を満たした回だけ行を出す — 件数を常に出すと、「ヒット数 0 の観点は出力に現れない」という
+# 読み方では毎回起動に見える。行が無かったため、14 ファイル以上の self-review 2 回で起動せず
+# 欠損観点にも載らなかった（GitHub issue #295）。
+# **閾値は triage-guide の表の複製**（size_tier の帯境界と同じ扱い。テストが表の値と突き合わせる）。
+# 数えるのはコードのファイル（core と test）。doc・生成物には命名や既存ユーティリティの揃い方が無い
+PATTERN_MIN_FILES=10
+pattern_sig() {
+  local n
+  n=$(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core" || $1=="test"' | grep -c . || true)
+  if [ "${n:-0}" -ge "$PATTERN_MIN_FILES" ]; then
+    printf 'pattern-consistency\t%s\t-\n' "$n"
+  fi
+}
+
+# test-quality の 2 つ目の条件（triage-guide `## 3`）: テスト以外の新しいソースファイルがあり、
+# テストファイルの変更が 0。テストの変更が 1 件でもあれば paths のシグナルが test-quality を出すので、
+# ここは 0 の回だけを見る（GitHub issue #295 で表とシグナルを突き合わせたときに見つかった欠け）。
+# 設定・型定義だけの新規ファイルは振る舞いを持たないので数えない
+NEW_SRC_SKIP_RE='\.(json|ya?ml|toml|ini|d\.ts)$|(^|/)\.env|\.config\.|(^|/)Dockerfile|(^|/)\.github/|(^|/)types?(/|\.[A-Za-z]+$)'
+new_source_sig() {
+  local tests news n
+  tests=$(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="test"' | grep -c . || true)
+  [ "${tests:-0}" -eq 0 ] || return 0
+  # 新規ファイルは diff の `new file mode` で見分ける（numstat には新規かどうかが出ない）。
+  # 分類は CLASSIFIED の core に限る（awk の分類式をもう 1 つ持たない）
+  news=$(awk '/^diff --git / { f=$4; sub(/^b\//, "", f); next } /^new file mode / { print f }' "$OUT" \
+    | sort -u | grep -vE -e "$NEW_SRC_SKIP_RE" \
+    | grep -xF -f <(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core" {print $4}') || true)
+  n=$(printf '%s\n' "$news" | grep -c . || true)
+  if [ "${n:-0}" -gt 0 ]; then
+    printf 'test-quality\t%s\t%s\n' "$n" "$(printf '%s\n' "$news" | head -1)"
+  fi
+}
+
 echo "## focus-signals"
 {
   sig error-handling   'try *\{|catch *\(|except |rescue |\.catch\('
@@ -351,7 +388,12 @@ echo "## focus-signals"
   sig security         '(^|/)(auth|security|crypto)/|middleware/auth' paths
   sig security         'password|secret|token|api_key|eval\(|innerHTML|dangerouslySetInnerHTML|query\('
   sig performance      'SELECT |INSERT |UPDATE |DELETE |\.find\(|\.findMany\(|Promise\.all'
+  # 表の「DB 関連ファイル、キャッシュ、キュー、ワーカー」。表の「ループ内の await」は 1 行の正規表現で
+  # 拾えないので、オーケストレーターの起動前検算に残す（review SKILL.md `### 2`）
+  sig performance      '(^|/)(db|database|caches?|queues?|workers?|jobs?)/|\.sql$' core-paths
   sig api-design       'router\.(get|post|put|delete)|@(Get|Post|Put|Delete)\(|app\.(get|post|put|delete)\('
+  # 表の「API/ルート/コントローラ/GraphQL/proto」
+  sig api-design       '(^|/)(api|routes?|controllers?|graphql|resolvers?)/|\.(proto|graphql|gql)$' core-paths
   sig dependency       'package\.json$|.*lock.*|Gemfile|requirements\.txt$|go\.mod$|Cargo\.toml$' paths
   sig migration        '(^|/)(migrations|db/migrate)/|prisma/migrations/' paths
   sig config           '\.env|\.config\.|Dockerfile|docker-compose\.|\.github/workflows/' paths
@@ -374,6 +416,8 @@ echo "## focus-signals"
   # 同じ文書の変えていない節と矛盾しうるのは、既存の記述に手を入れたときだけ。閾値は triage-guide
   sig doc-rewritten-lines '[^[:space:]|>*+-]' removed-doc
   layer_rule_sig
+  pattern_sig
+  new_source_sig
 } | merge_sig
 
 echo "## red-flags"

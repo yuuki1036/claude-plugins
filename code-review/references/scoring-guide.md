@@ -62,7 +62,16 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 - **BLOCKER は confidence 60+ で報告**: 不確実でも「人間に確認してもらう価値がある」という判断。見落とした時の代償が大きすぎるため
 - **CRITICAL は confidence 80+ で報告**: 従来の閾値を踏襲。妥当な確信度があれば報告
 - **MAJOR は confidence 95+ で報告**: 確信度が低いと「正しい判断」と区別できないノイズになりがち
-- **MINOR は confidence 95+ で報告**: ほぼ確実な時のみ。それ以下は nitpick として除外
+- **MINOR は confidence 95+ で報告**: ほぼ確実な時のみ。それ以下は nitpick として除外。**実効報告閾値が `MINOR` の回だけは 80+**（下の節）
+
+### 実効報告閾値が MINOR の回（GitHub issue #295）
+
+実効報告閾値（orchestration-guide.md `## 2`。userConfig `review_severity_threshold: MINOR`、または doc だけの diff で下げた回）が `MINOR` の回は、**MINOR 行を confidence 80+ で通す**（CRITICAL と同じ帯）。BLOCKER / CRITICAL / MAJOR の行は変えない。
+
+- **閾値を MINOR に下げるのは MINOR を本文で読むため**だが、95+ のままでは閾値を下げても本文に届かなかった。reviewer は閾値に合わせて MINOR の本文を書いて返す（`## below-threshold` は 0 件になる）のに、後段のマトリクスで 95 未満が全部 🔁 付録へ落ち、指摘件数「MINOR 0 件」・Step 7 の修正方針確認なし、で終わる（実測: 閾値を MINOR に下げた self-review で confidence 40〜85 の MINOR 9 件がすべて付録へ落ちた）。上の「書かせて捨てる」組み合わせを、閾値を下げた回にだけ作っていた
+- **80 で切る理由**: 根拠の無い好みは 40、repo で検証できない外部状態に依拠する指摘（`[unverified]`）は 75 で頭打ちになるので、どちらも 80 では通らない。pattern-consistency の「明確な不統一」（70-85）のうち 80 以上と、file:line で裏付けた MINOR が通る
+- **反証レイヤーの対象は広げない**。MINOR は反証のゲート帯（triage-dynamic-gates.md `## 9`）に入っていない。誤った MINOR が通っても影響は小さく、Step 7 で人間が採否を決める
+- **既定の `MAJOR` 以上の回は 95+ のまま**（`MINOR` は閾値で足切りされるので、この行は効かない）
 
 ### surface-aware 閾値（high-risk surface に限る recall 補正 / ADR-20260703204045）
 
@@ -73,7 +82,7 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 | **BLOCKER** | 60+ | 60+（変更なし） |
 | **CRITICAL** | 80+ | **70+** |
 | **MAJOR** | 95+ | **85+** |
-| **MINOR** | 95+ | 95+（変更なし） |
+| **MINOR** | 95+（実効閾値 MINOR の回は 80+） | 通常 surface と同じ（変更なし） |
 
 - **目的**: high-risk surface では CRITICAL 見落としのコストが nit 偽陽性のコストを大きく上回るため、その層に限って recall を優先する（見落としコストが偽陽性コストを上回る層の非対称扱い）。低リスク surface の noise は据え置く
 - **効かせる箇所は適用順序の手順 7 の一点のみ**（下記「適用順序」参照）。precision の本丸（手順 2〜6 = 反証 verdict 反映 / 加減算 / `[unverified] min75` / `≤40 好みクランプ`）と Phase 5.9 の specialist 反証除外は**不変**。緩和は報告マトリクスのフィルタ段でのみ適用する
@@ -161,7 +170,7 @@ reviewer が付与した confidence を、以下のルールで Step 6 でオー
 4. **未検証クランプ**: `[unverified: ...]` タグ付きの指摘は confidence を `min(値, 75)` に制限
 5. **好みベース・拡張提案の上限クランプ**: 根拠が個人的好みのみの指摘と、`[extension: ...]` タグ付きの指摘は confidence を `min(値, 40)` に制限（未検証クランプと両方該当するときはこちらが優先）
 6. 0-100 にクランプ
-7. severity と組み合わせて報告マトリクスでフィルタ。**このとき high-risk surface フラグ付きの指摘には surface-aware 閾値（CRITICAL 70+ / MAJOR 85+）を適用する**（surface 判定は triage-dynamic-gates.md `## 8.5`。手順 2〜6 の precision 機構は不変で、緩和はこの手順 7 の一点のみ）
+7. severity と組み合わせて報告マトリクスでフィルタ。**このとき high-risk surface フラグ付きの指摘には surface-aware 閾値（CRITICAL 70+ / MAJOR 85+）を適用する**（surface 判定は triage-dynamic-gates.md `## 8.5`。手順 2〜6 の precision 機構は不変で、緩和はこの手順 7 の一点のみ）。**実効報告閾値が `MINOR` の回は MINOR 行を 80+ で通す**（上の「実効報告閾値が MINOR の回」。こちらも手順 7 だけで効かせる）
 
 ---
 
@@ -257,7 +266,7 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 - `review_severity_threshold` (string, default: "MAJOR"): 報告対象の最低 severity。`BLOCKER` / `CRITICAL` / `MAJOR` / `MINOR` のいずれか
 - `enable_recall_skeptic` (bool, default: true): 冷や読み skeptic ラウンド（Phase 5.8 / 4.8）の有効化。`false` で強制スキップ。high-risk surface でも起動しなくなり、surface-aware 閾値は据え置き（surface-aware 閾値自体はこの config で無効化しない＝閾値と skeptic 起動は別機構）
 
-`review_severity_threshold = "CRITICAL"` を設定すると MAJOR 以下を完全に除外（厳しめ運用）。`"MINOR"` にすると全 severity を報告（緩め運用）。デフォルトの `"MAJOR"` は上記マトリクス通り。
+`review_severity_threshold = "CRITICAL"` を設定すると MAJOR 以下を完全に除外（厳しめ運用）。`"MINOR"` にすると全 severity を報告対象にし、MINOR は confidence 80+ で報告する（緩め運用。上の「実効報告閾値が MINOR の回」）。デフォルトの `"MAJOR"` は上記マトリクス通り。
 
 ### 実効閾値を reviewer に伝える（GitHub issue #117）
 

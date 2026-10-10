@@ -199,7 +199,7 @@ Step 6 で `scoring-guide.md` の報告マトリクスに従いフィルタさ�
 | MAJOR | skip | skip | skip | 報告 |
 | MINOR | skip | skip | skip | 報告 |
 
-**つまり BLOCKER は不確実(conf 60+)でも報告される**ので、「重大な疑い」を意図的に低 confidence で出すことを恐れない。逆に MINOR は ≥95 でないと出ないので、ノイズ的指摘は素直に MINOR を付ければ自動除外される。
+**つまり BLOCKER は不確実(conf 60+)でも報告される**ので、「重大な疑い」を意図的に低 confidence で出すことを恐れない。逆に MINOR は ≥95 でないと出ないので、ノイズ的指摘は素直に MINOR を付ければ自動除外される。**ただし `{{SEVERITY_THRESHOLD}}` が `MINOR` の回は MINOR も 80+ で出る**（閾値を下げた回は MINOR を本文で読むため / GitHub issue #295）
 
 境界値（confidence 75-85）や他 reviewer と矛盾しうる指摘では、①diff の意図（コミットメッセージ / PR 説明 / session-context）との矛盾 ②既存問題の新規誤認 ③証拠が数値を裏付けているか、を確認してから確定する。
 

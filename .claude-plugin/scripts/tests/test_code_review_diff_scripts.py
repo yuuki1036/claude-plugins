@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import json
 import tempfile
@@ -26,6 +27,7 @@ from test_code_review_scripts import PLUGIN, ScriptTestBase
 
 SLICE = PLUGIN / "scripts" / "diff-slice.sh"
 TRIAGE = PLUGIN / "scripts" / "triage-signals.sh"
+GUIDE = PLUGIN / "references" / "triage-guide.md"
 
 
 class DiffScriptTestBase(ScriptTestBase):
@@ -703,6 +705,122 @@ class TriageSignalTest(DiffScriptTestBase):
         rows = {l.split("\t")[0]: l.split("\t")[1:] for l in
                 self.section(self.digest(), "## focus-signals") if l.count("\t") == 2}
         self.assertEqual(rows.get("layer-responsibility"), ["1", "AGENTS.md"])
+
+    @staticmethod
+    def _pattern_min_files() -> int:
+        """triage-guide `## 3` の表の pattern-consistency 行から閾値を読む（スクリプトの値から作らない）."""
+        row = next(l for l in GUIDE.read_text(encoding="utf-8").splitlines()
+                   if l.startswith("| pattern-consistency |"))
+        m = re.search(r">= (\d+)", row)
+        assert m, row
+        return int(m.group(1))
+
+    def test_pattern_min_files_matches_the_triage_guide_table(self):
+        """閾値は表の複製。表だけ直すとシグナルが古い閾値で出続ける（GitHub issue #295）."""
+        m = re.search(r"^PATTERN_MIN_FILES=(\d+)$", TRIAGE.read_text(encoding="utf-8"), re.M)
+        self.assertIsNotNone(m)
+        self.assertEqual(int(m.group(1)), self._pattern_min_files())
+
+    def test_pattern_consistency_fires_at_the_threshold_counting_core_and_tests(self):
+        """コードの変更ファイル（core と test）が閾値に達したら出す。件数は数えたファイル数（#295）."""
+        n = self._pattern_min_files()
+        for i in range(n - 2):
+            self.write("src/f%d.ts" % i, "x\n")
+        self.write("src/a.test.ts", "t\n")
+        self.write("tests/b.py", "t\n")
+        self.assertEqual(self.sig(self.digest(), "## focus-signals").get("pattern-consistency"), n)
+
+    def test_pattern_consistency_stays_silent_below_the_threshold_regardless_of_docs(self):
+        """黙る条件: コードが閾値の 1 つ手前なら、doc や生成物がいくつあっても出さない."""
+        n = self._pattern_min_files()
+        for i in range(n - 1):
+            self.write("src/f%d.ts" % i, "x\n")
+        for i in range(5):
+            self.write("docs/d%d.md" % i, "prose\n")
+        self.write("package-lock.json", "{}\n")
+        self.assertNotIn("pattern-consistency", self.sig(self.digest(), "## focus-signals"))
+
+    def test_test_quality_fires_on_a_new_source_file_without_test_changes(self):
+        """表の 2 つ目の条件: 新規ソースがあってテストの変更が 0（#295 で見つかった欠け）."""
+        self.write("src/feature.ts", "export function run() { return 1 }\n")
+        rows = {l.split("\t")[0]: l.split("\t")[1:] for l in
+                self.section(self.digest(), "## focus-signals") if l.count("\t") == 2}
+        self.assertEqual(rows.get("test-quality"), ["1", "src/feature.ts"])
+
+    def test_test_quality_stays_silent_on_new_config_and_type_files(self):
+        """黙る条件: 設定・型定義だけの新規ファイルは振る舞いを持たない."""
+        for path in ("config/app.json", "src/settings.yaml", "src/global.d.ts", "src/types.ts",
+                     "src/types/user.ts", "vite.config.ts", ".env.example", "docs/new.md"):
+            self.write(path, "x\n")
+        self.assertNotIn("test-quality", self.sig(self.digest(), "## focus-signals"))
+
+    def test_test_quality_stays_silent_on_modified_source_without_tests(self):
+        """黙る条件: 既存のソースを変えただけでは新規ソースに当たらない."""
+        self.write("src/feature.ts", "a\n")
+        self.add()
+        self.git("commit", "-qm", "base")
+        self.write("src/feature.ts", "b\n")
+        self.assertNotIn("test-quality", self.sig(self.digest(), "## focus-signals"))
+
+    def test_test_quality_counts_new_source_only_once_with_test_changes(self):
+        """テストの変更があれば paths のシグナルだけが出る（新規ソースの分を足さない）."""
+        self.write("src/feature.ts", "export const a = 1\n")
+        self.write("src/feature.test.ts", "test()\n")
+        self.assertEqual(self.sig(self.digest(), "## focus-signals").get("test-quality"), 1)
+
+    def test_performance_and_api_design_fire_on_their_directories(self):
+        """表の「DB・キャッシュ・キュー・ワーカー」と「API・ルート・コントローラ・proto」のパス（#295）."""
+        self.write("src/workers/sync.ts", "x\n")
+        self.write("src/routes/user.ts", "x\n")
+        got = self.sig(self.digest(), "## focus-signals")
+        self.assertIn("performance", got)
+        self.assertIn("api-design", got)
+
+    def test_performance_and_api_design_ignore_doc_and_test_directories(self):
+        """黙る条件: `docs/api/` のような doc・テストの置き場所の名前では起こさない."""
+        self.write("docs/api/guide.md", "prose\n")
+        self.write("tests/db/fixture.py", "x\n")
+        got = self.sig(self.digest(), "## focus-signals")
+        self.assertNotIn("performance", got)
+        self.assertNotIn("api-design", got)
+
+    # 表の観点のうち、diff からは決まらないもの（常時必須・仕様ソースの有無）。
+    # ここに足すときは review SKILL.md `### 2` の「スクリプトが見ない条件」も直す
+    NOT_FROM_DIFF = {"bug-detection", "claude-md-compliance", "spec-compliance"}
+
+    def _table_focus_keys(self) -> set[str]:
+        lines = GUIDE.read_text(encoding="utf-8").splitlines()
+        start = lines.index("### reviewer の観点判定")
+        keys = set()
+        for line in lines[start + 1:]:
+            if line.startswith("### "):
+                break
+            m = re.match(r"\| ([a-z][a-z-]+) \|", line)
+            if m:
+                keys.add(m.group(1))
+        return keys
+
+    def test_every_table_focus_has_a_signal(self):
+        """観点判定表のどの行も、条件を満たす diff で `## focus-signals` に出る（GitHub issue #295）.
+
+        出ない行があると「ヒット数 0 の観点は出力に現れない＝条件不成立」の読み方で黙って落ちる。
+        表に行を足したら、シグナルを足すか `NOT_FROM_DIFF` に入れる（このテストがそれを迫る）。
+        """
+        keys = self._table_focus_keys()
+        self.assertTrue(self.NOT_FROM_DIFF <= keys, self.NOT_FROM_DIFF - keys)
+        self.write("AGENTS.md", "- usecase/ は 1 行為。判定は domain/ に置く\n")
+        self.write("README.md", "intro\n")
+        self.write("package.json", "{}\n")
+        self.write("migrations/001.sql", "create table t (id int);\n")
+        self.write(".env.example", "A=1\n")
+        self.write("src/utils/u.ts", "// helper\nexport type U = { a: number }\n")
+        self.write("src/a.ts", "try {\n  q('SELECT 1', password)\n} catch (e) {}\nrouter.get('/x')\n")
+        self.write("src/components/B.tsx", "export const B = () => null\n")
+        self.write("src/a.test.ts", "test()\n")
+        for i in range(self._pattern_min_files()):
+            self.write("src/p%d.ts" % i, "x\n")
+        got = set(self.sig(self.digest(), "## focus-signals"))
+        self.assertEqual(sorted(keys - self.NOT_FROM_DIFF - got), [])
 
     def test_guardrail_bypass_pattern_starting_with_dash_is_detected(self):
         """`--no-verify` は grep のオプションに見える。`-e` で渡していないと黙って 0 件になる."""
