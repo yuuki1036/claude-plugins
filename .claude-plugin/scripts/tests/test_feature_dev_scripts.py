@@ -143,6 +143,21 @@ class InitialSelfReviewScopeTest(unittest.TestCase):
         loop = self.section(self.REVIEW_LOOP.read_text(), "7. **Re-review**", "8. **Update loop state**")
         self.assertIn("`--focus <persisting issue の focus 集合>`", loop)
 
+    def test_re_review_declares_itself(self):
+        """再レビューは `--rereview` を渡し、計測で初回のレビューと分けて数えさせる（GitHub issue #296）.
+
+        self-review 側が引数の名前を変えたらここで気づけるよう、self-review の宣言とも突き合わせる.
+        """
+        loop = self.section(self.REVIEW_LOOP.read_text(), "7. **Re-review**", "8. **Update loop state**")
+        self.assertIn("`--rereview`", loop)
+        self_review = (REPO / "code-review" / "skills" / "self-review" / "SKILL.md").read_text()
+        self.assertIn("**`--rereview`（", self_review, "self-review の引数から --rereview が消えた")
+
+    def test_initial_call_does_not_declare_a_rereview(self):
+        step2 = self.section(self.SKILL.read_text(), "### Step 2: Invoke code-review:self-review",
+                             "self-review 内部の動き")
+        self.assertNotIn("--rereview", step2)
+
 
 class SummaryReadingGuideTest(unittest.TestCase):
     """Phase 7 は独自サマリの代わりに code-review:review-guide を案内する（GitHub issue #290）.

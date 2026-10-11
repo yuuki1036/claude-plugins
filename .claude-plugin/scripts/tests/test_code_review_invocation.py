@@ -34,18 +34,22 @@ def start() -> dict:
     return assistant({"type": "tool_use", "name": "Bash", "input": {"command": START}})
 
 
-def skill(name: str) -> dict:
-    return assistant({"type": "tool_use", "name": "Skill", "input": {"skill": name}})
+def skill(name: str, args: str | None = None) -> dict:
+    inp = {"skill": name}
+    if args is not None:
+        inp["args"] = args
+    return assistant({"type": "tool_use", "name": "Skill", "input": inp})
 
 
 def prompt(body: str) -> dict:
     return {"type": "user", "message": {"role": "user", "content": body}}
 
 
-def slash(name: str) -> dict:
+def slash(name: str, args: str | None = None) -> dict:
     """実 transcript の形: command 起動の行と、isMeta の本文展開の行の 2 行."""
-    return prompt("<command-message>%s</command-message>\n<command-name>/%s</command-name>"
-                  % (name, name))
+    tail = "" if args is None else "\n<command-args>%s</command-args>" % args
+    return prompt("<command-message>%s</command-message>\n<command-name>/%s</command-name>%s"
+                  % (name, name, tail))
 
 
 def expanded(body: str = "self-review スキルを使用して…") -> dict:
@@ -64,6 +68,10 @@ def via(entries: list) -> str:
 
 def parent(entries: list):
     return judge_entries(entries)["parent"]
+
+
+def rereview(entries: list):
+    return judge_entries(entries)["rereview"]
 
 
 class ViaTest(unittest.TestCase):
@@ -165,6 +173,49 @@ class MarketplaceListTest(unittest.TestCase):
                          "harness-keeper:eval-runner")
 
 
+class RereviewTest(unittest.TestCase):
+    """修正を確かめる再レビューの申告（`--rereview`）を読む（GitHub issue #296）."""
+
+    def test_the_flag_in_the_skill_args(self):
+        self.assertIs(rereview([skill("feature-dev:feature-dev"),
+                                skill("code-review:self-review", "--focus x --embed --rereview"),
+                                tool_result(), start()]), True)
+
+    def test_the_flag_in_the_slash_args(self):
+        self.assertIs(rereview([slash("code-review:self-review", "--rereview"), expanded(), start()]), True)
+
+    def test_the_slash_args_count_even_if_the_skill_call_drops_them(self):
+        """slash の本文に従って Skill を呼び直すとき、引数が落ちることがある（slash 側の申告を読む）."""
+        self.assertIs(rereview([slash("code-review:self-review", "--embed --rereview"), expanded(),
+                                skill("code-review:self-review", "--embed"), tool_result(), start()]), True)
+
+    def test_no_flag_is_false(self):
+        self.assertIs(rereview([skill("code-review:self-review", "--focus x --embed"), start()]), False)
+        self.assertIs(rereview([skill("code-review:self-review"), start()]), False)
+        self.assertIs(rereview([slash("code-review:self-review", "--embed"), expanded(), start()]), False)
+        self.assertIs(rereview([prompt("y"), start()]), False, "inline は引数を持たない")
+
+    def test_a_flag_must_be_a_whole_token(self):
+        self.assertIs(rereview([skill("code-review:self-review", "--rereviewed --no-rereview"), start()]),
+                      False)
+
+    def test_a_flag_on_another_skill_is_not_a_declaration(self):
+        self.assertIs(rereview([skill("feature-dev:feature-dev", "--rereview"),
+                                skill("code-review:self-review"), start()]), False)
+
+    def test_the_previous_review_bounds_the_search(self):
+        """同じターンの前の start より前の申告は、次のレビューに持ち越さない."""
+        self.assertIs(rereview([skill("code-review:self-review", "--rereview"), start(),
+                                skill("code-review:self-review", "--embed"), start()]), False)
+
+    def test_a_human_prompt_bounds_the_search(self):
+        self.assertIs(rereview([skill("code-review:self-review", "--rereview"), prompt("続けて"),
+                                start()]), False)
+
+    def test_undecidable_without_a_start(self):
+        self.assertIsNone(rereview([skill("code-review:self-review", "--rereview")]))
+
+
 class CliTest(unittest.TestCase):
     def run_cli(self, path: str) -> dict:
         out = subprocess.run([sys.executable, str(LIB / "invocation.py"), path],
@@ -178,10 +229,11 @@ class CliTest(unittest.TestCase):
                      skill("code-review:self-review"), start()]
             p.write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in lines)
                          + "\nnot json\n", encoding="utf-8")
-            self.assertEqual(self.run_cli(str(p)), {"via": "slash", "parent": None})
+            self.assertEqual(self.run_cli(str(p)), {"via": "slash", "parent": None, "rereview": False})
 
     def test_an_unreadable_transcript_is_unknown(self):
-        self.assertEqual(self.run_cli("/nonexistent/s.jsonl"), {"via": "unknown", "parent": None})
+        self.assertEqual(self.run_cli("/nonexistent/s.jsonl"),
+                         {"via": "unknown", "parent": None, "rereview": None})
 
 
 if __name__ == "__main__":

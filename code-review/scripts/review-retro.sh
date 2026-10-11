@@ -695,7 +695,7 @@ def pct(part, whole):
 # 積み上がり、ゲートの実装バグと運用上の非該当を区別できなくなる
 # `no-md-prose` / `embed` / `not-installed` は Markdown 推敲（`md_polish`）だけの値（#243）。
 # md の変更がある回にだけ意味を持つ層なので、対象が無い回も分母に入れない
-OUT_OF_SCOPE_SKIPS = {"effort", "config", "emergency", "scope",
+OUT_OF_SCOPE_SKIPS = {"effort", "config", "emergency", "scope", "scope-rereview",
                       "no-md-prose", "embed", "not-installed"}
 
 report, signals = [], []
@@ -759,6 +759,28 @@ LAYER_ROWS_MAX = 8
 MAIN_THRESHOLD = "MAJOR"
 
 
+#: 修正を確かめる再レビューの行に付ける印（GitHub issue #296）
+REREVIEW_TAG = "（再レビュー）"
+
+
+def is_rereview(p):
+    """修正を確かめる再レビューの回か（`invocation.rereview` / GitHub issue #296）。
+
+    呼び出し側の申告（self-review の `--rereview`）を publish が transcript から読んで載せる。
+    **鍵が無い回は初回に置く**（申告の仕組みより前の回は区別できない。推定で振り分けない）。
+    """
+    inv = p.get("invocation")
+    return isinstance(inv, dict) and inv.get("rereview") is True
+
+
+def is_main_rereview_key(key):
+    return REREVIEW_TAG not in key
+
+
+REREVIEW_SPLIT_NOTE = ("> `（再レビュー）` の行は修正を確かめる再レビュー（`invocation.rereview` / feature-dev の "
+                       "G-V ループ）。0 件が望ましい回なので世代の行に混ぜず、⚠️ の判定からも外す（#296）")
+
+
 def gen_threshold_of(p):
     """世代ラベルに、主層と違う報告閾値を添える（GitHub issue #277）。
 
@@ -770,6 +792,9 @@ def gen_threshold_of(p):
     過去にさかのぼって動く。現行版の欠落は publish が `payload:severity_threshold` を立てる。
     """
     g = gen_of(p)
+    # 再レビューは閾値によらず 1 行にまとめる（どの閾値でも主層から外れる / #296）
+    if is_rereview(p):
+        return g + REREVIEW_TAG
     t = p.get("severity_threshold")
     return g if t in (None, MAIN_THRESHOLD) else "%s（閾値 %s）" % (g, t)
 
@@ -798,7 +823,7 @@ def apx_layer_of(p):
     """
     key = gen_threshold_of(p)
     e = p.get("effort")
-    if not is_main_threshold_key(key) or e is None or e in MAIN_EFFORTS:
+    if not (is_main_threshold_key(key) and is_main_rereview_key(key)) or e is None or e in MAIN_EFFORTS:
         return key
     return "%s（effort %s）" % (key, "low/medium" if e in ("low", "medium") else e)
 
@@ -991,8 +1016,9 @@ for e in events:
         threshold_missing += 1
     elif e["threshold_lifted"]:
         threshold_recovered += 1
-    key = with_gen(p, "schema>=%d/threshold=%s" % (
-        schema_of(pre, "schema"), p.get("severity_threshold") or "?"))
+    key = with_gen(p, "schema>=%d/threshold=%s%s" % (
+        schema_of(pre, "schema"), p.get("severity_threshold") or "?",
+        "/再レビュー" if is_rereview(p) else ""))
     y = yields.setdefault(key, {"n": 0, "pre": 0, "post": 0})
     y["n"] += 1
     for sev in ("blocker", "critical", "major", "minor"):
@@ -1033,8 +1059,9 @@ for e in events:
         continue
     # **歩留まり（yields）と同じ粒度にする**。片方だけ割ると、隣り合う 2 表のどの行を
     # 分解した数字なのかが対応付かない（#191 のセルフレビュー指摘）
-    key = with_gen(p, "schema>=%d/threshold=%s" % (
-        schema_of(pre, "schema"), p.get("severity_threshold") or "?"))
+    key = with_gen(p, "schema>=%d/threshold=%s%s" % (
+        schema_of(pre, "schema"), p.get("severity_threshold") or "?",
+        "/再レビュー" if is_rereview(p) else ""))
     sp = splits.setdefault(key, {"n": 0, "pre": 0, "below": 0, "post": 0, "judged": 0,
                                  "over": 0, "over_appendix": 0, "over_report": 0, "lower": 0})
     sp["n"] += 1
@@ -1350,6 +1377,10 @@ def layer_stats(field, schema_key, min_schema, value_of=None, major_only_of=None
             st["dropped_unrecorded"] += 1
             continue
         reason = d.get("skip_reason") or None
+        # 再レビューの `scope` は設計どおりの絞り込み。初回の `scope`（#283 が直した不具合の形）と
+        # 同じ鍵で数えると、どちらが起きたのか payload から読めない（GitHub issue #296）
+        if reason == "scope" and is_rereview(e["p"]):
+            reason = "scope-rereview"
         if d.get("fired") is not True and reason in OUT_OF_SCOPE_SKIPS:
             st["dropped_scope"] += 1
             st["skips"][reason] = st["skips"].get(reason, 0) + 1
@@ -2090,7 +2121,8 @@ else:
 _TS_KEYS = ("n", "true_silent", "true_silent_empty", "true_silent_below",
             "true_silent_below_listed", "true_silent_below_over")
 apx_main = {"by_gen": {_k: _v for _k, _v in apx_stats["by_gen"].items()
-                        if is_main_threshold_key(_k) and is_main_effort_key(_k)}}
+                        if is_main_threshold_key(_k) and is_main_effort_key(_k)
+                        and is_main_rereview_key(_k)}}
 for _f in _TS_KEYS:
     apx_main[_f] = sum(_v.get(_f, 0) for _v in apx_main["by_gen"].values())
 _ts_split = {"`%s` 層" % _k: (_v.get("true_silent_empty", 0), _v.get("true_silent_below", 0),
@@ -2143,10 +2175,11 @@ def _ts_breakdown(label):
 
 
 def _excluded_note():
-    """判定から外した件数を、外した理由ごとに添える（#277 / #284）."""
+    """判定から外した件数を、外した理由ごとに添える（#277 / #284 / #296）."""
     parts = []
     for name, is_main, issue in (("閾値が MAJOR でない", is_main_threshold_key, "#277"),
-                                 ("effort が high 未満の", is_main_effort_key, "#284")):
+                                 ("effort が high 未満の", is_main_effort_key, "#284"),
+                                 ("修正を確かめる再レビューの", is_main_rereview_key, "#296")):
         n = sum(_v["n"] for _k, _v in apx_stats["by_gen"].items() if not is_main(_k))
         if n:
             parts.append("%s %d 件は判定から外した（%s）" % (name, n, issue))
@@ -2465,6 +2498,8 @@ if zero_rows:
           "既知の世代と同じバケツに入れない（#169）")
     if not all(is_main_threshold_key(_k) for _k in zero_rows):
         print(THRESHOLD_SPLIT_NOTE)
+    if not all(is_main_rereview_key(_k) for _k in zero_rows):
+        print(REREVIEW_SPLIT_NOTE)
     if len(zero_rows) > 1:
         print()
         print("**世代間で差が出ていたら、コスト側の層別（fleet / 体数 / cache_read）だけでは"
@@ -2857,9 +2892,10 @@ if apx_rows:
           % (len(apx_rows), tot_listed, tot_rec))
     # **世代別の真の空振り**（#214）。#210 の判定基準「20% 未満」を人が引き算せずに読める形。
     # 世代が 1 種しか無い母集団では表を割らない（`with_gen` と同じ方針）。ただし判定から外した行
-    # （閾値・effort）だけの母集団では出す — 表が無いと ⚠️ が黙っている理由が見えない
+    # （閾値・effort・再レビュー）だけの母集団では出す — 表が無いと ⚠️ が黙っている理由が見えない
     # 下の `or` の右辺でしか効かず、そこではキーが 1 個なので all と any は同値
     _all_main = all(is_main_threshold_key(_k) and is_main_effort_key(_k)  # mutation-ok: 上の注記
+                    and is_main_rereview_key(_k)
                     for _k in apx_stats["by_gen"])
     if len(apx_stats["by_gen"]) > 1 or not _all_main:
         print()
@@ -2881,6 +2917,8 @@ if apx_rows:
             print(THRESHOLD_SPLIT_NOTE)
         if not all(is_main_effort_key(_k) for _k in apx_stats["by_gen"]):
             print(EFFORT_SPLIT_NOTE)
+        if not all(is_main_rereview_key(_k) for _k in apx_stats["by_gen"]):
+            print(REREVIEW_SPLIT_NOTE)
         print()
     # **内訳を読ませる**（#210）。混ぜたままだと回復サインがどちらの改善を求めているのか
     # 決まらない。**検出 0 = recall の問題 / 閾値未満のみ = 閾値・付録の方針の問題**

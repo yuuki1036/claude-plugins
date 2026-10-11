@@ -976,18 +976,22 @@ if os.environ.get("REVIEW_TOKENS_WANTED") == "1" and "session-unresolved" in gap
     # 捨てる — 残すと LLM が書いた値が機械計測のふりをして残る（下の `models` と同じ fail-closed）
     for _f in ("tokens", "models", "dispatch"):
         payload.pop(_f, None)
-    payload["invocation"] = {"via": "unknown", "parent": None}
+    payload["invocation"] = {"via": "unknown", "parent": None, "rereview": None}
 elif os.environ.get("REVIEW_TOKENS_WANTED") == "1":
     # **呼び出し経路**（GitHub issue #265）。機械判定の値だけを載せ、呼び出し側が書いた値は捨てる
     try:
         _inv = json.loads(os.environ.get("REVIEW_INVOCATION") or "")
     except ValueError:
         _inv = None
+    # `rereview` は修正を確かめる再レビューの申告（GitHub issue #296）。`1 in (True, False)` が真になるので
+    # 値の集合ではなく型で見る。判定器が古く鍵を持たないときは None（判定できない）
     if not (isinstance(_inv, dict)
             and _inv.get("via") in ("slash", "skill-tool", "inline", "unknown")
-            and (_inv.get("parent") is None or isinstance(_inv.get("parent"), str))):
+            and (_inv.get("parent") is None or isinstance(_inv.get("parent"), str))
+            and (_inv.get("rereview") is None or isinstance(_inv.get("rereview"), bool))):
         _inv = {"via": "unknown", "parent": None}
-    payload["invocation"] = {"via": _inv["via"], "parent": _inv.get("parent")}
+    payload["invocation"] = {"via": _inv["via"], "parent": _inv.get("parent"),
+                             "rereview": _inv.get("rereview")}
     # **定型の判定を載せる**（GitHub issue #250）。gap は定型なしの回にしか立たないので、率の分母
     # （判定できた回）はこのフィールドで数える。呼び出し側が書いた値は捨てる（機械判定の値だけ）
     _tpl = os.environ.get("REVIEW_TEMPLATE_STATE")

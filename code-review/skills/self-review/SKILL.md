@@ -20,7 +20,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @2b85a6c0 -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @26573c3c -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @82c98647 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
 
 ## review との違い
@@ -136,6 +136,10 @@ fi
 `--embed` 引数が指定されている場合は、本 skill が他 plugin（例: feature-dev Phase 6）からプログラム的に呼び出されたと判断する。Step 7 の修正方針確認 AskUserQuestion と Step 8 の worktree teardown 連携を skip し、Step 6 のレポートをそのまま return する。呼び出し元側で findings を集約・後処理する前提。
 
 return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、marker の位置、後方互換）の正本 → orchestration-optional-flows.md `## 15`。AskUserQuestion は呼ばない（呼び出し元の UX を阻害しない）。
+
+**`--rereview`（修正を確かめる再レビューの申告）:**
+
+直前のレビューの指摘を直したあと、直ったかを確かめるために回し直す回であることを申告する（feature-dev の G-V ループが渡す / GitHub issue #296）。**レビューの手順は何も変えない**。publish が transcript からこの引数を読んで payload の `invocation.rereview` に載せるので、SKILL から payload に書かない。retro は再レビューを真の空振り・報告 0 件率・歩留まりの主層から外し、反証・skeptic の `scope` スキップも初回と分けて数える — 0 件が望ましい回を初回と同じ母集団で数えると、1 回の再レビューで ⚠️ の有無が入れ替わる。人が手で直したあとに回し直すときも付けてよい
 
 **`--focus` / `--exclude`（同一セッションでの重複レビュー回避）:**
 

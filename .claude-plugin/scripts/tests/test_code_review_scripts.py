@@ -1510,13 +1510,24 @@ class InvocationPublishTest(TranscriptFixture):
                      self._start())
         self.publish(env=self.env_home())
         self.assertEqual(self.last_payload()["invocation"],
-                         {"via": "skill-tool", "parent": "feature-dev:feature-dev"})
+                         {"via": "skill-tool", "parent": "feature-dev:feature-dev", "rereview": False})
+
+    def test_a_rereview_declaration_is_read_from_the_skill_args(self):
+        """G-V ループが渡す `--rereview` を transcript から読んで載せる（GitHub issue #296）."""
+        self.write_transcript([[0, 5]])
+        self._append(self._tool("Skill", {"skill": "feature-dev:feature-dev"}),
+                     self._tool("Skill", {"skill": "code-review:self-review",
+                                          "args": "--focus error-handling --embed --rereview"}),
+                     self._start())
+        self.publish(env=self.env_home())
+        self.assertIs(self.last_payload()["invocation"]["rereview"], True)
 
     def test_a_route_written_by_the_caller_is_discarded(self):
         self.write_transcript([[0, 5]])
-        self.publish(dict(BASE_PAYLOAD, invocation={"via": "slash", "parent": "x"}),
+        self.publish(dict(BASE_PAYLOAD, invocation={"via": "slash", "parent": "x", "rereview": True}),
                      env=self.env_home())
-        self.assertEqual(self.last_payload()["invocation"], {"via": "unknown", "parent": None},
+        self.assertEqual(self.last_payload()["invocation"],
+                         {"via": "unknown", "parent": None, "rereview": None},
                          "start が無い transcript なのに呼び出し側の値が残っている")
 
     def test_an_unresolved_session_is_unknown(self):
@@ -1524,7 +1535,8 @@ class InvocationPublishTest(TranscriptFixture):
         env = self.env_home()
         del env["CLAUDE_CODE_SESSION_ID"]
         self.publish(env=env)
-        self.assertEqual(self.last_payload()["invocation"], {"via": "unknown", "parent": None})
+        self.assertEqual(self.last_payload()["invocation"],
+                         {"via": "unknown", "parent": None, "rereview": None})
 
     def _publish_with_judge(self, judged: dict) -> dict:
         """判定器（`lib/invocation.py`）の出力を差し替えて publish する.
@@ -1544,16 +1556,31 @@ class InvocationPublishTest(TranscriptFixture):
 
     def test_a_valid_judgement_passes_through(self):
         """前提: stub の値がそのまま載る経路が生きている（下 2 本が fallback を見ていることの裏付け）."""
+        self.assertEqual(self._publish_with_judge({"via": "slash", "parent": "other", "rereview": True}),
+                         {"via": "slash", "parent": "other", "rereview": True})
+
+    def test_a_judge_without_rereview_is_undecided(self):
+        """鍵を持たない判定器（#296 より前の形）は通し、`rereview` は None（判定できない）にする."""
         self.assertEqual(self._publish_with_judge({"via": "slash", "parent": "other"}),
-                         {"via": "slash", "parent": "other"})
+                         {"via": "slash", "parent": "other", "rereview": None})
 
     def test_an_unknown_via_falls_back(self):
         self.assertEqual(self._publish_with_judge({"via": "bogus", "parent": None}),
-                         {"via": "unknown", "parent": None}, "語彙外の via が載っている")
+                         {"via": "unknown", "parent": None, "rereview": None}, "語彙外の via が載っている")
 
     def test_a_non_string_parent_falls_back(self):
         self.assertEqual(self._publish_with_judge({"via": "slash", "parent": 5}),
-                         {"via": "unknown", "parent": None}, "文字列でない parent が載っている")
+                         {"via": "unknown", "parent": None, "rereview": None},
+                         "文字列でない parent が載っている")
+
+    def test_an_integer_rereview_falls_back(self):
+        """`1 in (True, False)` は真になるので、型で弾いていることを確かめる."""
+        self.assertEqual(self._publish_with_judge({"via": "slash", "parent": None, "rereview": 1}),
+                         {"via": "unknown", "parent": None, "rereview": None})
+
+    def test_a_string_rereview_falls_back(self):
+        self.assertEqual(self._publish_with_judge({"via": "slash", "parent": None, "rereview": "true"}),
+                         {"via": "unknown", "parent": None, "rereview": None})
 
 
 class PublishSessionResolutionTest(TranscriptFixture):
@@ -7711,6 +7738,104 @@ class RetroAppendixLayerTest(RetroFixture):
         out = self._out()
         self.assertIn("| opus-4-8（閾値 MINOR） | 3 |", out)
         self.assertNotIn("（effort ", out)
+
+    @staticmethod
+    def _rereview(row: dict, flag=True) -> dict:
+        return dict(row, invocation={"via": "skill-tool", "parent": "feature-dev:feature-dev",
+                                     "rereview": flag})
+
+    def test_rereview_runs_do_not_flip_the_main_layer(self):
+        """修正を確かめる再レビューを主層に混ぜない（GitHub issue #296）.
+
+        #296 の形: 初回だけなら 4/24 = 17% で鳴らないが、0 件の再レビュー 1 回を混ぜると 5/25 = 20% で鳴る.
+        """
+        rows = [self._row("opus-5-5", 0, 0) for _ in range(4)] \
+             + [self._row("opus-5-5", 1, 0) for _ in range(20)] \
+             + [self._rereview(self._row("opus-5-5", 0, 0))]
+        self._events(rows)
+        out = self._out()
+        self.assertNotIn("真の空振り率", self.signals(out))
+        self.assertIn("| opus-5-5 | 24 | 4 | 0 | 4（17%） |", out)
+        self.assertIn("| opus-5-5（再レビュー） | 1 | 1 | 0 | 1（100%） |", out)
+        self.assertIn("`（再レビュー）` の行は修正を確かめる再レビュー", out)
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["appendix_by_gen"]["opus-5-5（再レビュー）"]["n"], 1)
+
+    def test_the_signal_names_the_rereview_exclusion(self):
+        """鳴ったときは、外した再レビューの件数も ⚠️ に添える（#296）."""
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(5)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)] \
+             + [self._rereview(self._row("opus-4-8", 0, 0)) for _ in range(2)]
+        self._events(rows)
+        sig = self.signals(self._out())
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", sig)
+        self.assertIn("修正を確かめる再レビューの 2 件は判定から外した（#296）", sig)
+
+    def test_an_undeclared_run_stays_in_the_main_layer(self):
+        """`rereview` が false・null・鍵なし・invocation なしの回は初回として主層に置く（推定で振り分けない）."""
+        base = self._row("opus-4-8", 0, 0)
+        rows = [self._rereview(base, False), self._rereview(base, None), self._rereview(base, 1),
+                dict(base, invocation={"via": "inline", "parent": None}), dict(base)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", out)
+        self.assertNotIn("（再レビュー）", out)
+
+    def test_a_rereview_only_population_still_shows_the_table(self):
+        """判定から外した行だけの母集団でも表を出す（⚠️ が黙っている理由が見えるように）."""
+        self._events([self._rereview(self._row("opus-5-5", 0, 0)) for _ in range(3)])
+        self.assertIn("| opus-5-5（再レビュー） | 3 |", self._out())
+
+    def test_a_rereview_is_one_row_whatever_its_threshold_or_effort(self):
+        """再レビューは閾値・effort で割り直さない（どれでも主層から外れる）."""
+        self._events([self._rereview(dict(self._row("opus-4-8", 1, 0), severity_threshold="MINOR")),
+                      self._rereview(dict(self._row("opus-4-8", 1, 0), effort="medium")),
+                      self._row("opus-4-8", 1, 0)])
+        out = self._out()
+        self.assertIn("| opus-4-8（再レビュー） | 2 |", out)
+        self.assertNotIn("（閾値 ", out)
+        self.assertNotIn("（effort ", out)
+
+    _NOTE = "`（再レビュー）` の行は修正を確かめる再レビュー"
+
+    def _counted(self, row: dict) -> dict:
+        """報告 0 件率・歩留まり・検出内訳の母集団に入る形（`pre_adjust_counts` と `below_threshold_counts`）."""
+        sevs = ("blocker", "critical", "major", "minor")
+        return dict(row, severity_threshold="MAJOR",
+                    pre_adjust_counts=dict({k: 0 for k in sevs}, schema=2, major=1),
+                    below_threshold_counts=dict({k: 0 for k in sevs}, schema=1))
+
+    def test_rereview_rows_are_split_in_the_zero_rate_yield_and_split_tables(self):
+        """報告 0 件率・歩留まり・検出内訳も同じ母集団の切り方にする（#296）.
+
+        件数を初回 2・再レビュー 1 と非対称にする（同数だと、印を付ける側を取り違えても行の文字列が揃う）.
+        """
+        self._events([self._counted(self._row("opus-4-8", 1, 0)) for _ in range(2)]
+                     + [self._rereview(self._counted(self._row("opus-4-8", 0, 0)))])
+        out = self._out()
+        self.assertIn("| opus-4-8 | 2 | 0（0%） |", out)
+        self.assertIn("| opus-4-8（再レビュー） | 1 | 1（100%） |", out)
+        for tail in ("検出", "本文を書いた"):
+            with self.subTest(table=tail):
+                self.assertIn("- schema>=2/threshold=MAJOR: n=2 / %s" % tail, out)
+                self.assertIn("- schema>=2/threshold=MAJOR/再レビュー: n=1 / %s" % tail, out)
+        self.assertEqual(out.count(self._NOTE), 2, "報告 0 件率と付録の両方の表に注記が要る")
+
+    def test_no_rereview_note_without_rereview_rows(self):
+        """黙る条件: 再レビューの回が無ければ、どちらの表にも注記を出さない."""
+        self._events([self._counted(self._row("opus-4-8", 1, 0)),
+                      dict(self._counted(self._row("opus-4-8", 1, 0)), effort="medium")])
+        self.assertNotIn(self._NOTE, self._out())
+
+    def test_a_rereview_scope_skip_is_counted_apart(self):
+        """反証の `scope` スキップを、再レビューと初回で分けて数える（#296）."""
+        av = {"fired": False, "skip_reason": "scope", "gate_schema": 2, "calibration_schema": 3}
+        self._events([dict(self._row("opus-5-5", 1, 0), adversarial_verify=dict(av)),
+                      self._rereview(dict(self._row("opus-5-5", 1, 0), adversarial_verify=dict(av)))])
+        line = next(l for l in self._out().splitlines() if l.startswith("  - 反証 skip 理由:"))
+        self.assertIn("scope=1", line)
+        self.assertIn("scope-rereview=1", line)
 
     def test_a_single_main_layer_keeps_the_table_folded(self):
         """世代が 1 種で判定から外した行も無いなら、表を割らない（`with_gen` と同じ方針）."""

@@ -18,6 +18,12 @@ slash の回を `skill-tool` と取り違える。遡るのは人間の発話（
 `parent` は start より前に最後に起動した code-review 以外の skill 名（`Skill` 呼び出しと slash の両方）。
 値はこのマーケットプレイスの skill 名だけにし、それ以外は `other` にする（計測ストアの語彙に載らない
 自由な名前を送らない）。
+
+`rereview` は、`via` を決めるのと同じ範囲にある code-review の起動（slash の `<command-args>` と
+`Skill` の `args`）のどれかが `--rereview` を持つか（GitHub issue #296）。修正を確かめる再レビュー
+（feature-dev の G-V ループ）は 0 件が望ましい回なのに、初回と同じ母集団で数えられていた。推定ではなく
+呼び出し側の申告を読む — 「同じセッションの 2 回目で `--focus` 付き」は、手で観点を絞った回も拾う。
+start が無い回は `None`（判定できない）。SKILL を経由しない回は引数を持たないので `False`。
 """
 
 from __future__ import annotations
@@ -45,6 +51,9 @@ FORMER_PLUGINS = frozenset(("claude-meta",))
 MARKETPLACE_PLUGINS = CURRENT_PLUGINS | FORMER_PLUGINS
 _NAME_RE = re.compile(r"([a-z0-9-]+):([a-z0-9-]+)")
 _SLASH_RE = re.compile(r"<command-name>/([^<\s]+)</command-name>")
+_ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.S)
+#: 再レビューの申告（self-review の引数。feature-dev の G-V ループが渡す）
+REREVIEW_FLAG = "--rereview"
 
 
 def _user_text(entry: dict) -> str | None:
@@ -68,11 +77,21 @@ def _slash(text: str) -> str | None:
 
 
 def _skill_calls(entry: dict):
+    for name, _ in _skill_calls_with_args(entry):
+        yield name
+
+
+def _skill_calls_with_args(entry: dict):
     for b in _blocks(entry):
         if b.get("type") == "tool_use" and b.get("name") == "Skill":
-            name = (b.get("input") or {}).get("skill")
+            inp = b.get("input") or {}
+            name, args = inp.get("skill"), inp.get("args")
             if isinstance(name, str):
-                yield name
+                yield name, args if isinstance(args, str) else ""
+
+
+def _declares_rereview(args: str) -> bool:
+    return REREVIEW_FLAG in args.split()
 
 
 def _is_code_review(name: str) -> bool:
@@ -85,27 +104,31 @@ def _allowlisted(name: str) -> str:
 
 
 def judge_entries(entries: list) -> dict:
-    """{"via": ..., "parent": ...} を返す（`entries` は transcript の行を json.loads したもの）."""
+    """{"via": ..., "parent": ..., "rereview": ...} を返す（`entries` は transcript の行を json.loads したもの）."""
     starts = [i for i, e in enumerate(entries)
               if e.get("type") == "assistant"
               and any((c := _command(b)) is not None and START_RE.search(c) for b in _blocks(e))]
     if not starts:
-        return {"via": "unknown", "parent": None}
+        return {"via": "unknown", "parent": None, "rereview": None}
     start, floor = starts[-1], (starts[-2] if len(starts) > 1 else -1)
 
-    via, skill_seen = "inline", False
+    via, skill_seen, rereview = "inline", False, False
     for e in reversed(entries[floor + 1:start]):
         text = _user_text(e)
         if text is not None:
             cmd = _slash(text)
             if cmd is not None and _is_code_review(cmd):
                 via = "slash"
+                m = _ARGS_RE.search(text)
+                rereview = rereview or bool(m and _declares_rereview(m.group(1)))
                 break
             # 人間の発話・他の slash が境界。通知（`<task-notification>` 等）は発話ではないので越える
             if cmd is not None or not text.lstrip().startswith("<"):
                 break
-        if any(_is_code_review(n) for n in _skill_calls(e)):
-            skill_seen = True
+        for name, args in _skill_calls_with_args(e):
+            if _is_code_review(name):
+                skill_seen = True
+                rereview = rereview or _declares_rereview(args)
     if via != "slash" and skill_seen:
         via = "skill-tool"
 
@@ -122,7 +145,7 @@ def judge_entries(entries: list) -> dict:
         if others:
             parent = _allowlisted(others[-1])
             break
-    return {"via": via, "parent": parent}
+    return {"via": via, "parent": parent, "rereview": rereview}
 
 
 def judge(path: str) -> dict:
@@ -140,7 +163,7 @@ def judge(path: str) -> dict:
                 if isinstance(e, dict):
                     entries.append(e)
     except OSError:
-        return {"via": "unknown", "parent": None}
+        return {"via": "unknown", "parent": None, "rereview": None}
     return judge_entries(entries)
 
 
