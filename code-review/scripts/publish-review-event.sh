@@ -1381,6 +1381,13 @@ else
   echo "WARN: safe-hook.sh を読み込めず publish をスキップした" >&2
 fi
 
+# ---- 前回の指摘への修正の記録を消す（self-review のみ / GitHub issue #298） ----------
+# この回の Step 1 が照合して reviewer に渡したので、次の回へ持ち越さない。この回の Step 7 で修正を
+# 選べば、その分を記録し直す（Step 7 は publish の後）。publish の成否には依らない
+if [ "$PLUGIN" = "code-review:self-review" ]; then
+  bash "$HERE/prior-fixes.sh" clear >/dev/null 2>&1 || true
+fi
+
 # ---- self-review Step 7 で聞く質問（publish の成否に関わらず出す / GitHub issue #279） ----
 # 質問の要否は payload の件数だけで決まるので、ここで機械的に出す。記憶で選び直すと、指摘の
 # 修正方針だけを聞いて Markdown 推敲の採否を落とした実例がある。質問の文面の正本は self-review

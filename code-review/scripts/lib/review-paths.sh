@@ -196,7 +196,7 @@ review_diff_keys() {
   printf '%s %s' "$digest" "$files"
 }
 
-# review_path <diff|prctx|timing|agentctx|oracles|size|corelist|pastrev>
+# review_path <diff|prctx|timing|agentctx|oracles|size|corelist|pastrev|priorfix>
 review_path() {
   local kind="$1" suffix=""
   [ -n "${REVIEW_PR:-}" ] && suffix="-pr${REVIEW_PR}"
@@ -218,6 +218,10 @@ review_path() {
     corelist) printf '%s/review-corelist-%s%s.txt' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     # pastrev: 同じファイルを触った過去の merged PR のレビューコメント（`fetch-past-reviews.sh --save`）
     pastrev) printf '%s/review-pastrev-%s%s.md' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
+    # priorfix: 前回の self-review で修正を選んだ指摘（`prior-fixes.sh`）。**次のセッションの self-review が
+    # 読む**ので、セッション id ではなく作業ツリーで鍵を作る（上の種別はどれもセッション内で使い切る / GitHub issue #298）
+    priorfix) printf '%s/review-priorfix-%s.json' "$REVIEW_TMPROOT" \
+                "$(printf %s "$REVIEW_WT" | cksum | cut -d' ' -f1)" ;;
     *) echo "FATAL: 未知の一時ファイル種別: $kind" >&2; return 2 ;;
   esac
 }

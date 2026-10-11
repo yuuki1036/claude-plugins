@@ -52,6 +52,8 @@ REPRESENTATIVES = {
         "test_finds_the_transcript_of_the_main_repository_from_a_worktree",
     "test_code_review_past_reviews.py":
         "test_code_review_past_reviews.PastReviewsTest.test_origin_is_preferred_over_a_stale_local_base",
+    "test_code_review_prior_fixes.py":
+        "test_code_review_prior_fixes.PriorFixesTest.test_a_recorded_fix_in_the_diff_is_listed",
     "hook_harness.py":
         "test_dev_workflow_hooks.OnCommitTest.test_publishes_commit_created",
     "test_dev_workflow_scripts.py":

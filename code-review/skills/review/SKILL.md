@@ -20,7 +20,7 @@ allowed-tools:
 # Review
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @2b85a6c0 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @a757845f -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @82c98647 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
 

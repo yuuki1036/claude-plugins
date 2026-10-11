@@ -19,7 +19,7 @@ allowed-tools:
 # Self Review
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @2b85a6c0 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @a757845f -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @82c98647 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
 
@@ -103,18 +103,28 @@ if [ -n "$BASE" ]; then
   # 同じファイルを触った過去の merged PR のレビューコメント（GitHub issue #286）。triage-signals.sh が
   # 書いた core の一覧を読むのでこの順序。コメントがあったときだけパスを 1 行出す
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-past-reviews.sh" --base "$BASE" --save
+
+  # 前回の self-review で修正を選んだ指摘のうち、今回の diff に入った分（GitHub issue #298）。
+  # triage-signals.sh が書いた diff を読むのでこの順序。該当が無ければ何も出さない
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/prior-fixes.sh" match
 else
-  echo "FATAL: base branch を特定できない（後続 4 本はスキップした）"
+  echo "FATAL: base branch を特定できない（後続 5 本はスキップした）"
 fi
 ```
 
 **`fetch-past-reviews.sh` がパスを出したら、Step 4 の共通ブロックに `past_reviews_file=<そのパス>` として入れる**（読み方の規約は reviewer-common.md「過去 PR の指摘」）。何も出さない回（コメント 0 件・GitHub に届かない repo）は入れない。`skip:` の 1 行は欠損観点ではないので `missing_coverage` に記録しない
 
-**`set -e` を張らないこと**、そして**分岐を `[ 条件 ] && コマンド` で書かないこと**（どちらも CLAUDE.md Gotchas の ERR trap family）。base が決まらないとき `base-branch.sh` は exit 2 を返すので、`set -e` 下では `BASE_OUT=$(...)` の行でシェルごと落ち、**以降の 4 本を実行せずに終わる**。`if` なら BASE が空でも 0 で終わり、`FATAL:` の 1 行が出力に残る。
+**`## prior-fixes` が出たら（前回の指摘への修正 / GitHub issue #298）**: 前回の self-review の Step 7 で修正を選んだ指摘のうち、今回の diff が触ったファイルの分（`file:line<TAB>観点<TAB>要旨`。行番号は指摘した時点のもの）。指摘を受けた修正は、指摘されたケースだけに合わせた狭い直し方になりやすく、最も見直しが要る行なのに、「前回以降」に絞ると検証済みに入ってどのレビューにも見られなかった（実測: 5 回の self-review で報告 0 件にした PR が、外部レビューで、直したフラグが同じ形の別の 2 ケースを拾っていないと指摘された）。次の 3 つを守る:
+
+- **絞り込みの例外**: `--focus` / `--exclude` や共通ブロックのスコープ（「前回以降」など）で範囲を絞った回でも、この行を検証済み（`already verified`）に入れない。各行の観点の reviewer を構成に入れ（`--focus` に無い観点でも入れる。実効上限に収まらなければ既存の reviewer に相乗りさせる）、その reviewer の担当ファイルに当該ファイルを含める
+- Step 4 の共通ブロックに `prior_fixes:` として各行をそのまま並べる（読み方は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「前回の指摘への修正」）
+- Step 6 のレポートの `**前回の指摘への修正**` の行に、確認対象に戻した件数と観点を出す
+
+**`set -e` を張らないこと**、そして**分岐を `[ 条件 ] && コマンド` で書かないこと**（どちらも CLAUDE.md Gotchas の ERR trap family）。base が決まらないとき `base-branch.sh` は exit 2 を返すので、`set -e` 下では `BASE_OUT=$(...)` の行でシェルごと落ち、**以降の 5 本を実行せずに終わる**。`if` なら BASE が空でも 0 で終わり、`FATAL:` の 1 行が出力に残る。
 
 `base_source=` が `reflog` なら、このブランチを作った起点（統合ブランチ等）を base にしている。`default` なら起点が分からず default branch に倒した — 統合ブランチから切ったブランチでは、統合ブランチの他の変更まで対象に混ざるので、Phase 0 の出力にこの 1 行を載せる。
 
-`FATAL:` が出たら base branch を特定できていない（後続 4 本は走っていない）。ユーザーに base branch を確認してから呼び直す。
+`FATAL:` が出たら base branch を特定できていない（後続 5 本は走っていない）。ユーザーに base branch を確認してから呼び直す。
 
 **diff 全文をメインコンテキストに載せない。** `triage-signals.sh` が diff（コミット済み + 未コミット）をファイルへ保存し、Phase 0 に必要な**事実だけ**を compact に出力する。diff は reviewer / explorer へ**パスで渡す**（本文を転記しない。orchestration-guide.md `## 3.5`）。
 
@@ -150,7 +160,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 - **値は triage-guide.md `## 3` の観点判定表のキー（＝ `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` だけで、Markdown 推敲を止める。観点ではないので `--focus` には書けない）。**`md-polish` はスコープの絞り込みに数えない** — 本ファイルと参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、`md-polish` 以外の値を 1 つ以上指定した場合だけを指す。`--exclude md-polish` 単独の回は、推敲を止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える
 
 適用先:
-- **Phase 0 (Step 2)**: `--focus` 指定時は該当観点の reviewer のみ構成する（最小保証の reviewer-bugs / reviewer-claude-md も `--focus` に含まれない限り起動しない）。`--exclude` 指定時は該当観点の reviewer を構成から外す
+- **Phase 0 (Step 2)**: `--focus` 指定時は該当観点の reviewer のみ構成する（最小保証の reviewer-bugs / reviewer-claude-md も `--focus` に含まれない限り起動しない）。`--exclude` 指定時は該当観点の reviewer を構成から外す。**例外は Step 1 の `## prior-fixes` の行**（前回の指摘への修正）で、絞り込みの外に置く
 - **reviewer 起動時 (Step 4)**: 各 reviewer プロンプトに以下を注入する
 
   ```
@@ -420,6 +430,7 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
   ※ reviewer の effort と動的ラウンド（meta / skeptic / 反証ゲート）は**実行時 effort に連動**する。skill frontmatter の effort はオーケストレーター用で別枠
 **動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行（N 件追加）| スキップ理由（`effort` / `config` / `no-high-severity` / `size-tier`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/scope）| 非該当（surface なし）**← payload の `recall_skeptic.skip_reason` は `"no-surface"`。`fired=false` なので `null` にしない**} / 反証 {対象 N 件（うち meta 由来の追加バッチ M 件）| スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
+**前回の指摘への修正**: {Step 1 で `## prior-fixes` が出た回: `N 箇所を確認対象に戻した（観点: <キー>, …）` | 出なかった回はこの行を省く}（GitHub issue #298。絞り込んだ回でも、前回の指摘で入れた修正を見たかが読み手に見えるように）
 **仕様整合**: {spec-compliance を起動した回: `<仕様ソース>`（Issue / session-context / knowledge / `--spec`）と照合し、仕様違反 N 件 | 起動しなかった回: `仕様ソースなし` か `規模キャップで未起動`}（spec-compliance の結論を 1 行で。起動の有無が読み手に見えないと、指摘 0 件が「仕様どおり」と読まれる）
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{**スキップ時もこの行を出す**（書式の正本は orchestration-dynamic-rounds.md `## 10` 手順 4）。`no-eligible-findings` は `未実施（対象帯に該当なし。MAJOR 以下の severity は較正されていない）` と書く — 「対象 0 件」は「検証したが問題なし」と読まれる}
 
@@ -549,6 +560,16 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 - **すべて修正**: 全指摘を一覧化し、ファイルごとにまとめて修正を実施する
 - **BLOCKER/CRITICAL のみ**: 該当 severity の指摘のみ再表示し、ファイルごとにまとめて修正を実施する
 - **このまま**: 完了（BLOCKER 指摘が 1 件以上残っている場合は「BLOCKER 指摘を残したままコミットしますか？」と AskUserQuestion で再確認する）
+
+**修正した指摘を記録する（GitHub issue #298）**: 「すべて修正」「BLOCKER/CRITICAL のみ」で修正を終えたら、修正した指摘を次の self-review に渡す。次の回の Step 1 が今回の diff と照合し、絞り込んだ回でも検証済みにしない（Step 1 の `## prior-fixes`）。`file` は repo のルート相対、`focus` は観点判定表のキー、`title` は指摘の要旨:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/prior-fixes.sh" record <<'JSON'
+[{"file": "src/a.ts", "line": 42, "focus": "bug-detection", "title": "結果の種類 X のときだけ確認表示を下げる"}]
+JSON
+```
+
+「このまま」の回は記録しない（前回の記録は publish が消している）。`--embed` の回は Step 7 自体を通らないので記録しない（feature-dev の G-V ループは、直した観点を `--focus` と `--rereview` で自分で見直す）
 
 **コメント推敲（B 系統）の適用**: 質問 2 で「適用する」を選んだときは、（A 系統の指摘修正がある場合はそれを終えた後に）`## コメント推敲提案` ブロック（Step 6 で出力済み）を適用する。**質問 1 の回答（「このまま」を含む）とは独立に、質問 2 の回答だけで決める**。`code-review` がインストールされているので `Skill` tool で `code-review:comment-polish` を呼ぶ:
 - 提案を一時ファイル（例: `.claude/.comment-polish-findings.txt`）に書き出してから、`comment-polish --embed --from-findings <path>`（+ 現在の base / `--staged` があれば同値）で起動する
