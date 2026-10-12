@@ -114,11 +114,7 @@ fi
 
 **`fetch-past-reviews.sh` がパスを出したら、Step 4 の共通ブロックに `past_reviews_file=<そのパス>` として入れる**（読み方の規約は reviewer-common.md「過去 PR の指摘」）。何も出さない回（コメント 0 件・GitHub に届かない repo）は入れない。`skip:` の 1 行は欠損観点ではないので `missing_coverage` に記録しない
 
-**`## prior-fixes` が出たら（前回の指摘への修正 / GitHub issue #298）**: 前回の self-review の Step 7 で修正を選んだ指摘のうち、今回の diff が触ったファイルの分（`file:line<TAB>観点<TAB>要旨`。行番号は指摘した時点のもの）。指摘を受けた修正は、指摘されたケースだけに合わせた狭い直し方になりやすく、最も見直しが要る行なのに、「前回以降」に絞ると検証済みに入ってどのレビューにも見られなかった（実測: 5 回の self-review で報告 0 件にした PR が、外部レビューで、直したフラグが同じ形の別の 2 ケースを拾っていないと指摘された）。次の 3 つを守る:
-
-- **絞り込みの例外**: `--focus` / `--exclude` や共通ブロックのスコープ（「前回以降」など）で範囲を絞った回でも、この行を検証済み（`already verified`）に入れない。各行の観点の reviewer を構成に入れ（`--focus` に無い観点でも入れる。実効上限に収まらなければ既存の reviewer に相乗りさせる）、その reviewer の担当ファイルに当該ファイルを含める
-- Step 4 の共通ブロックに `prior_fixes:` として各行をそのまま並べる（読み方は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「前回の指摘への修正」）
-- Step 6 のレポートの `**前回の指摘への修正**` の行に、確認対象に戻した件数と観点を出す
+**`## prior-fixes` が出たら（前回の指摘への修正 / GitHub issue #298）** → Read `${CLAUDE_PLUGIN_ROOT}/references/prior-fixes-guide.md` の 1 節。範囲を絞った回でもこの行は検証済みにせず、その観点の reviewer に割り当て、共通ブロックに `prior_fixes:` として渡す（出なければ読まない）
 
 **`set -e` を張らないこと**、そして**分岐を `[ 条件 ] && コマンド` で書かないこと**（どちらも CLAUDE.md Gotchas の ERR trap family）。base が決まらないとき `base-branch.sh` は exit 2 を返すので、`set -e` 下では `BASE_OUT=$(...)` の行でシェルごと落ち、**以降の 5 本を実行せずに終わる**。`if` なら BASE が空でも 0 で終わり、`FATAL:` の 1 行が出力に残る。
 
@@ -561,7 +557,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 - **BLOCKER/CRITICAL のみ**: 該当 severity の指摘のみ再表示し、ファイルごとにまとめて修正を実施する
 - **このまま**: 完了（BLOCKER 指摘が 1 件以上残っている場合は「BLOCKER 指摘を残したままコミットしますか？」と AskUserQuestion で再確認する）
 
-**修正した指摘を記録する（GitHub issue #298）**: 「すべて修正」「BLOCKER/CRITICAL のみ」で修正を終えたら、修正した指摘を次の self-review に渡す。次の回の Step 1 が今回の diff と照合し、絞り込んだ回でも検証済みにしない（Step 1 の `## prior-fixes`）。`file` は repo のルート相対、`focus` は観点判定表のキー、`title` は指摘の要旨:
+**修正した指摘を記録する（GitHub issue #298）**: 「すべて修正」「BLOCKER/CRITICAL のみ」で修正を終えたら、修正した指摘を次の self-review に渡す（`file` は repo のルート相対、`focus` は観点判定表のキー、`title` は指摘の要旨。扱いの詳細は `${CLAUDE_PLUGIN_ROOT}/references/prior-fixes-guide.md` の 2・3 節）:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/prior-fixes.sh" record <<'JSON'
@@ -569,7 +565,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/prior-fixes.sh" record <<'JSON'
 JSON
 ```
 
-「このまま」の回は記録しない（今回照合した分は publish が記録から消している。今回の diff に入らなかった分は残る）。`--embed` の回は Step 7 自体を通らないので記録しない（feature-dev の G-V ループは、直した観点を `--focus` と `--rereview` で自分で見直す）
+「このまま」の回と `--embed` の回は記録しない。
 
 **コメント推敲（B 系統）の適用**: 質問 2 で「適用する」を選んだときは、（A 系統の指摘修正がある場合はそれを終えた後に）`## コメント推敲提案` ブロック（Step 6 で出力済み）を適用する。**質問 1 の回答（「このまま」を含む）とは独立に、質問 2 の回答だけで決める**。`code-review` がインストールされているので `Skill` tool で `code-review:comment-polish` を呼ぶ:
 - 提案を一時ファイル（例: `.claude/.comment-polish-findings.txt`）に書き出してから、`comment-polish --embed --from-findings <path>`（+ 現在の base / `--staged` があれば同値）で起動する

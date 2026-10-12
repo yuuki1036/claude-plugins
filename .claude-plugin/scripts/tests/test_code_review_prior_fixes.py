@@ -251,6 +251,20 @@ class PriorFixesTest(PriorFixesFixture):
         self.prior("clear")
         self.assertTrue(__import__("os").path.exists(self.record_path()), "detached HEAD の clear が記録を消した")
 
+    def test_an_unwritable_record_warns_and_exits_1(self):
+        """記録を書けない回は traceback ではなく WARN と exit 1（終了コードの約束どおり）.
+
+        一時ディレクトリの親を通常ファイルにして作れなくする（chmod は root で効かないので使わない）.
+        """
+        blocker = self.root / "not-a-dir"
+        blocker.write_text("x", encoding="utf-8")
+        env = self._env(TMPDIR=str(blocker / "sub"))
+        r = subprocess.run(["bash", str(PRIOR), "record"], cwd=self.root, input=json.dumps([self.FIX_A]),
+                           capture_output=True, text=True, env=env, timeout=60)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("WARN", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
     def test_wrong_argument_counts_are_usage_errors(self):
         """呼び出し口（prior-fixes.sh）を通らない呼び方でも落ちずに usage を返す."""
         lib = PLUGIN / "scripts" / "lib" / "prior_fixes.py"

@@ -10,7 +10,7 @@
 # match は triage-signals.sh が書いた diff（`review_path diff`）を読む。本体は lib/prior_fixes.py。
 #
 # 終了コード: 0 = 正常（記録が無い・別ブランチ・diff に入っていない回は何も出さずに 0）/
-# 2 = 引数・入力の誤り
+# 1 = 記録を書けない（WARN を出す。レビューは続けてよい）/ 2 = 引数・入力の誤り
 set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

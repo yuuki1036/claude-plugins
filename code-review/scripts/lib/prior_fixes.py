@@ -123,7 +123,12 @@ def record(path: str, branch: str, root: str, text: str) -> int:
     else:
         # 修正しなかった回・渡した全件が無効だった回は、このブランチの前回の分も残さない
         data["branches"].pop(branch, None)
-    _save(path, data)
+    try:
+        _save(path, data)
+    except OSError as e:
+        # 一時ディレクトリを作れない・書けない回。記録が無いだけで次の回は照合を飛ばすので、レビューは止めない
+        print("WARN: 前回の指摘への修正を記録できない（%s: %s）" % (path, e), file=sys.stderr)
+        return 1
     print("recorded=%d" % len(fixes))
     return 0
 
@@ -193,7 +198,11 @@ def clear(path: str, branch: str, diff: str) -> int:
         data["branches"][branch]["fixes"] = rest
     else:
         data["branches"].pop(branch, None)
-    _save(path, data)
+    try:
+        _save(path, data)
+    except OSError as e:
+        print("WARN: 前回の指摘への修正の記録を書き換えられない（%s: %s）" % (path, e), file=sys.stderr)
+        return 1
     return 0
 
 

@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.155.1] - 2026-10-12
+
+### Fixed
+
+- **前回の指摘への修正の記録（#298）を書けなかった回が、traceback で終わっていた**。`prior-fixes.sh` の終了コードは
+  0 / 2 の約束なのに、一時ディレクトリを作れない回は python の例外で exit 1 になっていた。`WARN:` を出して exit 1
+  で終わり、終了コードの説明に 1（記録を書けない。レビューは続けてよい）を足した
+- **publish が最後まで通らなかった回は記録が消えないことを書いた**。SKILL.md は「publish が消している」としていたが、
+  payload の不備で止まった回と `--dry-run` の回は消えず、照合済みの行が次の回にもう一度出る（害は reviewer が
+  余分に見るだけ）
+
+### Changed
+
+- self-review の SKILL.md にあった「`## prior-fixes` が出た回」と「記録する回」の詳しい扱いを
+  `references/prior-fixes-guide.md` に移した。出た回・修正を選んだ回だけ読めば足りる内容で、SKILL.md は 500 行を
+  超えていた
+
+いずれも 2.154.1 の self-review（#297 の計測 1 回目）で付録に落ちた MINOR。
+
 ## [2.155.0] - 2026-10-12
 
 ### Changed
