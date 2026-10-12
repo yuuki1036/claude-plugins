@@ -214,7 +214,7 @@ Step 1 で Read した PR コンテキスト（説明・issue コメント・レ
 **実効上限 = min(effort 上限, 規模キャップ)**（体数の正本: triage-guide.md `## 7` / `## 6.2`）。**2 系統を必ず両方適用する**（effort 上限だけを見ると、小 PR に上限いっぱいの体数が張り付いて所要時間が数倍に膨らむ。GitHub issue #96 の実測は core 3 ファイル `+22 -13` の PR に 17 体 / 130 分）。
 
 第 1 系統 — **effort 上限**（現在の effort = `${CLAUDE_EFFORT}`）:
-- `low` / `medium`: explorer 2 体、reviewer 4 体、specialist 3 体（束ね起動）（最小保証は維持）。深掘りより速度優先
+- `low` / `medium`: explorer 2 体、reviewer 4 体、specialist 3 体（束ね起動）（最小保証は維持）。深掘りより速度優先。**設計系の観点（layer-responsibility / cross-cutting / type-design / pattern-consistency）は 1 体にまとめて先に枠を取る**（triage-guide.md `## 7` の設計バンドル）
 - `high`（既定）: explorer 4 体、reviewer 6 体、specialist 3 体（束ね起動）。**冗長ペアは組まない**（ペア条件成立時は Angle A/B を 1 体に内挿）。上限を超える観点数は近接観点のバンドルで可能な限り吸収し、それでも収まらない観点は `missing_coverage` に必ず記録する（容量の算式は triage-guide.md `## 7`。脱落を silent にしない）
 - `xhigh` / `max`: explorer 6 体、reviewer 10 体、specialist 6 体を full に使い、冗長ペアを積極投入
 

@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.155.0] - 2026-10-12
+
+### Changed
+
+- **effort low / medium で、設計系の観点を 1 体にまとめて必ず枠を取るようにした**。medium の reviewer 上限 4 体では、
+  最小保証の 2 体と単独の layer-responsibility で 3 枠が埋まり、残り 1 枠を test-quality / error-handling /
+  comment-accuracy と取り合って、設計・責務・命名の観点が落ちていた（opus-5-5・medium の 32 回で cross-cutting 6 回・
+  type-design 4 回が欠損）。layer-responsibility / cross-cutting / type-design / pattern-consistency のうち起動
+  条件を満たしたものを「設計バンドル」として 1 体にまとめ（この束ねだけ 4 観点まで）、先に枠を取る。low / medium
+  では layer-responsibility の単独維持を外す。high 以上は変えない
+
 ## [2.154.2] - 2026-10-12
 
 ### Fixed

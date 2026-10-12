@@ -229,7 +229,7 @@ diff の特性を分析し、必要なエージェントタイプを判定する
 - `--focus` / `--exclude` でスコープを絞った実行では、そもそも構成が観点指定で決まるため規模キャップは追加で効かせない（指定観点は必ず起動する）
 
 第 1 系統 — **effort 上限**（現在の effort = `${CLAUDE_EFFORT}`）:
-- `low` / `medium`: explorer 2 体、reviewer 4 体、specialist 3 体（束ね起動）（最小保証は維持）。深掘りより速度優先
+- `low` / `medium`: explorer 2 体、reviewer 4 体、specialist 3 体（束ね起動）（最小保証は維持）。深掘りより速度優先。**設計系の観点（layer-responsibility / cross-cutting / type-design / pattern-consistency）は 1 体にまとめて先に枠を取る**（triage-guide.md `## 7` の設計バンドル）
 - `high`（既定）: explorer 4 体、reviewer 6 体、specialist 3 体（束ね起動）。**冗長ペアは組まない**（ペア条件成立時は Angle A/B を 1 体に内挿）。上限を超える観点数は近接観点のバンドルで可能な限り吸収し、それでも収まらない観点は `missing_coverage` に必ず記録する（容量の算式は triage-guide.md `## 7`。脱落を silent にしない）
 - `xhigh` / `max`: explorer 6 体、reviewer 10 体、specialist 6 体を full に使い、冗長ペアを積極投入
 
