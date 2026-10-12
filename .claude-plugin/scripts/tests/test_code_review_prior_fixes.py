@@ -219,6 +219,38 @@ class PriorFixesTest(PriorFixesFixture):
                 self.assertEqual((r.returncode, r.stdout), (0, ""))
                 self.assertIn("WARN", r.stderr)
 
+    def test_paths_are_taken_from_the_file_header_lines(self):
+        """` b/` を含むパス・引用符で囲まれるパス・削除したファイルも照合する（`diff --git` 行から取らない）."""
+        self.write("src/a b/c.ts", "keep\n")
+        self.write("src/gone.ts", "keep\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.record([{"file": "src/a b/c.ts", "line": 1, "focus": "x", "title": "空白と b/"},
+                     {"file": "src/q\"uote.ts", "line": 1, "focus": "x", "title": "引用符"},
+                     {"file": "src/gone.ts", "line": 1, "focus": "x", "title": "削除"}])
+        self.write("src/a b/c.ts", "changed\n")
+        self.write("src/q\"uote.ts", "new\n")
+        (self.root / "src" / "gone.ts").unlink()
+        out = self.match()
+        self.assertIn("recorded=3 in_diff=3", out)
+        self.assertIn("src/a b/c.ts:1", out)
+        self.assertIn('src/q"uote.ts:1', out)
+        self.assertIn("src/gone.ts:1", out)
+
+    def test_detached_head_does_nothing(self):
+        """detached HEAD ではブランチ名が常に "HEAD" になるので、記録も照合もしない."""
+        self.git("checkout", "-q", "--detach")
+        r = self.record([self.FIX_A])
+        self.assertIn("recorded=0", r.stdout)
+        self.assertFalse(__import__("os").path.exists(self.record_path()))
+        self.git("checkout", "-q", "-")
+        self.record([self.FIX_A])
+        self.git("checkout", "-q", "--detach")
+        self.write("src/a.ts", "x\n")
+        self.assertEqual(self.match(), "")
+        self.prior("clear")
+        self.assertTrue(__import__("os").path.exists(self.record_path()), "detached HEAD の clear が記録を消した")
+
     def test_wrong_argument_counts_are_usage_errors(self):
         """呼び出し口（prior-fixes.sh）を通らない呼び方でも落ちずに usage を返す."""
         lib = PLUGIN / "scripts" / "lib" / "prior_fixes.py"

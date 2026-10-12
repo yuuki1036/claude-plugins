@@ -19,6 +19,13 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 review_paths_init "" || exit 2
 FILE=$(review_path priorfix) || exit 2
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || BRANCH=""
+# detached HEAD ではどのコミットでも "HEAD" になり、無関係な作業の記録と一致してしまうので何もしない
+if [ "$BRANCH" = "HEAD" ]; then
+  if [ "${1:-}" = "record" ]; then
+    echo "recorded=0（detached HEAD では記録しない）"
+  fi
+  exit 0
+fi
 
 case "${1:-}" in
   record) exec python3 "$HERE/lib/prior_fixes.py" record "$FILE" "$BRANCH" "$REVIEW_WT" ;;

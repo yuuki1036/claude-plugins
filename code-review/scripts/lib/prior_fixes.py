@@ -34,7 +34,9 @@ SCHEMA = 2
 MAX_FIXES = 50
 _TITLE_MAX = 200
 _FOCUS_MAX = 40
-_DIFF_RE = re.compile(r"^diff --git a/.* b/(.*)$")
+#: diff のファイルのパスは `--- a/` と `+++ b/` の行から取る。`diff --git a/X b/X` の行から取ると、パスが
+#: ` b/` を含む回に区切りを取り違える。特殊文字を含むパスは git が `"b/..."` と引用符で囲む
+_PATH_RE = re.compile(r'^(?:---|\+\+\+) (?:"[ab]/(.*)"|[ab]/(.*))$')
 
 
 def _clean(entry, root: str):
@@ -126,13 +128,19 @@ def record(path: str, branch: str, root: str, text: str) -> int:
     return 0
 
 
+def _unquote(path: str) -> str:
+    """git が引用符で囲んだパスのエスケープを戻す（`core.quotePath=false` なので非 ASCII は生のまま来る）."""
+    return re.sub(r'\\(["\\tn])', lambda m: {"t": "\t", "n": "\n"}.get(m.group(1), m.group(1)), path)
+
+
 def _diff_files(diff: str):
     files = set()
     with open(diff, encoding="utf-8", errors="replace") as f:
         for line in f:
-            m = _DIFF_RE.match(line.rstrip("\n"))
+            # 空白を含むパスの後ろには git がタブを付ける
+            m = _PATH_RE.match(line.rstrip("\n").rstrip("\t"))
             if m:
-                files.add(m.group(1))
+                files.add(_unquote(m.group(1)) if m.group(1) is not None else m.group(2))
     return files
 
 
