@@ -4,7 +4,7 @@
 # Usage:
 #   prior-fixes.sh record   # stdin: [{"file": ..., "line": ..., "focus": ..., "title": ...}, ...]（self-review Step 7）
 #   prior-fixes.sh match    # 記録のうち今回の diff に入った分を `## prior-fixes` で出す（Step 1。triage-signals.sh の後）
-#   prior-fixes.sh clear    # 同じブランチの記録を消す（publish-review-event.sh が呼ぶ）
+#   prior-fixes.sh clear    # 今回の diff に入った分を記録から消す（publish-review-event.sh が呼ぶ）
 #
 # 記録は作業ツリー単位（`review_path priorfix`）なので、次のセッションの self-review からも読める。
 # match は triage-signals.sh が書いた diff（`review_path diff`）を読む。本体は lib/prior_fixes.py。
@@ -23,6 +23,6 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || BRANCH=""
 case "${1:-}" in
   record) exec python3 "$HERE/lib/prior_fixes.py" record "$FILE" "$BRANCH" "$REVIEW_WT" ;;
   match)  exec python3 "$HERE/lib/prior_fixes.py" match "$FILE" "$BRANCH" "$(review_path diff)" ;;
-  clear)  exec python3 "$HERE/lib/prior_fixes.py" clear "$FILE" "$BRANCH" ;;
+  clear)  exec python3 "$HERE/lib/prior_fixes.py" clear "$FILE" "$BRANCH" "$(review_path diff)" ;;
   *) echo "usage: prior-fixes.sh record|match|clear" >&2; exit 2 ;;
 esac

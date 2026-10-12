@@ -97,27 +97,79 @@ class PriorFixesTest(PriorFixesFixture):
         self.write("src/a.ts", "x\n")
         self.assertIn("src/a.ts:3\tbug-detection", self.match(session="s2"))
 
-    def test_clear_removes_the_record_of_this_branch(self):
-        self.record([self.FIX_A])
-        self.assertEqual(self.prior("clear").returncode, 0)
+    def test_clear_removes_only_what_this_diff_covered(self):
+        """消すのは今回の diff に入った分（reviewer に渡した分）だけ。入らなかった分は次の回へ残す."""
+        self.record([self.FIX_A, self.FIX_B])
         self.write("src/a.ts", "x\n")
-        self.assertEqual(self.match(), "")
+        self.triage()
+        self.assertEqual(self.prior("clear").returncode, 0)
+        self.write("src/other.ts", "y\n")
+        self.assertEqual(self.match().splitlines()[1:],
+                         ["recorded=1 in_diff=1", "src/other.ts:9\terror-handling\t握りつぶし"])
+
+    def test_clear_removes_the_record_when_everything_was_covered(self):
+        self.record([self.FIX_A])
+        self.write("src/a.ts", "x\n")
+        self.triage()
+        self.prior("clear")
+        self.assertFalse(__import__("os").path.exists(self.record_path()))
+
+    def test_clear_without_a_diff_keeps_the_record(self):
+        """照合できなかった回（diff が無い）は、どの分も reviewer に渡っていないので消さない."""
+        self.record([self.FIX_A])
+        self.prior("clear")
+        self.write("src/a.ts", "x\n")
+        self.assertIn("## prior-fixes", self.match())
 
     def test_clear_keeps_the_record_of_another_branch(self):
         """別ブランチの記録は、そのブランチへ戻ったときの self-review が読む."""
         self.record([self.FIX_A])
         self.git("checkout", "-q", "-b", "feat/other")
+        self.write("src/a.ts", "x\n")
+        self.triage()
         self.prior("clear")
         self.git("checkout", "-q", "-")
-        self.write("src/a.ts", "x\n")
         self.assertIn("## prior-fixes", self.match())
 
-    def test_an_empty_record_drops_the_previous_one(self):
-        """修正しなかった回の記録は、前回の分も残さない."""
+    def test_recording_on_another_branch_keeps_this_branch(self):
+        """記録はブランチ別に持つ。別ブランチで record しても、元のブランチの分は上書きされない."""
         self.record([self.FIX_A])
-        self.assertEqual(self.record([]).stdout.strip(), "recorded=0")
+        self.git("checkout", "-q", "-b", "feat/other")
+        self.record([self.FIX_B])
+        self.write("src/other.ts", "y\n")
+        self.assertIn("src/other.ts:9", self.match())
+        self.git("checkout", "-q", "-")
         self.write("src/a.ts", "x\n")
+        out = self.match()
+        self.assertIn("src/a.ts:3", out)
+        self.assertNotIn("src/other.ts", out)
+
+    def test_an_empty_record_drops_only_this_branch(self):
+        """修正しなかった回は、このブランチの前回の分を残さない（他のブランチの分は残す）."""
+        self.record([self.FIX_A])
+        self.git("checkout", "-q", "-b", "feat/other")
+        self.record([self.FIX_B])
+        self.assertEqual(self.record([]).stdout.strip(), "recorded=0")
+        self.write("src/other.ts", "y\n")
         self.assertEqual(self.match(), "")
+        self.git("checkout", "-q", "-")
+        self.write("src/a.ts", "x\n")
+        self.assertIn("src/a.ts:3", self.match())
+
+    def test_an_empty_record_on_the_only_branch_removes_the_file(self):
+        self.record([self.FIX_A])
+        self.record([])
+        self.assertFalse(__import__("os").path.exists(self.record_path()))
+
+    def test_a_schema_1_record_is_read_as_its_branch(self):
+        """1 ブランチ分だけを持っていた形（schema 1）の記録も、そのブランチの分として読む."""
+        branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=self.root, capture_output=True,
+                                text=True, env=self._env()).stdout.strip()
+        self.record([self.FIX_B])
+        with open(self.record_path(), "w", encoding="utf-8") as f:
+            json.dump({"schema": 1, "branch": branch, "recorded_at": "x", "fixes": [self.FIX_A]}, f)
+        self.write("src/a.ts", "x\n")
+        self.assertIn("src/a.ts:3", self.match())
 
     def test_invalid_input_is_rejected_and_keeps_the_record(self):
         self.record([self.FIX_A])
@@ -155,7 +207,8 @@ class PriorFixesTest(PriorFixesFixture):
 
     def test_a_record_of_another_schema_is_not_read(self):
         """形の違う記録（版が違う・辞書でない）は読まずに WARN を出す."""
-        for body in ({"schema": 2, "branch": "x", "fixes": [self.FIX_A]}, [self.FIX_A]):
+        for body in ({"schema": 3, "branches": {}}, {"schema": 2, "branches": {"x": {"fixes": "x"}, "y": {"fixes": []}}},
+                     {"schema": 2, "branch": "x", "fixes": [self.FIX_A]}, [self.FIX_A]):
             with self.subTest(body=type(body).__name__):
                 self.record([self.FIX_A])
                 with open(self.record_path(), "w", encoding="utf-8") as f:
@@ -169,7 +222,7 @@ class PriorFixesTest(PriorFixesFixture):
     def test_wrong_argument_counts_are_usage_errors(self):
         """呼び出し口（prior-fixes.sh）を通らない呼び方でも落ちずに usage を返す."""
         lib = PLUGIN / "scripts" / "lib" / "prior_fixes.py"
-        for args in (["match", "p", "b"], ["clear", "p"], ["record", "p", "b"], []):
+        for args in (["match", "p", "b"], ["clear", "p", "b"], ["record", "p", "b"], []):
             with self.subTest(args=args):
                 r = subprocess.run(["python3", str(lib), *args], capture_output=True, text=True, timeout=30)
                 self.assertEqual(r.returncode, 2, r.stderr)
@@ -193,7 +246,7 @@ class PriorFixesTest(PriorFixesFixture):
 
 
 class PriorFixesPublishTest(PriorFixesFixture):
-    """self-review の publish が記録を消す（この回が照合したので次の回へ持ち越さない）."""
+    """self-review の publish が、この回が照合した分を記録から消す（次の回へ持ち越さない）."""
 
     def publish(self, plugin: str) -> subprocess.CompletedProcess[str]:
         r = subprocess.run(["bash", str(PLUGIN / "scripts" / "publish-review-event.sh"), "--plugin", plugin,
@@ -202,18 +255,20 @@ class PriorFixesPublishTest(PriorFixesFixture):
         self.assertNotIn("Traceback", r.stderr)
         return r
 
-    def test_self_review_publish_clears_the_record(self):
+    def test_self_review_publish_clears_what_it_covered(self):
         self.record([self.FIX_A])
+        self.write("src/a.ts", "x\n")
+        self.triage()
         r = self.publish("code-review:self-review")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.write("src/a.ts", "x\n")
         self.assertEqual(self.match(), "")
 
     def test_review_publish_keeps_the_record(self):
         """PR のレビュー（review）は記録を照合しないので、消さない."""
         self.record([self.FIX_A])
-        self.publish("code-review:review")
         self.write("src/a.ts", "x\n")
+        self.triage()
+        self.publish("code-review:review")
         self.assertIn("## prior-fixes", self.match())
 
 

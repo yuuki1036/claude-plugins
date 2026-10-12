@@ -1382,8 +1382,9 @@ else
 fi
 
 # ---- 前回の指摘への修正の記録を消す（self-review のみ / GitHub issue #298） ----------
-# この回の Step 1 が照合して reviewer に渡したので、次の回へ持ち越さない。この回の Step 7 で修正を
-# 選べば、その分を記録し直す（Step 7 は publish の後）。publish の成否には依らない
+# 消すのは今回の diff に入った分だけ（この回の Step 1 が照合して reviewer に渡した分）。diff に入らなかった
+# 分は渡っていないので残す。この回の Step 7 で修正を選べば、その分を記録し直す（Step 7 は publish の後）。
+# publish の成否には依らない
 if [ "$PLUGIN" = "code-review:self-review" ]; then
   bash "$HERE/prior-fixes.sh" clear >/dev/null 2>&1 || true
 fi

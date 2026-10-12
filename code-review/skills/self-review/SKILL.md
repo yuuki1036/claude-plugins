@@ -569,7 +569,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/prior-fixes.sh" record <<'JSON'
 JSON
 ```
 
-「このまま」の回は記録しない（前回の記録は publish が消している）。`--embed` の回は Step 7 自体を通らないので記録しない（feature-dev の G-V ループは、直した観点を `--focus` と `--rereview` で自分で見直す）
+「このまま」の回は記録しない（今回照合した分は publish が記録から消している。今回の diff に入らなかった分は残る）。`--embed` の回は Step 7 自体を通らないので記録しない（feature-dev の G-V ループは、直した観点を `--focus` と `--rereview` で自分で見直す）
 
 **コメント推敲（B 系統）の適用**: 質問 2 で「適用する」を選んだときは、（A 系統の指摘修正がある場合はそれを終えた後に）`## コメント推敲提案` ブロック（Step 6 で出力済み）を適用する。**質問 1 の回答（「このまま」を含む）とは独立に、質問 2 の回答だけで決める**。`code-review` がインストールされているので `Skill` tool で `code-review:comment-polish` を呼ぶ:
 - 提案を一時ファイル（例: `.claude/.comment-polish-findings.txt`）に書き出してから、`comment-polish --embed --from-findings <path>`（+ 現在の base / `--staged` があれば同値）で起動する

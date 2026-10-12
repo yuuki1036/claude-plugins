@@ -5,15 +5,17 @@ self-review を `--focus` や共通ブロックのスコープで「前回以降
 要る行なのに、どのレビューにも見られない（実測: 5 回の self-review で報告 0 件まで解消した PR が、外部の
 レビューで、修正したフラグが同じ形の別の 2 ケースを拾っていないと指摘された）。
 
+記録は作業ツリーに 1 ファイルで、中をブランチ別に持つ（ブランチを行き来しても、他のブランチの分を消さない）。
+
 - `record`: Step 7 で修正を選んだ指摘（`file` / `line` / `focus` / `title`）の JSON 配列を stdin から受け、
-  ブランチ名と一緒に書く。空の配列は記録を消す
-- `match`: 記録のうち、今回の diff が触ったファイルの分を `## prior-fixes` として出す。別ブランチの記録と、
-  diff に入っていないファイルの分は出さない。出すものが無ければ何も出さない
-- `clear`: 同じブランチの記録を消す（publish が呼ぶ。その回の Step 1 が照合して reviewer に渡したので、
-  次の回へ持ち越さない）
+  今のブランチの分として書く（そのブランチの前回の分は置き換える）。空の配列はそのブランチの分を消す
+- `match`: 今のブランチの記録のうち、今回の diff が触ったファイルの分を `## prior-fixes` として出す。
+  出すものが無ければ何も出さない
+- `clear`: 今のブランチの記録から、今回の diff が触ったファイルの分だけを消す（publish が呼ぶ。その分は
+  この回の Step 1 が照合して reviewer に渡した）。diff に入らなかった分は reviewer に渡っていないので残す
 
 使い方: `prior_fixes.py record <記録> <ブランチ> <repo のルート>` / `match <記録> <ブランチ> <diff>` /
-`clear <記録> <ブランチ>`。呼び出し口は `scripts/prior-fixes.sh`（記録のパスを導出する）。
+`clear <記録> <ブランチ> <diff>`。呼び出し口は `scripts/prior-fixes.sh`（記録と diff のパスを導出する）。
 """
 
 from __future__ import annotations
@@ -26,7 +28,8 @@ import sys
 
 sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pycache__` を作らせないだけで、判定にも出力にも効かない
 
-SCHEMA = 1
+#: 2 でブランチ別に持つ形にした（1 は作業ツリーに 1 ブランチ分だけ。読むときに 2 の形へ直す）
+SCHEMA = 2
 #: 1 回の Step 7 で記録する上限。超えた分は捨てる（reviewer の共通ブロックに全件並ぶので、長くしない）
 MAX_FIXES = 50
 _TITLE_MAX = 200
@@ -62,6 +65,44 @@ def _clean(entry, root: str):
     return {"file": path, "line": line, "focus": focus or "?", "title": title}
 
 
+def _now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _load(path: str):
+    """記録を読む。無ければ空の記録、壊れていれば None。schema 1（1 ブランチ分）は 2 の形に直す."""
+    if not os.path.exists(path):
+        return {"schema": SCHEMA, "branches": {}}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("schema") == 1 and isinstance(data.get("fixes"), list) and isinstance(data.get("branch"), str):
+        return {"schema": SCHEMA, "branches": {data["branch"]: {"recorded_at": data.get("recorded_at"),
+                                                                  "fixes": data["fixes"]}}}
+    branches = data.get("branches")
+    if data.get("schema") != SCHEMA or not isinstance(branches, dict):
+        return None
+    if not all(isinstance(v, dict) and isinstance(v.get("fixes"), list) for v in branches.values()):
+        return None
+    return data
+
+
+def _save(path: str, data: dict) -> None:
+    """ブランチが 1 つも残らなければファイルを消す。書くときは書き終えてから置き換える."""
+    if not data["branches"]:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    os.replace(tmp, path)
+
+
 def record(path: str, branch: str, root: str, text: str) -> int:
     try:
         items = json.loads(text)
@@ -73,33 +114,16 @@ def record(path: str, branch: str, root: str, text: str) -> int:
         print("FATAL: stdin は JSON の配列で渡す", file=sys.stderr)
         return 2
     fixes = [c for c in (_clean(e, root) for e in items) if c is not None][:MAX_FIXES]
-    if not fixes:
-        # 修正しなかった回・渡した全件が無効だった回は、前回の記録も残さない（古い修正を次の回に出さない）
-        if os.path.exists(path):
-            os.remove(path)
-        print("recorded=0")
-        return 0
-    body = {"schema": SCHEMA, "branch": branch,
-            "recorded_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "fixes": fixes}
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(body, f)
-    # 書き終えてから置き換える（途中のファイルを次の self-review が読まない）
-    os.replace(tmp, path)
+    # 壊れた記録は読めないので作り直す（照合できない記録を残しても使い道が無い）
+    data = _load(path) or {"schema": SCHEMA, "branches": {}}
+    if fixes:
+        data["branches"][branch] = {"recorded_at": _now(), "fixes": fixes}
+    else:
+        # 修正しなかった回・渡した全件が無効だった回は、このブランチの前回の分も残さない
+        data["branches"].pop(branch, None)
+    _save(path, data)
     print("recorded=%d" % len(fixes))
     return 0
-
-
-def _load(path: str):
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return None
-    if not isinstance(data, dict) or data.get("schema") != SCHEMA or not isinstance(data.get("fixes"), list):
-        return None
-    return data
 
 
 def _diff_files(diff: str):
@@ -112,37 +136,56 @@ def _diff_files(diff: str):
     return files
 
 
-def match(path: str, branch: str, diff: str) -> int:
-    if not os.path.exists(path):
-        return 0
+def _branch_fixes(path: str, branch: str):
+    """今のブランチの記録（無ければ空）と記録全体。読めなければ WARN を出して (None, None)."""
     data = _load(path)
     if data is None:
         print("WARN: 前回の指摘への修正の記録を読めない（%s）。照合せずに続ける" % path, file=sys.stderr)
-        return 0
-    if data.get("branch") != branch:
+        return None, None
+    entry = data["branches"].get(branch) or {}
+    return [f for f in entry.get("fixes") or [] if isinstance(f, dict)], data
+
+
+def match(path: str, branch: str, diff: str) -> int:
+    fixes, _ = _branch_fixes(path, branch)
+    if not fixes:
         return 0
     try:
         files = _diff_files(diff)
     except OSError:
         print("WARN: diff を読めない（%s）。triage-signals.sh の後に呼ぶ" % diff, file=sys.stderr)
         return 0
-    fixes = [f for f in data["fixes"] if isinstance(f, dict) and f.get("file") in files]
-    if not fixes:
+    hits = [f for f in fixes if f.get("file") in files]
+    if not hits:
         return 0
     print("## prior-fixes")
-    print("recorded=%d in_diff=%d" % (len(data["fixes"]), len(fixes)))
-    for f in fixes:
+    print("recorded=%d in_diff=%d" % (len(fixes), len(hits)))
+    for f in hits:
         print("%s:%s\t%s\t%s" % (f["file"], f.get("line") or "?", f.get("focus") or "?", f.get("title") or ""))
     return 0
 
 
-def clear(path: str, branch: str) -> int:
+def clear(path: str, branch: str, diff: str) -> int:
     if not os.path.exists(path):
         return 0
-    data = _load(path)
-    # 別ブランチの記録は残す（そのブランチへ戻ったときの self-review が読む）。壊れた記録は消す
-    if data is None or data.get("branch") == branch:
+    fixes, data = _branch_fixes(path, branch)
+    if data is None:
+        # 壊れた記録は消す（次の回も読めず、WARN を出し続けるだけ）
         os.remove(path)
+        return 0
+    if not fixes:
+        return 0  # mutation-ok: 消す分が無い回の早期 return。外しても記録を同じ内容で書き直すだけで、出力も記録も変わらない
+    try:
+        files = _diff_files(diff)
+    except OSError:
+        # 照合できなかった回は、どの分も reviewer に渡っていないので消さない
+        return 0
+    rest = [f for f in fixes if f.get("file") not in files]
+    if rest:
+        data["branches"][branch]["fixes"] = rest
+    else:
+        data["branches"].pop(branch, None)
+    _save(path, data)
     return 0
 
 
@@ -151,10 +194,10 @@ def main(argv) -> int:
         return record(argv[1], argv[2], argv[3], sys.stdin.read())
     if len(argv) >= 4 and argv[0] == "match":
         return match(argv[1], argv[2], argv[3])
-    if len(argv) >= 3 and argv[0] == "clear":
-        return clear(argv[1], argv[2])
+    if len(argv) >= 4 and argv[0] == "clear":
+        return clear(argv[1], argv[2], argv[3])
     print("usage: prior_fixes.py record <path> <branch> <root> | match <path> <branch> <diff> | "
-          "clear <path> <branch>", file=sys.stderr)
+          "clear <path> <branch> <diff>", file=sys.stderr)
     return 2
 
 
