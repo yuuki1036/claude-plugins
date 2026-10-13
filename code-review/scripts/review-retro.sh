@@ -2217,6 +2217,26 @@ signals.extend(layered_signal(
         % (SYN_DOMINANT_PCT, pct(dom, n), label, dom, n, note),
     pending=layer_pending.setdefault("synthesis の支配率", [])))
 
+# **計測ストアの同期で語彙に無い値を落とした回**。計測ストアの sanitizer が payload の `sanitize_drops` に
+# 件数だけを残す（知らないキー `keys` / 欠けた観点の知らない語 `coverage` / 識別子の形の値 `values`）。
+# publish が足したキー・観点名に計測ストアの語彙が追随しないと、同期のたびに黙って落ちる（実測: #296 の
+# `invocation.rereview` と #261 の `layer-responsibility` が 10 日前後落ち続け、件数は同期のログにしか
+# 出ていなかった）。直近 30 日に絞るのは、業務由来の語をわざと other のままにした回で鳴り続けないため
+store_drops = dict.fromkeys(("runs", "keys", "coverage", "values"), 0)
+for e in recent:
+    _d = e["p"].get("sanitize_drops")
+    _c = {k: num(_d.get(k)) or 0 for k in ("keys", "coverage", "values")} if isinstance(_d, dict) else {}
+    if any(_c.values()):
+        store_drops["runs"] += 1
+        for k, v in _c.items():
+            store_drops[k] += v
+if store_drops["runs"]:
+    signals.append(
+        "計測ストアの同期で語彙に無い値を落とした回が直近 30 日に %d 件（キー %d・欠けた観点 %d・値 %d）。"
+        "落とした値を計測ストアの同期レポートで見て、code-review の識別子なら語彙に足し、その回を publish した"
+        "マシンで読み直す（orchestration-measurement.md `## 18`）"
+        % (store_drops["runs"], store_drops["keys"], store_drops["coverage"], store_drops["values"]))
+
 # ---- 出力 -----------------------------------------------------------------
 if as_json:
     print(json.dumps({
@@ -2281,6 +2301,8 @@ if as_json:
         "appendix_bound": {"rescued_judged": apx_stats["rescued_judged"],
                            "rescued_uncontracted": apx_stats["rescued_uncontracted"]},
         "body_bound_marker": n_exceeds_marker,
+        # 計測ストアの同期で語彙に無い値を落とした回（直近 30 日 / `sanitize_drops`）
+        "store_drops": store_drops,
         "splits_bound": {k: {"judged": v["judged"], "over": v["over"],
                              "over_appendix": v["over_appendix"], "over_report": v["over_report"],
                              "lower": v["lower"], "written": v["pre"] - v["below"],

@@ -8480,5 +8480,48 @@ class RetroMdPolishTest(RetroFixture):
         self.assertIn("self-review の publish 節", sig, "是正先が両 SKILL の既定に落ちている")
 
 
+
+class RetroStoreDropsTest(RetroFixture):
+    """計測ストアの同期で語彙に無い値を落とした回を ⚠️ に出す（`sanitize_drops`）.
+
+    計測ストアの sanitizer は allowlist で、publish が足したキー・観点名に語彙が追随しないと同期のたびに
+    黙って落ちる（実測: #296 の `invocation.rereview` と #261 の `layer-responsibility` が 10 日前後）。
+    件数は同期のログにしか出ず、launchd の同期では誰も見ていなかった。直近 30 日の回だけを見る。
+    """
+
+    def _write(self, rows: list[tuple[int, dict]]) -> None:
+        now = datetime.now(timezone.utc)
+        (self.root / ".claude").mkdir(exist_ok=True)
+        (self.root / ".claude" / "events.jsonl").write_text("\n".join(
+            json.dumps({"ts": (now - timedelta(days=d, minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "plugin": "code-review:self-review", "event": "review:completed",
+                        "payload": {"effort": "high", "measurement_gaps": [], **p}})
+            for i, (d, p) in enumerate(rows)) + "\n", encoding="utf-8")
+
+    def _run(self) -> tuple[str, dict]:
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        return r.stdout, json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+
+    def test_recent_drops_fire_with_counts(self):
+        self._write([(1, {"sanitize_drops": {"keys": 1, "coverage": 2}}),
+                     (2, {"sanitize_drops": {"values": 3}}),
+                     (3, {})])
+        out, j = self._run()
+        self.assertIn("計測ストアの同期で語彙に無い値を落とした回が直近 30 日に 2 件（キー 1・欠けた観点 2・値 3）",
+                      self.signals(out))
+        self.assertEqual(j["store_drops"], {"runs": 2, "keys": 1, "coverage": 2, "values": 3})
+
+    def test_old_zero_and_broken_marks_stay_silent(self):
+        """30 日より前の回・件数 0・壊れた印は数えない（わざと other のままにした語で鳴り続けない）."""
+        self._write([(45, {"sanitize_drops": {"keys": 1}}),
+                     (1, {"sanitize_drops": {"keys": 0, "values": True}}),
+                     (1, {"sanitize_drops": "keys"}),
+                     (2, {})])
+        out, j = self._run()
+        self.assertNotIn("語彙に無い値を落とした", self.signals(out))
+        self.assertEqual(j["store_drops"], {"runs": 0, "keys": 0, "coverage": 0, "values": 0})
+
+
 if __name__ == "__main__":
     unittest.main()

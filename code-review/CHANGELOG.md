@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.156.0] - 2026-10-13
+
+### Added
+
+- **retro が、計測ストアの同期で語彙に無い値を落とした回を ⚠️ に出す**。計測ストアの sanitizer は allowlist で、
+  publish が足したキーや観点名に語彙が追随しないと、同期のたびに黙って落ちる。#296 の `invocation.rereview` と
+  #261 の `layer-responsibility` が 10 日前後落ち続け、ストアから集計した値が判定に使えなかった。件数は同期の
+  ログにしか出ておらず、launchd の同期では誰も見ていなかった。sanitizer が落とした行に残す `sanitize_drops`
+  （件数だけ）を直近 30 日について数え、1 件でもあれば ⚠️ に出す（`--json` では `store_drops`）。
+  語彙に足す手順は `references/orchestration-measurement.md ## 18`
+
 ## [2.155.2] - 2026-10-13
 
 ### Changed
