@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.155.2] - 2026-10-13
+
+### Changed
+
+- **reviewer 1 体あたりの往復上限（GitHub issue #190）を採らないで決着した**。A/B の前に決めた判定基準
+  （sub `cache_read` が 20% 以上下がり、MAJOR 以上が 1 件も減らないなら採用）に medium の実測（11 回・53 体）を
+  当てると、上限 20 往復の削減は約 6% で保留にしかならない。20% に届くのは上限 15 以下で、往復の中央値の
+  すぐ上になり、指摘の根拠を切る。根拠は `references/design-notes/pending-optimizations.md ## 11`
+- retro の「1 体あたりの往復」表の見出しを、上限の候補ではなく見直しの材料として 20 超の割合を出す、という
+  書き方に直した。体数の見直しの条件（`triage-rationale.md`）も #190 の A/B に頼らない形に直した
+
 ## [2.155.1] - 2026-10-12
 
 ### Fixed

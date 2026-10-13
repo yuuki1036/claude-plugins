@@ -1758,6 +1758,7 @@ for key in sorted(per_agent_buckets, key=lambda k: -len(per_agent_buckets[k])):
 # **1 体あたりの往復の分布**（GitHub issue #265 / #190）。往復数が cache_read を決める唯一の効くレバーで、
 # 平均（`sub_cache_read_k / sub_agents`）では cap の候補値で何体が打ち切られるかが分からない。
 # 層は上と同じ effort × size_tier × 世代。`sub_turns` は v2.135.0 以降の回にだけある
+# 上限は採らないと決めた（pending-optimizations.md ## 11）が、見直す条件が「20 超の割合が上がったとき」なので列は残す
 TURN_CAP_CANDIDATE = 20   # #190 の 09-30 の計測で挙げた候補（新算法で 22 体中 5 体が超える値）
 turn_buckets = {}
 for e in tok_rows:
@@ -1876,9 +1877,10 @@ for _lk in sorted(verdict_layers):
 # ときだけ行動する」契約の方が壊れる。規範自体は残るが根拠が変わった（無相関だから、では
 # なく**相関は因果ではなく体数削減は recall を削るから** / `## 7`）。
 #
-# **再開の条件は指標ではなく実験**: #190 の A/B が「体数削減で fleet が縮み、かつ MAJOR が
-# 減らない」を示したときに `## 7` ごと見直す。閾値を層ごとに動かして黙らせる案（#217 候補①）は
-# 採らない — データに合わせて水準を動かすのは検出力を捨てるのと同じ。
+# **再開の条件は指標ではなく実験**: 体数を減らした A/B が「fleet が縮み、かつ MAJOR が
+# 減らない」を示したときに `## 7` ごと見直す（#190 の A/B に見込んでいたが、#190 は回さずに
+# 決着した）。閾値を層ごとに動かして黙らせる案（#217 候補①）は採らない — データに合わせて
+# 水準を動かすのは検出力を捨てるのと同じ。
 r_strong_tiers = [(t, n_t, rr) for t, n_t, rr in tier_r_judged if abs(rr) >= R_STRONG]
 if have_waves >= 10 and pct(split_waves, have_waves) >= 20:
     signals.append("explorer wave が 2 本以上に割れた回が %.0f%%（%d/%d）。一括発行の規約"
@@ -2387,7 +2389,7 @@ if tier_r_rows:
               "動く未観測の変数（diff の難しさ・1 体あたりの探索量）が両方を押していると読む。"
               "規範「体数を壁時計のレバーとして扱わない」は残るが、根拠は無相関ではなく"
               "**体数削減が recall を削ること**（triage-guide.md `## 7`）。次の判断材料は"
-              "#190 の A/B。"
+              "体数を減らした A/B（#190 は回さずに決着した）。"
               % (R_STRONG, " / ".join("%s r=%.2f n=%d" % (t, rr, n_t)
                                       for t, n_t, rr in r_strong_tiers)))
     if r is not None:
@@ -2862,7 +2864,7 @@ else:
         if turn_rows:
             print()
             print("**1 体あたりの往復**（effort × size_tier。往復数が cache_read を決める唯一の効くレバー / "
-                  "#190。cap の候補 %d 往復を超えた体の割合も出す / #265）" % TURN_CAP_CANDIDATE)
+                  "#190。上限は採らないと決めた — %d 往復を超えた体の割合は見直しの材料 / #265）" % TURN_CAP_CANDIDATE)
             print()
             print("| effort/tier | 回 | 体 | 往復 中央値 | 最大 | %d 超 |" % TURN_CAP_CANDIDATE)
             print("|---|---:|---:|---:|---:|---:|")
