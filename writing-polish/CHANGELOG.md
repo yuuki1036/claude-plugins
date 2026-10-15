@@ -5,6 +5,20 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.10.2] - 2026-10-15
+
+### Fixed
+
+- **他のスキルから `--embed` で呼ばれたとき、推敲結果を書いたところでターンが終わり、呼び出し元の手順が
+  止まっていた**（feature-dev・issue-workflow・pr-creator で観測）。Skill tool で呼ばれたスキルは subagent ではなく
+  同じ会話の中で動くので、返却フォーマットだけを書いてツールを呼ばないと、そこでターンが終わる。embed の契約は
+  「結果だけ返す」だけで、戻ったあと呼び出し元の手順を続けよという指示が無かった（実測: follow-up が推敲結果を
+  出したところで止まり、Issue ファイルを書かないまま終わった）。command 本文・SKILL.md・presentation-guide に
+  「返却フォーマットを書いても終えず、同じターンのまま呼び出し元の次の手順を実行する」を足した。
+  変更が 0 件の回も同じで、「推敲の必要なし」と返して終わる規則には embed では終わらない但し書きを足した
+  （0 件の embed は原文と「変更点: なし」とマーカーで返す）。
+  末尾のマーカー `[embed-mode: polish-only, no-prompt]` は code-review が戻りの確認に使うので変えていない
+
 ## [0.10.1] - 2026-09-19
 
 ### Fixed
