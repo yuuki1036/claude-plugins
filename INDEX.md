@@ -13,7 +13,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | プラグイン | version | cmd | skill | agent | hooks | mcp | 概要 |
 |-----------|---------|----:|------:|-------|-------|-----|------|
 | [adr-keeper](#adr-keeper) | 0.4.2 | 1 | 1 | - | PreToolUse, SessionStart | - | 設計判断 (ADR) を append-only 蓄積 |
-| [bdd-spec](#bdd-spec) | 0.3.5 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
+| [bdd-spec](#bdd-spec) | 0.3.6 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [harness-keeper](#harness-keeper) | 2.0.0 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.156.1 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.6.0 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |

@@ -127,6 +127,8 @@ evaluation-rubric.md「観点 5」の 5.1〜5.5 を評価する。**dormant 発�
 
 ## Phase 6: 修正提案（任意 / 承認後のみ）
 
+**`--embed` 指定時は本 Phase を skip し、Phase 5 のレポートを返したらターンを終えずに呼び出し元の次の手順へ戻る**（検出 0 件の回も同じ）。Skill tool で呼ばれたスキルは呼び出し元と同じ会話の中で動くので、レポートだけ書いてツールを呼ばずに止まると、呼び出し元（feature-dev Phase 1.4 など）の手順ごとターンが終わる。
+
 報告マトリクス通過後の指摘が 1 件以上ある場合のみ **AskUserQuestion** で対応方針を確認する:
 
 - question: "検出された spec の問題への対応方針を選んでください"
@@ -173,4 +175,4 @@ evaluation-rubric.md「観点 5」の 5.1〜5.5 を評価する。**dormant 発�
 - **scaffold と評価の責務分離**: 空骨格の生成は `create-spec`、埋めた後の評価が本スキル。Generator（create-spec）と Evaluator（evaluate-spec）を分けることで、生成時の思い込みに引きずられず独立に穴を見つける
 - **機械判定を意味判定より先に**: 構文・リンク・表セルは grep で確定できる（外部オラクル）。意味判断（粒度・Why-answered）に LLM コストを割く前に、安いオラクルで確定分を落とす
 - **over-correction 抑制**: 意味判断の指摘は confidence < 80 で「要確認」を明示し、断定で高 severity を作らない。修正は機械確定分のみ自動化する
-- **API 安定保証（feature-dev 連携）**: `feature-dev` からの `Skill bdd-spec:evaluate-spec` 呼び出しを安定 API として扱う。引数で `spec=<path>` を渡すと Phase 0 の対象選択をスキップし非対話実行する（feature-dev Phase 1.4 embed 用途）。`--embed` 指定時は Phase 6 の AskUserQuestion をスキップし Phase 5 レポートをそのまま return する
+- **API 安定保証（feature-dev 連携）**: `feature-dev` からの `Skill bdd-spec:evaluate-spec` 呼び出しを安定 API として扱う。引数で `spec=<path>` を渡すと Phase 0 の対象選択をスキップし非対話実行する（feature-dev Phase 1.4 embed 用途）。`--embed` 指定時は Phase 6 の AskUserQuestion をスキップし Phase 5 レポートをそのまま return する。return してもターンは終えず、同じターンのまま呼び出し元の次の手順へ戻る（Phase 6 冒頭）
