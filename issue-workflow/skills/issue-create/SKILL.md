@@ -97,16 +97,12 @@ allowed-tools:
     2. label: "feature" / description: "新機能追加・既存機能の改修・リファクタリング"
     3. label: "investigation" / description: "原因調査・パフォーマンス分析・技術選定"
     4. label: "debt" / description: "コード品質改善・依存関係更新・非推奨 API の移行"
-- スコープサイズは**全 type で必須**（`check-scope-size` hook のリアルタイム警告とスコープ超過チェックの前提）:
-  - feature の場合は **AskUserQuestion** で確認する:
-    - question: "この feature の実装規模は？（タスク数上限と見積もり基準に使用）"
-    - header: "スコープ"
-    - options:
-      1. label: "small" / description: "3タスク以下（1-2日で完了）"
-      2. label: "medium" / description: "7タスク以下（数日〜1週間）"
-      3. label: "large" / description: "15タスク以下（1週間以上）"
-  - bugfix / debt はテンプレ既定値 `small` をそのまま使う（明らかに大きい場合のみ調整して一言添える）
-  - investigation はタスク内容から判断して設定する（既定は `small`。質問はしない）
+- スコープサイズは**全 type で必須**（`check-scope-size` hook のリアルタイム警告とスコープ超過チェックの前提）。**どの type も自分で決め、質問はしない**:
+  - 基準は `## 進捗` に並ぶ見込みのタスク数: `small` は 3 以下（1-2 日）/ `medium` は 7 以下（数日〜1 週間）/ `large` は 15 以下（1 週間以上）
+  - feature / investigation は依頼の内容から見積もる。Phase 5〜5.4 で分かった内容で見積もりが変わったら、Phase 6 の生成時に直す
+  - bugfix / debt はテンプレ既定値 `small` を使う（明らかに大きい場合だけ上げる）
+  - 決めた値と根拠を 1 行で示す（例: 「scope_size: medium（API・UI・テストの 3 層で 5〜6 タスクの見込み）」）。利用者は Phase 6 の承認で直せる
+  - 以前は feature だけ AskUserQuestion で聞いていたが、回答がほぼ毎回「任せる」で、frontmatter を書き換えれば後から直せる値なので聞かない
 - テンプレートは以下を Read で読み込む:
   - `${CLAUDE_SKILL_DIR}/references/{type}.md`
 
@@ -161,16 +157,17 @@ Issue の内容が確定した段階で、過去の蓄積から「この問題�
 - `.claude/adr/` が存在する場合のみ `.claude/adr/*.md` をキーワードで grep し、関連する設計判断を抽出する。ディレクトリが無ければ skip（未導入時は完全にスキップ・後方互換）
 
 **関連が 1 件以上見つかった場合:**
-- 種別ラベル付きでまとめて提示する（取捨選択できる形で）:
+- **見つかったものは全部採用する。どれを使うかを利用者に選ばせない**（以前は選ばせていたが、ほぼ毎回全部が選ばれていた）。種別ラベル付きで一覧を示して次へ進む:
   ```
-  過去の関連ナレッジが見つかりました（取捨選択できます）:
+  過去の関連ナレッジ（N 件。すべて備考に載せる。不要なものは Phase 6 の承認で外せる）:
   - [knowledge] `knowledge/{topic}.md` — {概要}（tags: {tags}）
+  - [却下] `knowledge/{topic}.md` — {却下した概念}
   - [完了Issue] `issues/{ID}.md` — {タイトル}
   - [ADR] `adr/{file}.md` — {タイトル}
-  参照・引用しますか？
   ```
-- ユーザーが選んだものを Read で内容表示し、Issue ファイルの「備考」セクションに種別ラベル付きで関連リンクを記載する
-- Issue の内容が提示した ADR とぶつかるなら、「備考」に ADR の id・ぶつかる点・見直す理由を 1 行で書く（黙って上書きしない。見直すなら ADR の supersede が別途要る）
+- 全件を Issue ファイルの「備考」セクションに種別ラベル付きの関連リンクとして書く。不要なものは利用者が Phase 6 の承認で外せる
+- ヒットした ADR は Read し、Issue の内容とぶつかるなら「備考」に ADR の id・ぶつかる点・見直す理由を 1 行で書く（黙って上書きしない。見直すなら ADR の supersede が別途要る）
+- ヒットした knowledge のうち frontmatter が `kind: rejected`（却下記録）のものも Read し、一覧のラベルを `[却下]` にする。Issue の内容が却下した概念と一致するなら、「備考」に却下記録のファイル名と一致する点を 1 行で書く（選ばせていた頃は選んだものを Read して見せており、却下理由が目に入るのはその経路だけだった）
 - 1 件も見つからなければ何も追記せず次 Phase へ進む（ノイズを出さない）
 
 ### Phase 6: Issue ファイル生成
@@ -182,7 +179,7 @@ Issue の内容が確定した段階で、過去の蓄積から「この問題�
    - `status: in-progress`
    - BACKEND=local: `id: {ISSUE-ID}` / BACKEND=linear: `linear: {ISSUE-ID}`（Linear のプロジェクト情報があれば `project:` も記入）
    - `type: {選択したtype}`
-   - `scope_size: {small|medium|large}`（全 type 必須。feature は Phase 4 の選択値、他 type は Phase 4 で決めた値）
+   - `scope_size: {small|medium|large}`（全 type 必須。Phase 4 で決めた値。Phase 5〜5.4 で見積もりが変わっていれば直した値）
    - `created: {今日の日付}`
    - `last_active: {今日の日付}`
    - `pr: ""` (空欄)
@@ -241,7 +238,7 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
    - 既存実装の有無: {あれば該当箇所のサマリー}
 
    ## Phase 5.5 関連ナレッジ（knowledge / ADR / 完了 Issue）
-   - {参照済み knowledge / ADR / 完了 Issue のファイル名と種別ラベル}
+   - {Issue ファイルの「備考」に残った knowledge / ADR / 完了 Issue（Phase 6 の承認で外したものを除く。ファイル名と種別ラベル）}
 
    ## 親 Issue（frontmatter の parent: に値がある場合）
    - [{PARENT-ID}] {タイトル} — 背景・計画のサマリー
