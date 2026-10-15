@@ -5,6 +5,14 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.21.1] - 2026-10-15
+
+### Fixed
+
+- **適用範囲の足切りで直接実装に移るとき、モデルの切り替え点が無かった**。8 phase を回すときは Phase 5 の承認が
+  設計 → 実装の切り替え点になるが、足切りするとそこを通らず、止まらずに書き始めていた。足切りしても書き始める前に
+  変更方針と切り替えの案内を出し、返信を待ってから実装するようにした
+
 ## [2.21.0] - 2026-10-11
 
 ### Added
