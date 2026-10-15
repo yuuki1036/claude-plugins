@@ -141,6 +141,8 @@ fi
 
 `--embed` 引数が指定されている場合は、本 skill が他 plugin（例: feature-dev Phase 6）からプログラム的に呼び出されたと判断する。Step 7 の修正方針確認 AskUserQuestion と Step 8 の worktree teardown 連携を skip し、Step 6 のレポートをそのまま return する。呼び出し元側で findings を集約・後処理する前提。
 
+**return してもターンを終えない**（指摘 0 件の回も同じ）。Skill tool で呼ばれた skill は subagent ではなく呼び出し元と同じ会話の中で動くので、marker を書いてツールを呼ばずに止まると、呼び出し元の手順ごとターンが終わる（writing-polish の embed で実際に起きた）。marker の後は同じターンのまま、呼び出し元の次の手順（feature-dev なら Phase 6 の Step 3 以降）を実行する。marker は呼び出し元が戻りを確かめるためのもので、完了の合図ではない。
+
 return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、marker の位置、後方互換）の正本 → orchestration-optional-flows.md `## 15`。AskUserQuestion は呼ばない（呼び出し元の UX を阻害しない）。
 
 **`--rereview`（修正を確かめる再レビューの申告）:**
@@ -532,7 +534,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 
 **publish 済みかのガード（`--embed` / 指摘 0 件でも必ず実行する / GitHub issue #133）**: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" publish-pending` で 6.4 の脱落を捕まえる。**下の skip 条件はこのガードには掛からない** — 本ステップの他の判定（embed / 指摘件数）より前に、レポート出力後 1 回だけ無条件で実行する。**警告が出たら他を中断して 6.4 を先に完了させる**（計測ファイルはまだ残っているので、この時点なら損失なく復旧できる。修正作業に入ってから気づいた回は `duration_min` が欠測に倒れる）。**embed 経路こそ落ちやすい**（publish の後に呼び出し元の作業が続くため）ので、ここを条件分岐の内側に入れない。
 
-**embed mode skip**: 引数で `--embed` が指定されている場合は、上のガードを実行したうえで本ステップの残りを skip する。Step 6 の markdown レポート → **Step 6.5 の構造化 JSON ブロック** → `[embed-mode: findings-only, no-prompt]` の 1 行 marker、の順で出力して完了。AskUserQuestion を呼ばないことで呼び出し元 plugin の UX を阻害しない。
+**embed mode skip**: 引数で `--embed` が指定されている場合は、上のガードを実行したうえで本ステップの残りを skip する。Step 6 の markdown レポート → **Step 6.5 の構造化 JSON ブロック** → `[embed-mode: findings-only, no-prompt]` の 1 行 marker、の順で出力し、**ターンを終えずに呼び出し元の次の手順へ戻る**（Step 1 の `--embed` の節）。AskUserQuestion を呼ばないことで呼び出し元 plugin の UX を阻害しない。
 
 **以下の修正方針フローは**、指摘事項（A 系統）・`## コメント推敲提案`（B 系統）・Markdown 推敲の提案のいずれかが 1 件以上ある場合に実行する。B 系統と Markdown 推敲は severity マトリクスを通らない別枠であり、**適用トリガーを A 系統の件数に従属させない**（A 系統 0 件でも別枠に提案があれば下の確認へ進む / GitHub issue #236）。すべて 0 件なら（上のガードを実行したうえで）「問題なし」で完了。
 

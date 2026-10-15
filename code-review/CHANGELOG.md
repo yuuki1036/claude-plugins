@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.156.1] - 2026-10-16
+
+### Fixed
+
+- **self-review と comment-polish を `--embed` で呼ぶと、結果を書いたところでターンが終わりうる**のを塞いだ。
+  Skill tool で呼ばれた skill は subagent ではなく呼び出し元と同じ会話の中で動くので、marker や報告だけを書いて
+  ツールを呼ばずに止まると、呼び出し元（feature-dev Phase 6 の G-V ループ、self-review Step 7 の残りの適用）の手順ごと
+  ターンが終わる。writing-polish の embed で実際に起きた型で、embed の契約に「戻ったら呼び出し元の手順を続けよ」が
+  無かった。self-review の `--embed` の節と Step 7、orchestration-optional-flows の `## 15`、comment-polish の
+  `--embed` の分岐、同名の command 本文 2 つに「書いても終えず、同じターンのまま呼び出し元の次の手順を実行する
+  （0 件の回も同じ）」を足した。marker の文言は変えていない
+
 ## [2.156.0] - 2026-10-13
 
 ### Added

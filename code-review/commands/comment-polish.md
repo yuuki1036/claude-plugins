@@ -12,4 +12,4 @@ argument-hint: "[--staged | base branch] [--embed] [--from-findings <path>] [--g
 
 comment-polish スキルを使用して、現在の diff で追加・変更したコード内コメントを精査してください（2 観点の推敲 + git 外の参照 ID の除去）。
 
-引数が渡されていればそれも考慮してください（`--staged` / base ブランチ / `--embed` / `--from-findings <path>` / `--github`）。
+引数が渡されていればそれも考慮してください（`--staged` / base ブランチ / `--embed` / `--from-findings <path>` / `--github`）。`--embed` のときは、適用と報告を終えてもターンを終えず、同じターンのまま呼び出し元（self-review Step 7）の次の手順へ戻ってください（このスキルは呼び出し元と同じ会話の中で動くので、ツールを呼ばずに止まると呼び出し元の手順ごと終わる）。

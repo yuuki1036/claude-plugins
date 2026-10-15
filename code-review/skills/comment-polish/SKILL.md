@@ -85,7 +85,7 @@ Markdown 装飾の除去は 2 観点とは別の**表記**の扱いで、3 つ�
 
 **適用の分岐**:
 
-- **`--embed` 指定時（self-review からの委譲）**: 提示のみ簡潔にして**全件を Edit で適用**する。AskUserQuestion は出さない（self-review Step 7 で既にコメント推敲適用の承認が済んでいる）。`--from-findings <path>` があれば self-review が書き出した B 系統提案を読み、再推敲せずそれを適用する
+- **`--embed` 指定時（self-review からの委譲）**: 提示のみ簡潔にして**全件を Edit で適用**する。AskUserQuestion は出さない（self-review Step 7 で既にコメント推敲適用の承認が済んでいる）。`--from-findings <path>` があれば self-review が書き出した B 系統提案を読み、再推敲せずそれを適用する。**適用と 5. の報告を終えてもターンを終えない**（適用 0 件の回も同じ）。Skill tool で呼ばれた skill は呼び出し元と同じ会話の中で動くので、報告だけ書いてツールを呼ばずに止まると、self-review Step 7 の残り（Markdown 推敲の適用など）ごとターンが終わる。同じターンのまま呼び出し元の次の手順へ戻る
 - **単独起動時**: AskUserQuestion で確認する
   - question: 「コメント精査の適用方針は？」
   - header: 「コメント精査」
