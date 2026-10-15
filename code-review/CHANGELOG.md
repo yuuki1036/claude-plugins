@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.156.2] - 2026-10-16
+
+### Changed
+
+- **区間・wave 単価の実測ベースラインを opus-5-5 の母集団で取り直し、effort で割った**（`orchestration-measurement.md ## 15`）。
+  旧表（2026-08-21）は世代を記録する前の xhigh 中心の母集団で、Phase 0 が出す目安（explorer wave 約 6 min・以降の wave
+  14〜34 min）は、いまの medium / high（explorer 約 2 min・以降 約 2〜5 min・fleet 中央値 4 分）を、explorer で約 3 倍・
+  以降の wave で約 5 倍以上に見積もっていた。
+  計測ストア 2 本の opus-5-5 の 117 件（再レビューを除く）から、triage・explorer・wave 間隔とその内訳・fleet・synthesis・
+  closing を effort（medium / high / xhigh）ごとに出し、旧表は 15.1 に残した。medium / high では統合作業の約 1 分が
+  wave 間隔の 4 割を占め、旧表の「fleet の約 92% は agent」は xhigh にだけ当てはまる。Phase 0 の目安（`triage-guide.md`
+  の出力例と `### 5.1`）と、反証の wave の費用を引いている `triage-dynamic-gates.md` の 1 か所を新しい値に合わせた。
+  トークンの基準値（`design-notes/pending-optimizations.md ## 計測の基準値`）にも opus-5-5 の 1 体あたり cache_read と
+  往復を effort × tier で足した
+
 ## [2.156.1] - 2026-10-16
 
 ### Fixed

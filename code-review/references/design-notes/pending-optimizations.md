@@ -37,6 +37,25 @@ v2.49.0 の「agent 側ツール使用規約」を入れる**前**の実測。PR
 - サンプルの大半はプラグイン開発以外のリポジトリで取ったもの。別マシン・別リポジトリの値と並べるときは母集団の違いを明記する
 - 再現: `review-backfill.sh --logs <各リポジトリの .claude/events.jsonl> --projects <対応する ~/.claude/projects/ の slug>`。**既定は今いるリポジトリしか見ない**ので、他リポジトリで回したレビューは明示しないと母集団に入らない（このリポジトリ単独では 2 件・成立 0 件だった）
 
+### opus-5-5 の値（publish 時点の payload / 2026-10-16）
+
+opus-5-5 の回は publish 時点で `tokens`（`tokens.schema` 3）を持つので、後付けせずに retro の表から取った。母集団は計測ストア 2 本（`m1` / `m2`）。`review-retro.sh --logs <計測ストアの events/*.jsonl>` の「1 体あたり cache_read」と「1 体あたりの往復」の表そのまま（n が 3 以上の層）。
+
+| effort / tier | n | 1 体あたり cache_read 中央値 | 1 体あたり往復 中央値 |
+|---|---:|---:|---:|
+| medium / small | 9 | 1,639k | 12 |
+| medium / medium | 12 | 894k | 8 |
+| medium / large | 16 | 1,739k | 14 |
+| high / small | 14 | 1,074k | 11.5 |
+| high / medium | 13 | 1,238k | 10 |
+| high / large | 39 | 2,110k | 13 |
+| xhigh / medium | 3 | 3,596k | — |
+| xhigh / large | 9 | 2,964k | 21 |
+
+- 往復の列は往復を記録した回（#265 以降）だけで、cache_read の列と n が違う（high / large は 25 回）
+- **上の後付けの表（opus-5 の 3,007.5k）と並べて世代差と読まない**。数え方は同じだが、後付けは窓の逆算で、effort × tier の構成も違う。opus-5-5 の改修効果は、この表の同じ effort × tier の値と比べる
+- 1 体あたり cache_read は往復数でほぼ決まる（#190 の決着。`## 11`）。xhigh の 1 体は往復が 21 で、同じ large 帯の high（13）・medium（14）の約 1.5 倍
+
 > **1.（meta-reviewer と反証レイヤーの並列化）は v2.61.0 で実装した**（GitHub issue #122）。根拠は `orchestration-rationale.md`「meta-reviewer と反証レイヤーを同一 wave にした経緯」へ移した。
 
 ## 2. メインコンテキスト側のツール呼び出しバッチ化（**冒頭だけ採用 / 一般則は不採用** / GitHub issue #147）

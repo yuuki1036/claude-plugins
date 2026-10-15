@@ -150,9 +150,32 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 - 旧サンプルとの層別: `duration_triage_min` フィールドの存在が v2.41.0 以降の publish マーカーになる（triage-guide.md `## 7` のロールバック条件が `agents` フィールドで版を切るのと同じ流儀。日付では切らない）。`duration_explore_min` の存在が v2.43.0 以降・`duration_synthesis_min` の存在が v2.60.0 以降のマーカー
 - **`duration_*` が並行セッションに汚染されていないこと**は `## 13.1` の `TS_FILE` セッション識別に依存する。識別子を持たない版（v2.43.0 未満）の値は、同一リポジトリで worktree を並列運用していた期間について「もっともらしい過小値」を含みうるため、ロールバック判断の基準側に使わない
 
-## 15. 区間・wave 単価の実測ベースライン（実測値の正本 / v2.78.2 / GitHub issue #155）
+## 15. 区間・wave 単価の実測ベースライン（実測値の正本 / v2.78.2・v2.156.2 で opus-5-5 に取り直し / GitHub issue #155）
 
 **各区間の実測値はここだけに書く。** `triage-guide.md ## 5` の Phase 0 出力と `## 5.1` は**目安の提示に留め、数値を二重に持たない**（実測が動いたら本節だけを直せば提示側が追随する / CLAUDE.md の SSoT 方針）。
+
+**現行のベースライン（opus-5-5 / 2026-10-16 取り直し）**: 計測ストア 2 本（`m1` 15 件・`m2` 102 件）の、モデル世代が opus-5-5 だけの回から再レビュー（`invocation.rereview`）を除いた 117 件（2026-09-23〜10-15 / self-review 112・review 5）。**effort で割る** — effort が wave の本数と 1 体の深さを決めるので、混ぜると medium の速さと xhigh の遅さが平均されてどちらの目安にもならない。max は回っていないので xhigh の値を使う。`dispatch` 由来の 3 行は transcript の取り違え（#246）が直った版（2.130.6 以上）に絞った。
+
+| 区間 | medium | high | xhigh | 出典フィールド |
+|---|---|---|---|---|
+| triage（t0→t1） | 1 分未満（n=39） | 1 分未満（n=64） | 1 分未満（n=14） | `duration_triage_min` |
+| explorer wave（起動した回） | 中央値 2 分（n=13） | 中央値 2 分（90% 点 4 / n=21） | 中央値 6 分（90% 点 8 / n=7） | `duration_explore_min` |
+| 最大の wave 間隔（合算） | **中央値 2.4 分**（1.6〜2.9 / n=11） | **中央値 2.9 分**（1.8〜5.4 / n=16） | **中央値 10.5 分**（6.1〜15.2 / n=8） | `dispatch.max_inter_wave_sec` |
+| └ うち前 wave の agent 実行 | 中央値 92 秒（比 59%） | 中央値 111 秒（比 57%） | 中央値 554 秒（比 93%） | `dispatch.inter_wave_agent_sec` |
+| └ うち orchestrator の統合作業 | 中央値 58 秒 | 中央値 63 秒 | 中央値 41 秒 | `dispatch.inter_wave_idle_sec` |
+| fleet（t1→t2） | 中央値 4 分（90% 点 7 / n=39） | 中央値 4 分（90% 点 12 / n=64） | 中央値 21 分（90% 点 51 / n=14） | `duration_fleet_min` |
+| synthesis（最後の wave→t2） | 1 分未満 | 1 分未満 | 1 分未満 | `duration_synthesis_min` |
+| closing（t2→t3 / **review のみ**） | 全 effort で中央値 5 分（0〜95 / n=5。大半が人間待ち） | | | `duration_closing_min` |
+
+- 範囲は 10% 点〜90% 点。分の値は payload が整数分なので、1 分未満は 0 と記録されている
+- **medium / high の wave は 2 本**（explorer → reviewer。`wave_sizes` は `[1,4]`〜`[2,8]`）で、最大の wave 間隔は explorer wave に統合作業 1 回を足したもの。xhigh は reviewer の後に反証・meta・Round 2 の wave が続き、reviewer 1 体の実行が長い（12 体の wave を含む）
+- **統合作業の比率は effort で逆転する**。旧ベースライン（下の 15.1）の「fleet の約 92% は agent」は xhigh 中心の母集団の値で、opus-5-5 の xhigh（93%）とは合う。medium / high では agent が 2 分前後で終わるので、統合作業の 1 分前後が wave 間隔の 4 割を占める。ただし移り目は 1 回なので、全部消しても fleet 4 分のうち約 1 分
+- 集計は計測ストアの行を直接読んだ（`review-retro.sh` は区間を effort で割らない）。**合算値を下げる方向に丸めない**（見積もりが外れるコストの方が高い）
+- **更新の条件**: 世代が変わったとき、または xhigh 以上の review が 5 件たまったとき（現行の review は medium 3・high 2 で、explorer 5 + reviewer 10 の帯は未観測）。**本表は手で更新する** — retro は毎回の実行時点の値を出すが、doc 側の目安は版として固定しておかないと提示が回ごとにぶれる
+
+### 15.1 旧ベースライン（2026-08-21 / v2.78.2・v2.82.3）
+
+世代を payload に載せる前（#169）の母集団で、xhigh の self-review が中心。現行の目安には使わない。比べるときは effort を揃える（下の値は上表の xhigh 列と同じ桁にある）。
 
 | 区間 | 実測 | n | 出典フィールド |
 |---|---|---:|---|
@@ -167,14 +190,15 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 | synthesis（最後の wave→t2） | 中央値 1.5 分 | 26 | `duration_synthesis_min` |
 | closing（t2→t3） | 中央値 17 分 | 21 | `duration_closing_min`（**review のみ** / 大半が人間待ち） |
 
-- **単一の「wave あたり N 分」では表せない。** explorer wave は 6 分で安く、目安を外しているのは **reviewer → 反証** の間（5/5 件が 16 分超）。層で分けて提示する
-- **`max_inter_wave_sec` は「wave 単価」そのものではない** — wave N の agent 実行時間と、その後のオーケストレーターの統合・dedup・scoring が合算されている（内訳は上表の 2 行 / `dispatch.schema` 3 以上 / GitHub issue #153）。ただし **Phase 0 の見積もりが約束するのは実時間**なので、提示は合算値のまま行う
-- **`max_inter_wave_sec` を「次の wave の費用」と読まないこと**（v2.82.3 / #153 Phase 2）。この値は **wave N 起動 → wave N+1 起動**なので、**wave N+1 がまだ起動していない区間**を含む。そこを次の wave の費用に数えると単価を数倍に見積もる（実測: `wave_sizes` が `[5,1]` の回で `max_inter_wave_sec` は fleet span の 74.5% を占めるが、**末尾 1 体そのものは 25.5%** で残りは wave 1 の reviewer 5 体が回っていた時間）。**wave の費用は `wave_clock` の `end - start` で直接測る**
-- **fleet の約 92% は agent が回っている時間**（orchestrator の待ちは中央値 8.4% / 最大 14.3%）。往復削減（`design-notes/pending-optimizations.md ## 2` の延長）で縮められる上限がここで、**全部消しても 1 割に届かない**。壁時計の打ち手は wave の本数ではなく **1 体あたりの実行時間**にある（#156 の「1 体あたりの読む量」と同じ対象を別の軸から見たもの）
+- この母集団では explorer wave（6 分）だけが安く、目安を外していたのは **reviewer → 反証** の間（5/5 件が 16 分超）だった。旧版の Phase 0 はこれを受けて層（explorer / 以降）で分けて提示していた
+- **fleet の約 92% は agent が回っている時間**（orchestrator の待ちは中央値 8.4% / 最大 14.3%）。往復削減（`design-notes/pending-optimizations.md ## 2` の延長）で縮められる上限がここで、**全部消しても 1 割に届かない**。壁時計の打ち手は wave の本数ではなく **1 体あたりの実行時間**にある（#156 の「1 体あたりの読む量」と同じ対象を別の軸から見たもの）。opus-5-5 の xhigh でも同じ（上表 93%）
 - **後付け値の 2 行は publish 済み payload には無い**。`wave_clock` は payload に載せない契約（`## 16`）なので、生存している `subagents/agent-*.jsonl` に `[t0, t2]` の窓をかけて事後に算出した。**`review-retro.sh` には出ない**
 - 別経路の実測（review / small 帯 / `## 14` の v2.60.0 の注記）とも矛盾しない: agent wave 実時間 約 24 分（reviewer 8.5 / meta 8.9 / verify 6.2 ＝ 各 wave 内最長）に対しオーケストレーター側が約 20 分で、**reviewer wave の 8.5 + 20 = 28.5 分**は上のレンジに収まる。`## 14` は内訳側・本表は合算側で、**同じ現象を別の切り口で測っている**
-- **更新の条件**: #153 の内訳分離は payload に載り、上表を割った（v2.82.3）。次は **review 側のサンプルが 5 件貯まったとき** — 現行の母集団は self-review / high / medium に偏っており、review 側の wave 構成（explorer 5 + reviewer 10 の帯）では内訳が変わりうる。**合算値を下げる方向に丸めない**（見積もりが外れるコストの方が高い）
-- 集計は `scripts/review-retro.sh`（`## 18`）。**本表は手で更新する** — retro は毎回の実行時点の値を出すが、doc 側の目安は版として固定しておかないと提示が回ごとにぶれる
+
+### 15.2 `max_inter_wave_sec` の読み方（現行・旧の両方に当てはまる）
+
+- **`max_inter_wave_sec` は「wave 単価」そのものではない** — wave N の agent 実行時間と、その後のオーケストレーターの統合・dedup・scoring が合算されている（内訳は表の 2 行 / `dispatch.schema` 3 以上 / GitHub issue #153）。ただし **Phase 0 の見積もりが約束するのは実時間**なので、提示は合算値のまま行う
+- **`max_inter_wave_sec` を「次の wave の費用」と読まないこと**（v2.82.3 / #153 Phase 2）。この値は **wave N 起動 → wave N+1 起動**なので、**wave N+1 がまだ起動していない区間**を含む。そこを次の wave の費用に数えると単価を数倍に見積もる（実測: `wave_sizes` が `[5,1]` の回で `max_inter_wave_sec` は fleet span の 74.5% を占めるが、**末尾 1 体そのものは 25.5%** で残りは wave 1 の reviewer 5 体が回っていた時間）。**wave の費用は `wave_clock` の `end - start` で直接測る**
 
 ## 16. `review:completed` payload 契約（review 締めフロー 4・self-review Step 6.4 共通 / 正本）
 
