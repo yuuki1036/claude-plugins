@@ -504,6 +504,48 @@ if not events:
 now = datetime.now(timezone.utc)
 recent = [e for e in events if e["when"] and e["when"] >= now - timedelta(days=30)]
 
+#: 層別の ⚠️ を判定する層の窓（GitHub issue #302）。この日数のあいだに回が入っていない層は、もう
+#: サンプルが増えないので率も下がらず、閾値を超えたまま鳴り続ける（実測: 素の集計の ⚠️ 5 件中 4 件が
+#: 使っていない世代の層と決定済みの信号だった）。**母集団の最新の回から数える** — 壁時計から数えると、
+#: 古いログだけを読む集計で全層が過去になる（古さを母集団の最新と比べるのは #251 と同じ）
+LAYER_LIVE_DAYS = 30
+_TS_FMT = "%Y-%m-%dT%H:%M:%SZ"
+_whens = [e["when"] for e in events if e["when"]]
+LAYER_LIVE_SINCE = ((max(_whens) - timedelta(days=LAYER_LIVE_DAYS)).astimezone(timezone.utc).strftime(_TS_FMT)
+                    if _whens else None)
+
+
+def touch_last(last, key, when):
+    """層の最後の回を `last[key]` に残す（JSON にそのまま載る UTC の文字列で持つ）."""
+    if when is None:
+        return
+    s = when.astimezone(timezone.utc).strftime(_TS_FMT)
+    if s > last.get(key, ""):  # mutation-ok: 同じ値なら代入しても結果は同じ（> と >= で結果が変わらない）
+        last[key] = s
+
+
+#: 窓の中に回の無い層で、下限に達して閾値を超えている層の控え（信号名 → [(層, 最後の回, 分子, 分母)]）。
+#: ⚠️ の代わりに「計測の健全性」へ 1 行で出す（#302）
+layer_past = {}
+
+
+def is_live_layer(last):
+    """窓の中に回が入った層か。最後の回が分からない層は窓の中に置く（判定から黙って外さない）."""
+    return last is None or LAYER_LIVE_SINCE is None or last >= LAYER_LIVE_SINCE
+
+
+def print_past_layers():
+    """**窓の中に回の無い層を ⚠️ の代わりに「計測の健全性」へ 1 行で出す**（#302）.
+
+    もう増えないので率が動かず、⚠️ に置くと毎回同じ行に触れるか流すかになる。黙って消すと
+    「閾値を下回った」と読まれる。控えが無ければ出さない。
+    """
+    txt = " / ".join("%sの `%s` 層（最後の回 %s・%d/%d）" % (sig, k, last[5:10], num, den)
+                     for sig in sorted(layer_past) for k, last, num, den in layer_past[sig])
+    if txt:
+        print("  - 過去の層（母集団の最新の回から %d 日、回の入っていない層 / #302）: %sは ⚠️ の"
+              "条件に当たったまま。もう増えないので率は動かず、⚠️ からは外した" % (LAYER_LIVE_DAYS, txt))
+
 
 def num(v):
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
@@ -965,7 +1007,7 @@ SYN_DOMINANT_PCT = 30   # 1 回の syn ÷ fleet がこれ以上なら「支配�
 SYN_RATE_HOT = 10       # 支配的な回の割合がこれ以上で ⚠️
 SYN_MIN_N = 10          # 層 / 累計の分母の下限（他のシグナルの 8〜15 に揃える）
 SYN_TOP = 5             # 本文に列挙する支配的な回の上限
-syn_stats = {"n": 0, "dominant": 0, "by_gen": {}}
+syn_stats = {"n": 0, "dominant": 0, "by_gen": {}, "last_by_gen": {}}
 syn_ratios = []                 # (支配率 %, ts, plugin, tier, 世代, syn, fleet)
 syn_inconsistent = 0            # syn が fleet を超えた回（打点の矛盾。内数の契約に反する）
 for e in events:
@@ -982,6 +1024,7 @@ for e in events:
     syn_ratios.append((ratio, e["ts"], e["plugin"], p.get("size_tier") or "?", gen_of(p), syn, fleet))
     _g = syn_stats["by_gen"].setdefault(gen_of(p), {"n": 0, "dominant": 0})
     _g["n"] += 1
+    touch_last(syn_stats["last_by_gen"], gen_of(p), e["when"])
     syn_stats["n"] += 1
     if ratio >= SYN_DOMINANT_PCT:
         _g["dominant"] += 1
@@ -1164,7 +1207,8 @@ apx_stats = {"n": 0, "true_silent": 0, "true_silent_empty": 0, "true_silent_belo
              "true_silent_below_listed": 0, "true_silent_below_over": 0,
              "true_silent_unknown": 0,
              "rescued_judged": 0, "rescued_uncontracted": 0,
-             "by_gen": {}}   # 世代別の真の空振り（#214 / #210）
+             "by_gen": {},   # 世代別の真の空振り（#214 / #210）
+             "last_by_gen": {}}   # 層 → 最後の回（#302）
 for e in events:
     p = e["p"]
     a = p.get("appendix")
@@ -1195,6 +1239,7 @@ for e in events:
                                                     "true_silent_unknown": 0})
     _g["n"] += 1
     apx_stats["n"] += 1
+    touch_last(apx_stats["last_by_gen"], apx_layer_of(p), e["when"])
     if reported == 0:
         apx_silent += 1
         _g["silent"] += 1
@@ -1235,6 +1280,7 @@ for e in events:
 
 # ---- 6. 反証 verdict 分布（calibration_schema で層別） ---------------------
 verdict_layers = {}
+verdict_last = {}   # 層 → 最後の回（#302）。表の JSON には載せない
 for e in events:
     av = e["p"].get("adversarial_verify")
     if not isinstance(av, dict):
@@ -1256,6 +1302,7 @@ for e in events:
                                           "contested": 0, "calib": calib})
     L["n"] += 1
     L["total"] += total
+    touch_last(verdict_last, layer, e["when"])
     for k in ("confirmed", "refuted", "uncertain", "severity_inflated", "contested"):
         L[k] += num(av.get(k)) or 0
 
@@ -1376,7 +1423,7 @@ def layer_stats(field, schema_key, min_schema, value_of=None, major_only_of=None
     # 不発率を 1 つの分母に混ぜると世代差に見えるものが effort の構成差になる
     st = {"n_raw": 0, "n": 0, "fired": 0, "valuable": 0, "by_gen": {}, "by_effort": {},
           "skips": {}, "dropped_schema": 0, "dropped_scope": 0, "dropped_unrecorded": 0,
-          "schema_key": schema_key, "min_schema": min_schema}
+          "schema_key": schema_key, "min_schema": min_schema, "last_by_gen": {}}
     for e in events:
         d = e["p"].get(field)
         if not isinstance(d, dict):
@@ -1409,6 +1456,7 @@ def layer_stats(field, schema_key, min_schema, value_of=None, major_only_of=None
         g = st["by_gen"].setdefault(gen_of(e["p"]),
                                     {"n": 0, "fired": 0, "valuable": 0, "skips": {}})
         g["n"] += 1
+        touch_last(st["last_by_gen"], gen_of(e["p"]), e["when"])
         eb = st["by_effort"].setdefault(effort_band(e["p"]), {"n": 0, "fired": 0, "by_gen": {}})
         ebg = eb["by_gen"].setdefault(gen_of(e["p"]), {"n": 0, "fired": 0, "skips": {}})
         eb["n"] += 1
@@ -1443,7 +1491,7 @@ def layer_stats(field, schema_key, min_schema, value_of=None, major_only_of=None
 LAYER_PENDING_MIN_N = 5
 
 
-def layered_signal(st, numer_of, denom_of, min_n, is_hot, render, pending=None):
+def layered_signal(st, numer_of, denom_of, min_n, is_hot, render, pending=None, past=None):
     """**世代層ごとに閾値を評価し、超えた層だけを鳴らす**（GitHub issue #209）。
 
     表は既に世代別に出ているのに判定だけ累計のままだと、母集団の違う層を平均する
@@ -1460,8 +1508,16 @@ def layered_signal(st, numer_of, denom_of, min_n, is_hot, render, pending=None):
     累計で鳴らすときは**なぜ層別で判定していないか**を必ず添える（黙ると層別が効いて
     いると読まれる）。**分母はシグナルごとに違う**ので注記も同じ関数から取り直す
     （skeptic の分母は起動回数であって母集団ではない）。
+
+    **窓（`LAYER_LIVE_DAYS`）の中に回が入っていない層は判定しない**（GitHub issue #302）。もう増えない
+    ので率が下がらず、閾値を超えたまま鳴り続ける。下限に達して閾値を超えている過去の層は `past` に
+    `(層, 最後の回, 分子, 分母)` で控え、「計測の健全性」に 1 行で出す（黙って消さない）。**累計も窓の
+    中の層だけで組み直す** — 組み直さないと、過去の層の値で累計が鳴り続けて同じことが起きる。
+    下限未満の過去の層は保留（`pending`）にも入れない — 「あと N 件で判定可能」が成り立たない。
     """
     by_gen = st.get("by_gen") or {}
+    last_by_gen = st.get("last_by_gen") or {}
+    live = {k: g for k, g in by_gen.items() if is_live_layer(last_by_gen.get(k))}
     hot = []
     judged = []
     for key in sorted(by_gen):
@@ -1469,21 +1525,29 @@ def layered_signal(st, numer_of, denom_of, min_n, is_hot, render, pending=None):
         d = denom_of(g)
         if d < min_n:
             continue
+        if key not in live:
+            if past is not None and is_hot(numer_of(g), d):
+                past.append((key, last_by_gen[key], numer_of(g), d))
+            continue
         judged.append(key)
         if is_hot(numer_of(g), d):
             hot.append(render("`%s` 層" % key, numer_of(g), d, ""))
     if hot:
         return hot
-    total = denom_of(st)
-    if total < min_n or not is_hot(numer_of(st), total):
+    if len(live) == len(by_gen):
+        numer, total = numer_of(st), denom_of(st)
+    else:
+        numer = sum(numer_of(g) for g in live.values())
+        total = sum(denom_of(g) for g in live.values())
+    if total < min_n or not is_hot(numer, total):
         # **どこも鳴らなかったときだけ、下限未満で閾値を超えている層を控える**（#209）。
         # 累計は層を平均するので、判定できる層が健全だと**崩れている少数層が希釈されて
         # 消える**（実測の形: 健全な層 n=10 と崩れた層 n=8 で累計 28% ＝ 閾値 50 に届かない）。
         # ⚠️ には出さない — 下限未満は「行動する根拠がまだ無い」という判断そのもの。
         # 代わりに「計測の健全性」へ保留として出し、**黙って落ちる状態を作らない**
         if pending is not None:
-            for key in sorted(by_gen):
-                g = by_gen[key]
+            for key in sorted(live):
+                g = live[key]
                 d = denom_of(g)
                 if LAYER_PENDING_MIN_N <= d < min_n and is_hot(numer_of(g), d):
                     pending.append((key, numer_of(g), d, min_n))
@@ -1492,10 +1556,12 @@ def layered_signal(st, numer_of, denom_of, min_n, is_hot, render, pending=None):
         note = ("。**累計で判定**（層別では %s が下限に達したが閾値に届かない）"
                 % " / ".join("`%s`" % k for k in judged))
     else:
-        top = max(((denom_of(g), k) for k, g in by_gen.items()), default=(0, "-"))
+        top = max(((denom_of(g), k) for k, g in live.items()), default=(0, "-"))
         note = ("。**累計で判定**（層別では判定不能 — 最大層 `%s` の分母 %d・下限 %d）"
                 % (top[1], top[0], min_n))
-    return [render("累計", numer_of(st), total, note)]
+    if len(live) < len(by_gen):
+        note += "。過去の層（母集団の最新の回から %d 日、回の入っていない層）は累計から外した" % LAYER_LIVE_DAYS
+    return [render("累計", numer, total, note)]
 
 
 # ロールバック条件の層別要件の正本: triage-dynamic-gates.md `## 8`（meta） / `## 8.5`（skeptic）
@@ -1863,30 +1929,33 @@ VERDICT_MIN = 20     # 層内の verdict 件数の下限（これ未満では層
 # **該当する層をすべて出す**。層キーに世代が入って同じ calib に複数層が並ぶように
 # なったので、代表 1 層だけを見ると**条件を満たした別世代が黙って落ちる**
 # （「⚠️ が出たときだけ行動する」契約では「該当なし」と読まれる）
+#: ⚠️ から外した決定済みの信号の層（GitHub issue #302）。外した件数を ⚠️ の末尾に出す
+decided_off = []
 for _lk in sorted(verdict_layers):
     L = verdict_layers[_lk]
     ratio = pct(L["severity_inflated"], L["total"])
-    # **最新より古い calib の層では鳴らさない**（GitHub issue #251 提案 3）。publish は現行の
-    # `calibration_schema` を固定で注入するので、古い層はもう増えず、鳴っても行動の先が無い
-    # （#221 で「鳴っていること自体は新しい情報ではない」と確認済み）。古さは母集団の最新と
-    # 比べる — 最新が古い calib しか無い母集団では従来どおり鳴る。表の行と注記は残す
-    # **世代が分からない層でも鳴らさない**（#251）。節が「世代が分からないので効果判定に使わない」と
-    # 言う層で「効いていない疑い」を出すと、同じ出力の中で表示が食い違う
+    # **severity_inflated は ⚠️ に出さない**（GitHub issue #221 で「何もしない」と決めて close した /
+    # #302）。直接回す self-review は medium が標準で、反証は medium では起動せず、MAJOR を見るのは
+    # xhigh 以上だけ。鳴っても行動の先が無い（実測: 3/opus-5-5 の 63% が #221 の後も毎回鳴っていた）。
+    # 表は xhigh の回の較正を見る用途で残す。**⚠️ には戻さない** — #221 の再開条件（medium の本文で
+    # MAJOR の誇張が問題になったとき）は retro では測れないので、再開は issue で行う。
+    # 下の条件は外す前の判定（#251: 最新の calib・世代の分かる層だけ）で、外した件数に数えるのに使う
     if (L["total"] >= VERDICT_MIN and ratio >= 45 and L["calib"] >= CALIB_MIN
             and L["calib"] == latest_calib and LAYER_GEN.get(_lk) not in UNKNOWN_GENS):
-        # ラベルは**その層のキー**を出す（`newest_layer` を出すと別層の名前が付く）。
-        # キーには世代が入っているので `層=` と呼ぶ
-        signals.append("severity_inflated が %.0f%%（層=%s / %d verdict）。"
-                       "上流較正（references/prompts/reviewer-common.md の降格典型）が効いていない疑い"
-                       % (ratio, _lk, L["total"]))
+        decided_off.append(("severity_inflated", _lk))
     # 下の 2 つは `CALIB_MIN` で絞らない。**反証レイヤー自身の設定**（effort / バッチサイズ）の
-    # 再監視条件であって上流較正の効果測定ではないので、較正版で層別する理由が無い
-    if L["total"] >= VERDICT_MIN and pct(L["uncertain"], L["total"]) >= 15:
-        signals.append("uncertain が %.0f%%。反証 effort を max に戻す条件"
-                       "（triage-dynamic-gates.md `## 9`）に該当" % pct(L["uncertain"], L["total"]))
-    if L["total"] >= VERDICT_MIN and pct(L["refuted"], L["total"]) >= 20:
-        signals.append("refuted が %.0f%%。反証バッチサイズ 5 → 3 の再検討条件に該当"
-                       % pct(L["refuted"], L["total"]))
+    # 再監視条件であって上流較正の効果測定ではないので、較正版で層別する理由が無い。
+    # 窓の中に回の無い層は ⚠️ にせず、過去の層として控える（#302 / `layered_signal` と同じ扱い）
+    for _name, _key, _hot_pct, _txt in (
+            ("反証の uncertain 率", "uncertain", 15,
+             "uncertain が %.0f%%。反証 effort を max に戻す条件（triage-dynamic-gates.md `## 9`）に該当"),
+            ("反証の refuted 率", "refuted", 20, "refuted が %.0f%%。反証バッチサイズ 5 → 3 の再検討条件に該当")):
+        if L["total"] < VERDICT_MIN or pct(L[_key], L["total"]) < _hot_pct:
+            continue
+        if is_live_layer(verdict_last.get(_lk)):
+            signals.append(_txt % pct(L[_key], L["total"]))
+        else:
+            layer_past.setdefault(_name, []).append((_lk, verdict_last[_lk], L[_key], L["total"]))
 # **相関は ⚠️ に出さない**（GitHub issue #217 で再監視を終了した）。この行はもともと
 # 「`## 7` の『体数と fleet は無相関』を再監視せよ」というトリガーで、実際に 3 回鳴って
 # 3 回とも調べ切った: tier 交絡（#151）/ 世代・effort・wave 数の統制（#217）/ synthesis の
@@ -2093,7 +2162,8 @@ signals.extend(layered_signal(
         "冷や読み skeptic の価値率が %.0f%%（%s / fired %d 件 / gate_schema 3 = xhigh/max 起点）。"
         "層の撤去を検討する撤去条件"
         "（triage-dynamic-gates.md `## 8.5`）に該当%s" % (pct(v, f), label, f, note),
-    pending=layer_pending.setdefault("skeptic 価値率", [])))
+    pending=layer_pending.setdefault("skeptic 価値率", []),
+    past=layer_past.setdefault("skeptic 価値率", [])))
 # 反証レイヤーの不発（`no-eligible-findings`）は **⚠️ にしない**（GitHub issue #249）。以前は世代別に
 # 50% 以上で鳴らしていたが、分母に effort の違う回が混ざっていた:
 #   - high 帯は世代が分かる 31 回中 30 回が不発で、opus-4-8 / opus-5 / opus-5-5 のどれも 9 割超。
@@ -2110,7 +2180,8 @@ _meta_dead = layered_signal(
     lambda label, fired, n, note:
         "meta-reviewer が起動対象 %d 件（%s / gate_schema>=3・effort 帯内）で 1 度も"
         "起動していない。起動ゲートの再検討が要る%s" % (n, label, note),
-    pending=layer_pending.setdefault("meta の起動ゼロ", []))
+    pending=layer_pending.setdefault("meta の起動ゼロ", []),
+    past=layer_past.setdefault("meta の起動ゼロ", []))
 if _meta_dead:
     signals.extend(_meta_dead)
 else:
@@ -2121,7 +2192,8 @@ else:
             "meta-reviewer の価値率が %.0f%%（%s / fired %d 件 / gate_schema>=3）。"
             "層を畳むロールバック条件（triage-dynamic-gates.md `## 8`）に該当%s"
             % (pct(v, f), label, f, note),
-        pending=layer_pending.setdefault("meta 価値率", [])))
+        pending=layer_pending.setdefault("meta 価値率", []),
+        past=layer_past.setdefault("meta 価値率", [])))
 
 # **真の空振り率**（GitHub issue #214）。#210 の判定基準の片方で、表に出ていても鳴らなければ
 # 行動につながらない（#209）。閾値 20 は #210 本文が「回復のサイン」として先に固定した値で、
@@ -2141,7 +2213,8 @@ _TS_KEYS = ("n", "true_silent", "true_silent_empty", "true_silent_below",
             "true_silent_below_listed", "true_silent_below_over")
 apx_main = {"by_gen": {_k: _v for _k, _v in apx_stats["by_gen"].items()
                         if is_main_threshold_key(_k) and is_main_effort_key(_k)
-                        and is_main_rereview_key(_k)}}
+                        and is_main_rereview_key(_k)},
+            "last_by_gen": apx_stats["last_by_gen"]}
 for _f in _TS_KEYS:
     apx_main[_f] = sum(_v.get(_f, 0) for _v in apx_main["by_gen"].values())
 _ts_split = {"`%s` 層" % _k: (_v.get("true_silent_empty", 0), _v.get("true_silent_below", 0),
@@ -2221,7 +2294,8 @@ signals.extend(layered_signal(
         "（20%% 未満）を満たしていない%s%s%s"
         % (pct(ts, n), label, ts, n, _ts_breakdown(label), note, _recovery_window_hint(),
            _excluded_note()),
-    pending=layer_pending.setdefault("真の空振り率", [])))
+    pending=layer_pending.setdefault("真の空振り率", []),
+    past=layer_past.setdefault("真の空振り率", [])))
 
 # **synthesis の支配率**（GitHub issue #218）。閾値の根拠は上の 4b。層別は他と同じ流儀
 signals.extend(layered_signal(
@@ -2232,7 +2306,8 @@ signals.extend(layered_signal(
         "（分冊の遅延読み込み・可変部の圧縮・scoring の機械化 / orchestration-measurement.md "
         "`## 14`）— 体数削減では縮まない（triage-guide.md `## 7`）%s"
         % (SYN_DOMINANT_PCT, pct(dom, n), label, dom, n, note),
-    pending=layer_pending.setdefault("synthesis の支配率", [])))
+    pending=layer_pending.setdefault("synthesis の支配率", []),
+    past=layer_past.setdefault("synthesis の支配率", [])))
 
 # **計測ストアの同期で語彙に無い値を落とした回**。計測ストアの sanitizer が payload の `sanitize_drops` に
 # 件数だけを残す（知らないキー `keys` / 欠けた観点の知らない語 `coverage` / 識別子の形の値 `values`）。
@@ -2351,6 +2426,12 @@ if as_json:
                         "modern_explorer_waves": modern_waves,
                         "modern_explorer_waves_scope": len(modern_waves_scope)},
         "signals": signals,
+        # ⚠️ から外した分（#302）。`past` は窓の中に回の無い層、`decided` は決定済みの信号
+        "signals_excluded": {
+            "live_since": LAYER_LIVE_SINCE,
+            "past": [{"signal": sig, "layer": k, "last": last, "numer": num, "denom": den}
+                     for sig in sorted(layer_past) for k, last, num, den in layer_past[sig]],
+            "decided": [{"signal": sig, "layer": k} for sig, k in decided_off]},
         # 下限未満で閾値を超えた層（#209）と、判定可能になるまでの件数（#230）。
         # テキスト出力はシグナルごとに 2 層で切るが、こちらは全層を出す
         "pending": [{"signal": sig, "layer": k, "numer": num, "denom": den,
@@ -2610,6 +2691,11 @@ if verdict_layers:
             pct(L["confirmed"], L["total"]), pct(L["severity_inflated"], L["total"]),
             pct(L["refuted"], L["total"]), pct(L["uncertain"], L["total"]),
             pct(L["contested"], L["total"])))
+    # ⚠️ から外したことを表の側で言う（#302）。黙ると「閾値を下回った」と読まれる
+    print()
+    print("severity_inflated は ⚠️ に出さない（#221 で「何もしない」と決めた — 直接回す self-review は"
+          " medium が標準で、反証が MAJOR を見るのは xhigh 以上だけ / #302）。表は xhigh で回した回の"
+          "較正を見る用途で残す。⚠️ には戻さない（再開は issue で行う）")
     # 黙るだけだと「効果あり」と読まれうるので、**判定できない間はその旨を 1 行で言う**
     # （⚠️ 欄には出さない / issue #131）。**「層 1 のみ」だけを待ち扱いにしない** — 現行版 publish は
     # `calibration_schema: 2` を常に注入するので層 2 は 1 件目ですぐ現れる一方、シグナルは
@@ -2619,7 +2705,7 @@ if verdict_layers:
     if _older and latest_calib >= CALIB_MIN:
         print()
         print("層 %s は旧較正（この母集団の最新は層 %d。publish は現行の calib を注入するので"
-              "旧較正の層はもう増えない）。**severity_inflated の ⚠️ は層 %d だけで判定する**（#251）"
+              "旧較正の層はもう増えない）。**較正の効果は層 %d だけで読む**（#251）"
               % (" / ".join(str(c) for c in _older), latest_calib, latest_calib))
 
     def _runs_txt(r):
@@ -2664,7 +2750,7 @@ if verdict_layers:
     elif newest_layer is not None and verdict_layers[newest_layer]["total"] < VERDICT_MIN:
         print()
         print("上流較正（v2.62.0）の効果判定は **層 %s を蓄積中**（%d/%d verdict）。"
-              "この件数ではシグナルを出さない — triage-dynamic-gates.md `## 9`"
+              "この件数では比率を解釈しない — triage-dynamic-gates.md `## 9`"
               % (newest_layer, verdict_layers[newest_layer]["total"], VERDICT_MIN))
         # **「待てば貯まる」とは限らない**（GitHub issue #191）。対策後の層が特定の世代に
         # 偏っていると、比率が下がっても打ち手の効果か世代の副作用かを分離できない。
@@ -3008,6 +3094,7 @@ else:
 if n_modern == 0:
     print("**計測の健全性**: 判定対象なし（`measurement_gaps` を持つ v2.62.0 以降の"
           "サンプルが 0 件。全 %d 件は旧版で publish されたもの）" % n_all)
+    print_past_layers()
 else:
     waves_txt = ("explorer_waves %d/%d 件（explorer 起動回のみ）"
                  % (modern_waves, len(modern_waves_scope)) if modern_waves_scope
@@ -3076,6 +3163,7 @@ else:
             print("  - %s: `%s` 層が閾値を超えている（%d/%d）が、下限 %d に届かないので"
                   "**判定を保留**（**あと %d 件で判定可能** / %s閾値に届かず ⚠️ も出ていない）"
                   % (_sig, _k, _num, _den, _min, _min - _den, _scope_txt))
+    print_past_layers()
     # **分母を明示する**（#207 / `wave-split` と同じ流儀）。判定できた回が少ないうちは
     # 比率が閾値に届かず ⚠️ が出ないので、黙ると「fleet の打点は守られている」と読まれる
     if n_fleet_span_judged:
@@ -3107,5 +3195,11 @@ if signals:
     print("**⚠️ シグナル**（ロールバック条件・再監視条件に該当）")
     for s in signals:
         print("- %s" % s)
+# **外した件数を出す**（#302）。黙って消すと「該当なし」と読まれる。0 件なら出さない
+_n_past = sum(len(v) for v in layer_past.values())
+if _n_past or decided_off:
+    print()
+    print("⚠️ から外した: 過去の層 %d 件 / 決定済み %d 件（過去の層は「計測の健全性」の行、決定済みは"
+          "反証 verdict 分布の注記 / #302）" % (_n_past, len(decided_off)))
 PY
 exit 0

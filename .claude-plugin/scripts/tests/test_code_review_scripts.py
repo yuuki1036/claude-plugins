@@ -3508,6 +3508,7 @@ class RetroTest(RetroFixture):
         self._events([self._verdict(1, 5) for _ in range(6)])
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertNotIn("severity_inflated が", out)
+        self.assertNotIn("決定済み", out, "対策前の層を外した件数に数えている")
         self.assertIn("対策前", out, "黙るだけでは「効果あり」と読まれる")
 
     def test_accumulating_layer_is_announced(self):
@@ -3516,11 +3517,15 @@ class RetroTest(RetroFixture):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("蓄積中", out)
         self.assertNotIn("severity_inflated が", out)
+        self.assertNotIn("決定済み", out, "下限未満の層を外した件数に数えている")
 
-    def test_signal_fires_on_post_measure_layer(self):
+    def test_post_measure_layer_is_counted_as_decided(self):
+        """severity_inflated は ⚠️ に出さず、外した件数に数える（#221 で決定済み / GitHub issue #302）."""
         self._events([self._verdict(2, 5) for _ in range(6)])
         out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("severity_inflated が", out)
+        self.assertNotIn("severity_inflated が", self.signals(out))
+        self.assertIn("⚠️ から外した: 過去の層 0 件 / 決定済み 1 件", out)
+        self.assertIn("severity_inflated は ⚠️ に出さない（#221", out)
 
     def test_gap_signal_does_not_fire_on_a_single_sample(self):
         """`late-publish` は self-review 母集団で判定する（**単発で 100% 点灯しない**）."""
@@ -4252,20 +4257,24 @@ class RetroGenerationRecallTest(RetroFixture):
         line = [l for l in out.splitlines() if l.startswith("| opus-5")][0]
         self.assertTrue(line.rstrip().endswith("| - |"), "欠測が数値に化けている: %s" % line)
 
-    def test_every_qualifying_layer_emits_a_signal(self):
-        """閾値を超えた層は**すべて**シグナルに出す（代表 1 層だけ見ない）.
+    def test_every_qualifying_layer_is_counted(self):
+        """条件を満たした層は**すべて**数える（代表 1 層だけ見ない）.
 
         層キーに世代が入って同じ calib に複数層が並ぶので、代表だけを見ると
-        条件を満たした別世代が黙って落ちる。
+        条件を満たした別世代が黙って落ちる。severity_inflated は ⚠️ から外した（#221 / #302）ので、
+        外した件数（`signals_excluded.decided`）で見る。
         """
         rows = []
         for gen in ("opus-5", "opus-4-8"):
             for _ in range(10):
                 rows.append(self._row(gen, 8, 3, calib=2, inflated=1))
         self._events(rows)
-        out = self.run_script(RETRO, env=self._env()).stdout
-        self.assertIn("層=2/opus-5", out)
-        self.assertIn("層=2/opus-4-8", out, "片方の世代のシグナルが落ちている")
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["signals_excluded"]["decided"],
+                         [{"signal": "severity_inflated", "layer": "2/opus-4-8"},
+                          {"signal": "severity_inflated", "layer": "2/opus-5"}],
+                         "片方の世代が落ちている")
+        self.assertFalse([s for s in j["signals"] if "severity_inflated" in s])
 
     def test_the_split_table_matches_the_yield_table_granularity(self):
         """内訳（splits）の粒度を歩留まり（yields）に揃える.
@@ -4871,6 +4880,7 @@ class RetroCalibrationRepresentativeTest(RetroFixture):
         self.assertIn("層 3 で世代を記録できた verdict が 0 件", out)
         self.assertIn("opus-5-5 1 回（反証発火 0 回: effort 1）", out)
         self.assertNotIn("層=2", self.signals(out))
+        self.assertNotIn("決定済み", out, "最新でない層 2 を外した件数に数えている")
 
     def test_a_single_generation_population_lists_its_zero_verdict_runs(self):
         """世代が 1 種の母集団でも「verdict 0 件の世代」を数える（層キーは割られていない）."""
@@ -4908,27 +4918,28 @@ class RetroCalibrationRepresentativeTest(RetroFixture):
         out = self._out()
         self.assertIn("効果判定に使わない", out)
         self.assertNotIn("severity_inflated が", self.signals(out))
+        self.assertNotIn("決定済み", out, "世代不明の層を外した件数に数えている")
 
     def test_a_known_low_calibration_layer_with_more_verdicts_loses_to_the_latest(self):
         """代表は calib 優先（対抗馬が既知世代でも、verdict の多い古い層を選ばない）."""
         self._events([self._v("opus-4-8", calib=1, total=8), self._v("opus-5", total=1)])
         self.assertIn("層 3/opus-5 を蓄積中", self._out())
 
-    def test_severity_inflated_does_not_ring_for_an_older_calibration(self):
-        """提案 3: 最新より古い calib の層は publish では増えないので ⚠️ を鳴らさない."""
+    def test_severity_inflated_does_not_count_an_older_calibration(self):
+        """提案 3: 最新より古い calib の層は数えない（⚠️ から外した後も、外した件数の数え方は同じ / #302）."""
         old = [self._v("opus-5", calib=2, total=10, inflated=6) for _ in range(2)]
         new = [self._v("opus-5", calib=3, total=10, inflated=6) for _ in range(2)]
         self._events(old + new)
-        sig = self.signals(self._out())
-        self.assertNotIn("層=2", sig)
-        self.assertIn("層=3", sig)
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["signals_excluded"]["decided"], [{"signal": "severity_inflated", "layer": "3"}])
         self.assertIn("旧較正", self._out())
 
-    def test_severity_inflated_still_rings_when_the_older_one_is_the_latest(self):
-        """最新の層が calib 2 なら鳴る（古いかどうかは母集団の最新と比べる）."""
+    def test_severity_inflated_is_counted_when_the_older_one_is_the_latest(self):
+        """最新の層が calib 2 なら数える（古いかどうかは母集団の最新と比べる）."""
         self._events([self._v("opus-5", calib=2, total=10, inflated=6) for _ in range(2)])
         out = self._out()
-        self.assertIn("severity_inflated が 60%", self.signals(out))
+        self.assertNotIn("severity_inflated が", self.signals(out))
+        self.assertIn("決定済み 1 件", out)
         self.assertNotIn("旧較正", out, "古い層が無いのに注記を出している")
 
     def test_the_older_calibration_note_names_layers_below_the_latest(self):
@@ -6696,6 +6707,154 @@ class RetroFleetSpanTest(RetroFixture):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("fleet-span-mismatch", out, "シグナルに出ていない（分母が壊れている）")
         self.assertIn("t2 を全 agent の回収後に", out, "是正先が既定文言に落ちている")
+
+
+class RetroStaleLayerTest(RetroFixture):
+    """層別の ⚠️ は窓の中に回が入った層だけで判定する（GitHub issue #302）.
+
+    もう使っていない世代の層は増えないので率が下がらず、閾値を超えたまま毎回鳴っていた（実測: 素の集計の
+    ⚠️ 5 件中 4 件）。窓は母集団の最新の回から 30 日。題材は真の空振り率（閾値 20%・下限 10）。
+    """
+
+    SIG = "真の空振り率（報告 0 件かつ付録推奨 0）が "
+
+    def _run(self, gen: str, silent: bool) -> dict:
+        r = {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+             "models": self._models("claude-%s" % gen),
+             "pre_adjust_counts": {"schema": 2, "blocker": 0, "critical": 0, "major": 1, "minor": 0},
+             "blocker_count": 0, "critical_count": 0, "major_count": 0 if silent else 1,
+             "minor_count": 0, "appendix": {"schema": 1, "listed": 0, "recommended": 0}}
+        return r
+
+    def _dated(self, spec: list[tuple[str, str, int, int]]) -> None:
+        """`(日付, 世代, 総数, 真の空振り数)` の並びからイベントを作る（時刻は日付の中で連番）."""
+        rows = []
+        for day, gen, total, silent in spec:
+            for i in range(total):
+                rows.append(("%sT00:%02d:00Z" % (day, i), self._run(gen, i < silent)))
+        self._write_rows(rows)
+
+    def _write_rows(self, rows: list[tuple[str, dict]]) -> None:
+        (self.root / ".claude").mkdir(exist_ok=True)
+        (self.root / ".claude" / "events.jsonl").write_text(
+            "\n".join(json.dumps({"ts": ts, "plugin": "code-review:self-review",
+                                  "event": "review:completed", "payload": r}, ensure_ascii=False)
+                      for ts, r in rows) + "\n", encoding="utf-8")
+
+    def _out(self, *args: str) -> str:
+        r = self.run_script(RETRO, *args, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        self.assertIn("## レビュー振り返り", r.stdout)
+        return r.stdout
+
+    def test_a_layer_without_runs_in_the_window_moves_to_health(self):
+        self._dated([("2026-08-20", "opus-4-8", 10, 5), ("2026-10-10", "opus-5-5", 10, 0)])
+        out = self._out()
+        self.assertNotIn(self.SIG, self.signals(out), "過去の層で ⚠️ が鳴っている")
+        self.assertIn("過去の層（母集団の最新の回から 30 日、回の入っていない層 / #302）: 真の空振り率の "
+                      "`opus-4-8` 層（最後の回 08-20・5/10）は ⚠️ の条件に当たったまま", out)
+        self.assertIn("⚠️ から外した: 過去の層 1 件 / 決定済み 0 件", out)
+
+    def test_a_layer_with_a_run_in_the_window_still_rings(self):
+        """境界: 最後の回が窓の起点ちょうど（最新の回 10-10T00:09 の 30 日前）なら、層ごと判定する."""
+        rows = [("2026-08-20T00:%02d:00Z" % i, self._run("opus-4-8", i < 5)) for i in range(9)]
+        rows.append(("2026-09-10T00:09:00Z", self._run("opus-4-8", False)))
+        rows += [("2026-10-10T00:%02d:00Z" % i, self._run("opus-5-5", False)) for i in range(10)]
+        self._write_rows(rows)
+        out = self._out()
+        self.assertIn(self.SIG + "50%（`opus-4-8` 層", self.signals(out))
+        self.assertNotIn("過去の層", out)
+        self.assertNotIn("⚠️ から外した", out, "外していないのに件数の行を出している")
+
+    def test_the_window_counts_from_the_newest_run_not_the_clock(self):
+        """古いログだけを読む集計で全層を過去にしない（最新の回が窓の起点）."""
+        self._dated([("2026-08-20", "opus-4-8", 10, 5)])
+        self.assertIn(self.SIG + "50%（`opus-4-8` 層", self.signals(self._out()))
+
+    def test_the_total_is_rebuilt_from_live_layers(self):
+        """下限未満の過去の層が累計に残ると、累計で鳴り続ける（9/18 = 50%）. 窓の中の層だけなら 1/10."""
+        self._dated([("2026-08-20", "opus-4-8", 8, 8), ("2026-10-10", "opus-5-5", 10, 1)])
+        out = self._out()
+        self.assertNotIn(self.SIG, self.signals(out), "過去の層の値で累計が鳴っている")
+        self.assertNotIn("判定を保留", out, "増えない層をあと N 件で判定可能と出している")
+
+    def test_the_total_says_it_left_out_past_layers(self):
+        """累計で鳴るときは、過去の層を外したことを添える。境界: 窓の中の層の合計がちょうど下限 10."""
+        self._dated([("2026-08-20", "opus-4-8", 3, 0), ("2026-10-10", "opus-5-5", 5, 3),
+                     ("2026-10-11", "opus-5", 5, 2)])
+        sig = self.signals(self._out())
+        self.assertIn(self.SIG + "50%（累計 / 5/10）", sig)
+        self.assertIn("過去の層（母集団の最新の回から 30 日、回の入っていない層）は累計から外した", sig)
+
+    def test_the_total_does_not_mention_past_layers_without_any(self):
+        self._dated([("2026-10-10", "opus-5-5", 5, 3), ("2026-10-11", "opus-5", 5, 2)])
+        sig = self.signals(self._out())
+        self.assertIn(self.SIG + "50%（累計 / 5/10）", sig)
+        self.assertNotIn("累計から外した", sig)
+
+    def test_a_past_layer_under_the_threshold_is_not_listed(self):
+        """過去の層でも、条件に当たっていなければ控えに出さない（外した件数にも数えない）."""
+        self._dated([("2026-08-20", "opus-4-8", 10, 1), ("2026-10-10", "opus-5-5", 10, 0)])
+        out = self._out()
+        self.assertNotIn("過去の層", out)
+        self.assertNotIn("⚠️ から外した", out)
+
+    def test_runs_with_an_unreadable_timestamp_stay_in_the_window(self):
+        """ts を読めない回だけの層は窓の中に置く（最後の回が分からない層を黙って外さない）."""
+        rows = [("bogus-%d" % i, self._run("opus-5", i < 5)) for i in range(10)]
+        rows += [("2026-10-10T00:%02d:00Z" % i, self._run("opus-5-5", False)) for i in range(10)]
+        self._write_rows(rows)
+        self.assertIn(self.SIG + "50%（`opus-5` 層", self.signals(self._out()))
+
+    def test_no_readable_timestamp_at_all_keeps_every_layer(self):
+        self._write_rows([("bogus-%d" % i, self._run("opus-4-8", i < 5)) for i in range(10)])
+        self.assertIn(self.SIG + "50%（`opus-4-8` 層", self.signals(self._out()))
+
+    def test_past_layers_are_listed_in_json(self):
+        self._dated([("2026-08-20", "opus-4-8", 10, 5), ("2026-10-10", "opus-5-5", 10, 0)])
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["signals_excluded"]["live_since"], "2026-09-10T00:09:00Z")
+        self.assertEqual(j["signals_excluded"]["past"],
+                         [{"signal": "真の空振り率", "layer": "opus-4-8", "last": "2026-08-20T00:09:00Z",
+                           "numer": 5, "denom": 10}])
+        self.assertEqual(j["signals_excluded"]["decided"], [])
+
+    def test_a_past_verdict_layer_does_not_ring(self):
+        """反証 verdict の uncertain / refuted も同じ窓で扱う."""
+        def verdict(gen, uncertain):
+            return {"effort": "high", "measurement_gaps": [], "models": self._models("claude-%s" % gen),
+                    "adversarial_verify": {"fired": True, "skip_reason": None, "gate_schema": 2,
+                                           "calibration_schema": 3, "confirmed": 5 - uncertain,
+                                           "refuted": 0, "uncertain": uncertain,
+                                           "severity_inflated": 0, "contested": 0}}
+        rows = [("2026-08-20T00:%02d:00Z" % i, verdict("opus-4-8", 2)) for i in range(5)]
+        rows += [("2026-10-10T00:%02d:00Z" % i, verdict("opus-5-5", 0)) for i in range(5)]
+        self._write_rows(rows)
+        out = self._out()
+        self.assertNotIn("uncertain が", self.signals(out))
+        self.assertIn("反証の uncertain 率の `3/opus-4-8` 層（最後の回 08-20・10/25）", out)
+
+    def test_a_live_verdict_layer_still_rings(self):
+        """境界: refuted がちょうど閾値の 20%（5/25）で鳴る."""
+        rows = [("2026-10-10T00:%02d:00Z" % i, {
+            "effort": "high", "measurement_gaps": [], "models": self._models("claude-opus-5-5"),
+            "adversarial_verify": {"fired": True, "skip_reason": None, "gate_schema": 2,
+                                   "calibration_schema": 3, "confirmed": 4, "refuted": 1,
+                                   "uncertain": 0, "severity_inflated": 0, "contested": 0}})
+            for i in range(5)]
+        self._write_rows(rows)
+        self.assertIn("refuted が 20%。反証バッチサイズ", self.signals(self._out()))
+
+    def test_a_live_verdict_layer_rings_at_the_minimum_count(self):
+        """境界: verdict がちょうど下限の 20 件で、uncertain がちょうど閾値の 15%（3/20）."""
+        rows = [("2026-10-10T00:%02d:00Z" % i, {
+            "effort": "high", "measurement_gaps": [], "models": self._models("claude-opus-5-5"),
+            "adversarial_verify": {"fired": True, "skip_reason": None, "gate_schema": 2,
+                                   "calibration_schema": 3, "confirmed": 4 - (i < 3), "refuted": 0,
+                                   "uncertain": int(i < 3), "severity_inflated": 0, "contested": 0}})
+            for i in range(5)]
+        self._write_rows(rows)
+        self.assertIn("uncertain が 15%。反証 effort を max に戻す条件", self.signals(self._out()))
 
 
 class RetroLayeredSignalTest(RetroFixture):
