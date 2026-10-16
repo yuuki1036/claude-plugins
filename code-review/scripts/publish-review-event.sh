@@ -992,6 +992,11 @@ elif os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         _inv = {"via": "unknown", "parent": None}
     payload["invocation"] = {"via": _inv["via"], "parent": _inv.get("parent"),
                              "rereview": _inv.get("rereview")}
+    # 判定規則の版（GitHub issue #300 / #301）。鍵の無い判定器の回は載せない（retro は 1 として読む）。
+    # `True` も int なので bool を先に外す
+    _schema = _inv.get("schema")
+    if isinstance(_schema, int) and not isinstance(_schema, bool):
+        payload["invocation"]["schema"] = _schema
     # **定型の判定を載せる**（GitHub issue #250）。gap は定型なしの回にしか立たないので、率の分母
     # （判定できた回）はこのフィールドで数える。呼び出し側が書いた値は捨てる（機械判定の値だけ）
     _tpl = os.environ.get("REVIEW_TEMPLATE_STATE")

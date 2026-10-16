@@ -773,6 +773,24 @@ def is_rereview(p):
     return isinstance(inv, dict) and inv.get("rereview") is True
 
 
+#: parent の遡りに境界が無かった判定器の回に付ける印（`invocation.schema` が 2 未満 / GitHub issue #301）
+OLD_PARENT_TAG = "（旧判定）"
+
+
+def route_key(inv):
+    """経路別の行のキー `<via>/<parent>`。旧判定器が parent を付けた回は印を付けて分ける.
+
+    旧判定器は人間の発話を越えてセッションの先頭まで遡り、利用者が頼んだレビューを数時間前の skill の
+    配下に数えていた（#301）。**parent が null の回は印を付けない** — 新しい規則は旧規則が遡った範囲の
+    一部しか見ないので、旧規則で見つからなかった回は新しい規則でも null になる。
+    """
+    parent = inv.get("parent")
+    key = "%s/%s" % (inv.get("via") or "?", parent or "-")
+    schema = inv.get("schema")
+    judged_bounded = isinstance(schema, int) and not isinstance(schema, bool) and schema >= 2
+    return key + OLD_PARENT_TAG if parent and not judged_bounded else key
+
+
 def is_main_rereview_key(key):
     return REREVIEW_TAG not in key
 
@@ -1548,8 +1566,7 @@ report_template_by_route = {}
 for e in events:
     _rt, _inv = e["p"].get("report_template"), e["p"].get("invocation")
     if _rt in ("present", "absent") and isinstance(_inv, dict):
-        _key = "%s/%s" % (_inv.get("via") or "?", _inv.get("parent") or "-")
-        _d = report_template_by_route.setdefault(_key, {"judged": 0, "absent": 0})
+        _d = report_template_by_route.setdefault(route_key(_inv), {"judged": 0, "absent": 0})
         _d["judged"] += 1
         _d["absent"] += 1 if _rt == "absent" else 0
 # 取り違え疑いで外した回（#246）。publish の gap ではなく読み側の判定なので欠測内訳には混ぜない
@@ -3020,7 +3037,10 @@ else:
     if report_template_by_route:
         print("  - 定型レポートの経路別（via/parent / #265）: %s"
               % " / ".join("%s 判定 %d 件中 %d 件で定型なし" % (k, v["judged"], v["absent"])
-                           for k, v in sorted(report_template_by_route.items())))
+                           for k, v in sorted(report_template_by_route.items()))
+              + ("。`%s` は parent の遡りに境界が無かった判定器の回で、利用者が頼んだレビューを skill の"
+                 "配下に数えていることがある（#301）" % OLD_PARENT_TAG
+                 if any(OLD_PARENT_TAG in k for k in report_template_by_route) else ""))
     # **外した回を黙って消さない**（#246）。0 件なら出さない（⚠️ 契約）
     if session_suspects:
         print("  - transcript の取り違え疑い: %d 件（同じ transcript で窓が重なる %d 件 / "

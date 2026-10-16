@@ -155,6 +155,25 @@ class JudgeLinesTest(unittest.TestCase):
         self.assertFalse(verdict([bash(START), user, bash(PUBLISH)]))
 
 
+def with_uuid(line: str, value: str) -> str:
+    return json.dumps(dict(json.loads(line), uuid=value), ensure_ascii=False)
+
+
+class ReplayedLinesTest(unittest.TestCase):
+    """同じ `uuid` の行は最初の 1 行だけを読む（GitHub issue #301）."""
+
+    def test_a_replayed_review_is_not_this_review(self):
+        """前の回の start と定型が今回の start の後に再生されても、今回の出力に数えない."""
+        old_start, old_template = with_uuid(bash(START), "u1"), with_uuid(text(TEMPLATE), "u2")
+        lines = [old_start, old_template, with_uuid(bash(PUBLISH), "u3"),
+                 with_uuid(bash(START), "u4"), with_uuid(text("済"), "u5"),
+                 old_start, old_template, with_uuid(bash(PUBLISH), "u6")]
+        self.assertFalse(verdict(lines))
+
+    def test_lines_without_a_uuid_are_all_kept(self):
+        self.assertTrue(verdict([bash(START), text("済"), text(TEMPLATE), text(TEMPLATE), bash(PUBLISH)]))
+
+
 class CliTest(unittest.TestCase):
     """publish は標準出力の 1 語で受け取る。**落ちても publish 側では「gap なし」に見える**ので CLI で測る."""
 

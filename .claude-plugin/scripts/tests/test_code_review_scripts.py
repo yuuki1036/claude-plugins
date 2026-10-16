@@ -1510,7 +1510,8 @@ class InvocationPublishTest(TranscriptFixture):
                      self._start())
         self.publish(env=self.env_home())
         self.assertEqual(self.last_payload()["invocation"],
-                         {"via": "skill-tool", "parent": "feature-dev:feature-dev", "rereview": False})
+                         {"via": "skill-tool", "parent": "feature-dev:feature-dev", "rereview": False,
+                          "schema": 2})
 
     def test_a_rereview_declaration_is_read_from_the_skill_args(self):
         """G-V ループが渡す `--rereview` を transcript から読んで載せる（GitHub issue #296）."""
@@ -1527,7 +1528,7 @@ class InvocationPublishTest(TranscriptFixture):
         self.publish(dict(BASE_PAYLOAD, invocation={"via": "slash", "parent": "x", "rereview": True}),
                      env=self.env_home())
         self.assertEqual(self.last_payload()["invocation"],
-                         {"via": "unknown", "parent": None, "rereview": None},
+                         {"via": "unknown", "parent": None, "rereview": None, "schema": 2},
                          "start が無い transcript なのに呼び出し側の値が残っている")
 
     def test_an_unresolved_session_is_unknown(self):
@@ -1581,6 +1582,23 @@ class InvocationPublishTest(TranscriptFixture):
     def test_a_string_rereview_falls_back(self):
         self.assertEqual(self._publish_with_judge({"via": "slash", "parent": None, "rereview": "true"}),
                          {"via": "unknown", "parent": None, "rereview": None})
+
+    def test_the_rule_version_passes_through(self):
+        """判定規則の版（GitHub issue #300 / #301）。retro が旧判定器の回を層別する."""
+        self.assertEqual(self._publish_with_judge({"via": "slash", "parent": None, "rereview": False,
+                                                   "schema": 2}),
+                         {"via": "slash", "parent": None, "rereview": False, "schema": 2})
+
+    def test_a_boolean_rule_version_is_dropped(self):
+        """`True` も int なので型で弾く。版を落としても経路の判定は残す."""
+        self.assertEqual(self._publish_with_judge({"via": "slash", "parent": None, "rereview": False,
+                                                   "schema": True}),
+                         {"via": "slash", "parent": None, "rereview": False})
+
+    def test_a_string_rule_version_is_dropped(self):
+        self.assertEqual(self._publish_with_judge({"via": "slash", "parent": None, "rereview": False,
+                                                   "schema": "2"}),
+                         {"via": "slash", "parent": None, "rereview": False})
 
 
 class PublishSessionResolutionTest(TranscriptFixture):
@@ -8275,7 +8293,7 @@ class ReportTemplateRetroTest(RetroFixture):
     def test_rates_are_split_by_route(self):
         """経路（`invocation`）を持つ回だけを via/parent で割る（GitHub issue #265）."""
         def routed(state, via, parent=None):
-            return dict(self._row(state), invocation={"via": via, "parent": parent})
+            return dict(self._row(state), invocation={"via": via, "parent": parent, "schema": 2})
         self._events([routed("present", "slash"), routed("absent", "skill-tool", "feature-dev:feature-dev"),
                       routed("present", "skill-tool", "feature-dev:feature-dev"),
                       routed(None, "inline"), self._row("absent")])
@@ -8286,6 +8304,33 @@ class ReportTemplateRetroTest(RetroFixture):
         out = self.run_script(RETRO, env=self._env()).stdout
         self.assertIn("定型レポートの経路別（via/parent / #265）: skill-tool/feature-dev:feature-dev "
                       "判定 2 件中 1 件で定型なし / slash/- 判定 1 件中 0 件で定型なし", out)
+
+    def test_a_parent_from_the_unbounded_judge_is_split_off(self):
+        """parent の遡りに境界が無かった判定器（`schema` 無し・1）の回は印を付けて分ける（GitHub issue #301）.
+
+        parent が null の回は分けない（新しい規則は旧規則が遡った範囲の一部しか見ないので、旧規則で
+        null の回は新しい規則でも null）。
+        """
+        def routed(state, parent, **extra):
+            return dict(self._row(state), invocation=dict({"via": "skill-tool", "parent": parent}, **extra))
+        self._events([routed("absent", "feature-dev:feature-dev"),
+                      routed("present", "feature-dev:feature-dev", schema=1),
+                      routed("present", "feature-dev:feature-dev", schema=True),
+                      routed("present", "feature-dev:feature-dev", schema=2),
+                      routed("present", None), routed("absent", None, schema=2)])
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["measurement"]["report_template_by_route"],
+                         {"skill-tool/feature-dev:feature-dev（旧判定）": {"judged": 3, "absent": 1},
+                          "skill-tool/feature-dev:feature-dev": {"judged": 1, "absent": 0},
+                          "skill-tool/-": {"judged": 2, "absent": 1}})
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("`（旧判定）` は parent の遡りに境界が無かった判定器の回", out)
+
+    def test_no_old_judge_note_without_old_parents(self):
+        self._events([dict(self._row("present"), invocation={"via": "slash", "parent": None})])
+        out = self.run_script(RETRO, env=self._env()).stdout
+        self.assertIn("定型レポートの経路別", out)
+        self.assertNotIn("旧判定", out)
 
     def test_no_route_line_without_invocation(self):
         self._events([self._row("absent"), self._row("present")])

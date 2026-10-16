@@ -24,6 +24,11 @@ start → publish の組を今回の判定として使ってしまう。古い�
 判定できない回は None を返し、呼び出し側は gap を立てない（誤って鳴らさない）: 起点の start が無い /
 待ちが切れても直近の publish の呼び出しが書き出されない / transcript を読めない。**待つのは start があって
 直近の publish がまだ無いときだけ**（start が無い回は待っても書き出されてこない）。
+
+**同じ `uuid` の行は最初の 1 行だけを読む**（`drop_replayed`）。transcript には、セッションの先頭からの行が
+同じ `uuid` のまま後ろへ書き足されることがある（実測: `m2` で 10-01 以降に更新された 341 本のうち 23 本 /
+GitHub issue #301）。再生区間が start より後に入ると、そのまま読んだ場合は再生された古い start を「最後の
+start」に、その後の古い定型を今回の出力に取る。
 """
 
 from __future__ import annotations
@@ -59,6 +64,19 @@ def _command(block: dict) -> str | None:
     return _HEREDOC_RE.sub("", cmd) if isinstance(cmd, str) else None
 
 
+def drop_replayed(entries: list) -> list:
+    """同じ `uuid` の行は最初の 1 行だけを残す（ファイル順は保つ。`uuid` の無い行は残す）."""
+    seen, out = set(), []
+    for e in entries:
+        uid = e.get("uuid")
+        if isinstance(uid, str):
+            if uid in seen:
+                continue
+            seen.add(uid)
+        out.append(e)
+    return out
+
+
 def _epoch(entry: dict) -> float | None:
     try:
         return datetime.fromisoformat(str(entry.get("timestamp")).replace("Z", "+00:00")).timestamp()
@@ -82,6 +100,7 @@ def judge_lines(lines, now: float | None = None) -> tuple[bool | None, bool]:
             continue
         if isinstance(entry, dict) and entry.get("type") == "assistant":
             entries.append(entry)
+    entries = drop_replayed(entries)
     start = None
     for i, entry in enumerate(entries):
         for b in _blocks(entry):

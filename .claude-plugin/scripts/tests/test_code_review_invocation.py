@@ -62,6 +62,10 @@ def tool_result() -> dict:
         {"type": "tool_result", "tool_use_id": "t", "content": "Launching skill: x"}]}}
 
 
+def uid(entry: dict, value: str) -> dict:
+    return dict(entry, uuid=value)
+
+
 def via(entries: list) -> str:
     return judge_entries(entries)["via"]
 
@@ -156,6 +160,80 @@ class ParentTest(unittest.TestCase):
         self.assertIsNone(parent([prompt("y"), start(), skill("failure-journal:retro")]))
 
 
+class ParentBoundaryTest(unittest.TestCase):
+    """遡りをレビューを頼む人間の発話で止める（GitHub issue #301）.
+
+    境界が無かった頃は、利用者の「self-review 回して」を数時間前の feature-dev / writing-polish の
+    配下に数えていた。止めるのはレビューを頼む発話だけで、phase 境界の「OK」は越える。
+    """
+
+    def test_a_prompt_asking_for_a_review_stops_the_search(self):
+        for body in ("self-review 回して", "一応セルフレビューして", "Review please", "/review の結果を見せて"):
+            with self.subTest(body=body):
+                self.assertIsNone(parent([skill("writing-polish:writing-polish"), prompt(body),
+                                          skill("code-review:self-review"), start()]))
+
+    def test_a_code_review_slash_stops_the_search(self):
+        """slash で頼んだ回（実測: 前日の feature-dev に当たっていた）."""
+        self.assertIsNone(parent([skill("feature-dev:feature-dev"), slash("code-review:self-review"),
+                                  expanded(), skill("code-review:self-review"), start()]))
+
+    def test_phase_boundary_prompts_are_crossed(self):
+        """どの発話でも止めると、feature-dev の Phase 6 の初回 self-review が parent を失う."""
+        self.assertEqual(parent([slash("feature-dev:feature-dev"), expanded(), prompt("OK"),
+                                 prompt("進めて"), skill("code-review:self-review", "--embed"), start()]),
+                         "feature-dev:feature-dev")
+
+    def test_words_that_only_contain_review_do_not_stop(self):
+        self.assertEqual(parent([skill("feature-dev:feature-dev"), prompt("preview を確認した。進めて"),
+                                 skill("code-review:self-review"), start()]),
+                         "feature-dev:feature-dev")
+
+    def test_notifications_do_not_stop(self):
+        note = prompt("<task-notification>\n<summary>review finished</summary>\n</task-notification>")
+        self.assertEqual(parent([skill("feature-dev:feature-dev"), note,
+                                 skill("code-review:self-review"), start()]),
+                         "feature-dev:feature-dev")
+
+    def test_another_plugins_slash_named_review_is_a_parent(self):
+        """`design-review` は skill の起動で、code-review を頼む発話ではない."""
+        self.assertEqual(parent([slash("design-doc:design-review"), expanded(),
+                                 skill("code-review:self-review"), start()]),
+                         "design-doc:design-review")
+
+
+class ReplayedLinesTest(unittest.TestCase):
+    """同じ `uuid` の行は最初の 1 行だけを読む（GitHub issue #301）.
+
+    transcript には、セッションの先頭からの行が同じ `uuid` のまま後ろへ書き足されることがある。
+    """
+
+    def test_a_replayed_skill_is_not_the_parent(self):
+        """実測の形: 境界が無いだけなら writing-polish になる回が、再生された前日の feature-dev に当たった."""
+        fd = uid(skill("feature-dev:feature-dev"), "u1")
+        entries = [fd, uid(prompt("PR 本文を直して"), "u2"), uid(skill("writing-polish:writing-polish"), "u3"),
+                   fd, uid(skill("code-review:self-review"), "u4"), uid(start(), "u5")]
+        self.assertEqual(parent(entries), "writing-polish:writing-polish")
+
+    def test_a_replayed_prompt_does_not_bound_a_skill_procedure(self):
+        """G-V ループの途中に再生された発話を、利用者が挟んだ発話と読まない."""
+        head = uid(prompt("機能を作って"), "u1")
+        entries = [head, uid(skill("feature-dev:feature-dev"), "u2"), uid(start(), "u3"), head,
+                   uid(skill("code-review:self-review", "--embed --rereview"), "u4"), uid(start(), "u5")]
+        self.assertIs(rereview(entries), True)
+
+    def test_a_replayed_start_is_not_the_previous_review(self):
+        first = uid(start(), "u2")
+        entries = [uid(prompt("y"), "u1"), first, uid(slash("code-review:self-review"), "u3"),
+                   uid(expanded(), "u4"), first, uid(start(), "u5")]
+        self.assertEqual(via(entries), "slash", "再生された start を前のレビューにして slash を見落とした")
+
+    def test_lines_without_a_uuid_are_all_kept(self):
+        self.assertEqual(via([slash("code-review:self-review"), expanded(), expanded(), start()]), "slash")
+        self.assertEqual(parent([skill("feature-dev:feature-dev"), skill("feature-dev:feature-dev"),
+                                 start()]), "feature-dev:feature-dev")
+
+
 class MarketplaceListTest(unittest.TestCase):
     def test_the_allowlist_matches_the_plugins_in_this_repo(self):
         """プラグインを足したら `MARKETPLACE_PLUGINS` と計測ストアの語彙も足す（足さないと parent が other に落ちる）."""
@@ -216,6 +294,58 @@ class RereviewTest(unittest.TestCase):
         self.assertIsNone(rereview([skill("code-review:self-review", "--rereview")]))
 
 
+class RereviewSourceTest(unittest.TestCase):
+    """申告として読むのは利用者か呼び出し元 skill の手順が付けたものだけ（GitHub issue #300）.
+
+    利用者が「self-review 回して」としか言っていないのに、モデルが前回の構成から推して `--rereview` を
+    足した回があった（3 回中 2 回は修正確認ではなかった）。
+    """
+
+    def test_a_flag_the_model_added_after_a_prompt_is_not_a_declaration(self):
+        for body in ("self-review 回して", "回して", "self-review もう一度回して"):
+            with self.subTest(body=body):
+                self.assertIs(rereview([skill("code-review:self-review"), start(), prompt(body),
+                                        skill("code-review:self-review", "--rereview --focus x"),
+                                        start()]), False)
+
+    def test_the_first_review_of_a_session_needs_a_declaration_too(self):
+        self.assertIs(rereview([prompt("self-review 回して"), skill("code-review:self-review", "--rereview"),
+                                start()]), False)
+
+    def test_a_prompt_that_asks_for_a_rereview_is_a_declaration(self):
+        for body in ("直したので再レビューして", "--rereview で回して", "ReReview で"):
+            with self.subTest(body=body):
+                self.assertIs(rereview([skill("code-review:self-review"), start(), prompt(body),
+                                        skill("code-review:self-review", "--rereview"), start()]), True)
+
+    def test_a_flag_inside_a_skill_procedure_is_a_declaration(self):
+        """G-V ループ: 前のレビューから人間の発話を挟まずに呼び直す。通知は発話ではない."""
+        note = prompt("<task-notification>\n<status>completed</status>\n</task-notification>")
+        self.assertIs(rereview([slash("feature-dev:feature-dev"), expanded(),
+                                skill("code-review:self-review", "--embed"), start(), note,
+                                skill("code-review:self-review", "--embed --rereview"), start()]), True)
+
+    def test_a_flag_the_model_added_after_a_slash_is_not_a_declaration(self):
+        """slash の後に Skill で呼び直すときの args は、利用者が打った引数ではない."""
+        self.assertIs(rereview([slash("code-review:self-review"), expanded(),
+                                skill("code-review:self-review", "--rereview"), tool_result(), start()]),
+                      False)
+
+    def test_a_prompt_without_a_flag_still_needs_one(self):
+        """発話が再レビューを頼んでも、`--rereview` の付いた起動が無ければ申告ではない."""
+        self.assertIs(rereview([skill("code-review:self-review"), start(), prompt("再レビューして"),
+                                skill("code-review:self-review"), start()]), False)
+
+
+class SchemaTest(unittest.TestCase):
+    def test_every_judgement_carries_the_rule_version(self):
+        """retro は鍵の無い回を境界の無い規則（1）として層別する（#300 / #301）."""
+        from invocation import SCHEMA
+        self.assertEqual(SCHEMA, 2)
+        self.assertEqual(judge_entries([prompt("y"), start()])["schema"], 2)
+        self.assertEqual(judge_entries([prompt("y")])["schema"], 2, "start が無い回も判定器の版は付ける")
+
+
 class CliTest(unittest.TestCase):
     def run_cli(self, path: str) -> dict:
         out = subprocess.run([sys.executable, str(LIB / "invocation.py"), path],
@@ -229,11 +359,12 @@ class CliTest(unittest.TestCase):
                      skill("code-review:self-review"), start()]
             p.write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in lines)
                          + "\nnot json\n", encoding="utf-8")
-            self.assertEqual(self.run_cli(str(p)), {"via": "slash", "parent": None, "rereview": False})
+            self.assertEqual(self.run_cli(str(p)),
+                             {"via": "slash", "parent": None, "rereview": False, "schema": 2})
 
     def test_an_unreadable_transcript_is_unknown(self):
         self.assertEqual(self.run_cli("/nonexistent/s.jsonl"),
-                         {"via": "unknown", "parent": None, "rereview": None})
+                         {"via": "unknown", "parent": None, "rereview": None, "schema": 2})
 
 
 if __name__ == "__main__":

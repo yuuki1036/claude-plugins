@@ -2,6 +2,29 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.156.3] - 2026-10-16
+
+### Fixed
+
+- **素の「self-review 回して」で、モデルが `--focus` / `--rereview` を自分で足さないようにした**（GitHub issue #300）。
+  SKILL の `--rereview` 節と `--focus` / `--exclude` 節に主語が無く、Skill を呼ぶモデルへの指示として読めたため、
+  利用者が観点も再レビューも指定していない回に前回の構成から推して足していた（`m2` の 2 セッションで 6 回）。
+  `--focus` の 4 回は反証がどれも `scope` でスキップされ、`--rereview` の 3 回のうち 2 回は修正確認ではないのに
+  retro の主層から外れた。両節と同名の command 本文に「付けるのは利用者か呼び出し元 skill の手順だけ」を足した
+- **publish が `--rereview` を申告として読むのを、slash の引数と、前のレビューから人間の発話を挟まない `Skill` の
+  `args` だけにした**（#300）。発話を挟んだ `Skill` の `--rereview` は、その発話が `rereview` / `再レビュー` を
+  含むときだけ読む。slash の後にモデルが Skill で呼び直したときの引数も申告に数えない。feature-dev の G-V ループ
+  （発話を挟まずに呼び直す）は従来どおり再レビューになる
+- **`invocation.parent` が、利用者が頼んだレビューを数時間前に起動した skill の配下として記録する**のを直した
+  （GitHub issue #301）。遡りをレビューを頼む人間の発話（code-review の slash か、`review` / `レビュー` を含む発話）
+  で止める。feature-dev の phase 境界の「OK」「進めて」は越える。あわせて、transcript に同じ `uuid` で書き足された
+  セッション先頭からの行を最初の 1 行だけ読むようにした（`report_template` の判定も同じ前処理を通す）。
+  `m2` で 10-01 以降に更新された transcript 341 本のうち 23 本にこの再生区間があり、再生された前日の feature-dev に
+  当たった回があった
+- `invocation` に判定規則の版 `schema`（2）を載せ、retro の「定型レポートの経路別」で、版の無い判定器が parent を
+  付けた回を `（旧判定）` として分けるようにした。計測ストアは append-only で過去の回を書き換えないため。
+  計測ストアの語彙にも `invocation.schema` を足した
+
 ## [2.156.2] - 2026-10-16
 
 ### Changed
