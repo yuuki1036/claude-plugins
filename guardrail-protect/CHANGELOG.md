@@ -2,6 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.9.0] - 2026-10-17
+
+### Added
+
+- **gh-read-guard を追加**（PreToolUse / Bash / GitHub issue #299）。gh の読み取りで、エラーにならずに結果が黙って欠ける
+  2 つの書き方を知らせる。`gh run list --commit <40 桁未満の 16 進>` は完全な SHA でないと 0 件を返すので `exit 2` で止め、
+  `git rev-parse` での展開を案内する。`gh issue|pr view --comments` を `--json` なしで使うと非 TTY では本文が出ないので、
+  止めずに `--json title,body,comments` を案内する。過去の transcript の Bash 呼び出し 27,575 回で前者 22 回（全件 0 件）・
+  後者 81 回だった。判定はコマンドを解析して gh を呼ぶ語だけを見る（echo / grep の引数の字面・変数で渡した SHA・
+  `--json` 付きは通す）。failure-journal の `tool-cli-semantics-misread` の還流
+  - blocker: 既存の gh-ref-guard は書き込み系の gh だけを git 管理下で見る契約で、zsh-trap-guard はシェルが zsh のときだけ
+    動く。どちらに足しても発火条件が噛み合わない
+  - fallback: この hook が無い環境でも、CLAUDE.md の Gotchas（issue を読むときは `--json title,body,comments`）が残る
+
 ## [0.8.1] - 2026-10-08
 
 ### Changed

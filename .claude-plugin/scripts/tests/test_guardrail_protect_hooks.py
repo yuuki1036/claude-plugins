@@ -995,6 +995,129 @@ class ZshTrapGuardTest(HookTestCase):
 
 
 
+class GhReadGuardTest(HookTestCase):
+    """gh-read-guard（GitHub issue #299）。**黙る条件を厚く見る** — 全 Bash 呼び出しに効く.
+
+    `gh run list --commit <短縮 SHA>` は止め、`gh issue|pr view --comments`（`--json` なし）は
+    止めずにコンテキストへ出す。
+    """
+
+    PLUGIN = "guardrail-protect"
+    SCRIPT = "hooks/scripts/gh-read-guard.sh"
+    FULL = "a07c5dd3e6f5464e127f6b0887f5eaba78c32454"
+
+    def run_cmd(self, command: str):
+        return self.run_hook(self.bash_payload(command))
+
+    def assertBlocked(self, res, contains: str):
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn(contains, res.stderr)
+        self.assertSilent(res)
+
+    def assertPassedQuietly(self, res):
+        """rc 0・注入なし・**stderr も空**（検出器が例外で落ちて黙った回を通さない）."""
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+        self.assertEqual(res.stderr, "", res)
+
+    # --- 止める ---
+    def test_blocks_a_short_sha_given_to_run_list(self):
+        for cmd in ("gh run list --commit 66f6abb", "gh run list --commit=66f6abb --json x",
+                    "gh run list -c fe6f22f5 -L 1", "gh run list --repo o/r --commit 'b6244d9'",
+                    "gh run list --commit ABCD"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.run_cmd(cmd), "git rev-parse")
+
+    def test_a_short_sha_inside_a_loop_or_substitution_is_found(self):
+        """実測の形: CI 待ちのループと、コマンド置換の中の呼び出し、行継続."""
+        for cmd in ("until s=$(gh run list --commit 837238f --json status); do sleep 30; done",
+                    'for i in 1 2; do id=$(gh run list -c 2feb64e3 --json d); [ -n "$id" ] && break; done',
+                    "gh run list \\\n  --commit 66f6abb"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.run_cmd(cmd), "完全な SHA")
+
+    def test_the_comments_note_rides_along_with_a_block(self):
+        res = self.run_cmd("gh run list --commit 66f6abb; gh issue view 3 --comments")
+        self.assertBlocked(res, "--commit 66f6abb")
+        self.assertIn("TTY", res.stderr)
+
+    def test_comments_without_json_only_warn(self):
+        for cmd in ("gh issue view 299 --comments", "gh pr view 12 -c",
+                    "gh issue view 3 --comments 2>&1 | head", "n=$(gh issue view 7 --comments | wc -l)"):
+            with self.subTest(cmd=cmd):
+                res = self.run_cmd(cmd)
+                self.assertEqual(res.returncode, 0, res)
+                self.assertFired(res, "--json title,body,comments")
+
+    # --- 黙る ---
+    def test_silent_for_a_full_sha_or_a_dynamic_value(self):
+        for cmd in ("gh run list --commit " + self.FULL, 'gh run list --commit "$(git rev-parse 66f6abb)"',
+                    'gh run list --commit "$SHA"', "gh run list --commit $sha --json x",
+                    "gh run list --commit 66f", "gh run list --commit main", "gh run list --commit",
+                    "gh run list -L 5 -c", "gh run view 123 -c 66f6abb"):
+            with self.subTest(cmd=cmd):
+                self.assertPassedQuietly(self.run_cmd(cmd))
+
+    def test_silent_for_comments_with_json_or_web(self):
+        for cmd in ("gh issue view 3 --comments --json comments", "gh issue view 3 --json=body --comments",
+                    "gh pr view 3 --comments --web", "gh issue view 3 -c -w", "gh issue view 3 -c && echo",
+                    "gh issue list --search x -c", "gh issue comment 3 --body x -c"):
+            with self.subTest(cmd=cmd):
+                res = self.run_cmd(cmd)
+                if cmd == "gh issue view 3 -c && echo":
+                    self.assertFired(res, "TTY")    # 前提: 同じ形で `--json` / `--web` が無ければ鳴る
+                    continue
+                self.assertPassedQuietly(res)
+
+    def test_silent_when_the_text_is_an_argument_of_another_command(self):
+        """echo / grep / jq の引数に現れた字面は gh の呼び出しではない（実測で混ざっていた形）."""
+        for cmd in ('echo "gh run list --commit 66f6abb"', "grep -rn 'gh issue view 3 --comments' .",
+                    "jq -nc --arg s 'gh issue view N --comments を非 TTY で' '{s:$s}'",
+                    "git log --grep 'gh run list --commit 66f6abb'", "high -c 66f6abb run list",
+                    "cat <<'EOF'\ngh run list --commit 66f6abb\nEOF"):
+            with self.subTest(cmd=cmd):
+                self.assertPassedQuietly(self.run_cmd(cmd))
+
+    def test_silent_without_gh_or_without_the_flags(self):
+        """事前フィルタの両側（python を起動しない経路）."""
+        for cmd in ("git status -c x", "python3 -c 1", "gh run list", "gh pr view 3"):
+            with self.subTest(cmd=cmd):
+                self.assertPassedQuietly(self.run_cmd(cmd))
+
+    def test_silent_when_the_command_cannot_be_parsed(self):
+        self.assertPassedQuietly(self.run_cmd("gh run list --commit 66f6abb 'unterminated"))
+
+    def test_silent_for_non_bash_tool(self):
+        """**matcher 単独に依存しない**二重ゲート（CLAUDE.md Gotchas）."""
+        res = self.run_hook({"tool_name": "Edit", "tool_input": {"command": "gh run list --commit 66f6abb"}})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+
+    def test_malformed_input_does_not_block(self):
+        res = self.run_hook(raw="{ this is not json")
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr, "正常系の分岐で ERR trap を踏んでいる")
+
+    def test_missing_python3_is_loud(self):
+        res = self.run_hook(self.bash_payload("gh run list --commit 66f6abb"),
+                            env_extra={"PATH": self.path_with_only("jq")})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("Unexpected", res.stderr, res)
+
+    def test_a_broken_detector_is_loud(self):
+        """検出器の非ゼロを握り潰さない（握り潰すとガードが黙って無効化される / gh-ref-guard と同じ）."""
+        import shutil
+        alt = self.isolated_project_dir() / "plugin-copy"
+        if not alt.exists():
+            shutil.copytree(ROOT / "guardrail-protect", alt)
+        (alt / "hooks" / "scripts" / "detect-gh-read-traps.py").write_text("raise SystemExit(3)\n")
+        res = self.run_hook(self.bash_payload("gh run list --commit 66f6abb"),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(alt)})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("Unexpected", res.stderr, res)
+
+
 class BranchDriftTest(HookTestCase):
     """git の書き込みの前に、自分の知らない間にブランチが変わっていたら止める（GitHub issue #270）.
 
