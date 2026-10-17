@@ -432,6 +432,7 @@ git commit -m "fix" && git log -n 5            → PASS（他コマンドの -n 
 
 - 保護対象 (`protected_basenames`) は basename マッチのみ（パス全体ではない）。同名ファイルがリポジトリ内に複数ある場合は全て対象になる
 - `MultiEdit` での編集も `tool_input.file_path` を見るのでブロックされる
+- gh-read-guard は、コマンドの位置にある gh だけを見る。`bash -c '…'` の文字列の中・heredoc の本文・パラメータ展開の中のコマンド置換（`${x:-$(gh …)}`）・値を取る前置きのオプション（`sudo -u root gh …`）・値を連結した短いフラグ（`-cabc1234`）は拾わず、通す
 - **保護対象 config への `Bash` 経由の編集**（`sed` / `awk` / リダイレクト等）はブロックしない。`Bash` matcher の hook（`pre-commit-guard.sh`）自体は存在するが、その前段フィルタが `git commit` 系と guardrail 設定ファイル自体に関わるコマンドだけを通すため。これは意図的な制限（Bash の編集系コマンドを全部マッチさせると誤爆が爆発するため）。**ただし `guardrail-protect.json` 自体への Bash 書き込み**（リダイレクト / `sed -i` / `tee` / `cp` / `mv` / `rm`）は自己保護として検出しブロックする
 - git hook 迂回の検出は `git commit` コマンド自体に埋め込まれたパターンが対象。以下の**別コマンドによる無効化**は検出しない（既知の穴。必要なら該当ファイル/コマンドを permissions 側で塞ぐ）:
   - `git config core.hooksPath ...`（commit と別コマンドで hooksPath を変更）

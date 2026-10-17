@@ -1024,9 +1024,25 @@ class GhReadGuardTest(HookTestCase):
     def test_blocks_a_short_sha_given_to_run_list(self):
         for cmd in ("gh run list --commit 66f6abb", "gh run list --commit=66f6abb --json x",
                     "gh run list -c fe6f22f5 -L 1", "gh run list --repo o/r --commit 'b6244d9'",
-                    "gh run list --commit ABCD"):
+                    "gh run list --commit ABCD", "gh run list --commit " + self.FULL[:39]):
             with self.subTest(cmd=cmd):
                 self.assertBlocked(self.run_cmd(cmd), "git rev-parse")
+
+    def test_reserved_words_wrappers_and_repo_flags_are_skipped(self):
+        """予約語・前置き（とその引数）・`-R` / `--repo` を挟んでも、コマンドの位置の gh を見つける."""
+        for cmd in ("time gh run list -c 66f6abb", "if true; then gh run list --commit 66f6abb; fi",
+                    "timeout 60 gh run list -c 66f6abb", "watch -n 30 gh run list -c 66f6abb",
+                    "env FOO=1 gh run list -c 66f6abb", "exec gh run list -c 66f6abb",
+                    "timeout 5m gh run list --commit 66f6abb", "gh run -R cli/cli list -c 66f6abb",
+                    "gh -R a/b run list --commit 66f6abb", "gh --repo=a/b run list --commit 66f6abb"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.run_cmd(cmd), "完全な SHA")
+        self.assertFired(self.run_cmd("gh pr -R a/b view 1 --comments"), "gh pr view <番号>")
+
+    def test_the_same_hit_is_reported_once(self):
+        res = self.run_cmd("gh run list --commit 66f6abb; gh run list --commit 66f6abb")
+        self.assertBlocked(res, "--commit 66f6abb")
+        self.assertEqual(res.stderr.count("`gh run list --commit 66f6abb`"), 1, res.stderr)
 
     def test_a_short_sha_inside_a_loop_or_substitution_is_found(self):
         """実測の形: CI 待ちのループと、コマンド置換の中の呼び出し、行継続."""
@@ -1074,15 +1090,29 @@ class GhReadGuardTest(HookTestCase):
         for cmd in ('echo "gh run list --commit 66f6abb"', "grep -rn 'gh issue view 3 --comments' .",
                     "jq -nc --arg s 'gh issue view N --comments を非 TTY で' '{s:$s}'",
                     "git log --grep 'gh run list --commit 66f6abb'", "high -c 66f6abb run list",
-                    "cat <<'EOF'\ngh run list --commit 66f6abb\nEOF"):
+                    "cat <<'EOF'\ngh run list --commit 66f6abb\nEOF", "sudo -u root gh run list -c 66f6abb",
+                    "timeout x gh run list -c 66f6abb"):
             with self.subTest(cmd=cmd):
                 self.assertPassedQuietly(self.run_cmd(cmd))
 
-    def test_silent_without_gh_or_without_the_flags(self):
-        """事前フィルタの両側（python を起動しない経路）."""
-        for cmd in ("git status -c x", "python3 -c 1", "gh run list", "gh pr view 3"):
+    def broken_copy(self):
+        """検出器を `exit 3` に差し替えたプラグインの複製（起動したら Unexpected が出る）."""
+        import shutil
+        alt = self.isolated_project_dir() / "plugin-copy"
+        if not alt.exists():
+            shutil.copytree(ROOT / "guardrail-protect", alt)
+        (alt / "hooks" / "scripts" / "detect-gh-read-traps.py").write_text("raise SystemExit(3)\n")
+        return alt
+
+    def test_the_prefilter_does_not_start_the_detector(self):
+        """事前フィルタの両側で python を起動しない（検出器が壊れていても stderr は空）."""
+        alt = self.broken_copy()
+        for cmd in ("git status -c x", "gh run list", "gh pr view 3", "echo hello"):
             with self.subTest(cmd=cmd):
-                self.assertPassedQuietly(self.run_cmd(cmd))
+                res = self.run_hook(self.bash_payload(cmd), env_extra={"CLAUDE_PLUGIN_ROOT": str(alt)})
+                self.assertPassedQuietly(res)
+        res = self.run_hook(self.bash_payload("gh run list -c x"), env_extra={"CLAUDE_PLUGIN_ROOT": str(alt)})
+        self.assertIn("rc=3", res.stderr, "前提: フィルタを通る形では検出器が起動する")
 
     def test_silent_when_the_command_cannot_be_parsed(self):
         self.assertPassedQuietly(self.run_cmd("gh run list --commit 66f6abb 'unterminated"))
@@ -1103,19 +1133,14 @@ class GhReadGuardTest(HookTestCase):
         res = self.run_hook(self.bash_payload("gh run list --commit 66f6abb"),
                             env_extra={"PATH": self.path_with_only("jq")})
         self.assertEqual(res.returncode, 0, res)
-        self.assertIn("Unexpected", res.stderr, res)
+        self.assertIn("python3 not installed", res.stderr, res)
 
     def test_a_broken_detector_is_loud(self):
         """検出器の非ゼロを握り潰さない（握り潰すとガードが黙って無効化される / gh-ref-guard と同じ）."""
-        import shutil
-        alt = self.isolated_project_dir() / "plugin-copy"
-        if not alt.exists():
-            shutil.copytree(ROOT / "guardrail-protect", alt)
-        (alt / "hooks" / "scripts" / "detect-gh-read-traps.py").write_text("raise SystemExit(3)\n")
         res = self.run_hook(self.bash_payload("gh run list --commit 66f6abb"),
-                            env_extra={"CLAUDE_PLUGIN_ROOT": str(alt)})
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(self.broken_copy())})
         self.assertEqual(res.returncode, 0, res)
-        self.assertIn("Unexpected", res.stderr, res)
+        self.assertIn("detector failed (rc=3)", res.stderr, res)
 
 
 class BranchDriftTest(HookTestCase):

@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.9.1] - 2026-10-17
+
+### Fixed
+
+- **gh-read-guard が拾わない形を減らした**（GitHub issue #299）。`gh run -R o/r list` や `gh -R o/r run list` のように `-R` /
+  `--repo` を挟んだ呼び出しと、`timeout` / `watch` / `env` / `exec` / `nohup` / `sudo` などを前に付けた呼び出し（CI 待ちを
+  `timeout` で包む形）を、短縮 SHA の判定に乗せた。拾えない形（`bash -c` の文字列の中・heredoc の本文・パラメータ展開の中の
+  コマンド置換・値を取る前置きのオプション）は docstring と README の制限事項に書いた
+- 0.9.0 の CHANGELOG の fallback 欄が、配布先では成り立たない退路を書いていたのを直した（規約側の退路は、このリポジトリの
+  `--comments` の側にしか無い）
+- 予約語の読み飛ばし・重複除去・事前フィルタ・依存の欠如と検出器の失敗の経路を、テストで見分けるようにした
+
 ## [0.9.0] - 2026-10-17
 
 ### Added
@@ -14,7 +26,8 @@
   `--json` 付きは通す）。failure-journal の `tool-cli-semantics-misread` の還流
   - blocker: 既存の gh-ref-guard は書き込み系の gh だけを git 管理下で見る契約で、zsh-trap-guard はシェルが zsh のときだけ
     動く。どちらに足しても発火条件が噛み合わない
-  - fallback: この hook が無い環境でも、CLAUDE.md の Gotchas（issue を読むときは `--json title,body,comments`）が残る
+  - fallback: このマーケットプレイスのリポジトリでは、CLAUDE.md の Gotchas（issue を読むときは `--json title,body,comments`）が
+    `--comments` の側を覆う。短縮 SHA の側と、CLAUDE.md を持たない他のリポジトリには規約側の退路が無い（hook が無効なら検出されない）
 
 ## [0.8.1] - 2026-10-08
 
