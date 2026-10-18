@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.0] - 2026-10-18
+
+### Added
+
+- **start の軽量フローに「Step 4: 読み合わせ」を入れた**（7 Step になった）。self-review の修正方針まで済んでから
+  `code-review:review-guide` を `--base <self-review の base> --walkthrough` で呼び、精読を 1 件ずつ利用者と読み合わせる
+  （進め方は review-guide 側の手順。ここには複製しない）。締めの `self-review 以降の変更:` が `あり` なら検証と
+  self-review をもう一度通してからコミットへ進む（引数は base だけで `--focus` / `--rereview` / `--embed` を付けない。
+  読み合わせの修正は前回の指摘への対応ではないため）。読み合わせはフロー中 1 回だけで、CI が赤くて戻った回は通らない。
+  code-review が無い・review-guide が `--walkthrough` を知らない版では skip するか、修正を入れたかで同じ分岐にする。
+  これまでは self-review の直後にコミットへ進み、読み合わせを挟むには毎回手で指示していた
+
 ## [1.10.1] - 2026-10-15
 
 ### Changed

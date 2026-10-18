@@ -212,4 +212,4 @@ bash <plugin>/scripts/review-retro.sh --logs ... --show-paths   # 母集団行�
 
 出力にはマシンの生の名前とリポジトリのパスを出さない。マシンは label（`~/.config/claude-review/machine-label` に置いた `m1` などの値。未設定なら salt 付き HMAC の `m-xxxxxxxx`）で、`--logs` のパスは `<repo sha=xxxxxxxx>/.claude/events.jsonl` の形で出る。`~/.config/claude-review/post-publish` を実行可能にして置くと、publish が成功するたびに切り離して起動する（計測ストアへの同期を蹴る任意のフック。publish は待たない。shebang の無いスクリプトは `/bin/sh` で読む）。計測ストアとローカルのログを `--logs` で合算しても、同じイベントは `(ts, plugin)` で 1 件に数える。
 
-同一 diff への二重レビュー（self-review 直後に PR レビューを回す等）は `scripts/detect-recent-review.sh` が diff の内容ダイジェストで突合し、検出時に続行可否を確認する。
+同一 diff への二重レビュー（self-review 直後に PR レビューを回す等）は `scripts/detect-recent-review.sh` が diff の内容ダイジェスト（同じ skill の再実行で一致）と変更ファイルの集合（skill を跨いでも一致するが、中身が同じとは限らない）で突合し、検出時に一致の強さに応じた文で続行可否を確認する。

@@ -511,6 +511,56 @@ class DetectRecentReviewTest(ScriptTestBase):
         self.assertEqual(stamps, sorted(stamps, reverse=True))
 
 
+
+class DuplicateReviewQuestionContractTest(unittest.TestCase):
+    """重複検出の質問文（self-review 1.4 / review 2.4）が、スクリプトの出すラベルと呼び出し元の参照に合っている.
+
+    質問文は明細のラベルで書き分ける。ラベルの綴りがずれると、どちらの文を出すかを決められない。
+    読み合わせの後に self-review を回す呼び出し元（issue-workflow の軽量フロー・feature-dev の Phase 7）は、
+    この質問を header「重複レビュー」で指して「続行してよい」と添えるので、header が変わると案内が外れる.
+    """
+
+    REPO = PLUGIN.parent
+    SECTIONS = {
+        PLUGIN / "skills" / "self-review" / "SKILL.md": ("### 1.4 ", "### 1.5 "),
+        PLUGIN / "skills" / "review" / "SKILL.md": ("### 2.4.", "### 2.5."),
+    }
+    CALLERS = {
+        REPO / "issue-workflow" / "skills" / "start" / "references" / "lightweight-flow.md":
+            ("### Step 4: 読み合わせ", "### Step 5:"),
+        REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md":
+            ("4. **読み合わせで入った修正を self-review に通す**", "5. **従来のサマリ**"),
+    }
+
+    @staticmethod
+    def section(path: Path, start: str, end: str) -> str:
+        text = path.read_text(encoding="utf-8")
+        i = text.index(start)
+        return text[i:text.index(end, i)]
+
+    def test_labels_match_the_script_output(self):
+        script = DETECT_RECENT.read_text(encoding="utf-8")
+        self.assertIn('label = "完全一致" if strength == "exact" else "ファイル集合のみ"', script)
+        for path, (start, end) in self.SECTIONS.items():
+            with self.subTest(path=path.parent.name):
+                s = self.section(path, start, end)
+                for label in ("[完全一致]", "[ファイル集合のみ]"):
+                    self.assertIn(f"`{label}`", s)
+                self.assertIn("「同一の diff が直近にレビュー済みです", s)
+                self.assertIn("中身が同じとは限らない", s)
+
+    def test_header_and_options_are_kept(self):
+        for path, (start, end) in self.SECTIONS.items():
+            with self.subTest(path=path.parent.name):
+                s = self.section(path, start, end)
+                for word in ("header:「重複レビュー」", "label「続行する」", "label「中止する」"):
+                    self.assertIn(word, s)
+
+    def test_callers_point_at_the_header(self):
+        for path, (start, end) in self.CALLERS.items():
+            with self.subTest(path=path.parent.name):
+                self.assertIn("header「重複レビュー」", self.section(path, start, end))
+
 class TimingSessionSlugTest(WorktreeTestBase):
     """一時ファイルの識別子をセッション単位にする（GitHub issue #247）.
 

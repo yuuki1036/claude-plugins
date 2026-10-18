@@ -369,14 +369,14 @@ AskUserQuestion(
   multiSelect: false,
   options: [
     { label: "feature-dev", description: "8 phase で設計から実装まで通す（explorer/architect + spec ゲート + self-review）" },
-    { label: "軽量フロー",   description: "8 phase なしで 実装 → 検証 → self-review → commit → push → CI 確認 → Issue 更新 の一連をガイドする（方針が決まっている変更向け）" },
+    { label: "軽量フロー",   description: "8 phase なしで 実装 → 検証 → self-review → 読み合わせ → commit → push + CI → Issue 更新 をガイドする（方針が決まっている変更向け）" },
     { label: "自分で進める", description: "ガイドなしで通常の作業に入る" },
   ]
 )
 ```
 
 - 「feature-dev」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**起動する前に**下の「ブランチ未作成のとき」に従ってブランチを作る。**feature-dev が未導入**（`grep -q '"feature-dev@' "$HOME/.claude/settings.json"` が偽）**なら、この選択肢を option から外す**（dormant。未導入プラグインを提案肢に出さない）
-- 「軽量フロー」→ ブランチ未作成なら先に下の「ブランチ未作成のとき」に従ってブランチを作る。そのうえで `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 6 Step（実装 → 検証 → self-review → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、self-review / commit の委譲先（code-review / dev-workflow）は導入済みなら委譲し、未導入なら手動手順にフォールバックする（この選択肢自体は委譲先の有無に関わらず提示する）
+- 「軽量フロー」→ ブランチ未作成なら先に下の「ブランチ未作成のとき」に従ってブランチを作る。そのうえで `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 7 Step（実装 → 検証 → self-review → 読み合わせ → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、self-review / 読み合わせ / commit の委譲先（code-review / dev-workflow）は導入済みなら委譲し、未導入なら手動手順にフォールバックする（読み合わせは手動の代わりが無いので skip。この選択肢自体は委譲先の有無に関わらず提示する）
 - 「自分で進める」→ 何も起動せず通常の作業に入る。同一セッションで再提案しない
 - feature-dev 起動後は、`feature_dev_plan:` frontmatter への記載をユーザーに案内する（手動更新、または `/issue-maintain` で反映）
 

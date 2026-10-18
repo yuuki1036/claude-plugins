@@ -5,6 +5,19 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.22.0] - 2026-10-18
+
+### Changed
+
+- **Phase 7 で review-guide を読み合わせ（`--walkthrough`）として呼び、読み合わせで入った修正を self-review に
+  もう一度通すようにした**。Phase 6.9（レビュー後の変更の確認）は Phase 7 より前にあるので、review-guide の解説中に
+  入れた修正はどこでも再レビューされていなかった。review-guide を呼ぶ直前に `review-snapshot.sh save` で作業ツリーを記録し、
+  締めの後に `check` で読み合わせの間に変更が入ったかを見る（Phase 6.9 で「回さずに締める」を選んだ変更は数えない。
+  記録が取れなかった回だけ、締めの `self-review 以降の変更:` の行で決める）。変更が入っていれば、
+  `code-review:self-review` を base だけで呼ぶ（Phase 6 と違い `--embed` を付けず、self-review の修正方針の確認と
+  重複検出をそのまま通す。`--focus` / `--rereview` も付けない。Phase 6 で `--spec` を渡した回はそれも渡す）。
+  `feature:implemented` の publish は読み合わせと 2 回目の self-review が終わってから行う
+
 ## [2.21.1] - 2026-10-15
 
 ### Fixed

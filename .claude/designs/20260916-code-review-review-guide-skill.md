@@ -2,8 +2,8 @@
 id: 20260916-code-review-review-guide-skill
 title: code-review に review-guide skill を新設する（人間が PR を理解するための読み順ガイド）
 status: approved
-phase: target
-last-validated: 2026-09-16
+phase: current
+last-validated: 2026-10-18
 supersedes: []
 superseded-by: null
 issue: null
@@ -18,6 +18,8 @@ tags: [code-review, skill-design, human-review, reading-order]
 
 PR（または base 指定のローカル diff）を人間が読むための「読み順ガイド」をセッション内に出力する読み取り専用 skill。`triage-signals.sh` の分類とリスク信号で精読ファイルを上位 N 件に絞り、explorer（sonnet）が辿った呼び出し関係を「入口 → ロジック → 永続化 → テスト」のスレッド単位に並べ、各ファイルに「この PR で何をした / 難点 / 見る行 / レビュー観点」を付ける。ファイルは作らず、コメントも投稿しない。
 
+（2026-10-18 追記: 精読は「精読に値するものだけ 1〜5 件」に改め、コミット前の読み合わせ `--walkthrough` を足した。コードを直すのは読み合わせの中だけ。末尾の追記を参照）
+
 ## 背景 / 課題
 
 - 主用途は**自分の PR を後から理解する**こと（マージ済み・時間が経った PR を読み直す）。副用途は他者 PR に `review` を回した後の学習
@@ -27,7 +29,7 @@ PR（または base 指定のローカル diff）を人間が読むための「�
 ## ゴール / 非ゴール
 
 - **ゴール**:
-  - PR 番号（既定）または `--base <ref>` のローカル diff を入力に、精読 N 件（既定 5、`--top N`）/ 流し読み / 不要 の 3 段に振り、不要には 1 行の理由を付ける
+  - PR 番号（既定）または `--base <ref>` のローカル diff を入力に、精読 N 件（既定 5、`--top N`）/ 流し読み / 不要 の 3 段に振り、不要には 1 行の理由を付ける → 精読の数は 2026-10-18 追記で改めた
   - 精読ファイルをスレッド（変更が貫く 1 本の流れ）単位で実装順に並べ、各ファイルに 4 項目（この PR で何をした / 難点 / 見る行 `file:line` / レビュー観点）を付ける
   - PR 本文の主張と diff の突合（書いてあるが無い / 無いが入っている）
   - 変更した振る舞いごとのテスト対応表（ある / 無い）
@@ -35,9 +37,9 @@ PR（または base 指定のローカル diff）を人間が読むための「�
   - `${CLAUDE_EFFORT}` で agent 体数を変える（low / medium: agent なし、high: explorer 上限 2、xhigh / max: 上限 3）
 - **非ゴール**:
   - ファイルへの永続化（ユーザー確定 2026-09-16: セッション出力のみ。必要なときに再実行する）
-  - コメント投稿・PR 本文編集・コード修正（Edit / Write を持たない）
+  - コメント投稿・PR 本文編集・コード修正（Edit / Write を持たない） → コード修正は 2026-10-18 追記で改めた（読み合わせの中だけ Edit を持つ。Write は持たない）
   - severity 付き指摘の生成（review の領分。ガイドの「レビュー観点」は「何を見るか」の問いであって判定ではない）
-  - 全ファイルの解説（上位 N 件に絞る。残りは 1 行）
+  - 全ファイルの解説（上位 N 件に絞る。残りは 1 行） → 絞り方は 2026-10-18 追記で改めた（上位 N 件ではなく、精読に値するものだけ）
   - 反証レイヤー（説明文の誤りは `file:line` の根拠強制で抑える。独立検証を足すコストに見合わない）
 
 ## 確定した前提
@@ -58,6 +60,8 @@ PR（または base 指定のローカル diff）を人間が読むための「�
 ## 採用案
 
 ### 全体フロー
+
+→ 2026-10-18 追記で改めた: 下の図は初版のフロー。引数 `--walkthrough`、Step 2 の選び方（「上位 N 件 = 精読」ではなく、精読に値するものだけを 1〜5 件）、Step 5 の後の Step 6・7（読み合わせ・その場の修正・締め）は末尾の追記 (a)〜(d) と SKILL.md が正本
 
 ```
 /review-guide [PR番号 | --base <ref>] [--top N]
@@ -93,6 +97,8 @@ PR（または base 指定のローカル diff）を人間が読むための「�
 ```
 
 ### レポート形式
+
+→ 2026-10-18 追記で改めた: 下の例は初版の形式。精読の件数の書き方・分割の検討・上限超えの印・読み合わせの案内・精読の解説・締めの形式は `code-review/references/review-guide-format.md` が正本
 
 ```
 ## 読み順ガイド: PR #<N> <title>（<core_files> files / <core_lines> lines / size_tier）
@@ -134,7 +140,7 @@ PR（または base 指定のローカル diff）を人間が読むための「�
 | ファイル | 内容 |
 |---|---|
 | `code-review/commands/review-guide.md` | 新規。description（トリガー: 「PR の読み方」「読み順」「PR を解説して」「このPR何やってる」「/review-guide」）+ SKILL.md を Read する 1 行 + 引数の説明 |
-| `code-review/skills/review-guide/SKILL.md` | 新規。上のフロー。allowed-tools: Bash / Read / Grep / Glob / Agent（Edit / Write / Skill を持たない）。command と一致させる |
+| `code-review/skills/review-guide/SKILL.md` | 新規。上のフロー。allowed-tools: Bash / Read / Grep / Glob / Agent（Edit / Write / Skill を持たない）。command と一致させる → Edit は 2026-10-18 追記で足した |
 | `code-review/references/review-guide-format.md` | 新規。レポート形式の正本と 4 項目の書き方（「難点」に書くもの / 書かないもの、「見る行」の粒度）。SKILL.md は Step 4 でのみ Read |
 | `code-review/CHANGELOG.md` / `.claude-plugin/plugin.json` / `marketplace.json` / `INDEX.md` / ルート `CLAUDE.md` の一覧 | 版と件数（commands 5 / skills 5） |
 | `evals/cases/code-review.yaml` | トリガーフレーズの起動ケース + 逆方向（「レビューして」が review-guide に奪われない）ケース |
@@ -166,12 +172,12 @@ PR（または base 指定のローカル diff）を人間が読むための「�
 
 ## 未解決事項 (open)
 
-- **精読 N の既定値**: (a) 5 — 1 回で読み切れる量。(b) size_tier 連動（small 3 / medium 5 / large 8）— 小 PR で全件精読になり「絞る」意味が薄れる。現時点の方向性: **(a) 5 固定 + `--top N`**。確定タイミング: 実装後 3 PR で使い、上限に当たる頻度を見て決める
+- **精読 N の既定値**: (a) 5 — 1 回で読み切れる量。(b) size_tier 連動（small 3 / medium 5 / large 8）— 小 PR で全件精読になり「絞る」意味が薄れる。現時点の方向性: **(a) 5 固定 + `--top N`**。確定タイミング: 実装後 3 PR で使い、上限に当たる頻度を見て決める → 2026-10-18 追記で畳んだ（上限 5・精読に値するものだけ）
 - **スコアの 2 要素で選抜が不足するか**: 初版は分類 + red-flag/surface 代表加点のみ（fan-in・行数帯を落とした / design-review F1・F3）。精読すべきファイルが上位 N から漏れる回が出たら、triage-signals `## explorer-signals` の再利用で fan-in を足す。現時点の方向性: **2 要素で開始**。確定タイミング: 実装後 3 PR で、漏れ（後で「これは精読に入れるべきだった」と気づいた回）の頻度を見て決める
 
 ## 実装ブリッジ (Implementation Bridge)
 
-1. 実装着手の単位: Issue 1 件で閉じる規模（新規 3 ファイル + 版更新 + evals）。起票時タイトル案: 「[code-review] review-guide: 人間が PR を理解するための読み順ガイド skill を追加」。feature-dev は使わず、issue-workflow:start の**軽量フロー**（実装 → 検証 → self-review → commit → push + CI → Issue 更新）で通す（本 doc が HOW を確定済みのため 8 phase は不要）
+1. 実装着手の単位: Issue 1 件で閉じる規模（新規 3 ファイル + 版更新 + evals）。起票時タイトル案: 「[code-review] review-guide: 人間が PR を理解するための読み順ガイド skill を追加」。feature-dev は使わず、issue-workflow:start の**軽量フロー**（実装 → 検証 → self-review → commit → push + CI → Issue 更新）で通す（本 doc が HOW を確定済みのため 8 phase は不要）。2026-10-18 時点の軽量フローは self-review の後に読み合わせ（review-guide `--walkthrough`）が入り、変更があれば self-review をもう一度回してから commit する（追記の (d)）
 2. 検証方法:
    - 機械層: `bash .claude-plugin/scripts/machine-layer.sh`（allowed-tools ペア一致 / `skill-hop-cmd` / トリガー必須 / references 参照整合 / agent-sync warning）
    - evals: `python3 evals/runner.py --plugin code-review`（新トリガーの起動 + 「レビューして」「セルフレビュー」「レビューコメントを精査」が奪われない逆方向ケース。pass^k=3）
@@ -184,3 +190,34 @@ PR（または base 指定のローカル diff）を人間が読むための「�
 - 関連 spec: なし
 - 関連 ADR: なし（判断はすべて skill ローカル）
 - 関連 design doc: `20260912-worktree-gc-skill.md`（新 skill 追加の先例。scan / reap 分離の判断過程を参考にした）
+
+## 追記（2026-10-18）: 読み合わせ（--walkthrough）と精読数
+
+実装後の使われ方を受けて、次の 4 点を決めた。手順は `code-review/skills/review-guide/SKILL.md` の Step 2・5〜7、形式の正本は `code-review/references/review-guide-format.md` の「精読の解説」「読み合わせの締め」。
+
+### (a) 想定していなかった使い方が主になった: コミット前の読み合わせ
+
+- 設計時に想定した用途は、自分の PR の後日理解と、他者 PR に review を回した後の学習だった（背景 / 確定した前提 10）。実際に主になったのは**コミット前**の使い方で、利用者は毎回次の流れを手で指示していた: self-review → review-guide → 概要を確かめる → 精読を 1 件ずつ解説させる（難点がなぜ難点になったか / レビュー観点はまず AI が確かめる / 直す所があればその場で直し、以後の精読はそれを折り込む）→ 全精読の後に精読の外の気になる点 → self-review をもう一度 → commit
+- `--walkthrough` はこの流れを手順にしたもの。Step 5 でレポートの末尾に案内を出してターンを終え（概要を確かめる間を取る）、Step 6 で 1 精読を 1 ターンで解説し、Step 7 で締める。解説は editor を開かずに読めるように書く（置き場所・関連ファイル・変更したコードの引用を解説の中に入れる）。レビュー観点の問いは並べるだけにせず、コードを読んで「問題なし / 直すべき / 判断が要る」で答える。解説への要望と入れた修正は以後の精読に持ち越す
+- 呼び出し元は issue-workflow の軽量フロー（self-review の後に読み合わせを通す）と feature-dev の Phase 7（読み合わせとして呼ぶ）。どちらも `code-review:review-guide` を名前で呼び、パスで参照しない（プラグイン間の依存禁止）
+
+### (b) 非ゴール「コード修正（Edit / Write を持たない）」を改める
+
+- **読み合わせの中だけ Edit を持つ**。Write は持たない（ファイルを新規作成しない）。commit・push もしない
+- 直してよいのは、作業ツリーが diff の対象そのもの（base モード、または手元の HEAD が PR head と同じ PR モード。SKILL の `FIX_OK`）で、かつ直し方が 1 つに決まり（仕様・設計の判断が要らない）、diff の範囲で閉じる修正だけ。直し方が複数ある / 仕様の判断が要る / diff の外へ広がる / 新しい仕組みが要る / 他者の PR を別のブランチから読んでいる、のどれかなら直さずに 1 問だけ聞く
+- 理由: その場で直せば、利用者は解説と修正を並べて確かめられ、以後の精読もその修正を前提に進められる。別の skill に渡すと読み合わせの流れが切れる。一方で判断を含む修正まで入れると、利用者が読んで理解する前にコードが変わるので、直し方が 1 つに決まるものに限る。作業ツリーに限るのは、他者の PR を読んでいる回に手元の別のブランチを書き換えないため
+
+### (c) 未解決事項「精読 N の既定値」を畳む
+
+- **上限 5**（`--top N` は 1〜5 の範囲で上限を下げる）。上限は読み手の負担の上限であって目標ではなく、**精読に値するものだけ**を取り、数合わせで埋めない。値するかの線は「流し読みの 1 行では、読み手がこの変更の正しさを判断できない」か（SKILL Step 2）。実装の精読に対応するテストは、その精読の関連ファイルとして解説に畳む
+- 精読に値するものが上限を超えたら、score の上位 N 件（既定 5）を精読にし、残りは流し読みに「精読候補・上限超え」の印を付けて置き、「まず全体」に分割の検討を出す。上限を広げて全部を精読にはしない — 1 回の読み合わせで読み切れる量を超えていること自体を利用者に渡す（分けるかどうか、どの単位で分けるかは呼び出し元・利用者が決める）
+- **横断の精読も上限に数える**。GitHub issue #294 で横断を足したときは数えなかったが、読み手の負担は項目の数で決まるので、数えないと上限 5 のまま 6 項目を読ませることになる
+- 理由: 読み合わせは 1 精読 1 ターンなので、数合わせで足した精読はそのまま利用者のターンを使う。size_tier 連動の案（未解決事項の (b)）は採らない。大きい diff で上限を上げると読み切れない量を精読に並べることになり、分割の検討を出す方が次の一手につながる
+
+### (d) 2 回目の self-review の判断は締めの 1 行で呼び出し元に渡す
+
+- 締め（Step 7）が `self-review 以降の変更: あり | なし | 不明（理由）` の 1 行を出し、呼び出し元はこの値で self-review をもう一度回すかを決める。3 つの値は言い換えない契約。review-guide 自身は self-review も commit も起動しない（次の一手は呼び出し元か利用者が決める）
+- 判定は、base モードで diff を今の作業ツリーで取り直し、`detect-recent-review.sh` の明細のうち最も新しい self-review の行で決める: `[完全一致]` → なし / `[ファイル集合のみ]` → あり / self-review の行が無い → 不明。PR モードは「不明（PR モード）」
+- diff は 3 本（コミット済み・staged・unstaged）を連結したバイト列で比べるので、中身が同じでも self-review の後の commit や `git add` でファイルの並びが変わると「あり」に倒れる（1 ファイルの add / commit だけなら変わらない）。逆に、self-review の後に変更ファイルの集合が変わるとどちらのキーも一致せず「不明」になる。2 回目を勧める側に倒れる誤りなので、見分けるキーを足さずにそのまま出す
+- 2 回目の self-review は「修正確認の再レビュー」（`--rereview` / GitHub issue #300 の分類）ではない。読み合わせで入れた修正は前回の指摘への対応ではないので、引数は base だけにし、`--focus` / `--rereview` / `--embed` を付けない
+- 2 回目の self-review は重複検出（self-review 1.4）で `[ファイル集合のみ]` に一致する（読み合わせの修正は diff の範囲で閉じるので、触ったファイルの集合は変わらない）。質問文が一致の強さを問わず「同一の diff が直近にレビュー済みです」と出していたので、明細のラベルで書き分けた（self-review 1.4 と、同じ質問を持つ review 2.4 の両方。その文は `[完全一致]` のときだけ。`[ファイル集合のみ]` だけなら「同じファイルを触った変更が直近にレビュー済みです（…。中身が同じとは限らない）」）

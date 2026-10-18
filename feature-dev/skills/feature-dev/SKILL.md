@@ -687,7 +687,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
 
 ## Phase 7: Summary
 
-**Goal**: 人間が変更を自分で読み、コミットや PR に進めるかを判断できる状態で渡す（GitHub issue #290）。この時点で要るのは要約ではなく読み順なので、読み順は `code-review:review-guide` に任せ、feature-dev からは review-guide が diff から知りえない申し送りだけを短く添える。変更ファイルを列挙するだけの独自サマリは、どこから読むか・どこが難所かを伝えない。
+**Goal**: 人間が変更を自分で読み、コミットや PR に進めるかを判断できる状態で渡す（GitHub issue #290）。この時点で要るのは要約ではなく読み順なので、読み順と読み合わせ（精読を 1 件ずつ解説し、見つけた修正をその場で入れる）は `code-review:review-guide` に任せ、feature-dev からは review-guide が diff から知りえない申し送りだけを短く添える。読み合わせで入った修正は Phase 6 の self-review も Phase 6.9 の確認も通らないので、締めの判定で self-review にもう一度通してから終える。変更ファイルを列挙するだけの独自サマリは、どこから読むか・どこが難所かを伝えない。
 
 **Actions**:
 1. Mark all todos complete
@@ -697,18 +697,27 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
    - **静的オラクル** (Phase 5.3): 「静的オラクル判定不能」「静的オラクル打ち切り」「静的オラクル無し（型/テスト未検証）」、`low` effort で skip した回だけ
    - **G-V ループ** (Phase 6 Step 3 が走った回): `/tmp/feature-dev-loop-state.json` を読み、反復回数・終了理由・auto-fix 件数・persisting。終了理由が `regression` / `budget` なら persisting の fingerprint を目立たせる（人間の判断が要る）。self-review が失敗した・Phase 6 を skip した回はその旨
    - **コメント精査** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
-   - **レビュー後の変更** (Phase 6.9): 「**N ファイル・M 行（未レビュー）**」（ファイル名も並べる）/「確認できなかった」の回だけ。「なし」「再レビュー済み」は省く
+   - **レビュー後の変更** (Phase 6.9): 「**N ファイル・M 行（未レビュー）**」（ファイル名も並べる）/「確認できなかった」の回だけ。「なし」「再レビュー済み」は省く。値は Phase 6.9 の時点のもので、3. の読み合わせで入れる修正は含まない（それは 4. の 2 回目の self-review が見る）
    - **worktree** (Phase 4.8 で分離した場合のみ): worktree のパスとブランチ、後片付けは teardown / worktree-gc に委ねる旨
    - **Design doc follow-up** (Phase 4.5 で `DESIGN_DOC_PATH` がある場合のみ): 実装が完了したので、doc の frontmatter を `phase: target → current` に更新するよう案内する（実装と設計が乖離した箇所があれば doc への追記 or supersede も）。更新は design-doc プラグイン側の運用（ユーザー操作）に委ねる
-3. **読み順ガイドの案内**: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" code-review` が `1` なら、`AskUserQuestion` で聞く:
-   - question: "変更を読む順のガイド（code-review:review-guide）を出す？"
-   - header: "読み順"
-   - options: "出す (Recommended)"（重要ファイルを実装の流れ順に並べ、ファイルごとに何をした・難点・見る行・レビュー観点を付ける）/ "出さない"（従来のサマリを出して終える）
+3. **読み合わせの案内**: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" code-review` が `1` なら、`AskUserQuestion` で聞く:
+   - question: "読み順ガイド（code-review:review-guide）を出して、読み合わせる？（精読を 1 件ずつ解説し、見つけた修正をその場で入れる）"
+   - header: "読み合わせ"
+   - options: "出す (Recommended)"（読み順の概要を出した後、精読を 1 件ずつ解説する。難点がなぜ難点になったかとレビュー観点の答えを添え、見つけた修正はその場で入れる。入った修正は最後に self-review へもう一度通す）/ "出さない"（従来のサマリを出して終える）
 
-   「出す」なら `Skill` tool で `code-review:review-guide` を `--base <BASE>` 付きで呼ぶ。PR がまだ無い段階なので base モードで呼び、未コミットの変更まで読み順に入れる（PR モードは PR に push 済みのコミットしか見ない）。`<BASE>` は Phase 6 の self-review が冒頭で出した `base_branch=` の値を使う（同じ base から読ませる）。Phase 6 が走らなかった・値が分からないときは `--base` を付けずに呼ぶ（PR が無ければ review-guide が同じ順で base を決める）。ガイドの後に次の一手（コミット → PR）を 1 行添える。
-4. **従来のサマリ**（code-review が無効 / 「出さない」/ review-guide の呼び出しが失敗した回。review-guide を持たない旧版の code-review も含む）: What was built / Key decisions made / Files modified / Suggested next steps を出す。2. の申し送りはそのまま残す
-5. **Event Bus publish (`feature:implemented`)**:
+   「出す」なら `Skill` tool で `code-review:review-guide` を `--base <BASE>` 付きで呼ぶ（読み合わせとして `--walkthrough` も付ける）。PR がまだ無い段階なので base モードで呼び、未コミットの変更まで読み順に入れる（PR モードは PR に push 済みのコミットしか見ない）。`<BASE>` は Phase 6 の self-review が冒頭で出した `base_branch=` の値を使う（同じ base から読ませる）。Phase 6 が走らなかった・値が分からないときは `--base` を付けずに `--walkthrough` だけで呼ぶ（PR が無ければ review-guide が同じ順で base を決める）。**呼ぶ直前に** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" save` を実行する（4. で読み合わせの間に入った変更だけを数えるため。Phase 6 の記録を上書きするが、その確認は Phase 6.9 で済んでいる）。
+
+   **読み合わせは何ターンも続く**: review-guide は概要を出してターンを終え、利用者の「次」ごとに精読を 1 件ずつ解説し（1 精読 1 ターン）、最後に締め（精読の外で気になるところ → `self-review 以降の変更:` の行）を出す。進め方は review-guide の手順に任せ、feature-dev は途中で次の一手やサマリを挟まない。4. 以降は締めが出てから進める
+4. **読み合わせで入った修正を self-review に通す**（3. で読み合わせた回）: review-guide は判断の材料を出すだけで self-review を起動しないので、回すのは feature-dev。まず `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check` で 3. の直前に `save` した時点との差を取り、`changed_files` が 1 以上なら下の `あり`、0 なら `なし` として扱う（読み合わせの間に入った変更だけを数える。Phase 6.7 のコメント適用と、Phase 6.9 で「回さずに締める」を選んだ変更は数えない — そちらは 6.9 で利用者が決めた）。`snapshot=missing` / `unavailable` のときだけ、締めの `self-review 以降の変更:` の行で分岐する（この行は直近の self-review の publish 以降の全変更を数えるので、6.7 / 6.9 の変更も `あり` に入る）:
+   - `あり` → `Skill` tool で `code-review:self-review` を呼ぶ。**引数は base だけ**（3. と同じ `<BASE>`。分からなければ引数なし）。例外は Phase 6 で `--spec=<BDD_SPEC_PATH>` を渡した回で、それも渡す（渡さないと spec-compliance reviewer が BDD spec を読まない）。Phase 6 Step 2 と違い `--embed` を付けない — 読み合わせの後は feature-dev が findings を集約しないので、self-review の Step 7（修正方針の確認と、修正した指摘の prior-fixes への記録）と 1.4 の重複検出をそのまま通す。`--focus` / `--rereview` も付けない（前回の指摘が直ったかを確かめる回ではなく、読み合わせで入った修正を含めて diff 全体を見直す回 / GitHub issue #300）。呼ぶ前に、1.4 で重複レビュー（header「重複レビュー」）の続行可否を聞かれたら、読み合わせで直した後の回し直しなので「続行する」でよい旨を 1 行添える。Step 6 の定型レポートと 6.4 の publish は Phase 6 Step 2 と同じく省かない・1 行に畳まない（GitHub issue #232 / #250）
+   - `なし` → 回さずに次の一手へ
+   - `不明（…）` → 読み合わせで修正を入れた（締めの「入れた修正」が 1 件以上）なら `あり` と同じ、入れていなければ `なし` と同じ
+   - 締めにこの行が無い（`--walkthrough` を知らない旧版の code-review でガイドだけが出た）→ ガイドの後に修正を入れたかで `不明` と同じ分岐
+   - 2 回目の self-review の後は、読み合わせも self-review も繰り返さない。最後に次の一手（コミット → PR）を 1 行添える
+5. **従来のサマリ**（code-review が無効 / 「出さない」/ review-guide の呼び出しが失敗した回。review-guide を持たない旧版の code-review も含む）: What was built / Key decisions made / Files modified / Suggested next steps を出す。2. の申し送りはそのまま残す
+6. **Event Bus publish (`feature:implemented`)**:
    - 完了直前に `feature:implemented` イベントを `.claude/events.jsonl` へ追記する。subscriber がいなくても無害（fire-and-forget）
+   - **読み合わせ（3.）と 2 回目の self-review（4.）が終わってから**、Phase 7 の最後に 1 回だけ追記する。読み合わせは何ターンも続くので、review-guide を呼んだターンで先に publish しない（`files_changed` にも読み合わせの修正を入れる）
    - feature-dev は `hooks/lib/safe-hook.sh` を同梱しているため、`event_bus_publish` 経由で追記する（規約どおり 1 行 1 イベント）。`SAFE_HOOK_NAME` を `feature-dev` に上書きして publisher を識別する
    - payload は最小限の JSON: `{"feature":"<short description>","files_changed":<count>,"phases_completed":[...]}`
    - `feature` は 80 文字以内・ダブルクオート/バックスラッシュ/改行は除去。`files_changed` は今セッションで触ったファイル数（git diff の `--name-only` を `wc -l`）。`phases_completed` は実際に走った phase 番号の JSON 配列

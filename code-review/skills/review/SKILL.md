@@ -165,7 +165,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file の実パス>" pa
 
 **実行は Step 2 の Bash 呼び出しに同梱済み**（#147）。ここは出力の解釈だけを行う。
 
-**出力が空なら何も報告せず Step 2.5 へ**。`## recent-review` が出た場合のみ **AskUserQuestion** で続行可否を確認する（question:「同一の diff が直近にレビュー済みです（<plugin> / <日時> / 報告 <件数>）。このままレビューを続けますか？」/ header:「重複レビュー」/ options: ①label「続行する」description「別観点・別 effort で見直す価値があると判断した場合」 ②label「中止する」description「前回のレポートで足りる。agent を 1 体も起動せず終了する」）。**「中止する」なら ExitWorktree して終了**（Phase 0 に進まない）。突合キーの性質と背景: → orchestration-measurement.md `## 19`
+**出力が空なら何も報告せず Step 2.5 へ**。`## recent-review` が出た場合のみ **AskUserQuestion** で続行可否を確認する。question は明細のラベルで書き分ける（`[完全一致]` は diff 全文が同じ。`[ファイル集合のみ]` は触ったファイルが同じというだけで、中身は変わっている可能性がある。self-review の後の PR レビューや、修正を push した後の回し直しは、触ったファイルが同じならこちらで一致する）:
+
+- 明細に `[完全一致]` の行がある →「同一の diff が直近にレビュー済みです（<plugin> / <日時> / 報告 <件数>）。このままレビューを続けますか？」
+- `[ファイル集合のみ]` の行だけ →「同じファイルを触った変更が直近にレビュー済みです（<plugin> / <日時> / 報告 <件数>。中身が同じとは限らない）。このままレビューを続けますか？」
+
+`<plugin>` / `<日時>` / `<件数>` は、その文を選んだラベルの最も新しい行から取る。header:「重複レビュー」/ options: ①label「続行する」description「前回の後に変更を入れた（読み合わせ・修正の後に回し直す）か、別観点・別 effort で見直す価値があると判断した場合」 ②label「中止する」description「前回のレポートで足りる。agent を 1 体も起動せず終了する」。**「中止する」なら ExitWorktree して終了**（Phase 0 に進まない）。突合キーの性質と背景: → orchestration-measurement.md `## 19`
 
 ### 2.5. PR コンテキストの扱い
 

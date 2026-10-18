@@ -61,7 +61,7 @@
 | 5.3 | 静的オラクルゲート | 型チェック / lint / テストを変更範囲に絞って実行し、機械的欠陥を fail-closed で落とす |
 | 5.5 | Runtime Smoke Test | 静的チェックで取れない runtime 初期化バグを検出 |
 | 6 | Quality Review | code-review:self-review に委譲 + 致命指摘を自動 fix |
-| 7 | Summary | 成果のサマリ + イベント発行 |
+| 7 | Summary | 申し送り + 読み合わせ（review-guide）+ 読み合わせの修正の self-review + イベント発行 |
 
 > Phase 1.3 / 1.4 / 1.6 / 4.5 は連携先プラグイン（または外部 CLI）が無ければ完全に skip される dormant な連携。後方互換を壊さない。
 
@@ -164,7 +164,9 @@ Phase 6 の最後のレビュー直後に作業ツリーを記録し（`scripts/
 
 ### Phase 7: Summary
 
-全 todo を完了にし、review-guide からは分からない申し送り（設計契約の決定と未決・静的オラクルの判定不能・G-V ループの persisting・未レビューの変更・design doc の `phase: target → current` 更新など。該当するものだけ）を短く出す。そのうえで、code-review が有効なら読み順ガイド（`code-review:review-guide --base <base>`）を出すかを聞く。人間がこの後にやるのは変更を自分で読んでコミット・PR に進めるかの判断なので、変更ファイルの列挙より読み順を渡す（GitHub issue #290）。code-review が無効・「出さない」・呼び出しの失敗のときは、従来のサマリ（作ったもの / 主要な決定 / 変更ファイル / 次の一手）を出す。最後に `.claude/events.jsonl` へ `feature:implemented` イベントを fire-and-forget で追記する。
+全 todo を完了にし、review-guide からは分からない申し送り（設計契約の決定と未決・静的オラクルの判定不能・G-V ループの persisting・未レビューの変更・design doc の `phase: target → current` 更新など。該当するものだけ）を短く出す。そのうえで、code-review が有効なら読み合わせ（`code-review:review-guide --base <base> --walkthrough`）をするかを聞く。人間がこの後にやるのは変更を自分で読んでコミット・PR に進めるかの判断なので、変更ファイルの列挙より読み順を渡す（GitHub issue #290）。読み合わせでは、review-guide が読み順の概要を出した後に精読を 1 件ずつ解説し（1 精読 1 ターン。難点がなぜ難点になったかとレビュー観点の答えを添え、見つけた修正はその場で入れる）、精読の外で気になるところと `self-review 以降の変更:` の 1 行で締める。
+
+読み合わせで入った修正は Phase 6 の self-review も Phase 6.9 の確認も通っていない。review-guide を呼ぶ直前に `review-snapshot.sh save` で作業ツリーを記録し、締めの後に `check` で差を取る。読み合わせの間に変更が入ったとき（記録が取れなかった回は締めの行が `あり`、`不明` なら読み合わせで修正を入れた回）は、`code-review:self-review` を base だけを引数にもう一度回してから次の一手（コミット → PR）に進む。`--embed` を付けないので self-review の修正方針の確認と重複検出がそのまま走り、修正確認の再レビューではないので `--focus` / `--rereview` も付けない。2 回目の後に読み合わせは繰り返さない。code-review が無効・「出さない」・呼び出しの失敗のときは、従来のサマリ（作ったもの / 主要な決定 / 変更ファイル / 次の一手）を出す。最後に、読み合わせと 2 回目の self-review が終わってから `.claude/events.jsonl` へ `feature:implemented` イベントを fire-and-forget で追記する。
 
 ## Agents
 

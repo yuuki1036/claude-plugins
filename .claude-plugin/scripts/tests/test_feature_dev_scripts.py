@@ -191,6 +191,75 @@ class SummaryReadingGuideTest(unittest.TestCase):
             self.assertIn(cond, fallback)
         self.assertIn("Files modified", fallback)
 
+    COMMAND = REPO / "code-review" / "commands" / "review-guide.md"
+    FORMAT = REPO / "code-review" / "references" / "review-guide-format.md"
+    VERDICT = "self-review 以降の変更:"
+
+    def test_invokes_review_guide_as_walkthrough(self):
+        """読み合わせとして呼ぶ。base が分からず `--base` を外す回も `--walkthrough` は落とさない."""
+        call = next(l for l in self.phase7().splitlines()
+                    if "`code-review:review-guide` を `--base <BASE>` 付きで呼ぶ" in l)
+        with_base = next(s for s in call.split("。") if "`--base <BASE>` 付きで呼ぶ" in s)
+        self.assertIn("`--walkthrough`", with_base, "base 付きの呼び出しに --walkthrough が無い")
+        no_base = [s for s in call.split("。") if "`--base` を付けずに" in s]
+        self.assertTrue(no_base, "base が分からない回の呼び方を拾えていない")
+        self.assertIn("`--walkthrough`", no_base[0], "base が分からない回に --walkthrough を落としている")
+
+    def test_review_guide_still_accepts_walkthrough(self):
+        """同名 command があるので `Skill` で呼ぶと command 本文が返る（#219）。skill と command の両方の宣言を見る."""
+        for path in (self.GUIDE, self.COMMAND):
+            text = path.read_text()
+            front = text[:text.index("\n---", 4)]
+            self.assertIn("--walkthrough", front, f"{path.name} の引数から --walkthrough が消えた")
+
+    def second_review_branches(self) -> dict[str, str]:
+        p7 = self.phase7()
+        section = p7[p7.index(f"`{self.VERDICT}` の行で分岐"):p7.index("**従来のサマリ**")]
+        return {l.strip()[3:].split("`")[0]: l for l in section.splitlines() if l.strip().startswith("- `")}
+
+    def test_branches_on_walkthrough_verdict(self):
+        """締めの `self-review 以降の変更:` の 3 値で 2 回目の self-review を回すか決める.
+
+        行の文言と値は review-guide 側の契約（review-guide-format.md「読み合わせの締め」）。向こうで言い換えたら
+        ここで気づけるよう、format の正本と突き合わせる.
+        """
+        branches = self.second_review_branches()
+        self.assertEqual(set(branches), {"あり", "なし", "不明（…）"})
+        fmt = self.FORMAT.read_text()
+        closing = fmt[fmt.index("## 読み合わせの締め"):fmt.index("## 誤ガイド抑制")]
+        line = next((l for l in closing.splitlines() if l.startswith(self.VERDICT)), None)
+        self.assertIsNotNone(line, "review-guide-format.md の締めのテンプレートから判定の行が消えた")
+        for value in ("あり", "なし", "不明（"):
+            self.assertIn(value, line, f"締めの判定の値から {value} が消えた")
+        self.assertIn("`あり` と同じ", branches["不明（…）"], "修正を入れた回の `不明` を `あり` に倒していない")
+
+    def test_walkthrough_changes_are_measured_with_review_snapshot(self):
+        """読み合わせの間の変更だけを数える。review-guide の締めの行は直近の self-review 以降の全変更を数えるので、
+        Phase 6.9 で「回さずに締める」を選んだ変更まで `あり` に入り、利用者の判断を上書きしてしまう.
+        """
+        p7 = self.phase7()
+        call = p7.index("`code-review:review-guide` を `--base <BASE>` 付きで呼ぶ")
+        save = p7.index("review-snapshot.sh\" save", call)
+        self.assertLess(save, p7.index("4. **読み合わせで入った修正を self-review に通す**"),
+                        "review-guide を呼ぶ直前に作業ツリーを記録していない")
+        step4 = p7[p7.index("4. **読み合わせで入った修正を self-review に通す**"):p7.index("**従来のサマリ**")]
+        check = step4.index("review-snapshot.sh\" check")
+        self.assertLess(check, step4.index(f"`{self.VERDICT}` の行で分岐"),
+                        "記録との差より先に締めの行で分岐している")
+        self.assertIn("snapshot=missing", step4, "記録が取れなかった回に締めの行へ倒す条件が無い")
+
+    def test_second_self_review_passes_base_only(self):
+        """読み合わせの後の 2 回目は修正確認の再レビューではない（#300）。`--embed` / `--focus` / `--rereview` を付けない."""
+        rerun = self.second_review_branches()["あり"]
+        self.assertIn("`code-review:self-review`", rerun)
+        self.assertIn("引数は base だけ", rerun)
+        self.assertIn("省かない", rerun, "2 回目の self-review の定型レポートと publish を省かない旨が消えた（#232 / #250）")
+        for flag in ("--embed", "--focus", "--rereview"):
+            mentions = [s for s in rerun.split("。") if flag in s]
+            self.assertTrue(mentions, f"{flag} を付けないことが書かれていない")
+            for s in mentions:
+                self.assertIn("付けない", s, f"2 回目の self-review に {flag} を渡している: {s}")
+
 
 SNAPSHOT = REPO / "feature-dev" / "scripts" / "review-snapshot.sh"
 
