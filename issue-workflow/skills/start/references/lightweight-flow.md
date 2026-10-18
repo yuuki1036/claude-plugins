@@ -8,12 +8,12 @@ Phase F7 で「軽量フロー」が選ばれたときに Read する。8 phase�
 
 ## 前提: 委譲先プラグインの導入判定
 
-他プラグインへの依存は禁止（dormant 設計）。冒頭で 1 回だけ判定し、以降の Step で分岐する:
+他プラグインへの依存は禁止（dormant 設計）。冒頭で 1 回だけ判定し、出力の値を控えて以降の Step で分岐する
+（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す。無効化したプラグインは `0`）:
 
 ```bash
-DW=0; CR=0
-grep -q '"dev-workflow@' "$HOME/.claude/settings.json" 2>/dev/null && DW=1
-grep -q '"code-review@'  "$HOME/.claude/settings.json" 2>/dev/null && CR=1
+P="${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh"
+echo "DW=$(bash "$P" dev-workflow) CR=$(bash "$P" code-review)"
 ```
 
 ## 手順
@@ -66,8 +66,8 @@ Step 2 から戻った回は、この Step を通らず Step 3 から Step 5 へ
   `code-review:review-guide` を `--base <Step 3 の self-review が冒頭で出した base_branch= の値> --walkthrough` で起動する。
   進め方（1 精読 1 ターン・解説の形式・その場での修正・締め）は review-guide 側の手順に従い、ここに複製しない。
   **レポートと各精読の解説は定型のまま出す**（要約して 1 行に畳まない）
-- `CR=0`: skip し、報告に理由（code-review 未導入）を残す。起動が失敗した（code-review が無効・review-guide を
-  持たない版）ときも同じく skip して理由を残す
+- `CR=0`: skip し、報告に理由（code-review が無効か未導入）を残す。起動が失敗した（review-guide を持たない版など）
+  ときも同じく skip して理由を残す
 
 締めの `self-review 以降の変更:` の行で分岐する:
 

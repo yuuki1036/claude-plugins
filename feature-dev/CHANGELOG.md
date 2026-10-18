@@ -5,6 +5,21 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.22.1] - 2026-10-18
+
+### Changed
+
+- **`scripts/plugin-enabled.sh` を `.claude-plugin/lib/plugin-enabled.sh` の byte 一致の複製にした**（issue-workflow と
+  同じ判定を使うため。一致は `validate_plugin_quality.py` の BYTE_REPLICAS が検証する）。コメントの「spec-advisor の
+  #74」という帰属の誤りと、折り返した settings の扱いの説明（実際は前に読んだファイルの値が残る）を直した
+
+### Fixed
+
+- **`plugin-enabled.sh` が、cwd がサブディレクトリや linked worktree のときに project / local の settings を
+  読み落としていた**。Bash tool の環境には `CLAUDE_PROJECT_DIR` が無いので project を cwd にしており、
+  サブディレクトリでは `.claude/` を見失い、worktree では gitignore された `settings.local.json` が無かった。
+  `CLAUDE_PROJECT_DIR` が無いときは git の共通 dir の親（メインのチェックアウト）を project にする（git の外なら cwd）
+
 ## [2.22.0] - 2026-10-18
 
 ### Changed

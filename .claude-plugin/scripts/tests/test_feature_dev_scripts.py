@@ -21,7 +21,9 @@ from pathlib import Path
 from git_env import scrub
 
 REPO = Path(__file__).resolve().parents[3]
-SCRIPT = REPO / "feature-dev" / "scripts" / "plugin-enabled.sh"
+# 正本を叩く。feature-dev / issue-workflow の scripts/plugin-enabled.sh は byte 一致の複製で、
+# 一致は validate_plugin_quality.py の BYTE_REPLICAS が検証する
+SCRIPT = REPO / ".claude-plugin" / "lib" / "plugin-enabled.sh"
 
 
 class PluginEnabledTest(unittest.TestCase):
@@ -74,6 +76,32 @@ class PluginEnabledTest(unittest.TestCase):
         self.settings("user", {"bdd-spec": True}, compact=True)
         self.assertState("bdd-spec", "1")
 
+    def init_repo(self) -> dict[str, str]:
+        env = scrub()
+        for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "t"]):
+            subprocess.run(["git", *args], cwd=self.proj, env=env, check=True, capture_output=True)
+        (self.proj / "README").write_text("x\n")
+        for args in (["add", "-A"], ["commit", "-qm", "init"]):
+            subprocess.run(["git", *args], cwd=self.proj, env=env, check=True, capture_output=True)
+        return env
+
+    def test_project_dir_falls_back_to_the_repo_root_from_a_subdirectory(self):
+        """CLAUDE_PROJECT_DIR が無く cwd がサブディレクトリでも、リポジトリ直下の .claude を読む."""
+        self.init_repo()
+        self.settings("local", {"design-doc": True})
+        sub = self.proj / "src" / "deep"
+        sub.mkdir(parents=True)
+        self.assertState("design-doc", "1", project_env=False, cwd=sub)
+
+    def test_project_dir_falls_back_to_the_main_checkout_from_a_linked_worktree(self):
+        """linked worktree には gitignore された settings.local.json が無いので、メインのチェックアウトの値を読む."""
+        env = self.init_repo()
+        self.settings("user", {"code-review": True})
+        self.settings("local", {"code-review": False})
+        wt = self.root / "wt"
+        subprocess.run(["git", "worktree", "add", "-q", str(wt)], cwd=self.proj, env=env, check=True, capture_output=True)
+        self.assertState("code-review", "0", project_env=False, cwd=wt)
+
     def test_project_dir_falls_back_to_cwd(self):
         """CLAUDE_PROJECT_DIR が無い（Bash ツールの既定）ときは cwd の .claude を読む."""
         self.settings("project", {"design-doc": True})
@@ -84,7 +112,7 @@ class PluginEnabledTest(unittest.TestCase):
         self.assertState("bdd-spec", "0")
 
     def test_disabled_but_installed_is_not_enabled(self):
-        """`false` で無効化したプラグインを有効と誤認しない（旧判定の誤認 / spec-advisor #74 と同型）."""
+        """`false` で無効化したプラグインを有効と誤認しない（旧判定の誤認 / GitHub issue #74 と同型）."""
         self.settings("user", {"bdd-spec": False})
         self.assertState("bdd-spec", "0")
 

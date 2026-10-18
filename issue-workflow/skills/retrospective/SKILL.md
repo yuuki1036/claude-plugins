@@ -268,15 +268,11 @@ Phase 1 の Source 3 で取得した `failure:logged` イベントを集計す�
 
 ## Phase 3.5: writing-polish 連携（本文添削・必須）
 
-生成した振り返りレポートの散文を、ファイル保存（Phase 4）の直前に writing-polish へ渡して推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+生成した振り返りレポートの散文を、ファイル保存（Phase 4）の直前に writing-polish へ渡して推敲する。`writing-polish` が有効なら**必ず**実行する。無効か未導入のときだけ skip（プラグイン独立性のため。後方互換）。
 
-1. インストール判定（check-deps.sh と同方式）:
+1. 有効かの判定（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash
-   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
-     WRITING_POLISH=1
-   else
-     WRITING_POLISH=0
-   fi
+   echo "WRITING_POLISH=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" writing-polish)"
    ```
    `WRITING_POLISH=0` → 本 Phase を skip。
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed` で呼び（振り返りレポートは確立した tone 種別がないため tone は省略し、writing-polish の文書種別自動判定に委ねる）、レポートの散文部分を渡す。

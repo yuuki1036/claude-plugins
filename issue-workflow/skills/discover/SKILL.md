@@ -211,9 +211,9 @@ fi
 
 起票した各 issue の散文を推敲する（issue-create Phase 6.5 と同方式）。
 
-1. 判定:
+1. 有効かの判定（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash
-   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then WRITING_POLISH=1; else WRITING_POLISH=0; fi
+   echo "WRITING_POLISH=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" writing-polish)"
    ```
 2. `WRITING_POLISH=1` なら `Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で起動し、各 issue の散文部分を推敲。`POLISH_RESULT_START`〜`POLISH_RESULT_END` 間のみ抽出し、**frontmatter・見出し構造・evidence リンク・プレースホルダは変更しない**（構造を壊す結果は破棄）
 3. `${CLAUDE_EFFORT}` が low / medium かつ起票数が多い場合は、推敲を起票上位のみに絞ってよい（コスト配慮。high 以上は全件）

@@ -76,9 +76,9 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
 
 `bdd-spec` plugin が同居している場合、Issue を **human 層（9 セクション散文・背景・設計判断）と AI 層（BDD `spec.md` の Feature / Scenario / Examples）の二重化（bilayer）** で設計できる。AI ハーネスには AI 層だけ Read させる運用（AGENTS.md / CLAUDE.md 側で制御）を想定し、このスキルは **生成のみ**を担う。bdd-spec 未インストール時は本フェーズは完全に dormant（従来の単一ファイル設計）。
 
-1. bdd-spec のインストールを判定する（check-deps.sh と同じ方式）:
+1. bdd-spec が有効かを判定する（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash
-   if grep -q '"bdd-spec@' "$HOME/.claude/settings.json" 2>/dev/null; then BDD_BILAYER=1; else BDD_BILAYER=0; fi
+   echo "BDD_BILAYER=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" bdd-spec)"
    ```
    - `BDD_BILAYER=0` → 本フェーズを skip し、従来の単一ファイル設計のまま Phase 1 へ
 2. `BDD_BILAYER=1` のとき **AskUserQuestion** で確認:
@@ -128,9 +128,9 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
 6. **design doc への昇格判断（design-doc 連携・opt-in）**: open がタスク 1 件の作業設計を超えている兆候があれば、設計部分の design doc 切り出しを提案する。兆候の例:
    - 複数 Issue にまたがる方式選定（アーキテクチャ・データフロー・移行戦略）が open に含まれる
    - 選択肢の比較（トレードオフ表が要る規模）が Issue 本文では持ちきれない
-   1. インストール判定（check-deps.sh と同方式）:
+   1. 有効かの判定（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
       ```bash
-      if grep -q '"design-doc@' "$HOME/.claude/settings.json" 2>/dev/null; then DESIGN_DOC=1; else DESIGN_DOC=0; fi
+      echo "DESIGN_DOC=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" design-doc)"
       ```
       `DESIGN_DOC=0` または兆候なし → 何もしない（従来どおり grill で詰める）
    2. `DESIGN_DOC=1` かつ兆候あり → **AskUserQuestion** で確認:
@@ -164,15 +164,11 @@ BACKEND=local と同じ記法で書く。他 Issue はまだファイルが無�
 
 ### Phase 3.5: writing-polish 連携（本文添削・必須）
 
-Phase 1〜3 で設計した 9 セクション本文の散文部分は、ユーザー提示（Phase 4）の直前に writing-polish へ渡して推敲する（冗長削減・曖昧語の具体化・トーン統一・AI っぽさ除去）。`writing-polish` がインストールされていれば**必ず**通す。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+Phase 1〜3 で設計した 9 セクション本文の散文部分は、ユーザー提示（Phase 4）の直前に writing-polish へ渡して推敲する（冗長削減・曖昧語の具体化・トーン統一・AI っぽさ除去）。`writing-polish` が有効なら**必ず**通す。無効か未導入のときだけ skip（プラグイン独立性のため。後方互換）。
 
-1. インストール判定（check-deps.sh と同方式）:
+1. 有効かの判定（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash
-   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
-     WRITING_POLISH=1
-   else
-     WRITING_POLISH=0
-   fi
+   echo "WRITING_POLISH=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" writing-polish)"
    ```
    `WRITING_POLISH=0` → 本 Phase を skip。
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。

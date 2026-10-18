@@ -300,12 +300,9 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 2. 現在のセッションが該当 worktree 内で動いている: `git rev-parse --git-dir` ≠ `git rev-parse --git-common-dir` かつ現ブランチが該当 Issue のブランチ（main clone 上では自動起動しない。worktree-teardown は worktree 内からしか実行できない）
 3. dev-workflow が**有効**である:
    ```bash
-   DEV_WORKFLOW=0
-   for f in "$HOME/.claude/settings.json" ".claude/settings.json" ".claude/settings.local.json"; do
-     grep -Eq '"dev-workflow@[^"]*"[[:space:]]*:[[:space:]]*true' "$f" 2>/dev/null && DEV_WORKFLOW=1
-   done
+   echo "DEV_WORKFLOW=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" dev-workflow)"
    ```
-   キー存在だけを見る grep は使わない（`": false"` の無効化済みプラグインを導入済みと誤判定し、project-scoped 有効化を取りこぼすため。enabled-only 判定）
+   キー存在だけを見る grep は使わない（`": false"` の無効化済みプラグインを導入済みと誤判定し、project-scoped 有効化を取りこぼすため。enabled-only 判定）。user で `true` でも project / local の `false` が勝つ（Claude Code の settings の優先順位と同じ向き）
 
 発動時、**最終レポート出力後**に **AskUserQuestion** で削除の意思を確認する（worktree・DB・env は git で復元できない不可逆操作のため「起動＝実行確定」原則の例外として確認する。teardown 自身は clean tree の `git worktree remove` を確認なしで実行するため、削除の同意は必ずここで取る）:
 
@@ -327,9 +324,9 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 
 ## writing-polish 連携（本文添削・必須）
 
-整理後の **Issue 本文** と **切り出した knowledge ページ** の両方を、ファイル確定（処理フロー Step 13）の直前に `Skill` tool で `writing-polish:writing-polish` を呼んで推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+整理後の **Issue 本文** と **切り出した knowledge ページ** の両方を、ファイル確定（処理フロー Step 13）の直前に `Skill` tool で `writing-polish:writing-polish` を呼んで推敲する。`writing-polish` が有効なら**必ず**実行する。無効か未導入のときだけ skip（プラグイン独立性のため。後方互換）。
 
-`Skill` 呼び出しのインストール判定（bash）・引数（`--embed --tone issue`）・結果反映時の構造保護（frontmatter / wikilink / 見出し階層は変更しない）・fallback の詳細手順:
+`Skill` 呼び出しの有効かの判定（bash）・引数（`--embed --tone issue`）・結果反映時の構造保護（frontmatter / wikilink / 見出し階層は変更しない）・fallback の詳細手順:
 → Read `${CLAUDE_SKILL_DIR}/references/writing-polish-integration.md`
 
 ---

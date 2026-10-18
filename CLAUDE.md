@@ -10,6 +10,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/lib/routing-axes.md # spec ルーティング 3 軸コア（正本。ROUTING-AXES 区間を消費サイトに複製）
 .claude-plugin/lib/comment-rule.md  # コードコメント規約 2 観点（正本。COMMENT-RULE 区間を消費サイトに複製）
 .claude-plugin/lib/backend-detect.md # issue-workflow Phase 0 の backend 検出（正本。BACKEND-DETECT 区間を 10 スキルに複製）
+.claude-plugin/lib/plugin-enabled.sh # 他プラグインが有効かの判定（正本。feature-dev / issue-workflow の scripts/ に byte 一致で複製）
 .claude-plugin/schema/           # JSON Schema（plugin.json / marketplace.json / hooks.json）
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
                                  # validate_plugin_quality.py（品質検証。検査項目の正本は冒頭 docstring）

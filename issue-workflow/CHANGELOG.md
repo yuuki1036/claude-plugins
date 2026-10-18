@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.1] - 2026-10-18
+
+### Fixed
+
+- **他プラグインの導入判定が、無効化したプラグインを有効と誤り、project / local だけで有効化したものを取りこぼしていた**。
+  start の F7・軽量フロー・issue-create・issue-design・discover・follow-up・retrospective・issue-maintain の
+  writing-polish 連携の 14 か所が、`~/.claude/settings.json` にキーがあるかだけを見ていた。`scripts/plugin-enabled.sh`
+  （正本 `.claude-plugin/lib/plugin-enabled.sh` の byte 一致の複製）に寄せ、user → project → local の settings の
+  明示値で判定する（後に読んだファイルが勝つ。Claude Code の settings の優先順位と同じ向き）。判定値は echo して
+  出力から読む形にした — 以前の書き方は値を出力しておらず、Bash の状態は呼び出しをまたいで残らないので、
+  判定の結果をモデルが読み取れなかった。issue-maintain の dev-workflow の判定（3 ファイルの OR で `false` を
+  無視していた）も同じスクリプトにした。SessionStart の未インストール警告（`hooks/scripts/check-deps.sh`）は、
+  警告の意味が「未インストール」なのでキーの有無のまま。project の場所は、`CLAUDE_PROJECT_DIR` が無ければ git の
+  共通 dir の親（メインのチェックアウト）にする — 軽量フローで worktree に移った後も local の settings を読むため
+  writing-polish 連携などの前置きの「インストールされていれば必ず実行する」も「有効なら必ず実行する。無効か未導入のときだけ skip」に揃えた
+
 ## [1.11.0] - 2026-10-18
 
 ### Added

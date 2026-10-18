@@ -196,15 +196,11 @@ Issue の内容が確定した段階で、過去の蓄積から「この問題�
 
 ### Phase 6.5: writing-polish 連携（本文添削・必須）
 
-Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー提示・書き込み）の前に writing-polish へ渡して推敲する。`writing-polish` がインストールされていれば**必ず**実行する。未インストール時のみ skip（プラグイン独立性のため。後方互換）。
+Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー提示・書き込み）の前に writing-polish へ渡して推敲する。`writing-polish` が有効なら**必ず**実行する。無効か未導入のときだけ skip（プラグイン独立性のため。後方互換）。
 
-1. インストール判定（check-deps.sh と同方式）:
+1. 有効かの判定（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash
-   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
-     WRITING_POLISH=1
-   else
-     WRITING_POLISH=0
-   fi
+   echo "WRITING_POLISH=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" writing-polish)"
    ```
    `WRITING_POLISH=0` → 本 Phase を skip。
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、本文の散文部分を渡す。
@@ -260,12 +256,10 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
 
 実装に入る前に「どの仕様 (spec) を先に書くか」を判定する。仕様系プラグイン（bdd-spec / design-doc / adr-keeper）が 1 つも入っていなければ完全に skip（dormant・後方互換 100%）。feature-dev に引き継ぐ場合（Phase 7 で「はい」）は WHAT/HOW を feature-dev が内部 Phase で生成するため、この Phase には実質到達しない（自分で実装する経路でのみ働く）。
 
-1. **dormant 判定**（check-deps.sh / issue-design Phase 0.5 と同方式）:
+1. **dormant 判定**（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash
-   SPEC_BDD=0; SPEC_DD=0; SPEC_ADR=0
-   grep -q '"bdd-spec@'   "$HOME/.claude/settings.json" 2>/dev/null && SPEC_BDD=1
-   grep -q '"design-doc@' "$HOME/.claude/settings.json" 2>/dev/null && SPEC_DD=1
-   grep -q '"adr-keeper@' "$HOME/.claude/settings.json" 2>/dev/null && SPEC_ADR=1
+   P="${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh"
+   echo "SPEC_BDD=$(bash "$P" bdd-spec) SPEC_DD=$(bash "$P" design-doc) SPEC_ADR=$(bash "$P" adr-keeper)"
    ```
    - 3 つとも 0（いずれの spec プラグインも未導入）→ 本 Phase を skip
 

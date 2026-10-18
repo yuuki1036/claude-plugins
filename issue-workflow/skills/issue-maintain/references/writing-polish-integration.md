@@ -1,14 +1,10 @@
 # writing-polish 連携手順
 
-writing-polish 連携（本文添削）のインストール判定・呼び出し・結果反映・fallback の詳細手順。
+writing-polish 連携（本文添削）の有効かの判定・呼び出し・結果反映・fallback の詳細手順。
 
-1. インストール判定（check-deps.sh と同方式）:
+1. 有効かの判定（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash
-   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
-     WRITING_POLISH=1
-   else
-     WRITING_POLISH=0
-   fi
+   echo "WRITING_POLISH=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" writing-polish)"
    ```
    `WRITING_POLISH=0` → writing-polish 連携を skip。
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を `--embed --tone issue` で呼び、Issue 本文 + 切り出した knowledge ページの散文部分を渡す。

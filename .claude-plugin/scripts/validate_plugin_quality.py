@@ -13,8 +13,8 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     黙って落とすので, パスのタイポやスクリプト移動で hooks 安全性 / hook 自己判定の検査が
     **無言で対象ゼロ**になる（hook は配布されたまま検査だけ消える / issue #176）.
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
-  - byte-replica 同期: プラグイン間でファイルごと複製している md（grill-protocol.md）が正本と
-    byte-identical か. 複製側は「byte-identical 複製」と宣言していたのに検査が無く, 正本にだけ
+  - byte-replica 同期: プラグイン間で丸ごと複製しているファイル（grill-protocol.md /
+    plugin-enabled.sh）が正本と byte-identical か. 複製側は「byte-identical 複製」と宣言していたのに検査が無く, 正本にだけ
     #233 の節（14 行）が入ったまま複製が古くなっていた. 言い換えの消費サイトは SSoT pin が担う
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
   - backend-detect 同期: issue-workflow の Phase 0（backend 検出）区間が正本と一致するか（dedent 比較・区間を持つ SKILL.md を走査）
@@ -130,12 +130,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CANONICAL_SAFE_HOOK = ROOT / ".claude-plugin" / "lib" / "safe-hook.sh"
 
-# プラグイン間依存禁止のためファイルごと複製している md（正本 → 複製）. safe-hook.sh と同じく
+# プラグイン間依存禁止のため丸ごと複製しているファイル（正本 → 複製）. safe-hook.sh と同じく
 # byte 比較する. 言い換え・要約の消費サイトは一致比較にできないので SSoT pin の担当
 # （2 機構の使い分け: ADR-20260813223000）.
 BYTE_REPLICAS = {
     ROOT / "feature-dev" / "references" / "grill-protocol.md": [
         ROOT / "design-doc" / "skills" / "design-doc" / "references" / "grill-protocol.md",
+    ],
+    ROOT / ".claude-plugin" / "lib" / "plugin-enabled.sh": [
+        ROOT / "feature-dev" / "scripts" / "plugin-enabled.sh",
+        ROOT / "issue-workflow" / "scripts" / "plugin-enabled.sh",
     ],
 }
 

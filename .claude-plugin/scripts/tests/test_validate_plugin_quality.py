@@ -1618,6 +1618,16 @@ class ByteReplicaSyncTest(unittest.TestCase):
             pairs,
         )
 
+    def test_real_config_still_declares_the_plugin_enabled_pairs(self):
+        """導入判定の複製（feature-dev / issue-workflow）も正本と突き合わせ続ける."""
+        real = _load_module()
+        pairs = {
+            (c.relative_to(real.ROOT).as_posix(), r.relative_to(real.ROOT).as_posix())
+            for c, rs in real.BYTE_REPLICAS.items() for r in rs
+        }
+        for replica in ("feature-dev/scripts/plugin-enabled.sh", "issue-workflow/scripts/plugin-enabled.sh"):
+            self.assertIn((".claude-plugin/lib/plugin-enabled.sh", replica), pairs)
+
 
 class BackendDetectSyncTest(unittest.TestCase):
     """issue-workflow の Phase 0 区間同期. 消費サイトは走査で集めるので、最低件数の下限も固定する."""
