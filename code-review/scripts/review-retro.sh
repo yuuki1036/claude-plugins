@@ -856,14 +856,18 @@ def gen_threshold_of(p):
     if is_rereview(p):
         return g + REREVIEW_TAG
     t = p.get("severity_threshold")
-    return g if t in (None, MAIN_THRESHOLD) else "%s（閾値 %s）" % (g, t)
+    # self-review の既定は MINOR（#297）。既定のまま走った回は閾値によらず主層に置く — 外すと既定を
+    # 変えた日から self-review の主層が空になる。doc だけの diff の自動 MINOR（review / 旧版）は従来どおり分ける
+    if t in (None, MAIN_THRESHOLD) or p.get("severity_threshold_source") == "default":
+        return g
+    return "%s（閾値 %s）" % (g, t)
 
 
 def is_main_threshold_key(key):
     return "（閾値 " not in key
 
 
-THRESHOLD_SPLIT_NOTE = ("> `（閾値 X）` の行は報告閾値が MAJOR でない回（doc だけの diff の自動 MINOR を含む）。"
+THRESHOLD_SPLIT_NOTE = ("> `（閾値 X）` の行は報告閾値が既定でない回（MAJOR 以外で既定のまま走っていない回。doc だけの diff の自動 MINOR を含み、self-review の既定 MINOR は含まない / #297）。"
                         "閾値未満のみの空振りが起きにくいので世代の行に混ぜず、⚠️ の判定からも外す（#277）")
 
 
@@ -2269,7 +2273,7 @@ def _ts_breakdown(label):
 def _excluded_note():
     """判定から外した件数を、外した理由ごとに添える（#277 / #284 / #296）."""
     parts = []
-    for name, is_main, issue in (("閾値が MAJOR でない", is_main_threshold_key, "#277"),
+    for name, is_main, issue in (("閾値が既定でない", is_main_threshold_key, "#277"),
                                  ("effort が high 未満の", is_main_effort_key, "#284"),
                                  ("修正を確かめる再レビューの", is_main_rereview_key, "#296")):
         n = sum(_v["n"] for _k, _v in apx_stats["by_gen"].items() if not is_main(_k))

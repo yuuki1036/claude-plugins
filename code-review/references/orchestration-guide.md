@@ -74,9 +74,11 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 ## 2. 実効報告閾値の注入（`{{SEVERITY_THRESHOLD}}` / **review・self-review 共通** / GitHub issue #117）
 
-**reviewer には userConfig `review_severity_threshold` の実効値を必ず渡す**（既定 `MAJOR`）。
+**reviewer には userConfig `review_severity_threshold` の実効値を必ず渡す**（既定は review が `MAJOR`、self-review が `MINOR`）。
 
-**doc だけの diff では実効値を `MINOR` に下げる**（GitHub issue #275）: Step 1 の `## size` が `doc_only=1` を出し、userConfig が既定の `MAJOR` のときは、実効値を `MINOR` にする（userConfig で `CRITICAL` 等を明示している回は下げない）。文書では節の間のずれ・消し残し・受入条件と本文のずれが MINOR になり、そのまま実装者の誤読になるのに、`MAJOR` では件数だけになって本文が読めない（実測: 仕様書 5 ファイルの self-review で閾値未満 8 件。人の精読で直した 18 件のうち 2 件以上がその中にあった）。閾値未満の本文を 🔁 付録に出す案は採らない — 付録は閾値以上で列挙された指摘だけ、という #248 の契約が崩れる。レポートの報告閾値の行には「MINOR（doc だけの diff のため既定の MAJOR から下げた）」と出し、payload の `severity_threshold` には下げた後の値を入れる（retro はこの値で層別する）。下げたかどうか（出どころ）は**書かない** — publish が `doc_only` と userConfig から `severity_threshold_source` を機械判定して載せる（GitHub issue #277 / orchestration-measurement.md `## 16`）
+**self-review の既定は `MINOR`**（GitHub issue #297）: userConfig が未設定なら、diff の種類を問わず実効値を `MINOR` にする（設定していればその値。`MAJOR` を明示すれば `MAJOR`）。effort medium・閾値 MINOR の self-review 3 回で、本文に出た MINOR 15 件のうち 14 件が直す価値ありだった（1 回あたり中央値 5 件）。`MAJOR` では medium の self-review の本文がたいてい空のまま終わり、MINOR が件数だけになっていた。review は他人の PR に出す指摘でもあるので `MAJOR` のまま（下の doc だけの diff の規則だけが効く）。出どころは publish が `severity_threshold_source: default` として載せる
+
+**doc だけの diff では実効値を `MINOR` に下げる**（GitHub issue #275。review の規則。self-review は上の既定で既に `MINOR`）: Step 1 の `## size` が `doc_only=1` を出し、userConfig が既定の `MAJOR` のときは、実効値を `MINOR` にする（userConfig で `CRITICAL` 等を明示している回は下げない）。文書では節の間のずれ・消し残し・受入条件と本文のずれが MINOR になり、そのまま実装者の誤読になるのに、`MAJOR` では件数だけになって本文が読めない（実測: 仕様書 5 ファイルの self-review で閾値未満 8 件。人の精読で直した 18 件のうち 2 件以上がその中にあった）。閾値未満の本文を 🔁 付録に出す案は採らない — 付録は閾値以上で列挙された指摘だけ、という #248 の契約が崩れる。レポートの報告閾値の行には「MINOR（doc だけの diff のため既定の MAJOR から下げた）」と出し、payload の `severity_threshold` には下げた後の値を入れる（retro はこの値で層別する）。下げたかどうか（出どころ）は**書かない** — publish が `doc_only` と userConfig から `severity_threshold_source` を機械判定して載せる（GitHub issue #277 / orchestration-measurement.md `## 16`）
 
 報告マトリクスと本閾値は**直列に掛かる 2 段のフィルタ**で、reviewer は後段を知らされていなかったため、構造的にほぼ報告されない severity に出力予算を使い続けていた（実測: MINOR 調整前 60 → 報告 9 件 = **85% 破棄**、うち confidence 95+ が 7 件）。
 

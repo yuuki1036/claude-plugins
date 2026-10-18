@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.158.0] - 2026-10-19
+
+### Changed
+
+- **self-review の報告閾値の既定を `MINOR` にした**（GitHub issue #297）。userConfig `review_severity_threshold` が
+  未設定なら、diff の種類を問わず `MINOR` で回す（設定していればその値。`MAJOR` を明示すれば `MAJOR`）。
+  effort medium・閾値 MINOR の self-review 3 回で、本文に出た MINOR 15 件のうち 14 件が直す価値ありだった
+  （1 回あたり中央値 5 件）。`MAJOR` では medium の self-review の本文がたいてい空のまま終わり、MINOR が件数だけ
+  になっていた。review（PR）は `MAJOR` のまま（doc だけの diff を `MINOR` に下げる規則は従来どおり）
+  - publish の `severity_threshold_source` は、self-review の既定で走った回を `default` と判定する
+  - retro は `severity_threshold_source: default` の回を閾値によらず主層に置く（外すと既定を変えた日から
+    self-review の主層が空になる）。主層から外した回の注記は「閾値が既定でない」に改めた
+
 ## [2.157.0] - 2026-10-18
 
 ### Added

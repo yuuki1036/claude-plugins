@@ -1884,10 +1884,12 @@ class ThresholdSourcePublishTest(ScriptTestBase):
         d.mkdir(exist_ok=True)
         (d / "settings.json").write_text(json.dumps({"pluginConfigs": configs}), encoding="utf-8")
 
-    def _source(self, threshold: str, doc_only: int | None = None, **payload_extra) -> str | None:
+    def _source(self, threshold: str, doc_only: int | None = None, plugin: str = "code-review:review",
+                **payload_extra) -> str | None:
+        # 既定の規則は review と self-review で違う（#297）。下の既存ケースは review の規則
         if doc_only is not None:
             self._size_file().write_text("doc_only=%d\n" % doc_only, encoding="utf-8")
-        r = self.publish(dict(BASE_PAYLOAD, severity_threshold=threshold, **payload_extra))
+        r = self.publish(dict(BASE_PAYLOAD, severity_threshold=threshold, **payload_extra), plugin)
         self.assertEqual(r.returncode, 0, r.stderr)
         return self.last_payload().get("severity_threshold_source")
 
@@ -1960,6 +1962,21 @@ class ThresholdSourcePublishTest(ScriptTestBase):
     def test_a_caller_written_source_is_discarded(self):
         self.assertEqual(self._source("MAJOR", doc_only=0, severity_threshold_source="user_config"),
                          "default")
+
+    def test_self_review_defaults_to_minor_on_code_diffs(self):
+        """self-review は userConfig が未設定なら diff の種類を問わず MINOR が既定（#297）."""
+        sr = "code-review:self-review"
+        self.assertEqual(self._source("MINOR", doc_only=0, plugin=sr), "default")
+        self.assertEqual(self._source("MINOR", doc_only=1, plugin=sr), "default")
+        self.assertEqual(self._source("MINOR", plugin=sr), "default")
+        self.assertEqual(self._source("MAJOR", doc_only=0, plugin=sr), "unknown", "既定を適用し損ねた回")
+
+    def test_self_review_respects_an_explicit_user_value(self):
+        """self-review でも userConfig を明示すればその値（MAJOR の明示も下げない）."""
+        sr = "code-review:self-review"
+        self._settings({"code-review@m": {"options": {"review_severity_threshold": "MAJOR"}}})
+        self.assertEqual(self._source("MAJOR", doc_only=0, plugin=sr), "user_config")
+        self.assertEqual(self._source("MINOR", doc_only=0, plugin=sr), "unknown")
 
     def test_no_source_without_a_threshold(self):
         p = json.loads(json.dumps(BASE_PAYLOAD))
@@ -7831,11 +7848,23 @@ class RetroAppendixLayerTest(RetroFixture):
         self._events(rows)
         out = self._out()
         self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 30%（`opus-4-8` 層 / 3/10）", out)
-        self.assertIn("閾値が MAJOR でない 10 件は判定から外した（#277）", out)
+        self.assertIn("閾値が既定でない 10 件は判定から外した（#277）", out)
         self.assertIn("| opus-4-8（閾値 MINOR） | 10 |", out)
         j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
         self.assertEqual(j["appendix_by_gen"]["opus-4-8"]["n"], 10)
         self.assertEqual(j["appendix_by_gen"]["opus-4-8（閾値 MINOR）"]["n"], 10)
+
+    def test_self_review_default_minor_runs_stay_in_the_main_layer(self):
+        """self-review の既定 MINOR（`severity_threshold_source: default`）で走った回は主層に置く（#297）.
+
+        外すと既定を変えた日から self-review の主層が空になり、#210 の回復サインが読めなくなる.
+        """
+        rows = [dict(self._row("opus-4-8", 1, 0), severity_threshold="MINOR",
+                     severity_threshold_source="default") for _ in range(10)]
+        self._events(rows)
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual(j["appendix_by_gen"]["opus-4-8"]["n"], 10)
+        self.assertNotIn("opus-4-8（閾値 MINOR）", j["appendix_by_gen"])
 
     def test_a_minor_threshold_layer_never_fires(self):
         """主層でない閾値の層は ⚠️ の判定に入れない（累計にも入れない）."""
@@ -7905,7 +7934,7 @@ class RetroAppendixLayerTest(RetroFixture):
         self._events(rows)
         sig = self.signals(self._out())
         self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", sig)
-        self.assertIn("閾値が MAJOR でない 2 件は判定から外した（#277）", sig)
+        self.assertIn("閾値が既定でない 2 件は判定から外した（#277）", sig)
         self.assertIn("effort が high 未満の 3 件は判定から外した（#284）", sig)
 
     def test_a_minor_threshold_run_is_not_split_again_by_effort(self):

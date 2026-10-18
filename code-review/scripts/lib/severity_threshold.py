@@ -78,11 +78,12 @@ def user_threshold(settings: object, plugin: str = "code-review") -> str | None:
 
 
 def threshold_source(effective: str | None, user_value: str | None,
-                     doc_only: int | None) -> str | None:
+                     doc_only: int | None, skill: str = "review") -> str | None:
     """実効閾値の出どころを決める。実効値が無い回は None（フィールドごと載せない）。
 
-    規則の正本は orchestration-guide.md `## 2`: userConfig が既定の MAJOR（未設定を含む）で、
-    doc だけの diff なら MINOR に下げる。明示した MAJOR 以外の値は下げない。
+    規則の正本は orchestration-guide.md `## 2`: review は userConfig が既定の MAJOR（未設定を含む）で、
+    doc だけの diff なら MINOR に下げる。明示した MAJOR 以外の値は下げない。self-review は userConfig が
+    未設定なら diff の種類を問わず MINOR（GitHub issue #297 の計測で採用）、設定していればその値。
 
     **規則と実効値が食い違う回は `unknown`**（オーケストレーターが規則を適用し損ねた・userConfig が
     読めなかった等。どちらかに寄せると #275 の効果測定がその回を誤った側に数える）。
@@ -91,6 +92,10 @@ def threshold_source(effective: str | None, user_value: str | None,
     """
     if effective is None:
         return None
+    if skill == "self-review":
+        if user_value is not None:
+            return "user_config" if effective == user_value else "unknown"
+        return "default" if effective == "MINOR" else "unknown"
     if user_value is not None and user_value != "MAJOR":
         return "user_config" if effective == user_value else "unknown"
     if doc_only == 1:

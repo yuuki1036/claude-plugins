@@ -71,7 +71,7 @@ reviewer が証拠（diff、ファイル Read、explorer 結果、ドキュメ�
 - **閾値を MINOR に下げるのは MINOR を本文で読むため**だが、95+ のままでは閾値を下げても本文に届かなかった。reviewer は閾値に合わせて MINOR の本文を書いて返す（`## below-threshold` は 0 件になる）のに、後段のマトリクスで 95 未満が全部 🔁 付録へ落ち、指摘件数「MINOR 0 件」・Step 7 の修正方針確認なし、で終わる（実測: 閾値を MINOR に下げた self-review で confidence 40〜85 の MINOR 9 件がすべて付録へ落ちた）。上の「書かせて捨てる」組み合わせを、閾値を下げた回にだけ作っていた
 - **80 で切る理由**: 根拠の無い好みは 40、repo で検証できない外部状態に依拠する指摘（`[unverified]`）は 75 で頭打ちになるので、どちらも 80 では通らない。pattern-consistency の「明確な不統一」（70-85）のうち 80 以上と、file:line で裏付けた MINOR が通る
 - **反証レイヤーの対象は広げない**。MINOR は反証のゲート帯（triage-dynamic-gates.md `## 9`）に入っていない。誤った MINOR が通っても影響は小さく、Step 7 で人間が採否を決める
-- **既定の `MAJOR` 以上の回は 95+ のまま**（`MINOR` は閾値で足切りされるので、この行は効かない）
+- **閾値が `MAJOR` 以上の回は 95+ のまま**（`MINOR` は閾値で足切りされるので、この行は効かない。review の既定がこれ。self-review の既定は `MINOR` / #297）
 
 ### surface-aware 閾値（high-risk surface に限る recall 補正 / ADR-20260703204045）
 
@@ -263,10 +263,10 @@ severity の頻繁な上書きは reviewer のキャリブレーションを崩�
 `plugin.json` の `userConfig` で報告閾値をユーザーがカスタマイズ可能:
 
 - `review_confidence_threshold` (number, default: 80): CRITICAL 以下の最低 confidence（後方互換のため残置）
-- `review_severity_threshold` (string, default: "MAJOR"): 報告対象の最低 severity。`BLOCKER` / `CRITICAL` / `MAJOR` / `MINOR` のいずれか
+- `review_severity_threshold` (string, 未設定時は review が "MAJOR"・self-review が "MINOR" / #297): 報告対象の最低 severity。`BLOCKER` / `CRITICAL` / `MAJOR` / `MINOR` のいずれか
 - `enable_recall_skeptic` (bool, default: true): 冷や読み skeptic ラウンド（Phase 5.8 / 4.8）の有効化。`false` で強制スキップ。high-risk surface でも起動しなくなり、surface-aware 閾値は据え置き（surface-aware 閾値自体はこの config で無効化しない＝閾値と skeptic 起動は別機構）
 
-`review_severity_threshold = "CRITICAL"` を設定すると MAJOR 以下を完全に除外（厳しめ運用）。`"MINOR"` にすると全 severity を報告対象にし、MINOR は confidence 80+ で報告する（緩め運用。上の「実効報告閾値が MINOR の回」）。デフォルトの `"MAJOR"` は上記マトリクス通り。
+`review_severity_threshold = "CRITICAL"` を設定すると MAJOR 以下を完全に除外（厳しめ運用）。`"MINOR"` にすると全 severity を報告対象にし、MINOR は confidence 80+ で報告する（緩め運用。上の「実効報告閾値が MINOR の回」）。review の既定の `"MAJOR"` は上記マトリクス通り（self-review の既定は `"MINOR"`）。
 
 ### 実効閾値を reviewer に伝える（GitHub issue #117）
 

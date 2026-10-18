@@ -367,6 +367,7 @@ MERGED=$(
   REVIEW_LIB_DIR="$HERE/lib" \
   REVIEW_SIZE_FILE="$(review_path size)" \
   REVIEW_USER_SETTINGS="${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/settings.json" \
+  REVIEW_PLUGIN="$PLUGIN" \
   python3 - "$PAYLOAD" <<'PY'
 import json, os, re, sys
 
@@ -822,7 +823,8 @@ def _read_user_threshold(path):
         return None
 _source = threshold_source(payload.get("severity_threshold"),
                            _read_user_threshold(os.environ["REVIEW_USER_SETTINGS"]),
-                           _read_doc_only(os.environ["REVIEW_SIZE_FILE"]))
+                           _read_doc_only(os.environ["REVIEW_SIZE_FILE"]),
+                           "self-review" if os.environ.get("REVIEW_PLUGIN", "").endswith(":self-review") else "review")
 if _source is not None:
     payload["severity_threshold_source"] = _source
 
