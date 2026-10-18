@@ -74,7 +74,7 @@ Issue documentation pattern の規範を提供し、Issue 本文を 9 セクシ�
 
 ### Phase 0.5: BDD bilayer モード（bdd-spec 連携・opt-in）
 
-`bdd-spec` plugin が同居している場合、Issue を **human 層（9 セクション散文・背景・設計判断）と AI 層（BDD `spec.md` の Feature / Scenario / Examples）の二重化（bilayer）** で設計できる。AI ハーネスには AI 層だけ Read させる運用（AGENTS.md / CLAUDE.md 側で制御）を想定し、このスキルは **生成のみ**を担う。bdd-spec 未インストール時は本フェーズは完全に dormant（従来の単一ファイル設計）。
+`bdd-spec` plugin が同居している場合、Issue を **human 層（9 セクション散文・背景・設計判断）と AI 層（BDD `spec.md` の Feature / Scenario / Examples）の二重化（bilayer）** で設計できる。AI ハーネスには AI 層だけ Read させる運用（AGENTS.md / CLAUDE.md 側で制御）を想定し、このスキルは **生成のみ**を担う。bdd-spec が有効でない（無効か未導入の）ときは本フェーズは完全に dormant（従来の単一ファイル設計）。
 
 1. bdd-spec が有効かを判定する（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash

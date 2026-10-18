@@ -254,16 +254,16 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
 
 ### Phase 8: spec 選択（着手前の仕様化ルーティング）
 
-実装に入る前に「どの仕様 (spec) を先に書くか」を判定する。仕様系プラグイン（bdd-spec / design-doc / adr-keeper）が 1 つも入っていなければ完全に skip（dormant・後方互換 100%）。feature-dev に引き継ぐ場合（Phase 7 で「はい」）は WHAT/HOW を feature-dev が内部 Phase で生成するため、この Phase には実質到達しない（自分で実装する経路でのみ働く）。
+実装に入る前に「どの仕様 (spec) を先に書くか」を判定する。仕様系プラグイン（bdd-spec / design-doc / adr-keeper）が 1 つも有効でなければ完全に skip（dormant・後方互換 100%）。feature-dev に引き継ぐ場合（Phase 7 で「はい」）は WHAT/HOW を feature-dev が内部 Phase で生成するため、この Phase には実質到達しない（自分で実装する経路でのみ働く）。
 
 1. **dormant 判定**（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash
    P="${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh"
    echo "SPEC_BDD=$(bash "$P" bdd-spec) SPEC_DD=$(bash "$P" design-doc) SPEC_ADR=$(bash "$P" adr-keeper)"
    ```
-   - 3 つとも 0（いずれの spec プラグインも未導入）→ 本 Phase を skip
+   - 3 つとも 0（いずれの spec プラグインも有効でない。無効か未導入）→ 本 Phase を skip
 
-2. **自動推奨（判定表）**: type と Issue の性質から推奨を 1 つ決める。WHAT / HOW / WHY は排他ではない（大きめの feature は bdd-spec で WHAT を固めてから design-doc で HOW、のように併用してよい）。推奨が未導入の spec を指す場合（例: design-doc 推奨だが `SPEC_DD=0`）は導入済みの次点か「不要」にフォールバックする。
+2. **自動推奨（判定表）**: type と Issue の性質から推奨を 1 つ決める。WHAT / HOW / WHY は排他ではない（大きめの feature は bdd-spec で WHAT を固めてから design-doc で HOW、のように併用してよい）。推奨が有効でない spec を指す場合（例: design-doc 推奨だが `SPEC_DD=0`）は有効な次点か「不要」にフォールバックする。
 
    共有 3 軸コア（正本: `.claude-plugin/lib/routing-axes.md`。spec-advisor と同期・quality-check が検証。**編集時は正本と全消費サイトを同時更新**）:
 

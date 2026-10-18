@@ -376,7 +376,7 @@ AskUserQuestion(
 ```
 
 - 「feature-dev」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**起動する前に**下の「ブランチ未作成のとき」に従ってブランチを作る。**feature-dev が有効でない**（`bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" feature-dev` が `0`。無効化した・未導入のどちらも）**なら、この選択肢を option から外す**（dormant。使えないプラグインを提案肢に出さない）
-- 「軽量フロー」→ ブランチ未作成なら先に下の「ブランチ未作成のとき」に従ってブランチを作る。そのうえで `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 7 Step（実装 → 検証 → self-review → 読み合わせ → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、self-review / 読み合わせ / commit の委譲先（code-review / dev-workflow）は導入済みなら委譲し、未導入なら手動手順にフォールバックする（読み合わせは手動の代わりが無いので skip。この選択肢自体は委譲先の有無に関わらず提示する）
+- 「軽量フロー」→ ブランチ未作成なら先に下の「ブランチ未作成のとき」に従ってブランチを作る。そのうえで `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 7 Step（実装 → 検証 → self-review → 読み合わせ → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、self-review / 読み合わせ / commit の委譲先（code-review / dev-workflow）は有効なら委譲し、無効か未導入なら手動手順にフォールバックする（読み合わせは手動の代わりが無いので skip。この選択肢自体は委譲先の有無に関わらず提示する）
 - 「自分で進める」→ 何も起動せず通常の作業に入る。同一セッションで再提案しない
 - feature-dev 起動後は、`feature_dev_plan:` frontmatter への記載をユーザーに案内する（手動更新、または `/issue-maintain` で反映）
 

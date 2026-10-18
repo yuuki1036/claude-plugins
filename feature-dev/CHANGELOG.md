@@ -5,6 +5,15 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.22.2] - 2026-10-18
+
+### Fixed
+
+- **`plugin-enabled.sh` が、submodule・`--separate-git-dir`・git 2.31 未満で project の settings を読み落としていた**。
+  `CLAUDE_PROJECT_DIR` が無いときに git の共通 dir の親を project にしていたが、submodule では `.git/modules` を指し、
+  古い git は `--path-format` を知らずにフラグをそのまま出力して exit 0 するので project が空になっていた。共通 dir が
+  `<dir>/.git` のときだけその `<dir>` を使い、それ以外は作業ツリーの直下（git の外なら cwd）を使う
+
 ## [2.22.1] - 2026-10-18
 
 ### Changed

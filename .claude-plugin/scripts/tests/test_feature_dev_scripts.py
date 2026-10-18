@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""feature-dev 同梱スクリプトの CLI 境界テスト（`scripts/plugin-enabled.sh`）.
+"""feature-dev 同梱スクリプトの CLI 境界テスト（導入判定 plugin-enabled.sh は正本 .claude-plugin/lib/ を叩く）.
 
 有効判定を誤ると、無効化したプラグインの skill を呼びに行く（有効と誤認）か、project だけで
 有効化したプラグインを使わない（取りこぼし）。以前の判定は `$HOME/.claude/settings.json` に
@@ -102,8 +102,29 @@ class PluginEnabledTest(unittest.TestCase):
         subprocess.run(["git", "worktree", "add", "-q", str(wt)], cwd=self.proj, env=env, check=True, capture_output=True)
         self.assertState("code-review", "0", project_env=False, cwd=wt)
 
+    def test_project_dir_is_the_toplevel_when_the_git_dir_is_not_dot_git(self):
+        """submodule・--separate-git-dir では共通 dir の親に .claude/ が無いので、作業ツリーの直下を読む."""
+        env = scrub()
+        gitdir = self.root / "elsewhere.git"
+        subprocess.run(["git", "init", "-q", f"--separate-git-dir={gitdir}", str(self.proj)], env=env, check=True, capture_output=True)
+        self.settings("project", {"bdd-spec": True})
+        sub = self.proj / "src"
+        sub.mkdir()
+        self.assertState("bdd-spec", "1", project_env=False, cwd=sub)
+
+    def test_project_dir_env_wins_over_git(self):
+        """CLAUDE_PROJECT_DIR があれば git から導かない（hook など本体が渡す文脈を優先する）."""
+        self.init_repo()
+        other = self.root / "other"
+        (other / ".claude").mkdir(parents=True)
+        (other / ".claude" / "settings.json").write_text('{"enabledPlugins": {"adr-keeper@mkt": true}}')
+        self.settings("project", {"adr-keeper": False})
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "CLAUDE_PROJECT_DIR": str(other)}
+        res = subprocess.run(["bash", str(SCRIPT), "adr-keeper"], capture_output=True, text=True, env=env, cwd=str(self.proj))
+        self.assertEqual(res.stdout.strip(), "1", res.stderr)
+
     def test_project_dir_falls_back_to_cwd(self):
-        """CLAUDE_PROJECT_DIR が無い（Bash ツールの既定）ときは cwd の .claude を読む."""
+        """CLAUDE_PROJECT_DIR が無く（Bash ツールの既定）、git の外のときは cwd の .claude を読む."""
         self.settings("project", {"design-doc": True})
         self.assertState("design-doc", "1", project_env=False, cwd=self.proj)
 

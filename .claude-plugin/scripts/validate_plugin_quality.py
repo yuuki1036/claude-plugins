@@ -14,7 +14,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     **無言で対象ゼロ**になる（hook は配布されたまま検査だけ消える / issue #176）.
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
   - byte-replica 同期: プラグイン間で丸ごと複製しているファイル（grill-protocol.md /
-    plugin-enabled.sh）が正本と byte-identical か. 複製側は「byte-identical 複製」と宣言していたのに検査が無く, 正本にだけ
+    plugin-enabled.sh）が正本と byte-identical か. grill-protocol.md の複製は「byte-identical 複製」と宣言していたのに検査が無く, 正本にだけ
     #233 の節（14 行）が入ったまま複製が古くなっていた. 言い換えの消費サイトは SSoT pin が担う
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
   - backend-detect 同期: issue-workflow の Phase 0（backend 検出）区間が正本と一致するか（dedent 比較・区間を持つ SKILL.md を走査）
@@ -370,7 +370,7 @@ def check_safe_hook_sync(plugin_dir: Path, errors: list[str]) -> None:
 
 
 def check_byte_replicas(errors: list[str]) -> None:
-    """ファイルごと複製した md が正本と byte-identical かを検証する（plugin 跨ぎ）."""
+    """ファイルごと複製したファイル（md / sh）が正本と byte-identical かを検証する（plugin 跨ぎ）."""
     tag = "byte-replica"
     for canonical, replicas in BYTE_REPLICAS.items():
         if not canonical.is_file():

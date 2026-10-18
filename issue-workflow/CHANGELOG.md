@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.2] - 2026-10-18
+
+### Fixed
+
+- **`plugin-enabled.sh` が、submodule・`--separate-git-dir`・git 2.31 未満で project の settings を読み落としていた**。
+  `CLAUDE_PROJECT_DIR` が無いときに git の共通 dir の親を project にしていたが、submodule では `.git/modules` を指し、
+  古い git は `--path-format` を知らずにフラグをそのまま出力して exit 0 するので project が空になっていた。共通 dir が
+  `<dir>/.git` のときだけその `<dir>` を使い、それ以外は作業ツリーの直下（git の外なら cwd）を使う
+- 判定を「有効か」に変えた箇所の説明に残っていた「未導入」の言い回し（issue-create の spec の dormant 判定・
+  issue-design の bdd-spec・start の委譲先・軽量フローの見出し）を「有効でない（無効か未導入）」に揃えた
+
 ## [1.11.1] - 2026-10-18
 
 ### Fixed
@@ -15,7 +26,7 @@
   判定の結果をモデルが読み取れなかった。issue-maintain の dev-workflow の判定（3 ファイルの OR で `false` を
   無視していた）も同じスクリプトにした。SessionStart の未インストール警告（`hooks/scripts/check-deps.sh`）は、
   警告の意味が「未インストール」なのでキーの有無のまま。project の場所は、`CLAUDE_PROJECT_DIR` が無ければ git の
-  共通 dir の親（メインのチェックアウト）にする — 軽量フローで worktree に移った後も local の settings を読むため
+  共通 dir の親（メインのチェックアウト）にする — 軽量フローで worktree に移った後も local の settings を読むため。
   writing-polish 連携などの前置きの「インストールされていれば必ず実行する」も「有効なら必ず実行する。無効か未導入のときだけ skip」に揃えた
 
 ## [1.11.0] - 2026-10-18

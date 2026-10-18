@@ -10,10 +10,12 @@
 # `false` で無効化したプラグインを有効と誤認し、project だけで有効化したものを取りこぼす
 # （GitHub issue #74 と同じ型）。
 #
-# project の場所は CLAUDE_PROJECT_DIR、無ければ git の共通 dir の親（メインのチェックアウト）、git の外なら cwd。
-# Bash tool の環境には CLAUDE_PROJECT_DIR が無いので、cwd のままだとサブディレクトリでは .claude/ を見失い、
-# linked worktree では gitignore された settings.local.json が無いので local の値が消える（issue-workflow の
-# worktree はメインで開いたセッションから移る運用。worktree で起動したセッションでは本体の見え方とずれうる）。
+# project の場所は CLAUDE_PROJECT_DIR、無ければ git の共通 dir が `<dir>/.git` のときその <dir>（linked worktree
+# からもメインのチェックアウトになる）、それ以外（submodule・--separate-git-dir・git 2.31 未満で --path-format を
+# 知らず未知のフラグがそのまま出る）は作業ツリーの直下、git の外なら cwd。Bash tool の環境には CLAUDE_PROJECT_DIR が
+# 無いので、cwd のままだとサブディレクトリでは .claude/ を見失い、linked worktree では gitignore された
+# settings.local.json が無いので local の値が消える。メインで開いたセッションから worktree に移った場合は Claude Code
+# 本体と同じ settings を読むが、worktree で起動したセッションでは Claude Code 本体が読む settings とずれうる。
 # 行単位の grep なので、キーと値を別の行に折り返したファイルは判定に使われず、前に読んだファイルの値が残る。
 
 set -uo pipefail
@@ -28,7 +30,11 @@ fi
 project="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$project" ]; then
   common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=""
-  if [ -n "$common" ]; then project=$(dirname "$common"); else project="$PWD"; fi
+  case "$common" in
+    /*/.git) project="${common%/.git}" ;;
+    *) project=$(git rev-parse --show-toplevel 2>/dev/null) || project="" ;;
+  esac
+  if [ -z "$project" ]; then project="$PWD"; fi
 fi
 state=0
 for f in "${HOME}/.claude/settings.json" "${project}/.claude/settings.json" "${project}/.claude/settings.local.json"; do
