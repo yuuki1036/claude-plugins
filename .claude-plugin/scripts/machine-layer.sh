@@ -12,7 +12,10 @@
 # ステップ単位で結果を見せるため）。並びを増やすときはこの 2 つも見ること。
 #
 # 使い方:
-#   machine-layer.sh            # 全検査。問題があれば stdout に出して exit 1
+#   machine-layer.sh             # 全検査。問題があれば stdout に出して exit 1
+#   machine-layer.sh --no-tests  # 回帰テスト（検査 3）を外す。self-review 前段が使う
+#     （テストだけで約 12 分かかり、run-oracles.sh の 300 秒に収まらない。2026-10-19 実測。
+#      回帰テストは pre-commit と CI が必ず回すので、レビュー前段では外す）
 #
 # 終了コード:
 #   0 … すべて通過
@@ -23,6 +26,14 @@
 #   - `validate_plugin_quality.py` 冒頭 docstring（品質検査の項目）
 #   - `validate-ssot.sh`（SSoT 同期の項目）
 set -uo pipefail
+
+RUN_TESTS=1
+case "${1:-}" in
+  "") ;;
+  --no-tests) RUN_TESTS=0 ;;
+  # 知らない引数は判定不能（2）。黙って全検査に倒すと、綴りを誤った呼び出し側が 12 分待つ
+  *) echo "FATAL: 知らない引数: $1" >&2; exit 2 ;;
+esac
 
 # 既定はスクリプトの位置から導く。`MACHINE_LAYER_ROOT` は**テスト用の差し替え口**で、
 # stub を置いた使い捨てリポジトリに向けて exit code の契約（0/1/2）を検証するために要る
@@ -67,7 +78,7 @@ esac
 # 3. 回帰テスト（検証スクリプト自身 + 同梱スクリプトの CLI テスト + hook テスト）。
 #    **起動は run-tests.py に寄せる**: テストが起動したプロセスの残留をそこで回収する
 #    （テストが緑でも外に副作用が残る型は、テストの成否では検出できない / #140）
-if [ -d "$REPO_ROOT/.claude-plugin/scripts/tests" ]; then
+if [ "$RUN_TESTS" -eq 1 ] && [ -d "$REPO_ROOT/.claude-plugin/scripts/tests" ]; then
   OUT="$(python3 "$REPO_ROOT/.claude-plugin/scripts/run-tests.py" 2>&1)" && RC=0 || RC=$?
   case "$RC" in
     0) ;;

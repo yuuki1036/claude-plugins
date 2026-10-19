@@ -118,10 +118,10 @@ class MachineLayerTest(unittest.TestCase):
                         encoding="utf-8")
         stub.chmod(0o755)
 
-    def run_layer(self, env: dict[str, str] | None = None
+    def run_layer(self, env: dict[str, str] | None = None, args: tuple[str, ...] = ()
                   ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["bash", str(SCRIPT)], cwd=str(self.root), capture_output=True,
-                              text=True, env=env or self.env(), timeout=120)
+        return subprocess.run(["bash", str(SCRIPT), *args], cwd=str(self.root),
+                              capture_output=True, text=True, env=env or self.env(), timeout=120)
 
     # ---- exit code の契約 --------------------------------------------------
     def test_all_green_exits_0_with_no_output(self):
@@ -151,6 +151,37 @@ class MachineLayerTest(unittest.TestCase):
         res = self.run_layer()
         self.assertEqual(res.returncode, 1)
         self.assertIn("[unit-tests]", res.stdout)
+
+    # ---- --no-tests（self-review 前段の宣言が使う） --------------------------
+    def test_no_tests_skips_the_regression_tests(self):
+        """回帰テストが赤でも走らせない（全体で 12 分かかり、前段の 300 秒に収まらない）."""
+        self.with_tests_dir(passing=False)
+        res = self.run_layer(args=("--no-tests",))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertNotIn("[unit-tests]", res.stdout)
+
+    def test_no_tests_still_reports_static_findings(self):
+        """外すのは回帰テストだけ。静的検査の検出まで黙らせない."""
+        self.write_stub("validate_plugin_quality.py",
+                        "print('allowed-tools が一致しない')\nimport sys; sys.exit(1)\n")
+        self.with_tests_dir(passing=True)
+        res = self.run_layer(args=("--no-tests",))
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("allowed-tools が一致しない", res.stdout)
+
+    def test_no_tests_still_reports_an_unknown_verdict(self):
+        self.write_stub("validate-ssot.sh",
+                        "#!/usr/bin/env bash\necho 'jsonschema が無い'\nexit 2\n")
+        res = self.run_layer(args=("--no-tests",))
+        self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+
+    def test_an_unknown_argument_is_unknown_not_a_full_run(self):
+        """綴りを誤った引数で全検査（回帰テスト込み）に倒さない."""
+        self.with_tests_dir(passing=False)
+        res = self.run_layer(args=("--no-test",))
+        self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+        self.assertIn("--no-test", res.stderr)
+        self.assertNotIn("[unit-tests]", res.stdout)
 
     def test_ssot_unknown_verdict_is_not_reported_as_a_detection(self):
         """子の exit 2 を 1 に混ぜない（「直せるもの」と「判定できなかった」は別物）.

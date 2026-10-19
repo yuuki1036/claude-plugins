@@ -58,7 +58,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
   settings.json                  # Stop hook（auto-quality-check.sh）等の設定
   review-oracles.sh              # self-review が agent 起動前に走らせる機械層の宣言
-                                 #   （存在自体が opt-in。中身は machine-layer.sh を呼ぶだけ）
+                                 #   （存在自体が opt-in。中身は machine-layer.sh --no-tests を呼ぶだけ。
+                                 #   回帰テストは 300 秒に収まらないので外し、pre-commit と CI に任せる）
   commands/ skills/              # /quality-check の実体（マーケットプレイスに配布しない自前コマンド）
   adr/ designs/                  # 本リポジトリ自身の設計判断・設計書
 docs/                            # 横断設計指針（pipeline-design / rule-placement / skill-writing / event-bus /
