@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.12.1] - 2026-10-19
+
+### Fixed
+
+- **軽量フローの Step 5 が command の `dev-workflow:commit` を起動していた**。command 名と skill 名が違うので返るのは
+  command 本文で、git-commit-helper の SKILL.md には届かない。`dev-workflow:git-commit-helper` を skill として直接起動し、
+  self-review の「このまま」や review-guide の `次の一手: コミットへ` に従う回も `git commit` を直接打たずにこの skill を通す
+
 ## [1.12.0] - 2026-10-19
 
 ### Changed

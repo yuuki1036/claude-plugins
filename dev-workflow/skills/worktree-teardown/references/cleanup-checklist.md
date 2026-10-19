@@ -132,7 +132,7 @@ git status --porcelain
 ユーザーに以下を提示:
 
 - **stash**: `git stash push -m "worktree-teardown:$WORKTREE_NAME"`
-- **commit**: 別途 `/git-commit-helper` を呼ぶ
+- **commit**: `Skill` tool で `dev-workflow:git-commit-helper` を起動する（`git commit` を直接打たない。command の `dev-workflow:commit` を経由せず、skill を直接呼ぶ）
 - **force remove**: 変更を破棄して `git worktree remove --force`（破壊的、要確認）
 - **中止**: teardown を止めて別途整理
 

@@ -196,7 +196,7 @@ WARNING が出た項目は強調表示し、手動対応コマンドを併記す
 [WARNING] 5. uncommitted 変更あり:
   M  src/feature.ts
   ?? new-file.md
-  対応: git stash / git commit / git worktree remove --force のいずれかを選択
+  対応: git stash / git-commit-helper でコミット / git worktree remove --force のいずれかを選択
 ```
 
 ## 絶対厳守ルール

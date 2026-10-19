@@ -718,6 +718,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
    - `不明（…）` → 読み合わせで修正を入れた（締めの「入れた修正」が 1 件以上）なら `あり` と同じ、入れていなければ `なし` と同じ
    - 締めにこの行が無い（`--walkthrough` を知らない旧版の code-review でガイドだけが出た）→ ガイドの後に修正を入れたかで `不明` と同じ分岐
    - 2 回目の self-review の後は、読み合わせも self-review も繰り返さない。最後に次の一手（コミット → PR）を 1 行添える
+   - **コミット・PR は dev-workflow の skill で行う**: 利用者が次の一手どおりに進めるよう返したら、`bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" dev-workflow` が `1` なら、コミットは `Skill` tool で `dev-workflow:git-commit-helper`、PR は `dev-workflow:pr-creator` を起動する（command の `dev-workflow:commit` / `dev-workflow:pr` を経由せず、skill を直接呼ぶ）。`git commit` / `gh pr create` を直接打たない。`0` なら Conventional Commits 形式で論理単位に分けてコミットする。5. の従来のサマリの回も同じ
 5. **従来のサマリ**（code-review が無効 / 「出さない」/ review-guide の呼び出しが失敗した回。review-guide を持たない旧版の code-review も含む）: What was built / Key decisions made / Files modified / Suggested next steps を出す。2. の申し送りはそのまま残す
 6. **Event Bus publish (`feature:implemented`)**:
    - 完了直前に `feature:implemented` イベントを `.claude/events.jsonl` へ追記する。subscriber がいなくても無害（fire-and-forget）

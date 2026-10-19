@@ -88,7 +88,10 @@ Step 2 から戻った回は、この Step を通らず Step 3 から Step 5 へ
 
 ### Step 5: コミット
 
-- `DW=1`: `Skill` tool で `dev-workflow:commit` を起動する
+- `DW=1`: `Skill` tool で `dev-workflow:git-commit-helper` を起動する（command の `dev-workflow:commit` を経由せず、skill を
+  直接呼ぶ）。self-review の「このまま」や review-guide の `次の一手: コミットへ` に
+  従って進む回も、**`git commit` を直接打たずにこの skill を通す**。Issue ブランチではなく protected branch へ直接
+  コミットする運用のリポジトリでは `--no-protect` を渡す
 - `DW=0`: 論理単位に分けて Conventional Commits 形式でコミットする
 
 ### Step 6: push + CI 確認

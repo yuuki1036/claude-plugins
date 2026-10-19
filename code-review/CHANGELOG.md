@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.159.1] - 2026-10-19
+
+### Fixed
+
+- **self-review の「このまま」を選ぶと、git-commit-helper を通さずにコミットする回があった**。選択肢の説明が
+  「修正はせず、このままコミットする」だったので、選んだ直後に `git commit` を打っていた。説明を「このまま進む（コミットは
+  git-commit-helper で行う）」に改め、Step 7 に「コミットはこの skill でしない」を足した。コミットへ進むときは呼び出し元の
+  フローに戻り、単独で起動した回は使える skill に `dev-workflow:git-commit-helper` があればそれを起動する
+- **review-guide の `次の一手: コミットへ` に従うときも同じ**。`review-guide-format.md` に、コミットは呼び出し元のフローか
+  `dev-workflow:git-commit-helper` で行い、`git commit` を直接打たないことを書いた
+
 ## [2.159.0] - 2026-10-19
 
 ### Changed

@@ -552,7 +552,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
   - options:
     1. label: "すべて修正" / description: "指摘事項をすべて今すぐ修正する"
     2. label: "BLOCKER/CRITICAL のみ" / description: "severity BLOCKER または CRITICAL の指摘だけ修正する"
-    3. label: "このまま" / description: "修正はせず、このままコミットする"
+    3. label: "このまま" / description: "修正はせず、このまま進む（コミットは git-commit-helper で行う）"
 - 質問 2（`## コメント推敲提案` が 1 件以上ある場合のみ）:
   - question: "コメント推敲提案（N 件）を適用しますか？"
   - header: "コメント推敲"
@@ -565,6 +565,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 - **すべて修正**: 全指摘を一覧化し、ファイルごとにまとめて修正を実施する
 - **BLOCKER/CRITICAL のみ**: 該当 severity の指摘のみ再表示し、ファイルごとにまとめて修正を実施する
 - **このまま**: 完了（BLOCKER 指摘が 1 件以上残っている場合は「BLOCKER 指摘を残したままコミットしますか？」と AskUserQuestion で再確認する）
+
+**コミットはこの skill でしない**（設計原則: コミットは Generator 側の `dev-workflow:git-commit-helper` が行う）。どの選択肢の後でも、コミットへ進むとき（「このまま」を選んだ・修正を終えた・利用者がコミットを指示した）は、呼び出し元のフロー（issue-workflow の軽量フロー等）があればその次の手順へ戻る。単独で起動した回は、使える skill に `dev-workflow:git-commit-helper` があれば `Skill` tool で起動する（`git commit` を直接打たない。protected branch へ直接コミットする運用のリポジトリでは `--no-protect` を渡す）。無ければ Conventional Commits 形式で論理単位に分けてコミットする
 
 **修正した指摘を記録する（GitHub issue #298）**: 「すべて修正」「BLOCKER/CRITICAL のみ」で修正を終えたら、修正した指摘を次の self-review に渡す（`file` は repo のルート相対、`focus` は観点判定表のキー、`title` は指摘の要旨。扱いの詳細は `${CLAUDE_PLUGIN_ROOT}/references/prior-fixes-guide.md` の 2・3 節）:
 

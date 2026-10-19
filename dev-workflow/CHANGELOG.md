@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.38.1] - 2026-10-19
+
+### Fixed
+
+- **`/commit` と `/pr` が SKILL.md を読ませておらず、手順を記憶で再現しうる作りだった**。command 名と skill 名が違う
+  （`commit` → `git-commit-helper` / `pr` → `pr-creator`）ので、`/commit` でも `Skill` tool の `dev-workflow:commit` でも
+  返るのは command 本文で、SKILL.md には届かない（GitHub issue #219 と同じ型）。本文の先頭に
+  `${CLAUDE_PLUGIN_ROOT}/skills/<skill>/SKILL.md` を Read する 1 行を置いた
+- **worktree-teardown の未コミット変更の選択肢が `git commit` を直接案内していた**。commit を選んだら `Skill` tool で
+  `dev-workflow:git-commit-helper` を起動する
+
 ## [1.38.0] - 2026-10-09
 
 ### Added

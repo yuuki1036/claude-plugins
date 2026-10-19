@@ -5,6 +5,14 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.23.2] - 2026-10-19
+
+### Fixed
+
+- **Phase 7 の次の一手（コミット → PR）に従うと、dev-workflow の skill を通さずにコミット・PR を作る回があった**。
+  dev-workflow が有効なら、コミットは `dev-workflow:git-commit-helper`、PR は `dev-workflow:pr-creator` を skill として
+  直接起動する（command の `dev-workflow:commit` / `dev-workflow:pr` を経由しない）。従来のサマリの回も同じ
+
 ## [2.23.1] - 2026-10-19
 
 ### Changed
