@@ -2317,10 +2317,18 @@ class SameNameCommandSkillHopTest(unittest.TestCase):
         self._orig_root = v.ROOT
         v.ROOT = Path(self._tmp.name)
         self.addCleanup(lambda: setattr(v, "ROOT", self._orig_root))
+        for attr in ("COMMAND_SKILL_ALIASES", "ALIAS_COMMANDS_WITH_OWN_PROCEDURE"):
+            self.addCleanup(setattr, v, attr, getattr(v, attr))
+            setattr(v, attr, {})  # 本物の別名表に demo が無いことに頼らない
         _write(self.plugin, "skills/thing/SKILL.md", "---\ndescription: 説明 トリガー: 「A」\n---\n\n手順\n")
 
     def _cmd(self, body: str) -> None:
         _write(self.plugin, "commands/thing.md", f"---\ndescription: 説明 トリガー: 「A」\n---\n\n{body}\n")
+
+    def test_a_horizontal_rule_in_the_body_does_not_hide_the_path(self):
+        """frontmatter の切り出しは最初の閉じ区切りだけ。本文の `---` の前にある誘導を捨てない."""
+        self._cmd("**まず `${CLAUDE_PLUGIN_ROOT}/skills/thing/SKILL.md` を Read し、その手順に従う**\n\n---\n\n補足")
+        self.assertEqual(self._run(), [])
 
     def _run(self) -> list[str]:
         errors: list[str] = []
@@ -2353,6 +2361,93 @@ class SameNameCommandSkillHopTest(unittest.TestCase):
         _write(self.plugin, "commands/alone.md", "---\ndescription: x\n---\n\nalone スキルを使って\n")
         self._cmd("`${CLAUDE_PLUGIN_ROOT}/skills/thing/SKILL.md` を Read")
         self.assertEqual(self._run(), [])
+
+
+class AliasCommandSkillHopTest(unittest.TestCase):
+    """別名ペア（COMMAND_SKILL_ALIASES）の command 本文にも SKILL.md への Read 誘導を必須にする.
+
+    `/commit` も `Skill dev-workflow:commit` も command 本文だけが返り、名前の違う skill の SKILL.md には
+    届かない。誘導が無いと手順を記憶で再現する（同名ペアの #219 と同じ型）。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.plugin = Path(self._tmp.name) / "demo"
+        _write(self.plugin, ".claude-plugin/plugin.json", '{"name": "demo", "version": "0.0.1"}')
+        _write(self.plugin, "skills/thing/SKILL.md", "---\ndescription: 説明 トリガー: 「A」\n---\n\n手順\n")
+        for attr, value in (
+            ("ROOT", Path(self._tmp.name)),
+            ("COMMAND_SKILL_ALIASES", {("demo", "do"): "thing", ("other", "do"): "thing"}),
+            ("ALIAS_COMMANDS_WITH_OWN_PROCEDURE", {}),
+        ):
+            orig = getattr(v, attr)
+            setattr(v, attr, value)
+            self.addCleanup(setattr, v, attr, orig)
+
+    def _cmd(self, body: str, name: str = "do") -> None:
+        _write(self.plugin, f"commands/{name}.md", f"---\ndescription: 説明\n---\n\n{body}\n")
+
+    def _run(self) -> list[str]:
+        errors: list[str] = []
+        v.check_same_name_command_reads_skill(self.plugin, errors)
+        return errors
+
+    def test_a_thin_alias_wrapper_without_the_path_is_an_error(self):
+        self._cmd("thing スキルを使って作業してください。")
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("[skill-hop-cmd:demo]", errors[0])
+        self.assertIn("別名の command（do → thing）", errors[0])
+        self.assertIn("commands/do.md", errors[0])
+
+    def test_an_alias_body_that_reads_the_skill_passes(self):
+        self._cmd("**まず `${CLAUDE_PLUGIN_ROOT}/skills/thing/SKILL.md` を Read し、その手順に従う**")
+        self.assertEqual(self._run(), [])
+
+    def test_the_path_must_name_the_aliased_skill(self):
+        """command 名のパス（`skills/do/SKILL.md`）では通らない。対応づけた skill の名前で見る."""
+        self._cmd("`${CLAUDE_PLUGIN_ROOT}/skills/do/SKILL.md` を Read する")
+        self.assertEqual(len(self._run()), 1)
+
+    def test_a_command_with_its_own_procedure_is_exempt(self):
+        v.ALIAS_COMMANDS_WITH_OWN_PROCEDURE = {("demo", "do"): "skill と別の手順"}
+        self._cmd("## Step 1\n独自の手順")
+        self.assertEqual(self._run(), [])
+
+    def test_a_missing_aliased_skill_is_left_to_the_tools_check(self):
+        """参照先 skill が無い対応づけは check_allowed_tools_pair が error にする（二重に数えない）."""
+        v.COMMAND_SKILL_ALIASES = {("demo", "do"): "missing"}
+        self._cmd("missing スキルを使って")
+        self.assertEqual(self._run(), [])
+        tools_errors: list[str] = []
+        v.check_allowed_tools_pair(self.plugin, tools_errors)
+        self.assertTrue(any("参照先 skill が存在しない" in e for e in tools_errors), tools_errors)
+
+    def test_an_alias_without_its_command_file_is_silent(self):
+        """対応表に残っていても command ファイルが無ければ黙る（読もうとして validator ごと落ちない）."""
+        self.assertEqual(self._run(), [])
+
+    def test_aliases_of_other_plugins_are_not_checked_here(self):
+        v.COMMAND_SKILL_ALIASES = {("demo", "do"): "thing", ("other", "do2"): "thing"}
+        self._cmd("`${CLAUDE_PLUGIN_ROOT}/skills/thing/SKILL.md` を Read")
+        self._cmd("thing スキルを使って", name="do2")  # other の別名。demo の検査では見ない
+        self.assertEqual(self._run(), [])
+
+    def test_a_same_name_skill_wins_over_the_alias(self):
+        """同名 skill があれば同名ペアとして見る（check_allowed_tools_pair と同じ同名優先）."""
+        _write(self.plugin, "skills/do/SKILL.md", "---\ndescription: 説明 トリガー: 「A」\n---\n\n手順\n")
+        self._cmd("`${CLAUDE_PLUGIN_ROOT}/skills/do/SKILL.md` を Read")
+        self.assertEqual(self._run(), [])
+
+
+class AliasExemptionsAreRealTest(unittest.TestCase):
+    """除外は実在する別名ペアだけに付ける（対応表から消えた除外が残ると、何を外しているか分からなくなる）."""
+
+    def test_every_exemption_is_an_alias_pair(self):
+        for key, reason in v.ALIAS_COMMANDS_WITH_OWN_PROCEDURE.items():
+            self.assertIn(key, v.COMMAND_SKILL_ALIASES, f"{key} は別名ペアではない")
+            self.assertTrue(reason.strip(), f"{key} に除外の理由が無い")
 
 
 class SameNameCommandTriggerTest(unittest.TestCase):
