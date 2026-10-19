@@ -5,6 +5,20 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.23.0] - 2026-10-19
+
+### Added
+
+- **Phase 6.9 に「静的オラクルだけ回す」を足し、推奨を差の中身で決めるようにした**（GitHub issue #304）。これまでは差が
+  あれば常に「self-review をもう一度回す（推奨）」で、Phase 6.7 のコメント適用だけの回も回し直しを勧めていた。
+  `scripts/review-snapshot.sh diff`（新設。`check` と同じ 2 つの tree の patch を出す。未追跡の新規ファイルも入る）で
+  中身を読み、どれも実行時の挙動を変えないなら「静的オラクルだけ回す」、分岐・状態・入出力の契約を変えたものがあれば
+  「self-review をもう一度回す」を推奨にする。判断の材料は code-review の `review-guide-format.md`「回し直すかの判断」を
+  要約したもので、SSoT pin で正本の変更に追随する
+- **Phase 7 の読み合わせの後、締めの `次の一手:` が `決定的な検証` なら self-review の代わりに Phase 5.3 を回す**。
+  review-guide が、読み合わせの変更は挙動を変えず解説で確かめ済みと判断した回にあたる。それ以外（行が無い回を含む）は
+  従来どおり self-review をもう一度回す
+
 ## [2.22.2] - 2026-10-18
 
 ### Fixed

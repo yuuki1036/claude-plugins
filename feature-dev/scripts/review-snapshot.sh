@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# review-snapshot.sh save|check — レビューした時点の作業ツリーを記録し、その後に変わった分を出す
+# review-snapshot.sh save|check|diff — レビューした時点の作業ツリーを記録し、その後に変わった分を出す
 # （GitHub issue #276）
 #
 # Phase 6 の self-review の後に入った変更（ユーザーの判断で入れた修正・別の決定の反映）は、
@@ -11,6 +11,9 @@
 #   check  記録した tree と今の作業ツリーを比べ、変わったファイルと行数を出す:
 #            snapshot=missing            記録が無い（Phase 6 が走らなかった等）
 #            changed_files=N / changed_lines=M と、変わったファイルごとの `<追加>\t<削除>\t<path>`
+#   diff   check と同じ 2 つの tree の patch を出す（未追跡の新規ファイルも入る。`git diff <tree>` では
+#          作業ツリー側の未追跡が落ちる）。Phase 6.9 が回し直すかを変更の中身で決めるため（GitHub issue #304）。
+#          記録が無い・比べられないときは check と同じ `snapshot=missing` / `snapshot=unavailable`
 #
 # 記録先は作業ツリーごとの git dir（worktree ごとに分かれる）。出力は常に exit 0（判定できないときも
 # Phase 7 を止めない）。git でないときは `snapshot=unavailable` を出す。
@@ -55,7 +58,7 @@ case "$mode" in
       echo "snapshot=unavailable"
     fi
     ;;
-  check)
+  check|diff)
     cd "$(git rev-parse --show-toplevel)" || { echo "snapshot=unavailable"; exit 0; }
     if [ ! -f "$store" ]; then
       echo "snapshot=missing"
@@ -64,6 +67,10 @@ case "$mode" in
     old=$(head -1 "$store")
     if ! git cat-file -e "${old}^{tree}" 2>/dev/null || ! new=$(current_tree); then
       echo "snapshot=unavailable"
+      exit 0
+    fi
+    if [ "$mode" = diff ]; then
+      git diff "$old" "$new" 2>/dev/null || true
       exit 0
     fi
     stat=$(git diff --numstat "$old" "$new" 2>/dev/null || true)
@@ -81,7 +88,7 @@ case "$mode" in
     fi
     ;;
   *)
-    echo "usage: review-snapshot.sh save|check" >&2
+    echo "usage: review-snapshot.sh save|check|diff" >&2
     exit 2
     ;;
 esac

@@ -309,6 +309,49 @@ class SummaryReadingGuideTest(unittest.TestCase):
             for s in mentions:
                 self.assertIn("付けない", s, f"2 回目の self-review に {flag} を渡している: {s}")
 
+    NEXT = "次の一手:"
+    DETERMINISTIC = "決定的な検証"
+
+    def test_skips_second_self_review_only_on_deterministic_next_step(self):
+        """`あり` でも、review-guide が挙動を変えないと判断した回は静的オラクルだけ回す（#304）.
+
+        先頭の文言は review-guide 側の契約（review-guide-format.md「読み合わせの締め」）なので正本と突き合わせる。
+        self-review を外すのは `決定的な検証` のときだけで、行が無い・別の値なら self-review に倒す.
+        """
+        fmt = self.FORMAT.read_text()
+        closing = fmt[fmt.index("## 読み合わせの締め"):fmt.index("## 誤ガイド抑制")]
+        line = next((l for l in closing.splitlines() if l.startswith(self.NEXT)), None)
+        self.assertIsNotNone(line, "review-guide-format.md の締めのテンプレートから次の一手の行が消えた")
+        self.assertIn(self.DETERMINISTIC, line, "締めの次の一手から決定的な検証が消えた")
+        rerun = self.second_review_branches()["あり"]
+        self.assertIn(f"`{self.NEXT}` が `{self.DETERMINISTIC}` で始まる", rerun)
+        skip = rerun.index(self.DETERMINISTIC)
+        review = rerun.index("`code-review:self-review` を呼ぶ")
+        self.assertIn("Phase 5.3", rerun[skip:review], "self-review の代わりに静的オラクルを回していない")
+        self.assertIn("それ以外", rerun[skip:review], "決定的な検証以外を self-review に倒していない")
+
+
+class PostReviewChangeTest(unittest.TestCase):
+    """Phase 6.9 の推奨は差の中身で決める（GitHub issue #304）。差があるだけで self-review を推奨に固定しない."""
+
+    SKILL = REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
+
+    def phase69(self) -> str:
+        text = self.SKILL.read_text()
+        i = text.index("## Phase 6.9")
+        return text[i:text.index("## Phase 7", i)]
+
+    def test_reads_the_diff_before_asking(self):
+        p = self.phase69()
+        self.assertLess(p.index('review-snapshot.sh" diff'), p.index("`AskUserQuestion`"),
+                        "中身を読む前に推奨を決めて聞いている")
+
+    def test_recommendation_is_not_fixed_to_self_review(self):
+        p = self.phase69()
+        self.assertNotIn("回す（推奨）", p, "self-review を推奨に固定している")
+        for option in ("「self-review をもう一度回す」", "「静的オラクルだけ回す」", "「回さずに締める」"):
+            self.assertIn(option, p)
+
 
 SNAPSHOT = REPO / "feature-dev" / "scripts" / "review-snapshot.sh"
 
@@ -399,6 +442,39 @@ class ReviewSnapshotTest(unittest.TestCase):
 
     def test_missing_snapshot(self):
         self.assertEqual(self.run_snap("check")["snapshot"], "missing")
+
+    def run_diff(self) -> str:
+        res = subprocess.run(["bash", str(SNAPSHOT), "diff"], cwd=self.root, capture_output=True,
+                             text=True, env=self.env, timeout=60)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout
+
+    def test_diff_shows_the_content_changed_after_save(self):
+        """Phase 6.9 は中身で回し直すかを決める（#304）。未追跡の新規ファイルも入る（`git diff <tree>` では落ちる）."""
+        (self.root / "spec.md").write_text("rule 1\nrule 2 before review\n", encoding="utf-8")  # レビュー前の変更は出さない
+        self.run_snap("save")
+        (self.root / "spec.md").write_text("rule 1\nrule 2 after review\n", encoding="utf-8")
+        (self.root / "new.md").write_text("added after review\n", encoding="utf-8")
+        out = self.run_diff()
+        self.assertIn("-rule 2 before review", out)
+        self.assertIn("+rule 2 after review", out)
+        self.assertIn("+added after review", out)
+        self.assertNotIn("snapshot=", out, "patch に check の集計行が混ざっている")
+
+    def test_diff_is_empty_when_nothing_changed(self):
+        self.run_snap("save")
+        self.assertEqual(self.run_diff(), "")
+
+    def test_diff_without_snapshot_reports_missing(self):
+        self.assertEqual(self.run_diff().strip(), "snapshot=missing")
+
+    def test_diff_leaves_refs_and_index_untouched(self):
+        self.run_snap("save")
+        (self.root / "spec.md").write_text("unstaged\n", encoding="utf-8")
+        (self.root / "untracked.md").write_text("u\n", encoding="utf-8")
+        before = (self.git("rev-parse", "HEAD"), self.git("status", "--porcelain"))
+        self.run_diff()
+        self.assertEqual((self.git("rev-parse", "HEAD"), self.git("status", "--porcelain")), before)
 
     def test_not_a_git_repo(self):
         with tempfile.TemporaryDirectory() as d:

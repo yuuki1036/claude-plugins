@@ -26,6 +26,8 @@ allowed-tools:
 <!-- 正本依存（SSoT pin）。Phase 5.3 の宣言オラクルの契約は code-review の machine-layer.md が正本（プラグイン間依存禁止のため要約で持つ）。正本が変わったら Phase 5.3 を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/machine-layer.md#5 @737549d4 -->
 <!-- SSOT: feature-dev/references/grill-protocol.md @f90e4324 -->
+<!-- 正本依存（SSoT pin）。Phase 6.9 の推奨の決め方は code-review の review-guide-format.md「回し直すかの判断」の `あり` の条件 3 を要約したもの（条件 1・2 は check / diff の出力で満たされる）。正本が変わったら Phase 6.9 を確認して pin を打ち直す -->
+<!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @00a318ed -->
 
 You are helping a developer implement a new feature. Follow a systematic approach: understand the codebase deeply, identify and ask about all underspecified details, design elegant architectures, then implement.
 
@@ -677,8 +679,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
 ```
 
 - `changed_files=0` → 何もせず Phase 7 へ
-- `changed_files` が 1 以上 → 変わったファイルと行数（出力の `<追加>\t<削除>\t<path>` 行）を示して、`AskUserQuestion` で聞く:
-  - 「self-review をもう一度回す（推奨）」— Phase 6 Step 2 を同じ引数で回し、指摘を Step 4 と同じ扱いで提示する。終わったら `save` で記録し直し、もう一度 `check` する
+- `changed_files` が 1 以上 → `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" diff` で変わった中身を読み、どれを推奨にするかを決める（GitHub issue #304）。変更がどれも実行時の挙動を変えない（名前・コメント・doc、テストの改名やアサーションの追加、中身を変えないブロックの移動。Phase 6.7 のコメント適用はこれに当たる）なら「静的オラクルだけ回す」、分岐・状態・入出力の契約（引数・戻り値・出力の形式・規約の文言）を足した・変えたものが 1 つでもあれば「self-review をもう一度回す」を推奨にする。差があるという事実だけで self-review を推奨にしない — 挙動を変えない変更に回し直しても、前回と同じ閾値未満の候補が並び直すだけになる。変わったファイルと行数（`check` の `<追加>\t<削除>\t<path>` 行）と推奨の理由 1 行を示して、`AskUserQuestion` で聞く（推奨を先頭に置き「（推奨）」を付ける）:
+  - 「self-review をもう一度回す」— Phase 6 Step 2 を同じ引数で回し、指摘を Step 4 と同じ扱いで提示する。終わったら `save` で記録し直し、もう一度 `check` する
+  - 「静的オラクルだけ回す」— Phase 5.3 を同じ手順でもう一度回し、緑なら Phase 7 へ（赤なら Phase 5.3 Step 3 の扱い）。Phase 7 のサマリには未レビューとして残し、静的オラクルが緑だったことを添える
   - 「回さずに締める」— Phase 7 のサマリに未レビューとして残す
   - **差分だけを self-review に通すことはできない**。self-review は base との分岐点から作業ツリーまでを対象にするので、もう一度回すと diff 全体が対象になる
 - `snapshot=missing` / `unavailable`（Phase 6 が走らなかった・git の操作に失敗した）→ 聞かずに Phase 7 へ進み、サマリに「レビュー後の変更: 確認できなかった」と出す
@@ -697,7 +700,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
    - **静的オラクル** (Phase 5.3): 「静的オラクル判定不能」「静的オラクル打ち切り」「静的オラクル無し（型/テスト未検証）」、`low` effort で skip した回だけ
    - **G-V ループ** (Phase 6 Step 3 が走った回): `/tmp/feature-dev-loop-state.json` を読み、反復回数・終了理由・auto-fix 件数・persisting。終了理由が `regression` / `budget` なら persisting の fingerprint を目立たせる（人間の判断が要る）。self-review が失敗した・Phase 6 を skip した回はその旨
    - **コメント精査** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
-   - **レビュー後の変更** (Phase 6.9): 「**N ファイル・M 行（未レビュー）**」（ファイル名も並べる）/「確認できなかった」の回だけ。「なし」「再レビュー済み」は省く。値は Phase 6.9 の時点のもので、3. の読み合わせで入れる修正は含まない（それは 4. の 2 回目の self-review が見る）
+   - **レビュー後の変更** (Phase 6.9): 「**N ファイル・M 行（未レビュー）**」（ファイル名も並べる。「静的オラクルだけ回す」を選んだ回は「（未レビュー・静的オラクルは緑）」）/「確認できなかった」の回だけ。「なし」「再レビュー済み」は省く。値は Phase 6.9 の時点のもので、3. の読み合わせで入れる修正は含まない（それは 4. の 2 回目の self-review が見る）
    - **worktree** (Phase 4.8 で分離した場合のみ): worktree のパスとブランチ、後片付けは teardown / worktree-gc に委ねる旨
    - **Design doc follow-up** (Phase 4.5 で `DESIGN_DOC_PATH` がある場合のみ): 実装が完了したので、doc の frontmatter を `phase: target → current` に更新するよう案内する（実装と設計が乖離した箇所があれば doc への追記 or supersede も）。更新は design-doc プラグイン側の運用（ユーザー操作）に委ねる
 3. **読み合わせの案内**: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" code-review` が `1` なら、`AskUserQuestion` で聞く:
@@ -708,8 +711,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
    「出す」なら `Skill` tool で `code-review:review-guide` を `--base <BASE>` 付きで呼ぶ（読み合わせとして `--walkthrough` も付ける）。PR がまだ無い段階なので base モードで呼び、未コミットの変更まで読み順に入れる（PR モードは PR に push 済みのコミットしか見ない）。`<BASE>` は Phase 6 の self-review が冒頭で出した `base_branch=` の値を使う（同じ base から読ませる）。Phase 6 が走らなかった・値が分からないときは `--base` を付けずに `--walkthrough` だけで呼ぶ（PR が無ければ review-guide が同じ順で base を決める）。**呼ぶ直前に** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" save` を実行する（4. で読み合わせの間に入った変更だけを数えるため。Phase 6 の記録を上書きするが、その確認は Phase 6.9 で済んでいる）。
 
    **読み合わせは何ターンも続く**: review-guide は概要を出してターンを終え、利用者の「次」ごとに精読を 1 件ずつ解説し（1 精読 1 ターン）、最後に締め（精読の外で気になるところ → `self-review 以降の変更:` の行）を出す。進め方は review-guide の手順に任せ、feature-dev は途中で次の一手やサマリを挟まない。4. 以降は締めが出てから進める
-4. **読み合わせで入った修正を self-review に通す**（3. で読み合わせた回）: review-guide は判断の材料を出すだけで self-review を起動しないので、回すのは feature-dev。まず `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check` で 3. の直前に `save` した時点との差を取り、`changed_files` が 1 以上なら下の `あり`、0 なら `なし` として扱う（読み合わせの間に入った変更だけを数える。Phase 6.7 のコメント適用と、Phase 6.9 で「回さずに締める」を選んだ変更は数えない — そちらは 6.9 で利用者が決めた）。`snapshot=missing` / `unavailable` のときだけ、締めの `self-review 以降の変更:` の行で分岐する（この行は直近の self-review の publish 以降の全変更を数えるので、6.7 / 6.9 の変更も `あり` に入る）:
-   - `あり` → `Skill` tool で `code-review:self-review` を呼ぶ。**引数は base だけ**（3. と同じ `<BASE>`。分からなければ引数なし）。例外は Phase 6 で `--spec=<BDD_SPEC_PATH>` を渡した回で、それも渡す（渡さないと spec-compliance reviewer が BDD spec を読まない）。Phase 6 Step 2 と違い `--embed` を付けない — 読み合わせの後は feature-dev が findings を集約しないので、self-review の Step 7（修正方針の確認と、修正した指摘の prior-fixes への記録）と 1.4 の重複検出をそのまま通す。`--focus` / `--rereview` も付けない（前回の指摘が直ったかを確かめる回ではなく、読み合わせで入った修正を含めて diff 全体を見直す回 / GitHub issue #300）。呼ぶ前に、1.4 で重複レビュー（header「重複レビュー」）の続行可否を聞かれたら、読み合わせで直した後の回し直しなので「続行する」でよい旨を 1 行添える。Step 6 の定型レポートと 6.4 の publish は Phase 6 Step 2 と同じく省かない・1 行に畳まない（GitHub issue #232 / #250）
+4. **読み合わせで入った修正を self-review に通す**（3. で読み合わせた回）: review-guide は判断の材料を出すだけで self-review を起動しないので、回すのは feature-dev。まず `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check` で 3. の直前に `save` した時点との差を取り、`changed_files` が 1 以上なら下の `あり`、0 なら `なし` として扱う（読み合わせの間に入った変更だけを数える。Phase 6.7 のコメント適用と、Phase 6.9 で self-review を回さなかった変更は数えない — そちらは 6.9 で利用者が決めた）。`snapshot=missing` / `unavailable` のときだけ、締めの `self-review 以降の変更:` の行で分岐する（この行は直近の self-review の publish 以降の全変更を数えるので、6.7 / 6.9 の変更も `あり` に入る）:
+   - `あり` → 締めの `次の一手:` が `決定的な検証` で始まるなら、self-review は回さずに Phase 5.3（静的オラクル）を同じ手順でもう一度回し、緑なら `次の一手:` の理由を 1 行添えて次の一手へ進む（赤なら Phase 5.3 Step 3 の扱い。review-guide が、読み合わせの変更は挙動を変えず解説で確かめ済みと判断した回 / GitHub issue #304）。それ以外（`self-review をもう一度` / 行が無い）なら `Skill` tool で `code-review:self-review` を呼ぶ。**引数は base だけ**（3. と同じ `<BASE>`。分からなければ引数なし）。例外は Phase 6 で `--spec=<BDD_SPEC_PATH>` を渡した回で、それも渡す（渡さないと spec-compliance reviewer が BDD spec を読まない）。Phase 6 Step 2 と違い `--embed` を付けない — 読み合わせの後は feature-dev が findings を集約しないので、self-review の Step 7（修正方針の確認と、修正した指摘の prior-fixes への記録）と 1.4 の重複検出をそのまま通す。`--focus` / `--rereview` も付けない（前回の指摘が直ったかを確かめる回ではなく、読み合わせで入った修正を含めて diff 全体を見直す回 / GitHub issue #300）。呼ぶ前に、1.4 で重複レビュー（header「重複レビュー」）の続行可否を聞かれたら、読み合わせで直した後の回し直しなので「続行する」でよい旨を 1 行添える。Step 6 の定型レポートと 6.4 の publish は Phase 6 Step 2 と同じく省かない・1 行に畳まない（GitHub issue #232 / #250）
    - `なし` → 回さずに次の一手へ
    - `不明（…）` → 読み合わせで修正を入れた（締めの「入れた修正」が 1 件以上）なら `あり` と同じ、入れていなければ `なし` と同じ
    - 締めにこの行が無い（`--walkthrough` を知らない旧版の code-review でガイドだけが出た）→ ガイドの後に修正を入れたかで `不明` と同じ分岐

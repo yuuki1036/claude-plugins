@@ -77,6 +77,16 @@ class ClosingLineTest(unittest.TestCase):
         branch = between(s, "- `あり`", "\n- `なし`")
         self.assertIn("`--focus` / `--rereview` / `--embed` を付けない", branch)
 
+    def test_skips_self_review_only_on_deterministic_next_step(self):
+        """`あり` でも締めの `次の一手:` が `決定的な検証` なら Step 2 だけ通す（#304）。先頭の文言は format の正本と突き合わせる."""
+        closing = between(FORMAT.read_text(encoding="utf-8"), "## 読み合わせの締め", "## 誤ガイド抑制")
+        line = next((ln for ln in closing.splitlines() if ln.startswith("次の一手:")), None)
+        self.assertIsNotNone(line, "review-guide-format.md の締めから `次の一手:` の行が消えた")
+        self.assertIn("決定的な検証", line)
+        branch = between(step4(), "- `あり`", "\n- `なし`")
+        self.assertIn("`次の一手:` が `決定的な検証` で始まるなら、Step 2（検証）だけ", branch)
+        self.assertIn("それ以外なら Step 2（検証）と Step 3（self-review）をもう一度通す", branch)
+
 
 class StepCountTest(unittest.TestCase):
     """「以下 N Step」・見出し・start F7 の「その N Step（…）」がずれない."""

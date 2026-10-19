@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.12.0] - 2026-10-19
+
+### Changed
+
+- **軽量フローの Step 4 で、締めの `次の一手:` が `決定的な検証` なら self-review を回し直さず Step 2（検証）だけを通す**
+  （GitHub issue #304）。review-guide が、読み合わせの変更は挙動を変えず解説で確かめ済みと判断した回にあたる。
+  self-review を外した理由は報告に 1 行残す。それ以外は従来どおり Step 2 と Step 3 をもう一度通す
+
 ## [1.11.2] - 2026-10-18
 
 ### Fixed
