@@ -81,6 +81,10 @@ LEAKING_SLOW = LEAKING.replace(
     '        self.assertTrue(os.path.exists(MARKER), "前提: 孫が起動して pid を書く")\n'
     '        time.sleep(60)   # ここで上位層に殺される')
 
+#: 上の 2 つの組み合わせ（TERM を無視する孫を残したまま長く走る）。回収が SIGKILL まで
+#: 上げないと孫が残るので、回収の途中で抜けたかどうかが孫の生死に出る
+LEAKING_SLOW_STUBBORN = LEAKING_SLOW.replace('echo $$ > "%s";', 'trap "" TERM; echo $$ > "%s";')
+
 #: 孫が**親の stdout/stderr をそのまま継承する**偽テスト（現実の残留はこちら）
 LEAKING_INHERIT = LEAKING.replace(
     """,
@@ -130,9 +134,14 @@ class RunTestsTest(unittest.TestCase):
             return False
         return True
 
-    def running_test_pids(self) -> list[int]:
-        """使い捨てリポジトリの tests/ を走らせている unittest プロセスの pid."""
-        out = subprocess.run(["pgrep", "-f", str(self.tests)], capture_output=True, text=True)
+    def running_test_pids(self, parent: int) -> list[int]:
+        """`run-tests.py`（pid `parent`）が起動した unittest プロセスの pid.
+
+        **コマンドラインで引かない**: unittest は `-s .claude-plugin/scripts/tests` と相対パスで
+        起動されるので、使い捨てリポジトリの絶対パスで `pgrep -f` すると孫（marker の絶対パスを
+        持つ）しか当たらず、テスト本体の生死を見ないまま通っていた。
+        """
+        out = subprocess.run(["pgrep", "-P", str(parent)], capture_output=True, text=True)
         return [int(x) for x in out.stdout.split() if x.isdigit()]
 
     def leaked_pid_is_alive(self) -> bool:
@@ -223,12 +232,44 @@ class RunTestsTest(unittest.TestCase):
                     break
                 time.sleep(0.05)
             self.assertTrue(self.marker.exists(), "前提: 孫が起動している")
-            child = self.running_test_pids()
+            child = self.running_test_pids(proc.pid)
             self.assertTrue(child, "前提: テスト本体が走っている")
             os.kill(proc.pid, signal.SIGTERM)
             proc.wait(timeout=30)
         time.sleep(1)
         self.assertFalse(self.leaked_pid_is_alive(), "孫を置き去りにしている")
+        for pid in child:
+            self.assertFalse(self.alive(pid), "テスト本体 %d が走り続けている" % pid)
+
+    def test_being_killed_after_the_caller_died_still_reaps_the_test_group(self):
+        """**stderr の読み手が先に死んだ回**でも、テスト木を残さない.
+
+        machine-layer は `OUT="$(run-tests.py 2>&1)"` で呼ぶ。上位層（self-review の
+        `run-oracles.sh` の timeout）がグループごと TERM すると bash が先に死に、stderr の
+        パイプに読み手がいなくなる。回収の前に出す警告が BrokenPipeError で抜けると、
+        テストに TERM すら届かない（実測: 機械層を 300 秒で打ち切った回に unittest が ppid=1 で残った）。
+        上の DEVNULL のテストはこの経路を通らない。
+        """
+        self.write_test(LEAKING_SLOW_STUBBORN)
+        r, w = os.pipe()
+        with subprocess.Popen([sys.executable, str(self.scripts / "run-tests.py")],
+                              cwd=str(self.root), stdout=w, stderr=w) as proc:
+            os.close(w)
+            self.addCleanup(proc.kill)
+            for _ in range(200):
+                if self.marker.exists():
+                    break
+                time.sleep(0.05)
+            self.assertTrue(self.marker.exists(), "前提: 孫が起動している")
+            child = self.running_test_pids(proc.pid)
+            self.assertTrue(child, "前提: テスト本体が走っている")
+            for pid in child:
+                self.addCleanup(lambda p=pid: self.alive(p) and os.kill(p, signal.SIGKILL))
+            os.close(r)   # 呼び出し側の bash が先に死んだ状態
+            os.kill(proc.pid, signal.SIGTERM)
+            proc.wait(timeout=30)
+        time.sleep(1)
+        self.assertFalse(self.leaked_pid_is_alive(), "TERM を無視する孫に SIGKILL が届いていない")
         for pid in child:
             self.assertFalse(self.alive(pid), "テスト本体 %d が走り続けている" % pid)
 

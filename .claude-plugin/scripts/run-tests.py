@@ -134,6 +134,20 @@ def reap(pgid: int, pids: list[int]) -> list[int]:
     return sorted(survivors | denied)
 
 
+def _warn(msg: str) -> None:
+    """stderr に書く。**書けなくても回収は止めない**.
+
+    上位層に殺される回は、呼び出し側（`OUT="$(run-tests.py 2>&1)"` の bash）が先に死んで
+    stderr のパイプに読み手がいない。素の `print` は BrokenPipeError を投げてシグナル
+    ハンドラを抜け、`reap` に届かないままテストのグループが孤児になる
+    （実測: self-review の機械層を 300 秒で打ち切った回に unittest が ppid=1 で残った）。
+    """
+    try:
+        print(msg, file=sys.stderr)
+    except (OSError, ValueError):   # 読み手のいないパイプ / 閉じた stderr
+        pass
+
+
 def sweep(pgid: int, exclude: int | None = None) -> None:
     """`pgid` の残留を報告して回収する（**何度呼んでも安全**）.
 
@@ -143,19 +157,19 @@ def sweep(pgid: int, exclude: int | None = None) -> None:
     """
     leaked = list_group(pgid)
     if leaked is None:
-        print("[run-tests] pgrep が使えないため残留プロセスの判定を skip した", file=sys.stderr)
+        _warn("[run-tests] pgrep が使えないため残留プロセスの判定を skip した")
         return
     leaked = [pid for pid in leaked if pid != exclude]
     if not leaked:
         return
-    print("[run-tests:leak] テスト終了後に %d 個のプロセスが残っている: %s"
-          % (len(leaked), ", ".join(str(p) for p in leaked)), file=sys.stderr)
-    print("[run-tests] テストが起動したプロセスの後始末が漏れている"
-          "（timeout は直接の子しか殺さない）。回収してから続行する", file=sys.stderr)
+    _warn("[run-tests:leak] テスト終了後に %d 個のプロセスが残っている: %s"
+          % (len(leaked), ", ".join(str(p) for p in leaked)))
+    _warn("[run-tests] テストが起動したプロセスの後始末が漏れている"
+          "（timeout は直接の子しか殺さない）。回収してから続行する")
     stubborn = reap(pgid, leaked)
     if stubborn:
-        print("[run-tests:leak] 回収できなかった: %s（手動で kill すること）"
-              % ", ".join(str(p) for p in stubborn), file=sys.stderr)
+        _warn("[run-tests:leak] 回収できなかった: %s（手動で kill すること）"
+              % ", ".join(str(p) for p in stubborn))
 
 
 def _install_signal_forwarding(pgid: int) -> None:
