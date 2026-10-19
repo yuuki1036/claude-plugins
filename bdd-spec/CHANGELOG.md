@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.7] - 2026-10-19
+
+### Fixed
+
+- **`/bdd-spec-create` と `/bdd-spec-evaluate` の本文に、対の SKILL.md（create-spec / evaluate-spec）を Read する 1 行を置いた**。
+  command 名と skill 名が違うので、command を呼ぶと command 本文だけが返り、SKILL.md には届かない（GitHub issue #219 と同じ型）。
+  あわせて、command 本文に複製していた手順（「## 実行」の Phase 一覧）を消し、SKILL.md と食い違っていた引数の説明を直した
+  （create は必須キーを SKILL.md の「API 安定保証」の表に任せる。evaluate の既定の探索先は `{featuresDir}/*/spec.md`）
+
 ## [0.3.6] - 2026-10-16
 
 ### Fixed

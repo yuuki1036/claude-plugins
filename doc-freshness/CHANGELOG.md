@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.4] - 2026-10-19
+
+### Fixed
+
+- **`/doc-freshness-check` の本文に、対の SKILL.md（doc-freshness）を Read する 1 行を置いた**。command 名と skill 名が
+  違うので、command を呼ぶと command 本文だけが返り、SKILL.md には届かない（GitHub issue #219 と同じ型）。command 本文に
+  複製していた手順（「## 実行」の Phase 一覧）は消した
+
 ## [0.5.3] - 2026-08-28
 
 ### Fixed

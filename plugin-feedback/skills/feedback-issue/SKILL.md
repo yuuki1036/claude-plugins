@@ -32,7 +32,7 @@ allowed-tools:
 - 「バグがある」→ 作業対象の話（対象外）
 - 「プラグインにバグがある」→ プラグインの話（対象）
 
-**「プラグイン」「スキル」「コマンド」「hook」への言及があるかを判断基準にする。**
+**「プラグイン」「スキル」「コマンド」「hook」への言及があるかを判断基準にする。** 利用者が起票を明示的に求めた回（`/feedback` の入力を含む）には当てない。
 
 ## ワークフロー
 
@@ -45,11 +45,25 @@ allowed-tools:
 GitHub Issue として起票しますか？
 ```
 
-ユーザーが承諾しなければ何もしない。
+ユーザーが承諾しなければ何もしない。利用者が起票を明示的に求めた回（`/feedback` または `/plugin-feedback:feedback` の入力を含む）と、すでに提案に承諾している回はこの Step を飛ばす。ここで飛ばすのは提案だけで、Step 4 の投稿の承認には代えない。
+
+### Step 1.5: 認証チェック
+
+`gh auth status` で確認する。未認証なら `gh auth login` の実行を案内して中止する（聞き取りの前に止める。聞き取った後で投稿できないと分かると、利用者の手間が無駄になる）。
 
 ### Step 2: 情報の整理
 
-1. 対象プラグインを特定する（会話コンテキストから推定 or ユーザーに確認）
+1. 対象プラグインを特定する。引数・会話コンテキストから決まればそれを使う。決まらなければ、プラグイン一覧を**動的取得**して選択を促す（一覧をハードコードしない。更新忘れを構造的に防ぐ）:
+
+   ```bash
+   # インストール済みプラグインから feedback マーケットプレイス（plugin-feedback が属する marketplace）のものを列挙
+   MP_NAME=$(claude plugin list 2>/dev/null | grep -oE 'plugin-feedback@[^ )]+' | head -1 | cut -d'@' -f2)
+   claude plugin list 2>/dev/null | grep -oE "[a-z0-9-]+@${MP_NAME}" | sort -u
+   ```
+
+   - `claude plugin list` が使えない環境では、feedback マーケットプレイスの `marketplace.json`（`~/.claude/plugins/marketplaces/*/.claude-plugin/marketplace.json` のうち `.name` が `MP_NAME` のもの）の `.plugins[].name` を参照する
+   - `MP_NAME` が空（一覧に plugin-feedback が無い・出力の形が違う）なら 2 行目は実行しない（全マーケットプレイスのプラグインが並ぶ）。下の直接尋ねる分岐へ回す
+   - どちらも取得できない場合のみ、ユーザーに対象プラグイン名を直接尋ねる
 2. 種別を判定する。会話文脈で自明ならそれを使い、曖昧なら **AskUserQuestion** で確認する:
    - question: "このフィードバックの種別はどれですか？"
    - header: "Issue 種別"
@@ -58,16 +72,13 @@ GitHub Issue として起票しますか？
      2. label: "bug" / description: "不具合・期待通り動かない（label: bug）"
      3. label: "question" / description: "質問・使い方の不明点（label: question）"
 3. 会話コンテキストから要望内容を要約する
-4. 不足情報があればヒアリングする
-5. ユーザーがスクリーンショット・録画のファイルを示していれば添付候補にする（`png` / `jpg` / `jpeg` / `gif` / `webp` / `svg` / `mp4` / `mov` / `webm`、50 件まで）。自分から撮影を求めない
-
-### Step 3: 認証チェック
-
-`gh auth status` で確認。未認証なら案内して中止。
+4. 不足情報があればヒアリングする（ユーザーが既に説明していれば重複して聞かない）
+5. タイトルを決める（簡潔に、50 文字以内目安）
+6. ユーザーがスクリーンショット・録画のファイルを示していれば添付候補にする（`png` / `jpg` / `jpeg` / `gif` / `webp` / `svg` / `mp4` / `mov` / `webm`、50 件まで）。自分から撮影を求めない
 
 ### Step 3.5: 既存 Issue の確認
 
-同じ要望・不具合が既に起票されていないかを、**open と closed の両方**で探す。要望の言葉だけでなく、同じ概念の別名でも探す:
+同じ要望・不具合が既に起票されていないかを、**open と closed の両方**で探す。要望の言葉だけでなく、同じ概念の別名でも探す。検索語は匿名化（Step 3.7）より前に GitHub へ送られるので、プラグインの機能名と症状の語に限り、`anonymize.md` の置き換え対象に当たる語（業務のリポジトリ名・Issue ID・コードの識別子など）は使わない:
 
 ```bash
 gh issue list --repo yuuki1036/claude-plugins --state all --search "<キーワード> in:title,body" \
@@ -80,7 +91,7 @@ gh issue list --repo yuuki1036/claude-plugins --state all --search "<キーワ�
   - header: "既存 Issue"
   - options:
     1. label: "既存 Issue にコメントする (Recommended)" / description: "open なら状況や再現例を足す。closed なら再発・未解決の報告として足す"
-    2. label: "新しく起票する" / description: "別の観点・別の不具合として起票する"
+    2. label: "新しく起票する" / description: "別の観点・別の不具合として起票する（Step 3.7 へ）"
     3. label: "やめる" / description: "起票しない"
   - コメントするときも Step 3.7 と Step 4 を通してから、Step 5 の手順で `gh issue comment` として投稿する
 
@@ -88,7 +99,7 @@ gh issue list --repo yuuki1036/claude-plugins --state all --search "<キーワ�
 
 起票先は公開リポジトリで、投稿した本文は編集しても履歴とアーカイブに残る。
 
-1. 本文を `references/issue-template.md`（正本）の種別別テンプレートで組み立てる（コメントならテンプレートは使わない）
+1. 本文を `${CLAUDE_PLUGIN_ROOT}/skills/feedback-issue/references/issue-template.md`（正本）の種別別テンプレートで組み立てる（コメントならテンプレートは使わない）
 2. `${CLAUDE_PLUGIN_ROOT}/skills/feedback-issue/references/anonymize.md` を Read し、その置き換え表をタイトル・本文（コメントならその全文）・添付ファイル名に当てる。完了基準も同ファイルに従う
 3. cwd のリポジトリが公開かを調べる:
 
@@ -100,7 +111,20 @@ gh issue list --repo yuuki1036/claude-plugins --state all --search "<キーワ�
 
 ### Step 4: プレビューと承認
 
-タイトルと本文の**全文**（要約しない）、ラベル、添付候補のファイル名、Step 3.7 で置き換えた種類と件数を示して承認を得る。
+タイトルと本文の**全文**（要約しない）、ラベル、添付候補のファイル名、Step 3.7 で置き換えた種類と件数を示して承認を得る。既存 Issue へのコメントなら、タイトルとラベルの 2 行の代わりに `**コメント先**: #{番号}（{open / closed}）` の 1 行を書く:
+
+```
+## Issue プレビュー
+
+**リポジトリ**: yuuki1036/claude-plugins
+**タイトル**: [{plugin-name}] {title}
+**ラベル**: {label}
+**添付**: {添付候補のファイル名。無ければ行ごと省略}
+**匿名化**: {置き換えた種類と件数。無ければ「なし」}
+
+**本文**:
+{Step 3.7 で組み立て・匿名化した本文}
+```
 
 - cwd が公開でないときは、承認を **AskUserQuestion** で取る（チャットの「OK」で代えない）:
   - question: "公開 Issue に載る本文です。業務のリポジトリ名・PR 番号・Issue ID・ホスト名・社内のコード名やパスが残っていませんか？"
@@ -140,12 +164,12 @@ gh issue list --repo yuuki1036/claude-plugins --state all --search "<キーワ�
      --attach "{file}"   # Step 4 で「添付する」を選んだときだけ。1 ファイル 1 フラグ
    ```
 
-   既存 Issue へのコメントは `gh issue comment <番号> --repo yuuki1036/claude-plugins --body-file "{1 で表示されたパス}"`。
+   既存 Issue へのコメントは `gh issue comment <番号> --repo yuuki1036/claude-plugins --body-file "{1 で表示されたパス}"`（添付するときは `--attach "{file}"` を足す。判定は下と同じで、`--help` はコメント用のサブコマンドのものを見る）。
 
 - タイトルに `"` `` ` `` `$` を入れない（`--title` はシェルの二重引用符の中に入る）。要るなら言い換える
 - ラベルが存在しない場合は `--label` を省略する
-- `--repo yuuki1036/claude-plugins` は意図的な固定値（フィードバック先はユーザーの CWD に関係なく常にマーケットプレイス本体リポジトリ）
-- Step 4 で「添付する」が選ばれたら、次の両方を満たすときだけ `--attach` を付ける。満たさなければ `--attach` 無しで作成し、報告時に「Issue ページを開いて画像をドラッグ&ドロップで追加して」と案内する（「添付しない」が選ばれたときは案内しない）:
+- `--repo yuuki1036/claude-plugins` は意図的な固定値（フィードバック先はユーザーの CWD に関係なく常にマーケットプレイス本体リポジトリ。marketplace.json には repo URL フィールドが無いため導出不可）
+- Step 4 で「添付する」が選ばれたら、次の両方を満たすときだけ `--attach` を付ける。満たさなければ `--attach` 無しで作成・投稿し、報告時に「Issue ページを開いて画像をドラッグ&ドロップで追加して」（コメントなら「コメントを編集して画像を追加して」）と案内する（「添付しない」が選ばれたときは案内しない）:
 
   ```bash
   # --attach は gh 2.99.0 以降
@@ -154,9 +178,16 @@ gh issue list --repo yuuki1036/claude-plugins --state all --search "<キーワ�
   gh repo view yuuki1036/claude-plugins --json viewerPermission -q .viewerPermission   # WRITE / MAINTAIN / ADMIN
   ```
 
-- `--attach` 付きで exit 非ゼロになっても、途中までのアップロード分で Issue が作成され URL が出力されていることがある。**再実行する前に出力に Issue URL が無いか確認する**（二重起票を防ぐ）
+- `--attach` 付きで exit 非ゼロになっても、途中までのアップロード分で Issue やコメントが作成され URL が出力されていることがある。**再実行する前に出力に URL（コメントなら `#issuecomment-` 付き）が無いか確認する**（二重投稿を防ぐ）
 - 投稿に成功したら本文ファイルを消す（`rm -f "{1 で表示されたパス}"`）。失敗したときは再実行に使うので残す
 
 ### Step 6: 報告
 
-作成された Issue URL を報告し、元の作業に戻る。
+次の形で報告し、元の作業に戻る（既存 Issue へのコメントなら 2 行目の形。`--attach` を付けられなかった回は、Step 5 の添付の案内を 1 行足す）:
+
+```
+Issue を作成しました: {URL}
+Issue #{番号} にコメントしました: {URL}
+```
+
+途中でやめた回（Step 3.5 / Step 4 の「やめる」、匿名化の確認で 1 以外）は「起票を取りやめました」の 1 行で報告し、元の作業に戻る。

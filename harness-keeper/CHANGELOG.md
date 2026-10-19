@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.0.1] - 2026-10-19
+
+### Fixed
+
+- **`/catch-up` の本文に、対の SKILL.md（cc-catch-up）を Read する 1 行を置いた**。command 名と skill 名が違うので、
+  command を呼ぶと command 本文だけが返り、SKILL.md には届かない（GitHub issue #219 と同じ型）。「省略時は前回以降の差分」と
+  SKILL.md の Phase 0（モードを選ばせ、既定は effort で変わる）と食い違っていた説明を、引数で範囲を渡したときだけモードを
+  「特定バージョン範囲」で確定する形に直した。`/revise-claude-md` は対の claude-md-improver と別の手順（セッションの学びの
+  反映 / 全 CLAUDE.md の監査）なので変えていない
+
 ## [2.0.0] - 2026-10-08
 
 ### Changed

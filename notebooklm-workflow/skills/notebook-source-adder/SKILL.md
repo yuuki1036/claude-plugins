@@ -7,6 +7,7 @@ description: |
 effort: low
 allowed-tools:
   - Bash
+  - Read
   - AskUserQuestion
   - mcp__plugin_notebooklm-workflow_notebooklm-mcp__notebook_list
   - mcp__plugin_notebooklm-workflow_notebooklm-mcp__source_add

@@ -10,24 +10,8 @@ allowed-tools:
   - AskUserQuestion
 ---
 
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/create-spec/SKILL.md` を Read し、その手順に従う**（command 名と skill 名が違うので、`/bdd-spec-create` でも `Skill` tool の `bdd-spec:bdd-spec-create` でもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `bdd-spec@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+
 create-spec スキルを使って、BDD spec 駆動の user story を scaffold してください。
 
-## 引数
-
-`$ARGUMENTS`:
-- 未指定 → ヒアリングで {role} / {want} / {why} を聞き出す
-- key=value 形式（例: `role=契約管理者 want=契約書を一括承認 why=月末処理短縮`） → 引数で渡された値を使い、ヒアリングをスキップ
-- `shortPath=true` 付加で短縮モード（`{role}-{verb}-{object}`）に切替
-
-## 実行
-
-`create-spec` スキルの処理フローに従ってください:
-
-1. Phase 0: `.claude/bdd-spec.json` 読み込み（または default）
-2. Phase 1: {role} / {want} / {why} ヒアリング（引数で埋まっていればスキップ）
-3. Phase 2: dir 名決定 + 衝突チェック（AskUserQuestion）
-4. Phase 3: all_spec.md / common_spec.md 初期化（必要なら）
-5. Phase 4: epic.md 生成
-6. Phase 5: spec.md 生成
-7. Phase 6: 用語整合チェック
-8. Phase 7: 完了報告
+引数（`$ARGUMENTS`）は `key=value` 形式で渡せる。どのキーが必須で、何が揃えばヒアリングを省くかは SKILL.md の「API 安定保証」の表に従う（`shortPath=true` のときに要るキーもそこにある）。引数が無ければ SKILL.md の Phase 1 のとおり、会話から分からない値だけを聞く。

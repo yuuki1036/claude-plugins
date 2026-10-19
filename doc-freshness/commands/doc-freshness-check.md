@@ -11,6 +11,8 @@ allowed-tools:
   - AskUserQuestion
 ---
 
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/doc-freshness/SKILL.md` を Read し、その手順に従う**（command 名と skill 名が違うので、`/doc-freshness-check` でも `Skill` tool の `doc-freshness:doc-freshness-check` でもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `doc-freshness@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+
 doc-freshness スキルを使って、ドキュメント鮮度を検証してください。
 
 ## 引数
@@ -18,17 +20,3 @@ doc-freshness スキルを使って、ドキュメント鮮度を検証してく
 `$ARGUMENTS`:
 - 未指定 → プロジェクト全体走査
 - ファイルパス指定（例: `CLAUDE.md`） → 単一ファイル走査
-
-## 実行
-
-`doc-freshness` スキルの処理フローに従ってください:
-
-1. Phase 0: 設定ロード（`.claude/doc-freshness.json` または default）
-2. Phase 1: 対象ファイル特定 + grace period 判定
-3. Phase 2: frontmatter スキーマ検証
-4. Phase 3: phase 別 stale 判定
-5. Phase 4: harness doc 行数ガード
-6. Phase 5: internal link 検証
-7. Phase 6: superseded 参照禁止
-8. Phase 7: レポート出力
-9. Phase 8: 修正提案（任意、AskUserQuestion）

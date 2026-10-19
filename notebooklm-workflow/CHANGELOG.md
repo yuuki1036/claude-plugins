@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2026-10-19
+
+### Fixed
+
+- **`/notebook-add-source` と `/notebook-query` の本文に、対の SKILL.md（notebook-source-adder / notebook-query-assistant）を
+  Read する 1 行を置いた**。command 名と skill 名が違うので、command を呼ぶと command 本文だけが返り、SKILL.md には届かない
+  （GitHub issue #219 と同じ型）。読むために、command と skill の両方の allowed-tools に `Read` を足した。「引数がなければ
+  対象ノートを確認」と SKILL.md の Step 2（一覧を取って 1 件ならそのまま、複数なら選ばせる）と食い違っていた説明も直した
+
 ## [0.2.9] - 2026-09-24
 
 ### Changed
