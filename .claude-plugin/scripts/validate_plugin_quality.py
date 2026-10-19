@@ -56,9 +56,10 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     「ファイルは実在する」ぶん references 検査を素通りする（v2.47.0 の分割で 11 箇所発生）.
     参照は**同一行**で拾い, 節番号の直後に節タイトルが続く形も対象にする（issue #177）.
   - トリガーフレーズ: SKILL.md description に 'トリガー:' が含まれているか
-  - skill-hop-cmd: 同名ペアの command 本文が `skills/<name>/SKILL.md` への Read 誘導を持つか
-    （同名だと `Skill` tool で呼んでも command 本文が返り SKILL.md に到達しない. 誘導が無いと
-    model が cache を `ls | head -1` で辞書順に掴み旧版で走る / GitHub issue #219）
+  - skill-hop-cmd: 同名ペアと別名ペア（COMMAND_SKILL_ALIASES）の command 本文が `skills/<name>/SKILL.md`
+    への Read 誘導を持つか（command を呼ぶと command 本文だけが返り SKILL.md に到達しない. 誘導が無いと
+    model が cache を `ls | head -1` で辞書順に掴み旧版で走る / GitHub issue #219）. 別名ペアのうち
+    独自の手順を持つ command は ALIAS_COMMANDS_WITH_OWN_PROCEDURE で外す
   - doc 構造: 番号見出しの重複（他 doc からの番号参照が曖昧になる）と, blockquote を
     分断した孤立 `>` 行. どちらもセルフレビューが見逃した / agent 8 体を要した型で,
     判定は行走査だけで決まる（「lint が見つけるべきものを agent に探させない」）.
@@ -304,6 +305,16 @@ COMMAND_SKILL_ALIASES: dict[tuple[str, str], str] = {
     ("notebooklm-workflow", "notebook-add-source"): "notebook-source-adder",
     ("notebooklm-workflow", "notebook-query"): "notebook-query-assistant",
     ("plugin-feedback", "feedback"): "feedback-issue",
+}
+
+# 別名ペアのうち、command が skill のラッパではなく独自の手順を持つもの（skill-hop-cmd の対象外）.
+# 上の対応表は allowed-tools をそろえる対で、手順まで同じとは限らない. 対応表に載せた command は
+# skill-hop-cmd で対の SKILL.md への Read 誘導を求められるので、別の手順を持つ command はここに理由と載せる
+# （Read 誘導を足すと別の手順へ飛ばすことになる）.
+ALIAS_COMMANDS_WITH_OWN_PROCEDURE: dict[tuple[str, str], str] = {
+    ("harness-keeper", "revise-claude-md"): (
+        "このセッションの学びを CLAUDE.md へ反映する手順。対の claude-md-improver は全 CLAUDE.md の監査で、別の手順"
+    ),
 }
 
 
@@ -1760,22 +1771,47 @@ def check_same_name_command_reads_skill(plugin_dir: Path, errors: list[str]) -> 
     `commands/*.md` の本文**で、SKILL.md には到達しない（#206 の本文版）。本文が「X スキルを
     使って」だけの薄いラッパだと、model は手順を記憶から再現するか cache を `ls | head -1`
     で掴む — 実測（2026-09-06 / yatima）では辞書順で旧版 2.105.1 を掴み、publish まで丸ごと
-    落ちた。**`skills/<name>/SKILL.md` のパスが本文にあること**だけを見る（書き方は縛らない）。
+    落ちた。**`skills/<name>/SKILL.md` のパスが本文にあること**だけを見る（書き方は縛らない。
+    パスの前に何があるか — 別プラグインの skill を指していないか — までは見ない）。
+
+    別名ペア（COMMAND_SKILL_ALIASES）も見る。対応づけた skill の名前のパスを求め、独自の手順を持つ
+    command（ALIAS_COMMANDS_WITH_OWN_PROCEDURE）は外す。
     """
     name = plugin_dir.name
     for skill_md in sorted((plugin_dir / "skills").glob("*/SKILL.md")):
         sname = skill_md.parent.name
         cmd_md = plugin_dir / "commands" / f"{sname}.md"
-        if not cmd_md.is_file():
-            continue
-        text = read_text(cmd_md)
-        body = text.split("\n---\n", 2)[-1] if text.startswith("---\n") else text
-        if f"skills/{sname}/SKILL.md" not in body:
+        if cmd_md.is_file() and not _command_body_reads_skill(cmd_md, sname):
             errors.append(
                 f"[skill-hop-cmd:{name}] 同名 command の本文が SKILL.md への Read 誘導を持たない"
                 f"（`${{CLAUDE_PLUGIN_ROOT}}/skills/{sname}/SKILL.md` を Read する 1 行を本文に置く / "
                 f"GitHub issue #219）— {cmd_md.relative_to(ROOT)}"
             )
+    # 別名ペアも同じ: `/commit` も `Skill dev-workflow:commit` も command 本文だけが返り、名前の違う
+    # skill の SKILL.md には届かない。参照先の欠落は check_allowed_tools_pair が error にするので、ここでは見ない
+    for (plugin, cmd), sname in COMMAND_SKILL_ALIASES.items():
+        if plugin != name or (plugin, cmd) in ALIAS_COMMANDS_WITH_OWN_PROCEDURE:
+            continue
+        cmd_md = plugin_dir / "commands" / f"{cmd}.md"
+        if (plugin_dir / "skills" / cmd / "SKILL.md").is_file():
+            continue  # 同名 skill があれば同名ペアとして上で見ている（check_allowed_tools_pair と同じ同名優先）
+        if not (cmd_md.is_file() and (plugin_dir / "skills" / sname / "SKILL.md").is_file()):
+            continue
+        if not _command_body_reads_skill(cmd_md, sname):
+            errors.append(
+                f"[skill-hop-cmd:{name}] 別名の command（{cmd} → {sname}）の本文が SKILL.md への Read 誘導を持たない"
+                f"（`${{CLAUDE_PLUGIN_ROOT}}/skills/{sname}/SKILL.md` を Read する 1 行を本文に置く。"
+                f"skill と別の手順を持つ command なら ALIAS_COMMANDS_WITH_OWN_PROCEDURE に理由と載せる）"
+                f"— {cmd_md.relative_to(ROOT)}"
+            )
+
+
+def _command_body_reads_skill(cmd_md: Path, sname: str) -> bool:
+    """command 本文（frontmatter の外）に `skills/<sname>/SKILL.md` のパスがあるか."""
+    text = read_text(cmd_md)
+    # maxsplit=1: 本文に水平線（`---`）があっても、その前の誘導を捨てない
+    body = text.split("\n---\n", 1)[-1] if text.startswith("---\n") else text
+    return f"skills/{sname}/SKILL.md" in body
 
 
 def check_shell_syntax(plugin_dir: Path, errors: list[str]) -> None:
