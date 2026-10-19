@@ -105,12 +105,20 @@ jobs:
       # 落ちたときの直し方は 2 つだけ: ①生存した変異を殺すテストを足す
       # ②等価変異なら**理由つきで** `# mutation-ok:` を同じ行に置く（無理由の抑制は書けない）。
       # 変異が無限ループ化する行（`dirname` の遡上等）も ② で外す — テストでは打ち切れない。
+      #
+      # `--related-first`: 変異したファイルを参照するテストモジュールだけを先に回し、落ちれば killed と確定する。
+      # 通った変異だけフルスイートで確かめるので、生存（= `--strict` の fail）はフルスイートでしか決まらない。
+      # 無いと変異 1 個ごとにフルスイートを回す（2026-10-19 の push は .py の変異 5 個で 34 分。同じ差分を
+      # ローカルで `--related-first` 付きで回すと 5 個とも関連テスト 34 秒の組で決着した）。nightly と同じ
+      # PYTHONUNBUFFERED: パイプ越しだと出力が終わるまでバッファされ、途中で殺された回のログが空になる
       - name: mutation-test
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
           if [ -z "${DIFF_BASE:-}" ]; then
             echo "比較対象が特定できないため skip（初回コミット）"; exit 0
           fi
-          python3 .claude-plugin/scripts/mutation-test.py --base "$DIFF_BASE" --max 5 --strict
+          python3 .claude-plugin/scripts/mutation-test.py --base "$DIFF_BASE" --max 5 --strict --related-first
 
       # pre-commit と同等のバージョンバンプ検査。
       # ローカル hook は --no-verify で迂回できるため CI 側でも検査する。
