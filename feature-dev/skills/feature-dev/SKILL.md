@@ -105,7 +105,7 @@ echo "BDD_SPEC_AVAILABLE=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh
 
 - `BDD_SPEC_AVAILABLE=0` → **skip して Phase 1.5 へ**（既存の Issue 解釈フローがそのまま動く）
 - 初期リクエストに `spec=<path>` があれば生成せずそれを `BDD_SPEC_PATH` に採用し Phase 4 へ渡す
-- それ以外で `BDD_SPEC_AVAILABLE=1` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.3」を読み、その手順（既存 spec 確認 → AskUserQuestion → `bdd-spec:create-spec` 非対話呼び出し → fallback）に従う
+- それ以外で `BDD_SPEC_AVAILABLE=1` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.3」を読み、その手順（自動判定 → 該当時だけ `bdd-spec:create-spec` 非対話呼び出し → fallback）に従う。**利用者には聞かない**（BDD を使う repo・変更かをここで判定し、非該当なら 1 行報告して skip する。セッションを止めない）
 
 **Output**: `BDD_SPEC_PATH=<path>` または `""`（未生成）。Phase 4 architect の "BDD Spec Injection" と Phase 1.7 の Issue context completeness 判定に使う。
 
@@ -116,7 +116,7 @@ echo "BDD_SPEC_AVAILABLE=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh
 **Goal**: Phase 1.3 で spec.md を生成した場合、architect の入力にする前に品質ゲート（網羅性・トレーサビリティ）を通す。穴のある spec を真実として渡すと穴が実装に伝播するため、安いオラクルを実装前に挟む。
 
 - `BDD_SPEC_PATH` が空（未生成 / 未インストール / skip） → **Phase 1.4 を skip して Phase 1.5 へ**
-- `BDD_SPEC_PATH` がセット済み → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.4」を読み、その手順（`bdd-spec:evaluate-spec --embed` 呼び出し → 🔴 critical があれば AskUserQuestion で修正を既定に、🟡 以下は情報提示のみ → fallback）に従う
+- `BDD_SPEC_PATH` がセット済み → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.4」を読み、その手順（`bdd-spec:evaluate-spec --embed` 呼び出し → 🔴 critical があれば spec を自分で直して 1 回だけ再評価し、残っても止めずに Phase 7 のサマリへ回す。🟡 以下は情報提示のみ → fallback）。**利用者には聞かない**に従う
 
 ---
 
@@ -700,6 +700,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
    - **静的オラクル** (Phase 5.3): 「静的オラクル判定不能」「静的オラクル打ち切り」「静的オラクル無し（型/テスト未検証）」、`low` effort で skip した回だけ
    - **G-V ループ** (Phase 6 Step 3 が走った回): `/tmp/feature-dev-loop-state.json` を読み、反復回数・終了理由・auto-fix 件数・persisting。終了理由が `regression` / `budget` なら persisting の fingerprint を目立たせる（人間の判断が要る）。self-review が失敗した・Phase 6 を skip した回はその旨
    - **コメント精査** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
+   - **BDD spec の未解消指摘** (Phase 1.4): 再評価後も 🔴 が残った回だけ、件数と内容を出す（Phase 1.4 は聞かずに進めるため、ここで初めて利用者に見える）
    - **レビュー後の変更** (Phase 6.9): 「**N ファイル・M 行（未レビュー）**」（ファイル名も並べる。「静的オラクルだけ回す」を選んだ回は「（未レビュー・静的オラクルは緑）」）/「確認できなかった」の回だけ。「なし」「再レビュー済み」は省く。値は Phase 6.9 の時点のもので、3. の読み合わせで入れる修正は含まない（それは 4. の 2 回目の self-review が見る）
    - **worktree** (Phase 4.8 で分離した場合のみ): worktree のパスとブランチ、後片付けは teardown / worktree-gc に委ねる旨
    - **Design doc follow-up** (Phase 4.5 で `DESIGN_DOC_PATH` がある場合のみ): 実装が完了したので、doc の frontmatter を `phase: target → current` に更新するよう案内する（実装と設計が乖離した箇所があれば doc への追記 or supersede も）。更新は design-doc プラグイン側の運用（ユーザー操作）に委ねる

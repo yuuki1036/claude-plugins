@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.23.1] - 2026-10-19
+
+### Changed
+
+- **Phase 1.3 / 1.4 の BDD spec 連携で、利用者に聞かず自動で判定するようにした**（セッションの停止を減らすため）。BDD を使わない repo が大半なのに、bdd-spec が有効なだけで毎回「BDD spec を生成しますか？」を聞いて止まっていた。Phase 1.3 は既定を skip とし、(A) この repo に `features/*/spec.md` か `features/all_spec.md` がある、かつ (B) 利用者から観察できる振る舞いの追加・変更で `role` / `want` を聞かずに書き出せる、の両方を満たすときだけ `bdd-spec:create-spec` を呼ぶ。判定結果は 1 行で報告する。Phase 1.4 は 🔴 critical が出たら聞かずに spec を直して 1 回だけ再評価し、残っても止めずに Phase 7 のサマリへ「BDD spec の未解消指摘」として回す。`spec=<path>` を渡した回の扱いは変えていない
+
 ## [2.23.0] - 2026-10-19
 
 ### Added

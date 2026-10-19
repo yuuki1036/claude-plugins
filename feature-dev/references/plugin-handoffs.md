@@ -17,22 +17,20 @@ feature-dev の Phase 1.3 / 1.4 / 1.6 / 4.5 は、対応する optional plugin�
 ユーザーが既に spec.md を持っている場合は再生成しない:
 
 1. 初期リクエストに `spec=<path>` が含まれていればそれを採用（Phase 4 へそのまま渡す）
-2. 引数から user story の要素（`role` / `want` / `why`）が推測可能なら次の Step へ
-3. 推測できない場合は Phase 1 で集めた discovery 情報から要素を抽出してユーザーに確認
+2. 無ければ次の Step で自動判定する
 
-### Step 3: Propose create-spec invocation
+### Step 3: Auto-decide whether to generate（利用者には聞かない）
 
-`AskUserQuestion` で確認:
+BDD を使わない repo が大半なので、**既定は skip**。次の 2 つを**両方**満たすときだけ生成する:
 
-- question: "bdd-spec plugin が利用可能です。BDD spec.md を Phase 4 architect の入力として生成しますか？"
-- header: "BDD spec 生成"
-- options:
-  1. label: "生成する (推奨)" / description: "bdd-spec:create-spec を呼んで spec.md を作成。architect は spec を真実として読む"
-  2. label: "skip" / description: "BDD spec を生成せず既存の Issue 解釈フローで進む"
+- **A. この repo が BDD を運用している**: `features/*/spec.md` か `features/all_spec.md`（`featuresDir` を変えていればその下）が既にある。無ければ BDD の運用が無い repo として skip
+- **B. 変更が利用者から観察できる振る舞いの追加・変更で、要件が Given/When/Then に落ちる**: 新機能・振る舞いの変更で、`role` / `want` を初期リクエストか Issue context から**聞かずに**書き出せる。バグ修正・リファクタ・設定変更・内部実装だけの変更・UI の見た目だけの調整・role/want を書き出せない場合は skip
+
+判定結果は 1 行で報告して先へ進む（例: `BDD spec: skip（この repo に features/ が無い）` / `BDD spec: 生成（features/ あり・新機能）`）。`AskUserQuestion` は使わない。
 
 ### Step 4: Invoke bdd-spec:create-spec
 
-ユーザーが「生成する」を選んだら `Skill` tool で `bdd-spec:create-spec` を呼ぶ。
+Step 3 で「生成」と判定したときだけ `Skill` tool で `bdd-spec:create-spec` を呼ぶ。
 
 **非対話 API（bdd-spec の安定保証セクション参照）に従い引数で値を渡す**:
 
@@ -50,7 +48,7 @@ feature-dev の Phase 1.3 / 1.4 / 1.6 / 4.5 は、対応する optional plugin�
 ### Step 5: Fallback handling
 
 - bdd-spec:create-spec が失敗（例: bdd-spec plugin の version 不整合、内部エラー）→ warning を出して fallback。Phase 1.5 以降は既存フローで継続
-- ユーザーが skip を選択 → そのまま Phase 1.5 へ
+- Step 3 で skip と判定 → そのまま Phase 1.5 へ
 
 ### Output
 
@@ -80,7 +78,7 @@ feature-dev の Phase 1.3 / 1.4 / 1.6 / 4.5 は、対応する optional plugin�
 
 ### Step 3: Gate on findings
 
-- 🔴 critical（未カバー AC・リンク切れ・構文破綻）が 1 件以上 → **ユーザーに提示して確認**する。AskUserQuestion で「spec を修正してから設計に進む（推奨）/ このまま進む」を選ばせる。spec の穴は architect が読む前に埋めるのが安いため、修正を既定に置く
+- 🔴 critical（未カバー AC・リンク切れ・構文破綻）が 1 件以上 → **聞かずに** spec.md を直す（未カバー AC に Scenario を足す・壊れたリンクを直す・構文を直す）。直したら `bdd-spec:evaluate-spec --embed` を **1 回だけ**再実行する。まだ 🔴 が残っても止めず、Phase 4 へ進み、残った件数と内容を Phase 7 のサマリに「BDD spec の未解消指摘」として出す。spec の穴は architect が読む前に埋めるのが安いため、修正を既定にする
 - 🟡 major 以下のみ → レポートを情報として提示し、そのまま Phase 1.5 へ進む（ブロックしない）
 - 指摘 0 件 → 「spec は契約として妥当」と一言添えて Phase 1.5 へ
 
