@@ -64,7 +64,7 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
    {ISSUE-ID} [今回の意図（自由記述）]
    ```
 
-   - **第 1 トークン**: Issue ID（`[A-Z]+-\d+` 形式）。あればそれを対象 Issue ID として採用し、**ブランチ名を見ずに Feature ブランチモード（Phase F2 以降）へ直行する**（Phase F1 の抽出は skip）。ブランチが main/master のままでも同様（ブランチを切る前に Issue のコンテキストだけ読みたい、が典型）。この場合のブランチは Phase F7 で作る（「ブランチ未作成」の扱い）
+   - **第 1 トークン**: Issue ID（`[A-Z]+-\d+` 形式）。あればそれを対象 Issue ID として採用し、**ブランチ名を見ずに Feature ブランチモード（Phase F2 以降）へ直行する**（Phase F1 の抽出は skip）。ブランチが main/master のままでも同様（ブランチを切る前に Issue のコンテキストだけ読みたい、が典型）。その Issue のブランチ・worktree が既にあるかは Phase F2.5 が別の worktree まで見て調べ、無ければ Phase F7 で作る
    - **残りの文字列**: 今回のセッションの意図（`TASK_INTENT`）。次の 3 値に分類して Phase F7 の分岐に使う:
 
      | TASK_INTENT | 判定 | 例 |
@@ -192,6 +192,11 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
    WARNING: open な follow-up が合計 {total}件あります。棚卸しを推奨します。
    `/follow-up list` で一覧、`/follow-up promote` で Issue 化できます。
    ```
+8. `bash "${CLAUDE_PLUGIN_ROOT}/scripts/branch-setup.sh" worktrees` を 1 回実行し、出力があれば表示する。1 件ごとに `id=` / `branch=` / `worktree=` の 3 行が並ぶ（メインのチェックアウト・detached HEAD・ディレクトリが消えた worktree と、ブランチ名に Issue ID の無いものはスクリプトが外す）。出力が空・exit が 0 以外なら何も出さない:
+   ```
+   **worktree で作業中:**
+   - {id} `{branch}` — `{worktree}`（`/start {id}` でそこへ移って続ける）
+   ```
 
 ### Phase D2.5: Knowledge サマリー
 
@@ -240,6 +245,18 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 1. Issue ID のプレフィックスを小文字化してスラッグとする
    - 例: `TEAM-12` → `team`、`PROJ-345` → `proj`
 
+### Phase F2.5: 新規か続きかの判定（既存の作業の検知）
+
+今のチェックアウトの HEAD だけでなく、別の worktree・ローカル / origin のブランチまで見て、この Issue の作業が既にあるかを決める（GitHub issue #305）。表・選ぶ順・判定行の書式は `${CLAUDE_PLUGIN_ROOT}/skills/start/references/existing-work.md` を Read して従う。
+
+1. 候補を出す。候補ごとに `worktree=` / `branch=` / `ahead=` / `dirty=` / `matched=` / `current=` / `prunable=` / `locked=` / `head=` の 9 行が並び、最後に `found=` が出る（exit 2 なら `found=0` として進め、stderr を判定行に添える）:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/branch-setup.sh" existing {ISSUE-ID}
+   ```
+2. `WORK_STATE`（`none` / `fresh` / `here` / `moved` / `branch` / `detached` / `closed` / `prunable`）を同 doc の 2 で決める。要点: Issue の status が `completed` / `canceled` なら `closed`（移動もブランチ作成もしない）/ `current=1` の候補があれば今のチェックアウトに残る / 確認なしで移るのは `matched` に `branch` か `path` を含む候補だけ / session-context だけの候補には移らず、作業がそこにしか無ければ `detached`（ブランチも作らず案内だけする）/ 選んだ候補の `prunable=` にパスがあれば `prunable`（そのブランチへは移れないので、登録の消し方を案内して止まる。`locked=1` なら unlock も、detached HEAD ならコミットを残す `git branch` も添える）/ `ahead=-` と、worktree のある候補の `dirty=-` は作業ありに倒す（worktree の無い候補の `dirty=-` は 0）
+3. 別の worktree の候補を選んだら、同 doc の 3 の手順でそこへ移る（新しいブランチも worktree も作らない）。`{WORK_DIR}` は、移った回は移り先、それ以外は今のチェックアウトの root を指す
+4. 判定行（`WORK_LINE`）を同 doc の 4 の書式で作る。F6 の先頭に置く
+
 ### Phase F3: 関連ファイル読み込み
 
 1. **プロジェクト doc の読み込み**
@@ -266,7 +283,7 @@ Issue ファイルが存在しない場合（Phase F4 へ進む場合）はス�
 | Agent | 役割 | 入力 |
 |-------|------|------|
 | #1 Doc Resolver | 親 Issue・関連 Issue・Knowledge 直接参照を辿る | Issue ファイル内容、スラッグ |
-| #2 Code Context | Issue 内のソースファイル参照を辿る + Git 状態取得 | Issue ファイル内容 |
+| #2 Code Context | Issue 内のソースファイル参照を辿る + Git 状態取得 | Issue ファイル内容、`{WORK_DIR}`（F2.5） |
 | #3 Linear Sync（BACKEND=linear のみ） | Linear API の最新状態との差分検出 | Issue ID、frontmatter 情報 |
 
 **起動手順:**
@@ -274,7 +291,7 @@ Issue ファイルが存在しない場合（Phase F4 へ進む場合）はス�
 1. `${CLAUDE_SKILL_DIR}/references/context-agents.md` を Read する
 2. **必須**: 対象の Agent（local: 2 つ / linear: 3 つ）を**同一メッセージ内で並列起動する**（Agent tool call を 1 つのレスポンスに含める）。逐次起動は禁止（待ち時間が倍になる）。各 Agent call に `run_in_background: false` を明示する（CC 2.1.198 で既定が background になり、省略すると完了を待たずに進んで結果を取りこぼす）
    - Agent #1 Doc Resolver: Issue ファイル内容 + スラッグを渡す
-   - Agent #2 Code Context: Issue ファイル内容を渡す
+   - Agent #2 Code Context: Issue ファイル内容と `{WORK_DIR}` を渡す（git は `git -C {WORK_DIR}`、ソースファイルは `{WORK_DIR}` を前に付けた絶対パスで見させる）
    - Agent #3 Linear Sync（BACKEND=linear のみ、Phase 0.7 で MCP 利用可の場合のみ）: Issue ID + frontmatter を渡す
 3. 全エージェントの完了を待つ（並列起動していれば最長エージェントの時間で揃う）
 4. 各エージェントの結果を Phase F6 の報告に統合する
@@ -339,6 +356,7 @@ Issue ファイルが存在しない場合:
 
 Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する。**Phase F7 の連携案内があれば Issue 情報の直後に差し込む**（末尾に置くと読まれない）:
 
+- **判定**: F2.5 の `WORK_LINE`（常に先頭の 1 行。Issue 情報より前）
 - **Issue 情報**: タイトル・ステータス
 - **今回のセッションでやること**: `TASK_INTENT = continue` のとき、引数で渡された意図をそのまま再掲する
 - **未完了タスク一覧**: Issue ファイルのチェックリストから未完了項目を抽出（あれば）
@@ -347,7 +365,7 @@ Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する
 - **関連 Issue**: Agent #1 の結果（関連 Issue の概要一覧）（あれば）
 - **関連 Knowledge**: Agent #1 の直接参照結果 + Phase F3.7 の keyword 検索結果をマージ（あれば）
 - **参照ソースファイル**: Agent #2 の結果（読み込んだファイルの役割サマリー）（あれば）
-- **Git 状態**: Agent #2 の結果（コミット数・最新コミット・未コミット変更・変更規模）
+- **Git 状態**: Agent #2 の結果（コミット数・最新コミット・未コミット変更・変更規模）。F2.5 の候補が 2 件以上なら全候補の worktree・ブランチ・コミット数・未コミットの変更も並べる。Agent #2 の数と判定行の数が違うときは、`WORK_STATE` に関わらず判定行を正とし、差の理由を 1 句添える（判定行は `origin/<既定>` にあるコミットも除き、`.claude/` 配下の未追跡と写した `.env*` を数えない。existing-work.md の 5）。`branch` / `detached` / `prunable` の回は、Agent #2 が見たのが作業の無いチェックアウト（移る前 / 今の）であることも添える
 - **Linear 同期**: Agent #3 の結果（ステータス差分・新規コメント）（BACKEND=linear のみ・あれば）
 - **読み込んだプロジェクト doc**: 読み込んだファイル名
 - **放置 Issue 警告**: 該当があれば表示（Phase F5）
@@ -355,12 +373,12 @@ Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する
 
 ### Phase F7: 進め方の確認（feature-dev / 軽量フロー）
 
-Phase 1 で分類した `TASK_INTENT` と Git 状態で分岐する。
+Phase 1 で分類した `TASK_INTENT` と F2.5 の `WORK_STATE` で分岐する。`WORK_STATE = closed` と `detached` と `prunable` なら、`TASK_INTENT` に関わらず進め方の確認もテキスト案内も出さず、ブランチも作らない（判定行で報告・案内だけする。`detached` でここで新しく始めると言われたら、existing-work.md の 2 のとおり決め直してからこの Phase を通す。`prunable` は利用者が `git worktree prune` を打った後の /start で決め直す）。
 
 **`TASK_INTENT = new` のとき（`start {ISSUE-ID} 新規タスク` 等）: 必ず AskUserQuestion を出す。**
 コミット数も `feature_dev_plan:` も見ない。着手宣言が明示されている以上、どの進め方にするかを
 ユーザーに決めさせるのが正しく、こちらで先回りして黙る理由が無い（黙る判定を足した結果
-この導線が実質死んでいたのが元の設計）:
+この導線が実質死んでいたのが元の設計）。F2.5 で既存の作業が見つかっていても（`here` / `moved` / `branch`）この選択は出すが、ブランチは新しく作らない（食い違いは判定行に書いてある）:
 
 ```
 AskUserQuestion(
@@ -369,29 +387,31 @@ AskUserQuestion(
   multiSelect: false,
   options: [
     { label: "feature-dev", description: "8 phase で設計から実装まで通す（explorer/architect + spec ゲート + self-review）" },
-    { label: "軽量フロー",   description: "8 phase なしで 実装 → 検証 → self-review → 読み合わせ → commit → push + CI → Issue 更新 をガイドする（方針が決まっている変更向け）" },
+    { label: "軽量フロー",   description: "8 phase なしで 実装 → 検証 → 動作確認 → self-review → 読み合わせ → commit → push + CI → Issue 更新 をガイドする（方針が決まっている変更向け）" },
     { label: "自分で進める", description: "ガイドなしで通常の作業に入る" },
   ]
 )
 ```
 
 - 「feature-dev」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**起動する前に**下の「ブランチ未作成のとき」に従ってブランチを作る。**feature-dev が有効でない**（`bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" feature-dev` が `0`。無効化した・未導入のどちらも）**なら、この選択肢を option から外す**（dormant。使えないプラグインを提案肢に出さない）
-- 「軽量フロー」→ ブランチ未作成なら先に下の「ブランチ未作成のとき」に従ってブランチを作る。そのうえで `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 7 Step（実装 → 検証 → self-review → 読み合わせ → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、self-review / 読み合わせ / commit の委譲先（code-review / dev-workflow）は有効なら委譲し、無効か未導入なら手動手順にフォールバックする（読み合わせは手動の代わりが無いので skip。この選択肢自体は委譲先の有無に関わらず提示する）
+- 「軽量フロー」→ ブランチ未作成なら先に下の「ブランチ未作成のとき」に従ってブランチを作る。そのうえで `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 8 Step（実装 → 検証 → 動作確認 → self-review → 読み合わせ → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、動作確認 / self-review / 読み合わせ / commit の委譲先（dev-workflow / code-review）は有効なら委譲し、無効か未導入なら手動手順にフォールバックする（読み合わせは手動の代わりが無いので skip。この選択肢自体は委譲先の有無に関わらず提示する）
 - 「自分で進める」→ 何も起動せず通常の作業に入る。同一セッションで再提案しない
 - feature-dev 起動後は、`feature_dev_plan:` frontmatter への記載をユーザーに案内する（手動更新、または `/issue-maintain` で反映）
 
-**ブランチ未作成のとき**（今のブランチ名に `{ISSUE-ID}` が含まれない）: `${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。worktree に移した回は、feature-dev の引数に worktree のパスを添え、Phase CTX の書き出し先を worktree 側にする（同 doc の 5）
+**ブランチ未作成のとき**（`WORK_STATE` が `none`、または `fresh` で選んだ候補がブランチだけ）: `${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る。`fresh` なら `{BRANCH}` は候補の `branch`（`origin/` は外す）で、新しい名前を作らない。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。worktree に移した回は、feature-dev の引数に worktree のパスを添え、Phase CTX の書き出し先を worktree 側にする（同 doc の 5）
+
+**`WORK_STATE = branch` のとき**（作業のあるブランチを checkout している worktree が無い）: `TASK_INTENT` に関わらず、F6 の後に同じ手順でそのブランチへ移る（`{BRANCH}` は候補の `branch`。`origin/` は外す）。`new` なら進め方の選択より先に行う。`here` / `moved` と、今のチェックアウトか移り先に残った `fresh` では何もしない（もうそこにいる）
 
 **`TASK_INTENT = continue` のとき**: feature-dev の案内は出さない（やることが決まっているので選択 UI で止めるのは邪魔）。Phase F6 で「今回のセッションでやること」として意図を再掲するに留める。
 
-**`TASK_INTENT = auto` のとき**: 従来どおり Git 状態で判定する。判定に使うのは **Issue ブランチ上のコミット数**（`git rev-list --count {default-branch}..HEAD`）であり、Issue ファイルに計画が書かれているかではない。`issue-create` は起票時に計画・タスクを埋めるので、「計画が書いてあるか」で切ると未着手の Issue でも案内が出なくなる。
+**`TASK_INTENT = auto` のとき**: F2.5 の `WORK_STATE` で判定する（今のチェックアウトの HEAD ではなく、別の worktree とブランチまで見た結果）。判定に使うのは **既定ブランチに無いコミットと未コミットの変更**であり、Issue ファイルに計画が書かれているかではない。`issue-create` は起票時に計画・タスクを埋めるので、「計画が書いてあるか」で切ると未着手の Issue でも案内が出なくなる。
 
-1. **コミット0件**（ブランチ作成直後 / ブランチ未作成）:
+1. **新規**（`none` / `fresh`）:
    - 上と同じ AskUserQuestion を出す
    - ただし `feature_dev_plan:` frontmatter が既に埋まっている場合は、実行済みとみなしてスキップする
-2. **コミット1件以上 + 進捗がプレースホルダのまま**（作業が進んでいるのに Issue が未更新）:
-   - 「コミットがありますが Issue の進捗が未記入です。`/issue-maintain` で更新しますか？」とテキストで案内する（選択 UI は使わない）
-3. **コミット1件以上 + 進捗も更新済み**:
+2. **続き**（`here` / `moved` / `branch`）**+ 進捗がプレースホルダのまま**（作業が進んでいるのに Issue が未更新）:
+   - 「作業がありますが Issue の進捗が未記入です。`/issue-maintain` で更新しますか？」とテキストで案内する（選択 UI は使わない）
+3. **続き + 進捗も更新済み**:
    - この案内をスキップする
 
 **表示位置**: テキスト案内（`auto` の 2）は Phase F6 の報告の**末尾ではなく冒頭**（Issue 情報の直後）に置く。F6 の報告は knowledge / git / Linear 同期まで含めて長く、末尾の 1 行は読まれない。AskUserQuestion は F6 の報告を出し切った**後**に呼ぶ（選択 UI が出ると報告が読めなくなるため）。
@@ -413,7 +433,7 @@ Feature ブランチモードで Issue ファイルの読み込みに成功し�
 ---
 shared_state_type: session
 producer: issue-workflow
-consumers: [code-review]
+consumers: [code-review, issue-workflow]
 schema_version: 1
 last_updated: {現在の ISO 8601 タイムスタンプ}
 branch: {現在のブランチ名}
@@ -443,4 +463,4 @@ issue_id: {Issue ID}
 
 **注意:**
 - `.claude/session-context.md` はセッション固有のファイルであり、git にコミットしない
-- Write ツールで `.claude/session-context.md` に書き出す。Phase F7 で worktree に移した回は `{WORKTREE}/.claude/session-context.md`（絶対パス）に書く — 読む側（code-review・issue-band）は作業しているチェックアウトのものを見る
+- Write ツールで `.claude/session-context.md` に書き出す。Phase F2.5 か F7 で worktree に移した回は `{WORKTREE}/.claude/session-context.md`（絶対パス）に書く — 読む側（code-review・issue-band）は作業しているチェックアウトのものを見る

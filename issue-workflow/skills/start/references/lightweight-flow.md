@@ -1,7 +1,10 @@
+<!-- 正本依存（SSoT pin）。Step 5 の変異テストの分岐（承認の取り方・回し方・結果の 4 区分・前後の git status の突き合わせ）は code-review の review-guide-format.md「変異テストの提案」を要約したもの（プラグイン間依存禁止のため要約で持つ）。正本が変わったら Step 5 と「報告」を確認して pin を打ち直す -->
+<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @af03ed33 -->
+
 # 軽量フロー（feature-dev を使わない一連のワークフロー）
 
 Phase F7 で「軽量フロー」が選ばれたときに Read する。8 phase（explorer / architect / spec ゲート）は回さず、
-実装 → 検証 → セルフレビュー → 読み合わせ → コミット → push → CI 確認 → Issue 更新の一連を最後まで通すことだけを保証する。
+実装 → 検証 → 動作確認 → セルフレビュー → 読み合わせ → コミット → push → CI 確認 → Issue 更新の一連を最後まで通すことだけを保証する。
 
 **対象**: 方針が既に決まっている・影響範囲が読めている変更（bugfix・小〜中規模の機能追加・リファクタ）。
 設計判断が未確定・複数レイヤーにまたがる場合は feature-dev を勧め直してよい（1 回だけ。断られたらこのまま進む）。
@@ -18,7 +21,7 @@ echo "DW=$(bash "$P" dev-workflow) CR=$(bash "$P" code-review)"
 
 ## 手順
 
-開始時に TodoWrite で以下 7 Step をタスク化し、進捗を追跡する（各 Step の完了条件を満たすまで次へ進まない）。
+開始時に TodoWrite で以下 8 Step をタスク化し、進捗を追跡する（各 Step の完了条件を満たすまで次へ進まない）。
 
 ### Step 1: 実装
 
@@ -41,29 +44,55 @@ echo "DW=$(bash "$P" dev-workflow) CR=$(bash "$P" code-review)"
 （`git config core.hooksPath` / `.git/hooks`）→ CI 定義（`.github/workflows/` 等）のジョブと同じコマンド。
 いずれも無ければ変更に対応するテスト・lint を直接実行する。**赤のまま Step 3 へ進まない。**
 
-### Step 3: セルフレビュー
+### Step 3: 動作確認
+
+コミット前に、画面に影響する変更を実機ブラウザで確かめる（GitHub issue #306）。UI に影響するかは ui-verify が
+判定する（ここに複製しない）。**Step 5 の読み合わせから戻った回は通らない**。Step 7 で CI が赤くなって Step 2 から
+戻った回は通す（ui-verify は未コミットの変更だけを見るので、修正が画面に触れなければ `skipped` で返る）。
+
+- `DW=1`: `Skill` tool で `dev-workflow:ui-verify` を `verify --caller=lightweight-flow` で起動する。Issue や依頼が
+  証跡・スクショの添付を求めるときだけ `--screenshot=need` を足す。ui-verify 内の確認（dev server の起動許可・
+  ケース表・既存ブラウザの停止）は ui-verify の手順のまま通す（`--caller` は確認を省かない）。応答の最後の
+  `UI_VERIFY_RESULT=` の行で分岐する:
+  - `pass` → Step 4 へ（`UI_VERIFY_UNCOVERED=` が `none` 以外なら報告に残す）
+  - `fail` → fail したケース（`UI_VERIFY_REASON=`）を示し、直すか承知で進めるかを利用者に決めてもらう（直す → 修正して
+    Step 2 から。承知 → fail したケースを報告に残して Step 4 へ）
+  - `skipped` → `UI_VERIFY_REASON=` を報告に残して Step 4 へ
+  - `blocked` → `UI_VERIFY_BROWSER=none`（使える基盤が無かった）なら下の `DW=0` の手動手順を、画面に影響する変更として
+    通す（ui-verify が判定済みなので判定し直さない）。`UI_VERIFY_BROWSER=unselected`（基盤を選ぶ前に止まった。dev server の
+    起動を断られた等）とそれ以外の値は、`UI_VERIFY_REASON=` を報告に残して Step 4 へ（手動確認を頼み直さない）
+  - 起動が失敗した・`UI_VERIFY_RESULT=` の行が出ない（`--caller` を知らない旧版の dev-workflow）→ `DW=0` と同じ扱い
+- `DW=0`: diff（未追跡の新規ファイルを含む）に画面のファイルがあるかを判断する。あれば dev server の
+  起動コマンドと URL を示して手動での確認と返信を頼み、返信が無ければ報告に「動作確認: 手動確認待ち」と残す。
+  無ければ skip し、理由を報告に残す
+
+ui-verify を通さずに判断する箇所（上の `DW=0` と「報告」）の画面のファイルは、ui-verify の事前判定が画面の変更と
+数えるファイルに揃える: UI の拡張子（`.tsx` / `.vue` / `.css` など）に加え、`components/` `pages/` `app/` `routes/`
+`views/` `layouts/` `hooks/` `composables/` `store(s)/` 配下の `.ts` / `.js` / `.mts` / `.mjs`。
+
+### Step 4: セルフレビュー
 
 **self-review の前の停止点**（`CR=1` のときだけ・フロー中 1 回だけ）: 実行中のメインモデルが**現行世代の Opus より前の世代**
 （例: Opus 4.8 で実装した）なら、self-review に入る前に止まり、次のメッセージを出してターンを終える。現行世代
-（またはそれより上位）なら止まらず、何も出さずに進む。Step 4 の読み合わせから戻った回と、Step 6 で CI が赤くなって
+（またはそれより上位）なら止まらず、何も出さずに進む。Step 5 の読み合わせから戻った回と、Step 7 で CI が赤くなって
 Step 2 から戻った回は止まらない（一度返信を受けた後に同じ案内を繰り返さない）:
 
 > 🔀 **モデル切り替えポイント**: これからセルフレビューに入ります。self-review 内の `opus` 指定の reviewer・検証役はメインモデルの世代に解決されるため、前の世代のままだと見落としが増えます。**現行世代の Opus へ切り替えてから**「続けて」と返信してください。このまま進める場合もそのまま返信で構いません。
 
 - `CR=1`: `Skill` tool で `code-review:self-review` を起動する（引数は現在の base に合わせる）。冒頭に出る
-  `base_branch=` の値を控える（Step 4 で使う）。指摘への対応は self-review 側の修正方針フローに従う。
+  `base_branch=` の値を控える（Step 5 で使う）。指摘への対応は self-review 側の修正方針フローに従う。
   **self-review の Step 6 レポートは定型のまま出す** — 下の「報告」の Step ごとの 1 行はその後に足すもので、
   定型の代わりにしない（1 行に畳んだ回は指摘件数も閾値未満の候補もユーザーに届かなかった）。
   self-review の手順はここに複製しない
 - `CR=0`: `git diff` を通読し、Issue のスコープ外変更・デバッグ残骸・コメントの言い残しを自分で点検する
 
-### Step 4: 読み合わせ（review-guide）
+### Step 5: 読み合わせ（review-guide）
 
-コミット前に、変更を精読 1 件ずつ利用者と読み合わせる。**フロー中 1 回だけ**: Step 6 で CI が赤くなって
-Step 2 から戻った回は、この Step を通らず Step 3 から Step 5 へ進む。
+コミット前に、変更を精読 1 件ずつ利用者と読み合わせる。**フロー中 1 回だけ**: Step 7 で CI が赤くなって
+Step 2 から戻った回は、この Step を通らず Step 4 から Step 6 へ進む。
 
-- `CR=1`: Step 3 の self-review の修正方針（self-review の Step 7）まで済んでから、`Skill` tool で
-  `code-review:review-guide` を `--base <Step 3 の self-review が冒頭で出した base_branch= の値> --walkthrough` で起動する。
+- `CR=1`: Step 4 の self-review の修正方針（self-review の Step 7）まで済んでから、`Skill` tool で
+  `code-review:review-guide` を `--base <Step 4 の self-review が冒頭で出した base_branch= の値> --walkthrough` で起動する。
   進め方（1 精読 1 ターン・解説の形式・その場での修正・締め）は review-guide 側の手順に従い、ここに複製しない。
   **レポートと各精読の解説は定型のまま出す**（要約して 1 行に畳まない）
 - `CR=0`: skip し、報告に理由（code-review が無効か未導入）を残す。起動が失敗した（review-guide を持たない版など）
@@ -71,22 +100,51 @@ Step 2 から戻った回は、この Step を通らず Step 3 から Step 5 へ
 
 締めの `self-review 以降の変更:` の行で分岐する:
 
-- `あり` → 締めの `次の一手:` が `決定的な検証` で始まるなら、Step 2（検証）だけをもう一度通して Step 5 へ進み、
+- `あり` → 締めの `次の一手:` が `決定的な検証` で始まるなら、Step 2（検証）だけをもう一度通して Step 6 へ進み、
   self-review を外した理由（`次の一手:` の理由）を報告に 1 行残す（変更が挙動を変えないと review-guide が判断した回 /
-  GitHub issue #304）。それ以外なら Step 2（検証）と Step 3（self-review）をもう一度通す。Step 3 冒頭のモデル切り替えの停止点は通らない。
+  GitHub issue #304）。それ以外なら Step 2（検証）と Step 4（self-review）をもう一度通す（Step 3 の動作確認は通らない）。
+  Step 4 冒頭のモデル切り替えの停止点は通らない。
   self-review の引数は base だけにし、`--focus` / `--rereview` / `--embed` を付けない（読み合わせの後の回し直しは
   修正を確かめる再レビューではない）。self-review の 1.4 で重複レビュー（header「重複レビュー」）の続行可否を聞かれたら
   （変更ファイルの集合が前回と同じなので出る）、問いの前に「読み合わせで直した後の回し直しなので続行してよい」と
   1 行添える。
-  2 回目の self-review で修正が入っても読み合わせは繰り返さず、Step 5 へ進む
-- `なし` → Step 5 へ
+  2 回目の self-review で修正が入っても読み合わせは繰り返さず、Step 6 へ進む
+- `なし` → Step 6 へ
 - `不明（…）` → 読み合わせで修正を入れたなら `あり`、入れていなければ `なし` と同じ扱い
 
 **締めの行が出ないまま読み合わせが終わったとき**（旧版の code-review で review-guide が `--walkthrough` を
 知らない＝レポートの末尾に読み合わせの案内が出ない / 利用者が途中で切り上げ、締めを出さずに終わった）:
 読み合わせの間に修正を入れた（利用者が editor で直したものを含む）なら `あり`、入れていなければ `なし` と同じ分岐にする。
 
-### Step 5: コミット
+**Step 6 へ進む前に、締めの `変異テスト:` の行で分岐する**（GitHub issue #307。上の分岐で Step 2・Step 4 をもう一度
+通した回はその後。フロー中 1 回だけ。上の「Step 6 へ」はこの分岐を通ってから進む）:
+
+- `提案する` → 行の理由・回し方・所要の目安をそのまま示し、回すかを通常のメッセージで聞いてターンを終える
+  （`AskUserQuestion` にしない。無操作の自動続行を承認と取り違えないため）。回しているあいだは作業ツリーを編集しない
+  ことも添える（道具によっては、変異体を作業ツリーのファイルへ直接書き込みながら回る）。
+  **承認の返信が無ければ回さない**。承認されたら、`git status --porcelain` の出力を控えてから、回し方のコマンドを
+  リポジトリのルートで Bash の `run_in_background: true` で起動し、終わるまで Step 6 へ進まない（所要は前景の上限
+  600 秒を超えうる）。終わったら次を報告する:
+  - 結果: exit code と出力（stdout と stderr）から次の 4 区分のどれかで書く（推測した道具の回は、道具の出力の集計で
+    同じ区分に当てる）
+    - `生存 N 件`: exit 1 で生存した変異の行がある。ファイル・行・変異の内容を出力どおりに並べ、未実行が残っていれば
+      その数も添える。exit 0 で全件を実行して生存が無ければ `生存 0 件`
+    - `一部未実行`: exit 0 だが、集計に「上限で未実行 N」か「タイムアウト N」がある。生存が無くても「生存 0」と書かず、
+      実行した数と未実行の数を書く
+    - `未計測`: exit 0 で、対象行・変異が 0 個
+    - `判定不能`: コマンドが失敗した・exit 2・途中で止まった（exit 1 で stderr に中断の FATAL があるものを含み、生存の
+      行があってもこちら）。途中で止まった回は、stderr の「変異が当たったまま」の箇所（ファイル・行・元の内容）を
+      利用者に示し、元に戻したと返されるまで Step 6 へ進まない（変異が残ったツリーをコミットしない）
+  - 回す前と後の `git status --porcelain` を突き合わせ、増えたファイル（道具の出力）を並べる。コミットに混ぜない
+    （消すか gitignore するかは利用者が決める）
+
+  テストを足すかは利用者が決め、足した回は Step 2（検証）をもう一度通してから Step 6 へ進む（テストの追加は実行時の
+  挙動を変えないので self-review は回し直さない。Step 3 の動作確認も通らない）。回さないと返されたら Step 6 へ
+- `不要` / `道具なし` → 聞かずに Step 6 へ進み、行の理由を報告に残す
+- 行が無い（`CR=0` で Step 5 を skip した / 締めの行が出ないまま読み合わせが終わった / `変異テスト:` を出さない
+  旧版の code-review）→ 何もしない
+
+### Step 6: コミット
 
 - `DW=1`: `Skill` tool で `dev-workflow:git-commit-helper` を起動する（command の `dev-workflow:commit` を経由せず、skill を
   直接呼ぶ）。self-review の「このまま」や review-guide の `次の一手: コミットへ` に
@@ -94,13 +152,13 @@ Step 2 から戻った回は、この Step を通らず Step 3 から Step 5 へ
   コミットする運用のリポジトリでは `--no-protect` を渡す
 - `DW=0`: 論理単位に分けて Conventional Commits 形式でコミットする
 
-### Step 6: push + CI 確認
+### Step 7: push + CI 確認
 
 push し、CI があれば結果を確認する。**CI が緑になるまで完了と見なさない**（移植性・環境差はローカルで
-検出できない）。赤なら修正して Step 2 から繰り返す（Step 4 は通らない）。CI が無いプロジェクトでは push まで。
+検出できない）。赤なら修正して Step 2 から繰り返す（Step 5 は通らない）。CI が無いプロジェクトでは push まで。
 push しない運用（ローカルのみ・PR 前に溜める等）が明らかな場合は、その旨をユーザーに確認してスキップしてよい。
 
-### Step 7: Issue 更新
+### Step 8: Issue 更新
 
 進捗・完了を Issue ファイルへ反映する（`/issue-maintain` 委譲でも直接編集でもよい）。完了なら status を
 completed へ遷移する（BACKEND=linear のときは Linear 側のステータス更新も案内する）。未完了で終える場合は
@@ -109,6 +167,13 @@ completed へ遷移する（BACKEND=linear のときは Linear 側のステー�
 ## 報告
 
 全 Step 完了時（または中断時）に、実施した Step / スキップした Step とその理由を 1 行ずつで報告する。
-Step 4 を skip した理由と、2 回目の self-review を回さなかった理由（締めが `なし` だった等）もここに 1 行で残す。
-この 1 行は、self-review の Step 6 レポート・review-guide のレポートと各精読の解説・2 回目の self-review の
+Step 5 を skip した理由と、2 回目の self-review を回さなかった理由（締めが `なし` だった等）もここに 1 行で残す。
+Step 3 も同じく 1 行で残す: `skipped` / `blocked` の理由（`UI_VERIFY_REASON=`）、fail を承知で進めた回は fail したケース、
+手動の回は「手動確認待ち」か返ってきた結果、`pass` でも未カバー（`UI_VERIFY_UNCOVERED=`）が `none` 以外ならその値。
+Step 3 の後に入れた変更（Step 4 の self-review での修正・読み合わせでの修正・2 回目の self-review での修正）に画面の
+ファイル（Step 3 の定義）があれば、「Step 3 の後の変更は動作確認を通していない」と残す。
+変異テストを回さなかった理由（締めの `変異テスト:` が `不要` / `道具なし` だった・利用者が回さないと返した）と、回した回の
+結果（Step 5 の 4 区分: `生存 N 件` / `一部未実行`（実行した数と未実行の数）/ `未計測` / `判定不能`）と増えたファイルも
+ここに 1 行で残す。
+これらの 1 行は、self-review の Step 6 レポート・review-guide のレポートと各精読の解説・2 回目の self-review の
 Step 6 レポートを定型のまま出した後に足すもので、それらを 1 行に畳む代わりにしない。

@@ -18,7 +18,7 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 | スキル | 説明 |
 |--------|------|
 | init | プロジェクト初期セットアップ（backend 選択 + ディレクトリ作成） |
-| start | セッション開始。引数の Issue ID を優先し、無ければブランチ名から判定（main ならダッシュボード）。未着手なら feature-dev を案内 |
+| start | セッション開始。引数の Issue ID を優先し、無ければブランチ名から判定（main ならダッシュボード）。新規か続きかを別の worktree・ブランチまで見て判定し、未着手なら feature-dev を案内 |
 | issue-create | Issue 作成 + ブランチ作成（未コミットの変更があれば worktree に分けてセッションごと移るのを推奨） |
 | issue-design | Issue 本文を 9 セクションテンプレと設計判断ルールで設計・リライト |
 | issue-maintain | Issue ファイルのセッション内容反映・品質整理・knowledge 切り出し |
@@ -69,6 +69,7 @@ start / issue-create がブランチを切るとき、今のチェックアウ�
 - `.claude/worktrees/<Issue ID>` に既定ブランチから作り、未追跡の `.env*` を写し、lockfile に合わせて依存を入れる（`scripts/branch-setup.sh`）
 - 作った直後にセッションの作業ディレクトリを worktree へ移す（CLI は `EnterWorktree`）。diff ペイン・hook・CLAUDE.md が worktree 側の値になる
 - worktree にデータ dir（`.claude/indie` / `.claude/linear`）が無ければ、スキルの Phase 0 と hook はメインのチェックアウトのものを使う
+- start は、その Issue のブランチを別の worktree で checkout 済みなら、新しく作らずにそこへ移って続ける（`scripts/branch-setup.sh existing`。Claude アプリが作る detached HEAD の worktree は `.claude/session-context.md` で結び付けるが、別のセッションが使っていることがあるので移らずに案内だけする。作業がそこにしか無ければ、ここでブランチを作って新しく始めない。ディレクトリを消した worktree の登録が git に残っていてそのブランチへ移れないときは、登録の消し方（`git worktree prune`。locked なら unlock も、detached HEAD ならコミットを残す手順も）を案内して止まる）。新規か続きかの判定と根拠は報告の先頭に 1 行で出る
 
 ## 主な機能
 

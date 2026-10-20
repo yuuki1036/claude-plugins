@@ -2,6 +2,49 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.0] - 2026-10-21
+
+### Added
+
+- **start が、新規か続きかを別の worktree とブランチまで見て判定する**（GitHub issue #305）。
+  新設の Phase F2.5 が `scripts/branch-setup.sh existing <ISSUE-ID>` で候補を探す（Issue ID を含むローカル / origin のブランチ、それを checkout している worktree、`.claude/worktrees/<ID>`、detached HEAD の worktree の session-context）。
+  今いるチェックアウトが候補ならそこに残り、ブランチ名か path で結び付いた別の worktree に作業があればそこへ移る（新しいブランチも worktree も作らない）。
+  判定の結果と根拠は報告の先頭に 1 行で出る。
+  Issue が completed / canceled の回（closed）、作業が session-context だけで結び付いた detached HEAD の worktree にある回（detached）、ディレクトリを消した worktree の登録が残っている回（prunable）は、移動もブランチ作成もせずに報告・案内する。
+  表・選ぶ順・判定行の書式は `skills/start/references/existing-work.md`
+- `branch-setup.sh worktrees` を足した。
+  ダッシュボード（D2）の「worktree で作業中」は、この出力（Issue ID を含むブランチを checkout している linked worktree）を表示する
+- **軽量フローに「動作確認」の Step を足し、8 Step にした**（GitHub issue #306）。
+  dev-workflow が有効なら `dev-workflow:ui-verify` を `verify --caller=lightweight-flow` で毎回呼び、結果の `UI_VERIFY_*` の行で分岐する（画面に影響するかは ui-verify が判定する）。
+  使える基盤が無かった回（`UI_VERIFY_BROWSER=none`）と dev-workflow が無効な回は手動の手順に回し、基盤を選ぶ前に止まった回（`unselected`）は理由を残して進む。
+  Step 3 の後に入った画面の変更は「動作確認を通していない」と報告に残す
+- **軽量フローの読み合わせの締めにある `変異テスト:` の行を読むようにした**（GitHub issue #307）。
+  `提案する` の回だけ回すかを通常のメッセージで聞き（`AskUserQuestion` にしない）、承認されたときだけ回す。
+  結果は 生存 N 件 / 一部未実行 / 未計測 / 判定不能 の 4 区分で報告し、途中で止まった回は元に戻るまでコミットへ進まない。
+  道具が残した出力ファイルはコミットに混ぜない。
+  この手順には正本（code-review の review-guide-format.md「変異テストの提案」）への SSoT pin を張った
+
+### Changed
+
+- start の F7 は、新規か続きかを今の HEAD のコミット数ではなく F2.5 の判定で分ける。
+  引数が「新規」でも既存の作業があれば、進め方の確認は出すがブランチは作らない
+- `branch-setup.sh existing` が報告する数（既定ブランチに無いコミット・未コミットの変更）は、origin/<既定> のコミットも除き、`.claude/` 配下の未追跡と worktree の作成時に写した `.env*` を数えない。
+  git が失敗した値は `-` を出し、作業ありとして扱う。
+  F6 で Git 状態と数が違うときは、どの判定でも判定行を正とする
+- Code Context agent は、git とソースファイルを作業しているチェックアウト（`{WORK_DIR}`）で読む
+- session-context.md の consumers に issue-workflow を足した（branch-setup.sh existing と issue-band が読む）
+- `_requirements` と check-deps の dev-workflow の説明に、軽量フローの動作確認（ui-verify）を足した
+
+### Fixed
+
+- **`branch-setup.sh worktree` が、別の path の worktree（メインのチェックアウトを含む）で checkout 済みのブランチを指定されると `git worktree add` の失敗で止まっていた**。
+  その worktree を返す（`created=0`。
+  `.env*` の複製と依存のインストールの行は出さない）。
+  origin にだけあるブランチは、既定ブランチから同名で切り直さずに追跡して取り出す
+- `branch-setup.sh worktree` が、`.claude/worktrees/<名前>` にある別のブランチ（または detached HEAD）の worktree を、頼まれたブランチ名で `created=0` として返していた。
+  exit 1 で止める。
+  ディレクトリを消した worktree の登録が残っているブランチ・パスも、何も書き換えずに exit 1 で止め、`git worktree prune` を案内する（locked な登録は unlock、detached HEAD の登録はコミットの退避を先に案内する）
+
 ## [1.12.1] - 2026-10-19
 
 ### Fixed
