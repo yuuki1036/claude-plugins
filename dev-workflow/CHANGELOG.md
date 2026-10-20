@@ -2,6 +2,40 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.39.0] - 2026-10-21
+
+### Added
+
+- **ui-verify に `verify --caller=<feature-dev|lightweight-flow>` を足した**（GitHub issue #306）。
+  別のスキルから呼ぶための口で、先に `scripts/ui-impact.sh` が未コミットの変更と未追跡のファイルが画面に影響するかを判定し、影響しなければブラウザも dev server も起こさず skipped を返す。
+  結果は応答の最後の `UI_VERIFY_*` の 5 行で返す。
+  `--targets` があれば事前判定が no でも続け、`--require=<理由>` があれば Web フロントエンドを検出できなくても dev server のトップを smoke のケースにする。
+  基盤を選ぶ前に止まった blocked は `UI_VERIFY_BROWSER=unselected`、使える基盤が無かった回だけ `none` を返す。
+  確認（dev server の起動許可・ケース表など）は省かない。
+  判定式を読めない・照合に失敗した回は `unknown`（確かめる側）に倒す
+- **`--screenshot=need|none` を足し、verify のブラウザ基盤をスクショの要否で選ぶようにした**。
+  要る回は chrome-devtools、要らない回は Claude Browser → Claude in Chrome → chrome-devtools の順。
+  tune / snap は従来どおり chrome-devtools（ADR-20261020221214 が ADR-20260912195236 を supersede）
+- **`scripts/chrome-profile-lock.sh` を足した**。
+  chrome-devtools-mcp のプロファイルを掴んでいる既存のブラウザを `status` で検知し、誰のブラウザか（このセッション / 別セッション / 起動元の MCP が見当たらない / 判定できない）を出す。
+  chrome-devtools を使う回は最初のツール呼び出しの前にこれを見て、別セッションか起動元の見当たらないブラウザなら「止めない」「止めて続行」の順で聞く（Recommended は付けず、無操作の自動続行は止めない扱い）。
+  `stop` は利用者が選んだときだけ使い、止める直前に lock を読み直して SIGTERM だけを送る。
+  userDataDir は末尾の `/` の有無を問わず照合し、相対パスや `~` の dir は照合できないので `LOCK=unknown`（止めない）を返す。
+  SIGTERM を送れなかったときは待たずに `REFUSED=signal-failed` を返す
+
+### Changed
+
+- 画面のファイルの判定式を `scripts/lib/ui-paths.sh` にまとめ、ui-change-reminder.sh（hook）と ui-impact.sh で共有した。
+  画面の層のディレクトリ（components / pages / app / routes / views / layouts / hooks / composables / store(s)）配下の .ts / .js / .mts / .mjs は ui-impact.sh でだけ数える。
+  hook が鳴る範囲は変えていない
+- browser_connect の読み取りを `scripts/lib/browser-connect.sh` にまとめ、起動ラッパ（launch-chrome-devtools.sh）と chrome-profile-lock.sh で共有した
+- Claude in Chrome（利用者の実 Chrome プロファイルにつながる）を、`--autoConnect` と同じ書き込み系の歯止め（破壊的操作は既定で blocked）の対象に入れた
+
+### Fixed
+
+- `browser_connect` が `userDataDir=`（path が空）のとき、起動ラッパが空の `--userDataDir=` を MCP に渡していた。
+  既定のプロファイルとして扱う
+
 ## [1.38.1] - 2026-10-19
 
 ### Fixed

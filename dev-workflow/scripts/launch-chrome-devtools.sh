@@ -7,6 +7,9 @@
 #   npx の在り処を複数のバージョンマネージャ経路から探して exec する。
 #   あわせて browser_connect（認証あり画面で実 Chrome のログイン状態を使う設定）を
 #   引数に展開する。設計: .claude/designs/20260912-e2e-verify-comment-polish-pr-flow.md (A-5)
+#   既存のブラウザ（別セッションがプロファイルを掴んでいる）の検知はここでしない。stdout は MCP の
+#   通信路で、ブラウザは最初のツール呼び出しで起動する。検知と停止は ui-verify が
+#   scripts/chrome-profile-lock.sh で行う（browser_connect の読み取りは scripts/lib/browser-connect.sh を共有する）
 
 set -euo pipefail
 
@@ -45,23 +48,18 @@ NPX="$(resolve_npx)" || {
   exit 1
 }
 
-# --- browser_connect 設定の読み取り ---
-# .mcp.json の env で ${user_config.browser_connect} を DEV_WORKFLOW_BROWSER_CONNECT に
-# 展開して渡す（userConfig は MCP config で展開される。code.claude.com/docs/en/plugins-reference）。
-# 展開されなかった機体向けに .claude/dev-workflow.json も fallback で読む。
-CONNECT="${DEV_WORKFLOW_BROWSER_CONNECT:-}"
-# 未展開リテラルが来たら無視する
-case "$CONNECT" in *'${user_config'*) CONNECT="" ;; esac
-if [ -z "$CONNECT" ] && [ -f ".claude/dev-workflow.json" ] && command -v jq >/dev/null 2>&1; then
-  CONNECT="$(jq -r '.browser_connect // empty' .claude/dev-workflow.json 2>/dev/null || true)"
-fi
+# --- browser_connect 設定の読み取り（読む順と値の解釈は lib にある。chrome-profile-lock.sh と共有） ---
+# shellcheck source=lib/browser-connect.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/browser-connect.sh"
+browser_connect_resolve
 
 EXTRA_ARGS=()
-case "$CONNECT" in
+case "$BROWSER_CONNECT_MODE" in
   autoConnect)
     # 実 Chrome のログイン状態を使う。Chrome 144+ 前提。
     # @latest がキャッシュの旧版（autoConnect 非対応）に解決すると黙殺されるので
     # 解決版を一度確認し、満たさなければ autoConnect を付けず既定プロファイルに落とす。
+    # この版落ちは chrome-profile-lock.sh の起動前の status には見えない（見ない理由はそちらに書いた）
     VER="$("$NPX" -y chrome-devtools-mcp@latest --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
     if [ -n "$VER" ] && [ "$(printf '%s\n1.7.0\n' "$VER" | sort -V | head -1)" = "1.7.0" ]; then
       EXTRA_ARGS+=(--autoConnect)
@@ -69,8 +67,8 @@ case "$CONNECT" in
       echo "launch-chrome-devtools: chrome-devtools-mcp が ${VER:-不明} で autoConnect（1.7.0+ 必須）に満たないため既定プロファイルで起動します。" >&2
     fi
     ;;
-  userDataDir=*)
-    EXTRA_ARGS+=("--userDataDir=${CONNECT#userDataDir=}")
+  userDataDir)
+    EXTRA_ARGS+=("--userDataDir=${BROWSER_CONNECT_DIR}")
     ;;
 esac
 

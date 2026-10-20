@@ -31,8 +31,17 @@ esac
 
 [[ -z "$FILE_PATH" ]] && safe_hook_error Validation "empty file_path"
 
-# UI 関連拡張子の判定
-if ! echo "$FILE_PATH" | grep -qiE '\.(tsx|jsx|vue|svelte|css|scss|sass|less|html|astro|mdx|module\.css|module\.scss)$'; then
+# UI 関連拡張子の判定（式の正本は scripts/lib/ui-paths.sh。ui-impact.sh と共有する）
+# 読めるかを先に見る: bash 3.2（macOS の /bin/bash）は set -e 下で `. <無いファイル> || …` の
+# `||` に入らず、その場で exit 1 する（ERR trap を通らないので safe-hook の分類も Unexpected も出ず、
+# bash の No such file だけが stderr に残る）
+UI_PATHS_LIB="${CLAUDE_PLUGIN_ROOT}/scripts/lib/ui-paths.sh"
+if [[ ! -r "$UI_PATHS_LIB" ]]; then
+  safe_hook_error Dependency "ui-paths.sh missing"
+fi
+# shellcheck source=../../scripts/lib/ui-paths.sh
+. "$UI_PATHS_LIB"
+if ! echo "$FILE_PATH" | grep -qiE "$UI_PATH_ERE"; then
   safe_hook_error Validation "not a UI file: $FILE_PATH"
 fi
 
