@@ -1,10 +1,10 @@
 ---
 id: 20260912195236
-status: accepted
-phase: current
-last-validated: 2026-09-12
+status: superseded
+phase: superseded
+last-validated: 2026-10-20
 supersedes: [20260831120000]
-superseded-by: null
+superseded-by: 20261020221214
 append_only: true
 tags: [architecture, dev-workflow, ui-verify, mcp, browser, e2e]
 ---

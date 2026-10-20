@@ -54,12 +54,16 @@ REPRESENTATIVES = {
         "test_code_review_past_reviews.PastReviewsTest.test_origin_is_preferred_over_a_stale_local_base",
     "test_code_review_prior_fixes.py":
         "test_code_review_prior_fixes.PriorFixesTest.test_a_recorded_fix_in_the_diff_is_listed",
+    "test_code_review_mutation_tool.py":
+        "test_code_review_mutation_tool.RealToolContractTest.test_no_target_lines_is_unmeasured_and_exits_zero",
     "hook_harness.py":
         "test_dev_workflow_hooks.OnCommitTest.test_publishes_commit_created",
     "test_dev_workflow_scripts.py":
         "test_dev_workflow_scripts.ScanKeepTest.test_primary_worktree_is_kept",
     "test_dev_workflow_detect_checkout.py":
         "test_dev_workflow_detect_checkout.ServerMatchTest.test_main_server_seen_from_worktree_is_foreign",
+    "test_dev_workflow_ui_impact.py":
+        "test_dev_workflow_ui_impact.UiImpactTest.test_untracked_new_vue_is_yes",
     "test_code_review_hooks.py":
         "test_code_review_hooks.ExternalIdReminderTest.test_fires_on_staged_linear_id_in_comment",
     "test_code_review_detect_external_ids.py":

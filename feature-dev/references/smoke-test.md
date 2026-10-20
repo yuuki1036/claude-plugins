@@ -1,6 +1,6 @@
 # Runtime Smoke Test — 検出ロジック（Phase 5.5 の詳細手順）
 
-SKILL.md 本文の Phase 5.5 は「smoke test を要否判定 → 必要なら dev-workflow:ui-verify で実行 → findings を triage」の骨格を持つ。本ファイルは (1) 自己再帰防止の self-lock guard と (2) runtime-sensitive な変更を検出する deterministic gate の bash を持つ。Phase 5.5 Step 0 / Step 1 から参照される。
+SKILL.md 本文の Phase 5.5 は「runtime-sensitive を判定 → dev-workflow:ui-verify を `verify --caller=feature-dev` で呼ぶ（REQUIRED なら `--require`。UI に影響するかは ui-verify が判定する）→ 結果を triage」の骨格を持つ。本ファイルは (1) 自己再帰防止の self-lock guard と (2) runtime-sensitive な変更を検出する deterministic gate の bash を持つ。Phase 5.5 Step 0 / Step 1 から参照される。
 
 ## Step 0: Self-lock guard（PostToolUse 自己再帰防止）
 
@@ -34,12 +34,16 @@ fi
 
 ## Step 1: Deterministic Detection（gate check）
 
-Run the following Bash check to decide whether smoke test is **required** or **optional**:
+判定の入力は作業ツリーの diff と、未追跡の新規ファイル（`git ls-files --others --exclude-standard`。ignore されたものは除く）の名前と中身。Phase 5 は `git add` しないので、新しく作ったファイルは `git diff HEAD` に出ない（入れないと、新規ファイルで足した DB client や middleware が OPTIONAL に落ちる）。
+
+Run the following Bash check to decide whether smoke test is **required** or **optional**（OPTIONAL でも Phase 5.5 は ui-verify を呼ぶ。REQUIRED は `--require` を付けて、UI 変更が無くても smoke を走らせる）:
 
 ```bash
 # Detect runtime-sensitive changes in the working tree
-git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-changed-files.txt
-git diff HEAD 2>/dev/null > /tmp/feature-dev-diff.txt
+# ls-files はサブディレクトリから回すと cwd 配下だけを cwd 相対で出すので、-C / cd で toplevel から回す。-z: 空白を含むファイル名で cat が割れない
+TOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+{ git -C "$TOP" diff --name-only HEAD; git -C "$TOP" ls-files --others --exclude-standard; } 2>/dev/null > /tmp/feature-dev-changed-files.txt
+{ git -C "$TOP" diff HEAD; (cd "$TOP" && git ls-files --others --exclude-standard -z | xargs -0 cat --); } 2>/dev/null > /tmp/feature-dev-diff.txt
 
 REQUIRED_REASONS=()
 
@@ -63,7 +67,7 @@ if [ ${#REQUIRED_REASONS[@]} -gt 0 ]; then
   echo "REQUIRED: smoke test 必須"
   printf '  - %s\n' "${REQUIRED_REASONS[@]}"
 else
-  echo "OPTIONAL: 静的変換のみの変更。skip 候補だがユーザ判断"
+  echo "OPTIONAL: runtime-sensitive なパターンなし（UI に影響するかは ui-verify が判定する）"
 fi
 ```
 

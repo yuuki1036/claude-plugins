@@ -5,6 +5,32 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.24.0] - 2026-10-21
+
+### Added
+
+- **Phase 7 の読み合わせの締めにある `変異テスト:` の行を読むようにした**（GitHub issue #307）。
+  `提案する` の回だけ、理由・回し方・所要の目安を示して回すかを通常のメッセージで聞き、承認されたときだけ background で回す。
+  結果は 生存 N 件 / 一部未実行 / 未計測 / 判定不能 の 4 区分で報告し、途中で止まった回は元に戻るまで次の一手へ進まない。
+  回す前と後の `git status --porcelain` を突き合わせ、増えたファイルはコミットに混ぜない。
+  この手順には正本（code-review の review-guide-format.md「変異テストの提案」）への SSoT pin を張った
+
+### Changed
+
+- **Phase 5.5 は、動作確認を行うかを聞かなくなった**（GitHub issue #306）。
+  dev-workflow が有効なら、REQUIRED の回も OPTIONAL の回も `dev-workflow:ui-verify` を `verify --caller=feature-dev` で呼ぶ（UI に影響するかは ui-verify が判定する）。
+  architect の smoke target は `--targets`、runtime-sensitive に当たった pattern は `--require` で渡し、最後の `UI_VERIFY_*` の行で分岐する。
+  使える基盤が無かった回（`UI_VERIFY_BROWSER=none`）は画面に影響する変更として手動確認を頼み、基盤を選ぶ前に止まった回（`unselected`）は頼み直さない
+- Phase 7 の申し送りに動作確認の項目を足した（skipped / blocked の理由・fail を承知で進めた回・手動確認待ち・未カバー）。
+  動作確認の後に画面のファイルが変わっていれば「動作確認を通していない」と次の一手に添える
+- code-architect と smoke-test.md の OPTIONAL の文言を、Phase 5.5 を skip する根拠として読まれない書き方に直した
+
+### Fixed
+
+- **Phase 5.5 の runtime-sensitive の判定（references/smoke-test.md の Step 1）が、未追跡の新規ファイルを見ていなかった**。
+  Phase 5 は `git add` しないので、新しく作ったファイルで足した DB client や middleware が OPTIONAL に落ちていた。
+  `git ls-files --others --exclude-standard` のファイルの名前と中身も照合する（toplevel から列挙する）
+
 ## [2.23.2] - 2026-10-19
 
 ### Fixed

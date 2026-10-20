@@ -28,6 +28,8 @@ allowed-tools:
 <!-- SSOT: feature-dev/references/grill-protocol.md @f90e4324 -->
 <!-- 正本依存（SSoT pin）。Phase 6.9 の推奨の決め方は code-review の review-guide-format.md「回し直すかの判断」の `あり` の条件 3 を要約したもの（条件 1・2 は check / diff の出力で満たされる）。正本が変わったら Phase 6.9 を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @00a318ed -->
+<!-- 正本依存（SSoT pin）。Phase 7 の 4. の変異テストの分岐（承認の取り方・回し方・結果の 4 区分・前後の git status の突き合わせ）は code-review の review-guide-format.md「変異テストの提案」を要約したもの。正本が変わったら Phase 7 の 4. を確認して pin を打ち直す -->
+<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @af03ed33 -->
 
 You are helping a developer implement a new feature. Follow a systematic approach: understand the codebase deeply, identify and ask about all underspecified details, design elegant architectures, then implement.
 
@@ -509,46 +511,56 @@ fi
 
 ---
 
-## Phase 5.5: Runtime Smoke Test
+## Phase 5.5: Runtime Smoke Test と動作確認
 
-**Goal**: Catch runtime initialization bugs that static checks (tsc / lint / build) cannot detect, before reaching Quality Review.
+**Goal**: 静的チェック（tsc / lint / build）で取れない runtime 初期化のバグと、画面の挙動の食い違いを、Quality Review の前に実機ブラウザで捕まえる。UI に影響する変更なら既定で動作確認を行い、行わなかった回は理由を Phase 7 に残す。
 
-**Why this phase exists**: Past incidents (e.g. Prisma v7 adapter requirement) showed bugs that pass all static checks but fail on first request — proxy lazy-init, env var loading, middleware misconfiguration, DB client initialization. Catching these before Phase 6 prevents "review passes but deploy blocks" loops.
+**Why this phase exists**: Past incidents (e.g. Prisma v7 adapter requirement) showed bugs that pass all static checks but fail on first request — proxy lazy-init, env var loading, middleware misconfiguration, DB client initialization. Catching these before Phase 6 prevents "review passes but deploy blocks" loops. 動作確認は以前は既定 skip で聞いていたため、画面を触る変更でもほとんど走らなかった（GitHub issue #306）。
 
 ### Step 0-1: Self-lock guard と runtime-sensitive 検出
 
 詳細な bash は `${CLAUDE_PLUGIN_ROOT}/references/smoke-test.md` にある。本文では判定結果だけ使う:
 
 1. **Self-lock guard**（将来 PostToolUse hook で自動トリガーする構成に備えた TTL ベースの自己再帰防止）を評価する。lock が active なら `SKIP_PHASE_5_5=1` として Step 2〜4 を skip し **Phase 6** へ進む（command 経由の手動実行では通常 active にならない）。
-2. **Deterministic detection**: 作業ツリーの diff を references の pattern（DB/ORM 初期化・環境変数 wiring・middleware/proxy/lazy-init・新規 route）と照合し、1 つでも当たれば **REQUIRED**、無ければ **OPTIONAL** と判定する。判定理由（当たった pattern）を保持して Step 2 の確認に添える。
+2. **Deterministic detection**: 作業ツリーの diff（未追跡の新規ファイルの名前と中身を含む。Phase 5 は `git add` しない）を references の pattern（DB/ORM 初期化・環境変数 wiring・middleware/proxy/lazy-init・新規 route）と照合し、1 つでも当たれば **REQUIRED**、無ければ **OPTIONAL** と判定する。当たった pattern を保持し、Step 3 の `--require` に渡す。
 
-### Step 2: User Confirmation
+### Step 2: 実行するかの判定（聞かない）
 
-Present the detection result with `AskUserQuestion`:
+実行するかは利用者に聞かない。UI に影響するかは `dev-workflow:ui-verify` が判定する（ここに複製しない）。dev-workflow が有効かだけを見る:
 
-- **If REQUIRED**: Ask "smoke test を実行しますか？" with options `[実行する (推奨) / skip して Phase 6 へ]`. Strongly recommend execution.
-- **If OPTIONAL**: Ask "静的変換のみの変更でした。smoke test を実行しますか？" with options `[skip (推奨) / 実行する]`.
+```bash
+echo "DEV_WORKFLOW=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" dev-workflow)"
+```
+
+- `DEV_WORKFLOW=1` → REQUIRED でも OPTIONAL でも Step 3 で ui-verify を呼ぶ（UI に影響せず、OPTIONAL で smoke の target も無い回は、ui-verify が `skipped` と理由を返す）
+- `DEV_WORKFLOW=0` → Step 3 の 3.（手動手順）へ
 
 ### Step 3: Execute via dev-workflow:ui-verify
 
-If the user chose to execute:
+1. smoke の target を決める: architect の `Runtime Smoke Test Targets`（Phase 4）を使い、無ければ Step 1 で検出した追加・変更された route を使う。ui-verify には GET の target の path だけを渡す。`none (static-only change)` なら target を渡さない（画面を確かめるかは ui-verify が決める）
+2. `DEV_WORKFLOW=1` なら `Skill` tool で `dev-workflow:ui-verify` を `verify --caller=feature-dev` で呼ぶ。付ける引数:
+   - `--targets=<path を , で連結>`（target があるときは REQUIRED でも OPTIONAL でも必ず渡す。ui-verify は `--targets` があれば、UI に影響しないと判定した回も早期終了せずに開く）
+   - `--require=<Step 1 で当たった pattern>`（REQUIRED のときだけ。合格基準は **console error 0・network 4xx/5xx 0**）
+   - `--screenshot=need`（Issue・依頼が証跡やスクショの添付を求めるときだけ。省くと ui-verify が依頼・Issue から決める）
 
-1. Identify smoke test targets from the architect's `Runtime Smoke Test Targets` output (Phase 4). Fall back to "all newly added or modified routes" detected in Step 1 if not specified.
-2. Invoke the `dev-workflow:ui-verify` skill via the Skill tool with:
-   - Target routes / URLs to access
-   - Pass criteria: **console error 0, network 4xx/5xx 0**
-3. If chrome-devtools MCP is unavailable (the dev-workflow SessionStart hook warns when unset), fall back to manual verification:
-   - Print the dev server start command and target URLs
-   - Ask the user to manually verify and report back
-   - Do NOT hard-fail; record as "manual check pending"
+   ui-verify 内の確認（dev server の起動許可・ケース表・既存ブラウザの停止）は ui-verify の手順のまま通す（`--caller` は確認を省かない）。応答の最後に出る `UI_VERIFY_*` の 5 行（`UI_VERIFY_RESULT=` / `UI_VERIFY_REASON=` / `UI_VERIFY_BROWSER=` / `UI_VERIFY_RECORD=` / `UI_VERIFY_UNCOVERED=`）を Step 4 で使う
+3. **手動手順**（`DEV_WORKFLOW=0` / 呼び出しが失敗した / `UI_VERIFY_RESULT=` の行が無い（`--caller` を知らない旧版の dev-workflow。ui-verify のサマリから pass / fail を読めればそれを使う）/ `UI_VERIFY_RESULT=blocked` かつ `UI_VERIFY_BROWSER=none`。`unselected` は入れない）:
+   - 手動確認を頼む回: `UI_VERIFY_RESULT=blocked` かつ `UI_VERIFY_BROWSER=none`（使える基盤が無かった）の回は、画面に影響する変更として頼む（ui-verify が判定済みなので判定し直さない）。それ以外は、REQUIRED の回か、diff（未追跡の新規ファイルを含む）に画面のファイルがある回。dev server の起動コマンドと target の URL を示し、手動で確かめて結果を返すよう頼む。hard fail しない。返信が無ければ "manual check pending" として記録する
+   - 頼まない回: 実行せず、理由（dev-workflow が無効・UI 変更なし など）を Phase 7 に残す
+
+   画面のファイルは、ui-verify の事前判定が画面の変更と数えるファイル: UI の拡張子（`.tsx` / `.vue` / `.css` など）に加え、`components/` `pages/` `app/` `routes/` `views/` `layouts/` `hooks/` `composables/` `store(s)/` 配下の `.ts` / `.js` / `.mts` / `.mjs`。Phase 7 の申し送りも同じ定義で見る
 
 ### Step 4: Triage Findings
 
-- **Pass (no errors)**: Proceed to Phase 6
-- **Fail (errors detected)**: Present findings, do NOT proceed to Phase 6 until the user decides:
-  - Fix now → return to Phase 5
-  - Acknowledge and proceed → record as a known issue and continue to Phase 6
-- **Skipped / manual pending**: Note in the Phase 7 summary, proceed to Phase 6
+`UI_VERIFY_RESULT=` の値で分岐する:
+
+- `pass` → Phase 6 へ（`UI_VERIFY_UNCOVERED=` が `none` 以外なら Phase 7 に残す）
+- `fail` → fail したケース（`UI_VERIFY_REASON=`）を示し、利用者が決めるまで Phase 6 へ進まない:
+  - Fix now → Phase 5 に戻る
+  - Acknowledge and proceed → known issue として記録して Phase 6 へ
+- `skipped` → `UI_VERIFY_REASON=` を Phase 7 に残して Phase 6 へ
+- `blocked` → `UI_VERIFY_REASON=` を Phase 7 に残して Phase 6 へ。`UI_VERIFY_BROWSER=none`（使える基盤が無かった）の回だけ、Step 3 の手動手順を通してから。`UI_VERIFY_BROWSER=unselected`（基盤を選ぶ前に止まった。dev server の起動を断られた等）の回は手動確認を頼み直さない
+- 手動手順の回（manual check pending / 返ってきた結果）と実行しなかった回 → その旨と理由を Phase 7 に残して Phase 6 へ（返ってきた結果が fail なら `fail` と同じ扱い）
 
 ---
 
@@ -698,6 +710,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
    - **設計契約** (Phase 3 Step 5): ユーザーが決めたことと、未決のまま残したこと（いつ・どこで決めるか）。契約が明示的に確認されなかった回（`askUserQuestionTimeout` で自動続行）はその旨
    - **探索の欠損** (Phase 2): 失敗した explorer の `missing_coverage`
    - **静的オラクル** (Phase 5.3): 「静的オラクル判定不能」「静的オラクル打ち切り」「静的オラクル無し（型/テスト未検証）」、`low` effort で skip した回だけ
+   - **動作確認** (Phase 5.5): `UI_VERIFY_RESULT` が `pass` 以外の回（`skipped` / `blocked` は `UI_VERIFY_REASON`、fail を承知で進めた回は fail したケース、手動の回は「手動確認待ち」か返ってきた結果、実行しなかった回はその理由）、`pass` でも `UI_VERIFY_UNCOVERED` が `none` 以外の回はその値、self-lock で Phase 5.5 を飛ばした回はその旨。Phase 5.5 の後に入った変更（Phase 6 の G-V ループの auto-fix・利用者の判断で入れた修正）に画面のファイル（Phase 5.5 Step 3 の定義）があれば「Phase 5.5 の後の変更は動作確認を通していない」と添える（3. の読み合わせで入る修正は 4. で扱う）
    - **G-V ループ** (Phase 6 Step 3 が走った回): `/tmp/feature-dev-loop-state.json` を読み、反復回数・終了理由・auto-fix 件数・persisting。終了理由が `regression` / `budget` なら persisting の fingerprint を目立たせる（人間の判断が要る）。self-review が失敗した・Phase 6 を skip した回はその旨
    - **コメント精査** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
    - **BDD spec の未解消指摘** (Phase 1.4): 再評価後も 🔴 が残った回だけ、件数と内容を出す（Phase 1.4 は聞かずに進めるため、ここで初めて利用者に見える）
@@ -711,12 +724,20 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
 
    「出す」なら `Skill` tool で `code-review:review-guide` を `--base <BASE>` 付きで呼ぶ（読み合わせとして `--walkthrough` も付ける）。PR がまだ無い段階なので base モードで呼び、未コミットの変更まで読み順に入れる（PR モードは PR に push 済みのコミットしか見ない）。`<BASE>` は Phase 6 の self-review が冒頭で出した `base_branch=` の値を使う（同じ base から読ませる）。Phase 6 が走らなかった・値が分からないときは `--base` を付けずに `--walkthrough` だけで呼ぶ（PR が無ければ review-guide が同じ順で base を決める）。**呼ぶ直前に** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" save` を実行する（4. で読み合わせの間に入った変更だけを数えるため。Phase 6 の記録を上書きするが、その確認は Phase 6.9 で済んでいる）。
 
-   **読み合わせは何ターンも続く**: review-guide は概要を出してターンを終え、利用者の「次」ごとに精読を 1 件ずつ解説し（1 精読 1 ターン）、最後に締め（精読の外で気になるところ → `self-review 以降の変更:` の行）を出す。進め方は review-guide の手順に任せ、feature-dev は途中で次の一手やサマリを挟まない。4. 以降は締めが出てから進める
+   **読み合わせは何ターンも続く**: review-guide は概要を出してターンを終え、利用者の「次」ごとに精読を 1 件ずつ解説し（1 精読 1 ターン）、最後に締め（精読の外で気になるところ → `変異テスト:` / `self-review 以降の変更:` / `次の一手:` の行）を出す。進め方は review-guide の手順に任せ、feature-dev は途中で次の一手やサマリを挟まない。4. 以降は締めが出てから進める
 4. **読み合わせで入った修正を self-review に通す**（3. で読み合わせた回）: review-guide は判断の材料を出すだけで self-review を起動しないので、回すのは feature-dev。まず `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check` で 3. の直前に `save` した時点との差を取り、`changed_files` が 1 以上なら下の `あり`、0 なら `なし` として扱う（読み合わせの間に入った変更だけを数える。Phase 6.7 のコメント適用と、Phase 6.9 で self-review を回さなかった変更は数えない — そちらは 6.9 で利用者が決めた）。`snapshot=missing` / `unavailable` のときだけ、締めの `self-review 以降の変更:` の行で分岐する（この行は直近の self-review の publish 以降の全変更を数えるので、6.7 / 6.9 の変更も `あり` に入る）:
    - `あり` → 締めの `次の一手:` が `決定的な検証` で始まるなら、self-review は回さずに Phase 5.3（静的オラクル）を同じ手順でもう一度回し、緑なら `次の一手:` の理由を 1 行添えて次の一手へ進む（赤なら Phase 5.3 Step 3 の扱い。review-guide が、読み合わせの変更は挙動を変えず解説で確かめ済みと判断した回 / GitHub issue #304）。それ以外（`self-review をもう一度` / 行が無い）なら `Skill` tool で `code-review:self-review` を呼ぶ。**引数は base だけ**（3. と同じ `<BASE>`。分からなければ引数なし）。例外は Phase 6 で `--spec=<BDD_SPEC_PATH>` を渡した回で、それも渡す（渡さないと spec-compliance reviewer が BDD spec を読まない）。Phase 6 Step 2 と違い `--embed` を付けない — 読み合わせの後は feature-dev が findings を集約しないので、self-review の Step 7（修正方針の確認と、修正した指摘の prior-fixes への記録）と 1.4 の重複検出をそのまま通す。`--focus` / `--rereview` も付けない（前回の指摘が直ったかを確かめる回ではなく、読み合わせで入った修正を含めて diff 全体を見直す回 / GitHub issue #300）。呼ぶ前に、1.4 で重複レビュー（header「重複レビュー」）の続行可否を聞かれたら、読み合わせで直した後の回し直しなので「続行する」でよい旨を 1 行添える。Step 6 の定型レポートと 6.4 の publish は Phase 6 Step 2 と同じく省かない・1 行に畳まない（GitHub issue #232 / #250）
    - `なし` → 回さずに次の一手へ
    - `不明（…）` → 読み合わせで修正を入れた（締めの「入れた修正」が 1 件以上）なら `あり` と同じ、入れていなければ `なし` と同じ
    - 締めにこの行が無い（`--walkthrough` を知らない旧版の code-review でガイドだけが出た）→ ガイドの後に修正を入れたかで `不明` と同じ分岐
+
+   **締めの `変異テスト:` の行で、次の一手の前に変異テストを提案するかを決める**（GitHub issue #307。`review-snapshot.sh check` の結果によらず、3. で読み合わせた回はすべて通る。上の分岐で 2 回目の self-review や Phase 5.3 を回した回はその後に 1 回だけ）:
+   - 先頭が `提案する` → 行の理由・回し方・所要の目安をそのまま示し、回すかを通常のメッセージで聞いてターンを終える。`AskUserQuestion` にしない（無操作の自動続行（`askUserQuestionTimeout`）を承認と取り違えないため）。回しているあいだは作業ツリーを編集しないことも添える（道具によっては、変異体を作業ツリーのファイルへ直接書き込みながら回る）。**承認の返信が無ければ回さない**。承認されたら、`git status --porcelain` の出力を控えてから、回し方のコマンドをリポジトリのルートで Bash の `run_in_background: true` で起動し、終わるまで次の一手へ進まない（所要は前景の上限 600 秒を超えうる）。終わったら、exit code と出力（stdout と stderr）から結果を次の 4 区分のどれかで報告する（推測した道具の回は、道具の出力の集計で同じ区分に当てる）: `生存 N 件`（exit 1 で生存した変異の行がある。ファイル・行・変異の内容を出力どおりに並べ、未実行が残っていればその数も添える。exit 0 で全件を実行して生存が無ければ `生存 0 件`）/ `一部未実行`（exit 0 だが、集計に「上限で未実行 N」か「タイムアウト N」がある。生存が無くても「生存 0」と書かず、実行した数と未実行の数を書く）/ `未計測`（exit 0 で、対象行・変異が 0 個）/ `判定不能`（コマンドが失敗した・exit 2・途中で止まった。exit 1 で stderr に中断の FATAL があるものを含み、生存の行があってもこちら）。途中で止まった回は、stderr の「変異が当たったまま」の箇所（ファイル・行・元の内容）を利用者に示し、元に戻したと返されるまで次の一手へ進まない（変異が残ったツリーをコミットしない）。回す前と後の `git status --porcelain` を突き合わせ、増えたファイル（道具の出力）を報告に並べ、コミットに混ぜない（消すか gitignore するかは利用者が決める）。テストを足すかは利用者が決め、足した回は足したテストを走らせて緑を確かめてから次の一手へ（テストの追加は実行時の挙動を変えないので self-review は回し直さない。Phase 5.3 の宣言オラクルはテストを含まないことがある）。回さないと返されたら次の一手へ
+   - 先頭が `不要` / `道具なし` → 聞かずに、行の理由を 1 行添えて次の一手へ
+   - 行が無い（`変異テスト:` を出さない旧版の code-review / 締めが出なかった）→ 何もしない
+
+   **読み合わせ以降の画面の変更を残す**（GitHub issue #306。3. で読み合わせて修正を入れた回はすべて。上の分岐で 2 回目の self-review を回した回も、`決定的な検証` で Phase 5.3 だけを回した回も同じ）: 3. の読み合わせ以降に入った変更（読み合わせでの修正・2 回目の self-review での修正）に画面のファイル（Phase 5.5 Step 3 の定義）があれば、次の一手に「読み合わせ後の変更は動作確認を通していない」と添える（Phase 5.5 はもう一度回さない）。変わったファイルは 4. の冒頭の `review-snapshot.sh check` が出す `<追加>\t<削除>\t<path>` の行（`snapshot=missing` / `unavailable` の回は締めの「入れた修正」）と、2 回目の self-review で直したファイルで見る
+
    - 2 回目の self-review の後は、読み合わせも self-review も繰り返さない。最後に次の一手（コミット → PR）を 1 行添える
    - **コミット・PR は dev-workflow の skill で行う**: 利用者が次の一手どおりに進めるよう返したら、`bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" dev-workflow` が `1` なら、コミットは `Skill` tool で `dev-workflow:git-commit-helper`、PR は `dev-workflow:pr-creator` を起動する（command の `dev-workflow:commit` / `dev-workflow:pr` を経由せず、skill を直接呼ぶ）。`git commit` / `gh pr create` を直接打たない。`0` なら Conventional Commits 形式で論理単位に分けてコミットする。5. の従来のサマリの回も同じ
 5. **従来のサマリ**（code-review が無効 / 「出さない」/ review-guide の呼び出しが失敗した回。review-guide を持たない旧版の code-review も含む）: What was built / Key decisions made / Files modified / Suggested next steps を出す。2. の申し送りはそのまま残す

@@ -5,6 +5,8 @@
 閉じ、読解だけの答えを実行したかのように書き、本命を直しても確かめ方を渡さない回があった
 （recall fixture での再現: 設計書 `.claude/designs/20260916-code-review-review-guide-skill.md` の追記 (g)）。
 手順（SKILL.md Step 6・7）と書式（review-guide-format.md）の両方にその出口があることを見る。
+締めの契約行（`変異テスト:` / `self-review 以降の変更:` / `次の一手:`）の並びと、変異テストを提案するかの
+判断（「変異テストの提案」の節 / GitHub issue #307）もここで見る。
 
 実行: python3 .claude-plugin/scripts/run-tests.py
 """
@@ -38,6 +40,10 @@ def explain_template() -> str:
 
 def closing_template() -> str:
     return between(FORMAT.read_text(encoding="utf-8"), "## 読み合わせの締め", "## 回し直すかの判断")
+
+
+def mutation_section() -> str:
+    return between(FORMAT.read_text(encoding="utf-8"), "## 変異テストの提案", "## 誤ガイド抑制")
 
 
 class TemplateLineMixin:
@@ -130,6 +136,108 @@ class ClosingTest(unittest.TestCase):
         lines = [l for l in block.splitlines() if l.strip()]
         self.assertTrue(lines[-2].startswith("self-review 以降の変更:"), lines[-2])
         self.assertTrue(lines[-1].startswith("次の一手:"), lines[-1])
+
+    def test_mutation_line_sits_just_before_the_contract_lines(self):
+        """`変異テスト:` は 3 本目の契約行（#307）。既存の 2 行の後ろではなく直前に置く."""
+        block = closing_template().split("```")[1]
+        lines = [l for l in block.splitlines() if l.strip()]
+        self.assertTrue(lines[-3].startswith("変異テスト:"), lines[-3])
+        for value in ("提案する", "不要", "道具なし"):
+            self.assertIn(value, lines[-3], f"締めの変異テストの値から {value} が消えた")
+        self.assertIn("回し方:", lines[-3])
+        self.assertIn("所要の目安:", lines[-3])
+        bullets = closing_template().split("```")[2]
+        self.assertIn("`変異テスト:` の行も呼び出し元", bullets, "変異テストの行が契約だと書いていない")
+
+    def test_mutation_section_follows_the_pinned_section(self):
+        """新しい節は SSoT pin 先（回し直すかの判断）の後ろに同じ `##` で置く。`###` にすると pin 先の節に入る."""
+        fmt = FORMAT.read_text(encoding="utf-8")
+        heads = [l for l in fmt.splitlines() if l.startswith("## ")]
+        names = [h.split("（")[0] for h in heads]
+        i = names.index("## 回し直すかの判断")
+        self.assertEqual(names[i + 1], "## 変異テストの提案", heads)
+        self.assertEqual(names[i + 2], "## 誤ガイド抑制", heads)
+        self.assertIn("## 変異テストの提案", heads,
+                      "見出しが変わると、呼び出し元 2 か所の SSoT pin（#変異テストの提案）が当たらない")
+        section = mutation_section()
+        self.assertIn("要るときだけ", section)
+        self.assertIn("導入は提案しない", section, "道具が無いプロジェクトに導入を勧める余地が残っている")
+        self.assertIn("detect-mutation-tool.sh", section)
+        self.assertIn("`npx --no stryker run --mutate", section,
+                      "ローカルに無い Stryker を npx が registry から取りに行く")
+        self.assertIn("判定不能", section)
+
+    def test_mutmut_is_narrowed_to_changed_modules(self):
+        """mutmut 3 の `run` は mutant 名のワイルドカードを受ける。素の `mutmut run` は設定の範囲全体を変異させる."""
+        bullet = next((l for l in mutation_section().splitlines() if l.startswith("- mutmut")), None)
+        self.assertIsNotNone(bullet, "推測した道具の回し方に mutmut の行が無い")
+        self.assertIn("`mutmut run '<module>.*'", bullet, "変更したモジュールに絞っていない")
+        self.assertIn("先頭の `src.` を落とした", bullet, "モジュール名の作り方が無い")
+        self.assertIn("判定不能", bullet, "名前が当たらずに止まった回の扱いが無い")
+
+    def test_mutation_section_does_not_start_contract_lines(self):
+        """呼び出し元のテストは締めから最初に一致した行を拾う。節の本文に同じ書き出しの行を置かない."""
+        for line in mutation_section().splitlines():
+            for key in ("変異テスト:", "self-review 以降の変更:", "次の一手:"):
+                self.assertFalse(line.startswith(key), line)
+
+    def test_test_coverage_none_is_a_reason_not_to_propose(self):
+        """テスト対応表の「なし」は提案の理由ではなく `不要` の理由（壊せば全部生存すると分かっている）."""
+        need = between(mutation_section(), "### 要るか", "### 道具")
+        self.assertIn("テスト対応表で「あり」", need)
+        self.assertIn("すべて「なし」", need)
+        self.assertIn("先にテストを足す", need)
+
+    def test_unmeasured_exit_zero_is_not_survivor_zero(self):
+        """宣言の exit 0 は「生存 0」のほかに一部未実行（上限・タイムアウト）と未計測を含む。呼び出し元に分けて報告させる."""
+        contract = mutation_section()[mutation_section().index("### 宣言の契約"):]
+        self.assertIn("0 は実行した変異に生存なし（上限・タイムアウトで未実行が残った回を含む", contract)
+        self.assertIn("または未計測（対象行・変異が 0 個）", contract)
+        self.assertIn("呼び出し元は exit 0 だけで「生存 0」と書かない", contract)
+        self.assertIn("全件を実行して生存が無い回だけを生存 0 とし、一部未実行", contract)
+        self.assertNotIn("exit 0 を「生存 0」と書かず", contract,
+                         "全件を実行して生存が無い回まで「生存 0」と書かせない文言に読める（呼び出し元と食い違う）")
+        self.assertIn("途中で止まった（stderr に中断の FATAL", contract, "途中で止まった回の手がかりが stderr にあると書いていない")
+        self.assertIn("未追跡のファイルは対象外", contract)
+
+    def test_unquotable_paths_are_left_out_of_the_command(self):
+        """パスの `'` で単引用符が閉じ、承認したコマンドの中でコマンド置換が走る（実測）。引用を組み立てさせず、外す."""
+        section = mutation_section()
+        for tool in ("- Stryker", "- mutmut"):
+            bullet = next((l for l in section.splitlines() if l.startswith(tool)), None)
+            self.assertIsNotNone(bullet, f"推測した道具の回し方に {tool} の行が無い")
+            self.assertRegex(bullet, r"'<(file|module)>", f"{tool} の名前を単引用符で囲んでいない")
+        self.assertIn("パスに `'`・改行・制御文字を含むファイルは回し方に入れず", section)
+        self.assertIn("理由に外したことを書く", section)
+        self.assertIn("`'` を `'\\''` に置き換えて引用を組み立て直すことはしない", section)
+        self.assertIn("回せるファイルが 1 つも残らなければ `道具なし`", section)
+
+    def test_cargo_mutants_writes_the_diff_to_a_fresh_temp_dir(self):
+        """決め打ちの一時ファイル名は、同時に回した worktree と上書きし合い、共有の /tmp では先回りされうる."""
+        bullet = next((l for l in mutation_section().splitlines() if l.startswith("- cargo-mutants")), None)
+        self.assertIsNotNone(bullet, "推測した道具の回し方に cargo-mutants の行が無い")
+        self.assertIn('`d=$(mktemp -d) && git diff <ref> > "$d/mutants.diff" && '
+                      'cargo mutants --in-diff "$d/mutants.diff"`', bullet)
+        self.assertNotIn("${TMPDIR:-/tmp}/mutants.diff", bullet)
+
+    def test_review_guide_only_proposes(self):
+        s7 = step7()
+        self.assertIn("detect-mutation-tool.sh", s7)
+        self.assertIn("**この skill からは回さない**", s7)
+        done = s7[s7.index("**完了基準**"):]
+        self.assertIn("決定的な検証も変異テストも commit も起動していない", done)
+        self.assertIn("`変異テスト:` が `提案する` / `不要` / `道具なし` のどれかで始まり", done)
+        skill = SKILL.read_text(encoding="utf-8")
+        cost = between(skill, "## コスト×精度パイプライン設計", "## 実行手順")
+        self.assertIn("提案だけで回すのは呼び出し元なので捨てたまま", cost,
+                      "原則 8（外部オラクル）の扱いを書いていない")
+
+    def test_step7_numbers_stay_consistent(self):
+        """締めを出すのは 5.。1. の「残った確認」の参照が番号のずれに追随している."""
+        s7 = step7()
+        self.assertIn("4. **変異テストを提案するかを決める**", s7)
+        self.assertIn("5. **締めを出す**", s7)
+        self.assertIn("5. の締めの「残った確認」", s7)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """コミットへ進む導線が `dev-workflow:git-commit-helper` を通る、という文言契約のテスト.
 
-self-review の「このまま」・review-guide の `次の一手: コミットへ`・軽量フローの Step 5・feature-dev の Phase 7・
+self-review の「このまま」・review-guide の `次の一手: コミットへ`・軽量フローのコミットの Step・feature-dev の Phase 7・
 worktree-teardown の未コミット変更の選択肢に従って進むと、`git commit` を直接打って git-commit-helper の手順
 （分割判定・protected branch の確認・メッセージの規約）を飛ばす回があった。どの導線も skill を名前で呼ぶ。
 
@@ -13,6 +13,7 @@ command 本文には SKILL.md への Read 誘導を置き、呼び出し側は s
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -51,10 +52,14 @@ class ConsumersCallTheSkillTest(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertNotIn("`dev-workflow:commit` を起動", text, f"{label} が command を起動している")
 
-    def test_lightweight_flow_step5_calls_the_skill(self):
+    def test_lightweight_flow_commit_step_calls_the_skill(self):
+        """節は見出しの名前で探す（Step の挿入で番号が動く。#306 で動作確認が入り 5 → 6 になった）."""
         flow = CONSUMERS["lightweight-flow"].read_text(encoding="utf-8")
-        step5 = between(flow, "### Step 5:", "### Step 6:")
-        dw1 = next(l for l in step5.splitlines() if l.startswith("- `DW=1`"))
+        m = re.search(r"(?m)^### Step \d+: コミット$", flow)
+        self.assertIsNotNone(m, "軽量フローにコミットの Step が無い")
+        nxt = re.compile(r"(?m)^### Step \d+:").search(flow, m.end())
+        commit_step = flow[m.start():nxt.start() if nxt else len(flow)]
+        dw1 = next(l for l in commit_step.splitlines() if l.startswith("- `DW=1`"))
         self.assertIn(f"`Skill` tool で {HELPER} を起動", dw1)
 
     def test_feature_dev_phase7_routes_commit_and_pr_to_skills(self):

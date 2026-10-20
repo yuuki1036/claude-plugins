@@ -22,7 +22,7 @@ last_updated: <ISO8601>           # 書き込み時に更新（producer が責�
 
 | type | 配置 | producer | 主な consumers | 永続性 |
 |---|---|---|---|---|
-| `session` | `.claude/session-context.md` | issue-workflow | code-review | セッション単位（gitignored） |
+| `session` | `.claude/session-context.md` | issue-workflow | code-review / issue-workflow（start の F2.5。branch-setup.sh existing が detached HEAD の worktree の issue_id を読む / issue-band が帯に出す Issue を決める） | セッション単位（gitignored） |
 | `follow-up` | `{DATA_DIR}/{slug}/follow-ups/*.md` | issue-workflow | issue-workflow（dashboard / issue-maintain） | 永続（committed） |
 | `knowledge` | `{DATA_DIR}/{slug}/knowledge/**/*.md` | issue-workflow | issue-workflow（knowledge / knowledge-lint / start）/ code-review（spec-compliance の照合元）/ dev-workflow（diagnose が探索前に読む）/ feature-dev・design-doc（grill で決定記録として参照） | 永続（committed）。knowledge は共通契約フィールドではなくドメイン固有 frontmatter（kind/status/verified/updated/tags）で代替し、consumer 側も契約フィールド（shared_state_type 等）を読まない |
 | `verification` | `.claude/verification/<branch>.md` | dev-workflow（ui-verify） | dev-workflow（pr-creator） | ブランチ単位（gitignored）。実機 E2E の実施ケース・合否・証跡パスを残し pr-creator が動作確認セクションに読む |

@@ -9,6 +9,8 @@
 - mise も npx も引けなければ --check は 1（silent に素通りさせない）。
 - browser_connect=autoConnect で、旧版 npx stub を掴んだら autoConnect を付けず
   既定プロファイルに落とす（@latest がキャッシュ旧版に解決する事故の歯止め）。
+- browser_connect=userDataDir=<path> は --userDataDir=<path> に、path が空なら既定プロファイル
+  （値の解釈は chrome-profile-lock.sh と共有の scripts/lib/browser-connect.sh）。
 
 実行:
   python3 .claude-plugin/scripts/run-tests.py
@@ -114,7 +116,8 @@ class LaunchWrapperTest(unittest.TestCase):
 
     def test_connect_read_from_project_config_when_env_unset(self) -> None:
         # DEV_WORKFLOW_BROWSER_CONNECT 未設定でも .claude/dev-workflow.json の
-        # browser_connect を読む（55 の `[ -z CONNECT ] && [ -f json ] && command -v jq` 連鎖）。
+        # browser_connect を読む（lib/browser-connect.sh の browser_connect_resolve にある
+        # `[ -z "$raw" ] && [ -f json ] && command -v jq` 連鎖）。
         # jq スタブと新しめの npx スタブを置き、autoConnect が実起動引数に乗ることを測る。
         self._stub("jq", 'echo autoConnect\n')  # .browser_connect の値として返す
         self._stub("npx", r'''
@@ -135,7 +138,7 @@ class LaunchWrapperTest(unittest.TestCase):
 
     def test_env_connect_wins_over_project_config(self) -> None:
         # 環境変数 DEV_WORKFLOW_BROWSER_CONNECT が設定済みなら .claude/dev-workflow.json は
-        # 読まない（55 の `[ -z CONNECT ] && ...` 連鎖の先頭 &&）。env=default なのに
+        # 読まない（lib/browser-connect.sh の `[ -z "$raw" ] && ...` 連鎖の先頭 &&）。env=default なのに
         # file の autoConnect を拾うと env より file が勝ってしまう。
         self._stub("jq", 'echo autoConnect\n')
         self._stub("npx", r'''
@@ -154,6 +157,21 @@ class LaunchWrapperTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("ARGS:", res.stdout)            # exec 到達
         self.assertNotIn("--autoConnect", res.stdout)  # env=default が file の autoConnect に勝つ
+
+    def test_user_data_dir_is_passed_through(self) -> None:
+        self._stub("npx", 'echo "ARGS: $*"\nexit 0\n')
+        res = self._run(env=self._env(DEV_WORKFLOW_BROWSER_CONNECT="userDataDir=/abs/prof"))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("--userDataDir=/abs/prof", res.stdout)
+
+    def test_empty_user_data_dir_falls_back_to_default(self) -> None:
+        # `userDataDir=`（path が空）は既定プロファイル。空の --userDataDir を渡さない
+        # （chrome-profile-lock.sh も既定の dir を見る。解釈は scripts/lib/browser-connect.sh を共有）
+        self._stub("npx", 'echo "ARGS: $*"\nexit 0\n')
+        res = self._run(env=self._env(DEV_WORKFLOW_BROWSER_CONNECT="userDataDir="))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("ARGS:", res.stdout)
+        self.assertNotIn("--userDataDir", res.stdout)
 
     def test_autoconnect_kept_on_new_npx_version(self) -> None:
         self._stub("npx", r'''

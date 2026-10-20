@@ -89,6 +89,30 @@ npm run lint && npm run typecheck && npm test
 
 設計判断と撤回条件: `.claude/adr/20260817170000-machine-layer-before-self-review-agents.md` / 運用の正本: `references/machine-layer.md`
 
+## 読み合わせの後の変異テスト（review-guide / opt-in）
+
+review-guide の読み合わせ（`--walkthrough`）は、締めに `変異テスト: <提案する / 不要 / 道具なし> — <理由>` の 1 行を出す。変更が分岐・境界・検証ロジックを触り、その振る舞いにテストがあるときだけ `提案する` になり、回し方と所要の目安が付く。review-guide は回さない。issue-workflow の軽量フローと feature-dev の Phase 7 は、`提案する` のときだけ利用者に回すかを聞き、承認されたら回して生存した変異を報告する。
+
+道具は、リポジトリのルートに `.claude/mutation-test.sh` があればそれを使う（存在自体が宣言）。無ければルートの設定ファイル（Stryker の `stryker.config.*` 等か `package.json` の `@stryker-mutator/*`、`pyproject.toml` の `[tool.mutmut]` / `setup.cfg` の `[mutmut]`、`.cargo/mutants.toml`）から推測する。どれも無ければ `道具なし` で、導入は提案しない。
+
+```bash
+#!/usr/bin/env bash
+# .claude/mutation-test.sh — 存在自体が宣言。呼ばれ方: bash .claude/mutation-test.sh --base <ref>
+# 対象は `git diff <ref>` に出る変更（未追跡のファイルは対象外）。範囲を絞るのは宣言の側
+# exit 0 = 実行した変異に生存なし（上限・タイムアウトで未実行が残った回を含む）、
+#          または未計測（対象行・変異が 0 個）。どれかは stdout で見分ける
+# exit 1 = 生存あり（stdout に file:line と変異）か、途中で止まった（stderr に中断の FATAL と実行済みの件数）。stdout と stderr の両方で見分ける
+# exit 2 = 判定不能
+# 見分ける手がかりは宣言が出す: 未実行が残った回は実行した数と未実行の数を stdout の集計に、
+#   未計測の回は集計の代わりに未計測と分かる 1 行を stdout に、途中で止まった回はその旨と実行済みの件数を stderr に出す
+# 所要の目安: 変異 1 個あたり約 20 秒・上限 25 個
+exec python3 scripts/mutate_changed.py "$@"
+```
+
+手がかりの語は宣言が決める。この repo の宣言（mutation-test.py を呼ぶ）では、集計の「上限で未実行 N」「タイムアウト N」、集計の代わりに出る「変異対象の変更行が無い」「変異 0 個」の行、stderr の中断の FATAL がそれに当たる。
+
+契約の正本: `references/review-guide-format.md` の「変異テストの提案」
+
 ## レビュー構成
 
 ### Phase 0: トリアージ（メインコンテキスト）

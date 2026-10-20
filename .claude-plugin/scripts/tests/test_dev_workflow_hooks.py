@@ -519,6 +519,30 @@ class UiChangeReminderTest(HookTestCase):
             self._enable(root)
             self.assertSilent(self.run_hook(self.payload(str(root / "a.tsx"), tool="Bash"), cwd=root))
 
+    def test_silent_without_the_shared_extension_list(self):
+        """拡張子の式は scripts/lib/ui-paths.sh にある（ui-impact.sh と共有 / GitHub issue #306）.
+
+        lib を欠いた配布では Dependency に分類して exit 0 で黙り、pending flag を立てない。
+        読めるかを先に見るガードが無いと、bash 3.2 は set -e 下の `.` でその場で exit 1 する
+        （returncode で拾う）。式の変数を定義前に使う書き方（unbound）と、ERR trap に落ちる書き方
+        （Unexpected）も拒む。
+        """
+        with TempGitRepo() as root, tempfile.TemporaryDirectory() as bare:
+            self._enable(root)
+            lib = Path(bare) / "hooks" / "lib"
+            lib.mkdir(parents=True)
+            shutil.copy(self.plugin_root / "hooks" / "lib" / "safe-hook.sh", lib / "safe-hook.sh")
+            res = self.run_hook(self.payload(str(root / "a.tsx")), cwd=root,
+                                env_extra={"CLAUDE_PLUGIN_ROOT": bare})
+            self.assertSilent(res)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertNotIn("Unexpected", res.stderr)
+            self.assertNotIn("unbound", res.stderr)
+            self.assertIn("Dependency", res.stderr)
+            self.assertFalse((root / ".claude" / ".ui-verify-pending").exists())
+            # 対照: 同じ編集を本物のプラグインで流すと鳴る
+            self.assertIn("[ui-verify]", self.run_hook(self.payload(str(root / "a.tsx")), cwd=root).stdout)
+
 
 class TddPhaseGateTest(HookTestCase):
     """opt-in なので**既定では絶対に鳴らない**ことが第一の仕様."""

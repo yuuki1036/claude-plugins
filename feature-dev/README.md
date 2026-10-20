@@ -16,7 +16,7 @@
 - **理解してから動く**: 変更前に既存のパターンを読んで把握する
 - **曖昧さを潰す**: 要件の曖昧点を grill（1 問ずつ依存順）で解決する
 - **設計してから実装する**: 複数案を比較してから 1 案にコミットする
-- **品質を検証する**: 実装後に runtime smoke test とレビューゲートを通す
+- **品質を検証する**: 実装後に runtime smoke test・動作確認とレビューゲートを通す
 
 これらを構造化したワークフローに埋め込み、`/feature-dev` で自動的に走らせる。
 
@@ -59,7 +59,7 @@
 | 4.5 | Design Doc Export | design-doc 連携。採用案 + 代替案比較を永続化（dormant） |
 | 5 | Implementation | 採用案に沿って実装（Normal Mode / Fix Mode） |
 | 5.3 | 静的オラクルゲート | 型チェック / lint / テストを変更範囲に絞って実行し、機械的欠陥を fail-closed で落とす |
-| 5.5 | Runtime Smoke Test | 静的チェックで取れない runtime 初期化バグを検出 |
+| 5.5 | Runtime Smoke Test と動作確認 | runtime 初期化バグと画面の挙動を実機ブラウザで確かめる（UI に影響する変更なら既定で実行） |
 | 6 | Quality Review | code-review:self-review に委譲 + 致命指摘を自動 fix |
 | 7 | Summary | 申し送り + 読み合わせ（review-guide）+ 読み合わせの修正の self-review + イベント発行 |
 
@@ -136,15 +136,15 @@ Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する�
 
 runtime smoke test（Phase 5.5）と LLM 品質レビュー（Phase 6）の**手前**で、型チェック / lint / テストという決定的オラクルを変更範囲に絞って実行し、機械的に落とせる欠陥をここで潰す。プロジェクトの package.json scripts / tsconfig / Cargo.toml / go.mod / pyproject を検出（不在時は graceful skip、fail-open は summary に明記）。テスト実行は effort 連動（low/medium は型チェックのみ、high 以上で関連テスト）で、exit≠0 なら Phase 5 Fix Mode に差し戻す。ゲート↔Fix の往復は最大 2 回の暴走ガード付き。ルート CLAUDE.md「コスト×精度パイプライン設計指針」（Clearwing 原則 8: 外部オラクル + fail-closed）に準拠。
 
-### Phase 5.5: Runtime Smoke Test
+### Phase 5.5: Runtime Smoke Test と動作確認
 
-tsc / lint / build では検知できない runtime 初期化バグ（DB client 初期化、env var 読み込み、middleware 設定ミス、proxy lazy-init 等）を Quality Review 前に検出する。
+tsc / lint / build では検知できない runtime 初期化バグ（DB client 初期化、env var 読み込み、middleware 設定ミス、proxy lazy-init 等）と画面の挙動の食い違いを、Quality Review 前に実機ブラウザで確かめる。UI に影響する変更なら既定で動作確認を行う（以前は既定 skip で聞いていたため、画面を触る変更でもほとんど走らなかった / GitHub issue #306）。
 
 - Step 0: TTL ベースの self-lock guard（将来 PostToolUse hook を導入した際の重複起動・無限ループ予防 template）
-- Step 1: `git diff` から DB client / env var / middleware / 新規 route のパターンを grep し、smoke test が必須か任意かを決定的に判定
-- Step 2: `AskUserQuestion` で実行可否を確認
-- Step 3: `dev-workflow:ui-verify` skill を呼んで dev server 起動 + console error / network 4xx-5xx を検査。chrome-devtools MCP 未設定時は手動確認に fallback（hard fail しない）
-- Step 4: エラー検出時は Phase 6 に進ませず、ユーザー判断（今修正 / 受け入れて続行）を仰ぐ
+- Step 1: `git diff` と未追跡の新規ファイル（名前と中身。Phase 5 は `git add` しない）から DB client / env var / middleware / 新規 route のパターンを grep し、smoke test が必須（REQUIRED）か任意（OPTIONAL）かを決定的に判定
+- Step 2: 実行するかは聞かずに `dev-workflow:ui-verify` を `verify --caller=feature-dev` で呼ぶ（REQUIRED なら `--require`。UI 影響の判定は ui-verify 側が持ち、ここに複製しない）
+- Step 3: 結果は応答の最後の `UI_VERIFY_*` の 5 行で受け取る。dev-workflow が無効・使えるブラウザが無いときは手動確認に fallback（hard fail しない）。dev server の起動を断られた等でブラウザを選ぶ前に止まった回（`UI_VERIFY_BROWSER=unselected`）は手動確認を頼み直さない
+- Step 4: fail なら Phase 6 に進ませず、ユーザー判断（今修正 / 受け入れて続行）を仰ぐ。skip・blocked の理由は Phase 7 の申し送りに残す
 
 「全静的チェックを通過したのに初回 runtime アクセスで死ぬ」事故（Issue #29）を構造的に予防する。
 
@@ -164,9 +164,13 @@ Phase 6 の最後のレビュー直後に作業ツリーを記録し（`scripts/
 
 ### Phase 7: Summary
 
-全 todo を完了にし、review-guide からは分からない申し送り（設計契約の決定と未決・静的オラクルの判定不能・G-V ループの persisting・未レビューの変更・design doc の `phase: target → current` 更新など。該当するものだけ）を短く出す。そのうえで、code-review が有効なら読み合わせ（`code-review:review-guide --base <base> --walkthrough`）をするかを聞く。人間がこの後にやるのは変更を自分で読んでコミット・PR に進めるかの判断なので、変更ファイルの列挙より読み順を渡す（GitHub issue #290）。読み合わせでは、review-guide が読み順の概要を出した後に精読を 1 件ずつ解説し（1 精読 1 ターン。難点がなぜ難点になったかとレビュー観点の答えを添え、見つけた修正はその場で入れる）、精読の外で気になるところと `self-review 以降の変更:` / `次の一手:` の 2 行で締める。
+全 todo を完了にし、review-guide からは分からない申し送り（設計契約の決定と未決・静的オラクルの判定不能・動作確認を通さなかった理由・G-V ループの persisting・未レビューの変更・design doc の `phase: target → current` 更新など。該当するものだけ）を短く出す。そのうえで、code-review が有効なら読み合わせ（`code-review:review-guide --base <base> --walkthrough`）をするかを聞く。人間がこの後にやるのは変更を自分で読んでコミット・PR に進めるかの判断なので、変更ファイルの列挙より読み順を渡す（GitHub issue #290）。読み合わせでは、review-guide が読み順の概要を出した後に精読を 1 件ずつ解説し（1 精読 1 ターン。難点がなぜ難点になったかとレビュー観点の答えを添え、見つけた修正はその場で入れる）、精読の外で気になるところと `変異テスト:` / `self-review 以降の変更:` / `次の一手:` の 3 行で締める。
 
-読み合わせで入った修正は Phase 6 の self-review も Phase 6.9 の確認も通っていない。review-guide を呼ぶ直前に `review-snapshot.sh save` で作業ツリーを記録し、締めの後に `check` で差を取る。読み合わせの間に変更が入ったとき（記録が取れなかった回は締めの行が `あり`、`不明` なら読み合わせで修正を入れた回）は、`code-review:self-review` を base だけを引数にもう一度回してから次の一手（コミット → PR）に進む。締めの `次の一手:` が `決定的な検証` で始まる回（review-guide が、読み合わせの変更は挙動を変えず解説で確かめ済みと判断した回 / GitHub issue #304）は、self-review の代わりに静的オラクルだけをもう一度回す。`--embed` を付けないので self-review の修正方針の確認と重複検出がそのまま走り、修正確認の再レビューではないので `--focus` / `--rereview` も付けない。2 回目の後に読み合わせは繰り返さない。code-review が無効・「出さない」・呼び出しの失敗のときは、従来のサマリ（作ったもの / 主要な決定 / 変更ファイル / 次の一手）を出す。最後に、読み合わせと 2 回目の self-review が終わってから `.claude/events.jsonl` へ `feature:implemented` イベントを fire-and-forget で追記する。
+読み合わせで入った修正は Phase 6 の self-review も Phase 6.9 の確認も通っていない。review-guide を呼ぶ直前に `review-snapshot.sh save` で作業ツリーを記録し、締めの後に `check` で差を取る。読み合わせの間に変更が入ったとき（記録が取れなかった回は締めの行が `あり`、`不明` なら読み合わせで修正を入れた回）は、`code-review:self-review` を base だけを引数にもう一度回してから次の一手（コミット → PR）に進む。締めの `次の一手:` が `決定的な検証` で始まる回（review-guide が、読み合わせの変更は挙動を変えず解説で確かめ済みと判断した回 / GitHub issue #304）は、self-review の代わりに静的オラクルだけをもう一度回す。`--embed` を付けないので self-review の修正方針の確認と重複検出がそのまま走り、修正確認の再レビューではないので `--focus` / `--rereview` も付けない。2 回目の後に読み合わせは繰り返さない。
+
+次の一手の前に、締めの `変異テスト:` の行を読む（GitHub issue #307）。`提案する` のときだけ、行にある理由・回し方・所要の目安を示して、回すかを通常のメッセージで聞く（`AskUserQuestion` にしない。無操作の自動続行を承認と取り違えないため）。承認の返信が無ければ回さない。承認されたら background で回し、結果を 4 区分（生存 N 件 / 一部未実行 / 未計測 / 判定不能）で、道具が作業ツリーに残したファイルとあわせて報告する（exit 0 は上限・タイムアウトで一部を回さなかった回や未計測の回でも返るので、それだけで「生存 0」とは書かない。途中で止まった回は変異が当たったままの箇所を示し、戻るまで次の一手へ進まない）。テストを足した回は、足したテストを走らせてから次の一手へ進む。`不要` / `道具なし` は理由を 1 行添えるだけ。
+
+code-review が無効・「出さない」・呼び出しの失敗のときは、従来のサマリ（作ったもの / 主要な決定 / 変更ファイル / 次の一手）を出す。最後に、読み合わせと 2 回目の self-review が終わってから `.claude/events.jsonl` へ `feature:implemented` イベントを fire-and-forget で追記する。
 
 ## Agents
 

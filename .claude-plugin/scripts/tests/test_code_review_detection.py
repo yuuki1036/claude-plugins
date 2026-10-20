@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -525,11 +526,13 @@ class DuplicateReviewQuestionContractTest(unittest.TestCase):
         PLUGIN / "skills" / "self-review" / "SKILL.md": ("### 1.4 ", "### 1.5 "),
         PLUGIN / "skills" / "review" / "SKILL.md": ("### 2.4.", "### 2.5."),
     }
+    # 節の始まりと終わりの正規表現。軽量フローの Step は挿入で番号が動くので、見出しの名前で探す
+    # （test_issue_workflow_lightweight_flow.py の step() と同じ形）
     CALLERS = {
         REPO / "issue-workflow" / "skills" / "start" / "references" / "lightweight-flow.md":
-            ("### Step 4: 読み合わせ", "### Step 5:"),
+            (r"(?m)^### Step \d+: 読み合わせ", r"(?m)^### Step \d+:"),
         REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md":
-            ("4. **読み合わせで入った修正を self-review に通す**", "5. **従来のサマリ**"),
+            (re.escape("4. **読み合わせで入った修正を self-review に通す**"), re.escape("5. **従来のサマリ**")),
     }
 
     @staticmethod
@@ -556,10 +559,21 @@ class DuplicateReviewQuestionContractTest(unittest.TestCase):
                 for word in ("header:「重複レビュー」", "label「続行する」", "label「中止する」"):
                     self.assertIn(word, s)
 
+    @staticmethod
+    def caller_section(path: Path, start: str, end: str) -> str:
+        text = path.read_text(encoding="utf-8")
+        m = re.search(start, text)
+        if m is None:
+            raise AssertionError(f"{path.name} に {start} の節が無い")
+        n = re.compile(end).search(text, m.end())
+        if n is None:
+            raise AssertionError(f"{path.name} の {start} の節の終わり（{end}）が無い")
+        return text[m.start():n.start()]
+
     def test_callers_point_at_the_header(self):
         for path, (start, end) in self.CALLERS.items():
             with self.subTest(path=path.parent.name):
-                self.assertIn("header「重複レビュー」", self.section(path, start, end))
+                self.assertIn("header「重複レビュー」", self.caller_section(path, start, end))
 
 class TimingSessionSlugTest(WorktreeTestBase):
     """一時ファイルの識別子をセッション単位にする（GitHub issue #247）.

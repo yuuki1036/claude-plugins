@@ -60,6 +60,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
   review-oracles.sh              # self-review が agent 起動前に走らせる機械層の宣言
                                  #   （存在自体が opt-in。中身は machine-layer.sh --no-tests を呼ぶだけ。
                                  #   回帰テストは 300 秒に収まらないので外し、pre-commit と CI に任せる）
+  mutation-test.sh               # review-guide の締めが変異テストを提案するときの宣言
+                                 #   （存在自体が opt-in。mutation-test.py を --strict --related-first で呼ぶだけ。
+                                 #   回すのは軽量フロー・feature-dev が利用者の承認を得てから / #307）
   commands/ skills/              # /quality-check の実体（マーケットプレイスに配布しない自前コマンド）
   adr/ designs/                  # 本リポジトリ自身の設計判断・設計書
 docs/                            # 横断設計指針（pipeline-design / rule-placement / skill-writing / event-bus /

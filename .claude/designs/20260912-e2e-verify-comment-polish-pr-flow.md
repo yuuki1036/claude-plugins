@@ -8,7 +8,7 @@ supersedes: []
 superseded-by: null
 issue: null
 spec: null
-adrs: [20260912195236]
+adrs: [20260912195236, 20261020221214]
 tags: [dev-workflow, code-review, ui-verify, pr-creator, comment-rule, e2e]
 ---
 
@@ -82,6 +82,8 @@ grill（2026-09-12）でユーザーが確定した事項と、コード・ADR �
               ↓ 未接続 / 別アカウント
             ログイン画面で停止し、ユーザーにログインを依頼して続行
 ```
+
+> 現在の選び方はスクショの要否が第 1 キー（ADR-20261020221214 / GitHub issue #306）。上の図は「スクショが要る」側の認証の扱いとして残る。スクショが要らない回は Claude Browser → Claude in Chrome → chrome-devtools の順で、chrome-devtools の既存ブラウザは利用者の確認を取ってから `scripts/chrome-profile-lock.sh` で止める。
 
 - 「認証必要」の判定: 対象 URL を開いてログイン画面（`/login` / `/signin` へのリダイレクト、password 型 input の存在）を検知したとき。事前にユーザーへ聞かない
 - `--autoConnect` は同梱 `.mcp.json` の既定にはしない（ADR-20260831 の privacy posture）。`dev-workflow` の `userConfig` に `browser_connect`（`default` / `autoConnect` / `userDataDir=<path>`）を追加し、MCP 起動ラッパ（後述 A-5）が値を読んで引数を組み立てる
