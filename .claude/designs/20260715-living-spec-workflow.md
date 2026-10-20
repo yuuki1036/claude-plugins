@@ -3,7 +3,7 @@ id: 20260715-living-spec-workflow
 title: living-spec-workflow — Issue 化前の設計収束ドキュメント運用の仕組み化
 status: approved
 phase: current
-last-validated: 2026-07-15
+last-validated: 2026-10-20
 supersedes: []
 superseded-by: null
 issue: https://github.com/yuuki1036/claude-plugins/issues/87
@@ -65,14 +65,14 @@ grill Phase で自己解決した事項（出典つき）と、ユーザーが�
    - 必須: `last-validated`（YYYY-MM-DD）/ `phase`（current = 5 日 / target = 15 日 / superseded = 対象外）
    - 任意: `append_only: true` で stale 判定を免除
    - **判定粒度はファイル単位**（セクション単位の鮮度は測れない）
-4. **`projects/*.md` に living spec は置けない**（出典: `linear-workflow/skills/linear-maintain/SKILL.md:63`, `:94`）
+4. **`projects/*.md` に living spec は置けない**（出典: 統合前の `linear-workflow/skills/linear-maintain/SKILL.md:63`, `:94`。統合後は `issue-workflow/skills/linear-maintain/SKILL.md` の `:69`, `:100` で、挙動は同じ。以下の `:63` / `:94` はこの対応で読む）
    - `projects/*.md` は linear-workflow が Linear API のミラーとして生成・管理（`source: linear` / `project_id`、テンプレは `project-doc-template.md`）
    - linear-maintain は projects/ 内の各 doc を `get_project` で**再取得・上書き更新**する（:63）
    - Linear 上でプロジェクトが Done になると **`projects/{project-name}.md` を削除**する（:94）
    - living spec は local-authoring SoT で SoT の向きが逆、かつ Decision log という append-only 履歴を抱えるため、上書きと削除の的になる
 5. **Notion MCP は未導入**（リポジトリ内で `claude-meta/skills/claude-code-setup/references/mcp-servers.md` に名前があるのみ）
 6. **リポジトリの流儀は「1 プラグイン = 少数コマンド + サブコマンド」**: adr-keeper はコマンド 1 個（`/adr` に list/new/supersede）、design-doc は 2 個（`/design-doc` に new/list/supersede/export、`/design-review`）
-7. **linear/indie ミラー規約**（出典: `CLAUDE.md`）: 共通機能は両方に対称反映が必須。意図的な非対称は 2 つのみ
+7. **linear/indie ミラー規約**（出典: `CLAUDE.md`）: 共通機能は両方に対称反映が必須。意図的な非対称は 2 つのみ（2026-07-22 に廃止。ADR-20260722164106。以降は issue-workflow の backend 分岐）
 8. **深掘り系スキルには `${CLAUDE_EFFORT}` 実行時分岐が必須**（出典: `CLAUDE.md`）。maintain 系は深掘り系に該当
 9. **living spec は 1 ファイル内セクション構成**（Issue #87 が明言。adr-keeper との粒度違いの根拠として使われている）
 10. **living spec の実ファイルは存在しない**（`.claude/linear/` `.claude/indie/` ともこのリポジトリには未作成）= グリーンフィールド設計
@@ -428,4 +428,4 @@ Issue 1-6 は**全て実装完了**（Issue 5 は分解粒度の注記どおり 
 - 関連 design doc: [[20260708-spec-routing-ssot]]（spec ルーティングの 3 軸と、未解決事項 4 の spec-advisor 連携で接続しうる）
 - 踏襲元: `adr-keeper/skills/adr/SKILL.md`（append-only / 採番 / supersede 思想）
 - 委譲先: `doc-freshness/skills/doc-freshness/references/frontmatter-spec.md`（ファイル単位の鮮度契約）
-- 回避対象: `linear-workflow/skills/linear-maintain/SKILL.md:63,94`（projects/ の上書き・削除）
+- 回避対象: `issue-workflow/skills/linear-maintain/SKILL.md:69,100`（projects/ の上書き・削除。統合前は `linear-workflow` の `:63,94`）

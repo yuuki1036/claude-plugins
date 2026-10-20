@@ -3,7 +3,7 @@ id: 20260708-bdd-spec-transition-coverage
 title: FSM ベースの状態遷移カバレッジを bdd-spec の第5評価観点として追加する
 status: approved
 phase: current
-last-validated: 2026-07-08
+last-validated: 2026-10-20
 supersedes: []
 superseded-by: null
 issue: null
@@ -149,3 +149,4 @@ bdd-spec は既に4観点あり重い。stateless CRUD/query に第5観点を出
 - 関連 ADR: （Phase 6 で `[→ADR候補]` 2件を切り出し予定）
 - 関連 design doc: なし
 - 参照コード: `bdd-spec/skills/create-spec/references/spec-template.md:76-98`, `bdd-spec/skills/evaluate-spec/references/evaluation-rubric.md:70-99`, `bdd-spec/.../glossary-ssot.md:28-36`, `feature-dev/commands/feature-dev.md:564-604`
+- 追記（2026-10-20）: 上の行番号は 2026-07-08 時点（実装前の状態を指す）。実装後の観点 5 は `evaluation-rubric.md` の `## 観点 5`、状態遷移表は `spec-template.md` の `## 状態遷移表` にある。feature-dev の smoke test（Phase 5.5）の本体は `feature-dev/skills/feature-dev/SKILL.md` に移った。未解決事項の「stateful 判定の偽陰性ゲート」はバックストップ未実装のまま（見逃し許容で運用）

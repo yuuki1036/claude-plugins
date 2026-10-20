@@ -3,7 +3,7 @@ id: 20260708-spec-routing-ssot
 title: spec ルーティング rubric の SSoT 一元化方式
 status: approved
 phase: current
-last-validated: 2026-07-08
+last-validated: 2026-10-20
 supersedes: []
 superseded-by: null
 issue: null
@@ -109,3 +109,4 @@ spec-advisor 追加時の敵対的レビュー（M2）で「routing-rubric.md �
 - 関連 ADR: なし（[→ADR候補] は未切り出し）
 - 関連 design doc: なし
 - 関連実装: `.claude-plugin/lib/routing-axes.md`（正本・新規）、`spec-advisor/skills/spec-advise/references/routing-rubric.md`、`linear-workflow/skills/issue-create/SKILL.md` Phase 5、`indie-workflow/skills/indie-issue-create/SKILL.md` Phase 8、`.claude-plugin/scripts/validate_plugin_quality.py`、`.claude-plugin/lib/safe-hook.sh`（同期機構の前例）
+- 追記（2026-10-20）: `linear-workflow` と `indie-workflow` は `issue-workflow` に統合された（ADR-20260722164106）。消費サイトは `spec-advisor/skills/spec-advise/references/routing-rubric.md` と `issue-workflow/skills/issue-create/SKILL.md` の 2 つで、本文の linear / indie ミラー前提は統合前の記録として残す。機構（正本 + delimiter 区間 + `validate_plugin_quality.py` の dedent 比較）は変わらず稼働している

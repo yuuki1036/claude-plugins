@@ -3,7 +3,7 @@ id: 20260703-code-review-recall-high-risk-surface
 title: code-review の high-risk surface における recall 補強（冷や読み skeptic + surface-aware 閾値）
 status: accepted
 phase: current
-last-validated: 2026-07-08
+last-validated: 2026-10-20
 supersedes: []
 superseded-by: null
 issue: null
@@ -168,6 +168,16 @@ open の確定（実装時に採用した方向）:
 - **回帰 fixture は作成済み**（2026-07-04）: `evals/fixtures/recall/` に合成 fixture 3 本（01=#1 層跨ぎ値フロー recall / 07=#7 帰結接続 recall / 90=副単位ゲート precision 対照群）+ `expected.yaml`（判定ルール: recall は k=3 中 2 回以上、precision は 0 回厳格）+ `setup.sh`（temp repo 構築 + surface 判定の決定的発火チェック）+ runbook README。setup 検証済み（01=HIT raw-sql+money / 07=MISS が正解 / 90=HIT money）。
 - **k=3 本計測 完了（2026-07-08, v2.33.1, GitHub issue #76）**: `evals/reports/recall-20260708.md`。**01 PASS (3/3 CRITICAL 以上) / 07 PASS (3/3 BLOCKER) / 90 PASS (パターン合致 FP 0/3) → recall 回帰 PASS**。headless でも名前空間付き `/code-review:self-review` なら skill が起動する（スモークの不起動原因はコマンド名解決だった）。副次発見 2 点: (1) **skeptic silent skip** — surface HIT 6 run 中起動 1 run のみ、かつ未起動が missing_coverage に出ない遵守バグ（GitHub issue #85）。ただし skeptic 未起動でも 01 は全捕捉で、Tier2 だけで合成 fixture 級は足りる傍証（Tier1 縮小出口条件の材料）。(2) plan mode では review:completed が publish されず #77 の集計に寄与しない。
 - high での skeptic 起動昇格判断: 前提だった `recall_skeptic` payload フィールド（surface / fired / skip_reason / findings_added）は **v2.33.0 で実装済み**（2026-07-05）。skip 時も正規表現 surface 判定を必ず記録する。昇格の判断基準と jq 集計手順は `triage-guide.md` §8.5「high 昇格の判断基準」に記載。あとは xhigh 運用で events を貯めて集計するだけ（データ蓄積待ち）。
+
+### 実装後の変化（2026-10-20 追記）
+
+本文は実装時点の記述。決定（独立 skeptic + surface-aware 閾値）自体は変わらず稼働している。その後に変わった点:
+
+- **ファイルの移動**: `triage-guide.md` の §8.5（skeptic 起動ゲート）と §9（反証レイヤー）は `references/triage-dynamic-gates.md` の `## 8.5` / `## 9` に分割された。skeptic のテンプレートは `reviewer-prompts.md` §8 から `references/prompts/recall-skeptic.md` に移った
+- **起動位置**: v2.41.0 で skeptic は reviewer wave に相乗りして同時に発火する（findings 非注入なので reviewer に依存しない）。本文の「meta-reviewer の後・反証の前」は、reviewer の `[surface:high-risk]` フラグで事後に判明した場合の fallback 経路の位置になった。どちらで起動したかは payload の `recall_skeptic.launch`（`rider` / `fallback`）に記録される
+- **high への昇格**: #77 の判断で v2.52.0 に high 起点へ昇格したが、v2.136.0 でロールバック条件に該当し（#264）、現在は xhigh/max 起点に戻っている。open の (ii)「初版は xhigh/max 起点」と現状が一致する
+- **silent skip**: #85 は close 済み
+- **surface-aware 閾値**: CRITICAL 70+ / MAJOR 85+ は `scoring-guide.md` の報告マトリクス手順 7 に現存する
 
 ## 未解決事項 (open)
 

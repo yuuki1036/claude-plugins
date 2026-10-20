@@ -1,9 +1,9 @@
 ---
 id: 20260912-e2e-verify-comment-polish-pr-flow
 title: 実装完了後フロー（実機 E2E 動作確認 → コメント精査 → PR 作成）の改修
-status: draft
-phase: target
-last-validated: 2026-09-12
+status: approved
+phase: current
+last-validated: 2026-10-20
 supersedes: []
 superseded-by: null
 issue: null
@@ -388,9 +388,33 @@ done | grep -iE 'pull request|プルリク|(^|[^a-zA-Z])PR([^a-zA-Z]|$)'
    - frontmatter `phase: target → current`、`last-validated` を更新
    - 未解決事項 1〜5 の確定結果を設計判断ログに追記。基盤の落ち方や偽陽性率が設計と違えば追記、fallback 順を変えるなら supersede
 
+## 実装状況 (2026-10-20 / dev-workflow 1.38.1・code-review 2.160.0)
+
+A・B・C の 3 系統はすべて実装済みで、ADR も supersede 済み。frontmatter を `status: draft → approved` / `phase: target → current` に更新した。
+
+| 系統 | 状況 | 主なコミット |
+|---|---|---|
+| A: ui-verify verify の実機 E2E 化 | 実装済み。基盤選択・ケース列挙・3 値判定・`verification.md`・起動ラッパ `scripts/launch-chrome-devtools.sh`・`userConfig.browser_connect`・gh 版下限 WARN（`check-deps.sh`）・`docs/shared-state.md` の `verification` type | dd9cde5（2026-09-12）。c0997bb（2026-09-13 / #228）で verdict 必須化・未カバー種別の明記・`## カバレッジ` を追加 |
+| B: comment-polish | 実装済み。skill + command・`detect-external-ids.sh`・commit 前 hook `external-id-reminder.sh`・self-review からの適用 | af3e327 で code-review 2.122.0 に同期（スキル数 2→3）。以降 #231（Markdown 太字の除去）・#236（適用の独立化） |
+| C: pr-creator | 実装済み。repo skill の取り込み・概要 bullet（What / Why / Outcome）・`verification.md` からの動作確認セクション・`verify-*` の添付 | dd9cde5。c0997bb（#226）で Step 4.93 の pre-flight ゲートを追加 |
+| ADR | ADR-20260831120000 を ADR-20260912195236 で supersede 済み | af3e327 |
+
+### 設計からのズレ
+
+- **self-review からの適用**: 設計は「Step 7 で修正方針を選ぶと comment-polish を `--embed` で呼び、全件適用」。実装は、Step 6 のレポートに `✏️ コメント推敲` を別枠で出し、Step 7 の適用確認で「適用する」を選んだときに comment-polish が適用する。適用は A 系統 findings の件数から独立している（#236）
+- **`comment_polish.applied` は計測しない**: 未解決事項 6 の (a) を採った。payload の `comment_polish` は `{fired, suggested}` だけ
+- **autoConnect 証跡**: 未解決事項 8 の方向性どおり、既定で PR 添付対象外（ローカル保持）。dev アカウント画面に限りユーザー承認で opt-in
+- **verification.md の再実行**: 未解決事項 5 の方向性どおり上書き。`expected_user` は引き継ぐ
+- **ID 検出の既定**: 設計判断ログのとおり Linear ID + Linear URL（GitHub `#N` は `--github` の opt-in）
+
+### 未確認のまま残る項目
+
+- 未解決事項 2（Chrome 未起動時の `--autoConnect` の挙動）と 3（CLI での内蔵 Browser pane の常在性）は、実測結果が SKILL.md・cheatsheet のどちらにも書かれていない
+- 移行手順 6（作業 repo で 1 サイクル通し、検出数・偽陽性・基盤の落ち方を記録する）の結果は、設計書に残っていない
+
 ## 関連
 
-- 関連 Issue: （起票後に記入）
+- 関連 Issue: 起票元の記録は無い。実装後の修正は #226（pr-creator）/ #227（feature-dev）/ #228（ui-verify）/ #231・#236（comment-polish）
 - 関連 spec: null
 - 関連 ADR: ADR-20260831120000（chrome-devtools を維持。本 doc の A-1 で supersede 予定）/ ADR-20260817120000（典拠検証を hook にしない。B-2 の「検出数を先に測る」の根拠）
 - 関連 design doc: なし
