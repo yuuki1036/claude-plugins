@@ -248,6 +248,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 
 ## 未解決事項 (open)
 
+- **issue-workflow で始めたセッションを hub に紐付ける導線**（段階 ②）: 利用者の主な使い方は、brief を貼るのではなく、issue-workflow の `start` で作業セッションを立ち上げ、後から hub に紐付ける形になる見込み（2026-10-22 に利用者から）。段階 ① でも、作業側が会話の題に Issue ID を入れて `report hello` を置けば紐付く。ただし `start` の手順の中に、それを促すものが無い。案: `start` がブランチ・worktree を作った後、project-hub が有効（`plugin-enabled.sh`）で、cwd の repo を含む active な PJ があれば、題に Issue ID を入れて `hello` を置くよう案内する（プラグイン間の依存は作らない。案内だけにする）。あわせて、issue-workflow の local backend の Issue（`TEAM-123` の形）を hub の tracker として扱う種類が要るかを決める（段階 ① では `--tracker linear` で照合はできるが、status の Issue 一覧は Linear MCP でしか取らない）。確定タイミング: 段階 ② の詳細設計
 - **3 回目の self-review（2026-10-21・security / bug-detection）で残した指摘**（G-V ループの上限に達し、BLOCKER だけ直す方針にしたため未修正）。確定タイミング: 段階 ① を 1 PJ で使う前
   - MAJOR 3 件（同名の宛先の `to`・同じ PJ の別の登録のトークン照合・report の `--name`）は同じ日に直した（CHANGELOG の次の版）
   - MINOR: base のブランチ名を `split("/")[-1]` で取る / `--registered-branches` が repo ごとでない / fact の `path` が base に実在するかを確かめない / 共有 worktree の判定に done・不在の登録も数える / 別の PJ の hub.json が壊れていると全セッションの hook で stderr が出る
