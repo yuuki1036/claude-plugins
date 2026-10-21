@@ -177,6 +177,34 @@ class TempGitRepo:
         subprocess.run(["git", "checkout", "-q", name], cwd=self.path,
                        capture_output=True, env=self.ENV)
 
+    def is_ignored(self, path: Path) -> bool:
+        """`git check-ignore` が path を ignore 扱いにするか（`branch` と同じく git を直接叩かせないための口）.
+
+        rc 128（リポジトリ外のパスなど git の失敗）を「ignore されていない」と取り違えると、
+        否定の assert が git の失敗でも通る。0 / 1 以外は例外にする
+        """
+        proc = subprocess.run(["git", "check-ignore", "-q", str(path)], cwd=self.path,
+                              capture_output=True, text=True, env=self.ENV)
+        if proc.returncode not in (0, 1):
+            raise AssertionError(f"git check-ignore が失敗した（rc {proc.returncode}）: {proc.stderr}")
+        return proc.returncode == 0
+
+    def fake_origin(self, branch: str, head: bool = True) -> None:
+        """remote を張らずに `origin/<branch>`（head なら origin/HEAD も）の参照だけを今の HEAD に作る."""
+        subprocess.run(["git", "update-ref", f"refs/remotes/origin/{branch}", "HEAD"], cwd=self.path,
+                       capture_output=True, env=self.ENV)
+        if head:
+            subprocess.run(["git", "symbolic-ref", "refs/remotes/origin/HEAD",
+                            f"refs/remotes/origin/{branch}"], cwd=self.path, capture_output=True,
+                           env=self.ENV)
+
+    @classmethod
+    def at(cls, path: Path) -> "TempGitRepo":
+        """既存の作業ツリー（worktree・別のテスト用リポジトリ）をこのクラスの口で操作する."""
+        repo = cls.__new__(cls)
+        repo.path = path
+        return repo
+
     def worktree(self, name: str) -> Path:
         """linked worktree を `name` ブランチで張ってパスを返す（HEAD が無ければ先に commit する）."""
         if subprocess.run(["git", "rev-parse", "-q", "--verify", "HEAD"], cwd=self.path,
