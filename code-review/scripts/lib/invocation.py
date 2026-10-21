@@ -64,7 +64,7 @@ CURRENT_PLUGINS = frozenset((
     "adr-keeper", "bdd-spec", "code-review", "design-doc", "dev-workflow",
     "doc-freshness", "failure-journal", "feature-dev", "guardrail-protect", "harness-keeper",
     "issue-workflow", "living-spec-workflow", "notebooklm-workflow", "plugin-feedback",
-    "plugin-manager", "spec-advisor", "writing-polish",
+    "plugin-manager", "project-hub", "spec-advisor", "writing-polish",
 ))
 #: 改名した旧名。改名前の transcript を読むので残す（`claude-meta` → `harness-keeper` は
 #: Claude Code 2.1.292 の予約名を避けた改名）

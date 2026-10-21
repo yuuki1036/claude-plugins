@@ -9,7 +9,7 @@
     {
       "name": "code-review",
       "description": "Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity の 2 軸で報告閾値を制御し、diff の性質と effort に応じて explorer → reviewer → 反証レイヤーを構成する。PR レビュー（/review）とコミット前セルフレビュー（/self-review。--embed で他プラグインから委譲可）に対応。",
-      "version": "2.161.1",
+      "version": "2.161.2",
       "author": {
         "name": "yuki"
       },
@@ -158,6 +158,15 @@
         "name": "yuki"
       },
       "source": "./living-spec-workflow"
+    },
+    {
+      "name": "project-hub",
+      "description": "1 つのセッションを hub にして、複数の作業セッションで進める PJ の状態（作業セッション・PR・Issue・確かめた事実）をコンテキストの外のファイルで持つ。作業側の report はファイルで受け、hub からの連絡は送る直前に宛先を引き直す。hub のセッションにだけ SessionStart / PostCompact で状態の表を注入する",
+      "version": "0.1.0",
+      "author": {
+        "name": "yuki"
+      },
+      "source": "./project-hub"
     }
   ]
 }

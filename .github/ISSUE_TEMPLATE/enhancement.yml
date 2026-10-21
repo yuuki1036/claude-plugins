@@ -23,6 +23,7 @@ body:
         - notebooklm-workflow
         - plugin-feedback
         - plugin-manager
+        - project-hub
         - spec-advisor
         - writing-polish
         - 新プラグイン提案

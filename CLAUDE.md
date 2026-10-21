@@ -124,6 +124,7 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 | design-doc | 2 | 2 | 1 | - | 技術設計書の作成・永続化・supersede・多視点レビュー（実装ブリッジ必須） |
 | spec-advisor | 1 | 1 | - | SessionStart | タスク内容から設計系成果物（WHAT/HOW/WHY）を判断して実装前に提案 |
 | living-spec-workflow | 2 | 2 | - | - | Issue 化前の設計収束ドキュメント (living spec) の作成・運用と 8 段ファネル検証 |
+| project-hub | 2 | 2 | - | SessionStart, PostCompact | 複数の作業セッションを 1 つの hub で束ねる（状態はファイル・report は inbox・宛先は送る直前に引き直す） |
 
 ## セットアップ
 

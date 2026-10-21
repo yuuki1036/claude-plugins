@@ -1,0 +1,29 @@
+plugin: project-hub
+cases:
+  - id: hub-init-ja
+    prompt: このセッションを PJ の hub にしたいので hub を作って
+    expected_skill: project-hub:hub
+    k: 3
+  - id: hub-status-ja
+    prompt: hub の状況を見せて。作業セッションの report も取り込んで
+    expected_skill: project-hub:hub
+    k: 3
+  - id: hub-relay-ja
+    prompt: hub から ABC-12 の作業セッションに relay して、レビューの指摘を直すよう伝えて
+    expected_skill: project-hub:hub
+    k: 3
+  - id: report-hello-ja
+    prompt: brief を受けたので hub に hello の report を置いて
+    expected_skill: project-hub:report
+    k: 3
+  - id: report-progress-ja
+    prompt: PR を出したので hub に報告して
+    expected_skill: project-hub:report
+    k: 3
+
+  # --- 誤発火防止 ---
+  # 1 リポジトリのプロジェクト状況は issue-workflow の dashboard の領分（hub を含まない語では起動しない）
+  - id: status-goes-to-dashboard
+    prompt: プロジェクト状況を見せて
+    expected_skill: issue-workflow:dashboard
+    k: 3

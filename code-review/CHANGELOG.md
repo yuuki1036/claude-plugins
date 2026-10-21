@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.161.2] - 2026-10-21
+
+### Changed
+
+- 呼び出し元の判定（`scripts/lib/invocation.py`）が知るこのマーケットプレイスのプラグインに `project-hub` を足した（GitHub issue #308 で新設）。足さないと、project-hub の skill から呼ばれたレビューの呼び出し元が `other` に落ちる
+
 ## [2.161.1] - 2026-10-21
 
 ### Fixed

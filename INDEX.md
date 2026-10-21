@@ -2,8 +2,8 @@
 
 Claude Code プラグインのマーケットプレイスリポジトリ。各プラグインは独立して動作する（プラグイン間依存なし）。
 
-- 最終更新: 2026-08-28
-- プラグイン数: 17
+- 最終更新: 2026-10-21
+- プラグイン数: 18
 - マニフェスト: `.claude-plugin/marketplace.json`（各 `plugin.json` から派生・SSoT 検証あり）
 
 > 詳細な運用規約・設計判断は [CLAUDE.md](CLAUDE.md) を参照。本ファイルは各プラグインのコンポーネント構成の早見表。
@@ -15,7 +15,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [adr-keeper](#adr-keeper) | 0.4.2 | 1 | 1 | - | PreToolUse, SessionStart | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.7 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [harness-keeper](#harness-keeper) | 2.0.1 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.161.1 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [code-review](#code-review) | 2.161.2 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.6.0 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.39.1 | 4 | 7 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.4 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
@@ -27,6 +27,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.3.3 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.9.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
+| [project-hub](#project-hub) | 0.1.0 | 2 | 2 | - | SessionStart, PostCompact | - | 複数の作業セッションを 1 つの hub で束ねる PJ の状態ファイル |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.10.2 | 1 | 1 | - | SessionStart | - | 文章を語句レベルで推敲・添削 |
 
@@ -137,6 +138,12 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 インストール済みプラグインの一括更新と、マーケットプレイスの後発追加プラグイン取りこぼし通知。mods が有効な環境では `/update-all` を mod がモデルを呼ばずにその場で実行する（無効なら従来どおりモデルが手順を実行する）。
 - **commands**: `update-all`
 - **hooks**: SessionStart
+
+### project-hub
+1 つのセッションを PJ の hub にして、複数の作業セッションで進める PJ の状態（作業セッション・PR・Issue・確かめた事実）を `~/.claude/project-hub/<PJ>/` のファイルで持つ。作業側の report は inbox にファイルで置き SendMessage は通知だけ、hub → 作業側の brief / relay は送る直前に ListAgents で宛先を引き直し、1 件に決まらなければ送らない。brief が渡す事実は出典つきで hub が確かめた facts だけから引く。
+- **commands**: `hub`, `report`
+- **skills**: `hub`（init / status / brief / relay / fact / takeover / close）, `report`
+- **hooks**: SessionStart（check-deps / inject-state）, PostCompact（inject-state: hub のセッションにだけ state.md を注入）
 
 ### spec-advisor
 開発タスクの内容から、実装着手前に書くべき設計・計画系成果物（WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / Issue粒度=issue-design / 実装一気通貫=feature-dev）を判断して提案。判定の SSoT を `routing-rubric.md` に一元化。over-suggestion guard を先頭に置くファネルで bugfix/typo/設定変更には黙り、確信度が高い時だけ 1 文根拠で提案・迷う時のみ AskUserQuestion。dormant 判定で未導入プラグインは提案肢から除外、全て未導入なら沈黙。
