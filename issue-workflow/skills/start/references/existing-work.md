@@ -29,11 +29,11 @@ start の Phase F2.5 が読む。`branch-setup.sh existing {ISSUE-ID}` の出力
 
 | 条件 | WORK_STATE | 扱い |
 |---|---|---|
-| Issue ファイル（F3 で読む `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md`。無ければこの行は当たらない）の `status` が `completed` / `canceled` | `closed` | 移動もブランチ作成もしない。判定行で報告だけする |
+| Issue ファイル（F3 で読む `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md`。無ければこの行は当たらない）の `status` が `completed` / `canceled` | `closed` | 移動もブランチ作成もしない。判定行で報告だけする。Phase CTX は書かない |
 | `current=1` の候補がある（session-context だけの候補も含む） | その `current=1` の候補に作業があれば `here`、無ければ `fresh` | 作業の有無に関わらず今のチェックアウトに残る。ほかの候補は F6 に並べるだけ |
-| 移れる候補（`matched` に `branch` か `path` を含む）のどれかに作業がある | 下の順で先頭の候補が worktree を持てば `moved`、`prunable=` にパスがあれば `prunable`、ブランチだけ（`worktree=-`）なら `branch` | `moved` はその worktree へ移る（3）。確認は出さない。`branch` は F7 でそのブランチへ移る。どちらも新しいブランチは作らない。`prunable` は移動もブランチ作成もせず、判定行で登録の消し方（下の `prunable` の項）を案内する |
-| 作業のある session-context だけの候補がある | `detached` | 移動もブランチ作成もしない。判定行で、その worktree のセッションで続けるよう案内する |
-| 移れる候補がある（どれも作業なし） | 下の順で先頭の候補の `prunable=` にパスがあれば `prunable`、無ければ `fresh` | `fresh` は、先頭の候補が worktree を持てばそこへ移る（3）。ブランチだけなら移らず、F7 の「ブランチ未作成のとき」でそのブランチを使う（新しい名前を作らない）。`prunable` は移動もブランチ作成もせず、登録の消し方（下の `prunable` の項）を案内する |
+| 移れる候補（`matched` に `branch` か `path` を含む）のどれかに作業がある | 下の順で先頭の候補が worktree を持てば `moved`、`prunable=` にパスがあれば `prunable`、ブランチだけ（`worktree=-`）なら `branch` | `moved` はその worktree へ移る（3）。確認は出さない。`branch` は F7 でそのブランチへ移る。どちらも新しいブランチは作らない。`prunable` は移動もブランチ作成もせず（Phase CTX は書かない）、判定行で登録の消し方（下の `prunable` の項）を案内する |
+| 作業のある session-context だけの候補がある | `detached` | 移動もブランチ作成もしない。判定行で、その worktree のセッションで続けるよう案内する。Phase CTX は書かない（今のチェックアウトが detached HEAD の worktree なら、書くと次の /start でここが `current=1` の候補になり、上の行が先に当たってこの判定が効かなくなる） |
+| 移れる候補がある（どれも作業なし） | 下の順で先頭の候補の `prunable=` にパスがあれば `prunable`、無ければ `fresh` | `fresh` は、先頭の候補が worktree を持てばそこへ移る（3）。ブランチだけなら移らず、F7 の「ブランチ未作成のとき」でそのブランチを使う（新しい名前を作らない）。`prunable` は移動もブランチ作成もせず（Phase CTX は書かない）、登録の消し方（下の `prunable` の項）を案内する |
 | それ以外（0 件、または作業の無い session-context だけの候補） | `none` | これまでどおり新規（F7 でブランチを作る） |
 
 - **選ぶ順**: `ahead` が多い順 → 同じなら `dirty` が多い順 → それも同じなら出力の順。`-` は 0 として比べる（既定ブランチが分からない回は `ahead=-` が全候補に出るので、`dirty` と出力の順で決まる）
@@ -42,6 +42,10 @@ start の Phase F2.5 が読む。`branch-setup.sh existing {ISSUE-ID}` の出力
   - `branch=detached` で `ahead` が 0 でない（`-` を含む）: そのコミットは、ほかのブランチに無ければ登録の HEAD からしか辿れず、prune で登録と一緒に辿れなくなる（次の /start は `none` になり、ブランチを新しく作る）。prune の前に `git branch <名前> <head の値>` で残すよう書く
 - **session-context だけの候補**（`matched=session-context`）には移らない。Claude アプリが作る detached HEAD の worktree で、別の稼働中のセッションが使っていることがある。作業があり、`current=1` の候補が無く、移れる候補にも作業が無ければ `detached` にする — ここで新規として始めると、その worktree の続きと並行に同じ Issue を作り直すことになる。ほかの WORK_STATE に決まった回も、作業があれば 4 の書式で判定行と F6 に並べる。作業なしなら捨てる（session-context が残っているだけ）
 - `detached` の回に利用者がここで新しく始めると言ったら（その worktree が古い残りだった、など）、`detached` の行を飛ばして下の行で決め直す
+- `TASK_INTENT = new` で作業のある `here` / `moved` / `branch` に決まった回（F7 は着手の選択を出さず続きとして扱う）に、利用者が既存は捨てて新しく始めたいと言ったら、ブランチ・worktree・コミットはこちらで消さない（`git branch -D` / `git worktree remove` は取り消せない）。行を飛ばして F7 のブランチ作成にも進めない — ID を含む今のブランチや `.claude/worktrees/<ID>` は既存のものがそのまま使われ（branch-setup.md の 0 / 3）、別の名前で切っても次の /start は上の選ぶ順で `ahead` の多い既存の方を選び直す。候補を結び付ける手がかり（1 の `matched=`）が 1 つでも残ると次の /start も同じ候補に決まるので、残るものごとに次の手順を案内し、利用者が済ませた後の /start で決め直す（どれも残らなければ `none` で新規になる）:
+  - ブランチ名の ID: そのブランチを消すか、ID を含まない名前に変える（`git branch -m`）。origin に push 済みなら `origin/<名前>` が残り、ローカルを消しても名前を変えても候補に残る。リモートのブランチも消すか名前を変えるよう案内する（リモートへの操作はこちらで打たない）
+  - `.claude/worktrees/<ID>` の worktree: ブランチの名前を変えてもパスで結び付く。`git worktree remove` するか、ID を含まないパスへ `git worktree move` する
+  - detached HEAD の worktree: `.claude/session-context.md` が ID を持つ間は、`git worktree move` で動かしても session-context で結び付く。worktree を remove するか、その session-context を消す
 - `{WORK_DIR}` は、移った回（`moved` と、worktree へ移った `fresh`）は移り先の worktree、それ以外（`branch`・`closed`・`detached`・`prunable` を含む）は今のチェックアウトの root を指す。F3.5 の Agent #2 に渡す
 - 確認なしで移るのは、移り先が後から `EnterWorktree`（または `ExitWorktree`）で直せるため。意図しない回は判定行を見て戻す
 
@@ -72,7 +76,7 @@ prunable  判定: 続き（移れない）— `.claude/worktrees/TEAM-12`（deta
 ```
 
 - **別の worktree へ移った回**（`moved` と、worktree へ移った `fresh`）は、末尾の括弧に「別のセッションがこの worktree で作業中なら並行編集になる」を添える。使っているセッションがあるかはこちらから判定できない
-- `TASK_INTENT = new` で作業ありのときは食い違いを書く: 「判定: 続き（引数は新規）— `feat/TEAM-12-x` に 3 コミット。ブランチは作らず既存を使う」
+- `TASK_INTENT = new` で作業ありのときは食い違いを書く（`here` / `moved` / `branch` なら F7 は着手の選択を出さず続きとして扱う。GitHub issue #305 の完了条件）: 「判定: 続き（引数は新規）— `feat/TEAM-12-x` に 3 コミット。着手の選択は出さず、ブランチも作らず既存を続ける」
 - 候補が 2 件以上なら末尾に「ほかに N 件」を足し、F6 の Git 状態に全候補の worktree・ブランチ・コミット数・未コミットの変更を並べる
 - `detached` 以外の回で、作業のある session-context だけの候補があれば、末尾に「`<path>`（detached HEAD）にも作業がある。続けるならその worktree のセッションで /start する」を足す
 

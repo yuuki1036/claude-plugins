@@ -68,7 +68,7 @@ feature-dev の Phase 5.5 と issue-workflow の軽量フロー（Step 3）は�
 
 | 引数 | 意味 |
 |---|---|
-| `--caller=<feature-dev\|lightweight-flow>` | 別のスキルから呼ばれた。モードを聞き返さず、Step 0 の前に「事前判定」を行い、応答の最後に (f) の 5 行を出す。**確認は省かない**（dev server の起動許可・ケース表の確認・期待ユーザー・既存ブラウザの停止確認。他スキルの `--embed` のように確認 UI を止める意味は持たない）。verify 以外のモードでは無視する |
+| `--caller=<feature-dev\|lightweight-flow>` | 別のスキルから呼ばれた。モードを聞き返さず、Step 0 の前に「事前判定」を行い、応答の最後に (f) の 5 行を出す。**確認は省かない**（dev server の起動許可・ケース表の確認・期待ユーザー・backend の隔離の確認・既存ブラウザの停止確認。他スキルの `--embed` のように確認 UI を止める意味は持たない）。verify 以外のモードでは無視する |
 | `--require=<理由>` | 事前判定が `no` でも smoke を走らせる（feature-dev の runtime-sensitive 判定が REQUIRED の回） |
 | `--targets=<path>[,<path>...]` | 必ず開く URL / path（事前判定が `no` でも開く）。各 target を smoke ケース 1 件として (b) に足す |
 | `--screenshot=need\|none` | (a) のスクショの要否。省くと依頼から決める |
@@ -125,6 +125,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-checkout.sh" [--port N]
 | どれでも | `foreign` | **流用も kill もしない**。`SERVER_CWD` を示して「別 checkout の server が port を占有している」と報告し、worktree なら `DEV_PORT + 10` から空きを探して（worktree-setup の `allocate_port` と同じ刻み）その port で起動する許可を取る。main なら占有側の停止か別 port での起動かをユーザーに選んでもらう |
 | どれでも | `unknown` | cwd が取れない（`lsof` / procfs 不在）。`ours` と見なさず、ユーザーに「`SERVER_PID` はこの checkout の server か」を確認してから進む |
 
+この表で取る許可・確認（`none` / `foreign` の起動の許可と占有側の停止の選択、`worktree-unconfigured` の worktree-setup の提案、`unknown` の確認）は、利用者が自分で選んだ回答だけを有効とする。無操作の自動続行（askUserQuestionTimeout）の回答は許可・確認とみなさず、起動しない・占有側を止めない・worktree-setup を走らせない・`ours` と見なさない側に読む（既存ブラウザの停止確認と同じ規則。`--caller` の回も省かない）。
+
 判定結果（`CHECKOUT` / `TOPLEVEL` / `DEV_PORT` / `SERVER_MATCH`）は Step 3 (e) の verification.md frontmatter に書く。pr-creator は同じ checkout の `.claude/verification/<branch>.md` を読むので、worktree で検証した記録は worktree 側に残る（main 側には残らない）。
 
 ### Step 1: 対象プロジェクトの Web 判定
@@ -147,7 +149,7 @@ port と起動中判定は Step 0 の `DEV_PORT` / `SERVER_MATCH` を使う（�
 
 1. `package.json` の `scripts.dev` (または `start`, `preview`) を読む
 2. パッケージマネージャを推定（`pnpm-lock.yaml`→pnpm / `yarn.lock`→yarn / `bun.lockb`→bun / else npm）
-3. **ユーザーに起動許可を確認**（勝手に port を占有しない）
+3. **ユーザーに起動許可を確認**（勝手に port を占有しない）。許可は利用者が自分で選んだ回答だけ。無操作の自動続行（askUserQuestionTimeout）の回答は許可とみなさず、起動しない（`--caller` の回も同じで、(f) は `blocked` / `UI_VERIFY_BROWSER=unselected`）
 4. 許可されたら background で起動: `pnpm dev &` 相当を Bash の `run_in_background: true` で実行
 5. HTTP が応答するまで Bash で待機する（`wait_for` は**ページ上のテキスト出現待ち**であって
    疎通待ちではないので使えない）:
@@ -181,7 +183,7 @@ dev server はセッション開始時に **1 回だけ** 起動し、以後は 
 
 Step 0 の `detect-checkout.sh` が正本（port の占有ではなく LISTEN process の cwd で判定する）:
 
-- `SERVER_MATCH=none`: 未起動 → 起動許可をユーザーに確認してから background 起動
+- `SERVER_MATCH=none`: 未起動 → 起動許可をユーザーに確認してから background 起動（無操作の自動続行の回答は許可ではない。上の 3）
 - `SERVER_MATCH=ours`: 起動中 → そのまま使う（kill / restart 禁止）
 - `SERVER_MATCH=foreign`: 別 checkout の server → 使わない・止めない。別 port で起動する（Step 0 の表）
 
@@ -214,13 +216,13 @@ E2E への昇格（`webapp-testing` / Playwright）時も、Playwright の `webS
                    blocked（基盤なし）
 ```
 
-- tune / snap は撮影そのものが目的なので、常に chrome-devtools を使う。PR に添付するスクショは従来どおり pr-creator の Step 4.5 が snap で撮る
+- tune / snap は撮影そのものが目的なので、常に chrome-devtools を使う。PR に添付するスクショは pr-creator の Step 4.5 が選ぶ: このチェックアウトが今のブランチに切り替わった後に撮った snap / verify / tune のディレクトリがあればその最新を使い、無ければ snap で撮る（判定は `scripts/pick-screenshot-dir.sh`）
 - **chrome-devtools を使う回は、最初の chrome-devtools のツール呼び出しの前に**「既存のブラウザがプロファイルを掴んでいるとき」（`## MCP Tool の使い方`）の status を 1 回見る
 - 認証の要否は、対象 URL を開いてログイン画面（`/login` `/signin` へのリダイレクト、password 型 input）を検知して決める。事前にユーザーへ聞かない。どの基盤でもログイン画面で止まったら、ユーザーにログインを依頼して続行する（パスワードは入力しない）
 - `--autoConnect` を使うには `userConfig.browser_connect` を `autoConnect` にする（既定は `default`）。ADR-20260831 の privacy posture から既定では実プロファイルに繋がない
 - **Claude Browser / Claude in Chrome はスクショをファイルに保存できない**。スクショが要る回にこの 2 基盤へ落ちたら E2E の操作と合否判定だけを行い、証跡は (d) で別途撮るか「証跡なし」と記録する
 - Claude in Chrome は利用者の実 Chrome プロファイルにつながる。スクショを保存しないので raw URL の懸念（ADR-20260831）は当たらないが、書き込み系は (c) の実 Chrome の歯止めの対象（ADR-20261020221214）
-- **期待ユーザーの確認**（アカウント切替対策）: E2E 起動時にユーザーへ 1 回「どのアカウントでログイン中か」を確認し、`expected_user` として verification.md に記録する。最初のケースで画面の表示ユーザー名を読み取り `signed_in_as` に記録し、`expected_user` と照合する。違えば停止して報告（自動で切り替えない）。表示名が読めない場合はその旨を記録し、意図したアカウントかを起動時に確認する
+- **期待ユーザーの確認**（アカウント切替対策）: E2E 起動時にユーザーへ 1 回「どのアカウントでログイン中か」を確認し、`expected_user` として verification.md に記録する。最初のケースで画面の表示ユーザー名を読み取り `signed_in_as` に記録し、`expected_user` と照合する。違えば停止して報告（自動で切り替えない）。表示名が読めない場合はその旨を記録し、意図したアカウントかを起動時に確認する。確認は利用者が自分で返した回答だけ。無操作の自動続行（askUserQuestionTimeout）の回答は確認とみなさず、`expected_user` を null のまま記録する（自動続行の回答を期待ユーザーとして書かない。2 回目以降の実行に引き継がれる）。この回は照合できないので、サマリに `期待ユーザー未確認` と書く（`--caller` の回も省かない）
 
 ##### (b) ケース列挙
 
@@ -238,7 +240,7 @@ E2E への昇格（`webapp-testing` / Playwright）時も、Playwright の `webS
 
 **`${CLAUDE_EFFORT}` 分岐**: `low` / `medium` は spec + Issue + 固定 5 項目。`high` 以上で diff 推定も加える。「呼び出し元」の行は effort に関わらず入れる。
 
-列挙したケース表はユーザーに提示して確認を取ってから実行する（削る・足す）。
+列挙したケース表はユーザーに提示して確認を取ってから実行する（削る・足す）。確認は利用者が自分で返した回答だけ。無操作の自動続行（askUserQuestionTimeout）の回答は確認とみなさず実行しない（全ケースを `blocked: ケース表の確認なし` で残す。`--caller` の回も省かない）。この回は pending flag を `verified-snap` で上書きしない（UI を変えた後なら `unverified` のまま残る。(e) の最後の行）。
 
 **coverage 宣言（列挙時に必須）**: ケース表と一緒に次の 2 表を出す。正常系だけのケース表を黙って確定させないためのゲートで、準正常 / 異常が 0 件なら件数ではなく**理由**を書く（「該当なし」では通さない。どの入力・どの失敗経路を候補として見て落としたかを 1 行）。
 
@@ -265,7 +267,7 @@ E2E への昇格（`webapp-testing` / Playwright）時も、Playwright の `webS
 - 完了時に種別ごとの verdict 集計（例: 正常 3 pass / 準正常 1 pass 1 blocked / 異常 0 件）を出す。**種別単位で「0 件 または 1 件も pass していない」ものを判定し、該当する種別だけを `未カバー: <種別>（理由）` としてサマリと verification.md の両方に明記する**（例: 異常=0 件で準正常は pass なら `未カバー: 異常（…理由）`）。全種別がカバー済みなら `未カバー: なし`。pr-creator がこの行を PR 本文へ転記する
 - **書き込み系（フォーム送信・削除・確定）の歯止めは 2 段**:
   - 本番 URL では一切書き込まない（従来どおり）
-  - `--autoConnect` / Claude in Chrome（どちらも利用者の実 Chrome プロファイル）では破壊的操作を**既定 blocked**。dev server の backend が隔離環境（テスト DB / seed データ）だとユーザーが 1 回確認したときだけ解禁し、verification.md の `backend_isolation: confirmed` に記録する。確認が取れなければ読み取り系のみ実行し、破壊的ケースは `blocked: 書き込み先未確認` で残す
+  - `--autoConnect` / Claude in Chrome（どちらも利用者の実 Chrome プロファイル）では破壊的操作を**既定 blocked**。dev server の backend が隔離環境（テスト DB / seed データ）だとユーザーが 1 回確認したときだけ解禁し、verification.md の `backend_isolation: confirmed` に記録する。確認は利用者が自分で返した回答だけで、無操作の自動続行（askUserQuestionTimeout）の回答は確認とみなさず `unconfirmed` とする（`--caller` の回も省かない）。確認が取れなければ読み取り系のみ実行し、破壊的ケースは `blocked: 書き込み先未確認` で残す
 - 二重送信は連打せず「送信直後にボタンの disabled / 二重リクエストの有無を network で確認」
 
 ##### (d) 証跡撮影（E2E とは別係）
@@ -322,7 +324,7 @@ backend_isolation: confirmed | unconfirmed
 
 - 2 回目実行は上書きする（最新の head が正）。ただし `expected_user` は消さず引き継ぐ
 - 出力先を作る: `mkdir -p .claude/verification` し、`.claude/verification/.gitignore` に `*` を書く（初回のみ）
-- 記録後に pending flag を `verified-snap` で上書きする（Step 4 参照）
+- 記録後に pending flag を `verified-snap` で上書きする（Step 4 参照）。ただし pass も fail も 0 件の回（全ケースが `blocked`。ケース表の確認が無かった回を含む）は上書きしない（UI を変えた後なら `unverified` のまま残る。何も確かめていないのに commit 前の gate hook を黙らせない）
 
 ##### (f) 呼び出し元への結果（`--caller` のときだけ）
 
@@ -421,7 +423,7 @@ mcp__plugin_dev-workflow_chrome-devtools__emulate(pageId: 1, colorScheme: "auto"
 - `.claude/screenshots/` が存在しなければ作成（`mkdir -p`）
 - `.claude/screenshots/.gitignore` に `*` を書いて git 追跡を防ぐ（初回のみ）
 - 結果を報告する際は保存パスを file_path:line_number 形式ではなくプレーンパスで提示
-- **pending flag の更新**: PostToolUse hook が UI 変更検知時に作成する `.claude/.ui-verify-pending` を `verified-snap` ステータスで上書きする（verify / tune / snap のいずれも実行完了時点）。これにより commit 前の gate hook が黙る。
+- **pending flag の更新**: PostToolUse hook が UI 変更検知時に作成する `.claude/.ui-verify-pending` を `verified-snap` ステータスで上書きする（verify / tune / snap のいずれも実行完了時点。verify で pass も fail も 0 件の回は上書きしない — (e)）。これにより commit 前の gate hook が黙る。
   ```bash
   mkdir -p .claude
   printf 'verified-snap\n%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .claude/.ui-verify-pending
@@ -432,7 +434,7 @@ mcp__plugin_dev-workflow_chrome-devtools__emulate(pageId: 1, colorScheme: "auto"
   |----|------|------------|
   | `unverified` | 未確認。gate hook が `git commit` 直前に reminder を出す | `ui-change-reminder.sh`（UI ファイル変更検知時） |
   | `verified-local` | ローカル目視済み。gate hook は黙る | 手動（撮影せず黙らせたいとき） |
-  | `verified-snap` | snap 撮影済み。gate hook は黙る | ui-verify（verify / tune / snap の完了時） |
+  | `verified-snap` | snap 撮影済み。gate hook は黙る | ui-verify（verify / tune / snap の完了時。verify は pass か fail が 1 件以上の回だけ） |
 
   撮影せず黙らせる場合は次を実行する:
   ```bash
@@ -483,6 +485,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/chrome-profile-lock.sh" stop --pid <HOLDER_P
 ## 絶対厳守ルール
 
 - dev server の勝手な起動禁止。必ずユーザー確認を取る
+- dev server の起動許可・期待ユーザーの確認・ケース表の確認・backend の隔離の確認・既存ブラウザの停止確認は、利用者が自分で選んだ回答だけを有効とする。無操作の自動続行（askUserQuestionTimeout）の回答は許可・確認とみなさない（起動しない・期待ユーザーとして記録しない・実行しない・破壊的操作を解禁しない・止めない）。`--caller` で呼ばれた回もこれらの確認を省かない
 - `verify` は列挙した全ケースに verdict（pass / fail / blocked）を付けるまで完了にしない。準正常 / 異常が 0 件または未実施なら、verification.md とサマリに `未カバー` を理由つきで明記する（正常系だけの完了を黙って通さない）
 - 一度起動した dev server をタスク完了ごとに停止・再起動しない。セッション中は保持する（詳細は Step 2「dev server ライフサイクル」）
 - 別 checkout（main / 他 worktree）の dev server を流用しない・kill しない。`SERVER_MATCH=ours` 以外の server で E2E を回さない（Step 0）

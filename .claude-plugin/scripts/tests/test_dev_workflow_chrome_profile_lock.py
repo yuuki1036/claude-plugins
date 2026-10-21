@@ -13,7 +13,8 @@ build/ を指す node の形 / `npm exec chrome-devtools-mcp@…`）を真似た
 
 **`CLAUDE_PID` を継承させない**: 実行中の Claude Code セッションの pid が入っていると、テストの
 プロセスがその子孫なので self / other の判定が開発機と CI で割れる。ケースごとに明示する。
-**orphan を期待するケースは holder を再親付けしたプロセスにする**（`orphan_browser()`）: テストの
+**orphan を期待するケース（と MCP の祖先が無い self）は holder を再親付けしたプロセスにする**（`orphan_browser()` /
+`chain(..., detach=True)`）: テストの
 直接の子にすると、祖先の walk がテストランナーの祖先（シェル・claude・端末）まで届き、そのどれかの
 コマンド行に MCP の印があると other に化ける（実測）。
 起動したプロセスはすべて回収する（run-tests.py の残留検出に掛からないように）。
@@ -431,6 +432,19 @@ class HolderSessionTest(ProfileLockBase):
         self.lock(holder)
         self.assertEqual(self.status(claude_pid=os.getpid())["HOLDER_SESSION"], "self")
 
+    def test_session_self_without_mcp_ancestor(self):
+        """CLAUDE_PID が祖先にいれば、MCP の祖先が無くても self（orphan と書かない）. judge_session は self を
+        orphan より先に見る（逆にすると、このセッションが MCP を通さずに起動したブラウザに停止の確認が出る）.
+
+        claude の役の層の下に置いて再親付けする: テストの直接の子にすると祖先の walk がテストランナーの祖先に
+        届き、そこに MCP の印がある機では順を入れ替えても self のまま緑になる. CLAUDE_PID が無関係なら orphan（対照）.
+        """
+        (claude,), holder = self.chain(("claude",), detach=True)
+        self.lock(holder)
+        out = self.status(claude_pid=claude)
+        self.assertEqual((out["HOLDER_SESSION"], out["HOLDER_MCP_PID"]), ("self", ""))
+        self.assertEqual(self.status(claude_pid=self.unrelated_pid())["HOLDER_SESSION"], "orphan")
+
     def test_session_other_when_claude_pid_is_unrelated(self):
         _, holder = self.mcp_browser()
         self.lock(holder)
@@ -510,6 +524,15 @@ class StopTest(ProfileLockBase):
         self.assertEqual(proc.returncode, 3, proc.stderr)
         self.assertEqual(out["REFUSED"], "self")
         self.assertEqual(out["STOPPED"], "no")
+        self.assertTrue(alive(holder))
+
+    def test_stop_refuses_self_without_mcp_ancestor(self):
+        """MCP の祖先が無くても、CLAUDE_PID が祖先にいる holder は止めない（orphan として止める側に倒さない）."""
+        (claude,), holder = self.chain(("claude",), detach=True)
+        self.lock(holder)
+        proc, out = self.stop(holder, claude_pid=claude)
+        self.assertEqual(proc.returncode, 3, proc.stderr)
+        self.assertEqual((out["REFUSED"], out["STOPPED"]), ("self", "no"))
         self.assertTrue(alive(holder))
 
     def test_stop_refuses_unknown_session(self):

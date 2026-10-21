@@ -212,6 +212,63 @@ class ClosingTest(unittest.TestCase):
         self.assertIn("`'` を `'\\''` に置き換えて引用を組み立て直すことはしない", section)
         self.assertIn("回せるファイルが 1 つも残らなければ `道具なし`", section)
 
+    def test_pr_mode_ref_is_taken_from_the_pr_head(self):
+        """PR モードの `<ref>` を手元の HEAD から求めると、手元が PR head でない回に base のコミットが対象に混ざる.
+
+        式が本物の git で PR の変更だけを選ぶかは test_code_review_mutation_tool.py の PrModeRefTest で見る.
+        """
+        bullet = next((l for l in mutation_section().splitlines() if l.startswith("- `<ref>` は")), None)
+        self.assertIsNotNone(bullet, "道具の節に `<ref>` の決め方の行が無い")
+        self.assertIn("PR モードなら `git merge-base origin/<baseRefName> <headRefOid>` の値", bullet)
+        self.assertNotIn("`git merge-base origin/<baseRefName> HEAD`", bullet, "手元の HEAD から求めている")
+        self.assertIn("手元の `HEAD` で求めない", bullet)
+        self.assertIn("`FIX_OK=0` なら理由に「PR head を checkout してから回す」を添える", bullet,
+                      "手元が PR head と違う回に checkout を促す規則が消えた（起点が正しくても別のコードを測る）")
+        self.assertIn("merge-base が失敗する", bullet, "手元に PR head のコミットが無い回の扱いが無い")
+        self.assertIn("`HEAD` で代えない", bullet, "式が失敗した回に手元の HEAD へ戻る余地が残っている")
+        skill = SKILL.read_text(encoding="utf-8")
+        meta = next((l for l in skill.splitlines() if "gh pr view" in l and "--json" in l), None)
+        self.assertIsNotNone(meta, "Step 0 に META を取る行が無い")
+        fields = meta.split("--json", 1)[1].split()[0].split(",")
+        for field in ("baseRefName", "headRefOid"):
+            with self.subTest(field=field):
+                self.assertIn(field, fields, "式に埋める値を META が取っていない")
+        step0 = between(skill, "### 0. 入力確定と diff 収集", "### 1. PR コンテキスト")
+        self.assertIn("`baseRefName` と `headRefOid` の実値を控えている", step0,
+                      "Step 7 まで値が残らない（シェル変数は Bash 呼び出し間で消える）")
+
+    def test_unresolvable_ref_is_not_proposed(self):
+        """`<ref>` が求まらない回に `提案する` を出すと、`<ref>` が残った回し方を呼び出し元が承認後にそのまま回して必ず失敗する.
+
+        `提案する` の回し方は「そのまま実行できるコマンド」という契約を崩さず、その回は `道具なし` に倒す。
+        倒す対象は回し方に `<ref>` を埋める道具だけで、その一覧は回し方の書式から数え直して突き合わせる.
+        """
+        bullets = closing_template().split("```")[2]
+        self.assertIn("`回し方:`（リポジトリのルートでそのまま実行できるコマンド）", bullets,
+                      "`提案する` の回し方が実行できるコマンドだという契約が消えた")
+        section = mutation_section()
+        bullet = next((l for l in section.splitlines() if l.startswith("- `<ref>` は")), None)
+        self.assertIsNotNone(bullet, "道具の節に `<ref>` の決め方の行が無い")
+        self.assertIn("`道具なし` にして回し方を付けない", bullet, "`<ref>` が求まらない回にも `提案する` を出せる")
+        self.assertNotIn("埋めずに残し", bullet, "`<ref>` が埋まらない回し方を出させている（承認しても必ず失敗する）")
+        self.assertIn("PR head を checkout してから `git merge-base origin/<baseRefName> <headRefOid>`", bullet,
+                      "回さない回に利用者が自分で回す手順を渡していない")
+        no_tool = next((l for l in section.splitlines() if l.startswith("- `道具なし` では")), None)
+        self.assertIsNotNone(no_tool, "道具の節に `道具なし` の理由の行が無い")
+        self.assertIn("`<ref>` を求められない", no_tool, "`道具なし` の理由の並びにこの回が無い")
+
+        lines = section.splitlines()
+        commands = {
+            "宣言": next(l for l in lines if l.startswith("| `declared`")),
+            "Stryker": next(l for l in lines if l.startswith("- Stryker")),
+            "cargo-mutants": next(l for l in lines if l.startswith("- cargo-mutants")),
+            "mutmut": next(l for l in lines if l.startswith("- mutmut")),
+        }
+        uses_ref = [name for name, line in commands.items() if "<ref>" in line]
+        self.assertEqual(uses_ref, ["宣言", "cargo-mutants"], "回し方に `<ref>` を埋める道具が変わった")
+        self.assertIn("回し方が `<ref>` を使う道具（" + "・".join(uses_ref) + "）", bullet,
+                      "`道具なし` に倒す道具の一覧が、回し方に `<ref>` を埋める道具と合っていない")
+
     def test_cargo_mutants_writes_the_diff_to_a_fresh_temp_dir(self):
         """決め打ちの一時ファイル名は、同時に回した worktree と上書きし合い、共有の /tmp では先回りされうる."""
         bullet = next((l for l in mutation_section().splitlines() if l.startswith("- cargo-mutants")), None)

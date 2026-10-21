@@ -64,6 +64,8 @@ REPRESENTATIVES = {
         "test_dev_workflow_detect_checkout.ServerMatchTest.test_main_server_seen_from_worktree_is_foreign",
     "test_dev_workflow_ui_impact.py":
         "test_dev_workflow_ui_impact.UiImpactTest.test_untracked_new_vue_is_yes",
+    "test_dev_workflow_pick_screenshot_dir.py":
+        "test_dev_workflow_pick_screenshot_dir.SinceTest.test_shots_from_the_previous_branch_are_skipped",
     "test_code_review_hooks.py":
         "test_code_review_hooks.ExternalIdReminderTest.test_fires_on_staged_linear_id_in_comment",
     "test_code_review_detect_external_ids.py":

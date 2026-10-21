@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.13.1] - 2026-10-21
+
+### Changed
+
+- **start: 引数で「新規タスク」と書いても、その Issue の既存の作業が見つかれば、進め方の選択 UI を出さずブランチも作らずに続きとして扱う**（GitHub issue #305 の完了条件「既存のコミットがあるのに、新規として着手の選択 UI とブランチ作成に進まない」）。
+  判定行には「続き（引数は新規）」と書き、進捗が未記入なら `/issue-maintain` を案内する。
+  既存の作業が無ければ従来どおり必ず選択 UI を出す。
+  既存を捨てて新しく始めたいと言われたら、候補を結び付ける手がかり（`matched=`）ごとに外し方を案内する（ブランチ・worktree・session-context はこちらで消さない）。
+  description（command と SKILL.md）も対で直した
+
+### Fixed
+
+- start: F2.5 が `detached` / `closed` / `prunable` と判定した回は、Phase CTX が `.claude/session-context.md` を書かない。
+  書くと、同じ detached HEAD の worktree で次に `/start` した回にそこが `current=1` の候補になり、`detached` の歯止めが 1 回目の `/start` でしか効かなかった（GitHub issue #305）
+
 ## [1.13.0] - 2026-10-21
 
 ### Added

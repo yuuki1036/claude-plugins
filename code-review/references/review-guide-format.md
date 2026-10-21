@@ -276,9 +276,9 @@ Step 7 の 4. で従う（GitHub issue #307）。締めの `変異テスト:` �
 | `inferred` | `inferred=` の道具のうち、変更した core の言語に合うもの（Stryker: JS / TS・mutmut: Python・cargo-mutants: Rust）を 1 つ選んで `提案する`。合うものが無ければ `道具なし` | 下の「推測した道具の回し方」 |
 | `none` | `道具なし` | — |
 
-- `<ref>` は、base モードなら `## meta` の `diff_base=`。PR モードなら `git merge-base origin/<baseRefName> HEAD` の値で、`FIX_OK=0` なら理由に「PR head を checkout してから回す」を添える（手元が PR head と違うと、解説した diff と別のコードを測る）
+- `<ref>` は、base モードなら `## meta` の `diff_base=`。PR モードなら `git merge-base origin/<baseRefName> <headRefOid>` の値（`<baseRefName>` と `<headRefOid>` は SKILL.md Step 0 の `META` の値）。手元の `HEAD` で求めない: 手元が PR head でない回に起点が PR の分岐点からずれ、base のコミットが対象に混ざる（手元が base の先にいれば PR の分岐後に base へ入ったコミット、古い PR head にいれば PR が後から取り込んだ base のコミット）。`FIX_OK=0` なら理由に「PR head を checkout してから回す」を添える（手元が PR head と違うと、解説した diff と別のコードを測る）。手元に `<headRefOid>` のコミットが無い回（fork の PR・別のマシンから push して手元に取り込んでいない回）は merge-base が失敗する。`HEAD` で代えない。回し方が `<ref>` を使う道具（宣言・cargo-mutants）なら、表で `提案する` になる回でも `道具なし` にして回し方を付けない（`提案する` の回し方は呼び出し元が承認を得てそのまま回すので、`<ref>` が埋まらないコマンドを出すと承認しても必ず失敗する）。理由に「PR head のコミットが手元に無く `<ref>` を求められない。PR head を checkout してから `git merge-base origin/<baseRefName> <headRefOid>`（値を埋めて書く）で `<ref>` を求めて回す」と書く
 - 所要の目安は、`declared` で出力に `estimate=` があればその値。無ければ「変異 1 個ごとにテストを 1 回回す（変更の規模 <core_files> files / <core_lines> lines）」
-- `道具なし` では導入は提案しない。何が無かったかを 1 行書く（宣言も既知の道具の設定も無い / 見つかった道具が変更の言語に合わない / 引用できないパスのファイルを外すと何も残らない）。導入は道具の選定・設定・CI への組み込みまで広がり、締めで決める範囲を超える
+- `道具なし` では導入は提案しない。何が無かったかを 1 行書く（宣言も既知の道具の設定も無い / 見つかった道具が変更の言語に合わない / 引用できないパスのファイルを外すと何も残らない / PR モードで PR head のコミットが手元に無く `<ref>` を求められない）。導入は道具の選定・設定・CI への組み込みまで広がり、締めで決める範囲を超える
 
 推測した道具の回し方（範囲を変更行か変更ファイルに絞る。指定の仕方は道具の版で変わりうるので、呼び出し元は問いでコマンドを見せ、承認を得てから回す）:
 

@@ -56,7 +56,7 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 
 mods が有効な端末・Desktop（Claude Code 2.1.287 以降）では、作業中の Issue をプロンプトの上に 1 行で出す。例: `MYAPP-3 帯を出す · in-progress · feature · タスク 2/5 · feat/band`
 
-- どの Issue かは `/start` が書く `.claude/session-context.md` で決まる。そのブランチが今のブランチと違えば（別の作業に移った）出さない
+- どの Issue かは `/start` が書く `.claude/session-context.md` で決まる。そのブランチが今のブランチと違えば（別の作業に移った）出さない。Issue が完了済みの回と、作業のある場所へ移らずに案内だけした回は、`/start` は書かない
 - タスクの数は `## 進捗`（無ければ `## 完了条件`）のチェックリスト。scope_size の上限（small 3 / medium 7 / large 15。`check-scope-size.sh` と同じ）を超えたら警告も出す
 - 読み直すのは、プロンプトを送ったとき・Issue / session-context を Edit / Write したとき・`git checkout` / `git switch` の後。読むだけで何も書かない
 - 「隠す」で消え、別の Issue に移るとまた出る。実装: `hooks/issue-band.tsx`
@@ -69,7 +69,7 @@ start / issue-create がブランチを切るとき、今のチェックアウ�
 - `.claude/worktrees/<Issue ID>` に既定ブランチから作り、未追跡の `.env*` を写し、lockfile に合わせて依存を入れる（`scripts/branch-setup.sh`）
 - 作った直後にセッションの作業ディレクトリを worktree へ移す（CLI は `EnterWorktree`）。diff ペイン・hook・CLAUDE.md が worktree 側の値になる
 - worktree にデータ dir（`.claude/indie` / `.claude/linear`）が無ければ、スキルの Phase 0 と hook はメインのチェックアウトのものを使う
-- start は、その Issue のブランチを別の worktree で checkout 済みなら、新しく作らずにそこへ移って続ける（`scripts/branch-setup.sh existing`。Claude アプリが作る detached HEAD の worktree は `.claude/session-context.md` で結び付けるが、別のセッションが使っていることがあるので移らずに案内だけする。作業がそこにしか無ければ、ここでブランチを作って新しく始めない。ディレクトリを消した worktree の登録が git に残っていてそのブランチへ移れないときは、登録の消し方（`git worktree prune`。locked なら unlock も、detached HEAD ならコミットを残す手順も）を案内して止まる）。新規か続きかの判定と根拠は報告の先頭に 1 行で出る
+- start は、その Issue のブランチを別の worktree で checkout 済みなら、新しく作らずにそこへ移って続ける（`scripts/branch-setup.sh existing`。Claude アプリが作る detached HEAD の worktree は `.claude/session-context.md` で結び付けるが、別のセッションが使っていることがあるので移らずに案内だけする。作業がそこにしか無ければ、ここでブランチを作って新しく始めない。ディレクトリを消した worktree の登録が git に残っていてそのブランチへ移れないときは、登録の消し方（`git worktree prune`。locked なら unlock も、detached HEAD ならコミットを残す手順も）を案内して止まる）。引数で「新規タスク」と書いても、その Issue の作業（既定ブランチに無いコミットか未コミットの変更）が見つかれば、着手の選択を出さず続きとして扱う。新規か続きかの判定と根拠は報告の先頭に 1 行で出る
 
 ## 主な機能
 

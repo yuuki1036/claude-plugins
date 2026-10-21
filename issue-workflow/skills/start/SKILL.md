@@ -3,7 +3,7 @@ name: start
 description: >
   セッション開始時の作業準備。引数の Issue ID を優先し、無ければブランチ名から判定する
   （main ブランチではダッシュボードモード、feature ブランチでは Issue コンテキスト読み込み）。
-  第 2 引数以降の「今回の意図」が新規着手なら feature-dev 起動の確認を必ず出す。
+  第 2 引数以降の「今回の意図」が新規着手で既存の作業が無ければ feature-dev 起動の確認を必ず出す。
   トリガー: 「作業開始」「セッション開始」「今日の作業」「/start」
   引数: [Issue ID] [今回の意図]（省略可）
 effort: high
@@ -373,12 +373,12 @@ Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する
 
 ### Phase F7: 進め方の確認（feature-dev / 軽量フロー）
 
-Phase 1 で分類した `TASK_INTENT` と F2.5 の `WORK_STATE` で分岐する。`WORK_STATE = closed` と `detached` と `prunable` なら、`TASK_INTENT` に関わらず進め方の確認もテキスト案内も出さず、ブランチも作らない（判定行で報告・案内だけする。`detached` でここで新しく始めると言われたら、existing-work.md の 2 のとおり決め直してからこの Phase を通す。`prunable` は利用者が `git worktree prune` を打った後の /start で決め直す）。
+Phase 1 で分類した `TASK_INTENT` と F2.5 の `WORK_STATE` で分岐する。`WORK_STATE = closed` と `detached` と `prunable` なら、`TASK_INTENT` に関わらず進め方の確認もテキスト案内も出さず、ブランチも作らない（判定行で報告・案内だけし、Phase CTX も書かない。`detached` でここで新しく始めると言われたら、existing-work.md の 2 のとおり決め直してからこの Phase を通す。`prunable` は利用者が `git worktree prune` を打った後の /start で決め直す）。
 
-**`TASK_INTENT = new` のとき（`start {ISSUE-ID} 新規タスク` 等）: 必ず AskUserQuestion を出す。**
-コミット数も `feature_dev_plan:` も見ない。着手宣言が明示されている以上、どの進め方にするかを
+**`TASK_INTENT = new` のとき（`start {ISSUE-ID} 新規タスク` 等）: F2.5 で既存の作業が見つからなければ（`none` / `fresh`）、必ず AskUserQuestion を出す。**
+`feature_dev_plan:` は見ない。着手宣言が明示されている以上、どの進め方にするかを
 ユーザーに決めさせるのが正しく、こちらで先回りして黙る理由が無い（黙る判定を足した結果
-この導線が実質死んでいたのが元の設計）。F2.5 で既存の作業が見つかっていても（`here` / `moved` / `branch`）この選択は出すが、ブランチは新しく作らない（食い違いは判定行に書いてある）:
+この導線が実質死んでいたのが元の設計）。上の `closed` / `detached` / `prunable` のほかに黙るのは、この Issue の作業（既定ブランチに無いコミットか未コミットの変更）が F2.5 で見つかった回（`here` / `moved` / `branch`）だけで、そのときは選択 UI を出さずブランチも作らず、続きとして扱う — 下の `auto` の 2・3 と同じく、進捗が未記入なら `/issue-maintain` をテキストで案内するだけにする（GitHub issue #305 の完了条件「既存のコミットがあるのに、新規として着手の選択 UI とブランチ作成に進まない」。食い違いは判定行に「続き（引数は新規）」と書いてある）。利用者が既存は捨てて新しく始めたいと言ったら、existing-work.md の 2 のとおりこちらでは消さずに手順を案内し、その後の /start で決め直す。既存の作業が無い回の選択:
 
 ```
 AskUserQuestion(
@@ -400,7 +400,7 @@ AskUserQuestion(
 
 **ブランチ未作成のとき**（`WORK_STATE` が `none`、または `fresh` で選んだ候補がブランチだけ）: `${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る。`fresh` なら `{BRANCH}` は候補の `branch`（`origin/` は外す）で、新しい名前を作らない。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。worktree に移した回は、feature-dev の引数に worktree のパスを添え、Phase CTX の書き出し先を worktree 側にする（同 doc の 5）
 
-**`WORK_STATE = branch` のとき**（作業のあるブランチを checkout している worktree が無い）: `TASK_INTENT` に関わらず、F6 の後に同じ手順でそのブランチへ移る（`{BRANCH}` は候補の `branch`。`origin/` は外す）。`new` なら進め方の選択より先に行う。`here` / `moved` と、今のチェックアウトか移り先に残った `fresh` では何もしない（もうそこにいる）
+**`WORK_STATE = branch` のとき**（作業のあるブランチを checkout している worktree が無い）: `TASK_INTENT` に関わらず、F6 の後に同じ手順でそのブランチへ移る（`{BRANCH}` は候補の `branch`。`origin/` は外す）。`new` でも進め方の選択は出さない（上の `new` の項）。`here` / `moved` と、今のチェックアウトか移り先に残った `fresh` では何もしない（もうそこにいる）
 
 **`TASK_INTENT = continue` のとき**: feature-dev の案内は出さない（やることが決まっているので選択 UI で止めるのは邪魔）。Phase F6 で「今回のセッションでやること」として意図を再掲するに留める。
 
@@ -414,7 +414,7 @@ AskUserQuestion(
 3. **続き + 進捗も更新済み**:
    - この案内をスキップする
 
-**表示位置**: テキスト案内（`auto` の 2）は Phase F6 の報告の**末尾ではなく冒頭**（Issue 情報の直後）に置く。F6 の報告は knowledge / git / Linear 同期まで含めて長く、末尾の 1 行は読まれない。AskUserQuestion は F6 の報告を出し切った**後**に呼ぶ（選択 UI が出ると報告が読めなくなるため）。
+**表示位置**: テキスト案内（`auto` の 2 と、既存の作業がある `new`）は Phase F6 の報告の**末尾ではなく冒頭**（Issue 情報の直後）に置く。F6 の報告は knowledge / git / Linear 同期まで含めて長く、末尾の 1 行は読まれない。AskUserQuestion は F6 の報告を出し切った**後**に呼ぶ（選択 UI が出ると報告が読めなくなるため）。
 
 > ブランチ作成直後（コミット0件）で実装前に仕様を固めたい場合は、仕様系プラグインの利用も案内できる（導入済みのもののみ・案内のみ）: bdd-spec=振る舞い仕様 (WHAT) / design-doc=技術設計 (HOW) / adr-keeper=設計判断 (WHY)。詳細なルーティングは `issue-create` の spec 選択フェーズに従う。
 
@@ -426,6 +426,8 @@ AskUserQuestion(
 
 Feature ブランチモードで Issue ファイルの読み込みに成功した場合に実行する。
 ダッシュボードモード・Quick Pick モード・親 Issue 軽量サマリーモード、および Issue ファイルが存在しない場合はスキップする。
+F2.5 の `WORK_STATE`（F7 で決め直した回は決め直した後の値）が `detached` / `closed` / `prunable` の回もスキップする（session-context を書かない）。
+この Issue の作業が無い今のチェックアウトに `issue_id` を書くと、そこが detached HEAD の worktree なら、同じチェックアウトでの次の /start でここが session-context の候補（`current=1`）になって `fresh` に決まり、`detached` の歯止めが判定行の注記だけに弱まる（`closed` の status を戻した後・`prunable` を prune した後の /start も、作業のある候補より先にここへ決まる）。
 
 1. 以下の情報を `.claude/session-context.md` に Write で書き出す:
 

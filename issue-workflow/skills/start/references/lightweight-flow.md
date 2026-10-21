@@ -1,5 +1,5 @@
 <!-- 正本依存（SSoT pin）。Step 5 の変異テストの分岐（承認の取り方・回し方・結果の 4 区分・前後の git status の突き合わせ）は code-review の review-guide-format.md「変異テストの提案」を要約したもの（プラグイン間依存禁止のため要約で持つ）。正本が変わったら Step 5 と「報告」を確認して pin を打ち直す -->
-<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @af03ed33 -->
+<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @3c9ee376 -->
 
 # 軽量フロー（feature-dev を使わない一連のワークフロー）
 

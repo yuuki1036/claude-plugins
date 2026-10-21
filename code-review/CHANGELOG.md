@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.161.1] - 2026-10-21
+
+### Fixed
+
+- **review-guide の読み合わせの締めで、PR モードの変異テストの `<ref>` を PR head から求めるようにした**。
+  これまでは `git merge-base origin/<baseRefName> HEAD` を手元の HEAD で計算していたので、手元が PR head でない回に起点が PR の分岐点からずれ、base のコミットが対象に混ざっていた。
+  今は Step 0 の `META` の `headRefOid` を使って `git merge-base origin/<baseRefName> <headRefOid>` で求める。
+  手元に PR head のコミットが無く失敗する回は HEAD で代えず、`<ref>` を使う道具なら `道具なし` にして、PR head を checkout してから回す手順を理由に書く
+
 ## [2.161.0] - 2026-10-21
 
 ### Added

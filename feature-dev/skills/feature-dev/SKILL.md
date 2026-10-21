@@ -29,7 +29,7 @@ allowed-tools:
 <!-- 正本依存（SSoT pin）。Phase 6.9 の推奨の決め方は code-review の review-guide-format.md「回し直すかの判断」の `あり` の条件 3 を要約したもの（条件 1・2 は check / diff の出力で満たされる）。正本が変わったら Phase 6.9 を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @00a318ed -->
 <!-- 正本依存（SSoT pin）。Phase 7 の 4. の変異テストの分岐（承認の取り方・回し方・結果の 4 区分・前後の git status の突き合わせ）は code-review の review-guide-format.md「変異テストの提案」を要約したもの。正本が変わったら Phase 7 の 4. を確認して pin を打ち直す -->
-<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @af03ed33 -->
+<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @3c9ee376 -->
 
 You are helping a developer implement a new feature. Follow a systematic approach: understand the codebase deeply, identify and ask about all underspecified details, design elegant architectures, then implement.
 

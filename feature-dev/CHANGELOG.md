@@ -5,6 +5,13 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.24.1] - 2026-10-21
+
+### Changed
+
+- Phase 7 の変異テストの手順が依る正本（code-review の review-guide-format.md「変異テストの提案」）の SSoT pin を打ち直した。
+  正本の変更は PR モードの `<ref>` を PR head から求める点で、review-guide の内側で閉じ、Phase 7 の手順は変わらない
+
 ## [2.24.0] - 2026-10-21
 
 ### Added

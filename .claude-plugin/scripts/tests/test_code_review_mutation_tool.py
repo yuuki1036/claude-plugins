@@ -11,6 +11,7 @@ argv を書き出す stub に差し替えて回す（この repo のスイート
 10 分以上回るので、引数の受け渡しと終了コードの素通しは stub で見る）。
 契約に書いた終了コードと集計の語が本物の出力と合っているかは、本物の `mutation-test.py` も複製し、変異 2 個・
 テスト 2 件の小さな fixture に向けて回して見る（`RealToolContractTest`。変異体は複製先の fixture にだけ書かれる）。
+PR モードで宣言に渡す `<ref>` の式は、format の文言から取り出して本物の git に当てる（`PrModeRefTest`）。
 
 実行: python3 .claude-plugin/scripts/run-tests.py
 """
@@ -18,6 +19,7 @@ argv を書き出す stub に差し替えて回す（この repo のスイート
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import unittest
@@ -400,6 +402,94 @@ class RealToolContractTest(DetectBase):
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("変異 0 個", res.stdout)
         self.assertNotIn("殺した", res.stdout, "未計測の回に集計を出している（生存 0 に見える）")
+
+
+class PrModeRefTest(ScriptTestBase):
+    """PR モードの `<ref>`（format の「道具」の節）を、手元が PR head でない 2 つの形で本物の git に当てる.
+
+    宣言の対象は `git diff <ref>` なので、PR head を checkout した後のその diff が PR の変更（lib.py）だけかで見る。
+    式は format の文言から取り出す（手元の `HEAD` 起点に戻すとここが落ちる）。同じ fixture で `HEAD` 起点の式も回し、
+    base のコミット（other.py）が混ざること、つまり fixture が両者を見分けられることを対で確かめる.
+    """
+
+    LOCAL_HEAD = "git merge-base origin/<baseRefName> HEAD"
+
+    def git(self, *args: str, cwd: Path | None = None) -> str:
+        return subprocess.run(["git", *args], cwd=str(cwd or self.root), capture_output=True, text=True,
+                              env=self._env(), check=True).stdout.strip()
+
+    def commit(self, rel: str, line: str, msg: str) -> None:
+        with (self.root / rel).open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        self.git("add", rel)
+        self.git("commit", "-qm", msg)
+
+    def setUp(self) -> None:
+        super().setUp()
+        # self.root を origin にし、commit はすべてここで作る（clone 側には author を設定しない）
+        self.git("checkout", "-q", "-B", "main")
+        self.commit("lib.py", "a", "A")
+        self.commit("other.py", "o", "A2")
+        self.git("checkout", "-q", "-b", "feature")
+        self.commit("lib.py", "pr", "F1")
+        self.git("checkout", "-q", "main")
+        self.commit("other.py", "base-later", "B")
+        self.local = self.root / "tmp" / "local"
+        self.git("clone", "-q", str(self.root), str(self.local))
+        self.assertEqual(self.git("rev-parse", "--abbrev-ref", "HEAD", cwd=self.local), "main")
+
+    def doc_command(self) -> str:
+        text = FORMAT.read_text(encoding="utf-8")
+        bullet = next((l for l in text.splitlines() if l.startswith("- `<ref>` は")), None)
+        self.assertIsNotNone(bullet, "format に `<ref>` の決め方の行が無い")
+        m = re.search(r"PR モードなら `(git merge-base [^`]+)`", bullet)
+        self.assertIsNotNone(m, f"PR モードの式が読めない: {bullet}")
+        return m.group(1)
+
+    def argv(self, command: str, head_oid: str) -> list[str]:
+        argv = command.replace("<baseRefName>", "main").replace("<headRefOid>", head_oid).split()
+        self.assertEqual(argv[:2], ["git", "merge-base"], argv)
+        return argv[1:]
+
+    def target(self, ref: str, head_oid: str) -> list[str]:
+        self.git("checkout", "-q", head_oid, cwd=self.local)
+        return self.git("diff", "--name-only", ref, cwd=self.local).splitlines()
+
+    def check(self, head_oid: str) -> None:
+        # どちらの起点も、手元が PR head でない今の状態で求める（checkout を促すのは起点を決めた後）
+        doc_ref = self.git(*self.argv(self.doc_command(), head_oid), cwd=self.local)
+        head_ref = self.git(*self.argv(self.LOCAL_HEAD, head_oid), cwd=self.local)
+        self.assertEqual(self.target(doc_ref, head_oid), ["lib.py"], "format の式で base のコミットが混ざった")
+        self.assertEqual(self.target(head_ref, head_oid), ["lib.py", "other.py"],
+                         "fixture が手元の HEAD 起点との違いを作れていない")
+
+    def test_local_head_is_on_base_that_moved_after_the_pr_forked(self):
+        """手元が main: HEAD 起点だと、PR の分岐後に base へ入ったコミット（B）が逆向きに混ざる."""
+        self.check(self.git("rev-parse", "origin/feature", cwd=self.local))
+
+    def test_local_head_is_an_old_pr_head(self):
+        """手元が古い PR head で、PR が後から base を取り込んだ: HEAD 起点だと、取り込んだ B が混ざる."""
+        old = self.git("rev-parse", "origin/feature", cwd=self.local)
+        self.git("checkout", "-q", "feature")
+        self.git("merge", "-q", "--no-edit", "main")
+        self.commit("lib.py", "pr2", "F2")
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-q", old, cwd=self.local)
+        self.git("fetch", "-q", "origin", cwd=self.local)
+        head = self.git("rev-parse", "origin/feature", cwd=self.local)
+        self.assertNotEqual(head, old)
+        self.check(head)
+
+    def test_missing_pr_head_commit_fails_without_a_value(self):
+        """手元に headRefOid のコミットが無いと式は失敗し、値を返さない（format はその回を HEAD で代えず、
+        `<ref>` を埋める回し方では `道具なし` にする）."""
+        res = subprocess.run(["git", *self.argv(self.doc_command(), "0" * 40)], cwd=str(self.local),
+                             capture_output=True, text=True, env=self._env())
+        self.assertNotEqual(res.returncode, 0)
+        self.assertEqual(res.stdout.strip(), "")
+        present = self.git("rev-parse", "origin/feature", cwd=self.local)
+        self.assertTrue(self.git(*self.argv(self.doc_command(), present), cwd=self.local),
+                        "コミットがある回にも値が出ない（失敗の対が成り立たない）")
 
 
 class ContractWordingTest(unittest.TestCase):

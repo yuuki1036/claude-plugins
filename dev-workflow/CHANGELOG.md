@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.39.1] - 2026-10-21
+
+### Fixed
+
+- **pr-creator の Step 4.5 が `.claude/screenshots/` の最新の撮影を鮮度を見ずに添付していた**。
+  同じチェックアウトで前に別のブランチで撮った画面が PR に載ることがあった。
+  新しい `scripts/pick-screenshot-dir.sh` が、このチェックアウトが今のブランチに切り替わった後に撮ったもの（HEAD の reflog の時刻より後の mtime を持つ snap / verify / tune のディレクトリ）だけから選び、条件に合うものが無いときと HEAD の reflog が読めないときは ui-verify の snap で撮り直す。
+  見るのは ui-verify の保存先と同じ cwd の `.claude/screenshots/`
+- **ui-verify が、確認の UI で無操作の自動続行（askUserQuestionTimeout）の回答を許可と読みうる書き方になっていた**。
+  dev server の起動許可・ケース表の確認・期待ユーザーの確認・backend の隔離の確認でも、既存ブラウザの停止確認と同じく許可・確認とみなさない（起動しない・占有側を止めない・実行しない。
+  ケース表は全ケースを `blocked: ケース表の確認なし`、期待ユーザーは null、backend の隔離は `unconfirmed`）。
+  `--caller` で呼ばれた回もこれらの確認は省かない。
+  絶対厳守ルールに 5 つの確認を並べた
+- ui-verify の verify で pass も fail も 0 件の回（全ケースが blocked）は、pending flag を `verified-snap` で上書きしない。
+  何も確かめていないのに commit 前の gate hook の reminder が黙っていた
+
 ## [1.39.0] - 2026-10-21
 
 ### Added

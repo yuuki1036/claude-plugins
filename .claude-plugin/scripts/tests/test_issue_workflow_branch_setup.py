@@ -18,6 +18,7 @@ main の session-context・ブランチを持つ worktree の session-context・
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -29,6 +30,7 @@ from git_env import scrub
 REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "issue-workflow" / "scripts" / "branch-setup.sh"
 START = REPO / "issue-workflow" / "skills" / "start" / "SKILL.md"
+START_COMMAND = REPO / "issue-workflow" / "commands" / "start.md"
 EXISTING_DOC = REPO / "issue-workflow" / "skills" / "start" / "references" / "existing-work.md"
 ENV = scrub()
 #: existing が候補ごとに出すキー（この順で 1 件 9 行）
@@ -860,6 +862,193 @@ class StartSkillContractTest(RepoTestCase):
                 self.assertRegex(f7, rf"`(WORK_STATE = )?{st}`")
                 # F2.5 の要点の一覧にも並べる（F7 と表にだけ足して F2.5 から漏れた値を拾う）
                 self.assertIn(f"`{st}`", section(skill, "### Phase F2.5", "### Phase F3:"))
+
+    #: Phase CTX が session-context を書かない WORK_STATE（start SKILL.md の Phase CTX と existing-work.md の表）
+    NO_CTX = ("detached", "closed", "prunable")
+
+    def test_phase_ctx_is_skipped_where_writing_would_make_this_checkout_current(self):
+        """detached HEAD の今のチェックアウトに Phase CTX が issue_id を書くと、次の /start でそこが current=1 になる.
+
+        existing-work.md の表は current=1 の行が detached より先に当たるので、書くと detached の歯止めが
+        1 回目の /start でしか効かない。前提をスクリプトで確かめてから、Phase CTX のスキップ条件を見る。
+        スキップする値は過不足なく見る — here / fresh などで書かないと code-review と issue-band が Issue を引けない.
+        """
+        other = self.root / ".claude" / "worktrees" / "happy-a"
+        self.add_worktree("--detach", str(other))
+        self.commit("w1", {"w1.txt": "1"}, other)
+        self.write_sc(other, "TEAM-1")
+        here = self.root / ".claude" / "worktrees" / "happy-b"
+        self.add_worktree("--detach", str(here))
+        cols = ("worktree", "current", "ahead")
+        self.assertEqual([tuple(r[k] for k in cols) for r in self.records(self.existing(cwd=here))],
+                         [(str(other), "0", "1")])
+        # 鳴る側の対: Phase CTX の形で今のチェックアウトに書くと、作業の無いここが current=1 の候補になる
+        self.write_sc(here, "TEAM-1")
+        self.assertEqual(sorted(tuple(r[k] for k in cols) for r in self.records(self.existing(cwd=here))),
+                         sorted([(str(other), "0", "1"), (str(here), "1", "0")]))
+
+        ctx = section(START.read_text(encoding="utf-8"), "### Phase CTX", "1. 以下の情報")
+        m = re.search(r"`WORK_STATE`[^。\n]*?が ((?:`[a-z]+` / )*`[a-z]+`) の回もスキップする", ctx)
+        self.assertIsNotNone(m, "Phase CTX のスキップ条件に WORK_STATE が無い")
+        self.assertEqual(set(re.findall(r"`([a-z]+)`", m.group(1))), set(self.NO_CTX))
+        self.assertIn("決め直した後の値", ctx, "F7 で決め直した回にどの値で判断するかが無い")
+        self.assertIn("`current=1`", ctx, "スキップする理由が無い")
+        # F7 の冒頭（closed / detached / prunable で黙る段落）も同じことを言う
+        f7_head = section(START.read_text(encoding="utf-8"), "### Phase F7", "**`TASK_INTENT = new`")
+        self.assertIn("Phase CTX も書かない", f7_head)
+
+    def test_existing_work_rows_say_where_phase_ctx_is_not_written(self):
+        """表の行のうち NO_CTX に決まりうる行だけが「Phase CTX は書かない」と書く（here / fresh / none の行は書く側）."""
+        table = section(EXISTING_DOC.read_text(encoding="utf-8"), "## 2.", "## 3.")
+        rows = []
+        for ln in table.splitlines():
+            cells = ln.split("|")
+            if not ln.startswith("| ") or len(cells) < 5:
+                continue
+            states = set(re.findall(r"`([a-z]+)`", cells[2])) & set(self.STATES)
+            if states:
+                rows.append((states, cells[3]))
+        self.assertEqual(set().union(*(s for s, _ in rows)), set(self.STATES), rows)
+        for states, how in rows:
+            with self.subTest(states=sorted(states)):
+                if states & set(self.NO_CTX):
+                    self.assertIn("Phase CTX は書かない", how)
+                else:
+                    self.assertNotIn("Phase CTX は書かない", how)
+
+    def test_discard_guidance_names_every_clue_that_keeps_the_candidate(self):
+        """既存を捨てたいと言われた回の案内は、候補を結び付ける手がかり（matched=）を全部挙げる（#305）.
+
+        ブランチの名前を変えるだけでは `.claude/worktrees/<ID>` のパスと origin に push 済みのブランチが残り、
+        案内どおりにしても次の /start でまた同じ候補に決まる。前提をスクリプトで確かめてから文言を見る.
+        """
+        seen: set[str] = set()
+
+        def candidates() -> list[tuple[str, str]]:
+            recs = self.records(self.existing())
+            seen.update(m for r in recs for m in r["matched"].split(","))
+            return sorted((r["branch"], r["matched"]) for r in recs)
+
+        wt = Path(self.worktree()["worktree"][0])
+        self.commit("w1", {"w1.txt": "1"}, wt)
+        git(self.root, "update-ref", "refs/remotes/origin/feat/TEAM-1-x", git(wt, "rev-parse", "HEAD"))
+        # 鳴る側: ローカルの名前を変えても、パスと origin のブランチで候補に残る
+        git(self.root, "branch", "-m", "feat/TEAM-1-x", "feat/renamed")
+        self.assertEqual(candidates(), [("feat/renamed", "path"), ("origin/feat/TEAM-1-x", "branch")])
+        git(self.root, "worktree", "move", str(wt), str(self.root.parent / "renamed"))
+        self.assertEqual(candidates(), [("origin/feat/TEAM-1-x", "branch")])
+        # 黙る側の対: 手がかりがどれも残らなければ該当なし（次の /start は none で新規になる）
+        git(self.root, "update-ref", "-d", "refs/remotes/origin/feat/TEAM-1-x")
+        self.assertEqual(self.existing(), {"found": ["0"]})
+        # detached HEAD の worktree は、パスを動かしても session-context で結び付く
+        det = self.root / ".claude" / "worktrees" / "TEAM-1"
+        self.add_worktree("--detach", str(det))
+        self.commit("w2", {"w2.txt": "2"}, det)
+        self.write_sc(det, "TEAM-1")
+        moved = self.root.parent / "moved"
+        git(self.root, "worktree", "move", str(det), str(moved))
+        self.assertEqual(candidates(), [("detached", "session-context")])
+        (moved / ".claude" / "session-context.md").unlink()
+        self.assertEqual(self.existing(), {"found": ["0"]})
+
+        #: matched= の値ごとに、それを外す手順の行にだけ出る語
+        clues = {"branch": "`origin/<名前>`", "path": "`.claude/worktrees/<ID>`",
+                 "session-context": "`.claude/session-context.md`"}
+        self.assertEqual(set(clues), seen)
+        lines = section(EXISTING_DOC.read_text(encoding="utf-8"), "## 2.", "## 3.").splitlines()
+        i = next((n for n, ln in enumerate(lines) if "既存は捨てて新しく始めたい" in ln), None)
+        self.assertIsNotNone(i, "既存を捨てたいと言われた回の案内が無い")
+        self.assertIn("どれも残らなければ `none`", lines[i])
+        self.assertNotIn("候補が無くなれば", lines[i])
+        subs = []
+        for ln in lines[i + 1:]:
+            if not ln.startswith("  - "):
+                break
+            subs.append(ln)
+        self.assertEqual(len(subs), len(clues), subs)
+        for m, marker in clues.items():
+            with self.subTest(matched=m):
+                self.assertEqual(sum(marker in s for s in subs), 1, subs)
+        by_clue = {m: next(s for s in subs if marker in s) for m, marker in clues.items()}
+        self.assertIn("こちらで打たない", by_clue["branch"])
+        for cmd in ("`git worktree remove`", "`git worktree move`"):
+            self.assertIn(cmd, by_clue["path"])
+
+
+def states_in(text: str) -> set[str]:
+    """text の中の `値` のうち、WORK_STATE の値だけを取り出す."""
+    return set(re.findall(r"`([a-z]+)`", text)) & set(StartSkillContractTest.STATES)
+
+
+class StartNewIntentContractTest(unittest.TestCase):
+    """TASK_INTENT = new でも、F2.5 が既存の作業を見つけた回は着手の選択 UI もブランチ作成も無い（#305 の完了条件 2）.
+
+    既存の作業が無い回（none / fresh）は今までどおり必ず選択 UI を出す（黙る判定を足して導線が死んだ前例がある）。
+    同名 command なので `Skill` で呼んでも command 本文が先に注入される（#219）。SKILL.md と command の両方を見る.
+    """
+
+    WORK = {"here", "moved", "branch"}
+    NO_WORK = {"none", "fresh"}
+    LIST = r"((?:`[a-z]+` / )*`[a-z]+`)"
+
+    def new_section(self) -> str:
+        return section(START.read_text(encoding="utf-8"), "**`TASK_INTENT = new` のとき", "```")
+
+    def test_f7_asks_only_when_there_is_no_existing_work(self):
+        s = self.new_section()
+        head = s.splitlines()[0]
+        self.assertIn("必ず AskUserQuestion を出す", head)
+        self.assertEqual(states_in(head), self.NO_WORK)
+        m = re.search(rf"見つかった回（{self.LIST}）だけで、そのときは選択 UI を出さずブランチも作らず、続きとして扱う", s)
+        self.assertIsNotNone(m, "既存の作業がある回に選択 UI を出さないことが書かれていない")
+        self.assertEqual(states_in(m.group(1)), self.WORK)
+        self.assertIn("`auto` の 2・3 と同じく", s, "auto の続きの扱い（進捗が未記入なら案内）にそろえていない")
+        self.assertIn("続き（引数は新規）", s)
+        self.assertIn("既存は捨てて新しく始めたい", s)
+        self.assertNotIn("この選択は出す", s)
+        skill = START.read_text(encoding="utf-8")
+        # new + branch でも選択を出す前提だった旧い文（選択より先にブランチへ移る）が残っていない
+        self.assertNotIn("進め方の選択より先に行う", skill)
+        # 続きとして扱う new の案内も、auto の 2 と同じく F6 の冒頭に置く
+        placement = section(skill, "**表示位置**", "\n")
+        self.assertIn("（`auto` の 2 と、既存の作業がある `new`）", placement)
+        self.assertIn("冒頭", placement)
+
+    def test_command_body_agrees_with_f7(self):
+        body = START_COMMAND.read_text(encoding="utf-8")
+        line = next((ln for ln in body.splitlines() if ln.startswith("- 新規着手の場合")), None)
+        self.assertIsNotNone(line, "command 本文に新規着手の行が無い")
+        asks = re.search(rf"見つからなければ（{self.LIST}）、Phase F7 で \*\*進め方の確認", line)
+        self.assertIsNotNone(asks, line)
+        self.assertEqual(states_in(asks.group(1)), self.NO_WORK)
+        silent = re.search(rf"見つかったら（{self.LIST}）、\*\*確認を出さずブランチも作らず、続きとして扱う\*\*", line)
+        self.assertIsNotNone(silent, line)
+        self.assertEqual(states_in(silent.group(1)), self.WORK)
+        self.assertIn("続き（引数は新規）", line)
+        self.assertIn("既存を捨てて新しく始めたいと言われたら、こちらでは消さずに手順を案内する", line)
+        self.assertNotIn("既存のコミットがあっても確認は出す", body)
+
+    def test_descriptions_of_skill_and_command_say_the_same(self):
+        """router に載るのは command の description（#206）。片方だけ直すと選択の挙動と本文がずれる."""
+        phrase = "新規着手で既存の作業が無ければ feature-dev 起動の確認を"
+        for path in (START, START_COMMAND):
+            with self.subTest(path=path.name):
+                desc = section(path.read_text(encoding="utf-8"), "description:", "allowed-tools:")
+                self.assertIn(phrase, desc)
+
+    def test_existing_work_doc_names_the_mismatch_and_the_discard_request(self):
+        doc = EXISTING_DOC.read_text(encoding="utf-8")
+        line = next((ln for ln in section(doc, "## 4.", "## 5.").splitlines()
+                     if ln.startswith("- `TASK_INTENT = new`")), None)
+        self.assertIsNotNone(line, "判定行の書式に TASK_INTENT = new の食い違いの書き方が無い")
+        self.assertIn("続き（引数は新規）", line)
+        self.assertIn("着手の選択は出さず", line)
+        self.assertEqual(states_in(line), self.WORK)
+        redecide = next((ln for ln in section(doc, "## 2.", "## 3.").splitlines()
+                         if "既存は捨てて新しく始めたい" in ln), None)
+        self.assertIsNotNone(redecide, "既存を捨てたいと言われた回の決め直しが無い")
+        self.assertIn("こちらで消さない", redecide)
+        self.assertIn("済ませた後の /start で決め直す", redecide)
 
 
 if __name__ == "__main__":

@@ -177,12 +177,13 @@ VERI=".claude/verification/$(git rev-parse --abbrev-ref HEAD).md"
 
 #### 撮影フローと PR body 添付
 
-1. `.claude/screenshots/` 内の最新 snap ディレクトリを特定。見つからなければ ui-verify スキルを `snap` モードで起動して新規撮影（PR タイプ判定結果に応じた `--viewports=...` を渡す）
+1. 添付する撮影ディレクトリを同梱スクリプトで選ぶ。`.claude/screenshots/` はチェックアウトに 1 つでブランチを切り替えても残るので、最新をそのまま使うと、前に別のブランチで撮った画面をこの PR に添付する。スクリプトは ui-verify の snap / verify / tune モードのディレクトリ（`snap-*` / `verify-*` / `tune-*`）のうち、このチェックアウトが今のブランチに切り替わった後に撮ったものだけから最新を選ぶ:
 
    ```bash
-   # ui-verify の snap モード（snap-*）・verify モード（verify-*）・tune モード（tune-*）を対象
-   LATEST=$(ls -1dt .claude/screenshots/{snap,verify,tune}-* 2>/dev/null | head -1)
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/pick-screenshot-dir.sh"
    ```
+
+   `SCREENSHOT_DIR=<パス>` が出たらそのディレクトリを使う。`SCREENSHOT_DIR=none`（`REASON=` が理由）なら ui-verify スキルを `snap` モードで起動して新規撮影し（PR タイプ判定結果に応じた `--viewports=...` を渡す）、snap が報告した保存先のディレクトリを使う（今撮ったものなので選び直さない）。`SINCE=` / `SINCE_SOURCE=` / `SKIPPED=`（どの時刻より後を今のブランチの撮影と見たか・外した数）の定義はスクリプト冒頭のコメント
 2. **撮影内容の機密チェック**（次節「機密 UI チェックリスト」を実施）。問題があれば中止
 3. 添付ファイルを `ATTACH` 配列に集める。対象は `png` / `jpg` / `jpeg` / `gif` / `webp` / `svg` と、録画があれば `mp4` / `mov` / `webm`（gh が受け付ける形式はこの 9 種のみ）。**1 回の gh 呼び出しで 50 件まで**
 4. PR body に以下を追記（テンプレート既存セクションの末尾 or 新規 `## Screenshots` として）。画像の参照先は **`ATTACH` に入れたローカルパスをそのまま書く** — `gh pr create --attach` がアップロード時に同じパスの Markdown 参照を GitHub 上の URL へ書き換える（alt text は保持される）。**1 枚のみの場合は table ではなく単独画像で添付する**:

@@ -37,6 +37,7 @@ worktree-setup / worktree-teardown はコマンドを持たず、トリガーフ
 - ブランチ名から Linear Issue ID を抽出して情報を取得
 - 概要を What / Why / Outcome の三要素で記述（字数制約と両立）
 - gitignored パス・ローカル限定ドキュメント参照の検出
+- UI PR の Screenshots は、このチェックアウトが今のブランチに切り替わった後に撮った ui-verify の撮影を使い（`scripts/pick-screenshot-dir.sh` が選ぶ）、無ければ snap で撮る。前に別のブランチで撮った画面は添付しない
 - 処理の流れや集計の範囲を変える PR では、変更の要点を 1〜2 枚の図にして添付するかを提案（UI 変更の有無は問わない。SVG を `scripts/svg-to-png.sh` で PNG にする。`--no-diagrams` で止める）
 - 常にドラフト PR として作成
 
@@ -51,7 +52,7 @@ chrome-devtools MCP を使って Web UI の動作確認・スタイル調整・�
 - `snap`: スクリーンショット収集（デフォルト desktop 1 枚、`--viewports=...` で複数 viewport 撮影）
 - dev server はセッション中保持し、タスク完了ごとの再起動を避ける
 - 複数ステップの E2E が必要な場合は公式 skill `webapp-testing` へ委譲
-- `--caller=<feature-dev|lightweight-flow>`: feature-dev の Phase 5.5 / issue-workflow の軽量フローから呼ぶ口。UI に影響する変更か（`scripts/ui-impact.sh`。未コミットの変更と未追跡のファイルを見る）を先に判定し、該当しなければブラウザを開かず skipped を返す。結果は応答の最後の `UI_VERIFY_*` の 5 行。確認（dev server の起動許可・ケース表など）は省かない
+- `--caller=<feature-dev|lightweight-flow>`: feature-dev の Phase 5.5 / issue-workflow の軽量フローから呼ぶ口。UI に影響する変更か（`scripts/ui-impact.sh`。未コミットの変更と未追跡のファイルを見る）を先に判定し、該当しなければブラウザを開かず skipped を返す。結果は応答の最後の `UI_VERIFY_*` の 5 行。確認（dev server の起動許可・ケース表など）は省かない。無操作の自動続行（askUserQuestionTimeout）の回答は許可・確認とみなさない（起動しない・実行しない）
 - verify のブラウザ基盤はスクショの要否で選ぶ（要る → chrome-devtools／要らない → Claude Browser → Claude in Chrome → chrome-devtools）。tune / snap は chrome-devtools
 - chrome-devtools のプロファイルを別のブラウザ（別セッションの MCP が開いたもの等）が掴んでいたら、`scripts/chrome-profile-lock.sh` で検知し、利用者が「止めて続行」を選んだときだけ止める。起動前の検知が読める接続方式は `.claude/dev-workflow.json` の `browser_connect` だけなので、userConfig で `browser_connect` を `autoConnect` / `userDataDir=<path>` にしたら同じ値をこのファイルにも書く（書かないと既定のプロファイルを見る）。`userDataDir=<path>` の path は絶対パスで書く（相対・`~` は MCP の cwd を起点に解決されるので照合できず、`LOCK=unknown` として chrome-devtools を基盤から外す）
 
