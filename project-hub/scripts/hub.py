@@ -1082,11 +1082,19 @@ def candidates(rows: list[dict]) -> list[dict]:
     return [{"name": a["name"], "ref": a["ref"]} for a in rows]
 
 
-def resolved(hit: dict, rule: str, expect_ref: str | None, warning: str | None = None) -> int:
+def send_to(hit: dict, agents: list[dict]) -> str:
+    """SendMessage の `to`。同じ名前の行が他にもあれば名前だけでは届け先が決まらないので ` [ref]` を付ける."""
+    if sum(1 for a in agents if a["name"] == hit["name"]) > 1:
+        return f"{hit['name']} [{hit['ref']}]"
+    return hit["name"]
+
+
+def resolved(hit: dict, rule: str, expect_ref: str | None, agents: list[dict],
+             warning: str | None = None) -> int:
     # 承認の画面に出した ref と違えば、同じ名前の別のセッションに入れ替わっている
     if expect_ref and hit["ref"] != expect_ref:
         return unresolved(f"名前は同じだが ref が承認時（{expect_ref}）と違う", candidates=candidates([hit]))
-    out = {"status": "ok", "name": hit["name"], "ref": hit["ref"], "rule": rule}
+    out = {"status": "ok", "name": hit["name"], "ref": hit["ref"], "to": send_to(hit, agents), "rule": rule}
     if warning:
         out["warning"] = warning
     emit(out)
@@ -1113,7 +1121,7 @@ def pick_exact(agents: list[dict], name, rule: str, expect_ref: str | None = Non
         return unresolved("照合に使う名前が無い", candidates=candidates(agents))
     hits = [a for a in agents if a["name"] == name]
     if len(hits) == 1:
-        return resolved(hits[0], rule, expect_ref)
+        return resolved(hits[0], rule, expect_ref, agents)
     return unresolved(f"名前「{name}」に一致する行が {len(hits)} 件", name=name,
                       candidates=candidates(hits or agents))
 
@@ -1142,7 +1150,7 @@ def cmd_resolve(args) -> int:
         # lead が候補から選んだ行。名前は変わりうるので ref で引き、今の名前を返す
         hits = [a for a in agents if a["ref"] == args.ref]
         if len(hits) == 1:
-            return resolved(hits[0], "ref", None)
+            return resolved(hits[0], "ref", None, agents)
         return unresolved(f"ref「{args.ref}」に一致する行が {len(hits)} 件", candidates=candidates(agents))
 
     if not SESSION_ID_RE.fullmatch(args.session):
@@ -1162,7 +1170,7 @@ def cmd_resolve(args) -> int:
     if registered and not absent and not is_default_name(registered, token):
         hits = [a for a in agents if a["name"] == registered]
         if len(hits) == 1:
-            return resolved(hits[0], "registered_name", args.expect_ref)
+            return resolved(hits[0], "registered_name", args.expect_ref, agents)
         if len(hits) > 1:
             return unresolved(f"登録名「{registered}」に一致する行が {len(hits)} 件",
                               registered_name=registered, candidates=candidates(hits))
@@ -1174,11 +1182,15 @@ def cmd_resolve(args) -> int:
     if token is None:
         return unresolved(f"Issue ID「{issue}」が tracker の形と合わない", registered_name=registered,
                           candidates=candidates(agents))
-    foreign = foreign_names(pdir)
+    # 別のセッションのものと hub が知っている名前は外す（ほかの PJ・この PJ の別の登録・hub）。
+    # 名前に別の Issue ID と並んでこの Issue ID が入っていても（「#310: #308 の残り」）、そのセッションは宛先ではない
+    taken = foreign_names(pdir) | {read_obj(pdir / "hub.json").get("name")}
+    regs, _ = load_registrations(pdir)
+    taken |= {r.get("name") for r in regs if r.get("session_id") != args.session}
     hits = [a for a in agents if not is_default_name(a["name"], token) and token.search(a["name"])
-            and a["name"] not in foreign]
+            and a["name"] not in taken]
     if len(hits) == 1:
-        return resolved(hits[0], "issue_token", args.expect_ref,
+        return resolved(hits[0], "issue_token", args.expect_ref, agents,
                         warning=f"登録名ではなく、名前に含まれる Issue ID で引いた（「{hits[0]['name']}」）。"
                                 "承認の画面で、この名前が宛先のセッションか lead に確かめてもらう")
     return unresolved(f"Issue ID「{issue}」を名前に含む行が {len(hits)} 件",
@@ -1212,9 +1224,6 @@ def detect_project(cwd: Path) -> str:
 
 def cmd_report(args) -> int:
     sid = current_session(args.session_id)
-    problem = name_problem(args.name)
-    if problem:
-        raise HubError(2, problem + "（ListAgents の「This session is ...」から取る）")
     cwd = Path(args.cwd or os.getcwd())
     project = args.project or detect_project(cwd)
     pdir = project_dir(project)
@@ -1224,6 +1233,11 @@ def cmd_report(args) -> int:
     body = load_json_input(args.body_file, "report の本文")
     if not isinstance(body, dict):
         raise HubError(2, "report の本文が JSON のオブジェクトではない")
+    # 名前も argv で受けない。作業側の名前は会話の題で、トラッカーの題を写したものになりうる
+    my_name = body.get("name")
+    problem = name_problem(my_name)
+    if problem:
+        raise HubError(2, problem + "（ListAgents の「This session is ...」から取る）")
 
     # ListAgents の抜き出しを先に検査し、合わなければ何も書かない（hub への通知先もここで決める）
     agents = body.get("agents")
@@ -1239,7 +1253,7 @@ def cmd_report(args) -> int:
         return 2
 
     kind = tracker_kind(config)
-    report = {"schema": REPORT_SCHEMA, "session_id": sid, "name": args.name, "project": project,
+    report = {"schema": REPORT_SCHEMA, "session_id": sid, "name": my_name, "project": project,
               "issue": body.get("issue"), "state": body.get("state"), "pr": body.get("pr"),
               "needs_lead": body.get("needs_lead", []), "follow_ups": body.get("follow_ups", []),
               "claims": body.get("claims", [])}
@@ -1253,7 +1267,7 @@ def cmd_report(args) -> int:
     write_json(pdir / "sessions" / f"{sid}.json", {
         "session_id": sid,
         "host_session_id": os.environ.get("CLAUDE_CODE_HOST_SESSION_ID") or None,
-        "name": args.name, "project": project, "issue": report["issue"],
+        "name": my_name, "project": project, "issue": report["issue"],
         "branch": git(cwd, "rev-parse", "--abbrev-ref", "HEAD"),
         "worktree": git(cwd, "rev-parse", "--show-toplevel"),
         "updated": stamp(),
@@ -1267,15 +1281,15 @@ def cmd_report(args) -> int:
         # 既定名は開き直した別のセッションが名乗りうる（通知の先を取り違える）
         notify = {"status": "unresolved", "reason": f"hub の名前「{hub_name}」が既定名なので宛先にしない"}
     elif len(hits) == 1:
-        notify = {"status": "ok", "name": hits[0]["name"], "ref": hits[0]["ref"]}
+        notify = {"status": "ok", "name": hits[0]["name"], "ref": hits[0]["ref"], "to": hits[0]["name"]}
     else:
         notify = {"status": "unresolved", "reason": f"hub の名前「{hub_name}」に一致する行が {len(hits)} 件"}
     out = {"file": name, "project": project, "hub_name": hub_name, "notify": notify}
     warnings = []
-    if is_default_name(args.name, issue_token(kind, report["issue"])):
+    if is_default_name(my_name, issue_token(kind, report["issue"])):
         warnings.append("既定名で登録した。hub は既定名では宛先を引かないので、"
                         "会話の題に Issue ID を入れてから report し直すよう利用者に頼む")
-    if any(a["name"] == args.name for a in agents):
+    if any(a["name"] == my_name for a in agents):
         warnings.append("同じ名前の別のセッションがある。hub はこの名前では宛先を決められないので、"
                         "会話の題を変えてから report し直すよう利用者に頼む")
     if warnings:
@@ -1434,10 +1448,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--peer-count", type=int, required=True)
 
     p = add("report", cmd_report,
-            "作業側の report。stdin の JSON に本文と ListAgents の抜き出し（agents / peer_count）を入れる",
+            "作業側の report。stdin の JSON に本文・自分の名前と ref・ListAgents の抜き出し"
+            "（name / self_ref / agents / peer_count）を入れる",
             project=False)
     p.add_argument("--project", help="brief が渡した PJ。無ければ cwd の repo から決める")
-    p.add_argument("--name", required=True, help="ListAgents の「This session is <name>」")
     p.add_argument("--cwd")
     p.add_argument("--body-file", default="-")
 

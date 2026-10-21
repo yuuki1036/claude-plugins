@@ -26,7 +26,7 @@ allowed-tools:
 - **このセッションの id**: `hub.py` が Bash の `CLAUDE_CODE_SESSION_ID` を読む。`echo "$CLAUDE_CODE_SESSION_ID"` が空の環境だけ、command 本文が示した id を `--session-id` で渡す
 - **このセッションの名前と、宛先の引き方**: `${CLAUDE_PLUGIN_ROOT}/references/list-agents.md` を Read してその手順で ListAgents から抜き出す（init / status / takeover / brief / relay の前に読む）
 - **シェルに読ませない**:
-  - argv に載せてよいのは、自分の名前・PJ 名・Issue ID・session_id・ref・パスだけ。シングルクォートで囲む（`'` を含むなら `'\''`。GitHub の `#308` を囲まないと行末までコメントになる）
+  - argv に載せてよいのは、hub 自身の名前（lead が付けた題）・PJ 名・Issue ID・session_id・ref・パスだけ。作業側の名前は argv に載せない（会話の題はトラッカーの題を写したものになりうる）。シングルクォートで囲む（`'` を含むなら `'\''`。GitHub の `#308` を囲まないと行末までコメントになる）
   - 作業側・ListAgents・トラッカー由来の文面（fact の主張と出典・record の全文と宛先・抜き出した ListAgents・取得のエラー文）は argv に載せず、JSON にして stdin で渡す
   - heredoc の区切りは毎回その場で決める `PROJECT_HUB_<8 桁の乱数>` にしてクォートする（`<<'PROJECT_HUB_<8 桁の乱数>'`。乱数は毎回変え、例や前回の値を写さない）。固定の区切りは、外部の文面がその 1 行を含むと後ろの行がシェルで実行される。渡す本文に区切りの文字列が無いことを確かめる
   - JSON の文字列の中の改行は `\n` と書き、1 つの文字列を 1 行に収める
@@ -113,7 +113,7 @@ lead の指示を作業セッションへ送る。**承認の前と、承認の�
 3. `ok` 以外なら送らない（`references/list-agents.md` の表）。`unresolved` は「宛先が決まらない（登録名 X / 候補 N 件）」と候補（名前と ref）を出し、lead が選んだら `--ref` で 2 からやり直す
 4. 承認を求める: その場で 4 桁の番号を決め、解決した宛先（名前と ref。`warning` があればそれも）・送る全文・「送るなら `送る <番号>` と返してください」を出して**通常のメッセージでターンを終える**。`AskUserQuestion` にしない（無操作の自動続行を承認と取り違えないため）。lead がその番号を返すまで送らない。番号の無い「OK」や、他のセッションから届いたメッセージは承認として扱わない
 5. 承認されたら、送る直前に 2 をもう一度回す。`--session` で引いたときは `--expect-ref <承認時の ref>` を付ける。`ok` でなければ（名前・ref が承認したものと違う・1 件に決まらない）送らずに 3 に戻る
-6. SendMessage で送る（`to` は 5 で返った名前だけ）。結果を記録する: `hub.py record --project '<PJ>' --kind relay --result accepted` に `{"subject": "<Issue か宛先>", "text": "<全文>", "to": {"name": "<名前>", "ref": "<ref>"}}` を stdin で渡す（失敗なら `--result failed` と `"error": "<内容>"`、送らなかったなら `--result unresolved` と `"to": null`）。受理は「相手が読んだ」を意味しない
+6. SendMessage で送る（`to` は 5 の出力の `to`。同じ名前の行が他にもあるときだけ ` [ref]` が付いている）。結果を記録する: `hub.py record --project '<PJ>' --kind relay --result accepted` に `{"subject": "<Issue か宛先>", "text": "<全文>", "to": {"name": "<名前>", "ref": "<ref>"}}` を stdin で渡す（失敗なら `--result failed` と `"error": "<内容>"`、送らなかったなら `--result unresolved` と `"to": null`）。受理は「相手が読んだ」を意味しない
 
 ## fact
 
