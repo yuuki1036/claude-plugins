@@ -249,7 +249,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 ## 未解決事項 (open)
 
 - **3 回目の self-review（2026-10-21・security / bug-detection）で残した指摘**（G-V ループの上限に達し、BLOCKER だけ直す方針にしたため未修正）。確定タイミング: 段階 ① を 1 PJ で使う前
-  - MAJOR: `resolve --ref` は同名の行があっても名前だけを返す（SendMessage は同名 2 行なら ` [ref]` を付ける必要がある）/ Issue ID のトークン照合が同じ PJ の別の登録を外さない / report の `--name` に作業側の名前（トラッカーの題を含みうる）が argv で載る
+  - MAJOR 3 件（同名の宛先の `to`・同じ PJ の別の登録のトークン照合・report の `--name`）は同じ日に直した（CHANGELOG の次の版）
   - MINOR: base のブランチ名を `split("/")[-1]` で取る / `--registered-branches` が repo ごとでない / fact の `path` が base に実在するかを確かめない / 共有 worktree の判定に done・不在の登録も数える / 別の PJ の hub.json が壊れていると全セッションの hook で stderr が出る
   - 付録（閾値未満）: 注入する表の前に「外部の文面」の断りが無い / 作業側が送り手の名前だけで hub を認める / relay の承認番号を包みの無い send_message で返されうる ほか 10 件
 
