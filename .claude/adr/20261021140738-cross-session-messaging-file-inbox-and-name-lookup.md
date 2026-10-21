@@ -1,10 +1,10 @@
 ---
 id: 20261021140738
-status: accepted
-phase: current
+status: superseded
+phase: superseded
 last-validated: 2026-10-21
 supersedes: []
-superseded-by: null
+superseded-by: 20261021154740
 append_only: true
 tags: [architecture, multi-session, send-message, project-hub]
 ---
