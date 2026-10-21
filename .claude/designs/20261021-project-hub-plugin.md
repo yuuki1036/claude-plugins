@@ -48,12 +48,20 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 
 - **新プラグインにする**（2026-10-21 にユーザーが確定。component-addition-advisor の判定）。blocker: 状態を repo の外に置き、セッションをまたいで持つ必要がある。issue-workflow のデータ置き場（repo の `.claude/` 配下・worktree ごとに分かれる）とは粒度が合わない。fallback: issue-workflow:dashboard と living spec を手で回す今のやり方
 - **Issue トラッカーは hub が直接読む**（2026-10-21 にユーザーが確定）。hub が要るのは状態・担当・紐づく PR の数列だけなので、`gh issue view --json` / Linear MCP を自前の短い呼び出しで読む。issue-workflow には依存せず、スクリプトの複製も作らない（CLAUDE.md「各プラグインは独立して動作すること」「複製は分割単位の誤りのシグナル」）
-- **report はファイルで置き、SendMessage は通知にだけ使う**（2026-10-21 にユーザーが確定）。下の要検証 (b) が未決でも取りこぼさない経路にする
+- **report はファイルで置き、SendMessage は通知にだけ使う**（2026-10-21 にユーザーが確定）。確定時は要検証 (b) が未決だったため。決着した後も変えない理由は「検討した代替案」の最後の項
 - **SendMessage の宛先は名前で、セッション ID は使えない**（要検証 (a)。2026-10-21 に確認）
   - ツール説明（SendMessage・CC 2.1.302）: 「the name IS the address; there is no separate address syntax」。` [ref]` は同名が 2 つあるときだけ付け、「A ref you did not just read from a listing or an error will not resolve」。raw の agentId（`a...-...`）は in-process の subagent 用
-  - 実測: `--session-id 11111111-2222-4333-8444-555555555555 -n hubtest-worker` で起動したセッションは、ListAgents に `hubtest-worker [227051]` と出た。ref はセッション ID の先頭と一致しない。セッション ID 宛ての送信は `No agent named '11111111-…' is reachable` で失敗した（#308 で出たのと同じ文言）。ただし送信の時点で受信側が認証エラーで終了していた可能性があり、生きている相手への ID 宛ては試せていない。上のツール説明と合わせて「使えない」と扱う
+  - 実測: `--session-id 11111111-2222-4333-8444-555555555555 -n hubtest-worker` で起動したセッションは、ListAgents に `hubtest-worker [227051]` と出た。ref はセッション ID の先頭と一致しない。セッション ID 宛ての送信は `No agent named '11111111-…' is reachable` で失敗した（#308 で出たのと同じ文言）。この回は受信側が認証エラーで先に終了していた可能性があったので、受信側が ListAgents に `busy` と出ている間に測り直した（`22222222-…`）。結果は同じ文言での失敗だった。名前宛て（`hubtest-busy`）は同じ相手に届いた
   - `-n` で付けた表示名がそのまま ListAgents の名前になった（上の実測）。Desktop のセッションも会話の題に当たる名前で出ていた（タイトルと同一かは未確認）。どちらにせよ利用者が改名すると宛先が変わる
-- **他セッションから届いたメッセージで UserPromptSubmit が発火するかは未確認**（要検証 (b)）。ツール説明では、受信側が busy なら「enqueue and drain at the receiver's next tool round」で、ターンの途中に入る。ヘッドレスの `claude -p` を受信側にして測ろうとしたが、Bash の環境で OAuth の期限切れになり起動できなかった。手順は「未解決事項」に残す
+- **他セッションから届いたメッセージで、受信側の UserPromptSubmit は発火する**（要検証 (b)。2026-10-21 に実測）。受信側はヘッドレスの `claude`（haiku）で、UserPromptSubmit の stdin をファイルに追記するだけの hook を `--settings` で入れた。送信側はこのリポジトリの Desktop のセッション
+  | 受信側の状態 | 届き方 | UserPromptSubmit |
+  |---|---|---|
+  | 入力待ち（`-p --input-format stream-json` で stdin を開いたまま、1 ターン目の後） | 新しいターンとして始まる | 発火（送信の直後） |
+  | API 呼び出しの合間（`-p` の 1 ターン目の途中） | ターンの途中に入る | 発火（送信の直後） |
+  | ツールの実行中（`python3 -c 'import time; time.sleep(60)'`） | transcript に `queue-operation: enqueue` と `queued_command` が残り、ツールが終わるまで保留された | 発火（ツールの終了時。送信から約 53 秒後） |
+  - hook の `prompt` には、包みごとの全文が入る: `<cross-session-message from="uds:/tmp/cc-socks/<pid>.sock" from-session="local_<uuid>" from-name="<送信側の名前>" from-mode="prompting">` + 本文 + `</cross-session-message>`。送り手の名前とセッションを hook が決定的に読める
+  - `from` は送信側のプロセスごとのソケットで、ツール説明は返信の宛先にこれを使うよう指示している。プロセスが変われば変わるので、保存する宛先には使えない
+  - 測っていないもの: 対話の TUI と Desktop のセッションが受信側のとき。受信側の permission mode が送信側と違うとき（ツール説明では、メッセージは受信側の利用者の承認待ちになり、期限切れもありうる）
 - **置き場所は `~/.claude/hub/<project>/`**（#308 本文）。repo の `.claude/` は worktree ごとに分かれ、hub と作業側で共有できない
 - **hook が受け取る stdin に `session_id` がある**（上の実測で UserPromptSubmit の stdin に `session_id` / `transcript_path` / `cwd` が入っていた）。hub のセッションかどうかは、登録した hub の session_id との一致で決定的に判定できる
 - **hook のイベントに SessionStart / PostCompact / UserPromptSubmit がある**（`.claude-plugin/schema/hooks.schema.json` の enum）
@@ -133,7 +141,7 @@ skill 間の共通処理（journal の追記・宛先の解決・state.md の生
 
 - 案 B を採らない理由: 状態を repo の外に置くと、issue-workflow の `{DATA_DIR}` 規約・backend 判定（Phase 0）の前提から外れた別系統がプラグイン内にでき、13 スキルのうち hub 系だけが別の置き場所を持つ
 - 案 C を採らない理由: 問題の 5 件のうち、膨張しか直らない
-- report を SendMessage だけで受ける案を採らない理由: 受け取りを UserPromptSubmit hook に頼ることになり、要検証 (b) が否なら記録が落ちる
+- report を SendMessage だけで受ける案を採らない理由: UserPromptSubmit は発火する（確定した前提）が、本文が会話を通るのでコンパクションで要約される。ツール実行中の hub には、そのツールが終わるまで届かない。permission mode が違うと受信側の承認待ちになり、期限切れもありうる（ツール説明）。ファイルならどれにも左右されない
 
 ## 設計判断ログ
 
@@ -142,11 +150,12 @@ skill 間の共通処理（journal の追記・宛先の解決・state.md の生
 - [local] facts は追記のみ。訂正は新しい行で前の行を指す（hub の思い込みが作業側へ渡った経緯を後から辿れるように）
 - [local] inbox は取り込んだら `inbox/done/` へ移す（消さない）。取り込みの重複は report のファイル名で防ぐ
 - [local] hook はどちらも stdin の `session_id` と cwd で自己判定する（CLAUDE.md の「hooks.json の if:/matcher に単独依存しない」）
+- [local] ADR-20261021140738 のコンテキストにある「UserPromptSubmit が発火するかは未確認」は、2026-10-21 の実測で「発火する」と決着した。決定（本文はファイル・SendMessage は通知だけ）は変えない（理由は「検討した代替案」の最後の項）。ADR は append-only なので本文は書き換えない
 - [→ADR候補] 複数セッションの間の連絡は、本文をファイルで置き SendMessage は通知にだけ使う。宛先は名前で引き、送る直前に ListAgents で引き直す（セッション ID・ref を保存して使わない）。ほかのプラグインがセッション間の連絡を持つときも、この形を拘束する
 
 ## 未解決事項 (open)
 
-- **要検証 (b) 他セッションから届いたメッセージで、受信側の UserPromptSubmit が発火するか**: (a) 発火する — Pros: report の通知を hub の hook で journal に自動で残せる / Cons: busy の受信側ではターン途中に入るので、idle と busy で挙動が違う可能性 (b) 発火しない — Pros: 採用案はこの前提で組んであり変更不要 / Cons: 通知から status を回すのは hub の Claude 任せ。現時点の方向性: 採用案は (b) でも動くので段階 ① は待たない。(a) なら段階 ② で「通知を受けたら inbox を取り込む」hook を足す。手順: UserPromptSubmit の stdin をファイルに追記するだけの hook を `--settings` で入れたセッションを受信側にし、idle と busy（`sleep 60` の実行中）のそれぞれで SendMessage を送ってログを見る。確定タイミング: 段階 ① の実装に着手するとき（認証の通ったターミナルで実施）
+- **hub 側で通知を受ける UserPromptSubmit hook を何に使うか**（要検証 (b) が「発火する」で決着したので生じた問い）: (a) 受信を journal に 1 行残し、未取り込みの report の件数を注入するだけ — Pros: hook が軽い（Event Bus 規約の「hook 内で重い処理をしない」に沿う）。report の取り込みは `status` に一本化される / Cons: 取り込みは hub の Claude が `status` を回すまで遅れる (b) hook が inbox を取り込み state.md まで作り直す — Pros: 通知と同時に状態が最新になる / Cons: hook で gh・トラッカーを呼ぶことになり重い。失敗すると黙る。現時点の方向性: (a)。`prompt` が `<cross-session-message` で始まり、かつ stdin の `session_id` が hub-session と一致するときだけ動かす。確定タイミング: 段階 ② の詳細設計（段階 ① の運用 1 PJ 目の後）
 - **作業側の登録 hook をどのセッションで有効にするか**: (a) project-hub を user スコープで有効にし、config の repos に当たるときだけ書く — Pros: 作業側の設定が要らない / Cons: 全セッションで SessionStart が走る（当たらなければ黙る） (b) 作業側の repo の project スコープでだけ有効にする — Pros: 走る範囲が狭い / Cons: worktree ごとに settings.local.json が無く、有効化が漏れる。現時点の方向性: (a)（判定は git common dir の比較だけで軽い）。確定タイミング: 段階 ① の実装時
 - **作業側の名前を決まった形にするか**: (a) brief に「セッションのタイトルを `<Issue ID>: …` にする」を含める — Pros: 宛先の引き直し 2 番目が効く / Cons: 利用者が改名すれば崩れる (b) 何もしない — Pros: 手間なし / Cons: 引き直しが登録名頼みになる。現時点の方向性: (a)。確定タイミング: 段階 ① の運用 1 PJ 目の後
 
@@ -154,8 +163,7 @@ skill 間の共通処理（journal の追記・宛先の解決・state.md の生
 
 1. **実装着手の単位**（段階 ①）:
    - `/feature-dev project-hub の段階 ①（状態ファイル・status・brief・relay・report・compact の注入 hook・作業側の登録 hook） design=.claude/designs/20261021-project-hub-plugin.md`
-   - 着手の前に「未解決事項」の要検証 (b) を実施し、結果をこの doc に書き足す
-   - 段階 ②（`merged`・`decide` の波及と living-spec への受け渡し）と段階 ③（意見の台帳・送信前の検査）は、段階 ① を 1 PJ で使った後にこの doc を改訂して詰める（確定タイミング: 段階 ① の運用 1 PJ 目の後）
+   - 段階 ②（`merged`・`decide` の波及と living-spec への受け渡し・hub 側で通知を受ける UserPromptSubmit hook）と段階 ③（意見の台帳・送信前の検査）は、段階 ① を 1 PJ で使った後にこの doc を改訂して詰める（確定タイミング: 段階 ① の運用 1 PJ 目の後）
 2. **検証方法**:
    - hook: `hook_harness.py` で「hub 以外のセッションでは注入しない」「config の repos に当たらない cwd では登録しない」「壊れた JSON で黙る」を厚く書く
    - scripts: 宛先の解決（登録名一致 / Issue ID 一致が 1 件 / 0 件・2 件で送らない）を ListAgents の出力を stub にした CLI テストで固定する
