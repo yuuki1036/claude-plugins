@@ -2,7 +2,7 @@
 id: 20261021-project-hub-plugin
 title: project-hub — 複数セッションを束ねて PJ を進める hub のプラグイン
 status: draft
-phase: target
+phase: current
 last-validated: 2026-10-21
 supersedes: []
 superseded-by: null
@@ -63,7 +63,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 - **SendMessage の宛先は名前で、セッション ID は使えない**（要検証 (a)。2026-10-21）
   - ツール説明（SendMessage・CC 2.1.302）: 「the name IS the address; there is no separate address syntax」。` [ref]` は同名が 2 つあるときだけ付け、「A ref you did not just read from a listing or an error will not resolve」。raw の agentId（`a...-...`）は in-process の subagent 用
   - 実測: `--session-id 11111111-2222-4333-8444-555555555555 -n hubtest-worker` で起動したセッションは、ListAgents に `hubtest-worker [227051]` と出た。ref はセッション ID の先頭と一致しない。セッション ID 宛ての送信は `No agent named '11111111-…' is reachable` で失敗した（#308 で出たのと同じ文言）。この回は受信側が認証エラーで先に終了していた可能性があったので、受信側が ListAgents に `busy` と出ている間に測り直した（`22222222-…`）。結果は同じ文言での失敗だった。名前宛て（`hubtest-busy`）は同じ相手に届いた
-  - `-n` で付けた表示名がそのまま ListAgents の名前になった。Desktop のセッションも会話の題に当たる名前で出ていた（タイトルと同一かは未確認）。名前を付けていないセッションは `claude-plugins-96` のような既定名で出る。どちらにせよ利用者が改名すると宛先が変わる
+  - `-n` で付けた表示名がそのまま ListAgents の名前になった。Desktop のセッションも会話の題に当たる名前で出ていた（題と同一であることは下の sessionTitle の項で確認済み）。名前を付けていないセッションは `claude-plugins-96` のような既定名で出る。どちらにせよ利用者が改名すると宛先が変わる
 - **ListAgents の出力は人間向けの自然文で、書式の契約は見つかっていない**。例: `claude-plugins-96 [f3183e]  ·  interactive  ·  waiting  ·  started 1m ago`。名前は空白を含みうる
 - **ListAgents / SendMessage / Linear MCP は Claude のツールで、hook やシェルスクリプトからは呼べない**
 - **他セッションから届いたメッセージで、受信側の UserPromptSubmit は発火する**（要検証 (b)。2026-10-21 に実測）。受信側はヘッドレスの `claude`（haiku）で、UserPromptSubmit の stdin をファイルに追記するだけの hook を `--settings` で入れた。送信側はこのリポジトリの Desktop のセッション
@@ -76,11 +76,15 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
   - `from` は送信側のプロセスごとのソケットで、ツール説明は返信の宛先にこれを使うよう指示している。プロセスが変われば変わるので、保存する宛先には使えない
   - `from-session` は送信側の `CLAUDE_CODE_HOST_SESSION_ID`（Desktop の `local_<uuid>`）と同じ値で、CLI のセッション ID とは別の値
   - 測っていないもの: 対話の TUI と Desktop のセッションが受信側のとき。受信側の permission mode が送信側と違うとき（ツール説明では、メッセージは受信側の利用者の承認待ちになり、期限切れもありうる）
-- **skill が自分の session_id を得る手段**: Desktop のセッションの Bash 環境には `CLAUDE_CODE_SESSION_ID`（CLI のセッション ID）と `CLAUDE_CODE_HOST_SESSION_ID` がある（2026-10-21 に確認）。SKILL.md の本文では `${CLAUDE_SESSION_ID}` が展開される（`harness-keeper/skills/cc-catch-up/references/plugin-features.md:136`）。hook の stdin の `session_id` と `CLAUDE_CODE_SESSION_ID` を同じ ID として扱う前例は `code-review/hooks/scripts/publish-guard.sh`。この前例は「env に載ることは保証されていない」として stdin を優先している。ターミナルの CLI で同じ変数があるかは未確認
+- **skill が自分の session_id を得る手段**: Desktop のセッションの Bash 環境には `CLAUDE_CODE_SESSION_ID`（CLI のセッション ID）と `CLAUDE_CODE_HOST_SESSION_ID` がある（2026-10-21 に確認）。SKILL.md の本文では `${CLAUDE_SESSION_ID}` が展開される（`harness-keeper/skills/cc-catch-up/references/plugin-features.md:136`）。hook の stdin の `session_id` と `CLAUDE_CODE_SESSION_ID` を同じ ID として扱う前例は `code-review/hooks/scripts/publish-guard.sh`。この前例は「env に載ることは保証されていない」として stdin を優先している。CLI での値は下の「CLI でも session_id の 3 つの取り方は同じ値になる」で確認済み（同名の command と skill では `${CLAUDE_SESSION_ID}` が展開されるのは command の本文だけ）
 - **hook の stdin に `session_id` がある**（上の実測で UserPromptSubmit の stdin に `session_id` / `transcript_path` / `cwd` が入っていた）
 - **hook のイベントに SessionStart / PostCompact / UserPromptSubmit / SessionEnd がある**（`.claude-plugin/schema/hooks.schema.json` の enum）。SessionStart と PostCompact の stdout で注入する前例は `issue-workflow/hooks/scripts/inject-rules.sh`（`issue-workflow/hooks/hooks.json` で SessionStart の matcher `""` と PostCompact の両方につないでいる）
-- **issue-workflow の set-session-title は、作業側の名前を決まった形にする前例としては弱い**。セッションのタイトルを `<ID>: <タイトル>` にするが、付くのは次をすべて満たすときだけ: ブランチ名に `[A-Z]+-[0-9]+` がある（`set-session-title.sh:13`）、feature ブランチにいる（`:11`）、issue-workflow の Issue ファイルがある（`:23-24`）。さらに `once: true` なので、main で始めて後からブランチを切るセッションには付かない。GitHub の数値の Issue ID には効かない。sessionTitle が ListAgents の名前になるかも未確認
+- **issue-workflow の set-session-title は、作業側の名前を決まった形にする前例としては弱い**。セッションのタイトルを `<ID>: <タイトル>` にするが、付くのは次をすべて満たすときだけ: ブランチ名に `[A-Z]+-[0-9]+` がある（`set-session-title.sh:13`）、feature ブランチにいる（`:11`）、issue-workflow の Issue ファイルがある（`:23-24`）。さらに `once: true` なので、main で始めて後からブランチを切るセッションには付かない。GitHub の数値の Issue ID には効かない。sessionTitle が ListAgents の名前になることは下の項で確認済み
 - **hook_harness.py は HOME を隔離しない**（`CLAUDE_PROJECT_DIR` と `CLAUDE_CODE_SESSION_ID` は隔離する）。置き場所の root を変数で差し替えられないと、テストが開発機の実データを読み書きする
+- **hook の `sessionTitle` で付けた題は、そのまま ListAgents の名前になる**（未解決事項 1 を決着。2026-10-21 に実測）。ヘッドレスの `claude -p`（CC 2.1.302・haiku）に、UserPromptSubmit で `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","sessionTitle":"PHUB-7: probe title"}}` を出す hook を入れて起動し、別のセッションの ListAgents に `PHUB-7: probe title [262901]` と出た。Desktop のセッションも会話の題がそのまま名前になる（このセッションの `get_session` の `title` と ListAgents の「This session is …」が一致）。どちらも利用者が改名すれば変わるので、採用案（登録名を主・Issue ID を補助）のまま。brief で「会話の題に Issue ID を入れる」と頼めば 2 番目が効く
+- **CLI でも session_id の 3 つの取り方は同じ値になる**（未解決事項 2 を決着。2026-10-21 に実測）。上と同じヘッドレスの `claude -p` で、Bash の `CLAUDE_CODE_SESSION_ID`・SessionStart / UserPromptSubmit の stdin の `session_id`・SKILL.md 本文の `${CLAUDE_SESSION_ID}` の展開がすべて同じ値だった。測っていないもの: ターミナルで対話の TUI として起動したとき（同じバイナリだが未確認。実装ブリッジの「実機」に入れた）
+  - `CLAUDE_CODE_HOST_SESSION_ID` は、Desktop のセッションの Bash から起動した CLI に**起動元の値がそのまま継承されていた**（CLI 自身の値ではない）。段階 ② で `from-session` と結び付けるときは、この値を無条件には信じない
+  - `${CLAUDE_SESSION_ID}` が展開されるのは、注入される本文（同名ペアなら command の本文）だけ。同名ペアの SKILL.md は Read で読むので展開されない。そこで commands の本文にこの変数を置き、`hub.py` は Bash の `CLAUDE_CODE_SESSION_ID` を先に使い、引数と両方あって違えば止める
 - 帯（mod）は issue-workflow の `hooks/issue-band.tsx` に前例がある（読むだけで書かない mod）。段階 ① では作らない
 
 ## 採用案
@@ -97,6 +101,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
   facts.jsonl                  確かめた事実（出典つき。brief はここからだけ引く）
   snapshot.json                status が集めた外部の状態（gh・トラッカー・ListAgents。取得時刻つき）
   state.md                     journal・sessions・snapshot から script が作る表（注入する）
+  presence.json                ListAgents に名前が無かった登録（hub だけが書く。実装で追加）
   sessions/<session_id>.json   作業側の登録（report だけが書く）
   inbox/<ts>-<session_id>.json 作業側の report（report が一時名で書いてから rename する）
   inbox/done/                  取り込み済みの report
@@ -116,15 +121,15 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 - `config.json`: `{ "project", "status": "active|closed", "tracker": {"kind": "github|linear", "repo"|"team"/"project", "milestone"?}, "repos": [{"path", "base"}], "approval": {"prefix", "suffix"} }`。PJ 固有の決まり（PR のラベル・向き先）はここに置き、プラグイン本体に入れない。公開先での置き換えは guardrail-protect の設定が正本なので、ここには持たない
 - `hub.json`: `{ "session_id", "name", "updated" }`。`name` は ListAgents の自分の行（「This session is X [ref]」）から取る
 - `journal.jsonl`: 1 行 1 件 `{"ts", "kind", "subject", "body", "source"}`。`kind` は段階 ① では `relay | brief | report | fact | takeover | close` のどれか（段階 ② で `merged` / `decide` を足す）。relay と brief は送った全文と、解決した宛先・送信の結果（受理 / 失敗）を残す。送信の受理は「相手が読んだ」を意味しない。report は取り込んだファイル名を `source` に入れ、再取り込みの重複を防ぐキーにする
-- `facts.jsonl`: `{"id", "ts", "claim", "source", "checked_by", "supersedes"?}`。`source` が無い行は書かない。`checked_by` は `hub`（hub が自分で確かめた）か `null`（作業側の主張をそのまま写したもの）。brief が引くのは `checked_by` が入った行だけ。訂正は新しい行で、`supersedes` に前の行の `id` を入れる（追記のみ）。訂正の正本は facts だけで、journal には `fact` の行で id を指すだけにする
-- `snapshot.json`: `{ "sources": { "<名前>": {"fetched_at", "ok", "data"} } }`。取得に失敗した source は前回の `data` を残し、`ok: false` と失敗時刻を書く
+- `facts.jsonl`: `{"id", "ts", "claim", "source", "checked_by", "supersedes"?}`。`source` が無い行は書かない。`checked_by` は `hub`（hub が自分で確かめた）か `null`（作業側の主張をそのまま写したもの）。brief が引くのは `checked_by` が入った行だけ。訂正は新しい行で、`supersedes` に前の行の `id` を入れる（追記のみ）。訂正の正本は facts だけで、journal には `fact` の行で id を指すだけにする。出典が config の repo の中のファイルなら `repo` / `path` / `base_sha`（確かめた時点の base）を足す（実装で追加）
+- `snapshot.json`: `{ "sources": { "<名前>": {"fetched_at", "ok", "data"} } }`。取得に失敗した source は前回の `data` を残し、`ok: false` と失敗時刻を書く。repo ごとに取る PR は `prs:<repo のパス>` を名前にする。取得の上限に届いた回は `truncated_at` を付ける（実装で追加）
 - `state.md`: 冒頭に生成時刻と、journal の何行目までを反映したかを書く。report の自由文（`needs_lead` / `follow_ups` / `claims`）は写さず、件数・状態・ファイル名だけを載せる（作業側が読んだ外部の文面が、承認なしに hub のコンテキストへ入るのを防ぐ）。冒頭に「通知を受けたら取り込まず、未取り込みの件数を 1 行出すだけにする」を置く
-- `sessions/<session_id>.json`: `{"session_id", "host_session_id"?, "name", "project", "issue", "branch", "worktree", "updated", "absent_since"?}`。書き手は report だけで、report のたびに丸ごと書き直す。`branch` / `worktree` は report の時点で git から取る。`host_session_id` は `CLAUDE_CODE_HOST_SESSION_ID`（あれば）で、段階 ② で通知の `from-session` と結び付けるのに使う。`absent_since` は status が付ける（ListAgents に名前が無かった最初の時刻）
+- `sessions/<session_id>.json`: `{"session_id", "host_session_id"?, "name", "project", "issue", "branch", "worktree", "updated"}`（`absent_since` は実装で `presence.json` へ移した。「実装で決めたこと」）。書き手は report だけで、report のたびに丸ごと書き直す。`branch` / `worktree` は report の時点で git から取る。`host_session_id` は `CLAUDE_CODE_HOST_SESSION_ID`（あれば）で、段階 ② で通知の `from-session` と結び付けるのに使う
 - `inbox/*.json`（report の形）: `{"session_id", "name", "project", "issue", "state": "hello|in_progress|blocked|ready_for_review|done", "pr"?, "needs_lead": [..], "follow_ups": [..], "claims": [{"text", "source"}]}`。`hello` は最初の brief を受けた直後の自己登録。`claims` の `source`（`path:line` 等）は必須
 
 ### session_id と PJ の決め方（report）
 
-- session_id は `CLAUDE_CODE_SESSION_ID`、無ければ SKILL.md の `${CLAUDE_SESSION_ID}` 展開から取る。どちらも無ければ書かずに止まり、利用者に伝える
+- session_id は Bash の `CLAUDE_CODE_SESSION_ID` から取る。空の環境だけ、command の本文で展開した `${CLAUDE_SESSION_ID}` を `--session-id` で渡す（同名の command と skill では SKILL.md は Read で読むので展開されない）。両方あって違えば止める。どちらも無ければ書かずに止まり、利用者に伝える
 - 名前は ListAgents の自分の行から取る。解析が合わなければ（下の「ListAgents の扱い」）書かずに止まる
 - PJ は brief が渡す `--project <name>` で決める。指定が無いときは、`status: active` の config のうち repos に cwd の git common dir を含むものが 1 つだけならそれにする。0 件か 2 件以上なら書かずに止まる
 
@@ -133,12 +138,12 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 送る直前に毎回 ListAgents を引く。Claude が一覧を `[{name, ref, state}]` の JSON に抜き出して script に渡し、script は照合だけを持つ。
 
 - **hub → 作業側**（brief / relay）
-  1. 登録の `name` と完全一致する行が 1 つだけで、その登録に `absent_since` が無い → それ
+  1. 登録の `name` と完全一致する行が 1 つだけで、その登録が不在（`presence.json` の `absent_since`。ListAgents に名前が無かった最初の時刻）になっていない → それ
   2. 無ければ、Issue ID がトークンとして一致する行が 1 つだけ → それ。トークンの形は tracker で決める: linear は `ABC-12` を語境界つきで、github は `#308` を語境界つきで照合する。既定名の形（`<dir>-<数字>`）の行は候補から外す
   3. それ以外（0 件・2 件以上）は送らず、lead に「宛先が決まらない（登録名 X / 候補 N 件）」と出す
   - 送る前の承認の画面に、解決した宛先の名前と ref を出す。lead はそこで宛先も確かめる
 - **作業側 → hub**（report の通知）: `hub.json` の `name` と完全一致する行が 1 つだけならそれに送る。決まらなければ通知だけ省き、利用者に「report は置いた。hub への通知は送れなかった」と伝える（report のファイルは残るので、hub の次の status で取り込まれる）
-- **最初の連絡**: 新しいセッションへの最初の brief は、lead が最初のプロンプトとして貼る。brief は冒頭で report の `hello` を出すよう指示し、作業側はそれで名前と session_id を登録する。それ以降の hub → 作業側は上の 1・2 で引ける。既にあるセッションへ最初に送るときは、lead が承認の画面で候補から選ぶ
+- **最初の連絡**: 新しいセッションへの最初の brief は、lead が最初のプロンプトとして貼る。brief は冒頭で report の `hello` を出すよう指示し、作業側はそれで名前と session_id を登録する。それ以降の hub → 作業側は上の 1・2 で引ける。既にあるセッションへ最初に送るときは、lead が承認の画面で候補から選ぶ（選んだ行の ref で引き直す。実装で決めた）
 
 ### ListAgents の扱い
 
@@ -157,7 +162,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 | 部品 | 種類 | 中身 |
 |---|---|---|
 | `hub` | skill（hub 側） | サブコマンド `init` / `status` / `brief <Issue>` / `relay` / `fact` / `takeover` / `close` |
-| ├ `status` | | inbox を取り込み（journal に追記 → done/ へ移す。読めないファイルは移さず lead に出す）、gh・トラッカー・ListAgents・`sessions/` を集めて snapshot.json を書き、script で state.md を作り直す。表・止まっている箇所・マージ順を出す |
+| ├ `status` | | inbox を取り込み（journal に追記 → done/ へ移す。取り込めないファイルは inbox/invalid/ へ退避して lead に出す。実装で変更）、gh・トラッカー・ListAgents・`sessions/` を集めて snapshot.json を書き、script で state.md を作り直す。表・止まっている箇所・マージ順を出す |
 | ├ `brief <Issue>` | | base の SHA、作業中のブランチとの重なり、`checked_by` の入った facts、溜まった注意点から文面を作る。重なりは `git diff --name-only <base>...<branch>` に加え、登録の worktree で `git status --porcelain`（未コミットの変更）も突き合わせる。冒頭に report の `hello` の指示と `--project` を入れる。新しいセッションには lead が貼り、既にあるセッションには relay の経路で送る |
 | ├ `relay` | | config の前置きと締めを付け、宛先を引き直し、lead の承認の後に送り、全文を journal に残す |
 | └ `fact` | | hub が自分で確かめた事実を出典つきで facts に足す（`checked_by: hub`）。#308 の問題 3（hub の思い込み）は、brief が facts からだけ引くことで塞ぐ |
@@ -204,10 +209,50 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 - [local] ADR-20261021140738 のコンテキストにある「UserPromptSubmit が発火するかは未確認」は、2026-10-21 の実測で「発火する」と決着した。範囲は ADR-20261021154740 で report の向きに絞った
 - [→ADR候補] 作業側 → hub の report は本文をファイルで置き、SendMessage は通知にだけ使う。宛先は名前で引き、送る直前に ListAgents で引き直し、1 件に決まらなければ送らない（ADR-20261021154740 として切り出し済み）
 
+## 実装で決めたこと（段階 ①・2026-10-21）
+
+採用案から変えた・足した点。宛先の引き方と inbox の方式は変えていない（supersede ではなく追記）。
+
+- **不在は hub 専用の `presence.json`（`{session_id: {absent_since}}`）に持つ**。「ファイルの形」の `sessions/<session_id>.json` の `absent_since?` を移した。hub の status と作業側の report が同じ登録ファイルを書き直すと、作業側の新しい名前を古い内容で上書きしうる（書き手をファイルごとに 1 つにする）。不在の後に report が来たセッションは不在として扱わない（`absent_since` と登録の `updated` を比べる。どちらもマイクロ秒の時刻）
+- **hub 側で書くサブコマンドは、今のセッションが `hub.json` の hub でなければ exit 3 で書かない**（fact / record / ingest / presence / snapshot / render / close / refresh-hub）。takeover の後に古い hub が書き続けるのを防ぐ。status の冒頭の確認は `refresh-hub` が兼ね、名前が変わっていれば hub.json に反映する
+- **Linear の Issue ID の照合は大文字小文字を区別する**（送らない側に倒す）。既定名（`<dir>-<数字>`）を照合から外すとき、名前がちょうど Issue ID のセッションは外さない
+- **report に `schema: 1` を入れる**。hub と作業側で入っている project-hub の版がずれうる（marketplace 版と inline 版）ので、違う版は取り込まずに lead に出す
+- **inject は「state.md の生成時刻より後」ではなく「state.md が反映した journal の行数より後」を数える**（state.md の先頭の機械用の行に行数を持つ）。あわせて未取り込みの inbox の件数を出し、closed の PJ は注入しない
+- **ingest は今回取り込んだ report の中身（`needs_lead` / `follow_ups` / `claims`）を出力に含める**。status が lead に見せるため。state.md には引き続き写さない
+- **brief の材料は `worktrees`（base の SHA・登録済みセッションの `changed` / `uncommitted`）と `facts --checked-only`（訂正で置き換わった行と未確認の行を除く）**。facts には作業側の主張を確かめずに控える `--unchecked`（`checked_by: null`）を用意した
+- **state.md の表は 30 行で切る**（全件は snapshot.json）。注入する量を抑える
+- **report が既定名で登録したら警告を返す**（Issue ID で引けず、改名で登録名も外れるため、会話の題に Issue ID を入れるよう頼む）
+- **プラグインを足すと code-review の `scripts/lib/invocation.py` の `CURRENT_PLUGINS` も更新が要る**（`test_code_review_invocation.py` が repo のプラグイン一覧との一致を見る）。repo の外の計測ストアの語彙（`invocation.parent`）は追随していない
+- **self-review（2026-10-21・xhigh）の指摘を受けて決めたこと**:
+  - 作業側・ListAgents・トラッカー由来の文面（report の本文・fact の主張と出典・record の全文・ListAgents の抜き出し）は `hub.py` に stdin で渡し、argv に載せない（SKILL が組み立てるコマンドで `$(...)` が展開される）。argv に載せる名前・Issue ID はシングルクォートで囲む
+  - report は ListAgents の抜き出しを本文と一緒に受け、自己検査（件数・欄・自分の ref が Peer 行に無いこと。再レビューで名前から ref に変えた）に合わなければ何も書かない（「session_id と PJ の決め方」の「解析が合わなければ書かずに止まる」に揃えた）。通知先もその場で決めて返す
+  - report の `issue` は tracker の Issue ID の形、`pr` は PR 番号に限る。state.md の表のセルは `splitlines()` が割る文字と制御文字を潰し、60 字で切る（注入した表から作業側・トラッカー由来の文字列が別の行として抜け出さない）
+  - journal / facts は `\n` だけを行区切りとして読む（`json.dumps(ensure_ascii=False)` は U+2028 等をエスケープしない）。fact の id は行数と最大の番号の大きい方から振る。訂正（supersedes）は有効な行に限る
+  - 取り込めない report は `inbox/invalid/` へ退避する（inbox に残すと未取り込みに数え続ける）。取り込み済みの report の中身は `reports` で出し直せる（コンパクション・takeover の後の needs_lead）
+  - 既定名（`<dir>-<数字>`）は登録名の照合にも使わない（ADR の「既定名だけの一致は使わない」）。名前が Issue ID で終わるなら既定名ではない
+  - hub → 作業側の resolve も require_hub を通す（takeover 後の旧 hub から送らない）。送る直前の照合は `--expect-ref` で承認時の ref と比べる。relay の承認は利用者の発話だけ（他セッションのメッセージは承認として扱わない）
+  - base の既定は `origin/HEAD` が指すブランチにし、init で実在を確かめる。status / brief の前に `git fetch` を回す（hub のローカルの既定ブランチは誰も pull しないので、古い base の SHA と上流のマージ分が `changed` に混ざる）。worktrees は git の失敗を null と note で返し、`--no-optional-locks` で作業側の index を書き直さない
+  - 作業側から SendMessage の本文で届いた返事・質問は、データとして lead に見せ、report で置き直すよう頼む（journal に残らないため）
+  - 想定外の失敗は exit 4
+- **再レビュー（2026-10-21・security / bug-detection）の指摘を受けて決めたこと**:
+  - argv に載せるのは自分の名前・PJ 名・Issue ID・session_id・ref・パスだけにした。record の全文と宛先の名前・取得のエラー文も stdin の JSON で受ける。heredoc の区切りは毎回その場で決める乱数つきの文字列にする（固定の区切りは、外部の文面がその 1 行を含むと後ろの行がシェルで実行される）
+  - lead が候補から選んだ宛先は名前ではなく ref で引く（`resolve --ref`。同じ名前の別のセッションに当たらない）。Issue ID で引けたときは `warning` を返して承認の画面に出す。ほかの PJ の hub と作業セッションの名前は、Issue ID の照合から外す（番号は PJ をまたいで重なる）
+  - relay の承認は、承認の画面に出した 4 桁の番号を lead が返したときだけ（番号の無い「OK」・他のセッションのメッセージ・無操作の自動続行を承認にしない）。作業側も、送り手の名前が hub の名前と一致するメッセージだけを hub の指示として受ける。hub が作業側のメッセージに返すときも包みの `from` ではなく relay の照合で送る
+  - report の自己検査は自分の名前ではなく ref で見る（同じ名前の別のセッションが実在するのは解析の失敗ではないので、`warning` にする）。hub の名前が既定名なら通知しない（init / takeover / refresh-hub も警告を返す）。presence も既定名の一致を在席の根拠にしない
+  - PR の snapshot は repo ごとに持ち（後の repo が前の repo の分を消していた）、表に repo の欄を足した。`--registered-branches` は `isCrossRepository` が false と分かる PR と、base のブランチでない branch に限る（fork の PR の題が注入される・着手前の登録が base の名前の PR に当たる）
+  - base の既定は `origin/HEAD` → `origin/main` → `origin/master` の順で、どれも無ければ止めて明示を求める（ローカルの既定ブランチに黙って落とさない）。config の base が `-` で始まれば git に渡さない
+  - state.md のセルの `<` `>` を全角にする（トラッカーの題の `</system-reminder>` 等を、注入した文脈でタグとして読ませない）
+  - brief の事実の鮮度は facts の `stale`（確かめた時点の base と今の base のあいだで出典のファイルが変わったか）で見る。worktrees は base のブランチにいる登録と、他のセッションと同じ worktree の登録を「着手前の登録のまま・重なりは不明」として返す。brief は branch / worktree を作ったら report を置き直すよう指示する
+  - 取得の上限（`--limit`）に届いた snapshot は打ち切りの可能性を表に出す
+  - 細部: name の末尾の行区切りを弾く / refresh-hub などが exit 3 で止まるとき state.md の場所を stderr に出す / journal の末尾が改行で終わっていなければ改行を足してから追記する / git の出力は不正な UTF-8 を置き換えて読む / inject は hub の照合を先にし、hub でない PJ の config は読まない / `--repo` の `=` は最後のものを区切りにする
+
 ## 未解決事項 (open)
 
-- **sessionTitle で付けた題が ListAgents の名前になるか**: (a) なる — Pros: brief で「題を `<Issue ID>: …` にする」と頼めば、宛先の 2 番目が効く / Cons: 利用者が改名すれば崩れる (b) ならない — Pros: 採用案は 1 番目（登録名）で動く / Cons: 開き直した後、最初の report まで引けない。現時点の方向性: 1 番目を主にし、2 番目は補助にとどめる（採用案のまま）。確定タイミング: 段階 ① の実装時に実測する（UserPromptSubmit の `hookSpecificOutput.sessionTitle` を出す hook を入れたセッションを ListAgents で見る）
-- **ターミナルの CLI に `CLAUDE_CODE_SESSION_ID` があるか、`${CLAUDE_SESSION_ID}` が hook の stdin の値と同じか**: (a) ある・同じ — Pros: report の session_id の取り方が 1 つで済む / Cons: なし (b) 無い・違う — Pros: なし / Cons: CLI の作業側で登録と注入の判定が外れる。現時点の方向性: 両方を試し、取れない環境では report が止まる（採用案）。確定タイミング: 段階 ① の実装時に CLI で実測する
+- **3 回目の self-review（2026-10-21・security / bug-detection）で残した指摘**（G-V ループの上限に達し、BLOCKER だけ直す方針にしたため未修正）。確定タイミング: 段階 ① を 1 PJ で使う前
+  - MAJOR: `resolve --ref` は同名の行があっても名前だけを返す（SendMessage は同名 2 行なら ` [ref]` を付ける必要がある）/ Issue ID のトークン照合が同じ PJ の別の登録を外さない / report の `--name` に作業側の名前（トラッカーの題を含みうる）が argv で載る
+  - MINOR: base のブランチ名を `split("/")[-1]` で取る / `--registered-branches` が repo ごとでない / fact の `path` が base に実在するかを確かめない / 共有 worktree の判定に done・不在の登録も数える / 別の PJ の hub.json が壊れていると全セッションの hook で stderr が出る
+  - 付録（閾値未満）: 注入する表の前に「外部の文面」の断りが無い / 作業側が送り手の名前だけで hub を認める / relay の承認番号を包みの無い send_message で返されうる ほか 10 件
+
 - **hub 側で通知を受ける UserPromptSubmit hook**（段階 ②）: 受信を journal に 1 行残し、未取り込みの件数を注入するだけにする。hook から ListAgents・トラッカーは呼べないので、取り込みと state.md の作り直しは status に残す。`prompt` が `<cross-session-message` で始まり、stdin の `session_id` が `hub.json` と一致するときだけ動かす。`from-session` は `sessions/` の `host_session_id` と結び付ける。確定タイミング: 段階 ② の詳細設計（段階 ① の運用 1 PJ 目の後）
 
 ## 実装ブリッジ (Implementation Bridge)
@@ -222,7 +267,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
    - hook: `hook_harness.py` で「hub 以外のセッションでは注入しない」「hub.json が無い・壊れているときは黙る」「壊れた JSON の stdin で黙る」を厚く書く。root は必ず `PROJECT_HUB_DIR` で使い捨ての dir に向ける
    - scripts: 宛先の照合（登録名の一致が 1 件 / absent の登録は使わない / Issue ID のトークン一致が 1 件 / 0 件・2 件以上・既定名だけの一致で送らない / `ABC-1` が `ABC-12` に当たらない / `#30` が `#308` に当たらない）と、inbox の取り込み（書きかけ・壊れた JSON・取り込み直し）を CLI テストで固定する
    - 置き場所: `git -C ~/.claude check-ignore` で `<root>` 配下が ignore されることを確かめる
-   - 実機: 作業セッション 2 本と hub 1 本で、改名・開き直しの後に relay が届くか（決まらないときは送らないか）、コンパクションの後と hub の開き直し + takeover の後に state.md が注入されるかを確かめる
+   - 実機: 作業セッション 2 本と hub 1 本で、改名・開き直しの後に relay が届くか（決まらないときは送らないか）、コンパクションの後と hub の開き直し + takeover の後に state.md が注入されるかを確かめる。あわせて、コンパクションの後に SessionStart（source=compact）と PostCompact の両方で二重に注入されないか、ターミナルの対話 TUI で `CLAUDE_CODE_SESSION_ID`・hook の stdin・command 本文の `${CLAUDE_SESSION_ID}` が一致するかを確かめる
 3. **実装完了時の doc 更新手順**:
    - frontmatter の `phase: target` → `current`、`last-validated` を更新
    - 実装と食い違った箇所（ファイルの形・部品の分け方）を追記する。宛先の引き方や inbox の方式ごと変わったら supersede
