@@ -89,11 +89,11 @@ class HubTestBase(unittest.TestCase):
                agents: list[dict] | None = None, peer_count=None, self_ref: str | None = "me0"
                ) -> subprocess.CompletedProcess[str]:
         peers = [agent("hub-session", "h1")] if agents is None else agents
-        payload = {**(body or report_body()), "agents": peers,
+        payload = {**(body or report_body()), "name": name, "agents": peers,
                    "peer_count": len(peers) if peer_count is None else peer_count}
         if self_ref is not None:
             payload["self_ref"] = self_ref
-        args = ["report", "--name", name]
+        args = ["report"]
         if project:
             args += ["--project", project]
         return self.run_hub(*args, stdin=json.dumps(payload), cwd=cwd or self.repo,
@@ -348,6 +348,7 @@ class ResolveToWorkerTest(HubTestBase):
         self.assertEqual(rc, 0, out)
         self.assertEqual((out["name"], out["ref"], out["rule"]), ("ABC-12: 監査ログ", "f1",
                                                                   "registered_name"))
+        self.assertEqual(out["to"], "ABC-12: 監査ログ")
         self.assertNotIn("warning", out)
 
     def test_an_absent_registration_is_not_used_and_the_issue_token_decides(self):
@@ -393,6 +394,18 @@ class ResolveToWorkerTest(HubTestBase):
         self.assertEqual(rc, 0, out)
         self.assertEqual((out["ref"], out["rule"]), ("f9", "issue_token"))
         self.assertIn("ABC-12 リネーム後", out["warning"], "承認の画面で名前を確かめさせる")
+
+    def test_another_registration_in_the_same_project_is_not_hit_by_the_token(self):
+        # ABC-13 のセッションの名前に ABC-12 が並んでいても、ABC-12 のセッションの宛先にしない
+        self.register(self.pdir, SID_A, "監査ログ（改名前）", issue="ABC-12")
+        self.register(self.pdir, SID_B, "ABC-13: ABC-12 の続き", issue="ABC-13")
+        agents = [agent("ABC-13: ABC-12 の続き", "f2")]
+        rc, out = self.resolve("--session", SID_A, agents=agents)
+        self.assertEqual(rc, 1, out)
+        rc, out = self.resolve("--session", SID_B, agents=agents)
+        self.assertEqual((rc, out["rule"]), (0, "registered_name"), "対照: 自分の登録名では引ける")
+        rc, out = self.resolve("--session", SID_A, agents=[*agents, agent("ABC-12 改名後", "f1")])
+        self.assertEqual((rc, out["ref"]), (0, "f1"), "対照: 他に登録の無い名前なら引ける")
 
     def test_a_session_registered_in_another_project_is_not_hit_by_the_token(self):
         # Issue 番号は PJ をまたいで重なりうる（別の team・別の repo の同じ番号）
@@ -464,6 +477,9 @@ class ResolveToWorkerTest(HubTestBase):
         # lead が候補から選んだ行。名前で選び直すと、同名の別セッションに当たりうる
         rc, out = self.resolve("--ref", "f1", agents=[agent("改名後", "f1"), agent("改名後", "f2")])
         self.assertEqual((rc, out["name"], out["ref"], out["rule"]), (0, "改名後", "f1", "ref"))
+        self.assertEqual(out["to"], "改名後 [f1]", "同じ名前の行が他にあれば SendMessage の to に ref を付ける")
+        rc, out = self.resolve("--ref", "f1", agents=[agent("改名後", "f1"), agent("別", "f2")])
+        self.assertEqual(out["to"], "改名後", "対照: 名前が 1 行だけなら名前だけ")
         rc, out = self.resolve("--ref", "f9", agents=[agent("改名後", "f1")])
         self.assertEqual(rc, 1, "閉じたセッションの ref では送らない")
 
@@ -586,7 +602,7 @@ class ReportTest(HubTestBase):
         self.assertEqual(res.returncode, 0, res)
         out = json.loads(res.stdout)
         self.assertEqual((out["project"], out["hub_name"]), ("pj", "hub-session"))
-        self.assertEqual(out["notify"], {"status": "ok", "name": "hub-session", "ref": "h1"})
+        self.assertEqual(out["notify"], {"status": "ok", "name": "hub-session", "ref": "h1", "to": "hub-session"})
         self.assertNotIn("warning", out)
         files = list((self.pdir / "inbox").glob("*.json"))
         self.assertEqual([f.name for f in files], [out["file"]])
@@ -623,6 +639,19 @@ class ReportTest(HubTestBase):
                 self.assertEqual(json.loads(res.stdout)["status"], "parse_failed")
         self.assertEqual(list((self.pdir / "sessions").iterdir()), [])
         self.assertEqual(list((self.pdir / "inbox").glob("*.json")), [])
+
+    def test_the_name_is_taken_from_stdin_not_argv(self):
+        name = "#308: x'$(echo INJECTED)'y"
+        res = self.report(name=name)
+        self.assertEqual(res.returncode, 0, res)
+        reg = json.loads((self.pdir / "sessions" / f"{SID_A}.json").read_text(encoding="utf-8"))
+        self.assertEqual(reg["name"], name, "名前は書いたとおりに残る（シェルを通らない）")
+        res = self.run_hub("report", "--project", "pj", "--name", "w", stdin="{}",
+                           env_extra={"CLAUDE_CODE_SESSION_ID": SID_A})
+        self.assertEqual(res.returncode, 2, "--name は受けない")
+        self.assertIn("--name", res.stderr)
+        res = self.report(body={**report_body(), "name": None}, name=None)
+        self.assertEqual(res.returncode, 2, res)
 
     def test_another_session_under_the_same_name_is_a_warning(self):
         res = self.report(agents=[agent("hub-session", "h1"), agent("worker-a", "w1")])
