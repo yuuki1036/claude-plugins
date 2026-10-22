@@ -467,6 +467,19 @@ class TriageSizeTierTest(DiffScriptTestBase):
         self.assertEqual(size["core_files"], "0")
         self.assertEqual(size["size_tier"], "small")
 
+    def test_added_and_deleted_lines_are_counted_apart_over_every_file(self):
+        """review-guide の見出しが `git diff --stat` の +/− と突き合わせられる数（GitHub issue #309）."""
+        self.write("src/a.ts", "".join("old %d\n" % n for n in range(5)))
+        self.write("docs/b.md", "keep\n")
+        self.add()
+        self.git("commit", "-qm", "init")
+        self.write("src/a.ts", "old 0\nnew 1\nnew 2\n")  # 4 行削除・2 行追加
+        self.write("docs/b.md", "keep\nmore\n")          # doc でも全体には数える
+        self.add()
+        size = self.kv(self.run_in(TRIAGE, "--base", "HEAD").stdout, "## size")
+        self.assertEqual((size["total_added"], size["total_deleted"]), ("3", "4"))
+        self.assertEqual((size["total_lines"], size["core_lines"]), ("7", "6"))
+
     def test_same_file_staged_and_unstaged_is_counted_once(self):
         """3 系統連結の diff は同一パスを複数回含む。集約しないと帯が実態より大きく出る."""
         self.write("src/a.ts", "one\n")
