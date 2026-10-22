@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.161.3] - 2026-10-23
+
+### Changed
+
+- **review-guide の見出しの件数を、diff ペインや `git diff --stat` と突き合わせられる形にした**（GitHub issue #309）。
+  これまでは core（テスト・doc・生成物を除いた本番コード）の件数だけを無印で出していた。テストと doc を含む変更では、
+  ファイル一覧と並べると「diff が合っていない」ように見えていた。見出しは「全体 N files / +A −D・うち本番コード
+  n files / m lines / <size_tier>」にし、size_tier は core で決まることが分かるよう core の件数の横に置いた。
+  `triage-signals.sh` の `## size` に `total_added` / `total_deleted` を足した（既存のキーは変えていない）
+
 ## [2.161.2] - 2026-10-21
 
 ### Changed

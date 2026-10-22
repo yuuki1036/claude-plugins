@@ -194,11 +194,14 @@ CLASSIFIED=$(printf '%s\n' "$NUMSTAT" | awk -F'\t' '
   }' | sort -k4)
 
 echo "## size"
+# total_added / total_deleted は review-guide の見出しで `git diff --stat`・editor の diff ペインの +/− と
+# 突き合わせるための数（GitHub issue #309）。core の数だけだと別の母集団に見える
 printf '%s\n' "$CLASSIFIED" | awk -F'\t' '
   $1=="core" {cf++; cl+=$2+$3}
-  {tf++; tl+=$2+$3}
+  {tf++; tl+=$2+$3; ta+=$2; td+=$3}
   END {
     printf "core_files=%d\ncore_lines=%d\ntotal_files=%d\ntotal_lines=%d\n", cf+0, cl+0, tf+0, tl+0
+    printf "total_added=%d\ntotal_deleted=%d\n", ta+0, td+0
   }'
 # doc だけの diff か（GitHub issue #275）。1 以上のファイルがあり、すべて doc に分類されたときだけ 1。
 # 実効の報告閾値を MINOR に下げる判定に使う（orchestration-guide `## 2`）。文書では節の間のずれ・消し残しが

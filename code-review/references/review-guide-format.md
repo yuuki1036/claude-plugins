@@ -5,8 +5,9 @@ review-guide Step 4 の統合執筆と Step 5 の出力、Step 6 の精読の解
 ## レポートテンプレート
 
 ```
-## 読み順ガイド: PR #<N> <title>（<core_files> files / <core_lines> lines / <size_tier>）
-（base モードでは「読み順ガイド: <base>..HEAD（<core_files> files / …）」）
+## 読み順ガイド: PR #<N> <title>（全体 <total_files> files / +<total_added> −<total_deleted>・うち本番コード <core_files> files / <core_lines> lines / <size_tier>）
+（base モードでは「読み順ガイド: <base>..HEAD（全体 <total_files> files / …）」）
+（値は `## size` から写す。「全体」は diff ペインや `git diff --stat` と同じ母集団、「本番コード」はテスト・doc・生成物を除いた core で、<size_tier> はこちらで決まる / GitHub issue #309）
 （base モードでは見出しの直後に次の 1 行を必ず出す / GitHub issue #274）
 base: <base_branch>（<決め方: 引数指定 / このブランチを作った起点（reflog）/ default branch へのフォールバック>）・比較先: <diff_base の短縮 sha>（<base_branch> との分岐点。editor でこの commit と比べるとタスクの diff だけが見える）<base_refresh が fast-forwarded なら「・ローカルの <base> を N commits 早送りした」/ behind-checked-out なら「・⚠️ ローカルの <base> は N commits 遅れている（別の作業ツリーでチェックアウト中のため進めていない）」/ diverged なら「・⚠️ ローカルの <base> に未 push のコミットがある」/ fetch-failed なら「・⚠️ origin から取り直せなかった（比較先は手元の origin/<base> 基準）」/ not-on-origin なら「・<base> は origin に無い（ローカルのブランチ基準）」>
 

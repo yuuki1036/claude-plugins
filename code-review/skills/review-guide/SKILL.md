@@ -75,7 +75,7 @@ fi
 - base モード → `FIX_OK=1`（diff は分岐点から今の作業ツリーまで）
 - PR モード → 今の `HEAD`（`git rev-parse HEAD`）が `META` の `headRefOid` と一致するときだけ `FIX_OK=1`。diff は PR head のものなので、ブランチ名が同じでも手元が head と違えば（別のマシンから push して手元が古い・未 push のコミットがある・fork の同名ブランチ）、解説したコードと Edit する作業ツリーが食い違う。一致しない回は `FIX_OK=0` で修正は提案に留め、理由（HEAD が PR head と違う）をレポート冒頭に 1 行で書く
 
-**完了基準**: `diff_file` の実パス・`size_tier`・`## files` の分類済みファイル一覧・PR/base モードの別・`WALKTHROUGH` と `FIX_OK` が確定している。PR モードでは `META` の `baseRefName` と `headRefOid` の実値を控えている（Step 7 の 4. で変異テストの `<ref>` を手元の `HEAD` ではなく PR head から求める。シェル変数は Bash 呼び出し間で消える）。`## size` の `total_files` が 0 なら「変更なし」で終了。
+**完了基準**: `diff_file` の実パス・`size_tier`・見出しに使う `## size` の値（`total_files` / `total_added` / `total_deleted` / `core_files` / `core_lines`）・`## files` の分類済みファイル一覧・PR/base モードの別・`WALKTHROUGH` と `FIX_OK` が確定している。PR モードでは `META` の `baseRefName` と `headRefOid` の実値を控えている（Step 7 の 4. で変異テストの `<ref>` を手元の `HEAD` ではなく PR head から求める。シェル変数は Bash 呼び出し間で消える）。`## size` の `total_files` が 0 なら「変更なし」で終了。
 
 ### 1. PR コンテキスト（PR モードのみ）
 
