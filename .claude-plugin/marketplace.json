@@ -162,7 +162,7 @@
     {
       "name": "project-hub",
       "description": "1 つのセッションを hub にして、複数の作業セッションで進める PJ の状態（作業セッション・PR・Issue・確かめた事実）をコンテキストの外のファイルで持つ。作業側の report はファイルで受け、hub からの連絡は送る直前に宛先を引き直す。hub のセッションにだけ SessionStart / PostCompact で状態の表を注入する",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "author": {
         "name": "yuki"
       },

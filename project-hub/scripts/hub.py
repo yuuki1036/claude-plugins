@@ -1171,7 +1171,7 @@ def cmd_resolve(args) -> int:
         hits = [a for a in agents if a["name"] == registered]
         if len(hits) == 1:
             return resolved(hits[0], "registered_name", args.expect_ref, agents)
-        if len(hits) > 1:
+        if len(hits) > 1:  # mutation-ok: 1 件は直前で return 済みで、ここの hits は 0 件か 2 件以上（>= 1 と同じ）
             return unresolved(f"登録名「{registered}」に一致する行が {len(hits)} 件",
                               registered_name=registered, candidates=candidates(hits))
 
@@ -1405,7 +1405,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="作業側の主張をそのまま写す（checked_by: null。brief は引かない）")
     p.add_argument("--body-file", default="-")
 
-    p = add("facts", cmd_facts, "有効な facts（訂正で置き換わった行を除く）", session=False)
+    # 読むだけのサブコマンド（facts / reports / worktrees）は args.session_id を使わない。session=True でも
+    # 受け付ける引数が 1 つ増えるだけで、skill もこれらに --session-id を付けない
+    p = add("facts", cmd_facts, "有効な facts（訂正で置き換わった行を除く）", session=False)  # mutation-ok: 上の注記
     p.add_argument("--checked-only", action="store_true")
 
     p = add("record", cmd_record,
@@ -1417,7 +1419,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("ingest", cmd_ingest, "inbox の report を journal に取り込み done/ へ移す（不正なものは invalid/ へ）")
 
-    p = add("reports", cmd_reports, "取り込み済みの report のセッションごとの最新の中身", session=False)
+    p = add("reports", cmd_reports, "取り込み済みの report のセッションごとの最新の中身",
+            session=False)  # mutation-ok: facts の注記と同じ
     p.add_argument("--session", help="session_id で絞る")
 
     p = add("snapshot", cmd_snapshot, "外部の状態を source ごとに snapshot.json へ（data は stdin の JSON）")
@@ -1435,7 +1438,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--peer-count", type=int, required=True, help="見出し「Peer sessions (N)」の N")
 
     add("render", cmd_render, "journal・sessions・snapshot から state.md を作り直す")
-    add("worktrees", cmd_worktrees, "base の SHA と、登録済みセッションが触っているファイル", session=False)
+    add("worktrees", cmd_worktrees, "base の SHA と、登録済みセッションが触っているファイル",
+        session=False)  # mutation-ok: facts の注記と同じ
 
     p = add("resolve", cmd_resolve, "ListAgents から抜き出した JSON で宛先を 1 件に決める（送る直前に毎回）")
     target = p.add_mutually_exclusive_group(required=True)
