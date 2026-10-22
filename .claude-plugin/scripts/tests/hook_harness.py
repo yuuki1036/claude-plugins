@@ -177,6 +177,10 @@ class TempGitRepo:
         subprocess.run(["git", "checkout", "-q", name], cwd=self.path,
                        capture_output=True, env=self.ENV)
 
+    def stage(self) -> None:
+        """作業ツリーの変更を commit せずに index へ載せる（`git add -A`。rename を staged で作るときに使う）."""
+        subprocess.run(["git", "add", "-A"], cwd=self.path, capture_output=True, env=self.ENV)
+
     def is_ignored(self, path: Path) -> bool:
         """`git check-ignore` が path を ignore 扱いにするか（`branch` と同じく git を直接叩かせないための口）.
 

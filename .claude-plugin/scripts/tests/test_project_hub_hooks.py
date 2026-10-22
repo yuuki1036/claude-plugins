@@ -158,6 +158,14 @@ class InjectStateTest(HookTestCase):
         self.assertQuiet(self.fire(raw="[]"))
         self.assertQuiet(self.fire(session_id=""))
 
+    def test_a_missing_session_id_never_matches_a_hub_json_without_one(self):
+        # 壊れた hub.json の「無い」「空」と、stdin の「無い」「空」を一致とみなさない
+        pdir = self.make_project(state=self.STATE)
+        for hub, session_id in (({"name": "hub"}, None), ({"session_id": "", "name": "hub"}, "")):
+            with self.subTest(hub=hub):
+                (pdir / "hub.json").write_text(json.dumps(hub), encoding="utf-8")
+                self.assertQuiet(self.fire(session_id=session_id))
+
     def test_python_is_not_launched_on_a_machine_without_a_hub(self):
         # 大半のセッションは hub を持たない。そこで python を起動しないことを stub で見る
         bin_dir = Path(self.path_with_only())
