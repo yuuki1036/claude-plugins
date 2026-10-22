@@ -329,11 +329,21 @@ BUDGET = Budget(DEADLINE_SECONDS)
 
 
 def run(args, cwd=None, timeout=3.0, env=None):
-    """(rc, stdout)。起動できない・時間切れは rc=None."""
-    t = min(timeout, max(0.2, BUDGET.left() - 0.5))
+    """(rc, stdout)。起動できない・時間切れは rc=None.
+
+    締め切りの残りで timeout を縮めた呼び出しの時間切れは Deadline にする。rc=None で返すと、
+    呼び出し側が「git リポジトリの外」のような別の理由で止め、時間切れだったことが消える
+    （負荷で `git rev-parse` が 0.5 秒を超えた実例）
+    """
+    left = BUDGET.left() - 0.5
+    t = min(timeout, max(0.2, left))
     try:
         p = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=t,
                            env=env, errors="replace")
+    except subprocess.TimeoutExpired:
+        if left < timeout:  # mutation-ok: left は monotonic の差で、timeout にちょうど一致する境界は意味を持たない
+            raise Deadline()
+        return None, ""
     except (OSError, subprocess.SubprocessError):
         return None, ""
     return p.returncode, p.stdout
