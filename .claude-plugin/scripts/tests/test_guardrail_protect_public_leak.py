@@ -642,6 +642,31 @@ class PushTest(PublicLeakBase):
         res = self.bash("git push", _env={"PATH": "%s:%s:%s" % (slow, self.bin, os.environ["PATH"])})
         self.assertBlocked(res, "秒以内")
 
+    def slow_toplevel(self, seconds: float) -> dict:
+        """`git rev-parse --show-toplevel` だけを遅らせる PATH（負荷で git が遅れた状況の再現）."""
+        slow = self.tmp / "slowbin"
+        slow.mkdir()
+        _write_exec(slow / "git", '#!/bin/sh\nif [ "$1 $2" = "rev-parse --show-toplevel" ]; then sleep %s; fi\n'
+                                  'exec %s "$@"\n' % (seconds, shutil.which("git")))
+        return {"PATH": "%s:%s:%s" % (slow, self.bin, os.environ["PATH"])}
+
+    def test_a_git_call_cut_short_by_the_deadline_is_reported_as_the_deadline(self):
+        # 締め切り 1 秒だと rev-parse に許すのは 0.5 秒。rc=None で返すと「git リポジトリの外」で止めていた
+        self.set_config(deadline_seconds=1.0)
+        self.commit(self.repo, "feat: x")
+        res = self.bash("git push", _env=self.slow_toplevel(0.7))
+        self.assertBlocked(res, "秒以内")
+        self.assertNotIn("git リポジトリの外", res.stderr)
+
+    def test_a_git_call_past_its_own_timeout_is_not_the_deadline(self):
+        # 締め切りに余裕があるまま 1 回の呼び出しが自前の timeout（3 秒）を超えたのは、その呼び出しの失敗
+        self.set_config(deadline_seconds=8.0)
+        self.commit(self.repo, "feat: x")
+        res = self.bash("git push", _env=self.slow_toplevel(3.3))
+        self.assertBlocked(res)
+        self.assertNotIn("秒以内", res.stderr)
+        self.assertNotIn("内部エラー", res.stderr)
+
 
 class McpTest(PublicLeakBase):
     def test_github_write_tools(self):
