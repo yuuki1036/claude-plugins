@@ -207,6 +207,70 @@ class MutationNightlyReportTest(unittest.TestCase):
         self.assertNotIn("line 19\n", body, "ログの末尾 40 行より前まで貼っている")
         self.assertIn("https://example.invalid/run/1", body)
 
+    def write_log(self, lines: list[str]) -> None:
+        (self.d / "mutation.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    @staticmethod
+    def survivors_log(n: int, killed: int = 36, pad: int = 0) -> list[str]:
+        """mutation-test.py の出力の形: 進捗 → 集計行 → 生存の一覧（1 件 3 行）."""
+        out = ["  [%d/60] killed    a.py:%d — x" % (i, i) for i in range(1, 61)]
+        out += ["", "殺した %d / 生存 %d / 構文エラーで対象外 0" % (killed, n), "生存率 40%", "",
+                "生存した変異（テストがこの変更を検知しない）:"]
+        for i in range(1, n + 1):
+            out += ["  a.py:%d  or を and に" % i, "    - x or y" + "z" * pad, "    + x and y"]
+        return out
+
+    def test_every_survivor_reaches_the_body_past_the_tail(self):
+        """#311 の形: 生存 24 件 = 72 行。末尾 40 行だけだと先頭の 11 件が本文に出なかった."""
+        self.write_log(self.survivors_log(24))
+        _, body = self.run_report("failure", dict(FULL, generated=60, executed=60, killed=36, survived=24))
+        self.assertIn("殺した 36 / 生存 24", body)
+        for i in (1, 24):
+            self.assertIn("  a.py:%d  or を and に\n" % i, body)
+        self.assertNotIn("[60/60]", body, "集計行より前の進捗まで貼っている")
+        self.assertNotIn("ここで切った", body)
+
+    def test_a_summary_inside_the_tail_keeps_the_tail(self):
+        """集計行が末尾 40 行の内側にあるときは、その手前の行を削らない（起点は前にしか動かさない）."""
+        lines = ["line %d" % i for i in range(60)]
+        lines[55] = "殺した 3 / 生存 0 / 構文エラーで対象外 0"
+        self.write_log(lines)
+        _, body = self.run_report("failure", None)
+        self.assertIn("line 20\n", body)
+        self.assertNotIn("line 19\n", body)
+
+    def test_an_oversized_list_is_cut_with_a_note(self):
+        """生存が数百件の晩でも本文が 65536 文字（issue 本文・コメントの上限）を超えて起票ごと失敗しない.
+        切ったことは本文に書く（黙って欠けると #311 と同じく、載っている分だけ直して閉じられる）."""
+        self.write_log(self.survivors_log(2000, pad=40))
+        _, body = self.run_report("failure", dict(FULL, survived=2000))
+        self.assertLessEqual(len(body), 65536)
+        self.assertIn("殺した 36 / 生存 2000", body)
+        self.assertIn("  a.py:1  or を and に\n", body)
+        self.assertRegex(body, r"（ここで切った。残り \d+ 行は run のログで見る）")
+        self.assertNotIn("  a.py:2000  or を and に", body)
+
+    def test_the_char_limit_boundary(self):
+        """上限ちょうどは切らず、1 文字超えたら最後の 1 行を切って「残り 1 行」と書く."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("mutation_nightly_report", SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        head = "殺した 0 / 生存 1 / 構文エラーで対象外 0"
+        rest = mod.LOG_MAX_CHARS - (len(head) + 1)
+        lines = [head] + ["x" * 99] * (rest // 100)
+        last = rest % 100 - 1 if rest % 100 else 99
+        if not rest % 100:
+            lines.pop()
+        lines.append("y" * last)
+        self.assertEqual(sum(len(line) + 1 for line in lines), mod.LOG_MAX_CHARS)
+        self.write_log(lines)
+        self.assertEqual(mod.log_tail(str(self.d / "mutation.log")), "\n".join(lines))
+        self.write_log(lines[:-1] + ["y" * (last + 1)])
+        got = mod.log_tail(str(self.d / "mutation.log")).splitlines()
+        self.assertEqual(got[:-1], lines[:-1])
+        self.assertEqual(got[-1], "（ここで切った。残り 1 行は run のログで見る）")
+
     def test_every_argument_is_required(self):
         """1 つでも欠けたら argparse で止める（`None` のまま進むと本文に `None` が入るか例外で死ぬ）."""
         args = {"--outcome": "success", "--summary": "s.json", "--log": "mutation.log",
