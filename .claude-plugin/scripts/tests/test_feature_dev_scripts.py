@@ -191,15 +191,15 @@ class InitialSelfReviewScopeTest(unittest.TestCase):
 
     def test_re_review_keeps_focus(self):
         """再レビューは既検証の観点の見直しなので `--focus` を使う（初回の禁止を広げすぎない）."""
-        loop = self.section(self.REVIEW_LOOP.read_text(), "7. **Re-review**", "8. **Update loop state**")
-        self.assertIn("`--focus <persisting issue の focus 集合>`", loop)
+        loop = self.section(self.REVIEW_LOOP.read_text(), "5. **Re-review**", "6. Return to step 1")
+        self.assertIn("`--focus <target の focus 集合>`", loop)
 
     def test_re_review_declares_itself(self):
         """再レビューは `--rereview` を渡し、計測で初回のレビューと分けて数えさせる（GitHub issue #296）.
 
         self-review 側が引数の名前を変えたらここで気づけるよう、self-review の宣言とも突き合わせる.
         """
-        loop = self.section(self.REVIEW_LOOP.read_text(), "7. **Re-review**", "8. **Update loop state**")
+        loop = self.section(self.REVIEW_LOOP.read_text(), "5. **Re-review**", "6. Return to step 1")
         self.assertIn("`--rereview`", loop)
         self_review = (REPO / "code-review" / "skills" / "self-review" / "SKILL.md").read_text()
         self.assertIn("**`--rereview`（", self_review, "self-review の引数から --rereview が消えた")
@@ -896,6 +896,338 @@ class ReviewSnapshotTest(unittest.TestCase):
                                                cwd=self.root, capture_output=True, env=self.env))
         self.run_snap("save")
         self.assertEqual(self.run_snap("check", cwd=wt)["snapshot"], "missing")
+
+    def test_tree_prints_the_same_tree_as_save_without_recording_it(self):
+        """G-V ループ（gv-loop.py）が自分の状態に持つ tree。Phase 6.9 の記録を上書きしない（#310）."""
+        (self.root / "untracked.md").write_text("u\n", encoding="utf-8")
+        tree = self.run_snap("tree")["snapshot"]
+        self.assertRegex(tree, r"^[0-9a-f]{40}$")
+        self.assertEqual(self.run_snap("check")["snapshot"], "missing", "tree が記録を作った")
+        self.assertEqual(self.run_snap("save")["snapshot"], tree)
+
+
+GV_LOOP = REPO / "feature-dev" / "scripts" / "gv-loop.py"
+
+
+class GvLoopTest(unittest.TestCase):
+    """`gv-loop.py` — G-V ループを delta の中だけで続け、範囲外の変更を数える（GitHub issue #310）.
+
+    実測ではループが収束しなかった: Fix Mode が対象外の指摘まで直し（34 件・17 件）、再レビューが
+    diff 全体から新しい指摘を拾ってループを延ばした。**ループを延ばす条件（delta の中・前回の対象の残存）と、
+    延ばさない条件（delta の外 → deferred）の境界**を厚く見る。
+    """
+
+    LINES = 60
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.env = scrub()
+        for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "t"]):
+            self.git(*args)
+        self.write_lines("a.txt", [f"line {i}" for i in range(1, self.LINES + 1)])
+        self.git("add", "-A")
+        self.git("commit", "-qm", "init")
+
+    def git(self, *args: str) -> str:
+        res = subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True, env=self.env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout
+
+    def write_lines(self, name: str, lines: list[str]) -> None:
+        (self.root / name).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def edit(self, *line_nos: int, name: str = "a.txt") -> None:
+        path = self.root / name
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for n in line_nos:
+            lines[n - 1] += " (fixed)"
+        self.write_lines(name, lines)
+
+    def raw(self, *args: str, stdin: str = "", cwd: Path | None = None) -> subprocess.CompletedProcess:
+        return subprocess.run(["python3", str(GV_LOOP), *args], cwd=cwd or self.root, input=stdin,
+                              capture_output=True, text=True, env=self.env, timeout=60)
+
+    def run_loop(self, *args: str, stdin: str = "", cwd: Path | None = None) -> dict:
+        res = self.raw(*args, stdin=stdin, cwd=cwd)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        out: dict = {"rows": []}
+        for line in res.stdout.splitlines():
+            if "\t" in line:
+                out["rows"].append(line.split("\t"))
+            else:
+                k, _, v = line.partition("=")
+                out[k] = v
+        return out
+
+    @staticmethod
+    def findings(*items: tuple) -> str:
+        """items: (severity, confidence, file, line, focus)."""
+        return json.dumps({"schema_version": 1, "findings": [
+            {"id": i, "severity": s, "confidence": c, "focus": fo, "file": f, "line": ln, "title": f"t{i}"}
+            for i, (s, c, f, ln, fo) in enumerate(items, 1)], "missing_coverage": []})
+
+    def review(self, *items: tuple) -> dict:
+        return self.run_loop("review", stdin=self.findings(*items))
+
+    @staticmethod
+    def rows(out: dict, kind: str) -> list[list[str]]:
+        return [r for r in out["rows"] if r[0] == kind]
+
+    def start(self, max_iterations: int, *items: tuple) -> dict:
+        self.assertEqual(self.run_loop("init", "--max", str(max_iterations))["loop"], "initialized")
+        return self.review(*items)
+
+    def test_initial_review_targets_blockers_and_confident_criticals(self):
+        got = self.start(3, ("BLOCKER", 10, "a.txt", 5, "security"), ("CRITICAL", 90, "a.txt", 20, "bug-detection"),
+                         ("CRITICAL", 89, "a.txt", 30, "bug-detection"), ("MAJOR", 100, "a.txt", 40, "security"))
+        self.assertEqual((got["action"], got["iteration"]), ("fix", "1/3"))
+        self.assertEqual([r[1] for r in self.rows(got, "target")],
+                         ["a.txt:5:security", "a.txt:20:bug-detection"])
+        self.assertTrue(got["notice"].startswith("🔄 Iteration 1/3: auto-fix 2 件"), got["notice"])
+
+    def test_no_target_stops_with_success(self):
+        got = self.start(3, ("MAJOR", 100, "a.txt", 5, "security"), ("CRITICAL", 80, "a.txt", 6, "security"))
+        self.assertEqual((got["action"], got["reason"]), ("stop", "success"))
+        self.assertNotIn("notice", got)
+
+    def fixed_line_10(self) -> None:
+        """a.txt:10 の対象を直した状態にする。init は前のループの状態を上書きするので subTest ごとに呼べる."""
+        self.git("checkout", "-q", "--", ".")
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+
+    def test_target_near_the_loop_change_continues_the_loop(self):
+        for line in (5, 15):  # 変えた行（10）から 5 行以内の両端
+            with self.subTest(line=line):
+                self.fixed_line_10()
+                self.assertEqual(self.review(("BLOCKER", 70, "a.txt", line, "security"))["action"], "fix")
+
+    def test_target_away_from_the_loop_change_is_deferred(self):
+        """修正と関係ない箇所の新しい指摘ではループを延ばさない（#310 の 2 つ目の原因）."""
+        for line in (4, 16):  # 変えた行（10）から 6 行離れた両端
+            with self.subTest(line=line):
+                self.fixed_line_10()
+                got = self.review(("BLOCKER", 70, "a.txt", line, "security"))
+                self.assertEqual((got["action"], got["reason"]), ("stop", "deferred"))
+                self.assertEqual([r[1] for r in self.rows(got, "deferred")], [f"a.txt:{line}:security"])
+                self.assertEqual(self.rows(got, "target"), [])
+
+    def test_deferred_and_looped_targets_are_split(self):
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        got = self.review(("BLOCKER", 70, "a.txt", 11, "security"), ("CRITICAL", 95, "a.txt", 50, "security"))
+        self.assertEqual((got["action"], got["iteration"]), ("fix", "2/3"))
+        self.assertEqual([r[1] for r in self.rows(got, "target")], ["a.txt:11:security"])
+        self.assertEqual([r[1] for r in self.rows(got, "deferred")], ["a.txt:50:security"])
+        self.assertIn("delta の外へ回した指摘 1 件", got["notice"])
+
+    def test_file_created_in_the_loop_is_in_the_delta(self):
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.write_lines("b.txt", ["new 1", "new 2"])
+        self.assertEqual(self.review(("BLOCKER", 70, "b.txt", 2, "security"))["action"], "fix")
+
+    def test_same_fingerprint_again_is_a_regression(self):
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        got = self.review(("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.assertEqual((got["action"], got["reason"]), ("stop", "regression"))
+        self.assertEqual([r[1] for r in self.rows(got, "target")], ["a.txt:10:bug-detection"])
+
+    def test_persisting_target_outside_the_delta_is_still_a_regression(self):
+        """修正を別の場所に入れて対象が残った回を deferred に流さない."""
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(40)
+        got = self.review(("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.assertEqual(got["reason"], "regression")
+
+    def test_budget(self):
+        self.assertEqual(self.start(1, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))["action"], "fix")
+        self.edit(10)
+        got = self.review(("BLOCKER", 70, "a.txt", 11, "security"))
+        self.assertEqual((got["action"], got["reason"], got["iteration"]), ("stop", "budget", "1/1"))
+        self.assertEqual([r[1] for r in self.rows(got, "target")], ["a.txt:11:security"])
+
+    def test_last_round_asks_only_after_the_first(self):
+        self.assertEqual(self.start(2, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))["action"], "fix")
+        self.edit(10)
+        got = self.review(("BLOCKER", 70, "a.txt", 11, "security"))
+        self.assertEqual((got["action"], got["iteration"]), ("ask", "2/2"))
+        self.assertTrue(got["notice"].startswith("🔄 Iteration 2/2"), got["notice"])
+
+    def test_changes_away_from_the_target_are_counted_out_of_scope(self):
+        """Fix Mode が対象外まで直した分を数える（#310 の 1 つ目の原因）。止めはしない."""
+        self.start(3, ("BLOCKER", 70, "a.txt", 30, "bug-detection"))
+        self.edit(18, 20, 30, 40, 42)  # 対象（30）から 10 行以内は 20 / 30 / 40
+        self.write_lines("b.txt", ["unrelated"])
+        got = self.review(("BLOCKER", 70, "a.txt", 30, "security"))
+        self.assertEqual((got["action"], got["out_of_scope"]), ("fix", "3"))
+        self.assertEqual(sorted(r[2] for r in self.rows(got, "out_of_scope")), ["a.txt:18-18", "a.txt:42-42", "b.txt:0-1"])
+        self.assertIn("前回の範囲外の変更 3 か所", got["notice"])
+        summary = self.run_loop("summary")
+        self.assertEqual((summary["out_of_scope"], summary["auto_fix_targets"]), ("3", "1"))
+
+    def test_first_round_has_no_out_of_scope_line(self):
+        got = self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.assertNotIn("out_of_scope", got)
+        self.assertNotIn("前回", got["notice"])
+
+    def test_reads_the_block_out_of_the_self_review_output(self):
+        self.run_loop("init", "--max", "3")
+        body = self.findings(("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        text = f"## レポート\n...\n<!-- FINDINGS_JSON_START -->\n```json\n{body}\n```\n<!-- FINDINGS_JSON_END -->\n" \
+               "[embed-mode: findings-only, no-prompt]\n"
+        self.assertEqual(self.run_loop("review", stdin=text)["action"], "fix")
+
+    def test_invalid_input_exits_2(self):
+        self.run_loop("init", "--max", "3")
+        cases = {
+            "not json": "not json",
+            "no end marker": "<!-- FINDINGS_JSON_START -->\n{}",
+            "no findings": json.dumps({"schema_version": 1}),
+            "target without line": json.dumps({"findings": [{"severity": "BLOCKER", "confidence": 70,
+                                                             "focus": "security", "file": "a.txt"}]}),
+        }
+        for name, stdin in cases.items():
+            with self.subTest(name):
+                res = self.raw("review", stdin=stdin)
+                self.assertEqual(res.returncode, 2, res.stdout)
+                self.assertIn("error=", res.stderr)
+
+    def test_target_on_the_first_line_is_accepted(self):
+        self.assertEqual(self.start(3, ("BLOCKER", 70, "a.txt", 1, "security"))["action"], "fix")
+
+    def test_target_with_an_empty_file_exits_2(self):
+        self.run_loop("init", "--max", "3")
+        res = self.raw("review", stdin=self.findings(("BLOCKER", 70, "", 3, "security")))
+        self.assertEqual(res.returncode, 2, res.stdout)
+
+    def test_usage_errors_exit_2(self):
+        self.run_loop("init", "--max", "3")  # 状態が無いことによる exit 2 と取り違えない
+        for args in ((), ("init",), ("finish",)):
+            with self.subTest(args=args):
+                self.assertEqual(self.raw(*args).returncode, 2)
+
+    def edit_state(self, change) -> None:
+        path = self.root / ".git" / "feature-dev-loop-state.json"
+        state = json.loads(path.read_text(encoding="utf-8"))
+        change(state)
+        path.write_text(json.dumps(state), encoding="utf-8")
+
+    def test_unreadable_start_tree_loops_every_target(self):
+        """delta を取れないときは deferred に回さず、以前どおり全対象でループする."""
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        self.edit_state(lambda s: s.update(start_tree="0" * 40))
+        got = self.review(("BLOCKER", 70, "a.txt", 50, "security"))
+        self.assertEqual((got["action"], got["delta"]), ("fix", "unavailable"))
+        self.assertEqual(self.rows(got, "deferred"), [])
+
+    def test_round_without_a_pre_fix_tree_reports_out_of_scope_as_unavailable(self):
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10, 50)
+        self.edit_state(lambda s: s["iterations"][-1].update(pre_fix_tree=None))
+        self.assertEqual(self.review(("BLOCKER", 70, "a.txt", 11, "security"))["out_of_scope"], "unavailable")
+        self.assertEqual(self.run_loop("summary")["out_of_scope"], "unavailable")
+
+    def test_finish_before_the_first_review(self):
+        self.run_loop("init", "--max", "3")
+        got = self.run_loop("finish", "--reason", "manual")
+        self.assertEqual((got["reason"], got["iteration"]), ("manual", "0/3"))
+
+    def test_minor_without_location_is_not_an_input_error(self):
+        """場所を検証するのは auto-fix 対象だけ（報告のみの指摘で止めない）."""
+        got = self.start(3, ("MINOR", 50, "", 0, "readability"))
+        self.assertEqual(got["reason"], "success")
+
+    def test_review_before_init_and_after_stop_exits_2(self):
+        self.assertEqual(self.raw("review", stdin=self.findings()).returncode, 2)
+        self.start(3)
+        self.assertEqual(self.raw("review", stdin=self.findings()).returncode, 2)
+
+    def test_init_rejects_zero(self):
+        self.assertEqual(self.raw("init", "--max", "0").returncode, 2)
+
+    def test_finish_before_fixing_does_not_count_the_round(self):
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        got = self.run_loop("finish", "--reason", "manual")
+        self.assertEqual((got["reason"], got["iteration"]), ("manual", "0/3"))
+        summary = self.run_loop("summary")
+        self.assertEqual((summary["reason"], summary["remaining"], summary["auto_fix_targets"]), ("manual", "1", "0"))
+
+    def test_finish_after_a_partial_fix_closes_the_round(self):
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10, 50)
+        self.assertEqual(self.run_loop("finish", "--reason", "manual")["iteration"], "1/3")
+        summary = self.run_loop("summary")
+        self.assertEqual((summary["iterations"], summary["out_of_scope"]), ("1/3", "1"))
+        self.assertEqual(self.raw("finish", "--reason", "manual").returncode, 2, "止めた後にもう一度止められた")
+
+    def test_summary_lists_remaining_and_deferred(self):
+        self.start(1, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        self.review(("BLOCKER", 70, "a.txt", 11, "security"), ("BLOCKER", 70, "a.txt", 50, "security"))
+        got = self.run_loop("summary")
+        self.assertEqual((got["loop"], got["reason"], got["iterations"]), ("terminated", "budget", "1/1"))
+        self.assertEqual([r[1] for r in self.rows(got, "remaining")], ["a.txt:11:security"])
+        self.assertEqual([r[1] for r in self.rows(got, "deferred")], ["a.txt:50:security"])
+        self.assertEqual(self.rows(got, "iteration"), [["iteration", "1", "1", "0"]])
+
+    def test_summary_without_a_loop(self):
+        self.assertEqual(self.run_loop("summary")["loop"], "missing")
+
+    def test_not_a_git_repo(self):
+        with tempfile.TemporaryDirectory() as d:
+            for args in (("init", "--max", "3"), ("review",), ("summary",)):
+                with self.subTest(args=args):
+                    self.assertEqual(self.run_loop(*args, stdin=self.findings(), cwd=Path(d))["loop"], "unavailable")
+
+    def test_works_from_a_subdirectory(self):
+        (self.root / "docs").mkdir()
+        self.run_loop("init", "--max", "3", cwd=self.root / "docs")
+        self.edit(10)
+        self.assertEqual(self.run_loop("summary", cwd=self.root / "docs")["loop"], "running")
+
+    def test_refs_and_index_are_untouched(self):
+        (self.root / "untracked.md").write_text("u\n", encoding="utf-8")
+        before = (self.git("rev-parse", "HEAD"), self.git("status", "--porcelain"))
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.review()
+        self.run_loop("summary")
+        self.assertEqual((self.git("rev-parse", "HEAD"), self.git("status", "--porcelain")), before)
+
+
+class GvLoopProcedureTest(unittest.TestCase):
+    """G-V ループの手順が `gv-loop.py` を通り、止め方と集計を落とさない（GitHub issue #310）."""
+
+    SKILL = REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
+    REVIEW_LOOP = REPO / "feature-dev" / "references" / "review-loop.md"
+
+    def test_loop_state_is_not_written_by_hand(self):
+        for path in (self.SKILL, self.REVIEW_LOOP, REPO / "feature-dev" / "references" / "triage-guide.md"):
+            with self.subTest(path=path.name):
+                self.assertNotIn("/tmp/feature-dev-loop-state.json", path.read_text())
+
+    def test_loop_calls_every_subcommand(self):
+        text = self.REVIEW_LOOP.read_text()
+        for cmd in ('gv-loop.py" init --max', 'gv-loop.py" review', 'gv-loop.py" finish --reason manual'):
+            self.assertIn(cmd, text)
+        self.assertIn('gv-loop.py" summary', self.SKILL.read_text())
+
+    def test_every_action_and_reason_is_handled(self):
+        loop, skill = self.REVIEW_LOOP.read_text(), self.SKILL.read_text()
+        for value in ("`action=fix`", "`action=ask`", "`action=stop`"):
+            self.assertIn(value, loop)
+        step4 = skill[skill.index("### Step 4: Consolidate and present"):skill.index("## Phase 6.7")]
+        for reason in ("`success`", "`regression`", "`budget`", "`deferred`", "`manual`"):
+            self.assertIn(reason, step4)
+
+    def test_fix_mode_leaves_non_targets_to_step4(self):
+        skill = self.SKILL.read_text()
+        fix = skill[skill.index("### Fix Mode"):skill.index("## Phase 5.3")]
+        self.assertIn("Step 4", fix)
+        self.assertIn("MAJOR / MINOR", fix)
 
 
 if __name__ == "__main__":
