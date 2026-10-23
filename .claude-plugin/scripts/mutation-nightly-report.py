@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -36,6 +37,11 @@ TITLE_UNEXECUTED = PREFIX + " 検証しきれなかった変異がある"
 TITLE_NOT_RUN = PREFIX + " 変異テストを回せなかった"
 TITLE_STATE = PREFIX + " 持ち越しの状態を読めなかった"
 LOG_TAIL = 40
+#: mutation-test.py の集計行。ここから後ろ（タイムアウトと生存の一覧）は LOG_TAIL を超えても貼る
+SUMMARY_LINE = re.compile(r"殺した \d+ / 生存 \d+")
+#: 本文に貼るログの文字数の上限。issue の本文・コメントは 65536 文字までで、超えると gh が失敗して
+#: 何も起票されない。見出しと run の行の分を残す
+LOG_MAX_CHARS = 60000
 #: 持ち越しがこの日数以上解消していなければ起票する（毎晩の打ち切りは持ち越しで回収されるので起票しない）
 STALE_DAYS = 7
 
@@ -64,7 +70,21 @@ def log_tail(path: str) -> str:
         lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return "(ログを取得できなかった)"
-    return "\n".join(lines[-LOG_TAIL:])
+    start = max(len(lines) - LOG_TAIL, 0)
+    # 生存の一覧は集計行の後ろに 1 件 3 行で並ぶので、末尾 40 行だけだと 13 件を超えた分が先頭から
+    # 本文に出ない（#311 は 24 件中 11 件）。集計行から後ろは行数で切らない
+    hits = [i for i, line in enumerate(lines) if SUMMARY_LINE.match(line)]
+    if hits:
+        start = min(start, hits[-1])
+    kept: list[str] = []
+    size = 0
+    for n, line in enumerate(lines[start:]):
+        size += len(line) + 1
+        if size > LOG_MAX_CHARS:
+            kept.append("（ここで切った。残り %d 行は run のログで見る）" % (len(lines) - start - n))
+            break
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def stale_days(state: dict | None, now: dt.datetime) -> int | None:
@@ -156,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--outcome", required=True, help="変異テストの step の outcome（steps.<id>.outcome）")
     ap.add_argument("--summary", required=True, help="mutation-test.py --summary-json の出力")
-    ap.add_argument("--log", required=True, help="mutation-test.py の出力ログ（末尾を本文に貼る）")
+    ap.add_argument("--log", required=True, help="mutation-test.py の出力ログ（末尾と、集計行から後ろを本文に貼る）")
     ap.add_argument("--base", required=True)
     ap.add_argument("--head", required=True)
     ap.add_argument("--run-url", required=True)
