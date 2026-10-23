@@ -130,7 +130,7 @@ Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する�
 2 つのモードを持つ。
 
 - **Normal Mode**: Phase 4 完了から起動。ユーザー承認を待ってから、採用したアーキテクチャに沿って実装する。既存コードの規約に従う。
-- **Fix Mode**: Phase 6 の Generator-Verifier ループから起動。reviewer が指摘した file:line だけをピンポイント修正する（スコープ拡大・無関係なリファクタ禁止、Phase 4 の設計を維持）。
+- **Fix Mode**: Phase 6 の Generator-Verifier ループから起動。auto-fix 対象の file:line だけをピンポイント修正する（スコープ拡大・無関係なリファクタ禁止、Phase 4 の設計を維持）。対象外の指摘は近くにあっても直さず Step 4 に回し、範囲外の変更はループが hunk 単位で数えて Step 4 に出す。
 
 ### Phase 5.3: 静的オラクルゲート（fail-closed / 決定的検証）
 
@@ -155,8 +155,8 @@ tsc / lint / build では検知できない runtime 初期化バグ（DB client 
 - Step 0: code-review プラグインが有効かを確認（`scripts/plugin-enabled.sh`）。未インストール・無効時は **fail-fast**（Phase 5 までの成果物は維持。`_requirements` では `required: false` 宣言だが Phase 6 では事実上必須）
 - Step 1: 実装 diff を記録する。reviewer の観点は選ばない（self-review の triage に任せる）
 - Step 2: `Skill code-review:self-review --embed` を 1 回呼ぶ（`--embed` で self-review 終端の AskUserQuestion を skip）。初回は `--focus` を付けない — 付けると反証レイヤーと skeptic が `scope` でスキップされ、triage が出す観点（`layer-responsibility` など）も起動しない（GitHub issue #283）。BDD spec があれば `--spec=<path>` で照合元として渡す（Issue context / session-context は self-review が自分で読む）。`--focus` は Step 3 の再レビューだけで使う。出力は構造化 findings JSON ブロックを優先パース、無ければ markdown フォールバック（dual format）
-- Step 3: Generator-Verifier ループ。`BLOCKER`（any confidence）/ `CRITICAL && confidence ≥ 90` を auto-fix 対象とし、effort 別 max_iterations で fix → 再 review を反復。regression 検知（同一 fingerprint）/ budget で終了
-- Step 4: 集約結果を `[auto-fixed]` / `[persisting]` タグ付きで提示し、残課題はユーザー判断
+- Step 3: Generator-Verifier ループ。`BLOCKER`（any confidence）/ `CRITICAL && confidence ≥ 90` を auto-fix 対象とし、effort 別 max_iterations で fix → 再 review を反復。判断は `scripts/gv-loop.py` が持つ: 2 回目以降はループの起点からの差分（delta）の近くの対象だけで続け、delta の外の対象は `deferred` に回す。regression 検知（同一 fingerprint）/ budget で終了し、2 回目以降で上限の回は続けるかを聞く（GitHub issue #310）
+- Step 4: 集約結果を `[auto-fixed]` / `[persisting]` / `[deferred]` タグと範囲外の変更の場所つきで提示し、残課題はユーザー判断
 
 ### Phase 6.9: レビュー後の変更の確認
 

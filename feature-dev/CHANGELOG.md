@@ -5,6 +5,27 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.25.0] - 2026-10-23
+
+### Added
+
+- **Phase 6 の G-V ループの判断を `scripts/gv-loop.py` に移した**（GitHub issue #310）。
+  ループの状態を手書きの JSON（`/tmp/feature-dev-loop-state.json`）で持つのをやめ、作業ツリーごとの git dir に置いた。
+  `init` でループの起点を記録し、`review` が self-review の findings から auto-fix 対象を選び、regression / budget を判定して `action=fix|ask|stop` を出す。
+  Step 4 と Phase 7 は `summary` で集計を読む
+- **2 回目以降は、ループの起点からの差分（delta）の近くにある対象だけでループを続ける**。
+  delta の外の対象は `deferred` として Step 4 に回し、ループを延ばさない。
+  再レビューは diff 全体を見直すので、修正と関係ない箇所の新しい指摘でループが延び、収束しなかった
+- **Fix Mode が対象外まで直した分を数える**。前回の修正のうち、どの対象の行の近くにも掛からない hunk を「範囲外の変更」として数え、Step 4 と Phase 7 に場所を並べる（止めはしない）。
+  Fix Mode の文面にも、対象外の指摘（MAJOR / MINOR・CRITICAL < 90・deferred）は近くにあっても直さないと明記した。
+  実測では各回で対象外まで直し（34 件・17 件）、その修正が次のレビューの新しい指摘になっていた
+- 2 回目以降で上限の回は、続けるかを利用者に聞く。各回の前に出す `🔄 Iteration` の 1 行は `gv-loop.py` が作り、2 回目以降は前回の範囲外の変更と delta の外へ回した件数が付く
+- `review-snapshot.sh` に、記録せずに tree だけを出す `tree` を足した（`gv-loop.py` が使う）
+
+### Changed
+
+- delta の近さ（5 行）と範囲外の判定（対象の行から 10 行）は実測で決めた値ではない。外れたときの影響は、指摘が Step 4 に回る・範囲外の件数が増減するだけで、指摘は失われない
+
 ## [2.24.1] - 2026-10-21
 
 ### Changed

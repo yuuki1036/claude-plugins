@@ -208,38 +208,21 @@ Phase 5 (Implementation) に自動差し戻して修正を試行する点は変�
 
 self-review 内部の confidence しきい値（BLOCKER は 60+、CRITICAL は 80+ で報告される）は v2.0.0 では尊重し、feature-dev 側で再フィルタしない。
 
-### Regression 検知
+### Regression 検知と delta
 
-無限ループ防止のため、`/tmp/feature-dev-loop-state.json` に各 iteration の指摘 fingerprint を記録:
+ループの状態と判定は `scripts/gv-loop.py` が持つ（状態は作業ツリーごとの git dir。手順は `review-loop.md` Step 3）。fingerprint は `file:line:focus` のタプル。**前回の対象と同じ fingerprint がまた出た場合は「自動 fix 不能」と判定し、即座にループを break してユーザに提示**する（再帰的に同じ修正を試みても無駄なため）。
 
-```json
-{
-  "run_id": "<uuid>",
-  "max_iterations": 2,
-  "current_iteration": 1,
-  "iterations": [
-    {
-      "iter": 0,
-      "fingerprints": ["src/auth.ts:67:bug-detection", "src/db.ts:23:security"]
-    },
-    {
-      "iter": 1,
-      "fingerprints": ["src/auth.ts:67:bug-detection"]
-    }
-  ]
-}
-```
-
-fingerprint は `file:line:focus` のタプル。**同一 fingerprint が連続 2 iteration で残存した場合は「自動 fix 不能」と判定し、即座にループを break してユーザに提示**する（再帰的に同じ修正を試みても無駄なため）。
+2 回目以降は、ループの起点から変えた行の近く（delta）にある対象だけでループを続ける。delta の外の対象は `deferred` として Step 4 に回す。再レビューは diff 全体を見直すので、delta で絞らないと修正と関係ない箇所の新しい指摘でループが延び、収束しない（GitHub issue #310）。
 
 ### ループ終了条件
 
-以下のいずれかでループを終了し Step 4（Final consolidation）へ進む:
+以下のいずれかでループを終了し Step 4（Final consolidation）へ進む（`reason=`）:
 
-1. auto-fix 対象（`BLOCKER` または `CRITICAL && conf ≥ 90`）が 0 件になった（成功）
-2. `current_iteration == max_iterations` に到達（予算切れ）
-3. Regression 検知（同一 fingerprint が連続 2 回残存）
-4. メインスレッドが「修正不能」と判断（複雑すぎる、設計再考が必要等）
+1. auto-fix 対象（`BLOCKER` または `CRITICAL && conf ≥ 90`）が 0 件になった（`success`）
+2. 2 回目以降、残った対象がすべて delta の外（`deferred`）
+3. `current_iteration == max_iterations` に到達（`budget`）
+4. Regression 検知（前回の対象と同じ fingerprint が残存。`regression`）
+5. メインスレッドが「修正不能」と判断した、または上限の回の確認で利用者が止めた（`manual`）
 
 ### Fix の責務分離
 
@@ -253,7 +236,7 @@ Phase 5 は通常モードと Fix Mode の 2 形態を持つ:
 | モード | 起動元 | 動作 |
 |---|---|---|
 | 通常 | Phase 4 完了後 | architect の設計に従い feature を実装 |
-| Fix Mode | Phase 6 G-V ループから | Phase 6 が指定した critical 指摘リストのみを対象に修正。**スコープ拡大禁止**、reviewer の指摘した範囲のみ |
+| Fix Mode | Phase 6 G-V ループから | `gv-loop.py review` が出した `target` の行のみを対象に修正。**スコープ拡大禁止**、reviewer の指摘した範囲のみ（対象外の指摘は近くにあっても直さず Step 4 へ。範囲外の変更は次の `review` が数える） |
 
 Fix Mode では:
 - 元の architect 設計（Phase 4 で user が選んだ approach）は維持

@@ -438,10 +438,11 @@ Phase 5 has two modes — check the invocation context:
 
 ### Fix Mode
 
-**Triggered by**: Phase 6 Step 3 G-V loop with a list of auto-fix target issues (`BLOCKER` any-confidence OR `CRITICAL && confidence ≥ 90` from `code-review:self-review` output).
+**Triggered by**: Phase 6 Step 3 G-V loop with the `target` rows printed by `gv-loop.py review` (`BLOCKER` any-confidence OR `CRITICAL && confidence ≥ 90` from `code-review:self-review` output; from the 2nd round on, only those inside the loop's delta).
 
 **Constraints**:
-- **Scope is strictly limited** to the reviewer-flagged file:line locations
+- **Scope is strictly limited** to the `target` rows' file:line locations
+- 対象外の指摘（MAJOR / MINOR・CRITICAL < 90・`deferred` の行）は、同じファイルの近くにあっても直さない。Step 4 で利用者に出る。実測では各回で対象外まで直し（34 件・17 件）、その修正が次のレビューの新しい指摘になってループが収束しなかった（GitHub issue #310）。範囲外の変更は次の `gv-loop.py review` が hunk 単位で数え、Step 4 に場所を並べる
 - The architect design chosen in Phase 4 must be preserved
 - No scope expansion, no refactoring of unrelated code
 
@@ -449,8 +450,7 @@ Phase 5 has two modes — check the invocation context:
 1. Read each flagged file at the indicated line range
 2. Apply the reviewer's suggested fix (or a minimal equivalent that resolves the issue)
 3. If the fix requires design-level changes, escalate by launching `code-architect` (with `run_in_background: false`) with focus `delta-proposal` and **consume 1 loop iteration**. Otherwise apply directly with Edit.
-4. Update the loop state file (`/tmp/feature-dev-loop-state.json`) — see Phase 6 Step 3 for the format
-5. Return to Phase 6 Step 3 (do NOT re-run Phase 5.5 unless the fix is runtime-sensitive and effort ≥ `medium`)
+4. Return to Phase 6 Step 3 (do NOT re-run Phase 5.5 unless the fix is runtime-sensitive and effort ≥ `medium`). ループの状態は書かない（次の `gv-loop.py review` が記録する）
 
 ---
 
@@ -646,18 +646,19 @@ self-review の出力を severity × confidence で auto-fix トリガーに変�
 
 **Rationale**: BLOCKER は security/data-loss class なので confidence を問わず即修正。CRITICAL は confidence ≥ 90 閾値を維持して誤検知を防ぐ。
 
-ループの初期化（`${CLAUDE_EFFORT}` → `max_iterations`）・実行（filter → fingerprint → regression/budget チェック → Fix → 再レビュー）・終了ログの手順は `${CLAUDE_PLUGIN_ROOT}/references/review-loop.md` に従う。`low` effort は `max_iterations=0` で Step 3 を skip し Step 4 へ直行する。
+ループの初期化（`${CLAUDE_EFFORT}` → `max_iterations`）・実行・集計の読み方は `${CLAUDE_PLUGIN_ROOT}/references/review-loop.md` に従う。対象の選別・regression / budget の判定・2 回目以降に delta の外の対象を `deferred` に回すこと・範囲外の変更の集計は `scripts/gv-loop.py review` が持ち、Claude はその `action=` に従って Fix と再レビューを回す（GitHub issue #310）。2 回目以降で上限の回は、続けるかを利用者に聞く。`low` effort は `max_iterations=0` で Step 3 を skip し Step 4 へ直行する。
 
 ### Step 4: Consolidate and present
 
 0. **レビューした時点を記録する**（GitHub issue #276）: Step 3 のループが終わった直後（skip した回は Step 2 の直後）に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" save` を実行する。この後に入る変更（下の 5. のユーザー判断の修正・Phase 6.7・別の決定の反映）は self-review を通らないので、Phase 6.9 で差を取る
-1. **集約**: self-review の最終出力（post-loop）を読み、全ての BLOCKER / CRITICAL / MAJOR / MINOR を列挙
-2. **タグ付け**: Step 3 で解決したものは `[auto-fixed]`、ループ後も残ったものは `[persisting]`
+1. **集約**: self-review の最終出力（post-loop）と `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" summary`（Step 3 が走った回）を読み、全ての BLOCKER / CRITICAL / MAJOR / MINOR を列挙
+2. **タグ付け**: Step 3 で解決したものは `[auto-fixed]`、ループ後も残ったもの（summary の `remaining`）は `[persisting]`、delta の外にあってループに入れなかったもの（`deferred`）は `[deferred]`。範囲外の変更（`out_of_scope`）が 1 以上なら「範囲外の変更 N か所」と場所を添える（ループの再レビューは通っているが、auto-fix の対象ではない変更）
 3. **Recommend**: 手動修正を推奨する高 severity issue を identify
-4. **Present findings and ask**:
-   - Step 3 が `success` で終了: 確認のみで Phase 7 へ
-   - Step 3 が `regression` / `budget` で終了: persisting critical issues を提示し、ユーザーに（手動修正 / 受け入れて続行 / abandon）を聞く
-   - Step 3 が skip（`low` effort）: 全 critical を提示してユーザー判断
+4. **Present findings and ask**（`reason=` で分岐）:
+   - `success`: 確認のみで Phase 7 へ
+   - `regression` / `budget` / `manual`: persisting critical issues を提示し、ユーザーに（手動修正 / 受け入れて続行 / abandon）を聞く
+   - `deferred`: deferred の対象（BLOCKER / CRITICAL ≥ 90 のまま、ループの修正と関係ない箇所に残っている）を提示し、同じ 3 択を聞く
+   - Step 3 が skip（`low` effort / `loop=unavailable`）: 全 critical を提示してユーザー判断
    - self-review が失敗: warning を提示し、ユーザー判断（リトライ / skip / abandon）
 5. ユーザー判断に従って対応
 
@@ -711,7 +712,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
    - **探索の欠損** (Phase 2): 失敗した explorer の `missing_coverage`
    - **静的オラクル** (Phase 5.3): 「静的オラクル判定不能」「静的オラクル打ち切り」「静的オラクル無し（型/テスト未検証）」、`low` effort で skip した回だけ
    - **動作確認** (Phase 5.5): `UI_VERIFY_RESULT` が `pass` 以外の回（`skipped` / `blocked` は `UI_VERIFY_REASON`、fail を承知で進めた回は fail したケース、手動の回は「手動確認待ち」か返ってきた結果、実行しなかった回はその理由）、`pass` でも `UI_VERIFY_UNCOVERED` が `none` 以外の回はその値、self-lock で Phase 5.5 を飛ばした回はその旨。Phase 5.5 の後に入った変更（Phase 6 の G-V ループの auto-fix・利用者の判断で入れた修正）に画面のファイル（Phase 5.5 Step 3 の定義）があれば「Phase 5.5 の後の変更は動作確認を通していない」と添える（3. の読み合わせで入る修正は 4. で扱う）
-   - **G-V ループ** (Phase 6 Step 3 が走った回): `/tmp/feature-dev-loop-state.json` を読み、反復回数・終了理由・auto-fix 件数・persisting。終了理由が `regression` / `budget` なら persisting の fingerprint を目立たせる（人間の判断が要る）。self-review が失敗した・Phase 6 を skip した回はその旨
+   - **G-V ループ** (Phase 6 Step 3 が走った回): `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" summary` の反復回数・終了理由・auto-fix 件数・persisting（`remaining`）・`deferred`。終了理由が `regression` / `budget` / `deferred` / `manual` なら残った対象の fingerprint を目立たせる（人間の判断が要る）。範囲外の変更（`out_of_scope`）が 1 以上なら件数と場所。self-review が失敗した・Phase 6 を skip した回はその旨
    - **コメント精査** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
    - **BDD spec の未解消指摘** (Phase 1.4): 再評価後も 🔴 が残った回だけ、件数と内容を出す（Phase 1.4 は聞かずに進めるため、ここで初めて利用者に見える）
    - **レビュー後の変更** (Phase 6.9): 「**N ファイル・M 行（未レビュー）**」（ファイル名も並べる。「静的オラクルだけ回す」を選んだ回は「（未レビュー・静的オラクルは緑）」）/「確認できなかった」の回だけ。「なし」「再レビュー済み」は省く。値は Phase 6.9 の時点のもので、3. の読み合わせで入れる修正は含まない（それは 4. の 2 回目の self-review が見る）

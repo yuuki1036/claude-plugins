@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# review-snapshot.sh save|check|diff — レビューした時点の作業ツリーを記録し、その後に変わった分を出す
+# review-snapshot.sh save|check|diff|tree — レビューした時点の作業ツリーを記録し、その後に変わった分を出す
 # （GitHub issue #276）
 #
 # Phase 6 の self-review の後に入った変更（ユーザーの判断で入れた修正・別の決定の反映）は、
@@ -14,6 +14,8 @@
 #   diff   check と同じ 2 つの tree の patch を出す（未追跡の新規ファイルも入る。`git diff <tree>` では
 #          作業ツリー側の未追跡が落ちる）。Phase 6.9 が回し直すかを変更の中身で決めるため（GitHub issue #304）。
 #          記録が無い・比べられないときは check と同じ `snapshot=missing` / `snapshot=unavailable`
+#   tree   save と同じ tree を作って `snapshot=<tree>` を出すだけで、記録しない。G-V ループ（gv-loop.py）が
+#          ループの起点と各回の修正前を自分の状態に持つため（GitHub issue #310）
 #
 # 記録先は作業ツリーごとの git dir（worktree ごとに分かれる）。出力は常に exit 0（判定できないときも
 # Phase 7 を止めない）。git でないときは `snapshot=unavailable` を出す。
@@ -48,11 +50,13 @@ current_tree() {
 }
 
 case "$mode" in
-  save)
+  save|tree)
     # add -A はリポジトリ全体が対象なので、作業ツリーのルートで走らせる
     cd "$(git rev-parse --show-toplevel)" || { echo "snapshot=unavailable"; exit 0; }
     if tree=$(current_tree); then
-      printf '%s\n' "$tree" > "$store"
+      if [ "$mode" = save ]; then
+        printf '%s\n' "$tree" > "$store"
+      fi
       echo "snapshot=$tree"
     else
       echo "snapshot=unavailable"
@@ -88,7 +92,7 @@ case "$mode" in
     fi
     ;;
   *)
-    echo "usage: review-snapshot.sh save|check|diff" >&2
+    echo "usage: review-snapshot.sh save|check|diff|tree" >&2
     exit 2
     ;;
 esac
