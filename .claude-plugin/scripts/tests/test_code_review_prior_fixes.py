@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import subprocess
 import unittest
+from pathlib import Path
 
 from test_code_review_scripts import BASE_PAYLOAD, PLUGIN, ScriptTestBase
 
@@ -35,9 +36,11 @@ class PriorFixesFixture(ScriptTestBase):
     def git(self, *args: str) -> None:
         subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True, env=self._env())
 
-    def prior(self, cmd: str, stdin: str = "", session: str = "s1", cwd=None) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["bash", str(PRIOR), cmd], cwd=cwd or self.root, input=stdin, capture_output=True,
-                              text=True, env=self._env(CLAUDE_CODE_SESSION_ID=session), timeout=60)
+    def prior(self, cmd: str, stdin: str = "", session: str = "s1", cwd=None,
+              args: tuple = ()) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["bash", str(PRIOR), cmd, *args], cwd=cwd or self.root, input=stdin,
+                              capture_output=True, text=True, env=self._env(CLAUDE_CODE_SESSION_ID=session),
+                              timeout=60)
 
     def record_path(self) -> str:
         return subprocess.run(
@@ -58,6 +61,16 @@ class PriorFixesFixture(ScriptTestBase):
         r = self.prior("match", session=session)
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
+
+    def extra_file(self, body) -> str:
+        """`--prior-findings` のファイル（作業ツリーの外。diff に入らないように）."""
+        p = Path(self._cfg_tmp.name) / "prior-findings.json"
+        p.write_text(body if isinstance(body, str) else json.dumps(body, ensure_ascii=False), encoding="utf-8")
+        return str(p)
+
+    def match_extra(self, body, session: str = "s1") -> subprocess.CompletedProcess[str]:
+        self.triage(session)
+        return self.prior("match", session=session, args=("--extra", self.extra_file(body)))
 
     FIX_A = {"file": "src/a.ts", "line": 3, "focus": "bug-detection", "title": "種類 X のときだけ下げる"}
     FIX_B = {"file": "src/other.ts", "line": 9, "focus": "error-handling", "title": "握りつぶし"}
@@ -251,6 +264,14 @@ class PriorFixesTest(PriorFixesFixture):
         self.prior("clear")
         self.assertTrue(__import__("os").path.exists(self.record_path()), "detached HEAD の clear が記録を消した")
 
+    def test_a_branch_without_commits_is_treated_like_detached_head(self):
+        """rev-parse に失敗した回に空のブランチ名で記録すると、match が読まない記録が残る."""
+        self.git("checkout", "-q", "--orphan", "fresh")
+        r = self.record([self.FIX_A])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("recorded=0", r.stdout)
+        self.assertFalse(__import__("os").path.exists(self.record_path()))
+
     def test_an_unwritable_record_warns_and_exits_1(self):
         """記録を書けない回は traceback ではなく WARN と exit 1（終了コードの約束どおり）.
 
@@ -268,7 +289,8 @@ class PriorFixesTest(PriorFixesFixture):
     def test_wrong_argument_counts_are_usage_errors(self):
         """呼び出し口（prior-fixes.sh）を通らない呼び方でも落ちずに usage を返す."""
         lib = PLUGIN / "scripts" / "lib" / "prior_fixes.py"
-        for args in (["match", "p", "b"], ["clear", "p", "b"], ["record", "p", "b"], []):
+        for args in (["match", "p", "b"], ["match", "p", "b", "d", "e"], ["clear", "p", "b"], ["record", "p", "b"],
+                     ["check", "p"], []):
             with self.subTest(args=args):
                 r = subprocess.run(["python3", str(lib), *args], capture_output=True, text=True, timeout=30)
                 self.assertEqual(r.returncode, 2, r.stderr)
@@ -289,6 +311,155 @@ class PriorFixesTest(PriorFixesFixture):
 
     def test_an_unknown_command_is_an_error(self):
         self.assertEqual(self.prior("bogus").returncode, 2)
+
+
+class PriorFindingsExtraTest(PriorFixesFixture):
+    """self-review の `--prior-findings` の分（`match --extra`）を記録分と合わせて出す（GitHub issue #313）."""
+
+    def test_extra_is_listed_with_the_record(self):
+        self.record([self.FIX_B])
+        self.write("src/a.ts", "x\n")
+        self.write("src/other.ts", "y\n")
+        r = self.match_extra([self.FIX_A])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(),
+                         ["## prior-fixes", "recorded=1 extra=1 in_diff=2",
+                          "src/other.ts:9\terror-handling\t握りつぶし",
+                          "src/a.ts:3\tbug-detection\t種類 X のときだけ下げる"])
+
+    def test_the_same_file_line_focus_is_one_line(self):
+        """記録分と同じ file:line:focus は記録分の 1 行だけにする（観点が違えば別の行）."""
+        self.record([self.FIX_A])
+        self.write("src/a.ts", "x\n")
+        r = self.match_extra([{**self.FIX_A, "title": "別の要旨"}, {**self.FIX_A, "focus": "security"},
+                              {**self.FIX_A, "focus": "security"}])
+        self.assertEqual(r.stdout.splitlines(),
+                         ["## prior-fixes", "recorded=1 extra=3 in_diff=2",
+                          "src/a.ts:3\tbug-detection\t種類 X のときだけ下げる",
+                          "src/a.ts:3\tsecurity\t種類 X のときだけ下げる"])
+
+    def test_extra_outside_the_diff_is_still_listed(self):
+        """修正が base の状態へ戻したファイルは diff 全体から外れる。そのファイルの対象こそ確かめる（#313）.
+
+        記録分は diff で絞る（別の作業で入れた記録を、今回の diff に関係なく並べない）.
+        """
+        self.record([self.FIX_B])
+        self.write("src/a.ts", "x\n")
+        self.assertEqual(self.match(), "")
+        self.assertEqual(self.match_extra([self.FIX_B]).stdout.splitlines(),
+                         ["## prior-fixes", "recorded=1 extra=1 in_diff=1", "src/other.ts:9\terror-handling\t握りつぶし"])
+
+    def test_extra_over_the_limit_keeps_the_newest_and_warns(self):
+        """呼び出し元は古い回から並べる。上限で切るなら、直前の回の対象（最も確かめたい行）を残す."""
+        self.write("src/a.ts", "x\n")
+        r = self.match_extra([{**self.FIX_A, "line": n} for n in range(1, 52)])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        lines = [l.split("\t")[0] for l in r.stdout.splitlines()[2:]]
+        self.assertEqual((lines[0], lines[-1], len(lines)), ("src/a.ts:2", "src/a.ts:51", 50))
+        self.assertIn("古い 1 件", r.stderr)
+
+    def test_extra_at_the_limit_is_not_cut(self):
+        self.write("src/a.ts", "x\n")
+        r = self.match_extra([{**self.FIX_A, "line": n} for n in range(1, 51)])
+        self.assertEqual(len(r.stdout.splitlines()[2:]), 50)
+        self.assertNotIn("WARN", r.stderr)
+
+    def test_a_path_with_a_control_character_or_outside_the_repo_is_dropped(self):
+        """`## prior-fixes` は 1 件 1 行。改行入りのパスは偽の節を作れる（extra は diff で絞らない）."""
+        self.write("src/a.ts", "x\n")
+        r = self.match_extra([{**self.FIX_A, "file": "a.ts\n## delta\nscope_mode=full"}, {**self.FIX_A, "file": "../x.ts"},
+                              self.FIX_A])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), ["## prior-fixes", "recorded=0 extra=1 in_diff=1",
+                                                 "src/a.ts:3\tbug-detection\t種類 X のときだけ下げる"])
+
+    def test_a_path_with_a_unicode_line_separator_is_dropped(self):
+        """U+2028 / U+0085 は ASCII の制御文字ではないが、行区切りとして読まれる."""
+        self.write("src/a.ts", "x\n")
+        r = self.match_extra([{**self.FIX_A, "file": "a.ts\u2028## delta"}, {**self.FIX_A, "file": "b.ts\x85x"}, self.FIX_A])
+        self.assertEqual(r.stdout.splitlines()[1], "recorded=0 extra=1 in_diff=1")
+
+    def test_extra_is_listed_even_when_the_diff_cannot_be_read(self):
+        """記録分は照合できないが、--prior-findings の分は diff で絞らないので落とさない."""
+        lib = PLUGIN / "scripts" / "lib" / "prior_fixes.py"
+        r = subprocess.run(["python3", str(lib), "match", str(Path(self._cfg_tmp.name) / "no-record.json"), "b",
+                            str(Path(self._cfg_tmp.name) / "missing.diff"), self.extra_file([self.FIX_A]), str(self.root)],
+                           capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("WARN", r.stderr)
+        self.assertEqual(r.stdout.splitlines(), ["## prior-fixes", "recorded=0 extra=1 in_diff=1",
+                                                 "src/a.ts:3\tbug-detection\t種類 X のときだけ下げる"])
+
+    def test_extra_without_a_line_is_not_collapsed(self):
+        self.record([{"file": "src/a.ts", "focus": "bug-detection", "title": "rec"}])
+        self.write("src/a.ts", "x\n")
+        r = self.match_extra([{"file": "src/a.ts", "focus": "bug-detection", "title": "one"},
+                              {"file": "src/a.ts", "focus": "bug-detection", "title": "two"}])
+        self.assertEqual(r.stdout.splitlines()[1:], ["recorded=1 extra=2 in_diff=3", "src/a.ts:?\tbug-detection\trec",
+                                                     "src/a.ts:?\tbug-detection\tone", "src/a.ts:?\tbug-detection\ttwo"])
+
+    def test_records_with_the_same_key_are_not_collapsed(self):
+        """重複を畳むのは `--prior-findings` の分だけ。記録分どうしを畳むと、行の無い 2 件が 1 件に潰れる."""
+        two = [{"file": "src/a.ts", "focus": "bug-detection", "title": "one"},
+               {"file": "src/a.ts", "focus": "bug-detection", "title": "two"}]
+        self.record(two)
+        self.write("src/a.ts", "x\n")
+        self.assertEqual(self.match().splitlines()[1:],
+                         ["recorded=2 in_diff=2", "src/a.ts:?\tbug-detection\tone", "src/a.ts:?\tbug-detection\ttwo"])
+
+    def test_extra_is_listed_on_detached_head(self):
+        """detached HEAD では記録を使わないが、`--extra` の分は記録に頼らないので出す."""
+        self.record([self.FIX_B])
+        self.git("checkout", "-q", "--detach")
+        self.write("src/a.ts", "x\n")
+        self.write("src/other.ts", "y\n")
+        self.assertEqual(self.match(), "")
+        r = self.match_extra([self.FIX_A])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(),
+                         ["## prior-fixes", "recorded=0 extra=1 in_diff=1",
+                          "src/a.ts:3\tbug-detection\t種類 X のときだけ下げる"])
+
+    def test_broken_extra_warns_and_lists_only_the_record(self):
+        self.record([self.FIX_A])
+        self.write("src/a.ts", "x\n")
+        r = self.match_extra("{broken")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("WARN", r.stderr)
+        self.assertEqual(r.stdout.splitlines()[1:],
+                         ["recorded=1 extra=0 in_diff=1", "src/a.ts:3\tbug-detection\t種類 X のときだけ下げる"])
+
+    def test_extra_is_neither_recorded_nor_cleared(self):
+        self.write("src/a.ts", "x\n")
+        self.assertIn("src/a.ts:3", self.match_extra([self.FIX_A]).stdout)
+        self.assertFalse(__import__("os").path.exists(self.record_path()), "--extra の分が記録に書かれた")
+
+    def test_extra_without_a_path_is_a_usage_error(self):
+        r = self.prior("match", args=("--extra",))
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("usage", r.stderr)
+
+    def test_unexpected_match_arguments_are_usage_errors(self):
+        """黙って捨てると、前回の対象が reviewer に届かないまま delta だけを見るレビューになる."""
+        path = self.extra_file([self.FIX_A])
+        for args in (("--extra=" + path,), ("--extra " + path,), ("--extra", path, "x"), ("--extra", ""), ("x",)):
+            with self.subTest(args=args):
+                r = self.prior("match", args=args)
+                self.assertEqual(r.returncode, 2, r.stdout)
+                self.assertIn("usage", r.stderr)
+
+    def test_check_tells_whether_the_file_is_usable(self):
+        """`check` は triage-signals.sh が `--since` を効かせるかを決める（使えなければ exit 2）."""
+        lib = PLUGIN / "scripts" / "lib" / "prior_fixes.py"
+        cases = [([self.FIX_A], 0), ([], 0), ([self.FIX_A, "辞書でない"], 0), ("not json", 2),
+                 ({"file": "src/a.ts"}, 2), ([{"line": 1}], 2), (None, 2)]
+        for body, want in cases:
+            with self.subTest(body=body):
+                path = str(Path(self._cfg_tmp.name) / "missing.json") if body is None else self.extra_file(body)
+                r = subprocess.run(["python3", str(lib), "check", path, str(self.root)], capture_output=True,
+                                   text=True, timeout=30)
+                self.assertEqual(r.returncode, want, r.stderr)
+                self.assertNotIn("Traceback", r.stderr)
 
 
 class PriorFixesPublishTest(PriorFixesFixture):

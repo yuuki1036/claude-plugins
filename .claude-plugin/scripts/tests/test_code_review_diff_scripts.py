@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import json
 import tempfile
@@ -315,7 +316,7 @@ class TriageArgumentTest(DiffScriptTestBase):
         self.assertIn("未知の引数", res.stderr)
 
     def test_flag_without_value_exits_2(self):
-        for flag in ("--pr", "--base", "--out"):
+        for flag in ("--pr", "--base", "--out", "--since-tree", "--prior-findings"):
             with self.subTest(flag=flag):
                 res = self.run_in(TRIAGE, flag)
                 self.assertEqual(res.returncode, 2)
@@ -385,6 +386,308 @@ class TriageStaleFileTest(DiffScriptTestBase):
         target = self.root / "custom.diff"
         self.run_in(TRIAGE, "--base", "HEAD", "--out", str(target))
         self.assertFalse((self.root / "custom.diff.tmp").exists())
+
+
+class TriageSinceTreeTest(DiffScriptTestBase):
+    """self-review の `--since` の delta（`--since-tree` / `## delta` / GitHub issue #313）.
+
+    delta = 起点の tree と作業ツリーの差分を、diff 全体に入るファイルに限ったもの。使えない回は理由を
+    残して diff 全体で続ける。publish は size ファイルの `scope_mode=` から `review_scope` を作る。
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        # TMPDIR がリポジトリの中にあるので、起点の tree と diff に一時ファイルを入れない
+        with open(self.root / ".git" / "info" / "exclude", "a", encoding="utf-8") as f:
+            f.write("tmp/\n")
+
+    def snapshot(self) -> str:
+        """作業ツリー（未追跡を含む）の tree。feature-dev の review-snapshot.sh と同じ作り方."""
+        idx = Path(self._cfg_tmp.name) / "snap-index"
+        if idx.exists():
+            idx.unlink()
+        env = self._env(GIT_INDEX_FILE=str(idx))
+        subprocess.run(["git", "add", "-A"], cwd=self.root, env=env, check=True, capture_output=True)
+        return subprocess.run(["git", "write-tree"], cwd=self.root, env=env, check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    def triage(self, *args: str) -> subprocess.CompletedProcess[str]:
+        self.add()
+        res = self.run_in(TRIAGE, "--base", "HEAD", *args)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res
+
+    def delta(self, tree: str, *args: str) -> dict[str, str]:
+        return self.kv(self.triage("--since-tree", tree, *args).stdout, "## delta")
+
+    def commit(self, msg: str = "base") -> None:
+        self.add()
+        self.git("commit", "-qm", msg)
+
+    def size_file(self) -> Path:
+        proc = subprocess.run(
+            ["bash", "-c", '. "$1/scripts/lib/review-paths.sh"; review_paths_init ""; review_path size',
+             "_", str(PLUGIN)], cwd=str(self.root), capture_output=True, text=True, env=self._env())
+        # 失敗すると空のパスが Path(".") になり、exists() が常に真で前提の確認が空振りする
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(proc.stdout.strip())
+        return Path(proc.stdout.strip())
+
+    @staticmethod
+    def subsection(out: str, name: str) -> list[str]:
+        """`## delta` の中の `### <name>` の中身."""
+        lines = DiffScriptTestBase.section(out, "## delta")
+        try:
+            start = lines.index("### " + name)
+        except ValueError:
+            return []
+        body = []
+        for line in lines[start + 1:]:
+            if line.startswith("### "):
+                break
+            body.append(line)
+        return body
+
+    def test_delta_survives_a_subdirectory_start(self):
+        """self-review は cwd がセッション起動 dir のまま。delta の pathspec を cwd 相対で読ませると、
+        サブディレクトリからの起動で何にも一致せず、空の delta が成功に見える（縮退も WARN もしない）."""
+        self.write("src/a.ts", "a\n")
+        tree = self.snapshot()
+        self.write("src/a.ts", "a2\n")
+        self.add()
+        res = self.run_in(TRIAGE, "--base", "HEAD", "--since-tree", tree, cwd=self.root / "src")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        got = self.kv(res.stdout, "## delta")
+        self.assertEqual((got["scope_mode"], got["delta_files"]), ("delta", "1"))
+        self.assertIn("+++ b/src/a.ts", Path(got["delta_file"]).read_text(encoding="utf-8"))
+
+    def test_a_file_reverted_to_base_after_the_tree_is_in_the_delta(self):
+        """修正が base の状態へ戻したファイルは diff 全体から外れる。delta からも落とすと、戻したことで壊れた
+        呼び出し側を誰も見ないまま 0 件で終わる."""
+        self.write("src/f.ts", "a\n")
+        self.commit()
+        self.write("src/f.ts", "a\nfoo\n")
+        self.write("src/g.ts", "use foo\n")
+        tree = self.snapshot()
+        self.git("checkout", "--", "src/f.ts")
+        res = self.triage("--since-tree", tree)
+        self.assertNotIn("src/f.ts", "\n".join(self.section(res.stdout, "## files")), "前提: diff 全体から外れている")
+        got = self.kv(res.stdout, "## delta")
+        self.assertEqual((got["scope_mode"], got["delta_files"]), ("delta", "1"))
+        patch = Path(got["delta_file"]).read_text(encoding="utf-8")
+        self.assertIn("--- a/src/f.ts", patch)
+        self.assertIn("-foo", patch)
+
+    def test_a_new_file_removed_after_the_tree_is_in_the_delta(self):
+        """追加したファイルを消して base の状態へ戻した回。diff 全体から外れるので、削除の側で拾う."""
+        self.write("src/keep.ts", "k\n")
+        self.write("src/new.ts", "export const n = 1\n")
+        self.add()
+        tree = self.snapshot()
+        self.git("rm", "-qf", "src/new.ts")
+        res = self.triage("--since-tree", tree)
+        self.assertNotIn("src/new.ts", "\n".join(self.section(res.stdout, "## files")), "前提: diff 全体から外れている")
+        got = self.kv(res.stdout, "## delta")
+        self.assertEqual((got["scope_mode"], got["delta_files"]), ("delta", "1"))
+        self.assertIn("deleted file mode", Path(got["delta_file"]).read_text(encoding="utf-8"))
+        tmp = Path(got["delta_file"])
+        self.assertEqual([p.name for p in tmp.parent.glob(tmp.name + ".*")], [], "中間ファイルが残った")
+
+    def test_paths_equal_under_the_locale_collation_are_both_kept(self):
+        """重複除去をロケールの照合順で行うと、別のパスが等しいとみなされて 1 つ落ちる（ja_JP.UTF-8 の ① と ②）."""
+        probe = subprocess.run(["sort", "-zu"], input="x①\0x②\0", capture_output=True, text=True,
+                               env={**self._env(), "LC_ALL": "ja_JP.UTF-8"})
+        if probe.stdout.count("\0") != 1:
+            self.skipTest("この環境のロケールでは ① と ② が別に並ぶ（照合順で潰れる状態を作れない）")
+        self.write("src/x①.ts", "a\n")
+        self.write("src/x②.ts", "b\n")
+        tree = self.snapshot()
+        self.write("src/x①.ts", "a2\n")
+        self.write("src/x②.ts", "b2\n")
+        self.add()
+        res = self.run_in(TRIAGE, "--base", "HEAD", "--since-tree", tree,
+                          env={**self._env(), "LC_ALL": "ja_JP.UTF-8"})
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(self.kv(res.stdout, "## delta")["delta_files"], "2")
+
+    def test_delta_holds_only_what_changed_after_the_tree(self):
+        self.write("src/a.ts", "a\n")
+        self.write("src/b.ts", "b\n")
+        tree = self.snapshot()
+        self.write("src/b.ts", "b2\nmore\n")
+        res = self.triage("--since-tree", tree)
+        got = self.kv(res.stdout, "## delta")
+        self.assertEqual((got["scope_mode"], got["since_tree"], got["delta_files"], got["delta_lines"]),
+                         ("delta", tree, "1", "3"))
+        self.assertEqual(self.kv(res.stdout, "## size")["total_files"], "2", "diff 全体の規模は変えない")
+        patch = Path(got["delta_file"]).read_text(encoding="utf-8")
+        self.assertIn("+++ b/src/b.ts", patch)
+        self.assertNotIn("src/a.ts", patch)
+        self.assertEqual(self.size_file().read_text(encoding="utf-8"),
+                         "doc_only=0\nscope_mode=delta\ndelta_lines=3\ndelta_size_tier=small\n")
+
+    def test_delta_is_not_limited_to_the_80_listed_files(self):
+        """`## files` は 80 件で打ち切る表示なので、絞り込みには使わない."""
+        for i in range(85):
+            self.write("src/f%02d.ts" % i, "x\n")
+        tree = self.snapshot()
+        self.write("src/f84.ts", "changed\n")
+        out = self.triage("--since-tree", tree).stdout
+        self.assertTrue(any("files 省略" in line for line in self.section(out, "## files")))
+        self.assertEqual(self.kv(out, "## delta")["delta_files"], "1")
+
+    def test_a_rename_after_the_tree_counts_both_paths(self):
+        self.write("src/old.ts", "keep\n")
+        self.commit()
+        self.write("src/other.ts", "x\n")
+        tree = self.snapshot()
+        self.git("mv", "src/old.ts", "src/new.ts")
+        got = self.delta(tree)
+        self.assertEqual(got["delta_files"], "2")
+
+    def test_a_file_untracked_now_is_not_counted_as_deleted(self):
+        """tree に入っていても今は未追跡のファイルは diff 全体に入らないので、delta にも入れない."""
+        self.write("src/b.ts", "tracked\n")
+        self.commit()
+        self.write("src/a.ts", "x\n")
+        self.add()
+        self.write("notes.txt", "untracked\n")
+        tree = self.snapshot()
+        self.write("src/a.ts", "y\n")
+        res = self.run_in(TRIAGE, "--base", "HEAD", "--since-tree", tree)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        got = self.kv(res.stdout, "## delta")
+        self.assertEqual(got["delta_files"], "1")
+        self.assertNotIn("notes.txt", Path(got["delta_file"]).read_text(encoding="utf-8"))
+        # 対: 追跡済みのファイルを消したら削除として数える
+        self.git("rm", "-q", "src/b.ts")
+        got = self.kv(self.run_in(TRIAGE, "--base", "HEAD", "--since-tree", tree).stdout, "## delta")
+        self.assertEqual(got["delta_files"], "2")
+        self.assertIn("deleted file mode", Path(got["delta_file"]).read_text(encoding="utf-8"))
+
+    def test_unusable_since_falls_back_to_the_whole_diff_with_a_reason(self):
+        self.write("src/a.ts", "x\n")
+        tree = self.snapshot()
+        blob = subprocess.run(["git", "hash-object", "-w", str(self.root / "src" / "a.ts")], cwd=self.root,
+                              capture_output=True, text=True, env=self._env()).stdout.strip()
+        broken = Path(self._cfg_tmp.name) / "broken.json"
+        broken.write_text("{broken", encoding="utf-8")
+        cases = [(("zz" * 20,), "bad-tree-id"), (("a" * 39,), "bad-tree-id"), (("a" * 65,), "bad-tree-id"),
+                 (("-" + "a" * 39,), "bad-tree-id"), (("0" * 40,), "tree-not-found"),
+                 (("0" * 64,), "tree-not-found"), ((blob,), "tree-not-found"),
+                 ((tree, "--staged"), "staged"), ((tree, "--prior-findings", str(broken)), "prior-findings-unreadable")]
+        for args, reason in cases:
+            with self.subTest(reason=reason, value=args[0][:6]):
+                self.add()
+                res = self.run_in(TRIAGE, "--base", "HEAD", "--since-tree", *args)
+                self.assertEqual(res.returncode, 0, res.stderr)
+                got = self.kv(res.stdout, "## delta")
+                self.assertEqual((got.get("scope_mode"), got.get("fallback")), ("full", reason))
+                self.assertNotIn("delta_file", got)
+                self.assertIn("WARN", res.stderr)
+                self.assertEqual(self.size_file().read_text(encoding="utf-8").splitlines()[-1], "scope_mode=full")
+
+    def test_usable_prior_findings_keep_the_delta(self):
+        """対: 使える `--prior-findings` なら delta のまま."""
+        self.write("src/a.ts", "x\n")
+        tree = self.snapshot()
+        prior = Path(self._cfg_tmp.name) / "prior.json"
+        prior.write_text(json.dumps([{"file": "src/a.ts", "line": 1, "focus": "x", "title": "t"}]), encoding="utf-8")
+        self.assertEqual(self.delta(tree, "--prior-findings", str(prior))["scope_mode"], "delta")
+
+    def test_an_empty_delta_is_still_a_delta(self):
+        """修正が何も変えなかった回は delta が空（unknown にしない）."""
+        self.write("src/a.ts", "x\n")
+        tree = self.snapshot()
+        got = self.delta(tree)
+        self.assertEqual((got["scope_mode"], got["delta_files"], got["delta_lines"], got["delta_size_tier"]),
+                         ("delta", "0", "0", "small"))
+        self.assertEqual(Path(got["delta_file"]).read_text(encoding="utf-8"), "")
+
+    def test_without_since_tree_there_is_no_delta_and_the_old_patch_is_removed(self):
+        self.write("src/a.ts", "x\n")
+        tree = self.snapshot()
+        self.write("src/a.ts", "y\n")
+        patch = Path(self.delta(tree)["delta_file"])
+        self.assertTrue(patch.exists())
+        out = self.triage().stdout
+        self.assertEqual(self.section(out, "## delta"), [])
+        self.assertFalse(patch.exists(), "前の回の delta の patch が残っている")
+        self.assertEqual(self.size_file().read_text(encoding="utf-8"), "doc_only=0\nscope_mode=full\n")
+
+    def test_a_failed_run_leaves_no_size_file_or_patch_of_the_previous_run(self):
+        self.write("src/a.ts", "x\n")
+        tree = self.snapshot()
+        self.write("src/a.ts", "y\n")
+        patch = Path(self.delta(tree)["delta_file"])
+        self.assertTrue(self.size_file().exists())
+        res = self.run_in(TRIAGE, "--base", "no-such-ref", "--since-tree", tree)
+        self.assertEqual(res.returncode, 2)
+        self.assertFalse(self.size_file().exists(), "途中で止まった回に前の回の scope_mode が残る")
+        self.assertFalse(patch.exists())
+
+    def test_delta_size_tier_boundaries(self):
+        """delta の帯も diff 全体と同じ境界（triage-guide `## 6.2`）で決める."""
+        for files, lines, want in ((3, 1, "small"), (4, 1, "medium"), (1, 100, "small"), (1, 101, "medium"),
+                                   (11, 1, "large")):
+            with self.subTest(files=files, lines=lines):
+                for i in range(12):
+                    self.write("src/t%02d.ts" % i, "base\n")
+                tree = self.snapshot()
+                for i in range(files):
+                    # 1 行を書き換えると追加と削除で 2 行。行数の境界は追加だけの新しいファイルで測る
+                    if lines == 1:
+                        self.write("src/t%02d.ts" % i, "base\nadded\n")
+                    else:
+                        self.write("src/n%02d.ts" % i, "".join("l%d\n" % n for n in range(lines)))
+                self.assertEqual(self.delta(tree)["delta_size_tier"], want)
+                for f in (self.root / "src").glob("n*.ts"):
+                    f.unlink()
+
+    def test_signals_in_the_delta_come_from_the_delta_only(self):
+        self.write("src/a.ts", "try {\n  run()\n} catch (e) {}\n")
+        tree = self.snapshot()
+        self.write("src/b.ts", "const password = load()\ndb.query('INSERT INTO t')\n")
+        out = self.triage("--since-tree", tree).stdout
+        whole = {line.split("\t")[0] for line in self.section(out, "## focus-signals")}
+        self.assertTrue({"error-handling", "security"} <= whole, whole)
+        delta = {line.split("\t")[0] for line in self.subsection(out, "focus-signals")}
+        self.assertIn("security", delta)
+        self.assertNotIn("error-handling", delta)
+        self.assertIn("db-write", {line.split("\t")[0] for line in self.subsection(out, "surface")})
+        self.assertIn("### red-flags", self.section(out, "## delta"))
+        self.assertIn("### explorer-signals", self.section(out, "## delta"))
+
+    def test_path_signals_in_the_delta_come_from_the_delta_only(self):
+        """パスの分類（CLASSIFIED）と新規ソースの判定（SRC_DIFF）に依るシグナルも delta で作り直す.
+
+        内容シグナルだけを見ると、入れ替えを消しても緑のまま（delta の観点・explorer の選定が diff 全体に戻り、
+        #313 で削りたかった体数がそのまま残る）.
+        """
+        self.write("src/big.ts", "".join("const x%d = 1\n" % i for i in range(600)))
+        self.write("lib/l.ts", "export const l = 1\n")
+        self.write("src/new.ts", "export const a = 1\n")
+        tree = self.snapshot()
+        self.write("src/new.ts", "export const a = 2\n")
+        out = self.triage("--since-tree", tree).stdout
+        whole_explorer = "\n".join(self.section(out, "## explorer-signals"))
+        delta_explorer = "\n".join(self.subsection(out, "explorer-signals"))
+        self.assertIn("large-file\tsrc/big.ts", whole_explorer)
+        self.assertIn("shared-module\tlib/l.ts", whole_explorer)
+        self.assertNotIn("big.ts", delta_explorer)
+        self.assertNotIn("lib/l.ts", delta_explorer)
+        self.assertIn("test-quality", {line.split("\t")[0] for line in self.section(out, "## focus-signals")})
+        self.assertNotIn("test-quality", {line.split("\t")[0] for line in self.subsection(out, "focus-signals")})
+
+    def test_the_whole_diff_output_does_not_change_with_since_tree(self):
+        """`## delta` を足しても、diff 全体の節は 1 バイトも変えない（関数化の回帰）."""
+        self.write("src/utils/a.ts", "try {\n  x()\n} catch (e) {}\n// note\n")
+        self.write("docs/g.md", "prose\n")
+        tree = self.snapshot()
+        self.write("src/b.ts", "const token = 1\n")
+        plain = self.triage().stdout
+        with_since = self.triage("--since-tree", tree).stdout
+        self.assertEqual(with_since.split("\n## delta\n")[0], plain.rstrip("\n"))
 
 
 class TriageSizeTierTest(DiffScriptTestBase):
@@ -651,10 +954,10 @@ class TriageSignalTest(DiffScriptTestBase):
         size = self._size_file()
         self.write("docs/spec.md", "rule\n")
         self.digest()
-        self.assertEqual(size.read_text(encoding="utf-8"), "doc_only=1\n")
+        self.assertEqual(size.read_text(encoding="utf-8"), "doc_only=1\nscope_mode=full\n")
         self.write("src/a.ts", "x\n")
         self.digest()
-        self.assertEqual(size.read_text(encoding="utf-8"), "doc_only=0\n")
+        self.assertEqual(size.read_text(encoding="utf-8"), "doc_only=0\nscope_mode=full\n")
 
     def test_ui_quality_fires_on_locale_files(self):
         """文言だけを変える diff でも ui-quality を起動する（GitHub issue #272）."""
@@ -965,6 +1268,63 @@ class TriageHostDepsTest(DiffScriptTestBase):
         self.write("pnpm-lock.yaml", "lockfileVersion: 9\n")
         rows = self.section(self.run_digest(), "## host-deps")
         self.assertIn("lockfile-changed\tpnpm-lock.yaml", rows)
+
+
+class SelfReviewStep1ArgsTest(unittest.TestCase):
+    """self-review Step 1 が `--since` / `--prior-findings` を語に分けて渡す（GitHub issue #313）.
+
+    Bash tool のシェルは利用者の既定（macOS では zsh）。zsh は引用していない展開を語に分けないので、
+    `${X:+--flag "$X"}` は `--flag <値>` の 1 語になり、triage-signals.sh は未知の引数で止まり、
+    prior-fixes.sh は `--extra` を黙って捨てていた。SKILL.md の行をそのまま stub に流して argv を見る.
+    """
+
+    SKILL = PLUGIN / "skills" / "self-review" / "SKILL.md"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        for name in ("triage-signals.sh", "prior-fixes.sh"):
+            stub = self.root / "scripts" / name
+            stub.parent.mkdir(parents=True, exist_ok=True)
+            stub.write_text("printf '%s\\n' \"$@\"\n", encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def command(self, marker: str) -> str:
+        """Step 1 のブロックから `marker` を含むコマンドを、`\\` の継続行ごと取り出す."""
+        lines = self.SKILL.read_text(encoding="utf-8").splitlines()
+        i = next(n for n, line in enumerate(lines) if marker in line)
+        cmd = [lines[i]]
+        while cmd[-1].rstrip().endswith("\\"):
+            i += 1
+            cmd.append(lines[i])
+        return "\n".join(cmd)
+
+    def argv(self, shell: tuple[str, ...], marker: str, since: str, prior: str) -> list[str]:
+        env = {"PATH": "/usr/bin:/bin", "CLAUDE_PLUGIN_ROOT": str(self.root), "BASE": "main",
+               "SINCE_ARG": since, "PRIOR_ARG": prior}
+        res = subprocess.run([*shell, "-c", self.command(marker)], capture_output=True, text=True,
+                             env=env, timeout=30)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout.splitlines()
+
+    def check(self, shell: tuple[str, ...]) -> None:
+        tree, prior = "a" * 40, "/x/prior findings.json"
+        self.assertEqual(self.argv(shell, "scripts/triage-signals.sh\"", tree, prior),
+                         ["--base", "main", "--since-tree", tree, "--prior-findings", prior])
+        self.assertEqual(self.argv(shell, "scripts/prior-fixes.sh\" match", tree, prior),
+                         ["match", "--extra", prior])
+        self.assertEqual(self.argv(shell, "scripts/triage-signals.sh\"", "", ""), ["--base", "main"])
+        self.assertEqual(self.argv(shell, "scripts/prior-fixes.sh\" match", "", ""), ["match"])
+
+    def test_args_split_under_bash(self):
+        self.check(("bash",))
+
+    def test_args_split_under_zsh(self):
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh が無い")
+        self.check(("zsh", "-f"))  # -f: 利用者の .zshenv を読ませない
 
 
 class TriageStartDirTest(DiffScriptTestBase):

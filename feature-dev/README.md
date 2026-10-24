@@ -154,13 +154,13 @@ tsc / lint / build では検知できない runtime 初期化バグ（DB client 
 
 - Step 0: code-review プラグインが有効かを確認（`scripts/plugin-enabled.sh`）。未インストール・無効時は **fail-fast**（Phase 5 までの成果物は維持。`_requirements` では `required: false` 宣言だが Phase 6 では事実上必須）
 - Step 1: 実装 diff を記録する。reviewer の観点は選ばない（self-review の triage に任せる）
-- Step 2: `Skill code-review:self-review --embed` を 1 回呼ぶ（`--embed` で self-review 終端の AskUserQuestion を skip）。初回は `--focus` を付けない — 付けると反証レイヤーと skeptic が `scope` でスキップされ、triage が出す観点（`layer-responsibility` など）も起動しない（GitHub issue #283）。BDD spec があれば `--spec=<path>` で照合元として渡す（Issue context / session-context は self-review が自分で読む）。`--focus` は Step 3 の再レビューだけで使う。出力は構造化 findings JSON ブロックを優先パース、無ければ markdown フォールバック（dual format）
-- Step 3: Generator-Verifier ループ。`BLOCKER`（any confidence）/ `CRITICAL && confidence ≥ 90` を auto-fix 対象とし、effort 別 max_iterations で fix → 再 review を反復。判断は `scripts/gv-loop.py` が持つ: 2 回目以降はループの起点からの差分（delta）の近くの対象だけで続け、delta の外の対象は `deferred` に回す。regression 検知（同一 fingerprint）/ budget で終了し、2 回目以降で上限の回は続けるかを聞く（GitHub issue #310）
-- Step 4: 集約結果を `[auto-fixed]` / `[persisting]` / `[deferred]` タグと範囲外の変更の場所つきで提示し、残課題はユーザー判断
+- Step 2: `Skill code-review:self-review --embed` を 1 回呼ぶ（`--embed` で self-review 終端の AskUserQuestion を skip）。初回は `--focus` を付けない — 付けると反証レイヤーと skeptic が `scope` でスキップされ、triage が出す観点（`layer-responsibility` など）も起動しない（GitHub issue #283）。BDD spec があれば `--spec=<path>` で照合元として渡す（Issue context / session-context は self-review が自分で読む）。`--focus` はどこでも付けない（再レビューは `--since` / `--prior-findings` で範囲を絞る / GitHub issue #313）。出力は構造化 findings JSON ブロックを優先パース、無ければ markdown フォールバック（dual format）
+- Step 3: Generator-Verifier ループ。`BLOCKER`（any confidence）/ `CRITICAL && confidence ≥ 90` を auto-fix 対象とし、effort 別 max_iterations で fix → 再 review を反復。判断は `scripts/gv-loop.py` が持つ: 2 回目以降はループの起点からの差分（delta）の近くの対象だけで続け、delta の外の対象は `deferred` に回して回をまたいで残す。再レビューには直前の修正の前の tree（`--since`）と全回の対象（`--prior-findings`）を渡し、self-review が delta を主に見る（GitHub issue #313）。regression 検知（同一 fingerprint）/ budget で終了し、2 回目以降で上限の回は続けるかを聞く（GitHub issue #310）
+- Step 4: 初回と各回の再レビューのレポートを合わせて集約し、`[auto-fixed]` / `[persisting]` / `[deferred]` タグと範囲外の変更の場所つきで提示し、残課題はユーザー判断
 
 ### Phase 6.9: レビュー後の変更の確認
 
-Phase 6 の最後のレビュー直後に作業ツリーを記録し（`scripts/review-snapshot.sh save`。未追跡ファイルを含み、ref も index も動かさない）、Phase 7 の前に差を取る。ユーザーの判断で入れた修正や別の決定の反映など、レビューを通っていない変更があれば、もう一度 self-review を回すか、静的オラクル（Phase 5.3）だけ回すか、未レビューとして締めるかを聞く（GitHub issue #276）。推奨は差の中身（`review-snapshot.sh diff`）で決め、どれも実行時の挙動を変えない変更（コメント・名前・テストの改名など。Phase 6.7 のコメント適用を含む）なら静的オラクルだけ、分岐・状態・入出力の契約を変えたものがあれば self-review を推奨にする（GitHub issue #304）。
+Phase 6 の最後のレビュー直後に作業ツリーを記録し（`scripts/review-snapshot.sh save`。未追跡ファイルを含み、ref も index も動かさない）、Phase 7 の前に差を取る。ユーザーの判断で入れた修正や別の決定の反映など、レビューを通っていない変更があれば、もう一度 self-review を回すか、静的オラクル（Phase 5.3）だけ回すか、未レビューとして締めるかを聞く（GitHub issue #276）。推奨は差の中身（`review-snapshot.sh diff`）で決め、どれも実行時の挙動を変えない変更（コメント・名前・テストの改名など。Phase 6.7 のコメント適用を含む）なら静的オラクルだけ、分岐・状態・入出力の契約を変えたものがあれば self-review を推奨にする（GitHub issue #304）。self-review を回す回は `--since=<記録した tree>` と、`gv-loop.py prior-findings` が書いた前回の対象（Step 4 で直すと決めた指摘と、Step 3 が走った回はループの残り）を `--prior-findings` で渡し、記録の後の変更（delta）を主に見る。未追跡のファイルの変更は self-review の対象外なので、Phase 7 に未レビューとして残す（GitHub issue #313）。
 
 ### Phase 7: Summary
 

@@ -125,7 +125,7 @@ Phase 1.7 は reviewer の構成を決めない。Phase 6 の初回 self-review 
 
 - **`--focus` を付けない理由**: self-review の `--focus` は「既に検証した観点の再評価を避ける」ための引数で、指定すると反証レイヤーと skeptic が `scope` でスキップされ、triage の `## focus-signals`（`layer-responsibility` など）も範囲外になる。Phase 6 の初回はその変更の最初のレビューなので、この前提が成り立たない。実測では feature-dev 経由の high 以上 5 回すべてで反証が `scope` でスキップされ、auto-fix 対象になる CRITICAL が反証を通らずに残った
 - **feature-dev が持つ情報の渡し方**: BDD spec は `--spec=<path>` で渡す（self-review の triage が spec-compliance を起動する）。Issue ファイル・`.claude/session-context.md` は self-review 側が自分で読んで spec-compliance の起動条件に使う
-- **`--focus` を使うのは G-V ループの再レビューだけ**（Section 10）。修正した指摘の観点を見直す回で、「既検証の再評価を避ける」本来の用途に当たる
+- **`--focus` はどの呼び出しでも付けない**。G-V ループの再レビュー（Section 10）は `--since` / `--prior-findings` で範囲を delta に絞り、観点と体数は self-review の triage が delta で選び直す（GitHub issue #313）。`--focus` で絞ると、修正が持ち込んだ別の観点の欠陥を誰も見ず、反証と skeptic も `scope` でスキップされる
 
 ## 7. 出力フォーマット
 
@@ -210,9 +210,9 @@ self-review 内部の confidence しきい値（BLOCKER は 60+、CRITICAL は 8
 
 ### Regression 検知と delta
 
-ループの状態と判定は `scripts/gv-loop.py` が持つ（状態は作業ツリーごとの git dir。手順は `review-loop.md` Step 3）。fingerprint は `file:line:focus` のタプル。**前回の対象と同じ fingerprint がまた出た場合は「自動 fix 不能」と判定し、即座にループを break してユーザに提示**する（再帰的に同じ修正を試みても無駄なため）。
+ループの状態と判定は `scripts/gv-loop.py` が持つ（状態は作業ツリーごとの git dir。手順は `review-loop.md` Step 3）。fingerprint は `file:line:focus` のタプル。**前の回（どの回でも）の対象と同じ指摘がまた出た場合（行はその後の修正で動いた分を写して比べる）は「自動 fix 不能」と判定し、即座にループを break してユーザに提示**する（再帰的に同じ修正を試みても無駄なため）。
 
-2 回目以降は、ループの起点から変えた行の近く（delta）にある対象だけでループを続ける。delta の外の対象は `deferred` として Step 4 に回す。再レビューは diff 全体を見直すので、delta で絞らないと修正と関係ない箇所の新しい指摘でループが延び、収束しない（GitHub issue #310）。
+2 回目以降は、ループの起点から変えた行の近く（delta）にある対象だけでループを続ける。delta の外の対象は `deferred` として Step 4 に回し、回をまたいで残す。再レビューは直前の修正からの delta を主に見る（`--since=<直前の修正の前の tree>` / GitHub issue #313）が、delta の外の指摘も出うるので、delta で絞らないと修正と関係ない箇所の新しい指摘でループが延び、収束しない（GitHub issue #310）。
 
 ### ループ終了条件
 
@@ -221,7 +221,7 @@ self-review 内部の confidence しきい値（BLOCKER は 60+、CRITICAL は 8
 1. auto-fix 対象（`BLOCKER` または `CRITICAL && conf ≥ 90`）が 0 件になった（`success`）
 2. 2 回目以降、残った対象がすべて delta の外（`deferred`）
 3. `current_iteration == max_iterations` に到達（`budget`）
-4. Regression 検知（前回の対象と同じ fingerprint が残存。`regression`）
+4. Regression 検知（前の回の対象と同じ指摘が残存。`regression`）
 5. メインスレッドが「修正不能」と判断した、または上限の回の確認で利用者が止めた（`manual`）
 
 ### Fix の責務分離

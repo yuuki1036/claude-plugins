@@ -5,6 +5,42 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.26.0] - 2026-10-24
+
+### Added
+
+- **`gv-loop.py review` が fix / ask の回に `since=<直前の修正の前の tree>` と `prior_findings=<path>` を出す**（GitHub issue #313）。
+  置き場所は自分専用の一時ディレクトリに限る（symlink・他人の持ち物・グループや他人が読み書きできる dir には書かず、ファイルは 0600。
+  書けない回は理由を WARN に出して `since=unavailable`）。ループを止めたときに消す
+- **`gv-loop.py prior-findings [--with-loop]`**: Phase 6.9 の再レビューに渡す前回の対象を書く（Step 4 で直すと決めた指摘と、
+  今回の run で Step 3 が走った回はループの deferred / remaining。状態は作業ツリーに残り続けるので、`--with-loop` なしでは読まない）。
+  行の無い指摘も受け、使えない項目は WARN を出して捨てる
+- **`review-snapshot.sh check` に `untracked_files=`**（未追跡の変更は self-review の対象外なので、Phase 7 に未レビューとして残す）
+
+### Changed
+
+- **G-V ループの再レビューを delta に絞った**（GitHub issue #313）。再レビューには `--focus` / `--exclude` を付けず、
+  `gv-loop.py review` が出す `since=<直前の修正の前の tree>` と `prior_findings=<全回の対象の JSON>` を `--since` / `--prior-findings` で渡す。
+  self-review は delta を主に見て、観点と体数を delta で選び直す（code-review の `--since` 対応版と合わせて更新する。
+  旧版の code-review は引数を知らないので diff 全体をフル構成で見直し、Step 4 にその旨を出す）
+- **`gv-loop.py`**: `target` に `focus` を持たせた。`deferred` を回をまたいで残し、直前の修正で動いた行へ写してから
+  今回の対象と突き合わせる（delta を主に見る再レビューは前の回の deferred を出し直さないので、上書きすると `success` で止まりえた）。
+  同じ指摘とみなすのは、写した後の行が同じか、行が近くて要旨も同じとき（近いだけでは別の指摘で deferred を捨てる）。修正がファイルごと消した deferred は落とす。
+  `regression` は前の回すべての対象を、その後の修正で動いた行へ写して突き合わせる（再レビューには全回の対象を渡すので、後の修正が先の修正を戻した回も止める）。
+  再レビューの `--spec` は target の観点によらず `BDD_SPEC_PATH` があれば渡す
+- **Phase 6 Step 4** は初回と各回の再レビューのレポートを合わせて読む。**Phase 6.7** は再レビューが走った回は diff 全体を精査する
+- **Phase 6.9** の「self-review をもう一度回す」は、記録した tree を `--since` で、`gv-loop.py prior-findings` が書いた前回の対象を
+  `--prior-findings` で渡す（書けなければどちらも付けない）。変わったファイルがすべて未追跡の回は self-review を推奨にしない。
+  Phase 6.7 / 6.9 は、今回の run で Step 3 が走った回だけループの状態を読む
+
+### Fixed
+
+- `gv-loop.py` は `"focus": null` を空のキーにする（`None` という観点名になっていた）。`file` に改行などの制御文字がある指摘は止める
+  （1 行 1 項目の出力に偽の `since=` / `prior_findings=` 行を差し込めた）。観点の空白は潰す
+- `review-snapshot.sh` は index の種を mtime ごと写す（`cp -p`）。コピーで mtime が今になると git の racy の判定が効かず、
+  同じ秒に同じサイズへ書き換えたファイルを「変わっていない」と読んで、古い中身の tree を作っていた
+- `review-snapshot.sh check` は rename を両側に分けて数える（`changed_files` と `untracked_files` の単位がずれ、`mv` した回を「全部未追跡」と読ませていた）
+
 ## [2.25.0] - 2026-10-23
 
 ### Added

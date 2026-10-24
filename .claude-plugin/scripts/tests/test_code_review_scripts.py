@@ -250,12 +250,12 @@ class CleanupTest(ScriptTestBase):
     def test_success_removes_every_temp_file_of_the_review(self):
         """**掃除の対象は種別を増やすたびに漏れる**（残ると TMPDIR に溜まり続ける）.
 
-        prctx / diff / agentctx / oracles / size / corelist / pastrev を実在させてから publish し、全部消えることを見る。
+        prctx / diff / delta / agentctx / oracles / size / corelist / pastrev を実在させてから publish し、全部消えることを見る。
         """
         ts = self.full_run()
         # パスは `lib/review-paths.sh` に問い合わせる（命名規則をテスト側に複製しない）
         made = []
-        for kind in ("prctx", "diff", "agentctx", "oracles", "size", "corelist", "pastrev"):
+        for kind in ("prctx", "diff", "delta", "agentctx", "oracles", "size", "corelist", "pastrev"):
             proc = subprocess.run(
                 ["bash", "-c", '. "$1/scripts/lib/review-paths.sh"; review_paths_init ""; '
                                'review_path "$2"', "_", str(PLUGIN), kind],
@@ -2285,6 +2285,78 @@ class AppendixCountTest(ScriptTestBase):
         p = self.last_payload()
         self.assertNotIn("appendix", p, "空のオブジェクトを捏造している")
         self.assertIn("payload:appendix", p["measurement_gaps"])
+
+
+class ReviewScopePublishTest(ScriptTestBase):
+    """publish が範囲（`review_scope`）を triage-signals.sh の size ファイルから作る（GitHub issue #313）.
+
+    mode はファイルの有無ではなく `scope_mode=` の行で持つ。書くのは triage-signals.sh だけで、呼び出し側が
+    書いた値は捨てる。
+    """
+
+    def _size_file(self) -> Path:
+        proc = subprocess.run(
+            ["bash", "-c", '. "$1/scripts/lib/review-paths.sh"; review_paths_init ""; '
+                           'review_path size', "_", str(PLUGIN)],
+            cwd=self.root, capture_output=True, text=True, env=self._env())
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return Path(proc.stdout.strip())
+
+    def _scope(self, size_text: str | None, **payload_extra):
+        if size_text is not None:
+            self._size_file().write_text(size_text, encoding="utf-8")
+        r = self.publish(dict(BASE_PAYLOAD, **payload_extra))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return self.last_payload().get("review_scope")
+
+    def test_a_delta_run_carries_its_size(self):
+        got = self._scope("doc_only=0\nscope_mode=delta\ndelta_lines=12\ndelta_size_tier=small\n")
+        self.assertEqual(got, {"schema": 1, "mode": "delta", "delta_lines": 12, "delta_size_tier": "small"})
+
+    def test_a_full_run_carries_only_the_mode(self):
+        """full の回に delta の行が混ざっていても載せない（delta の値は delta の回だけ）."""
+        got = self._scope("doc_only=0\nscope_mode=full\ndelta_lines=12\ndelta_size_tier=small\n")
+        self.assertEqual(got, {"schema": 1, "mode": "full"})
+
+    def test_no_scope_line_means_no_review_scope(self):
+        """行が無い回（旧版の triage・triage を経ていない回）は載せない。gap も立てない."""
+        for text in ("doc_only=0\n", None, "doc_only=0\nscope_mode=partial\n"):
+            with self.subTest(text=text):
+                self.assertIsNone(self._scope(text))
+                self.assertNotIn("payload:review_scope", self.last_payload().get("measurement_gaps") or [])
+
+    def test_values_outside_the_vocabulary_are_dropped(self):
+        for lines, tier in (("abc", "small"), ("１２", "small"), ("-1", "small"), ("12", "huge")):
+            with self.subTest(lines=lines, tier=tier):
+                got = self._scope("scope_mode=delta\ndelta_lines=%s\ndelta_size_tier=%s\n" % (lines, tier))
+                self.assertEqual(got.get("mode"), "delta")
+                self.assertEqual("delta_lines" in got, lines == "12")
+                self.assertEqual("delta_size_tier" in got, tier == "small")
+
+    def test_a_review_scope_written_by_the_caller_is_discarded(self):
+        claimed = {"schema": 1, "mode": "delta", "delta_lines": 3}
+        self.assertIsNone(self._scope(None, review_scope=claimed))
+        self.assertEqual(self._scope("scope_mode=full\n", review_scope=claimed), {"schema": 1, "mode": "full"})
+
+    def test_triage_then_publish_end_to_end(self):
+        """triage-signals.sh の `--since-tree` の回は delta、続けて付けない回は full（前の回の値を引きずらない）."""
+        with open(self.root / ".git" / "info" / "exclude", "a", encoding="utf-8") as f:
+            f.write("tmp/\n")
+        (self.root / "a.ts").write_text("x\n", encoding="utf-8")
+        env = self._env()
+        idx_env = self._env(GIT_INDEX_FILE=str(self.review_config / "snap-index"))
+        subprocess.run(["git", "add", "-A"], cwd=self.root, env=idx_env, check=True, capture_output=True)
+        tree = subprocess.run(["git", "write-tree"], cwd=self.root, env=idx_env, check=True, capture_output=True,
+                              text=True).stdout.strip()
+        (self.root / "a.ts").write_text("y\nz\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=self.root, env=env, check=True, capture_output=True)
+        triage = PLUGIN / "scripts" / "triage-signals.sh"
+        for args, want in ((("--since-tree", tree), "delta"), ((), "full")):
+            with self.subTest(want=want):
+                r = subprocess.run(["bash", str(triage), "--base", "HEAD", *args], cwd=self.root, env=env,
+                                   capture_output=True, text=True, timeout=60)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(self._scope(None)["mode"], want)
 
 
 class AppendixRetroTest(ScriptTestBase):
@@ -4735,6 +4807,14 @@ class RetroAgentFieldDenominatorTest(RetroFixture):
         out = self._json()
         self.assertEqual(out["round2_scope"], 1, "記録の無い旧版を分母に入れている")
         self.assertEqual(out["round2_fired"], 1)
+
+    def test_round2_scope_drops_rereview_and_delta_runs(self):
+        """他の動的層と同じく、再レビューと delta の回は round2 の分母に入れない（#313）."""
+        re_run = dict(self._row({"round2": 1}), invocation={"via": "skill-tool", "parent": None, "rereview": True})
+        delta = dict(self._row({"round2": 1}), review_scope={"schema": 1, "mode": "delta"})
+        self._events([self._row({"round2": 0}), re_run, delta])
+        out = self._json()
+        self.assertEqual((out["round2_scope"], out["round2_fired"], out["round2_dropped_rereview"]), (1, 0, 2))
 
     def test_round2_fired_counts_positive_values_only(self):
         """発火は「1 本以上起動した回」。0 本の回は分母に残して分子から外す."""
@@ -7762,6 +7842,169 @@ class RetroSynthesisDominanceTest(RetroFixture):
         j = json.loads(self._out("--json"))
         self.assertEqual(j["synthesis_dominance"]["n"], 0)
         self.assertIsNone(j["synthesis_dominance"]["median_pct"])
+
+
+class RetroDeltaScopeTest(RetroFixture):
+    """delta に絞った回（`review_scope.mode == "delta"`）を主層・帯の表・価値率から外す（GitHub issue #313）."""
+
+    _NOTE = "`（delta）` の行は self-review を `--since` で delta に絞った回"
+
+    def _row(self, gen: str, reported: int, recommended: int) -> dict:
+        return {"effort": "high", "size_tier": "medium", "measurement_gaps": [],
+                "models": self._models("claude-%s" % gen),
+                "blocker_count": 0, "critical_count": 0, "major_count": reported, "minor_count": 0,
+                "appendix": {"schema": 1, "listed": 3, "recommended": recommended}}
+
+    @staticmethod
+    def _delta(row: dict, mode="delta") -> dict:
+        return dict(row, review_scope={"schema": 1, "mode": mode, "delta_lines": 10, "delta_size_tier": "small"})
+
+    @staticmethod
+    def _rereview(row: dict) -> dict:
+        return dict(row, invocation={"via": "skill-tool", "parent": "feature-dev:feature-dev", "rereview": True})
+
+    def _out(self) -> str:
+        r = self.run_script(RETRO, env=self._env())
+        self.assertNotIn("Traceback", r.stderr, "retro が例外で死んでいる")
+        self.assertTrue(r.stdout.strip(), "stdout が空（沈黙死）")
+        return r.stdout
+
+    def _json(self) -> dict:
+        return json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+
+    def test_delta_runs_do_not_flip_the_main_layer(self):
+        """#296 と同じ形: 初回だけなら 4/24 = 17% で鳴らないが、0 件の delta の回を混ぜると鳴る."""
+        rows = [self._row("opus-5-5", 0, 0) for _ in range(4)] \
+             + [self._row("opus-5-5", 1, 0) for _ in range(20)] \
+             + [self._delta(self._row("opus-5-5", 0, 0))]
+        self._events(rows)
+        out = self._out()
+        self.assertNotIn("真の空振り率", self.signals(out))
+        self.assertIn("| opus-5-5 | 24 | 4 | 0 | 4（17%） |", out)
+        self.assertIn("| opus-5-5（delta） | 1 | 1 | 0 | 1（100%） |", out)
+        self.assertIn(self._NOTE, out)
+        self.assertEqual(self._json()["appendix_by_gen"]["opus-5-5（delta）"]["n"], 1)
+
+    def test_the_signal_names_the_delta_exclusion(self):
+        rows = [self._row("opus-4-8", 0, 0) for _ in range(5)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)] \
+             + [self._delta(self._row("opus-4-8", 0, 0)) for _ in range(2)]
+        self._events(rows)
+        sig = self.signals(self._out())
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", sig)
+        self.assertIn("delta に絞った 2 件は判定から外した（#313）", sig)
+
+    def test_full_missing_or_unknown_scope_stays_in_the_main_layer(self):
+        """`mode` が full・語彙外・鍵なし・dict でない回は diff 全体を見た回として主層に置く."""
+        base = self._row("opus-4-8", 0, 0)
+        rows = [self._delta(base, "full"), self._delta(base, "partial"), dict(base, review_scope="delta"),
+                dict(base, review_scope={"schema": 1}), dict(base)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", out)
+        self.assertNotIn("（delta）", out)
+        self.assertNotIn(self._NOTE, out)
+
+    def test_a_delta_rereview_is_a_rereview_row(self):
+        """G-V ループの delta の回は再レビューの行に入る（再レビューの印が優先）."""
+        self._events([self._rereview(self._delta(self._row("opus-5-5", 0, 0))), self._row("opus-5-5", 1, 0)])
+        out = self._out()
+        self.assertIn("| opus-5-5（再レビュー） | 1 |", out)
+        self.assertNotIn("（delta）", out)
+
+    def test_delta_runs_are_kept_out_of_the_size_tier_tables(self):
+        """体数を delta の帯で決めた回は、payload の size_tier（diff 全体の帯）で層別する表に入れない."""
+        def fleet_row(agents, fleet, scope=None):
+            row = {"effort": "xhigh", "size_tier": "large", "measurement_gaps": [],
+                   "agents": {"explorer": 0, "reviewer": agents, "specialist": 0, "round2": 0, "verify": 0},
+                   "duration_fleet_min": fleet}
+            return self._delta(row) if scope else row
+        self._events([fleet_row(8, 40), fleet_row(8, 44), fleet_row(3, 5, scope=True)])
+        j = self._json()
+        self.assertEqual([(t["key"], t["n"], t["agents_median"]) for t in j["tiers"]], [("xhigh/large", 2, 8)])
+        self.assertEqual(j["agents_fleet_n"], 2)
+        self.assertIn("_delta に絞った 1 件は size_tier で層別する集計から外した", self._out())
+
+    def test_delta_runs_are_kept_out_of_the_per_agent_table(self):
+        rows = [self._tokens("large", 900.0, 3), self._tokens("large", 1100.0, 3),
+                self._delta(self._tokens("large", 90.0, 3))]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("| high/large | 2 | 333 k |", out)
+        self.assertIn("_delta に絞った 1 件は 1 体あたり・往復の集計から外した", out)
+
+    def test_a_delta_only_window_still_names_the_exclusion(self):
+        """delta の回だけの窓では 1 体あたりの表が空になる。除外を書かないと、原因を計測の故障と読ませる."""
+        self._events([self._delta(self._tokens("large", 90.0, 3))])
+        out = self._out()
+        self.assertIn("**1 体あたり cache_read**: 実測 0 件", out)
+        self.assertIn("_delta に絞った 1 件は 1 体あたり・往復の集計から外した", out)
+
+    def test_rereview_and_delta_runs_are_kept_out_of_the_value_rates(self):
+        """再レビューと delta の回は対象の選び方が違うので、反証などの発火率・価値率の分母に入れない."""
+        fired = {"fired": True, "skip_reason": None, "gate_schema": 3, "calibration_schema": 3,
+                 "confirmed": 1, "refuted": 0, "uncertain": 0, "severity_inflated": 0, "contested": 0}
+        skipped = {"fired": False, "skip_reason": "scope", "gate_schema": 3, "calibration_schema": 3}
+        base = dict(self._row("opus-5-5", 1, 0), adversarial_verify=dict(fired))
+        self._events([base, base, self._delta(base), self._rereview(base),
+                      self._rereview(dict(base, adversarial_verify=dict(skipped)))])
+        adv = self._json()["adversarial_verify"]
+        self.assertEqual((adv["n"], adv["fired"], adv["dropped_rereview"]), (2, 2, 2))
+        self.assertEqual(adv["skips"].get("scope-rereview"), 1, "再レビューの scope スキップは従来どおり数える")
+        self.assertIn("再レビュー・delta で除外 2", self._out())
+
+    def test_rereview_cost_is_split_by_kind(self):
+        def tok(sub_out, scope=False, rereview=False):
+            row = self._tokens_full(sub_out, 3)
+            row = self._delta(row) if scope else row
+            return self._rereview(row) if rereview else row
+        self._events([tok(500.0), tok(700.0), tok(600.0, rereview=True), tok(200.0, scope=True, rereview=True),
+                      tok(100.0, scope=True)])
+        cost = {r["kind"]: r for r in self._json()["tokens"]["rereview_cost"]}
+        self.assertEqual({k: (v["n"], v["sub_output_k_median"]) for k, v in cost.items()},
+                         {"初回": (2, 600.0), "再レビュー・全体": (1, 600.0), "再レビュー・delta": (1, 200.0),
+                          "delta": (1, 100.0)})
+        out = self._out()
+        self.assertIn("**再レビューの費用**", out)
+        self.assertIn("| high/medium | 再レビュー・delta | 1 | 200 k |", out)
+
+    def test_runs_without_sub_values_do_not_open_the_cost_table(self):
+        """値の無い回でバケツを作ると、n=0 の行だけで表が出る（再レビューの回が 1 件あるだけで）."""
+        blank = self._rereview(self._tokens_full(None, None, sub_cache_read_k=None))
+        self._events([self._tokens_full(500.0, 3), self._tokens_full(700.0, 3), blank])
+        self.assertEqual(self._json()["tokens"]["rereview_cost"], [])
+        self.assertNotIn("**再レビューの費用**", self._out())
+
+    def test_no_rereview_cost_table_without_rereview_or_delta_runs(self):
+        """黙る条件: 初回だけの母集団では表を出さない（対: 上のテストは出る）."""
+        self._events([self._tokens_full(500.0, 3), self._tokens_full(700.0, 3)])
+        self.assertEqual(self._json()["tokens"]["rereview_cost"], [])
+        self.assertNotIn("**再レビューの費用**", self._out())
+
+    def test_delta_rows_are_split_in_the_yield_tables(self):
+        sevs = ("blocker", "critical", "major", "minor")
+        def counted(row):
+            return dict(row, severity_threshold="MAJOR",
+                        pre_adjust_counts=dict({k: 0 for k in sevs}, schema=2, major=1),
+                        below_threshold_counts=dict({k: 0 for k in sevs}, schema=1))
+        self._events([counted(self._row("opus-4-8", 1, 0)) for _ in range(2)]
+                     + [self._delta(counted(self._row("opus-4-8", 0, 0)))])
+        out = self._out()
+        self.assertIn("- schema>=2/threshold=MAJOR: n=2 / 検出", out)
+        self.assertIn("- schema>=2/threshold=MAJOR/delta: n=1 / 検出", out)
+        self.assertIn("delta", "\n".join(l for l in out.splitlines() if "本文を書いた" in l), "検出の内訳も delta を分ける")
+
+    def test_delta_runs_are_kept_out_of_the_turn_distribution(self):
+        a = self._tokens("large", 900.0, 3)
+        a["tokens"]["sub_turns"] = [5, 5, 5]
+        d = self._delta(self._tokens("large", 90.0, 3))
+        d["tokens"]["sub_turns"] = [1, 1, 1]
+        self._events([a, d])
+        out = self._out()
+        rows = [l for l in out.splitlines() if l.startswith("| high/large |") and l.count("|") == 7]
+        self.assertEqual(len(rows), 1, out)
+        self.assertTrue(rows[0].startswith("| high/large | 1 | 3 | 5 |"), rows[0])
 
 
 class RetroAppendixLayerTest(RetroFixture):

@@ -166,11 +166,11 @@ class PluginEnabledTest(unittest.TestCase):
 
 
 class InitialSelfReviewScopeTest(unittest.TestCase):
-    """Phase 6 の初回 self-review に `--focus` を渡さない（GitHub issue #283）.
+    """Phase 6 の self-review に `--focus` を渡さない（GitHub issue #283 / #313）.
 
     `--focus` を付けると self-review は反証レイヤーと skeptic を `scope` でスキップし、triage が出す観点
-    （`layer-responsibility` など）も起動しない。初回は観点選定を code-review の triage に任せ、
-    `--focus` は G-V ループの再レビュー（既検証の観点の見直し）だけで使う。
+    （`layer-responsibility` など）も起動しない。初回は観点選定を code-review の triage に任せ、G-V ループの
+    再レビューは `--since` / `--prior-findings` で範囲を delta に絞る（観点と体数は triage が delta で選び直す）。
     """
 
     SKILL = REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
@@ -189,10 +189,21 @@ class InitialSelfReviewScopeTest(unittest.TestCase):
         self.assertFalse([l for l in args if l.startswith("- `--focus")], "初回の self-review に --focus を渡している")
         self.assertTrue([l for l in args if "`--embed`" in l])
 
-    def test_re_review_keeps_focus(self):
-        """再レビューは既検証の観点の見直しなので `--focus` を使う（初回の禁止を広げすぎない）."""
+    def test_re_review_narrows_by_since_not_focus(self):
+        """再レビューは `--since` / `--prior-findings` で範囲を絞り、`--focus` を付けない（GitHub issue #313）.
+
+        self-review 側が引数の名前を変えたらここで気づけるよう、self-review の宣言とも突き合わせる.
+        """
         loop = self.section(self.REVIEW_LOOP.read_text(), "5. **Re-review**", "6. Return to step 1")
-        self.assertIn("`--focus <target の focus 集合>`", loop)
+        self.assertIn("`--since=<since>`", loop)
+        self.assertIn("`--prior-findings=<prior_findings>`", loop)
+        self.assertIn("`since=unavailable`", loop, "since を用意できない回の扱いが無い")
+        self.assertNotIn("`--focus <", loop)
+        self.assertNotIn("`--exclude <", loop)
+        self.assertIn("`**範囲**:`", loop, "旧版の code-review を見分ける手順が無い")
+        self_review = (REPO / "code-review" / "skills" / "self-review" / "SKILL.md").read_text()
+        self.assertIn("**`--since=<tree>` / `--prior-findings=<path>`（", self_review, "self-review の引数から --since が消えた")
+        self.assertIn("**範囲**:", self_review, "self-review のレポートに範囲の行が無い")
 
     def test_re_review_declares_itself(self):
         """再レビューは `--rereview` を渡し、計測で初回のレビューと分けて数えさせる（GitHub issue #296）.
@@ -300,12 +311,12 @@ class SummaryReadingGuideTest(unittest.TestCase):
         self.assertIn("snapshot=missing", step4, "記録が取れなかった回に締めの行へ倒す条件が無い")
 
     def test_second_self_review_passes_base_only(self):
-        """読み合わせの後の 2 回目は修正確認の再レビューではない（#300）。`--embed` / `--focus` / `--rereview` を付けない."""
+        """読み合わせの後の 2 回目は修正確認の再レビューではない（#300 / #313）。`--embed` / `--focus` / `--rereview` / `--since` を付けない."""
         rerun = self.second_review_branches()["あり"]
         self.assertIn("`code-review:self-review`", rerun)
         self.assertIn("引数は base だけ", rerun)
         self.assertIn("省かない", rerun, "2 回目の self-review の定型レポートと publish を省かない旨が消えた（#232 / #250）")
-        for flag in ("--embed", "--focus", "--rereview"):
+        for flag in ("--embed", "--focus", "--rereview", "--since", "--prior-findings"):
             mentions = [s for s in rerun.split("。") if flag in s]
             self.assertTrue(mentions, f"{flag} を付けないことが書かれていない")
             for s in mentions:
@@ -755,6 +766,16 @@ class PostReviewChangeTest(unittest.TestCase):
         self.assertLess(p.index('review-snapshot.sh" diff'), p.index("`AskUserQuestion`"),
                         "中身を読む前に推奨を決めて聞いている")
 
+    def test_rerun_narrows_by_since_and_keeps_untracked_as_unreviewed(self):
+        """6.9 の回し直しは記録した tree を `--since` で渡し、未追跡の変更は Phase 7 に残す（GitHub issue #313）."""
+        p = self.phase69()
+        self.assertIn("`--since=<check が出した snapshot>`", p)
+        self.assertNotIn("差分だけを self-review に通すことはできない", p)
+        self.assertIn("`untracked_files=`", p)
+        skill = self.SKILL.read_text()
+        p7 = skill[skill.index("## Phase 7"):]
+        self.assertIn("未追跡 N ファイル（self-review の対象外）", p7)
+
     def test_recommendation_is_not_fixed_to_self_review(self):
         p = self.phase69()
         self.assertNotIn("回す（推奨）", p, "self-review を推奨に固定している")
@@ -820,6 +841,51 @@ class ReviewSnapshotTest(unittest.TestCase):
         self.run_snap("save")
         (self.root / "spec.md").unlink()
         self.assertEqual(self.run_snap("check")["changed_files"], "1")
+
+    def test_untracked_changes_are_counted_apart(self):
+        """未追跡の変更は self-review の diff に入らないので別に数える（Phase 6.9 が Phase 7 に残す / #313）."""
+        self.run_snap("save")
+        (self.root / "spec.md").write_text("rule 1\nrule 2 changed\n", encoding="utf-8")
+        self.assertEqual(self.run_snap("check")["untracked_files"], "0", "追跡済みの編集を未追跡に数えた")
+        (self.root / "new.md").write_text("added\n", encoding="utf-8")
+        got = self.run_snap("check")
+        self.assertEqual((got["changed_files"], got["untracked_files"]), ("2", "1"))
+
+    def test_a_same_size_rewrite_with_the_same_mtime_is_seen(self):
+        """index の種を mtime ごと写さないと、git の racy の判定が効かず、同じ秒に同じサイズへ書き換えた
+        ファイルを「変わっていない」と読む（G-V ループの行の写像のテストが、ときどき落ちていた）.
+
+        秒が揃うかは運なので、ファイルと index の mtime を揃え、ctime を比べない設定にして確実に作る.
+        """
+        self.git("config", "core.trustctime", "false")
+        spec = self.root / "spec.md"
+        before = os.stat(spec)
+        self.run_snap("save")
+        spec.write_text("rule 1\nrule X\n", encoding="utf-8")  # 同じサイズ
+        os.utime(spec, ns=(before.st_atime_ns, before.st_mtime_ns))
+        os.utime(self.root / ".git" / "index", ns=(before.st_atime_ns, before.st_mtime_ns))
+        self.assertEqual(self.run_snap("check")["changed_files"], "1")
+
+    def test_untracked_files_is_zero_without_changes(self):
+        (self.root / "draft.md").write_text("untracked before save\n", encoding="utf-8")
+        self.run_snap("save")
+        self.assertEqual(self.run_snap("check")["untracked_files"], "0", "保存前からある未追跡を変更に数えた")
+
+    def test_a_rename_is_not_counted_as_all_untracked(self):
+        """`mv` した回は、追跡済みファイルの削除（self-review の diff に入る）と未追跡の新しい名前の 2 つ。
+        rename を 1 つに数えると `changed_files == untracked_files` になり、6.9 が「全部未追跡」と読む."""
+        self.run_snap("save")
+        (self.root / "spec.md").rename(self.root / "renamed.md")
+        got = self.run_snap("check")
+        self.assertEqual((got["changed_files"], got["untracked_files"]), ("2", "1"))
+
+    def test_untracked_before_save_is_not_counted_next_to_a_tracked_edit(self):
+        """変更が 0 件の回は突き合わせまで届かない。追跡済みの編集と並べて、保存前からある未追跡を数えないことを見る."""
+        (self.root / "draft.md").write_text("untracked before save\n", encoding="utf-8")
+        self.run_snap("save")
+        (self.root / "spec.md").write_text("rule 1\nrule 2 changed\n", encoding="utf-8")
+        got = self.run_snap("check")
+        self.assertEqual((got["changed_files"], got["untracked_files"]), ("1", "0"))
 
     def test_ignored_files_are_not_counted(self):
         self.run_snap("save")
@@ -924,6 +990,11 @@ class GvLoopTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.env = scrub()
+        # 再レビューに渡す前回の対象（`prior_findings`）は TMPDIR に書くので、使い捨ての dir に向ける
+        tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.tmpdir = Path(tmp_dir.name)
+        self.env["TMPDIR"] = str(self.tmpdir)
         for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "t"]):
             self.git(*args)
         self.write_lines("a.txt", [f"line {i}" for i in range(1, self.LINES + 1)])
@@ -991,6 +1062,312 @@ class GvLoopTest(unittest.TestCase):
         got = self.start(3, ("MAJOR", 100, "a.txt", 5, "security"), ("CRITICAL", 80, "a.txt", 6, "security"))
         self.assertEqual((got["action"], got["reason"]), ("stop", "success"))
         self.assertNotIn("notice", got)
+        self.assertNotIn("since", got, "止める回に再レビューの引数を出した")
+
+    def state(self) -> dict:
+        gd = self.git("rev-parse", "--absolute-git-dir").strip()
+        return json.loads((Path(gd) / "feature-dev-loop-state.json").read_text(encoding="utf-8"))
+
+    def test_fix_hands_since_and_prior_findings_for_the_rereview(self):
+        """再レビューを delta に絞る材料（GitHub issue #313）: 修正前の tree と、前回の対象の JSON."""
+        got = self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.assertEqual(got["action"], "fix")
+        self.assertRegex(got["since"], r"^[0-9a-f]{40,64}$")
+        self.assertEqual(got["since"], self.state()["iterations"][-1]["pre_fix_tree"])
+        self.assertTrue(got["prior_findings"].startswith(str(self.tmpdir)))
+        self.assertEqual(json.loads(Path(got["prior_findings"]).read_text(encoding="utf-8")),
+                         [{"file": "a.txt", "line": 10, "focus": "bug-detection", "title": "t1"}])
+        self.assertEqual(self.state()["iterations"][-1]["targets"][0]["focus"], "bug-detection")
+
+    def test_prior_findings_accumulate_every_round_without_duplicates(self):
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        got = self.review(("BLOCKER", 70, "a.txt", 12, "security"), ("BLOCKER", 70, "a.txt", 12, "security"))
+        self.assertEqual(got["action"], "fix")
+        self.assertEqual([(i["line"], i["focus"]) for i in
+                          json.loads(Path(got["prior_findings"]).read_text(encoding="utf-8"))],
+                         [(10, "bug-detection"), (12, "security")])
+
+    def test_ask_also_hands_since(self):
+        self.start(2, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        got = self.review(("BLOCKER", 70, "a.txt", 12, "security"))
+        self.assertEqual(got["action"], "ask")
+        self.assertIn("prior_findings", got)
+        self.assertRegex(got["since"], r"^[0-9a-f]{40,64}$")
+
+    def test_since_is_unavailable_when_prior_findings_cannot_be_written(self):
+        """空白を含む置き場所・ディレクトリを作れない回は、--since も渡さない（diff 全体に戻す）."""
+        spaced = self.tmpdir / "a b"
+        spaced.mkdir()
+        blocker = self.tmpdir / "blocked"
+        blocker.mkdir()
+        (blocker / ("feature-dev-%d" % os.getuid())).write_text("x", encoding="utf-8")
+        for name, tmp in (("space", spaced), ("file", blocker)):
+            with self.subTest(name):
+                self.env["TMPDIR"] = str(tmp)
+                got = self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+                self.assertEqual((got["action"], got["since"]), ("fix", "unavailable"))
+                self.assertNotIn("prior_findings", got)
+
+    def test_deferred_outlives_a_rereview_that_does_not_report_it_again(self):
+        """delta を主に見る再レビューは delta の外の指摘を出し直さない。前の回の deferred を残す（#313）."""
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        got = self.review(("BLOCKER", 70, "a.txt", 40, "security"), ("BLOCKER", 70, "a.txt", 12, "security"))
+        self.assertEqual(got["action"], "fix")
+        self.assertEqual([r[1] for r in self.rows(got, "deferred")], ["a.txt:40:security"])
+        self.edit(12)
+        got = self.review()
+        self.assertEqual((got["action"], got["reason"]), ("stop", "deferred"))
+        self.assertEqual([r[1] for r in self.rows(got, "deferred")], ["a.txt:40:security"])
+        self.assertEqual(self.run_loop("summary")["deferred"], "1")
+
+    def test_a_deferred_reported_again_is_listed_once(self):
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        self.review(("BLOCKER", 70, "a.txt", 40, "security"), ("BLOCKER", 70, "a.txt", 12, "security"))
+        self.edit(12)
+        got = self.review(("BLOCKER", 70, "a.txt", 40, "security"))
+        self.assertEqual((got["action"], got["reason"]), ("stop", "deferred"))
+        self.assertEqual([r[1] for r in self.rows(got, "deferred")], ["a.txt:40:security"])
+
+    def insert_lines(self, after: int, count: int, name: str = "a.txt") -> None:
+        path = self.root / name
+        lines = path.read_text(encoding="utf-8").splitlines()
+        lines[after:after] = [f"inserted {i}" for i in range(count)]
+        self.write_lines(name, lines)
+
+    def test_a_deferred_moved_by_the_fix_is_listed_once(self):
+        """修正が上の行を足すと、出し直された同じ指摘は別の fingerprint になる。古い行を写してから突き合わせる."""
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        self.review(("BLOCKER", 70, "a.txt", 40, "security"), ("BLOCKER", 70, "a.txt", 12, "security"))
+        self.edit(12)
+        self.insert_lines(12, 8)  # 40 行目が 48 行目へ動く（DELTA_MARGIN より大きくずらす）
+        got = self.review(("BLOCKER", 70, "a.txt", 48, "security"))
+        self.assertEqual((got["action"], got["reason"]), ("stop", "deferred"))
+        self.assertEqual([r[1] for r in self.rows(got, "deferred")], ["a.txt:48:security"])
+        self.assertEqual(self.run_loop("summary")["deferred"], "1")
+
+    def test_a_carried_deferred_follows_the_lines_the_fix_moved(self):
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        self.review(("BLOCKER", 70, "a.txt", 40, "security"), ("BLOCKER", 70, "a.txt", 12, "security"))
+        self.edit(12)
+        self.insert_lines(12, 3)
+        got = self.review()
+        self.assertEqual([r[1] for r in self.rows(got, "deferred")], ["a.txt:43:security"])
+
+    def test_a_target_of_an_earlier_round_reported_again_is_a_regression(self):
+        """再レビューには全回の対象を渡すので、後の修正が先の修正を戻した回も regression で止める."""
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        self.assertEqual(self.review(("BLOCKER", 70, "a.txt", 12, "security"))["action"], "fix")
+        self.edit(12)
+        got = self.review(("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.assertEqual((got["action"], got["reason"]), ("stop", "regression"))
+
+    def test_since_of_a_later_round_is_the_tree_before_that_fix(self):
+        """delta は直前の修正からの差分。ループの起点の tree を渡すと、前の回の修正を毎回見直す."""
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        res = subprocess.run(["bash", str(SNAPSHOT), "tree"], cwd=self.root, capture_output=True, text=True,
+                             env=self.env, timeout=60)
+        before = res.stdout.strip().removeprefix("snapshot=")
+        got = self.review(("BLOCKER", 70, "a.txt", 12, "security"))
+        self.assertEqual(got["since"], before)
+        self.assertNotEqual(got["since"], self.state()["start_tree"])
+
+    def test_null_focus_is_an_empty_key(self):
+        """`"focus": null` を `None` という観点名にしない（再レビューで割り当て先が決まらなくなる）."""
+        self.run_loop("init", "--max", "3")
+        stdin = json.dumps({"findings": [{"severity": "BLOCKER", "confidence": 70, "focus": None,
+                                          "file": "a.txt", "line": 10, "title": "x"}]})
+        self.assertEqual([r[1] for r in self.rows(self.run_loop("review", stdin=stdin), "target")], ["a.txt:10:"])
+
+    def private_dir(self) -> Path:
+        return self.tmpdir / ("feature-dev-%d" % os.getuid())
+
+    def test_prior_findings_are_private(self):
+        got = self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        path = Path(got["prior_findings"])
+        self.assertEqual(path.parent, self.private_dir())
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(path.parent).st_mode & 0o777, 0o700)
+
+    def test_prior_findings_are_not_written_into_a_dir_someone_else_can_reach(self):
+        """TMPDIR が無い環境は共有の /tmp に落ちる。先に作られた dir や symlink に書かず、diff 全体に戻す."""
+        elsewhere = self.tmpdir / "elsewhere"
+        elsewhere.mkdir()
+        os.chmod(elsewhere, 0o777)
+
+        def open_mode() -> None:
+            self.private_dir().mkdir()
+            os.chmod(self.private_dir(), 0o777)
+
+        for name, make in (("symlink", lambda: self.private_dir().symlink_to(elsewhere)), ("open mode", open_mode)):
+            with self.subTest(name):
+                make()
+                self.run_loop("init", "--max", "3")
+                res = self.raw("review", stdin=self.findings(("BLOCKER", 70, "a.txt", 10, "bug-detection")))
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertIn("since=unavailable", res.stdout.splitlines())
+                self.assertIn("WARN:", res.stderr)
+                self.assertEqual(list(elsewhere.iterdir()), [])
+                if self.private_dir().is_symlink():
+                    self.private_dir().unlink()
+                else:
+                    shutil.rmtree(self.private_dir())
+
+    def test_prior_findings_are_removed_when_the_loop_stops(self):
+        for name in ("success", "finish"):
+            with self.subTest(name):
+                self.git("checkout", "-q", "--", ".")
+                path = Path(self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))["prior_findings"])
+                self.edit(10)
+                if name == "success":
+                    self.assertEqual(self.review()["reason"], "success")
+                else:
+                    self.run_loop("finish", "--reason", "manual")
+                self.assertFalse(path.exists())
+
+    def test_init_removes_only_the_previous_run_of_this_worktree(self):
+        """6.9 の分は止めた後に書くので init で消す。dir は別の worktree のループと共有するので、そちらは残す."""
+        self.start(3)
+        mine = Path(self.run_loop("prior-findings", stdin=self.findings(("MINOR", 80, "a.txt", 3, "x")))
+                    ["prior_findings"])
+        other = self.private_dir() / "gv-prior-findings-another-run.json"
+        other.write_text("[]", encoding="utf-8")
+        self.run_loop("init", "--max", "3")
+        self.assertFalse(mine.exists())
+        self.assertTrue(other.exists())
+
+    def prior_items(self, out: dict) -> list[tuple[int, str]]:
+        return [(i["line"], i["focus"]) for i in json.loads(Path(out["prior_findings"]).read_text(encoding="utf-8"))]
+
+    def test_prior_findings_for_phase_6_9_join_the_loop_leftovers_and_the_chosen_fixes(self):
+        """6.9 の差分の主な中身は Step 4 で直すと決めた指摘への修正。前回の対象なしに delta だけを見せない."""
+        self.start(1, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        self.review(("BLOCKER", 70, "a.txt", 11, "security"), ("BLOCKER", 70, "a.txt", 50, "security"))
+        got = self.run_loop("prior-findings", "--with-loop",
+                            stdin=self.findings(("MAJOR", 95, "a.txt", 30, "doc-substance"),
+                                                ("BLOCKER", 70, "a.txt", 11, "security")))
+        # 古い順（後ろほど新しい）: deferred → remaining → 直すと決めた指摘
+        self.assertEqual(self.prior_items(got), [(50, "security"), (11, "security"), (30, "doc-substance")])
+
+    def test_prior_findings_ignore_the_loop_state_without_with_loop(self):
+        """状態は作業ツリーに残り続ける。init を呼ばない run では前の run のものなので、既定では読まない."""
+        self.start(1, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        self.review(("BLOCKER", 70, "a.txt", 11, "security"))
+        self.assertEqual(self.run_loop("prior-findings")["prior_findings"], "none")
+        got = self.run_loop("prior-findings", stdin=self.findings(("MINOR", 80, "a.txt", 3, "x")))
+        self.assertEqual(self.prior_items(got), [(3, "x")])
+        self.assertTrue(got["prior_findings"].endswith("gv-prior-findings-nostate.json"), "uuid で書くと誰も消さない")
+
+    def test_chosen_findings_without_a_line_are_kept_and_without_a_file_are_dropped(self):
+        stdin = json.dumps({"findings": [{"severity": "MAJOR", "file": "a.txt", "line": None, "focus": "x", "title": "n"},
+                                         {"severity": "MAJOR", "file": "", "line": 3, "focus": "x", "title": "e"}]})
+        res = self.raw("prior-findings", stdin=stdin)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("WARN:", res.stderr)
+        path = res.stdout.strip().removeprefix("prior_findings=")
+        self.assertEqual(json.loads(Path(path).read_text(encoding="utf-8")),
+                         [{"file": "a.txt", "line": None, "focus": "x", "title": "n"}])
+
+    def test_a_file_with_a_newline_is_rejected(self):
+        """1 行 1 項目の出力に偽の `since=` / `prior_findings=` 行を差し込ませない."""
+        self.run_loop("init", "--max", "3")
+        for bad in ("a.txt\nprior_findings=$(id)", "a.txt\u2028prior_findings=$(id)"):
+            with self.subTest(bad=bad):
+                res = self.raw("review", stdin=self.findings(("BLOCKER", 70, bad, 10, "security")))
+                self.assertEqual(res.returncode, 2, res.stdout)
+                self.assertNotIn("prior_findings=", res.stdout)
+
+    def two_rounds(self) -> None:
+        """2 回目に a.txt:40:security を deferred にし、a.txt:12 を直した状態にする."""
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        self.review(("BLOCKER", 70, "a.txt", 40, "security"), ("BLOCKER", 70, "a.txt", 12, "security"))
+        self.edit(12)
+
+    def test_another_focus_on_the_deferred_line_does_not_drop_it(self):
+        self.two_rounds()
+        got = self.review(("BLOCKER", 70, "a.txt", 40, "error-handling"))
+        self.assertEqual(sorted(r[1] for r in self.rows(got, "deferred")),
+                         ["a.txt:40:error-handling", "a.txt:40:security"])
+
+    def test_a_nearby_different_finding_of_the_same_focus_does_not_drop_the_deferred(self):
+        """近いだけで同じとみなすと、別の指摘で deferred を捨てて `success` で止まりうる."""
+        self.two_rounds()
+        other = json.dumps({"findings": [{"severity": "BLOCKER", "confidence": 70, "focus": "security",
+                                          "file": "a.txt", "line": 43, "title": "別の指摘"}]})
+        got = self.run_loop("review", stdin=other)
+        self.assertEqual(sorted(r[1] for r in self.rows(got, "deferred")), ["a.txt:40:security", "a.txt:43:security"])
+
+    def test_an_insertion_right_above_moves_the_deferred(self):
+        self.two_rounds()
+        self.insert_lines(39, 3)
+        self.assertEqual([r[1] for r in self.rows(self.review(), "deferred")], ["a.txt:43:security"])
+
+    def test_a_rewritten_range_moves_the_deferred_to_its_start(self):
+        self.two_rounds()
+        lines = (self.root / "a.txt").read_text(encoding="utf-8").splitlines()
+        lines[37:42] = ["rewritten a", "rewritten b"]
+        self.write_lines("a.txt", lines)
+        self.assertEqual([r[1] for r in self.rows(self.review(), "deferred")], ["a.txt:38:security"])
+
+    def test_a_deferred_on_a_file_the_fix_removed_is_dropped(self):
+        # ループの起点より前からあるファイル（起点の後に作ると delta に入り、deferred にならない）
+        self.write_lines("b.txt", [f"b {i}" for i in range(1, 30)])
+        self.git("add", "b.txt")
+        self.git("commit", "-qm", "b")
+        self.start(3, ("BLOCKER", 70, "a.txt", 10, "bug-detection"))
+        self.edit(10)
+        got = self.review(("BLOCKER", 70, "b.txt", 15, "security"), ("BLOCKER", 70, "a.txt", 12, "security"))
+        self.assertEqual([r[1] for r in self.rows(got, "deferred")], ["b.txt:15:security"], "前提: deferred にした")
+        self.edit(12)
+        (self.root / "b.txt").unlink()
+        got = self.review()
+        self.assertEqual(self.rows(got, "deferred"), [])
+        self.assertEqual(got["reason"], "success")
+
+    def test_a_reverted_earlier_target_moved_by_a_later_fix_is_a_regression(self):
+        """各回の対象は、その後の修正で動いた行へ写して持つ。写さないと、行がずれた戻しを見逃す."""
+        self.start(3, ("BLOCKER", 70, "a.txt", 50, "bug-detection"))
+        self.edit(50, 10)
+        self.assertEqual(self.review(("BLOCKER", 70, "a.txt", 10, "security"))["action"], "fix")
+        self.insert_lines(9, 3)
+        got = self.review(("BLOCKER", 70, "a.txt", 53, "bug-detection"))
+        self.assertEqual((got["action"], got["reason"]), ("stop", "regression"))
+
+    def test_a_state_without_focus_is_still_read(self):
+        """この版より前に作った状態（targets に focus が無い）を読んでも落ちない."""
+        self.two_rounds()
+        self.edit_state(lambda s: [t.pop("focus", None) for r in s["iterations"] for t in r["targets"]]
+                        + [t.pop("focus", None) for t in s["deferred"]])
+        res = self.raw("review", stdin=self.findings())
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("deferred\ta.txt:40:security", res.stdout)
+
+    def test_prior_findings_for_phase_6_9_without_a_loop(self):
+        got = self.run_loop("prior-findings", stdin=self.findings(("MINOR", 80, "a.txt", 3, "comment-accuracy")))
+        self.assertEqual(self.prior_items(got), [(3, "comment-accuracy")])
+
+    def test_prior_findings_for_phase_6_9_with_nothing_to_check(self):
+        self.start(3)
+        self.assertEqual(self.run_loop("prior-findings")["prior_findings"], "none")
+
+    def test_prior_findings_for_phase_6_9_that_cannot_be_written(self):
+        spaced = self.tmpdir / "a b"
+        spaced.mkdir()
+        self.env["TMPDIR"] = str(spaced)
+        res = self.raw("prior-findings", stdin=self.findings(("MINOR", 80, "a.txt", 3, "x")))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), "prior_findings=unavailable")
+        self.assertIn("WARN:", res.stderr)
 
     def fixed_line_10(self) -> None:
         """a.txt:10 の対象を直した状態にする。init は前のループの状態を上書きするので subTest ごとに呼べる."""
@@ -1222,6 +1599,19 @@ class GvLoopProcedureTest(unittest.TestCase):
         step4 = skill[skill.index("### Step 4: Consolidate and present"):skill.index("## Phase 6.7")]
         for reason in ("`success`", "`regression`", "`budget`", "`deferred`", "`manual`"):
             self.assertIn(reason, step4)
+
+    def test_step4_reads_every_rereview_report(self):
+        """delta 中心の再レビューの最後の回だけを読むと、初回・途中の回の delta の外の指摘が落ちる（#313）."""
+        skill = self.SKILL.read_text()
+        step4 = skill[skill.index("### Step 4: Consolidate and present"):skill.index("## Phase 6.7")]
+        self.assertIn("**各回の**再レビューのレポート", step4)
+        self.assertIn("初回のレポート", step4)
+        self.assertNotIn("self-review の最終出力（post-loop）", step4)
+
+    def test_comment_polish_scans_the_whole_diff_after_a_rereview(self):
+        skill = self.SKILL.read_text()
+        p67 = skill[skill.index("## Phase 6.7"):skill.index("## Phase 6.9")]
+        self.assertIn("`iterations` が 1 以上", p67)
 
     def test_fix_mode_leaves_non_targets_to_step4(self):
         skill = self.SKILL.read_text()

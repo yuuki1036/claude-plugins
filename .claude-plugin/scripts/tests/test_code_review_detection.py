@@ -352,6 +352,23 @@ class DetectRecentReviewTest(ScriptTestBase):
         self.assertTrue(path.is_file(), "publish が events.jsonl を書いていない")
         return path
 
+    def test_a_delta_review_is_labelled(self):
+        """delta に絞った回の digest も diff 全体のもの。少ない件数を diff 全体の結果と読ませない（#313）."""
+        diff = self.previous_review()
+        log = self.log()
+        lines = log.read_text(encoding="utf-8").splitlines()
+        ev = json.loads(lines[-1])
+        ev["payload"]["review_scope"] = {"schema": 1, "mode": "delta", "delta_lines": 3, "delta_size_tier": "small"}
+        log.write_text("\n".join(lines[:-1] + [json.dumps(ev)]) + "\n", encoding="utf-8")
+        res = self.detect("--diff", str(diff))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("[完全一致]", res.stdout)
+        self.assertIn("範囲=delta", res.stdout)
+
+    def test_a_full_review_has_no_scope_label(self):
+        diff = self.previous_review()
+        self.assertNotIn("範囲=", self.detect("--diff", str(diff)).stdout)
+
     def test_silent_without_any_event_log(self):
         self.save_diff()
         res = self.detect()

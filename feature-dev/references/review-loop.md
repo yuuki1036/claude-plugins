@@ -1,3 +1,9 @@
+<!-- 正本依存（SSoT pin）。Step 3.2 の再レビューの引数と「範囲の行が無ければ旧版」の判定は、code-review の self-review SKILL.md「6. レポート出力」の範囲の行と prior-fixes-guide.md「4.」の形を要約したもの。正本が変わったら Step 3.2 を確認して pin を打ち直す -->
+<!-- SSOT: code-review/skills/self-review/SKILL.md#6 @14aa3b18 -->
+<!-- SSOT: code-review/references/prior-fixes-guide.md#4 @f5c76a67 -->
+<!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review SKILL.md「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
+<!-- SSOT: code-review/skills/self-review/SKILL.md#1 @e146effb -->
+<!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
 # Quality Review — Generator-Verifier Loop（Phase 6 の詳細手順）
 
 SKILL.md 本文の Phase 6 は「self-review へ委譲 → 致命指摘を auto-fix ループで潰す」の骨格だけを持つ。本ファイルは (1) self-review 出力の構造化 findings 消費契約（dual format）と、(2) Generator-Verifier ループの初期化・実行・集計の読み方の手順を持つ。ループの判断（対象の選別・delta・regression・予算・範囲外の変更）は `scripts/gv-loop.py` が持つ。Phase 6 Step 2 / Step 3 から参照される。
@@ -68,13 +74,14 @@ Repeat the following until `action=stop`:
 
    `review` が決めること（Claude が判定し直さない）:
    - 上の表で auto-fix 対象を選ぶ。fingerprint は `file:line:focus`
-   - 2 回目以降は、ループの起点からの差分（delta）で変えた行の 5 行以内にある対象だけをループに入れる。delta の外の対象は `deferred` に回し、ループを延ばさない（Step 4 に残る）。再レビューは diff 全体を見直すので、修正と関係ない箇所の新しい指摘でループが延びていた（#310）
-   - 前回の対象と同じ fingerprint がまた出たら `regression`（delta の外でも）
+   - 2 回目以降は、ループの起点からの差分（delta）で変えた行の 5 行以内にある対象だけをループに入れる。delta の外の対象は `deferred` に回し、ループを延ばさない（Step 4 に残る）。deferred は回をまたいで残す（直前の修正で動いた行へ写してから、今回の対象と突き合わせる）。再レビューは直前の修正からの delta を主に見る（#313）が、delta の外の指摘も出うる。以前は再レビューが diff 全体を見直し、修正と関係ない箇所の新しい指摘でループが延びていた（#310）
+   - `action=fix` / `action=ask` の回は、再レビューに渡す `since=<直前の修正の前の tree>` と `prior_findings=<path>`（全回の対象を重複なく並べた JSON）も出す。どちらかを用意できない回は `since=unavailable`
+   - 前の回（どの回でも）の対象と同じ fingerprint がまた出たら `regression`（delta の外でも。再レビューには全回の対象を渡すので、後の修正が先の修正を戻した回もここで止まる）
    - 前回の修正のうち、どの対象の行の 10 行以内にも掛からない hunk を「範囲外の変更」として数える。止めはせず、場所を Step 4 に並べる
 2. **Branch on `action=`**:
    - `action=stop` → `reason=`（`success` / `regression` / `budget` / `deferred`）を持って Step 4 へ
-   - `action=fix` → 3. へ
-   - `action=ask` → 2 回目以降で上限の回。`notice=` の値と `target` / `deferred` / `out_of_scope` の行を示し、`AskUserQuestion` で「続ける」/「ここで止めて Step 4 へ」を聞く。続けるなら 3. へ。止めるなら `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" finish --reason manual` を実行して Step 4 へ
+   - `action=fix` → `since=` / `prior_findings=` の行を控えて 3. へ
+   - `action=ask` → 2 回目以降で上限の回（`since=` / `prior_findings=` も出る）。`notice=` の値と `target` / `deferred` / `out_of_scope` の行を示し、`AskUserQuestion` で「続ける」/「ここで止めて Step 4 へ」を聞く。続けるなら 3. へ。止めるなら `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" finish --reason manual` を実行して Step 4 へ
 3. **Notify user**: `notice=` の値をそのまま 1 行で出す（`🔄 Iteration N/max: auto-fix K 件`。2 回目以降は前回の範囲外の変更と delta の外へ回した件数が付く）。省かない — 省くと、何回目か・なぜ続いているかが利用者に見えない（#310 の実測では出ていなかった）
 4. **Fix** (Phase 5 Fix Mode): `target` の行だけを直す
    - 各 target の file:line を読み、JSON findings の `suggested_fix`（無ければ markdown の影響説明から推定）を Edit で適用
@@ -82,11 +89,14 @@ Repeat the following until `action=stop`:
    - 設計レベル変更が必要なら `code-architect` を `delta-proposal` focus で起動（1 iteration 消費）
    - 修正不能と判断したら `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" finish --reason manual` を実行して Step 4 へ
 5. **Re-review**: `Skill code-review:self-review` を再呼び出し。引数:
-   - `--focus <target の focus 集合>`
-   - `--exclude <既に解決した focus 集合>` で重複検査をスキップ可
+   - `--since=<since>`（`review` が出した `since=` の値。直前の修正の前の tree で、self-review はその後の変更（delta）を主に見る / GitHub issue #313）
+   - `--prior-findings=<prior_findings>`（`review` が出した `prior_findings=` の値。self-review は範囲を絞っても前回の対象を確認対象に戻す）。`since=unavailable` の回は `--since` も `--prior-findings` も付けない（diff 全体を見る）
+   - `--focus` / `--exclude` は付けない（付けると修正が持ち込んだ別の観点の欠陥を誰も見ず、反証と skeptic も `scope` でスキップされる / #313。観点と体数は self-review の triage が delta で選び直す）
    - `--embed`（loop 中も AskUserQuestion を skip させる）
    - `--rereview`（修正を確かめる再レビューの申告。計測で初回のレビューと分けて数えさせる / GitHub issue #296）
-   - `--spec=<BDD_SPEC_PATH>`（target に `spec-compliance` があり、`BDD_SPEC_PATH` があるとき。初回と同じ照合元を渡す）
+   - `--spec=<BDD_SPEC_PATH>`（`BDD_SPEC_PATH` があるとき。初回と同じ照合元を渡す。観点は self-review の triage が delta から選び直すので、target の観点で絞らない）
+
+   `--since` を渡したのにレポート冒頭に `**範囲**:` の行が無ければ、code-review が `--since` を知らない旧版で、diff 全体をフル構成で見直している。止めずに続け、Step 4 にその旨を 1 行出す
 6. Return to step 1（再レビューの出力を `review` に渡す）。
 
 ### Step 3.3: 集計の読み方
@@ -104,6 +114,6 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" summary
 | `auto_fix_targets=` | auto-fix に回した対象の延べ件数 |
 | `out_of_scope=` | 範囲外の変更（hunk）の延べ件数。作業ツリーを比べられなかった回があれば `unavailable` |
 | `remaining=` と `remaining` の行 | 止めた時点で残った対象（`regression` / `budget` / `manual`） |
-| `deferred=` と `deferred` の行 | 最後のレビューで delta の外にあった対象 |
+| `deferred=` と `deferred` の行 | 全回で delta の外に回し、後の回の対象に出直していない対象（最後に報告された時点の状態。行番号は直前の修正で動いた分を写してある） |
 | `out_of_scope` の行 | `<回>`・`<file>:<開始行>-<終了行>`（修正前の行番号）・`+追加 -削除` |
 
