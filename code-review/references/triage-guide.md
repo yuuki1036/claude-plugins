@@ -17,6 +17,7 @@ Phase 0 実行前に以下の情報を収集する:
 | 情報 | 取得方法 | 必須 |
 |---|---|---|
 | **シグナルダイジェスト** | `scripts/triage-signals.sh --pr <N>` / `--base <ref>`。規模・ファイル分類・hunk ヘッダ・観点判定シグナル・red-flag・surface・explorer シグナル・AGENTS.md・Issue ID を 1 回の Bash で取得 | Yes |
+| `## delta`（self-review の `--since` の回だけ / #313） | ダイジェストの末尾。`scope_mode=` / `delta_file=` / delta の規模（`delta_files=` / `delta_lines=` / `delta_core_*` / `delta_size_tier=`）と、delta だけで数えた `### focus-signals` / `### red-flags` / `### surface` / `### explorer-signals`。縮退した回は `scope_mode=full` と `fallback=<理由>` だけ（`### 6.5`） | `--since` の回 |
 | diff 全文 | **メインコンテキストでは読まない**。ダイジェストの `## meta` の `diff_file=` に保存済みで、agent へはパスで渡す。Phase 0 で個別に必要になったときだけ `${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh "$DIFF_FILE" <path>` で該当ファイルぶんを読む | No（原則読まない） |
 | PR コンテキスト（review skill のみ） | SKILL.md Step 1 が `$PR_CTX_FILE` に保存した原本（説明・issue コメント・レビューサマリ・行単位 review comment）。Phase 0 はメインコンテキストが Read した内容を使う | review skill で PR ありの場合 |
 | CLAUDE.md | プロジェクトルートから読み込み | 存在する場合 |
@@ -385,6 +386,24 @@ diff シグナルが読めず観点を決められない場合の既定構成（
 | small | reviewer 2（bug-detection, claude-md-compliance） |
 | medium | explorer 1（history-context）+ reviewer 3（bug-detection, claude-md-compliance, error-handling） |
 | large | explorer 2（history-context, dependency-trace）+ reviewer 4（bug-detection, claude-md-compliance, error-handling, cross-cutting） |
+
+### 6.5 `--since` の回の観点・体数（self-review / GitHub issue #313）
+
+self-review に `--since=<tree>` が渡され、`## delta` が `scope_mode=delta` の回（feature-dev の G-V ループの再レビューと Phase 6.9）。見るものは「前回の対象が直ったか」と「delta が新しい欠陥を作っていないか」で、diff 全体は delta を読むための文脈。
+
+- **観点**: 次の 3 つを合わせる。`## 3` の判定表は `## delta` の `###` の節に当てる（diff 全体の節には当てない）
+  - `## prior-fixes` の行の観点（前回の対象。`--prior-findings` の分を含む）
+  - delta の `### focus-signals` / `### red-flags` で立つ観点と specialist
+  - 最小保証の 2 体（reviewer-bugs / reviewer-claude-md）
+  - Stage 1 の型判定（spec-compliance・Markdown 推敲）は従来どおり行う。`--spec` や session-context があれば spec-compliance は起動する
+- **体数**: 前回の対象の観点は `--focus` と同じく**規模キャップの外**に置き、専任の reviewer を起動する（相乗りにすると、修正の確認が他の観点の片手間になる）。ただし `## 7` の effort 上限は超えない — 超える分の観点だけを近い観点の reviewer に相乗りさせる。観点のキーが specialist や `recall-skeptic` / `meta` の行の割り当ては prior-fixes-guide.md の 1 節。残りの観点と explorer に、`## 7` の effort 上限と `delta_size_tier` の規模キャップ（`### 6.2` の表）の小さい方を掛ける
+- **担当ファイル**: delta のファイル一覧を `diff-slice.sh <delta_file> --list` で取り、`## files` と合わせて割り当てる。delta には、base の状態へ戻して diff 全体から外れたファイルも入る（`## files` には出ない）。漏らすと、戻したことで壊れた呼び出し側を誰も見ない
+- **run の中のゲート**: meta-reviewer の size-tier（`### 6.3` の例外）と Round 2 の圧縮は `delta_size_tier` で判定する
+- **payload の `size_tier` は diff 全体の帯のまま**（`### 6.2` の「payload の `size_tier` に出す」の例外）。delta の帯は publish が `review_scope.delta_size_tier` に載せる。retro は delta の回を `size_tier` で層別する表から外す
+- **delta が空**（`delta_files=0`。修正が何も変えなかった回と、変更が未追跡ファイルだけの回。delta は追跡しているファイルに限る）: 前回の対象があれば、その観点の reviewer だけで直ったかを確かめる。前回の対象も無ければ agent を起動せず指摘 0 件で終え、`mark t1` と `mark wave` を続けて打つ。`--embed` なら `findings: []` の FINDINGS_JSON と marker を返し、publish する（空の delta を返さずに止めると、呼び出し元が止まり方を決められない）
+- **`--focus` / `--exclude` と一緒のとき**（読む範囲は delta のまま。skeptic と反証は `scope` でスキップする）:
+  - `--focus`: 指定した観点と前回の対象の観点を規模キャップの外で起動し、それ以外は起動しない
+  - `--exclude`: 指定した観点を構成から外し、残りは上の規則（delta のシグナル・最小保証・前回の対象）で決める。前回の対象の観点は外さない（prior-fixes-guide.md の 1 節）
 
 ## 7. 最小保証とフェーズ上限（effort 適応 / effort 側上限の正本。実効上限は `## 6.2` との min）
 

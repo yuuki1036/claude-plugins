@@ -26,6 +26,8 @@ PR ベースのコードレビュー。PR が必須（`gh pr diff` で差分を�
 - `--focus <観点>` — レビュー対象を特定の観点に絞る（最小保証 reviewer も focus に含まれない限り起動しない。カンマ区切りで複数指定可）
 - `--exclude <観点1,観点2>` — 同一セッションで既に検証済みの観点をスキップする
 - `--embed` — 他 plugin からの呼び出し用。終端の修正方針確認 AskUserQuestion を skip し、レポート + 機械可読 findings JSON を return する（feature-dev Phase 6 等で使用）
+- `--since=<tree>` — その tree の後に変えた分（delta）を主な対象にする。観点と体数は delta で決める（feature-dev の G-V ループと Phase 6.9 が渡す）
+- `--prior-findings=<path>` — 前回の対象（`[{file, line, focus, title}]` の JSON）。範囲を絞った回でも確認対象に戻す
 
 ### review-triage
 

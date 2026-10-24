@@ -198,12 +198,15 @@ review_diff_keys() {
   printf '%s %s' "$digest" "$files"
 }
 
-# review_path <diff|prctx|timing|agentctx|oracles|size|corelist|pastrev|priorfix>
+# review_path <diff|delta|prctx|timing|agentctx|oracles|size|corelist|pastrev|priorfix>
 review_path() {
   local kind="$1" suffix=""
   [ -n "${REVIEW_PR:-}" ] && suffix="-pr${REVIEW_PR}"
   case "$kind" in
     diff)   printf '%s/review-diff-%s%s.diff' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
+    # delta: self-review の `--since` の回の delta の patch（起点の tree と作業ツリーの差分）。
+    # triage-signals.sh が毎回配る前に消し、publish が掃除する（GitHub issue #313）
+    delta)  printf '%s/review-delta-%s%s.diff' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     prctx)  printf '%s/review-prctx-%s%s.md'  "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     timing) printf '%s/review-start-%s%s'     "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     # oracles: 機械層（`run-oracles.sh`）の出力全文。digest は先頭数十行に切るので、
@@ -212,8 +215,9 @@ review_path() {
     # agentctx: 全 agent 共通の可変部（実値集合）。オーケストレーターが 1 回書き、
     # 各 agent はパスを受け取って自分で Read する（orchestration-guide.md `## 3.5`）
     agentctx) printf '%s/review-agentctx-%s%s.md' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
-    # size: triage-signals.sh の `## size` のうち publish が使う行（`doc_only=`）。報告閾値の
-    # 出どころ（`severity_threshold_source`）を publish が機械判定するために渡す（GitHub issue #277）
+    # size: triage-signals.sh が publish に渡す行。`## size` の `doc_only=`（報告閾値の出どころ
+    # `severity_threshold_source` の判定 / GitHub issue #277）と、stdout には出さない `scope_mode=` /
+    # `delta_lines=` / `delta_size_tier=`（payload の `review_scope` / GitHub issue #313）
     size)   printf '%s/review-size-%s%s.txt'  "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     # corelist: core に分類した変更ファイルのパス（変更行の多い順）。`fetch-past-reviews.sh` が読む
     # （core の分類式を triage-signals.sh の外に複製しないため / GitHub issue #286）

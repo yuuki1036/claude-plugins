@@ -125,9 +125,12 @@ for ts, plugin, strength, p in hits[:5]:
         p.get("blocker_count", "?"), p.get("critical_count", "?"),
         p.get("major_count", "?"), p.get("minor_count", "?"))
     label = "完全一致" if strength == "exact" else "ファイル集合のみ"
-    print("- %s  %s  [%s]  effort=%s  size=%s  報告 %s  fleet=%s min" % (
+    # delta に絞った回の digest も diff 全体のもの。少ない件数を diff 全体の結果と読ませない（GitHub issue #313）
+    scope = p.get("review_scope") if isinstance(p.get("review_scope"), dict) else {}
+    delta = "  範囲=delta（直前の変更分だけを見た回）" if scope.get("mode") == "delta" else ""
+    print("- %s  %s  [%s]  effort=%s  size=%s  報告 %s  fleet=%s min%s" % (
         ts, plugin, label, p.get("effort", "?"), p.get("size_tier", "?"),
-        counts, p.get("duration_fleet_min", "?")))
+        counts, p.get("duration_fleet_min", "?"), delta))
 if n_exact < len(hits):
     print("※ 「ファイル集合のみ」は**別内容の変更でも一致しうる**（skill 跨ぎを拾うための弱いキー）。"
           "続行可否の判断材料であって、重複の証明ではない。")

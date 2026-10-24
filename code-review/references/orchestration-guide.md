@@ -104,7 +104,8 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 | AGENTS.md / CLAUDE.md（`## 4`） | **元ファイルのパスをそのまま**注入（コピーを作らない） | 既にディスク上にあるので追加コストゼロ。パスは `triage-signals.sh` の `## agents-md` が出す |
 | explorer 結果（review Step 5 / self-review Step 4 の選択的注入） | **従来どおりインラインで注入する** | 選択的注入なので複製係数がほぼ 1（1 explorer → 依存する 1〜2 reviewer）。ファイル化すると explorer 体数ぶんの Write が増えて逆効果 |
 | **可変部の共通ブロック**（全 agent 共通の実値集合 / v2.63.0） | `triage-signals.sh` の `## meta` が出す `agent_ctx_file=` のパスに**オーケストレーターが 1 回だけ書き出し**、各プロンプトには**パスと focus 固有の差分だけ**を書く | 複製係数 = 体数で表中最大級。実測（issue #124）では reviewer 5 + skeptic 1 + meta 1 + 反証 3 の**計 10 本に同一ブロックを手書き**しており、wave 間のメイン時間 ≈16.1 分（fleet の 26%）がここに効いていた。中身は下記 |
-| **explorer の「確定事実」**（`## 確定事実（explorer 共通・裏取り済み）`） | **共通ブロックには入れず、reviewer にだけインライン注入する**（**specialist・skeptic には渡さない**）。**合計 10 行以内** | **意図的にファイル化しない唯一の枠。** 共通ブロックに同梱すると skeptic にも届き、`triage-dynamic-gates.md ## 8.5` の「findings 非注入がこのレイヤーの設計の核」が壊れる（false-negative hunter が fleet の所見を前提にしてしまう）。10 行上限で複製コストは既に抑えられており、**独立性と引き換えにする価値がない** |
+| **前回の指摘への修正**（`prior_fixes:` / self-review のみ / GitHub issue #298・#313） | **共通ブロックには入れず、reviewer と specialist にだけインラインで注入する**（skeptic・meta・反証・explorer には渡さない） | 確定事実と同じ理由。前回の指摘の場所と要旨は findings そのものなので、共通ブロックに入れると skeptic の独立性が壊れる。#313 で G-V ループの再レビューに skeptic が乗るようになり、この経路が常態になった。specialist には渡す — G-V ループの auto-fix 対象で多いのは specialist の BLOCKER で、その修正を確かめるのは同じ specialist |
+| **explorer の「確定事実」**（`## 確定事実（explorer 共通・裏取り済み）`） | **共通ブロックには入れず、reviewer にだけインライン注入する**（**specialist・skeptic には渡さない**）。**合計 10 行以内** | **意図的にファイル化しないインラインの枠（ほかに前回の指摘への修正）。** 共通ブロックに同梱すると skeptic にも届き、`triage-dynamic-gates.md ## 8.5` の「findings 非注入がこのレイヤーの設計の核」が壊れる（false-negative hunter が fleet の所見を前提にしてしまう）。10 行上限で複製コストは既に抑えられており、**独立性と引き換えにする価値がない** |
 
 > **判断基準は「複製係数」**（= その内容が何体のプロンプトに現れるか）。係数が 1 に近いものはインラインの方が安い（Write / Read の往復が増えるだけ）。係数が体数ぶん立つものは必ずパス渡しにする。**同一内容を 2 体以上に書くと分かった時点でパス渡しを検討する。**
 
@@ -114,16 +115,16 @@ HEAD_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null)
 
 - `{{PLUGIN_ROOT}}` の実パス（テンプレート内の `${CLAUDE_PLUGIN_ROOT}` の読み替え指示を含む）
 - `$DIFF_FILE` のパスと `diff-slice.sh` の使い方
+- **delta の patch のパス**（`delta_file=`。self-review の `--since` の回で `## delta` が `scope_mode=delta` のときだけ / GitHub issue #313）。読み方の規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「delta が主な対象」
 - **base ref**（`## meta` の `base=`。skeptic / 反証 / base 検算がいずれも要求する）。**`## meta` に `diff_base=` が出ている回（self-review の base 経路）はその値を base ref として書く** — diff の変更前と一致するコミットで、`base=` の ref の先端はブランチを切った後に base が進むと diff とずれる（agent の `git show <base>:<file>` が diff に無い変更を「変更前」として読む / GitHub issue #253）
 - `{{SEVERITY_THRESHOLD}}` の実効値
 - AGENTS.md / CLAUDE.md のパス一覧（`## 4`）
 - **review のみ**: `{{MAIN_ROOT}}` と `dep-dir` 一覧（`## 1.1`）、PR 番号と `{{HEAD_SHA}}`、`$PR_CTX_FILE` のパス
 - session-context が有効なときはそのパス
 - **過去 PR のレビューコメントのパス**（`past_reviews_file=`。`fetch-past-reviews.sh --save` がパスを出した回だけ / GitHub issue #286）。読み方の規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「過去 PR の指摘」
-- **前回の指摘への修正**（`prior_fixes:` の各行。self-review の Step 1 で `## prior-fixes` が出た回だけ / GitHub issue #298）。読み方の規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`「前回の指摘への修正」。**スコープの指示より優先する** — スコープで「前回以降」に絞っても、この行は検証済みに入れない
 - 全 agent 共通の重点指示（`--focus` / `--exclude` のスコープ等）
 
-**共通ブロックに入れないもの**（agent ごとに違う / 渡してはいけない）: Read させるテンプレートのパス（`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<name>.md` 等）、担当 focus と angle、担当ファイル、explorer 結果の選択的注入、Vault 注入、**explorer の確定事実**（上表のとおり reviewer 限定でインライン。specialist / skeptic には渡さない）、**findings**（反証エージェントに reviewer の理由文を渡さない規約）。
+**共通ブロックに入れないもの**（agent ごとに違う / 渡してはいけない）: Read させるテンプレートのパス（`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<name>.md` 等）、担当 focus と angle、担当ファイル、explorer 結果の選択的注入、Vault 注入、**explorer の確定事実**（上表のとおり reviewer 限定でインライン。specialist / skeptic には渡さない）、**前回の指摘への修正**（`prior_fixes:`。上表のとおり reviewer と specialist に限ってインライン / #313）、**findings**（反証エージェントに reviewer の理由文を渡さない規約）。
 
 - **書き出すのは explorer wave の回収後・reviewer 一括発行の直前に 1 回**（`## meta` はもっと早く出るが、パスを控えておくだけで書き出しはここ）。**explorer プロンプトは対象外**（explorer は共通ブロックより前に走るので従来どおりインライン可変部）
 - **20 行以内に収まるならインラインでよい**（Write / Read の往復の方が高くつく）。実運用では上記を並べると常に超えるので**ファイル化が既定**。この 20 行は**共通ブロック全体**の閾値で、上表の確定事実の 10 行とは別の数字

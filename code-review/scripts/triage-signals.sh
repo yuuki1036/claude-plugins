@@ -13,17 +13,23 @@
 #   triage-signals.sh --pr <N> [--out <diff path>]      # review: gh pr diff で取得
 #   triage-signals.sh --base <ref> [--out <diff path>]  # self-review: 分岐点..HEAD + staged + unstaged
 #   triage-signals.sh --base <ref> --staged             # self-review --staged: staged のみ
+#   triage-signals.sh --base <ref> --since-tree <tree> [--prior-findings <path>]
+#                                                       # self-review --since: diff 全体に加えて `## delta`
 #
 # 出力は stdout（セクション区切りの plain text）。diff 本体は stdout に出さない。
+# `## delta`（GitHub issue #313）は diff 全体の節を出し終えてから最後に出す（内容シグナルの入力を
+# delta に入れ替えて同じ関数で数えるので、後ろに diff 全体の節を置かない）。
 set -uo pipefail
 
-PR=""; BASE=""; OUT=""; STAGED=0
+PR=""; BASE=""; OUT=""; STAGED=0; SINCE_GIVEN=0; SINCE_TREE=""; PRIOR_FINDINGS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --pr)     [ $# -ge 2 ] || { echo "FATAL: --pr に値が必要" >&2; exit 2; }; PR="$2"; shift 2 ;;
     --base)   [ $# -ge 2 ] || { echo "FATAL: --base に値が必要" >&2; exit 2; }; BASE="$2"; shift 2 ;;
     --out)    [ $# -ge 2 ] || { echo "FATAL: --out に値が必要" >&2; exit 2; }; OUT="$2"; shift 2 ;;
     --staged) STAGED=1; shift ;;
+    --since-tree) [ $# -ge 2 ] || { echo "FATAL: --since-tree に値が必要" >&2; exit 2; }; SINCE_GIVEN=1; SINCE_TREE="$2"; shift 2 ;;
+    --prior-findings) [ $# -ge 2 ] || { echo "FATAL: --prior-findings に値が必要" >&2; exit 2; }; PRIOR_FINDINGS="$2"; shift 2 ;;
     *) echo "FATAL: 未知の引数: $1" >&2; exit 2 ;;
   esac
 done
@@ -49,8 +55,12 @@ QP="-c core.quotePath=false"
 # **取得前に $OUT を必ず消す**。残したまま取得に失敗すると、`mv` されないだけで
 # 前回実行の diff が残り、下の `-s` チェックを通過して「古い diff で完走」する
 # （成功時のみ mv するガードは空ファイル対策であって stale 対策ではない）。
-trap 'rm -f "$OUT.tmp"' EXIT
-rm -f "$OUT"
+# publish に渡す size ファイルと delta の patch も、どの経路で終わるかに関わらずここで消す。途中で exit した
+# 回に前の回の `scope_mode=delta` が残ると、diff 全体を見た回が delta として記録される（GitHub issue #313）
+SIZE_FILE=$(review_path size)
+DELTA_OUT=$(review_path delta)
+trap 'rm -f "$OUT.tmp" "$DELTA_OUT.tmp" "$DELTA_OUT.paths" "$DELTA_OUT.paths.deleted"' EXIT
+rm -f "$OUT" "$SIZE_FILE" "$DELTA_OUT"
 if [ -n "$PR" ]; then
   BASE=$(gh pr view "$PR" --json baseRefName -q .baseRefName 2>/dev/null)
   gh pr diff "$PR" > "$OUT.tmp" || { echo "FATAL: gh pr diff に失敗した (PR=${PR})" >&2; exit 1; }
@@ -83,10 +93,81 @@ if [ ! -s "$OUT" ]; then
   exit 1
 fi
 
+# ---- 範囲（self-review の `--since` / GitHub issue #313）------------------------
+# delta = 起点の tree と作業ツリーの差分（対象のパスは build_delta の上のコメント）。使えない回は理由
+# （`fallback=`）を残して diff 全体で続ける — 範囲を絞れないことで指摘を落とさない
+SCOPE_MODE=full; SCOPE_FALLBACK=""; DELTA_NUMSTAT=""
+# 40〜64 桁の 16 進だけを tree の ID として受ける（ref や `-` 始まりの値を git に渡さない）
+is_tree_id() {
+  case "$1" in ''|*[!0-9a-f]*) return 1 ;; esac
+  if [ "${#1}" -ge 40 ] && [ "${#1}" -le 64 ]; then
+    return 0
+  fi
+  return 1
+}
+# delta のパスは 2 つの和。① diff 全体に入るファイル ② 起点の tree から変わったファイル（base の状態へ戻して
+# diff 全体から外れたファイルの変更を落とさない）。rename は両側に分けて取る（numstat の `{a => b}` の表記は
+# `git diff <tree>` のパスと揃わない）。② の削除は、ファイルが消えたものだけを採る — 起点の tree は未追跡を
+# 含むので、いま未追跡のファイルも `git diff <tree>` には削除として出る。起点の時点で未追跡だったファイルを
+# 後で消した回も削除として入る（tree には追跡の有無が残らない。削除だけの patch で、規模を少し増やすだけ）。
+# `--name-only` はルート相対で出るのに pathspec は cwd 相対で読まれるので、git はすべて `-C "$WT"` で回す
+# （self-review は cwd がセッション起動 dir のまま。サブディレクトリからだと何にも一致せず、空の delta が成功に見える）
+build_delta() {
+  local paths=() p list="$DELTA_OUT.paths"
+  # 前の回の中間ファイルを消してから書く（置かれた symlink を `>` で辿らない）
+  rm -f "$list" "$list.deleted" "$DELTA_OUT.tmp"
+  # 1 本ずつ失敗を見る（まとめて読むと、終了ステータスは最後のコマンドのものになる）
+  git $QP -C "$WT" diff --no-renames --name-only -z "${REVIEW_BASE_COMMIT}..HEAD" > "$list" 2>/dev/null || return 1
+  git $QP -C "$WT" diff --no-renames --name-only -z --cached >> "$list" 2>/dev/null || return 1
+  git $QP -C "$WT" diff --no-renames --name-only -z >> "$list" 2>/dev/null || return 1
+  git $QP -C "$WT" diff --no-renames --name-only -z --diff-filter=d --end-of-options "$SINCE_TREE" \
+    >> "$list" 2>/dev/null || return 1
+  git $QP -C "$WT" diff --no-renames --name-only -z --diff-filter=D --end-of-options "$SINCE_TREE" \
+    > "$list.deleted" 2>/dev/null || return 1
+  while IFS= read -r -d '' p; do
+    if [ ! -e "$WT/$p" ] && [ ! -L "$WT/$p" ]; then
+      printf '%s\0' "$p" >> "$list"
+    fi
+  done < "$list.deleted"
+  while IFS= read -r -d '' p; do
+    paths+=("$p")
+  # バイト順で重複を除く（ロケールの照合順では、別のパスが等しいとみなされて 1 つ落ちることがある）
+  done < <(LC_ALL=C sort -zu "$list")
+  if [ "${#paths[@]}" -eq 0 ]; then
+    return 1
+  fi
+  git $QP -C "$WT" --literal-pathspecs diff --no-renames --end-of-options "$SINCE_TREE" -- "${paths[@]}" \
+    > "$DELTA_OUT.tmp" 2>/dev/null || return 1
+  DELTA_NUMSTAT=$(git $QP -C "$WT" --literal-pathspecs diff --no-renames --numstat --end-of-options "$SINCE_TREE" \
+    -- "${paths[@]}" 2>/dev/null) || return 1
+  mv "$DELTA_OUT.tmp" "$DELTA_OUT"
+}
+if [ "$SINCE_GIVEN" = "1" ]; then
+  if [ -n "$PR" ]; then
+    SCOPE_FALLBACK=pr
+  elif [ "$STAGED" = "1" ]; then
+    SCOPE_FALLBACK=staged
+  elif ! is_tree_id "$SINCE_TREE"; then
+    SCOPE_FALLBACK=bad-tree-id
+  elif ! git cat-file -e "${SINCE_TREE}^{tree}" 2>/dev/null; then
+    SCOPE_FALLBACK=tree-not-found
+  # 渡された前回の対象を読めないまま delta だけを見ると、修正が対象の行に触れなかった回に直っていない指摘を誰も見ない（渡さない回は delta のまま）
+  elif [ -n "$PRIOR_FINDINGS" ] && ! python3 "$HERE/lib/prior_fixes.py" check "$PRIOR_FINDINGS" "$WT" 2>/dev/null; then
+    SCOPE_FALLBACK=prior-findings-unreadable
+  elif ! build_delta; then
+    SCOPE_FALLBACK=delta-diff-failed
+  else
+    SCOPE_MODE=delta
+  fi
+  if [ -n "$SCOPE_FALLBACK" ]; then
+    echo "WARN: --since-tree を使わず diff 全体で続ける（${SCOPE_FALLBACK}）" >&2
+  fi
+fi
+
 # 変更行を「所属ファイルのクラス付き」で取り出す。
 # クラスを付けないと md 見出し `## x` を code コメントと誤検出する等の偽陽性が出るため、
 # 内容シグナルは必ずクラスで絞ってから grep する。形式は `<class>\t<path>\t<内容>`。
-extract() { # extract <+|-> : 追加行 or 削除行
+extract() { # extract <+|-> <diff> : 追加行 or 削除行
   awk -v sign="$1" '
     /^diff --git / {
       f=$4; sub(/^b\//,"",f)
@@ -98,16 +179,21 @@ extract() { # extract <+|-> : 追加行 or 削除行
     }
     substr($0,1,1)==sign && substr($0,1,3)!=sign sign sign {
       printf "%s\t%s\t%s\n", c, f, substr($0,2)
-    }' "$OUT"
+    }' "$2"
 }
-ADDED_ALL=$(extract '+')
-REMOVED_ALL=$(extract '-')
-# code = gen / doc を除いた行（test は含む: テストコードもコードとして判定対象）
-ADDED_CODE=$(printf '%s\n' "$ADDED_ALL" | awk -F'\t' '$1!="gen" && $1!="doc"')
-ADDED_DOC=$(printf '%s\n' "$ADDED_ALL" | awk -F'\t' '$1=="doc"')
-REMOVED_CODE=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1!="gen" && $1!="doc"')
-REMOVED_CORE=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1=="core"')
-REMOVED_DOC=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1=="doc"')
+# 内容シグナルの入力を <diff> から作る（`## delta` は delta の patch で作り直す）
+load_lines() {
+  SRC_DIFF="$1"
+  ADDED_ALL=$(extract '+' "$1")
+  REMOVED_ALL=$(extract '-' "$1")
+  # code = gen / doc を除いた行（test は含む: テストコードもコードとして判定対象）
+  ADDED_CODE=$(printf '%s\n' "$ADDED_ALL" | awk -F'\t' '$1!="gen" && $1!="doc"')
+  ADDED_DOC=$(printf '%s\n' "$ADDED_ALL" | awk -F'\t' '$1=="doc"')
+  REMOVED_CODE=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1!="gen" && $1!="doc"')
+  REMOVED_CORE=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1=="core"')
+  REMOVED_DOC=$(printf '%s\n' "$REMOVED_ALL" | awk -F'\t' '$1=="doc"')
+}
+load_lines "$OUT"
 
 echo "## meta"
 echo "diff_file=$OUT"
@@ -181,7 +267,8 @@ fi
 
 # 同一パスが複数系統（分岐点..HEAD / staged / unstaged）に現れるため、パス単位で集約する。
 # 集約しないとファイル数が重複計上され size_tier が実態より大きく出る
-CLASSIFIED=$(printf '%s\n' "$NUMSTAT" | awk -F'\t' '
+classify() { # classify <numstat>
+  printf '%s\n' "$1" | awk -F'\t' '
   NF>=3 && $1 ~ /^[0-9]+$/ { a[$3]+=$1; d[$3]+=$2 }
   END {
     for (p in a) {
@@ -191,7 +278,31 @@ CLASSIFIED=$(printf '%s\n' "$NUMSTAT" | awk -F'\t' '
       else if (p ~ /\.md$|(^|\/)docs\//) c="doc"
       printf "%s\t%s\t%s\t%s\n", c, a[p], d[p], p
     }
-  }' | sort -k4)
+  }' | sort -k4
+}
+CLASSIFIED=$(classify "$NUMSTAT")
+# size_tier は triage-guide.md `## 6.2` の帯定義を機械適用する（stdin は CLASSIFIED の形）。
+# **判定は large → medium → small の順**（条件が重なる場合は大きい帯が勝つ）。
+# large = ファイル > 10 **または** 行数 > 500。ここを OR で書かないと
+# 「15 ファイル / 50 行」「2 ファイル / 600 行」が medium へ落ち、規模キャップで
+# fleet が無言で半減する（ガイドは後者を large の worked example に挙げている）。
+tier_of() {
+  awk -F'\t' '
+    $1=="core" {cf++; cl+=$2+$3}
+    END {
+      if (cf+0 > 10 || cl+0 > 500) t="large"
+      else if (cf+0 >= 4 || cl+0 >= 101) t="medium"
+      else t="small"
+      print t
+    }'
+}
+DELTA_CLASSIFIED=""; DELTA_LINES=0; DELTA_TIER=""
+if [ "$SCOPE_MODE" = "delta" ]; then
+  DELTA_CLASSIFIED=$(classify "$DELTA_NUMSTAT")
+  DELTA_LINES=$(printf '%s\n' "$DELTA_CLASSIFIED" | awk -F'\t' 'NF { l+=$2+$3 } END { print l+0 }')
+  # delta が空なのは「修正が何も変えなかった」という正当な状態なので、diff 全体と違って unknown にしない
+  DELTA_TIER=$(printf '%s\n' "$DELTA_CLASSIFIED" | tier_of)
+fi
 
 echo "## size"
 # total_added / total_deleted は review-guide の見出しで `git diff --stat`・editor の diff ペインの +/− と
@@ -207,15 +318,17 @@ printf '%s\n' "$CLASSIFIED" | awk -F'\t' '
 # 実効の報告閾値を MINOR に下げる判定に使う（orchestration-guide `## 2`）。文書では節の間のずれ・消し残しが
 # MINOR になり、そのまま実装者の誤読になるのに、既定の MAJOR では件数だけになって本文が読めない
 # publish にも同じ行を渡す（報告閾値の出どころを payload に載せる / GitHub issue #277）。前回の残骸は
-# agentctx と同じく配る前に消す — 残すと別の diff の判定で出どころを決めることになる
-SIZE_FILE=$(review_path size)
-rm -f "$SIZE_FILE"
+# agentctx と同じく配る前に消す（冒頭の diff の取得の前で消している）— 残すと別の diff の判定で出どころを決めることになる
 printf '%s\n' "$CLASSIFIED" | awk -F'\t' 'NF { n++; if ($1 != "doc") o++ } END { printf "doc_only=%d\n", (n > 0 && o == 0) ? 1 : 0 }' | tee "$SIZE_FILE" 2>/dev/null
-# size_tier は triage-guide.md `## 6.2` の帯定義を機械適用する。
-# **判定は large → medium → small の順**（条件が重なる場合は大きい帯が勝つ）。
-# large = ファイル > 10 **または** 行数 > 500。ここを OR で書かないと
-# 「15 ファイル / 50 行」「2 ファイル / 600 行」が medium へ落ち、規模キャップで
-# fleet が無言で半減する（ガイドは後者を large の worked example に挙げている）。
+# publish は範囲（`review_scope`）もこのファイルから作る。mode はファイルの有無ではなく中身で持つので、
+# `--since-tree` の無い回も `scope_mode=full` を書く（GitHub issue #313）。stdout には出さない
+{
+  echo "scope_mode=${SCOPE_MODE}"
+  if [ "$SCOPE_MODE" = "delta" ]; then
+    echo "delta_lines=${DELTA_LINES}"
+    echo "delta_size_tier=${DELTA_TIER}"
+  fi
+} 2>/dev/null >> "$SIZE_FILE" || true
 if [ -z "$CLASSIFIED" ]; then
   # numstat が取れなかった場合。「変更 0 件」と同じ small に潰すと、
   # 大規模 PR が最小構成で処理されても誰も気づけない
@@ -223,14 +336,7 @@ if [ -z "$CLASSIFIED" ]; then
   echo "numstat=failed"
   echo "WARN: numstat が空のため size_tier を判定できない" >&2
 else
-  printf '%s\n' "$CLASSIFIED" | awk -F'\t' '
-    $1=="core" {cf++; cl+=$2+$3}
-    END {
-      if (cf+0 > 10 || cl+0 > 500) t="large"
-      else if (cf+0 >= 4 || cl+0 >= 101) t="medium"
-      else t="small"
-      printf "size_tier=%s\n", t
-    }'
+  echo "size_tier=$(printf '%s\n' "$CLASSIFIED" | tier_of)"
 fi
 # モード判定の入力比率（判定そのものは triage-guide `## 2.5` が行う）
 printf '%s\n' "$CLASSIFIED" | awk -F'\t' '
@@ -304,7 +410,7 @@ sig() {
 merge_sig() { awk -F'\t' '{n[$1]+=$2; if(!(($1) in e)) e[$1]=$3} END {for(k in n) printf "%s\t%s\t%s\n", k, n[k], e[k]}' | sort; }
 
 # ---- 注入対象の AGENTS.md / CLAUDE.md（`## agents-md` と層の規約シグナルの両方が使う） ----
-AGENTS_MD=$(
+agents_md_list() {
 # **実在判定は `$WT` 基準で行い、出力は repo ルート相対のまま**にする（agent 側は
 # repo ルートから読む）。cwd 相対で見ると、リポジトリルート以外から起動したときに
 # セクションが丸ごと空になり、reviewer の CLAUDE.md 準拠観点が入力なしで走る。
@@ -321,7 +427,8 @@ done | sort -u | while read -r d; do
 done | sort -u
 if [ -f "$WT/AGENTS.md" ]; then echo "AGENTS.md"; fi
 if [ -f "$WT/CLAUDE.md" ]; then echo "CLAUDE.md"; fi
-)
+}
+AGENTS_MD=$(agents_md_list)
 
 # 層の規約シグナル（triage-guide `## 3` の layer-responsibility）。上の AGENTS.md / CLAUDE.md
 # のうち、**ディレクトリ名（`usecase/` 等）と役割語を同じ行に持つ行**を数える。
@@ -373,7 +480,7 @@ new_source_sig() {
   [ "${tests:-0}" -eq 0 ] || return 0
   # 新規ファイルは diff の `new file mode` で見分ける（numstat には新規かどうかが出ない）。
   # 分類は CLASSIFIED の core に限る（awk の分類式をもう 1 つ持たない）
-  news=$(awk '/^diff --git / { f=$4; sub(/^b\//, "", f); next } /^new file mode / { print f }' "$OUT" \
+  news=$(awk '/^diff --git / { f=$4; sub(/^b\//, "", f); next } /^new file mode / { print f }' "$SRC_DIFF" \
     | sort -u | grep -vE -e "$NEW_SRC_SKIP_RE" \
     | grep -xF -f <(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core" {print $4}') || true)
   n=$(printf '%s\n' "$news" | grep -c . || true)
@@ -382,7 +489,11 @@ new_source_sig() {
   fi
 }
 
-echo "## focus-signals"
+# 観点・red-flag・surface・explorer の 4 節を出す（見出しの接頭辞を受ける。`## delta` の中は `###`）。
+# 入力は CLASSIFIED / load_lines の値 / AGENTS_MD / SRC_DIFF
+emit_signals() {
+local h="$1"
+echo "$h focus-signals"
 {
   sig error-handling   'try *\{|catch *\(|except |rescue |\.catch\('
   sig comment-accuracy '^[[:space:]]*(//|/\*|\*[^*/]|#[^!#]|<!--|--[^-])'
@@ -423,7 +534,7 @@ echo "## focus-signals"
   new_source_sig
 } | merge_sig
 
-echo "## red-flags"
+echo "$h red-flags"
 {
   sig specialist-injection        'eval\(|new Function\(|vm\.runIn|child_process|exec\(|execSync|subprocess\.run|os\.system|shell=True'
   sig specialist-destructive-op   'fs\.unlink|fs\.rm|rmSync|rm -rf|DROP TABLE|TRUNCATE|DELETE FROM'
@@ -435,7 +546,7 @@ echo "## red-flags"
   sig lint-config-changed '\.golangci\.yml|\.eslintrc|lefthook\.yml|pre-commit|redocly\.yaml|tsconfig\.json|ruff\.toml|\.rubocop\.yml' paths
 } | merge_sig
 
-echo "## surface"
+echo "$h surface"
 # triage-dynamic-gates.md `## 8.5` の high-risk surface 判定（正規表現部分のみ。PR 自己申告は別経路）
 {
   sig db-write     'INSERT |UPDATE |DELETE |\.create\(|\.update\(|\.save\(|\.insert\(|\.upsert\('
@@ -443,7 +554,7 @@ echo "## surface"
   sig authz        'permission|authorize|isAdmin|hasRole|session|jwt|verifyToken|can[A-Z]'
 } | merge_sig
 
-echo "## explorer-signals"
+echo "$h explorer-signals"
 # triage-guide `## 3` explorer の必要性判定
 # shared-module には **呼び出し元の概数**を添える（同節の explorer 下限判定 / GitHub issue
 # #122）。数えないと「型引数を 1 つ足しただけの共通モジュール変更」にも explorer が 1 体
@@ -479,6 +590,9 @@ printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1=="core" {print $4}' | while read -r
   n=$(wc -l < "$WT/$f" 2>/dev/null | tr -d ' ')
   [ "${n:-0}" -gt 500 ] && printf 'large-file\t%s (%s lines)\n' "$f" "$n"
 done | head -10
+return 0
+}
+emit_signals "##"
 
 echo "## agents-md"
 if [ -n "$AGENTS_MD" ]; then printf '%s\n' "$AGENTS_MD"; fi
@@ -526,5 +640,26 @@ if [ -n "$PR" ]; then
     | grep -oE '[A-Z]+-[0-9]+' | sort -u
 else
   git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -oE '[A-Z]+-[0-9]+' | sort -u
+fi
+
+if [ "$SINCE_GIVEN" = "1" ]; then
+  echo "## delta"
+  echo "scope_mode=${SCOPE_MODE}"
+  if [ "$SCOPE_MODE" = "delta" ]; then
+    echo "since_tree=${SINCE_TREE}"
+    echo "delta_file=${DELTA_OUT}"
+    printf '%s\n' "$DELTA_CLASSIFIED" | awk -F'\t' '
+      NF { tf++; tl+=$2+$3 }
+      $1=="core" { cf++; cl+=$2+$3 }
+      END { printf "delta_files=%d\ndelta_lines=%d\ndelta_core_files=%d\ndelta_core_lines=%d\n", tf+0, tl+0, cf+0, cl+0 }'
+    echo "delta_size_tier=${DELTA_TIER}"
+    # ここから先は内容シグナルの入力を delta に入れ替える（後ろに diff 全体の節を置かない）
+    CLASSIFIED="$DELTA_CLASSIFIED"
+    load_lines "$DELTA_OUT"
+    AGENTS_MD=$(agents_md_list)
+    emit_signals "###"
+  else
+    echo "fallback=${SCOPE_FALLBACK}"
+  fi
 fi
 exit 0

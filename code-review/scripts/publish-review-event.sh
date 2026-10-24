@@ -828,6 +828,28 @@ _source = threshold_source(payload.get("severity_threshold"),
 if _source is not None:
     payload["severity_threshold_source"] = _source
 
+# ---- 範囲（`review_scope` / GitHub issue #313）------------------------------------
+# 書くのは triage-signals.sh だけ（size ファイルの `scope_mode=` 等）。mode はファイルの有無ではなく行の中身で
+# 持つ — 有無で持つと前の回の残骸で mode が化ける。呼び出し側が書いた値は捨てる。行が無い回（旧版・
+# triage を経ていない回）は載せず、gap も立てない（retro は無い回を full として読む）
+payload.pop("review_scope", None)
+def _read_size_kv(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return dict(line.split("=", 1) for line in f.read().splitlines() if "=" in line)
+    except OSError:
+        return {}
+_kv = _read_size_kv(os.environ["REVIEW_SIZE_FILE"])
+if _kv.get("scope_mode") in ("delta", "full"):
+    _scope = {"schema": 1, "mode": _kv["scope_mode"]}
+    if _scope["mode"] == "delta":
+        # `str.isdigit` は全角数字なども通すので使わない
+        if re.fullmatch(r"[0-9]+", _kv.get("delta_lines", "")):
+            _scope["delta_lines"] = int(_kv["delta_lines"])
+        if _kv.get("delta_size_tier") in ("small", "medium", "large"):
+            _scope["delta_size_tier"] = _kv["delta_size_tier"]
+    payload["review_scope"] = _scope
+
 # **付録と報告件数が、本文を書いた指摘の数を超えた回**（GitHub issue #248）。上限の式と契約 (a) は
 # `lib/body_bound.py`。**fail-fast にも WARN にもしない** — 止めるとその回の計測が丸ごと消え
 # （`agents-mismatch` と同じ判断）、WARN は既存データで 89 回中 43 回が該当するので鳴りっぱなしになる。
@@ -1498,7 +1520,7 @@ if [ "$PUBLISHED" = "1" ]; then
     bash "$HERE/review-timing.sh" cleanup ${PR_ARGS[@]+"${PR_ARGS[@]}"}
     rm -f "$(review_path prctx)" "$(review_path diff)" "$(review_path agentctx)" \
           "$(review_path oracles)" "$(review_path size)" "$(review_path corelist)" \
-          "$(review_path pastrev)"
+          "$(review_path pastrev)" "$(review_path delta)"
   fi
 else
   echo "WARN: publish に失敗したので一時ファイルを残した（同じ引数で再実行すれば復旧できる。" >&2

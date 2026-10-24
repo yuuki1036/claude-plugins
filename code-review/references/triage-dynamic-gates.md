@@ -1,8 +1,8 @@
 # 動的ラウンドの起動ゲート（triage-guide 分冊）
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @2561c0d6 -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @1cc0aecf -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @ea9cbe3a -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @0ea1c3d4 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
@@ -99,7 +99,7 @@
 | xhigh | 起動（2 段。**規模キャップが effort 上限を下回る帯は 1 段圧縮**） | 起動（BLOCKER / CRITICAL / **報告見込み MAJOR 3 件以上**。**`small` 帯は BLOCKER 有りのみ**） |
 | max | 起動（2 段。**規模キャップが effort 上限を下回る帯は 1 段圧縮**） | 同上 |
 
-**「起動するか否か」が規模帯に連動するのは Phase 5.6 だけ（v2.60.0）**。5.8 / 5.9 は帯に連動せず、**Phase 5.5 は起動可否こそ帯非連動だが段数は従来から帯連動する**（規模キャップが effort 上限を下回る帯では追加 explorer なしの 1 段圧縮経路 — triage-guide.md `## 6.3` / 同 `## 5.1` の wave 表）。5.6 のスキップは triage-guide.md `## 6.3` の「規模キャップが削るのは breadth だけ」という原則に対する**唯一の例外**（＝ depth 層を帯で止める唯一の例）で、根拠が n=1 と弱いため**ロールバック条件つきの暫定措置**として入れてある（`design-notes/triage-rationale.md`）。他の depth 層（5.8 / 5.9）へ同じ帯連動を横展開しないこと。
+**「起動するか否か」が規模帯に連動するのは Phase 5.6 だけ（v2.60.0）**。5.8 / 5.9 は帯に連動せず、**Phase 5.5 は起動可否こそ帯非連動だが段数は従来から帯連動する**（規模キャップが effort 上限を下回る帯では追加 explorer なしの 1 段圧縮経路 — triage-guide.md `## 6.3` / 同 `## 5.1` の wave 表）。5.6 のスキップは triage-guide.md `## 6.3` の「規模キャップが削るのは breadth だけ」という原則に対する**唯一の例外**（＝ depth 層を帯で止める唯一の例）で、根拠が n=1 と弱いため**ロールバック条件つきの暫定措置**として入れてある（`design-notes/triage-rationale.md`）。他の depth 層（5.8 / 5.9）へ同じ帯連動を横展開しないこと。self-review の `--since` の回は、帯を `delta_size_tier` で判定する（triage-guide.md `### 6.5` / #313）。
 
 ### userConfig による無効化
 
@@ -128,6 +128,8 @@ high-risk surface を含む変更に限り、事前所見と無関係に **findi
 2. **金銭・数量計算**: `amount` / `price` / `balance` / `quantity` / `stock` / 通貨・丸め・課金に関わる numeric 演算
 3. **認可・認証**: 権限チェック / セッション / トークン / ロール判定に関わる変更
 4. **PR 自己申告 D1-High**: PR 本文・ラベルで著者が「高リスク」「D1-High」「要注意」と申告した変更（`${CLAUDE_PLUGIN_ROOT}/references/prompts/pr-context-rules.md` の D1-High 検出で拾う。review skill のみ）
+
+**self-review の `--since` の回（GitHub issue #313）**: 判定は delta（ダイジェストの `## delta` の `### surface`）に当て、起動した skeptic には `$DIFF_FILE` として delta の patch（`delta_file`）を渡す。reviewer のフラグによる fallback も、フラグが delta の hunk を指すときだけ起動する。修正が認可・永続層・金額に触れた回だけ effort max の 1 体を払い、触れていない回は再レビューのたびに足さない。
 
 **偽陰性の保険**: 正規表現は ORM 抽象の深い経由（動的メソッド・ラッパー越しの書込）を取り逃しうる。reviewer はコード読解で high-risk surface に触れると判断したら `[surface:high-risk]` を申告する（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` の「high-risk surface フラグ」で全 reviewer に指示。PR 自己申告 `${CLAUDE_PLUGIN_ROOT}/references/prompts/pr-context-rules.md` とは独立経路）。オーケストレーターは **正規表現ヒット ∨ reviewer フラグ ∨ PR 自己申告 D1-High で OR 判定**する。surface 偽陰性は recall 補強が丸ごと不発になるため、網羅は正規表現に依存しきらない。
 
@@ -295,6 +297,8 @@ surface-aware 報告閾値（scoring-guide.md `## 報告マトリクス`）が h
 4. verdict を scoring（scoring-guide.md `## 反証レイヤーの verdict 反映`）に渡す。**高 severity は消さず注記**、MAJOR/MINOR のみ取り下げ可（理由は付録に記録）
 5. 1 体が複数 verdict を返す（バッチ）。**全 finding_id 分の verdict が揃っているか突合し、欠落は verdict なし扱い**にする（欠落を confirmed とも refuted とも解釈しない）
 6. **`severity-inflated` は `axis`（降格の型）まで数えて payload に載せる**（`adversarial_verify.inflated_axes` / GitHub issue #150）。件数だけでは**上流較正の型が的外れなのか、そもそも上流で直せないのか**を切り分けられない
+
+**self-review の `--since` の回（GitHub issue #313）**: `scope` のスキップに入れない（`--focus` / `--exclude` が無い限り）。上表のゲートを範囲で絞らず全指摘に当てる — delta の中に限ると、self-review の delta（直前の修正の前から）と feature-dev の G-V ループの delta（ループの起点から ±5 行）が 2 回目以降ずれ、反証を通らない指摘が auto-fix に入る。G-V ループが auto-fix に入れうる指摘が水増しのまま通ると、修正と再レビューが丸ごと 1 回増える
 
 ### effort 適応（5.5/5.6 とは別ゲート）
 

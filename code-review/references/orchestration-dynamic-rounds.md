@@ -2,10 +2,10 @@
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @00b686bc -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @a757845f -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @b3b520a7 -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @3f7275c0 -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @af73142e -->
+<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @d1549e64 -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @75db4464 -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @1153f07c -->
 
 **このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は SKILL.md 側にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。
 
@@ -36,6 +36,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
    - **high（既定）— 1 段圧縮**: 追加 explorer は起動しない。unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、**初回 reviewer と同じ effort**（orchestration-guide.md `## 5` の連動表）で再起動する（全 call を同一メッセージ内で一括発行 — orchestration-guide.md `## 0` 並列発行の明示）。プロンプトには**初回に渡した Read パスをすべて**（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` / `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<focus>.md`、review では `${CLAUDE_PLUGIN_ROOT}/references/prompts/pr-context-rules.md`、初回に条件付きで加えたもの。渡し方は orchestration-guide.md `## 3.5`）列挙したうえで、①初回指摘②担当分の unmet_information（focus, target, why, related_finding）を渡し、「**まず unmet ターゲットを自分で Read / Grep / Glob で探索し、取得した事実に基づいて初回 confidence を再評価せよ**」と指示する
    - **xhigh / max — 2 段**: `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md` と `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/re-explore.md` の 2 パスを Read させる追加 explorer（最大 3 体）を `model: sonnet` で並列起動し（一括発行 — orchestration-guide.md `## 0`）、各 explorer に対応する unmet_information を渡す。完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、初回と同じ effort で再起動し、初回に渡した Read パスをすべて列挙したうえで初回指摘 + 追加 explorer 結果を context として渡して「初回 confidence を再評価せよ」と指示する
    - いずれの経路も isolation は orchestration-guide.md `## 0` に従う（review は `isolation: "worktree"`（PR ブランチ）、self-review は使用しない）
+   - 初回にインラインで渡した `prior_fixes:`（self-review）も、再起動する reviewer に同じく渡す（共通ブロックに無いので、渡さないと置き換えた出力から前回の対象の確認が落ちる / #313）
    - **共通ブロック（`agent_ctx_file`）のパスを渡す**: PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` はそこに入っているので**プロンプトに再掲しない**（v2.63.0 / orchestration-guide.md `## 3.5`。値の意味は `## 1` / `## 1.1`） に従い prompt 冒頭に PR_NUMBER / head ref / head SHA / メインルートを明記し `{{PR_NUMBER}}` / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` を置換（issue #56 / #98 / #113）。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2` / issue #117）
 4. 再起動 reviewer の出力は **初回出力を置換**（dedup のため）
 5. レポートに「Round 2 trigger: <reason>」を記録（レポート出力 step = review Step 7 / self-review Step 6 で出力）
@@ -64,7 +65,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
    - **判定は Phase 0（reviewer 起動前）で行う**（v2.41.0）。正規表現 + PR 自己申告は diff だけで決まるため事前に取れる。effort ゲートも通過していれば、下記 2 の skeptic を **reviewer 一括発行と同一メッセージで発火**する（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合・dedup（下記 3）だけを 5.8 / 4.8 の位置で行う
    - **fallback（直列）**: reviewer の `[surface:high-risk]` フラグ由来で事後に surface=true になった場合のみ、reviewer 完了後に単独起動する。正規表現が取り逃した ORM 抽象越えのケースに限られる
 2. **手順 1 の相乗りで発火済みの場合、本手順は実行しない**（fallback 経路でのみ実行する。二重起動は「PR あたり skeptic 1 体・1 round」の上限違反であり `recall_skeptic.fired` の計測も壊す）。fallback のときのみ、`${CLAUDE_PLUGIN_ROOT}/references/prompts/recall-skeptic.md` を使用し、skeptic agent を **1 体**、`model: opus`, `effort: max` で起動する（isolation は orchestration-guide.md `## 0` に従う）
-   - **findings / reviewer の推論は渡さない**（独立性の核）。diff と最小 focus、base ref のみ渡す
+   - **findings / reviewer の推論は渡さない**（独立性の核）。diff と最小 focus、base ref のみ渡す。前回の指摘への修正（`prior_fixes:`）も findings なので渡さない
+   - **self-review の `--since` の回は `$DIFF_FILE` として delta の patch（`delta_file`）を渡し**、共通ブロックの `diff_file` は読まないと明記する。fallback の起動も、reviewer のフラグが delta の hunk を指すときだけ（triage-dynamic-gates.md `## 8.5` / GitHub issue #313）
    - **共通ブロック（`agent_ctx_file`）のパスを渡す**: PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` はそこに入っているので**プロンプトに再掲しない**（v2.63.0 / orchestration-guide.md `## 3.5`。値の意味は `## 1` / `## 1.1`） に従う。**`{{SEVERITY_THRESHOLD}}` は両 skill 共通で必須**（`## 2`）
 3. skeptic の指摘（`[recall-skeptic]` タグ付き）を既存指摘に統合。重複は dedup（同一ファイル ±5 行 + 類似内容）。skeptic の指摘も通常のスコアリング・報告マトリクス・**反証レイヤーの対象**に含める
    - **dedup 時はタグを残す側へ引き継ぐ**（どちらの本文を採用するかに関わらず）。reviewer 指摘と重複したときにタグごと捨てると skeptic の寄与が不可視になり過少計上される。**独立の skeptic が同じ問題に到達した事実は、reviewer が先に見つけていても失われない**
@@ -80,7 +82,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
 
 > **起動は meta-reviewer（`## 7`）と同一メッセージで行う**（v2.61.0）。対象選定の材料は「Round 2 後 + skeptic 統合済み」の全指摘で、**meta の出力は待たない**（meta 由来指摘は手順 3.5 の追加バッチで拾う）。
 
-1. triage-dynamic-gates.md `## 9 反証レイヤー` の選定ルールで対象指摘を選ぶ（high: 非対称ゾーン BLOCKER 60-94 / CRITICAL 80-94、xhigh/max: 報告ゾーン全体 + MAJOR）。**specialist 由来の指摘は全 effort で除外**
+1. triage-dynamic-gates.md `## 9 反証レイヤー` の選定ルールで対象指摘を選ぶ（high: 非対称ゾーン BLOCKER 60-94 / CRITICAL 80-94、xhigh/max: 報告ゾーン全体 + MAJOR）。**specialist 由来の指摘は全 effort で除外**。self-review の `--since` の回も delta の中に絞らず全指摘から選ぶ（#313）
 2. 対象指摘に通し番号（finding_id）を振り、**5 件ずつのバッチに分ける**（上限 3 体 = 15 件。超過分の扱いは triage-dynamic-gates.md `## 9`）。バッチごとに `${CLAUDE_PLUGIN_ROOT}/references/prompts/adversarial-verify.md` で反証エージェントを `model: opus`, `effort: high` で並列起動する（isolation は orchestration-guide.md `## 0` に従う。全 call を同一メッセージ内で一括発行する — orchestration-guide.md `## 0` 並列発行の明示）
    - 指摘の主張（severity / confidence / file:line / 内容）のみ渡し、**reviewer の理由文は渡さない**（アンカリング防止）
    - **バッチの切り方**: **同一ファイル・同一 reviewer 由来の指摘は意図的に散らす**（同一ファイルは 1 バッチ 2 件までを目安に分割）。バッチ化で失うのは reviewer からの独立性ではなく **反証者側の誤読の独立性** — 1 体がその関数の制御フローを 1 回読み違えると同一ファイルの指摘が束で `refuted` になり、MAJOR は confidence −40 で実質まとめて消える（旧構成の「指摘ごと 1 体」はこれを構造的に防いでいた）。diff 読解の共有によるコスト削減は寄せなくても大半が得られるので、寄せる誘惑に乗らない

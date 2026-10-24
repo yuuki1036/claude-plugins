@@ -841,6 +841,29 @@ REREVIEW_SPLIT_NOTE = ("> `（再レビュー）` の行は修正を確かめる
                        "G-V ループ）。0 件が望ましい回なので世代の行に混ぜず、⚠️ の判定からも外す（#296）")
 
 
+#: self-review を `--since` で delta に絞った回の行に付ける印（GitHub issue #313）
+DELTA_TAG = "（delta）"
+
+
+def scope_mode_of(p):
+    """`review_scope.mode`。**無い・語彙外の回は full**（実装より前の回は diff 全体を見ている / #313）."""
+    sc = p.get("review_scope")
+    mode = sc.get("mode") if isinstance(sc, dict) else None
+    return mode if mode in ("delta", "full") else "full"
+
+
+def is_delta(p):
+    return scope_mode_of(p) == "delta"
+
+
+def is_main_delta_key(key):
+    return DELTA_TAG not in key
+
+
+DELTA_SPLIT_NOTE = ("> `（delta）` の行は self-review を `--since` で delta に絞った回（feature-dev の Phase 6.9）。"
+                    "見る範囲と体数を決めた帯が diff 全体と違うので世代の行に混ぜず、⚠️ の判定からも外す（#313）")
+
+
 def gen_threshold_of(p):
     """世代ラベルに、主層と違う報告閾値を添える（GitHub issue #277）。
 
@@ -855,6 +878,10 @@ def gen_threshold_of(p):
     # 再レビューは閾値によらず 1 行にまとめる（どの閾値でも主層から外れる / #296）
     if is_rereview(p):
         return g + REREVIEW_TAG
+    # delta に絞った回も閾値によらず 1 行にまとめる（再レビューでない Phase 6.9 の回 / #313）。
+    # G-V ループの delta の回は上の再レビューに入る
+    if is_delta(p):
+        return g + DELTA_TAG
     t = p.get("severity_threshold")
     # self-review の既定は MINOR（#297）。既定のまま走った回は閾値によらず主層に置く — 外すと既定を
     # 変えた日から self-review の主層が空になる。doc だけの diff の自動 MINOR（review / 旧版）は従来どおり分ける
@@ -887,7 +914,8 @@ def apx_layer_of(p):
     """
     key = gen_threshold_of(p)
     e = p.get("effort")
-    if not (is_main_threshold_key(key) and is_main_rereview_key(key)) or e is None or e in MAIN_EFFORTS:
+    if not (is_main_threshold_key(key) and is_main_rereview_key(key) and is_main_delta_key(key)) \
+            or e is None or e in MAIN_EFFORTS:
         return key
     return "%s（effort %s）" % (key, "low/medium" if e in ("low", "medium") else e)
 
@@ -943,10 +971,16 @@ def layer_omission_note(dropped_layers, dropped_n):
 
 # ---- 2. effort × size_tier 別の fleet 時間・体数 ---------------------------
 buckets = {}
+# delta に絞った回は体数を delta の帯で決めた（payload の `size_tier` は diff 全体の帯）ので、size_tier で
+# 層別する表には入れない（GitHub issue #313）。外した件数は表の下に出す
+tier_dropped_delta = 0
 for e in events:
     p = e["p"]
     fleet = num(p.get("duration_fleet_min"))
     if fleet is None or fleet < 0 or _fleet_span_conflict(p):
+        continue
+    if is_delta(p):
+        tier_dropped_delta += 1
         continue
     key = with_gen(p, "%s/%s" % (p.get("effort", "?"), p.get("size_tier", "?")))
     buckets.setdefault(key, {"fleet": [], "agents": []})
@@ -971,7 +1005,7 @@ tier_xy = {}
 for e in events:
     p = e["p"]
     fleet, ta = num(p.get("duration_fleet_min")), total_agents(p)
-    if fleet is not None and fleet >= 0 and ta is not None and not _fleet_span_conflict(p):
+    if fleet is not None and fleet >= 0 and ta is not None and not _fleet_span_conflict(p) and not is_delta(p):
         xs.append(ta)
         ys.append(fleet)
         # **層別キーを tier 中央値表と揃える**（GitHub issue #217）。相関だけ `size_tier`
@@ -1083,7 +1117,7 @@ for e in events:
         threshold_recovered += 1
     key = with_gen(p, "schema>=%d/threshold=%s%s" % (
         schema_of(pre, "schema"), p.get("severity_threshold") or "?",
-        "/再レビュー" if is_rereview(p) else ""))
+        "/再レビュー" if is_rereview(p) else ("/delta" if is_delta(p) else "")))
     y = yields.setdefault(key, {"n": 0, "pre": 0, "post": 0})
     y["n"] += 1
     for sev in ("blocker", "critical", "major", "minor"):
@@ -1126,7 +1160,7 @@ for e in events:
     # 分解した数字なのかが対応付かない（#191 のセルフレビュー指摘）
     key = with_gen(p, "schema>=%d/threshold=%s%s" % (
         schema_of(pre, "schema"), p.get("severity_threshold") or "?",
-        "/再レビュー" if is_rereview(p) else ""))
+        "/再レビュー" if is_rereview(p) else ("/delta" if is_delta(p) else "")))
     sp = splits.setdefault(key, {"n": 0, "pre": 0, "below": 0, "post": 0, "judged": 0,
                                  "over": 0, "over_appendix": 0, "over_report": 0, "lower": 0})
     sp["n"] += 1
@@ -1402,9 +1436,10 @@ def effort_band(p):
 
 
 def layer_stats(field, schema_key, min_schema, value_of=None, major_only_of=None):
-    """版マーカーで濾し、設計上非該当のスキップを分母から外して集計する。
+    """版マーカーで濾し、設計上非該当のスキップと、再レビュー・delta の回を分母から外して集計する。
 
-    `n_raw` は全サンプル、`n` は判定に使える母集団（層別後 × スコープ内）。
+    `n_raw` は全サンプル、`n` は判定に使える母集団（層別後 × スコープ内 × 初回の diff 全体の回）。
+    再レビュー・delta の回は対象が絞られていて発火の条件が初回と違うので、`dropped_rereview` に数える（#313）。
     両方返すのは「まだサンプルが貯まっていない」と「絞った結果 0 件」を区別するため。
 
     `value_of` は「その回に価値が出たか」を測る関数（既定は `findings_added`）。
@@ -1427,6 +1462,7 @@ def layer_stats(field, schema_key, min_schema, value_of=None, major_only_of=None
     # 不発率を 1 つの分母に混ぜると世代差に見えるものが effort の構成差になる
     st = {"n_raw": 0, "n": 0, "fired": 0, "valuable": 0, "by_gen": {}, "by_effort": {},
           "skips": {}, "dropped_schema": 0, "dropped_scope": 0, "dropped_unrecorded": 0,
+          "dropped_rereview": 0,
           "schema_key": schema_key, "min_schema": min_schema, "last_by_gen": {}}
     for e in events:
         d = e["p"].get(field)
@@ -1453,6 +1489,11 @@ def layer_stats(field, schema_key, min_schema, value_of=None, major_only_of=None
         if d.get("fired") is not True and reason in OUT_OF_SCOPE_SKIPS:
             st["dropped_scope"] += 1
             st["skips"][reason] = st["skips"].get(reason, 0) + 1
+            continue
+        # 再レビューと delta に絞った回は、前回の対象・delta が主で対象の選び方が初回と違うので、発火率と
+        # 価値率に混ぜない（GitHub issue #313。`--since` の回は反証が scope で止まらず走る）
+        if is_rereview(e["p"]) or is_delta(e["p"]):
+            st["dropped_rereview"] += 1
             continue
         st["n"] += 1
         # 分母は `n` と同じ（スコープ外スキップは上で除外済み）。集計と内訳で母集団を
@@ -1586,8 +1627,10 @@ adversarial = layer_stats("adversarial_verify", "gate_schema", 2, value_of=verdi
                           major_only_of=major_only_verdicts)
 # round2 は専用オブジェクトを持たないので `agents.round2` の**キー存在**を版プロキシにする
 # （`agents` を持たない旧サンプルを分母に入れると発火率が構造的に薄まる。#127 と同型）
-round2_scope = [e for e in events
-                if num(agents_dict(e["p"]).get("round2")) is not None]
+# 再レビューと delta の回は、他の動的層と同じく分母から外す（GitHub issue #313）
+_round2_recorded = [e for e in events if num(agents_dict(e["p"]).get("round2")) is not None]
+round2_scope = [e for e in _round2_recorded if not (is_rereview(e["p"]) or is_delta(e["p"]))]
+round2_dropped_rereview = len(_round2_recorded) - len(round2_scope)
 round2_fired = sum(1 for e in round2_scope
                    if (num(agents_dict(e["p"]).get("round2")) or 0) > 0)
 
@@ -1828,8 +1871,12 @@ tok_r = pearson(txs, tys)
 # 代用すると、窓や単位を変えて schema を上げたとき旧版が無言で同じ中央値に混ざる（冒頭の層別の原則）
 per_agent_buckets = {}
 per_agent_undividable = 0
+per_agent_dropped_delta = 0
 for e in tok_rows:
     t = e["p"]["tokens"] or {}
+    if is_delta(e["p"]):
+        per_agent_dropped_delta += 1
+        continue
     cr, na = num(t.get("sub_cache_read_k")), num(t.get("sub_agents"))
     if cr is None or cr < 0 or na is None or na <= 0:
         per_agent_undividable += 1
@@ -1842,6 +1889,51 @@ for key in sorted(per_agent_buckets, key=lambda k: -len(per_agent_buckets[k])):
     per_agent_rows.append((key, len(per_agent_buckets[key]),
                            median(per_agent_buckets[key])))
 
+# **再レビューの費用**（GitHub issue #313）。delta に絞った再レビューで 1 回の費用が下がったかを、同じ
+# effort × size_tier（diff 全体の帯）の初回・diff 全体の再レビューと並べて読む。反証・skeptic の分は
+# reviewer の分と分けられない（`tokens` に役割別の内訳が無い）ので、合計で比べる
+REVIEW_KINDS = ("初回", "再レビュー・全体", "再レビュー・delta", "delta")
+
+
+def review_kind(p):
+    if is_rereview(p):
+        return "再レビュー・delta" if is_delta(p) else "再レビュー・全体"
+    return "delta" if is_delta(p) else "初回"
+
+
+cost_buckets = {}
+for e in tok_rows:
+    t = e["p"]["tokens"] or {}
+    if _sub_is_blank(t):
+        continue
+    vals = {}
+    for name, k in (("output", "sub_output_k"), ("cache_read", "sub_cache_read_k")):
+        v = num(t.get(k))
+        if v is not None and v >= 0:
+            vals[name] = v
+    # 値の無い回でバケツを作ると、n=0 の行だけで表が出る
+    if not vals:
+        continue
+    key = with_gen(e["p"], "%s/%s" % (e["p"].get("effort", "?"), e["p"].get("size_tier", "?")))
+    b = cost_buckets.setdefault((key, review_kind(e["p"])), {"output": [], "cache_read": []})
+    for name, v in vals.items():
+        b[name].append(v)
+# 再レビューか delta の回が 1 件も無ければ表を出さない（初回だけの表は上のトークンの行と同じことしか言わない）。
+# 層の上限は他の層別表と同じく効かせ、層ごと（種別をまとめて）残すか省くかを決める
+rereview_cost_rows, rereview_cost_omitted = [], None
+if any(kind != "初回" for _, kind in cost_buckets):
+    _layer_n = {}
+    for (key, kind), b in cost_buckets.items():
+        _layer_n[key] = _layer_n.get(key, 0) + max(len(b["output"]), len(b["cache_read"]))
+    _cost_shown, _cost_dropped, _cost_dropped_n = cap_layer_rows(sorted(_layer_n.items(), key=lambda kv: -kv[1]))
+    rereview_cost_omitted = layer_omission_note(_cost_dropped, _cost_dropped_n)
+    for key, _n in _cost_shown:
+        for kind in REVIEW_KINDS:
+            b = cost_buckets.get((key, kind))
+            if b:
+                rereview_cost_rows.append((key, kind, max(len(b["output"]), len(b["cache_read"])),
+                                           median(b["output"]), median(b["cache_read"])))
+
 # **1 体あたりの往復の分布**（GitHub issue #265 / #190）。往復数が cache_read を決める唯一の効くレバーで、
 # 平均（`sub_cache_read_k / sub_agents`）では cap の候補値で何体が打ち切られるかが分からない。
 # 層は上と同じ effort × size_tier × 世代。`sub_turns` は v2.135.0 以降の回にだけある
@@ -1850,7 +1942,7 @@ TURN_CAP_CANDIDATE = 20   # #190 の 09-30 の計測で挙げた候補（新算�
 turn_buckets = {}
 for e in tok_rows:
     _ts = (e["p"]["tokens"] or {}).get("sub_turns")
-    if not isinstance(_ts, list):
+    if not isinstance(_ts, list) or is_delta(e["p"]):
         continue
     _ts = [v for v in _ts if isinstance(v, int) and v > 0]
     if _ts:
@@ -2217,7 +2309,7 @@ _TS_KEYS = ("n", "true_silent", "true_silent_empty", "true_silent_below",
             "true_silent_below_listed", "true_silent_below_over")
 apx_main = {"by_gen": {_k: _v for _k, _v in apx_stats["by_gen"].items()
                         if is_main_threshold_key(_k) and is_main_effort_key(_k)
-                        and is_main_rereview_key(_k)},
+                        and is_main_rereview_key(_k) and is_main_delta_key(_k)},
             "last_by_gen": apx_stats["last_by_gen"]}
 for _f in _TS_KEYS:
     apx_main[_f] = sum(_v.get(_f, 0) for _v in apx_main["by_gen"].values())
@@ -2271,11 +2363,12 @@ def _ts_breakdown(label):
 
 
 def _excluded_note():
-    """判定から外した件数を、外した理由ごとに添える（#277 / #284 / #296）."""
+    """判定から外した件数を、外した理由ごとに添える（#277 / #284 / #296 / #313）."""
     parts = []
     for name, is_main, issue in (("閾値が既定でない", is_main_threshold_key, "#277"),
                                  ("effort が high 未満の", is_main_effort_key, "#284"),
-                                 ("修正を確かめる再レビューの", is_main_rereview_key, "#296")):
+                                 ("修正を確かめる再レビューの", is_main_rereview_key, "#296"),
+                                 ("delta に絞った", is_main_delta_key, "#313")):
         n = sum(_v["n"] for _k, _v in apx_stats["by_gen"].items() if not is_main(_k))
         if n:
             parts.append("%s %d 件は判定から外した（%s）" % (name, n, issue))
@@ -2362,6 +2455,7 @@ if as_json:
         "adversarial_verify": adversarial,
         "md_polish": md_polish,
         "round2_fired": round2_fired, "round2_scope": len(round2_scope),
+        "round2_dropped_rereview": round2_dropped_rereview,
         "tokens": {"n": len(tok_rows), "n_raw": len(tok_raw),
                    "dropped_window": tok_dropped_window,
                    "dropped_schema": tok_dropped_schema,
@@ -2371,7 +2465,11 @@ if as_json:
                    # #265。層 → 1 体あたりの往復の分布（`over_cap` は候補値を超えた体数）
                    "sub_turns": {"cap_candidate": TURN_CAP_CANDIDATE, "layers": [
                        {"layer": k, "runs": r, "agents": n, "median": m, "max": mx, "over_cap": oc}
-                       for k, r, n, m, mx, oc in turn_rows]}},
+                       for k, r, n, m, mx, oc in turn_rows]},
+                   # #313。種別（初回 / 再レビュー・全体 / 再レビュー・delta / delta）ごとの sub の合計
+                   "rereview_cost": [{"layer": k, "kind": kind, "n": n_c, "sub_output_k_median": mo,
+                                      "sub_cache_read_k_median": mc}
+                                     for k, kind, n_c, mo, mc in rereview_cost_rows]},
         # **一括発行は欠測と別枠**（#192 / #200）。`marker` は payload に焼かれた
         # publish 時点の判定の生カウントで、`n` は現行式での再計算。食い違いは `stale`
         "wave_split": {"n": n_wave_split, "judged": n_wave_judged,
@@ -2481,6 +2579,10 @@ _note = layer_omission_note(_tier_dropped, _tier_dropped_n)
 if _note:
     print()
     print(_note)
+if tier_dropped_delta:
+    print()
+    print("_delta に絞った %d 件は size_tier で層別する集計から外した（体数を delta の帯で決めた回 / #313）_"
+          % tier_dropped_delta)
 if tier_r_rows:
     print()
     print("**体数 vs fleet 時間の相関**（size_tier × 世代。tier が体数と fleet の両方を"
@@ -2626,6 +2728,8 @@ if zero_rows:
         print(THRESHOLD_SPLIT_NOTE)
     if not all(is_main_rereview_key(_k) for _k in zero_rows):
         print(REREVIEW_SPLIT_NOTE)
+    if not all(is_main_delta_key(_k) for _k in zero_rows):
+        print(DELTA_SPLIT_NOTE)
     if len(zero_rows) > 1:
         print()
         print("**世代間で差が出ていたら、コスト側の層別（fleet / 体数 / cache_read）だけでは"
@@ -2802,21 +2906,23 @@ print()
 print("**動的層の発火**（**層ごとに分母が違う** — 各層の版マーカーで濾し、設計上の非該当"
       "スキップを外した母集団。round2 は `agents.round2` を持つ回）: "
       "skeptic %d/%d（価値 %d） / meta %d/%d（価値 %d） / 反証 %d/%d（verdict 有 %d） / "
-      "round2 %d/%d"
+      "round2 %d/%d%s"
       % (skeptic["fired"], skeptic["n"], skeptic["valuable"],
          meta["fired"], meta["n"], meta["valuable"],
          adversarial["fired"], adversarial["n"], adversarial["valuable"],
-         round2_fired, len(round2_scope)))
+         round2_fired, len(round2_scope),
+         "（再レビュー・delta で除外 %d）" % round2_dropped_rereview if round2_dropped_rereview else ""))
 if md_polish["n_raw"]:   # review だけの母集団では出さない（self-review のみの層）
     print("  - Markdown 推敲（self-review のみ / #243）: 起動 %d 回（提案あり %d 回）"
           % (md_polish["fired"], md_polish["valuable"]))
 for name, st in (("skeptic", skeptic), ("meta", meta), ("反証", adversarial),
                  ("md 推敲", md_polish)):
-    if st["dropped_schema"] or st["dropped_scope"] or st["dropped_unrecorded"]:
+    if st["dropped_schema"] or st["dropped_scope"] or st["dropped_unrecorded"] or st["dropped_rereview"]:
         print("  - %s 母集団: 全 %d 件 → 判定対象 %d 件（版マーカー %s>=%d で除外 %d / "
-              "設計上非該当で除外 %d / 発火記録の欠落で除外 %d）"
+              "設計上非該当で除外 %d / 発火記録の欠落で除外 %d / 再レビュー・delta で除外 %d）"
               % (name, st["n_raw"], st["n"], st["schema_key"], st["min_schema"],
-                 st["dropped_schema"], st["dropped_scope"], st["dropped_unrecorded"]))
+                 st["dropped_schema"], st["dropped_scope"], st["dropped_unrecorded"],
+                 st["dropped_rereview"]))
     if st["skips"]:
         print("  - %s skip 理由: %s" % (name, " / ".join(
             "%s=%d" % kv for kv in sorted(st["skips"].items(), key=lambda kv: -kv[1]))))
@@ -3009,6 +3115,24 @@ else:
               "欠測・0 で除算不可 %d）。旧算法の schema で落とした回はここではなくトークン行の"
               "除外件数に出る。除算不可が続くなら `measure-tokens.sh` の窓・引き当てが原因"
               "（issue #156）" % per_agent_undividable)
+    # 表の有無によらず出す。delta の回だけの窓では上の表が空になり、原因を計測の故障と読ませる
+    if per_agent_dropped_delta:
+        print()
+        print("_delta に絞った %d 件は 1 体あたり・往復の集計から外した（#313）_" % per_agent_dropped_delta)
+    if rereview_cost_rows:
+        print()
+        print("**再レビューの費用**（effort × size_tier は diff 全体の帯 / sub の合計の中央値。delta に絞った"
+              "再レビューで 1 回の費用が下がったかを同じ層で読む。反証・skeptic の分は reviewer の分と分けて"
+              "いない / #313）")
+        print()
+        print("| effort/tier | 種別 | n | sub.output 中央値 | sub.cache_read 中央値 |")
+        print("|---|---|---:|---:|---:|")
+        for key, kind, n_c, mo, mc in rereview_cost_rows:
+            print("| %s | %s | %d | %s | %s |" % (key, kind, n_c, "-" if mo is None else "%g k" % mo,
+                                                "-" if mc is None else "%g k" % mc))
+        if rereview_cost_omitted:
+            print()
+            print(rereview_cost_omitted)
 
 print()
 # ---- 🔁 付録（「報告 0 件」と「価値 0」の分離 / GitHub issue #168） ----------
@@ -3023,10 +3147,10 @@ if apx_rows:
           % (len(apx_rows), tot_listed, tot_rec))
     # **世代別の真の空振り**（#214）。#210 の判定基準「20% 未満」を人が引き算せずに読める形。
     # 世代が 1 種しか無い母集団では表を割らない（`with_gen` と同じ方針）。ただし判定から外した行
-    # （閾値・effort・再レビュー）だけの母集団では出す — 表が無いと ⚠️ が黙っている理由が見えない
+    # （閾値・effort・再レビュー・delta）だけの母集団では出す — 表が無いと ⚠️ が黙っている理由が見えない
     # 下の `or` の右辺でしか効かず、そこではキーが 1 個なので all と any は同値
     _all_main = all(is_main_threshold_key(_k) and is_main_effort_key(_k)  # mutation-ok: 上の注記
-                    and is_main_rereview_key(_k)
+                    and is_main_rereview_key(_k) and is_main_delta_key(_k)
                     for _k in apx_stats["by_gen"])
     if len(apx_stats["by_gen"]) > 1 or not _all_main:
         print()
@@ -3050,6 +3174,8 @@ if apx_rows:
             print(EFFORT_SPLIT_NOTE)
         if not all(is_main_rereview_key(_k) for _k in apx_stats["by_gen"]):
             print(REREVIEW_SPLIT_NOTE)
+        if not all(is_main_delta_key(_k) for _k in apx_stats["by_gen"]):
+            print(DELTA_SPLIT_NOTE)
         print()
     # **内訳を読ませる**（#210）。混ぜたままだと回復サインがどちらの改善を求めているのか
     # 決まらない。**検出 0 = recall の問題 / 閾値未満のみ = 閾値・付録の方針の問題**

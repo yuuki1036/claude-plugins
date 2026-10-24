@@ -2,6 +2,42 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.162.0] - 2026-10-24
+
+### Added
+
+- **self-review に `--since=<tree>` / `--prior-findings=<path>` を足した**（GitHub issue #313）。
+  起点の tree の後に変えた分（delta）を主な対象にし、前回の対象を範囲を絞っても確認対象に戻す。
+  feature-dev の G-V ループの再レビューと Phase 6.9 が渡す。delta は `triage-signals.sh --since-tree` が作り、対象は diff 全体に入るファイルと、
+  起点の tree から変わったファイル（base の状態へ戻したファイルを含む。いま未追跡のものは除く）。rename は両側に分けて照合し、
+  git はすべて repo のルートで回す（サブディレクトリから起動しても delta が空にならない）。Step 1 は条件付きの引数を 1 語ずつ書く
+  （Bash tool の zsh は展開を語に分けない）。値はシングルクォートで埋める（値の検査より先にシェルが展開しない）。ダイジェストの末尾に `## delta`
+  （`scope_mode=` / `delta_file=` / delta の規模と、delta だけで数えた `###` の 4 節）を出す。
+  起点が tree の ID でない・引けない・`--staged` / `--pr` と一緒・`--prior-findings` を読めない回は、理由（`fallback=`）を残して diff 全体で続ける
+- **`--since` の回の観点・体数**（triage-guide.md `### 6.5`）。観点は前回の対象の観点・delta に立つ観点・最小保証の 2 体で、
+  前回の対象の観点は規模キャップの外で専任の reviewer を起動する（effort 上限の内側。キーが specialist ならその specialist を、
+  `recall-skeptic` / `meta` / 語彙外なら reviewer-bugs を充てる）。残りの観点と explorer は delta の帯の規模キャップを掛ける。
+  反証は `scope` でスキップせず、通常のゲートを範囲で絞らず全指摘に当てる。skeptic は delta が high-risk surface に当たる回だけ delta を冷や読みする。
+  レポート冒頭に `**範囲**:` の行を出す
+- **`prior-fixes.sh match --extra <path>`**（`--prior-findings` の分を記録分と合わせて出す。記録分と同じ `file:line:focus` の分は捨てる。
+  diff では絞らない（base の状態へ戻したファイルの対象も出す）。上限 50 件を超えたら古い側から捨てて WARN を出す。detached HEAD でも出す）と、
+  使えるファイルかだけを見る `prior_fixes.py check`。`match` の想定外の引数（`--extra=<path>` など）は黙って捨てずに exit 2 で止める
+- **payload に `review_scope` を足した**。publish が size ファイルの `scope_mode=` から作る（mode はファイルの有無ではなく中身で持つ。呼び出し側が書いた値は捨てる）
+- **retro**: delta に絞った回（再レビューでない回）を `（delta）` の層で主層から外し、`size_tier` で層別する表（fleet・体数・相関・1 体あたり cache_read・往復）からも外す。
+  再レビューと delta の回は反証などの発火率・価値率の分母に入れない。トークンの節に「再レビューの費用」の表（初回 / 再レビュー・全体 / 再レビュー・delta / delta）を足した
+
+### Changed
+
+- **`prior_fixes:` を共通ブロックに入れず、reviewer と specialist のプロンプトにだけインラインで渡すようにした**（#298 の経路も同じ）。Round 2 で再起動する reviewer にも同じく渡す
+
+### Fixed
+
+- `prior_fixes:` が共通ブロック経由で skeptic にも届き、「findings を渡さない」独立性が崩れていた（上の Changed で塞いだ）
+- `prior-fixes.sh` は `git rev-parse` に失敗した回（コミットの無いブランチなど）を detached HEAD と同じに扱う（空のブランチ名で記録すると、照合で読まれない記録が残っていた）
+- triage-signals.sh は size ファイルと delta の patch を diff の取得より前に消すようにした（途中で止まった回に前の回の `doc_only=` などが残っていた）
+- `prior_fixes.py` は制御文字を含むパスと repo の外を指す相対パスを捨てる（`## prior-fixes` は 1 件 1 行で出すので、改行で偽の節を作れた）
+- `detect-recent-review.sh` は delta に絞った回に `範囲=delta` を添える（digest は diff 全体の値なので、少ない件数を diff 全体の結果と読ませていた）
+
 ## [2.161.3] - 2026-10-23
 
 ### Changed

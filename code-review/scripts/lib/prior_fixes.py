@@ -13,9 +13,18 @@ self-review を `--focus` や共通ブロックのスコープで「前回以降
   出すものが無ければ何も出さない
 - `clear`: 今のブランチの記録から、今回の diff が触ったファイルの分だけを消す（publish が呼ぶ。その分は
   この回の Step 1 が照合して reviewer に渡した）。diff に入らなかった分は reviewer に渡っていないので残す
+- `match` に `<extra> <repo のルート>` を足すと、self-review の `--prior-findings` で渡された前回の対象
+  （形は `record` の stdin と同じ）も合わせて出す。記録には書かず、`clear` でも消さない。記録分と同じ
+  `file:line:focus` の分は捨てる。diff では絞らない — 修正が base の状態へ戻したファイルは diff 全体から
+  外れるが、そのファイルの対象こそ確かめる（GitHub issue #313）
+- `check`: `--prior-findings` のファイルを使えるかだけを確かめる（triage-signals.sh が `--since` を
+  効かせるかを決める。読めない・形が違うなら exit 2）
 
-使い方: `prior_fixes.py record <記録> <ブランチ> <repo のルート>` / `match <記録> <ブランチ> <diff>` /
-`clear <記録> <ブランチ> <diff>`。呼び出し口は `scripts/prior-fixes.sh`（記録と diff のパスを導出する）。
+使い方: `prior_fixes.py record <記録> <ブランチ> <repo のルート>` / `match <記録> <ブランチ> <diff>
+[<extra> <repo のルート>]` / `clear <記録> <ブランチ> <diff>` / `check <extra> <repo のルート>`。
+`match` はブランチが空なら記録を読まない（prior-fixes.sh が detached HEAD で `--extra` の分だけを出すときに
+空で呼ぶ）。record / match / clear の呼び出し口は `scripts/prior-fixes.sh`（記録と diff のパスを導出する）。
+`check` は triage-signals.sh が直接呼ぶ。
 """
 
 from __future__ import annotations
@@ -30,7 +39,8 @@ sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pyca
 
 #: 2 でブランチ別に持つ形にした（1 は作業ツリーに 1 ブランチ分だけ。読むときに 2 の形へ直す）
 SCHEMA = 2
-#: 1 回の Step 7 で記録する上限。超えた分は捨てる（reviewer の共通ブロックに全件並ぶので、長くしない）
+#: 1 回の Step 7 で記録する上限と、`--prior-findings` から読む上限。超えた分は捨てる（`## prior-fixes` の行は
+#: reviewer のプロンプトにそのまま並ぶので、長くしない）
 MAX_FIXES = 50
 _TITLE_MAX = 200
 _FOCUS_MAX = 40
@@ -47,6 +57,10 @@ def _clean(entry, root: str):
     if not isinstance(path, str) or not path.strip():
         return None
     path = path.strip()
+    # 表示できない文字を含むパスは捨てる（`## prior-fixes` は 1 件 1 行で出す。改行や U+2028 などの行区切りで
+    # 偽の節を作れる。ASCII の制御文字だけを見ると U+2028 / U+0085 が通る）
+    if not path.isprintable():
+        return None
     # 絶対パスで渡されたら repo のルート相対に直す（diff の `b/` 側のパスと突き合わせるため）
     if os.path.isabs(path) and root:
         rel = os.path.relpath(path, root)
@@ -55,6 +69,8 @@ def _clean(entry, root: str):
         path = rel
     if path.startswith("./"):
         path = path[2:]
+    if os.path.normpath(path).startswith(".."):
+        return None
     line = entry.get("line")
     # bool は int の部分型なので先に弾く（`true` が 1 行目に化ける）
     if isinstance(line, bool) or not isinstance(line, int) or line < 1:
@@ -159,20 +175,67 @@ def _branch_fixes(path: str, branch: str):
     return [f for f in entry.get("fixes") or [] if isinstance(f, dict)], data
 
 
-def match(path: str, branch: str, diff: str) -> int:
-    fixes, _ = _branch_fixes(path, branch)
-    if not fixes:
+def _load_extra(path: str, root: str):
+    """`--prior-findings` のファイルを読む。使えなければ WARN を出して None（空の配列は使える）."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            items = json.load(f)
+    except (OSError, ValueError):
+        print("WARN: --prior-findings を読めない（%s）" % path, file=sys.stderr)
+        return None
+    if not isinstance(items, list):
+        print("WARN: --prior-findings は JSON の配列で渡す（%s）" % path, file=sys.stderr)
+        return None
+    extra = [c for c in (_clean(e, root) for e in items) if c is not None]
+    if items and not extra:
+        print("WARN: --prior-findings に使える項目が無い（%s）" % path, file=sys.stderr)
+        return None
+    if len(extra) < len(items):
+        print("WARN: --prior-findings の %d 件は形が違うので捨てた" % (len(items) - len(extra)), file=sys.stderr)
+    # 入力は古い順（後ろほど新しい / prior-fixes-guide.md 4 節）。上限を超えたら後ろを残す
+    if len(extra) > MAX_FIXES:
+        print("WARN: --prior-findings の古い %d 件を捨てた（上限 %d 件）" % (len(extra) - MAX_FIXES, MAX_FIXES),
+              file=sys.stderr)
+    return extra[-MAX_FIXES:]
+
+
+def check(path: str, root: str) -> int:
+    return 0 if _load_extra(path, root) is not None else 2
+
+
+def _key(f: dict):
+    return (f.get("file"), f.get("line"), f.get("focus"))
+
+
+def match(path: str, branch: str, diff: str, extra_path: str = "", root: str = "") -> int:
+    # ブランチが空（detached HEAD）なら記録を読まない。--prior-findings の分は記録に頼らないので出す
+    fixes = (_branch_fixes(path, branch)[0] or []) if branch else []
+    extra = (_load_extra(extra_path, root) or []) if extra_path else []
+    if not fixes and not extra:
         return 0
     try:
         files = _diff_files(diff)
     except OSError:
+        # 記録分は照合できないので出さない。--prior-findings の分は diff で絞らないので出す
         print("WARN: diff を読めない（%s）。triage-signals.sh の後に呼ぶ" % diff, file=sys.stderr)
-        return 0
+        files = set()
     hits = [f for f in fixes if f.get("file") in files]
+    recorded, seen = {_key(f) for f in hits}, set()
+    # 記録分を先に並べ、同じ file:line:focus の --prior-findings の分は捨てる。記録分どうしは畳まない。
+    # 行の無い指摘も畳まない（鍵が粗く、別の指摘が 1 件に潰れる）
+    for f in extra:
+        k = _key(f)
+        if k[1] is not None and (k in recorded or k in seen):
+            continue
+        seen.add(k)
+        hits.append(f)
     if not hits:
         return 0
     print("## prior-fixes")
-    print("recorded=%d in_diff=%d" % (len(fixes), len(hits)))
+    if extra_path:
+        print("recorded=%d extra=%d in_diff=%d" % (len(fixes), len(extra), len(hits)))
+    else:
+        print("recorded=%d in_diff=%d" % (len(fixes), len(hits)))
     for f in hits:
         print("%s:%s\t%s\t%s" % (f["file"], f.get("line") or "?", f.get("focus") or "?", f.get("title") or ""))
     return 0
@@ -209,12 +272,14 @@ def clear(path: str, branch: str, diff: str) -> int:
 def main(argv) -> int:
     if len(argv) >= 4 and argv[0] == "record":
         return record(argv[1], argv[2], argv[3], sys.stdin.read())
-    if len(argv) >= 4 and argv[0] == "match":
-        return match(argv[1], argv[2], argv[3])
+    if len(argv) in (4, 6) and argv[0] == "match":
+        return match(*argv[1:])
     if len(argv) >= 4 and argv[0] == "clear":
         return clear(argv[1], argv[2], argv[3])
-    print("usage: prior_fixes.py record <path> <branch> <root> | match <path> <branch> <diff> | "
-          "clear <path> <branch> <diff>", file=sys.stderr)
+    if len(argv) == 3 and argv[0] == "check":
+        return check(argv[1], argv[2])
+    print("usage: prior_fixes.py record <path> <branch> <root> | match <path> <branch> <diff> [<extra> <root>] | "
+          "clear <path> <branch> <diff> | check <extra> <root>", file=sys.stderr)
     return 2
 
 

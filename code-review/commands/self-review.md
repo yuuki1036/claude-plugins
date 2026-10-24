@@ -8,7 +8,7 @@ allowed-tools:
   - Agent
   - AskUserQuestion
   - Skill
-argument-hint: "[--staged | base branch] [--focus <観点>] [--exclude <観点1,観点2>] [--spec <path>] [--embed] [--rereview] (省略時はデフォルトブランチとの差分)"
+argument-hint: "[--staged | base branch] [--focus <観点>] [--exclude <観点1,観点2>] [--spec <path>] [--embed] [--rereview] [--since=<tree>] [--prior-findings=<path>] (省略時はデフォルトブランチとの差分)"
 ---
 
 **まず `${CLAUDE_PLUGIN_ROOT}/skills/self-review/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `code-review@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。**SKILL.md は 70KB を超え、1 回では読み切れない。Bash の `cat` / `sed` で読まない** — 出力超過で先頭 2KB のプレビューしか残らず、Step 6 のレポートテンプレートに届かない（テンプレートがコンテキストに入らないまま締めた回は 3/3 で定型を出さなかった / GitHub issue #250）。Read の `offset` / `limit` で分けて、Step 6 のテンプレートと 6.4 の publish まで読む。
@@ -18,7 +18,8 @@ self-review スキルを使用して、現在の変更のセルフレビュー�
 引数に `--staged` が指定されている場合は、ステージ済みの変更のみを対象にしてください。
 引数にブランチ名が指定されている場合は、それをbase branchとして使用してください。
 引数に `--focus <観点>` / `--exclude <観点1,観点2>` が指定されている場合は、レビュー対象観点を絞り込み・除外してください（同一セッションで既検証の観点を再報告しないため）。
-`--focus` / `--exclude` / `--rereview` は利用者か呼び出し元 skill の手順が付ける引数です。利用者が「self-review 回して」としか言っていない回に、前回の構成から推して足さないでください（絞った観点の外は誰も見ず、計測では修正確認の再レビューに入る / GitHub issue #300）。
+引数に `--since=<tree>` / `--prior-findings=<path>` が指定されている場合は、その tree の後に変えた分（delta）を主な対象にし、前回の対象を確認対象に戻してください（feature-dev の G-V ループと Phase 6.9 が渡す / GitHub issue #313）。
+`--focus` / `--exclude` / `--rereview` / `--since` / `--prior-findings` は利用者か呼び出し元 skill の手順が付ける引数です。利用者が「self-review 回して」としか言っていない回に、前回の構成から推して足さないでください（絞った観点の外は誰も見ず、計測では修正確認の再レビューに入る / GitHub issue #300）。
 `--exclude md-polish` は観点ではなく、Markdown 推敲（diff の md の散文を writing-polish に通す別枠）を止めます。
 引数に `--spec <path>`（または `--spec=<path>`）が指定されている場合は、その仕様ファイルを spec-compliance の照合元にしてください（パスを base branch と読み違えない）。
 引数に `--embed` が指定されている場合は、他 plugin からの呼び出しと判断し、終端の修正方針確認 AskUserQuestion を skip してください（呼び出し元側で findings を集約する想定）。**marker を書いた後もターンを終えず**、同じターンのまま呼び出し元の次の手順へ戻ってください（このスキルは呼び出し元と同じ会話の中で動くので、ツールを呼ばずに止まると呼び出し元の手順ごと終わる）。
