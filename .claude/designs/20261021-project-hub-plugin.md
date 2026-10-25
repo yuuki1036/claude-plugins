@@ -8,7 +8,7 @@ supersedes: []
 superseded-by: null
 issue: "GitHub issue #308"
 spec: null
-adrs: ["20261021140738", "20261021154740"]
+adrs: ["20261021140738", "20261021154740", "20261025152955"]
 tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 ---
 
@@ -17,6 +17,8 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 ## TL;DR
 
 1 つのセッションを hub にする。PJ の状態（作業セッション・PR・Issue・判断）は `~/.claude/project-hub/<project>/` の追記ログとスナップショットから作る表で持つ。作業側は決まった形の report をファイルで置き、SendMessage では「置いた」とだけ知らせる。hub から作業側へは本文を SendMessage で送り、全文を hub 側の journal に残す。宛先は名前で引き、送る直前に毎回引き直し、1 件に決まらなければ送らない。
+
+段階 ②a（「自律運用」の節）で、作業セッションを sub と呼び、lead の確認が要る事柄が無い連絡は承認なしに送るようにし（`approval.mode: auto`）、hub から sub を起動できるようにする。hub は指示出しと相談役に徹し、実装しない。
 
 ## 背景 / 課題
 
@@ -40,7 +42,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 - **非ゴール**:
   - 判断の正本を持つこと — 正本は Issue トラッカーの本文とリポジトリの仕様 docs に置く（hub が持つと二重管理になる）
   - Issue トラッカーへの書き込み — 起票・更新は issue-workflow / 人間の領分
-  - 作業セッションの起動・停止の自動化 — 起動手段がアプリ（Desktop の start_session）と CLI で違い、どちらにも寄せられない。新しいセッションへの最初の brief は、lead が最初のプロンプトとして貼る
+  - 作業セッションの停止の自動化。起動は段階 ① では非ゴールにしていた（起動手段がアプリ（Desktop の start_session）と CLI で違う）が、段階 ②a で Desktop の start_session を使い、使えないときは今どおり貼る形で入れる（「自律運用」の節）
   - マシンをまたいで 1 つの hub を共有すること — データはマシンごとに置き、git 同期の対象から外す（config の repos のパスもマシンごとに違う）
   - living spec との統合 — 進捗を living spec に書かない。連携は段階 ② の `decide` の受け渡しだけ
   - 段階 ② ③ の詳細設計 — 段階 ① を 1 PJ で使ってから、この doc の改訂で詰める
@@ -270,6 +272,98 @@ GitHub issue #312 / #314 / #315 / #316 への対応。宛先の方式（名前�
 - **共有 worktree の判定は、作業中の登録だけで数える**。done を報告した登録と不在の登録は数えない（その worktree に後から別のセッションが入る）。done・不在の登録自身は、その worktree を作業中の別のセッションが使っていれば「重なりは不明」の note にする
 - **読めない hub.json は、hook で黙って飛ばす**。どのセッションの hub かも分からないので、stderr に出すと 1 つの PJ が壊れただけで全セッションの hook が毎回騒ぐ。その PJ の hub は、status の最初の `refresh-hub` が exit 2 で止まるので気づける。hub.json がこのセッションと一致した PJ の config・state.md が読めないときは、これまでどおり stderr に出す
 
+## 自律運用（段階 ②a・2026-10-25）
+
+lead の要望（2026-10-25）: 関連セッションを **sub** と呼ぶ / hub と sub の連絡は、lead の確認が要る事柄が無ければ自動で行う / hub でタスクはほとんどしない / hub の役割は指示出しと、進め方・仕様の相談役 / hub から sub を起動できるとよい。sub は issue-workflow で動くので、brief を送った後の進め方（feature-dev か軽量フローか・commit や push の確認）は sub の中の workflow と lead のやりとりに任せる（lead の補足）。
+
+宛先の引き方（名前で引き、送る直前に引き直し、1 件に決まらなければ送らない）と inbox の方式は変えない。変えるのは、送る前の承認・report の受け方・sub の起動の 3 つ。送る前の承認を外す判断は ADR-20261025152955。
+
+### 呼び名と役割
+
+- **sub**: hub が束ねる作業セッション。以降の SKILL・README・この節では「作業セッション」を「sub」と書く。ファイル名と JSON のキー（`sessions/`・`--session`）はそのままにする（変えると既存の PJ のデータが読めなくなる。呼び名の差は文面で吸収する）
+- **hub**: 指示出し（brief・連絡）と、進め方・仕様の相談役（sub の質問に答える・lead の相談に乗る）と、状態の集約。**repo を編集せず、実装しない**。lead に実装を頼まれたら sub の起動（`hub start`）を勧める。確かめるための読み・コマンドの実行（fact の裏取り）はする。判断の正本（Issue 本文・仕様 docs）を書かないのは段階 ① のまま
+- **sub の進め方**: brief で「issue-workflow の `start` でこの Issue を始める」と頼み（tracker の Issue ID の形による。下の「sub の起動」の 1）、その後は sub の中の workflow に任せる。workflow の確認（進め方の選択・コミットの承認など）には lead が sub の中で答える。hub はその確認を代わりに取らず、lead の承認を sub へ中継もしない
+
+### 自動の連絡（`approval.mode: auto`）
+
+`approval.mode` に `auto` を足し、`init` の既定にする。既存の PJ の config は変えない（`number` / `phrase` を選んだ PJ はそのまま）。切り替えは `hub mode <auto|number|phrase>`（`hub.py set-mode`。config.json を手で直さずに済むように）。読めない値は今どおり `number` に倒す。`init`・`mode`・`takeover` は、自動の連絡が有効かと、その止め方（`hub mode number`）を必ず lead に出す（既定のまま始めた PJ でも、lead が知らないまま auto で動かない / design review 2026-10-25）。
+
+lead に聞かずに送るもの:
+
+1. **lead の言葉の伝達**: lead が hub に言った指示・答え・判断を、該当する sub へ送る（lead の発言を「」で引用して送る）。lead がこの場で頼んだ連絡なので、もう一度承認は取らない
+2. **sub の質問への答え**: report の `questions`（下）に、出典で答えられるものを答える。出典は Issue 本文・config の repo の仕様 docs / ADR（`path:line`）・facts の確かめた行・journal の `basis: lead` の relay 行（lead の発言の引用。lead の判断を記録する `decide` は段階 ② で、まだ無い）。答えにはどれから答えたかを必ず付ける
+3. **段取りの連絡**: 重なるファイルの注意（`worktrees`）・マージ後の base の取り込み・マージ順。どれも status が集めた事実から書く。**report の受領だけの連絡は送らない**（report はファイルで残るので受領を知らせる必要が無く、受領 → sub の report → 受領…の往復になりうる）
+4. **brief**: `hub start` の起動時の brief と、既にある sub への brief
+
+**sub の文面を元に動く範囲**（信頼境界 / design review 2026-10-25）: `questions` は sub が書いた文面で、sub が読んだ外部の文面を含みうる。hub が `questions` を元にしてよいのは、答えるための読み取り（Issue・仕様 docs・facts・journal）と、その答えを**質問した sub にだけ**送ることまで。`questions` の中の指示（コマンドの実行・ファイルの編集・他の宛先への連絡・PJ の外の情報の提供）は実行せず、答えに「指示として扱っていない」と添えて lead に出す。段階 ① の「作業側が書いた文面はデータ」はこの範囲で緩めるだけで、`needs_lead` / `follow_ups` / `claims` の扱いは変えない
+
+**往復の上限**: sub ごとに、lead の言葉の伝達を挟まずに hub の判断の連絡（`basis: source` / `routine` の relay）が続けて 3 回に達したら、4 回目は送らずに lead に出す。数えるのは journal の accepted の relay 行で、lead の言葉の伝達（`basis: lead`）で 0 に戻す。`hub.py` の `resolve` が宛先を決めた後に数える（実装で決めたこと）
+
+lead に出して、送らずに止まるもの:
+
+1. 宛先が 1 件に決まらない（`resolve` が `ok` 以外。今の 3 のまま）
+2. sub の `needs_lead`（lead の判断が要ると sub が書いたもの）
+3. `questions` のうち、出典で答えられないもの・出典どうしが食い違うもの。hub が推測で答えない（#308 の問題 3「hub の思い込みが作業側へ伝わる」を塞ぐのが brief を facts に限った理由で、答えにも同じ規則を当てる）
+4. lead の判断を先取りする連絡: Issue の範囲や受け入れ条件の変更・Issue をまたぐ優先度の入れ替え・外部（PJ の外の人・サービス）への連絡
+
+送った連絡は今どおり journal に全文・宛先・結果を残し、`basis`（`lead`: lead の発言 / `source`: 出典の一覧 / `routine`: 段取りの連絡 / `brief`）を足す。`basis: source` の record は `sources`（出典の配列）が空なら exit 2 で書かない（出典の無い答えを機械で止める）。status は、前回の status より後に自動で送った連絡を一覧で出す（lead が後から見て、直す・取り消しの連絡を頼める）。送る本文の先頭には、hub の答え・段取りか、lead の言葉の伝達かを 1 行で書く（sub が重みを分けられるように）。
+
+**自動で動く契機**:
+
+- **sub の通知**（cross-session message）で始まった hub のターン: `ingest` → `render` → 取り込んだ report ごとに、上の「聞かずに送るもの」は送り、「止まるもの」は lead に出す。lead に出すものが無ければ、何をしたかを 1〜2 行で書いて終える。このターンは lead の発言で始まっていないが、`approval.mode: auto` は lead が選んだ（init・mode の出力で有効と知らされた）常設の指示で、送る範囲もこの節の 1〜4 に限ってある（ADR-20261025152955）
+- **hub が起動した sub のターンの終わり**（Desktop が hub に返す linked session の知らせ）: 未取り込みの report があれば取り込んで上と同じく処理する。report が無ければ何もしない（ターンの終わりは節目とは限らない）。この契機は要検証 (c) の届き方に依存する。(c) で、hub に届かない・届く時点が使えないと分かったら、この項は削る（report の通知だけで足りる）
+
+**既知の限界**: permission mode が hub と違う sub（lead が貼って始めた sub など）には、自動の連絡が受け手の承認待ちで止まりうる。Desktop の sub では止まっても送り手に何も返らない（SendMessage のツール説明）ので、hub からは検出できない。brief を貼ってもらう回は「hub と同じ permission mode で始める」と添える
+- **lead の発言**: 今どおり（UserPromptSubmit が未取り込みの件数を知らせる）
+
+### report の `questions`
+
+- report に `questions: [str]`（hub に答えてほしいこと。進め方・仕様・他の sub との関係）を足す。`needs_lead` は lead の判断が要ることに限る。迷ったら `needs_lead` に書く（hub が答えてよいかを sub が決めない）
+- report の `schema` を 2 に上げる。hub は 1 と 2 を受ける（1 には `questions` が無い）。古い hub は 2 を invalid に退避して版のずれを lead に出す（`questions` を黙って捨てる代わりに）
+- `ingest` / `reports` の出力と state.md の件数の欄に `questions` を足す（state.md には件数だけ。自由文は写さない）
+
+### sub の起動（`hub start <Issue>`）
+
+1. brief を作る（今の `brief` の 1〜2）。hello の指示の後に、始め方を 1 行足す。issue-workflow の `start` は Issue ID を `[A-Z]+-\d+` の形でしか受けない（`issue-workflow/skills/start/SKILL.md:67`）ので、tracker で分ける:
+   - linear（`ABC-12`）: 「issue-workflow が使えれば、`issue-workflow:start` を `<Issue>` を引数に起動して始める。使えなければ Issue を読んで始める」
+   - github（`#308`）: 「Issue を読んで始める」（今の brief のまま）
+   - どちらも散文で書き、prompt の先頭に `/…` を置かない（prompt の先頭の slash を slash コマンドとして読むかは確かめていない）
+2. Desktop で `mcp__ccd_session__start_session` が使えるとき、それで起動する:
+   - `initiation: user_asked`（lead が start を頼んだ）/ `context: fresh` / `use_worktree: true` / `prompt` に brief、`background` に PJ の概要（config と state.md から）/ `title` に Issue ID を含める（ListAgents の名前に Issue ID が入り、hello の前でも Issue ID で引ける）
+   - `permission_mode` は渡さない（hub と同じ mode を引き継ぐ。mode が違う sub には、メッセージが受け手の承認待ちで止まる / SendMessage のツール説明）
+   - `cwd`: hub の cwd が config の repo でなければ、Issue の repo のパスを渡す
+   - 結果のセッションの id と名前を journal に `start` で残す（hello の前に宛先を引くときの手がかり。宛先にはまだ使わない — 下の要検証 d）
+3. 使えない（CLI）・断られた・失敗した: 今どおり、貼る用の全文を出して lead に貼ってもらう
+4. **sub の通知で始まったターンからは起動しない**（アプリが断る）。次の Issue に進む sub が要ると判断したら、提案（`own_initiative` のカード）に留め、lead が始める
+
+### 変更対象ファイル（段階 ②a）
+
+- `skills/hub/SKILL.md`: 呼び名・役割・自動の連絡・自動で動く契機・`start`。allowed-tools に `mcp__ccd_session__start_session`
+- `commands/hub.md`: description と allowed-tools を SKILL.md と対で直す（同名ペアなので選択に載るのは command 側）
+- `skills/report/SKILL.md` / `commands/report.md`: `questions` と呼び名
+- `scripts/hub.py`: `APPROVAL_MODES` に `auto`（init の既定）・`set-mode`・report の schema 2 と `questions`・record の `basis`（`source` は `sources` 必須）と `start`・往復の上限の数え・自動で送った連絡の一覧（status 用）・state.md の件数の欄
+- hook の文面（inject / pending-hint）: auto の PJ では「取り込んで処理する」
+- README / CHANGELOG（minor）/ テスト（`test_project_hub_scripts.py`・`test_project_hub_hooks.py`）/ evals の起動語（「hub start」「sub を起動」）
+
+### 要検証（実装の最初に実機で確かめる）
+
+- (a) `start_session` で起動した sub の ListAgents の名前は `title` か `name` か（Issue ID の照合に効くのはどちらか）
+- (b) sub の通知で始まった hub のターンから SendMessage で送れるか（ツールとしても、アプリの扱いとしても）
+- (c) hub が起動した sub のターンの終わりに、hub へ何がいつ届くか（hub が idle でないとき・sub が lead の確認待ちで止まったとき）
+- (d) SendMessage の `to` に `start_session` が返す `local_…` を使えるか。使えれば改名・開き直しに強い宛先になる（#316 の残り）。使えると分かったら ADR-20261021154740 の決定 3 を見直す（この段では使わない）
+
+## 実装で決めたこと（段階 ②a・self-review・2026-10-25）
+
+self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、承認を外す代わりに置いた網（事後の一覧・往復の上限・宛先の安全・start の承認）が、呼び出し側の引数や承認の画面に頼っていて fail-open だった。設計の向きは変えず、網を script に寄せた。
+
+- **一覧の印は journal の行数で持ち、status の最後（`sent --unseen --mark`）だけが進める**。初版は `refresh-hub` が status の時刻を書いていたが、SKILL は方式を読むためだけにも refresh-hub を回すので、その間に送った分が一覧から落ちた（逆に status の 9 で送った分は次の status に重なって出た。takeover は時刻ごと消した）。時刻は秒精度で同じ秒の送信の前後が決まらないので、行数にした。印は hub.json に置き、takeover が引き継ぐ。通知を受けたターンが方式を知るのは `ingest` の出力の `approval_mode` から（refresh-hub を回させない）
+- **auto の PJ では record が `--basis` と宛先を必須にする**。basis の無い送信は一覧にも上限にも載らず、session の無い行は上限で数えられなかった。`source` / `routine` は `session` か `to.ref` のどちらかが要る。kind と basis の組も固定した（relay は lead / source / routine、brief・start は brief）
+- **auto の PJ の resolve は、宛先を決めた後に 2 つの歯止めを掛ける**（`--session` でも `--ref` でも）。warning の付く照合（名前の中の Issue ID・不在から戻った登録名・ref で引いた改名）は、承認の画面で lead が見直す前提の規則なので `needs_lead` で返す（lead が候補から選んだ `--ref` は通す）。往復の上限は既定で数え、このターンの lead の言葉を伝えるときだけ `--lead` で外す。初版は `--auto` を付けたときだけ数え、`--ref` の経路は数える前に返していた
+- **一覧は lead の言葉の伝達も含める**（basis の付いた accepted の送信すべて）。auto の PJ では最終の文面を lead が見ていない。過去の lead の発言を答えの出典に引くときは `sent --basis lead` で探し、その送信は `source` で記録する
+- **start は方式を見る**。`number` / `phrase` の PJ では brief の全文を見せて承認を取ってから起動する（brief は Issue 本文の引用を含み、起動したセッションの最初のタスク本文になる）。`auto` の PJ でも、送った brief の全文を起動したターンで lead に見せる
+- `set-mode` は state.md を作り直す（注入が古い方式の手順を出さない）。takeover の出力にも `mode_notice` を出す。pending-hint は、lead の発言が送るのを止める指示や mode の切り替えなら先にそれを行うよう書く
+- `ingest` の `reports` に `session_id` を足し、答えの宛先を Issue から逆引きしない。status は `questions` が残っている sub も並べ直す（質問ごとに答えたか回したかは journal に残らない。残す仕組みは次の段で決める）
+
 ## 未解決事項 (open)
 
 - **issue-workflow の local backend の Issue を tracker にするか**（段階 ②）: 紐付けの導線は入れた（下の「実装で決めたこと（2026-10-25）」）。残りは、issue-workflow の local backend の Issue（`TEAM-123` の形）を hub の tracker として扱う種類が要るか（段階 ① では `--tracker linear` で照合はできるが、status の Issue 一覧は Linear MCP でしか取らない）。確定タイミング: 段階 ② の詳細設計
@@ -278,6 +372,7 @@ GitHub issue #312 / #314 / #315 / #316 への対応。宛先の方式（名前�
   - MINOR 5 件は 2026-10-25 に直した（下の「実装で決めたこと（self-review の MINOR・2026-10-25）」）
   - 付録（閾値未満）: 注入する表の前に「外部の文面」の断りが無い / 作業側が送り手の名前だけで hub を認める / relay の承認番号を包みの無い send_message で返されうる ほか 10 件
 
+- **質問ごとの処理の記録**（段階 ②a の残り）: hub が質問に答えたか lead に回したかを、report の file と質問の添字で journal に残すか。今は status が `questions` の残る sub を並べ直し、分からないものを「処理は未確認」と書く。確定タイミング: 段階 ②a を 1 PJ で使ったとき
 - **受信の journal への記録と `from-session` の結び付け**（段階 ②）: UserPromptSubmit hook は入れた（下の「実装で決めたこと（2026-10-25）」）が、受信を journal に 1 行残すことと、包みの `from-session` を `sessions/` の `host_session_id` と結び付けることはしていない。後者は Desktop の SendMessage が `local_…` を宛先に取れるかも含めて未確認（GitHub issue #316 の残り）。確定タイミング: 段階 ② の詳細設計
 - **開き直して名前も変えたセッション**: ref は開き直しで変わりうる（未確認）。開き直したうえで改名し、題に Issue ID も無いセッションは、作業側が report を置き直すまでどの照合でも引けない。プロセスが残っていないセッションは ListAgents に出ない（2026-10-25 の観察）。確定タイミング: 段階 ① の運用で同じことが起きたとき
 
@@ -306,3 +401,4 @@ GitHub issue #312 / #314 / #315 / #316 への対応。宛先の方式（名前�
 - 関連 design doc: `.claude/designs/20260715-living-spec-workflow.md`（living spec。進捗を書かない方針）
 - 規約: `docs/event-bus.md`（journal を Event Bus と分ける理由）/ `docs/shared-state.md` / `docs/skill-writing.md`（skill を分ける条件）
 - design review（2026-10-21・4 視点 + 反証）: BLOCKER 1 / MAJOR 13 / MINOR 9 をすべて反映した
+- design review（2026-10-25・段階 ②a・minimal + risk・反証なし）: MAJOR 3（issue-workflow の Issue ID の形・sub の文面を元に動く範囲・受領の往復と上限）/ MINOR 5 をすべて反映した
