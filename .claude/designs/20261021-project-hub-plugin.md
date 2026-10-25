@@ -370,9 +370,10 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
 ## 実装で決めたこと（tracker local・2026-10-25 / GitHub issue #321）
 
 - `--tracker local --tracker-dir <{DATA_DIR}/<slug>>`。issue-workflow の local backend の Issue ファイル（`issues/ABC-12.md`）を tracker にする。dir は resolve した絶対パスで持つ（worktree の sub にも同じファイルを指させる。Issue ファイルは gitignore された `.claude/` の下にあり、worktree には無い）
-- 一覧は `snapshot --source tracker --from-local` で `hub.py` が frontmatter を読んで作る（LLM に写させない）。`status` が `completed` / `canceled` / `cancelled` の行は外す。`title` が無いファイルは本文の最初の見出しから `ID: ` を外して取る。`pr` は PR の URL か番号だけを `#<番号>` にし、自由文は表に載せない（state.md は hub に注入される）。frontmatter は 1 行 1 つの `key: value` だけを読み、字下げした行は読まない
+- 一覧は `snapshot --source tracker --from-local` で `hub.py` が frontmatter を読んで作る（LLM に写させない）。`status` が `completed` / `canceled`（issue-workflow の 5 値のうち閉じたもの。start の existing-work.md の判定と揃える）の行は外す。frontmatter の行末コメントは外し、BOM は読み捨てる。`title` が無いファイルは本文の最初の見出しから `ID: ` を外して取る。`pr` は PR の URL か番号だけを `#<番号>` にし、自由文は表に載せない（state.md は hub に注入される）。frontmatter は 1 行 1 つの `key: value` だけを読み、字下げした行は読まない
 - sub が Issue ファイルの `status` を書き換えれば、次の `status` の snapshot で表に出る（hub は Issue ファイルを書かない）
 - brief の材料は `issue --issue <ID>`（本文と絶対パス）。brief には絶対パスと「Issue は起票しない。候補は follow_ups に」を入れる。issue-workflow の `start` は worktree の中でもメインのチェックアウト側のデータ dir を見る（backend-detect の 2）ので、始め方は linear と同じにした
+- **sub は Issue 本文を書き換えない**: Issue ファイルは sub も書けるので、brief で書き換えてよいのを frontmatter の `status` と `pr` に限り、hub は自動の連絡で local の Issue 本文を出典にしない（sub の文面が正本として別の sub へ渡るのを防ぐ。強制はしない）
 - **起票の持ち主**: 採番が `counter.txt` なので、起票は hub のセッションで lead が issue-workflow を呼んだときだけにする（hub 自身も起票しない）。sub の起票の候補は report の `follow_ups` で受ける。強制はしない（sub の issue-workflow を止める仕組みは無い）。brief と report の skill の文面で頼む
 
 ## 未解決事項 (open)
