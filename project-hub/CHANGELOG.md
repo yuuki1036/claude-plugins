@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.1] - 2026-10-25
+
+### Changed
+
+- `hub start` の title の注記を、実機で確かめた事実に直した（ListAgents の名前は `start_session` の `name` ではなく title になる。Issue ID を入れれば hello の前でも Issue ID で引ける）
+
 ## [0.3.0] - 2026-10-25
 
 ### Added

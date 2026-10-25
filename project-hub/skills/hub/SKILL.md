@@ -123,7 +123,7 @@ sub を起動して、その Issue を任せる。lead が start を頼んだタ
 1. 下の `brief` の 1〜2 で文面を作る。`approval_mode`（`refresh-hub`）が `number` / `phrase` なら、relay の 4 と同じく全文を出して承認を取ってから 2 へ進む（brief には Issue 本文の引用が入り、起動したセッションの最初のタスク本文になる）
 2. Desktop で `mcp__ccd_session__start_session` が使えるとき、それで起動する:
    - `initiation: user_asked` / `context: fresh` / `use_worktree: true`
-   - `title`: `<Issue ID>: <タイトル>`（60 字以内。Issue ID を含める。ListAgents の名前が title か `name` かは確かめていない（設計書の要検証 a）。Issue ID で引けなくても resolve は送らない側に倒れる）
+   - `title`: `<Issue ID>: <タイトル>`（60 字以内。ListAgents の名前は `name` ではなく title になる（2026-10-25 に実測）ので、Issue ID を入れると hello の前でも Issue ID で引ける）
    - `prompt`: brief の全文。`background`: PJ 名・hub の名前・PJ の目的（config と state.md から 2〜3 文。80 字以上）
    - `cwd`: このセッションの cwd が config の repos のどれでもなければ、Issue の repo のパス（repos が複数で決まらなければ lead に聞く）
    - `permission_mode` は渡さない（hub と同じ mode を引き継ぐ。mode が違う sub には、メッセージが受け手の承認待ちで止まる）
