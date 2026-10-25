@@ -191,6 +191,16 @@ if [ "$quality_rc" != "0" ]; then
   exit 1
 fi
 
+# 変更が docs/・.claude/designs/・.claude/adr/ の下だけなら回帰テストを省く（SSoT・品質の検査は上で済んでいる）。
+# テストが実リポジトリから読むのはプラグイン配下・.claude-plugin/・.githooks/・evals/・CLAUDE.md で、この 3 つは
+# 読まない（2026-10-25 に tests の `ROOT / "..."` を集計）。読むテストを足したら、その dir をここから外す。
+# rename は両側を見る（`--no-renames`。プラグインから docs/ へ移したファイルを docs だけの変更と読まない）
+non_docs=$(git diff --cached --name-only --no-renames | grep -v -E '^(docs|\.claude/designs|\.claude/adr)/' || true)
+if [ -z "$non_docs" ]; then
+  echo "[pre-commit] 変更が docs/・.claude/designs/・.claude/adr/ の下だけなので回帰テストを省いた（CI では回る）"
+  exit 0
+fi
+
 # 検証スクリプト自身の回帰テスト（stdlib unittest / 依存なし）
 # SSoT pin は「pin の初期値」も検証と同じ関数で作るため, 切り出しが壊れていても
 # 実リポジトリに対する検証は全 pin pass になる（v2.63.1 で実際に起きた）。

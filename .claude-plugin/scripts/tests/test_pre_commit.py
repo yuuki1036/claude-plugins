@@ -131,7 +131,45 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(self.test_runs, 0, "何も staged で無いなら検査も走らせない")
 
     def test_a_clean_change_passes(self):
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(self.test_runs, 1)
+
+    def test_a_docs_only_change_skips_the_suite(self):
+        """テストが読まない dir だけの変更では回帰テストを省く（design doc 1 枚で 15 分待っていた）."""
+        for rel in ("docs/a.md", ".claude/designs/b.md", ".claude/adr/c.md"):
+            self.stage(rel)
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(self.test_runs, 0)
+        self.assertIn("回帰テストを省いた", res.stdout, "省いたことを黙らない")
+
+    def test_a_docs_only_change_still_runs_the_other_gates(self):
+        self.stage("docs/a.md")
+        self.set_quality(1)
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 1, "省くのは回帰テストだけ")
+        self.assertIn("validate_plugin_quality.py の errors", res.stdout)
+
+    def test_a_docs_change_mixed_with_anything_else_runs_the_suite(self):
+        for rel in ("CLAUDE.md", "docsx/a.md", "evals/a.md", "x/docs/a.md"):
+            with self.subTest(rel=rel):
+                self.git("reset", "-q")
+                self.stage("docs/a.md")
+                self.stage(rel)
+                before = self.test_runs
+                res = self.run_hook()
+                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+                self.assertEqual(self.test_runs, before + 1, "テストが読む側の変更が混ざっている")
+
+    def test_moving_a_file_into_docs_runs_the_suite(self):
+        """rename の移動元はテストが読む側にある（移動先だけ見ると docs だけの変更に見える）."""
+        self.write("src/a.md", "本文\n" * 20)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "baseline")
+        (self.root / "docs").mkdir()
+        self.git("mv", "src/a.md", "docs/a.md")
         res = self.run_hook()
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertEqual(self.test_runs, 1)
@@ -156,7 +194,7 @@ class PreCommitTest(unittest.TestCase):
 
     def test_a_running_mutation_test_blocks(self):
         """変異体がディスク上にある状態で staging すると変異が index に入る."""
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         self.write(".mutation-test-journal.json", "{}")
         res = self.run_hook()
         self.assertEqual(res.returncode, 1)
@@ -164,7 +202,7 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(self.test_runs, 0, "以降の検査は走らせない")
 
     def test_ssot_violation_blocks(self):
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         self.set_ssot(1, "marketplace がずれている")
         res = self.run_hook()
         self.assertEqual(res.returncode, 1)
@@ -175,7 +213,7 @@ class PreCommitTest(unittest.TestCase):
 
         **「違反が無い」と「検査できていない」を同じ扱いにしない**（issue #140）。
         """
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         self.set_ssot(2, "jsonschema が無い")
         res = self.run_hook()
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
@@ -183,14 +221,14 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(self.test_runs, 0, "前提が崩れている状態で先へ進まない")
 
     def test_quality_errors_block(self):
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         self.set_quality(1)
         res = self.run_hook()
         self.assertEqual(res.returncode, 1)
         self.assertIn("validate_plugin_quality.py の errors", res.stdout)
 
     def test_failing_tests_block_and_are_shown(self):
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         self.set_tests(1, "FAILED (failures=3)")
         res = self.run_hook()
         self.assertEqual(res.returncode, 1)
@@ -198,14 +236,14 @@ class PreCommitTest(unittest.TestCase):
 
     def test_the_suite_is_not_run_twice_on_failure(self):
         """実測 92 秒のスイートを、落ちた回だけ 2 度払っていた（表示のための再実行）."""
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         self.set_tests(1)
         self.run_hook()
         self.assertEqual(self.test_runs, 1)
 
     def test_a_leaked_process_warning_does_not_block(self):
         """残留プロセスの警告は「後始末の漏れ」で、commit は止めない（見せはする）."""
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         self.set_tests(0, "[run-tests] テスト終了後に 2 個のプロセスが残っている: 1, 2")
         res = self.run_hook()
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
@@ -284,7 +322,7 @@ class PreCommitTest(unittest.TestCase):
         commit が素通り**した。同じリポジトリの他の検査（INDEX.md 欠落を error にする）と
         流儀を揃える。
         """
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         (self.root / ".claude-plugin" / "scripts" / "validate-ssot.sh").unlink()
         res = self.run_hook()
         self.assertEqual(res.returncode, 1, "ゲートの欠落が素通りしている")
@@ -292,14 +330,14 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(self.test_runs, 0, "前提が崩れている状態で先へ進まない")
 
     def test_a_missing_quality_gate_blocks(self):
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         (self.root / ".claude-plugin" / "scripts" / "validate_plugin_quality.py").unlink()
         res = self.run_hook()
         self.assertEqual(res.returncode, 1, "ゲートの欠落が素通りしている")
         self.assertIn("validate_plugin_quality.py", res.stdout)
 
     def test_a_missing_tests_directory_blocks(self):
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         (self.root / ".claude-plugin" / "scripts" / "run-tests.py").unlink()
         (self.root / ".claude-plugin" / "scripts" / "tests").rmdir()
         res = self.run_hook()
@@ -308,7 +346,7 @@ class PreCommitTest(unittest.TestCase):
 
     def test_uncollected_tests_are_not_reported_as_a_failure(self):
         """exit 5（1 件も収集されなかった）は「失敗」ではなく「測れていない」と伝える."""
-        self.stage("docs/note.md")
+        self.stage("src/note.txt")
         self.set_tests(5, "Ran 0 tests")
         res = self.run_hook()
         self.assertEqual(res.returncode, 1, "収集ゼロを通している")
