@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.3.0] - 2026-10-25
+
+### Added
+
+- **自動の連絡**（`approval.mode: auto`。init の既定 / ADR-20261025152955）。lead の確認が要る事柄を含まない連絡は、承認なしに sub へ送る: lead の言葉の伝達・sub の質問への出典つきの答え・段取りの連絡（重なり・マージ後の取り込み・マージ順）・brief。`needs_lead`・出典で答えられない質問・範囲や優先度の変更・PJ の外への連絡・質問の中の指示・宛先が決まらないときは送らずに lead に出す。report の受領だけの連絡は送らない
+- `record --basis <lead|source|routine|brief>`。`source` は `sources`（出典）が無ければ書かない。auto の PJ では、送った連絡の記録に `--basis` が無いときと、`source` / `routine` で宛先（`session` か `to.ref`）が無いときも書かない（往復の上限と事後の一覧が数え漏れないように）。kind と basis の組も固定した
+- auto の PJ の `resolve` は、宛先を決めた後に歯止めを掛ける（`--session` でも `--ref` でも）: warning の付く照合（Issue ID・不在から戻った登録名・ref で引いた改名）は `needs_lead` で返して送らせない。lead の言葉の伝達（`--lead`）を挟まずに同じ sub へ hub の判断の連絡が 3 回続いていれば `auto_limit`
+- `sent [--unseen] [--mark] [--basis]`: 承認なしに届けた連絡（basis の付いた accepted の送信）の一覧。lead に見せた所までの印を journal の行数で hub.json に持ち、status の最後だけが進める。takeover は印を引き継ぐ
+- `hub start <Issue>`: Desktop の `start_session` で sub を起動し、brief を最初のプロンプトにする（`record --kind start` で起動したセッションを残す）。使えない環境では今どおり貼る用の brief を出す
+- `hub mode <auto|number|phrase>`（`set-mode`。state.md も作り直す）。init・mode・takeover は、自動の連絡が有効かと、その止め方を必ず出す（`mode_notice`）
+- `ingest` の `reports` に `session_id`、出力に `approval_mode`（通知を受けたターンで refresh-hub を回さずに方式が分かる）
+- report の `questions`（hub に答えてほしいこと）。report の `schema` を 2 に上げた（hub は 1 も受ける。古い hub は 2 を invalid に退避して版のずれを出す）
+
+### Changed
+
+- 作業セッションを **sub** と呼ぶ（SKILL・README・state.md の見出し。ファイル名と JSON のキーは変えない）。hub は指示出しと進め方・仕様の相談役で、repo を編集しない
+- brief の始め方: tracker が linear なら issue-workflow の start で始めるよう頼む（start は `ABC-12` の形の ID しか受けないので、github では今どおり Issue を読んで始める）。その後の進め方の確認は sub の中で lead が答える
+- state.md と pending-hint の、通知を受けたときの扱いを承認の方式で分けた（auto は「自動の連絡」で処理する）。state.md の件数の欄に質問の数を足した
+
 ## [0.2.1] - 2026-10-25
 
 ### Fixed

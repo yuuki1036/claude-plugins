@@ -12,6 +12,14 @@ cases:
     prompt: hub から ABC-12 の作業セッションに relay して、レビューの指摘を直すよう伝えて
     expected_skill: project-hub:hub
     k: 3
+  - id: hub-start-ja
+    prompt: hub から ABC-12 の sub を起動して任せて
+    expected_skill: project-hub:hub
+    k: 3
+  - id: hub-mode-ja
+    prompt: hub mode を number にして、送る前に毎回確認させて
+    expected_skill: project-hub:hub
+    k: 3
   - id: report-hello-ja
     prompt: brief を受けたので hub に hello の report を置いて
     expected_skill: project-hub:report

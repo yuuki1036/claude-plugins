@@ -52,6 +52,8 @@ stdout の JSON の `status` で分岐する。JSON が出ない回もある。
 | 結果 | すること |
 |---|---|
 | `status: ok` | SendMessage の `to` には出力の `to` をそのまま使う（ふだんは名前だけ。同じ名前の行が他にもあるときだけ ` [ref]` が付く）。`warning`（登録名ではなく登録した時の ref で引いた・名前の中の Issue ID で引いた・前回の status で不在だった登録名で引いた）があれば、承認の画面に添える |
+| `status: needs_lead`（hub → sub・auto の PJ） | **送らない**。warning の付く照合（名前の中の Issue ID・不在から戻った登録名・ref で引いた改名）で決まった宛先。`name`・`ref`・`warning` を lead に見せ、lead が選んだらその行の ref で引き直す（`--ref`） |
+| `status: auto_limit`（hub → sub・auto の PJ） | **送らない**。lead の言葉の伝達を挟まずに、同じ sub へ hub の判断の連絡が続いた。hub の SKILL.md の「自動の連絡」のとおり lead に出す |
 | `status: unresolved` | **送らない**。`reason` と `candidates`（名前と ref）を lead / 利用者に出す。候補が 1 つも無いときは抜き出した全行を見せる。lead が選んだら、その行の ref で引き直す（hub の relay の `--ref`） |
 | `status: parse_failed`（exit 2） | **送らない・記録しない**。「ListAgents の出力を解析できなかった（宛先が見つからないのとは別）」と書き、ListAgents の生の出力を添えて出す。exit 2 でも入力の誤りではないので、手順の続きは呼び出し元の手順に従う（hub の status は 4 へ進む） |
 | stdout に JSON が無い（exit 2 / 3 / 4） | **送らない**。stderr の `project-hub: ...` をそのまま出す（引数・状態ファイルの問題で、ListAgents の解析失敗ではない） |
