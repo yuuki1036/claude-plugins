@@ -2140,6 +2140,119 @@ class RootTest(HubTestBase):
         self.assertTrue((self.tmp / ".claude" / "project-hub" / "pj" / "config.json").exists())
 
 
+class LocalTrackerTest(HubTestBase):
+    """tracker local（issue-workflow の local backend の Issue ファイル。GitHub issue #321）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.data = self.tmp / "indie" / "abc"
+        (self.data / "issues").mkdir(parents=True)
+        # config には resolve した絶対パスが入る（macOS の tmp は /private への symlink）
+        self.issues = (self.data / "issues").resolve()
+
+    def write_issue(self, name: str, text: str) -> Path:
+        path = self.data / "issues" / name
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def init_local(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return self.run_hub("init", "--project", "pj", "--name", "hub-session", "--tracker", "local",
+                            "--repo", f"{self.repo}=base", *extra)
+
+    def snapshot_local(self) -> dict:
+        return self.ok("snapshot", "--project", "pj", "--source", "tracker", "--from-local")
+
+    def tracker_rows(self) -> list[dict]:
+        sources = json.loads((self.root / "pj" / "snapshot.json").read_text(encoding="utf-8"))["sources"]
+        return sources["tracker"]["data"]
+
+    def test_init_needs_a_data_dir_with_issues_and_keeps_it_absolute(self):
+        res = self.init_local()
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("--tracker-dir", res.stderr)
+        res = self.init_local("--tracker-dir", str(self.tmp / "indie"))
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("issues/", res.stderr)
+        self.assertFalse((self.root / "pj" / "config.json").exists())
+
+        self.ok("init", "--project", "pj", "--name", "hub-session", "--tracker", "local",
+                "--repo", f"{self.repo}=base", "--tracker-dir", "indie/abc", cwd=self.tmp)
+        config = json.loads((self.root / "pj" / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["tracker"], {"kind": "local", "dir": str(self.data.resolve())})
+
+    def test_snapshot_reads_open_issues_from_the_frontmatter(self):
+        self.write_issue("ABC-1.md", "---\nid: ABC-1\ntitle: 一つ目\nstatus: in-progress\n"
+                                     "pr: \"https://github.com/o/r/pull/177\"\n---\n# ABC-1: 一つ目\n")
+        self.write_issue("ABC-2.md", "---\nid: ABC-2\nstatus: backlog\npr: \"\"\n---\n# ABC-2: 見出しの題\n")
+        self.write_issue("ABC-3.md", "---\nstatus: completed\n---\n# ABC-3: 済み\n")
+        self.write_issue("ABC-4.md", "---\nstatus: canceled\n---\n")
+        self.write_issue("ABC-5.md", "---\nstatus: in_progress\npr: 12\ntags:\n  status: completed\n---\n")
+        self.write_issue("ABC-6.md", "---\nstatus: backlog\npr: 後で出す | 見出し\n---\n")
+        self.write_issue("notes.md", "---\nstatus: backlog\n---\n")
+        self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
+        out = self.snapshot_local()
+        self.assertEqual((out["count"], out["skipped"]), (4, ["notes.md"]))
+        rows = {r["id"]: r for r in self.tracker_rows()}
+        self.assertEqual(sorted(rows), ["ABC-1", "ABC-2", "ABC-5", "ABC-6"])
+        self.assertEqual((rows["ABC-1"]["title"], rows["ABC-1"]["state"], rows["ABC-1"]["pr"]),
+                         ("一つ目", "in-progress", "#177"))
+        # title の無いファイルは見出しから「ID: 」を外して取る
+        self.assertEqual((rows["ABC-2"]["title"], rows["ABC-2"]["pr"]), ("見出しの題", None))
+        # 字下げした行（前のキーの続き）は status を上書きしない
+        self.assertEqual((rows["ABC-5"]["state"], rows["ABC-5"]["pr"]), ("in_progress", "#12"))
+        # 自由文の pr は表に載せない
+        self.assertIsNone(rows["ABC-6"]["pr"])
+        self.assertEqual(rows["ABC-1"]["path"], str(self.issues / "ABC-1.md"))
+
+        # sub が status を書き換えたら、次の snapshot で表から外れる
+        self.write_issue("ABC-1.md", "---\nstatus: completed\n---\n")
+        self.snapshot_local()
+        self.assertNotIn("ABC-1", {r["id"] for r in self.tracker_rows()})
+        self.ok("render", "--project", "pj")
+        state = (self.root / "pj" / "state.md").read_text(encoding="utf-8")
+        self.assertIn("| ABC-2 | backlog | - | - | 見出しの題 |", state)
+
+    def test_from_local_is_only_for_a_local_tracker_source(self):
+        self.init()  # github
+        res = self.run_hub("snapshot", "--project", "pj", "--source", "tracker", "--from-local")
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("local ではない", res.stderr)
+
+    def test_from_local_rejects_other_sources_and_failed(self):
+        self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
+        for extra in (["--source", "prs"], ["--source", "tracker", "--failed"]):
+            with self.subTest(extra=extra):
+                res = self.run_hub("snapshot", "--project", "pj", *extra, "--from-local", stdin="{}")
+                self.assertEqual(res.returncode, 2, res)
+                self.assertIn("--from-local", res.stderr)
+        self.assertFalse((self.root / "pj" / "snapshot.json").exists())
+
+    def test_a_missing_issues_dir_is_a_state_error(self):
+        self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
+        shutil.rmtree(self.data / "issues")
+        res = self.run_hub("snapshot", "--project", "pj", "--source", "tracker", "--from-local")
+        self.assertEqual(res.returncode, 3, res)
+
+    def test_issue_returns_the_body_and_the_absolute_path(self):
+        self.write_issue("ABC-7.md", "---\nid: ABC-7\ntitle: 題\nstatus: backlog\n---\n# ABC-7: 題\n\n本文\n")
+        self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
+        out = self.ok("issue", "--project", "pj", "--issue", "ABC-7")
+        self.assertEqual(out, {"id": "ABC-7", "title": "題", "state": "backlog", "assignee": None, "pr": None,
+                               "path": str(self.issues / "ABC-7.md"), "body": "# ABC-7: 題\n\n本文\n"})
+        for issue, msg in (("../ABC-7", "Issue ID の形"), ("ABC-8", "無いか読めない")):
+            with self.subTest(issue=issue):
+                res = self.run_hub("issue", "--project", "pj", "--issue", issue)
+                self.assertEqual(res.returncode, 2, res)
+                self.assertIn(msg, res.stderr)
+
+    def test_reports_take_local_issue_ids(self):
+        self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
+        self.assertEqual(self.report(body=report_body(issue="ABC-7")).returncode, 0)
+        res = self.report(body=report_body(issue="#7"))
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("Issue ID の形ではない", res.stderr)
+
+
 class RequiredArgumentsTest(HubTestBase):
     """必須の引数が欠けたら argparse が止める（None のまま先へ進むと、別の理由の exit 2 や、黙って書く・落ちるになる）."""
 
