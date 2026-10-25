@@ -120,7 +120,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 
 ### ファイルの形
 
-- `config.json`: `{ "project", "status": "active|closed", "tracker": {"kind": "github|linear", "repo"|"team"/"project", "milestone"?}, "repos": [{"path", "base"}], "approval": {"prefix", "suffix"} }`。PJ 固有の決まり（PR のラベル・向き先）はここに置き、プラグイン本体に入れない。公開先での置き換えは guardrail-protect の設定が正本なので、ここには持たない
+- `config.json`: `{ "project", "status": "active|closed", "tracker": {"kind": "github|linear|local", "repo"|"team"/"project"|"dir", "milestone"?}, "repos": [{"path", "base"}], "approval": {"prefix", "suffix"} }`。PJ 固有の決まり（PR のラベル・向き先）はここに置き、プラグイン本体に入れない。公開先での置き換えは guardrail-protect の設定が正本なので、ここには持たない
 - `hub.json`: `{ "session_id", "name", "updated" }`。`name` は ListAgents の自分の行（「This session is X [ref]」）から取る
 - `journal.jsonl`: 1 行 1 件 `{"ts", "kind", "subject", "body", "source"}`。`kind` は段階 ① では `relay | brief | report | fact | takeover | close` のどれか（段階 ② で `merged` / `decide` を足す）。relay と brief は送った全文と、解決した宛先・送信の結果（受理 / 失敗）を残す。送信の受理は「相手が読んだ」を意味しない。report は取り込んだファイル名を `source` に入れ、再取り込みの重複を防ぐキーにする
 - `facts.jsonl`: `{"id", "ts", "claim", "source", "checked_by", "supersedes"?}`。`source` が無い行は書かない。`checked_by` は `hub`（hub が自分で確かめた）か `null`（作業側の主張をそのまま写したもの）。brief が引くのは `checked_by` が入った行だけ。訂正は新しい行で、`supersedes` に前の行の `id` を入れる（追記のみ）。訂正の正本は facts だけで、journal には `fact` の行で id を指すだけにする。出典が config の repo の中のファイルなら `repo` / `path` / `base_sha`（確かめた時点の base）を足す（実装で追加）
@@ -367,9 +367,16 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
 - `set-mode` は state.md を作り直す（注入が古い方式の手順を出さない）。takeover の出力にも `mode_notice` を出す。pending-hint は、lead の発言が送るのを止める指示や mode の切り替えなら先にそれを行うよう書く
 - `ingest` の `reports` に `session_id` を足し、答えの宛先を Issue から逆引きしない。status は `questions` が残っている sub も並べ直す（質問ごとに答えたか回したかは journal に残らない。残す仕組みは次の段で決める）
 
+## 実装で決めたこと（tracker local・2026-10-25 / GitHub issue #321）
+
+- `--tracker local --tracker-dir <{DATA_DIR}/<slug>>`。issue-workflow の local backend の Issue ファイル（`issues/ABC-12.md`）を tracker にする。dir は resolve した絶対パスで持つ（worktree の sub にも同じファイルを指させる。Issue ファイルは gitignore された `.claude/` の下にあり、worktree には無い）
+- 一覧は `snapshot --source tracker --from-local` で `hub.py` が frontmatter を読んで作る（LLM に写させない）。`status` が `completed` / `canceled` / `cancelled` の行は外す。`title` が無いファイルは本文の最初の見出しから `ID: ` を外して取る。`pr` は PR の URL か番号だけを `#<番号>` にし、自由文は表に載せない（state.md は hub に注入される）。frontmatter は 1 行 1 つの `key: value` だけを読み、字下げした行は読まない
+- sub が Issue ファイルの `status` を書き換えれば、次の `status` の snapshot で表に出る（hub は Issue ファイルを書かない）
+- brief の材料は `issue --issue <ID>`（本文と絶対パス）。brief には絶対パスと「Issue は起票しない。候補は follow_ups に」を入れる。issue-workflow の `start` は worktree の中でもメインのチェックアウト側のデータ dir を見る（backend-detect の 2）ので、始め方は linear と同じにした
+- **起票の持ち主**: 採番が `counter.txt` なので、起票は hub のセッションで lead が issue-workflow を呼んだときだけにする（hub 自身も起票しない）。sub の起票の候補は report の `follow_ups` で受ける。強制はしない（sub の issue-workflow を止める仕組みは無い）。brief と report の skill の文面で頼む
+
 ## 未解決事項 (open)
 
-- **issue-workflow の local backend の Issue を tracker にするか**（段階 ②）: 紐付けの導線は入れた（下の「実装で決めたこと（2026-10-25）」）。残りは、issue-workflow の local backend の Issue（`TEAM-123` の形）を hub の tracker として扱う種類が要るか（段階 ① では `--tracker linear` で照合はできるが、status の Issue 一覧は Linear MCP でしか取らない）。確定タイミング: 段階 ② の詳細設計
 - **3 回目の self-review（2026-10-21・security / bug-detection）で残した指摘**（G-V ループの上限に達し、BLOCKER だけ直す方針にしたため未修正）。確定タイミング: 段階 ① を 1 PJ で使う前
   - MAJOR 3 件（同名の宛先の `to`・同じ PJ の別の登録のトークン照合・report の `--name`）は同じ日に直した（CHANGELOG の次の版）
   - MINOR 5 件は 2026-10-25 に直した（下の「実装で決めたこと（self-review の MINOR・2026-10-25）」）
