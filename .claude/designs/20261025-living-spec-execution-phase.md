@@ -34,7 +34,7 @@ living spec は「Issue 化する前の設計収束ドキュメント」で、�
 ## 確定した前提
 
 - 仕様表のヘッダは段 1 が完全一致で検査している（`format-spec.md` 2 節・9 節）。列を足すと旧ファイルが段 1 の Critical になるので、旧 4 列のヘッダも受ける
-- Decision log の bullet は固定順の 6 つで、append-only（4 節）。既存エントリに bullet を足すことはできない
+- Decision log の bullet は固定順の 6 つで、append-only（4 節）。既存エントリに bullet を足せない
 - 凍結（#245 / 2.1 節）は表全体の宣言を frontmatter に置いた。同じ置き場所の流儀に揃える
 
 ## 採用案
@@ -47,7 +47,7 @@ living spec は「Issue 化する前の設計収束ドキュメント」で、�
 
 - `phase`: `-`（phase を分けていない）/ `P<n>`（n は 1 以上）/ `先送り`（phase を決めずに後へ回す）
 - `関連 Issue`: `-` か、Issue ID のカンマ区切り（`ABC-12` か `#308` の形）。トラッカーは問わない
-- 旧 4 列の表（`| 項目 | 内容 | 確度 | since |`）も有効。1 つの表の中で 2 つの形を混ぜない（混在は段 1 の Critical）。旧 4 列の表は、どの行も `phase` と `関連 Issue` が `-` とみなす
+- 旧 4 列の表（`| 項目 | 内容 | 確度 | since |`）も有効。1 つの表の中で 2 つの形を混ぜない（混在は段 1 の Critical）。旧 4 列の表は、どの行も `phase` と `関連 Issue` を `-` とみなす
 - 6 列にするのは `spec --upgrade`（全行に `-` を 2 つ挿す）。`spec --phase` / `--issue` は旧 4 列の表では拒否し、`--upgrade` を案内する。凍結中の表は upgrade も拒否する
 
 ### 今の phase（format-spec 10 節）
