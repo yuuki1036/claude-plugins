@@ -2184,16 +2184,20 @@ class LocalTrackerTest(HubTestBase):
         self.write_issue("ABC-1.md", "---\nid: ABC-1\ntitle: 一つ目\nstatus: in-progress\n"
                                      "pr: \"https://github.com/o/r/pull/177\"\n---\n# ABC-1: 一つ目\n")
         self.write_issue("ABC-2.md", "---\nid: ABC-2\nstatus: backlog\npr: \"\"\n---\n# ABC-2: 見出しの題\n")
-        self.write_issue("ABC-3.md", "---\nstatus: completed\n---\n# ABC-3: 済み\n")
+        # issue-workflow のテンプレートの行末コメントが残ったファイル
+        self.write_issue("ABC-3.md", "---\nstatus: completed          # 必須。値: backlog / completed\n"
+                                     "pr: \"\"   # 任意。PR 作成後に記載\n---\n# ABC-3: 済み\n")
+        self.write_issue("ABC-8.md", "---\nstatus: backlog   # 必須\npr: \"#9\"   # 任意\n---\n# ABC-8: 引用符の後ろ\n")
         self.write_issue("ABC-4.md", "---\nstatus: canceled\n---\n")
         self.write_issue("ABC-5.md", "---\nstatus: in_progress\npr: 12\ntags:\n  status: completed\n---\n")
         self.write_issue("ABC-6.md", "---\nstatus: backlog\npr: 後で出す | 見出し\n---\n")
         self.write_issue("notes.md", "---\nstatus: backlog\n---\n")
         self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
         out = self.snapshot_local()
-        self.assertEqual((out["count"], out["skipped"]), (4, ["notes.md"]))
+        self.assertEqual((out["count"], out["skipped"]), (5, ["notes.md"]))
         rows = {r["id"]: r for r in self.tracker_rows()}
-        self.assertEqual(sorted(rows), ["ABC-1", "ABC-2", "ABC-5", "ABC-6"])
+        self.assertEqual(sorted(rows), ["ABC-1", "ABC-2", "ABC-5", "ABC-6", "ABC-8"])
+        self.assertEqual((rows["ABC-8"]["state"], rows["ABC-8"]["pr"]), ("backlog", "#9"))
         self.assertEqual((rows["ABC-1"]["title"], rows["ABC-1"]["state"], rows["ABC-1"]["pr"]),
                          ("一つ目", "in-progress", "#177"))
         # title の無いファイルは見出しから「ID: 」を外して取る
@@ -2220,7 +2224,9 @@ class LocalTrackerTest(HubTestBase):
 
     def test_from_local_rejects_other_sources_and_failed(self):
         self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
-        for extra in (["--source", "prs"], ["--source", "tracker", "--failed"]):
+        # --repo を付けると key が tracker:<path> になり、Issue 表（key tracker）に出ない
+        for extra in (["--source", "prs"], ["--source", "tracker", "--failed"],
+                      ["--source", "tracker", "--repo", str(self.repo)]):
             with self.subTest(extra=extra):
                 res = self.run_hub("snapshot", "--project", "pj", *extra, "--from-local", stdin="{}")
                 self.assertEqual(res.returncode, 2, res)
