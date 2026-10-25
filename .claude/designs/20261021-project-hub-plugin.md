@@ -3,7 +3,7 @@ id: 20261021-project-hub-plugin
 title: project-hub — 複数セッションを束ねて PJ を進める hub のプラグイン
 status: draft
 phase: current
-last-validated: 2026-10-21
+last-validated: 2026-10-25
 supersedes: []
 superseded-by: null
 issue: "GitHub issue #308"
@@ -140,6 +140,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 - **hub → 作業側**（brief / relay）
   1. 登録の `name` と完全一致する行が 1 つだけで、その登録が不在（`presence.json` の `absent_since`。ListAgents に名前が無かった最初の時刻）になっていない → それ
   2. 無ければ、Issue ID がトークンとして一致する行が 1 つだけ → それ。トークンの形は tracker で決める: linear は `ABC-12` を語境界つきで、github は `#308` を語境界つきで照合する。既定名の形（`<dir>-<数字>`）の行は候補から外す
+     - 不在の登録でも、登録名と完全一致する行が今の一覧に 1 つだけあり、その名前がほかの登録・ほかの PJ・hub のものでなければ、Issue ID の一致と並ぶ候補にする。候補を合わせて 1 行に決まればそれ（どちらも `warning` 付き）、2 行以上なら 3 へ（実装で変更 / GitHub issue #316。`presence.json` は前回の status の時点の値で、今の一覧に戻った名前を次の status まで捨てていた）
   3. それ以外（0 件・2 件以上）は送らず、lead に「宛先が決まらない（登録名 X / 候補 N 件）」と出す
   - 送る前の承認の画面に、解決した宛先の名前と ref を出す。lead はそこで宛先も確かめる
 - **作業側 → hub**（report の通知）: `hub.json` の `name` と完全一致する行が 1 つだけならそれに送る。決まらなければ通知だけ省き、利用者に「report は置いた。hub への通知は送れなかった」と伝える（report のファイルは残るので、hub の次の status で取り込まれる）
