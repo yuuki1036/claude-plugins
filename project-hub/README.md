@@ -103,6 +103,7 @@ claude plugin install /path/to/claude-plugins/project-hub
 - `python3`（必須）: 状態ファイルの読み書きと宛先の照合（`scripts/hub.py`）
 - `gh`（任意）: tracker が GitHub のときの Issue と PR の取得
 - Linear MCP（任意）: tracker が Linear のときの Issue の取得
+- issue-workflow の local backend（任意）: tracker が local のときの Issue ファイル（`hub.py` が直接読む。プラグインとしての依存は無い）
 
 ## テスト
 

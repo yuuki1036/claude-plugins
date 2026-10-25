@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.0] - 2026-10-25
+
+### Added
+
+- `--tracker local --tracker-dir <{DATA_DIR}/<slug>>`: issue-workflow の local backend の Issue ファイルを tracker にする（GitHub issue #321）
+- `snapshot --source tracker --from-local`: Issue ファイルの frontmatter（`status`・`pr`）から、完了・取り下げ以外の Issue の表を作る。sub が `status` を書き換えれば次の `status` で表に出る
+- `issue --issue <ID>`: Issue ファイル 1 件の本文と絶対パス（brief の材料。worktree の sub には Issue ファイルが無いので、絶対パスで読ませる）
+- tracker local の PJ では、起票を hub のセッションの lead だけにする（採番が `counter.txt` でぶつかりうるため）。brief で sub に起票しないよう伝え、候補は report の `follow_ups` で受ける
+
 ## [0.3.1] - 2026-10-25
 
 ### Changed

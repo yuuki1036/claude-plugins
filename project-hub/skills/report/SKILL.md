@@ -32,7 +32,8 @@ sub（hub が束ねる作業セッション）側の手順。本文は hub の i
     "agents": [{"name": "...", "ref": "...", "state": "..."}], "peer_count": <N>}
    ```
    - 文字列の中の改行は `\n` と書き、1 つの文字列を 1 行に収める
-   - `issue` は brief の Issue ID（GitHub は `#308`、Linear は `ABC-12` の形。それ以外は弾かれる）。`pr` は `gh pr view --json number -q .number` で取れれば数値で入れる
+   - `follow_ups` は Issue の起票の候補にもなる。brief が「Issue を起票しない」と言った PJ（tracker local）では、Issue を起票せずにここへ書く（hub のセッションの lead が起票する）
+   - `issue` は brief の Issue ID（GitHub は `#308`、Linear と issue-workflow の local は `ABC-12` の形。それ以外は弾かれる）。`pr` は `gh pr view --json number -q .number` で取れれば数値で入れる
    - `claims` は出典を付けられるものだけ。出典の無い推測は claims に入れず、確かめてから書くか questions / needs_lead に問いとして書く
    - `questions` と `needs_lead` の分け方: Issue・仕様 docs・これまでの lead の判断から答えが決まりそうなものは questions、lead が新しく決めることは needs_lead。迷ったら needs_lead に書く（hub が答えてよいかを sub が決めない）
    - 節目の report は利用者に確かめずに置いてよい（brief の指示と report の skill がそう決めている）。hub の連絡（`[hub の答え]` など）を受けただけで、state も質問も変わらないなら report を置き直さない（hub との往復を作らない）

@@ -27,7 +27,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.3.3 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.9.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
-| [project-hub](#project-hub) | 0.3.1 | 2 | 2 | - | SessionStart, PostCompact, UserPromptSubmit | - | 複数の sub を 1 つの hub で束ねる PJ の状態ファイルと自動の連絡 |
+| [project-hub](#project-hub) | 0.4.0 | 2 | 2 | - | SessionStart, PostCompact, UserPromptSubmit | - | 複数の sub を 1 つの hub で束ねる PJ の状態ファイルと自動の連絡 |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.10.2 | 1 | 1 | - | SessionStart | - | 文章を語句レベルで推敲・添削 |
 

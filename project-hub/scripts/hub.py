@@ -63,6 +63,10 @@ SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
 SOURCE_NAME_RE = re.compile(r"[a-z][a-z0-9_-]*")
 REF_RE = re.compile(r"[0-9A-Za-z]+")
 PR_RE = re.compile(r"#?\d+")
+PR_URL_RE = re.compile(r"/pull/(\d+)(?![0-9])")
+# issue-workflow の local backend の Issue ファイル名（`{DATA_DIR}/<slug>/issues/ABC-12.md`）
+LOCAL_ISSUE_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*-\d+")
+LOCAL_CLOSED_STATES = ("completed", "canceled", "cancelled")
 FACT_ID_RE = re.compile(r"F(\d+)")
 # 名前を付けていないセッションの既定名（`claude-plugins-96`）。判定は is_default_name
 DEFAULT_NAME_RE = re.compile(r"\S+-\d+")
@@ -216,6 +220,81 @@ def is_active(config: dict) -> bool:
 def tracker_kind(config: dict) -> str | None:
     tracker = config.get("tracker")
     return tracker.get("kind") if isinstance(tracker, dict) else None
+
+
+def local_issues_dir(config: dict) -> Path:
+    """tracker local の Issue ファイルの dir（`{DATA_DIR}/<slug>/issues`）."""
+    if tracker_kind(config) != "local":
+        raise HubError(2, "この PJ の tracker は local ではない（Issue ファイルを読むのは tracker local だけ）")
+    base = config["tracker"].get("dir")
+    issues = Path(base) / "issues" if isinstance(base, str) and base else None
+    if issues is None or not issues.is_dir():
+        raise HubError(3, f"tracker local の Issue の dir が無い: {issues}（config.json の tracker.dir を直す）")
+    return issues
+
+
+def read_frontmatter(text: str) -> tuple[dict, str]:
+    """issue-workflow の Issue ファイルの frontmatter（1 行 1 つの `key: value`）と本文.
+
+    YAML の他の記法（複数行・リスト）は読まない。値を囲む引用符だけ外す
+    """
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.find("\n---", 3)
+    if end < 0:
+        return {}, text
+    fm = {}
+    for line in text[4:end].split("\n"):
+        key, sep, value = line.partition(":")
+        # 字下げした行は前のキーの続き（リスト等）なので読まない
+        if not sep or not key or key != key.strip():
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        fm[key] = value
+    return fm, text[end + 4:].lstrip("\n")
+
+
+def local_pr(value: str | None) -> str | None:
+    """frontmatter の pr（PR の URL か番号）を `#<番号>` に。自由文は表に載せない."""
+    if not value:
+        return None
+    m = PR_URL_RE.search(value)
+    if m:
+        return f"#{m.group(1)}"
+    return f"#{value.lstrip('#')}" if PR_RE.fullmatch(value) else None
+
+
+def local_issue(path: Path) -> tuple[dict, str] | None:
+    """Issue ファイル 1 件の表の行と本文。ファイル名が Issue ID の形でなければ None."""
+    if not LOCAL_ISSUE_RE.fullmatch(path.stem):
+        return None
+    try:
+        fm, body = read_frontmatter(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return None
+    title = fm.get("title")
+    if not title:
+        # title の無いファイルは本文の最初の見出し（`# ABC-12: 題`）から取る
+        heading = next((line[2:] for line in body.split("\n") if line.startswith("# ")), "")
+        title = re.sub(rf"^{re.escape(path.stem)}\s*:\s*", "", heading.strip())
+    return {"id": path.stem, "title": title or None, "state": fm.get("status") or None,
+            "assignee": None, "pr": local_pr(fm.get("pr")), "path": str(path)}, body
+
+
+def local_issue_rows(config: dict) -> tuple[list[dict], list[str]]:
+    """完了・取り下げ以外の Issue ファイルの行と、読めなかったファイル名."""
+    rows, skipped = [], []
+    for path in sorted(local_issues_dir(config).glob("*.md")):
+        got = local_issue(path)
+        if got is None:
+            skipped.append(path.name)
+            continue
+        row = got[0]
+        if row["state"] not in LOCAL_CLOSED_STATES:
+            rows.append(row)
+    return rows, skipped
 
 
 def approval_mode(config: dict) -> tuple[str, str | None]:
@@ -522,6 +601,13 @@ def cmd_init(args) -> int:
         if not args.tracker_repo:
             raise HubError(2, "tracker github には --tracker-repo <owner/name> が要る")
         tracker["repo"] = args.tracker_repo
+    elif args.tracker == "local":
+        if not args.tracker_dir:
+            raise HubError(2, "tracker local には --tracker-dir <{DATA_DIR}/<slug> のパス> が要る")
+        # worktree の sub にも同じファイルを読ませるので、絶対パスで持つ
+        tracker["dir"] = str(Path(args.tracker_dir).expanduser().resolve())
+        if not (Path(tracker["dir"]) / "issues").is_dir():
+            raise HubError(2, f"--tracker-dir の下に issues/ が無い: {tracker['dir']}")
     else:
         if not (args.tracker_team or args.tracker_project):
             raise HubError(2, "tracker linear には --tracker-team か --tracker-project が要る")
@@ -1033,6 +1119,13 @@ def cmd_snapshot(args) -> int:
         if repo is None:
             raise HubError(2, f"repo が config の repos に無い: {args.repo}")
         key = f"{args.source}:{repo['path']}"
+    if args.from_local:
+        if args.source != "tracker" or args.failed:
+            raise HubError(2, "--from-local は --source tracker だけに付ける（--failed とは併用しない）")
+        rows, skipped = local_issue_rows(config)
+        record_snapshot(pdir, key, ok=True, data=rows)
+        emit({"source": key, "ok": True, "count": len(rows), "truncated": False, "skipped": skipped})
+        return 0
     body = load_json_input(args.data_file, "data")
     if args.failed:
         error = body.get("error") if isinstance(body, dict) else None
@@ -1049,6 +1142,21 @@ def cmd_snapshot(args) -> int:
     record_snapshot(pdir, key, ok=True, data=data, truncated_at=args.limit if truncated else None)
     emit({"source": key, "ok": True, "count": len(data) if isinstance(data, list) else None,
           "truncated": truncated})
+    return 0
+
+
+def cmd_issue(args) -> int:
+    """brief の材料。sub の worktree には gitignore された Issue ファイルが無いので、絶対パスも返す."""
+    config = load_config(project_dir(args.project))
+    issue = args.issue.strip()
+    if not LOCAL_ISSUE_RE.fullmatch(issue):
+        raise HubError(2, f"Issue ID の形ではない: {issue}（ABC-12 の形）")
+    path = local_issues_dir(config) / f"{issue}.md"
+    got = local_issue(path) if path.is_file() else None
+    if got is None:
+        raise HubError(2, f"Issue ファイルが無いか読めない: {path}")
+    row, body = got
+    emit({**row, "body": body})
     return 0
 
 
@@ -1784,8 +1892,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("init", cmd_init, "PJ を作り、このセッションを hub として登録する（config が無いときだけ）")
     p.add_argument("--name", required=True, help="ListAgents の「This session is <name>」")
-    p.add_argument("--tracker", choices=("github", "linear"), required=True)
+    p.add_argument("--tracker", choices=("github", "linear", "local"), required=True)
     p.add_argument("--tracker-repo", help="github: owner/name")
+    p.add_argument("--tracker-dir", help="local: issue-workflow の {DATA_DIR}/<slug>（issues/ を持つ dir）")
     p.add_argument("--tracker-team", help="linear: team")
     p.add_argument("--tracker-project", help="linear: project")
     p.add_argument("--milestone")
@@ -1851,6 +1960,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="取得に付けた件数の上限（届いていたら打ち切りの可能性を残す）")
     p.add_argument("--failed", action="store_true",
                    help="取得に失敗した（前回の data を残す。stdin は {\"error\": ...}）")
+    p.add_argument("--from-local", action="store_true",
+                   help="tracker local: stdin を読まず、Issue ファイルの frontmatter から完了・取り下げ以外を集める")
+
+    p = add("issue", cmd_issue, "tracker local: Issue ファイル 1 件の frontmatter・本文・絶対パス",
+            session=False)  # mutation-ok: facts の注記と同じ
+    p.add_argument("--issue", required=True, help="Issue ID（ABC-12）")
 
     p = add("presence", cmd_presence, "ListAgents と登録を突き合わせて absent_since を付け外しする")
     p.add_argument("--agents-file", default="-")
