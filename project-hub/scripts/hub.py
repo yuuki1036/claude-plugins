@@ -10,7 +10,7 @@ root: ${PROJECT_HUB_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/project-hub}
 サブコマンド（`hub.py <cmd> --help`）:
   init / takeover / refresh-hub / set-mode / close / projects   PJ と hub の登録・送る前の承認の方式
   fact / facts / record / sent                             facts と brief・relay・start の記録・承認なしに送った連絡
-  ingest / reports / presence / snapshot / render / worktrees   hub status・brief の材料
+  ingest / reports / presence / snapshot / issue / render / worktrees   hub status・brief の材料
   resolve                                                  宛先の照合（送る直前に毎回）
   report                                                   sub の report（自己検査 → 登録 + inbox → 通知先）
   inject / pending-hint                                    SessionStart・PostCompact / UserPromptSubmit hook 用
@@ -250,8 +250,13 @@ def read_frontmatter(text: str) -> tuple[dict, str]:
         if not sep or not key or key != key.strip():
             continue
         value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
+        if value[:1] in ("\"", "'"):
+            end_quote = value.find(value[0], 1)
+            if end_quote > 0:
+                value = value[1:end_quote]
+        else:
+            # issue-workflow のテンプレートは値の後ろに `# 必須。値: ...` の行末コメントを持つ
+            value = re.sub(r"\s+#.*$", "", value)
         fm[key] = value
     return fm, text[end + 4:].lstrip("\n")
 
@@ -1120,8 +1125,8 @@ def cmd_snapshot(args) -> int:
             raise HubError(2, f"repo が config の repos に無い: {args.repo}")
         key = f"{args.source}:{repo['path']}"
     if args.from_local:
-        if args.source != "tracker" or args.failed:
-            raise HubError(2, "--from-local は --source tracker だけに付ける（--failed とは併用しない）")
+        if args.source != "tracker" or args.failed or args.repo is not None:
+            raise HubError(2, "--from-local は --source tracker だけに付ける（--failed・--repo とは併用しない）")
         rows, skipped = local_issue_rows(config)
         record_snapshot(pdir, key, ok=True, data=rows)
         emit({"source": key, "ok": True, "count": len(rows), "truncated": False, "skipped": skipped})
@@ -1926,7 +1931,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="作業側の主張をそのまま写す（checked_by: null。brief は引かない）")
     p.add_argument("--body-file", default="-")
 
-    # 読むだけのサブコマンド（facts / reports / worktrees）は args.session_id を使わない。session=True でも
+    # 読むだけのサブコマンド（facts / reports / worktrees / issue）は args.session_id を使わない。session=True でも
     # 受け付ける引数が 1 つ増えるだけで、skill もこれらに --session-id を付けない
     p = add("facts", cmd_facts, "有効な facts（訂正で置き換わった行を除く）", session=False)  # mutation-ok: 上の注記
     p.add_argument("--checked-only", action="store_true")

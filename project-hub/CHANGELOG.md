@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.1] - 2026-10-25
+
+### Fixed
+
+- tracker local の Issue ファイルで、frontmatter の行末コメント（issue-workflow のテンプレートの `# 必須。…`）を値から外す。残っていると `status: completed  # …` の Issue が完了と判定されず表に残っていた
+- `snapshot --from-local` に `--repo` を付けたら拒否する（key が `tracker:<path>` になり、ok を返すのに Issue 表に出なかった）
+
 ## [0.4.0] - 2026-10-25
 
 ### Added
