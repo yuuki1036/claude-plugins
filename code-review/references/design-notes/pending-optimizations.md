@@ -54,6 +54,7 @@ opus-5-5 の回は publish 時点で `tokens`（`tokens.schema` 3）を持つの
 
 - 往復の列は往復を記録した回（#265 以降）だけで、cache_read の列と n が違う（high / large は 25 回）
 - **上の後付けの表（opus-5 の 3,007.5k）と並べて世代差と読まない**。数え方は同じだが、後付けは窓の逆算で、effort × tier の構成も違う。opus-5-5 の改修効果は、この表の同じ effort × tier の値と比べる
+- **2.158.0 以降の xhigh の self-review**（10-25 / 再レビューを除く 10 回・131 体・tier を混ぜた値）は、1 体あたり cache_read 中央値 5,209k・往復中央値 25 で、それより前の xhigh（15 回・157 体: 2,716k・19）の約 1.9 倍。medium・high は動いていない（medium 1,335k → 1,020k・high 1,399k → 1,104k）。原因は未確定（`orchestration-measurement.md ## 15` の xhigh の注記）
 - 1 体あたり cache_read は往復数でほぼ決まる（#190 の決着。`## 11`）。xhigh の 1 体は往復が 21 で、同じ large 帯の high（13）・medium（14）の約 1.5 倍
 
 > **1.（meta-reviewer と反証レイヤーの並列化）は v2.61.0 で実装した**（GitHub issue #122）。根拠は `orchestration-rationale.md`「meta-reviewer と反証レイヤーを同一 wave にした経緯」へ移した。
