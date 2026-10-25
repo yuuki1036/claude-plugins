@@ -266,7 +266,7 @@ class NotifyPendingTest(HookTestCase):
         res = self.fire()
         self.assertEqual(res.returncode, 0, res)
         self.assertIn("未取り込みの report がある", res.stdout)
-        self.assertIn("PJ「pj」: 2 件", res.stdout)
+        self.assertIn("PJ「pj」（number）: 2 件", res.stdout)
         self.assertIn("ingest --project 'pj'", res.stdout)
         self.assertNotIn("Unexpected", res.stderr)
 

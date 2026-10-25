@@ -77,8 +77,9 @@ class HubTestBase(unittest.TestCase):
         return json.loads(res.stdout)
 
     def init(self, project: str = "pj", tracker: str = "github", session_id: str = SID_HUB,
-             name: str = "hub-session", repos: list[Path] | None = None) -> Path:
-        args = ["init", "--project", project, "--name", name, "--tracker", tracker]
+             name: str = "hub-session", repos: list[Path] | None = None, mode: str = "number") -> Path:
+        # 既定は承認を取る方式（宛先の照合の規則そのものを見るテストが多い）。自動の連絡は mode="auto" で見る
+        args = ["init", "--project", project, "--name", name, "--tracker", tracker, "--approval-mode", mode]
         for repo in repos or [self.repo]:
             args += ["--repo", f"{repo}=base"]
         args += ["--tracker-repo", "o/r"] if tracker == "github" else ["--tracker-team", "ABC"]
@@ -896,9 +897,10 @@ class IngestTest(HubTestBase):
         name = json.loads(self.report(body=body).stdout)["file"]
         out = self.ok("ingest", "--project", "pj")
         self.assertEqual((out["ingested"], out["duplicates"], out["invalid"]), ([name], [], []))
-        self.assertEqual(out["reports"], [{"file": name, "name": "worker-a", "issue": "#308",
+        self.assertEqual(out["approval_mode"], "number")
+        self.assertEqual(out["reports"], [{"file": name, "session_id": SID_A, "name": "worker-a", "issue": "#308",
                                            "state": "in_progress", "pr": None,
-                                           "needs_lead": ["どちらにする？"], "follow_ups": [],
+                                           "needs_lead": ["どちらにする？"], "questions": [], "follow_ups": [],
                                            "claims": [{"text": "c", "source": "a.py:1"}]}])
         rows = [r for r in self.journal(self.pdir) if r["kind"] == "report"]
         self.assertEqual(len(rows), 1)
@@ -934,7 +936,8 @@ class IngestTest(HubTestBase):
             "20261021T000001000000Z-b.json": self.full_report(claims=[{"text": "x", "source": ""}]),
             "20261021T000002000000Z-c.json": self.full_report(project="other"),
             "20261021T000003000000Z-d.json": self.full_report(issue=""),
-            "20261021T000004000000Z-e.json": self.full_report(schema=2),
+            "20261021T000004000000Z-e.json": self.full_report(schema=3),
+            "20261021T000004500000Z-e2.json": self.full_report(schema=True),
             "20261021T000005000000Z-f.json": [],
             "20261021T000006000000Z-g.json": self.full_report(session_id="../x"),
             "20261021T000007000000Z-h.json": self.full_report(pr={}),
@@ -961,13 +964,13 @@ class IngestTest(HubTestBase):
         tmp = self.inbox / ".20261021T000000000000Z-a.json.tmp"
         tmp.write_text("{", encoding="utf-8")
         out = self.ok("ingest", "--project", "pj")
-        self.assertEqual(out, {"ingested": [], "duplicates": [], "invalid": [], "reports": []})
+        self.assertEqual(out, {"ingested": [], "duplicates": [], "invalid": [], "reports": [], "approval_mode": "number"})
         self.assertTrue(tmp.exists())
 
     def test_a_directory_named_like_a_report_is_left_alone(self):
         (self.inbox / "20261021T000000000000Z-a.json").mkdir()
         out = self.ok("ingest", "--project", "pj")
-        self.assertEqual(out, {"ingested": [], "duplicates": [], "invalid": [], "reports": []})
+        self.assertEqual(out, {"ingested": [], "duplicates": [], "invalid": [], "reports": [], "approval_mode": "number"})
         self.assertTrue((self.inbox / "20261021T000000000000Z-a.json").is_dir())
 
     def test_a_missing_inbox_is_made_again(self):
@@ -1164,6 +1167,7 @@ class RecordTest(HubTestBase):
             "to の ref が不正": {"subject": "#1", "text": "t", "to": {"name": "n", "ref": "[f1]"}},
             "to が文字列": {"subject": "#1", "text": "t", "to": "n"},
             "error が数": {"subject": "#1", "text": "t", "error": 1},
+            "session が不正": {"subject": "#1", "text": "t", "session": "../x"},
             "配列": ["t"],
         }
         for label, body in cases.items():
@@ -1359,14 +1363,15 @@ class RenderTest(HubTestBase):
         self.assertIn("journal の 2 行目まで反映", text)
 
     def test_free_text_from_reports_is_counted_not_copied(self):
-        body = report_body(needs_lead=["秘密の判断材料"], follow_ups=["あとで A", "あとで B"],
+        body = report_body(needs_lead=["秘密の判断材料"], questions=["質問の本文"],
+                           follow_ups=["あとで A", "あとで B"],
                            claims=[{"text": "外部の文面", "source": "x.md:1"}], pr=42)
         self.assertEqual(self.report(body=body).returncode, 0)
         self.ok("ingest", "--project", "pj")
         text = self.render()
-        for secret in ("秘密の判断材料", "あとで A", "外部の文面"):
+        for secret in ("秘密の判断材料", "質問の本文", "あとで A", "外部の文面"):
             self.assertNotIn(secret, text)
-        self.assertIn("| 1・2・1 |", text)
+        self.assertIn("| 1・1・2・1 |", text)
         self.assertIn("| in_progress | 42 |", text)
 
     def test_external_text_cannot_break_out_of_a_cell(self):
@@ -1746,22 +1751,31 @@ class RenamedSessionTest(HubTestBase):
 
 
 class ApprovalModeTest(HubTestBase):
-    """relay の承認の方式（GitHub issue #312）。既定と読めない値は番号の打ち返しに倒す."""
+    """送る前の承認の方式（GitHub issue #312 / ADR-20261025152955）。init の既定は auto、読めない値は番号に倒す."""
 
     def config(self, pdir: Path) -> dict:
         return json.loads((pdir / "config.json").read_text(encoding="utf-8"))
 
-    def test_init_stores_number_by_default_and_phrase_when_asked(self):
-        pdir = self.init()
-        self.assertEqual(self.config(pdir)["approval"]["mode"], "number")
+    def test_init_defaults_to_auto_and_always_tells_the_lead(self):
+        out = self.ok("init", "--project", "pj", "--name", "hub-session", "--tracker", "github",
+                      "--tracker-repo", "o/r", "--repo", f"{self.repo}=base")
+        self.assertEqual(self.config(self.root / "pj")["approval"]["mode"], "auto")
+        self.assertEqual(out["approval_mode"], "auto")
+        self.assertIn("自動の連絡: 有効", out["mode_notice"], "lead が知らないまま auto で動かない")
+        self.assertIn("hub mode number", out["mode_notice"], "止め方を出す")
         self.assertEqual(self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")["approval_mode"],
-                         "number")
-        self.ok("init", "--project", "p2", "--name", "h2", "--tracker", "github", "--tracker-repo", "o/r",
-                "--repo", f"{self.repo}=base", "--approval-mode", "phrase")
-        self.assertEqual(self.config(self.root / "p2")["approval"]["mode"], "phrase")
-        out = self.ok("refresh-hub", "--project", "p2", "--name", "h2")
-        self.assertEqual(out["approval_mode"], "phrase")
-        self.assertNotIn("warning", out)
+                         "auto")
+
+    def test_number_and_phrase_stay_available(self):
+        for mode in ("number", "phrase"):
+            with self.subTest(mode):
+                out = self.ok("init", "--project", f"p-{mode}", "--name", "h2", "--tracker", "github",
+                              "--tracker-repo", "o/r", "--repo", f"{self.repo}=base", "--approval-mode", mode)
+                self.assertIn("自動の連絡: 無効", out["mode_notice"])
+                self.assertEqual(self.config(self.root / f"p-{mode}")["approval"]["mode"], mode)
+                refreshed = self.ok("refresh-hub", "--project", f"p-{mode}", "--name", "h2")
+                self.assertEqual(refreshed["approval_mode"], mode)
+                self.assertNotIn("warning", refreshed)
 
     def test_an_unknown_mode_is_refused_at_init(self):
         res = self.run_hub("init", "--project", "pj", "--name", "h", "--tracker", "github",
@@ -1771,19 +1785,220 @@ class ApprovalModeTest(HubTestBase):
 
     def test_a_config_without_or_with_a_broken_mode_falls_back_to_number(self):
         pdir = self.init()
-        cases = {"no mode (0.1.x)": {"prefix": "", "suffix": ""}, "unknown": {"mode": "auto"},
-                 "not a string": {"mode": ["phrase"]}, "not an object": "phrase"}
+        cases = {"no mode (0.1.x)": {"prefix": "", "suffix": ""}, "unknown": {"mode": "loose"},
+                 "not a string": {"mode": ["auto"]}, "not an object": "auto"}
         for label, approval in cases.items():
             with self.subTest(label):
                 config = self.config(pdir)
                 config["approval"] = approval
                 (pdir / "config.json").write_text(json.dumps(config), encoding="utf-8")
                 out = self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")
-                self.assertEqual(out["approval_mode"], "number")
+                self.assertEqual(out["approval_mode"], "number", "読めない値を auto に倒さない")
                 if label == "no mode (0.1.x)" or label == "not an object":
                     self.assertNotIn("warning", out)
                 else:
                     self.assertIn("approval.mode", out["warning"])
+
+
+class SetModeTest(HubTestBase):
+    """`hub mode` の切り替え。既存の PJ を config.json の手直しなしに auto へ移せる."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.ok("init", "--project", "pj", "--name", "hub-session", "--tracker", "github",
+                "--tracker-repo", "o/r", "--repo", f"{self.repo}=base", "--approval-mode", "number",
+                "--approval-prefix", "前置き")
+        self.pdir = self.root / "pj"
+
+    def test_switching_keeps_the_rest_of_approval_and_is_journaled(self):
+        out = self.ok("set-mode", "--project", "pj", "--mode", "auto")
+        self.assertEqual((out["approval_mode"], out["previous"]), ("auto", "number"))
+        self.assertIn("自動の連絡: 有効", out["mode_notice"])
+        config = json.loads((self.pdir / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["approval"], {"prefix": "前置き", "suffix": "", "mode": "auto"})
+        self.assertEqual([(r["kind"], r["subject"], r["body"]) for r in self.journal(self.pdir)],
+                         [("mode", "auto", {"from": "number"})])
+
+    def test_only_the_hub_can_switch_and_only_to_a_known_mode(self):
+        res = self.run_hub("set-mode", "--project", "pj", "--mode", "auto",
+                           env_extra={"CLAUDE_CODE_SESSION_ID": SID_A})
+        self.assertEqual(res.returncode, 3, res)
+        self.assertEqual(self.run_hub("set-mode", "--project", "pj", "--mode", "loose").returncode, 2)
+        config = json.loads((self.pdir / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["approval"]["mode"], "number")
+
+
+class AutoRelayTest(HubTestBase):
+    """承認なしに送る連絡の記録と歯止め（ADR-20261025152955）。auto の PJ では script が書き忘れと上限を止める."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init(mode="auto")
+        self.register(self.pdir, SID_A, "worker-a", ref="a1")
+        self.agents = [agent("worker-a", "a1")]
+
+    def send(self, basis: str | None, session: str | None = SID_A, result: str = "accepted", sources=None,
+             kind: str = "relay", ref: str = "a1"):
+        body = {"subject": "#308", "text": f"{basis} の連絡", "to": {"name": "worker-a", "ref": ref}}
+        if session is not None:
+            body["session"] = session
+        if sources is not None:
+            body["sources"] = sources
+        args = ["record", "--project", "pj", "--kind", kind, "--result", result]
+        if basis is not None:
+            args += ["--basis", basis]
+        return self.run_hub(*args, stdin=json.dumps(body))
+
+    def to_sub(self, *extra: str, target: tuple[str, ...] = ("--session", SID_A)) -> tuple[int, dict]:
+        return self.resolve(*target, *extra, agents=self.agents)
+
+    def test_an_answer_without_sources_is_not_recorded(self):
+        for sources in (None, [], ["  "], "a.md:1"):
+            with self.subTest(sources=sources):
+                self.assertEqual(self.send("source", sources=sources).returncode, 2)
+        self.assertEqual(self.journal(self.pdir), [])
+        self.assertEqual(self.send("source", sources=["docs/spec.md:12"]).returncode, 0, "対照: 出典があれば書く")
+        row = self.journal(self.pdir)[-1]
+        self.assertEqual((row["body"]["basis"], row["body"]["sources"], row["body"]["session"]),
+                         ("source", ["docs/spec.md:12"], SID_A))
+
+    def test_the_auto_project_refuses_records_that_the_limit_and_the_list_cannot_count(self):
+        self.assertEqual(self.send(None).returncode, 2, "basis の無い送信は一覧にも上限にも載らない")
+        res = self.run_hub("record", "--project", "pj", "--kind", "relay", "--result", "accepted", "--basis",
+                           "routine", stdin=json.dumps({"subject": "#308", "text": "t", "to": None}))
+        self.assertEqual(res.returncode, 2, "宛先の分からない routine は上限を数えられない")
+        self.assertEqual(self.journal(self.pdir), [])
+        self.assertEqual(self.send("routine", session=None).returncode, 0, "対照: to.ref があれば数えられる")
+        self.assertEqual(self.send(None, result="failed").returncode, 0, "対照: 届かなかった送信の記録は通す")
+        self.ok("set-mode", "--project", "pj", "--mode", "number")
+        self.assertEqual(self.send(None).returncode, 0, "対照: 承認を取る PJ では basis は要らない")
+
+    def test_basis_must_be_known_and_fit_the_kind(self):
+        self.assertEqual(self.send("guess").returncode, 2)
+        for kind, basis in (("relay", "brief"), ("brief", "lead"), ("start", "source")):
+            with self.subTest(kind=kind, basis=basis):
+                self.assertEqual(self.send(basis, kind=kind, sources=["a.md:1"]).returncode, 2)
+        self.assertEqual(self.send("brief", kind="brief").returncode, 0, "対照: 合う組は書く")
+
+    def test_three_automatic_messages_in_a_row_stop_the_fourth(self):
+        for basis, sources in (("source", ["a.md:1"]), ("routine", None)):
+            self.assertEqual(self.send(basis, sources=sources).returncode, 0)
+            self.assertEqual(self.to_sub()[0], 0, "上限の前は送れる")
+        self.assertEqual(self.send("routine").returncode, 0)
+        code, out = self.to_sub()
+        self.assertEqual((code, out["status"], out["streak"]), (1, "auto_limit", 3))
+        code, out = self.to_sub(target=("--ref", "a1"))
+        self.assertEqual((code, out["status"]), (1, "auto_limit"), "--ref で引いても数える")
+        code, out = self.to_sub("--lead")
+        self.assertEqual((code, out["status"]), (0, "ok"), "lead の言葉の伝達は止めない")
+
+    def test_a_record_with_only_the_ref_is_counted(self):
+        for _ in range(3):
+            self.assertEqual(self.send("routine", session=None).returncode, 0)
+        self.assertEqual(self.to_sub()[0], 1, "session の無い行も to.ref で同じ sub に数える")
+
+    def test_relaying_the_leads_words_resets_the_count(self):
+        for _ in range(3):
+            self.send("routine")
+        self.assertEqual(self.to_sub()[0], 1)
+        self.assertEqual(self.send("lead").returncode, 0)
+        self.assertEqual(self.to_sub()[0], 0)
+
+    def test_failed_sends_other_subs_and_briefs_are_not_counted(self):
+        for _ in range(3):
+            self.send("routine", result="failed")
+            self.send("routine", session=SID_B, ref="b1")
+            self.send("brief", kind="brief")
+            self.send("brief", kind="start")
+        self.assertEqual(self.to_sub()[0], 0)
+
+    def test_weakly_matched_destinations_go_to_the_lead_in_the_auto_project(self):
+        """Issue ID・不在から戻った登録名・ref で引いた改名は、承認の画面で見直す前提の規則."""
+        self.register(self.pdir, SID_A, "worker-a", issue="#308", ref="gone")
+        for extra in ((), ("--lead",)):
+            with self.subTest(extra=extra):
+                code, out = self.resolve("--session", SID_A, *extra, agents=[agent("#308: 監査ログ", "t1")])
+                self.assertEqual((code, out["status"], out["rule"]), (1, "needs_lead", "issue_token"))
+        code, out = self.resolve("--ref", "t1", agents=[agent("#308: 監査ログ", "t1")])
+        self.assertEqual((code, out["status"]), (0, "ok"), "lead が選んだ行（--ref）には送れる")
+        self.ok("set-mode", "--project", "pj", "--mode", "number")
+        code, out = self.resolve("--session", SID_A, agents=[agent("#308: 監査ログ", "t1")])
+        self.assertEqual((code, out["status"]), (0, "ok"), "対照: 承認を取る PJ では warning を付けて返す")
+        self.assertIn("warning", out)
+
+    def test_lead_is_only_for_the_hub_to_sub_direction(self):
+        res = self.run_hub("resolve", "--project", "pj", "--hub", "--lead", "--peer-count", "1",
+                           stdin=json.dumps([agent("hub-session", "h1")]))
+        self.assertEqual(res.returncode, 2, res)
+
+    def test_sent_shows_each_delivered_message_once_and_keeps_the_mark_over_takeover(self):
+        self.send("lead")
+        self.send("source", sources=["a.md:1"])
+        self.send("routine", result="failed")
+        self.send("brief", kind="start")
+        listed = self.ok("sent", "--project", "pj", "--unseen", "--mark")
+        self.assertEqual([(r["kind"], r["basis"]) for r in listed],
+                         [("relay", "lead"), ("relay", "source"), ("start", "brief")],
+                         "lead の言葉の伝達も出す・届かなかった送信は出さない")
+        self.assertEqual(listed[1]["sources"], ["a.md:1"])
+        # status 以外の手順（承認の方式を読む refresh-hub）は印を動かさない
+        self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")
+        self.send("routine")
+        self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")
+        again = self.ok("sent", "--project", "pj", "--unseen")
+        self.assertEqual([r["basis"] for r in again], ["routine"], "見せた分は出さず、まだ見せていない分を落とさない")
+        self.assertEqual(self.ok("sent", "--project", "pj", "--unseen"), again, "--mark なしでは印を進めない")
+        self.ok("sent", "--project", "pj", "--unseen", "--mark")
+        out = self.ok("takeover", "--project", "pj", "--name", "hub-2",
+                      env_extra={"CLAUDE_CODE_SESSION_ID": SID_B})
+        self.assertIn("自動の連絡: 有効", out["mode_notice"], "開き直した hub の会話でも方式を伝える")
+        self.assertEqual(self.ok("sent", "--project", "pj", "--unseen"), [], "takeover で印を落とさない")
+        self.assertEqual(len(self.ok("sent", "--project", "pj")), 4)
+        self.assertEqual([r["basis"] for r in self.ok("sent", "--project", "pj", "--basis", "lead")], ["lead"])
+
+    def test_only_the_hub_moves_the_mark(self):
+        self.send("routine")
+        res = self.run_hub("sent", "--project", "pj", "--unseen", "--mark",
+                           env_extra={"CLAUDE_CODE_SESSION_ID": SID_A})
+        self.assertEqual(res.returncode, 3, res)
+        self.assertEqual(len(self.ok("sent", "--project", "pj", "--unseen")), 1)
+
+    def test_a_started_session_is_recorded_only_for_kind_start(self):
+        body = {"subject": "#308", "text": "brief", "to": None, "started": {"id": "local_x1", "name": "issue-308"}}
+        res = self.run_hub("record", "--project", "pj", "--kind", "start", "--result", "accepted",
+                           "--basis", "brief", stdin=json.dumps(body))
+        self.assertEqual(res.returncode, 0, res)
+        self.assertEqual(self.journal(self.pdir)[-1]["body"]["started"], {"id": "local_x1", "name": "issue-308"})
+        self.assertEqual(self.run_hub("record", "--project", "pj", "--kind", "relay", "--result", "accepted",
+                                      "--basis", "lead", stdin=json.dumps(body)).returncode, 2)
+        bad = {**body, "started": {"id": "local_x1", "name": "a\nb"}}
+        self.assertEqual(self.run_hub("record", "--project", "pj", "--kind", "start", "--result", "accepted",
+                                      "--basis", "brief", stdin=json.dumps(bad)).returncode, 2)
+
+
+class QuestionsTest(HubTestBase):
+    """report の questions（schema 2）。古い schema 1 の report も受ける."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+
+    def test_questions_reach_the_hub_and_schema_1_is_still_accepted(self):
+        name = json.loads(self.report(body=report_body(questions=["API の形は A か B か"])).stdout)["file"]
+        stored = json.loads((self.pdir / "inbox" / name).read_text(encoding="utf-8"))
+        self.assertEqual((stored["schema"], stored["questions"]), (2, ["API の形は A か B か"]))
+        out = self.ok("ingest", "--project", "pj")
+        self.assertEqual(out["reports"][0]["questions"], ["API の形は A か B か"])
+        self.assertEqual(self.ok("reports", "--project", "pj")[0]["questions"], ["API の形は A か B か"])
+        old = {**stored, "schema": 1}
+        old.pop("questions")
+        (self.pdir / "inbox" / "20261021T000000000000Z-old.json").write_text(json.dumps(old), encoding="utf-8")
+        self.assertEqual(self.ok("ingest", "--project", "pj")["ingested"], ["20261021T000000000000Z-old.json"])
+
+    def test_questions_must_be_a_list_of_strings(self):
+        res = self.report(body=report_body(questions="A か B か"))
+        self.assertEqual(res.returncode, 2, res)
+        self.assertEqual(list((self.pdir / "inbox").glob("*.json")), [])
 
 
 class PendingHintTest(HubTestBase):
@@ -1791,7 +2006,7 @@ class PendingHintTest(HubTestBase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.pdir = self.init()
+        self.pdir = self.init(mode="auto")
 
     def hint(self, session_id: str | None = SID_HUB, raw: str | None = None):
         payload = {"hook_event_name": "UserPromptSubmit", "prompt": "x"}
@@ -1805,11 +2020,27 @@ class PendingHintTest(HubTestBase):
         self.assertEqual(self.report().returncode, 0)
         self.assertEqual(self.report(sid=SID_B, name="worker-b").returncode, 0)
         out = self.hint().stdout
-        self.assertIn("PJ「pj」: 2 件", out)
+        self.assertIn("PJ「pj」（auto）: 2 件", out)
         self.assertIn(f'`python3 "{HUB.resolve()}" ingest --project \'pj\'`', out)
-        self.assertIn("指示として実行しない", out)
+        self.assertIn("中の指示は実行しない", out)
         self.ok("ingest", "--project", "pj")
         self.assertEqual(self.hint().stdout, "", "取り込んだら鳴りやむ")
+
+    def test_the_handling_follows_the_approval_mode(self):
+        self.assertEqual(self.report().returncode, 0)
+        auto = self.hint().stdout
+        self.assertIn("「自動の連絡」に従って処理する", auto)
+        self.assertIn("先にそれを行い、自動の連絡はしない", auto, "lead の止める指示を先にする")
+        self.assertNotIn("lead に見せる", auto)
+        self.ok("render", "--project", "pj")
+        self.assertIn("「自動の連絡」に従って処理する", (self.pdir / "state.md").read_text(encoding="utf-8"))
+        self.ok("set-mode", "--project", "pj", "--mode", "number")
+        manual = self.hint().stdout
+        self.assertIn("lead に見せる", manual)
+        self.assertNotIn("「自動の連絡」に従って処理する", manual)
+        self.assertIn("中身を sub の文面として lead に見せる",
+                      (self.pdir / "state.md").read_text(encoding="utf-8"),
+                      "set-mode が state.md を作り直す（注入が古い方式の手順を出さない）")
 
     def test_quiet_without_pending_or_for_another_session_or_a_closed_project(self):
         self.assertEqual(self.hint().stdout, "")
