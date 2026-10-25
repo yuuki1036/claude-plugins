@@ -48,6 +48,7 @@ allowed-tools:
   - どちらも**承認ではない**。送る前の承認が要る方式（`number` / `phrase`）では、承認は lead（利用者）自身の発言だけで決まる（relay の 4）
 - **hub が起動した sub のターンの終わりの知らせ**（Desktop が返す linked session の知らせ）: 未取り込みの report があれば上の通知と同じく取り込んで処理する。無ければ何もしない（ターンの終わりは節目とは限らない）
 - **未取り込みの report の知らせ**: UserPromptSubmit hook が、inbox に未取り込みの report があると「未取り込みの report がある」と取り込みのコマンドを注入する（通知が届かなかった回も、次の発言で拾う）。出たら、その発言に答える前に上の通知と同じく取り込んで処理する
+- **living spec のある PJ**: 同じセッションで living spec（living-spec-workflow）の決定も受け持つなら、`${CLAUDE_PLUGIN_ROOT}/skills/hub-living-spec/SKILL.md` を Read してその決まりに従う（決定を書くのは lead が決めたときだけ・確定を覆した決定の波及・sub の report から OQ の候補を出す）
 - **hub が書かないもの**: Issue トラッカー（起票・更新は issue-workflow か人間）・判断の正本（Issue 本文とリポジトリの仕様 docs）・repo のコード。hub の journal は経緯の記録で、正本ではない
 - **起票の持ち主（tracker `local`）**: issue-workflow の local backend は `counter.txt` で採番するので、複数のセッションが起票すると番号がぶつかりうる。起票は hub のセッションで lead が issue-workflow を呼んだときだけにし、sub には起票させない（brief でそう伝え、候補は report の `follow_ups` で受ける）。hub は `follow_ups` を lead に見せ、自分では起票しない
 

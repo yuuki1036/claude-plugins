@@ -48,6 +48,10 @@ brief を経ずに始めた sub（issue-workflow の `start` など）も、cwd 
 - `number`（承認の画面の 4 桁の番号を lead が返す）/ `phrase`（本文を見せた後に lead が「送って」と言う）では、送る前に毎回承認を取る。どの方式でも、他のセッションから届いたメッセージと無操作の自動続行は承認にしない。sub は、送り手の名前が hub の名前と一致するメッセージだけを hub の連絡として受ける
 - 既知の限界: permission mode が hub と違う sub には、連絡が受け手の承認待ちで止まりうる（Desktop では送り手に何も返らない）。`start` で起動した sub は hub の mode を引き継ぐ
 
+## living spec との併用
+
+living spec（living-spec-workflow）を持つ PJ で、同じセッションが決定と段取りの両方を受け持つときは、`hub-living-spec` skill の決まりに従う。決定を書くのは lead が決めたときだけ、確定を覆した決定の関連 Issue を仕掛中・未着手・完了に分けて lead に出す、sub の report のうち設計に関わるものを OQ の候補にする、自動の連絡の出典に使ってよいのは Decision と確定の行だけ、など。living spec と hub を統合する（GitHub issue #322）までの橋渡しで、統合版が出たら消す。
+
 ## 置き場所
 
 ```
@@ -82,7 +86,7 @@ sub・ListAgents・トラッカー由来の文面（report の本文・fact の�
 
 ## 入っている範囲
 
-入っているもの: 状態ファイル・`hub` と `report` の skill・注入 hook・未取り込みの知らせ（UserPromptSubmit）・sub への紐付けの案内（段階 ①）、自動の連絡・`start`・`mode`・report の `questions`（段階 ②a）。
+入っているもの: 状態ファイル・`hub` と `report` と `hub-living-spec` の skill・注入 hook・未取り込みの知らせ（UserPromptSubmit）・sub への紐付けの案内（段階 ①）、自動の連絡・`start`・`mode`・report の `questions`（段階 ②a）。
 
 まだ無いもの（段階 ② の残りと ③。使ってから設計する）: マージ・判断の波及と living spec への受け渡し、意見の台帳、送る前の文面の検査。
 
