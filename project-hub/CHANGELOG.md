@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.2] - 2026-10-26
+
+### Fixed
+
+- `hub-living-spec` の波及で、Issue の状態をトラッカーから 1 件ずつ引くようにした（`status` の Issue 表には閉じた Issue が載らないため、完了した Issue が、sub が `done` を報告していない限り「分類不明」になっていた）
+
 ## [0.5.1] - 2026-10-26
 
 ### Changed

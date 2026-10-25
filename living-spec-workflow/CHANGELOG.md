@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.7.2] - 2026-10-26
+
+### Fixed
+
+- Decision の `関連 Issue` を置く位置を「`関連 OQ`（とその子 bullet）の後ろ」と書き直した（「直後」だと、`関連 OQ` に子 bullet があるとき段 1 の順序違反と読めた）
+
 ## [0.7.1] - 2026-10-26
 
 ### Fixed

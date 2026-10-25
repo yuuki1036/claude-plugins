@@ -43,15 +43,17 @@ hub の注入（state.md）だけでは決定の現在地が分からない。�
 
 ## 確定を覆した決定の波及
 
-`/living-spec decision` で確定の項目を覆すと、覆した項目とその関連 Issue が報告に出る。hub はその Issue を、hub の材料（`status` の Issue 表・`worktrees` の `sessions`・最新の report）で 3 つに分けて lead に出す:
+`/living-spec decision` で確定の項目を覆すと、覆した項目とその関連 Issue が報告に出る。hub はその Issue を、hub の材料（`worktrees` の `sessions`・最新の report）と Issue の今の状態で 3 つに分けて lead に出す。
+
+**Issue の状態は 1 件ずつトラッカーから引く**: `status` の Issue 表には閉じた Issue が載らない（github は open だけを集め、local は完了・取り下げを外す）ので、表に無いことを「完了」とも「分類不明」とも読まない。github は `gh issue view <n> --repo <repo> --json state`、linear は `mcp__linear__get_issue`、local は `hub.py issue --project '<PJ>' --issue '<ID>'`（完了の Issue も `state` つきで返る）:
 
 | 分類 | 見分け方 | lead に出すもの |
 |---|---|---|
 | 仕掛中 | その Issue の sub が登録されていて、最新の report の state が `hello` / `in_progress` / `blocked` / `ready_for_review` | 「この sub に決定を伝えるか」。**自動の連絡にしない**（範囲の変更で、hub の skill の「lead の判断を先取りする連絡」に当たる）。lead が伝えると決めたら `relay` で `[lead の言葉]` として送る |
 | 未着手 | Issue は open で、sub が登録されていない | Issue 本文の直す案（どの節をどう変えるか）。直すのは lead か issue-workflow |
-| 完了 | Issue が closed、または sub の最新の report が `done` | follow-up を起こす案。起票は lead が issue-workflow で行う（tracker が local なら、起票は hub のセッションだけ） |
+| 完了 | トラッカーで閉じている（github は `CLOSED`、linear は完了・取り消しの status、local は `completed` / `canceled`）、または sub の最新の report が `done` | follow-up を起こす案。起票は lead が issue-workflow で行う（tracker が local なら、起票は hub のセッションだけ） |
 
-- 分けられない Issue（表に無い・report が古い）は「分類不明」として並べ、推測で振り分けない
+- 分けられない Issue（トラッカーから状態を引けない・sub の report が古い）は「分類不明」として並べ、推測で振り分けない
 - 関連 Issue の無い確定の項目を覆したときは、影響しそうな sub がいないかを lead に聞く（hub が探して決めない）
 
 ## sub の report から OQ の候補を出す
