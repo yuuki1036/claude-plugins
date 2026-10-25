@@ -3,7 +3,10 @@
 
 - `inject-state.sh`（SessionStart / PostCompact）— stdin の session_id が hub.json と一致した
   セッションにだけ state.md を注入する。**すべてのセッションの開始で走る**ので、黙る条件
-  （hub でないセッション・root も hub.json も無い・壊れた入力・closed の PJ・python3 が無い）を厚く書く
+  （hub でないセッション・root も hub.json も無い・壊れた入力・closed の PJ・python3 が無い）を厚く書く。
+  hub でないセッションには、cwd の repo が未登録の PJ に入っているときだけ紐付けの案内を出す
+- `notify-pending.sh`（UserPromptSubmit）— hub のセッションに、未取り込みの report があるときだけ
+  取り込むよう促す。**すべての発言で走る**ので、python を起動する前の絞り込みも見る
 - `check-deps.sh` — python3 が無いときだけ知らせる。任意の gh が無くても黙る
 
 root は必ず `PROJECT_HUB_DIR` で使い捨ての dir に向ける（`hook_harness` は HOME を隔離しない）。
@@ -19,7 +22,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from hook_harness import HookTestCase
+from hook_harness import HookTestCase, TempGitRepo
 
 SID_HUB = "11111111-1111-4111-8111-111111111111"
 SID_OTHER = "22222222-2222-4222-8222-222222222222"
@@ -190,6 +193,124 @@ class InjectStateTest(HookTestCase):
         self.make_project(state=self.STATE)
         res = self.fire(env_extra={"PROJECT_HUB_DIR": "", "CLAUDE_CONFIG_DIR": str(self.tmp / "cfg")})
         self.assertIn("表の本文", res.stdout)
+
+    def test_an_unregistered_session_in_a_project_repo_gets_the_hello_hint(self):
+        # 作業側（issue-workflow の start などで始めた）への紐付けの案内（GitHub issue #315）。
+        # 判定の境界は test_project_hub_scripts の WorkerHintTest
+        git_repo = TempGitRepo()
+        repo = git_repo.__enter__()
+        self.addCleanup(git_repo.__exit__, None, None, None)
+        git_repo.commit("init")
+        pdir = self.make_project(session_id=SID_HUB)
+        config = json.loads((pdir / "config.json").read_text(encoding="utf-8"))
+        config["repos"] = [{"path": str(repo), "base": "main"}]
+        (pdir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        env = {"PROJECT_HUB_DIR": str(self.root), "HOME": str(self.tmp / "home")}
+        payload = {"hook_event_name": "SessionStart", "source": "startup",
+                   "session_id": SID_OTHER, "cwd": str(repo)}
+        res = self.run_hook(payload, env_extra=env)
+        self.assertIn("state=hello", res.stdout)
+        self.assertNotIn("Unexpected", res.stderr)
+        payload["cwd"] = str(self.tmp)
+        self.assertQuiet(self.run_hook(payload, env_extra=env))
+
+
+class NotifyPendingTest(HookTestCase):
+    """`notify-pending.sh`（UserPromptSubmit）。**すべての発言で走る**ので黙る条件を厚く書く（GitHub issue #314）."""
+
+    PLUGIN = "project-hub"
+    SCRIPT = "hooks/scripts/notify-pending.sh"
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.root = self.tmp / "hub-root"
+
+    def make_project(self, name: str = "pj", session_id: str = SID_HUB, status: str = "active",
+                     inbox: int = 1) -> Path:
+        pdir = self.root / name
+        (pdir / "inbox" / "done").mkdir(parents=True)
+        (pdir / "config.json").write_text(json.dumps({"project": name, "status": status}), encoding="utf-8")
+        (pdir / "hub.json").write_text(json.dumps({"session_id": session_id, "name": "hub"}), encoding="utf-8")
+        for i in range(inbox):
+            (pdir / "inbox" / f"2026102{i}T000000000000Z-x.json").write_text("{}", encoding="utf-8")
+        return pdir
+
+    def fire(self, session_id: str | None = SID_HUB, raw: str | None = None, env_extra: dict | None = None):
+        payload = {"hook_event_name": "UserPromptSubmit",
+                   "prompt": '<cross-session-message from-name="w">report を置いた</cross-session-message>'}
+        if session_id is not None:
+            payload["session_id"] = session_id
+        env = {"PROJECT_HUB_DIR": str(self.root), "HOME": str(self.tmp / "home")}
+        env.update(env_extra or {})
+        return self.run_hook(payload, raw=raw, env_extra=env)
+
+    def assertQuiet(self, res):
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_the_hub_with_pending_reports_is_told_to_ingest(self):
+        self.make_project(inbox=2)
+        res = self.fire()
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("未取り込みの report がある", res.stdout)
+        self.assertIn("PJ「pj」: 2 件", res.stdout)
+        self.assertIn("ingest --project 'pj'", res.stdout)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_a_pretty_printed_stdin_still_finds_the_session(self):
+        self.make_project()
+        raw = json.dumps({"session_id": SID_HUB, "prompt": "x"}, indent=2)
+        self.assertIn("PJ「pj」", self.fire(raw=raw).stdout)
+
+    # --- 黙る条件 ---
+
+    def test_another_session_is_silent(self):
+        self.make_project()
+        self.assertQuiet(self.fire(session_id=SID_OTHER))
+        self.assertIn("PJ「pj」", self.fire().stdout, "対照: hub のセッションでは鳴る")
+
+    def test_nothing_pending_or_a_closed_project_is_silent(self):
+        self.make_project(inbox=0)
+        self.assertQuiet(self.fire())
+        self.root = self.tmp / "closed"
+        self.make_project(status="closed")
+        self.assertQuiet(self.fire())
+
+    def test_no_root_or_no_hub_is_silent(self):
+        self.assertQuiet(self.fire())
+        (self.root / "pj").mkdir(parents=True)
+        self.assertQuiet(self.fire())
+
+    def test_broken_or_incomplete_stdin_is_silent(self):
+        self.make_project()
+        for raw in ("{not json", "[]", json.dumps({"session_id": ""}), json.dumps({"prompt": "x"})):
+            with self.subTest(raw=raw):
+                self.assertQuiet(self.fire(raw=raw))
+
+    def test_a_session_id_only_inside_the_prompt_does_not_count(self):
+        # stdin の文面に hub の id を書いても、session_id の欄でなければ hub とみなさない
+        self.make_project()
+        raw = json.dumps({"session_id": SID_OTHER, "prompt": f'"session_id": "{SID_HUB}"'})
+        self.assertQuiet(self.fire(raw=raw))
+
+    def test_python_is_not_launched_unless_a_hub_json_names_this_session(self):
+        bin_dir = Path(self.path_with_only())
+        stub = bin_dir / "python3"
+        stub.write_text("#!/bin/bash\necho LAUNCHED\n", encoding="utf-8")
+        os.chmod(stub, 0o755)
+        self.make_project(session_id=SID_OTHER)
+        self.assertQuiet(self.fire(env_extra={"PATH": str(bin_dir)}))
+        self.make_project("pj2")
+        res = self.fire(env_extra={"PATH": str(bin_dir)})
+        self.assertIn("LAUNCHED", res.stdout, "対照: この session_id を含む hub.json があれば python を起動する")
+
+    def test_without_python3_it_is_silent(self):
+        self.make_project()
+        self.assertQuiet(self.fire(env_extra={"PATH": self.path_with_only()}))
+        res = self.fire(env_extra={"PATH": self.path_with_only("python3")})
+        self.assertIn("PJ「pj」", res.stdout, "対照: python3 を引ければ鳴る")
 
 
 class CheckDepsTest(HookTestCase):

@@ -2,6 +2,25 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.2.0] - 2026-10-25
+
+### Added
+
+- hub のセッションに UserPromptSubmit hook（`hooks/scripts/notify-pending.sh` → `hub.py pending-hint`）を足した。inbox に未取り込みの report があるときだけ、取り込みのコマンドを注入する。作業側の通知でも lead の発言でも発火するので、通知が届かなかった回（hub の名前が既定名など）も次の発言で拾う。hook は件数を見るだけで、report の文面は読まない。このセッションの id を含む `hub.json` が無ければ python を起動しない（GitHub issue #314）
+- brief を経ずに始めた作業セッション（issue-workflow の `start` など）への紐付けの案内を足した。SessionStart / PostCompact の `inject` は、hub でないセッションの cwd の repo が active な PJ に入っていて、そのセッションがまだ登録されていなければ、Issue の作業を始めたら `report` で `hello` を置くよう案内する。issue-workflow には手を入れない（プラグイン間の依存を作らない / GitHub issue #315）
+- relay の承認の方式を選べるようにした（`init --approval-mode`・config.json の `approval.mode`）。`number`（既定。今までの 4 桁の番号）か `phrase`（本文を見せた後の lead 自身の「送って」）。mode の無い config と読めない値は `number` にする。`refresh-hub` が `approval_mode` を返す（GitHub issue #312）
+
+### Changed
+
+- hub は「report を置いた」の通知を受けたら、`status` を待たずにその場で `ingest` して中身（needs_lead・follow_ups・claims）を lead に見せる。ListAgents・トラッカー・PR の集め直しは今までどおり `status` で行う（GitHub issue #314）
+
+### Fixed
+
+- 改名した作業セッションを見失っていた（GitHub issue #316）。report が登録に自分の ref を残し、名前で引けないときはその ref の行に結び付ける（ref は改名では変わらないことを 2026-10-25 に実測）。
+  `resolve` はその行の今の名前で引き（`rule: registered_ref`・`warning` 付き）、登録名の行が ref の行と別にあれば送らない（改名の後に別のセッションが元の名前を付けた可能性）。
+  `presence` は改名したセッションを不在にせず `renamed` で返し、state.md の名前の欄に `登録名 → 今の名前` で出す。送る宛先は今までどおり今の一覧の名前で、ref は照合にだけ使う（ADR-20261021154740）。
+  ref の無い登録（0.1.x の report）と、開き直して ref が変わったセッションは、今までどおり登録名と Issue ID で引く
+
 ## [0.1.3] - 2026-10-25
 
 ### Fixed

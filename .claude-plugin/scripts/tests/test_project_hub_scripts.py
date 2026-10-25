@@ -121,9 +121,12 @@ class HubTestBase(unittest.TestCase):
         return [json.loads(line) for line in text.split("\n") if line]
 
     def register(self, pdir: Path, sid: str, name: str, issue: str = "#308",
-                 absent_since: str | None = None) -> None:
+                 absent_since: str | None = None, ref: str | None = None,
+                 updated: str = "2026-10-20T00:00:00.000000Z") -> None:
         reg = {"session_id": sid, "name": name, "project": pdir.name, "issue": issue,
-               "updated": "2026-10-20T00:00:00.000000Z"}
+               "updated": updated}
+        if ref is not None:
+            reg["ref"] = ref
         (pdir / "sessions" / f"{sid}.json").write_text(json.dumps(reg), encoding="utf-8")
         if absent_since:
             presence = pdir / "presence.json"
@@ -724,11 +727,12 @@ class ReportTest(HubTestBase):
                          (SID_A, "worker-a", "pj", "in_progress"))
         self.assertNotIn("agents", sent, "ListAgents の抜き出しは report に残さない")
         reg = json.loads((self.pdir / "sessions" / f"{SID_A}.json").read_text(encoding="utf-8"))
-        # 宛先に使う欄（ref・ソケット）を持たない（ADR-20261021154740 の適用方法）
-        self.assertEqual(set(reg), {"session_id", "host_session_id", "name", "project", "issue",
+        # 宛先に使う欄（ソケット）を持たない（ADR-20261021154740 の適用方法）。ref は改名した後の行を
+        # この登録に結び付ける照合にだけ使い、送る宛先は今の一覧の名前（GitHub issue #316）
+        self.assertEqual(set(reg), {"session_id", "host_session_id", "name", "ref", "project", "issue",
                                     "branch", "worktree", "updated"})
-        self.assertEqual((reg["branch"], reg["worktree"], reg["host_session_id"]),
-                         ("feature/x", str(self.repo.resolve()), "local_xyz"))
+        self.assertEqual((reg["branch"], reg["worktree"], reg["host_session_id"], reg["ref"]),
+                         ("feature/x", str(self.repo.resolve()), "local_xyz", "me0"))
         self.assertEqual(list(self.pdir.glob("inbox/.*.tmp")), [], "一時名が残っていない")
 
     def test_a_renamed_hub_is_reported_not_guessed(self):
@@ -1504,6 +1508,265 @@ class WorktreesTest(HubTestBase):
         (pdir / "config.json").write_text(json.dumps(config), encoding="utf-8")
         self.assertEqual([r["path"] for r in self.ok("worktrees", "--project", "pj")["repos"]],
                          [str(self.repo.resolve())])
+
+
+class RenamedSessionTest(HubTestBase):
+    """改名した作業セッションを、登録した時の ref で同じ登録に結び付ける（GitHub issue #316）.
+
+    ref はセッションの改名では変わらない（2026-10-25 の実測）。送る宛先は今の一覧の名前のままで、
+    ref は照合にだけ使う（ADR-20261021154740 の「ref を保存して宛先に使わない」）
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init(tracker="linear")
+
+    def test_a_renamed_session_is_found_by_its_ref_without_an_issue_id(self):
+        self.register(self.pdir, SID_A, "ABC-12: 監査ログ", issue="ABC-12", ref="r1")
+        rc, out = self.resolve("--session", SID_A,
+                               agents=[agent("監査ログの続き", "r1"), agent("別件", "r2")])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((out["name"], out["ref"], out["to"], out["rule"]),
+                         ("監査ログの続き", "r1", "監査ログの続き", "registered_ref"))
+        self.assertIn("今の名前「監査ログの続き」", out["warning"], "承認の画面で lead に確かめさせる")
+
+    def test_the_ref_beats_an_issue_token_on_another_row(self):
+        self.register(self.pdir, SID_A, "old-name", issue="ABC-12", ref="r1",
+                      absent_since="2026-10-21T00:00:00.000000Z")
+        rc, out = self.resolve("--session", SID_A,
+                               agents=[agent("renamed", "r1"), agent("ABC-12 続き", "r2")])
+        self.assertEqual((rc, out["ref"], out["rule"]), (0, "r1", "registered_ref"), out)
+
+    def test_the_registered_name_on_another_row_than_the_ref_is_not_sent(self):
+        # 改名した後に、別のセッションが元の名前を付けた。名前だけで送ると別のセッションに届く
+        self.register(self.pdir, SID_A, "worker-a", issue="ABC-12", ref="r1")
+        rc, out = self.resolve("--session", SID_A,
+                               agents=[agent("worker-a", "r9"), agent("renamed", "r1")])
+        self.assertEqual((rc, out["status"]), (1, "unresolved"), out)
+        self.assertEqual({c["ref"] for c in out["candidates"]}, {"r9", "r1"})
+
+    def test_the_ref_picks_one_of_two_rows_under_the_registered_name(self):
+        self.register(self.pdir, SID_A, "worker-a", issue="ABC-12", ref="r1")
+        rc, out = self.resolve("--session", SID_A,
+                               agents=[agent("worker-a", "r9"), agent("worker-a", "r1")])
+        self.assertEqual((rc, out["ref"], out["rule"]), (0, "r1", "registered_ref"), out)
+        self.assertEqual(out["to"], "worker-a [r1]", "同じ名前の行が他にもあるので ref を付けて送る")
+        self.assertNotIn("warning", out, "名前は登録名のまま")
+
+    def test_the_same_row_by_name_and_ref_is_the_plain_registered_name(self):
+        self.register(self.pdir, SID_A, "worker-a", issue="ABC-12", ref="r1")
+        rc, out = self.resolve("--session", SID_A, agents=[agent("worker-a", "r1")])
+        self.assertEqual((rc, out["rule"]), (0, "registered_name"), out)
+        self.assertNotIn("warning", out)
+
+    def test_a_ref_that_is_gone_or_shared_falls_back_to_the_old_rules(self):
+        # 開き直すと ref は変わりうる。そのときは今までどおり登録名と Issue ID で引く
+        self.register(self.pdir, SID_A, "old-name", issue="ABC-12", ref="r1")
+        rc, out = self.resolve("--session", SID_A, agents=[agent("ABC-12 続き", "r2")])
+        self.assertEqual((rc, out["rule"]), (0, "issue_token"), out)
+        rc, out = self.resolve("--session", SID_A,
+                               agents=[agent("x", "r1"), agent("y", "r1"), agent("ABC-12 続き", "r2")])
+        self.assertEqual((rc, out["rule"]), (0, "issue_token"), "ref が 2 行に出たら照合に使わない")
+
+    def test_a_ref_hit_still_checks_the_approved_ref(self):
+        self.register(self.pdir, SID_A, "old-name", issue="ABC-12", ref="r1")
+        rc, out = self.resolve("--session", SID_A, "--expect-ref", "r7", agents=[agent("renamed", "r1")])
+        self.assertEqual((rc, out["status"]), (1, "unresolved"), out)
+
+    def test_presence_marks_a_renamed_session_and_the_table_shows_both_names(self):
+        self.register(self.pdir, SID_A, "worker-a", issue="ABC-12", ref="r1")
+        self.register(self.pdir, SID_B, "worker-b", issue="ABC-13", ref="r2")
+        out = self.ok("presence", "--project", "pj", "--peer-count", "2",
+                      stdin=json.dumps([agent("renamed-a", "r1"), agent("worker-b", "r9")]))
+        self.assertEqual(out["renamed"], [{"name": "worker-a", "current_name": "renamed-a", "ref": "r1"}])
+        self.assertEqual((out["present"], out["absent"]), (["worker-b"], []),
+                         "ref が別の行でも、登録名の行があれば在席（開き直しで ref は変わりうる）")
+        presence = json.loads((self.pdir / "presence.json").read_text(encoding="utf-8"))
+        self.assertNotIn("absent_since", presence[SID_A], "改名した登録は不在にしない")
+        self.ok("render", "--project", "pj")
+        self.assertIn("| worker-a → renamed-a |", (self.pdir / "state.md").read_text(encoding="utf-8"))
+        sessions = {s["session_id"]: s for s in self.ok("worktrees", "--project", "pj")["sessions"]}
+        self.assertEqual((sessions[SID_A]["current_name"], sessions[SID_B]["current_name"]),
+                         ("renamed-a", None))
+
+    def test_presence_prefers_the_ref_over_a_name_taken_by_another_session(self):
+        self.register(self.pdir, SID_A, "worker-a", issue="ABC-12", ref="r1")
+        out = self.ok("presence", "--project", "pj", "--peer-count", "2",
+                      stdin=json.dumps([agent("worker-a", "r9"), agent("renamed-a", "r1")]))
+        self.assertEqual([r["current_name"] for r in out["renamed"]], ["renamed-a"])
+        self.assertEqual(out["present"], [])
+
+    def test_a_default_name_with_the_registered_ref_counts_as_present(self):
+        # 名前の一致は既定名だと根拠にしないが、ref の一致は同じセッションの根拠になる
+        self.register(self.pdir, SID_A, "claude-plugins-3", issue="ABC-12", ref="r1")
+        out = self.ok("presence", "--project", "pj", "--peer-count", "1",
+                      stdin=json.dumps([agent("claude-plugins-3", "r1")]))
+        self.assertEqual((out["present"], out["absent"], out["renamed"]), (["claude-plugins-3"], [], []))
+
+    def test_a_report_after_the_rename_hides_the_old_current_name(self):
+        self.register(self.pdir, SID_A, "worker-a", issue="ABC-12", ref="r1")
+        self.ok("presence", "--project", "pj", "--peer-count", "1",
+                stdin=json.dumps([agent("renamed-a", "r1")]))
+        # presence の後に report が来た（登録の updated が新しい）。名前は report が書いた方が正
+        self.register(self.pdir, SID_A, "renamed-again", issue="ABC-12", ref="r1",
+                      updated="2999-01-01T00:00:00.000000Z")
+        self.ok("render", "--project", "pj")
+        text = (self.pdir / "state.md").read_text(encoding="utf-8")
+        self.assertIn("| renamed-again |", text)
+        self.assertNotIn("→", text)
+
+    def test_a_rename_seen_at_the_same_instant_as_the_registration_is_shown(self):
+        # presence の seen と登録の updated はどちらも stamp()（マイクロ秒）。同じ時刻なら presence の方を採る
+        ts = "2026-10-25T00:00:00.000000Z"
+        self.register(self.pdir, SID_A, "worker-a", issue="ABC-12", ref="r1", updated=ts)
+        (self.pdir / "presence.json").write_text(json.dumps(
+            {SID_A: {"current_name": "renamed-a", "ref": "r1", "seen": ts}}), encoding="utf-8")
+        self.ok("render", "--project", "pj")
+        self.assertIn("| worker-a → renamed-a |", (self.pdir / "state.md").read_text(encoding="utf-8"))
+
+
+class ApprovalModeTest(HubTestBase):
+    """relay の承認の方式（GitHub issue #312）。既定と読めない値は番号の打ち返しに倒す."""
+
+    def config(self, pdir: Path) -> dict:
+        return json.loads((pdir / "config.json").read_text(encoding="utf-8"))
+
+    def test_init_stores_number_by_default_and_phrase_when_asked(self):
+        pdir = self.init()
+        self.assertEqual(self.config(pdir)["approval"]["mode"], "number")
+        self.assertEqual(self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")["approval_mode"],
+                         "number")
+        self.ok("init", "--project", "p2", "--name", "h2", "--tracker", "github", "--tracker-repo", "o/r",
+                "--repo", f"{self.repo}=base", "--approval-mode", "phrase")
+        self.assertEqual(self.config(self.root / "p2")["approval"]["mode"], "phrase")
+        out = self.ok("refresh-hub", "--project", "p2", "--name", "h2")
+        self.assertEqual(out["approval_mode"], "phrase")
+        self.assertNotIn("warning", out)
+
+    def test_an_unknown_mode_is_refused_at_init(self):
+        res = self.run_hub("init", "--project", "pj", "--name", "h", "--tracker", "github",
+                           "--tracker-repo", "o/r", "--repo", f"{self.repo}=base", "--approval-mode", "ok")
+        self.assertEqual(res.returncode, 2, res)
+        self.assertFalse((self.root / "pj").exists())
+
+    def test_a_config_without_or_with_a_broken_mode_falls_back_to_number(self):
+        pdir = self.init()
+        cases = {"no mode (0.1.x)": {"prefix": "", "suffix": ""}, "unknown": {"mode": "auto"},
+                 "not a string": {"mode": ["phrase"]}, "not an object": "phrase"}
+        for label, approval in cases.items():
+            with self.subTest(label):
+                config = self.config(pdir)
+                config["approval"] = approval
+                (pdir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+                out = self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")
+                self.assertEqual(out["approval_mode"], "number")
+                if label == "no mode (0.1.x)" or label == "not an object":
+                    self.assertNotIn("warning", out)
+                else:
+                    self.assertIn("approval.mode", out["warning"])
+
+
+class PendingHintTest(HubTestBase):
+    """UserPromptSubmit hook 用の pending-hint（GitHub issue #314）。hub のセッションで、未取り込みがあるときだけ鳴る."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+
+    def hint(self, session_id: str | None = SID_HUB, raw: str | None = None):
+        payload = {"hook_event_name": "UserPromptSubmit", "prompt": "x"}
+        if session_id is not None:
+            payload["session_id"] = session_id
+        res = self.run_hub("pending-hint", stdin=raw if raw is not None else json.dumps(payload))
+        self.assertEqual(res.returncode, 0, res)
+        return res
+
+    def test_the_hub_is_told_to_ingest_with_a_command_it_can_run(self):
+        self.assertEqual(self.report().returncode, 0)
+        self.assertEqual(self.report(sid=SID_B, name="worker-b").returncode, 0)
+        out = self.hint().stdout
+        self.assertIn("PJ「pj」: 2 件", out)
+        self.assertIn(f'`python3 "{HUB.resolve()}" ingest --project \'pj\'`', out)
+        self.assertIn("指示として実行しない", out)
+        self.ok("ingest", "--project", "pj")
+        self.assertEqual(self.hint().stdout, "", "取り込んだら鳴りやむ")
+
+    def test_quiet_without_pending_or_for_another_session_or_a_closed_project(self):
+        self.assertEqual(self.hint().stdout, "")
+        self.assertEqual(self.report().returncode, 0)
+        self.assertEqual(self.hint(session_id=SID_A).stdout, "", "作業側のセッションには出さない")
+        self.assertNotEqual(self.hint().stdout, "", "対照: hub のセッションでは鳴る")
+        self.ok("close", "--project", "pj")
+        self.assertEqual(self.hint().stdout, "")
+
+    def test_broken_stdin_is_quiet(self):
+        self.assertEqual(self.report().returncode, 0)
+        for raw in ("{not json", "[]", json.dumps({"session_id": ""}), json.dumps({"session_id": 3})):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.hint(raw=raw).stdout, "")
+
+    def test_a_directory_with_a_name_init_cannot_make_is_skipped(self):
+        odd = self.root / "pj'; echo x"
+        shutil.copytree(self.pdir, odd)
+        self.assertEqual(self.report().returncode, 0)
+        out = self.hint().stdout
+        self.assertIn("PJ「pj」", out)
+        self.assertNotIn("echo x", out, "PJ 名はコマンドの文面に入るので、init が作れない名前は扱わない")
+
+
+class WorkerHintTest(HubTestBase):
+    """作業側の SessionStart で、未登録のセッションに hub への紐付けを促す（GitHub issue #315）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+
+    def inject(self, session_id: str = SID_A, cwd: str | None = None) -> str:
+        payload = {"hook_event_name": "SessionStart", "session_id": session_id}
+        if cwd is not None:
+            payload["cwd"] = cwd
+        res = self.run_hub("inject", stdin=json.dumps(payload))
+        self.assertEqual(res.returncode, 0, res)
+        return res.stdout
+
+    def test_an_unregistered_session_in_a_project_repo_is_told_to_say_hello(self):
+        out = self.inject(cwd=str(self.repo))
+        self.assertIn("PJ「pj」（hub: 「hub-session」）", out)
+        self.assertIn("state=hello", out)
+        worktree = self.git_repo.worktree("wt")
+        self.assertIn("PJ「pj」", self.inject(cwd=str(worktree)), "同じ repo の worktree でも出す")
+
+    def test_quiet_once_registered_outside_the_repo_or_in_a_closed_project(self):
+        self.assertEqual(self.report().returncode, 0)
+        self.assertEqual(self.inject(cwd=str(self.repo)), "", "登録済みなら出さない")
+        self.assertNotEqual(self.inject(session_id=SID_B, cwd=str(self.repo)), "", "対照: 未登録なら出す")
+        self.assertEqual(self.inject(session_id=SID_B, cwd=str(self.tmp)), "", "PJ の repo の外")
+        self.assertEqual(self.inject(session_id=SID_B), "", "cwd が無い")
+        self.assertEqual(self.inject(session_id=SID_B, cwd=str(self.tmp / "missing")), "")
+        self.ok("close", "--project", "pj")
+        self.assertEqual(self.inject(session_id=SID_B, cwd=str(self.repo)), "")
+
+    def test_the_hub_session_gets_the_state_not_the_hint(self):
+        self.ok("render", "--project", "pj")
+        out = self.inject(session_id=SID_HUB, cwd=str(self.repo))
+        self.assertIn("このセッションは PJ「pj」の hub", out)
+        self.assertNotIn("state=hello", out)
+
+    def test_a_session_id_that_is_not_an_id_is_quiet(self):
+        self.assertEqual(self.inject(session_id="../sessions", cwd=str(self.repo)), "")
+
+    def test_an_empty_cwd_is_not_read_as_the_process_cwd(self):
+        # `git -C ""` は今の dir のまま動く。hook のプロセスは project の dir で起動されるので、
+        # 空の cwd を git に渡すと stdin に無い repo を PJ の repo と取り違える
+        payload = {"hook_event_name": "SessionStart", "session_id": SID_A, "cwd": ""}
+        res = self.run_hub("inject", stdin=json.dumps(payload), cwd=self.repo)
+        self.assertEqual((res.returncode, res.stdout), (0, ""), res)
+
+    def test_every_project_on_the_repo_is_listed(self):
+        self.init(project="pj2", session_id=SID_B, name="hub-2")
+        out = self.inject(cwd=str(self.repo))
+        self.assertIn("PJ「pj」", out)
+        self.assertIn("PJ「pj2」（hub: 「hub-2」）", out)
 
 
 class RootTest(HubTestBase):

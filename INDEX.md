@@ -27,7 +27,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.3.3 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.9.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
-| [project-hub](#project-hub) | 0.1.3 | 2 | 2 | - | SessionStart, PostCompact | - | 複数の作業セッションを 1 つの hub で束ねる PJ の状態ファイル |
+| [project-hub](#project-hub) | 0.2.0 | 2 | 2 | - | SessionStart, PostCompact, UserPromptSubmit | - | 複数の作業セッションを 1 つの hub で束ねる PJ の状態ファイル |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.10.2 | 1 | 1 | - | SessionStart | - | 文章を語句レベルで推敲・添削 |
 
@@ -143,7 +143,7 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 1 つのセッションを PJ の hub にして、複数の作業セッションで進める PJ の状態（作業セッション・PR・Issue・確かめた事実）を `~/.claude/project-hub/<PJ>/` のファイルで持つ。作業側の report は inbox にファイルで置き SendMessage は通知だけ、hub → 作業側の brief / relay は送る直前に ListAgents で宛先を引き直し、1 件に決まらなければ送らない。brief が渡す事実は出典つきで hub が確かめた facts だけから引く。
 - **commands**: `hub`, `report`
 - **skills**: `hub`（init / status / brief / relay / fact / takeover / close）, `report`
-- **hooks**: SessionStart（check-deps / inject-state）, PostCompact（inject-state: hub のセッションにだけ state.md を注入）
+- **hooks**: SessionStart（check-deps / inject-state）, PostCompact（inject-state: hub のセッションには state.md を、PJ の repo にいる未登録の作業セッションには紐付けの案内を注入）, UserPromptSubmit（notify-pending: hub のセッションに未取り込みの report があるときだけ取り込みを促す）
 
 ### spec-advisor
 開発タスクの内容から、実装着手前に書くべき設計・計画系成果物（WHAT=bdd-spec / HOW=design-doc / WHY=adr-keeper / Issue粒度=issue-design / 実装一気通貫=feature-dev）を判断して提案。判定の SSoT を `routing-rubric.md` に一元化。over-suggestion guard を先頭に置くファネルで bugfix/typo/設定変更には黙り、確信度が高い時だけ 1 文根拠で提案・迷う時のみ AskUserQuestion。dormant 判定で未導入プラグインは提案肢から除外、全て未導入なら沈黙。
