@@ -221,6 +221,58 @@ class InitialSelfReviewScopeTest(unittest.TestCase):
         self.assertNotIn("--rereview", step2)
 
 
+class ScopeCutoffKeepsGatesTest(unittest.TestCase):
+    """適用範囲で足切りした回も、実装の後の検証（Phase 5.3 以降）を通す（GitHub issue #319）.
+
+    以前は足切りの節が「通常の実装に移る」で終わっていて、静的オラクルと self-review を一度も通らないまま
+    コミットの確認に入った。承認した方針を実装中に替えたときに止まる規定も無かった。
+    """
+
+    SKILL = REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
+
+    def section(self, start: str, end: str) -> str:
+        text = self.SKILL.read_text()
+        i = text.index(start)
+        return text[i:text.index(end, i)]
+
+    def cutoff(self) -> str:
+        return self.section("## 適用範囲", "## Core Principles")
+
+    def test_cutoff_runs_every_gate_after_implementation(self):
+        """後に通す phase の列は 1 段落で切り出す（停止点・TodoWrite の行にも同じ phase 番号が出るので、節全体では落としても通る）."""
+        self.assertNotIn("通常の実装に移る", self.cutoff())
+        gates = self.section("**足切りで飛ばすのは設計までで、検証は飛ばさない**", "**足切りしたときの停止点**")
+        self.assertIn("Phase 5.3（静的オラクル）→ 5.5（動作確認）→ 6（self-review と G-V ループ）→ "
+                      "6.7（コメント精査）→ 6.9（レビュー後の変更の確認）→ 7（申し送りと読み合わせ）", gates)
+
+    def test_cutoff_tracks_remaining_gates_in_todos(self):
+        self.assertIn("TodoWrite へ「実装 / Phase 5.3 / 5.5 / 6 / 6.7 / 6.9 / 7」を積む", self.cutoff())
+
+    def test_cutoff_enters_normal_mode_then_static_oracle(self):
+        modes = self.section("### Mode Detection", "### Normal Mode")
+        self.assertIn("適用範囲で足切りした回は停止点の返信で入る", modes)
+        self.assertIn("終えたら Phase 5.3 へ進む", modes)
+
+    def test_stop_point_states_the_cutoff_and_offers_full_flow(self):
+        stop = self.section("**足切りしたときの停止点**", "> 🔀")
+        self.assertIn("足切りしたこと", stop)
+        self.assertIn("8 phase で回すなら返信でそう書いてください", stop)
+
+    def test_changing_the_approved_plan_stops_first(self):
+        """方針を替える前に止まる規定は Normal Mode の 4. に 1 か所だけ置き、適用範囲と Fix Mode はそこを指す."""
+        normal = self.section("### Normal Mode", "### Fix Mode")
+        rule = normal[normal.index("4. **承認した方針を実装中に変えるときは、書き換える前に止まる**"):normal.index("\n5. ")]
+        self.assertIn("足切りした回の停止点の承認", rule)
+        self.assertIn("返信を待ってから書き換える", rule)
+        self.assertIn("Normal Mode の 4. に従って止まる", self.cutoff())
+        fix = self.section("### Fix Mode", "## Phase 5.3")
+        self.assertIn("足切りした回は architect を起動しない", fix)
+
+    def test_summary_reports_the_cutoff(self):
+        handoff = self.section("2. **申し送り**", "3. **読み合わせの案内**")
+        self.assertIn("**足切り** (適用範囲)", handoff)
+
+
 class SummaryReadingGuideTest(unittest.TestCase):
     """Phase 7 は独自サマリの代わりに code-review:review-guide を案内する（GitHub issue #290）.
 
