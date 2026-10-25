@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.7.1] - 2026-10-26
+
+### Fixed
+
+- format-spec の段 1 の適用範囲・1 節・4 節を、任意の 7 番目の bullet `関連 Issue` に追従させた。check-rules の段 1 の「どの形でもない行」も同じにした（そのままだと、`decision` が書いた `関連 Issue` の行を段 1 が Critical にしえた）
+- `spec` の報告の収束率も先送りの行を除く（`status` と違う値が出ていた）。行が全部先送りのときは「今の phase の項目なし」と出す
+- 先送りの Decision の見出しに項目名を入れるよう `spec --phase` が案内する（表に D# を残さないので、見出しから辿る）
+- format-spec の 2.2 節を、2.1 節（凍結）の却下案の引用の後ろに移した
+
 ## [0.7.0] - 2026-10-25
 
 ### Added

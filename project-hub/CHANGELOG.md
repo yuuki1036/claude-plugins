@@ -2,11 +2,20 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.1] - 2026-10-26
+
+### Changed
+
+- README の「まだ無いもの」を、`hub-living-spec`（決まりに沿って手で行う）と機械化の未実装を分けて書いた
+- CHANGELOG の 0.5.0 に、`hub-living-spec` をプラグインの skill にした理由と、living-spec-workflow の書式に追従が要ることを書き足した
+
 ## [0.5.0] - 2026-10-25
 
 ### Added
 
 - `hub-living-spec` skill: living spec（living-spec-workflow）と hub を 1 つのセッションで併用するときの決まり（GitHub issue #322 の橋渡し。統合版が出たら消す）。決定を書くのは lead が決めたときだけ・確定を覆した決定の関連 Issue を仕掛中・未着手・完了に分けて lead に出す（仕掛中の sub に伝えるかは lead が決める）・sub の report のうち設計に関わるものを OQ の候補にする・自動の連絡の出典は Decision と確定の行だけ・重い OQ の調査を sub に出す・先送りの扱い。`hub` skill から living spec のある PJ でこの skill を読むよう案内する
+  - #322 の補足は user スコープの skill の予定だったが、複数のマシンで使うのでプラグインに入れた。`hub/references/` ではなく skill にしたのは、hub を経ずに「hub と living spec を併用」で直接呼ばれるようにするため（戻すなら `hub/references/` に移し、hub SKILL からの Read だけにする）
+  - living-spec-workflow 0.7.0 以降の書式（仕様表の phase・関連 Issue、Decision の `関連 Issue`）を前提にしている。living-spec-workflow の書式が変わったら、この skill も合わせて直す
 
 ## [0.4.2] - 2026-10-25
 

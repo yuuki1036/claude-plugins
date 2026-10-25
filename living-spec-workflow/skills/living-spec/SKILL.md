@@ -325,7 +325,7 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    ✅ 「<項目>」の確度を <旧確度> → <確度> に更新しました（.claude/living-specs/<slug>.md）
      since: <TODAY>
 
-   収束率: <確定数>/<全項目数>
+   収束率: <確定数>/<全項目数>（先送りの行を除く。Phase 7 と同じ数え方）
    ```
    新規行なら「新しい仕様項目「<項目>」を <確度> で追加しました」
 
@@ -411,7 +411,7 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    - `--phase`: `-` / `P<n>`（n は 1 以上）/ `先送り`
    - `--issue`: `-` か Issue ID のカンマ区切り（`format-spec.md` 9 節の `ISSUES`）。置き換えであって追記ではない（表は現在値の一覧）
 3. `<項目>` に完全一致する行を 6a の表と同じ規則で引き当てる。**0 件なら追加しない**（「`<項目>` が仕様表にありません。先に /living-spec spec <項目> <確度> で追加してください」）
-4. **先送りの行になる `--phase` には D# が要る**（`format-spec.md` 2.2 節）: 新しい値が `先送り`、または frontmatter の `current_phase` より大きい `P<n>` なら、`D<n>` が無い・Decision log に無いとき「先送りは Decision で残します。/living-spec decision で経緯（なぜ後へ回すか）を残し、その番号を渡してください」と報告して終了する。今の phase 以前へ戻す・`-` にする変更は D# なしでよい。D# は表に書かない
+4. **先送りの行になる `--phase` には D# が要る**（`format-spec.md` 2.2 節）: 新しい値が `先送り`、または frontmatter の `current_phase` より大きい `P<n>` なら、`D<n>` が無い・Decision log に無いとき「先送りは Decision で残します。/living-spec decision で経緯（なぜ後へ回すか）を残し、その番号を渡してください。Decision の見出しには項目名を入れてください（例: `D<n>: 「通知」を P2 へ先送り`。表に D# を残さないので、見出しから辿ります）」と報告して終了する。今の phase 以前へ戻す・`-` にする変更は D# なしでよい。D# は表に書かない
 5. その行の `phase` か `関連 Issue` と、`since` を `<TODAY>` に更新する（確度を確かめ直したのではないが、行を触った日として残す。6a と同じく `since` は機械が書く）
 6. W4 で `last_updated` を更新し、「「<項目>」の phase を <旧> → <新> にしました」（`--issue` なら関連 Issue）と報告する。先送りにしたなら「maintain 段 6 は、この行を塩漬けとして数えません」と添える
 
@@ -424,7 +424,7 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 1. 対象ファイルを Read し、コメント除去後に frontmatter・仕様表・OQ 台帳をパースする
 2. 集計する:
    - **収束率 = `確定` の数 ÷ 全項目数**（`format-spec.md` の重み付けはしない。単純な比）。項目 0 件なら「項目なし」と表示し、0 除算しない
-   - **先送りの行（`format-spec.md` 2.2 節）は全体の収束率の分母から外し**、「先送り N 件（先送り a / P<n> 以降 b）」として別に数える
+   - **先送りの行（`format-spec.md` 2.2 節）は全体の収束率の分母から外し**、「先送り N 件（先送り a / P<n> 以降 b）」として別に数える。行はあるが全部が先送りなら、収束率の代わりに「今の phase の項目なし（先送り N 件）」と出す（0 除算しない）
    - 6 列の表で `P<n>` の行があれば、**phase ごとの収束率**（その phase の `確定` ÷ その phase の行数）も出す。`-` の行は今の phase（`current_phase`。無ければ「phase なし」）に入れる
    - 確度ラベル別の内訳（`確定` / `方向性(仮)` / `未定`）
    - **open OQ 残数**

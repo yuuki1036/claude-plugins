@@ -1,6 +1,6 @@
 {
   "name": "project-hub",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "1 つのセッションを hub にして、複数の sub（作業セッション）で進める PJ の状態（sub・PR・Issue・確かめた事実）をコンテキストの外のファイルで持つ。hub は指示出しと進め方・仕様の相談役で、sub を起動でき（Desktop）、lead の確認が要らない連絡（質問への出典つきの答え・段取り・lead の言葉の伝達）は承認なしに送る。sub の report はファイルで受けて通知のその場で取り込み、宛先は送る直前に引き直す（改名は登録した時の ref で追う）。hub のセッションには SessionStart / PostCompact で状態の表を、UserPromptSubmit で未取り込みの知らせを注入し、PJ の repo にいる未登録の sub には紐付けを案内する",
   "author": {
     "name": "yuki"
