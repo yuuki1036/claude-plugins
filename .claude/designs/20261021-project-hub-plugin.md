@@ -62,7 +62,7 @@ tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 
 ### 実測と一次ソースで確かめたこと
 
-- **SendMessage の宛先は名前で、セッション ID は使えない**（要検証 (a)。2026-10-21）
+- **SendMessage の宛先は名前で、セッション ID は使えない**（要検証 (a)。2026-10-21。測ったのは CLI のセッション ID。Desktop の `local_…` は 2026-10-25 に届くと分かった — 「自律運用」の節の「実機で確かめたこと」の (d)）
   - ツール説明（SendMessage・CC 2.1.302）: 「the name IS the address; there is no separate address syntax」。` [ref]` は同名が 2 つあるときだけ付け、「A ref you did not just read from a listing or an error will not resolve」。raw の agentId（`a...-...`）は in-process の subagent 用
   - 実測: `--session-id 11111111-2222-4333-8444-555555555555 -n hubtest-worker` で起動したセッションは、ListAgents に `hubtest-worker [227051]` と出た。ref はセッション ID の先頭と一致しない。セッション ID 宛ての送信は `No agent named '11111111-…' is reachable` で失敗した（#308 で出たのと同じ文言）。この回は受信側が認証エラーで先に終了していた可能性があったので、受信側が ListAgents に `busy` と出ている間に測り直した（`22222222-…`）。結果は同じ文言での失敗だった。名前宛て（`hubtest-busy`）は同じ相手に届いた
   - `-n` で付けた表示名がそのまま ListAgents の名前になった。Desktop のセッションも会話の題に当たる名前で出ていた（題と同一であることは下の sessionTitle の項で確認済み）。名前を付けていないセッションは `claude-plugins-96` のような既定名で出る。どちらにせよ利用者が改名すると宛先が変わる
@@ -311,7 +311,7 @@ lead に出して、送らずに止まるもの:
 **自動で動く契機**:
 
 - **sub の通知**（cross-session message）で始まった hub のターン: `ingest` → `render` → 取り込んだ report ごとに、上の「聞かずに送るもの」は送り、「止まるもの」は lead に出す。lead に出すものが無ければ、何をしたかを 1〜2 行で書いて終える。このターンは lead の発言で始まっていないが、`approval.mode: auto` は lead が選んだ（init・mode の出力で有効と知らされた）常設の指示で、送る範囲もこの節の 1〜4 に限ってある（ADR-20261025152955）
-- **hub が起動した sub のターンの終わり**（Desktop が hub に返す linked session の知らせ）: 未取り込みの report があれば取り込んで上と同じく処理する。report が無ければ何もしない（ターンの終わりは節目とは限らない）。この契機は要検証 (c) の届き方に依存する。(c) で、hub に届かない・届く時点が使えないと分かったら、この項は削る（report の通知だけで足りる）
+- **hub が起動した sub のターンの終わり**（Desktop が hub に返す linked session の知らせ）: 未取り込みの report があれば取り込んで上と同じく処理する。report が無ければ何もしない（ターンの終わりは節目とは限らない）。hub が idle のときに知らせが届くことは実機で確かめた（「実機で確かめたこと」の (c)）。hub が busy のときの届き方は測っていない
 
 **既知の限界**: permission mode が hub と違う sub（lead が貼って始めた sub など）には、自動の連絡が受け手の承認待ちで止まりうる。Desktop の sub では止まっても送り手に何も返らない（SendMessage のツール説明）ので、hub からは検出できない。brief を貼ってもらう回は「hub と同じ permission mode で始める」と添える
 - **lead の発言**: 今どおり（UserPromptSubmit が未取り込みの件数を知らせる）
@@ -332,7 +332,7 @@ lead に出して、送らずに止まるもの:
    - `initiation: user_asked`（lead が start を頼んだ）/ `context: fresh` / `use_worktree: true` / `prompt` に brief、`background` に PJ の概要（config と state.md から）/ `title` に Issue ID を含める（ListAgents の名前に Issue ID が入り、hello の前でも Issue ID で引ける）
    - `permission_mode` は渡さない（hub と同じ mode を引き継ぐ。mode が違う sub には、メッセージが受け手の承認待ちで止まる / SendMessage のツール説明）
    - `cwd`: hub の cwd が config の repo でなければ、Issue の repo のパスを渡す
-   - 結果のセッションの id と名前を journal に `start` で残す（hello の前に宛先を引くときの手がかり。宛先にはまだ使わない — 下の要検証 d）
+   - 結果のセッションの id と名前を journal に `start` で残す（hello の前に宛先を引くときの手がかり。宛先にはまだ使わない — 下の「実機で確かめたこと」の (d)）
 3. 使えない（CLI）・断られた・失敗した: 今どおり、貼る用の全文を出して lead に貼ってもらう
 4. **sub の通知で始まったターンからは起動しない**（アプリが断る）。次の Issue に進む sub が要ると判断したら、提案（`own_initiative` のカード）に留め、lead が始める
 
@@ -345,12 +345,15 @@ lead に出して、送らずに止まるもの:
 - hook の文面（inject / pending-hint）: auto の PJ では「取り込んで処理する」
 - README / CHANGELOG（minor）/ テスト（`test_project_hub_scripts.py`・`test_project_hub_hooks.py`）/ evals の起動語（「hub start」「sub を起動」）
 
-### 要検証（実装の最初に実機で確かめる）
+### 実機で確かめたこと（2026-10-25・project-hub 0.3.0）
 
-- (a) `start_session` で起動した sub の ListAgents の名前は `title` か `name` か（Issue ID の照合に効くのはどちらか）
-- (b) sub の通知で始まった hub のターンから SendMessage で送れるか（ツールとしても、アプリの扱いとしても）
-- (c) hub が起動した sub のターンの終わりに、hub へ何がいつ届くか（hub が idle でないとき・sub が lead の確認待ちで止まったとき）
-- (d) SendMessage の `to` に `start_session` が返す `local_…` を使えるか。使えれば改名・開き直しに強い宛先になる（#316 の残り）。使えると分かったら ADR-20261021154740 の決定 3 を見直す（この段では使わない）
+hub 役の Desktop のセッションから、`start_session`（`title: "ABC-1: hub probe"`・`name: "hub-probe"`・haiku・`use_worktree: false`）で使い捨ての sub を起動し、メッセージの送受信だけをさせた。
+
+- (a) **ListAgents の名前は `title`**: sub の ListAgents の 1 行目は `This session is ABC-1: hub probe [bf8a06]`、hub の一覧にも `ABC-1: hub probe [bf8a06] · interactive · busy · Claude Desktop session` と出た。`name`（hub-probe）は出ない。title に Issue ID を入れれば、hello の前でも Issue ID の照合に乗る
+- (b) **sub の通知で始まった hub のターンから送れる**: sub が名前宛てに送ったメッセージで始まった hub のターンで、名前宛て（`ABC-1: hub probe`）の SendMessage が受理され（同じマシンの inbox 経由）、sub から ack が返った
+- (c) **hub が起動した sub のターンが終わると、hub に知らせが届く**: hub が idle のとき、sub のターンの終わりに「finished a turn」と sub の報告の先頭 400 字が system-reminder で届いた（あわせて linked session の状態の行）。hub が busy のとき・sub が lead の確認待ちで止まったときは測っていない
+- (d) **`to` に `local_…` を使える**: `start_session` が返した `local_e44593dc-…` 宛ての SendMessage は「Forwarded to Claude Desktop's session messaging: Message delivered … its turn has started on it」で受理され、sub から ack が返った（この経路は既読も保留も返さない）。ADR-20261021154740 の「セッション ID 宛ては届かない」は CLI のセッション ID（uuid）で測った結果で、Desktop の `local_…` は届く。宛先に使うかは、改名・開き直しの後も同じ id で届くかを測ってから ADR を見直して決める（この段では使わない）
+- 包みの形は経路で違った: 名前宛て（inbox 経由）で届いたメッセージは `from="uds:…" from-session="local_…" from-name="…"`、`local_…` 宛ての返事（Desktop 経由）は `from="local_…" name="…"`。hub の手順は本文の「report を置いた（…）」だけを見るので、どちらでも動く
 
 ## 実装で決めたこと（段階 ②a・self-review・2026-10-25）
 
