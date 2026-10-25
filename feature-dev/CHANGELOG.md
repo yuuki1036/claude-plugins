@@ -5,6 +5,20 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.26.1] - 2026-10-25
+
+### Fixed
+
+- **適用範囲で足切りした回も、実装の後の検証を通すようにした**（GitHub issue #319）。足切りで飛ばすのは設計までの phase（Phase 1〜4.8）だけで、
+  実装の後は Phase 5.3（静的オラクル）→ 5.5 → 6（self-review）→ 6.7 → 6.9 → 7 を 8 phase の回と同じ手順で通す。
+  停止点の返信を受けたら、残りの検証を TodoWrite に積む。以前は停止点の後に実装へ移るところで手順が終わり、self-review を通らないまま
+  コミットの確認に入った
+- **足切りの停止点で、足切りしたことと通す検証を明示する**。起動のされ方（`/feature-dev`・issue-workflow の start で選ばれた回）によらず
+  足切りしてよいが、8 phase で回したければ返信で選び直せると添える。Phase 7 の申し送りにも足切りした旨を出す
+- **承認した方針を実装中に変えるときは、書き換える前に止まる**。承認した手段が効かない・別の手段に替える・方針の外のファイルや挙動まで
+  広げるときは、理由と新しい案を示して確かめ直す。規定は Phase 5 Normal Mode の 4. に置き、足切りの停止点の承認にも 8 phase の Phase 5 の承認にも効く。
+  足切りの回の Fix Mode は architect の delta-proposal を起動せず（基準にする設計が無い）、別の手段が要るなら同じく止まる
+
 ## [2.26.0] - 2026-10-24
 
 ### Added

@@ -41,8 +41,8 @@ You are helping a developer implement a new feature. Follow a systematic approac
 
 ## 適用範囲（起動したらまずここで足切りする）
 
-このワークフローは **新機能を設計から作る**ためのもの。次に当てはまるなら 8 phase を回さず、
-「feature-dev の規模ではないので直接実装する」と 1 文断り、下の停止点を通ってから通常の実装に移ること:
+このワークフローは **新機能を設計から作る**ためのもの。次に当てはまるなら設計までの phase（Phase 1〜4.8）を回さず、
+下の停止点を通ってから実装し、**実装の後の検証（Phase 5.3 以降）はそのまま通す**こと:
 
 - typo・設定値変更・文言修正
 - 影響範囲が数ファイル・数十行に閉じる bugfix（原因が分かっているもの。原因不明なら `dev-workflow:diagnose`）
@@ -51,12 +51,17 @@ You are helping a developer implement a new feature. Follow a systematic approac
 
 逆に、設計判断が未確定・複数レイヤーにまたがる・既存パターンの調査が要る場合は最後まで回す。
 
-**足切りしたときの停止点**: 足切りしても、書き始める前に 1 回止まる。8 phase を回すときは Phase 5 の承認がモデルの切り替え点になるが、足切りするとそこを通らないので、ここで代わりに止まる。次の 2 つを出してターンを終え、返信を待ってから実装する:
+**足切りで飛ばすのは設計までで、検証は飛ばさない**（GitHub issue #319）: 実装の後は Phase 5.3（静的オラクル）→ 5.5（動作確認）→ 6（self-review と G-V ループ）→ 6.7（コメント精査）→ 6.9（レビュー後の変更の確認）→ 7（申し送りと読み合わせ）を、8 phase の回と同じ手順で通す。Phase 4 の設計を指す箇所は、停止点で承認された方針に読み替える（Fix Mode の `The architect design chosen in Phase 4 must be preserved` は承認された方針を保つ。Phase 5.5 の smoke の target は architect の出力が無いので Step 1 の検出に任せる）。以前は停止点の後に実装へ移るところで手順が終わっていたため、実装 → build → 動作確認まで進めても self-review を一度も回さずにコミットの確認に入った。
 
+**足切りしたときの停止点**: 足切りしても、書き始める前に 1 回止まる。8 phase を回すときは Phase 5 の承認がモデルの切り替え点になるが、足切りするとそこを通らないので、ここで代わりに止まる。次の 3 つを出してターンを終え、返信を待ってから実装する:
+
+- 足切りしたこと: 上のどの項目に当たったかを 1 つ挙げ、「Phase 1〜4.8 を飛ばし、実装の後は Phase 5.3（静的オラクル）・6（self-review）を含む検証を通す」と書く。起動のされ方（`/feature-dev` での起動・issue-workflow の start で「feature-dev」が選ばれた回）によらず足切りしてよいが、「8 phase で回すなら返信でそう書いてください」と添える。利用者が feature-dev を選んだのは 8 phase を求めてのことかもしれず、起動のされ方からは見分けられないので、ここで選び直せるようにする
 - 変更方針: 何をどう変えるか・触るファイルを 2〜3 行で書く。モデルを切り替えると、切り替え先は切り替え前のモデルの思考過程を読めないので、実装に要る判断は本文に残す
 - 末尾にこの案内をそのまま添える:
 
   > 🔀 **モデル切り替えポイント**: 実装を別のモデルで行う場合は、**この返信の前に**アプリのモデル選択で切り替えてください。切り替え先には上の方針だけが引き継がれるので、足りない判断があれば返信に書き足してください。このまま進める場合もそのまま返信で構いません。
+
+返信で 8 phase を求められたら Phase 1 から回す。そうでなければ、実装に入る前に TodoWrite へ「実装 / Phase 5.3 / 5.5 / 6 / 6.7 / 6.9 / 7」を積む（足切りの回は phase の見出しを順に追わないので、こうして残りの検証を落とさない）。実装中に承認した方針を変えるときは、Phase 5 Normal Mode の 4. に従って止まる。
 
 ## Core Principles
 
@@ -421,7 +426,7 @@ echo "DESIGN_DOC=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" design
 
 Phase 5 has two modes — check the invocation context:
 
-- **Normal Mode**: Triggered by Phase 4 completion. Implements the feature from scratch.
+- **Normal Mode**: Triggered by Phase 4 completion. Implements the feature from scratch. 適用範囲で足切りした回は停止点の返信で入る（承認は停止点で済んでいるので Actions の 1. は通らない。4. は通る）。終えたら Phase 5.3 へ進む
 - **Fix Mode**: Triggered by Phase 6 Generator-Verifier loop (Step 3). Applies only the specific reviewer-flagged critical issues. **DO NOT START WITHOUT USER APPROVAL** is waived for Fix Mode (the loop is automatic; reaching the user-decision step happens at Phase 6 Step 4).
 
 ### Normal Mode
@@ -438,9 +443,10 @@ Phase 5 has two modes — check the invocation context:
    > 🔀 **モデル切り替えポイント**: 設計（Phase 1〜4.8）と実装で別のモデルを使う場合は、**この承認に返信する前に**アプリのモデル選択で実装用モデルへ切り替えてください。切り替えた後の返信から、そのモデルで Phase 5 以降を実行します。切り替え先には上の要約（と design doc）だけが引き継がれるので、足りない判断があれば承認と一緒に書き足してください。
 2. Read all relevant files identified in previous phases
 3. Implement following chosen architecture. If the project has a test setup (a test runner and existing tests), Read `${CLAUDE_PLUGIN_ROOT}/references/testing-discipline.md` first and put tests at the **Test Seams** from the chosen blueprint
-4. Follow codebase conventions strictly
-5. Write clean, well-documented code
-6. Update todos as you progress
+4. **承認した方針を実装中に変えるときは、書き換える前に止まる**（GitHub issue #319。承認は 1. の承認か、足切りした回の停止点の承認）: 承認した手段が効かないと分かった・別の手段に替える・承認した範囲（build sequence / 停止点の変更方針に挙げたファイルと挙動）の外まで広げる、のどれかに当たったら、承認した案が使えない理由（観測したもの: エラー・ドキュメント・コードの行）と、新しい案・触るファイルを示してターンを終え、返信を待ってから書き換える（通常のメッセージで止める。モデル切り替えの案内は繰り返さない）。承認は示した方針に対するもので、別の案には及ばない。実例では、足切りの停止点で承認された `dynamicParams = false` が全ルートの動的レンダリングで効かないと分かり、別の案（`notFound()` とデータ取得関数の戻り値）へ確かめずに切り替えた
+5. Follow codebase conventions strictly
+6. Write clean, well-documented code
+7. Update todos as you progress
 
 ### Fix Mode
 
@@ -455,7 +461,7 @@ Phase 5 has two modes — check the invocation context:
 **Actions**:
 1. Read each flagged file at the indicated line range
 2. Apply the reviewer's suggested fix (or a minimal equivalent that resolves the issue)
-3. If the fix requires design-level changes, escalate by launching `code-architect` (with `run_in_background: false`) with focus `delta-proposal` and **consume 1 loop iteration**. Otherwise apply directly with Edit.
+3. If the fix requires design-level changes, escalate by launching `code-architect` (with `run_in_background: false`) with focus `delta-proposal` and **consume 1 loop iteration**. Otherwise apply directly with Edit. 適用範囲で足切りした回は architect を起動しない（基準にする設計が無い）。停止点で承認した方針と別の手段が要るなら、Normal Mode の 4. と同じく止まって確かめ直す（ループの状態はそのまま残し、返信の後に修正して Phase 6 Step 3 へ戻る）
 4. Return to Phase 6 Step 3 (do NOT re-run Phase 5.5 unless the fix is runtime-sensitive and effort ≥ `medium`). ループの状態は書かない（次の `gv-loop.py review` が記録する）
 
 ---
@@ -719,6 +725,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
 **Actions**:
 1. Mark all todos complete
 2. **申し送り**（feature-dev だけが持つ情報。該当する項目だけ出し、無い項目は行ごと省く）:
+   - **足切り** (適用範囲): 足切りした回だけ。当たった項目と、Phase 1〜4.8 を飛ばしたこと。実装中に承認した方針を変えた回は、変えた理由と承認を取り直した新しい案
    - **設計契約** (Phase 3 Step 5): ユーザーが決めたことと、未決のまま残したこと（いつ・どこで決めるか）。契約が明示的に確認されなかった回（`askUserQuestionTimeout` で自動続行）はその旨
    - **探索の欠損** (Phase 2): 失敗した explorer の `missing_coverage`
    - **静的オラクル** (Phase 5.3): 「静的オラクル判定不能」「静的オラクル打ち切り」「静的オラクル無し（型/テスト未検証）」、`low` effort で skip した回だけ
