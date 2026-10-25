@@ -23,7 +23,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [feature-dev](#feature-dev) | 2.26.1 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.9.2 | - | - | - | PreToolUse, PostToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行・公開先への業務情報送信・zsh で壊れる書き方・gh run list --commit への短縮 SHA・知らない間のブランチ切り替え後の git 書き込みを機械ブロック |
 | [issue-workflow](#issue-workflow) | 1.13.1 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
-| [living-spec-workflow](#living-spec-workflow) | 0.6.0 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
+| [living-spec-workflow](#living-spec-workflow) | 0.7.0 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.3.3 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.9.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |

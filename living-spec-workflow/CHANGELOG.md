@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.7.0] - 2026-10-25
+
+### Added
+
+- **実行中も living spec を使い続けられるようにした**（format-spec 2 節・2.2 節 / GitHub issue #320）。確定した項目を Issue に切り分けた後にも決定が増え、確定の項目が実装中に覆り、phase 2 へ回す項目が出るのに、覆った項目の Issue を引く手段も、先送りを表す手段も無かった
+  - 仕様表を `| 項目 | 内容 | 確度 | phase | 関連 Issue | since |` の 6 列にした。旧 4 列の表もそのまま有効で、`/living-spec spec --upgrade` で 6 列にする。1 つの表で 4 列と 6 列の行を混ぜるのは段 1 の Critical
+  - frontmatter の `current_phase: P<n>`（init は `P1`）で今の phase を宣言し、`spec --phase-advance D<n>` で進める。phase が `先送り` か今の phase より後の行を先送りとして数える
+  - `spec <項目> --phase <P<n>|先送り|-> [D<n>]`（先送りになる変更は D# が要る）と `spec <項目> --issue <ID,…|->`
+  - `status` は先送りを全体の収束率から外し、phase ごとの収束率と先送りの件数を出す。maintain 段 6 は先送りの行を塩漬けとして数えず、外した行数を「skip した段」に出す。段 8 は現在地サマリが今の phase の到達点になっているかも見る
+  - `decision` は覆す確定の項目を選ばせ、その項目の関連 Issue を報告に出して、Decision の任意の 7 番目の bullet `関連 Issue` に書く
+
 ## [0.6.0] - 2026-09-26
 
 ### Added

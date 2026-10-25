@@ -32,7 +32,7 @@ Issue 化する前段の「設計収束ドキュメント」(living spec) を `.
 
 **使い分けの軸は「何セッションかかるか」**。未確定が 1 セッションの grill（数問で、互いの依存が浅い）で片付くなら living spec は要らない — `design-doc` か `feature-dev` の grill で足りる。複数セッションに跨って決めていくときに使う。
 
-living spec は**決める場所で、実装はしない**。実装に手を付けたくなったら到達点に着いた合図なので、Issue 化するか `feature-dev` に渡す。
+living spec は**決める場所で、実装はしない**。実装に手を付けたくなったら今の phase の到達点に着いた合図なので、確定した塊を Issue 化するか `feature-dev` に渡す。**到達点は phase ごとに持ち**、着いたら `spec --phase-advance` で次の phase へ進む。実行に入ったあとも閉じずに使い続ける — 実装中に覆った確定の項目は新しい Decision で上書きし（関連 Issue を辿る）、後の phase へ回す項目は先送りにする（`format-spec.md` 2.2 節 / GitHub issue #320）。全 phase を終えたら閉じる。
 
 > living spec で確度が `確定` に寄った塊ができたら、それを Issue 化する。living spec 側からプラグインは呼ばない（疎結合）。ユーザーが `/issue-create`（issue-workflow）に手で渡す。
 
@@ -58,7 +58,7 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 | `oq` | `<text> [--spec <slug>]` | Phase 4 |
 | `oq list` | `[--all] [--spec <slug>]` | Phase 4 |
 | `decision` | `<text> [--spec <slug>]` | Phase 5 |
-| `spec` | `<項目> <確度> [--spec <slug>]` / `--freeze D<n>` / `--unfreeze [D<n>]` | Phase 6 |
+| `spec` | `<項目> <確度> [--spec <slug>]` / `<項目> --phase <P<n>\|先送り\|-> [D<n>]` / `<項目> --issue <ID,…\|->` / `--upgrade` / `--phase-advance D<n>` / `--freeze D<n>` / `--unfreeze [D<n>]` | Phase 6 |
 | `status` | `[--spec <slug>]` | Phase 7 |
 | `maintain` | - | 案内のみ（整合・鮮度チェックは `/living-spec-maintain` の領分） |
 
@@ -227,6 +227,11 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    - header: 「関連 OQ」
    - options: open な OQ ごとに「`OQ<n>`: <問いの先頭 40 字>」（**先頭に「なし（OQ を close しない）」を置く**。決定が既存の問いに対応しないことは普通にあるため）
    - open な OQ が 0 件なら**この確認を飛ばす**（選択肢が無いのに問わない）
+3.5. **覆す確定の項目を選ばせる**（GitHub issue #320）。仕様表に `確定` の行が 1 つ以上あり、凍結していなければ、AskUserQuestion で確認する（multiSelect。3 の確認と同じ呼び出しにまとめてよい）:
+   - question: 「この決定が覆す確定の項目を選んでください」
+   - header: 「覆す項目」
+   - options: `確定` の行ごとに「<項目>（関連 Issue: <関連 Issue>）」（**先頭に「なし（確定を覆さない）」**。多くの決定は新しいことを決めるだけなので）
+   - `確定` の行が 0 件か凍結中なら**この確認を飛ばす**
 4. **Decision log に append する**（4 節の形式。bullet のキーと順序は固定）:
    ```
    ### D<n>: <text を要約した見出し>
@@ -236,7 +241,9 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    - 出典: <ファイルパス / URL / 会話。無ければ ->
    - 残: <この決定で残った未確定。無ければ ->
    - 関連 OQ: <OQ1, OQ3 形式。close しないなら ->
+   - 関連 Issue: <ABC-12, #308 形式>
    ```
+   - **`関連 Issue` の行は任意**（7 番目。4 節）。3.5 で選んだ項目の `関連 Issue` の和集合（`-` を除く）と、ユーザーが挙げた Issue を書く。どちらも無ければ**行ごと書かない**（`- 関連 Issue: -` を書かない）
    - `確信度` / `根拠` / `残` はユーザーの入力から埋める。読み取れなければ**推測で埋めず**、`確信度: 中` を既定にして `根拠` に与えられた文言をそのまま置く
    - 補足・内訳・但し書きは、該当する bullet の下にインデントした子 bullet で書いてよい（4 節）。散文の段落・引用ブロックは置かない
    - 既存エントリは**絶対に編集しない**（append-only。4 節）
@@ -263,6 +270,13 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    残る open な OQ: <残数> 件
    ```
    OQ は番号だけでは読めないので、問いの先頭を添える。
+   3.5 で項目を選んだときは、続けて次を出す（Issue の状態（仕掛中・未着手・完了）で分けるのは、トラッカーを読む側の仕事。living spec はトラッカーを読まない）:
+   ```
+   覆した確定の項目:
+   - <項目>（関連 Issue: <ID, …> / 無ければ「関連 Issue なし」）
+   これらの Issue は、覆す前の決定に沿って書かれています。Issue の本文・作業中の実装を直すかを確かめてください。
+   仕様表の行は /living-spec spec <項目> <確度> で更新してください（内容は直接 Edit で直す）。
+   ```
 
 > **スコープ外と分かった OQ**も decision で閉じる。見出しを `### D<n>: スコープ外: <要約>` にし、`根拠` に到達点の外だと判断した理由を書く。あわせて「進め方フェーズ」の「スコープ外」小見出しに 1 行残す（template.md のコメント参照）。
 
@@ -274,7 +288,9 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 
 `since` の発生源を機械に寄せるためのサブコマンド。手編集に委ねると「確度だけ変えて `since` を据え置く」（実際は動いているのに stale 警告）と「`since` だけ触る」（塩漬けなのに沈黙）が両方起こる。仕様表の凍結（`format-spec.md` 2.1 節）の宣言と解除も、同じ理由でここから書く。
 
-**`spec` に続く引数で分岐する**（`--spec <slug>` は位置を問わず先に取り除く）: `--freeze` があれば 6b、`--unfreeze` があれば 6c、どちらも無ければ 6a。
+**`spec` に続く引数で分岐する**（`--spec <slug>` は位置を問わず先に取り除く）: `--freeze` があれば 6b、`--unfreeze` があれば 6c、`--upgrade` があれば 6d、`--phase-advance` があれば 6e、`<項目>` の後ろに `--phase` か `--issue` があれば 6f、どれも無ければ 6a。
+
+**表の形**: 仕様表のヘッダが 6 列（`| 項目 | 内容 | 確度 | phase | 関連 Issue | since |`）か旧 4 列かを先に見る（`format-spec.md` 2 節）。行を書くときはヘッダの形に合わせる。6d の他は、表の形を変えない。
 
 **凍結の判定**: frontmatter に `spec_table:` か `spec_table_frozen_by:` の行が 1 つでもあれば「凍結している」と扱う（6a の拒否・6b の二重宣言の拒否・6c・Phase 5 の歯止め・Phase 7 のすべてで同じ判定を使う）。
 
@@ -298,7 +314,7 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 | 一致数 | 挙動 |
 |---|---|
 | 1 件 | その行の `確度` と `since` を in-place 更新する |
-| 0 件 | **新規行として append する**（W5）: `\| <項目> \| - \| <確度> \| <TODAY> \|`。`内容` は `-`（8 節。決まってから `spec` で更新するのではなく直接 Edit で埋める） |
+| 0 件 | **新規行として append する**（W5）: 6 列の表は `\| <項目> \| - \| <確度> \| - \| - \| <TODAY> \|`、旧 4 列の表は `\| <項目> \| - \| <確度> \| <TODAY> \|`。`内容` は `-`（8 節。決まってから `spec` で更新するのではなく直接 Edit で埋める）。phase・関連 Issue は 6f で入れる |
 | 2 件以上 | **更新せず報告して終了**。「`<項目>` が N 行あります。`format-spec.md` 2 節により項目はファイル内で一意である必要があります。重複を解消してください」（2 節の一意性違反。どちらを更新したかが非決定になるため倒す） |
 
 4. 更新時は `確度` と `since` の**両方**を書く。`since` は必ず `<TODAY>`（W1）
@@ -372,6 +388,33 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
      未確定の行（<方向性(仮) と 未定 の数> 件）は since が凍結の前のままなら塩漬けとして出ます。/living-spec spec <項目> <確度> で見直してください。
    ```
 
+### 6d. `spec --upgrade` — 旧 4 列の表を 6 列にする
+
+1. 対象ファイルを Read する。凍結していれば 6a の step 0 と同じく報告して終了する（凍結した表は凍結した時点の記録なので形も変えない）
+2. ヘッダが既に 6 列なら「仕様表は既に 6 列です」と報告して終了する
+3. ヘッダと区切り行を 6 列にし、各行の `確度` と `since` の間に `- | - |` を挿す（`| <項目> | <内容> | <確度> | - | - | <since> |`）。**`since` は変えない**（形を変えただけで、確度を確かめたわけではない）
+4. frontmatter に `current_phase` が無ければ、足すかを聞かずに足さない（無くても動く。phase を分けるときに 6e か手で足す）
+5. W4 で `last_updated` を更新し、「仕様表を 6 列にしました（<n> 行。phase と関連 Issue は - で入れました）。/living-spec spec <項目> --phase / --issue で埋めてください」と報告する
+
+### 6e. `spec --phase-advance D<n>` — 次の phase へ進む
+
+1. `D<n>` が `D<数値>` の形でなければ報告して終了する
+2. 対象ファイルを Read する。`### D<n>: ` の見出しが Decision log に無ければ「D<n> が Decision log にありません。先に /living-spec decision で今の phase の到達点に着いた経緯を残し、その番号を渡してください」と報告して終了する
+3. frontmatter の `current_phase: P<k>` を `P<k+1>` に書き換える。無ければ `P2` にはせず、`current_phase: P1` を足したうえで「今の phase が宣言されていなかったので P1 にしました。進めるなら、もう一度実行してください」と報告して終了する（どの phase にいたかを推測しない）
+4. W4 で `last_updated` を更新する
+5. 報告: 「今の phase を P<k> → P<k+1> にしました（D<n>: <見出し>）」に続けて、P<k+1> の行のうち `未定` / `方向性(仮)` の項目と、P<k> に残っている未確定の項目（あれば。先送りにするか決めるよう添える）を並べる。現在地サマリの 1 行目（今の phase の到達点）を書き直すよう案内する
+
+### 6f. `spec <項目> --phase <値> [D<n>]` / `spec <項目> --issue <値>` — phase と関連 Issue
+
+1. 対象ファイルを Read する。凍結していれば 6a の step 0 と同じく報告して終了する。ヘッダが旧 4 列なら「仕様表が旧 4 列です。/living-spec spec --upgrade で 6 列にしてから実行してください」と報告して終了する
+2. 値を検証する（勝手に正規化しない）:
+   - `--phase`: `-` / `P<n>`（n は 1 以上）/ `先送り`
+   - `--issue`: `-` か Issue ID のカンマ区切り（`format-spec.md` 9 節の `ISSUES`）。置き換えであって追記ではない（表は現在値の一覧）
+3. `<項目>` に完全一致する行を 6a の表と同じ規則で引き当てる。**0 件なら追加しない**（「`<項目>` が仕様表にありません。先に /living-spec spec <項目> <確度> で追加してください」）
+4. **先送りの行になる `--phase` には D# が要る**（`format-spec.md` 2.2 節）: 新しい値が `先送り`、または frontmatter の `current_phase` より大きい `P<n>` なら、`D<n>` が無い・Decision log に無いとき「先送りは Decision で残します。/living-spec decision で経緯（なぜ後へ回すか）を残し、その番号を渡してください」と報告して終了する。今の phase 以前へ戻す・`-` にする変更は D# なしでよい。D# は表に書かない
+5. その行の `phase` か `関連 Issue` と、`since` を `<TODAY>` に更新する（確度を確かめ直したのではないが、行を触った日として残す。6a と同じく `since` は機械が書く）
+6. W4 で `last_updated` を更新し、「「<項目>」の phase を <旧> → <新> にしました」（`--issue` なら関連 Issue）と報告する。先送りにしたなら「maintain 段 6 は、この行を塩漬けとして数えません」と添える
+
 ---
 
 ## Phase 7: status — 進捗ビュー
@@ -381,6 +424,8 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 1. 対象ファイルを Read し、コメント除去後に frontmatter・仕様表・OQ 台帳をパースする
 2. 集計する:
    - **収束率 = `確定` の数 ÷ 全項目数**（`format-spec.md` の重み付けはしない。単純な比）。項目 0 件なら「項目なし」と表示し、0 除算しない
+   - **先送りの行（`format-spec.md` 2.2 節）は全体の収束率の分母から外し**、「先送り N 件（先送り a / P<n> 以降 b）」として別に数える
+   - 6 列の表で `P<n>` の行があれば、**phase ごとの収束率**（その phase の `確定` ÷ その phase の行数）も出す。`-` の行は今の phase（`current_phase`。無ければ「phase なし」）に入れる
    - 確度ラベル別の内訳（`確定` / `方向性(仮)` / `未定`）
    - **open OQ 残数**
    - **仕様表が凍結されていれば（Phase 6 冒頭の「凍結の判定」）収束率を出さない**（`format-spec.md` 2.1 節）。正本が別の文書に移った表の確定率は、収束の度合いを表さない。下の「収束率」の行を次に置き換え、内訳は参考として残す:
@@ -394,6 +439,8 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    ## <プロジェクト名> の現在地
 
    収束率: <確定>/<全> （<確定> 確定 / <仮> 方向性(仮) / <未定> 未定）
+   今の phase: <current_phase か「宣言なし」>  phase ごと: P1 <確定>/<行数> / P2 <確定>/<行数>（P<n> の行があるときだけ）
+   先送り: <N> 件（先送り <a> / P<n> 以降 <b>）（0 件なら行ごと省く）
    open な OQ: <n> 件
    last_updated: <日付> / last-validated: <日付>
 
@@ -406,6 +453,7 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    ```
 4. **セッション再開の導線**として、open な OQ と `未定` / `方向性(仮)` の項目を提示する。ここが「新規セッションで living spec の未確定から再開する」ゴールの実装
    - 仕様表が凍結されていれば、「次に決めるもの」には open な OQ だけを挙げる（凍結した表の項目はここで決めない）
+   - 先送りの行は「次に決めるもの」に挙げない（後の phase で決める）
 
 > 確定した塊ができていたら（仕様表が凍結されていれば、この案内は出さない）、報告の末尾に「確定した項目が <n> 件あります」と添え、次の渡し先を 1 行で示す: 実装方式（HOW）を詰めるなら `design-doc`、振る舞い（WHAT）を固めるなら `bdd-spec`、作業に落とすなら `/issue-create`（issue-workflow）。**living spec 側からプラグインは呼ばない**（疎結合）。
 
@@ -434,10 +482,12 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 3. Phase 2: date 取得 → 衝突確認 → template 置換 → Write
 4. Phase 3: init の完了報告
 5. Phase 4: oq → 採番（コメント除去 → max+1）→ append / oq list は読むだけ
-6. Phase 5: decision → 採番（その番号を壊れた凍結の宣言が指していたら止める）→ 関連 OQ を選ばせる → append → OQ を close → 双方向参照を Read で検証
+6. Phase 5: decision → 採番（その番号を壊れた凍結の宣言が指していたら止める）→ 関連 OQ と覆す確定の項目を選ばせる → append（覆した項目の関連 Issue を報告） → OQ を close → 双方向参照を Read で検証
 7. Phase 6: spec → 凍結中なら拒否 → 確度の 3 値検証 → 項目で引き当て（重複は倒す）→ 確度と since を更新
    / --freeze・--unfreeze → D# の実在と順序を確かめて frontmatter の凍結の 2 行を書く・消す（壊れた宣言は --unfreeze が D# なしで消す）
-8. Phase 7: status → 収束率と open OQ 残数を集計（読むだけ）
+   / --upgrade → 旧 4 列の表を 6 列に / --phase-advance → D# を確かめて current_phase を進める
+   / <項目> --phase・--issue → 先送りになる変更は D# を確かめて phase・関連 Issue を更新
+8. Phase 7: status → 収束率（先送りを除く）・phase ごとの収束率・先送りの件数・open OQ 残数を集計（読むだけ）
 ```
 
 ---
