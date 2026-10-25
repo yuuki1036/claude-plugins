@@ -83,42 +83,11 @@ jobs:
           CLAUDE_PLUGIN_TEST_REQUIRED: "1"
         run: python3 .claude-plugin/scripts/run-tests.py
 
-      # 変更行の変異テスト。**テストが実は何も検証していない**（通るだけのテスト）を
-      # 機械的に検出する。ローカルでは手動起動なので、強制力は CI 側に置く。
-      #
-      # **push 側は浅いスモーク（`--max 5`）**。1 変異ごとにフルスイートを回すので、
-      # 所要は最大で `--max` に比例する（落ちる変異は `-f` で最初の失敗で止まる。`-f` を入れる前の
-      # 実測: `--max 15` で 960〜1065 秒 ＝ CI 全体の 94%）。**深い検証は nightly（`mutation-nightly.yml`）に移した**
-      # ので、ここは「明らかに何も検証していない」を早く弾くだけに絞る。
-      # 切り方は `spread()` がファイル横断で丸めるので、浅くても全変更ファイルに触れる。
-      #
-      # **ブロッキング**（`--strict` = 生存が 1 つでもあれば fail / GitHub issue #138）。
-      # 非ブロッキングだった理由（「同梱スクリプトにテストが数本しか無く、触ると生存率が
-      # 当然高くなる」）は hook 27/27 + 同梱スクリプト 37/37 で消えた。
-      #
-      # **昇格前の実測**（各スクリプト × 自身のテストで測った生存率。`docs/rule-placement.md`
-      # 「昇格を決める前に発火数を測る」）: diff-slice 4% / triage-signals 4% /
-      # detect-dev-worktree 0% / detect-recent-review 6% / cleanup-agent-worktrees 0% /
-      # fetch-pr-context 0% / measure-tokens 0%。**残る生存はすべて等価変異**で、
-      # `# mutation-ok: <理由>` を付けて明示的に外してある。
-      #
-      # 落ちたときの直し方は 2 つだけ: ①生存した変異を殺すテストを足す
-      # ②等価変異なら**理由つきで** `# mutation-ok:` を同じ行に置く（無理由の抑制は書けない）。
-      # 変異が無限ループ化する行（`dirname` の遡上等）も ② で外す — テストでは打ち切れない。
-      #
-      # `--related-first`: 変異したファイルを参照するテストモジュールだけを先に回し、落ちれば killed と確定する。
-      # 通った変異だけフルスイートで確かめるので、生存（= `--strict` の fail）はフルスイートでしか決まらない。
-      # 無いと変異 1 個ごとにフルスイートを回す（2026-10-19 の push は .py の変異 5 個で 34 分。同じ差分を
-      # ローカルで `--related-first` 付きで回すと 5 個とも関連テスト 34 秒の組で決着した）。nightly と同じ
-      # PYTHONUNBUFFERED: パイプ越しだと出力が終わるまでバッファされ、途中で殺された回のログが空になる
-      - name: mutation-test
-        env:
-          PYTHONUNBUFFERED: "1"
-        run: |
-          if [ -z "${DIFF_BASE:-}" ]; then
-            echo "比較対象が特定できないため skip（初回コミット）"; exit 0
-          fi
-          python3 .claude-plugin/scripts/mutation-test.py --base "$DIFF_BASE" --max 5 --strict --related-first
+      # 変更行の変異テストは **push / PR では回さない**。nightly（`mutation-nightly.yml`）だけで回し、
+      # 生存は nightly が GitHub Issue に起票する（ADR-20261025123627）。以前はここで `--max 5 --strict` の
+      # スモークを回していたが（GitHub issue #138）、直近 40 回で平均 518 秒・CI の 57% を使って検出 0 回、
+      # 2026-10-24 の push はスモークを通ったまま nightly が生存 15 件を出した（#317）。main に直接入れる
+      # 運用なので、スモークは着地を止めず、早く知らせるだけだった
 
       # pre-commit と同等のバージョンバンプ検査。
       # ローカル hook は --no-verify で迂回できるため CI 側でも検査する。

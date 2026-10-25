@@ -254,7 +254,7 @@ def changed_lines(base: str) -> dict[Path, set[int]] | None:
     """`git diff` の**追加行**の行番号を新ファイル側で拾う（変更していない行は変異させない）.
 
     git diff が失敗したら None。**「変更行が無い」（空の dict）と区別する**: 範囲 0 個で exit 0 すると、
-    nightly は範囲を回し切ったと判定して持ち越していた変異を捨てる（push 側のスモークも黙って緑になる）。
+    nightly は範囲を回し切ったと判定して持ち越していた変異を捨てる。
     """
     res = run(["git", "diff", "--unified=0", base], ROOT)
     if res.returncode != 0:
@@ -1102,7 +1102,7 @@ def main(argv: list[str] | None = None) -> int:
         left = every
     keys_all = sorted(set(keys.values()))
     # **ファイル横断で丸めてから切る**。先頭から切ると変更が複数ファイルにまたがる回で
-    # 1 ファイルに偏る（push 側の CI は `--max` を小さくしてあるので特に効く）
+    # 1 ファイルに偏る（`--max` を小さくした回ほど効く）
     mutants = spread(left)
     n_lines = sum(len(v) for v in targets.values())
     n_hit = len({(m.path, m.lineno) for m in every})

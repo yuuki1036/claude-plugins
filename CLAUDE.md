@@ -24,7 +24,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  # mutation-nightly-state.py（nightly の比較起点と、打ち切った変異を翌晩へ持ち越す状態）
                                  # run-tests.py（回帰テストの起動口。新セッションで走らせ、
                                  #   終了後に残ったプロセスを検出・回収する。pre-commit / CI /
-                                 #   machine-layer はここを呼ぶ）
+                                 #   machine-layer はここを呼ぶ。既定はモジュール（大きいものはクラス）単位の
+                                 #   並列で、`RUN_TESTS_JOBS=1` で 1 プロセスに戻る）
                                  # plugin-eval.sh（`claude plugin eval` の起動口。入力の指紋を
                                  #   `<plugin>/evals/results/.last-eval` に残し、pre-commit が突合する）
 .claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。4 系統:
@@ -49,9 +50,10 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #     （CLI が無ければ skip。CI は版を固定して入れ、skip を失敗にする）
                                  # python3 .claude-plugin/scripts/run-tests.py
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・plugin eval の鮮度・SSoT 同期・プラグイン品質 (errors)・回帰テスト
+                                 #   （docs/・.claude/designs/・.claude/adr/ だけの変更では回帰テストを省く）
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
-                                 #   変異テストは `--max 5` のスモークだけ（深い検証は nightly）
-.github/workflows/mutation-nightly.yml # 変異テストの深い方（03:00 JST / 全件を回し切った最後の head
+                                 #   変異テストは回さない（nightly だけ / ADR-20261025123627）
+.github/workflows/mutation-nightly.yml # 変異テスト（03:00 JST / 全件を回し切った最後の head
                                  #   以降の変更行を予算 19000 秒まで。打ち切った変異は artifact の状態で翌晩へ
                                  #   持ち越す）。生存・持ち越しが 7 日以上解消しない・状態を失った晩に
                                  #   GitHub Issue を起票・追記する（#288）
@@ -279,7 +281,7 @@ Claude Code の hook を **Pub/Sub Message Bus** として運用するための�
 - **eval を実行・修正する前に `evals/README.md` の Gotchas を読む**: スラッシュコマンドは headless で必ず落ちる（自然言語プロンプトで測る）/ fail は「プラグイン選択」と「skill id の綴り」を分けて読む（id 捏造は harness 側の性質）/ 判定は k=1 でなく pass^k=3 で行う — 詳細と実例は README 側に集約
 
 - **版ラベルは `vNEXT` と書く**（プラグイン配下の md / sh / py）。`bump-version.sh` がそのプラグイン配下だけを実版へ置換し、`validate_plugin_quality.py` が「bump 済みなのに残っている」を error にする。**具体的な版番号を手書きしない** — 書く時点では正しい値が確定しておらず、実測で 3 回再発した。**行内コード・フェンス内は置換も検出もされない**ので、規約の説明はそこに入れ、`references/prompts/*.md` のようにフェンスで丸ごと囲われた doc では版ラベルを使わずissue 番号で参照する。repo 直下の共通スクリプト（`.claude-plugin/scripts/` 等）・doc はプラグイン版に属さないので版ラベルを持たせない — issue 番号か設計ノートへのパスで参照する。経緯: `code-review/references/design-notes/pending-optimizations.md ## 9`
-- **散文に `>=` / `<=` を書かない（変異テストが必ず等価変異として拾う）**: 変異ツールは `.py` と、`.sh` に埋め込んだ python（`python3 ... <<'PY'` のヒアドキュメント / `python3 -c '...'` の本体）を `tokenize` で読み、docstring・文字列・コメントを変異させない。**それ以外の `.sh` は行単位の近似**（`#` コメントと 1 行内の引用符の中だけを除外）なので、`cat <<EOF` のメッセージ本文のような**引用符の外の散文**にある `>=` / `<=`（と英語の `and` / `or`）はそのまま書き換えられる。挙動は変わらないので**必ず生存し、CI（`--strict`）が落ちる**。「`x` 以上」「`y` 以下」と日本語で書く（行内コードに入れても効かない — 除外は字句の判定であって markdown 記法の解釈ではない）。`python3 -c '...'` の開始行・終了行も近似側。実例: #161 のセルフレビュー修正で `ok()` の docstring が CI を落とした（python のヒアドキュメントを近似で読んでいた頃）
+- **散文に `>=` / `<=` を書かない（変異テストが必ず等価変異として拾う）**: 変異ツールは `.py` と、`.sh` に埋め込んだ python（`python3 ... <<'PY'` のヒアドキュメント / `python3 -c '...'` の本体）を `tokenize` で読み、docstring・文字列・コメントを変異させない。**それ以外の `.sh` は行単位の近似**（`#` コメントと 1 行内の引用符の中だけを除外）なので、`cat <<EOF` のメッセージ本文のような**引用符の外の散文**にある `>=` / `<=`（と英語の `and` / `or`）はそのまま書き換えられる。挙動は変わらないので**必ず生存し、nightly（`--strict`）が生存として起票する**。「`x` 以上」「`y` 以下」と日本語で書く（行内コードに入れても効かない — 除外は字句の判定であって markdown 記法の解釈ではない）。`python3 -c '...'` の開始行・終了行も近似側。実例: #161 のセルフレビュー修正で `ok()` の docstring が CI を落とした（python のヒアドキュメントを近似で読んでいた頃）
 - **新しい lint / 検証ロジックを足すときは ①既存 repo での検出数を先に測って水準を決める ②変異テストで「実装を壊すと該当テストが落ちる」ことを確認する**。初回実行で偽陽性が出る warning は「⚠️ が出たときだけ行動する」契約を壊すので、入れない方がまし（実例: 版ラベルの追随漏れ検出は 6/6 が偽陽性で撤去）。手順と却下事例は`docs/rule-placement.md`。変異テストは `python3 .claude-plugin/scripts/mutation-test.py`（`__pycache__` の消去・モードの保存・中断時の復元はツール側にある。**実行中に対象ファイルを編集しないこと**、そして**実行中に別セッションでテストを走らせないこと** — 変異体は作業ツリーの実ファイルへ in-place で書かれ、1 変異ごとにフルスイートを回すので**ファイルはほぼ 100% の時間 mutant 状態**になる。そこで測った結果は緑にも赤にも化け、「テスト間の順序干渉」に見える（実測: 3 秒間隔 44 サンプルすべてが変異体。誤診でフルスイート 6 回を溶かした）。`run-tests.py` は journal の pid が生存していれば exit 2 で止めるが、**素の `python3 -m unittest` は素通りする**。待てないときは `git checkout-index -a --prefix=/tmp/clone/` で index から取り出して測る。**Ctrl-C で殺さないこと** — 復元が飛んで変異がツリーに残る）
 - **テストは「環境の不在」に頼らない**: PATH を絞るときは引ける側を列挙する / 使い捨てリポジトリはリポジトリ側に author を設定する / `CLAUDE_PROJECT_DIR` を継承させない / `pgrep` は PATH から外さず stub にする / git を叩くテストは `git_env.scrub()` を通す。**どれも「テストが緑のまま壊れる」型**で、実測で CI 6 件・Stop hook 経由 3 件・CI 21 件が落ちた。**7 項目の詳細と実測は `docs/testing-pitfalls.md`**
 - **実行を伴う検証を委譲したら、完了後に副作用の差分まで見る**（実測 4 件 / GitHub issue #194）: agent に「再現せよ」「動かして確かめよ」と指示する回は、**dispatch する前に** `.claude/events.jsonl` の行数と `git status --porcelain` を控え、完了後に突き合わせる。**指示ベースの隔離は守られない** — prompt に隔離を明記しても並列 agent の一部が実 `events.jsonl` を汚した実測がある。hook スクリプトの直接実行は `guardrail-protect` の `hook-isolation-guard` が block するようになったが、**Edit/Write でツリーを書き換える経路は機械的に判定できない**ので、この事後確認が唯一の網。**常時 Stop hook で「events.jsonl が増えた」を鳴らす案は採らなかった** — 実測で稼働日ほぼ毎日 3〜38 件の正当な publish があり、鳴りっぱなしになって「⚠️ が出たときだけ行動する」契約を壊す
