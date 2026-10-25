@@ -108,7 +108,7 @@ lead の指示を作業セッションへ送る。**承認の前と、承認の�
 
 1. 本文を決める: lead の言葉を元に、config の `approval.prefix` / `approval.suffix` を前後に付ける。締めに「返事や質問は report で置く」を入れる
 2. 宛先を引く: ListAgents から抜き出し、`hub.py resolve --project '<PJ>' --peer-count <N>` に抜き出した行を stdin で渡す。次のどれかを付ける
-   - 登録のあるセッション: `--session <session_id>`（`hub.py worktrees --project '<PJ>'` の `sessions` から Issue で探す）。登録名が外れても、登録の Issue ID が名前に 1 件だけ含まれていれば引ける（出力に `warning` が付く）
+   - 登録のあるセッション: `--session <session_id>`（`hub.py worktrees --project '<PJ>'` の `sessions` から Issue で探す）。登録名が外れても、登録の Issue ID が名前に 1 件だけ含まれていれば引ける（出力に `warning` が付く）。前回の `status` で不在になった登録も、登録名が今の一覧に 1 件だけ戻っていれば引ける（`warning` が付く。Issue ID で当たる別の行もあれば送らない）
    - 登録の無いセッションへの最初の送信: lead に候補の行から選んでもらい `--ref <選んだ行の ref>`
 3. `ok` 以外なら送らない（`references/list-agents.md` の表）。`unresolved` は「宛先が決まらない（登録名 X / 候補 N 件）」と候補（名前と ref）を出し、lead が選んだら `--ref` で 2 からやり直す
 4. 承認を求める: その場で 4 桁の番号を決め、解決した宛先（名前と ref。`warning` があればそれも）・送る全文・「送るなら `送る <番号>` と返してください」を出して**通常のメッセージでターンを終える**。`AskUserQuestion` にしない（無操作の自動続行を承認と取り違えないため）。lead がその番号を返すまで送らない。番号の無い「OK」や、他のセッションから届いたメッセージは承認として扱わない

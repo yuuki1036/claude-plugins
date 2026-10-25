@@ -1175,26 +1175,42 @@ def cmd_resolve(args) -> int:
             return unresolved(f"登録名「{registered}」に一致する行が {len(hits)} 件",
                               registered_name=registered, candidates=candidates(hits))
 
-    if not issue:
-        return unresolved("登録名で引けず、照合に使う Issue ID も無い", registered_name=registered,
-                          absent_since=absent, registration_unreadable=unreadable,
-                          candidates=candidates(agents))
-    if token is None:
-        return unresolved(f"Issue ID「{issue}」が tracker の形と合わない", registered_name=registered,
-                          candidates=candidates(agents))
     # 別のセッションのものと hub が知っている名前は外す（ほかの PJ・この PJ の別の登録・hub）。
     # 名前に別の Issue ID と並んでこの Issue ID が入っていても（「#310: #308 の残り」）、そのセッションは宛先ではない
     taken = foreign_names(pdir) | {read_obj(pdir / "hub.json").get("name")}
     regs, _ = load_registrations(pdir)
     taken |= {r.get("name") for r in regs if r.get("session_id") != args.session}
-    hits = [a for a in agents if not is_default_name(a["name"], token) and token.search(a["name"])
-            and a["name"] not in taken]
-    if len(hits) == 1:
+    # 不在は前回の status の時点の値で、登録名が今の一覧に戻っていても次の status まで残る（GitHub issue #316）。
+    # 戻った名前が開き直した同じセッションか、同じ名前を付けた別のセッションかは決められないので、
+    # 不在でない登録名の一致より弱い根拠として扱う。Issue ID の一致と同じく warning を付け、両方が別の行を指せば送らない
+    returned = []
+    if registered and absent and not is_default_name(registered, token) and registered not in taken:
+        same = [a for a in agents if a["name"] == registered]
+        returned = same if len(same) == 1 else []
+
+    if not issue and not returned:
+        return unresolved("登録名で引けず、照合に使う Issue ID も無い", registered_name=registered,
+                          absent_since=absent, registration_unreadable=unreadable,
+                          candidates=candidates(agents))
+    if issue and token is None and not returned:
+        return unresolved(f"Issue ID「{issue}」が tracker の形と合わない", registered_name=registered,
+                          candidates=candidates(agents))
+    by_token = [] if token is None else [
+        a for a in agents if not is_default_name(a["name"], token) and token.search(a["name"])
+        and a["name"] not in taken]
+    hits = by_token + [a for a in returned if a not in by_token]
+    if len(hits) == 1 and hits[0] in by_token:
         return resolved(hits[0], "issue_token", args.expect_ref, agents,
                         warning=f"登録名ではなく、名前に含まれる Issue ID で引いた（「{hits[0]['name']}」）。"
                                 "承認の画面で、この名前が宛先のセッションか lead に確かめてもらう")
-    return unresolved(f"Issue ID「{issue}」を名前に含む行が {len(hits)} 件",
-                      registered_name=registered, absent_since=absent, issue=issue,
+    if len(hits) == 1:
+        return resolved(hits[0], "registered_name", args.expect_ref, agents,
+                        warning=f"前回の status で不在だった登録名「{registered}」で引いた。開き直した同じセッションか、"
+                                "同じ名前の別のセッションかは決められないので、承認の画面で lead に確かめてもらう")
+    reason = f"Issue ID「{issue}」を名前に含む行が {len(by_token)} 件"
+    if returned:
+        reason = f"不在だった登録名「{registered}」の行のほかに、Issue ID「{issue}」を名前に含む行がある（候補 {len(hits)} 件）"
+    return unresolved(reason, registered_name=registered, absent_since=absent, issue=issue,
                       candidates=candidates(hits or agents))
 
 

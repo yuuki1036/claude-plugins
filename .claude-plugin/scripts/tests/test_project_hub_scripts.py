@@ -371,32 +371,93 @@ class ResolveToWorkerTest(HubTestBase):
         self.assertEqual(out["to"], "ABC-12: 監査ログ")
         self.assertNotIn("warning", out)
 
-    def test_an_absent_registration_is_not_used_and_the_issue_token_decides(self):
+    def test_an_absent_registration_whose_name_is_gone_is_found_by_the_issue_token(self):
+        self.register(self.pdir, SID_A, "old-name", issue="ABC-12",
+                      absent_since="2026-10-21T00:00:00.000000Z")
+        rc, out = self.resolve("--session", SID_A, agents=[agent("ABC-12 続き", "f2")])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((out["ref"], out["rule"]), ("f2", "issue_token"))
+
+    def test_an_absent_registration_whose_name_came_back_is_sent_with_a_warning(self):
+        # presence.json は前回の status の値。今の一覧に戻った名前を、次の status まで捨てない（GitHub issue #316）
+        self.register(self.pdir, SID_A, "old-name", issue="ABC-12",
+                      absent_since="2026-10-21T00:00:00.000000Z")
+        rc, out = self.resolve("--session", SID_A, agents=[agent("old-name", "f1"), agent("ABC-13", "f3")])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((out["ref"], out["rule"]), ("f1", "registered_name"))
+        self.assertIn("不在だった登録名「old-name」", out["warning"],
+                      "開き直した同じセッションか決められないので、承認の画面で確かめさせる")
+        (self.pdir / "presence.json").unlink()
+        rc, out = self.resolve("--session", SID_A, agents=[agent("old-name", "f1")])
+        self.assertEqual((rc, out["rule"]), (0, "registered_name"))
+        self.assertNotIn("warning", out, "対照: 不在でなければ warning を付けない")
+
+    def test_a_returned_name_and_a_token_hit_on_different_rows_are_not_sent(self):
+        # どちらが開き直した同じセッションか決められない。lead に両方を見せて選ばせる
         self.register(self.pdir, SID_A, "old-name", issue="ABC-12",
                       absent_since="2026-10-21T00:00:00.000000Z")
         rc, out = self.resolve("--session", SID_A,
                                agents=[agent("old-name", "f1"), agent("ABC-12 続き", "f2")])
-        self.assertEqual(rc, 0, out)
-        self.assertEqual((out["ref"], out["rule"]), ("f2", "issue_token"))
+        self.assertEqual(rc, 1, out)
+        self.assertEqual({c["ref"] for c in out["candidates"]}, {"f1", "f2"})
+        self.assertIn("不在だった登録名「old-name」", out["reason"])
 
-    def test_an_absent_registration_without_a_token_hit_is_not_sent(self):
+    def test_a_returned_name_among_two_token_hits_is_not_sent(self):
+        self.register(self.pdir, SID_A, "ABC-12 作業", issue="ABC-12",
+                      absent_since="2026-10-21T00:00:00.000000Z")
+        rc, out = self.resolve("--session", SID_A,
+                               agents=[agent("ABC-12 作業", "f1"), agent("ABC-12 の別件", "f2")])
+        self.assertEqual(rc, 1, "Issue ID を含む別の行がある。登録名が戻っただけでは選ばない")
+        self.assertEqual({c["ref"] for c in out["candidates"]}, {"f1", "f2"})
+
+    def test_a_returned_name_is_not_trusted_when_it_is_shared_default_or_taken(self):
+        absent = "2026-10-21T00:00:00.000000Z"
+        cases = [
+            # (登録名, 今の一覧, 理由)
+            ("dup", [agent("dup", "f1"), agent("dup", "f2")], "同じ名前の行が 2 つ"),
+            ("my-repo-96", [agent("my-repo-96", "f1")], "既定名"),
+            ("hub-session", [agent("hub-session", "f1")], "hub の名前"),
+            ("worker-b", [agent("worker-b", "f1")], "この PJ の別の登録の名前"),
+        ]
+        self.register(self.pdir, SID_B, "worker-b", issue="ABC-13")
+        for name, agents, why in cases:
+            with self.subTest(why):
+                self.register(self.pdir, SID_A, name, issue="ABC-12", absent_since=absent)
+                rc, out = self.resolve("--session", SID_A, agents=agents)
+                self.assertEqual(rc, 1, out)
+        other = self.init(project="other", tracker="linear")
+        self.register(other, SID_B, "別 PJ の作業", issue="ABC-13")
+        self.register(self.pdir, SID_A, "別 PJ の作業", issue="ABC-12", absent_since=absent)
+        rc, out = self.resolve("--session", SID_A, agents=[agent("別 PJ の作業", "f1")])
+        self.assertEqual(rc, 1, "ほかの PJ の登録の名前")
+        self.register(self.pdir, SID_A, "ここの作業", issue="ABC-12", absent_since=absent)
+        rc, out = self.resolve("--session", SID_A, agents=[agent("ここの作業", "f1")])
+        self.assertEqual(rc, 0, "対照: どれにも当たらない名前なら引ける")
+
+    def test_a_returned_name_does_not_need_a_usable_issue_id(self):
+        absent = "2026-10-21T00:00:00.000000Z"
+        for issue in (None, "#12"):
+            with self.subTest(issue=issue):
+                self.register(self.pdir, SID_A, "old-name", issue=issue, absent_since=absent)
+                rc, out = self.resolve("--session", SID_A, agents=[agent("old-name", "f1")])
+                self.assertEqual((rc, out.get("rule")), (0, "registered_name"), out)
+                rc, out = self.resolve("--session", SID_A, agents=[agent("ABC-12", "f1")])
+                self.assertEqual(rc, 1, "対照: 名前が戻っていなければ引けない")
+
+    def test_a_returned_name_still_checks_the_approved_ref(self):
         self.register(self.pdir, SID_A, "old-name", issue="ABC-12",
                       absent_since="2026-10-21T00:00:00.000000Z")
-        rc, out = self.resolve("--session", SID_A, agents=[agent("old-name", "f1")])
+        rc, out = self.resolve("--session", SID_A, "--expect-ref", "f1", agents=[agent("old-name", "f2")])
         self.assertEqual(rc, 1, out)
-        self.assertEqual((out["status"], out["registered_name"]), ("unresolved", "old-name"))
-        self.assertEqual(out["candidates"], [{"name": "old-name", "ref": "f1"}],
-                         "lead が選べるよう候補を出す")
-        (self.pdir / "presence.json").unlink()
-        rc, out = self.resolve("--session", SID_A, agents=[agent("old-name", "f1")])
-        self.assertEqual(rc, 0, "対照: 不在でなければ登録名で引ける")
+        self.assertIn("ref が承認時", out["reason"])
 
     def test_an_absence_at_the_same_instant_as_the_registration_counts_as_absent(self):
-        # register() の updated と同じ時刻。どちらが先か決められないので、送らない側に倒す
+        # register() の updated と同じ時刻。どちらが先か決められないので、不在の側（warning 付き）に倒す
         self.register(self.pdir, SID_A, "old-name", issue="ABC-12",
                       absent_since="2026-10-20T00:00:00.000000Z")
         rc, out = self.resolve("--session", SID_A, agents=[agent("old-name", "f1")])
-        self.assertEqual((rc, out["status"]), (1, "unresolved"))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("不在だった", out["warning"])
 
     def test_a_registered_name_shared_by_two_rows_is_not_sent(self):
         self.register(self.pdir, SID_A, "dup", issue="ABC-12")
@@ -790,10 +851,12 @@ class ReportTest(HubTestBase):
         self.assertEqual(self.run_hub("presence", "--project", "pj", "--peer-count", "0",
                                       stdin="[]").returncode, 0)
         rc, out = self.resolve("--session", SID_A, agents=[agent("old-name", "f1")])
-        self.assertEqual(rc, 1, "不在のあいだは登録名を使わない")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("不在だった", out["warning"], "不在のあいだに戻った登録名は、lead に確かめさせる")
         self.assertEqual(self.report(name="new-name").returncode, 0)
         rc, out = self.resolve("--session", SID_A, agents=[agent("new-name", "f1")])
         self.assertEqual((rc, out.get("rule")), (0, "registered_name"))
+        self.assertNotIn("warning", out, "report の後は不在ではない")
 
     def test_registering_under_a_default_name_warns(self):
         out = json.loads(self.report(name="claude-plugins-96").stdout)
