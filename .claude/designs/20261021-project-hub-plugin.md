@@ -260,12 +260,22 @@ GitHub issue #312 / #314 / #315 / #316 への対応。宛先の方式（名前�
   - 却下: `start` が `plugin-enabled.sh` で project-hub の有効を見て案内する案。issue-workflow 側に project-hub の手順の知識が入る。project-hub 側の hook なら、`start` 以外の始め方（素のセッション）でも同じ案内になる
 - **relay の承認の方式を選べるようにした**（#312）。`approval.mode` が `number`（既定。今までの番号）か `phrase`（本文を見せた後の lead 自身の「送って」）。mode の無い config と読めない値は `number` にする（緩い側に倒さない）。どちらでも、他のセッションのメッセージ・hook の注入・無操作の自動続行は承認にしない
 
+## 実装で決めたこと（self-review の MINOR・2026-10-25）
+
+3 回目の self-review（2026-10-21）で残した MINOR 5 件への対応。
+
+- **base のブランチ名は、先頭の remote 名だけを外して取る**（`origin/feature/x` は `feature/x`）。`git remote` に出る名前で始まるときだけ外し、`refs/heads/` と `refs/remotes/` の接頭辞も外す。`split("/")[-1]` は `feature/x` にいる着手前の登録を見落とし、`x` にいる登録を着手前と取り違えていた（worktrees の note と `--registered-branches` の両方）
+- **`--registered-branches` は `--repo` の repo の worktree にいる登録だけを数える**。同じ名前のブランチは repo をまたいで重なる。worktree を消した登録（マージの後など）はどの repo のものか決められないので、repo が 1 つの PJ のときだけ数える（複数 repo の PJ では、その PR は表から落ちる。第三者の PR の題を載せるよりは落とす側に倒す）
+- **fact の `path` は、確かめた時点の base にあるファイルに限る**。base に無いパスは `git diff` が両側とも無いとして差分なしを返すので、`stale` がいつまでも false になる。base を解決できないとき・base が `-` で始まるときも書かない
+- **共有 worktree の判定は、作業中の登録だけで数える**。done を報告した登録と不在の登録は数えない（その worktree に後から別のセッションが入る）。done・不在の登録自身は、その worktree を作業中の別のセッションが使っていれば「重なりは不明」の note にする
+- **読めない hub.json は、hook で黙って飛ばす**。どのセッションの hub かも分からないので、stderr に出すと 1 つの PJ が壊れただけで全セッションの hook が毎回騒ぐ。その PJ の hub は、status の最初の `refresh-hub` が exit 2 で止まるので気づける。hub.json がこのセッションと一致した PJ の config・state.md が読めないときは、これまでどおり stderr に出す
+
 ## 未解決事項 (open)
 
 - **issue-workflow の local backend の Issue を tracker にするか**（段階 ②）: 紐付けの導線は入れた（下の「実装で決めたこと（2026-10-25）」）。残りは、issue-workflow の local backend の Issue（`TEAM-123` の形）を hub の tracker として扱う種類が要るか（段階 ① では `--tracker linear` で照合はできるが、status の Issue 一覧は Linear MCP でしか取らない）。確定タイミング: 段階 ② の詳細設計
 - **3 回目の self-review（2026-10-21・security / bug-detection）で残した指摘**（G-V ループの上限に達し、BLOCKER だけ直す方針にしたため未修正）。確定タイミング: 段階 ① を 1 PJ で使う前
   - MAJOR 3 件（同名の宛先の `to`・同じ PJ の別の登録のトークン照合・report の `--name`）は同じ日に直した（CHANGELOG の次の版）
-  - MINOR: base のブランチ名を `split("/")[-1]` で取る / `--registered-branches` が repo ごとでない / fact の `path` が base に実在するかを確かめない / 共有 worktree の判定に done・不在の登録も数える / 別の PJ の hub.json が壊れていると全セッションの hook で stderr が出る
+  - MINOR 5 件は 2026-10-25 に直した（下の「実装で決めたこと（self-review の MINOR・2026-10-25）」）
   - 付録（閾値未満）: 注入する表の前に「外部の文面」の断りが無い / 作業側が送り手の名前だけで hub を認める / relay の承認番号を包みの無い send_message で返されうる ほか 10 件
 
 - **受信の journal への記録と `from-session` の結び付け**（段階 ②）: UserPromptSubmit hook は入れた（下の「実装で決めたこと（2026-10-25）」）が、受信を journal に 1 行残すことと、包みの `from-session` を `sessions/` の `host_session_id` と結び付けることはしていない。後者は Desktop の SendMessage が `local_…` を宛先に取れるかも含めて未確認（GitHub issue #316 の残り）。確定タイミング: 段階 ② の詳細設計
