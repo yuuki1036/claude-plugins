@@ -2189,14 +2189,18 @@ class LocalTrackerTest(HubTestBase):
                                      "pr: \"\"   # 任意。PR 作成後に記載\n---\n# ABC-3: 済み\n")
         self.write_issue("ABC-8.md", "---\nstatus: backlog   # 必須\npr: \"#9\"   # 任意\n---\n# ABC-8: 引用符の後ろ\n")
         self.write_issue("ABC-4.md", "---\nstatus: canceled\n---\n")
+        # BOM 付き（Windows のエディタで保存したファイル）でも frontmatter を読む
+        self.write_issue("ABC-9.md", "﻿---\nstatus: completed\n---\n")
+        # issue-workflow の 5 値に無い綴りは閉じた扱いにしない（issue-workflow 側の判定と揃える）
+        self.write_issue("ABC-10.md", "---\nstatus: cancelled\n---\n")
         self.write_issue("ABC-5.md", "---\nstatus: in_progress\npr: 12\ntags:\n  status: completed\n---\n")
         self.write_issue("ABC-6.md", "---\nstatus: backlog\npr: 後で出す | 見出し\n---\n")
         self.write_issue("notes.md", "---\nstatus: backlog\n---\n")
         self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
         out = self.snapshot_local()
-        self.assertEqual((out["count"], out["skipped"]), (5, ["notes.md"]))
+        self.assertEqual((out["count"], out["skipped"]), (6, ["notes.md"]))
         rows = {r["id"]: r for r in self.tracker_rows()}
-        self.assertEqual(sorted(rows), ["ABC-1", "ABC-2", "ABC-5", "ABC-6", "ABC-8"])
+        self.assertEqual(sorted(rows), ["ABC-1", "ABC-10", "ABC-2", "ABC-5", "ABC-6", "ABC-8"])
         self.assertEqual((rows["ABC-8"]["state"], rows["ABC-8"]["pr"]), ("backlog", "#9"))
         self.assertEqual((rows["ABC-1"]["title"], rows["ABC-1"]["state"], rows["ABC-1"]["pr"]),
                          ("一つ目", "in-progress", "#177"))
