@@ -32,8 +32,18 @@
   こちらが終了してもコマンド置換が EOF を待って**無言でハングする**（＝`git commit` が固まる）。
   ファイルなら握られても EOF は待たれない。回収後に本文をこちらの stderr へ流す。
 
+**既定は並列で回す**（2026-10-25）: 1 プロセスの `unittest discover` は
+3436 件に 915 秒かかり、pre-commit・Stop hook・CI の待ち時間の大半だった。テストモジュール
+（件数の多いモジュールはクラス）を単位に、別プロセスで並べて回す（実測: モジュール単位 8 並列で
+320 秒。律速は 815 件・295 秒の `test_code_review_scripts` だったので、クラスまで割る）。
+- 単位は**この起動口が子として立てた取りまとめ役**が起動する。取りまとめ役はテストと同じ
+  プロセスグループに居続けるので、残留の判定と回収（下の `sweep`）は並列でも 1 グループ分で済む
+- 単位の出力も一時ファイルへ向ける（上と同じ理由）。緑の単位の出力は捨て、落ちた単位の出力だけを流す
+- `RUN_TESTS_JOBS=1` か、unittest への追加引数を渡したときは、従来どおり 1 プロセスで回す
+
 使い方:
   python3 .claude-plugin/scripts/run-tests.py [unittest への追加引数...]
+  RUN_TESTS_JOBS=<N> python3 .claude-plugin/scripts/run-tests.py   # 並列数（既定は CPU 数、上限 8）
 """
 
 from __future__ import annotations
@@ -46,6 +56,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -270,7 +282,113 @@ def mutation_in_progress() -> str | None:
     return "pid %d が %s に変異を当てている" % (pid, data.get("path") or "?")
 
 
+#: 並列数の上限。CPU が多くても上げない（開発機で他の作業を止めない）
+MAX_JOBS = 8
+
+#: これより件数の多いモジュールはクラスごとの単位に割る（件数を所要の代わりに使う）
+SPLIT_THRESHOLD = 100
+
+#: 取りまとめ役として起動されたことを示す内部の引数（利用者は渡さない）
+COORDINATOR_ARG = "--_coordinator"
+
+#: 単位を回すコマンド。`discover -s` と同じく tests の dir を `sys.path` の先頭に置き、cwd は ROOT のまま
+_UNIT_CODE = ("import sys, unittest; sys.path.insert(0, sys.argv[1]); "
+              "unittest.main(module=None, argv=['unittest', sys.argv[2]])")
+
+
+def jobs_from_env() -> int:
+    """並列数。`RUN_TESTS_JOBS` が正の整数ならそれ、無ければ CPU 数（上限 `MAX_JOBS`）."""
+    raw = os.environ.get("RUN_TESTS_JOBS", "").strip()
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    return max(1, min(os.cpu_count() or 1, MAX_JOBS))
+
+
+def class_units(modname: str, module, loader: unittest.TestLoader) -> list[tuple[str, int]] | None:
+    """モジュールをクラスごとの単位にする。モジュールを丸ごと回したときと件数が合わなければ None.
+
+    **数え方は `loadTestsFromModule` に合わせる**（`dir(module)` の TestCase の派生クラス。別の
+    モジュールから import したクラスも含む）。`load_tests` を持つモジュールは何が走るかを
+    モジュール自身が決めるので割らない。
+    """
+    if hasattr(module, "load_tests"):
+        return None
+    units = []
+    for name in dir(module):
+        obj = getattr(module, name)
+        if (isinstance(obj, type) and issubclass(obj, unittest.TestCase)
+                and obj not in (unittest.TestCase, unittest.FunctionTestCase)):
+            count = loader.loadTestsFromTestCase(obj).countTestCases()
+            if count:
+                units.append((f"{modname}.{name}", count))
+    return units
+
+
+def plan_units(tests_dir: Path, threshold: int = SPLIT_THRESHOLD) -> list[tuple[str, int]]:
+    """回す単位（unittest に渡す名前）と件数を、件数の多い順に返す.
+
+    対象は `discover` の既定と同じ `test*.py`。import に失敗したモジュールは丸ごと 1 単位にする
+    （単位の側で失敗として出る）。テストが 1 件も無いモジュールは単位にしない。
+    """
+    sys.path.insert(0, str(tests_dir))
+    loader = unittest.TestLoader()
+    units: list[tuple[str, int]] = []
+    for path in sorted(tests_dir.glob("test*.py")):
+        modname = path.stem
+        try:
+            suite = loader.loadTestsFromName(modname)
+        except Exception:   # noqa: BLE001  ImportError 以外（SyntaxError 等）は loader が投げる
+            units.append((modname, 1))
+            continue
+        total = suite.countTestCases()
+        if not total:
+            continue
+        split = None
+        module = sys.modules.get(modname)
+        if total > threshold and module is not None:
+            split = class_units(modname, module, loader)
+            if split is not None and sum(n for _, n in split) != total:
+                split = None
+        units.extend(split or [(modname, total)])
+    return sorted(units, key=lambda u: -u[1])
+
+
+def _run_unit(unit: str, tests_dir: Path) -> tuple[str, int, bytes]:
+    with tempfile.TemporaryFile("w+b") as log:
+        rc = subprocess.run([sys.executable, "-c", _UNIT_CODE, str(tests_dir), unit],
+                            cwd=str(ROOT), stdout=log, stderr=log).returncode
+        log.seek(0)
+        return unit, rc, log.read()
+
+
+def coordinate(jobs: int) -> int:
+    """単位を `jobs` 並列で回し、落ちた単位の出力と、全体の集計行を stdout に出す.
+
+    集計行は unittest と同じ形（`Ran N tests in Xs`）にする。呼び出し側の `_ran_count` がそれを読む。
+    単位がテストを 1 件も走らせずに終わる（rc 5）のも失敗に数える — 単位は 1 件以上あるものだけを作る。
+    """
+    tests_dir = ROOT / TESTS_DIR
+    started = time.monotonic()
+    units = plan_units(tests_dir)
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        results = list(pool.map(lambda u: _run_unit(u[0], tests_dir), units))
+    out = sys.stdout.buffer
+    failed = [unit for unit, rc, _ in results if rc != 0]
+    for unit, rc, body in results:
+        if rc != 0:
+            out.write(("======== %s（exit %d）\n" % (unit, rc)).encode() + body + b"\n")
+    ran = sum(_ran_count(body) for _, _, body in results)
+    out.write(("-" * 70 + "\nRan %d test%s in %.3fs（%d 並列・%d 単位）\n\n"
+               % (ran, "" if ran == 1 else "s", time.monotonic() - started, jobs, len(units))).encode())
+    out.write(("FAILED（落ちた単位 %d: %s）\n" % (len(failed), ", ".join(failed)) if failed
+               else "OK\n").encode())
+    out.flush()
+    return 1 if failed else 0
+
+
 def main(argv: list[str]) -> int:
+    if argv[:1] == [COORDINATOR_ARG]:
+        return coordinate(int(argv[1]))
     busy = mutation_in_progress()
     if busy:
         print("[run-tests] **変異テストの実行中**（%s）。\n"
@@ -280,7 +398,11 @@ def main(argv: list[str]) -> int:
               "  **Ctrl-C で殺さないこと** — 復元が飛んで変異が作業ツリーに残る。"
               % busy, file=sys.stderr)
         return 2               # 判定不能（machine-layer と同じ流儀）
-    cmd = [sys.executable, "-m", "unittest", "discover", "-s", TESTS_DIR, *argv]
+    jobs = jobs_from_env()
+    if argv or jobs == 1:
+        cmd = [sys.executable, "-m", "unittest", "discover", "-s", TESTS_DIR, *argv]
+    else:
+        cmd = [sys.executable, str(Path(__file__).resolve()), COORDINATOR_ARG, str(jobs)]
     out = b""
     with tempfile.TemporaryFile("w+b") as log:
         proc = _spawn(cmd, log)

@@ -1238,9 +1238,11 @@ class RelatedFirstMainTest(unittest.TestCase):
         if check_y:
             body += "    def test_y(self):\n        self.assertIs(self.ns()[\"y\"], False)\n"
         (tests / "test_t.py").write_text(body, encoding="utf-8")
-        # 関連しない重いモジュール（関連テストの組がフルスイートの半分を超えないようにする）
+        # 関連しない重いモジュール（関連テストの組がフルスイートの半分を超えないようにする）。
+        # 差は sleep の秒数しか無いので、python の起動がその秒数を超えると組が捨てられる。1 秒では
+        # run-tests.py の 8 並列で CPU が混んだ回に足りなかった（2026-10-25 の実測で 1 回）ので 3 秒にした
         (tests / "test_other.py").write_text("import time, unittest\nclass O(unittest.TestCase):\n"
-                                             "    def test_o(self):\n        time.sleep(1)\n", encoding="utf-8")
+                                             "    def test_o(self):\n        time.sleep(3)\n", encoding="utf-8")
 
     def stage(self, name: str, cmd: str = "python3 -m unittest discover -s tests -f", full_sec: float = 1000.0,
               timeout: int = 0, deadline: float | None = None):

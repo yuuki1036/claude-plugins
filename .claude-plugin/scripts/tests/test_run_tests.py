@@ -91,7 +91,9 @@ LEAKING_INHERIT = LEAKING.replace(
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)""", ")")
 
 
-class RunTestsTest(unittest.TestCase):
+class RunTestsBase(unittest.TestCase):
+    """使い捨てリポジトリに `run-tests.py` の実物を置く fixture（テストは持たない）."""
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name).resolve()
@@ -118,12 +120,12 @@ class RunTestsTest(unittest.TestCase):
         except (ProcessLookupError, PermissionError):
             pass
 
-    def write_test(self, body: str) -> None:
-        (self.tests / "test_stub.py").write_text(body, encoding="utf-8")
+    def write_test(self, body: str, name: str = "test_stub.py") -> None:
+        (self.tests / name).write_text(body, encoding="utf-8")
 
-    def run_wrapper(self, env: dict[str, str] | None = None
+    def run_wrapper(self, env: dict[str, str] | None = None, args: tuple[str, ...] = ()
                     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run([sys.executable, str(self.scripts / "run-tests.py")],
+        return subprocess.run([sys.executable, str(self.scripts / "run-tests.py"), *args],
                               capture_output=True, text=True, timeout=120,
                               cwd=str(self.root), env=env or dict(os.environ))
 
@@ -154,6 +156,10 @@ class RunTestsTest(unittest.TestCase):
         stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
                               capture_output=True, text=True).stdout.strip()
         return not stat.startswith("Z")
+
+
+class RunTestsTest(RunTestsBase):
+    """既定の起動（並列）での契約. 1 プロセスの経路は `SingleProcessTest`."""
 
     # ---- 終了コードは素通し（緑判定を変えない） -----------------------------
     def test_passing_tests_exit_0(self):
@@ -300,6 +306,116 @@ class RunTestsTest(unittest.TestCase):
         res = self.run_wrapper(env={**os.environ, "PATH": str(empty_bin)})
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("skip", res.stderr)
+
+
+#: 相手のモジュールが同時に走っていないと通らない偽テスト（`{me}` と `{peer}` を埋める）。
+#: 所要の差で並列を見ると、CPU が混んだ回に落ちる。互いの印を待ち合わせれば決定的に分かる
+RENDEZVOUS = """import os
+import time
+import unittest
+
+HERE = os.path.dirname(__file__)
+
+
+class T(unittest.TestCase):
+    def test_meet(self):
+        open(os.path.join(HERE, "{me}.here"), "w").close()
+        for _ in range(600):
+            if os.path.exists(os.path.join(HERE, "{peer}.here")):
+                return
+            time.sleep(0.05)
+        self.fail("{peer} が同時に走っていない")
+"""
+
+
+class ParallelTest(RunTestsBase):
+    """並列の経路（単位の作り方・出力・1 プロセスへの戻り方）."""
+
+    def jobs_env(self, jobs: int) -> dict[str, str]:
+        return {**os.environ, "RUN_TESTS_JOBS": str(jobs)}
+
+    def plan(self, threshold: int) -> list[list]:
+        """`plan_units` を別プロセスで呼ぶ（test モジュールの import でこのプロセスの sys.modules を汚さない）."""
+        code = ("import importlib.util, json, sys; from pathlib import Path; "
+                "spec = importlib.util.spec_from_file_location('rt', sys.argv[1]); "
+                "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); "
+                "print(json.dumps(m.plan_units(Path(sys.argv[2]), int(sys.argv[3]))))")
+        res = subprocess.run([sys.executable, "-c", code, str(self.scripts / "run-tests.py"),
+                              str(self.tests), str(threshold)],
+                             capture_output=True, text=True, timeout=60, cwd=str(self.root))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return json.loads(res.stdout)
+
+    def test_modules_run_at_the_same_time(self):
+        self.write_test(RENDEZVOUS.format(me="a", peer="b"), "test_a.py")
+        self.write_test(RENDEZVOUS.format(me="b", peer="a"), "test_b.py")
+        res = self.run_wrapper(env=self.jobs_env(2))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("Ran 2 tests in", res.stderr, "単位の件数を合わせて数える")
+        self.assertIn("2 並列", res.stderr)
+
+    def test_only_failing_units_are_shown(self):
+        self.write_test(PASSING.replace("self.assertTrue(True)",
+                                        "print('緑の単位の出力')\n        self.assertTrue(True)"), "test_a.py")
+        self.write_test(FAILING, "test_b.py")
+        res = self.run_wrapper(env=self.jobs_env(2))
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("わざと失敗", res.stderr)
+        self.assertIn("落ちた単位 1: test_b", res.stderr)
+        self.assertNotIn("緑の単位の出力", res.stderr, "緑の単位の出力まで流すと失敗が埋もれる")
+
+    def test_a_module_that_fails_to_import_fails_the_run(self):
+        self.write_test(PASSING, "test_a.py")
+        self.write_test("raise RuntimeError('壊れた import')\n", "test_bad.py")
+        res = self.run_wrapper(env=self.jobs_env(2))
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("壊れた import", res.stderr)
+
+    def test_one_job_or_extra_arguments_run_a_single_process(self):
+        self.write_test(PASSING)
+        for env, args in ((self.jobs_env(1), ()), (self.jobs_env(4), ("-k", "test_ok"))):
+            with self.subTest(args=args):
+                res = self.run_wrapper(env=env, args=args)
+                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+                self.assertIn("Ran 1 test", res.stderr)
+                self.assertNotIn("並列", res.stderr)
+
+    def test_a_leak_is_reaped_in_a_single_process_too(self):
+        self.write_test(LEAKING)
+        res = self.run_wrapper(env=self.jobs_env(1))
+        self.assertIn("残っている", res.stderr)
+        self.assertFalse(self.leaked_pid_is_alive(), "残留プロセスを回収していない")
+
+    def test_a_large_module_is_split_by_class(self):
+        self.write_test("import unittest\n\n"
+                        "class A(unittest.TestCase):\n    def test_1(self): pass\n    def test_2(self): pass\n\n"
+                        "class B(unittest.TestCase):\n    def test_1(self): pass\n\n"
+                        "class Base(unittest.TestCase):\n    pass\n", "test_big.py")
+        self.write_test(PASSING, "test_small.py")
+        self.assertEqual(self.plan(threshold=2),
+                         [["test_big.A", 2], ["test_big.B", 1], ["test_small", 1]],
+                         "テストの無いクラスは単位にしない。件数の多い順")
+        self.assertEqual(self.plan(threshold=3), [["test_big", 3], ["test_small", 1]], "閾値以下は割らない")
+
+    def test_a_split_keeps_every_test_the_module_would_run(self):
+        # 別のモジュールから import したクラスも、モジュールを丸ごと回せば走る（loadTestsFromModule と同じ数え方）
+        self.write_test("import unittest\n\nclass Shared(unittest.TestCase):\n    def test_s(self): pass\n",
+                        "test_lib.py")
+        self.write_test("import unittest\nfrom test_lib import Shared\n\n"
+                        "class Own(unittest.TestCase):\n    def test_o(self): pass\n", "test_user.py")
+        self.assertIn(["test_user.Shared", 1], self.plan(threshold=1))
+
+    def test_a_module_with_load_tests_is_not_split(self):
+        self.write_test("import unittest\n\n"
+                        "class A(unittest.TestCase):\n    def test_1(self): pass\n\n"
+                        "class B(unittest.TestCase):\n    def test_1(self): pass\n\n"
+                        "def load_tests(loader, tests, pattern):\n    return tests\n", "test_lt.py")
+        self.assertEqual(self.plan(threshold=1), [["test_lt", 2]])
+
+    def test_a_module_without_tests_is_not_a_unit(self):
+        self.write_test("X = 1\n", "test_empty.py")
+        self.write_test(PASSING, "test_a.py")
+        self.assertEqual(self.plan(threshold=100), [["test_a", 1]])
 
 
 class ReapTest(unittest.TestCase):
