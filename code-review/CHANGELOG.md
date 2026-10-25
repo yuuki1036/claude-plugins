@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.162.1] - 2026-10-25
+
+### Changed
+
+- **区間・wave 単価のベースラインの xhigh 列を取り直した**（`orchestration-measurement.md ## 15`）。xhigh の review が 5 件たまり、
+  表の更新の条件を満たした。2.158.0 以降の xhigh 15 件（self-review 10・review 5）は、explorer 8 分・最大の wave 間隔
+  中央値 20.6 分（5.1〜53.4）・fleet 中央値 25 分（90% 点 117）で、旧値（6 分・10.5 分・21 分）から倍前後に伸びていた。
+  Phase 0 の目安（`triage-guide.md`）と、反証の wave の費用を引く `triage-dynamic-gates.md` の 1 か所を合わせた。
+  medium・high は動いていないので据え置いた。伸びの原因は未確定で、表の注記とトークンの基準値に前後の値を残した
+
 ## [2.162.0] - 2026-10-24
 
 ### Added
