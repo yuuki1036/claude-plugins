@@ -202,6 +202,11 @@ class TempGitRepo:
                             f"refs/remotes/origin/{branch}"], cwd=self.path, capture_output=True,
                            env=self.ENV)
 
+    def add_remote(self, name: str = "origin", url: str = "https://example.invalid/r.git") -> None:
+        """remote を足す（fetch はしない。`git remote` に名前が出ればよいテスト向け）."""
+        subprocess.run(["git", "remote", "add", name, url], cwd=self.path, capture_output=True,
+                       env=self.ENV)
+
     @classmethod
     def at(cls, path: Path) -> "TempGitRepo":
         """既存の作業ツリー（worktree・別のテスト用リポジトリ）をこのクラスの口で操作する."""

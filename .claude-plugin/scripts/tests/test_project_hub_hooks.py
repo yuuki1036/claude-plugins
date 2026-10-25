@@ -117,6 +117,17 @@ class InjectStateTest(HookTestCase):
         self.assertNotIn("Unexpected", res.stderr)
         self.assertIn("aaa-broken", res.stderr)
 
+    def test_a_broken_hub_json_of_another_project_does_not_write_to_stderr(self):
+        # どのセッションの hub かも分からないファイルで、全セッションの開始のたびに騒がない
+        broken = self.make_project("aaa-broken")
+        (broken / "hub.json").write_text("{broken", encoding="utf-8")
+        self.make_project("mine", state=self.STATE)
+        res = self.fire()
+        self.assertIn("PJ「mine」", res.stdout)
+        self.assertEqual(res.stderr, "")
+        self.assertQuiet(self.fire(session_id=SID_OTHER))
+        self.assertEqual(self.fire(session_id=SID_OTHER).stderr, "")
+
     def test_a_broken_config_of_a_project_this_session_is_not_the_hub_of_is_not_read(self):
         other = self.make_project("aaa-theirs", session_id=SID_OTHER)
         (other / "config.json").write_bytes(b"\xff broken")

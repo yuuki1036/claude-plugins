@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.2.1] - 2026-10-25
+
+### Fixed
+
+- base のブランチ名を `split("/")[-1]` で取っていたので、`origin/feature/x` が `x` になっていた。その結果、`feature/x` にいる着手前の登録を見落とし、`x` にいる登録を着手前と取り違えていた（worktrees の note と `--registered-branches`）。先頭の remote 名（と `refs/heads/`・`refs/remotes/`）だけを外すようにした
+- `snapshot --source prs --repo <repo> --registered-branches` が、ほかの repo の登録のブランチでも PR を残していた。その repo の worktree にいる登録だけを数える。worktree を消した登録は、repo が 1 つの PJ のときだけ数える
+- `fact` が base に無い `path` を受けていた（`stale` がいつまでも false になる）。確かめた時点の base にあるファイルに限る。base を解決できないときも書かない
+- worktrees の共有 worktree の判定に、done を報告した登録と不在の登録も数えていた。作業中の登録だけで数え、done・不在の登録自身は、その worktree を作業中の別のセッションが使っていれば「重なりは不明」の note にする
+- 別の PJ の `hub.json` が壊れていると、すべてのセッションの SessionStart / PostCompact / UserPromptSubmit の hook が stderr に出していた。読めない hub.json は黙って飛ばす（その PJ の hub は status の最初で exit 2 になる）
+- `references/list-agents.md` の「プロセスが残っていないセッションは一覧に出ない」の根拠の書き方を、観察した内容（一覧の行の `started` と最後の操作の日）どおりに直した
+
 ## [0.2.0] - 2026-10-25
 
 ### Added

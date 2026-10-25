@@ -682,13 +682,22 @@ def cmd_fact(args) -> int:
             raise HubError(2, f"supersedes の id が有効な facts に無い: {args.supersedes}"
                               + (f"（既に {', '.join(map(str, replaced))} で置き換わっている）"
                                  if replaced else ""))
+    base_sha = None
+    if repo is not None and source_path:
+        # 確かめた時点の base に無いファイルは、facts の stale がいつまでも「変わっていない」と答える
+        # （git diff は両側に無いパスを差分なしとする）。打ち間違えた path をここで止める
+        base = str(repo.get("base") or "")
+        base_sha = None if base.startswith("-") else git(repo["path"], "rev-parse", "--verify", "--quiet",
+                                                          f"{base}^{{commit}}")
+        if base_sha is None:
+            raise HubError(2, f"base（{base}）を解決できないので、path の鮮度を残せない: {repo['path']}")
+        if git(repo["path"], "cat-file", "-e", f"{base_sha}:{source_path}") is None:
+            raise HubError(2, f"path が base（{base}）に無い: {source_path}（repo の中の相対パスで渡す）")
     fact_id = next_fact_id(path, facts)
     row = {"id": fact_id, "ts": now(), "claim": claim, "source": source,
            "checked_by": None if args.unchecked else "hub"}
-    if repo is not None and source_path:
-        row.update({"repo": repo["path"], "path": source_path,
-                    "base_sha": git(repo["path"], "rev-parse", "--verify", "--quiet",
-                                    f"{repo.get('base')}^{{commit}}")})
+    if base_sha is not None:
+        row.update({"repo": repo["path"], "path": source_path, "base_sha": base_sha})
     if args.supersedes:
         row["supersedes"] = args.supersedes
     # 訂正の正本は facts。journal には id を指す行だけを置く
@@ -832,10 +841,42 @@ def normalize_prs(items, branches: set[str] | None) -> list:
     return out
 
 
-def registered_branches(pdir: Path, config: dict) -> set[str]:
+def base_branch(repo_path, base) -> str:
+    """config の base（`origin/main`・`origin/feature/x`・ローカルの `main`）が指すブランチの名前.
+
+    `split("/")[-1]` では `origin/feature/x` が `x` になり、`feature/x` にいる着手前の登録を見落とし、
+    `x` にいる登録を着手前と取り違える。先頭の remote 名だけを外す
+    """
+    base = str(base or "")
+    if base.startswith("refs/heads/"):
+        return base[len("refs/heads/"):]
+    if base.startswith("refs/remotes/"):
+        base = base[len("refs/remotes/"):]
+    for remote in (git(repo_path, "remote") or "").split("\n"):
+        if remote and base.startswith(remote + "/"):
+            return base[len(remote) + 1:]
+    return base
+
+
+def registered_branches(pdir: Path, config: dict, repo: dict | None = None) -> set[str]:
     regs, _ = load_registrations(pdir)
+    repos = [r for r in config.get("repos", []) if isinstance(r, dict) and r.get("path")]
+    if repo is not None:
+        # 同じ名前のブランチは repo をまたいで重なりうる（repo A の登録の `feat` が repo B の PR に当たる）。
+        # その repo の worktree にいる登録だけを数える
+        common = git_common_dir(repo["path"])
+
+        def belongs(reg: dict) -> bool:
+            worktree = reg.get("worktree")
+            if isinstance(worktree, str) and worktree and Path(worktree).is_dir():
+                return common is not None and git_common_dir(worktree) == common
+            # worktree を消した登録（マージの後など）は、どの repo のものか決められない。repo が 1 つの PJ のときだけ数える
+            return len(repos) == 1
+
+        regs = [r for r in regs if belongs(r)]
+        repos = [repo]
     # base のブランチ（main など）にいる登録は着手前で、その名前の PR は PJ のものと限らない
-    bases = {str(r.get("base") or "").split("/")[-1] for r in config.get("repos", []) if isinstance(r, dict)}
+    bases = {base_branch(r["path"], r.get("base")) for r in repos}
     return {r["branch"] for r in regs if isinstance(r.get("branch"), str) and r["branch"] not in bases}
 
 
@@ -846,6 +887,7 @@ def cmd_snapshot(args) -> int:
     if not SOURCE_NAME_RE.fullmatch(args.source):
         raise HubError(2, f"source 名が不正: {args.source}")
     key = args.source
+    repo = None
     if args.repo is not None:
         # repo ごとに取る source（prs）は repo ごとに持つ。同じ key で置き換えると前の repo の分が消える
         repo = config_repo(config, args.repo)
@@ -861,7 +903,7 @@ def cmd_snapshot(args) -> int:
     raw_count = len(body) if isinstance(body, list) else None
     data = body
     if args.source == "prs":
-        branches = registered_branches(pdir, config) if args.registered_branches else None
+        branches = registered_branches(pdir, config, repo) if args.registered_branches else None
         data = normalize_prs(body, branches)
     # 取得の上限に届いていたら、窓の外に出た分が黙って消えている可能性がある
     truncated = bool(args.limit and raw_count is not None and raw_count >= args.limit)
@@ -955,8 +997,17 @@ def cmd_worktrees(args) -> int:
     sessions = []
     absent = absent_map(pdir)
     regs, unreadable = load_registrations(pdir)
-    shared = {w for w in (r.get("worktree") for r in regs)
-              if w and sum(1 for r in regs if r.get("worktree") == w) > 1}
+    latest = latest_reports(read_jsonl(pdir / "journal.jsonl"))
+
+    def working(reg: dict) -> bool:
+        # done を報告した登録と不在の登録は、もうその worktree で作業していない（後から別のセッションが入りうる）
+        rep = latest.get(reg.get("session_id"))
+        return absent_since(reg, absent) is None and not (rep and rep["body"].get("state") == "done")
+
+    active = [r for r in regs if working(r)]
+    shared = {w for w in (r.get("worktree") for r in active)
+              if w and sum(1 for r in active if r.get("worktree") == w) > 1}
+    taken = {r.get("worktree") for r in active if r.get("worktree")}
     for reg in regs:
         entry = {"session_id": reg.get("session_id"), "name": reg.get("name"),
                  "current_name": current_name(reg, absent),
@@ -968,7 +1019,9 @@ def cmd_worktrees(args) -> int:
         repo = next((r for r in repos if common is not None and r["common_dir"] == str(common)), None)
         if repo is None:
             entry["note"] = "worktree が無いか、config の repos に当たらない"
-        elif reg.get("branch") == str(repo["base"]).split("/")[-1] or worktree in shared:
+        elif not working(reg) and worktree in taken:
+            entry["note"] = "done か不在の登録で、この worktree は作業中の別のセッションが使っている。重なりは不明"
+        elif reg.get("branch") == base_branch(repo["path"], repo["base"]) or worktree in shared:
             # hello は branch・worktree を作る前に出るので、その時点の登録のまま実装が進みうる
             entry["note"] = "着手前の登録のまま（base のブランチか、他のセッションと同じ worktree）。重なりは不明"
         else:
@@ -1431,8 +1484,13 @@ def hub_projects(sid: str) -> list[tuple[Path, dict]]:
             continue
         try:
             hub = json.loads(hub_path.read_text(encoding="utf-8"))
-            if not isinstance(hub, dict) or hub.get("session_id") != sid:
-                continue
+        except (OSError, ValueError):
+            # 読めない hub.json は、どのセッションの hub かも分からない。ここで stderr に出すと、
+            # 1 つの PJ が壊れただけで全セッションの hook が毎回騒ぐ（その PJ の hub は status の exit で気づく）
+            continue
+        if not isinstance(hub, dict) or hub.get("session_id") != sid:
+            continue
+        try:
             config = json.loads((hub_path.parent / "config.json").read_text(encoding="utf-8"))
             if isinstance(config, dict) and is_active(config):
                 out.append((hub_path.parent, config))

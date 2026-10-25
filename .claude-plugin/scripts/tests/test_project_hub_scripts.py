@@ -122,11 +122,13 @@ class HubTestBase(unittest.TestCase):
 
     def register(self, pdir: Path, sid: str, name: str, issue: str = "#308",
                  absent_since: str | None = None, ref: str | None = None,
-                 updated: str = "2026-10-20T00:00:00.000000Z") -> None:
+                 updated: str = "2026-10-20T00:00:00.000000Z", branch: str | None = None) -> None:
         reg = {"session_id": sid, "name": name, "project": pdir.name, "issue": issue,
                "updated": updated}
         if ref is not None:
             reg["ref"] = ref
+        if branch is not None:
+            reg["branch"] = branch
         (pdir / "sessions" / f"{sid}.json").write_text(json.dumps(reg), encoding="utf-8")
         if absent_since:
             presence = pdir / "presence.json"
@@ -1077,6 +1079,35 @@ class FactFreshnessTest(HubTestBase):
                 self.assertEqual(res.returncode, 2, res)
         self.assertEqual((self.root / "pj" / "facts.jsonl").read_text(encoding="utf-8"), "")
 
+    def test_a_path_that_is_not_at_the_base_is_refused(self):
+        # base に無いパスは git diff が両側とも無いとして差分なしを返し、stale がいつまでも false になる
+        pdir = self.init()
+        wt = TempGitRepo.at(self.git_repo.worktree("w"))
+        wt.commit("later", filename="g.txt")  # base より後のブランチにだけあるファイル
+        for path in ("missing.txt", "g.txt", "../f.txt", str(self.repo / "f.txt")):
+            with self.subTest(path=path):
+                res = self.run_hub("fact", "--project", "pj", stdin=json.dumps(
+                    {"claim": "c", "source": "s", "repo": str(self.repo), "path": path}))
+                self.assertEqual(res.returncode, 2, res)
+                self.assertIn("base", res.stderr)
+        self.assertEqual((pdir / "facts.jsonl").read_text(encoding="utf-8"), "")
+        row = self.ok("fact", "--project", "pj", stdin=json.dumps(
+            {"claim": "c", "source": "s", "repo": str(self.repo), "path": "f.txt"}))
+        self.assertEqual(len(row["base_sha"]), 40, "対照: base にあるファイルは通す")
+
+    def test_a_base_that_cannot_be_resolved_is_refused_for_a_path(self):
+        pdir = self.init()
+        for base in ("no-such-branch", f"--output={self.tmp / 'leak'}"):
+            with self.subTest(base=base):
+                config = json.loads((pdir / "config.json").read_text(encoding="utf-8"))
+                config["repos"][0]["base"] = base
+                (pdir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+                res = self.run_hub("fact", "--project", "pj", stdin=json.dumps(
+                    {"claim": "c", "source": "s", "repo": str(self.repo), "path": "f.txt"}))
+                self.assertEqual(res.returncode, 2, res)
+        self.assertFalse((self.tmp / "leak").exists(), "base を git のオプションとして渡さない")
+        self.assertEqual((pdir / "facts.jsonl").read_text(encoding="utf-8"), "")
+
     def test_a_repo_without_a_path_leaves_no_freshness_fields(self):
         self.init()
         row = self.ok("fact", "--project", "pj",
@@ -1443,6 +1474,26 @@ class WorktreesTest(HubTestBase):
         sessions = self.ok("worktrees", "--project", "pj")["sessions"]
         self.assertEqual([("着手前" in s.get("note", "")) for s in sessions], [True, True])
 
+    def test_a_done_or_absent_session_does_not_make_its_worktree_shared(self):
+        # 終わった・居なくなったセッションの worktree に、後から別のセッションが入る
+        for label in ("done", "absent"):
+            with self.subTest(label):
+                self.root = self.tmp / label
+                pdir = self.init()
+                worktree = self.git_repo.worktree(f"wt-{label}")
+                state = "done" if label == "done" else "in_progress"
+                self.assertEqual(self.report(cwd=worktree, body=report_body(state=state)).returncode, 0)
+                self.assertEqual(self.report(sid=SID_B, name="worker-b", cwd=worktree).returncode, 0)
+                self.ok("ingest", "--project", "pj")
+                if label == "absent":
+                    (pdir / "presence.json").write_text(json.dumps(
+                        {SID_A: {"absent_since": "2999-01-01T00:00:00.000000Z"}}), encoding="utf-8")
+                sessions = {s["session_id"]: s for s in self.ok("worktrees", "--project", "pj")["sessions"]}
+                self.assertNotIn("note", sessions[SID_B], "作業中のセッションは 1 本だけなので見る")
+                self.assertIsNotNone(sessions[SID_B]["changed"])
+                self.assertIn("作業中の別のセッション", sessions[SID_A]["note"])
+                self.assertIsNone(sessions[SID_A]["changed"])
+
     def test_a_base_that_looks_like_an_option_is_not_passed_to_git(self):
         pdir = self.init()
         worktree = self.git_repo.worktree("wt")
@@ -1508,6 +1559,75 @@ class WorktreesTest(HubTestBase):
         (pdir / "config.json").write_text(json.dumps(config), encoding="utf-8")
         self.assertEqual([r["path"] for r in self.ok("worktrees", "--project", "pj")["repos"]],
                          [str(self.repo.resolve())])
+
+
+PR = {"state": "OPEN", "isDraft": False, "isCrossRepository": False, "title": "t"}
+
+
+class BaseBranchTest(HubTestBase):
+    """config の base からブランチ名を取るとき、外すのは先頭の remote 名だけ（`origin/feature/x` は `feature/x`）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+        self.git_repo.add_remote()
+        self.git_repo.fake_origin("feature/x", head=False)
+
+    def set_base(self, base: str) -> None:
+        config = json.loads((self.pdir / "config.json").read_text(encoding="utf-8"))
+        config["repos"][0]["base"] = base
+        (self.pdir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+
+    def test_the_prs_of_a_slashed_base_branch_are_dropped_and_its_last_segment_is_kept(self):
+        self.register(self.pdir, SID_A, "worker-a", branch="feature/x")
+        self.register(self.pdir, SID_B, "worker-b", branch="x")
+        prs = [{**PR, "number": 1, "headRefName": "feature/x"}, {**PR, "number": 2, "headRefName": "x"}]
+        for base in ("origin/feature/x", "refs/remotes/origin/feature/x", "refs/heads/feature/x"):
+            with self.subTest(base=base):
+                self.set_base(base)
+                self.ok("snapshot", "--project", "pj", "--source", "prs", "--registered-branches",
+                        stdin=json.dumps(prs))
+                snap = json.loads((self.pdir / "snapshot.json").read_text(encoding="utf-8"))
+                self.assertEqual([p["head"] for p in snap["sources"]["prs"]["data"]], ["x"])
+
+    def test_a_session_on_a_slashed_base_branch_is_noted_as_before_the_work(self):
+        self.set_base("origin/feature/x")
+        self.assertEqual(self.report(cwd=self.git_repo.worktree("feature/x")).returncode, 0)
+        self.assertEqual(self.report(sid=SID_B, name="worker-b", cwd=self.git_repo.worktree("x")).returncode, 0)
+        notes = {s["branch"]: s.get("note", "") for s in self.ok("worktrees", "--project", "pj")["sessions"]}
+        self.assertIn("着手前", notes["feature/x"])
+        self.assertNotIn("着手前", notes["x"], "末尾の部分だけ同じブランチは着手前ではない")
+
+
+class RegisteredBranchesPerRepoTest(HubTestBase):
+    """`--registered-branches` は `--repo` の repo の worktree にいる登録のブランチだけを数える."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        other = TempGitRepo()
+        self.other = other.__enter__()
+        self.addCleanup(other.__exit__, None, None, None)
+        other.commit("init")
+        other.branch("base")
+
+    def count(self, project: str, repo: Path) -> int:
+        return self.ok("snapshot", "--project", project, "--source", "prs", "--repo", str(repo),
+                       "--registered-branches",
+                       stdin=json.dumps([{**PR, "number": 1, "headRefName": "feat"}]))["count"]
+
+    def test_a_branch_of_one_repo_does_not_pick_the_pr_of_another(self):
+        self.init(project="two", repos=[self.repo, self.other])
+        self.assertEqual(self.report(project="two", cwd=self.git_repo.worktree("feat")).returncode, 0)
+        self.assertEqual(self.count("two", self.other), 0, "別の repo の同じ名前のブランチの PR は PJ のものと限らない")
+        self.assertEqual(self.count("two", self.repo), 1, "対照: 登録の repo の PR は残す")
+
+    def test_a_registration_without_a_worktree_counts_only_when_the_project_has_one_repo(self):
+        one = self.init(project="one")
+        self.register(one, SID_A, "worker-a", branch="feat")
+        self.assertEqual(self.count("one", self.repo), 1)
+        two = self.init(project="two", repos=[self.repo, self.other])
+        self.register(two, SID_A, "worker-a", branch="feat")
+        self.assertEqual(self.count("two", self.repo), 0, "どの repo の登録か決められない")
 
 
 class RenamedSessionTest(HubTestBase):
