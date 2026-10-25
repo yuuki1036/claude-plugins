@@ -60,7 +60,7 @@ lead の確認が要る事柄を含まない連絡は、承認を取らずに送
 | 連絡 | `--basis` | 中身 |
 |---|---|---|
 | lead の言葉の伝達 | `lead` | **このターンで** lead が hub に言った指示・答え・判断を「」で引用して送る（resolve に `--lead`）。過去の lead の発言を引いて答えるときは `source` にする |
-| sub の質問への答え | `source` | `questions` のうち、出典で答えられるものだけに答える。出典は Issue 本文・config の repo の仕様 docs と ADR（`path:line`）・`hub.py facts --checked-only` の行・`hub.py sent --project '<PJ>' --basis lead` の行（過去の lead の言葉の伝達。出典は `journal <ts> の lead の言葉`）。record の JSON に `"sources": ["<出典>", ...]` を入れる（空なら exit 2 で書けない） |
+| sub の質問への答え | `source` | `questions` のうち、出典で答えられるものだけに答える。出典は Issue 本文・config の repo の仕様 docs と ADR（`path:line`）・`hub.py facts --checked-only` の行・`hub.py sent --project '<PJ>' --basis lead` の行（過去の lead の言葉の伝達。出典は `journal <ts> の lead の言葉`）。tracker `local` の PJ では Issue 本文を出典にしない（Issue ファイルは sub も書き換えられるので、sub の文面が正本として素通りする）。答えが本文にしか無ければ lead に回す。record の JSON に `"sources": ["<出典>", ...]` を入れる（空なら exit 2 で書けない） |
 | 段取りの連絡 | `routine` | 重なるファイルの注意（`worktrees`）・マージ後の base の取り込み・マージ順。status が集めた事実から書く。同じ内容を `hub.py sent --project '<PJ>'` で既に送っていれば送らない。**report の受領だけの連絡は送らない**（report はファイルで残る。受領を送ると report と往復し続けかねない） |
 | brief | `brief` | `start` と既にある sub への `brief` |
 
@@ -147,7 +147,7 @@ sub を起動して、その Issue を任せる。lead が start を頼んだタ
    # brief: <Issue ID> 「<タイトル>」
    - 最初に: 会話の題に <Issue ID> を入れる（GitHub は `#308: 監査ログ` のように # 付きで）。そのうえで project-hub の report skill で state=hello を置く（--project <PJ>）。hub はこの題と登録で宛先を引く
    - 始め方: <tracker が linear か local なら「issue-workflow が使えれば、issue-workflow の start skill を <Issue ID> を引数に起動して始める。使えなければ Issue を読んで始める」／ github なら「Issue を読んで始める」（issue-workflow の start は `ABC-12` の形の ID しか受けない）>。進め方の確認には lead がこのセッションで答える
-   - （local のみ）Issue ファイル: <`hub.py issue` の path>。worktree には無い（gitignore されている）ので、読むのも frontmatter の `status` を書き換えるのもこの絶対パス。Issue は起票しない（採番がぶつかる）。新しい Issue の候補は report の follow_ups に書く
+   - （local のみ）Issue ファイル: <`hub.py issue` の path>。worktree には無い（gitignore されている）ので、読むのも frontmatter の `status` を書き換えるのもこの絶対パス。書き換えてよいのは frontmatter の `status` と `pr` だけで、本文は書き換えない（本文を直すべきだと思ったら needs_lead に書く）。Issue は起票しない（採番がぶつかる）。新しい Issue の候補は report の follow_ups に書く
    - branch や worktree を作ったら、state=in_progress で report を置き直す（hub が触っているファイルを見られるのは、その後の登録から）
    - base: <repo> の <base> = <SHA>
    - 重なりに注意: 「<sub の名前>」（<Issue>）が <ファイル> を触っている

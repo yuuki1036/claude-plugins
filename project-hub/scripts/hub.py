@@ -66,7 +66,9 @@ PR_RE = re.compile(r"#?\d+")
 PR_URL_RE = re.compile(r"/pull/(\d+)(?![0-9])")
 # issue-workflow の local backend の Issue ファイル名（`{DATA_DIR}/<slug>/issues/ABC-12.md`）
 LOCAL_ISSUE_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*-\d+")
-LOCAL_CLOSED_STATES = ("completed", "canceled", "cancelled")
+# issue-workflow の status 5 値（issue-workflow/skills/maintain/SKILL.md）のうち閉じたもの。
+# 同じ判定が issue-workflow/skills/start/references/existing-work.md にもあり、値を揃えておく
+LOCAL_CLOSED_STATES = ("completed", "canceled")
 FACT_ID_RE = re.compile(r"F(\d+)")
 # 名前を付けていないセッションの既定名（`claude-plugins-96`）。判定は is_default_name
 DEFAULT_NAME_RE = re.compile(r"\S+-\d+")
@@ -276,7 +278,8 @@ def local_issue(path: Path) -> tuple[dict, str] | None:
     if not LOCAL_ISSUE_RE.fullmatch(path.stem):
         return None
     try:
-        fm, body = read_frontmatter(path.read_text(encoding="utf-8"))
+        # utf-8-sig: BOM が残ると先頭の `---` を frontmatter と読めない
+        fm, body = read_frontmatter(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeDecodeError):
         return None
     title = fm.get("title")

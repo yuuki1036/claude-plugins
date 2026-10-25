@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.2] - 2026-10-25
+
+### Fixed
+
+- tracker local の Issue ファイルを BOM 付きでも読む（BOM があると frontmatter を読めず、完了した Issue が表に残っていた）
+- tracker local で閉じた Issue と見なす status を issue-workflow の 5 値（`completed` / `canceled`）に揃え、正本の場所をコードに書いた（`cancelled` を閉じた扱いにするのは hub だけだった）
+- tracker local の brief で、sub が書き換えてよいのを frontmatter の `status` と `pr` に限り、hub は自動の連絡で local の Issue 本文を出典にしない（sub が書き換えた本文が、正本として別の sub へ渡りうる）
+
 ## [0.4.1] - 2026-10-25
 
 ### Fixed
