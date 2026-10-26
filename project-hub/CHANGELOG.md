@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.3] - 2026-10-26
+
+### Fixed
+
+- Desktop で hub の会話を開き直して session_id が変わっても、同じ会話と確かめられれば `takeover` なしで hub を続けられるようにした（GitHub issue #325）。hub.json に会話の ID（`CLAUDE_CODE_HOST_SESSION_ID`）を持ち、Desktop のセッションの記録がその会話に今つないでいる CLI をこのセッションと示すときだけ、hub.json を付け替えて journal に `takeover`（`reason: resume`）を残す。付け替えたことは、SessionStart・UserPromptSubmit の注入（hook が先に付け替えた回）か `refresh-hub` の出力の `resumed_from` で知らせる。journal を先に書き、書けなければ付け替えない。読んでから書くまでの間に takeover が入っていれば上書きしない。UserPromptSubmit の hook は、session_id が hub.json に無くても会話の ID が一致すれば hub.py に判定を渡す（SessionStart の時点で付け替えられなかった回を拾う）。会話の ID を継承しただけの子の CLI と、Desktop の記録を確かめられない回は今までどおり exit 3 で止まる。0.6.2 までの hub は、次の `status` で会話の ID を書き足してから効く
+- exit 3（別のセッションの hub）の文面で、開き直した直後なら `takeover` で引き継げると案内するようにした
+- `start` が、文面を作る前に `start_session` の有無を確かめるようにした（deferred tool なら ToolSearch で読み込む）。無ければ最初から貼る用の brief に進む。以前はツールを呼べなかった後に初めて分かった
+
 ## [0.6.2] - 2026-10-26
 
 ### Changed

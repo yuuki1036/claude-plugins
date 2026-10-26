@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # inject-state.sh — SessionStart / PostCompact hook
-# このセッションが project-hub の hub（stdin の session_id が hub.json と一致）のときだけ、
+# このセッションが project-hub の hub（stdin の session_id が hub.json と一致するか、開き直した同じ会話）のときだけ、
 # state.md と、その生成後に増えた journal の件数を注入する。それ以外のセッションでは黙る
 
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"

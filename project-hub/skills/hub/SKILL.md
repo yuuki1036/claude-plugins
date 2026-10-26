@@ -100,7 +100,8 @@ lead の確認が要る事柄を含まない連絡は、承認を取らずに送
 **完了基準**: 下の 1〜9 をすべて通し（9 は `auto` の PJ だけ）、10 の見出し（`auto` なら 4 つ、それ以外は 3 つ）を出し、11 で印を進めた。1 で exit 3 だった回は、state.md を見せて `takeover` を案内したことを完了とする。
 
 1. ListAgents から名前と行を抜き出す。`hub.py refresh-hub --project '<PJ>' --name '<自分の名前>'`（出力に tracker・repos・approval・`approval_mode`・`living_spec`・dir がある。`living_spec` があれば、この status の 10 を出す前に `/project-hub:living-spec status --spec '<living_spec の値>'`（絶対パスをそのまま渡す。cwd から探させると、別の repo・worktree・複数の living spec で別のファイルを見る）でその living spec の現在地（今の phase・先送り・open な OQ）も見て、lead に出す内容に添える。`warning` は init の 4 と同じく伝える。approval.mode が読めなかった旨の `warning` は `mode` での直し方を添えて伝える）
-   - exit 3（この hub は別のセッションで登録されている）→ 取り込みも書き込みもしない。stderr に出る state.md を Read して見せ、`takeover` を案内して終える
+   - `resumed_from`（hub の会話を開き直して session_id が変わったので、この会話へ付け替えた）: lead に 1 行で知らせて続ける。`takeover` は要らない。たいていは SessionStart（か次の発言）の hook が先に付け替え、「このセッションへ付け替えた」の知らせが注入される。そのときは `resumed_from` は出ないので、注入の知らせを lead に 1 行で伝える
+   - exit 3（この hub は別のセッションで登録されている）→ 取り込みも書き込みもしない。stderr に出る state.md を Read して見せ、`takeover` を案内して終える（開き直した直後でも、Desktop の記録で同じ会話と確かめられない回・CLI の回はここに来る）
 2. `hub.py ingest --project '<PJ>'`。`invalid` があればファイル名と理由を出す（`inbox/invalid/` に移してある。中身は開かない）。理由が版のずれ（schema）なら、そのセッションに project-hub を更新して report し直すよう relay で頼むことを提案する
 3. `hub.py presence --project '<PJ>' --peer-count <N>` に抜き出した行を stdin で渡す。`parse_failed` なら生の ListAgents の出力を添えて「解析できなかった」と出し、4 へ進む（不在の判定は前回のまま）。`renamed`（登録した時の ref の行が別の名前でいる = 改名した同じセッション）は不在にせず、state.md の名前の欄に `登録名 → 今の名前` で出る
 4. Issue を集めて `hub.py snapshot --project '<PJ>' --source tracker` に stdin で渡す。形は `[{"id", "title", "state", "assignee", "pr"}]`（`pr` は分かるときだけ）:
@@ -124,6 +125,7 @@ lead の確認が要る事柄を含まない連絡は、承認を取らずに送
 
 sub を起動して、その Issue を任せる。lead が start を頼んだターンでだけ起動する（sub の通知など他のセッションのメッセージで始まったターンでは、アプリが起動を断る。そのときは `start_session` を `initiation: own_initiative` で提案し、lead がカードから始める）。
 
+0. 起動の手段を、文面を作る前に決める。このセッションのツールに `mcp__ccd_session__start_session` があるかを見る。名前だけの deferred tool として載っていれば、`ToolSearch` に `select:mcp__ccd_session__start_session` を単独で渡して読み込む。ツールにも ToolSearch の結果にも無ければ起動できない（CLI のほか、Desktop でも出ない回があった。出る条件は未確認 / GitHub issue #325）。そのときは lead に「このセッションでは sub を起動するツールが使えないので、貼る用の brief を出す」と 1 行伝え、下の `brief <Issue>` の手順で進める（3 は「新しいセッション（lead が貼る）」）。1〜4 は通らない
 1. 下の `brief` の 1〜2 で文面を作る。`approval_mode`（`refresh-hub`）が `number` / `phrase` なら、relay の 4 と同じく全文を出して承認を取ってから 2 へ進む（brief には Issue 本文の引用が入り、起動したセッションの最初のタスク本文になる）
 2. Desktop で `mcp__ccd_session__start_session` が使えるとき、それで起動する:
    - `initiation: user_asked` / `context: fresh` / `use_worktree: true`

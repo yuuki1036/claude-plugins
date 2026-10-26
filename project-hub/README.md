@@ -22,7 +22,7 @@
 /project-hub:hub fact             # hub が確かめた事実を出典つきで残す
 /project-hub:hub mode <方式>      # 送る前の承認の方式を切り替える（auto / number / phrase）
 /project-hub:hub living-spec <path> # PJ の living spec を結ぶ（state.md にパスが出る）
-/project-hub:hub takeover         # hub のセッションを開き直したら、このセッションに引き継ぐ
+/project-hub:hub takeover         # 別のセッションを hub にする（Desktop で同じ会話を開き直しただけなら、確かめられれば自動で引き継ぐ）
 /project-hub:hub close            # PJ を閉じる
 ```
 
