@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.2] - 2026-10-26
+
+### Changed
+
+- `hub.py` の等価変異 3 か所（frontmatter の `find` の境界 2 か所と、ref の形が不正なときの早期 return）に、理由つきの `# mutation-ok` を付けた。挙動は変わらない（nightly の生存変異 / GitHub issue #317）。frontmatter の読み方・`tracker.dir` の検査・base のブランチ名・record の `sources` の検査は、生存していた変異を殺すテストを足した
+
 ## [0.6.1] - 2026-10-26
 
 ### Fixed

@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.26.2] - 2026-10-26
+
+### Changed
+
+- `gv-loop.py` の前回の対象のファイルを消す行（`unlink(missing_ok=True)`）は等価変異なので、理由つきの `# mutation-ok` を付けた。挙動は変わらない（GitHub issue #317）。前回の対象の行番号 1 を残すテストも足した
+
 ## [2.26.1] - 2026-10-25
 
 ### Fixed

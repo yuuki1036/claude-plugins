@@ -243,7 +243,7 @@ def read_frontmatter(text: str) -> tuple[dict, str]:
     if not text.startswith("---\n"):
         return {}, text
     end = text.find("\n---", 3)
-    if end < 0:
+    if end < 0:  # mutation-ok: 探し始めが 3 なので find は 0 を返さない（< 0 と <= 0 は同じ）
         return {}, text
     fm = {}
     for line in text[4:end].split("\n"):
@@ -254,7 +254,7 @@ def read_frontmatter(text: str) -> tuple[dict, str]:
         value = value.strip()
         if value[:1] in ("\"", "'"):
             end_quote = value.find(value[0], 1)
-            if end_quote > 0:
+            if end_quote > 0:  # mutation-ok: 探し始めが 1 なので find は 0 を返さない（> 0 と >= 0 は同じ）
                 value = value[1:end_quote]
         else:
             # issue-workflow のテンプレートは値の後ろに `# 必須。値: ...` の行末コメントを持つ
@@ -543,7 +543,7 @@ def ref_row(reg: dict | None, agents: list[dict]) -> dict | None:
     """
     ref = reg.get("ref") if isinstance(reg, dict) else None
     if not isinstance(ref, str) or not REF_RE.fullmatch(ref):
-        return None
+        return None  # mutation-ok: agents は load_agents の自己検査で ref が英数字の行だけなので、下の照合でも 0 件になる
     hits = [a for a in agents if a["ref"] == ref]
     return hits[0] if len(hits) == 1 else None
 

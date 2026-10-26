@@ -363,7 +363,7 @@ def drop_prior_findings(run_id: str) -> None:
     if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
         return
     try:
-        (d / f"gv-prior-findings-{run_id}.json").unlink(missing_ok=True)
+        (d / f"gv-prior-findings-{run_id}.json").unlink(missing_ok=True)  # mutation-ok: False でも FileNotFoundError は直下の except OSError が受ける
     except OSError:
         pass
 
