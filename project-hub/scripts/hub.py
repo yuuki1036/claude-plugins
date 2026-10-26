@@ -1025,9 +1025,13 @@ def cmd_record(args) -> int:
         raise HubError(2, "subject（Issue ID か宛先）が無い")
     if not isinstance(text, str) or not text.strip():
         raise HubError(2, "text（送った全文）が空")
-    if to is not None and not (isinstance(to, dict) and isinstance(to.get("name"), str)
-                               and isinstance(to.get("ref"), str) and REF_RE.fullmatch(to["ref"])):
-        raise HubError(2, "to は {\"name\", \"ref\"} か null")
+    # 会話の ID（host）宛ては、一覧に見えない sub へ送った回があるので ref を持たないことがある
+    if to is not None and not (
+            isinstance(to, dict) and isinstance(to.get("name"), str)
+            and ((isinstance(to.get("ref"), str) and REF_RE.fullmatch(to["ref"]))
+                 or (to.get("ref") is None and isinstance(to.get("host"), str) and HOST_ID_RE.fullmatch(to["host"])))
+            and (to.get("host") is None or (isinstance(to["host"], str) and HOST_ID_RE.fullmatch(to["host"])))):
+        raise HubError(2, "to は {\"name\", \"ref\"}・{\"name\", \"ref\", \"host\"}・{\"name\", \"host\"} か null")
     if error is not None and not isinstance(error, str):
         raise HubError(2, "error は文字列か null")
     if session is not None and not (isinstance(session, str) and SESSION_ID_RE.fullmatch(session)):
@@ -1601,6 +1605,48 @@ def send_to(hit: dict, agents: list[dict]) -> str:
     return hit["name"]
 
 
+def registered_host(reg: dict | None) -> str | None:
+    """登録の会話の ID（local_…）。report が Desktop の記録で確かめて書いたものだけ（0.6.4 までの登録は env の値）."""
+    if not isinstance(reg, dict) or reg.get("host_verified") is not True:
+        return None
+    host = reg.get("host_session_id")
+    return host if isinstance(host, str) and HOST_ID_RE.fullmatch(host) else None
+
+
+def resolved_host(reg: dict, host: str, by_ref: dict | None, guard: dict | None) -> int:
+    """Desktop の hub から、登録の会話の ID（local_…）へ送る（GitHub issue #316 / ADR-20261027002221）.
+
+    会話の ID は改名・開き直しで変わらず、別のセッションに入れ替わらない（2026-10-26 に実測）。一覧の行は表示と
+    往復の上限の数え方にだけ使い、宛先は決めない。登録した時の ref の行が無い（開き直した・プロセスが無い）なら、
+    送ると Desktop がその会話を再開するので warning を付ける（archive 中なら届かずに失敗する）
+    """
+    name = by_ref["name"] if by_ref else reg.get("name")
+    ref = by_ref["ref"] if by_ref else None
+    warning = None
+    if by_ref is None:
+        warning = ("登録した時の ref の行が今の一覧に無い（開き直した・閉じている）。会話の ID へ送ると、Desktop が"
+                   "その会話を再開する（archive 中なら届かない）。承認の画面で lead に確かめてもらう")
+    out = {"status": "ok", "name": name, "ref": ref, "to": host, "host": host, "rule": "host_session"}
+    if guard is not None:
+        if warning:
+            emit({**out, "status": "needs_lead", "warning": warning,
+                  "reason": "承認なしに送る PJ では、一覧に見えない sub の会話を再開させない。lead が送ってよいと"
+                            "言えば、出力の to へ送る"})
+            return 1
+        if not guard["lead"]:
+            streak = auto_streak(guard["rows"], guard["session"], ref)
+            if streak >= AUTO_STREAK_MAX:
+                emit({"status": "auto_limit", "name": name, "ref": ref, "streak": streak,
+                      "reason": f"lead の言葉の伝達を挟まずに、この sub へ hub の判断の連絡が {streak} 回続いた。"
+                                "送らずに lead に出す（続けてよければ、その旨を lead の言葉としてこの sub へ伝えると"
+                                "数え直しになる）"})
+                return 1
+    if warning:
+        out["warning"] = warning
+    emit(out)
+    return 0
+
+
 def resolved(hit: dict, rule: str, expect_ref: str | None, agents: list[dict],
              warning: str | None = None, guard: dict | None = None) -> int:
     # 承認の画面に出した ref と違えば、同じ名前の別のセッションに入れ替わっている
@@ -1661,9 +1707,10 @@ def cmd_resolve(args) -> int:
         raise HubError(2, "--session が空")
     if args.ref is not None and not REF_RE.fullmatch(args.ref):
         raise HubError(2, "--ref は ListAgents の [ref]（英数字）")
+    hub = None
     if not args.hub:
         # hub → sub（brief / relay）。送るのは hub だけ（sub の report の通知は --hub）
-        require_hub(pdir, args.session_id)
+        hub = require_hub(pdir, args.session_id)
     if args.hub and args.lead:
         raise HubError(2, "--lead は hub → sub の宛先にだけ付ける")
     # 承認なしに送る PJ では、宛先が決まった後に歯止めを掛ける（--session でも --ref でも）
@@ -1701,6 +1748,11 @@ def cmd_resolve(args) -> int:
     issue = args.issue or (reg.get("issue") if reg else None)
     token = issue_token(tracker_kind(config), issue) if issue else None
     by_ref = ref_row(reg, agents)
+    host = registered_host(reg)
+    # 会話の ID 宛ては Desktop のセッションからしか届かない（素の CLI からは `No agent named ... is reachable`。
+    # 2026-10-27 に実測）。hub が Desktop で動いていると確かめられたときだけ使い、それ以外は名前で引く
+    if host and verified_host(hub["session_id"]):
+        return resolved_host(reg, host, by_ref, guard)
     # 既定名（<dir>-<数字>）だけの一致は使わない。開き直しで別のセッションが同じ番号を名乗りうる
     if registered and not absent and not is_default_name(registered, token):
         hits = [a for a in agents if a["name"] == registered]
@@ -1833,12 +1885,15 @@ def cmd_report(args) -> int:
         raise HubError(2, "report の形が不正: " + "; ".join(errs))
     hub_name = read_obj(pdir / "hub.json").get("name")
 
-    # 宛先にする欄は持たない（名前は毎回 ListAgents で引き直す / ADR-20261021154740）。
-    # ref は宛先ではなく、改名した後の行をこの登録に結び付ける照合にだけ使う（ref_row）
+    # ref は宛先ではなく、改名した後の行をこの登録に結び付ける照合にだけ使う（ref_row）。
+    # 会話の ID（local_…）は Desktop の記録で確かめた回だけ持つ。Desktop の hub はこれを宛先にする
+    # （改名・開き直しで変わらない / ADR-20261027002221）。env だけの値は子の CLI が継承した親の会話を指しうる
+    host = verified_host(sid)
     (pdir / "sessions").mkdir(exist_ok=True)
     write_json(pdir / "sessions" / f"{sid}.json", {
         "session_id": sid,
-        "host_session_id": os.environ.get("CLAUDE_CODE_HOST_SESSION_ID") or None,
+        "host_session_id": host,
+        "host_verified": host is not None,
         "name": my_name, "ref": self_ref, "project": project, "issue": report["issue"],
         "branch": git(cwd, "rev-parse", "--abbrev-ref", "HEAD"),
         "worktree": git(cwd, "rev-parse", "--show-toplevel"),

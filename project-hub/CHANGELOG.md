@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.7.0] - 2026-10-27
+
+### Changed
+
+- Desktop の hub は、sub の会話の ID（`local_…`）を宛先にするようにした（GitHub issue #316 / ADR-20261027002221）。会話の ID は改名・開き直しで変わらないので、改名したうえで開き直し、題に Issue ID も無い sub にも、report を置き直させずに届く。使うのは、hub が Desktop のセッションだと Desktop の記録で確かめられ、sub の登録の会話の ID も report の時点で同じく確かめたもの（`host_verified: true`）のときだけ。素の CLI からは `local_…` 宛てが届かないので、CLI の hub・確かめられない登録・0.6.4 までの登録は今までどおり名前で引く。`resolve` は `rule: host_session` と `to`（`local_…`）を返し、登録した時の ref の行が一覧に無ければ（送ると Desktop がその会話を再開する）warning を付け、承認なしに送る PJ では lead に出す。record の `to` は `host` を受ける
+- report が登録に書く会話の ID を、Desktop の記録で確かめた値だけにした。以前は env の値をそのまま書いており、Desktop の Bash から起動した子の CLI が親の会話の ID を名乗れた
+
 ## [0.6.4] - 2026-10-26
 
 ### Fixed
