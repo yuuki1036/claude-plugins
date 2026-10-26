@@ -215,9 +215,9 @@ def desktop_cli_session(host: str) -> str | None:
     """Desktop の記録で、会話 host に今つないでいる CLI の session_id。記録が無い・読めなければ None.
 
     記録（`claude-code-sessions/<account>/<org>/<host>.json` の `cliSessionId`）は Desktop の内部の
-    ファイルで契約が無い（2026-10-26 に Desktop 3.6556.2 で確認。開き直した後に `cliSessionId` が新しい値へ
-    替わるかは未確認）。形が変わった・替わらないなら None か前の値になり、開き直しの自動の引き継ぎが
-    効かなくなるだけで、別のセッションには引き継がない
+    ファイルで契約が無い（2026-10-26 に Desktop 3.6556.2 で確認。archive → unarchive の開き直しでは
+    `cliSessionId` も session_id も替わらず、替わったのは rewind の回だけだった）。形が変わった・替わらないなら
+    None か前の値になり、開き直しの自動の引き継ぎが効かなくなるだけで、別のセッションには引き継がない
     """
     for base in desktop_dirs():
         for path in sorted((base / "claude-code-sessions").glob(f"*/*/{host}.json")):
@@ -782,11 +782,12 @@ def cmd_refresh_hub(args) -> int:
     """hub status の最初に呼ぶ。今のセッションが hub か確かめ（開き直した同じ会話なら付け替えて
     resumed_from を返す）、名前と会話の ID が変わっていれば hub.json を直す."""
     pdir = project_dir(args.project)
-    resumed: list = []
-    hub = require_hub(pdir, args.session_id, resumed)
+    # 名前を先に検証する。付け替えた後に止まると resumed_from を出せず、lead が付け替えを知らないまま進む
     problem = name_problem(args.name)
     if problem:
         raise HubError(2, problem)
+    resumed: list = []
+    hub = require_hub(pdir, args.session_id, resumed)
     changes = {}
     if hub.get("name") != args.name:
         changes["name"] = args.name
@@ -1927,8 +1928,22 @@ def hub_projects(sid: str) -> list[tuple[Path, dict, str | None]]:
             continue
         if not isinstance(hub, dict):
             continue
+        # active かを付け替えより先に見る。閉じた PJ は注入しないので、付け替えても lead に知らせる経路が無い
+        # （付け替えは閉じた PJ の hub.py のコマンドの側で起き、refresh-hub の resumed_from で知らせる）
+        mine = hub.get("session_id") == sid
+        # 付け替えの候補にならない PJ は config を読まない（hook は全 PJ を毎回なめる。壊れた config で騒がない）
+        if not mine and (not hub.get("host_session_id")
+                         or hub.get("host_session_id") != os.environ.get("CLAUDE_CODE_HOST_SESSION_ID")):
+            continue
+        try:
+            config = json.loads((hub_path.parent / "config.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"project-hub: {hub_path.parent.name} を読めない（{e}）", file=sys.stderr)
+            continue
+        if not isinstance(config, dict) or not is_active(config):
+            continue
         resumed_from = None
-        if hub.get("session_id") != sid:
+        if not mine:
             # 開き直した hub の会話（source は見ない。Desktop の記録が会話とこのセッションを結んでいれば足りる）。
             # SessionStart で付け替えれば、注入も以後の hook も効く
             try:
@@ -1939,12 +1954,7 @@ def hub_projects(sid: str) -> list[tuple[Path, dict, str | None]]:
                 continue
             if resumed_from is None:
                 continue
-        try:
-            config = json.loads((hub_path.parent / "config.json").read_text(encoding="utf-8"))
-            if isinstance(config, dict) and is_active(config):
-                out.append((hub_path.parent, config, resumed_from))
-        except (OSError, ValueError) as e:
-            print(f"project-hub: {hub_path.parent.name} を読めない（{e}）", file=sys.stderr)
+        out.append((hub_path.parent, config, resumed_from))
     return out
 
 

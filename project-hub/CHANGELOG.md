@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.4] - 2026-10-26
+
+### Fixed
+
+- 閉じた PJ では、SessionStart・UserPromptSubmit の hook が開き直した hub の会話を付け替えないようにした。閉じた PJ には注入しないので、hook で付け替えると lead に知らせる経路が無かった。hub 側のコマンドは閉じた PJ でも動くので、付け替えは `refresh-hub` などで起き、`resumed_from` で知らせる（GitHub issue #325）
+- `refresh-hub` が、hub の名前を検証してから付け替えるようにした。以前は付け替えた後に名前の検証で止まると `resumed_from` が出ず、付け替えたことが lead に伝わらなかった（GitHub issue #325）
+- hub の skill と command の `allowed-tools` に ToolSearch を足した。`start` は `start_session` を ToolSearch で読み込むので、承認が要る環境で止まりえた（GitHub issue #325）
+- ListAgents の抜き出し（`references/list-agents.md`）で、改名の直後だけ入る `says it was <前の名前> until <N>s ago` の欄を除いてから state を取るようにした。この欄を数えると state に `interactive` を取っていた。あわせて、開き直すと ref が変わること・プロセスの無いセッションは一覧に出ないことを、2026-10-26 の実測として書いた（GitHub issue #316）
+
 ## [0.6.3] - 2026-10-26
 
 ### Fixed

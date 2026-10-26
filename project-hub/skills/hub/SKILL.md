@@ -12,6 +12,7 @@ allowed-tools:
   - ListAgents
   - SendMessage
   - mcp__ccd_session__start_session
+  - ToolSearch
   - mcp__linear__list_issues
   - mcp__linear__get_issue
 ---
