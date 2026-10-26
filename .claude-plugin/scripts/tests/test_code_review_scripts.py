@@ -4815,6 +4815,7 @@ class RetroAgentFieldDenominatorTest(RetroFixture):
         self._events([self._row({"round2": 0}), re_run, delta])
         out = self._json()
         self.assertEqual((out["round2_scope"], out["round2_fired"], out["round2_dropped_rereview"]), (1, 0, 2))
+        self.assertIn("round2 0/1（再レビュー・delta で除外 2）", self.run_script(RETRO, env=self._env()).stdout)
 
     def test_round2_fired_counts_positive_values_only(self):
         """発火は「1 本以上起動した回」。0 本の回は分母に残して分子から外す."""
@@ -4822,6 +4823,8 @@ class RetroAgentFieldDenominatorTest(RetroFixture):
         out = self._json()
         self.assertEqual(out["round2_scope"], 2)
         self.assertEqual(out["round2_fired"], 1, "起動本数が正の回を数えていない")
+        line = next(l for l in self.run_script(RETRO, env=self._env()).stdout.splitlines() if "**動的層の発火**" in l)
+        self.assertTrue(line.endswith("round2 1/2"), "除外 0 件の回に除外の注記を付けている: " + line)
 
     # ---- explorer_waves（欠測率の生カウント）----------------------------------
 
@@ -7954,6 +7957,16 @@ class RetroDeltaScopeTest(RetroFixture):
         self.assertEqual(adv["skips"].get("scope-rereview"), 1, "再レビューの scope スキップは従来どおり数える")
         self.assertIn("再レビュー・delta で除外 2", self._out())
 
+    def test_a_schema_only_drop_still_prints_the_population_line(self):
+        """母集団の行は除外のどれか 1 つでもあれば出す（版マーカーだけで落とした回も）."""
+        fired = {"fired": True, "skip_reason": None, "gate_schema": 3, "calibration_schema": 3,
+                 "confirmed": 1, "refuted": 0, "uncertain": 0, "severity_inflated": 0, "contested": 0}
+        base = self._row("opus-5-5", 1, 0)
+        self._events([dict(base, adversarial_verify=dict(fired)),
+                      dict(base, adversarial_verify=dict(fired, gate_schema=1))])
+        self.assertIn("反証 母集団: 全 2 件 → 判定対象 1 件（版マーカー gate_schema>=2 で除外 1 / "
+                      "設計上非該当で除外 0 / 発火記録の欠落で除外 0 / 再レビュー・delta で除外 0）", self._out())
+
     def test_rereview_cost_is_split_by_kind(self):
         def tok(sub_out, scope=False, rereview=False):
             row = self._tokens_full(sub_out, 3)
@@ -7967,7 +7980,7 @@ class RetroDeltaScopeTest(RetroFixture):
                           "delta": (1, 100.0)})
         out = self._out()
         self.assertIn("**再レビューの費用**", out)
-        self.assertIn("| high/medium | 再レビュー・delta | 1 | 200 k |", out)
+        self.assertIn("| high/medium | 再レビュー・delta | 1 | 200 k | 100 k |", out)
 
     def test_runs_without_sub_values_do_not_open_the_cost_table(self):
         """値の無い回でバケツを作ると、n=0 の行だけで表が出る（再レビューの回が 1 件あるだけで）."""

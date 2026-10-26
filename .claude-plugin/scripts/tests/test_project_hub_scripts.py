@@ -1587,7 +1587,8 @@ class BaseBranchTest(HubTestBase):
         self.register(self.pdir, SID_A, "worker-a", branch="feature/x")
         self.register(self.pdir, SID_B, "worker-b", branch="x")
         prs = [{**PR, "number": 1, "headRefName": "feature/x"}, {**PR, "number": 2, "headRefName": "x"}]
-        for base in ("origin/feature/x", "refs/remotes/origin/feature/x", "refs/heads/feature/x"):
+        # 素の `feature/x` は remote 名で始まらないので、そのままブランチ名として読む
+        for base in ("origin/feature/x", "refs/remotes/origin/feature/x", "refs/heads/feature/x", "feature/x"):
             with self.subTest(base=base):
                 self.set_base(base)
                 self.ok("snapshot", "--project", "pj", "--source", "prs", "--registered-branches",
@@ -1853,7 +1854,7 @@ class AutoRelayTest(HubTestBase):
         return self.resolve(*target, *extra, agents=self.agents)
 
     def test_an_answer_without_sources_is_not_recorded(self):
-        for sources in (None, [], ["  "], "a.md:1"):
+        for sources in (None, [], ["  "], ["a.md:1", "  "], "a.md:1"):
             with self.subTest(sources=sources):
                 self.assertEqual(self.send("source", sources=sources).returncode, 2)
         self.assertEqual(self.journal(self.pdir), [])
@@ -2220,6 +2221,31 @@ class LocalTrackerTest(HubTestBase):
         state = (self.root / "pj" / "state.md").read_text(encoding="utf-8")
         self.assertIn("| ABC-2 | backlog | - | - | 見出しの題 |", state)
 
+    def test_broken_frontmatter_is_not_read(self):
+        """先頭が `---` でない・閉じの `---` が無い・コロンの無い行は frontmatter として読まない."""
+        # 先頭が `---` でないファイルを読むと、本文中の区切り線（`\n---`）までが frontmatter になり、本文の `status:` で閉じた扱いになる
+        self.write_issue("ABC-11.md", "# ABC-11: 前置き\n\nstatus: completed\n---\n")
+        self.write_issue("ABC-12.md", "---\nstatus: completed\n")
+        self.write_issue("ABC-13.md", "---\nstatus: in-progress\nstatus\n---\n# ABC-13: 見出し\n")
+        self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
+        self.snapshot_local()
+        rows = {r["id"]: r for r in self.tracker_rows()}
+        self.assertEqual(sorted(rows), ["ABC-11", "ABC-12", "ABC-13"])
+        self.assertEqual((rows["ABC-11"]["state"], rows["ABC-11"]["title"]), (None, "前置き"))
+        self.assertIsNone(rows["ABC-12"]["state"])
+        self.assertEqual(rows["ABC-13"]["state"], "in-progress", "コロンの無い行が status を空で上書きした")
+
+    def test_a_non_string_tracker_dir_is_a_config_error(self):
+        self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
+        path = self.root / "pj" / "config.json"
+        config = json.loads(path.read_text(encoding="utf-8"))
+        config["tracker"]["dir"] = 123
+        path.write_text(json.dumps(config), encoding="utf-8")
+        res = self.run_hub("snapshot", "--project", "pj", "--source", "tracker", "--from-local")
+        self.assertEqual(res.returncode, 3, res)
+        self.assertNotIn("Traceback", res.stderr)
+        self.assertIn("tracker.dir", res.stderr)
+
     def test_from_local_is_only_for_a_local_tracker_source(self):
         self.init()  # github
         res = self.run_hub("snapshot", "--project", "pj", "--source", "tracker", "--from-local")
@@ -2307,8 +2333,16 @@ class LivingSpecLinkTest(HubTestBase):
         other = self.tmp / "other" / ".claude" / "living-specs"  # config の repo の外（worktree の複製など）
         other.mkdir(parents=True)
         (other / "pj.md").write_text("x", encoding="utf-8")
+        # 場所の 2 条件（親が living-specs・その親が .claude）を片方ずつ外す
+        wrong_parent = self.repo / ".claude" / "x" / "pj.md"
+        wrong_grandparent = self.repo / "x" / "living-specs" / "pj.md"
+        for path in (wrong_parent, wrong_grandparent):
+            path.parent.mkdir(parents=True)
+            path.write_text("x", encoding="utf-8")
         cases = [(txt, ".md のファイルを指す"), (loose, "config の repo の .claude/living-specs/ の下"),
-                 (other / "pj.md", "config の repo の .claude/living-specs/ の下")]
+                 (other / "pj.md", "config の repo の .claude/living-specs/ の下"),
+                 (wrong_parent, "config の repo の .claude/living-specs/ の下"),
+                 (wrong_grandparent, "config の repo の .claude/living-specs/ の下")]
         for bad, msg in cases:
             with self.subTest(bad=bad):
                 res = self.init_with(str(bad))

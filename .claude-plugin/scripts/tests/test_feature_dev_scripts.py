@@ -1329,6 +1329,16 @@ class GvLoopTest(unittest.TestCase):
         self.assertEqual(json.loads(Path(path).read_text(encoding="utf-8")),
                          [{"file": "a.txt", "line": None, "focus": "x", "title": "n"}])
 
+    def test_chosen_findings_keep_line_1_and_drop_line_0(self):
+        """1 行目は実在する行。0 以下だけを「行なし」にする."""
+        stdin = json.dumps({"findings": [{"severity": "MAJOR", "file": "a.txt", "line": 1, "focus": "x", "title": "top"},
+                                         {"severity": "MAJOR", "file": "a.txt", "line": 0, "focus": "y", "title": "zero"}]})
+        res = self.raw("prior-findings", stdin=stdin)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        path = res.stdout.strip().removeprefix("prior_findings=")
+        self.assertEqual([(i["line"], i["focus"]) for i in json.loads(Path(path).read_text(encoding="utf-8"))],
+                         [(1, "x"), (None, "y")])
+
     def test_a_file_with_a_newline_is_rejected(self):
         """1 行 1 項目の出力に偽の `since=` / `prior_findings=` 行を差し込ませない."""
         self.run_loop("init", "--max", "3")

@@ -380,6 +380,11 @@ class ParallelTest(RunTestsBase):
                 self.assertIn("Ran 1 test", res.stderr)
                 self.assertNotIn("並列", res.stderr)
 
+    def test_a_module_without_tests_is_not_a_unit(self):
+        self.write_test(PASSING, "test_a.py")
+        self.write_test("import unittest\n", "test_empty.py")
+        self.assertEqual(self.plan(100), [["test_a", 1]])
+
     def test_a_leak_is_reaped_in_a_single_process_too(self):
         self.write_test(LEAKING)
         res = self.run_wrapper(env=self.jobs_env(1))
@@ -416,6 +421,32 @@ class ParallelTest(RunTestsBase):
         self.write_test("X = 1\n", "test_empty.py")
         self.write_test(PASSING, "test_a.py")
         self.assertEqual(self.plan(threshold=100), [["test_a", 1]])
+
+
+class JobsFromEnvTest(unittest.TestCase):
+    """並列数の決め方（`RUN_TESTS_JOBS` が正の整数でなければ CPU 数、上限 `MAX_JOBS`）."""
+
+    def setUp(self) -> None:
+        spec = importlib.util.spec_from_file_location("_run_tests_under_test", SCRIPT)
+        self.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.mod)
+
+    def jobs(self, raw: str, cpus) -> int:
+        with mock.patch.dict(os.environ, {"RUN_TESTS_JOBS": raw}), \
+                mock.patch.object(self.mod.os, "cpu_count", return_value=cpus):
+            return self.mod.jobs_from_env()
+
+    def test_a_positive_value_wins(self):
+        self.assertEqual(self.jobs("3", 8), 3)
+
+    def test_zero_falls_back_to_the_cpu_count(self):
+        """0 並列では何も回らない。正の整数でない値は未指定と同じに扱う."""
+        self.assertEqual(self.jobs("0", 4), 4)
+
+    def test_the_cpu_count_is_capped_and_unknown_is_one(self):
+        self.assertEqual(self.jobs("", 4), 4)
+        self.assertEqual(self.jobs("", 64), self.mod.MAX_JOBS)
+        self.assertEqual(self.jobs("", None), 1)
 
 
 class ReapTest(unittest.TestCase):
