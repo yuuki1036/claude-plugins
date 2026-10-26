@@ -423,6 +423,90 @@ class ParallelTest(RunTestsBase):
         self.assertEqual(self.plan(threshold=100), [["test_a", 1]])
 
 
+SLOW = """import time, unittest
+
+
+class T(unittest.TestCase):
+    def test_slow(self):
+        time.sleep(60)
+"""
+
+#: 1 つの単位の中で失敗が先に走る（unittest はメソッド名の辞書順）。単位に `-f` が渡らないと sleep まで回る
+FAIL_THEN_SLOW = """import time, unittest
+
+
+class T(unittest.TestCase):
+    def test_a_fail(self):
+        self.fail('わざと失敗')
+
+    def test_b_slow(self):
+        time.sleep(60)
+"""
+
+
+class CoordinatorTest(RunTestsBase):
+    """取りまとめ役を直接起動する形（`mutation-test.py` のフルスイート判定が使う / GitHub issue #318）."""
+
+    def coordinate(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return self.run_wrapper(args=("--_coordinator", *args))
+
+    def test_failfast_stops_the_running_units(self):
+        self.write_test(FAILING, "test_a.py")
+        self.write_test(SLOW, "test_b.py")
+        t0 = time.monotonic()
+        res = self.coordinate("2", "--failfast")
+        self.assertLess(time.monotonic() - t0, 30, "走っている単位を止めていない")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("落ちた単位 1: test_a", res.stdout)
+        self.assertIn("最初の失敗で止めた単位 1", res.stdout)
+
+    def test_failfast_does_not_start_the_remaining_units(self):
+        self.write_test(FAILING, "test_a.py")
+        self.write_test(SLOW, "test_b.py")
+        t0 = time.monotonic()
+        res = self.coordinate("1", "--failfast")
+        self.assertLess(time.monotonic() - t0, 30)
+        self.assertIn("最初の失敗で止めた単位 1", res.stdout)
+
+    def test_failfast_stops_inside_a_unit_too(self):
+        """クラスごとに割った大きいモジュールも、1 単位の中で最初の失敗で止める（単位に -f を渡す）."""
+        self.write_test(FAIL_THEN_SLOW, "test_a.py")
+        t0 = time.monotonic()
+        res = self.coordinate("1", "--failfast")
+        self.assertLess(time.monotonic() - t0, 30, "単位の中で残りのテストを回している")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+
+    def test_without_failfast_every_unit_runs(self):
+        self.write_test(FAILING, "test_a.py")
+        self.write_test(PASSING, "test_b.py")
+        res = self.coordinate("1")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("Ran 2 tests", res.stdout)
+        self.assertNotIn("止めた単位", res.stdout)
+
+    def test_a_green_failfast_run_counts_every_test(self):
+        self.write_test(PASSING, "test_a.py")
+        self.write_test(PASSING, "test_b.py")
+        res = self.coordinate("2", "--failfast")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("Ran 2 tests", res.stdout)
+
+    def test_tests_dir_and_cwd_point_at_another_tree(self):
+        other = self.root / "other"
+        (other / "t").mkdir(parents=True)
+        (other / "t" / "test_cwd.py").write_text(
+            "import os, unittest\n\n\nclass T(unittest.TestCase):\n    def test_cwd(self):\n"
+            "        with open('cwd.txt', 'w') as f:\n            f.write(os.getcwd())\n", encoding="utf-8")
+        res = self.coordinate("2", "--tests-dir", str(other / "t"), "--cwd", str(other))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(Path((other / "cwd.txt").read_text()).resolve(), other.resolve())
+
+    def test_zero_jobs_uses_the_default(self):
+        self.write_test(PASSING)
+        res = self.run_wrapper(env={**os.environ, "RUN_TESTS_JOBS": "3"}, args=("--_coordinator", "0"))
+        self.assertIn("3 並列", res.stdout)
+
+
 class JobsFromEnvTest(unittest.TestCase):
     """並列数の決め方（`RUN_TESTS_JOBS` が正の整数でなければ CPU 数、上限 `MAX_JOBS`）."""
 

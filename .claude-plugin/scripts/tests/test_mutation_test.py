@@ -18,6 +18,7 @@ import importlib.util
 import json
 import os
 import stat
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -944,6 +945,27 @@ class BudgetMainTest(unittest.TestCase):
         self.assertIn("生存 2", out)
         self.assertNotIn("予算", out)
 
+    def test_the_baseline_reaps_what_its_test_command_left(self):
+        """baseline もグループごと回す。取りまとめ役の単位は別の python で、`run` では取りまとめ役しか殺せない（#318）."""
+        pid_file = self.root / "leaked.pid"
+        (self.root / "leak.py").write_text(
+            "import subprocess, sys\n"
+            "p = subprocess.Popen(['sleep', '30'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+            f"open({str(pid_file)!r}, 'a').write(str(p.pid) + '\\n')\n", encoding="utf-8")
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            mt.main(["--file", "t.py", "--test-cmd", f"{sys.executable} leak.py"])
+        pid = int(pid_file.read_text().split()[0])   # 最初の行が baseline（後は変異ごとの判定が足す）
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = RunGroupSweepTest.state(pid)
+            if not state or state.startswith("Z"):
+                return
+            time.sleep(0.1)
+        subprocess.run(["kill", "-9", str(pid)], capture_output=True)
+        self.fail("baseline のテストコマンドが残した sleep が生きている")
+
 
 class BudgetCapTest(unittest.TestCase):
     """予算の残りで 1 変異の timeout を頭打ちにし、baseline の timeout を予算まで延ばす（GitHub issue #288）.
@@ -1004,18 +1026,21 @@ class BudgetCapTest(unittest.TestCase):
     def test_the_baseline_timeout_follows_the_budget(self):
         """固定のままだと、スイートが伸びて timeout を超えた晩から baseline が毎晩 FATAL になる."""
         seen: list[int] = []
-        orig = mt.run
+        orig = mt.run_group      # baseline は run_group で回す（単位をグループごと回収する / #318）
 
-        def spy(cmd, cwd, timeout=600):
+        def spy(cmd, cwd, timeout):
             if cmd == ["true"]:
                 seen.append(timeout)
             return orig(cmd, cwd, timeout=timeout)
 
-        mt.run = spy
-        self.addCleanup(setattr, mt, "run", orig)
+        mt.run_group = spy
+        self.addCleanup(setattr, mt, "run_group", orig)
+        baselines = []
         for extra in (("--budget-sec", "5000"), (), ("--budget-sec", "10")):
+            before = len(seen)
             self._main(*extra)
-        self.assertEqual(seen, [5000, 1800, 1800])
+            baselines.append(seen[before])   # 各回の最初の呼び出しが baseline（その後は変異ごとの判定）
+        self.assertEqual(baselines, [5000, 1800, 1800])
 
     def test_the_default_test_command_stops_at_the_first_failure(self):
         """落ちる変異は最初の失敗で止める（1 変異 = フルスイートの所要を縮める / #288）."""
@@ -1365,6 +1390,114 @@ class RelatedFirstMainTest(unittest.TestCase):
         stage, out = self.stage("t.py", deadline=time.monotonic() + 1)
         self.assertIsNone(stage)
         self.assertLess(time.monotonic() - t0, 4)
+
+    def test_the_full_suite_runs_in_parallel_unless_jobs_is_1(self):
+        """判定はどちらでも同じ。並列で回したかは見出しに出す（#318）."""
+        self.write_tests(check_y=False)
+        # 回るたびに起動の形を 1 行残す（取りまとめ役の単位は `python -c`、1 プロセスは `-m unittest`）
+        how = self.root / "how.txt"
+        (self.root / "tests" / "test_how.py").write_text(
+            "import sys, unittest\n\n\nclass H(unittest.TestCase):\n    def test_how(self):\n"
+            f"        with open({str(how)!r}, 'a') as f:\n            f.write(sys.argv[0] + '\\n')\n",
+            encoding="utf-8")
+        for jobs, parallel in (("2", True), ("1", False)):
+            with self.subTest(jobs=jobs):
+                how.unlink(missing_ok=True)
+                rc, out, s = self.run_main("--jobs", jobs)
+                self.assertEqual((s["killed"], s["survived"], s["full_runs"]), (1, 1, 2))
+                self.assertEqual("run-tests.py の取りまとめ役で" in out, parallel)
+                # baseline と、変異ごとの最後の段のどちらも同じ経路で回す
+                runs = how.read_text(encoding="utf-8").split()
+                self.assertGreaterEqual(len(runs), 2)
+                self.assertEqual({r == "-c" for r in runs}, {parallel}, runs)
+
+
+class FullSuiteCmdTest(unittest.TestCase):
+    """フルスイートの判定を run-tests.py の取りまとめ役に渡す条件（GitHub issue #318）."""
+
+    def setUp(self) -> None:
+        self._orig_root = mt.ROOT
+        mt.ROOT = Path("/repo")
+        self.addCleanup(lambda: setattr(mt, "ROOT", self._orig_root))
+
+    def test_a_plain_discover_goes_to_the_coordinator(self):
+        self.assertEqual(mt.full_suite_cmd("python3 -m unittest discover -s tests -f".split(), 0),
+                         ["python3", str(mt.RUN_TESTS), "--_coordinator", "0", "--tests-dir", "/repo/tests",
+                          "--cwd", "/repo", "--failfast"])
+
+    def test_failfast_only_follows_the_f_flag(self):
+        self.assertNotIn("--failfast", mt.full_suite_cmd("python3 -m unittest discover -s tests".split(), 4))
+
+    def test_one_job_or_a_narrowed_command_stays_as_given(self):
+        for cmd, jobs in (("python3 -m unittest discover -s tests -f", 1),
+                          ("python3 -m unittest discover -s tests -f -k Foo", 4),
+                          ("python3 check.py", 4)):
+            with self.subTest(cmd=cmd, jobs=jobs):
+                self.assertEqual(mt.full_suite_cmd(cmd.split(), jobs), cmd.split())
+
+    def test_the_coordinator_arg_matches_run_tests(self):
+        """引数の名前を複製しているので、run-tests.py 側の正本とずれたら落とす."""
+        self.assertIn(f'COORDINATOR_ARG = "{mt.RUN_TESTS_COORDINATOR_ARG}"', mt.RUN_TESTS.read_text(encoding="utf-8"))
+
+    def test_the_command_parses_with_run_tests_own_parser(self):
+        """引数の形（位置引数とオプション）も正本の `coordinator_args` で解釈できること.
+
+        期待値を mutation-test 側で組むだけだと、run-tests 側でオプション名が変わっても緑のまま、nightly の
+        baseline が argparse の exit 2 で毎晩 FATAL になる。
+        """
+        spec = importlib.util.spec_from_file_location("_run_tests_for_mutation_test", mt.RUN_TESTS)
+        rt = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rt)
+        cmd = mt.full_suite_cmd("python3 -m unittest discover -s tests -f".split(), 3)
+        self.assertEqual(cmd[2], rt.COORDINATOR_ARG)
+        a = rt.coordinator_args(cmd[3:])
+        self.assertEqual((a.jobs, a.failfast, a.tests_dir, a.cwd), (3, True, Path("/repo/tests"), Path("/repo")))
+
+
+class LastStageTest(unittest.TestCase):
+    """最後の段は取りまとめ役で回す。ただし取りまとめ役そのものの変異は 1 プロセスで判定する（#318）."""
+
+    TEST = "python3 -m unittest discover -s tests -f".split()
+
+    def setUp(self) -> None:
+        self.full = mt.full_suite_cmd(self.TEST, 4)
+
+    def test_other_files_use_the_coordinator(self):
+        self.assertEqual(mt.last_stage(mt.ROOT / "x.py", self.TEST, self.full, 60, 0), (self.full, 60))
+
+    def test_run_tests_itself_runs_in_one_process_with_a_longer_timeout(self):
+        self.assertEqual(mt.last_stage(mt.RUN_TESTS, self.TEST, self.full, 60, 0),
+                         (self.TEST, mt.BASELINE_TIMEOUT))
+
+    def test_an_explicit_timeout_wins(self):
+        self.assertEqual(mt.last_stage(mt.RUN_TESTS, self.TEST, self.full, 60, 90), (self.TEST, 90))
+
+    def test_without_the_coordinator_nothing_changes(self):
+        self.assertEqual(mt.last_stage(mt.RUN_TESTS, self.TEST, self.TEST, 60, 0), (self.TEST, 60))
+
+
+class RunGroupSweepTest(unittest.TestCase):
+    """正常に終わった回もグループの残りを落とす（並列判定で止めた単位の孫を残さない / #318）."""
+
+    @staticmethod
+    def state(pid: int) -> str:
+        return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+
+    def test_a_leftover_grandchild_is_killed(self):
+        # 孫がパイプを握ると communicate が EOF を待ち続けるので、出力は捨てさせる（単位の出力は一時ファイルに向く）
+        code = ("import subprocess; p = subprocess.Popen(['sleep', '30'], stdout=subprocess.DEVNULL, "
+                "stderr=subprocess.DEVNULL); print(p.pid)")
+        res = mt.run_group([sys.executable, "-c", code], Path.cwd(), timeout=30)
+        pid = int(res.stdout.strip())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = self.state(pid)
+            if not state or state.startswith("Z"):
+                return
+            time.sleep(0.1)
+        # 生きていると確かめた経路でだけ落とす（消えた pid は別のプロセスに再利用されうる）
+        subprocess.run(["kill", "-9", str(pid)], capture_output=True)
+        self.fail("グループに残った sleep が生きている")
 
 
 class SummaryJsonTest(unittest.TestCase):
