@@ -317,6 +317,23 @@ class NotifyPendingTest(HookTestCase):
         res = self.fire(env_extra={"PATH": str(bin_dir)})
         self.assertIn("LAUNCHED", res.stdout, "対照: この session_id を含む hub.json があれば python を起動する")
 
+    def test_python_is_launched_for_the_reopened_hub_conversation(self):
+        # 開き直して session_id が変わった hub の会話は、hub.json の会話の ID で拾って hub.py に判定させる（#325）
+        bin_dir = Path(self.path_with_only())
+        stub = bin_dir / "python3"
+        stub.write_text("#!/bin/bash\necho LAUNCHED\n", encoding="utf-8")
+        os.chmod(stub, 0o755)
+        pdir = self.make_project()
+        host = "local_5c2bef5a-36fb-439d-ba78-92eec681d03a"
+        (pdir / "hub.json").write_text(json.dumps({"session_id": SID_HUB, "host_session_id": host,
+                                                    "name": "hub"}), encoding="utf-8")
+        env = {"PATH": str(bin_dir)}
+        self.assertQuiet(self.fire(session_id=SID_OTHER, env_extra=env))
+        self.assertQuiet(self.fire(session_id=SID_OTHER, env_extra={
+            **env, "CLAUDE_CODE_HOST_SESSION_ID": "local_99999999-9999-4999-8999-999999999999"}))
+        res = self.fire(session_id=SID_OTHER, env_extra={**env, "CLAUDE_CODE_HOST_SESSION_ID": host})
+        self.assertIn("LAUNCHED", res.stdout)
+
     def test_without_python3_it_is_silent(self):
         self.make_project()
         self.assertQuiet(self.fire(env_extra={"PATH": self.path_with_only()}))

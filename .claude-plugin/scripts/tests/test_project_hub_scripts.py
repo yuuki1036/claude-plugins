@@ -63,9 +63,11 @@ class HubTestBase(unittest.TestCase):
     def run_hub(self, *args: str, stdin: str | None = None, env_extra: dict | None = None,
                 cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         env = scrub()
-        for key in ("CLAUDE_CODE_HOST_SESSION_ID", "CLAUDE_CONFIG_DIR"):
+        for key in ("CLAUDE_CODE_HOST_SESSION_ID", "CLAUDE_CONFIG_DIR", "APPDATA"):
             env.pop(key, None)
+        # Desktop の記録（開き直しの判定）も開発機の実物を読まない
         env.update({"PROJECT_HUB_DIR": str(self.root), "HOME": str(self.tmp / "home"),
+                    "PROJECT_HUB_DESKTOP_DIR": str(self.tmp / "desktop"),
                     "CLAUDE_CODE_SESSION_ID": SID_HUB})
         env.update(env_extra or {})
         return subprocess.run([sys.executable, str(HUB), *args], input=stdin, capture_output=True,
@@ -358,6 +360,166 @@ class TakeoverAndCloseTest(HubTestBase):
         res = self.report()
         self.assertEqual(res.returncode, 4, res)
         self.assertIn("想定外", res.stderr)
+
+
+HOST = "local_5c2bef5a-36fb-439d-ba78-92eec681d03a"
+
+
+class ResumeTest(HubTestBase):
+    """Desktop で hub の会話を開き直すと CLI の session_id だけが変わる（GitHub issue #325）.
+
+    同じ会話なら takeover なしで続けられ、会話の ID を継承しただけの子の CLI・別の会話には引き継がない。
+    """
+
+    def desktop(self, cli: str | None, host: str = HOST, session_id: str | None = None) -> None:
+        # Desktop の記録の形（claude-code-sessions/<account>/<org>/<host>.json）。cli=None で記録を消す
+        path = self.tmp / "desktop" / "claude-code-sessions" / "acct" / "org" / f"{host}.json"
+        if cli is None:
+            path.unlink(missing_ok=True)
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"sessionId": session_id or host, "cliSessionId": cli}), encoding="utf-8")
+
+    def hub_json(self, pdir: Path) -> dict:
+        return json.loads((pdir / "hub.json").read_text(encoding="utf-8"))
+
+    def init_on_desktop(self) -> Path:
+        self.desktop(SID_HUB)
+        args = ["init", "--project", "pj", "--name", "hub-session", "--tracker", "github",
+                "--tracker-repo", "o/r", "--approval-mode", "number", "--repo", f"{self.repo}=base"]
+        self.ok(*args, env_extra={"CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        return self.root / "pj"
+
+    def refresh(self, sid: str, host: str | None = HOST):
+        env = {"CLAUDE_CODE_SESSION_ID": sid}
+        if host:
+            env["CLAUDE_CODE_HOST_SESSION_ID"] = host
+        return self.run_hub("refresh-hub", "--project", "pj", "--name", "hub-session", env_extra=env)
+
+    def test_init_and_takeover_keep_the_conversation_id_only_when_desktop_confirms_it(self):
+        pdir = self.init_on_desktop()
+        self.assertEqual(self.hub_json(pdir)["host_session_id"], HOST)
+        # 子の CLI は会話の ID を継承するが、Desktop の記録でその会話につないでいるのは親のセッション
+        self.ok("takeover", "--project", "pj", "--name", "child",
+                env_extra={"CLAUDE_CODE_SESSION_ID": SID_B, "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertIsNone(self.hub_json(pdir)["host_session_id"])
+        self.desktop(SID_A)
+        self.ok("takeover", "--project", "pj", "--name", "again",
+                env_extra={"CLAUDE_CODE_SESSION_ID": SID_A, "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertEqual(self.hub_json(pdir)["host_session_id"], HOST)
+
+    def test_reopened_conversation_continues_as_the_hub_without_takeover(self):
+        pdir = self.init_on_desktop()
+        self.desktop(SID_B)
+        res = self.refresh(SID_B)
+        self.assertEqual(res.returncode, 0, res)
+        self.assertEqual(json.loads(res.stdout)["resumed_from"], SID_HUB)
+        hub = self.hub_json(pdir)
+        self.assertEqual((hub["session_id"], hub["host_session_id"], hub["name"]),
+                         (SID_B, HOST, "hub-session"))
+        last = self.journal(pdir)[-1]
+        self.assertEqual((last["kind"], last["subject"], last["body"]["reason"], last["body"]["from_session_id"]),
+                         ("takeover", SID_B, "resume", SID_HUB))
+        self.assertNotIn("resumed_from", self.ok("refresh-hub", "--project", "pj", "--name", "hub-session",
+                                                 env_extra={"CLAUDE_CODE_SESSION_ID": SID_B,
+                                                            "CLAUDE_CODE_HOST_SESSION_ID": HOST}),
+                         "付け替えた後は普通の hub")
+        # 前の session_id はもう hub ではない（開き直す前のプロセスが残っていても書けない）
+        self.assertEqual(self.fact("c", "s", sid=SID_HUB).returncode, 3)
+
+    def test_any_hub_command_adopts_the_reopened_conversation(self):
+        pdir = self.init_on_desktop()
+        self.desktop(SID_B)
+        res = self.run_hub("fact", "--project", "pj", stdin=json.dumps({"claim": "c", "source": "s"}),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": SID_B, "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertEqual(self.hub_json(pdir)["session_id"], SID_B)
+
+    def test_does_not_adopt_unless_the_same_conversation_is_confirmed(self):
+        other = "local_99999999-9999-4999-8999-999999999999"
+        cases = {
+            # 子の CLI: 会話の ID は継承しているが、Desktop がその会話につないでいるのは hub のまま
+            "child_cli": (lambda: self.desktop(SID_HUB), HOST),
+            "other_conversation": (lambda: self.desktop(SID_B, host=other), other),
+            "no_host_env": (lambda: self.desktop(SID_B), None),
+            "no_desktop_record": (lambda: self.desktop(None), HOST),
+            "record_for_another_conversation": (lambda: self.desktop(SID_B, session_id=other), HOST),
+        }
+        for label, (arrange, host) in cases.items():
+            with self.subTest(label):
+                pdir = self.init_on_desktop()
+                before = self.hub_json(pdir)
+                journal = (pdir / "journal.jsonl").read_text(encoding="utf-8")
+                arrange()
+                res = self.refresh(SID_B, host)
+                self.assertEqual(res.returncode, 3, res)
+                self.assertIn("開き直した直後", res.stderr)
+                self.assertIn("takeover", res.stderr)
+                self.assertEqual(self.hub_json(pdir), before)
+                self.assertEqual((pdir / "journal.jsonl").read_text(encoding="utf-8"), journal)
+                shutil.rmtree(self.root)
+
+    def test_a_hub_without_the_conversation_id_is_not_adopted_but_gets_it_on_refresh(self):
+        pdir = self.init()  # 0.6.2 までの hub.json（会話の ID を持たない）
+        self.desktop(SID_B)
+        self.assertEqual(self.refresh(SID_B).returncode, 3, "持っていない ID で同じ会話とはみなさない")
+        self.desktop(SID_HUB)
+        self.assertEqual(self.refresh(SID_HUB).returncode, 0)
+        self.assertEqual(self.hub_json(pdir)["host_session_id"], HOST)
+        self.desktop(SID_B)
+        self.assertEqual(self.refresh(SID_B).returncode, 0, "次の開き直しからは自動で引き継ぐ")
+
+    def test_session_start_on_resume_injects_the_state_and_adopts(self):
+        pdir = self.init_on_desktop()
+        self.desktop(SID_B)
+        res = self.run_hub("inject", stdin=json.dumps({"session_id": SID_B, "source": "resume"}),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": "", "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("このセッションは PJ「pj」の hub", res.stdout)
+        self.assertIn("このセッションへ付け替えた", res.stdout, "付け替えた回は lead に知らせる材料を注入する")
+        self.assertIn(SID_HUB, res.stdout)
+        self.assertEqual(self.hub_json(pdir)["session_id"], SID_B)
+        # 付け替えた後の SessionStart（compact など）では知らせを繰り返さない
+        res = self.run_hub("inject", stdin=json.dumps({"session_id": SID_B, "source": "compact"}),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": "", "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertIn("の hub", res.stdout)
+        self.assertNotIn("付け替えた", res.stdout)
+        # 子の CLI の SessionStart には注入しない
+        res = self.run_hub("inject", stdin=json.dumps({"session_id": SID_A, "source": "startup"}),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": "", "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertNotIn("の hub", res.stdout)
+        self.assertEqual(self.hub_json(pdir)["session_id"], SID_B)
+
+
+    def test_pending_hint_adopts_and_tells_even_without_pending_reports(self):
+        # SessionStart の時点で Desktop の記録が古く、付け替えが UserPromptSubmit まで遅れた回
+        pdir = self.init_on_desktop()
+        self.desktop(SID_B)
+        res = self.run_hub("pending-hint", stdin=json.dumps({"session_id": SID_B}),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": "", "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("このセッションへ付け替えた", res.stdout)
+        self.assertNotIn("未取り込みの report", res.stdout, "report が無い回に取り込みを促さない")
+        self.assertEqual(self.hub_json(pdir)["session_id"], SID_B)
+
+    def test_a_journal_that_cannot_be_written_leaves_the_hub_unchanged(self):
+        # journal を先に書くので、書けなければ hub.json も替えない（記録の無い付け替えを作らない）
+        pdir = self.init_on_desktop()
+        self.desktop(SID_B)
+        before = self.hub_json(pdir)
+        journal = pdir / "journal.jsonl"
+        journal.unlink()
+        journal.mkdir()
+        (journal / "x").write_text("x", encoding="utf-8")
+        res = self.refresh(SID_B)
+        self.assertEqual(res.returncode, 4, res)
+        self.assertEqual(self.hub_json(pdir), before)
+        res = self.run_hub("inject", stdin=json.dumps({"session_id": SID_B, "source": "resume"}),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": "", "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertNotIn("の hub", res.stdout)
+        self.assertIn("付け替えられない", res.stderr, "hook の経路でも黙って飛ばさない")
+        self.assertEqual(self.hub_json(pdir), before)
 
 
 class ResolveToWorkerTest(HubTestBase):

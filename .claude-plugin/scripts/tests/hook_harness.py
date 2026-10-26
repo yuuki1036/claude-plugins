@@ -92,6 +92,8 @@ class HookTestCase(unittest.TestCase):
         # 識別子になるので、継承すると開発機のセッションの打点を読む / CI と手元で別の経路を通る。
         # 要るテストは `env_extra` か stdin の `session_id` で渡す
         env.pop("CLAUDE_CODE_SESSION_ID", None)
+        # Desktop の会話の ID も同じ扱い（project-hub の hook が開き直しの判定に使う / GitHub issue #325）
+        env.pop("CLAUDE_CODE_HOST_SESSION_ID", None)
         env.update(env_extra or {})
         proc = subprocess.run(
             ["bash", str(self.plugin_root / self.SCRIPT)],
