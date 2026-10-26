@@ -641,6 +641,7 @@ def cmd_init(args) -> int:
         repos.append({"path": str(resolved), "base": base})
     if not repos:
         raise HubError(2, "--repo <path>[=<base>] を 1 つ以上指定する")
+    living_spec = living_spec_path(args.living_spec) if args.living_spec else None
 
     base_dir = root()
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -652,11 +653,14 @@ def cmd_init(args) -> int:
         (pdir / sub).mkdir(parents=True, exist_ok=True)
     for name in ("journal.jsonl", "facts.jsonl"):
         (pdir / name).touch()
-    write_json(pdir / "config.json", {
+    config = {
         "project": args.project, "status": "active", "tracker": tracker, "repos": repos,
         "approval": {"prefix": args.approval_prefix, "suffix": args.approval_suffix,
                      "mode": args.approval_mode},
-    })
+    }
+    if living_spec:
+        config["living_spec"] = living_spec
+    write_json(pdir / "config.json", config)
     write_json(pdir / "hub.json", {"session_id": sid, "name": args.name, "updated": now()})
     out = {"project": args.project, "dir": str(pdir), "hub": args.name, "repos": repos,
            "gitignored": gitignored(pdir / "config.json"), "approval_mode": args.approval_mode,
@@ -710,6 +714,7 @@ def cmd_refresh_hub(args) -> int:
     mode, mode_warning = approval_mode(config)
     out = {"project": args.project, "hub": args.name, "dir": str(pdir), "status": config.get("status"),
            "tracker": config.get("tracker"), "repos": config.get("repos"),
+           "living_spec": config.get("living_spec"),
            "approval": config.get("approval"), "approval_mode": mode}
     warnings = [w for w in (default_name_warning(args.name), mode_warning) if w]
     if warnings:
@@ -732,6 +737,40 @@ def cmd_set_mode(args) -> int:
     write_state(pdir)
     emit({"project": args.project, "approval_mode": args.mode, "previous": previous,
           "mode_notice": mode_notice(args.mode)})
+    return 0
+
+
+def living_spec_path(raw: str) -> str:
+    """config の living_spec に入れる絶対パス（repo の `.claude/living-specs/<slug>.md`。ADR-20261026090521）."""
+    path = Path(raw).expanduser().resolve()
+    if path.suffix != ".md" or not path.is_file():
+        raise HubError(2, f"living spec のファイルが無い: {path}（.claude/living-specs/<slug>.md を指す）")
+    return str(path)
+
+
+def living_spec_line(config: dict) -> str | None:
+    raw = config.get("living_spec")
+    if not isinstance(raw, str) or not raw:
+        return None
+    # hub は living spec を書かないので、中身は写さずパスと見方だけを載せる
+    if not Path(raw).is_file():
+        return f"living spec: {cell(raw, None)}（ファイルが無い。`set-living-spec` で直す）"
+    return f"living spec: {cell(raw, None)}（現在地は `/project-hub:living-spec status`）"
+
+
+def cmd_set_living_spec(args) -> int:
+    """PJ の living spec を結ぶ・外す（`-` で外す）."""
+    pdir = project_dir(args.project)
+    require_hub(pdir, args.session_id)
+    config = load_config(pdir)
+    previous = config.get("living_spec")
+    if args.path == "-":
+        config.pop("living_spec", None)
+    else:
+        config["living_spec"] = living_spec_path(args.path)
+    write_json(pdir / "config.json", config)
+    write_state(pdir)
+    emit({"project": args.project, "living_spec": config.get("living_spec"), "previous": previous})
     return 0
 
 
@@ -1338,10 +1377,13 @@ def render_state(pdir: Path) -> tuple[str, int]:
            f"- hub: {cell(hub.get('name'))}（session {cell(hub.get('session_id'))}）",
            f"- PJ の状態: {cell(config.get('status'))}",
            f"- 未取り込みの report: {pending_count(pdir)} 件",
-           f"- {notify_line(config)}",
-           "",
-           "## sub",
-           ""]
+           f"- {notify_line(config)}"]
+    spec_line = living_spec_line(config)
+    if spec_line:
+        out.append(f"- {spec_line}")
+    out += ["",
+            "## sub",
+            ""]
     if sessions:
         # report の自由文（needs_lead / questions / follow_ups / claims）は写さず件数だけ載せる。
         # 作業側が読んだ外部の文面を、lead の承認なしに hub のコンテキストへ入れないため。
@@ -1910,6 +1952,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="<path>[=<base>]（複数可。base の既定は origin/HEAD が指すブランチ。repo に実在すること）")
     p.add_argument("--approval-prefix", default="")
     p.add_argument("--approval-suffix", default="")
+    p.add_argument("--living-spec", help="PJ の living spec（.claude/living-specs/<slug>.md）。後から set-living-spec でも結べる")
     p.add_argument("--approval-mode", choices=APPROVAL_MODES, default="auto",
                    help="送る前の承認の取り方（auto: lead の確認が要る事柄を含まない連絡は承認なしに送る / "
                         "number: 4 桁の番号の打ち返し / phrase: 本文の提示より後の lead の「送って」）")
@@ -1923,6 +1966,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("set-mode", cmd_set_mode, "送る前の承認の方式を切り替える（config の approval.mode）")
     p.add_argument("--mode", choices=APPROVAL_MODES, required=True)
+
+    p = add("set-living-spec", cmd_set_living_spec, "PJ の living spec を結ぶ（config の living_spec）")
+    p.add_argument("--path", required=True, help="living spec のファイル（.claude/living-specs/<slug>.md）。- で外す")
 
     add("close", cmd_close, "config の status を closed にする")
     add("projects", cmd_projects, "PJ の一覧（status・hub の名前・未取り込みの件数）",

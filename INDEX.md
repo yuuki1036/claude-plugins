@@ -18,16 +18,16 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [code-review](#code-review) | 2.162.1 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.6.0 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.39.1 | 4 | 7 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
-| [doc-freshness](#doc-freshness) | 0.5.4 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
+| [doc-freshness](#doc-freshness) | 0.5.5 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.9.0 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.26.1 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.9.2 | - | - | - | PreToolUse, PostToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行・公開先への業務情報送信・zsh で壊れる書き方・gh run list --commit への短縮 SHA・知らない間のブランチ切り替え後の git 書き込みを機械ブロック |
 | [issue-workflow](#issue-workflow) | 1.13.1 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
-| [living-spec-workflow](#living-spec-workflow) | 0.7.2 | 2 | 2 | - | - | - | Issue 化前の設計収束ドキュメントを append-only 運用 |
+| [living-spec-workflow](#living-spec-workflow) | 0.7.3 | 2 | 2 | - | - | - | **deprecated → project-hub** |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.3.3 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.9.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
-| [project-hub](#project-hub) | 0.5.2 | 2 | 3 | - | SessionStart, PostCompact, UserPromptSubmit | - | 複数の sub を 1 つの hub で束ねる PJ の状態ファイルと自動の連絡 |
+| [project-hub](#project-hub) | 0.6.0 | 4 | 5 | - | SessionStart, PostCompact, UserPromptSubmit | - | PJ の決定（living spec）と、複数の sub を 1 つの hub で束ねる段取り |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.10.2 | 1 | 1 | - | SessionStart | - | 文章を語句レベルで推敲・添削 |
 
@@ -115,6 +115,7 @@ Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合�
 - **移行**: 旧 2 プラグインとの同一マシン併存は禁止（uninstall → install を連続実行）
 
 ### living-spec-workflow
+**deprecated → project-hub**（ADR-20261026090521。`/update-all` が自動で移行する。全マシンの移行後に削除）。以下は移行前の内容。
 Issue 化前の設計収束ドキュメント (living spec) を `.claude/living-specs/` にフラット配置で運用。OQ 台帳と Decision log を両方 append-only の表として持ち、情報の move を設計から除いて消失を構造的に防ぐ。確度ラベル（確定 / 方向性(仮) / 未定）と since 日付でセクション粒度の収束を追跡。
 - **commands / skills**（同名ペア 2）: `living-spec`（サブコマンド: `init` / `oq` / `oq list` / `decision` / `spec` / `status`）, `living-spec-maintain`（整合・鮮度の 8 段検証。`--spec` / `--all`）
 - **references**: `living-spec/format-spec.md`（対象ファイル特定・表スキーマ・確度ラベル・採番規約・パース正規表現の正本）, `living-spec/template.md`, `living-spec-maintain/check-rules.md`（段 1-8 の判定内容・severity・修正方針の正本）
@@ -140,10 +141,10 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 - **hooks**: SessionStart
 
 ### project-hub
-1 つのセッションを PJ の hub にして、複数の sub（作業セッション）で進める PJ の状態（sub・PR・Issue・確かめた事実）を `~/.claude/project-hub/<PJ>/` のファイルで持つ。hub は指示出しと進め方・仕様の相談役で実装せず、`start` で sub を起動する（Desktop）。sub の report は inbox にファイルで置き SendMessage は通知だけ。hub → sub の連絡は送る直前に ListAgents で宛先を引き直し、1 件に決まらなければ送らない。`approval.mode: auto`（既定）では、lead の確認が要る事柄を含まない連絡（質問への出典つきの答え・段取り・lead の言葉の伝達）を承認なしに送る。brief が渡す事実は出典つきで hub が確かめた facts だけから引く。
-- **commands**: `hub`, `report`
-- **skills**: `hub`（init / status / start / brief / relay / fact / mode / takeover / close）, `report`, `hub-living-spec`（living spec と hub を 1 セッションで併用する決まり。#322 までの橋渡し）
-- **dormant 連携**: living-spec-workflow 0.7.0+（living spec のある PJ でだけ `hub-living-spec` を読む。未導入なら使わない）
+PJ の決定（living spec: repo の `.claude/living-specs/<slug>.md`。旧 living-spec-workflow を吸収 / ADR-20261026090521）と段取り（hub）を持つ。hub は 1 つのセッションを PJ の hub にして、複数の sub（作業セッション）で進める PJ の状態（sub・PR・Issue・確かめた事実）を `~/.claude/project-hub/<PJ>/` のファイルで持つ。hub は指示出しと進め方・仕様の相談役で実装せず、`start` で sub を起動する（Desktop）。sub の report は inbox にファイルで置き SendMessage は通知だけ。hub → sub の連絡は送る直前に ListAgents で宛先を引き直し、1 件に決まらなければ送らない。`approval.mode: auto`（既定）では、lead の確認が要る事柄を含まない連絡（質問への出典つきの答え・段取り・lead の言葉の伝達）を承認なしに送る。brief が渡す事実は出典つきで hub が確かめた facts だけから引く。
+- **commands**: `hub`, `report`, `living-spec`, `living-spec-maintain`
+- **skills**: `hub`（init / status / start / brief / relay / fact / mode / living-spec / takeover / close）, `report`, `living-spec`（init / oq / decision / spec / status。旧 living-spec-workflow）, `living-spec-maintain`（8 段検証）, `hub-living-spec`（living spec と hub を 1 セッションで併用する決まり）
+- **dormant 連携**: `doc-freshness` 0.4.0+（living spec のファイル単位の鮮度 lint を委譲）
 - **hooks**: SessionStart（check-deps / inject-state）, PostCompact（inject-state: hub のセッションには state.md を、PJ の repo にいる未登録の作業セッションには紐付けの案内を注入）, UserPromptSubmit（notify-pending: hub のセッションに未取り込みの report があるときだけ取り込みを促す）
 
 ### spec-advisor

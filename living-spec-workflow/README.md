@@ -1,5 +1,14 @@
 # living-spec-workflow
 
+> **deprecated → project-hub**（ADR-20261026090521 / GitHub issue #322）。living spec の skill（`living-spec` / `living-spec-maintain`）は project-hub に移った。`/update-all`（plugin-manager）を回すと、このプラグインを外して project-hub を入れる。手で移るなら:
+>
+> ```bash
+> claude plugin uninstall living-spec-workflow
+> claude plugin install project-hub@yuuki1036-claude-plugins
+> ```
+>
+> 書式と手順は変えていない。既存の `.claude/living-specs/*.md` はそのまま使える。コマンドは `/project-hub:living-spec` / `/project-hub:living-spec-maintain` になる。新旧を同時に入れるとトリガーが重なるので、どちらか一方にする。全マシンの移行を確かめたら、このディレクトリは消す。
+
 Issue 化する前段の「設計収束ドキュメント」(living spec) を作成・運用するプラグイン。**未確定を抱えていることが正常状態**の文書を、採番・書式・相互参照を機械化しながら「仮 → 確定」へ収束させる。
 
 ## 使い方

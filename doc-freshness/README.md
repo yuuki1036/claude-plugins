@@ -33,7 +33,7 @@ phase: current               # current | target | superseded
 ## 走査対象
 
 - プロジェクト root 配下の `**/*.md`
-- `.claude/adr/**/*.md`（adr-keeper）、`.claude/designs/**/*.md`（design-doc）、`.claude/living-specs/**/*.md`（living-spec-workflow）を明示追加（Glob は既定で dot ディレクトリを拾わないため）
+- `.claude/adr/**/*.md`（adr-keeper）、`.claude/designs/**/*.md`（design-doc）、`.claude/living-specs/**/*.md`（project-hub の living spec。旧 living-spec-workflow）を明示追加（Glob は既定で dot ディレクトリを拾わないため）
 - 除外: `.git/` / `node_modules/` / 生成物、および `.claude/adr` / `.claude/designs` / `.claude/living-specs` を除く `.claude/` 配下、プロジェクトツリー外
 
 ## チェック項目

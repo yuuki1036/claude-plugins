@@ -51,7 +51,7 @@ allowed-tools:
    - **dot ディレクトリ配下の doc を明示追加**: Glob の `**` は既定で dot ディレクトリ（`.claude/` 等）を拾わないため、以下を個別に Glob して対象に加える:
      - `.claude/adr/**/*.md`（adr-keeper が鮮度 lint を委譲する ADR）
      - `.claude/designs/**/*.md`（design-doc が鮮度 lint を委譲する design doc）
-     - `.claude/living-specs/**/*.md`（living-spec-workflow が鮮度 lint を委譲する living spec）
+     - `.claude/living-specs/**/*.md`（project-hub の living spec が鮮度 lint を委譲する。旧 living-spec-workflow）
    - `CLAUDE.md` / `AGENTS.md` はリポジトリ root + 各サブディレクトリ両方を対象
    - **除外**: 以下は走査対象から外す:
      - `.git/` / `node_modules/` / `dist/` / `build/` / `vendor/` 配下（生成物・依存ライブラリ）

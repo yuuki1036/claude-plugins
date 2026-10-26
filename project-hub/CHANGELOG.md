@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.0] - 2026-10-26
+
+### Added
+
+- **living spec を統合した**（旧 living-spec-workflow を吸収 / ADR-20261026090521・GitHub issue #322）。`living-spec`（init / oq / decision / spec / status）と `living-spec-maintain`（8 段検証）の skill と command をこのプラグインに移した。書式と手順は変えていない。living spec は今どおり repo の `.claude/living-specs/<slug>.md` に置く。設計だけを詰める段階は living spec だけで使え、hub は sub を起動するときに init する
+- hub の `living-spec` サブコマンド（`hub.py set-living-spec --path <path|->`）と `init --living-spec`: PJ の living spec を config の `living_spec` で結ぶ。state.md にパスと見方が出る（ファイルが無くなったらその旨を出す）。`refresh-hub` の出力にも載り、`status` は living spec の現在地も見る
+- 任意依存に doc-freshness（living spec の鮮度 lint の委譲先）を足した
+
+### Changed
+
+- `hub-living-spec` を「統合までの橋渡し」から「living spec のある PJ の決まり」に書き直した（別プラグインの版の名指しを外した）
+
 ## [0.5.2] - 2026-10-26
 
 ### Fixed

@@ -4,7 +4,7 @@ description: >
   複数の sub（作業セッション）で進める PJ を、1 つの hub セッションから束ねる。hub は指示出しと進め方・仕様の相談役で、実装しない。
   状態（sub・PR・Issue・確かめた事実）は ~/.claude/project-hub/ のファイルに置き、sub の report を取り込み、
   lead の確認が要らない連絡は自動で送る（宛先は送る直前に引き直す）。hub から sub を起動できる。
-  サブコマンド init / status / start / brief / relay / fact / mode / takeover / close。
+  サブコマンド init / status / start / brief / relay / fact / mode / living-spec / takeover / close。
   トリガー: 「hub を作って」「hub init」「hub status」「hub の状況」「hub start」「hub から sub を起動」「hub から brief」「hub から relay」「hub mode」「hub を引き継ぐ」「/project-hub:hub」
 allowed-tools:
   - Bash
@@ -48,7 +48,7 @@ allowed-tools:
   - どちらも**承認ではない**。送る前の承認が要る方式（`number` / `phrase`）では、承認は lead（利用者）自身の発言だけで決まる（relay の 4）
 - **hub が起動した sub のターンの終わりの知らせ**（Desktop が返す linked session の知らせ）: 未取り込みの report があれば上の通知と同じく取り込んで処理する。無ければ何もしない（ターンの終わりは節目とは限らない）
 - **未取り込みの report の知らせ**: UserPromptSubmit hook が、inbox に未取り込みの report があると「未取り込みの report がある」と取り込みのコマンドを注入する（通知が届かなかった回も、次の発言で拾う）。出たら、その発言に答える前に上の通知と同じく取り込んで処理する
-- **living spec のある PJ**: 同じセッションで living spec（living-spec-workflow）の決定も受け持つなら、`${CLAUDE_PLUGIN_ROOT}/skills/hub-living-spec/SKILL.md` を Read してその決まりに従う（決定を書くのは lead が決めたときだけ・確定を覆した決定の波及・sub の report から OQ の候補を出す）
+- **living spec のある PJ**: 同じセッションで living spec（このプラグインの `living-spec` skill。repo の `.claude/living-specs/<slug>.md`）の決定も受け持つなら、`${CLAUDE_PLUGIN_ROOT}/skills/hub-living-spec/SKILL.md` を Read してその決まりに従う（決定を書くのは lead が決めたときだけ・確定を覆した決定の波及・sub の report から OQ の候補を出す）
 - **hub が書かないもの**: Issue トラッカー（起票・更新は issue-workflow か人間）・判断の正本（Issue 本文とリポジトリの仕様 docs）・repo のコード。hub の journal は経緯の記録で、正本ではない
 - **起票の持ち主（tracker `local`）**: issue-workflow の local backend は `counter.txt` で採番するので、複数のセッションが起票すると番号がぶつかりうる。起票は hub のセッションで lead が issue-workflow を呼んだときだけにし、sub には起票させない（brief でそう伝え、候補は report の `follow_ups` で受ける）。hub は `follow_ups` を lead に見せ、自分では起票しない
 
@@ -88,6 +88,7 @@ lead の確認が要る事柄を含まない連絡は、承認を取らずに送
    - repos: `--repo <path>[=<base>]`（複数可）。既定は cwd の repo の toplevel。base を省くと `origin/HEAD` が指すブランチ（無ければ `origin/main` → `origin/master`）。どれも無ければ止まるので、利用者に base を聞いて `=<base>` で渡す。repo に実在しない base は弾かれる
    - 前置き・締め（`--approval-prefix` / `--approval-suffix`）: 送る本文の前後に付ける定型文。言われなければ空でよい（後から config.json で直せる）
    - 送る前の承認の方式（`--approval-mode`）: `auto`（既定。「自動の連絡」の範囲は承認なしに送る）/ `number`（4 桁の番号を打ち返す）/ `phrase`（本文を見せた後に lead が「送って」と言えば送る）。lead が送る前に毎回見たいと言ったときだけ `number` か `phrase` にする。聞かなくてよい（後から `mode` で直せる）
+   - living spec（`--living-spec <path>`）: PJ の repo に `.claude/living-specs/*.md` があれば、そのパスを渡す（1 本なら聞かずに、複数なら利用者に聞く）。無ければ渡さない（後から `living-spec` で結べる）
 3. ListAgents から自分の名前を取り、`hub.py init --project '<PJ>' --name '<名前>' ...` を実行する
 4. 出力を伝える。`mode_notice`（自動の連絡が有効かと、その止め方）は**必ずそのまま**伝える（lead が知らないまま auto で動かさない）:
    - `gitignored`: `true` は同期の対象から外れている / `false` は `~/.claude` 等の git リポジトリで追跡されうる（`<root>/.gitignore` の中身 `*` を確かめるよう伝える）/ `null` は git の外
@@ -98,7 +99,7 @@ lead の確認が要る事柄を含まない連絡は、承認を取らずに送
 
 **完了基準**: 下の 1〜9 をすべて通し（9 は `auto` の PJ だけ）、10 の見出し（`auto` なら 4 つ、それ以外は 3 つ）を出し、11 で印を進めた。1 で exit 3 だった回は、state.md を見せて `takeover` を案内したことを完了とする。
 
-1. ListAgents から名前と行を抜き出す。`hub.py refresh-hub --project '<PJ>' --name '<自分の名前>'`（出力に tracker・repos・approval・`approval_mode`・dir がある。`warning` は init の 4 と同じく伝える。approval.mode が読めなかった旨の `warning` は `mode` での直し方を添えて伝える）
+1. ListAgents から名前と行を抜き出す。`hub.py refresh-hub --project '<PJ>' --name '<自分の名前>'`（出力に tracker・repos・approval・`approval_mode`・`living_spec`・dir がある。`living_spec` があれば、この status の 10 を出す前に `/project-hub:living-spec status` でその living spec の現在地（今の phase・先送り・open な OQ）も見て、lead に出す内容に添える。`warning` は init の 4 と同じく伝える。approval.mode が読めなかった旨の `warning` は `mode` での直し方を添えて伝える）
    - exit 3（この hub は別のセッションで登録されている）→ 取り込みも書き込みもしない。stderr に出る state.md を Read して見せ、`takeover` を案内して終える
 2. `hub.py ingest --project '<PJ>'`。`invalid` があればファイル名と理由を出す（`inbox/invalid/` に移してある。中身は開かない）。理由が版のずれ（schema）なら、そのセッションに project-hub を更新して report し直すよう relay で頼むことを提案する
 3. `hub.py presence --project '<PJ>' --peer-count <N>` に抜き出した行を stdin で渡す。`parse_failed` なら生の ListAgents の出力を添えて「解析できなかった」と出し、4 へ進む（不在の判定は前回のまま）。`renamed`（登録した時の ref の行が別の名前でいる = 改名した同じセッション）は不在にせず、state.md の名前の欄に `登録名 → 今の名前` で出る
@@ -202,6 +203,10 @@ hub が**自分で確かめた**事実だけを足す（ファイルを読んだ
 ## takeover
 
 このセッションを hub にする（前の hub のセッションを閉じた・開き直した）。ListAgents から自分の名前を取り、`hub.py takeover --project '<PJ>' --name '<名前>'`。config・journal・facts は触らない（自動で送った連絡の一覧の印も引き継ぐ）。出力の `mode_notice` は**必ずそのまま**伝え、`warning` は init の 4 と同じく伝える。続けて `status` を回す。
+
+## living-spec `<path|->`
+
+PJ の living spec を結ぶ・外す。`hub.py set-living-spec --project '<PJ>' --path '<.claude/living-specs/<slug>.md のパス>'`（外すときは `--path -`）。結ぶと state.md に living spec のパスが出て、コンパクションの後も決定の置き場所が分かる。hub は living spec を書かない（書くのは `living-spec` skill で、lead が決めたときだけ。`hub-living-spec` の決まり）
 
 ## close
 

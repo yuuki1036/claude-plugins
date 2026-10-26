@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.7.3] - 2026-10-26
+
+### Deprecated
+
+- **project-hub に統合した**（ADR-20261026090521 / GitHub issue #322）。`_superseded_by: project-hub` を付けたので、`/update-all` がこのプラグインを外して project-hub を入れる。書式と手順は変えていない。全マシンの移行を確かめたらディレクトリを消す
+
 ## [0.7.2] - 2026-10-26
 
 ### Fixed

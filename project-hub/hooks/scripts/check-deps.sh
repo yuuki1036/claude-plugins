@@ -24,10 +24,17 @@ check_mcp() {
   return 0
 }
 
+check_plugin() {
+  # 任意依存（living spec の鮮度 lint の委譲先）。未導入でも living spec は動くので警告しない
+  local name="$1" required="$2" desc="$3"
+  return 0
+}
+
 # --- チェック実行 ---
 check_cli "python3" "true" "状態ファイルの読み書き・宛先の照合（scripts/hub.py）と注入 hook で使用"
 check_cli "gh" "false" "GitHub の Issue・PR の取得（hub status。tracker が github のとき）"
 check_mcp "linear" "false" "Linear MCP サーバー（hub status。tracker が linear のとき）"
+check_plugin "doc-freshness" "false" "living spec の鮮度 lint の委譲先"
 
 # --- 結果出力 ---
 if [ -n "$errors" ]; then

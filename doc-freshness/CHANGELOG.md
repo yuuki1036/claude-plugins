@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.5.5] - 2026-10-26
+
+### Changed
+
+- living spec の持ち主の名前を project-hub に直した（living-spec-workflow を project-hub に統合したため。走査の対象 `.claude/living-specs/` は変わらない）
+
 ## [0.5.4] - 2026-10-19
 
 ### Fixed

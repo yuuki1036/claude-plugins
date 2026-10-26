@@ -4,7 +4,6 @@ description: >
   living spec（決定）と project-hub の hub（段取り）を 1 つのセッションで併用するときの決まり。
   決定を書くのは lead が決めたときだけ、確定を覆した決定の波及（関連 Issue を仕掛中・未着手・完了に分けて lead に出す）、
   sub の report のうち設計に関わるものを OQ の候補にする、重い OQ の調査を sub に出す、先送りの扱い。
-  living spec と hub の統合（GitHub issue #322）までの橋渡しで、統合版が出たら消す。
   トリガー: 「hub と living spec を併用」「living spec のある PJ で hub」「決定を sub に届ける」「決定の波及」「hub で living spec」
 allowed-tools:
   - Bash
@@ -13,9 +12,9 @@ allowed-tools:
 
 # hub と living spec の併用
 
-living spec を持つ PJ で、1 つのセッションが **決定**（living spec: 仕様表・OQ・Decision log）と **段取り**（project-hub の hub: sub・report・relay）の両方を受け持つときの決まり。living spec（`living-spec-workflow` プラグイン）と hub（このプラグインの `hub` skill）の手順はそれぞれの skill のまま使い、この skill は **2 つの間の決まりだけ**を持つ。living-spec-workflow が無い・PJ に living spec が無いなら、この skill は使わない（hub は単体で動く）
+living spec を持つ PJ で、1 つのセッションが **決定**（living spec: 仕様表・OQ・Decision log）と **段取り**（project-hub の hub: sub・report・relay）の両方を受け持つときの決まり。living spec（このプラグインの `living-spec` / `living-spec-maintain` skill）と hub（`hub` skill）の手順はそれぞれの skill のまま使い、この skill は **2 つの間の決まりだけ**を持つ。PJ に living spec が無いなら、この skill は使わない
 
-- これは統合（GitHub issue #322）までの橋渡し。使ってみて合わなかった点は #322 にコメントで残す（統合の設計に使う）。統合版が出たらこの skill は消す
+- living spec は 1 PJ に 1 本で、hub の config の `living_spec` で結ぶ（hub の `living-spec` サブコマンド / ADR-20261026090521）
 - 守りたいことは 1 つ: **hub の思い込みが、正本（living spec の決定・Issue 本文）にも sub にも入らないこと**
 
 ## いつ使うか
@@ -28,7 +27,7 @@ living spec を持つ PJ で、1 つのセッションが **決定**（living sp
 hub の注入（state.md）だけでは決定の現在地が分からない。続ける前に両方を見る:
 
 1. hub の `status`（sub・PR・Issue の表）
-2. `/living-spec status`（今の phase・収束率・先送り・open な OQ）
+2. `/project-hub:living-spec status`（今の phase・収束率・先送り・open な OQ）
 
 ## 書く決まり
 
@@ -39,7 +38,7 @@ hub の注入（state.md）だけでは決定の現在地が分からない。�
 | Issue 本文・トラッカー | hub は書かない（hub の skill の決まりのまま）。直す案を lead に出す |
 
 - hub の skill の「hub は判断の正本を書かない」は、この併用では **「hub が自分の判断では正本を書かない」** と読む。lead が決めたことを living spec に書き留めるのは、書記として行う
-- Decision と経緯は ID で結ぶ: hub の fact（`F<n>`）を根拠にした Decision は `出典` に `hub fact F<n>` と書く。Decision が影響する Issue は `関連 Issue`（living-spec-workflow 0.7.0 以降の任意の 7 番目の bullet）に書く
+- Decision と経緯は ID で結ぶ: hub の fact（`F<n>`）を根拠にした Decision は `出典` に `hub fact F<n>` と書く。Decision が影響する Issue は `関連 Issue`（Decision の任意の 7 番目の bullet）に書く
 
 ## 確定を覆した決定の波及
 
@@ -81,7 +80,7 @@ hub が `questions` に出典で答えるとき（`approval_mode: auto`）、liv
 
 ## 先送り
 
-living-spec-workflow 0.7.0 以降は、仕様表の phase と先送りを使う（`spec <項目> --phase <値> D<n>`）。
+仕様表の phase と先送りを使う（`spec <項目> --phase <値> D<n>`）。
 
 - 先送りにした項目に関連 Issue があれば、その Issue をどうするか（今の phase の範囲から外す・後の phase の Issue にする）を lead に出す。仕掛中の sub がいれば、伝えるかは上の波及と同じく lead が決める
 - `spec --phase-advance` で phase を進めたら、hub の `status` で新しい phase の Issue と sub の割り当てを見直す

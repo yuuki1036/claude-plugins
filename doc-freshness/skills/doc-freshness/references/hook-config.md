@@ -42,7 +42,7 @@ doc-freshness は手動走査（`/doc-freshness-check` スキル）に加えて�
 
 **なぜ `.claude/designs/` `.claude/adr/` `.claude/living-specs/` に限定するか**:
 
-- この 3 dir は adr-keeper / design-doc / living-spec-workflow が鮮度 lint を委譲する「frontmatter 必須の project doc」置き場（skill Phase 1 の走査対象と一致）。
+- この 3 dir は adr-keeper / design-doc / project-hub（living spec）が鮮度 lint を委譲する「frontmatter 必須の project doc」置き場（skill Phase 1 の走査対象と一致）。
 - **プラグイン内部 doc（SKILL.md / references/ / README）は対象に含めない**。ルート CLAUDE.md の規約どおり、これらの鮮度はバージョンバンプ + CHANGELOG + pre-commit hook で管理され、`last-validated`（current 閾値）を付けると恒常 stale 化して逆効果になるため。
 - 別の project doc 置き場（例: `docs/adr/`）を使う場合は `hookTargets` で明示的に追加する。
 

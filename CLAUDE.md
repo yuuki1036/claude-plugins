@@ -125,8 +125,8 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 | writing-polish | 1 | 1 | - | SessionStart | 文章の語句レベル推敲（最小差分 diff → 採否、過剰修正抑制、日英対応） |
 | design-doc | 2 | 2 | 1 | - | 技術設計書の作成・永続化・supersede・多視点レビュー（実装ブリッジ必須） |
 | spec-advisor | 1 | 1 | - | SessionStart | タスク内容から設計系成果物（WHAT/HOW/WHY）を判断して実装前に提案 |
-| living-spec-workflow | 2 | 2 | - | - | Issue 化前の設計収束ドキュメント (living spec) の作成・運用と 8 段ファネル検証 |
-| project-hub | 2 | 3 | - | SessionStart, PostCompact, UserPromptSubmit | 複数の sub を 1 つの hub で束ねる（hub は指示出しと相談役・確認の要らない連絡は自動・hub から sub を起動） |
+| living-spec-workflow | 2 | 2 | - | - | **deprecated → project-hub**（living spec は project-hub に統合。全マシンの移行後に削除） |
+| project-hub | 4 | 5 | - | SessionStart, PostCompact, UserPromptSubmit | PJ の決定（living spec）と段取り（複数の sub を 1 つの hub で束ねる。確認の要らない連絡は自動・hub から sub を起動） |
 
 ## セットアップ
 
