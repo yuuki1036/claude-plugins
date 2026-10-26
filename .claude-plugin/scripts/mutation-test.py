@@ -70,7 +70,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # **`-f`（failfast）を付ける**。落ちる変異は最初の失敗で止まり、判定は killed のまま変わらない（生存は
 # スイート全体が緑のときだけ）。1 変異 = フルスイートなので所要がスイートの伸びに比例する（nightly の
 # 10-07 は 1 変異 約 428 秒・1 晩 19 個 / #288）。代償は、出力が最初の失敗の分だけになるので構文エラーの
-# 判定（invalid）を取りこぼし、killed に入りうること
+# 判定（invalid）を取りこぼし、killed に入りうること。フルスイートの判定はこの形のまま回さず、`full_suite_cmd` が
+# run-tests.py の並列の取りまとめ役に組み直す（#318）
 DEFAULT_TEST_CMD = "python3 -m unittest discover -s .claude-plugin/scripts/tests -f"
 # baseline（変異前のフルスイート）の timeout。手元（macOS）のフルスイートは約 650 秒、CI は 280〜457 秒で
 # 伸び続けている。600 秒だと既定のテストコマンドの baseline が手元で FATAL になり、CI でも push 側の
@@ -193,6 +194,9 @@ def run_group(cmd: list[str], cwd: Path, timeout: int) -> subprocess.CompletedPr
 
     `start_new_session=True` で子を新しいプロセスグループのリーダーにし、
     負の pid へシグナルを送ってグループ全体（孫・ひ孫を含む）を回収する。
+
+    **正常に終わった回もグループの残りを落とす**（GitHub issue #318）。フルスイートの並列判定は、最初に落ちた
+    単位で残りの単位を止める。止めた単位が起動した孫はグループに残るので、ここで回収しないと次の変異と並んで走る。
     """
     env = dict(os.environ, **{OWNER_ENV: str(os.getpid())})
     with subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -208,6 +212,12 @@ def run_group(cmd: list[str], cwd: Path, timeout: int) -> subprocess.CompletedPr
             except subprocess.TimeoutExpired:
                 out, err = "", ""
             raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+        # リーダーは wait 済みなので pgid は proc.pid（start_new_session）。残りが居なければ ESRCH で終わる。
+        # 送れない（EPERM。macOS ではゾンビだけのグループで返る）も判定には影響させない
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
         return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 
@@ -835,6 +845,41 @@ def discover_dir(test_cmd: list[str]) -> str | None:
     return None
 
 
+#: フルスイートを並列で回す起動口。取りまとめ役の引数の形の正本は run-tests.py の `coordinator_args`
+RUN_TESTS = Path(__file__).resolve().parent / "run-tests.py"
+RUN_TESTS_COORDINATOR_ARG = "--_coordinator"
+
+
+def full_suite_cmd(test_cmd: list[str], jobs: int) -> list[str]:
+    """フルスイートの判定（baseline と最後の段）に使うコマンド（GitHub issue #318）.
+
+    `--test-cmd` が素の `unittest discover -s <dir> [-f]` なら、run-tests.py の取りまとめ役が単位（モジュール。
+    件数の多いものはクラス）を `jobs` 並列で回す（0 は run-tests の既定の並列数）。`-f` があれば最初に落ちた単位で
+    残りを止める。生存は全単位が緑のときだけなので、判定は 1 プロセスで回したときと変わらない。
+    `jobs` が 1・絞り込みがある（`discover_dir` が None）・run-tests.py が無いときは `test_cmd` のまま。
+    """
+    tests_rel = discover_dir(test_cmd)
+    if jobs == 1 or tests_rel is None or not RUN_TESTS.is_file():
+        return test_cmd
+    return [test_cmd[0], str(RUN_TESTS), RUN_TESTS_COORDINATOR_ARG, str(jobs),
+            "--tests-dir", str(ROOT / tests_rel), "--cwd", str(ROOT),
+            *(["--failfast"] if "-f" in test_cmd else [])]
+
+
+def last_stage(path: Path, test_cmd: list[str], full_cmd: list[str], timeout: int,
+               explicit_timeout: int) -> tuple[list[str], int]:
+    """変異ごとの最後の段（フルスイート）のコマンドと timeout.
+
+    **取りまとめ役そのもの（run-tests.py）の変異は 1 プロセスで判定する**。並列で回すと変異した run-tests.py が
+    判定を下し、結果がテストではなくハーネスの壊れ方で決まる（`FailFast.finished` の反転は緑の単位で残りを止めて
+    偽の生存に、`main` の分岐の反転は変異中の検査で exit 2 になって偽の killed になる）。timeout は並列の baseline
+    から決めた値では足りないので、明示が無ければ baseline の timeout と同じ上限まで延ばす。
+    """
+    if full_cmd is not test_cmd and path.resolve() == RUN_TESTS:
+        return test_cmd, explicit_timeout or max(timeout, BASELINE_TIMEOUT)
+    return full_cmd, timeout
+
+
 def _strings_of(text: str) -> str:
     """python のソースから、docstring を除いた文字列定数を連結して返す（読めなければ空）.
 
@@ -1030,6 +1075,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="起動からの経過秒数の上限（既定 0 = 無制限）。次の 1 変異で超える見込みになったら"
                          "打ち切り、残りを「予算で未実行」として数える。1 変異の timeout は予算の残りで"
                          "頭打ちにし、baseline の timeout は予算まで延ばす")
+    ap.add_argument("--jobs", type=int, default=0,
+                    help="フルスイートの判定（baseline と最後の段）を回す並列数（既定 0 = run-tests.py の既定。"
+                         "RUN_TESTS_JOBS か CPU 数・上限 8）。1 なら --test-cmd を 1 プロセスで回す。"
+                         "--test-cmd が素の unittest discover -s のときだけ効く / #318")
     ap.add_argument("--related-first", action="store_true",
                     help="変異ごとに、変異したファイルを参照するテストモジュールだけを先に -f で回し、落ちれば killed と"
                          "確定する。通ったら --test-cmd で確かめる（テストが決定的で他モジュールの副作用に依存しなければ、"
@@ -1057,6 +1106,7 @@ def main(argv: list[str] | None = None) -> int:
               '  例: --test-cmd "python3 -m unittest discover -s .claude-plugin/scripts/tests '
               '-p test_foo.py -k SomeTest"', file=sys.stderr)
         return 2
+    full_cmd = full_suite_cmd(test_cmd, args.jobs)
     if args.file:
         targets: dict[Path, set[int]] = {}
         for f in args.file:
@@ -1132,7 +1182,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # **予算があれば baseline の timeout も予算まで延ばす**。固定のままだと、スイートが伸びて timeout を
         # 超えた晩から毎晩 FATAL になり、変異を 1 個も回せない（BASELINE_TIMEOUT の注記）
-        baseline = run(test_cmd, ROOT, timeout=max(BASELINE_TIMEOUT, int(args.budget_sec)))
+        # **run_group で回す**: 取りまとめ役の単位は別の python なので、`run` の timeout は取りまとめ役だけを殺し、
+        # 単位がスイートの残りを回し続ける（#318）
+        baseline = run_group(full_cmd, ROOT, timeout=max(BASELINE_TIMEOUT, int(args.budget_sec)))
     except subprocess.TimeoutExpired:
         print("FATAL: 変異前のテストがタイムアウトした（この状態では生存判定に意味がない）",
               file=sys.stderr)
@@ -1160,7 +1212,10 @@ def main(argv: list[str] | None = None) -> int:
     mutants = mutants[: args.max]
     print(f"変異 {len(mutants)} 個を実行する"
           + (f"（上限 --max={args.max} により **{dropped} 個を対象外にした**）" if dropped else "")
-          + f" / テスト: {args.test_cmd}（baseline {baseline_sec:.1f}s"
+          + f" / テスト: {args.test_cmd}"
+          + (f"（フルスイートは run-tests.py の取りまとめ役で単位ごとに回す・--jobs {args.jobs or '既定'}）"
+             if full_cmd is not test_cmd else "")
+          + f"（baseline {baseline_sec:.1f}s"
           + (f"・{n_ran} 件" if n_ran is not None else "") + f" / timeout {timeout}s）")
     if patterns:
         print(f"  テストの絞り込み: -k {' / '.join(patterns)}（部分一致）で {n_ran} 件。"
@@ -1189,7 +1244,7 @@ def main(argv: list[str] | None = None) -> int:
         # **1 変異の timeout を予算の残りで頭打ちにする**。見積もりは平均なので、最後の 1 個が hang すると
         # 予算 + timeout（baseline の 5 倍）まで走り、CI の job timeout に当たって cancelled になる
         # （結果もログも残らない。180 分 / 9000 秒の設定では余裕が 1 分も無かった / #288）
-        stages = ([first] if first else []) + [(test_cmd, timeout)]
+        stages = ([first] if first else []) + [last_stage(m.path, test_cmd, full_cmd, timeout, args.timeout)]
         try:
             verdict, decided, capped = judge(m, stages, deadline)
         except ExternalEditError as e:

@@ -48,6 +48,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -55,6 +56,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -288,12 +290,14 @@ MAX_JOBS = 8
 #: これより件数の多いモジュールはクラスごとの単位に割る（件数を所要の代わりに使う）
 SPLIT_THRESHOLD = 100
 
-#: 取りまとめ役として起動されたことを示す内部の引数（利用者は渡さない）
+#: 取りまとめ役として起動されたことを示す内部の引数（利用者は渡さない）。`mutation-test.py` もこの名前と
+#: `coordinator_args` の形で起動するので、変えるときはあちらの `full_suite_cmd` も直す（テストが突き合わせる / #318）
 COORDINATOR_ARG = "--_coordinator"
 
-#: 単位を回すコマンド。`discover -s` と同じく tests の dir を `sys.path` の先頭に置き、cwd は ROOT のまま
+#: 単位を回すコマンド。`discover -s` と同じく tests の dir を `sys.path` の先頭に置く（cwd は取りまとめ役の `--cwd`。既定 ROOT）。
+#: 3 つ目以降の引数（`-f`）は unittest のオプションとして単位名の前に渡す
 _UNIT_CODE = ("import sys, unittest; sys.path.insert(0, sys.argv[1]); "
-              "unittest.main(module=None, argv=['unittest', sys.argv[2]])")
+              "unittest.main(module=None, argv=['unittest', *sys.argv[3:], sys.argv[2]])")
 
 
 def jobs_from_env() -> int:
@@ -353,42 +357,113 @@ def plan_units(tests_dir: Path, threshold: int = SPLIT_THRESHOLD) -> list[tuple[
     return sorted(units, key=lambda u: -u[1])
 
 
-def _run_unit(unit: str, tests_dir: Path) -> tuple[str, int, bytes]:
+class FailFast:
+    """最初に落ちた単位で残りを止める（`unittest -f` の並列版 / GitHub issue #318）.
+
+    変異テストのフルスイート判定が使う。落ちる変異は 1 単位が落ちた時点で killed と決まるので、
+    まだ始めていない単位は始めず、走っている単位には SIGTERM を送る。止めた単位は失敗に数えない
+    （落ちたのは止めた側の都合で、テストの結果ではない）。止めた単位が起動した孫は取りまとめ役と同じ
+    プロセスグループに残るので、`--failfast` を付けて起動する `mutation-test.py` の `run_group` が、
+    終わった後にグループごと回収する（この起動口の `main` は `--failfast` を付けない）。
+    """
+
+    def __init__(self) -> None:
+        self.stopped = threading.Event()
+        self._lock = threading.Lock()
+        self._running: set[subprocess.Popen] = set()
+        self._terminated: set[subprocess.Popen] = set()
+
+    def started(self, proc: subprocess.Popen) -> None:
+        with self._lock:
+            if self.stopped.is_set():
+                self._stop(proc)    # 始める前の判定と Popen の間に止まった
+            else:
+                self._running.add(proc)
+
+    def finished(self, proc: subprocess.Popen, rc: int) -> int | None:
+        """単位の rc。こちらが止めた単位は None."""
+        with self._lock:
+            self._running.discard(proc)
+            if proc in self._terminated:
+                return None
+            if rc != 0 and not self.stopped.is_set():
+                self.stopped.set()
+                for other in list(self._running):
+                    self._stop(other)
+            return rc
+
+    def _stop(self, proc: subprocess.Popen) -> None:
+        self._terminated.add(proc)
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            pass
+
+
+def _run_unit(unit: str, tests_dir: Path, cwd: Path = ROOT,
+              failfast: FailFast | None = None) -> tuple[str, int | None, bytes]:
+    """単位を 1 つ回す。rc が None なら `failfast` で始めなかった・止めた単位."""
+    if failfast is not None and failfast.stopped.is_set():
+        return unit, None, b""  # mutation-ok: 外しても started() が止めるので結果は同じ（止める単位の起動を省くだけ）
     with tempfile.TemporaryFile("w+b") as log:
-        rc = subprocess.run([sys.executable, "-c", _UNIT_CODE, str(tests_dir), unit],
-                            cwd=str(ROOT), stdout=log, stderr=log).returncode
+        proc = subprocess.Popen([sys.executable, "-c", _UNIT_CODE, str(tests_dir), unit,
+                                 *(["-f"] if failfast is not None else [])],
+                                cwd=str(cwd), stdout=log, stderr=log)
+        if failfast is not None:
+            failfast.started(proc)
+        rc = proc.wait()
+        if failfast is not None:
+            rc = failfast.finished(proc, rc)
         log.seek(0)
         return unit, rc, log.read()
 
 
-def coordinate(jobs: int) -> int:
+def coordinate(jobs: int, tests_dir: Path | None = None, cwd: Path = ROOT, failfast: bool = False) -> int:
     """単位を `jobs` 並列で回し、落ちた単位の出力と、全体の集計行を stdout に出す.
 
     集計行は unittest と同じ形（`Ran N tests in Xs`）にする。呼び出し側の `_ran_count` がそれを読む。
     単位がテストを 1 件も走らせずに終わる（rc 5）のも失敗に数える — 単位は 1 件以上あるものだけを作る。
+    `failfast` は最初に落ちた単位で残りを止める（`FailFast`）。`Ran` の件数は最後まで走った単位の分だけになる。
     """
-    tests_dir = ROOT / TESTS_DIR
+    tests_dir = tests_dir or ROOT / TESTS_DIR
     started = time.monotonic()
     units = plan_units(tests_dir)
+    gate = FailFast() if failfast else None
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        results = list(pool.map(lambda u: _run_unit(u[0], tests_dir), units))
+        results = list(pool.map(lambda u: _run_unit(u[0], tests_dir, cwd, gate), units))
     out = sys.stdout.buffer
-    failed = [unit for unit, rc, _ in results if rc != 0]
+    failed = [unit for unit, rc, _ in results if rc not in (0, None)]
+    stopped = sum(1 for _, rc, _ in results if rc is None)
     for unit, rc, body in results:
-        if rc != 0:
+        if rc not in (0, None):
             out.write(("======== %s（exit %d）\n" % (unit, rc)).encode() + body + b"\n")
-    ran = sum(_ran_count(body) for _, _, body in results)
-    out.write(("-" * 70 + "\nRan %d test%s in %.3fs（%d 並列・%d 単位）\n\n"
-               % (ran, "" if ran == 1 else "s", time.monotonic() - started, jobs, len(units))).encode())
+    ran = sum(_ran_count(body) for _, rc, body in results if rc is not None)
+    out.write(("-" * 70 + "\nRan %d test%s in %.3fs（%d 並列・%d 単位%s）\n\n"
+               % (ran, "" if ran == 1 else "s", time.monotonic() - started, jobs, len(units),
+                  "・最初の失敗で止めた単位 %d" % stopped if stopped else "")).encode())
     out.write(("FAILED（落ちた単位 %d: %s）\n" % (len(failed), ", ".join(failed)) if failed
                else "OK\n").encode())
     out.flush()
     return 1 if failed else 0
 
 
+def coordinator_args(argv: list[str]) -> argparse.Namespace:
+    """取りまとめ役の引数. `mutation-test.py` もこの形で起動する（フルスイートの判定 / #318）.
+
+    並列数の 0 は `jobs_from_env` の既定に従う。`--tests-dir` / `--cwd` は使い捨てリポジトリに向けるとき用。
+    """
+    ap = argparse.ArgumentParser(prog="run-tests.py " + COORDINATOR_ARG)
+    ap.add_argument("jobs", type=int)
+    ap.add_argument("--failfast", action="store_true")
+    ap.add_argument("--tests-dir", type=Path, default=None)
+    ap.add_argument("--cwd", type=Path, default=ROOT)
+    return ap.parse_args(argv)
+
+
 def main(argv: list[str]) -> int:
     if argv[:1] == [COORDINATOR_ARG]:
-        return coordinate(int(argv[1]))
+        a = coordinator_args(argv[1:])
+        return coordinate(a.jobs if a.jobs > 0 else jobs_from_env(), a.tests_dir, a.cwd, a.failfast)
     busy = mutation_in_progress()
     if busy:
         print("[run-tests] **変異テストの実行中**（%s）。\n"
