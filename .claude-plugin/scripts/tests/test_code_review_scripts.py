@@ -3099,8 +3099,16 @@ class RetroFixture(ScriptTestBase):
     新しいテストクラスはこちらを継承する。
     """
 
+    #: 真の空振りの ⚠️ を判定する版（retro の `REMEDIED_SINCE` / #324）。版を書かない行はこの版で
+    #: publish した回にする。打ち手より前の回を作るときは行に `plugin_version` を書く（`None` で版なし）
+    PLUGIN_VERSION = "2.158.0"
+
     def _events(self, rows: list[dict]) -> None:
         (self.root / ".claude").mkdir(exist_ok=True)
+        for r in rows:
+            r.setdefault("plugin_version", self.PLUGIN_VERSION)
+            if r["plugin_version"] is None:
+                del r["plugin_version"]
         (self.root / ".claude" / "events.jsonl").write_text(
             "\n".join(json.dumps({"ts": "2026-08-1%d T00:%02d:00Z".replace(" ", "") % (i // 60, i % 60),
                                   "plugin": r.pop("_plugin", "code-review:self-review"),
@@ -6823,7 +6831,8 @@ class RetroStaleLayerTest(RetroFixture):
              "models": self._models("claude-%s" % gen),
              "pre_adjust_counts": {"schema": 2, "blocker": 0, "critical": 0, "major": 1, "minor": 0},
              "blocker_count": 0, "critical_count": 0, "major_count": 0 if silent else 1,
-             "minor_count": 0, "appendix": {"schema": 1, "listed": 0, "recommended": 0}}
+             "minor_count": 0, "appendix": {"schema": 1, "listed": 0, "recommended": 0},
+             "plugin_version": self.PLUGIN_VERSION}
         return r
 
     def _dated(self, spec: list[tuple[str, str, int, int]]) -> None:
@@ -8058,23 +8067,62 @@ class RetroAppendixLayerTest(RetroFixture):
         self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 20%（`opus-4-8` 層 / 2/10）",
                       self._out(), "境界ちょうどで鳴っていない")
 
-    def test_the_signal_points_recovery_to_a_version_window(self):
-        """累計には打ち手より前の回が残り続けるので、回復は版で絞って読むと ⚠️ に添える（#210）."""
+    def test_the_signal_names_the_remedy_window(self):
+        """⚠️ は打ち手（#297）を入れた版以上の回で判定したと名乗る（#324）."""
         rows = [self._row("opus-4-8", 0, 0) for _ in range(5)] \
-             + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)] \
+             + [dict(self._row("opus-4-8", 1, 0), plugin_version=v) for v in ("2.157.9", None)]
         self._events(rows)
-        self.assertIn("回復は打ち手を入れた版以降に絞って読む", self._out())
+        sig = self.signals(self._out())
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", sig)
+        self.assertIn("**打ち手（#297）を入れた 2.158.0 以上の回で判定**"
+                      "（それより前・版なしの 2 件は判定から外した）（表は累計 / #324）", sig)
 
-    def test_a_version_filtered_run_names_its_window(self):
-        """絞った集計では案内ではなく絞り込み条件を名乗る（同じ案内を出し続けない）."""
-        rows = [self._row("opus-4-8", 0, 0) for _ in range(5)] \
-             + [self._row("opus-4-8", 1, 0) for _ in range(5)]
-        for r in rows:
-            r["plugin_version"] = "2.121.0"
+    def test_runs_before_the_remedy_do_not_ring(self):
+        """累計 11/20 = 55% でも、打ち手以後が 0/10 なら鳴らさず「打ち手済み」に数える（#324）."""
+        rows = [dict(self._row("opus-4-8", 0, 0), plugin_version="2.157.0") for _ in range(10)] \
+             + [dict(self._row("opus-4-8", 0, 0), plugin_version=None)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(10)]
         self._events(rows)
-        out = self.run_script(RETRO, "--min-plugin-version", "2.121.0", env=self._env()).stdout
-        self.assertIn("（plugin_version 2.121.0 以上に絞った集計）", out)
-        self.assertNotIn("回復は打ち手を入れた版以降に絞って読む", out)
+        out = self._out()
+        self.assertNotIn("真の空振り率", self.signals(out))
+        self.assertIn("⚠️ から外した: 過去の層 0 件 / 決定済み 0 件 / 打ち手済み 1 件", out)
+        self.assertIn("打ち手済みは累計なら鳴るが、打ち手を入れた版以上の回では鳴らない信号: "
+                      "真の空振り率（2.158.0 以上・#297） / #324", out)
+        j = json.loads(self.run_script(RETRO, "--json", env=self._env()).stdout)
+        self.assertEqual((j["appendix_by_gen"]["opus-4-8"]["n"], j["appendix_by_gen"]["opus-4-8"]["true_silent"]),
+                         (21, 11), "表を累計で出していない")
+        self.assertEqual(j["signals_excluded"]["remedied"],
+                         [{"signal": "真の空振り率", "since": "2.158.0", "issue": "#297"}])
+
+    def test_the_remedy_version_itself_is_judged(self):
+        """境界: 2.158.0 ちょうどの回は判定に入る（版を数値で比べる。2.158.10 も入る）."""
+        rows = [dict(self._row("opus-4-8", 0, 0), plugin_version=v)
+                for v in ("2.158.0", "2.158.10", "2.159.0", "3.0.0", "2.158.0")] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(5)]
+        self._events(rows)
+        out = self._out()
+        self.assertIn("真の空振り率（報告 0 件かつ付録推奨 0）が 50%（`opus-4-8` 層 / 5/10）", self.signals(out))
+        self.assertNotIn("打ち手済み", out)
+
+    def test_too_few_runs_after_the_remedy_are_held(self):
+        """打ち手以後が下限 10 に届かない間は ⚠️ ではなく判定の保留に出す（#230 / #324）."""
+        rows = [dict(self._row("opus-4-8", 0, 0), plugin_version="2.150.0") for _ in range(10)] \
+             + [self._row("opus-4-8", 0, 0) for _ in range(3)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(3)]
+        self._events(rows)
+        out = self._out()
+        self.assertNotIn("真の空振り率", self.signals(out))
+        self.assertIn("真の空振り率: `opus-4-8` 層が閾値を超えている（3/6）が、下限 10 に届かないので"
+                      "**判定を保留**（**あと 4 件で判定可能**", out)
+        self.assertIn("/ 打ち手済み 1 件", out)
+
+    def test_nothing_is_counted_as_remedied_when_the_total_is_quiet(self):
+        """累計でも鳴らないなら「打ち手済み」に数えない（外していないのに件数の行を出さない）."""
+        rows = [dict(self._row("opus-4-8", 1, 0), plugin_version="2.150.0") for _ in range(10)] \
+             + [self._row("opus-4-8", 1, 0) for _ in range(10)]
+        self._events(rows)
+        self.assertNotIn("⚠️ から外した", self._out())
 
     def test_a_rescued_run_is_not_a_true_silent_one(self):
         """報告 0 でも推奨があれば空振りではない（#168）— 分子に入れない."""
