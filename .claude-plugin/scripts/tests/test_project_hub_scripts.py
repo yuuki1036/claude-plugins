@@ -2268,10 +2268,12 @@ class LivingSpecLinkTest(HubTestBase):
 
     def setUp(self) -> None:
         super().setUp()
-        specs = self.tmp / "repo-specs" / ".claude" / "living-specs"
+        specs = self.repo / ".claude" / "living-specs"
         specs.mkdir(parents=True)
         self.spec = specs / "pj.md"
         self.spec.write_text("---\nphase: target\n---\n# PJ\n", encoding="utf-8")
+        # config には resolve した絶対パスが入る（macOS の tmp は /private への symlink）
+        self.resolved = str(self.spec.resolve())
 
     def config(self) -> dict:
         return json.loads((self.root / "pj" / "config.json").read_text(encoding="utf-8"))
@@ -2279,22 +2281,47 @@ class LivingSpecLinkTest(HubTestBase):
     def state(self) -> str:
         return (self.root / "pj" / "state.md").read_text(encoding="utf-8")
 
+    def init_with(self, spec: str) -> subprocess.CompletedProcess[str]:
+        return self.run_hub("init", "--project", "pj", "--name", "hub-session", "--tracker", "github",
+                            "--tracker-repo", "o/r", "--repo", f"{self.repo}=base", "--living-spec", spec)
+
     def test_init_links_the_living_spec_and_refuses_a_missing_file(self):
-        res = self.run_hub("init", "--project", "pj", "--name", "hub-session", "--tracker", "github",
-                           "--tracker-repo", "o/r", "--repo", f"{self.repo}=base",
-                           "--living-spec", str(self.tmp / "nope.md"))
+        res = self.init_with(str(self.spec.parent / "nope.md"))
         self.assertEqual(res.returncode, 2, res)
         self.assertIn("living spec のファイルが無い", res.stderr)
         self.assertFalse((self.root / "pj" / "config.json").exists())
 
-        self.ok("init", "--project", "pj", "--name", "hub-session", "--tracker", "github",
-                "--tracker-repo", "o/r", "--repo", f"{self.repo}=base", "--living-spec", str(self.spec))
-        self.assertEqual(self.config()["living_spec"], str(self.spec.resolve()))
+        self.assertEqual(self.init_with(str(self.spec)).returncode, 0)
+        self.assertEqual(self.config()["living_spec"], self.resolved)
         self.assertEqual(self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")["living_spec"],
-                         str(self.spec.resolve()))
+                         self.resolved)
         self.ok("render", "--project", "pj")
-        self.assertIn(f"- living spec: {self.spec.resolve()}（現在地は `/project-hub:living-spec status`）",
+        self.assertIn(f"- living spec: {self.resolved}（現在地は `/project-hub:living-spec status --spec` にこのパスを渡す）",
                       self.state())
+
+    def test_only_a_md_file_under_a_config_repo_living_specs_is_linked(self):
+        txt = self.spec.with_suffix(".txt")
+        txt.write_text("x", encoding="utf-8")
+        loose = self.repo / "notes.md"  # repo の中でも .claude/living-specs/ の外
+        loose.write_text("x", encoding="utf-8")
+        other = self.tmp / "other" / ".claude" / "living-specs"  # config の repo の外（worktree の複製など）
+        other.mkdir(parents=True)
+        (other / "pj.md").write_text("x", encoding="utf-8")
+        cases = [(txt, ".md のファイルを指す"), (loose, "config の repo の .claude/living-specs/ の下"),
+                 (other / "pj.md", "config の repo の .claude/living-specs/ の下")]
+        for bad, msg in cases:
+            with self.subTest(bad=bad):
+                res = self.init_with(str(bad))
+                self.assertEqual(res.returncode, 2, res)
+                self.assertIn(msg, res.stderr)
+                self.assertFalse((self.root / "pj" / "config.json").exists())
+        self.init()
+        for bad, msg in cases:
+            with self.subTest(set_living_spec=bad):
+                res = self.run_hub("set-living-spec", "--project", "pj", "--path", str(bad))
+                self.assertEqual(res.returncode, 2, res)
+                self.assertIn(msg, res.stderr)
+                self.assertNotIn("living_spec", self.config())
 
     def test_without_a_living_spec_nothing_is_written(self):
         self.init()
@@ -2305,14 +2332,12 @@ class LivingSpecLinkTest(HubTestBase):
     def test_set_living_spec_links_unlinks_and_rerenders(self):
         self.init()
         out = self.ok("set-living-spec", "--project", "pj", "--path", str(self.spec))
-        self.assertEqual((out["living_spec"], out["previous"]), (str(self.spec.resolve()), None))
+        self.assertEqual((out["living_spec"], out["previous"]), (self.resolved, None))
         self.assertIn("- living spec:", self.state())
-        # .md でない・無いファイルは結ばない（config は前のまま）
-        for bad in (str(self.spec.parent), str(self.tmp / "nope.md")):
-            with self.subTest(bad=bad):
-                res = self.run_hub("set-living-spec", "--project", "pj", "--path", bad)
-                self.assertEqual(res.returncode, 2, res)
-                self.assertEqual(self.config()["living_spec"], str(self.spec.resolve()))
+        # 無いファイルは結ばない（config は前のまま）
+        res = self.run_hub("set-living-spec", "--project", "pj", "--path", str(self.spec.parent / "nope.md"))
+        self.assertEqual(res.returncode, 2, res)
+        self.assertEqual(self.config()["living_spec"], self.resolved)
         # 結んだ後にファイルが消えたら、state.md にそう出す
         self.spec.unlink()
         self.ok("render", "--project", "pj")
