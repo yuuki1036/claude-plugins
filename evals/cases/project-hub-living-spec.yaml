@@ -1,4 +1,5 @@
-plugin: living-spec-workflow
+plugin: project-hub
+# living spec（旧 living-spec-workflow を project-hub に吸収 / ADR-20261026090521）のケース。
 # トリガー回帰 + 隣接プラグイン（design-doc / adr-keeper / issue-design）への誤発火防止。
 # living-spec は「未確定を抱えた継続収束 + OQ 台帳」、design-doc は「代替案比較の 1 回性スナップショット」、
 # adr-keeper は「点の決定記録」。「設計ドキュメント」系の語は design-doc の領分なので
@@ -7,54 +8,54 @@ cases:
   # --- トリガー回帰（スキル選択） ---
   - id: living-spec-trigger-ja
     prompt: living spec を作りたい
-    expected_skill: living-spec-workflow:living-spec
+    expected_skill: project-hub:living-spec
     k: 3
   # スラッシュコマンド（/living-spec init auth-redesign）はプロンプトに使わない。
   # headless の `claude -p` はプラグインのコマンドを登録しないため `Unknown command` で
   # 必ず落ちる（/adr・/design-doc でも同様）。init の意図は自然言語で測る。
   - id: living-spec-trigger-init
     prompt: auth-redesign の living spec を新規作成して
-    expected_skill: living-spec-workflow:living-spec
+    expected_skill: project-hub:living-spec
     k: 3
   - id: living-spec-trigger-converge
     prompt: Issue 化する前に未確定を詰めるドキュメントを作りたい
-    expected_skill: living-spec-workflow:living-spec
+    expected_skill: project-hub:living-spec
     k: 3
   - id: living-spec-trigger-oq
     prompt: Open Questions 台帳を作って管理したい
-    expected_skill: living-spec-workflow:living-spec
+    expected_skill: project-hub:living-spec
     k: 3
   - id: living-spec-trigger-oq-add
     prompt: living spec に OQ を追加して
-    expected_skill: living-spec-workflow:living-spec
+    expected_skill: project-hub:living-spec
     k: 3
   - id: living-spec-trigger-decision
     prompt: この決定を Decision log に記録して関連する OQ を閉じて
-    expected_skill: living-spec-workflow:living-spec
+    expected_skill: project-hub:living-spec
     k: 3
   - id: living-spec-trigger-status
     prompt: living spec の収束率と残ってる open OQ を見せて
-    expected_skill: living-spec-workflow:living-spec
+    expected_skill: project-hub:living-spec
     k: 3
 
   # --- living-spec-maintain のトリガー回帰 ---
   - id: living-spec-maintain-trigger-ja
     prompt: living spec の整合をチェックして
-    expected_skill: living-spec-workflow:living-spec-maintain
+    expected_skill: project-hub:living-spec-maintain
     k: 3
   - id: living-spec-maintain-trigger-refs
     prompt: OQ と Decision の参照が合ってるか点検して
-    expected_skill: living-spec-workflow:living-spec-maintain
+    expected_skill: project-hub:living-spec-maintain
     k: 3
   - id: living-spec-maintain-trigger-stale
     prompt: 確度ラベルが塩漬けになってる項目を検出して
-    expected_skill: living-spec-workflow:living-spec-maintain
+    expected_skill: project-hub:living-spec-maintain
     k: 3
 
   # --- living-spec <-> living-spec-maintain の弁別（作成・更新は living-spec 側）---
   - id: living-spec-nofire-maintain-on-create
     prompt: living spec に新しい OQ を起票して
-    expected_skill: living-spec-workflow:living-spec
+    expected_skill: project-hub:living-spec
     k: 3
 
   # --- 誤発火防止（隣接スキルに正しくルーティングされるか） ---
