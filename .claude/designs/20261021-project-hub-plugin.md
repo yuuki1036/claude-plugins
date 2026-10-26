@@ -376,6 +376,18 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
 - **sub は Issue 本文を書き換えない**: Issue ファイルは sub も書けるので、brief で書き換えてよいのを frontmatter の `status` と `pr` に限り、hub は自動の連絡で local の Issue 本文を出典にしない（sub の文面が正本として別の sub へ渡るのを防ぐ。強制はしない）
 - **起票の持ち主**: 採番が `counter.txt` なので、起票は hub のセッションで lead が issue-workflow を呼んだときだけにする（hub 自身も起票しない）。sub の起票の候補は report の `follow_ups` で受ける。強制はしない（sub の issue-workflow を止める仕組みは無い）。brief と report の skill の文面で頼む
 
+## 実装で決めたこと（hub の開き直しと start の事前判定・2026-10-26 / GitHub issue #325）
+
+- **開き直した hub の会話は、Desktop の記録で同じ会話と確かめられたときだけ自動で付け替える**。Desktop は開き直すと同じ会話に新しい CLI の session_id を振り、`refresh-hub` が exit 3 で止まっていた（#325 の実測）。hub.json に会話の ID（`CLAUDE_CODE_HOST_SESSION_ID` の `local_<uuid>`）を `host_session_id` として持つ。session_id が違っても、env の会話の ID が同じで、かつ Desktop の記録（`claude-code-sessions/<account>/<org>/<local_…>.json` の `cliSessionId`）がこのセッションを指すときは、hub.json をこのセッションへ付け替えて journal に `takeover`（`reason: resume`）を残す。hub.py のどのコマンドでも、注入 hook（SessionStart。source は見ない）でも、UserPromptSubmit の hook でも起きる。UserPromptSubmit の hook は、session_id が hub.json に無くても会話の ID が一致すれば hub.py を起動する（SessionStart の時点で Desktop の記録が古かった回を拾う）
+  - 付け替えたことは、hook の経路では注入（「このセッションへ付け替えた」）で、コマンドの経路では `refresh-hub` の `resumed_from` で lead に知らせる。hook が先に付け替えると `refresh-hub` には判断が残らないので、知らせは付け替えた層が出す（self-review の指摘）
+  - journal を先に書き、書けなければ付け替えない（hub.json だけが替わって記録が無い状態を作らない）。Desktop の記録を読んでいる間に takeover が入っていたら上書きしない
+  - env だけでは信じない: `CLAUDE_CODE_HOST_SESSION_ID` は Desktop の Bash から起動した子の CLI にも継承される（上の「確定した前提」）。会話の ID を書くとき（init / takeover / refresh-hub）も、Desktop の記録と合わなければ書かない
+  - Desktop の記録は内部のファイルで契約が無い（2026-10-26 に Desktop 3.6556.2 で、ファイル名が会話の ID で、`sessionId` と `cliSessionId` を持つことを確認）。開き直した後に `cliSessionId` が新しい値へ替わるかは**未確認**。替わらない・形が変わった場合は付け替えが効かず、今までどおり exit 3 → `takeover` になる（別のセッションへは付け替えない側に倒れる）
+  - 名前で同じ会話とみなす案（#325 の補足）は採らなかった。名前は利用者が付けた題で、別のセッションが同じ名前を名乗れる
+  - 0.6.2 までの hub.json は会話の ID を持たないので、最初の開き直しは自動で引き継げない。次の `refresh-hub`（status）で書き足す
+- **exit 3 の文面に「開き直した直後なら takeover で引き継げる」を入れた**（上の判定が効かない回・CLI の回のため）
+- **`start` は文面を作る前に `start_session` の有無を見る**。deferred tool なら ToolSearch で読み込み、無ければ brief の「貼る用」へ最初から進む。ツールの有無は Claude 側のことで hub.py からは見えないので、SKILL.md の手順に置く。Desktop で出ない条件は未確認
+
 ## 未解決事項 (open)
 
 - **3 回目の self-review（2026-10-21・security / bug-detection）で残した指摘**（G-V ループの上限に達し、BLOCKER だけ直す方針にしたため未修正）。確定タイミング: 段階 ① を 1 PJ で使う前
