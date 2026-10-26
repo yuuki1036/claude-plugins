@@ -1247,6 +1247,27 @@ apx_stats = {"n": 0, "true_silent": 0, "true_silent_empty": 0, "true_silent_belo
              "rescued_judged": 0, "rescued_uncontracted": 0,
              "by_gen": {},   # 世代別の真の空振り（#214 / #210）
              "last_by_gen": {}}   # 層 → 最後の回（#302）
+#: 打ち手を入れて直った信号と、その版（GitHub issue #324）。⚠️ はこの版以上で publish された回だけで
+#: 判定する — 累計には打ち手より前の回が残り続け、率が閾値を切るまで新しい回で薄めるしかない
+#: （実測: 真の空振りは 2.158.0 以降の主層で 1/18 = 6% なのに、累計 17/65 = 26% で毎回鳴っていた）。
+#: 版の無い回は打ち手より前に置く（`--min-plugin-version` と同じ扱い）。表は累計のまま残す
+REMEDIED_SINCE = {"真の空振り率": ("2.158.0", "#297")}
+
+
+def is_remedied_run(p, signal):
+    """打ち手を入れた版以上で publish された回か（GitHub issue #324）."""
+    v = _str_or_none(p.get("plugin_version"))
+    return v is not None and _version_tuple(v) >= _version_tuple(REMEDIED_SINCE[signal][0])
+
+
+def _apx_layer_init():
+    return {"n": 0, "silent": 0, "rescued": 0, "rescued_judged": 0, "rescued_uncontracted": 0,
+            "true_silent": 0, "true_silent_empty": 0, "true_silent_below": 0,
+            "true_silent_below_listed": 0, "true_silent_below_over": 0, "true_silent_unknown": 0}
+
+
+#: 打ち手を入れた版以上の回だけの層別（⚠️ の判定用 / #324）
+apx_remedied = {"by_gen": {}, "last_by_gen": {}}
 for e in events:
     p = e["p"]
     a = p.get("appendix")
@@ -1267,34 +1288,33 @@ for e in events:
     # （欠測は上で外し、`appendix` を持つ回だけ）。**真の空振り = 報告 0 かつ推奨 0**（#168）
     # 閾値でも割る（#277）。主層と違う閾値の回は別の行にし、⚠️ の判定から外す（下の `apx_main`）
     # effort でも割る（#284）。high 未満の回は別の行にし、⚠️ の判定から外す
-    _g = apx_stats["by_gen"].setdefault(apx_layer_of(p), {"n": 0, "silent": 0, "rescued": 0,
-                                                    "rescued_judged": 0,
-                                                    "rescued_uncontracted": 0,
-                                                    "true_silent": 0, "true_silent_empty": 0,
-                                                    "true_silent_below": 0,
-                                                    "true_silent_below_listed": 0,
-                                                    "true_silent_below_over": 0,
-                                                    "true_silent_unknown": 0})
-    _g["n"] += 1
-    apx_stats["n"] += 1
+    _gs = [apx_stats["by_gen"].setdefault(apx_layer_of(p), _apx_layer_init())]
     touch_last(apx_stats["last_by_gen"], apx_layer_of(p), e["when"])
+    if is_remedied_run(p, "真の空振り率"):
+        _gs.append(apx_remedied["by_gen"].setdefault(apx_layer_of(p), _apx_layer_init()))
+        touch_last(apx_remedied["last_by_gen"], apx_layer_of(p), e["when"])
+    for _g in _gs:
+        _g["n"] += 1
+    apx_stats["n"] += 1
     if reported == 0:
         apx_silent += 1
-        _g["silent"] += 1
+        for _g in _gs:
+            _g["silent"] += 1
         if rec > 0:
             apx_rescued += 1
-            _g["rescued"] += 1
+            for _g in _gs:
+                _g["rescued"] += 1
             # **契約外の行に救われた回を分ける**（GitHub issue #248）。上限が 0 の回は、契約 (a)
             # どおりなら付録に 1 行も載らない ＝ 推奨は閾値未満に数えた指摘の本文から来ている。
             # 真の空振り率はこの混入が増えるか減るかだけでも動く（opus-4-8 で 33% から最大 60%）
             _b = body_bound(p)
             if _b is not None:
-                for _d in (_g, apx_stats):
+                for _d in (*_gs, apx_stats):
                     _d["rescued_judged"] += 1
                     _d["rescued_uncontracted"] += 1 if _b["appendix_cap"] == 0 else 0
         else:
-            _g["true_silent"] += 1
-            apx_stats["true_silent"] += 1
+            for _d in (*_gs, apx_stats):
+                _d["true_silent"] += 1
             # **検出の有無で割る**（#210）。`pre_adjust_counts` を持たない回・語彙違反の回は
             # どちらとも言えないので `unknown` に置く（0 に丸めると「検出が無かった」に化ける）
             _pre = p.get("pre_adjust_counts")
@@ -1305,14 +1325,14 @@ for e in events:
                          else "true_silent_empty")
             else:
                 _kind = "true_silent_unknown"
-            _g[_kind] += 1
-            apx_stats[_kind] += 1
+            for _d in (*_gs, apx_stats):
+                _d[_kind] += 1
             # 「閾値未満のみ」のうち付録には出た回（推奨なし / #248）。処方文の「報告にも付録にも
             # 出ていない」はこちらには当たらない。**契約外と言えるのは上限を超えた回だけ** —
             # 上限内の付録行は閾値以上で書かれて報告マトリクスで落ちた指摘で、契約 (a) どおり
             if _kind == "true_silent_below" and listed > 0:
                 _b = body_bound(p)
-                for _d in (_g, apx_stats):
+                for _d in (*_gs, apx_stats):
                     _d["true_silent_below_listed"] += 1
                     _d["true_silent_below_over"] += 1 if (_b and _b["appendix_over"]) else 0
 
@@ -2307,12 +2327,22 @@ else:
 # 打ち手の効果と運用の変化を分けられなくなる
 _TS_KEYS = ("n", "true_silent", "true_silent_empty", "true_silent_below",
             "true_silent_below_listed", "true_silent_below_over")
-apx_main = {"by_gen": {_k: _v for _k, _v in apx_stats["by_gen"].items()
-                        if is_main_threshold_key(_k) and is_main_effort_key(_k)
-                        and is_main_rereview_key(_k) and is_main_delta_key(_k)},
-            "last_by_gen": apx_stats["last_by_gen"]}
-for _f in _TS_KEYS:
-    apx_main[_f] = sum(_v.get(_f, 0) for _v in apx_main["by_gen"].values())
+
+
+def _apx_main_of(st):
+    m = {"by_gen": {_k: _v for _k, _v in st["by_gen"].items()
+                    if is_main_threshold_key(_k) and is_main_effort_key(_k)
+                    and is_main_rereview_key(_k) and is_main_delta_key(_k)},
+         "last_by_gen": st["last_by_gen"]}
+    for _f in _TS_KEYS:
+        m[_f] = sum(_v.get(_f, 0) for _v in m["by_gen"].values())
+    return m
+
+
+# **判定は打ち手（#297）を入れた版以上の回で行う**（GitHub issue #324）。累計の主層は、⚠️ から外した
+# 件数を数えるためだけに同じ判定を回す（`apx_main_all`）
+apx_main_all = _apx_main_of(apx_stats)
+apx_main = _apx_main_of(apx_remedied)
 _ts_split = {"`%s` 層" % _k: (_v.get("true_silent_empty", 0), _v.get("true_silent_below", 0),
                               _v.get("true_silent_below_listed", 0),
                               _v.get("true_silent_below_over", 0))
@@ -2376,23 +2406,28 @@ def _excluded_note():
 
 
 def _recovery_window_hint():
-    """回復の読み方を添える（#210）。累計には打ち手より前の回が残り続け、率が構造的に下がりにくい."""
-    if min_pv_raw:
-        return "（plugin_version %s 以上に絞った集計）" % min_pv_raw
-    return ("。**回復は打ち手を入れた版以降に絞って読む** — 累計には打ち手より前の回が残り続ける"
-            "（`--min-plugin-version <版>`）")
+    """判定に使った窓を添える（#210 / #324）。黙ると累計で判定したと読まれる."""
+    since, issue = REMEDIED_SINCE["真の空振り率"]
+    n_old = apx_main_all["n"] - apx_main["n"]
+    return ("。**打ち手（%s）を入れた %s 以上の回で判定**%s（表は累計 / #324）"
+            % (issue, since, "" if not n_old else "（それより前・版なしの %d 件は判定から外した）" % n_old))
 
 
-signals.extend(layered_signal(
-    apx_main, lambda d: d.get("true_silent", 0), lambda d: d.get("n", 0), 10,
-    lambda ts, n: pct(ts, n) >= 20,
-    lambda label, ts, n, note:
-        "真の空振り率（報告 0 件かつ付録推奨 0）が %.0f%%（%s / %d/%d）%s。#210 の回復サイン"
-        "（20%% 未満）を満たしていない%s%s%s"
-        % (pct(ts, n), label, ts, n, _ts_breakdown(label), note, _recovery_window_hint(),
-           _excluded_note()),
-    pending=layer_pending.setdefault("真の空振り率", []),
-    past=layer_past.setdefault("真の空振り率", [])))
+_ts_args = (lambda d: d.get("true_silent", 0), lambda d: d.get("n", 0), 10,
+            lambda ts, n: pct(ts, n) >= 20,
+            lambda label, ts, n, note:
+                "真の空振り率（報告 0 件かつ付録推奨 0）が %.0f%%（%s / %d/%d）%s。#210 の回復サイン"
+                "（20%% 未満）を満たしていない%s%s%s"
+                % (pct(ts, n), label, ts, n, _ts_breakdown(label), note, _recovery_window_hint(),
+                   _excluded_note()))
+_ts_hot = layered_signal(apx_main, *_ts_args,
+                         pending=layer_pending.setdefault("真の空振り率", []),
+                         past=layer_past.setdefault("真の空振り率", []))
+signals.extend(_ts_hot)
+#: 累計なら鳴るが、打ち手を入れた版以上では鳴らなかった信号（#324）。⚠️ の末尾に件数を出す
+remedied_off = []
+if not _ts_hot and layered_signal(apx_main_all, *_ts_args):
+    remedied_off.append("真の空振り率")
 
 # **synthesis の支配率**（GitHub issue #218）。閾値の根拠は上の 4b。層別は他と同じ流儀
 signals.extend(layered_signal(
@@ -2533,7 +2568,10 @@ if as_json:
             "live_since": LAYER_LIVE_SINCE,
             "past": [{"signal": sig, "layer": k, "last": last, "numer": num, "denom": den}
                      for sig in sorted(layer_past) for k, last, num, den in layer_past[sig]],
-            "decided": [{"signal": sig, "layer": k} for sig, k in decided_off]},
+            "decided": [{"signal": sig, "layer": k} for sig, k in decided_off],
+            # 累計なら鳴るが、打ち手を入れた版以上の回では鳴らなかった信号（#324）
+            "remedied": [{"signal": sig, "since": REMEDIED_SINCE[sig][0], "issue": REMEDIED_SINCE[sig][1]}
+                         for sig in remedied_off]},
         # 下限未満で閾値を超えた層（#209）と、判定可能になるまでの件数（#230）。
         # テキスト出力はシグナルごとに 2 層で切るが、こちらは全層を出す
         "pending": [{"signal": sig, "layer": k, "numer": num, "denom": den,
@@ -3327,9 +3365,15 @@ if signals:
         print("- %s" % s)
 # **外した件数を出す**（#302）。黙って消すと「該当なし」と読まれる。0 件なら出さない
 _n_past = sum(len(v) for v in layer_past.values())
-if _n_past or decided_off:
+if _n_past or decided_off or remedied_off:
     print()
-    print("⚠️ から外した: 過去の層 %d 件 / 決定済み %d 件（過去の層は「計測の健全性」の行、決定済みは"
-          "反証 verdict 分布の注記 / #302）" % (_n_past, len(decided_off)))
+    print("⚠️ から外した: 過去の層 %d 件 / 決定済み %d 件%s（過去の層は「計測の健全性」の行、決定済みは"
+          "反証 verdict 分布の注記 / #302%s）"
+          % (_n_past, len(decided_off),
+             "" if not remedied_off else " / 打ち手済み %d 件" % len(remedied_off),
+             "" if not remedied_off else
+             "。打ち手済みは累計なら鳴るが、打ち手を入れた版以上の回では鳴らない信号: %s / #324"
+             % "・".join("%s（%s 以上・%s）" % (sig, REMEDIED_SINCE[sig][0], REMEDIED_SINCE[sig][1])
+                        for sig in remedied_off)))
 PY
 exit 0
