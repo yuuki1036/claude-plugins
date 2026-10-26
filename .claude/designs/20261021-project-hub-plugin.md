@@ -3,7 +3,7 @@ id: 20261021-project-hub-plugin
 title: project-hub — 複数セッションを束ねて PJ を進める hub のプラグイン
 status: draft
 phase: current
-last-validated: 2026-10-25
+last-validated: 2026-10-26
 supersedes: []
 superseded-by: null
 issue: "GitHub issue #308"
@@ -382,7 +382,8 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
   - 付け替えたことは、hook の経路では注入（「このセッションへ付け替えた」）で、コマンドの経路では `refresh-hub` の `resumed_from` で lead に知らせる。hook が先に付け替えると `refresh-hub` には判断が残らないので、知らせは付け替えた層が出す（self-review の指摘）
   - journal を先に書き、書けなければ付け替えない（hub.json だけが替わって記録が無い状態を作らない）。Desktop の記録を読んでいる間に takeover が入っていたら上書きしない
   - env だけでは信じない: `CLAUDE_CODE_HOST_SESSION_ID` は Desktop の Bash から起動した子の CLI にも継承される（上の「確定した前提」）。会話の ID を書くとき（init / takeover / refresh-hub）も、Desktop の記録と合わなければ書かない
-  - Desktop の記録は内部のファイルで契約が無い（2026-10-26 に Desktop 3.6556.2 で、ファイル名が会話の ID で、`sessionId` と `cliSessionId` を持つことを確認）。開き直した後に `cliSessionId` が新しい値へ替わるかは**未確認**。替わらない・形が変わった場合は付け替えが効かず、今までどおり exit 3 → `takeover` になる（別のセッションへは付け替えない側に倒れる）
+  - Desktop の記録は内部のファイルで契約が無い（2026-10-26 に Desktop 3.6556.2 で、ファイル名が会話の ID で、`sessionId` と `cliSessionId` を持つことを確認）。替わらない・形が変わった場合は付け替えが効かず、今までどおり exit 3 → `takeover` になる（別のセッションへは付け替えない側に倒れる）
+  - **実機（2026-10-26・個人機 m1）: archive → unarchive の開き直しでは session_id は替わらない**。hub の会話を開き直して次のメッセージで再開させると、`CLAUDE_CODE_SESSION_ID`・hub.json・記録の `cliSessionId` はどれも init の時と同じ値のままで、SessionStart（source=resume）の注入で state.md が出て、`refresh-hub` は exit 0（付け替えは起きず、`resumed_from` も出ない）。ListAgents の ref は替わった（`28c6f0` → `2958e9`）。この機の記録 160 件で、`cliSessionId` が替わった例は rewind の 1 件だけで、記録には `priorCliSessionIds`（古い id）と `rewindEdges`（parent → child）が残っていた。#325 の「開き直したら session_id が替わった」は rewind か、別のマシン（m2）の開き直しの経路と見ているが、どちらかは確かめていない。そのため**付け替えの経路（id が替わった回）はまだ実機で通していない**
   - 名前で同じ会話とみなす案（#325 の補足）は採らなかった。名前は利用者が付けた題で、別のセッションが同じ名前を名乗れる
   - 0.6.2 までの hub.json は会話の ID を持たないので、最初の開き直しは自動で引き継げない。次の `refresh-hub`（status）で書き足す
 - **exit 3 の文面に「開き直した直後なら takeover で引き継げる」を入れた**（上の判定が効かない回・CLI の回のため）
@@ -396,8 +397,13 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
   - 付録（閾値未満）: 注入する表の前に「外部の文面」の断りが無い / 作業側が送り手の名前だけで hub を認める / relay の承認番号を包みの無い send_message で返されうる ほか 10 件
 
 - **質問ごとの処理の記録**（段階 ②a の残り）: hub が質問に答えたか lead に回したかを、report の file と質問の添字で journal に残すか。今は status が `questions` の残る sub を並べ直し、分からないものを「処理は未確認」と書く。確定タイミング: 段階 ②a を 1 PJ で使ったとき
-- **受信の journal への記録と `from-session` の結び付け**（段階 ②）: UserPromptSubmit hook は入れた（下の「実装で決めたこと（2026-10-25）」）が、受信を journal に 1 行残すことと、包みの `from-session` を `sessions/` の `host_session_id` と結び付けることはしていない。後者は Desktop の SendMessage が `local_…` を宛先に取れるかも含めて未確認（GitHub issue #316 の残り）。確定タイミング: 段階 ② の詳細設計
-- **開き直して名前も変えたセッション**: ref は開き直しで変わりうる（未確認）。開き直したうえで改名し、題に Issue ID も無いセッションは、作業側が report を置き直すまでどの照合でも引けない。プロセスが残っていないセッションは ListAgents に出ない（2026-10-25 の観察）。確定タイミング: 段階 ① の運用で同じことが起きたとき
+- **受信の journal への記録と `from-session` の結び付け**（段階 ②）: UserPromptSubmit hook は入れた（下の「実装で決めたこと（2026-10-25）」）が、受信を journal に 1 行残すことと、包みの `from-session` を `sessions/` の `host_session_id` と結び付けることはしていない。Desktop の SendMessage は `local_…` を宛先に取れ、改名・開き直しの後も同じ id で届く（2026-10-26 の実機。下の「開き直して名前も変えたセッション」）。確定タイミング: 段階 ② の詳細設計
+- **開き直して名前も変えたセッション**: 開き直したうえで改名し、題に Issue ID も無いセッションは、作業側が report を置き直すまでどの照合でも引けない。2026-10-26 の実機（m1）で確かめた:
+  - 改名だけ: ref は替わらず（`51e007`）、presence は `renamed`、resolve は `ok` / `registered_ref` で今の名前を引いた
+  - 改名したうえで archive → unarchive: session_id と `CLAUDE_CODE_HOST_SESSION_ID` は替わらないが、ref は替わった（`51e007` → `20cb13`）。presence は登録名で absent、resolve は unresolved（exit 1）で、送らない側に倒れた
+  - archive 中（プロセスが無い間）は ListAgents に出ない。unarchive しただけでも出ず、次のメッセージで再開して初めて出る
+  - **`local_…` 宛ての SendMessage は、改名・開き直しの後も同じ id で届いた**（上の (d) の残り）。登録は `host_session_id` を持っているので、照合と宛先を `local_…` に寄せればこのケースも引ける。ADR-20261021154740 の見直しが要る。確定タイミング: 段階 ② の詳細設計
+- **ListAgents の行に、改名の直後だけ `says it was <前の名前> until <N>s ago` の欄が入る**（2026-10-26 の実機）。`references/list-agents.md` の state の規則（2 番目の区切りの後）だと `interactive` を取ってしまう。今回の hub は kind の次の欄を state として読んで通したが、規則を「kind の次」と書き直すか、この欄を前の名前として使うかを決める
 
 ## 実装ブリッジ (Implementation Bridge)
 
