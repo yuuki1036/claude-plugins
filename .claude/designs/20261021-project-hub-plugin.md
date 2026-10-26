@@ -3,12 +3,12 @@ id: 20261021-project-hub-plugin
 title: project-hub — 複数セッションを束ねて PJ を進める hub のプラグイン
 status: draft
 phase: current
-last-validated: 2026-10-26
+last-validated: 2026-10-27
 supersedes: []
 superseded-by: null
 issue: "GitHub issue #308"
 spec: null
-adrs: ["20261021140738", "20261021154740", "20261025152955"]
+adrs: ["20261021140738", "20261021154740", "20261025152955", "20261027002221"]
 tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 ---
 
@@ -402,7 +402,8 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
   - 改名だけ: ref は替わらず（`51e007`）、presence は `renamed`、resolve は `ok` / `registered_ref` で今の名前を引いた
   - 改名したうえで archive → unarchive: session_id と `CLAUDE_CODE_HOST_SESSION_ID` は替わらないが、ref は替わった（`51e007` → `20cb13`）。presence は登録名で absent、resolve は unresolved（exit 1）で、送らない側に倒れた
   - archive 中（プロセスが無い間）は ListAgents に出ない。unarchive しただけでも出ず、次のメッセージで再開して初めて出る
-  - **`local_…` 宛ての SendMessage は、改名・開き直しの後も同じ id で届いた**（上の (d) の残り）。登録は `host_session_id` を持っているので、照合と宛先を `local_…` に寄せればこのケースも引ける。ADR-20261021154740 の見直しが要る。確定タイミング: 段階 ② の詳細設計
+  - **`local_…` 宛ての SendMessage は、改名・開き直しの後も同じ id で届いた**（上の (d) の残り）
+  - **2026-10-27 に決着（ADR-20261027002221 / project-hub 0.7.0）**: hub と sub がどちらも Desktop で、sub の登録の会話の ID を Desktop の記録で確かめられたときは、`resolve` が `rule: host_session` でその `local_…` を宛先に返す。素の CLI からの `local_…` 宛ては届かず（`No agent named ... is reachable`）、archive 中の会話には `is archived; unarchive it first` で届かない（同日の実測）。CLI の hub・確かめられない登録は今までどおり名前で引く。登録した時の ref の行が一覧に無いときは、送ると Desktop が会話を再開するので warning を付け、auto の PJ では lead に出す
 - **ListAgents の行に、改名の直後だけ `says it was <前の名前> until <N>s ago` の欄が入る**（2026-10-26 の実機）。`references/list-agents.md` の state の規則（2 番目の区切りの後）だと `interactive` を取ってしまう。今回の hub は kind の次の欄を state として読んで通したが、規則を「kind の次」と書き直すか、この欄を前の名前として使うかを決める
 
 ## 実装ブリッジ (Implementation Bridge)
