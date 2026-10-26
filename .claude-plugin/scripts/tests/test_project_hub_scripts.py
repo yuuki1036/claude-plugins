@@ -2263,6 +2263,73 @@ class LocalTrackerTest(HubTestBase):
         self.assertIn("Issue ID の形ではない", res.stderr)
 
 
+class LivingSpecLinkTest(HubTestBase):
+    """hub の config から PJ の living spec を指す（ADR-20261026090521 / GitHub issue #322）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        specs = self.tmp / "repo-specs" / ".claude" / "living-specs"
+        specs.mkdir(parents=True)
+        self.spec = specs / "pj.md"
+        self.spec.write_text("---\nphase: target\n---\n# PJ\n", encoding="utf-8")
+
+    def config(self) -> dict:
+        return json.loads((self.root / "pj" / "config.json").read_text(encoding="utf-8"))
+
+    def state(self) -> str:
+        return (self.root / "pj" / "state.md").read_text(encoding="utf-8")
+
+    def test_init_links_the_living_spec_and_refuses_a_missing_file(self):
+        res = self.run_hub("init", "--project", "pj", "--name", "hub-session", "--tracker", "github",
+                           "--tracker-repo", "o/r", "--repo", f"{self.repo}=base",
+                           "--living-spec", str(self.tmp / "nope.md"))
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("living spec のファイルが無い", res.stderr)
+        self.assertFalse((self.root / "pj" / "config.json").exists())
+
+        self.ok("init", "--project", "pj", "--name", "hub-session", "--tracker", "github",
+                "--tracker-repo", "o/r", "--repo", f"{self.repo}=base", "--living-spec", str(self.spec))
+        self.assertEqual(self.config()["living_spec"], str(self.spec.resolve()))
+        self.assertEqual(self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")["living_spec"],
+                         str(self.spec.resolve()))
+        self.ok("render", "--project", "pj")
+        self.assertIn(f"- living spec: {self.spec.resolve()}（現在地は `/project-hub:living-spec status`）",
+                      self.state())
+
+    def test_without_a_living_spec_nothing_is_written(self):
+        self.init()
+        self.assertNotIn("living_spec", self.config())
+        self.ok("render", "--project", "pj")
+        self.assertNotIn("living spec:", self.state())
+
+    def test_set_living_spec_links_unlinks_and_rerenders(self):
+        self.init()
+        out = self.ok("set-living-spec", "--project", "pj", "--path", str(self.spec))
+        self.assertEqual((out["living_spec"], out["previous"]), (str(self.spec.resolve()), None))
+        self.assertIn("- living spec:", self.state())
+        # .md でない・無いファイルは結ばない（config は前のまま）
+        for bad in (str(self.spec.parent), str(self.tmp / "nope.md")):
+            with self.subTest(bad=bad):
+                res = self.run_hub("set-living-spec", "--project", "pj", "--path", bad)
+                self.assertEqual(res.returncode, 2, res)
+                self.assertEqual(self.config()["living_spec"], str(self.spec.resolve()))
+        # 結んだ後にファイルが消えたら、state.md にそう出す
+        self.spec.unlink()
+        self.ok("render", "--project", "pj")
+        self.assertIn("（ファイルが無い。`set-living-spec` で直す）", self.state())
+        out = self.ok("set-living-spec", "--project", "pj", "--path", "-")
+        self.assertIsNone(out["living_spec"])
+        self.assertNotIn("living_spec", self.config())
+        self.assertNotIn("living spec:", self.state())
+
+    def test_set_living_spec_is_for_the_hub_session_only(self):
+        self.init()
+        res = self.run_hub("set-living-spec", "--project", "pj", "--path", str(self.spec),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": SID_A})
+        self.assertEqual(res.returncode, 3, res)
+        self.assertNotIn("living_spec", self.config())
+
+
 class RequiredArgumentsTest(HubTestBase):
     """必須の引数が欠けたら argparse が止める（None のまま先へ進むと、別の理由の exit 2 や、黙って書く・落ちるになる）."""
 
