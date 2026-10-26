@@ -641,7 +641,7 @@ def cmd_init(args) -> int:
         repos.append({"path": str(resolved), "base": base})
     if not repos:
         raise HubError(2, "--repo <path>[=<base>] を 1 つ以上指定する")
-    living_spec = living_spec_path(args.living_spec) if args.living_spec else None
+    living_spec = living_spec_path(args.living_spec, repos) if args.living_spec else None
 
     base_dir = root()
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -740,11 +740,22 @@ def cmd_set_mode(args) -> int:
     return 0
 
 
-def living_spec_path(raw: str) -> str:
-    """config の living_spec に入れる絶対パス（repo の `.claude/living-specs/<slug>.md`。ADR-20261026090521）."""
+def living_spec_path(raw: str, repos: list) -> str:
+    """config の living_spec に入れる絶対パス（config の repo の `.claude/living-specs/<slug>.md`。ADR-20261026090521）.
+
+    living-spec skill は `.claude/living-specs/` の中のファイルしか対象にできないので、その外は結ばない。
+    repo の外（worktree の複製を含む）を結ぶと、worktree を消したときに切れる
+    """
     path = Path(raw).expanduser().resolve()
-    if path.suffix != ".md" or not path.is_file():
-        raise HubError(2, f"living spec のファイルが無い: {path}（.claude/living-specs/<slug>.md を指す）")
+    if path.suffix != ".md":
+        raise HubError(2, f"living spec は .md のファイルを指す: {path}")
+    if not path.is_file():
+        raise HubError(2, f"living spec のファイルが無い: {path}")
+    roots = [Path(r["path"]) for r in repos if isinstance(r, dict) and isinstance(r.get("path"), str)]
+    if path.parent.name != "living-specs" or path.parent.parent.name != ".claude" \
+            or not any(path.parent.parent.parent == root for root in roots):
+        raise HubError(2, f"living spec は config の repo の .claude/living-specs/ の下を指す: {path}"
+                          "（cwd が worktree ならメインのチェックアウト側のパス）")
     return str(path)
 
 
@@ -755,7 +766,7 @@ def living_spec_line(config: dict) -> str | None:
     # hub は living spec を書かないので、中身は写さずパスと見方だけを載せる
     if not Path(raw).is_file():
         return f"living spec: {cell(raw, None)}（ファイルが無い。`set-living-spec` で直す）"
-    return f"living spec: {cell(raw, None)}（現在地は `/project-hub:living-spec status`）"
+    return f"living spec: {cell(raw, None)}（現在地は `/project-hub:living-spec status --spec` にこのパスを渡す）"
 
 
 def cmd_set_living_spec(args) -> int:
@@ -767,7 +778,7 @@ def cmd_set_living_spec(args) -> int:
     if args.path == "-":
         config.pop("living_spec", None)
     else:
-        config["living_spec"] = living_spec_path(args.path)
+        config["living_spec"] = living_spec_path(args.path, config.get("repos") or [])
     write_json(pdir / "config.json", config)
     write_state(pdir)
     emit({"project": args.project, "living_spec": config.get("living_spec"), "previous": previous})

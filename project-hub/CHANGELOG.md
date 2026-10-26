@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.6.1] - 2026-10-26
+
+### Fixed
+
+- hub が結んだ living spec を、living-spec skill に絶対パスで渡すようにした。living-spec skill の `--spec` は、`/` を含み `.md` で終わる値をファイルのパスとして受ける（そのときは cwd の `.claude/living-specs/` を見ず、作りもしない）。以前は hub が `/project-hub:living-spec status` を引数なしで呼ばせていたので、hub の cwd が別の repo・worktree のとき、repo に living spec が複数あるときに、結んだのと別のファイルを見ていた
+- `set-living-spec` / `init --living-spec` は、config の repo の `.claude/living-specs/` の下の `.md` だけを結ぶ（worktree の複製や repo の外は拒否する）。拒否の理由（.md でない・無い・場所が違う）を分けて出す
+- `commands/hub.md` の description にも `living-spec` サブコマンドを足した（同名の command の description がスキル選択に載る）
+
 ## [0.6.0] - 2026-10-26
 
 ### Added

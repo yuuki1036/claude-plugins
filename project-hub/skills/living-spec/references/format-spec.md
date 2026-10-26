@@ -11,6 +11,7 @@ living spec ファイル（`.claude/living-specs/<slug>.md`）の構造・語彙
 `.claude/living-specs/` はフラットで **1 プロジェクト = 1 ファイル**。`oq` / `decision` / `spec` / `status` はどのファイルに対して実行するかを次の順で決める。
 
 1. `--spec <slug>` が指定されていれば `.claude/living-specs/<slug>.md` を対象にする。不在なら「`<slug>` が見つかりません」と報告して**終了**（勝手に作らない。init の領分）
+   - **`--spec` の値が `/` を含み `.md` で終わるなら、ファイルのパスとして扱う**（hub が config の `living_spec` の絶対パスを渡す経路。cwd が living spec のある repo でなくても、そのファイルを対象にする）。`.claude/living-specs/` の中のファイルに限り、無ければ「`<パス>` が見つかりません」と報告して終了する。このときは cwd の `.claude/living-specs/` を見ない（作りもしない）
 2. 指定が無く、`.claude/living-specs/*.md` が **1 件だけ**ならそれを対象にする
 3. **複数件**なら AskUserQuestion で選ばせる（自動で推測しない。意図しないファイルを書き換える事故のほうが重い）
 4. **0 件**なら「living spec がありません。`/living-spec init <slug>` で作成してください」と報告して終了

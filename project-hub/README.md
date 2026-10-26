@@ -237,7 +237,7 @@ sub・ListAgents・トラッカー由来の文面（report の本文・fact の�
 
 入っているもの: 状態ファイル・`hub` と `report` と `hub-living-spec` の skill・living spec（`living-spec` と `living-spec-maintain` の skill。旧 living-spec-workflow）・注入 hook・未取り込みの知らせ（UserPromptSubmit）・sub への紐付けの案内（段階 ①）、自動の連絡・`start`・`mode`・report の `questions`（段階 ②a）。
 
-まだ無いもの（段階 ② の残りと ③。使ってから設計する）: マージの連鎖、判断の波及と living spec への受け渡しの機械化（いまは `hub-living-spec` の決まりに沿って hub が手で行う）、意見の台帳、送る前の文面の検査。
+まだ無いもの（段階 ② の残りと ③。使ってから設計する）: マージの連鎖、判断の波及と living spec への受け渡しの機械化（いまは `hub-living-spec` の決まりに沿って hub が手で行う）、status への living spec の数字の機械表示（いまは status の手順で hub が `/project-hub:living-spec status` を見る）、決定と経緯（journal・facts）の ID による機械的な紐付け、意見の台帳、送る前の文面の検査。
 
 ## install
 

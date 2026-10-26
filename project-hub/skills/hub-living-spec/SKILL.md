@@ -27,13 +27,13 @@ living spec を持つ PJ で、1 つのセッションが **決定**（living sp
 hub の注入（state.md）だけでは決定の現在地が分からない。続ける前に両方を見る:
 
 1. hub の `status`（sub・PR・Issue の表）
-2. `/project-hub:living-spec status`（今の phase・収束率・先送り・open な OQ）
+2. `/project-hub:living-spec status --spec '<config の living_spec>'`（今の phase・収束率・先送り・open な OQ。パスは `refresh-hub` の出力の `living_spec`）
 
 ## 書く決まり
 
 | 書くもの | 書いてよいとき |
 |---|---|
-| living spec（`/living-spec decision` / `oq` / `spec`） | **lead がこのターンで決めた・頼んだときだけ**。hub の自動の連絡・report の取り込み・hub 自身の判断では書かない |
+| living spec（`/living-spec decision` / `oq` / `spec`） | **lead がこのターンで決めた・頼んだときだけ**。hub の自動の連絡・report の取り込み・hub 自身の判断では書かない。書くときも `--spec '<config の living_spec>'` を付ける（cwd から探させると、別の repo・worktree の複製・別の living spec に書きうる） |
 | hub の journal・facts | hub の手順どおり（経緯の記録。正本ではない） |
 | Issue 本文・トラッカー | hub は書かない（hub の skill の決まりのまま）。直す案を lead に出す |
 

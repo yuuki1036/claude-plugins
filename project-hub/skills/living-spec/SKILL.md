@@ -45,7 +45,7 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 
 ## Phase 0: 保存先確認 + サブコマンド判定
 
-1. `.claude/living-specs/` の存在を Glob で確認。不在なら Bash で作成:
+1. `.claude/living-specs/` の存在を Glob で確認。不在なら Bash で作成（**`--spec` にファイルのパスが渡された回は、この確認も作成もしない**。`format-spec.md` 0 節。hub が別の repo の living spec を指したとき、cwd にディレクトリを作らない）:
    ```bash
    mkdir -p .claude/living-specs
    ```
@@ -69,7 +69,7 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 | 引数なし | usage（サブコマンド一覧）を報告して終了。**既定のサブコマンドを持たない** |
 | 未知の第 1 引数（例: `/living-spec my-project`） | 「`my-project` は不明なサブコマンドです。利用可能: `init` / `oq` / `decision` / `spec` / `status`」と報告して終了 |
 
-4. **`init` 以外は対象ファイルを特定する**（`format-spec.md` の 0 節が正本）: `--spec <slug>` があればそれ / 無くて 1 件なら自動 / 複数なら AskUserQuestion で選択 / 0 件なら init を案内して終了。**自動で推測しない**（意図しないファイルを書き換える事故のほうが重い）
+4. **`init` 以外は対象ファイルを特定する**（`format-spec.md` の 0 節が正本）: `--spec <slug>` があればそれ（`--spec <パス>` ならそのファイル）/ 無くて 1 件なら自動 / 複数なら AskUserQuestion で選択 / 0 件なら init を案内して終了。**自動で推測しない**（意図しないファイルを書き換える事故のほうが重い）
 
 > **slug は `init` の後ろにしか置けない。** サブコマンド名と slug 名を同じ名前空間に置くと、後からサブコマンドを追加するたびに、その語を slug に使っていた利用者の意味が変わる（例: `/living-spec oq` が「slug=oq で作成」から「OQ を追加」に反転する）。第 1 引数を常にサブコマンドとして解釈し未知語を弾くことで、Issue 追加時の破壊的変更をまとめて回避する。同じ理由で**既定のサブコマンドを持たない**（`/living-spec` 単独は usage）。typo（`stats` 等）が無確認でファイルを作る事故も同時に塞がる。
 

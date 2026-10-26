@@ -52,7 +52,7 @@ allowed-tools:
 ## Phase 0: 対象特定 + 縮退判定
 
 1. **対象ファイルの特定**: `format-spec.md` の 0 節が正本。**Glob で `.claude/living-specs/*.md` を列挙**してから振り分ける:
-   - `--spec <slug>` があれば `.claude/living-specs/<slug>.md`（Glob の結果に無ければ「`<slug>` が見つかりません」と報告して終了。勝手に作らない）
+   - `--spec <slug>` があれば `.claude/living-specs/<slug>.md`（Glob の結果に無ければ「`<slug>` が見つかりません」と報告して終了。勝手に作らない）。`--spec` の値が `/` を含み `.md` で終わるなら、そのファイルのパスとして扱う（`format-spec.md` 0 節）
    - 無くて Glob の結果が 1 件なら自動選択
    - **複数件**なら AskUserQuestion で選択（自動で推測しない）
    - **0 件**なら「living spec がありません。`/living-spec init <slug>` で作成してください」と報告して終了

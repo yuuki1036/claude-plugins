@@ -17,7 +17,7 @@ allowed-tools:
 
 `$ARGUMENTS`:
 - 省略 → 対象を自動特定（1 件なら自動 / 複数なら選択 / 0 件なら案内して終了）
-- `--spec <slug>` → `.claude/living-specs/<slug>.md` を対象にする
+- `--spec <slug>` → `.claude/living-specs/<slug>.md` を対象にする（`/` を含み `.md` で終わる値はファイルのパス）
 - `--all` → `.claude/living-specs/*.md` の全件を対象にする
 
 ## 実行
