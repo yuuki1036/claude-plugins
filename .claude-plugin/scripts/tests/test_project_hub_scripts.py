@@ -926,12 +926,13 @@ class ReportTest(HubTestBase):
                          (SID_A, "worker-a", "pj", "in_progress"))
         self.assertNotIn("agents", sent, "ListAgents の抜き出しは report に残さない")
         reg = json.loads((self.pdir / "sessions" / f"{SID_A}.json").read_text(encoding="utf-8"))
-        # 宛先に使う欄（ソケット）を持たない（ADR-20261021154740 の適用方法）。ref は改名した後の行を
-        # この登録に結び付ける照合にだけ使い、送る宛先は今の一覧の名前（GitHub issue #316）
-        self.assertEqual(set(reg), {"session_id", "host_session_id", "name", "ref", "project", "issue",
-                                    "branch", "worktree", "updated"})
-        self.assertEqual((reg["branch"], reg["worktree"], reg["host_session_id"], reg["ref"]),
-                         ("feature/x", str(self.repo.resolve()), "local_xyz", "me0"))
+        # ソケットは持たない（ADR-20261021154740 の適用方法）。ref は改名した後の行をこの登録に結び付ける照合に
+        # だけ使う（GitHub issue #316）。会話の ID は Desktop の記録で確かめた回だけ持つ（ADR-20261027002221）
+        self.assertEqual(set(reg), {"session_id", "host_session_id", "host_verified", "name", "ref", "project",
+                                    "issue", "branch", "worktree", "updated"})
+        self.assertEqual((reg["branch"], reg["worktree"], reg["host_session_id"], reg["host_verified"], reg["ref"]),
+                         ("feature/x", str(self.repo.resolve()), None, False, "me0"),
+                         "Desktop の記録が無いので env の会話の ID は書かない")
         self.assertEqual(list(self.pdir.glob("inbox/.*.tmp")), [], "一時名が残っていない")
 
     def test_a_renamed_hub_is_reported_not_guessed(self):
@@ -1945,6 +1946,124 @@ class RenamedSessionTest(HubTestBase):
             {SID_A: {"current_name": "renamed-a", "ref": "r1", "seen": ts}}), encoding="utf-8")
         self.ok("render", "--project", "pj")
         self.assertIn("| worker-a → renamed-a |", (self.pdir / "state.md").read_text(encoding="utf-8"))
+
+
+HUB_HOST = "local_11111111-1111-4111-8111-111111111111"
+SUB_HOST = "local_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+
+
+class HostSessionTest(HubTestBase):
+    """Desktop の hub は、sub の会話の ID（local_…）へ送る（GitHub issue #316 / ADR-20261027002221）.
+
+    会話の ID は改名・開き直しで変わらない（2026-10-26 に実測）。素の CLI からは届かないので、hub が Desktop で
+    動いていると確かめられたときだけ使う。登録の ID は Desktop の記録で確かめたものだけを信じる
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init(tracker="linear")
+        self.desktop(HUB_HOST, SID_HUB)
+        self.desktop(SUB_HOST, SID_A)
+
+    def desktop(self, host: str, cli: str) -> None:
+        path = self.tmp / "desktop" / "claude-code-sessions" / "acct" / "org" / f"{host}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"sessionId": host, "cliSessionId": cli}), encoding="utf-8")
+
+    def registration(self) -> dict:
+        return json.loads((self.pdir / "sessions" / f"{SID_A}.json").read_text(encoding="utf-8"))
+
+    def register_on_desktop(self, name: str = "ABC-12: 監査ログ", ref: str = "r1") -> None:
+        res = self.report(name=name, body=report_body(issue="ABC-12"), self_ref=ref,
+                          env_extra={"CLAUDE_CODE_HOST_SESSION_ID": SUB_HOST})
+        self.assertEqual(res.returncode, 0, res)
+
+    def resolve_from(self, agents: list, host: str | None = HUB_HOST, *extra: str) -> tuple[int, dict]:
+        env = {"CLAUDE_CODE_SESSION_ID": SID_HUB}
+        if host:
+            env["CLAUDE_CODE_HOST_SESSION_ID"] = host
+        res = self.run_hub("resolve", "--project", "pj", "--session", SID_A, *extra,
+                           "--peer-count", str(len(agents)), stdin=json.dumps(agents), env_extra=env)
+        return res.returncode, json.loads(res.stdout)
+
+    def test_the_report_keeps_the_conversation_id_only_when_desktop_confirms_it(self):
+        self.register_on_desktop()
+        reg = self.registration()
+        self.assertEqual((reg["host_session_id"], reg["host_verified"]), (SUB_HOST, True))
+        # 子の CLI: 会話の ID は継承しているが、Desktop の記録でその会話につないでいるのは親
+        res = self.report(sid=SID_B, name="child", body=report_body(issue="ABC-12"),
+                          env_extra={"CLAUDE_CODE_HOST_SESSION_ID": SUB_HOST})
+        self.assertEqual(res.returncode, 0, res)
+        child = json.loads((self.pdir / "sessions" / f"{SID_B}.json").read_text(encoding="utf-8"))
+        self.assertEqual((child["host_session_id"], child["host_verified"]), (None, False))
+
+    def test_a_renamed_and_reopened_sub_is_reached_by_its_conversation_id(self):
+        # 開き直すと ref が変わり、改名した題に Issue ID も無い。名前の規則ではどれでも引けなかった
+        self.register_on_desktop()
+        rc, out = self.resolve_from([agent("改名後の sub", "r7")])
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((out["to"], out["host"], out["rule"], out["name"], out["ref"]),
+                         (SUB_HOST, SUB_HOST, "host_session", "ABC-12: 監査ログ", None))
+        self.assertIn("再開", out["warning"], "一覧に見えない会話を再開させることを承認の画面に出す")
+
+    def test_a_visible_sub_is_sent_to_its_conversation_id_without_a_warning(self):
+        self.register_on_desktop()
+        rc, out = self.resolve_from([agent("改名後の sub", "r1"), agent("ABC-12: 監査ログ", "r9")])
+        self.assertEqual((rc, out["to"], out["name"], out["ref"]), (0, SUB_HOST, "改名後の sub", "r1"), out)
+        self.assertNotIn("warning", out, "同じ名前を付けた別のセッションがいても、会話の ID は入れ替わらない")
+
+    def test_names_are_used_when_the_hub_or_the_registration_is_not_confirmed(self):
+        cases = {
+            # 素の CLI の hub からは local_ 宛てが届かない（2026-10-27 に実測）
+            "cli_hub": (lambda: self.register_on_desktop(), None),
+            # 子の CLI の hub: 会話の ID は継承しているが、Desktop がその会話につないでいるのは別のセッション
+            "child_cli_hub": (lambda: (self.register_on_desktop(), self.desktop(HUB_HOST, SID_B)), HUB_HOST),
+            # 0.6.4 までの登録（env の値をそのまま書いていた）
+            "unverified_registration": (lambda: self.register(self.pdir, SID_A, "ABC-12: 監査ログ",
+                                                              issue="ABC-12", ref="r1"), HUB_HOST),
+        }
+        for label, (arrange, host) in cases.items():
+            with self.subTest(label):
+                arrange()
+                if label == "unverified_registration":
+                    reg = self.registration()
+                    reg["host_session_id"] = SUB_HOST
+                    (self.pdir / "sessions" / f"{SID_A}.json").write_text(json.dumps(reg), encoding="utf-8")
+                rc, out = self.resolve_from([agent("ABC-12: 監査ログ", "r1")], host)
+                self.assertEqual((rc, out["rule"], out["to"]), (0, "registered_name", "ABC-12: 監査ログ"), out)
+                self.desktop(HUB_HOST, SID_HUB)
+
+    def test_the_auto_project_asks_the_lead_before_resuming_an_unseen_sub(self):
+        self.ok("set-mode", "--project", "pj", "--mode", "auto")
+        self.register_on_desktop()
+        rc, out = self.resolve_from([agent("改名後の sub", "r7")])
+        self.assertEqual((rc, out["status"], out["to"]), (1, "needs_lead", SUB_HOST), out)
+        rc, out = self.resolve_from([agent("改名後の sub", "r1")])
+        self.assertEqual((rc, out["status"]), (0, "ok"), "対照: 一覧に見える sub には送る")
+
+    def test_the_auto_limit_still_counts_sends_to_the_conversation_id(self):
+        self.ok("set-mode", "--project", "pj", "--mode", "auto")
+        self.register_on_desktop()
+        body = {"subject": "ABC-12", "text": "t", "to": {"name": "x", "ref": None, "host": SUB_HOST},
+                "session": SID_A}
+        for _ in range(3):
+            res = self.run_hub("record", "--project", "pj", "--kind", "relay", "--result", "accepted",
+                               "--basis", "routine", stdin=json.dumps(body))
+            self.assertEqual(res.returncode, 0, res)
+        rc, out = self.resolve_from([agent("改名後の sub", "r1")])
+        self.assertEqual((rc, out["status"]), (1, "auto_limit"), out)
+        rc, out = self.resolve_from([agent("改名後の sub", "r1")], HUB_HOST, "--lead")
+        self.assertEqual((rc, out["status"]), (0, "ok"), "lead の言葉の伝達は上限を数えない")
+
+    def test_record_takes_a_conversation_id_but_not_a_malformed_one(self):
+        for to, rc in (({"name": "x", "ref": None, "host": SUB_HOST}, 0),
+                       ({"name": "x", "ref": "r1", "host": SUB_HOST}, 0),
+                       ({"name": "x", "host": SUB_HOST}, 0),
+                       ({"name": "x", "ref": None, "host": "uds:/tmp/sock"}, 2),
+                       ({"name": "x", "ref": "r1", "host": "x"}, 2),
+                       ({"name": "x", "ref": None}, 2)):
+            with self.subTest(to=to):
+                self.assertEqual(self.record({"subject": "ABC-12", "text": "t", "to": to}).returncode, rc)
 
 
 class ApprovalModeTest(HubTestBase):
