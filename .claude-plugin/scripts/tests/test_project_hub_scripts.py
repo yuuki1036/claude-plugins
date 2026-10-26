@@ -490,6 +490,40 @@ class ResumeTest(HubTestBase):
         self.assertNotIn("の hub", res.stdout)
         self.assertEqual(self.hub_json(pdir)["session_id"], SID_B)
 
+    def test_hooks_do_not_adopt_a_closed_project_but_its_commands_do(self):
+        # 閉じた PJ は注入しないので、hook で付け替えると lead に知らせる経路が無い
+        pdir = self.init_on_desktop()
+        self.ok("close", "--project", "pj",
+                env_extra={"CLAUDE_CODE_SESSION_ID": SID_HUB, "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        before = self.hub_json(pdir)
+        journal = (pdir / "journal.jsonl").read_text(encoding="utf-8")
+        self.desktop(SID_B)
+        for cmd, payload in (("inject", {"session_id": SID_B, "source": "resume"}),
+                             ("pending-hint", {"session_id": SID_B})):
+            with self.subTest(cmd):
+                res = self.run_hub(cmd, stdin=json.dumps(payload),
+                                   env_extra={"CLAUDE_CODE_SESSION_ID": "", "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+                self.assertEqual(res.returncode, 0, res)
+                self.assertNotIn("付け替えた", res.stdout)
+                self.assertEqual(self.hub_json(pdir), before)
+                self.assertEqual((pdir / "journal.jsonl").read_text(encoding="utf-8"), journal)
+        # hub 側のコマンドは閉じた PJ でも動くので、そこで付け替えて resumed_from で知らせる
+        res = self.refresh(SID_B)
+        self.assertEqual(res.returncode, 0, res)
+        self.assertEqual(json.loads(res.stdout)["resumed_from"], SID_HUB)
+        self.assertEqual(self.hub_json(pdir)["session_id"], SID_B)
+
+    def test_refresh_hub_checks_the_name_before_adopting(self):
+        # 付け替えた後に名前で止まると resumed_from が出ず、lead が付け替えを知らないまま進む
+        pdir = self.init_on_desktop()
+        before = self.hub_json(pdir)
+        self.desktop(SID_B)
+        res = self.run_hub("refresh-hub", "--project", "pj", "--name", "a\nb",
+                           env_extra={"CLAUDE_CODE_SESSION_ID": SID_B, "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertEqual(res.returncode, 2, res)
+        self.assertEqual(self.hub_json(pdir), before)
+        res = self.refresh(SID_B)
+        self.assertEqual(json.loads(res.stdout)["resumed_from"], SID_HUB)
 
     def test_pending_hint_adopts_and_tells_even_without_pending_reports(self):
         # SessionStart の時点で Desktop の記録が古く、付け替えが UserPromptSubmit まで遅れた回
