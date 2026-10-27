@@ -418,7 +418,7 @@ def _run_unit(unit: str, tests_dir: Path, cwd: Path = ROOT,
         return unit, rc, log.read()
 
 
-def coordinate(jobs: int, tests_dir: Path | None = None, cwd: Path = ROOT, failfast: bool = False) -> int:
+def coordinate(jobs: int, tests_dir: Path | None, cwd: Path, failfast: bool) -> int:
     """単位を `jobs` 並列で回し、落ちた単位の出力と、全体の集計行を stdout に出す.
 
     集計行は unittest と同じ形（`Ran N tests in Xs`）にする。呼び出し側の `_ran_count` がそれを読む。
