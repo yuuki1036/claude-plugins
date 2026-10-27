@@ -627,6 +627,8 @@ class ResumeTest(HubTestBase):
         self.addCleanup(proc.kill)
         proc.stdin.write(json.dumps({"claim": "c", "source": "s"}))
         proc.stdin.close()
+        # 3.12 の communicate() は閉じた stdin も flush して ValueError になる（3.14 では起きない）
+        proc.stdin = None
         deadline = time.monotonic() + 20
         while True:
             try:
