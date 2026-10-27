@@ -1,7 +1,7 @@
 ---
 name: living-spec
 description: >
-  Issue 化前の「設計収束ドキュメント」(living spec) を作成・運用するスキル。OQ (Open Questions) 台帳と Decision log を append-only の表で持ち、確度ラベル（確定 / 方向性(仮) / 未定）で未確定を抱えたまま収束を追跡する。init / oq / decision / spec / status を提供する。**収束率や open OQ の残数を見る（status）のもこちら**（整合・鮮度の検証は living-spec-maintain）。
+  Issue 化前の「設計収束ドキュメント」(living spec) を作成・運用するスキル。OQ (Open Questions) 台帳と Decision log を append-only の表で持ち、確度ラベル（確定 / 方向性(仮) / 未定）で未確定を抱えたまま収束を追跡する。init / oq / decision / spec / timeline / status を提供する。**収束率や open OQ の残数を見る（status）のもこちら**（整合・鮮度の検証は living-spec-maintain）。
   トリガー: 「living spec」「リビングスペック」「living spec 作る」「OQ 台帳」「Open Questions 台帳」
   「OQ 追加」「Decision log」「決定を記録して OQ を閉じる」「確度ラベル」「収束率」「収束率を見せて」
   「open OQ を見せて」「残ってる OQ」「living spec の現在地」「living spec status」
@@ -40,6 +40,7 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 
 - `${CLAUDE_SKILL_DIR}/references/format-spec.md` — 表スキーマ・確度ラベル・採番規約・frontmatter の**正本**
 - `${CLAUDE_SKILL_DIR}/references/template.md` — scaffold テンプレ（プレースホルダ方式）
+- `${CLAUDE_SKILL_DIR}/references/timeline.md` — `timeline` の手順（Phase 8 でだけ読む）
 
 ---
 
@@ -60,6 +61,7 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 | `decision` | `<text> [--spec <slug>]` | Phase 5 |
 | `spec` | `<項目> <確度> [--spec <slug>]` / `<項目> --phase <P<n>\|先送り\|-> [D<n>]` / `<項目> --issue <ID,…\|->` / `--upgrade` / `--phase-advance D<n>` / `--freeze D<n>` / `--unfreeze [D<n>]` | Phase 6 |
 | `status` | `[--spec <slug>]` | Phase 7 |
+| `timeline` | `<text> [--date <YYYY-MM-DD>] [--source <出典>] [--spec <slug>]` | Phase 8 |
 | `maintain` | - | 案内のみ（整合・鮮度チェックは `/living-spec-maintain` の領分） |
 
 3. 上記以外の入力の扱い:
@@ -67,7 +69,7 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 | 入力 | 挙動 |
 |---|---|
 | 引数なし | usage（サブコマンド一覧）を報告して終了。**既定のサブコマンドを持たない** |
-| 未知の第 1 引数（例: `/living-spec my-project`） | 「`my-project` は不明なサブコマンドです。利用可能: `init` / `oq` / `decision` / `spec` / `status`」と報告して終了 |
+| 未知の第 1 引数（例: `/living-spec my-project`） | 「`my-project` は不明なサブコマンドです。利用可能: `init` / `oq` / `decision` / `spec` / `timeline` / `status`」と報告して終了 |
 
 4. **`init` 以外は対象ファイルを特定する**（`format-spec.md` の 0 節が正本）: `--spec <slug>` があればそれ（`--spec <パス>` ならそのファイル）/ 無くて 1 件なら自動 / 複数なら AskUserQuestion で選択 / 0 件なら init を案内して終了。**自動で推測しない**（意図しないファイルを書き換える事故のほうが重い）
 
@@ -132,9 +134,9 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 
 ---
 
-## 共通手順: 書き込み前後の規律（Phase 4-6 が従う）
+## 共通手順: 書き込み前後の規律（Phase 4-6・8 が従う）
 
-`oq` / `decision` / `spec` はいずれもファイルを更新する。**すべてこの規律に従う**。
+`oq` / `decision` / `spec` / `timeline` はいずれもファイルを更新する。**すべてこの規律に従う**。
 
 ### W1. 日付は Bash で取る
 
@@ -459,6 +461,12 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 
 ---
 
+## Phase 8: timeline — タイムラインへの 1 項目の append
+
+起きたこと（進捗）と期日を、`format-spec.md` 1.1 節の形で「## タイムライン」の末尾に 1 行足す（GitHub issue #333）。**決定は書かない**。手順（引数の検証・挿入位置・報告）は `${CLAUDE_SKILL_DIR}/references/timeline.md` を Read して従う。W1・W4 の規律はここでも守る。
+
+---
+
 ## maintain の案内
 
 `maintain` が指定されたら、次を報告して終了する（このコマンドでは提供しない）:
@@ -488,6 +496,7 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
    / --upgrade → 旧 4 列の表を 6 列に / --phase-advance → D# を確かめて current_phase を進める
    / <項目> --phase・--issue → 先送りになる変更は D# を確かめて phase・関連 Issue を更新
 8. Phase 7: status → 収束率（先送りを除く）・phase ごとの収束率・先送りの件数・open OQ 残数を集計（読むだけ）
+9. Phase 8: timeline → 1 行・日付の検証 → 「## タイムライン」の末尾に `- <日付> <text>（出典: …）` を append（決定の文なら decision へ案内）
 ```
 
 ---

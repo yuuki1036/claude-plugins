@@ -57,7 +57,7 @@ brief を経ずに始めた sub（issue-workflow の `start` など）も、cwd 
 
 Issue 化する前段から実行中まで、PJ の決定を「設計収束ドキュメント」(living spec) で持つ。**未確定を抱えていることが正常状態**の文書を、採番・書式・相互参照を機械化しながら「仮 → 確定」へ収束させる。living spec は repo の `.claude/living-specs/<slug>.md` に置いて commit する（1 PJ に 1 本）。hub は使わなくてよい — 設計だけを詰める段階は living spec だけで使い、sub を起動するときに hub を init する（旧 living-spec-workflow を吸収した / ADR-20261026090521・GitHub issue #322）。
 
-hub と併用するときは、hub の `living-spec` サブコマンド（`hub.py set-living-spec`）でその PJ の living spec を結ぶ（state.md にパスが出る）。決定と段取りの間の決まりは `hub-living-spec` skill に従う: 決定を書くのは lead が決めたときだけ、確定を覆した決定の関連 Issue を仕掛中・未着手・完了に分けて lead に出す、sub の report のうち設計に関わるものを OQ の候補にする、自動の連絡の出典に使ってよいのは Decision と確定の行だけ、など。
+hub と併用するときは、hub の `living-spec` サブコマンド（`hub.py set-living-spec`）でその PJ の living spec を結ぶ（state.md にパスが出る）。決定と段取りの間の決まりは `hub-living-spec` skill に従う: 決定を書くのは lead が決めたときだけ、進捗（PR のマージ・sub の done・確かめた事実）は lead に聞かずに出典つきでタイムラインへ書く、確定を覆した決定の関連 Issue を仕掛中・未着手・完了に分けて lead に出す、sub の report のうち設計に関わるものを OQ の候補にする、自動の連絡の出典に使ってよいのは Decision と確定の行だけ、など。
 
 コマンドは `/project-hub:living-spec` と `/project-hub:living-spec-maintain`（他のプラグインと名前がぶつからなければ `/living-spec` でも呼べる）。
 
@@ -70,6 +70,7 @@ hub と併用するときは、hub の `living-spec` サブコマンド（`hub.p
 /living-spec decision 認証は OAuth 2.0 を採用       # D1 を append し、関連 OQ を close
 /living-spec oq list                               # open な OQ の一覧（--all で closed 込み）
 /living-spec status                                # 収束率 + open OQ 残数 + 次に決めるもの
+/living-spec timeline PR #12 をマージ --source 'PR #12（merge 1a2b3c4d）'  # タイムラインに 1 行足す（日付は機械付与）
 /living-spec spec --freeze D12                     # 仕様表を凍結（D12 に凍結の経緯を書いてから）
 /living-spec                                       # usage
 ```
@@ -119,7 +120,7 @@ sync: null                     # v1 未使用（予約）
 | 仕様 | 項目ごとの確度ラベル（`確定` / `方向性(仮)` / `未定`）・phase（`P1` … / `先送り`）・関連 Issue・`since` |
 | Open Questions | OQ 台帳。`open` / `closed` と関連 D# の双方向参照 |
 | Decision log | append-only の決定記録（D# 採番） |
-| 進め方フェーズ / タイムライン / 参照ソース | 散文セクション |
+| 進め方フェーズ / タイムライン / 参照ソース | 散文セクション（タイムラインは起きたことと期日。`timeline` が `- <日付> <起きたこと>（出典: …）` の形で足す） |
 
 ### 設計の核心: 情報を move しない
 

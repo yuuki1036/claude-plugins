@@ -26,6 +26,7 @@ allowed-tools:
 - `spec <項目> --phase <P<n>|先送り|-> [D<n>]` / `spec <項目> --issue <ID,…|->` → 仕様表の行の phase（先送りになる変更は D# が要る）と関連 Issue を更新
 - `spec --upgrade` → 旧 4 列の仕様表を 6 列（phase・関連 Issue を足す）にする / `spec --phase-advance D<n>` → 今の phase（`current_phase`）を次へ進める
 - `spec --freeze D<n>` / `spec --unfreeze D<n>` → 仕様表を凍結 / 解除する（正本を別の文書へ移したとき。先に `decision` で経緯を残し、その D# を渡す。壊れた凍結の宣言は `--unfreeze` を D# なしで実行して消す）
+- `timeline <text> [--date <YYYY-MM-DD>] [--source <出典>]` → タイムラインの末尾に `- <日付> <text>（出典: …）` を 1 行 append（起きたこと・期日。決定は書かない）
 - `status` → 進捗ビュー（収束率（先送りを除く）・phase ごとの収束率・先送りの件数 + open OQ 残数 + セッション再開導線）
 
 `init` 以外は `--spec <slug>` で対象ファイルを明示指定できます（`/` を含み `.md` で終わる値はファイルのパスとして扱う。hub が結んだ living spec を渡す経路。省略時: 1 件なら自動 / 複数なら選択 / 0 件なら init を案内）。
@@ -42,5 +43,6 @@ allowed-tools:
 4. Phase 5: decision（採番（その番号を壊れた凍結の宣言が指していたら止める）→ 関連 OQ と覆す確定の項目を選ばせる → append → OQ を close → 双方向参照を Read で検証）
 5. Phase 6: spec（凍結中なら拒否 → 確度の 3 値検証 → 項目で引き当て → 確度と since を更新）/ `--freeze`・`--unfreeze`（D# の実在と順序を確かめて frontmatter の凍結の 2 行を書く・消す。壊れた宣言は `--unfreeze` が D# なしで消す）/ `--upgrade`・`--phase-advance`・`<項目> --phase`・`--issue`
 6. Phase 7: status（収束率（先送りを除く）・phase ごとの収束率・先送りの件数と open OQ 残数を集計。仕様表が凍結されていれば収束率は数えない）
+7. Phase 8: timeline（1 行・日付の検証 → 「## タイムライン」の末尾に append。形は format-spec.md 1.1 節）
 
 書式の正本は `skills/living-spec/references/format-spec.md` です（表スキーマ・確度ラベル 3 値・採番規約・パース正規表現）。日付は必ず Bash の `date` で取得し、擬似日付を作らないでください。**採番の前に HTML コメント区間を除去する**こと（コメント内の記入例を実在 ID として数えないため）。

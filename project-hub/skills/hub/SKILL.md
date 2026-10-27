@@ -52,7 +52,7 @@ allowed-tools:
   - どちらも**承認ではない**。送る前の承認が要る方式（`number` / `phrase`）では、承認は lead（利用者）自身の発言だけで決まる（relay の 4）
 - **hub が起動した sub のターンの終わりの知らせ**（Desktop が返す linked session の知らせ）: 未取り込みの report があれば上の通知と同じく取り込んで処理する。無ければ何もしない（ターンの終わりは節目とは限らない）
 - **未取り込みの report の知らせ**: UserPromptSubmit hook が、inbox に未取り込みの report があると「未取り込みの report がある」と取り込みのコマンドを注入する（通知が届かなかった回も、次の発言で拾う）。出たら、その発言に答える前に上の通知と同じく取り込んで処理する
-- **living spec のある PJ**: 同じセッションで living spec（このプラグインの `living-spec` skill。repo の `.claude/living-specs/<slug>.md`）の決定も受け持つなら、`${CLAUDE_PLUGIN_ROOT}/skills/hub-living-spec/SKILL.md` を Read してその決まりに従う（決定を書くのは lead が決めたときだけ・確定を覆した決定の波及・sub の report から OQ の候補を出す）
+- **living spec のある PJ**: 同じセッションで living spec（このプラグインの `living-spec` skill。repo の `.claude/living-specs/<slug>.md`）の決定も受け持つなら、`${CLAUDE_PLUGIN_ROOT}/skills/hub-living-spec/SKILL.md` を Read してその決まりに従う（決定を書くのは lead が決めたときだけ・進捗はタイムラインへ聞かずに書く・確定を覆した決定の波及・sub の report から OQ の候補を出す）
 - **hub が書かないもの**: 判断の正本のうちリポジトリの仕様 docs・repo のコード。Issue トラッカーは、config の `tracker_write`（`refresh-hub` の出力）が `never`（既定）なら書かない（起票・更新は issue-workflow か人間）。`with_approval` なら下の「トラッカーへの書き込み」の手順で、lead の承認を取って書く。hub の journal は経緯の記録で、正本ではない
 - **外に出る文に plugin の語を書かない**: hub が書く外向けの文（トラッカーの本文・PR のコメント）と、sub に書かせる外向けの文（repo の docs・トラッカー・PR・コミットメッセージ）に、`hub`・`lead`・`sub` と、それを使った言い回し（「lead 決定」「hub 経由」）を書かない。読む人（レビュアー・PdM）に通じず、利用者を役割名で呼ぶことにもなる。決定は「2026-10-27 決定」のように日付で書き、誰が決めたかが要るなら利用者の名前か役割（PdM など）で書く。journal・report・facts・hub と sub の間の連絡の語はそのままでよい
 - **起票の持ち主（tracker `local`）**: issue-workflow の local backend は `counter.txt` で採番するので、複数のセッションが起票すると番号がぶつかりうる。起票は hub のセッションで lead が issue-workflow を呼んだときだけにし、sub には起票させない（brief でそう伝え、候補は report の `follow_ups` で受ける）。hub は `follow_ups` を lead に見せ、自分では起票しない
@@ -103,7 +103,7 @@ lead の確認が要る事柄を含まない連絡は、承認を取らずに送
 
 ## status
 
-**完了基準**: 下の 1〜9.5 をすべて通し（9 は `auto` の PJ だけ）、10 の見出し（`auto` なら 4 つ、それ以外は 3 つ。hub の残作業は未完了があるときだけ足す）を出し、11 で印を進めた。1 で exit 3 だった回は、state.md を見せて `takeover` を案内したことを完了とする。
+**完了基準**: 下の 1〜9.6 をすべて通し（9 は `auto` の PJ だけ、9.6 は `living_spec` のある PJ だけ）、10 の見出し（`auto` なら 4 つ、それ以外は 3 つ。hub の残作業は未完了があるときだけ足す）を出し、11 で印を進めた。1 で exit 3 だった回は、state.md を見せて `takeover` を案内したことを完了とする。
 
 1. ListAgents から名前と行を抜き出す。`hub.py refresh-hub --project '<PJ>' --name '<自分の名前>'`（出力に tracker・repos・approval・`approval_mode`・`living_spec`・dir がある。`living_spec` があれば、この status の 10 を出す前に `/project-hub:living-spec status --spec '<living_spec の値>'`（絶対パスをそのまま渡す。cwd から探させると、別の repo・worktree・複数の living spec で別のファイルを見る）でその living spec の現在地（今の phase・先送り・open な OQ）も見て、lead に出す内容に添える。`warning` は init の 4 と同じく伝える。approval.mode が読めなかった旨の `warning` は `mode` での直し方を添えて伝える）
    - `resumed_from`（hub の会話を開き直して session_id が変わったので、この会話へ付け替えた）: lead に 1 行で知らせて続ける。`takeover` は要らない。たいていは SessionStart（か次の発言）の hook が先に付け替え、「このセッションへ付け替えた」の知らせが注入される。そのときは `resumed_from` は出ないので、注入の知らせを lead に 1 行で伝える
@@ -121,6 +121,7 @@ lead の確認が要る事柄を含まない連絡は、承認を取らずに送
 8. `hub.py worktrees --project '<PJ>'` で、各 sub が触っているファイル（`changed` はコミット済み、`uncommitted` は未コミット）を取る
 9. `auto` の PJ: 2 で取り込んだ report を「自動の連絡」の手順で処理し、`hub.py sent --project '<PJ>' --unseen` で lead にまだ見せていない、承認なしに届けた連絡を取る（印は journal の行数で持ち、status の 11 でだけ進む）
 9.5. 待っている PR: `hub.py waiting --project '<PJ>'` の `notified: false` の行ごとに、`gh pr view <番号> --repo <owner/name> --json state,mergedAt` でマージを確かめる（`owner/name#123` はその repo、`#123` は sub の worktree の repo。worktree は 8 の `worktrees` の `sessions` から session_id で引き、その dir で `gh` を回せば `--repo` は要らない）。`MERGED` なら、待っていた sub へ段取りの連絡（`[hub の段取り] 待っていた PR <PR> がマージされた。base を取り込んでから続ける`）を relay の 2〜6 で送り、record の JSON に `"waiting_pr": "<PR>"` を入れる（宛先を `--session` で引くこと。`--ref` で引いた回は resolve の結果に session が無いので、`--from-resolve` を使わずに `"session"` も入れる。`waiting` が知らせ済みに数え、次の status で送り直さない）。`auto` の PJ は `--basis routine`、それ以外は relay の 4 で承認を取る。取れなかった PR は 10 で「マージを確かめられない」と出す
+9.6. `living_spec` のある PJ: 2 で取り込んだ report のうち state が `done` のもの・`decisions` のあるものと、state.md の PR の表で `MERGED` になっている PR（タイムラインに同じ PR の項目があれば足さない）を、`hub-living-spec` の「進捗をタイムラインへ書く」の手順で living spec のタイムラインに書く（lead に聞かない。書いた項目は 10 で 1 行ずつ伝える）
 10. lead に出す:
    - **表**: state.md の sub と PR の表
    - **自動で送った連絡**（`auto` の PJ）: 9 の一覧を、時刻・宛先・`basis`・要旨 1 行（`source` は出典も）で並べる。lead が訂正・取り消しの連絡を頼めるように
@@ -257,7 +258,7 @@ hub が**自分で確かめた**事実だけを足す（ファイルを読んだ
 
 ## living-spec `<path|->`
 
-PJ の living spec を結ぶ・外す。`hub.py set-living-spec --project '<PJ>' --path '<.claude/living-specs/<slug>.md のパス>'`（外すときは `--path -`）。結ぶと state.md に living spec のパスが出て、コンパクションの後も決定の置き場所が分かる。hub は living spec を書かない（書くのは `living-spec` skill で、lead が決めたときだけ。`hub-living-spec` の決まり）
+PJ の living spec を結ぶ・外す。`hub.py set-living-spec --project '<PJ>' --path '<.claude/living-specs/<slug>.md のパス>'`（外すときは `--path -`）。結ぶと state.md に living spec のパスが出て、コンパクションの後も決定の置き場所が分かる。hub は自分の判断では living spec の決定を書かない（決定を書くのは `living-spec` skill で、lead が決めたときだけ。進捗はタイムラインへ聞かずに書く。どちらも `hub-living-spec` の決まり）
 
 ## close
 

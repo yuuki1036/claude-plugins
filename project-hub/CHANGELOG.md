@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.9.0] - 2026-10-27
+
+### Added
+
+- living-spec の `timeline <text> [--date] [--source]`: タイムラインの末尾に `- <日付> <起きたこと>（出典: …）` を 1 行足す。項目の形は format-spec の 1.1 節に固定した（手で Edit すると、日付・粒度・出典の書き方がセッションごとにぶれた）。決定の文は書かずに `decision` を案内する（GitHub issue #333）
+
+### Changed
+
+- hub-living-spec の書き分け: 決定（Decision・OQ・仕様表）は今どおり lead が決めたときだけ書く。進捗（PR のマージ・sub の done・hub の fact で確かめた事実・リリースの段取りの完了）は、hub が lead に聞かずに出典（PR とマージの SHA・report のファイル名・hub fact の ID）つきでタイムラインへ書き、そのターンで lead に 1 行で伝える。sub の report の `decisions` は「sub で決まったこと」としてタイムラインに残し、Decision にするかは lead に聞く。hub の status に、living spec のある PJ でこれを行う手順（9.6）を足した（GitHub issue #333）
+- living spec のテンプレのタイムラインの説明を「起きたこと（進捗）と期日」に直した
+
 ## [0.8.1] - 2026-10-27
 
 ### Changed
