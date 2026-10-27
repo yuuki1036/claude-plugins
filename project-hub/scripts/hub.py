@@ -2382,7 +2382,7 @@ def hub_projects(sid: str) -> list[tuple[Path, dict, str | None]]:
             except (OSError, HubError) as e:
                 print(f"project-hub: {hub_path.parent.name} の hub をこのセッションへ付け替えられない（{e}）",
                       file=sys.stderr)
-                continue
+                continue  # mutation-ok: 外しても resumed_from は None のままで、すぐ下の continue に当たる
             if resumed_from is None:
                 continue
         out.append((hub_path.parent, config, resumed_from))
@@ -2463,7 +2463,7 @@ def cmd_pending_hint(args) -> int:
     except ValueError:
         return 0
     sid = payload.get("session_id") if isinstance(payload, dict) else None
-    if not isinstance(sid, str) or not sid:
+    if not isinstance(sid, str) or not sid:  # mutation-ok: None は isinstance で必ず返る。空文字・None 以外の非文字列は hub.json とも Desktop の記録とも一致せず、先へ進んでも何も出さない
         return 0
     lines, modes, notices = [], set(), []
     projects = hub_projects(sid)

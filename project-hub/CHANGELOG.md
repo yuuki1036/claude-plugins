@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.8.1] - 2026-10-27
+
+### Changed
+
+- `hub.py` の等価変異 2 か所（pending-hint の入口で sid を確かめる判定と、hook で hub を付け替えられなかった PJ を飛ばす continue）に、理由つきの `# mutation-ok` を付けた。挙動は変わらない（nightly の生存変異 / GitHub issue #317）。Desktop の記録の読み方・開き直しの付け替え・hook が全 PJ をなめるときの読み飛ばし・作業側に紐付けを促す PJ の選び方・living spec を結べる repo・登録のブランチの数え方・必須の引数などには、生存していた変異を殺すテストを足した
+
 ## [0.8.0] - 2026-10-27
 
 ### Added
