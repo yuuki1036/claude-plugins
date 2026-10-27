@@ -88,13 +88,21 @@ Step 2 から戻った回は止まらない（一度返信を受けた後に同�
 
 ### Step 5: 読み合わせ（review-guide）
 
-コミット前に、変更を精読 1 件ずつ利用者と読み合わせる。**フロー中 1 回だけ**: Step 7 で CI が赤くなって
+コミット前に、変更を精読 1 件ずつ利用者と読み合わせる。**`CR=1` なら必須**（精読を選び、レビュー観点に答え、直せるものを直す
+工程がコードの質を上げるため）。利用者に選ばせるのはガイドを表示するかだけで、どちらでも工程は同じに通す。**フロー中 1 回だけ**: Step 7 で CI が赤くなって
 Step 2 から戻った回は、この Step を通らず Step 4 から Step 6 へ進む。
 
-- `CR=1`: Step 4 の self-review の修正方針（self-review の Step 7）まで済んでから、`Skill` tool で
-  `code-review:review-guide` を `--base <Step 4 の self-review が冒頭で出した base_branch= の値> --walkthrough` で起動する。
-  進め方（1 精読 1 ターン・解説の形式・その場での修正・締め）は review-guide 側の手順に従い、ここに複製しない。
-  **レポートと各精読の解説は定型のまま出す**（要約して 1 行に畳まない）
+- `CR=1`: Step 4 の self-review の修正方針（self-review の Step 7）まで済んでから、`AskUserQuestion` で聞く:
+  - question: "読み順ガイドと精読の解説を表示する？（どちらでも読み合わせの工程は同じに通し、見つけた修正はその場で入れる）"
+  - header: "ガイド表示"
+  - options: "表示する (Recommended)"（概要の後に精読を 1 件ずつ解説する）/ "表示しない"（同じ工程を表示せずに通し、
+    結果は締めで受け取る）
+
+  どちらでも `Skill` tool で `code-review:review-guide` を
+  `--base <Step 4 の self-review が冒頭で出した base_branch= の値> --walkthrough` で起動し、「表示しない」なら `--hide-guide` も付ける。
+  進め方（解説の形式・その場での修正・締め・`--hide-guide` の回のターンの区切り方）は review-guide 側の手順に従い、
+  ここに複製しない。**review-guide が出すもの（表示する回はレポートと各精読の解説、どちらの回も締め）は定型のまま出す**
+  （要約して 1 行に畳まない）
 - `CR=0`: skip し、報告に理由（code-review が無効か未導入）を残す。起動が失敗した（review-guide を持たない版など）
   ときも同じく skip して理由を残す
 

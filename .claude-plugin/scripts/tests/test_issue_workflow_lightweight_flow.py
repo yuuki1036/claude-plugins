@@ -106,6 +106,18 @@ class WalkthroughCallTest(unittest.TestCase):
         self.assertIn("`code-review:review-guide`", s)
         self.assertRegex(s, r"--base <[^>]+> --walkthrough")
 
+    def test_display_choice_keeps_the_same_steps(self):
+        """読み合わせは必須で、選ばせるのは表示するかだけ。表示しない回も `--walkthrough` に `--hide-guide` を足して同じ工程を通す."""
+        s = walkthrough_step()
+        self.assertIn("`AskUserQuestion`", s)
+        self.assertIn("\"表示しない\"", s)
+        self.assertIn("「表示しない」なら `--hide-guide` も付ける", s)
+        cr1 = between(s, "- `CR=1`", "- `CR=0`")
+        options = between(cr1, "- options:", "どちらでも")
+        self.assertEqual(re.findall(r'"([^"]+)"', options), ["表示する (Recommended)", "表示しない"],
+                         "CR=1 に読み合わせを外す選択肢がある")
+        self.assertNotIn("Step 6", cr1, "CR=1 の枝から読み合わせを飛ばして Step 6 へ進む道がある")
+
     def test_review_guide_still_declares_arguments(self):
         """引数の宣言行だけを見る（description の散文にも同じ語があるので frontmatter 全体では外れても気づけない）.
 
@@ -118,7 +130,7 @@ class WalkthroughCallTest(unittest.TestCase):
         for path, pattern in decl.items():
             m = re.search(pattern, path.read_text(encoding="utf-8"))
             self.assertIsNotNone(m, f"{path.name} に引数の宣言が無い")
-            for arg in ("--walkthrough", "--base <ref>"):
+            for arg in ("--walkthrough", "--base <ref>", "--hide-guide"):
                 self.assertIn(arg, m.group(1), f"{path.name} の引数から {arg} が消えた")
 
 
