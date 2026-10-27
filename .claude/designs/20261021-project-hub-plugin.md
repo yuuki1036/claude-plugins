@@ -8,7 +8,7 @@ supersedes: []
 superseded-by: null
 issue: "GitHub issue #308"
 spec: null
-adrs: ["20261021140738", "20261021154740", "20261025152955", "20261027002221"]
+adrs: ["20261021140738", "20261021154740", "20261025152955", "20261027002221", "20261027014506"]
 tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 ---
 
@@ -389,6 +389,16 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
   - 0.6.2 までの hub.json は会話の ID を持たないので、最初の開き直しは自動で引き継げない。次の `refresh-hub`（status）で書き足す
 - **exit 3 の文面に「開き直した直後なら takeover で引き継げる」を入れた**（上の判定が効かない回・CLI の回のため）
 - **`start` は文面を作る前に `start_session` の有無を見る**。deferred tool なら ToolSearch で読み込み、無ければ brief の「貼る用」へ最初から進む。ツールの有無は Claude 側のことで hub.py からは見えないので、SKILL.md の手順に置く。Desktop で出ない条件は未確認
+
+## 実装で決めたこと（運用で出た 6 件・2026-10-27 / GitHub issue #326〜#331）
+
+- **外に出る文の語（#326）**: hub・lead・sub は hub と sub の間の語として残し、外に出る文（repo の docs・トラッカー・PR・コミットメッセージ）には書かない決まりを、hub の共通・brief の雛形・report の skill の 3 か所に置いた。relay の `[lead の言葉]` は引用だけの段にし、hub の説明は `[hub の補足]` の段に分ける。文面の判断なので hook には上げない
+- **sub の会話で決まったこと（#327）**: report に `decisions`（`text` / `date` / `by`）を足し、report の形の版を 3 にした（1・2 も受ける。古い hub は版のずれとして invalid に退避し、更新を促す既存の経路に乗る）。hub は `hub.py decisions` で一覧を見て relay の前に食い違いを確かめる。同じ sub が書き直した同じ決定は 1 件にまとめ、別の sub の同じ決定は別に数える。state.md には件数だけを載せる（sub の文面を注入しない既存の方針）
+- **relay の手間（#328）**: ListAgents の抜き出しを hub.py にも持たせた（`--raw` / report の `list_agents`）。規則の正本は `references/list-agents.md` のままで、合わない行があれば推測で埋めずに `parse_failed` にし、Claude の抜き出しへ戻す（書式に契約が無いので、機械の抜き出しは「合うときだけ使う」）。record の `--from-resolve` は、resolve の冒頭で前の宛先を消し、`ok` のときだけ `last_resolve.json` に残す（送らない結果の後に前の宛先を引き継がない）。使った後に消し、30 分を超えたものは使わない。版に左右されない呼び口は、hub のセッションの hook が `<root>/bin/hub.py` を毎回動いている版へ向け直す。版が上がった直後、hook がまだ新しい版で動いていない間は前の版を呼ぶ
+- **待っている PR と hub の残作業（#329）**: report に `waiting_prs` を足し、`hub.py waiting` が「待っている sub・PR・知らせ済みか」を返す。知らせ済みは、record の `waiting_pr` を持つ accepted の relay で数える（送れなかった回は数えない）。PR のマージの確かめは gh で、Claude が status の手順で行う（hub.py は gh を呼ばない既存の分担）。hub の残作業は `todos.jsonl`（add / done の追記）に持ち、state.md に本文を載せる。sub の文面をそのまま写さず hub の言葉で書く決まりを SKILL.md に置いた
+- **sub を閉じる・題の形（#330）**: `hub.py close-sub` は最新の report が done かと、会話の ID（Desktop の hub から、確かめた登録だけ）を返し、閉じた結果を `close_sub` の kind で journal に残す。archive は Claude が `archive_session` で行い、アプリの承認に任せる。題は start で `<Issue ID> <英語の短い要約>`、init で `hub <英語の短い名前>` を提案する（hub の改名は lead が良いと言ったときだけ）
+- **トラッカーへの書き込み（#331）**: ADR-20261027014506。config の `tracker_write`（既定 `never`）で選び、`with_approval` でも毎回 lead の承認を取り、読み直した本文で反映を確かめる
+
 
 ## 未解決事項 (open)
 
