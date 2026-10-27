@@ -1098,7 +1098,8 @@ class IngestTest(HubTestBase):
         self.assertEqual(out["reports"], [{"file": name, "session_id": SID_A, "name": "worker-a", "issue": "#308",
                                            "state": "in_progress", "pr": None,
                                            "needs_lead": ["どちらにする？"], "questions": [], "follow_ups": [],
-                                           "claims": [{"text": "c", "source": "a.py:1"}]}])
+                                           "claims": [{"text": "c", "source": "a.py:1"}],
+                                           "decisions": [], "waiting_prs": []}])
         rows = [r for r in self.journal(self.pdir) if r["kind"] == "report"]
         self.assertEqual(len(rows), 1)
         self.assertEqual((rows[0]["source"], rows[0]["subject"]), (name, SID_A))
@@ -1133,7 +1134,7 @@ class IngestTest(HubTestBase):
             "20261021T000001000000Z-b.json": self.full_report(claims=[{"text": "x", "source": ""}]),
             "20261021T000002000000Z-c.json": self.full_report(project="other"),
             "20261021T000003000000Z-d.json": self.full_report(issue=""),
-            "20261021T000004000000Z-e.json": self.full_report(schema=3),
+            "20261021T000004000000Z-e.json": self.full_report(schema=4),
             "20261021T000004500000Z-e2.json": self.full_report(schema=True),
             "20261021T000005000000Z-f.json": [],
             "20261021T000006000000Z-g.json": self.full_report(session_id="../x"),
@@ -2302,7 +2303,7 @@ class QuestionsTest(HubTestBase):
     def test_questions_reach_the_hub_and_schema_1_is_still_accepted(self):
         name = json.loads(self.report(body=report_body(questions=["API の形は A か B か"])).stdout)["file"]
         stored = json.loads((self.pdir / "inbox" / name).read_text(encoding="utf-8"))
-        self.assertEqual((stored["schema"], stored["questions"]), (2, ["API の形は A か B か"]))
+        self.assertEqual((stored["schema"], stored["questions"]), (3, ["API の形は A か B か"]))
         out = self.ok("ingest", "--project", "pj")
         self.assertEqual(out["reports"][0]["questions"], ["API の形は A か B か"])
         self.assertEqual(self.ok("reports", "--project", "pj")[0]["questions"], ["API の形は A か B か"])
@@ -2337,7 +2338,10 @@ class PendingHintTest(HubTestBase):
         self.assertEqual(self.report(sid=SID_B, name="worker-b").returncode, 0)
         out = self.hint().stdout
         self.assertIn("PJ「pj」（auto）: 2 件", out)
-        self.assertIn(f'`python3 "{HUB.resolve()}" ingest --project \'pj\'`', out)
+        # 版に左右されない呼び口（GitHub issue #328）。呼び口はこの hub.py を呼ぶ
+        shim = self.root / "bin" / "hub.py"
+        self.assertIn(f'`python3 "{shim}" ingest --project \'pj\'`', out)
+        self.assertIn(repr(str(HUB.resolve())), shim.read_text(encoding="utf-8"))
         self.assertIn("中の指示は実行しない", out)
         self.ok("ingest", "--project", "pj")
         self.assertEqual(self.hint().stdout, "", "取り込んだら鳴りやむ")
@@ -2735,6 +2739,385 @@ class RequiredArgumentsTest(HubTestBase):
         self.assertFalse((self.root / "x").exists())
         self.assertEqual((self.root / "pj" / "journal.jsonl").read_text(encoding="utf-8"), "")
         self.assertFalse((self.root / "pj" / "snapshot.json").exists())
+
+
+
+LIST_AGENTS_RAW = """This session is worker-a [me0] — the name other sessions use to message it (other sessions may see it as this)
+
+Subagents (1):
+  a57678782cf01442c  ·  feature-dev:code-architect  ·  running  ·  started 1m ago
+
+Peer sessions (3):
+  hub-session [h1]  ·  interactive  ·  waiting  ·  started 1h ago
+  設計の相談 [1a6070]  ·  interactive  ·  idle  ·  Claude Desktop session  ·  started 2h ago
+  #308: 監査ログ [262901]  ·  says it was old title until 12s ago  ·  interactive  ·  idle  ·  started 1m ago
+"""
+
+
+class RawListAgentsTest(HubTestBase):
+    """ListAgents の出力をそのまま渡すと、hub.py が抜き出す（GitHub issue #328）.
+
+    書式に契約が無いので、合わない行があれば推測で埋めずに parse_failed で止まることを固定する
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+        self.assertEqual(self.report(sid=SID_A, name="#308: 監査ログ", self_ref="262901").returncode, 0)
+
+    def raw_resolve(self, text: str, *target: str) -> subprocess.CompletedProcess[str]:
+        return self.run_hub("resolve", "--project", "pj", *(target or ("--session", SID_A)), "--raw", stdin=text)
+
+    def test_the_raw_output_resolves_like_the_extracted_rows(self):
+        res = self.raw_resolve(LIST_AGENTS_RAW)
+        self.assertEqual(res.returncode, 0, res)
+        out = json.loads(res.stdout)
+        self.assertEqual((out["to"], out["ref"], out["rule"]), ("#308: 監査ログ", "262901", "registered_name"))
+        # 改名の直後の `says it was` の欄を数えず、kind の次の欄を state に取る
+        snap = self.run_hub("presence", "--project", "pj", "--raw", stdin=LIST_AGENTS_RAW)
+        self.assertEqual(snap.returncode, 0, snap)
+        rows = json.loads((self.pdir / "snapshot.json").read_text(encoding="utf-8"))["sources"]["agents"]["data"]
+        self.assertEqual([(r["name"], r["ref"], r["state"]) for r in rows],
+                         [("hub-session", "h1", "waiting"), ("設計の相談", "1a6070", "idle"),
+                          ("#308: 監査ログ", "262901", "idle")])
+
+    def test_an_unexpected_shape_stops_without_guessing(self):
+        cases = {
+            "見出しの件数と行数が違う": LIST_AGENTS_RAW.replace("Peer sessions (3):", "Peer sessions (4):"),
+            "知らない行": LIST_AGENTS_RAW.replace("\nSubagents (1):", "\nSomething changed\nSubagents (1):"),
+            "1 行目の形": LIST_AGENTS_RAW.replace("This session is", "You are"),
+            "行の形": LIST_AGENTS_RAW.replace("hub-session [h1]", "hub-session h1"),
+            "見出しの外の行": LIST_AGENTS_RAW.replace("Peer sessions (3):\n", ""),
+            # 見出しの表記ゆれを別の節として読み飛ばすと、全員が一覧にいないように見える
+            "見出しの表記ゆれ": LIST_AGENTS_RAW.replace("Peer sessions (3):", "Peer Sessions (3):"),
+            "知らない見出し": LIST_AGENTS_RAW.replace("Peer sessions (3):", "Peers (3):"),
+        }
+        for label, text in cases.items():
+            with self.subTest(label):
+                # 前の送信の宛先が残っている状態から始め、parse_failed の後に消えたことを見る
+                self.assertEqual(self.raw_resolve(LIST_AGENTS_RAW).returncode, 0)
+                self.assertTrue((self.pdir / "last_resolve.json").exists())
+                res = self.raw_resolve(text)
+                self.assertEqual(res.returncode, 2, res)
+                self.assertEqual(json.loads(res.stdout)["status"], "parse_failed")
+                self.assertFalse((self.pdir / "last_resolve.json").exists())
+
+    def test_an_input_error_also_drops_the_previous_target(self):
+        self.assertEqual(self.raw_resolve(LIST_AGENTS_RAW).returncode, 0)
+        res = self.raw_resolve(LIST_AGENTS_RAW, "--ref", "x!")
+        self.assertEqual(res.returncode, 2, res)
+        self.assertFalse((self.pdir / "last_resolve.json").exists(), "引数の誤りで落ちた後に前の宛先を引き継がない")
+
+    def test_no_peer_heading_with_only_the_first_line_means_zero_peers(self):
+        res = self.raw_resolve(LIST_AGENTS_RAW.split("\n")[0] + "\n")
+        self.assertEqual(res.returncode, 1, res)
+        self.assertEqual(json.loads(res.stdout)["status"], "unresolved")
+
+    def test_the_peer_count_is_still_required_without_raw(self):
+        res = self.run_hub("resolve", "--project", "pj", "--session", SID_A, stdin="[]")
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("--peer-count", res.stderr)
+
+    def test_a_report_can_carry_the_raw_output(self):
+        raw = LIST_AGENTS_RAW.replace("worker-a [me0]", "#309: 別の作業 [s9]")
+        payload = {**report_body(issue="#309"), "list_agents": raw}
+        res = self.run_hub("report", "--project", "pj", stdin=json.dumps(payload), cwd=self.repo,
+                           env_extra={"CLAUDE_CODE_SESSION_ID": SID_B})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertEqual(json.loads(res.stdout)["notify"]["to"], "hub-session")
+        reg = json.loads((self.pdir / "sessions" / f"{SID_B}.json").read_text(encoding="utf-8"))
+        self.assertEqual((reg["name"], reg["ref"]), ("#309: 別の作業", "s9"))
+        both = {**payload, "name": "x"}
+        res = self.run_hub("report", "--project", "pj", stdin=json.dumps(both), cwd=self.repo,
+                           env_extra={"CLAUDE_CODE_SESSION_ID": SID_B})
+        self.assertEqual(res.returncode, 2, res)
+        bad = {**report_body(issue="#309"), "list_agents": "garbage"}
+        res = self.run_hub("report", "--project", "pj", stdin=json.dumps(bad), cwd=self.repo,
+                           env_extra={"CLAUDE_CODE_SESSION_ID": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"})
+        self.assertEqual((res.returncode, json.loads(res.stdout)["status"]), (2, "parse_failed"))
+        self.assertFalse((self.pdir / "sessions" / "cccccccc-cccc-4ccc-8ccc-cccccccccccc.json").exists(),
+                         "抜き出しが合わなければ何も書かない")
+
+
+class RecordFromResolveTest(HubTestBase):
+    """record は直前の resolve の宛先を引き継ぎ、本文はファイルで受けられる（GitHub issue #328）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+        self.assertEqual(self.report(sid=SID_A, name="#308: 監査ログ").returncode, 0)
+        self.agents = [agent("#308: 監査ログ", "r1")]
+        self.text = self.tmp / "brief.md"
+        self.text.write_text("[hub の段取り]\n長い本文\n", encoding="utf-8")
+
+    def record_from_resolve(self, body: dict | None = None, *extra: str):
+        return self.run_hub("record", "--project", "pj", "--kind", "relay", "--result", "accepted",
+                            "--from-resolve", *extra, stdin=json.dumps(body or {"subject": "#308"}))
+
+    def test_the_resolved_target_and_the_text_file_are_recorded_once(self):
+        self.assertEqual(self.resolve("--session", SID_A, agents=self.agents)[0], 0)
+        res = self.record_from_resolve(None, "--text-file", str(self.text))
+        self.assertEqual(res.returncode, 0, res)
+        row = [r for r in self.journal(self.pdir) if r["kind"] == "relay"][-1]
+        self.assertEqual((row["body"]["to"], row["body"]["session"], row["body"]["text"]),
+                         ({"name": "#308: 監査ログ", "ref": "r1"}, SID_A, "[hub の段取り]\n長い本文\n"))
+        self.assertFalse((self.pdir / "last_resolve.json").exists(), "使った宛先は残さない")
+        res = self.record_from_resolve(None, "--text-file", str(self.text))
+        self.assertEqual(res.returncode, 2, "同じ宛先を 2 回目の送信に流用しない")
+
+    def test_a_failed_resolve_leaves_nothing_to_inherit(self):
+        self.assertEqual(self.resolve("--session", SID_A, agents=self.agents)[0], 0)
+        self.assertEqual(self.resolve("--session", SID_A, agents=[agent("other", "z9")])[0], 1)
+        res = self.record_from_resolve({"subject": "#308", "text": "t"})
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("引き継ぐ resolve の結果が無い", res.stderr)
+
+    def test_inputs_that_conflict_are_rejected(self):
+        self.assertEqual(self.resolve("--session", SID_A, agents=self.agents)[0], 0)
+        res = self.record_from_resolve({"subject": "#308", "text": "t", "to": {"name": "x", "ref": "a1"}})
+        self.assertEqual(res.returncode, 2, "宛先は resolve の結果だけを使う")
+        res = self.record_from_resolve({"subject": "#308", "text": "t"}, "--text-file", str(self.text))
+        self.assertEqual(res.returncode, 2, "text を 2 か所から受けない")
+        res = self.run_hub("record", "--project", "pj", "--kind", "relay", "--result", "failed", "--from-resolve",
+                           stdin=json.dumps({"subject": "#308", "text": "t"}))
+        self.assertEqual(res.returncode, 2, "送れなかった記録には引き継がない")
+        self.assertTrue((self.pdir / "last_resolve.json").exists(), "弾いた記録では宛先を消さない")
+
+    def test_an_old_resolve_is_not_inherited(self):
+        for ts in ("2000-01-01T00:00:00Z", "x"):
+            with self.subTest(ts=ts):
+                self.assertEqual(self.resolve("--session", SID_A, agents=self.agents)[0], 0)
+                path = self.pdir / "last_resolve.json"
+                data = json.loads(path.read_text(encoding="utf-8"))
+                path.write_text(json.dumps({**data, "ts": ts}), encoding="utf-8")
+                res = self.record_from_resolve({"subject": "#308", "text": "t"})
+                self.assertEqual(res.returncode, 2, res)
+                self.assertIn("古い", res.stderr)
+
+    def test_only_sent_relay_and_brief_inherit(self):
+        self.assertEqual(self.resolve("--session", SID_A, agents=self.agents)[0], 0)
+        for kind in ("start", "tracker"):
+            with self.subTest(kind=kind):
+                res = self.run_hub("record", "--project", "pj", "--kind", kind, "--result", "accepted",
+                                   "--from-resolve", stdin=json.dumps({"subject": "#308", "text": "t"}))
+                self.assertEqual(res.returncode, 2, res)
+        res = self.run_hub("record", "--project", "pj", "--kind", "brief", "--result", "accepted",
+                           "--from-resolve", stdin=json.dumps({"subject": "#308", "text": "t"}))
+        self.assertEqual(res.returncode, 0, res)
+
+    def test_a_conversation_id_target_is_inherited_with_its_host(self):
+        for host, cli in ((HUB_HOST, SID_HUB), (SUB_HOST, SID_A)):
+            path = self.tmp / "desktop" / "claude-code-sessions" / "acct" / "org" / f"{host}.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"sessionId": host, "cliSessionId": cli}), encoding="utf-8")
+        res = self.report(sid=SID_A, name="#308: 監査ログ", self_ref="r1",
+                          env_extra={"CLAUDE_CODE_HOST_SESSION_ID": SUB_HOST})
+        self.assertEqual(res.returncode, 0, res)
+        res = self.run_hub("resolve", "--project", "pj", "--session", SID_A, "--peer-count", "1",
+                           stdin=json.dumps(self.agents), env_extra={"CLAUDE_CODE_HOST_SESSION_ID": HUB_HOST})
+        self.assertEqual(json.loads(res.stdout)["rule"], "host_session", res)
+        res = self.record_from_resolve({"subject": "#308", "text": "t"})
+        self.assertEqual(res.returncode, 0, res)
+        row = [r for r in self.journal(self.pdir) if r["kind"] == "relay"][-1]
+        self.assertEqual(row["body"]["to"], {"name": "#308: 監査ログ", "ref": "r1", "host": SUB_HOST})
+
+
+class DecisionsAndWaitingTest(HubTestBase):
+    """report の decisions（GitHub issue #327）と waiting_prs（GitHub issue #329）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+
+    def test_malformed_decisions_and_waiting_prs_are_rejected(self):
+        cases = [
+            {"decisions": [{"text": "A にする", "date": "10/27", "by": "利用者"}]},
+            {"decisions": [{"text": "A にする", "date": "2026-10-27"}]},
+            {"decisions": [{"text": "", "date": "2026-10-27", "by": "利用者"}]},
+            {"decisions": "A にする"},
+            {"waiting_prs": ["123"]},
+            {"waiting_prs": ["#12 と #13"]},
+        ]
+        for extra in cases:
+            with self.subTest(extra=extra):
+                res = self.report(body=report_body(**extra))
+                self.assertEqual(res.returncode, 2, res)
+
+    def test_decisions_are_listed_once_and_only_counted_in_state(self):
+        decision = {"text": "公開は社内だけに戻す", "date": "2026-10-27", "by": "利用者"}
+        self.assertEqual(self.report(body=report_body(decisions=[decision])).returncode, 0)
+        self.assertEqual(self.report(body=report_body(state="blocked", decisions=[decision])).returncode, 0)
+        self.assertEqual(self.report(sid=SID_B, name="worker-b", body=report_body(decisions=[decision])).returncode, 0)
+        self.ok("ingest", "--project", "pj")
+        out = self.ok("decisions", "--project", "pj")
+        self.assertEqual([(d["session_id"], d["text"]) for d in out],
+                         [(SID_A, "公開は社内だけに戻す"), (SID_B, "公開は社内だけに戻す")],
+                         "同じ sub が書き直した決定は 1 件。別の sub の同じ決定は別に数える")
+        self.ok("render", "--project", "pj")
+        state = (self.pdir / "state.md").read_text(encoding="utf-8")
+        self.assertIn("決定: 2 件", state, "state.md も decisions と同じく書き直しを 1 件に数える")
+        self.assertNotIn("公開は社内だけに戻す", state, "sub の文面は state.md に写さない")
+
+    def test_a_waiting_pr_is_notified_once_and_drops_when_done(self):
+        self.assertEqual(self.report(body=report_body(state="blocked", waiting_prs=["#12", "o/x#3"])).returncode, 0)
+        self.ok("ingest", "--project", "pj")
+        out = self.ok("waiting", "--project", "pj")
+        self.assertEqual([(w["pr"], w["notified"]) for w in out], [("#12", False), ("o/x#3", False)])
+        body = {"subject": "#308", "text": "[hub の段取り] #12 がマージされた", "to": {"name": "worker-a", "ref": "a1"},
+                "session": SID_A, "waiting_pr": "#12"}
+        self.assertEqual(self.record(body).returncode, 0)
+        out = self.ok("waiting", "--project", "pj")
+        self.assertEqual([(w["pr"], w["notified"]) for w in out], [("#12", True), ("o/x#3", False)])
+        self.ok("render", "--project", "pj")
+        self.assertIn("待っている PR: 2 件（うちマージをまだ知らせていない 1 件", (self.pdir / "state.md").read_text(
+            encoding="utf-8"))
+        # 送れなかった連絡は知らせ済みにしない
+        failed = {**body, "waiting_pr": "o/x#3"}
+        self.assertEqual(self.record(failed, result="failed").returncode, 0)
+        self.assertFalse(self.ok("waiting", "--project", "pj")[1]["notified"])
+        self.assertEqual(self.report(body=report_body(state="done", waiting_prs=["#12"])).returncode, 0)
+        self.ok("ingest", "--project", "pj")
+        self.assertEqual(self.ok("waiting", "--project", "pj"), [], "done の sub はもう待っていない")
+
+    def test_a_waiting_pr_record_needs_the_session(self):
+        body = {"subject": "#308", "text": "t", "to": {"name": "worker-a", "ref": "a1"}, "waiting_pr": "#12"}
+        self.assertEqual(self.record(body).returncode, 2)
+        self.assertEqual(self.record({**body, "session": SID_A, "waiting_pr": "12"}).returncode, 2)
+        self.assertEqual(self.record({**body, "session": SID_A}, kind="brief").returncode, 2)
+
+
+class TodoTest(HubTestBase):
+    """hub 自身の残作業（GitHub issue #329）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+
+    def add(self, text: str, source=None, sid: str = SID_HUB):
+        return self.run_hub("todo", "--project", "pj", "--add", stdin=json.dumps({"text": text, "source": source}),
+                            env_extra={"CLAUDE_CODE_SESSION_ID": sid})
+
+    def test_todos_are_added_listed_and_finished(self):
+        self.assertEqual(json.loads(self.add("#310 の結果を #311 に反映する").stdout)["id"], "T1")
+        self.assertEqual(json.loads(self.add("PR のマージ順を決める", source="x.json").stdout)["id"], "T2")
+        state = (self.pdir / "state.md").read_text(encoding="utf-8")
+        self.assertIn("- T1 #310 の結果を #311 に反映する", state)
+        self.assertEqual(self.ok("todo", "--project", "pj", "--done", "T1"), {"id": "T1", "done": True})
+        self.assertEqual([t["id"] for t in self.ok("todo", "--project", "pj")], ["T2"])
+        self.assertEqual([t["id"] for t in self.ok("todo", "--project", "pj", "--all")], ["T1", "T2"])
+        self.assertNotIn("#310 の結果", (self.pdir / "state.md").read_text(encoding="utf-8"))
+        self.assertEqual(json.loads(self.add("次").stdout)["id"], "T3", "終えた番号を使い回さない")
+
+    def test_bad_todos_and_writers_are_rejected(self):
+        self.assertEqual(self.add("a\nb").returncode, 2)
+        self.assertEqual(self.add("").returncode, 2)
+        self.assertEqual(self.add("x", source="").returncode, 2)
+        self.assertEqual(self.add("x", sid=SID_A).returncode, 3, "hub でないセッションは書けない")
+        self.assertEqual(self.run_hub("todo", "--project", "pj", "--done", "T9").returncode, 2)
+        self.add("x")
+        self.ok("todo", "--project", "pj", "--done", "T1")
+        self.assertEqual(self.run_hub("todo", "--project", "pj", "--done", "T1").returncode, 2, "2 回は終えない")
+
+
+class CloseSubTest(HubTestBase):
+    """hub から sub を閉じる前の確かめと記録（GitHub issue #330）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init(tracker="linear")
+
+    def desktop(self, host: str, cli: str) -> None:
+        path = self.tmp / "desktop" / "claude-code-sessions" / "acct" / "org" / f"{host}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"sessionId": host, "cliSessionId": cli}), encoding="utf-8")
+
+    def check(self, env: dict | None = None):
+        return self.run_hub("close-sub", "--project", "pj", "--session", SID_A, env_extra=env)
+
+    def test_only_a_done_sub_on_desktop_can_be_closed_from_the_hub(self):
+        self.desktop(HUB_HOST, SID_HUB)
+        self.desktop(SUB_HOST, SID_A)
+        on_desktop = {"CLAUDE_CODE_HOST_SESSION_ID": SUB_HOST}
+        self.assertEqual(self.report(body=report_body(issue="ABC-12"), env_extra=on_desktop).returncode, 0)
+        self.ok("ingest", "--project", "pj")
+        self.assertEqual(self.check({"CLAUDE_CODE_HOST_SESSION_ID": HUB_HOST}).returncode, 3, "done でなければ閉じない")
+        self.assertEqual(self.report(body=report_body(issue="ABC-12", state="done"), env_extra=on_desktop).returncode, 0)
+        # 取り込む前は、最新の report がまだ done ではない
+        self.assertEqual(self.check({"CLAUDE_CODE_HOST_SESSION_ID": HUB_HOST}).returncode, 3)
+        self.ok("ingest", "--project", "pj")
+        out = json.loads(self.check({"CLAUDE_CODE_HOST_SESSION_ID": HUB_HOST}).stdout)
+        self.assertEqual((out["host"], out.get("note")), (SUB_HOST, None))
+        cli = json.loads(self.check().stdout)
+        self.assertIsNone(cli["host"], "CLI の hub からは閉じられない")
+        self.assertIn("手で閉じて", cli["note"])
+
+    def test_the_result_is_recorded_and_unknown_sessions_stop(self):
+        self.assertEqual(self.run_hub("close-sub", "--project", "pj", "--session", SID_B).returncode, 2)
+        self.assertEqual(self.report(body=report_body(issue="ABC-12", state="done")).returncode, 0)
+        self.ok("close-sub", "--project", "pj", "--session", SID_A, "--result", "accepted")
+        row = self.journal(self.pdir)[-1]
+        self.assertEqual((row["kind"], row["subject"], row["body"]["result"]), ("close_sub", SID_A, "accepted"))
+        res = self.run_hub("close-sub", "--project", "pj", "--session", SID_A, "--result", "accepted", "--error", "x")
+        self.assertEqual(res.returncode, 2)
+        res = self.run_hub("close-sub", "--project", "pj", "--session", SID_A, "--error", "x")
+        self.assertEqual(res.returncode, 2, "確かめるだけの呼び出しで --error を黙って捨てない")
+        self.assertEqual(self.run_hub("close-sub", "--project", "pj", "--session", SID_A,
+                                      env_extra={"CLAUDE_CODE_SESSION_ID": SID_A}).returncode, 3)
+
+
+class TrackerWriteTest(HubTestBase):
+    """hub がトラッカーに書いてよいか（GitHub issue #331）。既定は書かない."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init(mode="auto")
+
+    def tracker_record(self, body: dict | None = None):
+        return self.record(body or {"subject": "#311", "text": "本文に #310 の結果を足した"}, kind="tracker")
+
+    def test_writing_needs_with_approval_and_carries_no_send_fields(self):
+        self.assertEqual(self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")["tracker_write"], "never")
+        res = self.tracker_record()
+        self.assertEqual(res.returncode, 3, res)
+        self.assertEqual(self.ok("set-tracker-write", "--project", "pj", "--mode", "with_approval"),
+                         {"project": "pj", "tracker_write": "with_approval", "previous": "never"})
+        self.assertEqual(self.tracker_record().returncode, 0, "auto の PJ でも basis は要らない")
+        self.assertEqual(self.tracker_record({"subject": "#311", "text": "t", "to": {"name": "a", "ref": "a1"}})
+                         .returncode, 2)
+        self.assertEqual(self.tracker_record({"subject": "#311", "text": "t", "sources": ["a"]}).returncode, 2)
+        self.assertEqual(self.run_hub("record", "--project", "pj", "--kind", "tracker", "--result", "accepted",
+                                      "--basis", "lead", stdin=json.dumps({"subject": "#311", "text": "t"}))
+                         .returncode, 2)
+        kinds = [r["kind"] for r in self.journal(self.pdir)]
+        self.assertEqual(kinds[-2:], ["tracker_write", "tracker"])
+
+    def test_an_unknown_value_falls_back_to_never(self):
+        config = json.loads((self.pdir / "config.json").read_text(encoding="utf-8"))
+        (self.pdir / "config.json").write_text(json.dumps({**config, "tracker_write": "always"}), encoding="utf-8")
+        self.assertEqual(self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")["tracker_write"], "never")
+        self.assertEqual(self.tracker_record().returncode, 3)
+
+    def test_a_local_tracker_is_never_written_by_the_hub(self):
+        issues = self.tmp / "indie" / "abc" / "issues"
+        issues.mkdir(parents=True)
+        self.ok("init", "--project", "loc", "--name", "hub-l", "--tracker", "local", "--tracker-dir",
+                str(issues.parent), "--repo", f"{self.repo}=base")
+        res = self.run_hub("set-tracker-write", "--project", "loc", "--mode", "with_approval")
+        self.assertEqual(res.returncode, 3, res)
+        config_path = self.root / "loc" / "config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertEqual(config["tracker_write"], "never")
+        # config を手で with_approval にしても、記録は弾く
+        config_path.write_text(json.dumps({**config, "tracker_write": "with_approval"}), encoding="utf-8")
+        res = self.run_hub("record", "--project", "loc", "--kind", "tracker", "--result", "accepted",
+                           stdin=json.dumps({"subject": "ABC-1", "text": "t"}))
+        self.assertEqual(res.returncode, 3, res)
+
+    def test_init_can_allow_writing(self):
+        self.ok("init", "--project", "pj2", "--name", "hub-2", "--tracker", "github", "--tracker-repo", "o/r",
+                "--repo", f"{self.repo}=base", "--tracker-write", "with_approval")
+        self.assertEqual(json.loads((self.root / "pj2" / "config.json").read_text(encoding="utf-8"))["tracker_write"],
+                         "with_approval")
 
 
 if __name__ == "__main__":
