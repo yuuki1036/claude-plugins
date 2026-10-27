@@ -19,11 +19,14 @@ root は必ず `PROJECT_HUB_DIR` で使い捨ての dir に向ける（既定は
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -60,8 +63,7 @@ class HubTestBase(unittest.TestCase):
         repo.commit("init")
         repo.branch("base")
 
-    def run_hub(self, *args: str, stdin: str | None = None, env_extra: dict | None = None,
-                cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def hub_env(self, env_extra: dict | None = None) -> dict:
         env = scrub()
         for key in ("CLAUDE_CODE_HOST_SESSION_ID", "CLAUDE_CONFIG_DIR", "APPDATA"):
             env.pop(key, None)
@@ -70,8 +72,12 @@ class HubTestBase(unittest.TestCase):
                     "PROJECT_HUB_DESKTOP_DIR": str(self.tmp / "desktop"),
                     "CLAUDE_CODE_SESSION_ID": SID_HUB})
         env.update(env_extra or {})
+        return env
+
+    def run_hub(self, *args: str, stdin: str | None = None, env_extra: dict | None = None,
+                cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, str(HUB), *args], input=stdin, capture_output=True,
-                              text=True, env=env, cwd=str(cwd or self.tmp), timeout=30)
+                              text=True, env=self.hub_env(env_extra), cwd=str(cwd or self.tmp), timeout=30)
 
     def ok(self, *args: str, **kw) -> dict:
         res = self.run_hub(*args, **kw)
@@ -554,6 +560,133 @@ class ResumeTest(HubTestBase):
         self.assertNotIn("の hub", res.stdout)
         self.assertIn("付け替えられない", res.stderr, "hook の経路でも黙って飛ばさない")
         self.assertEqual(self.hub_json(pdir), before)
+
+    def test_the_resume_notice_names_the_project_even_without_its_name_in_config(self):
+        pdir = self.init_on_desktop()
+        config = json.loads((pdir / "config.json").read_text(encoding="utf-8"))
+        del config["project"]
+        (pdir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        self.desktop(SID_B)
+        res = self.run_hub("inject", stdin=json.dumps({"session_id": SID_B, "source": "resume"}),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": "", "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertIn("PJ「pj」の hub をこのセッションへ付け替えた", res.stdout)
+
+    def test_unreadable_or_malformed_desktop_records_are_skipped(self):
+        pdir = self.init_on_desktop()
+        # 読めない記録（辞書順で先に当たる）を飛ばし、後ろの本物で引き継ぐ
+        broken = self.tmp / "desktop" / "claude-code-sessions" / "aaa" / "org" / f"{HOST}.json"
+        broken.parent.mkdir(parents=True)
+        broken.write_text("{", encoding="utf-8")
+        self.desktop(SID_B)
+        res = self.refresh(SID_B)
+        self.assertEqual(res.returncode, 0, res)
+        self.assertEqual(json.loads(res.stdout)["resumed_from"], SID_HUB)
+        # cliSessionId が文字列でない記録は、つないでいるセッションが分からない扱い（落ちない）
+        path = self.tmp / "desktop" / "claude-code-sessions" / "acct" / "org" / f"{HOST}.json"
+        path.write_text(json.dumps({"sessionId": HOST, "cliSessionId": 123}), encoding="utf-8")
+        res = self.refresh(SID_A)
+        self.assertEqual(res.returncode, 3, res)
+        self.assertEqual(self.hub_json(pdir)["session_id"], SID_B)
+
+    def test_a_malformed_conversation_id_in_env_is_not_looked_up(self):
+        # 形式に合わない会話の ID は、同じ名前の記録があっても Desktop の記録を引かない
+        self.init()
+        bad = "local_not-hex!"
+        self.desktop(SID_A, host=bad)
+        self.ok("takeover", "--project", "pj", "--name", "again",
+                env_extra={"CLAUDE_CODE_SESSION_ID": SID_A, "CLAUDE_CODE_HOST_SESSION_ID": bad})
+        self.assertIsNone(self.hub_json(self.root / "pj")["host_session_id"])
+
+    def test_refresh_without_the_conversation_id_keeps_the_stored_one(self):
+        # 会話の ID を確かめられない回（env が無い）に、持っている ID を消さない
+        pdir = self.init_on_desktop()
+        before = self.hub_json(pdir)
+        res = self.refresh(SID_HUB, host=None)
+        self.assertEqual(res.returncode, 0, res)
+        self.assertEqual(self.hub_json(pdir), before)
+
+    def test_pending_hint_without_a_session_id_does_not_adopt(self):
+        # Desktop の記録が無いと、つないでいる CLI は None。session_id の無い payload の sid（None）と一致したとみなして付け替えない
+        pdir = self.init_on_desktop()
+        self.desktop(None)
+        before = self.hub_json(pdir)
+        res = self.run_hub("pending-hint", stdin=json.dumps({"source": "x"}),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": "", "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        self.assertEqual((res.returncode, res.stdout), (0, ""), res)
+        self.assertEqual(self.hub_json(pdir), before)
+
+    def test_a_takeover_while_reading_the_desktop_record_is_not_overwritten(self):
+        # 記録を FIFO にして、hub.py が記録を読んでいる間に別のセッションの takeover を書き込む
+        pdir = self.init_on_desktop()
+        record = self.tmp / "desktop" / "claude-code-sessions" / "acct" / "org" / f"{HOST}.json"
+        record.unlink()
+        os.mkfifo(record)
+        env = self.hub_env({"CLAUDE_CODE_SESSION_ID": SID_B, "CLAUDE_CODE_HOST_SESSION_ID": HOST})
+        proc = subprocess.Popen([sys.executable, str(HUB), "fact", "--project", "pj"], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=str(self.tmp))
+        self.addCleanup(proc.kill)
+        proc.stdin.write(json.dumps({"claim": "c", "source": "s"}))
+        proc.stdin.close()
+        deadline = time.monotonic() + 20
+        while True:
+            try:
+                fd = os.open(record, os.O_WRONLY | os.O_NONBLOCK)
+                break
+            except OSError as e:
+                # 読み手が開くまでは ENXIO。開く前に終わったなら、20 秒待たずに hub.py の stderr で落とす
+                if e.errno != errno.ENXIO or time.monotonic() > deadline:
+                    raise
+                if proc.poll() is not None:
+                    self.fail(f"hub.py が記録を開く前に終わった (rc={proc.returncode}): {proc.communicate()[1]}")
+                time.sleep(0.05)
+        taken = {**self.hub_json(pdir), "session_id": SID_A, "name": "other"}
+        (pdir / "hub.json").write_text(json.dumps(taken), encoding="utf-8")
+        os.write(fd, json.dumps({"sessionId": HOST, "cliSessionId": SID_B}).encode())
+        os.close(fd)
+        _, err = proc.communicate(timeout=30)
+        self.assertEqual(proc.returncode, 3, err)
+        self.assertEqual(self.hub_json(pdir), taken)
+
+
+class HubProjectsTest(HubTestBase):
+    """hook（inject）は全 PJ をなめる。壊れた・別の・閉じた PJ が、このセッションの hub の注入を止めない."""
+
+    def clone(self, name: str, hub: str | None = None, config: str | None = None, **changes) -> None:
+        # pj の状態ファイルを写して、hub.json / config.json だけを差し替えた PJ を作る
+        src, dst = self.root / "pj", self.root / name
+        shutil.copytree(src, dst)
+        cfg = {**json.loads((src / "config.json").read_text(encoding="utf-8")), "project": name, **changes}
+        (dst / "config.json").write_text(config if config is not None else json.dumps(cfg), encoding="utf-8")
+        if hub is not None:
+            (dst / "hub.json").write_text(hub, encoding="utf-8")
+
+    def inject(self) -> subprocess.CompletedProcess[str]:
+        res = self.run_hub("inject", stdin=json.dumps({"session_id": SID_HUB, "source": "startup"}),
+                           env_extra={"CLAUDE_CODE_SESSION_ID": ""})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("このセッションは PJ「pj」の hub", res.stdout)
+        return res
+
+    def test_broken_or_foreign_projects_are_skipped_silently(self):
+        self.init()
+        other = json.dumps({"session_id": SID_A, "name": "x"})
+        self.clone("aa", hub="{")
+        self.clone("ab", hub="[]")
+        # 別のセッションの hub で、付け替えの候補でもない PJ は config を読まない（壊れていても騒がない）
+        self.clone("ac", hub=other, config="{")
+        self.clone("ad", status="closed")
+        self.clone("bad name")
+        res = self.inject()
+        self.assertEqual(res.stderr, "")
+        for name in ("aa", "ab", "ac", "ad", "bad name"):
+            self.assertNotIn(f"PJ「{name}」", res.stdout)
+
+    def test_a_broken_config_of_this_hub_is_reported_and_skipped(self):
+        self.init()
+        self.clone("aa", config="{")
+        res = self.inject()
+        self.assertIn("aa を読めない", res.stderr)
+        self.assertNotIn("PJ「aa」", res.stdout)
 
 
 class ResolveToWorkerTest(HubTestBase):
@@ -1833,6 +1966,17 @@ class RegisteredBranchesPerRepoTest(HubTestBase):
         self.register(two, SID_A, "worker-a", branch="feat")
         self.assertEqual(self.count("two", self.repo), 0, "どの repo の登録か決められない")
 
+    def test_a_removed_worktree_and_a_repo_entry_without_a_path_keep_a_one_repo_project(self):
+        # worktree を消した登録は、repo が 1 つの PJ なら数える。path の無い repos の要素は repo に数えない
+        one = self.init(project="one")
+        reg = {"session_id": SID_A, "name": "worker-a", "project": "one", "issue": "#308",
+               "updated": "2026-10-20T00:00:00.000000Z", "branch": "feat", "worktree": str(self.tmp / "gone")}
+        (one / "sessions" / f"{SID_A}.json").write_text(json.dumps(reg), encoding="utf-8")
+        config = json.loads((one / "config.json").read_text(encoding="utf-8"))
+        config["repos"].append({"name": "no-path"})
+        (one / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        self.assertEqual(self.count("one", self.repo), 1)
+
 
 class RenamedSessionTest(HubTestBase):
     """改名した作業セッションを、登録した時の ref で同じ登録に結び付ける（GitHub issue #316）.
@@ -2426,6 +2570,20 @@ class WorkerHintTest(HubTestBase):
     def test_a_session_id_that_is_not_an_id_is_quiet(self):
         self.assertEqual(self.inject(session_id="../sessions", cwd=str(self.repo)), "")
 
+    def test_a_cwd_outside_git_does_not_match_a_project_whose_repo_is_gone(self):
+        # 消えた repo の common dir も None。cwd が git の外でも None 同士で一致させない
+        config = json.loads((self.pdir / "config.json").read_text(encoding="utf-8"))
+        config["repos"].append({"path": str(self.tmp / "gone"), "base": "base"})
+        (self.pdir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        self.assertEqual(self.inject(cwd=str(self.tmp)), "")
+
+    def test_a_project_with_an_unreadable_hub_json_is_skipped(self):
+        shutil.copytree(self.pdir, self.root / "aa")
+        (self.root / "aa" / "hub.json").write_text("{", encoding="utf-8")
+        out = self.inject(cwd=str(self.repo))
+        self.assertIn("PJ「pj」", out)
+        self.assertNotIn("PJ「aa」", out)
+
     def test_an_empty_cwd_is_not_read_as_the_process_cwd(self):
         # `git -C ""` は今の dir のまま動く。hook のプロセスは project の dir で起動されるので、
         # 空の cwd を git に渡すと stdin に無い repo を PJ の repo と取り違える
@@ -2518,7 +2676,7 @@ class LocalTrackerTest(HubTestBase):
         self.write_issue("notes.md", "---\nstatus: backlog\n---\n")
         self.assertEqual(self.init_local("--tracker-dir", str(self.data)).returncode, 0)
         out = self.snapshot_local()
-        self.assertEqual((out["count"], out["skipped"]), (6, ["notes.md"]))
+        self.assertEqual((out["ok"], out["count"], out["truncated"], out["skipped"]), (True, 6, False, ["notes.md"]))
         rows = {r["id"]: r for r in self.tracker_rows()}
         self.assertEqual(sorted(rows), ["ABC-1", "ABC-10", "ABC-2", "ABC-5", "ABC-6", "ABC-8"])
         self.assertEqual((rows["ABC-8"]["state"], rows["ABC-8"]["pr"]), ("backlog", "#9"))
@@ -2700,6 +2858,30 @@ class LivingSpecLinkTest(HubTestBase):
         self.assertNotIn("living_spec", self.config())
         self.assertNotIn("living spec:", self.state())
 
+    def test_a_spec_in_any_config_repo_is_linked_and_malformed_repos_are_ignored(self):
+        other = TempGitRepo()
+        other_path = other.__enter__()
+        self.addCleanup(other.__exit__, None, None, None)
+        other.commit("init")
+        other.branch("base")
+        # 結ぶ spec は 2 つ目の repo の中
+        self.init(repos=[other_path, self.repo])
+        path = self.root / "pj" / "config.json"
+        config = self.config()
+        config["repos"] += [{"path": None}, "x"]
+        path.write_text(json.dumps(config), encoding="utf-8")
+        out = self.ok("set-living-spec", "--project", "pj", "--path", str(self.spec))
+        self.assertEqual(out["living_spec"], self.resolved)
+
+    def test_an_empty_or_non_string_living_spec_in_config_is_not_shown(self):
+        self.init()
+        path = self.root / "pj" / "config.json"
+        for value in ("", 5):
+            with self.subTest(value=value):
+                path.write_text(json.dumps({**self.config(), "living_spec": value}), encoding="utf-8")
+                self.ok("render", "--project", "pj")
+                self.assertNotIn("living spec:", self.state())
+
     def test_set_living_spec_is_for_the_hub_session_only(self):
         self.init()
         res = self.run_hub("set-living-spec", "--project", "pj", "--path", str(self.spec),
@@ -2728,6 +2910,10 @@ class RequiredArgumentsTest(HubTestBase):
             ("--peer-count", ["presence", "--project", "pj"]),
             ("--hub", ["resolve", "--project", "pj", "--peer-count", "1"]),
             ("--peer-count", ["resolve", "--project", "pj", "--hub"]),
+            ("--mode", ["set-mode", "--project", "pj"]),
+            ("--mode", ["set-tracker-write", "--project", "pj"]),
+            ("--path", ["set-living-spec", "--project", "pj"]),
+            ("--issue", ["issue", "--project", "pj"]),
         ]
         for flag, args in cases:
             with self.subTest(args=args):
@@ -3050,6 +3236,18 @@ class CloseSubTest(HubTestBase):
         cli = json.loads(self.check().stdout)
         self.assertIsNone(cli["host"], "CLI の hub からは閉じられない")
         self.assertIn("手で閉じて", cli["note"])
+
+    def test_only_a_well_formed_verified_conversation_id_is_recorded(self):
+        self.assertEqual(self.report(body=report_body(issue="ABC-12", state="done")).returncode, 0)
+        path = self.pdir / "sessions" / f"{SID_A}.json"
+        reg = json.loads(path.read_text(encoding="utf-8"))
+        for host in ("local_not-hex!", 123, SUB_HOST):
+            with self.subTest(host=host):
+                path.write_text(json.dumps({**reg, "host_verified": True, "host_session_id": host}),
+                                encoding="utf-8")
+                self.ok("close-sub", "--project", "pj", "--session", SID_A, "--result", "accepted")
+                want = host if host == SUB_HOST else None
+                self.assertEqual(self.journal(self.pdir)[-1]["body"]["host"], want)
 
     def test_the_result_is_recorded_and_unknown_sessions_stop(self):
         self.assertEqual(self.run_hub("close-sub", "--project", "pj", "--session", SID_B).returncode, 2)
