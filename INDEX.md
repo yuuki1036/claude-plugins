@@ -25,7 +25,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [issue-workflow](#issue-workflow) | 1.13.1 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [living-spec-workflow](#living-spec-workflow) | 0.7.3 | 2 | 2 | - | - | - | **deprecated → project-hub** |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
-| [plugin-feedback](#plugin-feedback) | 1.3.3 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
+| [plugin-feedback](#plugin-feedback) | 1.4.0 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
 | [plugin-manager](#plugin-manager) | 1.9.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
 | [project-hub](#project-hub) | 0.8.0 | 4 | 5 | - | SessionStart, PostCompact, UserPromptSubmit | - | PJ の決定（living spec）と、複数の sub を 1 つの hub で束ねる段取り |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
