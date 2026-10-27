@@ -69,6 +69,7 @@ start / issue-create がブランチを切るとき、今のチェックアウ�
 - `.claude/worktrees/<Issue ID>` に既定ブランチから作り、未追跡の `.env*` を写し、lockfile に合わせて依存を入れる（`scripts/branch-setup.sh`）
 - 作った直後にセッションの作業ディレクトリを worktree へ移す（CLI は `EnterWorktree`）。diff ペイン・hook・CLAUDE.md が worktree 側の値になる
 - worktree にデータ dir（`.claude/indie` / `.claude/linear`）が無ければ、スキルの Phase 0 と hook はメインのチェックアウトのものを使う
+- issue-maintain が worktree の中で Issue を完了にしたら、`.claude/` の git 未追跡のファイルをメインのチェックアウトへ写す（`scripts/sync-claude-to-main.py`。内容が違えば新しい側を残し、`.jsonl` は足りない行だけを足す）
 - start は、その Issue のブランチを別の worktree で checkout 済みなら、新しく作らずにそこへ移って続ける（`scripts/branch-setup.sh existing`。Claude アプリが作る detached HEAD の worktree は `.claude/session-context.md` で結び付けるが、別のセッションが使っていることがあるので移らずに案内だけする。作業がそこにしか無ければ、ここでブランチを作って新しく始めない。ディレクトリを消した worktree の登録が git に残っていてそのブランチへ移れないときは、登録の消し方（`git worktree prune`。locked なら unlock も、detached HEAD ならコミットを残す手順も）を案内して止まる）。引数で「新規タスク」と書いても、その Issue の作業（既定ブランチに無いコミットか未コミットの変更）が見つかれば、着手の選択を出さず続きとして扱う。新規か続きかの判定と根拠は報告の先頭に 1 行で出る
 
 ## 主な機能

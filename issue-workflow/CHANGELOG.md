@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.14.0] - 2026-10-27
+
+### Added
+
+- **issue-maintain: worktree の中で Issue を completed / canceled にしたら、`.claude/` の git 未追跡のファイルをメインのチェックアウトへ写す**（`scripts/sync-claude-to-main.py`）。
+  `.claude/` を gitignore している repo では、worktree で書いた knowledge・follow-up・journal などがブランチに乗らず、worktree を消すと失われていた。
+  メインに無ければ写し、`.jsonl` はメインに無い行だけを足す。内容が違えば mtime の新しい側を残し、上書きしたメインの版は git dir の下に残す。
+  `session-context.md`・`settings.local.json`・`worktrees/` 配下・symlink・メインで追跡しているパスは写さない。結果は最終レポートに載せる。teardown を選ぶかに関わらず実行する
+
 ## [1.13.1] - 2026-10-21
 
 ### Changed

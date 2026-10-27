@@ -226,7 +226,25 @@ Issue のタスクが全て完了した場合、以下を実行する：
      「open な follow-up が {N}件あります。`/follow-up list` で確認できます」
    - frontmatter の `follow_up` リストに未起票の文字列がある場合:
      「未起票の follow-up が {N}件あります。`/follow-up new` で記録できます」とレポートに列挙（自動記録はしない）
-7. worktree teardown 連携の発動判定（「worktree teardown 連携」節を参照。起動は最終レポート後）
+7. worktree 内なら `.claude/` の未追跡ファイルをメインのチェックアウトへ写す（次節「worktree の .claude をメインへ写す」。処理フロー 14.5）
+8. worktree teardown 連携の発動判定（「worktree teardown 連携」節を参照。起動は最終レポート後）
+
+---
+
+## worktree の .claude をメインへ写す（完了 Issue）
+
+本スキルの実行で対象 Issue の status が `completed` / `canceled` に**遷移した**とき、セッションが linked worktree の中で動いていれば、本スキルの編集をすべて書き終えた後（処理フロー 14 の後）に実行する。dev-workflow の有無・teardown を選ぶかに関わらず実行する（worktree を残しても、メイン側のセッションからは worktree の `.claude/` が見えない）:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sync-claude-to-main.py"
+```
+
+- 対象は worktree の `.claude/` にある **git 未追跡**のファイル（ignored を含む）だけ。追跡済みのファイルはブランチのマージで届く
+- メインに無ければ写す / 同じなら何もしない / `.jsonl` はメインに無い行だけを末尾に足す / 内容が違えば mtime の新しい側を残す（worktree が新しければ上書きし、前の版を git dir の下の `issue-workflow/wt-sync-backup/<日時>/` に残す）
+- `session-context.md`・`settings.local.json`（チェックアウトごとの状態）・`worktrees/` 配下・symlink は写さない。メインで追跡しているパスも触らない
+- `in_worktree=0` なら何もしない（メインのチェックアウト）
+- 出力の各行（`copied=` / `appended=` / `overwritten=` / `kept_main=` / `tracked_in_main=` / `uncommitted=` / `backup=`）を最終レポートの「メインへ写した .claude」に載せる。0 件の種類は省く。`kept_main=` はメインの方が新しかったので worktree の版を写していない。`uncommitted=` は追跡済みで未コミットの変更なので、teardown の前にコミットするよう添える
+- exit 2 は stderr を最終レポートに載せて進める（teardown の確認の前に、写せていないことが分かるようにする）
 
 ---
 
@@ -319,6 +337,7 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 
 - teardown を起動する前に、本スキルが行った Issue ファイル・knowledge の編集のコミット状況を確認する。worktree 側 `{DATA_DIR}` への未コミット編集は worktree remove で失われるため、残したい変更は先にコミットする（teardown の uncommitted チェックでも警告されるが、このスキル自身の編集が失われる事故を防ぐため先に確認する）
 - teardown は cwd（worktree）自体を削除するため、必ず**このスキルの全処理と最終レポートを終えた後**に起動する
+- `.claude/` の未追跡ファイルは処理フロー 14.5 でメインへ写し終えている。`kept_main=` の行があれば、worktree の版は写っていないので、削除の確認で選ぶ前に見るよう最終レポートに書く
 
 ---
 
@@ -354,6 +373,7 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 13. knowledge/ 切り出し・concept 波及があった場合、knowledge/index.md を更新（concept はパス付きで登録）
 13.5 未import knowledge の検知（vault CLI に委譲。KNOWLEDGE_VAULT_ROOT + scan スクリプトが揃う時のみ。N>0 なら `/import-knowledge` 促しをレポートに）
 14. 更新履歴にメンテナンス内容を記録
+14.5 worktree の .claude をメインへ写す（completed / canceled 遷移 && worktree 内のとき。「worktree の .claude をメインへ写す」節）
 15. 実行内容を最終レポートにまとめて報告:
     - スコープ超過警告（該当する場合）
     - 即クローズパターン時の経緯セクション補完（該当する場合）
@@ -366,6 +386,7 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
     - スコープ外差分から検出した follow-up 候補（記録は未実行。ユーザーが判断）
     - レビュー未実施の警告（該当する場合。非ブロッキング）
     - 追加したテンプレート不足セクション
+    - メインへ写した .claude（14.5 を実行した場合）
     - worktree teardown 候補（main 上で検出した場合 / dev-workflow 未インストールの場合の手動案内）
 16. worktree teardown 連携の自動起動（発動条件・分岐の正本は「worktree teardown 連携」節。
     completed / canceled 遷移 && worktree 内 && dev-workflow 有効のとき、AskUserQuestion で
