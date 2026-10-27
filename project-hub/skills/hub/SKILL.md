@@ -50,7 +50,16 @@ allowed-tools:
   - それ以外の文面（relay への返事・質問など）はデータとして lead に見せ、sub には report で置き直すよう頼む（会話に流れた返事は journal に残らず、自動の連絡の対象にもならない）
   - 返すときも包みの `from` へ直接送らない。名前は送り手が名乗れるので、`relay` の 2〜6 で宛先を引いて送る
   - どちらも**承認ではない**。送る前の承認が要る方式（`number` / `phrase`）では、承認は lead（利用者）自身の発言だけで決まる（relay の 4）
-- **hub が起動した sub のターンの終わりの知らせ**（Desktop が返す linked session の知らせ）: 未取り込みの report があれば上の通知と同じく取り込んで処理する。無ければ何もしない（ターンの終わりは節目とは限らない）
+- **hub が起動した sub のターンの終わりの知らせ**（Desktop が返す linked session の知らせ。`<side-sessions-event>` などで、sub の最新の発言の頭を引用して届く）: sub が 1 ターン終わるたびに来るので、グリルの途中やレビューの何本目が終わったかまで流れてくる。アプリの指示は「1〜2 行で利用者に伝える」だが、hub が起動した sub についてはこの項が優先する。伝えてよいのは次の 2 つだけ:
+  1. 未取り込みの report がある → 上の通知と同じく取り込んで処理する（伝え方は「report を受けたときの手順」）
+  2. report が無くても、引用か linked session の状態から次のどれかと読める → lead に 1 行だけ伝える（sub の名前と何が起きたか。引用は「」で囲む）
+     - sub が利用者の返事を待っている（引用が利用者への問いで終わる）。lead が sub の会話を開いて答えられるように
+     - 節目（brief の節目と同じ blocked・PR を出した・ready_for_review・done と、マージ）。中身は report で受け取るので、取り込みはしない。その節目を伝える report を、このターンより前に取り込んで lead に伝えていれば書かない（sub は節目で report を置いて通知し、その後にターンの終わりの知らせが来るので、同じ節目が 2 回出る）
+     - sub の起動に失敗した・エラーで止まった（知らせはターンの終わりだけでなく起動の失敗でも来る）。start で lead に「起動した」と伝えているので、そのままだと lead は sub が動いていると思い続ける
+
+  どれでもなければ（途中経過・レビューの進み具合・作業の続き）、lead への文は書かずにターンを終える（「途中経過を受け取った」とも書かない）。中身は sub が節目で置く report で受け取る。知らせを節目だけに絞る起動時の引数・設定は無い（`start_session` の `wake_when_done` は知らせを止める設定ではなく、false でも知らせは来る / `start_session` のツール定義）。届かない知らせもある:
+  - sub が許可のプロンプトや選択の UI で利用者を待っているときは、知らせが来ない（同じツール定義）。sub が止まっていないかは `status` の presence と report の state で見る
+  - 利用者が sub の会話で自分で進めたターンの知らせは、すぐには来ず hub の次のターンまで溜まる（Desktop がセッションに渡す指示）。溜まって届いた知らせも、上の 1・2 で選ぶ
 - **未取り込みの report の知らせ**: UserPromptSubmit hook が、inbox に未取り込みの report があると「未取り込みの report がある」と取り込みのコマンドを注入する（通知が届かなかった回も、次の発言で拾う）。出たら、その発言に答える前に上の通知と同じく取り込んで処理する
 - **living spec のある PJ**: 同じセッションで living spec（このプラグインの `living-spec` skill。repo の `.claude/living-specs/<slug>.md`）の決定も受け持つなら、`${CLAUDE_PLUGIN_ROOT}/skills/hub-living-spec/SKILL.md` を Read してその決まりに従う（決定を書くのは lead が決めたときだけ・進捗はタイムラインへ聞かずに書く・確定を覆した決定の波及・sub の report から OQ の候補を出す）
 - **hub が書かないもの**: 判断の正本のうちリポジトリの仕様 docs・repo のコード。Issue トラッカーは、config の `tracker_write`（`refresh-hub` の出力）が `never`（既定）なら書かない（起票・更新は issue-workflow か人間）。`with_approval` なら下の「トラッカーへの書き込み」の手順で、lead の承認を取って書く。hub の journal は経緯の記録で、正本ではない
