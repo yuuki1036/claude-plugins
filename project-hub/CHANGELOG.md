@@ -2,6 +2,26 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.8.0] - 2026-10-27
+
+### Added
+
+- report に `decisions`（sub の会話で決まったこと。本文・日付・決めた人）と `waiting_prs`（マージを待っている PR）を足した（report の形の版を 3 にした。1・2 の report も受ける / GitHub issue #327・#329）。hub は `hub.py decisions` で決定の一覧を見て、relay の前に食い違いを確かめる。取り込んだ決定は自動で送る PJ でも必ず lead に出し、他の sub への連絡と食い違えば送らずに lead に出す。sub には、利用者が決めたことを節目を待たずに report するよう、brief と report の skill に書いた
+- `hub.py waiting`: sub が待っている PR と、マージを知らせ済みか。status で PR の状態を確かめ、マージされていれば待っていた sub へ段取りの連絡を送る。record に `waiting_pr` を入れると知らせ済みに数え、次の status で送り直さない（GitHub issue #329）
+- `hub.py todo`: hub 自身の残作業（`--add` / `--done` / 一覧）。未完了のものは state.md の「hub の残作業」に出る。done の report の follow_ups に hub 宛ての作業があれば、足す案を lead に出す（GitHub issue #329）
+- `hub.py close-sub` と hub の `close-sub <Issue>`: 最新の report が done の sub を、Desktop の archive で閉じる。閉じる前に done と会話の ID を確かめ、閉じた結果を journal に残す。会話の ID を確かめられない（CLI・0.6.4 までの登録）ときは lead に手で閉じてもらう（GitHub issue #330）
+- config の `tracker_write`（`never` 既定 / `with_approval`）と `hub.py set-tracker-write`・hub の `tracker-write`。`with_approval` の PJ では、hub が文面を見せて lead の承認を取ってからトラッカーに起票・本文の直しをし、書き込みの応答ではなく読み直した本文で反映を確かめる（応答の古い本文を見て送り直すと二重に入る）。記録は record の `--kind tracker`。tracker `local` では書かない（GitHub issue #331 / ADR-20261027014506）
+- `resolve` / `presence` の `--raw` と report の `list_agents`: ListAgents の出力をそのまま渡せば hub.py が抜き出す。合わない行があれば推測で埋めずに `parse_failed` を返し、そのときだけ Claude が抜き出した JSON を渡し直す（GitHub issue #328）
+- record の `--from-resolve`（直前の `ok` の resolve の宛先を引き継ぎ、使った後に消す。30 分を超えたものと、間に送らない結果の resolve を挟んだものは引き継がない）と `--text-file`（本文を JSON に書き直さずにファイルで渡す）。start の記録は brief の全文をファイルで渡す（GitHub issue #328）
+- 版に左右されない呼び口 `<root>/bin/hub.py`: hub のセッションの hook（SessionStart・PostCompact・UserPromptSubmit）が、動いている版の hub.py へ向けて書き直し、注入にそのパスを出す。hub の SKILL.md はこの呼び口を使う（GitHub issue #328）
+
+### Changed
+
+- relay の `[lead の言葉]` を 2 段に分け、hub の説明・解釈は `[hub の補足]` の段に書くようにした。同じ段に続けると、sub には hub の判断が lead の決定に見えた（GitHub issue #326）
+- 外に出る文（repo の docs・トラッカー・PR・コミットメッセージ）に hub・lead・sub の語を書かないことを、hub の共通の決まり・brief の雛形・report の skill に書いた。決定は日付で書く（GitHub issue #326）
+- `start` の題を `<Issue ID> <英語の短い要約>` にした（Issue のタイトルをそのまま入れると、日本語の長い文になって一覧で見分けにくい）。init で hub の題を `hub <英語の短い名前>` の形に揃える案を出す（GitHub issue #330）
+- brief と report の skill に、sub が hub に先に聞いてよいこと（着手前の進め方の案・他の sub との重なり・仕様の解釈）を書いた（GitHub issue #327）
+
 ## [0.7.0] - 2026-10-27
 
 ### Changed

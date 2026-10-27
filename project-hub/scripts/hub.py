@@ -9,8 +9,11 @@ root: ${PROJECT_HUB_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/project-hub}
 
 サブコマンド（`hub.py <cmd> --help`）:
   init / takeover / refresh-hub / set-mode / close / projects   PJ と hub の登録・送る前の承認の方式
-  fact / facts / record / sent                             facts と brief・relay・start の記録・承認なしに送った連絡
+  set-tracker-write                                        hub がトラッカーに書いてよいか
+  fact / facts / record / sent                             facts と brief・relay・start・トラッカーへの書き込みの記録・
+                                                           承認なしに送った連絡
   ingest / reports / presence / snapshot / issue / render / worktrees   hub status・brief の材料
+  decisions / waiting / todo / close-sub                   sub の決定・待っている PR・hub の残作業・sub を閉じる
   resolve                                                  宛先の照合（送る直前に毎回）
   report                                                   sub の report（自己検査 → 登録 + inbox → 通知先）
   inject / pending-hint                                    SessionStart・PostCompact / UserPromptSubmit hook 用
@@ -42,7 +45,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-JOURNAL_KINDS = ("relay", "brief", "start", "report", "fact", "takeover", "close", "mode")
+JOURNAL_KINDS = ("relay", "brief", "start", "report", "fact", "takeover", "close", "mode", "tracker", "close_sub",
+                 "tracker_write")
 REPORT_STATES = ("hello", "in_progress", "blocked", "ready_for_review", "done")
 SEND_RESULTS = ("accepted", "failed", "pasted", "unresolved")
 # 送る前の承認の取り方。auto は lead の確認が要る事柄を含まない連絡を承認なしに送る（ADR-20261025152955）、
@@ -54,11 +58,16 @@ KIND_BASES = {"relay": ("lead", "source", "routine"), "brief": ("brief",), "star
 # 同じ sub へ、lead の言葉の伝達を挟まずに続けて送ってよい hub の判断の連絡（答え・段取り）の数（往復が止まらなくなるのを防ぐ）
 AUTO_STREAK_MAX = 3
 # report の形の版。hub と sub で入っている project-hub の版がずれうる（marketplace 版と inline 版）。
-# 2 で questions を足した。1 は questions が無いだけなので受ける
-REPORT_SCHEMA = 2
-REPORT_SCHEMAS = (1, 2)
+# 2 で questions を、3 で decisions・waiting_prs を足した。1・2 は足した欄が無いだけなので受ける
+REPORT_SCHEMA = 3
+REPORT_SCHEMAS = (1, 2, 3)
 # ingest / reports が出す report の中身（state.md には写さない）
-REPORT_FIELDS = ("name", "issue", "state", "pr", "needs_lead", "questions", "follow_ups", "claims")
+REPORT_FIELDS = ("name", "issue", "state", "pr", "needs_lead", "questions", "follow_ups", "claims",
+                 "decisions", "waiting_prs")
+# hub がトラッカーに書いてよいか。never は書かない（既定）、with_approval は lead の承認を取って書く（GitHub issue #331）
+TRACKER_WRITE_MODES = ("never", "with_approval")
+# record の --from-resolve が引き継ぐ resolve の結果の有効期限（秒）。古い宛先を別の送信に流用しない
+RESOLVE_TTL = 1800
 # どれも fullmatch で使う（re.match + `$` は末尾の改行 1 つを通す）
 PROJECT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
@@ -68,6 +77,10 @@ SOURCE_NAME_RE = re.compile(r"[a-z][a-z0-9_-]*")
 REF_RE = re.compile(r"[0-9A-Za-z]+")
 PR_RE = re.compile(r"#?\d+")
 PR_URL_RE = re.compile(r"/pull/(\d+)(?![0-9])")
+# report の waiting_prs（待っている PR）。別の repo の PR は `owner/name#123`
+WAITING_PR_RE = re.compile(r"(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#\d+")
+DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+TODO_ID_RE = re.compile(r"T(\d+)")
 # issue-workflow の local backend の Issue ファイル名（`{DATA_DIR}/<slug>/issues/ABC-12.md`）
 LOCAL_ISSUE_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*-\d+")
 # issue-workflow の status 5 値（issue-workflow/skills/maintain/SKILL.md）のうち閉じたもの。
@@ -399,6 +412,12 @@ def approval_mode(config: dict) -> tuple[str, str | None]:
                       "番号の打ち返し（number）で承認する")
 
 
+def tracker_write(config: dict) -> str:
+    """hub がトラッカーに書いてよいか。無い・読めない値は never（緩い側に倒さない / GitHub issue #331）."""
+    value = config.get("tracker_write")
+    return value if value in TRACKER_WRITE_MODES else "never"
+
+
 def mode_notice(mode: str) -> str:
     """init / set-mode が lead に必ず見せる 1 行（auto を lead が知らないまま動かさない / ADR-20261025152955）."""
     if mode == "auto":
@@ -542,6 +561,21 @@ def validate_report(data, project: str | None = None, kind: str | None = None) -
                 errs.append(f"claims[{i}] に text が無い")
             elif not isinstance(claim.get("source"), str) or not claim["source"].strip():
                 errs.append(f"claims[{i}] に source が無い（path:line 等の出典は必須）")
+    decisions = data.get("decisions", [])
+    if not isinstance(decisions, list):
+        errs.append("decisions が配列ではない")
+    else:
+        for i, d in enumerate(decisions):
+            if not isinstance(d, dict) or not isinstance(d.get("text"), str) or not d["text"].strip():
+                errs.append(f"decisions[{i}] に text が無い")
+            elif not isinstance(d.get("date"), str) or not DATE_RE.fullmatch(d["date"]):
+                errs.append(f"decisions[{i}] の date が YYYY-MM-DD ではない")
+            elif name_problem(d.get("by")):
+                errs.append(f"decisions[{i}] に by（誰が決めたか）が無い、または改行を含む")
+    waiting = data.get("waiting_prs", [])
+    if not isinstance(waiting, list) or not all(isinstance(x, str) and WAITING_PR_RE.fullmatch(x)
+                                                for x in waiting):
+        errs.append("waiting_prs が PR（#123 か owner/name#123）の配列ではない")
     return errs
 
 
@@ -571,7 +605,68 @@ def check_agents(agents, peer_count) -> list[str]:
     return problems
 
 
-def load_agents(arg: str, peer_count: int) -> list[dict]:
+LIST_SELF_RE = re.compile(r"This session is (.+) \[([0-9A-Za-z]+)\] — ")
+LIST_PEERS_RE = re.compile(r"Peer sessions \((\d+)\):")
+LIST_ROW_NAME_RE = re.compile(r"(.+) \[([0-9A-Za-z]+)\]")
+# 読み飛ばしてよい節の見出し。ほかの見出し（`Peer Sessions (3):` のような表記ゆれを含む）は書式が変わったとみなして止める
+LIST_SKIP_RE = re.compile(r"Subagents \(\d+\):")
+LIST_SEP = "  ·  "
+
+
+def parse_list_agents(text: str) -> dict:
+    """ListAgents の生の出力から、自分の名前と ref・Peer sessions の行・件数を抜き出す（GitHub issue #328）.
+
+    規則の正本は references/list-agents.md。書式に契約が無いので、合わない行があれば推測で埋めずに止める
+    （exit 2 の parse_failed。宛先が見つからないのとは別）
+    """
+    if not isinstance(text, str):
+        raise HubError(2, "ListAgents の出力が文字列ではない")
+    lines = text.replace("\r\n", "\n").split("\n")
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    m = LIST_SELF_RE.match(lines[first].strip()) if first is not None else None
+    if m is None:
+        raise HubError(2, "1 行目が「This session is <name> [<ref>] — 」の形ではない")
+    out = {"name": m.group(1), "self_ref": m.group(2), "agents": [], "peer_count": 0}
+    heading, section = None, None
+    for line in lines[first + 1:]:
+        if not line.strip():
+            section = None if section != "peers" else "peers_end"
+            continue
+        if not line.startswith(" "):
+            # 見出しの行。Peer sessions 以外（Subagents など）の下の行は入れない
+            hm = LIST_PEERS_RE.fullmatch(line.strip())
+            if hm:
+                if heading is not None:
+                    raise HubError(2, "見出し「Peer sessions (N):」が 2 つある")
+                heading, section = int(hm.group(1)), "peers"
+            elif LIST_SKIP_RE.fullmatch(line.strip()):
+                section = "other"
+            else:
+                raise HubError(2, f"見出しでも行でもない行がある: {cell(line)}")
+            continue
+        if section == "other":
+            continue
+        if section != "peers":
+            raise HubError(2, f"見出しの外に行がある: {cell(line)}")
+        fields = line.strip().split(LIST_SEP)
+        nm = LIST_ROW_NAME_RE.fullmatch(fields[0])
+        # 改名の直後だけ入る `says it was <前の名前> until <N>s ago` の欄は数えない
+        rest = [f for f in fields[1:] if not f.startswith("says it was ")]
+        if nm is None or len(rest) < 2:
+            raise HubError(2, f"Peer sessions の行の形が合わない: {cell(line)}")
+        out["agents"].append({"name": nm.group(1), "ref": nm.group(2), "state": rest[1]})
+    out["peer_count"] = heading or 0
+    problems = check_agents(out["agents"], out["peer_count"])
+    if problems:
+        raise HubError(2, "ListAgents の抜き出しが自己検査に合わない: " + "; ".join(problems))
+    return out
+
+
+def load_agents(arg: str, peer_count: int | None, raw: bool = False) -> list[dict]:
+    if raw:
+        return parse_list_agents(read_body(arg))["agents"]
+    if peer_count is None:
+        raise HubError(2, "--peer-count が無い（生の ListAgents を渡すなら --raw）")
     agents = load_json_input(arg, "agents")
     problems = check_agents(agents, peer_count)
     if problems:
@@ -736,6 +831,7 @@ def cmd_init(args) -> int:
         "project": args.project, "status": "active", "tracker": tracker, "repos": repos,
         "approval": {"prefix": args.approval_prefix, "suffix": args.approval_suffix,
                      "mode": args.approval_mode},
+        "tracker_write": args.tracker_write,
     }
     if living_spec:
         config["living_spec"] = living_spec
@@ -744,7 +840,7 @@ def cmd_init(args) -> int:
                                    "name": args.name, "updated": now()})
     out = {"project": args.project, "dir": str(pdir), "hub": args.name, "repos": repos,
            "gitignored": gitignored(pdir / "config.json"), "approval_mode": args.approval_mode,
-           "mode_notice": mode_notice(args.approval_mode)}
+           "mode_notice": mode_notice(args.approval_mode), "tracker_write": args.tracker_write}
     warning = default_name_warning(args.name)
     if warning:
         out["warning"] = warning
@@ -805,7 +901,8 @@ def cmd_refresh_hub(args) -> int:
     out = {"project": args.project, "hub": args.name, "dir": str(pdir), "status": config.get("status"),
            "tracker": config.get("tracker"), "repos": config.get("repos"),
            "living_spec": config.get("living_spec"),
-           "approval": config.get("approval"), "approval_mode": mode}
+           "approval": config.get("approval"), "approval_mode": mode,
+           "tracker_write": tracker_write(config)}
     warnings = [w for w in (default_name_warning(args.name), mode_warning) if w]
     if warnings:
         out["warning"] = " / ".join(warnings)
@@ -829,6 +926,23 @@ def cmd_set_mode(args) -> int:
     write_state(pdir)
     emit({"project": args.project, "approval_mode": args.mode, "previous": previous,
           "mode_notice": mode_notice(args.mode)})
+    return 0
+
+
+def cmd_set_tracker_write(args) -> int:
+    """hub がトラッカーに書いてよいかを切り替える（GitHub issue #331）."""
+    pdir = project_dir(args.project)
+    require_hub(pdir, args.session_id)
+    config = load_config(pdir)
+    if args.mode == "with_approval" and tracker_kind(config) == "local":
+        raise HubError(3, "tracker local の PJ では hub はトラッカーに書かない（Issue ファイルは issue-workflow の持ち物 / "
+                          "ADR-20261027014506 の決定 5）")
+    previous = tracker_write(config)
+    # 記録を先に書く。書けなければ切り替えない（安全側の設定を緩めた経緯を落とさない）
+    journal_append(pdir, "tracker_write", args.mode, {"from": previous})
+    config["tracker_write"] = args.mode
+    write_json(pdir / "config.json", config)
+    emit({"project": args.project, "tracker_write": args.mode, "previous": previous})
     return 0
 
 
@@ -1011,16 +1125,44 @@ def cmd_facts(args) -> int:
 def cmd_record(args) -> int:
     """brief / relay / start の送った全文・宛先・送信の結果を journal に残す.
 
-    stdin の JSON: {subject, text, to?, error?, session?, sources?, started?}。
-    `--basis` は承認なしに送った連絡の根拠（ADR-20261025152955）。`--basis source` は sources が無ければ書かない
+    stdin の JSON: {subject, text, to?, error?, session?, sources?, started?, waiting_pr?}。
+    `--basis` は承認なしに送った連絡の根拠（ADR-20261025152955）。`--basis source` は sources が無ければ書かない。
+    `--text-file` は text を JSON に入れずにファイルで渡す（長い brief を JSON の文字列に書き直さない）。
+    `--from-resolve` は直前の resolve が決めた宛先（to・session）を引き継ぎ、使った後に消す（GitHub issue #328）。
+    kind tracker はトラッカーへの書き込みの記録で、config の tracker_write が with_approval の PJ だけ（GitHub issue #331）
     """
     pdir = project_dir(args.project)
     require_hub(pdir, args.session_id)
+    config = load_config(pdir)
     body = load_json_input(args.body_file, "record の本文")
     if not isinstance(body, dict):
         raise HubError(2, "record の本文が JSON のオブジェクトではない")
+    if args.text_file is not None:
+        if body.get("text") is not None:
+            raise HubError(2, "text は JSON か --text-file のどちらかで渡す")
+        body["text"] = read_body(args.text_file)
+    resolve_path = pdir / "last_resolve.json"
+    if args.from_resolve:
+        if args.kind not in ("relay", "brief") or args.result != "accepted":
+            raise HubError(2, "--from-resolve は送った（accepted）relay / brief の記録にだけ付ける")
+        if body.get("to") is not None or body.get("session") is not None:
+            raise HubError(2, "--from-resolve と to・session は一緒に渡さない（宛先は resolve の結果を使う）")
+        last = read_obj(resolve_path)
+        if not last:
+            raise HubError(2, "引き継ぐ resolve の結果が無い（resolve が ok 以外だったか、もう記録に使った）。"
+                              "宛先を引き直してから送る")
+        try:
+            age = (dt.datetime.now(dt.timezone.utc)
+                   - dt.datetime.strptime(str(last.get("ts")), "%Y-%m-%dT%H:%M:%SZ").replace(
+                       tzinfo=dt.timezone.utc)).total_seconds()
+        except ValueError:
+            age = None
+        if age is None or age > RESOLVE_TTL:
+            raise HubError(2, f"引き継ぐ resolve の結果が古い（{RESOLVE_TTL // 60} 分を超えた）。宛先を引き直してから送る")
+        body["to"], body["session"] = last.get("to"), last.get("session")
     subject, text, to, error = body.get("subject"), body.get("text"), body.get("to"), body.get("error")
     session, sources, started = body.get("session"), body.get("sources"), body.get("started")
+    waiting_pr = body.get("waiting_pr")
     if not isinstance(subject, str) or not subject.strip():
         raise HubError(2, "subject（Issue ID か宛先）が無い")
     if not isinstance(text, str) or not text.strip():
@@ -1039,12 +1181,24 @@ def cmd_record(args) -> int:
     if sources is not None and not (isinstance(sources, list)
                                     and all(isinstance(s, str) and s.strip() for s in sources)):
         raise HubError(2, "sources は空でない文字列の配列か null")
+    if waiting_pr is not None and not (args.kind == "relay" and isinstance(waiting_pr, str)
+                                       and WAITING_PR_RE.fullmatch(waiting_pr) and session):
+        raise HubError(2, "waiting_pr は relay の、待っていた PR（#123 か owner/name#123）。session（宛先の登録）も要る")
+    if args.kind == "tracker":
+        if tracker_kind(config) == "local":
+            raise HubError(3, "tracker local の PJ では hub はトラッカーに書かない（ADR-20261027014506 の決定 5）")
+        if tracker_write(config) != "with_approval":
+            raise HubError(3, "この PJ の tracker_write は never（hub はトラッカーに書かない）。"
+                              "書くなら lead に頼まれてから `set-tracker-write --mode with_approval`")
+        if args.basis is not None or any(v is not None for v in (to, session, started, sources)):
+            raise HubError(2, "kind tracker の記録は subject（Issue ID）・text（書いた本文）・error だけを持つ")
     if args.basis == "source" and not sources:
         raise HubError(2, "basis source には sources（答えに使った出典）が要る（出典の無い答えは送らない）")
-    if args.basis is not None and args.basis not in KIND_BASES[args.kind]:
+    if args.basis is not None and args.basis not in KIND_BASES.get(args.kind, ()):
         raise HubError(2, f"kind {args.kind} の basis は {' / '.join(KIND_BASES[args.kind])} のどれか")
     # 往復の上限と事後の一覧は basis と宛先で数えるので、auto の PJ では書き忘れを止める（fail-open にしない）
-    if approval_mode(load_config(pdir))[0] == "auto" and args.result == "accepted":
+    # トラッカーへの書き込みは、どの方式でも lead の承認を取ってから行うので basis を持たない
+    if approval_mode(config)[0] == "auto" and args.result == "accepted" and args.kind != "tracker":
         if args.basis is None:
             raise HubError(2, "承認なしに送る PJ では、送った連絡の record に --basis が要る")
         if args.basis in ("source", "routine") and not session and not (to and to.get("ref")):
@@ -1055,10 +1209,12 @@ def cmd_record(args) -> int:
         raise HubError(2, "started は kind start の {\"id\", \"name\"}（起動したセッションの id と名前）か null")
     row = {"text": text, "to": to, "result": args.result, "error": error}
     for key, value in (("basis", args.basis), ("session", session), ("sources", sources),
-                       ("started", started)):
+                       ("started", started), ("waiting_pr", waiting_pr)):
         if value is not None:
             row[key] = value
     journal_append(pdir, args.kind, subject, row)
+    if args.from_resolve:
+        resolve_path.unlink(missing_ok=True)
     emit({"kind": args.kind, "subject": subject, "result": args.result, "basis": args.basis})
     return 0
 
@@ -1180,6 +1336,141 @@ def cmd_reports(args) -> int:
         out.append({"session_id": sid, "file": row.get("source"), "ingested_at": row.get("ts"),
                     **{k: body.get(k) for k in REPORT_FIELDS}})
     emit(sorted(out, key=lambda r: str(r.get("ingested_at"))))
+    return 0
+
+
+def decision_rows(rows: list[dict]) -> list[dict]:
+    """sub が report の decisions で知らせた PJ の決定（古い順）.
+
+    同じ決定を節目ごとに書き直す sub がいるので、セッション・本文・日付・決めた人が同じものは 1 件にまとめる
+    """
+    out, seen = [], set()
+    for row in rows:
+        body = row.get("body")
+        if row.get("kind") != "report" or not isinstance(body, dict):
+            continue
+        for d in body.get("decisions") or []:
+            if not isinstance(d, dict):
+                continue
+            key = (row.get("subject"), d.get("text"), d.get("date"), d.get("by"))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"date": d.get("date"), "by": d.get("by"), "text": d.get("text"),
+                        "session_id": row.get("subject"), "name": body.get("name"), "issue": body.get("issue"),
+                        "file": row.get("source")})
+    return out
+
+
+def cmd_decisions(args) -> int:
+    """sub が知らせた PJ の決定の一覧。relay の前に食い違いを見る（GitHub issue #327）."""
+    emit(decision_rows(read_jsonl(project_dir(args.project) / "journal.jsonl")))
+    return 0
+
+
+def notified_waits(rows: list[dict]) -> set[tuple]:
+    """待っていた PR のマージを知らせ済みの (session, PR)."""
+    done = set()
+    for row in rows:
+        body = row.get("body") if isinstance(row.get("body"), dict) else {}
+        if row.get("kind") == "relay" and body.get("result") == "accepted" and body.get("waiting_pr"):
+            done.add((body.get("session"), body["waiting_pr"]))
+    return done
+
+
+def cmd_waiting(args) -> int:
+    """sub が最新の report の waiting_prs で待っている PR（done の sub は除く）と、マージを知らせ済みか（GitHub issue #329）."""
+    pdir = project_dir(args.project)
+    rows = read_jsonl(pdir / "journal.jsonl")
+    done = notified_waits(rows)
+    out = []
+    for sid, row in latest_reports(rows).items():
+        body = row["body"]
+        if body.get("state") == "done":
+            continue
+        for pr in body.get("waiting_prs") or []:
+            out.append({"session_id": sid, "name": body.get("name"), "issue": body.get("issue"),
+                        "pr": pr, "notified": (sid, pr) in done})
+    emit(out)
+    return 0
+
+
+def load_todos(pdir: Path) -> list[dict]:
+    """hub の残作業（todos.jsonl の add / done の行から作る今の一覧。古い順）."""
+    todos: dict[str, dict] = {}
+    for row in read_jsonl(pdir / "todos.jsonl"):
+        tid = row.get("id")
+        if row.get("op") == "add" and isinstance(tid, str) and isinstance(row.get("text"), str):
+            todos[tid] = {"id": tid, "ts": row.get("ts"), "text": row["text"], "source": row.get("source"),
+                          "done": None}
+        elif row.get("op") == "done" and tid in todos:
+            todos[tid]["done"] = row.get("ts")
+    return list(todos.values())
+
+
+def cmd_todo(args) -> int:
+    """hub 自身の残作業を足す（--add。stdin の {"text", "source"?}）・終える（--done <id>）・一覧（既定は未完了だけ）."""
+    pdir = project_dir(args.project)
+    path = pdir / "todos.jsonl"
+    if args.add or args.done:
+        require_hub(pdir, args.session_id)
+    todos = load_todos(pdir)
+    if args.add:
+        body = load_json_input(args.body_file, "todo の本文")
+        text = body.get("text") if isinstance(body, dict) else None
+        source = body.get("source") if isinstance(body, dict) else None
+        if not isinstance(text, str) or not text.strip() or text.splitlines() != [text]:
+            raise HubError(2, "text（1 行の残作業）が要る")
+        if source is not None and not (isinstance(source, str) and source.strip()):
+            raise HubError(2, "source は空でない文字列か null（sub の report から取ったなら、その report のファイル名）")
+        numbers = [int(m.group(1)) for t in todos if (m := TODO_ID_RE.fullmatch(t["id"]))]
+        row = {"op": "add", "id": f"T{max([0, *numbers]) + 1}", "ts": now(), "text": text, "source": source}
+        append_jsonl(path, row)
+        write_state(pdir)
+        emit({k: row[k] for k in ("id", "text", "source")})
+        return 0
+    if args.done:
+        hit = next((t for t in todos if t["id"] == args.done), None)
+        if hit is None or hit["done"]:
+            raise HubError(2, f"未完了の残作業に {args.done} が無い")
+        append_jsonl(path, {"op": "done", "id": args.done, "ts": now()})
+        write_state(pdir)
+        emit({"id": args.done, "done": True})
+        return 0
+    emit([t for t in todos if args.all or not t["done"]])
+    return 0
+
+
+def cmd_close_sub(args) -> int:
+    """sub のセッションを閉じる前の確かめ（--result なし）と、閉じた結果の記録（--result あり / GitHub issue #330）.
+
+    閉じてよいのは最新の report が done の sub だけ。閉じる手段（Desktop の archive）は会話の ID を宛先に取るので、
+    Desktop の hub から、report の時点で確かめた会話の ID を持つ登録にだけ返す
+    """
+    pdir = project_dir(args.project)
+    hub = require_hub(pdir, args.session_id)
+    if not SESSION_ID_RE.fullmatch(args.session):
+        raise HubError(2, "session_id に使えない文字がある")
+    reg = read_obj(pdir / "sessions" / f"{args.session}.json")
+    if not reg:
+        raise HubError(2, f"登録が無い: {args.session}")
+    if args.error is not None and args.result != "failed":
+        raise HubError(2, "--error は --result failed にだけ付ける")
+    if args.result is not None:
+        journal_append(pdir, "close_sub", args.session,
+                       {"result": args.result, "host": registered_host(reg), "error": args.error})
+        emit({"session_id": args.session, "result": args.result})
+        return 0
+    rep = latest_reports(read_jsonl(pdir / "journal.jsonl")).get(args.session)
+    state = rep["body"].get("state") if rep else None
+    if state != "done":
+        raise HubError(3, f"この sub の最新の report は done ではない（{state}）。閉じるのは done を報告した sub だけ")
+    host = registered_host(reg) if verified_host(hub["session_id"]) else None
+    out = {"session_id": args.session, "name": reg.get("name"), "issue": reg.get("issue"), "host": host}
+    if host is None:
+        out["note"] = ("会話の ID を確かめられない（hub か sub が Desktop でない・0.6.4 までの登録）。"
+                       "hub からは閉じられないので、lead に手で閉じてもらう")
+    emit(out)
     return 0
 
 
@@ -1319,7 +1610,7 @@ def cmd_presence(args) -> int:
     pdir = project_dir(args.project)
     require_hub(pdir, args.session_id)
     try:
-        agents = load_agents(args.agents_file, args.peer_count)
+        agents = load_agents(args.agents_file, args.peer_count, args.raw)
     except HubError as e:
         record_snapshot(pdir, "agents", ok=False, error=str(e))
         emit({"status": "parse_failed", "reason": str(e)})
@@ -1555,6 +1846,20 @@ def render_state(pdir: Path) -> tuple[str, int]:
     else:
         out.append("（未取得。`hub status` で集める）")
 
+    todos = [t for t in load_todos(pdir) if not t["done"]]
+    out += ["", "## hub の残作業", ""]
+    # hub が自分の言葉で書いたものなので本文を載せる（sub の文面をそのまま写さない。SKILL.md の todo）
+    out += [f"- {cell(t['id'])} {cell(t['text'], None)}" for t in todos[:TABLE_MAX]] or ["（なし）"]
+    out += more_rows(todos, "`hub.py todo`")
+    rows_waiting = [(sid, pr) for sid, row in latest.items() if row["body"].get("state") != "done"
+                    for pr in row["body"].get("waiting_prs") or []]
+    notified = notified_waits(rows)
+    pending_waits = [w for w in rows_waiting if w not in notified]
+    out += ["", "## sub の決定と待っている PR", "",
+            f"- sub が report で知らせた決定: {len(decision_rows(rows))} 件（中身は `hub.py decisions`。relay の前に食い違いを見る）",
+            f"- sub が待っている PR: {len(rows_waiting)} 件（うちマージをまだ知らせていない {len(pending_waits)} 件。"
+            "中身は `hub.py waiting`）"]
+
     checked = sum(1 for f in current if f.get("checked_by"))
     out += ["", "## facts", "",
             f"- 有効 {len(current)} 件（確かめた {checked} / 未確認 {len(current) - checked}）・"
@@ -1592,6 +1897,26 @@ def write_state(pdir: Path) -> tuple[Path, int]:
 def unresolved(reason: str, **extra) -> int:
     emit({"status": "unresolved", "reason": reason, **extra})
     return 1
+
+
+# hub → sub の resolve の間だけ持つ文脈（PJ の dir と --session）。決まった宛先を last_resolve.json に残し、
+# record --from-resolve が本文だけで記録できるようにする（GitHub issue #328）
+RESOLVE_CTX: dict | None = None
+
+
+def save_resolve(out: dict) -> None:
+    if RESOLVE_CTX is None:
+        return
+    to = {"name": out["name"], "ref": out.get("ref")}
+    if out.get("host"):
+        to["host"] = out["host"]
+    write_json(RESOLVE_CTX["pdir"] / "last_resolve.json",
+               {"ts": now(), "to": to, "send_to": out["to"], "session": RESOLVE_CTX["session"]})
+
+
+def clear_resolve() -> None:
+    if RESOLVE_CTX is not None:
+        (RESOLVE_CTX["pdir"] / "last_resolve.json").unlink(missing_ok=True)
 
 
 def candidates(rows: list[dict]) -> list[dict]:
@@ -1643,6 +1968,7 @@ def resolved_host(reg: dict, host: str, by_ref: dict | None, guard: dict | None)
                 return 1
     if warning:
         out["warning"] = warning
+    save_resolve(out)
     emit(out)
     return 0
 
@@ -1671,6 +1997,7 @@ def resolved(hit: dict, rule: str, expect_ref: str | None, agents: list[dict],
     out = {"status": "ok", "name": hit["name"], "ref": hit["ref"], "to": send_to(hit, agents), "rule": rule}
     if warning:
         out["warning"] = warning
+    save_resolve(out)
     emit(out)
     return 0
 
@@ -1702,15 +2029,20 @@ def pick_exact(agents: list[dict], name, rule: str, expect_ref: str | None = Non
 
 def cmd_resolve(args) -> int:
     pdir = project_dir(args.project)
+    global RESOLVE_CTX
+    hub = None
+    if not args.hub:
+        # hub → sub（brief / relay）。送るのは hub だけ（sub の report の通知は --hub）
+        hub = require_hub(pdir, args.session_id)
+        RESOLVE_CTX = {"pdir": pdir, "session": args.session}
+        # 決まらない・送らない結果（unresolved・needs_lead・auto_limit・parse_failed・下の入力の誤り）の後に、
+        # 前の送信の宛先を record が引き継がないよう、先に消す
+        clear_resolve()
     config = load_config(pdir)
     if args.session is not None and not args.session.strip():
         raise HubError(2, "--session が空")
     if args.ref is not None and not REF_RE.fullmatch(args.ref):
         raise HubError(2, "--ref は ListAgents の [ref]（英数字）")
-    hub = None
-    if not args.hub:
-        # hub → sub（brief / relay）。送るのは hub だけ（sub の report の通知は --hub）
-        hub = require_hub(pdir, args.session_id)
     if args.hub and args.lead:
         raise HubError(2, "--lead は hub → sub の宛先にだけ付ける")
     # 承認なしに送る PJ では、宛先が決まった後に歯止めを掛ける（--session でも --ref でも）
@@ -1718,7 +2050,7 @@ def cmd_resolve(args) -> int:
     if not args.hub and approval_mode(config)[0] == "auto":
         guard = {"rows": read_jsonl(pdir / "journal.jsonl"), "session": args.session, "lead": args.lead}
     try:
-        agents = load_agents(args.agents_file, args.peer_count)
+        agents = load_agents(args.agents_file, args.peer_count, args.raw)
     except HubError as e:
         emit({"status": "parse_failed", "reason": str(e)})
         return 2
@@ -1856,6 +2188,16 @@ def cmd_report(args) -> int:
     body = load_json_input(args.body_file, "report の本文")
     if not isinstance(body, dict):
         raise HubError(2, "report の本文が JSON のオブジェクトではない")
+    raw = body.get("list_agents")
+    if raw is not None:
+        # 抜き出しを hub.py に任せる形（GitHub issue #328）。name・self_ref・agents・peer_count と一緒には受けない
+        if any(k in body for k in ("name", "self_ref", "agents", "peer_count")):
+            raise HubError(2, "list_agents と name・self_ref・agents・peer_count は一緒に渡さない")
+        try:
+            body.update(parse_list_agents(raw))
+        except HubError as e:
+            emit({"status": "parse_failed", "reason": str(e)})
+            return 2
     # 名前も argv で受けない。作業側の名前は会話の題で、トラッカーの題を写したものになりうる
     my_name = body.get("name")
     problem = name_problem(my_name)
@@ -1879,7 +2221,8 @@ def cmd_report(args) -> int:
     report = {"schema": REPORT_SCHEMA, "session_id": sid, "name": my_name, "project": project,
               "issue": body.get("issue"), "state": body.get("state"), "pr": body.get("pr"),
               "needs_lead": body.get("needs_lead", []), "questions": body.get("questions", []),
-              "follow_ups": body.get("follow_ups", []), "claims": body.get("claims", [])}
+              "follow_ups": body.get("follow_ups", []), "claims": body.get("claims", []),
+              "decisions": body.get("decisions", []), "waiting_prs": body.get("waiting_prs", [])}
     errs = validate_report(report, project, kind)
     if errs:
         raise HubError(2, "report の形が不正: " + "; ".join(errs))
@@ -1928,14 +2271,47 @@ def cmd_report(args) -> int:
 # ---------------------------------------------------------------- hook
 
 
+def shim_path() -> Path:
+    return root() / "bin" / "hub.py"
+
+
+def write_shim() -> Path | None:
+    """版に左右されない呼び口 `<root>/bin/hub.py` を、この hook を動かしている版の hub.py へ向け直す（GitHub issue #328）.
+
+    hub の会話の途中でプラグインの版が上がると、`${CLAUDE_PLUGIN_ROOT}` の絶対パスを毎回書き直すことになった。
+    hub のセッションの hook（SessionStart・PostCompact・UserPromptSubmit）が毎回向け直す（中身が同じなら書かない）ので、
+    hook が新しい版で動いた後はこのパスで新しい版を呼べる。書けなければ None（呼び口が無いだけで hook は止めない）
+    """
+    target = str(Path(__file__).resolve())
+    text = ("#!/usr/bin/env python3\n"
+            "# project-hub の hook が書き直す呼び口。消してもよい（次の hook がまた作る）\n"
+            "import os, sys\n"
+            f"TARGET = {target!r}\n"
+            "os.execv(sys.executable, [sys.executable, TARGET, *sys.argv[1:]])\n")
+    path = shim_path()
+    try:
+        if path.is_file() and path.read_text(encoding="utf-8") == text:
+            return path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # 一時名は pid 付き（同じマシンの別の hub のセッションの hook と同時に書いても、互いの一時ファイルを奪わない）
+        tmp = path.with_name(f".hub.py.{os.getpid()}.tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except (OSError, ValueError):  # ValueError: 壊れた呼び口の読み取り（UnicodeDecodeError）
+        return None
+    return path
+
+
 def resume_notice(project: str, resumed_from: str) -> str:
     return (f"## project-hub: PJ「{cell(project)}」の hub をこのセッションへ付け替えた\n\n"
             f"hub の会話を開き直して session_id が変わったため（前の session_id: {resumed_from}）。"
             "journal に takeover（reason: resume）を残した。`takeover` は要らない。lead に 1 行で知らせる")
 
 
-def inject_text(pdir: Path, config: dict, resumed_from: str | None = None) -> str:
+def inject_text(pdir: Path, config: dict, resumed_from: str | None = None, shim: Path | None = None) -> str:
     out = [f"## project-hub: このセッションは PJ「{cell(config.get('project'))}」の hub", ""]
+    if shim is not None:
+        out += [f"hub.py の呼び口（版が上がっても同じ）: `python3 \"{shim}\"`", ""]
     if resumed_from:
         out += [resume_notice(config.get("project") or pdir.name, resumed_from), ""]
     reflected = 0
@@ -2058,9 +2434,11 @@ def cmd_inject(args) -> int:
     if not isinstance(sid, str) or not sid:
         return 0
     blocks = []
-    for pdir, config, resumed_from in hub_projects(sid):
+    projects = hub_projects(sid)
+    shim = write_shim() if projects else None
+    for pdir, config, resumed_from in projects:
         try:
-            blocks.append(inject_text(pdir, config, resumed_from))
+            blocks.append(inject_text(pdir, config, resumed_from, shim))
         except (OSError, ValueError) as e:
             print(f"project-hub: {pdir.name} を注入できない（{e}）", file=sys.stderr)
     if not blocks:
@@ -2088,7 +2466,9 @@ def cmd_pending_hint(args) -> int:
     if not isinstance(sid, str) or not sid:
         return 0
     lines, modes, notices = [], set(), []
-    for pdir, config, resumed_from in hub_projects(sid):
+    projects = hub_projects(sid)
+    shim = write_shim() if projects else None
+    for pdir, config, resumed_from in projects:
         if resumed_from:
             notices.append(resume_notice(pdir.name, resumed_from))
         count = pending_count(pdir)
@@ -2096,7 +2476,7 @@ def cmd_pending_hint(args) -> int:
             mode = approval_mode(config)[0]
             modes.add(mode)
             lines.append(f"- PJ「{cell(pdir.name)}」（{mode}）: {count} 件 → "
-                         f"`python3 \"{Path(__file__).resolve()}\" ingest --project '{pdir.name}'`")
+                         f"`python3 \"{shim or Path(__file__).resolve()}\" ingest --project '{pdir.name}'`")
     if lines:
         how = []
         if "auto" in modes:
@@ -2148,6 +2528,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--approval-prefix", default="")
     p.add_argument("--approval-suffix", default="")
     p.add_argument("--living-spec", help="PJ の living spec（.claude/living-specs/<slug>.md）。後から set-living-spec でも結べる")
+    p.add_argument("--tracker-write", choices=TRACKER_WRITE_MODES, default="never",
+                   help="hub がトラッカーに書いてよいか（never: 書かない / with_approval: lead の承認を取って書く）")
     p.add_argument("--approval-mode", choices=APPROVAL_MODES, default="auto",
                    help="送る前の承認の取り方（auto: lead の確認が要る事柄を含まない連絡は承認なしに送る / "
                         "number: 4 桁の番号の打ち返し / phrase: 本文の提示より後の lead の「送って」）")
@@ -2161,6 +2543,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("set-mode", cmd_set_mode, "送る前の承認の方式を切り替える（config の approval.mode）")
     p.add_argument("--mode", choices=APPROVAL_MODES, required=True)
+
+    p = add("set-tracker-write", cmd_set_tracker_write, "hub がトラッカーに書いてよいかを切り替える（config の tracker_write）")
+    p.add_argument("--mode", choices=TRACKER_WRITE_MODES, required=True)
 
     p = add("set-living-spec", cmd_set_living_spec, "PJ の living spec を結ぶ（config の living_spec）")
     p.add_argument("--path", required=True, help="living spec のファイル（.claude/living-specs/<slug>.md）。- で外す")
@@ -2181,13 +2566,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--checked-only", action="store_true")
 
     p = add("record", cmd_record,
-            "brief / relay / start の全文・宛先・送信の結果を journal に残す"
-            "（{\"subject\", \"text\", \"to\", \"error\", \"session\", \"sources\", \"started\"} を stdin の JSON で）")
-    p.add_argument("--kind", choices=("brief", "relay", "start"), required=True)
+            "brief / relay / start の全文・宛先・送信の結果と、トラッカーへの書き込みを journal に残す"
+            "（{\"subject\", \"text\", \"to\", \"error\", \"session\", \"sources\", \"started\", \"waiting_pr\"}"
+            " を stdin の JSON で）")
+    p.add_argument("--kind", choices=("brief", "relay", "start", "tracker"), required=True,
+                   help="tracker はトラッカーへの書き込み（tracker_write が with_approval の PJ だけ）")
     p.add_argument("--result", choices=SEND_RESULTS, required=True)
     p.add_argument("--basis", choices=SEND_BASES,
                    help="承認なしに送った連絡の根拠（lead / source / routine / brief）。source は sources が要る")
     p.add_argument("--body-file", default="-")
+    p.add_argument("--text-file", help="text を JSON に入れずにファイルで渡す")
+    p.add_argument("--from-resolve", action="store_true",
+                   help="直前の resolve が決めた宛先（to・session）を引き継ぐ（送った relay / brief だけ。使うと消える）")
 
     p = add("sent", cmd_sent, "承認なしに届けた連絡（basis の付いた accepted の送信）の一覧")
     p.add_argument("--unseen", action="store_true", help="lead にまだ見せていない分だけ（hub.json の印より後）")
@@ -2199,6 +2589,22 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("reports", cmd_reports, "取り込み済みの report のセッションごとの最新の中身",
             session=False)  # mutation-ok: facts の注記と同じ
     p.add_argument("--session", help="session_id で絞る")
+
+    add("decisions", cmd_decisions, "sub が report で知らせた PJ の決定の一覧", session=False)  # mutation-ok: facts の注記と同じ
+    add("waiting", cmd_waiting, "sub が待っている PR と、マージを知らせ済みか", session=False)  # mutation-ok: facts の注記と同じ
+
+    p = add("todo", cmd_todo, "hub 自身の残作業（--add は stdin の {\"text\", \"source\"}・--done <id>・既定は未完了の一覧）")
+    action = p.add_mutually_exclusive_group()
+    action.add_argument("--add", action="store_true")
+    action.add_argument("--done", help="終えた残作業の id（T1 など）")
+    p.add_argument("--all", action="store_true", help="一覧に終えたものも含める")
+    p.add_argument("--body-file", default="-")
+
+    p = add("close-sub", cmd_close_sub,
+            "sub を閉じる前の確かめ（最新の report が done か・会話の ID）。--result で閉じた結果を journal に残す")
+    p.add_argument("--session", required=True, help="閉じる sub の登録の session_id")
+    p.add_argument("--result", choices=("accepted", "failed"), help="閉じた結果（付けなければ確かめるだけ）")
+    p.add_argument("--error", help="--result failed の理由")
 
     p = add("snapshot", cmd_snapshot, "外部の状態を source ごとに snapshot.json へ（data は stdin の JSON）")
     p.add_argument("--source", required=True, help="tracker / prs など")
@@ -2218,7 +2624,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("presence", cmd_presence, "ListAgents と登録を突き合わせて absent_since を付け外しする")
     p.add_argument("--agents-file", default="-")
-    p.add_argument("--peer-count", type=int, required=True, help="見出し「Peer sessions (N)」の N")
+    p.add_argument("--peer-count", type=int, help="見出し「Peer sessions (N)」の N（--raw のときは要らない）")
+    p.add_argument("--raw", action="store_true", help="stdin に ListAgents の出力をそのまま渡す（抜き出しは hub.py）")
 
     add("render", cmd_render, "journal・sessions・snapshot から state.md を作り直す")
     add("worktrees", cmd_worktrees, "base の SHA と、登録済みセッションが触っているファイル",
@@ -2236,11 +2643,12 @@ def build_parser() -> argparse.ArgumentParser:
                         f"{AUTO_STREAK_MAX} 回に達していれば送らない（status auto_limit。--session でも --ref でも数える）。"
                         "warning の付く照合は、付けても付けなくても needs_lead で返す")
     p.add_argument("--agents-file", default="-")
-    p.add_argument("--peer-count", type=int, required=True)
+    p.add_argument("--peer-count", type=int, help="見出し「Peer sessions (N)」の N（--raw のときは要らない）")
+    p.add_argument("--raw", action="store_true", help="stdin に ListAgents の出力をそのまま渡す（抜き出しは hub.py）")
 
     p = add("report", cmd_report,
             "作業側の report。stdin の JSON に本文・自分の名前と ref・ListAgents の抜き出し"
-            "（name / self_ref / agents / peer_count）を入れる",
+            "（name / self_ref / agents / peer_count。または ListAgents の出力そのままの list_agents）を入れる",
             project=False)
     p.add_argument("--project", help="brief が渡した PJ。無ければ cwd の repo から決める")
     p.add_argument("--cwd")
@@ -2257,7 +2665,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    # --peer-count は --raw のときだけ要らない。argparse の必須と同じく、usage を stderr に出して exit 2 で止める
+    if getattr(args, "raw", None) is False and args.peer_count is None:
+        parser.error("the following arguments are required: --peer-count（ListAgents の出力をそのまま渡すなら --raw）")
     try:
         return args.func(args)
     except HubError as e:

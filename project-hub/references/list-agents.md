@@ -36,6 +36,14 @@ Peer sessions (3):
 
 ## hub.py に渡す
 
+ふだんは抜き出さずに、ListAgents の出力を**そのまま** stdin で渡す（`resolve` / `presence` は `--raw`、report は JSON の `list_agents`）。hub.py が下の「抜き出すもの」の規則で抜き出し、合わない行があれば推測で埋めずに `parse_failed` を返す（GitHub issue #328）。そのときだけ、Claude が下の規則で抜き出した JSON を渡し直す。
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/hub.py" resolve --project '<PJ>' --session '<session_id>' --raw <<'PROJECT_HUB_<8 桁の乱数>'
+<ListAgents の出力そのまま>
+PROJECT_HUB_<8 桁の乱数>
+```
+
 抜き出した値は argv に載せず、JSON にして stdin で渡す（名前は他のセッションが付けた文字列で、`$`・`#`・バッククォートを含みうる）。heredoc の区切りは毎回その場で決める `PROJECT_HUB_<8 桁の乱数>` にしてクォートし、名前にその文字列が無いことを確かめる（固定の区切りは、名前がその 1 行を含むと後ろの行がシェルで実行される）。
 
 ```bash

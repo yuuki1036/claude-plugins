@@ -1,5 +1,5 @@
 ---
-description: "project-hub の hub が束ねる PJ の sub（作業セッション）から、決まった形の report（hello / in_progress / blocked / ready_for_review / done・PR・lead の判断待ち・hub への質問・follow-up・出典つきの主張）を hub の inbox にファイルで置き、hub には「置いた」とだけ知らせる。 トリガー: 「hub に報告」「hub に report」「hub に hello」「report を置いて」「/project-hub:report」"
+description: "project-hub の hub が束ねる PJ の sub（作業セッション）から、決まった形の report（hello / in_progress / blocked / ready_for_review / done・PR・lead の判断待ち・hub への質問・follow-up・出典つきの主張・決まったこと・待っている PR）を hub の inbox にファイルで置き、hub には「置いた」とだけ知らせる。 トリガー: 「hub に報告」「hub に report」「hub に hello」「report を置いて」「/project-hub:report」"
 user_invocable: true
 allowed-tools:
   - Bash

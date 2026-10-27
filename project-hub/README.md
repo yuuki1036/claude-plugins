@@ -20,7 +20,10 @@
 /project-hub:hub status           # report を取り込み、sub・Issue・PR の表、自動で送った連絡、止まっている箇所を出す
 /project-hub:hub relay            # lead の指示や hub の連絡を sub へ送る（送る直前に宛先を引き直す）
 /project-hub:hub fact             # hub が確かめた事実を出典つきで残す
+/project-hub:hub todo             # hub 自身の残作業を足す・終える・一覧する
+/project-hub:hub close-sub <Issue> # done を報告した sub を閉じる（Desktop の archive）
 /project-hub:hub mode <方式>      # 送る前の承認の方式を切り替える（auto / number / phrase）
+/project-hub:hub tracker-write <never|with_approval> # hub がトラッカーに書いてよいか（書くときは毎回 lead の承認を取る）
 /project-hub:hub living-spec <path> # PJ の living spec を結ぶ（state.md にパスが出る）
 /project-hub:hub takeover         # 別のセッションを hub にする（Desktop で同じ会話を開き直しただけなら、確かめられれば自動で引き継ぐ）
 /project-hub:hub close            # PJ を閉じる
@@ -32,7 +35,8 @@ brief を経ずに始めた sub（issue-workflow の `start` など）も、cwd 
 
 ## 連絡の形
 
-- **sub → hub**: report の本文は hub の inbox にファイルで置き、SendMessage では「置いた」とだけ知らせる。通知が届かなくても、hub の次の `status` で取り込まれる。ListAgents の抜き出しが自己検査に合わなければ、何も書かずに止まる。hub に聞きたいことは `questions`、lead の判断が要ることは `needs_lead` に書く
+- **sub → hub**: report の本文は hub の inbox にファイルで置き、SendMessage では「置いた」とだけ知らせる。通知が届かなくても、hub の次の `status` で取り込まれる。ListAgents の抜き出しが自己検査に合わなければ、何も書かずに止まる。hub に聞きたいことは `questions`、lead の判断が要ることは `needs_lead`、sub の会話で決まったことは `decisions`（節目を待たずに置く）、マージを待っている PR は `waiting_prs` に書く。ListAgents の出力はそのまま渡せば hub.py が抜き出す
+- **外に出る文**: repo の docs・トラッカー・PR・コミットメッセージには hub・lead・sub の語を書かず、決定は日付で書く。relay の `[lead の言葉]` は lead の発言の引用だけにし、hub の説明は `[hub の補足]` の段に分ける
 - **hub → sub**: 本文を SendMessage で送り、送った全文・宛先・送信の結果・根拠（`basis`）を hub の journal に残す
 - **宛先**: SendMessage の宛先は名前だけで、セッション ID は使えない（2026-10-21 に実測）。送る直前に毎回 ListAgents を引き、登録名・登録した時の ref（改名しても変わらない）・Issue ID のどれかで 1 件に決まったときだけ、その行の今の名前へ送る。0 件・2 件以上・ListAgents の出力を解析できないときは送らずに lead に出す
 - 判断の経緯: `.claude/adr/20261021154740-worker-to-hub-report-file-inbox-and-name-lookup.md` / `.claude/adr/20261025152955-project-hub-auto-relay-without-lead-approval.md`（このリポジトリ内）
@@ -218,6 +222,9 @@ ${PROJECT_HUB_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/project-hub}/
     inbox/<ts>-<session_id>.json sub の report（一時名で書いてから rename）
     inbox/done/                取り込み済みの report
     inbox/invalid/             取り込めなかった report（版のずれ・壊れたファイル。消さずに退避）
+    todos.jsonl                hub 自身の残作業（add / done の追記のみ）
+    last_resolve.json          直前の ok の resolve の宛先（record --from-resolve が使って消す）
+  bin/hub.py                   版に左右されない呼び口（hub のセッションの hook が、動いている版へ向けて書き直す）
 ```
 
 データはマシンごとに置く。マシンをまたいで 1 つの hub を共有しない。
@@ -235,9 +242,9 @@ sub・ListAgents・トラッカー由来の文面（report の本文・fact の�
 
 ## 入っている範囲
 
-入っているもの: 状態ファイル・`hub` と `report` と `hub-living-spec` の skill・living spec（`living-spec` と `living-spec-maintain` の skill。旧 living-spec-workflow）・注入 hook・未取り込みの知らせ（UserPromptSubmit）・sub への紐付けの案内（段階 ①）、自動の連絡・`start`・`mode`・report の `questions`（段階 ②a）。
+入っているもの: 状態ファイル・`hub` と `report` と `hub-living-spec` の skill・living spec（`living-spec` と `living-spec-maintain` の skill。旧 living-spec-workflow）・注入 hook・未取り込みの知らせ（UserPromptSubmit）・sub への紐付けの案内（段階 ①）、自動の連絡・`start`・`mode`・report の `questions`（段階 ②a）、report の `decisions` と `waiting_prs`・待っている PR のマージの知らせ・hub の残作業（`todo`）・sub を閉じる（`close-sub`）・トラッカーへの承認つきの書き込み（`tracker-write`）・ListAgents の生の出力の受け取り。
 
-まだ無いもの（段階 ② の残りと ③。使ってから設計する）: マージの連鎖、判断の波及と living spec への受け渡しの機械化（いまは `hub-living-spec` の決まりに沿って hub が手で行う）、status への living spec の数字の機械表示（いまは status の手順で hub が `/project-hub:living-spec status` を見る）、決定と経緯（journal・facts）の ID による機械的な紐付け、意見の台帳、送る前の文面の検査。
+まだ無いもの（段階 ② の残りと ③。使ってから設計する）: マージの連鎖（待っている PR の知らせを除く）、判断の波及と living spec への受け渡しの機械化（いまは `hub-living-spec` の決まりに沿って hub が手で行う）、status への living spec の数字の機械表示（いまは status の手順で hub が `/project-hub:living-spec status` を見る）、決定と経緯（journal・facts）の ID による機械的な紐付け、意見の台帳、送る前の文面の検査。
 
 ## install
 
@@ -254,8 +261,8 @@ claude plugin install /path/to/claude-plugins/project-hub
 ## 依存
 
 - `python3`（必須）: 状態ファイルの読み書きと宛先の照合（`scripts/hub.py`）
-- `gh`（任意）: tracker が GitHub のときの Issue と PR の取得
-- Linear MCP（任意）: tracker が Linear のときの Issue の取得
+- `gh`（任意）: tracker が GitHub のときの Issue と PR の取得。`tracker_write: with_approval` の PJ では Issue の起票・本文の直しにも使う
+- Linear MCP（任意）: tracker が Linear のときの Issue の取得。`tracker_write: with_approval` の PJ では Issue の保存（`save_issue`）にも使う
 - issue-workflow の local backend（任意）: tracker が local のときの Issue ファイル（`hub.py` が直接読む。プラグインとしての依存は無い）
 
 - doc-freshness（任意・0.4.0 以降）: living spec のファイル単位の鮮度 lint を委譲する。未導入でも living spec は動く
