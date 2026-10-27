@@ -3,7 +3,7 @@ id: 20261026-project-hub-living-spec-integration
 title: project-hub に living spec を統合する
 status: approved
 phase: current
-last-validated: 2026-10-26
+last-validated: 2026-10-27
 supersedes: []
 superseded-by: null
 issue: "GitHub issue #322"
@@ -40,6 +40,14 @@ ADR-20261026090521 を参照。living spec がある PJ では、決定（living
    - living-spec skill の `--spec` は、`/` を含み `.md` で終わる値をファイルのパスとして受ける（format-spec 0 節）。hub はこの経路で config のパスを渡す。cwd から探させると、hub の cwd が living spec のある repo でない・worktree にいる・repo に living spec が複数ある、のどれかで別のファイルを見る（self-review で検出）
 4. **決まり**: `hub-living-spec` を「統合までの橋渡し」から「living spec のある PJ の決まり」に書き直す（別プラグインの版の名指しを外す）。hub の status の手順に、config に `living_spec` があれば `/project-hub:living-spec status` も見ることを足す
 5. **周辺**: eval のケース（`evals/cases/living-spec-workflow.yaml` → `project-hub-living-spec.yaml`、`expected_skill` を `project-hub:*` に）、doc-freshness の説明（living spec の持ち主の名前）、一覧（CLAUDE.md・INDEX.md）
+
+## 進捗をタイムラインへ書く（GitHub issue #333・2026-10-27）
+
+- 決定（Decision・OQ・仕様表）は今どおり lead が決めたときだけ書く。進捗（PR のマージ・sub の done・hub の fact で確かめた事実・リリースの段取りの完了）は、hub が lead に聞かずにタイムラインへ書き、そのターンで lead に 1 行で伝える。進捗は確かめた事実で lead の判断を含まず、聞いても答えは毎回「書いて」になる（実際の PJ で lead から「自動でやってくれないの？」と返された）
+- `.claude/designs/20261021-project-hub-plugin.md` の「進捗を living spec に書かない」は、決定ログに進捗を足して膨らんだ失敗への対策だった。書く先をタイムラインに限れば決定ログは膨らまないので、その方針はタイムラインには掛けない
+- 書き足す口として living-spec skill に `timeline` サブコマンドを足し、項目の形を `- <日付> <起きたこと>（出典: …）` に固定した（format-spec 1.1 節）。タイムラインは散文セクションのままで maintain の段 1-3 は読まない（既存の手書きの行を Critical にしないため）
+- 出典は PR とマージの SHA・report のファイル名・hub fact の ID で、journal・facts と突き合わせる。journal から書き起こす案は採らなかった（journal には relay・brief など進捗でない行が多く、どれを書くかの選別が結局 hub の判断になる）
+- sub の report の `decisions` は「sub で決まったこと」としてタイムラインに残してよいが、Decision にするかは lead に聞く
 
 ## 検討した代替案
 
