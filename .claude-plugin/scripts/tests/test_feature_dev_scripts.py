@@ -298,12 +298,35 @@ class SummaryReadingGuideTest(unittest.TestCase):
         self.assertIn("--base <ref>", front, "review-guide の引数から --base が消えた")
 
     def test_falls_back_to_plain_summary(self):
-        """code-review が無効・「出さない」・呼び出しの失敗のときは従来のサマリを出す."""
+        """code-review が無効・呼び出しの失敗のときだけ従来のサマリを出す。読み合わせは必須で、利用者の選択では外れない."""
         p7 = self.phase7()
         fallback = p7[p7.index("**従来のサマリ**"):]
-        for cond in ("code-review が無効", "「出さない」", "呼び出しが失敗"):
+        for cond in ("code-review が無効", "呼び出しが失敗"):
             self.assertIn(cond, fallback)
+        for opt_out in ("「出さない」", "「表示しない」"):
+            self.assertNotIn(opt_out, fallback.split("\n")[0], f"{opt_out} で読み合わせを飛ばして従来のサマリへ進む")
+        p7_ask = p7[p7.index("3. **読み合わせの案内**"):p7.index("4. **読み合わせで入った修正を self-review に通す**")]
+        options = next(l for l in p7_ask.splitlines() if l.strip().startswith("- options:"))
+        self.assertEqual(re.findall(r'"([^"]+)"', options), ["表示する (Recommended)", "表示しない"],
+                         "読み合わせを外す選択肢が案内に戻っている")
+        self.assertNotIn("従来のサマリ", p7_ask, "案内の選択から従来のサマリへ進む道がある")
         self.assertIn("Files modified", fallback)
+
+    def test_hidden_guide_runs_the_same_walkthrough(self):
+        """選ばせるのは表示するかだけ。表示しない回も `--walkthrough` で呼び、`--hide-guide` を足す."""
+        p7 = self.phase7()
+        ask = p7[p7.index("3. **読み合わせの案内**"):p7.index("4. **読み合わせで入った修正を self-review に通す**")]
+        self.assertIn('"表示する (Recommended)"', ask)
+        self.assertIn('"表示しない"', ask)
+        call = next(l for l in ask.splitlines() if "`--base <BASE>` 付きで呼ぶ" in l)
+        sentences = [s for s in call.split("。") if "`--base <BASE>` 付きで呼ぶ" in s or "`--base` を付けずに" in s]
+        self.assertEqual(len(sentences), 2, f"base 付き・base なしの呼び方を拾えていない: {sentences}")
+        for sentence in sentences:
+            self.assertIn("`--hide-guide`", sentence, f"表示しない回に --hide-guide を渡さない呼び方がある: {sentence}")
+        guide = self.GUIDE.read_text()
+        self.assertIn("`HIDE_GUIDE`（1 なら `WALKTHROUGH` も 1 にする）", guide, "--hide-guide が WALKTHROUGH を立てない")
+        self.assertIn("省くのは**表示とターンの区切りだけ**", guide, "--hide-guide が工程を省いてよいことになっている")
+        self.assertIn("1.〜4. はすべて同じに行い", guide, "--hide-guide の回に精読の読解・答え・修正を省いてよいことになっている")
 
     COMMAND = REPO / "code-review" / "commands" / "review-guide.md"
     FORMAT = REPO / "code-review" / "references" / "review-guide-format.md"
@@ -325,6 +348,7 @@ class SummaryReadingGuideTest(unittest.TestCase):
             text = path.read_text()
             front = text[:text.index("\n---", 4)]
             self.assertIn("--walkthrough", front, f"{path.name} の引数から --walkthrough が消えた")
+            self.assertIn("--hide-guide", front, f"{path.name} の引数から --hide-guide が消えた")
 
     def second_review_branches(self) -> dict[str, str]:
         p7 = self.phase7()

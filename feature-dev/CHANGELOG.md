@@ -5,6 +5,15 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.0] - 2026-10-27
+
+### Changed
+
+- **Phase 7 の読み合わせ（`code-review:review-guide --walkthrough`）を必須にした。利用者に聞くのはガイドを表示するかだけ**。
+  精読を選び、レビュー観点に答え、直せるものを直す工程がコードの質を上げるので、ガイドを読まない回にも通す。
+  「表示しない」を選んだ回は `--hide-guide` を付けて同じ工程を表示せずに通し、締めだけを受け取る。読み合わせで入った修正を 2 回目の self-review に通す流れはどちらも同じ。
+  従来のサマリは code-review が無効か、呼び出しが失敗した回だけになった
+
 ## [2.26.2] - 2026-10-26
 
 ### Changed
