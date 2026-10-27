@@ -57,17 +57,19 @@ Architecture Decision Record (ADR) を append-only で蓄積するスキル。�
 
 1. `.claude/adr/*.md` を Glob
 2. **0 件** → 「ADR がまだありません」と報告して終了
-3. 各ファイルの frontmatter を Read で解析し、`id` / `title` / `status` / `phase` / `last-validated` を抽出
+3. 各ファイルの frontmatter を Read で解析し、`id` / `title` / `status` / `phase` / `last-validated` / `supersedes` / `superseded-by` を抽出
 4. **id 降順**（新しい順）で表に整形:
 
 ```
 ## ADR 一覧（N 件）
 
-| id | title | status | phase | last-validated |
-|----|-------|--------|-------|----------------|
-| 20260529143012 | API バージョニング方針 | accepted | current | 2026-05-29 |
-| 20260520091500 | 認証方式の選定 | superseded | superseded | 2026-05-29 |
+| id | title | status | phase | last-validated | 置き換え |
+|----|-------|--------|-------|----------------|----------|
+| 20260529143012 | API バージョニング方針 | accepted | current | 2026-05-29 | ← 20260520091500 |
+| 20260520091500 | 認証方式の選定 | superseded | superseded | 2026-05-29 | → 20260529143012 |
 ```
+
+> 置き換えの列: `superseded-by` があれば `→ <id>`（置き換え先）、`supersedes` があれば `← <id>`（置き換え元。複数なら `, ` で並べる）。両方あれば `← <id> / → <id>` の順で並べ、どちらも無ければ `-`。値は引用符の有無（`"20261021140738"` と `20261021140738`）を区別せず id として読み、`null` と `[]` は無いものとして扱う。鎖をたどるときは `→` を追えば今の決定に着く
 
 > id は `YYYYMMDDhhmmss`（T 区切りなし）。ファイル名の timestamp と同一値にする（`references/naming.md`）。
 

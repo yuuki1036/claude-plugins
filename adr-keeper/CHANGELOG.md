@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.4.3] - 2026-10-27
+
+### Added
+
+- **`list` の表に置き換えの列を足した**（#84）。`supersedes` を `← <id>`、`superseded-by` を `→ <id>` で出し、
+  `→` を追えば supersede の鎖の今の決定に着く。timeline（Mermaid のグラフ）は、鎖が短いうちは
+  `superseded-by` をたどれば足りるので作らない
+
 ## [0.4.2] - 2026-09-26
 
 ### Changed
