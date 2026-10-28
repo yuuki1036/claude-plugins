@@ -107,6 +107,25 @@ class TestCopy(SyncTestCase):
         res = run(self.wt)
         self.assertEqual(lines(res.stdout, "copied"), [])
         self.assertEqual(lines(res.stdout, "unchanged"), ["1"])
+        self.assertEqual(lines(res.stdout, "kept_main") + lines(res.stdout, "overwritten"), [])
+
+    def test_a_copied_file_is_reported_once(self):
+        self.write(self.wt, ".claude/indie/a/knowledge/k.md", "new\n")
+        for args in ((), ("--dry-run",)):
+            with self.subTest(args=args):
+                (self.main / ".claude/indie/a/knowledge/k.md").unlink(missing_ok=True)
+                res = run(self.wt, *args)
+                self.assertEqual(lines(res.stdout, "copied"), [".claude/indie/a/knowledge/k.md"])
+                self.assertEqual(lines(res.stdout, "kept_main"), [])
+                self.assertEqual(lines(res.stdout, "unchanged"), ["0"])
+
+    def test_a_directory_in_main_at_the_same_path_is_kept(self):
+        self.write(self.wt, ".claude/indie/a/x", "file\n")
+        (self.main / ".claude/indie/a/x").mkdir(parents=True)
+        res = run(self.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(lines(res.stdout, "kept_main"), [".claude/indie/a/x"])
+        self.assertTrue((self.main / ".claude/indie/a/x").is_dir())
 
 
 class TestConflict(SyncTestCase):
@@ -120,6 +139,13 @@ class TestConflict(SyncTestCase):
         self.assertEqual(len(backup), 1)
         self.assertEqual((Path(backup[0]) / ".claude/indie/a/issues/X-1.md").read_text(), "old\n")
         self.assertFalse(Path(backup[0]).is_relative_to(self.main.resolve() / ".claude"))
+
+    def test_same_mtime_keeps_main(self):
+        self.write(self.main, ".claude/indie/a/issues/X-1.md", "main\n", mtime=1_500_000)
+        self.write(self.wt, ".claude/indie/a/issues/X-1.md", "wt\n", mtime=1_500_000)
+        res = run(self.wt)
+        self.assertEqual(lines(res.stdout, "kept_main"), [".claude/indie/a/issues/X-1.md"])
+        self.assertEqual((self.main / ".claude/indie/a/issues/X-1.md").read_text(), "main\n")
 
     def test_main_newer_is_kept(self):
         self.write(self.main, ".claude/indie/a/issues/X-1.md", "main\n", mtime=2_000_000)
@@ -137,12 +163,20 @@ class TestConflict(SyncTestCase):
         self.assertEqual((self.main / ".claude/indie/events.jsonl").read_text(),
                          '{"a":1}\n{"b":2}\n{"c":3}\n')
 
+    def test_jsonl_into_an_empty_main_file_has_no_leading_blank_line(self):
+        self.write(self.main, ".claude/indie/events.jsonl", "")
+        self.write(self.wt, ".claude/indie/events.jsonl", '{"c":3}\n')
+        res = run(self.wt)
+        self.assertEqual(lines(res.stdout, "appended"), [".claude/indie/events.jsonl 1"])
+        self.assertEqual((self.main / ".claude/indie/events.jsonl").read_text(), '{"c":3}\n')
+
     def test_jsonl_with_no_new_lines_is_unchanged(self):
         self.write(self.main, ".claude/indie/events.jsonl", '{"a":1}\n{"b":2}\n')
         self.write(self.wt, ".claude/indie/events.jsonl", '{"a":1}\n')
         res = run(self.wt)
         self.assertEqual(lines(res.stdout, "appended"), [])
         self.assertEqual(lines(res.stdout, "unchanged"), ["1"])
+        self.assertEqual(lines(res.stdout, "kept_main") + lines(res.stdout, "overwritten"), [])
         self.assertEqual((self.main / ".claude/indie/events.jsonl").read_text(), '{"a":1}\n{"b":2}\n')
 
 
@@ -181,6 +215,12 @@ class TestSkip(SyncTestCase):
 
     def test_clean_tracked_file_is_not_reported(self):
         res = run(self.wt)
+        self.assertEqual(lines(res.stdout, "uncommitted"), [])
+
+    def test_an_untracked_file_is_copied_not_reported_as_uncommitted(self):
+        self.write(self.wt, ".claude/adr/new.md", "adr\n")
+        res = run(self.wt)
+        self.assertEqual(lines(res.stdout, "copied"), [".claude/adr/new.md"])
         self.assertEqual(lines(res.stdout, "uncommitted"), [])
 
     def test_renamed_tracked_file_reports_new_path_only(self):
