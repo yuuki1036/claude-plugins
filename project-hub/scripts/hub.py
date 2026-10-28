@@ -630,7 +630,7 @@ def parse_list_agents(text: str) -> dict:
     heading, section = None, None
     for line in lines[first + 1:]:
         if not line.strip():
-            section = None if section != "peers" else "peers_end"
+            section = None
             continue
         if not line.startswith(" "):
             # 見出しの行。Peer sessions 以外（Subagents など）の下の行は入れない
@@ -662,7 +662,7 @@ def parse_list_agents(text: str) -> dict:
     return out
 
 
-def load_agents(arg: str, peer_count: int | None, raw: bool = False) -> list[dict]:
+def load_agents(arg: str, peer_count: int | None, raw: bool) -> list[dict]:
     if raw:
         return parse_list_agents(read_body(arg))["agents"]
     if peer_count is None:
@@ -1157,7 +1157,7 @@ def cmd_record(args) -> int:
                        tzinfo=dt.timezone.utc)).total_seconds()
         except ValueError:
             age = None
-        if age is None or age > RESOLVE_TTL:
+        if age is None or age > RESOLVE_TTL:  # mutation-ok: ts は秒単位で age は小数を持つので、ちょうど TTL に一致する回は作れない
             raise HubError(2, f"引き継ぐ resolve の結果が古い（{RESOLVE_TTL // 60} 分を超えた）。宛先を引き直してから送る")
         body["to"], body["session"] = last.get("to"), last.get("session")
     subject, text, to, error = body.get("subject"), body.get("text"), body.get("to"), body.get("error")
@@ -1214,7 +1214,7 @@ def cmd_record(args) -> int:
             row[key] = value
     journal_append(pdir, args.kind, subject, row)
     if args.from_resolve:
-        resolve_path.unlink(missing_ok=True)
+        resolve_path.unlink(missing_ok=True)  # mutation-ok: 直前の read_obj で読めたファイル。消えているのは別プロセスとの競合のときだけ
     emit({"kind": args.kind, "subject": subject, "result": args.result, "basis": args.basis})
     return 0
 
@@ -2292,7 +2292,7 @@ def write_shim() -> Path | None:
     try:
         if path.is_file() and path.read_text(encoding="utf-8") == text:
             return path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(exist_ok=True)  # 親の root は PJ の dir を持つので必ずある
         # 一時名は pid 付き（同じマシンの別の hub のセッションの hook と同時に書いても、互いの一時ファイルを奪わない）
         tmp = path.with_name(f".hub.py.{os.getpid()}.tmp")
         tmp.write_text(text, encoding="utf-8")

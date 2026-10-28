@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.9.2] - 2026-10-28
+
+### Changed
+
+- hub.py の、挙動に効いていなかった書き方を整理した（ListAgents の抜き出しで空行の後に入れていた読まれない節の名前・呼び出し元が必ず渡す `load_agents` の `raw` の既定値・親が必ずある呼び口の dir の `parents=True`）。挙動は変えていない。ちょうど TTL に一致する回を作れない resolve の古さの境界と、直前に読めたファイルの削除の `missing_ok` には、等価変異である理由を同じ行に書いた（GitHub issue #338）
+
 ## [0.9.1] - 2026-10-28
 
 ### Fixed
