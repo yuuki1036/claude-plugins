@@ -3,7 +3,7 @@ id: 20260722-issue-workflow-unification
 title: linear/indie ワークフロープラグインの単一プラグイン統合（backend 分岐）
 status: approved
 phase: current
-last-validated: 2026-08-28
+last-validated: 2026-10-28
 supersedes: []
 superseded-by: null
 issue: 94
@@ -78,6 +78,8 @@ issue-workflow/
 2. indie のみ有効 → `BACKEND=local`, `DATA_DIR=.claude/indie`。linear のみ有効 → `BACKEND=linear`, `DATA_DIR=.claude/linear`
 3. **両方とも有効（両方に slug dir がある）** → エラーとして停止し、片寄せを案内（現行の「排他警告」から昇格）。**片方が空 dir・残骸の場合は停止しない**: 警告を出しつつ有効側を採用して継続する（design review 反映: 残骸 dir 1 つで全機能停止する可用性回帰を防ぐ。判定述語 1 が「非空」を要求するため、`.gitkeep` や消し忘れの空 dir はそもそも有効 backend にならない）
 4. どちらも無効 → init への誘導を表示して終了
+
+> **2026-10-28 追記**: その後、両方とも無効のときに、linked worktree の中ならメインのチェックアウト側で同じ述語を確かめ直す fallback を足した（`f0bdff1` / GitHub issue #280。DATA_DIR はメイン側の絶対パスになる）。手順の正本は `.claude-plugin/lib/backend-detect.md` に移り、10 スキルの `BACKEND-DETECT` 区間へ複製して `validate_plugin_quality.py` が同期を検証する（`c90d3af`）。hook 側は `issue-workflow/hooks/lib/detect-backend.sh`。今の手順はこれらを読むこと
 
 以後の本文は `DATA_DIR` / `BACKEND` を使って記述する。sed 4 ルールで吸収されていた語彙差分（`.claude/indie` ↔ `.claude/linear` 等）はこの変数化で消える。
 
@@ -156,6 +158,11 @@ issue-workflow/
 
 ## 未解決事項 (open)
 
+> **2026-10-28 追記**: 3 件とも決着した。下は設計時点の記録として残す。
+> - 1 は案 (b)。`evals/cases/issue-workflow.yaml` は 20 ケース
+> - 2 は有力案どおり。`.claude-plugin/lib/backend-detect.md` の手順 4 が、両 dir の slug 一覧・issues 件数・最終更新日を並べて片寄せを案内する。hook（`inject-rules.sh`）が注入するのは片寄せの案内だけ
+> - 3 は現名の `linear-maintain` を維持した
+
 1. **eval ケースの統合粒度**: (a) 26 ケースを機械的に改名移送 / (b) backend 使い分けフレーズが不要になった分を削って再設計。有力: (b) — 「Linear で」「ローカルで」の使い分けテストが不要になるため 20 ケース前後に減らせる見込み。確定タイミング: 移行手順 4 の着手時
 2. **両 dir 同居（両方有効）時のエラー文言と復旧手順**: 片寄せの具体手順（どちらを正にするかの判断材料）をエラーに含めるか。有力: 含める（issue 件数と最終更新日を並べて提示）。確定タイミング: backend 検出の実装時
 3. **linear-maintain の改名**: linear 固有スキルなので backend 名を含む現名維持が有力（「linear と同期する」機能の名前として正確）。対抗案は `sync`。確定タイミング: 移行手順 2 の着手時
@@ -187,5 +194,5 @@ issue-workflow/
   hash の追記は本 doc が §「実装ブリッジ」で課していた義務だが 11 日間漏れていた（#184 で補完）
 - 関連 spec: なし
 - 関連 ADR: [[20260722164106-backend-branch-over-plugin-mirror]]（ミラー規約廃止の決定）
-- 関連 design doc: [[20260708-spec-routing-ssot]]（routing-axes 消費サイトが 4→3 に減る影響あり）
+- 関連 design doc: [[20260708-spec-routing-ssot]]（routing-axes 消費サイトが 4→3 に減る影響あり。2026-10-28 追記: `validate_plugin_quality.py` の `ROUTING_AXES_CONSUMERS` は統合前 3・統合後 2）
 - design review: 2026-07-22 実施（minimal / pragmatic / risk 3 視点 + 独立反証。MAJOR 6 / MINOR 3 を全件反映済み）

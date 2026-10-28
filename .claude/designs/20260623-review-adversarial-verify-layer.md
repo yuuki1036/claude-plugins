@@ -3,7 +3,7 @@ id: 20260623-review-adversarial-verify-layer
 title: review系スキルへの反証レイヤー（adversarial verification）導入
 status: approved
 phase: current
-last-validated: 2026-08-28
+last-validated: 2026-10-28
 supersedes: []
 superseded-by: null
 issue: null
@@ -17,6 +17,15 @@ tags: [code-review, false-positive, adversarial-verify, scoring]
 > 2026-06-23 design-review（minimal/clean/pragmatic/risk 4 視点）の findings を反映済み。主な変更: Phase 番号を相対位置で定義 / 二重計上の排他 / 高 severity 非削除の機械保証点を明示 / specialist 除外 / 反証軸を独立性に効くものへ絞り既存自己検算を再利用 / MAJOR drop の付録保全。
 >
 > **実装済み（code-review 2.26.0、phase: current）**: scoring-guide.md / reviewer-prompts.md `## 7` / triage-guide.md `## 9` / review SKILL Phase 5.8 / self-review SKILL Phase 4.8 / plugin.json userConfig + 両 payload。静的検証（validate-ssot / validate_plugin_quality / claude plugin validate）通過。残: 既知偽陽性 diff での runtime スモーク（高 severity 非削除の目視）と event bus 計測による verdict→delta チューニング（open 参照）。
+>
+> **2026-10-28 追記（鮮度の読み直し）**: 方式の核（非対称ゾーン・反証者の独立性・高 severity は消さず係争注記・specialist 除外・新 agent なし）は今も成り立つ。次の点は本文と今の実装が違う。本文は設計時点の記録として残し、今の挙動は正本（`code-review/references/triage-dynamic-gates.md` の `## 9`、`references/scoring-guide.md` の verdict 反映、プロンプトは `references/prompts/adversarial-verify.md`）を読むこと。
+> - **Phase 番号と実行順**: 冷や読み skeptic が 5.8 / 4.8 に入り、反証は review の Phase 5.9 / self-review の Phase 4.9 になった。反証は meta-reviewer（5.6 / 4.6）と同じ wave で発行し、観点カバレッジの事後突合（5.7 / 4.7）は反証の後に回る。meta が足した指摘は、ゲートに当たれば追加のバッチ 1 体で反証する
+> - **起動単位**: 指摘ごとに 1 体ではなく、5 件ごとに 1 体（`ceil(対象件数 / 5)`・本体の上限 3 体 / code-review 2.41.0）
+> - **高 severity の保護が広がった**: BLOCKER / CRITICAL の `severity-inflated` も、降格すると報告マトリクスを割るなら severity を据え置いて反証メモを付ける。割らないときだけ 1 段階下げる（2.41.0。旧規約では BLOCKER 60-79 などが降格で黙って消えていた）
+> - **pre-existing / intended の git 判定**: LLM の前段の決定的な判定としては実装されていない。反証エージェントに `git show` / `git blame` の実行を許可し、プロンプトの手順で確かめさせている
+> - **specialist の除外は 5 種**: injection / secret-handling / destructive-op に、input-validation / guardrail-bypass が加わった
+> - **ゲートの例外とスキップ理由**: high-risk surface の指摘は、high でも CRITICAL 70-79 / MAJOR 85-94 を反証の対象に含める。スキップ理由は effort のほかに config / emergency / no-eligible-findings、self-review では scope（`--focus` / `--exclude`）もある。self-review の `--since` だけでは scope に当たらない（#313）
+> - **置き場所**: テンプレは `reviewer-prompts.md` の `## 7` ではなく `references/prompts/adversarial-verify.md`、effort ゲートは `triage-guide.md` の `## 9` ではなく `triage-dynamic-gates.md` の `## 9` にある。本文の行番号は設計時点のもの。実装ブリッジの `claude-meta:component-addition-advisor` は、今の `harness-keeper:component-addition-advisor`
 
 ## TL;DR
 
@@ -213,8 +222,8 @@ verdict 反映ステップ（既存の加減算より前）:
 > |---|---|
 > | 反証エージェントのモデル | **決着**（opus。`triage-dynamic-gates.md` の反証レイヤー節が正本） |
 > | パネル（max で BLOCKER 3 体多数決） | **据え置き**。`design-notes/scoring-rationale.md` が「現行は全 effort で 1 指摘 1 verdict、パネルは event bus 計測後に拡張判断」と明記 |
-> | verdict→delta の数値 | **決着**（実測に基づき確定。`design-notes/scoring-rationale.md` に 19 サンプル / 67 verdict の集計） |
-> | design-review への展開 | **据え置き**（design-notes に言及なし＝着手されていない） |
+> | verdict→delta の数値 | ~~**決着**（実測に基づき確定。`design-notes/scoring-rationale.md` に 19 サンプル / 67 verdict の集計）~~ → 2026-10-28 訂正: **初期値（refuted −40 / uncertain −10 / confirmed は +15 の発火源）のまま**。`scoring-rationale.md` の集計（n=19、のちに n=102）は上流ガード（#114）とバッチ化のロールバック判定の根拠で、delta の値を評価した記録は見当たらない。本文の「20+ 件たまったら調整」の条件は満たしているが、調整はしていない |
+> | design-review への展開 | ~~**据え置き**（design-notes に言及なし＝着手されていない）~~ → 2026-10-28 訂正: design-review は design-doc 0.3.0（2026-07-01）で、独自の Phase 4.5「反証」を持った（この反証レイヤーの移植ではない別実装）。さらに 2026-10-28 から、code-review は diff に含まれる決定系 doc を design-review に委譲して呼ぶ（#334） |
 
 - 反証エージェントのモデル: (a) opus — Pros: reviewer 同等の読解 / Cons: コスト高 (b) sonnet — Pros: 安い / Cons: uncertain 連発の恐れ。現時点 (a) opus が有力（反証は読解の質が直結）。確定タイミング: 実装後に uncertain 率を観測して判断。
 - パネル（max で BLOCKER 3 体多数決）の要否: (a) 初版は全 effort で 1 体 — Pros: 単純・計測先行 / Cons: 1 体の誤却下耐性なし (b) max で 3 体パネル — Pros: 誤却下耐性 / Cons: 計測前は YAGNI。現時点 (a) が有力（1 体の uncertain 率すら未観測、design-review minimal/risk）。確定タイミング: event bus で 1 体の誤却下が観測された後。集計規則は採用案に既述。

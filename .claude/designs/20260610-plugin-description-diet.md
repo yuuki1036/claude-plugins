@@ -3,7 +3,7 @@ id: 20260610-plugin-description-diet
 title: plugin description のダイエットと再発防止
 status: approved
 phase: current
-last-validated: 2026-08-28
+last-validated: 2026-10-28
 supersedes: []
 superseded-by: null
 issue: 183
@@ -112,6 +112,12 @@ Phase 3（機械強制）は `validate_plugin_quality.py` の `check_plugin_desc
 として実装した（`PLUGIN_DESC_CHAR_LIMIT = 400` / 非ブロッキング warning）。
 **リライト後は 1 件も発火しない**ことを実測で確認している — 既存 corpus で鳴り続ける
 warning を入れないのが `docs/rule-placement.md` の要件。
+
+> **2026-10-28 追記（鮮度の読み直し）**: 上の「非ブロッキング warning」と §3・§5 の記述は、今の挙動と次の点で違う。
+> - **実効はブロッキング**: `check_plugin_description_size` は warning を返すだけで exit code を変えない。ただし同じコミット（`e6fa408`）で足した回帰テスト `test_the_repository_itself_is_within_the_limit`（`.claude-plugin/scripts/tests/test_validate_plugin_quality.py`）が、リポジトリ自身の全 plugin.json で warning が 0 件であることを assert する。回帰テストは pre-commit と CI が回すので、400 字を超える description は commit の時点で止まる。§3 の「一時的に長くしたい時も止めない」は成り立たない。上限を動かすときは `PLUGIN_DESC_CHAR_LIMIT` を変える
+> - **Stop hook には出ない**: `machine-layer.sh` は品質検査の出力を rc=1（errors あり）のときだけ拾い、`auto-quality-check.sh` も machine-layer の rc=1 のときだけ通知する。pre-commit も品質検査が rc=0 なら出力を見せない。warning だけの回が見えるのは、スクリプトの直接実行・`/quality-check`・CI のログだけ。§5 とブリッジ 1 の「auto-quality-check 経由で発火することを確認」は満たされておらず、強制は上の回帰テストが担っている
+> - **living-spec-workflow** は 2026-10-26 に deprecated になり（`febd1ee`）、living spec は project-hub に統合された。上の表の 183 字は当時の値で、今の description は deprecated の表示に差し替わっている
+> - §5 とブリッジに残る 160 字は、冒頭の注のとおり 400 と読み替える
 
 ADR 化は見送った。閾値は分布に応じて動かす運用値であり、「覆すコストが大きい判断」という
 ADR の記録価値ゲート（`adr-keeper`）に当たらない。値を動かす理由と手順は本 doc に残す。

@@ -3,7 +3,7 @@ id: 20260624-code-review-doc-substance-perspective
 title: code-review への doc-substance（内容妥当性）レビュー観点の追加
 status: approved
 phase: current
-last-validated: 2026-08-28
+last-validated: 2026-10-28
 supersedes: []
 superseded-by: null
 issue: null
@@ -17,6 +17,13 @@ tags: [code-review, doc-review, perspective, triage, scoring, grounding]
 > **実装済み（code-review 2.27.0、phase: current）**: reviewer-prompts.md `## 3`（doc-substance Focus）/ `## 7`（反証軸 doc 読み替え）/ triage-guide.md（doc-review-mode 行・観点判定表 doc-substance 行・「doc-substance の起動（重要度ゲート）」節）/ scoring-guide.md（explorer +10 流用・≤40 クランプ拡張・git blame ガード付き CRITICAL 昇格）/ plugin.json 2.27.0 + CHANGELOG + marketplace + INDEX 同期。SKILL は triage/reviewer-prompts/scoring に委譲のため本体編集なし。静的検証（validate-ssot / validate_plugin_quality / claude plugin validate）通過。**runtime smoke 実走済み（8 シナリオ全 PASS、独立 reviewer agent ×5 + 決定的トリアージ/scoring）**。smoke 設計・実走で実装の穴を 2 件修正: ① 昇格ガードが「コードが古い→非昇格」で安定コードへの誤記まで殺していた→「別経路/同時変更/intended でのみ非昇格」に修正、② doc-review-mode が doc-substance を無条件併走させ typo PR でも起動→両経路で起動条件を共通化。残: 実 PR での「実質 prose 10 行」閾値・design-review 内挿軽量版のチューニング（open 参照）。
 >
 > 2026-06-24 design-review（minimal / pragmatic / risk 3 視点）の findings を反映済み。主な修正: ゲート指標を「diff 行数比率」→「変更ファイル数比率」に訂正（BLOCKER）/ 反証レイヤーは「specialist 以外全て」でなく effort 別の非対称ゾーン限定だと訂正し偽陽性抑制戦略を再設計（BLOCKER）/ 裏取り報酬を新設 +15 から既存 explorer 裏付け +10 に変更 / 5 種別サブレンズを廃し単一プロンプト化（種別は委譲判定のみに残す）/ effort 別起動制御を追加 / 裏取り CRITICAL 昇格に git blame 検算ガード / grounding explorer の読み取り対象を diff 変更 doc の参照コード ∩ 実在パスに限定 / 観点判定表への登録を実装ブリッジに明記 / userConfig トグルを廃止。
+>
+> **2026-10-28 追記（鮮度の読み直し / GitHub issue #334）**: 実装の後に次が変わった。本文は設計時点の記録として残す。今の挙動は末尾の正本を読むこと。
+> - **決定系 doc の委譲を置き換えた**: 本 doc の A の末尾・B-5・案 C の部分採用・open の「design-review の minimal / risk チェックリストを doc-substance に内挿する軽量版」は、内挿が実装されないまま triage-guide に dormant として書かれていた。#334 で、決定系 doc（パスが `adr(s)/` `rfc(s)/` `decision(s)/`・`.claude/designs/` か、frontmatter が `type: rfc | adr`）の決定の質を publish の後に design-review（`--path <file> --embed`）に見させ、別節に出す委譲に置き換えた。design-doc が無効な回は、doc-substance の B 軸「決定の質」で補う
+> - **「2 軸」の中身が変わった**: 本 doc の 2 軸は severity の分け方（裏取りできた内容誤り / 裏取りできない論理・有用性）だった。code-review 2.28.0 で、観点そのものが A 軸（主張の真偽）と B 軸（文書としての成立性）の 2 軸になり、B 軸は doc:line と破られた期待を示せば ≤40 クランプの対象外になった
+> - **起動条件が広がった**: 高価値 doc に決定系 doc（#334）が加わり、条件に既存の節の書き換え（`doc-rewritten-lines` が 3 以上 / #269）が加わった。effort 別の起動制御（B-3）は変わっていない
+> - **置き場所が変わった**: プロンプトは `reviewer-prompts.md` の `## 3` ではなく `code-review/references/prompts/focus/doc-substance.md`、反証の doc 向け読み替えは `references/prompts/adversarial-verify.md` にある。design-doc が有効かは settings の grep ではなく `scripts/plugin-enabled.sh` で判定する
+> - **正本**: 起動条件・effort 制御・grounding・委譲の入口は `code-review/references/triage-guide.md` の `### doc-substance の起動（重要度ゲート）`、委譲の詳細は `references/design-review-guide.md`、クランプと CRITICAL 昇格は `references/scoring-guide.md`
 
 ## TL;DR
 
@@ -78,7 +85,7 @@ grill Phase および design-review でコード裏取り済みの事項。出�
 
 severity の本質は「裏取りできた内容誤り（CRITICAL）」と「裏取りできない論理 / 有用性（MAJOR / MINOR）」の **2 軸**。後者は根拠（code:line または doc:line ×2）を示せなければ表現の好みとみなされ scoring ≤40 クランプで自動除外される（C）。reviewer プロンプトには「表現・言い回しの好みは根拠なし（低 confidence）として申告する」とだけ書き、**観点の自己削除はさせない**（`reviewer-prompts.md:39` と非衝突）。
 
-委譲: 決定系 doc（ADR / design doc / RFC 根拠）は `design-doc` 導入時のみ design-review (minimal / risk) へ dormant soft 委譲。未導入時は doc-substance が内製で代替。
+委譲: 決定系 doc（ADR / design doc / RFC 根拠）は `design-doc` 導入時のみ design-review (minimal / risk) へ dormant soft 委譲。未導入時は doc-substance が内製で代替。（2026-10-28: この委譲は実装されないまま残っており、#334 で design-review を呼ぶ委譲に置き換えた。冒頭の追記を参照）
 
 ### B. triage の作り替え（triage-guide.md）
 
@@ -155,6 +162,8 @@ self-review SKILL（Phase 4.x）も同じ重要度ゲート・effort 制御・do
 > 正本は本 doc ではなく `code-review/references/triage-guide.md` に移っている
 > （「実質 prose 変更」の行数閾値 / design-review への soft 委譲は dormant として同 doc に記載）。
 > 本節は**設計時点の検討の記録**であり、現在の挙動を知りたいときは triage-guide を読むこと。
+>
+> **2026-10-28 追記（GitHub issue #334）**: 上の「soft 委譲は dormant として同 doc に記載」は、記載だけで実装が無かった。下の「design-review の非対話起動可否」は、design-review に `--path` / `--embed` を足して非対話で呼ぶ形で決着した（冒頭の追記）。
 
 - **「実質 prose 変更」の閾値（目安 10 行）の妥当性**
   - (a) 固定行数閾値 / (b) prose 行比率 / (c) LLM 判定のみ
