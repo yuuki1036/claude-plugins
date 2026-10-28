@@ -489,6 +489,49 @@ new_source_sig() {
   fi
 }
 
+# 決定系 doc（RFC / ADR / design doc / GitHub issue #334）。決定の質は design-review の視点別 reviewer に渡し
+# （`## decision-docs`）、design-doc が無効な回は doc-substance の B 軸「決定の質」で補う。doc-substance の
+# 高価値 doc にも数える（`decision_sig`）。判定はパス（`adr(s)/` `rfc(s)/` `decision(s)/`（単数・複数とも）・
+# `.claude/designs/`）か、frontmatter の `type: rfc | adr`。frontmatter は作業ツリーのファイルを読む
+# （diff に type の行が出るとは限らない）
+DECISION_PATH_RE='(^|/)(adrs?|rfcs?|decisions?)/|(^|/)\.claude/designs/'
+decision_type_of() { # decision_type_of <path> : 先頭の frontmatter に type: rfc|adr があれば 0
+  [ -f "$WT/$1" ] || return 1
+  # CRLF の doc でも `---` を区切りと読めるように、行末の CR を落としてから見る
+  awk '{ sub(/\r$/, "") }
+       NR==1 && $0!="---" { exit 1 }
+       NR>1 && $0=="---" { exit 1 }
+       NR>1 && tolower($0) ~ /^type:[[:space:]]*["\047]?(rfc|adr)["\047]?[[:space:]]*$/ { found=1; exit 0 }
+       NR>40 { exit 1 }
+       END { exit found ? 0 : 1 }' "$WT/$1" 2>/dev/null
+}
+# 1 行 = `<追加した語を持つ行の数>\t<path>`（多い順）。入力は SRC_DIFF（`## delta` の中では delta）。
+# 語を持つ行の数え方は doc-prose-lines と同じ。パスは `+++ b/` の行から取る — extract の
+# `diff --git` 行の第 4 フィールドでは、空白を含むパスが割れて別のファイルに数えられる。
+# `+++ ` を見出しと読むのは直前が `--- ` の行のときだけ（本文の `++ x` を足した行も `+++ x` になる）
+decision_docs() {
+  local tab
+  tab=$(printf '\t')
+  awk 'prev ~ /^--- / && /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); prev = $0; next }
+       /^diff --git / { f = "" }
+       f != "" && /^\+/ && substr($0, 2) ~ /[^[:space:]|>*+-]/ { n[f]++ }
+       { prev = $0 }
+       END { for (p in n) printf "%d\t%s\n", n[p], p }' "$SRC_DIFF" 2>/dev/null \
+  | while IFS="$tab" read -r n p; do
+      case "$p" in *.md) ;; *) continue ;; esac
+      if printf '%s\n' "$p" | grep -qE -e "$DECISION_PATH_RE" || decision_type_of "$p"; then
+        printf '%s\t%s\n' "$n" "$p"
+      fi
+    done | sort -t "$tab" -k1,1nr -k2,2
+}
+decision_sig() {
+  local d
+  d=$(decision_docs)
+  if [ -n "$d" ]; then
+    printf 'doc-substance\t%s\t%s\n' "$(printf '%s\n' "$d" | grep -c .)" "$(printf '%s\n' "$d" | head -1 | cut -f2-)"
+  fi
+}
+
 # 観点・red-flag・surface・explorer の 4 節を出す（見出しの接頭辞を受ける。`## delta` の中は `###`）。
 # 入力は CLASSIFIED / load_lines の値 / AGENTS_MD / SRC_DIFF
 emit_signals() {
@@ -517,6 +560,7 @@ echo "$h focus-signals"
   # 翻訳・文言ファイル（GitHub issue #272）。文言だけを変える diff は上の拡張子・ディレクトリに掛からない
   sig ui-quality       '(^|/)(locales?|i18n|messages)/' paths
   sig doc-substance    '(^|/)(CLAUDE|AGENTS|CONTRIBUTING|README)|\.claude/(adr|designs)/' paths
+  decision_sig
   # 任意 *.md の**語を持つ行**（空行と、マーカー・区切りだけの行 — `---` / `|---|---|` /
   # `> ` / `* * *` — を除く）。**箇条書きの本文は数える**: 本文が箇条書きで書かれた doc が
   # 大半で、除外すると doc-substance の起動閾値にほぼ届かなくなる。
@@ -593,6 +637,18 @@ done | head -10
 return 0
 }
 emit_signals "##"
+
+echo "## decision-docs"
+# design-review に渡す決定系 doc（GitHub issue #334 / 起動の閾値と 2 件の上限は `design-review-guide.md`）。
+# `## delta` の中には出さない（対象は diff 全体の決定系 doc）。
+# design-doc が有効かは正本の複製（`plugin-enabled.sh`）で判定する。project はレビュー対象の作業ツリーに固定する
+# （継承した CLAUDE_PROJECT_DIR を使わせない — review の worktree や、Stop hook から走る回では別の repo を指す）
+DD=$(cd "$WT" && CLAUDE_PROJECT_DIR="$WT" bash "$HERE/plugin-enabled.sh" design-doc 2>/dev/null) || DD=0
+echo "design_doc=${DD:-0}"
+DECISION_DOCS=$(decision_docs)
+# 下の一覧は 10 件で切る。guide が「ほか N 件」を数えられるように総数を出す
+echo "decision_docs_total=$(printf '%s\n' "$DECISION_DOCS" | grep -c . || true)"
+if [ -n "$DECISION_DOCS" ]; then printf '%s\n' "$DECISION_DOCS" | head -10; fi
 
 echo "## agents-md"
 if [ -n "$AGENTS_MD" ]; then printf '%s\n' "$AGENTS_MD"; fi

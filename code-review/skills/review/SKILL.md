@@ -48,6 +48,7 @@ allowed-tools:
 | `orchestration-dynamic-rounds.md` | 動的ラウンド（Round 2 / meta-reviewer / skeptic / 反証）の**いずれかを実行すると決まったとき** |
 | `orchestration-measurement.md` | **publish の直前**（締めフロー 4） |
 | `orchestration-optional-flows.md` | Issue 必読 / Vault 照合 / 訂正の伝播前ガード / embed mode の**適用条件を満たしたとき** |
+| `design-review-guide.md` | ダイジェストの `## decision-docs` に**doc の行があるとき**（Step 3。決定系 doc の design-review 委譲） |
 
 同じく `triage-guide.md` も Phase 0 用の中核だけを持ち、動的ラウンドの起動ゲートは `triage-dynamic-gates.md` にある（**起動可否を判断する段で Read する**）。
 
@@ -139,6 +140,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-past-reviews.sh" --pr <PR番号> --bas
 | `## surface` | high-risk surface 判定（`db-write` / `money-numeric` / `authz`） | Step 3.4 の skeptic 相乗り判断 |
 | `## explorer-signals` | 共通モジュール変更・500 行超ファイル | explorer の必要性判定 |
 | `## agents-md` | 変更ファイル階層でヒットした AGENTS.md / CLAUDE.md のパス | Step 4.9（reviewer へパス渡し） |
+| `## decision-docs` | `design_doc=`（design-doc が有効か）・`decision_docs_total=`（決定系 doc の総数）と、決定系 doc（RFC / ADR / design doc）ごとの追加した語を持つ行の数（10 件まで） | Step 3.3 の design-review 委譲の起動判定（`design-review-guide.md` の 1 節） |
 | `## issue-ids` | branch 名から抽出した Issue ID | Issue ファイル必読フロー |
 
 **`size_tier` はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値**をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。テスト 5 + doc 1 を含む 9 ファイルの PR が実質 3 ファイル `+22 -13` なのに large 扱いで 17 体起動する事故を防ぐ。GitHub issue #96）。Phase 0 の構成テーブル・Step 7 レポート冒頭・締めフロー 4 の `size_tier` に記録する。
@@ -235,6 +237,8 @@ Step 1 で Read した PR コンテキスト（説明・issue コメント・レ
 **構成テーブルを確定する前に、起動前検算を実施する（orchestration-guide `### 8a`・default-mode のみ構成追加）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば構成テーブルに追加（またはバンドルで相乗り）してから確定する。v2.39.0 で旧 Phase 5.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。
 
 **モード除外**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**検算による構成追加は行わない**。検出した focus は `missing_coverage` に識別子 `<focus>` のみ記録する（**mode による意図的縮退である旨はレポート本文へ**）。
+
+**決定系 doc の design-review 委譲**: `## decision-docs` に doc の行（`<数>\t<path>`）があれば `design-review-guide.md` を Read し、1 節で起動するかを決めて構成テーブルに `design-review` の行を足す（**体数の上限の外**。呼ぶのは締めフロー 4 の後）。起動するなら、委譲する doc を doc-substance のプロンプトの可変部に「design-review に渡す doc: <path>」と書く。
 
 検算後、triage-guide.md の出力フォーマット（`## 5`）に従い、エージェント構成テーブルを出力する。**「直列 wave」行を必ず含める**（見積もり方は triage-guide.md `## 5.1`）— 体数はトークンコストのレバー、wave 数は壁時計のレバーで、後者だけが従来ユーザーから見えなかった（GitHub issue #100 B）。
 
@@ -527,6 +531,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
    - `agents.round2` / `recall_skeptic.findings_added` はレポートの「動的ラウンド」行の数値と一致させる。**`meta_reviewer.findings_added` も同様**（`[meta]` タグ付き指摘を数える。#121）
 
    **publish の直後に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh"` を実行する**（→ 同 `## 18`）。出力は**そのままレポートの後ろに出す**（要約・再解釈をしない）。**⚠️ シグナル行が出たときだけ**戻り先ドキュメントを示して 1〜2 行の所見を添え、無い回は集計表だけ出す。失敗しても続行（best-effort）。
+
+   **決定系 doc の design-review 委譲**（Step 3.3 で起動すると決めた回だけ）: retro の後、`Skill` tool で `design-doc:design-review` を `--path <path> --embed --effort ${CLAUDE_EFFORT}` で doc ごとに呼び、戻りを「🧭 決定の品質」の節としてレポートの後ろに出す（PR の worktree の中にいるうちに呼ぶ）。Step 6 のスコアリング・反証には入れない。呼び方・失敗の扱い・節の書式の正本は `design-review-guide.md` の 2〜4 節。publish の後に置くのは、design-review が起動する agent を計測の窓に入れないため。この節の指摘を投稿したいと言われたら、締めフロー 3 の手順でドラフトを作る
 
 5. **agent worktree の掃除（ExitWorktree の直前 / 必須）**: agent は `isolation: "worktree"` で起動するため体数ぶんの worktree が配下に残り、**この状態では `ExitWorktree(remove)` が state 検証に失敗して worktree を畳めない**（GitHub issue #105）。**同じブロックで publish 済みかを確認する**（4 の publish は副作用のみで出力に何も足さないため、脱落しても実行中は気づけない。ここは必須ステップなので通過が保証される / GitHub issue #133。**警告が出たら ExitWorktree の前に 4 へ戻る** — session id が無い環境では `TS_FILE` の slug が worktree のパス由来になり、抜けた後では同じ計測ファイルを引けなくなる / orchestration-measurement.md `## 13.1`）:
 

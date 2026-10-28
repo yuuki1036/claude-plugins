@@ -1191,6 +1191,134 @@ class TriageSignalTest(DiffScriptTestBase):
         self.assertNotIn("src/unstaged.ts", files)
 
 
+class TriageDecisionDocsTest(DiffScriptTestBase):
+    """`## decision-docs`: design-review に渡す決定系 doc の列挙と design-doc の有効判定（GitHub issue #334）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # 開発機の ~/.claude/settings.json（design-doc が有効）を読ませない
+        self.home = self.root / "home"
+        (self.home / ".claude").mkdir(parents=True)
+
+    def digest(self) -> str:
+        self.add()
+        res = self.run_in(TRIAGE, "--base", "HEAD", env=self._env(HOME=str(self.home)))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        return res.stdout
+
+    def docs(self, out: str) -> list[tuple[int, str]]:
+        rows = []
+        for line in self.section(out, "## decision-docs"):
+            n, sep, p = line.partition("\t")
+            if sep:
+                rows.append((int(n), p))
+        return rows
+
+    def test_lists_docs_under_decision_paths(self):
+        for p in ("docs/rfcs/001.md", "docs/rfc/a.md", "adr/0001.md", "x/adrs/b.md",
+                  "docs/decisions/c.md", "notes/decision/d.md", ".claude/designs/e.md"):
+            self.write(p, "body\n")
+        got = {p for _, p in self.docs(self.digest())}
+        self.assertEqual(got, {"docs/rfcs/001.md", "docs/rfc/a.md", "adr/0001.md", "x/adrs/b.md",
+                               "docs/decisions/c.md", "notes/decision/d.md", ".claude/designs/e.md"})
+
+    def test_stays_silent_on_lookalike_paths_and_non_md(self):
+        """黙る条件: 語中の一致（`myadr/` `rfcsx/`）・md でないファイル・ふつうの doc."""
+        self.write("docs/myadr/a.md", "body\n")
+        self.write("docs/rfcsx/b.md", "body\n")
+        self.write("src/adr/c.ts", "export const a = 1\n")
+        # doc に分類される md 以外（`.md` の絞り込みにだけ当たる入力）
+        self.write("docs/adr/x.txt", "body\n")
+        self.write("docs/guide.md", "body\n")
+        self.assertEqual(self.docs(self.digest()), [])
+
+    def test_lists_paths_with_spaces(self):
+        """`diff --git` 行の空白区切りでは割れるパスも、`+++ b/` の行から取る."""
+        self.write("docs/adr/with space.md", "one\ntwo\n")
+        self.assertEqual(self.docs(self.digest()), [(2, "docs/adr/with space.md")])
+
+    def test_reads_crlf_frontmatter(self):
+        self.write("docs/x/crlf.md", "---\r\ntype: rfc\r\n---\r\nbody\r\n")
+        self.assertEqual([p for _, p in self.docs(self.digest())], ["docs/x/crlf.md"])
+
+    def test_reports_the_total_beyond_the_10_listed(self):
+        """一覧は 10 件で切り、総数を別の行で出す（guide の「ほか N 件」に使う）."""
+        for i in range(12):
+            self.write("adr/%02d.md" % i, "body\n")
+        out = self.digest()
+        self.assertEqual(len(self.docs(out)), 10)
+        self.assertEqual(self.kv(out, "## decision-docs").get("decision_docs_total"), "12")
+
+    def test_lists_docs_whose_frontmatter_type_is_rfc_or_adr(self):
+        self.write("docs/x/a.md", "---\ntitle: t\ntype: RFC\n---\nbody\n")
+        self.write("docs/x/b.md", "---\ntype: \"adr\"\n---\nbody\n")
+        got = {p for _, p in self.docs(self.digest())}
+        self.assertEqual(got, {"docs/x/a.md", "docs/x/b.md"})
+
+    def test_ignores_type_lines_outside_the_frontmatter(self):
+        """黙る条件: frontmatter が無い・frontmatter の外の `type: rfc`・ほかの type."""
+        self.write("docs/x/a.md", "type: rfc\nbody\n")
+        self.write("docs/x/b.md", "---\ntitle: t\n---\ntype: adr\n")
+        self.write("docs/x/c.md", "---\ntype: guide\n---\nbody\n")
+        self.assertEqual(self.docs(self.digest()), [])
+
+    def test_counts_added_word_lines_and_sorts_by_count(self):
+        """語を持つ追加行だけを数え、多い順に並べる（design-review-guide の閾値と 2 件の上限に使う）."""
+        self.write("adr/small.md", "one\n\n---\n")
+        self.write("adr/large.md", "one\ntwo\nthree\n")
+        self.assertEqual(self.docs(self.digest()), [(3, "adr/large.md"), (1, "adr/small.md")])
+
+    def test_stays_silent_when_only_removing_lines(self):
+        """黙る条件: 足した語が無い（削除だけの変更には決定の質を問う相手が無い）."""
+        self.write("adr/a.md", "one\ntwo\n")
+        self.add()
+        self.git("commit", "-qm", "base")
+        self.write("adr/a.md", "one\n")
+        self.assertEqual(self.docs(self.digest()), [])
+
+    def test_decision_paths_count_as_high_value_docs_for_doc_substance(self):
+        """決定系 doc のパスは doc-substance の高価値 doc に入る（`.claude/adr/` 以外の RFC / ADR も）."""
+        for p in ("docs/rfcs/a.md", "docs/adr/b.md", "decisions/c.md"):
+            with self.subTest(path=p):
+                f = self.write(p, "body\n")
+                out = self.digest()
+                self.assertIn("doc-substance", [l.split("\t")[0] for l in self.section(out, "## focus-signals")])
+                self.git("rm", "-q", "--cached", p)
+                f.unlink()
+
+    def test_frontmatter_decision_docs_count_as_high_value_docs(self):
+        """パスで判定できない決定系 doc（frontmatter の type だけ）も doc-substance の高価値 doc に入る."""
+        self.write("docs/x/a.md", "---\ntype: adr\n---\nbody\n")
+        out = self.digest()
+        self.assertIn("doc-substance", [l.split("\t")[0] for l in self.section(out, "## focus-signals")])
+
+    def test_code_under_decision_like_dirs_does_not_wake_doc_substance(self):
+        """黙る条件: `decisions/` `rfc/` という名前のコードのディレクトリは doc ではない."""
+        self.write("src/decisions/engine.ts", "export const a = 1\n")
+        self.write("src/rfc/parser.py", "x = 1\n")
+        out = self.digest()
+        self.assertNotIn("doc-substance", [l.split("\t")[0] for l in self.section(out, "## focus-signals")])
+
+    def _design_doc(self) -> str:
+        self.write("src/a.ts", "x\n")  # diff を空にしない（空だと triage-signals は FATAL で止まる）
+        return self.kv(self.digest(), "## decision-docs").get("design_doc", "")
+
+    def test_design_doc_is_0_without_settings(self):
+        self.assertEqual(self._design_doc(), "0")
+
+    def test_design_doc_is_1_when_enabled_in_user_settings(self):
+        (self.home / ".claude" / "settings.json").write_text(
+            '{"enabledPlugins": {"design-doc@m": true}}', encoding="utf-8")
+        self.assertEqual(self._design_doc(), "1")
+
+    def test_project_local_setting_overrides_user_setting(self):
+        """優先順位の高い設定から見て、最初に値を持つファイルで決める."""
+        (self.home / ".claude" / "settings.json").write_text(
+            '{"enabledPlugins": {"design-doc@m": true}}', encoding="utf-8")
+        self.write(".claude/settings.local.json", '{"enabledPlugins": {"design-doc@m": false}}')
+        self.assertEqual(self._design_doc(), "0")
+
+
 class TriageExplorerSignalTest(DiffScriptTestBase):
     """`shared-module` の importers 概数（explorer の下限判定に使う / GitHub issue #122）.
 

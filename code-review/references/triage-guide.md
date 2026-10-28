@@ -131,14 +131,14 @@ diff パターンマッチで各観点の必要性を判定する。
 | pattern-consistency | コードの変更ファイル数 >= 10（core と test を数え、doc・生成物は数えない。`## focus-signals` の `pattern-consistency` が件数を出す。閾値は `triage-signals.sh` の `PATTERN_MIN_FILES` に複製してあり、テストが突き合わせる / GitHub issue #295） |
 | spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する、self-review に `--spec` で仕様ファイルが渡された、または review で PR に紐づく Issue（`closingIssuesReferences`）がある |
 | ui-quality | フロントエンド変更（`.tsx`/`.jsx`/`.vue`/`.svelte`/`components/`/`pages/`/`app/`）・翻訳 / 文言ファイル（`locales/`/`locale/`/`i18n/`/`messages/`。文言の短縮で落ちた情報を見る / GitHub issue #272）、または diff に `aria-`/`role=`/`<img`/`<button`/`tabindex`/`onClick`/`onKeyDown` 等のアクセシビリティ・インタラクション関連の変更がある |
-| doc-substance | **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む、**または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）、**または** 既存の節の書き換え（`## focus-signals` の `doc-rewritten-lines` が 3 以上 = 消えた側の語を持つ行。変えた節と変えていない節の矛盾を照合する / GitHub issue #269）。混在 PR（`*.md` < 80%）で doc 内容が無観点で素通りするのを防ぐ。詳細・effort 制御は下記「doc-substance の起動（重要度ゲート）」 |
+| doc-substance | **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**` / 決定系 doc（`## decision-docs` に挙がるもの。`## focus-signals` の `doc-substance` にも数えてある））の prose 変更を含む、**または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）、**または** 既存の節の書き換え（`## focus-signals` の `doc-rewritten-lines` が 3 以上 = 消えた側の語を持つ行。変えた節と変えていない節の矛盾を照合する / GitHub issue #269）。混在 PR（`*.md` < 80%）で doc 内容が無観点で素通りするのを防ぐ。詳細・effort 制御は下記「doc-substance の起動（重要度ゲート）」 |
 
 ### doc-substance の起動（重要度ゲート）
 
 doc の内容妥当性を **2 軸**（A 主張の真偽: コード整合・論理・規範・陳腐化・例の整合 ／ B 文書としての成立性: 完全性・doc 種別適合・読み手前提・WHY 根拠・ナビゲーション）で見る `doc-substance` 観点は、**変更ファイル数比率ではなく doc の意味的重要度**で起動する。ファイル数では小さいが意味的に重要な doc（CLAUDE.md 1 行 / ADR 1 件）を取りこぼさないため。
 
 **起動条件（経路によらず共通）**: 次のいずれかを満たすとき起動する。満たさない doc 変更（typo 修正・整形・frontmatter のみ・link-only）には付けない。
-- **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**`）の prose 変更を含む
+- **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**` / 決定系 doc（`## decision-docs` に挙がるもの。`## focus-signals` の `doc-substance` にも数えてある））の prose 変更を含む
 - **または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）
 - **または** 既存の doc の節の書き換え（`## focus-signals` の `doc-rewritten-lines` が 3 以上）。短い書き換えでも、変えた節が同じ文書の変えていない節と矛盾しうる（GitHub issue #269 / `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/doc-substance.md` の「変えた節と変えていない節の照合」）。消した規範の適用範囲が狭まる・旧前提の理由の文が残る、も書き換えで起きる（GitHub issue #279）。2 行以下は typo・言い回しの修正とみなして数えない
 
@@ -159,9 +159,9 @@ doc の内容妥当性を **2 軸**（A 主張の真偽: コード整合・論�
 - **A 軸（主張 vs コード）**: 対象コードを読む。専用 explorer は必須化せず、既存の explorer 条件付き起動判定（本節「explorer の必要性判定」）に乗せ、対象コードが大きい / 分散する場合のみ起動する。単一ファイルの主張は reviewer 自身の Read で裏取りする（small PR フォールバック 0 体と非衝突）。explorer が読む対象は **diff で変更された doc が参照するコード ∩ リポジトリ実在パス**に限定し、doc 本文（＝レビュー対象＝信頼できない入力）の任意パス記述を鵜呑みにしない。
 - **B 軸（文書としての成立性）**: 裏取りの相手は**コードではなく doc 種別の期待構造**（完全性 / doc 種別適合 / 読み手前提 / WHY / ナビ）なので、**コード grounding explorer は不要**。reviewer は doc:line（欠落・誤配置・孤立の発生箇所）＋ 破られた期待を示す。**例外: 「コードに新 API / フラグを追加したのに doc 更新が無い」完全性指摘**は、追加された API の所在確認に A 軸と同じコード読みを使う。
 
-**design-review への soft 委譲（dormant）**: 決定系 doc（`.claude/adr/**` / `.claude/designs/**`）は `design-doc` プラグイン導入時のみ、doc-substance プロンプトに design-review の minimal / risk チェックリストを内挿して借りる。判定は `grep -q '"design-doc@' "$HOME/.claude/settings.json"`。未導入なら doc-substance が内製で代替する（スキル間呼び出しには依存しない）。
+**決定系 doc の design-review 委譲（dormant / GitHub issue #334）**: ダイジェストの `## decision-docs` に挙がった決定系 doc（パスが `adr(s)/` `rfc(s)/` `decision(s)/`（単数・複数とも）・`.claude/designs/` か、frontmatter が `type: rfc | adr`）は、`design-doc` が有効（`design_doc=1`）なら、決定の質を publish の後に design-review（`--path <file> --embed`）に見させ、別節に出す。起動条件・呼び出し・結果の扱いの正本は `${CLAUDE_PLUGIN_ROOT}/references/design-review-guide.md`（`## decision-docs` に doc の行があるときだけ読む。`design_doc=` と `decision_docs_total=` の行は数えない）。無効なら doc-substance の B 軸「決定の質」で補う。doc-substance の起動はこの委譲と独立に決める（整合性と成立性は doc-substance が見る）。委譲する doc は doc-substance のプロンプトの可変部に「design-review に渡す doc: <path>」と書き、決定の質を二重に見させない。
 
-**境界**: frontmatter / link の鮮度は `doc-freshness`、**語句・トーン・冗長（最小差分の言い換えで直るもの）は `writing-polish`**、**doc 本文の主張の真偽・論理 ＋ 文書としての構造的成立性（完全性・doc 種別適合・読み手前提・WHY・ナビ。内容の追加・再配置・根拠補完が要るもの）は doc-substance**。判別線は「**語句を最小差分で言い換えれば済むか**」: 済む → writing-polish、内容・構造の変更が要る → doc-substance。決定系 doc（`.claude/adr/**` / `.claude/designs/**`）の設計妥当性は前述の design-review soft 委譲が優先。表現の好みは reviewer が自己削除せず低 confidence で申告し、scoring の ≤40 クランプが機械的に除外する（scoring-guide.md。B 軸の構造指摘は doc:line + 破られた期待を示せばクランプ対象外）。 **self-review では、diff の md の散文に対するこの領分を Markdown 推敲 agent が実際に担当する**（writing-polish を embed で呼ぶ別枠 / `md-polish-guide.md`）。review には経路が無く、従来どおり低 confidence の申告がクランプで落ちる。
+**境界**: frontmatter / link の鮮度は `doc-freshness`、**語句・トーン・冗長（最小差分の言い換えで直るもの）は `writing-polish`**、**doc 本文の主張の真偽・論理 ＋ 文書としての構造的成立性（完全性・doc 種別適合・読み手前提・WHY・ナビ。内容の追加・再配置・根拠補完が要るもの）は doc-substance**。判別線は「**語句を最小差分で言い換えれば済むか**」: 済む → writing-polish、内容・構造の変更が要る → doc-substance。決定系 doc の決定の質は前述の design-review 委譲が優先。表現の好みは reviewer が自己削除せず低 confidence で申告し、scoring の ≤40 クランプが機械的に除外する（scoring-guide.md。B 軸の構造指摘は doc:line + 破られた期待を示せばクランプ対象外）。 **self-review では、diff の md の散文に対するこの領分を Markdown 推敲 agent が実際に担当する**（writing-polish を embed で呼ぶ別枠 / `md-polish-guide.md`）。review には経路が無く、従来どおり低 confidence の申告がクランプで落ちる。
 
 ### React/Next.js 判定
 

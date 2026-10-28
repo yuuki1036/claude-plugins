@@ -1,6 +1,6 @@
 {
   "name": "code-review",
-  "version": "2.163.0",
+  "version": "2.164.0",
   "description": "Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity の 2 軸で報告閾値を制御し、diff の性質と effort に応じて explorer → reviewer → 反証レイヤーを構成する。PR レビュー（/review）とコミット前セルフレビュー（/self-review。--embed で他プラグインから委譲可）に対応。",
   "author": {
     "name": "yuki"
@@ -35,6 +35,12 @@
       "type": "plugin",
       "required": false,
       "description": "review 締めフロー 3 の投稿コメントドラフト推敲と、self-review の Markdown 推敲（diff の md の散文を --embed で通し before→after を別枠に出す）。インストール時のみ soft 委譲し、未導入時は skip（dormant・後方互換）"
+    },
+    {
+      "name": "design-doc",
+      "type": "plugin",
+      "required": false,
+      "description": "review / self-review の決定系 doc（RFC / ADR / design doc）の決定の質を design-review（--path --embed）に見させ、「決定の品質」の節に出す。インストール時のみ soft 委譲し、未導入時は doc-substance の B 軸「決定の質」で補う（dormant・後方互換）"
     },
     {
       "name": "dev-workflow",

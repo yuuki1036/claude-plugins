@@ -63,6 +63,7 @@ Phase 0 の explorer/reviewer 並列起動も同じ思想で、reviewer は expl
 | `orchestration-measurement.md` | **publish の直前**（Step 6.4） |
 | `orchestration-optional-flows.md` | Issue 必読 / Vault 照合 / 訂正の伝播前ガード / embed mode の**適用条件を満たしたとき** |
 | `md-polish-guide.md` | Markdown 推敲を**起動すると決まったとき**（Step 2。self-review 限定） |
+| `design-review-guide.md` | ダイジェストの `## decision-docs` に**doc の行があるとき**（Step 2。決定系 doc の design-review 委譲） |
 
 同じく `triage-guide.md` も Phase 0 用の中核だけを持ち、動的ラウンドの起動ゲートは `triage-dynamic-gates.md` にある（**起動可否を判断する段で Read する**）。
 
@@ -130,7 +131,7 @@ fi
 
 **diff 全文をメインコンテキストに載せない。** `triage-signals.sh` が diff（コミット済み + 未コミット）をファイルへ保存し、Phase 0 に必要な**事実だけ**を compact に出力する。diff は reviewer / explorer へ**パスで渡す**（本文を転記しない。orchestration-guide.md `## 3.5`）。
 
-出力セクション（`## meta` / `## size` / `## files` / `## hunks` / `## focus-signals` / `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`）の意味と使い道の正本 → review SKILL.md `### 2`。self-review では `## issue-ids` はブランチ名から抽出され、`## meta` の `base` は指定した base branch になる（ローカルの base が origin より遅れていれば `origin/<base>`）。あわせて出る **`diff_base=`**（diff の起点のコミット）を、共通ブロックの base ref と base 検算に使う（`git show <diff_base>:<path>` が diff の変更前と一致する。`base` の ref の先端は、ブランチを切った後に base が進むとずれる / orchestration-guide.md `## 3.5`）。**`## md-polish`**（`md_prose_lines=` / `writing_polish=`）は self-review だけにあり、Markdown 推敲の起動判定（Step 2.1）に使う。**`## delta`** は `--since` の回だけに最後の節として出る（読み方は下の `--since` の節）。
+出力セクション（`## meta` / `## size` / `## files` / `## hunks` / `## focus-signals` / `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`）の意味と使い道の正本 → review SKILL.md `### 2`。self-review では `## issue-ids` はブランチ名から抽出され、`## meta` の `base` は指定した base branch になる（ローカルの base が origin より遅れていれば `origin/<base>`）。あわせて出る **`diff_base=`**（diff の起点のコミット）を、共通ブロックの base ref と base 検算に使う（`git show <diff_base>:<path>` が diff の変更前と一致する。`base` の ref の先端は、ブランチを切った後に base が進むとずれる / orchestration-guide.md `## 3.5`）。**`## md-polish`**（`md_prose_lines=` / `writing_polish=`）は self-review だけにあり、Markdown 推敲の起動判定（Step 2.1）に使う。**`## decision-docs`**（`design_doc=` と決定系 doc の一覧）は決定系 doc の design-review 委譲の起動判定（Step 2.1）に使う。**`## delta`** は `--since` の回だけに最後の節として出る（読み方は下の `--since` の節）。
 
 - **`size_tier`** はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。GitHub issue #96）。Phase 0 の構成テーブル・Step 6 レポート冒頭・Step 6.4 の `size_tier` に記録する
 - **シグナルは事実であって判定ではない**。観点採否・体数は triage-guide が決める。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む
@@ -170,7 +171,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 
 - `--focus <観点>`: レビュー対象を特定の観点に絞る（例: `--focus "comment-accuracy"`, `--focus "type-design"`）。複数指定はカンマ区切り
 - `--exclude <観点1,観点2>`: 既に他 agent でカバー済みの観点をスキップする
-- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` だけで、Markdown 推敲を止める。観点ではないので `--focus` には書けない）。**`md-polish` はスコープの絞り込みに数えない** — 本ファイルと参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、`md-polish` 以外の値を 1 つ以上指定した場合だけを指す。`--exclude md-polish` 単独の回は、推敲を止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える
+- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` と `--exclude design-review` で、それぞれ Markdown 推敲と決定系 doc の design-review 委譲を止める。観点ではないので `--focus` には書けない）。**`md-polish` と `design-review` はスコープの絞り込みに数えない** — 本ファイルと参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、この 2 つ以外の値を 1 つ以上指定した場合だけを指す。この 2 つだけを `--exclude` した回は、それを止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える
 
 適用先:
 - **Phase 0 (Step 2)**: `--focus` 指定時は該当観点の reviewer のみ構成する（最小保証の reviewer-bugs / reviewer-claude-md も `--focus` に含まれない限り起動しない）。`--exclude` 指定時は該当観点の reviewer を構成から外す。**例外は Step 1 の `## prior-fixes` の行**（前回の指摘への修正。`--prior-findings` の分を含む）で、絞り込みの外に置く
@@ -181,7 +182,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
   already verified (do not re-report): {{ exclude or "none" }}
   ```
 
-  （`md-polish` は観点ではないので `exclude` の値から外して注入する）
+  （`md-polish` と `design-review` は観点ではないので `exclude` の値から外して注入する）
 
 **`--spec <path>` / `--spec=<path>`（仕様ファイルの明示 / 他 plugin からの呼び出し向け）:**
 
@@ -227,6 +228,7 @@ diff の特性を分析し、必要なエージェントタイプを判定する
 - **reviewer**: 常に必要。diff パターンマッチでどの観点が必要かを判定
 - **spec-compliance**: session-context / Issue / knowledge が存在するか、`--spec` で仕様ファイルが渡されたか
 - **Markdown 推敲**: `## md-polish` と引数から起動するかを決める（**effort を問わない・体数の上限の外**）。起動するなら `md-polish-guide.md` を Read する。判定表と `skip_reason` の正本は同 guide の 1 節
+- **決定系 doc の design-review 委譲**: `## decision-docs` に doc の行（`<数>\t<path>`）があれば `design-review-guide.md` を Read し、1 節で起動するかを決める（**体数の上限の外**。呼ぶのは Step 6.4 の後）。起動するなら、委譲する doc を doc-substance のプロンプトの可変部に「design-review に渡す doc: <path>」と書く
 
 #### 2.2 Stage 2: 体数・フォーカス・冗長度決定
 
@@ -488,6 +490,8 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
 ### 📝 Markdown 推敲（severity 対象外・Step 7 で「適用する」を選ぶとメインが Edit で適用する）
 {見出しを出す・省く規則と 1 件の書式の正本は `md-polish-guide.md` の 4 節。起動した回は 0 件でも「該当なし」を出す。`no-md-prose` の回は見出しごと省く}
 
+{決定系 doc の design-review 委譲を起動した回は、「🧭 決定の品質」の節を Step 6.4 の publish の後に足す（この位置には書かない。書式の正本は `design-review-guide.md` の 4 節）}
+
 ### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
 - reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
 - explorer-<focus>: timeout → 依存していた reviewer-<focus> には探索結果なしで実行
@@ -545,6 +549,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
 - **`md_polish` も self-review のみのフィールド**（v2.131.0）。**起動しなかった回も `fired: false` と `skip_reason` で必ず入れる**（落とすと `payload:md_polish` が立つ）。推敲 agent は `agents` に数えず、publish が `md_polish.fired` を申告体数に足して突合する。定義の正本は orchestration-measurement.md `## 16`
 
 **publish の直後に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh"` を実行する**（→ 同 `## 18`。**`--embed` ではスキップ** — Step 6.5 の出力フォーマットに集計テキストを混ぜない）。出力は**そのままレポートの後ろに出す**（要約・再解釈をしない）。**⚠️ シグナル行が出たときだけ**戻り先ドキュメントを示して 1〜2 行の所見を添え、無い回は集計表だけ出す。失敗しても続行（best-effort）。
+
+**決定系 doc の design-review 委譲**（Step 2 で起動すると決めた回だけ・`--embed` では起動しない）: retro の後、`Skill` tool で `design-doc:design-review` を `--path <path> --embed --effort ${CLAUDE_EFFORT}` で doc ごとに呼び、戻りを「🧭 決定の品質」の節としてレポートの後ろに出す。Step 5 のスコアリング・反証と Step 7 の修正方針の確認には入れない。呼び方・失敗の扱い・節の書式の正本は `design-review-guide.md` の 2〜4 節。publish の後に置くのは、design-review が起動する agent を計測の窓に入れないため
 
 ### 6.5. 構造化 findings JSON（embed mode のみ）
 

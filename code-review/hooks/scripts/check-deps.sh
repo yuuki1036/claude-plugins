@@ -61,6 +61,8 @@ check_mcp "github" "true" "GitHub MCP サーバー"
 check_cli "kvault" "false" "knowledge vault CLI（self-review Vault 照合。未導入時は skip）"
 # writing-polish は review 締めフロー 3 のドラフト推敲と self-review の Markdown 推敲で使う dormant 連携（未導入時は skip）
 check_plugin "writing-polish" "false" "writing-polish プラグイン（返答ドラフトの提示前推敲と self-review の Markdown 推敲。未インストール時は skip）"
+# design-doc は review / self-review の決定系 doc の design-review 委譲で使う dormant 連携（未導入時は doc-substance で補う）
+check_plugin "design-doc" "false" "design-doc プラグイン（決定系 doc の決定の質を design-review に見させる。未インストール時は doc-substance で補う）"
 check_plugin "dev-workflow" "false" "dev-workflow プラグイン（self-review 完了後の worktree-teardown 起動。未インストール時は skip）"
 
 # --- 結果出力 ---

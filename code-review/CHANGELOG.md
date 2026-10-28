@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.164.0] - 2026-10-28
+
+### Added
+
+- **review / self-review: diff に含まれる決定系 doc（RFC / ADR / design doc）の決定の質を、design-doc の design-review（`--path <file> --embed`）に見させ、「🧭 決定の品質」の節としてレポートの後ろに出す**（GitHub issue #334）。
+  doc-substance は文書の整合性と成立性を見るが、「この決定は最善か」（代替案との比較・目的と手段の対応・既存コードとの整合・範囲の線引き）を問わず、RFC の PR で指摘が整合性の MINOR に寄っていた。
+  視点別の reviewer と反証は design-review のものをそのまま使い、code-review には写さない。呼ぶのは publish の後（design-review が起動する agent を計測の窓に入れないため）で、スコアリング・反証・Step 7 の修正方針の確認には入れない。
+  起動するのは、追加した語を持つ行が 10 以上の決定系 doc があり、design-doc が有効なとき（上位 2 件まで）。`--embed`・`--focus`・`--exclude design-review`・`--emergency`・effort `low` では起動しない。起動条件・呼び出し・節の書式の正本は `references/design-review-guide.md`
+- **triage-signals.sh: `## decision-docs` を出す**。決定系 doc（パスが `adr(s)/` `rfc(s)/` `decision(s)/`（単数・複数とも）・`.claude/designs/` か、frontmatter が `type: rfc | adr`）ごとの追加した語を持つ行の数（10 件まで）と、`decision_docs_total=`（総数）・`design_doc=`（design-doc が有効か）。パスは `+++ b/` の行から取り（空白を含むパスも割れない）、CRLF の frontmatter も読む
+- **`_requirements` と check-deps.sh に design-doc（任意・dormant）を足した**
+- **doc-substance: B 軸に「決定の質」を足した**。design-doc が無効で design-review に渡せない回に、決定系 doc の決定の質をここで見る（design-review に渡す doc では見ない）
+
+### Changed
+
+- **doc-substance の高価値 doc に、`.claude/adr/` の外の決定系 doc を足した**（`## decision-docs` と同じ判定。frontmatter の type だけで決まる doc も含み、`src/decisions/` のようなコードのディレクトリは含まない）
+- **プラグインが有効かの判定を、正本の `plugin-enabled.sh` の複製（`scripts/plugin-enabled.sh`）に寄せた**。md-prose-lines.sh の writing-polish の判定も同じ複製を使う（判定の結果は変わらない。設定の優先順位はどちらも local > project > user）
+- **triage-guide の「design-review への soft 委譲」を書き直した**。design-review の minimal / risk チェックリストを doc-substance に内挿すると書いていたが、どこにも実装されていなかった。上の委譲に置き換えた
+
 ## [2.163.0] - 2026-10-27
 
 ### Added

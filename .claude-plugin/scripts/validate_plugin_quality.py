@@ -139,6 +139,7 @@ BYTE_REPLICAS = {
         ROOT / "design-doc" / "skills" / "design-doc" / "references" / "grill-protocol.md",
     ],
     ROOT / ".claude-plugin" / "lib" / "plugin-enabled.sh": [
+        ROOT / "code-review" / "scripts" / "plugin-enabled.sh",
         ROOT / "feature-dev" / "scripts" / "plugin-enabled.sh",
         ROOT / "issue-workflow" / "scripts" / "plugin-enabled.sh",
     ],

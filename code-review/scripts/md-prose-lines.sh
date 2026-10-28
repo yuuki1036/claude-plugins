@@ -58,17 +58,10 @@ else
     || { echo "FATAL: git diff ${BASE} の分岐点に失敗した" >&2; exit 1; }
 fi
 
-# writing-polish が有効か。**優先順位の高い設定から見て、最初に値を持つファイルで決める**
-# （プロジェクトのローカル設定 → プロジェクト設定 → ユーザー設定。ユーザー設定で有効でも
-# ローカル設定で `false` にしていれば無効）。キーの存在ではなく値を見る
-WP=0
-for f in "$TOP/.claude/settings.local.json" "$TOP/.claude/settings.json" "$HOME/.claude/settings.json"; do
-  v=$(grep -Eo '"writing-polish@[^"]*"[[:space:]]*:[[:space:]]*(true|false)' "$f" 2>/dev/null | head -1)
-  if [ -n "$v" ]; then
-    case "$v" in *true) WP=1 ;; esac
-    break
-  fi
-done
+# writing-polish が有効か。判定は正本の複製（`plugin-enabled.sh`。triage-signals.sh の design-doc と共有）
+# project は TOP に固定する（継承した CLAUDE_PROJECT_DIR は別の repo を指しうる）
+WP=$(cd "$TOP" && CLAUDE_PROJECT_DIR="$TOP" bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/plugin-enabled.sh" writing-polish 2>/dev/null) || WP=0
+WP=${WP:-0}
 
 printf '%s' "$DIFF" | TOP="$TOP" STAGED="$STAGED" CAP="$CAP" COUNT="$COUNT" WP="$WP" python3 -c '
 import os, re, subprocess, sys

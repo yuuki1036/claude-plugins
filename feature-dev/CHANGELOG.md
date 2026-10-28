@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.1] - 2026-10-28
+
+### Changed
+
+- **self-review の SKILL.md「1.」「6.」への SSoT pin を打ち直した**（挙動の変更なし）。code-review が決定系 doc の design-review 委譲（GitHub issue #334）を足して正本の節が変わったが、委譲は `--embed` の回には起動せず、Step 3.2 の再レビューの引数・範囲の行・`--since` の効き方は変わっていない
+
 ## [2.27.0] - 2026-10-27
 
 ### Changed
