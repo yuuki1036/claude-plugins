@@ -2531,6 +2531,38 @@ class PendingHintTest(HubTestBase):
         self.assertNotIn("echo x", out, "PJ 名はコマンドの文面に入るので、init が作れない名前は扱わない")
 
 
+class ShimTest(HubTestBase):
+    """hub のセッションの hook が書く、版に左右されない呼び口（GitHub issue #328）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+        self.shim = self.root / "bin" / "hub.py"
+
+    def inject(self, sid: str = SID_HUB) -> str:
+        res = self.run_hub("inject", stdin=json.dumps({"session_id": sid, "source": "startup"}))
+        self.assertEqual(res.returncode, 0, res)
+        return res.stdout
+
+    def test_the_hub_is_told_the_shim_and_other_sessions_do_not_write_it(self):
+        self.inject(SID_A)
+        self.assertFalse(self.shim.exists(), "hub でないセッションは呼び口を書かない")
+        out = self.inject()
+        self.assertIn(f'hub.py の呼び口（版が上がっても同じ）: `python3 "{self.shim}"`', out)
+        self.assertIn(repr(str(HUB.resolve())), self.shim.read_text(encoding="utf-8"))
+
+    def test_a_stale_shim_is_rewritten_and_a_current_one_is_left_alone(self):
+        self.shim.parent.mkdir(parents=True)
+        self.shim.write_text("古い版を指す呼び口\n", encoding="utf-8")
+        self.inject()
+        current = self.shim.read_text(encoding="utf-8")
+        self.assertIn(repr(str(HUB.resolve())), current)
+        os.utime(self.shim, (1_000_000, 1_000_000))
+        self.inject()
+        self.assertEqual(self.shim.stat().st_mtime, 1_000_000, "中身が同じなら書き直さない")
+        self.assertEqual(self.shim.read_text(encoding="utf-8"), current)
+
+
 class WorkerHintTest(HubTestBase):
     """作業側の SessionStart で、未登録のセッションに hub への紐付けを促す（GitHub issue #315）."""
 
@@ -2916,6 +2948,7 @@ class RequiredArgumentsTest(HubTestBase):
             ("--mode", ["set-tracker-write", "--project", "pj"]),
             ("--path", ["set-living-spec", "--project", "pj"]),
             ("--issue", ["issue", "--project", "pj"]),
+            ("--session", ["close-sub", "--project", "pj"]),
         ]
         for flag, args in cases:
             with self.subTest(args=args):
@@ -2968,6 +3001,14 @@ class RawListAgentsTest(HubTestBase):
         self.assertEqual([(r["name"], r["ref"], r["state"]) for r in rows],
                          [("hub-session", "h1", "waiting"), ("設計の相談", "1a6070", "idle"),
                           ("#308: 監査ログ", "262901", "idle")])
+
+    def test_a_row_with_only_the_kind_and_the_state_is_read(self):
+        text = LIST_AGENTS_RAW.replace("Peer sessions (3):", "Peer sessions (4):").replace(
+            "  設計の相談 [1a6070]", "  短い行 [s2]  ·  interactive  ·  idle\n  設計の相談 [1a6070]")
+        snap = self.run_hub("presence", "--project", "pj", "--raw", stdin=text)
+        self.assertEqual(snap.returncode, 0, snap)
+        rows = json.loads((self.pdir / "snapshot.json").read_text(encoding="utf-8"))["sources"]["agents"]["data"]
+        self.assertIn(("短い行", "s2", "idle"), [(r["name"], r["ref"], r["state"]) for r in rows])
 
     def test_an_unexpected_shape_stops_without_guessing(self):
         cases = {
@@ -3122,6 +3163,8 @@ class DecisionsAndWaitingTest(HubTestBase):
             {"decisions": [{"text": "A にする", "date": "10/27", "by": "利用者"}]},
             {"decisions": [{"text": "A にする", "date": "2026-10-27"}]},
             {"decisions": [{"text": "", "date": "2026-10-27", "by": "利用者"}]},
+            {"decisions": [{"date": "2026-10-27", "by": "利用者"}]},
+            {"decisions": ["A にする"]},
             {"decisions": "A にする"},
             {"waiting_prs": ["123"]},
             {"waiting_prs": ["#12 と #13"]},
@@ -3130,6 +3173,7 @@ class DecisionsAndWaitingTest(HubTestBase):
             with self.subTest(extra=extra):
                 res = self.report(body=report_body(**extra))
                 self.assertEqual(res.returncode, 2, res)
+                self.assertNotIn("Traceback", res.stderr)
 
     def test_decisions_are_listed_once_and_only_counted_in_state(self):
         decision = {"text": "公開は社内だけに戻す", "date": "2026-10-27", "by": "利用者"}
@@ -3146,11 +3190,29 @@ class DecisionsAndWaitingTest(HubTestBase):
         self.assertIn("決定: 2 件", state, "state.md も decisions と同じく書き直しを 1 件に数える")
         self.assertNotIn("公開は社内だけに戻す", state, "sub の文面は state.md に写さない")
 
+    def test_hand_edited_journal_rows_do_not_break_the_decision_list(self):
+        decision = {"text": "公開は社内だけに戻す", "date": "2026-10-27", "by": "利用者"}
+        self.assertEqual(self.report(body=report_body(decisions=[decision])).returncode, 0)
+        self.ok("ingest", "--project", "pj")
+        rep = [r for r in self.journal(self.pdir) if r["kind"] == "report"][-1]
+        extra = [{**rep, "kind": "relay", "subject": "#999"},
+                 {**rep, "subject": SID_B, "body": "壊れた本文"},
+                 {**rep, "subject": SID_B, "body": {**rep["body"], "decisions": ["文字列", decision]}}]
+        with (self.pdir / "journal.jsonl").open("a", encoding="utf-8") as f:
+            f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in extra)
+        out = self.ok("decisions", "--project", "pj")
+        self.assertEqual([(d["session_id"], d["text"]) for d in out],
+                         [(SID_A, "公開は社内だけに戻す"), (SID_B, "公開は社内だけに戻す")],
+                         "report 以外の行・本文が壊れた行・決定でない要素は数えない")
+
     def test_a_waiting_pr_is_notified_once_and_drops_when_done(self):
         self.assertEqual(self.report(body=report_body(state="blocked", waiting_prs=["#12", "o/x#3"])).returncode, 0)
         self.ok("ingest", "--project", "pj")
         out = self.ok("waiting", "--project", "pj")
         self.assertEqual([(w["pr"], w["notified"]) for w in out], [("#12", False), ("o/x#3", False)])
+        self.ok("render", "--project", "pj")
+        self.assertIn("待っている PR: 2 件（うちマージをまだ知らせていない 2 件", (self.pdir / "state.md").read_text(
+            encoding="utf-8"))
         body = {"subject": "#308", "text": "[hub の段取り] #12 がマージされた", "to": {"name": "worker-a", "ref": "a1"},
                 "session": SID_A, "waiting_pr": "#12"}
         self.assertEqual(self.record(body).returncode, 0)
@@ -3199,12 +3261,28 @@ class TodoTest(HubTestBase):
     def test_bad_todos_and_writers_are_rejected(self):
         self.assertEqual(self.add("a\nb").returncode, 2)
         self.assertEqual(self.add("").returncode, 2)
+        for text in ("   ", 5, None):
+            with self.subTest(text=text):
+                res = self.add(text)
+                self.assertEqual(res.returncode, 2, res)
+                self.assertIn("text（1 行の残作業）が要る", res.stderr)
         self.assertEqual(self.add("x", source="").returncode, 2)
         self.assertEqual(self.add("x", sid=SID_A).returncode, 3, "hub でないセッションは書けない")
         self.assertEqual(self.run_hub("todo", "--project", "pj", "--done", "T9").returncode, 2)
         self.add("x")
         self.ok("todo", "--project", "pj", "--done", "T1")
         self.assertEqual(self.run_hub("todo", "--project", "pj", "--done", "T1").returncode, 2, "2 回は終えない")
+
+    def test_hand_edited_rows_are_not_read_as_new_todos(self):
+        self.add("x")
+        self.ok("todo", "--project", "pj", "--done", "T1")
+        rows = [{"op": "add", "id": 1, "text": "番号が文字列でない"},
+                {"op": "add", "id": "T7", "text": 3},
+                {"op": "done", "id": "T1", "ts": "2026-10-28T00:00:00Z", "text": "done の行に本文"}]
+        with (self.pdir / "todos.jsonl").open("a", encoding="utf-8") as f:
+            f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
+        out = self.ok("todo", "--project", "pj", "--all")
+        self.assertEqual([(t["id"], t["text"], t["done"] is not None) for t in out], [("T1", "x", True)])
 
 
 class CloseSubTest(HubTestBase):
