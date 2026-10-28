@@ -25,16 +25,17 @@ The prompt will include:
 - **Perspective**: one of `minimal` / `clean` / `pragmatic` / `risk`, with its checklist (from `references/review-perspectives.md`)
 - **Design doc content**: the full markdown of the doc under review (frontmatter included)
 - **Context paths** (optional): related spec.md, ADR files, Issue files
+- **Doc kind**: `design-doc` (a doc under `.claude/designs/`, even when passed via `--path`) or `external` (an RFC / ADR elsewhere in the repo). Absent means `design-doc`
 
 ### Core process
 
 **1. Ground yourself in the codebase**
-The doc's "確定した前提" and "採用案" sections make claims about existing code (paths, patterns, constraints). Verify the ones that materially affect the design with Grep / Glob / Read. A design built on a wrong premise is the highest-value finding you can produce.
+The doc's "確定した前提" and "採用案" sections make claims about existing code (paths, patterns, constraints). Verify the ones that materially affect the design with Grep / Glob / Read. A design built on a wrong premise is the highest-value finding you can produce. For `Doc kind: external`, the doc may not have these sections; ground the claims in whichever sections state the decision and its premises.
 
 **2. Apply your perspective's checklist**
 Review ONLY through your assigned lens. Other perspectives are covered by sibling reviewers — do not pad your output with generic observations outside your lens.
 
-**3. Check the doc's own contract**
+**3. Check the doc's own contract** (`Doc kind: design-doc` only — an external doc does not follow the design-doc format, so skip this step)
 Regardless of perspective, flag these structural defects if present:
 - 実装ブリッジ (Implementation Bridge) が実質空欄（接続情報なし・理由も確定タイミングもない）
 - open に「現時点の方向性」または「確定タイミング」が無い

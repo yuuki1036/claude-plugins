@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.7.0] - 2026-10-28
+
+### Added
+
+- **design-review: `--path <file>` と `--embed` / `--effort <level>` を足した**（GitHub issue #334）。
+  `--path` で `.claude/designs/` の外の doc（`docs/rfcs/` の RFC・ADR など）を対象にし、design-doc の frontmatter や節が無くてもレビューする。`Doc kind` は doc のパスで決め、`.claude/designs/` の外の doc には `Doc kind: external` を渡して design-doc の書式の契約（実装ブリッジ・open の形式・判断ログのマーカー）を検査させない（`.claude/designs/` の doc は `--path` で渡されても `design-doc`）。
+  `--embed` は code-review の review / self-review から呼ぶためのもので、Phase 4 のレポート（反証を含む）だけを返し、doc への反映・完了報告・AskUserQuestion を行わず、ターンを終えずに呼び出し元へ戻る。視点の構成は `--effort` の値で決める（省略時は high）
+
 ## [0.6.0] - 2026-10-06
 
 ### Added

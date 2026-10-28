@@ -31,6 +31,7 @@ allowed-tools:
 | `status: draft` の doc を approved に上げる判断材料が欲しい | **design-review**（本スキル） |
 | design doc を新規作成・改訂・supersede する | `design-doc` |
 | 実装したコード（diff / PR）をレビューする | `code-review:review` / `self-review` |
+| diff に含まれる RFC / ADR の決定の質を見る | `code-review` が本スキルを `--path <file> --embed` で呼ぶ（下の「呼び出し元から使う」） |
 | spec.md（BDD Scenario）の品質を評価する | 対象外（bdd-spec の将来 evaluate の領分） |
 
 ## 参照する規範（references）
@@ -43,19 +44,29 @@ allowed-tools:
 
 ---
 
+## 呼び出し元から使う（`--embed`）
+
+`code-review` の review / self-review が、diff に含まれる決定系 doc（RFC / ADR / design doc）の決定の質を見るために呼ぶ（GitHub issue #334）。引数は `--path <file> --embed [--effort <level>]`。
+
+- **`--path <file>`**: `.claude/designs/` の外の doc も対象にする（`docs/rfcs/001.md` など。repo ルート相対）。design-doc の frontmatter（`status` / `phase` / `spec:` 等）が無くてもよい
+- **`--embed`**: レビューだけを行い、findings を返す。**Phase 5（doc への反映）と Phase 6（完了報告）を行わず、AskUserQuestion も出さない**。doc を Edit しない（指摘を採るかは呼び出し元の利用者が決める）
+- **`--effort <level>`**: Phase 2 の構成をこの値で決める（呼び出し元の実行時 effort を渡す。省略時は `high`）
+- 返すのは Phase 4 のレポート（反証を実行した回は「反証」列つき）と、その最後の行の `[embed-mode: design-review, no-edit]`。**レポートを出した後もターンを終えず**、同じターンのまま呼び出し元の次の手順へ戻る（呼び出し元と同じ会話の中で動くので、ツールを呼ばずに止まると呼び出し元の手順ごと終わる）
+
 ## Phase 0: 対象特定
 
-1. 引数を解析する: `[doc-id] [--focus <視点>]`
+1. 引数を解析する: `[doc-id | --path <file>] [--focus <視点>] [--embed] [--effort <level>]`
 2. 対象 doc の決定:
+   - `--path` 指定あり → そのファイルを対象にする。無ければ error として中止（`--embed` の回は 1 行の error を返して呼び出し元へ戻る）。以降の手順で design-doc の frontmatter や節（「採用案」「確定した前提」「実装ブリッジ」）を前提にしない
    - id 指定あり → `.claude/designs/*<id>*.md` を Glob。見つからなければ error として中止
    - 指定なし → `.claude/designs/*.md` を Glob し、`status: draft` または `approved` かつ `phase: target` の doc を候補に。1 件なら自動選択、複数なら AskUserQuestion で選択（最新を先頭 + `(Recommended)`）、0 件なら「レビュー対象の design doc がありません。/design-doc で作成してください」と案内して終了
-3. `phase: superseded` の doc が指定された場合は「superseded doc はレビュー対象外」と伝えて中止
+3. `phase: superseded` の doc が指定された場合は「superseded doc はレビュー対象外」と伝えて中止（`--path` の回も frontmatter に `phase: superseded` があれば同じ。`--embed` の回はこの 1 行を返して呼び出し元へ戻る）
 
 ## Phase 1: 入力読み込み
 
 1. 対象 doc を Read する（frontmatter 含む全文）
-2. frontmatter の `spec:` / `issue:` / `adrs:` にパスがあれば Read する（reviewer へのコンテキスト）
-3. doc の「採用案」「確定した前提」から関連コードのパス・パターンを抽出する（reviewer の裏取り対象ヒント）
+2. frontmatter の `spec:` / `issue:` / `adrs:` にパスがあれば Read する（reviewer へのコンテキスト）。`--path` の doc で frontmatter が無ければ、本文がリンクしている ADR・仕様を同じ扱いにする
+3. doc の「採用案」「確定した前提」から関連コードのパス・パターンを抽出する（reviewer の裏取り対象ヒント）。その節が無い doc（`--path` の RFC・ADR など）は、決定とその前提を述べている節から抽出する
 4. **knowledge vault（任意・後方互換）**: MCP ツール `search_knowledge`（server `knowledge-vault`。deferred なら ToolSearch で `select:mcp__knowledge-vault__search_knowledge` を読み込む）か `kvault` CLI があれば、採用案のキーワード列で過去の設計判断・落とし穴を引き（`purpose="design"`。CLI は `kvault recall "<キーワード列>" --top 5 --purpose design 2>/dev/null` の `relevant: true` の結果だけ）、reviewer へのコンテキストに加える。どちらも無ければ飛ばす。関連の判定は vault 側が行う。findings と doc への反映に vault の title や本文を書き写さない（別プロジェクト由来の知見を含む）
 
 ## Phase 2: 視点トリアージ
@@ -69,6 +80,7 @@ allowed-tools:
 | `xhigh` / `max` | design-reviewer agent ×4 並列（全視点） |
 
 - `--focus <視点>` 指定時は effort に関わらずその視点のみ
+- `--embed` の回は表の effort に `--effort` の値を使う（省略時は `high`）。Phase 4.5 の実行条件も同じ値で決める
 - agent 構成を 1 行でユーザーに表示してから実行する（例: 「effort=high: minimal / pragmatic / risk の 3 視点で並列レビューします」）
 
 ## Phase 3: レビュー実行
@@ -80,6 +92,7 @@ allowed-tools:
 3. 対象 doc の全文
 4. Phase 1 で集めたコンテキストパス（spec / ADR / Issue）
 5. agent 定義の perspective mode の Output format に従って findings を返すこと
+6. `Doc kind` を書く。**doc のパスで決める**: `.claude/designs/` の配下なら `Doc kind: design-doc`（`--path` で渡された回も同じ）、それ以外は `Doc kind: external`（design-doc の書式の契約 — 実装ブリッジ・open の形式・判断ログのマーカー — を検査させない）。メインコンテキストで見る回（low / medium）も同じ分け方で、external の doc には書式の契約を当てない
 
 **メインコンテキストの場合**（low / medium）: 同じチェックリストと Output format を自分に適用し、minimal → risk の順で findings を作る。doc の前提のうち設計を左右するものは Grep / Read で裏取りする。
 
@@ -127,6 +140,8 @@ allowed-tools:
 
 ## Phase 5: doc への反映
 
+`--embed` の回は Phase 5・6 を行わない（上の「呼び出し元から使う」）。
+
 findings が 1 件以上ある場合、AskUserQuestion で反映方針を確認する（multiSelect）:
 
 - question: 「どの finding を doc に反映しますか？」
@@ -166,14 +181,14 @@ status 更新（draft → approved）はユーザーが判断する。BLOCKER �
 ## 処理フロー
 
 ```
-1. Phase 0: 対象 doc 特定（id / 自動選択 / 0 件案内）
+1. Phase 0: 対象 doc 特定（id / --path / 自動選択 / 0 件案内）
 2. Phase 1: doc + 関連成果物（spec / ADR / Issue）読み込み
 3. Phase 2: 視点トリアージ（${CLAUDE_EFFORT} / --focus）
 4. Phase 3: レビュー実行（agent 並列 or メインコンテキスト）
 5. Phase 4: findings 集約（dedup → confidence フィルタ → severity × セクション表）
 6. Phase 4.5: 反証（high 以上・BLOCKER/MAJOR を独立 agent で敵対的検証）
-7. Phase 5: 採用 finding を doc に反映 + last-validated 更新
-8. Phase 6: 完了報告（approved 遷移の提案）
+7. Phase 5: 採用 finding を doc に反映 + last-validated 更新（--embed では行わない）
+8. Phase 6: 完了報告（approved 遷移の提案。--embed では行わない）
 ```
 
 ---

@@ -19,7 +19,10 @@ allowed-tools:
 
 `$ARGUMENTS`:
 - `[doc-id]` → 対象 doc の id（省略時は `.claude/designs/` の draft/approved な doc から自動選択）
+- `--path <file>` → `.claude/designs/` の外の doc（RFC / ADR など）を対象にする（doc-id の代わり）
 - `--focus <minimal|clean|pragmatic|risk>` → 単一視点に絞る（effort 分岐を上書き）
+- `--embed` → 他 plugin（code-review）からの呼び出し。レビューだけを行い findings を返す。doc に反映せず、完了報告と AskUserQuestion を出さず、ターンを終えずに呼び出し元の手順へ戻る
+- `--effort <level>` → `--embed` の回の視点構成をこの effort で決める（省略時は high）
 
 ## 実行
 
@@ -31,5 +34,5 @@ allowed-tools:
 4. Phase 3: design-reviewer agent 並列レビュー（またはメインコンテキスト）
 5. Phase 4: findings 集約（dedup → confidence フィルタ（<50 は MINOR 降格、BLOCKER は残す）→ severity × セクション表）
 6. Phase 4.5: 反証（high 以上・BLOCKER/MAJOR を独立 design-reviewer agent で敵対的検証。反証された finding は severity を下げるか明示、BLOCKER は fail-closed で残す）
-7. Phase 5: 採用 finding を doc に反映 + last-validated 更新
-8. Phase 6: 完了報告
+7. Phase 5: 採用 finding を doc に反映 + last-validated 更新（`--embed` では行わない）
+8. Phase 6: 完了報告（`--embed` では行わない）
