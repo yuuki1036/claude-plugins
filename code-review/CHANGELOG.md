@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.164.1] - 2026-10-28
+
+### Fixed
+
+- **triage-dynamic-gates.md `## 9` の動作 3 を実装に合わせた**。「`pre-existing` / `intended` の鮮度は LLM 前に `git show` / `git blame` で機械判定」と書いていたが、そのような前段の判定は無く、反証エージェント自身が git を実行して確かめている（orchestration-dynamic-rounds.md が実行を許可し、`prompts/adversarial-verify.md` が手順を持つ）。反証レイヤーの設計書（`.claude/designs/20260623-review-adversarial-verify-layer.md`）の読み直しで見つけた。挙動は変わらない
+
 ## [2.164.0] - 2026-10-28
 
 ### Added

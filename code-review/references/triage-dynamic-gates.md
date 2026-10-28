@@ -293,7 +293,7 @@ surface-aware 報告閾値（scoring-guide.md `## 報告マトリクス`）が h
 1. 上表のゲートで対象指摘を選ぶ
 2. 対象指摘を 5 件ずつのバッチに分け、バッチごとに反証エージェント（`${CLAUDE_PLUGIN_ROOT}/references/prompts/adversarial-verify.md`）を `model: opus`, `effort: high` で起動。指摘の主張のみ渡し reviewer 推論は渡さない
    - **effort は v2.41.0 で `max` → `high`**。effort 方針の正本は orchestration-guide.md `## 5`（「下げるのは『全レビューで走る』または『指摘数に比例する』レイヤー、据え置くのは 1 体固定の検証レイヤー」）。反証は誤判定コストの非対称性を **verdict の扱い側**（高 severity は `refuted` でも `severity-inflated` でも消さず係争注記 = scoring-guide の不変条件）で吸収しているため、effort での二重の保険は要らない
-3. `pre-existing` / `intended` の鮮度は LLM 前に `git show <base>:<file>` / `git blame` で機械判定
+3. `pre-existing` / `intended` の鮮度は、反証エージェント自身が `git show <base>:<file>` / `git blame` を実行して確かめる（実行の許可は orchestration-dynamic-rounds.md、手順は `adversarial-verify.md`）。反証の前段に決定的な判定は置いていない
 4. verdict を scoring（scoring-guide.md `## 反証レイヤーの verdict 反映`）に渡す。**高 severity は消さず注記**、MAJOR/MINOR のみ取り下げ可（理由は付録に記録）
 5. 1 体が複数 verdict を返す（バッチ）。**全 finding_id 分の verdict が揃っているか突合し、欠落は verdict なし扱い**にする（欠落を confirmed とも refuted とも解釈しない）
 6. **`severity-inflated` は `axis`（降格の型）まで数えて payload に載せる**（`adversarial_verify.inflated_axes` / GitHub issue #150）。件数だけでは**上流較正の型が的外れなのか、そもそも上流で直せないのか**を切り分けられない
