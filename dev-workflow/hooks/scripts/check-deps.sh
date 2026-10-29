@@ -104,6 +104,7 @@ if [ -f ".claude/.ui-verify-enabled" ]; then
 fi
 
 check_plugin "writing-polish" "false" "writing-polish プラグイン（PR 本文・コミットメッセージの提示前推敲。未インストール時は skip）"
+check_plugin "code-review" "false" "code-review プラグイン（コミット前の self-review と読み合わせの提案。未インストール時は skip）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then

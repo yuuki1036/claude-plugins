@@ -1,6 +1,6 @@
 {
   "name": "dev-workflow",
-  "version": "1.39.1",
+  "version": "1.40.0",
   "description": "Git 操作・PR 作成・UI 動作確認・バグ診断・worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、承認ゲート付き PR 作成、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断、worktree 単位の DB / port 分離を提供する。",
   "author": {
     "name": "yuki"
@@ -59,6 +59,12 @@
       "type": "plugin",
       "required": false,
       "description": "PR 本文・コミットメッセージを提示前に推敲（pr-creator / git-commit-helper で --embed 連携、未インストール時は skip）"
+    },
+    {
+      "name": "code-review",
+      "type": "plugin",
+      "required": false,
+      "description": "コミット前の self-review と読み合わせ（git-commit-helper の 1.5 で review-guide --walkthrough まで提案、未インストール時は skip）"
     }
   ]
 }

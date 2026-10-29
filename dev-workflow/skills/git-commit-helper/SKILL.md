@@ -10,7 +10,12 @@ allowed-tools:
   - Bash
   - Read
   - Skill
+  - AskUserQuestion
 ---
+
+<!-- 正本依存（SSoT pin）。1.5 の締めの分岐（`次の一手:` の値・`変異テスト: 提案する` の扱い）は code-review の review-guide-format.md「回し直すかの判断」「変異テストの提案」を要約したもの（プラグイン間依存禁止のため要約で持つ）。正本が変わったら 1.5 を確認して pin を打ち直す -->
+<!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @bc251143 -->
+<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @3c9ee376 -->
 
 # Git Commit Helper
 
@@ -20,7 +25,7 @@ allowed-tools:
 
 - 推奨フロー: 実装 → `/self-review` → 修正 → `/git-commit-helper`
 - 理由: 同一コンテキストで生成と判定を行うと confirmation bias で見落としが増える
-- 自身では品質判定をしない（UI 変更の動作確認も持たない。`ui-verify-gate.sh` が commit 直前に非ブロッキングで通知する）
+- 自身では品質判定をしない（UI 変更の動作確認も持たない。`ui-verify-gate.sh` が commit 直前に非ブロッキングで通知する）。このセッションで self-review を回していない変更なら、1.5 で self-review と読み合わせを回すかを聞く（呼び出し元のフローを持たないコミットでも、レビューの提案が抜けないように）
 
 ## 実行手順
 
@@ -36,6 +41,36 @@ git log --oneline -10
 
 - Protected branch (main/staging/production/develop) の場合、`--no-protect`がなければ即中止
 - 変更がなければ終了
+
+### 1.5 コミット前のレビュー提案（self-review・読み合わせ）
+
+issue-workflow の軽量フローと feature-dev は、コミットの前に self-review と読み合わせ（review-guide）を回す。そのどちらも通らないコミット（start を通さずに始めたセッション・hub から起動した sub・GitHub の Issue の作業など）では誰もレビューを提案しないので、ここで聞く。
+
+**聞かない回**（どれか 1 つに当たれば 2. へ進む）:
+- 使える skill に `code-review:self-review` が無い（code-review が無効か未導入）
+- 呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動された（レビューを回すかはそのフローが決めている。self-review を回したかは問わない）
+- このセッションで、今回コミットする変更に self-review か読み合わせ（review-guide の締め）を回した
+- 変更が版番号・CHANGELOG・lock ファイルなどの機械的な更新だけ
+- 利用者がこの依頼で「レビューは要らない」「このままコミット」と言っている
+
+それ以外は `AskUserQuestion` で 1 問だけ聞く:
+- question: "コミットの前に self-review と読み合わせ（review-guide）を通しますか？"
+- header: "コミット前"
+- options: "self-review → 読み合わせ (Recommended)"（self-review で指摘を直した後、精読を 1 件ずつ読み合わせて直せるものを直す）/ "self-review だけ"（読み合わせは省く）/ "このままコミット"
+
+無操作の自動続行（`askUserQuestionTimeout`）の回答は選ばれたものとみなさない。通常のメッセージで同じ 3 つを並べて聞き直し、ターンを終える。
+
+**この skill が self-review と review-guide の呼び出し元のフローになる**: 起動した self-review の修正方針（「このまま」・修正の後）や review-guide の `次の一手: コミットへ` がコミットへ進むよう示しても、git-commit-helper を起動し直さずにこの 1.5 の続きへ戻る（起動し直すと、読み合わせの前にコミットが入る）。選ばれたものに従う:
+- **self-review → 読み合わせ**: `Skill` tool で `code-review:self-review` を引数なしで起動し（base は self-review が決める）、冒頭に出る `base_branch=` の値を控える。指摘への対応は self-review の修正方針フローに従う。続けて `code-review:review-guide` を `--base <控えた base_branch> --walkthrough` で起動する。締めの行で分岐する（両方に当たる回は `次の一手:` を済ませてから `変異テスト:` を見る）:
+  - `次の一手:` が `self-review をもう一度` → self-review を `<控えた base_branch>` だけを引数にもう一度回す
+  - `次の一手:` が `決定的な検証` → その検証を回す。赤なら 2. へ進まずに結果を示し、直すかを聞く（直したら同じ検証を回し直す）
+  - `変異テスト:` が `提案する` → この skill からは回さない。行の理由・回し方・所要の目安をそのまま示し、コミットの前に回すかを通常のメッセージで聞いてターンを終える。回すと返されたらコミットせずに終える（回している間は作業ツリーを編集しないこと、終わったら改めてコミットを頼んでもらうことを添える）。回さないと返されたら先へ進む
+- **self-review だけ**: 上の self-review までを行う
+- **このままコミット**: そのまま先へ進む
+- self-review / review-guide の起動に失敗したら、理由を 1 行伝えて先へ進む
+- 利用者がコミットしないと答えた（self-review が BLOCKER を残したままのコミットを確かめた問いに「しない」と返した、など）ら、2. へ進まずに終える
+
+先へ進むときは、1. の `git status` / `git diff` / `git diff --cached` を取り直してから 2. へ戻り、この skill の手順でコミットする（`git commit` を直接打たない。self-review と読み合わせの修正で差分が変わっている）。
 
 ### 2. コミット分割判定
 

@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.40.0] - 2026-10-29
+
+### Added
+
+- **git-commit-helper がコミットの前に self-review と読み合わせを提案する**（Step 1.5）。提案は issue-workflow の軽量フローと feature-dev にしか無く、start を通さずに始めたセッション・hub から起動した sub・GitHub の Issue の作業では、どちらも提案されないままコミットまで進んでいた。code-review が使え、このセッションで今回の変更に self-review を回していなければ、`AskUserQuestion` で「self-review → 読み合わせ / self-review だけ / このままコミット」を聞く。軽量フロー・feature-dev から起動された回、版番号・CHANGELOG だけの更新、利用者がレビュー不要と言った回は聞かない。無操作の自動続行の回答は選択とみなさず、通常のメッセージで聞き直す
+  - 読み合わせは self-review と同じ base で `code-review:review-guide --walkthrough` を回す。起動した self-review / review-guide がコミットへ進むよう示しても git-commit-helper を起動し直さず、1.5 の続きへ戻る（起動し直すと読み合わせの前にコミットが入る）。締めの `決定的な検証` が赤ならコミットへ進まない。`変異テスト: 提案する` はこの skill からは回さず、回すと返されたらコミットせずに終える（変異体が作業ツリーに残ったままコミットしない）。利用者がコミットしないと答えた回も終える。先へ進むときは `git status` / `git diff` を取り直してから分割判定に入る
+  - このセッションで読み合わせ（review-guide の締め）を回した回も聞かない。締めの 2 行を要約して持つので、review-guide-format.md の「回し直すかの判断」「変異テストの提案」への SSoT pin を置いた
+  - allowed-tools に `AskUserQuestion` を足した（`/commit` の command も同じ）。`_requirements` と check-deps.sh に code-review（任意）を足した
+
 ## [1.39.1] - 2026-10-21
 
 ### Fixed

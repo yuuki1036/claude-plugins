@@ -88,5 +88,57 @@ class AliasCommandReadsSkillTest(unittest.TestCase):
             self.assertIn(f"${{CLAUDE_PLUGIN_ROOT}}/skills/{skill}/SKILL.md", body, f"/{cmd} が SKILL.md を読ませない")
 
 
+class ReviewOfferBeforeCommitTest(unittest.TestCase):
+    """呼び出し元のフローを持たないコミットでも、self-review と読み合わせを提案する.
+
+    提案は軽量フローと feature-dev にしか無く、start を通さないセッション・hub から起動した sub・GitHub の
+    Issue の作業では、self-review も review-guide も提案されないままコミットまで進んだ
+    """
+
+    def step(self) -> str:
+        return between((DW / "skills" / "git-commit-helper" / "SKILL.md").read_text(encoding="utf-8"),
+                       "### 1.5 コミット前のレビュー提案", "### 2. コミット分割判定")
+
+    def test_offers_both_reviews_and_skipping(self):
+        s = self.step()
+        self.assertIn("`AskUserQuestion` で 1 問だけ聞く", s)
+        for option in ('"self-review → 読み合わせ (Recommended)"', '"self-review だけ"', '"このままコミット"'):
+            self.assertIn(option, s, f"選択肢に {option} が無い")
+        self.assertIn("`--base <控えた base_branch> --walkthrough`", s, "読み合わせを self-review と同じ base で回さない")
+
+    def test_does_not_ask_again_after_a_flow_already_reviewed(self):
+        s = self.step()
+        self.assertIn("今回コミットする変更に self-review か読み合わせ（review-guide の締め）を回した", s,
+                      "self-review・読み合わせの後に聞き直す")
+        self.assertIn("呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動された", s,
+                      "フローが回さないと決めた回にも聞き直す")
+        self.assertIn("使える skill に `code-review:self-review` が無い", s, "code-review が無いのに提案する")
+        self.assertIn("機械的な更新だけ", s, "版の bump だけのコミットにも聞く")
+        self.assertIn("「レビューは要らない」", s, "利用者が断ったのに聞く")
+        self.assertIn("取り直してから 2. へ戻り、この skill の手順でコミットする", s)
+
+    def test_reviews_return_here_instead_of_committing_by_themselves(self):
+        """起動した self-review / review-guide が git-commit-helper を起動し直すと、読み合わせの前にコミットが入る."""
+        s = self.step()
+        self.assertIn("git-commit-helper を起動し直さずにこの 1.5 の続きへ戻る", s)
+        self.assertIn("2. へ進まずに終える", s, "コミットを断った回にもコミットへ進む")
+
+    def test_heavy_branches_stop_before_committing(self):
+        """検証が赤のまま・変異テストを回しながらコミットへ進まない（変異体は作業ツリーへ直接書かれる）."""
+        s = self.step()
+        self.assertIn("赤なら 2. へ進まずに結果を示し", s)
+        self.assertIn("`次の一手:` が `self-review をもう一度` → self-review を `<控えた base_branch>` だけを引数にもう一度回す", s,
+                      "2 回目の self-review を求められてもそのままコミットへ進む")
+        self.assertIn("両方に当たる回は `次の一手:` を済ませてから `変異テスト:` を見る", s)
+        self.assertIn("この skill からは回さない", s)
+        self.assertIn("回すと返されたらコミットせずに終える", s)
+        self.assertIn("`askUserQuestionTimeout`）の回答は選ばれたものとみなさない", s)
+
+    def test_ask_user_question_is_allowed_on_both_entry_points(self):
+        for path in (DW / "skills" / "git-commit-helper" / "SKILL.md", DW / "commands" / "commit.md"):
+            head = path.read_text(encoding="utf-8").split("---")[1]
+            self.assertIn("- AskUserQuestion", head, f"{path.name} の allowed-tools に AskUserQuestion が無い")
+
+
 if __name__ == "__main__":
     unittest.main()

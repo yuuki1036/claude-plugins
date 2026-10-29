@@ -4,6 +4,7 @@ allowed-tools:
   - Bash
   - Read
   - Skill
+  - AskUserQuestion
 ---
 
 **まず `${CLAUDE_PLUGIN_ROOT}/skills/git-commit-helper/SKILL.md` を Read し、その手順に従う**（command 名と skill 名が違うので、`/commit` でも `Skill` tool の `dev-workflow:commit` でもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `dev-workflow@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない。`git commit` を直接打たない / GitHub issue #219）。
