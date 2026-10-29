@@ -8,7 +8,7 @@ supersedes: []
 superseded-by: null
 issue: "GitHub issue #308"
 spec: null
-adrs: ["20261021140738", "20261021154740", "20261025152955", "20261027002221", "20261027014506"]
+adrs: ["20261021140738", "20261021154740", "20261025152955", "20261027002221", "20261027014506", "20261029191558"]
 tags: [project-hub, multi-session, hooks, send-message, new-plugin]
 ---
 
@@ -399,6 +399,12 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
 - **sub を閉じる・題の形（#330）**: `hub.py close-sub` は最新の report が done かと、会話の ID（Desktop の hub から、確かめた登録だけ）を返し、閉じた結果を `close_sub` の kind で journal に残す。archive は Claude が `archive_session` で行い、アプリの承認に任せる。題は start で `<Issue ID> <英語の短い要約>`、init で `hub <英語の短い名前>` を提案する（hub の改名は lead が良いと言ったときだけ）
 - **トラッカーへの書き込み（#331）**: ADR-20261027014506。config の `tracker_write`（既定 `never`）で選び、`with_approval` でも毎回 lead の承認を取り、読み直した本文で反映を確かめる
 
+
+## 実装で決めたこと（init の既定と follow-up の起票の候補・2026-10-29）
+
+- **トラッカーへの書き込みの既定**: ADR-20261029191558（ADR-20261027014506 を置き換え）。上の #331 の「既定 `never`」について、init で `--tracker-write` を指定しなかったときの既定が `with_approval` に変わった（tracker `local` は `never`。`local` に `with_approval` は init が exit 3）。config に値が無い・読めない PJ は `never` のままで、既にある PJ の挙動は変えない。書くたびの承認・読み直し・`local` で書かない、は据え置き
+- **サイドバーのグループの既定**: init で `--sidebar-group` を指定しなかったとき、Desktop の hub（会話の ID を確かめられる）なら `on`、それ以外は `off`。on のときは init の出力の `sidebar_notice` を lead にそのまま伝える。config に値が無い・読めない PJ は `off` のまま
+- **follow-up を起票の候補として出す**: `tracker_write` が `with_approval` で tracker が github / linear の PJ では、report を受けたときと status で lead に出す一覧の `follow_ups` に番号を振り、lead が番号で指定したものだけ、書き込みの手順（全文を見せて承認）で起票する。sub が Issue ID を添えたもの（起票済み）と、hub 宛ての残作業として todo の案にしたものは候補にしない
 
 ## 未解決事項 (open)
 

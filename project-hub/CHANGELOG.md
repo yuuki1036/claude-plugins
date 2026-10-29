@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.11.0] - 2026-10-29
+
+### Added
+
+- **sub の `follow_ups` を起票の候補として出す**（`tracker_write: with_approval` で tracker が github / linear の PJ）: report を受けたときと `status` で lead に出す一覧の follow-up に番号を振り、「起票するなら番号で指定」と添える。指定されたものだけ、これまでの書き込みの手順（全文を見せて承認を取る）で起票する。番号を振るのは今回取り込んだ report の follow-up だけで、先頭に Issue ID を書いた follow-up（sub が起票済み。report skill に書き方を足した）・hub 宛ての残作業として `todo` の案にしたもの・status で再掲した分には振らない。`hub.py ingest` の出力に `tracker_write` を足した（通知のターンで refresh-hub を回さずに決められるように）
+
+### Changed
+
+- **`hub init` の既定を変えた**: `--tracker-write` は `with_approval`（tracker `local` は `never`。`local` に `with_approval` を指定すると init が止まる）、サイドバーのグループは Desktop の hub なら `on`（CLI の hub は `off`）。init に `--sidebar-group <on|off>` を足し、on のときは出力の `sidebar_notice` を lead にそのまま伝える。変えたのは新しく作る hub の既定だけで、既にある PJ の config と、config に値が無い・読めないときの扱い（`never` / `off`）はそのまま。書くたびに全文を見せて lead の承認を取る手順は変えていないので、承認なしに書く経路は増えない。この既定の決定を記録した ADR は新しい ADR で supersede した
+- init が上の 2 つの組み合わせで exit 3 になったときは、stderr の文面を lead に伝え、その引数を外して実行し直す（PJ が init 済みの exit 3 は takeover を案内する）
+
 ## [0.10.0] - 2026-10-29
 
 ### Added

@@ -1,10 +1,10 @@
 ---
 id: 20261027014506
-status: accepted
-phase: current
-last-validated: 2026-10-27
+status: superseded
+phase: superseded
+last-validated: 2026-10-29
 supersedes: []
-superseded-by: null
+superseded-by: 20261029191558
 append_only: true
 tags: [project-hub, tracker, approval]
 ---

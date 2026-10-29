@@ -65,11 +65,13 @@ REPORT_SCHEMAS = (1, 2, 3)
 # ingest / reports が出す report の中身（state.md には写さない）
 REPORT_FIELDS = ("name", "issue", "state", "pr", "needs_lead", "questions", "follow_ups", "claims",
                  "decisions", "waiting_prs")
-# hub がトラッカーに書いてよいか。never は書かない（既定）、with_approval は lead の承認を取って書く（GitHub issue #331）
+# hub がトラッカーに書いてよいか。never は書かない、with_approval は lead の承認を取って書く（GitHub issue #331）。
+# init の既定は with_approval（tracker local は never）。config に無い・読めない値は never に倒す（tracker_write()）
 TRACKER_WRITE_MODES = ("never", "with_approval")
 # Desktop のサイドバーで hub と sub を PJ のグループにまとめるか。既にあるセッションを別のセッションの下に結び付ける
 # ツールは無い（detach_session は外すだけ）ので、hub の外で始めて後から sub にしたセッションはグループで代える。
-# off は利用者のサイドバーを動かさない（既定 / GitHub issue #339）
+# off は利用者のサイドバーを動かさない（GitHub issue #339）。init の既定は Desktop の hub なら on、それ以外は off。
+# config に無い・読めない値は off に倒す（sidebar_group()）
 SIDEBAR_GROUP_MODES = ("off", "on")
 # filed: グループに入れた / nested: 起動したセッションの下に並んでいるので動かさない / declined: 移動の確認を断られた /
 # failed: 取得か移動に失敗した（次の回にやり直す）
@@ -435,7 +437,7 @@ def sidebar_group(config: dict) -> str:
 
 
 def sidebar_notice(mode: str, project: str) -> str:
-    """set-sidebar-group が lead に必ず見せる 1 行（サイドバーの表示が変わることを lead が知らないまま動かさない）."""
+    """set-sidebar-group と init（on のときだけ）が lead に必ず見せる 1 行（サイドバーの表示が変わることを lead が知らないまま動かさない）."""
     if mode == "on":
         # 表示の切り替えと確認の出方は move_sessions のツール定義による
         return (f"サイドバーのグループ: 有効。hub と、hub の外で始めて後から sub にしたセッションを、グループ「{project}」に"
@@ -843,6 +845,15 @@ def cmd_init(args) -> int:
     if not repos:
         raise HubError(2, "--repo <path>[=<base>] を 1 つ以上指定する")
     living_spec = living_spec_path(args.living_spec, repos) if args.living_spec else None
+    write_mode = args.tracker_write or ("never" if args.tracker == "local" else "with_approval")
+    if write_mode == "with_approval" and args.tracker == "local":
+        raise HubError(3, "tracker local の PJ では hub はトラッカーに書かない（Issue ファイルは issue-workflow の持ち物 / "
+                          "ADR-20261027014506 の決定 5）")
+    host = verified_host(sid)
+    group_mode = args.sidebar_group or ("on" if host else "off")
+    if group_mode == "on" and host is None:
+        raise HubError(3, "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーのグループは"
+                          "Desktop の hub だけで使える")
 
     base_dir = root()
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -858,16 +869,19 @@ def cmd_init(args) -> int:
         "project": args.project, "status": "active", "tracker": tracker, "repos": repos,
         "approval": {"prefix": args.approval_prefix, "suffix": args.approval_suffix,
                      "mode": args.approval_mode},
-        "tracker_write": args.tracker_write,
+        "tracker_write": write_mode, "sidebar_group": group_mode,
     }
     if living_spec:
         config["living_spec"] = living_spec
     write_json(pdir / "config.json", config)
-    write_json(pdir / "hub.json", {"session_id": sid, "host_session_id": verified_host(sid),
+    write_json(pdir / "hub.json", {"session_id": sid, "host_session_id": host,
                                    "name": args.name, "updated": now()})
     out = {"project": args.project, "dir": str(pdir), "hub": args.name, "repos": repos,
            "gitignored": gitignored(pdir / "config.json"), "approval_mode": args.approval_mode,
-           "mode_notice": mode_notice(args.approval_mode), "tracker_write": args.tracker_write}
+           "mode_notice": mode_notice(args.approval_mode), "tracker_write": write_mode,
+           "sidebar_group": group_mode}
+    if group_mode == "on":
+        out["sidebar_notice"] = sidebar_notice("on", args.project)
     warning = default_name_warning(args.name)
     if warning:
         out["warning"] = warning
@@ -1334,9 +1348,9 @@ def cmd_ingest(args) -> int:
         (inbox / sub).mkdir(parents=True, exist_ok=True)
     seen = {r.get("source") for r in read_jsonl(pdir / "journal.jsonl") if r.get("kind") == "report"}
     # reports は今回取り込んだ分の中身（status が lead に見せる）。state.md には写さない
-    # approval_mode は、通知を受けたターンで処理の仕方を決めるのに使う（refresh-hub を回さずに済むように）
+    # approval_mode と tracker_write は、通知を受けたターンで処理の仕方を決めるのに使う（refresh-hub を回さずに済むように）
     result = {"ingested": [], "duplicates": [], "invalid": [], "reports": [],
-              "approval_mode": approval_mode(config)[0]}
+              "approval_mode": approval_mode(config)[0], "tracker_write": tracker_write(config)}
     for path in sorted(inbox.glob("*.json")):
         if not path.is_file():
             continue
@@ -2685,8 +2699,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--approval-prefix", default="")
     p.add_argument("--approval-suffix", default="")
     p.add_argument("--living-spec", help="PJ の living spec（.claude/living-specs/<slug>.md）。後から set-living-spec でも結べる")
-    p.add_argument("--tracker-write", choices=TRACKER_WRITE_MODES, default="never",
-                   help="hub がトラッカーに書いてよいか（never: 書かない / with_approval: lead の承認を取って書く）")
+    p.add_argument("--tracker-write", choices=TRACKER_WRITE_MODES,
+                   help="hub がトラッカーに書いてよいか（never: 書かない / with_approval: lead の承認を取って書く。"
+                        "既定は with_approval、tracker local は never）")
+    p.add_argument("--sidebar-group", choices=SIDEBAR_GROUP_MODES,
+                   help="後から sub にしたセッションを hub とサイドバーのグループにまとめるか（既定は Desktop の hub なら on）")
     p.add_argument("--approval-mode", choices=APPROVAL_MODES, default="auto",
                    help="送る前の承認の取り方（auto: lead の確認が要る事柄を含まない連絡は承認なしに送る / "
                         "number: 4 桁の番号の打ち返し / phrase: 本文の提示より後の lead の「送って」）")

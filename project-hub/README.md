@@ -23,8 +23,8 @@
 /project-hub:hub todo             # hub 自身の残作業を足す・終える・一覧する
 /project-hub:hub close-sub <Issue> # done を報告した sub を閉じる（Desktop の archive）
 /project-hub:hub mode <方式>      # 送る前の承認の方式を切り替える（auto / number / phrase）
-/project-hub:hub tracker-write <never|with_approval> # hub がトラッカーに書いてよいか（書くときは毎回 lead の承認を取る）
-/project-hub:hub sidebar-group <on|off> # 後から sub にしたセッションを、hub と一緒にサイドバーのグループにまとめる（Desktop だけ。既定は off）
+/project-hub:hub tracker-write <never|with_approval> # hub がトラッカーに書いてよいか（既定は with_approval、tracker local は never。書くときは毎回 lead の承認を取る。sub の follow-up は起票の候補として出す）
+/project-hub:hub sidebar-group <on|off> # 後から sub にしたセッションを、hub と一緒にサイドバーのグループにまとめる（Desktop だけ。Desktop の hub は既定で on）
 /project-hub:hub living-spec <path> # PJ の living spec を結ぶ（state.md にパスが出る）
 /project-hub:hub takeover         # 別のセッションを hub にする（Desktop で同じ会話を開き直しただけなら、確かめられれば自動で引き継ぐ）
 /project-hub:hub close            # PJ を閉じる

@@ -1297,13 +1297,15 @@ class IngestTest(HubTestBase):
         tmp = self.inbox / ".20261021T000000000000Z-a.json.tmp"
         tmp.write_text("{", encoding="utf-8")
         out = self.ok("ingest", "--project", "pj")
-        self.assertEqual(out, {"ingested": [], "duplicates": [], "invalid": [], "reports": [], "approval_mode": "number"})
+        self.assertEqual(out, {"ingested": [], "duplicates": [], "invalid": [], "reports": [], "approval_mode": "number",
+                               "tracker_write": "with_approval"})
         self.assertTrue(tmp.exists())
 
     def test_a_directory_named_like_a_report_is_left_alone(self):
         (self.inbox / "20261021T000000000000Z-a.json").mkdir()
         out = self.ok("ingest", "--project", "pj")
-        self.assertEqual(out, {"ingested": [], "duplicates": [], "invalid": [], "reports": [], "approval_mode": "number"})
+        self.assertEqual(out, {"ingested": [], "duplicates": [], "invalid": [], "reports": [], "approval_mode": "number",
+                               "tracker_write": "with_approval"})
         self.assertTrue((self.inbox / "20261021T000000000000Z-a.json").is_dir())
 
     def test_a_missing_inbox_is_made_again(self):
@@ -3344,7 +3346,7 @@ class CloseSubTest(HubTestBase):
 
 
 class TrackerWriteTest(HubTestBase):
-    """hub がトラッカーに書いてよいか（GitHub issue #331）。既定は書かない."""
+    """hub がトラッカーに書いてよいか（GitHub issue #331）。init の既定は承認を取って書く（tracker local は書かない）."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -3353,8 +3355,25 @@ class TrackerWriteTest(HubTestBase):
     def tracker_record(self, body: dict | None = None):
         return self.record(body or {"subject": "#311", "text": "本文に #310 の結果を足した"}, kind="tracker")
 
+    def test_init_defaults_to_with_approval_except_for_a_local_tracker(self):
+        self.assertEqual(self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")["tracker_write"],
+                         "with_approval")
+        linear = self.init(project="lin", tracker="linear")
+        self.assertEqual(json.loads((linear / "config.json").read_text(encoding="utf-8"))["tracker_write"],
+                         "with_approval")
+        issues = self.tmp / "indie" / "abc" / "issues"
+        issues.mkdir(parents=True)
+        local = ["init", "--project", "loc", "--name", "hub-l", "--tracker", "local", "--tracker-dir",
+                 str(issues.parent), "--repo", f"{self.repo}=base"]
+        res = self.run_hub(*local, "--tracker-write", "with_approval")
+        self.assertEqual(res.returncode, 3, "tracker local で書く設定の hub を作らない")
+        self.assertFalse((self.root / "loc" / "config.json").exists())
+        self.ok(*local)
+        self.assertEqual(json.loads((self.root / "loc" / "config.json").read_text(encoding="utf-8"))["tracker_write"],
+                         "never")
+
     def test_writing_needs_with_approval_and_carries_no_send_fields(self):
-        self.assertEqual(self.ok("refresh-hub", "--project", "pj", "--name", "hub-session")["tracker_write"], "never")
+        self.assertEqual(self.ok("set-tracker-write", "--project", "pj", "--mode", "never")["tracker_write"], "never")
         res = self.tracker_record()
         self.assertEqual(res.returncode, 3, res)
         self.assertEqual(self.ok("set-tracker-write", "--project", "pj", "--mode", "with_approval"),
@@ -3367,7 +3386,7 @@ class TrackerWriteTest(HubTestBase):
                                       "--basis", "lead", stdin=json.dumps({"subject": "#311", "text": "t"}))
                          .returncode, 2)
         kinds = [r["kind"] for r in self.journal(self.pdir)]
-        self.assertEqual(kinds[-2:], ["tracker_write", "tracker"])
+        self.assertEqual(kinds[-3:], ["tracker_write", "tracker_write", "tracker"])
 
     def test_an_unknown_value_falls_back_to_never(self):
         config = json.loads((self.pdir / "config.json").read_text(encoding="utf-8"))
@@ -3391,18 +3410,26 @@ class TrackerWriteTest(HubTestBase):
                            stdin=json.dumps({"subject": "ABC-1", "text": "t"}))
         self.assertEqual(res.returncode, 3, res)
 
-    def test_init_can_allow_writing(self):
+    def test_ingest_reports_tracker_write_for_the_notified_turn(self):
+        self.assertEqual(self.ok("ingest", "--project", "pj")["tracker_write"], "with_approval")
+        self.ok("set-tracker-write", "--project", "pj", "--mode", "never")
+        self.assertEqual(self.ok("ingest", "--project", "pj")["tracker_write"], "never",
+                         "通知のターンで never の PJ に起票の候補を出す")
+
+    def test_init_can_forbid_writing(self):
         self.ok("init", "--project", "pj2", "--name", "hub-2", "--tracker", "github", "--tracker-repo", "o/r",
-                "--repo", f"{self.repo}=base", "--tracker-write", "with_approval")
+                "--repo", f"{self.repo}=base", "--tracker-write", "never")
         self.assertEqual(json.loads((self.root / "pj2" / "config.json").read_text(encoding="utf-8"))["tracker_write"],
-                         "with_approval")
+                         "never")
+        self.assertEqual(self.run_hub("record", "--project", "pj2", "--kind", "tracker", "--result", "accepted",
+                                      stdin=json.dumps({"subject": "#311", "text": "t"})).returncode, 3)
 
 
 SUB_HOST_B = "local_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 
 
 class SidebarGroupTest(HubTestBase):
-    """hub と後から sub にしたセッションを、サイドバーのグループにまとめる（GitHub issue #339）。既定は動かさない.
+    """hub と後から sub にしたセッションを、サイドバーのグループにまとめる（GitHub issue #339）。init の既定は Desktop の hub なら on（lead に必ず知らせる）、CLI の hub は off.
 
     利用者のサイドバーを変える操作なので、黙って on にならないこと・断られた移動を出し直さないこと・
     hub と登録の会話の ID 以外に結果を付けないことを見る
@@ -3449,14 +3476,40 @@ class SidebarGroupTest(HubTestBase):
     def config(self) -> dict:
         return json.loads((self.pdir / "config.json").read_text(encoding="utf-8"))
 
-    def test_off_by_default_and_on_only_for_a_desktop_hub(self):
+    def init_on_desktop(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        self.desktop("local_cccccccc-cccc-4ccc-8ccc-cccccccccccc", "sid-hub-2")
+        return self.run_hub("init", "--project", "pj2", "--name", "hub-2", "--tracker", "github", "--tracker-repo",
+                            "o/r", "--repo", f"{self.repo}=base", *extra,
+                            env_extra={"CLAUDE_CODE_SESSION_ID": "sid-hub-2",
+                                       "CLAUDE_CODE_HOST_SESSION_ID": "local_cccccccc-cccc-4ccc-8ccc-cccccccccccc"})
+
+    def test_init_turns_it_on_for_a_desktop_hub_and_says_so(self):
+        res = self.init_on_desktop()
+        self.assertEqual(res.returncode, 0, res)
+        out = json.loads(res.stdout)
+        self.assertEqual(out["sidebar_group"], "on")
+        self.assertIn("サイドバーのグループ: 有効", out["sidebar_notice"], "lead が知らないままサイドバーを動かす")
+        config = json.loads((self.root / "pj2" / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["sidebar_group"], "on")
+
+    def test_init_can_keep_it_off_and_refuses_on_outside_desktop(self):
+        res = self.init_on_desktop("--sidebar-group", "off")
+        self.assertEqual(res.returncode, 0, res)
+        self.assertEqual(json.loads(res.stdout)["sidebar_group"], "off")
+        self.assertNotIn("sidebar_notice", json.loads(res.stdout))
+        res = self.run_hub("init", "--project", "pj3", "--name", "hub-3", "--tracker", "github", "--tracker-repo",
+                           "o/r", "--repo", f"{self.repo}=base", "--sidebar-group", "on")
+        self.assertEqual(res.returncode, 3, "CLI の hub を on にしない")
+        self.assertFalse((self.root / "pj3" / "config.json").exists())
+
+    def test_a_cli_hub_is_off_by_default_and_on_only_for_a_desktop_hub(self):
         self.assertEqual(self.hub_ok("refresh-hub", "--project", "pj", "--name", "hub-session")["sidebar_group"], "off")
         self.assertEqual(self.plan(), {"sidebar_group": "off"})
         self.adopt(SID_A, SUB_HOST, "worker-a", "#308")
         self.assertNotIn("sidebar_pending", self.hub_ok("ingest", "--project", "pj"))
         res = self.run_hub("set-sidebar-group", "--project", "pj", "--mode", "on")
         self.assertEqual(res.returncode, 3, "CLI の hub では on にしない")
-        self.assertNotIn("sidebar_group", self.config())
+        self.assertEqual(self.config()["sidebar_group"], "off", "CLI で作った hub は既定で off")
         out = self.enable()
         self.assertEqual((out["sidebar_group"], out["previous"]), ("on", "off"))
         self.assertIn("グループ「pj」", out["notice"])
@@ -3583,6 +3636,42 @@ class SidebarGroupTest(HubTestBase):
                                                                                        "filed": [SUB_HOST]}),
                            env_extra={**self.ON_DESKTOP, "CLAUDE_CODE_SESSION_ID": SID_A})
         self.assertEqual(res.returncode, 3, "hub でないセッションは記録しない")
+
+
+
+class FollowUpFilingTextTest(unittest.TestCase):
+    """sub の follow_ups を起票の候補として出す手順（hub の SKILL.md）の文言契約.
+
+    候補を出す条件を「lead に出す一覧に並べるとき」にしたので、report を受けたときの手順が follow_ups を
+    一覧に入れないと、auto の PJ では候補が一度も出ない。起票済みの follow-up に番号を振ると二重に起票しうる
+    """
+
+    def skill(self) -> str:
+        return (ROOT / "project-hub" / "skills" / "hub" / "SKILL.md").read_text(encoding="utf-8")
+
+    def section(self, start: str, end: str) -> str:
+        s = self.skill()
+        i = s.index(start)
+        return s[i:s.index(end, i)]
+
+    def test_report_handling_puts_follow_ups_in_the_list(self):
+        s = self.section("**report を受けたときの手順**", "## init")
+        self.assertIn("`ingest` の出力の `tracker_write` が `with_approval` で tracker が github / linear の PJ では、"
+                      "それ以外の `follow_ups` を起票の候補として lead に出す一覧に入れる", s,
+                      "report を受けたターンに起票の候補が出ない / never・local の PJ にも候補が出る")
+
+    def test_candidates_skip_filed_ones_and_need_a_number(self):
+        s = self.section("**sub の `follow_ups` は起票の候補として出す**", "## tracker-write")
+        self.assertIn("番号を振らないもの: 先頭に Issue ID を書いた follow-up", s, "起票済みの follow-up を二重に起票しうる")
+        self.assertIn("取り込み済みの report を並べ直した分", s, "hub が起票した follow-up に status のたびに番号が振り直される")
+        self.assertIn("一覧を出し直したら前の番号は使わない", s)
+        report = (ROOT / "project-hub" / "skills" / "report" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("自分で起票したもの（tracker github / linear）は、文の先頭に Issue ID を書く", report,
+                      "sub 側に起票済みを示す書き方が無い")
+        self.assertIn("`todo --add` の案にした hub 宛ての残作業", s, "todo の案と起票の候補に二重に出る")
+        self.assertIn("lead が番号を指定したものだけ", s)
+        self.assertIn("指定が無ければ書かない", s, "候補を出しただけで起票する")
+        self.assertIn("tracker `local` の PJ はこれまでどおり lead に見せるだけ", s)
 
 
 if __name__ == "__main__":
