@@ -3398,5 +3398,192 @@ class TrackerWriteTest(HubTestBase):
                          "with_approval")
 
 
+SUB_HOST_B = "local_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+
+class SidebarGroupTest(HubTestBase):
+    """hub と後から sub にしたセッションを、サイドバーのグループにまとめる（GitHub issue #339）。既定は動かさない.
+
+    利用者のサイドバーを変える操作なので、黙って on にならないこと・断られた移動を出し直さないこと・
+    hub と登録の会話の ID 以外に結果を付けないことを見る
+    """
+
+    ON_DESKTOP = {"CLAUDE_CODE_HOST_SESSION_ID": HUB_HOST}
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init()
+        self.desktop(HUB_HOST, SID_HUB)
+
+    def desktop(self, host: str, cli: str) -> None:
+        path = self.tmp / "desktop" / "claude-code-sessions" / "acct" / "org" / f"{host}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"sessionId": host, "cliSessionId": cli}), encoding="utf-8")
+
+    def hub(self, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+        return self.run_hub(*args, stdin=stdin, env_extra=self.ON_DESKTOP)
+
+    def hub_ok(self, *args: str, stdin: str | None = None) -> dict:
+        res = self.hub(*args, stdin=stdin)
+        self.assertEqual(res.returncode, 0, res)
+        return json.loads(res.stdout)
+
+    def enable(self) -> dict:
+        return self.hub_ok("set-sidebar-group", "--project", "pj", "--mode", "on")
+
+    def plan(self) -> dict:
+        return self.hub_ok("sidebar", "--project", "pj")
+
+    def record(self, body: dict) -> subprocess.CompletedProcess[str]:
+        return self.hub("sidebar", "--project", "pj", "--record", stdin=json.dumps(body))
+
+    def adopt(self, sid: str, host: str | None, name: str, issue: str) -> None:
+        """hub の外で始めたセッションが hello で登録される（host が None なら Desktop の記録で確かめられない）."""
+        env = None
+        if host is not None:
+            self.desktop(host, sid)
+            env = {"CLAUDE_CODE_HOST_SESSION_ID": host}
+        res = self.report(sid=sid, name=name, body=report_body(issue=issue, state="hello"), env_extra=env)
+        self.assertEqual(res.returncode, 0, res)
+
+    def config(self) -> dict:
+        return json.loads((self.pdir / "config.json").read_text(encoding="utf-8"))
+
+    def test_off_by_default_and_on_only_for_a_desktop_hub(self):
+        self.assertEqual(self.hub_ok("refresh-hub", "--project", "pj", "--name", "hub-session")["sidebar_group"], "off")
+        self.assertEqual(self.plan(), {"sidebar_group": "off"})
+        self.adopt(SID_A, SUB_HOST, "worker-a", "#308")
+        self.assertNotIn("sidebar_pending", self.hub_ok("ingest", "--project", "pj"))
+        res = self.run_hub("set-sidebar-group", "--project", "pj", "--mode", "on")
+        self.assertEqual(res.returncode, 3, "CLI の hub では on にしない")
+        self.assertNotIn("sidebar_group", self.config())
+        out = self.enable()
+        self.assertEqual((out["sidebar_group"], out["previous"]), ("on", "off"))
+        self.assertIn("グループ「pj」", out["notice"])
+        self.assertIn("表示に切り替わる", out["notice"])
+        self.assertEqual(self.journal(self.pdir)[-1]["kind"], "sidebar_group")
+        self.assertEqual(self.hub_ok("refresh-hub", "--project", "pj", "--name", "hub-session")["sidebar_group"], "on")
+        self.assertEqual(self.run_hub("set-sidebar-group", "--project", "pj", "--mode", "on",
+                                      env_extra={**self.ON_DESKTOP, "CLAUDE_CODE_SESSION_ID": SID_A}).returncode, 3,
+                         "hub でないセッションは切り替えない")
+
+    def test_an_unknown_value_falls_back_to_off(self):
+        (self.pdir / "config.json").write_text(json.dumps({**self.config(), "sidebar_group": "yes"}),
+                                               encoding="utf-8")
+        self.assertEqual(self.plan(), {"sidebar_group": "off"})
+        self.assertEqual(self.record({"group_id": "g1", "filed": [HUB_HOST]}).returncode, 3)
+        self.assertEqual(self.ok("set-sidebar-group", "--project", "pj", "--mode", "off")["sidebar_group"], "off",
+                         "off には CLI の hub からでも戻せる")
+        self.enable()
+        (self.pdir / "config.json").write_text(json.dumps({**self.config(), "sidebar_group_id": "$(id)"}),
+                                               encoding="utf-8")
+        self.assertIsNone(self.plan()["group_id"], "読めないグループの ID は使わない")
+
+    def test_verified_subs_and_the_hub_are_listed_until_filed(self):
+        self.enable()
+        self.adopt(SID_A, SUB_HOST, "worker-a", "#308")
+        self.adopt(SID_B, None, "worker-b", "#309")
+        self.assertEqual(self.hub_ok("ingest", "--project", "pj")["sidebar_pending"], 2, "sub A と hub 自身")
+        plan = self.plan()
+        self.assertEqual((plan["group_name"], plan["group_id"]), ("pj", None))
+        self.assertEqual(plan["hub"], {"host": HUB_HOST, "filed": False})
+        self.assertEqual(plan["pending"], [{"session_id": SID_A, "name": "worker-a", "issue": "#308", "host": SUB_HOST}])
+        self.assertEqual(plan["no_host"], [{"session_id": SID_B, "name": "worker-b", "issue": "#309"}])
+        out = json.loads(self.record({"group_id": "g-1", "filed": [HUB_HOST, SUB_HOST]}).stdout)
+        self.assertEqual(out["recorded"], {"filed": 2, "nested": 0, "declined": 0, "failed": 0})
+        self.assertEqual(self.config()["sidebar_group_id"], "g-1")
+        rows = [r for r in self.journal(self.pdir) if r["kind"] == "sidebar"]
+        self.assertEqual([(r["subject"], r["body"]["session_id"]) for r in rows], [(HUB_HOST, None), (SUB_HOST, SID_A)])
+        plan = self.plan()
+        self.assertEqual((plan["hub"]["filed"], plan["pending"]), (True, []))
+        self.assertEqual(self.hub_ok("ingest", "--project", "pj")["sidebar_pending"], 0)
+        # CLI から呼んだ hub は会話の ID を確かめられないので、相手を出さず記録もしない
+        self.adopt(SID_B, SUB_HOST_B, "worker-b2", "#309")
+        cli = self.ok("sidebar", "--project", "pj")
+        self.assertEqual((cli["hub"]["host"], cli["pending"]), (None, []))
+        self.assertIn("Desktop", cli["note"])
+        self.assertEqual(self.ok("ingest", "--project", "pj")["sidebar_pending"], 0)
+        self.assertEqual(self.run_hub("sidebar", "--project", "pj", "--record",
+                                      stdin=json.dumps({"group_id": "g-1", "filed": [SUB_HOST]})).returncode, 3)
+
+    def test_declined_and_nested_are_not_retried_but_failed_is(self):
+        self.enable()
+        self.adopt(SID_A, SUB_HOST, "worker-a", "#308")
+        self.adopt(SID_B, SUB_HOST_B, "worker-b", "#309")
+        self.assertEqual(self.record({"nested": [SUB_HOST_B]}).returncode, 0, "nested だけなら group_id は要らない")
+        self.assertNotIn("sidebar_group_id", self.config())
+        res = self.record({"group_id": "g1", "declined": [SUB_HOST], "failed": [{"host": HUB_HOST, "error": "timeout"}]})
+        self.assertEqual(res.returncode, 0, res)
+        plan = self.plan()
+        self.assertEqual((plan["pending"], plan["hub"]["filed"]), ([], False), "断られた sub は出し直さず、失敗はやり直す")
+        failed = [r for r in self.journal(self.pdir) if r["kind"] == "sidebar"][-1]
+        self.assertEqual((failed["body"]["action"], failed["body"]["error"]), ("failed", "timeout"))
+        self.assertEqual(self.record({"group_id": "g1", "filed": [HUB_HOST]}).returncode, 0)
+        self.assertTrue(self.plan()["hub"]["filed"])
+
+    def test_re_enabling_forgets_the_group_but_not_nested(self):
+        self.enable()
+        self.adopt(SID_A, SUB_HOST, "worker-a", "#308")
+        self.adopt(SID_B, SUB_HOST_B, "worker-b", "#309")
+        self.assertEqual(self.record({"group_id": "g1", "filed": [HUB_HOST, SUB_HOST], "nested": [SUB_HOST_B]})
+                         .returncode, 0)
+        nested = [r for r in self.journal(self.pdir) if r["kind"] == "sidebar"][-1]
+        self.assertEqual((nested["subject"], nested["body"]["group_id"]), (SUB_HOST_B, None))
+        out = self.enable()
+        self.assertEqual((out["previous"], out["previous_group_id"]), ("on", "g1"))
+        self.assertNotIn("sidebar_group_id", self.config())
+        plan = self.plan()
+        self.assertEqual([p["host"] for p in plan["pending"]], [SUB_HOST], "nested は起動したセッションの下のまま")
+        self.assertFalse(plan["hub"]["filed"])
+        self.assertEqual(self.record({"group_id": "g2", "filed": [HUB_HOST, SUB_HOST]}).returncode, 0)
+        self.assertEqual(self.record({"group_id": "g3", "filed": [SUB_HOST]}).returncode, 3, "config のグループと違う")
+        off = self.hub_ok("set-sidebar-group", "--project", "pj", "--mode", "off")
+        self.assertEqual((off["previous_group_id"], self.config()["sidebar_group"]), ("g2", "off"))
+        self.assertIn("そのまま残る", off["notice"])
+        self.assertEqual(self.plan(), {"sidebar_group": "off"})
+        self.assertNotIn("sidebar_pending", self.hub_ok("ingest", "--project", "pj"))
+
+    def test_a_closed_sub_is_not_listed(self):
+        self.enable()
+        self.adopt(SID_A, SUB_HOST, "worker-a", "#308")
+        self.hub_ok("close-sub", "--project", "pj", "--session", SID_A, "--result", "failed", "--error", "busy")
+        with (self.pdir / "journal.jsonl").open("a", encoding="utf-8") as f:
+            for kind, subject in (("sidebar", SUB_HOST), ("close_sub", SID_A)):
+                f.write(json.dumps({"ts": "2026-10-29T00:00:00Z", "kind": kind, "subject": subject, "body": "x"}) + "\n")
+        self.assertEqual([p["session_id"] for p in self.plan()["pending"]], [SID_A],
+                         "閉じられなかった sub と、形の崩れた記録の sub は残す")
+        self.hub_ok("close-sub", "--project", "pj", "--session", SID_A, "--result", "accepted")
+        self.assertEqual(self.plan()["pending"], [])
+
+    def test_the_record_only_takes_known_conversations_in_one_action_each(self):
+        self.enable()
+        self.adopt(SID_A, SUB_HOST, "worker-a", "#308")
+        cases = {
+            "登録に無い会話": {"group_id": "g1", "filed": [SUB_HOST_B]},
+            "self のまま": {"group_id": "g1", "filed": ["self"]},
+            "配列の host": {"group_id": "g1", "filed": [[SUB_HOST]]},
+            "同じ会話を 2 回": {"group_id": "g1", "filed": [SUB_HOST], "declined": [SUB_HOST]},
+            "hub を nested": {"nested": [HUB_HOST]},
+            "failed に理由が無い": {"group_id": "g1", "failed": [SUB_HOST]},
+            "failed の理由が空": {"group_id": "g1", "failed": [{"host": SUB_HOST, "error": " "}]},
+            "group_id が無い": {"filed": [SUB_HOST]},
+            "group_id にシェルの文字": {"group_id": "$(id)", "filed": [SUB_HOST]},
+            "group_id が長すぎる": {"group_id": "g" * 201, "filed": [SUB_HOST]},
+            "知らない欄": {"group_id": "g1", "filed": [SUB_HOST], "moved": [SUB_HOST]},
+            "配列でない": {"group_id": "g1", "filed": SUB_HOST},
+            "空": {"group_id": "g1"},
+        }
+        for label, body in cases.items():
+            with self.subTest(label):
+                self.assertEqual(self.record(body).returncode, 2, body)
+        self.assertEqual(self.hub("sidebar", "--project", "pj", "--record", stdin="[]").returncode, 2)
+        self.assertEqual([r for r in self.journal(self.pdir) if r["kind"] == "sidebar"], [])
+        self.assertNotIn("sidebar_group_id", self.config())
+        res = self.run_hub("sidebar", "--project", "pj", "--record", stdin=json.dumps({"group_id": "g1",
+                                                                                       "filed": [SUB_HOST]}),
+                           env_extra={**self.ON_DESKTOP, "CLAUDE_CODE_SESSION_ID": SID_A})
+        self.assertEqual(res.returncode, 3, "hub でないセッションは記録しない")
+
+
 if __name__ == "__main__":
     unittest.main()
