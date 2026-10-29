@@ -118,9 +118,36 @@ class ClosingTest(unittest.TestCase):
         self.assertLess(listed, ask, "一覧より先に聞いている")
         self.assertIn("残った確認（", closing)
         s7 = step7()
-        self.assertIn("**1 問だけ**聞いてターンを終える", s7, "締めで確認をまとめて聞いている")
+        self.assertIn("**1 問だけ**聞く（1 回に 1 問。まとめて聞かない）", s7, "締めで確認をまとめて聞いている")
         self.assertIn("「要確認」を含む", s7, "解説の要確認が締めに集まらない")
         self.assertIn("「残った確認」に残す", s7)
+
+    def test_outside_points_are_fixed_before_asking(self):
+        """精読の外の点も、直し方が 1 つに決まるものは聞く前に直し、残りだけ対応可否を選ばせる."""
+        s7 = step7()
+        self.assertIn("**聞く前に直し**", s7, "直せる点まで利用者に聞いている")
+        self.assertIn("行に「対応を聞く」と付ける", s7)
+        for option in ("`直す`", "`別チケット候補にする`", "`このまま`"):
+            self.assertIn(option, s7, f"対応可否の選択肢に {option} が無い")
+        self.assertIn("`このまま` は外さない", s7)
+        self.assertIn("`AskUserQuestion`", s7)
+        self.assertIn("直さずに「残った確認」へ回す", s7, "無操作の自動続行の回答で直してしまう")
+        self.assertIn("`FIX_OK=1` で、`WALKTHROUGH=1` か利用者が直すよう言っていて", s7,
+                      "--walkthrough なしで解説だけ頼まれた回にも直してしまう")
+        self.assertIn("`FIX_OK=0` の点は手元で直せないので `直す` を出さず", s7)
+        self.assertIn("選択肢は 4 個まで", s7, "AskUserQuestion の上限を超える選択肢を作る")
+        self.assertIn("直し方が 1 つに決まり、この diff の範囲で閉じる修正は**聞く前に直し**", s7,
+                      "直し方が複数ある点まで聞かずに直す")
+        self.assertIn("直し方が複数ある・仕様の判断が要る・diff の外へ広がる・新しい仕組みが要る", s7)
+        self.assertIn("聞かずに終えたか答えが返らなかった「対応を聞く」の点", s7, "聞かなかった精読の外の点が締めから消える")
+        self.assertIn("- 精読の外 — <path or 観点> — <要旨>（対応を聞く: 未回答）", closing_template())
+        for path in (SKILL, REPO / "code-review" / "commands" / "review-guide.md"):
+            head = path.read_text(encoding="utf-8").split("---")[1]
+            self.assertIn("- AskUserQuestion", head, f"{path.name} の allowed-tools に AskUserQuestion が無い")
+        closing = closing_template()
+        self.assertIn("— 直した: <変更前 → 変更後の要旨>", closing)
+        self.assertIn("— 対応を聞く", closing)
+        self.assertIn("`（締め）` として数える", FORMAT.read_text(encoding="utf-8"))
 
     def test_same_check_is_not_restated(self):
         """同じ確認を解説の答え・確認したいこと・持ち越し・締めで言い直すと、読む量が繰り返しの分だけ増える（再現で最大 9 回）."""

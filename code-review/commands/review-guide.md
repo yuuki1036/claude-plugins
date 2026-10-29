@@ -7,6 +7,7 @@ allowed-tools:
   - Glob
   - Agent
   - Edit
+  - AskUserQuestion
 argument-hint: "[PR番号 | --base <ref>] [--top N] [--walkthrough] [--hide-guide]"
 ---
 
