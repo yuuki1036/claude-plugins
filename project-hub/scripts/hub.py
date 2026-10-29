@@ -10,6 +10,7 @@ root: ${PROJECT_HUB_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/project-hub}
 サブコマンド（`hub.py <cmd> --help`）:
   init / takeover / refresh-hub / set-mode / close / projects   PJ と hub の登録・送る前の承認の方式
   set-tracker-write                                        hub がトラッカーに書いてよいか
+  set-sidebar-group / sidebar                              サイドバーのグループにまとめるか・まとめる相手と結果の記録
   fact / facts / record / sent                             facts と brief・relay・start・トラッカーへの書き込みの記録・
                                                            承認なしに送った連絡
   ingest / reports / presence / snapshot / issue / render / worktrees   hub status・brief の材料
@@ -46,7 +47,7 @@ import sys
 from pathlib import Path
 
 JOURNAL_KINDS = ("relay", "brief", "start", "report", "fact", "takeover", "close", "mode", "tracker", "close_sub",
-                 "tracker_write")
+                 "tracker_write", "sidebar_group", "sidebar")
 REPORT_STATES = ("hello", "in_progress", "blocked", "ready_for_review", "done")
 SEND_RESULTS = ("accepted", "failed", "pasted", "unresolved")
 # 送る前の承認の取り方。auto は lead の確認が要る事柄を含まない連絡を承認なしに送る（ADR-20261025152955）、
@@ -66,6 +67,15 @@ REPORT_FIELDS = ("name", "issue", "state", "pr", "needs_lead", "questions", "fol
                  "decisions", "waiting_prs")
 # hub がトラッカーに書いてよいか。never は書かない（既定）、with_approval は lead の承認を取って書く（GitHub issue #331）
 TRACKER_WRITE_MODES = ("never", "with_approval")
+# Desktop のサイドバーで hub と sub を PJ のグループにまとめるか。既にあるセッションを別のセッションの下に結び付ける
+# ツールは無い（detach_session は外すだけ）ので、hub の外で始めて後から sub にしたセッションはグループで代える。
+# off は利用者のサイドバーを動かさない（既定 / GitHub issue #339）
+SIDEBAR_GROUP_MODES = ("off", "on")
+# filed: グループに入れた / nested: 起動したセッションの下に並んでいるので動かさない / declined: 移動の確認を断られた /
+# failed: 取得か移動に失敗した（次の回にやり直す）
+SIDEBAR_ACTIONS = ("filed", "nested", "declined", "failed")
+# list_groups / create_group が返すグループの ID。形の契約が無いので、シェルに読ませない文字だけを受ける
+GROUP_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,200}")
 # record の --from-resolve が引き継ぐ resolve の結果の有効期限（秒）。古い宛先を別の送信に流用しない
 RESOLVE_TTL = 1800
 # どれも fullmatch で使う（re.match + `$` は末尾の改行 1 つを通す）
@@ -416,6 +426,23 @@ def tracker_write(config: dict) -> str:
     """hub がトラッカーに書いてよいか。無い・読めない値は never（緩い側に倒さない / GitHub issue #331）."""
     value = config.get("tracker_write")
     return value if value in TRACKER_WRITE_MODES else "never"
+
+
+def sidebar_group(config: dict) -> str:
+    """サイドバーのグループにまとめるか。無い・読めない値は off（利用者のサイドバーを黙って変えない / GitHub issue #339）."""
+    value = config.get("sidebar_group")
+    return value if value in SIDEBAR_GROUP_MODES else "off"
+
+
+def sidebar_notice(mode: str, project: str) -> str:
+    """set-sidebar-group が lead に必ず見せる 1 行（サイドバーの表示が変わることを lead が知らないまま動かさない）."""
+    if mode == "on":
+        # 表示の切り替えと確認の出方は move_sessions のツール定義による
+        return (f"サイドバーのグループ: 有効。hub と、hub の外で始めて後から sub にしたセッションを、グループ「{project}」に"
+                "まとめる（hub から起動した sub は hub の下に並んでいるので動かさない）。サイドバーがグループを見せない"
+                "表示（プロジェクトごとのまとめなど）なら、見せる表示に切り替わる。permission mode が default なら、"
+                "hub 以外のセッションを動かすたびにアプリが確認を出す（止めるなら `hub sidebar-group off`）")
+    return "サイドバーのグループ: 無効。まとめたセッションとグループはそのまま残る（グループを消すなら、hub に頼むかサイドバーで消す）"
 
 
 def mode_notice(mode: str) -> str:
@@ -902,7 +929,7 @@ def cmd_refresh_hub(args) -> int:
            "tracker": config.get("tracker"), "repos": config.get("repos"),
            "living_spec": config.get("living_spec"),
            "approval": config.get("approval"), "approval_mode": mode,
-           "tracker_write": tracker_write(config)}
+           "tracker_write": tracker_write(config), "sidebar_group": sidebar_group(config)}
     warnings = [w for w in (default_name_warning(args.name), mode_warning) if w]
     if warnings:
         out["warning"] = " / ".join(warnings)
@@ -943,6 +970,26 @@ def cmd_set_tracker_write(args) -> int:
     config["tracker_write"] = args.mode
     write_json(pdir / "config.json", config)
     emit({"project": args.project, "tracker_write": args.mode, "previous": previous})
+    return 0
+
+
+def cmd_set_sidebar_group(args) -> int:
+    """hub と後から sub にしたセッションを、サイドバーのグループにまとめるかを切り替える（GitHub issue #339）."""
+    pdir = project_dir(args.project)
+    hub = require_hub(pdir, args.session_id)
+    if args.mode == "on" and verified_host(hub["session_id"]) is None:
+        raise HubError(3, "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーのグループは"
+                          "Desktop の hub だけで使える")
+    config = load_config(pdir)
+    previous = sidebar_group(config)
+    previous_id = config.get("sidebar_group_id")
+    journal_append(pdir, "sidebar_group", args.mode, {"from": previous, "group_id": previous_id})
+    config["sidebar_group"] = args.mode
+    # on にし直したときは前のグループの ID を引き継がない。lead が消したグループの代わりを、次のまとめで名前から引くか作る
+    config.pop("sidebar_group_id", None)
+    write_json(pdir / "config.json", config)
+    emit({"project": args.project, "sidebar_group": args.mode, "previous": previous,
+          "previous_group_id": previous_id, "notice": sidebar_notice(args.mode, args.project)})
     return 0
 
 
@@ -1279,7 +1326,7 @@ def cmd_sent(args) -> int:
 
 def cmd_ingest(args) -> int:
     pdir = project_dir(args.project)
-    require_hub(pdir, args.session_id)
+    hub = require_hub(pdir, args.session_id)
     config = load_config(pdir)
     kind = tracker_kind(config)
     inbox = pdir / "inbox"
@@ -1313,6 +1360,11 @@ def cmd_ingest(args) -> int:
             result["reports"].append({"file": path.name, "session_id": data["session_id"],
                                       **{k: data.get(k) for k in REPORT_FIELDS}})
         os.replace(path, inbox / "done" / path.name)
+    if sidebar_group(config) == "on":
+        # hello で登録した sub を、status を待たずに通知のターンでグループへまとめられるように
+        plan = sidebar_plan(pdir, config, hub)
+        result["sidebar_pending"] = len(plan["pending"]) + (plan["hub"]["host"] is not None
+                                                            and not plan["hub"]["filed"])
     emit(result)
     return 0
 
@@ -1471,6 +1523,111 @@ def cmd_close_sub(args) -> int:
         out["note"] = ("会話の ID を確かめられない（hub か sub が Desktop でない・0.6.4 までの登録）。"
                        "hub からは閉じられないので、lead に手で閉じてもらう")
     emit(out)
+    return 0
+
+
+def sidebar_done(marks: list[dict], host: str | None, group_id: str | None) -> bool:
+    """この会話をもう動かさないか。nested はどのグループでも、filed・declined は今のグループのものだけ数える.
+
+    declined を数えないと、断られた移動の確認を status のたびに出し直す。グループを作り直したら（ID が変わる）入れ直す
+    """
+    for row in marks:
+        if row.get("subject") != host:
+            continue
+        action = row["body"].get("action")
+        if action == "nested" or (action in ("filed", "declined") and row["body"].get("group_id") == group_id):
+            return True
+    return False
+
+
+def sidebar_plan(pdir: Path, config: dict, hub: dict) -> dict:
+    """サイドバーのグループにまとめる相手（GitHub issue #339）.
+
+    sub は会話の ID（local_…）を Desktop の記録で確かめた登録だけを動かせる。hub 自身は move_sessions に "self" で渡すが、
+    まとめたかを数えるために会話の ID を持つ。閉じた（close-sub で archive した）sub は出さない
+    """
+    if sidebar_group(config) != "on":
+        return {"sidebar_group": "off"}
+    rows = read_jsonl(pdir / "journal.jsonl")
+    marks = [r for r in rows if r.get("kind") == "sidebar" and isinstance(r.get("body"), dict)]
+    gid = config.get("sidebar_group_id")
+    gid = gid if isinstance(gid, str) and GROUP_ID_RE.fullmatch(gid) else None
+    hub_host = verified_host(hub["session_id"])
+    out = {"sidebar_group": "on", "group_name": config.get("project"), "group_id": gid,
+           "hub": {"host": hub_host, "filed": sidebar_done(marks, hub_host, gid)},
+           "pending": [], "no_host": []}
+    if hub_host is None:
+        out["note"] = "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーは動かさない"
+        return out
+    closed = {r.get("subject") for r in rows if r.get("kind") == "close_sub" and isinstance(r.get("body"), dict)
+              and r["body"].get("result") == "accepted"}
+    for reg in load_registrations(pdir)[0]:
+        if reg["session_id"] in closed:
+            continue
+        item = {"session_id": reg["session_id"], "name": reg.get("name"), "issue": reg.get("issue")}
+        host = registered_host(reg)
+        if host is None:
+            out["no_host"].append(item)
+        elif not sidebar_done(marks, host, gid):
+            out["pending"].append({**item, "host": host})
+    return out
+
+
+def cmd_sidebar(args) -> int:
+    """まとめる相手（--record なし）と、まとめた結果の記録（--record。stdin の JSON / GitHub issue #339）.
+
+    stdin: {"group_id", "filed": [host], "nested": [host], "declined": [host], "failed": [{"host", "error"}]}。
+    host は hub の会話の ID か、登録の会話の ID に限る（移動の結果を別の会話に付けない）
+    """
+    pdir = project_dir(args.project)
+    hub = require_hub(pdir, args.session_id)
+    config = load_config(pdir)
+    plan = sidebar_plan(pdir, config, hub)
+    if not args.record:
+        emit(plan)
+        return 0
+    if plan["sidebar_group"] != "on":
+        raise HubError(3, "sidebar_group が on の PJ ではない（`set-sidebar-group --mode on`）")
+    if plan["hub"]["host"] is None:
+        raise HubError(3, plan["note"])
+    body = load_json_input(args.body_file, "サイドバーの結果")
+    if not isinstance(body, dict) or set(body) - {"group_id", *SIDEBAR_ACTIONS}:
+        raise HubError(2, "結果は {\"group_id\", \"filed\", \"nested\", \"declined\", \"failed\"} の JSON")
+    hosts = {plan["hub"]["host"]: None}
+    hosts.update({h: reg["session_id"] for reg in load_registrations(pdir)[0] if (h := registered_host(reg))})
+    entries: dict[str, tuple[str, str | None]] = {}
+    for action in SIDEBAR_ACTIONS:
+        items = body.get(action, [])
+        if not isinstance(items, list):
+            raise HubError(2, f"{action} は配列")
+        for item in items:
+            host, error = (item.get("host"), item.get("error")) if isinstance(item, dict) else (item, None)
+            if action == "failed" and not (isinstance(error, str) and error.strip()):
+                raise HubError(2, "failed は {\"host\", \"error\"}（error は失敗の理由）")
+            if not isinstance(host, str) or host not in hosts:
+                raise HubError(2, f"hub と登録の会話の ID のどれでもない: {host}")
+            if host in entries:
+                raise HubError(2, f"同じ会話の ID が 2 回ある: {host}")
+            if action == "nested" and hosts[host] is None:
+                raise HubError(2, "hub 自身は nested にしない（hub は move_sessions に self で渡す）")
+            entries[host] = (action, error)
+    if not entries:
+        raise HubError(2, "記録する会話が無い")
+    gid = body.get("group_id")
+    moved = any(action != "nested" for action, _ in entries.values())
+    if moved and not (isinstance(gid, str) and GROUP_ID_RE.fullmatch(gid)):
+        raise HubError(2, "filed・declined・failed があるときは group_id（list_groups / create_group の ID）が要る")
+    if moved and plan["group_id"] is not None and gid != plan["group_id"]:
+        raise HubError(3, f"group_id が config のグループ（{plan['group_id']}）と違う。"
+                          "グループを作り直したなら `set-sidebar-group --mode on` からやり直す")
+    for host, (action, error) in entries.items():
+        journal_append(pdir, "sidebar", host, {"action": action, "session_id": hosts[host],
+                                              "group_id": gid if action != "nested" else None, "error": error})
+    if moved and plan["group_id"] is None:
+        config["sidebar_group_id"] = gid
+        write_json(pdir / "config.json", config)
+    counts = {a: sum(1 for action, _ in entries.values() if action == a) for a in SIDEBAR_ACTIONS}
+    emit({"project": args.project, "group_id": gid if moved else plan["group_id"], "recorded": counts})
     return 0
 
 
@@ -2546,6 +2703,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("set-tracker-write", cmd_set_tracker_write, "hub がトラッカーに書いてよいかを切り替える（config の tracker_write）")
     p.add_argument("--mode", choices=TRACKER_WRITE_MODES, required=True)
+
+    p = add("set-sidebar-group", cmd_set_sidebar_group,
+            "hub と後から sub にしたセッションを、Desktop のサイドバーのグループにまとめるかを切り替える"
+            "（config の sidebar_group。on は Desktop の hub だけ）")
+    p.add_argument("--mode", choices=SIDEBAR_GROUP_MODES, required=True)
+
+    p = add("sidebar", cmd_sidebar,
+            "サイドバーのグループにまとめる相手（hub と sub の会話の ID）。--record で、まとめた結果"
+            "（{\"group_id\", \"filed\", \"nested\", \"declined\", \"failed\"} を stdin の JSON で）を journal に残す")
+    p.add_argument("--record", action="store_true")
+    p.add_argument("--body-file", default="-")
 
     p = add("set-living-spec", cmd_set_living_spec, "PJ の living spec を結ぶ（config の living_spec）")
     p.add_argument("--path", required=True, help="living spec のファイル（.claude/living-specs/<slug>.md）。- で外す")

@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.10.0] - 2026-10-29
+
+### Added
+
+- hub の `sidebar-group <on|off>` と `hub.py set-sidebar-group`・`hub.py sidebar`: hub の外で始めて後から sub にしたセッション（貼った brief・hello で登録したもの）を、Desktop のサイドバーで PJ 名のグループに hub と一緒にまとめる。hub から起動した sub は hub の下に並ぶが、後から sub にしたセッションは独立のセッションのまま並び、関係の無いセッションと見分けられなかった。既にあるセッションを別のセッションの下に結び付けるツールは無い（`detach_session` は外すだけ）ので、グループで代えた（GitHub issue #339）
+  - 既定は `off`。利用者のサイドバーを変える操作なので、lead が頼んだ PJ だけで on にする。on にしたときの知らせで、サイドバーがグループの見える表示に切り替わることと、default の permission mode では移動のたびにアプリが確認を出すことを伝える。on にできるのは Desktop の hub だけ
+  - まとめるのは、会話の ID を Desktop の記録で確かめた登録だけ。`get_session` で起動したセッションの下に並んでいると分かった sub（hub から起動したもの）は動かさない。hello を取り込んだターン（ingest の出力の `sidebar_pending`）と status でまとめ、`takeover` した後の hub の会話も status で入れ直す
+  - 移動の確認を断られた会話は出し直さない（status のたびに確認を出さない）。失敗した会話は次の回にやり直す。lead が消したグループは作り直さず、`sidebar-group on` で作り直す
+  - `close-sub` で閉じた sub は、グループから外す操作をしない（archive した会話は Archived の一覧から開き直す扱いになる）。グループを消すのは lead が頼んだときだけ（`delete_group`）
+
 ## [0.9.2] - 2026-10-28
 
 ### Changed

@@ -24,6 +24,7 @@
 /project-hub:hub close-sub <Issue> # done を報告した sub を閉じる（Desktop の archive）
 /project-hub:hub mode <方式>      # 送る前の承認の方式を切り替える（auto / number / phrase）
 /project-hub:hub tracker-write <never|with_approval> # hub がトラッカーに書いてよいか（書くときは毎回 lead の承認を取る）
+/project-hub:hub sidebar-group <on|off> # 後から sub にしたセッションを、hub と一緒にサイドバーのグループにまとめる（Desktop だけ。既定は off）
 /project-hub:hub living-spec <path> # PJ の living spec を結ぶ（state.md にパスが出る）
 /project-hub:hub takeover         # 別のセッションを hub にする（Desktop で同じ会話を開き直しただけなら、確かめられれば自動で引き継ぐ）
 /project-hub:hub close            # PJ を閉じる
@@ -243,7 +244,7 @@ sub・ListAgents・トラッカー由来の文面（report の本文・fact の�
 
 ## 入っている範囲
 
-入っているもの: 状態ファイル・`hub` と `report` と `hub-living-spec` の skill・living spec（`living-spec` と `living-spec-maintain` の skill。旧 living-spec-workflow）・注入 hook・未取り込みの知らせ（UserPromptSubmit）・sub への紐付けの案内（段階 ①）、自動の連絡・`start`・`mode`・report の `questions`（段階 ②a）、report の `decisions` と `waiting_prs`・待っている PR のマージの知らせ・hub の残作業（`todo`）・sub を閉じる（`close-sub`）・トラッカーへの承認つきの書き込み（`tracker-write`）・ListAgents の生の出力の受け取り。
+入っているもの: 状態ファイル・`hub` と `report` と `hub-living-spec` の skill・living spec（`living-spec` と `living-spec-maintain` の skill。旧 living-spec-workflow）・注入 hook・未取り込みの知らせ（UserPromptSubmit）・sub への紐付けの案内（段階 ①）、自動の連絡・`start`・`mode`・report の `questions`（段階 ②a）、report の `decisions` と `waiting_prs`・待っている PR のマージの知らせ・hub の残作業（`todo`）・sub を閉じる（`close-sub`）・トラッカーへの承認つきの書き込み（`tracker-write`）・ListAgents の生の出力の受け取り・後から sub にしたセッションのサイドバーのグループ（`sidebar-group`）。
 
 まだ無いもの（段階 ② の残りと ③。使ってから設計する）: マージの連鎖（待っている PR の知らせを除く）、判断の波及と living spec への受け渡しの機械化（いまは `hub-living-spec` の決まりに沿って hub が手で行う）、status への living spec の数字の機械表示（いまは status の手順で hub が `/project-hub:living-spec status` を見る）、決定と経緯（journal・facts）の ID による機械的な紐付け、意見の台帳、送る前の文面の検査。
 
