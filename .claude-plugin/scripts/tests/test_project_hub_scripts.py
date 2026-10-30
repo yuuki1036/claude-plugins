@@ -2699,6 +2699,21 @@ class AutoRelayTest(HubTestBase):
         self.assertEqual(self.run_hub("record", "--project", "pj", "--kind", "start", "--result", "accepted",
                                       "--basis", "brief", stdin=json.dumps(bad)).returncode, 2)
 
+    def test_a_started_session_keeps_the_effort_it_was_given(self):
+        """sub は medium で起動する（GitHub issue #343）。hub が low で effort を渡せなかった回は鍵ごと省く."""
+        def record(started: dict) -> subprocess.CompletedProcess[str]:
+            return self.run_hub("record", "--project", "pj", "--kind", "start", "--result", "accepted",
+                                "--basis", "brief",
+                                stdin=json.dumps({"subject": "#308", "text": "brief", "to": None, "started": started}))
+        started = {"id": "local_x1", "name": "issue-308", "effort": "medium"}
+        self.assertEqual(record(started).returncode, 0)
+        self.assertEqual(self.journal(self.pdir)[-1]["body"]["started"], started)
+        for label, bad in (("語彙外の effort", {**started, "effort": "ultra"}),
+                           ("null の effort", {**started, "effort": None}),
+                           ("知らない欄", {**started, "model": "opus"})):
+            with self.subTest(label):
+                self.assertEqual(record(bad).returncode, 2, bad)
+
 
 class QuestionsTest(HubTestBase):
     """report の questions（schema 2）。古い schema 1 の report も受ける."""
