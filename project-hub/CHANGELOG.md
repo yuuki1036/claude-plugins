@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.13.0] - 2026-10-30
+
+### Added
+
+- **hub が sub を起動するとき、`start_session` に `effort: medium` を渡す**（GitHub issue #343）。hub の effort を
+  sub に引き継がせない。`start_session` は呼び出し元より上の effort を断るので、hub の effort が `low` の回は
+  渡さずに引き継がせる。hub の effort は Bash の `CLAUDE_EFFORT` で読み、空なら command 本文に展開した値を使う
+  （SKILL.md は Read で読むので `${CLAUDE_EFFORT}` が展開されない）。渡した effort は `hub.py record --kind start` の `started.effort` に残し、lead への報告にも出す
+- `hub.py record` の `started` は `{"id", "name", "effort"?}` だけを受ける（`effort` は `low` / `medium` / `high` /
+  `xhigh` / `max`。知らない欄は弾く）
+
 ## [0.12.0] - 2026-10-29
 
 ### Added

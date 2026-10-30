@@ -1,6 +1,6 @@
 {
   "name": "project-hub",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "1 つの PJ の決定と段取りを 1 つのプラグインで持つ。決定は living spec（repo の .claude/living-specs/。OQ 台帳と Decision log を append-only で持ち、確度ラベル・phase・先送りで収束を追い、maintain が 8 段で検証する）、段取りは hub（1 つのセッションを hub にして、複数の sub で進める PJ の状態をコンテキストの外のファイルで持つ。sub を起動でき、lead の確認が要らない連絡は承認なしに送り、宛先は送る直前に引き直す）。hub のセッションには SessionStart / PostCompact で状態の表を、UserPromptSubmit で未取り込みの知らせを注入する。living spec だけ・hub だけでも使える",
   "author": {
     "name": "yuki"

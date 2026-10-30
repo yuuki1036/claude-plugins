@@ -81,6 +81,8 @@ SIDEBAR_GROUP_MODES = ("off", "on")
 # filed: グループに入れた / nested: 起動したセッションの下に並んでいるので動かさない / declined: 移動の確認を断られた /
 # failed: 取得か移動に失敗した（次の回にやり直す）
 SIDEBAR_ACTIONS = ("filed", "nested", "declined", "failed")
+# start_session の effort に渡せる値。hub は sub を medium で起動する（GitHub issue #343）
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 # list_groups / create_group が返すグループの ID。形の契約が無いので、シェルに読ませない文字だけを受ける
 GROUP_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,200}")
 # record の --from-resolve が引き継ぐ resolve の結果の有効期限（秒）。古い宛先を別の送信に流用しない
@@ -1285,9 +1287,12 @@ def cmd_record(args) -> int:
         if args.basis in ("source", "routine") and not session and not (to and to.get("ref")):
             raise HubError(2, "basis source / routine には session（宛先の登録）か to.ref が要る（往復の上限を数える）")
     if started is not None and not (args.kind == "start" and isinstance(started, dict)
+                                    and not set(started) - {"id", "name", "effort"}
                                     and all(isinstance(started.get(k), str) and started[k].strip()
-                                            and not CONTROL_RE.search(started[k]) for k in ("id", "name"))):
-        raise HubError(2, "started は kind start の {\"id\", \"name\"}（起動したセッションの id と名前）か null")
+                                            and not CONTROL_RE.search(started[k]) for k in ("id", "name"))
+                                    and started.get("effort", "medium") in EFFORT_LEVELS):
+        raise HubError(2, "started は kind start の {\"id\", \"name\", \"effort\"?}（起動したセッションの id・名前・"
+                          "渡した effort。渡さなかったら effort を省く）か null")
     row = {"text": text, "to": to, "result": args.result, "error": error}
     for key, value in (("basis", args.basis), ("session", session), ("sources", sources),
                        ("started", started), ("waiting_pr", waiting_pr)):

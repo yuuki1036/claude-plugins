@@ -24,4 +24,6 @@ allowed-tools:
 
 このセッションの id: `${CLAUDE_SESSION_ID}`（SKILL.md の手順で、Bash の `CLAUDE_CODE_SESSION_ID` が空のときだけ `--session-id` に渡す。SKILL.md は Read で読むのでこの変数が展開されない）
 
+このセッションの effort: `${CLAUDE_EFFORT}`（SKILL.md の start の 2 で、Bash の `CLAUDE_EFFORT` が空のときだけ使う。展開されない理由は上と同じ）
+
 引数: `$ARGUMENTS`（サブコマンドと PJ 名・Issue ID。サブコマンドが無ければ `status`）

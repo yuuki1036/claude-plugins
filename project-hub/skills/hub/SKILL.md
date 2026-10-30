@@ -161,8 +161,9 @@ sub を起動して、その Issue を任せる。lead が start を頼んだタ
    - `prompt`: brief の全文。`background`: PJ 名・hub の名前・PJ の目的（config と state.md から 2〜3 文。80 字以上）
    - `cwd`: このセッションの cwd が config の repos のどれでもなければ、Issue の repo のパス（repos が複数で決まらなければ lead に聞く）
    - `permission_mode` は渡さない（hub と同じ mode を引き継ぐ。mode が違う sub には、メッセージが受け手の承認待ちで止まる）
-3. 結果を記録する: 1 で作った brief の全文を、要約せずにそのまま一時ファイルに書き（heredoc の区切りは「シェルに読ませない」の決まり）、`hub.py record --project '<PJ>' --kind start --result accepted --text-file '<そのファイル>'`（`auto` の PJ だけ `--basis brief`）に `{"subject": "<Issue>", "to": null, "started": {"id": "<結果のセッションの id>", "name": "<結果の名前>"}}` を stdin で渡す。`prompt` に渡した文面と同じものを残す（要約だけを残すと、記録の趣旨から外れる）。断られた・失敗した・ツールが無い（CLI）なら、`brief` の 3 の「新しいセッション」へ進む（貼る用の全文を出す）
-4. lead に、起動した sub（名前・リンク）を伝える。`auto` の PJ では送った brief の全文もここで見せ（lead が読まないまま送った文面を残さない）、sub が hello を置けば以後は自動で連絡すると添える
+   - `effort`: `medium` を渡す（hub の effort を sub に引き継がせない / GitHub issue #343）。`start_session` は hub の effort より上を断るので、hub の effort が `low` なら渡さずに引き継がせる。hub の effort は起動の直前に Bash の `echo "$CLAUDE_EFFORT"` で読み、空なら command 本文が示した値を使う（この SKILL.md は Read で読むので、ここに `${CLAUDE_EFFORT}` と書いても展開されない）
+3. 結果を記録する: 1 で作った brief の全文を、要約せずにそのまま一時ファイルに書き（heredoc の区切りは「シェルに読ませない」の決まり）、`hub.py record --project '<PJ>' --kind start --result accepted --text-file '<そのファイル>'`（`auto` の PJ だけ `--basis brief`）に `{"subject": "<Issue>", "to": null, "started": {"id": "<結果のセッションの id>", "name": "<結果の名前>", "effort": "<2 で渡した effort。渡さなかったら鍵ごと省く>"}}` を stdin で渡す。`prompt` に渡した文面と同じものを残す（要約だけを残すと、記録の趣旨から外れる）。断られた・失敗した・ツールが無い（CLI）なら、`brief` の 3 の「新しいセッション」へ進む（貼る用の全文を出す）
+4. lead に、起動した sub（名前・リンク・effort）を伝える。`auto` の PJ では送った brief の全文もここで見せ（lead が読まないまま送った文面を残さない）、sub が hello を置けば以後は自動で連絡すると添える
 
 ## brief `<Issue>`
 
