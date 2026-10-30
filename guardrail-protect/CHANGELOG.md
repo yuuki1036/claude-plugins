@@ -2,6 +2,23 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.10.0] - 2026-10-31
+
+### Added
+
+- **transcript-count-guard を追加**（PreToolUse / Bash / GitHub issue #342）。transcript（`~/.claude/projects/<slug>/*.jsonl`）を
+  grep / rg で数えて、ツール名・スキル名の呼び出し回数を出そうとするコマンドを、止めずにコンテキストへ知らせる。transcript には
+  system prompt のツール定義（`{"name":"<tool>",…}`）とスキル一覧も入っているので、素の名前でも `"name":"<tool>"` の形でも、
+  呼び出しが 0 回の transcript に当たる（呼び出し 0 回を 116 件・204 件と数えた回があった）。当たったら jq で
+  `select(.type=="assistant") | .message.content[]? | select(.type=="tool_use")` に絞るよう出す。過去の transcript の Bash 呼び出し
+  59,907 件で 18 件当たり（直近 30 日は 6 件）、偽陽性 0 件、誤計数した既知の 3 件はすべて当たった。jq / python で `tool_use` に
+  絞っている・件数を取っていない・tool_use の中にしか無い並び（`"skill":"…"` / `"name":"X","input"`）で数えている・`memory/` の
+  下だけを見ている、のどれかなら黙る。failure-journal の `data-shape-unverified` の還流
+  - blocker: CLAUDE.md の「未知のデータは 1 件ダンプして構造を確かめる」は、見慣れた transcript では引き金が引かれず、
+    5 日で 3 回踏んだ。gh-read-guard は gh の呼び出しだけを解析する契約で、発火条件が噛み合わない
+  - fallback: このマーケットプレイスのリポジトリでは、CLAUDE.md の上の規約と、transcript の構造の正本
+    （`code-review/references/orchestration-measurement.md`）が残る。他のリポジトリには規約側の退路が無い
+
 ## [0.9.2] - 2026-10-22
 
 ### Fixed

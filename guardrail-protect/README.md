@@ -255,6 +255,23 @@ echo だけは 3 回・実害を確認できなかったので止めていない
 引数に現れた字面、変数・コマンド置換で渡した SHA、完全な SHA、`--json` / `--web` 付きの呼び出し、解析できない
 コマンドは通す。
 
+### 9. transcript の grep 集計の検出（transcript-count-guard）
+
+transcript（`~/.claude/projects/<slug>/*.jsonl`）を grep / rg で数えて、ツール名・スキル名の呼び出し回数を
+出そうとするコマンドを PreToolUse（Bash）で知らせる（常時有効・止めない・GitHub issue #342）。
+
+transcript には呼び出し（tool_use）のほかに、system prompt のツール定義（`{"name":"<tool>","description":…}`）と
+スキル一覧（素の `<plugin>:<skill>`）も入っている。素の名前で数えても `"name":"<tool>"` の形で数えても、
+呼び出しが 0 回の transcript に当たる。実際に、呼び出し 0 回を 116 件・204 件と数えた回があった。
+
+| 当たる形 | 当たらない形 |
+|---|---|
+| `.claude/projects` を含み、grep / rg が件数を取っている（`-c` / `--count`、後ろのパイプに `wc -l` / `uniq -c`）。そのパターンに `"name":"<Tool>"` / `mcp__…` / 素の組み込みツール名 / 素のスキル名がある（`for x in …` で回す変数の中身も見る） | jq / python で `tool_use` に絞っている / 件数を取っていない / パターンが tool_use の中にしか無い並び（`"skill":"…"` / `"name":"X","input"` / `"type":"tool_use"…` / `command-name>/…`）/ `memory/` の下だけを見ている / イベント名（`issue:completed` など） |
+
+当たったら、jq で `select(.type=="assistant") | .message.content[]? | select(.type=="tool_use")` に絞るよう
+コンテキストへ出す。過去の transcript の Bash 呼び出し 59,907 件で測ると 18 件当たり（直近 30 日は 6 件）、
+偽陽性は 0 件、誤計数した既知の 3 件はすべて当たった。
+
 ## public-leak-guard のセットアップ
 
 **導入した直後は公開先への書き込みが止まる**（辞書が無いと止める既定）。次の 2 ファイルを
@@ -433,6 +450,7 @@ git commit -m "fix" && git log -n 5            → PASS（他コマンドの -n 
 - 保護対象 (`protected_basenames`) は basename マッチのみ（パス全体ではない）。同名ファイルがリポジトリ内に複数ある場合は全て対象になる
 - `MultiEdit` での編集も `tool_input.file_path` を見るのでブロックされる
 - gh-read-guard は、コマンドの位置にある gh だけを見る。`bash -c '…'` の文字列の中・heredoc の本文・パラメータ展開の中のコマンド置換（`${x:-$(gh …)}`）・値を取る前置きのオプション（`sudo -u root gh …`）・値を連結した短いフラグ（`-cabc1234`）は拾わず、通す
+- transcript-count-guard は、ハイフンを含まないプラグイン名のスキル（`hookify:list`）と、組み込みでない素のツール名（`lighthouse_audit` のような MCP ツールの末尾だけ）を拾わず、通す。`"name":"mcp__…"` や `mcp__…` の形なら拾う
 - **保護対象 config への `Bash` 経由の編集**（`sed` / `awk` / リダイレクト等）はブロックしない。`Bash` matcher の hook（`pre-commit-guard.sh`）自体は存在するが、その前段フィルタが `git commit` 系と guardrail 設定ファイル自体に関わるコマンドだけを通すため。これは意図的な制限（Bash の編集系コマンドを全部マッチさせると誤爆が爆発するため）。**ただし `guardrail-protect.json` 自体への Bash 書き込み**（リダイレクト / `sed -i` / `tee` / `cp` / `mv` / `rm`）は自己保護として検出しブロックする
 - git hook 迂回の検出は `git commit` コマンド自体に埋め込まれたパターンが対象。以下の**別コマンドによる無効化**は検出しない（既知の穴。必要なら該当ファイル/コマンドを permissions 側で塞ぐ）:
   - `git config core.hooksPath ...`（commit と別コマンドで hooksPath を変更）

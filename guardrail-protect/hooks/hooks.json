@@ -69,6 +69,14 @@
             "type": "command",
             "command": "bash",
             "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/transcript-count-guard.sh"
+            ],
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
               "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/branch-drift-guard.sh"
             ],
             "timeout": 5
