@@ -1143,6 +1143,163 @@ class GhReadGuardTest(HookTestCase):
         self.assertIn("detector failed (rc=3)", res.stderr, res)
 
 
+class TranscriptCountGuardTest(HookTestCase):
+    """transcript-count-guard（GitHub issue #342）。**黙る条件を厚く見る** — 全 Bash 呼び出しに効く.
+
+    transcript を grep で数えるとき、パターンが system prompt のツール定義・スキル一覧にも当たる形なら
+    止めずにコンテキストへ出す。
+    """
+
+    PLUGIN = "guardrail-protect"
+    SCRIPT = "hooks/scripts/transcript-count-guard.sh"
+    T = "~/.claude/projects/-Users-x-repo/*.jsonl"
+
+    def run_cmd(self, command: str):
+        return self.run_hook(self.bash_payload(command))
+
+    def assertPassedQuietly(self, res):
+        """rc 0・注入なし・**stderr も空**（検出器が例外で落ちて黙った回を通さない）."""
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+        self.assertEqual(res.stderr, "", res)
+
+    def assertNoticed(self, res, contains: str = ""):
+        self.assertEqual(res.returncode, 0, res)
+        self.assertFired(res, 'select(.type=="assistant")')
+        self.assertEqual(res.stderr, "", res)
+        if contains:
+            self.assertIn(contains, res.context)
+
+    # --- 知らせる ---
+    def test_the_three_recorded_miscounts_are_noticed(self):
+        """誤計数した既知の 3 件の形。10-24 / 10-25 は `"name":"mcp__…"` の形で数えていた."""
+        for cmd in (
+            "cd ~/.claude/projects && find . -name '*.jsonl' -newermt 2026-10-20 | xargs grep -l "
+            "'\"name\":\"mcp__plugin_dev-workflow_chrome-devtools__lighthouse_audit\"' | wc -l",
+            "grep -c -E '\"name\":\"mcp__[^\"]*(lighthouse_audit|performance_start_trace)\"' " + self.T,
+            "cd ~/.claude/projects && for pat in 'bdd-spec:create-spec' 'bdd-spec:evaluate-spec'; do "
+            'echo "$pat $(grep -rl -E "$pat" . | wc -l)"; done',
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertNoticed(self.run_cmd(cmd))
+
+    def test_each_counting_form_is_noticed(self):
+        for cmd in ("grep -c 'code-review:self-review' " + self.T,
+                    "grep --count 'code-review:self-review' " + self.T,
+                    "grep -rlc 'code-review:self-review' ~/.claude/projects",
+                    "rg -c 'code-review:self-review' ~/.claude/projects",
+                    "grep -o 'mcp__[a-z_]*' " + self.T + " | sort | uniq -c",
+                    "grep -l mcp__github__create_issue " + self.T + " | wc -l"):
+            with self.subTest(cmd=cmd):
+                self.assertNoticed(self.run_cmd(cmd))
+
+    def test_each_tool_name_form_is_noticed(self):
+        """`"name":"<tool>"` もツール定義に当たる（issue 本文の案では黙る側にあった形）."""
+        for pattern in ("'\"name\":\"Skill\"'", '"\\"name\\": \\"Skill\\""', "Skill", "TodoWrite",
+                        "'\"name\":\"mcp__github__create_issue\"'", "mcp__github__create_issue"):
+            with self.subTest(pattern=pattern):
+                self.assertNoticed(self.run_cmd("grep -c %s %s" % (pattern, self.T)))
+
+    def test_the_notice_quotes_the_grep(self):
+        self.assertNoticed(self.run_cmd("grep -c 'code-review:self-review' " + self.T), "code-review:self-review")
+
+    # --- 黙る ---
+    def test_silent_outside_the_transcript_dir(self):
+        for cmd in ("grep -c 'code-review:self-review' a.jsonl",
+                    "grep -c 'code-review:self-review' ~/.claude/projects/-x/memory/MEMORY.md",
+                    "grep -rc Skill ~/.claude/projects/-Users-x-repo/memory/"):
+            with self.subTest(cmd=cmd):
+                self.assertPassedQuietly(self.run_cmd(cmd))
+        # 前提: memory と transcript の両方を見るなら鳴る
+        self.assertNoticed(self.run_cmd("grep -c Skill ~/.claude/projects/-x/memory/a.md " + self.T))
+
+    def test_silent_when_already_narrowed_to_tool_use(self):
+        for cmd in ("jq -c 'select(.type==\"assistant\") | .message.content[]? | select(.type==\"tool_use\") "
+                    "| .name' " + self.T + " | grep -c Skill",
+                    "python3 -c 'import json,sys\nfor l in sys.stdin:\n  b=json.loads(l)\n"
+                    "  print(b.get(\"type\") == \"tool_use\")' < " + self.T + " | grep -c Skill"):
+            with self.subTest(cmd=cmd):
+                self.assertPassedQuietly(self.run_cmd(cmd))
+
+    def test_silent_when_not_counting(self):
+        """retro の transcript サルベージ（自己訂正の語を見るだけ）と、ファイルを探すだけの grep."""
+        for cmd in ("grep -l 'code-review:self-review' " + self.T + " | head -3",
+                    "grep -n mcp__github__create_issue " + self.T,
+                    "grep -o Skill " + self.T + " | head",
+                    "grep 'mcp__github__create_issue' " + self.T + " | cut -c 1-200",
+                    "grep -h '間違えていた' " + self.T + " | head -5"):
+            with self.subTest(cmd=cmd):
+                self.assertPassedQuietly(self.run_cmd(cmd))
+
+    def test_silent_for_patterns_only_found_inside_tool_use(self):
+        """tool_use ブロックの中にしか無い並びは定義行に当たらない（実測: api-request-shape 0 / prompt_snapshot 0）."""
+        for pattern in ("'\"skill\":\"code-review:self-review\"'", '"\\"skill\\": \\"code-review:self-review\\""',
+                        "'\"name\":\"Skill\",\"input\"'", "'\"type\":\"tool_use\",\"id\":\"[^\"]*\",\"name\":\"Bash\"'",
+                        "'command-name>/code-review:self-review'"):
+            with self.subTest(pattern=pattern):
+                self.assertPassedQuietly(self.run_cmd("grep -c %s %s" % (pattern, self.T)))
+
+    def test_silent_for_words_that_are_not_tool_or_skill_names(self):
+        for pattern in ("Read", "'issue:completed'", "'commit:created'", "'type:assistant'", "'https://x'",
+                        "hookify:list", "lighthouse_audit", "'2026-10-30T04:37'"):
+            with self.subTest(pattern=pattern):
+                self.assertPassedQuietly(self.run_cmd("grep -c %s %s" % (pattern, self.T)))
+
+    def test_a_variable_pattern_is_judged_by_its_for_list(self):
+        loop = "for s in %s; do grep -c \"$s\" " + self.T + "; done"
+        self.assertNoticed(self.run_cmd(loop % "'code-review:self-review' 'lighthouse'"))
+        self.assertNoticed(self.run_cmd(loop % "'\"name\":\"Skill\"'"))
+        for items in ("'\"skill\":\"code-review:self-review\"'", "'間違' '誤り'"):
+            with self.subTest(items=items):
+                self.assertPassedQuietly(self.run_cmd(loop % items))
+        self.assertPassedQuietly(self.run_cmd('grep -c "$PAT" ' + self.T))  # リストが無ければ判定しない
+        # 変数がファイルのほう（パターンは直書き）なら、for のリストではなくパターンで判定する
+        self.assertNoticed(self.run_cmd('for f in ' + self.T + '; do grep -c Skill "$f"; done'))
+
+    def broken_copy(self):
+        """検出器を `exit 3` に差し替えたプラグインの複製（起動したら Unexpected が出る）."""
+        import shutil
+        alt = self.isolated_project_dir() / "plugin-copy"
+        if not alt.exists():
+            shutil.copytree(ROOT / "guardrail-protect", alt)
+        (alt / "hooks" / "scripts" / "detect-transcript-count.py").write_text("raise SystemExit(3)\n")
+        return alt
+
+    def test_the_prefilter_does_not_start_the_detector(self):
+        """事前フィルタの両側で python を起動しない（検出器が壊れていても stderr は空）."""
+        alt = self.broken_copy()
+        for cmd in ("ls ~/.claude/projects", "grep -c Skill a.jsonl", "echo hello"):
+            with self.subTest(cmd=cmd):
+                res = self.run_hook(self.bash_payload(cmd), env_extra={"CLAUDE_PLUGIN_ROOT": str(alt)})
+                self.assertPassedQuietly(res)
+        res = self.run_hook(self.bash_payload("grep -c x " + self.T), env_extra={"CLAUDE_PLUGIN_ROOT": str(alt)})
+        self.assertIn("rc=3", res.stderr, "前提: フィルタを通る形では検出器が起動する")
+
+    def test_silent_for_non_bash_tool(self):
+        """**matcher 単独に依存しない**二重ゲート（CLAUDE.md Gotchas）."""
+        res = self.run_hook({"tool_name": "Edit", "tool_input": {"command": "grep -c Skill " + self.T}})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+
+    def test_malformed_input_does_not_block(self):
+        res = self.run_hook(raw="{ this is not json")
+        self.assertEqual(res.returncode, 0, res)
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr, "正常系の分岐で ERR trap を踏んでいる")
+
+    def test_missing_python3_is_loud(self):
+        res = self.run_hook(self.bash_payload("grep -c Skill " + self.T), env_extra={"PATH": self.path_with_only("jq")})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("python3 not installed", res.stderr, res)
+
+    def test_a_broken_detector_is_loud(self):
+        """検出器の非ゼロを握り潰さない（握り潰すとガードが黙って無効化される）."""
+        res = self.run_hook(self.bash_payload("grep -c Skill " + self.T),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(self.broken_copy())})
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("detector failed (rc=3)", res.stderr, res)
+
+
 class BranchDriftTest(HookTestCase):
     """git の書き込みの前に、自分の知らない間にブランチが変わっていたら止める（GitHub issue #270）.
 
