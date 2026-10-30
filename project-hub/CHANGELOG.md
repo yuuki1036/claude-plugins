@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.12.0] - 2026-10-29
+
+### Added
+
+- **別の PJ との横断（`hub.py cross`）**: 同じ repo を触る別の PJ（git の共通ディレクトリが同じ worktree を持つ active な PJ）の作業中の sub・重なり（`changed` ∪ `uncommitted` の共通部分）・新しい決定・読めなかった PJ（`unknown`）を返す。読むだけで何も書かない。`status` の 8.5 で読んで 10 の「別の PJ」に出し、11 の `cross --mark` だけが見せた所までの印（別の PJ ごとの journal の行数。hub.json の `cross_seen_lines`）を進め、journal に `cross` の行を残す（印の無い PJ は直近 14 日の決定だけ）。brief は「別の PJ との重なりに注意」に載せる。重なり不明の sub と読めない PJ は「無い」と区別して出す
+- 別の PJ の状態が壊れているとき（不正な UTF-8 の journal・形の崩れた config など）はその PJ を `unknown` に回し、ほかの PJ は出す。自分の側で重なりを判定できない sub は `mine_unknown` で返す。`cross` が失敗しても status・brief は止めない
+- hub どうしの送受信は作らない。別の PJ との重なりは自動の連絡（段取り）に入れず、lead に出す。その行がある brief は、`auto` の PJ でも全文を見せて承認を取る。brief を受けた sub には、別の PJ の sub へ直接連絡させない（ADR-20261029233229 / ADR-20261029233251）
+
+### Changed
+
+- `active_projects_on` と `cross` の PJ の走査を `scan_projects` にまとめ、`worktrees` の行の組み立てを `session_rows` に切り出した（`worktrees` の出力と report の PJ 判定は変わらない）。`cross` の行は state.md の直近の journal と注入の kind 別の数から外す
+
 ## [0.11.0] - 2026-10-29
 
 ### Added

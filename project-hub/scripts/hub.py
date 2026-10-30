@@ -14,6 +14,7 @@ root: ${PROJECT_HUB_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/project-hub}
   fact / facts / record / sent                             facts と brief・relay・start・トラッカーへの書き込みの記録・
                                                            承認なしに送った連絡
   ingest / reports / presence / snapshot / issue / render / worktrees   hub status・brief の材料
+  cross                                                    同じ repo を触る別の PJ の sub・重なり・決定（--mark 以外は読むだけ）
   decisions / waiting / todo / close-sub                   sub の決定・待っている PR・hub の残作業・sub を閉じる
   resolve                                                  宛先の照合（送る直前に毎回）
   report                                                   sub の report（自己検査 → 登録 + inbox → 通知先）
@@ -47,7 +48,11 @@ import sys
 from pathlib import Path
 
 JOURNAL_KINDS = ("relay", "brief", "start", "report", "fact", "takeover", "close", "mode", "tracker", "close_sub",
-                 "tracker_write", "sidebar_group", "sidebar")
+                 "tracker_write", "sidebar_group", "sidebar", "cross")
+# state.md の直近の journal と注入の kind 別の数から外す kind（status のたびに 1 行入り、経緯の行を押し出す）
+JOURNAL_QUIET_KINDS = ("cross",)
+# 印の無い別の PJ（初めて cross で見る PJ）の決定は、この日数より新しく journal に入ったものだけ出す
+CROSS_FIRST_DAYS = 14
 REPORT_STATES = ("hello", "in_progress", "blocked", "ready_for_review", "done")
 SEND_RESULTS = ("accepted", "failed", "pasted", "unresolved")
 # 送る前の承認の取り方。auto は lead の確認が要る事柄を含まない連絡を承認なしに送る（ADR-20261025152955）、
@@ -191,6 +196,18 @@ def parse_jsonl(lines: list[str]) -> list[dict]:
 
 def read_jsonl(path: Path) -> list[dict]:
     return parse_jsonl(journal_lines(path))
+
+
+def parse_jsonl_numbered(lines: list[str]) -> list[dict]:
+    """parse_jsonl と同じだが、読めない行を {} にして位置（行番号）を保つ."""
+    rows = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            row = {}
+        rows.append(row if isinstance(row, dict) else {})
+    return rows
 
 
 def append_jsonl(path: Path, row: dict) -> None:
@@ -900,6 +917,9 @@ def cmd_takeover(args) -> int:
     if isinstance(old.get("sent_seen_lines"), int):
         # lead に見せた所までの印は PJ のもので、hub のセッションが替わっても引き継ぐ
         new["sent_seen_lines"] = old["sent_seen_lines"]
+    for key in ("cross_seen_lines", "cross_last_overlaps"):
+        if key in old:
+            new[key] = old[key]
     write_json(pdir / "hub.json", new)
     journal_append(pdir, "takeover", sid,
                    {"from_session_id": old.get("session_id"), "from_name": old.get("name"),
@@ -1405,13 +1425,13 @@ def cmd_reports(args) -> int:
     return 0
 
 
-def decision_rows(rows: list[dict]) -> list[dict]:
-    """sub が report の decisions で知らせた PJ の決定（古い順）.
+def decision_entries(numbered: list[tuple[int, dict]]) -> list[tuple[int, dict, dict]]:
+    """(行番号, journal の行, 決定) を、決定が初めて出てきた行で 1 件ずつ（古い順）.
 
     同じ決定を節目ごとに書き直す sub がいるので、セッション・本文・日付・決めた人が同じものは 1 件にまとめる
     """
     out, seen = [], set()
-    for row in rows:
+    for i, row in numbered:
         body = row.get("body")
         if row.get("kind") != "report" or not isinstance(body, dict):
             continue
@@ -1422,10 +1442,15 @@ def decision_rows(rows: list[dict]) -> list[dict]:
             if key in seen:
                 continue
             seen.add(key)
-            out.append({"date": d.get("date"), "by": d.get("by"), "text": d.get("text"),
-                        "session_id": row.get("subject"), "name": body.get("name"), "issue": body.get("issue"),
-                        "file": row.get("source")})
+            out.append((i, row, {"date": d.get("date"), "by": d.get("by"), "text": d.get("text"),
+                                 "session_id": row.get("subject"), "name": body.get("name"),
+                                 "issue": body.get("issue"), "file": row.get("source")}))
     return out
+
+
+def decision_rows(rows: list[dict]) -> list[dict]:
+    """sub が report の decisions で知らせた PJ の決定（古い順）."""
+    return [d for _, _, d in decision_entries(list(enumerate(rows)))]
 
 
 def cmd_decisions(args) -> int:
@@ -1845,10 +1870,11 @@ def uncommitted_files(worktree: str) -> list[str] | None:
     return files
 
 
-def cmd_worktrees(args) -> int:
-    """brief の材料: 各 repo の base の SHA と、登録済みセッションが触っているファイル."""
-    pdir = project_dir(args.project)
-    config = load_config(pdir)
+def session_rows(pdir: Path, config: dict) -> tuple[list[dict], list[tuple[dict, bool, str | None]], list]:
+    """config の repos と、登録ごとの (worktrees の行, 作業中か, その worktree の git common dir) と、読めない登録.
+
+    作業中かの判定と重なり不明の note は worktrees と cross で同じものを使う
+    """
     repos = []
     for repo in config.get("repos", []):
         if not isinstance(repo, dict):
@@ -1893,8 +1919,130 @@ def cmd_worktrees(args) -> int:
             if entry["changed"] is None or entry["uncommitted"] is None:
                 # 取れなかったことを「変更なし」と区別する（重なりの判断を誤らせない）
                 entry["note"] = f"git で変更を取れない（base: {repo['base']}）。重なりは不明"
-        sessions.append(entry)
-    emit({"repos": repos, "sessions": sessions, "unreadable": unreadable})
+        sessions.append((entry, working(reg), str(common) if common is not None else None))
+    return repos, sessions, unreadable
+
+
+def cmd_worktrees(args) -> int:
+    """brief の材料: 各 repo の base の SHA と、登録済みセッションが触っているファイル."""
+    pdir = project_dir(args.project)
+    repos, rows, unreadable = session_rows(pdir, load_config(pdir))
+    emit({"repos": repos, "sessions": [entry for entry, _, _ in rows], "unreadable": unreadable})
+    return 0
+
+
+def repo_commons(config: dict) -> dict[str, str]:
+    """config の repos の git common dir → repo の path（common dir を取れない repo は照合に使わない）."""
+    out = {}
+    for repo in config.get("repos", []):
+        if isinstance(repo, dict) and isinstance(repo.get("path"), str):
+            common = git_common_dir(repo["path"])
+            if common is not None:
+                out.setdefault(str(common), repo["path"])
+    return out
+
+
+def modified_time(path: Path) -> str | None:
+    try:
+        return dt.datetime.fromtimestamp(path.stat().st_mtime, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except OSError:
+        return None
+
+
+def cmd_cross(args) -> int:
+    """同じ repo を触る別の PJ の作業中の sub・重なり・新しい決定（ADR-20261029233229）.
+
+    何も書かない。`--mark` だけが hub として、別の PJ ごとの journal の行数を見せた所までの印に進め、
+    journal に cross の 1 行を残す（印の持ち方は sent と同じ。status 以外の手順で印を動かすと、lead に
+    見せていない決定が次の一覧から落ちる）
+    """
+    pdir = project_dir(args.project)
+    config = load_config(pdir)
+    hub = require_hub(pdir, args.session_id) if args.mark else read_obj(pdir / "hub.json")
+    seen = hub.get("cross_seen_lines") if isinstance(hub.get("cross_seen_lines"), dict) else {}
+    mine_repos = repo_commons(config)
+    _, mine_rows, _ = session_rows(pdir, config)
+    since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=CROSS_FIRST_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    projects, unknown, lines_now, active = [], [], {}, 0
+    for other, other_config, reason in scan_projects():
+        if other_config is not None and is_active(other_config):
+            active += 1
+        if other == pdir:
+            continue
+        if other_config is None:
+            # repo を共有しているかが分からないので、名前と理由だけを返す
+            unknown.append({"project": other.name, "reason": reason})
+            continue
+        if not is_active(other_config):
+            continue
+        try:
+            shared = set(repo_commons(other_config)) & set(mine_repos)
+            if not shared:
+                continue
+            other_hub = read_obj(other / "hub.json")
+            _, rows, _ = session_rows(other, other_config)
+            lines = journal_lines(other / "journal.jsonl")
+        # 1 つの PJ の壊れた状態で、ほかの PJ の横断まで止めない（不正な UTF-8 は ValueError、形の崩れた config は TypeError）
+        except (HubError, OSError, ValueError, TypeError) as e:
+            unknown.append({"project": other.name, "reason": f"状態を読めない（{type(e).__name__}: {e}）"})
+            continue
+        sessions = []
+        for entry, working, common in rows:
+            # common が取れない作業中の登録は、共有する repo のものかが分からないので重なり不明として残す
+            if working and (common is None or common in shared):
+                sessions.append({"name": entry.get("name"), "issue": entry.get("issue"),
+                                 "repo": mine_repos.get(common) if common else None,
+                                 "changed": entry.get("changed"), "uncommitted": entry.get("uncommitted"),
+                                 "note": entry.get("note")})
+        # 自分の側で重なりを判定できない作業中の sub（相手に同じ repo の作業中の sub がいるときだけ。「無い」と区別する）
+        theirs_commons = {common for _, working, common in rows if working}
+        mine_unknown = [{"name": entry.get("name"), "issue": entry.get("issue"), "note": entry.get("note")}
+                        for entry, working, common in mine_rows
+                        if working and entry.get("changed") is None
+                        and (common is None or common in shared & theirs_commons)]
+        overlaps = []
+        for common in sorted(shared):
+            files: dict[str, dict] = {}
+            for side, side_rows in (("mine", mine_rows), ("theirs", rows)):
+                for entry, working, entry_common in side_rows:
+                    if not working or entry_common != common or entry.get("changed") is None:
+                        continue
+                    touched = set(entry["changed"]) | set(entry.get("uncommitted") or [])
+                    for name in touched:
+                        files.setdefault(name, {"mine": [], "theirs": []})[side].append(
+                            {"name": entry.get("name"), "issue": entry.get("issue")})
+            overlaps += [{"file": name, "repo": mine_repos[common], **who}
+                         for name, who in sorted(files.items()) if who["mine"] and who["theirs"]]
+        mark = seen.get(other.name)
+        # journal より長い印（同じ名前で作り直した PJ など）は使わず、印の無い PJ と同じく直近の窓で出す
+        if not (type(mark) is int and 0 <= mark <= len(lines)):
+            mark = None
+        numbered = [(i, row) for i, row in enumerate(parse_jsonl_numbered(lines))]
+        new = [{"text": d["text"], "date": d["date"], "by": d["by"], "issue": d["issue"], "name": d["name"]}
+               for i, row, d in decision_entries(numbered)
+               if (i >= mark if mark is not None else str(row.get("ts") or "") >= since)]
+        projects.append({"project": other.name, "hub": other_hub.get("name"),
+                         "presence_checked": modified_time(other / "presence.json"),
+                         "sessions": sessions, "mine_unknown": mine_unknown if sessions else [],
+                         "overlaps": overlaps, "new_decisions": new})
+        lines_now[other.name] = len(lines)
+    out = {"projects": projects, "unknown": unknown, "active_projects": active}
+    if args.mark:
+        # 読んでから書くまでの間に takeover が入っていたら、その hub.json を上書きしない
+        hub = require_hub(pdir, args.session_id)
+        previous = {tuple(p) for p in hub.get("cross_last_overlaps") or [] if isinstance(p, list)}
+        current = sorted({(p["project"], o["repo"], o["file"]) for p in projects for o in p["overlaps"]})
+        # 読めなかった PJ の印と前回の重なりは残す（次に読めた回に、続いている重なりを新しいと数えない）
+        unknown_names = {u["project"] for u in unknown}
+        hub["cross_seen_lines"] = {**seen, **lines_now}
+        hub["cross_last_overlaps"] = [list(p) for p in sorted(set(current)
+                                                              | {p for p in previous if p[0] in unknown_names})]
+        write_json(pdir / "hub.json", hub)
+        journal_append(pdir, "cross", hub.get("session_id"),
+                       {"active_projects": active,
+                        "new_overlaps": [list(p) for p in current if p not in previous],
+                        "new_decisions": sum(len(p["new_decisions"]) for p in projects)})
+    emit(out)
     return 0
 
 
@@ -2036,9 +2184,10 @@ def render_state(pdir: Path) -> tuple[str, int]:
             f"- 有効 {len(current)} 件（確かめた {checked} / 未確認 {len(current) - checked}）・"
             f"訂正で置き換わった {len(facts) - len(current)} 件。brief が引くのは確かめた行だけ",
             "", f"## journal（直近 {RECENT_JOURNAL} 件）", ""]
-    if rows:
+    shown = [r for r in rows if r.get("kind") not in JOURNAL_QUIET_KINDS]
+    if shown:
         out += ["| 時刻 | kind | subject |", "|---|---|---|"]
-        for row in rows[-RECENT_JOURNAL:]:
+        for row in shown[-RECENT_JOURNAL:]:
             out.append(f"| {cell(row.get('ts'))} | {cell(row.get('kind'))} | {cell(row.get('subject'))} |")
     else:
         out.append("（まだ無い）")
@@ -2321,19 +2470,31 @@ def cmd_resolve(args) -> int:
 # ---------------------------------------------------------------- 作業側の report
 
 
-def active_projects_on(common: Path) -> list[Path]:
-    """config の repos に、git common dir が common の repo を含む active な PJ（読めない config は飛ばす）."""
-    hits = []
+def scan_projects() -> list[tuple[Path, dict | None, str | None]]:
+    """ルートの下の PJ ごとに (dir, config, None)。config が読めなければ (dir, None, 理由)."""
+    out = []
     for cfg_path in sorted(root().glob("*/config.json")):
         try:
             config = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except (OSError, ValueError) as e:
+            out.append((cfg_path.parent, None, f"config.json が読めない（{type(e).__name__}）"))
             continue
-        if not isinstance(config, dict) or not is_active(config):
+        if not isinstance(config, dict):
+            out.append((cfg_path.parent, None, "config.json が JSON のオブジェクトではない"))
+            continue
+        out.append((cfg_path.parent, config, None))
+    return out
+
+
+def active_projects_on(common: Path) -> list[Path]:
+    """config の repos に、git common dir が common の repo を含む active な PJ（読めない config は飛ばす）."""
+    hits = []
+    for pdir, config, _ in scan_projects():
+        if config is None or not is_active(config):
             continue
         if any(git_common_dir(r.get("path")) == common for r in config.get("repos", [])
                if isinstance(r, dict) and r.get("path")):
-            hits.append(cfg_path.parent)
+            hits.append(pdir)
     return hits
 
 
@@ -2501,6 +2662,8 @@ def inject_text(pdir: Path, config: dict, resumed_from: str | None = None, shim:
     later = parse_jsonl(journal_lines(pdir / "journal.jsonl")[reflected:])
     counts: dict[str, int] = {}
     for row in later:
+        if row.get("kind") in JOURNAL_QUIET_KINDS:
+            continue
         kind = cell(row.get("kind"))
         counts[kind] = counts.get(kind, 0) + 1
     summary = "・".join(f"{k} {v}" for k, v in sorted(counts.items())) or "なし"
@@ -2815,6 +2978,10 @@ def build_parser() -> argparse.ArgumentParser:
     add("render", cmd_render, "journal・sessions・snapshot から state.md を作り直す")
     add("worktrees", cmd_worktrees, "base の SHA と、登録済みセッションが触っているファイル",
         session=False)  # mutation-ok: facts の注記と同じ
+
+    p = add("cross", cmd_cross, "同じ repo を触る別の PJ の作業中の sub・重なり・新しい決定（--mark 以外は読むだけ）")
+    p.add_argument("--mark", action="store_true",
+                   help="見せた所まで別の PJ ごとの印を進め、journal に cross を残す（hub status の 11 だけが付ける）")
 
     p = add("resolve", cmd_resolve, "ListAgents から抜き出した JSON で宛先を 1 件に決める（送る直前に毎回）")
     target = p.add_mutually_exclusive_group(required=True)

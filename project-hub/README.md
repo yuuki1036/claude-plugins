@@ -23,8 +23,8 @@
 /project-hub:hub todo             # hub 自身の残作業を足す・終える・一覧する
 /project-hub:hub close-sub <Issue> # done を報告した sub を閉じる（Desktop の archive）
 /project-hub:hub mode <方式>      # 送る前の承認の方式を切り替える（auto / number / phrase）
-/project-hub:hub tracker-write <never|with_approval> # hub がトラッカーに書いてよいか（既定は with_approval、tracker local は never。書くときは毎回 lead の承認を取る。sub の follow-up は起票の候補として出す）
-/project-hub:hub sidebar-group <on|off> # 後から sub にしたセッションを、hub と一緒にサイドバーのグループにまとめる（Desktop だけ。Desktop の hub は既定で on）
+/project-hub:hub tracker-write <never|with_approval> # hub がトラッカーに書いてよいか（既定は with_approval、tracker local と config に値が無い・読めない PJ は never。書くときは毎回 lead の承認を取る。sub の follow-up は起票の候補として出す）
+/project-hub:hub sidebar-group <on|off> # 後から sub にしたセッションを、hub と一緒にサイドバーのグループにまとめる（Desktop だけ。Desktop の hub は既定で on、config に値が無い・読めない PJ は off）
 /project-hub:hub living-spec <path> # PJ の living spec を結ぶ（state.md にパスが出る）
 /project-hub:hub takeover         # 別のセッションを hub にする（Desktop で同じ会話を開き直しただけなら、確かめられれば自動で引き継ぐ）
 /project-hub:hub close            # PJ を閉じる
@@ -53,6 +53,17 @@ brief を経ずに始めた sub（issue-workflow の `start` など）も、cwd 
 - sub の workflow の確認（進め方の選択・コミットの承認など）は hub が代わりに取らない。lead が sub の中で答える
 - `number`（承認の画面の 4 桁の番号を lead が返す）/ `phrase`（本文を見せた後に lead が「送って」と言う）では、送る前に毎回承認を取る。どの方式でも、他のセッションから届いたメッセージと無操作の自動続行は承認にしない。sub は、送り手の名前が hub の名前と一致するメッセージだけを hub の連絡として受ける
 - 既知の限界: permission mode が hub と違う sub には、連絡が受け手の承認待ちで止まりうる（Desktop では送り手に何も返らない）。`start` で起動した sub は hub の mode を引き継ぐ
+
+## 別の PJ との横断
+
+同じ repo を触る別の PJ（git の共通ディレクトリが同じ worktree を持つ PJ）があると、`status` と `brief` が `hub.py cross` で読み、作業中の sub との重なり・新しい決定・読めなかった PJ を lead に出す（brief は「別の PJ との重なりに注意」に載せる）。
+
+- `--mark` 以外は読むだけで、別の PJ にも自分の PJ にも書かない（壊れた PJ は `unknown` に回し、ほかの PJ は出す）。見せた所までの印は、`status` の最後の `cross --mark` だけが進める（別の PJ ごとの journal の行数を hub.json に持つ。takeover で引き継ぐ）
+- hub どうしは送り合わない。別の PJ との重なりは自動の連絡（段取り）にも入れず、調整が要るかは lead が決める。重なりの行を載せた brief は、`auto` の PJ でも全文を見せて承認を取る
+- 別の PJ の在席は、その PJ の hub が最後に status を回した時点の記録（`presence_checked`）
+- 別々に `git clone` した checkout は対象外（共通ディレクトリが違う）
+- PJ を束ねる上位の hub は、記録から測れる条件を満たしてから足す
+- 判断の経緯: `.claude/designs/20261029-project-hub-cross-project-view.md` / `.claude/adr/20261029233229-project-hub-cross-project-read-only-then-upper-hub.md` / `.claude/adr/20261029233251-project-hub-cross-project-overlap-not-auto-relayed.md`
 
 ## living spec（設計の収束）
 
