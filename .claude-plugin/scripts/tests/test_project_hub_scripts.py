@@ -1904,6 +1904,265 @@ class WorktreesTest(HubTestBase):
 PR = {"state": "OPEN", "isDraft": False, "isCrossRepository": False, "title": "t"}
 
 
+
+SID_HUB_2 = "22222222-2222-4222-8222-222222222222"
+SID_C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+
+
+class CrossProjectTest(HubTestBase):
+    """同じ repo を触る別の PJ の作業中の sub・重なり・新しい決定（ADR-20261029233229）.
+
+    何も書かないこと、見せた所までの印を進めるのは hub の --mark だけであること、
+    判定できない PJ を「無い」と区別して返すことを見る
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init(mode="auto")
+        self.pdir2 = self.init(project="pj2", session_id=SID_HUB_2, name="hub-two", mode="auto")
+        other = TempGitRepo()
+        self.other_repo = other.__enter__()
+        self.addCleanup(other.__exit__, None, None, None)
+        other.commit("init")
+        other.branch("base")
+        self.init(project="pj3", session_id=SID_HUB, name="hub-three", repos=[self.other_repo])
+
+    def work(self, project: str, sid: str, name: str, issue: str, files: list[str], **body) -> None:
+        worktree = self.git_repo.worktree(f"wt-{name}")
+        for filename in files:
+            TempGitRepo.at(worktree).commit("work", filename=filename)
+        res = self.report(sid=sid, name=name, project=project, cwd=worktree,
+                          body=report_body(issue=issue, **body))
+        self.assertEqual(res.returncode, 0, res)
+
+    def cross(self, *flags: str, sid: str = SID_HUB) -> dict:
+        return self.ok("cross", "--project", "pj", *flags, env_extra={"CLAUDE_CODE_SESSION_ID": sid})
+
+    def ingest2(self) -> None:
+        self.ok("ingest", "--project", "pj2", env_extra={"CLAUDE_CODE_SESSION_ID": SID_HUB_2})
+
+    def snapshot(self) -> dict:
+        return {str(p): p.read_bytes() for p in sorted(self.root.rglob("*")) if p.is_file()}
+
+    def test_returns_only_projects_sharing_a_repo_with_their_overlaps(self):
+        self.work("pj", SID_A, "worker-a", "#308", ["shared.txt"])
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt", "only-b.txt"])
+        out = self.cross()
+        self.assertEqual([p["project"] for p in out["projects"]], ["pj2"], "repo を共有しない pj3 は返さない")
+        self.assertEqual(out["unknown"], [])
+        self.assertEqual(out["active_projects"], 3)
+        peer = out["projects"][0]
+        self.assertEqual(peer["hub"], "hub-two")
+        self.assertEqual([(s["name"], s["issue"]) for s in peer["sessions"]], [("worker-b", "#412")])
+        self.assertEqual(peer["sessions"][0]["repo"], str(self.repo.resolve()))
+        self.assertEqual([(o["file"], o["mine"][0]["name"], o["theirs"][0]["name"]) for o in peer["overlaps"]],
+                         [("shared.txt", "worker-a", "worker-b")], "触っていないファイルは重なりにしない")
+
+    def test_reading_writes_nothing_anywhere(self):
+        self.work("pj", SID_A, "worker-a", "#308", ["shared.txt"])
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"], decisions=[{"text": "A にする", "date": "2026-10-29", "by": "lead"}])
+        self.ingest2()
+        before = self.snapshot()
+        self.cross()
+        self.assertEqual(self.snapshot(), before, "cross は自分の PJ にも別の PJ にも書かない")
+
+    def test_an_unknown_overlap_is_not_reported_as_none(self):
+        self.work("pj", SID_A, "worker-a", "#308", ["shared.txt"])
+        # hello で登録したまま base のブランチにいる（着手前）。重なりは判定できない
+        self.assertEqual(self.report(sid=SID_B, name="worker-b", project="pj2").returncode, 0)
+        peer = self.cross()["projects"][0]
+        self.assertEqual(peer["overlaps"], [])
+        self.assertIn("着手前", peer["sessions"][0]["note"], "重なり不明を「重なり無し」と同じ沈黙にしない")
+        self.assertIsNone(peer["sessions"][0]["changed"])
+
+    def test_an_unreadable_project_is_unknown_and_does_not_stop(self):
+        (self.root / "pj4").mkdir()
+        (self.root / "pj4" / "config.json").write_text("{", encoding="utf-8")
+        out = self.cross()
+        self.assertEqual([u["project"] for u in out["unknown"]], ["pj4"])
+        self.assertIn("config.json", out["unknown"][0]["reason"])
+
+    def test_done_sessions_and_closed_projects_are_left_out(self):
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"], state="done")
+        self.ingest2()
+        self.assertEqual(self.cross()["projects"][0]["sessions"], [], "done を報告した sub は作業中ではない")
+        config = json.loads((self.pdir2 / "config.json").read_text(encoding="utf-8"))
+        (self.pdir2 / "config.json").write_text(json.dumps({**config, "status": "closed"}), encoding="utf-8")
+        out = self.cross()
+        self.assertEqual(out["projects"], [])
+        self.assertEqual(out["active_projects"], 2)
+
+    def test_mark_shows_each_decision_once_and_logs_a_quiet_row(self):
+        decision = {"text": "A にする", "date": "2026-10-29", "by": "lead"}
+        self.work("pj", SID_A, "worker-a", "#308", ["shared.txt"])
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"], decisions=[decision])
+        self.ingest2()
+        self.assertEqual([d["text"] for d in self.cross()["projects"][0]["new_decisions"]], ["A にする"],
+                         "印の無い PJ は直近の決定を出す")
+        self.assertEqual(len(self.cross()["projects"][0]["new_decisions"]), 1, "印を進めない呼び出しは何度でも同じ")
+        self.cross("--mark")
+        row = self.journal(self.pdir)[-1]
+        self.assertEqual(row["kind"], "cross")
+        self.assertEqual(row["body"]["new_decisions"], 1)
+        self.assertEqual(row["body"]["active_projects"], 3)
+        self.assertEqual(row["body"]["new_overlaps"], [["pj2", str(self.repo.resolve()), "shared.txt"]])
+        self.assertEqual(self.cross()["projects"][0]["new_decisions"], [], "見せた決定は次の一覧に出さない")
+        self.work("pj2", SID_C, "worker-c", "#413", ["other.txt"],
+                  decisions=[{"text": "B にする", "date": "2026-10-29", "by": "lead"}])
+        self.ingest2()
+        self.assertEqual([d["text"] for d in self.cross()["projects"][0]["new_decisions"]], ["B にする"])
+        self.cross("--mark")
+        self.assertEqual(self.journal(self.pdir)[-1]["body"]["new_overlaps"], [], "前回の mark と同じ重なりは新しくない")
+        self.ok("render", "--project", "pj")
+        state = (self.pdir / "state.md").read_text(encoding="utf-8")
+        self.assertNotIn("| cross |", state, "cross の行で直近の journal を埋めない")
+
+    def test_rewritten_decisions_do_not_come_back(self):
+        decision = {"text": "A にする", "date": "2026-10-29", "by": "lead"}
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"], decisions=[decision])
+        self.ingest2()
+        self.cross("--mark")
+        worktree = self.git_repo.worktree("wt-worker-b-again")
+        res = self.report(sid=SID_B, name="worker-b", project="pj2", cwd=worktree,
+                          body=report_body(issue="#412", state="ready_for_review", decisions=[decision]))
+        self.assertEqual(res.returncode, 0, res)
+        self.ingest2()
+        self.assertEqual(self.cross()["projects"][0]["new_decisions"], [], "書き直された同じ決定は新しくない")
+
+    def test_mark_needs_the_hub_and_takeover_keeps_it(self):
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"])
+        self.assertEqual([p["project"] for p in self.cross(sid=SID_A)["projects"]], ["pj2"],
+                         "読むだけなら hub でないセッションからも呼べる")
+        res = self.run_hub("cross", "--project", "pj", "--mark", env_extra={"CLAUDE_CODE_SESSION_ID": SID_A})
+        self.assertEqual(res.returncode, 3, "hub でないセッションは印を進めない")
+        self.cross("--mark")
+        seen = json.loads((self.pdir / "hub.json").read_text(encoding="utf-8"))["cross_seen_lines"]
+        self.assertEqual(set(seen), {"pj2"})
+        self.ok("takeover", "--project", "pj", "--name", "hub-new", env_extra={"CLAUDE_CODE_SESSION_ID": SID_C})
+        hub = json.loads((self.pdir / "hub.json").read_text(encoding="utf-8"))
+        self.assertEqual(hub["cross_seen_lines"], seen, "見せた所までの印は PJ のもので、takeover で引き継ぐ")
+
+    def test_a_broken_state_of_one_project_is_unknown_and_others_still_show(self):
+        self.work("pj", SID_A, "worker-a", "#308", ["shared.txt"])
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"])
+        pdir4 = self.init(project="pj4", session_id=SID_HUB_2, name="hub-four")
+        for label, breakage in (("hub.json", lambda: (pdir4 / "hub.json").write_text("[1]", encoding="utf-8")),
+                                ("journal", lambda: (pdir4 / "journal.jsonl").open("ab").write(b"\xe3\x81\n")),
+                                ("repos", lambda: (pdir4 / "config.json").write_text(json.dumps(
+                                    {"project": "pj4", "status": "active", "repos": None}), encoding="utf-8"))):
+            with self.subTest(label):
+                breakage()
+                out = self.cross()
+                self.assertEqual([u["project"] for u in out["unknown"]], ["pj4"], "壊れた PJ を unknown に回して止まらない")
+                self.assertIn("状態を読めない", out["unknown"][0]["reason"])
+                self.assertEqual([p["project"] for p in out["projects"]], ["pj2"], "壊れた PJ のせいでほかの PJ を落とさない")
+                (pdir4 / "hub.json").write_text(json.dumps({"session_id": SID_HUB_2, "name": "hub-four"}), encoding="utf-8")
+                (pdir4 / "journal.jsonl").write_text("", encoding="utf-8")
+                (pdir4 / "config.json").write_text(json.dumps(
+                    {"project": "pj4", "status": "active", "tracker": {"kind": "github", "repo": "o/r"},
+                     "repos": [{"path": str(self.repo.resolve()), "base": "base"}]}), encoding="utf-8")
+
+    def test_my_unknown_overlap_is_reported_when_the_other_project_works_there(self):
+        # 自分の sub は hello で登録したまま base のブランチにいる（着手前）。相手は同じ repo で作業中
+        self.assertEqual(self.report(sid=SID_A, name="worker-a", project="pj").returncode, 0)
+        self.work("pj", SID_C, "worker-c", "#309", ["mine-only.txt"])
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"])
+        peer = self.cross()["projects"][0]
+        self.assertEqual(peer["overlaps"], [])
+        self.assertEqual([m["name"] for m in peer["mine_unknown"]], ["worker-a"],
+                         "自分の側の重なり不明を「無い」と同じ沈黙にしない。触るファイルが分かる sub は入れない")
+        self.assertIn("着手前", peer["mine_unknown"][0]["note"])
+
+    def test_malformed_repo_entries_are_skipped_and_the_shared_one_still_counts(self):
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"])
+        config = json.loads((self.pdir2 / "config.json").read_text(encoding="utf-8"))
+        (self.pdir2 / "config.json").write_text(json.dumps(
+            {**config, "repos": ["junk", {"base": "base"}, *config["repos"]]}), encoding="utf-8")
+        out = self.cross()
+        self.assertEqual(out["unknown"], [])
+        self.assertEqual([p["project"] for p in out["projects"]], ["pj2"], "形の崩れた repo の要素は照合に使わず飛ばす")
+
+    def test_a_vanished_worktree_stays_as_unknown(self):
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"])
+        reg_path = self.pdir2 / "sessions" / f"{SID_B}.json"
+        reg = json.loads(reg_path.read_text(encoding="utf-8"))
+        reg_path.write_text(json.dumps({**reg, "worktree": str(self.tmp / "gone")}), encoding="utf-8")
+        session = self.cross()["projects"][0]["sessions"][0]
+        self.assertIsNone(session["repo"])
+        self.assertIn("worktree が無い", session["note"])
+
+    def test_done_sessions_do_not_make_overlaps_and_uncommitted_files_do(self):
+        self.work("pj", SID_A, "worker-a", "#308", ["shared.txt"])
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"], state="done")
+        self.ingest2()
+        self.assertEqual(self.cross()["projects"][0]["overlaps"], [], "done を報告した sub は重なりの相手にしない")
+        worktree = self.git_repo.worktree("wt-worker-c")
+        (worktree / "draft.txt").write_text("y", encoding="utf-8")
+        mine = Path(json.loads((self.pdir / "sessions" / f"{SID_A}.json").read_text(encoding="utf-8"))["worktree"])
+        (mine / "draft.txt").write_text("x", encoding="utf-8")
+        self.assertEqual(self.report(sid=SID_C, name="worker-c", project="pj2", cwd=worktree,
+                                     body=report_body(issue="#413")).returncode, 0)
+        files = [o["file"] for o in self.cross()["projects"][0]["overlaps"]]
+        self.assertEqual(files, ["draft.txt"], "未コミットの編集も重なりに入れる")
+
+    def test_old_decisions_of_an_unmarked_project_are_not_shown(self):
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"], decisions=[{"text": "古い", "date": "2026-09-01", "by": "lead"}])
+        self.ingest2()
+        path = self.pdir2 / "journal.jsonl"
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line]
+        for row in rows:
+            row["ts"] = "2000-01-01T00:00:00Z"
+        path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+        self.assertEqual(self.cross()["projects"][0]["new_decisions"], [], "印の無い PJ は直近 14 日の決定だけ")
+
+    def test_a_mark_longer_than_the_journal_falls_back_to_the_window(self):
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"], decisions=[{"text": "A", "date": "2026-10-29", "by": "lead"}])
+        self.ingest2()
+        hub_path = self.pdir / "hub.json"
+        hub = json.loads(hub_path.read_text(encoding="utf-8"))
+        hub_path.write_text(json.dumps({**hub, "cross_seen_lines": {"pj2": 999}}), encoding="utf-8")
+        self.assertEqual([d["text"] for d in self.cross()["projects"][0]["new_decisions"]], ["A"],
+                         "作り直した PJ の決定を古い印で黙って落とさない")
+
+    def test_takeover_keeps_last_overlaps_and_counts_stay_honest(self):
+        self.work("pj", SID_A, "worker-a", "#308", ["shared.txt"])
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"])
+        self.cross("--mark")
+        before = json.loads((self.pdir / "hub.json").read_text(encoding="utf-8"))["cross_last_overlaps"]
+        self.assertTrue(before)
+        self.ok("takeover", "--project", "pj", "--name", "hub-new", env_extra={"CLAUDE_CODE_SESSION_ID": SID_C})
+        self.assertEqual(json.loads((self.pdir / "hub.json").read_text(encoding="utf-8"))["cross_last_overlaps"], before)
+        self.cross("--mark", sid=SID_C)
+        row = self.journal(self.pdir)[-1]
+        self.assertEqual((row["body"]["new_overlaps"], row["body"]["new_decisions"]), ([], 0),
+                         "引き継いだ重なりを新しいと数えず、決定が増えない回は 0")
+        (self.pdir2 / "config.json").write_text("{", encoding="utf-8")
+        self.cross("--mark", sid=SID_C)
+        kept = json.loads((self.pdir / "hub.json").read_text(encoding="utf-8"))["cross_last_overlaps"]
+        self.assertEqual(kept, before, "読めなかった PJ の前回の重なりは残す")
+
+    def test_presence_checked_and_quiet_rows_in_the_injection(self):
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"])
+        self.assertIsNone(self.cross()["projects"][0]["presence_checked"])
+        (self.pdir2 / "presence.json").write_text("{}", encoding="utf-8")
+        self.assertRegex(self.cross()["projects"][0]["presence_checked"], r"^\d{4}-\d{2}-\d{2}T")
+        self.ok("render", "--project", "pj")
+        self.cross("--mark")
+        res = self.run_hub("inject", stdin=json.dumps({"session_id": SID_HUB, "source": "compact"}))
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("増えた journal（kind 別）: なし", res.stdout, "cross の行を注入の数に入れない")
+        state = (self.pdir / "state.md").read_text(encoding="utf-8")
+        self.assertNotIn("|---|---|---|", state.split("## journal")[1], "cross の行しか無いときに空の表を出さない")
+
+    def test_an_unreadable_project_keeps_its_mark(self):
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"])
+        self.cross("--mark")
+        hub = json.loads((self.pdir / "hub.json").read_text(encoding="utf-8"))
+        (self.pdir2 / "config.json").write_text("{", encoding="utf-8")
+        self.cross("--mark")
+        after = json.loads((self.pdir / "hub.json").read_text(encoding="utf-8"))
+        self.assertEqual(after["cross_seen_lines"], hub["cross_seen_lines"], "読めなかった PJ の印は進めない")
+
 class BaseBranchTest(HubTestBase):
     """config の base からブランチ名を取るとき、外すのは先頭の remote 名だけ（`origin/feature/x` は `feature/x`）."""
 
@@ -3673,6 +3932,38 @@ class FollowUpFilingTextTest(unittest.TestCase):
         self.assertIn("指定が無ければ書かない", s, "候補を出しただけで起票する")
         self.assertIn("tracker `local` の PJ はこれまでどおり lead に見せるだけ", s)
 
+
+
+class CrossProjectTextTest(unittest.TestCase):
+    """別の PJ の重なり・決定を hub の手順に載せる文言契約（ADR-20261029233229 / ADR-20261029233251）."""
+
+    def skill(self) -> str:
+        return (ROOT / "project-hub" / "skills" / "hub" / "SKILL.md").read_text(encoding="utf-8")
+
+    def test_cross_overlaps_are_not_routine_relays(self):
+        s = self.skill()
+        self.assertIn("重なるファイルの注意（自分の PJ の `worktrees`）", s)
+        self.assertIn("別の PJ との重なり（`cross`）は入れない", s, "別の PJ 由来の重なりを承認なしに sub へ送る")
+
+    def test_status_reads_then_marks_after_showing(self):
+        s = self.skill()
+        self.assertIn("8.5. `hub.py cross --project '<PJ>'`", s)
+        self.assertIn("**別の PJ**（8.5 に重なり・`note` つきの sub・`mine_unknown`・`unknown`・新しい決定のどれかがあるとき、"
+                      "または 8.5 が exit 0 以外だったときだけ）", s, "重なり不明・読めない PJ・取れなかった回に節を省く")
+        self.assertIn("11.5. どの PJ でも（`auto` でなくても）: 10 を出した後に `hub.py cross --project '<PJ>' --mark`", s,
+                      "見せる前に印を進める / auto でない PJ で印を進め忘れる")
+        self.assertIn("もう 1 つの例外は `hub.py cross`", s, "cross の失敗で status・brief を止める")
+        self.assertIn("8.5 が exit 0 以外だった回は進めない", s)
+
+    def test_brief_lists_cross_overlaps_as_quoted_data(self):
+        s = self.skill()
+        self.assertIn("   - 別の PJ との重なりに注意: 「<別の PJ>」の「<sub の名前>」（<Issue>）が <ファイル> を触っている", s)
+        self.assertIn("（読むだけ。印は進めない）", s, "brief が別の PJ の印を進めると、lead に見せていない決定が落ちる")
+        self.assertIn("この sub へは直接連絡しない。調整が要りそうなら needs_lead に書く", s, "sub どうしが PJ をまたいで直接調整する")
+        self.assertIn("「別の PJ との重なりに注意」の行がある brief は、`auto` の PJ でも relay の 4 の `phrase` と同じく全文を見せて", s,
+                      "auto の PJ で別の PJ の重なりが lead に見えないまま既にある sub に届く")
+        self.assertIn("または文面に「別の PJ との重なりに注意」の行があれば（`auto` でも", s,
+                      "auto の PJ の start で別の PJ の重なりが lead に見えないまま新しい sub に届く")
 
 if __name__ == "__main__":
     unittest.main()
