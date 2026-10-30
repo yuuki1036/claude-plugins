@@ -3855,6 +3855,20 @@ class SidebarGroupTest(HubTestBase):
         self.assertEqual(self.plan(), {"sidebar_group": "off"})
         self.assertNotIn("sidebar_pending", self.hub_ok("ingest", "--project", "pj"))
 
+    def test_the_record_reports_the_group_of_the_pj(self):
+        self.enable()
+        self.adopt(SID_A, SUB_HOST, "worker-a", "#308")
+        self.adopt(SID_B, SUB_HOST_B, "worker-b", "#309")
+        out = json.loads(self.record({"group_id": "g1", "filed": [HUB_HOST, SUB_HOST]}).stdout)
+        self.assertEqual(out["group_id"], "g1", "初回は config にまだ無いので、渡した ID")
+        out = json.loads(self.record({"nested": [SUB_HOST_B]}).stdout)
+        self.assertEqual(out["group_id"], "g1", "nested だけの回は group_id を省けるので、config のグループ")
+
+    def test_switching_needs_the_mode(self):
+        self.enable()
+        self.assertEqual(self.hub("set-sidebar-group", "--project", "pj").returncode, 2)
+        self.assertEqual(self.config()["sidebar_group"], "on", "--mode が無い回に設定を書き換えない")
+
     def test_a_closed_sub_is_not_listed(self):
         self.enable()
         self.adopt(SID_A, SUB_HOST, "worker-a", "#308")
