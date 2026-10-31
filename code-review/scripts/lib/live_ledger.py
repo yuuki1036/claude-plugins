@@ -82,7 +82,7 @@ def summarize(ledger: dict, t0_ms: int) -> dict | None:
         "sub_turns_max": per_agent[0] if per_agent else 0,
         "sub_turns_median": statistics.median(per_agent) if per_agent else None,
         "spawns": len(spawns),
-        # `run_in_background: false` を省いて起動した体（結果を取りこぼす / orchestration-guide.md `## 0`）
+        # 2.1.302 からメイン会話の agent はほぼ全体が background で起動する（#347）
         "background_spawns": sum(1 for a in spawns if a.get("background") is True),
     }
 

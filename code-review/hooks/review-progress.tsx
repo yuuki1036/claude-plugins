@@ -3,8 +3,7 @@
 // レビューは 10〜57 分かかり、その間に見えるのは agent の起動と途中の出力だけだった。SKILL 本文は
 // 変えず、レビューが既に打っている計測の打点（scripts/review-timing.sh）と subagent の起動・完了を
 // 見るだけで組む。wave の打点は落ちることが多い（GitHub issue #161）ので、段階は start / t2 / publish
-// と agent の数だけから決める。`run_in_background` で起動した agent はその場で知らせる
-// （結果を取りこぼす / orchestration-guide.md `## 0`。transcript からは事後にしか分からなかった）
+// と agent の数だけから決める
 import { atom, read, update } from 'claude-code'
 import type { AgentSpawnInput, AgentSpawnResult, EngineInterface, On } from 'claude-code'
 
@@ -61,9 +60,8 @@ export function registerProgress(on: On, onSpawn: SpawnListener) {
     if ((await read($, progress)) === null) return r
     running.add(r.agentId)
     await update($, progress, v =>
-      v === null ? v : { ...v, now: t, lastEventAt: t, spawned: v.spawned + 1, background: v.background + (e.background ? 1 : 0) },
+      v === null ? v : { ...v, now: t, lastEventAt: t, spawned: v.spawned + 1 },
     )
-    if (e.background) $.ui.toast('agent を run_in_background で起動した（結果を取りこぼす）')
     return r
   })
 
@@ -85,7 +83,6 @@ export function registerProgress(on: On, onSpawn: SpawnListener) {
         lastEventAt: t,
         spawned: 0,
         done: 0,
-        background: 0,
         isReported: false,
       }))
       stopTick()
@@ -126,11 +123,6 @@ export function registerProgress(on: On, onSpawn: SpawnListener) {
           <Text dimColor>{progressLine(p)}</Text>
           <Button key="hide-progress" label="隠す" onPress={() => update($, isHidden, () => true)} />
         </Box>
-        {p.background > 0 && (
-          <Text color="warning">
-            ⚠️ run_in_background で起動した agent が {p.background} 体（結果を取りこぼす。run_in_background: false を明示する）
-          </Text>
-        )}
         {below}
       </Box>
     )

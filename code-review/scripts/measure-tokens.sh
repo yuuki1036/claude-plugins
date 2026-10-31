@@ -191,6 +191,15 @@ for fpath, side in targets:
             ts = e.get("timestamp") or ""
             if since and ts and ts < since:
                 continue
+            # main は会話の行（assistant / user / attachment）だけを読む（GitHub issue #346）。
+            # 2.1.302 から入った `api-request-blob` は API リクエストの会話の写しで、過去の
+            # tool_use / tool_result をそのまま含むのに timestamp も message.id も持たない
+            # （窓のフィルタも素通りする）。読むと Agent の発行元が `(None, "")` で上書きされて
+            # dispatch が欠測し、取り込み内訳も二重に数える。sub 側はここでは絞らない — sub の
+            # Agent・結果の読み取りは下で type を見ており、blob は timestamp を持たないので起動・終了時刻にも
+            # 入らない（timestamp を持つ `api-request` 行は終了時刻に入るが、agent の生存期間の内側にある）
+            if not side and e.get("type") not in ("assistant", "user", "attachment"):
+                continue
             # **main への取り込みを「何経由で入ったか」に分解する**（GitHub issue #118）。
             # cache_write は「新規に読んだ量」だが、参照 doc の読み込みと agent 出力の
             # 取り込みが同じバケツに入るため、cache_write 単独では分冊・遅延読み込みの
@@ -229,7 +238,10 @@ for fpath, side in targets:
                         if blk.get("type") == "tool_use":
                             tool_of[blk.get("id")] = blk.get("name") or "?"
                             if blk.get("name") == "Agent":
-                                agent_dispatch[blk.get("id")] = (_wave_key(e), ts)
+                                # 最初に見た値を残す（#346）。blob は上で除いてあり、ここは発行元のキーを
+                                # 持たない行が同じ Agent 呼び出しを再掲したときの保険（上書きすると、その体が
+                                # `unresolved` に落ちる）
+                                agent_dispatch.setdefault(blk.get("id"), (_wave_key(e), ts))
                         elif blk.get("type") == "tool_result":
                             body = blk.get("content")
                             if not isinstance(body, str):
@@ -683,8 +695,8 @@ if dispatch["verdict"] in ("serial", "layered", "batched"):
           % (label, dispatch["agents"], dispatch["waves"],
              "+".join(str(n) for n in dispatch["wave_sizes"]), dispatch["max_inter_wave_sec"]))
     if dispatch["verdict"] == "serial":
-        print("   → 同一フェーズは 1 メッセージで一括発行する。fleet は**wave 内最長の 1 体**で"
-              "決まる（orchestration-guide.md `## 0`「並列発行の明示」）")
+        print("   → 同一フェーズは 1 メッセージで一括発行する（別メッセージにすると main の往復が体数ぶん増え、計測が同じ層を別 wave と数える）"
+              " — orchestration-guide.md `## 0`「並列発行の明示」")
 elif dispatch.get("unresolved"):
     # 判定を諦めた回を黙って落とさない（`batched` にも `serial` にも倒さない / #149）
     print("発行パターン    : 判定不能（%d 体中 %d 体の発行元メッセージを引けない）"

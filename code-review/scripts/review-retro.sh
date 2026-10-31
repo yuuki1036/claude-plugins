@@ -3048,8 +3048,8 @@ else:
     print("**発行パターン**（一括発行 / n=%d%s）: **batched %d・layered %d・serial %d**%s"
           % (len(judged), v1_tail, n_b, len(judged) - n_b - n_s, n_s, tail))
     if n_s:
-        print("  - **serial %d 件**（単独 wave が %d 連続以上）。同一フェーズを 1 メッセージで"
-              "発行すれば fleet は**wave 内最長の 1 体**で決まる（orchestration-guide.md `## 0`）"
+        print("  - **serial %d 件**（単独 wave が %d 連続以上）。同一フェーズは 1 メッセージで一括発行する"
+              "（別メッセージにすると main の往復が体数ぶん増え、計測が同じ層を別 wave と数える） — orchestration-guide.md `## 0`"
               % (n_s, min(d.get("max_solo_run") or 0 for d in judged
                           if d["verdict"] == "serial")))
     # **最大ギャップの内訳**（GitHub issue #153）。どちらが支配的かで打ち手が正反対

@@ -31,7 +31,7 @@ Step 1 のダイジェストの `## md-polish`（`md-prose-lines.sh --count` の
 
 ## 2. 起動（Step 4 の reviewer 一括発行に相乗り）
 
-- **発行直前チェックポイントの列挙に含め**、reviewer と**同じメッセージで**発行する。`run_in_background: false` を明示する（後から別メッセージで出すと `wave-split` が立つ）
+- **発行直前チェックポイントの列挙に含め**、reviewer と**同じメッセージで**発行する（後から別メッセージで出すと `wave-split` が立つ）
 - `model: opus`、`effort: high`（**実行時 effort に連動させない**。推敲の厚みを effort で揺らさないため。agent 側でも writing-polish の effort 分岐を high として扱わせる）
 - プロンプトは 3 行だけ: 「まず `<agent_ctx_file>` を Read せよ」「`${CLAUDE_PLUGIN_ROOT}/references/prompts/md-polish.md` を Read して従え」、`--staged` の回は「`--staged` の回である」。**確定事実・findings・Vault・AGENTS.md の注入は渡さない**（推敲に使わない）
 - **`agents` の内訳に数えない**。publish は `md_polish.fired` を申告体数に足して transcript と突合する（`agents.reviewer` に含めると二重に数えて `agents-mismatch` が立つ）

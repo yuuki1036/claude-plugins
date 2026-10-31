@@ -19,8 +19,9 @@ allowed-tools:
 # Self Review
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
+<!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @49ae195b -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @9c47fc93 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
 
 ## review との違い
@@ -277,7 +278,7 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
   - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/<focus>.md`
 - 可変部として Phase 0 が決定した focus・対象ファイル・関数、**プラグインの実パス**（explorer-common.md の `{{PLUGIN_ROOT}}` の読み替え先。explorer は共通ブロックを受け取らないので、ここで渡すのが唯一の経路）、および **Step 1 の `$DIFF_FILE` のパスと担当ファイル名**を渡す（`diff-slice.sh` で自分の担当ぶんを切り出せることも明記する。`--since` の回は `$DIFF_FILE` として `delta_file` を渡す）
 - `isolation: "worktree"` は使用しない（セルフレビューは未コミット変更を含むため）
-- 全エージェントに `run_in_background: false` を明示し、**全 explorer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0`。`run_in_background` 省略は取りこぼし、1 体ずつ別メッセージ発行は逐次実行＝実時間が合計に膨らむ。2 つは独立の要件）。**`mark t1` の応答で出す explorer を列挙してから発行に移る**（発行直前チェックポイント / `## 0`。実測の違反のうち 1 件は explorer を 1 体ずつ出した型 — #220）
+- **全 explorer の Agent call を同一メッセージ内で一括発行し、全体の結果が届くまで次へ進まない**（orchestration-guide.md `## 0`。起動は常に非同期で、結果は完了通知で届く）。**`mark t1` の応答で出す explorer を列挙してから発行に移る**（発行直前チェックポイント / `## 0`。実測の違反のうち 1 件は explorer を 1 体ずつ出した型 — #220）
 
 一括発行の**直前**に fleet 区間の開始マーカーを記録する（**agent wave はすべて fleet 側に入れる**。explorer を triage 区間に含めると `duration_triage_min` が「メイン思考の代理指標」でなくなる。orchestration-measurement.md `## 14`）:
 
@@ -322,9 +323,9 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 3 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` 側（#122）
 - **Vault 注入**: Step 1.5 で関連ありと判断した知見があれば、各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する。reviewer には「過去に同種コードで指摘された観点を優先的に確認せよ。ただし現在の diff に該当しなければ無視してよい」と添える
 - `isolation: "worktree"` は使用しない
-- 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
+- **全 reviewer の Agent call を同一メッセージ内で一括発行し、全体の結果が届くまで次へ進まない**（orchestration-guide.md `## 0`）
 - **冷や読み skeptic の相乗り**: Step 2.4 で surface=true かつ Phase 4.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `${CLAUDE_PLUGIN_ROOT}/references/prompts/recall-skeptic.md` をパス渡し。`--since` の回は `$DIFF_FILE` として `delta_file` を渡し、共通ブロックの `diff_file` は読まないと明記する）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 4.8 で行う。**publish の `recall_skeptic.launch` は `"rider"`**（起動経路の自己申告 / #216）
-- **Markdown 推敲の相乗り**: Step 2.1 で起動すると決めた回は、推敲 agent 1 体（`model: opus`, `effort: high`、プロンプトは `${CLAUDE_PLUGIN_ROOT}/references/prompts/md-polish.md` をパス渡し）を **この一括発行に含める**（`run_in_background: false`）。`agents` の内訳には数えない。組み立てと結果の扱いは `md-polish-guide.md` の 2・3 節
+- **Markdown 推敲の相乗り**: Step 2.1 で起動すると決めた回は、推敲 agent 1 体（`model: opus`, `effort: high`、プロンプトは `${CLAUDE_PLUGIN_ROOT}/references/prompts/md-polish.md` をパス渡し）を **この一括発行に含める**。`agents` の内訳には数えない。組み立てと結果の扱いは `md-polish-guide.md` の 2・3 節
 
 一括発行の**直前**に fleet 区間の開始マーカーを記録する（orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式で決める。Step 3 で explorer を起動していれば記録済みなので `grep` ガードで二重記録を防ぐ。`||` 形なのでガードが偽でもブロックは成功終了する）:
 

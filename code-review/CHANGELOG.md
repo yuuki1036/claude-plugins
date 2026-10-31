@@ -2,6 +2,36 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.164.3] - 2026-10-31
+
+### Fixed
+
+- **`measure-tokens.sh` が transcript の `api-request-blob` 行を会話として読んでいたのを直した**（GitHub issue #346）。
+  2.1.302 から入ったこの行は API リクエストの会話の写しで、過去の tool_use / tool_result を含むのに timestamp も
+  message.id も持たない。読むと Agent の発行元が後から上書きされて消え、`dispatch` が欠測していた（m2 で 30 回中 7 回）。
+  main は assistant / user / attachment の行だけを読み、Agent の発行元は最初に見た値を残す。あわせて、人間向けの
+  取り込み内訳が blob の写しの分だけ二重に数えられていたのも直る（実測の 1 回で Read が 27 → 19 件、Agent 経由の
+  占有が 2.3% → 1.4%。ただしこの「Agent 経由」は起動の受付だけの値で、非同期起動で届く agent の結果は数えていない —
+  orchestration-measurement.md `## 16` の「分母の使い分け」）。m1 で欠測していた 6 回は、修正後にすべて
+  `layered` / `batched` と判定できた
+- **publish-guard の Stop 経路が agent の結果待ちのたびに鳴り、publish 漏れの検知を使い切っていたのを直した**
+  （GitHub issue #347）。2.1.302 から結果を待つ間にターンが終わるので、Stop 経路が最初の待ちで鳴って PreToolUse 経路
+  と共有の `nag` を書き、t2 の後に publish を飛ばす脱落（#232）を拾えなくなっていた。fleet の最中（`t1` あり・
+  `t2` なし）は鳴らさず `nag` も書かない。fleet の途中で放棄された回は Stop では拾えなくなる
+
+### Changed
+
+- **「Agent call に `run_in_background: false` を明示する」規約を「wave の全 agent の結果が届くまで次のフェーズへ進まない」に
+  置き換えた**（GitHub issue #347）。CC 2.1.302 から、メイン会話の Agent は terminal・デスクトップアプリ・VS Code のどれでも
+  常に background で走り、`false` を指定しても変わらない（m1 で 2.1.304〜2.1.309 の 151 回すべてが非同期起動）。
+  m1 の 10-21 以降のレビュー 37 回で、publish の前に結果が届いていない体がいた回は無かった。正本は
+  orchestration-guide.md `## 0`、根拠は design-notes/orchestration-rationale.md。あわせて、一括発行の WARN と
+  retro の文言から「一括発行すれば fleet は wave 内最長の 1 体で済む」を外した（非同期起動では別メッセージでも
+  並行して走るので、`## 0` の根拠を main の往復と計測に置き換えた）。計測契約に、`agents_completed` /
+  `agents_abandoned` が 2.1.302 以降は捨てられた試行を判定できないことを書いた
+- **review-progress mod の「run_in_background で起動した」警告（トーストと帯）を外した**（GitHub issue #347）。
+  2.1.302 からはほぼ毎回鳴っていた（10-21 以降 m1 34 / 34 回・m2 29 / 31 回）。`tokens_live.background_spawns` は残す
+
 ## [2.164.2] - 2026-10-29
 
 ### Changed

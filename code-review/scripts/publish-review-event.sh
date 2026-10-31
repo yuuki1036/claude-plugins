@@ -1131,8 +1131,8 @@ elif os.environ.get("REVIEW_TOKENS_WANTED") == "1":
         if disp.get("verdict") == "serial":
             sys.stderr.write(
                 "WARN: agent を逐次発行している（%s 体 / %s wave / 単独 wave が %s 連続）。"
-                "同一フェーズは 1 メッセージで一括発行すれば fleet は**wave 内最長の 1 体**で"
-                "済む — orchestration-guide.md `## 0`「並列発行の明示」\n"
+                "同一フェーズは 1 メッセージで一括発行する（別メッセージにすると main の往復が体数ぶん増え、計測が同じ層を別 wave と数える）"
+                " — orchestration-guide.md `## 0`「並列発行の明示」\n"
                 "  → **レポート末尾に 1 行追記すること**: "
                 "`⚠️ 計測: agent を逐次発行した（一括発行の規約違反 / #142）`\n"
                 % (disp.get("agents"), disp.get("waves"), disp.get("max_solo_run"))
@@ -1261,8 +1261,8 @@ elif os.environ.get("REVIEW_TOKENS_WANTED") == "1":
             # 取り逃している（`explorer_waves` は全件 1）。
             sys.stderr.write(
                 "WARN: wave が %s 本で期待 %d 本を超えた（一括発行の規約違反 / 全層検出）。"
-                "wave_sizes=%s。同一フェーズは 1 メッセージで一括発行すれば fleet は"
-                "**wave 内最長の 1 体**で済む — orchestration-guide.md `## 0`\n"
+                "wave_sizes=%s。同一フェーズは 1 メッセージで一括発行する"
+                "（別メッセージにすると main の往復が体数ぶん増え、計測が同じ層を別 wave と数える） — orchestration-guide.md `## 0`\n"
                 "  → **レポート末尾に 1 行追記すること**: "
                 "`⚠️ 計測: agent を %s wave に分けて発行した（期待 %d 本 / 一括発行の規約違反 / #172）`\n"
                 % (waves, expected, json.dumps(disp.get("wave_sizes")), waves, expected)
@@ -1341,8 +1341,8 @@ payload["derived_markers"] = [m for m in (os.environ.get("REVIEW_DERIVED_MARKERS
 # （→ design-notes/pending-optimizations.md `## 8`）
 if explorer_waves >= 2:
     sys.stderr.write(
-        "WARN: explorer wave が %d 本ある（一括発行が破られた）。1 メッセージにまとめていれば "
-        "wave 内最長の 1 本で済む — orchestration-guide.md `## 0`\n"
+        "WARN: explorer wave が %d 本ある（一括発行が破られた）。同一フェーズは 1 メッセージで一括発行する"
+        "（別メッセージにすると main の往復が体数ぶん増え、計測が同じ層を別 wave と数える） — orchestration-guide.md `## 0`\n"
         "  → **レポート末尾に 1 行追記すること**: "
         "`⚠️ 計測: explorer を %d wave に分けて発行した（一括発行の規約違反 / #135）`\n" % (explorer_waves, explorer_waves)
     )

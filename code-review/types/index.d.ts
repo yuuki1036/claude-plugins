@@ -41,8 +41,6 @@ export type ReviewProgress = {
   /** main が起動した agent の数と、そのうち終わった数 */
   spawned: number
   done: number
-  /** run_in_background で起動した agent の数 */
-  background: number
   /** 初回レポートを出した（`mark t2`） */
   isReported: boolean
 }

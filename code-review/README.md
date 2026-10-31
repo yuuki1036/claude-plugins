@@ -56,7 +56,6 @@ review-guide を base モード（PR を作る前）で回すと、読み順と�
 review / self-review の間、プロンプトの上に 1 行で進み具合を出す。例: `self-review · agent 実行中（完了 4 / 起動 6） · 12 分`
 
 - 段階は「トリアージ中 → agent 実行中 → 統合中 → レポート出力済み・publish 待ち」。レビューが打つ計測の打点（`review-timing.sh` の start / t2）と、agent の起動・完了の数だけから決める（SKILL は変えていない）
-- agent を `run_in_background` で起動すると、その場でトーストと帯の警告で知らせる（結果を取りこぼすので `run_in_background: false` を明示する）
 - publish か `discard` で消える。2 時間何も起きなければ、止まったレビューとみなして消える。「隠す」で次のレビューまで消せる
 - 帯を描けるのは端末と Desktop。実装: `hooks/review-progress.tsx`
 
@@ -68,7 +67,7 @@ review / self-review の間、プロンプトの上に 1 行で進み具合を�
 
 review / self-review の publish に載せるトークン消費を、transcript から事後に読むだけでなく**イベントからその場で数える**。モデルへのリクエスト 1 回ごとの usage と subagent の起動を記録し、publish の直前に `~/.config/claude-review/live/<session id>.json` へ書き出す（`CLAUDE_REVIEW_CONFIG_DIR` で差し替え可）。publish はそれを `tokens_live` として transcript 由来の `tokens` と並べて載せ、一致したかを `agree` に残す。
 
-- transcript を引けない・取り違える回（#246 / #263）にも値が残る。`run_in_background` で起動した体の数も分かる
+- transcript を引けない・取り違える回（#246 / #263）にも値が残る。background で起動した体の数も分かる
 - 記録は数値と agent の種類だけ。prompt・description・本文は持たない
 - mods が無効な環境では記録が無く、`tokens_live` も載らない（欠測扱いにもしない）。契約は `references/orchestration-measurement.md` `## 16`
 - 実装: `hooks/review-ledger.ts`。mods の入口は `hooks/mod.ts`（`modules` はプラグインに 1 つしか書けない）

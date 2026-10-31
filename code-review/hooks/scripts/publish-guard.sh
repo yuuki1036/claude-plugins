@@ -86,6 +86,14 @@ for f in "$REVIEW_TMPROOT"/review-start-"$REVIEW_SLUG"*; do
   if grep -q '^nag ' "$f" 2>/dev/null; then
     continue
   fi
+  # **agent の fleet の最中（`t1` あり・`t2` なし）は鳴らさず、`nag` も書かない**（GitHub issue #347）。
+  # CC 2.1.302 から Agent は常に background で起動し、結果を待つ間にターンが終わる。ここで鳴らすと
+  # 待つたびに main が 1 往復ぶん起こされ、しかも共有の `nag` を使い切って、t2 の後に publish を
+  # 飛ばす本来の脱落（#232）で PreToolUse 経路が黙る。代わりに fleet の途中で放棄された回は
+  # Stop では拾えない（`t1` の前と `t2` の後は従来どおり鳴る）
+  if grep -q '^t1 ' "$f" 2>/dev/null && ! grep -q '^t2 ' "$f" 2>/dev/null; then
+    continue
+  fi
   echo "nag $(date +%s)" >> "$f"
   pending="${pending} $(basename "$f")"
 done

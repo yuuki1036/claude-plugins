@@ -20,8 +20,9 @@ allowed-tools:
 # Review
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
+<!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @49ae195b -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @9c47fc93 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
 
 ## 前提
@@ -262,7 +263,7 @@ Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並
   - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/<focus>.md`
 - 可変部として Phase 0 が決定した focus・対象ファイル・関数、**プラグインの実パス**（explorer-common.md の `{{PLUGIN_ROOT}}` の読み替え先。explorer は共通ブロックを受け取らないので、ここで渡すのが唯一の経路）、および **Step 2 の `$DIFF_FILE` のパスと担当ファイル名**を渡す（`diff-slice.sh` で自分の担当ぶんを切り出せることも明記する）
 - 全エージェントを `isolation: "worktree"` で起動する（PR ブランチの状態でファイルを読むため）
-- 全エージェントに `run_in_background: false` を明示し、**全 explorer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0`。`run_in_background` 省略は取りこぼし、1 体ずつ別メッセージ発行は逐次実行＝実時間が合計に膨らむ。2 つは独立の要件）。**`mark t1` の応答で出す explorer を列挙してから発行に移る**（発行直前チェックポイント / `## 0`。実測の違反のうち 1 件は explorer を 1 体ずつ出した型 — #220）
+- **全 explorer の Agent call を同一メッセージ内で一括発行し、全体の結果が届くまで次へ進まない**（orchestration-guide.md `## 0`。起動は常に非同期で、結果は完了通知で届く）。**`mark t1` の応答で出す explorer を列挙してから発行に移る**（発行直前チェックポイント / `## 0`。実測の違反のうち 1 件は explorer を 1 体ずつ出した型 — #220）
 - **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}` 注入（必須）**: orchestration-guide.md `## 1` / `## 1.1` に従う（前者を欠かすと偽陽性を量産 #56 / #98、後者を欠かすと依存を読めず「検証不能」の誤申告で wave を 1 本失う #113）
 
 一括発行の**直前**に fleet 区間の開始マーカーを記録する（**agent wave はすべて fleet 側に入れる**。explorer を triage 区間に含めると `duration_triage_min` が「メイン思考の代理指標」でなくなる。orchestration-measurement.md `## 14`）:
@@ -305,7 +306,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）
 - **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 4 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` 側（#122）
 - 全エージェントを `isolation: "worktree"` で起動する
-- 全エージェントに `run_in_background: false` を明示し、**全 reviewer の Agent call を同一メッセージ内で一括発行する**（orchestration-guide.md `## 0` 並列発行の明示。1 体ずつ別メッセージで発行するとフェーズ実時間が相内最長でなく合計になる）
+- **全 reviewer の Agent call を同一メッセージ内で一括発行し、全体の結果が届くまで次へ進まない**（orchestration-guide.md `## 0`）
 - **冷や読み skeptic の相乗り**: Step 3.4 で surface=true かつ Phase 5.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `${CLAUDE_PLUGIN_ROOT}/references/prompts/recall-skeptic.md` をパス渡し）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 5.8 で行う。**publish の `recall_skeptic.launch` は `"rider"`**（起動経路の自己申告 / #216）
 - **PR 番号・期待 HEAD SHA・`{{MAIN_ROOT}}`・`{{SEVERITY_THRESHOLD}}` は共通ブロックに含める（必須）**: 値の意味と欠落時の影響は orchestration-guide.md `## 1` / `## 1.1` / `## 2`（MAIN_ROOT を欠かすと「検証不能」の誤申告で wave を 1 本失う #113、SEVERITY_THRESHOLD を欠かすと閾値未満を書かせて捨てる #117）。**プロンプトに再掲しない**
 
