@@ -1499,8 +1499,8 @@ class WarningChannelTest(unittest.TestCase):
 
     def test_only_advisory_tags_are_summarised(self):
         """助言として畳むのは既知のタグだけ（新しい検査を黙って隠さない）."""
-        out = self._render(["[agent-sync:demo] 要確認: run_in_background 未言及"], verbose=False)
-        self.assertIn("run_in_background", out)
+        out = self._render(["[new-check:demo] 要確認: 新しい検査の指摘"], verbose=False)
+        self.assertIn("新しい検査の指摘", out)
 
     def test_the_verbose_flag_is_not_mistaken_for_a_plugin_name(self):
         """`--verbose` を付けても全プラグインを検査する（CLI 境界越しに見る）.
