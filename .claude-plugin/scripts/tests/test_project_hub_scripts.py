@@ -1977,10 +1977,12 @@ class CrossProjectTest(HubTestBase):
 
     def test_an_unreadable_project_is_unknown_and_does_not_stop(self):
         (self.root / "pj4").mkdir()
-        (self.root / "pj4" / "config.json").write_text("{", encoding="utf-8")
-        out = self.cross()
-        self.assertEqual([u["project"] for u in out["unknown"]], ["pj4"])
-        self.assertIn("config.json", out["unknown"][0]["reason"])
+        for text, reason in (("{", "config.json"), ("[1]", "オブジェクトではない")):
+            with self.subTest(text):
+                (self.root / "pj4" / "config.json").write_text(text, encoding="utf-8")
+                out = self.cross()
+                self.assertEqual([u["project"] for u in out["unknown"]], ["pj4"])
+                self.assertIn(reason, out["unknown"][0]["reason"])
 
     def test_done_sessions_and_closed_projects_are_left_out(self):
         self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"], state="done")
@@ -2124,6 +2126,20 @@ class CrossProjectTest(HubTestBase):
         self.assertEqual([d["text"] for d in self.cross()["projects"][0]["new_decisions"]], ["A"],
                          "作り直した PJ の決定を古い印で黙って落とさない")
 
+    def test_a_mark_of_zero_shows_old_decisions_too(self):
+        # 印 0 = journal が空のときに見せた。その後に入った決定は、ts が窓より古くてもすべて新しい
+        self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"], decisions=[{"text": "古い", "date": "2026-09-01", "by": "lead"}])
+        self.ingest2()
+        path = self.pdir2 / "journal.jsonl"
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line]
+        path.write_text("".join(json.dumps({**r, "ts": "2000-01-01T00:00:00Z"}, ensure_ascii=False) + "\n"
+                                for r in rows), encoding="utf-8")
+        hub_path = self.pdir / "hub.json"
+        hub = json.loads(hub_path.read_text(encoding="utf-8"))
+        hub_path.write_text(json.dumps({**hub, "cross_seen_lines": {"pj2": 0}}), encoding="utf-8")
+        self.assertEqual([d["text"] for d in self.cross()["projects"][0]["new_decisions"]], ["古い"],
+                         "印 0 を印の無い PJ と同じ直近の窓に落とさない")
+
     def test_takeover_keeps_last_overlaps_and_counts_stay_honest(self):
         self.work("pj", SID_A, "worker-a", "#308", ["shared.txt"])
         self.work("pj2", SID_B, "worker-b", "#412", ["shared.txt"])
@@ -2150,7 +2166,9 @@ class CrossProjectTest(HubTestBase):
         self.cross("--mark")
         res = self.run_hub("inject", stdin=json.dumps({"session_id": SID_HUB, "source": "compact"}))
         self.assertEqual(res.returncode, 0, res)
-        self.assertIn("増えた journal（kind 別）: なし", res.stdout, "cross の行を注入の数に入れない")
+        # 同じ hub の pj3 の節も「なし」を出すので、assertIn では pj の節を見たことにならない
+        self.assertNotRegex(res.stdout, r"増えた journal（kind 別）: [^\n]*cross", "cross の行を注入の数に入れない")
+        self.assertEqual(res.stdout.count("増えた journal（kind 別）: なし"), 2)
         state = (self.pdir / "state.md").read_text(encoding="utf-8")
         self.assertNotIn("|---|---|---|", state.split("## journal")[1], "cross の行しか無いときに空の表を出さない")
 
