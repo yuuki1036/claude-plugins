@@ -276,7 +276,7 @@ spec ルーティング 3 軸コア（WHAT→bdd-spec / HOW→design-doc / WHY�
 1. 対象プラグインの一覧を確定
 2. チェック0: 全プラグインに `claude plugin validate` を実行（Bash で一括）
 3. marketplace.json を Read で読み込み
-4. 各プラグインに対して並列で Agent を起動（各 Agent call に `run_in_background: false` を明示。CC 2.1.198 で既定が background になり、省略すると step 6 が agent 結果を欠いたまま集約し偽 PASS を出す）:
+4. 各プラグインに対して並列で Agent を起動（起動は常に非同期。全 agent の結果が届くまで step 6 の集約へ進まない — 欠けたまま集約すると偽 PASS を出す）:
    a. plugin.json を Read
    b. 全コマンド・全スキルの frontmatter を Read
    c. hooks スクリプトを Read

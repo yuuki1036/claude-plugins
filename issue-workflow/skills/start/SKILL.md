@@ -289,7 +289,7 @@ Issue ファイルが存在しない場合（Phase F4 へ進む場合）はス�
 **起動手順:**
 
 1. `${CLAUDE_SKILL_DIR}/references/context-agents.md` を Read する
-2. **必須**: 対象の Agent（local: 2 つ / linear: 3 つ）を**同一メッセージ内で並列起動する**（Agent tool call を 1 つのレスポンスに含める）。逐次起動は禁止（待ち時間が倍になる）。各 Agent call に `run_in_background: false` を明示する（CC 2.1.198 で既定が background になり、省略すると完了を待たずに進んで結果を取りこぼす）
+2. **必須**: 対象の Agent（local: 2 つ / linear: 3 つ）を**同一メッセージ内で並列起動する**（Agent tool call を 1 つのレスポンスに含める）。逐次起動しない（main の往復が増える）。起動は常に非同期（CC 2.1.302+）で、結果は体ごとの完了通知で届くので、**全 agent の結果が届くまで次のステップへ進まない**
    - Agent #1 Doc Resolver: Issue ファイル内容 + スラッグを渡す
    - Agent #2 Code Context: Issue ファイル内容と `{WORK_DIR}` を渡す（git は `git -C {WORK_DIR}`、ソースファイルは `{WORK_DIR}` を前に付けた絶対パスで見させる）
    - Agent #3 Linear Sync（BACKEND=linear のみ、Phase 0.7 で MCP 利用可の場合のみ）: Issue ID + frontmatter を渡す

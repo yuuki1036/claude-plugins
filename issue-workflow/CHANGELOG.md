@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.16.1] - 2026-10-31
+
+### Changed
+
+- **discover / start の agent 起動から `run_in_background: false` の指示を外し、全 agent の結果が届くまで次へ進まないと
+  書いた**（GitHub issue #347）。CC 2.1.302 から Agent は常に background で走り、指定は効かない。start の「逐次起動は
+  待ち時間が倍になる」も、非同期起動では成り立たないので「main の往復が増える」に直した
+
 ## [1.16.0] - 2026-10-30
 
 ### Added

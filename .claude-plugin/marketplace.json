@@ -27,7 +27,7 @@
     {
       "name": "harness-keeper",
       "description": "Claude Code自体の設定管理・改善ツール。セットアップ推奨、CLAUDE.md監査・改善（骨抜き禁止/三段防御/階層 AGENTS.md/@AGENTS.md 参照運用/優先度規約/静的検査優先の 6 パターン強化）、CCアップデート追従、セッション学習の反映、eval 回帰テスト（トリガーフレーズ → 期待スキル起動を pass^k で検証）、新コンポーネント追加前判断（skill/agent/hook/command 追加前の退路確保）",
-      "version": "2.0.1",
+      "version": "2.0.2",
       "author": {
         "name": "yuki"
       },
@@ -36,7 +36,7 @@
     {
       "name": "issue-workflow",
       "description": "Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。却下記録（kind: rejected）で見送り提案の再提案を discover が概念類似照合で抑止。",
-      "version": "1.16.0",
+      "version": "1.16.1",
       "author": {
         "name": "yuki"
       },
@@ -63,7 +63,7 @@
     {
       "name": "feature-dev",
       "description": "コードベース理解・アーキテクチャ設計・runtime smoke test・品質レビューを 8 phase で進める機能開発ワークフロー。code-explorer / code-architect の 2 agent を内包し、型・テスト・lint の決定的オラクルゲートを高コストレビューの前に置く。Phase 6 は code-review:self-review へ --embed 委譲する。",
-      "version": "2.27.2",
+      "version": "2.27.3",
       "author": {
         "name": "yuki"
       },
@@ -117,7 +117,7 @@
     {
       "name": "failure-journal",
       "description": "再発する失敗を JSON Lines に append し、30日×3回閾値超えのパターンを retro で抽出して AGENTS.md/hook/skill へ還流。retro は transcript を走査して未起票の失敗もサルベージする。SessionStart で journal 初期化、failure:logged を event bus に publish",
-      "version": "0.9.0",
+      "version": "0.9.1",
       "author": {
         "name": "yuki"
       },
@@ -135,7 +135,7 @@
     {
       "name": "design-doc",
       "description": "技術設計書 (design doc) を実装に入らず作成・永続化する。grill で前提確定→代替案比較→.claude/designs/ に保存。実装ブリッジ必須化と supersede 機械化で死に文書化を防ぐ。4視点 agent の設計レビュー (design-review) を同梱（confidence フィルタ + high 以上で敵対的反証 phase）",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "author": {
         "name": "yuki"
       },

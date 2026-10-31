@@ -5,6 +5,13 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.3] - 2026-10-31
+
+### Changed
+
+- **Phase 2 / 4 / 5（Fix Mode）の agent 起動から `run_in_background: false` の指示を外し、全 agent の結果が届くまで先へ進まないと
+  書いた**（GitHub issue #347）。CC 2.1.302 から Agent は常に background で走り、指定は効かない
+
 ## [2.27.2] - 2026-10-29
 
 ### Changed

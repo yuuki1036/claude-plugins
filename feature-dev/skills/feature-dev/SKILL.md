@@ -270,7 +270,7 @@ Subsequent phases consume this table directly.
 **Skip condition**: Phase 1.7 assigned 0 explorers. Skip directly to Phase 3.
 
 **Actions**:
-1. Launch the N code-explorer agents specified by the Phase 1.7 configuration table in parallel (single message, multiple Agent tool calls, each with `run_in_background: false` — the Agent tool defaults to background since CC 2.1.198, and omitting it means results are not awaited). Each agent receives:
+1. Launch the N code-explorer agents specified by the Phase 1.7 configuration table in parallel (single message, multiple Agent tool calls). Agents always start in the background (CC 2.1.302+) and each result arrives later as a completion notification — **do not move on until every explorer's result has arrived**. Each agent receives:
    - Its assigned `focus` (similar-features / architecture-mapping / shared-modules / history-context / dependency-trace / layer-mapping)
    - Its target scope (specific directory / module / abstraction layer)
    - A request to return 5-10 key files to read
@@ -353,7 +353,7 @@ Then confirm it with **one** `AskUserQuestion` before launching the architects (
 **Goal**: Design implementation approaches with different trade-offs
 
 **Actions**:
-1. Launch the N code-architect agents specified by the Phase 1.7 configuration table in parallel (each with `run_in_background: false` — same rationale as Phase 2). Each agent receives its assigned `focus`:
+1. Launch the N code-architect agents specified by the Phase 1.7 configuration table in parallel (single message; wait for every architect's result, as in Phase 2). Each agent receives its assigned `focus`:
    - `minimal-changes`: smallest change, maximum reuse of existing code
    - `clean-architecture`: maintainability, elegant abstractions, long-term evolvability. Pass `Module design vocabulary: ${CLAUDE_PLUGIN_ROOT}/references/module-design.md` in its prompt (the agent Reads it; do not paste the body)
    - `pragmatic-balance`: speed + quality tradeoff explicitly weighed
@@ -461,7 +461,7 @@ Phase 5 has two modes — check the invocation context:
 **Actions**:
 1. Read each flagged file at the indicated line range
 2. Apply the reviewer's suggested fix (or a minimal equivalent that resolves the issue)
-3. If the fix requires design-level changes, escalate by launching `code-architect` (with `run_in_background: false`) with focus `delta-proposal` and **consume 1 loop iteration**. Otherwise apply directly with Edit. 適用範囲で足切りした回は architect を起動しない（基準にする設計が無い）。停止点で承認した方針と別の手段が要るなら、Normal Mode の 4. と同じく止まって確かめ直す（ループの状態はそのまま残し、返信の後に修正して Phase 6 Step 3 へ戻る）
+3. If the fix requires design-level changes, escalate by launching `code-architect` with focus `delta-proposal` (wait for its result before applying) and **consume 1 loop iteration**. Otherwise apply directly with Edit. 適用範囲で足切りした回は architect を起動しない（基準にする設計が無い）。停止点で承認した方針と別の手段が要るなら、Normal Mode の 4. と同じく止まって確かめ直す（ループの状態はそのまま残し、返信の後に修正して Phase 6 Step 3 へ戻る）
 4. Return to Phase 6 Step 3 (do NOT re-run Phase 5.5 unless the fix is runtime-sensitive and effort ≥ `medium`). ループの状態は書かない（次の `gv-loop.py review` が記録する）
 
 ---

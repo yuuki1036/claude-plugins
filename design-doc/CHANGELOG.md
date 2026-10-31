@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.7.1] - 2026-10-31
+
+### Changed
+
+- **design-review の agent 起動から `run_in_background: false` の指示を外し、全 perspective の findings が届くまで Phase 4 へ
+  進まないと書いた**（GitHub issue #347）。CC 2.1.302 から Agent は常に background で走り、指定は効かない
+
 ## [0.7.0] - 2026-10-28
 
 ### Added

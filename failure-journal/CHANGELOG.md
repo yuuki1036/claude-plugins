@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.9.1] - 2026-10-31
+
+### Changed
+
+- **retro の並列分類から `run_in_background: false` の指示を外し、全 agent の結果が届くまで次のフェーズへ進まないと
+  書いた**（GitHub issue #347）。CC 2.1.302 から Agent は常に background で走り、指定は効かない
+
 ## [0.9.0] - 2026-10-01
 
 ### Added

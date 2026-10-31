@@ -53,7 +53,7 @@ PR（または base 指定のローカル diff）を人間が読むための「�
 | 5 | 担当ぶんの diff は `diff-slice.sh <diff-file> '<path>'` で切り出す。パスはシングルクォート（信頼できない入力） | `explorer-common.md`「diff の取得」 |
 | 6 | レビュー観点の判定表（観点 × diff 条件）は `triage-guide.md ## 3` が正本。ガイドの「レビュー観点」はこの表を diff シグナルで引いて添える（複製しない） | `code-review/references/triage-guide.md:110-134` |
 | 7 | 同名 command + skill のペアでは router が見るのは `commands/*.md` の description。command 本文は SKILL.md を Read する 1 行を置く（`skill-hop-cmd` が error 強制） | ルート CLAUDE.md Gotchas（#206 / #219） |
-| 8 | 深掘り系は `${CLAUDE_EFFORT}` 分岐必須。探索は `sonnet`、統合は `opus`。fan-out には体数上限を明示し、各 Agent call に `run_in_background: false` + 同一メッセージで一括発行 | ルート CLAUDE.md「プラグイン開発ルール」「コスト×精度」「Agent tool の background 既定」 |
+| 8 | 深掘り系は `${CLAUDE_EFFORT}` 分岐必須。探索は `sonnet`、統合は `opus`。fan-out には体数上限を明示し、同一メッセージで一括発行して全 agent の結果が届くまで次へ進まない（2026-10-31 に `run_in_background: false` の明示から置き換え / #347） | ルート CLAUDE.md「プラグイン開発ルール」「コスト×精度」「Agent の結果は完了通知で届く」 |
 | 9 | `gh` / `jq` / `python3` は code-review の `_requirements` 済み。新規依存は無い | `code-review/.claude-plugin/plugin.json` |
 | 10 | ユーザー確定（2026-09-16）: 主用途は自分の PR の後日理解 / 副用途は他者 PR の review 後の学習 / 投稿なし / 全ファイル解説なし / **ファイル永続化なし（セッション出力のみ）** | 会話 |
 
@@ -179,7 +179,7 @@ PR（または base 指定のローカル diff）を人間が読むための「�
 
 1. 実装着手の単位: Issue 1 件で閉じる規模（新規 3 ファイル + 版更新 + evals）。起票時タイトル案: 「[code-review] review-guide: 人間が PR を理解するための読み順ガイド skill を追加」。feature-dev は使わず、issue-workflow:start の**軽量フロー**（実装 → 検証 → self-review → commit → push + CI → Issue 更新）で通す（本 doc が HOW を確定済みのため 8 phase は不要）。2026-10-18 時点の軽量フローは self-review の後に読み合わせ（review-guide `--walkthrough`）が入り、変更があれば self-review をもう一度回してから commit する（追記の (d)）
 2. 検証方法:
-   - 機械層: `bash .claude-plugin/scripts/machine-layer.sh`（allowed-tools ペア一致 / `skill-hop-cmd` / トリガー必須 / references 参照整合 / agent-sync warning）
+   - 機械層: `bash .claude-plugin/scripts/machine-layer.sh`（allowed-tools ペア一致 / `skill-hop-cmd` / トリガー必須 / references 参照整合。agent-sync warning は 2026-10-31 に外した / #347）
    - evals: `python3 evals/runner.py --plugin code-review`（新トリガーの起動 + 「レビューして」「セルフレビュー」「レビューコメントを精査」が奪われない逆方向ケース。pass^k=3）
    - 実機: 本リポジトリの直近 PR 1 件と `--base 2ccab43`（本セッションの diff）で出力を目視。精読 N 件に core が入り generated が「不要」に落ちること、スレッドが入口から並ぶこと、各主張に `file:line` があることを確認
 3. 実装完了時の doc 更新: frontmatter の `phase: target → current`、`last-validated` を更新。スコアの要素や N の既定が実装で変わっていたら「設計判断ログ」に追記。open 2 件は確定タイミングが来たら畳む
