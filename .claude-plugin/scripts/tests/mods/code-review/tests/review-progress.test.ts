@@ -64,19 +64,17 @@ async function band($: Engine, surface: (typeof SURFACES)[number]) {
     props: { hasSurvey: false, isWorking: true, maxRows: 10 } as never,
   })
   const line = (await ui.find({ type: 'Text', text: /分$/ }))?.text
-  const warn = (await ui.find({ type: 'Text', text: /run_in_background/ }))?.text
   const below = (await ui.find({ type: 'Text', text: 'BELOW' }))?.text
+  // 帯に出る Text を全部取る。行が 1 つ増えれば（警告を戻した回など）落とせる
+  const texts = (await ui.findAll({ type: 'Text' })).map(n => n.text)
   await ui.unmount()
-  return { line, warn, below }
+  return { line, below, texts }
 }
 
-test('レビューが始まるまで帯は出ず、レビュー外の agent では知らせない', async ($, on) => {
+test('レビューが始まるまで帯は出ない', async ($, on) => {
   mock.clock(on, { now: 0 })
-  const w = newWorld()
-  stub(on, w)
+  stub(on, newWorld())
   await spawn($, 'early')
-  await spawn($, 'early-bg', { background: true })
-  expect(w.toasts).toEqual([])
   await bash($, 'git status')
   for (const s of SURFACES) {
     const b = await band($, s)
@@ -123,16 +121,19 @@ test('--pr 付きの start は review として出す / 次の start で数え�
   expect((await band($, 'terminal')).line).toBe('review · トリアージ中 · 0 分')
 })
 
-test('run_in_background で起動した agent はその場で知らせる', async ($, on) => {
+// 2.1.302 からメイン会話の agent は常に background で起動する（GitHub issue #347）。
+// 警告すると毎回のレビューで鳴る
+test('background で起動した agent でも警告しない', async ($, on) => {
   mock.clock(on, { now: 0 })
   const w = newWorld()
   stub(on, w)
   await bash($, `${T} start`)
-  await spawn($, 'fg')
-  expect(w.toasts).toEqual([])
   await spawn($, 'bg', { background: true })
-  expect(w.toasts).toHaveLength(1)
-  for (const s of SURFACES) expect((await band($, s)).warn).toContain('1 体')
+  expect(w.toasts).toEqual([])
+  for (const s of SURFACES) {
+    const b = await band($, s)
+    expect(b.texts).toEqual(['self-review · agent 実行中（完了 0 / 起動 1） · 0 分', 'BELOW'])
+  }
 })
 
 test('discard で消える / 失敗した打点・subagent の Bash は数えない', async ($, on) => {

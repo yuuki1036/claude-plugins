@@ -921,12 +921,12 @@ class DispatchPatternTest(MeasureTokensTest):
         self.with_waves([[0], [400], [900]])
         broken = self.measure().stdout
         self.assertIn("逐次発行", broken)
-        self.assertIn("wave 内最長の 1 体", broken, "是正先を出していない")
+        self.assertIn("1 メッセージで一括発行する", broken, "是正先を出していない")
         self.setUp()
         self.with_waves([[0, 5], [600, 605]])
         ok = self.measure().stdout
         self.assertIn("層ごとの発行", ok)
-        self.assertNotIn("wave 内最長の 1 体", ok, "正当な形にまで是正を出している")
+        self.assertNotIn("1 メッセージで一括発行する", ok, "正当な形にまで是正を出している")
 
     def test_text_mode_says_it_could_not_judge(self):
         """判定を諦めた回を黙って落とさない（守れた回と区別がつかなくなる）."""

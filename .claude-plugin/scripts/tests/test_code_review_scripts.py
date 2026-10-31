@@ -1094,6 +1094,65 @@ class UsageDedupKeyTest(TranscriptFixture):
         self.assertEqual((got["main"]["n"], got["main"]["output"]), (1, 40))
 
 
+class ApiRequestBlobTest(TranscriptFixture):
+    """main の `api-request-blob` 行を会話として読まない（GitHub issue #346）.
+
+    2.1.302 から transcript に入った行で、API リクエストの会話の写し（過去の tool_use /
+    tool_result）を持つが、timestamp も message.id も持たない。読むと Agent の発行元が
+    消えて dispatch が欠測し（実測: m2 で 30 回中 7 回）、取り込み内訳も二重に数える。
+    """
+
+    def _main(self) -> Path:
+        return self.home / ".claude" / "projects" / self.slug() / "s1.jsonl"
+
+    def _append(self, *rows: dict) -> None:
+        with self._main().open("a", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+
+    @staticmethod
+    def _blob(role: str, *blocks: dict) -> dict:
+        # 実データのキーはこの 4 つだけ（timestamp / uuid / requestId を持たない）
+        return {"type": "api-request-blob", "hash": "h", "sessionId": "s1",
+                "message": {"role": role, "content": list(blocks)}}
+
+    def _measure(self, *args: str) -> subprocess.CompletedProcess[str]:
+        r = self.run_script(MEASURE, "--session", str(self._main()), *args, env=self.env_home())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r
+
+    def test_a_blob_copying_agent_calls_keeps_the_dispatch(self):
+        """Agent 呼び出しの写しが後から来ても、発行元は元のメッセージのまま（3 体を 1 通で発行）."""
+        self.write_transcript([[0, 3, 7]])
+        self._append(self._blob("assistant", *[
+            {"type": "tool_use", "id": "tu-%d" % i, "name": "Agent"} for i in range(3)]))
+        d = json.loads(self._measure("--json").stdout)["dispatch"]
+        self.assertEqual((d["verdict"], d["agents"], d["waves"]), ("batched", 3, 1), d)
+
+    def test_tool_results_copied_into_a_blob_are_not_counted_twice(self):
+        """取り込み内訳は会話の行の分だけ（blob の写しを足すと Read が 2 件・200 字になる）."""
+        self.write_transcript([])
+        read_use = {"type": "tool_use", "id": "r1", "name": "Read"}
+        read_result = {"type": "tool_result", "tool_use_id": "r1", "content": "x" * 100}
+        self._append(
+            {"type": "assistant", "timestamp": "2026-08-18T01:00:10Z",
+             "message": {"id": "msg-r", "content": [read_use]}},
+            {"type": "user", "timestamp": "2026-08-18T01:00:11Z",
+             "message": {"content": [read_result]}},
+            self._blob("assistant", read_use),
+            self._blob("user", read_result))
+        self.assertRegex(self._measure().stdout, r"(?m)^Read\s+1\s+100\s")
+
+    def test_a_later_copy_of_an_agent_call_keeps_the_first_dispatcher(self):
+        """同じ Agent 呼び出しが発行元を持たない行でもう一度出ても、最初の発行元を使う."""
+        self.write_transcript([[0, 3, 7]])
+        self._append({"type": "assistant", "timestamp": "2026-08-18T01:01:00Z",
+                      "message": {"content": [{"type": "tool_use", "id": "tu-1",
+                                               "name": "Agent"}]}})
+        d = json.loads(self._measure("--json").stdout)["dispatch"]
+        self.assertEqual(d["verdict"], "batched", "後の写しで発行元を上書きしている")
+
+
 class TokenAndDispatchPayloadTest(TranscriptFixture):
     """publish が `tokens` / `dispatch` を payload に載せる（GitHub issue #142 / #143）.
 

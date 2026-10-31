@@ -81,6 +81,33 @@ class PublishGuardTest(HookTestCase):
         res = self._stop()
         self.assertTrue(res.fired, "t2 が無いと鳴らない（実測の落ち方を取りこぼす）")
 
+    def test_stop_is_silent_while_agents_run(self):
+        """fleet の最中（t1 あり・t2 なし）のターン終了は agent の結果待ちで、鳴らさない（#347）.
+
+        **`nag` を書かないことまで見る** — 書くと、後で t2 の後に publish を飛ばしたときの
+        PreToolUse 経路（#232）が「既に鳴らした」で黙る。
+        """
+        self._timing("start")
+        self._timing("mark", "t1")
+        res = self._stop()
+        self.assertSilent(res, "agent の結果待ちのターン終了で鳴っている")
+        self.assertNotIn("Unexpected", res.stderr)
+        self.assertNotIn("nag ", self._timing_files()[0].read_text())
+        self._timing("mark", "t2")
+        self.assertTrue(self._pre("Edit").fired, "待ちの後で #232 の検知が死んでいる")
+
+    def test_stop_fires_after_the_report_without_publish(self):
+        """fleet を抜けて t2 を打った後に publish せずターンが終わったら鳴る（#219 の窓は残す）."""
+        self._timing("start")
+        self._timing("mark", "t1")
+        self._timing("mark", "t2")
+        self.assertTrue(self._stop().fired, "レポート後の publish 漏れを拾えていない")
+
+    def test_stop_is_silent_while_a_pr_reviews_agents_run(self):
+        self._timing("start", "--pr", "42")
+        self._timing("mark", "t1", "--pr", "42")
+        self.assertSilent(self._stop(), "review の agent 待ちで鳴っている")
+
     def test_a_pr_scoped_timing_file_is_also_covered(self):
         self._timing("start", "--pr", "42")
         res = self._stop()
