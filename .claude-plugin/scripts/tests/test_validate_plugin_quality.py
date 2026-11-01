@@ -32,6 +32,7 @@ import textwrap
 import os
 import subprocess
 import unittest
+import unittest.mock
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "validate_plugin_quality.py"
@@ -2629,6 +2630,114 @@ class TriggerPhrasesTest(unittest.TestCase):
     def test_a_section_without_phrases_is_an_empty_set(self):
         """空集合と None を潰さない（前者は「宣言はあるが空」）."""
         self.assertEqual(v.trigger_phrases("x トリガー: なし"), frozenset())
+
+
+class MetricsVocabDriftTest(unittest.TestCase):
+    """計測ストアの語彙と publish が送りうる名前の突き合わせ（GitHub issue #345）."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name) / "repo"
+        self.store = Path(self._tmp.name) / "store"
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        for plugin in ("demo", "code-review"):
+            _write(self.root, f"{plugin}/.claude-plugin/plugin.json", "{}")
+        _write(self.root, "demo/skills/alpha/SKILL.md", "x")
+        _write(self.root, "demo/commands/beta.md", "x")
+        _write(self.root, "code-review/skills/self-review/SKILL.md", "x")
+        _write(self.root, "code-review/references/prompts/focus/logic.md", "x")
+        _write(self.root, "code-review/references/prompts/explorer/trace.md", "x")
+        _write(self.root, "code-review/references/prompts/specialist/security.md", "x")
+
+    def _store(self, parents=("demo:alpha", "demo:beta"),
+               coverage=("logic", "trace", "security", "specialist-security")) -> None:
+        _write(self.store, "vocab/string_values.txt",
+               "# コメント\neffort low\n" + "".join(f"invocation.parent {p}\n" for p in parents))
+        _write(self.store, "vocab/missing_coverage.txt",
+               "# コメント\n" + "".join(f"{c}\n" for c in coverage))
+
+    def _run(self, store: Path | None = None) -> list[str]:
+        warnings: list[str] = []
+        v.check_metrics_vocab_drift(warnings, store=self.store if store is None else store)
+        return warnings
+
+    def test_no_clone_is_silent(self):
+        """clone が無い機（CI・他人の機）では何も出さない."""
+        self.assertEqual(self._run(), [])
+
+    def test_partial_clone_is_silent(self):
+        """語彙ファイルが片方しか無い clone（古い版など）は判定せずに飛ばす."""
+        for name in ("missing_coverage.txt", "string_values.txt"):
+            with self.subTest(removed=name):
+                self._store(parents=(), coverage=())
+                (self.store / "vocab" / name).unlink()
+                self.assertEqual(self._run(), [])
+
+    def test_all_names_present_is_silent(self):
+        self._store()
+        self.assertEqual(self._run(), [])
+
+    def test_missing_parent_is_reported_without_code_review(self):
+        """欠けた skill / command 名を出す. code-review 自身は parent にならないので数えない."""
+        self._store(parents=("demo:alpha",))
+        warnings = self._run()
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("invocation.parent", warnings[0])
+        self.assertIn("1 件", warnings[0])
+        self.assertIn("demo:beta", warnings[0])
+        self.assertNotIn("code-review:self-review", warnings[0])
+
+    def test_parent_value_of_another_key_does_not_count(self):
+        """別のパスの行に同じ値があっても, invocation.parent の値とは見なさない."""
+        self._store(parents=("demo:alpha",))
+        with (self.store / "vocab/string_values.txt").open("a", encoding="utf-8") as f:
+            f.write("skill demo:beta\n")
+        self.assertIn("demo:beta", " ".join(self._run()))
+
+    def test_missing_focus_is_reported(self):
+        """focus / explorer / specialist の各ディレクトリと, specialist の `specialist-<名前>` の綴りを見る."""
+        full = ("logic", "trace", "security", "specialist-security")
+        for absent in full:
+            with self.subTest(absent=absent):
+                self._store(coverage=tuple(c for c in full if c != absent))
+                warnings = self._run()
+                self.assertEqual(len(warnings), 1, warnings)
+                self.assertIn("missing_coverage", warnings[0])
+                self.assertIn(f": {absent}", warnings[0])
+
+    def test_inline_comment_is_stripped(self):
+        """値の後ろの `# 注記` は値に含めない（計測ストアの sanitize.py と同じ読み方）."""
+        self._store(parents=())
+        with (self.store / "vocab/string_values.txt").open("a", encoding="utf-8") as f:
+            f.write("invocation.parent demo:alpha  # 注記\ninvocation.parent demo:beta # 注記\n")
+        _write(self.store, "vocab/missing_coverage.txt",
+               "logic  # 注記\ntrace\nsecurity\nspecialist-security # 注記\n")
+        self.assertEqual(self._run(), [])
+
+    def test_vocab_only_names_are_not_reported(self):
+        """語彙にだけある値（改名前の旧名など）は意図して残すので出さない."""
+        self._store(parents=("demo:alpha", "demo:beta", "old:gone"),
+                    coverage=("logic", "trace", "security", "specialist-security", "gone"))
+        self.assertEqual(self._run(), [])
+
+    def test_tilde_path_hides_home(self):
+        """ホーム配下は `~/` 始まりにし, 外はそのまま出す."""
+        home = Path("/home/someone")
+        self.assertEqual(v.tilde_path(home / ".claude/x.txt", home=home), "~/.claude/x.txt")
+        self.assertEqual(v.tilde_path(Path("/srv/x.txt"), home=home), "/srv/x.txt")
+
+    def test_env_points_at_the_store(self):
+        """`store` を渡さなければ環境変数の場所を見る."""
+        self._store(parents=())
+        warnings: list[str] = []
+        with unittest.mock.patch.dict(os.environ, {v.METRICS_STORE_ENV: str(self.store)}):
+            v.check_metrics_vocab_drift(warnings)
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("demo:alpha", warnings[0])
+
 
 if __name__ == "__main__":
     unittest.main()
