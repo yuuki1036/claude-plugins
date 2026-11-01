@@ -1149,5 +1149,108 @@ class AgentsDecompositionTest(DispatchPatternTest):
         self.assertEqual(d["waves"], d["waves_effective"])
 
 
+class AsyncAgentsDecompositionTest(DispatchPatternTest):
+    """CC 2.1.302 以降の非同期起動の完了を、完了通知から判定する（GitHub issue #348）.
+
+    tool_result は起動の受付しか返さないので、それで判定すると捨てられた試行まで
+    完了に数え、`agents_abandoned` が常に 0 になる。fixture の通知の形は実 transcript
+    のダンプに合わせてある（`user` 行の文字列 / `queued_command` の `prompt` /
+    `queue-operation` の `content`）。
+    """
+
+    RECEIPT = ("Async agent launched successfully. (This tool result is internal metadata.)\n"
+               "agentId: a0 (internal ID)")
+
+    @staticmethod
+    def note(tid: str, status: str) -> str:
+        return ("<task-notification>\n<task-id>a-%s</task-id>\n<tool-use-id>%s</tool-use-id>\n"
+                "<status>%s</status>\n<summary>Agent \"x\" finished</summary>\n"
+                "</task-notification>" % (tid, tid, status))
+
+    def build_async(self, notes: dict[int, list[str]], n: int = 2, form: str = "user",
+                    session: str = "as1") -> dict:
+        """1 wave で `n` 体を非同期起動し、`notes[i]` の status を完了通知として置く."""
+        base = datetime(2026, 11, 1, 1, 0, 0)
+        rows = [self.usage_row(base.isoformat() + "Z", out=10)]
+        for i in range(n):
+            ts = (base + timedelta(seconds=i + 1)).isoformat() + "Z"
+            rows.append(self.agent_call_row(ts, "msg-0", "tu-%d" % i))
+            path = self.write_subagent(session, "agent-%d" % i, [self.usage_row(ts, out=5)])
+            path.with_suffix(".meta.json").write_text(
+                json.dumps({"toolUseId": "tu-%d" % i, "spawnDepth": 1}), encoding="utf-8")
+        rows.append(json.dumps({
+            "type": "user", "timestamp": (base + timedelta(seconds=30)).isoformat() + "Z",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "tu-%d" % i,
+                                     "content": [{"type": "text", "text": self.RECEIPT}]}
+                                    for i in range(n)]}}))
+        at = base + timedelta(seconds=600)
+        for i, statuses in sorted(notes.items()):
+            for status in statuses:
+                at += timedelta(seconds=1)
+                text = self.note("tu-%d" % i, status)
+                ts = at.isoformat() + "Z"
+                if form == "user":
+                    row = {"type": "user", "timestamp": ts, "message": {"content": text},
+                           "origin": {"kind": "task-notification"}}
+                elif form == "attachment":
+                    row = {"type": "attachment", "timestamp": ts,
+                           "attachment": {"type": "queued_command", "prompt": text,
+                                          "commandMode": "task-notification"}}
+                else:
+                    row = {"type": "queue-operation", "operation": "enqueue",
+                           "timestamp": ts, "content": text}
+                rows.append(json.dumps(row))
+        self.write_session(session, rows)
+        return self.as_json()["dispatch"]
+
+    def test_a_completed_notification_counts_as_completed(self):
+        d = self.build_async({0: ["completed"], 1: ["completed"]})
+        self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (2, 0), d)
+        self.assertEqual(d["schema"], 5)
+
+    def test_an_agent_without_a_notification_is_abandoned(self):
+        """受付が返っただけの体を完了に数えない（旧判定では 2 体とも completed になった）."""
+        d = self.build_async({0: ["completed"]})
+        self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (1, 1),
+                         "受付の tool_result を完了として数えている")
+
+    def test_failed_and_killed_notifications_are_abandoned(self):
+        d = self.build_async({0: ["completed"], 1: ["killed"], 2: ["failed"]}, n=3)
+        self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (1, 2), d)
+
+    def test_a_resumed_agent_that_completed_once_stays_completed(self):
+        """resume で同じ体が再通知する。`completed` の後の `killed` で結果は消えない."""
+        d = self.build_async({0: ["completed", "killed"], 1: ["completed"]})
+        self.assertEqual(d["agents_completed"], 2, d)
+
+    def test_no_notification_at_all_is_undecidable(self):
+        """通知を 1 件も引けない回は分解を出さない（受付の tool_result は材料にしない）."""
+        d = self.build_async({})
+        self.assertIsNone(d["agents_completed"], "判定不能なのに分解を出している")
+        self.assertIsNone(d["agents_abandoned"])
+        self.assertIsNone(d["waves_effective"])
+        self.assertEqual(d["agents"], 2)
+
+    def test_notifications_in_attachment_and_queue_rows_are_read(self):
+        """通知は `user` 行以外にも載る。孫 agent の通知は `queue-operation` にしか無い."""
+        for form in ("attachment", "queue"):
+            with self.subTest(form=form):
+                self.setUp()
+                d = self.build_async({0: ["completed"]}, form=form)
+                self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (1, 1), d)
+
+    def test_effective_waves_exclude_launches_without_a_completion(self):
+        d = self.build_async({}, n=1)
+        self.assertIsNone(d["waves_effective"])
+        self.setUp()
+        d = self.build_async({0: ["killed"], 1: ["completed"]})
+        self.assertEqual(d["waves_effective"], 1)
+
+    def test_synchronous_results_are_still_judged_by_the_tool_result(self):
+        """2.1.302 より前の同期起動（受付の文言が無い）は従来どおり tool_result で判定する."""
+        d = AgentsDecompositionTest.build(self, [[1, 2]], results={0: True, 1: False})
+        self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (1, 1), d)
+
+
 if __name__ == "__main__":
     unittest.main()
