@@ -225,12 +225,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 |---|---|---|
 | `agents` | 窓内 transcript の総数（捨てられた試行・孫を含む） | **コストの分母**（sub トークンと同じファイル集合） |
 | `agents_completed` | `spawnDepth` が 1 かつ結果が返った体 | **自己申告との突合**（`agents-mismatch`） |
-| `agents_abandoned` | 結果が返っていない / `is_error` の体 | 内訳（`agents-abandoned`） |
+| `agents_abandoned` | 結果が返っていない / `is_error` / 完了以外の通知だけの体 | 内訳（`agents-abandoned`） |
 | `agents_nested` | 孫 agent（`spawnDepth` が 2 以上）で結果が返った体 | 内訳（`agents-nested`） |
 
 不変条件: `completed + abandoned + nested == agents`。
 
-**CC 2.1.302 以降は「結果が返った」を判定できていない**（GitHub issue #347・未対応）。メイン会話の Agent は常に background で起動し、Agent の tool_result は起動の受付（`Async agent launched successfully.`）しか返さないので、起動した体はすべて `agents_completed` に数えられ、`agents_abandoned` は捨てられた試行があっても 0 になる。同じ判定を使う `waves_effective` も再試行の wave を除けない。この版以降の回で `agents_abandoned=0` や `agents-mismatch` が立たないことを「再試行が無かった」と読まない。経緯と直し方の候補（完了通知から引き直す）は `design-notes/orchestration-rationale.md` の「同期起動が無くなった」
+**「結果が返った」の判定は起動の形で分かれる**（`dispatch.schema` 5 / GitHub issue #348）。CC 2.1.302 以降、メイン会話の Agent は常に background で起動し、Agent の tool_result は起動の受付（`Async agent launched successfully.`）しか返さない。受付を返した体は完了通知（`<task-notification>` の `<status>`）に `completed` があれば結果が返ったとみなし、通知が無い・`failed` / `killed` / `stopped` / `running` だけの体は `agents_abandoned` に数える（resume で `completed` の後に `killed` が来ても完了のまま）。それより前の同期起動の体は従来どおり tool_result が `is_error` でないかで見る。通知は main の `user` 行・`attachment`（`queued_command`）・`queue-operation` 行に載り、孫 agent の通知は `queue-operation` にしか無い。受付を返した体がいるのに通知を 1 件も引けない回は分解ごと出さない。
+
+**schema 4 以下の 2.1.302 以降の回は読み替える**: 起動した体がすべて `agents_completed` に数えられ、`agents_abandoned` は捨てられた試行があっても 0、`waves_effective` も再試行の wave を含む。この区間で `agents_abandoned=0` や `agents-mismatch` が立たないことを「再試行が無かった」と読まない（実測: 利用者が 14 体を止めた回が schema 4 では `completed 56 / abandoned 0`、schema 5 では `42 / 14`）
 
 **`agents` を減らさない理由**: sub 側のトークン集計と同じファイル集合なので、
 「1 体あたり cache_read」の分母として正しい唯一の値。捨てられた試行も孫も実コストを

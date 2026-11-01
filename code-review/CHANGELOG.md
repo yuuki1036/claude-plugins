@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.164.4] - 2026-11-01
+
+### Fixed
+
+- **`measure-tokens.sh` が CC 2.1.302 以降の回で、捨てられた agent も完了に数えていたのを直した**（GitHub issue #348）。
+  2.1.302 から Agent の tool_result は起動の受付しか返さないので、`agents_abandoned` が常に 0 になり、`waves_effective`
+  も再試行の wave を除けず、`agents-mismatch` の突合も再試行で立たなかった。受付を返した体は完了通知
+  （`<task-notification>` の `<status>`）に `completed` があるかで判定し、通知が無い体と `failed` / `killed` /
+  `stopped` だけの体を `agents_abandoned` に数える。通知は main の `user` 行・`attachment`（`queued_command`）・
+  `queue-operation` 行から拾う（孫 agent の通知は `queue-operation` にしか無い）。同期起動の旧い回は従来どおり
+  tool_result で判定する。通知を 1 件も引けない回は分解ごと出さない。`dispatch.schema` を 5 に上げた（判定方法を
+  別キーで残すと、計測ストアの語彙に無いキーとして同期で落ちるため）。m1 の実 transcript で、利用者が 14 体を
+  止めた回が `completed 56 / abandoned 0` から `42 / 14` になり、`waves_effective` が 11 から 10 になった。孫のいる
+  回と同期起動の回は修正前と同じ値
+
 ## [2.164.3] - 2026-10-31
 
 ### Fixed

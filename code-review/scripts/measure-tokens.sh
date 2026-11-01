@@ -112,7 +112,7 @@ SESSION_ID=$(basename "$SESSION" .jsonl)
 SUBGLOB="$HOME/.claude/projects/*/${SESSION_ID}/subagents"
 
 SESSION="$SESSION" SINCE="$SINCE" SUBDIR="$SUBGLOB" AS_JSON="$AS_JSON" PER_AGENT="$PER_AGENT" python3 <<'PY'
-import glob, json, os, sys
+import glob, json, os, re, sys
 
 path, since = os.environ["SESSION"], os.environ.get("SINCE") or None
 subdir = os.environ.get("SUBDIR") or ""
@@ -152,7 +152,52 @@ agent_dispatch = {}
 # **`description` は読まない** — 自由文で書式が安定しないうえ、Round 2 は仕様上
 # 同じ reviewer を再起動して出力を置換するので、字面では再試行と区別できない
 result_ok = {}
+# **CC 2.1.302 から Agent は常に background で起動する**（GitHub issue #347 / #348）。tool_result は
+# 起動の受付（`Async agent launched successfully.`）しか返さないので、`result_ok` は捨てられた
+# 試行でも真になる。受付を返した体は完了通知（`<task-notification>` の `<status>`）で判定する。
+# 通知は main の `user` 行（content が文字列）・`attachment`（`queued_command` の `prompt`）・
+# `queue-operation`（`content`）に載る。**孫 agent の通知は main の `queue-operation` にしか無い**
+# （実測: 孫 4 体すべてそこにあり、`user` / `attachment` にも sub の transcript にも 0）。
+# 同じ体が複数回通知することがある（resume のたび）ので status は集合で持つ
+async_launched = set()
+notified = {}       # toolUseId -> 完了通知の status の集合
 sub_depth = {}      # subagent transcript -> meta.json の spawnDepth
+_NOTE_RE = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
+_NOTE_ID_RE = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
+_NOTE_STATUS_RE = re.compile(r"<status>([^<]+)</status>")
+
+
+def _collect_notifications(entry):
+    texts = []
+    if entry.get("type") == "queue-operation":
+        if isinstance(entry.get("content"), str):
+            texts.append(entry["content"])
+    elif entry.get("type") == "attachment":
+        att = entry.get("attachment") or {}
+        if isinstance(att, dict) and isinstance(att.get("prompt"), str):
+            texts.append(att["prompt"])
+    elif entry.get("type") == "user":
+        body = (entry.get("message") or {}).get("content")
+        if isinstance(body, str):
+            texts.append(body)
+        elif isinstance(body, list):
+            texts.extend(b.get("text") for b in body
+                         if isinstance(b, dict) and b.get("type") == "text"
+                         and isinstance(b.get("text"), str))
+    for text in texts:
+        for note in _NOTE_RE.findall(text):
+            tid = _NOTE_ID_RE.search(note)
+            status = _NOTE_STATUS_RE.search(note)
+            if tid and status:
+                notified.setdefault(tid.group(1).strip(), set()).add(status.group(1).strip())
+
+
+def _mark_async(blk):
+    body = blk.get("content")
+    if not isinstance(body, str):
+        body = json.dumps(body, ensure_ascii=False)
+    if "Async agent launched" in body:
+        async_launched.add(blk.get("tool_use_id"))
 
 
 def _wave_key(entry):
@@ -198,6 +243,9 @@ for fpath, side in targets:
             # dispatch が欠測し、取り込み内訳も二重に数える。sub 側はここでは絞らない — sub の
             # Agent・結果の読み取りは下で type を見ており、blob は timestamp を持たないので起動・終了時刻にも
             # 入らない（timestamp を持つ `api-request` 行は終了時刻に入るが、agent の生存期間の内側にある）
+            # 完了通知は会話の行の外（`queue-operation`）にも載るので、type で絞る前に拾う
+            if e.get("type") in ("user", "attachment", "queue-operation"):
+                _collect_notifications(e)
             if not side and e.get("type") not in ("assistant", "user", "attachment"):
                 continue
             # **main への取り込みを「何経由で入ったか」に分解する**（GitHub issue #118）。
@@ -257,6 +305,8 @@ for fpath, side in targets:
                             _rid = blk.get("tool_use_id")
                             if _rid:
                                 result_ok[_rid] = not blk.get("is_error")
+                                if name == "Agent":
+                                    _mark_async(blk)
             elif e.get("type") == "assistant":
                 # sub 側は取り込み内訳を採らない（main の負荷が論点）が、**Agent の発行だけは
                 # 拾う**。入れ子起動（`spawnDepth >= 2`）を親メッセージに寄せると wave の
@@ -279,6 +329,9 @@ for fpath, side in targets:
                             _rid = blk.get("tool_use_id")
                             if _rid:
                                 result_ok[_rid] = not blk.get("is_error")
+                                # sub ではツール名を引いていない。Agent 以外の id が入っても、
+                                # 引くのは agent の toolUseId だけなので判定には効かない
+                                _mark_async(blk)
             # **usage を持つ行に限らない**（起動直後のメタ行が先に来る）。窓の適用は
             # 上の `since` フィルタで済んでいるので、ここに来た時点で窓内
             if side and ts:
@@ -361,7 +414,10 @@ agents = sub_files
 # **agent が回っていた時間**と**オーケストレーターの統合・dedup・scoring 時間**が
 # 合算されている。どちらが支配的かで打ち手が正反対（前者なら wave を減らす / 後者なら
 # 往復を減らす）なので、分離しないまま是正すると「wave を消したのに fleet が縮まない」を踏む
-DISPATCH_SCHEMA = 4
+# schema 5: 受付だけを返した Agent（CC 2.1.302 以降）の完了を完了通知で判定する（GitHub issue #348）。
+# schema 4 以下の 2.1.302 以降の回は `agents_abandoned` が常に 0・`waves_effective` が再試行込み。
+# 判定方法を別キーで残さないのは、計測ストアの語彙に無いキーが同期で落ちるため（#313 で 10 回落ちた）
+DISPATCH_SCHEMA = 5
 # **連続する単独 wave が何本続いたら違反と呼ぶか**。1 体だけの wave 自体は正当（設計上 1 体
 # しか起動しないフェーズがある）。2 連続も skeptic → meta のような別ゲートの並びで説明が
 # つく。**3 連続以上はこのパイプラインの層構造では説明できない**ので、そこを閾値にする。
@@ -375,6 +431,22 @@ def _epoch(ts):
         return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
     except ValueError:
         return None
+
+
+# **結果を引けたか**。受付だけを返した体（2.1.302 以降）は完了通知に `completed` があるか、
+# 同期起動の体（それより前）は tool_result が `is_error` でないかで決める。resume で
+# `completed` の後に `killed` が来ても、結果はすでに届いているので完了に数える。
+# 通知が無い・`failed` / `killed` / `stopped` / `running` だけの体は完了に数えない
+def _returned(tid):
+    if tid in async_launched:
+        return "completed" in notified.get(tid, ())
+    return bool(result_ok.get(tid))
+
+
+# **判定の材料を 1 件も引けない回は分解しない**（下の分解の節）。受付を返した体がいるのに
+# 完了通知が 1 件も無いのは「全部捨てられた」より「通知の置き場所が変わった」を疑う
+# （受付の tool_result は返っているので、`result_ok` が空でないことは材料にならない）
+decomposable = bool(notified) if async_launched else bool(result_ok)
 
 
 # 窓内に起動した agent を「発行元メッセージ」へ寄せる。**引き当てられない agent が 1 体でも
@@ -412,7 +484,7 @@ for fpath, ts in sub_first.items():
     # **捨てられた試行・孫を除いた wave も同時に組む**（GitHub issue #154 / #192）。
     # 再試行は wave 本数・`wave_sizes`・`span_sec` も膨らませるので、`agents` だけを
     # 直すと一括発行の判定が汚れた本数のまま走る（実測: 8 本のうち 3 本が同一 6 体の再発行）
-    if result_ok.get(tool_use_id) and sub_depth.get(fpath, 1) <= 1:
+    if decomposable and _returned(tool_use_id) and sub_depth.get(fpath, 1) <= 1:
         waves_completed.setdefault(owner[0], []).append(started)
 
 # ---- agents の分解（GitHub issue #154）--------------------------------------
@@ -424,22 +496,23 @@ for fpath, ts in sub_first.items():
 # 分解の軸は `description` ではない。自由文で書式が安定しないうえ、**Round 2 は仕様上
 # 同じ reviewer を再起動して出力を置換する**ので、字面では正当な再起動と再試行を
 # 区別できない（実測: 重複 38 件中 26 件が正当な別起動）。代わりに
-# **結果が返ったか**（`tool_result` の到達）と `spawnDepth` で切る。
+# **結果が返ったか**（`_returned`。tool_result の到達か完了通知の `completed`）と
+# `spawnDepth` で切る。
 #
-#   agents_completed … depth==1 かつ結果が返った（`is_error` でない）体
-#   agents_abandoned … 結果が返っていない / `is_error` の体（深さ不問）
+#   agents_completed … depth==1 かつ結果が返った体
+#   agents_abandoned … 結果が返っていない / `is_error` / 完了以外の通知だけの体（深さ不問）
 #   agents_nested    … depth>=2 かつ結果が返った体（オーケストレーターは申告しようがない）
 #
 # 不変条件: completed + abandoned + nested == agents
-# **`tool_result` を 1 件も引けなかったら分解しない。** 引けない理由は「全部捨てられた」
+# **判定の材料を 1 件も引けなかったら分解しない。** 引けない理由は「全部捨てられた」
 # ではなく「結果の所在が変わった / 窓の外にある」の可能性があり、0 と欠測を潰すと
 # **毎回 `agents_completed = 0` になって突合が常時ずれる**（＝ agents-mismatch が
 # 恒常的に立ち、信号として死ぬ）。判定できないときは分解ごと出さず、突合は
 # 従来どおり `agents` で行う（publish 側がフォールバックする）
 agents_completed = agents_abandoned = agents_nested = None
-if result_ok:
+if decomposable:
     agents_completed = agents_abandoned = agents_nested = 0
-for _f in (sub_first if result_ok else ()):
+for _f in (sub_first if decomposable else ()):
     # `_f` は `agent-*.jsonl` の glob 由来なので拡張子の分岐は要らない
     _mp = _f[: -len(".jsonl")] + ".meta.json"
     _tid = None
@@ -452,7 +525,7 @@ for _f in (sub_first if result_ok else ()):
             _tid = None
     # **結果の有無が不明なら `abandoned` に倒す**（引き当てられなかった体を
     # 「完了した」と数えると、突合が黙って通る方向に倒れる）
-    if not _tid or not result_ok.get(_tid):
+    if not _tid or not _returned(_tid):
         agents_abandoned += 1
     elif sub_depth.get(_f, 1) > 1:
         agents_nested += 1
@@ -466,8 +539,8 @@ dispatch = {"schema": DISPATCH_SCHEMA, "agents": len(sub_first),
             # **捨てられた試行・孫を除いた wave 本数**。一括発行の判定はこちらを使う。
             # `waves` / `wave_sizes` は据え置き（実際に走った本数として意味がある）
             # 分解が成立した回だけ出す（同上）
-            # `waves_completed` は `result_ok` を引けた体しか入らないので、
-            # `result_ok` の空判定は要らない（分岐を残すと死んだ条件になる）
+            # `waves_completed` は `decomposable` の回にしか入らないので、
+            # ここで改めて判定しない（分岐を残すと死んだ条件になる）
             "waves_effective": (len(waves_completed) if waves_completed else None),
             "waves": None,
             "wave_sizes": None, "max_solo_run": None, "max_inter_wave_sec": None,
