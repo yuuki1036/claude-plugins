@@ -103,6 +103,10 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - skill 本文サイズ: SKILL.md 本文の行数上限（500 行）. 超過は references への
     progressive disclosure を促す（規模目安の正本は component-addition-advisor,
     執筆指針は docs/skill-writing.md）.
+  - metrics-vocab: publish が送りうる名前（code-review 以外の skill / command 名・観点名）が
+    計測ストアの語彙に無いか. 語彙の外の値は同期で `other` に置き換わり, 追随漏れは 5 回中 4 回が
+    落ちた後に足していた（#345）. 計測ストアの clone（`REVIEW_METRICS_DIR`, 既定
+    `~/.claude/review-metrics`）が無ければ飛ばすので, CI では走らない.
 
 実行: python3 validate_plugin_quality.py [plugin_dir ...]
   引数無し: 全プラグイン
@@ -1719,6 +1723,78 @@ def check_skill_body_size(warnings: list[str]) -> None:
             )
 
 
+#: 計測ストア（private リポジトリ review-metrics）の clone。CI と他人の機には無いので、無ければ黙って飛ばす
+METRICS_STORE_ENV = "REVIEW_METRICS_DIR"
+METRICS_STORE_DEFAULT = Path.home() / ".claude" / "review-metrics"
+#: missing_coverage に載る観点名の出どころ（ファイル名が観点名。specialist は `specialist-<ファイル名>` でも書かれる）
+METRICS_FOCUS_DIRS = ("focus", "explorer", "specialist")
+
+
+def _metrics_vocab(path: Path, key: str | None = None) -> set[str]:
+    """語彙ファイルの値. `key` を渡すと `パス 値` の行からそのパスの値だけを取る."""
+    values: set[str] = set()
+    for line in read_text(path).splitlines():
+        # 計測ストアの sanitize.py（`_vocab_lines`）と同じく行内の `#` 以降も落とす
+        line = line.split("#", 1)[0].strip()
+        parts = line.split(None, 1)
+        if not line:
+            pass
+        elif key is None:
+            values.add(line)
+        elif len(parts) == 2 and parts[0] == key:
+            values.add(parts[1].strip())
+    return values
+
+
+def check_metrics_vocab_drift(warnings: list[str], store: Path | None = None) -> None:
+    """publish が送りうる名前が計測ストアの語彙に無いか（非ブロッキング warning / GitHub issue #345）.
+
+    語彙に無い値は計測ストアの同期が `other` に置き換え, 気づくのは落ちた後になる（追随漏れ 5 回中 4 回）.
+    見るのは列挙できる 2 つだけ: `invocation.parent`（code-review 以外の skill / command 名）と
+    missing_coverage の観点名（`references/prompts/{focus,explorer,specialist}/` のファイル名. specialist は
+    `specialist-<ファイル名>` の綴りも）.
+    語彙にだけある値（改名前の旧名など）は意図して残すので数えない.
+    """
+    if store is None:
+        env = os.environ.get(METRICS_STORE_ENV)
+        store = Path(env) if env else METRICS_STORE_DEFAULT
+    vocab = store / "vocab"
+    strings, coverage = vocab / "string_values.txt", vocab / "missing_coverage.txt"
+    if not (strings.is_file() and coverage.is_file()):
+        return
+    names = set()
+    for plugin_json in ROOT.glob("*/.claude-plugin/plugin.json"):
+        plugin = plugin_json.parent.parent
+        # code-review 自身は parent にならない（lib/invocation.py の `_is_code_review`）
+        if plugin.name == "code-review":
+            continue
+        names |= {f"{plugin.name}:{p.parent.name}" for p in plugin.glob("skills/*/SKILL.md")}
+        names |= {f"{plugin.name}:{p.stem}" for p in plugin.glob("commands/*.md")}
+    missing = sorted(names - _metrics_vocab(strings, "invocation.parent"))
+    if missing:
+        warnings.append(
+            f"[metrics-vocab] 計測ストアの invocation.parent に無い名前 {len(missing)} 件（publish 後に other へ"
+            f"置き換わる。{tilde_path(strings)} に足して bin/sync --refresh）: {', '.join(missing)}"
+        )
+    prompts = ROOT / "code-review" / "references" / "prompts"
+    focuses = {p.stem for d in METRICS_FOCUS_DIRS for p in (prompts / d).glob("*.md")}
+    focuses |= {f"specialist-{p.stem}" for p in (prompts / "specialist").glob("*.md")}
+    missing = sorted(focuses - _metrics_vocab(coverage))
+    if missing:
+        warnings.append(
+            f"[metrics-vocab] 計測ストアの missing_coverage に無い観点 {len(missing)} 件（{tilde_path(coverage)}"
+            f" に足して bin/sync --refresh）: {', '.join(missing)}"
+        )
+
+
+def tilde_path(path: Path, home: Path | None = None) -> str:
+    """`$HOME` 配下を `~` 始まりにする（warning にユーザー名入りの絶対パスを出さない）."""
+    try:
+        return "~/" + str(path.relative_to(Path.home() if home is None else home))
+    except ValueError:
+        return str(path)
+
+
 #: 同梱シェルスクリプトの走査対象。**`skills/*/scripts/` を落とさない**（GitHub issue #177）:
 #: skill 同梱の配布物でありながら `scripts/**` にも `hooks/**` にも掛からない位置にある
 PLUGIN_SHELL_GLOBS = ("scripts/**/*.sh", "hooks/**/*.sh", "skills/*/scripts/**/*.sh")
@@ -2016,6 +2092,7 @@ def main() -> int:
     check_context_budget(warnings)
     check_router_trigger_drift(warnings)
     check_skill_body_size(warnings)
+    check_metrics_vocab_drift(warnings)
 
     if warnings:
         _print_warnings(warnings, verbose=verbose)
