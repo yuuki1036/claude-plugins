@@ -5,7 +5,8 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
 
 - 出力の契約: 定義の隣に .svg を書いて svg= を出す。壊れた定義は failed= を 1 行出し、他の定義の処理は続ける
   （exit 1）。型の違う値・UTF-8 でない定義・想定外の例外も failed= に落とす。幅が 1200 を超えた・線が箱を
-  避けられない・ラベルや箱が重なった・範囲の枠に範囲外の箱が入ったときは warn= を足す
+  避けられない・ラベルや箱が重なった・範囲の枠に範囲外の箱が入った・複雑さの予算（箱 9・線 12・参加者 5・
+  枠 1（分岐の無い枠だけなら 2）・alt の分岐 2・遷移は状態の 2 倍まで）を超えたときは warn= を足す。上限ちょうどでは黙る
 - 手で描いたときに踏んだ 3 点（全角と曖昧幅の見出しが箱に収まる / 矢印の先が markerUnits="userSpaceOnUse" /
   ライフラインの見出しの箱が隣と重ならない）。1 点目はスクリプトの見積もりを使わず、1 文字 14px を下限に置く
 - sequence: 呼び出しのラベルが両端のライフラインの間に収まる・複数行のラベルが矢印を隠さない・入れ子の枠が
@@ -217,6 +218,9 @@ class OutputContractTest(unittest.TestCase):
             ({**SEQ, "participants": [{"id": "a"}, {"id": "a"}]}, "id 'a' が重複"),
             ({**SEQ, "participants": [{"id": "a", "status": "new"}]}, "status 'new'"),
             ({**SEQ, "steps": [{"frame": "if", "steps": []}]}, "frame 'if'"),
+            ({**SEQ, "steps": [{"frame": "par", "steps": [{"from": "ui", "to": "act"}]}]}, "frame 'par'"),
+            ({**SEQ, "steps": [{"frame": "opt", "branches": [{"label": "x", "steps": [{"from": "ui", "to": "act"}]}]}]},
+             "branches は alt の枠だけに書ける"),
             ({**SEQ, "steps": [{"frame": "loop", "steps": []}]}, "呼び出しを 1 つ以上"),
             ({**SEQ, "steps": [{"frame": "alt", "steps": [], "branches": []}]}, "steps と branches のどちらか"),
             ({**SEQ, "steps": [{"frame": "alt", "branches": []}]}, "branches を 1 つ以上"),
@@ -269,6 +273,80 @@ class OutputContractTest(unittest.TestCase):
         _, _, _, a = run(SEQ)
         _, _, _, b = run(SEQ)
         self.assertEqual((a / "d0.svg").read_bytes(), (b / "d0.svg").read_bytes())
+
+
+def budget_warns(out: list[str]) -> list[str]:
+    return [w.split("\t", 1)[1] for w in out if w.startswith("warn=") and "\t複雑さの予算を超えた" in w]
+
+
+def flow_of(n_nodes: int, n_edges: int) -> dict:
+    ids = [f"n{i}" for i in range(n_nodes)]
+    return {"type": "flow", "nodes": [{"id": i} for i in ids],
+            "edges": [{"from": ids[k % n_nodes], "to": ids[(k + 1) % n_nodes]} for k in range(n_edges)]}
+
+
+def seq_of(n_parts: int, n_msgs: int, frames: list | None = None) -> dict:
+    ids = [f"p{i}" for i in range(n_parts)]
+    steps = [{"from": ids[k % n_parts], "to": ids[(k + 1) % n_parts]} for k in range(n_msgs)]
+    return {"type": "sequence", "participants": [{"id": i} for i in ids], "steps": steps + (frames or [])}
+
+
+def frame(kind: str, branches: int = 1) -> dict:
+    call = {"from": "p0", "to": "p1"}
+    if branches == 1:
+        return {"frame": kind, "label": "c", "steps": [call]}
+    return {"frame": kind, "branches": [{"label": f"b{i}", "steps": [call]} for i in range(branches)]}
+
+
+class ComplexityBudgetTest(unittest.TestCase):
+    """上限ちょうどは黙り、1 つ超えたら warn= を 1 行出す（cathrynlavery/diagram-design の complexity budget）."""
+
+    def assert_budget(self, spec: dict, fragment: str | None) -> None:
+        warns = budget_warns(render(spec)[1])
+        if fragment is None:
+            self.assertEqual(warns, [])
+        else:
+            self.assertEqual(len(warns), 1, warns)
+            self.assertIn(fragment, warns[0])
+            self.assertTrue(warns[0].endswith("。概要と詳細の 2 枚に分ける"), warns[0])
+
+    def test_boxes_and_lines(self):
+        self.assert_budget(flow_of(9, 12), None)
+        self.assert_budget(flow_of(10, 9), "箱 10 > 9")
+        self.assert_budget(flow_of(9, 13), "線 13 > 12")
+
+    def test_states_and_transitions(self):
+        states = [{"id": "a"}, {"id": "b"}]
+        within = [{"from": "a", "to": "b"}, {"from": "b", "to": "a"}, {"from": "a", "to": "a"}, {"from": "b", "to": "b"}]
+        self.assert_budget({"type": "state", "states": states, "transitions": within}, None)
+        self.assert_budget({"type": "state", "states": states, "transitions": [*within, {"from": "a", "to": "b"}]},
+                           "遷移 5 が状態の 2 倍 4 を超えた（2 つの状態機械に分ける）")
+        many = [{"id": f"s{i}"} for i in range(10)]
+        self.assert_budget({"type": "state", "states": many}, "状態 10 > 9")
+        nine = [{"id": f"s{i}"} for i in range(9)]
+        ring = [{"from": f"s{k % 9}", "to": f"s{(k + 1) % 9}"} for k in range(13)]
+        self.assert_budget({"type": "state", "states": nine, "transitions": ring}, "遷移 13 > 12")
+        # 両方を超えたら「状態の 2 倍」だけを出す
+        six = {"type": "state", "states": [{"id": f"s{i}"} for i in range(6)],
+               "transitions": [{"from": f"s{k % 6}", "to": f"s{(k + 1) % 6}"} for k in range(13)]}
+        self.assert_budget(six, "遷移 13 が状態の 2 倍 12 を超えた")
+        self.assertNotIn("遷移 13 > 12", budget_warns(render(six)[1])[0])
+
+    def test_participants_and_calls(self):
+        self.assert_budget(seq_of(5, 12), None)
+        self.assert_budget(seq_of(6, 2), "参加者 6 > 5")
+        self.assert_budget(seq_of(2, 13), "呼び出し 13 > 12")
+
+    def test_frames(self):
+        self.assert_budget(seq_of(2, 1, [frame("alt", 2)]), None)
+        self.assert_budget(seq_of(2, 1, [frame("opt"), frame("loop")]), None)
+        self.assert_budget(seq_of(2, 1, [frame("alt", 2), frame("opt")]), "枠 2")
+        self.assert_budget(seq_of(2, 1, [frame("opt"), frame("loop"), frame("opt")]), "枠 3")
+        self.assert_budget(seq_of(2, 1, [frame("alt", 3)]), "alt の分岐 3 > 2")
+        # 入れ子の枠も数える（alt の分岐の中の opt で 2 つ）
+        nested = {"frame": "alt", "branches": [{"label": "b0", "steps": [frame("opt")]},
+                                               {"label": "b1", "steps": [{"from": "p0", "to": "p1"}]}]}
+        self.assert_budget(seq_of(2, 1, [nested]), "枠 2")
 
 
 class CommonRenderingTest(unittest.TestCase):
@@ -569,8 +647,9 @@ class GraphEdgeTest(unittest.TestCase):
         wall = [{"id": f"w{i}", "pos": [1, i * 0.4]} for i in range(9)]
         nodes = [{"id": "a", "pos": [0, 1.6]}, {"id": "b", "pos": [2, 1.6]}, *wall]
         root, out = render({"type": "flow", "nodes": nodes, "edges": [{"from": "a", "to": "b"}]})
-        self.assertEqual(len(out), 2, out)
-        self.assertTrue(out[1].endswith("\tedges の 'a' → 'b' が他の箱を横切る（pos で並べ直す）"), out)
+        warns = [w.split("\t", 1)[1] for w in out[1:]]
+        self.assertEqual(warns, ["複雑さの予算を超えた（箱 11 > 9）。概要と詳細の 2 枚に分ける",
+                                 "edges の 'a' → 'b' が他の箱を横切る（pos で並べ直す）"], out)
         self.assertEqual(edge(root, "a", "b").get("data-route"), "straight")
 
     def test_parallel_edges_start_inside_tall_boxes(self):
