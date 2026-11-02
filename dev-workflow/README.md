@@ -39,7 +39,7 @@ worktree-setup / worktree-teardown はコマンドを持たず、トリガーフ
 - 概要を What / Why / Outcome の三要素で記述（字数制約と両立）
 - gitignored パス・ローカル限定ドキュメント参照の検出
 - UI PR の Screenshots は、このチェックアウトが今のブランチに切り替わった後に撮った ui-verify の撮影を使い（`scripts/pick-screenshot-dir.sh` が選ぶ）、無ければ snap で撮る。前に別のブランチで撮った画面は添付しない
-- 処理の流れや集計の範囲を変える PR では、変更の要点を 1〜2 枚の図にして添付するかを提案（UI 変更の有無は問わない。SVG を `scripts/svg-to-png.sh` で PNG にする。`--no-diagrams` で止める）
+- 処理の流れや集計の範囲を変える PR では、変更の要点を 1〜2 枚の図にして添付するかを提案（UI 変更の有無は問わない。`--no-diagrams` で止める）。図の型は主題ごとに選ぶ: 状態の移り変わりは状態遷移図、層をまたぐ呼び出しの順と分岐はシーケンス図、流れ・範囲は箱と矢印。JSON の定義から `scripts/diagram-svg.py` が SVG を組み、`scripts/svg-to-png.sh` で PNG にする
 - 常にドラフト PR として作成
 
 **トリガー例**: 「PR 作って」「プルリクエスト作成」「/pr」
