@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.42.0] - 2026-11-02
+
+### Added
+
+- **pr-creator の説明図に複雑さの予算を入れた**。`scripts/diagram-svg.py` は、箱・状態が 9、線・遷移・呼び出しが 12、sequence の参加者が 5、alt の分岐が 2 を超えたとき、state の遷移が状態の数の 2 倍を超えたとき、sequence の枠が 1 つ（分岐の無い枠だけなら 2 つ）を超えたときに `warn=` を出し、概要と詳細の 2 枚に分けるよう促す（上限ちょうどは出さない）。数は [cathrynlavery/diagram-design](https://github.com/cathrynlavery/diagram-design)（MIT）の complexity budget に合わせた。1 枚に詰め込んだ図は、ラベルを重ならないように置けても読み手が追えない
+- diagram-guide.md §1 に、部品のつながりが変わらず属性（値・設定・名前）だけが変わる変更前後は、図にせず表にする目安を足した
+
+### Removed
+
+- **sequence の枠 `par` / `break` / `critical`**（`failed=` になる。枠は `alt` / `opt` / `loop` の 3 つ。`branches` も `alt` だけに書ける）。枠が 1〜2 つまでの図では使い分けが読み手に伝わりにくく、並行や途中で抜ける経路は図を分けて描くほうが伝わる
+
 ## [1.41.0] - 2026-11-02
 
 ### Added

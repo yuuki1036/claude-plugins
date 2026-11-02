@@ -3,7 +3,7 @@
 
 型は 3 つ。どれを選ぶかと定義の書き方は skills/pr-creator/references/diagram-guide.md:
   flow      箱と矢印（流れ・範囲）。groups で「この PR のレビュー範囲」などを枠で囲む
-  sequence  ライフラインと alt / opt / loop / par / break / critical の枠（層をまたぐ呼び出しの順と分岐）
+  sequence  ライフラインと alt / opt / loop の枠（層をまたぐ呼び出しの順と分岐）
   state     状態を節・操作を辺にした状態遷移図
 
 使い方:
@@ -58,7 +58,13 @@ REPLY_DASH = "6 4"
 LATER_DASH = "2 4"
 LATER_REPLY_DASH = "8 3 2 3"
 
-FRAME_KINDS = ("alt", "opt", "loop", "par", "break", "critical")
+# par / break / critical は持たない。枠が 1〜2 つまでの図では使い分けが読み手に伝わらず、要るなら図を分ける
+FRAME_KINDS = ("alt", "opt", "loop")
+# 複雑さの予算（cathrynlavery/diagram-design の complexity budget に合わせた）。超えたら warn= で 2 枚に分けるよう促す
+MAX_NODES = 9
+MAX_EDGES = 12
+MAX_PARTICIPANTS = 5
+MAX_ALT_BRANCHES = 2
 COMMON_KEYS = {"type", "title", "legend", "legend_labels"}
 # XML 1.0 に書けない文字（タブ・改行・復帰以外の制御文字、サロゲート、U+FFFE / U+FFFF）。
 # 通すと svg= を出したのに読めない SVG ができ、Chrome で PNG にするとパースエラーの画面が写る
@@ -271,6 +277,8 @@ def parse_steps(steps: object, pids: dict, where: str) -> list[dict]:
             if kind not in FRAME_KINDS:
                 raise SpecError(f"{w} の frame {kind!r} は使えない（{' / '.join(FRAME_KINDS)}）")
             if "branches" in obj:
+                if kind != "alt":
+                    raise SpecError(f"{w} の branches は alt の枠だけに書ける（{kind} は label と steps で書く）")
                 if "steps" in obj:
                     raise SpecError(f"{w} は steps と branches のどちらかで書く")
                 if "label" in obj:
@@ -293,6 +301,19 @@ def parse_steps(steps: object, pids: dict, where: str) -> list[dict]:
                         "label": opt_str(obj, "label", w), "status": get_status(obj, w),
                         "reply": obj.get("reply") is True})
     return out
+
+
+def over_budget(c: Canvas, items: list[str]) -> None:
+    if items:
+        c.warnings.append(f"複雑さの予算を超えた（{' / '.join(items)}）。概要と詳細の 2 枚に分ける")
+
+
+def walk_frames(nodes: list[dict]):
+    for n in nodes:
+        if n["kind"] == "frame":
+            yield n
+            for _, sub in n["branches"]:
+                yield from walk_frames(sub)
 
 
 def walk_msgs(nodes: list[dict]):
@@ -325,6 +346,19 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
     gaps = [(hw[i] + hw[i + 1]) / 2 + SEQ_HEAD_GAP for i in range(n - 1)]
     right_extra = 0.0
     msgs = list(walk_msgs(steps))
+    frames = list(walk_frames(steps))
+    budget = []
+    if n > MAX_PARTICIPANTS:
+        budget.append(f"参加者 {n} > {MAX_PARTICIPANTS}")
+    if len(msgs) > MAX_EDGES:
+        budget.append(f"呼び出し {len(msgs)} > {MAX_EDGES}")
+    # 枠は 1 つまで。分岐の無い枠（opt / loop と分岐 1 つの alt）だけなら 2 つまで
+    if len(frames) > 2 or (len(frames) == 2 and any(len(f["branches"]) > 1 for f in frames)):
+        budget.append(f"枠 {len(frames)}（分岐のある枠を含むなら 1 つ、分岐の無い枠だけなら 2 つまで）")
+    for f in frames:
+        if len(f["branches"]) > MAX_ALT_BRANCHES:
+            budget.append(f"alt の分岐 {len(f['branches'])} > {MAX_ALT_BRANCHES}")
+    over_budget(c, budget)
     for m in sorted(msgs, key=lambda m: abs(col[m["from"]] - col[m["to"]])):
         a, b = col[m["from"]], col[m["to"]]
         if a == b:
@@ -588,6 +622,16 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
     for gi, g in enumerate(groups):
         for m in g["nodes"]:
             clusters.setdefault(m, gi)
+
+    budget = []
+    if len(nodes) > MAX_NODES:
+        budget.append(f"{'状態' if kind == 'state' else '箱'} {len(nodes)} > {MAX_NODES}")
+    # state で両方を超えたら、直し方まで言える「状態の 2 倍」のほうだけを出す（同じ数を 2 通りに言わない）
+    if kind == "state" and len(edges) > 2 * len(nodes):
+        budget.append(f"遷移 {len(edges)} が状態の 2 倍 {2 * len(nodes)} を超えた（2 つの状態機械に分ける）")
+    elif len(edges) > MAX_EDGES:
+        budget.append(f"{'遷移' if kind == 'state' else '線'} {len(edges)} > {MAX_EDGES}")
+    over_budget(c, budget)
 
     pairs = [(e["from"], e["to"]) for e in edges]
     has_in = {b for a, b in pairs if a != b}
