@@ -19,7 +19,7 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 |--------|------|
 | init | プロジェクト初期セットアップ（backend 選択 + ディレクトリ作成） |
 | start | セッション開始。引数の Issue ID を優先し、無ければブランチ名から判定（main ならダッシュボード）。新規か続きかを別の worktree・ブランチまで見て判定し、未着手なら feature-dev を案内 |
-| issue-create | Issue 作成 + ブランチ作成（未コミットの変更があれば worktree に分けてセッションごと移るのを推奨） |
+| issue-create | Issue 作成 + ブランチ作成（未コミットの変更があれば worktree に分けてセッションごと移るのを推奨）。`--create-only` なら Issue ファイルを `status: backlog` で書き込んで終え、ブランチ作成以降に進まない（最後に `起票だけで終えた:` か `起票せずに終えた:` の 1 行を出す） |
 | issue-design | Issue 本文を 9 セクションテンプレと設計判断ルールで設計・リライト |
 | issue-maintain | Issue ファイルのセッション内容反映・品質整理・knowledge 切り出し |
 | follow-up | Follow-up タスクの作成・一覧・Issue 昇格 |

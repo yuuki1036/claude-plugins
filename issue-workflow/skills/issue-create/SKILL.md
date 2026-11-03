@@ -3,8 +3,10 @@ name: issue-create
 description: >
   Issue ファイルを 1 件、新規に作る。テンプレート選択・ブランチ自動作成・feature-dev への
   接続まで通す。Linear 連携時は、指定した既存 Issue 1 件を Linear MCP から取得してファイル化
-  する（Linear からの取り込み＝1 件ぶんの新規起票）。
+  する（Linear からの取り込み＝1 件ぶんの新規起票）。`--create-only` なら Issue ファイルの書き込みで
+  終え、ブランチ作成以降に進まない。
   トリガー: 「タスク作成」「Issue起票」「新しいタスク」「Issueファイル作成」「Linear の Issue をローカルに取り込む」「/issue-create」
+  引数: [PROJECT-SLUG] [--create-only]（省略可）
 effort: medium
 allowed-tools:
   - mcp__linear__get_issue
@@ -22,6 +24,22 @@ allowed-tools:
 # Issue Create
 
 ユーザーからタスク情報をヒアリングし、テンプレートに基づいて Issue ファイルを新規作成する。
+
+## 引数
+
+- `--` で始まらない引数: プロジェクトスラッグ（Phase 1）
+- `--create-only`: **起票だけで終える**。Phase 6 で Issue ファイルを書き込み、Phase 7 の 1（パスの報告）を済ませたら、最後に次の 1 行目を出して終える。書き込まずに終えた回（Phase 0 の停止・Phase 0.7 の中断・Phase 2 の中止・Phase 6 の返答でやめた回）は、代わりに 2 行目を出す:
+
+  ```
+  起票だけで終えた: {ISSUE-ID} {Issue ファイルの絶対パス}
+  起票せずに終えた: {理由}
+  ```
+
+  - ブランチ作成・feature-dev 連携・次のアクションの案内・spec の選択（Phase 7 の 2〜4・Phase 8）には進まない。別のセッションが段取りを持っていて、起票だけを頼む回のための引数で、ブランチを切る・repo を書くのは頼んだ側が決める
+  - Issue は `status: backlog` で書く（Phase 6 の 2）。着手するのは頼んだ側で、着手までの間に放置検知（in-progress × `last_active` 7 日超）に掛からないようにする。着手は start で行う（discover の起票と同じ扱い）
+  - 承認は Phase 6 の 1 回だけにする。Phase 6 より前の、内容を決める確認は出さない: Phase 4 のテンプレートは迷っても聞かずに決め、Phase 5 の 4 で後発のコメントを採ったことと、Phase 5.4 で見つかった既存実装は、聞かずに Phase 6 の提示に並べる（直す・やめるは Phase 6 の返答で受ける）。入力が足りないときの確認はすべて残す: Phase 0.7（Linear MCP が使えない）・Phase 1（スラッグが決まらない）・Phase 3（Linear の Issue ID の受け取りと手動入力）・Phase 5 の 1〜2（タイトル・概要が依頼に無い）
+  - 終わりの 2 つの行は、頼んだ側が引数が効いたかを見分けるためのもの。引数を知らない版はどちらも出さない（Phase 7 の 2 へ進む）ので、どちらも無ければ版が古い
+  - 付けない回の挙動は変えない
 
 ## ワークフロー
 
@@ -97,6 +115,7 @@ allowed-tools:
     2. label: "feature" / description: "新機能追加・既存機能の改修・リファクタリング"
     3. label: "investigation" / description: "原因調査・パフォーマンス分析・技術選定"
     4. label: "debt" / description: "コード品質改善・依存関係更新・非推奨 API の移行"
+  - `--create-only` のときは迷っても聞かず、推奨の type と根拠 1 行で進む（Phase 6 の承認で直せる）
 - スコープサイズは**全 type で必須**（`check-scope-size` hook のリアルタイム警告とスコープ超過チェックの前提）。**どの type も自分で決め、質問はしない**:
   - 基準は `## 進捗` に並ぶ見込みのタスク数: `small` は 3 以下（1-2 日）/ `medium` は 7 以下（数日〜1 週間）/ `large` は 15 以下（1 週間以上）
   - feature / investigation は依頼の内容から見積もる。Phase 5〜5.4 で分かった内容で見積もりが変わったら、Phase 6 の生成時に直す
@@ -112,6 +131,7 @@ allowed-tools:
 2. ユーザーに概要（説明）を確認する
 3. 既にユーザーが説明している場合はそれを使い、重複して聞かない
 4. BACKEND=linear で `get_issue` からタイトル・説明を取得できている場合はそれを使い、ヒアリングをスキップする。**このとき Phase 3 で取得したコメントも材料に含める** — 本文と食い違う記述（仕様変更・スコープ削減・保留）がコメントにあれば後発のコメント側を採り、どのコメントを採ったかを 1 行で示してユーザーに確認する
+   - `--create-only` のときは聞かずに後発のコメント側を採り、どのコメントを採ったかを Phase 6 の提示の冒頭に並べる（本文の側に戻すかは Phase 6 の返答で受ける）
 
 ### Phase 5.4: コードベース現状確認
 
@@ -135,6 +155,7 @@ Issue の内容が確定した段階で、対象コードの現状を軽く確�
        1. label: "続行" / description: "別の観点での Issue として起票する"
        2. label: "スコープ変更" / description: "タイトル・概要を調整してから起票する"
        3. label: "中止" / description: "Issue 起票を取りやめる"
+     - `--create-only` のときは聞かずに Phase 5.5 へ進み、ヒット箇所を Phase 6 の提示の冒頭に並べる（続行・スコープ変更・中止は Phase 6 の返答で受ける）
 4. **軽量運用**:
    - 確認は 3〜5 回以内の Glob/Grep に留める（全網羅ではない）
    - bugfix / investigation / debt は対象コードが明確なことが多いので、この Phase はスキップしてよい（feature 時に特に有効）
@@ -176,7 +197,7 @@ Issue の内容が確定した段階で、過去の蓄積から「この問題�
    - `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md`
 
 2. **frontmatter の記入**
-   - `status: in-progress`
+   - `status: in-progress`（`--create-only` のときは `backlog`。着手は頼んだ側が決める）
    - BACKEND=local: `id: {ISSUE-ID}` / BACKEND=linear: `linear: {ISSUE-ID}`（Linear のプロジェクト情報があれば `project:` も記入）
    - `type: {選択したtype}`
    - `scope_size: {small|medium|large}`（全 type 必須。Phase 4 で決めた値。Phase 5〜5.4 で見積もりが変わっていれば直した値）
@@ -193,6 +214,7 @@ Issue の内容が確定した段階で、過去の蓄積から「この問題�
    - 提示前に Phase 6.5（writing-polish 連携）を実行し、本文を推敲済みにする
    - 推敲済みの Issue ファイル内容をユーザーに提示する
    - 承認を得てからファイルを書き込む
+   - `--create-only` のときは、これが唯一の承認になる。提示の冒頭に、聞かずに決めたもの（Phase 4 の type と scope_size の根拠・Phase 5 の 4 で採ったコメント・Phase 5.4 のヒット箇所）を並べる。返答で直されたら、type が変わったときは Phase 4 のテンプレートを読み直して 3 から、タイトル・概要が変わったときは Phase 5.5 から生成し直し、もう一度提示する。やめると返されたら書き込まずに `起票せずに終えた: {理由}` を出して終える
 
 ### Phase 6.5: writing-polish 連携（本文添削・必須）
 
@@ -210,6 +232,7 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
 ### Phase 7: 後処理
 
 1. 作成したファイルの絶対パスを報告する（採番は Phase 3 で確定済みのため、ここでは `counter.txt` を触らない）
+   - **`--create-only` のときはここで終える**: 2〜4 と Phase 8 に進まず、`## 引数` の終わりの 1 行目（`起票だけで終えた: …`）を最後に出す
 2. **ブランチ作成（両 backend）**: 今のブランチ名に Issue ID が含まれていなければ、`${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。ブランチ名の規則・worktree の作成・作業ディレクトリの移動・移動後の DATA_DIR の扱いは同 doc が正本
 3. **feature-dev 連携確認**: **AskUserQuestion** で確認する:
    - question: "feature-dev で実装計画を立てますか？（ブランチを切った直後が最もコンテキストがそろっています）"
@@ -254,7 +277,7 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
 
 ### Phase 8: spec 選択（着手前の仕様化ルーティング）
 
-実装に入る前に「どの仕様 (spec) を先に書くか」を判定する。仕様系プラグイン（bdd-spec / design-doc / adr-keeper）が 1 つも有効でなければ完全に skip（dormant・後方互換 100%）。feature-dev に引き継ぐ場合（Phase 7 で「はい」）は WHAT/HOW を feature-dev が内部 Phase で生成するため、この Phase には実質到達しない（自分で実装する経路でのみ働く）。
+実装に入る前に「どの仕様 (spec) を先に書くか」を判定する。`--create-only` の回はこの Phase に入らない（Phase 7 の 1 で終えている）。仕様系プラグイン（bdd-spec / design-doc / adr-keeper）が 1 つも有効でなければ完全に skip（dormant・後方互換 100%）。feature-dev に引き継ぐ場合（Phase 7 で「はい」）は WHAT/HOW を feature-dev が内部 Phase で生成するため、この Phase には実質到達しない（自分で実装する経路でのみ働く）。
 
 1. **dormant 判定**（有効なものだけを見る判定。`${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す）:
    ```bash
