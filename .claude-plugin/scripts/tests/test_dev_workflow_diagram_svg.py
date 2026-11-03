@@ -14,6 +14,8 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
 - state / flow: 往復の辺のラベルが向き（横・縦）に関わらず重ならない・自己ループのラベルが入ってくる辺の
   ラベルと重ならない・間の箱を横切る辺を曲げる・線の端が箱の境界に乗る・範囲の枠がメンバーだけを囲む
 - 凡例: 使った status（箱・線・枠）だけを出し、legend_labels で文言を差し替えられる
+- 境界ちょうどの点・矩形の判定（inside / overlap）は CLI から配置を作れないため、GeometryBoundaryTest だけ
+  関数を直接読み込んで呼ぶ
 
 描画は決定的なので、同じ定義の描画は 1 回だけ回して結果を使い回す（起動の回数を減らす）。
 
@@ -23,6 +25,7 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import shutil
@@ -231,6 +234,8 @@ class OutputContractTest(unittest.TestCase):
             ({"type": "flow", "nodes": [{"id": "a", "pos": [0, 0]}, {"id": "b", "pos": [0, 0]}]},
              "'b' の pos [0, 0] が他と重なっている"),
             ({"type": "flow", "nodes": [{"id": "a", "pos": [-1, 0]}]}, "0 以上の有限の数"),
+            ({"type": "flow", "nodes": [{"id": "a", "pos": [1]}]}, "'a' の pos は [列, 行]"),
+            ({"type": "flow", "nodes": [{"id": ""}]}, "nodes[0] に id が無い"),
             ({**flow, "edges": {}}, "edges は配列で書く"),
             ({**flow, "edges": [{"from": "a", "to": "a", "label": 1}]}, "edges[0] の label は文字列で書く"),
             ({"type": "state", "states": [{"id": "a", "final": "yes"}]}, "'a' の final は true / false"),
@@ -268,6 +273,12 @@ class OutputContractTest(unittest.TestCase):
         self.assertRegex(out[1], rf"^warn={re.escape(str(tmp / 'd0.svg'))}\t幅が \d+px で 1200 を超えた")
         width = int(ET.parse(tmp / "d0.svg").getroot().get("width"))
         self.assertGreater(width, 1200)
+
+    def test_exactly_1200_wide_does_not_warn(self):
+        # 箱 1 つで幅がちょうど 1200 になる見出し（全角 63・英大文字 14・英小文字 12）
+        root, out = render({"type": "flow", "nodes": [{"id": "a", "label": "あ" * 63 + "W" * 14 + "w" * 12}]})
+        self.assertEqual(root.get("width"), "1200")
+        self.assertEqual(len(out), 1, out)
 
     def test_output_is_deterministic(self):
         _, _, _, a = run(SEQ)
@@ -409,6 +420,39 @@ class CommonRenderingTest(unittest.TestCase):
         dashes = [m.find(f"{NS}path").get("stroke-dasharray") for m in groups(root, "message")]
         self.assertEqual(dashes, [None, "6 4", "2 4", "8 3 2 3"])
 
+    def test_bold_only_on_title_frame_kind_and_group_heading(self):
+        root, _ = render({**SEQ, "title": "削除の流れ"})
+        self.assertEqual(groups(root, "title")[0].find(f"{NS}text").get("font-weight"), "bold")
+        tab = next(t for t in root.iter(f"{NS}text") if text_of(t) == "alt")
+        self.assertEqual(tab.get("font-weight"), "bold")
+        self.assertIsNone(node(root, "ui").find(f"{NS}text").get("font-weight"))
+        label = next(t for t in root.iter(f"{NS}text") if text_of(t) == "deleteItem(id)")
+        self.assertIsNone(label.get("font-weight"))
+        root, _ = render({"type": "flow", "nodes": [{"id": "a"}], "groups": [{"label": "範囲", "nodes": ["a"]}]})
+        heading = next(t for t in root.iter(f"{NS}text") if text_of(t) == "範囲")
+        self.assertEqual(heading.get("font-weight"), "bold")
+
+    def test_only_removed_lines_strike_their_labels(self):
+        def deco(root, text):
+            return next(t for t in root.iter(f"{NS}text") if text_of(t) == text).get("text-decoration")
+
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}], "steps": [
+            {"from": "a", "to": "b", "label": "消す", "status": "removed"}, {"from": "b", "to": "a", "label": "残す"},
+            {"frame": "opt", "label": "条件", "steps": [{"from": "a", "to": "b", "label": "中"}]}]})
+        self.assertEqual(deco(root, "消す"), "line-through")
+        self.assertIsNone(deco(root, "残す"))
+        self.assertIsNone(deco(root, "[条件]"))
+        root, _ = render({"type": "flow", "nodes": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+                          "edges": [{"from": "a", "to": "b", "label": "消す", "status": "removed"},
+                                    {"from": "b", "to": "c", "label": "残す"}]})
+        self.assertEqual(deco(root, "消す"), "line-through")
+        self.assertIsNone(deco(root, "残す"))
+
+    def test_upper_case_letters_are_estimated_wider_than_lower_case(self):
+        root, _ = render({"type": "flow", "nodes": [{"id": "u", "label": "W" * 12}, {"id": "l", "label": "w" * 12}]})
+        (u0, _, u1, _), (l0, _, l1, _) = rect_of(node(root, "u")), rect_of(node(root, "l"))
+        self.assertGreater(u1 - u0, l1 - l0)
+
     def test_title_is_drawn_above_content(self):
         root, _ = render({**SEQ, "title": "削除の流れ"})
         title = groups(root, "title")[0]
@@ -426,6 +470,17 @@ class SequenceTest(unittest.TestCase):
                                   "steps": [{"from": "a", "to": "b"}]})
                 x0, _, x1, _ = rect_of(node(root, "a"))
                 self.assertGreaterEqual(x1 - x0, len(label) * 14)
+
+    def test_header_box_is_single(self):
+        root, _ = render(SEQ)
+        self.assertEqual(len(node(root, "ui").findall(f"{NS}rect")), 1)
+
+    def test_frame_reaches_past_label_of_self_message(self):
+        label = "自分を呼ぶ長いラベルの呼び出し"
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+                          "steps": [{"frame": "opt", "steps": [{"from": "a", "to": "a", "label": label}]},
+                                    {"from": "b", "to": "c"}]})
+        self.assertGreater(rect_of(groups(root, "frame")[0])[2], label_bg(root, label)[2])
 
     def test_headers_never_overlap(self):
         parts = [{"id": f"p{i}", "label": "長い見出しの参加者" * (i % 2 + 1)} for i in range(4)]
@@ -569,6 +624,37 @@ class GraphLayoutTest(unittest.TestCase):
         c = {i: center(root, i) for i in "abc"}
         self.assertTrue(c["a"][0] < c["b"][0] < c["c"][0])
 
+    def test_layers_start_from_nodes_without_incoming_edges(self):
+        # 入る辺の無い r から辿る。定義の先頭の y から辿ると、y → x を前向きの辺に取って y が r と同じ層に来る
+        root, _ = render({"type": "flow", "nodes": [{"id": "y"}, {"id": "x"}, {"id": "r"}],
+                          "edges": [{"from": "r", "to": "x"}, {"from": "x", "to": "y"}, {"from": "y", "to": "x"}]})
+        c = {i: center(root, i) for i in "rxy"}
+        self.assertTrue(c["r"][0] < c["x"][0] < c["y"][0], c)
+
+    def test_layer_is_ordered_by_position_of_predecessors(self):
+        # 定義順（c1, c2）ではなく、前の層の親の並び（r1, r2）に合わせて c2 を上に置く（線が交差しない）
+        root, _ = render({"type": "flow", "nodes": [{"id": "r1"}, {"id": "r2"}, {"id": "c1"}, {"id": "c2"}],
+                          "edges": [{"from": "r1", "to": "c2"}, {"from": "r2", "to": "c1"}]})
+        self.assertLess(center(root, "c2")[1], center(root, "c1")[1])
+
+    def test_gaps_between_boxes(self):
+        # 線のラベルが無ければ縦の間隔は 56
+        root, _ = render({"type": "flow", "direction": "TB", "nodes": [{"id": "a"}, {"id": "b"}],
+                          "edges": [{"from": "a", "to": "b"}]})
+        self.assertAlmostEqual(rect_of(node(root, "b"))[1] - rect_of(node(root, "a"))[3], 56, delta=0.15)
+        # 横の辺のラベルは、ラベルの白地の幅 + 24 の横の間隔を取る
+        label = "とても長いラベル"
+        root, _ = render({"type": "flow", "nodes": [{"id": "a"}, {"id": "b"}],
+                          "edges": [{"from": "a", "to": "b", "label": label}]})
+        bg = label_bg(root, label)
+        self.assertAlmostEqual(rect_of(node(root, "b"))[0] - rect_of(node(root, "a"))[2], bg[2] - bg[0] + 24,
+                               delta=0.15)
+        # 横の辺の複数行のラベルは、縦の間隔を広げない
+        root, _ = render({"type": "flow", "nodes": [{"id": "a", "pos": [0, 0]}, {"id": "b", "pos": [1, 0]},
+                                                    {"id": "c", "pos": [0, 1]}],
+                          "edges": [{"from": "a", "to": "b", "label": "一\n二\n三"}]})
+        self.assertAlmostEqual(rect_of(node(root, "c"))[1] - rect_of(node(root, "a"))[3], 56, delta=0.15)
+
     def test_pos_places_nodes_on_grid_and_overrides_direction(self):
         spec = {"type": "flow", "nodes": [{"id": "a", "pos": [1, 0]}, {"id": "b", "pos": [0, 1]}]}
         lr = {i: center(render(spec)[0], i) for i in "ab"}
@@ -596,6 +682,15 @@ class GraphLayoutTest(unittest.TestCase):
             self.assertTrue(g[0] < r[0] and r[2] < g[2] and g[1] < r[1] and r[3] < g[3])
         for m in ("src", "old"):
             self.assertFalse(overlap(rect_of(node(root, m)), g), m)
+        # 範囲の枠を持つ図は層の中央寄せをしない（1 つだけの層も先頭の行に置く）
+        self.assertEqual({center(root, m)[1] for m in ("src", "new", "agg")}, {center(root, "new")[1]})
+
+    def test_group_frame_top_leaves_room_only_for_a_heading(self):
+        for label, room in (("", 16), ("範囲", 40)):
+            with self.subTest(label=label):
+                root, _ = render({"type": "flow", "nodes": [{"id": "a"}], "groups": [{"label": label, "nodes": ["a"]}]})
+                self.assertAlmostEqual(rect_of(node(root, "a"))[1] - rect_of(groups(root, "group")[0])[1], room,
+                                       delta=0.15)
 
     def test_group_frame_is_wide_enough_for_its_heading(self):
         root, _ = render({"type": "flow", "nodes": [{"id": "a"}],
@@ -755,6 +850,40 @@ class GraphLabelTest(unittest.TestCase):
         ra = rect_of(node(root, "a"))
         self.assertLess(float(circle.get("cy")), ra[1])
         self.assertTrue(ra[0] < float(circle.get("cx")) < ra[2])
+
+    def test_initial_marker_moves_off_a_neighbouring_box(self):
+        # 左隣の箱 x が近く、左に置いた黒丸が x に乗る。上へ逃がす（離れた z は、黒丸を全部の箱と比べる変異 any → all を落とすために置く）
+        root, out = render({"type": "state", "initial": "a",
+                            "states": [{"id": "x", "pos": [0, 0]}, {"id": "a", "pos": [0.6, 0]},
+                                       {"id": "z", "pos": [3, 0]}]})
+        self.assertEqual(len(out), 1, out)
+        circle = groups(root, "initial")[0].find(f"{NS}circle")
+        ra = rect_of(node(root, "a"))
+        self.assertLess(float(circle.get("cy")), ra[1])
+        self.assertTrue(ra[0] < float(circle.get("cx")) < ra[2])
+
+
+class GeometryBoundaryTest(unittest.TestCase):
+    """点・矩形の判定は境界ちょうどを含めない（辺上の点は内側でない・辺が接するだけの箱は重ならない）.
+
+    境界ちょうどの配置は定義（CLI）から作れないので、このクラスだけ関数を直接読み込んで呼ぶ.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("_diagram_svg_under_test", SCRIPT)
+        cls.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.mod)
+
+    def test_point_on_border_is_not_inside(self):
+        self.assertFalse(self.mod.inside((0, 5), (0, 0, 10, 10)))
+        self.assertFalse(self.mod.inside((-4, 5), (0, 0, 10, 10), 4))
+        self.assertTrue(self.mod.inside((0.1, 5), (0, 0, 10, 10)))
+
+    def test_touching_rects_do_not_overlap(self):
+        self.assertFalse(self.mod.overlap((10, 0, 20, 10), (0, 0, 10, 10)))
+        self.assertFalse(self.mod.overlap((0, 0, 10, 10), (10, 0, 20, 10)))
+        self.assertTrue(self.mod.overlap((9.9, 0, 20, 10), (0, 0, 10, 10)))
 
 
 if __name__ == "__main__":

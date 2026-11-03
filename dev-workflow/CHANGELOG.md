@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.42.1] - 2026-11-03
+
+### Changed
+
+- `scripts/diagram-svg.py` の挙動は変えていない。変異テストで等価と判った 6 行に、等価の理由を `# mutation-ok:` で添えた。TB の向きの判定は、pos を全部に付けたかを先頭の 1 つで見る形に書き換えた（全部か無しかは前段が保証している）。残りの生存はテストを足して解消した（GitHub issue #354）
+
 ## [1.42.0] - 2026-11-02
 
 ### Added

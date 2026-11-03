@@ -1162,12 +1162,14 @@ class AsyncAgentsDecompositionTest(DispatchPatternTest):
                "agentId: a0 (internal ID)")
 
     @staticmethod
-    def note(tid: str, status: str) -> str:
+    def note(tid: str, status: str | None) -> str:
+        """`status` が None なら `<status>` の行を書かない."""
+        line = "" if status is None else "<status>%s</status>\n" % status
         return ("<task-notification>\n<task-id>a-%s</task-id>\n<tool-use-id>%s</tool-use-id>\n"
-                "<status>%s</status>\n<summary>Agent \"x\" finished</summary>\n"
-                "</task-notification>" % (tid, tid, status))
+                "%s<summary>Agent \"x\" finished</summary>\n"
+                "</task-notification>" % (tid, tid, line))
 
-    def build_async(self, notes: dict[int, list[str]], n: int = 2, form: str = "user",
+    def build_async(self, notes: dict[int, list[str | None]], n: int = 2, form: str = "user",
                     session: str = "as1") -> dict:
         """1 wave で `n` 体を非同期起動し、`notes[i]` の status を完了通知として置く."""
         base = datetime(2026, 11, 1, 1, 0, 0)
@@ -1192,6 +1194,11 @@ class AsyncAgentsDecompositionTest(DispatchPatternTest):
                 if form == "user":
                     row = {"type": "user", "timestamp": ts, "message": {"content": text},
                            "origin": {"kind": "task-notification"}}
+                elif form == "user-blocks":
+                    # 最後の体の完了通知を text 以外のブロックにも置く（読むのは type が text のブロックだけ）
+                    row = {"type": "user", "timestamp": ts, "message": {"content": [
+                        {"type": "text", "text": text},
+                        {"type": "image", "text": self.note("tu-%d" % (n - 1), "completed")}]}}
                 elif form == "attachment":
                     row = {"type": "attachment", "timestamp": ts,
                            "attachment": {"type": "queued_command", "prompt": text,
@@ -1238,6 +1245,16 @@ class AsyncAgentsDecompositionTest(DispatchPatternTest):
                 self.setUp()
                 d = self.build_async({0: ["completed"]}, form=form)
                 self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (1, 1), d)
+
+    def test_user_rows_with_blocks_read_only_text_blocks(self):
+        """tu-2 の通知は image ブロックにしか無いので完了に数えない（text を読まなければ 1 体、type で絞らなければ 3 体になる）."""
+        d = self.build_async({0: ["completed"], 1: ["completed"]}, n=3, form="user-blocks")
+        self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (2, 1), d)
+
+    def test_a_notification_without_status_is_not_a_completion(self):
+        """`<status>` の無い通知は読み飛ばす（その体は完了通知が無いのと同じに扱う）."""
+        d = self.build_async({0: ["completed"], 1: [None]})
+        self.assertEqual((d["agents_completed"], d["agents_abandoned"]), (1, 1), d)
 
     def test_effective_waves_exclude_launches_without_a_completion(self):
         d = self.build_async({}, n=1)

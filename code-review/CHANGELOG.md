@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.165.1] - 2026-11-03
+
+### Changed
+
+- `scripts/measure-tokens.sh` の挙動は変えていない。変異テストで等価と判った 1 行に、等価の理由を `# mutation-ok:` で添えた（GitHub issue #354。残りの生存はテストを足して解消した）
+
 ## [2.165.0] - 2026-11-02
 
 ### Changed
