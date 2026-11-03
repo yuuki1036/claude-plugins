@@ -16,7 +16,7 @@ allowed-tools:
   - ExitWorktree
 ---
 
-**まず `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `feature-dev@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `feature-dev@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。**SKILL.md は 90KB 近くあり、Read 1 回では Phase 5.3 の手前で切れる。Bash の `cat` / `sed` で読まない** — 続きを読まずに進めた回は、Phase 6 の self-review を手順を通さずに呼び、Phase 6.7 を self-review の Step 7 で代わりに済ませ、Phase 6.9 と Phase 7（読み合わせ）を飛ばしてコミットの確認を出した（GitHub issue #350）。Read の `offset` / `limit` で分けて、Phase 7（Summary）の末尾まで読む。
 
 feature-dev スキルを使用して、機能開発ワークフローを実行してください。
 

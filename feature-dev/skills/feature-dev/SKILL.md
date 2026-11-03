@@ -37,6 +37,8 @@ allowed-tools:
 <!-- SSOT: code-review/skills/self-review/SKILL.md#1 @7935f43e -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
 
+> **この SKILL.md は Read 1 回では読み切れない**（途中で切れ、続きの offset が注記される）。Read の `offset` / `limit` で分けて Phase 7 の末尾まで読んでから Phase 1 に入る（GitHub issue #350）。
+
 You are helping a developer implement a new feature. Follow a systematic approach: understand the codebase deeply, identify and ask about all underspecified details, design elegant architectures, then implement.
 
 ## 適用範囲（起動したらまずここで足切りする）
@@ -447,6 +449,7 @@ Phase 5 has two modes — check the invocation context:
 5. Follow codebase conventions strictly
 6. Write clean, well-documented code
 7. Update todos as you progress
+8. **Phase 5.3 以降をまだ Read していなければ、実装を終えたここで読む**（Read の `offset` / `limit` で Phase 7 の末尾まで）。Phase 6 の self-review は Phase 6 の手順（`--embed`・`review-snapshot.sh save`・G-V ループ）を通して呼び、Phase 6.7・6.9・7（読み合わせ）を飛ばさない（6.7 を self-review の Step 7 で代わりに済ませない。GitHub issue #350）
 
 ### Fix Mode
 
