@@ -366,10 +366,10 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
                 gaps[a] = max(gaps[a], self_need(m["label"]) + 8)
             else:
                 right_extra = max(right_extra, self_need(m["label"]))
-            continue
+            continue  # mutation-ok: 自己呼び出しは lo == hi で、下の range(lo, hi) が空なので読み飛ばさなくても gaps は変わらない
         lo, hi = min(a, b), max(a, b)
         short = text_w(m["label"], FS_LABEL) + 32 - sum(gaps[lo:hi])
-        if short > 0:
+        if short > 0:  # mutation-ok: short が 0 なら足す量も 0
             for i in range(lo, hi):
                 gaps[i] += short / (hi - lo)
     cx = [hw[0] / 2]
@@ -538,9 +538,9 @@ def assign_grid(nodes: list[dict], edges: list[tuple[str, str]], roots: list[str
             row[i] = k
     if clusters:
         return {i: (layer[i], row[i]) for i in ids}
-    tallest = max(sum(1 for i in ids if layer[i] == lv) for lv in set(layer.values()))
+    tallest = max(sum(1 for i in ids if layer[i] == lv) for lv in set(layer.values()))  # mutation-ok: tallest が変わると全箱が同じ量だけずれるだけで、render が原点へ寄せ直すので描かれる図は変わらない
     for lv in set(layer.values()):
-        members = [i for i in ids if layer[i] == lv]
+        members = [i for i in ids if layer[i] == lv]  # mutation-ok: == を != にしても、元のずれとの差はどの箱でも同じ定数なので、render が原点へ寄せ直して描かれる図は変わらない
         for i in members:
             row[i] += (tallest - len(members)) / 2
     return {i: (layer[i], row[i]) for i in ids}
@@ -637,7 +637,8 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
     has_in = {b for a, b in pairs if a != b}
     roots = ([initial] if initial else []) + [nd["id"] for nd in nodes if nd["id"] not in has_in]
     grid = assign_grid(nodes, pairs, roots, clusters)
-    if direction == "TB" and not all("pos" in nd for nd in nodes):
+    # pos は全部に付けるかどれにも付けない（assign_grid が混在を弾く）ので、先頭の 1 つで分かる
+    if direction == "TB" and "pos" not in nodes[0]:
         grid = {i: (r, lv) for i, (lv, r) in grid.items()}
     size = {nd["id"]: box_size(nd["label"]) for nd in nodes}
     maxw = max(w for w, _ in size.values())
@@ -655,7 +656,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
             if e["label"]:
                 # 自己ループのラベルは箱の右上に出るので、右隣の箱との間にラベルが入る幅を取る
                 gap_x = max(gap_x, loop_size(loop_count[e["from"]] - 1) * 0.45 + 6 + lw + 12)
-            continue
+            continue  # mutation-ok: 自己ループで取る gap_x（lw + 36 以上）が、下の縦の辺の分岐で取る lw + 32 を常に上回る
         if e["label"]:
             # 縦の辺のラベルは線の上か横に出るので、隣の列の辺のラベルと重ならない幅を取る
             gap_x = max(gap_x, lw + (24 if ca != cb else 32))
@@ -814,7 +815,8 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
             mid = ((dot[0] + end[0]) / 2, (dot[1] + end[1]) / 2)
             if any(inside(p, q, 10) for p in (dot, mid) for q in placed if q is not rect[initial]):
                 return False
-            return not any(math.hypot(p[0] - q[0], p[1] - q[1]) < 10 for p in (dot, mid) for q in line_pts)
+            near = [math.hypot(p[0] - q[0], p[1] - q[1]) < 10 for p in (dot, mid) for q in line_pts]  # mutation-ok: 線の標本点は浮動小数の補間で決まり、距離がちょうど 10 に一致する境界は意味を持たない
+            return not any(near)
 
         pick = next((s for s in spots if clear(s[0], s[1])), None)
         if pick is None:
