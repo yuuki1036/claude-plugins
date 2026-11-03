@@ -395,7 +395,7 @@ class DetectRecentReviewTest(ScriptTestBase):
         self.assertNotIn("unbound variable", res.stderr)
 
     def test_flag_without_value_exits_2(self):
-        for flag in ("--diff", "--window-hours", "--pr"):
+        for flag in ("--diff", "--window-hours", "--pr", "--skill"):
             with self.subTest(flag=flag):
                 res = self.detect(flag)
                 self.assertEqual(res.returncode, 2)
@@ -407,7 +407,7 @@ class DetectRecentReviewTest(ScriptTestBase):
         `[ $# -ge 2 ]` を `-gt 2` と取り違えると、`--pr 123` のように**値を渡しているのに**
         FATAL になる（引数を 1 つも足さずに呼ぶのが通常経路なので気づきにくい）。
         """
-        for args in (("--pr", "123"), ("--window-hours", "48")):
+        for args in (("--pr", "123"), ("--window-hours", "48"), ("--skill", "code-review:review")):
             with self.subTest(args=args):
                 res = self.detect(*args)
                 self.assertEqual(res.returncode, 0, res.stderr)
@@ -446,6 +446,54 @@ class DetectRecentReviewTest(ScriptTestBase):
         self.assertIn("[ファイル集合のみ]", res.stdout)
         self.assertNotIn("[完全一致]", res.stdout)
         self.assertIn("重複の証明ではない", res.stdout)
+
+    def rewrite_diff_keeping_files(self, diff: Path) -> None:
+        """同じファイル集合・別バイト列にする（修正の後の回し直しを模す）."""
+        body = diff.read_text(encoding="utf-8")
+        diff.write_text(body.replace("index ", "index~"), encoding="utf-8")
+
+    def test_same_skill_rerun_with_changed_content_is_silent(self):
+        """修正の後の回し直し。同じ skill は diff を同じ作り方で作るので、digest 違い = 中身が変わった."""
+        diff = self.previous_review()
+        self.rewrite_diff_keeping_files(diff)
+        res = self.detect("--skill", "code-review:self-review")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), "", "中身が変わった回し直しで確認を出させない")
+
+    def test_same_skill_rerun_with_the_same_diff_is_still_reported(self):
+        """**黙るのはファイル集合だけの一致**。同じ diff の回し直しは今までどおり聞く."""
+        self.previous_review()
+        out = self.detect("--skill", "code-review:self-review").stdout
+        self.assertIn("[完全一致]", out)
+
+    def test_files_only_match_from_another_skill_is_still_reported(self):
+        """skill 跨ぎ（self-review の後の PR レビュー）は弱いキーでしか拾えないので残す."""
+        diff = self.previous_review()
+        self.rewrite_diff_keeping_files(diff)
+        out = self.detect("--skill", "code-review:review").stdout
+        self.assertIn("[ファイル集合のみ]", out)
+        self.assertIn("code-review:self-review", out)
+
+    def test_without_skill_the_files_only_match_is_kept(self):
+        """review-guide は `--skill` を渡さず、この行で self-review 後の変更の有無を読む."""
+        diff = self.previous_review()
+        self.rewrite_diff_keeping_files(diff)
+        self.assertIn("[ファイル集合のみ]", self.detect().stdout)
+
+    def test_only_the_same_skill_row_is_dropped(self):
+        """同じ skill の行だけ落とし、別 skill の行と件数は残す."""
+        diff = self.previous_review()
+        log = self.log()
+        rows = log.read_text(encoding="utf-8").splitlines()
+        ev = json.loads(rows[-1])
+        ev["plugin"] = "code-review:review"
+        log.write_text("\n".join(rows + [json.dumps(ev, ensure_ascii=False)]) + "\n",
+                       encoding="utf-8")
+        self.rewrite_diff_keeping_files(diff)
+        out = self.detect("--skill", "code-review:self-review").stdout
+        self.assertIn("ファイル集合のみ一致 1 件", out)
+        self.assertIn("code-review:review", out)
+        self.assertNotIn("code-review:self-review", out)
 
     def test_a_different_file_set_is_not_reported(self):
         self.previous_review()
