@@ -169,7 +169,7 @@ skill に `repo` サブコマンドを足す。引数なしの `init` を repo h
 - repo hub がある repo では、どの tracker でも起票を repo hub のセッションに集め、sub には起票させない。sub の follow_ups と利用者の依頼は、hub が起票の候補として lead に出す
   - github / linear: 今の `tracker_write: with_approval` の手順（書くたびに全文を見せて承認を取る）
   - local: 今の「起票の持ち主」（hub の SKILL.md:72。hub のセッションで lead が issue-workflow を呼ぶ）をそのまま使う。hub は、lead が貼るだけで済む起動の 1 行（issue-create の「起票だけ」の引数つき）を出す。hub.py の `tracker_write` の検査は変えない（hub.py は Issue ファイルを書かない）
-- issue-create に「起票だけ」の引数を issue-workflow 側で足す。契約は終わり方で決める: 「Phase 6 の書き込みで終え、ブランチ作成・feature-dev 連携・次のアクションの案内・spec の選択（Phase 7 の 2〜4・Phase 8）に進まない」。承認は issue-create の Phase 6 の 1 回だけにする（hub は先に全文を見せない）。終わりに「起票だけで終えた」ことを 1 行出し、hub はそれで引数が効いたかを確かめる。出ていなければ（issue-workflow が古い）、ブランチ作成の確認を断るよう lead に伝え、issue-workflow の更新を勧める
+- issue-create に「起票だけ」の引数を issue-workflow 側で足す。契約は終わり方で決める: 「Phase 6 の書き込みで終え、ブランチ作成・feature-dev 連携・次のアクションの案内・spec の選択（Phase 7 の 2〜4・Phase 8）に進まない」。承認は issue-create の Phase 6 の 1 回だけにする（hub は先に全文を見せない）。終わりに「起票だけで終えた」ことを 1 行出す（書き込まずに終えた回は、どの Phase でやめても「起票せずに終えた」の 1 行を出す）。hub はこのどちらかで引数が効いたかを確かめる。どちらも出ていなければ（issue-workflow が古い）、ブランチ作成の確認を断るよう lead に伝え、issue-workflow の更新を勧める
 - Issue の保守は、対象を Issue 単位で指定できる issue-maintain（Issue ID を渡す）に限る。maintain（全件・承認なし）と follow-up の promote（ブランチ作成の確認を出す）は、hub のセッションでは回さない
 - 保守の前に status の取り込み（ingest と presence）を回し、作業中の sub がいる Issue を外す。作業中は、自分の sub の表と、cross が返す同じ repo の別の PJ の作業中の sub の両方で判定する
 - hub の SKILL.md の「hub の役割」に、repo hub の例外として起票と Issue の保守を書く。コードの実装と調査は今までどおり sub に任せる
@@ -186,7 +186,7 @@ skill に `repo` サブコマンドを足す。引数なしの `init` を repo h
 ### 版のずれと移行
 
 - sub の report は sub 側の `hub.py` で動く（report の SKILL.md:47）。sub の project-hub が古いと、振り分け・二重登録・強制が掛からない。README と CHANGELOG に「更新後は作業中のセッションを開き直す」と書く。漏れは上の status の後ろ盾で拾う
-- issue-workflow が古いと「起票だけ」の引数が効かない。上の「起票だけで終えた」の 1 行で見分け、ブランチ作成の確認を断る
+- issue-workflow が古いと「起票だけ」の引数が効かない。上の終わりの 1 行（「起票だけで終えた」か「起票せずに終えた」）が無いことで見分け、ブランチ作成の確認を断る
 - project-hub は issue-workflow に依存しない（起票だけの引数は、hub が lead に出す起動の 1 行に入るだけ）。`_requirements` と `check-deps.sh` は変えない
 
 ### 変更対象ファイル

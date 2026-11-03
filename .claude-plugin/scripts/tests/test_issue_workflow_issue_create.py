@@ -4,9 +4,11 @@
 project-hub の repo hub は、lead が hub のセッションで issue-create を `--create-only` 付きで呼び、
 最後の `起票だけで終えた:` / `起票せずに終えた:` の行で引数が効いたか（issue-workflow が古くないか）を見分ける
 （`.claude/designs/20261102-project-hub-repo-hub.md` の「起票と Issue の保守」）。
-契約は終わり方で決めてある。該当する Phase の本文に次の 2 つが書いてあるかを見る: Phase 6 の書き込みの後
-（ブランチ作成・feature-dev 連携・次のアクション・spec の選択）に進まないこと / 承認を Phase 6 の 1 回に絞ること。
-否定の向きを取り違えた書き換えでも通らないよう、`--create-only` と否定の語を同じ行で確かめる。
+契約は終わり方で決めてある。該当する Phase の本文に次の 3 つが書いてあるかを見る: Phase 6 の書き込みの後
+（ブランチ作成・feature-dev 連携・次のアクション・spec の選択）に進まないこと / 承認を Phase 6 の 1 回に絞ること /
+書き込まずに終えた回は、どの Phase でやめても `起票せずに終えた:` の行を出すこと（#355）。
+否定の向きを取り違えた書き換えでも通らないよう、契約の語は動詞（進まない・聞かず・出す など）まで同じ行で確かめる
+（語があるかだけを見ると「出さない」「進む」への書き換えが通る）。
 モデルが本当にそこで止まるかはここでは確かめられない（実機で確かめる）。
 節は番号ではなく見出しの名前と並び順で探す（番号は Phase の挿入で動く）。
 
@@ -112,6 +114,25 @@ class CreateOnlyArgumentTest(unittest.TestCase):
                          [f"{END_PREFIX} {{ISSUE-ID}} {{Issue ファイルの絶対パス}}", f"{ABORT_PREFIX} {{理由}}"],
                          "終わりの 2 行の書式がフェンスの中に 1 つずつ定義されていない")
 
+    def test_abort_line_covers_every_phase(self):
+        # 2 行目を出す回を Phase の列挙で限ると、列挙から漏れた Phase でやめた回は終わりの行が出ず、
+        # 頼んだ側が版が古いと取り違える（#355: 入力の確認でやめた回が漏れていた）
+        sec = arguments_section()
+        self.assertRegex(sec, r"書き込まずに終えた回は、どの Phase でやめても[^\n]*2 行目を出す",
+                         "引数の節が 2 行目を出す回を一般形で書いていない")
+        inputs = next((ln for ln in sec.splitlines() if "入力が足りないときの確認" in ln), None)
+        self.assertIsNotNone(inputs, "引数の節に入力の確認の行が無い")
+        self.assertRegex(inputs, rf"{re.escape(ABORT_PREFIX)} \{{理由\}}` を出す",
+                         "入力の確認でやめた回に 2 行目を出すと書いていない")
+        self.assertRegex(body(COMMAND), rf"書き込まずに終えたとき[^\n]*{re.escape(ABORT_PREFIX)}[^\n]*を出す",
+                         "command 本文に、書き込まずに終えたときの 2 行目が無い")
+        self.assertRegex(sec, r"（\{ISSUE-ID\} は欠番）` を添える", "採番の後にやめた回の欠番の注記が無い")
+        # 中止の手順を持つ Phase は、その場でも 2 行目を出すと書く（冒頭の節を思い出さずに終える回の保険）。
+        # Phase 0 は BACKEND-DETECT の複製区間の外（区間の直後）に書く
+        for name in ("backend 検出", "Linear MCP 利用可能性チェック", "プロジェクトの存在確認"):
+            with self.subTest(phase=name):
+                self.assertRegex(phase(name), rf"{re.escape(FLAG)}[^\n]*{re.escape(ABORT_PREFIX)}[^\n]*を出して終える")
+
     def test_skipped_steps_match_between_skill_and_command(self):
         # SKILL.md を読み損ねても、command 本文だけで書き込みで終えることと終わりの行が分かるようにする。
         # 進まない手順の列挙は 2 か所に複製されているので、片方だけ増減したらここで落とす
@@ -120,6 +141,9 @@ class CreateOnlyArgumentTest(unittest.TestCase):
         self.assertIn(END_PREFIX, text)
         self.assertIn(ABORT_PREFIX, text)
         sec = arguments_section()
+        self.assertRegex(sec, r"spec の選択[^\n]*には進まない", "引数の節に進まない旨が無い")
+        self.assertRegex(sec, r"Issue は `status: backlog` で書く", "引数の節に backlog が無い")
+        self.assertRegex(sec, r"承認は Phase 6 の 1 回だけにする", "引数の節に承認の回数が無い")
         for step in STEPS:
             with self.subTest(step=step):
                 self.assertIn(step, text)
@@ -127,7 +151,7 @@ class CreateOnlyArgumentTest(unittest.TestCase):
 
     def test_issue_is_written_as_backlog(self):
         sec = phase(WRITE_PHASE)
-        self.assertRegex(sec, rf"status: in-progress[^\n]*{re.escape(FLAG)}[^\n]*backlog",
+        self.assertRegex(sec, rf"status: in-progress[^\n]*{re.escape(FLAG)}` のときは `backlog`",
                          "Phase 6 の frontmatter に `--create-only` のときの backlog が無い")
         self.assertRegex(body(COMMAND), r"status: backlog")
 
@@ -136,6 +160,7 @@ class CreateOnlyArgumentTest(unittest.TestCase):
         first = sec[sec.index("\n1. "):sec.index("\n2. ")]
         self.assertIn(FLAG, first, "Phase 7 の 1 に `--create-only` で終える指示が無い")
         self.assertIn("ここで終える", first)
+        self.assertRegex(first, r"Phase 8 に進まず", "Phase 7 の 1 に進まない旨が無い")
         self.assertIn(END_PREFIX, first)
 
     def test_spec_selection_is_not_entered(self):
@@ -147,8 +172,10 @@ class CreateOnlyArgumentTest(unittest.TestCase):
     def test_the_only_approval_handles_deferred_replies(self):
         sec = phase(WRITE_PHASE)
         approval = sec[sec.index("\n4. "):]
-        self.assertIn(FLAG, approval, "Phase 6 の 4 に `--create-only` のときの承認の扱いが無い")
-        self.assertIn(ABORT_PREFIX, approval)
+        self.assertRegex(approval, rf"{re.escape(FLAG)}[^\n]*唯一の承認になる",
+                         "Phase 6 の 4 に `--create-only` のときの承認の扱いが無い")
+        self.assertRegex(approval, rf"書き込まずに `{re.escape(ABORT_PREFIX)}[^\n]*を出して終える",
+                         "Phase 6 の返答でやめた回に 2 行目を出すと書いていない")
 
     def test_every_question_before_writing_is_handled(self):
         # 承認を Phase 6 の 1 回に絞るので、書き込みより前の Phase で利用者に聞くなら、その Phase に
@@ -167,6 +194,17 @@ class CreateOnlyArgumentTest(unittest.TestCase):
         for name in ("テンプレート選択", "Issue 情報のヒアリング", "コードベース現状確認"):
             with self.subTest(expected=name):
                 self.assertTrue(any(t.startswith(name) for t in checked), f"「{name}」の質問を検査していない")
+        # Phase 5 は 4 で聞かない行を持つが、1〜2（タイトル・概要の確認）は入力の確認なので残す
+        hearing = phase("Issue 情報のヒアリング")
+        asks = re.findall(r"(?m)^[12]\. .*$", hearing)
+        self.assertEqual(len(asks), 2, "Phase 5 の 1〜2（タイトル・概要の確認）が無い")
+        # 下位の箇条で省く書き方もあるので、1〜2 の範囲全体に聞かない行が無いことを見る
+        self.assertIsNone(SKIPS_QUESTION.search(hearing[hearing.index("\n1. "):hearing.index("\n3. ")]),
+                          "タイトル・概要の確認まで `--create-only` で省いている")
+        for item in asks:
+            with self.subTest(hearing=item):
+                self.assertRegex(item, r"ユーザーに[^\n]*確認する")
+                self.assertIsNone(SKIPS_QUESTION.search(item), "タイトル・概要の確認まで `--create-only` で省いている")
         for name in INPUT_PHASES:
             with self.subTest(input_phase=name):
                 self.assertTrue(any(t.startswith(name) for t, _ in before_write()),

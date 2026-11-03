@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.17.2] - 2026-11-03
+
+### Fixed
+
+- **issue-create の `--create-only` で、入力の確認（スラッグ・Linear の Issue ID・タイトルと概要）でやめた回に `起票せずに終えた: {理由}` が出なかった**。SKILL.md の引数の節が 2 行目を出す回を Phase 0・0.7・2・6 に限っていたので、それ以外の Phase でやめた回は終わりの行が無く、頼んだ側が版が古いと取り違えた。Issue ファイルを書き込まずに終えた回は、どの Phase でやめても 2 行目を出すと書き直した（command 側の「書き込まずに終えたとき」と揃えた）。中止の手順を持つ Phase 0（backend が決まらない）・Phase 0.7（中断）・Phase 2（プロジェクトが無い）にも、その場で 2 行目を出すと書いた。BACKEND=local で採番の後にやめた回は、理由に `（{ISSUE-ID} は欠番）` を添える
+- **`--create-only` で Phase 6 の返答を受けて生成し直す手順の抜けを直した**。type が変わったときに frontmatter の `type` と `scope_size` を直さず、タイトル・概要が変わったときに Phase 5.4 の既存実装の確認をやり直していなかった。type とタイトル・概要の両方が変わった回と、それ以外の直し（scope_size・関連リンク・文言）の扱いも書いた
+
 ## [1.17.1] - 2026-11-03
 
 ### Changed
