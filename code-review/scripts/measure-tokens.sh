@@ -195,7 +195,7 @@ def _collect_notifications(entry):
 def _mark_async(blk):
     body = blk.get("content")
     if not isinstance(body, str):
-        body = json.dumps(body, ensure_ascii=False)
+        body = json.dumps(body, ensure_ascii=False)  # mutation-ok: "Async agent launched" は ASCII なので、非 ASCII を escape しても部分一致の結果は変わらない
     if "Async agent launched" in body:
         async_launched.add(blk.get("tool_use_id"))
 
