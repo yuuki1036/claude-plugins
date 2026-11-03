@@ -1,10 +1,10 @@
 ---
 id: 20261025123627
-status: accepted
-phase: current
-last-validated: 2026-10-25
+status: superseded
+phase: superseded
+last-validated: 2026-11-03
 supersedes: []
-superseded-by: null
+superseded-by: 20261103153228
 append_only: true
 tags: [ci, mutation-test, nightly]
 ---

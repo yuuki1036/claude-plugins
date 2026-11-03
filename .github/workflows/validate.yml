@@ -84,15 +84,16 @@ jobs:
         run: python3 .claude-plugin/scripts/run-tests.py
 
       # 変更行の変異テストは **push / PR では回さない**。nightly（`mutation-nightly.yml`）だけで回し、
-      # 生存は nightly が GitHub Issue に起票する（ADR-20261025123627）。以前はここで `--max 5 --strict` の
+      # 生存は nightly が GitHub Issue に起票する（ADR-20261103153228）。以前はここで `--max 5 --strict` の
       # スモークを回していたが（GitHub issue #138）、直近 40 回で平均 518 秒・CI の 57% を使って検出 0 回、
-      # 2026-10-24 の push はスモークを通ったまま nightly が生存 15 件を出した（#317）。main に直接入れる
-      # 運用なので、スモークは着地を止めず、早く知らせるだけだった
+      # 2026-10-24 の push はスモークを通ったまま nightly が生存 15 件を出した（#317）。当時は main に
+      # 直接入れる運用で、スモークは着地を止めず早く知らせるだけだった。PR 必須にした後も PR の CI に
+      # 戻していない（マージ前に止められる回が検出 0 回のスモークではほぼ無いため）
 
       # pre-commit と同等のバージョンバンプ検査。
       # ローカル hook は --no-verify で迂回できるため CI 側でも検査する。
-      # 本リポジトリは main 直コミット運用なので push イベントでも必ず走らせる
-      # （PR 限定にすると通常経路が素通りして保険にならない）。
+      # PR で検査したうえで、マージ後の main への push でも走らせる（ルールセットは必須ステータス
+      # チェックを持たないので、CI が赤のままマージされた PR を main 側でも拾う保険）。
       - name: check-version-bump
         env:
           EVENT_NAME: ${{ github.event_name }}

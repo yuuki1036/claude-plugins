@@ -52,7 +52,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .githooks/pre-commit             # バージョンバンプ・CHANGELOG・plugin eval の鮮度・SSoT 同期・プラグイン品質 (errors)・回帰テスト
                                  #   （docs/・.claude/designs/・.claude/adr/ だけの変更では回帰テストを省く）
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
-                                 #   変異テストは回さない（nightly だけ / ADR-20261025123627）
+                                 #   変異テストは回さない（nightly だけ / ADR-20261103153228）
 .github/workflows/mutation-nightly.yml # 変異テスト（03:00 JST / 全件を回し切った最後の head
                                  #   以降の変更行を予算 19000 秒まで。打ち切った変異は artifact の状態で翌晩へ
                                  #   持ち越す）。生存・持ち越しが 7 日以上解消しない・状態を失った晩に
