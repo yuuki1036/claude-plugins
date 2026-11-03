@@ -633,7 +633,7 @@ find ~ -maxdepth 6 -name events.jsonl -path '*/.claude/*' -not -path '*/node_mod
 `--focus` / `--exclude` は**同一 skill 内**の重複しか防げない。実測では self-review と PR レビューが同一 diff を 2 回舐め、互いを知らないまま同じ 3 件に独立到達していた。skill をまたぐ重複は仕組みで拾えていなかったので、publish 済みの計測イベントを突合キーにする。
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" [--diff <実パス>] [--pr N] [--window-hours 24]
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" [--diff <実パス>] [--pr N] [--window-hours 24] [--skill <plugin>]
 ```
 
 **突合キーは強弱 2 本ある**（算出の正本は `scripts/lib/review-paths.sh` の `review_diff_keys`、payload 契約は `## 16`）:
@@ -644,6 +644,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" [--diff <実パス>
 | `diff_files`（弱） | **skill を跨いでも一致する** | 「重複の疑い」どまり。**別内容の変更でも一致しうる** |
 
 - **強いキーだけでは skill 跨ぎを拾えない。** review は `gh pr diff`、self-review は `git diff BASE..HEAD` + `--cached` + unstaged の**3 本連結**で diff を作るので、同じ変更でもバイト列が違う（実測で確認済み。`## 16` の `diff_digest` 行）。**動機となったシナリオそのものが強いキーの外にある**ため、弱いキーを併設した
+- **同じ skill の「ファイル集合のみ」一致は出さない**（`--skill <呼び出し元の plugin>`）。同じ skill は diff を同じ作り方で作るので、digest が違えば中身が変わっている — 読み合わせ・修正の後の回し直しで毎回確認が出ていたのを止めた（利用者の要望は「直近かどうかより、中身が同じかどうか」）。commit や `git add` で 3 本連結の並びだけ変わった回もここで黙るが、聞かずにもう 1 回レビューするだけで見落としにはならない。review-guide は self-review 後の変更の有無をこの行で読むので `--skill` を渡さない
 - **判定材料は前回の payload だけ**で、指摘本文は読まない（**前回の結論に引きずられないため**。独立性は反証レイヤー / skeptic と同じ理由で守る）
 - **出力が空なら何も報告しない**（no-op を報告させない）。`events.jsonl` が無い / `python3` が無い場合も silent に抜ける。**ただし `--diff` を明示指定して不在だった場合だけは stderr に WARN する** — それは caller のバグであって「重複が無い」ではない
 - **`--diff` は省略してよい**（省略時は `review_path diff` を自力導出する。`triage-signals.sh` の既定出力先・publish の digest 算出元と同一関数なので、**省略した方が転記ずれの失敗モードが無い**）

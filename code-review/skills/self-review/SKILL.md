@@ -105,7 +105,7 @@ if [ -n "$BASE" ]; then
 
   # Step 1.4 の重複検出。**`--embed` のときはこの行を落とす**。triage-signals.sh が書いた
   # diff ファイルを読むので**この順序である必要がある**（パス引数は要らない / 自力導出する）
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh"
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" --skill code-review:self-review
 
   # 同じファイルを触った過去の merged PR のレビューコメント（GitHub issue #286）。triage-signals.sh が
   # 書いた core の一覧を読むのでこの順序。コメントがあったときだけパスを 1 行出す
@@ -199,12 +199,12 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 
 **実行は Step 1 の Bash 呼び出しに同梱済み**（#147）。ここは出力の解釈だけを行う。
 
-**出力が空なら何も報告せず Step 1.5 へ**。`## recent-review` が出た場合のみ **AskUserQuestion** で続行可否を確認する。question は明細のラベルで書き分ける（`[完全一致]` は diff 全文が同じ。`[ファイル集合のみ]` は触ったファイルが同じというだけで、中身は変わっている可能性がある。読み合わせ・修正の後の回し直しは、触ったファイルが同じならこちらで一致する）:
+**出力が空なら何も報告せず Step 1.5 へ**。`## recent-review` が出た場合のみ **AskUserQuestion** で続行可否を確認する。question は明細のラベルで書き分ける（`[完全一致]` は diff 全文が同じ。`[ファイル集合のみ]` は触ったファイルが同じというだけで、中身は変わっている可能性がある）。読み合わせ・修正の後の回し直し（前回も self-review で、中身が変わった回）は `--skill` によってスクリプトが出さないので、ここには来ない — `[ファイル集合のみ]` で残るのは別の skill（PR レビュー等）の記録だけ:
 
 - 明細に `[完全一致]` の行がある →「同一の diff が直近にレビュー済みです（<plugin> / <日時> / 報告 <件数>）。このままレビューを続けますか？」
 - `[ファイル集合のみ]` の行だけ →「同じファイルを触った変更が直近にレビュー済みです（<plugin> / <日時> / 報告 <件数>。中身が同じとは限らない）。このままレビューを続けますか？」
 
-`<plugin>` / `<日時>` / `<件数>` は、その文を選んだラベルの最も新しい行から取る。header:「重複レビュー」/ options: ①label「続行する」description「前回の後に変更を入れた（読み合わせ・修正の後に回し直す）か、別観点・別 effort で見直す価値があると判断した場合」 ②label「中止する」description「前回のレポートで足りる。agent を 1 体も起動せず終了する」。**「中止する」なら Phase 0 に進まず終了**。上の `--focus` / `--exclude` は同一 skill 内の重複しか防げないので、この経路が skill を跨ぐぶんを見る。突合キーの性質と背景: → orchestration-measurement.md `## 19`
+`<plugin>` / `<日時>` / `<件数>` は、その文を選んだラベルの最も新しい行から取る。header:「重複レビュー」/ options: ①label「続行する」description「前回の後に変更を入れた（PR レビューの後に修正して self-review を回し直す等）か、別観点・別 effort で見直す価値があると判断した場合」 ②label「中止する」description「前回のレポートで足りる。agent を 1 体も起動せず終了する」。**「中止する」なら Phase 0 に進まず終了**。上の `--focus` / `--exclude` は同一 skill 内の重複しか防げないので、この経路が skill を跨ぐぶんを見る。突合キーの性質と背景: → orchestration-measurement.md `## 19`
 
 ### 1.5 Vault 照合（過去の指摘・落とし穴の retrieval / 任意・後方互換）
 

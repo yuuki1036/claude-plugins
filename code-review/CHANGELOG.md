@@ -2,6 +2,19 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.165.0] - 2026-11-02
+
+### Changed
+
+- **重複レビューの確認を、直近かどうかではなく中身が変わったかで出すようにした**。`detect-recent-review.sh` に
+  `--skill <呼び出し元の plugin>` を足し、同じ skill の記録が「ファイル集合のみ」で一致した行を出さない。同じ skill は
+  diff を同じ作り方で作るので、digest が違えば中身が変わっている。self-review は `--skill code-review:self-review`、
+  review は `--skill code-review:review` で呼ぶ。これまでは読み合わせ・修正の後に self-review を回し直すたびに
+  「同じファイルを触った変更が直近にレビュー済み」の確認が出ていた。同じ diff の回し直し（完全一致）と、別の skill
+  の記録（self-review の後の PR レビュー）は今までどおり聞く。review-guide は self-review 後の変更の有無を「ファイル集合のみ」の行で
+  読むので `--skill` を渡さない。commit や `git add` で連結の並びだけが変わった回も聞かずに進む（もう 1 回レビュー
+  するだけで、見落としにはならない）
+
 ## [2.164.4] - 2026-11-01
 
 ### Fixed

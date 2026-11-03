@@ -13,7 +13,14 @@
 # ため、強いキーだけでは skill 跨ぎを拾えない — この非対称は実測で確認済み。
 #
 # 使い方:
-#   detect-recent-review.sh [--diff <diff ファイルの実パス>] [--window-hours N] [--pr N]
+#   detect-recent-review.sh [--diff <diff ファイルの実パス>] [--window-hours N] [--pr N] [--skill <plugin>]
+#
+# `--skill` は呼び出し元の skill（publish の `--plugin` と同じ値）。**同じ skill の記録が
+# 「ファイル集合のみ」で一致した行は出さない** — 同じ skill は diff を同じ作り方で作るので、
+# digest が違えば中身が変わっている（修正の後の回し直し・同じファイルを触った別の変更）。重複として扱わない。
+# 中身が同じでも commit や `git add` で 3 本連結の並びが変わると digest は変わり、この回も
+# 出さない側に倒れる（聞かずにもう 1 回レビューするだけで、見落としにはならない）。
+# review-guide は self-review 後の変更の有無をこの行で読むので `--skill` を渡さない
 #
 # **`--diff` は省略してよい**（省略時は `review_path diff` を自力導出する。`triage-signals.sh`
 # の既定出力先・`publish-review-event.sh` の digest 算出元と同一関数なので、省略した方が
@@ -23,12 +30,13 @@
 #       呼び出し側は**出力が空なら黙って続行**する（no-op を報告させない）。
 set -uo pipefail
 
-DIFF=""; DIFF_EXPLICIT=0; WINDOW=24; PR=""
+DIFF=""; DIFF_EXPLICIT=0; WINDOW=24; PR=""; SKILL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --diff)         [ $# -ge 2 ] || { echo "FATAL: --diff に値が必要" >&2; exit 2; }; DIFF="$2"; DIFF_EXPLICIT=1; shift 2 ;;
     --window-hours) [ $# -ge 2 ] || { echo "FATAL: --window-hours に値が必要" >&2; exit 2; }; WINDOW="$2"; shift 2 ;;
     --pr)           [ $# -ge 2 ] || { echo "FATAL: --pr に値が必要" >&2; exit 2; }; PR="$2"; shift 2 ;;
+    --skill)        [ $# -ge 2 ] || { echo "FATAL: --skill に値が必要" >&2; exit 2; }; SKILL="$2"; shift 2 ;;
     *) echo "FATAL: 未知の引数: $1" >&2; exit 2 ;;
   esac
 done
@@ -59,7 +67,7 @@ read -r DIGEST FILES_KEY <<< "$KEYS"
 review_event_logs || exit 0
 command -v python3 >/dev/null 2>&1 || exit 0
 
-REVIEW_DIGEST="$DIGEST" REVIEW_FILES_KEY="$FILES_KEY" REVIEW_WINDOW="$WINDOW" \
+REVIEW_DIGEST="$DIGEST" REVIEW_FILES_KEY="$FILES_KEY" REVIEW_WINDOW="$WINDOW" REVIEW_SKILL="$SKILL" \
   python3 - ${REVIEW_EVENT_LOGS[@]+"${REVIEW_EVENT_LOGS[@]}"} <<'PY'
 import json, os, sys
 from datetime import datetime, timedelta, timezone
@@ -67,6 +75,7 @@ from datetime import datetime, timedelta, timezone
 digest = os.environ["REVIEW_DIGEST"]
 files_key = os.environ.get("REVIEW_FILES_KEY") or ""
 window = int(os.environ["REVIEW_WINDOW"])
+skill = os.environ.get("REVIEW_SKILL") or ""
 cutoff = datetime.now(timezone.utc) - timedelta(hours=window)
 
 hits, seen = [], set()
@@ -94,6 +103,8 @@ for path in sys.argv[1:]:
         if p.get("diff_digest") == digest:
             strength = "exact"
         elif files_key and p.get("diff_files") == files_key:
+            if skill and ev.get("plugin") == skill:
+                continue         # 同じ skill で digest が違う = 別の中身。重複ではない
             strength = "files"   # skill 跨ぎで拾えるのはこちら
         else:
             continue
