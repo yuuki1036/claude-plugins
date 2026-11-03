@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.4] - 2026-11-02
+
+### Changed
+
+- **self-review の SKILL.md「1.」への SSoT pin を打ち直した**（挙動の変更なし）。code-review が 1.4 の重複検出に `--skill` を足し、修正の後の回し直し（中身が変わった回）では確認を出さなくなった。Phase 7 の「1.4 で聞かれたら続行でよい」の注記は、Phase 7 の回し直しではもう出ない旨を添えて残す（別の skill の記録と一致したときには出る）
+
 ## [2.27.3] - 2026-10-31
 
 ### Changed

@@ -2,7 +2,7 @@
 <!-- SSOT: code-review/skills/self-review/SKILL.md#6 @1896dba2 -->
 <!-- SSOT: code-review/references/prior-fixes-guide.md#4 @f5c76a67 -->
 <!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review SKILL.md「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
-<!-- SSOT: code-review/skills/self-review/SKILL.md#1 @9f751885 -->
+<!-- SSOT: code-review/skills/self-review/SKILL.md#1 @7935f43e -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
 # Quality Review — Generator-Verifier Loop（Phase 6 の詳細手順）
 
