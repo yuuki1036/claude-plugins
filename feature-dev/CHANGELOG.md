@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.5] - 2026-11-03
+
+### Fixed
+
+- **SKILL.md を Read の `offset` / `limit` で Phase 7 の末尾まで読むよう、command・SKILL.md の冒頭・Phase 5 の末尾に書いた**（GitHub issue #350）。SKILL.md は約 90KB あり、Read 1 回では Phase 5.3 の手前で切れる。続きを読まずに進めた回は、Phase 6 の self-review を手順を通さずに呼び、Phase 6.7 を self-review の Step 7 で代わりに済ませ、Phase 6.9 と Phase 7（読み合わせ）を飛ばしてコミットの確認を出した。code-review の self-review / review の command と同じ対策（GitHub issue #250）
+
 ## [2.27.4] - 2026-11-02
 
 ### Changed
