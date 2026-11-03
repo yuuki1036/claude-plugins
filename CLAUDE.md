@@ -58,7 +58,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #   持ち越す）。生存・持ち越しが 7 日以上解消しない・状態を失った晩に
                                  #   GitHub Issue を起票・追記する（#288）
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
-  settings.json                  # Stop hook（auto-quality-check.sh）等の設定
+  settings.json                  # Stop hook（auto-quality-check.sh）と、PR のマージを拒否する permissions.deny
   review-oracles.sh              # self-review が agent 起動前に走らせる機械層の宣言
                                  #   （存在自体が opt-in。中身は machine-layer.sh --no-tests を呼ぶだけ。
                                  #   回帰テストは 300 秒に収まらないので外し、pre-commit と CI に任せる）
@@ -309,4 +309,7 @@ LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プ�
 
 ## ブランチ運用
 
-- main に直接コミット
+- **PR 必須**。main へ直接コミット・push しない。作業はブランチを切ってコミットし、PR を作る（GitHub のルールセット「main: PR 必須」が main への直接 push・force push・削除を拒否する）
+- コミットは `dev-workflow:git-commit-helper` 経由で、`--no-protect` は渡さない
+- **PR を main へマージしない**。マージは利用者が行う（`.claude/settings.json` の deny が `gh pr merge`（`--auto` を含む）・`gh api` の merge エンドポイントと GraphQL の mergePullRequest / enablePullRequestAutoMerge・GitHub MCP のマージ・auto-merge の有効化を拒否する。ルールセットは承認 0 件なので、GitHub 側はマージを止めない）
+- push した後は PR の CI（validate.yml は pull_request でも走る）を確認するまで完了と見なさない
