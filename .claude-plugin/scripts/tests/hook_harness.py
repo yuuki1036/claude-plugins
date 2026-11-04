@@ -156,10 +156,21 @@ class TempGitRepo:
     def __enter__(self) -> Path:
         self._tmp = tempfile.TemporaryDirectory()
         self.path = Path(self._tmp.name)
+        self._init()
+        return self.path
+
+    def _init(self) -> None:
         for args in (["init", "-q"], ["config", "user.email", "t@example.com"],
                      ["config", "user.name", "t"]):
             subprocess.run(["git", *args], cwd=self.path, capture_output=True, env=self.ENV)
-        return self.path
+
+    @classmethod
+    def create_at(cls, path: Path) -> "TempGitRepo":
+        """path に repo を作る（tempdir の名前は選べないので、dir の名前を見るテスト向け。片付けは呼ぶ側の tmp）."""
+        path.mkdir(parents=True, exist_ok=True)
+        repo = cls.at(path)
+        repo._init()
+        return repo
 
     def __exit__(self, *exc):
         self._tmp.cleanup()
