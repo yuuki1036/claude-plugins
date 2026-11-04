@@ -1,5 +1,5 @@
 ---
-description: "複数の sub（作業セッション）で進める PJ を、1 つの hub セッションから束ねる。hub は指示出しと進め方・仕様の相談役で、実装しない。 状態（sub・PR・Issue・確かめた事実）は ~/.claude/project-hub/ のファイルに置き、sub の report を取り込み、 lead の確認が要らない連絡は自動で送る（宛先は送る直前に引き直す）。hub から sub を起動できる。 サブコマンド init / status / start / brief / relay / fact / todo / close-sub / mode / tracker-write / sidebar-group / living-spec / takeover / close。 トリガー: 「hub を作って」「hub init」「hub status」「hub の状況」「hub start」「hub から sub を起動」「hub から brief」「hub から relay」「hub todo」「hub の残作業」「sub を閉じて」「hub mode」「hub を引き継ぐ」「/project-hub:hub」"
+description: "複数の sub（作業セッション）で進める PJ を、1 つの hub セッションから束ねる。hub は指示出しと進め方・仕様の相談役で、実装しない。 状態（sub・PR・Issue・確かめた事実）は ~/.claude/project-hub/ のファイルに置き、sub の report を取り込み、 lead の確認が要らない連絡は自動で送る（宛先は送る直前に引き直す）。hub から sub を起動できる。 サブコマンド init / repo / status / start / brief / relay / fact / todo / close-sub / mode / tracker-write / sidebar-group / living-spec / takeover / close / reopen。 トリガー: 「hub を作って」「hub init」「repo hub を作って」「hub repo」「hub status」「hub の状況」「hub start」「hub から sub を起動」「hub から brief」「hub から relay」「hub todo」「hub の残作業」「sub を閉じて」「hub mode」「hub を引き継ぐ」「hub を再開」「/project-hub:hub」"
 user_invocable: true
 allowed-tools:
   - Bash
