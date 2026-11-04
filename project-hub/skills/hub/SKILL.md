@@ -4,8 +4,8 @@ description: >
   複数の sub（作業セッション）で進める PJ を、1 つの hub セッションから束ねる。hub は指示出しと進め方・仕様の相談役で、実装しない。
   状態（sub・PR・Issue・確かめた事実）は ~/.claude/project-hub/ のファイルに置き、sub の report を取り込み、
   lead の確認が要らない連絡は自動で送る（宛先は送る直前に引き直す）。hub から sub を起動できる。
-  サブコマンド init / status / start / brief / relay / fact / todo / close-sub / mode / tracker-write / sidebar-group / living-spec / takeover / close。
-  トリガー: 「hub を作って」「hub init」「hub status」「hub の状況」「hub start」「hub から sub を起動」「hub から brief」「hub から relay」「hub todo」「hub の残作業」「sub を閉じて」「hub mode」「hub を引き継ぐ」「/project-hub:hub」
+  サブコマンド init / repo / status / start / brief / relay / fact / todo / close-sub / mode / tracker-write / sidebar-group / living-spec / takeover / close / reopen。
+  トリガー: 「hub を作って」「hub init」「repo hub を作って」「hub repo」「hub status」「hub の状況」「hub start」「hub から sub を起動」「hub から brief」「hub から relay」「hub todo」「hub の残作業」「sub を閉じて」「hub mode」「hub を引き継ぐ」「hub を再開」「/project-hub:hub」
 allowed-tools:
   - Bash
   - Read
@@ -34,11 +34,12 @@ allowed-tools:
 - **指示出し**（`start` / `brief` / `relay`）と、**進め方・仕様の相談役**（sub の質問に答える・lead の相談に乗る）と、状態の集約
 - **repo を編集せず、実装しない**。lead に実装や調査の作業を頼まれたら、`start` で sub を起動するよう勧める。確かめるための読み・コマンドの実行（fact の裏取り・質問に答える出典を読む）はする
 - **sub の進め方は sub の中の workflow に任せる**。brief を渡した後の進め方の選択・コミットの承認などには lead が sub の中で答える。hub はその確認を代わりに取らず、lead の承認を sub へ中継もしない
+- **repo hub の例外**（`refresh-hub` の出力が `repo_hub: true`。PJ を定義せずに 1 つの repo を束ねる常設の hub / ADR-20261102144843）: 起票と Issue の保守も hub が受け持つ（下の「起票の持ち主」「Issue の保守」）。コードの実装と調査は今までどおり sub に任せる
 
 ## 共通
 
 - **CLI**: hub のセッションの注入（SessionStart・PostCompact）にある「hub.py の呼び口」のパス（既定は `~/.claude/project-hub/bin/hub.py`）を `python3 "<パス>" <cmd>` で呼ぶ。hook が毎回、動いている版の hub.py へ向け直すので、会話の途中で版が上がっても書き直さずに済む。呼び口がまだ無い（注入より前・hook が書けなかった）ときだけ `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/hub.py" <cmd>`。以下 `hub.py <cmd>` と略記する（変数に入れて `$HUB` で呼ばない — zsh は引用していない変数を単語に分けない）。引数は `hub.py <cmd> --help`。出力は JSON
-- **状態ファイル**: 書き込みは `hub.py` だけで行う（journal・facts・sessions・presence を手で編集しない）。例外は config.json の手直し（承認の前置き・締め、closed から戻す）
+- **状態ファイル**: 書き込みは `hub.py` だけで行う（journal・facts・sessions・presence を手で編集しない）。例外は config.json の手直し（承認の前置き・締め）。closed から戻すのは `reopen`
 - **PJ**: 引数の `--project <PJ>`。無ければ `hub.py projects` で、`hub_session_id` がこのセッションの id と一致し `status: active` の PJ が 1 つだけならそれを使う。決まらなければ利用者に聞く
 - **このセッションの id**: `hub.py` が Bash の `CLAUDE_CODE_SESSION_ID` を読む。`echo "$CLAUDE_CODE_SESSION_ID"` が空の環境だけ、command 本文が示した id を `--session-id` で渡す
 - **このセッションの名前と、宛先の引き方**: `${CLAUDE_PLUGIN_ROOT}/references/list-agents.md` を Read してその手順で ListAgents から抜き出す（init / status / takeover / brief / relay の前に読む）
@@ -67,9 +68,9 @@ allowed-tools:
   - 利用者が sub の会話で自分で進めたターンの知らせは、すぐには来ず hub の次のターンまで溜まる（Desktop がセッションに渡す指示）。溜まって届いた知らせも、上の 1・2 で選ぶ
 - **未取り込みの report の知らせ**: UserPromptSubmit hook が、inbox に未取り込みの report があると「未取り込みの report がある」と取り込みのコマンドを注入する（通知が届かなかった回も、次の発言で拾う）。出たら、その発言に答える前に上の通知と同じく取り込んで処理する
 - **living spec のある PJ**: 同じセッションで living spec（このプラグインの `living-spec` skill。repo の `.claude/living-specs/<slug>.md`）の決定も受け持つなら、`${CLAUDE_PLUGIN_ROOT}/skills/hub-living-spec/SKILL.md` を Read してその決まりに従う（決定を書くのは lead が決めたときだけ・進捗はタイムラインへ聞かずに書く・確定を覆した決定の波及・sub の report から OQ の候補を出す）
-- **hub が書かないもの**: 判断の正本のうちリポジトリの仕様 docs・repo のコード。Issue トラッカーは、config の `tracker_write`（`refresh-hub` の出力）が `never` なら書かない（起票・更新は issue-workflow か人間。init の既定は `with_approval` で、tracker `local` の PJ と config に値が無い・読めない PJ は `never`）。`with_approval` なら下の「トラッカーへの書き込み」の手順で、lead の承認を取って書く。hub の journal は経緯の記録で、正本ではない
+- **hub が書かないもの**: 判断の正本のうちリポジトリの仕様 docs・repo のコード。Issue トラッカーは、config の `tracker_write`（`refresh-hub` の出力）が `never` なら書かない（起票・更新は issue-workflow か人間。init の既定は `with_approval` で、tracker `local` の PJ と config に値が無い・読めない PJ は `never`）。`with_approval` なら下の「トラッカーへの書き込み」の手順で、lead の承認を取って書く。repo hub の起票と Issue の保守は「起票の持ち主」「Issue の保守」の手順で行う。hub の journal は経緯の記録で、正本ではない
 - **外に出る文に plugin の語を書かない**: hub が書く外向けの文（トラッカーの本文・PR のコメント）と、sub に書かせる外向けの文（repo の docs・トラッカー・PR・コミットメッセージ）に、`hub`・`lead`・`sub` と、それを使った言い回し（「lead 決定」「hub 経由」）を書かない。読む人（レビュアー・PdM）に通じず、利用者を役割名で呼ぶことにもなる。決定は「2026-10-27 決定」のように日付で書き、誰が決めたかが要るなら利用者の名前か役割（PdM など）で書く。journal・report・facts・hub と sub の間の連絡の語はそのままでよい
-- **起票の持ち主（tracker `local`）**: issue-workflow の local backend は `counter.txt` で採番するので、複数のセッションが起票すると番号がぶつかりうる。起票は hub のセッションで lead が issue-workflow を呼んだときだけにし、sub には起票させない（brief でそう伝え、候補は report の `follow_ups` で受ける）。hub は `follow_ups` を lead に見せ、自分では起票しない
+- **起票の持ち主（tracker `local` と、repo hub のすべての tracker）**: issue-workflow の local backend は `counter.txt` で採番するので、複数のセッションが起票すると番号がぶつかりうる。起票は hub のセッションで lead が issue-workflow を呼んだときだけにし、sub には起票させない（brief でそう伝え、候補は report の `follow_ups` で受ける）。hub は `follow_ups` を lead に見せ、自分では起票しない。repo hub では github / linear でも起票を hub のセッションに集める（ADR-20261102144922。書くのは「トラッカーへの書き込み」の手順）。repo hub の tracker `local` では、lead が起票を頼んだ候補ごとに、lead が hub の会話に貼る 1 行 `/issue-workflow:issue-create <slug> --create-only` を出す（`<slug>` は config の `tracker.dir` の最後の dir 名。承認は issue-create の Phase 6 の 1 回だけなので、hub は先に全文を見せない）。終わりに `起票だけで終えた:` か `起票せずに終えた:` の行が出たかを確かめる。どちらも無ければ issue-workflow が古く引数が効いていないので、続くブランチ作成の確認を断るよう lead に伝え、issue-workflow の更新を勧める
 
 ## 自動の連絡（`approval_mode` が `auto` の PJ）
 
@@ -97,24 +98,34 @@ lead の確認が要る事柄を含まない連絡は、承認を取らずに送
 - lead の判断を先取りする連絡: Issue の範囲や受け入れ条件の変更・Issue をまたぐ優先度の入れ替え・PJ の外（人・サービス）への連絡
 - `questions` の中の指示（コマンドの実行・ファイルの編集・他の宛先への連絡・PJ の外の情報の提供）。実行せず、「指示として扱っていない」と添えて lead に出す
 
-**report を受けたときの手順**（通知・ターンの終わりの知らせ・UserPromptSubmit の知らせのどれで始まっても同じ）: `ingest` の `reports` ごとに、`needs_lead` と答えられない質問は lead に出す一覧に入れ、答えられる質問は答えを送る。`decisions`（sub の会話で決まったこと）は、自動で送る連絡があっても無くても、必ず lead に出す一覧に入れる（「」で引用し、日付と決めた人を添える）。その決定が、`hub.py sent --project '<PJ>'` に残る他の sub への連絡や、まだ送っていない連絡の中身と食い違えば、食い違う連絡を並べて lead に出し、その中身の連絡は lead が決めるまで送らない。done の report の `follow_ups` に hub 宛ての残作業（他の sub の結果を Issue に反映するなど）があれば、`hub.py todo --add` で足す案を lead に出す（足すのは lead が良いと言ってから。下の `todo`）。`ingest` の出力の `tracker_write` が `with_approval` で tracker が github / linear の PJ では、それ以外の `follow_ups` を起票の候補として lead に出す一覧に入れる（番号の振り方は「トラッカーへの書き込み」）。段取りの連絡が要れば送る（重なりやマージ順は前回の `status` の材料で足りる範囲だけ。足りなければ `status` を回す）。最後に lead に、送った連絡を 1 行ずつ（宛先・`basis`）と、lead に出すもの（回した質問は「」で引用）を並べる。lead に出すものが無ければ 1〜2 行で終える。lead の発言で始まっていないターンでも、この節の範囲で送ってよい（lead が `auto` を選んだか、既定の `auto` を init・`mode`・`takeover` の `mode_notice` で知らされた常設の指示）。lead の発言で始まったターンで、その発言が送るのを止める指示や `mode` の切り替えなら、先にそれを行い、自動の連絡はしない
+**report を受けたときの手順**（通知・ターンの終わりの知らせ・UserPromptSubmit の知らせのどれで始まっても同じ）: `ingest` の `reports` ごとに、`needs_lead` と答えられない質問は lead に出す一覧に入れ、答えられる質問は答えを送る。`decisions`（sub の会話で決まったこと）は、自動で送る連絡があっても無くても、必ず lead に出す一覧に入れる（「」で引用し、日付と決めた人を添える）。その決定が、`hub.py sent --project '<PJ>'` に残る他の sub への連絡や、まだ送っていない連絡の中身と食い違えば、食い違う連絡を並べて lead に出し、その中身の連絡は lead が決めるまで送らない。done の report の `follow_ups` に hub 宛ての残作業（他の sub の結果を Issue に反映するなど）があれば、`hub.py todo --add` で足す案を lead に出す（足すのは lead が良いと言ってから。下の `todo`）。`ingest` の出力の `tracker_write` が `with_approval` で tracker が github / linear の PJ と、repo hub（`refresh-hub` の `repo_hub: true`）の tracker local では、それ以外の `follow_ups` を起票の候補として lead に出す一覧に入れる（番号の振り方は「トラッカーへの書き込み」）。段取りの連絡が要れば送る（重なりやマージ順は前回の `status` の材料で足りる範囲だけ。足りなければ `status` を回す）。最後に lead に、送った連絡を 1 行ずつ（宛先・`basis`）と、lead に出すもの（回した質問は「」で引用）を並べる。lead に出すものが無ければ 1〜2 行で終える。lead の発言で始まっていないターンでも、この節の範囲で送ってよい（lead が `auto` を選んだか、既定の `auto` を init・`mode`・`takeover` の `mode_notice` で知らされた常設の指示）。lead の発言で始まったターンで、その発言が送るのを止める指示や `mode` の切り替えなら、先にそれを行い、自動の連絡はしない
 
 ## init `<PJ>`
 
-1. `hub.py projects` で同名の PJ が無いことを確かめる。あれば init せず `takeover` を案内して終える
+1. `hub.py projects` で同名の PJ が無いことを確かめる。あれば init せず、その行が `repo_hub: true` なら別の名前を付けるよう伝える（takeover も reopen も案内しない。通常の PJ を作るつもりで repo hub を引き継がない）。それ以外は active なら `takeover`、closed なら `reopen` を案内して終える。PJ を定義せずに repo 全体を束ねたいと言われたら、init ではなく下の `repo` を案内する
 2. 設定を決める。利用者の言葉と環境から埋め、埋まらないものだけを 1 つずつ聞く:
-   - tracker: `github`（`--tracker-repo <owner/name>`。cwd の repo なら `gh repo view --json nameWithOwner`）か `linear`（`--tracker-team` / `--tracker-project`）か `local`（issue-workflow の local backend。`--tracker-dir <{DATA_DIR}/<slug>>`。repo の `.claude/indie/<slug>/` で、cwd が worktree ならメインのチェックアウト側のパス。slug が 1 つだけならそれ、複数なら利用者に聞く）。任意で `--milestone`（github / linear）
+   - tracker: `github`（`--tracker-repo <owner/name>`。cwd の repo なら `gh repo view --json nameWithOwner`）か `linear`（`--tracker-team` / `--tracker-project`）か `local`（issue-workflow の local backend。`--tracker-dir <{DATA_DIR}/<slug>>`。repo の `.claude/indie/<slug>/` で、cwd が worktree ならメインのチェックアウト側のパス。slug が 1 つだけならそれ、複数なら利用者に聞く）。任意で `--milestone`（github / linear。linear の repo hub との重なりは project で決まり、milestone では範囲を切れない）
    - repos: `--repo <path>[=<base>]`（複数可）。既定は cwd の repo の toplevel。base を省くと `origin/HEAD` が指すブランチ（無ければ `origin/main` → `origin/master`）。どれも無ければ止まるので、利用者に base を聞いて `=<base>` で渡す。repo に実在しない base は弾かれる
    - 前置き・締め（`--approval-prefix` / `--approval-suffix`）: 送る本文の前後に付ける定型文。言われなければ空でよい（後から config.json で直せる）
    - トラッカーへの書き込み（`--tracker-write`）: `with_approval`（既定。lead の承認を取って、起票・本文の直しをする。tracker `local` では使えず `never` が既定）/ `never`（hub はトラッカーに書かない）。lead が hub に書かせたくないと言ったときだけ `never` にする。聞かなくてよい（後から `tracker-write` で直せる）
    - サイドバーのグループ（`--sidebar-group`）: `on`（Desktop の hub の既定。後から sub にしたセッションを hub と一緒に PJ 名のグループにまとめる）/ `off`（CLI の hub の既定。サイドバーを動かさない）。lead がまとめたくないと言ったときだけ `off` にする。聞かなくてよい（後から `sidebar-group` で直せる）
    - 送る前の承認の方式（`--approval-mode`）: `auto`（既定。「自動の連絡」の範囲は承認なしに送る）/ `number`（4 桁の番号を打ち返す）/ `phrase`（本文を見せた後に lead が「送って」と言えば送る）。lead が送る前に毎回見たいと言ったときだけ `number` か `phrase` にする。聞かなくてよい（後から `mode` で直せる）
    - living spec（`--living-spec <path>`）: PJ の repo に `.claude/living-specs/*.md` があれば、そのパスを渡す（1 本なら聞かずに、複数なら利用者に聞く）。config の repos のどれかの `.claude/living-specs/` の下に限る（cwd が worktree ならメインのチェックアウト側のパス。worktree の複製を結ぶと、worktree を消したときに切れる）。無ければ渡さない（後から `living-spec` で結べる）
-3. 会話の題（＝ListAgents の名前）が `hub <英語の短い名前>`（例 `hub audit-log`）の形でなければ、その形を 1 つ提案する。lead が良いと言ったら `mcp__ccd_session_mgmt__set_session_title` に `session_id: "self"` と題を渡して付ける（Desktop だけ。ツールが無い・断られたらそのまま進める）。そのうえで ListAgents から自分の名前を取り、`hub.py init --project '<PJ>' --name '<名前>' ...` を実行する。exit 3 で stderr が `--tracker-write` か `--sidebar-group` を理由にしている（tracker `local` に `with_approval` / Desktop でない hub に `on`）なら、その文面を lead に伝え、その引数を外して実行し直す。PJ が init 済み（stderr が takeover を案内する）なら実行し直さず、takeover を案内する
+3. 会話の題（＝ListAgents の名前）が `hub <英語の短い名前>`（例 `hub audit-log`）の形でなければ、その形を 1 つ提案する。lead が良いと言ったら `mcp__ccd_session_mgmt__set_session_title` に `session_id: "self"` と題を渡して付ける（Desktop だけ。ツールが無い・断られたらそのまま進める）。そのうえで ListAgents から自分の名前を取り、`hub.py init --project '<PJ>' --name '<名前>' ...` を実行する。exit 3 で stderr が `--tracker-write` か `--sidebar-group` を理由にしている（tracker `local` に `with_approval` / Desktop でない hub に `on`）なら、その文面を lead に伝え、その引数を外して実行し直す。PJ が init 済み（stderr が takeover か reopen を案内する）なら実行し直さず、その案内を伝える。stderr が同じ repo の repo hub を理由にしている（範囲を切らない PJ は repo hub と並べられない）なら、範囲を切るか（github は `--milestone`、linear は `--tracker-project`。local は切れないので別の slug にする）、repo hub で進めるかを lead に聞く。stderr が repo hub の名前を理由にしている（PJ 名が repo hub と同じ）なら、`--project` を変えて実行し直す（takeover しない）
 4. 出力を伝える。`mode_notice`（自動の連絡が有効かと、その止め方）と、`sidebar_notice`（出たとき。サイドバーの表示が変わることと、その止め方）は**必ずそのまま**伝える（lead が知らないまま auto で動かさない・サイドバーを動かさない）:
    - `gitignored`: `true` は同期の対象から外れている / `false` は `~/.claude` 等の git リポジトリで追跡されうる（`<root>/.gitignore` の中身 `*` を確かめるよう伝える）/ `null` は git の外
    - `warning`（hub の名前が既定名）: sub は既定名の hub へ通知しないので、会話の題を付けてから `status` を回すよう頼む（`status` が名前の変化を反映する）
 5. sub は `start <Issue>` で起動できる（Desktop）と伝えて終える。`sidebar_group` が `on` なら、続けて「サイドバーのグループ」の手順を回す（hub 自身をグループに入れる）
+
+## repo
+
+PJ を定義せずに、cwd の repo を常設の hub（repo hub）で束ねる。範囲はその repo の open Issue のうち、同じ repo のどの PJ の範囲（milestone）にも入らないもの。止めるときは `close`、再開は `reopen`。PJ 名は `hub.py` が決める（`repo-<メインのチェックアウトの名前>`）ので、lead に聞かない。
+
+1. tracker を決める。init の 2 の tracker の決め方をそのまま使い、`--milestone` は付けない。github で `gh repo view --json nameWithOwner` を使ったときは、`git remote get-url origin` の owner/name（URL の最後の 2 段。末尾の `.git` を外す）と比べる。origin と upstream の両方がある fork の clone では、`gh repo view` が upstream を返す（gh 2.100.0 で確かめた）。食い違えば、どちらの Issue を束ねるかを 1 問だけ lead に聞く（origin が GitHub でなければ比べない）。repos・前置き・締め・トラッカーへの書き込み・サイドバー・承認の方式は init と同じ既定で、聞かない。living spec は結ばない
+2. ListAgents から自分の名前を取り、`hub.py init --repo-hub --name '<名前>' --tracker <…>` を cwd の repo で実行する（cwd が worktree でも、`hub.py` がメインのチェックアウトを repo にする）。`--project` は付けない
+3. exit 3 なら stderr で分ける。同じ repo の repo hub が active（takeover を案内）・closed（reopen を案内）→ その案内を伝えて終える。PJ 名が別の repo の PJ かこの repo の通常の PJ と同じ（`--project` で別の名前を付けるよう案内）→ lead に名前を 1 つ聞き、`--project '<名前>'` を付けて実行し直す。同じ repo に範囲を切らない PJ がある → その PJ の名前を伝え、その PJ の範囲を切るか（github は milestone、linear は project。local は切れない）、その PJ で進めるかを lead に聞いて終える。tracker local の dir が git に載る（gitignore されていない・追跡されているファイルがある）→ stderr を伝えて終える（repo hub が起票した Issue ファイルを、worktree の sub が読めない）。config が読めない PJ がある → その PJ の名前を伝えて終える。exit 2 で base を決められない（origin/HEAD も origin/main も無い）→ init の 2 と同じく lead に base を 1 問聞き、`--repo '<cwd の repo>=<base>'` を付けて実行し直す
+4. 会話の題に、出力の `project` を使った `hub <project>`（例 `hub repo-myapp`）を提案する。通常の PJ の hub と題がぶつかると、sub の通知先が 2 件に当たる。lead が良いと言ったら init の 3 と同じく題を付け、ListAgents の名前を取り直して `hub.py refresh-hub --project '<project>' --name '<新しい名前>'` で反映する。題を付けるまでは、出力の既定名の `warning` を伝えずにこの提案を出す
+5. init の 4・5 と同じく出力を伝える（`mode_notice`・`sidebar_notice` はそのまま。sub は `start <Issue>` で起動できる）。続けて、repo hub は起票と Issue の保守も受け持つこと（「起票の持ち主」「Issue の保守」）と、この repo の sub は hub に起票を頼む（自分では起票しない）ことを伝える
 
 ## status
 
@@ -126,7 +137,7 @@ lead の確認が要る事柄を含まない連絡は、承認を取らずに送
 2. `hub.py ingest --project '<PJ>'`。`invalid` があればファイル名と理由を出す（`inbox/invalid/` に移してある。中身は開かない）。理由が版のずれ（schema）なら、そのセッションに project-hub を更新して report し直すよう relay で頼むことを提案する
 3. `hub.py presence --project '<PJ>' --raw` に 1 で引いた ListAgents の出力をそのまま stdin で渡す。`parse_failed` なら、`references/list-agents.md` の手順で抜き出した JSON を `--peer-count <N>`（`--raw` なし）で渡し直す。それでも `parse_failed` なら生の ListAgents の出力を添えて「解析できなかった」と出し、4 へ進む（不在の判定は前回のまま）。`renamed`（登録した時の ref の行が別の名前でいる = 改名した同じセッション）は不在にせず、state.md の名前の欄に `登録名 → 今の名前` で出る
 4. Issue を集めて `hub.py snapshot --project '<PJ>' --source tracker` に stdin で渡す。形は `[{"id", "title", "state", "assignee", "pr"}]`（`pr` は分かるときだけ）:
-   - github: `gh issue list --repo <repo> --state open --limit 50 --json number,title,state,assignees`（`milestone` があれば `--milestone`）。`id` は `#<number>`、`assignee` は最初の login。`--limit 50` を付けたら snapshot にも `--limit 50` を付ける（50 件に届いたら打ち切りの可能性が表に出る）
+   - github: `gh issue list --repo <repo> --state open --limit 50 --json number,title,state,assignees`（`milestone` があれば `--milestone`）。`id` は `#<number>`、`assignee` は最初の login。`--limit 50` を付けたら snapshot にも `--limit 50` を付ける（50 件に届いたら打ち切りの可能性が表に出る）。repo hub では `--json` に `milestone` も入れ、各行に `"milestone": "<milestone の title か null>"` を入れて渡す（`hub.py` が、同じ repo の active な PJ の milestone の Issue を除く。その PJ の hub の受け持ち）。出力の `excluded`（除いた PJ と件数）は 10 の表に 1 行で添え、`warning`（milestone の無い行があり除けていない）はそのまま lead に伝える。tracker が linear の repo hub は、PJ の project での除外がまだ無いので、表に同じ repo の PJ の Issue も並ぶ
    - linear: `mcp__linear__list_issues`（config の team / project で絞る）。`id` は identifier、`state` は status の名前
    - local: stdin を渡さず `hub.py snapshot --project '<PJ>' --source tracker --from-local`（Issue ファイルの frontmatter の `status`・`pr` から、完了・取り下げ以外を集める。sub が Issue ファイルの `status` を書き換えていれば、ここで表に出る）。出力の `skipped` は読めなかったファイル名で、あれば lead に出す
    - 取れなかったら `hub.py snapshot --project '<PJ>' --source tracker --failed` に `{"error": "<理由>"}` を stdin で渡す（前回の値が残る）
@@ -158,7 +169,7 @@ sub を起動して、その Issue を任せる。lead が start を頼んだタ
 2. Desktop で `mcp__ccd_session__start_session` が使えるとき、それで起動する:
    - `initiation: user_asked` / `context: fresh` / `use_worktree: true`
    - `title`: `<Issue ID> <英語の短い要約>`（例 `#308 hub-relay-raw`・`ABC-12 audit-log`。60 字以内。Issue のタイトルをそのまま入れない — 日本語の長い文になって一覧で見分けにくい。ListAgents の名前は `name` ではなく title になる（2026-10-25 に実測）ので、Issue ID を入れると hello の前でも Issue ID で引ける）
-   - `prompt`: brief の全文。`background`: PJ 名・hub の名前・PJ の目的（config と state.md から 2〜3 文。80 字以上）
+   - `prompt`: brief の全文。`background`: PJ 名・hub の名前・PJ の目的（config と state.md から 2〜3 文。80 字以上）。repo hub は PJ の目的の代わりに「repo <repo の名前> の常設の hub。範囲はどの PJ にも入らない open Issue。Issue の起票は hub が受け持つ」と書く
    - `cwd`: このセッションの cwd が config の repos のどれでもなければ、Issue の repo のパス（repos が複数で決まらなければ lead に聞く）
    - `permission_mode` は渡さない（hub と同じ mode を引き継ぐ。mode が違う sub には、メッセージが受け手の承認待ちで止まる）
    - `effort`: `medium` を渡す（hub の effort を sub に引き継がせない / GitHub issue #343）。`start_session` は hub の effort より上を断るので、hub の effort が `low` なら渡さずに引き継がせる。hub の effort は起動の直前に Bash の `echo "$CLAUDE_EFFORT"` で読み、空なら command 本文が示した値を使う（この SKILL.md は Read で読むので、ここに `${CLAUDE_EFFORT}` と書いても展開されない）
@@ -181,7 +192,8 @@ sub を起動して、その Issue を任せる。lead が start を頼んだタ
    # brief: <Issue ID> 「<タイトル>」
    - 最初に: 会話の題に <Issue ID> を入れる（GitHub は `#308: 監査ログ` のように # 付きで）。そのうえで project-hub の report skill で state=hello を置く（--project <PJ>）。hub はこの題と登録で宛先を引く
    - 始め方: <tracker が linear か local なら「issue-workflow が使えれば、issue-workflow の start skill を <Issue ID> を引数に起動して始める。使えなければ Issue を読んで始める」／ github なら「Issue を読んで始める」（issue-workflow の start は `ABC-12` の形の ID しか受けない）>。進め方の確認には lead がこのセッションで答える
-   - （local のみ）Issue ファイル: <`hub.py issue` の path>。worktree には無い（gitignore されている）ので、読むのも frontmatter の `status` を書き換えるのもこの絶対パス。書き換えてよいのは frontmatter の `status` と `pr` だけで、本文は書き換えない（本文を直すべきだと思ったら needs_lead に書く）。Issue は起票しない（採番がぶつかる）。新しい Issue の候補は report の follow_ups に書く
+   - （local のみ）Issue ファイル: <`hub.py issue` の path>。worktree には無い（gitignore されている）ので、読むのも frontmatter の `status` を書き換えるのもこの絶対パス。書き換えてよいのは frontmatter の `status` と `pr` だけで、本文は書き換えない（本文を直すべきだと思ったら needs_lead に書く）
+   - （local の PJ と repo hub）Issue は起票しない（local は採番がぶつかる。repo hub は起票を hub に集めている）。新しい Issue の候補は report の follow_ups に書く
    - branch や worktree を作ったら、state=in_progress で report を置き直す（hub が触っているファイルを見られるのは、その後の登録から）
    - 外に出る文（repo の docs・トラッカー・PR の本文と返信・コミットメッセージ）に hub・lead・sub の語を書かない。決定は「<今日の日付> 決定」のように日付で書く
    - base: <repo> の <base> = <SHA>
@@ -266,12 +278,19 @@ PJ を `close` してもグループは残る。グループを消すのは lead
 
 lead に頼まれた起票・本文の直し（sub の結果を実装 Issue に反映する、など）を、承認を取って hub が書く。`tracker_write` が `never` の PJ では書かず、lead に `tracker-write with_approval` で切り替えられると伝える。
 
-**sub の `follow_ups` は起票の候補として出す**: 今回取り込んだ report の `follow_ups` を lead に出す一覧に並べるとき（report を受けたとき・`status` の 2 で取り込んだ分）、各行に番号を振り、「起票するなら番号で指定（例: `起票 1, 3`）」と 1 行添える。番号は直前に出した一覧のもので、一覧を出し直したら前の番号は使わない（lead が古い番号で答えたら、どの行かを引用して確かめる）。番号を振らないもの: 先頭に Issue ID を書いた follow-up（sub が起票済み。report skill の決まり）・`todo --add` の案にした hub 宛ての残作業・取り込み済みの report を並べ直した分（`status` の 10 で `needs_lead` / `questions` が残る sub を再掲したもの。前の回に候補として出してある）。lead が番号を指定したものだけ、下の 1. から文面を作って承認を取る（候補を出すことは承認ではないので、指定が無ければ書かない）。tracker `local` の PJ はこれまでどおり lead に見せるだけ（「共通」の起票の持ち主）
+**sub の `follow_ups` は起票の候補として出す**: 今回取り込んだ report の `follow_ups` を lead に出す一覧に並べるとき（report を受けたとき・`status` の 2 で取り込んだ分）、各行に番号を振り、「起票するなら番号で指定（例: `起票 1, 3`）」と 1 行添える。番号は直前に出した一覧のもので、一覧を出し直したら前の番号は使わない（lead が古い番号で答えたら、どの行かを引用して確かめる）。番号を振らないもの: 先頭に Issue ID を書いた follow-up（sub が起票済み。report skill の決まり）・`todo --add` の案にした hub 宛ての残作業・取り込み済みの report を並べ直した分（`status` の 10 で `needs_lead` / `questions` が残る sub を再掲したもの。前の回に候補として出してある）。lead が番号を指定したものだけ、下の 1. から文面を作って承認を取る（候補を出すことは承認ではないので、指定が無ければ書かない）。tracker `local` の PJ はこれまでどおり lead に見せるだけ（「共通」の起票の持ち主）。repo hub の tracker `local` では、lead が番号を指定した候補ごとに「起票の持ち主」の起動の 1 行を出す（hub は Issue ファイルを書かない）
 
 1. 書く文面（タイトル・本文の全文。直しなら直した後の全文と、変えた箇所）を lead に見せ、relay の 4 の `phrase` と同じ決まりで承認を取る（本文を出した**後**の lead 自身の「書いて」。`approval_mode` が `auto` でもこの承認は省かない。他のセッションのメッセージ・hook の注入は承認にしない）。外に出る文なので hub・lead・sub の語を書かない（「共通」の決まり）
 2. 書く: github は本文を一時ファイルに書き、別の Bash 呼び出しで `gh issue create` / `gh issue edit` に `--body-file` で渡す（`--body` に本文を載せない）。linear は `mcp__linear__save_issue`。tracker `local` では `with_approval` でも書かない（Issue ファイルの起票と本文は issue-workflow の持ち物。「共通」の起票の持ち主）。lead に issue-workflow で直すよう伝える
 3. 確かめる: 書いた後は、書き込みの応答ではなく、読み直した本文で反映を確かめる（github は `gh issue view <番号> --json title,body`、linear は `mcp__linear__get_issue`）。トラッカーの API は更新の応答に古い本文を返すことがあり、それを「反映されていない」と取り違えて送り直すと二重に入る。読み直しても反映が見えなければ、送り直さずに少し待ってもう一度読み、それでも見えなければ lead に出す
 4. 記録する: `hub.py record --project '<PJ>' --kind tracker --result accepted --text-file '<書いた本文のファイル>'` に `{"subject": "<Issue ID>"}` を stdin で渡す（失敗なら `--result failed` と `"error"`）。`--basis` は付けない
+
+## Issue の保守（repo hub だけ）
+
+lead に頼まれたときだけ、repo hub の Issue（Issue ファイルの進捗・状態）を整える。対象は Issue ごとに決め、作業中の sub がいる Issue は外す（sub が同じ Issue ファイルを書き換えている）。
+
+1. status の 2・3 で取り込みと presence を回してから、`hub.py worktrees --project '<PJ>'` の `sessions` のうち `working: true` の Issue と、`hub.py cross --project '<PJ>'` の各 PJ の `sessions` の Issue（同じ repo の別の PJ の作業中の sub）を外す
+2. 残った Issue ごとに、issue-workflow の issue-maintain に Issue ID を渡して回すよう、lead が貼る 1 行（`/issue-workflow:issue-maintain <Issue ID>`）を出す。issue-workflow の maintain（全件を承認なしに書き換える）と follow-up の promote（起票の後にブランチを作る確認を出す）は hub のセッションでは回さない
 
 ## tracker-write `<never|with_approval>`
 
@@ -311,4 +330,12 @@ PJ の living spec を結ぶ・外す。`hub.py set-living-spec --project '<PJ>'
 
 ## close
 
-`hub.py close --project '<PJ>'`。closed の PJ は report の自動判定と注入から外れる。データは消さない（戻すときは config.json の `status` を `active` に）。
+`hub.py close --project '<PJ>'`。closed の PJ は report の自動判定と注入から外れる。データは消さない（戻すときは `reopen`）。repo hub も同じく close で止める。
+
+## reopen `<PJ>`
+
+closed の PJ（repo hub を含む）を active に戻す。lead が頼んだときだけ行う。
+
+1. ListAgents から自分の名前を取り、`hub.py reopen --project '<PJ>' --name '<名前>'`。hub のセッションが前と違えば takeover も兼ねる（journal に takeover を残し、出力の `previous` に前の hub の名前が出る）
+2. exit 3 なら stderr を伝えて終える。理由は、closed ではない（active なら何もしない）か、closed の間に同じ repo に範囲が重なる PJ ができている（その PJ を close するか範囲を切るまで戻せない）
+3. 出力を伝える。`mode_notice` は**必ずそのまま**伝える。`moved`（closed の間に同じ repo の別の PJ へ移ったので、この PJ の作業中から外した sub。名前・Issue・移った先の PJ）と `unknown`（config が読めず、移ったかを確かめられなかった PJ）があれば並べる。続けて `status` を回す

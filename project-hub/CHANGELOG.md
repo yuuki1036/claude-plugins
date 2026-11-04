@@ -2,6 +2,29 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.14.0] - 2026-11-04
+
+### Added
+
+- **repo hub（`hub repo` / `hub.py init --repo-hub`）**（GitHub issue #356）: PJ を定義せずに 1 つの repo を常設の hub で束ねる。config に `repo_hub: true` を持つ PJ として、inbox・宛先の照合・start は通常の PJ と同じ仕組みで動く。
+  - repo は `--repo`（1 つまで）か `--cwd` か cwd から取り、worktree から起動してもメインのチェックアウトにする。PJ 名の既定は `repo-<basename>`。milestone は付けない
+  - 同じ repo の repo hub があれば作らない（active なら takeover、closed なら reopen を案内する）。同じ名前で別の repo の PJ があるときは takeover を案内せず、`--project` で別の名前を付けるよう案内する
+  - 範囲を切らない通常の PJ（github は同じ repo で milestone なし、linear は同じ team で project なしか同じ project、local は同じ slug）とは、同じ repo に並べられない。どちらの順で作っても後の方が止まる
+  - tracker local では、Issue ファイルの dir が git に載る（gitignore されていない・追跡中のファイルがある）repo では作らない
+  - config が読めない PJ があれば作らない（同じ repo の repo hub かを確かめられず、2 つ目を作りうる）。tracker local の dir が worktree の中にあっても作らない（worktree を消すと tracker が切れる）
+- repo hub では、どの tracker でも起票を hub のセッションに集め、sub は起票しない（ADR-20261102144922）。tracker local では、lead が貼る `issue-create --create-only` の 1 行を hub が出し、終わりの行で引数が効いたかを確かめる。Issue の保守は issue-maintain を Issue ごとに回すだけで、作業中の sub がいる Issue は外す
+- repo hub の `status` は、github で同じ repo の active な PJ の milestone の Issue を表から除く（`snapshot --source tracker` の `excluded`。milestone の無い行があれば `warning`）。fork の clone では `gh repo view` が upstream を返すことがあるので、origin と食い違えば聞く
+- **`hub reopen` / `hub.py reopen`**: closed の PJ を active に戻す（すべての PJ で使える。これまでは config.json を手で直していた）。closed の間に同じ repo に範囲が重なる PJ ができていれば止める。別の PJ へ移ったセッションは journal の `close_sub`（`result: moved`）で作業中から外す（`worktrees` の `working`・cross・サイドバー・待っている PR の知らせ）。移ったとみなすのは、別の PJ の登録が close より後に更新されたものだけ。close の時点で inbox に残っていた report を reopen の後に取り込んでも作業中に戻さない。別の PJ の登録が読めなければ止めずに `unknown` に出す。repo hub の reopen は、読めない config があれば止める。hub のセッションが違えば takeover も兼ねる
+- `hub.py worktrees` の各 sub に `working`（作業中か）を足した。`refresh-hub` に `repo_hub`、`projects` の repo hub の行に `repo_hub: true` を足した
+
+### Changed
+
+- `cross` の `active_projects` は repo hub を数えない（上位の hub に進む条件 1 の材料。閉じない repo hub を repo ごとに置くと、それだけで条件を満たすため / ADR-20261102144843）。repo hub が無い今までの値は変わらない
+- `hub.py init` の `--project` は repo hub のときだけ省ける
+- tracker local の PJ に `--milestone` を付けると exit 2 で止める（repo hub に限らない。Issue ファイルに milestone は無く、値は以前から読まれていなかった）
+- state.md の sub 表で、reopen が別の PJ へ移ったと記録した sub の状態を「移った（→ PJ）」と出し、PR の照合からも外す
+- GitHub の repo の比較（範囲の重なり・status の milestone での除外）は大文字と小文字を区別しない
+
 ## [0.13.0] - 2026-10-30
 
 ### Added

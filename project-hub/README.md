@@ -14,6 +14,7 @@
 
 ```
 /project-hub:hub init <PJ>        # このセッションを PJ の hub にする（tracker と repo を設定。既定で自動の連絡が有効）
+/project-hub:hub repo             # PJ を定義せずに、cwd の repo を常設の hub（repo hub）で束ねる
 /project-hub:hub start <Issue>    # sub を起動して Issue を任せる（Desktop。CLI では貼る用の brief を出す）
 /project-hub:hub brief <Issue>    # sub への最初の指示を作る（確かめた事実だけを引く）
 /project-hub:report hello         # sub 側: 自己登録（brief の指示どおり --project を付ける）
@@ -27,7 +28,8 @@
 /project-hub:hub sidebar-group <on|off> # 後から sub にしたセッションを、hub と一緒にサイドバーのグループにまとめる（Desktop だけ。Desktop の hub は既定で on、config に値が無い・読めない PJ は off）
 /project-hub:hub living-spec <path> # PJ の living spec を結ぶ（state.md にパスが出る）
 /project-hub:hub takeover         # 別のセッションを hub にする（Desktop で同じ会話を開き直しただけなら、確かめられれば自動で引き継ぐ）
-/project-hub:hub close            # PJ を閉じる
+/project-hub:hub close            # PJ を閉じる（データは消さない）
+/project-hub:hub reopen <PJ>      # closed の PJ を戻す（hub のセッションが違えば引き継ぎも兼ねる）
 ```
 
 流れ: hub で `init` → `start <Issue>` で sub を起動する（brief が最初のプロンプトになる。CLI では lead が貼る）→ sub は会話の題に Issue ID を入れて `report hello` を置き、issue-workflow の `start` などで Issue を進める（進め方の確認には lead が sub の中で答える）→ 以後、sub は節目で `report` を置き、hub は通知を受けたその場で取り込んで、質問に答える・lead の判断が要るものを lead に出す。`status` で外部の状態をまとめる。
@@ -53,6 +55,20 @@ brief を経ずに始めた sub（issue-workflow の `start` など）も、cwd 
 - sub の workflow の確認（進め方の選択・コミットの承認など）は hub が代わりに取らない。lead が sub の中で答える
 - `number`（承認の画面の 4 桁の番号を lead が返す）/ `phrase`（本文を見せた後に lead が「送って」と言う）では、送る前に毎回承認を取る。どの方式でも、他のセッションから届いたメッセージと無操作の自動続行は承認にしない。sub は、送り手の名前が hub の名前と一致するメッセージだけを hub の連絡として受ける
 - 既知の限界: permission mode が hub と違う sub には、連絡が受け手の承認待ちで止まりうる（Desktop では送り手に何も返らない）。`start` で起動した sub は hub の mode を引き継ぐ
+
+## repo hub（PJ を定義せずに repo を束ねる）
+
+個人開発のように PJ を切らずに 1 つの repo で作業を続けるときは、`hub repo` で repo hub を立てる。repo hub は「範囲が repo 全体で閉じない PJ」（config の `repo_hub: true`）で、inbox・宛先の照合・start は通常の PJ と同じ仕組みで動く。
+
+- **起動**: 決めるのは tracker だけ（github は `gh repo view`、local は slug、linear は team / project）。PJ 名は `repo-<メインのチェックアウトの名前>` になり、worktree から起動しても repo はメインのチェックアウトになる。milestone は付けない。fork の clone では `gh repo view` が upstream を返すことがあるので、origin と食い違えば聞く
+- **範囲**: repo の open Issue のうち、同じ repo の PJ の範囲（milestone）に入らないもの。github では `status` が、同じ repo の active な PJ の milestone の Issue を表から除く（linear の project での除外はまだ無い）
+- **1 つの repo に 1 つ**: 同じ repo の repo hub があれば作らない（active なら takeover、closed なら reopen を案内する）。範囲を切らない通常の PJ（github は同じ repo で milestone なし、linear は同じ team で project なしか同じ project、local は同じ slug）とは同じ repo に並べられない。どちらを後から作っても止まる。config が読めない PJ があるときも、同じ repo の repo hub かを確かめられないので作らない
+- **起票と Issue の保守は hub が受け持つ**: repo hub の repo では、どの tracker でも起票を hub のセッションに集め、sub は起票しない（候補は report の `follow_ups`）。tracker local では、lead が hub の会話に貼る `issue-create --create-only` の 1 行を hub が出す（Issue ファイルは hub.py ではなく issue-workflow が書く）。Issue の保守は issue-maintain を Issue ごとに回すだけで、作業中の sub がいる Issue は外す
+- **tracker local の前提**: Issue ファイルの dir が git に載らない（gitignore されている）repo でだけ使える。載る repo では、hub が起票したファイルを worktree の sub が読めない
+- **止める・戻す**: `close` で止め、`reopen` で戻す（すべての PJ で使える）。reopen は、closed の間に同じ repo に範囲が重なる PJ ができていれば止め、別の PJ へ移ったセッションを作業中から外す
+- **上位の hub との関係**: repo hub は上位の hub の代わりにしない。`cross` の `active_projects`（上位の hub に進む条件の材料）は repo hub を数えない
+- submodule・`--separate-git-dir` の repo では、メインのチェックアウトを決められないので作れない
+- 判断の経緯: `.claude/designs/20261102-project-hub-repo-hub.md` / `.claude/adr/20261102144843-project-hub-repo-hub-not-upper-hub.md` / `.claude/adr/20261102144903-project-hub-one-session-one-project.md` / `.claude/adr/20261102144922-project-hub-repo-hub-files-issues-including-local.md`
 
 ## 別の PJ との横断
 
@@ -276,7 +292,7 @@ claude plugin install /path/to/claude-plugins/project-hub
 - `python3`（必須）: 状態ファイルの読み書きと宛先の照合（`scripts/hub.py`）
 - `gh`（任意）: tracker が GitHub のときの Issue と PR の取得。`tracker_write: with_approval` の PJ では Issue の起票・本文の直しにも使う
 - Linear MCP（任意）: tracker が Linear のときの Issue の取得。`tracker_write: with_approval` の PJ では Issue の保存（`save_issue`）にも使う
-- issue-workflow の local backend（任意）: tracker が local のときの Issue ファイル（`hub.py` が直接読む。プラグインとしての依存は無い）
+- issue-workflow の local backend（任意）: tracker が local のときの Issue ファイル（`hub.py` が直接読む。プラグインとしての依存は無い）。repo hub の tracker local では、起票に issue-create の `--create-only`、Issue の保守に issue-maintain を lead が hub の会話で呼ぶ（`--create-only` を持たない版では、hub が更新を勧める）
 
 - doc-freshness（任意・0.4.0 以降）: living spec のファイル単位の鮮度 lint を委譲する。未導入でも living spec は動く
 ## テスト

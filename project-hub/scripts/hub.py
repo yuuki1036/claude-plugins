@@ -8,7 +8,8 @@ Claude のツールでスクリプトからは呼べないので、Claude が取
 root: ${PROJECT_HUB_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/project-hub}
 
 サブコマンド（`hub.py <cmd> --help`）:
-  init / takeover / refresh-hub / set-mode / close / projects   PJ と hub の登録・送る前の承認の方式
+  init / takeover / refresh-hub / set-mode / close / reopen / projects   PJ と hub の登録・送る前の承認の方式
+                                                           （init --repo-hub は PJ を定義せずに repo を束ねる repo hub）
   set-tracker-write                                        hub がトラッカーに書いてよいか
   set-sidebar-group / sidebar                              サイドバーのグループにまとめるか・まとめる相手と結果の記録
   fact / facts / record / sent                             facts と brief・relay・start・トラッカーへの書き込みの記録・
@@ -48,7 +49,7 @@ import sys
 from pathlib import Path
 
 JOURNAL_KINDS = ("relay", "brief", "start", "report", "fact", "takeover", "close", "mode", "tracker", "close_sub",
-                 "tracker_write", "sidebar_group", "sidebar", "cross")
+                 "tracker_write", "sidebar_group", "sidebar", "cross", "reopen")
 # state.md の直近の journal と注入の kind 別の数から外す kind（status のたびに 1 行入り、経緯の行を押し出す）
 JOURNAL_QUIET_KINDS = ("cross",)
 # 印の無い別の PJ（初めて cross で見る PJ）の決定は、この日数より新しく journal に入ったものだけ出す
@@ -132,6 +133,18 @@ def root() -> Path:
 
 def now() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_ts(value) -> dt.datetime | None:
+    """now() と stamp() の時刻（秒まで / マイクロ秒まで）を比べられる形に。読めなければ None."""
+    if not isinstance(value, str):
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return dt.datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def stamp() -> str:
@@ -340,6 +353,11 @@ def load_config(pdir: Path) -> dict:
 
 def is_active(config: dict) -> bool:
     return config.get("status") == "active"
+
+
+def is_repo_hub(config: dict) -> bool:
+    """PJ を定義せずに 1 つの repo を束ねる常設の hub か（ADR-20261102144843）。真偽値の true 以外は通常の PJ."""
+    return config.get("repo_hub") is True
 
 
 def tracker_kind(config: dict) -> str | None:
@@ -818,10 +836,154 @@ def gitignored(path: Path) -> bool | None:
     return proc.returncode == 0
 
 
+def main_checkout(path) -> Path:
+    """path の repo のメインのチェックアウト（git common dir の親）。worktree から呼んでも本体を返す.
+
+    repo hub の repos に worktree を書くと、その worktree を消したときに切れる
+    """
+    common = git_common_dir(path)
+    if common is None:
+        raise HubError(2, f"git リポジトリではない: {path}")
+    main = common.parent
+    # submodule（common が .git/modules/<name>）・--separate-git-dir・bare では、親がメインのチェックアウトにならない
+    if common.name != ".git" or git_common_dir(main) != common:
+        raise HubError(2, f"メインのチェックアウトを決められない（submodule・--separate-git-dir・bare の repo）: {path}")
+    return main
+
+
+def repo_hub_project(main: Path) -> str:
+    # 先頭が `repo-` なので、PROJECT_RE の「英数字で始まる」は置き換えの後も満たす
+    return "repo-" + re.sub(r"[^A-Za-z0-9._-]", "-", main.name)
+
+
+def repo_hubs_on(common: Path) -> list[tuple[Path, dict]]:
+    """common の repo を持つ repo hub。closed も含める（closed の repo hub は作り直さずに reopen で戻す）."""
+    return [(pdir, config) for pdir, config, _ in scan_projects()
+            if config is not None and is_repo_hub(config) and str(common) in repo_commons(config)]
+
+
+# 範囲を切らない PJ の説明（same_scope の判定を言葉にしたもの。stderr に出す）
+SCOPE_HINT = "github は同じ repo で milestone なし、linear は同じ team で project なしか同じ project、local は同じ slug"
+# 範囲の切り方の案内（local は切れない）
+SCOPE_CUT = "github は --milestone、linear は --tracker-project で範囲を切る。local は範囲を切れないので別の slug にする"
+
+
+def same_scope(a: dict, b: dict) -> bool:
+    """2 つの PJ の範囲が重なるか（同じ repo にあるときだけ呼ぶ / ADR-20261102144843 の決定 5）.
+
+    範囲が重なる hub が 2 つあると、Issue をどちらに振り分けるかが決まらない。通常の PJ どうしは今までどおり並べてよい。
+    repo hub と重なるのは、範囲を切らない通常の PJ: github は同じ repo で milestone なし、local は同じ slug の dir。
+    linear は project で範囲を切るので、project なしで同じ team の PJ と、repo hub と同じ project の PJ が重なる
+    """
+    if is_repo_hub(a) == is_repo_hub(b):
+        # repo hub どうしは init が先に弾く（1 つの repo に 1 つ）。ここは config を手で直した状態への保険
+        return is_repo_hub(a)
+    hub, pj = (a, b) if is_repo_hub(a) else (b, a)
+    th, tp = hub.get("tracker"), pj.get("tracker")
+    if not isinstance(th, dict) or not isinstance(tp, dict) or th.get("kind") != tp.get("kind"):
+        return False
+    if tp.get("kind") == "linear":
+        if tp.get("project"):
+            return tp["project"] == th.get("project")
+        # team の無い repo hub（project だけ）は、その project がどの team のものか分からないので重なる側に倒す
+        return bool(tp.get("team")) and (not th.get("team") or tp["team"] == th["team"])
+    if tp.get("kind") == "local":
+        return tp.get("dir") == th.get("dir")
+    return not tp.get("milestone") and same_github_repo(tp.get("repo"), th.get("repo"))
+
+
+def same_github_repo(a, b) -> bool:
+    # GitHub の owner/name は大文字と小文字を区別しない（`--tracker-repo` は手で打つことがある）
+    return isinstance(a, str) and isinstance(b, str) and bool(a) and a.casefold() == b.casefold()
+
+
+def scope_conflicts(pdir: Path, config: dict) -> list[str]:
+    """同じ repo にある active な別の PJ のうち、config と範囲が重なるものの名前（読めない config は飛ばす）."""
+    mine = set(repo_commons(config))
+    return [other.name for other, other_config, _ in scan_projects()
+            if other != pdir and other_config is not None and is_active(other_config)
+            and mine & set(repo_commons(other_config)) and same_scope(config, other_config)]
+
+
+def local_dir_problem(main: Path, data_dir: Path) -> str | None:
+    """repo hub の tracker local の dir が git に載るなら理由（.claude/designs/20261102-project-hub-repo-hub.md の未解決事項 7 の (a)）.
+
+    hub のセッションが書いた Issue ファイルが本体の checkout に未コミットで残ると、worktree の sub は自分の
+    複製を読むので見えない。repo の外の dir は git に載らないので見ない
+    """
+    top = git(data_dir, "rev-parse", "--show-toplevel")
+    if top is not None and Path(top).resolve() != main and git_common_dir(data_dir) == git_common_dir(main):
+        # worktree の中の dir は、本体の check-ignore では `.claude/worktrees/` の ignore に当たって通ってしまい、
+        # その worktree を消すと tracker も切れる
+        return "worktree の中の dir（メインのチェックアウト側のパスを渡す）"
+    try:
+        rel = data_dir.relative_to(main)
+    except ValueError:
+        return None
+    proc = run_git(main, "check-ignore", "-q", str(rel))
+    if proc is None or proc.returncode not in (0, 1):
+        return "git check-ignore が失敗した"
+    if proc.returncode == 1:
+        return "gitignore されていない"
+    # check-ignore は ignore されたパスを force-add して追跡しているファイルを数えない
+    if git(main, "ls-files", "-z", "--", str(rel)):
+        return "gitignore されているが、git で追跡されているファイルがある"
+    return None
+
+
+def repo_spec(spec: str) -> tuple[str, str]:
+    path, sep, base = spec.rpartition("=")
+    return (path, base) if sep else (spec, "")
+
+
 def cmd_init(args) -> int:
-    pdir = project_dir(args.project, must_exist=False)
+    specs = [repo_spec(s) for s in args.repo or []]
+    main = None
+    if args.repo_hub:
+        if args.milestone:
+            raise HubError(2, "repo hub は --milestone で範囲を切らない（範囲は repo の open Issue のうち、どの PJ にも入らないもの）")
+        if len(specs) > 1:
+            raise HubError(2, "repo hub の --repo は 1 つだけ（repo hub は 1 つの repo を束ねる）")
+        if specs and args.cwd:
+            raise HubError(2, "--cwd と --repo は併用しない（repo hub の repo はどちらか一方で決める）")
+        path, base = specs[0] if specs else (args.cwd or os.getcwd(), "")
+        main = main_checkout(Path(path).expanduser().resolve())
+        specs = [(str(main), base)]
+    elif args.cwd:
+        raise HubError(2, "--cwd は --repo-hub にだけ付ける（通常の PJ の repo は --repo で指定する）")
+    # `--project ""` を既定名に置き換えない（project_dir が exit 2 で止める）
+    project = args.project if args.project is not None else repo_hub_project(main)
+    pdir = project_dir(project, must_exist=False)
+    if main is not None:
+        common = git_common_dir(main)
+        unreadable = [other.name for other, other_config, _ in scan_projects() if other_config is None]
+        if unreadable:
+            # 読めない config が同じ repo の repo hub だと、2 つ目を作ってしまう
+            raise HubError(3, f"config が読めない PJ がある（{', '.join(unreadable)}）。同じ repo の repo hub かを確かめられない"
+                              "ので作らない。その config.json を直してからやり直す")
+        for other, other_config in repo_hubs_on(common):
+            if is_active(other_config):
+                raise HubError(3, f"repo {main} には repo hub「{other.name}」がある（active）。"
+                                  f"このセッションに引き継ぐなら takeover --project {other.name}")
+            raise HubError(3, f"repo {main} には repo hub「{other.name}」がある（{other_config.get('status')}）。"
+                              f"戻すなら reopen --project {other.name}")
     if (pdir / "config.json").exists():
-        raise HubError(3, f"PJ {args.project} は init 済み。このセッションに引き継ぐなら takeover")
+        if main is not None:
+            # 同じ repo の repo hub は上で弾いた。ここに来るのは同じ basename の別の repo の PJ か、同じ repo の
+            # 通常の PJ。どちらも引き継ぐと別の hub を乗っ取るので、takeover は案内しない
+            where = "この repo の通常の PJ" if str(common) in repo_commons(load_config(pdir)) else "別の repo の PJ"
+            raise HubError(3, f"PJ 名 {project} は{where}が使っている。--project で別の名前を付ける")
+        try:
+            existing = load_config(pdir)
+        except HubError:
+            existing = {}
+        status = existing.get("status")
+        if is_repo_hub(existing):
+            # 案内どおりに takeover すると、通常の PJ を作るつもりで repo hub を乗っ取る
+            raise HubError(3, f"PJ 名 {project} は repo hub が使っている。--project で別の名前を付ける")
+        if status == "closed":
+            raise HubError(3, f"PJ {project} は init 済み（closed）。戻すなら reopen")
+        raise HubError(3, f"PJ {project} は init 済み。このセッションに引き継ぐなら takeover")
     sid = current_session(args.session_id)
     problem = name_problem(args.name)
     if problem:
@@ -846,12 +1008,12 @@ def cmd_init(args) -> int:
         if args.tracker_project:
             tracker["project"] = args.tracker_project
     if args.milestone:
+        if args.tracker == "local":
+            # local の Issue ファイルには milestone が無く、範囲を切れない（範囲を切ったつもりで repo hub と重なる）
+            raise HubError(2, "tracker local には --milestone を付けない（Issue ファイルに milestone は無い）")
         tracker["milestone"] = args.milestone
     repos = []
-    for spec in args.repo or []:
-        path, sep, base = spec.rpartition("=")
-        if not sep:
-            path, base = spec, ""
+    for path, base in specs:
         resolved = Path(path).expanduser().resolve()
         if git_common_dir(resolved) is None:
             raise HubError(2, f"git リポジトリではない: {path}")
@@ -873,6 +1035,28 @@ def cmd_init(args) -> int:
     if group_mode == "on" and host is None:
         raise HubError(3, "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーのグループは"
                           "Desktop の hub だけで使える")
+    config = {
+        "project": project, "status": "active", "tracker": tracker, "repos": repos,
+        "approval": {"prefix": args.approval_prefix, "suffix": args.approval_suffix,
+                     "mode": args.approval_mode},
+        "tracker_write": write_mode, "sidebar_group": group_mode,
+    }
+    if main is not None:
+        config["repo_hub"] = True
+        if args.tracker == "local":
+            problem = local_dir_problem(main, Path(tracker["dir"]))
+            if problem:
+                raise HubError(3, f"{problem}: {tracker['dir']}。repo hub の tracker local は、Issue ファイルが git に"
+                                  "載らない repo でだけ使える（worktree の sub が hub の起票した Issue を読めない）")
+    if living_spec:
+        config["living_spec"] = living_spec
+    conflicts = scope_conflicts(pdir, config)
+    if conflicts:
+        if main is not None:
+            raise HubError(3, f"同じ repo に、範囲を切らない PJ「{'」「'.join(conflicts)}」がある（{SCOPE_HINT}）。"
+                              f"範囲が重なる hub は置けない。その PJ の範囲を切るか（{SCOPE_CUT}）、その PJ で進める")
+        raise HubError(3, f"同じ repo に repo hub「{'」「'.join(conflicts)}」がある。範囲を切らない PJ（{SCOPE_HINT}）は"
+                          f"置けない。{SCOPE_CUT}か、repo hub で進める")
 
     base_dir = root()
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -884,28 +1068,40 @@ def cmd_init(args) -> int:
         (pdir / sub).mkdir(parents=True, exist_ok=True)
     for name in ("journal.jsonl", "facts.jsonl"):
         (pdir / name).touch()
-    config = {
-        "project": args.project, "status": "active", "tracker": tracker, "repos": repos,
-        "approval": {"prefix": args.approval_prefix, "suffix": args.approval_suffix,
-                     "mode": args.approval_mode},
-        "tracker_write": write_mode, "sidebar_group": group_mode,
-    }
-    if living_spec:
-        config["living_spec"] = living_spec
     write_json(pdir / "config.json", config)
     write_json(pdir / "hub.json", {"session_id": sid, "host_session_id": host,
                                    "name": args.name, "updated": now()})
-    out = {"project": args.project, "dir": str(pdir), "hub": args.name, "repos": repos,
+    out = {"project": project, "dir": str(pdir), "hub": args.name, "repos": repos,
            "gitignored": gitignored(pdir / "config.json"), "approval_mode": args.approval_mode,
            "mode_notice": mode_notice(args.approval_mode), "tracker_write": write_mode,
            "sidebar_group": group_mode}
     if group_mode == "on":
-        out["sidebar_notice"] = sidebar_notice("on", args.project)
+        out["sidebar_notice"] = sidebar_notice("on", project)
+    if main is not None:
+        out["repo_hub"] = True
     warning = default_name_warning(args.name)
     if warning:
         out["warning"] = warning
     emit(out)
     return 0
+
+
+def take_hub(pdir: Path, sid: str, name: str, reason: str | None = None) -> dict:
+    """hub.json を sid のセッションに書き換え、journal に takeover を残す。前の hub.json を返す."""
+    old = read_obj(pdir / "hub.json")
+    new = {"session_id": sid, "host_session_id": verified_host(sid), "name": name, "updated": now()}
+    if isinstance(old.get("sent_seen_lines"), int):
+        # lead に見せた所までの印は PJ のもので、hub のセッションが替わっても引き継ぐ
+        new["sent_seen_lines"] = old["sent_seen_lines"]
+    for key in ("cross_seen_lines", "cross_last_overlaps"):
+        if key in old:
+            new[key] = old[key]
+    write_json(pdir / "hub.json", new)
+    body = {"from_session_id": old.get("session_id"), "from_name": old.get("name"), "to_name": name}
+    if reason is not None:
+        body["reason"] = reason
+    journal_append(pdir, "takeover", sid, body)
+    return old
 
 
 def cmd_takeover(args) -> int:
@@ -914,18 +1110,7 @@ def cmd_takeover(args) -> int:
     problem = name_problem(args.name)
     if problem:
         raise HubError(2, problem)
-    old = read_obj(pdir / "hub.json")
-    new = {"session_id": sid, "host_session_id": verified_host(sid), "name": args.name, "updated": now()}
-    if isinstance(old.get("sent_seen_lines"), int):
-        # lead に見せた所までの印は PJ のもので、hub のセッションが替わっても引き継ぐ
-        new["sent_seen_lines"] = old["sent_seen_lines"]
-    for key in ("cross_seen_lines", "cross_last_overlaps"):
-        if key in old:
-            new[key] = old[key]
-    write_json(pdir / "hub.json", new)
-    journal_append(pdir, "takeover", sid,
-                   {"from_session_id": old.get("session_id"), "from_name": old.get("name"),
-                    "to_name": args.name})
+    old = take_hub(pdir, sid, args.name)
     mode, _ = approval_mode(load_config(pdir))
     # 新しい hub の会話の lead は、自動の連絡が有効かをまだ知らされていない（ADR-20261025152955 の決定 1）
     out = {"project": args.project, "hub": args.name, "previous": old.get("name"),
@@ -965,7 +1150,8 @@ def cmd_refresh_hub(args) -> int:
            "tracker": config.get("tracker"), "repos": config.get("repos"),
            "living_spec": config.get("living_spec"),
            "approval": config.get("approval"), "approval_mode": mode,
-           "tracker_write": tracker_write(config), "sidebar_group": sidebar_group(config)}
+           "tracker_write": tracker_write(config), "sidebar_group": sidebar_group(config),
+           "repo_hub": is_repo_hub(config)}
     warnings = [w for w in (default_name_warning(args.name), mode_warning) if w]
     if warnings:
         out["warning"] = " / ".join(warnings)
@@ -1085,6 +1271,87 @@ def cmd_close(args) -> int:
     return 0
 
 
+def cmd_reopen(args) -> int:
+    """closed の PJ を active に戻す（ADR-20261102144843）。戻す前に、closed の間に変わった同じ repo の状態を確かめる.
+
+    閉じた PJ を戻すのはたいてい新しい会話なので、hub のセッションが違えば takeover も兼ねる
+    """
+    pdir = project_dir(args.project)
+    sid = current_session(args.session_id)
+    problem = name_problem(args.name)
+    if problem:
+        raise HubError(2, problem)
+    config = load_config(pdir)
+    if config.get("status") != "closed":
+        raise HubError(3, f"PJ {args.project} は closed ではない（status: {config.get('status')}）")
+    conflicts = scope_conflicts(pdir, config)
+    if conflicts:
+        raise HubError(3, f"closed の間に、同じ repo に範囲が重なる PJ「{'」「'.join(conflicts)}」ができている"
+                          "（範囲が重なる hub は置けない）。戻すなら、先にその PJ を close するか範囲を切る")
+    # closed の間に同じ repo の別の PJ へ移ったセッション。戻した PJ で作業中に数えると、重なりと宛先が二重になる
+    mine = set(repo_commons(config))
+    others, unknown = [], []
+    for other, other_config, reason in scan_projects():
+        if other == pdir:
+            continue
+        if other_config is None:
+            unknown.append({"project": other.name, "reason": reason})
+        elif is_active(other_config) and mine & set(repo_commons(other_config)):
+            others.append(other)
+    if unknown and is_repo_hub(config):
+        # init と同じ。読めない config が同じ repo の active な repo hub だと、active な repo hub が 2 つになる
+        raise HubError(3, f"config が読めない PJ がある（{', '.join(u['project'] for u in unknown)}）。同じ repo の "
+                          "repo hub かを確かめられないので戻さない。その config.json を直してからやり直す")
+    closes = [row.get("ts") for row in read_jsonl(pdir / "journal.jsonl") if row.get("kind") == "close"]
+    closed_at = parse_ts(closes[-1]) if closes else None
+
+    def moved_to(other: Path, session_id: str) -> bool:
+        try:
+            reg = read_obj(other / "sessions" / f"{session_id}.json")
+        except HubError as e:
+            # 1 つの壊れた登録で reopen 全体を止めない（load_registrations と同じ）。移ったかは分からないので出力に出す
+            unknown.append({"project": other.name, "reason": f"登録が読めない（{session_id}: {e}）"})
+            return False
+        if not reg:
+            return False
+        # close より前から別の PJ にあった登録（その PJ の作業を終えてからこの PJ に来た）は移ったとみなさない。
+        # close の記録が無い（config を手で直して閉じた）・時刻が読めないときは、移った側に倒す
+        updated = parse_ts(reg.get("updated"))
+        return closed_at is None or updated is None or updated >= closed_at
+
+    moved = []
+    for reg in load_registrations(pdir)[0]:
+        to = next((o for o in others if moved_to(o, reg["session_id"])), None)
+        if to is not None:
+            moved.append({"session_id": reg["session_id"], "name": reg.get("name"), "issue": reg.get("issue"),
+                          "to_project": to.name})
+    # 記録を先に書く（status を戻した後に止まると、移ったセッションを作業中に数えたまま active になる）
+    for item in moved:
+        # at: journal の ts は秒までなので、後から取り込む report と比べる時刻を細かく持つ（moved_projects）
+        journal_append(pdir, "close_sub", item["session_id"],
+                       {"result": "moved", "to_project": item["to_project"], "at": stamp()})
+    hub = read_obj(pdir / "hub.json")
+    previous = None
+    if hub.get("session_id") != sid:
+        previous = take_hub(pdir, sid, args.name, reason="reopen").get("name")
+    journal_append(pdir, "reopen", args.project, {"moved": len(moved)})
+    config["status"] = "active"
+    write_json(pdir / "config.json", config)
+    write_state(pdir)
+    mode, _ = approval_mode(config)
+    # 同じセッションの reopen は hub.json を書き換えないので、名前は hub.json のものを返す（refresh-hub が直す）
+    hub_name = read_obj(pdir / "hub.json").get("name")
+    out = {"project": args.project, "status": "active", "hub": hub_name, "approval_mode": mode,
+           "mode_notice": mode_notice(mode), "moved": moved, "unknown": unknown}
+    if previous is not None:
+        out["previous"] = previous
+    warning = default_name_warning(hub_name) if isinstance(hub_name, str) else None
+    if warning:
+        out["warning"] = warning
+    emit(out)
+    return 0
+
+
 def cmd_projects(args) -> int:
     out = []
     for cfg_path in sorted(root().glob("*/config.json")):
@@ -1098,9 +1365,12 @@ def cmd_projects(args) -> int:
         if not isinstance(config, dict) or not isinstance(hub, dict):
             out.append({"project": pdir.name, "status": "unreadable"})
             continue
-        out.append({"project": pdir.name, "status": config.get("status"),
-                    "hub": hub.get("name"), "hub_session_id": hub.get("session_id"),
-                    "pending": pending_count(pdir), "dir": str(pdir)})
+        row = {"project": pdir.name, "status": config.get("status"),
+               "hub": hub.get("name"), "hub_session_id": hub.get("session_id"),
+               "pending": pending_count(pdir), "dir": str(pdir)}
+        if is_repo_hub(config):
+            row["repo_hub"] = True
+        out.append(row)
     emit(out)
     return 0
 
@@ -1408,6 +1678,45 @@ def cmd_ingest(args) -> int:
     return 0
 
 
+def report_placed_at(source) -> dt.datetime | None:
+    """report を inbox に置いた時刻（ファイル名の先頭 `%Y%m%dT%H%M%S%fZ`）。読めなければ None."""
+    if not isinstance(source, str):
+        return None
+    try:
+        return dt.datetime.strptime(source[:22], "%Y%m%dT%H%M%S%fZ")
+    except ValueError:
+        return None
+
+
+def moved_projects(rows: list[dict]) -> dict:
+    """closed の間に別の PJ へ移ったと reopen が記録し、その後にこの PJ で report していないセッション → 移った先の PJ.
+
+    close の時点で inbox に残っていた report は reopen の後に取り込まれて journal で後ろに並ぶので、journal の順ではなく
+    inbox に置いた時刻で「その後に report した」かを決める。記録に `at` が無い（秒までの ts しか無い）ときは、
+    同じ秒に置いた report を前とみなす
+    """
+    moved, moved_at = {}, {}
+    for row in rows:
+        body = row.get("body")
+        subject = row.get("subject")
+        if row.get("kind") == "close_sub" and isinstance(body, dict) and body.get("result") == "moved":
+            moved[subject] = body.get("to_project")
+            at = parse_ts(body.get("at"))
+            if at is None:
+                ts = parse_ts(row.get("ts"))
+                at = ts + dt.timedelta(seconds=1) if ts else None
+            moved_at[subject] = at
+        elif row.get("kind") == "report" and subject in moved:
+            placed, at = report_placed_at(row.get("source")), moved_at.get(subject)
+            if placed is None or at is None or placed > at:
+                del moved[subject]
+    return moved
+
+
+def moved_sessions(rows: list[dict]) -> set[str]:
+    return set(moved_projects(rows))
+
+
 def latest_reports(rows: list[dict]) -> dict:
     latest = {}
     for row in rows:
@@ -1475,14 +1784,17 @@ def notified_waits(rows: list[dict]) -> set[tuple]:
 
 
 def cmd_waiting(args) -> int:
-    """sub が最新の report の waiting_prs で待っている PR（done の sub は除く）と、マージを知らせ済みか（GitHub issue #329）."""
+    """sub が最新の report の waiting_prs で待っている PR（done の sub と別の PJ へ移った sub は除く）と、
+    マージを知らせ済みか（GitHub issue #329）."""
     pdir = project_dir(args.project)
     rows = read_jsonl(pdir / "journal.jsonl")
     done = notified_waits(rows)
+    # 移った sub へマージの段取りを送ると、別の PJ で作業中のセッションに届く
+    moved = moved_sessions(rows)
     out = []
     for sid, row in latest_reports(rows).items():
         body = row["body"]
-        if body.get("state") == "done":
+        if body.get("state") == "done" or sid in moved:
             continue
         for pr in body.get("waiting_prs") or []:
             out.append({"session_id": sid, "name": body.get("name"), "issue": body.get("issue"),
@@ -1603,8 +1915,9 @@ def sidebar_plan(pdir: Path, config: dict, hub: dict) -> dict:
     if hub_host is None:
         out["note"] = "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーは動かさない"
         return out
+    # 別の PJ へ移った sub（reopen が記録する）も、戻した PJ のグループに入れ直さない
     closed = {r.get("subject") for r in rows if r.get("kind") == "close_sub" and isinstance(r.get("body"), dict)
-              and r["body"].get("result") == "accepted"}
+              and r["body"].get("result") == "accepted"} | moved_sessions(rows)
     for reg in load_registrations(pdir)[0]:
         if reg["session_id"] in closed:
             continue
@@ -1731,6 +2044,9 @@ def base_branch(repo_path, base) -> str:
 
 def registered_branches(pdir: Path, config: dict, repo: dict | None = None) -> set[str]:
     regs, _ = load_registrations(pdir)
+    # 別の PJ へ移った sub のブランチの PR は、移った先の PJ の表に載る
+    moved = moved_sessions(read_jsonl(pdir / "journal.jsonl"))
+    regs = [r for r in regs if r.get("session_id") not in moved]
     repos = [r for r in config.get("repos", []) if isinstance(r, dict) and r.get("path")]
     if repo is not None:
         # 同じ名前のブランチは repo をまたいで重なりうる（repo A の登録の `feat` が repo B の PR に当たる）。
@@ -1780,15 +2096,64 @@ def cmd_snapshot(args) -> int:
         return 0
     raw_count = len(body) if isinstance(body, list) else None
     data = body
+    extra = {}
     if args.source == "prs":
         branches = registered_branches(pdir, config, repo) if args.registered_branches else None
         data = normalize_prs(body, branches)
-    # 取得の上限に届いていたら、窓の外に出た分が黙って消えている可能性がある
+    elif args.source == "tracker" and is_repo_hub(config) and tracker_kind(config) == "github" \
+            and isinstance(body, list):
+        data, extra = drop_pj_milestones(pdir, config, body)
+    # 取得の上限に届いていたら、窓の外に出た分が黙って消えている可能性がある（除く前の件数で見る）
     truncated = bool(args.limit and raw_count is not None and raw_count >= args.limit)
     record_snapshot(pdir, key, ok=True, data=data, truncated_at=args.limit if truncated else None)
     emit({"source": key, "ok": True, "count": len(data) if isinstance(data, list) else None,
-          "truncated": truncated})
+          "truncated": truncated, **extra})
     return 0
+
+
+def pj_milestones(pdir: Path, config: dict) -> dict[str, str]:
+    """repo hub と同じ repo・同じ GitHub repo の tracker を持つ active な通常の PJ の milestone → PJ 名."""
+    mine = set(repo_commons(config))
+    tracker_repo = config["tracker"].get("repo")
+    out = {}
+    for other, other_config, _ in scan_projects():
+        if other == pdir or other_config is None or not is_active(other_config) or is_repo_hub(other_config):
+            continue
+        tracker = other_config.get("tracker")
+        if not isinstance(tracker, dict) or tracker.get("kind") != "github" \
+                or not same_github_repo(tracker.get("repo"), tracker_repo) \
+                or not isinstance(tracker.get("milestone"), str) or not tracker["milestone"]:
+            continue
+        if mine & set(repo_commons(other_config)):
+            out.setdefault(tracker["milestone"], other.name)
+    return out
+
+
+def drop_pj_milestones(pdir: Path, config: dict, rows: list) -> tuple[list, dict]:
+    """repo hub の Issue の表から、同じ repo の PJ の範囲（milestone）に入る Issue を除く（その PJ の hub の受け持ち）.
+
+    行の milestone は `gh issue list --json milestone` の形（{"title": …}）か、title の文字列か null
+    """
+    owners = pj_milestones(pdir, config)
+    if not owners:
+        return rows, {}
+    kept, excluded, missing = [], {}, 0
+    for row in rows:
+        if not isinstance(row, dict) or "milestone" not in row:
+            missing += 1
+            kept.append(row)
+            continue
+        title = row["milestone"].get("title") if isinstance(row["milestone"], dict) else row["milestone"]
+        if isinstance(title, str) and title in owners:
+            excluded[title] = excluded.get(title, 0) + 1
+        else:
+            kept.append(row)
+    extra = {"excluded": [{"project": owners[m], "milestone": m, "count": n} for m, n in sorted(excluded.items())]}
+    if missing:
+        # milestone を取らずに渡すと、PJ の Issue が黙って repo hub の表に残る
+        extra["warning"] = (f"milestone の無い行が {missing} 件あり、同じ repo の PJ の範囲を除けていない"
+                            "（gh issue list の --json に milestone を入れる）")
+    return kept, extra
 
 
 def cmd_issue(args) -> int:
@@ -1891,12 +2256,16 @@ def session_rows(pdir: Path, config: dict) -> tuple[list[dict], list[tuple[dict,
     sessions = []
     absent = absent_map(pdir)
     regs, unreadable = load_registrations(pdir)
-    latest = latest_reports(read_jsonl(pdir / "journal.jsonl"))
+    journal = read_jsonl(pdir / "journal.jsonl")
+    latest = latest_reports(journal)
+    moved = moved_sessions(journal)
 
     def working(reg: dict) -> bool:
-        # done を報告した登録と不在の登録は、もうその worktree で作業していない（後から別のセッションが入りうる）
+        # done を報告した登録・不在の登録・別の PJ へ移った登録は、もうこの PJ でその worktree を使っていない
+        # （後から別のセッションが入りうる）
         rep = latest.get(reg.get("session_id"))
-        return absent_since(reg, absent) is None and not (rep and rep["body"].get("state") == "done")
+        return (absent_since(reg, absent) is None and not (rep and rep["body"].get("state") == "done")
+                and reg.get("session_id") not in moved)
 
     active = [r for r in regs if working(r)]
     shared = {w for w in (r.get("worktree") for r in active)
@@ -1932,7 +2301,9 @@ def cmd_worktrees(args) -> int:
     """brief の材料: 各 repo の base の SHA と、登録済みセッションが触っているファイル."""
     pdir = project_dir(args.project)
     repos, rows, unreadable = session_rows(pdir, load_config(pdir))
-    emit({"repos": repos, "sessions": [entry for entry, _, _ in rows], "unreadable": unreadable})
+    # working: done・不在・別の PJ へ移った登録は false（repo hub の Issue の保守で作業中の Issue を外すのに使う）
+    emit({"repos": repos, "sessions": [{**entry, "working": working} for entry, working, _ in rows],
+          "unreadable": unreadable})
     return 0
 
 
@@ -1970,7 +2341,9 @@ def cmd_cross(args) -> int:
     since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=CROSS_FIRST_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
     projects, unknown, lines_now, active = [], [], {}, 0
     for other, other_config, reason in scan_projects():
-        if other_config is not None and is_active(other_config):
+        # 段 2 の進む条件 1 の材料。閉じない repo hub は repo ごとに置くので、数えると PJ が同時に動いているかと
+        # 無関係に条件を満たす（ADR-20261102144843）
+        if other_config is not None and is_active(other_config) and not is_repo_hub(other_config):
             active += 1
         if other == pdir:
             continue
@@ -2086,6 +2459,7 @@ def render_state(pdir: Path) -> tuple[str, int]:
     lines = journal_lines(pdir / "journal.jsonl")
     rows = parse_jsonl(lines)
     latest = latest_reports(rows)
+    moved_to = moved_projects(rows)
     sessions, unreadable = load_registrations(pdir)
     absent = absent_map(pdir)
     facts = read_jsonl(pdir / "facts.jsonl")
@@ -2120,9 +2494,12 @@ def render_state(pdir: Path) -> tuple[str, int]:
             counts = "・".join(str(len(body.get(k) or [])) for k in (
                 "needs_lead", "questions", "follow_ups", "claims")) if rep else "-"
             renamed_to = current_name(reg, absent)
+            sid = reg.get("session_id")
+            # 別の PJ へ移った sub は、最後の report の状態のまま作業中に見せない
+            state = f"移った（→ {moved_to[sid]}）" if sid in moved_to else body.get("state")
             out.append("| " + " | ".join([
                 cell(f"{reg.get('name')} → {renamed_to}" if renamed_to else reg.get("name")),
-                cell(reg.get("issue")), cell(body.get("state")),
+                cell(reg.get("issue")), cell(state),
                 cell(body.get("pr")), cell(reg.get("branch")), cell(rep and rep.get("ts")),
                 counts, cell(absent_since(reg, absent))]) + " |")
         out += more_rows(ordered, "sessions/")
@@ -2175,7 +2552,9 @@ def render_state(pdir: Path) -> tuple[str, int]:
     # hub が自分の言葉で書いたものなので本文を載せる（sub の文面をそのまま写さない。SKILL.md の todo）
     out += [f"- {cell(t['id'])} {cell(t['text'], None)}" for t in todos[:TABLE_MAX]] or ["（なし）"]
     out += more_rows(todos, "`hub.py todo`")
-    rows_waiting = [(sid, pr) for sid, row in latest.items() if row["body"].get("state") != "done"
+    # waiting と同じく、done の sub と別の PJ へ移った sub は数えない
+    rows_waiting = [(sid, pr) for sid, row in latest.items()
+                    if row["body"].get("state") != "done" and sid not in moved_to
                     for pr in row["body"].get("waiting_prs") or []]
     notified = notified_waits(rows)
     pending_waits = [w for w in rows_waiting if w not in notified]
@@ -2854,7 +3233,13 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(func=func)
         return p
 
-    p = add("init", cmd_init, "PJ を作り、このセッションを hub として登録する（config が無いときだけ）")
+    p = add("init", cmd_init, "PJ を作り、このセッションを hub として登録する（config が無いときだけ）",
+            project=False)
+    p.add_argument("--project", help="PJ 名（--repo-hub なら省略でき、既定は repo-<メインのチェックアウトの名前>）")
+    p.add_argument("--repo-hub", action="store_true",
+                   help="PJ を定義せずに 1 つの repo を束ねる repo hub にする（milestone なし・repo は 1 つ。"
+                        "repo は --repo か --cwd か cwd から取り、メインのチェックアウトにする）")
+    p.add_argument("--cwd", help="--repo-hub: repo を取る dir（既定は cwd）")
     p.add_argument("--name", required=True, help="ListAgents の「This session is <name>」")
     p.add_argument("--tracker", choices=("github", "linear", "local"), required=True)
     p.add_argument("--tracker-repo", help="github: owner/name")
@@ -2904,6 +3289,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--path", required=True, help="living spec のファイル（.claude/living-specs/<slug>.md）。- で外す")
 
     add("close", cmd_close, "config の status を closed にする")
+    p = add("reopen", cmd_reopen,
+            "closed の PJ を active に戻す（同じ repo に範囲が重なる PJ ができていれば止める。別の PJ へ移ったセッションは"
+            "作業中から外す。hub のセッションが違えば takeover も兼ねる）")
+    p.add_argument("--name", required=True, help="ListAgents の「This session is <name>」")
     add("projects", cmd_projects, "PJ の一覧（status・hub の名前・未取り込みの件数）",
         project=False, session=False)
 
@@ -3027,6 +3416,8 @@ def main(argv: list[str] | None = None) -> int:
     # --peer-count は --raw のときだけ要らない。argparse の必須と同じく、usage を stderr に出して exit 2 で止める
     if getattr(args, "raw", None) is False and args.peer_count is None:
         parser.error("the following arguments are required: --peer-count（ListAgents の出力をそのまま渡すなら --raw）")
+    if args.cmd == "init" and args.project is None and not args.repo_hub:
+        parser.error("the following arguments are required: --project（repo hub なら --repo-hub）")
     try:
         return args.func(args)
     except HubError as e:
