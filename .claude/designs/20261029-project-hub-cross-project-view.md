@@ -3,7 +3,7 @@ id: 20261029-project-hub-cross-project-view
 title: project-hub の PJ 横断 — どの hub からも別 PJ の重なりと決定を読み、上位の hub は条件を満たしてから足す
 status: draft
 phase: current
-last-validated: 2026-10-29
+last-validated: 2026-11-04
 supersedes: []
 superseded-by: null
 issue: null
@@ -85,7 +85,7 @@ hub は自分の PJ の sub しか見ていないので、同じ repo を触る�
 - `presence_checked` は別 PJ の `presence.json` の更新時刻（無ければ null）。その PJ の在席がいつ時点の値かを読み手に渡す
 - `new_decisions` は、自分の hub.json の `cross_seen_lines`（別 PJ ごとの journal の行数）より後の行に**初めて**出てきた決定。`decision_rows` に初出の行番号を持たせ、書き直しで出直さないようにする。印が無い PJ（初回）は、直近 14 日に初出の決定だけを返す（過去の全件を一度に出さない）
 - `unknown` は、照合できなかった PJ（config・hub.json・journal が読めない）。repo を共有しているかが分からないので、名前と理由だけを返す
-- `active_projects` は、その時点で `status: active` の PJ の総数（repo を共有しない PJ も含む。段 2 の進む条件の材料）
+- `active_projects` は、その時点で `status: active` の PJ の総数（repo を共有しない PJ も含む。段 2 の進む条件の材料）。repo hub（config の `repo_hub: true`）は数えない（2026-11-04 追記。下の段 2 の条件 1）
 
 **`hub.py cross --project <PJ> --mark`（hub だけ・status の 11. でだけ呼ぶ）**: require_hub を通し、自分の hub.json の `cross_seen_lines` を、読めた PJ の今の journal の行数に進める（`unknown` の PJ の印は進めない）。あわせて自分の journal に `cross` の kind で 1 行残す: `{"active_projects": N, "new_overlaps": [<前回の mark に無かった (PJ, repo, file) の組>], "new_decisions": <件数>}`。前回の組は hub.json の `cross_last_overlaps` に持つ。takeover は `sent_seen_lines` と同じく `cross_seen_lines` / `cross_last_overlaps` を引き継ぐ。
 
@@ -106,7 +106,7 @@ PJ の hub を sub として束ねる hub を 1 つ置き、PJ をまたぐ問�
 
 **進む条件**（どれか 1 つ。数えるのは `cross --mark` の行で、PJ ごとの journal に status 1 回につき 1 行入る）:
 
-1. 直近 14 日の `cross` の行のうち、`active_projects` が 3 以上の行がある日が 7 日以上（どの PJ の journal で数えてもよいが、合算はしない）
+1. 直近 14 日の `cross` の行のうち、`active_projects` が 3 以上の行がある日が 7 日以上（どの PJ の journal で数えてもよいが、合算はしない）。`active_projects` は repo hub を除いた数（2026-11-04 追記。閉じない repo hub を repo ごとに置くと、それだけで総数が 3 以上になり、PJ が同時に動いているかと無関係に条件を満たすため。repo hub が入る前の行は repo hub が 1 つも無いので値が変わらない / ADR-20261102144843・`.claude/designs/20261102-project-hub-repo-hub.md`）
 2. 直近 14 日に、`new_overlaps` が空でないか `new_decisions` が 1 以上の `cross` の行が、1 つの PJ の journal で 5 行以上
 3. lead が、別 PJ の hub に伝えるために手で文面を貼った回が 14 日で 3 回以上（journal から取れないので、lead の申告で数える）
 
@@ -141,7 +141,7 @@ PJ の hub を sub として束ねる hub を 1 つ置き、PJ をまたぐ問�
 ## 実装で決めたこと（段 1・2026-10-29）
 
 - サブコマンドは `cross`（読むだけ）と `cross --mark`（hub だけ）。`presence_checked` は別の PJ の `presence.json` の更新時刻（無ければ null）
-- `cross` の `active_projects` は、自分の PJ を含む active な PJ の総数。読めない config の PJ は数えない
+- `cross` の `active_projects` は、自分の PJ を含む active な PJ の総数。読めない config の PJ と repo hub（自分が repo hub でも）は数えない
 - 作業中の登録のうち、worktree の git の共通ディレクトリが取れないもの（worktree が消えた）は、共有する repo のものかが分からないので `sessions` に `repo: null`・`note` つきで残す（重なり不明）。worktree が実在して相手の config の repos に当たらないものは返さない
 - 自分の側で重なりを判定できない作業中の sub（`changed: null`）は、相手に同じ repo の作業中の sub がいるときだけ `mine_unknown` で返し、SKILL は「別の PJ」の節に「重なり不明」と出す（`sessions` には相手の sub しか入らないので、別の欄にした）
 - 別 PJ の hub.json・journal・config の中身が壊れているとき（不正な UTF-8・`repos` が配列でない など）も、その PJ を `unknown` に回し、ほかの PJ は出す

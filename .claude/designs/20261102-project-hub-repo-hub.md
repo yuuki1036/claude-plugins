@@ -3,7 +3,7 @@ id: 20261102-project-hub-repo-hub
 title: project-hub の repo hub — PJ を定義せず、1 つの repo を常設の hub で束ねる
 status: draft
 phase: target
-last-validated: 2026-11-02
+last-validated: 2026-11-04
 supersedes: []
 superseded-by: null
 issue: null
@@ -37,7 +37,7 @@ PJ を束ねる上位の hub（ADR-20261029233229 の決定 3・4、`.claude/des
   - PJ を定義せずに、repo を常設の hub で束ねられる（起動時に聞くことを、決められないものだけにする）
   - repo hub の sub は、編集するならブランチの上で編集し、重なりの判定が働く
   - 同じ repo で PJ hub と共存でき、1 つのセッションがどの hub に属するかが一意に決まる
-  - repo hub の無い repo では、今の挙動を変えない
+  - repo hub の無い repo では、今の挙動を変えない（例外: tracker local の PJ の `--milestone` を止める。「実装で決めたこと」）
   - 上位の hub の構想と役割を分ける
 - **非ゴール**:
   - 上位の hub（段 2）を作ること。進む条件を満たしてから別の doc で設計する
@@ -271,10 +271,29 @@ skill に `repo` サブコマンドを足す。引数なしの `init` を repo h
    - (a) 今のまま（文面で守る） — pros: 変更なし / cons: 同時の起票で番号がぶつかりうる
    - (b) issue-create に排他を入れるか、discover と同じく既存のファイルの最大 ID と counter の大きい方を使う — pros: 書き手が複数でもぶつからない / cons: issue-workflow の採番を変える
    - 方向性: (a)。確定タイミング: 採番の衝突を 1 回でも観測したとき（(b) を issue-workflow 側で入れる）
-9. **fork の clone で、`gh repo view` が返す repo が upstream を指す**（tracker を upstream で記録すると、fork の Issue と食い違う。未検証）
+9. **（解決済み・2026-11-04）fork の clone で、`gh repo view` が返す repo が upstream を指す**（tracker を upstream で記録すると、fork の Issue と食い違う）。gh 2.100.0 で確かめた: origin と upstream の両方の remote があり、既定の repo（`gh repo set-default`）を決めていない clone では upstream を返し、origin だけなら origin を返す。(b) を採り、SKILL の `repo` の手順で origin の owner/name と比べ、食い違えば利用者に聞く
    - (a) tracker の判定は `gh repo view` の既定に任せ、利用者が違えば `--tracker-repo` で直す — pros: 変更なし / cons: 気づかないと範囲の判定が外れる
    - (b) init のときに origin の owner/name と食い違えば利用者に聞く — pros: 気づける / cons: 手順が増える
    - 方向性: (b)。確定タイミング: Issue 1a の実装時に gh の挙動を確かめて決める
+10. **linear の repo hub で、status の表から同じ repo の PJ の Issue（project）を除く**（1a は github の milestone だけを除く）
+   - (a) 呼ぶ側が Issue の project を渡し、hub.py が PJ の project の Issue を除く — pros: github と同じ形 / cons: Linear MCP の出力の形に合わせる
+   - (b) 今のまま（表に PJ の Issue も並ぶ）— pros: 変更なし / cons: repo hub の表が PJ の Issue で埋まる
+   - 方向性: (a)。確定タイミング: linear の repo hub を使い始めたとき（1b の範囲には入れない）
+
+## 実装で決めたこと（Issue 1a・2026-11-04）
+
+採用案に書いていない細部を、Issue 1a（GitHub #356）の実装で次のように決めた。
+
+- `init --repo-hub` の repo は `--repo`（1 つまで）か `--cwd` か cwd から取り、メインのチェックアウトに直す。submodule・`--separate-git-dir`・bare の repo は、メインのチェックアウトを決められないので exit 2。PJ 名の既定は `repo-<basename>` で、`--project` は repo hub のときだけ省ける
+- 共存の検査の「範囲が重なる」（決定 5 のとおり）: 同じ git の共通ディレクトリにある closed 以外の通常の PJ のうち、github は同じ repo で milestone なし、local は同じ slug の dir、linear は project なしで同じ team（repo hub が team を持たなければ project なしのすべて）か、repo hub と同じ project のもの（linear の範囲は project で切る。milestone は見ない）。local の PJ には `--milestone` を付けられない。読めない config の PJ は飛ばすが、repo hub の init だけは、読めない config があれば止める（同じ repo の repo hub かを確かめられず、2 つ目を作りうる）
+- repo hub の init で PJ 名がぶつかったときは、相手が同じ repo の通常の PJ か別の repo の PJ かを文面で分け、どちらも takeover を案内しない
+- tracker local の検査は `.claude/indie` ではなく `--tracker-dir` で行い、`git check-ignore` に加えて `git ls-files` で追跡中のファイルが無いかも見る（ignore したパスを force-add したファイルは check-ignore に出ない）。repo の外の dir は見ない。worktree の中の dir は止める（本体の check-ignore では `.claude/worktrees/` の ignore に当たって通り、worktree を消すと tracker が切れる）
+- reopen は hub のセッションが違えば takeover を兼ねる（閉じた PJ を戻すのはたいてい新しい会話。journal の takeover の行に `reason: reopen`）。移ったセッションは journal の `close_sub` に `{"result": "moved", "to_project": …, "at": …}` で残し、その後にこの PJ で report を置くまで作業中から外す（`worktrees` の `working`・cross・サイドバーのグループ・`waiting`・state.md の sub 表と待っている PR・PR の照合）。「その後に report を置いた」は inbox に置いた時刻と `at` で比べる（close の時点で inbox に残っていた report を reopen の後に取り込んでも、作業中に戻さない）。移ったとみなすのは、別の PJ の登録が close より後に更新されたものだけ（close より前からあった登録は、その PJ の作業を終えてから来たセッション）。repo hub の reopen は、init と同じく読めない config があれば止める。別の PJ の登録が読めなければ、止めずに `unknown` に出す
+- `snapshot --source tracker` の milestone での除外は github だけ。除く対象は、tracker の repo が repo hub と同じで milestone を持つ、同じ repo の active な通常の PJ。除く PJ があるのに milestone の無い行があれば warning を出す。linear の project での除外は後に回す（下の未解決事項 10）
+- README の「main に直接コミットする repo とは両立しない」「更新後は作業中のセッションを開き直す」は、強制と振り分けの説明なので Issue 1b で書く（#357 の本文には無いので、1b に着手するときに範囲へ入れる）
+- 1b が入るまでの間、同じ repo に repo hub と PJ hub がどちらも active だと、`--project` の無い report は PJ が決まらず exit 1 で止まる（今の `detect_project`。誤った宛先には置かない）
+- tracker local の PJ に `--milestone` を付けると、repo hub の有無によらず止める。ゴールの「repo hub の無い repo では今の挙動を変えない」の例外で、値は以前から読まれていなかった（local の範囲は slug で決まり、milestone では切れない）
+- GitHub の repo の比較は大文字と小文字を区別しない
 
 ## 実装ブリッジ (Implementation Bridge)
 
