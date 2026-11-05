@@ -9,6 +9,7 @@ allowed-tools:
   - mcp__linear__list_issues
   - Read
   - Write
+  - Edit
   - Glob
   - Grep
   - Bash
