@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.17.3] - 2026-11-05
+
+### Fixed
+
+- **start が backlog の Issue に着手しても `status` を in-progress に変えていなかった**。discover の起票と issue-create の `--create-only` は Issue を `status: backlog` で書き、着手を start に任せているが、start はどこでも status を書き換えていなかった。着手した後もダッシュボード（Phase D2）の in-progress の一覧と放置検知から漏れ、D4 が「古い backlog から着手しますか？」と勧め続けた。Feature ブランチモードに Phase F3.2（着手の記録）を足し、Issue ファイルが `status: backlog` で、着手しない回（`WORK_STATE` が `closed` / `detached` / `prunable`）でなければ、`status` を `in-progress` に、`last_active` を今日に書き換える。F7 は feature-dev・軽量フローに処理を渡して start に戻らないので、F7 より前に置いた。`{DATA_DIR}` を git で追跡している repo で F7 で既存のブランチへ移る回（`WORK_STATE` が `branch`、ブランチだけの候補を選んだ `fresh`）だけは後回しにし、F7 の締め（feature-dev・軽量フローを起動する直前、どちらも起動しない回は F7 を終える時点）で 1 回だけ書き換える（先に書き換えると、ブランチ側の Issue ファイルを古い版で上書きするか、未コミットの変更が `git switch` を止めるため）。書き換えるのは、ブランチへ移った回は移った先、ブランチだけの候補へ移らなかった回は今のチェックアウトの Issue ファイル。作業のあるブランチへ移らなかった回は書き換えず、移った後に /start し直すよう案内する。`detached` を F7 で決め直した回も、決め直した後に書き換える。backlog 以外の status は書き換えない。linear backend でも書くのはローカルの Issue ファイルだけ。書き換えに使う Edit を start の allowed-tools（SKILL.md と command）に足した（GitHub #364）
+
 ## [1.17.2] - 2026-11-03
 
 ### Fixed

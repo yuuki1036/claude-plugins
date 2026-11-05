@@ -16,6 +16,7 @@ allowed-tools:
   - mcp__linear__list_issues
   - Read
   - Write
+  - Edit
   - Glob
   - Grep
   - Bash
@@ -221,7 +222,7 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 - 放置 Issue がある場合:
   - 「放置 Issue に対応しませんか？ブランチ: `{type}/{SLUG-N}-{desc}`」
 - backlog がある場合:
-  - 「古い backlog から着手しますか？（`/start {ID}`）見送るなら `/maintain` で canceled に（二度と取り組まないなら却下記録を残す）」
+  - 「古い backlog から着手しますか？（`/start {ID}`。着手すると Phase F3.2 が in-progress に移す）見送るなら `/maintain` で canceled に（二度と取り組まないなら却下記録を残す）」
 - 新規タスクを作りたい場合:
   - 「`/issue-create` で新しいタスクを作成」
 - メンテナンスが必要な場合:
@@ -270,6 +271,20 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
      - 「前回の作業状態」としてユーザーにサマリーを報告する（Phase F6 へ）
    - 存在しない場合:
      - Phase F4 へ進む
+
+### Phase F3.2: 着手の記録（backlog → in-progress）
+
+Issue ファイルを読み込めた回に、frontmatter の `status` で分岐する（GitHub issue #364）。discover の起票と issue-create の `--create-only` は Issue を `status: backlog` で書き、着手を start に任せている。ここで移さないと、着手した後も D2 の in-progress の一覧と放置検知（in-progress × `last_active` 7 日以上）から漏れ、D4 が「古い backlog から着手しますか？」と勧め続ける。
+
+1. `status: backlog` で、F2.5 の `WORK_STATE` が `closed` / `detached` / `prunable` のどれでもない → Edit で frontmatter の `status` を `in-progress` に、`last_active` を今日の日付（`YYYY-MM-DD`）に書き換える。本文と他のキーは書き換えない。書き換える時点は `WORK_STATE` で分ける:
+   - `none` / `here` / `moved` / `fresh` / `branch`（下の後回しの回を除く）→ ここで書き換える。F7 は feature-dev・軽量フローに処理を渡して start に戻らないので、F7 より前に済ませる
+   - 後回しの回 = `{DATA_DIR}` を git で追跡している repo（メインのチェックアウト `$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")` で `git -C <そのパス> check-ignore -q "{DATA_DIR}"` が偽）の `branch` と、選んだ候補がブランチだけの `fresh`（F7 で既存のブランチへ移る回）→ ここでは書き換えない。ここで先に書き換えると、そのブランチの Issue ファイル（進捗入り）を古い版で上書きするか、未コミットの変更が `git switch` を止める。書き換えは F7 の「Phase F3.2 の後回しの回」で 1 回だけ行う
+2. `WORK_STATE` が `closed` / `detached` / `prunable` → 書き換えない（F7 でも着手しない回）。`detached` の回に、ここで新しく始めると言われて F7 で決め直したら、決め直した後に F7 が 1 を行う（F7 の冒頭）
+3. `status` が `backlog` 以外（`in-progress` / `frozen` / `completed` / `canceled`）→ 書き換えない（`frozen` の再開は maintain の手順で利用者が決める）
+
+- 書き換えた回は F6 の Issue 情報に「status: backlog → in-progress（着手を記録）」と出す
+- BACKEND=linear でも書くのはローカルの Issue ファイルだけで、Linear 側のステータスは変えない（Linear API は読み取りのみ）
+- `{DATA_DIR}` を git で追跡している repo で、`none` から F7 で worktree へ移る回は、書き換えた Issue ファイルを `branch-setup.md` の 5 の「この skill がメイン側で書き換えたファイル」として扱う（既定ブランチから新しく切るので、写しても上書きにならない）。F2.5 で既存の worktree へ移った回（`moved` と、worktree へ移った `fresh`）は、移り先の Issue ファイルを書き換える
 
 ### Phase F3.5: Context Recovery Agent Team（並列起動）
 
@@ -357,7 +372,7 @@ Issue ファイルが存在しない場合:
 Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する。**Phase F7 の連携案内があれば Issue 情報の直後に差し込む**（末尾に置くと読まれない）:
 
 - **判定**: F2.5 の `WORK_LINE`（常に先頭の 1 行。Issue 情報より前）
-- **Issue 情報**: タイトル・ステータス
+- **Issue 情報**: タイトル・ステータス（Phase F3.2 で書き換えた回は「status: backlog → in-progress（着手を記録）」。後回しの回は「status: backlog（F7 の締めで in-progress にする。作業のあるブランチへ移らずに終える回は、移った後の /start で）」）
 - **今回のセッションでやること**: `TASK_INTENT = continue` のとき、引数で渡された意図をそのまま再掲する
 - **未完了タスク一覧**: Issue ファイルのチェックリストから未完了項目を抽出（あれば）
 - **前回セッションからの継続ポイント**: 更新履歴の最新エントリや進行中の作業内容
@@ -373,7 +388,7 @@ Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する
 
 ### Phase F7: 進め方の確認（feature-dev / 軽量フロー）
 
-Phase 1 で分類した `TASK_INTENT` と F2.5 の `WORK_STATE` で分岐する。`WORK_STATE = closed` と `detached` と `prunable` なら、`TASK_INTENT` に関わらず進め方の確認もテキスト案内も出さず、ブランチも作らない（判定行で報告・案内だけし、Phase CTX も書かない。`detached` でここで新しく始めると言われたら、existing-work.md の 2 のとおり決め直してからこの Phase を通す。`prunable` は利用者が `git worktree prune` を打った後の /start で決め直す）。
+Phase 1 で分類した `TASK_INTENT` と F2.5 の `WORK_STATE` で分岐する。`WORK_STATE = closed` と `detached` と `prunable` なら、`TASK_INTENT` に関わらず進め方の確認もテキスト案内も出さず、ブランチも作らない（判定行で報告・案内だけし、Phase CTX も書かない。`detached` でここで新しく始めると言われたら、existing-work.md の 2 のとおり決め直し（決め直した結果が worktree を持つ `fresh` なら、先に同 doc の 3 でそこへ移る）、Issue が `status: backlog` なら Phase F3.2 の 1 を決め直した `WORK_STATE` で行ってから（書き換えたら進め方の確認の前に 1 行で伝える）この Phase を通す。`prunable` は利用者が `git worktree prune` を打った後の /start で決め直す）。
 
 **`TASK_INTENT = new` のとき（`start {ISSUE-ID} 新規タスク` 等）: F2.5 で既存の作業が見つからなければ（`none` / `fresh`）、必ず AskUserQuestion を出す。**
 `feature_dev_plan:` は見ない。着手宣言が明示されている以上、どの進め方にするかを
@@ -401,6 +416,11 @@ AskUserQuestion(
 **ブランチ未作成のとき**（`WORK_STATE` が `none`、または `fresh` で選んだ候補がブランチだけ）: `${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る。`fresh` なら `{BRANCH}` は候補の `branch`（`origin/` は外す）で、新しい名前を作らない。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。worktree に移した回は、feature-dev の引数に worktree のパスを添え、Phase CTX の書き出し先を worktree 側にする（同 doc の 5）
 
 **`WORK_STATE = branch` のとき**（作業のあるブランチを checkout している worktree が無い）: `TASK_INTENT` に関わらず、F6 の後に同じ手順でそのブランチへ移る（`{BRANCH}` は候補の `branch`。`origin/` は外す）。`new` でも進め方の選択は出さない（上の `new` の項）。`here` / `moved` と、今のチェックアウトか移り先に残った `fresh` では何もしない（もうそこにいる）
+
+**Phase F3.2 の後回しの回**（F3.2 の 1 で書き換えを後回しにした回だけ）: F7 の締めで 1 回だけ F3.2 の 1 を行う。締めは、feature-dev・軽量フローを起動する回はその直前、どちらも起動しない回（「自分で進める」・`continue`・`feature_dev_plan:` で選択を省いた回）は F7 を終える時点。どれも start に戻らないので、起動した後には置かない。書き換える Issue ファイルは次で決める:
+- ブランチへ移った回 → 移った先の Issue ファイル（まだ `status: backlog` なら書き換え、そのことを 1 行で伝える）。移った先に Issue ファイルが無い（メイン側にしか無い）ときは、今のチェックアウトの Issue ファイルを書き換え、`branch-setup.md` の 5 の DATA_DIR の項どおり移った先へ写す
+- 選んだ候補がブランチだけの `fresh` で、移らなかった回（「自分で進める」・ブランチ作成の「スキップ」・`continue`・選択を省いた回）→ 今のチェックアウトの Issue ファイル（作業の無いブランチなので、後で移るときも衝突しにくい）
+- `branch` で移らなかった回（ブランチ作成の「スキップ」）→ 書き換えず、「そのブランチへ移った後に `/start {ISSUE-ID}` し直すと in-progress に移る」と 1 行で案内する。今のチェックアウトを書き換えると、利用者がそのブランチへ移るときに未コミットの変更が `git switch` を止める
 
 **`TASK_INTENT = continue` のとき**: feature-dev の案内は出さない（やることが決まっているので選択 UI で止めるのは邪魔）。Phase F6 で「今回のセッションでやること」として意図を再掲するに留める。
 
