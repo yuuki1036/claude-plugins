@@ -2,6 +2,26 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.15.0] - 2026-11-04
+
+### Added
+
+- **report の宛先の振り分け**（GitHub issue #357 / ADR-20261102144903）: 同じ repo に active な repo hub があるとき、`--project` を付けない report の宛先を report が決める。
+  - このセッションの登録が同じ repo の PJ にあれば、その PJ に固定する（範囲が変わっても付け替えず、食い違いは `warning` に出す）
+  - 初めての登録は Issue の範囲で決める: local は Issue ファイルの slug、github は `--milestone <名前>` / `--no-milestone`、linear は `--issue-project <名前>` / `--no-issue-project`（呼ぶ側が tracker から取って渡す）。PJ が 1 つに決まらない・材料が足りないときは stdout の `status: needs_project` と exit 1
+  - `--project` に repo hub を指し、Issue が通常の PJ の範囲に入れば `status: out_of_scope`（exit 3）
+  - 同じ repo の別の PJ に登録済みなら `status: registered_elsewhere`（exit 3）。2 つ以上に登録済みのときは、`--project` で登録済みの 1 つを選べば `warning` 付きで置ける
+- **base のブランチの上での編集の強制**: repo hub に置く report は、base のブランチか detached HEAD の上に未コミットの変更か base より先のコミットがあれば `status: needs_branch`（exit 3）で止める。作業ツリーがきれいなら state によらず通る
+  - untracked のファイルも未コミットの変更に数える。base がローカルのブランチ名なら、その upstream と比べる（取れなければ base より先のコミットは数えず、未コミットの変更が無ければ止めずに `warning`）
+- **status の後ろ盾**: `cross` の出力に `double_registered`（自分の sub のうち、同じ repo の別の active な PJ にも登録のあるセッション）を足し、hub の status が lead に出す。active な repo hub のある repo だけを数える（repo hub でない PJ どうしの組も数える）
+
+### Changed
+
+- 紐付けの案内（SessionStart / PostCompact）は、同じ repo のどれかの PJ に登録済みならどの PJ の案内も出さない。repo hub のある repo では「`--project` を付けずに report を置く」「ブランチを切ってから編集する」を足す
+- 宛先の照合（`resolve`）は、引いているセッションがこの PJ にも登録を持つなら、ほかの PJ でのそのセッションの名前を候補から外さない（closed の PJ から移ったセッションを引けるように）
+- repo hub の無い repo では、宛先の決め方と report を止める判定は今までどおり（2026-11-04 決定）
+- **更新後は作業中のセッションを開き直す**: sub の report は sub 側の `hub.py` で動くので、開き直すまで振り分けと強制が掛からない
+
 ## [0.14.0] - 2026-11-04
 
 ### Added
