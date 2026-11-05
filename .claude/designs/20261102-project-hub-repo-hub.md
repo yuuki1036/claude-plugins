@@ -2,13 +2,13 @@
 id: 20261102-project-hub-repo-hub
 title: project-hub の repo hub — PJ を定義せず、1 つの repo を常設の hub で束ねる
 status: draft
-phase: target
+phase: current
 last-validated: 2026-11-04
 supersedes: []
 superseded-by: null
 issue: null
 spec: null
-adrs: [20261102144843, 20261102144903, 20261102144922]
+adrs: [20261102144843, 20261102144903, 20261102144922, 20261105111324]
 tags: [project-hub, repo-hub, orchestration]
 ---
 
@@ -294,6 +294,17 @@ skill に `repo` サブコマンドを足す。引数なしの `init` を repo h
 - 1b が入るまでの間、同じ repo に repo hub と PJ hub がどちらも active だと、`--project` の無い report は PJ が決まらず exit 1 で止まる（今の `detect_project`。誤った宛先には置かない）
 - tracker local の PJ に `--milestone` を付けると、repo hub の有無によらず止める。ゴールの「repo hub の無い repo では今の挙動を変えない」の例外で、値は以前から読まれていなかった（local の範囲は slug で決まり、milestone では切れない）
 - GitHub の repo の比較は大文字と小文字を区別しない
+
+## 実装で決めたこと（Issue 1b・2026-11-04）
+
+採用案に書いていない細部を、Issue 1b（GitHub #357）の実装で次のように決めた。
+
+- repo hub の無い repo では、登録の固定・`registered_elsewhere`・`needs_branch`・status の後ろ盾を掛けない（2026-11-04 決定 / ADR-20261105111324。ゴールの「今の挙動を変えない」に合わせた。`--project` を切り替えて 2 つの PJ に置くセッションを止めない）。どの repo にも効かせるのは、`foreign_names` と、登録済みなら紐付けの案内を出さない `worker_hint` だけ
+- 範囲の材料は report の引数で渡す: github は `--milestone <名前>` / `--no-milestone`、linear は `--issue-project <名前>` / `--no-issue-project`。Issue ID の形が PJ の tracker と合わなければ「範囲外」で、不明にはしない
+- 登録の固定では、reopen が「移った」と journal に記録した登録（`close_sub` の `result: moved`）を数えない（紐付けの案内の「登録済みなら黙る」も同じ）。`--project` が固定した PJ と違えば `registered_elsewhere`。2 つ以上の PJ に登録済み（版のずれ・repo hub を後から作った repo）のときは、`--project` で登録済みの 1 つを選べば warning 付きで置ける（止めたままだと、登録を外す手段が無いので抜け出せない）
+- `foreign_names` で外さないのは、宛先を引いているセッション自身がこの PJ にも登録を持つときの、そのセッションの名前だけにした。この PJ の別のセッションがほかの PJ で名乗る名前は、そのセッションのものなので外す（設計どおり「自分の PJ にも登録のある session_id」をどれも外さないことにすると、別のセッションの名前に当たる）
+- `needs_branch` の base のブランチは config の `repos[].base` から remote 名を外したもの（`base_branch`）。未コミットの変更には gitignore されていない untracked のファイルも数える。base がローカルのブランチ（`main` / `refs/heads/main`）なら `main..HEAD` は main の上で常に 0 なので、その upstream と比べる。git でブランチを取れないときは止めずに `warning` に出す。未コミットの変更と base との差のどちらかを取れないときは、取れた側で当たれば止め、当たらなければ `warning` に出す
+- status の後ろ盾は `cross` の `double_registered` に出し、hub の SKILL.md の status の 10 で lead に出す。数えるのは route と同じ単位で、登録の worktree の repo に active な repo hub があるもの（repo hub でない PJ どうしの組も含む。worktree を消した登録は PJ が共有する repo で見る）。登録を外す CLI はまだ無いので、どちらの PJ で続けるかは lead が決める
 
 ## 実装ブリッジ (Implementation Bridge)
 
