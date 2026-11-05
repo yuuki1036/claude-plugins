@@ -2739,5 +2739,132 @@ class MetricsVocabDriftTest(unittest.TestCase):
         self.assertIn("demo:alpha", warnings[0])
 
 
+class ReadCutPositionTest(unittest.TestCase):
+    """読み直しの注記の行末の byte 位置（#362）.
+
+    行末の位置はテスト側で byte を数えて組み立てる（検査の走査を使って期待値を作らない）.
+    """
+
+    REL = "demo/skills/demo/SKILL.md"
+    HEAD = "# demo\n\n## Phase 5: Implementation\n\n"
+    NOTE = "8. 続きは Read の `offset` / `limit` で読む\n"
+    TAIL = "\n## Phase 5.3: 次\n\n本文\n"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("ROOT", "READ_CUT_NOTES", "READ_CUT_ERROR_BYTES", "READ_CUT_WARN_BYTES"):
+            self.addCleanup(lambda n=name, o=getattr(v, name): setattr(v, n, o))
+        v.ROOT = self.root
+        v.READ_CUT_NOTES = ((self.REL, "## Phase 5: Implementation", "## Phase 5.3"),)
+        v.READ_CUT_ERROR_BYTES = 2_000
+        v.READ_CUT_WARN_BYTES = 1_000
+
+    def _body_with_note_ending_at(self, end: int, filler_char: str = "x") -> str:
+        """先頭から注記の行末までがちょうど `end` byte になる本文."""
+        fixed = len((self.HEAD + self.NOTE).encode("utf-8"))
+        width = len(filler_char.encode("utf-8"))
+        rest = end - fixed - 1   # 埋め草の行末の改行
+        self.assertGreaterEqual(rest, 0)
+        filler = filler_char * (rest // width) + "x" * (rest % width) + "\n"
+        body = self.HEAD + filler + self.NOTE
+        self.assertEqual(len(body.encode("utf-8")), end)
+        return body + self.TAIL
+
+    def _run(self, body: str | None) -> tuple[list[str], list[str]]:
+        if body is not None:
+            path = self.root / self.REL
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body.encode("utf-8"))
+        errors: list[str] = []
+        warnings: list[str] = []
+        v.check_read_cut_position(errors, warnings)
+        return errors, warnings
+
+    def test_note_within_warn_limit_passes(self):
+        self.assertEqual(self._run(self._body_with_note_ending_at(1_000)), ([], []))
+
+    def test_note_past_warn_limit_warns(self):
+        errors, warnings = self._run(self._body_with_note_ending_at(1_001))
+        self.assertEqual(errors, [])
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("1,001 byte", warnings[0])
+        self.assertIn("999 byte", warnings[0])   # error までの残り
+
+    def test_note_at_error_limit_only_warns(self):
+        errors, warnings = self._run(self._body_with_note_ending_at(2_000))
+        self.assertEqual(errors, [])
+        self.assertEqual(len(warnings), 1, warnings)
+
+    def test_note_past_error_limit_is_an_error(self):
+        errors, warnings = self._run(self._body_with_note_ending_at(2_001))
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("2,001 byte", errors[0])
+        self.assertIn(self.REL, errors[0])
+
+    def test_counts_bytes_not_characters(self):
+        """日本語は 1 字 3 byte. 字数では上限の内側でも byte で超えれば止める."""
+        body = self._body_with_note_ending_at(2_400 + len((self.HEAD + self.NOTE).encode("utf-8")), "あ")
+        self.assertLess(len(body.split(self.NOTE)[0] + self.NOTE), 2_000)
+        errors, _ = self._run(body)
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_last_note_in_section_is_measured(self):
+        """節の中に注記が 2 つあれば後ろの方を測る（Phase 5 の 8. は節の末尾にある）."""
+        body = self.HEAD + self.NOTE + "x" * 2_100 + "\n" + self.NOTE + self.TAIL
+        errors, _ = self._run(body)
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_note_outside_the_section_is_not_counted(self):
+        """冒頭の注記や Phase 5.3 以降の注記は拾わない. 節に注記が無ければ error."""
+        body = "# demo\n\n" + self.NOTE + self.HEAD + "本文\n" + self.TAIL + self.NOTE
+        errors, warnings = self._run(body)
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("注記", errors[0])
+        self.assertNotIn("byte", errors[0])
+
+    def test_missing_section_heading_is_an_error(self):
+        errors, _ = self._run("# demo\n\n" + self.NOTE + self.TAIL)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("見出し「## Phase 5: Implementation」が無い", errors[0])
+
+    def test_missing_end_heading_is_an_error(self):
+        """終わりの見出しが無いと節が EOF まで延びるので, 注記の位置より先に見出しの欠落で止める."""
+        errors, warnings = self._run(self.HEAD + self.NOTE + "本文\n")
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("見出し「## Phase 5.3」が「## Phase 5: Implementation」より後に無い", errors[0])
+
+    def test_end_heading_before_the_section_is_ignored(self):
+        """終わりの見出しは節の中でだけ見る. 節より前にあっても走査を打ち切らない."""
+        body = "# demo\n\n## Phase 5.3 目次\n\n" + self.HEAD + self.NOTE + self.TAIL
+        self.assertEqual(self._run(body), ([], []))
+
+    def test_missing_file_is_an_error(self):
+        errors, _ = self._run(None)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("SKILL.md が無い", errors[0])
+
+    def test_real_feature_dev_skill_has_the_note_within_the_error_limit(self):
+        """本物の SKILL.md と既定の閾値で error が出ない. warning の帯は許す（error までの猶予として残す 2 段構え）."""
+        for name in ("ROOT", "READ_CUT_NOTES", "READ_CUT_ERROR_BYTES", "READ_CUT_WARN_BYTES"):
+            setattr(v, name, getattr(_load_module(), name))
+        v.ROOT = SCRIPT.parents[2]
+        errors, _ = self._run(None)
+        self.assertEqual(errors, [])
+
+    def test_the_check_is_registered(self):
+        """直接呼ぶテストだけでは, main() から外れて検査が丸ごと黙っても気づけない."""
+        with unittest.mock.patch.object(v, "check_read_cut_position") as check, \
+                unittest.mock.patch.object(sys, "argv", ["validate_plugin_quality.py", str(SCRIPT.parents[2] / "feature-dev")]), \
+                unittest.mock.patch("sys.stdout"), unittest.mock.patch("sys.stderr"):
+            v.ROOT = SCRIPT.parents[2]
+            v.main()
+        check.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -78,6 +78,13 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     UTF-8 ロケールの bash が非 ASCII の 1 バイト目まで変数名に取り込むため, `set -u`
     下では診断を出さず exit 1 する. **C ロケールでは再現しない**ので開発機のシェル設定
     次第で見えなくなる（実測: detect-recent-review.sh の WARN が丸ごと死んでいた / #138）.
+  - read-cut: 長い SKILL.md の途中に置いた「Read の offset / limit で続きを読め」の注記
+    （READ_CUT_NOTES）の行末が, 先頭から READ_CUT_ERROR_BYTES 以内にあるか. 注記は Read 1 回で
+    返る範囲の内側にあるから効き, 前に文を足すと切れ目の外へ押し出されて後半を読まずに進む
+    （#350 / #362）. 注記の行が見つからないのも error（消したら黙って通らないように）.
+    節の始まり・終わりの見出し（READ_CUT_NOTES の 2・3 要素目）が見つからないのも error
+    （終わりが無いと節が EOF まで延び, 節の外の注記を測る）.
+    READ_CUT_WARN_BYTES を超えたら warning（下の warnings 側の同名項目）.
 
 検査項目（warnings = 助言, exit code に影響しない）:
   - allowed-tools 最小性 (#14b): frontmatter 宣言ツールが本文で未言及（未使用候補）.
@@ -103,6 +110,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - skill 本文サイズ: SKILL.md 本文の行数上限（500 行）. 超過は references への
     progressive disclosure を促す（規模目安の正本は component-addition-advisor,
     執筆指針は docs/skill-writing.md）.
+  - read-cut: 読み直しの注記の行末が READ_CUT_WARN_BYTES を超えた（error まで約 1KB）.
   - metrics-vocab: publish が送りうる名前（code-review 以外の skill / command 名・観点名）が
     計測ストアの語彙に無いか. 語彙の外の値は同期で `other` に置き換わり, 追随漏れは 5 回中 4 回が
     落ちた後に足していた（#345）. 計測ストアの clone（`REVIEW_METRICS_DIR`, 既定
@@ -1723,6 +1731,66 @@ def check_skill_body_size(warnings: list[str]) -> None:
             )
 
 
+#: Read 1 回で返る範囲の内側に置くことで効く「続きを読め」の注記（GitHub issue #362）.
+#: (SKILL.md, 注記を探す節の見出し, 節の終わりの見出し). 注記は節の中で `offset` / `limit` を
+#: 含む最後の行. Read は token 数（cap 25000）で行の境目に切るが, 手元で token を数える手段が
+#: 無いので byte 数で代える. 実測の切れ目は 42,129 byte（#350 の旧版）と 42,448 byte
+#: （2026-11-05 の版。メインと新しい subagent のどちらでも 469 行目）
+READ_CUT_NOTES = (
+    ("feature-dev/skills/feature-dev/SKILL.md", "## Phase 5: Implementation", "## Phase 5.3"),
+)
+READ_CUT_NOTE_MARKER = "`offset` / `limit`"
+#: 観測した最小の切れ目 42,129 byte から約 130 byte の余白を取る. token と byte の比は本文の
+#: 字種で揺れるので, 切れ目そのものを上限にしない
+READ_CUT_ERROR_BYTES = 42_000
+#: error まで約 1KB を残して知らせる（段落 1 つ分を足すと超える幅）
+READ_CUT_WARN_BYTES = 41_000
+
+
+def check_read_cut_position(errors: list[str], warnings: list[str]) -> None:
+    """読み直しの注記の行末が, Read 1 回で返る範囲に収まっているかを byte 数で見る."""
+    for rel, start, end in READ_CUT_NOTES:
+        path = ROOT / rel
+        if not path.is_file():
+            errors.append(f"[read-cut] 注記の位置を守る SKILL.md が無い: {rel}")
+            continue
+        offset = 0
+        in_section = False
+        saw_end = False
+        note_end: int | None = None
+        for line in path.read_bytes().splitlines(keepends=True):
+            offset += len(line)
+            text = line.decode("utf-8", errors="replace").rstrip("\n")
+            if in_section and text.startswith(end):
+                saw_end = True
+                break
+            if text.startswith(start):
+                in_section = True
+            elif in_section and READ_CUT_NOTE_MARKER in text:
+                note_end = offset
+        if not in_section or not saw_end:
+            # 終わりの見出しが無いと節が黙って EOF まで延び, 後ろの注記を測ってしまう
+            missing = f"「{start}」が無い" if not in_section else f"「{end}」が「{start}」より後に無い"
+            errors.append(
+                f"[read-cut] 見出し{missing}. 見出しを改名・移動したなら READ_CUT_NOTES も直す: {rel}"
+            )
+        elif note_end is None:
+            errors.append(
+                f"[read-cut] 「{start}」節に Read の続きを読む注記（{READ_CUT_NOTE_MARKER} を含む行）が無い."
+                f" 注記を消した・節の外へ移したなら, READ_CUT_NOTES も合わせて直す: {rel}"
+            )
+        elif note_end > READ_CUT_ERROR_BYTES:
+            errors.append(
+                f"[read-cut] 読み直しの注記の行末が先頭から {note_end:,} byte（上限 {READ_CUT_ERROR_BYTES:,}）."
+                f" Read 1 回の範囲の外に出て後半を読まずに進む（#350）. 注記より前を削るか references へ移す: {rel}"
+            )
+        elif note_end > READ_CUT_WARN_BYTES:
+            warnings.append(
+                f"[read-cut] 読み直しの注記の行末が先頭から {note_end:,} byte. error（{READ_CUT_ERROR_BYTES:,}）まで"
+                f" {READ_CUT_ERROR_BYTES - note_end:,} byte. 注記より前に文を足すと Read の範囲の外に出る: {rel}"
+            )
+
+
 #: 計測ストア（private リポジトリ review-metrics）の clone。CI と他人の機には無いので、無ければ黙って飛ばす
 METRICS_STORE_ENV = "REVIEW_METRICS_DIR"
 METRICS_STORE_DEFAULT = Path.home() / ".claude" / "review-metrics"
@@ -2092,6 +2160,7 @@ def main() -> int:
     check_context_budget(warnings)
     check_router_trigger_drift(warnings)
     check_skill_body_size(warnings)
+    check_read_cut_position(errors, warnings)
     check_metrics_vocab_drift(warnings)
 
     if warnings:
