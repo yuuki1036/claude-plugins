@@ -146,7 +146,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-past-reviews.sh" --pr <PR番号> --bas
 
 **`size_tier` はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値**をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。テスト 5 + doc 1 を含む 9 ファイルの PR が実質 3 ファイル `+22 -13` なのに large 扱いで 17 体起動する事故を防ぐ。GitHub issue #96）。Phase 0 の構成テーブル・Step 7 レポート冒頭・締めフロー 4 の `size_tier` に記録する。
 
-**シグナルは事実であって判定ではない。** モード決定・観点採否・体数は triage-guide が決める（スクリプトは policy を持たない）。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む。**例外はスクリプトが見ない条件だけ**: 常時必須の `bug-detection` / `claude-md-compliance`、仕様ソースの有無で決まる `spec-compliance`、`performance` の「ループ内の await」。この 3 つは Step 3.3 の起動前検算で自分で評価する（それ以外の行は、表の条件をスクリプトが出すことをテストが固定している / GitHub issue #295）
+**シグナルは事実であって判定ではない。** モード決定・観点採否・体数は triage-guide が決める（スクリプトは policy を持たない）。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む。**例外はスクリプトが見ない条件だけ**: 常時必須の `bug-detection` / `claude-md-compliance`、仕様ソースの有無で決まる `spec-compliance`、`performance` の「ループ内の await」。前の 2 つと spec-compliance は Step 3.2 の plan が足し、ループ内の await は Step 3.3 の起動前検算で自分で評価する（それ以外の行は、表の条件をスクリプトが出すことをテストが固定している / GitHub issue #295）
 
 **`diff_file=` と `agent_ctx_file=` の値は以降ずっと使うので、パス文字列そのものを控えておく**（後者は Step 5 の共通ブロック書き出し先。**slug は不透明な cksum 値なので、控え損ねると復元できない**）（シェル変数は Bash 呼び出し間で消えるため、`$DIFF_FILE` として引き回さず実パスを毎回書く）。
 
@@ -158,8 +158,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file の実パス>" pa
 
 **その他のコンテキスト収集:**
 - PR 会話データ（Step 1 の fetch-pr-context.sh 出力をそのまま使用）
-- `.claude/session-context.md` の存在確認（存在する場合、frontmatter の `branch` と現在のブランチ名を比較。一致すれば有効）
-- Issue/knowledge ファイルの探索（`## issue-ids` を起点にする）
+- `.claude/session-context.md` と Issue / knowledge ファイルの探索（`## issue-ids` を起点にする。spec-compliance の reviewer に同梱するため）。**spec-compliance を起動するかは自分で決めない** — session-context の branch 一致と Issue ファイルは Step 3.2 の plan が探す。knowledge と PR に紐づく Issue（`closingIssuesReferences`）は見つけたら plan に `--spec-source knowledge:<path>` / `--spec-source pr-issue:#N` で渡す
 - プロジェクト特性シグナル（`package.json` の `react` / `next` 有無 = triage-guide.md `## 3` の React/Next.js 判定）
 
 **スクリプトが失敗した場合**（`FATAL:` で終了）は従来どおり `gh pr diff <PR番号> --name-only` と `--stat` でファイル一覧と規模を取り、triage-guide.md `## 6.4` のフォールバック構成に落とす。**diff 全文の Read はこの経路でも行わない**。
@@ -207,35 +206,40 @@ triage-guide.md `## 2.5 PR 種別分岐ルール` を **Stage 1 より先に** �
 diff の特性を分析し、必要なエージェントタイプを判定する:
 - **explorer**: 巨大ファイル、複数関数、条件分岐追加、共通モジュール変更のいずれかに該当するか
 - **reviewer**: 常に必要。diff パターンマッチでどの観点が必要かを判定
-- **spec-compliance**: session-context / Issue / knowledge が存在するか
+- **spec-compliance**: 自分で判定しない。Step 3.2 の plan が仕様ソースから決める（`--activated` に入れると plan が exit 2 で止まる / GitHub issue #351）
 
 Step 1 で Read した PR コンテキスト（説明・issue コメント・レビューサマリ・行単位コメント）もタイプ判定の参考にする（例: 説明に「セキュリティ修正」、行単位コメントで認可周りが議論されている → security reviewer を追加）。
 
 #### 3.2 Stage 2: 体数・フォーカス・冗長度決定
 
-各タイプの体数と各エージェントの具体的なフォーカスを決定する:
-- explorer: 独立した探索対象の数に比例
-- reviewer: 必要な観点数 × 対象コードの複雑さに応じた冗長度
-- 冗長ペアには異なる angle（分析の切り口）を割り当てる（実起動は xhigh/max のみ。下記）
-- 最小保証: reviewer-bugs + reviewer-claude-md の 2 体は常に起動
+**default-mode の回だけ**、reviewer の体数・単独か束ねか・落とす観点を**自分で数えず** `plan-reviewers.sh plan` に決めさせる（GitHub issue #351。triage-guide の表を読んで数えた回に、high の上限 6 を 5 と数え、仕様ソースがあるのに spec-compliance より security を先に取った）。それ以外のモードはモードの推奨構成に従い、plan も check も呼ばない:
 
-**実効上限 = min(effort 上限, 規模キャップ)**（体数の正本: triage-guide.md `## 7` / `## 6.2`）。**2 系統を必ず両方適用する**（effort 上限だけを見ると、小 PR に上限いっぱいの体数が張り付いて所要時間が数倍に膨らむ。GitHub issue #96 の実測は core 3 ファイル `+22 -13` の PR に 17 体 / 130 分）。
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --pr <PR番号> --effort "${CLAUDE_EFFORT}" --size-tier <Step 2 の size_tier> \
+  --activated <Stage 1 で起動条件を満たした観点をカンマ区切り> --issue-id <## issue-ids の ID>... \
+  [--spec-source pr-issue:#N] [--spec-source knowledge:<path>]
+```
 
-第 1 系統 — **effort 上限**（現在の effort = `${CLAUDE_EFFORT}`）:
-- `low` / `medium`: explorer 2 体、reviewer 4 体、specialist 3 体（束ね起動）（最小保証は維持）。深掘りより速度優先。**設計系の観点（layer-responsibility / cross-cutting / type-design / pattern-consistency）は 1 体にまとめて先に枠を取る**（triage-guide.md `## 7` の設計バンドル）
-- `high`（既定）: explorer 4 体、reviewer 6 体、specialist 3 体（束ね起動）。**冗長ペアは組まない**（ペア条件成立時は Angle A/B を 1 体に内挿）。上限を超える観点数は近接観点のバンドルで可能な限り吸収し、それでも収まらない観点は `missing_coverage` に必ず記録する（容量の算式は triage-guide.md `## 7`。脱落を silent にしない）
-- `xhigh` / `max`: explorer 6 体、reviewer 10 体、specialist 6 体を full に使い、冗長ペアを積極投入
+- `--activated` には最小保証の 2 体と spec-compliance を入れない（前者は plan が足す。後者は入れると exit 2 — 仕様ソースから plan が決める）。`--issue-id` は `## issue-ids` の ID ごとに 1 つ（PR の head / base のブランチ名から取った ID。plan は worktree の今のブランチ名からも取る）
+- 出力の読み方（kind・`piggyback`・`dropped` の理由・`spare`）と check の規則の一覧は `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` の `## 4` 末尾「plan の出力の読み方」。`dropped` の観点は `missing_coverage` に識別子で記録し、理由をレポートの「⚠️ 欠損観点」に写す
+- explorer と specialist の体数は従来どおり triage-guide で決める。上限は出力の `explorer_cap` / `specialist_cap`
+- exit 2 は引数の誤り（理由は stderr）。直して呼び直す
 
-第 2 系統 — **規模キャップ**（Step 2 で数えた core 規模。triage-guide.md `## 6`）:
-- small（core ≤ 3 ファイル かつ ≤ 100 行）: explorer 0 / reviewer 3 / specialist 1
-- medium（core 4-10 ファイル または 101-500 行）: explorer 2 / reviewer 5 / specialist 2
-- large: キャップなし（effort 上限がそのまま実効上限）
-- **最小保証の 2 体は規模キャップより優先**。キャップに収まらない観点は `missing_coverage` に識別子 `<focus>` として記録する（**規模キャップで落ちた旨はレポートの「⚠️ 欠損観点」へ** — payload は識別子のみ）
-- **規模キャップが effort 上限を下回った場合、Round 2（Step 5.5）は effort に関わらず 1 段圧縮経路**（追加 explorer なし）を使う。一方 **reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない**（規模キャップが削るのは breadth のみ。triage-guide.md `## 6.3`）
+数値を含まない規則は従来どおり:
+- explorer は独立した探索対象の数に比例させる。冗長ペア（x2）を組むのは `redundant_pairs=allowed`（xhigh / max）の回だけで、high 以下でペア条件が成立したら Angle A/B を 1 体に内挿する
+- `cap_source=size`（規模キャップが effort 上限を下回った）回は、Round 2（Step 5.5）を effort に関わらず 1 段圧縮経路にする。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（規模キャップが削るのは breadth のみ。triage-guide.md `## 6.3`）
 
 #### 3.3 観点カバレッジ検算と構成テーブル出力
 
-**構成テーブルを確定する前に、起動前検算を実施する（orchestration-guide `### 8a`・default-mode のみ構成追加）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば構成テーブルに追加（またはバンドルで相乗り）してから確定する。v2.39.0 で旧 Phase 5.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。
+**構成テーブルを確定する前に、起動前検算をする（orchestration-guide `### 8a`・default-mode のみ構成追加）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば、`--activated` に足して plan を引き直してから確定する（テーブルに直接書き足さない。spec-compliance は足さない — plan が仕様ソースから決める）。v2.39.0 で旧 Phase 5.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。確定したテーブル（plan の `reviewer` / `piggyback` / `dropped` の行。xhigh / max で冗長ペアを組んだらその行も足す）を `check` に流してから起動する:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" check --pr <PR番号> <<'TABLE'
+<確定テーブルの行>
+TABLE
+```
+
+`ok`（exit 0）なら確定。exit 1 なら `NG	<規則>	<詳細>	<直し方>` の行に従って直し、もう一度 check する。上限を超えたか・spec-compliance が欠けたかを自分で判定して check を飛ばさない。exit 2 は plan が無い（Step 2 の triage-signals.sh が前の回の plan を消す）か、テーブルの形が違う。
 
 **モード除外**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**検算による構成追加は行わない**。検出した focus は `missing_coverage` に識別子 `<focus>` のみ記録する（**mode による意図的縮退である旨はレポート本文へ**）。
 
@@ -437,11 +441,11 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
 **総合判定**: {Approve | Approve with nits | Needs work}（scoring-guide.md「レビュー結論（総合判定）」の表に従って決定）
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
-**実効上限**: explorer N / reviewer N / specialist N（**実行時** effort `{値}` の上限と規模キャップ `{帯}` の min。どちらが効いたかを明記する）
+**実効上限**: explorer N / reviewer N / specialist N（default-mode は Step 3.2 の plan の `explorer_cap` / `reviewer_cap` / `specialist_cap` を写し、効いた側を `cap_source` で書く（`effort` = **実行時** effort `{値}` の上限 / `size` = 規模キャップ `{帯}`）。他のモードはモードの推奨構成）
   ※ reviewer の effort と動的ラウンド（meta / skeptic / 反証ゲート）は**実行時 effort に連動**する。skill frontmatter の effort はオーケストレーター用で別枠
 **動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（reviewer N 体 / explorer M 体）} / Meta-reviewer {実行（N 件追加）| skip 理由（`effort` / `config` / `no-high-severity` / `size-tier` / `emergency`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: config/emergency）| 非該当（surface なし）**← payload の `recall_skeptic.skip_reason` は `"no-surface"`。`fired=false` なので `null` にしない**} / 反証 {対象 N 件（うち meta 由来の追加バッチ M 件）| skip 理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
-**仕様整合**: {spec-compliance を起動した回: `<仕様ソース>`（Issue / session-context / knowledge / `--spec` / PR に紐づく Issue）と照合し、仕様違反 N 件 | 起動しなかった回: `仕様ソースなし` か `規模キャップで未起動`}（spec-compliance の結論を 1 行で。起動の有無が読み手に見えないと、指摘 0 件が「仕様どおり」と読まれる）
+**仕様整合**: {spec-compliance を起動した回: `<仕様ソース>`（Issue / session-context / knowledge / `--spec` / PR に紐づく Issue）と照合し、仕様違反 N 件 | 起動しなかった回: Step 3.2 の plan から写す — `spec_source	none` なら `仕様ソースなし`、`dropped	spec-compliance	size-cap` なら `規模キャップで未起動`、`effort-cap` なら `effort 上限で未起動`。default-mode 以外は `モード <名前> の構成で未起動`}（spec-compliance の結論を 1 行で。起動の有無が読み手に見えないと、指摘 0 件が「仕様どおり」と読まれる）
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{**スキップ時もこの行を出す**（書式の正本は orchestration-dynamic-rounds.md `## 10` 手順 4）。`no-eligible-findings` は `未実施（対象帯に該当なし。MAJOR 以下の severity は較正されていない）` と書く — 「対象 0 件」は「検証したが問題なし」と読まれる}
 
 ### 🚨 BLOCKER 指摘

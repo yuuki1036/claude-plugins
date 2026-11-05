@@ -250,12 +250,12 @@ class CleanupTest(ScriptTestBase):
     def test_success_removes_every_temp_file_of_the_review(self):
         """**掃除の対象は種別を増やすたびに漏れる**（残ると TMPDIR に溜まり続ける）.
 
-        prctx / diff / delta / agentctx / oracles / size / corelist / pastrev を実在させてから publish し、全部消えることを見る。
+        prctx / diff / delta / agentctx / oracles / size / corelist / pastrev / plan を実在させてから publish し、全部消えることを見る。
         """
         ts = self.full_run()
         # パスは `lib/review-paths.sh` に問い合わせる（命名規則をテスト側に複製しない）
         made = []
-        for kind in ("prctx", "diff", "delta", "agentctx", "oracles", "size", "corelist", "pastrev"):
+        for kind in ("prctx", "diff", "delta", "agentctx", "oracles", "size", "corelist", "pastrev", "plan"):
             proc = subprocess.run(
                 ["bash", "-c", '. "$1/scripts/lib/review-paths.sh"; review_paths_init ""; '
                                'review_path "$2"', "_", str(PLUGIN), kind],

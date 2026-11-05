@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.6] - 2026-11-05
+
+### Changed
+
+- **self-review の SKILL.md「1.」「6.」への SSoT pin を打ち直した**（挙動の変更なし）。code-review が reviewer の構成を `plan-reviewers.sh` で決めるようにし（GitHub issue #351）、「1.」の `--spec` とコンテキスト収集の段落、「6.」のレポートの「実効上限」「仕様整合」の写し元が変わった。feature-dev が要約している `--since` / `--prior-findings` の効き方と「範囲」の行は変わっていないので、Phase 6 の本文はそのまま
+
 ## [2.27.5] - 2026-11-03
 
 ### Fixed
