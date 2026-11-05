@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.165.2] - 2026-11-05
+
+### Fixed
+
+- **bug-detection の点検項目に「例外・早い return の後ろの後片付け」を足した**（GitHub issue #353）。catch で投げ直す経路・
+  早い return・`await` の reject がある関数で、その後ろに置いた後片付け（閉じる・解放・状態を戻す）が `finally` に入って
+  いるかを見る。フレームワークの制御フローを投げ直す helper（Next の `unstable_rethrow` / `redirect` / `notFound` など）を
+  呼ぶ catch の後ろは特に疑い、同じ形が既存コードにあっても既存の作法として免除しない（既存側は「同じ形の既存箇所」として
+  1 行で添える。「pre-existing」の語は diff 側の指摘を 1 段下げる申告と取り違えるので使わない）。後片付けする状態を作る前の
+  脱出口と、後片付けを飛ばすのが意図と読める経路（判定は脱出口ごと。画面が移る投げ直しには及ばない）、`defer` / `with` /
+  `using` など `finally` と同等の仕組みで保証された後片付けは対象外にする。severity は、データの不整合・サービス全体の停止を
+  BLOCKER、一部の後続の処理を止める漏れ（ロックの保持・接続プールの枯渇）を CRITICAL に置く。脱出口だけを足した diff では、
+  指摘を足した脱出口の行に置く。これまでは redirect で reject された経路で `finally` の外の `closeDialog()` が呼ばれず、遷移先に
+  ダイアログが残る形を self-review（effort high・bug-detection 起動済み）が指摘しなかった
+
 ## [2.165.1] - 2026-11-03
 
 ### Changed
