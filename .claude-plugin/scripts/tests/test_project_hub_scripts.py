@@ -4506,6 +4506,426 @@ class RepoHubCrossAndSnapshotTest(RepoHubTestBase):
         self.assertEqual(out["count"], 2, "除けないなら残す")
 
 
+class RepoHubRouteTest(RepoHubTestBase):
+    """report の宛先の振り分け・二重登録の禁止・base のブランチの上での編集の強制（ADR-20261102144903 / GitHub issue #357）."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.assertEqual(self.repo_hub().returncode, 0)
+        self.assertEqual(self.plain("auth", "--milestone", "v2").returncode, 0)
+
+    def route(self, *flags: str, sid: str = SID_A, issue: str = "#308", project: str | None = None,
+              state: str = "in_progress") -> subprocess.CompletedProcess[str]:
+        peers = [agent("hub-repo", "h1")]
+        payload = {**report_body(issue, state), "name": f"{issue} 作業", "agents": peers, "peer_count": 1,
+                   "self_ref": "me0"}
+        args = ["report", *flags] + (["--project", project] if project else [])
+        return self.run_hub(*args, stdin=json.dumps(payload), cwd=self.repo,
+                            env_extra={"CLAUDE_CODE_SESSION_ID": sid})
+
+    def placed(self) -> dict[str, int]:
+        return {p: len(list((self.root / p / "inbox").glob("*.json"))) for p in (self.hub_name, "auth")}
+
+    def test_the_milestone_decides_the_first_registration(self):
+        cases = [  # (flags, 宛先, 理由)
+            (("--milestone", "v2"), "auth", "PJ の milestone"),
+            (("--no-milestone",), self.hub_name, "milestone が無いと確かめた"),
+            (("--milestone", "v9"), self.hub_name, "どの PJ の milestone でもない"),
+        ]
+        for i, (flags, want, why) in enumerate(cases):
+            with self.subTest(why):
+                sid = f"{i}" * 8 + "-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+                res = self.route(*flags, sid=sid)
+                self.assertEqual(res.returncode, 0, res)
+                self.assertEqual(json.loads(res.stdout)["project"], want)
+                self.assertTrue((self.root / want / "sessions" / f"{sid}.json").is_file())
+
+    def test_without_the_milestone_the_project_is_asked(self):
+        res = self.route()
+        self.assertEqual(res.returncode, 1, res)
+        out = json.loads(res.stdout)
+        self.assertEqual((out["status"], out["unknown"], out["inside"]), ("needs_project", ["auth"], []))
+        self.assertEqual(sorted(out["candidates"]), sorted(["auth", self.hub_name]))
+        self.assertEqual(self.placed(), {self.hub_name: 0, "auth": 0}, "決まらなければ何も置かない")
+        self.assertFalse((self.root / self.hub_name / "sessions" / f"{SID_A}.json").exists())
+
+    def test_a_project_on_another_tracker_repo_is_unknown(self):
+        self.assertEqual(self.plain("other", "--milestone", "x",
+                                    tracker=("--tracker", "github", "--tracker-repo", "o/other")).returncode, 0)
+        res = self.route("--no-milestone")
+        self.assertEqual(res.returncode, 1, res)
+        self.assertEqual(json.loads(res.stdout)["unknown"], ["other"], "Issue ID だけではどちらの repo の Issue か決まらない")
+        self.ok("close", "--project", "other", env_extra={"CLAUDE_CODE_SESSION_ID": SID_HUB_2})
+        self.assertEqual(json.loads(self.route("--no-milestone").stdout)["project"], self.hub_name,
+                         "対照: closed の PJ は数えない")
+
+    def test_the_registration_stays_even_when_the_scope_changes(self):
+        self.assertEqual(self.route("--no-milestone").returncode, 0)
+        res = self.route("--milestone", "v2")
+        self.assertEqual(res.returncode, 0, res)
+        out = json.loads(res.stdout)
+        self.assertEqual(out["project"], self.hub_name, "作業の途中で milestone が付いても付け替えない")
+        self.assertIn("「auth」の範囲に入る", out["warning"])
+        self.assertEqual(json.loads(self.route().stdout)["project"], self.hub_name, "登録があれば milestone は要らない")
+
+        res = self.route("--milestone", "v2", sid=SID_B)
+        self.assertEqual(json.loads(res.stdout)["project"], "auth")
+        res = self.route("--no-milestone", sid=SID_B)
+        self.assertIn("「auth」の範囲に入らない", json.loads(res.stdout)["warning"])
+        out = json.loads(self.route(sid=SID_B).stdout)
+        self.assertNotIn("warning", out, "milestone を渡さない（判定できない）回は「範囲に入らない」と言わない")
+
+    def test_a_second_project_is_refused(self):
+        self.assertEqual(self.route("--no-milestone").returncode, 0)
+        before = self.placed()
+        res = self.route("--milestone", "v2", project="auth")
+        self.assertEqual(res.returncode, 3, res)
+        out = json.loads(res.stdout)
+        self.assertEqual((out["status"], out["registered"]), ("registered_elsewhere", [self.hub_name]))
+        self.assertEqual(self.placed(), before)
+        self.assertFalse((self.root / "auth" / "sessions" / f"{SID_A}.json").exists())
+        self.assertEqual(self.route(project=self.hub_name).returncode, 0, "対照: 登録した PJ を指すなら通る")
+
+    def test_registrations_in_two_projects_are_refused(self):
+        # 版のずれで両方に置かれた状態
+        for pdir in (self.root / self.hub_name, self.root / "auth"):
+            (pdir / "sessions").mkdir(exist_ok=True)
+            self.register(pdir, SID_A, "#308 作業")
+        res = self.route("--milestone", "v2")
+        self.assertEqual(res.returncode, 3, res)
+        self.assertEqual(sorted(json.loads(res.stdout)["registered"]), sorted(["auth", self.hub_name]))
+        self.assertEqual(self.placed(), {self.hub_name: 0, "auth": 0})
+        res = self.route(project="auth")
+        self.assertEqual(res.returncode, 0, "登録済みの 1 つを --project で選べば置ける（止めたままだと抜け出せない）")
+        out = json.loads(res.stdout)
+        self.assertEqual(out["project"], "auth")
+        self.assertIn("「auth」に置いた", out["warning"])
+        res = self.route(project="other-pj")
+        self.assertEqual((res.returncode, json.loads(res.stdout)["status"]), (3, "registered_elsewhere"),
+                         "登録の無い PJ は選べない")
+
+    def test_a_registration_marked_as_moved_does_not_count(self):
+        pdir = self.root / "auth"
+        (pdir / "sessions").mkdir(exist_ok=True)
+        self.register(pdir, SID_A, "#308 作業")
+        with (pdir / "journal.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": "2026-11-04T00:00:00Z", "kind": "close_sub", "subject": SID_A,
+                                "body": {"result": "moved", "to_project": self.hub_name,
+                                         "at": "2026-11-04T00:00:00.000000Z"}}) + "\n")
+        res = self.route("--no-milestone")
+        self.assertEqual(json.loads(res.stdout)["project"], self.hub_name, res)
+
+    def test_the_repo_hub_refuses_an_issue_of_a_project(self):
+        res = self.route("--milestone", "v2", project=self.hub_name)
+        self.assertEqual(res.returncode, 3, res)
+        self.assertEqual(json.loads(res.stdout)["status"], "out_of_scope")
+        self.assertEqual(self.placed(), {self.hub_name: 0, "auth": 0})
+        self.assertEqual(self.route(project=self.hub_name).returncode, 0, "範囲が分からなければ --project に従う")
+
+    def test_two_projects_in_scope_are_asked(self):
+        self.assertEqual(self.plain("auth2", "--milestone", "v2").returncode, 0)
+        res = self.route("--milestone", "v2")
+        self.assertEqual(res.returncode, 1, res)
+        out = json.loads(res.stdout)
+        self.assertEqual((out["status"], sorted(out["inside"])), ("needs_project", ["auth", "auth2"]))
+        self.assertIn("2 件", out["reason"])
+        self.assertEqual(self.placed(), {self.hub_name: 0, "auth": 0}, "先頭の PJ に黙って登録しない")
+        self.assertFalse(list((self.root / "auth2" / "inbox").glob("*.json")), "後ろの PJ にも置かない")
+        self.assertFalse((self.root / "auth2" / "sessions" / f"{SID_A}.json").exists())
+
+    def test_an_unknown_project_is_named_in_the_reason(self):
+        self.assertEqual(self.plain("other", "--milestone", "x",
+                                    tracker=("--tracker", "github", "--tracker-repo", "o/other")).returncode, 0)
+        out = json.loads(self.route("--milestone", "v2").stdout)
+        self.assertEqual((out["inside"], out["unknown"]), (["auth"], ["other"]))
+        self.assertIn("判定できない PJ がある（other）", out["reason"], "範囲に入る PJ が 1 件でも、判定できない PJ があれば聞く")
+
+    def test_linear_issues_are_routed_by_the_project(self):
+        self.root = self.tmp / "linear-root"
+        self.assertEqual(self.repo_hub(tracker=("--tracker", "linear", "--tracker-team", "ABC")).returncode, 0)
+        self.assertEqual(self.plain("pj", tracker=("--tracker", "linear", "--tracker-team", "ABC",
+                                                   "--tracker-project", "P")).returncode, 0)
+        cases = [(("--issue-project", "P"), 0, "pj"), (("--no-issue-project",), 0, self.hub_name),
+                 (("--issue-project", "Q"), 0, self.hub_name), ((), 1, None)]
+        for i, (flags, rc, want) in enumerate(cases):
+            with self.subTest(flags=flags):
+                res = self.route(*flags, issue="ABC-12", sid=f"{i}" * 8 + "-dddd-4ddd-8ddd-dddddddddddd")
+                self.assertEqual(res.returncode, rc, res)
+                out = json.loads(res.stdout)
+                if rc == 0:
+                    self.assertEqual(out["project"], want)
+                else:
+                    self.assertEqual((out["status"], out["unknown"]), ("needs_project", ["pj"]))
+
+    def test_an_issue_of_another_tracker_kind_is_out_of_scope(self):
+        # github の repo hub と linear の PJ。`#308` は linear の Issue ID の形ではないので、project が無くても範囲外と決まる
+        self.assertEqual(self.plain("lin", tracker=("--tracker", "linear", "--tracker-team", "ABC",
+                                                    "--tracker-project", "P")).returncode, 0)
+        out = json.loads(self.route("--no-milestone").stdout)
+        self.assertEqual(out["project"], self.hub_name, out)
+
+    def test_the_route_guards(self):
+        res = self.route("--no-milestone", issue="")
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("issue が無い", res.stderr)
+        config = self.config("auth")
+        (self.root / "auth" / "config.json").write_text(json.dumps({**config, "repo_hub": True}), encoding="utf-8")
+        res = self.route("--no-milestone")
+        self.assertEqual(res.returncode, 3, res)
+        self.assertIn("active な repo hub が 2 つ", res.stderr)
+        self.assertEqual(res.stdout, "", "config の不整合は status を出さない（SKILL は stderr を伝えて終える）")
+
+    def test_local_issues_are_routed_by_the_slug(self):
+        self.root = self.tmp / "local-root"
+        hub_dir, pj_dir = self.tmp / "indie" / "hub", self.tmp / "indie" / "pj"
+        for d, issue in ((hub_dir, "HUB-1"), (pj_dir, "PJ-1")):
+            (d / "issues").mkdir(parents=True)
+            (d / "issues" / f"{issue}.md").write_text("---\nstatus: backlog\n---\n", encoding="utf-8")
+        self.assertEqual(self.repo_hub(tracker=("--tracker", "local", "--tracker-dir", str(hub_dir))).returncode, 0)
+        self.assertEqual(self.plain("pj", tracker=("--tracker", "local", "--tracker-dir", str(pj_dir))).returncode, 0)
+        cases = [("PJ-1", 0, "pj"), ("HUB-1", 0, self.hub_name), ("XX-9", 1, None)]
+        for i, (issue, rc, want) in enumerate(cases):
+            with self.subTest(issue):
+                res = self.route(issue=issue, sid=f"{i}" * 8 + "-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+                self.assertEqual(res.returncode, rc, res)
+                out = json.loads(res.stdout)
+                self.assertEqual(out.get("project") if rc == 0 else out["status"], want or "needs_project")
+
+    def on_main(self) -> None:
+        # base の origin/main から remote 名を外して base のブランチ（main）を決めるので、remote を張る
+        self.git_repo.add_remote()
+        self.git_repo.branch("main")
+        self.git_repo.checkout("main")
+
+    def test_editing_on_the_base_branch_is_refused(self):
+        self.on_main()
+        for i, state in enumerate(("hello", "in_progress", "blocked", "done")):
+            with self.subTest(clean=state):
+                self.assertEqual(self.route("--no-milestone", state=state, sid=f"{i}" * 8 + "-cccc-4ccc-8ccc-cccccccccccc"
+                                            ).returncode, 0, "作業ツリーがきれいなら通る")
+        (self.repo / "new.txt").write_text("x", encoding="utf-8")
+        res = self.route("--no-milestone")
+        self.assertEqual(res.returncode, 3, res)
+        out = json.loads(res.stdout)
+        self.assertEqual(out["status"], "needs_branch")
+        self.assertIn("未コミットの変更 1 件", out["reason"])
+        self.assertFalse((self.root / self.hub_name / "sessions" / f"{SID_A}.json").exists())
+
+        sha = self.git_repo.commit("on main", filename="new.txt")
+        res = self.route("--no-milestone")
+        self.assertEqual((res.returncode, json.loads(res.stdout)["status"]), (3, "needs_branch"), "base より先のコミット")
+        self.git_repo.checkout(sha)
+        res = self.route("--no-milestone")
+        self.assertIn("detached HEAD", json.loads(res.stdout)["reason"])
+
+        self.git_repo.branch("feat/x")
+        (self.repo / "more.txt").write_text("x", encoding="utf-8")
+        self.assertEqual(self.route("--no-milestone").returncode, 0, "対照: ブランチの上なら通る")
+
+    def set_hub_base(self, base: str) -> None:
+        config = self.config(self.hub_name)
+        config["repos"][0]["base"] = base
+        (self.root / self.hub_name / "config.json").write_text(json.dumps(config), encoding="utf-8")
+
+    def test_a_base_that_cannot_be_compared_warns(self):
+        # detached HEAD は base の名前によらず判定に入る。base との差を数えられなければ止めずに warning。
+        # `-x` は git 自身もオプションとして弾くので、`-` を弾く処理の有無はこの出力では見分けられない
+        self.on_main()
+        self.git_repo.checkout(self.git_repo.commit("detached", filename="d.txt"))
+        for i, base in enumerate(("origin/nope", "-x")):
+            with self.subTest(base):
+                self.set_hub_base(base)
+                res = self.route("--no-milestone", sid=f"{i}" * 8 + "-eeee-4eee-8eee-eeeeeeeeeeee")
+                self.assertEqual(res.returncode, 0, res)
+                self.assertIn("確かめきっていない", json.loads(res.stdout)["warning"])
+
+    def test_a_local_base_is_compared_with_its_upstream(self):
+        # `main..HEAD` は main の上では常に 0 なので、main の upstream と比べる
+        for i, base in enumerate(("main", "refs/heads/main")):
+            with self.subTest(base):
+                self.root = self.tmp / f"upstream-{i}"
+                self.assertEqual(self.repo_hub().returncode, 0)
+                if i == 0:
+                    self.on_main()
+                    self.git_repo.set_upstream("main", "origin/main")
+                    self.git_repo.commit("on main", filename="up.txt")
+                self.set_hub_base(base)
+                res = self.route("--no-milestone", sid=f"{i}" * 8 + "-ffff-4fff-8fff-ffffffffffff")
+                self.assertEqual(res.returncode, 3, res)
+                self.assertIn("base より先のコミット 1 件", json.loads(res.stdout)["reason"])
+
+    def test_a_local_base_without_an_upstream_warns(self):
+        # upstream が無ければ数えずに warning
+        self.on_main()
+        self.set_hub_base("main")
+        self.git_repo.commit("on main", filename="new.txt")
+        res = self.route("--no-milestone")
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("確かめきっていない", json.loads(res.stdout)["warning"])
+        (self.repo / "more.txt").write_text("x", encoding="utf-8")
+        res = self.route("--no-milestone", sid=SID_B)
+        self.assertEqual((res.returncode, json.loads(res.stdout)["status"]), (3, "needs_branch"),
+                         "差を数えられなくても、未コミットの変更があれば止める")
+
+    def test_a_plain_project_does_not_enforce_the_branch(self):
+        self.on_main()
+        (self.repo / "new.txt").write_text("x", encoding="utf-8")
+        self.assertEqual(self.route("--milestone", "v2").returncode, 0, "通常の PJ に置く report は止めない")
+        self.assertEqual(self.route(project="auth", sid=SID_B).returncode, 0)
+
+    def test_cross_shows_a_session_registered_twice(self):
+        for pdir in (self.root / self.hub_name, self.root / "auth"):
+            (pdir / "sessions").mkdir(exist_ok=True)
+            self.register(pdir, SID_A, "#308 作業")
+        self.register(self.root / "auth", SID_B, "#309 作業", issue="#309")
+        out = self.ok("cross", "--project", "auth")
+        self.assertEqual(out["double_registered"], [{"session_id": SID_A, "name": "#308 作業", "issue": "#308",
+                                                     "also_in": [self.hub_name]}])
+        self.assertEqual([d["session_id"] for d in self.ok("cross", "--project", self.hub_name)["double_registered"]],
+                         [SID_A])
+
+    def test_cross_counts_two_plain_projects_on_a_repo_hub_repo(self):
+        self.assertEqual(self.plain("web", "--milestone", "w").returncode, 0)
+        for project in ("auth", "web"):
+            (self.root / project / "sessions").mkdir(exist_ok=True)
+            self.register(self.root / project, SID_A, "#308 作業")
+        out = self.ok("cross", "--project", "auth")
+        self.assertEqual([(d["session_id"], d["also_in"]) for d in out["double_registered"]], [(SID_A, ["web"])],
+                         "repo hub でない PJ どうしでも、repo hub のある repo では二重登録")
+        self.ok("close", "--project", self.hub_name)
+        self.assertEqual(self.ok("cross", "--project", "auth")["double_registered"], [],
+                         "repo hub を close した repo では 2 つの PJ に登録してよい（route と同じ）")
+
+    def test_cross_follows_the_repo_the_session_registered_in(self):
+        # PJ どうしが repo hub のある repo と無い repo を共有するとき、無い repo の worktree での登録は数えない
+        other = self.other_repo(self.tmp / "plain-repo")
+        for project in ("auth", "web"):
+            if project == "web":
+                self.assertEqual(self.plain("web", "--milestone", "w").returncode, 0)
+            config = self.config(project)
+            config["repos"].append({"path": str(other), "base": "base"})
+            (self.root / project / "config.json").write_text(json.dumps(config), encoding="utf-8")
+            (self.root / project / "sessions").mkdir(exist_ok=True)
+            reg = {"session_id": SID_A, "name": "#308 作業", "project": project, "issue": "#308",
+                   "updated": "2026-11-04T00:00:00.000000Z", "worktree": str(other)}
+            (self.root / project / "sessions" / f"{SID_A}.json").write_text(json.dumps(reg), encoding="utf-8")
+        self.assertEqual(self.ok("cross", "--project", "auth")["double_registered"], [])
+        reg["worktree"] = str(self.repo)
+        (self.root / "auth" / "sessions" / f"{SID_A}.json").write_text(json.dumps({**reg, "project": "auth"}),
+                                                                       encoding="utf-8")
+        self.assertEqual(len(self.ok("cross", "--project", "auth")["double_registered"]), 1,
+                         "対照: repo hub のある repo の worktree での登録は数える")
+
+    def test_cross_leaves_out_a_session_that_moved(self):
+        for side in ("mine", "theirs"):
+            with self.subTest(side):
+                self.root = self.tmp / f"moved-{side}"
+                self.assertEqual(self.repo_hub().returncode, 0)
+                self.assertEqual(self.plain("auth", "--milestone", "v2").returncode, 0)
+                for pdir in (self.root / self.hub_name, self.root / "auth"):
+                    (pdir / "sessions").mkdir(exist_ok=True)
+                    self.register(pdir, SID_A, "#308 作業")
+                moved = self.root / ("auth" if side == "mine" else self.hub_name)
+                with (moved / "journal.jsonl").open("a", encoding="utf-8") as f:
+                    f.write(json.dumps({"ts": "2026-11-04T00:00:00Z", "kind": "close_sub", "subject": SID_A,
+                                        "body": {"result": "moved", "to_project": "x",
+                                                 "at": "2026-11-04T00:00:00.000000Z"}}) + "\n")
+                self.assertEqual(self.ok("cross", "--project", "auth")["double_registered"], [])
+
+
+class RouteWithoutRepoHubTest(HubTestBase):
+    """repo hub の無い repo では、宛先も止める判定も今のまま（2026-11-04 決定）."""
+
+    def test_two_projects_still_need_the_project_and_may_share_a_session(self):
+        self.init()
+        self.init(project="pj2", session_id=SID_B, name="hub-two")
+        res = self.report(project=None)
+        self.assertEqual(res.returncode, 1, res)
+        self.assertEqual(res.stdout, "", "今の detect_project のまま（stdout に status を出さない）")
+        self.assertEqual(self.report(project="pj").returncode, 0)
+        self.assertEqual(self.report(project="pj2").returncode, 0, "2 つの PJ への登録を止めない")
+        out = self.ok("cross", "--project", "pj")
+        self.assertEqual(out["double_registered"], [], "repo hub の無い repo の二重登録は後ろ盾にも出さない")
+
+    def test_the_base_branch_is_not_enforced(self):
+        self.init()
+        (self.repo / "new.txt").write_text("x", encoding="utf-8")
+        self.git_repo.checkout("base")
+        self.assertEqual(self.report().returncode, 0)
+
+
+class ForeignNamesTest(HubTestBase):
+    def test_a_name_from_a_closed_project_of_the_same_session_is_kept(self):
+        # closed の PJ から移ったセッションの名前が、移った先で候補から消えない（ADR-20261102144903 の決定 5）
+        pdir = self.init()
+        old = self.init(project="old", session_id=SID_B, name="hub-old")
+        self.register(old, SID_A, "#308 作業")
+        self.register(pdir, SID_A, "#308 作業", absent_since="2026-10-21T00:00:00.000000Z")
+        rc, out = self.resolve("--session", SID_A, agents=[agent("#308 作業", "f1")])
+        self.assertEqual(rc, 0, out)
+        self.register(old, SID_B, "#308 作業")
+        self.register(old, SID_A, "別の名前")
+        rc, out = self.resolve("--session", SID_A, agents=[agent("#308 作業", "f1")])
+        self.assertEqual(rc, 1, "対照: 別のセッションがほかの PJ で名乗る名前は外す")
+
+    def test_a_session_only_in_another_project_keeps_its_name_taken(self):
+        self.init()
+        old = self.init(project="old", session_id=SID_B, name="hub-old")
+        self.register(old, SID_A, "#308 作業")
+        rc, out = self.resolve("--session", SID_A, "--issue", "#308", agents=[agent("#308 作業", "f1")])
+        self.assertEqual(rc, 1, "この PJ に登録の無いセッションの、ほかの PJ での名前は外す")
+
+
+class RepoHubWorkerHintTest(RepoHubTestBase):
+    def inject(self, session_id: str = SID_A) -> str:
+        res = self.run_hub("inject", stdin=json.dumps({"hook_event_name": "SessionStart", "session_id": session_id,
+                                                       "cwd": str(self.repo)}))
+        self.assertEqual(res.returncode, 0, res)
+        return res.stdout
+
+    def test_a_repo_hub_repo_tells_to_leave_out_the_project(self):
+        self.assertEqual(self.repo_hub().returncode, 0)
+        self.assertEqual(self.plain("auth", "--milestone", "v2").returncode, 0)
+        out = self.inject()
+        self.assertIn(f"PJ「{self.hub_name}」", out)
+        self.assertIn("PJ「auth」", out)
+        self.assertIn("`--project` を付けずに report を置けば", out)
+        self.assertIn("ブランチを切ってから編集する", out)
+        self.assertNotIn("PJ が 1 つなら省いてよい", out)
+
+    def test_quiet_once_registered_in_any_project_of_the_repo(self):
+        self.assertEqual(self.repo_hub().returncode, 0)
+        self.assertEqual(self.plain("auth", "--milestone", "v2").returncode, 0)
+        for project in (self.hub_name, "auth"):
+            with self.subTest(project):
+                pdir = self.root / project
+                (pdir / "sessions").mkdir(exist_ok=True)
+                self.register(pdir, SID_A, "#308 作業")
+                self.assertEqual(self.inject(), "")
+                (pdir / "sessions" / f"{SID_A}.json").unlink()
+                self.assertNotEqual(self.inject(), "", "対照: 登録を消せば鳴る")
+
+    def test_a_registration_that_moved_does_not_silence_the_hint(self):
+        self.assertEqual(self.repo_hub().returncode, 0)
+        pdir = self.root / self.hub_name
+        (pdir / "sessions").mkdir(exist_ok=True)
+        self.register(pdir, SID_A, "#308 作業")
+        self.assertEqual(self.inject(), "", "前提: 登録があれば黙る")
+        with (pdir / "journal.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": "2026-11-04T00:00:00Z", "kind": "close_sub", "subject": SID_A,
+                                "body": {"result": "moved", "to_project": "x", "at": "2026-11-04T00:00:00.000000Z"}}) + "\n")
+        self.assertIn("state=hello", self.inject(), "reopen で移ったと記録した登録は数えない（route と同じ）")
+
+    def test_without_a_repo_hub_the_text_stays(self):
+        self.init()
+        self.init(project="pj2", session_id=SID_HUB_2, name="hub-two")
+        out = self.inject()
+        self.assertIn("PJ が 1 つなら省いてよい", out)
+        self.assertNotIn("`--project` を付けずに", out)
+        self.register(self.root / "pj2", SID_A, "#308 作業")
+        self.assertEqual(self.inject(), "", "repo hub が無くても、どれかに登録済みなら黙る")
+
+
 class RepoHubTextTest(unittest.TestCase):
     """repo hub と reopen を hub の手順に載せる文言契約（ADR-20261102144843 / ADR-20261102144922 / GitHub issue #356）."""
 

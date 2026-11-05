@@ -215,6 +215,11 @@ class TempGitRepo:
                             f"refs/remotes/origin/{branch}"], cwd=self.path, capture_output=True,
                            env=self.ENV)
 
+    def set_upstream(self, branch: str, upstream: str) -> None:
+        """branch の upstream を upstream（`origin/main` など。remote と参照は先に作っておく）にする."""
+        subprocess.run(["git", "branch", f"--set-upstream-to={upstream}", branch], cwd=self.path,
+                       capture_output=True, env=self.ENV)
+
     def add_remote(self, name: str = "origin", url: str = "https://example.invalid/r.git") -> None:
         """remote を足す（fetch はしない。`git remote` に名前が出ればよいテスト向け）."""
         subprocess.run(["git", "remote", "add", name, url], cwd=self.path, capture_output=True,

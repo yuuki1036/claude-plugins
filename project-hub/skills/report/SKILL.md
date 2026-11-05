@@ -18,7 +18,8 @@ sub（hub が束ねる作業セッション）側の手順。本文は hub の i
 **完了基準**: report のファイルを置き、通知を送ったか、送れなかった理由を利用者に伝えた。ListAgents の抜き出しが合わなかった回は、何も書かずに止めたことを伝えた。
 
 1. **PJ と state を決める**
-   - PJ: brief が渡した `--project <PJ>`。無ければ省く（`hub.py` が cwd の repo を含む active な PJ が 1 つだけならそれにする）
+   - PJ: brief が渡した `--project <PJ>`。無ければ省く。既定は省く側で、`--project` を付けるのは brief や利用者が指定したときだけ（`hub.py` が宛先を決める。cwd の repo を含む active な PJ が 1 つだけならそれ。同じ repo に repo hub があれば、登録済みの PJ か、Issue の範囲で決まる PJ）
+   - 同じ repo に repo hub があり、まだどの PJ にも登録していなければ（初めての report）、Issue の範囲の材料を 4 で渡す。github は `gh issue view <番号> --repo <tracker の repo> --json milestone -q .milestone.title` で milestone を取り、名前があれば `--milestone '<名前>'`、空なら `--no-milestone`。linear は Issue の project を `--issue-project '<名前>'` か `--no-issue-project` で渡す。local は要らない（`hub.py` が Issue ファイルの slug を見る）。repo hub があるかは、紐付けの案内（hook）の「`--project` を付けずに report を置けば」の行か、`needs_project` が返ったことで分かる。どちらでもなければ渡さなくてよい
    - state: `hello`（brief を受けた直後の自己登録）/ `in_progress` / `blocked` / `ready_for_review` / `done`。引数に無ければ会話の状況から選ぶ
 2. **ListAgents を引く**: 出力をそのまま 3 の `list_agents` に入れる（抜き出しは hub.py がする）。4 が `parse_failed` を返したら、`${CLAUDE_PLUGIN_ROOT}/references/list-agents.md` を Read し、その手順で自分の名前と ref・`Peer sessions` の行・件数 N を抜き出して、`list_agents` の代わりに `name` / `self_ref` / `agents` / `peer_count` を入れる
 3. **本文を作る**（JSON）。ListAgents の出力も同じ JSON に入れる:
@@ -33,7 +34,7 @@ sub（hub が束ねる作業セッション）側の手順。本文は hub の i
     "list_agents": "<ListAgents の出力そのまま>"}
    ```
    - 文字列の中の改行は `\n` と書き、1 つの文字列を 1 行に収める
-   - `follow_ups` は Issue の起票の候補にもなる。自分で起票したもの（tracker github / linear）は、文の先頭に Issue ID を書く（`#123 ログのローテーション` / `ABC-12 …`。hub は先頭が Issue ID の follow-up を起票の候補にしない）。brief が「Issue を起票しない」と言った PJ（tracker local）では、Issue を起票せずにここへ書く（hub のセッションの lead が起票する）
+   - `follow_ups` は Issue の起票の候補にもなる。自分で起票したもの（tracker github / linear）は、文の先頭に Issue ID を書く（`#123 ログのローテーション` / `ABC-12 …`。hub は先頭が Issue ID の follow-up を起票の候補にしない）。brief が「Issue を起票しない」と言った PJ（tracker local）と、repo hub に置く report（どの tracker でも）では、Issue を起票せずにここへ書く（hub のセッションの lead が起票する）
    - `issue` は brief の Issue ID（GitHub は `#308`、Linear と issue-workflow の local は `ABC-12` の形。それ以外は弾かれる）。`pr` は `gh pr view --json number -q .number` で取れれば数値で入れる
    - `claims` は出典を付けられるものだけ。出典の無い推測は claims に入れず、確かめてから書くか questions / needs_lead に問いとして書く
    - `questions` と `needs_lead` の分け方: Issue・仕様 docs・これまでの lead の判断から答えが決まりそうなものは questions、lead が新しく決めることは needs_lead。迷ったら needs_lead に書く（hub が答えてよいかを sub が決めない）
@@ -44,14 +45,19 @@ sub（hub が束ねる作業セッション）側の手順。本文は hub の i
    - report の中の語（hub・lead・sub）は hub との間の語。外に出る文（repo の docs・トラッカー・PR の本文と返信・コミットメッセージ）には書かず、決定は「2026-10-27 決定」のように日付で書く
 4. **置く**: 本文を stdin で渡す。名前は空白や記号を含むのでシングルクォートで囲む（`'` を含むなら `'\''`）。heredoc の区切りは毎回その場で決める `PROJECT_HUB_<8 桁の乱数>` にしてクォートし、本文にその文字列が無いことを確かめる（固定の区切りは、本文や他のセッションの名前がその 1 行を含むと後ろの行がシェルで実行される）:
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/hub.py" report [--project '<PJ>'] <<'PROJECT_HUB_<8 桁の乱数>'
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/hub.py" report [--project '<PJ>'] [--milestone '<名前>' | --no-milestone] [--issue-project '<名前>' | --no-issue-project] <<'PROJECT_HUB_<8 桁の乱数>'
    <3 の JSON>
    PROJECT_HUB_<8 桁の乱数>
    ```
    - session_id は Bash の `CLAUDE_CODE_SESSION_ID` から取る。空の環境だけ command 本文が示した id を `--session-id` で渡す
    - `status: parse_failed`（exit 2）→ **何も書いていない**。`list_agents` で渡したなら、2 のとおり抜き出した形で渡し直す。抜き出した形でも合わなければ、ListAgents の生の出力を添えて「抜き出しが合わなかった」と利用者に伝え、引き直してやり直す
-   - exit 1（PJ が決まらない）→ 利用者に PJ 名を聞いて `--project` を付け直す / exit 2（JSON なし）→ stderr の理由に従って本文を直す / exit 3 → PJ が active でない・未 init。stderr を伝えて終える / exit 4 → stderr を伝えて終える
-   - 出力に `warning` があれば利用者に伝え、会話の題を直して report し直すよう頼む（既定名で登録した・同じ名前の別のセッションがある。どちらも hub はその名前では宛先を引かない）
+   - stdout に `status` の JSON が出て止まったら（どれも**何も書いていない**）、その `status` で分岐する:
+     - `needs_project`（exit 1）: Issue の範囲で PJ が 1 つに決まらなかった（`reason`・範囲に入る `inside`・判定できない `unknown`）。github / linear で範囲の材料を渡していなければ、1 の手順で milestone / project を取って渡し直す。渡しても決まらなければ、`candidates` を並べて利用者に PJ を聞き、`--project` を付け直す
+     - `out_of_scope`（exit 3）: `--project` に repo hub を指したが、Issue は `projects` の PJ の範囲に入る。利用者に伝え、その PJ を `--project` に付け直すかを聞く（repo hub の hub が start した sub なら、hub にも questions で知らせる）
+     - `registered_elsewhere`（exit 3）: このセッションは同じ repo の `registered` の PJ に登録済み（1 つのセッションは 1 つの PJ にだけ登録する）。`--project` を外すか登録済みの PJ にして置き直す。`registered` が 2 件以上なら（古い版で両方に置いた・repo hub が後から作られた）、どちらで続けるかを利用者に聞き、その PJ を `--project` に付けて置き直す（登録済みの PJ を指せば `warning` 付きで置ける。もう一方の登録は hub の status に二重登録として出る）。別の PJ の Issue を進めたいなら、Issue ごとにセッションを分ける
+     - `needs_branch`（exit 3）: repo hub に置く report で、base のブランチか detached HEAD の上に、未コミットの変更（gitignore されていない untracked のファイルも数える）か base より先のコミットがある（`reason`）。利用者に伝え、変更をブランチへ移す手順を出す: ブランチを切る（`git switch -c <type>/<Issue 番号>-<説明>`。未コミットの変更はそのまま移る。base より先のコミットは、切った後に base のブランチを `origin` の位置へ戻すかを利用者に確かめる）か、issue-workflow の start を Issue ID で起動する。移してから置き直す
+   - exit 1（`status` の無い stderr。PJ が決まらない）→ 利用者に PJ 名を聞いて `--project` を付け直す / exit 2（JSON なし）→ stderr の理由に従って本文を直す / exit 3（`status` の無い stderr）→ PJ が active でない・未 init・同じ repo に active な repo hub が 2 つある（config の不整合）。stderr を伝えて終える / exit 4 → stderr を伝えて終える
+   - 出力に `warning` があれば利用者に伝える。既定名で登録した・同じ名前の別のセッションがある、の 2 つは、会話の題を直して report し直すよう頼む（どちらも hub はその名前では宛先を引かない）。登録に合わせて範囲の外の PJ に置いた・base のブランチの上での編集を確かめていない、の 2 つは伝えるだけでよい（宛先は登録で固定する）
 5. **hub に知らせる**: 出力の `notify` で分岐する
    - `status: ok` → SendMessage で `notify.to` に、次の文面を**そのまま**送る（report の中身は書かない）: `report を置いた（<出力の file>）。hub の status で取り込む`
    - `status: unresolved` → 送らない。利用者に「report は置いた。hub への通知は送れなかった（<reason>）。hub の次の status で取り込まれる」と伝える
