@@ -225,6 +225,55 @@ class InjectStateTest(HookTestCase):
         payload["cwd"] = str(self.tmp)
         self.assertQuiet(self.run_hook(payload, env_extra=env))
 
+    def hint_on_repo(self, configs: dict[str, dict]) -> tuple[Path, dict]:
+        """repo を 1 つ作り、configs の PJ（名前 → config に足す値）をその repo に並べる。repo と payload を返す."""
+        git_repo = TempGitRepo()
+        repo = git_repo.__enter__()
+        self.addCleanup(git_repo.__exit__, None, None, None)
+        git_repo.commit("init")
+        for i, (name, extra) in enumerate(configs.items()):
+            pdir = self.make_project(name, session_id=f"{i}" * 8 + "-1111-4111-8111-111111111111")
+            config = json.loads((pdir / "config.json").read_text(encoding="utf-8"))
+            (pdir / "config.json").write_text(json.dumps({**config, "repos": [{"path": str(repo), "base": "main"}],
+                                                          **extra}), encoding="utf-8")
+            (pdir / "sessions").mkdir()
+        return repo, {"hook_event_name": "SessionStart", "source": "startup", "session_id": SID_OTHER,
+                      "cwd": str(repo)}
+
+    def register(self, project: str) -> Path:
+        path = self.root / project / "sessions" / f"{SID_OTHER}.json"
+        path.write_text(json.dumps({"session_id": SID_OTHER, "name": "#1 作業"}), encoding="utf-8")
+        return path
+
+    def test_a_session_registered_in_any_project_of_the_repo_is_quiet(self):
+        # どれかの PJ に登録済みなら、repo hub の有無によらず紐付けの案内を出さない（ADR-20261102144903 の決定 4。
+        # 1 セッション 1 PJ の強制は repo hub のある repo だけ / 2026-11-04 決定）
+        env = {"PROJECT_HUB_DIR": str(self.root), "HOME": str(self.tmp / "home")}
+        for label, configs in (("repo hub あり", {"repo-x": {"repo_hub": True}, "auth": {}}),
+                               ("repo hub なし", {"pj": {}, "pj2": {}})):
+            with self.subTest(label):
+                self.root = self.tmp / label
+                env["PROJECT_HUB_DIR"] = str(self.root)
+                _, payload = self.hint_on_repo(configs)
+                self.assertIn("state=hello", self.run_hook(payload, env_extra=env).stdout, "対照: 未登録なら鳴る")
+                for project in configs:
+                    path = self.register(project)
+                    self.assertQuiet(self.run_hook(payload, env_extra=env))
+                    path.unlink()
+
+    def test_a_repo_hub_repo_adds_the_routing_lines(self):
+        env = {"PROJECT_HUB_DIR": str(self.root), "HOME": str(self.tmp / "home")}
+        _, payload = self.hint_on_repo({"repo-x": {"repo_hub": True}, "auth": {}})
+        out = self.run_hook(payload, env_extra=env).stdout
+        self.assertIn("`--project` を付けずに report を置けば", out)
+        self.assertIn("ブランチを切ってから編集する", out)
+        self.root = self.tmp / "plain"
+        env["PROJECT_HUB_DIR"] = str(self.root)
+        _, payload = self.hint_on_repo({"pj": {}, "pj2": {"repo_hub": "true"}})
+        out = self.run_hook(payload, env_extra=env).stdout
+        self.assertIn("PJ が 1 つなら省いてよい", out, "repo hub の無い repo では今の文面のまま")
+        self.assertNotIn("`--project` を付けずに", out, "真偽値の true 以外は repo hub ではない")
+
 
 class NotifyPendingTest(HookTestCase):
     """`notify-pending.sh`（UserPromptSubmit）。**すべての発言で走る**ので黙る条件を厚く書く（GitHub issue #314）."""
