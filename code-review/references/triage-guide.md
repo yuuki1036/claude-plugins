@@ -241,6 +241,15 @@ SKILL.md Step 1 が保存した PR コンテキスト（`$PR_CTX_FILE`）の内�
 
 - **reviewer 上限**: `## 7` の effort 適応表と `## 6.2` の規模キャップの **min**（effort 側は high 6 体 / xhigh・max 10 体、規模側は small 3 体 / medium 5 体。最小保証の 2 体は規模キャップより優先）
 - **単独維持の観点が上限に収まらないときの順**（small の 3 体など）: 最小保証の 2 体（bug-detection・claude-md-compliance）→ **仕様ソースがあれば spec-compliance** → security → layer-responsibility（low / medium では単独ではなく設計バンドル）→ 残りは束ねる。仕様ソースのある回で spec-compliance を落とすと、Issue や spec との照合がその回まるごと起きない。落ちた観点は従来どおり `missing_coverage` に記録する
+- **この順・上限・束ねは `scripts/plan-reviewers.sh plan` が適用する**（self-review Step 2.2 / review Step 3.2。GitHub issue #351 — 表を読んで数えた回に high の上限 6 を 5 と数え、spec-compliance より security を先に取った）。オーケストレーターは数え直さず plan の行に従い、起動前に `check` で突き合わせる（orchestration-guide.md `### 8a`）。順・単独維持の観点・設計バンドル・`## 7` / `## 6.2` の表は `scripts/lib/reviewer_plan.py` に複製してあり、テストが本ファイルと突き合わせる（変えるときは両方直す）
+- **plan の出力の読み方**（self-review / review 共通）:
+  - `reviewer	R<n>	<kind>	<観点>` が reviewer の構成。kind は `solo`（1 観点）/ `bundle`（束ね）/ `design`（low・medium の設計バンドル）/ `prior`（`--since` の回の前回の対象の専任。規模キャップの外）。`piggyback	R<n>	<観点>` はその行への相乗り
+  - `dropped	<観点>	<理由>` は起動しない観点。`missing_coverage` に識別子で記録し、理由をレポートの「⚠️ 欠損観点」に写す: `size-cap` = 規模キャップで未起動 / `effort-cap` = effort 上限で未起動（単独維持の観点・low・medium の設計バンドル）/ `overflow` = 束ねても reviewer 上限を超えた
+  - `excluded` は `--focus` / `--exclude` で外した観点（欠損ではない）。`out_of_vocab` は「語彙外の focus」に書く。`spec_source	none` は仕様ソースなし、`spec_missing` は `--spec` のファイルが無い
+  - `prior_specialist	<key>` は前回の対象の specialist。plan の範囲外なので check には流さず、prior-fixes-guide.md の 1 節のとおり red-flag の有無によらず起動して前回の対象を渡す
+  - `--focus` / `--exclude` の回は規模キャップを掛けない（effort 上限は掛ける）。size_tier が `unknown` の回も規模キャップを掛けない（small に倒すと大きな diff が最小構成で黙って処理される）
+  - `spare` は前回の対象の専任でない行を足せる残りの枠。`cap_source` は効いた上限（`effort` / `size` / `scope`）
+  - check の NG の規則: `over-cap` / `min-guarantee` / `spec-missing` / `solo-bundled` / `over-bundled` / `redundant-not-allowed` / `unknown-focus` / `not-in-plan` / `unaccounted` / `wrong-reason` / `dropped-revived`（落とした観点を起こした）/ `bad-prior`（prior の行が plan と違う）/ `bad-piggyback`（plan に無い相乗り）/ `not-plan-row`（行の観点の組が plan と違う。束ね直して体数を変えた）。直し方は NG 行の 4 列目
 
 ## 5. 出力フォーマット
 
@@ -251,7 +260,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 
 ### 変更特性
 - 規模: {small|medium|large}（core {N} ファイル / {N} 行、全体 {N} ファイル / {N} 行）
-- 実効上限: explorer {N} / reviewer {N} / specialist {N}（effort {値} 上限 {N}/{N}/{N} と規模キャップ {N}/{N}/{N} の min。`## 6.2`）
+- 実効上限: explorer {N} / reviewer {N} / specialist {N}（effort {値} 上限 {N}/{N}/{N} と規模キャップ {N}/{N}/{N} の min。`## 6.2`。plan の `explorer_cap` / `reviewer_cap` / `specialist_cap` と `cap_source` を写す）
 - 直列 wave: {下限}〜{上限}（{explorer → }reviewer+skeptic{ → [Round 2 ×{1|2}]}{ → [meta+反証]}{ → [追加反証]}）／目安 explorer wave 約 2 min・以降の wave 約 2〜5 min（xhigh 以上は explorer 約 8 min・以降 約 5〜50 min、中央値 約 20 min）
 - Markdown 推敲（self-review のみ）: {reviewer wave に相乗り | skip（理由: `no-md-prose` / `embed` / `scope` / `not-installed`）}（`md-polish-guide.md` の 1 節。直列 wave の本数は変えない）
 - リスク因子: [巨大ファイル, 条件分岐追加, 共通モジュール変更, ...]
@@ -364,7 +373,7 @@ core が 0（テスト・doc のみの PR）の場合は `## 2.5` のモード�
 - **判定は large → medium → small の順**に上から当て、最初に条件を満たした帯を採る（条件が重なる場合は大きい帯が勝つ。例: 2 ファイル / 600 行は行数で large）
 - **large 帯は規模キャップを課さない**（effort 上限がそのまま実効上限になる）
 - **最小保証（reviewer-bugs + reviewer-claude-md の 2 体）は規模キャップより優先**する。small でもこの 2 体は必ず起動する
-- キャップに収まらない観点は、effort 上限超過と同じ扱いで `missing_coverage` に識別子 `<focus>` を**必ず記録**する（脱落を silent にしない。**規模キャップで落ちた旨はレポート本文へ**）。近接観点のバンドル（`## 7`）による吸収を先に試みる
+- キャップに収まらない観点は、effort 上限超過と同じ扱いで `missing_coverage` に識別子 `<focus>` を**必ず記録**する（脱落を silent にしない。**規模キャップで落ちた旨はレポート本文へ**。該当するのは plan の `dropped` 行の理由が `size-cap` のもの。規模キャップを外して割り当て直すと入る観点だけがこの理由になるので、large では出ない）。近接観点のバンドル（`## 7`）による吸収を先に試みる
 - 判定した帯と core の実数は Phase 0 の出力（`## 5`）とレポート冒頭・`review:completed` payload の `size_tier` に必ず出す（キャップが効いたことを事後に検証できるようにする）
 
 ### 6.3 規模キャップが削るもの・削らないもの
@@ -426,7 +435,7 @@ self-review に `--since=<tree>` が渡され、`## delta` が `scope_mode=delta
 - **観点バンドル（high 以下）**: 起動条件を満たした観点数が reviewer 上限を超える場合、近接観点を 1 体に束ねて**可能な限り**吸収する（例: error-handling + comment-accuracy + type-design / config + dependency）。1 体あたり 3 観点まで。**bug-detection / security / spec-compliance / claude-md-compliance / layer-responsibility は束ねず単独を維持**する（指摘密度が高く attention 希釈の代償が大きい観点。layer-responsibility は探索量が結果を決める観点で、claude-md-compliance に同居させた版は 6 回とも層の指摘を本文に出せず、専任の reviewer だけが拾えた / GitHub issue #261）。束ね時の出力規約（focus キーは原観点・観点ごとに独立列挙・自己フィルタ禁止）は `${CLAUDE_PLUGIN_ROOT}/references/prompts/bundle-rules.md`を参照
   - **`comment-accuracy` が束ねられた場合も、self-review のコメント推敲（B 系統）の `## コメント推敲提案` ブロックは省略しない**（v2.45.0）。束ねは attention の配分の話であって出力契約の削減ではない。該当なしなら「該当なし」と明記する（Step 6 の見出しが silent に消えると、推敲ゼロが「提案が無かった」のか「観点が薄まって見なかった」のか区別できなくなる）。**バンドル相乗りでも `comment_polish.fired` は `true`** — 専任 reviewer の有無で切ると high 既定で常に false になる（orchestration-measurement.md `## 16`）
   - **設計バンドル（low / medium のみ）**: `layer-responsibility` / `cross-cutting` / `type-design` / `pattern-consistency` のうち起動条件を満たしたものを、**1 体にまとめて先に枠を取る**（1 つだけなら単独、2 つ以上なら束ねる。この束ねだけは 4 観点まで）。置き場所・層の責務・型・命名は同じ「設計」の角度で 1 回読めば足り、別々の束ねに散らすより attention が揃う。medium の reviewer 上限 4 体では、最小保証の 2 体と単独の layer-responsibility で 3 枠が埋まり、残り 1 枠を test-quality / error-handling / comment-accuracy と取り合って設計系が落ちていた（opus-5-5・medium の 32 回で cross-cutting 6 回・type-design 4 回が欠損）。**この束ねでは layer-responsibility の単独維持を外す** — claude-md-compliance に同居させた版は層の指摘を出せなかった（#261）が、ここは規約照合ではなく設計の観点どうしの束ねなので別に扱う。効果は medium の回の `missing_coverage` から設計系が消えるか、層の指摘が本文・付録に出続けるかで見る。high 以上は従来どおり layer-responsibility を単独で起動する
-  - **容量と超過時の扱い**: 吸収容量は、起動した単独維持の観点数を S として「S +（reviewer 上限 − S）× 3」（high で単独 4 観点なら 10 観点、layer-responsibility も起動して 5 観点なら 8 観点）。観点判定表は 18 観点あるため、フルスタックな大型 PR では超過しうる。**超過分は `missing_coverage` に「観点未起動: <focus>（reviewer 上限超過）」として必ず記録**し、レポートの欠損観点セクションに明示する（脱落を silent にしない）。超過が常態化する PR は xhigh への明示 escalation を促す
+  - **容量と超過時の扱い**: 吸収容量は、起動した単独維持の観点数を S として「S +（reviewer 上限 − S）× 3」（high で単独 4 観点なら 10 観点、layer-responsibility も起動して 5 観点なら 8 観点）。観点判定表は 18 観点あるため、フルスタックな大型 PR では超過しうる。**超過分は `missing_coverage` に「観点未起動: <focus>（reviewer 上限超過）」として必ず記録**し、レポートの欠損観点セクションに明示する（脱落を silent にしない）。超過が常態化する PR は xhigh への明示 escalation を促す。どの観点をどの体に束ねるかは plan が決める（`reviewer_plan.py` の `ADJACENCY` の順に並べ、空いている枠へ均等に割る。あふれたものは後ろから落ち、`dropped` 行の理由は `overflow`）
 - **specialist の束ね起動（high 以下）**: 複数 red-flag 同時ヒット時、specialist-guardrail-bypass のみ単独 1 体を維持し、残りを 1〜2 体に束ねて該当テンプレートを連結注入する（`## 3` Red-flag 節）。トリガー感度は変更しない
 - **縮小のロールバック条件（v2.39.0 の high 既定縮小）**: 効果は `review:completed` の `agents` / `duration_fleet_min` / blocker+critical 件数で監視する。**判定に使えるのは `agents` フィールドを持つサンプルのみ**（フィールドの有無が版マーカー。日付では切らない）。悪化の検証は旧データ比ではなく **xhigh/max の明示実行を対照群にした縮小後サンプル内の比較**で行い、`size_tier` を揃える。サンプルが無いうちは判断しない。→ 監視の jq・観測ログ・`review` 由来サンプルが v2.40.0 より前に存在しない理由: `design-notes/triage-rationale.md`
 - **体数を壁時計のレバーとして扱わない**。並列発行が効いている限り fleet 区間の実時間は「wave 内最長の 1 体」で決まるため体数削減の効果は線形ではない。**支配的なのは effort（= 直列 wave 数）**（review 13 件。`size_tier` を medium に揃えると high 平均 32 分 / xhigh 平均 61 分と **1.9 倍**なのに、体数レンジは 6〜10 と 6〜11 でほぼ重なる。`73 分 / 6 体` と `19 分 / 7 体` が併存する。GitHub issue #116 / 内訳: `design-notes/triage-rationale.md`）。**この節はかつて「体数と `duration_fleet_min` は無相関」を根拠にしていたが、その事実主張は取り下げた**（v2.116.0 / GitHub issue #217）— サンプルが増えると `small` / `large` で相関が出る（実測 n=213: medium/unrecorded 0.16 / large/unrecorded 0.67 / small/opus-4-8 0.69）。**規範は残る。根拠が変わった**: ①相関は因果ではない（tier・世代・effort・wave 数の統制・synthesis の減算のどれでも消えず、体数と一緒に動く未観測の変数 — diff の難しさ・1 体あたりの探索量 — が両方を押していると読む）②**体数削減は recall を削る**（`## 5.2` の実測: 踏み下げで報告 0 件率 42% → 91%）。**「相関があるから体数を減らせば速くなる」と読まないこと** — 因果の向きが確かめられていないうえ、削るのは recall の側になる。体数削減が確実に効くのは**トークンコスト**。壁時計を縮めたいときにまず触るのは ①1 体あたりの探索量（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` の探索予算）②直列 wave 数（`## 5.1`）③メインコンテキストの複製量（orchestration-guide.md `## 3.5`）。**この節のロールバック判断に「時間が長いから体数を減らす」を混ぜない**（recall だけ落ちて時間が変わらない改悪になる）

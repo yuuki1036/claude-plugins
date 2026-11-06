@@ -2,6 +2,30 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.165.3] - 2026-11-05
+
+### Fixed
+
+- **reviewer の構成を `scripts/plan-reviewers.sh` で決め、起動前の検算で機械的に止めるようにした**（GitHub issue #351）。
+  これまでは triage-guide の表をオーケストレーターが読んで数えており、effort high の上限 6 を 5 と数えた回・仕様ソースが
+  あるのに spec-compliance より security を先に取った回があった。large の帯なのにレポートに「規模の上限で未起動」と書き、
+  起動前の検算（orchestration-guide `### 8a`）も同じ LLM が回すので止まらなかった
+  - `plan`: effort・帯・Stage 1 で起動条件を満たした観点から、実効上限・単独 / 束ねの reviewer の行・落とした観点とその理由
+    （`size-cap` / `effort-cap` / `overflow`）を出す。理由は、規模キャップを外して割り当て直すと入るかで分けるので、large で
+    `size-cap` は出ない。仕様ソース（session-context の branch 一致・ブランチ名か session-context の `issue_id` の Issue ID に対応する Issue ファイル（worktree なら
+    メインのチェックアウト側も）・`--spec` の実在）は plan が自分で探す。spec-compliance は `--activated` で受けない（仕様ソース
+    だけで決める）。PR に紐づく Issue と knowledge は `--spec-source` で渡す
+  - `check`: 確定したテーブルを保存した plan と突き合わせ、上限超過・最小保証の欠落・仕様ソースがあるのに spec-compliance の
+    単独の行が無い・単独維持の観点の束ね・束ねすぎ・high 以下の冗長ペア・plan に無い観点・落とした理由の食い違いを exit 1 で止める。
+    plan が落とした観点を prior の行や相乗りで起こした回と、行の観点の組が plan と違う回（束ね直して体数を変えた）も止める
+  - `--since` の回は前回の対象を規模キャップの外の専任にする（単独維持の観点も、low / medium の layer-responsibility も含む。
+    相乗りにするのは effort 上限を超える分だけ）。plan の候補がすべて外れて reviewer の行が 0 の回は、空のテーブルで check が ok を返す。
+    delta が空の回は plan / check を使わず、triage-guide `### 6.5` のとおり前回の対象の reviewer だけで確かめる
+  - self-review Step 2.2 / review Step 3.2（default-mode のみ）は数値の複製をやめて plan を呼び、8a の後に check を通す。
+    レポートの「実効上限」「仕様整合」「⚠️ 欠損観点」の未起動の理由は plan の行から写す
+  - 定数（`## 7` の effort 表・`## 6.2` の規模キャップ・単独維持の順と観点・設計バンドル）は `lib/reviewer_plan.py` に複製し、
+    テストが triage-guide の表と突き合わせる。一時ファイル `review_path plan` は triage-signals.sh が配る前に消し、publish が掃除する
+
 ## [2.165.2] - 2026-11-05
 
 ### Fixed

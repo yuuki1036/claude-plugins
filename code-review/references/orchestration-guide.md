@@ -247,7 +247,8 @@ reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検
 
 1. `triage-guide.md` の「reviewer の観点判定」表の各条件を、実際の diff シグナル（変更ファイルパス・diff 内文字列）に対して **メインコンテキストで再評価** する
 2. **「条件を満たすのに構成に入っていない focus」** を検出する（例: `migrations/` 変更があるのに migration 不在、`.tsx` 変更があるのに ui-quality 不在、`package.json` 変更があるのに dependency 不在）
-3. 検出した focus は **構成テーブルに追加してから確定する**（実効上限＝ effort 上限（triage-guide.md `## 7`）と規模キャップ（triage-guide.md `## 6.2`）の min に収まる範囲。**検算による追加で実効上限を超えてはならない** — 上限に達したら観点バンドル（triage-guide.md `## 7`）で既存 reviewer に相乗りさせ、それも不能なら `missing_coverage` に識別子 `<focus>` を記録する（**根拠の diff シグナルはレポート本文へ**））
+3. 検出した focus は **plan の `--activated` に足して `plan-reviewers.sh plan` を引き直す**（spec-compliance は除く — plan が仕様ソースから決める。knowledge と PR に紐づく Issue は `--spec-source`、仕様ファイルは `--spec` で渡す。テーブルに直接書き足さない。上限に収まるか・どの体に束ねるか・落とすならその理由は plan が決める。落ちた観点は `missing_coverage` に識別子 `<focus>` を記録し、**根拠の diff シグナルと plan の理由はレポート本文へ**）
+3b. 確定したテーブルを **`plan-reviewers.sh check` に流してから起動する**（GitHub issue #351）。check は保存した plan と突き合わせ、上限超過・最小保証の欠落・仕様ソースがあるのに spec-compliance の単独の行が無い・単独維持の観点の束ね・落とした理由の食い違いなどを exit 1 で止める。**上限を超えたか・spec-compliance が欠けたかを自分で判定しない** — 同じ LLM が数えて同じ LLM が検算すると、数え違いがそのまま通る（#351 では high の上限 6 を 5 と数え、spec-compliance を落とした構成を本節が止めなかった）
 4. **モード除外（review のみ）**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**構成追加は行わない**。検出した focus は `missing_coverage` に識別子 `<focus>` のみ記録する（**mode による意図的縮退である旨はレポート本文へ**）。self-review は `--focus` / `--exclude` 指定時にその範囲内でのみ検算する
 
 ### 8b. 事後突合（review Phase 5.7・self-review Phase 4.7 / logging のみ・agent 追加起動なし）

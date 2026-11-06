@@ -56,11 +56,12 @@ QP="-c core.quotePath=false"
 # 前回実行の diff が残り、下の `-s` チェックを通過して「古い diff で完走」する
 # （成功時のみ mv するガードは空ファイル対策であって stale 対策ではない）。
 # publish に渡す size ファイルと delta の patch も、どの経路で終わるかに関わらずここで消す。途中で exit した
-# 回に前の回の `scope_mode=delta` が残ると、diff 全体を見た回が delta として記録される（GitHub issue #313）
+# 回に前の回の `scope_mode=delta` が残ると、diff 全体を見た回が delta として記録される（GitHub issue #313）。
+# reviewer の構成の plan も消す。前の回の plan が残ると、plan を呼ばずに check だけ呼んだ回が古い plan で通る（#351）
 SIZE_FILE=$(review_path size)
 DELTA_OUT=$(review_path delta)
 trap 'rm -f "$OUT.tmp" "$DELTA_OUT.tmp" "$DELTA_OUT.paths" "$DELTA_OUT.paths.deleted"' EXIT
-rm -f "$OUT" "$SIZE_FILE" "$DELTA_OUT"
+rm -f "$OUT" "$SIZE_FILE" "$DELTA_OUT" "$(review_path plan)"
 if [ -n "$PR" ]; then
   BASE=$(gh pr view "$PR" --json baseRefName -q .baseRefName 2>/dev/null)
   gh pr diff "$PR" > "$OUT.tmp" || { echo "FATAL: gh pr diff に失敗した (PR=${PR})" >&2; exit 1; }
