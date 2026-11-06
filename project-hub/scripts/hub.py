@@ -2352,7 +2352,7 @@ def cmd_cross(args) -> int:
             if cfg is not None and is_active(cfg) and is_repo_hub(cfg):
                 hub_commons |= set(repo_commons(cfg))
         except (TypeError, AttributeError):  # 形の崩れた config 1 つで横断を止めない（下のループと同じ）
-            continue
+            continue  # mutation-ok: ループ本体の最後の文なので、continue と pass はどちらも次の周へ進む
     reg_commons = {}
     for reg in my_regs:
         worktree = reg.get("worktree")
@@ -3055,7 +3055,7 @@ def branch_check(cwd: Path, config: dict) -> tuple[str | None, str | None]:
     repo = next((r for r in config.get("repos", []) if isinstance(r, dict) and r.get("path")
                  and git_common_dir(r["path"]) == mine), None)
     if repo is None:
-        return None, "repo hub の repos に cwd の repo が無いので、base のブランチの上での編集を確かめていない"
+        return None, "repo hub の repos に cwd の repo が無いので、base のブランチの上での編集を確かめていない"  # mutation-ok: route は active_projects_on と同じ照合（cwd の repo を repos に持つ）でしか repo hub を選ばないので、repo は None にならない
     base = str(repo.get("base") or "")
     name = base_branch(repo["path"], base)
     branch = git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
@@ -3064,7 +3064,7 @@ def branch_check(cwd: Path, config: dict) -> tuple[str | None, str | None]:
     # untracked のファイルも数える（新しいファイルを足す編集も base のブランチの上での編集）
     dirty = uncommitted_files(str(cwd))
     # `-` で始まる値は git のオプションとして読まれる
-    against = base if base and not base.startswith("-") else None
+    against = base if base and not base.startswith("-") else None  # mutation-ok: 空の base は against が空文字でも None でも偽で同じ。`-` で始まる base は rev-list が未知のオプションとして弾き、ahead が None になる（test_a_base_that_cannot_be_compared_warns）
     remote = (name != base and not base.startswith("refs/heads/")) \
         or git(cwd, "rev-parse", "--verify", "--quiet", f"refs/remotes/{base}") is not None
     if against and not remote:
@@ -3084,6 +3084,27 @@ def branch_check(cwd: Path, config: dict) -> tuple[str | None, str | None]:
         return None, (f"git でブランチ・未コミットの変更か base（{base}）との差を取れないので、"
                       "base のブランチの上での編集を確かめきっていない")
     return None, None
+
+
+def absent_hub_notify(hub_name: str, hub_host, my_host: str | None) -> dict:
+    """hub の名前の行が一覧に無い（hub の会話が止まっているか、改名した）ときの通知先（GitHub issue #373）.
+
+    ListAgents は動いているセッションしか並べない。hub も sub も Desktop の会話なら、hub の会話の ID（`local_…`）へ
+    送れば Desktop が hub の会話を再開する（2026-10-27 の実測 / ADR-20261106152610）。素の CLI からは届かないので、
+    sub の会話の ID を Desktop の記録で確かめた回だけ使う。使えなければ、2 件以上の不一致と分けて absent で返す
+    """
+    if my_host is None:
+        why = "このセッションが Desktop の会話と確かめられないので、hub の会話の ID へは送れない"
+    elif not isinstance(hub_host, str) or not HOST_ID_RE.fullmatch(hub_host):
+        why = "hub.json に hub の会話の ID が無い"
+    elif hub_host == my_host:
+        why = "このセッションが hub の会話なので、自分宛てになる"
+    else:
+        return {"status": "ok", "name": hub_name, "ref": None, "to": hub_host, "host": hub_host,
+                "rule": "host_session",
+                "warning": f"hub「{hub_name}」が一覧に居ない（会話が止まっているか、改名した）。"
+                           "止まっていれば、送ると Desktop が hub の会話を再開する"}
+    return {"status": "absent", "reason": f"hub「{hub_name}」が一覧に居ない（会話が止まっているか、改名した）。{why}"}
 
 
 def cmd_report(args) -> int:
@@ -3144,7 +3165,8 @@ def cmd_report(args) -> int:
     errs = validate_report(report, project, kind)
     if errs:
         raise HubError(2, "report の形が不正: " + "; ".join(errs))
-    hub_name = read_obj(pdir / "hub.json").get("name")
+    hub_json = read_obj(pdir / "hub.json")
+    hub_name = hub_json.get("name")
 
     # ref は宛先ではなく、改名した後の行をこの登録に結び付ける照合にだけ使う（ref_row）。
     # 会話の ID（local_…）は Desktop の記録で確かめた回だけ持つ。Desktop の hub はこれを宛先にする
@@ -3170,8 +3192,10 @@ def cmd_report(args) -> int:
         notify = {"status": "unresolved", "reason": f"hub の名前「{hub_name}」が既定名なので宛先にしない"}
     elif len(hits) == 1:
         notify = {"status": "ok", "name": hits[0]["name"], "ref": hits[0]["ref"], "to": hits[0]["name"]}
-    else:
+    elif hits:
         notify = {"status": "unresolved", "reason": f"hub の名前「{hub_name}」に一致する行が {len(hits)} 件"}
+    else:
+        notify = absent_hub_notify(hub_name, hub_json.get("host_session_id"), host)
     out = {"file": name, "project": project, "hub_name": hub_name, "notify": notify}
     warnings = [*route_warnings, *([branch_warning] if branch_warning else [])]
     if is_default_name(my_name, issue_token(kind, report["issue"])):

@@ -1,6 +1,6 @@
 # ListAgents の抜き出し（hub / report 共通）
 
-宛先は名前で引き、送る直前に毎回 ListAgents を引き直す（CLI のセッション ID・ref・ソケットは宛先に使えない / ADR-20261021154740）。例外は、hub と sub がどちらも Desktop のセッションで、sub の登録が会話の ID（`local_…`。Desktop の記録で確かめたもの）を持つときの hub → sub で、`resolve` がその ID を `to` に返す（ADR-20261027002221）。ListAgents の出力は人間向けの文で書式の契約が無いので、Claude が抜き出した結果を `hub.py` の自己検査に通してから使う。
+宛先は名前で引き、送る直前に毎回 ListAgents を引き直す（CLI のセッション ID・ref・ソケットは宛先に使えない / ADR-20261021154740）。例外は、hub と sub がどちらも Desktop のセッションで、sub の登録が会話の ID（`local_…`。Desktop の記録で確かめたもの）を持つときの hub → sub。このときは `resolve` がその ID を `to` に返す（ADR-20261027002221）。sub → hub の report の通知も、hub の名前の行が一覧に無く、どちらも Desktop の会話と確かめられれば、hub の会話の ID を `notify.to` に返す（ADR-20261106152610）。ListAgents の出力は人間向けの文で書式の契約が無いので、Claude が抜き出した結果を `hub.py` の自己検査に通してから使う。
 
 ## 出力の形（2026-10-21 の実測）
 
@@ -60,9 +60,10 @@ stdout の JSON の `status` で分岐する。JSON が出ない回もある。
 
 | 結果 | すること |
 |---|---|
-| `status: ok` | SendMessage の `to` には出力の `to` をそのまま使う（ふだんは名前だけ。同じ名前の行が他にもあるときだけ ` [ref]` が付く。`rule: host_session` なら会話の ID の `local_…`）。`warning`（登録名ではなく登録した時の ref で引いた・名前の中の Issue ID で引いた・前回の status で不在だった登録名で引いた）があれば、承認の画面に添える |
+| `status: ok` | SendMessage の `to` には出力の `to` をそのまま使う（ふだんは名前だけ。同じ名前の行が他にもあるときだけ ` [ref]` が付く。`rule: host_session` なら会話の ID の `local_…`）。`warning`（登録名ではなく登録した時の ref で引いた・名前の中の Issue ID で引いた・前回の status で不在だった登録名で引いた）があれば、承認の画面に添える。report の `notify` の `rule: host_session` の `warning`（hub の会話を再開する）は、送る前に利用者に伝える（report の SKILL.md の 5） |
 | `status: needs_lead`（hub → sub・auto の PJ） | **送らない**。warning の付く照合（名前の中の Issue ID・不在から戻った登録名・ref で引いた改名）で決まった宛先。`name`・`ref`・`warning` を lead に見せ、lead が選んだらその行の ref で引き直す（`--ref`）。`rule: host_session`（一覧に見えない sub の会話の ID）は、lead が送ってよいと言えば出力の `to` へ送る |
 | `status: auto_limit`（hub → sub・auto の PJ） | **送らない**。lead の言葉の伝達を挟まずに、同じ sub へ hub の判断の連絡が続いた。hub の SKILL.md の「自動の連絡」のとおり lead に出す |
+| `status: absent`（report の `notify` のみ） | **送らない**。hub の名前の行が一覧に無く、会話の ID でも送れない（理由は `reason`）。report の SKILL.md の 5 のとおり「hub の会話を開けば取り込まれる」と伝える |
 | `status: unresolved` | **送らない**。`reason` と `candidates`（名前と ref）を lead / 利用者に出す。候補が 1 つも無いときは抜き出した全行を見せる。lead が選んだら、その行の ref で引き直す（hub の relay の `--ref`） |
 | `status: parse_failed`（exit 2） | **送らない・記録しない**。「ListAgents の出力を解析できなかった（宛先が見つからないのとは別）」と書き、ListAgents の生の出力を添えて出す。exit 2 でも入力の誤りではないので、手順の続きは呼び出し元の手順に従う（hub の status は 4 へ進む） |
 | stdout に JSON が無い（exit 2 / 3 / 4） | **送らない**。stderr の `project-hub: ...` をそのまま出す（引数・状態ファイルの問題で、ListAgents の解析失敗ではない） |

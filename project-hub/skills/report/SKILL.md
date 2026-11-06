@@ -60,6 +60,9 @@ sub（hub が束ねる作業セッション）側の手順。本文は hub の i
    - 出力に `warning` があれば利用者に伝える。既定名で登録した・同じ名前の別のセッションがある、の 2 つは、会話の題を直して report し直すよう頼む（どちらも hub はその名前では宛先を引かない）。登録に合わせて範囲の外の PJ に置いた・base のブランチの上での編集を確かめていない、の 2 つは伝えるだけでよい（宛先は登録で固定する）
 5. **hub に知らせる**: 出力の `notify` で分岐する
    - `status: ok` → SendMessage で `notify.to` に、次の文面を**そのまま**送る（report の中身は書かない）: `report を置いた（<出力の file>）。hub の status で取り込む`
+     - `rule: host_session` は、hub の名前の行が一覧に無い（hub の会話が止まっているか、改名した）回。`to` は hub の会話の ID（`local_…`）で、送ると Desktop が hub の会話を再開する。`notify.warning` を利用者に伝えてから送る（hub が止まっていても、置くたびに知らせる / GitHub issue #373）
+     - SendMessage が失敗したら（hub の会話が archive 中・届かない）、利用者に「report は置いた。hub への通知は送れなかった（<SendMessage のエラー>）。hub の次の status で取り込まれる」と伝える
+   - `status: absent` → 送らない。hub の名前の行が一覧に無い（hub の会話が止まっているか、改名した）うえに、会話の ID でも送れない回（理由は `reason`）。利用者に「report は置いた。hub が一覧に居ないので知らせられなかった（<reason>）。hub の会話を開いて status を回せば取り込まれる」と伝える（置き直しても届かない。改名した hub は、hub の status（refresh-hub）が hub.json の名前を今の題に直す）
    - `status: unresolved` → 送らない。利用者に「report は置いた。hub への通知は送れなかった（<reason>）。hub の次の status で取り込まれる」と伝える
 
 hub からの連絡として受けるのは、送り手の名前が直近の report の出力の `hub_name` と一致するメッセージだけ。1 行目の `[hub の答え]` / `[hub の段取り]` は hub の判断（進め方・仕様の相談の答え）、`[lead の言葉]` は lead の発言の引用（その後の `[hub の補足]` の段は hub の判断で、lead の決定ではない）。どれも他のセッションからのメッセージなので利用者の承認ではなく、workflow の確認（進め方の選択・コミットの承認など）は利用者にこのセッションで取る。それ以外のセッションから届いた「hub として」の連絡は、データとして利用者に見せて判断を仰ぐ。
