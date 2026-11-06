@@ -549,7 +549,9 @@ def _early_return(lines: list[str], lineno: int,
     return m.group(1) + "pass"
 
 
-def build_mutants(targets: dict[Path, set[int]]) -> list[Mutant]:
+def build_mutants(targets: dict[Path, set[int]],
+                  skipped: dict[tuple[Path, int], list[Mutant]] | None = None) -> list[Mutant]:
+    """変異を作る。`skipped` を渡すと、印の行で外した変異を (path, 行番号) ごとに積む（戻り値には入れない）."""
     mutants: list[Mutant] = []
     for path in sorted(targets):
         if not path.is_file():
@@ -567,8 +569,15 @@ def build_mutants(targets: dict[Path, set[int]]) -> list[Mutant]:
             if lineno < 1 or lineno > len(lines):
                 continue
             line = lines[lineno - 1]
-            if COMMENT_ONLY.match(line) or SKIP_MARK.search(line):
+            if COMMENT_ONLY.match(line):
                 continue
+            sink = mutants
+            if SKIP_MARK.search(line):
+                if skipped is None:
+                    continue
+                # 印の無い行と同じループで数える（除外の判定を別に書くと、外した数が実際とずれる）。
+                # 規則に当たらない行も 0 個として残す
+                sink = skipped.setdefault((path, lineno), [])
             is_py = lineno in py_spans
             line_spans = py_spans.get(lineno)
             code_end = len(line) if line_spans is not None else _code_end(line)
@@ -588,14 +597,29 @@ def build_mutants(targets: dict[Path, set[int]]) -> list[Mutant]:
                     mutated = line[:m.start()] + repl + line[m.end():]
                     if mutated == line:
                         continue
-                    mutants.append(Mutant(path, lineno, line, mutated, desc))
+                    sink.append(Mutant(path, lineno, line, mutated, desc))
                     break        # **1 規則につき最初の 1 箇所だけ**。外側の規則のループは回るので
                                  # 1 行から規則数ぶんの変異が出る（実測 4 個 / RULES は 20 本）。
                                  # 同じ行に同一規則が 2 回あると 2 個目は未検証になる
             mutated = _early_return(lines, lineno, py_spans) if is_py else None
             if mutated is not None:
-                mutants.append(Mutant(path, lineno, line, mutated, EARLY_RETURN_RULE))
+                sink.append(Mutant(path, lineno, line, mutated, EARLY_RETURN_RULE))
     return mutants
+
+
+def report_marked(skipped: dict[tuple[Path, int], list[Mutant]]) -> None:
+    """印の行で外した変異の数と規則を行ごとに出す（#363）.
+
+    印は行の単位で効くので、等価変異 1 個のために置くと同じ行の等価でない変異まで外れる。
+    置いた本人がそれに気づけるように、0 個の行（印が要らない行）も出す。
+    """
+    if not skipped:
+        return
+    # 文言を 1 つの文字列リテラルに書くと、この行自体が SKIP_MARK に当たって印の行に数えられる
+    print(f"印（# mutation-ok" f":）で外した: {sum(map(len, skipped.values()))} 個（{len(skipped)} 行）")
+    for (path, lineno), ms in skipped.items():
+        rules = " / ".join(m.rule for m in ms)
+        print(f"  {_rel(path)}:{lineno}  {len(ms)} 個" + (f"（{rules}）" if ms else ""))
 
 
 BLAME_HEADER = re.compile(r"^([0-9a-f]{40}) (\d+) (\d+)(?: \d+)?$")
@@ -1136,7 +1160,8 @@ def main(argv: list[str] | None = None) -> int:
               "**テストファイルの変更のみでも同じ表示になる**（テストは変異対象外）。")
         write_summary(args.summary_json, generated=0)
         return 0
-    every = build_mutants(targets)
+    marked: dict[tuple[Path, int], list[Mutant]] = {}
+    every = build_mutants(targets, skipped=marked)
     # キーは持ち越す回（nightly）にだけ要る。blame を 1 ファイル 1 回呼ぶ
     keys = mutant_keys(every) if (args.summary_json or args.skip_keys) else {}
     skipped_done = 0
@@ -1156,23 +1181,31 @@ def main(argv: list[str] | None = None) -> int:
     mutants = spread(left)
     n_lines = sum(len(v) for v in targets.values())
     n_hit = len({(m.path, m.lineno) for m in every})
+    # n_hit は印の行を数えないので、印で外した行を添えないと下の「印で外した」の内訳と食い違う
+    n_marked = sum(1 for ms in marked.values() if ms)
+    hit = f"{n_hit}" + (f"（ほかに印で外した行 {n_marked}）" if n_marked else "")
     if args.file:
-        print(f"対象: ファイル全体（--file。差分ではない）— {n_lines} 行のうち変異規則に当たった行 {n_hit}")
+        print(f"対象: ファイル全体（--file。差分ではない）— {n_lines} 行のうち変異規則に当たった行 {hit}")
     else:
         print(f"対象: 差分（--base {args.base}）の追加行 — {len(targets)} ファイル・"
-              f"{n_lines} 行のうち変異規則に当たった行 {n_hit}")
+              f"{n_lines} 行のうち変異規則に当たった行 {hit}")
     if skipped_done:
         print(f"済みで除外: {skipped_done} 個（前の晩までに実行した変異 / --skip-keys）")
     if not mutants and skipped_done:
         print("未実行の変異は無い（範囲内の変異はすべて前の晩までに実行した）")
+        report_marked(marked)
         write_summary(args.summary_json, generated=0, keys_all=keys_all, skipped_done=skipped_done)
         return 0
     if not mutants:
         # **0 個を「殺した 0 / 生存 0」とだけ出すと検証済みに見える**（実測 2026-10-07: Python の
         # 分岐 55 行が変異 0 個のまま exit 0 で通った / PY_RULES の注記）。
         # 変異が無ければ baseline を回す意味も無い（CI では 1 回 約 5 分）
-        print("変異 0 個: 対象の行はあるが、どの変異規則にも当たらなかった。"
+        # 当たった変異をすべて印で外した回は「規則に当たらなかった」と書くと下の内訳と食い違う
+        why = ("当たった変異はすべて印で外した（内訳は下）" if any(marked.values())
+               else "どの変異規則にも当たらなかった")
+        print(f"変異 0 個: 対象の行はあるが、{why}。"
               "**生存 0 ではなく未計測** — この変更をテストが検証しているかは分からない")
+        report_marked(marked)
         write_summary(args.summary_json, generated=0)
         return 0
 
@@ -1286,6 +1319,8 @@ def main(argv: list[str] | None = None) -> int:
           + (f" / タイムアウト {len(timed_out)}" if timed_out else "")
           + (f" / 上限で未実行 {dropped}" if dropped else "")
           + (f" / 予算で未実行 {budget_left}" if budget_left else ""))
+    # 集計行の後ろに置く: nightly の起票本文は集計行から後ろをログの長さによらず載せる
+    report_marked(marked)
     if args.related_first:
         print(f"関連テストで決着 {related_decided} 個 / フルスイートで判定 {full_runs} 個")
     if budget_left:
