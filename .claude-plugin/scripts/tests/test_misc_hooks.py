@@ -159,6 +159,11 @@ class FailureJournalInitTest(HookTestCase):
         with TempGitRepo() as root:
             self.assertIn("挙動・因果・深刻度の断定", self._run(root).stdout)
 
+    def test_injects_location_assertion_rule(self):
+        """所在・構造の断定の規約も同じファイルから注入される（GitHub issue #368）."""
+        with TempGitRepo() as root:
+            self.assertIn("コードの所在・構造の断定", self._run(root).stdout)
+
     def test_concrete_value_rule_is_reinjected_on_post_compact(self):
         with TempGitRepo() as root:
             res = self.run_hook({"hook_event_name": "PostCompact"}, cwd=root,
