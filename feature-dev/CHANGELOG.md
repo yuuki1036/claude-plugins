@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.7] - 2026-11-06
+
+### Changed
+
+- **「適用範囲」の足切りを、情報が揃っているかではなく開発の規模で決めるようにした**（GitHub issue #375）。複数レイヤー（DB・API・UI・URL など）にまたがる・数ファイル・数十行を超える（見積もりが大きい）・新しい部品やモジュールを作る場合は、足切りの項目（「既存 spec / 設計書どおりに書くだけ」「レビュー指摘の反映・リファクタのみ」を含む）に当たっていても Phase 1〜4.8 を回す。規模の条件は「逆に」の文の 1 か所にまとめ、全項目に掛ける。以前は spec と決定が揃っていれば、複数レイヤーにまたがる実装でも「書くだけ」と判断され、既存パターンの調査と設計を飛ばしえた。README には条件を写さず、規模の小さいものに限ることと SKILL.md の節への参照だけを書いた。足切りの後も検証を通す規定（GitHub issue #319）は変えていない
+
 ## [2.27.6] - 2026-11-05
 
 ### Changed
