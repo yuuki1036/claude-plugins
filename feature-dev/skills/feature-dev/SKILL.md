@@ -51,7 +51,7 @@ You are helping a developer implement a new feature. Follow a systematic approac
 - 既存 spec / 設計書どおりに書くだけで、設計判断が残っていないタスク
 - レビュー指摘の反映・リファクタのみ
 
-逆に、設計判断が未確定・複数レイヤーにまたがる・既存パターンの調査が要る場合は最後まで回す。
+逆に、設計判断が未確定・複数レイヤー（DB・API・UI・URL など）にまたがる・数ファイル・数十行を超える（見積もりが大きい）・新しい部品やモジュールを作る・既存パターンの調査が要る場合は、上の項目（spec どおり・リファクタを含む）に当たっていても最後まで回す（GitHub issue #375）。
 
 **足切りで飛ばすのは設計までで、検証は飛ばさない**（GitHub issue #319）: 実装の後は Phase 5.3（静的オラクル）→ 5.5（動作確認）→ 6（self-review と G-V ループ）→ 6.7（コメント精査）→ 6.9（レビュー後の変更の確認）→ 7（申し送りと読み合わせ）を、8 phase の回と同じ手順で通す。Phase 4 の設計を指す箇所は、停止点で承認された方針に読み替える（Fix Mode の `The architect design chosen in Phase 4 must be preserved` は承認された方針を保つ。Phase 5.5 の smoke の target は architect の出力が無いので Step 1 の検出に任せる）。以前は停止点の後に実装へ移るところで手順が終わっていたため、実装 → build → 動作確認まで進めても self-review を一度も回さずにコミットの確認に入った。
 
