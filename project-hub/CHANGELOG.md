@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.15.1] - 2026-11-06
+
+### Fixed
+
+- **hub の会話が止まっている間も report を知らせる**（GitHub issue #373 / ADR-20261106152610）: ListAgents は動いているセッションしか並べないので、hub が止まっている間は名前で引けず、`notify` が毎回 `unresolved`（一致する行が 0 件）になって hub に届かなかった。一致する行が 0 件で、sub の会話の ID を Desktop の記録で確かめられ、hub.json に hub の会話の ID（`local_…`）があれば、その ID を `notify.to` に返す（`rule: host_session`。送ると Desktop が hub の会話を再開するので `warning` を付ける）
+  - 会話の ID を使えない（sub が CLI か、hub.json に会話の ID が無いか、hub 自身の会話で report を走らせた）ときは `status: absent` で返し、2 件以上・既定名の `unresolved` と分ける。hub を改名した回も一致する行は 0 件なので、会話の ID へ送るか `absent` になる（改名後の行は当て推量しない）。report の SKILL.md は、`absent` なら「hub の会話を開けば取り込まれる（置き直しても届かない）」と伝える。`references/list-agents.md` に sub → hub の例外と `absent` を足した
+- 変異テストで生存した `hub.py` の変異 15 件を解消した（GitHub issue #369。`hub.py` の挙動は変えていない）。12 件はテストを足し、等価な 3 件（ループの末尾の `continue`・route が選ばない repo の保険・`-` で始まる base の弾き）は `# mutation-ok:` に理由を書いた
+
 ## [0.15.0] - 2026-11-04
 
 ### Added

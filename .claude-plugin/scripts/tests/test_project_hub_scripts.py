@@ -1072,7 +1072,8 @@ class ReportTest(HubTestBase):
 
     def test_a_renamed_hub_is_reported_not_guessed(self):
         out = json.loads(self.report(agents=[agent("hub（改名）", "h1")]).stdout)
-        self.assertEqual(out["notify"]["status"], "unresolved")
+        self.assertEqual(out["notify"]["status"], "absent", "名前の行が無い（改名・止まっている）。改名後の行を当て推量しない")
+        self.assertNotIn("to", out["notify"])
         self.assertEqual(len(list((self.pdir / "inbox").glob("*.json"))), 1, "report 自体は置く")
 
     def test_a_bad_listagents_extraction_writes_nothing(self):
@@ -2490,6 +2491,71 @@ class HostSessionTest(HubTestBase):
                        ({"name": "x", "ref": None}, 2)):
             with self.subTest(to=to):
                 self.assertEqual(self.record({"subject": "ABC-12", "text": "t", "to": to}).returncode, rc)
+
+
+class IdleHubNotifyTest(HubTestBase):
+    """hub が一覧に居ない（hub の会話が止まっている）ときの report の通知先（GitHub issue #373 / ADR-20261106152610）.
+
+    ListAgents は動いているセッションしか並べないので、止まっている hub は名前で引けない。hub も sub も Desktop の
+    会話なら hub の会話の ID へ送る（Desktop が会話を再開する）。送れないときは、2 件以上の不一致と分けて absent で返す
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.pdir = self.init(tracker="linear")
+        self.set_hub_host(HUB_HOST)
+        record = self.tmp / "desktop" / "claude-code-sessions" / "acct" / "org" / f"{SUB_HOST}.json"
+        record.parent.mkdir(parents=True, exist_ok=True)
+        record.write_text(json.dumps({"sessionId": SUB_HOST, "cliSessionId": SID_A}), encoding="utf-8")
+
+    def notify(self, agents: list, sid: str = SID_A, host: str | None = SUB_HOST) -> dict:
+        env = {"CLAUDE_CODE_HOST_SESSION_ID": host} if host else {}
+        res = self.report(sid=sid, name="ABC-12: 監査ログ", body=report_body(issue="ABC-12"), agents=agents,
+                          env_extra=env)
+        self.assertEqual(res.returncode, 0, res)
+        return json.loads(res.stdout)["notify"]
+
+    def test_an_idle_hub_is_reached_by_its_conversation_id(self):
+        out = self.notify([agent("別の作業", "o1")])
+        self.assertEqual((out["status"], out["to"], out["host"], out["rule"], out["name"], out["ref"]),
+                         ("ok", HUB_HOST, HUB_HOST, "host_session", "hub-session", None), out)
+        self.assertIn("再開", out["warning"], "止まっている hub の会話を再開させることを利用者に見せる")
+
+    def test_a_visible_hub_is_still_reached_by_its_name(self):
+        out = self.notify([agent("hub-session", "h1")])
+        self.assertEqual((out["status"], out["to"]), ("ok", "hub-session"), out)
+        self.assertNotIn("rule", out)
+
+    def test_an_idle_hub_is_absent_when_the_conversation_id_cannot_be_used(self):
+        cases = {
+            # 子の CLI: 会話の ID は継承しているが、Desktop がその会話につないでいるのは親（SID_A）
+            "child_cli_sub": (lambda: None, SID_B, SUB_HOST, "Desktop"),
+            "plain_cli_sub": (lambda: None, SID_A, None, "Desktop"),
+            "hub_without_conversation_id": (lambda: self.set_hub_host("uds:/tmp/sock"), SID_A, SUB_HOST,
+                                            "会話の ID が無い"),
+            # CLI で init・takeover した hub は host_session_id が null（verified_host が None を返す）
+            "hub_host_null": (lambda: self.set_hub_host(None), SID_A, SUB_HOST, "会話の ID が無い"),
+            # hub の会話の中で report を走らせた: hub.json の会話の ID が自分の会話と同じ
+            "hub_itself": (lambda: self.set_hub_host(SUB_HOST), SID_A, SUB_HOST, "自分宛て"),
+        }
+        for label, (arrange, sid, host, why) in cases.items():
+            with self.subTest(label):
+                self.set_hub_host(HUB_HOST)  # ケースごとに hub の会話の ID を有効な値へ戻す（並びに依存させない）
+                arrange()
+                out = self.notify([agent("別の作業", "o1")], sid=sid, host=host)
+                self.assertEqual(out["status"], "absent", out)
+                self.assertNotIn("to", out)
+                self.assertIn("一覧に居ない", out["reason"])
+                self.assertIn(why, out["reason"])
+
+    def test_two_matching_rows_stay_unresolved(self):
+        out = self.notify([agent("hub-session", "h1"), agent("hub-session", "h2")])
+        self.assertEqual(out["status"], "unresolved", out)
+        self.assertIn("2 件", out["reason"])
+
+    def set_hub_host(self, host: str | None) -> None:
+        hub = json.loads((self.pdir / "hub.json").read_text(encoding="utf-8"))
+        (self.pdir / "hub.json").write_text(json.dumps({**hub, "host_session_id": host}), encoding="utf-8")
 
 
 class ApprovalModeTest(HubTestBase):
@@ -4505,6 +4571,18 @@ class RepoHubCrossAndSnapshotTest(RepoHubTestBase):
         self.assertIn("2 件", out["warning"])
         self.assertEqual(out["count"], 2, "除けないなら残す")
 
+    def test_a_project_with_a_malformed_tracker_does_not_stop_the_repo_hub_table(self):
+        # 手で壊した config（tracker が dict でない）1 つで repo hub の表を止めない。milestone の持ち主にも数えない
+        self.assertEqual(self.repo_hub().returncode, 0)
+        self.assertEqual(self.plain("auth", "--milestone", "v2").returncode, 0)
+        self.assertEqual(self.plain("broken", "--milestone", "b").returncode, 0)
+        config = self.config("broken")
+        (self.root / "broken" / "config.json").write_text(json.dumps({**config, "tracker": "github"}),
+                                                          encoding="utf-8")
+        out = self.snapshot(self.hub_name, [{"id": "#1", "milestone": "v2"}, {"id": "#2", "milestone": "b"}])
+        self.assertEqual(out["excluded"], [{"project": "auth", "milestone": "v2", "count": 1}])
+        self.assertEqual(self.stored(self.hub_name), ["#2"])
+
 
 class RepoHubRouteTest(RepoHubTestBase):
     """report の宛先の振り分け・二重登録の禁止・base のブランチの上での編集の強制（ADR-20261102144903 / GitHub issue #357）."""
@@ -4691,6 +4769,20 @@ class RepoHubRouteTest(RepoHubTestBase):
                 out = json.loads(res.stdout)
                 self.assertEqual(out.get("project") if rc == 0 else out["status"], want or "needs_project")
 
+    def test_a_local_project_without_a_dir_is_unknown(self):
+        self.root = self.tmp / "local-empty-root"
+        hub_dir, pj_dir = self.tmp / "indie2" / "hub", self.tmp / "indie2" / "pj"
+        for d in (hub_dir, pj_dir):
+            (d / "issues").mkdir(parents=True)
+        self.assertEqual(self.repo_hub(tracker=("--tracker", "local", "--tracker-dir", str(hub_dir))).returncode, 0)
+        self.assertEqual(self.plain("pj", tracker=("--tracker", "local", "--tracker-dir", str(pj_dir))).returncode, 0)
+        config = self.config("pj")
+        config["tracker"]["dir"] = ""
+        (self.root / "pj" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        res = self.route(issue="PJ-1")
+        self.assertEqual(res.returncode, 1, res)
+        self.assertEqual(json.loads(res.stdout)["unknown"], ["pj"], "Issue ファイルの dir が無ければ判定できない")
+
     def on_main(self) -> None:
         # base の origin/main から remote 名を外して base のブランチ（main）を決めるので、remote を張る
         self.git_repo.add_remote()
@@ -4772,6 +4864,54 @@ class RepoHubRouteTest(RepoHubTestBase):
         (self.repo / "new.txt").write_text("x", encoding="utf-8")
         self.assertEqual(self.route("--milestone", "v2").returncode, 0, "通常の PJ に置く report は止めない")
         self.assertEqual(self.route(project="auth", sid=SID_B).returncode, 0)
+        res = self.route("--milestone", "v2")
+        self.assertEqual(res.returncode, 0, "登録済みの通常の PJ に置く 2 回目も止めない")
+        self.assertNotIn("warning", json.loads(res.stdout), "Issue が登録した PJ の範囲に入るなら何も言わない")
+
+    def test_a_registration_on_the_repo_hub_still_enforces_the_branch(self):
+        self.on_main()
+        self.assertEqual(self.route("--no-milestone").returncode, 0)
+        (self.repo / "new.txt").write_text("x", encoding="utf-8")
+        res = self.route()
+        self.assertEqual((res.returncode, json.loads(res.stdout)["status"]), (3, "needs_branch"), res)
+
+    def test_the_branch_check_uses_the_repo_of_the_cwd(self):
+        # repos に別の repo が先に並んでいても、cwd の repo の base で判定する
+        self.on_main()
+        other = self.other_repo(self.tmp / "other-repo")
+        config = self.config(self.hub_name)
+        config["repos"].insert(0, {"path": str(other), "base": "origin/dev"})
+        (self.root / self.hub_name / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        (self.repo / "new.txt").write_text("x", encoding="utf-8")
+        res = self.route("--no-milestone")
+        self.assertEqual((res.returncode, json.loads(res.stdout)["status"]), (3, "needs_branch"), res)
+
+    def test_a_remote_base_without_its_ref_is_not_compared_with_the_upstream(self):
+        # base の remote（up）はあるが参照が無い。upstream（origin/main）と比べると、base と別のものを数えてしまう
+        self.on_main()
+        self.git_repo.add_remote("up")
+        self.git_repo.set_upstream("main", "origin/main")
+        self.set_hub_base("up/main")
+        res = self.route("--no-milestone")
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("確かめきっていない", json.loads(res.stdout)["warning"])
+
+    def test_uncounted_changes_warn_even_when_the_branch_and_commits_are_known(self):
+        self.on_main()
+        self.git_repo.set_upstream("main", "origin/main")
+        self.set_hub_base("main")
+        (self.repo / ".git" / "index").write_bytes(b"broken")  # git status だけが失敗する
+        res = self.route("--no-milestone")
+        self.assertEqual(res.returncode, 0, res)
+        self.assertIn("確かめきっていない", json.loads(res.stdout)["warning"])
+
+    def test_an_issue_of_another_tracker_kind_is_outside_the_repo_hub(self):
+        # github の repo hub に linear の形の Issue ID。どの範囲にも入らないので聞く（repo hub に置いて形の検査で落とさない）
+        res = self.route(issue="ABC-12")
+        self.assertEqual(res.returncode, 1, res)
+        out = json.loads(res.stdout)
+        self.assertEqual((out["status"], out["inside"], out["unknown"]), ("needs_project", [], []))
+
 
     def test_cross_shows_a_session_registered_twice(self):
         for pdir in (self.root / self.hub_name, self.root / "auth"):
@@ -4795,6 +4935,18 @@ class RepoHubRouteTest(RepoHubTestBase):
         self.ok("close", "--project", self.hub_name)
         self.assertEqual(self.ok("cross", "--project", "auth")["double_registered"], [],
                          "repo hub を close した repo では 2 つの PJ に登録してよい（route と同じ）")
+
+    def test_cross_counts_a_registration_without_a_worktree_on_the_shared_repo(self):
+        # worktree が空の登録は、どの repo で登録したかが分からないので共有する repo で見る（cross の cwd の repo ではない）
+        self.assertEqual(self.plain("web", "--milestone", "w").returncode, 0)
+        for project in ("auth", "web"):
+            (self.root / project / "sessions").mkdir(exist_ok=True)
+            reg = {"session_id": SID_A, "name": "#308 作業", "project": project, "issue": "#308",
+                   "updated": "2026-11-04T00:00:00.000000Z", "worktree": ""}
+            (self.root / project / "sessions" / f"{SID_A}.json").write_text(json.dumps(reg), encoding="utf-8")
+        other = self.other_repo(self.tmp / "elsewhere")
+        out = self.ok("cross", "--project", "auth", cwd=other)
+        self.assertEqual([d["session_id"] for d in out["double_registered"]], [SID_A])
 
     def test_cross_follows_the_repo_the_session_registered_in(self):
         # PJ どうしが repo hub のある repo と無い repo を共有するとき、無い repo の worktree での登録は数えない
