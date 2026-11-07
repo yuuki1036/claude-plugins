@@ -25,6 +25,7 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 | follow-up | Follow-up タスクの作成・一覧・Issue 昇格 |
 | knowledge | 蓄積された知見の検索・参照 |
 | knowledge-lint | knowledge グラフの健全性チェック |
+| doc-sync | 仕様書・規約・ADR とコードコメント・実装・決めたことの整合を確かめ、文書への未反映を一覧にして承認後に直す（軽量フローのコミット前と completed 前にも回る） |
 | maintain | 全プロジェクトの棚卸し（放置 Issue・frozen・負債・クリーンアップ） |
 | discover | AI が多観点スキャンで課題を発見して issue を自動起票 |
 | retrospective | 振り返り・見積もり精度分析 |

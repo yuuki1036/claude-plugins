@@ -45,10 +45,11 @@ def between(text: str, start: str, end: str) -> str:
 def step(name: str) -> str:
     """見出しが `### Step <N>: <name>` の節を、次の `### Step` の見出しの手前まで返す."""
     flow = FLOW.read_text(encoding="utf-8")
-    m = re.search(rf"(?m)^### Step \d+: {re.escape(name)}", flow)
+    m = re.search(rf"(?m)^### Step \d+(?:\.\d+)?: {re.escape(name)}", flow)
     if m is None:
         raise AssertionError(f"軽量フローに「{name}」の Step が無い")
-    nxt = re.compile(r"(?m)^### Step \d+:").search(flow, m.end())
+    # 小数の Step（5.5）も節の切れ目に数える（数えないと前の Step の節に吸収される）
+    nxt = re.compile(r"(?m)^### Step \d+(?:\.\d+)?:").search(flow, m.end())
     return flow[m.start():nxt.start() if nxt else len(flow)]
 
 
@@ -162,6 +163,39 @@ class ClosingLineTest(unittest.TestCase):
         branch = between(walkthrough_step(), "- `あり`", "\n- `なし`")
         self.assertIn("`次の一手:` が `決定的な検証` で始まるなら、Step 2（検証）だけ", branch)
         self.assertIn("それ以外なら Step 2（検証）と Step 4（self-review）をもう一度通す", branch)
+
+
+class DocSyncStepTest(unittest.TestCase):
+    """Step 5.5 は読み合わせの後・コミットの前で doc-sync を呼び、Step 8 と issue-maintain が同じ語で二重実行を省く（GitHub issue #365）."""
+
+    MAINTAIN = REPO / "issue-workflow" / "skills" / "issue-maintain"
+    DOC_SYNC = REPO / "issue-workflow" / "skills" / "doc-sync" / "SKILL.md"
+
+    def test_step_5_5_sits_between_walkthrough_and_commit(self):
+        heads = re.findall(r"(?m)^### Step (\d+(?:\.\d+)?): (\S+)", FLOW.read_text(encoding="utf-8"))
+        order = [n for n, _ in heads]
+        self.assertIn("5.5", order)
+        i = order.index("5.5")
+        self.assertEqual((heads[i - 1][1], heads[i + 1][1]), ("読み合わせ（review-guide）", "コミット"))
+
+    def test_step_5_5_calls_doc_sync_with_base_and_branches_on_result(self):
+        body = step("文書整合（doc-sync）")
+        self.assertIn("`issue-workflow:doc-sync` を `--base", body)
+        for value in ("`skipped`", "`clean`", "`findings`"):
+            self.assertIn(value, body)
+
+    def test_result_values_exist_in_doc_sync(self):
+        skill = self.DOC_SYNC.read_text(encoding="utf-8")
+        self.assertIn("DOC_SYNC_RESULT=<clean | findings | skipped>", skill)
+
+    def test_record_word_and_report_only_flag_agree(self):
+        """記録語（`doc-sync:`）と `--report-only` の綴りがずれると、ガードが黙って二重に回るか不発になる."""
+        guards = (self.MAINTAIN / "references" / "detection-guards.md").read_text(encoding="utf-8")
+        self.assertIn("`doc-sync: <結果>`", step("Issue 更新"))
+        self.assertIn("`doc-sync:` の行が**無い**", guards)
+        self.assertIn("issue-workflow:doc-sync --report-only", guards)
+        self.assertIn("`--report-only`", self.DOC_SYNC.read_text(encoding="utf-8"))
+        self.assertIn("--report-only", (self.MAINTAIN / "SKILL.md").read_text(encoding="utf-8"))
 
 
 class StepCountTest(unittest.TestCase):

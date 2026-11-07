@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.18.0] - 2026-11-06
+
+### Added
+
+- **doc-sync を追加した**（GitHub issue #365）。diff・Issue ファイル・セッションで決めたことを入力に、repo の文書（仕様書・規約・ADR）とコードコメントの食い違い（文書↔実装・コメント↔実装・文書↔コメント）と、決めたことが文書に入っていない箇所を、文書の行を引いて一覧にする。旧の振る舞いを出典付きで書いた節は書き換えず、新しく決めたことの節に足す案にする。repo が `.claude/doc-checks.sh` を置いていれば文書の機械チェックとして回す。出すのは一覧と直し方の案までで、書き換えは承認した分だけ。文書を持たない repo では何もしない。文書の所在は `scripts/lib/doc_locate.py`（正本 `.claude-plugin/lib/doc_locate.py` の byte 一致の複製）、照合の規則は code-review の spec-compliance と同じ DOC-SYNC 区間（正本 `.claude-plugin/lib/doc-sync-rule.md`）
+  - blocker: 独立した起動語（「仕様書とコードコメントの整合性を確認」）で単独に回し、軽量フローと issue-maintain の 2 か所から Skill tool で呼ぶ必要がある。code-review の spec-compliance はプラグイン間依存の禁止で呼べず、多体レビューの 1 観点なので承認付きで文書を直す形にならない
+  - fallback: doc-sync が無い環境では、code-review の self-review が spec-compliance で同じ規則（決定の未反映・同じ節の古い説明）を見る
+- **軽量フローに Step 5.5（文書整合）を足した**。読み合わせの後・コミットの前に doc-sync を回し、Step 8 で更新履歴に `doc-sync: <結果>` を残す。Step 7 で CI を直した回だけ、completed に移す前にもう一度回す
+- **issue-maintain に文書整合ガードを足した**。completed に遷移する前に doc-sync を `--report-only` で回し、指摘を最終レポートに列挙する（止めない）。更新履歴に `doc-sync:` があれば省く。この経路では `.claude/doc-checks.sh` を回さない（承認を取らずに repo のスクリプトを走らせないため。回すなら `/doc-sync` を単独で回す）
+
 ## [1.17.3] - 2026-11-05
 
 ### Fixed

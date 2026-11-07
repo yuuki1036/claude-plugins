@@ -11,6 +11,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/lib/comment-rule.md  # コードコメント規約 2 観点（正本。COMMENT-RULE 区間を消費サイトに複製）
 .claude-plugin/lib/backend-detect.md # issue-workflow Phase 0 の backend 検出（正本。BACKEND-DETECT 区間を 10 スキルに複製）
 .claude-plugin/lib/plugin-enabled.sh # 他プラグインが有効かの判定（正本。code-review / feature-dev / issue-workflow の scripts/ に byte 一致で複製）
+.claude-plugin/lib/doc_locate.py # repo 内の文書の所在検出（正本。code-review / issue-workflow の scripts/lib/ に byte 一致で複製）
+.claude-plugin/lib/doc-sync-rule.md # 文書整合の検出規則（正本。DOC-SYNC 区間を spec-compliance と doc-sync に複製）
 .claude-plugin/schema/           # JSON Schema（plugin.json / marketplace.json / hooks.json）
 .claude-plugin/scripts/          # validate-ssot.sh / validate_ssot.py（SSoT 同期検証）
                                  # validate_plugin_quality.py（品質検証。検査項目の正本は冒頭 docstring）
@@ -62,6 +64,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
   review-oracles.sh              # self-review が agent 起動前に走らせる機械層の宣言
                                  #   （存在自体が opt-in。中身は machine-layer.sh --no-tests を呼ぶだけ。
                                  #   回帰テストは 300 秒に収まらないので外し、pre-commit と CI に任せる）
+  doc-checks.sh                  # issue-workflow の doc-sync が回す文書の機械チェックの宣言
+                                 #   （存在自体が opt-in。中身は machine-layer.sh --no-tests を呼ぶだけ）
   mutation-test.sh               # review-guide の締めが変異テストを提案するときの宣言
                                  #   （存在自体が opt-in。mutation-test.py を --strict --related-first で呼ぶだけ。
                                  #   回すのは軽量フロー・feature-dev が利用者の承認を得てから / #307）
@@ -112,7 +116,7 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 | code-review | 5 | 5 | - | SessionStart, Stop, PreToolUse | Phase 0 トリアージ + 動的エージェント構成のコードレビュー / セルフレビュー / コメント精査 / 受けたレビューコメントの仕分け / PR の読み順ガイド |
 | dev-workflow | 4 | 7 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認・バグ診断・worktree 並列開発 + 一括棚卸し（chrome-devtools MCP 同梱） |
 | harness-keeper | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査・CC アップデート追従・eval 回帰テスト・コンポーネント追加前判断 |
-| issue-workflow | 13 | 13 | 4 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | Issue 管理（旧 linear/indie の統合後継。backend 自動判定） |
+| issue-workflow | 14 | 14 | 4 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | Issue 管理（旧 linear/indie の統合後継。backend 自動判定） |
 | plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + deprecated の自動移行（_superseded_by）+ 後発追加通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 | feature-dev | 1 | 1 | 2 | SessionStart | 8 phase 機能開発ワークフロー（spec 品質ゲート・G-V fix ループ・self-review 委譲） |
@@ -276,7 +280,7 @@ Claude Code の hook を **Pub/Sub Message Bus** として運用するための�
 - **terminalSequence helpers (CC 2.1.141+)**: `safe-hook.sh` の `safe_hook_emit_bell` / `safe_hook_emit_window_title` は端末ベル / ウィンドウタイトルを JSON 出力で送る。`safe_hook_emit` (plain text) と**混在不可**（terminalSequence は単独 JSON 出力）。長時間処理の完了通知や警告アラートに opt-in で利用する
 - **${CLAUDE_EFFORT} skill 適応分岐 (CC 2.1.120+)**: SKILL.md / コマンド本文に `${CLAUDE_EFFORT}` を書くと実行時 effort (low/medium/high/xhigh/max) が展開される。深掘り skill では `low/medium → 速度優先、xhigh/max → 多重 agent` のような条件分岐を入れる。frontmatter の `effort:` は宣言（既定値）、本文の `${CLAUDE_EFFORT}` は実行時値
 - **Agent の結果は完了通知で届く (CC 2.1.302+)**: メイン会話から起動した Agent は terminal・デスクトップアプリ・VS Code のどれでも常に background で走り、tool_result は起動の受付しか返さない（`run_in_background: false` を指定しても変わらない。m1 の実測で 2.1.304〜2.1.309 の 151 回すべてが非同期起動）。fanout して結果を待つスキル（explorer/reviewer/verifier 等）では **①その wave の全 agent の結果が届くまで次のフェーズへ進まない**（一部の結果で統合を始めない・届いていない体の結果を推測で埋めない）、**②全 Agent call を同一メッセージ内で一括発行**する（別メッセージでも並行して走るが、main の往復が体数ぶん増え、wave の計測が割れる）。**`run_in_background` は書かない**（効かないうえ、引数に持たない環境がある）。根拠と実測は `orchestration-guide.md ## 0`（正本・issue #95 / #347）
-- **command 名と skill 名が同名なら、スキル選択に載るのは `commands/*.md` の description**（`SKILL.md` 側は載らない / GitHub issue #206）。**description を直すときは commands と SKILL.md を必ず対で直す** — `SKILL.md` だけ直しても選択挙動は 1 ミリも変わらない。確認は router 本人に聞くのが早い: `claude -p '<plugin>:<skill> について、あなたに見えている description を一字一句そのまま引用して' --permission-mode plan`。該当は **9 プラグイン 26 スキル**（issue-workflow は 13/13 全部）で、`トリガー:` 必須規約（error 強制）はそこで**字面は通るが router には届かない**。実例: #205 は「description の leading words で負けている」と誤診したが、実際は逐語トリガーがそもそも視界に無く、効いた修正は `commands/*.md` の 1 行だけだった。**本文も同じ**（#219）: 同名ペアは `Skill plugin:name` で呼んでも**注入されるのは command 本文**で SKILL.md には到達しない。本文が「X スキルを使って」だけだと model は記憶で手順を再現するか cache を `ls | head -1` で掴む（辞書順で旧版 2.105.1 を掴み publish まで落ちた実測）。同名 command の本文には `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md` を Read する 1 行を置く（`validate_plugin_quality.py` の `skill-hop-cmd` が error で強制）。**別名ペア（`COMMAND_SKILL_ALIASES`。`commit` → `git-commit-helper` 等）も本文については同じ** — `/commit` も `Skill dev-workflow:commit` も command 本文だけが返る。skill と別の手順を持つ command（`revise-claude-md`）は `ALIAS_COMMANDS_WITH_OWN_PROCEDURE` に理由と載せて外す。呼び出し側で skill を使わせたいときは、command ではなく skill の名前（`dev-workflow:git-commit-helper`）で呼ぶ
+- **command 名と skill 名が同名なら、スキル選択に載るのは `commands/*.md` の description**（`SKILL.md` 側は載らない / GitHub issue #206）。**description を直すときは commands と SKILL.md を必ず対で直す** — `SKILL.md` だけ直しても選択挙動は 1 ミリも変わらない。確認は router 本人に聞くのが早い: `claude -p '<plugin>:<skill> について、あなたに見えている description を一字一句そのまま引用して' --permission-mode plan`。該当は **11 プラグイン 35 スキル**（issue-workflow は 14/14 全部）で、`トリガー:` 必須規約（error 強制）はそこで**字面は通るが router には届かない**。実例: #205 は「description の leading words で負けている」と誤診したが、実際は逐語トリガーがそもそも視界に無く、効いた修正は `commands/*.md` の 1 行だけだった。**本文も同じ**（#219）: 同名ペアは `Skill plugin:name` で呼んでも**注入されるのは command 本文**で SKILL.md には到達しない。本文が「X スキルを使って」だけだと model は記憶で手順を再現するか cache を `ls | head -1` で掴む（辞書順で旧版 2.105.1 を掴み publish まで落ちた実測）。同名 command の本文には `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md` を Read する 1 行を置く（`validate_plugin_quality.py` の `skill-hop-cmd` が error で強制）。**別名ペア（`COMMAND_SKILL_ALIASES`。`commit` → `git-commit-helper` 等）も本文については同じ** — `/commit` も `Skill dev-workflow:commit` も command 本文だけが返る。skill と別の手順を持つ command（`revise-claude-md`）は `ALIAS_COMMANDS_WITH_OWN_PROCEDURE` に理由と載せて外す。呼び出し側で skill を使わせたいときは、command ではなく skill の名前（`dev-workflow:git-commit-helper`）で呼ぶ
 - **`evals/` は 2 種類ある**: repo 直下 `evals/` は `runner.py` のスキル選択回帰（cases/*.yaml）、`<plugin>/evals/` は `claude plugin eval` の出力品質回帰（`<case>/prompt.md`）。どちらもローカル実行のみ・paid・自然言語プロンプト必須は同じだが、**起動口と pre-commit の扱いが違う**（後者だけ鮮度ゲートがある。「品質チェック」節）。`<plugin>/evals/results/` は書き込み先が eval 自身なので指紋の入力から外してある — ここに手で何か置いても pre-commit は反応しない
 - **eval を実行・修正する前に `evals/README.md` の Gotchas を読む**: スラッシュコマンドは headless で必ず落ちる（自然言語プロンプトで測る）/ fail は「プラグイン選択」と「skill id の綴り」を分けて読む（id 捏造は harness 側の性質）/ 判定は k=1 でなく pass^k=3 で行う — 詳細と実例は README 側に集約
 

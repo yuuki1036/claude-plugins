@@ -210,7 +210,7 @@ Issue 起票後、実装せずに即クローズされた Issue（`status: compl
 
 Issue のタスクが全て完了した場合、以下を実行する：
 
-1. **レビュー実施状況の確認（レビューガード）** — 詳細は次節「レビューガード」参照。未実施が疑われる場合は `/self-review` 起動を提案する
+1. **レビュー実施状況の確認（レビューガード）** — 詳細は次節「レビューガード」参照。未実施が疑われる場合は `/self-review` 起動を提案する。続けて「文書整合ガード」を通す
 2. フロントマターの `status` を `completed` に更新
 3. 別 Issue に引き継ぐ残タスクがあれば、フロントマターに `follow_up` を追加
    ```yaml
@@ -255,6 +255,16 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sync-claude-to-main.py"
 - 検出ロジック（遷移条件・未実施シグナルのキーワード・investigation 例外）・警告フォーマット・注意事項の詳細:
   → Read `${CLAUDE_SKILL_DIR}/references/detection-guards.md`
 - 起動＝実行確定のためガードで**止めない**。検出時も完了マークは実行し、最終レポートの冒頭で警告する（非ブロッキング）。ユーザーはレポートを見てからチャットで `/self-review` を起動できる
+
+---
+
+## 文書整合ガード（完了マーク前の文書確認）
+
+Issue を `completed` に遷移させる前に、実装の途中で決め直した挙動が repo の仕様書・規約・コードコメントに古いまま残っていないかを `issue-workflow:doc-sync` で確かめる（GitHub issue #365）。
+
+- 発火条件・省く条件・呼び出し方の詳細:
+  → Read `${CLAUDE_SKILL_DIR}/references/detection-guards.md`
+- 起動＝実行確定のため**止めない**。doc-sync は `--report-only` で呼び（承認を取らず、書き換えない）、指摘は最終レポートに列挙する。直すかは利用者がチャットで決める
 
 ---
 
@@ -367,6 +377,7 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 10. スコープ外差分検出（git diff で「スコープ外」「後続 Issue 候補」セクションの追加行を抽出）
 11. タスク完了時フローの適用判定:
     - レビュー実施状況を確認（レビューガード節を参照）
+    - completed に遷移するなら文書整合を確認（文書整合ガード節を参照。doc-sync を `--report-only` で呼ぶ）
     - 全タスク完了 → status 更新、follow_up 確認
 12. 整理を承認待ちせず実行する
 12.5 writing-polish 連携（整理後の Issue 本文 + 切り出した knowledge ページの散文を確定直前に推敲。writing-polish 必須節を参照）
@@ -385,6 +396,7 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
     - 未import knowledge の件数（vault 反映促し。N>0 時のみ、`/import-knowledge` 推奨）
     - スコープ外差分から検出した follow-up 候補（記録は未実行。ユーザーが判断）
     - レビュー未実施の警告（該当する場合。非ブロッキング）
+    - 文書整合ガードの検出（doc-sync の一覧。該当する場合。非ブロッキング）
     - 追加したテンプレート不足セクション
     - メインへ写した .claude（14.5 を実行した場合）
     - worktree teardown 候補（main 上で検出した場合 / dev-workflow 未インストールの場合の手動案内）
