@@ -170,11 +170,13 @@ CI が赤くなって Step 2 から戻った回は通らない（その回は St
 `Skill` tool で `issue-workflow:doc-sync` を `--base <Step 4 の self-review が冒頭で出した base_branch= の値>` で起動する
 （値が無ければ `--base` を付けない）。応答の最後の `DOC_SYNC_RESULT=` で分岐する:
 
-- `skipped`（文書を持たない repo・差分なし）/ `clean` → `DOC_SYNC_REASON=` か「指摘なし」を報告に残して Step 6 へ
-- `findings` → doc-sync の手順どおり、適用する番号を利用者に聞いて承認された分を直す。直したのが文書とコメントだけなら
-  Step 2（検証）だけをもう一度通して Step 6 へ進む（挙動を変えないので self-review と Step 3 は通らない）。報告に
-  「Step 5.5 の文書修正は self-review を通していない」と 1 行残す。「実装を直す」指摘を利用者が直すと決めたら Step 1 へ戻る
-  （Step 2 から順に通し直す。読み合わせと Step 5.5 は繰り返さない）
+doc-sync は文書とコメントの側を承認を取らずに直してから報告する（`DOC_SYNC_FIXED=` が直した件数）。
+
+- `DOC_SYNC_FIXED=` が 1 以上 → Step 2（検証）だけをもう一度通す（挙動を変えないので self-review と Step 3 は通らない）。
+  報告に「Step 5.5 の文書修正は self-review を通していない」と 1 行残す。直した文書は Step 6 のコミットに含める
+- `skipped`（文書を持たない repo・差分なし）/ `clean` → `DOC_SYNC_REASON=` か「指摘なし」（直した件数があれば添える）を報告に残して Step 6 へ
+- `findings` → 残っているのは「実装を直す」指摘と doc-checks の検出。実装を直す指摘は Step 1 へ戻って直す（Step 2 から順に
+  通し直す。読み合わせと Step 5.5 は繰り返さない）。doc-checks の検出は出力に沿って直し、Step 2 を通す
 
 結果は Step 8 で Issue の更新履歴に `doc-sync: <DOC_SYNC_RESULT の値>` と 1 行残す（issue-maintain の文書整合ガードがこの語で
 二重に回すのを省く）。
@@ -198,7 +200,7 @@ push しない運用（ローカルのみ・PR 前に溜める等）が明らか
 進捗・完了を Issue ファイルへ反映する（`/issue-maintain` 委譲でも直接編集でもよい）。**最初に**更新履歴へ Step 5.5 の結果を
 `doc-sync: <結果>` と 1 行書く（`/issue-maintain` に委譲するときは委譲の前に。issue-maintain の文書整合ガードはこの行で
 二重に回すのを省く）。Step 7 で CI が赤くなって修正を入れた回だけ、completed に移す前に `issue-workflow:doc-sync` を
-同じ `--base` でもう一度回し（Step 5.5 の後に入った変更を見る）、結果を同じ形で残す。そこで承認して文書を直したら、
+同じ `--base` でもう一度回し（Step 5.5 の後に入った変更を見る）、結果を同じ形で残す。そこで文書を直した（`DOC_SYNC_FIXED=` が 1 以上）なら、
 Step 2（検証）→ Step 6（コミット）→ Step 7（push + CI）を通してから Step 8 に戻る（直した文書を未コミットのまま残さない）。完了なら status を
 completed へ遷移する（BACKEND=linear のときは Linear 側のステータス更新も案内する）。未完了で終える場合は
 残タスクと次セッションの入口を Issue に書き残す。

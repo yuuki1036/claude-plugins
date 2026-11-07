@@ -22,7 +22,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [failure-journal](#failure-journal) | 0.10.0 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.27.8 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.10.0 | - | - | - | PreToolUse, PostToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行・公開先への業務情報送信・zsh で壊れる書き方・gh run list --commit への短縮 SHA・知らない間のブランチ切り替え後の git 書き込みを機械ブロック |
-| [issue-workflow](#issue-workflow) | 1.18.0 | 14 | 14 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
+| [issue-workflow](#issue-workflow) | 1.19.0 | 14 | 14 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [living-spec-workflow](#living-spec-workflow) | 0.7.3 | 2 | 2 | - | - | - | **deprecated → project-hub** |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.4.0 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
@@ -106,7 +106,7 @@ Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環
 
 ### issue-workflow
 Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local: `.claude/indie/` / linear: `.claude/linear/`）をデータディレクトリの存在で自動判定し、単一のスキル群で両方を扱う。旧 indie 専用機能（discover / retrospective / scope_size）は両 backend に開放。knowledge に却下記録（`kind: rejected`）を持ち、人間が見送った提案の再提案を discover が概念類似照合で抑止する。
-- **commands / skills**（同名ペア 14）: `init`, `start`, `issue-create`, `issue-design`, `issue-maintain`, `follow-up`, `knowledge`, `knowledge-lint`, `maintain`, `discover`, `retrospective`, `doc-sync`（文書・コメント・実装の整合。軽量フローのコミット前と completed 前に回る）, `dashboard`（linear 専用）, `linear-maintain`（linear 専用）
+- **commands / skills**（同名ペア 14）: `init`, `start`, `issue-create`, `issue-design`, `issue-maintain`, `follow-up`, `knowledge`, `knowledge-lint`, `maintain`, `discover`, `retrospective`, `doc-sync`（文書・コメント・実装の整合。文書とコメントの側は承認なしで直す。軽量フロー・feature-dev・git-commit-helper のコミット前と completed 前に回る）, `dashboard`（linear 専用）, `linear-maintain`（linear 専用）
 - **agents**: `code-context`, `doc-resolver`, `discover-verifier`, `linear-sync`（linear 専用）
 - **mod**: 作業中の Issue（ID・タイトル・状態・タスクの進み・ブランチ）をプロンプトの上の帯に出す（mods が有効な端末・Desktop）
 - **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse

@@ -264,7 +264,7 @@ Issue を `completed` に遷移させる前に、実装の途中で決め直し�
 
 - 発火条件・省く条件・呼び出し方の詳細:
   → Read `${CLAUDE_SKILL_DIR}/references/detection-guards.md`
-- 起動＝実行確定のため**止めない**。doc-sync は `--report-only` で呼び（承認を取らず、書き換えない）、指摘は最終レポートに列挙する。直すかは利用者がチャットで決める
+- 起動＝実行確定のため**止めない**。doc-sync は承認を取らずに文書とコメントの側を直し（直した分は未コミットの変更として残す）、直した箇所と残った指摘を最終レポートに列挙する
 
 ---
 
@@ -377,7 +377,7 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 10. スコープ外差分検出（git diff で「スコープ外」「後続 Issue 候補」セクションの追加行を抽出）
 11. タスク完了時フローの適用判定:
     - レビュー実施状況を確認（レビューガード節を参照）
-    - completed に遷移するなら文書整合を確認（文書整合ガード節を参照。doc-sync を `--report-only` で呼ぶ）
+    - completed に遷移するなら文書整合を確認（文書整合ガード節を参照。doc-sync が文書とコメントの側を直す）
     - 全タスク完了 → status 更新、follow_up 確認
 12. 整理を承認待ちせず実行する
 12.5 writing-polish 連携（整理後の Issue 本文 + 切り出した knowledge ページの散文を確定直前に推敲。writing-polish 必須節を参照）
