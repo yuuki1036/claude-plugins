@@ -692,6 +692,8 @@ echo "## issue-ids"
 # `utf-8` / `sha-1` / `base-64` / `ipv6-1` のような語がブランチ名・ref から誤マッチし、
 # triage digest に無関係な「Issue ID」が載る。小文字 ID を使う backend を追加するときは
 # ここを見直す（その場合も誤マッチ増を避けるため prefix を絞る等の対策を伴わせる）。
+# 正本は lib/reviewer_plan.py の ISSUE_ID_RE（plan が Issue ファイルを探す ID）。変えるなら両方を直す —
+# test_code_review_reviewer_plan.py の IssueIdRegexTest が 2 つの一致を縛る（GitHub issue #389）。
 if [ -n "$PR" ]; then
   gh pr view "$PR" --json headRefName,baseRefName -q '.headRefName + " " + .baseRefName' 2>/dev/null \
     | grep -oE '[A-Z]+-[0-9]+' | sort -u

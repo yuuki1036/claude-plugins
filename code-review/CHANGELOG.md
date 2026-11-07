@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.167.0] - 2026-11-07
+
+### Added
+
+- **PR に紐づく GitHub Issue の本文が言及する仕様書を、spec-compliance の照合元に載せるようにした**（GitHub issue #391）。`plan-reviewers.sh plan` に `--pr-issue-body <file>`（何度でも）を足した。plan は本文が言及する repo の仕様書を `spec_source	repo-spec-ref` として出す。パスの解決は PR 本文と同じ `doc_locate` の検査を通るので、repo の外や実在しないパスは載らない。review は `closingIssuesReferences` の先頭 3 件の title と本文を `mktemp` のファイルに保存し、`--spec-source pr-issue:#N` と一緒に渡す（spec-compliance に同梱し終えたら消す）。これまでは spec-compliance の reviewer が Issue の本文から自分で仕様書を拾っていたので、拾い損ねても照合元の欠けが計測に残らなかった
+
+### Changed
+
+- **Issue ファイルの探索を plan に一本化した**（GitHub issue #389）。review の Issue ファイル必読フロー（`orchestration-optional-flows.md` の `## 2`）は bash で探すのをやめ、plan の `spec_source	issue-file` の行を使う。探し方はファイル名の完全一致（`.claude/{indie,linear}/<slug>/issues/<ID>.md`）にそろえた。これまでの「本文に ID を含む md を grep で拾う」探し方は、knowledge・follow-up まで当たっていた。PR の base ブランチ名の ID は、`## issue-ids` から `--issue-id` で渡す形のまま拾い続ける。default-mode 以外のモードも、spec-compliance を起動するなら仕様ソースの引数で plan を呼んで `spec_source` の行だけを使う（構成の行は読まず、check も呼ばない）
+- **Issue ID の正規表現を `reviewer_plan.py` の `ISSUE_ID_RE` に寄せた**（GitHub issue #389）。`triage-signals.sh` の `## issue-ids` は同じパターンを書いたまま、回帰テストで縛った（パターンの文字列が同じこと、同じ入力で `grep -oE` と python が同じ ID の集合を返すこと）
+
+### Fixed
+
+- **`--focus` に語彙外の値だけを渡すと、規模で絞った全体レビューになっていた**（GitHub issue #388）。例えば `--focus migration-safety` は `scope=full` / `cap_source=size` になり、bug-detection と claude-md-compliance が起動していた。語彙内の観点が 1 つも残らないときも `scope=focus` のまま reviewer の行を出さないようにした（前回の対象の行は残る）。レポートには「⚠️ 欠損観点」の `語彙外の focus` だけが出る。`md-polish` / `design-review` だけを渡した回は、これまでどおり引数なしと同じに扱う
+
 ## [2.166.1] - 2026-11-07
 
 ### Changed

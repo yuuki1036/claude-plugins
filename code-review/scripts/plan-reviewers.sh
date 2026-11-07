@@ -4,7 +4,8 @@
 # Usage:
 #   plan-reviewers.sh plan --effort <low|medium|high|xhigh|max> --size-tier <small|medium|large|unknown> \
 #     [--activated <観点,...>] [--prior <観点,...>] [--delta] [--focus <観点,...> | --exclude <観点,...>] \
-#     [--spec <path>]... [--spec-source pr-issue:#N | knowledge:<path>]... [--issue-id <ID>]... [--pr <N>]
+#     [--spec <path>]... [--spec-source pr-issue:#N | knowledge:<path>]... [--issue-id <ID>]... \
+#     [--pr-issue-body <file>]... [--pr <N>]
 #   <確定テーブル> | plan-reviewers.sh check [--pr <N>]
 #
 # plan は構成（実効上限・単独 / 束ねの reviewer 行・落とした観点と理由）を stdout に出し、セッションの
@@ -12,7 +13,8 @@
 # 仕様ソース（session-context の branch 一致・ブランチ名の Issue ID の Issue ファイル・--spec の実在）は
 # plan が自分で探す。作業ツリーとメインのチェックアウトの両方を見る。repo の仕様書（diff が触ったもの・
 # session-context / Issue ファイル / PR 本文が言及したもの / GitHub issue #352）は、triage-signals.sh が書いた
-# diff と fetch-pr-context.sh の保存先から探す。本体は lib/reviewer_plan.py。
+# diff と fetch-pr-context.sh の保存先から探す。PR に紐づく GitHub Issue の本文は呼び出し側が保存して
+# `--pr-issue-body` で渡す（GitHub issue #391。下の拒否の対象外）。本体は lib/reviewer_plan.py。
 #
 # 終了コード: 0 = 正常 / 1 = check が規則違反を見つけた（NG 行に直し方）・plan を書けない /
 # 2 = 引数・入力の誤り・plan が無いのに check を呼んだ
