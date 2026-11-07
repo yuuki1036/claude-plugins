@@ -65,7 +65,7 @@ mods が有効な端末・Desktop（Claude Code 2.1.287 以降）では、作業
 
 ## worktree での作業
 
-start / issue-create がブランチを切るとき、今のチェックアウトに未コミットの変更があれば worktree に分けるのを推奨する（手順の正本: `references/branch-setup.md`）。
+start / issue-create / follow-up の promote がブランチを切るとき、今のチェックアウトに未コミットの変更があれば worktree に分けるのを推奨する（手順の正本: `references/branch-setup.md`）。
 
 - `.claude/worktrees/<Issue ID>` に既定ブランチから作り、未追跡の `.env*` を写し、lockfile に合わせて依存を入れる（`scripts/branch-setup.sh`）
 - 作った直後にセッションの作業ディレクトリを worktree へ移す（CLI は `EnterWorktree`）。diff ペイン・hook・CLAUDE.md が worktree 側の値になる

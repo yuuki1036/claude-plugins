@@ -15,6 +15,7 @@ allowed-tools:
   - Bash
   - Skill
   - AskUserQuestion
+  - EnterWorktree
 ---
 
 # Follow-up タスク管理
@@ -254,13 +255,7 @@ created: YYYY-MM-DD
 5. follow-up の「内容」を概要セクション、「対応メモ」を計画セクションに反映して Issue ファイルを生成
 6. 配置先: `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md`
 7. ユーザーに Issue ファイル内容を提示し、承認を得てから Write（counter は step 3 で確定済みのため、ここでは触らない）
-8. ブランチ作成を AskUserQuestion で確認:
-   - question: "ブランチ `{type-prefix}/{ISSUE-ID}-{kebab-title}` を作成しますか？"
-   - header: "ブランチ作成"
-   - options:
-     1. label: "作成する" / description: "ブランチを作成してチェックアウト"
-     2. label: "スキップ" / description: "ブランチは自分で作る"
-   - type-prefix: bugfix → `fix`、feature → `feat`、investigation → `investigate`、debt → `chore`、idea → `feat`
+8. ブランチは P6 で follow-up ファイルを書き換えた後に、P6.5 で作る（書いたファイルが出そろってから、worktree へ写すものを決めるため）
 
 #### BACKEND=linear
 
@@ -275,7 +270,7 @@ created: YYYY-MM-DD
      - title: follow-up の title
      - description: 「内容」+「対応メモ」セクションの内容
   2. 返却された Issue ID を使って上記「ローカルのみ」と同じ手順でローカル Issue ファイルも生成する
-- ブランチ自動作成（local の step 8）は行わない
+- ブランチ作成（local の P6.5）は行わない
 
 ### P6: follow-up ファイルの更新
 
@@ -286,9 +281,14 @@ created: YYYY-MM-DD
    promoted_date: YYYY-MM-DD
    ```
 
+### P6.5: ブランチ作成（BACKEND=local のみ）
+
+今のブランチ名に Issue ID が含まれていなければ、`${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る（GitHub #398）。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。ブランチ名の規則（type の対応）・worktree の作成・作業ディレクトリの移動・移動後の DATA_DIR の扱い・「スキップ」を選んだ回の案内は同 doc が正本。この skill が `{DATA_DIR}` に作った・書き換えたファイルは、P5 の Issue ファイルと `counter.txt`、P6 の follow-up ファイル。
+
 ### P7: 完了報告
 
 - 作成した Issue ファイルのパスと Issue ID を報告
+- P6.5 でブランチを作った回は、ブランチ名（worktree に移った回は branch-setup.md の 5 の報告の項目）を添える
 
 ---
 
