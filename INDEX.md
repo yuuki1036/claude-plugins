@@ -170,6 +170,8 @@ PJ の決定（living spec: repo の `.claude/living-specs/<slug>.md`。旧 livi
 | marketplace マニフェスト | `.claude-plugin/marketplace.json` | plugin.json から派生（SSoT 検証） |
 | hook 共通ラッパー（正本） | `.claude-plugin/lib/safe-hook.sh` | 各プラグインへ byte-identical 複製 |
 | spec ルーティング 3 軸コア（正本） | `.claude-plugin/lib/routing-axes.md` | ROUTING-AXES 区間を spec-advisor routing-rubric / issue-workflow issue-create に複製（dedent 比較で同期検証） |
+| 文書の所在検出（正本） | `.claude-plugin/lib/doc_locate.py` | code-review / issue-workflow の `scripts/lib/` へ byte-identical 複製（spec-compliance の照合元と doc-sync が使う） |
+| 文書整合の検出規則（正本） | `.claude-plugin/lib/doc-sync-rule.md` | DOC-SYNC 区間を code-review の spec-compliance / issue-workflow の doc-sync に複製（dedent 比較で同期検証） |
 | JSON Schema | `.claude-plugin/schema/` | plugin.json / marketplace.json / hooks.json |
 | SSoT 検証 | `.claude-plugin/scripts/validate-ssot.sh`, `validate_ssot.py` | バージョン・description・_requirements 同期 |
 | 機械層（検査の並びの正本） | `.claude-plugin/scripts/machine-layer.sh` | exit 0 緑 / 1 検出 / 2 判定不能。Stop hook と self-review 前段が呼ぶ |
