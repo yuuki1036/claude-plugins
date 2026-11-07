@@ -1,13 +1,19 @@
-# high-risk recall 補強（Tier1-3, GitHub issue #75）の回帰 fixture 期待値
+# code-review の recall 回帰 fixture 期待値（01 / 07 / 90 は high-risk recall 補強 Tier1-3・GitHub issue #75、
+# 08 は bug-detection の後片付けの点検・GitHub issue #386）
 #
 # 判定ルール:
-#   - recall fixture (01, 07): k=3 実行のうち 2 回以上で期待指摘が報告されれば PASS
+#   - recall fixture (01, 07, 08): k=3 実行のうち 2 回以上で期待指摘が報告されれば PASS
 #     （LLM の非決定性を吸収。3/3 を要求すると flaky になる）
+#     expect.target_lines_any があれば、指摘の主対象の行がそのどれかを含むことも要る
 #   - precision fixture (90): k=3 実行のうち 1 回でも false_positive_patterns に
 #     合致する CRITICAL/MAJOR が報告されたら FAIL（厳格。誤検出の復活は設計目的に反する）
+#   - 対照 (expect.must_not_flag。08): k=3 実行のうち 1 回でも対照に当たる MAJOR 以上が報告されたら
+#     FAIL（precision と同じ厳格さ。recall 側の PASS とは独立）。当たる条件と「主対象の行」の定義の
+#     正本は README.md の「判定ルール」（ここに複製しない）
 #   - 実行 effort: xhigh（self-review skill frontmatter の既定。skeptic 起動条件）
 #
-# 照合は人手（半自動 runbook）。severity / 指摘対象ファイル / キーワードで判定する。
+# 照合は人手（半自動 runbook）。severity / 指摘対象ファイル / キーワードで判定する
+# （expect.target_lines_any があれば行、expect.must_not_flag があれば対照も見る）。
 
 fixtures:
   - id: 01-value-flow-insert
@@ -53,6 +59,46 @@ fixtures:
         迂回している。CLAUDE.md は「全 action は無条件で包む」を規定。instanceof AppError の
         パターン一致で「準拠」に見えるが、SERVICE_UNAVAILABLE の error 級ログが消える
         観測性の欠落が帰結。パターンの有無でなく帰結まで接続できるかを測る。
+    skeptic_should_fire: false
+
+  - id: 08-rethrow-skips-cleanup
+    kind: recall
+    reproduces: "GitHub issue #386（投げ直しの経路が finally の外の後片付けを飛ばす。観点は #353）"
+    surface: none # DB 書込・金・認可を含まない → skeptic は起動しなくてよい
+    expect:
+      severity_at_least: MAJOR
+      target_files_any:
+        - src/app/projects/[slug]/ProjectSettings.tsx
+      target_lines_any:
+        - 48 # changed 側の `unstable_rethrow(err);`（diff の唯一の + 行）
+      must_mention_any:
+        - "closeDialog"
+        - "finally"
+        - "ダイアログ"
+        - "後片付け"
+      rationale: >
+        RenameForm.handleSubmit の catch 先頭に足した unstable_rethrow(err) は、slug が変わる改名で
+        redirect を投げ直す。closeDialog() は try/catch/finally の後ろ（finally の外）にあるため、
+        この経路では呼ばれない。DialogProvider はルートレイアウトにあり、画面を移っても消えないので、
+        遷移先の /projects/<新しい slug> に旧 slug を持った改名ダイアログが開いたまま残る。
+        飛ばされる後片付けの行（closeDialog）は base から既にあり、指摘は足した脱出口（+ 行）に置く
+        （bug-detection の #353 節）。57 行目（closeDialog）だけを指す指摘は合致に数えない。
+        正常系（slug 不変）は closeDialog に届くので、正常系と比べて意図した飛ばしではないと判断できる。
+      must_not_flag:
+        target_files_any:
+          - src/app/projects/[slug]/ProjectSettings.tsx
+        target_lines_any:
+          - 51 # changed 側の InputError の `return;`
+        max_severity_reported: MINOR # 対照への MAJOR 以上が 1 回でも出たら FAIL
+        false_positive_patterns: # 主対象の行が 48 も 57 も含まない指摘にだけ当てる（README の判定ルール）
+          - "InputError.*(closeDialog|閉じ|後片付け)"
+          - "入力エラー.*(ダイアログ|閉じ|後片付け)"
+          - "return.*(closeDialog|後片付け).*(飛|呼ばれ|届か)"
+        rationale: >
+          入力エラーでは fieldError をダイアログ内に出し、開いたまま残して再試行させる。pending は
+          finally で戻るので、この return が飛ばすのは closeDialog / router.refresh だけで、これは意図した
+          飛ばし。同じ catch の投げ直し（画面が移る脱出口）と脱出口ごとに意図を分けて判定できるかを
+          測る（bug-detection「意図の判定は脱出口ごとに行う」）。
     skeptic_should_fire: false
 
   - id: 90-precision-minor-unit
