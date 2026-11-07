@@ -64,10 +64,10 @@ fi
 if [ -n "${SURFACE}" ]; then
   echo "== surface 判定: HIT [${SURFACE% }] → skeptic 起動条件を満たす（effort=xhigh 時）"
 else
-  echo "== surface 判定: MISS → skeptic は起動しない（correct only for 07）"
+  echo "== surface 判定: MISS → skeptic は起動しない（correct only for 07 / 08）"
 fi
 echo
 echo "== 次のステップ =="
-echo "  cd ${TARGET} && claude"
-echo "  プロンプト: 「コミット前にセルフレビューして」（self-review が起動する）"
+echo "  cd ${TARGET} && claude -p \"/code-review:self-review\" --permission-mode plan"
+echo "  （名前空間なしの /self-review や自然文は別の self-review に解決されうる。README の注意を参照）"
 echo "  期待値は evals/fixtures/recall/expected.yaml の ${FIXTURE_ID} を参照"

@@ -112,7 +112,7 @@ with_chrome() {
     polls=$((polls + 1))
     if [ -s "$png" ]; then
       cur=$(file_size "$png")
-      if [ "$cur" = "$prev" ]; then  # mutation-ok: 書きかけの PNG を見せる Chrome を stub で決定的に作れない（時間依存で不安定になる）
+      if [ "$cur" = "$prev" ]; then
         REASON=""
         break
       fi
