@@ -760,6 +760,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
 
    **読み合わせ以降の画面の変更を残す**（GitHub issue #306。3. で読み合わせて修正を入れた回はすべて。上の分岐で 2 回目の self-review を回した回も、`決定的な検証` で Phase 5.3 だけを回した回も同じ）: 3. の読み合わせ以降に入った変更（読み合わせでの修正・2 回目の self-review での修正）に画面のファイル（Phase 5.5 Step 3 の定義）があれば、次の一手に「読み合わせ後の変更は動作確認を通していない」と添える（Phase 5.5 はもう一度回さない）。変わったファイルは 4. の冒頭の `review-snapshot.sh check` が出す `<追加>\t<削除>\t<path>` の行（`snapshot=missing` / `unavailable` の回は締めの「入れた修正」）と、2 回目の self-review で直したファイルで見る
 
+   **コミットの前に文書整合を通す**（2026-11-07 決定。3. で読み合わせた回も、5. の従来のサマリの回も同じ。上の分岐と変異テストを済ませてから 1 回だけ）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" issue-workflow` が `1` なら、`Skill` tool で `issue-workflow:doc-sync` を `--base <BASE>`（3. と同じ。分からなければ付けない）で起動する。doc-sync は、コードの変更で更新が要る文書とコメントを承認を取らずに直し、残った指摘を一覧にする。応答の最後の行で分岐する:
+   - 直した（`DOC_SYNC_FIXED=` が 1 以上）→ Phase 5.3（静的オラクル）をもう一度回す（文書とコメントだけの変更なので self-review は回し直さない）。次の一手に「doc-sync の文書修正は self-review を通していない」と添え、直した文書はコミットに含める
+   - 残った（`DOC_SYNC_RESULT=findings`）→ 残った指摘（「実装を直す」・doc-checks の検出）を利用者に示し、直すかを聞く。実装を直すと決まったら Phase 5 に戻る
+   - 指摘なし（`clean` / `skipped`。`0` で issue-workflow が無い回も）→ 結果を 1 行添えて次の一手へ
+   - git-commit-helper は呼び出し元のフローから起動されたときに doc-sync を回さないので、feature-dev の回はここで回す（二重に回さない）
+   - Phase 1.5 で Issue ファイルを読んだ回は、その更新履歴に `doc-sync: <DOC_SYNC_RESULT の値>` と 1 行足す（issue-workflow の issue-maintain は、この行があれば completed にするときに doc-sync を回し直さない）
+
    - 2 回目の self-review の後は、読み合わせも self-review も繰り返さない。最後に次の一手（コミット → PR）を 1 行添える
    - **コミット・PR は dev-workflow の skill で行う**: 利用者が次の一手どおりに進めるよう返したら、`bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" dev-workflow` が `1` なら、コミットは `Skill` tool で `dev-workflow:git-commit-helper`、PR は `dev-workflow:pr-creator` を起動する（command の `dev-workflow:commit` / `dev-workflow:pr` を経由せず、skill を直接呼ぶ）。`git commit` / `gh pr create` を直接打たない。`0` なら Conventional Commits 形式で論理単位に分けてコミットする。5. の従来のサマリの回も同じ
 5. **従来のサマリ**（code-review が無効 / review-guide の呼び出しが失敗した回。review-guide を持たない旧版の code-review も含む）: What was built / Key decisions made / Files modified / Suggested next steps を出す。2. の申し送りはそのまま残す

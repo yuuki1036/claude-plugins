@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.0] - 2026-11-07
+
+### Added
+
+- **Phase 7 で、コミットの前に issue-workflow の doc-sync を回すようにした**（2026-11-07 決定）。issue-workflow が有効なときだけ回し、更新が要る文書とコメントは doc-sync が承認なしで直す。直したら Phase 5.3 をもう一度回し、Issue ファイルを読んだ回は更新履歴に `doc-sync: <結果>` を残す（issue-maintain が completed にするときに回し直さない）
+
 ## [2.27.8] - 2026-11-06
 
 ### Changed
