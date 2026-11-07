@@ -236,7 +236,7 @@ Phase 6 ステップ3 で本文を生成した後、ステップ4（ユーザー
 
 1. 作成したファイルの絶対パスを報告する（採番は Phase 3 で確定済みのため、ここでは `counter.txt` を触らない）
    - **`--create-only` のときはここで終える**: 2〜4 と Phase 8 に進まず、`## 引数` の終わりの 1 行目（`起票だけで終えた: …`）を最後に出す
-2. **ブランチ作成（両 backend）**: 今のブランチ名に Issue ID が含まれていなければ、`${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。ブランチ名の規則・worktree の作成・作業ディレクトリの移動・移動後の DATA_DIR の扱いは同 doc が正本
+2. **ブランチ作成（両 backend）**: 今のブランチ名に Issue ID が含まれていなければ、`${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read し、その手順でブランチを作る。今のチェックアウトで切るか、worktree に分けてセッションごと移るか（移動は CLI なら `EnterWorktree`。未コミットの変更があれば worktree を推奨）を AskUserQuestion で 1 回聞く。ブランチ名の規則・worktree の作成・作業ディレクトリの移動・移動後の DATA_DIR の扱い・「スキップ」を選んだ回の案内は同 doc が正本
 3. **feature-dev 連携確認**: **AskUserQuestion** で確認する:
    - question: "feature-dev で実装計画を立てますか？（ブランチを切った直後が最もコンテキストがそろっています）"
    - header: "feature-dev"
