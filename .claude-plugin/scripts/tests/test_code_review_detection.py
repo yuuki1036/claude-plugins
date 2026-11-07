@@ -595,7 +595,7 @@ class DuplicateReviewQuestionContractTest(unittest.TestCase):
     # （test_issue_workflow_lightweight_flow.py の step() と同じ形）
     CALLERS = {
         REPO / "issue-workflow" / "skills" / "start" / "references" / "lightweight-flow.md":
-            (r"(?m)^### Step \d+: 読み合わせ", r"(?m)^### Step \d+:"),
+            (r"(?m)^### Step \d+: 読み合わせ", r"(?m)^### Step \d+(?:\.\d+)?:"),
         REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md":
             (re.escape("4. **読み合わせで入った修正を self-review に通す**"), re.escape("5. **従来のサマリ**")),
     }

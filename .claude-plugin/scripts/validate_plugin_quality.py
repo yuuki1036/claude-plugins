@@ -14,7 +14,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     **無言で対象ゼロ**になる（hook は配布されたまま検査だけ消える / issue #176）.
   - safe-hook.sh 同期: 各プラグインの replica が canonical と byte-identical か
   - byte-replica 同期: プラグイン間で丸ごと複製しているファイル（grill-protocol.md /
-    plugin-enabled.sh）が正本と byte-identical か. grill-protocol.md の複製は「byte-identical 複製」と宣言していたのに検査が無く, 正本にだけ
+    plugin-enabled.sh / doc_locate.py）が正本と byte-identical か. grill-protocol.md の複製は「byte-identical 複製」と宣言していたのに検査が無く, 正本にだけ
     #233 の節（14 行）が入ったまま複製が古くなっていた. 言い換えの消費サイトは SSoT pin が担う
   - routing-axes 同期: spec ルーティング 3 軸コアの delimiter 区間が正本と一致するか（dedent 比較）
   - backend-detect 同期: issue-workflow の Phase 0（backend 検出）区間が正本と一致するか（dedent 比較・区間を持つ SKILL.md を走査）
@@ -22,6 +22,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     内容の良し悪しは決定的に判定できない（候補 4 案とも真陽性 0）ので, 機械層は「規約が届く経路」
     だけを止める. 区間は CLAUDE.md（書く側）と reviewer プロンプト（見る側）の両方にあり,
     片側だけ直すと「書く側と見る側で軸が違う」状態が静かに成立する.
+  - doc-sync-rule 同期: 文書整合の検出規則（決定の未反映・同じ節の古い説明など）の DOC-SYNC 区間が正本と
+    一致するか（dedent 比較）. 区間は code-review の spec-compliance と issue-workflow の doc-sync の両方にあり,
+    片側だけ直すとレビューと単独のチェックで検出する範囲が食い違う（GitHub issue #352 / #365）.
   - comment-polish 連結: コメント推敲（B 系統）の連結可否が self-review=attach / review=detach で
     宣言され, attach 側が実際にプロンプトのパスを渡しているか. 可否は散文 1 行だけで表現されており,
     消せば silent な不発, 混入すれば他人の PR への越権になる（どちらもレポートを見ても気づけない）.
@@ -152,6 +155,11 @@ BYTE_REPLICAS = {
         ROOT / "feature-dev" / "scripts" / "plugin-enabled.sh",
         ROOT / "issue-workflow" / "scripts" / "plugin-enabled.sh",
     ],
+    # repo 内の文書の所在検出（GitHub issue #352 / #365）. code-review は仕様ソースに, issue-workflow は doc-sync に使う
+    ROOT / ".claude-plugin" / "lib" / "doc_locate.py": [
+        ROOT / "code-review" / "scripts" / "lib" / "doc_locate.py",
+        ROOT / "issue-workflow" / "scripts" / "lib" / "doc_locate.py",
+    ],
 }
 
 # spec ルーティング 3 軸コア（WHAT/HOW/WHY → プラグイン対応）の正本と消費サイト.
@@ -177,6 +185,16 @@ COMMENT_RULE_CONSUMERS = [
 ]
 COMMENT_RULE_START = "<!-- COMMENT-RULE:START -->"
 COMMENT_RULE_END = "<!-- COMMENT-RULE:END -->"
+
+# 文書整合の検出規則の正本と消費サイト. comment-rule と同型（区間を dedent 比較）.
+# レビュー（code-review の spec-compliance）と単独のチェック（issue-workflow の doc-sync）が同じ規則で見る.
+CANONICAL_DOC_SYNC_RULE = ROOT / ".claude-plugin" / "lib" / "doc-sync-rule.md"
+DOC_SYNC_RULE_CONSUMERS = [
+    ROOT / "code-review" / "references" / "prompts" / "focus" / "spec-compliance.md",
+    ROOT / "issue-workflow" / "skills" / "doc-sync" / "SKILL.md",
+]
+DOC_SYNC_RULE_START = "<!-- DOC-SYNC:START -->"
+DOC_SYNC_RULE_END = "<!-- DOC-SYNC:END -->"
 
 # issue-workflow の Phase 0（backend 検出）の正本と消費サイト. routing-axes と同型（区間を dedent 比較）.
 # 同じ手順が 10 スキルに複製されており, 片方だけ直すと backend の判定がスキルごとに食い違う.
@@ -702,28 +720,39 @@ def check_routing_axes_sync(errors: list[str]) -> None:
             )
 
 
-def check_comment_rule_sync(errors: list[str]) -> None:
-    """コードコメント規約 2 観点の区間が正本と一致するかを検証する（CLAUDE.md / plugin 跨ぎ）."""
-    tag = "comment-rule-sync"
-    if not CANONICAL_COMMENT_RULE.is_file():
-        errors.append(f"[{tag}] canonical missing: {CANONICAL_COMMENT_RULE.relative_to(ROOT)}")
+def _check_region_sync(errors: list[str], tag: str, canonical_path: Path, consumers: list[Path],
+                       start: str, end: str) -> None:
+    """正本の区間と各消費サイトの区間が一致するかを検証する（comment-rule / doc-sync-rule 共通）."""
+    if not canonical_path.is_file():
+        errors.append(f"[{tag}] canonical missing: {canonical_path.relative_to(ROOT)}")
         return
-    canonical = _extract_marked_region(CANONICAL_COMMENT_RULE, COMMENT_RULE_START,
-                                       COMMENT_RULE_END, tag, errors)
+    canonical = _extract_marked_region(canonical_path, start, end, tag, errors)
     if canonical is None:
         return
-    for consumer in COMMENT_RULE_CONSUMERS:
+    for consumer in consumers:
         if not consumer.is_file():
             errors.append(f"[{tag}] consumer missing: {consumer.relative_to(ROOT)}")
             continue
-        region = _extract_marked_region(consumer, COMMENT_RULE_START, COMMENT_RULE_END, tag, errors)
+        region = _extract_marked_region(consumer, start, end, tag, errors)
         if region is None:
             continue
         if region != canonical:
             errors.append(
                 f"[{tag}] diverged from canonical "
-                f"({CANONICAL_COMMENT_RULE.relative_to(ROOT)}): {consumer.relative_to(ROOT)}"
+                f"({canonical_path.relative_to(ROOT)}): {consumer.relative_to(ROOT)}"
             )
+
+
+def check_comment_rule_sync(errors: list[str]) -> None:
+    """コードコメント規約 2 観点の区間が正本と一致するかを検証する（CLAUDE.md / plugin 跨ぎ）."""
+    _check_region_sync(errors, "comment-rule-sync", CANONICAL_COMMENT_RULE, COMMENT_RULE_CONSUMERS,
+                       COMMENT_RULE_START, COMMENT_RULE_END)
+
+
+def check_doc_sync_rule_sync(errors: list[str]) -> None:
+    """文書整合の検出規則の区間が正本と一致するかを検証する（code-review / issue-workflow 跨ぎ）."""
+    _check_region_sync(errors, "doc-sync-rule-sync", CANONICAL_DOC_SYNC_RULE, DOC_SYNC_RULE_CONSUMERS,
+                       DOC_SYNC_RULE_START, DOC_SYNC_RULE_END)
 
 
 def check_backend_detect_sync(errors: list[str]) -> None:
@@ -2149,6 +2178,7 @@ def main() -> int:
     check_byte_replicas(errors)
     check_routing_axes_sync(errors)
     check_comment_rule_sync(errors)
+    check_doc_sync_rule_sync(errors)
     check_backend_detect_sync(errors)
     check_comment_polish_wiring(errors)
     check_schema_markers_sync(errors)

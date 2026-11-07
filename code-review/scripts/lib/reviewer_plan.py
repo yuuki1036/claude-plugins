@@ -21,6 +21,9 @@ import sys
 
 sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pycache__` を作らせないだけで、判定にも出力にも効かない
 
+# 上の行より後に import する（前に置くと、この import で `lib/__pycache__` が作られる）
+import doc_locate  # noqa: E402
+
 # triage-guide `## 3` の観点判定表のキー（18 観点）
 FOCUS_KEYS = (
     "bug-detection", "claude-md-compliance", "error-handling", "comment-accuracy",
@@ -63,6 +66,12 @@ EFFORTS = tuple(EFFORT_CAP["reviewer"])
 SIZE_TIERS = ("small", "medium", "large", "unknown")
 REDUNDANT_EFFORTS = frozenset(("xhigh", "max"))
 SPEC_SOURCE_LABELS = ("pr-issue", "knowledge")
+# plan が diff と参照から見つける repo の仕様書（GitHub issue #352）。`--spec-source` では渡せない
+# （SPEC_SOURCE_LABELS に入れない）: touched = diff が触った、ref = session-context・Issue ファイル・PR 本文が言及した
+SPEC_DOC_LABELS = ("repo-spec-touched", "repo-spec-ref")
+PR_BODY_HEADING = "### PR 説明"
+# fetch-pr-context.sh が PR 本文の次に出す見出し。PR 本文の中の `### ` 見出しでは打ち切らない
+PR_BODY_END_HEADING = "### Issue コメント"
 # focus に来ても観点ではないので無視する値（self-review SKILL.md の `--focus` の注入と同じ扱い）
 NON_FOCUS = frozenset(("md-polish", "design-review"))
 ISSUE_ID_RE = re.compile(r"[A-Z]+-[0-9]+")
@@ -459,15 +468,53 @@ def _frontmatter(path):
     return out
 
 
-def detect_spec_sources(roots, branch, issue_ids, specs):
+def _pr_body(path):
+    """fetch-pr-context.sh の保存先から PR 本文の節（`### PR 説明` から `### Issue コメント` の手前まで）を返す。
+
+    コメント・レビューの節は読まない（参照を拾うのは著者が書いた本文だけ）。ファイルが無ければ空。
+    """
+    if not path:
+        return ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return ""
+    out, inside = [], False
+    for line in lines:
+        if line.startswith(PR_BODY_HEADING):
+            inside = True
+            continue
+        if inside and line.startswith(PR_BODY_END_HEADING):
+            break
+        if inside:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def detect_spec_sources(roots, branch, issue_ids, specs, diff_text="", pr_body=""):
     """仕様ソースを探す。戻り値は (sources, missing)。sources は [(label, detail)]。
 
     roots は作業ツリーとメインのチェックアウト（Issue ファイルを gitignore した repo では worktree に無い）。
+    repo の仕様書は作業ツリー（roots[0]）で探す: diff が触ったもの（repo-spec-touched）と、session-context・
+    Issue ファイル・PR 本文が言及したもの（repo-spec-ref）。規約（CLAUDE.md 等）は claude-md-compliance の
+    担当なので足さない。
     """
     sources, missing, seen = [], [], set()
     ids = list(issue_ids)
 
     def add(label, detail):
+        # plan は TSV で出すので、改行・タブを含むパス（第三者の diff が置いた名前）は行を壊す。仕様ソースにしない
+        if any(c in detail for c in "\t\n\r"):
+            return
         if (label, detail) not in seen:
             seen.add((label, detail))
             sources.append((label, detail))
@@ -500,6 +547,20 @@ def detect_spec_sources(roots, branch, issue_ids, specs):
             add("spec", os.path.abspath(spec))
         else:
             missing.append(spec)
+    if roots:
+        root = roots[0]
+        known = {os.path.realpath(d) for label, d in sources if label == "spec"}
+        for kind, rel in doc_locate.touched_docs(diff_text, root):
+            path = os.path.join(root, rel)
+            if kind == "spec" and os.path.realpath(path) not in known:
+                known.add(os.path.realpath(path))
+                add("repo-spec-touched", path)
+        refs = [_read_text(d) for label, d in list(sources) if label in ("session-context", "issue-file")]
+        for kind, rel in doc_locate.mentioned_docs("\n".join(refs + [pr_body]), root):
+            path = os.path.join(root, rel)
+            if kind == "spec" and os.path.realpath(path) not in known:
+                known.add(os.path.realpath(path))
+                add("repo-spec-ref", path)
     return sources, missing
 
 
@@ -542,7 +603,9 @@ def _plan_main(ns):
         extra.append((label, detail or "-"))
     roots = [r for r in (ns.wt, ns.main_root) if r]
     roots = list(dict.fromkeys(os.path.abspath(r) for r in roots))
-    found, missing = detect_spec_sources(roots, ns.branch, ns.issue_id or [], ns.spec or [])
+    diff_text = _read_text(ns.diff_file) if ns.diff_file else ""
+    found, missing = detect_spec_sources(roots, ns.branch, ns.issue_id or [], ns.spec or [],
+                                         diff_text=diff_text, pr_body=_pr_body(ns.pr_context))
     if ns.size_tier == "unknown":
         print("WARN: size_tier=unknown のため規模キャップを掛けずに effort 上限だけで構成した", file=sys.stderr)
     plan = compute_plan(effort, ns.size_tier, activated=activated, prior=prior, delta=ns.delta,
@@ -602,6 +665,8 @@ def main(argv=None):
     p.add_argument("--spec", action="append")
     p.add_argument("--spec-source", action="append")
     p.add_argument("--issue-id", action="append")
+    p.add_argument("--diff-file", default="")
+    p.add_argument("--pr-context", default="")
     c = sub.add_parser("check", allow_abbrev=False)
     c.add_argument("--plan-file", required=True)
     try:

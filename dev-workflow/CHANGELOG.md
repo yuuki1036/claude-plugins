@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.43.0] - 2026-11-07
+
+### Added
+
+- **git-commit-helper に 1.7（コミット前の文書整合）を足した**（2026-11-07 決定）。issue-workflow の doc-sync が使えるとき、コミットの前に回し、更新が要る文書とコメントを直してからコミットする。軽量フロー・feature-dev から呼ばれた回は、そちらが回しているので回さない
+
 ## [1.42.1] - 2026-11-03
 
 ### Changed

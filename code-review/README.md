@@ -161,7 +161,7 @@ diff の特性を分析し、エージェント構成を動的に決定する。
 | cross-cutting | 共通モジュールの変更時 |
 | layer-responsibility | AGENTS.md / CLAUDE.md が層（ディレクトリ）の役割を文書化しているとき。置き場所・判断の持ち場・層をまたぐ重複を見る |
 | pattern-consistency | 変更ファイル数 ≥ 10 |
-| spec-compliance | Issue/knowledge が存在する時 |
+| spec-compliance | Issue/knowledge が存在する時、または diff が触った・Issue や PR 本文が言及した repo の仕様書（`docs/` `adr/` `designs/` `features/` など）がある時。決定が仕様書に反映されているか・同じ節に古い説明が残っていないかも見る |
 | ui-quality | UI/フロントエンドの変更時 |
 | doc-substance | 高価値 doc（CLAUDE.md / ADR / design doc / README）の prose 変更、または実質 prose 変更が概ね 10 行以上のとき |
 

@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.166.0] - 2026-11-06
+
+### Added
+
+- **spec-compliance の照合元に repo 内の仕様書を足した**（GitHub issue #352）。これまでの照合元は session-context・Issue ファイル・knowledge・`--spec` だけで、`docs/` などに置いた仕様書は、diff がその仕様書自体を書き換えていても入らなかった。`plan-reviewers.sh plan` が、triage-signals.sh の書いた diff と PR コンテキスト（`--pr` の回だけ。PR 本文の節）から仕様書を探し、`spec_source` に `repo-spec-touched`（diff が触った）/ `repo-spec-ref`（session-context・Issue ファイル・PR 本文が言及した）として出す。仕様書の判定は `scripts/lib/doc_locate.py`（正本 `.claude-plugin/lib/doc_locate.py` の byte 一致の複製）で、パスの要素に `docs` / `spec` / `adr` / `designs` / `features` などを持つ md 類と `*.feature` を仕様書とみなす（CHANGELOG・README・規約は含めない）。**diff が仕様書を触っただけで、他の仕様ソースが無くても spec-compliance を単独で起動する**（2026-11-06 決定）。仕様書を持たない repo では何も変わらない
+- **spec-compliance の検出対象に文書整合を足した**（GitHub issue #352）。決定（Issue・PR 本文・session-context）が仕様書に反映されていない、変更した行と同じ節に古い説明が残っている、文書と実装が食い違う、の 3 つ。仕様書の行の引用を必須にし、旧の振る舞いを出典付きで書いた節は書き換えず新しい節に足す提案にする。規則は `.claude-plugin/lib/doc-sync-rule.md` の DOC-SYNC 区間が正本で、issue-workflow の doc-sync と同じ文を使う。同じ節の中の矛盾はこの観点、節をまたぐ矛盾は doc-substance、と境界を書いた
+- 既知の限界: review の doc-review-mode など default-mode 以外は plan を呼ばないので、仕様書との照合は起きない。PR に紐づく GitHub Issue の本文が言及した仕様書は plan が数えない（spec-compliance が Issue を読んだときに自分で足す）。repo の外を指す symlink と、repo の中の非文書（`.git` など）を指す symlink は仕様書として渡さない。effort high 以下の small（reviewer 3 体）では、仕様書に触れた回に spec-compliance が単独の枠を取り、security が束ねる側に回る
+
 ## [2.165.4] - 2026-11-06
 
 ### Added

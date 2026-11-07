@@ -206,7 +206,7 @@ triage-guide.md `## 2.5 PR 種別分岐ルール` を **Stage 1 より先に** �
 diff の特性を分析し、必要なエージェントタイプを判定する:
 - **explorer**: 巨大ファイル、複数関数、条件分岐追加、共通モジュール変更のいずれかに該当するか
 - **reviewer**: 常に必要。diff パターンマッチでどの観点が必要かを判定
-- **spec-compliance**: 自分で判定しない。Step 3.2 の plan が仕様ソースから決める（`--activated` に入れると plan が exit 2 で止まる / GitHub issue #351）
+- **spec-compliance**: 自分で判定しない。Step 3.2 の plan が仕様ソースから決める（`--activated` に入れると plan が exit 2 で止まる / GitHub issue #351）。repo の仕様書は、diff が触ったものと session-context・Issue ファイル・PR 本文が言及したものを plan が自分で探す（GitHub issue #352。PR 本文は `--pr` を渡せば plan が Step 1 の PR コンテキストから読む）
 
 Step 1 で Read した PR コンテキスト（説明・issue コメント・レビューサマリ・行単位コメント）もタイプ判定の参考にする（例: 説明に「セキュリティ修正」、行単位コメントで認可周りが議論されている → security reviewer を追加）。
 
@@ -307,7 +307,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - <!-- COMMENT-POLISH: detach --> **`${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md` は Read 対象に入れない**（self-review 限定。他人の PR に文面の推敲を投稿するのは越権になりやすい。混入は comment-polish 連結チェックが Critical で止める）
 - **Markdown 推敲の agent（`${CLAUDE_PLUGIN_ROOT}/references/prompts/md-polish.md`）も起動しない**（self-review 限定。理由は上と同じ。review の payload に `md_polish` は載らない）
 - **可変部の共通ブロック（全 agent 共通の実値集合）は 1 ファイルに落としてパス渡しする**: Step 2 の `## meta` が出す `agent_ctx_file=` のパスに **Write で 1 回だけ**書き出し、各プロンプトには「まず `<agent_ctx_file>` を Read せよ」の 1 行だけを置く。**入れる項目・残す項目・フォールバックの正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**（`{{PLUGIN_ROOT}}` / PR 番号 / `{{HEAD_SHA}}` / `{{MAIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` / `$DIFF_FILE` / `$PR_CTX_FILE` / AGENTS.md パス / 確定事実 など。実測で reviewer 5 + skeptic 1 + meta 1 + 反証 3 の計 10 本に手書きしていた — #124 (c)）。**書き出したら、その応答の中でこの wave に出す Agent call（reviewer 全行 + 相乗りする skeptic + specialist）を列挙してから発行に移る**（発行直前チェックポイント / orchestration-guide.md `## 0`。列挙より後に思いついた観点は同じ層へ後追いせず Round 2 へ回す — #220）
-- **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）
+- **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）。plan の `spec_source` 行のうち `repo-spec-touched` / `repo-spec-ref` のパスを、**spec-compliance 担当にだけ**「仕様ファイル: `<path>`（`<label>`。Read して照合元にする）」で 1 行ずつ添える。`repo-spec-touched` には「変更した行の節を節ごと読み、同じ節の古い説明も見る」を添える
 - **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 4 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` 側（#122）
 - 全エージェントを `isolation: "worktree"` で起動する
 - **全 reviewer の Agent call を同一メッセージ内で一括発行し、全体の結果が届くまで次へ進まない**（orchestration-guide.md `## 0`）
@@ -445,7 +445,7 @@ reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前�
   ※ reviewer の effort と動的ラウンド（meta / skeptic / 反証ゲート）は**実行時 effort に連動**する。skill frontmatter の effort はオーケストレーター用で別枠
 **動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（reviewer N 体 / explorer M 体）} / Meta-reviewer {実行（N 件追加）| skip 理由（`effort` / `config` / `no-high-severity` / `size-tier` / `emergency`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: config/emergency）| 非該当（surface なし）**← payload の `recall_skeptic.skip_reason` は `"no-surface"`。`fired=false` なので `null` にしない**} / 反証 {対象 N 件（うち meta 由来の追加バッチ M 件）| skip 理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
-**仕様整合**: {spec-compliance を起動した回: `<仕様ソース>`（Issue / session-context / knowledge / `--spec` / PR に紐づく Issue）と照合し、仕様違反 N 件 | 起動しなかった回: Step 3.2 の plan から写す — `spec_source	none` なら `仕様ソースなし`、`dropped	spec-compliance	size-cap` なら `規模キャップで未起動`、`effort-cap` なら `effort 上限で未起動`。default-mode 以外は `モード <名前> の構成で未起動`}（spec-compliance の結論を 1 行で。起動の有無が読み手に見えないと、指摘 0 件が「仕様どおり」と読まれる）
+**仕様整合**: {spec-compliance を起動した回: `<仕様ソース>`（Issue / session-context / knowledge / `--spec` / PR に紐づく Issue / repo の仕様書 N 件（diff が触った M 件））と照合し、仕様違反 N 件（うち文書への未反映 K 件） | 起動しなかった回: Step 3.2 の plan から写す — `spec_source	none` なら `仕様ソースなし`、`dropped	spec-compliance	size-cap` なら `規模キャップで未起動`、`effort-cap` なら `effort 上限で未起動`。default-mode 以外は `モード <名前> の構成で未起動`}（spec-compliance の結論を 1 行で。起動の有無が読み手に見えないと、指摘 0 件が「仕様どおり」と読まれる）
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{**スキップ時もこの行を出す**（書式の正本は orchestration-dynamic-rounds.md `## 10` 手順 4）。`no-eligible-findings` は `未実施（対象帯に該当なし。MAJOR 以下の severity は較正されていない）` と書く — 「対象 0 件」は「検証したが問題なし」と読まれる}
 
 ### 🚨 BLOCKER 指摘

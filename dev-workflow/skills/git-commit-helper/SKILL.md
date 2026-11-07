@@ -72,6 +72,25 @@ issue-workflow の軽量フローと feature-dev は、コミットの前に sel
 
 先へ進むときは、1. の `git status` / `git diff` / `git diff --cached` を取り直してから 2. へ戻り、この skill の手順でコミットする（`git commit` を直接打たない。self-review と読み合わせの修正で差分が変わっている）。
 
+### 1.7 コミット前の文書整合（doc-sync）
+
+コードを変えたあとに文書の更新が要るなら、コミットの前に直す（2026-11-07 決定）。仕様書・規約・コードコメントに、変更前の挙動が古いまま残っていないかを `issue-workflow:doc-sync` で確かめる。doc-sync は承認を取らずに文書とコメントの側を直し、残った指摘を一覧にする。
+
+**回さない回**（どれか 1 つに当たれば 2. へ進む）:
+- 使える skill に `issue-workflow:doc-sync` が無い（issue-workflow が無効か未導入）
+- 呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動された（そのフローがコミットの前に doc-sync を回している）
+- このセッションで、今回コミットする変更に doc-sync を回した
+- 変更が版番号・CHANGELOG・lock ファイルなどの機械的な更新だけ
+- 利用者がこの依頼で「文書の確認は要らない」と言っている
+
+それ以外は `Skill` tool で `issue-workflow:doc-sync` を引数なしで起動する（base は doc-sync が決める）。応答の最後の行で分岐する:
+- `DOC_SYNC_FIXED=` が 1 以上 → 直した文書とコメントを今回のコミットに含める（ドキュメントのコミットとして分ける。2. の分割判定に従う）。報告に「doc-sync の文書修正は self-review を通していない」と 1 行添える
+- `DOC_SYNC_RESULT=findings` → 残った指摘（「実装を直す」・doc-checks の検出）を示し、このままコミットするかを通常のメッセージで聞いてターンを終える
+- `clean` / `skipped` → 結果を 1 行添えて先へ進む
+- doc-sync の起動に失敗したら、理由を 1 行伝えて先へ進む
+
+先へ進むときは、1. の `git status` / `git diff` / `git diff --cached` を取り直してから 2. へ進む（doc-sync の修正で差分が変わっている）。
+
 ### 2. コミット分割判定
 
 **1コミット = 1作業単位。** 以下は必ず分割:

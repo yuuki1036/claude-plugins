@@ -19,7 +19,7 @@ description の仕事は 2 つだけ — **スキルの正体を 1 文で言う*
 - **1 branch 1 トリガー**: 同じ branch の言い換えを羅列するのは duplication。「TDD で機能を作る…テストファーストを求められたら」は 1 つの branch を 2 回書いている。ただしうちのトリガーフレーズは**ユーザーが実際に打つ表記ゆれ**（日英・スラッシュ形）を守る役目も持つので、実在する言い換えは残してよい — 目安は「同じ branch の言い換えは 3 つまで。増やすなら evals にケースを足して回帰で守る」
 - **本文にある説明を繰り返さない**: 設計背景・内部手順は description に書かない（context-budget warning の常連）
 
-**command と同名の skill では、この description は起動に使われない**（GitHub issue #206）。スキル選択の一覧に載るのは `commands/<name>.md` の description のほうで、`SKILL.md` 側は載らない。同名スキル（本リポジトリでは 9 プラグイン 26 個）で description を設計するときは、**この節の指針を `commands/*.md` の description に適用し、`SKILL.md` 側は対で揃える**。どちらが読まれているかは router 本人に引用させて確かめる（`claude -p '... 見えている description を一字一句そのまま引用して' --permission-mode plan`）。
+**command と同名の skill では、この description は起動に使われない**（GitHub issue #206）。スキル選択の一覧に載るのは `commands/<name>.md` の description のほうで、`SKILL.md` 側は載らない。同名スキル（本リポジトリでは 11 プラグイン 35 個）で description を設計するときは、**この節の指針を `commands/*.md` の description に適用し、`SKILL.md` 側は対で揃える**。どちらが読まれているかは router 本人に引用させて確かめる（`claude -p '... 見えている description を一字一句そのまま引用して' --permission-mode plan`）。
 
 ## 情報階層と progressive disclosure
 

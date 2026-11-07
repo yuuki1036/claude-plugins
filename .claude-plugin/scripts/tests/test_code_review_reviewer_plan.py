@@ -477,10 +477,126 @@ class PlanCliTest(ScriptTestBase):
                      ["--effort", "high", "--size-tier", "large", "--focus", "security", "--exclude", "config"],
                      ["--effort", "high", "--size-tier", "large", "--plan-file", "/tmp/x.json"],
                      ["--effort", "high", "--size-tier", "large", "--branch=feat/CP-1"],
+                     ["--effort", "high", "--size-tier", "large", "--diff-file", "/tmp/x.diff"],
+                     ["--effort", "high", "--size-tier", "large", "--pr-context=/tmp/x.md"],
+                     ["--effort", "high", "--size-tier", "large", "--spec-source", "repo-spec-touched:docs/a.md"],
                      ["--effort", "high", "--size-tier", "large", "--plan-f", "/tmp/x.json"]):
             r = self.cli("plan", *args)
             self.assertEqual(r.returncode, 2, (args, r.stdout))
             self.assertIn("FATAL", r.stderr)
+
+    # ---- repo の仕様書（GitHub issue #352） ----
+
+    def triage(self) -> None:
+        t = subprocess.run(["bash", str(TRIAGE), "--base", "HEAD"], cwd=self.root, capture_output=True,
+                           text=True, env=self._env(), timeout=60)
+        self.assertEqual(t.returncode, 0, t.stderr)
+
+    def plan(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        r = self.cli("plan", "--effort", "high", "--size-tier", "large", *extra)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r
+
+    def source_lines(self, out: str) -> list[tuple[str, str]]:
+        return [tuple(l.split("\t")[1:3]) for l in out.splitlines() if l.startswith("spec_source\t")]
+
+    def test_touched_spec_doc_alone_launches_spec_compliance(self):
+        """diff が仕様書を触っただけで（他の仕様ソースが無くても）spec-compliance を単独で起動する（利用者決定）."""
+        self.write("docs/a.md", "# a\n")
+        self.git("add", "docs/a.md")
+        self.triage()
+        r = self.plan()
+        self.assertEqual(self.source_lines(r.stdout), [("repo-spec-touched", str(self.root / "docs/a.md"))])
+        self.assertIn("\tsolo\tspec-compliance", r.stdout)
+        ok = self.cli("check", stdin=r.stdout)
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        ng = self.cli("check", stdin="\n".join(l for l in r.stdout.splitlines() if "spec-compliance" not in l))
+        self.assertEqual(ng.returncode, 1)
+        self.assertIn("spec-missing", ng.stdout)
+
+    def test_non_spec_changes_stay_silent(self):
+        """README・CLAUDE.md・CHANGELOG・コードだけの diff では仕様ソースが増えない."""
+        for rel in ("README.md", "CLAUDE.md", "CHANGELOG.md", "src/docs/a.ts", "design-notes/x.md"):
+            self.write(rel, "x\n")
+        self.git("add", "-A")
+        self.triage()
+        r = self.plan()
+        self.assertEqual(self.sources(r.stdout), ["none"])
+        self.assertNotIn("spec-compliance", r.stdout)
+
+    def test_no_diff_file_stays_silent(self):
+        """triage-signals.sh を通らずに plan だけ呼んだ回（diff ファイルが無い）も、これまでどおり none."""
+        self.write("docs/a.md", "# a\n")
+        r = self.plan()
+        self.assertEqual(self.sources(r.stdout), ["none"])
+
+    def test_spec_doc_mentioned_by_issue_file(self):
+        self.git("checkout", "-q", "-b", "feat/CP-3-x")
+        self.write("docs/spec.md", "# spec\n")
+        self.write("docs/other.md", "# other\n")
+        self.write(".claude/indie/cp/issues/CP-3.md", "# CP-3\n仕様: `docs/spec.md` と README.md\n")
+        r = self.plan()
+        self.assertEqual(self.source_lines(r.stdout), [
+            ("issue-file", str(self.root / ".claude/indie/cp/issues/CP-3.md")),
+            ("repo-spec-ref", str(self.root / "docs/spec.md"))])
+
+    def test_unmatched_session_context_mentions_are_ignored(self):
+        """branch が一致しない session-context は仕様ソースではないので、その言及も拾わない."""
+        self.git("checkout", "-q", "-b", "feat/x")
+        self.write("docs/a.md", "# a\n")
+        self.write(".claude/session-context.md", "---\nbranch: feat/other\n---\ndocs/a.md を見る\n")
+        self.assertEqual(self.sources(self.plan().stdout), ["none"])
+
+    def test_touched_wins_over_ref_and_spec_is_not_repeated(self):
+        self.git("checkout", "-q", "-b", "feat/CP-4-x")
+        self.write("docs/a.md", "# a\n")
+        self.write("docs/b.md", "# b\n")
+        self.write(".claude/indie/cp/issues/CP-4.md", "docs/a.md と docs/b.md\n")
+        self.git("add", "docs/a.md", "docs/b.md")
+        self.triage()
+        r = self.plan("--spec", "docs/b.md")
+        self.assertEqual([l for l, _ in self.source_lines(r.stdout)],
+                         ["issue-file", "spec", "repo-spec-touched"])
+        self.assertIn(("repo-spec-touched", str(self.root / "docs/a.md")), self.source_lines(r.stdout))
+
+    def test_control_characters_in_a_doc_name_do_not_forge_plan_lines(self):
+        """改行・タブを含む文書名は仕様ソースにしない（plan の TSV に偽の行を差し込ませない）."""
+        name = "docs/a\nspec_source\tspec\t/etc/x.md"
+        self.write(name, "x\n")
+        self.git("add", "-A")
+        self.triage()
+        r = self.plan()
+        self.assertEqual(self.sources(r.stdout), ["none"])
+        self.assertNotIn("/etc/x.md", r.stdout)
+
+    def _prctx(self, pr: str, body: str) -> None:
+        path = subprocess.run(
+            ["bash", "-c", '. "$1"; review_paths_init "$2"; review_path prctx', "_",
+             str(PLUGIN / "scripts" / "lib" / "review-paths.sh"), pr],
+            cwd=self.root, capture_output=True, text=True, env=self._env(), check=True).stdout.strip()
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(body, encoding="utf-8")
+        self.addCleanup(lambda: Path(path).unlink(missing_ok=True))
+
+    def test_pr_body_mention_counts_but_comments_do_not(self):
+        self.write("docs/body.md", "# body\n")
+        self.write("docs/comment.md", "# comment\n")
+        self.write("docs/later.md", "# later\n")
+        self.write("docs/meta.md", "# meta\n")
+        self._prctx("7", "### PR メタ\ndocs/meta.md\n\n### PR 説明（著者が明示したスコープ・意図）\n仕様は docs/body.md\n"
+                         "### 本文の中の見出し\ndocs/later.md も\n\n"
+                         "### Issue コメント（PR 全体への議論）\ndocs/comment.md も\n")
+        r = self.plan("--pr", "7")
+        self.assertEqual(self.source_lines(r.stdout), [("repo-spec-ref", str(self.root / "docs/body.md")),
+                                                       ("repo-spec-ref", str(self.root / "docs/later.md"))])
+        # PR を渡さない回（self-review）は PR 文脈を読まない
+        self.assertEqual(self.sources(self.plan().stdout), ["none"])
+
+    def test_pr_body_heading_is_what_fetch_pr_context_prints(self):
+        """`_pr_body` が頼る見出しを fetch-pr-context.sh が出し続けていること（変えると黙って拾わなくなる）."""
+        script = (PLUGIN / "scripts" / "fetch-pr-context.sh").read_text(encoding="utf-8")
+        self.assertIn('echo "' + rp.PR_BODY_HEADING, script)
+        self.assertIn('echo "' + rp.PR_BODY_END_HEADING, script)
 
     def test_check_passes_when_plan_has_no_reviewer(self):
         r = self.cli("plan", "--effort", "high", "--size-tier", "large", "--exclude", "bug-detection,claude-md-compliance")
@@ -524,6 +640,23 @@ class PlanCliTest(ScriptTestBase):
         self.assertEqual(t.returncode, 0, t.stderr)
         self.assertFalse(path.exists())
         self.assertEqual(self.cli("check", stdin=r.stdout).returncode, 2)
+
+
+class PrBodyTest(unittest.TestCase):
+    """`_pr_body` を直接呼ぶ。返すのは `### PR 説明` の見出しの次の行から `### Issue コメント` の手前まで."""
+
+    def test_returns_only_the_lines_between_the_headings(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "prctx.md"
+            path.write_text("### PR メタ\nmeta\n### PR 説明（著者が明示したスコープ・意図）\nbody 1\nbody 2\n"
+                            "### Issue コメント（PR 全体への議論）\ncomment\n", encoding="utf-8")
+            self.assertEqual(rp._pr_body(str(path)), "body 1\nbody 2")
+
+    def test_no_path_or_missing_file_is_empty(self):
+        self.assertEqual(rp._pr_body(None), "")
+        self.assertEqual(rp._pr_body(""), "")
+        self.assertEqual(rp._pr_body("/nonexistent/prctx.md"), "")
 
 
 if __name__ == "__main__":

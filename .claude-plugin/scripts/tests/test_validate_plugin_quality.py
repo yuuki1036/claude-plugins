@@ -1630,6 +1630,17 @@ class ByteReplicaSyncTest(unittest.TestCase):
             self.assertIn((".claude-plugin/lib/plugin-enabled.sh", replica), pairs)
 
 
+    def test_real_config_still_declares_the_doc_locate_pairs(self):
+        """文書の所在検出の複製（code-review / issue-workflow）も正本と突き合わせ続ける."""
+        real = _load_module()
+        pairs = {
+            (c.relative_to(real.ROOT).as_posix(), r.relative_to(real.ROOT).as_posix())
+            for c, rs in real.BYTE_REPLICAS.items() for r in rs
+        }
+        for replica in ("code-review/scripts/lib/doc_locate.py", "issue-workflow/scripts/lib/doc_locate.py"):
+            self.assertIn((".claude-plugin/lib/doc_locate.py", replica), pairs)
+
+
 class BackendDetectSyncTest(unittest.TestCase):
     """issue-workflow の Phase 0 区間同期. 消費サイトは走査で集めるので、最低件数の下限も固定する."""
 
@@ -1783,6 +1794,70 @@ class CommentRuleSyncTest(unittest.TestCase):
         got = v._extract_marked_region(self.root / "CLAUDE.md", v.COMMENT_RULE_START,
                                        v.COMMENT_RULE_END, "t", [])
         self.assertEqual(got, self.REGION)
+
+
+class DocSyncRuleSyncTest(unittest.TestCase):
+    """文書整合の検出規則の区間同期（GitHub issue #352 / #365）.
+
+    比較の本体は comment-rule と共有しているので、ここでは「正本と 2 つの消費サイトを見ているか」と
+    「COMMENT-RULE の区間を取り違えないか」を固定する。片側だけ直すと、レビューと単独のチェックで
+    検出する範囲が静かに食い違う。
+    """
+
+    REGION = "1. 決定の未反映\n2. 同じ節の古い説明"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("ROOT", "CANONICAL_DOC_SYNC_RULE", "DOC_SYNC_RULE_CONSUMERS"):
+            self.addCleanup(lambda n=name, o=getattr(v, name): setattr(v, n, o))
+        v.ROOT = self.root
+        v.CANONICAL_DOC_SYNC_RULE = self.root / "lib" / "doc-sync-rule.md"
+        v.DOC_SYNC_RULE_CONSUMERS = [self.root / "spec.md", self.root / "SKILL.md"]
+
+    def _block(self, region: str | None = None) -> str:
+        body = self.REGION if region is None else region
+        return "\n".join(["<!-- DOC-SYNC:START -->", *body.split("\n"), "<!-- DOC-SYNC:END -->"])
+
+    def _setup(self, *, spec: str | None = None, skill: str | None = None) -> list[str]:
+        _write(self.root, "lib/doc-sync-rule.md", "# 正本\n\n" + self._block() + "\n")
+        _write(self.root, "spec.md", "```\n" + (spec if spec is not None else self._block()) + "\n```\n")
+        if skill is not False:
+            _write(self.root, "SKILL.md", "# doc-sync\n\n" + (skill if skill is not None else self._block()) + "\n")
+        errors: list[str] = []
+        v.check_doc_sync_rule_sync(errors)
+        return errors
+
+    def test_identical_regions_pass(self):
+        self.assertEqual(self._setup(), [])
+
+    def test_divergence_in_either_consumer_is_caught(self):
+        for kw in ("spec", "skill"):
+            with self.subTest(kw):
+                errors = self._setup(**{kw: self._block("1. 決定の未反映")})
+                self.assertEqual(len(errors), 1, errors)
+                self.assertIn("doc-sync-rule-sync", errors[0])
+
+    def test_comment_rule_markers_do_not_count_as_the_region(self):
+        """別の規約の区間（COMMENT-RULE）を置いても、DOC-SYNC の区間が無ければ欠落として止める."""
+        other = "<!-- COMMENT-RULE:START -->\n" + self.REGION + "\n<!-- COMMENT-RULE:END -->"
+        errors = self._setup(skill=other)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("SKILL.md", errors[0])
+
+    def test_missing_consumer_is_an_error(self):
+        errors = self._setup(skill=False)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("consumer missing", errors[0])
+
+    def test_real_config_points_at_both_plugins(self):
+        real = _load_module()
+        consumers = {c.relative_to(real.ROOT).as_posix() for c in real.DOC_SYNC_RULE_CONSUMERS}
+        self.assertEqual(consumers, {"code-review/references/prompts/focus/spec-compliance.md",
+                                     "issue-workflow/skills/doc-sync/SKILL.md"})
+        self.assertEqual(real.CANONICAL_DOC_SYNC_RULE.relative_to(real.ROOT).as_posix(),
+                         ".claude-plugin/lib/doc-sync-rule.md")
 
 
 class CommentPolishWiringTest(unittest.TestCase):

@@ -15,14 +15,14 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [adr-keeper](#adr-keeper) | 0.4.3 | 1 | 1 | - | PreToolUse, SessionStart | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.7 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
 | [harness-keeper](#harness-keeper) | 2.0.2 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
-| [code-review](#code-review) | 2.165.4 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
+| [code-review](#code-review) | 2.166.0 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.7.1 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
-| [dev-workflow](#dev-workflow) | 1.42.1 | 4 | 7 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
+| [dev-workflow](#dev-workflow) | 1.43.0 | 4 | 7 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
 | [doc-freshness](#doc-freshness) | 0.5.5 | 1 | 1 | - | PostToolUse, SessionStart | - | frontmatter による doc 鮮度機械強制 |
 | [failure-journal](#failure-journal) | 0.10.0 | 2 | 2 | - | SessionStart, PostCompact | - | 再発失敗の fingerprint 集計・retro 還流 |
-| [feature-dev](#feature-dev) | 2.27.7 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
+| [feature-dev](#feature-dev) | 2.28.0 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.10.0 | - | - | - | PreToolUse, PostToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行・公開先への業務情報送信・zsh で壊れる書き方・gh run list --commit への短縮 SHA・知らない間のブランチ切り替え後の git 書き込みを機械ブロック |
-| [issue-workflow](#issue-workflow) | 1.17.3 | 13 | 13 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
+| [issue-workflow](#issue-workflow) | 1.19.0 | 14 | 14 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [living-spec-workflow](#living-spec-workflow) | 0.7.3 | 2 | 2 | - | - | - | **deprecated → project-hub** |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.4.0 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
@@ -106,7 +106,7 @@ Git 操作・PR 作成・UI 動作確認・バグ診断・git worktree 並列環
 
 ### issue-workflow
 Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local: `.claude/indie/` / linear: `.claude/linear/`）をデータディレクトリの存在で自動判定し、単一のスキル群で両方を扱う。旧 indie 専用機能（discover / retrospective / scope_size）は両 backend に開放。knowledge に却下記録（`kind: rejected`）を持ち、人間が見送った提案の再提案を discover が概念類似照合で抑止する。
-- **commands / skills**（同名ペア 13）: `init`, `start`, `issue-create`, `issue-design`, `issue-maintain`, `follow-up`, `knowledge`, `knowledge-lint`, `maintain`, `discover`, `retrospective`, `dashboard`（linear 専用）, `linear-maintain`（linear 専用）
+- **commands / skills**（同名ペア 14）: `init`, `start`, `issue-create`, `issue-design`, `issue-maintain`, `follow-up`, `knowledge`, `knowledge-lint`, `maintain`, `discover`, `retrospective`, `doc-sync`（文書・コメント・実装の整合。文書とコメントの側は承認なしで直す。軽量フロー・feature-dev・git-commit-helper のコミット前と completed 前に回る）, `dashboard`（linear 専用）, `linear-maintain`（linear 専用）
 - **agents**: `code-context`, `doc-resolver`, `discover-verifier`, `linear-sync`（linear 専用）
 - **mod**: 作業中の Issue（ID・タイトル・状態・タスクの進み・ブランチ）をプロンプトの上の帯に出す（mods が有効な端末・Desktop）
 - **hooks**: SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse
@@ -170,6 +170,8 @@ PJ の決定（living spec: repo の `.claude/living-specs/<slug>.md`。旧 livi
 | marketplace マニフェスト | `.claude-plugin/marketplace.json` | plugin.json から派生（SSoT 検証） |
 | hook 共通ラッパー（正本） | `.claude-plugin/lib/safe-hook.sh` | 各プラグインへ byte-identical 複製 |
 | spec ルーティング 3 軸コア（正本） | `.claude-plugin/lib/routing-axes.md` | ROUTING-AXES 区間を spec-advisor routing-rubric / issue-workflow issue-create に複製（dedent 比較で同期検証） |
+| 文書の所在検出（正本） | `.claude-plugin/lib/doc_locate.py` | code-review / issue-workflow の `scripts/lib/` へ byte-identical 複製（spec-compliance の照合元と doc-sync が使う） |
+| 文書整合の検出規則（正本） | `.claude-plugin/lib/doc-sync-rule.md` | DOC-SYNC 区間を code-review の spec-compliance / issue-workflow の doc-sync に複製（dedent 比較で同期検証） |
 | JSON Schema | `.claude-plugin/schema/` | plugin.json / marketplace.json / hooks.json |
 | SSoT 検証 | `.claude-plugin/scripts/validate-ssot.sh`, `validate_ssot.py` | バージョン・description・_requirements 同期 |
 | 機械層（検査の並びの正本） | `.claude-plugin/scripts/machine-layer.sh` | exit 0 緑 / 1 検出 / 2 判定不能。Stop hook と self-review 前段が呼ぶ |

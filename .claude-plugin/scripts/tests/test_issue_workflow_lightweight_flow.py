@@ -45,10 +45,11 @@ def between(text: str, start: str, end: str) -> str:
 def step(name: str) -> str:
     """見出しが `### Step <N>: <name>` の節を、次の `### Step` の見出しの手前まで返す."""
     flow = FLOW.read_text(encoding="utf-8")
-    m = re.search(rf"(?m)^### Step \d+: {re.escape(name)}", flow)
+    m = re.search(rf"(?m)^### Step \d+(?:\.\d+)?: {re.escape(name)}", flow)
     if m is None:
         raise AssertionError(f"軽量フローに「{name}」の Step が無い")
-    nxt = re.compile(r"(?m)^### Step \d+:").search(flow, m.end())
+    # 小数の Step（5.5）も節の切れ目に数える（数えないと前の Step の節に吸収される）
+    nxt = re.compile(r"(?m)^### Step \d+(?:\.\d+)?:").search(flow, m.end())
     return flow[m.start():nxt.start() if nxt else len(flow)]
 
 
@@ -162,6 +163,85 @@ class ClosingLineTest(unittest.TestCase):
         branch = between(walkthrough_step(), "- `あり`", "\n- `なし`")
         self.assertIn("`次の一手:` が `決定的な検証` で始まるなら、Step 2（検証）だけ", branch)
         self.assertIn("それ以外なら Step 2（検証）と Step 4（self-review）をもう一度通す", branch)
+
+
+class DocSyncStepTest(unittest.TestCase):
+    """Step 5.5 は読み合わせの後・コミットの前で doc-sync を呼び、Step 8 と issue-maintain が同じ語で二重実行を省く（GitHub issue #365）."""
+
+    MAINTAIN = REPO / "issue-workflow" / "skills" / "issue-maintain"
+    DOC_SYNC = REPO / "issue-workflow" / "skills" / "doc-sync" / "SKILL.md"
+
+    def test_step_5_5_sits_between_walkthrough_and_commit(self):
+        heads = re.findall(r"(?m)^### Step (\d+(?:\.\d+)?): (\S+)", FLOW.read_text(encoding="utf-8"))
+        order = [n for n, _ in heads]
+        self.assertIn("5.5", order)
+        i = order.index("5.5")
+        self.assertEqual((heads[i - 1][1], heads[i + 1][1]), ("読み合わせ（review-guide）", "コミット"))
+
+    def test_step_5_5_calls_doc_sync_with_base_and_branches_on_result(self):
+        body = step("文書整合（doc-sync）")
+        self.assertIn("`issue-workflow:doc-sync` を `--base", body)
+        for value in ("`skipped`", "`clean`", "`findings`"):
+            self.assertIn(value, body)
+
+    def test_result_values_exist_in_doc_sync(self):
+        skill = self.DOC_SYNC.read_text(encoding="utf-8")
+        self.assertIn("DOC_SYNC_RESULT=<clean | findings | skipped>", skill)
+
+    def test_record_word_and_flag_spelling_agree(self):
+        """記録語（`doc-sync:`）と引数の綴りがずれると、ガードが黙って二重に回るか不発になる."""
+        guards = (self.MAINTAIN / "references" / "detection-guards.md").read_text(encoding="utf-8")
+        self.assertIn("`doc-sync: <結果>`", step("Issue 更新"))
+        self.assertIn("`doc-sync:` の行が**無い**", guards)
+        self.assertIn("`issue-workflow:doc-sync --issue", guards)
+        self.assertIn("`--report-only`", self.DOC_SYNC.read_text(encoding="utf-8"))
+
+    def test_doc_sync_fixes_docs_without_approval(self):
+        """コードの変更で要る文書の更新は承認を取らずに直す（2026-11-07 決定）。直した件数を呼び出し元が読む."""
+        skill = self.DOC_SYNC.read_text(encoding="utf-8")
+        phase4 = skill[skill.index("## Phase 4"):]
+        self.assertIn("**承認を取らずに** Edit で直す", phase4)
+        self.assertIn("DOC_SYNC_FIXED=<直した件数>", phase4)
+        self.assertNotIn("適用する番号", skill)
+        # 承認を取らないので、repo のスクリプトを変更したばかりの回は確認なしで走らせない
+        self.assertIn("回さず、`doc-checks: 未実行（doc-checks.sh 自体が変更に入っている）`", skill)
+        for consumer in (step("文書整合（doc-sync）"),
+                         (self.MAINTAIN / "references" / "detection-guards.md").read_text(encoding="utf-8")):
+            self.assertIn("`DOC_SYNC_FIXED=` が 1 以上", consumer)
+        # completed にするときも直すので、report-only で呼ばない
+        self.assertNotIn("doc-sync --report-only", (self.MAINTAIN / "references" / "detection-guards.md").read_text(encoding="utf-8"))
+        self.assertNotIn("`--report-only` で呼", (self.MAINTAIN / "SKILL.md").read_text(encoding="utf-8"))
+
+
+class DocSyncOtherCallersTest(unittest.TestCase):
+    """軽量フローの外のコミット（feature-dev・git-commit-helper）でも、コミットの前に doc-sync を回す（2026-11-07 決定）."""
+
+    FEATURE_DEV = REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
+    COMMIT = REPO / "dev-workflow" / "skills" / "git-commit-helper" / "SKILL.md"
+
+    def test_feature_dev_runs_doc_sync_before_commit_when_issue_workflow_is_enabled(self):
+        text = self.FEATURE_DEV.read_text(encoding="utf-8")
+        phase7 = text[text.index("## Phase 7"):]
+        block = phase7[phase7.index("**コミットの前に文書整合を通す**"):phase7.index("   - 2 回目の self-review の後は")]
+        self.assertIn('plugin-enabled.sh" issue-workflow` が `1` なら', block)
+        self.assertIn("`issue-workflow:doc-sync` を `--base <BASE>`", block)
+        self.assertIn("`DOC_SYNC_FIXED=` が 1 以上", block)
+        self.assertIn("`doc-sync: <DOC_SYNC_RESULT の値>`", block)
+        # コミットの案内（dev-workflow の skill で行う）より前にある
+        self.assertLess(phase7.index("**コミットの前に文書整合を通す**"), phase7.index("**コミット・PR は dev-workflow の skill で行う**"))
+
+    def test_git_commit_helper_runs_doc_sync_between_review_offer_and_split(self):
+        text = self.COMMIT.read_text(encoding="utf-8")
+        i5, i7, i2 = (text.index(h) for h in ("### 1.5 ", "### 1.7 ", "### 2. "))
+        self.assertLess(i5, i7)
+        self.assertLess(i7, i2)
+        block = text[i7:i2]
+        self.assertIn("`issue-workflow:doc-sync`", block)
+        self.assertIn("使える skill に `issue-workflow:doc-sync` が無い", block)
+        # 軽量フロー・feature-dev は自分で回すので、そこから呼ばれた回は二重に回さない
+        self.assertIn("呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動された", block)
+        self.assertIn("`DOC_SYNC_FIXED=` が 1 以上", block)
+
 
 
 class StepCountTest(unittest.TestCase):
