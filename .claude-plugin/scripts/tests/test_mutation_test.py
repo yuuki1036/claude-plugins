@@ -137,6 +137,32 @@ class BuildMutantsTest(unittest.TestCase):
         p = self._file("c.py", "x = 1 if y >= 2 else 0  # mutation-ok: 等価変異\n")
         self.assertEqual(self._rules(p), [])
 
+    def test_marked_line_collects_what_it_would_have_yielded(self):
+        """印の行で外した変異を、印が無い行と同じ規則で集める（#363）."""
+        p = self._file("c.py", "x = 1 if y >= 2 else 0  # mutation-ok: 等価変異\n")
+        bare = self._file("bare.py", "x = 1 if y >= 2 else 0\n")
+        skipped: dict = {}
+        self.assertEqual(mt.build_mutants({p: {1}}, skipped=skipped), [])
+        got = [m.rule for m in skipped[(p, 1)]]
+        self.assertEqual(got, [">= を > に（境界を 1 つ狭める）", "条件式の条件を反転（if → if not）"])
+        self.assertEqual(got, self._rules(bare))
+
+    def test_marked_line_without_hits_is_kept_with_zero(self):
+        """規則に当たらない印の行も 0 個として残す。印の理由文の中は数えない."""
+        p = self._file("c.py", "x = 1  # mutation-ok: a >= b and c\n")
+        s = self._file("c.sh", "x=1  # mutation-ok: a -ge b && c\n")
+        skipped: dict = {}
+        mt.build_mutants({p: {1}, s: {1}}, skipped=skipped)
+        self.assertEqual(skipped, {(s, 1): [], (p, 1): []})
+
+    def test_comment_only_marker_is_not_collected(self):
+        """コメントだけの行の印は集めない（直前の行に置いた印は次の行に効かない）."""
+        p = self._file("c.py", "# mutation-ok: 理由\nx = 1 >= 2\n")
+        skipped: dict = {}
+        got = [(m.lineno, m.rule) for m in mt.build_mutants({p: {1, 2}}, skipped=skipped)]
+        self.assertEqual(got, [(2, ">= を > に（境界を 1 つ狭める）")])
+        self.assertEqual(skipped, {})
+
     def test_bash_argument_guard_is_covered(self):
         """`while [ $# -gt 0 ]` は bash の fail-open ゲートの最頻形（実測で 0 個だった）."""
         p = self._file("d.sh", "while [ $# -gt 0 ]; do\n  shift\ndone\n")
@@ -945,6 +971,34 @@ class BudgetMainTest(unittest.TestCase):
         self.assertIn("生存 2", out)
         self.assertNotIn("予算", out)
 
+    def test_marked_lines_are_listed_after_the_tally(self):
+        """印の行で外した変異の数と規則を、集計行の後ろに行ごとに出す（#363）."""
+        (self.root / "t.py").write_text(
+            "x = 1 > 2\ny = 3 < 4  # mutation-ok: 等価\nz = 5  # mutation-ok: 理由\n", encoding="utf-8")
+        rc, out = self._main()
+        self.assertEqual(rc, 0)
+        self.assertIn("生存 1 /", out, "印の行の変異を実行している")
+        self.assertIn("\n印（# mutation-ok:）で外した: 1 個（2 行）\n"
+                      "  t.py:2  1 個（< を <= に（境界を 1 つ広げる））\n"
+                      "  t.py:3  0 個\n", out)
+        self.assertLess(out.index("殺した"), out.index("印（"))
+
+    def test_no_marker_prints_nothing(self):
+        _, out = self._main()
+        self.assertNotIn("印（", out)
+
+    def test_marked_lines_are_listed_on_the_zero_mutant_return(self):
+        """変異 0 個で早期に終わる回も、印で外した数を出す（全行に印があると変異 0 個になる）."""
+        (self.root / "t.py").write_text("x = 1 > 2  # mutation-ok: 等価\n", encoding="utf-8")
+        rc, out = self._main()
+        self.assertEqual(rc, 0)
+        self.assertIn("1 行のうち変異規則に当たった行 0（ほかに印で外した行 1）\n", out)
+        self.assertIn("変異 0 個: 対象の行はあるが、当たった変異はすべて印で外した（内訳は下）。", out)
+        self.assertNotIn("どの変異規則にも当たらなかった", out)
+        self.assertIn("印（# mutation-ok:）で外した: 1 個（1 行）\n"
+                      "  t.py:1  1 個（> を >= に（境界を 1 つ広げる））\n", out)
+        self.assertNotIn("殺した", out)
+
     def test_the_baseline_reaps_what_its_test_command_left(self):
         """baseline もグループごと回す。取りまとめ役の単位は別の python で、`run` では取りまとめ役しか殺せない（#318）."""
         pid_file = self.root / "leaked.pid"
@@ -1070,6 +1124,26 @@ class SkipKeysTest(unittest.TestCase):
         rc, s = self._summary()
         self.assertEqual((s["schema"], s["keys_all"], s["keys_executed"], s["skipped_done"]),
                          (2, sorted(keys), sorted(keys), 0))
+
+    def test_marked_line_mutants_stay_out_of_the_summary(self):
+        """印の行の変異をキーにも件数にも入れない（入れると実行されないキーが持ち越しに残り続ける / #363）."""
+        keys = self._keys()
+        (self.root / "t.py").write_text("x = 1 > 2\ny = 3 < 4  # mutation-ok: 等価\n", encoding="utf-8")
+        rc, s = self._summary()
+        self.assertEqual((s["generated"], s["executed"], s["keys_all"], s["keys_executed"]),
+                         (1, 1, [keys[0]], [keys[0]]))
+
+    def test_marked_lines_are_listed_when_everything_is_done(self):
+        """済みで全件除外して早期に終わる回も、印で外した数を出す."""
+        keys = self._keys()
+        (self.root / "t.py").write_text(
+            "x = 1 > 2\ny = 3 < 4\nz = 5 >= 6  # mutation-ok: 等価\n", encoding="utf-8")
+        (self.root / "done.txt").write_text("\n".join(keys), encoding="utf-8")
+        rc, out = self._main("--skip-keys", str(self.root / "done.txt"))
+        self.assertEqual(rc, 0)
+        self.assertIn("未実行の変異は無い", out)
+        self.assertIn("印（# mutation-ok:）で外した: 1 個（1 行）\n"
+                      "  t.py:3  1 個（>= を > に（境界を 1 つ狭める））\n", out)
 
     def test_done_keys_are_skipped(self):
         keys = self._keys()
@@ -1629,7 +1703,7 @@ class RunReportTest(unittest.TestCase):
         rc, out, err = self._main("--test-cmd", "false", "--strict")
         self.assertEqual(rc, 0, err)
         self.assertIn("1 行のうち変異規則に当たった行 0", out)
-        self.assertIn("変異 0 個", out)
+        self.assertIn("変異 0 個: 対象の行はあるが、どの変異規則にも当たらなかった。", out)
         self.assertIn("未計測", out)
         self.assertNotIn("殺した", out)
         self.assertNotIn("失敗している", err, "変異が無いのに baseline を回している")
