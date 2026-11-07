@@ -175,7 +175,7 @@ def _assign(cands, prior, effort, main_cap, total_cap, delta):
             else:
                 dropped.append(k)
     taken = {k for _, keys in rows for k in keys} | set(dropped)
-    rest = [k for k in pool if k not in taken and k not in SOLO
+    rest = [k for k in pool if k not in taken and k not in SOLO  # mutation-ok: and を or にしても同じ。pool の単独維持の観点は上のループで必ず taken に入り、taken の非単独維持は設計バンドルの観点だけで次行が外す
             and not (design_effort and k in DESIGN)]
 
     for k in held:
@@ -188,7 +188,7 @@ def _assign(cands, prior, effort, main_cap, total_cap, delta):
     if rest:
         if slots <= 0:
             dropped.extend(rest)
-        elif len(rest) <= slots:
+        elif len(rest) <= slots:  # mutation-ok: <= を < にしても同じ。残りの観点数と枠数が等しいと、下の均等割りも 1 観点ずつの solo になる
             for k in rest:
                 take("solo", [k])
         else:
@@ -269,7 +269,7 @@ def compute_plan(effort, size_tier, activated=(), prior=(), delta=False, focus=(
                 reasons[k] = "overflow"
 
     cap_source = "scope" if scope != "full" else (
-        "size" if size_cap is not None and size_cap < effort_cap else "effort")
+        "size" if size_cap is not None and size_cap < effort_cap else "effort")  # mutation-ok: < を <= にしても同じ。規模キャップ（3 / 5）と effort 上限（4 / 6 / 10）に等しくなる組が無い
     explorer_size = SIZE_CAP["explorer"].get(size_tier)
     specialist_size = SIZE_CAP["specialist"].get(size_tier)
 
@@ -398,7 +398,7 @@ def check_table(plan, rows, piggyback, dropped):
 
     for r in rows:
         keys = set(r["keys"])
-        is_design = design_effort and len(keys) > 1 and keys <= DESIGN
+        is_design = design_effort and len(keys) > 1 and keys <= DESIGN  # mutation-ok: > を >= にしても同じ。1 観点の行は solo-bundled にも over-bundled にも当たらず、is_design の値が結果に効かない
         if len(keys) > 1 and keys & SOLO and not is_design:
             ng.append(("solo-bundled", "%s: %s" % (r["id"], ",".join(r["keys"]))))
         limit = DESIGN_BUNDLE_MAX if is_design else BUNDLE_MAX
@@ -564,7 +564,7 @@ def detect_spec_sources(roots, branch, issue_ids, specs, diff_text="", pr_body="
     return sources, missing
 
 
-def _keys_arg(value, name, allow_spec=True):
+def _keys_arg(value, name, allow_spec=True):  # mutation-ok: 呼び出しは --activated の 1 箇所だけで、allow_spec=False を明示して渡す（既定値は使われない）
     keys = _csv(value)
     bad = [k for k in keys if k not in FOCUS_KEYS]
     if bad:
@@ -617,7 +617,7 @@ def _plan_main(ns):
     rc = 0
     try:
         with open(ns.plan_file, "w", encoding="utf-8") as f:
-            json.dump(plan, f, ensure_ascii=False)
+            json.dump(plan, f, ensure_ascii=False)  # mutation-ok: 読むのは check の json.load だけで、妥当な Unicode 文字列ならエスケープの有無によらず同じ値に戻る
     except OSError as e:
         print("WARN: plan を書けない（check が使えない）: %s" % e, file=sys.stderr)
         rc = 1
@@ -656,7 +656,7 @@ def main(argv=None):
     p.add_argument("--main-root", default="")
     p.add_argument("--branch", default="")
     p.add_argument("--effort", default="")
-    p.add_argument("--size-tier", required=True)
+    p.add_argument("--size-tier", required=True)  # mutation-ok: 省いても _plan_main が SIZE_TIERS で弾き、FATAL 行と exit 2 になる（文言は違う）
     p.add_argument("--activated", default="")
     p.add_argument("--prior", default="")
     p.add_argument("--delta", action="store_true")

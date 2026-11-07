@@ -32,6 +32,9 @@ SCRIPT = REPO / "issue-workflow" / "scripts" / "branch-setup.sh"
 START = REPO / "issue-workflow" / "skills" / "start" / "SKILL.md"
 START_COMMAND = REPO / "issue-workflow" / "commands" / "start.md"
 EXISTING_DOC = REPO / "issue-workflow" / "skills" / "start" / "references" / "existing-work.md"
+BRANCH_DOC = REPO / "issue-workflow" / "references" / "branch-setup.md"
+ISSUE_CREATE = REPO / "issue-workflow" / "skills" / "issue-create" / "SKILL.md"
+FOLLOW_UP = REPO / "issue-workflow" / "skills" / "follow-up" / "SKILL.md"
 ENV = scrub()
 #: existing が候補ごとに出すキー（この順で 1 件 9 行）
 KEYS = ("worktree", "branch", "ahead", "dirty", "matched", "current", "prunable", "locked", "head")
@@ -1049,6 +1052,62 @@ class StartNewIntentContractTest(unittest.TestCase):
         self.assertIsNotNone(redecide, "既存を捨てたいと言われた回の決め直しが無い")
         self.assertIn("こちらで消さない", redecide)
         self.assertIn("済ませた後の /start で決め直す", redecide)
+
+
+class SkipChoiceContractTest(unittest.TestCase):
+    """「スキップ」を選んだ回も、書いたファイルの置き場所を伝える（GitHub issue #392）.
+
+    3 つの選択肢のうち「スキップ」だけ DATA_DIR の扱いが抜けていた。手で切った worktree に
+    Issue ファイルが入らず、counter.txt も古い版のまま作業が進む。
+    """
+
+    def test_branch_doc_tells_where_the_written_files_are(self):
+        sec = section(BRANCH_DOC.read_text(encoding="utf-8"), "## 2.", "## 3.")
+        self.assertNotIn("「スキップ」→ 何もしない", sec)
+        self.assertIn("「スキップ」→ ブランチは作らず、下の「スキップした回の案内」を出して終わる", sec)
+        guide = sec[sec.index("**スキップした回の案内**"):]
+        for phrase in ("5 の DATA_DIR の項と同じ判定", "`counter.txt`", "絶対パスで挙げ",
+                       "同じパスへ写して", "写さなくてよい", "gitignore している repo では案内しない",
+                       "作った・書き換えた内容が入っていない"):
+            self.assertIn(phrase, guide)
+        # 書き換えたファイルは worktree に古い版がある。「無い」と書くと写さずに古い採番をコミットされる
+        self.assertNotIn("書いたチェックアウトにしか無く", guide)
+
+    def test_issue_create_points_to_the_guide(self):
+        phase7 = section(ISSUE_CREATE.read_text(encoding="utf-8"), "### Phase 7", "### Phase 8")
+        self.assertIn("「スキップ」を選んだ回の案内は同 doc が正本", phase7)
+
+
+class FollowUpPromoteContractTest(unittest.TestCase):
+    """follow-up の promote も branch-setup.md の手順でブランチを作る（GitHub issue #398）.
+
+    promote は自前の「作成する / スキップ」を持ち、worktree の選択肢も「スキップ」の案内も無かった。
+    """
+
+    def test_promote_points_to_the_branch_doc_after_updating_the_follow_up(self):
+        text = FOLLOW_UP.read_text(encoding="utf-8")
+        p5 = section(text, "### P5", "### P6")
+        self.assertNotIn('label: "作成する"', p5)
+        self.assertIn("P6.5 で作る", p5)
+        p65 = section(text, "### P6.5", "### P7")
+        self.assertIn("`${CLAUDE_PLUGIN_ROOT}/references/branch-setup.md` を Read", p65)
+        self.assertIn("「スキップ」を選んだ回の案内は同 doc が正本", p65)
+        # 写す対象を同 doc が決められるよう、書いたファイルを列挙する
+        for name in ("Issue ファイル", "`counter.txt`", "follow-up ファイル"):
+            self.assertIn(name, p65)
+        # P6 の書き換えが済んでからブランチを作る（先に移ると follow-up ファイルが写らない）
+        self.assertLess(text.index("### P6:"), text.index("### P6.5"))
+
+    def test_branch_doc_covers_follow_up(self):
+        doc = BRANCH_DOC.read_text(encoding="utf-8")
+        self.assertIn("follow-up の promote（Phase P6.5）", doc.splitlines()[2])
+        self.assertIn("idea → `feat`", section(doc, "## 0.", "## 1."))
+        self.assertIn("follow-up ファイル", section(doc, "## 2.", "## 3."))
+
+    def test_promote_can_move_into_a_worktree(self):
+        for path in (FOLLOW_UP, REPO / "issue-workflow" / "commands" / "follow-up.md"):
+            front = path.read_text(encoding="utf-8").split("---")[1]
+            self.assertIn("- EnterWorktree", front, path)
 
 
 if __name__ == "__main__":

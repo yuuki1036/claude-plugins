@@ -6,7 +6,7 @@ self-review が triage-guide の構成の規則を LLM の数え上げで適用�
 構成は script が決め、確定したテーブルは check が突き合わせる。
 
 - 定数は triage-guide の表の複製なので、期待値は表を読んで作る（lib の値から作らない / testing-pitfalls）
-- 割り当てと検算は純関数を直接呼ぶ。仕様ソースの検出と終了コードは CLI 越しに見る
+- 割り当てと検算は純関数を直接呼ぶ。仕様ソースの検出と終了コードは CLI 越しに見る（CLI の出力に出ない `_frontmatter` / `_pr_body` の戻り値だけは直接呼ぶ）
 
 実行:
   python3 .claude-plugin/scripts/run-tests.py
@@ -18,6 +18,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -283,6 +284,40 @@ class ComputePlanTest(unittest.TestCase):
         self.assertEqual((p["effort"], p["effort_source"], p["reviewer_cap"]), ("high", "default", 6))
 
 
+    def test_single_key_chunk_of_a_bundle_split_is_solo(self):
+        """束ねを均等に割って 1 観点だけの塊ができたら、その行は solo（束ねと書かない）."""
+        p = plan(activated=["security"] + list(rp.ADJACENCY[:3]), spec=True)
+        self.assertEqual([(r["kind"], tuple(r["keys"])) for r in p["rows"][4:]],
+                         [("bundle", tuple(rp.ADJACENCY[:2])), ("solo", (rp.ADJACENCY[2],))])
+
+    def test_piggyback_goes_to_the_row_with_the_nearest_key(self):
+        a = rp.ADJACENCY
+        rows_ = [["solo", ["bug-detection"]], ["solo", [a[0]]], ["solo", [a[3]]]]
+        self.assertEqual(rp._piggyback_target(rows_, a[4]), 2)
+        # 距離が同じ（a[1] から a[0] と a[2] へ 1 ずつ）なら先の行
+        self.assertEqual(rp._piggyback_target([["solo", [a[0]]], ["solo", [a[2]]]], a[1]), 0)
+        self.assertEqual(rp._piggyback_target([["solo", ["bug-detection"]]], a[1]), 0)
+
+    def test_min_guarantee_needs_both_keys_in_focus_and_none_excluded(self):
+        # triage-guide `## 7` の最小保証の 2 観点
+        both = ["bug-detection", "claude-md-compliance"]
+        self.assertTrue(plan(focus=both)["min_guarantee"])
+        for k in both:
+            self.assertFalse(plan(focus=[k, "security"])["min_guarantee"], k)
+            self.assertFalse(plan(exclude=[k])["min_guarantee"], k)
+        self.assertTrue(plan(exclude=["security"])["min_guarantee"])
+
+    def test_redundant_pairs_only_on_xhigh_and_max(self):
+        self.assertEqual({e: plan(e)["redundant_pairs"] for e in rp.EFFORTS},
+                         {"low": "none", "medium": "none", "high": "none", "xhigh": "allowed", "max": "allowed"})
+
+    def test_render_writes_none_and_booleans_as_digits(self):
+        text = rp.render_plan(plan("high", "large"))
+        for line in ("size_cap=none", "delta=0", "min_guarantee=1"):
+            self.assertIn("\n%s\n" % line, text)
+        self.assertIn("\ndelta=1\n", rp.render_plan(plan("high", "large", delta=True)))
+
+
 class CheckTableTest(unittest.TestCase):
     CASES = [
         ("high", "large", dict(activated=["security", "error-handling", "comment-accuracy"], spec=True)),
@@ -396,6 +431,13 @@ class CheckTableTest(unittest.TestCase):
         p = plan("high", "large", activated=["security"], prior=["performance", "config"], delta=True)
         table = [l for l in as_table(p) if "\tprior\t" not in l] + ["reviewer\tR9\tbundle\tperformance,config"]
         self.assertIn("bad-prior", check(p, table))
+
+    def test_regrouped_row_is_stopped_even_where_redundant_pairs_are_allowed(self):
+        """xhigh / max で認めるのは plan の行を重ねることだけ。plan に無い観点の組の行は止める."""
+        p = plan("xhigh", "large", activated=list(rp.ADJACENCY[:3]))
+        self.assertEqual(check(p, as_table(p) + ["reviewer\tR9\tbundle\t%s,%s" % rp.ADJACENCY[:2]]),
+                         ["not-plan-row"])
+        self.assertEqual(check(p, as_table(p) + ["reviewer\tR9\tsolo\t%s" % rp.ADJACENCY[0]]), [])
 
     def test_table_without_reviewer_rows_is_a_usage_error(self):
         with self.assertRaises(rp.UsageError):
@@ -640,6 +682,58 @@ class PlanCliTest(ScriptTestBase):
         self.assertEqual(t.returncode, 0, t.stderr)
         self.assertFalse(path.exists())
         self.assertEqual(self.cli("check", stdin=r.stdout).returncode, 2)
+
+
+    def test_detached_head_ignores_session_context_naming_head(self):
+        """plan-reviewers.sh は detached HEAD で branch に "HEAD" を渡す。その値の session-context を拾わない."""
+        self.git("checkout", "-q", "--detach")
+        self.write(".claude/session-context.md", "---\nbranch: HEAD\n---\n")
+        self.assertEqual(self.sources(self.plan().stdout), ["none"])
+
+    def test_spec_path_with_a_tab_is_not_a_source(self):
+        self.write("features/a\tb.md", "Feature: a\n")
+        r = self.plan("--spec", "features/a\tb.md")
+        self.assertEqual(self.sources(r.stdout), ["none"])
+        self.assertNotIn("spec_missing", r.stdout)
+
+    # ---- lib の引数（plan-reviewers.sh を通らない呼び出し） ----
+
+    def lib(self, *args: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(PLUGIN / "scripts" / "lib" / "reviewer_plan.py"), *args],
+                              cwd=self.root, input=stdin, capture_output=True, text=True, env=self._env(),
+                              timeout=60)
+
+    def test_lib_rejects_missing_command_and_required_options(self):
+        for args in ([], ["--he"], ["plan", "--size-tier", "large"], ["check"]):
+            r = self.lib(*args)
+            self.assertEqual(r.returncode, 2, (args, r.stderr))
+            self.assertIn("FATAL", r.stderr, args)
+
+    def test_lib_check_rejects_abbreviated_plan_file(self):
+        """省略形を受けると plan-reviewers.sh のガードを経ずに別の plan で通る（plan 側の --plan-f と同じ）."""
+        path = str(self.root / "p.json")
+        r = self.lib("plan", "--plan-file", path, "--size-tier", "large")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.lib("check", "--plan-file", path, stdin=r.stdout).returncode, 0)
+        self.assertEqual(self.lib("check", "--plan-f", path, stdin=r.stdout).returncode, 2)
+
+    def test_unknown_tier_warns_on_stderr(self):
+        self.assertIn("WARN: size_tier=unknown", self.cli("plan", "--effort", "high", "--size-tier", "unknown").stderr)
+        self.assertNotIn("WARN", self.cli("plan", "--effort", "high", "--size-tier", "large").stderr)
+
+
+class FrontmatterTest(unittest.TestCase):
+    """`_frontmatter` が返す dict は CLI の出力に出ないので直接呼ぶ."""
+
+    def test_reads_only_the_block_at_the_top(self):
+        cases = {"": {}, "branch: feat/x\n": {}, "x\nbranch: feat/x\n": {},
+                 "---\nissue_id: CP-1\n---\nbranch: feat/x\n": {"issue_id": "CP-1"},
+                 "---\nbranch: feat/x\nissue_id: CP-1\n---\n": {"branch": "feat/x", "issue_id": "CP-1"}}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "sc.md"
+            for body, want in cases.items():
+                path.write_text(body, encoding="utf-8")
+                self.assertEqual(rp._frontmatter(str(path)), want, repr(body))
 
 
 class PrBodyTest(unittest.TestCase):

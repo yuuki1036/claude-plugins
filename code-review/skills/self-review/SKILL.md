@@ -254,7 +254,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --effort "${CLAUDE_E
 
 #### 2.3 観点カバレッジ検算と構成テーブル出力
 
-**構成テーブルを確定する前に、起動前検算をする（orchestration-guide `### 8a`・常時実行。delta が空で plan を呼ばない回（Step 2.2）だけは除き、レポートの「実効上限」「仕様整合」には `delta が空・前回の対象のみ` と書く）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば、`--activated` に足して plan を引き直してから確定する（テーブルに直接書き足さない。spec-compliance は足さない — plan が仕様ソースから決める）。v2.39.0 で旧 Phase 4.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。`--focus` / `--exclude` 指定時はその範囲内でのみ検算する。
+**構成テーブルを確定する前に、起動前検算をする（orchestration-guide `### 8a`・毎回。delta が空で plan を呼ばない回（Step 2.2）だけは検算せず、レポートの「実効上限」「仕様整合」には `delta が空・前回の対象のみ` と書く）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば、`--activated` に足して plan を引き直してから確定する（テーブルに直接書き足さない。spec-compliance は足さない — plan が仕様ソースから決める）。v2.39.0 で旧 Phase 4.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。`--focus` / `--exclude` を指定した回は、指定した範囲の観点だけを検算する。
 
 確定したテーブル（plan の `reviewer` / `piggyback` / `dropped` の行。xhigh / max で冗長ペアを組んだらその行も足す）を `check` に流してから起動する:
 

@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.166.2] - 2026-11-07
+
+### Changed
+
+- **orchestration-guide の `### 8a`（起動前検算）を「対象」「手順」「非 default-mode の回」の 3 区分に並べ直した**（GitHub issue #390）。見出しの「常時実行」と、最後の項に置いていた default-mode 以外の条件が食い違っていた。spec-compliance を `--activated` に足さない・mode の回は対象外・self-review の `--focus` / `--exclude` の範囲、の 3 つを同じ「除外」の語で書いていたのを、意味ごとに別の語にした。default-mode 以外では plan も check も呼ばないことを 8a にも書いた（これまでは review SKILL の Step 3.2 にしか無かった）。review SKILL の Step 3.3・self-review SKILL の Step 2.3・triage-guide の emergency の行も同じ語に揃えた。挙動は変えていない
+
+## [2.166.1] - 2026-11-07
+
+### Changed
+
+- **`plan-reviewers.sh` と `lib/reviewer_plan.py` の生存した変異を解消した**（GitHub issue #380）。挙動は変えていない。テストが検証していなかった挙動にテストを足した: 束ねを割ったときの 1 観点の行の kind、相乗り先の選び方（距離が同じなら先の行）、focus / exclude と最小保証、`redundant_pairs`、plan の値の書き方、確定テーブルの束ね直し（xhigh / max でも止める）、frontmatter の読み方、detached HEAD とタブを含むパス、lib を直接呼んだときの引数の誤り、unknown の帯の WARN。等価変異の 8 行には理由つきで `# mutation-ok:` を付けた（印は行の変異をすべて外すので、理由文の頭でどの変異が等価かを名指しした）
+
 ## [2.166.0] - 2026-11-06
 
 ### Added

@@ -2,6 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.2] - 2026-11-07
+
+### Fixed
+
+- **follow-up の promote でブランチ作成を「スキップ」すると、書いた Issue ファイルの置き場所を伝えていなかった**（GitHub #398）。promote は自前の「作成する / スキップ」を出し、worktree に分ける選択肢も、「スキップ」を選んだ回の案内（#392 で issue-create に入れたもの）も無かった。P5 の step 8 を外し、P6 で follow-up ファイルを書き換えた後の P6.5 で branch-setup.md の手順に従う（今のチェックアウトで切る / worktree に作って移る / スキップ）。worktree へ写す・案内するファイルは Issue ファイル・`counter.txt`・follow-up ファイル。branch-setup.md は冒頭と 0 の type の対応（`idea → feat`）に follow-up を足した。follow-up の allowed-tools に `EnterWorktree` を足した
+
+## [1.19.1] - 2026-11-07
+
+### Fixed
+
+- **ブランチ作成で「スキップ」を選んだ回に、書いた Issue ファイルがそのチェックアウトにしか無いことを伝えていなかった**（GitHub #392）。`{DATA_DIR}` を git で追跡している repo で、後から既定ブランチから切った worktree へ移ると、issue-create が作った Issue ファイルがそこに無く、`counter.txt` は古い版のままになる。branch-setup.md の 2 で「スキップ」を選んだ回は、この skill が作った・書き換えたファイルを絶対パスで挙げ、worktree の同じパスへ写してそのブランチでコミットするよう伝える（今のチェックアウトで切るなら写さなくてよい）。gitignore している repo では案内しない（移った先の skill はメインのチェックアウトのデータ dir を読む）。start から「スキップ」した回も、Phase F3.2 で先に書き換えた Issue ファイルがあれば同じ案内を出す（既存の作業が無い `none` の回。書き換えを F7 の締めまで後回しにする回は対象外）
+
 ## [1.19.0] - 2026-11-07
 
 ### Changed
