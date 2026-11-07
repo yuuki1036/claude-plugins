@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.166.1] - 2026-11-07
+
+### Changed
+
+- **`plan-reviewers.sh` と `lib/reviewer_plan.py` の生存した変異を解消した**（GitHub issue #380）。挙動は変えていない。テストが検証していなかった挙動にテストを足した: 束ねを割ったときの 1 観点の行の kind、相乗り先の選び方（距離が同じなら先の行）、focus / exclude と最小保証、`redundant_pairs`、plan の値の書き方、確定テーブルの束ね直し（xhigh / max でも止める）、frontmatter の読み方、detached HEAD とタブを含むパス、lib を直接呼んだときの引数の誤り、unknown の帯の WARN。等価変異の 8 行には理由つきで `# mutation-ok:` を付けた（印は行の変異をすべて外すので、理由文の頭でどの変異が等価かを名指しした）
+
 ## [2.166.0] - 2026-11-06
 
 ### Added
