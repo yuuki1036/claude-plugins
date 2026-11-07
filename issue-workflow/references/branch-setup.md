@@ -34,7 +34,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/branch-setup.sh" status
   2. label: "このチェックアウトで切る" / description: "`git checkout -b {BRANCH}`（未コミットの変更はそのまま持ち越される）"
   3. label: "スキップ" / description: "ブランチは自分で作る"
 
-「このチェックアウトで切る」→ `git checkout -b {BRANCH}` を実行して終わる。既存のブランチなら `git switch {BRANCH}`（origin にだけあれば、それを追跡するブランチができる。`already used by worktree at <path>` で失敗し、その path が無ければ、3 の登録だけが残った worktree の回と同じく案内して止まる）。「スキップ」→ 何もしない。「worktree に作って移る」→ 3 へ。
+「このチェックアウトで切る」→ `git checkout -b {BRANCH}` を実行して終わる。既存のブランチなら `git switch {BRANCH}`（origin にだけあれば、それを追跡するブランチができる。`already used by worktree at <path>` で失敗し、その path が無ければ、3 の登録だけが残った worktree の回と同じく案内して止まる）。「スキップ」→ ブランチは作らず、下の「スキップした回の案内」を出して終わる。「worktree に作って移る」→ 3 へ。
+
+**スキップした回の案内**（GitHub issue #392）: `{DATA_DIR}` を git で追跡している repo（5 の DATA_DIR の項と同じ判定）で、この skill が `{DATA_DIR}` に作った・書き換えたファイル（issue-create なら Issue ファイルと、BACKEND=local なら `counter.txt`）があるときだけ伝える。後から既定ブランチから切った worktree には、作った・書き換えた内容が入っていない（新しく作ったファイルは無く、既定ブランチにあるファイルは古い版のまま）。その worktree で作業するなら、各ファイルを絶対パスで挙げ、worktree の同じパスへ写してそのブランチでコミットするよう伝える（書いたチェックアウトにも同じ変更が残る）。このチェックアウトで `git checkout -b` するなら写さなくてよい（未コミットの変更として持ち越される）。gitignore している repo では案内しない（移った先で起動する skill は、Phase 0 でメインのチェックアウトのデータ dir を読む）。
 
 ## 3. worktree を作る
 
@@ -66,7 +68,7 @@ worktree を作っただけでは、diff ペイン・Bash の cwd・プロジェ
 ## 5. 移した後の決まりごと
 
 - **DATA_DIR**: この skill の残りでは、`{DATA_DIR}` が相対パスなら `{main_root}/{DATA_DIR}` に読み替える（移動後の相対パスは worktree を指す）。移動後に起動する skill は、Phase 0 の backend 検出が worktree にデータ dir が無いときにメインのチェックアウトへ fallback する
-- **DATA_DIR を git で追跡している repo**（`git -C "{main_root}" check-ignore -q "{DATA_DIR}"` が偽）: worktree には起点のブランチの `{DATA_DIR}` が入っており、この skill がメイン側で作った・書き換えたファイル（issue-create なら Issue ファイルと `counter.txt`）はまだ無い。worktree の同じパスへ写し、以降の編集は worktree 側で行う（ブランチと一緒にコミットされる）。メイン側にも同じ変更が残ることを報告に書く。gitignore している repo では写さない
+- **DATA_DIR を git で追跡している repo**（`git -C "{main_root}" check-ignore -q "{DATA_DIR}"` が偽）: worktree には起点のブランチの `{DATA_DIR}` が入っており、この skill がメイン側で作った・書き換えたファイル（issue-create なら Issue ファイルと `counter.txt`）の内容はまだ入っていない。worktree の同じパスへ写し、以降の編集は worktree 側で行う（ブランチと一緒にコミットされる）。メイン側にも同じ変更が残ることを報告に書く。gitignore している repo では写さない
 - **session-context.md**: start の Phase CTX は `{WORKTREE}/.claude/session-context.md` に書く。code-review と issue-band は、作業しているチェックアウトの `.claude/session-context.md` を読む
 - **feature-dev へ渡す**: 続けて起動するときは、引数に「worktree: `{WORKTREE}`（作成・移動済み。新しく作らない）」を添える。feature-dev の Phase 4.8 は worktree の中として扱い、環境のセットアップと Phase 7 の publish 先の規約に従う
 - **報告**: worktree のパス・ブランチ・起点・複製した .env*（`env_copied=` の行。0 件なら「なし」）・依存のインストールの結果・作業ディレクトリを移せたか

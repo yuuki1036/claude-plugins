@@ -32,6 +32,8 @@ SCRIPT = REPO / "issue-workflow" / "scripts" / "branch-setup.sh"
 START = REPO / "issue-workflow" / "skills" / "start" / "SKILL.md"
 START_COMMAND = REPO / "issue-workflow" / "commands" / "start.md"
 EXISTING_DOC = REPO / "issue-workflow" / "skills" / "start" / "references" / "existing-work.md"
+BRANCH_DOC = REPO / "issue-workflow" / "references" / "branch-setup.md"
+ISSUE_CREATE = REPO / "issue-workflow" / "skills" / "issue-create" / "SKILL.md"
 ENV = scrub()
 #: existing が候補ごとに出すキー（この順で 1 件 9 行）
 KEYS = ("worktree", "branch", "ahead", "dirty", "matched", "current", "prunable", "locked", "head")
@@ -1049,6 +1051,30 @@ class StartNewIntentContractTest(unittest.TestCase):
         self.assertIsNotNone(redecide, "既存を捨てたいと言われた回の決め直しが無い")
         self.assertIn("こちらで消さない", redecide)
         self.assertIn("済ませた後の /start で決め直す", redecide)
+
+
+class SkipChoiceContractTest(unittest.TestCase):
+    """「スキップ」を選んだ回も、書いたファイルの置き場所を伝える（GitHub issue #392）.
+
+    3 つの選択肢のうち「スキップ」だけ DATA_DIR の扱いが抜けていた。手で切った worktree に
+    Issue ファイルが入らず、counter.txt も古い版のまま作業が進む。
+    """
+
+    def test_branch_doc_tells_where_the_written_files_are(self):
+        sec = section(BRANCH_DOC.read_text(encoding="utf-8"), "## 2.", "## 3.")
+        self.assertNotIn("「スキップ」→ 何もしない", sec)
+        self.assertIn("「スキップ」→ ブランチは作らず、下の「スキップした回の案内」を出して終わる", sec)
+        guide = sec[sec.index("**スキップした回の案内**"):]
+        for phrase in ("5 の DATA_DIR の項と同じ判定", "`counter.txt`", "絶対パスで挙げ",
+                       "同じパスへ写して", "写さなくてよい", "gitignore している repo では案内しない",
+                       "作った・書き換えた内容が入っていない"):
+            self.assertIn(phrase, guide)
+        # 書き換えたファイルは worktree に古い版がある。「無い」と書くと写さずに古い採番をコミットされる
+        self.assertNotIn("書いたチェックアウトにしか無く", guide)
+
+    def test_issue_create_points_to_the_guide(self):
+        phase7 = section(ISSUE_CREATE.read_text(encoding="utf-8"), "### Phase 7", "### Phase 8")
+        self.assertIn("「スキップ」を選んだ回の案内は同 doc が正本", phase7)
 
 
 if __name__ == "__main__":
