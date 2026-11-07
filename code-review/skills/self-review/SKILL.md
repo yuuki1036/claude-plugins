@@ -226,7 +226,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 diff の特性を分析し、必要なエージェントタイプを判定する（`--since` の回は explorer・reviewer の観点を `## delta` の中の `###` の節で判定する。spec-compliance と Markdown 推敲の判定は従来どおり / triage-guide.md `### 6.5`）:
 - **explorer**: 巨大ファイル、複数関数、条件分岐追加、共通モジュール変更のいずれかに該当するか
 - **reviewer**: 常に必要。diff パターンマッチでどの観点が必要かを判定
-- **spec-compliance**: 自分で判定しない。Step 2.2 の plan が仕様ソース（session-context / Issue ファイル / `--spec` / `--spec-source`）から決める（`--activated` に入れると plan が exit 2 で止まる / GitHub issue #351）
+- **spec-compliance**: 自分で判定しない。Step 2.2 の plan が仕様ソース（session-context / Issue ファイル / `--spec` / `--spec-source` / repo の仕様書）から決める（`--activated` に入れると plan が exit 2 で止まる / GitHub issue #351）。repo の仕様書は、diff が触ったものと session-context・Issue ファイルが言及したものを plan が自分で探す（GitHub issue #352。diff が仕様書を触っただけでも起動する）
 - **Markdown 推敲**: `## md-polish` と引数から起動するかを決める（**effort を問わない・体数の上限の外**）。起動するなら `md-polish-guide.md` を Read する。判定表と `skip_reason` の正本は同 guide の 1 節
 - **決定系 doc の design-review 委譲**: `## decision-docs` に doc の行（`<数>\t<path>`）があれば `design-review-guide.md` を Read し、1 節で起動するかを決める（**体数の上限の外**。呼ぶのは Step 6.4 の後）。起動するなら、委譲する doc を doc-substance のプロンプトの可変部に「design-review に渡す doc: <path>」と書く
 
@@ -241,6 +241,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --effort "${CLAUDE_E
 ```
 
 - `--activated` には最小保証の 2 体と spec-compliance を入れない（前者は plan が足す。後者は入れると exit 2 — 仕様ソースから plan が決める）
+- `spec_source` の `repo-spec-touched`（diff が触った仕様書）/ `repo-spec-ref`（session-context・Issue ファイルが言及した仕様書）は plan が Step 1 の diff と参照から見つける。引数では渡さない
 - `## prior-fixes` が出た回は `--prior <行の観点をカンマ区切り>` を渡す（`--focus` の回も。前回の対象は絞り込みの外に置き、上限に収まらなければ落とさず相乗りにする / prior-fixes-guide.md の 1 節）。`--since` の回（`scope_mode=delta`）はさらに `--size-tier` に `delta_size_tier` を渡して `--delta` を足す（前回の対象は規模キャップの外の専任になり、effort 上限を超える分は相乗りになる / triage-guide.md `### 6.5`）
 - **delta が空（`delta_files=0`）の回は plan も check も呼ばない**。triage-guide.md `### 6.5` のとおり、前回の対象の観点の reviewer だけで直ったかを確かめる（前回の対象も無ければ agent を起動しない）。plan は最小保証と仕様ソースの spec-compliance を必ず足すので、この回の構成を表せない
 - 出力の読み方（kind・`piggyback`・`dropped` の理由・`excluded`・`spare`）と check の規則の一覧は triage-guide.md `## 4` 末尾の「plan の出力の読み方」。`dropped` の観点は `missing_coverage` に識別子で記録し、理由をレポートの「⚠️ 欠損観点」に写す
@@ -324,7 +325,7 @@ Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並�
 - <!-- COMMENT-POLISH: attach --> **`comment-accuracy` を担当する reviewer には `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md` を Read 対象に追加する**（単独起動・バンドル相乗りのどちらでも追加。B 系統は Focus テンプレートではないので「必ず Read させる」の focus ファイルとしては拾われない。追加漏れは機能の silent な不発になるため、comment-polish 連結チェックが宣言とパスの両方を Critical で検証する）
 - **可変部の共通ブロック（全 agent 共通の実値集合）は 1 ファイルに落としてパス渡しする**: Step 1 の `## meta` が出す `agent_ctx_file=` のパスに **Write で 1 回だけ**書き出し、各プロンプトには「まず `<agent_ctx_file>` を Read せよ」の 1 行だけを置く。**入れる項目・残す項目・フォールバックの正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**（`{{PLUGIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` / `$DIFF_FILE` / AGENTS.md パス / session-context パス / 確定事実 など。#124 (c)）。**書き出したら、その応答の中でこの wave に出す Agent call（reviewer 全行 + 相乗りする skeptic + specialist + Markdown 推敲）を列挙してから発行に移る**（発行直前チェックポイント / orchestration-guide.md `## 0`。列挙より後に思いついた観点は同じ層へ後追いせず Round 2 へ回す — #220）
   - **self-review 固有**: **PR 番号・HEAD SHA・`{{MAIN_ROOT}}` は入れない**（PR を持たず worktree も使わないので、テンプレートの worktree セットアップ節は適用外である旨を共通ブロックに明記する）
-- **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）。`--spec` があれば **spec-compliance 担当にだけ**「仕様ファイル: `<path>`（Read して照合元にする）」を添える
+- **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）。plan の `spec_source` 行のうち `spec`（`--spec`）/ `repo-spec-touched` / `repo-spec-ref` のパスを、**spec-compliance 担当にだけ**「仕様ファイル: `<path>`（`<label>`。Read して照合元にする）」で 1 行ずつ添える（本文は転記しない）。`repo-spec-touched` には「変更した行の節を節ごと読み、同じ節の古い説明も見る」を添える
 - **`--since` の回は共通ブロックに `delta_file=<## delta の delta_file>` を入れる**（diff 全体の `diff_file` はそのまま。読み方は reviewer-common.md「delta が主な対象」）
 - **`prior_fixes:` も共通ブロックに入れず、reviewer と specialist（skeptic・meta・反証・explorer を除く）にだけインラインで注入する**（共通ブロックは skeptic にも届き、前回の指摘が渡ると findings 非注入の核が壊れる / #313）
 - **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 3 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` 側（#122）
@@ -462,7 +463,7 @@ reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前�
 **動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行（N 件追加）| スキップ理由（`effort` / `config` / `no-high-severity` / `size-tier`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/scope）| 非該当（surface なし）**← payload の `recall_skeptic.skip_reason` は `"no-surface"`。`fired=false` なので `null` にしない**} / 反証 {対象 N 件（うち meta 由来の追加バッチ M 件）| スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
 **前回の指摘への修正**: {Step 1 で `## prior-fixes` が出た回: `N 箇所を確認対象に戻した（観点: <キー>, …）` | 出なかった回はこの行を省く}（GitHub issue #298。絞り込んだ回でも、前回の指摘で入れた修正を見たかが読み手に見えるように）
-**仕様整合**: {spec-compliance を起動した回: `<仕様ソース>`（Issue / session-context / knowledge / `--spec`）と照合し、仕様違反 N 件 | 起動しなかった回: Step 2.2 の plan から写す — `spec_source	none` なら `仕様ソースなし`、`dropped	spec-compliance	size-cap` なら `規模キャップで未起動`、`effort-cap` なら `effort 上限で未起動`、`excluded	spec-compliance` か `--focus` に無い回は `--focus / --exclude で対象外`}（spec-compliance の結論を 1 行で。起動の有無が読み手に見えないと、指摘 0 件が「仕様どおり」と読まれる）
+**仕様整合**: {spec-compliance を起動した回: `<仕様ソース>`（Issue / session-context / knowledge / `--spec` / repo の仕様書 N 件（diff が触った M 件））と照合し、仕様違反 N 件（うち文書への未反映 K 件） | 起動しなかった回: Step 2.2 の plan から写す — `spec_source	none` なら `仕様ソースなし`、`dropped	spec-compliance	size-cap` なら `規模キャップで未起動`、`effort-cap` なら `effort 上限で未起動`、`excluded	spec-compliance` か `--focus` に無い回は `--focus / --exclude で対象外`}（spec-compliance の結論を 1 行で。起動の有無が読み手に見えないと、指摘 0 件が「仕様どおり」と読まれる）
 **反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{**スキップ時もこの行を出す**（書式の正本は orchestration-dynamic-rounds.md `## 10` 手順 4）。`no-eligible-findings` は `未実施（対象帯に該当なし。MAJOR 以下の severity は較正されていない）` と書く — 「対象 0 件」は「検証したが問題なし」と読まれる}
 
 ### 🚨 BLOCKER 指摘
