@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.1] - 2026-11-07
+
+### Changed
+
+- **code-review の self-review SKILL.md「1.」への SSoT pin を打ち直した**（GitHub issue #388）。正本の変更は語彙外の値だけの `--focus` の扱いで、feature-dev は `--focus` を渡さないので本文は変えていない
+
 ## [2.28.0] - 2026-11-07
 
 ### Added
