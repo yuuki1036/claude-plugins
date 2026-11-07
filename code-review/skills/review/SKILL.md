@@ -241,7 +241,7 @@ TABLE
 
 `ok`（exit 0）なら確定。exit 1 なら `NG	<規則>	<詳細>	<直し方>` の行に従って直し、もう一度 check する。上限を超えたか・spec-compliance が欠けたかを自分で判定して check を飛ばさない。exit 2 は plan が無い（Step 2 の triage-signals.sh が前の回の plan を消す）か、テーブルの形が違う。
 
-**モード除外**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**検算による構成追加は行わない**。検出した focus は `missing_coverage` に識別子 `<focus>` のみ記録する（**mode による意図的縮退である旨はレポート本文へ**）。
+**非 default-mode の回**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した回は、モードの推奨構成が観点判定表より優先するため、**構成を決めるためには plan も check も呼ばず、検算で構成も足さない**（spec-compliance を起動するモードが仕様ソースを得るために plan を呼ぶのは別。Step 3.2 の但し書き / GitHub issue #389）。検出した focus は `missing_coverage` に識別子 `<focus>` だけを記録する（**mode による意図的な縮退である旨はレポート本文へ**）。
 
 **決定系 doc の design-review 委譲**: `## decision-docs` に doc の行（`<数>\t<path>`）があれば `design-review-guide.md` を Read し、1 節で起動するかを決めて構成テーブルに `design-review` の行を足す（**体数の上限の外**。呼ぶのは締めフロー 4 の後）。起動するなら、委譲する doc を doc-substance のプロンプトの可変部に「design-review に渡す doc: <path>」と書く。
 
