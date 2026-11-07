@@ -22,7 +22,7 @@ evals/
 │   └── recall/         # **別ハーネス**: code-review の見落とし（recall）回帰 fixture
 │       ├── setup.sh    #   base/ → changed/ から検証用の使い捨てリポジトリを組む
 │       ├── expected.yaml
-│       └── {case}/     #   01-value-flow-insert / 07-handler-bypass / 90-precision-minor-unit
+│       └── {case}/     #   01-value-flow-insert / 07-handler-bypass / 08-rethrow-skips-cleanup / 90-precision-minor-unit
 ├── reports/            # レポート出力先（gitignore）
 └── README.md
 ```
