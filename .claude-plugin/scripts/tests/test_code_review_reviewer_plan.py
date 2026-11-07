@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -278,6 +279,22 @@ class ComputePlanTest(unittest.TestCase):
     def test_out_of_vocab_focus_is_reported_not_fatal(self):
         p = plan(focus=["security", "migration-safety", "md-polish"])
         self.assertEqual(p["out_of_vocab"], ["migration-safety"])
+
+    def test_out_of_vocab_only_focus_does_not_fall_back_to_full(self):
+        """語彙外の値だけの --focus は、規模で絞った全体レビューにしない（reviewer 0 体 / GitHub issue #388）."""
+        p = plan("high", "small", focus=["migration-safety"])
+        self.assertEqual((p["scope"], p["cap_source"], rows(p)), ("focus", "scope", []))
+        self.assertEqual(p["out_of_vocab"], ["migration-safety"])
+        self.assertFalse(p["min_guarantee"])
+        # 前回の対象は絞り込みの外なので残る
+        p = plan("high", "small", focus=["migration-safety"], prior=["security"], delta=True)
+        self.assertEqual(rows(p), [("security",)])
+
+    def test_non_focus_values_alone_are_not_a_narrowing(self):
+        """md-polish / design-review だけの --focus は観点の指定ではないので、引数なしと同じ全体レビュー."""
+        p = plan("high", "small", focus=["md-polish", "design-review"])
+        self.assertEqual((p["scope"], p["out_of_vocab"]), ("full", []))
+        self.assertIn(("bug-detection",), rows(p))
 
     def test_empty_effort_defaults_to_high(self):
         p = rp.compute_plan("", "large")
@@ -634,6 +651,29 @@ class PlanCliTest(ScriptTestBase):
         # PR を渡さない回（self-review）は PR 文脈を読まない
         self.assertEqual(self.sources(self.plan().stdout), ["none"])
 
+    def test_linked_issue_body_mention_counts_as_repo_spec_ref(self):
+        """PR に紐づく GitHub Issue の本文が言及した仕様書を照合元に載せる（GitHub issue #391）."""
+        self.write("docs/a.md", "# a\n")
+        self.write("docs/b.md", "# b\n")
+        # repo の外の仕様書らしいパス（要素に docs を持つ）。分類では落ちず、repo の外の拒否まで届く
+        out = Path(tempfile.mkdtemp(prefix="issue-body-", dir=self.root.parent))
+        self.addCleanup(shutil.rmtree, out, True)
+        (out / "docs").mkdir()
+        (out / "docs" / "outside.md").write_text("# outside\n", encoding="utf-8")
+        rel_out = "../%s/docs/outside.md" % out.name
+        body1, body2 = out / "body1.md", out / "body2.md"
+        body1.write_text("受入条件は docs/a.md\n%s と %s/docs/outside.md も\n" % (rel_out, out), encoding="utf-8")
+        body2.write_text("docs/b.md を見る\n", encoding="utf-8")
+        r = self.plan("--spec-source", "pr-issue:#5", "--pr-issue-body", str(body1),
+                      "--spec-source", "pr-issue:#6", "--pr-issue-body", str(body2))
+        self.assertEqual(self.source_lines(r.stdout), [
+            ("repo-spec-ref", str(self.root / "docs/a.md")),
+            ("repo-spec-ref", str(self.root / "docs/b.md")),
+            ("pr-issue", "#5"), ("pr-issue", "#6")])
+        # 本文を渡さない回は数えない。読めないファイルは空の本文として扱う
+        self.assertEqual(self.source_lines(self.plan("--spec-source", "pr-issue:#5").stdout), [("pr-issue", "#5")])
+        self.assertEqual(self.sources(self.plan("--pr-issue-body", str(self.root / "nope.md")).stdout), ["none"])
+
     def test_pr_body_heading_is_what_fetch_pr_context_prints(self):
         """`_pr_body` が頼る見出しを fetch-pr-context.sh が出し続けていること（変えると黙って拾わなくなる）."""
         script = (PLUGIN / "scripts" / "fetch-pr-context.sh").read_text(encoding="utf-8")
@@ -751,6 +791,38 @@ class PrBodyTest(unittest.TestCase):
         self.assertEqual(rp._pr_body(None), "")
         self.assertEqual(rp._pr_body(""), "")
         self.assertEqual(rp._pr_body("/nonexistent/prctx.md"), "")
+
+
+
+class IssueIdRegexTest(unittest.TestCase):
+    """Issue ID の抽出の正規表現は `reviewer_plan.ISSUE_ID_RE` が正本。triage-signals.sh の `## issue-ids` が
+    同じ入力で同じ ID の集合を返すことを縛る（片方だけ直すと、plan が探す Issue ファイルと digest の ID がずれる /
+    GitHub issue #389）."""
+
+    CORPUS = (
+        "feat/CP-23-reviewer-plan main",
+        "fix/utf-8-sha-1-base-64 ipv6-1",
+        "TEAM-12 ABC-3x Abc-4 abc-5",
+        "release/RC-4-AB-12-CD-3",
+        "feature/ENG-1234 ENG-1234",
+    )
+
+    def _section_patterns(self) -> list[str]:
+        lines = TRIAGE.read_text(encoding="utf-8").splitlines()
+        start = lines.index('echo "## issue-ids"')
+        end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith('if [ "$SINCE_GIVEN"'))
+        return re.findall(r"grep -oE '([^']+)'", "\n".join(lines[start:end]))
+
+    def test_triage_signals_uses_the_same_pattern(self):
+        pats = self._section_patterns()
+        self.assertEqual(len(pats), 2, pats)  # PR の head / base と、作業ツリーのブランチ名
+        self.assertEqual(set(pats), {rp.ISSUE_ID_RE.pattern})
+
+    def test_grep_and_python_return_the_same_ids(self):
+        for pat in self._section_patterns():
+            for text in self.CORPUS:
+                out = subprocess.run(["grep", "-oE", pat], input=text, capture_output=True, text=True).stdout
+                self.assertEqual(set(out.split()), set(rp.ISSUE_ID_RE.findall(text)), text)
 
 
 if __name__ == "__main__":
