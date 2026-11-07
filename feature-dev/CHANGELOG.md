@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.8] - 2026-11-06
+
+### Changed
+
+- **self-review の SKILL.md「6.」への SSoT pin を打ち直した**（挙動の変更なし）。code-review が spec-compliance の照合元に repo の仕様書を足し（GitHub issue #352）、「6.」のレポートの「仕様整合」の行に仕様書の件数が入った。feature-dev が要約している「範囲」の行は変わっていないので、Phase 6 の本文はそのまま
+
 ## [2.27.7] - 2026-11-06
 
 ### Changed
