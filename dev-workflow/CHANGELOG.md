@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.43.1] - 2026-11-07
+
+### Changed
+
+- `scripts/svg-to-png.sh` の挙動は変えていない。変異を 1 つも外していなかった `# mutation-ok:` の印を 1 行から外した（GitHub issue #393）
+
 ## [1.43.0] - 2026-11-07
 
 ### Added

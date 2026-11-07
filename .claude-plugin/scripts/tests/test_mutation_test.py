@@ -163,6 +163,31 @@ class BuildMutantsTest(unittest.TestCase):
         self.assertEqual(got, [(2, ">= を > に（境界を 1 つ狭める）")])
         self.assertEqual(skipped, {})
 
+    def test_marker_inside_a_string_is_not_a_marker(self):
+        """文字列の中の `# mutation-ok:` は印に数えない。同じファイルのコメントの印は効く（#393）."""
+        p = self._file("c.py", '''
+            print("# mutation-ok: 説明", a >= b)
+            print("説明", a >= b)  # mutation-ok: 等価
+            ''')
+        skipped: dict = {}
+        got = [(m.lineno, m.rule) for m in mt.build_mutants({p: {1, 2}}, skipped=skipped)]
+        self.assertEqual(got, [(1, ">= を > に（境界を 1 つ狭める）")])
+        self.assertEqual(list(skipped), [(p, 2)])
+        self.assertEqual([m.rule for m in skipped[(p, 2)]], [">= を > に（境界を 1 つ狭める）"])
+
+    def test_sh_marker_inside_quotes_is_not_a_marker(self):
+        """bash の行は近似（引用符の外の `#` から後ろ）で印を探す（#393）."""
+        s = self._file("c.sh", '''
+            echo "# mutation-ok: 説明"; [ "$n" -ge 2 ] || exit 2
+            [ "$n" -ge 2 ] || exit 2  # mutation-ok: 等価
+            ''')
+        skipped: dict = {}
+        got = [(m.lineno, m.rule) for m in mt.build_mutants({s: {1, 2}}, skipped=skipped)]
+        self.assertIn((1, "-ge を -gt に（bash の境界を 1 つ狭める）"), got)
+        self.assertEqual([ln for ln, _ in got if ln == 2], [])
+        self.assertEqual(list(skipped), [(s, 2)])
+        self.assertIn("-ge を -gt に（bash の境界を 1 つ狭める）", [m.rule for m in skipped[(s, 2)]])
+
     def test_bash_argument_guard_is_covered(self):
         """`while [ $# -gt 0 ]` は bash の fail-open ゲートの最頻形（実測で 0 個だった）."""
         p = self._file("d.sh", "while [ $# -gt 0 ]; do\n  shift\ndone\n")
@@ -472,6 +497,21 @@ class ShellEmbeddedPythonTest(unittest.TestCase):
 
     def test_here_string_is_not_a_region(self):
         self.assertEqual(mt._sh_python_lines(['python3 -c "$p" <<< "$x"', "if not y; then :; fi"]), {})
+
+    def test_heredoc_marker_inside_a_string_is_not_a_marker(self):
+        """埋め込み python も tokenize のコメントの中だけで印を探す（#393）."""
+        p = self.root / "x.sh"
+        p.write_text(textwrap.dedent('''
+            python3 - <<'PY'
+            print("# mutation-ok: 説明", a >= b)
+            print("説明", a >= b)  # mutation-ok: 等価
+            PY
+            ''').lstrip("\n"), encoding="utf-8")
+        skipped: dict = {}
+        got = [(m.lineno, m.rule) for m in mt.build_mutants({p: {1, 2, 3, 4}}, skipped=skipped)]
+        self.assertEqual(got, [(2, ">= を > に（境界を 1 つ狭める）")])
+        self.assertEqual(list(skipped), [(p, 3)])
+        self.assertEqual([m.rule for m in skipped[(p, 3)]], [">= を > に（境界を 1 つ狭める）"])
 
 
 class ApplyAndTestTest(unittest.TestCase):

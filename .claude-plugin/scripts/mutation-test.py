@@ -138,7 +138,10 @@ SH_RULES: list[tuple[str, str, str]] = [
 EARLY_RETURN_RULE = "if 直下の return を pass に（早期 return を外す）"
 COMMENT_ONLY = re.compile(r"^\s*(#|//)")
 # 変異を意図的に除外する印（等価変異・到達不能な分岐に付ける）。理由を必ず書かせる。
-# **変異させたいコード行と同じ行に置く**（直前の行に書いても効かない）
+# **変異させたいコード行と同じ行に置く**（直前の行に書いても効かない）。コメントの中だけで効き、
+# 文字列の中の同じ綴りは数えない（#393。判定は `_comment_start`）。bash の行と tokenize できない
+# python は `_code_end` の近似なので、`#` の前に空白を置く。印の手前のコードにエスケープした
+# 引用符や裸の `'` があっても効かない（`;# mutation-ok:` や `echo don't  # mutation-ok:`）
 SKIP_MARK = re.compile(r"#\s*mutation-ok:\s*\S")
 
 
@@ -522,6 +525,19 @@ def _code_only(line: str, spans: list[tuple[int, int]] | None) -> str:
     return "".join(chars)
 
 
+def _comment_start(line: str, spans: list[tuple[int, int]] | None) -> int:
+    """行末コメントの開始桁（コメントが無ければ行の長さ）. 印はここより後ろだけで効く（#393）.
+
+    spans は `_masked_spans` の桁範囲で、文字列とコメントを区別しないので先頭の文字で見分ける
+    （COMMENT は `#`、STRING は引用符か接頭辞から始まる）。複数行文字列の 2 行目以降は 0 桁目から
+    始まるが、行頭が `#` の行は COMMENT_ONLY で先に外れる。spans が None（bash の行・tokenize
+    できない python）は `_code_end` の近似。
+    """
+    if spans is None:
+        return _code_end(line)
+    return next((lo for lo, _ in spans if line.startswith("#", lo)), len(line))
+
+
 def _early_return(lines: list[str], lineno: int,
                   py_spans: dict[int, list[tuple[int, int]] | None]) -> str | None:
     """if 直下の `return` を `pass` にした行を返す（当たらなければ None）.
@@ -571,15 +587,17 @@ def build_mutants(targets: dict[Path, set[int]],
             line = lines[lineno - 1]
             if COMMENT_ONLY.match(line):
                 continue
+            is_py = lineno in py_spans
+            line_spans = py_spans.get(lineno)
             sink = mutants
-            if SKIP_MARK.search(line):
+            # finditer: 文字列の中の綴りの後ろに本物の印が続く行もある
+            comment_start = _comment_start(line, line_spans)
+            if any(m.start() >= comment_start for m in SKIP_MARK.finditer(line)):
                 if skipped is None:
                     continue
                 # 印の無い行と同じループで数える（除外の判定を別に書くと、外した数が実際とずれる）。
                 # 規則に当たらない行も 0 個として残す
                 sink = skipped.setdefault((path, lineno), [])
-            is_py = lineno in py_spans
-            line_spans = py_spans.get(lineno)
             code_end = len(line) if line_spans is not None else _code_end(line)
             for pattern, repl, desc in RULES + (PY_RULES if is_py else SH_RULES):
                 for m in re.finditer(pattern, line):
@@ -615,8 +633,7 @@ def report_marked(skipped: dict[tuple[Path, int], list[Mutant]]) -> None:
     """
     if not skipped:
         return
-    # 文言を 1 つの文字列リテラルに書くと、この行自体が SKIP_MARK に当たって印の行に数えられる
-    print(f"印（# mutation-ok" f":）で外した: {sum(map(len, skipped.values()))} 個（{len(skipped)} 行）")
+    print(f"印（# mutation-ok:）で外した: {sum(map(len, skipped.values()))} 個（{len(skipped)} 行）")
     for (path, lineno), ms in skipped.items():
         rules = " / ".join(m.rule for m in ms)
         print(f"  {_rel(path)}:{lineno}  {len(ms)} 個" + (f"（{rules}）" if ms else ""))
