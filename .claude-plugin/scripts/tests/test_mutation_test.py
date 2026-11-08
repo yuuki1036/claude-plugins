@@ -15,6 +15,7 @@ docstring 自身が「実測で事故った」と書いている箇所なので�
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import stat
@@ -23,6 +24,7 @@ import sys
 import tempfile
 import textwrap
 import time
+import tokenize
 import unittest
 from pathlib import Path
 
@@ -209,6 +211,57 @@ class BuildMutantsTest(unittest.TestCase):
         self.assertTrue(mt.is_test_file(Path("x/tests/test_a.py")))
         self.assertTrue(mt.is_test_file(Path("x/a_test.py")))
         self.assertFalse(mt.is_test_file(Path("x/scripts/mutation-test.py")))
+
+    def test_marker_inside_a_multiline_string_is_not_a_marker(self):
+        """複数行文字列の 2 行目以降の範囲は 0 桁目から始まる。その中の印は数えない（#399）."""
+        p = self._file("c.py", '''
+            s = """
+            x # mutation-ok: 説明"""; t = a >= b
+            u = """
+            y"""; v = a >= b  # mutation-ok: 等価
+            ''')
+        skipped: dict = {}
+        got = [(m.lineno, m.rule) for m in mt.build_mutants({p: {1, 2, 3, 4}}, skipped=skipped)]
+        self.assertEqual(got, [(2, ">= を > に（境界を 1 つ狭める）")])
+        self.assertEqual(list(skipped), [(p, 4)])
+
+    def test_word_at_the_start_of_a_string_span_is_not_mutated(self):
+        """範囲の先頭の桁も伏せる（複数行文字列の 2 行目以降は 0 桁目から始まる）."""
+        p = self._file("c.py", '''
+            s = """
+            not a >= b"""
+            ''')
+        self.assertEqual(mt.build_mutants({p: {2}}), [])
+
+
+class MaskedSpansTest(unittest.TestCase):
+    """`_masked_spans` が桁範囲にコメントか文字列かを持たせること（#399）."""
+
+    @staticmethod
+    def _spans(src: str) -> dict:
+        return mt._masked_spans(tokenize.generate_tokens(io.StringIO(textwrap.dedent(src)).readline))
+
+    def test_comment_and_string_have_their_kind(self):
+        line = 'x = "#a" + y  # b'
+        self.assertEqual(self._spans(line + "\n"),
+                         {1: [mt.Span(4, 8, mt.STRING), mt.Span(14, 17, mt.COMMENT)]})
+
+    def test_fstring_is_one_string_span(self):
+        """入れ子の f-string も外側の 1 範囲（`{式}` の中の文字列を別に積まない）."""
+        self.assertEqual(self._spans('x = f"{y!r:>{w}} {\'#\'}"\n'),
+                         {1: [mt.Span(4, 23, mt.STRING)]})
+
+    def test_multiline_string_spans_every_line_as_string(self):
+        spans = self._spans('s = """\n# a\nb""" # c\n')
+        self.assertEqual(spans[2], [mt.Span(0, 10 ** 9, mt.STRING)])
+        self.assertEqual(spans[3], [mt.Span(0, 4, mt.STRING), mt.Span(5, 8, mt.COMMENT)])
+
+    def test_comment_start_picks_the_comment_span(self):
+        """文字列の範囲は、先頭が `#` でもコメントの開始にしない."""
+        line = '# a""" # c'
+        self.assertEqual(mt._comment_start(line, [mt.Span(0, 6, mt.STRING), mt.Span(7, 10, mt.COMMENT)]), 7)
+        self.assertEqual(mt._comment_start(line, [mt.Span(0, 6, mt.STRING)]), len(line))
+        self.assertEqual(mt._comment_start(line, []), len(line))
 
 
 class SpreadTest(unittest.TestCase):

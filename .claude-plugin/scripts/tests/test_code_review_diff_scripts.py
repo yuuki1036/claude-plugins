@@ -524,7 +524,7 @@ class TriageSinceTreeTest(DiffScriptTestBase):
         self.assertIn("+++ b/src/b.ts", patch)
         self.assertNotIn("src/a.ts", patch)
         self.assertEqual(self.size_file().read_text(encoding="utf-8"),
-                         "doc_only=0\nscope_mode=delta\ndelta_lines=3\ndelta_size_tier=small\n")
+                         "doc_only=0\nscope_mode=delta\ndelta_files=1\ndelta_lines=3\ndelta_size_tier=small\n")
 
     def test_delta_is_not_limited_to_the_80_listed_files(self):
         """`## files` は 80 件で打ち切る表示なので、絞り込みには使わない."""

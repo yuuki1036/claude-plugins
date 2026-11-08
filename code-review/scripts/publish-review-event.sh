@@ -366,6 +366,7 @@ MERGED=$(
   REVIEW_LATE_PUBLISH="$LATE_PUBLISH" \
   REVIEW_LIB_DIR="$HERE/lib" \
   REVIEW_SIZE_FILE="$(review_path size)" \
+  REVIEW_PLAN_FILE="$(review_path plan)" \
   REVIEW_USER_SETTINGS="${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/settings.json" \
   REVIEW_PLUGIN="$PLUGIN" \
   python3 - "$PAYLOAD" <<'PY'
@@ -466,6 +467,23 @@ if mc is not None:
             % json.dumps(bad, ensure_ascii=False)
         )
         sys.exit(1)
+
+# **review の Stage 0 のモード**（GitHub issue #387）。構成を決めるために plan を呼ぶのは default-mode の回だけなので、
+# plan ファイルが無いことを gap にしてよいかはこの値で決まる。モードは LLM が Stage 0 で決めるので
+# 書くのは SKILL（triage-signals.sh は知らない）。綴りが割れると default の回を判定から外すことになるので、
+# missing_coverage と同じく語彙外は fail-fast する。self-review にはモードが無いので載せない。
+# 語彙は triage-guide.md `## 2.5` のモード名（と `--emergency`）の写しで、テストが表と突き合わせる
+REVIEW_MODES = ("default", "emergency", "doc-review", "dba", "supply-chain", "skip")
+if not os.environ.get("REVIEW_PLUGIN", "").endswith(":review"):
+    payload.pop("review_mode", None)
+elif "review_mode" in payload and payload["review_mode"] not in REVIEW_MODES:
+    sys.stderr.write(
+        "review_mode が語彙の外: %s\n"
+        "許容値は %s（triage-guide.md `## 2.5` で確定したモードの `-mode` を外した名前。`--emergency` は `emergency`）。\n"
+        "**フィールドごと落として通さないこと** — 落とすと plan を呼ばなかった回が measurement_gaps に出ない。\n"
+        % (json.dumps(payload["review_mode"], ensure_ascii=False), " / ".join(REVIEW_MODES))
+    )
+    sys.exit(1)
 
 # ---- `findings_class` の検証（v2.68.0） --------------------------------------
 # **このフィールドは「次に何を機械化すべきか」を決めるメーター**なので、汚染時の損失が
@@ -849,6 +867,35 @@ if _kv.get("scope_mode") in ("delta", "full"):
         if _kv.get("delta_size_tier") in ("small", "medium", "large"):
             _scope["delta_size_tier"] = _kv["delta_size_tier"]
     payload["review_scope"] = _scope
+
+# **plan を呼ぶはずの回に plan ファイルが無い**（GitHub issue #387）。plan ファイルは triage-signals.sh が
+# 毎回の冒頭で消すので、ここで無ければその回は `plan-reviewers.sh plan` を呼んでいない（check だけ呼んだ回も
+# check が古い plan で通らないので同じ）。呼ぶはずの回は self-review が「delta が空でない回」（full か、
+# delta で `delta_files` が 1 以上）、review が default-mode の回（payload の `review_mode`）。default 以外でも
+# spec-compliance を起動するモードは仕様ソースを得るために plan を呼ぶが（review SKILL.md Step 3.2 の但し書き /
+# GitHub issue #389）、構成の手順ではないので呼ぶはずの回に数えない（plan ファイルが残っていても gap は立たない）。
+# 判定の結果は `plan_expected`（True / False / 判定できない回は None）に載せる。retro は `plan` gap の率を
+# True の回だけを分母に出す（判定できない回・呼ばない回を分母に入れると率が薄まる）。呼び出し側が書いた値は捨てる。
+# **判定できない回は立てない** — size ファイルに `scope_mode=` が無い（triage を経ていない回。`review_scope` と
+# 同じ扱い）/ delta の回に `delta_files=` が無い。review で `review_mode` が無い回は、SKILL と publish が
+# 同じ版から読まれるので旧版の回ではなく書き忘れで、`payload:review_mode` を立てる（plan の判定はしない）。
+# **publish は止めない**（計測の欠測であって、止めるとその回の計測が丸ごと消える）
+def _plan_expected():
+    if os.environ.get("REVIEW_PLUGIN", "").endswith(":review"):
+        if "review_mode" not in payload:
+            gaps.append("payload:review_mode")
+            return None
+        return payload["review_mode"] == "default"
+    if _kv.get("scope_mode") == "full":
+        return True
+    if _kv.get("scope_mode") == "delta":
+        if not re.fullmatch(r"[0-9]+", _kv.get("delta_files", "")):
+            return None
+        return int(_kv["delta_files"]) > 0
+    return None
+payload["plan_expected"] = _plan_expected()
+if payload["plan_expected"] and not os.path.isfile(os.environ["REVIEW_PLAN_FILE"]):
+    gaps.append("plan")
 
 # **付録と報告件数が、本文を書いた指摘の数を超えた回**（GitHub issue #248）。上限の式と契約 (a) は
 # `lib/body_bound.py`。**fail-fast にも WARN にもしない** — 止めるとその回の計測が丸ごと消え

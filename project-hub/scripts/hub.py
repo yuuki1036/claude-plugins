@@ -17,7 +17,9 @@ root: ${PROJECT_HUB_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/project-hub}
   ingest / reports / presence / snapshot / issue / render / worktrees   hub status・brief の材料
   cross                                                    同じ repo を触る別の PJ の sub・重なり・決定（--mark 以外は読むだけ）
   decisions / waiting / todo / close-sub                   sub の決定・待っている PR・hub の残作業・sub を閉じる
-  resolve                                                  宛先の照合（送る直前に毎回）
+  unregister                                               二重登録のうち、この PJ の登録を外す
+  resolve                                                  hub → 作業側の宛先の照合（送る直前に毎回）
+  hub-name                                                 今の hub の名前（作業側が hub からの連絡を見分ける）
   report                                                   sub の report（自己検査 → 登録 + inbox → 通知先）
   inject / pending-hint                                    SessionStart・PostCompact / UserPromptSubmit hook 用
 
@@ -35,6 +37,9 @@ exit code: 0 成功 / 1 決まらない（宛先・PJ が 1 件に決まらな�
            2 入力が不正・ListAgents の抜き出しが自己検査に合わない /
            3 状態の前提が違う（init 済み・未 init・別セッションの hub・active でない PJ への report）/
            4 想定外の失敗（書き込みの失敗など。原因は stderr）
+init / reopen の exit 3 と、set-tracker-write / set-sidebar-group の設定値を理由にした exit 3 は、stdout にも
+{"status": <理由コード>, "reason": <stderr と同じ文面>} を出す（report の拒否の status と同じ形 / GitHub issue #382）。
+後者の 2 つの未 init・別セッションの hub の exit 3 は stdout が空のまま
 """
 
 from __future__ import annotations
@@ -118,9 +123,11 @@ RECENT_JOURNAL = 10
 
 
 class HubError(Exception):
-    def __init__(self, code: int, message: str):
+    def __init__(self, code: int, message: str, status: str | None = None):
         super().__init__(message)
         self.code = code
+        # exit 3 の理由コード。付けた raise だけ stdout にも {"status", "reason"} を出す（SKILL は文面ではなくこれで分岐する）
+        self.status = status
 
 
 def root() -> Path:
@@ -237,12 +244,12 @@ def append_jsonl(path: Path, row: dict) -> None:
         f.write(line)
 
 
-def project_dir(name: str, must_exist: bool = True) -> Path:
+def project_dir(name: str, must_exist: bool = True, status: str | None = None) -> Path:
     if not PROJECT_RE.fullmatch(name or ""):
         raise HubError(2, f"PJ 名に使えない文字がある: {name!r}")
     path = root() / name
     if must_exist and not (path / "config.json").is_file():
-        raise HubError(3, f"PJ が init されていない: {name}（hub init で作る）")
+        raise HubError(3, f"PJ が init されていない: {name}（hub init で作る）", status)
     return path
 
 
@@ -755,6 +762,23 @@ def issue_token(kind: str | None, issue: str) -> re.Pattern | None:
     return re.compile(rf"(?<![A-Za-z0-9]){re.escape(m.group(1))}-{m.group(2)}(?!\d)")
 
 
+def issue_key(kind: str | None, issue) -> str | None:
+    """作業中の Issue を突き合わせる形（github は `#12`、ほかは前後の空白を除いた ID）。空なら None.
+
+    大文字と小文字は揃えない（tracker の ID と同じ形で比べる）
+    """
+    if not isinstance(issue, str) or not issue.strip():
+        return None
+    issue = issue.strip()
+    m = re.fullmatch(r"#?(\d+)", issue) if kind == "github" else None
+    return f"#{m.group(1)}" if m else issue
+
+
+def busy_issues(kind: str | None, entries) -> list[str]:
+    """作業中の登録の Issue を issue_key の形で重複なく（repo hub の Issue の保守が外す Issue / GitHub issue #382）."""
+    return sorted({k for k in (issue_key(kind, e.get("issue")) for e in entries) if k})
+
+
 def is_default_name(name: str, token: re.Pattern | None) -> bool:
     """名前を付けていないセッションの既定名（`<dir>-<数字>`）か.
 
@@ -766,6 +790,14 @@ def is_default_name(name: str, token: re.Pattern | None) -> bool:
     if token is None:
         return True
     return not any(m.end() == len(name) for m in token.finditer(name))
+
+
+def hub_default_name(name) -> bool:
+    """hub の名前を宛先・送り手の照合に使えないか（既定名か、名前が無い）.
+
+    既定名は開き直した別のセッションも名乗りうる。report の通知先と、sub が hub からの連絡を受けるかの両方をこれで決める
+    """
+    return not isinstance(name, str) or not name.strip() or is_default_name(name, None)
 
 
 def default_name_warning(name: str) -> str | None:
@@ -960,19 +992,19 @@ def cmd_init(args) -> int:
         if unreadable:
             # 読めない config が同じ repo の repo hub だと、2 つ目を作ってしまう
             raise HubError(3, f"config が読めない PJ がある（{', '.join(unreadable)}）。同じ repo の repo hub かを確かめられない"
-                              "ので作らない。その config.json を直してからやり直す")
+                              "ので作らない。その config.json を直してからやり直す", "config_unreadable")
         for other, other_config in repo_hubs_on(common):
             if is_active(other_config):
                 raise HubError(3, f"repo {main} には repo hub「{other.name}」がある（active）。"
-                                  f"このセッションに引き継ぐなら takeover --project {other.name}")
+                                  f"このセッションに引き継ぐなら takeover --project {other.name}", "repo_hub_active")
             raise HubError(3, f"repo {main} には repo hub「{other.name}」がある（{other_config.get('status')}）。"
-                              f"戻すなら reopen --project {other.name}")
+                              f"戻すなら reopen --project {other.name}", "repo_hub_closed")
     if (pdir / "config.json").exists():
         if main is not None:
             # 同じ repo の repo hub は上で弾いた。ここに来るのは同じ basename の別の repo の PJ か、同じ repo の
             # 通常の PJ。どちらも引き継ぐと別の hub を乗っ取るので、takeover は案内しない
             where = "この repo の通常の PJ" if str(common) in repo_commons(load_config(pdir)) else "別の repo の PJ"
-            raise HubError(3, f"PJ 名 {project} は{where}が使っている。--project で別の名前を付ける")
+            raise HubError(3, f"PJ 名 {project} は{where}が使っている。--project で別の名前を付ける", "name_taken")
         try:
             existing = load_config(pdir)
         except HubError:
@@ -980,10 +1012,10 @@ def cmd_init(args) -> int:
         status = existing.get("status")
         if is_repo_hub(existing):
             # 案内どおりに takeover すると、通常の PJ を作るつもりで repo hub を乗っ取る
-            raise HubError(3, f"PJ 名 {project} は repo hub が使っている。--project で別の名前を付ける")
+            raise HubError(3, f"PJ 名 {project} は repo hub が使っている。--project で別の名前を付ける", "name_taken")
         if status == "closed":
-            raise HubError(3, f"PJ {project} は init 済み（closed）。戻すなら reopen")
-        raise HubError(3, f"PJ {project} は init 済み。このセッションに引き継ぐなら takeover")
+            raise HubError(3, f"PJ {project} は init 済み（closed）。戻すなら reopen", "already_closed")
+        raise HubError(3, f"PJ {project} は init 済み。このセッションに引き継ぐなら takeover", "already_initialized")
     sid = current_session(args.session_id)
     problem = name_problem(args.name)
     if problem:
@@ -1029,12 +1061,12 @@ def cmd_init(args) -> int:
     write_mode = args.tracker_write or ("never" if args.tracker == "local" else "with_approval")
     if write_mode == "with_approval" and args.tracker == "local":
         raise HubError(3, "tracker local の PJ では hub はトラッカーに書かない（Issue ファイルは issue-workflow の持ち物 / "
-                          "ADR-20261027014506 の決定 5）")
+                          "ADR-20261027014506 の決定 5）", "tracker_write_local")
     host = verified_host(sid)
     group_mode = args.sidebar_group or ("on" if host else "off")
     if group_mode == "on" and host is None:
         raise HubError(3, "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーのグループは"
-                          "Desktop の hub だけで使える")
+                          "Desktop の hub だけで使える", "sidebar_not_desktop")
     config = {
         "project": project, "status": "active", "tracker": tracker, "repos": repos,
         "approval": {"prefix": args.approval_prefix, "suffix": args.approval_suffix,
@@ -1047,16 +1079,17 @@ def cmd_init(args) -> int:
             problem = local_dir_problem(main, Path(tracker["dir"]))
             if problem:
                 raise HubError(3, f"{problem}: {tracker['dir']}。repo hub の tracker local は、Issue ファイルが git に"
-                                  "載らない repo でだけ使える（worktree の sub が hub の起票した Issue を読めない）")
+                                  "載らない repo でだけ使える（worktree の sub が hub の起票した Issue を読めない）", "local_dir_tracked")
     if living_spec:
         config["living_spec"] = living_spec
     conflicts = scope_conflicts(pdir, config)
     if conflicts:
         if main is not None:
             raise HubError(3, f"同じ repo に、範囲を切らない PJ「{'」「'.join(conflicts)}」がある（{SCOPE_HINT}）。"
-                              f"範囲が重なる hub は置けない。その PJ の範囲を切るか（{SCOPE_CUT}）、その PJ で進める")
+                              f"範囲が重なる hub は置けない。その PJ の範囲を切るか（{SCOPE_CUT}）、その PJ で進める",
+                           "scope_conflict")
         raise HubError(3, f"同じ repo に repo hub「{'」「'.join(conflicts)}」がある。範囲を切らない PJ（{SCOPE_HINT}）は"
-                          f"置けない。{SCOPE_CUT}か、repo hub で進める")
+                          f"置けない。{SCOPE_CUT}か、repo hub で進める", "scope_conflict")
 
     base_dir = root()
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -1151,13 +1184,31 @@ def cmd_refresh_hub(args) -> int:
            "living_spec": config.get("living_spec"),
            "approval": config.get("approval"), "approval_mode": mode,
            "tracker_write": tracker_write(config), "sidebar_group": sidebar_group(config),
-           "repo_hub": is_repo_hub(config)}
+           "repo_hub": is_repo_hub(config),
+           # true なら sub はこの hub の連絡を受けない。hub は送る前にこれを見て止まる
+           "default_name": hub_default_name(args.name)}
     warnings = [w for w in (default_name_warning(args.name), mode_warning) if w]
     if warnings:
         out["warning"] = " / ".join(warnings)
     if resumed:
         out["resumed_from"] = resumed[0]
     emit(out)
+    return 0
+
+
+def cmd_hub_name(args) -> int:
+    """今の hub の名前と会話の ID（GitHub issue #384）。書かない.
+
+    sub は、送り手の名前が手元の hub_name（直近の report の出力）と違う連絡を受けたときにこれで引き直す。
+    hub.json の名前を変えるのは refresh-hub（同じ会話の改名。hub は送る前に回す）と takeover / reopen（hub の会話が
+    替わった回）
+    """
+    pdir = project_dir(args.project)
+    hub = read_obj(pdir / "hub.json")
+    name = hub.get("name")
+    # default_name が true の名前の送り手を、sub は hub と見なさない
+    emit({"project": args.project, "hub_name": name, "default_name": hub_default_name(name),
+          "host_session_id": hub.get("host_session_id"), "updated": hub.get("updated")})
     return 0
 
 
@@ -1185,7 +1236,7 @@ def cmd_set_tracker_write(args) -> int:
     config = load_config(pdir)
     if args.mode == "with_approval" and tracker_kind(config) == "local":
         raise HubError(3, "tracker local の PJ では hub はトラッカーに書かない（Issue ファイルは issue-workflow の持ち物 / "
-                          "ADR-20261027014506 の決定 5）")
+                          "ADR-20261027014506 の決定 5）", "tracker_write_local")
     previous = tracker_write(config)
     # 記録を先に書く。書けなければ切り替えない（安全側の設定を緩めた経緯を落とさない）
     journal_append(pdir, "tracker_write", args.mode, {"from": previous})
@@ -1201,7 +1252,7 @@ def cmd_set_sidebar_group(args) -> int:
     hub = require_hub(pdir, args.session_id)
     if args.mode == "on" and verified_host(hub["session_id"]) is None:
         raise HubError(3, "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーのグループは"
-                          "Desktop の hub だけで使える")
+                          "Desktop の hub だけで使える", "sidebar_not_desktop")
     config = load_config(pdir)
     previous = sidebar_group(config)
     previous_id = config.get("sidebar_group_id")
@@ -1276,18 +1327,18 @@ def cmd_reopen(args) -> int:
 
     閉じた PJ を戻すのはたいてい新しい会話なので、hub のセッションが違えば takeover も兼ねる
     """
-    pdir = project_dir(args.project)
+    pdir = project_dir(args.project, status="not_initialized")
     sid = current_session(args.session_id)
     problem = name_problem(args.name)
     if problem:
         raise HubError(2, problem)
     config = load_config(pdir)
     if config.get("status") != "closed":
-        raise HubError(3, f"PJ {args.project} は closed ではない（status: {config.get('status')}）")
+        raise HubError(3, f"PJ {args.project} は closed ではない（status: {config.get('status')}）", "not_closed")
     conflicts = scope_conflicts(pdir, config)
     if conflicts:
         raise HubError(3, f"closed の間に、同じ repo に範囲が重なる PJ「{'」「'.join(conflicts)}」ができている"
-                          "（範囲が重なる hub は置けない）。戻すなら、先にその PJ を close するか範囲を切る")
+                          "（範囲が重なる hub は置けない）。戻すなら、先にその PJ を close するか範囲を切る", "scope_conflict")
     # closed の間に同じ repo の別の PJ へ移ったセッション。戻した PJ で作業中に数えると、重なりと宛先が二重になる
     mine = set(repo_commons(config))
     others, unknown = [], []
@@ -1301,7 +1352,8 @@ def cmd_reopen(args) -> int:
     if unknown and is_repo_hub(config):
         # init と同じ。読めない config が同じ repo の active な repo hub だと、active な repo hub が 2 つになる
         raise HubError(3, f"config が読めない PJ がある（{', '.join(u['project'] for u in unknown)}）。同じ repo の "
-                          "repo hub かを確かめられないので戻さない。その config.json を直してからやり直す")
+                          "repo hub かを確かめられないので戻さない。その config.json を直してからやり直す",
+                       "config_unreadable")
     closes = [row.get("ts") for row in read_jsonl(pdir / "journal.jsonl") if row.get("kind") == "close"]
     closed_at = parse_ts(closes[-1]) if closes else None
 
@@ -1689,7 +1741,7 @@ def report_placed_at(source) -> dt.datetime | None:
 
 
 def moved_projects(rows: list[dict]) -> dict:
-    """closed の間に別の PJ へ移ったと reopen が記録し、その後にこの PJ で report していないセッション → 移った先の PJ.
+    """別の PJ へ移ったと reopen・unregister が記録し、その後にこの PJ で report していないセッション → 移った先の PJ.
 
     close の時点で inbox に残っていた report は reopen の後に取り込まれて journal で後ろに並ぶので、journal の順ではなく
     inbox に置いた時刻で「その後に report した」かを決める。記録に `at` が無い（秒までの ts しか無い）ときは、
@@ -1882,6 +1934,42 @@ def cmd_close_sub(args) -> int:
     return 0
 
 
+def cmd_unregister(args) -> int:
+    """二重登録のうち、lead が残さないと決めた側（この PJ）の登録を外す（GitHub issue #383）.
+
+    この PJ の journal に close_sub の moved を残すだけで、登録のファイルと残す PJ は書かない（他の PJ の状態は
+    その PJ の hub が持つ）。外れ方は reopen の moved と同じで、その後この PJ に report が来れば取り消される
+    """
+    pdir = project_dir(args.project)
+    require_hub(pdir, args.session_id)
+    if not SESSION_ID_RE.fullmatch(args.session):
+        raise HubError(2, "session_id に使えない文字がある")
+    reg = read_obj(pdir / "sessions" / f"{args.session}.json")
+    if not reg:
+        raise HubError(2, f"登録が無い: {args.session}")
+    if args.keep == args.project:
+        raise HubError(2, "--keep は登録を外す PJ（--project）と別の PJ")
+    out = {"session_id": args.session, "name": reg.get("name"), "issue": reg.get("issue"),
+           "project": args.project, "keep": args.keep}
+    # 外した記録が既にあれば、残す PJ がその後 closed になっていても済んだ操作として返す
+    if moved_projects(read_jsonl(pdir / "journal.jsonl")).get(args.session) == args.keep:
+        emit({**out, "already": True})
+        return 0
+    keep_dir = project_dir(args.keep)
+    keep_config = load_config(keep_dir)
+    if not is_active(keep_config):
+        raise HubError(3, f"残す PJ {args.keep} は active ではない（status: {keep_config.get('status')}）")
+    if not registered_on(args.session, [keep_dir]):
+        # 外すと、このセッションの登録がどの PJ にも残らない
+        raise HubError(3, f"残す PJ {args.keep} にこのセッションの登録が無い（別の PJ へ移ったと記録されたものを含む）")
+    # at: journal の ts は秒までなので、後から取り込む report と比べる時刻を細かく持つ（moved_projects）
+    journal_append(pdir, "close_sub", args.session,
+                   {"result": "moved", "to_project": args.keep, "at": stamp(), "by": "unregister"})
+    write_state(pdir)
+    emit({**out, "already": False})
+    return 0
+
+
 def sidebar_done(marks: list[dict], host: str | None, group_id: str | None) -> bool:
     """この会話をもう動かさないか。nested はどのグループでも、filed・declined は今のグループのものだけ数える.
 
@@ -1915,7 +2003,7 @@ def sidebar_plan(pdir: Path, config: dict, hub: dict) -> dict:
     if hub_host is None:
         out["note"] = "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーは動かさない"
         return out
-    # 別の PJ へ移った sub（reopen が記録する）も、戻した PJ のグループに入れ直さない
+    # 別の PJ へ移った sub（reopen・unregister が記録する）も、この PJ のグループに入れ直さない
     closed = {r.get("subject") for r in rows if r.get("kind") == "close_sub" and isinstance(r.get("body"), dict)
               and r["body"].get("result") == "accepted"} | moved_sessions(rows)
     for reg in load_registrations(pdir)[0]:
@@ -2300,9 +2388,11 @@ def session_rows(pdir: Path, config: dict) -> tuple[list[dict], list[tuple[dict,
 def cmd_worktrees(args) -> int:
     """brief の材料: 各 repo の base の SHA と、登録済みセッションが触っているファイル."""
     pdir = project_dir(args.project)
-    repos, rows, unreadable = session_rows(pdir, load_config(pdir))
-    # working: done・不在・別の PJ へ移った登録は false（repo hub の Issue の保守で作業中の Issue を外すのに使う）
+    config = load_config(pdir)
+    repos, rows, unreadable = session_rows(pdir, config)
+    # working: done・不在・別の PJ へ移った登録は false。busy_issues は working の登録の Issue
     emit({"repos": repos, "sessions": [{**entry, "working": working} for entry, working, _ in rows],
+          "busy_issues": busy_issues(tracker_kind(config), [entry for entry, working, _ in rows if working]),
           "unreadable": unreadable})
     return 0
 
@@ -2429,10 +2519,13 @@ def cmd_cross(args) -> int:
                if (i >= mark if mark is not None else str(row.get("ts") or "") >= since)]
         projects.append({"project": other.name, "hub": other_hub.get("name"),
                          "presence_checked": modified_time(other / "presence.json"),
-                         "sessions": sessions, "mine_unknown": mine_unknown if sessions else [],
+                         "sessions": sessions, "busy_issues": busy_issues(tracker_kind(other_config), sessions),
+                         "mine_unknown": mine_unknown if sessions else [],
                          "overlaps": overlaps, "new_decisions": new})
         lines_now[other.name] = len(lines)
+    # busy_issues: 別の PJ の作業中の sub の Issue（自分の PJ の分は worktrees が出す）
     out = {"projects": projects, "unknown": unknown, "active_projects": active,
+           "busy_issues": sorted({i for p in projects for i in p["busy_issues"]}),
            "double_registered": [double[k] for k in sorted(double)]}
     if args.mark:
         # 読んでから書くまでの間に takeover が入っていたら、その hub.json を上書きしない
@@ -2756,48 +2849,29 @@ def foreign_names(pdir: Path, session: str | None = None) -> set[str]:
     return {n for n in names if isinstance(n, str)}
 
 
-def pick_exact(agents: list[dict], name, rule: str, expect_ref: str | None = None) -> int:
-    if not name:
-        return unresolved("照合に使う名前が無い", candidates=candidates(agents))
-    hits = [a for a in agents if a["name"] == name]
-    if len(hits) == 1:
-        return resolved(hits[0], rule, expect_ref, agents)
-    return unresolved(f"名前「{name}」に一致する行が {len(hits)} 件", name=name,
-                      candidates=candidates(hits or agents))
-
-
 def cmd_resolve(args) -> int:
     pdir = project_dir(args.project)
     global RESOLVE_CTX
-    hub = None
-    if not args.hub:
-        # hub → sub（brief / relay）。送るのは hub だけ（sub の report の通知は --hub）
-        hub = require_hub(pdir, args.session_id)
-        RESOLVE_CTX = {"pdir": pdir, "session": args.session}
-        # 決まらない・送らない結果（unresolved・needs_lead・auto_limit・parse_failed・下の入力の誤り）の後に、
-        # 前の送信の宛先を record が引き継がないよう、先に消す
-        clear_resolve()
+    # hub → sub（brief / relay）。送るのは hub だけ（sub → hub の通知先は report が決める / cmd_report の notify）
+    hub = require_hub(pdir, args.session_id)
+    RESOLVE_CTX = {"pdir": pdir, "session": args.session}
+    # 決まらない・送らない結果（unresolved・needs_lead・auto_limit・parse_failed・下の入力の誤り）の後に、
+    # 前の送信の宛先を record が引き継がないよう、先に消す
+    clear_resolve()
     config = load_config(pdir)
     if args.session is not None and not args.session.strip():
         raise HubError(2, "--session が空")
     if args.ref is not None and not REF_RE.fullmatch(args.ref):
         raise HubError(2, "--ref は ListAgents の [ref]（英数字）")
-    if args.hub and args.lead:
-        raise HubError(2, "--lead は hub → sub の宛先にだけ付ける")
     # 承認なしに送る PJ では、宛先が決まった後に歯止めを掛ける（--session でも --ref でも）
     guard = None
-    if not args.hub and approval_mode(config)[0] == "auto":
+    if approval_mode(config)[0] == "auto":
         guard = {"rows": read_jsonl(pdir / "journal.jsonl"), "session": args.session, "lead": args.lead}
     try:
         agents = load_agents(args.agents_file, args.peer_count, args.raw)
     except HubError as e:
         emit({"status": "parse_failed", "reason": str(e)})
         return 2
-    if args.hub:
-        hub_name = read_obj(pdir / "hub.json").get("name")
-        if not isinstance(hub_name, str) or is_default_name(hub_name, None):
-            return unresolved(f"hub の名前「{hub_name}」が既定名なので宛先にしない", candidates=candidates(agents))
-        return pick_exact(agents, hub_name, "hub_name", args.expect_ref)
     if args.ref is not None:
         # lead が候補から選んだ行。名前は変わりうるので ref で引き、今の名前を返す
         hits = [a for a in agents if a["ref"] == args.ref]
@@ -2978,7 +3052,7 @@ def in_hub_range(hub_config: dict, issue: str) -> bool:
 
 
 def registered_on(sid: str, projects: list[Path]) -> list[Path]:
-    """projects のうち、このセッションの登録がある PJ（reopen で別の PJ へ移ったと記録した登録は数えない）."""
+    """projects のうち、このセッションの登録がある PJ（reopen・unregister で別の PJ へ移ったと記録した登録は数えない）."""
     return [p for p in projects if (p / "sessions" / f"{sid}.json").is_file()
             and sid not in moved_sessions(read_jsonl(p / "journal.jsonl"))]
 
@@ -3009,7 +3083,7 @@ def route(sid: str, cwd: Path, args, issue) -> tuple[str, list[str], dict | None
 
     registered = [p.name for p in registered_on(sid, projects)]
     # 2 つ以上に登録済み（古い版の sub・repo hub を後から作った repo）でも、--project で登録済みの 1 つを選べば置ける。
-    # 選ばせずに止めると、その repo では report を二度と置けない（登録を外す手段が無い）
+    # 選ばせずに止めると、hub が unregister で外すまで、その repo では report を置けない
     if (len(registered) > 1 and args.project not in registered) \
             or (len(registered) == 1 and args.project and args.project != registered[0]):
         raise ReportRefused(3, {"status": "registered_elsewhere", "registered": registered,
@@ -3187,7 +3261,8 @@ def cmd_report(args) -> int:
     write_json(pdir / "inbox" / name, report)
 
     hits = [a for a in agents if hub_name and a["name"] == hub_name]
-    if not isinstance(hub_name, str) or is_default_name(hub_name, None):
+    hub_default = hub_default_name(hub_name)
+    if hub_default:
         # 既定名は開き直した別のセッションが名乗りうる（通知の先を取り違える）
         notify = {"status": "unresolved", "reason": f"hub の名前「{hub_name}」が既定名なので宛先にしない"}
     elif len(hits) == 1:
@@ -3196,7 +3271,8 @@ def cmd_report(args) -> int:
         notify = {"status": "unresolved", "reason": f"hub の名前「{hub_name}」に一致する行が {len(hits)} 件"}
     else:
         notify = absent_hub_notify(hub_name, hub_json.get("host_session_id"), host)
-    out = {"file": name, "project": project, "hub_name": hub_name, "notify": notify}
+    # sub は default_name が true の hub_name と一致した送り手も hub と見なさない（hub-name と同じ）
+    out = {"file": name, "project": project, "hub_name": hub_name, "default_name": hub_default, "notify": notify}
     warnings = [*route_warnings, *([branch_warning] if branch_warning else [])]
     if is_default_name(my_name, issue_token(kind, report["issue"])):
         warnings.append("既定名で登録した。hub は既定名では宛先を引かないので、"
@@ -3508,6 +3584,9 @@ def build_parser() -> argparse.ArgumentParser:
             "今のセッションが hub か確かめ、名前の変化を hub.json に反映する（config も出す）")
     p.add_argument("--name", required=True)
 
+    add("hub-name", cmd_hub_name, "今の hub の名前と会話の ID（hub.json を読むだけ。sub が hub からの連絡を見分ける）",
+        session=False)  # mutation-ok: facts の注記と同じ
+
     p = add("set-mode", cmd_set_mode, "送る前の承認の方式を切り替える（config の approval.mode）")
     p.add_argument("--mode", choices=APPROVAL_MODES, required=True)
 
@@ -3588,6 +3667,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--result", choices=("accepted", "failed"), help="閉じた結果（付けなければ確かめるだけ）")
     p.add_argument("--error", help="--result failed の理由")
 
+    p = add("unregister", cmd_unregister,
+            "二重登録のうち、この PJ の登録を外す（journal に close_sub の moved を残す。残す PJ は --keep）")
+    p.add_argument("--session", required=True, help="外す登録の session_id")
+    p.add_argument("--keep", required=True, help="このセッションが登録を残す PJ（そこに登録があること）")
+
     p = add("snapshot", cmd_snapshot, "外部の状態を source ごとに snapshot.json へ（data は stdin の JSON）")
     p.add_argument("--source", required=True, help="tracker / prs など")
     p.add_argument("--data-file", default="-")
@@ -3619,7 +3703,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("resolve", cmd_resolve, "ListAgents から抜き出した JSON で宛先を 1 件に決める（送る直前に毎回）")
     target = p.add_mutually_exclusive_group(required=True)
-    target.add_argument("--hub", action="store_true", help="作業側 → hub")
     target.add_argument("--session", help="hub → 作業側（登録の session_id）")
     target.add_argument("--ref", help="lead が候補から選んだ行の ref（登録名でも Issue ID でも決まらないとき）")
     p.add_argument("--issue", help="登録名で引けないときに照合する Issue ID")
@@ -3668,6 +3751,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except HubError as e:
+        if e.status is not None:
+            emit({"status": e.status, "reason": str(e)})
         print(f"project-hub: {e}", file=sys.stderr)
         return e.code
     except Exception as e:  # 想定外の失敗を「決まらない」の 1 と取り違えさせない

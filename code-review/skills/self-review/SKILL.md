@@ -21,7 +21,7 @@ allowed-tools:
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @997437f8 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @2a27f9ea -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
 
 ## review との違い
@@ -172,7 +172,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 
 - `--focus <観点>`: レビュー対象を特定の観点に絞る（例: `--focus "comment-accuracy"`, `--focus "type-design"`）。複数指定はカンマ区切り
 - `--exclude <観点1,観点2>`: 既に他 agent でカバー済みの観点をスキップする
-- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` と `--exclude design-review` で、それぞれ Markdown 推敲と決定系 doc の design-review 委譲を止める。観点ではないので `--focus` には書けない）。**`md-polish` と `design-review` はスコープの絞り込みに数えない** — 本ファイルと参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、この 2 つ以外の値を 1 つ以上指定した場合だけを指す。この 2 つだけを `--exclude` した回は、それを止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える
+- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` と `--exclude design-review` で、それぞれ Markdown 推敲と決定系 doc の design-review 委譲を止める。観点ではないので `--focus` には書けない）。**`md-polish` と `design-review` はスコープの絞り込みに数えない** — 本ファイルと参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、この 2 つ以外の値を 1 つ以上指定した場合だけを指す。この 2 つだけを `--exclude` した回は、それを止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える。**`--focus` の値が語彙外だけのとき**（`md-polish` / `design-review` を除いて語彙内の観点が 1 つも残らない）も絞り込みとして扱い、全体レビューに倒さない — plan は `scope=focus` で reviewer の行を出さず（前回の対象の行だけは残る）、レポートは「⚠️ 欠損観点」の `語彙外の focus` だけになる。全体に倒すと、名前を書き違えた呼び出しが規模で絞った全体レビューになり、頼んだ観点を見ていないことが見えなくなる（GitHub issue #388）
 
 適用先:
 - **Phase 0 (Step 2)**: `--focus` 指定時は該当観点の reviewer のみ構成する（最小保証の reviewer-bugs / reviewer-claude-md も `--focus` に含まれない限り起動しない）。`--exclude` 指定時は該当観点の reviewer を構成から外す。**例外は Step 1 の `## prior-fixes` の行**（前回の指摘への修正。`--prior-findings` の分を含む）で、絞り込みの外に置く
@@ -254,7 +254,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --effort "${CLAUDE_E
 
 #### 2.3 観点カバレッジ検算と構成テーブル出力
 
-**構成テーブルを確定する前に、起動前検算をする（orchestration-guide `### 8a`・常時実行。delta が空で plan を呼ばない回（Step 2.2）だけは除き、レポートの「実効上限」「仕様整合」には `delta が空・前回の対象のみ` と書く）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば、`--activated` に足して plan を引き直してから確定する（テーブルに直接書き足さない。spec-compliance は足さない — plan が仕様ソースから決める）。v2.39.0 で旧 Phase 4.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。`--focus` / `--exclude` 指定時はその範囲内でのみ検算する。
+**構成テーブルを確定する前に、起動前検算をする（orchestration-guide `### 8a`・毎回。delta が空で plan を呼ばない回（Step 2.2）だけは検算せず、レポートの「実効上限」「仕様整合」には `delta が空・前回の対象のみ` と書く）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば、`--activated` に足して plan を引き直してから確定する（テーブルに直接書き足さない。spec-compliance は足さない — plan が仕様ソースから決める）。v2.39.0 で旧 Phase 4.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。`--focus` / `--exclude` を指定した回は、指定した範囲の観点だけを検算する。
 
 確定したテーブル（plan の `reviewer` / `piggyback` / `dropped` の行。xhigh / max で冗長ペアを組んだらその行も足す）を `check` に流してから起動する:
 

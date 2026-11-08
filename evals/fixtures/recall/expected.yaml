@@ -12,8 +12,9 @@
 #     正本は README.md の「判定ルール」（ここに複製しない）
 #   - 実行 effort: xhigh（self-review skill frontmatter の既定。skeptic 起動条件）
 #
-# 照合は人手（半自動 runbook）。severity / 指摘対象ファイル / キーワードで判定する
+# 照合は judge.py（GitHub issue #400）。severity / 指摘対象ファイル / キーワードで判定する
 # （expect.target_lines_any があれば行、expect.must_not_flag があれば対照も見る）。
+# 本文の読みが要る対照の条件だけは judge.py が「要確認」に挙げ、人が決める。
 
 fixtures:
   - id: 01-value-flow-insert
@@ -71,6 +72,8 @@ fixtures:
         - src/app/projects/[slug]/ProjectSettings.tsx
       target_lines_any:
         - 48 # changed 側の `unstable_rethrow(err);`（diff の唯一の + 行）
+      cleanup_lines: # 飛ばされる後片付けの行。対照の判定でこの行を指す指摘は「要確認」に回す（README の判定ルール）
+        - 57 # changed 側の `closeDialog();`（base から既にある行）
       must_mention_any:
         - "closeDialog"
         - "finally"
@@ -90,6 +93,11 @@ fixtures:
         target_lines_any:
           - 51 # changed 側の InputError の `return;`
         max_severity_reported: MINOR # 対照への MAJOR 以上が 1 回でも出たら FAIL
+        mentions_any: # 対照に触れている目印。期待の行だけを指す指摘は、これを含むものだけを judge.py が「要確認」に挙げる
+          - "InputError"
+          - "入力エラー"
+          - "fieldError"
+          - "51 行"
         false_positive_patterns: # 主対象の行が 48 も 57 も含まない指摘にだけ当てる（README の判定ルール）
           - "InputError.*(closeDialog|閉じ|後片付け)"
           - "入力エラー.*(ダイアログ|閉じ|後片付け)"

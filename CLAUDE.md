@@ -33,12 +33,13 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  # measure-interventions.py（transcript から人の介入点を数える計測。
                                  #   マシンごとに走らせ --merge で合算。手順は
                                  #   docs/session-reports/2026-11-08-human-intervention-measurement.md）
-.claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。4 系統:
+.claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest。依存は jsonschema / pyyaml だけ）。4 系統:
                                  #  ① 検証スクリプト自身（test_validate_plugin_quality.py / test_mutation_test.py）
                                  #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
-                                 #     （`test_<plugin>_*.py`。bats を入れず依存ゼロで 3 経路に載せる）
+                                 #     （`test_<plugin>_*.py`。bats を入れず python だけで 3 経路に載せる）
                                  #     `skills/*/scripts/` 配下も対象（test_harness_keeper_scripts.py）
                                  #     evals/runner.py は判定部だけ純関数として見る（test_evals_runner.py）
+                                 #     recall fixture の判定 judge.py も同じ（test_recall_judge.py）
                                  #  ③ repo 直下スクリプトの CLI テスト（使い捨てリポジトリを立てる）。
                                  #     ゲートの判断（何を止めるか / 判定不能を通すか）は stub を置いて
                                  #     exit code の契約だけを見る: test_machine_layer.py /
@@ -79,7 +80,8 @@ docs/                            # 横断設計指針（pipeline-design / rule-p
                                  # shared-state / testing-pitfalls / ssot-pin / plugin-eval / issue-workflow-migration
                                  # + session-reports/）
 evals/                           # スキル起動回帰テスト（runner.py + cases/*.yaml。README に Gotchas）
-                                 # fixtures/recall/ は別ハーネス（code-review の見落とし回帰）
+                                 # fixtures/recall/ は別ハーネス（code-review の見落とし回帰。
+                                 #   判定は judge.py が保存したレポート k=3 本と expected.yaml を突き合わせる）
 INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の表と同期検証される）
 {plugin-name}/                   # 各プラグイン（独立したディレクトリ）
   .claude-plugin/plugin.json     # プラグインマニフェスト
@@ -143,8 +145,10 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 git config core.hooksPath .githooks
 
 # SSoT 検査の前提（**必須**）。無いとスキーマ検証が実行できず、
-# validate-ssot.sh が exit 2（判定不能）を返して pre-commit が止まる
-pip install jsonschema
+# validate-ssot.sh が exit 2（判定不能）を返して pre-commit が止まる。
+# pyyaml は recall fixture の判定（evals/fixtures/recall/judge.py）とその回帰テストが使う。
+# 無いと test_recall_judge.py が落ち、回帰テストを回す pre-commit が止まる
+pip install jsonschema pyyaml
 ```
 
 ## コマンド

@@ -2418,6 +2418,132 @@ class ReviewScopePublishTest(ScriptTestBase):
                 self.assertEqual(self._scope(None)["mode"], want)
 
 
+class PlanGapPublishTest(ScriptTestBase):
+    """plan を呼ぶはずの回に plan ファイルが無ければ `plan` gap を立てる（GitHub issue #387）.
+
+    呼ぶはずの回は self-review が「delta が空でない回」、review が default-mode の回（payload の
+    `review_mode`）。判定できない回（size ファイルに `scope_mode=` が無い / delta の回に `delta_files=` が
+    無い / review で `review_mode` が無い）は立てない。publish は止めない。
+    """
+
+    def _path(self, kind: str) -> Path:
+        proc = subprocess.run(
+            ["bash", "-c", '. "$1/scripts/lib/review-paths.sh"; review_paths_init ""; '
+                           'review_path "$2"', "_", str(PLUGIN), kind],
+            cwd=self.root, capture_output=True, text=True, env=self._env())
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return Path(proc.stdout.strip())
+
+    def _gaps(self, size_text: str | None, plan: bool, plugin: str = "code-review:self-review",
+              **payload_extra) -> list:
+        if size_text is not None:
+            self._path("size").write_text(size_text, encoding="utf-8")
+        if plan:
+            self._path("plan").write_text("{}", encoding="utf-8")
+        r = self.publish(dict(BASE_PAYLOAD, **payload_extra), plugin)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return self.last_payload()["measurement_gaps"]
+
+    def test_self_review_without_a_plan_is_a_gap(self):
+        for size in ("doc_only=0\nscope_mode=full\n",
+                     "doc_only=0\nscope_mode=delta\ndelta_files=1\ndelta_lines=0\ndelta_size_tier=small\n"):
+            with self.subTest(size=size):
+                self.assertIn("plan", self._gaps(size, plan=False))
+
+    def test_self_review_with_a_plan_is_not_a_gap(self):
+        self.assertNotIn("plan", self._gaps("doc_only=0\nscope_mode=full\n", plan=True))
+
+    def test_self_review_runs_that_skip_the_plan_or_cannot_be_judged_stay_silent(self):
+        """delta が空の回は plan を呼ばない契約。旧版の size ファイル（行が無い）は判定しない."""
+        for size in ("doc_only=0\nscope_mode=delta\ndelta_files=0\ndelta_lines=0\ndelta_size_tier=small\n",
+                     "doc_only=0\nscope_mode=delta\ndelta_lines=3\ndelta_size_tier=small\n",
+                     "doc_only=0\nscope_mode=delta\ndelta_files=x\n",
+                     "doc_only=0\n", None):
+            with self.subTest(size=size):
+                self.assertNotIn("plan", self._gaps(size, plan=False))
+
+    def test_review_without_a_plan_is_a_gap_only_in_default_mode(self):
+        size = "doc_only=0\nscope_mode=full\n"
+        self.assertIn("plan", self._gaps(size, False, "code-review:review", review_mode="default"))
+        self.assertNotIn("plan", self._gaps(size, True, "code-review:review", review_mode="default"))
+        for mode in ("emergency", "doc-review", "dba", "supply-chain", "skip"):
+            with self.subTest(mode=mode):
+                self.assertNotIn("plan", self._gaps(size, False, "code-review:review", review_mode=mode))
+
+    def test_review_without_a_mode_is_a_payload_gap_not_a_plan_gap(self):
+        """`review_mode` を書き忘れた回は plan を判定せず、`payload:review_mode` を立てる."""
+        gaps = self._gaps("doc_only=0\nscope_mode=full\n", False, "code-review:review")
+        self.assertNotIn("plan", gaps)
+        self.assertIn("payload:review_mode", gaps)
+        self.assertIsNone(self.last_payload()["plan_expected"])
+        self.assertNotIn("payload:review_mode",
+                         self._gaps(None, False, "code-review:review", review_mode="dba"))
+        self.assertNotIn("payload:review_mode", self._gaps(None, False), "self-review に立てている")
+
+    def test_plan_expected_carries_the_judgement(self):
+        """retro の分母になる。true / false / 判定できない回は null。呼び出し側の値は捨てる."""
+        for size, plugin, extra, want in (
+                ("doc_only=0\nscope_mode=full\n", "code-review:self-review", {}, True),
+                ("scope_mode=delta\ndelta_files=0\n", "code-review:self-review", {}, False),
+                ("scope_mode=delta\ndelta_lines=3\n", "code-review:self-review", {}, None),
+                (None, "code-review:self-review", {"plan_expected": True}, None),
+                (None, "code-review:review", {"review_mode": "default"}, True),
+                (None, "code-review:review", {"review_mode": "skip", "plan_expected": True}, False)):
+            with self.subTest(size=size, plugin=plugin, extra=extra):
+                self._path("size").unlink(missing_ok=True)
+                self._gaps(size, True, plugin, **extra)
+                self.assertIs(self.last_payload()["plan_expected"], want)
+
+    def test_review_mode_is_kept_for_review_and_dropped_for_self_review(self):
+        self._gaps(None, False, "code-review:review", review_mode="dba")
+        self.assertEqual(self.last_payload().get("review_mode"), "dba")
+        self._gaps("doc_only=0\nscope_mode=full\n", False, review_mode="default")
+        p = self.last_payload()
+        self.assertNotIn("review_mode", p, "self-review にモードを載せている")
+        self.assertIn("plan", p["measurement_gaps"], "self-review の判定が review_mode に引きずられている")
+
+    def test_a_review_mode_outside_the_vocabulary_is_rejected(self):
+        for mode in ("default-mode", "Default", "", None, 1, "default\n"):
+            with self.subTest(mode=mode):
+                r = self.publish(dict(BASE_PAYLOAD, review_mode=mode), "code-review:review")
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("review_mode", r.stderr)
+                self.assertNotIn("Traceback", r.stderr)
+
+    def test_review_modes_match_the_triage_guide(self):
+        """publish の `REVIEW_MODES` は triage-guide.md `## 2.5` のモード名の写し。モードを足したら両方を直す.
+
+        期待値は triage-guide の表から独立に組む（publish の定数から作ると壊れていても通る）。
+        """
+        guide = (PLUGIN / "references" / "triage-guide.md").read_text(encoding="utf-8")
+        table = guide.split("### PR 種別分岐ルール表", 1)[1].split("\n### ", 1)[0]
+        modes = set(re.findall(r"^\|[^|]*\| `([a-z-]+)-mode` \|", table, re.M))
+        self.assertIn("default", modes, "表を読めていない")
+        self.assertIn("### 緊急レビューモード（`--emergency`", guide)
+        modes.add("emergency")
+        src = (PLUGIN / "scripts" / "publish-review-event.sh").read_text(encoding="utf-8")
+        m = re.search(r"^REVIEW_MODES = \(([^)]*)\)$", src, re.M)
+        self.assertIsNotNone(m, "REVIEW_MODES の定義が見つからない")
+        self.assertEqual(set(re.findall(r'"([^"]+)"', m.group(1))), modes)
+
+    def test_the_plan_gap_is_warned_about(self):
+        self._path("size").write_text("doc_only=0\nscope_mode=full\n", encoding="utf-8")
+        r = self.publish(BASE_PAYLOAD)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(r.stderr, r"計測マーカーの欠測: [^\n]*\bplan\b")
+
+    def test_triage_then_publish_end_to_end(self):
+        """triage-signals.sh が plan ファイルを消すので、plan を呼ばずに publish した回は gap になる."""
+        (self.root / "a.ts").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=self.root, env=self._env(), check=True, capture_output=True)
+        self._path("plan").write_text("{}", encoding="utf-8")
+        r = subprocess.run(["bash", str(PLUGIN / "scripts" / "triage-signals.sh"), "--base", "HEAD"],
+                           cwd=self.root, env=self._env(), capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self._path("plan").exists(), "triage が前の回の plan を消していない")
+        self.assertIn("plan", self._gaps(None, plan=False))
+
+
 class AppendixRetroTest(ScriptTestBase):
     """retro が「報告 0 件のうち推奨ありの回」を出す（GitHub issue #168）."""
 
@@ -5504,6 +5630,34 @@ class RetroProvenanceTest(ScriptTestBase):
                       "決められなかった", sig)
         self.assertIn("計測マーカー `plugin-version` の欠測が 100%（5/5）。publish スクリプト自身の "
                       "`plugin.json` を読めなかった", sig)
+
+    def test_a_missing_plan_points_to_the_skipped_step(self):
+        """`plan` の欠測は打点ではなく plan を飛ばした手順を指す（GitHub issue #387）."""
+        rows = [{"measurement_gaps": ["plan"], "plan_expected": True} for _ in range(5)]
+        sig = self.signals(self._retro("--logs", str(self._log(rows))))
+        self.assertIn("計測マーカー `plan` の欠測が 100%（5/5）。reviewer の構成を "
+                      "`plan-reviewers.sh plan` に決めさせずに進めた", sig)
+
+    def test_the_plan_gap_rate_is_over_the_runs_judged_to_need_a_plan(self):
+        """分母は `plan_expected` が true の回だけ。呼ばない回・判定できない回・旧版の回で薄めない."""
+        rows = ([{"measurement_gaps": ["plan"], "plan_expected": True} for _ in range(5)]
+                + [{"measurement_gaps": [], "plan_expected": v} for v in (False, None) for _ in range(20)]
+                + [{"measurement_gaps": []} for _ in range(20)])
+        sig = self.signals(self._retro("--logs", str(self._log(rows))))
+        self.assertIn("計測マーカー `plan` の欠測が 100%（5/5）", sig)
+
+    def test_a_missing_review_mode_is_rated_over_review_runs_only(self):
+        """`payload:review_mode` は #387 以降の review だけに立つので、self-review・旧版の review の回で薄めない."""
+        rows = ([{"measurement_gaps": ["payload:review_mode"], "plan_expected": None} for _ in range(5)]
+                + [{"measurement_gaps": []} for _ in range(20)])
+        log = self._log(rows)
+        text = log.read_text(encoding="utf-8").replace("code-review:self-review", "code-review:review")
+        log.write_text(text + "".join(
+            json.dumps({"ts": "2026-09-01T00:00:%02dZ" % i, "plugin": "code-review:self-review",
+                        "event": "review:completed", "payload": {"measurement_gaps": []}}) + "\n"
+            for i in range(20)), encoding="utf-8")
+        sig = self.signals(self._retro("--logs", str(log)))
+        self.assertIn("計測マーカー `payload:review_mode` の欠測が 100%（5/5）", sig)
 
     # ---- 版で絞る（GitHub issue #210） ------------------------------------------
     def test_min_plugin_version_keeps_that_version_and_newer(self):

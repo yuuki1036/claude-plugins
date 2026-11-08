@@ -7,7 +7,7 @@
 - Issue ファイル（要件定義、受入条件）
 - knowledge ファイル（ドメイン知識、技術的制約）
 - 呼び出し側が渡した仕様ファイル（self-review の `--spec`。BDD spec.md なら Scenario / Examples / 同値分割表を受入条件として読む。design doc なら採用案と設計判断）
-- repo の仕様書（plan が見つけて渡す。`repo-spec-touched` = diff が触った文書、`repo-spec-ref` = session-context・Issue ファイル・PR 本文が言及した文書。受入条件・未決事項の表・「新しく決まったこと」の節を照合元にする。PR に紐づく GitHub Issue の本文が言及した文書は plan の対象外なので、Issue の本文に仕様書のパスがあれば自分で Read して照合元に足す）
+- repo の仕様書（plan が見つけて渡す。`repo-spec-touched` = diff が触った文書、`repo-spec-ref` = session-context・Issue ファイル・PR 本文・PR に紐づく GitHub Issue の本文が言及した文書。受入条件・未決事項の表・「新しく決まったこと」の節を照合元にする）
 
 検出対象:
 - 仕様で定義された要件の実装漏れ
