@@ -47,7 +47,7 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 
 | イベント | スクリプト | 動作 |
 |---|---|---|
-| SessionStart / PostCompact | `inject-rules.sh` | backend を判定し、プロジェクト管理ルール・knowledge インデックス・**7 日以上更新の無い in-progress Issue** を注入する（backend 衝突時は解消手順のみ） |
+| SessionStart / PostCompact | `inject-rules.sh` | backend を判定し、プロジェクト管理ルール・knowledge インデックス・**7 日以上更新の無い in-progress Issue** を注入する（backend 衝突時は解消手順のみ）。全体は 9,500 字に収め、規約は全文、knowledge インデックスは残りに入る分だけ出す（省いた分は件数と `/knowledge` の案内。python3 で字数を数えられなければインデックスは出さず案内だけ） |
 | UserPromptSubmit（once） | `set-session-title.sh` | feature ブランチ名から Issue ID を拾い、セッション名を `<ID>: <title>` にする |
 | PostToolUse | `check-scope-size.sh` | Issue 編集時にチェックリスト数が `scope_size` 上限を超えたら警告 |
 | FileChanged | `on-issue-change.sh` / `on-knowledge-change.sh` | 外部変更を通知し、status が completed に遷移したら `issue:completed` を publish |

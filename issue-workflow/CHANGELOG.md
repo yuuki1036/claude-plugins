@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.4] - 2026-11-08
+
+### Fixed
+
+- **SessionStart / PostCompact の注入が knowledge の index を上限なしに出し、10,000 字を超えると規約ごと切り詰められていた**（GitHub #424）。Claude Code は hook の stdout を 10,000 字で打ち切り、Claude には先頭 2,000 字のプレビューしか渡さない。そのため超えた回は、規約の後半（Knowledge の活用・日程計算・作業フロー・writing-polish 必須）も knowledge も届かなかった。規約の本文（3,601 字）と合わせると、index が 6,000 字ほどになると超える（手元の実例では 9,871 字の index がある）。`inject-rules.sh` は出力全体を 9,500 字に収める（新しい `hooks/scripts/inject-budget.py`）。500 字は JS の UTF-16 長と `len` の差に取った余裕。入れる順は、規約の全文（必ず入れる）→ 放置 Issue → knowledge の index で、index は slug ごと・行ごとに残りへ入る分だけ出す。入りきらなかった分は「index の残り N 件は注入の上限で省いた。`/knowledge` で一覧を見る」に置き換え、丸ごと入らない slug は名前と件数を並べる（`bbb（3 件）`）。規約が上限に近く案内も入らない回は、上限を超えてもこの案内だけは出す（knowledge が黙って消える型に戻さない）。字数は `len`（コードポイント数）で数え、バイト数では数えない。`python3` が無い・起動に失敗する環境（CLT の無い macOS のスタブ・pyenv の shim・3.6 以前）と、index を読めなかった回は、index を出さずに `/knowledge` への案内だけを出す（規約と放置 Issue は出す。起動の失敗を `set -e` の ERR trap に任せると、規約ごと 0 バイトになる）。出す順（規約 → knowledge → 放置 Issue）は変えていない
+
 ## [1.19.3] - 2026-11-08
 
 ### Fixed
