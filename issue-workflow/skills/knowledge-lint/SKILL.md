@@ -28,6 +28,7 @@ knowledge の種類（source / concept）と wikilink 記法の定義は `knowle
 <!-- BACKEND-DETECT:START -->
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
 2. 1 で両方とも無効なら、linked worktree の中かを確かめる（`git rev-parse --absolute-git-dir` と `git rev-parse --path-format=absolute --git-common-dir` が違えば worktree）。worktree なら、メインのチェックアウト（後者の親 dir）の下の 2 つを同じ述語で確かめ直し、以降の判定はその結果で行う。その場合の DATA_DIR はメインのチェックアウト側の絶対パス（例: `/path/to/repo/.claude/linear`）にする — Issue ファイルを gitignore している repo では worktree の中にデータ dir が無いため
+   - worktree のセッションがメインのチェックアウトの `.claude/` の下（この fallback した DATA_DIR を含む）へ書く Edit / Write は、隔離された worktree のセッションだと Claude Code に止められる（`is in the base repo's shared .claude/ directory` と返る）。読むことは止められない。止められたら、メインのチェックアウトへ Bash で書く・コピーするといった回り込みをせず、その回のメイン側への書き込みはそれ以上試さない。書けなかった項目（ファイル・キー・書くはずだった値）を最終報告の「DATA_DIR に未反映」に並べ、残りの手順は進める（反映は worktree の外のセッションで行う）。ただし採番（`counter.txt`）か、Issue・follow-up ファイルの新規作成が止められた回は、止められた時点で後続の手順（ブランチ作成・他スキルへの引き継ぎ・完了の報告）へ進まずに終え、「<書けなかったファイル> を書けなかった（worktree の外のセッションで起動し直す）」と決めた内容を報告する — 採番が確定しないまま進むと、外のセッションが同じ番号を採る
 3. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
 4. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
 5. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する

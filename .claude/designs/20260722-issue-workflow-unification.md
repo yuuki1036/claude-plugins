@@ -3,7 +3,7 @@ id: 20260722-issue-workflow-unification
 title: linear/indie ワークフロープラグインの単一プラグイン統合（backend 分岐）
 status: approved
 phase: current
-last-validated: 2026-10-28
+last-validated: 2026-11-08
 supersedes: []
 superseded-by: null
 issue: 94
@@ -80,6 +80,8 @@ issue-workflow/
 4. どちらも無効 → init への誘導を表示して終了
 
 > **2026-10-28 追記**: その後、両方とも無効のときに、linked worktree の中ならメインのチェックアウト側で同じ述語を確かめ直す fallback を足した（`f0bdff1` / GitHub issue #280。DATA_DIR はメイン側の絶対パスになる）。手順の正本は `.claude-plugin/lib/backend-detect.md` に移り、10 スキルの `BACKEND-DETECT` 区間へ複製して `validate_plugin_quality.py` が同期を検証する（`c90d3af`）。hook 側は `issue-workflow/hooks/lib/detect-backend.sh`。今の手順はこれらを読むこと
+
+> **2026-11-08 追記**: 隔離された worktree のセッションは、fallback したメイン側の DATA_DIR への Edit / Write を Claude Code に止められる。止められたら回り込まず、書けなかった項目を報告の「DATA_DIR に未反映」に並べて進む（採番・Issue や follow-up ファイルの新規作成は止められた時点で終える）と決め、同じ正本の区間の 2 に入れた（GitHub issue #410）。先に検出して書き換えを飛ばす案は、隔離なしの worktree では書けるため採らなかった
 
 以後の本文は `DATA_DIR` / `BACKEND` を使って記述する。sed 4 ルールで吸収されていた語彙差分（`.claude/indie` ↔ `.claude/linear` 等）はこの変数化で消える。
 
