@@ -144,6 +144,7 @@ test('自作プラグインだけを、モデルを呼ばずに更新して表�
   expect(r.text).toContain('#### alpha (1.0.0 → 1.1.0)')
   expect(r.text).toContain('- 新機能')
   expect(r.text).not.toContain('- 古い')
+  expect(r.text).toContain('動いているセッションには、そのセッションで使った skill が更新されていれば')
   expect(c.calls.filter(x => x.startsWith('marketplace update'))).toEqual([`marketplace update ${MP}`])
   expect(c.installed.get('other@theirs')).toBe('2.0.0')
 })
@@ -187,7 +188,10 @@ test('uninstall は既定 → user → project → 手で外す、の順に試�
 test('install に失敗したら エラー、反映されなければ 未反映（キャッシュは消さない）', async ($, on) => {
   const c = newCli({ failInstall: new Set([`alpha@${MP}`]) })
   stub(on, c)
-  expect((await updateAll($)).text).toContain(`| alpha@${MP} | 1.0.0 | - | エラー |`)
+  const failed = (await updateAll($)).text
+  expect(failed).toContain(`| alpha@${MP} | 1.0.0 | - | エラー |`)
+  // 更新が 1 件も無ければ、動いているセッションへの通知の行は出さない
+  expect(failed).not.toContain('動いているセッションには')
 
   const d = newCli({ stuck: new Map([[`alpha@${MP}`, '1.0.0']]) })
   Object.assign(c, d)

@@ -64,8 +64,12 @@ class HookTestCase(unittest.TestCase):
         return ROOT / self.PLUGIN
 
     def run_hook(self, payload: dict | None = None, cwd: Path | None = None,
-                 env_extra: dict | None = None, raw: str | None = None) -> HookResult:
+                 env_extra: dict | None = None, raw: str | None = None,
+                 args: tuple[str, ...] = ()) -> HookResult:
         """hook を 1 回叩く.
+
+        `args` は hooks.json の `args` でスクリプトの後ろに渡す引数（1 本のスクリプトを
+        モード違いで複数のイベントにつなぐ hook 向け）.
 
         `raw` は **JSON として壊れた stdin** を流すための逃がし口（`payload` の代わり）。
         不正 payload で hook がどちらへ倒れるかは block 系 hook の要の挙動なのに、
@@ -96,7 +100,7 @@ class HookTestCase(unittest.TestCase):
         env.pop("CLAUDE_CODE_HOST_SESSION_ID", None)
         env.update(env_extra or {})
         proc = subprocess.run(
-            ["bash", str(self.plugin_root / self.SCRIPT)],
+            ["bash", str(self.plugin_root / self.SCRIPT), *args],
             input=raw if raw is not None else json.dumps(payload or {}),
             capture_output=True, text=True,
             cwd=str(cwd or ROOT), env=env, timeout=30,
