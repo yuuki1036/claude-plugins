@@ -173,9 +173,10 @@ CLAUDE_PROJECT_DIR=/tmp/scratch-repo bash path/to/hooks/scripts/x.sh < payload.j
   （推奨設定は下の「セットアップ 2」）
 
 **「確認」は既定で止める（`confirm_action: "block"`）**。公式 docs（hooks の PreToolUse decision control）
-によると `permissionDecision: "ask"` は、対話ユーザーがいないとき（`-p`、auto mode、dontAsk、
-bypassPermissions、subagent / background agent）に `"defer"` へ落ちて通常の権限フローに任される
-＝**止まらずに通りうる**。hook 入力の `permission_mode` と `agent_id` で auto / dontAsk / bypassPermissions /
+によると `permissionDecision: "ask"` は権限の確認を出す。auto mode でも確認に回り、答える人がいない `-p` と
+dontAsk では拒否になる（`"defer"` は hook が明示して返す別の値で、`-p` でしか使えない）。ただし bypassPermissions と
+subagent / background agent で hook の ask がどう扱われるかは、公式 docs に書かれていない（2026-11-08 に確認）
+＝**止まらずに通る可能性を否定できない**。hook 入力の `permission_mode` と `agent_id` で auto / dontAsk / bypassPermissions /
 subagent は見分けられるが、**`-p` は見分けられない**。`confirm_action: "ask"` にすると
 `permission_mode` が default / acceptEdits / plan で `agent_id` が無いときだけ ask を返し、それ以外は止める。
 

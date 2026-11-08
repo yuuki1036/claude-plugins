@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.10.1] - 2026-11-08
+
+### Fixed
+
+- **README と `detect-public-leak.py` のコメントの、`permissionDecision: "ask"` の説明を今の公式 docs に合わせた**。
+  「対話ユーザーがいないと `"defer"` へ落ちて通る」と書いていたが、`"defer"` は hook が明示して返す別の値で、`-p` でしか使えない。
+  今の docs では、ask は auto mode でも確認に回り、`-p` と dontAsk では拒否になる。bypassPermissions と subagent での扱いは
+  docs に書かれていないので、`confirm_action` の既定（block）は変えない。挙動は変えていない
+
 ## [0.10.0] - 2026-10-31
 
 ### Added
