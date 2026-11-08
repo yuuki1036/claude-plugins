@@ -67,7 +67,7 @@ worktree を作っただけでは、diff ペイン・Bash の cwd・プロジェ
 
 ## 5. 移した後の決まりごと
 
-- **DATA_DIR**: この skill の残りでは、`{DATA_DIR}` が相対パスなら `{main_root}/{DATA_DIR}` に読み替える（移動後の相対パスは worktree を指す）。移動後に起動する skill は、Phase 0 の backend 検出が worktree にデータ dir が無いときにメインのチェックアウトへ fallback する
+- **DATA_DIR**: この skill の残りでは、`{DATA_DIR}` が相対パスなら `{main_root}/{DATA_DIR}` に読み替える（移動後の相対パスは worktree を指す）。移動後に起動する skill は、Phase 0 の backend 検出が worktree にデータ dir が無いときにメインのチェックアウトへ fallback する。移った先が隔離された worktree のセッションなら、メインのチェックアウトの `.claude/` の下への Edit / Write は Claude Code に止められる。止められたら回り込まず、書けなかった項目を報告に「DATA_DIR に未反映」として並べて進む（Phase 0 の 2。上の読み替えで書く回も同じ）。次の項の「worktree へ写す」は worktree 側への書き込みなので止められない
 - **DATA_DIR を git で追跡している repo**（`git -C "{main_root}" check-ignore -q "{DATA_DIR}"` が偽）: worktree には起点のブランチの `{DATA_DIR}` が入っており、この skill がメイン側で作った・書き換えたファイル（issue-create なら Issue ファイルと `counter.txt`。follow-up の promote なら加えて follow-up ファイル）の内容はまだ入っていない。worktree の同じパスへ写し、以降の編集は worktree 側で行う（ブランチと一緒にコミットされる）。メイン側にも同じ変更が残ることを報告に書く。gitignore している repo では写さない
 - **session-context.md**: start の Phase CTX は `{WORKTREE}/.claude/session-context.md` に書く。code-review と issue-band は、作業しているチェックアウトの `.claude/session-context.md` を読む
 - **feature-dev へ渡す**: 続けて起動するときは、引数に「worktree: `{WORKTREE}`（作成・移動済み。新しく作らない）」を添える。feature-dev の Phase 4.8 は worktree の中として扱い、環境のセットアップと Phase 7 の publish 先の規約に従う

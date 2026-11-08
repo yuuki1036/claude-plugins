@@ -36,6 +36,7 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 <!-- BACKEND-DETECT:START -->
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
 2. 1 で両方とも無効なら、linked worktree の中かを確かめる（`git rev-parse --absolute-git-dir` と `git rev-parse --path-format=absolute --git-common-dir` が違えば worktree）。worktree なら、メインのチェックアウト（後者の親 dir）の下の 2 つを同じ述語で確かめ直し、以降の判定はその結果で行う。その場合の DATA_DIR はメインのチェックアウト側の絶対パス（例: `/path/to/repo/.claude/linear`）にする — Issue ファイルを gitignore している repo では worktree の中にデータ dir が無いため
+   - worktree のセッションがメインのチェックアウトの `.claude/` の下（この fallback した DATA_DIR を含む）へ書く Edit / Write は、隔離された worktree のセッションだと Claude Code に止められる（`is in the base repo's shared .claude/ directory` と返る）。読むことは止められない。止められたら、メインのチェックアウトへ Bash で書く・コピーするといった回り込みをせず、その回のメイン側への書き込みはそれ以上試さない。書けなかった項目（ファイル・キー・書くはずだった値）を最終報告の「DATA_DIR に未反映」に並べ、残りの手順は進める（反映は worktree の外のセッションで行う）。ただし採番（`counter.txt`）か、Issue・follow-up ファイルの新規作成が止められた回は、止められた時点で後続の手順（ブランチ作成・他スキルへの引き継ぎ・完了の報告）へ進まずに終え、「<書けなかったファイル> を書けなかった（worktree の外のセッションで起動し直す）」と決めた内容を報告する — 採番が確定しないまま進むと、外のセッションが同じ番号を採る
 3. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
 4. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
 5. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
@@ -283,6 +284,7 @@ Issue ファイルを読み込めた回に、frontmatter の `status` で分岐�
 3. `status` が `backlog` 以外（`in-progress` / `frozen` / `completed` / `canceled`）→ 書き換えない（`frozen` の再開は maintain の手順で利用者が決める）
 
 - 書き換えた回は F6 の Issue 情報に「status: backlog → in-progress（着手を記録）」と出す
+- 書き換えを Claude Code に止められた回（Phase 0 の 2。隔離された worktree のセッションが、メインのチェックアウトの Issue ファイルを書く回）は、回り込まずに F6 の Issue 情報へ「status: backlog のまま（in-progress への書き換えを止められた。worktree の外のセッションで反映する）」と出し（最終報告の「DATA_DIR に未反映」にも並べる）、F7 へ進む。後回しの回はこの扱いに当たらない（`{DATA_DIR}` を git で追跡している repo に限られ、worktree に自分のデータ dir があるので Phase 0 は fallback しない）
 - BACKEND=linear でも書くのはローカルの Issue ファイルだけで、Linear 側のステータスは変えない（Linear API は読み取りのみ）
 - `{DATA_DIR}` を git で追跡している repo で、`none` から F7 で worktree へ移る回は、書き換えた Issue ファイルを `branch-setup.md` の 5 の「この skill がメイン側で書き換えたファイル」として扱う（既定ブランチから新しく切るので、写しても上書きにならない）。F2.5 で既存の worktree へ移った回（`moved` と、worktree へ移った `fresh`）は、移り先の Issue ファイルを書き換える
 
@@ -351,7 +353,7 @@ Issue ファイルが存在しない場合:
 
 1. `issue-create` スキルを使った新規作成をユーザーに提案する
    - 「Issue ファイルが見つかりません。`/issue-create` で新規作成しますか？」と確認
-2. ユーザーの承認を得てから **Skill ツール**で `issue-create` スキルを実行する
+2. ユーザーの承認を得てから **Skill ツール**で `issue-create` スキルを実行する。issue-create が起票できずに終えた回（Phase 0 の 2。メイン側への書き込みを止められた）は F5 以降へ進まず、その報告を伝えて終える
 3. ユーザーが不要と判断した場合はスキップして Phase F6 へ
 
 ### Phase F5: 放置 Issue 検知 + Follow-up 通知
@@ -372,7 +374,7 @@ Issue ファイルが存在しない場合:
 Phase F3〜F5 で収集した全情報を統合し、ユーザーに報告する。**Phase F7 の連携案内があれば Issue 情報の直後に差し込む**（末尾に置くと読まれない）:
 
 - **判定**: F2.5 の `WORK_LINE`（常に先頭の 1 行。Issue 情報より前）
-- **Issue 情報**: タイトル・ステータス（Phase F3.2 で書き換えた回は「status: backlog → in-progress（着手を記録）」。後回しの回は「status: backlog（F7 の締めで in-progress にする。作業のあるブランチへ移らずに終える回は、移った後の /start で）」）
+- **Issue 情報**: タイトル・ステータス（Phase F3.2 で書き換えた回は「status: backlog → in-progress（着手を記録）」。書き換えを止められた回は「status: backlog のまま（…）」。後回しの回は「status: backlog（F7 の締めで in-progress にする。作業のあるブランチへ移らずに終える回は、移った後の /start で）」）
 - **今回のセッションでやること**: `TASK_INTENT = continue` のとき、引数で渡された意図をそのまま再掲する
 - **未完了タスク一覧**: Issue ファイルのチェックリストから未完了項目を抽出（あれば）
 - **前回セッションからの継続ポイント**: 更新履歴の最新エントリや進行中の作業内容
