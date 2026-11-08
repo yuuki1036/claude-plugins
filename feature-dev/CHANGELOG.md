@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.2] - 2026-11-08
+
+### Fixed
+
+- **check-deps.sh の他プラグインの有効判定を、同梱の `scripts/plugin-enabled.sh` に寄せた**（GitHub issue #423）。`false` で無効化したものを導入済みと誤らず、project / local の settings だけで有効化したものを未導入と鳴らさない。WARN は無効化の場合の有効化も案内する
+
 ## [2.28.1] - 2026-11-07
 
 ### Changed

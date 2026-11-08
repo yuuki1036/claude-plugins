@@ -71,9 +71,9 @@ allowed-tools:
 
 1. **Issue ファイル**: `.claude/indie/*/issues/*.md` / `.claude/linear/*/issues/*.md` をテーマに関連するものに絞って Glob（プラグイン呼び出し不要のファイル直読み）。見つかれば frontmatter の `issue:` に相対パスを記録する
 2. **BDD spec**: `features/**/spec.md` を Glob。テーマに合致する spec があれば **authoritative な WHAT** として Read し、`spec:` に記録する。Scenario の生成・編集は一切しない
-   - spec が無く、振る舞い仕様が曖昧なテーマの場合、bdd-spec の存在を判定:
+   - spec が無く、振る舞い仕様が曖昧なテーマの場合、bdd-spec が有効か判定（同梱の `plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す。出力が空ならスクリプトを起動できていないので、`${CLAUDE_PLUGIN_ROOT}` を実パス（この文書を Read したパスの、プラグインのルート）に直して再実行する（無効と同じに扱わない））:
      ```bash
-     if grep -q '"bdd-spec@' "$HOME/.claude/settings.json" 2>/dev/null; then BDD_SPEC=1; else BDD_SPEC=0; fi
+     echo "BDD_SPEC=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" bdd-spec)"
      ```
      `BDD_SPEC=1` なら AskUserQuestion で「先に spec.md を作るか」確認し、作る場合は `bdd-spec:create-spec` を非対話引数（`role`/`want`/`why`）で呼ぶ。`BDD_SPEC=0` または「作らない」なら skip
 3. **既存 design doc**: `.claude/designs/*.md` を Glob し、同テーマの doc がないか frontmatter の `title` / `tags` で確認。**同テーマの doc が存在する場合**は AskUserQuestion で確認:
@@ -135,9 +135,9 @@ allowed-tools:
    - 実装と doc の一致をどう検証するか
    - 実装完了時の doc 更新手順（`phase: target → current`）
    - 書けない場合は**書けない理由と確定タイミング**を残す（例: 「PoC 未了のため Issue 分解不能。確定タイミング: PoC 後」）
-5. **writing-polish 連携（opt-in・dormant）**: 提示直前に判定:
+5. **writing-polish 連携（opt-in・dormant）**: 提示直前に有効か判定（出力が空なら Phase 1 の 2 と同じく実パスに直して再実行する）:
    ```bash
-   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then WRITING_POLISH=1; else WRITING_POLISH=0; fi
+   echo "WRITING_POLISH=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" writing-polish)"
    ```
    `WRITING_POLISH=1` なら `Skill` tool で `writing-polish:writing-polish` を `--embed --tone rfc` で呼び、散文部分のみ推敲する。**frontmatter・セクション構造・表・コードブロックは変更しない。構造を壊す結果は破棄して元案を使う**。失敗時は warning を出し推敲前の本文で続行
 6. 本文をユーザーに提示し、承認を得てから Write する
@@ -149,9 +149,9 @@ allowed-tools:
 ## Phase 6: ADR 切り出し（adr-keeper dormant）
 
 1. doc の「設計判断ログ」から `[→ADR候補]` マーカーの付いた判断を列挙する
-2. adr-keeper の存在を判定:
+2. adr-keeper が有効か判定（同梱の `plugin-enabled.sh`。出力が空なら Phase 1 の 2 と同じく実パスに直して再実行する）:
    ```bash
-   if grep -q '"adr-keeper@' "$HOME/.claude/settings.json" 2>/dev/null; then ADR_KEEPER=1; else ADR_KEEPER=0; fi
+   echo "ADR_KEEPER=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" adr-keeper)"
    ```
 3. `ADR_KEEPER=1` かつ候補が 1 件以上 → AskUserQuestion で切り出す候補を確認（multiSelect）し、承認分を `Skill` tool で `adr-keeper:adr` の `new <title>` として作成する（ここで選別を済ませているので、adr 側の記録価値 3 条件ゲートは掛からない）。作成した ADR の id を doc 側 frontmatter の `adrs:` に追記し、ADR 側「関連」にも doc パスを記録する（相互リンク）
 4. `ADR_KEEPER=0` → 切り出しは skip。`[→ADR候補]` マーカーは doc に残す（後から adr-keeper 導入時に拾える）

@@ -71,11 +71,11 @@
 
 ### Phase 1.3: BDD Spec Creation（bdd-spec 連携 / dormant）
 
-`bdd-spec` プラグインがインストールされている場合のみ、Phase 1 直後に BDD `spec.md`（Feature / Scenario / Examples / 同値分割表）を生成し、Phase 4 architect の **authoritative requirements** として使う。`bdd-spec:create-spec` を非対話 API（`role` / `want` / `why` / `shortPath`）で呼ぶ。未インストール時は skip し、既存の Issue 解釈フローに fallback する。
+`bdd-spec` プラグインが有効な場合のみ、Phase 1 直後に BDD `spec.md`（Feature / Scenario / Examples / 同値分割表）を生成し、Phase 4 architect の **authoritative requirements** として使う。`bdd-spec:create-spec` を非対話 API（`role` / `want` / `why` / `shortPath`）で呼ぶ。未導入・無効時は skip し、既存の Issue 解釈フローに fallback する。
 
 ### Phase 1.4: BDD Spec Evaluation（bdd-spec 連携 / dormant）
 
-Phase 1.3 で spec を生成したときだけ、`bdd-spec:evaluate-spec` に `spec=<path>` + `--embed` で品質ゲートを委譲する（5 観点の静的レビュー）。Phase 1.3 が skip された（bdd-spec 未インストール /spec 未生成）場合は Phase 1.5 へ進む。
+Phase 1.3 で spec を生成したときだけ、`bdd-spec:evaluate-spec` に `spec=<path>` + `--embed` で品質ゲートを委譲する（5 観点の静的レビュー）。Phase 1.3 が skip された（bdd-spec 未導入・無効 / spec 未生成）場合は Phase 1.5 へ進む。
 
 ### Phase 1.5: Issue Context Detection（issue-workflow 連携）
 
@@ -123,7 +123,7 @@ Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する�
 
 ### Phase 4.5: Design Doc Export（design-doc 連携 / dormant）
 
-`design-doc` プラグインがインストールされている場合のみ、Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を `.claude/designs/` に永続化する opt-in ステップ。`design-doc:design-doc` を export 非対話 API（`mode=export`）で呼び、`spec=`（Phase 1.3）/ `issue=`（Phase 1.5）を frontmatter に転記する。後続の同領域開発の参照元・実装後の as-built 記録として再利用できる。未インストール時は skip、呼び出し失敗時も warning のみで実装フローを止めない。
+`design-doc` プラグインが有効な場合のみ、Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を `.claude/designs/` に永続化する opt-in ステップ。`design-doc:design-doc` を export 非対話 API（`mode=export`）で呼び、`spec=`（Phase 1.3）/ `issue=`（Phase 1.5）を frontmatter に転記する。後続の同領域開発の参照元・実装後の as-built 記録として再利用できる。未導入・無効時は skip、呼び出し失敗時も warning のみで実装フローを止めない。
 
 ### Phase 5: Implementation
 
@@ -222,9 +222,9 @@ code-review が無効・呼び出しの失敗のときは、従来のサマリ�
 
 連携プラグイン（いずれも optional。`_requirements` 参照）:
 
-- `code-review`（Phase 6 委譲先。未インストール時は Phase 6 が fail-fast）
-- `bdd-spec`（Phase 1.3 入力契約。未インストール時は skip）
-- `design-doc`（Phase 4.5 export 先。未インストール時は skip）
+- `code-review`（Phase 6 委譲先。未導入・無効時は Phase 6 が fail-fast）
+- `bdd-spec`（Phase 1.3 入力契約。未導入・無効時は skip）
+- `design-doc`（Phase 4.5 export 先。未導入・無効時は skip）
 
 ## Author
 

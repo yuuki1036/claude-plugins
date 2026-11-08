@@ -42,14 +42,16 @@ check_cli() {
 
 check_plugin() {
   local name="$1" required="$2" desc="$3"
-  # settings.json の enabled plugins（"name@marketplace" 形式）を確認
-  if [ -f "$HOME/.claude/settings.json" ] && grep -q "\"${name}@" "$HOME/.claude/settings.json" 2>/dev/null; then
+  local state
+  # 有効かは同梱の複製（正本 .claude-plugin/lib/plugin-enabled.sh）で決める。キーの有無だけでは false の無効化と project / local の有効化を読めない
+  state=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" "$name" 2>/dev/null) || state=0
+  if [ "$state" = 1 ]; then
     return 0
   fi
   if [ "$required" = "true" ]; then
-    errors="${errors}\n- [ERROR] ${desc}（${name}）がインストールされていません"
+    errors="${errors}\n- [ERROR] ${desc}（${name}）が未導入か無効です"
   else
-    warnings="${warnings}\n- [WARN] ${desc}（${name}）が未インストールです（オプション）"
+    warnings="${warnings}\n- [WARN] ${desc}（${name}）が未導入か無効です（オプション）"
   fi
 }
 
@@ -59,11 +61,11 @@ check_cli "python3" "true" "payload の整形・検証（publish-review-event.sh
 check_mcp "github" "true" "GitHub MCP サーバー"
 # kvault は self-review Step 1.5 の Vault 照合で使う任意の外部 CLI（未導入時は skip）
 check_cli "kvault" "false" "knowledge vault CLI（self-review Vault 照合。未導入時は skip）"
-# writing-polish は review 締めフロー 3 のドラフト推敲と self-review の Markdown 推敲で使う dormant 連携（未導入時は skip）
-check_plugin "writing-polish" "false" "writing-polish プラグイン（返答ドラフトの提示前推敲と self-review の Markdown 推敲。未インストール時は skip）"
-# design-doc は review / self-review の決定系 doc の design-review 委譲で使う dormant 連携（未導入時は doc-substance で補う）
-check_plugin "design-doc" "false" "design-doc プラグイン（決定系 doc の決定の質を design-review に見させる。未インストール時は doc-substance で補う）"
-check_plugin "dev-workflow" "false" "dev-workflow プラグイン（self-review 完了後の worktree-teardown 起動。未インストール時は skip）"
+# writing-polish は review 締めフロー 3 のドラフト推敲と self-review の Markdown 推敲で使う dormant 連携（未導入・無効時は skip）
+check_plugin "writing-polish" "false" "writing-polish プラグイン（返答ドラフトの提示前推敲と self-review の Markdown 推敲。未導入・無効時は skip）"
+# design-doc は review / self-review の決定系 doc の design-review 委譲で使う dormant 連携（未導入・無効時は doc-substance で補う）
+check_plugin "design-doc" "false" "design-doc プラグイン（決定系 doc の決定の質を design-review に見させる。未導入・無効時は doc-substance で補う）"
+check_plugin "dev-workflow" "false" "dev-workflow プラグイン（self-review 完了後の worktree-teardown 起動。未導入・無効時は skip）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then
