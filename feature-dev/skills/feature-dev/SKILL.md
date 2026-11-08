@@ -34,7 +34,7 @@ allowed-tools:
 <!-- SSOT: code-review/skills/self-review/SKILL.md#6 @22a4cba8 -->
 <!-- SSOT: code-review/references/prior-fixes-guide.md#4 @f5c76a67 -->
 <!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review SKILL.md「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
-<!-- SSOT: code-review/skills/self-review/SKILL.md#1 @87019c9f -->
+<!-- SSOT: code-review/skills/self-review/SKILL.md#1 @77013dba -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
 
 > **この SKILL.md は Read 1 回では読み切れない**（途中で切れ、続きの offset が注記される）。Read の `offset` / `limit` で分けて Phase 7 の末尾まで読んでから Phase 1 に入る（GitHub issue #350）。

@@ -96,6 +96,9 @@ GitHub #351。self-review が triage-guide の reviewer 構成の規則を守ら
 - [local] `--since` の回の前回の対象は、単独維持の観点も含めて規模キャップの枠を使わない専任（prior の行）にする。単独維持の観点は単独維持の順の位置で取り、low / medium の layer-responsibility も設計バンドルに入れない（相乗りや束ねにすると修正の確認が他の観点の片手間になる）
 - [local] delta が空の回は plan / check を使わない（`### 6.5` の「前回の対象の reviewer だけ」を、最小保証を必ず足す plan では表せない）
 - [local] check は保存した plan と突き合わせる。check のときに引数を渡し直させない（check だけ別の引数で通す経路を作らない）
+- [local] 2026-11-07 決定（#388）: `--focus` に語彙外の値しか無い回も `scope=focus` のままにし、reviewer の行を出さない（前回の対象の行は残す）。全体に倒すと、名前を書き違えた呼び出しが規模で絞った全体レビューになる。exit 2 で止める案は採らない（呼び出し側の書き違いでフロー全体が止まる）
+- [local] 2026-11-07 決定（#389）: review の Issue ファイルの探索を plan に一本化する（optional-flows `## 2` の本文 grep をやめる）。default-mode 以外でも spec-compliance を起動するモードは、仕様ソースを得るためだけに plan を呼び、構成の行と check は使わない。Issue ID の正規表現は `ISSUE_ID_RE` を正本にし、triage-signals.sh の grep はテストで縛る
+- [local] 2026-11-07 決定（#391）: PR に紐づく GitHub Issue の本文は、review が保存して `--pr-issue-body <file>` で渡す（plan に gh 依存を持ち込まない方針は維持）。本文が言及する仕様書は `repo-spec-ref` に数える
 
 ## 未解決事項 (open)
 

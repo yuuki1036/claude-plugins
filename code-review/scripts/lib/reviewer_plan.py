@@ -67,7 +67,8 @@ SIZE_TIERS = ("small", "medium", "large", "unknown")
 REDUNDANT_EFFORTS = frozenset(("xhigh", "max"))
 SPEC_SOURCE_LABELS = ("pr-issue", "knowledge")
 # plan が diff と参照から見つける repo の仕様書（GitHub issue #352）。`--spec-source` では渡せない
-# （SPEC_SOURCE_LABELS に入れない）: touched = diff が触った、ref = session-context・Issue ファイル・PR 本文が言及した
+# （SPEC_SOURCE_LABELS に入れない）: touched = diff が触った、ref = session-context・Issue ファイル・PR 本文・
+# PR に紐づく GitHub Issue の本文が言及した
 SPEC_DOC_LABELS = ("repo-spec-touched", "repo-spec-ref")
 PR_BODY_HEADING = "### PR 説明"
 # fetch-pr-context.sh が PR 本文の次に出す見出し。PR 本文の中の `### ` 見出しでは打ち切らない
@@ -175,7 +176,7 @@ def _assign(cands, prior, effort, main_cap, total_cap, delta):
             else:
                 dropped.append(k)
     taken = {k for _, keys in rows for k in keys} | set(dropped)
-    rest = [k for k in pool if k not in taken and k not in SOLO
+    rest = [k for k in pool if k not in taken and k not in SOLO  # mutation-ok: and を or にしても同じ。pool の単独維持の観点は上のループで必ず taken に入り、taken の非単独維持は設計バンドルの観点だけで次行が外す
             and not (design_effort and k in DESIGN)]
 
     for k in held:
@@ -188,7 +189,7 @@ def _assign(cands, prior, effort, main_cap, total_cap, delta):
     if rest:
         if slots <= 0:
             dropped.extend(rest)
-        elif len(rest) <= slots:
+        elif len(rest) <= slots:  # mutation-ok: <= を < にしても同じ。残りの観点数と枠数が等しいと、下の均等割りも 1 観点ずつの solo になる
             for k in rest:
                 take("solo", [k])
         else:
@@ -228,10 +229,13 @@ def compute_plan(effort, size_tier, activated=(), prior=(), delta=False, focus=(
     focus = [k for k in focus if k not in NON_FOCUS]
     exclude = [k for k in exclude if k not in NON_FOCUS]
     out_of_vocab = [k for k in focus + exclude if k not in FOCUS_KEYS]
+    # 語彙外の値しか無い --focus も絞り込みとして扱う。全体に倒すと、名前を書き違えた呼び出しが
+    # 規模で絞った全体レビューになり、頼んだ観点を見ていないことが分からない（GitHub issue #388）
+    focus_given = bool(focus)
     focus = [k for k in focus if k in FOCUS_KEYS]
     exclude = [k for k in exclude if k in FOCUS_KEYS]
     prior = _ordered(prior)
-    scope = "focus" if focus else ("exclude" if exclude else "full")
+    scope = "focus" if focus_given else ("exclude" if exclude else "full")
 
     if scope == "focus":
         cands = set(focus) | set(prior)
@@ -269,7 +273,7 @@ def compute_plan(effort, size_tier, activated=(), prior=(), delta=False, focus=(
                 reasons[k] = "overflow"
 
     cap_source = "scope" if scope != "full" else (
-        "size" if size_cap is not None and size_cap < effort_cap else "effort")
+        "size" if size_cap is not None and size_cap < effort_cap else "effort")  # mutation-ok: < を <= にしても同じ。規模キャップ（3 / 5）と effort 上限（4 / 6 / 10）に等しくなる組が無い
     explorer_size = SIZE_CAP["explorer"].get(size_tier)
     specialist_size = SIZE_CAP["specialist"].get(size_tier)
 
@@ -398,7 +402,7 @@ def check_table(plan, rows, piggyback, dropped):
 
     for r in rows:
         keys = set(r["keys"])
-        is_design = design_effort and len(keys) > 1 and keys <= DESIGN
+        is_design = design_effort and len(keys) > 1 and keys <= DESIGN  # mutation-ok: > を >= にしても同じ。1 観点の行は solo-bundled にも over-bundled にも当たらず、is_design の値が結果に効かない
         if len(keys) > 1 and keys & SOLO and not is_design:
             ng.append(("solo-bundled", "%s: %s" % (r["id"], ",".join(r["keys"]))))
         limit = DESIGN_BUNDLE_MAX if is_design else BUNDLE_MAX
@@ -500,13 +504,13 @@ def _read_text(path):
         return ""
 
 
-def detect_spec_sources(roots, branch, issue_ids, specs, diff_text="", pr_body=""):
+def detect_spec_sources(roots, branch, issue_ids, specs, diff_text="", pr_body="", issue_bodies=()):
     """仕様ソースを探す。戻り値は (sources, missing)。sources は [(label, detail)]。
 
     roots は作業ツリーとメインのチェックアウト（Issue ファイルを gitignore した repo では worktree に無い）。
     repo の仕様書は作業ツリー（roots[0]）で探す: diff が触ったもの（repo-spec-touched）と、session-context・
-    Issue ファイル・PR 本文が言及したもの（repo-spec-ref）。規約（CLAUDE.md 等）は claude-md-compliance の
-    担当なので足さない。
+    Issue ファイル・PR 本文・PR に紐づく GitHub Issue の本文（issue_bodies）が言及したもの（repo-spec-ref）。
+    規約（CLAUDE.md 等）は claude-md-compliance の担当なので足さない。
     """
     sources, missing, seen = [], [], set()
     ids = list(issue_ids)
@@ -556,7 +560,7 @@ def detect_spec_sources(roots, branch, issue_ids, specs, diff_text="", pr_body="
                 known.add(os.path.realpath(path))
                 add("repo-spec-touched", path)
         refs = [_read_text(d) for label, d in list(sources) if label in ("session-context", "issue-file")]
-        for kind, rel in doc_locate.mentioned_docs("\n".join(refs + [pr_body]), root):
+        for kind, rel in doc_locate.mentioned_docs("\n".join(refs + [pr_body] + list(issue_bodies)), root):
             path = os.path.join(root, rel)
             if kind == "spec" and os.path.realpath(path) not in known:
                 known.add(os.path.realpath(path))
@@ -564,7 +568,7 @@ def detect_spec_sources(roots, branch, issue_ids, specs, diff_text="", pr_body="
     return sources, missing
 
 
-def _keys_arg(value, name, allow_spec=True):
+def _keys_arg(value, name, allow_spec=True):  # mutation-ok: 呼び出しは --activated の 1 箇所だけで、allow_spec=False を明示して渡す（既定値は使われない）
     keys = _csv(value)
     bad = [k for k in keys if k not in FOCUS_KEYS]
     if bad:
@@ -604,8 +608,12 @@ def _plan_main(ns):
     roots = [r for r in (ns.wt, ns.main_root) if r]
     roots = list(dict.fromkeys(os.path.abspath(r) for r in roots))
     diff_text = _read_text(ns.diff_file) if ns.diff_file else ""
+    # PR に紐づく GitHub Issue の本文（review が gh issue view で保存したもの / GitHub issue #391）。
+    # 第三者が書く入力だが、パスの解決は PR 本文と同じ doc_locate の検査を通る
+    issue_bodies = [_read_text(f) for f in ns.pr_issue_body or []]
     found, missing = detect_spec_sources(roots, ns.branch, ns.issue_id or [], ns.spec or [],
-                                         diff_text=diff_text, pr_body=_pr_body(ns.pr_context))
+                                         diff_text=diff_text, pr_body=_pr_body(ns.pr_context),
+                                         issue_bodies=issue_bodies)
     if ns.size_tier == "unknown":
         print("WARN: size_tier=unknown のため規模キャップを掛けずに effort 上限だけで構成した", file=sys.stderr)
     plan = compute_plan(effort, ns.size_tier, activated=activated, prior=prior, delta=ns.delta,
@@ -617,7 +625,7 @@ def _plan_main(ns):
     rc = 0
     try:
         with open(ns.plan_file, "w", encoding="utf-8") as f:
-            json.dump(plan, f, ensure_ascii=False)
+            json.dump(plan, f, ensure_ascii=False)  # mutation-ok: 読むのは check の json.load だけで、妥当な Unicode 文字列ならエスケープの有無によらず同じ値に戻る
     except OSError as e:
         print("WARN: plan を書けない（check が使えない）: %s" % e, file=sys.stderr)
         rc = 1
@@ -656,7 +664,7 @@ def main(argv=None):
     p.add_argument("--main-root", default="")
     p.add_argument("--branch", default="")
     p.add_argument("--effort", default="")
-    p.add_argument("--size-tier", required=True)
+    p.add_argument("--size-tier", required=True)  # mutation-ok: 省いても _plan_main が SIZE_TIERS で弾き、FATAL 行と exit 2 になる（文言は違う）
     p.add_argument("--activated", default="")
     p.add_argument("--prior", default="")
     p.add_argument("--delta", action="store_true")
@@ -667,6 +675,7 @@ def main(argv=None):
     p.add_argument("--issue-id", action="append")
     p.add_argument("--diff-file", default="")
     p.add_argument("--pr-context", default="")
+    p.add_argument("--pr-issue-body", action="append")
     c = sub.add_parser("check", allow_abbrev=False)
     c.add_argument("--plan-file", required=True)
     try:

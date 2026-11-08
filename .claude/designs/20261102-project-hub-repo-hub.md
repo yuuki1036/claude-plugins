@@ -306,6 +306,14 @@ skill に `repo` サブコマンドを足す。引数なしの `init` を repo h
 - `needs_branch` の base のブランチは config の `repos[].base` から remote 名を外したもの（`base_branch`）。未コミットの変更には gitignore されていない untracked のファイルも数える。base がローカルのブランチ（`main` / `refs/heads/main`）なら `main..HEAD` は main の上で常に 0 なので、その upstream と比べる。git でブランチを取れないときは止めずに `warning` に出す。未コミットの変更と base との差のどちらかを取れないときは、取れた側で当たれば止め、当たらなければ `warning` に出す
 - status の後ろ盾は `cross` の `double_registered` に出し、hub の SKILL.md の status の 10 で lead に出す。数えるのは route と同じ単位で、登録の worktree の repo に active な repo hub があるもの（repo hub でない PJ どうしの組も含む。worktree を消した登録は PJ が共有する repo で見る）。登録を外す CLI はまだ無いので、どちらの PJ で続けるかは lead が決める
 
+## 実装で決めたこと（GitHub #382〜#384・2026-11-07）
+
+- 二重登録の欄に出た登録は `hub.py unregister --project <PJ> --session <id> --keep <残す PJ>` で外す。書くのは外す側の PJ の journal だけ（`close_sub` の `result: moved` に `by: "unregister"` を付ける）で、残す PJ の journal には書かない（2026-11-07 決定）。外した登録は route・二重登録の欄・working から外れる。上の Issue 1b の「登録を外す CLI はまだ無い」は、この CLI で解消した
+- Issue の保守で外す作業中の Issue は、`worktrees` と `cross` の出力の `busy_issues`（github は `#12` に揃え、ほかは前後の空白を除いた ID）で照合する
+- init / reopen / set-tracker-write / set-sidebar-group の設定値を理由にした exit 3 は、stdout にも理由のコード（`status`）と文面（`reason`）を出す。分岐はコードで決める
+- 送る前に `refresh-hub` で hub.json の名前を今の題に直し、受ける側は受けるたびに `hub-name` で今の名前を引いて照合する。既定名（`default_name: true`）の名前は照合に使わない
+- `resolve --hub` は外した（通知先は report が決めており、使い道が無かった）
+
 ## 実装ブリッジ (Implementation Bridge)
 
 1. **実装着手の単位**: 3 つの Issue に分け、Issue 2 → Issue 1a → Issue 1b の順に入れる

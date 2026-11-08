@@ -73,7 +73,7 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 `--emergency` 引数が渡された場合（本番障害のホットフィックス等）、Google eng-practices "Emergencies" に従い **速度優先の最小構成** でレビューする。diff シグナルからの自動判定ではなく、人間が明示的に宣言する点が他モードと異なる（他のモード判定より優先する）。
 
 - **起動**: reviewer-bugs + reviewer-security の最小 2 体のみ（specialist は red-flag 検出時のみ通常通り起動 — 緊急時こそインジェクション・破壊的操作の混入が危険なため）
-- **スキップ**: explorer / 冗長ペア / Step 3.3 の起動前検算による構成追加（orchestration-guide `### 8a` のモード除外。検出は missing_coverage 記録のみ）/ Phase 5.5 (adaptive deepening) / Phase 5.6 (meta-reviewer) / Phase 5.7 (カバレッジ事後突合) / Phase 5.8 (冷や読み skeptic) / Phase 5.9 (反証レイヤー)。速度と正しさのトレードオフをスコープ縮小で取る
+- **スキップ**: explorer / 冗長ペア / Step 3.3 の起動前検算による構成追加（orchestration-guide `### 8a` の「非 default-mode の回」。plan も check も呼ばず、検出は missing_coverage 記録のみ）/ Phase 5.5 (adaptive deepening) / Phase 5.6 (meta-reviewer) / Phase 5.7 (カバレッジ事後突合) / Phase 5.8 (冷や読み skeptic) / Phase 5.9 (反証レイヤー)。速度と正しさのトレードオフをスコープ縮小で取る
 - **レビューは省略しない**: 構成を絞るだけで「無レビュー」にはしない
 - **レポート冒頭に必須バナー**: `⚠️ 緊急レビュー（最小構成）: マージ後に通常の /review を必ず実施すること`
 - **緊急の定義**（eng-practices）: ロールバック回避 / 本番ユーザー影響のバグ修正 / 重大セキュリティ穴 / 法的緊急 等の **小さな** 変更に限る。soft deadline・疲労・タイムゾーンは緊急ではない（その場合は通常レビュー）
@@ -129,7 +129,7 @@ diff パターンマッチで各観点の必要性を判定する。
 | cross-cutting | 共通モジュール（`utils/`, `helpers/`, `shared/`, `common/`, `lib/`）の変更 |
 | layer-responsibility | `## focus-signals` に `layer-responsibility` が出ている（注入対象の AGENTS.md / CLAUDE.md が、ディレクトリ名と役割語を同じ行に持つ = 層の役割を文書化している、かつ core の変更がある）。シグナルが出ていなくても、Phase 0 で読んだ規約に層の役割が書かれていれば起動してよい。**束ねず単独で起動する**（`## 7`。**low / medium では設計バンドルに入る**） |
 | pattern-consistency | コードの変更ファイル数 >= 10（core と test を数え、doc・生成物は数えない。`## focus-signals` の `pattern-consistency` が件数を出す。閾値は `triage-signals.sh` の `PATTERN_MIN_FILES` に複製してあり、テストが突き合わせる / GitHub issue #295） |
-| spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する、self-review に `--spec` で仕様ファイルが渡された、review で PR に紐づく Issue（`closingIssuesReferences`）がある、または repo の仕様書がある（diff が触った・session-context / Issue ファイル / PR 本文が言及した。パスの要素に `docs` / `spec` / `adr` / `designs` / `features` などを持つ文書。plan が `doc_locate.py` で探す / GitHub issue #352） |
+| spec-compliance | `session-context.md` / Issue ファイル / knowledge ファイルが存在する、self-review に `--spec` で仕様ファイルが渡された、review で PR に紐づく Issue（`closingIssuesReferences`）がある、または repo の仕様書がある（diff が触った・session-context / Issue ファイル / PR 本文 / PR に紐づく GitHub Issue の本文が言及した。パスの要素に `docs` / `spec` / `adr` / `designs` / `features` などを持つ文書。plan が `doc_locate.py` で探す / GitHub issue #352） |
 | ui-quality | フロントエンド変更（`.tsx`/`.jsx`/`.vue`/`.svelte`/`components/`/`pages/`/`app/`）・翻訳 / 文言ファイル（`locales/`/`locale/`/`i18n/`/`messages/`。文言の短縮で落ちた情報を見る / GitHub issue #272）、または diff に `aria-`/`role=`/`<img`/`<button`/`tabindex`/`onClick`/`onKeyDown` 等のアクセシビリティ・インタラクション関連の変更がある |
 | doc-substance | **高価値 doc**（`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` / `README*` / `.claude/adr/**` / `.claude/designs/**` / 決定系 doc（`## decision-docs` に挙がるもの。`## focus-signals` の `doc-substance` にも数えてある））の prose 変更を含む、**または** 任意 `*.md` で実質 prose 変更（frontmatter / list マーカー / link-only 行を除いた追加・変更 prose 行が概ね 10 行以上）、**または** 既存の節の書き換え（`## focus-signals` の `doc-rewritten-lines` が 3 以上 = 消えた側の語を持つ行。変えた節と変えていない節の矛盾を照合する / GitHub issue #269）。混在 PR（`*.md` < 80%）で doc 内容が無観点で素通りするのを防ぐ。詳細・effort 制御は下記「doc-substance の起動（重要度ゲート）」 |
 
@@ -245,7 +245,7 @@ SKILL.md Step 1 が保存した PR コンテキスト（`$PR_CTX_FILE`）の内�
 - **plan の出力の読み方**（self-review / review 共通）:
   - `reviewer	R<n>	<kind>	<観点>` が reviewer の構成。kind は `solo`（1 観点）/ `bundle`（束ね）/ `design`（low・medium の設計バンドル）/ `prior`（`--since` の回の前回の対象の専任。規模キャップの外）。`piggyback	R<n>	<観点>` はその行への相乗り
   - `dropped	<観点>	<理由>` は起動しない観点。`missing_coverage` に識別子で記録し、理由をレポートの「⚠️ 欠損観点」に写す: `size-cap` = 規模キャップで未起動 / `effort-cap` = effort 上限で未起動（単独維持の観点・low・medium の設計バンドル）/ `overflow` = 束ねても reviewer 上限を超えた
-  - `excluded` は `--focus` / `--exclude` で外した観点（欠損ではない）。`out_of_vocab` は「語彙外の focus」に書く。`spec_source	none` は仕様ソースなし、`spec_missing` は `--spec` のファイルが無い。`spec_source	repo-spec-touched` / `repo-spec-ref` は plan が diff と参照から見つけた repo の仕様書（引数では渡さない。PR に紐づく GitHub Issue の本文が言及した文書は数えない）
+  - `excluded` は `--focus` / `--exclude` で外した観点（欠損ではない）。`out_of_vocab` は「語彙外の focus」に書く。`--focus` の値が語彙外だけの回は `scope=focus` のまま reviewer の行が出ない（前回の対象の行は残る。全体レビューに倒さない / GitHub issue #388）。`spec_source	none` は仕様ソースなし、`spec_missing` は `--spec` のファイルが無い。`spec_source	repo-spec-touched` / `repo-spec-ref` は plan が diff と参照から見つけた repo の仕様書（引数では渡さない。PR に紐づく GitHub Issue の本文が言及した文書は、`--pr-issue-body` で本文を渡した回だけ `repo-spec-ref` に数える / GitHub issue #391）
   - `prior_specialist	<key>` は前回の対象の specialist。plan の範囲外なので check には流さず、prior-fixes-guide.md の 1 節のとおり red-flag の有無によらず起動して前回の対象を渡す
   - `--focus` / `--exclude` の回は規模キャップを掛けない（effort 上限は掛ける）。size_tier が `unknown` の回も規模キャップを掛けない（small に倒すと大きな diff が最小構成で黙って処理される）
   - `spare` は前回の対象の専任でない行を足せる残りの枠。`cap_source` は効いた上限（`effort` / `size` / `scope`）

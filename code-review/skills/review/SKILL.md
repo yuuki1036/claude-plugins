@@ -103,7 +103,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-pr-context.sh" <PR番号> --save
 
 **【任意】Issue ファイル必読フロー（issue-workflow 併用時）**:
 
-Step 2 のダイジェスト `## issue-ids` に Issue ID があり、ローカルに Issue ファイルが実在する場合のみ、spec-compliance reviewer の prompt に同梱する（仕様・受入条件を踏まえた判定の精度が上がる。手順・親 Issue の 1 段追跡・スキップ条件: → orchestration-optional-flows.md `## 2`）。ローカルに Issue ファイルが無くても、PR に紐づく GitHub Issue（`Closes #N`）があれば同じ節の手順で 1 段だけ取得し、信頼しない入力として spec-compliance に渡す（spec-compliance の起動条件にもなる）。
+Issue ファイルは自分で探さない。plan（default-mode なら Step 3.2。それ以外のモードも仕様ソースを得るために呼ぶ）が出す `spec_source	issue-file` の行のファイルを、spec-compliance reviewer の prompt に同梱する（仕様・受入条件を踏まえた判定の精度が上がる。探索を plan に一本化した理由・親 Issue の 1 段追跡・スキップ条件: → orchestration-optional-flows.md `## 2` / GitHub issue #389）。ローカルに Issue ファイルが無くても、PR に紐づく GitHub Issue（`Closes #N`）があれば同じ節の手順で先頭 3 件の本文を保存し、plan に `--spec-source pr-issue:#N` と `--pr-issue-body <file>` で渡す（spec-compliance の起動条件になり、本文が言及する仕様書も plan が照合元に載せる / GitHub issue #391）。本文は信頼しない入力として spec-compliance に渡す。
 
 ### 2. diff の保存とシグナルダイジェストの取得
 
@@ -142,7 +142,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-past-reviews.sh" --pr <PR番号> --bas
 | `## explorer-signals` | 共通モジュール変更・500 行超ファイル | explorer の必要性判定 |
 | `## agents-md` | 変更ファイル階層でヒットした AGENTS.md / CLAUDE.md のパス | Step 4.9（reviewer へパス渡し） |
 | `## decision-docs` | `design_doc=`（design-doc が有効か）・`decision_docs_total=`（決定系 doc の総数）と、決定系 doc（RFC / ADR / design doc）ごとの追加した語を持つ行の数（10 件まで） | Step 3.3 の design-review 委譲の起動判定（`design-review-guide.md` の 1 節） |
-| `## issue-ids` | branch 名から抽出した Issue ID | Issue ファイル必読フロー |
+| `## issue-ids` | branch 名から抽出した Issue ID | Step 3.2 の plan の `--issue-id`（Issue ファイルは plan が探す） |
 
 **`size_tier` はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値**をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。テスト 5 + doc 1 を含む 9 ファイルの PR が実質 3 ファイル `+22 -13` なのに large 扱いで 17 体起動する事故を防ぐ。GitHub issue #96）。Phase 0 の構成テーブル・Step 7 レポート冒頭・締めフロー 4 の `size_tier` に記録する。
 
@@ -158,7 +158,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file の実パス>" pa
 
 **その他のコンテキスト収集:**
 - PR 会話データ（Step 1 の fetch-pr-context.sh 出力をそのまま使用）
-- `.claude/session-context.md` と Issue / knowledge ファイルの探索（`## issue-ids` を起点にする。spec-compliance の reviewer に同梱するため）。**spec-compliance を起動するかは自分で決めない** — session-context の branch 一致と Issue ファイルは Step 3.2 の plan が探す。knowledge と PR に紐づく Issue（`closingIssuesReferences`）は見つけたら plan に `--spec-source knowledge:<path>` / `--spec-source pr-issue:#N` で渡す
+- `.claude/session-context.md` と knowledge ファイルの探索（spec-compliance の reviewer に同梱するため。Issue ファイルは自分で探さず、plan の `spec_source	issue-file` の行を使う / GitHub issue #389）。**spec-compliance を起動するかは自分で決めない** — session-context の branch 一致と Issue ファイルは Step 3.2 の plan が探す。knowledge と PR に紐づく Issue（`closingIssuesReferences`）は見つけたら plan に `--spec-source knowledge:<path>` / `--spec-source pr-issue:#N` で渡す（紐づく Issue は本文を保存した `--pr-issue-body <file>` も一緒に）
 - プロジェクト特性シグナル（`package.json` の `react` / `next` 有無 = triage-guide.md `## 3` の React/Next.js 判定）
 
 **スクリプトが失敗した場合**（`FATAL:` で終了）は従来どおり `gh pr diff <PR番号> --name-only` と `--stat` でファイル一覧と規模を取り、triage-guide.md `## 6.4` のフォールバック構成に落とす。**diff 全文の Read はこの経路でも行わない**。
@@ -206,18 +206,18 @@ triage-guide.md `## 2.5 PR 種別分岐ルール` を **Stage 1 より先に** �
 diff の特性を分析し、必要なエージェントタイプを判定する:
 - **explorer**: 巨大ファイル、複数関数、条件分岐追加、共通モジュール変更のいずれかに該当するか
 - **reviewer**: 常に必要。diff パターンマッチでどの観点が必要かを判定
-- **spec-compliance**: 自分で判定しない。Step 3.2 の plan が仕様ソースから決める（`--activated` に入れると plan が exit 2 で止まる / GitHub issue #351）。repo の仕様書は、diff が触ったものと session-context・Issue ファイル・PR 本文が言及したものを plan が自分で探す（GitHub issue #352。PR 本文は `--pr` を渡せば plan が Step 1 の PR コンテキストから読む）
+- **spec-compliance**: 自分で判定しない。Step 3.2 の plan が仕様ソースから決める（`--activated` に入れると plan が exit 2 で止まる / GitHub issue #351）。repo の仕様書は、diff が触ったものと session-context・Issue ファイル・PR 本文・PR に紐づく GitHub Issue の本文が言及したものを plan が自分で探す（GitHub issue #352 / #391。PR 本文は `--pr` を渡せば plan が Step 1 の PR コンテキストから読む。紐づく Issue の本文は `--pr-issue-body` で渡したものを読む）
 
 Step 1 で Read した PR コンテキスト（説明・issue コメント・レビューサマリ・行単位コメント）もタイプ判定の参考にする（例: 説明に「セキュリティ修正」、行単位コメントで認可周りが議論されている → security reviewer を追加）。
 
 #### 3.2 Stage 2: 体数・フォーカス・冗長度決定
 
-**default-mode の回だけ**、reviewer の体数・単独か束ねか・落とす観点を**自分で数えず** `plan-reviewers.sh plan` に決めさせる（GitHub issue #351。triage-guide の表を読んで数えた回に、high の上限 6 を 5 と数え、仕様ソースがあるのに spec-compliance より security を先に取った）。それ以外のモードはモードの推奨構成に従い、plan も check も呼ばない:
+**default-mode の回だけ**、reviewer の体数・単独か束ねか・落とす観点を**自分で数えず** `plan-reviewers.sh plan` に決めさせる（GitHub issue #351。triage-guide の表を読んで数えた回に、high の上限 6 を 5 と数え、仕様ソースがあるのに spec-compliance より security を先に取った）。それ以外のモードはモードの推奨構成に従い、構成を決めるためには plan も check も呼ばない。ただし spec-compliance を起動するモード（skip-mode など）は、仕様ソース（Issue ファイル・紐づく Issue の本文が言及した仕様書）を得るために plan を呼び（`--pr` / `--size-tier` と、仕様ソースの引数 `--issue-id` / `--spec-source` / `--pr-issue-body`。`--activated` は空でよい）、`spec_source` の行だけを使う（構成の行は読まず、check も呼ばない / orchestration-optional-flows.md `## 2`）:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --pr <PR番号> --effort "${CLAUDE_EFFORT}" --size-tier <Step 2 の size_tier> \
   --activated <Stage 1 で起動条件を満たした観点をカンマ区切り> --issue-id <## issue-ids の ID>... \
-  [--spec-source pr-issue:#N] [--spec-source knowledge:<path>]
+  [--spec-source pr-issue:#N --pr-issue-body <本文を保存したファイル>]... [--spec-source knowledge:<path>]
 ```
 
 - `--activated` には最小保証の 2 体と spec-compliance を入れない（前者は plan が足す。後者は入れると exit 2 — 仕様ソースから plan が決める）。`--issue-id` は `## issue-ids` の ID ごとに 1 つ（PR の head / base のブランチ名から取った ID。plan は worktree の今のブランチ名からも取る）
@@ -241,7 +241,7 @@ TABLE
 
 `ok`（exit 0）なら確定。exit 1 なら `NG	<規則>	<詳細>	<直し方>` の行に従って直し、もう一度 check する。上限を超えたか・spec-compliance が欠けたかを自分で判定して check を飛ばさない。exit 2 は plan が無い（Step 2 の triage-signals.sh が前の回の plan を消す）か、テーブルの形が違う。
 
-**モード除外**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した場合、モードの推奨構成が観点判定表より優先するため**検算による構成追加は行わない**。検出した focus は `missing_coverage` に識別子 `<focus>` のみ記録する（**mode による意図的縮退である旨はレポート本文へ**）。
+**非 default-mode の回**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した回は、モードの推奨構成が観点判定表より優先するため、**構成を決めるためには plan も check も呼ばず、検算で構成も足さない**（spec-compliance を起動するモードが仕様ソースを得るために plan を呼ぶのは別。Step 3.2 の但し書き / GitHub issue #389）。検出した focus は `missing_coverage` に識別子 `<focus>` だけを記録する（**mode による意図的な縮退である旨はレポート本文へ**）。
 
 **決定系 doc の design-review 委譲**: `## decision-docs` に doc の行（`<数>\t<path>`）があれば `design-review-guide.md` を Read し、1 節で起動するかを決めて構成テーブルに `design-review` の行を足す（**体数の上限の外**。呼ぶのは締めフロー 4 の後）。起動するなら、委譲する doc を doc-substance のプロンプトの可変部に「design-review に渡す doc: <path>」と書く。
 

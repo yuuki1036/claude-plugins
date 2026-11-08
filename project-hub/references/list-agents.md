@@ -47,7 +47,7 @@ PROJECT_HUB_<8 桁の乱数>
 抜き出した値は argv に載せず、JSON にして stdin で渡す（名前は他のセッションが付けた文字列で、`$`・`#`・バッククォートを含みうる）。heredoc の区切りは毎回その場で決める `PROJECT_HUB_<8 桁の乱数>` にしてクォートし、名前にその文字列が無いことを確かめる（固定の区切りは、名前がその 1 行を含むと後ろの行がシェルで実行される）。
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/hub.py" resolve --project '<PJ>' --hub --peer-count 3 <<'PROJECT_HUB_<8 桁の乱数>'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/hub.py" resolve --project '<PJ>' --session '<session_id>' --peer-count 3 <<'PROJECT_HUB_<8 桁の乱数>'
 [{"name": "my-repo-96", "ref": "f3183e", "state": "waiting"},
  {"name": "設計の相談", "ref": "1a6070", "state": "idle"},
  {"name": "ABC-12: 監査ログ", "ref": "262901", "state": "idle"}]

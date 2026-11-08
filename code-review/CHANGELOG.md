@@ -2,6 +2,39 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.167.1] - 2026-11-08
+
+### Changed
+
+- **非 default-mode の回の「plan も check も呼ばない」に、仕様ソースのための呼び出しは別だと書き足した**（GitHub issue #389）。2.166.2 で orchestration-guide `### 8a` と review SKILL.md に入った「非 default-mode の回」の節が、2.167.0 の「spec-compliance を起動するモードは仕様ソースを得るために plan を呼び、`spec_source` の行だけを使う」と食い違って読めた。構成を決めるための呼び出しだけを止める書き方にした
+
+## [2.167.0] - 2026-11-07
+
+### Added
+
+- **PR に紐づく GitHub Issue の本文が言及する仕様書を、spec-compliance の照合元に載せるようにした**（GitHub issue #391）。`plan-reviewers.sh plan` に `--pr-issue-body <file>`（何度でも）を足した。plan は本文が言及する repo の仕様書を `spec_source	repo-spec-ref` として出す。パスの解決は PR 本文と同じ `doc_locate` の検査を通るので、repo の外や実在しないパスは載らない。review は `closingIssuesReferences` の先頭 3 件の title と本文を `mktemp` のファイルに保存し、`--spec-source pr-issue:#N` と一緒に渡す（spec-compliance に同梱し終えたら消す）。これまでは spec-compliance の reviewer が Issue の本文から自分で仕様書を拾っていたので、拾い損ねても照合元の欠けが計測に残らなかった
+
+### Changed
+
+- **Issue ファイルの探索を plan に一本化した**（GitHub issue #389）。review の Issue ファイル必読フロー（`orchestration-optional-flows.md` の `## 2`）は bash で探すのをやめ、plan の `spec_source	issue-file` の行を使う。探し方はファイル名の完全一致（`.claude/{indie,linear}/<slug>/issues/<ID>.md`）にそろえた。これまでの「本文に ID を含む md を grep で拾う」探し方は、knowledge・follow-up まで当たっていた。PR の base ブランチ名の ID は、`## issue-ids` から `--issue-id` で渡す形のまま拾い続ける。default-mode 以外のモードも、spec-compliance を起動するなら仕様ソースの引数で plan を呼んで `spec_source` の行だけを使う（構成の行は読まず、check も呼ばない）
+- **Issue ID の正規表現を `reviewer_plan.py` の `ISSUE_ID_RE` に寄せた**（GitHub issue #389）。`triage-signals.sh` の `## issue-ids` は同じパターンを書いたまま、回帰テストで縛った（パターンの文字列が同じこと、同じ入力で `grep -oE` と python が同じ ID の集合を返すこと）
+
+### Fixed
+
+- **`--focus` に語彙外の値だけを渡すと、規模で絞った全体レビューになっていた**（GitHub issue #388）。例えば `--focus migration-safety` は `scope=full` / `cap_source=size` になり、bug-detection と claude-md-compliance が起動していた。語彙内の観点が 1 つも残らないときも `scope=focus` のまま reviewer の行を出さないようにした（前回の対象の行は残る）。レポートには「⚠️ 欠損観点」の `語彙外の focus` だけが出る。`md-polish` / `design-review` だけを渡した回は、これまでどおり引数なしと同じに扱う
+
+## [2.166.2] - 2026-11-07
+
+### Changed
+
+- **orchestration-guide の `### 8a`（起動前検算）を「対象」「手順」「非 default-mode の回」の 3 区分に並べ直した**（GitHub issue #390）。見出しの「常時実行」と、最後の項に置いていた default-mode 以外の条件が食い違っていた。spec-compliance を `--activated` に足さない・mode の回は対象外・self-review の `--focus` / `--exclude` の範囲、の 3 つを同じ「除外」の語で書いていたのを、意味ごとに別の語にした。default-mode 以外では plan も check も呼ばないことを 8a にも書いた（これまでは review SKILL の Step 3.2 にしか無かった）。review SKILL の Step 3.3・self-review SKILL の Step 2.3・triage-guide の emergency の行も同じ語に揃えた。挙動は変えていない
+
+## [2.166.1] - 2026-11-07
+
+### Changed
+
+- **`plan-reviewers.sh` と `lib/reviewer_plan.py` の生存した変異を解消した**（GitHub issue #380）。挙動は変えていない。テストが検証していなかった挙動にテストを足した: 束ねを割ったときの 1 観点の行の kind、相乗り先の選び方（距離が同じなら先の行）、focus / exclude と最小保証、`redundant_pairs`、plan の値の書き方、確定テーブルの束ね直し（xhigh / max でも止める）、frontmatter の読み方、detached HEAD とタブを含むパス、lib を直接呼んだときの引数の誤り、unknown の帯の WARN。等価変異の 8 行には理由つきで `# mutation-ok:` を付けた（印は行の変異をすべて外すので、理由文の頭でどの変異が等価かを名指しした）
+
 ## [2.166.0] - 2026-11-06
 
 ### Added
