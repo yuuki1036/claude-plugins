@@ -204,6 +204,11 @@ push しない運用（ローカルのみ・PR 前に溜める等）が明らか
 Step 2（検証）→ Step 6（コミット）→ Step 7（push + CI）を通してから Step 8 に戻る（直した文書を未コミットのまま残さない）。完了なら status を
 completed へ遷移する（BACKEND=linear のときは Linear 側のステータス更新も案内する）。未完了で終える場合は
 残タスクと次セッションの入口を Issue に書き残す。
+Issue ファイルへの書き込みを Claude Code に止められた回（隔離された worktree のセッションが、メインのチェックアウトの
+Issue ファイルを書く回。Phase 0 の 2）は回り込まず、Issue ファイルへの書き込みだけを飛ばす。start の Phase F3.2 で既に止められた回は
+試さずに飛ばす。`/issue-maintain` へも委譲しない（`doc-sync:` の行が書けていないので、文書整合ガードがもう一度回る）。doc-sync の回し直しと
+Step 2 → 6 → 7 は上のとおり通し、書けなかった項目（`doc-sync:` の行・進捗・status など）を報告に「DATA_DIR に未反映」として
+並べる（反映は worktree の外のセッションで行う）。
 
 ## 報告
 

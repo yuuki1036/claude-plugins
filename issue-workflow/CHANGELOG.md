@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.3] - 2026-11-08
+
+### Fixed
+
+- **隔離された worktree のセッションがメインのチェックアウトの Issue ファイルを書けないときの進め方が無かった**（GitHub #410）。Phase 0 が worktree からメインのチェックアウトのデータ dir へ fallback した回、その下への Edit / Write は Claude Code に止められることがある（2026-11-07〜08 に並列の作業 4 件で起きた）。手順が無いため、Bash の `sed` で書こうとして auto mode に隔離の回り込みとみなされた回もあった。backend-detect の 2 に「止められたら回り込まず、その回のメイン側への書き込みはそれ以上試さず、書けなかった項目を最終報告の『DATA_DIR に未反映』に並べて残りの手順を進める（反映は worktree の外のセッションで行う）」を足し、正本と 10 スキルの複製を揃えた。採番（`counter.txt`）か Issue・follow-up ファイルの新規作成が止められた回だけは、止められた時点で後続へ進まずに終える（進むと外のセッションが同じ番号を採る。start の F4 も issue-create が起票できずに終えたら先へ進まない）。先に検出して書き換えを飛ばす案は採らない（隔離なしの worktree では書ける実例があり、先に飛ばすと書けるセッションでも書かなくなる / 2026-11-08 決定）。start の F3.2・F6（status を backlog のまま報告）、branch-setup.md の 5、軽量フローの Step 8（Issue ファイルへの書き込みだけを飛ばし、doc-sync の回し直しとコミットは通す）、常時注入の project-rules.md、README の worktree の節にも同じ扱いを書いた。issue-maintain は、メイン側への書き込みを止められた回に `sync-claude-to-main.py`（worktree の `.claude/` をメインへ写す）を走らせない（Bash で写すと回り込みになる）。軽量フローの Step 8 は、止められた回に `/issue-maintain` へ委譲しない（`doc-sync:` の行が書けず、文書整合ガードがもう一度回るため）
+
 ## [1.19.2] - 2026-11-07
 
 ### Fixed

@@ -18,6 +18,7 @@
 - プロジェクト概要: `{DATA_DIR}/{project}/project.md`（linear backend では `{DATA_DIR}/{project}/projects/` 配下）
 - 作業の進捗は Issue ファイルのチェックリストに反映する
 - `last_active` を作業のたびに更新する
+- 隔離された worktree のセッションでは、メインのチェックアウトの `{DATA_DIR}` への Edit / Write が Claude Code に止められることがある。止められたら Bash で書くなどの回り込みをせず、書けなかった項目を報告に「DATA_DIR に未反映」として並べる（反映は worktree の外のセッションで行う。採番・Issue や follow-up ファイルの新規作成は止められた時点で終える。正本は各スキルの Phase 0 の 2）
 - セッション終了前に `/issue-maintain` で Issue ファイルを更新する
 
 ## Linear MCP 連携（backend=linear のみ）

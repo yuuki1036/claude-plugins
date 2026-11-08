@@ -38,6 +38,7 @@ allowed-tools:
 <!-- BACKEND-DETECT:START -->
 1. Glob で `.claude/indie/*/` と `.claude/linear/*/` を確認する。「dir が存在し、かつプロジェクト slug サブディレクトリを 1 つ以上持つ」場合のみ有効な backend とみなす（空 dir・残骸は無効）
 2. 1 で両方とも無効なら、linked worktree の中かを確かめる（`git rev-parse --absolute-git-dir` と `git rev-parse --path-format=absolute --git-common-dir` が違えば worktree）。worktree なら、メインのチェックアウト（後者の親 dir）の下の 2 つを同じ述語で確かめ直し、以降の判定はその結果で行う。その場合の DATA_DIR はメインのチェックアウト側の絶対パス（例: `/path/to/repo/.claude/linear`）にする — Issue ファイルを gitignore している repo では worktree の中にデータ dir が無いため
+   - worktree のセッションがメインのチェックアウトの `.claude/` の下（この fallback した DATA_DIR を含む）へ書く Edit / Write は、隔離された worktree のセッションだと Claude Code に止められる（`is in the base repo's shared .claude/ directory` と返る）。読むことは止められない。止められたら、メインのチェックアウトへ Bash で書く・コピーするといった回り込みをせず、その回のメイン側への書き込みはそれ以上試さない。書けなかった項目（ファイル・キー・書くはずだった値）を最終報告の「DATA_DIR に未反映」に並べ、残りの手順は進める（反映は worktree の外のセッションで行う）。ただし採番（`counter.txt`）か、Issue・follow-up ファイルの新規作成が止められた回は、止められた時点で後続の手順（ブランチ作成・他スキルへの引き継ぎ・完了の報告）へ進まずに終え、「<書けなかったファイル> を書けなかった（worktree の外のセッションで起動し直す）」と決めた内容を報告する — 採番が確定しないまま進むと、外のセッションが同じ番号を採る
 3. `.claude/indie` のみ有効 → `BACKEND=local` / `DATA_DIR=.claude/indie`。`.claude/linear` のみ有効 → `BACKEND=linear` / `DATA_DIR=.claude/linear`。無効な残骸 dir がもう一方にある場合は警告を一言添えて継続する
 4. **両方有効** → エラーとして停止する。両 dir の slug 一覧・issues 件数・最終更新日を並べて提示し、どちらを正とするか決めて他方を退避（rename）または削除する片寄せを案内する
 5. **どちらも無効** → `/issue-workflow:init` の実行を案内して終了する
@@ -243,6 +244,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sync-claude-to-main.py"
 - メインに無ければ写す / 同じなら何もしない / `.jsonl` はメインに無い行だけを末尾に足す / 内容が違えば mtime の新しい側を残す（worktree が新しければ上書きし、前の版を git dir の下の `issue-workflow/wt-sync-backup/<日時>/` に残す）
 - `session-context.md`・`settings.local.json`（チェックアウトごとの状態）・`worktrees/` 配下・symlink は写さない。メインで追跡しているパスも触らない
 - `in_worktree=0` なら何もしない（メインのチェックアウト）
+- この実行でメインのチェックアウトの `.claude/` への Edit / Write を Claude Code に止められた回（Phase 0 の 2。隔離された worktree のセッション。Issue ファイルへの書き込みを止められて status の遷移を書けなかった回も含む）は、このスクリプトを実行しない。Bash でメイン側へ写すと隔離の回り込みになる。最終レポートの「メインへ写した .claude」に「写していない（メイン側への書き込みを止められた）」と書き、写すはずだったファイルは worktree の外のセッションで写す
 - 出力の各行（`copied=` / `appended=` / `overwritten=` / `kept_main=` / `tracked_in_main=` / `uncommitted=` / `backup=`）を最終レポートの「メインへ写した .claude」に載せる。0 件の種類は省く。`kept_main=` はメインの方が新しかったので worktree の版を写していない。`uncommitted=` は追跡済みで未コミットの変更なので、teardown の前にコミットするよう添える
 - exit 2 は stderr を最終レポートに載せて進める（teardown の確認の前に、写せていないことが分かるようにする）
 
@@ -347,7 +349,7 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 
 - teardown を起動する前に、本スキルが行った Issue ファイル・knowledge の編集のコミット状況を確認する。worktree 側 `{DATA_DIR}` への未コミット編集は worktree remove で失われるため、残したい変更は先にコミットする（teardown の uncommitted チェックでも警告されるが、このスキル自身の編集が失われる事故を防ぐため先に確認する）
 - teardown は cwd（worktree）自体を削除するため、必ず**このスキルの全処理と最終レポートを終えた後**に起動する
-- `.claude/` の未追跡ファイルは処理フロー 14.5 でメインへ写し終えている。`kept_main=` の行があれば、worktree の版は写っていないので、削除の確認で選ぶ前に見るよう最終レポートに書く
+- `.claude/` の未追跡ファイルは処理フロー 14.5 でメインへ写し終えている。ただしメイン側への書き込みを止められて 14.5 を飛ばした回は写していないので、削除の確認の前にそう書き、残す側を勧める。`kept_main=` の行があれば、worktree の版は写っていないので、削除の確認で選ぶ前に見るよう最終レポートに書く
 
 ---
 
