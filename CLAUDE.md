@@ -66,7 +66,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #   持ち越す）。生存・持ち越しが 7 日以上解消しない・状態を失った晩に
                                  #   GitHub Issue を起票・追記する（#288）
 .claude/                         # リポジトリローカル設定（プラグインではない。git 追跡下）
-  settings.json                  # Stop hook（auto-quality-check.sh）と、PR のマージを拒否する permissions.deny
+  settings.json                  # Stop hook（auto-quality-check.sh）と、PR の即時マージを拒否する permissions.deny
   review-oracles.sh              # self-review が agent 起動前に走らせる機械層の宣言
                                  #   （存在自体が opt-in。中身は machine-layer.sh --no-tests を呼ぶだけ。
                                  #   回帰テストは 300 秒に収まらないので外し、CI に任せる）
@@ -124,7 +124,7 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 | dev-workflow | 4 | 7 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認・バグ診断・worktree 並列開発 + 一括棚卸し（chrome-devtools MCP 同梱） |
 | harness-keeper | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査・CC アップデート追従・eval 回帰テスト・コンポーネント追加前判断 |
 | issue-workflow | 14 | 14 | 4 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | Issue 管理（旧 linear/indie の統合後継。backend 自動判定） |
-| plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + deprecated の自動移行（_superseded_by）+ 後発追加通知 |
+| plugin-manager | 1 | - | - | SessionStart, PostToolUse, UserPromptSubmit, PostCompact | インストール済みプラグインの一括更新 + deprecated の自動移行（_superseded_by）+ 後発追加通知 + 動いているセッションへの更新通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 | feature-dev | 1 | 1 | 2 | SessionStart | 8 phase 機能開発ワークフロー（spec 品質ゲート・G-V fix ループ・self-review 委譲） |
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（notebooklm-mcp-cli を .mcp.json で同梱） |
@@ -325,5 +325,6 @@ LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プ�
 
 - **PR 必須**。main へ直接コミット・push しない。作業はブランチを切ってコミットし、PR を作る（GitHub のルールセット「main: PR 必須」が main への直接 push・force push・削除を拒否する）
 - コミットは `dev-workflow:git-commit-helper` 経由で、`--no-protect` は渡さない
-- **PR を main へマージしない**。マージは利用者が行う（`.claude/settings.json` の deny が `gh pr merge`（`--auto` を含む）・`gh api` の merge エンドポイントと GraphQL の mergePullRequest / enablePullRequestAutoMerge・GitHub MCP のマージ・auto-merge の有効化を拒否する。ルールセットは承認 0 件で、GitHub 側が止めるのは必須チェック（CI の validate）が通っていない PR だけ。2026-11-08 に必須チェックを足した）
+- **PR を出したら auto-merge を有効にする。即時のマージはしない**（2026-11-08 決定）。有効にする経路は `mcp__ccd_pr__set_auto_merge` だけで、`merge_method: "merge"` を渡す（既定の squash にしない。これまでのマージは merge commit）。CI が緑になるまでマージされないことは、ルールセット「main: PR 必須」の必須のチェック `validate (ubuntu-latest)` / `validate (macos-latest)`（validate.yml の matrix の 2 つの job）が担保する（承認は 0 件なので、止めるのはこのチェックだけ）。`.claude/settings.json` の deny は、`gh pr merge`（`--auto` を含む。deny では `--auto` だけを通せない）・`gh api` の merge エンドポイントと GraphQL の mergePullRequest / enablePullRequestAutoMerge・GitHub MCP のマージを拒否したまま残す
+- `validate.yml` の `validate` job の名前や matrix を変えるとチェックの名前が変わり、必須のチェックと合わなくなる（合わないチェックは来ないので、auto-merge はいつまでもマージしない）。今のチェック名は `validate (<matrix.os>)` の 2 つ（#436）。job 名や matrix を変えたらルールセットの必須のチェックも合わせる
 - push した後は PR の CI（validate.yml は pull_request でも走る）を確認するまで完了と見なさない

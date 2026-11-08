@@ -6,6 +6,9 @@ on:
   pull_request:
 
 jobs:
+  # チェック名（`validate (ubuntu-latest)` / `validate (macos-latest)`。job 名と matrix の値から決まる）は
+  # ルールセット「main: PR 必須」の必須のチェック名。job 名や matrix を変える（チェック名が変わる）ときは
+  # ルールセットの側も合わせる。合わないと必須のチェックが来ず、auto-merge がいつまでもマージしない
   validate:
     # 回帰テストは CI だけで回す（2026-11-08 決定。pre-commit からは外した / GitHub issue #436）。
     # macOS を足すのは、開発機と同じ OS の差（bash 3.2・BSD の sed / grep・ロケール）を拾うため。

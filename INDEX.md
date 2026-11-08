@@ -26,7 +26,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [living-spec-workflow](#living-spec-workflow) | 0.7.3 | 2 | 2 | - | - | - | **deprecated → project-hub** |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.4.0 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |
-| [plugin-manager](#plugin-manager) | 1.9.1 | 1 | - | - | SessionStart | - | プラグイン一括更新・deprecated 自動移行・後発追加通知 |
+| [plugin-manager](#plugin-manager) | 1.10.0 | 1 | - | - | SessionStart, PostToolUse, UserPromptSubmit, PostCompact | - | プラグイン一括更新・deprecated 自動移行・後発追加通知・動いているセッションへの更新通知 |
 | [project-hub](#project-hub) | 0.16.0 | 4 | 5 | - | SessionStart, PostCompact, UserPromptSubmit | - | PJ の決定（living spec）と、複数の sub を 1 つの hub で束ねる段取り |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
 | [writing-polish](#writing-polish) | 0.10.2 | 1 | 1 | - | SessionStart | - | 文章を語句レベルで推敲・添削 |
@@ -136,9 +136,9 @@ NotebookLM 連携。URL/PDF/YouTube/Drive のソース追加と既存ノート�
 - **hooks**: SessionStart
 
 ### plugin-manager
-インストール済みプラグインの一括更新と、マーケットプレイスの後発追加プラグイン取りこぼし通知。mods が有効な環境では `/update-all` を mod がモデルを呼ばずにその場で実行する（無効なら従来どおりモデルが手順を実行する）。
+インストール済みプラグインの一括更新と、マーケットプレイスの後発追加プラグイン取りこぼし通知。mods が有効な環境では `/update-all` を mod がモデルを呼ばずにその場で実行する（無効なら従来どおりモデルが手順を実行する）。長く動くセッションには、読んだ skill より新しい版が入ったら SKILL.md の読み直しを促す。
 - **commands**: `update-all`
-- **hooks**: SessionStart
+- **hooks**: SessionStart（check-missing-plugins / stale-skill）, PostToolUse（stale-skill: Read・Skill で読んだ版を記録）, UserPromptSubmit・PostCompact（stale-skill: 新しい版が入っていれば読み直しを促す）
 
 ### project-hub
 PJ の決定（living spec: repo の `.claude/living-specs/<slug>.md`。旧 living-spec-workflow を吸収 / ADR-20261026090521）と段取り（hub）を持つ。hub は 1 つのセッションを PJ の hub にして、複数の sub（作業セッション）で進める PJ の状態（sub・PR・Issue・確かめた事実）を `~/.claude/project-hub/<PJ>/` のファイルで持つ。hub は指示出しと進め方・仕様の相談役で実装せず、`start` で sub を起動する（Desktop）。sub の report は inbox にファイルで置き SendMessage は通知だけ。hub → sub の連絡は送る直前に ListAgents で宛先を引き直し、1 件に決まらなければ送らない。`approval.mode: auto`（既定）では、lead の確認が要る事柄を含まない連絡（質問への出典つきの答え・段取り・lead の言葉の伝達）を承認なしに送る。brief が渡す事実は出典つきで hub が確かめた facts だけから引く。

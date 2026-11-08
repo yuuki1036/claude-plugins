@@ -44,8 +44,8 @@
     },
     {
       "name": "plugin-manager",
-      "description": "インストール済みプラグインの一括更新と、ほぼ全部 install しているマーケットプレイスの後発追加プラグイン取りこぼし通知（SessionStart hook）",
-      "version": "1.9.1",
+      "description": "インストール済みプラグインの一括更新と、ほぼ全部 install しているマーケットプレイスの後発追加プラグイン取りこぼし通知（SessionStart hook）、動いているセッションへの更新通知（読んだ skill より新しい版が入ったら SKILL.md の読み直しを促す）",
+      "version": "1.10.0",
       "author": {
         "name": "yuki"
       },
