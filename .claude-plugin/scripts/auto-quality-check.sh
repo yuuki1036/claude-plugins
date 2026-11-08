@@ -9,6 +9,9 @@
 #   `machine-layer.sh` に委譲する（検査の並びの正本はあちら。ここに複製しない
 #   — 同じ並びが Stop hook / pre-commit / CI / self-review 前段の 4 経路で要るため）。
 #   **このスクリプトの責務は「いつ走らせるか」と「hook 向けにどう出すか」だけ。**
+#   **回帰テストは外す**（`--no-tests`。2026-11-08 決定 / GitHub issue #436）。フルスイートは
+#   約 12 分かかり、プラグイン関連ファイルを変えたターンの終わりごとに回っていた。テストは CI の
+#   validate が ubuntu と macOS で回す
 #
 # トリガー条件（**走らせない条件は 3 つ**）:
 #   ①変異テストの実行中はスキップする（ソースが書き換わっているので結果が嘘になる）
@@ -194,7 +197,7 @@ ISSUES=""
 # 非ゼロで終わる代入がそこで ERR trap を踏み、**以降の report 部を実行せず exit 0** する
 # （＝検出したのに通知が消え、緑と区別がつかない。v2.69.0 で実際に落ちていた）。
 # `&& RC=0 || RC=$?` は代入を AND-OR リストに入れるので `set -e` の対象外になる
-ML_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/machine-layer.sh" 2>&1)" && ML_RC=0 || ML_RC=$?
+ML_OUT="$(bash "$REPO_ROOT/.claude-plugin/scripts/machine-layer.sh" --no-tests 2>&1)" && ML_RC=0 || ML_RC=$?
 case "$ML_RC" in
   0) ;;
   1) ISSUES="${ML_OUT}"$'\n' ;;
