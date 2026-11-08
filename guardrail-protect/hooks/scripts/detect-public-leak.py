@@ -53,8 +53,8 @@ CONFIG_DEFAULTS = {
     # 辞書が無い（または有効語 0 件）ときに公開先宛てを止めるか: block | warn
     "on_missing_dict": "block",
     # 汎用パターン・添付・文脈規則（確認を求めるもの）の扱い: block | ask
-    # ask は対話セッションでだけ効く（auto / dontAsk / bypassPermissions / subagent では
-    # 公式に defer へ落ちて通ってしまう）。-p を hook 入力から見分けられないので既定は block
+    # ask が確認として効くのは対話セッションだけ（-p と dontAsk では拒否、bypassPermissions と
+    # subagent での扱いは公式 docs に無い）。-p を hook 入力から見分けられないので既定は block
     "confirm_action": "block",
     # Linear 形式 ID の許可接頭辞（自分のチーム。例: ["YAT"]）
     "allowed_id_prefixes": [],
