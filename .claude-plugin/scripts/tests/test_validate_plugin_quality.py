@@ -739,7 +739,7 @@ class TestDiscoveryTest(unittest.TestCase):
     `if __name__ == "__main__": unittest.main()` より後ろにクラスを足すと,
     `unittest.main()` が `sys.exit()` するため後続のクラス定義自体が評価されず,
     **直接実行だけ静かに件数が減る**（実測: discover 41 件 / 直接実行 33 件で
-    どちらも `OK`）. 強制経路（pre-commit / CI / Stop hook）は 3 本とも discover なので
+    どちらも `OK`）. 強制経路（CI）は discover なので
     実害は出ないが, 「OK が出るのに走っていない」はこのファイルが存在する理由そのもの.
     """
 

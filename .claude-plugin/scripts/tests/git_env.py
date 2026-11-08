@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """git が hook 実行時に子プロセスへ渡す環境変数のスクラブ（本スイート共通の正本）.
 
-**本スイートは pre-commit / CI / Stop hook / self-review 前段から強制される**。
-そのうち pre-commit 経路では git 自身が hook に環境変数を渡すので、テストが
+**本スイートを git hook の中から走らせたとき**に備える（2026-11-08 までは pre-commit が回していた。
+今スイートを起動する hook は無く、CI が回す / GitHub issue #436）。git hook の中では git 自身が hook に環境変数を渡すので、テストが
 `cwd=<使い捨て dir>` を指定しても **`GIT_DIR` 等が cwd 探索より優先される**。
 落とさないと、使い捨てリポジトリのつもりで叩いた git が**外側のリポジトリ**に当たる。
 

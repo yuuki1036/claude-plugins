@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """ポイズンした `GIT_DIR` の下でスイートを走らせても実リポジトリを触らない（issue #158）.
 
-**なぜ要るか**: linked worktree の中で `git commit` すると、pre-commit が起動する本スイートは
+**なぜ要るか**: linked worktree の中で `git commit` すると、git hook が起動した本スイートは
+（2026-11-08 までは pre-commit が起動していた / GitHub issue #436）
 `GIT_DIR=/path/to/repo/.git/worktrees/<name>`（**絶対パス**）を継承する。cwd を使い捨て
 リポジトリにしても git は `GIT_DIR` を優先するので、テストの `git init` / `commit` が
 **実リポジトリ**に当たる。実測（issue #158）では作業ブランチの ref がテスト由来の `init`

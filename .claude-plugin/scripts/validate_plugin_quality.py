@@ -1031,7 +1031,7 @@ def check_test_collection(errors: list[str]) -> None:
     """`if __name__ == "__main__"` より後ろの TestCase を検出する.
 
     `unittest.main()` は `sys.exit()` するので, **後ろに置いたクラスは定義自体が
-    評価されない**. discover 経路（pre-commit / CI / Stop hook）は無事なので
+    評価されない**. discover 経路（CI / `run-tests.py`）は無事なので
     **直接実行だけ静かに件数が減り, しかも `OK` が出る**（実測: discover 41 /
     直接実行 33）. 「壊れているのに緑」の典型なのでファイル走査で潰す.
     """

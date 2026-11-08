@@ -154,7 +154,8 @@ class OnCommitTest(HookTestCase):
         """**環境の `CLAUDE_PROJECT_DIR` を継承しない**（この変数は書き込み先を決める）.
 
         継承すると publish は `${CLAUDE_PROJECT_DIR}/.claude/events.jsonl` へ飛ぶ。
-        本スイートは Stop hook / self-review 前段からも走る＝**その環境ではこの変数が入る**ので、
+        本スイートを Claude Code のセッションの中から走らせると**この変数が入る**ので（2026-11-08 までは
+        Stop hook からも回していた / #436）、
         publish を見るテストは落ち、黙る側のテストは**緑のまま**実リポジトリの計測データを汚す
         （実測: 偽イベント 20 件が `.claude/events.jsonl` に混入していた）。
         """

@@ -75,8 +75,8 @@ class HookTestCase(unittest.TestCase):
         env = scrub()
         env["CLAUDE_PLUGIN_ROOT"] = str(self.plugin_root)
         # **`CLAUDE_PROJECT_DIR` を継承させない**。event bus の書き込み先は
-        # `${CLAUDE_PROJECT_DIR:-$PWD}` なので、この変数が入った環境（＝Claude Code の
-        # hook から本スイートが走る Stop hook / self-review 前段の経路）では、
+        # `${CLAUDE_PROJECT_DIR:-$PWD}` なので、この変数が入った環境（＝Claude Code のセッションの
+        # 中から本スイートを走らせた経路。2026-11-08 までは Stop hook からも回していた / #436）では、
         # publish が**実リポジトリの `.claude/events.jsonl`** へ飛ぶ:
         #   - publish を見るテストは「イベントが無い」で落ちる（実測 3 件）
         #   - **黙るはずのテストは緑のまま**「publish しなかった」と「別の場所へ publish した」
