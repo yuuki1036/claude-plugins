@@ -65,6 +65,7 @@ import time
 import tokenize
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
 # **`-f`（failfast）を付ける**。落ちる変異は最初の失敗で止まり、判定は killed のまま変わらない（生存は
@@ -387,7 +388,18 @@ def _code_end(line: str) -> int:
     return len(line)
 
 
-def _py_masked_spans(path: Path) -> dict[int, list[tuple[int, int]]] | None:
+COMMENT = "comment"
+STRING = "string"
+
+
+class Span(NamedTuple):
+    """変異をかけない桁範囲（1 行の中の [lo, hi)）と、それがコメントか文字列か."""
+    lo: int
+    hi: int
+    kind: str            # COMMENT か STRING（f-string / t-string は STRING）
+
+
+def _py_masked_spans(path: Path) -> dict[int, list[Span]] | None:
     """`.py` の文字列 / コメントの桁範囲を行ごとに返す（取れなければ None）.
 
     **複数行文字列は行内の近似では追えない**。docstring の散文にある `>=` や `True` を
@@ -410,8 +422,8 @@ _FSTRING_START = {getattr(tokenize, n) for n in ("FSTRING_START", "TSTRING_START
 _FSTRING_END = {getattr(tokenize, n) for n in ("FSTRING_END", "TSTRING_END") if hasattr(tokenize, n)}
 
 
-def _masked_spans(tokens) -> dict[int, list[tuple[int, int]]]:
-    spans: dict[int, list[tuple[int, int]]] = {}
+def _masked_spans(tokens) -> dict[int, list[Span]]:
+    spans: dict[int, list[Span]] = {}
     opened: list[tuple[int, int]] = []       # 開いている f-string の開始位置（入れ子があるので積む）
     for tok in tokens:
         if tok.type in _FSTRING_START:
@@ -419,19 +431,19 @@ def _masked_spans(tokens) -> dict[int, list[tuple[int, int]]]:
         elif tok.type in _FSTRING_END:
             start = opened.pop()
             if not opened:                   # 入れ子の内側は外側の範囲に含まれる
-                _add_span(spans, start, tok.end)
+                _add_span(spans, start, tok.end, STRING)
         elif tok.type in (tokenize.STRING, tokenize.COMMENT) and not opened:
-            _add_span(spans, tok.start, tok.end)
+            _add_span(spans, tok.start, tok.end, COMMENT if tok.type == tokenize.COMMENT else STRING)
     return spans
 
 
-def _add_span(spans: dict[int, list[tuple[int, int]]],
-              start: tuple[int, int], end: tuple[int, int]) -> None:
+def _add_span(spans: dict[int, list[Span]],
+              start: tuple[int, int], end: tuple[int, int], kind: str) -> None:
     (srow, scol), (erow, ecol) = start, end
     for ln in range(srow, erow + 1):
         lo = scol if ln == srow else 0
         hi = ecol if ln == erow else 10 ** 9
-        spans.setdefault(ln, []).append((lo, hi))
+        spans.setdefault(ln, []).append(Span(lo, hi, kind))
 
 
 # `.sh` に埋め込まれた python の始まり。ヒアドキュメント（`python3 - <<'PY'`）と、
@@ -441,7 +453,7 @@ SH_PY_HEREDOC = re.compile(r"\bpython3?\b.*?(?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\1")
 SH_PY_DASH_C = re.compile(r"\bpython3?\b[^'#]*\s-c\s+'(?=[^']*$)")
 
 
-def _sh_python_lines(lines: list[str]) -> dict[int, list[tuple[int, int]] | None]:
+def _sh_python_lines(lines: list[str]) -> dict[int, list[Span] | None]:
     """`.sh` に埋め込まれた python の行 → その行の文字列 / コメントの桁範囲.
 
     **docstring の散文を変異させない**ためと、**python の規則を python にだけ当てる**ため。
@@ -453,7 +465,7 @@ def _sh_python_lines(lines: list[str]) -> dict[int, list[tuple[int, int]] | None
     数えない（近似のまま bash 側の規則だけが当たる）。tokenize できない塊（unquoted の
     ヒアドキュメントで `$x` を展開している等）は値を None にして近似へ落とす。
     """
-    result: dict[int, list[tuple[int, int]] | None] = {}
+    result: dict[int, list[Span] | None] = {}
     i = 0
     while i < len(lines):
         region = _python_region_at(lines, i)
@@ -514,32 +526,29 @@ INLINE_IF_RETURN = re.compile(r"^(\s*(?:if|elif)\b.*:\s*)return\b")
 BRACKET_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
 
-def _code_only(line: str, spans: list[tuple[int, int]] | None) -> str:
+def _code_only(line: str, spans: list[Span] | None) -> str:
     """文字列 / コメントを空白に潰した行（括弧の数え上げ用。spans が無ければ近似）."""
     if spans is None:
         return line[:_code_end(line)]
     chars = list(line)
-    for lo, hi in spans:
+    for lo, hi, _ in spans:
         for k in range(lo, min(hi, len(chars))):
             chars[k] = " "
     return "".join(chars)
 
 
-def _comment_start(line: str, spans: list[tuple[int, int]] | None) -> int:
+def _comment_start(line: str, spans: list[Span] | None) -> int:
     """行末コメントの開始桁（コメントが無ければ行の長さ）. 印はここより後ろだけで効く（#393）.
 
-    spans は `_masked_spans` の桁範囲で、文字列とコメントを区別しないので先頭の文字で見分ける
-    （COMMENT は `#`、STRING は引用符か接頭辞から始まる）。複数行文字列の 2 行目以降は 0 桁目から
-    始まるが、行頭が `#` の行は COMMENT_ONLY で先に外れる。spans が None（bash の行・tokenize
-    できない python）は `_code_end` の近似。
+    spans が None（bash の行・tokenize できない python）は `_code_end` の近似。
     """
     if spans is None:
         return _code_end(line)
-    return next((lo for lo, _ in spans if line.startswith("#", lo)), len(line))
+    return next((s.lo for s in spans if s.kind == COMMENT), len(line))
 
 
 def _early_return(lines: list[str], lineno: int,
-                  py_spans: dict[int, list[tuple[int, int]] | None]) -> str | None:
+                  py_spans: dict[int, list[Span] | None]) -> str | None:
     """if 直下の `return` を `pass` にした行を返す（当たらなければ None）.
 
     正規表現 1 本では書けない（直前の行が if であることを見る）ので RULES の外に置く。
@@ -602,7 +611,7 @@ def build_mutants(targets: dict[Path, set[int]],
             for pattern, repl, desc in RULES + (PY_RULES if is_py else SH_RULES):
                 for m in re.finditer(pattern, line):
                     if line_spans is not None:
-                        if any(lo <= m.start() < hi for lo, hi in line_spans):
+                        if any(lo <= m.start() < hi for lo, hi, _ in line_spans):
                             continue     # 文字列 / コメントの中（tokenize で確定）
                     elif m.start() >= code_end or _looks_quoted(line, m.start()):
                         continue         # 近似（bash とトークナイズ不能な python）
