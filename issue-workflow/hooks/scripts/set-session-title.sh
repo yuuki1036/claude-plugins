@@ -20,7 +20,8 @@ case "$IW_BACKEND" in
   none) safe_hook_error NotFound "no valid backend data dir" ;;
   both) safe_hook_error Validation "backend conflict (.claude/indie and .claude/linear both valid)" ;;
 esac
-ISSUE_FILE=$(find "$IW_DATA_DIR" -name "${ISSUE_ID}.md" 2>/dev/null | head -1 || true)
+# issues/ の下に絞る。maintain 系が {slug}/archive/ に同じ名前の控えを置くので、絞らないとそちらを掴みうる（GitHub issue #422）
+ISSUE_FILE=$(find "$IW_DATA_DIR" -path "*/issues/${ISSUE_ID}.md" 2>/dev/null | head -1 || true)
 [[ -z "$ISSUE_FILE" ]] && safe_hook_error NotFound "issue file not found: $ISSUE_ID"
 
 # **`|| true` は必須**（GitHub issue #179）: `title:` 行を欠く issue ファイルで grep が
