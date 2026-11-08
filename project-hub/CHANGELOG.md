@@ -2,6 +2,23 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.16.0] - 2026-11-07
+
+### Added
+
+- **`unregister --project <PJ> --session <session_id> --keep <残す PJ>`**（GitHub issue #383）: 二重登録（`cross` の `double_registered`）のうち、残さないと決めた側の PJ の登録を外す。外す側の PJ の hub だけが回せ、その PJ の journal に `close_sub` の `moved` を 1 行残すだけで、残す PJ の状態は書かない（2026-11-07 決定）。以後その登録は二重登録の欄・作業中の sub・report の宛先の固定から外れる（その後この PJ に report が来れば、外した扱いは取り消される）。残す PJ が active で、そこに登録が残っているときだけ外す。同じ指定で 2 回目を回すと、残す PJ がその後 closed になっていても、何も書かずに `already: true` を返す
+- **`hub-name --project <PJ>`**（GitHub issue #384）: hub.json の hub の名前と会話の ID を返す（読むだけ）。`default_name` は名前が既定名（`<dir>-<数字>`）のときと名前が無いときに `true` で、sub はその名前の送り手を hub と見なさない。report と `refresh-hub` の出力にも同じ `default_name` を足した（hub は `true` なら送らない。`hub_name` は今までどおり返すので、古い版の sub の照合は変わらない）。sub は hub からの連絡を受けるたびにこれで今の名前を引いて照合する（hub を改名した回に連絡を弾かず、改名で空いた古い名前を名乗る別のセッションの連絡も受けない）
+- **`worktrees` / `cross` の `busy_issues`**（GitHub issue #382）: 作業中の sub の Issue を、github は `#12`、local / linear は前後の空白を除いた ID に揃えて返す。repo hub の Issue の保守は、`#12` と `12` の表記ゆれを SKILL 側で突き合わせずにこの一覧と照合する
+
+### Changed
+
+- **init / reopen の exit 3 の理由コード**（GitHub issue #382）: init / reopen の exit 3 と、`set-tracker-write` / `set-sidebar-group` の設定値を理由にした exit 3 で、stdout に `{"status": <理由コード>, "reason": <stderr と同じ文面>}` を出す（report の拒否の `status` と同じ形）。コードは `repo_hub_active` / `repo_hub_closed` / `name_taken` / `already_initialized` / `already_closed` / `scope_conflict` / `tracker_write_local` / `sidebar_not_desktop` / `local_dir_tracked` / `config_unreadable` / `not_closed` / `not_initialized`。hub の SKILL.md は stderr の文面ではなくこのコードで分岐する。stderr は今のまま出し、ほかの exit 3 では stdout は空のまま
+- hub は relay と brief（start を含む）で、送る前に毎回 `refresh-hub` を回して hub.json の名前を今の会話の題に直す（GitHub issue #384）。brief のテンプレと report の SKILL.md に、名前が違うときは `hub-name` で引き直す手順を足した
+
+### Removed
+
+- **`resolve --hub`**（GitHub issue #384）: どの手順からも呼ばれておらず、一致が 0 件のときの扱い（unresolved）が report の通知（会話の ID へ送る / `absent`）と食い違っていた。sub → hub の通知先は report が決める。`references/list-agents.md` の例を `--session` に直した
+
 ## [0.15.1] - 2026-11-06
 
 ### Fixed
