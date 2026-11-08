@@ -80,6 +80,8 @@ REPRESENTATIVES = {
         "test_mutation_test.RunReportTest.test_file_mode_says_it_is_not_a_diff_and_counts_changed_lines",
     "test_feature_dev_scripts.py":
         "test_feature_dev_scripts.ReviewSnapshotTest.test_edits_and_new_files_after_save_are_reported",
+    "test_issue_workflow_issue_files.py":
+        "test_issue_workflow_issue_files.RetireTest.test_tracked_is_deleted_and_restorable_from_git",
     "test_issue_workflow_sync_claude.py":
         "test_issue_workflow_sync_claude.TestCopy.test_copies_ignored_file_missing_in_main",
     "test_issue_workflow_branch_setup.py":
