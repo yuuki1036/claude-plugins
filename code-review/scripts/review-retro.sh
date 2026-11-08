@@ -1790,6 +1790,13 @@ n_gapfield_selfreview = sum(1 for e in events
 # `dispatch.span_sec` と `since-t0` 窓が要り、揃う回は実測でごく一部（ローカル 15 件中 2 件）。
 # `n_gapfield` に載せると #127 と同型に薄まって、比率が構造的に閾値へ届かなくなる
 n_fleet_span_judged = sum(1 for e in events if _fleet_span_judgeable(e["p"]))
+# `plan` gap の分母（#387）。publish が「plan を呼ぶはずの回」と判定した回（`plan_expected` が true）だけ。
+# 呼ばない回（review の default 以外・delta が空）と判定できない回・#387 より前の回を入れると率が薄まる
+n_plan_judged = sum(1 for e in events if e["p"].get("plan_expected") is True)
+# `payload:review_mode` の分母（#387）。review の回のうち `plan_expected` を持つ回（#387 以降の publish は
+# 全回で注入する）。#387 より前の review の回はこの gap が立ちようがないので、入れると率が薄まる
+n_review_mode_judged = sum(1 for e in events
+                           if str(e["plugin"]).endswith(":review") and "plan_expected" in e["p"])
 n_fleet_span_conflict = sum(1 for e in events if _fleet_span_conflict(e["p"]))
 
 # 健全性表示の母集団は `measurement_gaps` を持つ回（= v2.62.0 以降）に絞る（issue #127）.
@@ -2110,8 +2117,12 @@ def gap_denom(g):
         return n_gapfield_selfreview
     if g == "fleet-span-mismatch":     # 突合の材料が揃った回でのみ判定できる（#207）
         return n_fleet_span_judged
+    if g == "plan":                    # publish が plan を呼ぶはずと判定した回でのみ立つ（#387）
+        return n_plan_judged
     if g.startswith("payload:md_polish"):  # self-review だけのフィールド（#243）
         return n_gapfield_selfreview
+    if g == "payload:review_mode":     # review だけで、#387 以降の回にだけ立つ
+        return n_review_mode_judged
     # **`agents-abandoned` / `agents-nested` / `wave-split` はここに来ない** — 欠測ではないので `gap_counts` から外してあり
     # （#192）、分母 `n_wave_judged` と分子は専用の判定ブロックが持つ（#200）
     return n_gapfield
@@ -2221,6 +2232,11 @@ def gap_hint(g):
     if g == "plugin-version":
         return ("publish スクリプト自身の `plugin.json` を読めなかった（プラグインの配置が壊れている"
                 "疑い）。その回がどの版の規約で走ったかが分からず、配布ラグの交絡を外せない")
+    if g == "plan":
+        # **打点ではなく手順の飛ばし**（#387）。既定に落ちると誤った是正先を指す
+        return ("reviewer の構成を `plan-reviewers.sh plan` に決めさせずに進めた（self-review Step 2.2 / "
+                "review Step 3.2 の default-mode）。plan を飛ばして構成を自分で数えた回は、体数・束ね・"
+                "仕様照合の起動が契約から外れうる")
     if g == "wave-split":
         # **打点とは無関係**。既定に落ちると確実に誤った是正先を指す（#192）
         return ("同一フェーズの agent を 1 メッセージで一括発行する"
