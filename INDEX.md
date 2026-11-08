@@ -177,7 +177,7 @@ PJ の決定（living spec: repo の `.claude/living-specs/<slug>.md`。旧 livi
 | 機械層（検査の並びの正本） | `.claude-plugin/scripts/machine-layer.sh` | exit 0 緑 / 1 検出 / 2 判定不能。Stop hook と self-review 前段が呼ぶ |
 | 自動品質チェック | `.claude-plugin/scripts/auto-quality-check.sh` | Stop hook で非ブロッキング通知（機械層に委譲。いつ走らせるかと hook 向け出力だけを持つ） |
 | 回帰テストの起動口 | `.claude-plugin/scripts/run-tests.py` | 新しいセッションで実行し、終了後に残ったプロセスを検出・回収する（pre-commit / CI / 機械層が呼ぶ） |
-| 検証スクリプトの回帰テスト | `.claude-plugin/scripts/tests/` | `python3 .claude-plugin/scripts/run-tests.py`（stdlib・依存なし。期待値を実装から独立に構築する） |
+| 検証スクリプトの回帰テスト | `.claude-plugin/scripts/tests/` | `python3 .claude-plugin/scripts/run-tests.py`（stdlib。依存は jsonschema / pyyaml だけ。期待値を実装から独立に構築する） |
 | pre-commit | `.githooks/pre-commit` | バージョンバンプ・CHANGELOG・SSoT 同期・プラグイン品質 (errors)・回帰テスト |
 | eval 回帰テスト | `evals/`（runner.py / cases / reports） | トリガーフレーズ → スキル起動を pass^k=3 で検証 |
 
