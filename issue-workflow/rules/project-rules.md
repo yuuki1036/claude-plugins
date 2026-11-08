@@ -66,7 +66,7 @@ type: {推定タイプ}
 
 ## Knowledge の活用
 
-- セッション開始時・コンパクション後に knowledge インデックスが自動注入される
+- セッション開始時・コンパクション後に knowledge インデックスが自動注入される（大きい index は一部だけ。省いた分は `/knowledge` で引く）
 - 実装方針の検討時や問題解決時に、関連する knowledge を Read して活用する
 - `/knowledge` で一覧表示、`/knowledge search <キーワード>` で検索できる
 - 新しい知見は `/issue-maintain` の実行時に自動的に切り出される
