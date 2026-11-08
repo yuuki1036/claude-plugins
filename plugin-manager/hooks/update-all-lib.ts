@@ -138,5 +138,7 @@ export function report(
     )
   }
   out.push('', '反映にはClaude Codeの再起動が必要です。')
+  // 再起動しないで動き続けるセッションへは、stale-skill hook が次の発言で知らせる（GitHub issue #416）
+  if (updated.length > 0) out.push('動いているセッションには、そのセッションで使った skill が更新されていれば、次の発言で読み直す SKILL.md のパスを知らせる。')
   return out.join('\n')
 }

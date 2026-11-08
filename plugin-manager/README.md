@@ -1,6 +1,6 @@
 # plugin-manager
 
-インストール済みプラグインの管理ユーティリティ。一括更新と、後から追加された自作プラグインの取りこぼし通知を行う。
+インストール済みプラグインの管理ユーティリティ。一括更新と、後から追加された自作プラグインの取りこぼし通知、動いているセッションへの更新通知（読んだ skill より新しい版が入ったら SKILL.md の読み直しを促す）を行う。
 
 ## コマンド
 
@@ -28,6 +28,18 @@ marketplace エントリに `_superseded_by: "<後継名>"` を持つ deprecated
 ## SessionStart 通知
 
 セッション開始時に `check-missing-plugins.sh` hook が「ほぼ全部 install しているマーケットプレイス」の未インストールプラグインを軽く通知する。`install_ratio`（そのマーケットプレイスの install 済み割合）が閾値（既定 0.8）以上のマーケットプレイスのみ監視対象とし、一部しか install していない巨大マーケットプレイスからの通知爆発を防ぐ。
+
+## 動いているセッションへの更新通知
+
+1 つのセッションを何日も動かし続けると、プラグインを更新した後も、最初に Read した版の SKILL.md の手順で進み続ける（`/update-all` の後も再起動しない限り、会話の中の手順は古いまま）。`stale-skill.sh` hook がこれを知らせる:
+
+1. **記録**（PostToolUse の Read / Skill）: `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` の下のファイルを Read したら、その版を記録する（`skills/<name>/SKILL.md` なら skill ごとに）。Skill で呼んだ skill は、呼んだ時点のインストール済みの版を記録する（Read で記録した版は上書きしない）
+2. **通知**（UserPromptSubmit・PostCompact・SessionStart の resume / compact）: 記録した版と `installed_plugins.json` の版が違えば、新しい版の SKILL.md のパスと、旧版より新しい CHANGELOG の見出し（最大 5 行）を注入する。読み直したら、新しい版で足された手順のうち今の作業に効くものは利用者に確かめずに済ませ、後から戻しにくい変更だけ聞くよう添える（常設のセッションが自分で追従できるように）
+3. 同じプラグインの同じ新版は 1 回だけ知らせる。compaction の後は通知も会話から消えるので、もう一度出す。新しい版の SKILL.md を Read すれば記録が新しくなり、通知は止まる
+
+黙る条件: このセッションでプラグインのファイルを読んでいない・版が同じ・アンインストール済み・`installed_plugins.json` が無いか壊れている・状態ファイルが壊れているか形式（`schema_version`）が違う（次の Read で記録し直す）・`python3` が無い。新しいセッション（SessionStart の startup / clear）では知らせない。
+
+状態は `${CLAUDE_CONFIG_DIR:-~/.claude}/plugin-manager/sessions/<session_id>.json`。発言のたびに更新し、14 日以上触れられていないもの（書きかけの一時ファイルを含む）は SessionStart で消す。ただし resume したセッション自身の記録は、通知を出す前には消さない。この版を入れる前から動いているセッションには、記録が無いので届かない。resume で session_id が変わる環境では記録を引き継げず、通知は出ない。
 
 ## 設定（任意）
 

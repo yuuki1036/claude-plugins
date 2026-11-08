@@ -123,7 +123,7 @@ INDEX.md                         # プラグイン詳細一覧（CLAUDE.md の�
 | dev-workflow | 4 | 7 | - | SessionStart, PreToolUse, PostToolUse | Git コミット・PR 作成・UI 動作確認・バグ診断・worktree 並列開発 + 一括棚卸し（chrome-devtools MCP 同梱） |
 | harness-keeper | 2 | 5 | - | - | Claude Code 設定管理・CLAUDE.md 監査・CC アップデート追従・eval 回帰テスト・コンポーネント追加前判断 |
 | issue-workflow | 14 | 14 | 4 | SessionStart, PostCompact, UserPromptSubmit, FileChanged, PostToolUse | Issue 管理（旧 linear/indie の統合後継。backend 自動判定） |
-| plugin-manager | 1 | - | - | SessionStart | インストール済みプラグインの一括更新 + deprecated の自動移行（_superseded_by）+ 後発追加通知 |
+| plugin-manager | 1 | - | - | SessionStart, PostToolUse, UserPromptSubmit, PostCompact | インストール済みプラグインの一括更新 + deprecated の自動移行（_superseded_by）+ 後発追加通知 + 動いているセッションへの更新通知 |
 | plugin-feedback | 1 | 1 | - | SessionStart | プラグインへの改善要望・バグ報告を GitHub Issue 化 |
 | feature-dev | 1 | 1 | 2 | SessionStart | 8 phase 機能開発ワークフロー（spec 品質ゲート・G-V fix ループ・self-review 委譲） |
 | notebooklm-workflow | 2 | 2 | - | SessionStart | NotebookLM 連携ワークフロー（notebooklm-mcp-cli を .mcp.json で同梱） |

@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.10.0] - 2026-11-08
+
+### Added
+
+- **動いているセッションへの更新通知**（`hooks/scripts/stale-skill.sh`。GitHub issue #416）。1 つのセッションを何日も動かすと、プラグインを更新した後も最初に Read した版の SKILL.md の手順で進み続け、CLI と注入は新しい版、手順は古い版のまま動いていた。PostToolUse の Read / Skill でこのセッションが読んだ版を記録し、UserPromptSubmit・PostCompact・SessionStart（resume / compact）でインストール済みの版と違えば、新しい版の SKILL.md のパスと CHANGELOG の見出し（最大 5 行）を注入する。読み直したら、新しい版で足された手順のうち今の作業に効くものは利用者に確かめずに済ませ、後から戻しにくい変更だけ聞くよう添える（常設のセッションが自分で追従できるように。2026-11-08 決定）。同じ新版は 1 回だけ知らせ、compaction の後はもう一度出す。状態は `~/.claude/plugin-manager/sessions/<session_id>.json` で、14 日以上触れられていないものは消す
+- `/update-all` の結果に、更新が 1 件以上あれば「動いているセッションには、そのセッションで使った skill が更新されていれば、次の発言で読み直す SKILL.md のパスを知らせる」の行を足した
+- 既存の `check-missing-plugins.sh` は `once` の SessionStart 専用で、PostToolUse・UserPromptSubmit・PostCompact にはつなげないため、別のスクリプトにした。並列の Read で記録が消えないよう、状態ファイルの読み書きはロックを取る
+
 ## [1.9.1] - 2026-10-04
 
 ### Fixed
