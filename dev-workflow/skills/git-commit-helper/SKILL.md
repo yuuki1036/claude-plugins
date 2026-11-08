@@ -134,15 +134,11 @@ issue-workflow の軽量フローと feature-dev は、コミットの前に sel
 
 #### 4.2 writing-polish 連携（コミットメッセージ添削・opt-in）
 
-`writing-polish` plugin が同居していれば、生成したコミットメッセージの description 部分をコミット実行の直前に writing-polish へ渡して推敲できる（冗長削減・曖昧語の具体化・トーン統一・AI っぽさ除去）。未インストール時は本ステップを完全に skip し、従来どおりコミットする（dormant・後方互換 100%）。1 行 subject が十分簡潔なら skip してよい。
+`writing-polish` plugin が有効なら、生成したコミットメッセージの description 部分をコミット実行の直前に writing-polish へ渡して推敲できる（冗長削減・曖昧語の具体化・トーン統一・AI っぽさ除去）。未導入か無効のときは本ステップを完全に skip し、従来どおりコミットする（dormant・後方互換 100%）。1 行 subject が十分簡潔なら skip してよい。
 
-1. インストール判定（check-deps.sh と同方式）:
+1. 有効かの判定（同梱の `plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す。出力が空ならスクリプトを起動できていないので、`${CLAUDE_PLUGIN_ROOT}` を実パス（この文書を Read したパスの、プラグインのルート）に直して再実行する（無効と同じに扱わない））:
    ```bash
-   if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
-     WRITING_POLISH=1
-   else
-     WRITING_POLISH=0
-   fi
+   echo "WRITING_POLISH=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" writing-polish)"
    ```
    `WRITING_POLISH=0` → 本ステップを skip。
 2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を呼ぶ。`--embed` を必ず付け、`--tone commit` を伝え、生成したコミットメッセージの description 部分を渡す。

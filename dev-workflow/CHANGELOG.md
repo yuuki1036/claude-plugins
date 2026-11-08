@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.43.2] - 2026-11-08
+
+### Fixed
+
+- **git-commit-helper / pr-creator の writing-polish の有効判定と、check-deps.sh の判定を、同梱した `scripts/plugin-enabled.sh`（正本の複製）に寄せた**（GitHub issue #423）。以前は user の settings でキーの有無だけを見ており、`false` で無効化したものを有効と誤っていた。pr-creator の pre-flight ゲートは、無効のときの skip を `N-A` と認める
+
 ## [1.43.1] - 2026-11-07
 
 ### Changed

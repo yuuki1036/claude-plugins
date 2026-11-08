@@ -94,15 +94,11 @@ Step 6（severity×confidence の機械フィルタ）と Phase 5.9 反証レイ
 - **各文面の末尾に署名を 1 行付す**。**文言は reply-tone-guide.md `0.1` の正本に従う**（現行は `— Created by Claude`。リポジトリ規約が署名文言を定めていればそちらが優先）。**この行に文言を複写しない** — 正本と複製の 2 箇所に literal があると片方だけ更新される（v2.42.0 で実際に発生: reply-tone-guide だけ更新され、本ファイルの署名 4 箇所が旧文言のまま残った）
 - **著者への配慮を自己点検する**（reply-tone-guide.md `0.6` のチェックリスト全項目。**項目はここに複写せず 0.6 を読む**）。**1 つでも欠けたらドラフトを直してから次へ進む**。適用範囲はメタ行と同じで、**承認コメントと 5 章の例外は対象外**（署名のみ必須。簡潔さが正の文面に謝辞を足すと 2.7 / 5 章の特則を壊す）
 - **未検証主張の断定抑止（over-correction 防止 / GitHub issue #71）**: ドラフトに load-bearing な事実主張を書く場合、typo 級でない限り **断定で書かない**。repo で確認できる主張は `file:line` を、正本 doc で確認できる主張は典拠を添える。repo/正本で裏が取れない外部状態（DB/本番/運用設定）は「要確認（典拠=X）」とし、元の reviewer 指摘が `[unverified: ...]` 付きならその不確実性を返答にも引き継ぐ（確定済みであるかのように書かない）
-- **`writing-polish` で推敲してから提示する（必須 / 未導入時のみ skip）**: 初稿は冗長になりやすく、ユーザーが都度短縮を指示する手間が生じる。**ドラフトを提示する直前に必ず通す**。プラグイン独立性のため未インストール時のみ skip し、従来どおり提示する（dormant・後方互換）。
+- **`writing-polish` で推敲してから提示する（必須 / 未導入か無効のときだけ skip）**: 初稿は冗長になりやすく、ユーザーが都度短縮を指示する手間が生じる。**ドラフトを提示する直前に必ず通す**。プラグイン独立性のため未導入か無効のときだけ skip し、従来どおり提示する（dormant・後方互換）。
 
-  1. インストール判定（check-deps.sh と同方式）:
+  1. 有効かの判定（同梱の `plugin-enabled.sh` が user → project → local の settings の明示値で `1` / `0` を出す。出力が空ならスクリプトを起動できていないので、`${CLAUDE_PLUGIN_ROOT}` を実パス（この文書を Read したパスの、プラグインのルート）に直して再実行する（無効と同じに扱わない））:
      ```bash
-     if grep -q '"writing-polish@' "$HOME/.claude/settings.json" 2>/dev/null; then
-       WRITING_POLISH=1
-     else
-       WRITING_POLISH=0
-     fi
+     echo "WRITING_POLISH=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" writing-polish)"
      ```
      `WRITING_POLISH=0` → 本ステップを skip。
   2. `WRITING_POLISH=1` のとき、`Skill` tool で `writing-polish:writing-polish` を呼ぶ。`--embed` を必ず付け、`--tone review` を伝え、生成した全ドラフト文面を渡す。

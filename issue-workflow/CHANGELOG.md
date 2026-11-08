@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.4] - 2026-11-08
+
+### Fixed
+
+- **check-deps.sh の他プラグインの有効判定を、同梱の `scripts/plugin-enabled.sh` に寄せた**（GitHub issue #423）。`false` で無効化したものを導入済みと誤らず、project / local の settings だけで有効化したものを未導入と鳴らさない。WARN は「未導入か無効です」になる
+
 ## [1.19.3] - 2026-11-08
 
 ### Fixed

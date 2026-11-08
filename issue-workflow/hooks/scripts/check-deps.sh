@@ -37,16 +37,16 @@ check_mcp() {
 
 check_plugin() {
   local name="$1" required="$2" desc="$3"
-  local found=false
-  if [ -f "$HOME/.claude/settings.json" ] && grep -q "\"${name}@" "$HOME/.claude/settings.json" 2>/dev/null; then
-    found=true
+  local state
+  # 有効かは同梱の複製（正本 .claude-plugin/lib/plugin-enabled.sh）で決める。キーの有無だけでは false の無効化と project / local の有効化を読めない
+  state=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" "$name" 2>/dev/null) || state=0
+  if [ "$state" = 1 ]; then
+    return 0
   fi
-  if [ "$found" = false ]; then
-    if [ "$required" = "true" ]; then
-      errors="${errors}\n- [ERROR] ${desc}（${name}）がインストールされていません"
-    else
-      warnings="${warnings}\n- [WARN] ${desc}（${name}）が未インストールです（オプション）"
-    fi
+  if [ "$required" = "true" ]; then
+    errors="${errors}\n- [ERROR] ${desc}（${name}）が未導入か無効です"
+  else
+    warnings="${warnings}\n- [WARN] ${desc}（${name}）が未導入か無効です（オプション）"
   fi
 }
 
