@@ -6,6 +6,8 @@ on:
   pull_request:
 
 jobs:
+  # job 名はルールセット「main: PR 必須」の必須のチェック名。名前を変える・matrix を足す（チェック名が変わる）ときは
+  # ルールセットの側も合わせる。合わないと必須のチェックが来ず、auto-merge がいつまでもマージしない
   validate:
     runs-on: ubuntu-latest
     steps:

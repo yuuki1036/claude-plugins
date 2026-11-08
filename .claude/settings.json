@@ -5,8 +5,7 @@
       "Bash(gh api *pulls/*/merge*)",
       "Bash(gh api graphql *mergePullRequest*)",
       "Bash(gh api graphql *enablePullRequestAutoMerge*)",
-      "mcp__github__merge_pull_request",
-      "mcp__ccd_pr__set_auto_merge"
+      "mcp__github__merge_pull_request"
     ]
   },
   "hooks": {
