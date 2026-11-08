@@ -30,6 +30,9 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #   並列で、`RUN_TESTS_JOBS=1` で 1 プロセスに戻る）
                                  # plugin-eval.sh（`claude plugin eval` の起動口。入力の指紋を
                                  #   `<plugin>/evals/results/.last-eval` に残し、pre-commit が突合する）
+                                 # measure-interventions.py（transcript から人の介入点を数える計測。
+                                 #   マシンごとに走らせ --merge で合算。手順は
+                                 #   docs/session-reports/2026-11-08-human-intervention-measurement.md）
 .claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest・依存なし）。4 系統:
                                  #  ① 検証スクリプト自身（test_validate_plugin_quality.py / test_mutation_test.py）
                                  #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
@@ -43,7 +46,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #     本物を使い捨てリポジトリに向けて走らせ生成物まで見る:
                                  #     test_bump_version.py / test_validate_ssot.py /
                                  #     test_run_tests.py（#139 / #140）/ test_plugin_eval.py（claude は stub）/
-                                 #     test_mutation_nightly_report.py / test_mutation_nightly_state.py（#288）
+                                 #     test_mutation_nightly_report.py / test_mutation_nightly_state.py（#288）/
+                                 #     test_measure_interventions.py（使い捨ての transcript dir を立てる）
                                  #  git を叩くテストは git_env.py（GIT_HOOK_ENV スクラブの正本）を通す
                                  #  ④ hook スクリプト（hook_harness.py + test_<plugin>_hooks.py。
                                  #     stdin に JSON を流し「発火するか / 黙るか」を直接見る）
