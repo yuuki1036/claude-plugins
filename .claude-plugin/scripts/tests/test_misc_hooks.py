@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -78,6 +79,102 @@ class CheckDepsContractTest(unittest.TestCase):
                 self.assertNotEqual(res.returncode, 2, res.stderr)
                 if res.stdout.strip():
                     self.assertIn("依存チェック", res.stdout)
+
+
+class CheckDepsPluginEnabledTest(unittest.TestCase):
+    """`check_plugin` が同梱の plugin-enabled.sh で判定すること（GitHub issue #423）.
+
+    以前はキーの有無だけを user の settings で見ており、`false` で無効化したものを黙って通し、
+    project / local だけで有効化したものを未導入と鳴らしていた。依存 1 つごとに
+    「（<dep>）が未導入か無効」の行の有無で見る（gh 等の他の検査の出力が混ざるので、全体の無音では見ない）。
+    """
+
+    MARKETPLACE = "yuuki1036-claude-plugins"
+
+    # 他プラグインを判定する check-deps.sh（project-hub / adr-keeper の check_plugin は何もしない）.
+    # 中身で選ぶと、旧実装へ戻ったスクリプトが対象から外れて回帰を見逃す
+    PLUGINS = ("code-review", "dev-workflow", "feature-dev", "issue-workflow")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.scripts = [ROOT / p / "hooks" / "scripts" / "check-deps.sh" for p in cls.PLUGINS]
+
+    def _deps(self, script: Path) -> list[str]:
+        return re.findall(r'^check_plugin "([a-z-]+)"', script.read_text(encoding="utf-8"), re.M)
+
+    def _run(self, script: Path, settings: dict[str, dict[str, bool]]):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            proj = Path(tmp) / "proj"
+            for base in (home / ".claude", proj / ".claude"):
+                base.mkdir(parents=True)
+            files = {"user": home / ".claude" / "settings.json",
+                     "project": proj / ".claude" / "settings.json",
+                     "local": proj / ".claude" / "settings.local.json"}
+            for layer, enabled in settings.items():
+                plugins = {f"{k}@{self.MARKETPLACE}": val for k, val in enabled.items()}
+                files[layer].write_text(json.dumps({"enabledPlugins": plugins}, indent=2), encoding="utf-8")
+            # 実 HOME と CLAUDE_PROJECT_DIR を継承させない（testing-pitfalls）
+            env = {"PATH": os.environ["PATH"], "HOME": str(home),
+                   "CLAUDE_PROJECT_DIR": str(proj), "CLAUDE_PLUGIN_ROOT": str(script.parents[2])}
+            res = subprocess.run(["/bin/bash", str(script)], input='{"hook_event_name":"SessionStart"}',
+                                 capture_output=True, text=True, cwd=str(proj), env=env, timeout=20)
+        self.assertNotEqual(res.returncode, 2, res.stderr)
+        self.assertNotIn("Unexpected", res.stderr)
+        return res.stdout
+
+    def _flagged(self, out: str, dep: str) -> bool:
+        return f"（{dep}）が未導入か無効" in out
+
+    def test_targets_are_found(self):
+        for script in self.scripts:
+            self.assertTrue(self._deps(script), script)
+        # 他プラグインを実際に判定する check-deps.sh が対象に入っていなければ足し忘れ.
+        # 本体が `return 0` だけの no-op（_requirements との対応のためだけに呼ぶもの）は除く
+        noop = re.compile(r'check_plugin\(\) \{\n(?:\s*#[^\n]*\n)?\s*local [^\n]*\n\s*return 0\n\}')
+        others = [p.parents[2].name for p in CHECK_DEPS
+                  if self._deps(p) and p.parents[2].name not in self.PLUGINS
+                  and not noop.search(p.read_text(encoding="utf-8"))]
+        self.assertEqual(others, [])
+
+    def test_silent_when_enabled_in_user_settings(self):
+        for script in self.scripts:
+            deps = self._deps(script)
+            with self.subTest(script=script.parents[2].name):
+                out = self._run(script, {"user": {d: True for d in deps}})
+                self.assertEqual([d for d in deps if self._flagged(out, d)], [], out)
+
+    def test_silent_when_enabled_only_in_project_settings(self):
+        """旧実装は user の settings しか見ず、ここで鳴っていた."""
+        for script in self.scripts:
+            deps = self._deps(script)
+            with self.subTest(script=script.parents[2].name):
+                out = self._run(script, {"project": {d: True for d in deps}})
+                self.assertEqual([d for d in deps if self._flagged(out, d)], [], out)
+
+    def test_reports_every_dependency_without_settings(self):
+        for script in self.scripts:
+            deps = self._deps(script)
+            with self.subTest(script=script.parents[2].name):
+                out = self._run(script, {})
+                self.assertEqual([d for d in deps if not self._flagged(out, d)], [], out)
+
+    def test_reports_only_the_dependency_disabled_with_false(self):
+        """旧実装はキーがあれば `false` でも黙っていた."""
+        for script in self.scripts:
+            deps = self._deps(script)
+            with self.subTest(script=script.parents[2].name):
+                enabled = {d: True for d in deps}
+                enabled[deps[0]] = False
+                out = self._run(script, {"user": enabled})
+                self.assertEqual([d for d in deps if self._flagged(out, d)], [deps[0]], out)
+
+    def test_local_false_overrides_user_true(self):
+        for script in self.scripts:
+            deps = self._deps(script)
+            with self.subTest(script=script.parents[2].name):
+                out = self._run(script, {"user": {d: True for d in deps}, "local": {deps[-1]: False}})
+                self.assertEqual([d for d in deps if self._flagged(out, d)], [deps[-1]], out)
 
 
 class InjectAdvisorRuleTest(HookTestCase):
