@@ -10,16 +10,16 @@ errors=""
 
 check_plugin() {
   local name="$1" required="$2" desc="$3" impact="$4"
-  local found=false
-  if [ -f "$HOME/.claude/settings.json" ] && grep -q "\"${name}@" "$HOME/.claude/settings.json" 2>/dev/null; then
-    found=true
+  local state
+  # 有効かは同梱の複製（正本 .claude-plugin/lib/plugin-enabled.sh）で決める。キーの有無だけでは false の無効化と project / local の有効化を読めない
+  state=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" "$name" 2>/dev/null) || state=0
+  if [ "$state" = 1 ]; then
+    return 0
   fi
-  if [ "$found" = false ]; then
-    if [ "$required" = "true" ]; then
-      errors="${errors}\n- [ERROR] ${desc}（${name}）がインストールされていません"
-    else
-      warnings="${warnings}\n- [WARN] ${desc}（${name}）が未インストールです。${impact} \`claude plugin install ${name}@yuuki1036-claude-plugins\` でインストール推奨"
-    fi
+  if [ "$required" = "true" ]; then
+    errors="${errors}\n- [ERROR] ${desc}（${name}）が未導入か無効です"
+  else
+    warnings="${warnings}\n- [WARN] ${desc}（${name}）が未導入か無効です。${impact} \`claude plugin install ${name}@yuuki1036-claude-plugins\` でインストール（導入済みなら settings で有効化）推奨"
   fi
 }
 
@@ -33,7 +33,7 @@ check_cli() {
 }
 
 # --- チェック実行 ---
-# 未インストール時の影響は連携先ごとに異なる（fail-fast は code-review のみ）
+# 未導入・無効時の影響は連携先ごとに異なる（fail-fast は code-review のみ）
 check_plugin "code-review" "false" "code-review プラグイン（Phase 6 品質レビュー委譲先）" "Phase 6 (Quality Review) は fail-fast します。"
 check_plugin "bdd-spec" "false" "bdd-spec プラグイン（Phase 1.3 BDD spec 入力契約）" "Phase 1.3 は skip され、既存の Issue 解釈フローに fallback します。"
 check_plugin "design-doc" "false" "design-doc プラグイン（Phase 4.5 design doc export）" "Phase 4.5 (Design Doc Export) は skip されます。"

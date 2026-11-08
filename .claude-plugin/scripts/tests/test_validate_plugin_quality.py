@@ -1466,6 +1466,103 @@ class PluginDescriptionSizeTest(unittest.TestCase):
         self.assertEqual(offenders, [], "上限を超えるプラグインが残っている")
 
 
+class PluginEnabledKeyOnlyTest(unittest.TestCase):
+    """他プラグインの有効判定をキーの有無だけで書いた行の検出（GitHub issue #423）.
+
+    鳴る条件より黙る条件を厚くする（値まで見る判定・説明文の行内コード・CHANGELOG を拾うと
+    「⚠️ が出たときだけ行動する」契約を壊す）.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+        (self.plugin / ".claude-plugin").mkdir(parents=True)
+
+    def _scan(self, rel: str, body: str) -> list[str]:
+        path = self.plugin / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        warnings: list[str] = []
+        v.check_plugin_enabled_key_only(self.plugin, warnings)
+        return warnings
+
+    def test_md_key_only_grep_warns_with_line_number(self):
+        body = "# x\n\n```bash\nif grep -q '\"bdd-spec@' \"$HOME/.claude/settings.json\" 2>/dev/null; then X=1; fi\n```\n"
+        warnings = self._scan("skills/x/SKILL.md", body)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("demo/skills/x/SKILL.md:4 ", warnings[0])
+        self.assertIn("[plugin-enabled-key-only:demo]", warnings[0])
+
+    def test_sh_key_only_grep_warns(self):
+        body = 'check_plugin() {\n  if grep -q "\\"${name}@" "$HOME/.claude/settings.json"; then return 0; fi\n}\n'
+        warnings = self._scan("hooks/scripts/check-deps.sh", body)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("check-deps.sh:2 ", warnings[0])
+
+    def test_combined_flags_warn(self):
+        self.assertEqual(len(self._scan("a.sh", "grep -qF '\"x@' f\n")), 1)
+
+    def test_value_checking_grep_is_silent(self):
+        body = "grep -Eq '\"x@[^\"]*\"[[:space:]]*:[[:space:]]*true' \"$f\"\n"
+        self.assertEqual(self._scan("a.sh", body), [])
+        self.assertEqual(self._scan("b.md", body), [])
+
+    def test_inline_code_in_md_is_silent(self):
+        body = "キーの存在だけを見る `grep -q '\"doc-freshness@'` は使わない。\n"
+        self.assertEqual(self._scan("skills/x/SKILL.md", body), [])
+
+    def test_inline_code_in_sh_is_not_stripped(self):
+        """行内コードの除去は md だけ（sh のバッククォートはコマンド置換）."""
+        self.assertEqual(len(self._scan("a.sh", "x=`grep -q '\"x@' f`\n")), 1)
+
+    def test_changelog_is_silent(self):
+        self.assertEqual(self._scan("CHANGELOG.md", "grep -q '\"x@' f\n"), [])
+
+    def test_sh_comment_line_is_silent(self):
+        self.assertEqual(self._scan("a.sh", "  # grep -q '\"x@' f\n"), [])
+
+    def test_md_hash_line_is_still_scanned(self):
+        """`#` で始まる行を飛ばすのは sh だけ（md の見出しやフェンス内のコメントは対象）."""
+        self.assertEqual(len(self._scan("a.md", "# grep -q '\"x@' f\n")), 1)
+
+    def test_the_bundled_replica_is_exempt(self):
+        self.assertEqual(self._scan("scripts/plugin-enabled.sh", "grep -q '\"x@' f\n"), [])
+
+    def test_other_scripts_named_alike_are_not_exempt(self):
+        self.assertEqual(len(self._scan("hooks/scripts/plugin-enabled.sh", "grep -q '\"x@' f\n")), 1)
+
+    def test_eval_results_are_exempt(self):
+        self.assertEqual(self._scan("evals/results/run/out.md", "grep -q '\"x@' f\n"), [])
+
+    def test_eval_results_outside_the_plugin_root_are_not_exempt(self):
+        """除外は plugin_dir からの相対パスで見る（祖先のパスに同じ綴りがあっても外さない）."""
+        self.assertEqual(len(self._scan("skills/evals/results/x.md", "grep -q '\"x@' f\n")), 1)
+
+    def test_calling_the_bundled_script_is_silent(self):
+        body = 'echo "X=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" x)"\n'
+        self.assertEqual(self._scan("skills/x/SKILL.md", body), [])
+
+    def test_other_extensions_are_not_scanned(self):
+        self.assertEqual(self._scan("a.py", "grep -q '\"x@' f\n"), [])
+
+    def test_the_repository_itself_has_no_key_only_checks(self):
+        """この検査を入れた時点で全プラグインが 0 件であること（以後は新しく書かれた行だけが鳴る）."""
+        v.ROOT = self._orig
+        plugins = sorted(self._orig.glob("*/.claude-plugin/plugin.json"))
+        self.assertGreater(len(plugins), 0, "プラグインの走査が空振りしている")
+        offenders = []
+        for pj in plugins:
+            warnings: list[str] = []
+            v.check_plugin_enabled_key_only(pj.parent.parent, warnings)
+            offenders += warnings
+        self.assertEqual(offenders, [], "キーの有無だけで判定する行が残っている")
+
+
 class WarningChannelTest(unittest.TestCase):
     """warning の出し分け（GitHub issue #182）.
 
@@ -1620,13 +1717,14 @@ class ByteReplicaSyncTest(unittest.TestCase):
         )
 
     def test_real_config_still_declares_the_plugin_enabled_pairs(self):
-        """導入判定の複製（feature-dev / issue-workflow）も正本と突き合わせ続ける."""
+        """導入判定の複製（code-review / design-doc / dev-workflow / feature-dev / issue-workflow）も正本と突き合わせ続ける."""
         real = _load_module()
         pairs = {
             (c.relative_to(real.ROOT).as_posix(), r.relative_to(real.ROOT).as_posix())
             for c, rs in real.BYTE_REPLICAS.items() for r in rs
         }
-        for replica in ("feature-dev/scripts/plugin-enabled.sh", "issue-workflow/scripts/plugin-enabled.sh"):
+        for plugin in ("code-review", "design-doc", "dev-workflow", "feature-dev", "issue-workflow"):
+            replica = f"{plugin}/scripts/plugin-enabled.sh"
             self.assertIn((".claude-plugin/lib/plugin-enabled.sh", replica), pairs)
 
 
