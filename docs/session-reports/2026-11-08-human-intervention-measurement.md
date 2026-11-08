@@ -103,6 +103,43 @@ python3 .claude-plugin/scripts/measure-interventions.py --merge m1/summary.json 
 - 入力は `--names` を付けずに作った summary にする（合算は伏せ字をかけ直さない）。期間の指定が揃っていない・
   伏せ字なしの summary が混ざるときは WARN が出る
 
+## m2 での手順（m2 のセッションでこの節を上から実行する）
+
+m2 から持ち出すのは `summary.json` 1 つだけ。`~/.claude` はマシン間で同期していないので、運ぶのは人の手
+（チャットへの貼り付け）にする。`<since>` は m1 と同じ日付（m1 の利用者に聞く）。
+
+1. claude-plugins の checkout で main を最新にする（`git pull --ff-only`）
+2. 出力 dir を作って集計する。`--names` は付けない:
+
+   ```bash
+   OUT=$(mktemp -d) && echo "$OUT"
+   python3 .claude-plugin/scripts/measure-interventions.py --since <since> --out "$OUT"
+   ```
+
+3. 手順 2 のとおり `$OUT/events.jsonl` を読んで分類し、`$OUT/labels.jsonl` に書く。`check` は業務情報を汎用名に
+   置き換えて書く（業務のリポジトリ名 → 「業務リポジトリ A」、画面名・ドメイン用語 → 「ある画面」など）
+4. 分類を足して集計し直す（引数は 2. と同じ）:
+
+   ```bash
+   python3 .claude-plugin/scripts/measure-interventions.py --since <since> --labels "$OUT/labels.jsonl" --out "$OUT"
+   ```
+
+   `unmatched_labels` と `duplicate_labels` が 0 であることを確かめる（0 でなければ手順 2 の箇条で原因を見る）
+5. `$OUT/summary.json` を目で確かめる。伏せ字を通らずに名前がそのまま出る欄は次の 4 つで、どれも業務の語を
+   含まないかを見る:
+   - `by_skill` / `skill_activations` / `skill_prompt_forms` / `labels_by_skill` のキーのスキル名（このマーケット
+     プレイスのスキル名だけが出る。他は `(other-skill)`）
+   - `hook-block:<plugin>`（このマーケットプレイスのプラグイン名だけが出る。他は `(other)`）
+   - `reject:<tool>`（組み込みの tool 名と、`mcp__(server)__<tool>` の tool 名。社内 MCP の tool 名に業務の語が
+     入りうる）
+   - `window` の日時（稼働の最初と最後の時刻が分単位で出る）
+
+   業務の語があれば、件数はそのままにキーだけ汎用名へ書き換える（`reject:mcp__(server)__query_orders` →
+   `reject:mcp__(server)__tool-a` など）
+6. `cat "$OUT/summary.json"` の出力を m1 のセッションに貼り付ける（m1 の Claude が m1 の出力 dir に
+   `m2/summary.json` として保存する。repo の中には置かない）
+7. 後始末。本文を含む `events.jsonl` と `labels.jsonl` を消す（`rm -r "$OUT"`）
+
 ## 読み方（機械へ移す候補）
 
 | 見るところ | 候補 |
@@ -113,3 +150,15 @@ python3 .claude-plugin/scripts/measure-interventions.py --merge m1/summary.json 
 | 修正・差し戻しで target が「決定的な検査」 | hook・script の事後条件にする（AI-DLC の区画 2） |
 | 修正・差し戻しで target が「LLM の判定」 | 反証の層か事後条件の文として書く。完了の判定は人に残す |
 | hook-block | すでに機械へ移した介入。停止が多すぎる hook は誤検出を疑う |
+
+## 合算の後
+
+1. m1 も同じ `<since>` で手順 1・2 を済ませる（m2 と同じく分類まで）
+2. 手順 3 で合算し、`summary.md` を上の「読み方」の表で読む
+3. 候補ごとに「見るところ・件数・スキル・移し先」を本書の末尾に「結果」の節として追記する。件数だけを書き、
+   発話の本文・`check` の文面は書かない（この repo は公開）
+4. 機械へ移す候補は 1 候補 1 issue で起票する。打ち手は移し先で決まる: 決定的な検査 → hook・script の事後条件 /
+   LLM の判定 → 反証の層か事後条件の文 / 推奨率の高い問い → 聞かずに既定で進める。起票前に、同じ打ち手の
+   issue が既に無いかを確かめる
+5. 打ち手を入れたら、その日を `<since>` にして同じ手順で測り直し、同じ欄の件数を比べる
+
