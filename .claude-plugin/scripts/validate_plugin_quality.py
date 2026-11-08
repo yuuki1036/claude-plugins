@@ -97,6 +97,11 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     を参照しているか. hooks.json の if:/matcher は実行環境で評価されないことが実測
     されており（2026-07 push-reminder 暴発）, フィルタ単独依存の注入 hook は全ツール
     呼び出しへの暴発リスクになる.
+  - plugin-enabled key-only: 他プラグインの有効判定を `"<name>@` の直後で引用を閉じる grep
+    （キーの有無だけを見る判定）で書いていないか. `false` で無効化したものを有効と誤り, project /
+    local の settings だけで有効化したものを取りこぼす（GitHub issue #423）. 同梱の
+    scripts/plugin-enabled.sh に寄せる. md は行内コードを除いて照合し, sh はコメント行を飛ばす.
+    CHANGELOG.md・scripts/plugin-enabled.sh・evals/results/ は対象外.
   - plugin description サイズ: `plugin.json` の description 上限（400 字）. 「これは何の
     プラグインか」を伝える 1〜2 文にバージョンアップごとの機能詳細が積層してリリースノート化
     する（実測: code-review が 915 → 2177 字）. 閾値は実測の分布から導く
@@ -152,6 +157,8 @@ BYTE_REPLICAS = {
     ],
     ROOT / ".claude-plugin" / "lib" / "plugin-enabled.sh": [
         ROOT / "code-review" / "scripts" / "plugin-enabled.sh",
+        ROOT / "design-doc" / "scripts" / "plugin-enabled.sh",
+        ROOT / "dev-workflow" / "scripts" / "plugin-enabled.sh",
         ROOT / "feature-dev" / "scripts" / "plugin-enabled.sh",
         ROOT / "issue-workflow" / "scripts" / "plugin-enabled.sh",
     ],
@@ -1577,6 +1584,36 @@ def check_hook_script_refs(plugin_dir: Path, errors: list[str]) -> None:
             f"[hook-ref:{name}] hooks.json が参照するスクリプトが無い: {raw} → {shown}")
 
 
+# `"<name>@` の直後で引用を閉じる grep = キーの有無だけを見る判定（GitHub issue #423）.
+# 値まで見る grep は `@` の後に `[^"]*"...true` が続くので掛からない. md は '"x@', sh は "\"${name}@" と引用の形が違う
+PLUGIN_KEY_ONLY_GREP_RE = re.compile(r"""grep\s+(?:-[A-Za-z]+\s+)+(?:'"|"\\")[A-Za-z0-9_${}-]+@['"]""")
+
+
+def check_plugin_enabled_key_only(plugin_dir: Path, warnings: list[str]) -> None:
+    """他プラグインの有効判定がキーの有無だけで書かれていないかを見る（非ブロッキング warning）."""
+    name = plugin_dir.name
+    exempt = plugin_dir / "scripts" / "plugin-enabled.sh"
+    paths = sorted(list(plugin_dir.glob("**/*.md")) + list(plugin_dir.glob("**/*.sh")))
+    for path in paths:
+        rel = path.relative_to(plugin_dir).as_posix()
+        if path.name == "CHANGELOG.md" or path == exempt or rel.startswith("evals/results/"):
+            continue
+        is_md = path.suffix == ".md"
+        for lineno, line in enumerate(read_text(path).splitlines(), start=1):
+            if is_md:
+                line = INLINE_CODE_RE.sub("", line)
+            elif line.lstrip().startswith("#"):
+                continue
+            match = PLUGIN_KEY_ONLY_GREP_RE.search(line)
+            if match is None:
+                continue
+            warnings.append(
+                f"[plugin-enabled-key-only:{name}] {path.relative_to(ROOT)}:{lineno} キーの有無だけで有効判定している"
+                "（false の無効化を有効と誤り、project / local の有効化を取りこぼす）。"
+                'bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" <name> に寄せる'
+            )
+
+
 def check_hook_self_judgement(plugin_dir: Path, warnings: list[str]) -> None:
     """PreToolUse/PostToolUse hook スクリプトの stdin 自己判定を検証する（非ブロッキング warning）.
 
@@ -2173,6 +2210,7 @@ def main() -> int:
             check(plugin_dir, errors)
         check_allowed_tools_minimality(plugin_dir, warnings)
         check_hook_self_judgement(plugin_dir, warnings)
+        check_plugin_enabled_key_only(plugin_dir, warnings)
         check_plugin_description_size(plugin_dir, warnings)
 
     check_byte_replicas(errors)

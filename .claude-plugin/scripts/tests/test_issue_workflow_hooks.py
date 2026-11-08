@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -239,6 +242,16 @@ class OnIssueChangeTest(HookTestCase):
             self.assertIn("not an issue file", res.stderr, "自己判定ガードに到達していない")
 
 
+# knowledge を出さない回の案内。期待値はテスト側で独立に持つ（実装の定数を import すると、
+# 両方を同じに変えたときに検知できない）。見出しは共通で、理由は経路ごとに違う
+# 字数を数えられない回（bash の emit_without_budget）
+UNCOUNTED_NOTE = ("\n---\n## Knowledge\n\nknowledge の index は注入していない（字数を数えられず、"
+                  "注入の上限に収められない）。`/knowledge` で一覧を見る。\n")
+# index を読めなかった回（inject-budget.py の例外の経路）
+UNREAD_NOTE = ("\n---\n## Knowledge\n\nknowledge の index は注入していない（index の読み込みか"
+               "注入の処理に失敗した）。`/knowledge` で一覧を見る。\n")
+
+
 class InjectRulesTest(HookTestCase):
     PLUGIN = "issue-workflow"
     SCRIPT = "hooks/scripts/inject-rules.sh"
@@ -311,6 +324,250 @@ class InjectRulesTest(HookTestCase):
             self.assertEqual(res.returncode, 0)
             self.assertEqual(res.stdout, "")
             self.assertNotIn("Unexpected", res.stderr)
+
+    # --- 注入の上限（GitHub issue #424） ---
+    # Claude Code は hook の stdout を 10,000 字で打ち切り、先頭 2,000 字のプレビューしか渡さない
+
+    CC_LIMIT = 10_000
+
+    def rules_tail(self) -> str:
+        lines = (self.plugin_root / "rules" / "project-rules.md").read_text(encoding="utf-8").splitlines()
+        return [line for line in lines if line.strip()][-1]
+
+    def write_index(self, root: Path, rows: int, slug: str = "demo") -> Path:
+        index = root / ".claude" / "indie" / slug / "knowledge" / "index.md"
+        index.parent.mkdir(parents=True, exist_ok=True)
+        body = "".join(f"| concepts/{slug}-{i:03d}.md | 認証, セッション | - | 外部の認証を既存のセッションに束ねる知見 {i} |\n"
+                       for i in range(rows))
+        index.write_text("# Knowledge Index\n\n| ファイル | tags | status | 概要 |\n|---|---|---|---|\n" + body,
+                         encoding="utf-8")
+        return index
+
+    def write_stale_issue(self, root: Path) -> None:
+        p = root / ".claude" / "indie" / "demo" / "issues" / "DEMO-7.md"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("---\nid: DEMO-7\nstatus: in-progress\nlast_active: 2020-01-01\n---\n", encoding="utf-8")
+
+    def test_a_large_index_is_cut_to_fit_and_the_rules_reach_their_end(self):
+        """大きな index でも全体が上限に収まり、規約は末尾まで入り、省いた件数が出る."""
+        with TempGitRepo() as root:
+            self.write_index(root, rows=300)
+            self.write_stale_issue(root)
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr)
+            self.assertLessEqual(len(res.stdout), self.CC_LIMIT)
+            self.assertIn(self.rules_tail(), res.stdout)
+            # 放置 Issue は knowledge より先に予算を取る
+            self.assertIn("- **DEMO-7**:", res.stdout)
+            shown = res.stdout.count("| concepts/demo-")
+            self.assertGreater(shown, 0)
+            self.assertIn(f"（index の残り {300 - shown} 件は注入の上限で省いた。`/knowledge` で一覧を見る）",
+                          res.stdout)
+            # 字数で数えている（バイト数で数えると日本語の index は半分も入らない）
+            self.assertGreater(len(res.stdout), 9000)
+
+    def test_a_small_index_is_injected_whole_without_a_note(self):
+        """上限に収まる index は一字も省かず、案内も出さない（黙る側）."""
+        with TempGitRepo() as root:
+            index = self.write_index(root, rows=5)
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr)
+            self.assertIn("## Knowledge（demo）", res.stdout)
+            self.assertIn(index.read_text(encoding="utf-8"), res.stdout)
+            self.assertNotIn("注入の上限", res.stdout)
+
+    def test_no_index_means_no_knowledge_section(self):
+        with TempGitRepo() as root:
+            (root / ".claude" / "indie" / "demo").mkdir(parents=True)
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr)
+            self.assertIn(self.rules_tail(), res.stdout)
+            # 規約の本文にも「## Knowledge の活用」があるので、注入の見出しの形で見る
+            self.assertNotIn("## Knowledge（", res.stdout)
+            self.assertNotIn("注入の上限", res.stdout)
+
+    def test_slugs_that_do_not_fit_are_listed_by_name(self):
+        """先の slug で予算を使い切ったら、後の slug は名前と `/knowledge` の案内だけを出す."""
+        with TempGitRepo() as root:
+            self.write_index(root, rows=300, slug="aaa")
+            self.write_index(root, rows=3, slug="bbb")
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root)
+            self.assertLessEqual(len(res.stdout), self.CC_LIMIT)
+            self.assertIn("## Knowledge（省略）\n\nbbb（3 件）の index は注入の上限で省いた。", res.stdout)
+            self.assertNotIn("| concepts/bbb-", res.stdout)
+
+    def test_without_python3_the_rules_still_arrive_and_the_index_is_skipped(self):
+        """字数を数えられない環境では index を出さず、規約と放置 Issue は出す."""
+        with TempGitRepo() as root:
+            self.write_index(root, rows=300)
+            self.write_stale_issue(root)
+            path = self.path_with_only("date", "find")
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root, env_extra={"PATH": path})
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr)
+            self.assertIn(self.rules_tail(), res.stdout)
+            self.assertIn(UNCOUNTED_NOTE, res.stdout)
+            self.assertNotIn("| concepts/demo-", res.stdout)
+            self.assertIn("- **DEMO-7**:", res.stdout)
+
+    def test_a_python3_that_fails_to_start_still_lets_the_rules_through(self):
+        """PATH の python3 が起動に失敗しても（CLT の無い macOS のスタブ等）、規約と放置 Issue は出す.
+
+        パイプの失敗が pipefail で ERR trap に落ちると、規約ごと 0 バイトになる（self-review で実測）。
+        """
+        with TempGitRepo() as root:
+            self.write_index(root, rows=300)
+            self.write_stale_issue(root)
+            # スタブは path_with_only の dir（本物への symlink が並ぶ）に書かない。同名の symlink が
+            # あると write_text がたどって本物の python3 を上書きする（レビュー中に一度起きた）
+            stub_dir = tempfile.TemporaryDirectory()
+            self.addCleanup(stub_dir.cleanup)
+            stub = Path(stub_dir.name) / "python3"
+            stub.write_text("#!/bin/sh\nexit 1\n")
+            stub.chmod(0o755)
+            path = f"{stub_dir.name}:{self.path_with_only('date', 'find')}"
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root,
+                                env_extra={"PATH": path})
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr, "ERR trap で落ちている")
+            self.assertIn(self.rules_tail(), res.stdout)
+            self.assertIn(UNCOUNTED_NOTE, res.stdout)
+            self.assertIn("- **DEMO-7**:", res.stdout)
+            self.assertNotIn("| concepts/demo-", res.stdout)
+
+
+    def test_rules_that_fail_to_read_are_not_emitted_twice(self):
+        """規約を出す側だけが失敗しても、縮退の経路で規約（と backend の行）を二重に出さない."""
+        with TempGitRepo() as root:
+            self.write_index(root, rows=3)
+            tmp = tempfile.TemporaryDirectory()
+            self.addCleanup(tmp.cleanup)
+            plugin = Path(tmp.name) / "issue-workflow"
+            shutil.copytree(self.plugin_root, plugin, ignore=shutil.ignore_patterns("evals"))
+            rules = plugin / "rules" / "project-rules.md"
+            rules.chmod(0)
+            self.addCleanup(rules.chmod, 0o644)
+            if os.access(rules, os.R_OK):  # root は mode 0 でも読めるので、読めない状態を再現できない
+                self.skipTest("規約を読めない状態を作れない（root で走っている）")
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root,
+                                env_extra={"CLAUDE_PLUGIN_ROOT": str(plugin)})
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr)
+            self.assertEqual(res.stdout.count("issue-workflow backend:"), 1)
+            self.assertIn("## Knowledge（demo）", res.stdout)
+
+class InjectBudgetTest(unittest.TestCase):
+    """inject-budget.py の境界を直接見る（hook 越しでは規約の字数に左右されて境界を測れない）."""
+
+    SCRIPT = Path(__file__).resolve().parents[3] / "issue-workflow" / "hooks" / "scripts" / "inject-budget.py"
+    HEAD = "\n---\n## Knowledge（demo）\n\n以下の知見が蓄積されている。実装時に関連する knowledge があれば Read して活用すること。\n\n"
+
+    def run_budget(self, prefix: str, limit: int, *pairs: str, stale: str = "") -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["python3", str(self.SCRIPT), str(limit), *pairs], input=prefix,
+                      capture_output=True, text=True, encoding="utf-8",
+                      env={**os.environ, "IW_STALE": stale}, timeout=30)
+
+    def index(self, body: str) -> str:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        p = Path(tmp.name) / "index.md"
+        p.write_text(body, encoding="utf-8")
+        return str(p)
+
+    def test_exactly_at_the_limit_is_kept_whole(self):
+        body = "| a | b |\n|---|---|\n| 知見 | x |\n"
+        prefix = "規約" * 10
+        limit = len(prefix) + len(self.HEAD) + len(body)
+        res = self.run_budget(prefix, limit, "demo", self.index(body))
+        self.assertEqual(res.stdout, prefix + self.HEAD + body)
+
+    def test_one_over_the_limit_is_cut(self):
+        body = "| a | b |\n|---|---|\n" + "".join(f"| 知見 {i} | x |\n" for i in range(20))
+        prefix = "規約" * 10
+        limit = len(prefix) + len(self.HEAD) + len(body) - 1
+        res = self.run_budget(prefix, limit, "demo", self.index(body))
+        self.assertLessEqual(len(res.stdout), limit)
+        self.assertTrue(res.stdout.startswith(prefix))
+        self.assertIn("注入の上限で省いた", res.stdout)
+
+    def test_the_header_row_and_separator_are_not_counted_as_entries(self):
+        """省いた件数は表の行だけを数える。見出し行・区切り行・表の外の行は数えない."""
+        rows = 30
+        body = "# Knowledge Index\n\n| a | b |\n|---|---|\n" + "".join(f"| 知見 {i} | x |\n" for i in range(rows))
+        res = self.run_budget("", len(self.HEAD) + len(body) // 2, "demo", self.index(body))
+        shown = res.stdout.count("| 知見 ")
+        self.assertGreater(shown, 0)
+        self.assertIn(f"（index の残り {rows - shown} 件は注入の上限で省いた。", res.stdout)
+
+    def test_a_budget_smaller_than_the_reserve_still_says_knowledge_was_omitted(self):
+        """省略の案内すら入らない予算でも、案内 1 行は上限を超えて出す（knowledge を黙って消さない）."""
+        res = self.run_budget("規約", 3, "demo", self.index("| a |\n|---|\n| x |\n"))
+        self.assertEqual(res.stdout, "規約\n---\n## Knowledge（省略）\n\ndemo（1 件）の index は注入の上限で省いた。"
+                                     "`/knowledge` で一覧を見る。\n")
+
+    def test_a_prefix_over_the_limit_is_never_cut(self):
+        """規約は上限を超えても削らない（knowledge は案内 1 行だけにし、放置 Issue は落とす）."""
+        prefix = "規約の本文" * 100
+        res = self.run_budget(prefix, 10, "demo", self.index("| a |\n|---|\n| x |\n"), stale="- **X-1**: 9日間未更新")
+        self.assertEqual(res.stdout, prefix + "\n---\n## Knowledge（省略）\n\ndemo（1 件）の index は注入の上限で省いた。"
+                                              "`/knowledge` で一覧を見る。\n")
+
+    def test_an_unreadable_index_falls_back_to_the_rules_and_stale_issues(self):
+        res = self.run_budget("規約", 9500, "demo", "/nonexistent/index.md", stale="- **X-1**: 9日間未更新")
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(res.stdout, "規約" + UNREAD_NOTE + "\n---\n## 放置 Issue 検知\n\n- **X-1**: 9日間未更新\n")
+        self.assertIn("inject-budget failed", res.stderr)
+
+    def test_the_fallback_after_an_error_still_keeps_the_limit(self):
+        """例外の経路でも放置 Issue は案内の残りに収める（予算を無制限にしない）."""
+        stale = "\n".join(f"- **X-{i}**: 9日間未更新" for i in range(50))
+        res = self.run_budget("規約", 150, "demo", "/nonexistent/index.md", stale=stale)
+        self.assertLessEqual(len(res.stdout), 150)
+        self.assertTrue(res.stdout.startswith("規約" + UNREAD_NOTE))
+        self.assertIn("ほか", res.stdout)
+
+    def test_the_fallback_after_an_error_says_knowledge_was_omitted_even_over_the_limit(self):
+        """例外の経路でも、案内すら入らない予算なら上限を超えて案内だけは出す（通常の経路と揃える）."""
+        res = self.run_budget("規約", 3, "demo", "/nonexistent/index.md", stale="- **X-1**: 9日間未更新")
+        self.assertEqual(res.stdout, "規約" + UNREAD_NOTE)
+
+    STALE_HEAD = "\n---\n## 放置 Issue 検知\n\n"
+
+    def test_stale_issues_exactly_at_the_limit_are_kept_whole(self):
+        lines = [f"- **X-{i}**: 9日間未更新" for i in range(5)]
+        full = self.STALE_HEAD + "".join(f"{line}\n" for line in lines)
+        res = self.run_budget("", len(full), stale="\n".join(lines))
+        self.assertEqual(res.stdout, full)
+
+    def test_stale_issues_one_over_the_limit_are_summarized(self):
+        lines = [f"- **X-{i}**: 9日間未更新" for i in range(5)]
+        full = self.STALE_HEAD + "".join(f"{line}\n" for line in lines)
+        res = self.run_budget("", len(full) - 1, stale="\n".join(lines))
+        self.assertLessEqual(len(res.stdout), len(full) - 1)
+        self.assertRegex(res.stdout, r"- ほか \d+ 件（`/maintain` で確かめる）\n$")
+
+    def test_a_partial_index_line_that_fits_exactly_is_kept(self):
+        """行ごとの切り詰めで、案内まで含めてちょうど収まる行は残し、1 字足りなければ落とす."""
+        rows = [f"| 知見 {i} | x |\n" for i in range(30)]
+        body = "| a | b |\n|---|---|\n" + "".join(rows)
+        reserve = len("\n---\n## Knowledge（省略）\n\ndemo（30 件）の index は注入の上限で省いた。"
+                      "`/knowledge` で一覧を見る。\n")
+        kept = "| a | b |\n|---|---|\n" + "".join(rows[:4])
+        note = "\n（index の残り 26 件は注入の上限で省いた。`/knowledge` で一覧を見る）\n"
+        limit = reserve + len(self.HEAD) + len(kept) + len(note)
+        res = self.run_budget("", limit, "demo", self.index(body))
+        self.assertEqual(res.stdout, self.HEAD + kept + note)
+        res = self.run_budget("", limit - 1, "demo", self.index(body))
+        self.assertEqual(res.stdout.count("| 知見 "), 3)
+
+    def test_stale_issues_that_do_not_fit_are_summarized(self):
+        stale = "\n".join(f"- **X-{i}**: 9日間未更新" for i in range(50))
+        res = self.run_budget("", 120, stale=stale)
+        self.assertLessEqual(len(res.stdout), 120)
+        self.assertRegex(res.stdout, r"- ほか \d+ 件（`/maintain` で確かめる）\n$")
 
 
 class SetSessionTitleTest(HookTestCase):

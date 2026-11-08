@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.2] - 2026-11-08
+
+### Fixed
+
+- **check-deps.sh の他プラグインの有効判定を、同梱の `scripts/plugin-enabled.sh` に寄せた**（GitHub issue #423）。以前は user の settings でキーの有無だけを見ており、`false` で無効化したものを導入済みと誤り、project / local の settings だけで有効化したものを未導入と鳴らしていた。WARN は「未導入か無効です」になる
+- **closing-flow-guide.md の writing-polish の判定も同じスクリプトに寄せた**。出力が空（スクリプトを起動できなかった）なら実パスに直して再実行し、無効と同じに扱わない
+
 ## [2.168.1] - 2026-11-08
 
 ### Fixed

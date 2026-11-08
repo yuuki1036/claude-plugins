@@ -54,9 +54,9 @@ tags: []
 | `feature-dev` | feature-dev = 設計 + 実装の一気通貫。design-doc = **実装フェーズを持たない**（Write 先は `.claude/designs/` のみ） |
 | `doc-freshness` | 鮮度 lint は doc-freshness に委譲（frontmatter 互換）。本プラグインは作成・命名・supersede 整合のみ |
 
-## dormant 連携（すべて optional、未インストールでも完全動作）
+## dormant 連携（すべて optional、未導入・無効でも完全動作）
 
-| 相手 | 内容 | 未インストール時 |
+| 相手 | 内容 | 未導入・無効時 |
 |---|---|---|
 | bdd-spec | spec.md を WHAT 入力に。無ければ作成を提案（非対話 API 呼び出し） | 会話文脈から要求を grill |
 | adr-keeper | `[→ADR候補]` を ADR として切り出し + 相互リンク | マーカーを doc に残すのみ |

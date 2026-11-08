@@ -64,14 +64,16 @@ check_bundled_mcp_launcher() {
 
 check_plugin() {
   local name="$1" required="$2" desc="$3"
-  # settings.json の enabled plugins（"name@marketplace" 形式）を確認
-  if [ -f "$HOME/.claude/settings.json" ] && grep -q "\"${name}@" "$HOME/.claude/settings.json" 2>/dev/null; then
+  local state
+  # 有効かは同梱の複製（正本 .claude-plugin/lib/plugin-enabled.sh）で決める。キーの有無だけでは false の無効化と project / local の有効化を読めない
+  state=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" "$name" 2>/dev/null) || state=0
+  if [ "$state" = 1 ]; then
     return 0
   fi
   if [ "$required" = "true" ]; then
-    errors="${errors}\n- [ERROR] ${desc}（${name}）がインストールされていません"
+    errors="${errors}\n- [ERROR] ${desc}（${name}）が未導入か無効です"
   else
-    warnings="${warnings}\n- [WARN] ${desc}（${name}）が未インストールです（オプション）"
+    warnings="${warnings}\n- [WARN] ${desc}（${name}）が未導入か無効です（オプション）"
   fi
 }
 
@@ -103,8 +105,8 @@ if [ -f ".claude/.ui-verify-enabled" ]; then
   check_cli "node" "false" "Node.js（chrome-devtools-mcp を npx 起動するため）"
 fi
 
-check_plugin "writing-polish" "false" "writing-polish プラグイン（PR 本文・コミットメッセージの提示前推敲。未インストール時は skip）"
-check_plugin "code-review" "false" "code-review プラグイン（コミット前の self-review と読み合わせの提案。未インストール時は skip）"
+check_plugin "writing-polish" "false" "writing-polish プラグイン（PR 本文・コミットメッセージの提示前推敲。未導入・無効時は skip）"
+check_plugin "code-review" "false" "code-review プラグイン（コミット前の self-review と読み合わせの提案。未導入・無効時は skip）"
 
 # --- 結果出力 ---
 if [ -n "$errors" ] || [ -n "$warnings" ]; then
