@@ -282,7 +282,7 @@ Issue ファイルの「スコープ外」「後続 Issue 候補」「やらな�
 
 ## completed ファイルのライフサイクル
 
-completed / canceled の Issue ファイルは、メンテナンス完了後に**削除を提案**する。
+completed / canceled の Issue ファイルは、メンテナンス完了後に承認を待たずに片付ける（HEAD に版があれば削除し、無ければ archive/ へ退避する。下の削除フロー）。
 
 ### 削除の前提条件
 
@@ -297,9 +297,19 @@ completed / canceled の Issue ファイルは、メンテナンス完了後に*
 
 ```
 1. 上記前提条件を全て確認
-2. 前提条件を満たすファイルは承認待ちせず削除する
-3. 削除したファイル一覧を最終レポートに列挙する（git 管理下のため復元可能）
+2. 前提条件を満たすファイルは承認待ちせず、次のスクリプトで片付ける（`rm` を直接打たない）
+3. 出力のとおり最終レポートに列挙する
 ```
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue-files.py" retire <Issue ファイル>...
+```
+
+- `deleted=` は HEAD に版があったので、削除した。この実行の書き換え（圧縮・status 更新）は消えるが、この実行より前の内容は HEAD（1.8 の時点で HEAD と一致していた）か 1.8 の控え（未コミットの変更があった）に残る（2026-11-08 決定）。レポートには「削除したもの（git から復元できる）」として並べる
+- `archived=` / `archived_to=` は HEAD に版が無い（DATA_DIR を gitignore や `.git/info/exclude` で外している repo・add しただけでコミットしていない）ので、git から戻せない。削除せずに `{DATA_DIR}/{slug}/archive/` へ移した。レポートには「git から戻せないため削除せず退避したもの（移した先）」として並べる
+- `missing=` は見つからなかったファイル（exit 2）。レポートにそのまま並べる
+- 「git 管理下のため復元可能」は、スクリプトが `deleted=` を返したファイルにだけ書く。確かめずに書かない（GitHub issue #422）
+- Phase 0 の 2 でメイン側への Edit / Write を止められた回（隔離された worktree のセッション）は、retire も backup も呼ばない（Bash でメイン側の `.claude/` に書くのは回り込みになる）。片付けるはずだったファイルを最終レポートの「DATA_DIR に未反映」に並べる。止められていない回は先回りして飛ばさない
 
 ### linear-maintain からの自動呼び出し（BACKEND=linear のみ）
 
@@ -367,6 +377,7 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 ```
 1. 対象 issue ファイルを読み込み
 1.5 セッションシグナルの取り込み（events.jsonl から commit:created / review:completed を読み、対象 Issue と照合。未反映の commit / レビューを反映候補に）
+1.8 最初の書き換え（2 の last_active 更新・status 更新・圧縮・統合・テンプレート補完）の前に、対象の Issue ファイルを `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue-files.py" backup <Issue ファイル>...` に通す。git の追跡下で HEAD と一致するファイル（`tracked=`）は git から戻せるので何もしない。それ以外（`backed_up=` / `backed_up_to=`）は書き換え前の内容を `{DATA_DIR}/{slug}/archive/` に複製する。メイン側への Edit / Write を止められた回は呼ばない（削除フローの最後の項）
 2. last_active を今日の日付に更新
 3. スコープ超過チェック（scope_size vs 実タスク数）
 4. テンプレート準拠チェック（セクション構成の確認）
@@ -390,7 +401,9 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 15. 実行内容を最終レポートにまとめて報告:
     - スコープ超過警告（該当する場合）
     - 即クローズパターン時の経緯セクション補完（該当する場合）
-    - 削除したもの（git 管理下のため復元可能）
+    - 削除したもの（`issue-files.py retire` が `deleted=` を返したもの。git から復元できる）
+    - git から戻せないため削除せず退避したもの（`archived=` と移した先）
+    - 書き換え前の内容を退避したもの（1.8 の `backed_up=` と複製した先）
     - 圧縮したもの
     - 統合した更新履歴
     - knowledge/ 切り出し（破壊的変更検出は 🔴 マーカー付きで先頭表示、tags を併記。照合結果を含む）
@@ -421,4 +434,4 @@ git worktree list --porcelain | grep -B2 -E "branch refs/heads/.*{ISSUE_ID}(-|$)
 - 判断に迷う場合は残す（過剰な削除よりは冗長な方がマシ）
 - knowledge/ 切り出し時は必ずコードベースとの照合を行う
 - 起動＝実行確定。承認待ちで止まらず最後まで実行し、**実行後にレポートで報告**する（AskUserQuestion で問い直さない）。**唯一の例外**は worktree teardown 連携の削除確認（git で復元できない不可逆操作のため。最終レポート後に置くことで実行の流れも止めない）
-- Issue ファイルは git 管理下のため、不要な変更は git で復元できる
+- 書き換え前の内容を git から戻せるのは、`issue-files.py` が `tracked=`（追跡下で HEAD と一致）を返したファイルだけ。それ以外は書き換える前に控えを残す（処理フローの 1.8）。HEAD に版の無いファイルは削除せずに退避する（削除フロー）

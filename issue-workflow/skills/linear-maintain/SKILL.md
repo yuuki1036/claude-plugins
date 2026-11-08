@@ -97,9 +97,11 @@ Linear 上でプロジェクトが Done の場合：
 
 | 対象 | アクション |
 |------|-----------|
-| `projects/{project-name}.md` | 削除 |
-| 関連する `issues/` 内ファイル | 削除 |
+| `projects/{project-name}.md` | 削除（下の `issue-files.py retire`） |
+| 関連する `issues/` 内ファイル | 削除（下の `issue-files.py retire`） |
 | `knowledge/` | **保持**（リポジトリの知見として永続的に有効） |
+
+削除は Bash `rm` を直接打たず、`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue-files.py" retire <ファイル>...` で行う。HEAD に版があるファイルは削除し（`deleted=`。git から戻せる）、それ以外（追跡外・add しただけ）は削除せず `{DATA_DIR}/{slug}/archive/` へ移す（`archived=` / `archived_to=`。git から戻せないため）。レポートには出力のとおり分けて並べる（GitHub issue #422）
 
 ### 5. Follow-up 棚卸し
 
@@ -120,8 +122,8 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
 
 | ローカル status | Linear ステータス | アクション |
 |----------------|------------------|-----------|
-| `in-progress` | Done | completed に更新 → メンテナンス実行 |
-| `in-progress` | Canceled | canceled に更新 → メンテナンス実行 |
+| `in-progress` | Done | 控え（下の処理フロー 4b）→ completed に更新 → メンテナンス実行 |
+| `in-progress` | Canceled | 控え（下の処理フロー 4b）→ canceled に更新 → メンテナンス実行 |
 | `completed` | Done | 更新履歴に「メンテナンス:」記録がなければ実行 |
 
 **メンテナンス済みの判定**: 更新履歴に `メンテナンス:` で始まるエントリがあればスキップ。
@@ -134,6 +136,7 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
 - `status: in-progress` の全 Issue（6a で処理済みのものは除く）
 
 ##### 処理内容（issue-maintain SKILL.md の全ステップを適用）
+0. 最初の書き換えの前に、issue-maintain の処理フロー 1.8 のとおり `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue-files.py" backup <Issue ファイル>...` を通す（git から戻せないファイルの控えを archive/ に残す）
 1. テンプレート準拠チェック
 2. 各セクション走査・整理対象の特定（削除/圧縮/統合）
 3. 更新履歴のセッション単位統合
@@ -146,7 +149,7 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
 
 検知した各 Issue ファイルに対して、**issue-maintain の処理フロー**（整理対象の判定、圧縮、knowledge 切り出し、completed ファイルの削除）に従って処理する。詳細は issue-maintain SKILL.md を参照。
 
-**実行フロー**: 起動＝実行確定のため、Issue メンテナンスは承認待ちせず実行し切る。実施内容（status 更新・圧縮・knowledge 切り出し・削除）は最終レポートにまとめて報告する。Issue ファイルは git 管理下のため、不要な変更は git で復元できる。
+**実行フロー**: 起動＝実行確定のため、Issue メンテナンスは承認待ちせず実行し切る。実施内容（status 更新・圧縮・knowledge 切り出し・削除）は最終レポートにまとめて報告する。Issue ファイルの削除・書き換えの前に `issue-files.py` を通す（書き換え前の控えは issue-maintain の処理フロー 1.8、削除・退避は同じく削除フロー。status の更新は控えの後 = 下の処理フロー 4b）。プロジェクト doc（`projects/*.md`）の書き換え（処理 1・2）は Linear から取り直せるので控えを取らない。
 
 ---
 
@@ -162,7 +165,7 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
    d. 関連 Issue テーブルを更新
 4. issues/ 内の全ファイルを走査
    a. Linear MCP でステータスを確認
-   b. Done / Canceled を検知 → status を更新
+   b. Done / Canceled を検知 → status を書き換える前に `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue-files.py" backup <Issue ファイル>...` を通し、status を更新
    c. completed / canceled ファイルに issue-maintain の処理フローを実行
    d. in-progress ファイルの follow_up 解消チェック
    e. in-progress ファイルに issue-maintain の全処理フローを実行
@@ -188,10 +191,10 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
 - project-alpha: 3件更新（TEAM-500: In Progress, TEAM-501: Done → 削除, TEAM-502: 新規追加）
 
 ### completed Issue メンテナンス
-| Issue | 処理 | knowledge 切り出し | 削除提案 |
-|-------|------|-------------------|---------|
-| TEAM-404 | 圧縮（358行→45行） | 仕様ドキュメント → knowledge/ | 削除可 |
-| TEAM-578 | 重複削除 | 切り出し済み | 削除可 |
+| Issue | 処理 | knowledge 切り出し | 片付け |
+|-------|------|-------------------|-------|
+| TEAM-404 | 圧縮（358行→45行） | 仕様ドキュメント → knowledge/ | 削除（git から復元できる） |
+| TEAM-578 | 重複削除（追跡外のため書き換え前を `archive/TEAM-578.md` に控えた） | 切り出し済み | 退避（`archive/TEAM-578.20261108T101500.md`。追跡外で git から戻せない） |
 
 ### Issue 品質整理
 | Issue | テンプレート | 圧縮 | knowledge | 警告 |
@@ -223,7 +226,7 @@ issues/ 内のファイルを走査し、Linear MCP `get_issue` で取得した�
 ## 注意事項
 
 - 起動＝実行確定。承認待ちで止まらず実行し切り、**実行後にレポートで報告**する（AskUserQuestion で問い直さない）
-- Issue ファイルは git 管理下のため、不要な変更は git で復元できる
+- 不要な変更を git で取り消せるのは、`issue-files.py` が `tracked=` を返したファイルだけ。それ以外は書き換え前の控えと退避先をレポートに並べる
 - Linear API のレート制限に注意（大量の Issue がある場合はバッチ処理）
 - knowledge/ は**いかなる場合も自動削除しない**
 - **writing-polish 連携は対象外**（設計判断）: このスキルの出力は機械的な status 遷移と実行後レポートのみで、Issue 本文のような散文成果物を新規生成しないため推敲を通さない（散文を生成する issue-maintain / issue-create 側は必須連携済み）

@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.4] - 2026-11-08
+
+### Fixed
+
+- **maintain 系が、git から戻せるかを確かめずに完了 Issue を削除していた**（GitHub #422）。issue-maintain・maintain・linear-maintain は「Issue ファイルは git 管理下のため復元できる」を前提に、承認なしで完了 Issue を削除・圧縮していた。しかし DATA_DIR を gitignore や `.git/info/exclude` で外している repo では、消したファイルを git から戻せない。判定と削除を `scripts/issue-files.py` に寄せ、3 スキルが同じものを呼ぶ。`check` はファイルの親 dir で git を叩き、`tracked`（追跡下で HEAD と一致）/ `dirty`（追跡下だが未コミットの変更がある）/ `untracked` を返す。`dirty` を分けるのは、書き換えるとコミットしていない内容がどこにも残らないため。`backup` は最初の書き換え（last_active・status の更新、圧縮・統合など）の前に呼び、`tracked` でないファイルの書き換え前の内容を `{DATA_DIR}/{slug}/archive/` に複製する。issue-maintain の処理フローの、最初の書き換えの前に 1.8 として足し、maintain 5b・linear-maintain 6b の手順と linear-maintain の status 同期にも入れた。`retire` は HEAD に版があるファイルを削除し（dirty でも削除する。この実行より前の内容は HEAD か控えに残る / 2026-11-08 決定）、HEAD に版の無いファイル（追跡外・add しただけ）は削除せず archive/ へ移す。退避先は省くとファイルの親の親の `archive/` になる。archive/ に同じ名前があれば名前に日時を付け、上書きしない。ファイル名は literal の pathspec として渡す（glob 文字を含む名前が別のファイルに一致しないように）。レポートの「git 管理下のため復元可能」は `deleted=` を返したファイルにだけ書き、maintain と linear-maintain のレポート雛形は「削除提案」の列を「片付け」（削除 / 退避先）に替えた。メインのチェックアウトへの Edit / Write を止められた回（隔離された worktree のセッション）は、retire も backup も呼ばず「DATA_DIR に未反映」に並べる（Bash で書くと回り込みになる）。セッションの題を付ける hook（`set-session-title.sh`）は Issue ファイルを `issues/` の下だけで探す（archive/ の同じ名前の控えを掴まないように）
+
 ## [1.19.3] - 2026-11-08
 
 ### Fixed

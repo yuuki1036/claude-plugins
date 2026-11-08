@@ -352,6 +352,22 @@ class SetSessionTitleTest(HookTestCase):
             self.assertEqual(json.loads(res.stdout)["hookSpecificOutput"]["sessionTitle"],
                              "TEAM-9: 帯を出す")
 
+    def test_ignores_the_copy_in_archive(self):
+        """maintain 系が archive/ に置いた同じ名前の控えを掴まない（GitHub issue #422）."""
+        repo = TempGitRepo()
+        with repo as root:
+            repo.branch("ISS-2-work")
+            base = root / ".claude" / "indie" / "demo"
+            for sub, title in (("archive", "古い控え"), ("issues", "今の題")):
+                p = base / sub / "ISS-2.md"
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(f"---\nid: ISS-2\ntitle: {title}\n---\n")
+            res = self.run_hook({"prompt": "作業する"}, cwd=root)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr)
+            self.assertEqual(json.loads(res.stdout)["hookSpecificOutput"]["sessionTitle"],
+                             "ISS-2: 今の題")
+
 
 class OnKnowledgeChangeTest(HookTestCase):
     PLUGIN = "issue-workflow"
