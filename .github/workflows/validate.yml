@@ -7,7 +7,15 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    # 回帰テストは CI だけで回す（2026-11-08 決定。pre-commit からは外した / GitHub issue #436）。
+    # macOS を足すのは、開発機と同じ OS の差（bash 3.2・BSD の sed / grep・ロケール）を拾うため。
+    # 以前はこれを pre-commit が開発機で拾っていた。公開 repo なので macOS の runner に料金はかからない
+    strategy:
+      # 片方が落ちても、もう片方の結果を最後まで出す（OS 差なのか共通の失敗なのかを見分ける）
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,6 +24,36 @@ jobs:
           # base も --depth=1 で取ると merge base が shallow 境界の外に出て
           # `git diff base...HEAD` が `fatal: no merge base` で必ず落ちる。
           fetch-depth: 0
+
+      # macOS の job ではテストが叩く `bash` を `/bin/bash`（3.2）に固定する。開発機と利用者の macOS で
+      # hook を起動するのはこの bash で、bash 3.2 でしか起きない壊れ方（`set -u` 下の空配列の展開・
+      # bash 4 以降の構文など）を拾うのが macOS を足した目的。runner には Homebrew の bash 5 が
+      # PATH の先に居ることがあるので、`/bin/bash` だけを置いた dir を PATH の先頭に足す
+      # （`/bin` ごと先頭にすると他のコマンドの解決まで変わる）
+      - name: pin-bash-3.2
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p "$RUNNER_TEMP/bash32"
+          ln -sf /bin/bash "$RUNNER_TEMP/bash32/bash"
+          echo "$RUNNER_TEMP/bash32" >> "$GITHUB_PATH"
+
+      # テストが叩く `bash` を残す。macOS で 3.2 になっていなければ止める（表示だけにすると、
+      # runner の PATH が変わって 5 系で回り始めても誰も気づかない）
+      - name: show-shell
+        env:
+          RUNNER_OS_NAME: ${{ runner.os }}
+        # 版は `$BASH_VERSION` で取る（`bash --version | head -1` は Actions 既定の `-o pipefail` の下で
+        # head が先に閉じると SIGPIPE で落ちうる）
+        run: |
+          command -v bash
+          ver="$(bash -c 'echo "$BASH_VERSION"')"
+          echo "bash ${ver}"
+          if [ "$RUNNER_OS_NAME" = "macOS" ]; then
+            case "$ver" in
+              3.*) ;;
+              *) echo "::error::macOS の job で bash が 3.2 になっていない（${ver}）"; exit 1 ;;
+            esac
+          fi
 
       - uses: actions/setup-python@v5
         with:
@@ -94,8 +132,9 @@ jobs:
 
       # pre-commit と同等のバージョンバンプ検査。
       # ローカル hook は --no-verify で迂回できるため CI 側でも検査する。
-      # PR で検査したうえで、マージ後の main への push でも走らせる（ルールセットは必須ステータス
-      # チェックを持たないので、CI が赤のままマージされた PR を main 側でも拾う保険）。
+      # PR で検査したうえで、マージ後の main への push でも走らせる（CI が赤のままマージされた PR を
+      # main 側でも拾う保険。ルールセットの必須チェックは 2026-11-08 に足されたが、外したときや
+      # job 名と食い違ったときに備えて残す）。
       - name: check-version-bump
         env:
           EVENT_NAME: ${{ github.event_name }}
