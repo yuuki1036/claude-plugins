@@ -22,7 +22,7 @@ allowed-tools:
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @997437f8 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @2a27f9ea -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
 
 ## 前提
@@ -532,6 +532,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 --pr <PR番号>
    - スクリプトが payload の JSON 妥当性検証・**`missing_coverage` の語彙検証**（識別子以外＝理由つき自由文は `FATAL` で弾く。**理由はレポートの「⚠️ 欠損観点」に書き、フィールドごと落として通さない** / issue #132）・**動的層の `skip_reason` の語彙検証**（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` の許容値は orchestration-measurement.md `## 16` が正本。**外れると `FATAL` で publish せず落ちる**ので、理由の補足はレポート本文に書く。`fired=false` で理由を書き忘れた回だけは落とさず `measurement_gaps` に倒す）・書込先のメインリポジトリ固定・一時ファイルの掃除まで行う（→ orchestration-measurement.md `## 13`）。**`measurement_gaps` / `derived_markers` / `diff_digest` / `tokens` / `models`（**モデル世代**。transcript の `message.model` からの機械計測で、渡しても捨てられる / issue #169）と版マーカーの整数（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`）も渡さない**（`derived_markers` は**打点が落ちた区間を agent の実測時刻で埋めた記録**で、`measurement_gaps` とは排他ではない / issue #161） — 計測ファイル・一時 diff・transcript から算出して注入される（定数の手書きは version drift 中に落ちサンプルが逆の版バケツに入るため v2.65.0 で移した / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts` / `below_threshold_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）。**`agents` の内訳は transcript 由来の `dispatch.agents` と突合される**（issue #154）— 合わないと `agents-mismatch` が立つので、`specialist` / `round2` を実際に起動したのに 0 のままにしない（publish は止まらないが、`agents` は体数と時間・トークンの相関すべての分母なので申告漏れがそのまま集計を歪める）
 
    **payload 契約の正本は orchestration-measurement.md `## 16`**（フィールドの意味・版マーカー・後方互換をここに複写しない）。review 固有の点のみ:
+   - `review_mode` は Stage 0（Step 3.0）で確定したモードから `-mode` を外した名前（`default` / `emergency` / `doc-review` / `dba` / `supply-chain` / `skip`）。**省かない** — publish はこの値が `default` の回だけ、plan ファイルが無ければ `measurement_gaps` に `plan` として立てる（GitHub issue #387）。欠けた回は `payload:review_mode` が立ち、語彙外は publish が `FATAL` で止める
    - `pr` は Step 1 で取得した PR 番号の文字列（失敗時は `"local"`）。`head_verified` は review のみ（Step 4 / Step 5 の `HEAD 検証:` 行の集計）。`duration_closing_min` は締めフロー（人間の応答待ち）を捉えるが**改善の効果測定には使わない**（人間の都合で 10 倍振れる）
    - `agents.round2` / `recall_skeptic.findings_added` はレポートの「動的ラウンド」行の数値と一致させる。**`meta_reviewer.findings_added` も同様**（`[meta]` タグ付き指摘を数える。#121）
 

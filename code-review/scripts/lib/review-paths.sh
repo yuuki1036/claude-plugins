@@ -217,7 +217,8 @@ review_path() {
     agentctx) printf '%s/review-agentctx-%s%s.md' "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     # size: triage-signals.sh が publish に渡す行。`## size` の `doc_only=`（報告閾値の出どころ
     # `severity_threshold_source` の判定 / GitHub issue #277）と、stdout には出さない `scope_mode=` /
-    # `delta_lines=` / `delta_size_tier=`（payload の `review_scope` / GitHub issue #313）
+    # `delta_lines=` / `delta_size_tier=`（payload の `review_scope` / GitHub issue #313）と `delta_files=`
+    # （payload の `plan_expected` の判定 / GitHub issue #387）
     size)   printf '%s/review-size-%s%s.txt'  "$REVIEW_TMPROOT" "$REVIEW_SLUG" "$suffix" ;;
     # corelist: core に分類した変更ファイルのパス（変更行の多い順）。`fetch-past-reviews.sh` が読む
     # （core の分類式を triage-signals.sh の外に複製しないため / GitHub issue #286）

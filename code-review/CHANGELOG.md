@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.0] - 2026-11-08
+
+### Added
+
+- **plan を呼ぶはずの回に plan ファイルが無ければ、`measurement_gaps` に `plan` を立てる**（GitHub issue #387）。今までは plan（`plan-reviewers.sh plan`）を呼ばずに reviewer の構成を自分で数えた回が、計測から見えなかった。publish は止めない。
+  - plan ファイルは triage-signals.sh が毎回の冒頭で消すので、publish の時点で無ければその回は plan を呼んでいない。
+  - 呼ぶはずの回: self-review は delta が空でない回（`scope_mode=full`、または delta で `delta_files` が 1 以上）。review は `review_mode` が `default` の回。
+  - 判定できない回は立てない: size ファイルに `scope_mode=` が無い回と、delta の回に `delta_files=` が無い回。review で `review_mode` が無い回は、代わりに `payload:review_mode` を立てる（SKILL と publish は同じ版から読まれるので、欠けるのは書き忘れの回）。
+  - 判定の結果を payload の `plan_expected`（true / false / 判定できない回は null）に載せる。publish が注入し、SKILL から渡さない。
+  - review-retro.sh は `plan` の欠測率を `plan_expected` が true の回だけを分母に出し、打点ではなく plan を飛ばした手順を是正先に出す。
+  - `payload:review_mode` の欠測率は、review の回のうち `plan_expected` を持つ回（#387 以降の版）だけを分母に出す（self-review の回・#387 より前の回で薄めない）。
+- **review の payload に `review_mode` を足した**（Stage 0 で確定したモード。`default` / `emergency` / `doc-review` / `dba` / `supply-chain` / `skip`）。モードは LLM が決めるので SKILL が書く。語彙外の値は publish が `FATAL` で止める。self-review の payload に書いても捨てる。
+- **triage-signals.sh が size ファイルに `delta_files=` を書く**（delta の回だけ）。self-review が plan を省く条件は `delta_files=0` だが、この値は stdout にしか出ておらず publish が読めなかった。`delta_lines` では代わりにならない（mode の変更のように行数 0 のファイルだけの delta も空ではない）。stdout の `## delta` 節も同じ値を出す（2 つの式で数えていたのを 1 つにした）。
+
+
 ## [2.167.1] - 2026-11-08
 
 ### Changed

@@ -297,9 +297,14 @@ tier_of() {
       print t
     }'
 }
-DELTA_CLASSIFIED=""; DELTA_LINES=0; DELTA_TIER=""
+DELTA_CLASSIFIED=""; DELTA_FILES=0; DELTA_LINES=0; DELTA_TIER=""
 if [ "$SCOPE_MODE" = "delta" ]; then
   DELTA_CLASSIFIED=$(classify "$DELTA_NUMSTAT")
+  # 下の `## delta` 節もこの値を出す（self-review が plan を省くかを決める `delta_files=0` と、publish が
+  # plan を呼ぶはずの回かを決める size ファイルの値を 1 つの式に揃える / GitHub issue #387）。行数ではなく
+  # ファイル数で持つのは、mode の変更のように行数 0 のファイルだけの delta も空ではないため。バイナリの行は
+  # classify が捨てるので数えない
+  DELTA_FILES=$(printf '%s\n' "$DELTA_CLASSIFIED" | awk -F'\t' 'NF { n++ } END { print n+0 }')
   DELTA_LINES=$(printf '%s\n' "$DELTA_CLASSIFIED" | awk -F'\t' 'NF { l+=$2+$3 } END { print l+0 }')
   # delta が空なのは「修正が何も変えなかった」という正当な状態なので、diff 全体と違って unknown にしない
   DELTA_TIER=$(printf '%s\n' "$DELTA_CLASSIFIED" | tier_of)
@@ -326,6 +331,7 @@ printf '%s\n' "$CLASSIFIED" | awk -F'\t' 'NF { n++; if ($1 != "doc") o++ } END {
 {
   echo "scope_mode=${SCOPE_MODE}"
   if [ "$SCOPE_MODE" = "delta" ]; then
+    echo "delta_files=${DELTA_FILES}"
     echo "delta_lines=${DELTA_LINES}"
     echo "delta_size_tier=${DELTA_TIER}"
   fi
@@ -707,10 +713,11 @@ if [ "$SINCE_GIVEN" = "1" ]; then
   if [ "$SCOPE_MODE" = "delta" ]; then
     echo "since_tree=${SINCE_TREE}"
     echo "delta_file=${DELTA_OUT}"
+    echo "delta_files=${DELTA_FILES}"
+    echo "delta_lines=${DELTA_LINES}"
     printf '%s\n' "$DELTA_CLASSIFIED" | awk -F'\t' '
-      NF { tf++; tl+=$2+$3 }
       $1=="core" { cf++; cl+=$2+$3 }
-      END { printf "delta_files=%d\ndelta_lines=%d\ndelta_core_files=%d\ndelta_core_lines=%d\n", tf+0, tl+0, cf+0, cl+0 }'
+      END { printf "delta_core_files=%d\ndelta_core_lines=%d\n", cf+0, cl+0 }'
     echo "delta_size_tier=${DELTA_TIER}"
     # ここから先は内容シグナルの入力を delta に入れ替える（後ろに diff 全体の節を置かない）
     CLASSIFIED="$DELTA_CLASSIFIED"
