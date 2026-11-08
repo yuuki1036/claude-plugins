@@ -67,7 +67,8 @@ SIZE_TIERS = ("small", "medium", "large", "unknown")
 REDUNDANT_EFFORTS = frozenset(("xhigh", "max"))
 SPEC_SOURCE_LABELS = ("pr-issue", "knowledge")
 # plan が diff と参照から見つける repo の仕様書（GitHub issue #352）。`--spec-source` では渡せない
-# （SPEC_SOURCE_LABELS に入れない）: touched = diff が触った、ref = session-context・Issue ファイル・PR 本文が言及した
+# （SPEC_SOURCE_LABELS に入れない）: touched = diff が触った、ref = session-context・Issue ファイル・PR 本文・
+# PR に紐づく GitHub Issue の本文が言及した
 SPEC_DOC_LABELS = ("repo-spec-touched", "repo-spec-ref")
 PR_BODY_HEADING = "### PR 説明"
 # fetch-pr-context.sh が PR 本文の次に出す見出し。PR 本文の中の `### ` 見出しでは打ち切らない
@@ -228,10 +229,13 @@ def compute_plan(effort, size_tier, activated=(), prior=(), delta=False, focus=(
     focus = [k for k in focus if k not in NON_FOCUS]
     exclude = [k for k in exclude if k not in NON_FOCUS]
     out_of_vocab = [k for k in focus + exclude if k not in FOCUS_KEYS]
+    # 語彙外の値しか無い --focus も絞り込みとして扱う。全体に倒すと、名前を書き違えた呼び出しが
+    # 規模で絞った全体レビューになり、頼んだ観点を見ていないことが分からない（GitHub issue #388）
+    focus_given = bool(focus)
     focus = [k for k in focus if k in FOCUS_KEYS]
     exclude = [k for k in exclude if k in FOCUS_KEYS]
     prior = _ordered(prior)
-    scope = "focus" if focus else ("exclude" if exclude else "full")
+    scope = "focus" if focus_given else ("exclude" if exclude else "full")
 
     if scope == "focus":
         cands = set(focus) | set(prior)
@@ -500,13 +504,13 @@ def _read_text(path):
         return ""
 
 
-def detect_spec_sources(roots, branch, issue_ids, specs, diff_text="", pr_body=""):
+def detect_spec_sources(roots, branch, issue_ids, specs, diff_text="", pr_body="", issue_bodies=()):
     """仕様ソースを探す。戻り値は (sources, missing)。sources は [(label, detail)]。
 
     roots は作業ツリーとメインのチェックアウト（Issue ファイルを gitignore した repo では worktree に無い）。
     repo の仕様書は作業ツリー（roots[0]）で探す: diff が触ったもの（repo-spec-touched）と、session-context・
-    Issue ファイル・PR 本文が言及したもの（repo-spec-ref）。規約（CLAUDE.md 等）は claude-md-compliance の
-    担当なので足さない。
+    Issue ファイル・PR 本文・PR に紐づく GitHub Issue の本文（issue_bodies）が言及したもの（repo-spec-ref）。
+    規約（CLAUDE.md 等）は claude-md-compliance の担当なので足さない。
     """
     sources, missing, seen = [], [], set()
     ids = list(issue_ids)
@@ -556,7 +560,7 @@ def detect_spec_sources(roots, branch, issue_ids, specs, diff_text="", pr_body="
                 known.add(os.path.realpath(path))
                 add("repo-spec-touched", path)
         refs = [_read_text(d) for label, d in list(sources) if label in ("session-context", "issue-file")]
-        for kind, rel in doc_locate.mentioned_docs("\n".join(refs + [pr_body]), root):
+        for kind, rel in doc_locate.mentioned_docs("\n".join(refs + [pr_body] + list(issue_bodies)), root):
             path = os.path.join(root, rel)
             if kind == "spec" and os.path.realpath(path) not in known:
                 known.add(os.path.realpath(path))
@@ -604,8 +608,12 @@ def _plan_main(ns):
     roots = [r for r in (ns.wt, ns.main_root) if r]
     roots = list(dict.fromkeys(os.path.abspath(r) for r in roots))
     diff_text = _read_text(ns.diff_file) if ns.diff_file else ""
+    # PR に紐づく GitHub Issue の本文（review が gh issue view で保存したもの / GitHub issue #391）。
+    # 第三者が書く入力だが、パスの解決は PR 本文と同じ doc_locate の検査を通る
+    issue_bodies = [_read_text(f) for f in ns.pr_issue_body or []]
     found, missing = detect_spec_sources(roots, ns.branch, ns.issue_id or [], ns.spec or [],
-                                         diff_text=diff_text, pr_body=_pr_body(ns.pr_context))
+                                         diff_text=diff_text, pr_body=_pr_body(ns.pr_context),
+                                         issue_bodies=issue_bodies)
     if ns.size_tier == "unknown":
         print("WARN: size_tier=unknown のため規模キャップを掛けずに effort 上限だけで構成した", file=sys.stderr)
     plan = compute_plan(effort, ns.size_tier, activated=activated, prior=prior, delta=ns.delta,
@@ -667,6 +675,7 @@ def main(argv=None):
     p.add_argument("--issue-id", action="append")
     p.add_argument("--diff-file", default="")
     p.add_argument("--pr-context", default="")
+    p.add_argument("--pr-issue-body", action="append")
     c = sub.add_parser("check", allow_abbrev=False)
     c.add_argument("--plan-file", required=True)
     try:

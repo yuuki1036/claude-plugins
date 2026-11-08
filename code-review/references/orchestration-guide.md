@@ -260,7 +260,7 @@ reviewer を起動する **前** に、Stage 1 の判定結果を機械的に検
    - plan が落とした観点は `missing_coverage` に識別子 `<focus>` を記録し、**根拠の diff シグナルと plan の理由はレポート本文へ**書く
 4. 確定したテーブルを **`plan-reviewers.sh check` に流してから起動する**（GitHub issue #351）。check は保存した plan と突き合わせ、上限超過・最小保証の欠落・仕様ソースがあるのに spec-compliance の単独の行が無い・単独維持の観点の束ね・落とした理由の食い違いなどを exit 1 で止める。**上限を超えたか・spec-compliance が欠けたかを自分で判定しない** — 同じ LLM が数えて同じ LLM が検算すると、数え違いがそのまま通る（#351 では high の上限 6 を 5 と数え、spec-compliance を落とした構成を本節が止めなかった）
 
-**非 default-mode の回（review のみ）**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した回は、モードの推奨構成が観点判定表より優先する。**plan も check も呼ばず、構成も足さない**。手順 1・2 だけを検算し、検出した focus は `missing_coverage` に識別子 `<focus>` だけを記録する（**mode による意図的な縮退である旨はレポート本文へ**）
+**非 default-mode の回（review のみ）**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した回は、モードの推奨構成が観点判定表より優先する。**構成を決めるためには plan も check も呼ばず、構成も足さない**（spec-compliance を起動するモードが仕様ソースを得るために plan を呼び、`spec_source` の行だけを使うのは別。orchestration-optional-flows.md `## 2` / GitHub issue #389）。手順 1・2 だけを検算し、検出した focus は `missing_coverage` に識別子 `<focus>` だけを記録する（**mode による意図的な縮退である旨はレポート本文へ**）
 
 ### 8b. 事後突合（review Phase 5.7・self-review Phase 4.7 / logging のみ・agent 追加起動なし）
 
