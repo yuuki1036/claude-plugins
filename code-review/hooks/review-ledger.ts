@@ -58,8 +58,22 @@ function modelIndex(model: string) {
   return models.length - 1
 }
 
-function record(t: number, agentId: string | undefined, u: TurnUsage) {
-  if (steps.length >= MAX_STEPS) {
+/**
+ * 環境変数 CLAUDE_REVIEW_LEDGER_MAX_STEPS の値から上限を決める。テストが打ち切りを少ない step で確かめるためにある
+ * （MAX_STEPS 件を流すと高負荷時に 60 秒を超えた / GitHub issue #409）。正の整数で MAX_STEPS 未満のときだけ効く
+ */
+export function limitFrom(v: string | undefined): number {
+  const n = /^[1-9][0-9]*$/.test(v ?? '') ? Number(v) : MAX_STEPS
+  return Math.min(n, MAX_STEPS)
+}
+
+async function maxSteps($: EngineInterface) {
+  // 名前を定数に出さないのは、$.env.get がリテラルしか受けないため（変数を渡すと mod の読み込みが失敗する）
+  return limitFrom(await $.env.get('CLAUDE_REVIEW_LEDGER_MAX_STEPS'))
+}
+
+function record(t: number, agentId: string | undefined, u: TurnUsage, limit: number) {
+  if (steps.length >= limit) {
     truncated = true
     return
   }
@@ -120,7 +134,7 @@ export function ledgerSpawned(t: number, e: AgentSpawnInput, r: AgentSpawnResult
 export function registerLedger(on: On) {
   on('turn.step', async function* ($, e, next) {
     const r = yield* next(e)
-    if (r?.usage) record(await now($), e.agentId, r.usage)
+    if (r?.usage) record(await now($), e.agentId, r.usage, await maxSteps($))
     return r
   })
 

@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.1] - 2026-11-08
+
+### Fixed
+
+- **review-ledger の打ち切りのテストが、高負荷時に 60 秒の上限を超えて pre-commit を止めていた**（GitHub issue #409）。上限（`MAX_STEPS = 20000`）を超える step を 1 件ずつ流していたため、時間がかかった。
+  - 環境変数 `CLAUDE_REVIEW_LEDGER_MAX_STEPS` で上限を下げられるようにし、テストは上限 5 で打ち切りを確かめる。値が正の整数でないとき・`MAX_STEPS` 以上のときは効かない。
+  - 「`MAX_STEPS` 件の記録が `fs.write` の上限（4 MiB）に収まる」は、engine を通さずに記録の JSON の長さを測る別のテストで確かめる。
+  - 上限ちょうどで `truncated` を立てないこと・不正な値では上限が変わらないこと・上げる向きには効かないことのテストを足した。上げる向きは、値から上限を決める関数（`limitFrom`）を engine を通さずに見る。
+
+
 ## [2.168.0] - 2026-11-08
 
 ### Added
