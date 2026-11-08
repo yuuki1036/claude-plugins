@@ -81,6 +81,7 @@ start / issue-create / follow-up の promote がブランチを切るとき、�
 - AI 主導の課題発見（discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）
 - 振り返り（retrospective。完了実績・見積もり精度・反復テーマの concept 化提案）
 - issue 作業の全散文成果物に writing-polish 推敲を必須連携（未インストール時は skip）
+- maintain 系が完了 Issue を片付ける前に、git の追跡下かを確かめる（`scripts/issue-files.py`。HEAD に版があるファイルは削除し、それ以外（DATA_DIR を gitignore している repo のファイルや、add しただけのファイル）は削除せず `{DATA_DIR}/{slug}/archive/` へ移す。書き換えの前にも、git から戻せない内容（追跡外・未コミットの変更）は archive/ に控えを残す。「git から復元できる」と報告するのは削除したファイルだけ）
 - 日本の祝日込みの営業日計算（`scripts/business-days.py`。営業日数 / N 営業日後 / 休日の列挙 / 週ごとの営業日数。2020〜2099 年）。期日・ペースを暗算せずこれで数えるよう、注入ルールが指示する
 
 ## 旧プラグインからの移行
