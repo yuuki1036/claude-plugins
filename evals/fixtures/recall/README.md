@@ -37,13 +37,20 @@ code-review の high-risk recall 補強（Tier3 v2.30.0 / Tier2 v2.31.0 / Tier1 
 cd evals/fixtures/recall
 ./setup.sh 01-value-flow-insert
 
-# 2. 出力された temp dir で self-review を実行（コマンド名は名前空間付きで指定）
+# 2. 出力された temp dir で self-review を実行し、レポートを保存する（コマンド名は名前空間付きで指定）。k=3 回
+OUT=$(mktemp -d) # レポートの保存先
 cd <出力された target dir>
-claude -p "/code-review:self-review" --permission-mode plan
-# 対話モードなら: claude を起動して /code-review:self-review
+for i in 1 2 3; do claude -p "/code-review:self-review" --permission-mode plan > "$OUT/run$i.md"; done
+# 対話モードなら: claude を起動して /code-review:self-review し、「セルフレビュー結果」以降を run<i>.md に保存する
 
-# 3. レポートを expected.yaml と照合して記録
+# 3. 判定する（repo のルートで。expected.yaml と 3 本のレポートを突き合わせ、結果の記録の表を出す）
+python3 evals/fixtures/recall/judge.py 01 "$OUT"/run{1,2,3}.md
 ```
+
+`judge.py` の exit は 0 PASS / 1 FAIL / 2 判定不能（レポートが 3 本でない・「セルフレビュー結果」の無いファイル・
+fixture id の誤り・PyYAML が無い・「指摘件数」の行と読めた指摘の数が合わない）/ 3 要確認（機械で決まる範囲は PASS で、人が本文を読んで決める候補が残る）。要確認の候補は表の下に並ぶので、
+下の判定ルールの**[人]** の条件で人が決める。`--embed` は付けない（採否の確認と Markdown 推敲を省くので、
+計測条件が変わる。2026-11-07 決定）。PyYAML が要る（`pip install pyyaml`）。
 
 > **⚠️ コマンド名は必ず名前空間付き `/code-review:self-review` で指定する**
 > 名前空間なし `/self-review` や自然文プロンプトはユーザーグローバルの旧 self-review
@@ -65,33 +72,43 @@ claude -p "/code-review:self-review" --permission-mode plan
 
 ### 判定ルール
 
-- **recall fixture（01 / 07 / 08）**: k=3 回実行し **2 回以上**で期待指摘（severity・対象ファイル・キーワード。
+`judge.py` が機械で決めるのは、下のうち **[機械]** と書いた条件だけ。**[人]** の条件は候補を挙げるだけで、最後は人が決める。
+
+- **recall fixture（01 / 07 / 08）** **[機械]**: k=3 回実行し **2 回以上**で期待指摘（severity・対象ファイル・キーワード。
   `expect.target_lines_any` があれば、指摘の主対象の行がそのどれかを含むことも）が報告されれば PASS。
   LLM の非決定性を吸収するため 3/3 は要求しない
-- **主対象の行**: レポートの指摘の `ファイル:` 欄が指す行（範囲なら範囲の全行）。根拠や本文に並べた行は数えない
+- **主対象の行**: レポートの指摘の `ファイル:` 欄が指す行（範囲なら範囲の全行）。根拠や本文に並べた行は数えない。
+  報告外の節（🔁 報告閾値を割った指摘・✏️ コメント推敲）の行も数えない
 - **対照（`expect.must_not_flag`。08）**: k=3 回のうち **1 回でも**、次のどれかに当たる MAJOR 以上が出たら
   FAIL（precision fixture と同じ厳格さ）。recall 側が PASS でも fixture 全体は FAIL。判定規則の正本はこの節
   （expected.yaml の冒頭はここを指すだけ）
-  - 主対象の行が対照の行（`must_not_flag` の `target_files_any` のファイルの、`target_lines_any` の行。
+  - **[機械]** 主対象の行が対照の行（`must_not_flag` の `target_files_any` のファイルの、`target_lines_any` の行。
     ファイルと行の両方）を含み、期待指摘の行（`expect.target_lines_any`）を含まない
-  - 主対象の行が期待指摘の行も、飛ばされる後片付けの行（08 では 57 行目の `closeDialog()`）も含まない指摘が
-    `false_positive_patterns` に合致する
-  - 主対象の行が期待指摘の行か飛ばされる後片付けの行を含む指摘、または `ファイル:` 欄に行番号の無い指摘でも、
+  - **[機械]** 主対象の行が期待指摘の行も、飛ばされる後片付けの行（`expect.cleanup_lines`。08 では 57 行目の
+    `closeDialog()`）も含まない指摘が `false_positive_patterns` に合致する
+  - **[人]** 主対象の行が期待指摘の行か飛ばされる後片付けの行を含む指摘、または `ファイル:` 欄に行番号の無い指摘でも、
     本文が対照の経路まで欠陥・要修正と述べている（入力エラーでも
     ダイアログを閉じるべき、`closeDialog()` を無条件に `finally` へ移す、など。無条件に移すと、入力エラーで
     ダイアログを残す対照の UX を壊す）
   - 期待指摘の行・飛ばされる後片付けの行を指すか行番号の無い指摘で、本文で対照の経路と比べるだけ（対照の
     `return` は意図した残しと読む）のものは数えない（patterns に合致しても数えない）。
     脱出口ごとに意図を比べる書き方こそ測りたい振る舞いなので、本文の字面だけで FAIL にしない
-- **precision fixture（90）**: k=3 回実行し **1 回でも** `false_positive_patterns` に合致する
+  - `judge.py` は上の **[人]** の項に当たりうる MAJOR 以上を「要確認」に挙げる。期待指摘の行だけを指す指摘は、
+    本文が対照に触れている（`must_not_flag.mentions_any` のどれかを含む）ものに絞る（期待指摘そのものを毎回挙げない
+    ため）。後片付けの行を指す指摘と行番号の無い指摘は絞らない（`closeDialog()` を無条件に `finally` へ移す、のように
+    対照に触れずに対照を壊す形がある）。対照のファイルを行番号なしで挙げた指摘は、別のファイルに行があっても行番号の
+    無い指摘に数える
+- **precision fixture（90）** **[機械]**: k=3 回実行し **1 回でも** `false_positive_patterns` に合致する
   CRITICAL/MAJOR が出たら FAIL（誤検出の復活は surface-aware 緩和の失敗を意味するため厳格）
-- 01 では **skeptic（Phase 4.8）が起動したこと**もレポートで確認する
+- 01 では **skeptic（Phase 4.8）が起動したこと**もレポートで確認する（`judge.py` が「動的ラウンド」の行の
+  `冷や読み skeptic` を表の「skeptic 起動」に写す。判定には使わない）
   （起動しなかった / 失敗した場合は `missing_coverage` に `recall-skeptic:` が出るはず。
   silent 失敗はそれ自体が Tier1 のバグ）
 
 ### 結果の記録
 
-実行結果は `evals/reports/recall-YYYYMMDD.md` に以下の形式で記録する:
+実行結果は `evals/reports/recall-YYYYMMDD.md` に以下の形式で記録する（`judge.py` が fixture ごとにこの表の行と
+「総合」の行を出す。「判定」と「備考」の列と、要確認を決めた結果は人が書き足す）:
 
 ```md
 # recall fixture 実行結果 (YYYY-MM-DD, code-review vX.Y.Z)
