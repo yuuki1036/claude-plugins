@@ -56,7 +56,7 @@ allowed-tools:
 
 effort によらず「止まらず実行し切り、実行後レポートで報告する」方針は不変。省略した処理はレポートに `省略（effort: {値}）` と明記する。
 
-判断が要る検出（放置 Issue・frozen Issue・follow-up の対処）は、**AskUserQuestion で止めずに最終レポートへ列挙**し、ユーザーがチャットで対処を指示できるようにする。ファイル更新（status 更新・圧縮・knowledge 切り出し・削除）は承認待ちせず実行し切り、結果をレポートで報告する。Issue ファイルは git 管理下のため、不要な変更は git で復元できる。
+判断が要る検出（放置 Issue・frozen Issue・follow-up の対処）は、**AskUserQuestion で止めずに最終レポートへ列挙**し、ユーザーがチャットで対処を指示できるようにする。ファイル更新（status 更新・圧縮・knowledge 切り出し・削除）は承認待ちせず実行し切り、結果をレポートで報告する。削除・書き換えの前に `issue-files.py` を通す（5a・5b。git から戻せないファイルは書き換える前に archive/ へ控えを残し、HEAD に版の無いファイルは削除せずに退避する）。
 
 ---
 
@@ -103,9 +103,9 @@ effort によらず「止まらず実行し切り、実行後レポートで報�
 
 `issues/` 内の `status: completed` ファイルを走査し、**issue-maintain の処理フロー**に従って品質整理を行う。
 
-- Issue ファイルの圧縮（Edit で冗長な記録を整理）
+- Issue ファイルの圧縮（Edit で冗長な記録を整理。圧縮の前に issue-maintain の処理フロー 1.8 の `issue-files.py backup` を通す）
 - knowledge への切り出し（Write で再利用可能な知見を新規ファイルに抽出）
-- 整理済みファイルの削除提案（Bash `rm` で削除）
+- 整理済みファイルの削除（Bash `rm` を直接打たず、issue-maintain の削除フローのとおり `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue-files.py" retire <ファイル>` で片付ける。HEAD に版があるファイルは削除し、それ以外（追跡外・add しただけ）は `{DATA_DIR}/{slug}/archive/` へ退避する）
 
 **メンテナンス済みの判定**: 更新履歴に `メンテナンス:` で始まるエントリがあれば（Grep で検出）スキップ。
 
@@ -117,6 +117,7 @@ effort によらず「止まらず実行し切り、実行後レポートで報�
 - `status: in-progress` の全 Issue（5a で処理済みのものは除く）
 
 ##### 処理内容（issue-maintain SKILL.md の全ステップを適用）
+0. 最初の書き換えの前に、issue-maintain の処理フロー 1.8 のとおり `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue-files.py" backup <Issue ファイル>...` を通す（git から戻せないファイルの控えを archive/ に残す）
 1. last_active を今日の日付に更新
 2. スコープ超過チェック
 3. テンプレート準拠チェック
@@ -198,8 +199,10 @@ effort によらず「止まらず実行し切り、実行後レポートで報�
 |-------|--------|---------|
 
 ### completed Issue メンテナンス
-| Issue | 処理 | knowledge 切り出し | 削除提案 |
-|-------|------|-------------------|---------|
+| Issue | 処理 | knowledge 切り出し | 片付け |
+|-------|------|-------------------|-------|
+| MYAPP-3 | 圧縮（120行→30行） | - | 削除（git から復元できる） |
+| MYAPP-4 | 圧縮（追跡外のため書き換え前を `archive/MYAPP-4.md` に控えた） | 切り出し済み | 退避（`archive/MYAPP-4.20261108T101500.md`。追跡外で git から戻せない） |
 
 ### Issue 品質整理
 | Issue | スコープ | テンプレート | 圧縮 | knowledge | 警告 |
@@ -227,7 +230,7 @@ effort によらず「止まらず実行し切り、実行後レポートで報�
 
 - 起動＝実行確定。承認待ちで止まらず実行し切り、**実行後にレポートで報告**する（AskUserQuestion で問い直さない）
 - 判断が要る検出（放置 / frozen / follow-up の対処）はレポートに列挙し、ユーザーがチャットで指示する
-- Issue ファイルは git 管理下のため、不要な変更は git で復元できる
+- 不要な変更を git で取り消せるのは、`issue-files.py` が `tracked=` を返したファイルだけ。それ以外は書き換え前の控えと退避先をレポートに並べる
 - knowledge/ は**いかなる場合も自動削除しない**
 - `last_active` の更新は Issue ファイルの frontmatter を直接編集する
 - **writing-polish 連携は対象外**（設計判断）: このスキルの出力は機械的な status 遷移と実行後レポートのみで、Issue 本文のような散文成果物を新規生成しないため推敲を通さない（散文を生成する issue-maintain / issue-create 側は必須連携済み）

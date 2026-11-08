@@ -2,11 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
-## [1.19.4] - 2026-11-08
+## [1.19.5] - 2026-11-08
 
 ### Fixed
 
 - **SessionStart / PostCompact の注入が knowledge の index を上限なしに出し、10,000 字を超えると規約ごと切り詰められていた**（GitHub #424）。Claude Code は hook の stdout を 10,000 字で打ち切り、Claude には先頭 2,000 字のプレビューしか渡さない。そのため超えた回は、規約の後半（Knowledge の活用・日程計算・作業フロー・writing-polish 必須）も knowledge も届かなかった。規約の本文（3,601 字）と合わせると、index が 6,000 字ほどになると超える（手元の実例では 9,871 字の index がある）。`inject-rules.sh` は出力全体を 9,500 字に収める（新しい `hooks/scripts/inject-budget.py`）。500 字は JS の UTF-16 長と `len` の差に取った余裕。入れる順は、規約の全文（必ず入れる）→ 放置 Issue → knowledge の index で、index は slug ごと・行ごとに残りへ入る分だけ出す。入りきらなかった分は「index の残り N 件は注入の上限で省いた。`/knowledge` で一覧を見る」に置き換え、丸ごと入らない slug は名前と件数を並べる（`bbb（3 件）`）。規約が上限に近く案内も入らない回は、上限を超えてもこの案内だけは出す（knowledge が黙って消える型に戻さない）。字数は `len`（コードポイント数）で数え、バイト数では数えない。`python3` が無い・起動に失敗する環境（CLT の無い macOS のスタブ・pyenv の shim・3.6 以前）と、index を読めなかった回は、index を出さずに `/knowledge` への案内だけを出す（規約と放置 Issue は出す。起動の失敗を `set -e` の ERR trap に任せると、規約ごと 0 バイトになる）。出す順（規約 → knowledge → 放置 Issue）は変えていない
+
+## [1.19.4] - 2026-11-08
+
+### Fixed
+
+- **maintain 系が、git から戻せるかを確かめずに完了 Issue を削除していた**（GitHub #422）。issue-maintain・maintain・linear-maintain は「Issue ファイルは git 管理下のため復元できる」を前提に、承認なしで完了 Issue を削除・圧縮していた。しかし DATA_DIR を gitignore や `.git/info/exclude` で外している repo では、消したファイルを git から戻せない。判定と削除を `scripts/issue-files.py` に寄せ、3 スキルが同じものを呼ぶ。`check` はファイルの親 dir で git を叩き、`tracked`（追跡下で HEAD と一致）/ `dirty`（追跡下だが未コミットの変更がある）/ `untracked` を返す。`dirty` を分けるのは、書き換えるとコミットしていない内容がどこにも残らないため。`backup` は最初の書き換え（last_active・status の更新、圧縮・統合など）の前に呼び、`tracked` でないファイルの書き換え前の内容を `{DATA_DIR}/{slug}/archive/` に複製する。issue-maintain の処理フローの、最初の書き換えの前に 1.8 として足し、maintain 5b・linear-maintain 6b の手順と linear-maintain の status 同期にも入れた。`retire` は HEAD に版があるファイルを削除し（dirty でも削除する。この実行より前の内容は HEAD か控えに残る / 2026-11-08 決定）、HEAD に版の無いファイル（追跡外・add しただけ）は削除せず archive/ へ移す。退避先は省くとファイルの親の親の `archive/` になる。archive/ に同じ名前があれば名前に日時を付け、上書きしない。ファイル名は literal の pathspec として渡す（glob 文字を含む名前が別のファイルに一致しないように）。レポートの「git 管理下のため復元可能」は `deleted=` を返したファイルにだけ書き、maintain と linear-maintain のレポート雛形は「削除提案」の列を「片付け」（削除 / 退避先）に替えた。メインのチェックアウトへの Edit / Write を止められた回（隔離された worktree のセッション）は、retire も backup も呼ばず「DATA_DIR に未反映」に並べる（Bash で書くと回り込みになる）。セッションの題を付ける hook（`set-session-title.sh`）は Issue ファイルを `issues/` の下だけで探す（archive/ の同じ名前の控えを掴まないように）
 
 ## [1.19.3] - 2026-11-08
 
