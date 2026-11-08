@@ -5,7 +5,8 @@
 import type { Engine } from 'claude-code/testing'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { MAX_STEPS } from '../hooks/review-ledger'
+import { limitFrom, MAX_STEPS } from '../hooks/review-ledger'
+import type { Ledger, Step } from '../hooks/review-ledger'
 import type { On } from 'claude-code'
 
 const SID = 'sess-1234_ab'
@@ -163,13 +164,53 @@ test('書き出しに失敗しても publish は走る', async ($, on) => {
   expect(r.text).toBe('ok')
 })
 
-test('step が上限を超えたら、それ以上は数えずに truncated を立てる（fs.write は 4 MiB まで）', { timeoutMs: 60000 }, async ($, on) => {
+// 上限は環境変数で小さくして確かめる（MAX_STEPS 件を engine に流すと高負荷時に 60 秒を超えた / GitHub issue #409）
+async function ledgerAfter($: Engine, on: On, n: number, limit?: string) {
   mock.clock(on, { now: 1 })
   const w = newWorld()
-  stub(on, w)
-  for (let i = 0; i < MAX_STEPS + 1; i++) await step($, 'claude-opus-x')
+  stub(on, w, { HOME: '/home/u', ...(limit === undefined ? {} : { CLAUDE_REVIEW_LEDGER_MAX_STEPS: limit }) })
+  for (let i = 0; i < n; i++) await step($, 'claude-opus-x')
   await $.tool.call({ tool: 'Bash', command: PUBLISH })
-  const led = JSON.parse(w.writes[0]?.text ?? '{}')
-  expect(led.steps).toHaveLength(MAX_STEPS)
+  return JSON.parse(w.writes[0]?.text ?? '{}')
+}
+
+test('step が上限を超えたら、それ以上は数えずに truncated を立てる', async ($, on) => {
+  const led = await ledgerAfter($, on, 6, '5')
+  expect(led.steps).toHaveLength(5)
   expect(led.truncated).toBe(true)
+})
+
+test('上限ちょうどでは truncated を立てない', async ($, on) => {
+  const led = await ledgerAfter($, on, 5, '5')
+  expect(led.steps).toHaveLength(5)
+  expect(led.truncated).toBe(false)
+})
+
+// 'abc' だけは検証を外しても NaN との比較が常に偽で 6 件残る。検証を外す変異は '0' / '-3' / '2.5' / ' 5' が捕まえる
+for (const bad of ['abc', '0', '-3', '2.5', ' 5']) {
+  test(`上限の環境変数が ${JSON.stringify(bad)} なら MAX_STEPS のまま（正の整数でなければ無視する）`, async ($, on) => {
+    const led = await ledgerAfter($, on, 6, bad)
+    expect(led.steps).toHaveLength(6)
+    expect(led.truncated).toBe(false)
+  })
+}
+
+// 上げる向きを engine で確かめると MAX_STEPS 件を流すことになるので、値から上限を決める関数を直接見る
+test('上限の環境変数は下げる向きにしか効かない', () => {
+  expect(limitFrom('5')).toBe(5)
+  expect(limitFrom(String(MAX_STEPS - 1))).toBe(MAX_STEPS - 1)
+  expect(limitFrom(String(MAX_STEPS))).toBe(MAX_STEPS)
+  expect(limitFrom(String(MAX_STEPS + 1))).toBe(MAX_STEPS)
+  expect(limitFrom('30000')).toBe(MAX_STEPS)
+  expect(limitFrom(undefined)).toBe(MAX_STEPS)
+})
+
+test('MAX_STEPS 件の step を書き出しても fs.write の上限（4 MiB）に収まる', () => {
+  // 各欄を実際に出うる桁の大きめの値で埋める（ms の時刻・agentId の長さ・百万単位の token）
+  const s: Step = [1_800_000_000_000, 'a'.repeat(24), 9, 9_999_999, 9_999_999, 9_999_999, 9_999_999]
+  const ledger: Ledger = {
+    schema: 1, session: SID, started: s[0], written: s[0], models: ['claude-opus-x'],
+    steps: Array.from({ length: MAX_STEPS }, () => s), agents: {}, truncated: true,
+  }
+  expect(new TextEncoder().encode(JSON.stringify(ledger)).length).toBeLessThan(4 * 1024 * 1024)
 })

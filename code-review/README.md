@@ -70,6 +70,7 @@ review / self-review の publish に載せるトークン消費を、transcript 
 - transcript を引けない・取り違える回（#246 / #263）にも値が残る。background で起動した体の数も分かる
 - 記録は数値と agent の種類だけ。prompt・description・本文は持たない
 - mods が無効な環境では記録が無く、`tokens_live` も載らない（欠測扱いにもしない）。契約は `references/orchestration-measurement.md` `## 16`
+- 記録する step は 20000 件（`MAX_STEPS`）まで。超えた分は数えず `truncated` を立てる。上限は `CLAUDE_REVIEW_LEDGER_MAX_STEPS` で下げられる（テスト用。上げる向きには効かない）。下げると `tokens_live` は実際より小さく出る
 - 実装: `hooks/review-ledger.ts`。mods の入口は `hooks/mod.ts`（`modules` はプラグインに 1 つしか書けない）
 
 ## 機械層の先行実行（self-review のみ / opt-in）
