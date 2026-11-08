@@ -23,8 +23,10 @@ jobs:
 
       # jsonschema が無いと validate_ssot.py の try_validate_schema が silent skip し、
       # 「ローカルでは落ちるが CI では通る」逆転が起きる（2026-07 精査で検出）
+      # pyyaml は recall fixture の judge.py が expected.yaml を読むのに要る（GitHub issue #400）。
+      # 無いと test_recall_judge.py が落ちる
       - name: install-deps
-        run: pip install jsonschema
+        run: pip install jsonschema pyyaml
 
       # plugin.json / marketplace.json / hooks.json のスキーマ準拠と SSoT 同期
       - name: validate-ssot
@@ -64,7 +66,7 @@ jobs:
           QUALITY_VERSION_BASE: ${{ env.DIFF_BASE }}
         run: python3 .claude-plugin/scripts/validate_plugin_quality.py
 
-      # 検証スクリプト自身の回帰テスト（stdlib unittest・依存なし）。
+      # 検証スクリプト自身の回帰テスト（stdlib unittest。依存は jsonschema / pyyaml だけ）。
       # SSoT pin は pin の初期値も検証と同じ関数で生成するため、実リポジトリに対する
       # 検証だけでは切り出しの欠陥を検出できない（v2.63.1）。期待値を独立に構築する
       # テストがその自己整合の盲点を塞ぐ

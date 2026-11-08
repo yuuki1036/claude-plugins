@@ -55,7 +55,7 @@ jobs:
           python-version: "3.12"
 
       - name: install-deps
-        run: pip install jsonschema
+        run: pip install jsonschema pyyaml # pyyaml: test_recall_judge.py が要る（GitHub issue #400）
 
       # 起点は前の晩までの持ち越しの状態（artifact `mutation-state`）の base。済みの変異のキーを
       # MUT_SKIP_KEYS に、前の状態を STATE_PREV に書く。状態が無ければ集計を残した最新の schedule run の
