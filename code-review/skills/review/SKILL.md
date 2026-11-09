@@ -23,7 +23,7 @@ allowed-tools:
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @2a27f9ea -->
-<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
+<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @ebcc7da2 -->
 
 ## 前提
 

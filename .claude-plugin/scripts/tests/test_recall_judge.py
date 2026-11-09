@@ -3,7 +3,7 @@
 
 judge.py は recall fixture の測定器で、壊れても判定結果からは見えない（`test_evals_runner.py` と同じ事情）。
 self-review を fixture に通す実計測は paid なので、保存したレポートの形を合成して入力にする。
-レポートの形の正本は `code-review/skills/self-review/SKILL.md` の Step 6 の定型。
+レポートの形の正本は `code-review/skills/self-review/references/step-6.md` の Step 6 の定型。
 
 実行: python3 .claude-plugin/scripts/run-tests.py
 """

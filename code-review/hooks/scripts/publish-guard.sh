@@ -2,7 +2,7 @@
 # publish-guard.sh — Stop hook（v2.115.0 / GitHub issue #219）+ PreToolUse（GitHub issue #232）
 #
 # `review-timing.sh start` の打点ファイルが「t0 あり・pub なし」のままターンが終わったら
-# **1 回だけ**鳴らす。SKILL.md 側の `publish-pending` ガードは SKILL.md が読まれた回にしか
+# **1 回だけ**鳴らす。SKILL.md 側（self-review は step-7.md）の `publish-pending` ガードはそれが読まれた回にしか
 # 効かない — 同名の command と skill は `Skill` tool で呼んでも command 本文が返るため、
 # 記憶から手順を再現した回は publish（review:completed）が丸ごと落ち、計測に「起きたこと」
 # すら残らない（実測 2026-09-06 / yatima）。決定的に判定できる（ファイルの行を見るだけ）ので

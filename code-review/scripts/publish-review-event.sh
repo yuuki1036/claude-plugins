@@ -130,7 +130,7 @@ case "$PLUGIN" in
         MEASUREMENT_GAPS="${MEASUREMENT_GAPS:+$MEASUREMENT_GAPS }report-template"
         echo "WARN: レポート出力の定型（self-review Step 6 / review Step 7。\`**指摘件数**: BLOCKER …\`" \
           "の行を含む）が、計測開始（review-timing.sh start）から publish までの出力に見当たらない。" \
-          "**今からでも SKILL のテンプレートどおりに出す**（行を省かない）。進捗報告や 1 行の要約で" \
+          "**今からでも定型どおりに出す**（review は SKILL.md の Step 7、self-review は Step 6 の見出しの Read 先 step-6.md のテンプレート。行を省かない）。進捗報告や 1 行の要約で" \
           "置き換えない — 他 skill から回した場合も同じ（GitHub issue #250 / #232）" >&2
       fi
     else

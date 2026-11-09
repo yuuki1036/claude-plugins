@@ -105,7 +105,7 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 
 - 実測（issue #122）: 型引数を 1 つ足しただけ（`+5 -2` 行）の共通モジュール変更に explorer 1 体が **13.6 万 tokens・35 tool_uses** を費やして「問題なし・後方互換」と結論した。呼び出し元が数件なら reviewer 自身の Read で足り、explorer 1 体ぶんが丸ごと浮く
 - **v2.12.0 の意図（小規模変更でも依存元への波及を見落とさない）は撤回していない**。下限が効くのは「波及先が数えられて少なく、かつ呼び出し側の書き換えを強制しない変更」だけで、破壊的変更・呼び出し元多数はこれまでどおり必ず起動する
-- **`missing_coverage` には記録しない**（条件不成立の未起動は正常系。記録すると欠損観点の偏り集計が潰れる — self-review SKILL の `comment-accuracy` 欠損記録規則と同じ扱い）。代わりに Phase 0 構成テーブルの「リスク因子」行に `共通モジュール変更（importers N 件・explorer 下限で reviewer に委譲）` と出して可視化する
+- **`missing_coverage` には記録しない**（条件不成立の未起動は正常系。記録すると欠損観点の偏り集計が潰れる — self-review の Step 6 の `comment-accuracy` 欠損記録規則（`skills/self-review/references/step-6.md`）と同じ扱い）。代わりに Phase 0 構成テーブルの「リスク因子」行に `共通モジュール変更（importers N 件・explorer 下限で reviewer に委譲）` と出して可視化する
 - **委譲先の reviewer には担当ファイルとして当該共通モジュールを必ず割り当てる**（委譲したのに誰も読まない状態を作らない）
 
 ### reviewer の観点判定

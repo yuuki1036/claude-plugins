@@ -1,8 +1,8 @@
-<!-- 正本依存（SSoT pin）。Phase 6 Step 4 の「範囲の行が無ければ旧版」と Phase 6.9 の `--since` / `--prior-findings` の渡し方は、code-review の self-review SKILL.md「6. レポート出力」の範囲の行と prior-fixes-guide.md「4.」の形を要約したもの。正本が変わったら Step 4 と 6.9 を確認して pin を打ち直す -->
-<!-- SSOT: code-review/skills/self-review/SKILL.md#6 @22a4cba8 -->
+<!-- 正本依存（SSoT pin）。Phase 6 Step 4 の「範囲の行が無ければ旧版」と Phase 6.9 の `--since` / `--prior-findings` の渡し方は、code-review の self-review の Step 6（`skills/self-review/references/step-6.md`）「6. レポート出力」の範囲の行と prior-fixes-guide.md「4.」の形を要約したもの。正本が変わったら Step 4 と 6.9 を確認して pin を打ち直す -->
+<!-- SSOT: code-review/skills/self-review/references/step-6.md#6 @76335b44 -->
 <!-- SSOT: code-review/references/prior-fixes-guide.md#4 @f5c76a67 -->
-<!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review SKILL.md「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
-<!-- SSOT: code-review/skills/self-review/SKILL.md#1 @77013dba -->
+<!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review の Step 1（`skills/self-review/references/step-1.md`）「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
+<!-- SSOT: code-review/skills/self-review/references/step-1.md#1 @18660c38 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
 ## Phase 6: Quality Review
 

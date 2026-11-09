@@ -121,5 +121,5 @@ findings をコード/文書本文に**反映する前に**、その修正が依
 - **反証レイヤー（Phase 4.9）の効果は `severity` / `confidence` に反映済み**（Step 5 で verdict 反映を適用してから報告するため、JSON には最終値が入る）。`refuted` で取り下げた MAJOR/MINOR は findings に含まれない。**係争中の BLOCKER/CRITICAL は通常通り findings に残り、`title` または `impact` に `⚠️ 反証メモ:` を含める**（schema_version は据え置き 1。新フィールドは追加しない＝consumer 後方互換）
 - JSON として valid であること（末尾カンマ禁止、ダブルクオート、改行は文字列内で `\n`）
 - **`--since` で delta が空だった回も省かない**（前回の対象も無く agent を起動しなかった回は `findings: []`）。呼び出し元（feature-dev の G-V ループ）は findings の配列が無いと止まり方を決められない（GitHub issue #313）
-- このブロックの**後**に `[embed-mode: findings-only, no-prompt]` marker を置く。marker を置いてもターンを終えず、呼び出し元の次の手順へ戻る（self-review SKILL.md の `--embed` の節）
+- このブロックの**後**に `[embed-mode: findings-only, no-prompt]` marker を置く。marker を置いてもターンを終えず、呼び出し元の次の手順へ戻る（self-review の Step 1 の `--embed` の節。`skills/self-review/references/step-1.md`）
 

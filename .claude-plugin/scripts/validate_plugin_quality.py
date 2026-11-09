@@ -1820,6 +1820,7 @@ def check_skill_body_size(warnings: list[str]) -> None:
 #: (SKILL.md, phase 見出しの正規表現（番号を group "num" に取る）, 末尾の「次は」に書く名前の書式)
 SPLIT_SKILLS: tuple[tuple[str, str, str], ...] = (
     ("feature-dev/skills/feature-dev/SKILL.md", r"^## Phase (?P<num>\d+(?:\.\d+)?): ", "Phase {num}"),
+    ("code-review/skills/self-review/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
 )
 #: SKILL.md と phase ファイルの上限. Read 1 回で返る範囲の切れ目は実測 42,129 byte（#350 の旧版）と
 #: 42,448 byte（2026-11-05 の版）. token と byte の比は字種で揺れるので切れ目の手前に余白を取り,

@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.3] - 2026-11-09
+
+### Changed
+
+- **self-review の SKILL.md の本文を Step ごとに `skills/self-review/references/step-<番号>.md` へ分けた**（GitHub issue #426）。SKILL.md（103 KB → 約 12 KB）は Read 1 回で読み切れる大きさになり、全 Step に効く節（review との違い・前提など）と、Step の見出し・「入ったら最初に Read する」の 1 行だけを残した。各 Step ファイルは末尾の「次は」で次の Step を指し、上限と鎖は `validate_plugin_quality.py` の検査（split-skill）が守る。Step 4.5 の後は実行の順（4.8 → 4.6 + 4.9 → 4.7）に見出しを並べた。手順の中身は変えていない
+- **Step をまたぐ参照を分けた後の構成に合わせた**: 「self-review SKILL.md の節」と書いていた参照（orchestration-optional-flows.md・triage-guide.md・`scripts/lib/reviewer_plan.py`）を Step ファイルへ向け直し、「本ファイル」「上の」と書いていた相対参照を Step 名で書いた。meta-reviewer（4.6）は起動を決めたら 4.9 へ進み、反証と同じメッセージで発行すると明記した（4.6 を読んだ時点では 4.9 の本文をまだ読んでいないため）。`review-retro.sh` の `report-template` のヒントと `publish-review-event.sh` の同じ WARN は review と self-review で書き分けた。共通の references（md-polish-guide・prior-fixes-guide・orchestration-dynamic-rounds・scoring-guide・orchestration-measurement・triage-dynamic-gates・orchestration-guide）が self-review の本文の所在や meta の発行位置を書いた箇所も、Step ファイルの構成に合わせた
+- **command の Read の案内を新しい構成に合わせた**（`offset` / `limit` で分けて読む指示をやめ、Step ごとにファイルを読む形にした）
+
 ## [2.168.2] - 2026-11-08
 
 ### Fixed

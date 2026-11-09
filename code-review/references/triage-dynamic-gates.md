@@ -76,7 +76,7 @@
 
 ### 起動タイミング: 反証レイヤー（`## 9`）と同一 wave（v2.61.0 / GitHub issue #122）
 
-**meta-reviewer と反証エージェントは同一メッセージで一括発行する**（review Step 5.6 / self-review Step 4.6 の位置）。両者の入力はどちらも「Round 2 後の全指摘 + skeptic 統合済み指摘」で、**互いの出力には依存しない**（meta は findings を足す係、反証は既存 findings を較正する係）。直列に置くと依存が無いのに wave を 1 本積み増す（実測 issue #122: 約 8 分）。冷や読み skeptic を reviewer wave に相乗りさせているのと同じ理屈。
+**meta-reviewer と反証エージェントは同一メッセージで一括発行する**（review Step 5.6 / self-review Step 4.9 の位置。self-review は 4.6 で起動を決め、4.9 で反証と同じメッセージに載せる）。両者の入力はどちらも「Round 2 後の全指摘 + skeptic 統合済み指摘」で、**互いの出力には依存しない**（meta は findings を足す係、反証は既存 findings を較正する係）。直列に置くと依存が無いのに wave を 1 本積み増す（実測 issue #122: 約 8 分）。冷や読み skeptic を reviewer wave に相乗りさせているのと同じ理屈。
 
 - **前提**: 相乗り skeptic の統合（`## 8.5` / Phase 5.8・4.8）を**この wave の前に済ませる**。skeptic の指摘も反証対象に含めるため（統合はメインコンテキストの dedup 作業で agent を要さない。fallback の単独起動が走った場合のみ、その wave の完了を待ってから発行する）
 - **代償と補償**: meta が足した指摘は同一 wave の反証を受けられない。反証ゲートに該当する `[meta]` タグ付き指摘が出た場合に限り、**追加バッチ 1 体（上限 5 件）を直列で走らせる**（`## 9`）。meta が 0 件 / ゲート非該当なら wave は増えない

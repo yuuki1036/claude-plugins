@@ -11,7 +11,7 @@ publish は tool の実行中に走り、transcript を session id で確定で�
 範囲は **最後の `review-timing.sh start` の呼び出しから、その後の最後の publish の呼び出しまで**の
 assistant の本文。最後の publish を使うのは、fail-fast で落ちた publish を直して再実行した回で、定型を
 出してから通した publish を判定するため。目印は定型の `**指摘件数**: BLOCKER` の行（review は Step 7・
-self-review は Step 6 のテンプレート。両方にある）。tool_result の中のテンプレート（SKILL.md を Read した結果）・
+self-review は Step 6 のテンプレート。両方にある）。tool_result の中のテンプレート（SKILL.md・self-review の step-6.md を Read した結果）・
 コマンドの中の文字列・publish の後に出した定型は数えない。
 
 **呼び出しはコマンドの位置にあるものだけを数える**。heredoc の本文（テストや SKILL を直す python / cat）や

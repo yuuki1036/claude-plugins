@@ -17,7 +17,7 @@
 
 ## 2. 記録する回（Step 7）
 
-「すべて修正」「BLOCKER/CRITICAL のみ」で修正を終えたら、修正した指摘を記録する（コマンドは SKILL.md の Step 7）。`file` は repo のルート相対、`focus` は観点判定表のキー、`title` は指摘の要旨。
+「すべて修正」「BLOCKER/CRITICAL のみ」で修正を終えたら、修正した指摘を記録する（コマンドは self-review の Step 7。`skills/self-review/references/step-7.md`）。`file` は repo のルート相対、`focus` は観点判定表のキー、`title` は指摘の要旨。
 
 - 記録は作業ツリーに 1 ファイルで、中をブランチ別に持つ。同じブランチで記録し直すと、そのブランチの前回の分を置き換える
 - 「このまま」の回は記録しない。`--embed` の回は Step 7 自体を通らないので記録しない（feature-dev の G-V ループは、前回の対象を `--prior-findings` で、範囲を `--since` で渡して見直す / #313）
