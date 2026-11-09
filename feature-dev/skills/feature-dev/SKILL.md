@@ -23,21 +23,9 @@ allowed-tools:
 
 # Feature Development
 
-<!-- 正本依存（SSoT pin）。Phase 5.3 の宣言オラクルの契約は code-review の machine-layer.md が正本（プラグイン間依存禁止のため要約で持つ）。正本が変わったら Phase 5.3 を確認して pin を打ち直す -->
-<!-- SSOT: code-review/references/machine-layer.md#5 @737549d4 -->
 <!-- SSOT: feature-dev/references/grill-protocol.md @f90e4324 -->
-<!-- 正本依存（SSoT pin）。Phase 6.9 の推奨の決め方は code-review の review-guide-format.md「回し直すかの判断」の `あり` の条件 3 を要約したもの（条件 1・2 は check / diff の出力で満たされる）。正本が変わったら Phase 6.9 を確認して pin を打ち直す -->
-<!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @bc251143 -->
-<!-- 正本依存（SSoT pin）。Phase 7 の 4. の変異テストの分岐（承認の取り方・回し方・結果の 4 区分・前後の git status の突き合わせ）は code-review の review-guide-format.md「変異テストの提案」を要約したもの。正本が変わったら Phase 7 の 4. を確認して pin を打ち直す -->
-<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @3c9ee376 -->
-<!-- 正本依存（SSoT pin）。Phase 6 Step 4 の「範囲の行が無ければ旧版」と Phase 6.9 の `--since` / `--prior-findings` の渡し方は、code-review の self-review SKILL.md「6. レポート出力」の範囲の行と prior-fixes-guide.md「4.」の形を要約したもの。正本が変わったら Step 4 と 6.9 を確認して pin を打ち直す -->
-<!-- SSOT: code-review/skills/self-review/SKILL.md#6 @22a4cba8 -->
-<!-- SSOT: code-review/references/prior-fixes-guide.md#4 @f5c76a67 -->
-<!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review SKILL.md「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
-<!-- SSOT: code-review/skills/self-review/SKILL.md#1 @77013dba -->
-<!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
 
-> **この SKILL.md は Read 1 回では読み切れない**（途中で切れ、続きの offset が注記される）。Read の `offset` / `limit` で分けて Phase 7 の末尾まで読んでから Phase 1 に入る（GitHub issue #350）。
+> **各 phase の手順は phase ごとのファイルにある**（`skills/feature-dev/references/phase-<番号>.md`）。phase の見出しに来たら入口の条件を見て、skip しないなら Read の行のファイルを最初に読む。読んだら手順を終え、ファイル末尾の「次は」の phase の見出しへ SKILL.md に戻る（本文の分岐が戻り先を書いている回はそちらに従う。Fix Mode は入口で戻り先が違い、phase-5.md の Fix Mode の 4. が持つ）。見出しだけを見て、本文を読まずに進めない（続きを読まずに進めた回は Phase 6.9 と 7 を飛ばした / GitHub issue #350・#426）。phase ファイルの中の `${CLAUDE_PLUGIN_ROOT}` は、この SKILL.md を Read したパスのプラグインのルートに読み替える
 
 You are helping a developer implement a new feature. Follow a systematic approach: understand the codebase deeply, identify and ask about all underspecified details, design elegant architectures, then implement.
 
@@ -63,7 +51,7 @@ You are helping a developer implement a new feature. Follow a systematic approac
 
   > 🔀 **モデル切り替えポイント**: 実装を別のモデルで行う場合は、**この返信の前に**アプリのモデル選択で切り替えてください。切り替え先には上の方針だけが引き継がれるので、足りない判断があれば返信に書き足してください。このまま進める場合もそのまま返信で構いません。
 
-返信で 8 phase を求められたら Phase 1 から回す。そうでなければ、実装に入る前に TodoWrite へ「実装 / Phase 5.3 / 5.5 / 6 / 6.7 / 6.9 / 7」を積む（足切りの回は phase の見出しを順に追わないので、こうして残りの検証を落とさない）。実装中に承認した方針を変えるときは、Phase 5 Normal Mode の 4. に従って止まる。
+返信で 8 phase を求められたら Phase 1 から回す。そうでなければ、実装に入る前に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-5.md` を Read し（Normal Mode の 4. と、Phase 6 から戻る Fix Mode の制約はそこにある）、TodoWrite へ「実装（phase-5.md）/ Phase 5.3 / 5.5 / 6 / 6.7 / 6.9 / 7」を積む（足切りの回は phase の見出しを順に追わないので、こうして残りの検証を落とさない）。実装中に承認した方針を変えるときは、Phase 5 Normal Mode の 4. に従って止まる。
 
 ## Core Principles
 
@@ -94,698 +82,120 @@ Of the 10 principles in root CLAUDE.md「コスト×精度パイプライン設�
 
 ## Phase 1: Discovery
 
-**Goal**: Understand what needs to be built
-
-Initial request: 呼び出し元から渡された引数（`/feature-dev` 経由なら command が展開して渡す）。引数が空なら Step 2 でユーザーに尋ねる。以降この節では **初期リクエスト** と呼ぶ。
-
-**Actions**:
-1. Create todo list with all phases
-2. If feature unclear, ask user for:
-   - What problem are they solving?
-   - What should the feature do?
-   - Any constraints or requirements?
-3. Summarize understanding and confirm with user
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-1.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 1.3: BDD Spec Creation (bdd-spec plugin handoff)
 
-**Goal**: bdd-spec が有効なら BDD `spec.md` を生成し、Phase 4 architect が読む真実にする（曖昧な Issue から実装が暴走する失敗を構造的に潰す）。未インストール・無効時は何もしない（後方互換）。
-
-有効判定は同梱スクリプトで行う（user / project / local の settings を優先順位どおりに読み、`true` の明示値だけを有効とする。出力は `1` / `0`。以下の Phase 4.5 / 6 と worktree-flow も同じ）:
-
-```bash
-echo "BDD_SPEC_AVAILABLE=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" bdd-spec)"
-```
-
-- `BDD_SPEC_AVAILABLE=0` → **skip して Phase 1.5 へ**（既存の Issue 解釈フローがそのまま動く）
-- 初期リクエストに `spec=<path>` があれば生成せずそれを `BDD_SPEC_PATH` に採用し Phase 4 へ渡す
-- それ以外で `BDD_SPEC_AVAILABLE=1` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.3」を読み、その手順（自動判定 → 該当時だけ `bdd-spec:create-spec` 非対話呼び出し → fallback）に従う。**利用者には聞かない**（BDD を使う repo・変更かをここで判定し、非該当なら 1 行報告して skip する。セッションを止めない）
-
-**Output**: `BDD_SPEC_PATH=<path>` または `""`（未生成）。Phase 4 architect の "BDD Spec Injection" と Phase 1.7 の Issue context completeness 判定に使う。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-1.3.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 1.4: BDD Spec Evaluation (bdd-spec:evaluate-spec handoff)
 
-**Goal**: Phase 1.3 で spec.md を生成した場合、architect の入力にする前に品質ゲート（網羅性・トレーサビリティ）を通す。穴のある spec を真実として渡すと穴が実装に伝播するため、安いオラクルを実装前に挟む。
+入口の条件: `BDD_SPEC_PATH` が空（未生成 / 未インストール / skip）なら Read せず Phase 1.5 へ。
 
-- `BDD_SPEC_PATH` が空（未生成 / 未インストール / skip） → **Phase 1.4 を skip して Phase 1.5 へ**
-- `BDD_SPEC_PATH` がセット済み → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.4」を読み、その手順（`bdd-spec:evaluate-spec --embed` 呼び出し → 🔴 critical があれば spec を自分で直して 1 回だけ再評価し、残っても止めずに Phase 7 のサマリへ回す。🟡 以下は情報提示のみ → fallback）。**利用者には聞かない**に従う
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-1.4.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 1.5: Issue Context Detection (issue-workflow handoff)
 
-**Goal**: Detect upfront Issue context handed off by issue-workflow and skip redundant discovery.
-
-**Trigger conditions** (match any in the 初期リクエスト or recent conversation context):
-
-- `Issue ファイル:` followed by `.claude/linear/*/issues/*.md` or `.claude/indie/*/issues/*.md` path
-- A frontmatter block with `feature_dev_plan:` already populated
-- `design=<path>` in the 初期リクエスト (a design doc under `.claude/designs/`, typically copied from its 実装ブリッジ)
-- Sections labeled "Phase 2.5 関連 Knowledge" / "Phase 5.4" / "Phase 5.5" / "親 Issue サマリー"
-
-**Actions when detected**:
-
-1. Notify the user: "Linear/Indie からの upfront 引き継ぎを検出しました。Discovery と Codebase Exploration（Phase 2 探索）はスキップしますが、Phase 1.6 (Vault Recall) → Phase 1.7 (Triage) は通過し、引き継ぎ context を起点に Phase 3 へ進みます。"（引き継ぎ context が揃っているケースこそ横断知見が効くため、detected 経路でも Phase 1.6 は skip しない）
-2. Read the Issue file to extract: title, summary, parent issue summary, related knowledge, existing `feature_dev_plan:`.
-3. **If `feature_dev_plan:` already exists**: Treat it as a baseline. Propose deltas rather than redesigning from scratch. Confirm with user whether to reuse or revise.
-   **If `design=<path>` was passed**: Read the design doc. Its adopted approach, 決定事項 and 実装ブリッジ are the baseline in the same way (Phase 4 runs one `delta-proposal` architect against it). If its `status` is not `approved` (draft / superseded), say so and ask whether to proceed. Phase 3 then asks **only the premise checks** (grill-protocol.md「採用する決定の前提を問う」) — do not reopen what the design doc decided, but do not treat it as an unconditional contract either: a broken premise or a conflict with `REQUIRED_DOCS` / ADRs is still asked (GitHub issue #233). Set `DESIGN_DOC_PATH=<path>` so Phase 4.5 skips exporting a new doc and Phase 7 points the as-built update (`phase: target → current`) at this one.
-4. Signal Phase 1.7 that **Issue context is complete** (Phase 1.7 will likely assign 0 explorers, effectively skipping Phase 2). If the Issue context is sparse or contradicts the user's request, signal `partial` so Phase 1.7 can still launch 1-2 explorers for validation.
-5. Pass the Issue context verbatim into Phase 4 architect prompts (the architect's "Issue Context Injection" section will consume it).
-
-**Actions when NOT detected**: Proceed normally to Phase 1.6.
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-1.5.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 1.6: Vault Recall (knowledge vault retrieval handoff)
 
-**Goal**: 過去プロジェクト横断の知見（落とし穴・設計判断・移行ノウハウ）を knowledge vault から recall し、Phase 4 architect に advisory 注入する。recall をモデルの文脈判断に委ねると省略されうるため、設計着手直前の必須ステップとして埋め込み「引き忘れ」を構造的に防ぐ。注入知見は advisory で、現コードベースのパターンと矛盾する場合は現コードベースを優先する。
-
-vault は feature-dev 外の外部資源。取得経路を上から順に確かめ、使えるものを 1 つ使う。どれも無ければ skip する（後方互換）:
-
-1. **MCP ツール `search_knowledge`**（server `knowledge-vault`。deferred なら ToolSearch で `select:mcp__knowledge-vault__search_knowledge` を読み込む）がこのセッションにある → `VAULT_VIA=mcp`
-2. 無ければ `kvault` CLI と vault dir を確かめる:
-
-```bash
-# vault の場所は KNOWLEDGE_VAULT_ROOT で指定（個人環境パスをハードコードしない）。未設定なら skip。
-if [ -n "$KNOWLEDGE_VAULT_ROOT" ] && command -v kvault >/dev/null 2>&1 && [ -d "$KNOWLEDGE_VAULT_ROOT" ]; then
-  VAULT_VIA=cli
-else
-  VAULT_VIA=none
-fi
-```
-
-- `VAULT_VIA=none` → **Phase 1.6 を skip して Phase 1.7 へ**。skip 理由を 1 行 notify（MCP ツール無し・CLI 未導入 / 未設定 / vault dir 不在）
-- `VAULT_VIA=mcp|cli` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 1.6」を読み、その手順（キーワード列クエリ構築 → recall → 関連ありの結果だけを advisory 注入。関連判定は vault 側が行うので判定し直さない）に従う
-
-**Output**: `VAULT_KNOWLEDGE=<関連知見の要約>` または `""`（未取得 / 関連なし / skip）。Phase 4 architect の "Vault Knowledge Injection" に渡す。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-1.6.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 1.7: Triage（動的エージェント構成決定）
 
-**Goal**: Decide how many explorer / architect agents to launch in subsequent phases, with concrete focus assignments. Phase 6 reviewers are left to code-review's triage (`triage-guide.md` Section 6).
-
-**Why this phase exists**: Static "always 2-3 explorers + 3 reviewers" configuration wastes tokens on simple tasks and under-covers complex ones. Phase 1.7 inspects feature characteristics × `${CLAUDE_EFFORT}` and produces an agent configuration table that subsequent phases read.
-
-**Run in main context (do NOT use the Agent tool here).**
-
-### Step 1: Read the triage guide
-
-Read `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` and apply its 2-stage logic.
-
-### Step 2: Stage 1 — Type judgment
-
-Identify:
-- **Feature type**: bugfix / extension / new-feature / refactor / migration / cross-cutting (multiple allowed)
-- **Explorer necessity**: skip if Issue context provides a complete `feature_dev_plan:` AND the feature is isolated; otherwise required
-- **Architect focuses**: always include `minimal-changes`; add `clean-architecture` / `pragmatic-balance` / `migration-strategy` per the guide
-
-Consider these signals:
-- `package.json` major dependencies (React/Next.js → vercel-best-practices for architects)
-- CLAUDE.md presence
-- Issue context content (if Phase 1.5 detected one)
-
-### Step 3: Stage 2 — Count and focus
-
-Apply the count tables in `triage-guide.md` Section 4, capped by the effort upper bounds in Section 5.
-
-**Minimum guarantee** (across all effort levels):
-- architect ≥ 1
-- explorer may be 0 (when Issue context is complete)
-
-### Step 4: Output the configuration table
-
-Present the table in the format defined in `triage-guide.md` Section 7. Example:
-
-```
-## Phase 1.7 トリアージ結果
-
-### 特性
-- スコープ: medium
-- 種別: extension
-- リスク因子: [auth]
-- Issue context: partial
-- React/Next.js: yes
-
-### エージェント構成
-
-#### Phase 2 探索（explorer）
-| # | focus | 対象 | 指示 |
-| E1 | similar-features | src/auth/ | ... |
-
-#### Phase 4 設計（architect）
-| # | focus | 指示 |
-| A1 | minimal-changes | ... |
-```
-
-Subsequent phases consume this table directly.
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-1.7.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 1.8: プロジェクト宣言の必読 doc（fail-closed / explorer 0 体でも skip しない）
 
-**Goal**: プロジェクトが「タスク種別 → 必読 doc」を宣言していれば、該当する doc を**全部**読み、Phase 3 grill と Phase 4 architect の入力にする。一部の doc だけを選んで渡すと、読まなかった doc の規約（例: 警告は設計システムの `<Alert>` を使う）を設計が破り、人間レビューまで見つからない（GitHub issue #233）。Phase 2 は explorer 0 体で丸ごと skip されるので、ここは独立 phase に置く。
-
-1. 宣言を探す。`AGENTS.md` / `CLAUDE.md` をリポジトリ直下と、変更対象ディレクトリから直下までの各階層で探し、「必読」「must read」「required reading」や、タスク種別と doc パスを対応させた表・箇条書きを拾う:
-
-   ```bash
-   for f in AGENTS.md CLAUDE.md .claude/CLAUDE.md; do [ -f "$f" ] && grep -n -iE '必読|must read|required reading|読むこと' "$f"; done
-   ```
-
-   変更対象ディレクトリ配下の `AGENTS.md` / `CLAUDE.md` も同じ grep に掛ける（Phase 1 で分かっている範囲だけでよい）
-2. ヒットした節を Read し、今回のタスクに**当てはまる行をすべて**選ぶ。1 つのタスクが複数の種別に当たる（UI 実装かつエラー表示など）ときは全行を採る。当てはまるか迷う行は採る側に倒す
-3. 選んだ行が指す doc を全部 Read する。節の指定があればその節を読む
-
-**Output**: `REQUIRED_DOCS=<doc パス / 節 / 当てはまった種別の一覧>` または `""`（宣言なし）。宣言が無ければ「必読 doc の宣言なし」と 1 行 notify して Phase 2 へ。宣言はあるが当てはまる行が無い場合も、その旨と見た種別を 1 行残す（黙って空にしない）。
-
-`REQUIRED_DOCS` は Phase 3（grill の分岐）と Phase 4（architect 注入）に**全件**渡す。要約して一部だけ渡さない。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-1.8.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 2: Codebase Exploration
 
-**Goal**: Understand relevant existing code and patterns at both high and low levels
+入口の条件: Phase 1.7 の構成表で explorer が 0 体なら Read せず Phase 3 へ。
 
-**Skip condition**: Phase 1.7 assigned 0 explorers. Skip directly to Phase 3.
-
-**Actions**:
-1. Launch the N code-explorer agents specified by the Phase 1.7 configuration table in parallel (single message, multiple Agent tool calls). Agents always start in the background (CC 2.1.302+) and each result arrives later as a completion notification — **do not move on until every explorer's result has arrived**. Each agent receives:
-   - Its assigned `focus` (similar-features / architecture-mapping / shared-modules / history-context / dependency-trace / layer-mapping)
-   - Its target scope (specific directory / module / abstraction layer)
-   - A request to return 5-10 key files to read
-
-   **Focus templates**:
-   - `similar-features`: "Find features similar to [feature] and trace through their implementation"
-   - `architecture-mapping`: "Map the architecture and abstractions for [feature area], tracing through the code"
-   - `shared-modules`: "Identify shared modules (`utils/`, `lib/`, `helpers/`) that this feature will touch and document their consumers"
-   - `history-context`: "Use git log to understand how [area] evolved and surface prior decisions / abandoned approaches"
-   - `dependency-trace`: "Trace upstream/downstream dependencies of [target module] across the codebase"
-   - `layer-mapping`: "Map the UI / API / data layer separately for [feature area]"
-
-2. Once the agents return, read all files identified by agents to build deep understanding
-3. Present a summary of findings and patterns discovered
-
-**Partial failure tolerance**: If individual explorers fail, continue with the remaining results. Record failed explorers in a `missing_coverage` list to surface in Phase 7.
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-2.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 3: Clarifying Questions (Grill)
 
-**Goal**: Fill in gaps and resolve all ambiguities before designing — by **grilling**, not by dumping a flat question list
-
-**CRITICAL**: This is one of the most important phases. DO NOT SKIP.
-
-**Why grill instead of a list**: A flat list forces the user to answer everything at once — including questions the codebase already answers — and hides the dependency order between decisions. The grill protocol resolves the design tree one branch at a time, self-answering facts the code can answer and recommending an answer for the rest. Full protocol: `${CLAUDE_PLUGIN_ROOT}/references/grill-protocol.md`.
-
-### Step 1: Enumerate candidate ambiguities
-
-Review the Phase 2 codebase findings + original request. List every underspecified aspect: edge cases, error handling, integration points, scope boundaries, design preferences, backward compatibility, performance needs.
-
-Always add these **premise checks** as candidates too (full rules: grill-protocol.md「採用する決定の前提を問う」):
-
-- **設計システムとの対応**（UI を含むタスク）: 各 UI 要素が設計システム / `REQUIRED_DOCS` のどのコンポーネントに当たり、設計がそれに一致するか
-- **引き継いだ決定の前提**: Issue / spec / living spec の既存決定（決定番号つきのもの等）が置いた前提が、今回の実装コンテキスト（コンテナ・画面種別・呼び出し経路など）でまだ成り立つか
-- **標準規約との衝突**: 引き継いだ決定が `REQUIRED_DOCS` やプロジェクト規約とぶつからないか
-- **説明とコードの食い違い**: ユーザーの説明が Phase 2 の調査結果と食い違っていたら、該当箇所（file:line）を示してどちらが正しいか聞く
-- **既存 ADR との矛盾**: 採ろうとしている決定が `.claude/adr/` の ADR とぶつかるなら、ADR の id を挙げて明示し、従うか見直すかを聞く（黙って上書きしない）
-- **用語の別名**: bdd-spec の用語集 `features/all_spec.md`（`featuresDir` を変えていればその下）があれば読み、要求や決定に「別名禁止リスト」の語が使われていたら正規の語を示して指摘する（無ければ黙る）
-
-### Step 2: Self-resolve facts, not decisions (grill principle ①)
-
-Split each candidate into a **fact** (how things are now) or a **decision** (how things should be).
-
-- **Facts**: if Phase 2 explorer findings or a quick `Grep` / `Glob` answer it, **resolve it yourself, drop it from the list, and record it as a 確定した前提** to surface in Step 5. Do NOT ask the user something the code already answers.
-- **Decisions**: self-resolve only when an **explicit decision record** answers the question directly — the BDD spec (Phase 1.3), the decisions in the Issue context (Phase 1.5), an ADR, or a knowledge decision. A precedent in the code is not a decision record: use it as the basis for your recommendation in Step 4, and still ask.
-
-**Exception — conflicts are not self-resolvable**: when a premise check finds that an inherited decision's premise no longer holds, or that it conflicts with `REQUIRED_DOCS`, do not pick a side yourself. Keep it as a question for Step 4 (recommend the option that follows the standard convention unless the decision explicitly overrides it for a stated reason).
-
-### Step 3: Order by design-tree dependency
-
-Sort the remaining questions so that **upstream decisions come first** — those that constrain or eliminate downstream questions (e.g. "replace vs augment existing auth?" gates a dozen follow-ups).
-
-### Step 4: Grill one at a time (grill principles ②③)
-
-For each remaining question, in dependency order:
-
-1. Ask it with `AskUserQuestion` — **one question per call** — with a **recommended answer as the first option suffixed `(Recommended)`** plus a one-line rationale.
-2. After the answer, re-evaluate the remaining questions: a prior answer may resolve, reshape, or reveal a downstream branch. Collapse resolved ones; insert newly-revealed ones.
-3. If the user says "whatever you think is best", take the recommended option and continue. An answer that auto-continued on idle (`askUserQuestionTimeout`) is **not** that — keep the question open instead of settling it.
-4. If the user says they don't know or someone else decides, do not fill it with your recommendation. Keep it open and record when / where / by whom it gets settled; list it in Step 5 as an open decision the architects must not assume.
-
-Stop when no open branch remains. **Proportionality**: if only 1-2 questions remain and the direction is obvious, batch them into a single `AskUserQuestion` rather than grilling serially (avoid over-questioning).
-
-### Step 5: Confirm the design contract
-
-Summarize before Phase 4: (a) the **確定した前提** auto-resolved in Step 2, (b) every user decision from Step 4 (and any question left open, with when / where it gets settled), (c) each inherited decision with its premise-check result (成立 / 衝突を解消した結果). This is the implicit contract the Phase 4 architects must honor. An inherited decision enters the contract only after its premise check — it is not an unconditional contract just because the Issue states it.
-
-If `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" adr-keeper` prints `1`, also list as **ADR 候補** the user decisions in (b) that meet all three of adr-keeper's conditions (hard to reverse / puzzling without context / the result of a real trade-off). Zero is the normal case — list nothing then. Only list them; recording one is the user's call (`/adr new <title>`). Print nothing about ADRs when adr-keeper is not enabled.
-
-Then confirm it with **one** `AskUserQuestion` before launching the architects (they are opus agents, up to 3, and a misunderstanding baked in here propagates into every blueprint): question "この設計契約で Phase 4（設計）に進みますか？", options "進む (Recommended)" / "直す" (the user states what to change via the free-text option). On "直す", update the contract, show the changed lines, and continue — do not re-ask unless the correction itself opened a new decision (grill that one per Step 4).
-
-- **Skip the question** when (b) and (c) contain nothing the user decided or left open — a contract made only of auto-resolved facts has nothing for the user to confirm. Still show the summary.
-- An answer that auto-continued on idle (`askUserQuestionTimeout`) counts as "進む", but note in the Phase 7 summary that the contract was not explicitly confirmed.
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-3.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 4: Architecture Design
 
-**Goal**: Design implementation approaches with different trade-offs
-
-**Actions**:
-1. Launch the N code-architect agents specified by the Phase 1.7 configuration table in parallel (single message; wait for every architect's result, as in Phase 2). Each agent receives its assigned `focus`:
-   - `minimal-changes`: smallest change, maximum reuse of existing code
-   - `clean-architecture`: maintainability, elegant abstractions, long-term evolvability. Pass `Module design vocabulary: ${CLAUDE_PLUGIN_ROOT}/references/module-design.md` in its prompt (the agent Reads it; do not paste the body)
-   - `pragmatic-balance`: speed + quality tradeoff explicitly weighed
-   - `migration-strategy`: phased migration steps with rollback points (migration tasks only)
-   - `delta-proposal`: when Issue context provides existing `feature_dev_plan:` or `design=` passed a design doc — propose deltas only, do not redesign
-
-   **BDD spec injection**: Phase 1.3 で `BDD_SPEC_PATH` が設定された場合、各 architect の prompt に以下を追加する:
-   - `BDD spec path: <BDD_SPEC_PATH>` — architect は冒頭でこのファイルを Read し、Feature / Scenario / Examples / 同値分割表を **authoritative requirements** として扱う
-   - 設計は spec.md の AC ↔ Scenario マッピングを保つこと（架空の Scenario を増やさない、削らない）
-   - 詳細は `agents/code-architect.md` の "BDD Spec Injection" セクション
-
-   **Required docs injection**: Phase 1.8 で `REQUIRED_DOCS` が非空の場合、各 architect の prompt に `Required Docs:` ブロックとして**全件**（パス / 節 / 当てはまった種別）を列挙する。architect 自身に Read させる。一部だけ選んで渡さない。詳細は `agents/code-architect.md` の "Required Docs Injection" セクション
-
-   **Vault knowledge injection**: Phase 1.6 で `VAULT_KNOWLEDGE` が非空の場合、各 architect の prompt に以下を追加する:
-   - `Vault Knowledge:` ブロックとして関連知見（`path` / `title` / `excerpt`）を列挙する
-   - これは **別プロジェクト横断の参考知見 (advisory)** であり、BDD spec のような authoritative requirement ではない。現コードベースのパターンと矛盾する場合は **現コードベースを優先** する
-   - 関連する過去の落とし穴があれば設計の Critical Details に反映させ、採用した知見は出典 (`title`) を明記させる
-   - 詳細は `agents/code-architect.md` の "Vault Knowledge Injection" セクション
-
-2. Review all approaches and form your opinion on which fits best for this specific task
-3. Present to user: brief summary of each approach, trade-offs comparison (include **depth / locality / seam placement** per approach — the axes in `${CLAUDE_PLUGIN_ROOT}/references/module-design.md`), **your recommendation with reasoning**, concrete implementation differences
-4. **Ask user which approach they prefer**
-
-**Partial failure tolerance**: If individual architects fail and at least 1 succeeded, continue with the successful results. If all architects failed, fall back to a single architect invocation with `minimal-changes` focus before surfacing the issue.
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-4.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 4.5: Design Doc Export (design-doc plugin handoff)
 
-**Goal**: Phase 4 の architect 比較とユーザー採用決定（プロンプト内で揮発する）を design doc として `.claude/designs/` に永続化する。後続の同領域開発の参照元・実装後の as-built 記録（`phase: target → current`）として再利用できる。design-doc 未インストール・無効時は何もしない（後方互換）。
+入口の条件: `design=` で design doc を受け取った回（`DESIGN_DOC_PATH` が既にある）なら Read せず Phase 4.8 へ（同じ設計の doc を二重に作らない）。
 
-```bash
-echo "DESIGN_DOC=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" design-doc)"
-```
-
-- `design=` で design doc を受け取った回（`DESIGN_DOC_PATH` が既にある）→ 本 Phase を skip する（同じ設計の doc を二重に作らない）
-- `DESIGN_DOC=0` → 本 Phase を skip して Phase 5 へ
-- `DESIGN_DOC=1` → `${CLAUDE_PLUGIN_ROOT}/references/plugin-handoffs.md` の「Phase 4.5」を読み、その手順（AskUserQuestion → `design-doc:design-doc` の export 非対話呼び出し → fallback）に従う
-
-**Output**: `DESIGN_DOC_PATH=<path>`（生成時）。Phase 7 サマリに含め、実装完了後の `phase: target → current` 更新案内に使う。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-4.5.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 4.8: 実装環境の分離（worktree・opt-in）
 
-**Goal**: 並列開発・メインツリーを汚さない実装のために、実装フェーズ以降を worktree 内で回す。設計（Phase 1〜4）は読み取りのみなので、書き込みが始まる Phase 5 の手前で環境を確定させる。
-
-**起動条件**: ユーザーが「worktree」を明示した（引数・会話）か、プロジェクト指示（CLAUDE.md / memory）が worktree 作業を指示している場合のみ。**自分の判断では作らない**（`EnterWorktree` の利用条件）。
-
-```bash
-# メインの clone か linked worktree か
-[ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ] && POS=main || POS=worktree
-```
-
-| 状態 | アクション |
-|---|---|
-| `main` + 明示要求なし | **Phase 4.8 を skip** して Phase 5 へ（従来の挙動・何も報告しない） |
-| `main` + 明示要求あり | `${CLAUDE_PLUGIN_ROOT}/references/worktree-flow.md` を Read し、Step 1（作成・移動）から従う |
-| `worktree`（すでに worktree 内） | 同 doc を Read し、Step 2（環境セットアップ）から従う |
-
-**Output**: worktree 内で続行する場合、doc の Step 3「引き継ぎ規約」が Phase 5.3 / 5.5 / 6 / 7 の挙動に効く（特に Phase 7 の publish 先）。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-4.8.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 5: Implementation
 
-**Goal**: Build the feature (Normal Mode) or apply targeted fixes (Fix Mode)
-
-### Mode Detection
-
-Phase 5 has two modes — check the invocation context:
-
-- **Normal Mode**: Triggered by Phase 4 completion. Implements the feature from scratch. 適用範囲で足切りした回は停止点の返信で入る（承認は停止点で済んでいるので Actions の 1. は通らない。4. は通る）。終えたら Phase 5.3 へ進む
-- **Fix Mode**: Triggered by Phase 6 Generator-Verifier loop (Step 3). Applies only the specific reviewer-flagged critical issues. **DO NOT START WITHOUT USER APPROVAL** is waived for Fix Mode (the loop is automatic; reaching the user-decision step happens at Phase 6 Step 4).
-
-### Normal Mode
-
-**DO NOT START WITHOUT USER APPROVAL**
-
-**Actions**:
-1. Wait for explicit user approval. 承認を求めるメッセージは次の 2 つで構成する（設計と実装でメインモデルを分ける運用の切り替え点。Phase 5 に入ると承認待ちで止まる箇所はここしか無い）:
-   - **設計の引き継ぎ要約**: 採用した設計案とその理由、Phase 3 Step 5 の設計契約（確定した前提 + ユーザー決定）、実装で触るファイルと build sequence を**本文として**書き出す。モデルを切り替えると、切り替え先は切り替え前のモデルの思考過程を読めない（API 仕様上、読める向きが決まっている）ため、実装に必要な判断は可視テキストに残っていないと失われる。Phase 4.5 で design doc を書き出した場合もそのパスを添えたうえで要約を省略しない
-   - 末尾に次の案内を**必ずそのまま**添える:
-
-   設計から実装へは**同じセッションで続けるのが既定**（実装は設計の推論を一次ソースのまま使える）。`/compact` は最後の手段 — 要約で決定が平らになり、新しい文脈がその決定について自信を持って誤る。
-
-   > 🔀 **モデル切り替えポイント**: 設計（Phase 1〜4.8）と実装で別のモデルを使う場合は、**この承認に返信する前に**アプリのモデル選択で実装用モデルへ切り替えてください。切り替えた後の返信から、そのモデルで Phase 5 以降を実行します。切り替え先には上の要約（と design doc）だけが引き継がれるので、足りない判断があれば承認と一緒に書き足してください。
-2. Read all relevant files identified in previous phases
-3. Implement following chosen architecture. If the project has a test setup (a test runner and existing tests), Read `${CLAUDE_PLUGIN_ROOT}/references/testing-discipline.md` first and put tests at the **Test Seams** from the chosen blueprint
-4. **承認した方針を実装中に変えるときは、書き換える前に止まる**（GitHub issue #319。承認は 1. の承認か、足切りした回の停止点の承認）: 承認した手段が効かないと分かった・別の手段に替える・承認した範囲（build sequence / 停止点の変更方針に挙げたファイルと挙動）の外まで広げる、のどれかに当たったら、承認した案が使えない理由（観測したもの: エラー・ドキュメント・コードの行）と、新しい案・触るファイルを示してターンを終え、返信を待ってから書き換える（通常のメッセージで止める。モデル切り替えの案内は繰り返さない）。承認は示した方針に対するもので、別の案には及ばない。実例では、足切りの停止点で承認された `dynamicParams = false` が全ルートの動的レンダリングで効かないと分かり、別の案（`notFound()` とデータ取得関数の戻り値）へ確かめずに切り替えた
-5. Follow codebase conventions strictly
-6. Write clean, well-documented code
-7. Update todos as you progress
-8. **Phase 5.3 以降をまだ Read していなければ、実装を終えたここで読む**（Read の `offset` / `limit` で Phase 7 の末尾まで）。Phase 6 の self-review は Phase 6 の手順（`--embed`・`review-snapshot.sh save`・G-V ループ）を通して呼び、Phase 6.7・6.9・7（読み合わせ）を飛ばさない（6.7 を self-review の Step 7 で代わりに済ませない。GitHub issue #350）
-
-### Fix Mode
-
-**Triggered by**: Phase 6 Step 3 G-V loop with the `target` rows printed by `gv-loop.py review` (`BLOCKER` any-confidence OR `CRITICAL && confidence ≥ 90` from `code-review:self-review` output; from the 2nd round on, only those inside the loop's delta).
-
-**Constraints**:
-- **Scope is strictly limited** to the `target` rows' file:line locations
-- 対象外の指摘（MAJOR / MINOR・CRITICAL < 90・`deferred` の行）は、同じファイルの近くにあっても直さない。Step 4 で利用者に出る。実測では各回で対象外まで直し（34 件・17 件）、その修正が次のレビューの新しい指摘になってループが収束しなかった（GitHub issue #310）。範囲外の変更は次の `gv-loop.py review` が hunk 単位で数え、Step 4 に場所を並べる
-- The architect design chosen in Phase 4 must be preserved
-- No scope expansion, no refactoring of unrelated code
-
-**Actions**:
-1. Read each flagged file at the indicated line range
-2. Apply the reviewer's suggested fix (or a minimal equivalent that resolves the issue)
-3. If the fix requires design-level changes, escalate by launching `code-architect` with focus `delta-proposal` (wait for its result before applying) and **consume 1 loop iteration**. Otherwise apply directly with Edit. 適用範囲で足切りした回は architect を起動しない（基準にする設計が無い）。停止点で承認した方針と別の手段が要るなら、Normal Mode の 4. と同じく止まって確かめ直す（ループの状態はそのまま残し、返信の後に修正して Phase 6 Step 3 へ戻る）
-4. Return to Phase 6 Step 3 (do NOT re-run Phase 5.5 unless the fix is runtime-sensitive and effort ≥ `medium`). ループの状態は書かない（次の `gv-loop.py review` が記録する）
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-5.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 5.3: 静的オラクルゲート（fail-closed / 決定的検証）
 
-**Goal**: runtime smoke test（Phase 5.5）と LLM レビュー（Phase 6 = 多体 agent）に進む**手前**で、型チェック・lint・テストという**決定的オラクル**を変更範囲に絞って走らせ、機械的に落とせる欠陥をここで潰す。
-
-**Why this phase exists**: Phase 5.5 は *runtime* smoke test、Phase 6 は *LLM* レビューで、型/テストを exit code で判定する決定的ゲートがパイプラインに無かった。型エラー・テスト赤はサーバ起動（5.5）や multi-agent レビュー（6）に投げるより先に、最も安いオラクルで落とすのが Clearwing 原則 8（外部オラクル + fail-closed）。ルート CLAUDE.md「コスト×精度パイプライン設計指針」参照。最安オラクルを先頭に置くため Phase 5.5 より前に配置し、Phase 5.5 が skip される静的変更でも必ず通す。
-
-### Step 1: オラクル検出（無ければ graceful skip）
-
-プロジェクトが `.claude/review-oracles.sh` でオラクルを宣言していれば、**それだけを使い、下の推測はしない**。何を安いオラクルとするかはプロジェクトの判断で、推測より宣言を優先する（契約の正本は code-review の `machine-layer.md` `## 5`: exit 0 = 緑 / 1 = 検出あり / 2 = 判定不能。実行は数分以内）。Phase 6 の self-review は `--embed` で機械層を skip するので、宣言オラクルが feature-dev の中で走るのはここだけ。
-
-```bash
-test -f "$(git rev-parse --show-toplevel 2>/dev/null)/.claude/review-oracles.sh" && echo "oracle=declared"
-```
-
-宣言が無いときだけ、次の推測で検出する:
-
-```bash
-git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-changed-files.txt
-ORACLE_TC=""; ORACLE_LINT=""; ORACLE_TEST=""
-if [ -f package.json ]; then
-  grep -q '"typecheck"' package.json && ORACLE_TC="npm run typecheck"
-  [ -z "$ORACLE_TC" ] && grep -q '"tsc"' package.json && ORACLE_TC="npm run tsc"
-  grep -q '"lint"' package.json && ORACLE_LINT="npm run lint"
-  grep -q '"test"' package.json && ORACLE_TEST="npm test"
-  # npm init 既定のプレースホルダ（"test": "echo ... exit 1"）は実テストではないので除外（恒常赤の誤爆防止）
-  grep -Eq '"test"[[:space:]]*:[[:space:]]*"echo' package.json && ORACLE_TEST=""
-fi
-# 他エコシステムのフォールバック（存在するもののみ採用）
-[ -z "$ORACLE_TC" ] && [ -f tsconfig.json ] && command -v npx >/dev/null && ORACLE_TC="npx tsc --noEmit"
-[ -z "$ORACLE_TEST" ] && [ -f Cargo.toml ] && ORACLE_TEST="cargo test"
-[ -z "$ORACLE_TEST" ] && [ -f go.mod ] && ORACLE_TEST="go test ./..."
-[ -z "$ORACLE_TC" ] && [ -f pyproject.toml ] && command -v mypy >/dev/null && ORACLE_TC="mypy ."
-```
-
-### Step 2: 実行（変更範囲に絞る。全ビルド/全テストは重いので避ける）
-
-- **宣言オラクル**は範囲を絞らず、repo ルートから 1 回実行する。**Bash の `timeout` に 600000 を指定する**（既定の 120 秒では、この repo の宣言でも実測 130 秒以上かかって打ち切られる）。exit code は出力に出す（代入で終わると Bash の終了ステータスが 0 に潰れ、Step 3 が判定できない）:
-  ```bash
-  ( cd "$(git rev-parse --show-toplevel)" && bash .claude/review-oracles.sh ); echo "oracle_exit=$?"
-  ```
-- 以下は推測で検出したときの出し分け
-- 型チェック・lint は常時実行（安い）。テストは effort に応じて出し分ける（`triage-guide.md` の effort 予算に接続）:
-  - `low` / `medium`: 型チェック（+ lint）のみ。テストは Phase 5.5 と Phase 6 に委ねる
-  - `high` 以上: 型チェック + lint + テスト。テストは可能なら**変更ファイルに関連するもののみ**（例: jest なら `npx jest --findRelatedTests $(cat /tmp/feature-dev-changed-files.txt)`、他は最小スコープ）
-- 各コマンドの exit code を記録する。
-
-### Step 3: 判定（fail-closed）
-
-- **全て緑（exit 0）**: Phase 5.5 へ進む。この結果は Phase 6 の focus 判定でも「静的検証済み」として扱ってよい。
-- **いずれか赤（exit≠0。下の exit 2 と打ち切りを除く）**: Phase 5.5 / Phase 6 へ**進まず**、エラー出力を Phase 5 Fix Mode に渡して決定的に修正 → 本ゲートを再実行。
-- **宣言オラクルが exit 2（判定不能）/ 126・127（実行不能）/ Bash の timeout で打ち切り**: 緑として扱わない。前提の欠落（依存ライブラリが無い等）はコードの修正では直らないので Fix Mode には渡さず、出力を添えて `AskUserQuestion` で「前提を整えて再実行 / 承知の上で Phase 5.5 へ進む」を委ねる。進んだ場合は Phase 7 summary に「静的オラクル判定不能」（打ち切りなら「静的オラクル打ち切り」）と明記する。
-- **オラクル不在（検出ゼロ）**: gate できないので Phase 5.5 へ進むが、Phase 7 summary に「静的オラクル無し（型/テスト未検証）」と明記する（fail-open は「検証手段が無い」ときだけ許容。曖昧・実行エラー時は赤扱いで保留に倒す）。
-
-**暴走ガード**: 本ゲート ↔ Fix Mode の往復は**最大 2 回**まで。2 回修正しても赤が残る場合はループを止め、`AskUserQuestion` で「手動修正して再開 / 承知の上で Phase 5.5 へ進む / abandon」をユーザーに委ねる（同一エラーの無限往復を防ぐ）。`low` effort では本ゲート自体を skip 可（速度優先。ただし skip した旨は summary に残す）。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-5.3.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 5.5: Runtime Smoke Test と動作確認
 
-**Goal**: 静的チェック（tsc / lint / build）で取れない runtime 初期化のバグと、画面の挙動の食い違いを、Quality Review の前に実機ブラウザで捕まえる。UI に影響する変更なら既定で動作確認を行い、行わなかった回は理由を Phase 7 に残す。
-
-**Why this phase exists**: Past incidents (e.g. Prisma v7 adapter requirement) showed bugs that pass all static checks but fail on first request — proxy lazy-init, env var loading, middleware misconfiguration, DB client initialization. Catching these before Phase 6 prevents "review passes but deploy blocks" loops. 動作確認は以前は既定 skip で聞いていたため、画面を触る変更でもほとんど走らなかった（GitHub issue #306）。
-
-### Step 0-1: Self-lock guard と runtime-sensitive 検出
-
-詳細な bash は `${CLAUDE_PLUGIN_ROOT}/references/smoke-test.md` にある。本文では判定結果だけ使う:
-
-1. **Self-lock guard**（将来 PostToolUse hook で自動トリガーする構成に備えた TTL ベースの自己再帰防止）を評価する。lock が active なら `SKIP_PHASE_5_5=1` として Step 2〜4 を skip し **Phase 6** へ進む（command 経由の手動実行では通常 active にならない）。
-2. **Deterministic detection**: 作業ツリーの diff（未追跡の新規ファイルの名前と中身を含む。Phase 5 は `git add` しない）を references の pattern（DB/ORM 初期化・環境変数 wiring・middleware/proxy/lazy-init・新規 route）と照合し、1 つでも当たれば **REQUIRED**、無ければ **OPTIONAL** と判定する。当たった pattern を保持し、Step 3 の `--require` に渡す。
-
-### Step 2: 実行するかの判定（聞かない）
-
-実行するかは利用者に聞かない。UI に影響するかは `dev-workflow:ui-verify` が判定する（ここに複製しない）。dev-workflow が有効かだけを見る:
-
-```bash
-echo "DEV_WORKFLOW=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" dev-workflow)"
-```
-
-- `DEV_WORKFLOW=1` → REQUIRED でも OPTIONAL でも Step 3 で ui-verify を呼ぶ（UI に影響せず、OPTIONAL で smoke の target も無い回は、ui-verify が `skipped` と理由を返す）
-- `DEV_WORKFLOW=0` → Step 3 の 3.（手動手順）へ
-
-### Step 3: Execute via dev-workflow:ui-verify
-
-1. smoke の target を決める: architect の `Runtime Smoke Test Targets`（Phase 4）を使い、無ければ Step 1 で検出した追加・変更された route を使う。ui-verify には GET の target の path だけを渡す。`none (static-only change)` なら target を渡さない（画面を確かめるかは ui-verify が決める）
-2. `DEV_WORKFLOW=1` なら `Skill` tool で `dev-workflow:ui-verify` を `verify --caller=feature-dev` で呼ぶ。付ける引数:
-   - `--targets=<path を , で連結>`（target があるときは REQUIRED でも OPTIONAL でも必ず渡す。ui-verify は `--targets` があれば、UI に影響しないと判定した回も早期終了せずに開く）
-   - `--require=<Step 1 で当たった pattern>`（REQUIRED のときだけ。合格基準は **console error 0・network 4xx/5xx 0**）
-   - `--screenshot=need`（Issue・依頼が証跡やスクショの添付を求めるときだけ。省くと ui-verify が依頼・Issue から決める）
-
-   ui-verify 内の確認（dev server の起動許可・ケース表・既存ブラウザの停止）は ui-verify の手順のまま通す（`--caller` は確認を省かない）。応答の最後に出る `UI_VERIFY_*` の 5 行（`UI_VERIFY_RESULT=` / `UI_VERIFY_REASON=` / `UI_VERIFY_BROWSER=` / `UI_VERIFY_RECORD=` / `UI_VERIFY_UNCOVERED=`）を Step 4 で使う
-3. **手動手順**（`DEV_WORKFLOW=0` / 呼び出しが失敗した / `UI_VERIFY_RESULT=` の行が無い（`--caller` を知らない旧版の dev-workflow。ui-verify のサマリから pass / fail を読めればそれを使う）/ `UI_VERIFY_RESULT=blocked` かつ `UI_VERIFY_BROWSER=none`。`unselected` は入れない）:
-   - 手動確認を頼む回: `UI_VERIFY_RESULT=blocked` かつ `UI_VERIFY_BROWSER=none`（使える基盤が無かった）の回は、画面に影響する変更として頼む（ui-verify が判定済みなので判定し直さない）。それ以外は、REQUIRED の回か、diff（未追跡の新規ファイルを含む）に画面のファイルがある回。dev server の起動コマンドと target の URL を示し、手動で確かめて結果を返すよう頼む。hard fail しない。返信が無ければ "manual check pending" として記録する
-   - 頼まない回: 実行せず、理由（dev-workflow が無効・UI 変更なし など）を Phase 7 に残す
-
-   画面のファイルは、ui-verify の事前判定が画面の変更と数えるファイル: UI の拡張子（`.tsx` / `.vue` / `.css` など）に加え、`components/` `pages/` `app/` `routes/` `views/` `layouts/` `hooks/` `composables/` `store(s)/` 配下の `.ts` / `.js` / `.mts` / `.mjs`。Phase 7 の申し送りも同じ定義で見る
-
-### Step 4: Triage Findings
-
-`UI_VERIFY_RESULT=` の値で分岐する:
-
-- `pass` → Phase 6 へ（`UI_VERIFY_UNCOVERED=` が `none` 以外なら Phase 7 に残す）
-- `fail` → fail したケース（`UI_VERIFY_REASON=`）を示し、利用者が決めるまで Phase 6 へ進まない:
-  - Fix now → Phase 5 に戻る
-  - Acknowledge and proceed → known issue として記録して Phase 6 へ
-- `skipped` → `UI_VERIFY_REASON=` を Phase 7 に残して Phase 6 へ
-- `blocked` → `UI_VERIFY_REASON=` を Phase 7 に残して Phase 6 へ。`UI_VERIFY_BROWSER=none`（使える基盤が無かった）の回だけ、Step 3 の手動手順を通してから。`UI_VERIFY_BROWSER=unselected`（基盤を選ぶ前に止まった。dev server の起動を断られた等）の回は手動確認を頼み直さない
-- 手動手順の回（manual check pending / 返ってきた結果）と実行しなかった回 → その旨と理由を Phase 7 に残して Phase 6 へ（返ってきた結果が fail なら `fail` と同じ扱い）
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-5.5.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 6: Quality Review
 
-**Goal**: `code-review:self-review` skill に委譲して品質ゲートを通し、致命指摘を Generator-Verifier ループで自動 fix する
-
-**モデル切り替えの停止点（Step 0 の前）**: 実行中のメインモデルが**現行世代の Opus より前の世代**（例: Opus 4.8 で実装した）なら、Phase 6 に入る前にここで止まり、次のメッセージを出してターンを終える。ユーザーの返信を待ってから Step 0 へ進む。現行世代（またはそれより上位）で動いているなら止まらず、何も出さずに Step 0 へ進む:
-
-> 🔀 **モデル切り替えポイント**: これから Phase 6（self-review）に入ります。self-review 内の `opus` 指定の reviewer・検証役はメインモデルの世代に解決されるため、前の世代のままだと見落としが増えます。**現行世代の Opus へ切り替えてから**「続けて」と返信してください。このまま進める場合もそのまま返信で構いません。
-
-選択 UI（`AskUserQuestion`）ではなく通常メッセージで止めるのは、ユーザーがモデル選択を操作してから返信する必要があるため。
-
-**設計判断**: v2.0.0 で feature-dev 内蔵の `code-reviewer` agent を廃止し、`code-review` plugin の `self-review` skill に品質基準を一本化した。理由は (a) 同リポジトリ内で reviewer ロジックが二重化していた DRY 違反、(b) `code-review` の 2 軸スコアリング × 15 観点 × specialist × meta-reviewer 構造の方が遥かに堅牢だから。`code-review` plugin は `_requirements` で `required: false` 宣言（claude-plugins 規約で plugin 間の強制依存を避ける）だが、Phase 6 では fail-fast する。
-
-### Step 0: Existence Check (code-review plugin)
-
-Phase 6 は `code-review:self-review` skill に依存する。冒頭で plugin が有効かを確認し、未インストール・無効時は **fail-fast** する:
-
-```bash
-if [ "$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" code-review)" != 1 ]; then
-  echo "❌ Phase 6 は code-review plugin に依存します（未インストールか無効）。インストール・有効化:"
-  echo "   claude plugin install code-review@yuuki1036-claude-plugins"
-  echo ""
-  echo "Phase 5 までの成果物は維持されています。インストール後、Phase 6 から再開してください。"
-  exit 1
-fi
-```
-
-ユーザーに「インストールして再開 / Phase 6 を skip して Phase 7 へ / abandon」を `AskUserQuestion` で確認するのも可。SessionStart hook (`hooks/scripts/check-deps.sh`) が事前に warning を出しているはずだが、ここで再確認することでセッション中盤のインストールにも対応する。
-
-### Step 1: Capture the implementation diff
-
-```bash
-# Phase 5.5 でも同じファイルを使う前提
-git diff HEAD 2>/dev/null > /tmp/feature-dev-final-diff.txt
-git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-final-files.txt
-```
-
-**reviewer の観点はここで選ばない。** 観点の選定・体数・束ね方は self-review の Phase 0 triage に任せる（`${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` Section 6 / GitHub issue #283）。初回のレビューに `--focus` を付けると、反証レイヤーと skeptic が `scope` でスキップされ、triage が出す観点（`layer-responsibility` など）も範囲外になる。
-
-### Step 2: Invoke code-review:self-review
-
-`Skill` tool で `code-review:self-review` を呼ぶ。引数:
-
-- **`--focus` は付けない**（Step 1）。Phase 6 のどの呼び出しでも付けない — Step 3 の G-V ループの再レビューは `--since` / `--prior-findings` で範囲を delta に絞る（GitHub issue #313）
-- `--embed`（**必須**: feature-dev は自前で findings を集約するため、self-review 終端の修正方針確認 AskUserQuestion を skip させる）
-- `--spec=<BDD_SPEC_PATH>`（`BDD_SPEC_PATH` があるときだけ）: spec-compliance reviewer に BDD spec を読ませる。self-review の spec-compliance は session-context / Issue / knowledge しか読まないので、渡さないと Phase 1.3 の spec と実装の照合が起きない。`=` でつないで 1 語にする（`--spec` を知らない旧版の self-review がパスを base branch と読み違えないため）
-- base branch は省略（self-review が `git remote show origin | grep "HEAD branch"` で自動検出）
-- 未コミット diff は self-review 側で `git diff` / `git diff --cached` を併用して取得
-
-self-review 内部の動き（詳細は `code-review:self-review` skill の SKILL.md 参照）:
-
-- Phase 0 triage で reviewer 体数を `${CLAUDE_EFFORT}` 連動で決定（feature-dev の effort をそのまま継承）
-- Phase 3/4 で explorer + reviewer 並列起動
-- Phase 4.5 adaptive deepening（reviewer が unmet_information を申告した場合、追加 explorer 最大 3 体 + 再起動 reviewer 最大 3 体）
-- Phase 4.6 meta-reviewer ラウンド（BLOCKER/CRITICAL 検出時、`${CLAUDE_EFFORT}` が xhigh/max のとき動作）
-- Phase 5 で **2 軸スコアリング** (confidence 0-100 × severity BLOCKER/CRITICAL/MAJOR/MINOR)
-- Phase 6 でレポート出力（severity 別グループ、欠損観点、総括）
-- Phase 6.5（**code-review ≥ 2.18.0**）で `--embed` 時に **構造化 findings JSON ブロック**を markdown レポート直後に出力（`<!-- FINDINGS_JSON_START -->` / `<!-- FINDINGS_JSON_END -->` で囲む）
-- Phase 7 は `--embed` 指定により skip（末尾 marker `[embed-mode: findings-only, no-prompt]` を確認）
-
-**self-review の Step 6 定型レポートと Step 6.4 publish は feature-dev が省かない**（GitHub issue #232）: self-review の手順をこのコンテキストで回すので、実行主体が曖昧になると定型を独自要約に置き換えたり、publish を踏まずに Step 3 へ進んだりしやすい。`--embed` を外して呼んだ場合も含め、self-review の定型レポート → `mark t2` → publish を済ませてから Step 3 に進む。feature-dev の集約（Step 4）は定型レポートの後に足し、置き換えない。publish 前に Edit / Skill 等を呼ぶと code-review の publish-guard hook が鳴る。
-
-**`--embed` が落とすもの（構造的な穴の埋め戻し）**: self-review の Step 7 には**コメント推敲（B 系統）の適用**が入っているため、`--embed` ではコードコメント精査が実行されない。feature-dev 側は **Phase 6.7** で独立ステップとして必ず通す（GitHub issue #227）。B 系統の提案自体は `--embed` でも Step 6 のレポートに `## コメント推敲提案` ブロックとして出るので、Phase 6.7 でそれを材料にする。
-
-**embed mode の利点**: ユーザー操作が 1 回減り、findings をそのまま Step 3 の G-V loop と Step 4 の集約処理に流せる。`--embed` 未対応の旧 code-review (< 2.17.0) では Step 7 の AskUserQuestion がそのまま出るが、Step 0 は **存在チェックのみ**で version は確認していない。旧版が混在しうる前提で、JSON ブロック不在時は markdown フォールバックへ、AskUserQuestion 出力時はそれを findings 提示として吸収する（version ゲートは張らない）。
-
-**構造化 findings の消費（dual format）**: Step 3 / Step 4 は self-review 出力を、`<!-- FINDINGS_JSON_START -->`〜`END` の JSON ブロックがあれば決定的にパースし、無ければ markdown を正規表現でフォールバックパースする。schema 契約と詳細は `${CLAUDE_PLUGIN_ROOT}/references/review-loop.md` を参照。
-
-**Partial failure tolerance**: self-review 自体が失敗した場合は warning を出して Step 3 を skip し、Step 4 で「Phase 6 not executed」状態をユーザー提示する。
-
-### Step 3: Generator-Verifier Loop (automatic critical-issue fix)
-
-self-review の出力を severity × confidence で auto-fix トリガーに変換し、致命指摘を Phase 5 Fix Mode で自動修正して再レビューするループ。
-
-| self-review 出力 | feature-dev 扱い |
-|---|---|
-| `BLOCKER` (any confidence) | **auto-fix 対象**（最高優先度） |
-| `CRITICAL && confidence ≥ 90` | **auto-fix 対象** |
-| `CRITICAL && confidence < 90` | 報告のみ（Step 4 で提示） |
-| `MAJOR` / `MINOR` (any confidence) | 報告のみ |
-
-**Rationale**: BLOCKER は security/data-loss class なので confidence を問わず即修正。CRITICAL は confidence ≥ 90 閾値を維持して誤検知を防ぐ。
-
-ループの初期化（`${CLAUDE_EFFORT}` → `max_iterations`）・実行・集計の読み方は `${CLAUDE_PLUGIN_ROOT}/references/review-loop.md` に従う。対象の選別・regression / budget の判定・2 回目以降に delta の外の対象を `deferred` に回すこと・範囲外の変更の集計は `scripts/gv-loop.py review` が持ち、Claude はその `action=` に従って Fix と再レビューを回す（GitHub issue #310）。再レビューには `review` が出す `since=` / `prior_findings=` を渡し、self-review は直前の修正からの delta を主に見る（GitHub issue #313）。2 回目以降で上限の回は、続けるかを利用者に聞く。`low` effort は `max_iterations=0` で Step 3 を skip し Step 4 へ直行する。
-
-### Step 4: Consolidate and present
-
-0. **レビューした時点を記録する**（GitHub issue #276）: Step 3 のループが終わった直後（skip した回は Step 2 の直後）に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" save` を実行する。この後に入る変更（下の 5. のユーザー判断の修正・Phase 6.7・別の決定の反映）は self-review を通らないので、Phase 6.9 で差を取る
-1. **集約**: Step 2 の初回のレポートと Step 3 の**各回の**再レビューのレポート、`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" summary`（Step 3 が走った回）を読み、全ての BLOCKER / CRITICAL / MAJOR / MINOR を列挙する。同じ fingerprint（`file:line:focus`）は後の回の判定を使う。再レビューは delta を主に見るので、最後の回だけを読むと初回や途中の回で出た delta の外の指摘が落ちる（GitHub issue #313）。`--since` を渡したのに再レビューのレポート冒頭に `**範囲**:` の行が無かった回は、code-review が旧版で diff 全体を見直した旨を 1 行添える（`since=unavailable` で渡さなかった回は、新版でも行が出ない）
-2. **タグ付け**: Step 3 で解決したものは `[auto-fixed]`、ループ後も残ったもの（summary の `remaining`）は `[persisting]`、delta の外にあってループに入れなかったもの（`deferred`）は `[deferred]`。範囲外の変更（`out_of_scope`）が 1 以上なら「範囲外の変更 N か所」と場所を添える（ループの再レビューは通っているが、auto-fix の対象ではない変更）
-3. **Recommend**: 手動修正を推奨する高 severity issue を identify
-4. **Present findings and ask**（`reason=` で分岐）:
-   - `success`: 確認のみで Phase 7 へ
-   - `regression` / `budget` / `manual`: persisting critical issues を提示し、ユーザーに（手動修正 / 受け入れて続行 / abandon）を聞く
-   - `deferred`: deferred の対象（BLOCKER / CRITICAL ≥ 90 で、ループの修正と関係ない箇所にあった。前の回の分は最後に報告された時点の状態で、delta を主に見る再レビューは確かめ直していない）を提示し、同じ 3 択を聞く
-   - Step 3 が skip（`low` effort / `loop=unavailable`）: 全 critical を提示してユーザー判断
-   - self-review が失敗: warning を提示し、ユーザー判断（リトライ / skip / abandon）
-5. ユーザー判断に従って対応。直すと決めた指摘は、Phase 6.9 で前回の対象として渡すので、FINDINGS_JSON の形（`{"findings": [...]}`。self-review の出力の該当行をそのまま）で控える
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-6.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 6.7: コードコメント精査（comment-polish 委譲）
 
-**Goal**: diff で追加・変更したコード内コメントを 2 観点（読み手に必要な情報か / 冗長表現の排除）で精査し、git 外の参照 ID を除去する。
+入口の条件: `code-review` が有効でない（Phase 6 Step 0 で fail-fast した）なら Read せず Phase 6.9 へ。
 
-**Why this phase exists**: Phase 6 は self-review を `--embed` で呼ぶため、self-review Step 7 のコメント推敲（B 系統）適用が skip され、標準フローの精査が feature-dev 経由では丸ごと落ちていた（GitHub issue #227）。Phase 6 の G-V ループ（Fix Mode）が**新しいコメントを追加しうる**ので、本 phase は Phase 6 の完了後に置く。
-
-**Skip 条件**: `code-review` 未インストール（Phase 6 Step 0 が fail-fast するので通常は到達しない）。それ以外は必ず実行する — diff にコメント変更が無ければ comment-polish 側が「精査対象のコメント変更なし」を返して no-op で終わる。
-
-**手順**: `Skill` tool で `code-review:comment-polish` を呼ぶ。入力は Phase 6 の self-review レポートで分岐する（今回の run で Step 3 が走り、G-V ループの再レビューが 1 回でも走った回 — `gv-loop.py summary` の `iterations` が 1 以上 — は下の 2 つ目に倒す。Step 3 が走らなかった回の summary は前の run の状態なので読まない。再レビューのレポートは delta 中心で、コメント推敲の提案も delta の分しか無い / GitHub issue #313）:
-
-- `## コメント推敲提案` ブロックがある → そのブロックを一時ファイル（例: `.claude/.comment-polish-findings.txt`）へ書き出し、`--embed --from-findings <path>` で起動（comment-polish は再推敲せず全件適用）
-- ブロックが無い（self-review の triage が `comment-accuracy` を起動しなかった / Fix Mode でコメントが増えた） → `--embed` 単独で起動（diff から精査して全件適用）
-
-どちらも `--embed` を付ける（一気通貫フローなので適用の是非を個別に聞き返さない。結果は Phase 7 summary と最終 diff で可視化される）。
-
-**結果の確認**: 適用件数と ID を除去した行（file:line）を受け取る。`git diff --stat` で**コメント以外のコード行が変わっていたら scope 逸脱として報告**し、その場合のみ Phase 5.3 を再走させる（コメントのみなら再走不要）。呼び出しが失敗したら warning を出して Phase 7 へ進む。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-6.7.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 6.9: レビュー後の変更の確認
 
-**Goal**: Phase 6 の self-review の後に入った変更を、未レビューのまま締めない（GitHub issue #276）。G-V ループが再レビューするのは auto-fix の対象だけで、ユーザーの判断で入れた修正・Phase 6.7 のコメント適用・別のセッションで決めたことの反映は通らない。仕様書のように節をまたいで同じ規則を参照する変更では、1 か所の修正が別の節との食い違いを作りやすい。
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check
-```
-
-- `changed_files=0` → 何もせず Phase 7 へ
-- `changed_files` が 1 以上 → `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" diff` で変わった中身を読み、どれを推奨にするかを決める（GitHub issue #304）。変更がどれも実行時の挙動を変えない（名前・コメント・doc、テストの改名やアサーションの追加、中身を変えないブロックの移動。Phase 6.7 のコメント適用はこれに当たる）か、変わったファイルがすべて未追跡（`untracked_files` が `changed_files` と同じ。self-review の diff は未追跡を含まないので、回しても見る対象が無い）なら「静的オラクルだけ回す」、分岐・状態・入出力の契約（引数・戻り値・出力の形式・規約の文言）を足した・変えたものが 1 つでもあれば「self-review をもう一度回す」を推奨にする。差があるという事実だけで self-review を推奨にしない — 挙動を変えない変更に回し直しても、前回と同じ閾値未満の候補が並び直すだけになる。変わったファイルと行数（`check` の `<追加>\t<削除>\t<path>` 行）と推奨の理由 1 行を示して、`AskUserQuestion` で聞く（推奨を先頭に置き「（推奨）」を付ける）:
-  - 「self-review をもう一度回す」— 先に前回の対象を書く: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" prior-findings` に、Step 4 の 5. で直すと決めた指摘の FINDINGS_JSON を stdin で渡す（無ければ空）。今回の run で Step 3 が走った回だけ `--with-loop` を付ける（ループの deferred / remaining を gv-loop が足す。Step 3 が走らなかった回の状態は前の run のもの）。exit 2 は `unavailable` と同じ扱いにする。出力の `prior_findings=` で引数を決め、Phase 6 Step 2 の引数に足して回す（記録の後の変更を主に見る / GitHub issue #313）:
-    - `<path>` → `--since=<check が出した snapshot>` と `--prior-findings=<path>`
-    - `none`（前回の対象が無い）→ `--since=<snapshot>` だけ
-    - `unavailable`（書けなかった）→ どちらも付けない（前回の対象なしに delta だけを見ると、修正が対象の行に触れなかった回に、直っていない指摘を誰も見ない）
-
-    指摘を Step 4 と同じ扱いで提示する。終わったら `save` で記録し直し、もう一度 `check` する
-  - 「静的オラクルだけ回す」— Phase 5.3 を同じ手順でもう一度回し、緑なら Phase 7 へ（赤なら Phase 5.3 Step 3 の扱い）。Phase 7 のサマリには未レビューとして残し、静的オラクルが緑だったことを添える
-  - 「回さずに締める」— Phase 7 のサマリに未レビューとして残す
-  - `check` の `untracked_files=` が 1 以上なら、その分は self-review の対象外（self-review の diff は未追跡ファイルを含まない）。どれを選んでも Phase 7 の「レビュー後の変更」に未追跡 N ファイルとして残す。値は最初の `check` のものを控えておく（回し直した後の `save` → `check` は未追跡も含めて記録し直すので 0 になる）
-- `snapshot=missing` / `unavailable`（Phase 6 が走らなかった・git の操作に失敗した）→ 聞かずに Phase 7 へ進み、サマリに「レビュー後の変更: 確認できなかった」と出す
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-6.9.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 7: Summary
 
-**Goal**: 人間が変更を自分で読み、コミットや PR に進めるかを判断できる状態で渡す（GitHub issue #290）。この時点で要るのは要約ではなく読み順なので、読み順と読み合わせ（精読を 1 件ずつ解説し、見つけた修正をその場で入れる）は `code-review:review-guide` に任せ（読み合わせは必須。利用者が選ぶのはガイドを表示するかだけ）、feature-dev からは review-guide が diff から知りえない申し送りだけを短く添える。読み合わせで入った修正は Phase 6 の self-review も Phase 6.9 の確認も通らないので、締めの判定で self-review にもう一度通してから終える。変更ファイルを列挙するだけの独自サマリは、どこから読むか・どこが難所かを伝えない。
-
-**Actions**:
-1. Mark all todos complete
-2. **申し送り**（feature-dev だけが持つ情報。該当する項目だけ出し、無い項目は行ごと省く）:
-   - **足切り** (適用範囲): 足切りした回だけ。当たった項目と、Phase 1〜4.8 を飛ばしたこと。実装中に承認した方針を変えた回は、変えた理由と承認を取り直した新しい案
-   - **設計契約** (Phase 3 Step 5): ユーザーが決めたことと、未決のまま残したこと（いつ・どこで決めるか）。契約が明示的に確認されなかった回（`askUserQuestionTimeout` で自動続行）はその旨
-   - **探索の欠損** (Phase 2): 失敗した explorer の `missing_coverage`
-   - **静的オラクル** (Phase 5.3): 「静的オラクル判定不能」「静的オラクル打ち切り」「静的オラクル無し（型/テスト未検証）」、`low` effort で skip した回だけ
-   - **動作確認** (Phase 5.5): `UI_VERIFY_RESULT` が `pass` 以外の回（`skipped` / `blocked` は `UI_VERIFY_REASON`、fail を承知で進めた回は fail したケース、手動の回は「手動確認待ち」か返ってきた結果、実行しなかった回はその理由）、`pass` でも `UI_VERIFY_UNCOVERED` が `none` 以外の回はその値、self-lock で Phase 5.5 を飛ばした回はその旨。Phase 5.5 の後に入った変更（Phase 6 の G-V ループの auto-fix・利用者の判断で入れた修正）に画面のファイル（Phase 5.5 Step 3 の定義）があれば「Phase 5.5 の後の変更は動作確認を通していない」と添える（3. の読み合わせで入る修正は 4. で扱う）
-   - **G-V ループ** (Phase 6 Step 3 が走った回): `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" summary` の反復回数・終了理由・auto-fix 件数・persisting（`remaining`）・`deferred`。終了理由が `regression` / `budget` / `deferred` / `manual` なら残った対象の fingerprint を目立たせる（人間の判断が要る）。範囲外の変更（`out_of_scope`）が 1 以上なら件数と場所。self-review が失敗した・Phase 6 を skip した回はその旨
-   - **コメント精査** (Phase 6.7): 適用件数 / ID 除去件数、または「精査対象のコメント変更なし」
-   - **BDD spec の未解消指摘** (Phase 1.4): 再評価後も 🔴 が残った回だけ、件数と内容を出す（Phase 1.4 は聞かずに進めるため、ここで初めて利用者に見える）
-   - **レビュー後の変更** (Phase 6.9): 「**N ファイル・M 行（未レビュー）**」（ファイル名も並べる。「静的オラクルだけ回す」を選んだ回は「（未レビュー・静的オラクルは緑）」）/「確認できなかった」/「未追跡 N ファイル（self-review の対象外）」（`check` の `untracked_files=` が 1 以上。self-review をもう一度回した回も残す / GitHub issue #313）の回だけ。「なし」「再レビュー済み」は省く。値は Phase 6.9 の時点のもので、3. の読み合わせで入れる修正は含まない（それは 4. の 2 回目の self-review が見る）
-   - **worktree** (Phase 4.8 で分離した場合のみ): worktree のパスとブランチ、後片付けは teardown / worktree-gc に委ねる旨
-   - **Design doc follow-up** (Phase 4.5 で `DESIGN_DOC_PATH` がある場合のみ): 実装が完了したので、doc の frontmatter を `phase: target → current` に更新するよう案内する（実装と設計が乖離した箇所があれば doc への追記 or supersede も）。更新は design-doc プラグイン側の運用（ユーザー操作）に委ねる
-3. **読み合わせの案内**（必須）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" code-review` が `1` なら、読み合わせは**飛ばさない**（精読を選び、レビュー観点に答え、直せるものを直す工程がコードの質を上げるため）。利用者に選ばせるのは**ガイドを表示するかだけ**で、`AskUserQuestion` で聞く:
-   - question: "読み順ガイドと精読の解説を表示する？（どちらでも読み合わせの工程は同じに通し、見つけた修正はその場で入れる）"
-   - header: "ガイド表示"
-   - options: "表示する (Recommended)"（読み順の概要を出した後、精読を 1 件ずつ解説する。難点がなぜ難点になったかとレビュー観点の答えを添え、見つけた修正はその場で入れる。入った修正は最後に self-review へもう一度通す）/ "表示しない"（同じ工程を表示せずに通し、結果は締めで受け取る。入った修正は同じく self-review へもう一度通す）
-
-   どちらでも `Skill` tool で `code-review:review-guide` を `--base <BASE>` 付きで呼ぶ（読み合わせとして `--walkthrough` も付け、「表示しない」なら `--hide-guide` も付ける）。PR がまだ無い段階なので base モードで呼び、未コミットの変更まで読み順に入れる（PR モードは PR に push 済みのコミットしか見ない）。`<BASE>` は Phase 6 の self-review が冒頭で出した `base_branch=` の値を使う（同じ base から読ませる）。Phase 6 が走らなかった・値が分からないときは `--base` を付けずに `--walkthrough`（「表示しない」なら `--hide-guide` も）で呼ぶ（PR が無ければ review-guide が同じ順で base を決める）。**呼ぶ直前に** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" save` を実行する（4. で読み合わせの間に入った変更だけを数えるため。Phase 6 の記録を上書きするが、その確認は Phase 6.9 で済んでいる）。
-
-   **読み合わせは何ターンも続く**: review-guide は概要を出してターンを終え、利用者の「次」ごとに精読を 1 件ずつ解説し（1 精読 1 ターン）、最後に締め（精読の外で気になるところ → `変異テスト:` / `self-review 以降の変更:` / `次の一手:` の行）を出す。`--hide-guide` の回は概要と解説を出さずに全精読を 1 ターンで通し、締めから始まる（締めでは持ち越した確認と、精読の外の点の対応可否を 1 問ずつ聞くので、そこからも続く）。進め方は review-guide の手順に任せ、feature-dev は途中で次の一手やサマリを挟まない。4. 以降は締めが出てから進める
-4. **読み合わせで入った修正を self-review に通す**（3. で読み合わせた回）: review-guide は判断の材料を出すだけで self-review を起動しないので、回すのは feature-dev。まず `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-snapshot.sh" check` で 3. の直前に `save` した時点との差を取り、`changed_files` が 1 以上なら下の `あり`、0 なら `なし` として扱う（読み合わせの間に入った変更だけを数える。Phase 6.7 のコメント適用と、Phase 6.9 で self-review を回さなかった変更は数えない — そちらは 6.9 で利用者が決めた）。`snapshot=missing` / `unavailable` のときだけ、締めの `self-review 以降の変更:` の行で分岐する（この行は直近の self-review の publish 以降の全変更を数えるので、6.7 / 6.9 の変更も `あり` に入る）:
-   - `あり` → 締めの `次の一手:` が `決定的な検証` で始まるなら、self-review は回さずに Phase 5.3（静的オラクル）を同じ手順でもう一度回し、緑なら `次の一手:` の理由を 1 行添えて次の一手へ進む（赤なら Phase 5.3 Step 3 の扱い。review-guide が、読み合わせの変更は挙動を変えず解説で確かめ済みと判断した回 / GitHub issue #304）。それ以外（`self-review をもう一度` / 行が無い）なら `Skill` tool で `code-review:self-review` を呼ぶ。**引数は base だけ**（3. と同じ `<BASE>`。分からなければ引数なし）。例外は Phase 6 で `--spec=<BDD_SPEC_PATH>` を渡した回で、それも渡す（渡さないと spec-compliance reviewer が BDD spec を読まない）。Phase 6 Step 2 と違い `--embed` を付けない — 読み合わせの後は feature-dev が findings を集約しないので、self-review の Step 7（修正方針の確認と、修正した指摘の prior-fixes への記録）と 1.4 の重複検出をそのまま通す。`--focus` / `--rereview` / `--since` / `--prior-findings` も付けない（前回の指摘が直ったかを確かめる回ではなく、読み合わせで入った修正を含めて diff 全体を見直す回 / GitHub issue #300）。呼ぶ前に、1.4 で重複レビュー（header「重複レビュー」）の続行可否を聞かれたら（読み合わせで直した回し直しでは出ない。出るのは別の skill の記録と一致したときなど）、読み合わせの後の回し直しなので「続行する」でよい旨を 1 行添える。Step 6 の定型レポートと 6.4 の publish は Phase 6 Step 2 と同じく省かない・1 行に畳まない（GitHub issue #232 / #250）
-   - `なし` → 回さずに次の一手へ
-   - `不明（…）` → 読み合わせで修正を入れた（締めの「入れた修正」が 1 件以上）なら `あり` と同じ、入れていなければ `なし` と同じ
-   - 締めにこの行が無い（`--walkthrough` を知らない旧版の code-review でガイドだけが出た。`--hide-guide` を知らない版は表示して進む見込みだが、未知の引数の扱いは旧版に定めが無い。締めの行が出ればこの分岐には入らない）→ ガイドの後に修正を入れたかで `不明` と同じ分岐
-
-   **締めの `変異テスト:` の行で、次の一手の前に変異テストを提案するかを決める**（GitHub issue #307。`review-snapshot.sh check` の結果によらず、3. で読み合わせた回はすべて通る。上の分岐で 2 回目の self-review や Phase 5.3 を回した回はその後に 1 回だけ）:
-   - 先頭が `提案する` → 行の理由・回し方・所要の目安をそのまま示し、回すかを通常のメッセージで聞いてターンを終える。`AskUserQuestion` にしない（無操作の自動続行（`askUserQuestionTimeout`）を承認と取り違えないため）。回しているあいだは作業ツリーを編集しないことも添える（道具によっては、変異体を作業ツリーのファイルへ直接書き込みながら回る）。**承認の返信が無ければ回さない**。承認されたら、`git status --porcelain` の出力を控えてから、回し方のコマンドをリポジトリのルートで Bash の `run_in_background: true` で起動し、終わるまで次の一手へ進まない（所要は前景の上限 600 秒を超えうる）。終わったら、exit code と出力（stdout と stderr）から結果を次の 4 区分のどれかで報告する（推測した道具の回は、道具の出力の集計で同じ区分に当てる）: `生存 N 件`（exit 1 で生存した変異の行がある。ファイル・行・変異の内容を出力どおりに並べ、未実行が残っていればその数も添える。exit 0 で全件を実行して生存が無ければ `生存 0 件`）/ `一部未実行`（exit 0 だが、集計に「上限で未実行 N」か「タイムアウト N」がある。生存が無くても「生存 0」と書かず、実行した数と未実行の数を書く）/ `未計測`（exit 0 で、対象行・変異が 0 個）/ `判定不能`（コマンドが失敗した・exit 2・途中で止まった。exit 1 で stderr に中断の FATAL があるものを含み、生存の行があってもこちら）。途中で止まった回は、stderr の「変異が当たったまま」の箇所（ファイル・行・元の内容）を利用者に示し、元に戻したと返されるまで次の一手へ進まない（変異が残ったツリーをコミットしない）。回す前と後の `git status --porcelain` を突き合わせ、増えたファイル（道具の出力）を報告に並べ、コミットに混ぜない（消すか gitignore するかは利用者が決める）。テストを足すかは利用者が決め、足した回は足したテストを走らせて緑を確かめてから次の一手へ（テストの追加は実行時の挙動を変えないので self-review は回し直さない。Phase 5.3 の宣言オラクルはテストを含まないことがある）。回さないと返されたら次の一手へ
-   - 先頭が `不要` / `道具なし` → 聞かずに、行の理由を 1 行添えて次の一手へ
-   - 行が無い（`変異テスト:` を出さない旧版の code-review / 締めが出なかった）→ 何もしない
-
-   **読み合わせ以降の画面の変更を残す**（GitHub issue #306。3. で読み合わせて修正を入れた回はすべて。上の分岐で 2 回目の self-review を回した回も、`決定的な検証` で Phase 5.3 だけを回した回も同じ）: 3. の読み合わせ以降に入った変更（読み合わせでの修正・2 回目の self-review での修正）に画面のファイル（Phase 5.5 Step 3 の定義）があれば、次の一手に「読み合わせ後の変更は動作確認を通していない」と添える（Phase 5.5 はもう一度回さない）。変わったファイルは 4. の冒頭の `review-snapshot.sh check` が出す `<追加>\t<削除>\t<path>` の行（`snapshot=missing` / `unavailable` の回は締めの「入れた修正」）と、2 回目の self-review で直したファイルで見る
-
-   **コミットの前に文書整合を通す**（2026-11-07 決定。3. で読み合わせた回も、5. の従来のサマリの回も同じ。上の分岐と変異テストを済ませてから 1 回だけ）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" issue-workflow` が `1` なら、`Skill` tool で `issue-workflow:doc-sync` を `--base <BASE>`（3. と同じ。分からなければ付けない）で起動する。doc-sync は、コードの変更で更新が要る文書とコメントを承認を取らずに直し、残った指摘を一覧にする。応答の最後の行で分岐する:
-   - 直した（`DOC_SYNC_FIXED=` が 1 以上）→ Phase 5.3（静的オラクル）をもう一度回す（文書とコメントだけの変更なので self-review は回し直さない）。次の一手に「doc-sync の文書修正は self-review を通していない」と添え、直した文書はコミットに含める
-   - 残った（`DOC_SYNC_RESULT=findings`）→ 残った指摘（「実装を直す」・doc-checks の検出）を利用者に示し、直すかを聞く。実装を直すと決まったら Phase 5 に戻る
-   - 指摘なし（`clean` / `skipped`。`0` で issue-workflow が無い回も）→ 結果を 1 行添えて次の一手へ
-   - git-commit-helper は呼び出し元のフローから起動されたときに doc-sync を回さないので、feature-dev の回はここで回す（二重に回さない）
-   - Phase 1.5 で Issue ファイルを読んだ回は、その更新履歴に `doc-sync: <DOC_SYNC_RESULT の値>` と 1 行足す（issue-workflow の issue-maintain は、この行があれば completed にするときに doc-sync を回し直さない）
-
-   - 2 回目の self-review の後は、読み合わせも self-review も繰り返さない。最後に次の一手（コミット → PR）を 1 行添える
-   - **コミット・PR は dev-workflow の skill で行う**: 利用者が次の一手どおりに進めるよう返したら、`bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" dev-workflow` が `1` なら、コミットは `Skill` tool で `dev-workflow:git-commit-helper`、PR は `dev-workflow:pr-creator` を起動する（command の `dev-workflow:commit` / `dev-workflow:pr` を経由せず、skill を直接呼ぶ）。`git commit` / `gh pr create` を直接打たない。`0` なら Conventional Commits 形式で論理単位に分けてコミットする。5. の従来のサマリの回も同じ
-5. **従来のサマリ**（code-review が無効 / review-guide の呼び出しが失敗した回。review-guide を持たない旧版の code-review も含む）: What was built / Key decisions made / Files modified / Suggested next steps を出す。2. の申し送りはそのまま残す
-6. **Event Bus publish (`feature:implemented`)**:
-   - 完了直前に `feature:implemented` イベントを `.claude/events.jsonl` へ追記する。subscriber がいなくても無害（fire-and-forget）
-   - **読み合わせ（3.）と 2 回目の self-review（4.）が終わってから**、Phase 7 の最後に 1 回だけ追記する。読み合わせは何ターンも続くので、review-guide を呼んだターンで先に publish しない（`files_changed` にも読み合わせの修正を入れる）
-   - feature-dev は `hooks/lib/safe-hook.sh` を同梱しているため、`event_bus_publish` 経由で追記する（規約どおり 1 行 1 イベント）。`SAFE_HOOK_NAME` を `feature-dev` に上書きして publisher を識別する
-   - payload は最小限の JSON: `{"feature":"<short description>","files_changed":<count>,"phases_completed":[...]}`
-   - `feature` は 80 文字以内・ダブルクオート/バックスラッシュ/改行は除去。`files_changed` は今セッションで触ったファイル数（git diff の `--name-only` を `wc -l`）。`phases_completed` は実際に走った phase 番号の JSON 配列
-   - **worktree 内で実行している場合は書き込み先をメインリポジトリのルートに固定する**（`event_bus_publish` は `CLAUDE_PROJECT_DIR` 未設定時に cwd 相対で書くため、worktree 相対に書くと teardown で worktree ごと消える。`--git-common-dir` は linked worktree からもメインの `.git` を返すので、その親がメインルート）
-   - 実行コマンド例（`<...>` を Phase 7 のサマリ情報で埋めてから走らせる）:
-     ```bash
-     GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-     MAIN_ROOT=${GCD:+$(dirname "$GCD")}
-     source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh" 2>/dev/null && \
-       CLAUDE_PROJECT_DIR="${MAIN_ROOT:-$PWD}" SAFE_HOOK_NAME="feature-dev" \
-       event_bus_publish "feature:implemented" \
-       '{"feature":"<sanitized desc>","files_changed":<n>,"phases_completed":["1","2","..."]}'
-     ```
-   - 失敗しても Phase 7 全体は成功扱い（イベント送信は best-effort）
-
----
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-7.md` を Read する（手順・分岐・次の phase はそのファイルにある。見出しだけで進めない）。

@@ -1,6 +1,6 @@
 # Plugin Handoffs（optional plugin 連携の詳細手順）
 
-feature-dev の Phase 1.3 / 1.4 / 1.6 / 4.5 は、対応する optional plugin（または外部 CLI）が利用可能なときだけ通る handoff branch。SKILL.md 本文はそれぞれ「検出 → 該当すれば本ファイルの該当節を読んで従う / 非該当なら skip」に留め、詳細手順をここに置く（大半のセッションでは読まれない dormant branch なので、progressive disclosure で本文から分離している）。
+feature-dev の Phase 1.3 / 1.4 / 1.6 / 4.5 は、対応する optional plugin（または外部 CLI）が利用可能なときだけ通る handoff branch。各 phase の手順（`skills/feature-dev/references/phase-<番号>.md`）はそれぞれ「検出 → 該当すれば本ファイルの該当節を読んで従う / 非該当なら skip」に留め、詳細手順をここに置く（大半のセッションでは読まれない dormant branch なので、progressive disclosure で本文から分離している）。
 
 本文が検出に使う変数（`BDD_SPEC_AVAILABLE` / `VAULT_VIA` / `DESIGN_DOC`）と、後続 Phase が消費する出力変数（`BDD_SPEC_PATH` / `VAULT_KNOWLEDGE` / `DESIGN_DOC_PATH`）は本文側に定義がある。ここではそれらがセット済み・該当プラグインが利用可能である前提で手順を書く。
 

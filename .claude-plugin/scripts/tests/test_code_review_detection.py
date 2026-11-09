@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from test_code_review_scripts import BASE_PAYLOAD, PLUGIN, PUBLISH, TIMING, ScriptTestBase
+from skill_flow import flow_text
 
 CLEANUP = PLUGIN / "scripts" / "cleanup-agent-worktrees.sh"
 DETECT_DEV = PLUGIN / "scripts" / "detect-dev-worktree.sh"
@@ -602,7 +603,8 @@ class DuplicateReviewQuestionContractTest(unittest.TestCase):
 
     @staticmethod
     def section(path: Path, start: str, end: str) -> str:
-        text = path.read_text(encoding="utf-8")
+        # 分けた SKILL.md は phase の本文を差し込んで読む（skill_flow.py / #426）
+        text = flow_text(path) if path.name == "SKILL.md" else path.read_text(encoding="utf-8")
         i = text.index(start)
         return text[i:text.index(end, i)]
 
@@ -626,7 +628,7 @@ class DuplicateReviewQuestionContractTest(unittest.TestCase):
 
     @staticmethod
     def caller_section(path: Path, start: str, end: str) -> str:
-        text = path.read_text(encoding="utf-8")
+        text = flow_text(path) if path.name == "SKILL.md" else path.read_text(encoding="utf-8")
         m = re.search(start, text)
         if m is None:
             raise AssertionError(f"{path.name} に {start} の節が無い")

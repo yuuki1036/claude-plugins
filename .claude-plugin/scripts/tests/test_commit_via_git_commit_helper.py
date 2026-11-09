@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
+from skill_flow import flow_text
 
 REPO = Path(__file__).resolve().parents[3]
 DW = REPO / "dev-workflow"
@@ -28,6 +29,11 @@ CONSUMERS = {
     "feature-dev": REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md",
     "teardown-checklist": DW / "skills" / "worktree-teardown" / "references" / "cleanup-checklist.md",
 }
+
+
+def read(path: Path) -> str:
+    """分けた SKILL.md は phase の本文を差し込んで読む（skill_flow.py / #426）."""
+    return flow_text(path) if path.name == "SKILL.md" else path.read_text(encoding="utf-8")
 
 
 def between(text: str, start: str, end: str) -> str:
@@ -44,17 +50,17 @@ class SkillExistsTest(unittest.TestCase):
 class ConsumersCallTheSkillTest(unittest.TestCase):
     def test_every_commit_route_names_the_skill(self):
         for label, path in CONSUMERS.items():
-            self.assertIn(HELPER, path.read_text(encoding="utf-8"), f"{label} のコミット導線が git-commit-helper を呼ばない")
+            self.assertIn(HELPER, read(path), f"{label} のコミット導線が git-commit-helper を呼ばない")
 
     def test_no_route_invokes_the_commit_command(self):
         """`Skill` で command の `dev-workflow:commit` を起動させない（command 本文が返り、SKILL.md を経由しない）."""
         for label, path in CONSUMERS.items():
-            text = path.read_text(encoding="utf-8")
+            text = read(path)
             self.assertNotIn("`dev-workflow:commit` を起動", text, f"{label} が command を起動している")
 
     def test_lightweight_flow_commit_step_calls_the_skill(self):
         """節は見出しの名前で探す（Step の挿入で番号が動く。#306 で動作確認が入り 5 → 6 になった）."""
-        flow = CONSUMERS["lightweight-flow"].read_text(encoding="utf-8")
+        flow = read(CONSUMERS["lightweight-flow"])
         m = re.search(r"(?m)^### Step \d+: コミット$", flow)
         self.assertIsNotNone(m, "軽量フローにコミットの Step が無い")
         nxt = re.compile(r"(?m)^### Step \d+:").search(flow, m.end())
@@ -63,7 +69,7 @@ class ConsumersCallTheSkillTest(unittest.TestCase):
         self.assertIn(f"`Skill` tool で {HELPER} を起動", dw1)
 
     def test_feature_dev_phase7_routes_commit_and_pr_to_skills(self):
-        text = CONSUMERS["feature-dev"].read_text(encoding="utf-8")
+        text = read(CONSUMERS["feature-dev"])
         p7 = between(text, "## Phase 7: Summary", "**Event Bus publish")
         self.assertIn(HELPER, p7)
         self.assertIn("`dev-workflow:pr-creator`", p7)
@@ -71,7 +77,7 @@ class ConsumersCallTheSkillTest(unittest.TestCase):
 
     def test_self_review_keep_as_is_does_not_commit_by_itself(self):
         """「このまま」の説明が「このままコミットする」だと、選んだ直後に `git commit` を打つ回がある."""
-        text = CONSUMERS["self-review"].read_text(encoding="utf-8")
+        text = read(CONSUMERS["self-review"])
         option = next(l for l in text.splitlines() if 'label: "このまま"' in l)
         self.assertNotIn("このままコミットする", option)
         self.assertIn("git-commit-helper", option)
@@ -136,7 +142,7 @@ class ReviewOfferBeforeCommitTest(unittest.TestCase):
 
     def test_ask_user_question_is_allowed_on_both_entry_points(self):
         for path in (DW / "skills" / "git-commit-helper" / "SKILL.md", DW / "commands" / "commit.md"):
-            head = path.read_text(encoding="utf-8").split("---")[1]
+            head = read(path).split("---")[1]
             self.assertIn("- AskUserQuestion", head, f"{path.name} の allowed-tools に AskUserQuestion が無い")
 
 

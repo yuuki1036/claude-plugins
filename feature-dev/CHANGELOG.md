@@ -5,6 +5,17 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.3] - 2026-11-09
+
+### Changed
+
+- **SKILL.md の本文を phase ごとに `skills/feature-dev/references/phase-<番号>.md` へ分けた**（GitHub issue #426）。SKILL.md（93 KB → 約 14 KB）は Read 1 回で読み切れる大きさになり、全 phase に効く節（適用範囲・原則）と、phase の並び・入口の条件・「入ったら最初に Read する」の 1 行だけを持つ。各 phase ファイルは末尾の「次は」で次の phase を指す。以前は SKILL.md が Read 1 回では Phase 5.3 の手前で切れ、続きを読まずに進めた回は Phase 6.9 と 7 を飛ばした（#350）。上限・phase の鎖・どこからも Read されない references/ の md は、repo の検査（`validate_plugin_quality.py` の split-skill）が error で守る。command の「`offset` / `limit` で分けて読む」指示は、phase ごとに Read する指示に置き換えた
+
+### Fixed
+
+- **本文の「次へ」が、後から足した phase を飛ばしていた 3 か所を直した**: Phase 4.5 で design-doc が無効なときの行き先（Phase 5 → 4.8）、Phase 6 Step 4 の `success`（Phase 7 → 6.7）、Phase 6.7 で comment-polish の呼び出しに失敗したとき（Phase 7 → 6.9）
+- **Phase 5 Fix Mode の戻り先を入口で分けた**: Phase 5.3 の赤から来た回は 5.3 のゲートを再実行する。以前は Fix Mode の節が G-V ループからの入口だけを書き、常に Phase 6 Step 3 へ戻ると読めたため、Phase 5.3 の「直して再実行」と食い違っていた。あわせて Phase 5.3 の「承知の上で進む」とオラクル不在の出口も、緑の行き先（Phase 6.7・6.9・7 から回し直した回はその phase の次）へそろえた。緑以外で進んだ回（判定不能・打ち切り・オラクル無し・赤のまま進行・low skip）の記録は Step 3 の 1 か所で定め、申し送りに「静的オラクルは緑」と書くのは緑だった回に限った。`low` effort の skip は初回に限り、回し直す回は skip しない
+
 ## [2.28.2] - 2026-11-08
 
 ### Fixed

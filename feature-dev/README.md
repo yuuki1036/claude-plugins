@@ -5,7 +5,7 @@
 ## Overview
 
 `/feature-dev` コマンド、または「機能開発」「新機能を実装」「実装計画を立てて」等の自然言語から起動する
-8 phase のワークフロー（command と skill の同名ペア。本体は `skills/feature-dev/SKILL.md`）。いきなりコードを書き始めるのではなく、コードベース理解 → 要件の grill → アーキテクチャ設計 → 実装 → runtime 検証 → 品質レビューの順で進めることで、既存コードに馴染む設計を作る。
+8 phase のワークフロー（command と skill の同名ペア。本体は `skills/feature-dev/SKILL.md` で、phase ごとの手順は `skills/feature-dev/references/phase-<番号>.md`）。いきなりコードを書き始めるのではなく、コードベース理解 → 要件の grill → アーキテクチャ設計 → 実装 → runtime 検証 → 品質レビューの順で進めることで、既存コードに馴染む設計を作る。
 
 各 phase は `${CLAUDE_EFFORT}`（実行時 effort）と feature の特性に応じて動的に構成される。Phase 1.7 のトリアージが explorer / architect の体数と focus を決め（Phase 6 の reviewer は code-review の triage が決める）、低 effort では phase を圧縮し、高 effort では多角的に検証する。
 
@@ -130,7 +130,7 @@ Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する�
 2 つのモードを持つ。
 
 - **Normal Mode**: Phase 4 完了から起動。ユーザー承認を待ってから、採用したアーキテクチャに沿って実装する。既存コードの規約に従う。
-- **Fix Mode**: Phase 6 の Generator-Verifier ループから起動。auto-fix 対象の file:line だけをピンポイント修正する（スコープ拡大・無関係なリファクタ禁止、Phase 4 の設計を維持）。対象外の指摘は近くにあっても直さず Step 4 に回し、範囲外の変更はループが hunk 単位で数えて Step 4 に出す。
+- **Fix Mode**: Phase 6 の Generator-Verifier ループ、または Phase 5.3 の赤（静的オラクルのエラー）から起動し、来た所へ戻る。auto-fix 対象（5.3 から来た回はエラーが指す）の file:line だけをピンポイント修正する（スコープ拡大・無関係なリファクタ禁止、Phase 4 の設計を維持）。対象外の指摘は近くにあっても直さず Step 4 に回し、範囲外の変更はループが hunk 単位で数えて Step 4 に出す。
 
 ### Phase 5.3: 静的オラクルゲート（fail-closed / 決定的検証）
 

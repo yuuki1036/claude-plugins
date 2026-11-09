@@ -21,6 +21,7 @@ import unittest
 from pathlib import Path
 
 from git_env import scrub
+from skill_flow import flow_text
 
 REPO = Path(__file__).resolve().parents[3]
 # 正本を叩く。feature-dev / issue-workflow の scripts/plugin-enabled.sh は byte 一致の複製で、
@@ -182,7 +183,7 @@ class InitialSelfReviewScopeTest(unittest.TestCase):
         return text[i:text.index(end, i)]
 
     def test_initial_call_does_not_pass_focus(self):
-        step2 = self.section(self.SKILL.read_text(), "### Step 2: Invoke code-review:self-review",
+        step2 = self.section(flow_text(self.SKILL), "### Step 2: Invoke code-review:self-review",
                              "self-review 内部の動き")
         args = [l for l in step2.splitlines() if l.startswith("- ")]
         self.assertTrue(args, "Step 2 の引数の箇条書きを拾えていない")
@@ -216,9 +217,13 @@ class InitialSelfReviewScopeTest(unittest.TestCase):
         self.assertIn("**`--rereview`（", self_review, "self-review の引数から --rereview が消えた")
 
     def test_initial_call_does_not_declare_a_rereview(self):
-        step2 = self.section(self.SKILL.read_text(), "### Step 2: Invoke code-review:self-review",
+        step2 = self.section(flow_text(self.SKILL), "### Step 2: Invoke code-review:self-review",
                              "self-review 内部の動き")
         self.assertNotIn("--rereview", step2)
+
+
+def _last_nonblank(text: str) -> str:
+    return next(l for l in reversed(text.splitlines()) if l.strip())
 
 
 class ScopeCutoffKeepsGatesTest(unittest.TestCase):
@@ -231,7 +236,7 @@ class ScopeCutoffKeepsGatesTest(unittest.TestCase):
     SKILL = REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
 
     def section(self, start: str, end: str) -> str:
-        text = self.SKILL.read_text()
+        text = flow_text(self.SKILL)
         i = text.index(start)
         return text[i:text.index(end, i)]
 
@@ -246,7 +251,68 @@ class ScopeCutoffKeepsGatesTest(unittest.TestCase):
                       "6.7（コメント精査）→ 6.9（レビュー後の変更の確認）→ 7（申し送りと読み合わせ）", gates)
 
     def test_cutoff_tracks_remaining_gates_in_todos(self):
-        self.assertIn("TodoWrite へ「実装 / Phase 5.3 / 5.5 / 6 / 6.7 / 6.9 / 7」を積む", self.cutoff())
+        self.assertIn("TodoWrite へ「実装（phase-5.md）/ Phase 5.3 / 5.5 / 6 / 6.7 / 6.9 / 7」を積む", self.cutoff())
+        # 足切りの回は Phase 5 の見出しを通らないので, Normal Mode の 4. と Fix Mode の制約を読む導線を停止点に置く（#426）
+        self.assertIn("実装に入る前に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-5.md` を Read し", self.cutoff())
+
+    def test_fix_mode_returns_to_where_it_came_from(self):
+        """Fix Mode の入口は 2 つ（G-V ループと Phase 5.3 の赤）. 戻り先を片方だけにすると 5.3 の再実行を飛ばす（#426）."""
+        phase5 = (REPO / "feature-dev" / "skills" / "feature-dev" / "references" / "phase-5.md").read_text()
+        step4 = next(l for l in phase5.splitlines() if l.startswith("4. 戻り先は入口で決まる"))
+        self.assertIn("G-V ループ（Phase 6 Step 3）から来た回は Phase 6 Step 3 へ戻る", step4)
+        self.assertIn("Phase 5.3 の赤（静的オラクルのエラー出力）から来た回は Phase 5.3 へ戻ってゲートを再実行する", step4)
+        # 緑の行き先は phase-5.3.md の Step 3 だけが持つ. 6.7 / 6.9 / 7 から回し直した回に「緑なら 5.5」と読むと 5.5 → 6 を回し直す
+        self.assertIn("緑の行き先は phase-5.3.md の Step 3 が持つ", step4)
+        gate = (REPO / "feature-dev" / "skills" / "feature-dev" / "references" / "phase-5.3.md").read_text()
+        green = next(l for l in gate.splitlines() if l.startswith("- **全て緑（exit 0）**"))
+        self.assertIn("Phase 6.7・6.9・7 から 5.3 を回し直した回は、その phase の手順の次へ戻る", green)
+        self.assertIn("下の「承知の上で進む」出口も同じ", green)
+        # 緑以外の「進む」出口（判定不能・オラクル不在・暴走ガード）も 5.5 に固定せず, 緑の行き先を指す
+        for head in ("- **宣言オラクルが exit 2", "- **オラクル不在", "**暴走ガード**"):
+            line = next(l for l in gate.splitlines() if l.startswith(head))
+            with self.subTest(exit=head):
+                self.assertIn("緑の行き先", line)
+                self.assertNotIn("Phase 5.5", line)
+        # 緑以外で進んだ回の記録は経路で書き先が違う（初回と 6.7・6.9 は申し送り、7 の 4. 以降は次の一手）
+        record = next(l for l in gate.splitlines() if l.startswith("**緑以外で進んだ回の記録**"))
+        self.assertIn("初回（Phase 5 の実装の後）は Phase 7 の申し送りに書く", record)
+        self.assertIn("Phase 6.7・6.9 から回し直した回も申し送りに書き", record)
+        self.assertIn("のように経路を添える", record)
+        self.assertIn("Phase 7 の 4. 以降から回し直した回は、申し送りを出した後なので次の一手に添える", record)
+        self.assertIn("「静的オラクルは緑」とは書かない", record)
+        # ラベルは全文で見る（「判定不能」などの部分語は適用範囲の括弧にも出るので, ラベルを消しても当たる）
+        for label in ("「静的オラクル判定不能」（exit 2・126・127）", "「静的オラクル打ち切り」（timeout）",
+                      "「静的オラクル無し（型/テスト未検証）」", "「静的オラクル赤のまま進行」", "「静的オラクル skip（low）」"):
+            self.assertIn(label, record)
+        # 緑以外で進む出口はどれも記録をこの 1 か所に任せる（列挙を出口ごとに書くと漏れる）
+        for head in ("- **宣言オラクルが exit 2", "- **オラクル不在", "**暴走ガード**"):
+            line = next(l for l in gate.splitlines() if l.startswith(head))
+            self.assertIn("「緑以外で進んだ回の記録」に従う", line)
+        guard = next(l for l in gate.splitlines() if l.startswith("**暴走ガード**"))
+        # 赤のまま進む回と low の skip の両方が記録に任せる（片方だけだと出口ごとの列挙の漏れと同じ型）
+        self.assertEqual(guard.count("「緑以外で進んだ回の記録」に従う"), 2)
+        self.assertIn("初回（Phase 5 の実装の後）に限り本ゲート自体を skip 可", guard)
+        self.assertIn("Phase 6.7・6.9・7 から回し直す回は skip しない", guard)
+        red = next(l for l in gate.splitlines() if l.startswith("- **いずれか赤"))
+        self.assertIn("exit 2・126・127 と打ち切りを除く", red)
+        # 5.3 を回し直す 3 つの呼び出し元は, 緑以外を Step 3 に任せる（「赤なら」だと判定不能・打ち切りが漏れる）
+        refs = REPO / "feature-dev" / "skills" / "feature-dev" / "references"
+        for name in ("phase-6.7.md", "phase-6.9.md", "phase-7.md"):
+            caller = (refs / name).read_text()
+            with self.subTest(caller=name):
+                self.assertIn("緑以外なら Phase 5.3 Step 3 の扱い", caller)
+                self.assertNotIn("赤なら Phase 5.3 Step 3", caller)
+        phase7 = (REPO / "feature-dev" / "skills" / "feature-dev" / "references" / "phase-7.md").read_text()
+        self.assertIn("phase-5.3.md の Step 3「緑以外で進んだ回の記録」に従う", phase7)
+        # 末尾の「次は」も通常の行き先だと書く（但し書きを消すと「常に 5.5」と読める）
+        self.assertIn("回し直した回は Step 3 の緑の行き先に従う", _last_nonblank(gate))
+        self.assertIn("Fix Mode から来た回は Fix Mode の 4. の戻り先に従う", _last_nonblank(phase5))
+        # 3. の止まる経路も 4. の戻り先へ戻す. Phase 6 Step 3 に固定すると 5.3 の再実行を飛ばす
+        step3 = next(l for l in phase5.splitlines() if l.startswith("3. If the fix requires design-level changes"))
+        self.assertIn("返信の後に修正して 4. の戻り先へ戻る", step3)
+        self.assertNotIn("Phase 6 Step 3 へ戻る", step3)
+        triggered = phase5[phase5.index("**Triggered by**:"):phase5.index("**Constraints**:")]
+        self.assertIn("Phase 5.3 の赤", triggered)
 
     def test_cutoff_enters_normal_mode_then_static_oracle(self):
         modes = self.section("### Mode Detection", "### Normal Mode")
@@ -285,7 +351,7 @@ class SummaryReadingGuideTest(unittest.TestCase):
     GUIDE = REPO / "code-review" / "skills" / "review-guide" / "SKILL.md"
 
     def phase7(self) -> str:
-        text = self.SKILL.read_text()
+        text = flow_text(self.SKILL)
         i = text.index("## Phase 7: Summary")
         return text[i:text.index("**Event Bus publish", i)]
 
@@ -497,7 +563,7 @@ class SummaryReadingGuideTest(unittest.TestCase):
     def test_mutation_summary_is_pinned_to_the_canonical(self):
         """Phase 7 の変異テストの分岐は review-guide-format.md「変異テストの提案」の要約。正本が変わったら pin の検査で気づく."""
         self.assertRegex(
-            self.SKILL.read_text(),
+            flow_text(self.SKILL),
             r"<!-- SSOT: code-review/references/review-guide-format\.md#変異テストの提案 @[0-9a-f]{8} -->")
 
     def test_mutation_reports_tool_output(self):
@@ -542,7 +608,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
     SMOKE = REPO / "feature-dev" / "references" / "smoke-test.md"
 
     def phase55(self) -> str:
-        text = self.SKILL.read_text()
+        text = flow_text(self.SKILL)
         i = text.index("## Phase 5.5")
         return text[i:text.index("## Phase 6", i)]
 
@@ -615,7 +681,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
 
     def test_keys_used_are_declared_by_ui_verify(self):
         declared = set(re.findall(r"(?m)^\s*(UI_VERIFY_[A-Z]+)=", UI_VERIFY.read_text()))
-        used = set(re.findall(r"(UI_VERIFY_[A-Z]+)", self.SKILL.read_text()))
+        used = set(re.findall(r"(UI_VERIFY_[A-Z]+)", flow_text(self.SKILL)))
         self.assertTrue(used, "Phase 5.5 が `UI_VERIFY_*` の行を読んでいない")
         self.assertLessEqual(used, declared, f"ui-verify が出さないキーを読んでいる: {used - declared}")
 
@@ -651,7 +717,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
                      if l.strip().startswith("UI_VERIFY_BROWSER=") and "|" in l), None)
         self.assertIsNotNone(line, "ui-verify の SKILL.md から `UI_VERIFY_BROWSER=` の定義行が消えた")
         declared = {v.strip(" <>`") for v in line.split("=", 1)[1].split("|")}
-        used = set(re.findall(r"UI_VERIFY_BROWSER=([a-z-]+)", self.SKILL.read_text()))
+        used = set(re.findall(r"UI_VERIFY_BROWSER=([a-z-]+)", flow_text(self.SKILL)))
         self.assertEqual(used, {"none", "unselected"}, used)
         self.assertLessEqual(used, declared, f"ui-verify が出さない値を読んでいる: {used - declared}")
 
@@ -676,7 +742,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
         旧い散文（コンポーネント・スタイル・テンプレート）は hooks/ stores/ 配下の .ts を数えず、
         ui-verify が画面の変更と判定したものを呼び出し元が覆していた.
         """
-        text = self.SKILL.read_text()
+        text = flow_text(self.SKILL)
         step3 = self.step(3)
         para = step3[step3.index("画面のファイルは、ui-verify の事前判定が"):]
         para = para[:para.index("\n")]
@@ -695,7 +761,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
                          "Phase 7 の申し送りと読み合わせ以降の段落が Step 3 の定義を指していない")
 
     def test_phase7_carries_the_reason(self):
-        text = self.SKILL.read_text()
+        text = flow_text(self.SKILL)
         p7 = text[text.index("## Phase 7: Summary"):]
         handoff = p7[p7.index("2. **申し送り**"):p7.index("3. **読み合わせの案内**")]
         item = next((l for l in handoff.splitlines() if "**動作確認** (Phase 5.5)" in l), None)
@@ -833,7 +899,7 @@ class PostReviewChangeTest(unittest.TestCase):
     SKILL = REPO / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
 
     def phase69(self) -> str:
-        text = self.SKILL.read_text()
+        text = flow_text(self.SKILL)
         i = text.index("## Phase 6.9")
         return text[i:text.index("## Phase 7", i)]
 
@@ -848,7 +914,7 @@ class PostReviewChangeTest(unittest.TestCase):
         self.assertIn("`--since=<check が出した snapshot>`", p)
         self.assertNotIn("差分だけを self-review に通すことはできない", p)
         self.assertIn("`untracked_files=`", p)
-        skill = self.SKILL.read_text()
+        skill = flow_text(self.SKILL)
         p7 = skill[skill.index("## Phase 7"):]
         self.assertIn("未追跡 N ファイル（self-review の対象外）", p7)
 
@@ -1670,16 +1736,17 @@ class GvLoopProcedureTest(unittest.TestCase):
     def test_loop_state_is_not_written_by_hand(self):
         for path in (self.SKILL, self.REVIEW_LOOP, REPO / "feature-dev" / "references" / "triage-guide.md"):
             with self.subTest(path=path.name):
-                self.assertNotIn("/tmp/feature-dev-loop-state.json", path.read_text())
+                text = flow_text(path) if path == self.SKILL else path.read_text()
+                self.assertNotIn("/tmp/feature-dev-loop-state.json", text)
 
     def test_loop_calls_every_subcommand(self):
         text = self.REVIEW_LOOP.read_text()
         for cmd in ('gv-loop.py" init --max', 'gv-loop.py" review', 'gv-loop.py" finish --reason manual'):
             self.assertIn(cmd, text)
-        self.assertIn('gv-loop.py" summary', self.SKILL.read_text())
+        self.assertIn('gv-loop.py" summary', flow_text(self.SKILL))
 
     def test_every_action_and_reason_is_handled(self):
-        loop, skill = self.REVIEW_LOOP.read_text(), self.SKILL.read_text()
+        loop, skill = self.REVIEW_LOOP.read_text(), flow_text(self.SKILL)
         for value in ("`action=fix`", "`action=ask`", "`action=stop`"):
             self.assertIn(value, loop)
         step4 = skill[skill.index("### Step 4: Consolidate and present"):skill.index("## Phase 6.7")]
@@ -1688,19 +1755,19 @@ class GvLoopProcedureTest(unittest.TestCase):
 
     def test_step4_reads_every_rereview_report(self):
         """delta 中心の再レビューの最後の回だけを読むと、初回・途中の回の delta の外の指摘が落ちる（#313）."""
-        skill = self.SKILL.read_text()
+        skill = flow_text(self.SKILL)
         step4 = skill[skill.index("### Step 4: Consolidate and present"):skill.index("## Phase 6.7")]
         self.assertIn("**各回の**再レビューのレポート", step4)
         self.assertIn("初回のレポート", step4)
         self.assertNotIn("self-review の最終出力（post-loop）", step4)
 
     def test_comment_polish_scans_the_whole_diff_after_a_rereview(self):
-        skill = self.SKILL.read_text()
+        skill = flow_text(self.SKILL)
         p67 = skill[skill.index("## Phase 6.7"):skill.index("## Phase 6.9")]
         self.assertIn("`iterations` が 1 以上", p67)
 
     def test_fix_mode_leaves_non_targets_to_step4(self):
-        skill = self.SKILL.read_text()
+        skill = flow_text(self.SKILL)
         fix = skill[skill.index("### Fix Mode"):skill.index("## Phase 5.3")]
         self.assertIn("Step 4", fix)
         self.assertIn("MAJOR / MINOR", fix)
