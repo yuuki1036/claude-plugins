@@ -4,26 +4,21 @@
 
 ## スコープ超過チェック
 
-| scope_size | 想定上限 | 警告発火閾値 | 警告内容 |
-|------------|---------|-------------|---------|
-| small | 3 | 5 以上 | スコープ膨張（medium 相当）|
-| medium | 7 | 8 以上 | スコープ膨張（large 相当）|
-| large | 15 | 16 以上 | 分割を推奨 |
+判定は `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scope-size.py" check --basis all <Issue ファイル>` が出す（上限・数え方・判定の正本はこのスクリプト。値をここに書き写さない / GitHub issue #425）。`verdict=over` のときだけ警告する。`under`（過大見積もり）は retrospective だけが使い、ここでは報告しない（作業中の Issue はタスクが増えていく途中にある）。
 
 **警告フォーマット:**
 ```
 ⚠️ {ISSUE-ID} はスコープ膨張を検知
-  - 宣言: {size}（想定 {limit} 個以下）
-  - 実タスク数: {actual} 個
+  - 宣言: {scope_size}（想定 {limit} 個以下）
+  - 実タスク数: {count} 個
   - 提案:
-    (A) scope_size を {推奨サイズ} に更新する
+    (A) scope_size を {recommended} に更新する
     (B) タスクを別 Issue に分割する（スコープ外に切り出し。分割は縦のスライスで切る
         — issue-design の design-rules.md ルール6。層で横に切らない）
 ```
 
-- `small: 5+` → 推奨サイズは `medium`
-- `medium: 8+` → 推奨サイズは `large`
-- `large: 16+` → 推奨サイズは無し（分割推奨のみ）
+- `{scope_size}` / `{limit}` / `{count}` / `{recommended}` は出力の同名の行の値
+- `recommended=split`（large の上限も超えた）なら (A) を出さず、(B) の分割だけを提案する
 
 ## 即クローズパターンの検出
 

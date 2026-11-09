@@ -30,7 +30,7 @@
 
 ## スコープ管理
 
-- Issue の `scope_size` で宣言したサイズを守る（small: 3個以下, medium: 7個以下, large: 15個以下）
+- Issue の `scope_size` で宣言したサイズを守る（上限は `python3 {PLUGIN_ROOT}/scripts/scope-size.py limits` が正本。超えたら hook が警告する）
 - タスクが増えてきたら分割を検討する
 - 「スコープ外」セクションに除外理由を明記する
 

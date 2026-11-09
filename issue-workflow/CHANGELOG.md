@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.7] - 2026-11-09
+
+### Changed
+
+- **scope_size の上限と判定を `scripts/scope-size.py` 1 本に寄せた**（GitHub #425）。これまでは hook（`check-scope-size.sh`。上限 3/7/15 を超えたら警告）・issue-maintain（`detection-guards.md`。5/8/16 以上で警告）・retrospective（small 5 以上・medium 8 以上で膨張、medium 3 以下・large 5 以下で過大見積もり）と散文 3 か所が別々の値で書いていた。そのため同じ Issue（small・タスク 4 個）が、hook では警告され、issue-maintain では警告されず、retrospective では「適正」になっていた。判定は上限 small 3 / medium 7 / large 15 に揃える（2026-11-09 決定）。超過は件数が上限を超えたとき、過大見積もりは 1 つ小さいサイズの上限を超えないとき（medium は 3 件まで、large は 7 件まで。large は従来の 5 件までから変わる）、推奨サイズは件数が収まる最小のサイズで、large も超えたら分割。`check --basis all|done` が `verdict=over|under|ok|skip` と `recommended=` を出し、hook と issue-maintain は all（全件）で over だけを、retrospective は done（完了した `[x]`）で over / under を使う。数え方は hook と同じ規則（`## 進捗` に項目があればその節、無ければ `## 完了条件`。足し合わせない。項目の括弧の中は半角スペースか x / X で、帯の mod と同じ）。チェックリストが 1 件も無い Issue は `verdict=skip`（`reason=no_tasks`）にし、retrospective の過大見積もりに数えない。issue-maintain と retrospective は LLM が数えず、スクリプトの出力を読む。project-rules・issue-create・README・retrospective のレポート雛形は値を書き写さず、スクリプトを指す（上限は `scope-size.py limits`）。帯の mod（`hooks/issue-band-lib.ts`）は python を呼べないので上限の値・数え方・超過判定を複製したままにし、上限の値はテストがスクリプトの出力と突き合わせ、数え方と超過判定は手で期待値を書いた共有 fixture（`.claude-plugin/scripts/tests/mods/issue-workflow/tests/scope-size-cases.ts`）を両方の実装に通して突き合わせる
+
+### Fixed
+
+- **テンプレートから作った Issue で、scope_size の超過警告が出ていなかった**（GitHub #425）。テンプレートの frontmatter は `scope_size: small            # 必須。…` と行末に注釈を持つが、hook の awk は注釈を外さずに読み、不明な値として黙っていた。`scope-size.py` は値の行末の ` # 注釈` と囲みの引用符を外し、先頭の BOM も外して読む（帯の mod と同じ読み方）
+- **CRLF 改行の Issue ファイルで、帯の mod が frontmatter とタイトルを読めず、scope_size の超過を出していなかった**（GitHub #425）。mod は行を `\n` だけで分けていたため、行末に `\r` が残っていた。そのせいで frontmatter のキーの正規表現が一致しなかった。`\r\n` でも分けるようにした。python の判定も行を `\n` と `\r\n` だけで分ける（以前の `splitlines()` は単独の `\r`・U+2028 などでも分けていた）。共有 fixture に CRLF と U+2028 のケースを足した
+
 ## [1.19.6] - 2026-11-08
 
 ### Fixed

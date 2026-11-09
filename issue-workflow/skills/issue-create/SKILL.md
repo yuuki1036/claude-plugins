@@ -121,7 +121,7 @@ allowed-tools:
     4. label: "debt" / description: "コード品質改善・依存関係更新・非推奨 API の移行"
   - `--create-only` のときは迷っても聞かず、推奨の type と根拠 1 行で進む（Phase 6 の承認で直せる）
 - スコープサイズは**全 type で必須**（`check-scope-size` hook のリアルタイム警告とスコープ超過チェックの前提）。**どの type も自分で決め、質問はしない**:
-  - 基準は `## 進捗` に並ぶ見込みのタスク数: `small` は 3 以下（1-2 日）/ `medium` は 7 以下（数日〜1 週間）/ `large` は 15 以下（1 週間以上）
+  - 基準は `## 進捗` に並ぶ見込みのタスク数が収まる最小のサイズ。上限は `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scope-size.py" limits` で引く（値を書き写さない）。目安: `small` は 1-2 日 / `medium` は数日〜1 週間 / `large` は 1 週間以上
   - feature / investigation は依頼の内容から見積もる。Phase 5〜5.4 で分かった内容で見積もりが変わったら、Phase 6 の生成時に直す
   - bugfix / debt はテンプレ既定値 `small` を使う（明らかに大きい場合だけ上げる）
   - 決めた値と根拠を 1 行で示す（例: 「scope_size: medium（API・UI・テストの 3 層で 5〜6 タスクの見込み）」）。利用者は Phase 6 の承認で直せる

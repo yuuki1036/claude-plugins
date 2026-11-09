@@ -3,7 +3,7 @@ import type { IssueBand } from '../types'
 
 /** `---` で囲まれた先頭の frontmatter を key → 値にする（行末の ` # 注釈` と囲みの引用符は外す） */
 export function frontmatter(text: string): Record<string, string> {
-  const lines = text.split('\n')
+  const lines = text.split(/\r?\n/)
   if (lines[0]?.trim() !== '---') return {}
   const out: Record<string, string> = {}
   for (const line of lines.slice(1)) {
@@ -28,20 +28,22 @@ export function sessionContext(text: string): { branch: string; issueId: string 
   return { branch, issueId }
 }
 
-/** scope_size ごとのタスク数の上限（hooks/scripts/check-scope-size.sh と同じ値） */
+/** scope_size ごとのタスク数の上限。正本は scripts/scope-size.py（mod から python を呼べないので複製し、一致は test_issue_workflow_scope_size.py が検証する） */
 export const SCOPE_LIMIT: Record<string, number> = { small: 3, medium: 7, large: 15 }
 
 /**
  * Issue ファイルの要約。チェックリストは `## 進捗` を優先し、無ければ `## 完了条件` を数える
- * （check-scope-size.sh と同じ規則 / GitHub issue #179。両方を足すと移行途中のファイルで二重に数える）
+ * （scripts/scope-size.py と同じ規則 / GitHub issue #179。両方を足すと移行途中のファイルで二重に数える）。
+ * 一致は両方の実装が読む共有 fixture（tests の mods/issue-workflow/tests/scope-size-cases.ts）を通す
+ * issue-band.test.ts と test_issue_workflow_scope_size.py の SharedCasesTest が検証する
  */
 export function issueSummary(text: string, issueId: string, branch: string): IssueBand {
   const fm = frontmatter(text)
-  const heading = text.split('\n').find(l => l.startsWith('# '))
+  const heading = text.split(/\r?\n/).find(l => l.startsWith('# '))
   const title = heading ? heading.slice(2).replace(new RegExp(`^${issueId}:\\s*`), '').trim() : ''
   const count = { p: { done: 0, total: 0 }, d: { done: 0, total: 0 } }
   let sec: 'p' | 'd' | null = null
-  for (const line of text.split('\n')) {
+  for (const line of text.split(/\r?\n/)) {
     if (/^## 進捗\s*$/.test(line)) sec = 'p'
     else if (/^## 完了条件\s*$/.test(line)) sec = 'd'
     else if (line.startsWith('## ')) sec = null
@@ -75,7 +77,7 @@ export function bandLine(b: IssueBand): string {
   return parts.filter(p => p !== '').join(' · ')
 }
 
-/** scope_size の上限を超えたときの 1 行。超えていなければ null */
+/** scope_size の上限を超えたときの 1 行。超えていなければ null（判定は scripts/scope-size.py の verdict=over と同じ。一致は共有 fixture の scope-size-cases.ts を通す issue-band.test.ts と SharedCasesTest が検証する） */
 export function overLine(b: IssueBand): string | null {
   if (b.limit === null || b.total <= b.limit) return null
   return `⚠️ タスク ${b.total} 件が scope_size=${b.scopeSize} の上限 ${b.limit} を超えている（別 Issue に切り出すか scope_size を上げる / /issue-maintain）`
