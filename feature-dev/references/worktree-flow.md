@@ -1,6 +1,6 @@
 # worktree 分離フロー（Phase 4.8 の詳細手順）
 
-SKILL.md 本文の Phase 4.8 は「3 状態判定 → 該当すればここを読んで従う」の骨格だけを持つ。本ファイルは worktree の作成・環境セットアップ・以降の Phase への引き継ぎ規約を持つ。**起動条件を満たしたときだけ Read する**（要求が無い回は読まない）。
+Phase 4.8 の手順（`skills/feature-dev/references/phase-4.8.md`）は「3 状態判定 → 該当すればここを読んで従う」の骨格だけを持つ。本ファイルは worktree の作成・環境セットアップ・以降の Phase への引き継ぎ規約を持つ。**起動条件を満たしたときだけ Read する**（要求が無い回は読まない）。
 
 ## 起動条件（再掲・どちらかを満たすときだけ worktree を作る）
 
@@ -35,5 +35,5 @@ if [ -f envs/.backend.env.worktree ]; then echo "WT_READY=1"; else echo "WT_READ
 
 - **Phase 5.3 / 5.5 は worktree の cwd で走らせる**。dev server の port は Step 2 で割り当てた値を使う（メイン側で動いている dev server を掴まない）
 - **Phase 6 は `code-review:self-review` のまま**。`code-review:review` は自前で `EnterWorktree` するため worktree の二重進入になる
-- **Phase 7 の Event Bus publish はメインリポジトリのルートへ書く**（worktree 相対に書くと teardown で worktree ごと消えるため）。根拠と実装（`--git-common-dir` の親をメインルートにする bash）は SKILL.md Phase 7 の publish 手順が正本 — ここでは二重化せず、worktree 内で続行する回はその手順に従うことだけを押さえる
+- **Phase 7 の Event Bus publish はメインリポジトリのルートへ書く**（worktree 相対に書くと teardown で worktree ごと消えるため）。根拠と実装（`--git-common-dir` の親をメインルートにする bash）は Phase 7 の publish 手順（`skills/feature-dev/references/phase-7.md`）が正本 — ここでは二重化せず、worktree 内で続行する回はその手順に従うことだけを押さえる
 - **worktree は Phase 7 で畳まない**（commit / PR が残っている）。後片付けは `code-review:self-review` の最終ステップ、または `dev-workflow:worktree-teardown` / `dev-workflow:worktree-gc` に委ねる

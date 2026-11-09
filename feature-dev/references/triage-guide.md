@@ -236,9 +236,9 @@ Phase 5 は通常モードと Fix Mode の 2 形態を持つ:
 | モード | 起動元 | 動作 |
 |---|---|---|
 | 通常 | Phase 4 完了後 | architect の設計に従い feature を実装 |
-| Fix Mode | Phase 6 G-V ループから | `gv-loop.py review` が出した `target` の行のみを対象に修正。**スコープ拡大禁止**、reviewer の指摘した範囲のみ（対象外の指摘は近くにあっても直さず Step 4 へ。範囲外の変更は次の `review` が数える） |
+| Fix Mode | Phase 6 G-V ループ / Phase 5.3 の赤から | `gv-loop.py review` が出した `target` の行（5.3 の赤から来た回はエラー出力が指す file:line）のみを対象に修正。**スコープ拡大禁止**、reviewer の指摘した範囲のみ（対象外の指摘は近くにあっても直さず Step 4 へ。範囲外の変更は次の `review` が数える） |
 
 Fix Mode では:
 - 元の architect 設計（Phase 4 で user が選んだ approach）は維持
-- 修正は ピンポイント（reviewer が指摘した file:line ベース）
-- 修正後 Phase 5.5 (Smoke Test) は skip（既に通過済みのため）— ただし `low` 以外の effort で修正が runtime-sensitive なら再実行を推奨
+- 修正は ピンポイント（reviewer が指摘した file:line ベース。5.3 の赤から来た回はエラー出力が指す file:line）
+- G-V ループから来た回は、修正後 Phase 5.5 (Smoke Test) を skip（既に通過済みのため。Phase 5.3 の赤から来た回は 5.3 を再実行し、緑の行き先は phase-5.3.md の Step 3 に従う）— ただし `low` 以外の effort で修正が runtime-sensitive なら再実行を推奨

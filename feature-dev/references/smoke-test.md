@@ -1,6 +1,6 @@
 # Runtime Smoke Test — 検出ロジック（Phase 5.5 の詳細手順）
 
-SKILL.md 本文の Phase 5.5 は「runtime-sensitive を判定 → dev-workflow:ui-verify を `verify --caller=feature-dev` で呼ぶ（REQUIRED なら `--require`。UI に影響するかは ui-verify が判定する）→ 結果を triage」の骨格を持つ。本ファイルは (1) 自己再帰防止の self-lock guard と (2) runtime-sensitive な変更を検出する deterministic gate の bash を持つ。Phase 5.5 Step 0 / Step 1 から参照される。
+Phase 5.5 の手順（`skills/feature-dev/references/phase-5.5.md`）は「runtime-sensitive を判定 → dev-workflow:ui-verify を `verify --caller=feature-dev` で呼ぶ（REQUIRED なら `--require`。UI に影響するかは ui-verify が判定する）→ 結果を triage」の骨格を持つ。本ファイルは (1) 自己再帰防止の self-lock guard と (2) runtime-sensitive な変更を検出する deterministic gate の bash を持つ。Phase 5.5 Step 0 / Step 1 から参照される。
 
 ## Step 0: Self-lock guard（PostToolUse 自己再帰防止）
 

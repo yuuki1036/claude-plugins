@@ -6,7 +6,7 @@
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
 # Quality Review — Generator-Verifier Loop（Phase 6 の詳細手順）
 
-SKILL.md 本文の Phase 6 は「self-review へ委譲 → 致命指摘を auto-fix ループで潰す」の骨格だけを持つ。本ファイルは (1) self-review 出力の構造化 findings 消費契約（dual format）と、(2) Generator-Verifier ループの初期化・実行・集計の読み方の手順を持つ。ループの判断（対象の選別・delta・regression・予算・範囲外の変更）は `scripts/gv-loop.py` が持つ。Phase 6 Step 2 / Step 3 から参照される。
+Phase 6 の手順（`skills/feature-dev/references/phase-6.md`）は「self-review へ委譲 → 致命指摘を auto-fix ループで潰す」の骨格だけを持つ。本ファイルは (1) self-review 出力の構造化 findings 消費契約（dual format）と、(2) Generator-Verifier ループの初期化・実行・集計の読み方の手順を持つ。ループの判断（対象の選別・delta・regression・予算・範囲外の変更）は `scripts/gv-loop.py` が持つ。Phase 6 Step 2 / Step 3 から参照される。
 
 ## 構造化 findings の消費（dual format）
 

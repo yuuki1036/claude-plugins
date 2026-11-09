@@ -2912,126 +2912,268 @@ class MetricsVocabDriftTest(unittest.TestCase):
         self.assertIn("demo:alpha", warnings[0])
 
 
-class ReadCutPositionTest(unittest.TestCase):
-    """読み直しの注記の行末の byte 位置（#362）.
+class SplitSkillTest(unittest.TestCase):
+    """phase ごとに分けた SKILL.md の上限と phase の鎖（#426）.
 
-    行末の位置はテスト側で byte を数えて組み立てる（検査の走査を使って期待値を作らない）.
+    期待値はテスト側の文字列リテラルと byte 数で組む（検査の解析部で期待値を作らない）.
     """
 
     REL = "demo/skills/demo/SKILL.md"
-    HEAD = "# demo\n\n## Phase 5: Implementation\n\n"
-    NOTE = "8. 続きは Read の `offset` / `limit` で読む\n"
-    TAIL = "\n## Phase 5.3: 次\n\n本文\n"
+    REF = "skills/demo/references"
+    HEADING = r"^## Phase (?P<num>\d+(?:\.\d+)?): "
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
-        for name in ("ROOT", "READ_CUT_NOTES", "READ_CUT_ERROR_BYTES", "READ_CUT_WARN_BYTES"):
+        for name in ("ROOT", "SPLIT_SKILLS", "SPLIT_SKILL_MAX_BYTES"):
             self.addCleanup(lambda n=name, o=getattr(v, name): setattr(v, n, o))
         v.ROOT = self.root
-        v.READ_CUT_NOTES = ((self.REL, "## Phase 5: Implementation", "## Phase 5.3"),)
-        v.READ_CUT_ERROR_BYTES = 2_000
-        v.READ_CUT_WARN_BYTES = 1_000
+        v.SPLIT_SKILLS = ((self.REL, self.HEADING, "Phase {num}"),)
+        v.SPLIT_SKILL_MAX_BYTES = 2_000
+        (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
+        (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}")
 
-    def _body_with_note_ending_at(self, end: int, filler_char: str = "x") -> str:
-        """先頭から注記の行末までがちょうど `end` byte になる本文."""
-        fixed = len((self.HEAD + self.NOTE).encode("utf-8"))
-        width = len(filler_char.encode("utf-8"))
-        rest = end - fixed - 1   # 埋め草の行末の改行
-        self.assertGreaterEqual(rest, 0)
-        filler = filler_char * (rest // width) + "x" * (rest % width) + "\n"
-        body = self.HEAD + filler + self.NOTE
-        self.assertEqual(len(body.encode("utf-8")), end)
-        return body + self.TAIL
+    def _read(self, f: str) -> str:
+        return f"入ったら最初に `${{CLAUDE_PLUGIN_ROOT}}/{self.REF}/{f}` を Read する（本文はそのファイルにある）。\n"
 
-    def _run(self, body: str | None) -> tuple[list[str], list[str]]:
-        if body is not None:
-            path = self.root / self.REL
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(body.encode("utf-8"))
+    def _skill(self, phases: list[tuple[str, str]], extra: str = "") -> None:
+        body = "---\nname: demo\n---\n\n# demo\n\n" + extra
+        for num, f in phases:
+            body += f"## Phase {num}: 段 {num}\n\n入口の条件: なし。\n\n" + self._read(f) + "\n---\n\n"
+        _write(self.root, self.REL, body)
+
+    def _phase(self, num: str, last: str, head: str | None = None, body: str = "本文\n") -> None:
+        _write(self.root, f"demo/{self.REF}/phase-{num}.md",
+               f"<!-- 正本依存のコメント -->\n{head or f'## Phase {num}: 段 {num}'}\n\n{body}\n{last}\n")
+
+    def _three(self) -> None:
+        self._skill([("1", "phase-1.md"), ("2", "phase-2.md"), ("3", "phase-3.md")])
+        self._phase("1", "**次は Phase 2**（SKILL.md に戻る）")
+        self._phase("2", "**次は Phase 3**")
+        self._phase("3", "**ここで終わり**")
+
+    def _run(self) -> list[str]:
         errors: list[str] = []
-        warnings: list[str] = []
-        v.check_read_cut_position(errors, warnings)
-        return errors, warnings
+        v.check_split_skills(errors)
+        return errors
 
-    def test_note_within_warn_limit_passes(self):
-        self.assertEqual(self._run(self._body_with_note_ending_at(1_000)), ([], []))
+    def test_closed_chain_passes(self):
+        self._three()
+        self.assertEqual(self._run(), [])
 
-    def test_note_past_warn_limit_warns(self):
-        errors, warnings = self._run(self._body_with_note_ending_at(1_001))
-        self.assertEqual(errors, [])
-        self.assertEqual(len(warnings), 1, warnings)
-        self.assertIn("1,001 byte", warnings[0])
-        self.assertIn("999 byte", warnings[0])   # error までの残り
+    def test_trailing_note_and_blank_lines_after_the_next_line_pass(self):
+        self._three()
+        p = self.root / "demo" / self.REF / "phase-2.md"
+        p.write_text(p.read_text() + "\n\n")
+        self.assertEqual(self._run(), [])
 
-    def test_note_at_error_limit_only_warns(self):
-        errors, warnings = self._run(self._body_with_note_ending_at(2_000))
-        self.assertEqual(errors, [])
-        self.assertEqual(len(warnings), 1, warnings)
-
-    def test_note_past_error_limit_is_an_error(self):
-        errors, warnings = self._run(self._body_with_note_ending_at(2_001))
-        self.assertEqual(warnings, [])
+    def test_skill_md_at_the_limit_passes_and_one_byte_over_fails(self):
+        self._three()
+        path = self.root / self.REL
+        base = path.read_bytes()
+        path.write_bytes(base + b"x" * (2_000 - len(base)))
+        self.assertEqual(self._run(), [])
+        path.write_bytes(base + b"x" * (2_001 - len(base)))
+        errors = self._run()
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("2,001 byte", errors[0])
         self.assertIn(self.REL, errors[0])
 
     def test_counts_bytes_not_characters(self):
         """日本語は 1 字 3 byte. 字数では上限の内側でも byte で超えれば止める."""
-        body = self._body_with_note_ending_at(2_400 + len((self.HEAD + self.NOTE).encode("utf-8")), "あ")
-        self.assertLess(len(body.split(self.NOTE)[0] + self.NOTE), 2_000)
-        errors, _ = self._run(body)
+        self._three()
+        self._phase("2", "**次は Phase 3**", body="あ" * 700 + "\n")
+        self.assertLess(len((self.root / "demo" / self.REF / "phase-2.md").read_text()), 2_000)
+        errors = self._run()
         self.assertEqual(len(errors), 1, errors)
+        self.assertIn("phase のファイル", errors[0])
 
-    def test_last_note_in_section_is_measured(self):
-        """節の中に注記が 2 つあれば後ろの方を測る（Phase 5 の 8. は節の末尾にある）."""
-        body = self.HEAD + self.NOTE + "x" * 2_100 + "\n" + self.NOTE + self.TAIL
-        errors, _ = self._run(body)
+    def test_missing_skill_md(self):
+        errors = self._run()
         self.assertEqual(len(errors), 1, errors)
+        self.assertIn("分けた SKILL.md が無い", errors[0])
 
-    def test_note_outside_the_section_is_not_counted(self):
-        """冒頭の注記や Phase 5.3 以降の注記は拾わない. 節に注記が無ければ error."""
-        body = "# demo\n\n" + self.NOTE + self.HEAD + "本文\n" + self.TAIL + self.NOTE
-        errors, warnings = self._run(body)
+    def test_no_phase_heading(self):
+        _write(self.root, self.REL, "# demo\n\n## 段 1\n\n" + self._read("phase-1.md"))
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("見出しが 1 つも無い", errors[0])
+
+    def test_zero_or_two_read_lines(self):
+        self._three()
+        path = self.root / self.REL
+        text = path.read_text()
+        text = text.replace(self._read("phase-1.md"), "")
+        text = text.replace(self._read("phase-2.md"), self._read("phase-2.md") * 2)
+        path.write_text(text)
+        (self.root / "demo" / self.REF / "phase-1.md").unlink()   # Read されなくなったファイルは孤立の検査が拾う
+        errors = self._run()
+        self.assertEqual(len(errors), 2, errors)
+        self.assertIn("「## Phase 1: 段 1」の下に Read の行が 0 本", errors[0])
+        self.assertIn("「## Phase 2: 段 2」の下に Read の行が 2 本", errors[1])
+
+    def test_read_line_after_a_higher_heading_is_not_counted(self):
+        """phase の節は同じレベルの見出しで閉じる. 後ろの別の節に置いた Read の行は phase のものにしない."""
+        self._skill([("1", "phase-1.md")])
+        self._phase("1", "**ここで終わり**")
+        path = self.root / self.REL
+        path.write_text(path.read_text().replace(self._read("phase-1.md"), "") + "## 付録\n\n" + self._read("phase-1.md"))
+        errors = self._run()
+        errors = [e for e in errors if "Read されない" not in e]   # 付録の Read の行は phase のものではないので孤立は正しい
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("Read の行が 0 本", errors[0])
+
+    def test_fenced_heading_and_read_line_are_not_counted(self):
+        self._three()
+        path = self.root / self.REL
+        path.write_text(path.read_text() + "```\n## Phase 9: 例\n" + self._read("phase-1.md") + "```\n")
+        self.assertEqual(self._run(), [])
+
+    def test_orphan_file_in_references_is_an_error(self):
+        """references/ にあるのにどの見出しからも Read されない md は, 検査も読み手も届かないので止める."""
+        self._three()
+        _write(self.root, f"demo/{self.REF}/sub/note.md", "## メモ\n")
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("demo/skills/demo/references/sub/note.md はどの phase の見出しからも Read されない", errors[0])
+
+    def test_split_skill_files_are_the_read_targets_only(self):
+        """他の検査に渡す phase ファイルの集合は Read 先から作る（references/ 全体ではない）."""
+        self._three()
+        _write(self.root, f"demo/{self.REF}/note.md", "## メモ\n")
+        names = [p.name for p in v.split_skill_files(self.root / "demo")]
+        self.assertEqual(names, ["phase-1.md", "phase-2.md", "phase-3.md"])
+
+    def test_heading_regex_matching_a_non_heading_line_does_not_crash(self):
+        """一覧の正規表現が見出しでない行にも当たる形でも, 見出しの行だけを phase にする."""
+        v.SPLIT_SKILLS = ((self.REL, r".*Phase (?P<num>\d+(?:\.\d+)?): ", "Phase {num}"),)
+        self._three()
+        path = self.root / self.REL
+        path.write_text(path.read_text().replace("# demo\n", "# demo\n\n本文の Phase 9: 言及\n", 1))
+        self.assertEqual(self._run(), [])
+
+    def test_missing_target(self):
+        self._three()
+        (self.root / "demo" / self.REF / "phase-2.md").unlink()
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("phase-2.md が無い", errors[0])
+
+    def test_target_outside_the_skill_references(self):
+        self._three()
+        _write(self.root, "demo/references/phase-2.md", "## Phase 2: 段 2\n\n**次は Phase 3**\n")
+        path = self.root / self.REL
+        path.write_text(path.read_text().replace(f"{self.REF}/phase-2.md", "references/phase-2.md"))
+        (self.root / "demo" / self.REF / "phase-2.md").unlink()
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("の外にある", errors[0])
+
+    def test_two_phases_reading_the_same_file(self):
+        self._three()
+        path = self.root / self.REL
+        path.write_text(path.read_text().replace(f"{self.REF}/phase-3.md", f"{self.REF}/phase-2.md"))
+        (self.root / "demo" / self.REF / "phase-3.md").unlink()
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("「## Phase 3: 段 3」と「## Phase 2: 段 2」が同じ", errors[0])
+
+    def test_first_heading_differs(self):
+        self._three()
+        self._phase("2", "**次は Phase 3**", head="## Phase 2: 改名した段")
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("最初の見出し「## Phase 2: 改名した段」", errors[0])
+
+    def test_missing_next_line(self):
+        self._three()
+        self._phase("2", "おわり")
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("phase-2.md の末尾に「**次は <phase>**」", errors[0])
+
+    def test_skipping_a_phase_breaks_the_chain(self):
+        """#350 の型: Phase 1 の末尾が Phase 3 を指すと Phase 2 を飛ばす."""
+        self._three()
+        self._phase("1", "**次は Phase 3**")
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("末尾は「次は Phase 3」", errors[0])
+        self.assertIn("の次は Phase 2", errors[0])
+
+    def test_last_phase_must_end_and_middle_must_not(self):
+        self._three()
+        self._phase("2", "**ここで終わり**")
+        self._phase("3", "**次は Phase 4**")
+        errors = self._run()
+        self.assertEqual(len(errors), 2, errors)
+        self.assertIn("phase-2.md の末尾は「ここで終わり」", errors[0])
+        self.assertIn("の次は Phase 3", errors[0])
+        self.assertIn("phase-3.md の末尾は「次は Phase 4」", errors[1])
+        self.assertIn("無い（ここで終わり）", errors[1])
+
+    def test_step_shaped_skill(self):
+        """self-review の形（`### 1.4 ...` / `Step {num}`）でも同じ検査が通る（2 本目は一覧に 1 行足すだけ）."""
+        v.SPLIT_SKILLS = ((self.REL, r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),)
+        body = "# demo\n\n## 実行手順\n\n"
+        for num in ("1", "1.4", "2"):
+            body += f"### {num}. 段 {num}\n\n" + self._read(f"step-{num}.md") + "\n"
+        _write(self.root, self.REL, body)
+        for num, last in (("1", "**次は Step 1.4**"), ("1.4", "**次は Step 2**"), ("2", "**ここで終わり**")):
+            _write(self.root, f"demo/{self.REF}/step-{num}.md", f"### {num}. 段 {num}\n\n本文\n\n{last}\n")
+        self.assertEqual(self._run(), [])
+
+    def test_phase_file_reference_is_checked(self):
+        """phase ファイルの `${CLAUDE_PLUGIN_ROOT}/...` も check_references が見る."""
+        self._three()
+        self._phase("2", "**次は Phase 3**", body="`${CLAUDE_PLUGIN_ROOT}/references/none.md` を読む\n")
+        errors: list[str] = []
+        v.check_references(self.root / "demo", errors)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("references/none.md", errors[0])
+        self.assertIn("phase-2.md", errors[0])
+
+    def test_phase_file_publish_is_collected(self):
+        """Phase 7 の publish は phase ファイルへ移る. publisher として拾い続ける."""
+        self._three()
+        self._phase("3", "**ここで終わり**", body='event_bus_publish "demo:done" \'{}\'\n')
+        self.assertIn(("demo", "demo:done"), v._collect_published_pairs())
+
+    def test_phase_file_counts_for_tool_minimality(self):
+        """本文が phase ファイルへ移っても, そこで使っているツールを未使用候補にしない."""
+        _write(self.root, self.REL, "---\nname: demo\nallowed-tools:\n  - AskUserQuestion\n---\n\n"
+               "## Phase 1: 段 1\n\n" + self._read("phase-1.md"))
+        self._phase("1", "**ここで終わり**", body="AskUserQuestion で聞く\n")
+        warnings: list[str] = []
+        v.check_allowed_tools_minimality(self.root / "demo", warnings)
         self.assertEqual(warnings, [])
-        self.assertEqual(len(errors), 1, errors)
-        self.assertIn("注記", errors[0])
-        self.assertNotIn("byte", errors[0])
 
-    def test_missing_section_heading_is_an_error(self):
-        errors, _ = self._run("# demo\n\n" + self.NOTE + self.TAIL)
-        self.assertEqual(len(errors), 1, errors)
-        self.assertIn("見出し「## Phase 5: Implementation」が無い", errors[0])
+    def test_flow_text_restores_the_phase_body_once_in_place(self):
+        """テスト補助 flow_text: phase の本文を Read の行の位置に 1 回だけ差し込み, phase ファイルの見出しは落とす."""
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from skill_flow import flow_text
+        repo = SCRIPT.parents[2]
+        skill = repo / "feature-dev" / "skills" / "feature-dev" / "SKILL.md"
+        text = flow_text(skill)
+        self.assertEqual(text.count("## Phase 5.3: "), 1)
+        body = "### Step 3: 判定（fail-closed）"
+        self.assertEqual(text.count(body), 1)
+        self.assertLess(text.index("## Phase 5.3: "), text.index(body))
+        self.assertLess(text.index(body), text.index("## Phase 5.5: "))
+        other = repo / "code-review" / "skills" / "review-guide" / "SKILL.md"
+        self.assertEqual(flow_text(other), other.read_text(encoding="utf-8"))
 
-    def test_missing_end_heading_is_an_error(self):
-        """終わりの見出しが無いと節が EOF まで延びるので, 注記の位置より先に見出しの欠落で止める."""
-        errors, warnings = self._run(self.HEAD + self.NOTE + "本文\n")
-        self.assertEqual(warnings, [])
-        self.assertEqual(len(errors), 1, errors)
-        self.assertIn("見出し「## Phase 5.3」が「## Phase 5: Implementation」より後に無い", errors[0])
-
-    def test_end_heading_before_the_section_is_ignored(self):
-        """終わりの見出しは節の中でだけ見る. 節より前にあっても走査を打ち切らない."""
-        body = "# demo\n\n## Phase 5.3 目次\n\n" + self.HEAD + self.NOTE + self.TAIL
-        self.assertEqual(self._run(body), ([], []))
-
-    def test_missing_file_is_an_error(self):
-        errors, _ = self._run(None)
-        self.assertEqual(len(errors), 1, errors)
-        self.assertIn("SKILL.md が無い", errors[0])
-
-    def test_real_feature_dev_skill_has_the_note_within_the_error_limit(self):
-        """本物の SKILL.md と既定の閾値で error が出ない. warning の帯は許す（error までの猶予として残す 2 段構え）."""
-        for name in ("ROOT", "READ_CUT_NOTES", "READ_CUT_ERROR_BYTES", "READ_CUT_WARN_BYTES"):
+    def test_real_repo_has_no_error(self):
+        """本物の repo と既定の一覧・上限で error が出ない."""
+        for name in ("ROOT", "SPLIT_SKILLS", "SPLIT_SKILL_MAX_BYTES"):
             setattr(v, name, getattr(_load_module(), name))
         v.ROOT = SCRIPT.parents[2]
-        errors, _ = self._run(None)
-        self.assertEqual(errors, [])
+        self.assertEqual(self._run(), [])
 
     def test_the_check_is_registered(self):
         """直接呼ぶテストだけでは, main() から外れて検査が丸ごと黙っても気づけない."""
-        with unittest.mock.patch.object(v, "check_read_cut_position") as check, \
+        with unittest.mock.patch.object(v, "check_split_skills") as check, \
                 unittest.mock.patch.object(sys, "argv", ["validate_plugin_quality.py", str(SCRIPT.parents[2] / "feature-dev")]), \
                 unittest.mock.patch("sys.stdout"), unittest.mock.patch("sys.stderr"):
             v.ROOT = SCRIPT.parents[2]

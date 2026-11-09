@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
+from skill_flow import flow_text
 
 REPO = Path(__file__).resolve().parents[3]
 FLOW = REPO / "issue-workflow" / "skills" / "start" / "references" / "lightweight-flow.md"
@@ -220,7 +221,7 @@ class DocSyncOtherCallersTest(unittest.TestCase):
     COMMIT = REPO / "dev-workflow" / "skills" / "git-commit-helper" / "SKILL.md"
 
     def test_feature_dev_runs_doc_sync_before_commit_when_issue_workflow_is_enabled(self):
-        text = self.FEATURE_DEV.read_text(encoding="utf-8")
+        text = flow_text(self.FEATURE_DEV)  # 分けた SKILL.md は phase の本文を差し込んで読む（#426）
         phase7 = text[text.index("## Phase 7"):]
         block = phase7[phase7.index("**コミットの前に文書整合を通す**"):phase7.index("   - 2 回目の self-review の後は")]
         self.assertIn('plugin-enabled.sh" issue-workflow` が `1` なら', block)

@@ -50,6 +50,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #     test_mutation_nightly_report.py / test_mutation_nightly_state.py（#288）/
                                  #     test_measure_interventions.py（使い捨ての transcript dir を立てる）
                                  #  git を叩くテストは git_env.py（GIT_HOOK_ENV スクラブの正本）を通す
+                                 #  phase ごとに分けた SKILL.md の本文を読むテストは skill_flow.py の flow_text を通す
                                  #  ④ hook スクリプト（hook_harness.py + test_<plugin>_hooks.py。
                                  #     stdin に JSON を流し「発火するか / 黙るか」を直接見る）
                                  #  ⑤ mod（hooks.json の modules）: mods/<plugin>/ の *.test.ts を

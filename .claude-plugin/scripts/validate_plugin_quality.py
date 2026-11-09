@@ -81,13 +81,16 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     UTF-8 ロケールの bash が非 ASCII の 1 バイト目まで変数名に取り込むため, `set -u`
     下では診断を出さず exit 1 する. **C ロケールでは再現しない**ので開発機のシェル設定
     次第で見えなくなる（実測: detect-recent-review.sh の WARN が丸ごと死んでいた / #138）.
-  - read-cut: 長い SKILL.md の途中に置いた「Read の offset / limit で続きを読め」の注記
-    （READ_CUT_NOTES）の行末が, 先頭から READ_CUT_ERROR_BYTES 以内にあるか. 注記は Read 1 回で
-    返る範囲の内側にあるから効き, 前に文を足すと切れ目の外へ押し出されて後半を読まずに進む
-    （#350 / #362）. 注記の行が見つからないのも error（消したら黙って通らないように）.
-    節の始まり・終わりの見出し（READ_CUT_NOTES の 2・3 要素目）が見つからないのも error
-    （終わりが無いと節が EOF まで延び, 節の外の注記を測る）.
-    READ_CUT_WARN_BYTES を超えたら warning（下の warnings 側の同名項目）.
+  - split-skill: phase（self-review は Step）ごとに本文を `skills/<skill>/references/` へ分けた
+    SKILL.md（SPLIT_SKILLS）の上限と phase の鎖. SKILL.md と phase ファイルが SPLIT_SKILL_MAX_BYTES 以下か /
+    phase 見出しごとに Read の行がちょうど 1 本か / Read 先がその skill の references/ に実在し,
+    2 つの phase で同じファイルを読んでいないか / ファイルの最初の見出しが SKILL.md の見出しと同じか /
+    末尾の「**次は <phase>**」が SKILL.md の並びの次を指すか（最後は「**ここで終わり**」）/
+    その skill の references/ の md がどれかの phase の見出しから Read されているか（孤立ファイルは error）.
+    Read 1 回で読み切れない SKILL.md は続きを読まずに phase を飛ばした（#350 / #250）. 鎖が表すのは
+    既定の並びだけで, skip は次の見出しの入口の条件, 後戻りは本文の分岐で表す（#426）.
+    references 参照整合性・doc-anchor・prompt-path・allowed-tools 最小性・Event Bus の publisher は,
+    Read 先の phase ファイル（`split_skill_files`）も SKILL.md の一部として見る
 
 検査項目（warnings = 助言, exit code に影響しない）:
   - allowed-tools 最小性 (#14b): frontmatter 宣言ツールが本文で未言及（未使用候補）.
@@ -118,7 +121,6 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - skill 本文サイズ: SKILL.md 本文の行数上限（500 行）. 超過は references への
     progressive disclosure を促す（規模目安の正本は component-addition-advisor,
     執筆指針は docs/skill-writing.md）.
-  - read-cut: 読み直しの注記の行末が READ_CUT_WARN_BYTES を超えた（error まで約 1KB）.
   - metrics-vocab: publish が送りうる名前（code-review 以外の skill / command 名・観点名）が
     計測ストアの語彙に無いか. 語彙の外の値は同期で `other` に置き換わり, 追随漏れは 5 回中 4 回が
     落ちた後に足していた（#345）. 計測ストアの clone（`REVIEW_METRICS_DIR`, 既定
@@ -1188,6 +1190,12 @@ def _collect_published_pairs() -> set[tuple[str, str]]:
                 continue
             for event in EVENT_PUBLISH_RE.findall(read_text(path)):
                 pairs.add((plugin, event))
+    # 分けた SKILL.md の本文は skills/<skill>/references/ にある. glob を skills/*/references 全体に
+    # 広げず, 分けた skill の phase ファイルだけを足す（SKILL.md の一部として扱う）
+    for plugin_dir in {split_skill_plugin_dir(rel) for rel, _h, _l in SPLIT_SKILLS}:
+        for path in split_skill_files(plugin_dir):
+            for event in EVENT_PUBLISH_RE.findall(read_text(path)):
+                pairs.add((plugin_dir.name, event))
     return pairs
 
 
@@ -1300,6 +1308,7 @@ def check_doc_anchors(plugin_dir: Path, errors: list[str]) -> None:
         r"([a-z][a-z0-9-]*\.md)[ \t`]*##[ \t]+(\d+(?:\.\d+)?|\d+[ab])(?=[\s.、。）)`]|$)")
     targets = sorted(ref_dir.rglob("*.md"))
     targets += sorted((plugin_dir / "skills").glob("*/SKILL.md"))
+    targets += split_skill_files(plugin_dir)
     targets += sorted((plugin_dir / "scripts").glob("*.sh"))
     for path in targets:
         for fname, sec in ref_re.findall(read_text(path)):
@@ -1330,8 +1339,10 @@ def _strip_ref_decoration(ref: str) -> str:
 def check_references(plugin_dir: Path, errors: list[str]) -> None:
     """`${CLAUDE_PLUGIN_ROOT}/...` / `{{PLUGIN_ROOT}}/...` の参照切れを検査する.
 
-    対象: skills/*/SKILL.md, commands/*.md, agents/*.md, references/**/*.md.
+    対象: skills/*/SKILL.md, commands/*.md, agents/*.md, references/**/*.md と,
+    分けた SKILL.md の phase ファイル（`split_skill_files`）.
     どのファイル種別でも同一規則（参照パスがプラグイン配下に実在するか）を適用する.
+    skills/*/references 全体には広げない（例示のパスを書いた doc が偽陽性で鳴る）.
     """
     name = plugin_dir.name
     targets: list[Path] = []
@@ -1341,6 +1352,7 @@ def check_references(plugin_dir: Path, errors: list[str]) -> None:
     # references/ 配下も対象にする. 参照の重心がここへ移った以上,
     # SKILL.md だけを見ていては参照切れを検出できない
     targets += sorted((plugin_dir / "references").rglob("*.md"))
+    targets += split_skill_files(plugin_dir)
     for md in targets:
         text = read_text(md)
         seen: set[str] = set()
@@ -1411,6 +1423,7 @@ def check_prompt_path_form(plugin_dir: Path, errors: list[str]) -> None:
     targets += sorted((plugin_dir / "agents").glob("*.md"))
     targets += [p for p in sorted((plugin_dir / "references").rglob("*.md"))
                 if not any(d in p.parents for d in excluded)]
+    targets += split_skill_files(plugin_dir)
     for md in targets:
         for lineno, line in enumerate(read_text(md).splitlines(), 1):
             for m in short_re.finditer(line):
@@ -1494,6 +1507,10 @@ def check_allowed_tools_minimality(plugin_dir: Path, warnings: list[str]) -> Non
         if not tools:
             continue
         body = FRONTMATTER_RE.sub("", read_text(md), count=1)
+        entry = split_skill_entry(md) if md.name == "SKILL.md" else None
+        if entry is not None:
+            # 分けた SKILL.md は本文の大半が phase ファイルにある
+            body += "".join(read_text(f) for f in split_skill_files(plugin_dir, only=entry[0]))
         rel = md.relative_to(ROOT)
         for tool in tools:
             if " " in tool:
@@ -1797,64 +1814,203 @@ def check_skill_body_size(warnings: list[str]) -> None:
             )
 
 
-#: Read 1 回で返る範囲の内側に置くことで効く「続きを読め」の注記（GitHub issue #362）.
-#: (SKILL.md, 注記を探す節の見出し, 節の終わりの見出し). 注記は節の中で `offset` / `limit` を
-#: 含む最後の行. Read は token 数（cap 25000）で行の境目に切るが, 手元で token を数える手段が
-#: 無いので byte 数で代える. 実測の切れ目は 42,129 byte（#350 の旧版）と 42,448 byte
-#: （2026-11-05 の版。メインと新しい subagent のどちらでも 469 行目）
-READ_CUT_NOTES = (
-    ("feature-dev/skills/feature-dev/SKILL.md", "## Phase 5: Implementation", "## Phase 5.3"),
+#: phase（self-review は Step）ごとに本文を `skills/<skill>/references/` へ分けた SKILL.md（GitHub issue #426）.
+#: 一覧に載せることが「分けた skill である」宣言で, 上限と phase の鎖の検査はここから決まる.
+#: (SKILL.md, phase 見出しの正規表現（番号を group "num" に取る）, 末尾の「次は」に書く名前の書式)
+SPLIT_SKILLS: tuple[tuple[str, str, str], ...] = (
+    ("feature-dev/skills/feature-dev/SKILL.md", r"^## Phase (?P<num>\d+(?:\.\d+)?): ", "Phase {num}"),
 )
-READ_CUT_NOTE_MARKER = "`offset` / `limit`"
-#: 観測した最小の切れ目 42,129 byte から約 130 byte の余白を取る. token と byte の比は本文の
-#: 字種で揺れるので, 切れ目そのものを上限にしない
-READ_CUT_ERROR_BYTES = 42_000
-#: error まで約 1KB を残して知らせる（段落 1 つ分を足すと超える幅）
-READ_CUT_WARN_BYTES = 41_000
+#: SKILL.md と phase ファイルの上限. Read 1 回で返る範囲の切れ目は実測 42,129 byte（#350 の旧版）と
+#: 42,448 byte（2026-11-05 の版）. token と byte の比は字種で揺れるので切れ目の手前に余白を取り,
+#: 分ける前の 3 分の 1（feature-dev 31 KB / self-review 34 KB）より少し下に置く
+SPLIT_SKILL_MAX_BYTES = 30_000
+#: phase 見出しの下に置く Read の行. 見出しごとにちょうど 1 本
+SPLIT_READ_RE = re.compile(r"^入ったら最初に `\$\{CLAUDE_PLUGIN_ROOT\}/(?P<path>[^`]+\.md)` を Read する")
+#: phase ファイルの最後の空でない行. 最後の phase だけ「ここで終わり」
+SPLIT_NEXT_RE = re.compile(r"^\*\*(?:次は (?P<next>[^*]+)|(?P<end>ここで終わり))\*\*")
+_HEADING_RE = re.compile(r"^(#{1,6})\s")
 
 
-def check_read_cut_position(errors: list[str], warnings: list[str]) -> None:
-    """読み直しの注記の行末が, Read 1 回で返る範囲に収まっているかを byte 数で見る."""
-    for rel, start, end in READ_CUT_NOTES:
-        path = ROOT / rel
-        if not path.is_file():
-            errors.append(f"[read-cut] 注記の位置を守る SKILL.md が無い: {rel}")
+def split_skill_phases(skill_md: Path, heading_re: str, label: str) -> list[tuple[str, str, list[tuple[int, str]]]]:
+    """分けた SKILL.md の phase を並び順に (名前, 見出し行, 節の中の Read の行の (行 index, Read 先パス)) で返す.
+
+    節は phase 見出しから, 次の phase 見出しか同じかそれより上のレベルの見出しの直前まで.
+    フェンスの中の見出し・Read の行は数えない. heading_re が見出しでない行に当たっても節にしない.
+    """
+    pat = re.compile(heading_re)
+    lines = read_text(skill_md).splitlines()
+    phases: list[tuple[str, str, list[tuple[int, str]]]] = []
+    level: int | None = None
+    for i, line in _iter_unfenced_lines(lines):
+        h = _HEADING_RE.match(line)
+        m = pat.match(line) if h else None
+        if m:
+            phases.append((label.format(num=m.group("num")), line.rstrip(), []))
+            level = len(h.group(1))
             continue
-        offset = 0
-        in_section = False
-        saw_end = False
-        note_end: int | None = None
-        for line in path.read_bytes().splitlines(keepends=True):
-            offset += len(line)
-            text = line.decode("utf-8", errors="replace").rstrip("\n")
-            if in_section and text.startswith(end):
-                saw_end = True
-                break
-            if text.startswith(start):
-                in_section = True
-            elif in_section and READ_CUT_NOTE_MARKER in text:
-                note_end = offset
-        if not in_section or not saw_end:
-            # 終わりの見出しが無いと節が黙って EOF まで延び, 後ろの注記を測ってしまう
-            missing = f"「{start}」が無い" if not in_section else f"「{end}」が「{start}」より後に無い"
+        if h and level is not None and len(h.group(1)) <= level:
+            level = None
+            continue
+        r = SPLIT_READ_RE.match(line)
+        if r and level is not None:
+            phases[-1][2].append((i, r.group("path")))
+    return phases
+
+
+def split_skill_plugin_dir(rel: str) -> Path:
+    """SPLIT_SKILLS の `<plugin>/skills/<skill>/SKILL.md` からプラグインのディレクトリを求める."""
+    return (ROOT / rel).parent.parent.parent
+
+
+def split_skill_entry(skill_md: Path) -> tuple[str, str, str] | None:
+    """SKILL.md が SPLIT_SKILLS に載っていればその行を返す（分けた skill かの判定はこれだけ）."""
+    for entry in SPLIT_SKILLS:
+        if (ROOT / entry[0]).resolve() == skill_md.resolve():
+            return entry
+    return None
+
+
+def split_skill_ref_dir(rel: str) -> Path:
+    """分けた skill の phase ファイルを置く references/ の実パス."""
+    return ((ROOT / rel).parent / "references").resolve()
+
+
+def split_read_target(rel: str, path: str) -> tuple[Path, str | None]:
+    """Read の行の Read 先を解決し, (実パス, 不合格の理由) を返す. 理由は "outside" / "missing" / None.
+
+    有効な Read 先 = その skill の references/ の内側にあり, 実在する md. check_split_skills と
+    split_skill_files がこの 1 か所を使う（判定基準の持ち主を 1 つにする / docs/rule-placement.md）.
+    """
+    target = (split_skill_plugin_dir(rel) / path).resolve()
+    if split_skill_ref_dir(rel) not in target.parents:
+        return target, "outside"
+    if not target.is_file():
+        return target, "missing"
+    return target, None
+
+
+def split_skill_files(plugin_dir: Path, only: str | None = None) -> list[Path]:
+    """そのプラグインの分けた SKILL.md が Read する phase ファイル（実在するものだけ）.
+
+    references/ にあっても Read されないファイルは含めない（孤立ファイルは check_split_skills が error にする）.
+    """
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for rel, heading_re, label in SPLIT_SKILLS:
+        if split_skill_plugin_dir(rel).resolve() != plugin_dir.resolve() or not (ROOT / rel).is_file():
+            continue
+        if only is not None and rel != only:
+            continue
+        for _name, _heading, reads in split_skill_phases(ROOT / rel, heading_re, label):
+            for _i, path in reads:
+                target, reason = split_read_target(rel, path)
+                # 不合格の Read 先は check_split_skills が error にする. ここでは数えない.
+                # 返すのは ROOT 起点の形（他の検査が relative_to(ROOT) で表示する）
+                if reason is None and target not in seen:
+                    seen.add(target)
+                    out.append(plugin_dir / path)
+    return out
+
+
+def first_heading_index(path: Path) -> int | None:
+    """フェンスの外の最初の見出しの行 index（無ければ None）."""
+    for i, line in _iter_unfenced_lines(read_text(path).splitlines()):
+        if _HEADING_RE.match(line):
+            return i
+    return None
+
+
+def _first_heading(path: Path) -> str | None:
+    i = first_heading_index(path)
+    return None if i is None else read_text(path).splitlines()[i].rstrip()
+
+
+def _last_line(path: Path) -> str:
+    lines = [l.strip() for l in read_text(path).splitlines() if l.strip()]
+    return lines[-1] if lines else ""
+
+
+def check_split_skills(errors: list[str]) -> None:
+    """分けた SKILL.md の上限と, phase の鎖（見出し ↔ Read の行 ↔ ファイル ↔ 末尾の「次は」）と, 孤立ファイルを見る.
+
+    鎖が表すのは SKILL.md の既定の並びだけ. skip は次の見出しの入口の条件で, 後戻り（Fix Mode など）は
+    本文の分岐で表すので, 末尾の「次は」は常に並びの次を指す（#350 / #426）.
+    """
+    tag = "split-skill"
+    limit = SPLIT_SKILL_MAX_BYTES
+    for rel, heading_re, label in SPLIT_SKILLS:
+        skill_md = ROOT / rel
+        if not skill_md.is_file():
+            errors.append(f"[{tag}] 分けた SKILL.md が無い（SPLIT_SKILLS を直す）: {rel}")
+            continue
+        size = len(skill_md.read_bytes())
+        if size > limit:
             errors.append(
-                f"[read-cut] 見出し{missing}. 見出しを改名・移動したなら READ_CUT_NOTES も直す: {rel}"
+                f"[{tag}] SKILL.md が {size:,} byte（上限 {limit:,}）. 本文は phase のファイルへ移す（#426）: {rel}"
             )
-        elif note_end is None:
+        phases = split_skill_phases(skill_md, heading_re, label)
+        if not phases:
             errors.append(
-                f"[read-cut] 「{start}」節に Read の続きを読む注記（{READ_CUT_NOTE_MARKER} を含む行）が無い."
-                f" 注記を消した・節の外へ移したなら, READ_CUT_NOTES も合わせて直す: {rel}"
+                f"[{tag}] phase の見出しが 1 つも無い. 見出しの形を変えたなら SPLIT_SKILLS の正規表現も直す: {rel}"
             )
-        elif note_end > READ_CUT_ERROR_BYTES:
-            errors.append(
-                f"[read-cut] 読み直しの注記の行末が先頭から {note_end:,} byte（上限 {READ_CUT_ERROR_BYTES:,}）."
-                f" Read 1 回の範囲の外に出て後半を読まずに進む（#350）. 注記より前を削るか references へ移す: {rel}"
-            )
-        elif note_end > READ_CUT_WARN_BYTES:
-            warnings.append(
-                f"[read-cut] 読み直しの注記の行末が先頭から {note_end:,} byte. error（{READ_CUT_ERROR_BYTES:,}）まで"
-                f" {READ_CUT_ERROR_BYTES - note_end:,} byte. 注記より前に文を足すと Read の範囲の外に出る: {rel}"
-            )
+            continue
+        ref_dir = split_skill_ref_dir(rel)
+        seen: dict[Path, str] = {}
+        for i, (name, heading, reads) in enumerate(phases):
+            if len(reads) != 1:
+                errors.append(
+                    f"[{tag}] 「{heading}」の下に Read の行が {len(reads)} 本（1 本だけ置く。形: "
+                    f"入ったら最初に `${{CLAUDE_PLUGIN_ROOT}}/skills/<skill>/references/<file>.md` を Read する）: {rel}"
+                )
+                continue
+            target, reason = split_read_target(rel, reads[0][1])
+            shown = f"${{CLAUDE_PLUGIN_ROOT}}/{reads[0][1]}"
+            if reason == "outside":
+                errors.append(
+                    f"[{tag}] 「{heading}」の Read 先 {shown} が {ref_dir.relative_to(ROOT.resolve())}/ の外にある: {rel}"
+                )
+                continue
+            if reason == "missing":
+                errors.append(f"[{tag}] 「{heading}」の Read 先 {shown} が無い: {rel}")
+                continue
+            if target in seen:
+                errors.append(
+                    f"[{tag}] 「{heading}」と「{seen[target]}」が同じ {shown} を Read している"
+                    f"（1 phase 1 ファイル）: {rel}"
+                )
+                continue
+            seen[target] = heading
+            frel = target.relative_to(ROOT.resolve())
+            fsize = len(target.read_bytes())
+            if fsize > limit:
+                errors.append(f"[{tag}] phase のファイルが {fsize:,} byte（上限 {limit:,}）: {frel}")
+            first = _first_heading(target)
+            if first != heading:
+                errors.append(
+                    f"[{tag}] {frel} の最初の見出し「{first}」が SKILL.md の「{heading}」と違う"
+                    f"（Read の行の張り替え漏れか, 見出しの直し漏れ）"
+                )
+            want = phases[i + 1][0] if i + 1 < len(phases) else None
+            m = SPLIT_NEXT_RE.match(_last_line(target))
+            if m is None:
+                errors.append(
+                    f"[{tag}] {frel} の末尾に「**次は <phase>**」（最後の phase は「**ここで終わり**」）が無い"
+                )
+                continue
+            got = m.group("next").strip() if m.group("next") else None
+            if got != want:
+                errors.append(
+                    f"[{tag}] {frel} の末尾は「{f'次は {got}' if got else 'ここで終わり'}」だが, "
+                    f"SKILL.md の並びで「{heading}」の次は{f' {want}' if want else '無い（ここで終わり）'}"
+                    f"（鎖が切れている。phase を足した・並べ替えたら前の phase の末尾も直す）"
+                )
+        named = {split_read_target(rel, path)[0] for _n, _h, reads in phases for _i, path in reads}
+        for orphan in sorted(p.resolve() for p in ref_dir.rglob("*.md")):
+            if orphan not in named:
+                errors.append(
+                    f"[{tag}] {orphan.relative_to(ROOT.resolve())} はどの phase の見出しからも Read されない"
+                    f"（phase の見出しと Read の行を足すか, references/ の外へ移す）"
+                )
 
 
 #: 計測ストア（private リポジトリ review-metrics）の clone。CI と他人の機には無いので、無ければ黙って飛ばす
@@ -2228,7 +2384,7 @@ def main() -> int:
     check_context_budget(warnings)
     check_router_trigger_drift(warnings)
     check_skill_body_size(warnings)
-    check_read_cut_position(errors, warnings)
+    check_split_skills(errors)
     check_metrics_vocab_drift(warnings)
 
     if warnings:
