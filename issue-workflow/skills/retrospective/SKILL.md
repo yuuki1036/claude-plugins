@@ -78,7 +78,7 @@ event_bus_tail "issue:completed" 200
 
 - 期間フィルタ: `ts` を指定期間と比較
 - dedup: 同じ `issue_id` + `slug` の組合せが複数イベントある場合、最新の ts を採用（同 Issue で status が toggle した想定）
-- payload の `file` を直接 Read することで、Issue ファイルの詳細（type / scope_size / 完了タスク数）を取得
+- payload の `file` を直接 Read することで、Issue ファイルの詳細（type / scope_size）を取得（完了タスク数は自分で数えず、Phase 2 の 3. で `scope-size.py` に渡す）
 
 ### Source 2: Issue ファイル走査（fallback / 補完）
 
@@ -146,20 +146,13 @@ event_bus_tail "failure:logged" 200
 
 ### 3. スコープ精度
 
-フロントマターの `scope_size` と、実際の完了タスク数（`[x]` の数）を比較:
+対象期間の完了 Issue のファイルをまとめて `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scope-size.py" check --basis done <Issue ファイル>...` に渡し、`verdict=` を次のとおり集計する（完了タスク数 `[x]` を数えるのも、上限と比べるのもスクリプト。自分で数えない / GitHub issue #425）:
 
-| scope_size | 想定タスク数 |
-|------------|-------------|
-| small | 3個以下 |
-| medium | 4〜7個 |
-| large | 8個以上 |
-
-判定ロジック:
-- 宣言が small で実際5個以上 → **スコープ膨張**
-- 宣言が medium で実際3個以下 → **過大見積もり**
-- 宣言が medium で実際8個以上 → **スコープ膨張**
-- 宣言が large で実際5個以下 → **過大見積もり**
-- それ以外 → **適正**
+- `over` → **スコープ膨張**
+- `under` → **過大見積もり**
+- `ok` → **適正**
+- `skip`（`scope_size` が未設定・不明な値、またはチェックリストが 1 件も無い）→ 集計から除外する
+- `missing=`（ファイルが既に消えている。exit 2）→ その Issue は集計から除外し、件数を「ファイルなし: X件」と添える
 
 ### 4. knowledge 切り出し
 
@@ -320,6 +313,6 @@ Phase 1 の Source 3 で取得した `failure:logged` イベントを集計す�
 
 - データが少ない場合（完了 Issue が0件など）でも振り返りフレームは実施する
 - canceled Issue は完了実績には含めず、別途「キャンセル: X件」として報告する
-- スコープ精度は `scope_size` フロントマターがない Issue はスキップする
+- スコープ精度は `scope-size.py` が `verdict=skip` を返した Issue（`scope_size` が無い・不明な値、チェックリストが無い）をスキップする
 - 前回 retro との比較は最新 1 件のみ対象とする（複雑化を避けるため、それ以上の履歴比較は別機能）
 - 初回実行（過去ファイルなし）の場合は前回比較セクションをスキップする

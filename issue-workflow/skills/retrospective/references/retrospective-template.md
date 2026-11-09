@@ -23,7 +23,7 @@ created: YYYY-MM-DD
 ## スコープ精度
 | Issue | 宣言 | 実タスク数 | 判定 |
 |-------|------|-----------|------|
-| {ISSUE-ID} | medium (7) | 5 | 適正 |
+| {ISSUE-ID} | {scope_size} ({limit}) | {count} | {適正 / スコープ膨張 / 過大見積もり} |
 
 ## knowledge 切り出し
 - 新規作成: X件

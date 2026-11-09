@@ -171,6 +171,38 @@ class CheckScopeSizeTest(HookTestCase):
             f = issue_file(root, scope="small", tasks=99)
             self.assertNotEqual(self.run_hook(self.edit_payload(f)).returncode, 2)
 
+    # --- 判定を scripts/scope-size.py に寄せた（#425）ことで増えた黙る条件と、直った読み方 ---
+    def test_template_frontmatter_with_trailing_comment_fires(self):
+        """テンプレの `scope_size: small   # 必須…` を small と読む（以前は不明値として黙っていた）."""
+        with TempGitRepo() as root:
+            f = issue_file(root, scope="small", tasks=4)
+            f.write_text(f.read_text().replace(
+                "scope_size: small", "scope_size: small            # 必須。値: small / medium / large"))
+            self.assertFired(self.run_hook(self.edit_payload(f)), "上限 3 を超過")
+
+    def test_without_python3_is_silent(self):
+        with TempGitRepo() as root:
+            f = issue_file(root, scope="small", tasks=9)
+            res = self.run_hook(self.edit_payload(f), env_extra={"PATH": self.path_with_only("jq")})
+            self.assertSilent(res)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr, "ERR trap で落ちている")
+
+    def test_a_python3_that_fails_to_start_is_silent(self):
+        with TempGitRepo() as root:
+            f = issue_file(root, scope="small", tasks=9)
+            # スタブは path_with_only の dir（本物への symlink が並ぶ）に書かない（上書きで本物を壊す）
+            stub_dir = tempfile.TemporaryDirectory()
+            self.addCleanup(stub_dir.cleanup)
+            stub = Path(stub_dir.name) / "python3"
+            stub.write_text("#!/bin/sh\nexit 1\n")
+            stub.chmod(0o755)
+            res = self.run_hook(self.edit_payload(f),
+                                env_extra={"PATH": f"{stub_dir.name}:{self.path_with_only('jq')}"})
+            self.assertSilent(res)
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr, "ERR trap で落ちている")
+
 
 class OnIssueChangeTest(HookTestCase):
     PLUGIN = "issue-workflow"

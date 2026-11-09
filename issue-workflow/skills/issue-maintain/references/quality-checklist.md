@@ -83,13 +83,9 @@ follow_up:
 
 ### 6. スコープ超過チェック
 
-- フロントマターに `scope_size` が設定されている場合、進捗セクション内のタスク数（`- [ ]` と `- [x]` の合計）と比較
-- 閾値:
-  - `small`: 3個以下
-  - `medium`: 7個以下
-  - `large`: 15個以下
-- 超過時は警告を出力し、Issue 分割を提案
-- `scope_size` が未設定の場合はスキップ
+- `scripts/scope-size.py check --basis all` の判定に従う（手順と警告フォーマットは `detection-guards.md` のスコープ超過チェック。上限の値はスクリプトが持つ）
+- `verdict=over` なら警告を出力し、Issue 分割を提案
+- `verdict=skip`（`scope_size` が未設定・不明な値、チェックリストが無い）の場合はスキップ
 
 ### 7. knowledge 切り出し判断基準
 

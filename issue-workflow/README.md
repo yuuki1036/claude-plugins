@@ -58,7 +58,7 @@ Issue 管理ワークフロープラグイン。旧 linear-workflow / indie-work
 mods が有効な端末・Desktop（Claude Code 2.1.287 以降）では、作業中の Issue をプロンプトの上に 1 行で出す。例: `MYAPP-3 帯を出す · in-progress · feature · タスク 2/5 · feat/band`
 
 - どの Issue かは `/start` が書く `.claude/session-context.md` で決まる。そのブランチが今のブランチと違えば（別の作業に移った）出さない。Issue が完了済みの回と、作業のある場所へ移らずに案内だけした回は、`/start` は書かない
-- タスクの数は `## 進捗`（無ければ `## 完了条件`）のチェックリスト。scope_size の上限（small 3 / medium 7 / large 15。`check-scope-size.sh` と同じ）を超えたら警告も出す
+- タスクの数は `## 進捗`（無ければ `## 完了条件`）のチェックリスト。scope_size の上限（`scripts/scope-size.py` と同じ値。一致はテストが検証する）を超えたら警告も出す
 - 読み直すのは、プロンプトを送ったとき・Issue / session-context を Edit / Write したとき・`git checkout` / `git switch` の後。読むだけで何も書かない
 - 「隠す」で消え、別の Issue に移るとまた出る。実装: `hooks/issue-band.tsx`
 - worktree の中では、worktree に無い Issue ファイルをメインのチェックアウトから読む（Issue ファイルを gitignore している repo 向け）
@@ -75,7 +75,7 @@ start / issue-create / follow-up の promote がブランチを切るとき、�
 
 ## 主な機能
 
-- 放置 Issue 検知・スコープ管理（`scope_size`: small 3 / medium 7 / large 15。超過はリアルタイム警告）
+- 放置 Issue 検知・スコープ管理（`scope_size` の上限と判定は `scripts/scope-size.py`。超過はリアルタイム警告）
 - 技術的負債トラッキングと定期棚卸し
 - knowledge の蓄積（source / concept / rejected の 3 種 + wikilink）と健全性 lint。rejected（却下記録）は「対応しない」と決めた提案を理由付きで永続化し、discover の再提案を機械的に抑止する
 - AI 主導の課題発見（discover。起票前に外部オラクル + 独立検証 agent で誤検知を抑制）

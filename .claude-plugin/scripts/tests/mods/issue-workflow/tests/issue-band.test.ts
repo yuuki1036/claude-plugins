@@ -3,7 +3,8 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 import { expect, test } from 'claude-code/testing'
 
-import { frontmatter, issueSummary } from '../hooks/issue-band-lib'
+import { frontmatter, issueSummary, overLine } from '../hooks/issue-band-lib'
+import scopeCases from './scope-size-cases'
 
 const ROOT = '/w/app'
 const SURFACES = ['terminal', 'desktop'] as const
@@ -161,7 +162,7 @@ test('worktree の中では、worktree に無い Issue をメインのチェッ�
   expect(b.line).toBe('TEAM-9 · feat/TEAM-9-x')
 })
 
-test('scope_size の上限を超えたら知らせる（check-scope-size.sh と同じ上限）', async ($, on) => {
+test('scope_size の上限を超えたら知らせる（scripts/scope-size.py と同じ上限）', async ($, on) => {
   const w = newWorld()
   w.files[`${ROOT}/.claude/indie/myapp/issues/MYAPP-3.md`] = issue('MYAPP-3', { scope: 'small', progress: ['- [ ] 1', '- [ ] 2', '- [ ] 3'] })
   stub(on, w)
@@ -217,4 +218,14 @@ test('frontmatter / issueSummary', () => {
   const d = issueSummary(issue('X-1', { done: ['- [ ] b', '- [x] c'] }), 'X-1', 'br')
   expect([d.done, d.total]).toEqual([1, 2])
   expect(issueSummary(issue('X-1', { scope: 'huge' }), 'X-1', 'br').limit).toBeNull()
+})
+
+// 数え方と超過判定は scripts/scope-size.py が正本。mod は python を呼べないので複製しており、
+// 同じ fixture を python 側（test_issue_workflow_scope_size.py）も読んで突き合わせる（GitHub issue #425）
+test('数え方と超過判定が scripts/scope-size.py と同じ（共有 fixture）', () => {
+  for (const c of scopeCases.cases) {
+    const b = issueSummary(c.text, 'ISS-1', 'feat/x')
+    expect({ name: c.name, total: b.total, done: b.done, over: overLine(b) !== null })
+      .toEqual({ name: c.name, total: c.total, done: c.done, over: c.over })
+  }
 })
