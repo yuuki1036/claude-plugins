@@ -89,8 +89,9 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     その skill の references/ の md がどれかの phase の見出しから Read されているか（孤立ファイルは error）.
     Read 1 回で読み切れない SKILL.md は続きを読まずに phase を飛ばした（#350 / #250）. 鎖が表すのは
     既定の並びだけで, skip は次の見出しの入口の条件, 後戻りは本文の分岐で表す（#426）.
-    references 参照整合性・doc-anchor・prompt-path・allowed-tools 最小性・Event Bus の publisher は,
-    Read 先の phase ファイル（`split_skill_files`）も SKILL.md の一部として見る
+    references 参照整合性・doc-anchor・prompt-path・allowed-tools 最小性・Event Bus の publisher・
+    comment-polish 連結（COMMENT-POLISH マーカーの数）は, Read 先の phase ファイル（`split_skill_files`）も
+    SKILL.md の一部として見る
 
 検査項目（warnings = 助言, exit code に影響しない）:
   - allowed-tools 最小性 (#14b): frontmatter 宣言ツールが本文で未言及（未使用候補）.
@@ -817,11 +818,11 @@ def check_comment_polish_wiring(errors: list[str]) -> None:
         if not path.is_file():
             errors.append(f"[{tag}] SKILL.md missing: {path.relative_to(ROOT)}")
             continue
-        text = read_text(path)
+        text = skill_text_with_split(path)
         modes = COMMENT_POLISH_MARKER_RE.findall(text)
         if len(modes) != 1:
             errors.append(
-                f"[{tag}] COMMENT-POLISH マーカーは各 SKILL.md にちょうど 1 個"
+                f"[{tag}] COMMENT-POLISH マーカーは各 SKILL.md にちょうど 1 個（分けた skill は phase ファイルを含めて）"
                 f"（実際 {len(modes)} 個）: {path.relative_to(ROOT)}"
             )
             continue
@@ -1910,6 +1911,16 @@ def split_skill_files(plugin_dir: Path, only: str | None = None) -> list[Path]:
                     seen.add(target)
                     out.append(plugin_dir / path)
     return out
+
+
+def skill_text_with_split(skill_md: Path) -> str:
+    """SKILL.md の本文. 分けた skill なら Read する phase ファイルの本文を後ろに足す（本文を見る検査用）."""
+    text = read_text(skill_md)
+    entry = split_skill_entry(skill_md)
+    if entry is None:
+        return text
+    files = split_skill_files(split_skill_plugin_dir(entry[0]), only=entry[0])
+    return "\n".join([text, *(read_text(p) for p in files)])
 
 
 def first_heading_index(path: Path) -> int | None:
