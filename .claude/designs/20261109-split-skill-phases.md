@@ -2,7 +2,7 @@
 id: 20261109-split-skill-phases
 title: feature-dev と self-review の SKILL.md を phase ごとに分ける
 status: draft
-phase: target
+phase: current
 last-validated: 2026-11-09
 supersedes: []
 superseded-by: null
@@ -51,7 +51,7 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 **phase ファイルの型**:
 
 - 先頭の見出しは SKILL.md の見出しと同じにする
-- 末尾は `**次は Phase X**` にし、最後の phase だけ `**ここで終わり**` にする。括弧で注記を添えてよい
+- 末尾は `**次は Phase X**`（self-review は `**次は Step X**`）にし、最後の phase だけ `**ここで終わり**` にする。括弧で注記を添えてよい
 - 鎖が表すのは既定の並び（線形）だけにする。skip は次の見出しの入口の条件で表し、後戻り（Fix Mode・5.3 が赤・5.5 が fail・doc-sync）は本文の分岐で表す
 
 **検査**（`validate_plugin_quality.py`）: 一覧 `SPLIT_SKILLS` に、SKILL.md・phase 見出しの正規表現・次の名前の書式を並べ、`check_split_skills` で次のどれかに当たれば `[split-skill]` の error にする。
@@ -67,7 +67,7 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 あわせて次のように直す:
 
 - `READ_CUT_NOTES` と `check_read_cut_position` は撤去する
-- `check_references`・`check_doc_anchors`・`prompt-path`・allowed-tools の最小性・`EVENT_PUBLISHER_GLOBS` の対象に、分けたファイルを足す。`skills/*/references` 全体には広げない（harness-keeper の例示パスで偽陽性が約 8 件出る見込み）
+- `check_references`・`check_doc_anchors`・`prompt-path`・allowed-tools の最小性・`EVENT_PUBLISHER_GLOBS`・comment-polish の連結（COMMENT-POLISH マーカーの数）の対象に、分けたファイルを足す。`skills/*/references` 全体には広げない（harness-keeper の例示パスで偽陽性が約 8 件出る見込み）
 
 **テスト**: `SplitSkillTest` を足す。期待値はテスト側で独立に組む。`tests/skill_flow.py` の `flow_text` は、SKILL.md の Read の行の位置に本文を差し込み、分ける前の順に戻す。これで既存の見出し切り出しテストはそのまま動く。分けた skill か・どれが Read の行か・どれが最初の見出しかは、検査と同じ関数（`split_skill_entry` / `split_skill_phases` / `first_heading_index`）で決める（判定基準の持ち主を 1 つにする）。
 
@@ -96,6 +96,9 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 - [local] 上限 30,000 B は、今の 3 分の 1（31 KB / 34 KB）より少し下で、Read 1 回の切れ目（実測 42,129 B）に余白を残す値
 - [local] 入口の条件を SKILL.md に上げるのは、前の phase で決まった値だけで判定できるものに限る（bash を走らせないと判定できない条件は本文に残す）
 - [local] 末尾の行に `## Phase` の文字列を書かない（`flow_text` で戻した本文の見出し切り出しに当たる）
+- [local] self-review の 4.5〜4.9 は、SKILL.md の見出しを実行の順（4.5 → 4.8 → 4.6 → 4.9 → 4.7）に並べ、並べ替えた見出しの直前の Step の下にそう並べたことを 1 行添える（`docs/skill-writing.md` にも同じ規則を書いた）。鎖は SKILL.md の並びを辿るので、番号の順に並べると 4.8 の skeptic 統合を飛ばして 4.6 へ進む（2026-11-09）
+- [local] self-review は `step-<番号>.md` を 19 本作り、入口の条件を SKILL.md に上げず、スキップの条件は Step ファイルで判定する（Step の見出しが条件を括弧書きで持ち、前の Step の値だけで決まる条件が少ないため / 2026-11-09）
+- [local] self-review の SSoT pin（orchestration-guide `0`・`3.5`、orchestration-measurement `16`、scoring-guide の報告閾値の節）は、要約している本文と一緒に Step 3・4・5・6・6.4 のファイルへ移す。COMMENT-POLISH マーカーの検査は phase ファイルを含めた本文で数える
 - [→ADR候補] 大きい SKILL.md は phase ごとに references へ分け、`SPLIT_SKILLS` に載せて上限と鎖を強制する（他の skill を分けるときもこの形に揃える）
 
 ## 未解決事項 (open)
