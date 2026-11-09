@@ -2206,8 +2206,9 @@ def gap_hint(g):
     if g == "report-template":
         # 打点でも payload でもなく、レポートの出し方（#250）
         return ("レポート出力の定型（self-review Step 6 / review Step 7。`**指摘件数**: BLOCKER …` の行）を"
-                "publish の前に出していない。SKILL.md を Bash の cat / sed で読んで切り詰められていないか"
-                "（Read の offset でテンプレートまで読む）、他 skill から回したときに進捗報告で置き換えて"
+                "publish の前に出していない。review は SKILL.md を Bash の cat / sed で読んで切り詰められていないか"
+                "（Read の offset でテンプレートまで読む）、self-review は Step 6 の見出しで step-6.md を Read したか、"
+                "他 skill から回したときに進捗報告で置き換えて"
                 "いないかを見る。skill 別の率は「計測の健全性」の定型レポートの行")
     if g == "session-unresolved":
         # **窓でも打点でもなく id の解決**（#246）。推定には倒していないので値は欠測で、誤値は無い

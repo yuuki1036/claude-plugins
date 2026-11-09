@@ -202,7 +202,7 @@ class InitialSelfReviewScopeTest(unittest.TestCase):
         self.assertNotIn("`--focus <", loop)
         self.assertNotIn("`--exclude <", loop)
         self.assertIn("`**範囲**:`", loop, "旧版の code-review を見分ける手順が無い")
-        self_review = (REPO / "code-review" / "skills" / "self-review" / "SKILL.md").read_text()
+        self_review = flow_text(REPO / "code-review" / "skills" / "self-review" / "SKILL.md")
         self.assertIn("**`--since=<tree>` / `--prior-findings=<path>`（", self_review, "self-review の引数から --since が消えた")
         self.assertIn("**範囲**:", self_review, "self-review のレポートに範囲の行が無い")
 
@@ -213,7 +213,7 @@ class InitialSelfReviewScopeTest(unittest.TestCase):
         """
         loop = self.section(self.REVIEW_LOOP.read_text(), "5. **Re-review**", "6. Return to step 1")
         self.assertIn("`--rereview`", loop)
-        self_review = (REPO / "code-review" / "skills" / "self-review" / "SKILL.md").read_text()
+        self_review = flow_text(REPO / "code-review" / "skills" / "self-review" / "SKILL.md")
         self.assertIn("**`--rereview`（", self_review, "self-review の引数から --rereview が消えた")
 
     def test_initial_call_does_not_declare_a_rereview(self):

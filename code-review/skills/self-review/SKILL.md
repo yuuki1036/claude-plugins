@@ -18,11 +18,7 @@ allowed-tools:
 
 # Self Review
 
-<!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
-<!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @2a27f9ea -->
-<!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @0bdb764b -->
+> **各 Step の手順は Step ごとのファイルにある**（`skills/self-review/references/step-<番号>.md`）。Step の見出しに来たら Read の行が指すファイルを最初に読み、スキップの条件もそのファイルで判定する。読んだら手順を終え、SKILL.md に戻ってファイル末尾の「次は」が指す Step の見出しへ進む（本文の分岐が戻り先を書いている回はそちらに従う）。見出しだけを見て、本文を読まずに進めない（Step 6 の定型と 6.4 の publish を読まずに締めた回は定型を出さなかった / GitHub issue #250・#426）。Step ファイルの中の `${CLAUDE_PLUGIN_ROOT}` は、この SKILL.md を Read したパスのプラグインのルートに読み替える
 
 ## review との違い
 
@@ -72,556 +68,78 @@ self-review では `isolation: "worktree"` を使わない等の差分は orches
 
 ### 1. diff 収集とコンテキスト準備
 
-**Step 1 と 1.4 は 1 つの Bash 呼び出しにまとめる**（GitHub issue #147）。間に LLM の判断が挟まらない — 後段は前段の**出力を読んで決める**のではなく、同じシェルの変数とファイルを使うだけなので、分けると往復ぶんの `cache_read` を払うだけになる。**1.7 の機械層はここに含めない**（理由は 1.7 側に記載）。
-
-```bash
-# 所要時間計測の開始マーカー t0 を記録（Step 6.4 の payload で使用）。
-# 以降 t1（一括発行の直前）/ wave --explorer（explorer 回収直後）/ wave（agent wave 回収の直後・毎回）/ t2（レポート出力直後）を
-# 同じスクリプトで追記する。パス導出・区間の意味の正本: orchestration-measurement.md `## 13.1` `## 14`
-# 1.4 で「中止する」を選んだ回は同じスクリプトの discard で打点ファイルを捨てる
-# （publish しない回を Stop hook が「publish 漏れ」と拾わないように / #247）
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" start
-
-# base branch: 引数 → このブランチを作ったときの reflog（統合ブランチから切ったなら統合ブランチ）→
-# default branch の順で決める（正本: scripts/lib/base-branch.sh / GitHub issue #274）
-BASE_ARG="<引数で指定された base branch。指定が無ければ空のまま>"
-# GitHub issue #313。シングルクォートで埋める（値の検査はシェルの展開の後なので、`$(…)` を評価させない。値に `'` があれば渡さない）
-SINCE_ARG='<引数の --since= の値。無ければ空のまま>'
-PRIOR_ARG='<引数の --prior-findings= の値。無ければ空のまま>'
-BASE_OUT=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/lib/base-branch.sh" ${BASE_ARG:+"$BASE_ARG"})
-printf '%s\n' "$BASE_OUT"
-BASE=$(printf '%s\n' "$BASE_OUT" | sed -n 's/^base_branch=//p')
-
-if [ -n "$BASE" ]; then
-  # diff を $DIFF_FILE に保存し、シグナルダイジェストのみ stdout に出す
-  # （`--staged` 指定時はこのコマンドの最後（継続行の後ろ）に --staged を足す。`--staged` の回は --since-tree を渡しても無視される）
-  # 条件付きの引数は 1 語ずつ書く（zsh は展開を語に分けないので、`${X:+--flag "$X"}` は 1 語になる）
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/triage-signals.sh" --base "$BASE" \
-    ${SINCE_ARG:+--since-tree} ${SINCE_ARG:+"$SINCE_ARG"} ${PRIOR_ARG:+--prior-findings} ${PRIOR_ARG:+"$PRIOR_ARG"}
-
-  # Markdown 推敲の起動判定の材料（`## md-polish`。md の散文の追加・変更行数と writing-polish の有無）。
-  # `--staged` 指定時は `--base "$BASE"` を `--staged` に置き換える
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/md-prose-lines.sh" --base "$BASE" --count
-
-  # Step 1.4 の重複検出。**`--embed` のときはこの行を落とす**。triage-signals.sh が書いた
-  # diff ファイルを読むので**この順序である必要がある**（パス引数は要らない / 自力導出する）
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-recent-review.sh" --skill code-review:self-review
-
-  # 同じファイルを触った過去の merged PR のレビューコメント（GitHub issue #286）。triage-signals.sh が
-  # 書いた core の一覧を読むのでこの順序。コメントがあったときだけパスを 1 行出す
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/fetch-past-reviews.sh" --base "$BASE" --save
-
-  # 前回の self-review で修正を選んだ指摘のうち、今回の diff に入った分（GitHub issue #298）。
-  # `--prior-findings` の分も合わせて出す（#313）。triage-signals.sh が書いた diff を読むのでこの順序。
-  # 該当が無ければ何も出さない
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/prior-fixes.sh" match ${PRIOR_ARG:+--extra} ${PRIOR_ARG:+"$PRIOR_ARG"}
-else
-  echo "FATAL: base branch を特定できない（後続 5 本はスキップした）"
-fi
-```
-
-**`fetch-past-reviews.sh` がパスを出したら、Step 4 の共通ブロックに `past_reviews_file=<そのパス>` として入れる**（読み方の規約は reviewer-common.md「過去 PR の指摘」）。何も出さない回（コメント 0 件・GitHub に届かない repo）は入れない。`skip:` の 1 行は欠損観点ではないので `missing_coverage` に記録しない
-
-**`## prior-fixes` が出たら（前回の指摘への修正 / GitHub issue #298）** → Read `${CLAUDE_PLUGIN_ROOT}/references/prior-fixes-guide.md` の 1 節。範囲を絞った回でもこの行は検証済みにせず、その観点の reviewer に割り当て、**reviewer と specialist のプロンプトにだけ** `prior_fixes:` としてインラインで渡す（共通ブロックに入れない。共通ブロックは skeptic にも届く / #313）。`--prior-findings` の分もこの節に合流している（出なければ読まない）
-
-**`set -e` を張らないこと**、そして**分岐を `[ 条件 ] && コマンド` で書かないこと**（どちらも CLAUDE.md Gotchas の ERR trap family）。base が決まらないとき `base-branch.sh` は exit 2 を返すので、`set -e` 下では `BASE_OUT=$(...)` の行でシェルごと落ち、**以降の 5 本を実行せずに終わる**。`if` なら BASE が空でも 0 で終わり、`FATAL:` の 1 行が出力に残る。
-
-`base_source=` が `reflog` なら、このブランチを作った起点（統合ブランチ等）を base にしている。`default` なら起点が分からず default branch に倒した — 統合ブランチから切ったブランチでは、統合ブランチの他の変更まで対象に混ざるので、Phase 0 の出力にこの 1 行を載せる。
-
-`FATAL:` が出たら base branch を特定できていない（後続 5 本は走っていない）。ユーザーに base branch を確認してから呼び直す。
-
-**diff 全文をメインコンテキストに載せない。** `triage-signals.sh` が diff（コミット済み + 未コミット）をファイルへ保存し、Phase 0 に必要な**事実だけ**を compact に出力する。diff は reviewer / explorer へ**パスで渡す**（本文を転記しない。orchestration-guide.md `## 3.5`）。
-
-出力セクション（`## meta` / `## size` / `## files` / `## hunks` / `## focus-signals` / `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`）の意味と使い道の正本 → review SKILL.md `### 2`。self-review では `## issue-ids` はブランチ名から抽出され、`## meta` の `base` は指定した base branch になる（ローカルの base が origin より遅れていれば `origin/<base>`）。あわせて出る **`diff_base=`**（diff の起点のコミット）を、共通ブロックの base ref と base 検算に使う（`git show <diff_base>:<path>` が diff の変更前と一致する。`base` の ref の先端は、ブランチを切った後に base が進むとずれる / orchestration-guide.md `## 3.5`）。**`## md-polish`**（`md_prose_lines=` / `writing_polish=`）は self-review だけにあり、Markdown 推敲の起動判定（Step 2.1）に使う。**`## decision-docs`**（`design_doc=` と決定系 doc の一覧）は決定系 doc の design-review 委譲の起動判定（Step 2.1）に使う。**`## delta`** は `--since` の回だけに最後の節として出る（読み方は下の `--since` の節）。
-
-- **`size_tier`** はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。GitHub issue #96）。Phase 0 の構成テーブル・Step 6 レポート冒頭・Step 6.4 の `size_tier` に記録する
-- **シグナルは事実であって判定ではない**。観点採否・体数は triage-guide が決める。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む
-- **`diff_file=` と `agent_ctx_file=` の値はパス文字列そのものを控えておく**（後者は Step 4 の共通ブロック書き出し先。**slug は不透明な cksum 値なので、控え損ねると復元できない**）（シェル変数は Bash 呼び出し間で消えるため、`$DIFF_FILE` として引き回さず実パスを毎回書く）
-- **判断が付かない場合のみ** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file の実パス>" <path>` で必要なファイルの diff だけを読む（全文 Read はしない）
-- **diff の起点は base branch の先端ではなく HEAD との分岐点**で、ローカルの base と `origin/<base>` のうち HEAD に近い方から取る（正本: `scripts/lib/diff-base.sh` / GitHub issue #253）。ローカルの base が遅れていて origin 側を使った回は stderr に `WARN: ⚠️ base:` が出る。止めずに続け、Phase 0 の出力にその 1 行を載せる
-- **スクリプトが失敗した場合**は `git diff "origin/${BASE}...HEAD" --name-only`（取れなければ `"${BASE}...HEAD"`）と `--stat` でファイル一覧と規模を取り、triage-guide.md `## 6.4` のフォールバック構成に落とす。**diff 全文の Read はこの経路でも行わない**
-
-`## size` の `total_files` が 0 なら変更なしとして終了。
-
-`--staged` 引数が指定されている場合は `triage-signals.sh --base "${BASE}" --staged` を使う（`git diff --cached` のみが対象になり、未ステージの変更とコミット済みの差分は除外される）。
-
-**`--embed`（他 plugin からの呼び出し）:**
-
-`--embed` 引数が指定されている場合は、本 skill が他 plugin（例: feature-dev Phase 6）からプログラム的に呼び出されたと判断する。Step 7 の修正方針確認 AskUserQuestion と Step 8 の worktree teardown 連携を skip し、Step 6 のレポートをそのまま return する。呼び出し元側で findings を集約・後処理する前提。
-
-**return してもターンを終えない**（指摘 0 件の回も同じ）。Skill tool で呼ばれた skill は subagent ではなく呼び出し元と同じ会話の中で動くので、marker を書いてツールを呼ばずに止まると、呼び出し元の手順ごとターンが終わる（writing-polish の embed で実際に起きた）。marker の後は同じターンのまま、呼び出し元の次の手順（feature-dev なら Phase 6 の Step 3 以降）を実行する。marker は呼び出し元が戻りを確かめるためのもので、完了の合図ではない。
-
-return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、marker の位置、後方互換）の正本 → orchestration-optional-flows.md `## 15`。AskUserQuestion は呼ばない（呼び出し元の UX を阻害しない）。
-
-**`--rereview`（修正を確かめる再レビューの申告）:**
-
-直前のレビューの指摘を直したあと、直ったかを確かめるために回し直す回であることを申告する（feature-dev の G-V ループが渡す / GitHub issue #296）。**レビューの手順は何も変えない**。publish が transcript からこの引数を読んで payload の `invocation.rereview` に載せるので、SKILL から payload に書かない。retro は再レビューを真の空振り・報告 0 件率・歩留まりの主層から外し、反証・skeptic の `scope` スキップも初回と分けて数える — 0 件が望ましい回を初回と同じ母集団で数えると、1 回の再レビューで ⚠️ の有無が入れ替わる。
-
-**付けるのは利用者か呼び出し元 skill の手順だけ**。利用者が手で直したあとの回し直しは、利用者が slash の引数か発話（「再レビュー」）で指定する。**利用者が「self-review 回して」としか言っていない回に、Skill を呼ぶモデルが前回の構成から推して足さない**（実測: 素の「回して」に `--rereview` を足した 3 回のうち 2 回は修正確認ではなく、主層から外れた / GitHub issue #300）。publish も、利用者の発話を挟んだ `Skill` の `--rereview` は、その発話が再レビューを明示していなければ申告として読まない
-
-**`--since=<tree>` / `--prior-findings=<path>`（再レビューの範囲を delta に絞る / GitHub issue #313）:**
-
-直前の修正の前（feature-dev の G-V ループ）やレビューした時点（Phase 6.9）の作業ツリーの tree を受け、その後に変えた分（delta）を主な対象にする。delta は Step 1 の triage-signals.sh が作る。対象のファイルは、diff 全体に入るファイルと、起点の tree から変わったファイル（base の状態へ戻したファイルを含む。いま未追跡のものは除く）。`--prior-findings` は前回の対象（`[{file, line, focus, title}]`。形の正本は prior-fixes-guide.md の 4 節）で、`## prior-fixes` に合流する。**付けるのは利用者か呼び出し元 skill の手順だけ**で、利用者が「self-review 回して」としか言っていない回にモデルが推して足さない（`--rereview` と同じ / #300）。
-
-- Step 1 の `## delta` が `scope_mode=delta` なら → Read `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` の `### 6.5`（観点・体数・空の delta の扱い）。`scope_mode=full` と `fallback=` が出た回は、理由を Step 6 の **範囲** の行に書いて diff 全体で続ける（`pr` / `staged` / `bad-tree-id` / `tree-not-found` / `prior-findings-unreadable` / `delta-diff-failed`）
-- `--focus` / `--exclude` と一緒に渡されたら: 読む範囲は delta、skeptic と反証は従来どおり `scope` でスキップする。`--focus` は指定した観点と前回の対象の観点だけを規模キャップの外で起動し、`--exclude` は指定した観点を外して残りを 6.5 の規則で決める
-
-**`--focus` / `--exclude`（同一セッションでの重複レビュー回避）:**
-
-同一セッションで既に reviewer agent を走らせた後（コミット前並列レビュー等）に self-review を再実行する場合、既検証の観点を再報告しないよう以下の引数でスコープを制御する。**付けるのは利用者か呼び出し元 skill の手順だけ**（feature-dev の G-V ループは付けない — `--since` / `--prior-findings` で絞る / #313）で、利用者が「self-review 回して」としか言っていない回に、Skill を呼ぶモデルが前回の構成から推して足さない — 絞った観点の外は誰も見ず、最小保証の reviewer も起動しない（実測: 素の「回して」に `--focus` を足した 4 回は反証がどれも `scope` でスキップされ、うち 1 セッションでは利用者が後から全観点で回し直した / GitHub issue #300）。前回の指摘が再び出るのは、観点が欠けたまま終わるより安いので、迷ったら全観点で回す:
-
-- `--focus <観点>`: レビュー対象を特定の観点に絞る（例: `--focus "comment-accuracy"`, `--focus "type-design"`）。複数指定はカンマ区切り
-- `--exclude <観点1,観点2>`: 既に他 agent でカバー済みの観点をスキップする
-- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` と `--exclude design-review` で、それぞれ Markdown 推敲と決定系 doc の design-review 委譲を止める。観点ではないので `--focus` には書けない）。**`md-polish` と `design-review` はスコープの絞り込みに数えない** — 本ファイルと参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、この 2 つ以外の値を 1 つ以上指定した場合だけを指す。この 2 つだけを `--exclude` した回は、それを止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える。**`--focus` の値が語彙外だけのとき**（`md-polish` / `design-review` を除いて語彙内の観点が 1 つも残らない）も絞り込みとして扱い、全体レビューに倒さない — plan は `scope=focus` で reviewer の行を出さず（前回の対象の行だけは残る）、レポートは「⚠️ 欠損観点」の `語彙外の focus` だけになる。全体に倒すと、名前を書き違えた呼び出しが規模で絞った全体レビューになり、頼んだ観点を見ていないことが見えなくなる（GitHub issue #388）
-
-適用先:
-- **Phase 0 (Step 2)**: `--focus` 指定時は該当観点の reviewer のみ構成する（最小保証の reviewer-bugs / reviewer-claude-md も `--focus` に含まれない限り起動しない）。`--exclude` 指定時は該当観点の reviewer を構成から外す。**例外は Step 1 の `## prior-fixes` の行**（前回の指摘への修正。`--prior-findings` の分を含む）で、絞り込みの外に置く
-- **reviewer 起動時 (Step 4)**: 各 reviewer プロンプトに以下を注入する
-
-  ```
-  review focus: {{ focus or "全件" }}
-  already verified (do not re-report): {{ exclude or "none" }}
-  ```
-
-  （`md-polish` と `design-review` は観点ではないので `exclude` の値から外して注入する）
-
-**`--spec <path>` / `--spec=<path>`（仕様ファイルの明示 / 他 plugin からの呼び出し向け）:**
-
-呼び出し側が仕様ファイル（BDD `spec.md`・design doc など）のパスを渡したときは、Step 2.2 の plan に `--spec <path>` で渡し（plan が仕様ソースに数えて spec-compliance を起動する）、その reviewer にパスを渡して Read させる（本文は転記しない）。session-context / Issue / knowledge が無い repo でも、spec と実装の照合が起きる。ファイルが実在しなければ plan が `spec_missing` 行を出すので、レポートの「⚠️ 欠損観点」に `--spec のファイルが無い: <path>` と書く。`--focus` を併用する場合、`spec-compliance` が focus に含まれていなければ起動しない（呼び出し側が focus に入れる）
-
-**コンテキスト収集（並列で実行）:**
-- CLAUDE.md・規約ファイル: `CLAUDE.md`, `.github/CONTRIBUTING.md`, `.eslintrc.*`, `prettier.config.*`
-- `.claude/session-context.md` と Issue / knowledge ファイルの探索（spec-compliance の reviewer に同梱するため）。**spec-compliance を起動するかは自分で決めない** — session-context（frontmatter の `branch` が現在のブランチと一致）と Issue ファイル（ブランチ名の Issue ID）は Step 2.2 の plan が自分で探す。knowledge は見つけたら plan に `--spec-source knowledge:<path>` で渡す
-- プロジェクト特性シグナル（`package.json` の存在確認と主要依存の確認）
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-1.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 1.4 直近レビューとの重複検出（skill 跨ぎ / 常時実行・agent なし。`--embed` ではスキップ）
 
-**実行は Step 1 の Bash 呼び出しに同梱済み**（#147）。ここは出力の解釈だけを行う。
-
-**出力が空なら何も報告せず Step 1.5 へ**。`## recent-review` が出た場合のみ **AskUserQuestion** で続行可否を確認する。question は明細のラベルで書き分ける（`[完全一致]` は diff 全文が同じ。`[ファイル集合のみ]` は触ったファイルが同じというだけで、中身は変わっている可能性がある）。読み合わせ・修正の後の回し直し（前回も self-review で、中身が変わった回）は `--skill` によってスクリプトが出さないので、ここには来ない — `[ファイル集合のみ]` で残るのは別の skill（PR レビュー等）の記録だけ:
-
-- 明細に `[完全一致]` の行がある →「同一の diff が直近にレビュー済みです（<plugin> / <日時> / 報告 <件数>）。このままレビューを続けますか？」
-- `[ファイル集合のみ]` の行だけ →「同じファイルを触った変更が直近にレビュー済みです（<plugin> / <日時> / 報告 <件数>。中身が同じとは限らない）。このままレビューを続けますか？」
-
-`<plugin>` / `<日時>` / `<件数>` は、その文を選んだラベルの最も新しい行から取る。header:「重複レビュー」/ options: ①label「続行する」description「前回の後に変更を入れた（PR レビューの後に修正して self-review を回し直す等）か、別観点・別 effort で見直す価値があると判断した場合」 ②label「中止する」description「前回のレポートで足りる。agent を 1 体も起動せず終了する」。**「中止する」なら Phase 0 に進まず終了**。上の `--focus` / `--exclude` は同一 skill 内の重複しか防げないので、この経路が skill を跨ぐぶんを見る。突合キーの性質と背景: → orchestration-measurement.md `## 19`
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-1.4.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 1.5 Vault 照合（過去の指摘・落とし穴の retrieval / 任意・後方互換）
 
-変更ファイルに関連する過去のレビュー指摘を vault から引いて reviewer に注入する（GitHub issue #68）。取得経路（MCP ツール `search_knowledge` → `kvault` → どちらも無ければ skip）・照合手順・公開先に書き写さない注意 → orchestration-optional-flows.md `## 11`
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-1.5.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 1.7 機械層の先行実行（原則 8 / `.claude/review-oracles.sh` を置いたプロジェクトのみ・`--embed` では skip）
 
-**agent の担当は「機械が決められないもの」に限る。** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-oracles.sh"` を実行し、プロジェクトが宣言した機械層（lint / 型 / テスト等）を Phase 0 の**前に**通す。**出力が空なら宣言なし＝何も報告せず Phase 0 へ**（no-op を報告しない）。`status=green` は Step 6 レポート冒頭に `機械層: green (<elapsed>s)` を出すだけ。**`red` / `timeout` / `error` のときだけ** → Read `${CLAUDE_PLUGIN_ROOT}/references/machine-layer.md`（続行可否の確認・reviewer への「既知」の渡し方・計測規約の正本。設計判断は ADR-20260817170000）。`--embed` では呼び出し元が自分の品質ゲートを持つため skip する。
-
-**この呼び出しを Step 1 にまとめないこと**（#147 で検討して見送った）。1.4 の重複検出には「中止する」＝ agent を 1 体も起動せず終える経路があり、機械層（lint / 型 / テスト）を前倒しすると**中止しても払い戻せない実行時間**を先に払うことになる。往復 1 回ぶんの `cache_read` より、中止経路の意味を保つほうが大きい。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-1.7.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 2. Phase 0: トリアージ
 
-`${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。
-
-**Phase 0 はメインコンテキストで実行する（Agent ツールは使わない）。**
-
-#### 2.1 Stage 1: タイプ判定
-
-diff の特性を分析し、必要なエージェントタイプを判定する（`--since` の回は explorer・reviewer の観点を `## delta` の中の `###` の節で判定する。spec-compliance と Markdown 推敲の判定は従来どおり / triage-guide.md `### 6.5`）:
-- **explorer**: 巨大ファイル、複数関数、条件分岐追加、共通モジュール変更のいずれかに該当するか
-- **reviewer**: 常に必要。diff パターンマッチでどの観点が必要かを判定
-- **spec-compliance**: 自分で判定しない。Step 2.2 の plan が仕様ソース（session-context / Issue ファイル / `--spec` / `--spec-source` / repo の仕様書）から決める（`--activated` に入れると plan が exit 2 で止まる / GitHub issue #351）。repo の仕様書は、diff が触ったものと session-context・Issue ファイルが言及したものを plan が自分で探す（GitHub issue #352。diff が仕様書を触っただけでも起動する）
-- **Markdown 推敲**: `## md-polish` と引数から起動するかを決める（**effort を問わない・体数の上限の外**）。起動するなら `md-polish-guide.md` を Read する。判定表と `skip_reason` の正本は同 guide の 1 節
-- **決定系 doc の design-review 委譲**: `## decision-docs` に doc の行（`<数>\t<path>`）があれば `design-review-guide.md` を Read し、1 節で起動するかを決める（**体数の上限の外**。呼ぶのは Step 6.4 の後）。起動するなら、委譲する doc を doc-substance のプロンプトの可変部に「design-review に渡す doc: <path>」と書く
-
-#### 2.2 Stage 2: 体数・フォーカス・冗長度決定
-
-reviewer の体数・単独か束ねか・落とす観点は**自分で数えず**、`plan-reviewers.sh plan` に決めさせる（GitHub issue #351。triage-guide の表を読んで数えた回に、high の上限 6 を 5 と数え、仕様ソースがあるのに spec-compliance より security を先に取った）:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --effort "${CLAUDE_EFFORT}" --size-tier <Step 1 の size_tier> \
-  --activated <Stage 1 で起動条件を満たした観点をカンマ区切り> \
-  [--spec <path>] [--spec-source knowledge:<path>] [--focus <観点> | --exclude <観点>] [--prior <観点>] [--delta]
-```
-
-- `--activated` には最小保証の 2 体と spec-compliance を入れない（前者は plan が足す。後者は入れると exit 2 — 仕様ソースから plan が決める）
-- `spec_source` の `repo-spec-touched`（diff が触った仕様書）/ `repo-spec-ref`（session-context・Issue ファイルが言及した仕様書）は plan が Step 1 の diff と参照から見つける。引数では渡さない
-- `## prior-fixes` が出た回は `--prior <行の観点をカンマ区切り>` を渡す（`--focus` の回も。前回の対象は絞り込みの外に置き、上限に収まらなければ落とさず相乗りにする / prior-fixes-guide.md の 1 節）。`--since` の回（`scope_mode=delta`）はさらに `--size-tier` に `delta_size_tier` を渡して `--delta` を足す（前回の対象は規模キャップの外の専任になり、effort 上限を超える分は相乗りになる / triage-guide.md `### 6.5`）
-- **delta が空（`delta_files=0`）の回は plan も check も呼ばない**。triage-guide.md `### 6.5` のとおり、前回の対象の観点の reviewer だけで直ったかを確かめる（前回の対象も無ければ agent を起動しない）。plan は最小保証と仕様ソースの spec-compliance を必ず足すので、この回の構成を表せない
-- 出力の読み方（kind・`piggyback`・`dropped` の理由・`excluded`・`spare`）と check の規則の一覧は triage-guide.md `## 4` 末尾の「plan の出力の読み方」。`dropped` の観点は `missing_coverage` に識別子で記録し、理由をレポートの「⚠️ 欠損観点」に写す
-- explorer と specialist の体数は従来どおり triage-guide で決める。上限は出力の `explorer_cap` / `specialist_cap`（effort 上限と規模キャップの min）
-- exit 2 は引数の誤り（理由は stderr）。直して呼び直す
-
-数値を含まない規則は従来どおり:
-- explorer は独立した探索対象の数に比例させる。冗長ペア（x2）を組むのは `redundant_pairs=allowed`（xhigh / max）の回だけで、high 以下でペア条件が成立したら Angle A/B を 1 体に内挿する
-- `cap_source=size`（規模キャップが effort 上限を下回った）回は、Round 2（Phase 4.5）を effort に関わらず 1 段圧縮経路にする。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（削るのは breadth のみ。triage-guide.md `## 6.3`）
-
-#### 2.3 観点カバレッジ検算と構成テーブル出力
-
-**構成テーブルを確定する前に、起動前検算をする（orchestration-guide `### 8a`・毎回。delta が空で plan を呼ばない回（Step 2.2）だけは検算せず、レポートの「実効上限」「仕様整合」には `delta が空・前回の対象のみ` と書く）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば、`--activated` に足して plan を引き直してから確定する（テーブルに直接書き足さない。spec-compliance は足さない — plan が仕様ソースから決める）。v2.39.0 で旧 Phase 4.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。`--focus` / `--exclude` を指定した回は、指定した範囲の観点だけを検算する。
-
-確定したテーブル（plan の `reviewer` / `piggyback` / `dropped` の行。xhigh / max で冗長ペアを組んだらその行も足す）を `check` に流してから起動する:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" check <<'TABLE'
-<確定テーブルの行>
-TABLE
-```
-
-`ok`（exit 0）なら確定。exit 1 なら `NG	<規則>	<詳細>	<直し方>` の行に従って直し、もう一度 check する（`spec-missing` = 仕様ソースがあるのに spec-compliance の単独の行が無い / `over-cap` = 上限超過 / `wrong-reason` = 落とした理由が plan と違う、など）。上限を超えたか・spec-compliance が欠けたかを自分で判定して check を飛ばさない。exit 2 は plan が無い（Step 1 の triage-signals.sh が前の回の plan を消す）か、テーブルの形が違う。
-
-検算後、triage-guide.md の出力フォーマット（`## 5`）に従い、エージェント構成テーブルを出力する。**「直列 wave」行を必ず含める**（見積もり方は triage-guide.md `## 5.1`）— 体数はトークンコストのレバー、wave 数は壁時計のレバーで、後者だけが従来ユーザーから見えなかった（GitHub issue #100 B）。
-
-#### 2.4 high-risk surface 判定（冷や読み skeptic の相乗り判断 / 常時実行）
-
-Phase 0 の最後に、triage-dynamic-gates.md `## 8.5` の surface 判定（diff への正規表現 grep。self-review は PR を持たないため自己申告経路は無い。`--since` の回は `## delta` の `### surface` で判定する）を **必ず実施** する。安価な grep なので構成に関わらず常に行う（silent skip 防止・issue #85）。
-
-- surface=true **かつ Phase 4.8 のスキップ条件（userConfig / effort / `--focus`・`--exclude` によるスコープ絞り込み）のいずれにも該当しない**場合、skeptic を **Step 4 の reviewer 一括発行に相乗りさせる**（同一メッセージ内で発火。1 wave 削減）。**条件は個別に列挙せず Phase 4.8 の定義を参照すること**（相乗りで起動が前倒しされるため、4.8 に到達してからスキップ判定しても手遅れ）
-- surface=true だがスキップ条件に該当する場合は、`skip_reason` を記録して Step 6 レポートと payload に出す（従来どおり）
-- reviewer の `[surface:high-risk]` フラグ由来で事後に surface=true になる経路は Phase 4.8 の fallback で拾う
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-2.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 3. 探索フェーズ（explorer 並列起動）
 
-Phase 0 が explorer を 1 体以上配置した場合のみ実行。explorer が不要と判断された場合はスキップして Step 4 へ。
-
-Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並列起動する:
-- プロンプト冒頭で次の **2 パスを Read せよ**と指示する（本文は書かない。組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md`。パスの渡し方は Step 4 の冒頭と同じ）:
-  - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md`
-  - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/<focus>.md`
-- 可変部として Phase 0 が決定した focus・対象ファイル・関数、**プラグインの実パス**（explorer-common.md の `{{PLUGIN_ROOT}}` の読み替え先。explorer は共通ブロックを受け取らないので、ここで渡すのが唯一の経路）、および **Step 1 の `$DIFF_FILE` のパスと担当ファイル名**を渡す（`diff-slice.sh` で自分の担当ぶんを切り出せることも明記する。`--since` の回は `$DIFF_FILE` として `delta_file` を渡す）
-- `isolation: "worktree"` は使用しない（セルフレビューは未コミット変更を含むため）
-- **全 explorer の Agent call を同一メッセージ内で一括発行し、全体の結果が届くまで次へ進まない**（orchestration-guide.md `## 0`。起動は常に非同期で、結果は完了通知で届く）。**`mark t1` の応答で出す explorer を列挙してから発行に移る**（発行直前チェックポイント / `## 0`。実測の違反のうち 1 件は explorer を 1 体ずつ出した型 — #220）
-
-一括発行の**直前**に fleet 区間の開始マーカーを記録する（**agent wave はすべて fleet 側に入れる**。explorer を triage 区間に含めると `duration_triage_min` が「メイン思考の代理指標」でなくなる。orchestration-measurement.md `## 14`）:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1
-```
-
-全 explorer の完了を待ち、結果を収集する。**回収した直後**に explorer wave の終了マーカーを記録し（`t1`→ explorer 打点 = explorer wave の実時間。orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式）、各 explorer の `#### 確定事実` 欄を集約して **合計 10 行以内**にまとめておく（Step 4 で全 reviewer に注入する枠。無ければ no-op）:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave --explorer   # 複数メッセージに分けてしまった場合も wave ごとに毎回打つ（行数が agents.explorer_waves になる・#122）
-```
-
-**部分失敗耐性:** orchestration-guide.md `## 5` に従う（個別失敗で全体を中止せず `missing_coverage` に記録して続行）。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-3.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 3.9 AGENTS.md 階層動的選択（reviewer 起動前）
 
-Step 1 のダイジェスト `## agents-md` に出ている**パス一覧**を reviewer プロンプトに渡し、agent 自身に Read させる（本文の転記はしない — 既にディスク上にあるので体数ぶんの複製がそのまま消える。orchestration-guide.md `## 3.5`）。ヒットが 0 件なら no-op（後方互換）。
-
-注入セクション名・探索ロジックの詳細: → orchestration-guide.md `## 4`
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-3.9.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 4. レビューフェーズ（reviewer 並列起動）
 
-**プロンプトテンプレートは Read しない。パスを渡して agent 自身に読ませる**（組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md`。共通指示だけで約 7.3k tokens あり、体数ぶん転記すると出力トークンが `(N-1) × 本文長` 膨らむ — orchestration-guide.md `## 3.5`）。
-
-Phase 0 の構成テーブルに従い、各 reviewer を `model: opus` で並列起動する。effort は実行時 `${CLAUDE_EFFORT}` に連動させる（low/medium/high（既定）→ `high`、xhigh/max → `xhigh`。設計意図は orchestration-guide.md `## 5`）。プロンプトは **Read させるパスの列挙 + 可変部**だけで構成する。**パスは `${CLAUDE_PLUGIN_ROOT}` の部分だけをプラグインの実パス（この SKILL.md を Read したパスの `skills/` より手前）に置き換え、`/references/prompts/...` 以降は下に書いたまま渡す**（agent の Read は変数を展開しない。`references/` を省いて短く書き直すと agent が最初の Read に失敗し、プロンプト探しに往復を使う — #282）:
-
-- **必ず Read させる**:
-  - `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md`
-  - `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<focus>.md`
-- **渡さない**: `pr-context-rules.md`（self-review は PR を持たない）
-- **条件付きで加える**:
-  - 観点バンドル時 → `${CLAUDE_PLUGIN_ROOT}/references/prompts/bundle-rules.md` と束ねる focus ファイル群
-  - **ペア条件が成立したとき → `${CLAUDE_PLUGIN_ROOT}/references/prompts/angles.md`**（xhigh/max の実ペアだけでなく、**high 以下の angle 内挿でも渡す**）
-  - セッションコンテキストが有効なとき → `${CLAUDE_PLUGIN_ROOT}/references/prompts/session-context.md`（confidence −30 の規約はここにある）
-- <!-- COMMENT-POLISH: attach --> **`comment-accuracy` を担当する reviewer には `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md` を Read 対象に追加する**（単独起動・バンドル相乗りのどちらでも追加。B 系統は Focus テンプレートではないので「必ず Read させる」の focus ファイルとしては拾われない。追加漏れは機能の silent な不発になるため、comment-polish 連結チェックが宣言とパスの両方を Critical で検証する）
-- **可変部の共通ブロック（全 agent 共通の実値集合）は 1 ファイルに落としてパス渡しする**: Step 1 の `## meta` が出す `agent_ctx_file=` のパスに **Write で 1 回だけ**書き出し、各プロンプトには「まず `<agent_ctx_file>` を Read せよ」の 1 行だけを置く。**入れる項目・残す項目・フォールバックの正本は orchestration-guide.md `## 3.5`「可変部の共通ブロックに入れるもの」**（`{{PLUGIN_ROOT}}` / `{{SEVERITY_THRESHOLD}}` / `$DIFF_FILE` / AGENTS.md パス / session-context パス / 確定事実 など。#124 (c)）。**書き出したら、その応答の中でこの wave に出す Agent call（reviewer 全行 + 相乗りする skeptic + specialist + Markdown 推敲）を列挙してから発行に移る**（発行直前チェックポイント / orchestration-guide.md `## 0`。列挙より後に思いついた観点は同じ層へ後追いせず Round 2 へ回す — #220）
-  - **self-review 固有**: **PR 番号・HEAD SHA・`{{MAIN_ROOT}}` は入れない**（PR を持たず worktree も使わないので、テンプレートの worktree セットアップ節は適用外である旨を共通ブロックに明記する）
-- **プロンプト側に残す可変部**: 担当 focus（冗長ペアなら angle）と担当ファイル、**explorer 結果の選択的注入**（構成テーブルの「explorer 依存」列。複製係数がほぼ 1 なのでインラインのまま）。plan の `spec_source` 行のうち `spec`（`--spec`）/ `repo-spec-touched` / `repo-spec-ref` のパスを、**spec-compliance 担当にだけ**「仕様ファイル: `<path>`（`<label>`。Read して照合元にする）」で 1 行ずつ添える（本文は転記しない）。`repo-spec-touched` には「変更した行の節を節ごと読み、同じ節の古い説明も見る」を添える
-- **`--since` の回は共通ブロックに `delta_file=<## delta の delta_file>` を入れる**（diff 全体の `diff_file` はそのまま。読み方は reviewer-common.md「delta が主な対象」）
-- **`prior_fixes:` も共通ブロックに入れず、reviewer と specialist（skeptic・meta・反証・explorer を除く）にだけインラインで注入する**（共通ブロックは skeptic にも届き、前回の指摘が渡ると findings 非注入の核が壊れる / #313）
-- **確定事実は共通ブロックに入れず、reviewer にだけインライン注入する**: Step 3 でまとめた `## 確定事実（explorer 共通・裏取り済み）` を**全 reviewer（specialist・skeptic を除く）**に合計 10 行以内で注入する。**skeptic に渡すと findings 非注入という層の設計核が壊れる**（triage-dynamic-gates.md `## 8.5`）。扱いの規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` 側（#122）
-- **Vault 注入**: Step 1.5 で関連ありと判断した知見があれば、各 reviewer プロンプトに `## Vault prior findings（過去の関連指摘・落とし穴）` セクションとして注入する。reviewer には「過去に同種コードで指摘された観点を優先的に確認せよ。ただし現在の diff に該当しなければ無視してよい」と添える
-- `isolation: "worktree"` は使用しない
-- **全 reviewer の Agent call を同一メッセージ内で一括発行し、全体の結果が届くまで次へ進まない**（orchestration-guide.md `## 0`）
-- **冷や読み skeptic の相乗り**: Step 2.4 で surface=true かつ Phase 4.8 のゲートを通過している場合、skeptic 1 体（`model: opus`, `effort: max`、プロンプトは `${CLAUDE_PLUGIN_ROOT}/references/prompts/recall-skeptic.md` をパス渡し。`--since` の回は `$DIFF_FILE` として `delta_file` を渡し、共通ブロックの `diff_file` は読まないと明記する）を **この一括発行に含める**。skeptic は findings 非注入が設計の核で reviewer 出力に依存しないため、直列に置く理由がない（triage-dynamic-gates.md `## 8.5` 起動タイミング）。結果の統合は Phase 4.8 で行う。**publish の `recall_skeptic.launch` は `"rider"`**（起動経路の自己申告 / #216）
-- **Markdown 推敲の相乗り**: Step 2.1 で起動すると決めた回は、推敲 agent 1 体（`model: opus`, `effort: high`、プロンプトは `${CLAUDE_PLUGIN_ROOT}/references/prompts/md-polish.md` をパス渡し）を **この一括発行に含める**。`agents` の内訳には数えない。組み立てと結果の扱いは `md-polish-guide.md` の 2・3 節
-
-一括発行の**直前**に fleet 区間の開始マーカーを記録する（orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式で決める。Step 3 で explorer を起動していれば記録済みなので `grep` ガードで二重記録を防ぐ。`||` 形なのでガードが偽でもブロックは成功終了する）:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t1
-```
-
-全 reviewer の完了を待ち、結果を収集する。**回収した直後**に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave` を実行する（打点→`t2` = agent 非稼働が保証される synthesis 区間。**動的ラウンドの各回収点でも毎回繰り返す** — 後勝ちなので最後の wave を判断しなくてよい。orchestration-measurement.md `## 14`）。
-
-reviewer 起動の共通詳細（effort 設計意図・diff-first 原則・出力形式の検証と auto-retry・部分失敗耐性・最小保証の閾値）: → orchestration-guide.md `## 5`
-
-**最小保証の閾値のみ抜粋**: Phase 0 の最小保証（reviewer-bugs と reviewer-claude-md）が **両方とも失敗** した場合のみレビュー中止とし、ユーザーに再実行を促す。それ以外は欠損観点を明示しつつ Step 5 に進む。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-4.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 4.5 Adaptive deepening: Round 2（unmet_information 起点 / 動的）
 
-**スキップ条件**（いずれか満たせばこのフェーズ全体をスキップして Step 4.8 の skeptic 統合へ）:
-- userConfig `enable_adaptive_rounds` が `false`
-- 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`
-- 全 reviewer の出力に `## unmet_information` セクションが 1 件もない
-- **unmet の target が全件「到達不能」**（DB / 本番の実データ、このリポジトリに存在しないコード、意図的にスキップした lint / テスト実走など）で、追加探索が構造的に空振りする場合。分類表と「1 件でも到達可能なら起動する」根拠は triage-dynamic-gates.md `## 8`（GitHub issue #100 C）。スキップ時は `missing_coverage` に識別子 `round2` を記録し（**理由はレポート本文へ**）、レポートの「動的ラウンド」行にも出す。**⚠️ 「repo 外」≠「到達不能」（v2.60.0）** — 外部サービスの実挙動でも**その MCP / CLI がセッションで使えるなら到達可能**で、Round 2 の前に**メインで直接照会して解決してよい**（read-only）
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-4.5.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
-**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 6` の手順に従う（unmet_information 集約 → **high は 1 段圧縮**: 追加 explorer なしで該当 reviewer 最大 3 体を再起動し unmet ターゲットを自力探索させる / **xhigh・max は 2 段**: 追加 explorer 最大 3 体 → 該当 reviewer 再起動 → 初回出力を置換。失敗時は初回結果のまま続行の best-effort）。**回収した直後に `mark wave` を記録する**（Step 4 と同じ呼び出し。後勝ち。**追加 explorer を起動した場合も `--explorer` は付けない** — `agents.explorer_waves` は「初回 explorer の一括発行が守られたか」の指標で、Round 2 の追加 explorer を混ぜると規約どおりの起動が「一括発行違反」として誤検知される）。レポートに「Round 2 trigger: <reason>」を記録（Step 6 で出力）。
-
-### 4.6 Meta-reviewer ラウンド（v2.12.0 / 動的・**4.9 反証と同一 wave**。実行順は `4.5 → 4.8 の skeptic 統合 → 4.6 meta + 4.9 反証を同一メッセージで一括発行 → mark wave → [meta 由来の追加反証バッチ] → 4.7 → Step 5`。両者は互いの出力に依存しないので直列に置かない / **片方がスキップでも他方はそのまま発行する** / #122）
-
-**スキップ条件**（いずれか満たせばスキップし、同一 wave の 4.9 だけを発行する）:
-- userConfig `enable_meta_reviewer` が `false`
-- 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
-- **severity 側の起動条件を満たさない**（`skip_reason: "no-high-severity"` / `gate_schema: 3`）。起動条件は「Step 4.5 後の全指摘（フィルタリング前）に **BLOCKER** が 1 件以上」∨「**CRITICAL** が 1 件以上」∨「**報告マトリクス通過見込みの MAJOR が 3 件以上**」。MAJOR 経路は v2.62.0 で追加した（旧ゲートは高 severity の存在だけを条件にしていたため実測 14 件中 `fired=1` とほぼ常時不発だった / GitHub issue #123 C）
-- **`size_tier` が `small` かつ BLOCKER が 1 件もない**（v2.60.0 / `skip_reason: "size-tier"`）。BLOCKER があれば帯に関わらず起動する。**この 1 条件だけが規模帯に連動する例外**で（triage-guide.md `## 6.3`）、根拠が n=1 のため**ロールバック条件つきの暫定ゲート** → `design-notes/triage-rationale.md`
-
-**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で **Step 4.9 の反証バッチと同一メッセージ内で**起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。**回収した直後に `mark wave` を記録する**（Step 4 と同じ呼び出し。後勝ち。反証と同一 wave なので打点は 1 回で足りる）。
-
-### 4.7 観点カバレッジ・事後突合（メインコンテキスト / 常時実行・agent 追加起動なし）
-
-Step 5 の直前に、**メインコンテキストで**（Agent は使わない・低コスト）Step 2.3 の起動前検算で確定した構成テーブルと実際に起動・完走した focus を突合し、差分を `missing_coverage` に追記する（orchestration-guide `### 8b`）。観点漏れの検出は Step 2.3 の起動前検算（`### 8a`）へ前倒し済みのため、**本フェーズで agent は追加起動しない**（v2.39.0。issue #69 の常時検査の意図は 8a で維持）。
-
-**スキップ条件**: `--focus` / `--exclude` 指定時は意図的にスコープを絞り込んでいるため、その範囲外の観点は missing_coverage に記録するのみ。
+Step 4.5 の後は実行順に 4.8 → 4.6 + 4.9（同じメッセージで発行）→ 4.7 と並べている（番号の順ではない）。
 
 ### 4.8 冷や読み skeptic ラウンド（recall 補強 / 動的）
 
-reviewer wave への相乗りで起動し、4.6 + 4.9 の一括発行より前に統合する。**high-risk surface を含む変更に限り**、reviewer の findings も推論も渡さない独立 skeptic を 1 体起動し、fleet 共通の盲点（層跨ぎ値フロー等）を冷や読みで探す（`${CLAUDE_PLUGIN_ROOT}/references/triage-dynamic-gates.md` `## 8.5 冷や読み skeptic ラウンド`）。反証レイヤー(4.9)が偽陽性を潰す係なのに対し、本フェーズは見落とし（false negative）を独立読み直しで足す係。self-review は PR を持たないため surface 判定は diff 正規表現 + reviewer の `[surface:high-risk]` フラグで行う（PR 自己申告 D1-High は無い）。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-4.8.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
-**スキップ条件**（いずれか満たせばスキップして 4.6 + 4.9 の一括発行へ）:
-- userConfig `enable_recall_skeptic` が `false`
-- 実行時 effort = `${CLAUDE_EFFORT}` が `low` / `medium` / `high`（**xhigh / max だけ起動する**。v2.52.0 で high 起点に昇格したが、ロールバック条件に該当したので戻した — opus-5-5 の high 起動 13 件で価値率 15%。根拠: triage-dynamic-gates.md `## 8.5` / #264）
-- `--focus` / `--exclude` でスコープを絞り込んでいる
-- high-risk surface（triage-dynamic-gates.md `## 8.5` の surface 判定。`--since` の回は delta で判定する）を含まない
+### 4.6 Meta-reviewer ラウンド（v2.12.0 / 動的・**4.9 反証と同一 wave**。実行順は `4.5 → 4.8 の skeptic 統合 → 4.6 meta + 4.9 反証を同一メッセージで一括発行 → mark wave → [meta 由来の追加反証バッチ] → 4.7 → Step 5`。両者は互いの出力に依存しないので直列に置かない / **片方がスキップでも他方はそのまま発行する** / #122）
 
-**スキップ時も surface 判定は必ず実施（silent skip 防止・issue #85）**: 上記スキップ条件（effort / config / scope）に該当して skeptic agent を起動しない場合でも、surface 判定（triage-dynamic-gates.md `## 8.5` の正規表現。diff への grep で安価）だけは Phase 0 の構成判断（縮退構成・小 diff）と **独立に必ず実施** する。surface=true なら skeptic 未起動の事実と skip_reason（`effort` / `config` / `scope`）を Step 6 レポートの「動的ラウンド」行に必ず出す（`--embed` の有無に依存しない human レポート契約。JSON payload の `recall_skeptic` 記録と対を成す）。
-
-**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 9` の手順に従う。**起動は Step 4 の reviewer 一括発行に相乗り済み**（Step 2.4 で surface 判定・ゲート通過を確認している）なので、本フェーズで行うのは **結果の統合**（`[recall-skeptic]` / `[recall-skeptic:dup]` タグ付き指摘を dedup して統合し、反証レイヤー(4.9)の対象にも含める）。**この統合は 4.6 + 4.9 の同一 wave 発行より前に済ませる**（skeptic の指摘を反証対象に含めるため。統合はメインコンテキストの作業で agent を要さない）。
-
-**fallback（直列起動）**: reviewer の `[surface:high-risk]` フラグ由来で**ここで初めて** surface=true になった場合のみ（`--since` の回はフラグが delta の hunk を指すときだけ）、skeptic を 1 体 `model: opus`, `effort: max` で単独起動する（**findings / reviewer の推論は渡さない**のが独立性の核）。**この経路で起動した場合は回収した直後に `mark wave` を記録し、publish の `recall_skeptic.launch` を `"fallback"` にする**（相乗り経路では `mark wave` は Step 4 で記録済みなので不要。`launch` は `"rider"`。期待 wave 本数の skeptic 控除はこの自己申告だけで決まり、`wave_sizes` の位置からは推定しない / #216）。正規表現で事前に HIT していれば相乗り済みなのでこの経路は走らない。
-
-**失敗時 / スキップ時**: skeptic の失敗は `missing_coverage` に追記して続行。**起動条件（high-risk surface）を満たしたのに未実行だった事実は、失敗・effort/config/scope スキップのいずれでも Step 6 レポートに必ず出す**（silent skip で「守ったつもり」の偽の安心を防ぐ）。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-4.6.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 4.9 反証レイヤー（adversarial verification / 動的・**meta-reviewer(4.6) と同一 wave**）
 
-冷や読み skeptic の統合後・スコアリングの前に、reviewer の指摘を独立エージェントが反証する。偽陽性を先回りして摘出するフェーズ（`${CLAUDE_PLUGIN_ROOT}/references/triage-dynamic-gates.md` `## 9 反証レイヤー`）。meta-reviewer (4.6) / skeptic (4.8) が見落とし（false negative）を足す係なのに対し、本フェーズは独立読み直しで **severity を較正し偽陽性を摘出する**鏡像（実測は較正が主機能: `severity_inflated` 60% / `refuted` 6%。#114）。skeptic が足した指摘も本レイヤーの対象。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-4.9.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
-**スキップ条件**（いずれか満たせばスキップし、同一 wave の 4.6 だけを発行する）。**発火は起動有無にかかわらず payload（`fired` + 括弧内の `skip_reason`。起動時は `null`）と Step 6 レポートに記録する。4 つ目を他と同じ値に潰さないこと** — 既定 high では BLOCKER / CRITICAL が 0 件なら対象が構造的に 0 件になるため、潰すと「ゲートが狭いのか対象が無かったのか」を事後に切り分けられない（→ triage-dynamic-gates.md `## 9` / issue #129）:
-- userConfig `enable_adversarial_verify` が `false`（`"config"`）
-- 実行時 effort = `${CLAUDE_EFFORT}` が `low` または `medium`（`"effort"`）
-- `--focus` / `--exclude` でスコープを絞り込んでいる（既検証の再評価を避ける）（`"scope"`）。**`--since` だけでは当たらない** — delta の回も通常のゲートを範囲で絞らず全指摘に当てる（G-V ループが auto-fix に入れうる指摘を水増しのまま通さない / #313）
-- 反証対象（triage-dynamic-gates.md `## 9` のゲート）に合致する指摘が 0 件（**`"no-eligible-findings"`**）
+### 4.7 観点カバレッジ・事後突合（メインコンテキスト / 常時実行・agent 追加起動なし）
 
-**実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 10` の手順に従う（triage-dynamic-gates.md `## 9` の選定ルールで対象を選び、**5 件ずつのバッチ**に分けて反証エージェントを `model: opus`, `effort: high` で並列起動（上限 3 体）。**この一括発行に Step 4.6 の meta-reviewer を含める**（同一 wave）。**reviewer の理由文は渡さない**＝アンカリング防止 → verdict を finding_id で突合して Step 5 のスコアリングに渡す。失敗した指摘は verdict なしのまま続行の best-effort）。**回収した直後に `mark wave` を記録する**（Step 4 と同じ呼び出し。後勝ち。既定 effort ではこのフェーズが最後の agent wave になるため、ここを落とすと `duration_synthesis_min` が反証 wave を丸ごと含む）。レポートに「反証: 対象 N 件 / 係争 M 件 / 取り下げ K 件」を記録（Step 6 で出力）。 **meta 由来指摘の追加バッチ**（`[meta]` タグ付きが反証ゲートに該当する場合のみ 1 体・上限 5 件を直列起動。0 件なら wave は増えない。`## 10` 手順 3.5）を起動したときは、回収直後に再度 `mark wave` を記録する。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-4.7.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 5. スコアリングとフィルタリング（2軸: confidence × severity）
 
-全 reviewer の指摘を統合し、`${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` を Read で読み込んでスコアリングを実施する。
-
-1. **各指摘の base confidence と severity を取得**
-   - reviewer 出力の `[confidence: XX]` と `[severity: BLOCKER|CRITICAL|MAJOR|MINOR]` をパース
-   - severity が欠落している指摘は **CRITICAL とみなす**（後方互換 / 安全側デフォルト）。**ただし `## コメント推敲提案` と `## Markdown 推敲提案` のブロックはこの既定の対象外**（severity を持たないのが仕様。指摘として扱わず、手順 7 まで素通りさせる）
-   - **この時点の severity 別件数を控える**（= `pre_adjust_counts`。統合・dedup 後、手順 2 以降の verdict 反映・加減算・降格・フィルタを**一切かける前**の生の分布）。Step 6.4 の publish で使う。**手順 5 通過後の件数との差が「調整で消えた分」**であり、これが無いと「reviewer が検出しなかった」と「検出したが調整で消えた」を事後に区別できない（orchestration-measurement.md `## 16`）
-   - **base 検算は `pre_adjust_counts` を控えた後に行う**（降格が「調整で消えた分」として会計されるため）。`退行` / 「変更前は X だった」を根拠にする指摘は `git show <diff_base>:<path>`（`## meta` の `diff_base=`）で base 側を検算する（orchestration-guide.md `## 5`「origin 主張の base 検算」。**冷や読み skeptic は reviewer 側の base 確認規約を継承しない**ため、この層の主張が主対象。反証レイヤーは effort ≥ high でしか走らないので、この検算だけが effort 非依存 / #124 (d)）
-2. **反証 verdict の反映**（Phase 4.9 が動いた場合のみ。scoring-guide.md `## 反証レイヤーの verdict 反映` に従う）
-   - **BLOCKER / CRITICAL の `refuted` は confidence / severity を据え置き**、指摘本文先頭に `⚠️ 反証メモ: <軸>（<根拠 file:line>、要確認）` を付与（**報告から消さない**）
-   - **MAJOR / MINOR の `refuted`** は confidence −40（取り下げ理由を付録に記録）、`confirmed` は既存「複数エージェント +15」の発火源（二重計上しない）、`uncertain` は −10
-   - verdict が無い指摘（対象外・反証失敗）は no-op
-3. **confidence への加算・減算ルールを適用**して 0-100 にクランプ
-4. **severity 調整**: `[scope:out]` / `[resolved: ...]` タグ付きは severity を 1 段階下げる（self-review では PR タグは通常出ない。反証 `severity-inflated` もこのルールに統合し二重降格しない）。**BLOCKER / CRITICAL の `severity-inflated` は降格後に報告マトリクスを割る場合のみ据え置き + 反証メモ**（scoring-guide の不変条件。高 severity を silent に消さない）。**MAJOR / MINOR が `severity-inflated` の降格で報告閾値を割って脱落する場合は、`refuted` の −40 脱落と同じく 🔁 付録に取り下げ理由を記録する**（scoring-guide.md `## 反証レイヤーの verdict 反映` / issue #109。降格で消える指摘が silent に落ちない）
-4.5. **加減算で報告閾値を割った指摘を控える**（issue #128）: 手順 3〜4 の減算・クランプ・降格の結果、手順 5 の報告マトリクスを通過しなくなる指摘は、**severity を問わず** 🔁 付録に「調整前の (severity, confidence) / 適用した規則名 / 遷移後の値」を記録する。反証由来の脱落（手順 2）と同じ枠に、経路が分かる形で並べる。**加減算を受けずに reviewer の付けた値のまま閾値を割っている指摘（③）も同じ枠に記録する**。**反証の対象は既定 high では非対称ゾーン限定（xhigh / max で MAJOR まで拡大）なので、既定 high で MAJOR しか出ない回では本経路が脱落の全量になる**。正本: scoring-guide.md `## 報告閾値を割った指摘の記録`
-5. **報告マトリクスでフィルタ**:
-
-   | severity \ confidence | <60 | 60-79 | 80-94 | 95+ |
-   |---|:---:|:---:|:---:|:---:|
-   | BLOCKER | skip | 報告 | 報告 | 報告 |
-   | CRITICAL | skip | skip | 報告 | 報告 |
-   | MAJOR | skip | skip | skip | 報告 |
-   | MINOR | skip | skip | skip | 報告 |
-
-   **実効報告閾値が `MINOR` の回は MINOR 行を 80+ で通す**（手順 6 の実効値。scoring-guide.md `### 実効報告閾値が MINOR の回` / GitHub issue #295）。95+ のままだと、閾値を下げて reviewer に本文を書かせた MINOR が付録に落ちる
-
-6. **userConfig 適用**: `review_severity_threshold`（self-review の既定は `MINOR`。未設定なら diff の種類を問わず `MINOR`、設定していればその値 / orchestration-guide.md `## 2` / #297）の**実効値**より低い severity は除外。**`pre_adjust_counts` には各 reviewer の `## below-threshold` の件数を同名 severity のバケツへ足し、`severity_threshold` を併せて記録する**（足し込む分は dedup されないため版で非可換。版マーカー `schema` は**スクリプトが注入する**ので書かない。orchestration-measurement.md `## 16`）。**足し込んだその件数を `below_threshold_counts` にも同じバケツで再掲し、`## below-threshold` の `demoted-across-threshold:` 行の型名を `below_threshold_counts.demoted_types` に型別で数える**（**親オブジェクトの中に置く** — トップレベルに書くと集計されない / GitHub issue #208）（どちらも 0 件でもキーを省かない / GitHub issue #146・#150）。合算しか残らないと **(a) 本文を書いてから捨てた**（出力トークンの純損失）と **(b) 件数だけ返した**（既に節約できている）が分離できず、閾値注入の効果を判定できない。**`pre_adjust_counts` を超える値は publish が fail-fast する**。**`below_threshold_counts` に入れるのは reviewer の `## below-threshold` 件数行の数字だけ**。`#### 指摘事項` に列挙された指摘は、反証・加減算・報告マトリクス（手順 2〜5）で閾値を割っても足さない — それらは 🔁 付録の側に載る指摘で、`pre_adjust − below` の「本文を書いた」に入る。足すと付録の上限が縮み、正規の付録行で `payload:appendix.exceeds-body` が偽陽性になる（実測 1 回 / GitHub issue #248）。**`## below-threshold` の件数行の後に reviewer が本文を書いていても、その指摘は below に数えるだけで本文にも 🔁 付録にも載せない**（付録の対象は閾値以上で列挙された指摘だけ ＝ 契約 (a)。載せると本文を書いた数の上限を超え、publish が `payload:appendix.exceeds-body` を立てる / GitHub issue #248）。**🔁 付録の件数は `appendix` に載せる**（`{listed, recommended}`。`listed` は付録に並べた行数、`recommended` はそのうち `※ 推奨:` を付けた行数。0 件でもキーを省かない / GitHub issue #168）— **付録に列挙しただけでは「報告 0 件の回」と「価値 0 の回」が payload 上で同じ形になる**（実測: severity 4 バケツすべて 0 なのに付録 18 件・うち 4 件を人間に推していた回がある）。`recommended` が `listed` を超えると publish が fail-fast する。マーカーの規約は scoring-guide.md `## 報告閾値を割った指摘の記録` の「推奨マーカー」。**`adversarial_verify.inflated_axes` は反証 agent の `axis` を同じ 4 型へ寄せて数える**（`pre-existing` / `intended` → `base_derived` / `misread` → `misread` / `overstated-impact` → `overstated_impact` / `miscategorized` → `miscategorized`。**`unknown` は「軸が返らなかった・語彙外だった」件だけ**で、`unreachable` / `pre-validated` / `none` は`severity-inflated` の軸ではないのでここに落ちる）。**語彙内の値を寄せ忘れても合計の突合は通る**ので、`unknown` が 1 件以上あると `measurement_gaps` に `axis-unknown` / `demoted-unknown` が立つ / GitHub issue #167
-7. **コメント推敲（B 系統）は本ステップを一切通さない**: `## コメント推敲提案` ブロックは手順 1〜6 と反証レイヤー（Phase 4.9）をすべてバイパスして Step 6 にそのまま流す。**severity / confidence を後付けしない**（付けた瞬間マトリクスの対象になり MINOR 95+ と好みクランプ 40 の 2 段で全滅する）。詳細は `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md`。**`review_severity_threshold` も B 系統には効かない**（severity を持たないため。推敲を止めるなら `--exclude comment-accuracy`）。オーケストレーター側で行う調整は次の 2 つだけ:
-   - **二重掲載の除去**: **手順 5-6 を通過して Step 6 に残った指摘**と同一 file:line のコメントのみ B から落とす。**「A 系統が指摘として挙げた」だけでは落とさない** — A の冗長コメント指摘は MINOR 95+ で大半が skip されるため、それを理由に B からも消すと A でも B でも出ない（B 系統を作った理由そのものを打ち消す）
-   - **掲載上限**: 10 件を超える場合はここで切り、末尾に「他 N 件」と添える（reviewer 側は全件出す規約。発見段階では間引かせない）。`comment_polish.suggested` には**切る前の総数**を入れる
-8. **Markdown 推敲も本ステップを一切通さない**（手順 7 と同じ扱い。二重掲載の除去・掲載上限・`md_polish.suggested` の数え方は `md-polish-guide.md` の 3 節）
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-5.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 6. レポート出力
 
-**他 skill からオーケストレーションされても定型と publish は省かない**（GitHub issue #232）: feature-dev 等の親 skill が self-review を呼び、手順を親のコンテキストで回す場合でも、**下のテンプレートどおりのレポート → `mark t2` → 6.4 の publish** は self-review の手順として踏む（`--embed` の有無を問わない）。親の集約・要約はこの定型レポートを**出した後に**足すもので、置き換えない。publish を踏まずに Edit / Write / Skill / Agent を呼ぶと publish-guard hook（PreToolUse）が鳴る。
-
-`missing_coverage` リストが空でない場合は「⚠️ 欠損観点」セクションを追加する（空なら省略）。**理由・補足はこのセクション本文に書き、payload の `missing_coverage` 配列には識別子のみを入れる**（語彙は orchestration-measurement.md `## 16`。自由文を入れると綴りが割れて集計不能になる）。
-
-**冷や読み skeptic の観測可能性（issue #85）**: high-risk surface を含む変更では、冷や読み skeptic（Phase 4.8）の起動有無を「動的ラウンド」行に **必ず** 出す（起動＝追加件数 / 未起動＝skip 理由）。surface HIT かつ未起動の silent skip を作らない。
-
-**skeptic 由来の帰属をレポートまで保つ（`findings_added` の計測妥当性）**: Phase 4.8 の skeptic 指摘に付いた由来タグは、**レポート本文の指摘行にもそのまま残す**（`[confidence][severity]` の後・カテゴリの前に置く）。タグを落とすと **Step 6.4** の publish 時点で由来を再構成できず、`findings_added` が記憶頼みになって系統的に 0 へ潰れる（＝ skeptic の価値率が実態より低く出る）。**由来タグはレポート契約の一部**であり、任意の装飾ではない。
-
-タグは 2 種（正本: orchestration-dynamic-rounds.md `## 9`）。**重複の有無で意味が正反対**になるため混ぜない:
-
-- `[recall-skeptic]` — skeptic 単独由来（reviewer 指摘と重複しなかった）。**fleet 共通盲点を実際に破った＝ skeptic の価値**
-- `[recall-skeptic:dup]` — 重複 survivor（reviewer も到達していた）。独立到達の記録としては残すが**盲点でなかった事例で recall の足し前はゼロ**
-
-```
-## セルフレビュー結果
-
-**総合判定**: {Approve | Approve with nits | Needs work}（scoring-guide.md「レビュー結論（総合判定）」の表に従う。コミット前ゲートとして「このままコミットしてよいか」の指針）
-**総合評価**: X/10 点
-**レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
-**範囲**: {`--since` を渡した回だけ: `delta（N ファイル・M 行 / 起点 <tree の先頭 8 桁>）` | `diff 全体（<縮退の理由>）`。渡していない回はこの行を省く}（GitHub issue #313。理由は `fallback=` の値を `--staged と併用` / `起点が tree の ID でない` / `起点の tree を引けない` / `--prior-findings を読めない` / `delta を取れない` / `PR のレビュー` と書く。呼び出し元はこの行の有無で code-review が `--since` を知る版かを見分ける）
-**実効上限**: explorer N / reviewer N / specialist N（Step 2.2 の plan の `explorer_cap` / `reviewer_cap` / `specialist_cap` を写す。効いた側は `cap_source` で、`effort` = **実行時** effort `{値}` の上限 / `size` = 規模キャップ `{帯}`（core N files / N lines）/ `scope` = `--focus` / `--exclude`）
-  ※ reviewer の effort と動的ラウンド（meta / skeptic / 反証ゲート）は**実行時 effort に連動**する。skill frontmatter の effort はオーケストレーター用で別枠
-**動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行（N 件追加）| スキップ理由（`effort` / `config` / `no-high-severity` / `size-tier`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/scope）| 非該当（surface なし）**← payload の `recall_skeptic.skip_reason` は `"no-surface"`。`fired=false` なので `null` にしない**} / 反証 {対象 N 件（うち meta 由来の追加バッチ M 件）| スキップ理由}
-**指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件
-**前回の指摘への修正**: {Step 1 で `## prior-fixes` が出た回: `N 箇所を確認対象に戻した（観点: <キー>, …）` | 出なかった回はこの行を省く}（GitHub issue #298。絞り込んだ回でも、前回の指摘で入れた修正を見たかが読み手に見えるように）
-**仕様整合**: {spec-compliance を起動した回: `<仕様ソース>`（Issue / session-context / knowledge / `--spec` / repo の仕様書 N 件（diff が触った M 件））と照合し、仕様違反 N 件（うち文書への未反映 K 件） | 起動しなかった回: Step 2.2 の plan から写す — `spec_source	none` なら `仕様ソースなし`、`dropped	spec-compliance	size-cap` なら `規模キャップで未起動`、`effort-cap` なら `effort 上限で未起動`、`excluded	spec-compliance` か `--focus` に無い回は `--focus / --exclude で対象外`}（spec-compliance の結論を 1 行で。起動の有無が読み手に見えないと、指摘 0 件が「仕様どおり」と読まれる）
-**反証**: 対象 N 件 / 係争 M 件（BLOCKER/CRITICAL、本文に反証メモ）/ 取り下げ K 件（MAJOR以下、付録に理由）{**スキップ時もこの行を出す**（書式の正本は orchestration-dynamic-rounds.md `## 10` 手順 4）。`no-eligible-findings` は `未実施（対象帯に該当なし。MAJOR 以下の severity は較正されていない）` と書く — 「対象 0 件」は「検証したが問題なし」と読まれる}
-
-### 🚨 BLOCKER 指摘
-
-1. [confidence: 70][severity: BLOCKER][セキュリティ] Hardcoded secret の疑い
-   ファイル: src/config.ts:15
-   影響: コミット時にシークレット漏洩
-
-### ⚠️ CRITICAL 指摘
-
-2. [confidence: 95][severity: CRITICAL][バグ] Missing null check
-   ファイル: src/utils.ts:42
-   影響: 特定入力で関数が落ちる
-
-3. [confidence: 85][severity: CRITICAL][recall-skeptic][バグ] 空文字の draft が numeric 列へ素通りする
-   ファイル: src/repo.ts:88
-   影響: 22P02 で INSERT が落ちる
-   {由来タグ: skeptic 単独由来は `[recall-skeptic]` / reviewer と重複した survivor は `[recall-skeptic:dup]`。Step 6.4 の publish で `findings_added` / `findings_overlap` を数える唯一の根拠なので落とさない。番号は他の指摘と通し連番にする}
-
-### 📋 MAJOR 指摘
-
-4. [confidence: 95][severity: MAJOR][設計] ...
-
-### ✏️ コメント推敲（severity 対象外・Step 7 の適用確認で「適用する」を選ぶと comment-polish が適用する）
-{`comment-accuracy` が構成に入っていれば（**バンドル相乗りを含む**）必ず見出しを出す（0 件なら「該当なし」。省略すると silent skip と区別できない）。構成に無ければ見出しごと省略し、**diff にコメントの追加・変更があるのに未起動だった場合のみ** `comment-accuracy` を欠損観点に記録する（トリガ不成立の未起動は正常系。記録すると `missing_coverage` の偏り集計が潰れる）。掲載上限 10 件、超過分は末尾に「他 N 件」}
-
-1. src/foo.ts:12 [不要]
-   before: `// カウンタをインクリメント`
-   after: (削除)
-   理由: `count++` が自明でコードの同語反復
-{タグは 2 種: `[不要]`=読み手に必要な情報を含まない / `[冗長]`=情報は必要だが表現が冗長。以降も同形式}
-
-### 📝 Markdown 推敲（severity 対象外・Step 7 で「適用する」を選ぶとメインが Edit で適用する）
-{見出しを出す・省く規則と 1 件の書式の正本は `md-polish-guide.md` の 4 節。起動した回は 0 件でも「該当なし」を出す。`no-md-prose` の回は見出しごと省く}
-
-{決定系 doc の design-review 委譲を起動した回は、「🧭 決定の品質」の節を Step 6.4 の publish の後に足す（この位置には書かない。書式の正本は `design-review-guide.md` の 4 節）}
-
-### ⚠️ 欠損観点（Agent 失敗による未カバー領域）
-- reviewer-security: ネットワーク I/O エラーで失敗 → 認証まわりの観点は未検査
-- explorer-<focus>: timeout → 依存していた reviewer-<focus> には探索結果なしで実行
-
-### 🔎 閾値未満の候補
-{**報告が 4 バケツすべて 0 件 かつ `below_threshold_counts` の合計が 1 件以上の回だけ出す**（それ以外は見出しごと省略）。件数だけ返った閾値未満は 🔁 付録に載らないので、この 1 行が無いと「何も見つからなかった回」と区別がつかない → scoring-guide.md `### 閾値未満の件数通知`}
-- 報告閾値 {実効 `review_severity_threshold`} 未満の候補が N 件あります（CRITICAL a / MAJOR b / MINOR c。本文は reviewer が書いていないため省略）。見る場合は `review_severity_threshold` を下げて再実行してください
-
-### 🔁 報告閾値を割った指摘（参考・人間が覆せる）
-{reviewer が `#### 指摘事項` に列挙した指摘が報告マトリクスを通過しなかった場合に載る（総括・related-observations の記述からは起こさない）。**経路（反証 verdict / 加減算 / 最初から閾値未満）を問わず記録し、severity 別の扱いは正本に従う** → scoring-guide.md `## 報告閾値を割った指摘の記録`。0 件なら省略}
-- [調整前: confidence XX / severity MAJOR] xxx の指摘
-  ファイル: path/to/file:行番号
-  脱落理由: <verdict: refuted | severity-inflated> — <軸>（反証根拠 file:line）／ <加減算: 規則名> — confidence XX → YY ／ <調整なし: reviewer の値のまま閾値未満>
-  ※ 判断が誤りと思えばこの指摘は有効。再評価してよい
-  ※ 推奨: <見送るのが惜しい理由。修正コストが小さい項目にだけ付ける。閾値を割った理由は上の欄にあるので繰り返さない>
-
-### 総括
-- 変更の概要
-- コミット前に修正すべき項目（特に BLOCKER）
-- 確認推奨の観点
-```
-
-**レポートを出力した直後に fleet 区間の終了マーカーを記録する**（Step 7 の修正方針確認＝人間の応答待ちを混ぜないため。orchestration-measurement.md `## 14`。`TS_FILE` は Step 1 と同じ導出式）:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2
-```
-
-> **「レポート出力 → `mark t2` → 6.4 の publish」は不可分の締めで、Step 6 はここまで**（GitHub issue #133）。番号は分かれているが 6.4 は独立した任意ステップではない。**publish を踏む前に Step 7（修正方針確認・修正作業）へ進まないこと** — publish は副作用のみで標準出力に何も足さないため、**脱落しても実行中は誰も気づかない**（実測: MAJOR 4 件を報告して全件修正した回が丸ごと欠測になり、meta 起動サンプルを 1 件失った）。ユーザーが事前に「指摘は全部修正して」と伝えている回ほど落ちやすい。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-6.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 6.4. Event Bus publish（`review:completed` / 計測用）
 
-**このステップの直前に `${CLAUDE_PLUGIN_ROOT}/references/orchestration-measurement.md` を Read する**（publish 先の固定・`TS_FILE` のパス導出・区間の算出式・payload 契約の正本。レビュー本体の実行には不要なのでここまで読まない）。
-
-レポート出力後、集計結果を `.claude/events.jsonl` に追記する fire-and-forget の publisher。**embed / 非 embed の両モードで実行する**（LLM 駆動 fan-out の「観点取りこぼし」「severity/confidence のパース安定性」を後から定量化するための計測データを蓄積する目的。review skill と同じ `review:completed` イベントで集計を揃える）。副作用のみで標準出力にレポート文字を足さないため embed mode の出力フォーマット（Step 6.5 の JSON ブロック → marker の順序）には影響しない。self-review は PR を持たないため `pr` は `"local"` 固定とする。
-
-**publish は専用スクリプトで行う**（書込先の固定・所要時間の算出・一時ファイルの掃除をまとめて担当する）。`duration_*` と **`agents.explorer_waves`** は**渡さない** — スクリプトが計測ファイル（explorer wave の打点）から算出して注入する。self-review では `duration_closing_min` を `-1`（測定不能）に固定する:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/publish-review-event.sh" \
-  --plugin code-review:self-review --payload '<orchestration-measurement.md `## 16` の self-review 用テンプレートを実値で埋めたもの。effort は '"${CLAUDE_EFFORT}"' の実値>'
-```
-
-- スクリプトは payload の JSON 妥当性と **`missing_coverage` / 動的層の `skip_reason` の語彙**を検証してから書く（不正なら publish せず `FATAL:` で落ちる。識別子以外＝理由つき自由文は弾かれるので、**理由はレポートの「⚠️ 欠損観点」に書き、フィールドごと落として通さない** / issue #132）。**`skip_reason` の許容値は orchestration-measurement.md `## 16` の各層の節が正本**で、層をまたいだ流用も弾かれる（`fired=false` で理由を書き忘れた回だけは落とさず `measurement_gaps` に倒す）。**`measurement_gaps` / `derived_markers` / `diff_digest` / `models` / `review_scope` も渡さない**（`review_scope` は triage-signals.sh が size ファイルに書いた範囲から作る / #313）（`models` は**モデル世代**で、transcript の `message.model` からの機械計測。渡しても捨てられる / issue #169）（計測ファイル・agent transcript・一時 diff から算出して注入される。`derived_markers` は**打点が落ちた区間を agent の実測時刻で埋めた記録**で、`measurement_gaps` とは排他ではない / issue #161）。計測ファイルと diff の一時ファイルもスクリプトが掃除する
-- **版マーカーの整数も渡さない**（`schema` / `gate_schema` / `attribution_schema` / `calibration_schema`。v2.65.0 でスクリプト注入に移した — 定数の手書きは version drift 中に落ち、サンプルが逆の版バケツに入る / issue #125）。**渡すのは実行時の事実だけ**で、層のオブジェクト自体（`adversarial_verify` / `recall_skeptic` / `meta_reviewer` / `pre_adjust_counts` / `below_threshold_counts`）と各層の `fired` は**必ず入れる**（落ちると `measurement_gaps` に `payload:<field>` が立つ）。**`agents` の内訳は transcript 由来の `dispatch.agents` と突合される**（issue #154）— 合わないと `agents-mismatch` が立つので、`specialist` / `round2` を実際に起動したのに 0 のままにしない（publish は止まらないが、`agents` は体数と時間・トークンの相関すべての分母なので申告漏れがそのまま集計を歪める）。**`tokens` も self-review に載る**（v2.70.0 で review 限定を撤回 / issue #143。`measure-tokens.sh` は publish 時点の transcript を読むので `t0 → publish` は閉じており、窓に Step 7 の修正作業が混ざるのは遅れて publish した回だけ ＝ `window: "since-t0-late"` で区別される）。これも**スクリプトが注入するので渡さない**。取り込み内訳や特定セッションを見たいときだけ `measure-tokens.sh` を手動実行する（→ 同 `## 17`）
-- **報告した指摘を `findings_class` に分類して入れる**（`lint` / `test` / `judgement`。合計は報告件数と一致。分類の基準と「0 件を目標にしない」理由は orchestration-measurement.md `## 16` の「`findings_class` の使い方」）
-- **書込先はメインリポジトリのルートに固定される**。self-review は worktree に入らないが、dev-workflow の作業用 worktree 内から実行されると cwd 相対では Step 8 の teardown で消える（→ orchestration-measurement.md `## 13`）。**publish の WARN に `⚠️ 計測:` の追記指示が出たら、レポート末尾にその 1 行を追記する**（#135 / #172。explorer の一括発行違反・wave 打点漏れ・**全層の wave 分割**（`wave-split`）は実行中に何も起きず、しかも打点漏れは違反の証拠自体を消す）
-
-**payload 契約の正本は orchestration-measurement.md `## 16`**（フィールドの意味・版マーカー・後方互換をここに複写しない）。self-review 固有の点のみ:
-- `pr` は常に `"local"`（PR を持たない）
-- **`duration_closing_min` は常に `-1`（測定不能）**: publish（Step 6.4）が Step 7 の修正方針確認より前にあるため t2→t3 に人間の応答待ちが入らない。0 を publish すると「人間待ちが無かった」と誤読される
-- **`duration_min`（全体）の意味は publisher 間で非対称**（review は締めフロー込み / self-review は Step 7 手前まで）。**`plugin` で層別してから比較する**。`head_verified` は publish しない（checkout を行わないため）。`recall_skeptic.skip_reason` は `"scope"`（`--focus`/`--exclude` 指定）も取りうる
-- `recall_skeptic.findings_added` / `meta_reviewer.findings_added` はレポートの「動的ラウンド」行の数値と一致させる（それぞれ `[recall-skeptic]` / `[meta]` タグ付き指摘を数える。#121）
-- **`comment_polish` は self-review のみのフィールド**（v2.45.0。`fired` / `suggested` の定義と計数基準は orchestration-measurement.md `## 16` が正本）
-- **`md_polish` も self-review のみのフィールド**（v2.131.0）。**起動しなかった回も `fired: false` と `skip_reason` で必ず入れる**（落とすと `payload:md_polish` が立つ）。推敲 agent は `agents` に数えず、publish が `md_polish.fired` を申告体数に足して突合する。定義の正本は orchestration-measurement.md `## 16`
-
-**publish の直後に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-retro.sh"` を実行する**（→ 同 `## 18`。**`--embed` ではスキップ** — Step 6.5 の出力フォーマットに集計テキストを混ぜない）。出力は**そのままレポートの後ろに出す**（要約・再解釈をしない）。**⚠️ シグナル行が出たときだけ**戻り先ドキュメントを示して 1〜2 行の所見を添え、無い回は集計表だけ出す。失敗しても続行（best-effort）。
-
-**決定系 doc の design-review 委譲**（Step 2 で起動すると決めた回だけ・`--embed` では起動しない）: retro の後、`Skill` tool で `design-doc:design-review` を `--path <path> --embed --effort ${CLAUDE_EFFORT}` で doc ごとに呼び、戻りを「🧭 決定の品質」の節としてレポートの後ろに出す。Step 5 のスコアリング・反証と Step 7 の修正方針の確認には入れない。呼び方・失敗の扱い・節の書式の正本は `design-review-guide.md` の 2〜4 節。publish の後に置くのは、design-review が起動する agent を計測の窓に入れないため
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-6.4.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 6.5. 構造化 findings JSON（embed mode のみ）
 
-**`--embed` が指定されている場合のみ**、Step 6 の markdown レポート直後に機械可読な findings ブロックを出力する（非 embed 実行では出力しない）。呼び出し元（feature-dev Phase 6 等）はこの JSON を決定的にパースし、markdown の正規表現パースに依存しない。
-
-出力テンプレート・フィールド契約（schema_version: 1）・`<!-- FINDINGS_JSON_START/END -->` マーカーの規約: → orchestration-optional-flows.md `## 15`（embed 分岐でのみ読む）
-
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-6.5.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 7. 修正方針の確認
 
-**publish 済みかのガード（`--embed` / 指摘 0 件でも必ず実行する / GitHub issue #133）**: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" publish-pending` で 6.4 の脱落を捕まえる。**下の skip 条件はこのガードには掛からない** — 本ステップの他の判定（embed / 指摘件数）より前に、レポート出力後 1 回だけ無条件で実行する。**警告が出たら他を中断して 6.4 を先に完了させる**（計測ファイルはまだ残っているので、この時点なら損失なく復旧できる。修正作業に入ってから気づいた回は `duration_min` が欠測に倒れる）。**embed 経路こそ落ちやすい**（publish の後に呼び出し元の作業が続くため）ので、ここを条件分岐の内側に入れない。
-
-**embed mode skip**: 引数で `--embed` が指定されている場合は、上のガードを実行したうえで本ステップの残りを skip する。Step 6 の markdown レポート → **Step 6.5 の構造化 JSON ブロック** → `[embed-mode: findings-only, no-prompt]` の 1 行 marker、の順で出力し、**ターンを終えずに呼び出し元の次の手順へ戻る**（Step 1 の `--embed` の節）。AskUserQuestion を呼ばないことで呼び出し元 plugin の UX を阻害しない。
-
-**以下の修正方針フローは**、指摘事項（A 系統）・`## コメント推敲提案`（B 系統）・Markdown 推敲の提案のいずれかが 1 件以上ある場合に実行する。B 系統と Markdown 推敲は severity マトリクスを通らない別枠であり、**適用トリガーを A 系統の件数に従属させない**（A 系統 0 件でも別枠に提案があれば下の確認へ進む / GitHub issue #236）。すべて 0 件なら（上のガードを実行したうえで）「問題なし」で完了。
-
-レポート全文を出力し終えた直後に **AskUserQuestion** で対応方針を確認する。該当する質問だけを含めて **1 回の呼び出し**にまとめる（別呼び出しに分けない）。**どの質問を入れるかは、publish（6.4）が出す `Step 7 の AskUserQuestion に入れる質問:` の行に従う** — payload の件数から機械的に決めたもので、自分の記憶で選び直さない（指摘の修正方針だけを聞き、Markdown 推敲の採否を落とした実例がある / GitHub issue #279）:
-- 質問 1（A 系統の指摘が 1 件以上ある場合のみ）:
-  - question: "指摘事項への対応方針を選択してください（コミット前の作業優先度を整理します）"
-  - header: "修正方針"
-  - options:
-    1. label: "すべて修正" / description: "指摘事項をすべて今すぐ修正する"
-    2. label: "BLOCKER/CRITICAL のみ" / description: "severity BLOCKER または CRITICAL の指摘だけ修正する"
-    3. label: "このまま" / description: "修正はせず、このまま進む（コミットは git-commit-helper で行う）"
-- 質問 2（`## コメント推敲提案` が 1 件以上ある場合のみ）:
-  - question: "コメント推敲提案（N 件）を適用しますか？"
-  - header: "コメント推敲"
-  - options:
-    1. label: "適用する (Recommended)" / description: "提案どおり comment-polish で全件適用する"
-    2. label: "適用しない" / description: "コメントは現状のまま残す"
-- 質問 3（Markdown 推敲の提案が 1 件以上ある場合のみ）: 文面と選択肢の正本は `md-polish-guide.md` の 6 節（確実のみ / 全件 / 適用しない）
-
-各選択肢の後処理:
-- **すべて修正**: 全指摘を一覧化し、ファイルごとにまとめて修正を実施する
-- **BLOCKER/CRITICAL のみ**: 該当 severity の指摘のみ再表示し、ファイルごとにまとめて修正を実施する
-- **このまま**: 完了（BLOCKER 指摘が 1 件以上残っている場合は「BLOCKER 指摘を残したままコミットしますか？」と AskUserQuestion で再確認する）
-
-**コミットはこの skill でしない**（設計原則: コミットは Generator 側の `dev-workflow:git-commit-helper` が行う）。どの選択肢の後でも、コミットへ進むとき（「このまま」を選んだ・修正を終えた・利用者がコミットを指示した）は、呼び出し元のフロー（issue-workflow の軽量フロー等）があればその次の手順へ戻る。単独で起動した回は、使える skill に `dev-workflow:git-commit-helper` があれば `Skill` tool で起動する（`git commit` を直接打たない。protected branch へ直接コミットする運用のリポジトリでは `--no-protect` を渡す）。無ければ Conventional Commits 形式で論理単位に分けてコミットする
-
-**修正した指摘を記録する（GitHub issue #298）**: 「すべて修正」「BLOCKER/CRITICAL のみ」で修正を終えたら、修正した指摘を次の self-review に渡す（`file` は repo のルート相対、`focus` は観点判定表のキー、`title` は指摘の要旨。扱いの詳細は `${CLAUDE_PLUGIN_ROOT}/references/prior-fixes-guide.md` の 2・3 節）:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/prior-fixes.sh" record <<'JSON'
-[{"file": "src/a.ts", "line": 42, "focus": "bug-detection", "title": "結果の種類 X のときだけ確認表示を下げる"}]
-JSON
-```
-
-「このまま」の回と `--embed` の回は記録しない。
-
-**コメント推敲（B 系統）の適用**: 質問 2 で「適用する」を選んだときは、（A 系統の指摘修正がある場合はそれを終えた後に）`## コメント推敲提案` ブロック（Step 6 で出力済み）を適用する。**質問 1 の回答（「このまま」を含む）とは独立に、質問 2 の回答だけで決める**。`code-review` がインストールされているので `Skill` tool で `code-review:comment-polish` を呼ぶ:
-- 提案を一時ファイル（例: `.claude/.comment-polish-findings.txt`）に書き出してから、`comment-polish --embed --from-findings <path>`（+ 現在の base / `--staged` があれば同値）で起動する
-- comment-polish 側は再推敲せず、渡した提案を**全件 Edit で適用**する（オプションなしで適用。提案が 0 件 or「該当なし」なら no-op）
-- `comment-accuracy` が構成に無く `## コメント推敲提案` が出ていない回は本処理を skip する（質問 2 自体を出さない）
-
-**Markdown 推敲の適用**: 質問 3 の回答だけで決める（質問 1・2 とは独立）。A 系統の修正とコメント推敲の適用を終えた後に、**メインが Edit で当てる**（writing-polish を呼び直さない — 呼び直すと推敲がやり直されてレポートと食い違う）。行が変わっていて当たらない提案の扱いと報告の書式は `md-polish-guide.md` の 6 節
-
-**訂正の伝播前ガード（over-correction 防止 / GitHub issue #71）**: findings をコード/文書本文に**反映する前に**、その修正が依拠する load-bearing な事実主張を一次ソースで再確認する。**反証レイヤーが覆っていない指摘**（`反証: 未実施` の回の全件 / `⚠️ 反証未実施（対象帯外）` 付き）では、**load-bearing かの判定より先に一次ソースを引く** — 絞り込みの判定自体が指摘を書いた同じ 1 体の推論に乗っているため（#196）。判定ルール（repo で確認できる/できない主張の扱い・暫定入力の非伝播・1 箇所先行確認・複数観点の独立一致）の詳細: → orchestration-optional-flows.md `## 12`
-
-**修正の指針（Fix the code, not the reviewer）**: 「分かりにくい」「誤解を招く」「意図が読めない」系の指摘に対しては、説明コメントを足して取り繕うのではなく、**コード・命名・型・構造そのものを直して解消する**ことを優先する。将来の読み手（半年後の自分・別コンテキストの Claude）も同じ箇所でつまずくため（Google eng-practices "Handling reviewer comments: fix the code, not the reviewer"）。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-7.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。
 
 ### 8. worktree teardown 連携（非 embed のみ）
 
-レビュー完了後に作業用 worktree が放置されるのを防ぐ後片付け。Step 7 の修正方針フロー（修正を選んだ場合はその実施）まで**すべて完了した後**の最終ステップとして実行する（teardown は cwd＝worktree 自体を削除するため、後続ステップを残した状態で起動してはならない）。
-
-**`--embed` 指定時は skip**（呼び出し元の UX を阻害しない）。それ以外では `${CLAUDE_PLUGIN_ROOT}/references/worktree-teardown-flow.md` を Read し、発動条件（worktree 内か / worktree-setup 由来か / tree が clean か / dev-workflow が有効か）と AskUserQuestion の確認手順に従う。**条件が 1 つでも欠けたら silent skip**。削除の同意が取れたときだけ `Skill` tool で `dev-workflow:worktree-teardown` を起動する。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-8.md` を Read する（手順・分岐・次の Step はそのファイルにある。見出しだけで進めない）。

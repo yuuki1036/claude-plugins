@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.4] - 2026-11-09
+
+### Changed
+
+- **code-review の self-review の Step 1・Step 6 への SSoT pin を、分けた Step ファイル（`skills/self-review/references/step-1.md`・`step-6.md`）へ向け直した**（GitHub issue #426。挙動の変更なし）
+
 ## [2.28.3] - 2026-11-09
 
 ### Changed

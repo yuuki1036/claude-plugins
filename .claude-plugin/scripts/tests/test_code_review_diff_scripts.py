@@ -24,6 +24,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from skill_flow import flow_text
 from test_code_review_scripts import PLUGIN, ScriptTestBase
 
 SLICE = PLUGIN / "scripts" / "diff-slice.sh"
@@ -1421,7 +1422,8 @@ class SelfReviewStep1ArgsTest(unittest.TestCase):
 
     def command(self, marker: str) -> str:
         """Step 1 のブロックから `marker` を含むコマンドを、`\\` の継続行ごと取り出す."""
-        lines = self.SKILL.read_text(encoding="utf-8").splitlines()
+        # 分けた SKILL.md は Step の本文を差し込んで読む（skill_flow.py / #426）
+        lines = flow_text(self.SKILL).splitlines()
         i = next(n for n, line in enumerate(lines) if marker in line)
         cmd = [lines[i]]
         while cmd[-1].rstrip().endswith("\\"):

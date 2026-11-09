@@ -32,7 +32,7 @@ RECALL_MIN_HITS = 2
 
 SEVERITY_RANK = {"MINOR": 1, "MAJOR": 2, "CRITICAL": 3, "BLOCKER": 4}
 
-# self-review の Step 6 の定型（code-review/skills/self-review/SKILL.md）:
+# self-review の Step 6 の定型（code-review/skills/self-review/references/step-6.md）:
 #   2. [confidence: 95][severity: CRITICAL][バグ] Missing null check
 #      ファイル: src/utils.ts:42
 # 🔁 付録は `- [調整前: …]` で始まり番号を持たないので、この形に当たらない（報告外の指摘を数えない）。

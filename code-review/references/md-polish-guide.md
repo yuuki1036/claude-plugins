@@ -2,7 +2,7 @@
 
 diff で追加・変更した Markdown の散文を writing-polish（別プラグイン・未導入なら skip）に通し、before → after の提案を severity マトリクスの外の別枠に出す。**起動条件・結果の扱い・レポート・適用の正本**。agent 側の手順は `${CLAUDE_PLUGIN_ROOT}/references/prompts/md-polish.md`、payload の定義は `orchestration-measurement.md ## 16` の `md_polish` の節が正本。
 
-**読むタイミング**: Step 2 で起動すると決まったとき（下の 1 節）。skip と決まった回は読まない（skip の記録は SKILL.md 本文の 1 行で足りる）。
+**読むタイミング**: Step 2 で起動すると決まったとき（下の 1 節）。skip と決まった回は読まない（skip の記録は self-review の Step 2（`skills/self-review/references/step-2.md`）の 1 行で足りる）。
 
 - **なぜ要るか**: 語句・トーン・冗長は writing-polish の領分と triage-guide が境界を引いている（`## 3` の doc-substance の境界）が、diff 内の md 散文をそこへ渡す経路が無かった。コメント推敲（B 系統）の対象はコード内コメントだけ、doc-substance は語句の指摘を低 confidence で申告して好みクランプに落とすので、md の文面はどの担当からも漏れていた
 - **なぜ別枠か**: B 系統と同じ理由。推敲は severity を持たず、報告マトリクス（MINOR は 95+）と好みクランプ 40 の 2 段を構造的に通らない
@@ -22,7 +22,7 @@ Step 1 のダイジェストの `## md-polish`（`md-prose-lines.sh --count` の
 | 上のどれでもない | **する（effort を問わない）** | `null` |
 
 - **`## md-polish` が出ていない（スクリプトが失敗した）回**: `--embed` か scope に当たるならその理由で skip する（表の 2・3 行目は `## md-polish` を使わずに決まる）。当たらなければ**起動せず**、`missing_coverage` に `md-polish` を記録し、`skip_reason` は空のままにする（判定できていないので `no-md-prose` にしない。publish が `payload:md_polish.skip_reason` を立てて可視化する）
-- `--exclude md-polish` 単独は他の層にとってスコープの絞り込みではない（SKILL.md の `--focus` / `--exclude` の節）
+- `--exclude md-polish` 単独は他の層にとってスコープの絞り込みではない（self-review の Step 1 の `--focus` / `--exclude` の節。`skills/self-review/references/step-1.md`）
 - **`--focus` では止めない**（GitHub issue #275）。Markdown 推敲は観点ではなく severity の外の別枠で、観点を絞っても読みやすさを見る係は要る。以前は `--focus` でも `scope` で止めており、docs の改訂で観点を絞ると読みやすさを誰も見なくなっていた。止めたいときは `--exclude md-polish`
 
 - **体数の上限（effort 上限・規模キャップ）の外**。reviewer 枠にも specialist 枠にも数えず、最小保証の 2 体にも含めない。core が 0 行の doc だけの変更は small 帯になるが、そこでも起動する

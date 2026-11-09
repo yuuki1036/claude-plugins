@@ -1,8 +1,8 @@
-<!-- 正本依存（SSoT pin）。Step 3.2 の再レビューの引数と「範囲の行が無ければ旧版」の判定は、code-review の self-review SKILL.md「6. レポート出力」の範囲の行と prior-fixes-guide.md「4.」の形を要約したもの。正本が変わったら Step 3.2 を確認して pin を打ち直す -->
-<!-- SSOT: code-review/skills/self-review/SKILL.md#6 @22a4cba8 -->
+<!-- 正本依存（SSoT pin）。Step 3.2 の再レビューの引数と「範囲の行が無ければ旧版」の判定は、code-review の self-review の Step 6（`skills/self-review/references/step-6.md`）「6. レポート出力」の範囲の行と prior-fixes-guide.md「4.」の形を要約したもの。正本が変わったら Step 3.2 を確認して pin を打ち直す -->
+<!-- SSOT: code-review/skills/self-review/references/step-6.md#6 @76335b44 -->
 <!-- SSOT: code-review/references/prior-fixes-guide.md#4 @f5c76a67 -->
-<!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review SKILL.md「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
-<!-- SSOT: code-review/skills/self-review/SKILL.md#1 @77013dba -->
+<!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review の Step 1（`skills/self-review/references/step-1.md`）「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
+<!-- SSOT: code-review/skills/self-review/references/step-1.md#1 @18660c38 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
 # Quality Review — Generator-Verifier Loop（Phase 6 の詳細手順）
 
@@ -15,7 +15,7 @@ Step 3（G-V ループ）と Step 4（集約）は self-review 出力を次の�
 1. **`<!-- FINDINGS_JSON_START -->` 〜 `<!-- FINDINGS_JSON_END -->` の JSON ブロックがあれば、それを決定的にパース**して `findings[]` を取得する（`severity` / `confidence` / `focus` / `file` / `line` / `suggested_fix`）。markdown の正規表現パースに依存しない
 2. **JSON ブロックが無い場合**（code-review < 2.18.0）は従来通り markdown レポートの `[confidence: XX][severity: YY]` と `ファイル: path:line` を正規表現パースする（後方互換フォールバック）
 
-消費する schema 契約は self-review SKILL.md 「6.5. 構造化 findings JSON」が SSoT（`schema_version: 1`）。`schema_version` が未知の上位値だった場合は warning を出しつつ既知フィールドのみ読む。
+消費する schema 契約は self-review の Step 6.5（`skills/self-review/references/step-6.5.md`）「6.5. 構造化 findings JSON」が SSoT（`schema_version: 1`）。`schema_version` が未知の上位値だった場合は warning を出しつつ既知フィールドのみ読む。
 
 **Partial failure tolerance**: self-review 自体が失敗した場合は warning を出して Step 3 を skip し、Step 4 で「Phase 6 not executed」状態をユーザー提示する。
 

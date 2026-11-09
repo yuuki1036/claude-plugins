@@ -73,7 +73,7 @@ SPEC_DOC_LABELS = ("repo-spec-touched", "repo-spec-ref")
 PR_BODY_HEADING = "### PR 説明"
 # fetch-pr-context.sh が PR 本文の次に出す見出し。PR 本文の中の `### ` 見出しでは打ち切らない
 PR_BODY_END_HEADING = "### Issue コメント"
-# focus に来ても観点ではないので無視する値（self-review SKILL.md の `--focus` の注入と同じ扱い）
+# focus に来ても観点ではないので無視する値（self-review の Step 1 の `--focus` の注入と同じ扱い）
 NON_FOCUS = frozenset(("md-polish", "design-review"))
 ISSUE_ID_RE = re.compile(r"[A-Z]+-[0-9]+")
 

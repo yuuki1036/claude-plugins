@@ -1985,6 +1985,33 @@ class CommentPolishWiringTest(unittest.TestCase):
     def test_correct_wiring_passes(self):
         self.assertEqual(self._run(), [])
 
+    def _run_split(self, skill_body: str, phase_body: str) -> list[str]:
+        """分けた skill（SPLIT_SKILLS）はマーカーを phase ファイルに持つ（GitHub issue #426）."""
+        self.addCleanup(lambda o=v.SPLIT_SKILLS: setattr(v, "SPLIT_SKILLS", o))
+        rel = "p/skills/s/SKILL.md"
+        v.SPLIT_SKILLS = ((rel, r"^### (?P<num>\d+)\.\s", "Step {num}"),)
+        v.COMMENT_POLISH_WIRING = {self.root / rel: "attach", self.review: "detach"}
+        _write(self.root, rel, "# s\n\n### 1. 準備\n\n"
+               "入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/s/references/step-1.md` を Read する\n" + skill_body)
+        _write(self.root, "p/skills/s/references/step-1.md", "### 1. 準備\n\n" + phase_body + "\n**ここで終わり**\n")
+        _write(self.root, "review.md", "# review\n\n" + self.DETACH)
+        errors: list[str] = []
+        v.check_comment_polish_wiring(errors)
+        return errors
+
+    def test_a_marker_in_a_phase_file_of_a_split_skill_passes(self):
+        self.assertEqual(self._run_split("", self.ATTACH), [])
+
+    def test_a_split_skill_without_the_marker_anywhere_is_an_error(self):
+        errors = self._run_split("", "- reviewer に渡す\n")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("ちょうど 1 個", errors[0])
+
+    def test_a_split_skill_counts_markers_in_skill_md_and_phase_files_together(self):
+        errors = self._run_split(self.ATTACH, self.ATTACH)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("実際 2 個", errors[0])
+
     def test_spacing_variants_are_accepted(self):
         self.assertEqual(
             self._run(attach="<!--COMMENT-POLISH:attach--> ${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/comment-polish.md\n"), [])

@@ -3,11 +3,11 @@
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @d1549e64 -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @e069c8ab -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @75db4464 -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @22f4abc9 -->
 
-**このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は SKILL.md 側にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。
+**このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は SKILL.md 側（self-review は Step ファイル `skills/self-review/references/step-4.*.md`）にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。
 
 | 節 | フェーズ | review / self-review |
 |---|---|---|

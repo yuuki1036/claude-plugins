@@ -11,7 +11,7 @@ allowed-tools:
 argument-hint: "[--staged | base branch] [--focus <観点>] [--exclude <観点1,観点2>] [--spec <path>] [--embed] [--rereview] [--since=<tree>] [--prior-findings=<path>] (省略時はデフォルトブランチとの差分)"
 ---
 
-**まず `${CLAUDE_PLUGIN_ROOT}/skills/self-review/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `code-review@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。**SKILL.md は 70KB を超え、1 回では読み切れない。Bash の `cat` / `sed` で読まない** — 出力超過で先頭 2KB のプレビューしか残らず、Step 6 のレポートテンプレートに届かない（テンプレートがコンテキストに入らないまま締めた回は 3/3 で定型を出さなかった / GitHub issue #250）。Read の `offset` / `limit` で分けて、Step 6 のテンプレートと 6.4 の publish まで読む。
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/self-review/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `code-review@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。**SKILL.md が持つのは、全 Step に効く節（review との違い・前提など）と、Step の並び・Read の行だけで、各 Step の手順は `${CLAUDE_PLUGIN_ROOT}/skills/self-review/references/step-<番号>.md` にある。Step に入るたびに、その見出しの下の Read の行が指すファイルを読んでから進む** — Step 6 の定型を読まないまま締めた回は 3/3 で定型を出さなかった（GitHub issue #250 / #426）。
 
 self-review スキルを使用して、現在の変更のセルフレビューを実行してください。
 
