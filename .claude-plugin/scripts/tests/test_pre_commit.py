@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """`.githooks/pre-commit` の回帰テスト（GitHub issue #139 / #140）.
 
-**機械層のゲート本体**（バージョンバンプ / CHANGELOG / SSoT / 品質 / 回帰テスト）で、
+**機械層のゲート本体**（バージョンバンプ / CHANGELOG / plugin eval の鮮度 / SSoT / 品質）で、
 ここが素通りすると下流の検査がいくら正しくても commit は通る。壊れ方は静かで、
 「ブロックされなかった＝問題が無かった」と区別がつかない。
 
 **実物をそのまま実行する**: このスクリプトは相対パスしか見ないので、cwd を使い捨ての
 リポジトリにすればそこを検査する（コピーも差し替え口も要らない）。検査本体は stub に
-差し替え、**ゲートの判断**（何を止めるか / 何回走らせるか / 判定不能を通すか）だけを見る。
+差し替え、**ゲートの判断**（何を止めるか / 何を走らせないか / 判定不能を通すか）だけを見る。
+
+**回帰テストは pre-commit から外した**（2026-11-08 決定 / GitHub issue #436。CI が ubuntu と macOS で
+回す）。`run-tests.py` の stub は呼ばれた回数を数えるために置き、**呼ばれないこと**を確かめる。
 """
 
 from __future__ import annotations
@@ -53,8 +56,9 @@ class PreCommitTest(unittest.TestCase):
 
     def env(self) -> dict[str, str]:
         env = scrub()   # git hook 由来の変数を落とす（正本と理由は `git_env`）
-        # 迂回の変数も継承しない。`PLUGIN_EVAL_SKIP=1 git commit` の pre-commit からこのスイートが
-        # 走ると、ゲートが止めることを見るテストまで迂回されて落ちる（2026-10-08 の実測）。
+        # 迂回の変数も継承しない。この変数が入った環境からこのスイートが走ると、ゲートが止めることを
+        # 見るテストまで迂回されて落ちる（2026-10-08 の実測。当時は `PLUGIN_EVAL_SKIP=1 git commit` の
+        # pre-commit からスイートを回していた）。
         # 迂回を試すテストは `run_hook(PLUGIN_EVAL_SKIP="1")` で明示する
         env.pop("PLUGIN_EVAL_SKIP", None)
         return env
@@ -75,7 +79,7 @@ class PreCommitTest(unittest.TestCase):
                    "print('quality stub')\nimport sys; sys.exit(%d)\n" % code)
 
     def set_tests(self, code: int, message: str = "test stub") -> None:
-        """回帰テストの stub。**呼ばれた回数を記録する**（二重実行の検出用）."""
+        """回帰テストの stub。**呼ばれた回数を記録する**（pre-commit が呼ばないことの確認用）."""
         self.write(".claude-plugin/scripts/run-tests.py",
                    "import sys\n"
                    "open('run-tests.count', 'a').write('x')\n"
@@ -134,45 +138,27 @@ class PreCommitTest(unittest.TestCase):
         self.stage("src/note.txt")
         res = self.run_hook()
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-        self.assertEqual(self.test_runs, 1)
 
-    def test_a_docs_only_change_skips_the_suite(self):
-        """テストが読まない dir だけの変更では回帰テストを省く（design doc 1 枚で 15 分待っていた）."""
-        for rel in ("docs/a.md", ".claude/designs/b.md", ".claude/adr/c.md"):
-            self.stage(rel)
+    def test_the_regression_suite_is_left_to_ci(self):
+        """コミットのたびにフルスイートを回さない（並列の作業で待ち・時間切れが出ていた / #436）.
+
+        プラグイン配下・CLAUDE.md のようなテストが読む側の変更でも回さない。テストが落ちる
+        状態で通るのは、回帰テストの stub を落ちる側にしても通ることで確かめる。
+        """
+        self.set_tests(1, "FAILED (failures=3)")
+        self.stage_plugin_change()
+        self.stage("CLAUDE.md")
         res = self.run_hook()
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-        self.assertEqual(self.test_runs, 0)
-        self.assertIn("回帰テストを省いた", res.stdout, "省いたことを黙らない")
+        self.assertEqual(self.test_runs, 0, "pre-commit が回帰テストを起動している")
+        self.assertNotIn("FAILED", res.stdout)
 
     def test_a_docs_only_change_still_runs_the_other_gates(self):
         self.stage("docs/a.md")
         self.set_quality(1)
         res = self.run_hook()
-        self.assertEqual(res.returncode, 1, "省くのは回帰テストだけ")
+        self.assertEqual(res.returncode, 1, "docs だけの変更でも品質の検査は省かない")
         self.assertIn("validate_plugin_quality.py の errors", res.stdout)
-
-    def test_a_docs_change_mixed_with_anything_else_runs_the_suite(self):
-        for rel in ("CLAUDE.md", "docsx/a.md", "evals/a.md", "x/docs/a.md"):
-            with self.subTest(rel=rel):
-                self.git("reset", "-q")
-                self.stage("docs/a.md")
-                self.stage(rel)
-                before = self.test_runs
-                res = self.run_hook()
-                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-                self.assertEqual(self.test_runs, before + 1, "テストが読む側の変更が混ざっている")
-
-    def test_moving_a_file_into_docs_runs_the_suite(self):
-        """rename の移動元はテストが読む側にある（移動先だけ見ると docs だけの変更に見える）."""
-        self.write("src/a.md", "本文\n" * 20)
-        self.git("add", "-A")
-        self.git("commit", "-qm", "baseline")
-        (self.root / "docs").mkdir()
-        self.git("mv", "src/a.md", "docs/a.md")
-        res = self.run_hook()
-        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-        self.assertEqual(self.test_runs, 1)
 
     def test_a_properly_bumped_plugin_change_passes(self):
         self.stage_plugin_change()
@@ -199,7 +185,6 @@ class PreCommitTest(unittest.TestCase):
         res = self.run_hook()
         self.assertEqual(res.returncode, 1)
         self.assertIn("変異テストが実行中", res.stdout)
-        self.assertEqual(self.test_runs, 0, "以降の検査は走らせない")
 
     def test_ssot_violation_blocks(self):
         self.stage("src/note.txt")
@@ -218,7 +203,6 @@ class PreCommitTest(unittest.TestCase):
         res = self.run_hook()
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("判定不能", res.stdout)
-        self.assertEqual(self.test_runs, 0, "前提が崩れている状態で先へ進まない")
 
     def test_quality_errors_block(self):
         self.stage("src/note.txt")
@@ -226,28 +210,6 @@ class PreCommitTest(unittest.TestCase):
         res = self.run_hook()
         self.assertEqual(res.returncode, 1)
         self.assertIn("validate_plugin_quality.py の errors", res.stdout)
-
-    def test_failing_tests_block_and_are_shown(self):
-        self.stage("src/note.txt")
-        self.set_tests(1, "FAILED (failures=3)")
-        res = self.run_hook()
-        self.assertEqual(res.returncode, 1)
-        self.assertIn("FAILED (failures=3)", res.stdout, "失敗内容を見せずに落とさない")
-
-    def test_the_suite_is_not_run_twice_on_failure(self):
-        """実測 92 秒のスイートを、落ちた回だけ 2 度払っていた（表示のための再実行）."""
-        self.stage("src/note.txt")
-        self.set_tests(1)
-        self.run_hook()
-        self.assertEqual(self.test_runs, 1)
-
-    def test_a_leaked_process_warning_does_not_block(self):
-        """残留プロセスの警告は「後始末の漏れ」で、commit は止めない（見せはする）."""
-        self.stage("src/note.txt")
-        self.set_tests(0, "[run-tests] テスト終了後に 2 個のプロセスが残っている: 1, 2")
-        res = self.run_hook()
-        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-        self.assertIn("[run-tests]", res.stdout)
 
     # ---- plugin eval の鮮度 ---------------------------------------------------
     def test_an_eval_input_change_without_a_matching_eval_blocks(self):
@@ -257,7 +219,6 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("plugin eval required", res.stdout)
         self.assertIn("plugin-eval.sh demo", res.stdout, "回すコマンドを示す")
-        self.assertEqual(self.test_runs, 0, "paid な検査の前で止める")
 
     def test_a_stale_eval_record_blocks(self):
         """一度回した後に SKILL.md を直した — 記録の指紋は古い内容のもの."""
@@ -327,7 +288,6 @@ class PreCommitTest(unittest.TestCase):
         res = self.run_hook()
         self.assertEqual(res.returncode, 1, "ゲートの欠落が素通りしている")
         self.assertIn("validate-ssot.sh", res.stdout)
-        self.assertEqual(self.test_runs, 0, "前提が崩れている状態で先へ進まない")
 
     def test_a_missing_quality_gate_blocks(self):
         self.stage("src/note.txt")
@@ -336,21 +296,6 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(res.returncode, 1, "ゲートの欠落が素通りしている")
         self.assertIn("validate_plugin_quality.py", res.stdout)
 
-    def test_a_missing_tests_directory_blocks(self):
-        self.stage("src/note.txt")
-        (self.root / ".claude-plugin" / "scripts" / "run-tests.py").unlink()
-        (self.root / ".claude-plugin" / "scripts" / "tests").rmdir()
-        res = self.run_hook()
-        self.assertEqual(res.returncode, 1, "テストディレクトリの欠落が素通りしている")
-        self.assertIn("tests", res.stdout)
-
-    def test_uncollected_tests_are_not_reported_as_a_failure(self):
-        """exit 5（1 件も収集されなかった）は「失敗」ではなく「測れていない」と伝える."""
-        self.stage("src/note.txt")
-        self.set_tests(5, "Ran 0 tests")
-        res = self.run_hook()
-        self.assertEqual(res.returncode, 1, "収集ゼロを通している")
-        self.assertIn("1 件も走っていません", res.stdout)
 
 
 if __name__ == "__main__":

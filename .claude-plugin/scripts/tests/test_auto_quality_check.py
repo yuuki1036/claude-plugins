@@ -98,7 +98,9 @@ class AutoQualityCheckTest(unittest.TestCase):
         stub が落ちると出力が空になり「検出なし」と区別できなくなる）。
         """
         body = "#!/usr/bin/env bash\n"
-        body += 'printf \'x\' >> "${BASH_SOURCE[0]%/*}/../../layer-invocations"\n'
+        # 呼ばれた引数を 1 回 1 行で残す（**作業ツリーに置くのはこの 1 ファイルだけ**。別に置くと、
+        # 消さずに残ったファイルが作業ツリーの指紋を動かし、キャッシュのテストが再走と読む）
+        body += 'printf \'%s\\n\' "$*" >> "${BASH_SOURCE[0]%/*}/../../layer-invocations"\n'
         if output:
             body += "printf '%%s\\n' %s\n" % shlex.quote(output)
         body += "exit %d\n" % code
@@ -186,6 +188,13 @@ class AutoQualityCheckTest(unittest.TestCase):
         return res
 
     # ---- いつ走らせるか -----------------------------------------------------
+    def test_the_layer_runs_without_the_regression_suite(self):
+        """Stop hook は回帰テストを回さない（約 12 分をターンの終わりごとに払っていた / #436）."""
+        self.modify(TRIGGERING[0])
+        self.run_hook()
+        args = self.marker.read_text(encoding="utf-8")
+        self.assertEqual(args, "--no-tests\n")
+
     def test_clean_tree_never_runs_the_layer(self):
         res = self.run_hook()
         self.assertEqual(res.returncode, 0, res.stderr)

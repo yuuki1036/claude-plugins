@@ -5,17 +5,19 @@
 # 書くと、検査を 1 本足したときに全経路を直す必要が出る（実際に `auto-quality-check.sh` の
 # ヘッダは検査一覧の複製を抱えていた）。**呼び出し側は「いつ走らせるか」だけを決める。**
 #
-# 現在の呼び出し元:
+# 現在の呼び出し元（**自動で走る経路はどれも `--no-tests`**。既定の全検査は手で走らせる用）:
 #   - Stop hook（`auto-quality-check.sh`）… プラグイン関連ファイルに変更があるターンの終了時
 #   - self-review 前段（`.claude/review-oracles.sh` ← `code-review/scripts/run-oracles.sh`）
+#   - issue-workflow の doc-sync（`.claude/doc-checks.sh`）
 # **`.githooks/pre-commit` と CI は今も個別に呼んでいる**（検査ごとに別の案内文を出す・
 # ステップ単位で結果を見せるため）。並びを増やすときはこの 2 つも見ること。
 #
 # 使い方:
-#   machine-layer.sh             # 全検査。問題があれば stdout に出して exit 1
-#   machine-layer.sh --no-tests  # 回帰テスト（検査 3）を外す。self-review 前段が使う
+#   machine-layer.sh             # 全検査。問題があれば stdout に出して exit 1（手で走らせる用）
+#   machine-layer.sh --no-tests  # 回帰テスト（検査 3）を外す。Stop hook と self-review 前段が使う
 #     （テストだけで約 12 分かかり、run-oracles.sh の 300 秒に収まらない。2026-10-19 実測。
-#      回帰テストは pre-commit と CI が必ず回すので、レビュー前段では外す）
+#      回帰テストは CI の validate が ubuntu と macOS で回す。pre-commit からは 2026-11-08 に
+#      外した / GitHub issue #436）
 #
 # 終了コード:
 #   0 … すべて通過
@@ -88,7 +90,7 @@ if [ "$RUN_TESTS" -eq 1 ] && [ -d "$REPO_ROOT/.claude-plugin/scripts/tests" ]; t
     *) UNKNOWN=1; add "[machine-layer] 回帰テストが判定不能（exit ${RC}）:"$'\n'"$(printf '%s' "$OUT" | tail -20)" ;;
   esac
   # **残留プロセスの警告は exit code に載らない契約**（run-tests.py）。rc だけ見ていると
-  # ここで捨てられ、Stop hook と self-review 前段の 2 経路で #140 の検出が不可視になる
+  # ここで捨てられ、引数なしで走らせた回に #140 の検出が不可視になる
   # `[run-tests:leak]` だけを拾う（`pgrep` 不在の skip 通知は同じ `[run-tests]` 前置きで
   # 出るので、前方一致にすると PATH を絞った環境で常時発火する）
   LEAK="$(printf '%s' "$OUT" | grep -F '[run-tests:leak]' || true)"

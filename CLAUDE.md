@@ -25,8 +25,8 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  # mutation-nightly-report.py（nightly の起票判定と本文。生存・打ち切り）
                                  # mutation-nightly-state.py（nightly の比較起点と、打ち切った変異を翌晩へ持ち越す状態）
                                  # run-tests.py（回帰テストの起動口。新セッションで走らせ、
-                                 #   終了後に残ったプロセスを検出・回収する。pre-commit / CI /
-                                 #   machine-layer はここを呼ぶ。既定はモジュール（大きいものはクラス）単位の
+                                 #   終了後に残ったプロセスを検出・回収する。CI /
+                                 #   machine-layer（引数なし）はここを呼ぶ。既定はモジュール（大きいものはクラス）単位の
                                  #   並列で、`RUN_TESTS_JOBS=1` で 1 プロセスに戻る）
                                  # plugin-eval.sh（`claude plugin eval` の起動口。入力の指紋を
                                  #   `<plugin>/evals/results/.last-eval` に残し、pre-commit が突合する）
@@ -36,7 +36,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
 .claude-plugin/scripts/tests/    # 回帰テスト（stdlib unittest。依存は jsonschema / pyyaml だけ）。4 系統:
                                  #  ① 検証スクリプト自身（test_validate_plugin_quality.py / test_mutation_test.py）
                                  #  ② プラグイン同梱スクリプトを CLI 境界越しに叩く subprocess テスト
-                                 #     （`test_<plugin>_*.py`。bats を入れず python だけで 3 経路に載せる）
+                                 #     （`test_<plugin>_*.py`。bats を入れず python だけで CI に載せる）
                                  #     `skills/*/scripts/` 配下も対象（test_harness_keeper_scripts.py）
                                  #     evals/runner.py は判定部だけ純関数として見る（test_evals_runner.py）
                                  #     recall fixture の判定 judge.py も同じ（test_recall_judge.py）
@@ -56,9 +56,10 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #     test_plugin_mods.py がプラグインの複製へ重ねて `claude plugin test`
                                  #     （CLI が無ければ skip。CI は版を固定して入れ、skip を失敗にする）
                                  # python3 .claude-plugin/scripts/run-tests.py
-.githooks/pre-commit             # バージョンバンプ・CHANGELOG・plugin eval の鮮度・SSoT 同期・プラグイン品質 (errors)・回帰テスト
-                                 #   （docs/・.claude/designs/・.claude/adr/ だけの変更では回帰テストを省く）
+.githooks/pre-commit             # バージョンバンプ・CHANGELOG・plugin eval の鮮度・SSoT 同期・プラグイン品質 (errors)
+                                 #   （回帰テストは回さない。CI に任せる / 2026-11-08 決定・#436）
 .github/workflows/validate.yml   # CI。push / PR で SSoT・品質・回帰テスト・バージョンバンプを検証（evals は非対応）
+                                 #   ubuntu-latest と macos-latest の matrix（macOS は開発機と同じ OS の差を拾う）
                                  #   変異テストは回さない（nightly だけ / ADR-20261103153228）
 .github/workflows/mutation-nightly.yml # 変異テスト（03:00 JST / 全件を回し切った最後の head
                                  #   以降の変更行を予算 19000 秒まで。打ち切った変異は artifact の状態で翌晩へ
@@ -68,7 +69,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
   settings.json                  # Stop hook（auto-quality-check.sh）と、PR の即時マージを拒否する permissions.deny
   review-oracles.sh              # self-review が agent 起動前に走らせる機械層の宣言
                                  #   （存在自体が opt-in。中身は machine-layer.sh --no-tests を呼ぶだけ。
-                                 #   回帰テストは 300 秒に収まらないので外し、pre-commit と CI に任せる）
+                                 #   回帰テストは 300 秒に収まらないので外し、CI に任せる）
   doc-checks.sh                  # issue-workflow の doc-sync が回す文書の機械チェックの宣言
                                  #   （存在自体が opt-in。中身は machine-layer.sh --no-tests を呼ぶだけ）
   mutation-test.sh               # review-guide の締めが変異テストを提案するときの宣言
@@ -147,7 +148,7 @@ git config core.hooksPath .githooks
 # SSoT 検査の前提（**必須**）。無いとスキーマ検証が実行できず、
 # validate-ssot.sh が exit 2（判定不能）を返して pre-commit が止まる。
 # pyyaml は recall fixture の判定（evals/fixtures/recall/judge.py）とその回帰テストが使う。
-# 無いと test_recall_judge.py が落ち、回帰テストを回す pre-commit が止まる
+# 無いと test_recall_judge.py が落ちる（回帰テストは CI が回す。手元では run-tests.py を直接走らせる）
 pip install jsonschema pyyaml
 ```
 
@@ -297,7 +298,7 @@ Claude Code の hook を **Pub/Sub Message Bus** として運用するための�
 - **新しい lint / 検証ロジックを足すときは ①既存 repo での検出数を先に測って水準を決める ②変異テストで「実装を壊すと該当テストが落ちる」ことを確認する**。初回実行で偽陽性が出る warning は「⚠️ が出たときだけ行動する」契約を壊すので、入れない方がまし（実例: 版ラベルの追随漏れ検出は 6/6 が偽陽性で撤去）。手順と却下事例は`docs/rule-placement.md`。変異テストは `python3 .claude-plugin/scripts/mutation-test.py`（`__pycache__` の消去・モードの保存・中断時の復元はツール側にある。**実行中に対象ファイルを編集しないこと**、そして**実行中に別セッションでテストを走らせないこと** — 変異体は作業ツリーの実ファイルへ in-place で書かれ、1 変異ごとにフルスイートを回すので**ファイルはほぼ 100% の時間 mutant 状態**になる。そこで測った結果は緑にも赤にも化け、「テスト間の順序干渉」に見える（実測: 3 秒間隔 44 サンプルすべてが変異体。誤診でフルスイート 6 回を溶かした）。`run-tests.py` は journal の pid が生存していれば exit 2 で止めるが、**素の `python3 -m unittest` は素通りする**。待てないときは `git checkout-index -a --prefix=/tmp/clone/` で index から取り出して測る。**Ctrl-C で殺さないこと** — 復元が飛んで変異がツリーに残る）
 - **テストは「環境の不在」に頼らない**: PATH を絞るときは引ける側を列挙する / 使い捨てリポジトリはリポジトリ側に author を設定する / `CLAUDE_PROJECT_DIR` を継承させない / `pgrep` は PATH から外さず stub にする / git を叩くテストは `git_env.scrub()` を通す。**どれも「テストが緑のまま壊れる」型**で、実測で CI 6 件・Stop hook 経由 3 件・CI 21 件が落ちた。**7 項目の詳細と実測は `docs/testing-pitfalls.md`**
 - **実行を伴う検証を委譲したら、完了後に副作用の差分まで見る**（実測 4 件 / GitHub issue #194）: agent に「再現せよ」「動かして確かめよ」と指示する回は、**dispatch する前に** `.claude/events.jsonl` の行数と `git status --porcelain` を控え、完了後に突き合わせる。**指示ベースの隔離は守られない** — prompt に隔離を明記しても並列 agent の一部が実 `events.jsonl` を汚した実測がある。hook スクリプトの直接実行は `guardrail-protect` の `hook-isolation-guard` が block するようになったが、**Edit/Write でツリーを書き換える経路は機械的に判定できない**ので、この事後確認が唯一の網。**常時 Stop hook で「events.jsonl が増えた」を鳴らす案は採らなかった** — 実測で稼働日ほぼ毎日 3〜38 件の正当な publish があり、鳴りっぱなしになって「⚠️ が出たときだけ行動する」契約を壊す
-- **移植性と環境差は CI でしか検出できない（push して CI を確認するまで完了ではない）**: pre-commit は開発機（macOS）でしか走らないので、**Linux 固有の失敗は原理的に push 前に検出できない**（Docker を pre-commit に入れるのは体感コストが見合わない）。機械層は同じコマンドを走らせるが**環境が違う**。前提ライブラリの差だけは塞いだ — `validate-ssot.sh` は jsonschema が無いと exit 2（判定不能）を返し、pre-commit がそこで止める（以前は warning を出しつつ「passed」と表示し、ローカル緑 / CI 赤の非対称が push まで見えなかった）。**OS 差は残るので、push 後に CI の結果を見るまで作業を完了と見なさない**（#140）
+- **回帰テストと移植性は CI でしか検出できない（push して CI を確認するまで完了ではない）**: 回帰テストは pre-commit でも Stop hook でも回さず、CI の validate が **ubuntu-latest と macos-latest の両方**で回す（2026-11-08 決定 / #436。以前は pre-commit が開発機の macOS で回していたが、並列の作業がコミットのたびにフルスイートを回して待ち・時間切れが出ていた）。**テストが落ちる変更でもコミットは通る**ので、push 後に CI の結果（両 OS の job）を見るまで作業を完了と見なさない。手元で先に確かめたいときは `python3 .claude-plugin/scripts/run-tests.py` を直接走らせる。前提ライブラリの差は pre-commit でも塞いである — `validate-ssot.sh` は jsonschema が無いと exit 2（判定不能）を返し、pre-commit がそこで止める（以前は warning を出しつつ「passed」と表示し、ローカル緑 / CI 赤の非対称が push まで見えなかった / #140）
 - **同梱スクリプトのテストは `.claude-plugin/scripts/tests/` に置く**（配布物にテストを混ぜない）。ハーネスは python の subprocess で外部依存を足さない。詳細: `docs/testing-pitfalls.md`
 - **判定は「変更ファイルの種類」で行う**: commit type が `docs` で変更が `*.md` + version/CHANGELOG のみなら PATCH。MINOR を当てると `plugin-manager:update-all` の利用者に「機能追加が入った」と誤ったシグナルを送る（pre-commit は bump の有無しか見ないので機械的には素通りする）
 
@@ -311,7 +312,8 @@ Claude Code の hook を **Pub/Sub Message Bus** として運用するための�
 - `validate-ssot.sh`: スキーマ準拠 / marketplace 同期 / _requirements ↔ check-deps.sh / INDEX.md・CLAUDE.md 一覧の同期
 - `validate_plugin_quality.py`: allowed-tools / safe-hook.sh 同期 / references 参照整合性 / トリガーフレーズ / Event Bus 同期 / hook 自己判定 / コンテキスト予算ほか — **検査項目の正本はスクリプト冒頭 docstring**（ここに列挙を複製しない）
 - `claude plugin validate`: CLI スキーマ（`_requirements` 警告は除外）
-- `python3 .claude-plugin/scripts/run-tests.py`: 回帰テスト（検証スクリプト自身 + プラグイン同梱スクリプトの CLI テスト）。**起動口をこのラッパに寄せてある** — テストを新しいセッションで走らせ、終了後に残ったプロセスを検出・回収する（テストは緑のまま 12 本が 4 時間回り続けた実例 / #140）。素の `python3 -m unittest discover -s .claude-plugin/scripts/tests` でも走るが、その経路には残留の検出が無い。**検証機構の期待値をその機構自身で生成すると、壊れていても全件 pass する**（SSoT pin の初期ハッシュを未テストの `_slice_section` で作り、節の 46% が無保護なまま 14 pin 全部が ok に見えた実例が v2.63.1）。**期待値をテスト側で独立に構築すること**（`test_digest_matches_independently_computed_expectation`）。検証ロジックを足すときは同じ原則でテストを添える
+
+**回帰テスト（`python3 .claude-plugin/scripts/run-tests.py`）は Stop hook では回さない**（`machine-layer.sh --no-tests`。約 12 分かかるため / #436）。CI の validate が ubuntu と macOS で回す（検証スクリプト自身 + プラグイン同梱スクリプトの CLI テスト）。**起動口をこのラッパに寄せてある** — テストを新しいセッションで走らせ、終了後に残ったプロセスを検出・回収する（テストは緑のまま 12 本が 4 時間回り続けた実例 / #140）。素の `python3 -m unittest discover -s .claude-plugin/scripts/tests` でも走るが、その経路には残留の検出が無い。**検証機構の期待値をその機構自身で生成すると、壊れていても全件 pass する**（SSoT pin の初期ハッシュを未テストの `_slice_section` で作り、節の 46% が無保護なまま 14 pin 全部が ok に見えた実例が v2.63.1）。**期待値をテスト側で独立に構築すること**（`test_digest_matches_independently_computed_expectation`）。検証ロジックを足すときは同じ原則でテストを添える
 
 LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プロジェクト固有情報検出等）は手動 `/quality-check` 側に残る。
 
@@ -323,6 +325,6 @@ LLM 判定が必要な項目（CLAUDE.md 品質、allowed-tools 最小性、プ�
 
 - **PR 必須**。main へ直接コミット・push しない。作業はブランチを切ってコミットし、PR を作る（GitHub のルールセット「main: PR 必須」が main への直接 push・force push・削除を拒否する）
 - コミットは `dev-workflow:git-commit-helper` 経由で、`--no-protect` は渡さない
-- **PR を出したら auto-merge を有効にする。即時のマージはしない**（2026-11-08 決定）。有効にする経路は `mcp__ccd_pr__set_auto_merge` だけで、`merge_method: "merge"` を渡す（既定の squash にしない。これまでのマージは merge commit）。CI が緑になるまでマージされないことは、ルールセット「main: PR 必須」の必須のチェック `validate` が担保する（承認は 0 件なので、止めるのはこのチェックだけ）。`.claude/settings.json` の deny は、`gh pr merge`（`--auto` を含む。deny では `--auto` だけを通せない）・`gh api` の merge エンドポイントと GraphQL の mergePullRequest / enablePullRequestAutoMerge・GitHub MCP のマージを拒否したまま残す
-- `validate.yml` の `validate` job に matrix を足すとチェックの名前が変わり、必須のチェックと合わなくなる（合わないチェックは来ないので、auto-merge はいつまでもマージしない）。job 名を変えたらルールセットの必須のチェックも合わせる
+- **PR を出したら auto-merge を有効にする。即時のマージはしない**（2026-11-08 決定）。有効にする経路は `mcp__ccd_pr__set_auto_merge` だけで、`merge_method: "merge"` を渡す（既定の squash にしない。これまでのマージは merge commit）。CI が緑になるまでマージされないことは、ルールセット「main: PR 必須」の必須のチェック `validate (ubuntu-latest)` / `validate (macos-latest)`（validate.yml の matrix の 2 つの job）が担保する（承認は 0 件なので、止めるのはこのチェックだけ）。`.claude/settings.json` の deny は、`gh pr merge`（`--auto` を含む。deny では `--auto` だけを通せない）・`gh api` の merge エンドポイントと GraphQL の mergePullRequest / enablePullRequestAutoMerge・GitHub MCP のマージを拒否したまま残す
+- `validate.yml` の `validate` job の名前や matrix を変えるとチェックの名前が変わり、必須のチェックと合わなくなる（合わないチェックは来ないので、auto-merge はいつまでもマージしない）。今のチェック名は `validate (<matrix.os>)` の 2 つ（#436）。job 名や matrix を変えたらルールセットの必須のチェックも合わせる
 - push した後は PR の CI（validate.yml は pull_request でも走る）を確認するまで完了と見なさない

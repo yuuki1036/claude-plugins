@@ -5,7 +5,7 @@
 プロセスが生き残ることがある。実測では `mutation-test.py` の timeout が直接の子しか
 殺さず、無限ループ化した孫が **12 本 × 4 時間 × 各 14% CPU** で回り続けた。
 **テストは緑のまま**で、発覚は「PC が重い」というユーザーの体感だった。
-既存のどの層（pre-commit / CI / Stop hook / self-review 前段）にも掛からない型なので、
+既存のどの層（CI / 機械層 / self-review 前段）にも掛からない型なので、
 **テストを起動する場所**に置く。原因側の対処（プロセスグループごと回収）は済んでいるが、
 それは同じ原因を塞いだだけで、**次に同種の後始末漏れを入れたときには効かない**。
 
@@ -27,13 +27,13 @@
   **自分のグループを回収してから死ぬ**（下の `_install_signal_forwarding`）。
 
 **子の出力はパイプではなく一時ファイルへ向ける**:
-  呼び出し側は `OUT="$(run-tests.py 2>&1)"` の形で使う（`machine-layer.sh` / `.githooks/pre-commit`）。
+  呼び出し側は `OUT="$(run-tests.py 2>&1)"` の形で使う（`machine-layer.sh`）。
   子の stdio をそのまま継承させると**残留した孫がそのパイプの write 端を握り続け**、
   こちらが終了してもコマンド置換が EOF を待って**無言でハングする**（＝`git commit` が固まる）。
   ファイルなら握られても EOF は待たれない。回収後に本文をこちらの stderr へ流す。
 
 **既定は並列で回す**（2026-10-25）: 1 プロセスの `unittest discover` は
-3436 件に 915 秒かかり、pre-commit・Stop hook・CI の待ち時間の大半だった。テストモジュール
+3436 件に 915 秒かかり、当時テストを回していた pre-commit・Stop hook・CI の待ち時間の大半だった。テストモジュール
 （件数の多いモジュールはクラス）を単位に、別プロセスで並べて回す（実測: モジュール単位 8 並列で
 320 秒。律速は 815 件・295 秒の `test_code_review_scripts` だったので、クラスまで割る）。
 - 単位は**この起動口が子として立てた取りまとめ役**が起動する。取りまとめ役はテストと同じ
@@ -92,7 +92,7 @@ def _signal(pid: int, sig: int) -> str:
 
     **`PermissionError` を捕まえること**: 捕まえないと `main` を貫通して traceback で
     exit 1 になり、「終了コードはテストのものをそのまま返す」という契約を後始末の側が破る
-    （＝緑のテストが pre-commit のブロックに化ける）。
+    （＝緑のテストが CI の失敗に化ける）。
     """
     try:
         os.kill(pid, sig)
@@ -208,9 +208,9 @@ def _install_signal_forwarding(pgid: int) -> None:
 def _spawn(cmd: list[str], log) -> subprocess.Popen:
     """テストを**別プロセスグループ・同一セッション**で起動する（出力は `log` へ）.
 
-    **git hook 由来の環境変数はここで落とす**（GitHub issue #158）。この起動口は
-    pre-commit から呼ばれるので、linked worktree で commit すると `GIT_DIR` に
-    **実リポジトリの絶対パス**が入って渡ってくる。個々のテストも `git_env.scrub()` を
+    **git hook 由来の環境変数はここで落とす**（GitHub issue #158）。この起動口を git hook から
+    呼ぶと（2026-11-08 までは pre-commit が呼んでいた / GitHub issue #436）、linked worktree で
+    commit すると `GIT_DIR` に **実リポジトリの絶対パス**が入って渡ってくる。個々のテストも `git_env.scrub()` を
     通す規約だが（`python3 -m unittest discover` で直に走らせる経路が残るため）、
     **壊れ方が実リポジトリの破壊**なので、強制される経路は入口でも落とす。
     """
@@ -495,7 +495,7 @@ def main(argv: list[str]) -> int:
                 sweep(pgid, proc.pid)
             except Exception as exc:   # noqa: BLE001
                 # **後始末の失敗を rc に載せない**。ここで例外を通すと traceback + exit 1 に
-                # なり、緑のテストが pre-commit のブロックに化ける（実測で 1 度踏んだ）
+                # なり、緑のテストが CI の失敗に化ける（pre-commit で回していた頃に 1 度踏んだ）
                 print("[run-tests] 残留の回収に失敗した: %r"
                       "（テストの結果には影響させない）" % (exc,), file=sys.stderr)
     # 判定は `_exit_code`（版差の吸収。machine-layer はこの 5 を「判定不能」として扱う）

@@ -8,8 +8,9 @@ CLAUDE.md の Gotchas には規範だけを 1 行で置き、経緯と実測は�
 
 ## 1. 環境の「不在」に頼らない（Linux CI でだけ落ちる型）
 
-ローカル（macOS）で通って CI（ubuntu）で落ちる型。pre-commit は開発機でしか走らないので、
-**この種の失敗は原理的に push 前に検出できない**。
+ローカル（macOS）で通って CI（ubuntu）で落ちる型。回帰テストは CI だけで回す（ubuntu と macOS の
+matrix / 2026-11-08 決定・GitHub issue #436）ので、**この種の失敗は push して CI を見るまで検出できない**。
+逆向き（macOS でだけ落ちる型）は CI の macOS の job が拾う。
 
 ### ① PATH を絞るときは「引けるもの」を列挙する
 
@@ -33,8 +34,9 @@ env の `GIT_AUTHOR_*` は init commit にしか効かない。global config の
 
 ### ⑤ 書き込み先を決める環境変数は継承させない
 
-`CLAUDE_PROJECT_DIR` は event bus の出力先（`${CLAUDE_PROJECT_DIR:-$PWD}`）で、本スイートは
-**Stop hook / self-review 前段からも走る＝そこではこの変数が入っている**。継承すると publish が
+`CLAUDE_PROJECT_DIR` は event bus の出力先（`${CLAUDE_PROJECT_DIR:-$PWD}`）で、本スイートを
+**Claude Code のセッションの中（Bash ツールや hook）から走らせるとこの変数が入っている**（2026-11-08 までは
+Stop hook からも回していた / #436）。継承すると publish が
 実リポジトリの `.claude/events.jsonl` へ飛び、
 
 - publish を見るテストは落ちる（実測 3 件）
@@ -50,7 +52,7 @@ env の `GIT_AUTHOR_*` は init commit にしか効かない。global config の
 
 実例: `auto-quality-check.sh` は変異テスト中かを `pgrep -f mutation-test.py` で判定するので、
 **このスイート自身が変異テストの中から走る CI の `mutation-test` ジョブ**で全ケースが
-スキップ経路へ落ちた（21 件）。**環境差ではなく実行文脈の差**なので pre-commit では踏めない。
+スキップ経路へ落ちた（21 件）。**環境差ではなく実行文脈の差**なので手元の実行では踏めない。
 
 ### ⑦ git を叩くテストは `git_env.scrub()` を通す
 
@@ -61,7 +63,8 @@ env の `GIT_AUTHOR_*` は init commit にしか効かない。global config の
 
 実測（issue #158）: 作業ブランチが `init` コミット 340 個に乗っ取られ、`core.bare` が `true` に
 反転して `git status` が通らなくなった。**壊れ方が「テストが 128 件落ちる」なので、最初に疑うのは
-自分の変更**になる。⑦は逆に pre-commit（開発機）でしか踏めない（CI は worktree を作らない）ので、
+自分の変更**になる。⑦は git hook からスイートを走らせたときにだけ踏む（2026-11-08 までは pre-commit が
+回していた。CI は worktree を作らず hook も通らない）ので、
 `test_git_env_isolation.py` が汚染環境を**作って**再現する。
 
 > テストから直接 `git` を呼ばない。`TempGitRepo` のメソッド（`commit` / `branch`）を使う。
