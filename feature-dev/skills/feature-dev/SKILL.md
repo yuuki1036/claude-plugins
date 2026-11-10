@@ -51,7 +51,7 @@ You are helping a developer implement a new feature. Follow a systematic approac
 
   > 🔀 **モデル切り替えポイント**: 実装を別のモデルで行う場合は、**この返信の前に**アプリのモデル選択で切り替えてください。切り替え先には上の方針だけが引き継がれるので、足りない判断があれば返信に書き足してください。このまま進める場合もそのまま返信で構いません。
 
-返信で 8 phase を求められたら Phase 1 から回す。そうでなければ、実装に入る前に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-5.md` を Read し（Normal Mode の 4. と、Phase 6 から戻る Fix Mode の制約はそこにある）、TodoWrite へ「実装（phase-5.md）/ Phase 5.3 / 5.5 / 6 / 6.7 / 6.9 / 7」を積む（足切りの回は phase の見出しを順に追わないので、こうして残りの検証を落とさない）。実装中に承認した方針を変えるときは、Phase 5 Normal Mode の 4. に従って止まる。
+返信で 8 phase を求められたら Phase 1 から回す。そうでなければ、実装に入る前に `${CLAUDE_PLUGIN_ROOT}/skills/feature-dev/references/phase-5.md` を Read し（Normal Mode の 2. の作業ファイルの clear と 4.、Phase 6 から戻る Fix Mode の制約はそこにある）、TodoWrite へ「実装（phase-5.md）/ Phase 5.3 / 5.5 / 6 / 6.7 / 6.9 / 7」を積む（足切りの回は phase の見出しを順に追わないので、こうして残りの検証を落とさない）。実装中に承認した方針を変えるときは、Phase 5 Normal Mode の 4. に従って止まる。
 
 ## Core Principles
 

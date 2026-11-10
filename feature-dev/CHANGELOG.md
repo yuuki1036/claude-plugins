@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.29.0] - 2026-11-10
+
+### Added
+
+- **Phase 2 の explorer の結果を作業ファイル `.claude/.feature-dev-exploration.md` に書き、Phase 4 の architect にそのパスを `Exploration results:` として渡すようにした**（GitHub issue #427）。ファイルは focus ごとの重要なファイル（パスと要点）と `missing_coverage` を持つ。architect（`agents/code-architect.md` の "Exploration Results Injection"）は最初にそれを読み、載っていない範囲と `missing_coverage` だけを追加で探す。本文は prompt に貼らない（BDD spec と同じ渡し方）。explorer が 0 体の回は何も渡さない。ファイルは Phase 2 で書く前と、Phase 4 で案が決まり全 architect が返した後に消す。足切りの回は Phase 4 を通らないので、Phase 5 Normal Mode で書き始める前にも消す（残すと未追跡ファイルとして Phase 5.5 の判定とコミットに入りうる。作業ツリーの外に置くと、作業ディレクトリの外への Write・Read が許可で止まりうる）。パスの決定と削除は新しい `scripts/exploration-file.sh`（`path` / `clear`）が持つ。architect がファイルを読めなかったときは、そう書いたうえで standard discovery に戻る。以前は explorer の結果を architect に渡す手順が無く、architect が同じ経路を探し直すか、要約が prompt に入った回だけ使うかが回ごとに揺れていた
+
 ## [2.28.4] - 2026-11-09
 
 ### Changed

@@ -97,7 +97,7 @@ feature の特性（種別・スコープ・リスク因子）× `${CLAUDE_EFFOR
 
 ### Phase 2: Codebase Exploration
 
-Phase 1.7 が指定した N 体の `code-explorer` agent を並列起動する。各 agent は割り当てられた focus（similar-features / architecture-mapping / shared-modules / history-context / dependency-trace / layer-mapping）と対象スコープを受け取り、読むべき主要ファイル 5-10 件を返す。agent 完了後、特定されたファイルを読んで理解を深める。
+Phase 1.7 が指定した N 体の `code-explorer` agent を並列起動する。各 agent は割り当てられた focus（similar-features / architecture-mapping / shared-modules / history-context / dependency-trace / layer-mapping）と対象スコープを受け取り、読むべき主要ファイル 5-10 件を返す。agent 完了後、特定されたファイルを読んで理解を深め、focus ごとの重要なファイル（パスと要点）と `missing_coverage` を作業ファイル（作業ツリーの中。パスは `scripts/exploration-file.sh` が決める）に書く。Phase 4 の architect がそれを読み、全 architect が返した後にオーケストレーターが消す（足切りで Phase 4 を通らない回は Phase 5 で書き始める前に消す）。
 
 個別 explorer が失敗しても残りの結果で続行し、失敗分は `missing_coverage` として Phase 7 で報告する。Phase 1.7 が 0 explorer と判定した場合はこの phase を skip する。
 
@@ -117,7 +117,7 @@ Phase 1.7 が指定した N 体の `code-explorer` agent を並列起動する�
 
 ### Phase 4: Architecture Design
 
-Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する。各 agent は focus（minimal-changes / clean-architecture / pragmatic-balance / migration-strategy / delta-proposal）を受け取る。Phase 1.3 の `BDD_SPEC_PATH` があれば各 architect に注入し、spec を真実として読ませる。Phase 1.8 の `REQUIRED_DOCS` があれば全件を渡し、設計前に読ませる。Phase 1.6 の `VAULT_KNOWLEDGE` があれば advisory として注入する。
+Phase 1.7 が指定した N 体の `code-architect` agent を並列起動する。各 agent は focus（minimal-changes / clean-architecture / pragmatic-balance / migration-strategy / delta-proposal）を受け取る。Phase 1.3 の `BDD_SPEC_PATH` があれば各 architect に注入し、spec を真実として読ませる。Phase 2 がこの run で探索結果を書いた回はそのパスを `Exploration results:` として渡し、architect に最初に読ませて、載っていない範囲だけを追加で探させる（explorer 0 体の回は渡さない）。Phase 1.8 の `REQUIRED_DOCS` があれば全件を渡し、設計前に読ませる。Phase 1.6 の `VAULT_KNOWLEDGE` があれば advisory として注入する。
 
 全案をレビューして推奨案を形成し、各案のトレードオフ比較 + 推奨理由をユーザーに提示し、どの案で進めるかを聞く。全 architect 失敗時は `minimal-changes` focus で単体起動して fallback する。
 
