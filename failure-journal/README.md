@@ -88,7 +88,7 @@ journal ディレクトリの中身を **参照してよいのは `/retro` 実�
 
 ### 既知の制約
 
-- **sidechain 盲点**: subagent は SessionStart ルールを受けないため候補を書きません。多段 agent スキル内の失敗は、オーケストレーターが訂正した時点での候補化に期待する設計です
+- **sidechain 盲点**: subagent は SessionStart ルールを受けないため候補を書きません。多段 agent スキル内の失敗は、オーケストレーターが訂正した時点での候補化に期待する設計です。事実主張の規約（`rules/concrete-value-rule.md`）だけは SubagentStart hook が subagent の文脈にも注入します（GitHub issue #428）。自己申告ルールは注入しないので、subagent が候補を書かない点は変わりません
 - **マルチマシン**: candidates / journal はマシンローカルです。プロジェクトを複数マシンで開発する場合、retro は実行マシンの分しか見えません（transcript 依存だった旧設計よりは、ファイルを commit する選択肢が生まれた分だけ改善）
 
 ## tag 規約

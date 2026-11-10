@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.11.0] - 2026-11-10
+
+### Added
+
+- **事実主張の規約（`rules/concrete-value-rule.md`）を SubagentStart hook で subagent にも注入する**（GitHub issue #428）。これまでは SessionStart と PostCompact でメインの会話にだけ注入しており、explorer や reviewer が出典のない数値・仕様を返してもその場で止める規約が届いていなかった。新しい `hooks/scripts/subagent-start-rule.sh` が `hookSpecificOutput.additionalContext` で規約の全文を返す。自己申告ルール（`self-report-rule.md`）は注入せず、journal ディレクトリも作らない
+
 ## [0.10.0] - 2026-11-06
 
 ### Added

@@ -75,6 +75,7 @@
           "PostToolUse",
           "PostToolUseFailure",
           "Stop",
+          "SubagentStart",
           "SubagentStop",
           "UserPromptSubmit",
           "PreCompact",
