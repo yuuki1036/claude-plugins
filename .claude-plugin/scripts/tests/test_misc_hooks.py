@@ -359,6 +359,104 @@ class FailureJournalInitTest(HookTestCase):
             self.assertNotEqual(self._run(root).returncode, 2)
 
 
+class FailureJournalSubagentRuleTest(HookTestCase):
+    """SubagentStart で concrete-value-rule.md を subagent に注入する（GitHub issue #428）."""
+
+    PLUGIN = "failure-journal"
+    SCRIPT = "hooks/scripts/subagent-start-rule.sh"
+    RULE = ROOT / PLUGIN / "rules" / "concrete-value-rule.md"
+
+    def _payload(self, **extra) -> dict:
+        return {"hook_event_name": "SubagentStart", "agent_id": "a1",
+                "agent_type": "Explore", **extra}
+
+    # --- 発火する ---
+    def test_injects_rule_as_subagent_start_context(self):
+        res = self.run_hook(self._payload())
+        self.assertEqual(res.returncode, 0)
+        out = json.loads(res.stdout)
+        self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "SubagentStart")
+        # 規約の全文がそのまま届く（要約・切り詰めをしない）
+        self.assertEqual(out["hookSpecificOutput"]["additionalContext"].strip(),
+                         self.RULE.read_text(encoding="utf-8").strip())
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_rule_fits_additional_context_limit(self):
+        # 注入は 10,000 字以下に収める（GitHub #428 の「期待する動作」が置いた上限）
+        self.assertLess(len(self.RULE.read_text(encoding="utf-8")), 10000)
+
+    def test_does_not_create_journal_dir(self):
+        # cwd と CLAUDE_PROJECT_DIR を同じ使い捨て dir に揃え、$PWD 側に作る退行も拾う
+        proj = self.isolated_project_dir()
+        res = self.run_hook(self._payload(), cwd=proj)
+        self.assertFired(res)
+        self.assertFalse((proj / ".claude" / "failure-journal").exists())
+
+    def test_injects_via_python3_without_jq(self):
+        # jq が無い環境では python3 でイベント名を読む
+        res = self.run_hook(self._payload(),
+                            env_extra={"PATH": self.path_with_only("python3")})
+        self.assertFired(res)
+        self.assertEqual(json.loads(res.stdout)["hookSpecificOutput"]["hookEventName"],
+                         "SubagentStart")
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_python3_fallback_silent_on_other_events(self):
+        for payload in ({"hook_event_name": "SessionStart"}, {"agent_type": "Explore"}):
+            with self.subTest(payload=payload):
+                res = self.run_hook(payload,
+                                    env_extra={"PATH": self.path_with_only("python3")})
+                self.assertSilent(res)
+                self.assertNotIn("Unexpected", res.stderr)
+
+    def test_silent_without_jq_and_python3(self):
+        # イベント名を読めない環境では自己判定できないので注入しない
+        res = self.run_hook(self._payload(), env_extra={"PATH": self.path_with_only()})
+        self.assertSilent(res)
+        self.assertEqual(res.returncode, 0)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    # --- 黙る ---
+    def test_silent_on_other_events(self):
+        for event in ("SessionStart", "PostCompact", "SubagentStop", "PreToolUse", ""):
+            with self.subTest(event=event):
+                res = self.run_hook({"hook_event_name": event})
+                self.assertSilent(res, event)
+                self.assertEqual(res.returncode, 0)
+                self.assertNotIn("Unexpected", res.stderr)
+
+    def test_silent_without_event_name(self):
+        res = self.run_hook({"agent_type": "Explore"})
+        self.assertSilent(res)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_silent_on_invalid_json(self):
+        for raw in ("{not json", "", "[]", '"SubagentStart"'):
+            with self.subTest(raw=raw):
+                res = self.run_hook(raw=raw)
+                self.assertSilent(res, raw)
+                self.assertEqual(res.returncode, 0)
+                self.assertNotIn("Unexpected", res.stderr)
+
+    def test_silent_when_rule_missing(self):
+        # プラグインの複製から規約ファイルだけ外す
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        copy = Path(tmp.name) / self.PLUGIN
+        shutil.copytree(ROOT / self.PLUGIN, copy)
+        (copy / "rules" / "concrete-value-rule.md").unlink()
+        res = self.run_hook(self._payload(),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(copy)})
+        self.assertSilent(res)
+        self.assertEqual(res.returncode, 0)
+        self.assertNotIn("Unexpected", res.stderr)
+        # ガードで先に止まる（cat まで進んで失敗し、空の注入で黙るのとは区別する）
+        self.assertNotIn("No such file", res.stderr)
+
+    def test_never_blocks(self):
+        self.assertNotEqual(self.run_hook(self._payload()).returncode, 2)
+
+
 class PreConfigGuardTest(HookTestCase):
     """lint / hook 設定ファイルの骨抜き編集をブロックする（opt-in）."""
 
