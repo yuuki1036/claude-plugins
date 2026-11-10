@@ -1117,6 +1117,74 @@ class ReviewSnapshotTest(unittest.TestCase):
 GV_LOOP = REPO / "feature-dev" / "scripts" / "gv-loop.py"
 
 
+EXPLORATION = REPO / "feature-dev" / "scripts" / "exploration-file.sh"
+PHASES = REPO / "feature-dev" / "skills" / "feature-dev" / "references"
+
+
+class ExplorationFileTest(unittest.TestCase):
+    """`exploration-file.sh path|clear` — Phase 2 の探索結果を Phase 4 に渡す作業ファイル（GitHub issue #427）.
+
+    path が作業ツリーの中の固定パスを出して前の run の残りを消すこと、clear が同じパスを消すこと、
+    phase ファイルがパスを書き下ろさずにこのスクリプトを呼ぶことを見る。
+    """
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name).resolve()
+        self.env = scrub()
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True, env=self.env)
+        self.expected = self.root / ".claude" / ".feature-dev-exploration.md"
+
+    def run_ex(self, mode: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+        return subprocess.run(["bash", str(EXPLORATION), mode], cwd=cwd or self.root, capture_output=True,
+                              text=True, env=self.env, timeout=30)
+
+    def test_path_prints_toplevel_file_and_removes_leftover(self):
+        self.expected.parent.mkdir()
+        self.expected.write_text("old run\n", encoding="utf-8")
+        sub = self.root / "src"
+        sub.mkdir()
+        res = self.run_ex("path", cwd=sub)  # サブディレクトリから呼んでも toplevel の下を指す
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), f"EXPLORATION_PATH={self.expected}")
+        self.assertFalse(self.expected.exists())
+        self.assertTrue(self.expected.parent.is_dir())
+
+    def test_path_creates_claude_dir_when_missing(self):
+        res = self.run_ex("path")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue(self.expected.parent.is_dir())
+
+    def test_clear_removes_the_same_file(self):
+        self.expected.parent.mkdir()
+        self.expected.write_text("results\n", encoding="utf-8")
+        res = self.run_ex("clear")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertFalse(self.expected.exists())
+        self.assertEqual(self.run_ex("clear").returncode, 0)  # 無くても止めない
+
+    def test_path_falls_back_to_cwd_outside_git(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        plain = Path(tmp.name).resolve()
+        env = dict(self.env, GIT_CEILING_DIRECTORIES=str(plain.parent))  # 上位のリポジトリを拾わない
+        res = subprocess.run(["bash", str(EXPLORATION), "path"], cwd=plain, capture_output=True, text=True,
+                             env=env, timeout=30)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), f"EXPLORATION_PATH={plain}/.claude/.feature-dev-exploration.md")
+        self.assertTrue((plain / ".claude").is_dir())
+
+    def test_unknown_mode_is_usage_error(self):
+        self.assertEqual(self.run_ex("bogus").returncode, 2)
+
+    def test_phases_call_the_script_instead_of_spelling_the_path(self):
+        for name, mode in (("phase-2.md", "path"), ("phase-4.md", "clear"), ("phase-5.md", "clear")):
+            text = (PHASES / name).read_text(encoding="utf-8")
+            self.assertIn(f'scripts/exploration-file.sh" {mode}', text, name)
+            self.assertNotIn(".feature-dev-exploration.md", text, f"{name} がパスを書き下ろしている")
+
+
 class GvLoopTest(unittest.TestCase):
     """`gv-loop.py` — G-V ループを delta の中だけで続け、範囲外の変更を数える（GitHub issue #310）.
 
