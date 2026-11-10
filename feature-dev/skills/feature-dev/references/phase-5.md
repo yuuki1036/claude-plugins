@@ -6,7 +6,7 @@
 
 Phase 5 has two modes — check the invocation context:
 
-- **Normal Mode**: Triggered by Phase 4 completion. Implements the feature from scratch. 適用範囲で足切りした回は停止点の返信で入る（承認は停止点で済んでいるので Actions の 1. は通らない。4. は通る）。終えたら Phase 5.3 へ進む
+- **Normal Mode**: Triggered by Phase 4 completion. Implements the feature from scratch. 適用範囲で足切りした回は停止点の返信で入る（承認は停止点で済んでいるので Actions の 1. は通らない。2.（作業ファイルの clear を含む）以降は通る）。終えたら Phase 5.3 へ進む
 - **Fix Mode**: 入口は 2 つ — Phase 6 の Generator-Verifier loop (Step 3) と、Phase 5.3 の赤（静的オラクルのエラー出力）。Applies only the flagged issues. **DO NOT START WITHOUT USER APPROVAL** is waived for Fix Mode (both loops are automatic; reaching the user-decision step happens at Phase 6 Step 4 / Phase 5.3 の暴走ガード).
 
 ### Normal Mode
@@ -22,6 +22,7 @@ Phase 5 has two modes — check the invocation context:
 
    > 🔀 **モデル切り替えポイント**: 設計（Phase 1〜4.8）と実装で別のモデルを使う場合は、**この承認に返信する前に**アプリのモデル選択で実装用モデルへ切り替えてください。切り替えた後の返信から、そのモデルで Phase 5 以降を実行します。切り替え先には上の要約（と design doc）だけが引き継がれるので、足りない判断があれば承認と一緒に書き足してください。
 2. Read all relevant files identified in previous phases
+   - 書き始める前に `bash "${CLAUDE_PLUGIN_ROOT}/scripts/exploration-file.sh" clear` を実行する（Phase 2 の探索結果の作業ファイル。phase-2.md の 3.）。Phase 4 で消しているが、足切りした回は Phase 4 を通らないので、前の run が Phase 2 と Phase 4 の間で止まった残りがここまで来る。残すと未追跡ファイルとして Phase 5.5 の判定と Phase 7 のコミットに入りうる
 3. Implement following chosen architecture. If the project has a test setup (a test runner and existing tests), Read `${CLAUDE_PLUGIN_ROOT}/references/testing-discipline.md` first and put tests at the **Test Seams** from the chosen blueprint
 4. **承認した方針を実装中に変えるときは、書き換える前に止まる**（GitHub issue #319。承認は 1. の承認か、足切りした回の停止点の承認）: 承認した手段が効かないと分かった・別の手段に替える・承認した範囲（build sequence / 停止点の変更方針に挙げたファイルと挙動）の外まで広げる、のどれかに当たったら、承認した案が使えない理由（観測したもの: エラー・ドキュメント・コードの行）と、新しい案・触るファイルを示してターンを終え、返信を待ってから書き換える（通常のメッセージで止める。モデル切り替えの案内は繰り返さない）。承認は示した方針に対するもので、別の案には及ばない。実例では、足切りの停止点で承認された `dynamicParams = false` が全ルートの動的レンダリングで効かないと分かり、別の案（`notFound()` とデータ取得関数の戻り値）へ確かめずに切り替えた
 5. Follow codebase conventions strictly

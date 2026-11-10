@@ -59,6 +59,18 @@ features/common_spec.md # 横断 Background / 共通閾値 / エラーメッセ�
 
 BDD spec context absent の場合は通常の "Issue Context Injection" または standard discovery にフォールバック。
 
+## Exploration Results Injection
+
+If the prompt includes an `Exploration results: <path>` line (Phase 2's code-explorer agents ran and their results were written to that file), **Read the file first, before your own codebase analysis**:
+
+- The file lists, per explorer `focus`, the key files (path + one-line gist) and a `## missing_coverage` section for explorers that failed.
+- **Do not re-trace what is already listed**: start from the listed files (Read the ones your design depends on) instead of rediscovering the same paths.
+- **Explore only what the file does not cover**: areas outside every listed focus, and every area named under `missing_coverage`.
+- If a listed gist contradicts what you read in the code, trust the code and note the discrepancy in "Critical Details".
+- If the file cannot be read, say so in "Critical Details" and fall back to standard discovery (do not proceed as if the listed areas were covered).
+
+Exploration results absent の場合（explorer が 0 体の回）は standard discovery で進める（注入なしが既定）。
+
 ## Required Docs Injection
 
 If the prompt includes a `Required Docs:` block (Phase 1.8 found the project's "task type → required docs" declaration), **Read every listed doc (or the named section) before designing**. These are the project's own conventions for this kind of task:

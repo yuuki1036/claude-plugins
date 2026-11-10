@@ -15,6 +15,8 @@
    - 設計は spec.md の AC ↔ Scenario マッピングを保つこと（架空の Scenario を増やさない、削らない）
    - 詳細は `agents/code-architect.md` の "BDD Spec Injection" セクション
 
+   **Exploration results injection**: Phase 2 で `EXPLORATION_PATH` を書いた回は、各 architect の prompt に `Exploration results: <EXPLORATION_PATH>` の 1 行を追加する。本文は prompt に貼らず、architect 自身に Read させる（BDD spec と同じ渡し方）。explorer が 0 体の回（Phase 2 を skip した回）は何も渡さない — 前の run のファイルが残っていても渡さない。詳細は `agents/code-architect.md` の "Exploration Results Injection" セクション
+
    **Required docs injection**: Phase 1.8 で `REQUIRED_DOCS` が非空の場合、各 architect の prompt に `Required Docs:` ブロックとして**全件**（パス / 節 / 当てはまった種別）を列挙する。architect 自身に Read させる。一部だけ選んで渡さない。詳細は `agents/code-architect.md` の "Required Docs Injection" セクション
 
    **Vault knowledge injection**: Phase 1.6 で `VAULT_KNOWLEDGE` が非空の場合、各 architect の prompt に以下を追加する:
@@ -25,8 +27,10 @@
 
 2. Review all approaches and form your opinion on which fits best for this specific task
 3. Present to user: brief summary of each approach, trade-offs comparison (include **depth / locality / seam placement** per approach — the axes in `${CLAUDE_PLUGIN_ROOT}/references/module-design.md`), **your recommendation with reasoning**, concrete implementation differences
-4. **Ask user which approach they prefer**
+4. **Ask user which approach they prefer**。案の作り直しを求められて architect を起動し直すときも、1. と同じ注入（`Exploration results:` を含む）で起動する
 
 **Partial failure tolerance**: If individual architects fail and at least 1 succeeded, continue with the successful results. If all architects failed, fall back to a single architect invocation with `minimal-changes` focus before surfacing the issue.
+
+**探索結果の作業ファイルを消す**: 4. で案が決まったら（Partial failure tolerance の fallback の単体起動と、4. の回答で案の作り直しを求められて architect を起動し直した回を含め、この phase の architect がすべて結果を返してから）、explorer の体数によらず `bash "${CLAUDE_PLUGIN_ROOT}/scripts/exploration-file.sh" clear` を実行する。読むのはこの phase の architect だけで、残すと未追跡ファイルとして Phase 5.5 の判定と Phase 7 のコミットに入りうる（phase-2.md の 3.）。explorer が 0 体の回も、中断した前の run の残りを消すために実行する
 
 **次は Phase 4.5**（SKILL.md に戻り、その見出しの入口の条件を見る）
