@@ -420,6 +420,38 @@ class InjectRulesTest(HookTestCase):
             # 規約の本文にも「## Knowledge の活用」があるので、注入の見出しの形で見る
             self.assertNotIn("## Knowledge（", res.stdout)
             self.assertNotIn("注入の上限", res.stdout)
+            # glob が当たらない回の綴りそのまま（`*/knowledge/index.md`）を index として渡さない
+            self.assertNotIn("knowledge の index は注入していない", res.stdout)
+            # local の backend に .claude/linear が無ければ残骸の警告は出さない
+            self.assertNotIn("残骸", res.stdout)
+
+    def test_no_index_without_python3_means_no_knowledge_note(self):
+        """字数を数えられない回でも、index が 1 つも無ければ「注入していない」の案内は出さない."""
+        with TempGitRepo() as root:
+            (root / ".claude" / "indie" / "demo").mkdir(parents=True)
+            path = self.path_with_only("date", "find")
+            res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root, env_extra={"PATH": path})
+            self.assertEqual(res.returncode, 0)
+            self.assertNotIn("Unexpected", res.stderr)
+            self.assertIn(self.rules_tail(), res.stdout)
+            self.assertNotIn("knowledge の index は注入していない", res.stdout)
+
+    def test_a_leftover_dir_of_the_other_backend_is_warned_about(self):
+        """有効な backend の反対側に dir だけが残っていれば警告し、無ければ黙る（local / linear の両方向）."""
+        for active, other in (("indie", "linear"), ("linear", "indie")):
+            for leftover in (True, False):
+                with self.subTest(active=active, leftover=leftover), TempGitRepo() as root:
+                    (root / ".claude" / active / "demo").mkdir(parents=True)
+                    if leftover:
+                        (root / ".claude" / other).mkdir()
+                    res = self.run_hook({"hook_event_name": "SessionStart"}, cwd=root)
+                    self.assertEqual(res.returncode, 0)
+                    self.assertNotIn("Unexpected", res.stderr)
+                    self.assertIn(self.rules_tail(), res.stdout)
+                    if leftover:
+                        self.assertIn(f"`.claude/{other}` に空の残骸ディレクトリがあります", res.stdout)
+                    else:
+                        self.assertNotIn("残骸", res.stdout)
 
     def test_slugs_that_do_not_fit_are_listed_by_name(self):
         """先の slug で予算を使い切ったら、後の slug は名前と `/knowledge` の案内だけを出す."""
@@ -600,6 +632,38 @@ class InjectBudgetTest(unittest.TestCase):
         res = self.run_budget("", 120, stale=stale)
         self.assertLessEqual(len(res.stdout), 120)
         self.assertRegex(res.stdout, r"- ほか \d+ 件（`/maintain` で確かめる）\n$")
+
+    def test_a_stale_line_that_fits_exactly_with_the_summary_is_kept(self):
+        """行と「ほか N 件」を合わせてちょうど収まる行は残し、1 字足りなければ落とす."""
+        lines = [f"- **X-{i}**: 9日間未更新" for i in range(5)]
+        kept = self.STALE_HEAD + lines[0] + "\n" + "- ほか 4 件（`/maintain` で確かめる）\n"
+        res = self.run_budget("", len(kept), stale="\n".join(lines))
+        self.assertEqual(res.stdout, kept)
+        res = self.run_budget("", len(kept) - 1, stale="\n".join(lines))
+        self.assertEqual(res.stdout, self.STALE_HEAD + "- ほか 5 件（`/maintain` で確かめる）\n")
+
+    def test_an_empty_index_under_the_reserve_still_says_knowledge_was_omitted(self):
+        """中身の無い index でも、案内すら入らない予算なら案内だけを出す（見出しだけを出さない）."""
+        res = self.run_budget("規約", 3, "demo", self.index(""))
+        self.assertEqual(res.stdout, "規約\n---\n## Knowledge（省略）\n\ndemo（0 件）の index は注入の上限で省いた。"
+                                     "`/knowledge` で一覧を見る。\n")
+
+    def test_a_slug_that_fits_exactly_is_kept_whole_and_the_next_is_omitted(self):
+        """先の slug がちょうど収まれば丸ごと出し、省略の案内には後の slug だけを並べる."""
+        body = "| a | b |\n|---|---|\n| 知見 | x |\n"
+        head_a = self.HEAD.replace("（demo）", "（a）")
+        reserve = ("\n---\n## Knowledge（省略）\n\na（1 件）・b（1 件）の index は注入の上限で省いた。"
+                   "`/knowledge` で一覧を見る。\n")
+        limit = len(reserve) + len(head_a) + len(body)
+        res = self.run_budget("", limit, "a", self.index(body), "b", self.index(body))
+        self.assertEqual(res.stdout, head_a + body + "\n---\n## Knowledge（省略）\n\nb（1 件）の index は"
+                                     "注入の上限で省いた。`/knowledge` で一覧を見る。\n")
+
+    def test_an_unreadable_limit_with_no_index_path_adds_no_knowledge_note(self):
+        """上限が読めない例外の経路で、index のパスまで渡っていなければ knowledge の案内は出さない."""
+        res = self.run_budget("規約", "x", "demo", stale="- **X-1**: 9日間未更新")
+        self.assertIn("inject-budget failed", res.stderr)
+        self.assertEqual(res.stdout, "規約" + self.STALE_HEAD + "- **X-1**: 9日間未更新\n")
 
 
 class SetSessionTitleTest(HookTestCase):
