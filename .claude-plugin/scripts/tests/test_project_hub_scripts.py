@@ -3333,6 +3333,7 @@ class RequiredArgumentsTest(HubTestBase):
             ("--session", ["resolve", "--project", "pj", "--peer-count", "1"]),
             ("--peer-count", ["resolve", "--project", "pj", "--ref", "abc123"]),
             ("--keep", ["unregister", "--project", "pj", "--session", SID_A]),
+            ("--session", ["unregister", "--project", "pj", "--keep", "other"]),
             ("--project", ["hub-name"]),
             ("--mode", ["set-mode", "--project", "pj"]),
             ("--mode", ["set-tracker-write", "--project", "pj"]),

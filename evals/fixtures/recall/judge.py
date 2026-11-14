@@ -175,7 +175,7 @@ def parse_report(text: str, path: str = "<report>") -> Report:
                 }
         if HEADING_RE.match(line):
             current = None
-            continue
+            continue  # mutation-ok: 見出し行は FINDING_RE に当たらず current が None なので、下の `if current is None` で読み飛ばされる
         m = FINDING_RE.match(line)
         if m:
             tags = [t.strip() for t in TAG_RE.findall(m.group(2))]

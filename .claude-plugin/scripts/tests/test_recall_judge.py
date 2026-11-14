@@ -88,6 +88,11 @@ class ParseReport(unittest.TestCase):
         self.assertIn("ダイアログが遷移先に残る", f.text)
         self.assertEqual(r.skeptic, "実行（1 件追加）")
 
+    def test_body_excludes_the_finding_and_file_lines(self):
+        # 指摘の行（`1. [..]`）・「ファイル:」行が本文に混ざると、タグやパスの字面がパターンに当たる
+        f = j.parse_report(report(HIT_08)).findings[0]
+        self.assertEqual(f.body, ["影響: ダイアログが遷移先に残る"])
+
     def test_range_and_bare_numbers_expand_to_every_line(self):
         self.assertEqual(j.parse_file_field(f"`{TSX}:48-51`"), {TSX: {48, 49, 50, 51}})
         self.assertEqual(j.parse_file_field("src/a.ts:10, 12, src/b.ts:3"), {"src/a.ts": {10, 12}, "src/b.ts": {3}})
@@ -187,6 +192,17 @@ class Recall08(unittest.TestCase):
         run = j.judge_run(j.parse_report(report(minor, no_kw, other_file)), fx08())
         self.assertEqual(run.hits, [])
 
+    def test_target_file_beside_another_file_is_a_hit(self):
+        both = finding(1, "MAJOR", "closeDialog が呼ばれない", f"{TSX}:48, src/other.tsx:3")
+        run = j.judge_run(j.parse_report(report(both)), fx08())
+        self.assertEqual(len(run.hits), 1)
+
+    def test_other_file_is_not_a_hit_without_target_lines(self):
+        # target_lines_any が無い fixture では、ファイルの照合だけが別ファイルの指摘を落とす
+        expect = {"severity_at_least": "MAJOR", "target_files_any": [TSX], "must_mention_any": ["closeDialog"]}
+        other = j.parse_report(report(finding(1, "MAJOR", "closeDialog が呼ばれない", "src/other.tsx:48"))).findings[0]
+        self.assertFalse(j.expected_hit(other, expect))
+
     def test_range_including_expected_line_is_a_hit(self):
         ranged = finding(1, "MAJOR", "closeDialog が呼ばれない", f"{TSX}:47-50")
         run = j.judge_run(j.parse_report(report(ranged)), fx08())
@@ -283,6 +299,52 @@ class Precision90(unittest.TestCase):
         self.assertEqual(v.status, "PASS")
 
 
+class Render(unittest.TestCase):
+    """表の各列と総合の理由（render / judge の summary）."""
+
+    def rows(self, fx: dict, *runs: str) -> tuple[list[str], str]:
+        reports = [j.parse_report(r, f"run{i}") for i, r in enumerate(runs, 1)]
+        out = j.render(fx, reports, j.judge(fx, reports))
+        return [l for l in out.splitlines() if l.startswith("| ") and "/3 |" in l], out
+
+    def test_summary_mentions_contrast_only_when_the_fixture_has_one(self):
+        fx = fx08()
+        self.assertEqual(j.judge(fx, [j.parse_report(report(HIT_08))] * 3).reasons, ["3/3, 対照 0/3"])
+        del fx["expect"]["must_not_flag"]
+        self.assertEqual(j.judge(fx, [j.parse_report(report(HIT_08))] * 3).reasons, ["3/3"])
+
+    def test_precision_column_shows_fp_or_none(self):
+        fp = finding(1, "MAJOR", "minorUnitDigits が 0 のときバグ", "src/money.ts:10")
+        rows, _ = self.rows(j.load_fixture("90"), report(fp), report(), report())
+        self.assertIn("| ❌ FP #1 | MAJOR |", rows[0])
+        self.assertIn("| ✅（FP なし） | - |", rows[1])
+
+    def test_skeptic_column_reads_the_report_line(self):
+        fx = j.load_fixture("01")
+        self.assertTrue(fx["skeptic_should_fire"])
+        skipped = report().replace("冷や読み skeptic 実行（1 件追加）", "冷や読み skeptic スキップ")
+        no_line = "\n".join(l for l in report().splitlines() if "動的ラウンド" not in l)
+        rows, _ = self.rows(fx, report(), skipped, no_line)
+        self.assertIn("| ✅ 実行（1 件追加） |", rows[0])
+        self.assertIn("| ❌ スキップ |", rows[1])
+        self.assertIn("| ❌ （行なし） |", rows[2])
+
+    def test_contrast_column_is_dash_only_without_contrast(self):
+        rows, _ = self.rows(fx08(), report(HIT_08), report(HIT_08), report(HIT_08))
+        self.assertTrue(all("| ✅（指摘なし） |" in r for r in rows), rows)
+        rows, _ = self.rows(j.load_fixture("90"), report(), report(), report())
+        self.assertTrue(all(r.endswith("| - | - | - | |") for r in rows), rows)
+
+    def test_review_detail_shows_patterns_only_when_matched(self):
+        with_pat = finding(2, "MAJOR", "後片付け", f"{TSX}:57", "影響: InputError でも閉じるべき")
+        without = finding(3, "MAJOR", "後片付け", f"{TSX}:57", "影響: closeDialog() を finally へ移す")
+        _, out = self.rows(fx08(), report(HIT_08, with_pat, without), report(HIT_08), report(HIT_08))
+        details = [l for l in out.splitlines() if l.startswith("- run 1 要確認")]
+        self.assertEqual(len(details), 2, details)
+        self.assertIn("（パターン: ", details[0])
+        self.assertTrue(details[1].startswith("- run 1 要確認: "), details[1])
+
+
 class Inputs(unittest.TestCase):
     def test_count_mismatch_is_undecidable(self):
         # 書式が変わって指摘を読めない回を、precision の PASS や recall の FAIL にしない
@@ -337,6 +399,7 @@ class Inputs(unittest.TestCase):
         bad_cases = [
             "fixtures:\n  - just-a-string\n",
             "fixtures:\n  - id: 8\n",
+            "fixtures:\n  - id: 08-x\n  - just-a-string\n",
             "fixtures:\n  - id: 08-x\n    kind: precision\n    expect:\n      false_positive_patterns: ['(unclosed']\n",
         ]
         with tempfile.TemporaryDirectory() as d:
@@ -365,6 +428,7 @@ class Inputs(unittest.TestCase):
     def test_non_report_is_undecidable(self):
         v = j.judge(fx08(), [j.parse_report("no report")] + [j.parse_report(report(HIT_08))] * 2)
         self.assertEqual(v.status, "判定不能")
+        self.assertIn("self-review のレポートでない", v.reasons[0])
 
     def test_fixture_id_resolves_by_number_and_full_id(self):
         self.assertEqual(j.load_fixture("08")["id"], "08-rethrow-skips-cleanup")

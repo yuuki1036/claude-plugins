@@ -3072,6 +3072,27 @@ class SplitSkillTest(unittest.TestCase):
         names = [p.name for p in v.split_skill_files(self.root / "demo")]
         self.assertEqual(names, ["phase-1.md", "phase-2.md", "phase-3.md"])
 
+    def test_split_skill_files_skip_missing_and_duplicate_targets(self):
+        """不合格の Read 先は返さず, 2 つの phase が同じファイルを Read しても 1 回だけ返す."""
+        self._three()
+        (self.root / "demo" / self.REF / "phase-3.md").unlink()
+        self.assertEqual([p.name for p in v.split_skill_files(self.root / "demo")], ["phase-1.md", "phase-2.md"])
+        path = self.root / self.REL
+        path.write_text(path.read_text().replace(f"{self.REF}/phase-3.md", f"{self.REF}/phase-2.md"))
+        self.assertEqual([p.name for p in v.split_skill_files(self.root / "demo")], ["phase-1.md", "phase-2.md"])
+
+    def test_split_skill_files_with_only_returns_that_skill_alone(self):
+        """同じプラグインに分けた skill が 2 つあっても, only で指定した skill の phase ファイルだけを返す."""
+        other = "demo/skills/other/SKILL.md"
+        v.SPLIT_SKILLS = ((self.REL, self.HEADING, "Phase {num}"), (other, self.HEADING, "Phase {num}"))
+        self._three()
+        _write(self.root, other, "# other\n\n## Phase 1: 段 1\n\n"
+               "入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/other/references/o-1.md` を Read する\n")
+        _write(self.root, "demo/skills/other/references/o-1.md", "## Phase 1: 段 1\n\n**ここで終わり**\n")
+        self.assertEqual([p.name for p in v.split_skill_files(self.root / "demo", only=other)], ["o-1.md"])
+        self.assertEqual([p.name for p in v.split_skill_files(self.root / "demo")],
+                         ["phase-1.md", "phase-2.md", "phase-3.md", "o-1.md"])
+
     def test_heading_regex_matching_a_non_heading_line_does_not_crash(self):
         """一覧の正規表現が見出しでない行にも当たる形でも, 見出しの行だけを phase にする."""
         v.SPLIT_SKILLS = ((self.REL, r".*Phase (?P<num>\d+(?:\.\d+)?): ", "Phase {num}"),)
@@ -3079,6 +3100,32 @@ class SplitSkillTest(unittest.TestCase):
         path = self.root / self.REL
         path.write_text(path.read_text().replace("# demo\n", "# demo\n\n本文の Phase 9: 言及\n", 1))
         self.assertEqual(self._run(), [])
+
+    def test_no_phase_heading_does_not_also_report_orphans(self):
+        """見出しが無ければ phase の検査はそこで止める. references/ の md を孤立として重ねて出さない."""
+        _write(self.root, self.REL, "# demo\n\n## 段 1\n\n" + self._read("phase-1.md"))
+        self._phase("1", "**ここで終わり**")
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("見出しが 1 つも無い", errors[0])
+
+    def test_phase_file_at_the_limit_passes(self):
+        self._three()
+        path = self.root / "demo" / self.REF / "phase-2.md"
+        pad = 2_000 - len(path.read_bytes()) + len("本文".encode())
+        self._phase("2", "**次は Phase 3**", body="x" * pad + "\n")
+        self.assertEqual(len(path.read_bytes()), 2_000)
+        self.assertEqual(self._run(), [])
+
+    def test_outside_target_that_does_not_exist_is_one_error(self):
+        """references/ の外の Read 先は, 実在しなくても「外にある」の 1 件で止める（中身を読みに行かない）."""
+        self._three()
+        path = self.root / self.REL
+        path.write_text(path.read_text().replace(f"{self.REF}/phase-2.md", "references/none.md"))
+        (self.root / "demo" / self.REF / "phase-2.md").unlink()
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("の外にある", errors[0])
 
     def test_missing_target(self):
         self._three()
