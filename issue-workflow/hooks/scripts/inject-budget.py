@@ -89,7 +89,7 @@ def knowledge_sections(pairs: list[tuple[str, str]], budget: int) -> str:
     full = [knowledge_head(slug) + body for slug, body in pairs]
     if sum(map(len, full)) <= budget:
         return "".join(full)
-    counts = [(slug, count_entries(body.splitlines(keepends=True))) for slug, body in pairs]
+    counts = [(slug, count_entries(body.splitlines(keepends=True))) for slug, body in pairs]  # mutation-ok: 行末の改行の有無は is_entry の判定（先頭の | と区切り行の regex）に効かない
     # 全部は入らない。丸ごと省く slug の一覧の行を、全 slug を並べた最大の長さで先に取っておく
     reserve = len(omitted_slugs_section(counts))
     if budget < reserve:

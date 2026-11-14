@@ -18,6 +18,8 @@ from hook_harness import HookTestCase
 
 MP = "mp"
 SID = "sess-1"
+# stale_skill.py が stderr へ出す行の頭（例外を握りつぶしたとき・stdin が JSON でないとき）
+PY_ERROR = "[plugin-manager:stale-skill] "
 
 
 class StaleSkillTest(HookTestCase):
@@ -92,11 +94,32 @@ class StaleSkillTest(HookTestCase):
         self.assertSilent(self.read(old / "skills" / "s" / "SKILL.md"))
         self.install({"p": "1.1.0"})
 
+    def python_stub_path(self) -> tuple[str, Path]:
+        """呼ばれたら印のファイルを作るだけの python3 を先頭に置いた PATH.
+
+        stub は path_with_only の dir（本物への symlink が並ぶ）に書かない。同名の symlink があると
+        write_text がたどって本物の python3 を上書きする
+        """
+        stub_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(stub_dir.cleanup)
+        marker = self.home / "python-called"
+        stub = Path(stub_dir.name) / "python3"
+        stub.write_text(f"#!/bin/bash\n: > '{marker}'\n")
+        stub.chmod(0o755)
+        return f"{stub_dir.name}:{self.path_with_only('find')}", marker
+
     def assertQuiet(self, res, msg=""):
-        """黙ったうえで、ERR trap にも落ちていない（rc は正常系も trap も 0 なので stderr で見分ける）."""
+        """黙ったうえで、ERR trap にも python の例外にも落ちていない.
+
+        rc は正常系も trap も 0 なので stderr で見分ける。python の except は `[plugin-manager:stale-skill] `
+        で始まる行を出す（bash の safe_hook_error は `[plugin-manager:stale-skill:<分類>]`。Unexpected だけは
+        同じ頭の行も出すが、先の `Unexpected` の assert が捕まえる）。
+        早期 return を外しても、後段で例外になって結局黙るので、stdout だけでは区別がつかない
+        """
         self.assertSilent(res, msg)
         self.assertEqual(res.returncode, 0)
         self.assertNotIn("Unexpected", res.stderr)
+        self.assertNotIn(PY_ERROR, res.stderr)
 
     # --- 発火する ---
 
@@ -501,6 +524,188 @@ class StaleSkillTest(HookTestCase):
         os.utime(self.state_file(), (past, past))
         self.prompt()
         self.assertGreater(self.state_file().stat().st_mtime, past + 86400)
+
+    # --- 置き場所・前段 ---
+
+    def test_config_dir_follows_claude_config_dir(self):
+        """CLAUDE_CONFIG_DIR が HOME/.claude と違っても、bash の前段と同じ場所に記録する."""
+        self.cfg = self.home / "cfg"
+        self.cache = self.cfg / "plugins" / "cache" / MP
+        self.stale_setup()
+        self.assertTrue(self.state_file().exists())
+        self.assertFalse((self.home / ".claude").exists())
+        self.assertIn("p: 1.0.0 → 1.1.0", self.prompt().stdout)
+
+    def test_prompt_does_not_start_python_without_own_state(self):
+        """発言のたびに走るので、自分の状態ファイルが無ければ python を起動しない."""
+        path, marker = self.python_stub_path()
+        sessions = self.cfg / "plugin-manager" / "sessions"
+        sessions.mkdir(parents=True)
+        env = {**self.env(), "PATH": path}
+        payload = {"session_id": SID, "hook_event_name": "UserPromptSubmit", "prompt": "hi"}
+        self.assertQuiet(self.run_hook(payload, env_extra=env, args=("prompt",)))
+        self.assertFalse(marker.exists())
+        # stub が呼ばれれば印が残ることの確認（上の不在が stub の不発でないこと）
+        (sessions / f"{SID}.json").write_text("{}")
+        self.run_hook(payload, env_extra=env, args=("prompt",))
+        self.assertTrue(marker.exists())
+
+    def test_prompt_for_missing_own_state_touches_nothing(self):
+        """payload の中の別の session_id で前段を通っても、自分の状態が無ければ何も作らない."""
+        sessions = self.cfg / "plugin-manager" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / "other.json").write_text("{}")
+        # prompt の本文は JSON の中で引用符がエスケープされ前段の grep に掛からないので、入れ子の object に置く
+        res = self.run_hook({"session_id": SID, "hook_event_name": "UserPromptSubmit", "prompt": "hi",
+                             "x": {"session_id": "other"}}, env_extra=self.env(), args=("prompt",))
+        self.assertQuiet(res)
+        self.assertEqual(sorted(p.name for p in sessions.iterdir()), ["other.json"])
+
+    def test_non_object_payload_is_ignored(self):
+        """JSON として正しくても object でない stdin は捨てる（例外にしない）."""
+        sessions = self.cfg / "plugin-manager" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / f"{SID}.json").write_text("{}")
+        for mode, payload in (("prompt", [{"session_id": SID}]),
+                              ("record", [{"session_id": SID, "tool_name": "Skill"}])):
+            self.assertQuiet(self.run_hook(raw=json.dumps(payload), env_extra=self.env(), args=(mode,)), mode)
+
+    # --- record の入力の形 ---
+
+    def test_skill_with_non_object_tool_input_is_not_recorded(self):
+        self.install({"p": "1.0.0"})
+        res = self.run_hook({"session_id": SID, "tool_name": "Skill", "tool_input": "p:s"},
+                            env_extra=self.env(), args=("record",))
+        self.assertQuiet(res)
+        self.assertFalse(self.state_file().exists())
+
+    def test_read_with_non_string_file_path_is_not_recorded(self):
+        res = self.run_hook({"session_id": SID, "tool_name": "Read", "tool_input": {"file_path": 1},
+                             "tool_response": f"{self.cache}/p/1.0.0/skills/s/SKILL.md"},
+                            env_extra=self.env(), args=("record",))
+        self.assertQuiet(res)
+        self.assertFalse(self.state_file().exists())
+
+    # --- installed_plugins.json の形 ---
+
+    def test_silent_when_any_installed_value_is_not_list(self):
+        """list でない値が 1 つでもあれば形の違うファイルとして全体を読まない（version 1 との混在）."""
+        self.stale_setup()
+        path = self.cfg / "plugins" / "installed_plugins.json"
+        data = json.loads(path.read_text())
+        data["plugins"][f"q@{MP}"] = {}
+        path.write_text(json.dumps(data))
+        self.assertQuiet(self.prompt())
+
+    def test_broken_installed_entry_is_skipped(self):
+        """entry の list に object でないものが混ざっていても、残りの entry で知らせる."""
+        self.stale_setup()
+        self.install({"p": ["x", {"scope": "user", "installPath": str(self.cache / "p" / "1.1.0"),
+                                  "version": "1.1.0"}]})
+        res = self.prompt()
+        self.assertIn("p: 1.0.0 → 1.1.0", res.stdout)
+        self.assertNotIn(PY_ERROR, res.stderr)
+
+    def test_user_scope_entry_is_preferred(self):
+        """project scope の entry が先に並んでいても、user scope の版を新しい版とする."""
+        self.stale_setup()
+        self.version_dir("p", "1.2.0")
+        self.install({"p": [
+            {"scope": "project", "installPath": str(self.cache / "p" / "1.2.0"), "version": "1.2.0",
+             "projectPath": "/x"},
+            {"scope": "user", "installPath": str(self.cache / "p" / "1.1.0"), "version": "1.1.0"},
+        ]})
+        out = self.prompt().stdout
+        self.assertIn("p: 1.0.0 → 1.1.0", out)
+        self.assertNotIn("1.2.0", out)
+
+    def test_silent_without_install_path(self):
+        self.stale_setup()
+        self.install({"p": [{"scope": "user", "version": "1.1.0"}]})
+        self.assertQuiet(self.prompt())
+
+    # --- 通知の判定 ---
+
+    def test_empty_recorded_version_is_not_notified(self):
+        self.version_dir("p", "1.1.0")
+        self.install({"p": "1.1.0"})
+        self.state_file().parent.mkdir(parents=True)
+        self.state_file().write_text(json.dumps({"schema_version": 1, "session_id": SID,
+                                                 "plugins": {f"p@{MP}": {"version": ""}}, "notified": {}}))
+        self.assertQuiet(self.prompt())
+
+    def test_changelog_with_non_semver_old_version(self):
+        """旧版の片方が semver でなくても、通知と見出しを出す（古さの比較はしない）."""
+        a = self.version_dir("p", "dev", skills=("a",))
+        b = self.version_dir("p", "1.0.0", skills=("b",))
+        self.version_dir("p", "1.1.0", skills=("a", "b"), changelog="## [1.1.0]\n## [1.0.0]\n")
+        self.install({"p": "1.0.0"})
+        self.read(a / "skills" / "a" / "SKILL.md")
+        self.read(b / "skills" / "b" / "SKILL.md")
+        self.install({"p": "1.1.0"})
+        res = self.prompt()
+        self.assertIn("p: 1.0.0, dev → 1.1.0", res.stdout)
+        self.assertIn("## [1.1.0]", res.stdout)
+        self.assertNotIn(PY_ERROR, res.stderr)
+
+    def test_changelog_stops_at_non_semver_old_version_heading(self):
+        """semver でない旧版でも、その見出しに着いたら止める（それより下は読んだ版に入っていた変更）."""
+        old = self.version_dir("p", "dev")
+        self.version_dir("p", "1.1.0", changelog="## [1.1.0]\n## [dev]\n## [0.9.0]\n")
+        self.install({"p": "dev"})
+        self.read(old / "skills" / "s" / "SKILL.md")
+        self.install({"p": "1.1.0"})
+        out = self.prompt().stdout
+        self.assertIn("## [1.1.0]", out)
+        self.assertNotIn("## [0.9.0]", out)
+
+    def test_changelog_omits_heading_of_same_release_as_old_version(self):
+        """build metadata だけ違う旧版（semver では同じ版）の見出しは、新しい変更として出さない."""
+        old = self.version_dir("p", "1.0.0+b5")
+        self.version_dir("p", "1.1.0", changelog="## [1.1.0]\n## [1.0.0]\n## [0.9.0]\n")
+        self.install({"p": "1.0.0+b5"})
+        self.read(old / "skills" / "s" / "SKILL.md")
+        self.install({"p": "1.1.0"})
+        out = self.prompt().stdout
+        self.assertIn("## [1.1.0]", out)
+        self.assertNotIn("## [1.0.0]", out)
+
+    # --- 状態の保存 ---
+
+    def test_prompt_without_change_does_not_rewrite_state(self):
+        """知らせることも rearm も無い発言では状態ファイルを書き直さない（毎回の発言で走る）."""
+        self.stale_setup()
+        self.prompt()
+        ino = self.state_file().stat().st_ino
+        self.assertQuiet(self.prompt())
+        self.assertEqual(self.state_file().stat().st_ino, ino)
+
+    def test_compact_rearm_is_saved_without_installed_file(self):
+        """installed_plugins.json が読めない回の compaction でも、通知済みを消したことは残す."""
+        self.stale_setup()
+        self.prompt()
+        installed = self.cfg / "plugins" / "installed_plugins.json"
+        saved = installed.read_text()
+        installed.unlink()
+        self.assertQuiet(self.compact())
+        installed.write_text(saved)
+        self.assertIn("1.0.0 → 1.1.0", self.prompt().stdout)
+
+    def test_rearm_window_boundary_is_exclusive(self):
+        """前回の rearm からちょうど REARM_WINDOW（120 秒）なら、まだ窓の中として通知済みを消さない."""
+        self.stale_setup()
+        self.prompt()
+        base = json.loads(self.state_file().read_text())
+        # python の now と同じ秒で走った回だけを判定に使う（秒をまたぐと差が 121 になる）
+        for _ in range(5):
+            t0 = int(time.time())
+            self.state_file().write_text(json.dumps({**base, "rearm_at": t0 - 120}))
+            res = self.compact()
+            if int(time.time()) == t0:
+                break
+        else:
+            self.skipTest("hook の実行が毎回秒をまたいだ")
+        self.assertQuiet(res)
 
 
 if __name__ == "__main__":

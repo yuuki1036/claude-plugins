@@ -11,6 +11,7 @@ maintain 系が完了 Issue を消す前に通す口。厚く見るのは「戻�
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -139,6 +140,21 @@ class CheckTest(IssueFilesTestCase):
         res = run(other, "check", str(p))
         self.assertEqual(lines(res.stdout, "tracked"), [str(p)])
 
+    def test_failed_status_is_dirty(self):
+        # status が失敗したら一致を確かめられないので、戻せる側（tracked）に倒さない。
+        # $1 は issue-files.py が先頭に付ける --literal-pathspecs
+        p = self.write("CP-1.md")
+        self.commit_all()
+        stub = self.tmp / "bin"
+        stub.mkdir()
+        (stub / "git").write_text(
+            f'#!/bin/sh\n[ "$2" = status ] && exit 128\nexec "{shutil.which("git")}" "$@"\n')
+        (stub / "git").chmod(0o755)
+        env = scrub(PATH=f"{stub}{os.pathsep}{os.environ['PATH']}")
+        res = run(self.repo, "check", str(p), env=env)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(lines(res.stdout, "dirty"), [str(p)])
+
     def test_missing_path_exit_2_and_others_still_reported(self):
         p = self.write("CP-1.md")
         self.commit_all()
@@ -216,6 +232,13 @@ class RetireTest(IssueFilesTestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(lines(res.stdout, "archived_to"), [str((self.archive / "CP-1.md").resolve())])
 
+    def test_archive_dir_with_missing_parents_is_created(self):
+        p = self.write("CP-1.md")
+        dest_dir = self.tmp / "a" / "b" / "archive"
+        res = run(self.repo, "retire", "--archive-dir", str(dest_dir), str(p))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue((dest_dir / "CP-1.md").exists())
+
     def test_existing_archive_entry_is_not_overwritten(self):
         self.exclude_data_dir()
         (self.repo / "README.md").write_text("x\n")
@@ -247,6 +270,12 @@ class RetireTest(IssueFilesTestCase):
         res = run(self.repo, "remove", str(p))
         self.assertEqual(res.returncode, 2)
         self.assertTrue(p.exists())
+
+    def test_no_subcommand_is_usage_error(self):
+        res = run(self.repo)
+        self.assertEqual(res.returncode, 2, res)
+        self.assertIn("usage", res.stderr)
+        self.assertEqual(res.stdout, "")
 
 
 class BackupTest(IssueFilesTestCase):

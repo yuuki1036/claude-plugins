@@ -233,6 +233,12 @@ class BuildMutantsTest(unittest.TestCase):
             ''')
         self.assertEqual(mt.build_mutants({p: {2}}), [])
 
+    def test_operator_right_after_a_string_is_mutated(self):
+        """範囲の終わりは開区間。閉じ引用符の直後から始まる演算子は伏せずに変異させる."""
+        p = self._file("c.py", "x = 'a'== b\n")
+        self.assertEqual([(m.lineno, m.rule) for m in mt.build_mutants({p: {1}})],
+                         [(1, "== を != に（判定を反転）")])
+
 
 class MaskedSpansTest(unittest.TestCase):
     """`_masked_spans` が桁範囲にコメントか文字列かを持たせること（#399）."""

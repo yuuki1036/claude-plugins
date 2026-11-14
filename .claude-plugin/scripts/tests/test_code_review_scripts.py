@@ -2510,6 +2510,12 @@ class PlanGapPublishTest(ScriptTestBase):
                 self.assertIn("review_mode", r.stderr)
                 self.assertNotIn("Traceback", r.stderr)
 
+    def test_a_review_mode_outside_the_vocabulary_is_quoted_as_written(self):
+        """語彙外の値は書かれたままの文字で引く（\\u エスケープにすると綴りを照らし合わせられない）."""
+        r = self.publish(dict(BASE_PAYLOAD, review_mode="既定"), "code-review:review")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('review_mode が語彙の外: "既定"', r.stderr)
+
     def test_review_modes_match_the_triage_guide(self):
         """publish の `REVIEW_MODES` は triage-guide.md `## 2.5` のモード名の写し。モードを足したら両方を直す.
 

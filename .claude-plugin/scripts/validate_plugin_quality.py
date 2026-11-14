@@ -1852,7 +1852,7 @@ def split_skill_phases(skill_md: Path, heading_re: str, label: str) -> list[tupl
             continue
         if h and level is not None and len(h.group(1)) <= level:
             level = None
-            continue
+            continue  # mutation-ok: 見出しの行は SPLIT_READ_RE に当たらず level も None なので, 下へ落ちても何もしない
         r = SPLIT_READ_RE.match(line)
         if r and level is not None:
             phases[-1][2].append((i, r.group("path")))

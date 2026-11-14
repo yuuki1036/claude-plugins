@@ -138,6 +138,12 @@ class BasisTest(ScopeSizeTestCase):
     def test_done_can_be_under(self):
         self.assertEqual(self.check(self.issue("large", 10, done=3), "done")["verdict"], "under")
 
+    def test_missing_subcommand_is_a_usage_error(self):
+        res = run()
+        self.assertEqual(res.returncode, 2, res.stderr)
+        self.assertIn("usage:", res.stderr)
+        self.assertNotIn("Traceback", res.stderr)
+
     def test_bad_basis_is_rejected(self):
         self.assertEqual(run("check", "--basis", "bogus", str(self.issue("small"))).returncode, 2)
 
