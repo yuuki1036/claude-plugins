@@ -111,8 +111,8 @@ BUILTIN_COMMANDS = frozenset(
 )
 
 
-def load_marketplace_plugins() -> frozenset[str]:
-    path = Path(__file__).resolve().parents[1] / "marketplace.json"
+def load_marketplace_plugins(path: Path | None = None) -> frozenset[str]:
+    path = path or Path(__file__).resolve().parents[1] / "marketplace.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return frozenset(p["name"] for p in data.get("plugins", []) if isinstance(p, dict) and "name" in p)
@@ -320,7 +320,7 @@ class Scanner:
                                     self.activations[inp["skill"]] += 1
                             elif name.endswith("wrap_up"):
                                 st["wrap"] = inp if inp.get("ask") else None
-                    continue
+                    continue  # mutation-ok: 外しても直後の kind != "user" の continue で同じく読み飛ばす
                 if kind != "user":
                     continue
 

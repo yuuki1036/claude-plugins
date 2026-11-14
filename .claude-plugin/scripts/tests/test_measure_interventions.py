@@ -2,10 +2,12 @@
 
 使い捨ての `projects/<slug>/<session>.jsonl` を組み立てて本物を走らせ、summary.json と events.jsonl を見る。
 期待値は各テストが fixture から独立に書く（スクリプトの集計関数で期待値を作らない）。
+CLI では入力を作りにくい分岐だけは `load_script()` で関数を直接呼ぶ（MarketplacePlugins / Helpers）。
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -124,6 +126,23 @@ class HumanDetection(Base):
         self.assertEqual(s["human_prompts"], 1)
         self.assertEqual(s["by_kind"].get("prompt:resume"), 1)
 
+    def test_rows_other_than_user_and_assistant_are_skipped(self):
+        self.write([human("作業して"), {**human("system の行"), "type": "system"}])
+        self.assertEqual(self.summary()["human_prompts"], 1)
+
+    def test_row_without_timestamp_is_outside_the_window(self):
+        self.write([{k: v for k, v in human("時刻なし").items() if k != "timestamp"}, human("作業して")])
+        self.run_script()
+        # 窓の外でも発話の順番には数える
+        self.assertEqual([(e["sub"], e["text"]) for e in self.events()], [("free", "作業して")])
+
+    def test_non_dict_blocks_in_content_are_skipped(self):
+        self.write([
+            human(["plain", {"type": "text", "text": "作業して"}]),
+            {"type": "assistant", "timestamp": "2026-11-01T00:00:01Z", "message": {"content": ["plain", say("x")]}},
+        ])
+        self.assertEqual(self.summary()["human_prompts"], 1)
+
 
 class PromptKinds(Base):
     def test_start_free_reply_and_buttons(self):
@@ -168,6 +187,11 @@ class PromptKinds(Base):
         ])
         self.run_script()
         self.assertEqual(self.events()[-1]["sub"], "button-primary")
+
+    def test_empty_text_block_keeps_the_previous_question(self):
+        self.write([human("作業して"), assistant(say("直しますか？"), say("")), human("直して")])
+        self.run_script()
+        self.assertEqual(self.events()[-1]["sub"], "reply")
 
     def test_slash_bash_and_card(self):
         self.write([
@@ -217,6 +241,7 @@ class Questions(Base):
         self.assertEqual(s["by_kind"]["question:multi"], 2)
         self.assertEqual(s["by_kind"]["question:unanswered"], 1)
         self.assertEqual(s["question_headers"]["方針"], {"recommended": 1, "free-text": 1})
+        self.assertIn("| 方針 | 2 | 1 | 50% |", (self.out / "summary.md").read_text(encoding="utf-8"))
         q = [e for e in self.events() if e["kind"] == "question"]
         self.assertTrue(q[0]["recommended_marked"])
         self.assertFalse(q[1]["recommended_marked"])
@@ -230,6 +255,25 @@ class Questions(Base):
         self.assertNotIn("question_headers", s)
         self.assertNotIn("社内の画面名", (self.out / "summary.md").read_text(encoding="utf-8"))
         self.assertIn("社内の画面名", self.summary("--names")["question_headers"])
+
+    def test_comma_answers_are_multi_only_when_multi_select_and_all_match(self):
+        single = {"question": "Q1", "options": [{"label": "X"}, {"label": "Y"}]}
+        multi = {"question": "Q2", "multiSelect": True, "options": [{"label": "m"}, {"label": "n"}]}
+        rows = [human("作業して")]
+        rows += self.auq("q1", [single], {"Q1": "X, Y"})
+        rows += self.auq("q2", [multi], {"Q2": "m, zzz"})
+        self.write(rows)
+        self.assertEqual(self.summary()["by_kind"]["question:free-text"], 2)
+
+    def test_options_count_and_non_dict_questions(self):
+        q = {"question": "Q", "options": [{"label": "a"}, {"label": "b"}]}
+        rows = [human("作業して"), assistant(tool_use("AskUserQuestion", "q", {"questions": [q]})),
+                {"type": "user", "timestamp": "2026-11-01T00:00:05Z",
+                 "toolUseResult": {"questions": ["壊れた行", q], "answers": {"Q": "a"}},
+                 "message": {"content": [{"type": "tool_result", "tool_use_id": "q", "content": "answered"}]}}]
+        self.write(rows)
+        self.run_script()
+        self.assertEqual([(e["qi"], e["options"]) for e in self.events() if e["kind"] == "question"], [(1, 2)])
 
 
 class OtherInterventions(Base):
@@ -264,6 +308,16 @@ class OtherInterventions(Base):
         self.assertEqual(self.summary()["by_kind"], {"prompt:start": 1, "reject:mcp__(server)__deploy": 1})
         self.assertIn("reject:mcp__workserver__deploy", self.summary("--names")["by_kind"])
 
+    def test_interrupt_is_not_also_counted_as_a_prompt(self):
+        self.write([human("[Request interrupted by user]")])
+        self.assertEqual(self.summary()["by_kind"], {"interrupt:turn": 1})
+
+    def test_pretooluse_without_hook_error_is_not_a_block(self):
+        self.write([human("作業して"), assistant(tool_use("Bash", "b1"), tool_use("Bash", "b2")),
+                    tool_result("b1", "PreToolUse:Bash 通過"),
+                    tool_result("b2", "Error: hook error が出た")])
+        self.assertEqual(self.summary()["by_kind"], {"prompt:start": 1})
+
 
 class SkillAttribution(Base):
     def test_window_and_builtin_commands(self):
@@ -281,6 +335,13 @@ class SkillAttribution(Base):
         self.write([human("<command-name>/issue-workflow:start</command-name>"), human("次")])
         self.run_script()
         self.assertEqual(self.events()[-1]["skill"], "issue-workflow:start")
+
+    def test_skill_input_on_another_tool_is_not_an_activation(self):
+        self.write([human("作業して"), assistant(tool_use("Read", "r", {"skill": "code-review:self-review"})),
+                    human("直して")])
+        s = self.summary("--names")
+        self.assertEqual(s["skill_activations"], {})
+        self.assertEqual([e["skill"] for e in self.events()], ["(no-skill)"] * 2)
 
     def test_slash_window_counts_five_after_the_launch(self):
         rows = [human("<command-name>/issue-workflow:start</command-name>")] + [human(f"直して {i}") for i in range(6)]
@@ -315,6 +376,17 @@ class Output(Base):
         self.run_script("--since", "2026-11-01", "--until", "2026-11-05")
         # 窓の外の「古い」もセッション内の発話の順番には数える（「新しい」は 2 回目の発話なので free）
         self.assertEqual([(e["sub"], e["text"]) for e in self.events()], [("free", "新しい")])
+
+    def test_since_is_inclusive_and_until_is_exclusive(self):
+        self.write([human("境界の始まり", ts="2026-11-01T00:00:00Z"), human("境界の終わり", ts="2026-11-02T00:00:00Z")])
+        self.run_script("--since", "2026-11-01T00:00:00Z", "--until", "2026-11-02T00:00:00Z")
+        self.assertEqual([e["text"] for e in self.events()], ["境界の始まり"])
+
+    def test_nested_out_dir_is_created_and_events_keep_non_ascii(self):
+        self.write([human("作業して")])
+        self.out = Path(self.tmp.name) / "a" / "b" / "out"
+        self.run_script()
+        self.assertIn("作業して", (self.out / "events.jsonl").read_text(encoding="utf-8"))
 
     def test_history_copied_into_another_file_is_counted_once(self):
         shared = [human("作業して", uuid="u1"), {**assistant(say("やりました")), "uuid": "u2"}, human("直して", uuid="u3")]
@@ -456,6 +528,24 @@ class Labels(Base):
         p = self.run_script("--labels", str(bad), expect=2)
         self.assertIn("object ではない", p.stderr)
 
+    def test_malformed_keys_are_unmatched_and_blank_lines_skipped(self):
+        self.write([human("作業して", ts="2026-11-01T00:00:00Z")])
+        labels = Path(self.tmp.name) / "labels.jsonl"
+        rows = [{"session": "s1", "ts": ["2026-11-01T00:00:00Z"], "label": "修正"},
+                {"ts": "2026-11-01T00:00:00Z", "label": "修正"}]
+        labels.write_text("\n\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
+        s = self.summary("--labels", str(labels))
+        self.assertEqual(s["unmatched_labels"], 2)
+        self.assertEqual(s["labels"], {})
+
+    def test_slash_prompts_are_not_labelled(self):
+        self.write([human("<command-name>/issue-workflow:start</command-name>", ts="2026-11-01T00:00:00Z")])
+        labels = Path(self.tmp.name) / "labels.jsonl"
+        labels.write_text(json.dumps({"session": "s1", "ts": "2026-11-01T00:00:00Z", "label": "修正"},
+                                     ensure_ascii=False) + "\n", encoding="utf-8")
+        s = self.summary("--labels", str(labels))
+        self.assertEqual((s["labels"], s["unmatched_labels"]), ({}, 1))
+
     def test_without_labels_the_keys_are_absent(self):
         self.write([human("作業して")])
         s = self.summary()
@@ -522,7 +612,51 @@ class Merge(Base):
         p = self.run_script("--merge", str(a), str(c))
         self.assertIn("since が揃っていない", p.stderr)
         self.assertIn("伏せ字なしの summary", p.stderr)
+        self.assertFalse(json.loads((self.out / "summary.json").read_text(encoding="utf-8"))["anonymized"])
         self.assertIsNone(json.loads((self.out / "summary.json").read_text(encoding="utf-8"))["window"]["since"])
+
+
+def load_script():
+    spec = importlib.util.spec_from_file_location("measure_interventions", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class MarketplacePlugins(unittest.TestCase):
+    """marketplace.json から名前を持つ dict の要素だけを拾う（どれか 1 件が崩れていても全体を空にしない）."""
+
+    def test_entries_without_a_name_are_skipped(self):
+        mod = load_script()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "marketplace.json"
+            path.write_text(json.dumps({"plugins": [{"name": "a"}, {"source": "./b"}, "name"]}), encoding="utf-8")
+            self.assertEqual(mod.load_marketplace_plugins(path), frozenset({"a"}))
+
+
+class Helpers(unittest.TestCase):
+    """CLI 経由では入力を作りにくい分岐を、関数を直接呼んで見る."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_script()
+
+    def test_tool_result_list_content_joins_texts(self):
+        block = {"content": [{"text": "a"}, {"type": "image"}, "x", {"text": "b"}]}
+        self.assertEqual(self.mod.tool_result_text(block), "a\n\nb")
+
+    def test_routine_needs_every_word_routine(self):
+        self.assertEqual(self.mod.form_of("commit push"), "routine")
+        self.assertEqual(self.mod.form_of("commit の前に直して"), "text")
+
+    def test_button_index_skips_non_dict_actions(self):
+        self.assertEqual(self.mod.button_index("はい", {"actions": ["はい", {"label": "はい"}]}), 1)
+
+    def test_list_answer_with_unknown_label_is_free_text(self):
+        q = {"options": [{"label": "A"}, {"label": "B"}]}
+        self.assertEqual(self.mod.classify_answer(q, ["A", "B"]), ("multi", False))
+        self.assertEqual(self.mod.classify_answer(q, ["A", "C"]), ("free-text", False))
+        self.assertEqual(self.mod.classify_answer(q, ["C"]), ("free-text", False))
 
 
 if __name__ == "__main__":
