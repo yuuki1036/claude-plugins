@@ -93,7 +93,7 @@ def lock(path: Path):
 
 
 def save_state(path: Path, state: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)  # mutation-ok: 呼び出し元はどれも先に lock() が parents=True で親を作っている
     # stale-skill.sh の掃除はこの `.*.tmp` の形を前提に書きかけを消す
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -198,7 +198,7 @@ def changelog_headings(install_path: str, old_versions: set[str]) -> list[str]:
         # 旧版の見出しが CHANGELOG に無い（版を飛ばして書いた）ときも、旧版より古い見出しは出さない
         cur = semver(ver)
         if oldest is not None and cur is not None and cur <= oldest:
-            break
+            break  # mutation-ok: CHANGELOG の見出しは semver の降順に並ぶ前提なので、以降の見出しも oldest 以下。continue でも出力は同じで、打ち切りは残りを読まないためだけ
         out.append(line.strip())
         if len(out) >= CHANGELOG_LIMIT:
             break
@@ -289,7 +289,7 @@ def notify(payload: dict, mode: str, path: Path, state: dict) -> None:
 
 
 def main(argv: list[str]) -> int:
-    mode = argv[1] if len(argv) > 1 else ""
+    mode = argv[1] if len(argv) > 1 else ""  # mutation-ok: stale-skill.sh は既知の mode だけを "$MODE" で 1 個渡すので argv は常に 2 要素
     try:
         payload = json.loads(sys.stdin.read())
     except ValueError:

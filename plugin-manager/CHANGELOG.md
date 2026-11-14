@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.10.1] - 2026-11-13
+
+### Changed
+
+- `hooks/scripts/stale_skill.py` の 3 行に、変異テストで等価と確かめた理由を `# mutation-ok:` で添えた（GitHub #441）。挙動は変わらない
+
 ## [1.10.0] - 2026-11-08
 
 ### Added
