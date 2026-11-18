@@ -96,7 +96,9 @@ def save_state(path: Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)  # mutation-ok: 呼び出し元はどれも先に lock() が parents=True で親を作っている
     # stale-skill.sh の掃除はこの `.*.tmp` の形を前提に書きかけを消す
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    # ensure_ascii は既定（True）のまま。False だと payload の `\ud800` のような対のないサロゲートが
+    # utf-8 に符号化できず、その回の記録ごと落ちる（GitHub issue #455）
+    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
     os.replace(tmp, path)
 
 
