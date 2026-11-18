@@ -412,6 +412,14 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
 - **重ね書きの扱い**（2026-11-18 決定）: `pr` と同じ番号を `waiting_prs` に書いた report は、sub が置くとき（`hub.py report`）だけ exit 2 で弾く。hub の取り込み（ingest）では弾かない — 版の古い sub の report を state や decisions ごと invalid に落とさないため。取り込んだ重ね書きは `waiting` が番号で 1 行にまとめる（`owner/name#40` と `#040` も同じ PR に読む。repo を突き合わせないので、別の repo の同じ番号も同じ扱いになる）
 - **持ち越し**: done を置かずに放置された sub の PR は、待っている PR に残り続ける（不在の sub と、送れなかった連絡の扱いは別に決める）
 
+## 実装で決めたこと（done を置かずに終わった sub・2026-11-18 / GitHub issue #461）
+
+上の「持ち越し」を解消した。
+
+- **閉じた sub を外す**: `close-sub --result accepted` を記録し、その後にこの PJ で report を置いていない sub は、`waiting`・`worktrees` の作業中の判定（cross の重なりも）・サイドバーのグループ・state.md の sub 表（状態を「閉じた（最後は <state>）」と出す）から外す。その後に report を置いた sub（会話を開き直した）は戻す。「その後」は移った sub（`moved`）と同じく inbox に置いた時刻と記録の `at` で比べる（`closed_sub_since` が両方を扱う）
+- **done が来ない sub は lead が閉じる**（2026-11-18 決定）: 自分の PR のマージを知らせたのに done が来ない sub（`waiting` で `own: true` かつ知らせ済み。知らせた時刻は `notified_at`）を status の止まっている箇所に出し、lead が閉じると決めたら `close-sub --force` で閉じる。`--force` が通すのはこの条件の sub だけで、それ以外は exit 3。一定期間で黙って外す案と、知らせた時点で外す案は採らなかった（前者は done が来ないことに気づきにくく、後者は #443 の締めの依頼が 1 回きりになる）
+- **送れなかった連絡**: relay が失敗した回は知らせ済みに数えず、次の status で送り直す（#329 からの挙動のまま）
+
 ## 未解決事項 (open)
 
 - **3 回目の self-review（2026-10-21・security / bug-detection）で残した指摘**（G-V ループの上限に達し、BLOCKER だけ直す方針にしたため未修正）。確定タイミング: 段階 ① を 1 PJ で使う前
