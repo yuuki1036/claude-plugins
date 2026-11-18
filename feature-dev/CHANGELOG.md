@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.29.1] - 2026-11-18
+
+### Fixed
+
+- **Phase 7 の文書整合の注記を、git-commit-helper の新しい skip 条件に合わせた**（GitHub issue #450）。git-commit-helper はフローから起動されたことでは doc-sync を飛ばさず、このセッションで回した証拠の行で決める
+
 ## [2.29.0] - 2026-11-10
 
 ### Added
