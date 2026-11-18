@@ -4,6 +4,7 @@ user_invocable: true
 argument-hint: "[--all]"
 allowed-tools:
   - Bash
+  - SendMessage
 ---
 
 <!-- 手順の正本はこのファイル。mods が有効な環境では hooks/update-all.ts が同じ手順をモデルを呼ばずに実行する（ここには届かない）。手順を変えたら両方を直す -->
@@ -166,6 +167,31 @@ fi
 
 4. 抽出結果（未インストールの `name@marketplace` 一覧）を Phase 5 の報告に渡す。`marketplace.json` が見つからない場合は検出をスキップする（警告のみ・更新処理は止めない）。
 
+### Phase 4.8: hub 系セッションへの読み直し依頼
+
+Phase 4 で **自作マーケットプレイスの project-hub（`project-hub@<Phase 0 の自作マーケットプレイス名>`）が「更新済み」になった回だけ**行う（それ以外の更新では何もせず、Phase 5 にこの節を出さない。2026-11-18 決定）。hub 系のセッション（project-hub の hub のように、ほかのセッションを束ねる常設のセッション）は、更新前に読んだ SKILL.md と同梱スクリプトの手順で動き続けるからである（GitHub issue #460）。`--all` で入る別マーケットプレイスの同名プラグインは、hub が使う project-hub ではないので数えない。ほかのプラグインの skill の更新は、各セッションの stale-skill hook が次の発言で知らせる。
+
+1. **宛先を集める**: project-hub のデータの置き場所（`$PROJECT_HUB_DIR`。無ければ `${CLAUDE_CONFIG_DIR:-~/.claude}/project-hub`）の `<PJ>/` ごとに `config.json` と `hub.json` を読み、`config.json` の `status` が `active` の PJ の `hub.json` から `session_id`・`host_session_id`・`name` を取る。`session_id` が同じものは 1 件にまとめる（1 つの会話が複数の PJ を兼ねることがある）。置き場所が無ければ何もせず（project-hub が入っていない環境でも止めない）、ファイルを読めない PJ は飛ばす。glob ではなく `find` で列挙する（zsh は一致の無い glob をエラーにする）
+
+```bash
+HUB_DIR="${PROJECT_HUB_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/project-hub}"
+echo "self	${CLAUDE_CODE_SESSION_ID:-}	${CLAUDE_CODE_HOST_SESSION_ID:-}"
+find "$HUB_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | while IFS= read -r d; do
+  [ "$(jq -r '.status // empty' "$d/config.json" 2>/dev/null)" = active ] || continue
+  jq -r --arg p "$(basename "$d")" '[$p, .session_id // "", .host_session_id // "", .name // ""] | @tsv' "$d/hub.json" 2>/dev/null
+done
+```
+
+2. **送る**: 宛先ごとに SendMessage で次の本文を送る（`<Before>` / `<After>` は project-hub の版、`<installPath>` は Phase 4 の After の版のディレクトリ）。宛先は `host_session_id`（会話の ID。開き直しても改名しても変わらない）で、空か届かなければ `name` で送り直す（名前は重なると宛先が決まらないので後に回す）。mod（`hooks/update-all.ts`）は `$.session.send` が CLI の会話 ID も宛先に取れるので、この前に `session_id` を試す。宛先がこのセッション自身（hub の会話で `/update-all` を打った回。手順 1 の `self` の行の ID と、宛先の `session_id` か `host_session_id` が一致する）なら送らず、「このセッション自身」と報告する:
+
+```
+[plugin-manager] update-all で project-hub が <Before> → <After> に更新された。次の発言から、project-hub の skill は新しい版の SKILL.md を Read し直してから使う。
+新しい版: <installPath>/skills/<skill>/SKILL.md（同梱の scripts/ も同じ版を使う）
+返事は不要。
+```
+
+3. 送った宛先と、送らなかった宛先と理由（届かなかった・hub 系のセッションが無い）を Phase 5 に渡す
+
 ### Phase 5: 結果の報告
 
 以下のフォーマットで報告する:
@@ -204,6 +230,11 @@ fi
 
 抑止: ~/.claude/plugin-manager/config.json の ignore_plugins / ignore_marketplaces
 
+### hub 系セッションへの読み直し依頼
+
+- 送った: <hub の名前>（<PJ>, <PJ>）
+- 送らなかった: <hub の名前>（<PJ>） — <理由>
+
 反映にはClaude Codeの再起動が必要です。
 動いているセッションには、そのセッションで使った skill が更新されていれば、次の発言で読み直す SKILL.md のパスを知らせる。
 ```
@@ -217,5 +248,7 @@ fi
 「更新内容」セクションは更新済みプラグインが1つ以上ある場合のみ表示する。
 全プラグインが「変更なし」の場合はこのセクションを省略する。
 末尾の「動いているセッションには、…」の行も、更新済みが 1 つ以上ある場合のみ表示する（再起動しないで動き続けるセッションには、plugin-manager の stale-skill hook が次の発言で読み直す SKILL.md を知らせる）。
+
+「hub 系セッションへの読み直し依頼」セクションは Phase 4.8 を行った回（project-hub が更新済み）だけ表示する。宛先が 0 件なら「送らなかった: hub 系のセッションが無い（project-hub のデータに active な PJ が無い）」の 1 行を出す。
 
 「未インストールの自作プラグイン」セクションは Phase 4.7 で検出が1件以上ある場合のみ表示する。0件の場合は省略する（更新のみが成果物）。

@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.0] - 2026-11-18
+
+### Added
+
+- `/update-all` で自作マーケットプレイスの project-hub が更新されたら、動いている hub 系のセッション（`~/.claude/project-hub/<PJ>/` の `config.json` の状態が active な PJ の `hub.json` の会話）へ、新しい版の SKILL.md を読み直す依頼を送る（GitHub #460）。mod（`hooks/update-all.ts`）は `$.session.send` で、`hub.json` の `session_id` → 会話の ID（`host_session_id`）→ 名前の順に届くまで試し、hub の会話で打った回は自分自身には送らない。データの置き場所は project-hub と同じく `PROJECT_HUB_DIR` / `CLAUDE_CONFIG_DIR` に従う。送った宛先と送れなかった理由を結果の「hub 系セッションへの読み直し依頼」に出す。送るのは project-hub の更新のときだけ（2026-11-18 決定）。置き場所が無い環境では何もしない。モデルが手順を実行する経路は `commands/update-all.md` の Phase 4.8
+
 ## [1.10.3] - 2026-11-18
 
 ### Fixed
