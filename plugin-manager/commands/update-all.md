@@ -117,7 +117,9 @@ cat ~/.claude/plugins/cache/<marketplace-name>/<plugin-name>/<After-version>/CHA
 ```
 
 2. CHANGELOG.md から Before バージョンより新しいエントリを抽出する:
-   - `## [<After-version>]` から `## [<Before-version>]` の直前までを取得
+   - 見出しの版が Before より新しく After 以下の節（`## [<版>]` から次の版の見出しの直前まで）を、ファイルの並びのまま取得する。`## [<After-version>]` の見出しが無ければ「CHANGELOG なし」と同じに扱う
+   - 並び順ではなく版で比べる。backport を時系列の位置に挟んだ CHANGELOG では、`## [<Before-version>]` の見出しより下にも新しい節がある（GitHub #464）
+   - `Unreleased` など semver でない見出しの節は含めない。Before か After が semver でなければ、`## [<After-version>]` から `## [<Before-version>]` の直前までを並び順で取得する
    - Before と After の間に複数バージョンがある場合は全て含める
    - `### Added` / `### Fixed` / `### Changed` 等のサブセクションをそのまま保持
 
