@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.9] - 2026-11-18
+
+### Fixed
+
+- **軽量フローで CI が赤くなり修正を入れた回に、doc-sync が Step 6 と Step 8 で二重に回らないようにした**（GitHub issue #450）。dev-workflow の git-commit-helper が、回した証拠の後にコードを変えた回は doc-sync を回すようになったので、Step 6 で `DOC_SYNC_RESULT=` の行が出た回はその結果を Step 8 で記録するだけにし、出なかった回（dev-workflow が無効・古い版など）だけ Step 8 で回す
+
 ## [1.19.8] - 2026-11-13
 
 ### Changed

@@ -239,9 +239,27 @@ class DocSyncOtherCallersTest(unittest.TestCase):
         block = text[i7:i2]
         self.assertIn("`issue-workflow:doc-sync`", block)
         self.assertIn("使える skill に `issue-workflow:doc-sync` が無い", block)
-        # 軽量フロー・feature-dev は自分で回すので、そこから呼ばれた回は二重に回さない
-        self.assertIn("呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動された", block)
+        # 二重に回さない判定はフロー経由かではなく、このセッションで回した証拠の行で決める（#450）
+        skip = block[block.index("**回さない回**"):block.index("それ以外は")]
+        self.assertIn("`DOC_SYNC_RESULT=` の行があり、その後にコミットする変更へコード（文書・コメント以外）の変更を足していない", skip)
+        self.assertNotIn("から起動された（そのフローがコミットの前に doc-sync を回している）", skip)
+        self.assertIn("呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動されたことは、回さない理由にしない", skip)
+        self.assertIn("「doc-sync を飛ばした（理由: <当たった条件>）」と 1 行出す", skip)
         self.assertIn("`DOC_SYNC_FIXED=` が 1 以上", block)
+
+    def test_ci_fix_path_runs_doc_sync_once(self):
+        """CI の修正後に Step 8 で回し直すかは、Step 6 で doc-sync が回った証拠の行で決める（DW や版で決め打ちしない / #450）."""
+        self.assertIn("Step 6 の git-commit-helper が回せばそれで足り、回らなければ Step 8 で回す", step("文書整合（doc-sync）"))
+        s8 = step("Issue 更新")
+        self.assertIn("Step 6 で `DOC_SYNC_RESULT=` の行が出ていれば", s8)
+        self.assertIn("出ていなければ（`DW=0`・git-commit-helper が回さなかった・古い版）、completed に移す前に", s8)
+        self.assertNotIn("修正を入れた回だけ、completed に移す前に", s8)
+
+    def test_feature_dev_does_not_rely_on_flow_origin_skip(self):
+        text = flow_text(self.FEATURE_DEV)
+        phase7 = text[text.index("## Phase 7"):]
+        self.assertNotIn("呼び出し元のフローから起動されたときに doc-sync を回さない", phase7)
+        self.assertIn("ここを通らずにコミットへ進んだ回は git-commit-helper が回す", phase7)
 
 
 

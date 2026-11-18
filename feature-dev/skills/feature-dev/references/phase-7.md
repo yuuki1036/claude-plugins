@@ -46,7 +46,7 @@
    - 直した（`DOC_SYNC_FIXED=` が 1 以上）→ Phase 5.3（静的オラクル）をもう一度回す（文書とコメントだけの変更なので self-review は回し直さない）。次の一手に「doc-sync の文書修正は self-review を通していない」と添え、直した文書はコミットに含める
    - 残った（`DOC_SYNC_RESULT=findings`）→ 残った指摘（「実装を直す」・doc-checks の検出）を利用者に示し、直すかを聞く。実装を直すと決まったら Phase 5 に戻る
    - 指摘なし（`clean` / `skipped`。`0` で issue-workflow が無い回も）→ 結果を 1 行添えて次の一手へ
-   - git-commit-helper は呼び出し元のフローから起動されたときに doc-sync を回さないので、feature-dev の回はここで回す（二重に回さない）
+   - git-commit-helper は、このセッションに `DOC_SYNC_RESULT=` の行があり、その後にコードの変更を足していなければ doc-sync を回さない。ここで回しておけばコミットで二重に回らない。ここを通らずにコミットへ進んだ回は git-commit-helper が回す（GitHub issue #450）
    - Phase 1.5 で Issue ファイルを読んだ回は、その更新履歴に `doc-sync: <DOC_SYNC_RESULT の値>` と 1 行足す（issue-workflow の issue-maintain は、この行があれば completed にするときに doc-sync を回し直さない）
 
    - 2 回目の self-review の後は、読み合わせも self-review も繰り返さない。最後に次の一手（コミット → PR）を 1 行添える
