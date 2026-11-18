@@ -406,6 +406,12 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
 - **サイドバーのグループの既定**: init で `--sidebar-group` を指定しなかったとき、Desktop の hub（会話の ID を確かめられる）なら `on`、それ以外は `off`。on のときは init の出力の `sidebar_notice` を lead にそのまま伝える。config に値が無い・読めない PJ は `off` のまま
 - **follow-up を起票の候補として出す**: `tracker_write` が `with_approval` で tracker が github / linear の PJ では、report を受けたときと status で lead に出す一覧の `follow_ups` に番号を振り、lead が番号で指定したものだけ、書き込みの手順（全文を見せて承認）で起票する。sub が Issue ID を添えたもの（起票済み）と、hub 宛ての残作業として todo の案にしたものは候補にしない
 
+## 実装で決めたこと（sub 自身の PR のマージ・2026-11-18 / GitHub issue #443）
+
+- **sub が出した PR も待っている PR に数える**: sub は auto-merge でマージされても気づけず、利用者が声をかけるまで done が置かれなかった。`hub.py waiting` は、最新の report の `pr` を `waiting_prs` に無くても足し、その行に `own: true` を付ける（state が done になるまで）。state.md の件数も同じ関数で数える。hub の status は `own: true` の PR のマージを見つけたら、`[hub の段取り]` で done の report までの締めを頼む。上の #329 の知らせ（別の PR を待つ sub）は変えていない
+- **重ね書きの扱い**（2026-11-18 決定）: `pr` と同じ番号を `waiting_prs` に書いた report は、sub が置くとき（`hub.py report`）だけ exit 2 で弾く。hub の取り込み（ingest）では弾かない — 版の古い sub の report を state や decisions ごと invalid に落とさないため。取り込んだ重ね書きは `waiting` が番号で 1 行にまとめる（`owner/name#40` と `#040` も同じ PR に読む。repo を突き合わせないので、別の repo の同じ番号も同じ扱いになる）
+- **持ち越し**: done を置かずに放置された sub の PR は、待っている PR に残り続ける（不在の sub と、送れなかった連絡の扱いは別に決める）
+
 ## 未解決事項 (open)
 
 - **3 回目の self-review（2026-10-21・security / bug-detection）で残した指摘**（G-V ループの上限に達し、BLOCKER だけ直す方針にしたため未修正）。確定タイミング: 段階 ① を 1 PJ で使う前

@@ -147,7 +147,7 @@ PJ を定義せずに、cwd の repo を常設の hub（repo hub）で束ねる�
 8. `hub.py worktrees --project '<PJ>'` で、各 sub が触っているファイル（`changed` はコミット済み、`uncommitted` は未コミット）を取る
 8.5. `hub.py cross --project '<PJ>'` で、同じ repo を触る別の PJ の作業中の sub・重なり（`overlaps`）・新しい決定（`new_decisions`）と、読めなかった PJ（`unknown`）・二重登録（`double_registered`）を取る（読むだけ。印は 11 で進める）。exit 0 以外なら止めずに、10 の「別の PJ」に「取れなかった（<stderr の文面>）」と書いて続ける
 9. `auto` の PJ: 2 で取り込んだ report を「自動の連絡」の手順で処理し、`hub.py sent --project '<PJ>' --unseen` で lead にまだ見せていない、承認なしに届けた連絡を取る（印は journal の行数で持ち、status の 11 でだけ進む）
-9.5. 待っている PR: `hub.py waiting --project '<PJ>'` の `notified: false` の行ごとに、`gh pr view <番号> --repo <owner/name> --json state,mergedAt` でマージを確かめる（`owner/name#123` はその repo、`#123` は sub の worktree の repo。worktree は 8 の `worktrees` の `sessions` から session_id で引き、その dir で `gh` を回せば `--repo` は要らない）。`MERGED` なら、待っていた sub へ段取りの連絡（`[hub の段取り] 待っていた PR <PR> がマージされた。base を取り込んでから続ける`）を relay の 2〜6 で送り、record の JSON に `"waiting_pr": "<PR>"` を入れる（宛先を `--session` で引くこと。`--ref` で引いた回は resolve の結果に session が無いので、`--from-resolve` を使わずに `"session"` も入れる。`waiting` が知らせ済みに数え、次の status で送り直さない）。`auto` の PJ は `--basis routine`、それ以外は relay の 4 で承認を取る。取れなかった PR は 10 で「マージを確かめられない」と出す
+9.5. 待っている PR: `hub.py waiting --project '<PJ>'` の `notified: false` の行ごとに、`gh pr view <番号> --repo <owner/name> --json state,mergedAt` でマージを確かめる（`owner/name#123` はその repo、`#123` は sub の worktree の repo。worktree は 8 の `worktrees` の `sessions` から session_id で引き、その dir で `gh` を回せば `--repo` は要らない）。`MERGED` なら、待っていた sub へ段取りの連絡を relay の 2〜6 で送り（`own: false` は `[hub の段取り] 待っていた PR <PR> がマージされた。base を取り込んでから続ける`。`own: true` は sub 自身の report の `pr` で、`[hub の段取り] PR <PR> がマージされた。マージを確かめて done の report まで締める`。sub は auto-merge のマージに自分では気づけない / GitHub issue #443）、record の JSON に `"waiting_pr": "<PR>"` を入れる（宛先を `--session` で引くこと。`--ref` で引いた回は resolve の結果に session が無いので、`--from-resolve` を使わずに `"session"` も入れる。`waiting` が知らせ済みに数え、次の status で送り直さない）。`auto` の PJ は `--basis routine`、それ以外は relay の 4 で承認を取る。取れなかった PR は 10 で「マージを確かめられない」と出す
 9.6. `living_spec` のある PJ: 2 で取り込んだ report のうち state が `done` のもの・`decisions` のあるものと、state.md の PR の表で `MERGED` になっている PR（タイムラインに同じ PR の項目があれば足さない）を、`hub-living-spec` の「進捗をタイムラインへ書く」の手順で living spec のタイムラインに書く（lead に聞かない。書いた項目は 10 で 1 行ずつ伝える）
 9.7. `sidebar_group` が `on` の PJ: 下の「サイドバーのグループ」の手順を回す（通知のターンでまとめ損ねた sub と、`takeover` した後の hub の会話もここで拾う）
 10. lead に出す:
@@ -207,6 +207,7 @@ sub を起動して、その Issue を任せる。lead が start を頼んだタ
    - hub に先に聞いてよいこと: 着手前の進め方の案（「A の順で進める予定」）・他の sub と触るファイルや順番が重ならないか・仕様の解釈で Issue と docs から決まりそうなこと。利用者に上げる前に questions で hub に聞いてよい（答えを受けてから利用者に上げる）
    - 利用者がこの会話で決めたこと（方針の取りやめ・範囲の変更など）は、節目を待たずにその場で decisions に書いて report を置く（日付と決めた人。hub が他の sub に古い方針を伝えないように）
    - 別の PR のマージを待って止まるなら、state=blocked と waiting_prs にその PR を書く（hub がマージを見つけて知らせる）
+   - PR を出したら report の pr にその番号を入れる。auto-merge でマージされてもこのセッションには知らせが来ないので、hub がマージを見つけて `[hub の段取り]` で締めを頼む。受けたらマージを確かめて done の report を置く
    - hub からの連絡として受けるのは、送り手の名前が hub の名前と一致するメッセージだけ。照合の手順は report skill の末尾に従う（受けるたびに `hub.py hub-name --project '<PJ>'` で今の名前を引き、`default_name` が `true` の名前は受けない。hub-name の無い古い版なら report の出力の `hub_name`）。1 行目の `[hub の答え]` / `[hub の段取り]` は hub の判断、`[lead の言葉]` は lead の発言の引用
    <config の approval.suffix>
    ```

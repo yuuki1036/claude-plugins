@@ -592,7 +592,8 @@ def name_problem(name) -> str | None:
     return None
 
 
-def validate_report(data, project: str | None = None, kind: str | None = None) -> list[str]:
+def validate_report(data, project: str | None = None, kind: str | None = None, strict: bool = False) -> list[str]:
+    """report の形の検査。strict は sub が置くときだけの検査を足す（hub の取り込みでは、版の古い sub の report を落とさない）."""
     if not isinstance(data, dict):
         return ["JSON のオブジェクトではない"]
     schema = data.get("schema")
@@ -617,8 +618,9 @@ def validate_report(data, project: str | None = None, kind: str | None = None) -
     if data.get("state") not in REPORT_STATES:
         errs.append(f"state が {'|'.join(REPORT_STATES)} のどれでもない")
     pr = data.get("pr")
-    if pr is not None and not (isinstance(pr, int) and not isinstance(pr, bool) and pr > 0) \
-            and not (isinstance(pr, str) and PR_RE.fullmatch(pr)):
+    pr_ok = pr is None or (isinstance(pr, int) and not isinstance(pr, bool) and pr > 0) \
+        or (isinstance(pr, str) and PR_RE.fullmatch(pr) is not None)
+    if not pr_ok:
         errs.append("pr が PR 番号（数値か #<番号>）か null ではない")
     for key in ("needs_lead", "questions", "follow_ups"):
         value = data.get(key, [])
@@ -649,6 +651,12 @@ def validate_report(data, project: str | None = None, kind: str | None = None) -
     if not isinstance(waiting, list) or not all(isinstance(x, str) and WAITING_PR_RE.fullmatch(x)
                                                 for x in waiting):
         errs.append("waiting_prs が PR（#123 か owner/name#123）の配列ではない")
+    elif strict and pr_ok and pr is not None:
+        # 自分の PR は hub が pr から待っている PR に足す（GitHub issue #443）。重ねて書いた分は waiting_prs() が
+        # 番号でまとめるが、書き方の誤りなので置く時点で知らせる。repo を突き合わせずに番号で弾くので、
+        # 別の repo の同じ番号の PR もここで弾かれる
+        if any(pr_number(x) == pr_number(pr) for x in waiting):
+            errs.append("waiting_prs に pr と同じ番号の PR がある（自分の PR は pr にだけ書く。hub が待っている PR に足す）")
     return errs
 
 
@@ -1835,12 +1843,28 @@ def notified_waits(rows: list[dict]) -> set[tuple]:
     return done
 
 
-def cmd_waiting(args) -> int:
-    """sub が最新の report の waiting_prs で待っている PR（done の sub と別の PJ へ移った sub は除く）と、
-    マージを知らせ済みか（GitHub issue #329）."""
-    pdir = project_dir(args.project)
-    rows = read_jsonl(pdir / "journal.jsonl")
-    done = notified_waits(rows)
+def pr_number(value) -> int | None:
+    """PR（数値・`12`・`#12`・`owner/name#12`）の番号。`#012` と `#12` を同じ番号に読む。
+    journal を手で直した行もあるので、PR の形でなければ None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str) and (PR_RE.fullmatch(value) or WAITING_PR_RE.fullmatch(value)):
+        return int(value.rsplit("#", 1)[-1])
+    return None
+
+
+def report_pr(value) -> str | None:
+    """report の pr を waiting_prs・知らせ済みの記録と同じ `#12` の形に."""
+    number = pr_number(value)
+    return None if number is None else f"#{number}"
+
+
+def waiting_prs(rows: list[dict]) -> list[tuple[str, dict, str, bool]]:
+    """sub が待っている PR の (session, 最新の report の本文, PR, sub 自身の PR か)。done の sub と別の PJ へ
+    移った sub は除く。sub 自身の PR（report の `pr`）は waiting_prs に無くても足す — sub は auto-merge で
+    マージされても気づけないので、hub が見つけて締めを頼む（GitHub issue #443）."""
     # 移った sub へマージの段取りを送ると、別の PJ で作業中のセッションに届く
     moved = moved_sessions(rows)
     out = []
@@ -1848,10 +1872,24 @@ def cmd_waiting(args) -> int:
         body = row["body"]
         if body.get("state") == "done" or sid in moved:
             continue
-        for pr in body.get("waiting_prs") or []:
-            out.append({"session_id": sid, "name": body.get("name"), "issue": body.get("issue"),
-                        "pr": pr, "notified": (sid, pr) in done})
-    emit(out)
+        own = report_pr(body.get("pr"))
+        prs = list(dict.fromkeys(body.get("waiting_prs") or []))
+        if own is not None:
+            # waiting_prs に自分の PR を重ねて書いた report（検査より前の版の sub か、取り込みでは通した分）を
+            # 1 行にまとめる。表記が違う（`owner/name#12`）と、同じマージに違う段取りが 2 通届く
+            prs = [x for x in prs if pr_number(x) != pr_number(own)] + [own]
+        out += [(sid, body, pr, pr == own) for pr in prs]
+    return out
+
+
+def cmd_waiting(args) -> int:
+    """sub が待っている PR（waiting_prs と sub 自身の PR）と、マージを知らせ済みか（GitHub issue #329 / #443）."""
+    pdir = project_dir(args.project)
+    rows = read_jsonl(pdir / "journal.jsonl")
+    done = notified_waits(rows)
+    emit([{"session_id": sid, "name": body.get("name"), "issue": body.get("issue"),
+           "pr": pr, "own": own, "notified": (sid, pr) in done}
+          for sid, body, pr, own in waiting_prs(rows)])
     return 0
 
 
@@ -2622,7 +2660,8 @@ def render_state(pdir: Path) -> tuple[str, int]:
             out.append("| " + " | ".join([
                 cell(f"{reg.get('name')} → {renamed_to}" if renamed_to else reg.get("name")),
                 cell(reg.get("issue")), cell(state),
-                cell(body.get("pr")), cell(reg.get("branch")), cell(rep and rep.get("ts")),
+                # report の pr は数値・`12`・`#12` のどれでも来るので、トラッカーの表と同じ `#12` に揃える
+                cell(report_pr(body.get("pr"))), cell(reg.get("branch")), cell(rep and rep.get("ts")),
                 counts, cell(absent_since(reg, absent))]) + " |")
         out += more_rows(ordered, "sessions/")
     else:
@@ -2674,10 +2713,7 @@ def render_state(pdir: Path) -> tuple[str, int]:
     # hub が自分の言葉で書いたものなので本文を載せる（sub の文面をそのまま写さない。SKILL.md の todo）
     out += [f"- {cell(t['id'])} {cell(t['text'], None)}" for t in todos[:TABLE_MAX]] or ["（なし）"]
     out += more_rows(todos, "`hub.py todo`")
-    # waiting と同じく、done の sub と別の PJ へ移った sub は数えない
-    rows_waiting = [(sid, pr) for sid, row in latest.items()
-                    if row["body"].get("state") != "done" and sid not in moved_to
-                    for pr in row["body"].get("waiting_prs") or []]
+    rows_waiting = [(sid, pr) for sid, _, pr, _ in waiting_prs(rows)]
     notified = notified_waits(rows)
     pending_waits = [w for w in rows_waiting if w not in notified]
     out += ["", "## sub の決定と待っている PR", "",
@@ -3236,7 +3272,7 @@ def cmd_report(args) -> int:
               "needs_lead": body.get("needs_lead", []), "questions": body.get("questions", []),
               "follow_ups": body.get("follow_ups", []), "claims": body.get("claims", []),
               "decisions": body.get("decisions", []), "waiting_prs": body.get("waiting_prs", [])}
-    errs = validate_report(report, project, kind)
+    errs = validate_report(report, project, kind, strict=True)
     if errs:
         raise HubError(2, "report の形が不正: " + "; ".join(errs))
     hub_json = read_obj(pdir / "hub.json")
