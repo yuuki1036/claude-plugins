@@ -122,7 +122,8 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - skill 本文サイズ: SKILL.md 本文の行数上限（500 行）. 超過は references への
     progressive disclosure を促す（規模目安の正本は component-addition-advisor,
     執筆指針は docs/skill-writing.md）.
-  - metrics-vocab: publish が送りうる名前（code-review 以外の skill / command 名・観点名）が
+  - metrics-vocab: publish が送りうる名前（code-review 以外の skill / command 名・観点名）と
+    payload のキー（`orchestration-measurement.md` の `## 16` の表. 計測ストアの `DENY_KEYS` は除く）が
     計測ストアの語彙に無いか. 語彙の外の値は同期で `other` に置き換わり, 追随漏れは 5 回中 4 回が
     落ちた後に足していた（#345）. 計測ストアの clone（`REVIEW_METRICS_DIR`, 既定
     `~/.claude/review-metrics`）が無ければ飛ばすので, CI では走らない.
@@ -2048,19 +2049,108 @@ def _metrics_vocab(path: Path, key: str | None = None) -> set[str]:
     return values
 
 
+#: payload のキーの正本（`## 16` の表の 1 列目）
+METRICS_CONTRACT_DOC = Path("code-review") / "references" / "orchestration-measurement.md"
+METRICS_CONTRACT_SECTION = "## 16."
+#: 表の 1 列目の行内コードのうち, キー名の形のもの（`duration_*` のような wildcard と `1` のような値は外れる）
+METRICS_KEY_RE = re.compile(r"`([a-z_][a-z0-9_]*)`")
+
+
+def _metrics_deny_keys(sanitize: Path) -> frozenset[str] | None:
+    """計測ストアの `bin/sanitize.py` の `DENY_KEYS`. 読めなければ None（複製を持たず, 正本から読む）."""
+    try:
+        tree = ast.parse(read_text(sanitize))
+    except (OSError, SyntaxError, ValueError):
+        return None
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "DENY_KEYS"):
+            value = node.value
+            # `frozenset({...})` の形なら中の集合を読む
+            if isinstance(value, ast.Call) and len(value.args) == 1:
+                value = value.args[0]
+            try:
+                keys = ast.literal_eval(value)
+            # 集合の要素が hash できない（`{[1]}`）と TypeError になる
+            except (ValueError, TypeError):
+                return None
+            if isinstance(keys, (set, frozenset, list, tuple)) and all(isinstance(k, str) for k in keys):
+                return frozenset(keys)
+            return None
+    return None
+
+
+def metrics_contract_keys(text: str) -> set[str]:
+    """`## 16` の表のうち, 1 列目の見出しが「フィールド」を含む表の 1 列目にあるキー名.
+
+    表の名前は入れ子を親なしで書く（`agents_abandoned` は `dispatch.agents_abandoned`）ので, 照合は末尾一致で行う.
+    1 列目が値の表（`schema` の値の一覧など）は見出しで外す.
+    """
+    keys: set[str] = set()
+    in_section = False
+    in_table = False  # mutation-ok: 見出しの行より前に表の本文の行は来ない
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            in_section = line.startswith(METRICS_CONTRACT_SECTION)
+        elif in_section and line.startswith("|"):
+            # 区切りの行（`|---|`）の 1 列目は行内コードを持たないので, 本文の行と同じに読んでも何も拾わない
+            first = line.split("|")[1]
+            if i + 1 < len(lines) and lines[i + 1].startswith("|---"):
+                in_table = "フィールド" in first
+            elif in_table:
+                keys |= set(METRICS_KEY_RE.findall(first))
+    return keys
+
+
+def check_metrics_payload_keys(warnings: list[str], store: Path) -> None:
+    """`## 16` の表のキー名が計測ストアの `vocab/payload_keys.txt` に無いか（GitHub issue #417）.
+
+    語彙に無いキーは同期で落ち, 追随漏れは 4 回起きた（`invocation.rereview` / `review_scope` /
+    `plan_expected` / `review_mode`）. 計測ストアが意図して落とす `DENY_KEYS` は除く. 列挙型の値は見ない.
+    表に無いキーを publish が足した回は拾えない（表に載せるのは `## 16` の既存の手順）.
+    """
+    keys_file = store / "vocab" / "payload_keys.txt"
+    doc = ROOT / METRICS_CONTRACT_DOC
+    if not (keys_file.is_file() and doc.is_file()):
+        return
+    sanitize = store / "bin" / "sanitize.py"
+    deny = _metrics_deny_keys(sanitize)
+    if deny is None:
+        warnings.append(
+            f"[metrics-vocab] {tilde_path(sanitize)} から DENY_KEYS を読めないので, payload のキーの照合を飛ばした"
+        )
+        return
+    # 末尾一致 = 最後の段がキー名と一致. 途中の段の `[]`（`x[].y`）は外す. 末尾が `[]` の行（`x[]`）は配列の要素のパスで,
+    # sanitize.py はキー `x` そのものを `x` の行でしか残さないので数えない
+    tails = {
+        path.replace("[]", "").rsplit(".", 1)[-1]
+        for path in _metrics_vocab(keys_file)
+        if not path.endswith("[]")
+    }
+    missing = sorted(metrics_contract_keys(read_text(doc)) - tails - deny)
+    if missing:
+        warnings.append(
+            f"[metrics-vocab] 計測ストアの payload_keys に無いキー {len(missing)} 件（{METRICS_CONTRACT_DOC} の"
+            f" ## 16 の表にある。同期で落ちる。{tilde_path(keys_file)} に足して"
+            f" bin/sync --refresh）: {', '.join(missing)}"
+        )
+
+
 def check_metrics_vocab_drift(warnings: list[str], store: Path | None = None) -> None:
     """publish が送りうる名前が計測ストアの語彙に無いか（非ブロッキング warning / GitHub issue #345）.
 
     語彙に無い値は計測ストアの同期が `other` に置き換え, 気づくのは落ちた後になる（追随漏れ 5 回中 4 回）.
-    見るのは列挙できる 2 つだけ: `invocation.parent`（code-review 以外の skill / command 名）と
+    見るのは列挙できる 3 つ: `invocation.parent`（code-review 以外の skill / command 名）と
     missing_coverage の観点名（`references/prompts/{focus,explorer,specialist}/` のファイル名. specialist は
-    `specialist-<ファイル名>` の綴りも）.
+    `specialist-<ファイル名>` の綴りも）と, payload のキー（`check_metrics_payload_keys`）.
     語彙にだけある値（改名前の旧名など）は意図して残すので数えない.
     """
     if store is None:
         env = os.environ.get(METRICS_STORE_ENV)
         store = Path(env) if env else METRICS_STORE_DEFAULT
     vocab = store / "vocab"
+    check_metrics_payload_keys(warnings, store)
     strings, coverage = vocab / "string_values.txt", vocab / "missing_coverage.txt"
     if not (strings.is_file() and coverage.is_file()):
         return
