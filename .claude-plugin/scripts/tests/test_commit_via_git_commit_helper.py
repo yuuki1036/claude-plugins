@@ -116,12 +116,23 @@ class ReviewOfferBeforeCommitTest(unittest.TestCase):
         s = self.step()
         self.assertIn("今回コミットする変更に self-review か読み合わせ（review-guide の締め）を回した", s,
                       "self-review・読み合わせの後に聞き直す")
-        self.assertIn("呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動された", s,
+        self.assertIn("呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）の中で、利用者が今回の変更に self-review を回さないと決めた", s,
                       "フローが回さないと決めた回にも聞き直す")
         self.assertIn("使える skill に `code-review:self-review` が無い", s, "code-review が無いのに提案する")
         self.assertIn("機械的な更新だけ", s, "版の bump だけのコミットにも聞く")
         self.assertIn("「レビューは要らない」", s, "利用者が断ったのに聞く")
         self.assertIn("取り直してから 2. へ戻り、この skill の手順でコミットする", s)
+
+    def test_flow_origin_alone_is_not_a_reason_to_skip(self):
+        """フローの締めを通らずにコミットへ進む経路では、フロー経由と判定して飛ばすとどこでも回らない（#450）."""
+        s = self.step()
+        self.assertNotIn("から起動された（レビューを回すかはそのフローが決めている", s)
+        self.assertIn("フローから起動されたことだけでは聞かない理由にしない", s)
+        self.assertIn("「レビューの提案を飛ばした（理由: <当たった条件>）」と 1 行出す", s)
+
+    def test_doc_sync_fixes_after_review_still_count_as_reviewed(self):
+        """フローは doc-sync の文書修正と変異テストの後のテストを self-review に通さない。それを理由に提案を出し直さない（#450）."""
+        self.assertIn("その後に入った変更が文書・コメントの修正とテストの追加だけなら、回したに数える", self.step())
 
     def test_reviews_return_here_instead_of_committing_by_themselves(self):
         """起動した self-review / review-guide が git-commit-helper を起動し直すと、読み合わせの前にコミットが入る."""

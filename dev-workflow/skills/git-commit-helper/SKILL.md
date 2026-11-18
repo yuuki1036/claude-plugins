@@ -48,10 +48,12 @@ issue-workflow の軽量フローと feature-dev は、コミットの前に sel
 
 **聞かない回**（どれか 1 つに当たれば 2. へ進む）:
 - 使える skill に `code-review:self-review` が無い（code-review が無効か未導入）
-- 呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動された（レビューを回すかはそのフローが決めている。self-review を回したかは問わない）
-- このセッションで、今回コミットする変更に self-review か読み合わせ（review-guide の締め）を回した
+- 呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）の中で、利用者が今回の変更に self-review を回さないと決めた
+- このセッションで、今回コミットする変更に self-review か読み合わせ（review-guide の締め）を回した（その後に入った変更が文書・コメントの修正とテストの追加だけなら、回したに数える。フローは doc-sync・doc-checks の修正と、変異テストの後に足すテストを self-review に通さない設計）
 - 変更が版番号・CHANGELOG・lock ファイルなどの機械的な更新だけ
 - 利用者がこの依頼で「レビューは要らない」「このままコミット」と言っている
+
+フローから起動されたことだけでは聞かない理由にしない（フローの締めを通らずにコミットへ進む経路がある / GitHub issue #450）。聞かない回は「レビューの提案を飛ばした（理由: <当たった条件>）」と 1 行出す。
 
 それ以外は `AskUserQuestion` で 1 問だけ聞く:
 - question: "コミットの前に self-review と読み合わせ（review-guide）を通しますか？"
@@ -78,10 +80,11 @@ issue-workflow の軽量フローと feature-dev は、コミットの前に sel
 
 **回さない回**（どれか 1 つに当たれば 2. へ進む）:
 - 使える skill に `issue-workflow:doc-sync` が無い（issue-workflow が無効か未導入）
-- 呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動された（そのフローがコミットの前に doc-sync を回している）
-- このセッションで、今回コミットする変更に doc-sync を回した
+- このセッションに doc-sync の応答の `DOC_SYNC_RESULT=` の行があり、その後にコミットする変更へコード（文書・コメント以外）の変更を足していない
 - 変更が版番号・CHANGELOG・lock ファイルなどの機械的な更新だけ
 - 利用者がこの依頼で「文書の確認は要らない」と言っている
+
+呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動されたことは、回さない理由にしない。フローの締めの手順を通らずにコミットへ進む経路があり、そこでは doc-sync がどちらでも回らないまま PR まで進んだ（GitHub issue #450）。証拠の行が無ければフローの中でも回す（二重に回っても害は小さい）。回さない回は「doc-sync を飛ばした（理由: <当たった条件>）」と 1 行出す（飛ばしたことに利用者が気づけるように）。
 
 それ以外は `Skill` tool で `issue-workflow:doc-sync` を引数なしで起動する（base は doc-sync が決める）。応答の最後の行で分岐する:
 - `DOC_SYNC_FIXED=` が 1 以上 → 直した文書とコメントを今回のコミットに含める（ドキュメントのコミットとして分ける。2. の分割判定に従う）。報告に「doc-sync の文書修正は self-review を通していない」と 1 行添える

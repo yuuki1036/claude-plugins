@@ -164,7 +164,7 @@ Step 2 から戻った回は、この Step を通らず Step 4 から Step 6 へ
 ### Step 5.5: 文書整合（doc-sync）
 
 Step 5 の「Step 6 へ」はこの Step を通ってから進む（読み合わせを skip した回も通る）。**フロー中 1 回だけ**: Step 7 で
-CI が赤くなって Step 2 から戻った回は通らない（その回は Step 8 で回す）。実装の途中で決め直した挙動が、仕様書・規約・
+CI が赤くなって Step 2 から戻った回は通らない（その回の doc-sync は、Step 6 の git-commit-helper が回せばそれで足り、回らなければ Step 8 で回す）。実装の途中で決め直した挙動が、仕様書・規約・
 コードコメントに古いまま残っていないかを commit の前に見る（GitHub issue #365）。
 
 `Skill` tool で `issue-workflow:doc-sync` を `--base <Step 4 の self-review が冒頭で出した base_branch= の値>` で起動する
@@ -199,8 +199,10 @@ push しない運用（ローカルのみ・PR 前に溜める等）が明らか
 
 進捗・完了を Issue ファイルへ反映する（`/issue-maintain` 委譲でも直接編集でもよい）。**最初に**更新履歴へ Step 5.5 の結果を
 `doc-sync: <結果>` と 1 行書く（`/issue-maintain` に委譲するときは委譲の前に。issue-maintain の文書整合ガードはこの行で
-二重に回すのを省く）。Step 7 で CI が赤くなって修正を入れた回だけ、completed に移す前に `issue-workflow:doc-sync` を
-同じ `--base` でもう一度回し（Step 5.5 の後に入った変更を見る）、結果を同じ形で残す。そこで文書を直した（`DOC_SYNC_FIXED=` が 1 以上）なら、
+二重に回すのを省く）。Step 7 で CI が赤くなって修正を入れた回は、Step 5.5 の後に入った変更も doc-sync に通す。Step 7 の修正の後の
+Step 6 で `DOC_SYNC_RESULT=` の行が出ていれば（git-commit-helper がコミットの前に回した / GitHub issue #450）、その値を同じ形で残し、
+ここでは回し直さない。出ていなければ（`DW=0`・git-commit-helper が回さなかった・古い版）、completed に移す前に `issue-workflow:doc-sync` を
+同じ `--base` でもう一度回し、結果を同じ形で残す。そこで文書を直した（`DOC_SYNC_FIXED=` が 1 以上）なら、
 Step 2（検証）→ Step 6（コミット）→ Step 7（push + CI）を通してから Step 8 に戻る（直した文書を未コミットのまま残さない）。完了なら status を
 completed へ遷移する（BACKEND=linear のときは Linear 側のステータス更新も案内する）。未完了で終える場合は
 残タスクと次セッションの入口を Issue に書き残す。
