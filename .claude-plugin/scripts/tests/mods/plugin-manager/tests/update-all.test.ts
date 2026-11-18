@@ -261,6 +261,14 @@ test('changelogBetween / parseConfig', () => {
   expect(changelogBetween(text, '1.0.0', '2.0.0')).toBe('## [2.0.0]\n- b\n\n## [1.5.0]\n- a')
   expect(changelogBetween(text.trimEnd(), '0.9.0', '2.0.0')).toBe(text.trimEnd())
   expect(changelogBetween(text, '1.0.0', '3.0.0')).toBeNull()
+  // backport（1.9.6）を時系列の位置に挟んだ CHANGELOG でも、before より新しく after 以下の節を全部拾う（GitHub issue #464）
+  const backport = '# Changelog\n\n## [Unreleased]\n- u\n\n## [2.1.0]\n- d\n\n## [1.9.6]\n- c\n\n## [2.0.1]\n- b\n\n## [2.0.0]\n- a\n'
+  expect(changelogBetween(backport, '2.0.0', '2.1.0')).toBe('## [2.1.0]\n- d\n\n## [2.0.1]\n- b')
+  expect(changelogBetween(backport, '1.9.6', '2.1.0')).toBe('## [2.1.0]\n- d\n\n## [2.0.1]\n- b\n\n## [2.0.0]\n- a')
+  expect(changelogBetween(backport, '2.0.0', '2.0.1')).toBe('## [2.0.1]\n- b')
+  expect(changelogBetween(backport, '2.1.0', '2.1.0')).toBeNull()
+  // 古さを比べられない（semver でない）版は、これまでどおり並び順で切り出す
+  expect(changelogBetween('## [2.0.0]\n- b\n\n## [dev]\n- a\n\n## [0.9.0]\n- old\n', 'dev', '2.0.0')).toBe('## [2.0.0]\n- b')
   expect(parseConfig(null)).toEqual({ autoMigrate: true, ignorePlugins: [], ignoreMarketplaces: [] })
   expect(parseConfig('{"auto_migrate": false}').autoMigrate).toBe(false)
   expect(parseConfig('{"auto_migrate": null}').autoMigrate).toBe(true)

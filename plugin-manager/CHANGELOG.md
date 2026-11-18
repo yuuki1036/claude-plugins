@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.10.3] - 2026-11-18
+
+### Fixed
+
+- `hooks/scripts/stale_skill.py` が、CHANGELOG の見出しが semver の降順に並ぶ前提で読むのを打ち切り、backport を時系列の位置に挟んだ CHANGELOG で旧版より新しい見出しを落としていた（GitHub #464）。旧版より古い見出しに当たっても打ち切らず、一番古い旧版より新しい見出しを並び順に関わらず拾う。読んだ旧版の見出しで止めるのは、古さを比べられない（semver でない旧版がある）回だけにした
+- `/update-all` の更新内容（mod の `hooks/update-all-lib.ts` の `changelogBetween` と `commands/update-all.md` の Phase 4.5）が、`## [After]` から `## [Before]` の手前までを並び順で切り出していたため、同じ CHANGELOG で Before より新しい節を落とし、Before より古い backport の節を混ぜていた（GitHub #464）。Before より新しく After 以下の版の節を、並び順に関わらず拾う。`Unreleased` など semver でない見出しの節は含めない。Before か After が semver でない回だけ、これまでどおり並び順で切り出す
+
+### Changed
+
+- `hooks/scripts/stale-skill.sh` の、`session_id` の出現をすべて候補にする理由のコメントを直した（GitHub #465）。発言の本文の字面は JSON でエスケープされて当たらず、候補が複数になるのは payload の入れ子に `session_id` のキーがある回。挙動は変わらない
+
 ## [1.10.2] - 2026-11-18
 
 ### Fixed

@@ -188,19 +188,20 @@ def changelog_headings(install_path: str, old_versions: set[str]) -> list[str]:
         if not m:
             continue
         ver = m.group(1)
-        # 旧版が複数ある（skill ごとに読んだ版が違う）ときは、一番古い旧版の手前まで出す
-        # （新しい方の旧版の見出しも、古い版で読んだ skill から見れば新しい変更）
+        # 古さを比べられない（semver でない旧版がある）ときだけ、並び順に頼って旧版の見出しで止める
         if ver in old_versions:
             seen.add(ver)
-            if seen >= old_versions:
+            if oldest is None and seen >= old_versions:
                 break
         # Unreleased や版ラベルのままの見出しは、入っている版の変更ではない
         if not SEMVER_RE.match(ver):
             continue
-        # 旧版の見出しが CHANGELOG に無い（版を飛ばして書いた）ときも、旧版より古い見出しは出さない
-        cur = semver(ver)
-        if oldest is not None and cur is not None and cur <= oldest:
-            break  # mutation-ok: CHANGELOG の見出しは semver の降順に並ぶ前提なので、以降の見出しも oldest 以下。continue でも出力は同じで、打ち切りは残りを読まないためだけ
+        # 並び順に頼らず、一番古い旧版より新しい見出しを全部拾う。backport を時系列の位置に挟んだ
+        # CHANGELOG では、旧版以下の見出しの下にも新しい見出しがある（GitHub issue #464）。
+        # 旧版が複数ある（skill ごとに読んだ版が違う）ときは、新しい方の旧版の見出しも出す
+        # （古い版で読んだ skill から見れば新しい変更）
+        if oldest is not None and semver(ver) <= oldest:
+            continue
         out.append(line.strip())
         if len(out) >= CHANGELOG_LIMIT:
             break

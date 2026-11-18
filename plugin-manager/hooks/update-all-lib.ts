@@ -74,14 +74,51 @@ export function parseConfig(text: string | null): Config {
   }
 }
 
-/** CHANGELOG の `## [after]` から `## [before]` の直前まで。見出しが無ければ null */
+const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)/
+const HEADING_RE = /^## \[([^\]]+)\]/
+
+function semver(ver: string): number[] | null {
+  const m = SEMVER_RE.exec(ver)
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+}
+
+function compareSemver(a: number[], b: number[]): number {
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i]
+  return 0
+}
+
+/**
+ * CHANGELOG のうち、before より新しく after 以下の版の節（見出しから次の版の見出しの手前まで）を、ファイルの並びのまま返す。
+ * `## [after]` の見出しが無いか、該当する節が空なら null。
+ * 並び順に頼らず版で比べる。backport を時系列の位置に挟んだ CHANGELOG では、before の見出しより下にも新しい節がある
+ * （stale-skill の stale_skill.py の changelog_headings と同じ規則 / GitHub issue #464）。
+ * semver でない見出し（Unreleased・版ラベル）は入っている版の変更ではないので含めない。
+ * before か after が semver でなければ古さを比べられないので、`## [after]` から `## [before]` の直前までを並び順で切り出す
+ */
 export function changelogBetween(text: string, before: string, after: string): string | null {
   const lines = text.split('\n')
   const start = lines.findIndex(l => l.startsWith(`## [${after}]`))
   if (start < 0) return null
-  let end = lines.findIndex((l, i) => i > start && l.startsWith(`## [${before}]`))
-  if (end < 0) end = lines.length
-  const body = lines.slice(start, end).join('\n').trim()
+  const lo = semver(before)
+  const hi = semver(after)
+  let kept: string[]
+  if (lo === null || hi === null) {
+    let end = lines.findIndex((l, i) => i > start && l.startsWith(`## [${before}]`))
+    if (end < 0) end = lines.length
+    kept = lines.slice(start, end)
+  } else {
+    kept = []
+    let keep = false
+    for (const l of lines) {
+      const m = HEADING_RE.exec(l)
+      if (m) {
+        const v = semver(m[1])
+        keep = v !== null && compareSemver(v, lo) > 0 && compareSemver(v, hi) <= 0
+      }
+      if (keep) kept.push(l)
+    }
+  }
+  const body = kept.join('\n').trim()
   return body === '' ? null : body
 }
 

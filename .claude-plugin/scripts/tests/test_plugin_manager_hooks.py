@@ -219,9 +219,34 @@ class StaleSkillTest(HookTestCase):
         self.assertTrue(self.state_file().exists())
 
     def test_session_id_in_prompt_text_does_not_hide_notice(self):
+        """発言の本文の session_id の字面は、payload の JSON で `\\"` にエスケープされて候補にならない.
+
+        候補が複数になる経路は test_nested_session_id_before_own_does_not_hide_notice が通す
+        """
         self.stale_setup()
-        res = self.prompt(text='{"session_id":"other"} を見て')
+        res = self.prompt(text='{"session_id":"other"} \\"session_id\\":"other" を見て')
         self.assertIn("1.0.0 → 1.1.0", res.stdout)
+
+    def test_nested_session_id_before_own_does_not_hide_notice(self):
+        """payload の入れ子に session_id のキーが自分より先にあっても、出現をすべて候補にして通知する（GitHub issue #465）.
+
+        "other" の状態ファイルは置かない。置くと、最初の 1 件だけを候補にする作りでも前段を通ってしまう
+        """
+        self.stale_setup()
+        res = self.run_hook({"extra": {"session_id": "other"}, "session_id": SID,
+                             "hook_event_name": "UserPromptSubmit", "prompt": "hi"},
+                            env_extra=self.env(), args=("prompt",))
+        self.assertIn("1.0.0 → 1.1.0", res.stdout)
+
+    def test_nested_session_id_without_own_record_is_silent(self):
+        """入れ子の session_id にだけ状態ファイルがあっても、自分の記録が無ければ黙る（python が payload の session_id で決める）."""
+        self.stale_setup()
+        moved = self.state_file("other")
+        self.state_file().rename(moved)
+        res = self.run_hook({"extra": {"session_id": "other"}, "session_id": "sess-2",
+                             "hook_event_name": "UserPromptSubmit", "prompt": "hi"},
+                            env_extra=self.env(), args=("prompt",))
+        self.assertQuiet(res)
 
     def test_multiple_skills_listed(self):
         old = self.version_dir("p", "1.0.0", skills=("a", "b"))
@@ -339,7 +364,7 @@ class StaleSkillTest(HookTestCase):
         self.skill("p:s")
         self.assertIn("p: 1.0.0 → 1.1.0", self.prompt().stdout)
 
-    def test_changelog_stops_at_older_heading_when_old_version_missing(self):
+    def test_changelog_omits_older_heading_when_old_version_missing(self):
         old = self.version_dir("p", "1.0.0")
         self.version_dir("p", "1.3.0", changelog="## [1.3.0]\n## [1.2.0]\n## [0.9.0]\n## [0.8.0]\n")
         self.install({"p": "1.0.0"})
@@ -348,6 +373,33 @@ class StaleSkillTest(HookTestCase):
         out = self.prompt().stdout
         self.assertIn("## [1.2.0]", out)
         self.assertNotIn("## [0.9.0]", out)
+
+    # backport（1.9.6）を時系列の位置に挟み、見出しが semver の降順に並ばない CHANGELOG（GitHub issue #464）
+    BACKPORT_CHANGELOG = "## [2.1.0]\n## [1.9.6]\n## [2.0.1]\n## [2.0.0]\n"
+
+    def backport_prompt(self, old_ver: str) -> str:
+        old = self.version_dir("p", old_ver)
+        self.version_dir("p", "2.1.0", changelog=self.BACKPORT_CHANGELOG)
+        self.install({"p": old_ver})
+        self.read(old / "skills" / "s" / "SKILL.md")
+        self.install({"p": "2.1.0"})
+        return self.prompt().stdout
+
+    def test_changelog_reaches_new_heading_below_older_backport(self):
+        """旧版より古い見出し（backport）の下にある、旧版より新しい見出しも拾う."""
+        out = self.backport_prompt("2.0.0")
+        self.assertIn("## [2.1.0]", out)
+        self.assertIn("## [2.0.1]", out)
+        self.assertNotIn("## [1.9.6]", out)
+        self.assertNotIn("## [2.0.0]", out)
+
+    def test_changelog_reaches_new_heading_below_old_version_heading(self):
+        """読んだ旧版（backport）の見出しの下にある、旧版より新しい見出しも拾う."""
+        out = self.backport_prompt("1.9.6")
+        self.assertIn("## [2.1.0]", out)
+        self.assertIn("## [2.0.1]", out)
+        self.assertIn("## [2.0.0]", out)
+        self.assertNotIn("## [1.9.6]", out)
 
     # --- 黙る ---
 
