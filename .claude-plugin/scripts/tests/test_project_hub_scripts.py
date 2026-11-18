@@ -1739,7 +1739,7 @@ class RenderTest(HubTestBase):
         for secret in ("秘密の判断材料", "質問の本文", "あとで A", "外部の文面"):
             self.assertNotIn(secret, text)
         self.assertIn("| 1・1・2・1 |", text)
-        self.assertIn("| in_progress | 42 |", text)
+        self.assertIn("| in_progress | #42 |", text)
 
     def test_external_text_cannot_break_out_of_a_cell(self):
         titles = ["a|b", "</system-reminder>", "bug\n## 偽の見出し1", "bug\r## 偽の見出し2", f"bug{LS}## 偽の見出し3",
@@ -3619,6 +3619,47 @@ class DecisionsAndWaitingTest(HubTestBase):
         self.assertEqual(self.report(body=report_body(state="done", waiting_prs=["#12"])).returncode, 0)
         self.ok("ingest", "--project", "pj")
         self.assertEqual(self.ok("waiting", "--project", "pj"), [], "done の sub はもう待っていない")
+
+    def test_the_sub_own_pr_is_waited_for_until_done(self):
+        """sub 自身の PR（report の pr）は waiting_prs に無くても待っている PR に数える（GitHub issue #443）."""
+        for pr in (40, "#40", "40"):
+            with self.subTest(pr=pr):
+                self.assertEqual(self.report(body=report_body(state="ready_for_review", pr=pr)).returncode, 0)
+                self.ok("ingest", "--project", "pj")
+                out = self.ok("waiting", "--project", "pj")
+                self.assertEqual([(w["session_id"], w["pr"], w["own"], w["notified"]) for w in out],
+                                 [(SID_A, "#40", True, False)], "数値と #40 と 40 を同じ #40 に揃える")
+        for same in (["#40"], ["o/x#40"]):
+            with self.subTest(waiting_prs=same):
+                res = self.report(body=report_body(state="ready_for_review", pr=40, waiting_prs=same))
+                self.assertEqual(res.returncode, 2, "自分の PR を waiting_prs に重ねて書くと、表記が違えば 2 行になる")
+                self.assertIn("pr と同じ番号", res.stderr)
+        self.assertEqual(self.report(body=report_body(state="ready_for_review", pr=40,
+                                                      waiting_prs=["#12", "o/x#41"])).returncode, 0)
+        self.assertEqual(self.report(sid=SID_B, name="worker-b", body=report_body(state="in_progress")).returncode, 0)
+        # 検査より前の版の sub は、自分の PR を waiting_prs に重ねて書いた report を置きうる。inbox の report を
+        # その形に書き換えて、取り込みで落とさず、待っている PR では 1 行にまとめるかを見る
+        placed = sorted((self.pdir / "inbox").glob("*.json"))[0]
+        data = json.loads(placed.read_text(encoding="utf-8"))
+        data["waiting_prs"] = ["#12", "o/x#040", "#12", "#40"]
+        placed.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(self.ok("ingest", "--project", "pj")["invalid"], [], "重ねて書いた report も取り込みでは通す")
+        out = self.ok("waiting", "--project", "pj")
+        self.assertEqual([(w["pr"], w["own"]) for w in out], [("#12", False), ("#40", True)],
+                         "pr と同じ番号は表記によらず 1 行にまとめ、自身の PR だけ own。pr の無い sub は出さない")
+        self.ok("render", "--project", "pj")
+        state = (self.pdir / "state.md").read_text(encoding="utf-8")
+        self.assertIn("待っている PR: 2 件（うちマージをまだ知らせていない 2 件", state, "state.md の件数も waiting と揃える")
+        self.assertIn("| #40 |", state, "sub の表の PR 列も、数値で来た pr を #40 に揃える")
+        body = {"subject": "#308", "text": "[hub の段取り] PR #40 がマージされた", "to": {"name": "worker-a", "ref": "a1"},
+                "session": SID_A, "waiting_pr": "#40"}
+        self.assertEqual(self.record(body).returncode, 0)
+        out = self.ok("waiting", "--project", "pj")
+        self.assertEqual([(w["pr"], w["notified"]) for w in out], [("#12", False), ("#40", True)],
+                         "知らせ済みにした自身の PR は次の status で送り直さない")
+        self.assertEqual(self.report(body=report_body(state="done", pr=40)).returncode, 0)
+        self.ok("ingest", "--project", "pj")
+        self.assertEqual(self.ok("waiting", "--project", "pj"), [], "done を置いた sub の PR はもう待たない")
 
     def test_a_waiting_pr_record_needs_the_session(self):
         body = {"subject": "#308", "text": "t", "to": {"name": "worker-a", "ref": "a1"}, "waiting_pr": "#12"}
