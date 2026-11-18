@@ -3661,6 +3661,60 @@ class DecisionsAndWaitingTest(HubTestBase):
         self.ok("ingest", "--project", "pj")
         self.assertEqual(self.ok("waiting", "--project", "pj"), [], "done を置いた sub の PR はもう待たない")
 
+    def test_a_sub_closed_without_done_is_no_longer_waiting(self):
+        """done を置かずに閉じた sub の PR は waiting から外す。閉じた後に report を置けば戻す（GitHub issue #461）."""
+        self.assertEqual(self.report(body=report_body(state="ready_for_review", pr=40)).returncode, 0)
+        self.assertEqual(self.report(sid=SID_B, name="worker-b",
+                                     body=report_body(state="blocked", waiting_prs=["#12"])).returncode, 0)
+        self.ok("ingest", "--project", "pj")
+        body = {"subject": "#308", "text": "[hub の段取り] PR #40 がマージされた", "to": {"name": "worker-a", "ref": "a1"},
+                "session": SID_A, "waiting_pr": "#40"}
+        res = self.run_hub("close-sub", "--project", "pj", "--session", SID_A, "--force")
+        self.assertEqual(res.returncode, 3, "マージをまだ知らせていない sub は --force でも閉じない")
+        self.assertEqual(self.record(body).returncode, 0)
+        other = {**body, "text": "[hub の段取り] 待っていた PR #12 がマージされた", "to": {"name": "worker-b", "ref": "b1"},
+                 "session": SID_B, "waiting_pr": "#12"}
+        self.assertEqual(self.record(other).returncode, 0)
+        res = self.run_hub("close-sub", "--project", "pj", "--session", SID_B, "--force")
+        self.assertEqual(res.returncode, 3, "別の PR を待っているだけの sub は、マージを知らせ済みでも閉じない（own だけ）")
+        first = self.ok("waiting", "--project", "pj")
+        time.sleep(1.1)  # journal の ts は秒までなので、送り直しの ts が最初と違う秒になるまで待つ
+        self.assertEqual(self.record(body).returncode, 0)
+        out = {w["session_id"]: w for w in self.ok("waiting", "--project", "pj")}
+        self.assertEqual(out[SID_A]["notified_at"], {w["session_id"]: w for w in first}[SID_A]["notified_at"],
+                         "送り直しても notified_at は最初に知らせた時刻のまま")
+        self.assertTrue(out[SID_A]["notified"] and out[SID_A]["notified_at"],
+                        "マージを知らせたのに done が来ない sub を、知らせた時刻つきで status に出せる")
+        self.assertTrue(out[SID_B]["notified"] and not out[SID_B]["own"])
+
+        res = self.run_hub("close-sub", "--project", "pj", "--session", SID_A)
+        self.assertEqual(res.returncode, 3, "done でない sub は --force なしでは閉じない")
+        forced = json.loads(self.run_hub("close-sub", "--project", "pj", "--session", SID_A, "--force").stdout)
+        self.assertEqual(forced["state"], "ready_for_review", "lead が閉じると決めた回は --force で確かめを通す")
+        res = self.run_hub("close-sub", "--project", "pj", "--session", SID_A, "--result", "accepted", "--force")
+        self.assertEqual(res.returncode, 2, "記録に --force を付けても意味が無いので黙って捨てない")
+
+        self.ok("close-sub", "--project", "pj", "--session", SID_B, "--result", "failed", "--error", "busy")
+        working = {s["session_id"]: s["working"] for s in self.ok("worktrees", "--project", "pj")["sessions"]}
+        self.assertTrue(working[SID_A], "対照: 閉じる前は作業中")
+        # 閉じる前に inbox に置かれ、閉じた後に取り込まれる report では戻さない（journal の順でなく置いた時刻で決める）
+        self.assertEqual(self.report(body=report_body(state="ready_for_review", pr=40)).returncode, 0)
+        self.ok("close-sub", "--project", "pj", "--session", SID_A, "--result", "accepted")
+        self.ok("ingest", "--project", "pj")
+        self.assertEqual([w["session_id"] for w in self.ok("waiting", "--project", "pj")], [SID_B],
+                         "閉じた sub は外し、閉じられなかった sub は残す")
+        state_md = (self.pdir / "state.md").read_text(encoding="utf-8")
+        self.assertIn("sub が待っている PR: 1 件", state_md, "close-sub の記録だけで state.md の件数も waiting と揃える")
+        self.assertIn("閉じた（最後は ready_for_review）", state_md, "sub の表でも閉じた sub を作業中に見せない")
+        working = {s["session_id"]: s["working"] for s in self.ok("worktrees", "--project", "pj")["sessions"]}
+        self.assertEqual((working[SID_A], working[SID_B]), (False, True),
+                         "done でないまま閉じた sub を作業中に数えない（worktree と重なりの判定に残さない）")
+
+        self.assertEqual(self.report(body=report_body(state="in_progress", pr=40)).returncode, 0)
+        self.ok("ingest", "--project", "pj")
+        self.assertEqual(sorted(w["session_id"] for w in self.ok("waiting", "--project", "pj")), sorted([SID_A, SID_B]),
+                         "閉じた会話を開き直して report を置いた sub は、また待っている")
+
     def test_a_waiting_pr_record_needs_the_session(self):
         body = {"subject": "#308", "text": "t", "to": {"name": "worker-a", "ref": "a1"}, "waiting_pr": "#12"}
         self.assertEqual(self.record(body).returncode, 2)
