@@ -38,7 +38,7 @@ brief を経ずに始めた sub（issue-workflow の `start` など）も、cwd 
 
 ## 連絡の形
 
-- **sub → hub**: report の本文は hub の inbox にファイルで置き、SendMessage では「置いた」とだけ知らせる。通知が届かなくても、hub の次の `status` で取り込まれる。ListAgents の抜き出しが自己検査に合わなければ、何も書かずに止まる。hub に聞きたいことは `questions`、lead の判断が要ることは `needs_lead`、sub の会話で決まったことは `decisions`（節目を待たずに置く）、マージを待っている PR は `waiting_prs` に書く。ListAgents の出力はそのまま渡せば hub.py が抜き出す
+- **sub → hub**: report の本文は hub の inbox にファイルで置き、SendMessage では「置いた」とだけ知らせる。通知が届かなくても、hub の次の `status` で取り込まれる。ListAgents の抜き出しが自己検査に合わなければ、何も書かずに止まる。hub に聞きたいことは `questions`、lead の判断が要ることは `needs_lead`、sub の会話で決まったことは `decisions`（節目を待たずに置く）、マージを待っている別の PR は `waiting_prs` に書く（自分で出した PR は `pr` に入れれば、hub がマージを見つけて done の report までの締めを頼む）。ListAgents の出力はそのまま渡せば hub.py が抜き出す
 - **外に出る文**: repo の docs・トラッカー・PR・コミットメッセージには hub・lead・sub の語を書かず、決定は日付で書く。relay の `[lead の言葉]` は lead の発言の引用だけにし、hub の説明は `[hub の補足]` の段に分ける
 - **hub → sub**: 本文を SendMessage で送り、送った全文・宛先・送信の結果・根拠（`basis`）を hub の journal に残す
 - **宛先**: SendMessage の宛先は名前だけで、セッション ID は使えない（2026-10-21 に実測）。送る直前に毎回 ListAgents を引き、登録名・登録した時の ref（改名しても変わらない）・Issue ID のどれかで 1 件に決まったときだけ、その行の今の名前へ送る。0 件・2 件以上・ListAgents の出力を解析できないときは送らずに lead に出す

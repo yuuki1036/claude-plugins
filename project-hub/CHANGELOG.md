@@ -2,6 +2,21 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.17.0] - 2026-11-18
+
+### Added
+
+- **sub 自身の PR のマージで締めを頼む**（GitHub issue #443）: `waiting` は、sub の最新の report の `pr` を `waiting_prs` に無くても待っている PR に足し、その行に `own: true` を付ける（state が `done` になるまで。`waiting_prs` に同じ番号の PR があれば 1 行にまとめる）。state.md の「sub が待っている PR」の件数も同じ数え方にした。hub の status は `own: true` の PR のマージを見つけたら、`[hub の段取り]` で「マージを確かめて done の report まで締める」を送る。auto-merge でマージされても sub には知らせが来ず、利用者が声をかけるまで done が置かれなかったため。別の PR を待っている sub への知らせ（#329）は変えていない
+- report の skill と brief の雛形に、PR を出したら `pr` に入れれば hub がマージを見つけて締めを頼むことを書いた
+
+### Changed
+
+- `report`: `waiting_prs` に `pr` と同じ番号の PR（`#40` / `owner/name#040`）があれば exit 2 で弾く（GitHub issue #443）。表記が違うと待っている PR が 2 行になり、同じマージに違う段取りが 2 通届くため。repo を突き合わせずに番号で見るので、別の repo の同じ番号の PR も弾かれる。hub の `ingest` では弾かない（版の古い sub の report を state や decisions ごと落とさないため）。重ねて書かれた分は `waiting` が番号で 1 行にまとめる
+
+### Fixed
+
+- state.md の sub の表の PR 列を `#12` の形に揃えた。report の `pr` を数値・`12`・`#12` のまま載せていたので、表の中で表記が混ざっていた
+
 ## [0.16.0] - 2026-11-07
 
 ### Added

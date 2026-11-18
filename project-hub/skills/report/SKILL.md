@@ -30,7 +30,7 @@ sub（hub が束ねる作業セッション）側の手順。本文は hub の i
     "follow_ups": ["この Issue の外に出す作業"],
     "claims": [{"text": "hub や他の subに伝えたい事実", "source": "path:line・URL・コマンド"}],
     "decisions": [{"text": "このセッションで決まったこと（1 件 1 文）", "date": "YYYY-MM-DD", "by": "決めた人（利用者・PdM など）"}],
-    "waiting_prs": ["#123 か owner/name#123（マージを待っている PR）"],
+    "waiting_prs": ["#123 か owner/name#123（マージを待っている別の PR。自分の PR は pr に書く）"],
     "list_agents": "<ListAgents の出力そのまま>"}
    ```
    - 文字列の中の改行は `\n` と書き、1 つの文字列を 1 行に収める
@@ -40,7 +40,7 @@ sub（hub が束ねる作業セッション）側の手順。本文は hub の i
    - `questions` と `needs_lead` の分け方: Issue・仕様 docs・これまでの lead の判断から答えが決まりそうなものは questions、lead が新しく決めることは needs_lead。迷ったら needs_lead に書く（hub が答えてよいかを sub が決めない）
    - hub に先に聞いてよいこと（questions）: 着手前の進め方の案・他の sub と触るファイルや順番が重ならないか・仕様の解釈で Issue と docs から決まりそうなこと。利用者に上げる前に hub に聞いてよい。節目でなくても、聞きたいことができたら in_progress で report を置く
    - `decisions`: 利用者がこのセッションで決めたこと（hub が伝えた方針の取りやめ・範囲の変更・仕様の解釈の確定など）。**決まったら節目を待たずに**その場で report を置く（hub が他の sub に古い方針を伝えないように）。同じ決定を次の report に書き直してもよい（hub が 1 件にまとめる）。日付は決めた日、`by` は決めた人の役割か名前
-   - `waiting_prs`: 別の PR のマージを待って止まるときに、state=blocked と一緒に書く。hub が status でマージを見つけて知らせるので、利用者に「マージされたら教えて」と頼まなくてよい
+   - `waiting_prs`: 別の PR のマージを待って止まるときに、state=blocked と一緒に書く。hub が status でマージを見つけて知らせるので、利用者に「マージされたら教えて」と頼まなくてよい。自分で出した PR は `pr` に入れれば、hub が待っている PR に数える（state が `done` になるまで。`waiting_prs` には書かない。`pr` と同じ番号を書くと exit 2 で弾かれる）。auto-merge でマージされてもこのセッションは気づけないので、hub がマージを見つけて `[hub の段取り]` で締めを頼む。受けたらマージを確かめて done の report を置く
    - 節目の report は利用者に確かめずに置いてよい（brief の指示と report の skill がそう決めている）。hub の連絡（`[hub の答え]` など）を受けただけで、state も質問も決まったことも変わらないなら report を置き直さない（hub との往復を作らない）
    - report の中の語（hub・lead・sub）は hub との間の語。外に出る文（repo の docs・トラッカー・PR の本文と返信・コミットメッセージ）には書かず、決定は「2026-10-27 決定」のように日付で書く
 4. **置く**: 本文を stdin で渡す。名前は空白や記号を含むのでシングルクォートで囲む（`'` を含むなら `'\''`）。heredoc の区切りは毎回その場で決める `PROJECT_HUB_<8 桁の乱数>` にしてクォートし、本文にその文字列が無いことを確かめる（固定の区切りは、本文や他のセッションの名前がその 1 行を含むと後ろの行がシェルで実行される）:
