@@ -41,6 +41,14 @@ marketplace エントリに `_superseded_by: "<後継名>"` を持つ deprecated
 
 状態は `${CLAUDE_CONFIG_DIR:-~/.claude}/plugin-manager/sessions/<session_id>.json`。発言のたびに更新し、14 日以上触れられていないもの（書きかけの一時ファイルを含む）は SessionStart で消す。ただし resume したセッション自身の記録は、通知を出す前には消さない。この版を入れる前から動いているセッションには、記録が無いので届かない。resume で session_id が変わる環境では記録を引き継げず、通知は出ない。
 
+### hub 系セッションへの読み直し依頼
+
+`/update-all` で project-hub が更新されたら、動いている hub 系のセッション（project-hub の hub のように、ほかのセッションを束ねる常設のセッション）に「新しい版の SKILL.md を読み直す」依頼を送り、送った宛先と送れなかった理由を結果に出す（GitHub #460）。hub はほかのセッションへの連絡や report の取り込みを担うので、古い手順のまま動き続けると影響が大きい。上の hook が知らせるのは hub 自身が次に発言したときだけなので、update-all の側からも頼む。
+
+- 送るのは自作マーケットプレイスの project-hub が更新されたときだけ（2026-11-18 決定。`--all` で入る別マーケットプレイスの同名プラグインは数えない）。ほかのプラグインの skill の更新は、上の hook が各セッションの次の発言で知らせる
+- 宛先は project-hub のデータの置き場所（`$PROJECT_HUB_DIR`。無ければ `${CLAUDE_CONFIG_DIR:-~/.claude}/project-hub`）の `<PJ>/` で、`config.json` が `status: active` である PJ の `hub.json` の会話（同じ会話は 1 回だけ）。`session_id` → 会話の ID（`host_session_id`）→ 名前の順に、届くまで試す。hub の会話で `/update-all` を打った回は、自分自身には送らない
+- project-hub のファイルは読むだけで、project-hub には依存しない。置き場所が無い環境では何もしない。読むファイルは `docs/shared-state.md` に載せてある
+
 ## 設定（任意）
 
 `~/.claude/plugin-manager/config.json` で挙動を調整できる:

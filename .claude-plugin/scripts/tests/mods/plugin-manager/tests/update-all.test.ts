@@ -5,7 +5,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { changelogBetween, parseConfig } from '../hooks/update-all-lib'
+import { changelogBetween, hubRereadText, hubTargets, parseConfig } from '../hooks/update-all-lib'
 
 const HOME = '/h'
 const MP = 'mine'
@@ -27,6 +27,13 @@ type Cli = {
   /** installed_plugins.json に載せない id（project scope などで、手で外す段でも外せない） */
   notInJson: Set<string>
   modelRan: boolean
+  /** ~/.claude/project-hub/<PJ>/ の config.json と hub.json。null ならディレクトリごと無い */
+  hubs: Record<string, { config?: string; hub?: string }> | null
+  /** 届く宛先（名前・会話の ID。`sid:<id>` は { sessionId } で送った回） */
+  reachable: Set<string>
+  /** HOME 以外の環境変数 */
+  env: Record<string, string>
+  sends: { to: string; text: string }[]
 }
 
 function newCli(over: Partial<Cli> = {}): Cli {
@@ -50,6 +57,10 @@ function newCli(over: Partial<Cli> = {}): Cli {
     installedJson: null,
     notInJson: new Set(),
     modelRan: false,
+    hubs: null,
+    reachable: new Set(),
+    env: {},
+    sends: [],
     ...over,
   }
 }
@@ -91,7 +102,7 @@ function fakeClaude(c: Cli, argv: readonly string[]) {
 }
 
 function stub(on: On, c: Cli) {
-  mock.env(on, { HOME })
+  mock.env(on, { HOME, ...c.env })
   on('process.run', (_$, e) => ({ value: fakeClaude(c, e.argv) }))
   on('fs.read', (_$, e) => {
     const p = e.path
@@ -108,6 +119,9 @@ function stub(on: On, c: Cli) {
       return { value: JSON.stringify({ name: mp, plugins }) }
     }
     if (p in c.changelogs) return { value: c.changelogs[p] as string }
+    const hub = /^(?:\/h\/\.claude\/project-hub|\/hubs)\/([^/]+)\/(config|hub)\.json$/.exec(p)
+    const file = hub ? c.hubs?.[hub[1] as string]?.[hub[2] as 'config' | 'hub'] : undefined
+    if (file !== undefined) return { value: file }
     if (p === `${HOME}/.claude/plugins/installed_plugins.json`) {
       return { value: JSON.stringify({ version: 2, plugins: Object.fromEntries([...c.installed].filter(([id]) => !c.notInJson.has(id)).map(([id, v]) => [id, [{ version: v }]])) }) }
     }
@@ -121,6 +135,20 @@ function stub(on: On, c: Cli) {
     }
     return { value: undefined }
   })
+  on('fs.list', (_$, e) => {
+    const root = c.env.PROJECT_HUB_DIR ?? `${HOME}/.claude/project-hub`
+    if (e.path !== root || c.hubs === null) return { deny: `ENOENT ${e.path}` }
+    const dirs = Object.keys(c.hubs).map(name => ({ name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false }))
+    return { value: [...dirs, { name: 'bin', kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false }] }
+  })
+  // 実物のセッションへは送らない: 宛先と本文を控え、reachable にあるものだけ届いたことにする
+  on('session.send', (_$, e) => {
+    c.sends.push({ to: e.to, text: e.text })
+    // { sessionId } の宛先の綴りは engine が決めるので、id を含むかで見る（会話の ID `local_<id>` は除く）
+    const ok = c.reachable.has(e.to) || [...c.reachable].some(r => r.startsWith('sid:') && e.to.includes(r.slice(4)) && e.to !== `local_${r.slice(4)}`)
+    return ok ? { isDelivered: true } : { isDelivered: false, reason: `no session named ${e.to}` }
+  })
+  on('session.id', () => ({ value: 'self-session' }))
   on('ui.status', () => ({ value: undefined }))
   on('command.run', () => {
     c.modelRan = true
@@ -254,6 +282,135 @@ test('未インストールの自作プラグインを挙げる（deprecated・i
   expect(r2.text).not.toContain(`- gamma@${MP}`)
   Object.assign(c, newCli({ config: JSON.stringify({ ignore_marketplaces: [MP] }) }), { catalogs: c.catalogs })
   expect((await updateAll($)).text).not.toContain('### 未インストールの自作プラグイン')
+})
+
+const active = JSON.stringify({ status: 'active' })
+function hubJson(sessionId: string, name: string) {
+  return JSON.stringify({ session_id: sessionId, host_session_id: `local_${sessionId}`, name, updated: 'x' })
+}
+/** project-hub を 1.0.0 → 1.1.0 に上げる構成 */
+function withProjectHub(over: Partial<Cli> = {}): Cli {
+  const c = newCli(over)
+  c.installed.set(`project-hub@${MP}`, '1.0.0')
+  c.catalogs[MP] = { ...c.catalogs[MP], 'project-hub': { version: '1.1.0' } }
+  return c
+}
+
+test('project-hub を更新したら、active な PJ の hub 系セッションへ読み直しを 1 回ずつ頼む', async ($, on) => {
+  const c = withProjectHub({
+    hubs: {
+      a: { config: active, hub: hubJson('s1', 'hub a') },
+      // 同じ会話が 2 つの PJ を兼ねる
+      b: { config: active, hub: hubJson('s1', 'hub a') },
+      closed: { config: JSON.stringify({ status: 'closed' }), hub: hubJson('s2', 'hub closed') },
+      broken: { config: active, hub: '{' },
+      nohub: { config: active },
+    },
+  })
+  stub(on, c)
+  const r = await updateAll($)
+  expect(c.modelRan).toBe(false)
+  // 同じ会話へは session_id → 会話の ID → 名前の 1 巡だけ。closed・壊れた・hub.json の無い PJ へは送らない
+  expect(c.sends.length).toBe(3)
+  expect(c.sends.map(x => x.to).slice(1)).toEqual(['local_s1', 'hub a'])
+  const first = c.sends[0]
+  expect(first?.to).toContain('s1')
+  expect(first?.text).toContain('project-hub が 1.0.0 → 1.1.0 に更新された')
+  expect(first?.text).toContain(`/cache/${MP}/project-hub/1.1.0/skills/<skill>/SKILL.md`)
+  expect(r.text).toContain('### hub 系セッションへの読み直し依頼')
+  expect(r.text).toContain('- 送らなかった: hub a（a, b） — ')
+})
+
+test('session_id → 会話の ID → 名前の順に、届いたところで止める', async ($, on) => {
+  const c = withProjectHub({ hubs: { a: { config: active, hub: hubJson('s1', 'hub a') } }, reachable: new Set(['hub a']) })
+  stub(on, c)
+  const r = await updateAll($)
+  expect(c.sends.map(x => x.to).slice(1)).toEqual(['local_s1', 'hub a'])
+  expect(r.text).toContain('- 送った: hub a（a）')
+
+  Object.assign(c, withProjectHub({ hubs: c.hubs, reachable: new Set(['local_s1']) }))
+  await updateAll($)
+  expect(c.sends.map(x => x.to).slice(1)).toEqual(['local_s1'])
+
+  Object.assign(c, withProjectHub({ hubs: c.hubs, reachable: new Set(['sid:s1']) }))
+  await updateAll($)
+  expect(c.sends.length).toBe(1)
+
+  // 会話の ID も名前も無い hub.json は session_id だけ試す
+  Object.assign(c, withProjectHub({ hubs: { a: { config: active, hub: JSON.stringify({ session_id: 's9' }) } } }))
+  const r4 = await updateAll($)
+  expect(c.sends.length).toBe(1)
+  expect(r4.text).toContain('- 送らなかった: s9（a） — no session named')
+})
+
+test('hub の会話で打った回は自分には送らず、そう報告する', async ($, on) => {
+  const c = withProjectHub({ hubs: { a: { config: active, hub: hubJson('self-session', 'hub a') } }, reachable: new Set(['sid:self-session']) })
+  stub(on, c)
+  const r = await updateAll($)
+  expect(c.sends).toEqual([])
+  expect(r.text).toContain('- 送らなかった: hub a（a） — このセッション自身')
+})
+
+test('session_id が古くても、会話の ID が自分なら送らない', async ($, on) => {
+  const c = withProjectHub({ hubs: { a: { config: active, hub: hubJson('old', 'hub a') } }, env: { CLAUDE_CODE_HOST_SESSION_ID: 'local_old' }, reachable: new Set(['local_old']) })
+  stub(on, c)
+  const r = await updateAll($)
+  expect(c.sends).toEqual([])
+  expect(r.text).toContain('- 送らなかった: hub a（a） — このセッション自身')
+})
+
+test('--all で別マーケットプレイスの project-hub だけが上がった回は送らない', async ($, on) => {
+  const c = newCli({ hubs: { a: { config: active, hub: hubJson('s1', 'hub a') } }, reachable: new Set(['local_s1']) })
+  c.installed.set('project-hub@theirs', '1.0.0')
+  c.catalogs.theirs = { ...c.catalogs.theirs, 'project-hub': { version: '2.0.0' } }
+  stub(on, c)
+  const r = await updateAll($, '--all')
+  expect(r.text).toContain('| project-hub@theirs | 1.0.0 | 2.0.0 | 更新済み |')
+  expect(c.sends).toEqual([])
+  expect(r.text).not.toContain('hub 系セッション')
+})
+
+test('PROJECT_HUB_DIR があればそこを project-hub のデータとして読む', async ($, on) => {
+  const c = withProjectHub({ hubs: { a: { config: active, hub: hubJson('s1', 'hub a') } }, env: { PROJECT_HUB_DIR: '/hubs' }, reachable: new Set(['local_s1']) })
+  stub(on, c)
+  const r = await updateAll($)
+  expect(r.text).toContain('- 送った: hub a（a）')
+})
+
+test('project-hub 以外の更新・project-hub が無い環境では送らない', async ($, on) => {
+  const c = newCli({ hubs: { a: { config: active, hub: hubJson('s1', 'hub a') } } })
+  stub(on, c)
+  const r = await updateAll($)
+  expect(r.text).toContain(`| alpha@${MP} | 1.0.0 | 1.1.0 | 更新済み |`)
+  expect(c.sends).toEqual([])
+  expect(r.text).not.toContain('hub 系セッション')
+
+  Object.assign(c, withProjectHub())
+  const r2 = await updateAll($)
+  expect(r2.text).toContain(`| project-hub@${MP} | 1.0.0 | 1.1.0 | 更新済み |`)
+  expect(c.sends).toEqual([])
+  expect(r2.text).toContain('- 送らなかった: hub 系のセッションが無い')
+})
+
+test('hubRereadText は installPath が取れない回に壊れたパスを出さない', () => {
+  const row = { id: `project-hub@${MP}`, before: '1.0.0', after: '1.1.0', result: 'updated' as const }
+  expect(hubRereadText(row, '/cache/p/1.1.0')).toContain('新しい版: /cache/p/1.1.0/skills/<skill>/SKILL.md')
+  const text = hubRereadText(row, '')
+  expect(text).not.toContain(' /skills/')
+  expect(text).toContain('installPath（1.1.0）')
+})
+
+test('hubTargets', () => {
+  expect(hubTargets([])).toEqual([])
+  expect(hubTargets([
+    { project: 'a', config: active, hub: hubJson('s1', 'hub a') },
+    { project: 'b', config: active, hub: JSON.stringify({ session_id: '' }) },
+    { project: 'c', config: null, hub: hubJson('s3', 'hub c') },
+    { project: 'd', config: active, hub: JSON.stringify({ session_id: 's4' }) },
+  ])).toEqual([
+    { sessionId: 's1', name: 'hub a', hostSessionId: 'local_s1', projects: ['a'] },
+    { sessionId: 's4', name: null, hostSessionId: null, projects: ['d'] },
+  ])
 })
 
 test('changelogBetween / parseConfig', () => {

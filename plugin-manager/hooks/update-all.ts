@@ -4,14 +4,17 @@
 // トークンを使い、手順の取り違えも起きた（GitHub issue #271 のキャッシュ削除）。mods が無効な環境では
 // 今までどおり markdown のコマンドがモデルに渡る。最初の変更（marketplace の再取得）の前に
 // 前提が崩れたら（CLI が無い・一覧が読めない）、何も変えずにモデルの経路へ戻す
-import type { EngineInterface, On } from 'claude-code'
+import type { EngineInterface, On, SessionSendResult } from 'claude-code'
 
 import {
   changelogBetween,
+  hubRereadText,
+  hubTargets,
   parseConfig,
   parseInstalled,
   parseMarketplace,
   report,
+  type HubNotice,
   type Installed,
   type MarketplaceEntry,
   type Migration,
@@ -167,8 +170,64 @@ async function run($: EngineInterface, args: string): Promise<string | null> {
     }
   }
 
+  // Phase 4.8: project-hub を更新した回だけ、hub 系のセッションへ読み直しを頼む（GitHub issue #460）
+  // `--all` で入る別マーケットプレイスの同名プラグインは、hub が使う project-hub ではないので数えない
+  const hubRow = rows.find(r => r.result === 'updated' && r.id === `project-hub@${self.marketplace}`)
+  const hubNotices = hubRow ? await notifyHubs($, home, hubRow, after.get(hubRow.id)?.installPath ?? '') : null
+
   $.ui.status(undefined)
-  return report(scope, rows, migrations, skipped, missing)
+  return report(scope, rows, migrations, skipped, missing, hubNotices)
+}
+
+/** 動いている hub 系のセッションへ、更新後の SKILL.md を読み直すよう送る。project-hub のデータが無ければ 0 件 */
+async function notifyHubs($: EngineInterface, home: string, row: Row, installPath: string): Promise<HubNotice[]> {
+  // project-hub のデータの置き場所の決め方（hub.py の PROJECT_HUB_DIR / CLAUDE_CONFIG_DIR）に合わせる
+  const configDir = (await $.env.get('CLAUDE_CONFIG_DIR')) || `${home}/.claude`
+  const root = (await $.env.get('PROJECT_HUB_DIR')) || `${configDir}/project-hub`
+  let dirs: string[]
+  try {
+    dirs = (await $.fs.list(root)).filter(e => e.kind === 'dir').map(e => e.name).sort()
+  } catch {
+    return []
+  }
+  const entries = []
+  for (const project of dirs) {
+    entries.push({
+      project,
+      config: await readText($, `${root}/${project}/config.json`),
+      hub: await readText($, `${root}/${project}/hub.json`),
+    })
+  }
+  const text = hubRereadText(row, installPath)
+  // hub の会話で /update-all を打った回は、この結果をそのまま読むので自分には送らない。
+  // hub.json の session_id は開き直すと古いまま残ることがあるので、会話の ID でも照合する（hub.py の SessionStart と同じ照合）
+  const selfId = await $.session.id().catch(() => '')
+  const selfHost = (await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')) ?? ''
+  const notices: HubNotice[] = []
+  for (const t of hubTargets(entries)) {
+    if (t.sessionId === selfId || (selfHost !== '' && t.hostSessionId === selfHost)) {
+      notices.push({ name: t.name ?? t.sessionId, projects: t.projects, delivered: false, reason: 'このセッション自身（この結果を読めば足りる）' })
+      continue
+    }
+    $.ui.status(`update-all: ${t.name ?? t.sessionId} へ読み直しを依頼中`)
+    // session_id → 会話の ID（host_session_id）→ 名前の順に、届くまで試す（commands/update-all.md の Phase 4.8）。
+    // session_id は会話を開き直すと hub の status が直すまで古い。会話の ID は開き直しても改名しても変わらない。
+    // 名前は重なると宛先が決まらないので最後に回す
+    let sent = await send($, { sessionId: t.sessionId }, text)
+    if (!sent.isDelivered && t.hostSessionId !== null) sent = await send($, t.hostSessionId, text)
+    if (!sent.isDelivered && t.name !== null) sent = await send($, t.name, text)
+    const who = { name: t.name ?? t.sessionId, projects: t.projects }
+    notices.push(sent.isDelivered ? { ...who, delivered: true } : { ...who, delivered: false, reason: sent.reason })
+  }
+  return notices
+}
+
+async function send($: EngineInterface, to: string | { sessionId: string }, text: string): Promise<SessionSendResult> {
+  try {
+    return await $.session.send({ to, text })
+  } catch (err) {
+    return { isDelivered: false, reason: String(err) }
+  }
 }
 
 export function registerUpdateAll(on: On) {

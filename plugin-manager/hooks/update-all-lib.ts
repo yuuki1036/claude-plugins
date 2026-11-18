@@ -129,13 +129,56 @@ const RESULT_LABEL: Record<Row['result'], string> = {
   stale: '未反映',
 }
 
-/** Phase 5 の報告（commands/update-all.md のフォーマット） */
+/** 読み直しを頼む hub 系のセッション（project-hub の hub.json 1 つ。同じ会話が複数の PJ を兼ねることがある） */
+export type HubTarget = { sessionId: string; name: string | null; hostSessionId: string | null; projects: string[] }
+
+/** 読み直しの依頼を送った結果。届かなかった回は理由を必ず持つ（SDK の SessionSendResult と同じ形） */
+export type HubNotice = { name: string; projects: string[] } & ({ delivered: true } | { delivered: false; reason: string })
+
+/**
+ * project-hub のデータの置き場所の `<PJ>/` にある config.json と hub.json から、依頼を送る hub 系のセッションを決める（Phase 4.8）。
+ * config.json の status が active の PJ だけを数え、同じ session_id は 1 件にまとめる。
+ * project-hub の内部ファイルを読むだけで project-hub には依存しない: 読めない・形が違う PJ は落とす
+ */
+export function hubTargets(entries: { project: string; config: string | null; hub: string | null }[]): HubTarget[] {
+  const bySession = new Map<string, HubTarget>()
+  for (const e of entries) {
+    if (e.config === null || e.hub === null) continue
+    try {
+      const config = JSON.parse(e.config) as Record<string, unknown>
+      const hub = JSON.parse(e.hub) as Record<string, unknown>
+      if (config.status !== 'active' || typeof hub.session_id !== 'string' || hub.session_id === '') continue
+      const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null)
+      const t = bySession.get(hub.session_id)
+      if (t) t.projects.push(e.project)
+      else bySession.set(hub.session_id, { sessionId: hub.session_id, name: str(hub.name), hostSessionId: str(hub.host_session_id), projects: [e.project] })
+    } catch {
+      continue
+    }
+  }
+  return [...bySession.values()]
+}
+
+/** hub 系のセッションへ送る依頼の本文。1 行目だけで用件が分かるようにする（受け手の一覧は 1 行目しか見せない） */
+export function hubRereadText(row: Row, installPath: string): string {
+  return [
+    `[plugin-manager] update-all で project-hub が ${row.before} → ${row.after} に更新された。次の発言から、project-hub の skill は新しい版の SKILL.md を Read し直してから使う。`,
+    // installPath が取れなかった回は壊れたパスを見せず、版だけで探させる
+    installPath !== ''
+      ? `新しい版: ${installPath}/skills/<skill>/SKILL.md（同梱の scripts/ も同じ版を使う）`
+      : `新しい版: ~/.claude/plugins/installed_plugins.json の project-hub の installPath（${row.after}）の skills/<skill>/SKILL.md`,
+    '返事は不要。',
+  ].join('\n')
+}
+
+/** Phase 5 の報告（commands/update-all.md のフォーマット）。hubNotices は project-hub を更新しなかった回は null */
 export function report(
   scope: string,
   rows: Row[],
   migrations: Migration[],
   skippedMigrations: string[],
   missing: string[],
+  hubNotices: HubNotice[] | null = null,
 ): string {
   const out = [scope, '', '## プラグイン更新結果', '', '| プラグイン | Before | After | 結果 |', '|-----------|--------|-------|------|']
   for (const r of rows) {
@@ -173,6 +216,14 @@ export function report(
       '',
       '抑止: ~/.claude/plugin-manager/config.json の ignore_plugins / ignore_marketplaces',
     )
+  }
+  if (hubNotices !== null) {
+    out.push('', '### hub 系セッションへの読み直し依頼', '')
+    if (hubNotices.length === 0) out.push('- 送らなかった: hub 系のセッションが無い（project-hub のデータに active な PJ が無い）')
+    for (const n of hubNotices) {
+      const who = `${n.name}（${n.projects.join(', ')}）`
+      out.push(n.delivered ? `- 送った: ${who}` : `- 送らなかった: ${who} — ${n.reason}`)
+    }
   }
   out.push('', '反映にはClaude Codeの再起動が必要です。')
   // 再起動しないで動き続けるセッションへは、stale-skill hook が次の発言で知らせる（GitHub issue #416）
