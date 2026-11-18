@@ -2939,6 +2939,160 @@ class MetricsVocabDriftTest(unittest.TestCase):
         self.assertIn("demo:alpha", warnings[0])
 
 
+class MetricsPayloadKeysTest(unittest.TestCase):
+    """`## 16` の表のキー名と計測ストアの payload_keys の突き合わせ（GitHub issue #417）.
+
+    期待値は表と語彙の文字列リテラルから組む（検査の解析部で期待値を作らない）.
+    """
+
+    DOC = textwrap.dedent("""\
+        ## 15. 前の節
+
+        | フィールド | 内容 |
+        |---|---|
+        | `outside` | 別の節の表は見ない |
+
+        ## 16. payload 契約
+
+        | フィールド | 意味 |
+        |---|---|
+        | `agents_abandoned` | 入れ子の子（語彙では dispatch.agents_abandoned） |
+
+        ### 本体
+
+        | フィールド | 内容 |
+        |---|---|
+        | `pr` | DENY_KEYS |
+        | `effort` | 実行時の effort |
+        | `duration_min` ほか `duration_*` | wildcard は見ない |
+        | `blocker_count` / `major_count` | 1 行に 2 つ |
+        | `measurement_gaps` | 配列 |
+
+        | `schema` | 算出方法 |
+        |---|---|
+        | `1` | 値の表は見ない |
+        | `enum_value` | 値の表は見ない |
+
+        | サブフィールド | 内容 |
+        |---|---|
+        | `session` / `first_ts` | 入れ子 |
+
+        ## 17. 次の節
+
+        | フィールド | 内容 |
+        |---|---|
+        | `later` | 別の節の表は見ない |
+        """)
+    PRESENT = ("dispatch.agents_abandoned", "effort", "duration_min", "blocker_count", "major_count",
+               "measurement_gaps", "tokens.session", "tokens.first_ts")
+    SANITIZE = 'import os\nDENY_KEYS = frozenset({\n    "pr", "base",\n})\nOTHER = 1\n'
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name) / "repo"
+        self.store = Path(self._tmp.name) / "store"
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        _write(self.root, "code-review/references/orchestration-measurement.md", self.DOC)
+        _write(self.store, "bin/sanitize.py", self.SANITIZE)
+
+    def _keys(self, keys=PRESENT) -> None:
+        _write(self.store, "vocab/payload_keys.txt", "# コメント\n" + "".join(f"{k}\n" for k in keys))
+
+    def _run(self) -> list[str]:
+        warnings: list[str] = []
+        v.check_metrics_payload_keys(warnings, self.store)
+        return warnings
+
+    def test_contract_keys_are_read_from_field_tables_of_section_16(self):
+        self.assertEqual(
+            v.metrics_contract_keys(self.DOC),
+            {"agents_abandoned", "pr", "effort", "duration_min", "blocker_count", "major_count",
+             "measurement_gaps", "session", "first_ts"},
+        )
+
+    def test_all_keys_present_is_silent(self):
+        """入れ子のパス・配列の `[]` は末尾一致で拾い, DENY_KEYS の `pr` は語彙に無くても出さない."""
+        self._keys()
+        self.assertEqual(self._run(), [])
+
+    def test_missing_key_is_reported(self):
+        for absent in self.PRESENT:
+            with self.subTest(absent=absent):
+                self._keys(tuple(k for k in self.PRESENT if k != absent))
+                warnings = self._run()
+                self.assertEqual(len(warnings), 1, warnings)
+                self.assertIn("payload_keys", warnings[0])
+                self.assertIn("1 件", warnings[0])
+                name = absent.replace("[]", "").rsplit(".", 1)[-1]
+                self.assertTrue(warnings[0].endswith(f": {name}"), warnings[0])
+
+    def test_array_element_path_does_not_count_as_the_key(self):
+        """`x[]` の行だけではキー `x` は残らない（sanitize.py は `x` の行で判定する）. `x[].y` の `y` は数える."""
+        keys = tuple(k for k in self.PRESENT if k not in ("measurement_gaps", "effort"))
+        self._keys(keys + ("measurement_gaps[]", "items[].effort"))
+        warnings = self._run()
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertTrue(warnings[0].endswith(": measurement_gaps"), warnings[0])
+
+    def test_prefix_of_a_path_does_not_count(self):
+        """パスの途中の段（`tokens.session` の `tokens`）は末尾一致に当たらない."""
+        self._keys(tuple(k for k in self.PRESENT if k != "effort") + ("effort.sub",))
+        self.assertIn(": effort", " ".join(self._run()))
+
+    def test_deny_key_is_reported_if_store_does_not_deny_it(self):
+        """DENY_KEYS は計測ストアの sanitize.py から読む（複製を持たない）."""
+        self._keys()
+        _write(self.store, "bin/sanitize.py", 'DENY_KEYS = frozenset({"base"})\n')
+        self.assertTrue(self._run()[0].endswith(": pr"))
+
+    def test_section_at_end_of_file_is_read(self):
+        """`## 16` が最後の節で, 表の行で終わる（末尾に改行も無い）文書も読む."""
+        doc = "## 16. x\n\n| フィールド | 内容 |\n|---|---|\n| `effort` | 最後の行 |"
+        self.assertEqual(v.metrics_contract_keys(doc), {"effort"})
+
+    def test_table_before_any_section_is_not_read(self):
+        """最初の `## ` より前の表は `## 16` の外."""
+        doc = "| フィールド | 内容 |\n|---|---|\n| `before` | 節の外 |\n" + self.DOC
+        self.assertNotIn("before", v.metrics_contract_keys(doc))
+
+    def test_plain_set_deny_keys_is_read(self):
+        """`frozenset(...)` で包まない集合の書き方も読む."""
+        self._keys()
+        _write(self.store, "bin/sanitize.py", 'DENY_KEYS = {"pr"}\n')
+        self.assertEqual(self._run(), [])
+
+    def test_unreadable_deny_keys_warns_and_skips(self):
+        self._keys(())
+        for body in ("OTHER = 1\n", "DENY_KEYS = frozenset({x})\n", "DENY_KEYS = frozenset({\n",
+                     'DENY_KEYS = frozenset("pr")\n', 'DENY_KEYS = frozenset({"pr", 1})\n',
+                     'DENY_KEYS = {[1]}\n'):
+            with self.subTest(body=body):
+                _write(self.store, "bin/sanitize.py", body)
+                warnings = self._run()
+                self.assertEqual(len(warnings), 1, warnings)
+                self.assertIn("DENY_KEYS を読めない", warnings[0])
+        (self.store / "bin/sanitize.py").unlink()
+        self.assertIn("DENY_KEYS を読めない", " ".join(self._run()))
+
+    def test_no_keys_file_or_doc_is_silent(self):
+        """clone が無い機（CI・他人の機）と, 正本の文書が無い repo では何も出さない."""
+        self.assertEqual(self._run(), [])
+        self._keys(())
+        (self.root / "code-review/references/orchestration-measurement.md").unlink()
+        self.assertEqual(self._run(), [])
+
+    def test_drift_check_runs_the_payload_check(self):
+        """`check_metrics_vocab_drift` から呼ばれる（他の語彙ファイルが無くても走る）."""
+        self._keys(())
+        warnings: list[str] = []
+        v.check_metrics_vocab_drift(warnings, store=self.store)
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("payload_keys", warnings[0])
+
+
 class SplitSkillTest(unittest.TestCase):
     """phase ごとに分けた SKILL.md の上限と phase の鎖（#426）.
 
