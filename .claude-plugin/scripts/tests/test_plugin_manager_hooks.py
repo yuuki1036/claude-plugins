@@ -480,6 +480,17 @@ class StaleSkillTest(HookTestCase):
             res = self.run_hook(raw="{not json", env_extra=self.env(), args=(mode,))
             self.assertQuiet(res, mode)
 
+    def test_record_keeps_unpaired_surrogate(self):
+        """payload の `\\ud800` は json.loads で対のないサロゲートになる。保存して同じ文字列に読み戻せる（#455）."""
+        skill = "s\ud800"
+        path = f"{self.cache}/p/1.0.0/skills/{skill}/SKILL.md"
+        payload = {"session_id": SID, "hook_event_name": "PostToolUse", "tool_name": "Read",
+                   "tool_input": {"file_path": path}, "tool_response": "x"}
+        res = self.run_hook(raw=json.dumps(payload), env_extra=self.env(), args=("record",))
+        self.assertQuiet(res)
+        st = json.loads(self.state_file().read_text(encoding="utf-8"))
+        self.assertEqual(st["plugins"][f"p@{MP}"], {"version": "1.0.0", "skills": {skill: "1.0.0"}})
+
     def test_broken_state_file(self):
         self.stale_setup()
         self.state_file().write_text("{broken")

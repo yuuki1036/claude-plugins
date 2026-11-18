@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.10.2] - 2026-11-18
+
+### Fixed
+
+- `hooks/scripts/stale_skill.py` が、読んだファイルのパスに対のないサロゲート（payload の JSON の `\ud800` など）を含む回に状態を保存できず、その回の記録を落としていた（GitHub #455）。状態ファイルを `ensure_ascii=False` で書いていたため utf-8 に符号化できなかった。既定の `ensure_ascii=True` に戻し、サロゲートはエスケープして書く（読み戻すと同じ文字列になる）
+
 ## [1.10.1] - 2026-11-13
 
 ### Changed
