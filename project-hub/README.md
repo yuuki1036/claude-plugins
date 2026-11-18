@@ -22,7 +22,7 @@
 /project-hub:hub relay            # lead の指示や hub の連絡を sub へ送る（送る直前に宛先を引き直す）
 /project-hub:hub fact             # hub が確かめた事実を出典つきで残す
 /project-hub:hub todo             # hub 自身の残作業を足す・終える・一覧する
-/project-hub:hub close-sub <Issue> # done を報告した sub を閉じる（Desktop の archive）
+/project-hub:hub close-sub <Issue> # done を報告した sub を閉じる（Desktop の archive。自分の PR のマージを知らせたのに done が来ない sub も lead が決めれば閉じる）
 /project-hub:hub mode <方式>      # 送る前の承認の方式を切り替える（auto / number / phrase）
 /project-hub:hub tracker-write <never|with_approval> # hub がトラッカーに書いてよいか（既定は with_approval、tracker local と config に値が無い・読めない PJ は never。書くときは毎回 lead の承認を取る。sub の follow-up は起票の候補として出す）
 /project-hub:hub sidebar-group <on|off> # 後から sub にしたセッションを、hub と一緒にサイドバーのグループにまとめる（Desktop だけ。Desktop の hub は既定で on、config に値が無い・読めない PJ は off）

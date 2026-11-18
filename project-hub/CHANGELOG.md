@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.18.0] - 2026-11-18
+
+### Added
+
+- **`close-sub --force`**（GitHub issue #461）: 最新の report が done でない sub でも、閉じる前の確かめを通す（出力に最新の report の `state` を足した）。自分の PR のマージを知らせたのに done が来ない sub（不在・連絡の取りこぼし）を lead が閉じると決めたときに使う。通すのは `waiting` で `own: true` かつ知らせ済みの行がある sub だけで、それ以外は `--force` でも exit 3。記録（`--result`）と一緒には付けられない（exit 2）
+- `waiting` の各行に `notified_at`（マージを最初に知らせた journal の時刻。まだなら null）を足した。hub の status は、`own: true` かつ知らせ済みの行を「マージを知らせたのに done が来ない sub」として止まっている箇所に出す
+
+### Fixed
+
+- **close-sub で閉じた sub の PR が `waiting` に残り続ける**（GitHub issue #461）: `waiting` と state.md の「sub が待っている PR」は、`close-sub --result accepted` で閉じた sub を外す。閉じた後にその sub が report を置けば（会話を開き直した）、また数える。閉じた記録には後から取り込む report と比べる細かい時刻 `at` を足した。閉じた記録を書いたときに state.md も書き直し、state.md の sub の表では閉じた sub の状態を「閉じた」（done でないまま閉じたなら「閉じた（最後は <state>）」）と出す。`worktrees` の作業中の判定（`cross` の重なりもこれを使う）とサイドバーのグループも同じ「閉じた」の判定に揃えた（`--force` で done でないまま閉じた sub を作業中に数えない。開き直して report を置いた sub はサイドバーのグループにも戻る）。0.17.0 で sub 自身の PR を done まで待つようにしたため、done を置かずに終わった sub の PR が残っていた
+
 ## [0.17.0] - 2026-11-18
 
 ### Added

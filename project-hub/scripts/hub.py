@@ -1748,33 +1748,51 @@ def report_placed_at(source) -> dt.datetime | None:
         return None
 
 
-def moved_projects(rows: list[dict]) -> dict:
-    """別の PJ へ移ったと reopen・unregister が記録し、その後にこの PJ で report していないセッション → 移った先の PJ.
+def closed_sub_since(rows: list[dict], result: str) -> dict:
+    """close_sub の `result` を記録し、その後にこの PJ で report していないセッション → その close_sub の本文.
 
-    close の時点で inbox に残っていた report は reopen の後に取り込まれて journal で後ろに並ぶので、journal の順ではなく
-    inbox に置いた時刻で「その後に report した」かを決める。記録に `at` が無い（秒までの ts しか無い）ときは、
+    閉じた記録（close-sub の accepted・reopen と unregister の moved）の時点で inbox に残っていた report は、後から
+    取り込まれて journal で後ろに並ぶので、journal の順ではなく inbox に置いた時刻で「その後に report した」かを決める。記録に `at` が無い（秒までの ts しか無い）ときは、
     同じ秒に置いた report を前とみなす
     """
-    moved, moved_at = {}, {}
+    found, found_at = {}, {}
     for row in rows:
         body = row.get("body")
         subject = row.get("subject")
-        if row.get("kind") == "close_sub" and isinstance(body, dict) and body.get("result") == "moved":
-            moved[subject] = body.get("to_project")
+        if row.get("kind") == "close_sub" and isinstance(body, dict) and body.get("result") == result:
+            found[subject] = body
             at = parse_ts(body.get("at"))
             if at is None:
                 ts = parse_ts(row.get("ts"))
                 at = ts + dt.timedelta(seconds=1) if ts else None
-            moved_at[subject] = at
-        elif row.get("kind") == "report" and subject in moved:
-            placed, at = report_placed_at(row.get("source")), moved_at.get(subject)
+            found_at[subject] = at
+        elif row.get("kind") == "report" and subject in found:
+            placed, at = report_placed_at(row.get("source")), found_at.get(subject)
             if placed is None or at is None or placed > at:
-                del moved[subject]
-    return moved
+                del found[subject]
+    return found
+
+
+def moved_projects(rows: list[dict]) -> dict:
+    """別の PJ へ移ったと reopen・unregister が記録し、その後にこの PJ で report していないセッション → 移った先の PJ."""
+    return {sid: body.get("to_project") for sid, body in closed_sub_since(rows, "moved").items()}
 
 
 def moved_sessions(rows: list[dict]) -> set[str]:
     return set(moved_projects(rows))
+
+
+def closed_sessions(rows: list[dict]) -> set[str]:
+    """close-sub で閉じたと記録し、その後にこの PJ で report していないセッション（GitHub issue #461）."""
+    return set(closed_sub_since(rows, "accepted"))
+
+
+def gone_sessions(rows: list[dict]) -> set[str]:
+    """この PJ からもう居なくなった sub（別の PJ へ移った・close-sub で閉じた）.
+
+    close-sub --force で done でないまま閉じた sub も、作業中・待っている PR・サイドバーから外す（GitHub issue #461）
+    """
+    return moved_sessions(rows) | closed_sessions(rows)
 
 
 def latest_reports(rows: list[dict]) -> dict:
@@ -1833,13 +1851,13 @@ def cmd_decisions(args) -> int:
     return 0
 
 
-def notified_waits(rows: list[dict]) -> set[tuple]:
-    """待っていた PR のマージを知らせ済みの (session, PR)."""
-    done = set()
+def notified_waits(rows: list[dict]) -> dict[tuple, str | None]:
+    """待っていた PR のマージを知らせ済みの (session, PR) → 最初に知らせた時刻（journal の ts）."""
+    done: dict[tuple, str | None] = {}
     for row in rows:
         body = row.get("body") if isinstance(row.get("body"), dict) else {}
         if row.get("kind") == "relay" and body.get("result") == "accepted" and body.get("waiting_pr"):
-            done.add((body.get("session"), body["waiting_pr"]))
+            done.setdefault((body.get("session"), body["waiting_pr"]), row.get("ts"))
     return done
 
 
@@ -1862,15 +1880,16 @@ def report_pr(value) -> str | None:
 
 
 def waiting_prs(rows: list[dict]) -> list[tuple[str, dict, str, bool]]:
-    """sub が待っている PR の (session, 最新の report の本文, PR, sub 自身の PR か)。done の sub と別の PJ へ
-    移った sub は除く。sub 自身の PR（report の `pr`）は waiting_prs に無くても足す — sub は auto-merge で
-    マージされても気づけないので、hub が見つけて締めを頼む（GitHub issue #443）."""
-    # 移った sub へマージの段取りを送ると、別の PJ で作業中のセッションに届く
-    moved = moved_sessions(rows)
+    """sub が待っている PR の (session, 最新の report の本文, PR, sub 自身の PR か)。done の sub・別の PJ へ
+    移った sub・close-sub で閉じた sub は除く。sub 自身の PR（report の `pr`）は waiting_prs に無くても足す — sub は
+    auto-merge でマージされても気づけないので、hub が見つけて締めを頼む（GitHub issue #443）."""
+    # 移った sub へマージの段取りを送ると、別の PJ で作業中のセッションに届く。閉じた sub は done を置かないので、
+    # 除かないと PR が残り続ける（GitHub issue #461）
+    gone = gone_sessions(rows)
     out = []
     for sid, row in latest_reports(rows).items():
         body = row["body"]
-        if body.get("state") == "done" or sid in moved:
+        if body.get("state") == "done" or sid in gone:
             continue
         own = report_pr(body.get("pr"))
         prs = list(dict.fromkeys(body.get("waiting_prs") or []))
@@ -1883,12 +1902,13 @@ def waiting_prs(rows: list[dict]) -> list[tuple[str, dict, str, bool]]:
 
 
 def cmd_waiting(args) -> int:
-    """sub が待っている PR（waiting_prs と sub 自身の PR）と、マージを知らせ済みか（GitHub issue #329 / #443）."""
+    """sub が待っている PR（waiting_prs と sub 自身の PR）と、マージを知らせ済みか・いつ知らせたか
+    （GitHub issue #329 / #443 / #461）."""
     pdir = project_dir(args.project)
     rows = read_jsonl(pdir / "journal.jsonl")
     done = notified_waits(rows)
     emit([{"session_id": sid, "name": body.get("name"), "issue": body.get("issue"),
-           "pr": pr, "own": own, "notified": (sid, pr) in done}
+           "pr": pr, "own": own, "notified": (sid, pr) in done, "notified_at": done.get((sid, pr))}
           for sid, body, pr, own in waiting_prs(rows)])
     return 0
 
@@ -1942,7 +1962,8 @@ def cmd_todo(args) -> int:
 def cmd_close_sub(args) -> int:
     """sub のセッションを閉じる前の確かめ（--result なし）と、閉じた結果の記録（--result あり / GitHub issue #330）.
 
-    閉じてよいのは最新の report が done の sub だけ。閉じる手段（Desktop の archive）は会話の ID を宛先に取るので、
+    閉じてよいのは最新の report が done の sub だけ。例外は --force で、マージを知らせたのに done が来ない sub を
+    lead が閉じると決めたとき（閉じた記録で waiting から外れる / GitHub issue #461）。閉じる手段（Desktop の archive）は会話の ID を宛先に取るので、
     Desktop の hub から、report の時点で確かめた会話の ID を持つ登録にだけ返す
     """
     pdir = project_dir(args.project)
@@ -1954,17 +1975,30 @@ def cmd_close_sub(args) -> int:
         raise HubError(2, f"登録が無い: {args.session}")
     if args.error is not None and args.result != "failed":
         raise HubError(2, "--error は --result failed にだけ付ける")
+    if args.force and args.result is not None:
+        raise HubError(2, "--force は確かめ（--result なし）にだけ付ける")
     if args.result is not None:
+        # at: journal の ts は秒までなので、後から取り込む report と比べる時刻を細かく持つ（closed_sessions）
         journal_append(pdir, "close_sub", args.session,
-                       {"result": args.result, "host": registered_host(reg), "error": args.error})
+                       {"result": args.result, "host": registered_host(reg), "error": args.error, "at": stamp()})
+        # 閉じた sub は待っている PR・作業中の sub から外れるので、state.md の件数も今書き直す
+        write_state(pdir)
         emit({"session_id": args.session, "result": args.result})
         return 0
-    rep = latest_reports(read_jsonl(pdir / "journal.jsonl")).get(args.session)
+    rows = read_jsonl(pdir / "journal.jsonl")
+    rep = latest_reports(rows).get(args.session)
     state = rep["body"].get("state") if rep else None
+    if state != "done" and not args.force:
+        raise HubError(3, f"この sub の最新の report は done ではない（{state}）。閉じるのは done を報告した sub だけ"
+                          "（自分の PR のマージを知らせたのに done が来ない sub を lead が閉じると決めたなら --force）")
     if state != "done":
-        raise HubError(3, f"この sub の最新の report は done ではない（{state}）。閉じるのは done を報告した sub だけ")
+        notified = notified_waits(rows)
+        if not any(sid == args.session and own and (sid, pr) in notified for sid, _, pr, own in waiting_prs(rows)):
+            raise HubError(3, f"この sub の最新の report は done ではない（{state}）。--force で閉じられるのは、"
+                              "自分の PR のマージを知らせたのに done が来ない sub だけ")
     host = registered_host(reg) if verified_host(hub["session_id"]) else None
-    out = {"session_id": args.session, "name": reg.get("name"), "issue": reg.get("issue"), "host": host}
+    out = {"session_id": args.session, "name": reg.get("name"), "issue": reg.get("issue"), "host": host,
+           "state": state}
     if host is None:
         out["note"] = ("会話の ID を確かめられない（hub か sub が Desktop でない・0.6.4 までの登録）。"
                        "hub からは閉じられないので、lead に手で閉じてもらう")
@@ -2042,8 +2076,7 @@ def sidebar_plan(pdir: Path, config: dict, hub: dict) -> dict:
         out["note"] = "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーは動かさない"
         return out
     # 別の PJ へ移った sub（reopen・unregister が記録する）も、この PJ のグループに入れ直さない
-    closed = {r.get("subject") for r in rows if r.get("kind") == "close_sub" and isinstance(r.get("body"), dict)
-              and r["body"].get("result") == "accepted"} | moved_sessions(rows)
+    closed = gone_sessions(rows)
     for reg in load_registrations(pdir)[0]:
         if reg["session_id"] in closed:
             continue
@@ -2384,14 +2417,14 @@ def session_rows(pdir: Path, config: dict) -> tuple[list[dict], list[tuple[dict,
     regs, unreadable = load_registrations(pdir)
     journal = read_jsonl(pdir / "journal.jsonl")
     latest = latest_reports(journal)
-    moved = moved_sessions(journal)
+    gone = gone_sessions(journal)
 
     def working(reg: dict) -> bool:
-        # done を報告した登録・不在の登録・別の PJ へ移った登録は、もうこの PJ でその worktree を使っていない
+        # done を報告した登録・不在の登録・別の PJ へ移った登録・閉じた登録は、もうこの PJ でその worktree を使っていない
         # （後から別のセッションが入りうる）
         rep = latest.get(reg.get("session_id"))
         return (absent_since(reg, absent) is None and not (rep and rep["body"].get("state") == "done")
-                and reg.get("session_id") not in moved)
+                and reg.get("session_id") not in gone)
 
     active = [r for r in regs if working(r)]
     shared = {w for w in (r.get("worktree") for r in active)
@@ -2620,6 +2653,7 @@ def render_state(pdir: Path) -> tuple[str, int]:
     rows = parse_jsonl(lines)
     latest = latest_reports(rows)
     moved_to = moved_projects(rows)
+    closed = closed_sessions(rows)
     sessions, unreadable = load_registrations(pdir)
     absent = absent_map(pdir)
     facts = read_jsonl(pdir / "facts.jsonl")
@@ -2655,8 +2689,12 @@ def render_state(pdir: Path) -> tuple[str, int]:
                 "needs_lead", "questions", "follow_ups", "claims")) if rep else "-"
             renamed_to = current_name(reg, absent)
             sid = reg.get("session_id")
-            # 別の PJ へ移った sub は、最後の report の状態のまま作業中に見せない
-            state = f"移った（→ {moved_to[sid]}）" if sid in moved_to else body.get("state")
+            # 別の PJ へ移った sub・閉じた sub は、最後の report の状態のまま作業中に見せない
+            state = body.get("state")
+            if sid in moved_to:
+                state = f"移った（→ {moved_to[sid]}）"
+            elif sid in closed:
+                state = "閉じた" if state == "done" else f"閉じた（最後は {state}）"
             out.append("| " + " | ".join([
                 cell(f"{reg.get('name')} → {renamed_to}" if renamed_to else reg.get("name")),
                 cell(reg.get("issue")), cell(state),
@@ -3702,6 +3740,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", required=True, help="閉じる sub の登録の session_id")
     p.add_argument("--result", choices=("accepted", "failed"), help="閉じた結果（付けなければ確かめるだけ）")
     p.add_argument("--error", help="--result failed の理由")
+    p.add_argument("--force", action="store_true",
+                   help="最新の report が done でなくても確かめを通す（自分の PR のマージを知らせたのに done が来ない sub だけ。"
+                        "lead が閉じると決めたとき）")
 
     p = add("unregister", cmd_unregister,
             "二重登録のうち、この PJ の登録を外す（journal に close_sub の moved を残す。残す PJ は --keep）")
