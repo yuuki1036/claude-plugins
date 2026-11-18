@@ -24,7 +24,8 @@ worktree-setup / worktree-teardown はコマンドを持たず、トリガーフ
 - ファイル単位での `git add <file>` によるステージング
 - Conventional Commits 準拠の日本語コミットメッセージ生成（subject 行の品質規約つき）
 - writing-polish soft 連携（opt-in）でコミットメッセージを推敲
-- このセッションで self-review を回していない変更なら、コミットの前に self-review と読み合わせ（review-guide）を回すかを聞く（code-review が有効なときだけ。軽量フロー・feature-dev から起動された回と、このセッションで self-review を回した後は聞かない）
+- このセッションで self-review を回していない変更なら、コミットの前に self-review と読み合わせ（review-guide）を回すかを聞く（code-review が有効なときだけ。このセッションで self-review を回した後（その後の変更が文書・コメント・テストの追加だけの回を含む）と、フローの中で利用者が回さないと決めた回は聞かない。軽量フロー・feature-dev から起動されたことだけでは飛ばさない）
+- コミットの前に doc-sync（issue-workflow）で文書とコメントの整合を確かめる（issue-workflow が有効なときだけ。このセッションで回した後にコードを変えていなければ飛ばし、飛ばした理由を 1 行出す）
 
 **トリガー例**: 「コミットして」「変更をコミット」「/commit」
 
