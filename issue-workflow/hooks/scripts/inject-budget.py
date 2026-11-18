@@ -74,8 +74,14 @@ def stale_section(lines: list[str], budget: int) -> str:
 
 
 def partial_section(slug: str, body: str, budget: int) -> str:
-    """index を行ごとに入る分だけ出し、残りの件数を案内に置き換える. 見出しも入らなければ空."""
+    """index を行ごとに入る分だけ出し、残りの件数を案内に置き換える. 見出しも入らなければ空.
+
+    空の index は切り詰めるものが無いので空を返す（丸ごと入る回は呼び出し側が先に出す）。ループに任せると
+    予算を見ないまま見出しを返し、注入が上限を超えていた（GitHub issue #454）。
+    """
     lines = body.splitlines(keepends=True)
+    if not lines:
+        return ""
     out = knowledge_head(slug)
     for i, line in enumerate(lines):
         note = omitted_note(count_entries(lines[i:]))
@@ -91,11 +97,9 @@ def knowledge_sections(pairs: list[tuple[str, str]], budget: int) -> str:
         return "".join(full)
     counts = [(slug, count_entries(body.splitlines(keepends=True))) for slug, body in pairs]  # mutation-ok: 行末の改行の有無は is_entry の判定（先頭の | と区切り行の regex）に効かない
     # 全部は入らない。丸ごと省く slug の一覧の行を、全 slug を並べた最大の長さで先に取っておく
-    reserve = len(omitted_slugs_section(counts))
-    if budget < reserve:
-        # 案内も入らない（規約が上限に近い）。上限を超えても案内だけは出し、knowledge が黙って消えないようにする
-        return omitted_slugs_section(counts)
-    budget -= reserve
+    # 案内も入らない予算（規約が上限に近い）では budget が負になり、どの slug も入らずに全 slug の案内だけが
+    # 出る。上限を超えても出すのは knowledge を黙って消さないため
+    budget -= len(omitted_slugs_section(counts))
     out = ""
     for i, (slug, body) in enumerate(pairs):
         if len(out) + len(full[i]) <= budget:

@@ -648,6 +648,40 @@ class InjectBudgetTest(unittest.TestCase):
         self.assertEqual(res.stdout, "規約\n---\n## Knowledge（省略）\n\ndemo（0 件）の index は注入の上限で省いた。"
                                      "`/knowledge` で一覧を見る。\n")
 
+    def test_an_empty_index_never_pushes_the_output_over_the_limit(self):
+        """空の index があっても、省略の案内が入る予算なら出力は上限に収める（GitHub issue #454）.
+
+        予算は省略の案内ちょうど（案内も入らない予算の境界）から、全部が入る 1 字手前まで。
+        """
+        body = "| x | y |\n|---|---|\n| 1 | 2 |\n"
+        head_a = self.HEAD.replace("（demo）", "（a）")
+        head_b = self.HEAD.replace("（demo）", "（b）")
+        reserve = len("\n---\n## Knowledge（省略）\n\na（0 件）・b（1 件）の index は注入の上限で省いた。"
+                      "`/knowledge` で一覧を見る。\n")
+        pairs = ("a", self.index(""), "b", self.index(body))
+        for limit in range(reserve, len(head_a) + len(head_b) + len(body)):
+            with self.subTest(limit=limit):
+                self.assertLessEqual(len(self.run_budget("", limit, *pairs).stdout), limit)
+
+    def test_an_empty_index_that_does_not_fit_is_listed_as_omitted_with_zero_entries(self):
+        """入りきらない空の index は見出しだけを出さず、後の slug と並べて件数 0 で省略の案内に回す."""
+        body = "| x | y |\n|---|---|\n| 1 | 2 |\n"
+        omitted = ("\n---\n## Knowledge（省略）\n\na（0 件）・b（1 件）の index は注入の上限で省いた。"
+                   "`/knowledge` で一覧を見る。\n")
+        head_a = self.HEAD.replace("（demo）", "（a）")
+        for limit in (len(omitted), len(omitted) + len(head_a) - 1):
+            with self.subTest(limit=limit):
+                res = self.run_budget("", limit, "a", self.index(""), "b", self.index(body))
+                self.assertEqual(res.stdout, omitted)
+
+    def test_a_lone_empty_index_heading_is_kept_exactly_at_the_limit(self):
+        """空の index だけなら、見出しがちょうど収まれば出し、1 字足りなければ件数 0 の案内だけを出す."""
+        head_a = self.HEAD.replace("（demo）", "（a）")
+        omitted = ("\n---\n## Knowledge（省略）\n\na（0 件）の index は注入の上限で省いた。"
+                   "`/knowledge` で一覧を見る。\n")
+        self.assertEqual(self.run_budget("", len(head_a), "a", self.index("")).stdout, head_a)
+        self.assertEqual(self.run_budget("", len(head_a) - 1, "a", self.index("")).stdout, omitted)
+
     def test_a_slug_that_fits_exactly_is_kept_whole_and_the_next_is_omitted(self):
         """先の slug がちょうど収まれば丸ごと出し、省略の案内には後の slug だけを並べる."""
         body = "| a | b |\n|---|---|\n| 知見 | x |\n"

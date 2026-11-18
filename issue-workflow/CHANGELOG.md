@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.10] - 2026-11-18
+
+### Fixed
+
+- **空の knowledge index を持つ slug があると、SessionStart の注入が上限を超えていたのを直した**（GitHub issue #454）。`inject-budget.py` の `partial_section` は、index が空だと予算を見ないまま見出しを返していた。空の index は空を返すようにし、入りきらない空の index の slug は省略の案内に件数 0 で載せる（注入から外すと、knowledge のファイルがあっても黙って消える）。直すと、案内も入らない予算の早期 return は通常の経路と同じ出力になるので消した
+
 ## [1.19.9] - 2026-11-18
 
 ### Fixed
