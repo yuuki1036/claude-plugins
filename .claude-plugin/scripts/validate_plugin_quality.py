@@ -122,6 +122,12 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
   - skill 本文サイズ: SKILL.md 本文の行数上限（500 行）. 超過は references への
     progressive disclosure を促す（規模目安の正本は component-addition-advisor,
     執筆指針は docs/skill-writing.md）.
+  - split-skill-pin: 分けた skill（SPLIT_SKILLS）の SKILL.md と phase ファイルのうち, 同じ skill の
+    別のファイルが pin している正本の節を本文で引く（正本のファイル名と `## <anchor>` が同じ行にある）のに,
+    その節の pin を持たないもの. 分けたときに pin を 1 本にだけ移すと, 同じ節を言い換えている
+    ほかのファイルが確認から外れる（#473 で 20 ファイル / #493）. 節を指しているだけの参照
+    （docs/ssot-pin.md の判定で pin を置かない）と字面で区別できないので warning. 出典を書かずに
+    言い換えている箇所と, 別の doc を出典に挙げている箇所は拾えない
   - metrics-vocab: publish が送りうる名前（code-review 以外の skill / command 名・観点名）と
     payload のキー（`orchestration-measurement.md` の `## 16` の表. 計測ストアの `DENY_KEYS` は除く）が
     計測ストアの語彙に無いか. 語彙の外の値は同期で `other` に置き換わり, 追随漏れは 5 回中 4 回が
@@ -2027,6 +2033,89 @@ def check_split_skills(errors: list[str]) -> None:
                 )
 
 
+def _live_pins(path: Path) -> set[tuple[str, str | None]]:
+    """ファイルが持つ生きた pin の (正本のパス, anchor)."""
+    return {
+        (m.group("path"), m.group("anchor"))
+        for _, raw in _iter_unfenced_lines(read_text(path).splitlines())
+        for m in SSOT_PIN_RE.finditer(INLINE_CODE_RE.sub("", raw))
+    }
+
+
+def _cites_section(line: str, path: str, anchor: str, plugin: str) -> bool:
+    """正本のファイル名と `## <anchor>` が同じ行にあるか. `## 8` は `## 8.5` / `## 80` に当たらない.
+
+    ファイル名の直前にディレクトリが書かれていれば, それが正本のパスの末尾と一致するときだけ数える
+    （`triage-guide.md` は code-review と feature-dev の両方にあり, `feature-dev/references/triage-guide.md` は
+    `code-review/references/triage-guide.md` の参照ではない）. `mycanon.md` は `canon.md` に当たらない.
+    `${CLAUDE_PLUGIN_ROOT}` は参照を書いたファイルのプラグイン（`plugin`）のディレクトリとして読む.
+    """
+    if not re.search(r"## " + re.escape(anchor.rstrip(".")) + r"(?![\d.]*\d)", line):
+        return False
+    line = line.replace("${CLAUDE_PLUGIN_ROOT}", plugin).replace("{{PLUGIN_ROOT}}", plugin)
+    # \w は非 ASCII も含むので, 「正本はcanon.md」のように和文が隣接すると token が繋がって外れる
+    for token in re.findall(r"[A-Za-z0-9_./-]+", line):
+        token = re.sub(r"^(?:\.\.?/)+", "", token.rstrip("."))
+        if token == path or (path.endswith(token) and path[-len(token) - 1] == "/"):
+            return True
+    return False
+
+
+def _section_contains(path: Path, outer: str, inner: str) -> bool:
+    """正本の `outer` の節（_slice_section と同じ範囲）が `inner` の見出しを含むか. どちらかが一意に決まらなければ偽."""
+    heads = _markdown_headings(read_text(path).splitlines())
+    o = [k for k, (_, _, h) in enumerate(heads) if _anchor_matches(outer, h)]
+    n = [k for k, (_, _, h) in enumerate(heads) if _anchor_matches(inner, h)]
+    if len(o) != 1 or len(n) != 1:
+        return False
+    level = heads[o[0]][1]
+    end = next((k for k in range(o[0] + 1, len(heads)) if heads[k][1] <= level), len(heads))
+    return o[0] < n[0] < end  # mutation-ok: o と n が同じ見出しになるのは同じ anchor だけで, 呼び出し側は持っていない pin しか渡さない
+
+
+def check_split_skill_pin_gaps(warnings: list[str]) -> None:
+    """分けた skill で, 別のファイルが pin している正本の節を本文で引くのに, その pin を持たないファイル.
+
+    分けたときに pin を 1 本のファイルにだけ移すと, 同じ節を言い換えているほかのファイルが
+    正本の変更時の確認から外れる（GitHub #473 で 20 ファイル）. check_ssot_pins は置かれた pin しか
+    見ないので置き忘れは上がらない（#493）. 節を指しているだけの参照とは字面で区別できないので
+    warning に留める. 導入時の実測: #489 のマージ前の版で 9 ファイルを検出し, 9 件とも #489 で
+    pin を足したもの（偽陽性 0）. マージ後の版は 0 件.
+    """
+    for rel, _heading_re, _label in SPLIT_SKILLS:
+        skill_md = ROOT / rel
+        if not skill_md.is_file():
+            continue  # 一覧の誤りは check_split_skills が error にする
+        plugin = split_skill_plugin_dir(rel).name
+        files = [skill_md, *split_skill_files(split_skill_plugin_dir(rel), only=rel)]
+        # anchor は見出しの前方一致なので `#8` と `#8.` は同じ節. 末尾の `.` を落として比べる
+        held = {f: {(p, a.rstrip(".") if a else a) for p, a in _live_pins(f)} for f in files}
+        pinned = {pin for pins in held.values() for pin in pins if pin[1] is not None}
+        for f in files:
+            whole = {p for p, a in held[f] if a is None}
+            for path, anchor in sorted(pinned - held[f]):
+                if path in whole:
+                    continue  # ファイル全体の pin は節の変更も拾う
+                if (ROOT / path).resolve() == f.resolve():
+                    continue  # 正本そのものには pin を置けない（自己参照は check_ssot_pins の error）
+                if (ROOT / path).is_file() and any(
+                    p == path and a is not None and _section_contains(ROOT / path, a, anchor) for p, a in held[f]
+                ):
+                    continue  # 親の節の pin は子の節の変更も拾う
+                hit = next(
+                    (i for i, raw in _iter_unfenced_lines(read_text(f).splitlines())
+                     if _cites_section(raw, path, anchor, plugin)),
+                    None,
+                )
+                if hit is not None:
+                    warnings.append(
+                        f"[split-skill-pin] {f.relative_to(ROOT)}:{hit + 1} が {path} `## {anchor}` を引くが, "
+                        f"その節の pin が無い（同じ skill の別のファイルは持つ）. 節の中身を言い換えているなら "
+                        f"<!-- SSOT: {path}#{anchor} @00000000 --> を置き, 版上げの後に --update-ssot-pins で確定する. "
+                        f"指しているだけなら置かず, 正本のファイル名と節を別の行に書き分ける（docs/ssot-pin.md の判定と落とし穴）"
+                    )
+
+
 #: 計測ストア（private リポジトリ review-metrics）の clone。CI と他人の機には無いので、無ければ黙って飛ばす
 METRICS_STORE_ENV = "REVIEW_METRICS_DIR"
 METRICS_STORE_DEFAULT = Path.home() / ".claude" / "review-metrics"
@@ -2488,6 +2577,7 @@ def main() -> int:
     check_router_trigger_drift(warnings)
     check_skill_body_size(warnings)
     check_split_skills(errors)
+    check_split_skill_pin_gaps(warnings)
     check_metrics_vocab_drift(warnings)
 
     if warnings:

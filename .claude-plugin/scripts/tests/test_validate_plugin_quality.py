@@ -3409,5 +3409,191 @@ class SplitSkillTest(unittest.TestCase):
         check.assert_called_once()
 
 
+class SplitSkillPinGapTest(unittest.TestCase):
+    """分けた skill で, 別のファイルが pin している節を引くのに pin を持たないファイル（#493）.
+
+    期待する warning はテスト側でファイル名・行番号・節の文字列から組む（検査の抽出部で作らない）.
+    """
+
+    REL = "demo/skills/demo/SKILL.md"
+    REF = "skills/demo/references"
+    CANON = "docs/canon.md"
+    PIN8 = "<!-- SSOT: docs/canon.md#8 @00000000 -->\n"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("ROOT", "SPLIT_SKILLS"):
+            self.addCleanup(lambda n=name, o=getattr(v, name): setattr(v, n, o))
+        v.ROOT = self.root
+        v.SPLIT_SKILLS = ((self.REL, r"^## Phase (?P<num>\d+): ", "Phase {num}"),)
+        _write(self.root, self.CANON, "# canon\n\n## 8. 規則\n\n本文\n\n### 8.2 細則\n\n本文\n\n## 8.5. 別\n\n本文\n")
+
+    def _skill(self, skill: str = "demo", phases: dict[str, str] | None = None, head: str = "") -> None:
+        """SKILL.md と phase ファイル（{番号: 本文}）を書く. 既定は phase 1 が pin を持ち, phase 2 は本文だけ."""
+        phases = phases if phases is not None else {"1": self.PIN8 + "規則の言い換え\n", "2": "本文\n"}
+        rel = f"{skill}/skills/{skill}/SKILL.md"
+        body = f"---\nname: {skill}\n---\n\n# {skill}\n\n{head}"
+        for num, text in phases.items():
+            body += (f"## Phase {num}: 段\n\n入ったら最初に `${{CLAUDE_PLUGIN_ROOT}}/skills/{skill}/references/"
+                     f"phase-{num}.md` を Read する。\n\n")
+            _write(self.root, f"{skill}/skills/{skill}/references/phase-{num}.md", f"## Phase {num}: 段\n\n{text}")
+        _write(self.root, rel, body)
+
+    def _run(self) -> list[str]:
+        warnings: list[str] = []
+        v.check_split_skill_pin_gaps(warnings)
+        return warnings
+
+    def _expected(self, file: str, line: int, anchor: str = "8") -> str:
+        return (
+            f"[split-skill-pin] {file}:{line} が {self.CANON} `## {anchor}` を引くが, "
+            f"その節の pin が無い（同じ skill の別のファイルは持つ）. 節の中身を言い換えているなら "
+            f"<!-- SSOT: {self.CANON}#{anchor} @00000000 --> を置き, 版上げの後に --update-ssot-pins で確定する. "
+            f"指しているだけなら置かず, 正本のファイル名と節を別の行に書き分ける（docs/ssot-pin.md の判定と落とし穴）"
+        )
+
+    def test_sibling_section_pin_does_not_cover(self):
+        """`## 8` の節は同じレベルの `## 8.5` の手前で終わる."""
+        self._skill(phases={"1": "<!-- SSOT: docs/canon.md#8.5 @00000000 -->\n", "2": self.PIN8 + "canon.md `## 8.5`\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 4, "8.5")])
+
+    def test_pin_to_a_missing_section_does_not_cover(self):
+        missing = "<!-- SSOT: docs/canon.md#9 @00000000 -->\n"
+        self._skill(phases={"1": "<!-- SSOT: docs/canon.md#8.2 @00000000 -->\n", "2": missing + "canon.md `### 8.2`\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 4, "8.2")])
+
+    def test_plugin_root_reference_to_own_plugin_warns(self):
+        pin = "<!-- SSOT: demo/references/guide.md#8 @00000000 -->\n"
+        self._skill(phases={"1": pin, "2": "本文\n`${CLAUDE_PLUGIN_ROOT}/references/guide.md` の `## 8`\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 4).replace(
+            self.CANON, "demo/references/guide.md")])
+
+    def test_plugin_root_reference_in_another_plugin_is_quiet(self):
+        pin = "<!-- SSOT: other/references/guide.md#8 @00000000 -->\n"
+        self._skill(phases={"1": pin, "2": "`${CLAUDE_PLUGIN_ROOT}/references/guide.md` の `## 8`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_relative_reference_warns(self):
+        self._skill(phases={"1": self.PIN8, "2": "../../docs/canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 3)])
+
+    def test_parent_section_pin_covers_the_child_section(self):
+        child = "<!-- SSOT: docs/canon.md#8.2 @00000000 -->\n"
+        self._skill(phases={"1": child, "2": self.PIN8 + "canon.md `### 8.2`\n"})
+        self.assertEqual(self._run(), [])
+        self._skill(phases={"1": child, "2": "<!-- SSOT: docs/canon.md#8.5 @00000000 -->\ncanon.md `### 8.2`\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 4, "8.2")])
+
+    def test_whole_file_pin_in_the_same_file_covers_the_section(self):
+        whole = "<!-- SSOT: docs/canon.md @00000000 -->\n"
+        self._skill(phases={"1": self.PIN8, "2": whole + "canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_anchor_with_trailing_dot_is_the_same_section(self):
+        self._skill(phases={"1": self.PIN8, "2": "<!-- SSOT: docs/canon.md#8. @00000000 -->\ncanon.md `## 8`\n"})
+        self.assertEqual(self._run(), [])
+        self._skill(phases={"1": "<!-- SSOT: docs/canon.md#8. @00000000 -->\n", "2": "canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 3)])
+
+    def test_longer_file_name_ending_in_the_name_is_quiet(self):
+        self._skill(phases={"1": self.PIN8, "2": "mycanon.md `## 8`\nmy-canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_same_name_in_another_directory_is_quiet(self):
+        self._skill(phases={"1": self.PIN8, "2": "other/canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_path_qualified_reference_to_the_canonical_warns(self):
+        self._skill(phases={"1": self.PIN8, "2": "本文\ndocs/canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 4)])
+
+    def test_name_glued_to_japanese_text_warns(self):
+        self._skill(phases={"1": self.PIN8, "2": "正本はcanon.mdの## 8. 規則\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 3)])
+
+    def test_name_at_the_end_of_a_sentence_warns(self):
+        self._skill(phases={"1": self.PIN8, "2": "`## 8` の規則は canon.md.\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 3)])
+
+    def test_reference_without_pin_warns_once_at_first_line(self):
+        self._skill(phases={"1": self.PIN8, "2": "一行目\n規則を書く（canon.md `## 8`）\nまた canon.md `## 8` の話\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 4)])
+
+    def test_anchor_before_file_name_also_warns(self):
+        self._skill(phases={"1": self.PIN8, "2": "`## 8` の規則（canon.md）\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 3)])
+
+    def test_reference_in_skill_md_warns(self):
+        self._skill(head="冒頭で canon.md `## 8` を言い換える\n\n")
+        self.assertEqual(self._run(), [self._expected(self.REL, 7)])
+
+    def test_file_holding_the_pin_is_quiet(self):
+        self._skill(phases={"1": self.PIN8 + "canon.md `## 8` の言い換え\n", "2": self.PIN8 + "canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_section_no_file_of_the_skill_pins_is_quiet(self):
+        self._skill(phases={"1": "canon.md `## 8` の言い換え\n", "2": "canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_neighbouring_section_numbers_do_not_match(self):
+        self._skill(phases={"1": self.PIN8, "2": "canon.md `## 8.5`\ncanon.md `## 80`\ncanon.md `## 18`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_heading_style_reference_with_title_matches(self):
+        self._skill(phases={"1": self.PIN8, "2": "canon.md の ## 8. 規則 に従う\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 3)])
+
+    def test_file_name_or_anchor_alone_is_quiet(self):
+        self._skill(phases={"1": self.PIN8, "2": "canon.md を読む\n`## 8` の話\nother.md `## 8`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_reference_inside_fence_is_quiet(self):
+        self._skill(phases={"1": self.PIN8, "2": "```\ncanon.md `## 8`\n```\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_whole_file_pin_is_not_demanded(self):
+        self._skill(phases={"1": "<!-- SSOT: docs/canon.md @00000000 -->\n", "2": "canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_pin_in_fence_does_not_count_as_held_or_pinned(self):
+        fenced = "```\n" + self.PIN8 + "```\n"
+        self._skill(phases={"1": self.PIN8, "2": fenced + "canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [self._expected(f"demo/{self.REF}/phase-2.md", 6)])
+        self._skill(phases={"1": fenced, "2": "canon.md `## 8`\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_canonical_inside_the_skill_is_not_demanded_of_itself(self):
+        canon = f"demo/{self.REF}/phase-2.md"
+        self._skill(phases={"1": f"<!-- SSOT: {canon}#規則 @00000000 -->\n", "2": "## 規則\n\nphase-2.md `## 規則` は自分\n"})
+        self.assertEqual(self._run(), [])
+
+    def test_pins_of_another_split_skill_do_not_count(self):
+        other = "other/skills/other/SKILL.md"
+        v.SPLIT_SKILLS = (*v.SPLIT_SKILLS, (other, r"^## Phase (?P<num>\d+): ", "Phase {num}"))
+        self._skill(phases={"1": "本文\n", "2": "canon.md `## 8`\n"})
+        self._skill("other", phases={"1": self.PIN8})
+        self.assertEqual(self._run(), [])
+
+    def test_missing_skill_md_is_skipped(self):
+        self.assertEqual(self._run(), [])
+
+    def test_real_repo_has_no_warning(self):
+        """本物の repo と既定の一覧で warning が出ない（#489 で pin を足し終えた状態）."""
+        v.SPLIT_SKILLS = _load_module().SPLIT_SKILLS
+        v.ROOT = SCRIPT.parents[2]
+        self.assertEqual(self._run(), [])
+
+    def test_the_check_is_registered(self):
+        """直接呼ぶテストだけでは, main() から外れて検査が丸ごと黙っても気づけない."""
+        with unittest.mock.patch.object(v, "check_split_skill_pin_gaps") as check, \
+                unittest.mock.patch.object(sys, "argv", ["validate_plugin_quality.py", str(SCRIPT.parents[2] / "feature-dev")]), \
+                unittest.mock.patch("sys.stdout"), unittest.mock.patch("sys.stderr"):
+            v.ROOT = SCRIPT.parents[2]
+            v.main()
+        check.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
