@@ -80,6 +80,7 @@ Opus 5 世代で逆効果になる足場 3 種（委譲促進 / 自己ダブル�
 | description 単体 600 字 / 合計 15,000 字 | 同上（context-budget）。**数えるのは常駐する側**＝ commands 全部と、同名 command を持たない skill | warning |
 | SKILL.md 本文 500 行以上 | 同上（skill-size） | warning |
 | phase ごとに分けた SKILL.md（`SPLIT_SKILLS`）の上限 30,000 B・phase の鎖・孤立ファイル | 同上（split-skill） | error |
+| 分けた skill で、別のファイルが pin している正本の節を引くのに、その pin を持たないファイル | 同上（split-skill-pin。字面で判定するので、指しているだけの参照にも出る。置くかの判定は `docs/ssot-pin.md`） | warning |
 | 同名・別名ペアの command 本文に、対の SKILL.md を Read する誘導がある | 同上（skill-hop-cmd。独自の手順を持つ command は `ALIAS_COMMANDS_WITH_OWN_PROCEDURE` で外す） | error |
 | トリガーフレーズ → 期待スキル起動の回帰 | `evals/runner.py`（pass^k=3） | 手動実行 |
 | 同名ペアで **トリガーフレーズだけ** SKILL.md 側を直した | 同上（router-drift）。トリガーの編集はルーティング意図そのものなので「意図はあったが届かなかった」を名指しできる（#206 案 B） | warning |
