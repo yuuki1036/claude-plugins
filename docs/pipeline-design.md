@@ -51,7 +51,7 @@ agent / サブタスクのロールに応じて既定モデルを出し分ける
   **コスト側だけ層別して recall 側を累計すると、「安くなった」だけが見えて
   「効かなくなった」が見えない非対称になる。**
 
-- **sub 側だけ世代を固定したいときの制御点**: 環境変数 `CLAUDE_CODE_SUBAGENT_MODEL`（フルモデル ID を受理）。優先順位は `env` → Agent tool の `model:` → agent frontmatter の `model:` → 親継承 で、env が立つと **tool の指定を読まずに**上書きする。**全 sub に一律**にかかりロール別ルーティング（原則 4 そのもの）を潰すので、**既定では使わない**。コストを下げたいだけならセッション全体のモデルを下げる方が素直（探索層が `sonnet` のまま残る）。
+- **sub 側だけ世代を固定したいときの制御点**: 環境変数 `CLAUDE_CODE_SUBAGENT_MODEL`（フルモデル ID を受理）と `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`（CC 2.1.257+）。優先順位は Agent tool の `model:` → agent 定義の `model:` → `CLAUDE_CODE_SUBAGENT_MODEL` → 親継承 で、**env だけなら model を明示していない sub の既定を決めるだけ**（CC 2.1.251 で上書きから既定値に変わった）。この repo の agent 定義と skill 本文の起動は原則 model を明示しているので、効く先は明示していない sub に限られる（例: failure-journal の retro が件数の多いときに並列分類で起動する agent / `failure-journal/skills/retro/references/transcript-salvage.md`）。`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` を立てると定義と起動時の `model:` を無視して**全 sub に一律**にかかり、ロール別ルーティング（原則 4 そのもの）を潰すので、**`_FORCE` は既定では使わない**。コストを下げたいだけならセッション全体のモデルを下げる方が素直（探索層が `sonnet` のまま残る）。出典: CC CHANGELOG 2.1.251 / 2.1.257、公式 sub-agents の「Choose a model」「Run every subagent on one model」。
 - **世代を下げても単価は下がらない**: Opus 5 と Opus 4.8 は同一単価（$5 / $25 per 1M）。差が出るのは消費トークン量で、Opus 5 は `thinking` 省略時に adaptive が既定 ON・4.8 は thinking なしで走る。**「安い世代に落とす」効果を単価で見積もらないこと。** 単価が動くのは tier を跨ぐときだけ（`sonnet` は $3 / $15）。
 
 ## Opus 5 世代へのプロンプト最適化（原則 2・3・5・7・10 との接続）

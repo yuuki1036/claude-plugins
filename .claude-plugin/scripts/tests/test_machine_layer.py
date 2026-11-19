@@ -13,6 +13,7 @@ stub を置いた使い捨てリポジトリに向けて契約だけを見る。
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -76,10 +77,10 @@ class MachineLayerTest(unittest.TestCase):
         else:
             link.unlink(missing_ok=True)
         # bash は常に要る。section 4（CLI スキーマ検査）は find / xargs / grep / sort /
-        # basename / awk（指摘行の切り出し）を使うので、python3 がある構成だけそれらを足す
+        # basename を使うので、python3 がある構成だけそれらを足す
         needed = ["bash"]
         if with_python:
-            needed += ["find", "xargs", "grep", "sort", "basename", "tail", "dirname", "awk"]
+            needed += ["find", "xargs", "grep", "sort", "basename", "tail", "dirname"]
         for name in needed:
             real = shutil.which(name)
             self.assertIsNotNone(real, "%s が見つからない" % name)
@@ -92,30 +93,53 @@ class MachineLayerTest(unittest.TestCase):
         return env
 
     def write_claude_stub(self, *findings: str) -> None:
-        """`claude` の stub。**bash builtin だけで書く**（PATH を絞るので `cat` は引けない）.
+        """`claude` の stub。指摘を渡せば manifest の error として rc=1 で返す."""
+        if findings:
+            self.write_claude_json_stub(1, errors=[self.item(f) for f in findings])
+        else:
+            self.write_claude_json_stub(0)
+
+    @staticmethod
+    def item(text: str) -> dict[str, object]:
+        """`path: message` を `--json` の 1 件（`{path, message, code}`）にする."""
+        path, _, message = text.partition(": ")
+        return {"path": path, "message": message, "code": None}
+
+    def write_claude_json_stub(self, code: int, errors: list | None = None,
+                               warnings: list | None = None, contents: list | None = None,
+                               notes: list | None = None) -> None:
+        """`claude plugin validate --json` の stub。**形は CC 2.1.328 の実物に合わせる**.
+
+        指摘は `manifest` と `contents[]`（ファイルごと）の `errors` / `warnings`。
+        `notes`（mod の一覧）と `directory.findings`（ICON_MISSING）は件数に入らない
+        """
+        report = {
+            "success": code == 0, "strict": False, "target": "demo/.claude-plugin/plugin.json",
+            "manifest": {"file": "demo/.claude-plugin/plugin.json", "type": "plugin",
+                         "errors": errors or [], "warnings": warnings or [],
+                         "notes": notes or [], "gatingHooks": [], "wasm": [], "modules": []},
+            "contents": contents or [],
+            "directory": {"findings": [{"code": "ICON_MISSING", "severity": "warning",
+                                        "message": "No icon found in the plugin."}]},
+        }
+        self.write_claude_raw_stub(code, json.dumps(report, ensure_ascii=False))
+
+    def write_claude_raw_stub(self, code: int, stdout: str, stderr: str = "") -> None:
+        """出力をそのまま返す `claude` stub。**bash builtin だけで書く**（PATH を絞るので `cat` は引けない）.
 
         実測: `cat <<EOF` の stub が `cat: command not found` で落ち、出力が空になったため
         「指摘なし」と区別できなかった。stub が壊れていても**テストは緑に見える**型なので、
         `test_..._reported_per_plugin` の assert が唯一の防壁になる。
-
-        **実物の書式で出す**: 指摘は `✘ Found N error(s):` の見出しの直後に N 行並ぶ（rc=1）。
-        機械層は見出しの件数ぶんだけを拾うので、見出しの無い stub では指摘にならない。
+        `--json` を付けずに呼ばれたら exit 64 で落ちる（表示を読む実装に戻ると判定不能になる）
         """
-        if findings:
-            self.write_claude_stub_rc(1, "", "✘ Found %d error:" % len(findings), "", *findings)
-        else:
-            self.write_claude_stub_rc(0)
-
-    def write_claude_warn_stub(self, *lines: str, count: int) -> None:
-        """`⚠ Found N warning:` の見出しで出す stub（rc=0）。`lines` の先頭 `count` 行が警告."""
-        self.write_claude_stub_rc(0, "", "⚠ Found %d warning:" % count, "", *lines)
-
-    def write_claude_stub_rc(self, code: int, *findings: str) -> None:
-        """終了コードも指定できる `claude` stub（rc を捨てていないかの検証用）."""
+        def quote(text: str) -> str:
+            return "'%s'" % text.replace("'", "'\\''")
         stub = self.bin / "claude"
-        args = " ".join("'%s'" % f.replace("'", "'\\''") for f in findings) or "''"
-        stub.write_text("#!/usr/bin/env bash\nprintf '%%s\\n' %s\nexit %d\n" % (args, code),
-                        encoding="utf-8")
+        stub.write_text(
+            "#!/usr/bin/env bash\n"
+            "[ \"$3\" = --json ] || { printf '%%s\\n' 'no --json' >&2; exit 64; }\n"
+            "printf '%%s\\n' %s\nprintf '%%s' %s >&2\nexit %d\n"
+            % (quote(stdout), quote(stderr), code), encoding="utf-8")
         stub.chmod(0o755)
 
     def run_layer(self, env: dict[str, str] | None = None, args: tuple[str, ...] = ()
@@ -270,21 +294,118 @@ class MachineLayerTest(unittest.TestCase):
         (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
         self.with_tests_dir(passing=True)
         env = self.env(with_claude=True)
-        self.write_claude_stub("  ❯ name: 必須フィールドが無い")
+        self.write_claude_stub("name: 必須フィールドが無い")
         res = self.run_layer(env=env)
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("[schema:demo]", res.stdout)
 
-    def test_ssot_only_warnings_are_filtered_out(self):
-        """`_requirements` / `_superseded_by` は独自フィールドなので警告から除外する."""
+    def _demo(self) -> dict[str, str]:
         (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
         (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
         self.with_tests_dir(passing=True)
-        env = self.env(with_claude=True)
-        self.write_claude_warn_stub("  ❯ _requirements: Unknown field", "  ❯ _superseded_by: Unknown",
-                                    count=2)
+        return self.env(with_claude=True)
+
+    def test_ssot_only_warnings_are_filtered_out(self):
+        """`_requirements` / `_superseded_by` は独自フィールドなので警告から除外する（`path` で見る）."""
+        env = self._demo()
+        self.write_claude_json_stub(0, warnings=[
+            self.item("_requirements: Unknown field '_requirements'. Claude Code ignores it at load time."),
+            self.item("_superseded_by: Unknown field '_superseded_by'.")])
         res = self.run_layer(env=env)
         self.assertEqual(res.returncode, 0, res.stdout)
+        self.assertEqual(res.stdout, "")
+
+    def test_a_message_naming_requirements_is_not_filtered_out(self):
+        """除外は `path` で決める。文言に `_requirements` を含むだけの別の指摘は落とさない."""
+        env = self._demo()
+        self.write_claude_json_stub(0, warnings=[self.item("author: _requirements の隣に置く")])
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("author: _requirements の隣に置く", res.stdout)
+
+    def test_other_warnings_are_reported(self):
+        """`_requirements` 以外の warning は rc=0 でも検出（exit 1）."""
+        env = self._demo()
+        self.write_claude_json_stub(0, warnings=[
+            self.item("_requirements: Unknown field '_requirements'."),
+            self.item("author: 推奨フィールドが無い")])
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("[schema:demo] author: 推奨フィールドが無い", res.stdout)
+        self.assertNotIn("_requirements", res.stdout)
+
+    def test_findings_in_contents_are_reported(self):
+        """hooks.json など manifest 以外のファイルの指摘は `contents[]` に入る."""
+        env = self._demo()
+        self.write_claude_json_stub(0, contents=[
+            {"file": "demo/hooks/hooks.json", "type": "hooks", "errors": [], "warnings": [],
+             "notes": ["./mod.ts hooks: session.start"]},
+            {"file": "demo/hooks/lib.ts", "type": "module", "errors": [],
+             "warnings": [self.item("line 86, column 57: error TS2532: Object is possibly 'undefined'.")]}])
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        # どのファイルの指摘かが分かるよう、プラグインからの相対パスが頭に付く
+        self.assertIn("hooks/lib.ts: line 86, column 57: error TS2532", res.stdout)
+        self.assertNotIn("mod.ts", res.stdout)
+
+    def test_errors_and_warnings_are_both_reported(self):
+        env = self._demo()
+        self.write_claude_json_stub(1, errors=[self.item("name: 予約名"), self.item("version: 不正")],
+                                    warnings=[self.item("author: 推奨")])
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        for want in ("name: 予約名", "version: 不正", "author: 推奨"):
+            self.assertIn(want, res.stdout)
+
+    def test_notes_and_directory_findings_are_not_findings(self):
+        """mod の一覧（notes）と配布先の検査（ICON_MISSING）は「修正の必要な問題」にしない.
+
+        CC 2.1.292 で表示の情報行を拾い、毎ターン Stop hook に載り続けた
+        """
+        env = self._demo()
+        self.write_claude_json_stub(0, notes=["./mod.ts hooks: session.start, tool.call{tool=Bash}",
+                                              "./mod.ts env reads: HOME"])
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(res.stdout, "")
+
+    def test_broken_json_is_unknown_not_green(self):
+        """JSON として読めなければ判定不能（exit 2）。rc=0 でも緑に倒さない."""
+        env = self._demo()
+        self.write_claude_raw_stub(0, '{"manifest": {"errors": [')
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 2, res.stdout)
+        self.assertIn("JSON として読めなかった", res.stdout)
+
+    def test_json_without_a_manifest_is_unknown(self):
+        """形が違う JSON（`manifest` が無い）も判定不能。指摘 0 件として読まない."""
+        env = self._demo()
+        self.write_claude_raw_stub(0, json.dumps({"success": True}))
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 2, res.stdout)
+
+    def test_an_old_cli_without_json_is_unknown(self):
+        """`--json` を知らない古い claude（CC 2.1.259 より前）は判定不能。stderr を添える."""
+        env = self._demo()
+        self.write_claude_raw_stub(1, "", "error: unknown option '--json'")
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 2, res.stdout)
+        self.assertIn("unknown option '--json'", res.stdout)
+
+    def test_a_failing_cli_that_reports_nothing_is_unknown_not_green(self):
+        """rc を捨てない（GitHub issue #176）: rc が非ゼロなのに指摘が 0 件なら判定不能（exit 2）."""
+        env = self._demo()
+        self.write_claude_json_stub(1)
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 2, "rc を捨てて緑に倒している: " + res.stdout)
+        self.assertIn("指摘が 0 件", res.stdout)
+
+    def test_a_successful_cli_with_no_findings_stays_green(self):
+        """rc=0 で指摘も無ければ緑（判定不能に倒しすぎない）."""
+        env = self._demo()
+        self.write_claude_json_stub(0)
+        res = self.run_layer(env=env)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertEqual(res.stdout, "")
 
     def test_missing_claude_cli_does_not_make_the_whole_run_unknown(self):
@@ -292,95 +413,6 @@ class MachineLayerTest(unittest.TestCase):
         self.with_tests_dir(passing=True)
         res = self.run_layer(env=self.env(with_claude=False))
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-
-    def test_a_failing_cli_that_reports_nothing_is_unknown_not_green(self):
-        """rc を捨てない（GitHub issue #176）.
-
-        指摘の抽出は出力の `❯` 行に依存しているので、CLI が出力形式を変えた版では
-        **1 行も拾えず無言で常時緑**になる。rc が非ゼロなのに抽出が空なら
-        「違反なし」ではなく「読めなかった」（exit 2）に倒す。
-        """
-        (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
-        (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
-        self.with_tests_dir(passing=True)
-        env = self.env(with_claude=True)
-        self.write_claude_stub_rc(1, "PLUGIN ERROR: name is required")  # `❯` を含まない書式
-        res = self.run_layer(env=env)
-        self.assertEqual(res.returncode, 2, "rc を捨てて緑に倒している: " + res.stdout)
-        self.assertIn("指摘行を抽出できなかった", res.stdout)
-
-    def test_a_successful_cli_with_no_findings_stays_green(self):
-        """rc=0 で指摘も無ければ従来どおり緑（判定不能に倒しすぎない）."""
-        (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
-        (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
-        self.with_tests_dir(passing=True)
-        env = self.env(with_claude=True)
-        self.write_claude_stub_rc(0)
-        res = self.run_layer(env=env)
-        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-
-    # ---- 情報行を拾わない（CC 2.1.292 の mod の一覧行）----------------------
-    def _demo(self) -> dict[str, str]:
-        (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
-        (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
-        self.with_tests_dir(passing=True)
-        return self.env(with_claude=True)
-
-    INFO = ("  ❯ ./mod.ts hooks: session.start, tool.call{tool=Bash}",
-            "  ❯ ./mod.ts gating hook without .catch: tool.call{tool=Bash}",
-            "  ❯ ./mod.ts calls: $.state.get, $.state.set",
-            "  ❯ ./mod.ts env reads: HOME")
-
-    def test_info_lines_of_a_passing_validate_are_not_findings(self):
-        """件数に数えない情報行を「修正の必要な問題」にしない（毎ターン Stop hook に載り続けた）."""
-        env = self._demo()
-        self.write_claude_stub_rc(0, "Validating hooks: demo/hooks/hooks.json", "", *self.INFO, "",
-                                  "✔ Validation passed")
-        res = self.run_layer(env=env)
-        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-        self.assertEqual(res.stdout, "")
-
-    def test_only_the_counted_warning_is_reported(self):
-        """見出しの件数ぶんだけ拾う（後ろに続く情報行は拾わない）."""
-        env = self._demo()
-        self.write_claude_warn_stub("  ❯ author: 推奨フィールドが無い", "", *self.INFO, count=1)
-        res = self.run_layer(env=env)
-        self.assertEqual(res.returncode, 1, res.stdout)
-        self.assertIn("author: 推奨フィールドが無い", res.stdout)
-        self.assertNotIn("mod.ts", res.stdout)
-
-    def test_errors_and_warnings_are_both_reported(self):
-        env = self._demo()
-        self.write_claude_stub_rc(1, "✘ Found 2 errors:", "", "  ❯ name: 予約名", "  ❯ version: 不正",
-                                  "", "⚠ Found 1 warning:", "", "  ❯ author: 推奨", "", *self.INFO)
-        res = self.run_layer(env=env)
-        self.assertEqual(res.returncode, 1, res.stdout)
-        for want in ("name: 予約名", "version: 不正", "author: 推奨"):
-            self.assertIn(want, res.stdout)
-        self.assertNotIn("mod.ts", res.stdout)
-
-    def test_a_count_of_zero_reports_nothing(self):
-        """境界: 0 件の見出しの後ろの `❯` 行は拾わない."""
-        env = self._demo()
-        self.write_claude_stub_rc(0, "⚠ Found 0 warnings:", "", *self.INFO)
-        res = self.run_layer(env=env)
-        self.assertEqual(res.returncode, 0, res.stdout)
-
-    def test_a_failing_cli_without_a_count_header_still_reports_its_lines(self):
-        """見出しの無い書式で落ちた回は `❯` 行を全部拾う（書式が変わった版で黙らない）."""
-        env = self._demo()
-        self.write_claude_stub_rc(1, "  ❯ name: 必須フィールドが無い")
-        res = self.run_layer(env=env)
-        self.assertEqual(res.returncode, 1, res.stdout)
-        self.assertIn("[schema:demo]", res.stdout)
-
-    def test_a_passing_cli_without_a_count_header_reports_nothing(self):
-        """rc=0 で見出しが無ければ `❯` 行は情報行として扱う."""
-        env = self._demo()
-        self.write_claude_stub_rc(0, *self.INFO)
-        res = self.run_layer(env=env)
-        self.assertEqual(res.returncode, 0, res.stdout)
-        self.assertEqual(res.stdout, "")
 
     def test_every_plugin_is_validated_not_just_the_first(self):
         """空行スキップを「非空スキップ」に取り違えると**全件が黙って飛ぶ**."""
@@ -390,7 +422,7 @@ class MachineLayerTest(unittest.TestCase):
                 "{}", encoding="utf-8")
         self.with_tests_dir(passing=True)
         env = self.env(with_claude=True)
-        self.write_claude_stub("  ❯ name: 必須フィールドが無い")
+        self.write_claude_stub("name: 必須フィールドが無い")
         res = self.run_layer(env=env)
         self.assertEqual(res.returncode, 1, res.stdout)
         self.assertIn("[schema:alpha]", res.stdout)

@@ -2775,7 +2775,7 @@ class ModelGenerationTest(TranscriptFixture):
     def test_sub_generation_follows_the_parent(self):
         """#170 の踏み下げ。親が 4.8 なら `opus` の sub も 4.8 で、両方 payload に残る.
 
-        この経路が壊れると `CLAUDE_CODE_SUBAGENT_MODEL` などで前提が崩れた回を
+        この経路が壊れると `CLAUDE_CODE_SUBAGENT_MODEL` + `_FORCE` などで前提が崩れた回を
         事後に検出できなくなる（`sub_distinct` はそのための証拠）。
         """
         self.write_transcript([[0, 5]], main_models=("claude-opus-4-8",),
