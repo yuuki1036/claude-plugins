@@ -71,7 +71,7 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 
 **テスト**: `SplitSkillTest` を足す。期待値はテスト側で独立に組む。`tests/skill_flow.py` の `flow_text` は、SKILL.md の Read の行の位置に本文を差し込み、分ける前の順に戻す。これで既存の見出し切り出しテストはそのまま動く。分けた skill か・どれが Read の行か・どれが最初の見出しかは、検査と同じ関数（`split_skill_entry` / `split_skill_phases` / `first_heading_index`）で決める（判定基準の持ち主を 1 つにする）。
 
-**pin**: 移した本文を要約している SSoT pin は、本文と一緒に新ファイルの冒頭へ移す（hash は変わらない）。
+**pin**: 移した本文を要約している SSoT pin は、本文と一緒に新ファイルの冒頭へ移す（hash は変わらない）。どのファイルに配るかは `docs/ssot-pin.md`「SKILL.md を分けるとき」に従う（review と self-review の配り漏れは GitHub #473 で直した）。
 
 **本文の修正**: 古い「次へ」3 か所を直す。どれも後に足した phase を飛ばす向きになっている。
 

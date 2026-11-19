@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.29.4] - 2026-11-20
+
+### Fixed
+
+- **`references/phase-7.md` に code-review の review-guide-format.md「回し直すかの判断」の SSoT pin を足した**（GitHub issue #473）。Phase 7 は 2 回目の self-review を回すかの分岐（`次の一手:` が `決定的な検証` の回・`不明（…）` の扱い）でこの節を要約しているが、分けたときに pin を Phase 6.9 のファイルにだけ移していた。正本が変わっても Phase 7 は打ち直しの対象に上がらなかった
+
 ## [2.29.3] - 2026-11-19
 
 ### Fixed

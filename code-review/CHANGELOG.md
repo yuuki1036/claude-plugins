@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.7] - 2026-11-20
+
+### Fixed
+
+- **review と self-review を分けた Step ファイルのうち、正本の節を言い換えているのに pin を持たない 19 本に SSoT pin を足した**（GitHub issue #473）。分けたときに、pin を最もよく要約している Step のファイルにだけ移していたので、正本の `orchestration-guide.md` の `## 3.5`（大きい共有コンテキストはファイルで渡す）か `orchestration-measurement.md` の `## 16`（`review:completed` の payload 契約）が変わっても、この 19 本は打ち直しの対象に上がらなかった。足したのは review の `step-2`・`step-2.5`・`step-4`・`step-4.9`（`#3.5`）と `step-3`・`step-5.5`・`step-5.6`・`step-5.8`・`step-5.9`・`step-6`（`#16`）、self-review の `step-1`・`step-3.9`（`#3.5`）と `step-2`・`step-4.5`・`step-4.6`・`step-4.8`・`step-4.9`・`step-5`・`step-6`（`#16`）。動的ラウンドと Phase 0 の 10 本は出典に triage-dynamic-gates を挙げているが、`skip_reason` の語彙と扱い・`gate_schema`・`recall_skeptic.launch`・`explorer_waves` の意味という `## 16` の値を書いている。あわせて、review の `step-4.9` と self-review の `step-3.9` に `orchestration-guide.md#4`（AGENTS.md の階層選択）の pin を足した。分ける前から pin の無い節だが、本文がその節を要約している。節を指しているだけのファイルには置いていない。動的ラウンドを同じメッセージで発行する手順は、`orchestration-dynamic-rounds.md` と `triage-dynamic-gates.md` を正本とする別の規則なので、`## 0` の pin は置いていない
+
 ## [2.168.6] - 2026-11-19
 
 ### Fixed

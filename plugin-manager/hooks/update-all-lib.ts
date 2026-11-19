@@ -83,7 +83,7 @@ function semver(ver: string): number[] | null {
 }
 
 function compareSemver(a: number[], b: number[]): number {
-  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i]
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return (a[i] ?? 0) - (b[i] ?? 0)
   return 0
 }
 
@@ -112,7 +112,7 @@ export function changelogBetween(text: string, before: string, after: string): s
     for (const l of lines) {
       const m = HEADING_RE.exec(l)
       if (m) {
-        const v = semver(m[1])
+        const v = semver(m[1] ?? '')
         keep = v !== null && compareSemver(v, lo) > 0 && compareSemver(v, hi) <= 0
       }
       if (keep) kept.push(l)
