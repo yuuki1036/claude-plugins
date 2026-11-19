@@ -16,7 +16,7 @@
 #   - レビューサマリ（APPROVED / CHANGES_REQUESTED / COMMENTED）
 #   - 行単位 review コメント（返信チェーン付き）
 #
-# 出力フォーマットは review SKILL.md Step 2.5 の「PR コンテキストブロック」に準拠。
+# 出力フォーマットは review の Step 2.5（skills/review/references/step-2.5.md） の「PR コンテキストブロック」に準拠。
 # 各セクションは取得失敗時も「（なし）」を出力し、reviewer が項目の有無を判別できるようにする。
 
 set -euo pipefail

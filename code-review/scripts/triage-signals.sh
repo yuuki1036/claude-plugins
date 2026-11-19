@@ -553,7 +553,7 @@ echo "$h focus-signals"
   sig security         'password|secret|token|api_key|eval\(|innerHTML|dangerouslySetInnerHTML|query\('
   sig performance      'SELECT |INSERT |UPDATE |DELETE |\.find\(|\.findMany\(|Promise\.all'
   # 表の「DB 関連ファイル、キャッシュ、キュー、ワーカー」。表の「ループ内の await」は 1 行の正規表現で
-  # 拾えないので、オーケストレーターの起動前検算に残す（review SKILL.md `### 2`）
+  # 拾えないので、オーケストレーターの起動前検算に残す（review の skills/review/references/step-2.md `### 2`）
   sig performance      '(^|/)(db|database|caches?|queues?|workers?|jobs?)/|\.sql$' core-paths
   sig api-design       'router\.(get|post|put|delete)|@(Get|Post|Put|Delete)\(|app\.(get|post|put|delete)\('
   # 表の「API/ルート/コントローラ/GraphQL/proto」
