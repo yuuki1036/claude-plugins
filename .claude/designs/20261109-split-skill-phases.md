@@ -99,11 +99,13 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 - [local] self-review の 4.5〜4.9 は、SKILL.md の見出しを実行の順（4.5 → 4.8 → 4.6 → 4.9 → 4.7）に並べ、並べ替えた見出しの直前の Step の下にそう並べたことを 1 行添える（`docs/skill-writing.md` にも同じ規則を書いた）。鎖は SKILL.md の並びを辿るので、番号の順に並べると 4.8 の skeptic 統合を飛ばして 4.6 へ進む（2026-11-09）
 - [local] self-review は `step-<番号>.md` を 19 本作り、入口の条件を SKILL.md に上げず、スキップの条件は Step ファイルで判定する（Step の見出しが条件を括弧書きで持ち、前の Step の値だけで決まる条件が少ないため / 2026-11-09）
 - [local] self-review の SSoT pin（orchestration-guide `0`・`3.5`、orchestration-measurement `16`、scoring-guide の報告閾値の節）は、要約している本文と一緒に Step 3・4・5・6・6.4 のファイルへ移す。COMMENT-POLISH マーカーの検査は phase ファイルを含めた本文で数える
+- [local] review（84 KB）も self-review と同じ形で `step-<番号>.md` を 17 本作り、`SPLIT_SKILLS` に足した（GitHub #447 / 2026-11-19）。5.5〜5.9 は self-review の 4.5〜4.9 と同じく実行の順（5.5 → 5.8 → 5.6 + 5.9 → 5.7）に並べた。Step 3 の `#### 3.0`〜`3.4` は Step 3 のファイルにまとめ、レポートの定型と締めフローを持つ Step 7 は分けずに 1 ファイルにした（22 KB で上限に収まり、7 の中に `###` の見出しが無い）。SSoT pin は要約している Step 1・4・5・6・7 のファイルへ移した
 - [→ADR候補] 大きい SKILL.md は phase ごとに references へ分け、`SPLIT_SKILLS` に載せて上限と鎖を強制する（他の skill を分けるときもこの形に揃える）
 
 ## 未解決事項 (open)
 
 - 残りの大きい SKILL.md（42 KB 超の 7 本）を分けるか。(a) 1 本ずつ分けて `SPLIT_SKILLS` に足す: 読み切れない問題が消えるが作業量が大きい / (b) 上限だけ緩く全体に掛ける: 分けなくても通る。方向性は (a)。確定タイミング: #426 の 2 本目のマージ後に follow-up の Issue で決める
+  - 2026-11-19: follow-up は GitHub #447。(a) で 1 本ずつ別の PR にして進め、1 本目の review は分けた（設計判断ログの review の行）。残りの 6 本は #447 で 1 本ずつ決める
 
 ## 実装ブリッジ (Implementation Bridge)
 
