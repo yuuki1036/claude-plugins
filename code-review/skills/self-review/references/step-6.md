@@ -1,6 +1,6 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @b7079976 -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @2a27f9ea -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @0d0d4681 -->
 ### 6. レポート出力
 
 **他 skill からオーケストレーションされても定型と publish は省かない**（GitHub issue #232）: feature-dev 等の親 skill が self-review を呼び、手順を親のコンテキストで回す場合でも、**下のテンプレートどおりのレポート → `mark t2` → 6.4 の publish** は self-review の手順として踏む（`--embed` の有無を問わない）。親の集約・要約はこの定型レポートを**出した後に**足すもので、置き換えない。publish を踏まずに Edit / Write / Skill / Agent を呼ぶと publish-guard hook（PreToolUse）が鳴る。
