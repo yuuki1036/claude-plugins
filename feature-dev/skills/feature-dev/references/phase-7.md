@@ -42,11 +42,11 @@
 
    **読み合わせ以降の画面の変更を残す**（GitHub issue #306。3. で読み合わせて修正を入れた回はすべて。上の分岐で 2 回目の self-review を回した回も、`決定的な検証` で Phase 5.3 だけを回した回も同じ）: 3. の読み合わせ以降に入った変更（読み合わせでの修正・2 回目の self-review での修正）に画面のファイル（Phase 5.5 Step 3 の定義）があれば、次の一手に「読み合わせ後の変更は動作確認を通していない」と添える（Phase 5.5 はもう一度回さない）。変わったファイルは 4. の冒頭の `review-snapshot.sh check` が出す `<追加>\t<削除>\t<path>` の行（`snapshot=missing` / `unavailable` の回は締めの「入れた修正」）と、2 回目の self-review で直したファイルで見る
 
-   **コミットの前に文書整合を通す**（2026-11-07 決定。3. で読み合わせた回も、5. の従来のサマリの回も同じ。上の分岐と変異テストを済ませてから 1 回だけ）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" issue-workflow` が `1` なら、`Skill` tool で `issue-workflow:doc-sync` を `--base <BASE>`（3. と同じ。分からなければ付けない）で起動する。doc-sync は、コードの変更で更新が要る文書とコメントを承認を取らずに直し、残った指摘を一覧にする。応答の最後の行で分岐する:
+   **コミットの前に文書整合を通す**（2026-11-07 決定。3. で読み合わせた回も、5. の従来のサマリの回も同じ。上の分岐と変異テストを済ませてから 1 回だけ）: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" issue-workflow` が `1` なら、`Skill` tool で `issue-workflow:doc-sync` を `--base <BASE>`（3. と同じ。分からなければ付けない）で起動する。doc-sync は、コードの変更で更新が要る文書とコメントを承認を取らずに直し、残った指摘を一覧にする。応答の末尾の `DOC_SYNC_*=` の行で分岐する（`--base` を付けなかった回は、`DOC_SYNC_BASE=` の値も次の一手に「doc-sync の base: <値>」と 1 行添える（行が無い古い版の issue-workflow なら「不明」）。main 以外から切ったブランチでは、見る範囲が親ブランチの変更まで広がりうる / GitHub issue #463）:
    - 直した（`DOC_SYNC_FIXED=` が 1 以上）→ Phase 5.3（静的オラクル）をもう一度回す（文書とコメントだけの変更なので self-review は回し直さない）。次の一手に「doc-sync の文書修正は self-review を通していない」と添え、直した文書はコミットに含める
    - 残った（`DOC_SYNC_RESULT=findings`）→ 残った指摘（「実装を直す」・doc-checks の検出）を利用者に示し、直すかを聞く。実装を直すと決まったら Phase 5 に戻る
    - 指摘なし（`clean` / `skipped`。`0` で issue-workflow が無い回も）→ 結果を 1 行添えて次の一手へ
-   - git-commit-helper は、このセッションに `DOC_SYNC_RESULT=` の行があり、その後にコードの変更を足していなければ doc-sync を回さない。ここで回しておけばコミットで二重に回らない。ここを通らずにコミットへ進んだ回は git-commit-helper が回す（GitHub issue #450）
+   - コミットの前にもう一度回すかは git-commit-helper の 1.7 が決める（その条件はここに書き写さない / GitHub issue #462）。ここを通らずにコミットへ進んだ回は git-commit-helper が回す（GitHub issue #450）
    - Phase 1.5 で Issue ファイルを読んだ回は、その更新履歴に `doc-sync: <DOC_SYNC_RESULT の値>` と 1 行足す（issue-workflow の issue-maintain は、この行があれば completed にするときに doc-sync を回し直さない）
 
    - 2 回目の self-review の後は、読み合わせも self-review も繰り返さない。最後に次の一手（コミット → PR）を 1 行添える
