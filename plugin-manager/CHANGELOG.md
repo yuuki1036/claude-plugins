@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.1] - 2026-11-20
+
+### Fixed
+
+- `hooks/update-all-lib.ts` が `claude plugin validate` の型チェックで 3 件の error を出していた（`compareSemver` の配列の添字と、`changelogBetween` の正規表現の捕捉が `undefined` を取りうる / GitHub #482 の作業中に検出）。どちらも `??` で既定値を補い、挙動は変えない
+
 ## [1.11.0] - 2026-11-18
 
 ### Added
