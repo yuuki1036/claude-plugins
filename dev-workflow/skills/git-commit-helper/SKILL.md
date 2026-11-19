@@ -80,13 +80,17 @@ issue-workflow の軽量フローと feature-dev は、コミットの前に sel
 
 **回さない回**（どれか 1 つに当たれば 2. へ進む）:
 - 使える skill に `issue-workflow:doc-sync` が無い（issue-workflow が無効か未導入）
-- このセッションに doc-sync の応答の `DOC_SYNC_RESULT=` の行があり、その後にコミットする変更へコード（文書・コメント以外）の変更を足していない
+- このセッションに doc-sync の応答の `DOC_SYNC_RESULT=` の行があり、その後にコミットする変更へコード（文書・コメント以外）の変更を足していない。ただし下で doc-sync に渡す base があり、その応答の `DOC_SYNC_BASE=` がそれと違う（行が無い回を含む。`origin/` の有無だけの違いは同じとみなす）なら、回さない理由にしない（見た範囲が違う / GitHub issue #463）
 - 変更が版番号・CHANGELOG・lock ファイルなどの機械的な更新だけ
 - 利用者がこの依頼で「文書の確認は要らない」と言っている
 
 呼び出し元のフロー（issue-workflow の軽量フロー・feature-dev）から起動されたことは、回さない理由にしない。フローの締めの手順を通らずにコミットへ進む経路があり、そこでは doc-sync がどちらでも回らないまま PR まで進んだ（GitHub issue #450）。証拠の行が無ければフローの中でも回す（二重に回っても害は小さい）。回さない回は「doc-sync を飛ばした（理由: <当たった条件>）」と 1 行出す（飛ばしたことに利用者が気づけるように）。
 
-それ以外は `Skill` tool で `issue-workflow:doc-sync` を引数なしで起動する（base は doc-sync が決める）。応答の最後の行で分岐する:
+それ以外は `Skill` tool で `issue-workflow:doc-sync` を起動する。base は呼び出し元と揃える（main 以外から切ったブランチで base を渡さないと、見る範囲が親ブランチの変更まで広がる / GitHub issue #463）:
+- このセッションに base を示す行があれば、その値を `--base <値>` で渡す。探す順: 1.5 で控えた `base_branch=` → self-review の応答の `base_branch=` の行（今のブランチで回した直近のもの）→ 呼び出し元のフローが doc-sync に渡した `--base` の値
+- どれも無ければ引数なしで起動する（base は doc-sync が決める）。応答の `DOC_SYNC_BASE=` の値を「doc-sync の base: <値>（base を渡していない。main 以外から切ったブランチなら、見る範囲が親ブランチの変更まで広がる）」と 1 行出す。`DOC_SYNC_BASE=` の行が無い（古い版の issue-workflow）なら <値> は「不明」と書く
+
+応答の末尾の `DOC_SYNC_*=` の行で分岐する:
 - `DOC_SYNC_FIXED=` が 1 以上 → 直した文書とコメントを今回のコミットに含める（ドキュメントのコミットとして分ける。2. の分割判定に従う）。報告に「doc-sync の文書修正は self-review を通していない」と 1 行添える
 - `DOC_SYNC_RESULT=findings` → 残った指摘（「実装を直す」・doc-checks の検出）を示し、このままコミットするかを通常のメッセージで聞いてターンを終える
 - `clean` / `skipped` → 結果を 1 行添えて先へ進む
