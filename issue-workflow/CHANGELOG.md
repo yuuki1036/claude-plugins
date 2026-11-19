@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.12] - 2026-11-20
+
+### Changed
+
+- **code-context / doc-resolver / linear-sync の 3 agent を、ユーザー・プロジェクト・ローカルの CLAUDE.md を読まずに起動するようにした**（GitHub issue #484）。frontmatter に `omitClaudeMd: true`（Claude Code 2.1.271 以降）を付けた。3 つとも Issue ファイル・git の状態・リンク先の文書・Linear の Issue を読んで返すだけで、規約を読まなくても仕事ができる。起動のたびに CLAUDE.md（大きい repo では 60 KB 近い）を sub の context に入れていた分が減る。ユーザーの CLAUDE.md の出力言語の指定も届かなくなるので、3 agent の本文と start の `context-agents.md` に「出力は日本語で書く」を足した。start の Context Recovery の手順にも、3 つを agent 定義（subagent_type `issue-workflow:<名前>`）で起動すると書いた（`omitClaudeMd` は定義で起動したときにだけ効く。これまで定義での起動を明記していたのは linear-sync だけだった）。コードを検証する discover-verifier には付けない（プロジェクトの規約を読む必要がある）
+
 ## [1.19.11] - 2026-11-19
 
 ### Fixed
