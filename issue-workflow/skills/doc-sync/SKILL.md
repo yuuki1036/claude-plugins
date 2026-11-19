@@ -24,7 +24,7 @@ allowed-tools:
 
 ## 引数
 
-- `--base <ref>`: 比べる起点。省いたら `auto`（`origin/HEAD` → `main` → `master`）
+- `--base <ref>`: 比べる起点。省いたら `auto`（`origin/HEAD` → `main` → `master`）。使った base は、Phase 0 で base を解決できた回はすべて応答の `DOC_SYNC_BASE=` の行に出す（exit 2 で終えた回は出さない。main 以外から切ったブランチで `--base` を省くと、見る範囲が親ブランチの変更まで広がる。呼び出し元がそれに気づけるように / GitHub issue #463）
 - `--issue <path>`: Issue ファイル。省いたら `.claude/session-context.md` の `issue_id`、無ければブランチ名の Issue ID（`[A-Z]+-\d+`）から `.claude/indie/*/issues/<ID>.md` / `.claude/linear/*/issues/<ID>.md` を、作業ツリーとメインのチェックアウト（`$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")`）の両方で探す。見つからなくても続ける
 - `--report-only`: 一覧を出すだけで書き換えず、doc-checks も回さない（利用者が見るだけの回）
 
@@ -38,10 +38,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lib/doc_locate.py" --base <base> --list [
 
 `--ref` は実在するファイルだけ渡す。出力は `base=` の行と、`touched`（diff が触った文書）・`ref`（Issue・session-context が言及した文書）・`doc`（repo の文書の一覧）の TSV 行。種別は `spec`（パスの要素に docs / spec / adr / designs / features などを持つ文書）と `rule`（CLAUDE.md / AGENTS.md / CONTRIBUTING.md）。exit 2 は stderr を出して終える。
 
-- `doc` の行が 0 件 → 文書を持たない repo。`DOC_SYNC_RESULT=skipped` / `DOC_SYNC_REASON=no-docs` を出して終える（何も読まない）
 以下の `<base>` は、出力の `base=` の行の値（`auto` を解決した後の ref）。
 
-- 分岐点から作業ツリーまでの変更（`git diff --name-only "$(git merge-base <base> HEAD)"`。コミット済み・staged・未コミットを含む）と未追跡のファイル（`git ls-files --others --exclude-standard`）が 0 件 → `DOC_SYNC_RESULT=skipped` / `DOC_SYNC_REASON=no-diff` を出して終える（`<base>...` の three-dot は作業ツリーの変更を含まないので使わない。コミット前に回すので未コミットの変更が本体になる）
+- `doc` の行が 0 件 → 文書を持たない repo。`DOC_SYNC_RESULT=skipped` / `DOC_SYNC_REASON=no-docs` / `DOC_SYNC_BASE=<base>` を出して終える（何も読まない）
+
+- 分岐点から作業ツリーまでの変更（`git diff --name-only "$(git merge-base <base> HEAD)"`。コミット済み・staged・未コミットを含む）と未追跡のファイル（`git ls-files --others --exclude-standard`）が 0 件 → `DOC_SYNC_RESULT=skipped` / `DOC_SYNC_REASON=no-diff` / `DOC_SYNC_BASE=<base>` を出して終える（`<base>...` の three-dot は作業ツリーの変更を含まないので使わない。コミット前に回すので未コミットの変更が本体になる）
 
 **完了基準**: `doc` の件数と変更ファイルの件数が分かっている。
 
@@ -120,10 +121,12 @@ DOC_SYNC_RESULT=<clean | findings | skipped>
 DOC_SYNC_FIXED=<直した件数>
 DOC_SYNC_FINDINGS=<残った件数>
 DOC_SYNC_REASON=<no-docs | no-diff | ->
+DOC_SYNC_BASE=<Phase 0 の base= の値>
 ```
 
 - 種別は `決定の未反映` / `同節の旧説明` / `文書↔実装` / `コメント↔実装` / `文書↔コメント` / `doc-checks` のどれか
 - 直し方は、足す・直した文をそのまま書く（文書の節の見出しと、足す位置の行）
 - 状態は `直した` / `実装を直す` / `未適用（report-only）` のどれか
 - 残った指摘（状態が `直した` でないもの）が 0 件なら `DOC_SYNC_RESULT=clean`（直した分があっても clean。doc-checks が未実行・判定不能でも clean にし、冒頭の `doc-checks:` の行でその状態を残す。呼び出し元はその行を報告に添える）
+- `DOC_SYNC_BASE=` は比べた起点（`--base` を省いた回は `auto` を解決した ref で、`origin/main` のように `origin/` が付く。`main` と `origin/main` のように `origin/` の有無だけが違う値は同じ base として比べる）。呼び出し元は自分の知っている base と違えば、`--base` を付けて回し直すか、範囲が広がったことを報告に残す
 - 直した文書・コメントは作業ツリーの変更として残す（コミットしない）。呼び出し元がコミットに含める。単独で呼ばれた回は、直したファイルの一覧を報告の最後に添える
