@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.11] - 2026-11-19
+
+### Fixed
+
+- **doc-sync が、比べた base を応答の `DOC_SYNC_BASE=` の行に出すようにした**（GitHub issue #463）。`--base` を省いて呼ばれると、main 以外から切ったブランチでは見る範囲が親ブランチの変更まで広がりうるので、呼び出し元が気づけるようにする。文書が無い・差分が無いで早く終わる回も出す
+- **軽量フローの Step 8 は、Step 6 の git-commit-helper が回した doc-sync の `DOC_SYNC_BASE=` が Step 4 の `base_branch=` と違えば、その結果を使わずに回し直すようにした**（GitHub issue #463）。Step 5.5 で `--base` を付けられなかった回は、使った base を報告に残す
+- **issue-maintain の文書整合ガードも、このセッションの self-review の `base_branch=` を doc-sync に `--base` で渡すようにした**（GitHub issue #463）。渡せなかった回は、doc-sync が使った base を最終レポートに 1 行載せる
+
 ## [1.19.10] - 2026-11-18
 
 ### Fixed

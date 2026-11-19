@@ -5,6 +5,13 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.29.2] - 2026-11-19
+
+### Fixed
+
+- **Phase 7 から、git-commit-helper が doc-sync を回さない条件の書き写しを消した**（GitHub issue #462）。git-commit-helper 側の条件が変わると古いまま残るので、ここでは「コミットの前にもう一度回すかは git-commit-helper の 1.7 が決める」とだけ書く
+- **doc-sync を `--base` なしで回した回は、doc-sync が使った base を次の一手に添えるようにした**（GitHub issue #463）
+
 ## [2.29.1] - 2026-11-18
 
 ### Fixed

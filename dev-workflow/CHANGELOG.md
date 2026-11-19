@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.43.4] - 2026-11-19
+
+### Fixed
+
+- **git-commit-helper の 1.7（コミット前の文書整合）が、呼び出し元の base を doc-sync に渡すようにした**（GitHub issue #463）。これまでは doc-sync を `--base` なしで呼んでいたので、main 以外から切ったブランチでは見る範囲が親ブランチの変更まで広がりえた。このセッションに 1.5 か self-review の `base_branch=`、呼び出し元が doc-sync に渡した `--base` があればその値を渡し、無い回は doc-sync が使った base（`DOC_SYNC_BASE=`）を 1 行出す。渡す base と前回の doc-sync が見た base が違えば、前回の結果があっても回し直す（`main` と `origin/main` のように `origin/` の有無だけの違いは同じとみなす）。dev-workflow の README の 1.7 の要約も合わせた
+
 ## [1.43.3] - 2026-11-18
 
 ### Fixed

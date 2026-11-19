@@ -255,6 +255,53 @@ class DocSyncOtherCallersTest(unittest.TestCase):
         self.assertIn("出ていなければ（`DW=0`・git-commit-helper が回さなかった・古い版）、completed に移す前に", s8)
         self.assertNotIn("修正を入れた回だけ、completed に移す前に", s8)
 
+    def test_doc_sync_reports_the_base_it_used(self):
+        """base を省いて呼ばれても、比べた起点を呼び出し元が読める（#463）。早く終わる回も出す."""
+        skill = (REPO / "issue-workflow" / "skills" / "doc-sync" / "SKILL.md").read_text(encoding="utf-8")
+        phase0 = skill[skill.index("## Phase 0"):skill.index("## Phase 1")]
+        for reason in ("no-docs", "no-diff"):
+            line = next(l for l in phase0.splitlines() if "`DOC_SYNC_REASON=%s`" % reason in l)
+            self.assertIn("`DOC_SYNC_BASE=<base>`", line)
+        phase4 = skill[skill.index("## Phase 4"):]
+        self.assertIn("DOC_SYNC_BASE=<Phase 0 の base= の値>", phase4)
+
+    def test_git_commit_helper_passes_the_callers_base_to_doc_sync(self):
+        """1.7 は呼び出し元の base を --base で渡し、渡せない回は doc-sync が使った base を出す（#463）."""
+        text = self.COMMIT.read_text(encoding="utf-8")
+        block = text[text.index("### 1.7 "):text.index("### 2. ")]
+        call = block[block.index("それ以外は"):]
+        self.assertNotIn("`issue-workflow:doc-sync` を引数なしで起動する（base は doc-sync が決める）。応答の最後の行で分岐する", call)
+        self.assertIn("`--base <値>` で渡す", call)
+        order = next(l for l in call.splitlines() if "探す順:" in l)
+        keys = ("1.5 で控えた `base_branch=`", "self-review の応答の `base_branch=`", "呼び出し元のフローが doc-sync に渡した `--base` の値")
+        self.assertEqual([order.index(k) for k in keys], sorted(order.index(k) for k in keys))
+        self.assertIn("`DOC_SYNC_BASE=` の値を「doc-sync の base: <値>", call)
+        # 前回の doc-sync が違う base で見た回は、回さない理由にしない
+        skip = block[block.index("**回さない回**"):block.index("それ以外は")]
+        self.assertIn("その応答の `DOC_SYNC_BASE=` がそれと違う（行が無い回を含む", skip)
+        self.assertIn("`origin/` の有無だけの違いは同じとみなす）なら、回さない理由にしない", skip)
+
+    def test_callers_read_doc_sync_base(self):
+        """doc-sync の応答に足した base の行を、軽量フローと feature-dev が読む（#463）."""
+        self.assertIn("`DOC_SYNC_BASE=` の値を報告に残す", step("文書整合（doc-sync）"))
+        s8 = step("Issue 更新")
+        self.assertIn("`DOC_SYNC_BASE=` が Step 4 の `base_branch=` の値と違えば", s8)
+        self.assertIn("その結果は使わず", s8)
+        self.assertIn("Step 4 に `base_branch=` が無い回は比べず", s8)
+        text = flow_text(self.FEATURE_DEV)
+        phase7 = text[text.index("## Phase 7"):]
+        self.assertIn("`DOC_SYNC_BASE=` の値も次の一手に", phase7)
+        guards = (REPO / "issue-workflow" / "skills" / "issue-maintain" / "references" / "detection-guards.md").read_text(encoding="utf-8")
+        self.assertIn("その値を `--base <値>` で添える", guards)
+        self.assertIn("「doc-sync の base: <`DOC_SYNC_BASE=` の値>」を 1 行載せる", guards)
+
+    def test_callers_do_not_copy_git_commit_helpers_skip_condition(self):
+        """1.7 の「回さない回」の条件は呼び出し側に書き写さない（正本が変わると古いまま残る / #462）."""
+        text = flow_text(self.FEATURE_DEV)
+        phase7 = text[text.index("## Phase 7"):]
+        self.assertNotIn("その後にコードの変更を足していなければ doc-sync を回さない", phase7)
+        self.assertIn("git-commit-helper の 1.7 が決める", phase7)
+
     def test_feature_dev_does_not_rely_on_flow_origin_skip(self):
         text = flow_text(self.FEATURE_DEV)
         phase7 = text[text.index("## Phase 7"):]

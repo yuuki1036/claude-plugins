@@ -168,7 +168,7 @@ CI が赤くなって Step 2 から戻った回は通らない（その回の do
 コードコメントに古いまま残っていないかを commit の前に見る（GitHub issue #365）。
 
 `Skill` tool で `issue-workflow:doc-sync` を `--base <Step 4 の self-review が冒頭で出した base_branch= の値>` で起動する
-（値が無ければ `--base` を付けない）。応答の最後の `DOC_SYNC_RESULT=` で分岐する:
+（値が無ければ `--base` を付けず、応答の `DOC_SYNC_BASE=` の値を報告に残す。行が無い古い版なら「不明」と残す）。応答の末尾の `DOC_SYNC_RESULT=` で分岐する:
 
 doc-sync は文書とコメントの側を承認を取らずに直してから報告する（`DOC_SYNC_FIXED=` が直した件数）。
 
@@ -201,7 +201,7 @@ push しない運用（ローカルのみ・PR 前に溜める等）が明らか
 `doc-sync: <結果>` と 1 行書く（`/issue-maintain` に委譲するときは委譲の前に。issue-maintain の文書整合ガードはこの行で
 二重に回すのを省く）。Step 7 で CI が赤くなって修正を入れた回は、Step 5.5 の後に入った変更も doc-sync に通す。Step 7 の修正の後の
 Step 6 で `DOC_SYNC_RESULT=` の行が出ていれば（git-commit-helper がコミットの前に回した / GitHub issue #450）、その値を同じ形で残し、
-ここでは回し直さない。出ていなければ（`DW=0`・git-commit-helper が回さなかった・古い版）、completed に移す前に `issue-workflow:doc-sync` を
+ここでは回し直さない。ただし、その応答の `DOC_SYNC_BASE=` が Step 4 の `base_branch=` の値と違えば（`origin/` の有無だけの違いは同じとみなす。見た範囲が違う / GitHub issue #463）、その結果は使わず、下の出ていない回と同じく回し直す（Step 4 に `base_branch=` が無い回は比べず、`DOC_SYNC_BASE=` の値を報告に残す）。出ていなければ（`DW=0`・git-commit-helper が回さなかった・古い版）、completed に移す前に `issue-workflow:doc-sync` を
 同じ `--base` でもう一度回し、結果を同じ形で残す。そこで文書を直した（`DOC_SYNC_FIXED=` が 1 以上）なら、
 Step 2（検証）→ Step 6（コミット）→ Step 7（push + CI）を通してから Step 8 に戻る（直した文書を未コミットのまま残さない）。完了なら status を
 completed へ遷移する（BACKEND=linear のときは Linear 側のステータス更新も案内する）。未完了で終える場合は
