@@ -2,7 +2,7 @@
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 ### 4. 探索フェーズ（explorer 並列起動）
 
-Phase 0 が explorer を 1 体以上配置した場合のみ実行。explorer が不要と判断された場合はスキップして Step 5 へ。
+Phase 0 が explorer を 1 体以上配置した場合のみ実行。explorer が不要と判断された場合はスキップして Step 4.9 へ。
 
 **プロンプトテンプレートは Read しない。パスを渡して agent 自身に読ませる**（組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md`。本文の転記は体数ぶんの複製になる — orchestration-guide.md `## 3.5`）。
 

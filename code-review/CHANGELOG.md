@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.5] - 2026-11-19
+
+### Fixed
+
+- **review の Step 4 で explorer を置かない回の飛び先を Step 4.9 に直した**（GitHub issue #472）。分ける前の SKILL.md の「Step 5 へ」が残っており、そのとおりに進むと AGENTS.md の階層選択（Step 4.9）を飛ばし、ダイジェストの `## agents-md` のパス一覧が reviewer に渡らなかった
+- **self-review の Step 1 が指す `triage-signals.sh` の出力セクションの正本の場所を `skills/review/references/step-2.md` に直した**（GitHub issue #472）。review の SKILL.md の `### 2` は分けた後に見出しと Read の案内だけになっている
+
 ## [2.168.4] - 2026-11-19
 
 ### Changed
