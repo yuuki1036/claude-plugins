@@ -307,9 +307,9 @@ Issue ファイルが存在しない場合（Phase F4 へ進む場合）はス�
 
 1. `${CLAUDE_SKILL_DIR}/references/context-agents.md` を Read する
 2. **必須**: 対象の Agent（local: 2 つ / linear: 3 つ）を**同一メッセージ内で並列起動する**（Agent tool call を 1 つのレスポンスに含める）。逐次起動しない（main の往復が増える）。起動は常に非同期（CC 2.1.302+）で、結果は体ごとの完了通知で届くので、**全 agent の結果が届くまで次のステップへ進まない**
-   - Agent #1 Doc Resolver: Issue ファイル内容 + スラッグを渡す
-   - Agent #2 Code Context: Issue ファイル内容と `{WORK_DIR}` を渡す（git は `git -C {WORK_DIR}`、ソースファイルは `{WORK_DIR}` を前に付けた絶対パスで見させる）
-   - Agent #3 Linear Sync（BACKEND=linear のみ、Phase 0.7 で MCP 利用可の場合のみ）: Issue ID + frontmatter を渡す
+   - Agent #1 Doc Resolver（subagent_type `issue-workflow:doc-resolver`）: Issue ファイル内容 + スラッグを渡す
+   - Agent #2 Code Context（subagent_type `issue-workflow:code-context`）: Issue ファイル内容と `{WORK_DIR}` を渡す（git は `git -C {WORK_DIR}`、ソースファイルは `{WORK_DIR}` を前に付けた絶対パスで見させる）
+   - Agent #3 Linear Sync（subagent_type `issue-workflow:linear-sync`。BACKEND=linear のみ、Phase 0.7 で MCP 利用可の場合のみ）: Issue ID + frontmatter を渡す
 3. 全エージェントの完了を待つ（並列起動していれば最長エージェントの時間で揃う）
 4. 各エージェントの結果を Phase F6 の報告に統合する
 

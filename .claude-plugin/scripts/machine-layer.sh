@@ -103,30 +103,71 @@ fi
 #    全体を判定不能に倒さない）
 if command -v claude >/dev/null 2>&1; then
   while IFS= read -r plugin_dir; do
-    # **rc を捨てないこと**（issue #176）: 指摘の抽出は出力の `❯` 行に依存しているので、
-    # CLI が出力形式を変えた版では**無言で常時緑**になる。rc が非ゼロなのに 1 行も
-    # 拾えなかったら「違反なし」ではなく「読めなかった」に倒す
-    VAL_OUT="$(claude plugin validate "$plugin_dir" 2>&1)" && VAL_RC=0 || VAL_RC=$?
-    # **指摘は「Found N error(s) / warning(s)」の見出しの直後に並ぶ N 行の `❯` 行だけ**。
-    # CC 2.1.292 から、mod（hooks.json の `modules`）を持つプラグインでは件数に数えない情報行
-    # （mod の hooks / calls / env reads / state writes の一覧など）も `❯` 付きで出る（rc=0）。
-    # `❯` 行を全部拾うと、それが毎回「修正の必要な問題」として Stop hook に載り続けた
-    FINDINGS="$(printf '%s\n' "$VAL_OUT" | awk '
-      match($0, /Found [0-9]+ (error|warning)/) { n = substr($0, RSTART + 6) + 0; next }
-      n > 0 && /^[[:space:]]*❯/ { print; n-- }')"
-    if [ -z "$FINDINGS" ] && [ "$VAL_RC" -ne 0 ]; then
-      # 見出しの無い書式で落ちた回は `❯` 行を全部拾う（書式が変わった版への保険。拾えなければ下で判定不能）
-      FINDINGS="$(printf '%s' "$VAL_OUT" | grep -E '^\s*❯' || true)"
-    fi
-    # `_requirements` / `_superseded_by` は SSoT 用の独自フィールドなので CLI 警告から除外する。
-    # CC のバージョンで警告文言が変わるため、文言ではなくフィールド名の有無で除外する
-    FILTERED="$(printf '%s' "$FINDINGS" | grep -Ev '_requirements|_superseded_by' || true)"
-    if [ -n "$FILTERED" ]; then
-      add "[schema:$(basename "$plugin_dir")] ${FILTERED}"
-    elif [ "$VAL_RC" -ne 0 ]; then
-      UNKNOWN=1
-      add "[machine-layer] claude plugin validate が exit ${VAL_RC} だが指摘行を抽出できなかった（出力形式が変わった？）: $(basename "$plugin_dir")"$'\n'"$VAL_OUT"
-    fi
+    # `--json`（CC 2.1.259+）の結果を読む。以前は表示の `❯` 行を awk で拾っていて、表示が
+    # 変わるたびに壊れた（CC 2.1.292 では mod の一覧の情報行を拾い、Stop hook に出し続けた / #482）。
+    # 終了コード: 0 指摘なし / 3 指摘あり（stdout に 1 行 1 件）/ それ以外は判定不能（stdout に理由）。
+    # 指摘ありを 1 にしないのは、python が未捕捉の例外で落ちた回（exit 1）と分けるため
+    SCHEMA_OUT="$(python3 - "$plugin_dir" 2>&1 <<'PY'
+import json
+import os
+import re
+import subprocess
+import sys
+
+plugin_dir = sys.argv[1]
+name = os.path.basename(plugin_dir.rstrip("/"))
+# SSoT 用の独自フィールド。CLI は「Unknown field」の warning を出すが、直すものではない
+IGNORED = {"_requirements", "_superseded_by"}
+
+
+def unknown(why, proc=None):
+    print("[machine-layer] claude plugin validate --json を判定できなかった（%s）: %s" % (why, name))
+    if proc is not None:
+        print((proc.stdout[-2000:] + proc.stderr[-2000:]).rstrip())
+    sys.exit(2)
+
+
+try:
+    proc = subprocess.run(["claude", "plugin", "validate", "--json", plugin_dir],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL)
+except OSError as exc:
+    unknown("起動できなかった: %s" % exc)
+
+# 指摘は manifest（plugin.json）と contents（hooks.json などファイルごと）の errors / warnings。
+# notes（mod の一覧など）と directory.findings（ICON_MISSING など配布先の検査）は指摘に数えない。
+# JSON が読めない・形が合わない（`--json` を知らない古い claude など）回は判定不能に倒す
+try:
+    report = json.loads(proc.stdout)
+    # contents の指摘の `path` は「line 86, column 57」の形でファイルを含まないので、
+    # プラグインからの相対パスを頭に付ける（無いと Stop hook の通知からどのファイルか分からない）
+    sections = [("", report["manifest"])]
+    for section in report.get("contents") or []:
+        sections.append((os.path.relpath(section["file"], plugin_dir), section))
+    findings = []
+    for label, section in sections:
+        for item in [*section["errors"], *section["warnings"]]:
+            path = item.get("path") or ""
+            if re.split(r"[.\[]", path, maxsplit=1)[0] in IGNORED:
+                continue
+            text = "%s: %s" % (path, item["message"]) if path else item["message"]
+            findings.append("%s: %s" % (label, text) if label else text)
+except (ValueError, KeyError, TypeError, AttributeError) as exc:
+    unknown("JSON として読めなかった: %s: %s, exit %d" % (type(exc).__name__, exc, proc.returncode), proc)
+
+if findings:
+    print("\n".join(findings))
+    sys.exit(3)
+# rc を捨てない（#176）: 非ゼロなのに指摘が 0 件なら「違反なし」ではなく「読めなかった」
+if proc.returncode != 0:
+    unknown("exit %d だが指摘が 0 件" % proc.returncode, proc)
+PY
+)" && SCHEMA_RC=0 || SCHEMA_RC=$?
+    case "$SCHEMA_RC" in
+      0) ;;
+      3) add "[schema:$(basename "$plugin_dir")] ${SCHEMA_OUT}" ;;
+      2) UNKNOWN=1; add "$SCHEMA_OUT" ;;
+      *) UNKNOWN=1; add "[machine-layer] CLI スキーマ検査が判定不能（exit ${SCHEMA_RC}）: $(basename "$plugin_dir")"$'\n'"$SCHEMA_OUT" ;;
+    esac
   # 空行はパイプライン側で落とす（ループ内で `[ -z ] && continue` と書くと、
   # その 1 行が反転したときに**全プラグインを黙って skip する**経路になる）
   done < <(find "$REPO_ROOT" -maxdepth 3 -name plugin.json -path '*/.claude-plugin/*' \

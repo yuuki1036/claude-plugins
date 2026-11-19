@@ -6,7 +6,8 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
 - 出力の契約: 定義の隣に .svg を書いて svg= を出す。壊れた定義は failed= を 1 行出し、他の定義の処理は続ける
   （exit 1）。型の違う値・UTF-8 でない定義・想定外の例外も failed= に落とす。幅が 1200 を超えた・線が箱を
   避けられない・ラベルや箱が重なった・範囲の枠に範囲外の箱が入った・複雑さの予算（箱 9・線 12・参加者 5・
-  枠 1（分岐の無い枠だけなら 2）・alt の分岐 2・遷移は状態の 2 倍まで）を超えたときは warn= を足す。上限ちょうどでは黙る
+  枠 1（分岐の無い枠だけなら 2）・alt の分岐 2・遷移は状態の 2 倍まで）を超えたときは warn= を足す。上限ちょうどでは黙る。
+  flow / state は縦長・横長・線どうしの交差・線が枠の見出しの下を通るときも warn= を足す（#452）
 - 手で描いたときに踏んだ 3 点（全角と曖昧幅の見出しが箱に収まる / 矢印の先が markerUnits="userSpaceOnUse" /
   ライフラインの見出しの箱が隣と重ならない）。1 点目はスクリプトの見積もりを使わず、1 文字 14px を下限に置く
 - sequence: 呼び出しのラベルが両端のライフラインの間に収まる・複数行のラベルが矢印を隠さない・入れ子の枠が
@@ -278,7 +279,8 @@ class OutputContractTest(unittest.TestCase):
         # 箱 1 つで幅がちょうど 1200 になる見出し（全角 63・英大文字 14・英小文字 12）
         root, out = render({"type": "flow", "nodes": [{"id": "a", "label": "あ" * 63 + "W" * 14 + "w" * 12}]})
         self.assertEqual(root.get("width"), "1200")
-        self.assertEqual(len(out), 1, out)
+        # 高さ 84 の 1 行なので横長の warn は出る（LayoutShapeTest）。ここで見るのは幅の warn だけ
+        self.assertFalse([w for w in out if "\t幅が " in w], out)
 
     def test_output_is_deterministic(self):
         _, _, _, a = run(SEQ)
@@ -818,7 +820,9 @@ class GraphLabelTest(unittest.TestCase):
                             "nodes": [{"id": "src"}, {"id": "f", "status": "added"}],
                             "edges": [{"from": "src", "to": "f", "label": "createdAt"}],
                             "groups": [{"label": "レビューで見てほしい範囲", "nodes": ["f"], "status": "added"}]})
-        self.assertEqual(len(out), 1, out)
+        # 縦の線は見出しの下を通る（LayoutShapeTest が warn を見る）。ここで見るのはラベルが見出しを避けることだけ
+        self.assertEqual([w.split("\t", 1)[1] for w in out[1:]],
+                         ["edges の 'src' → 'f' が groups[0] の見出しの下を通る（pos で並べ直すか、見出しを短くする）"])
         heading = bg_before(root, "レビューで見てほしい範囲", "group-heading")
         self.assertFalse(overlap(label_bg(root, "createdAt"), heading))
 
@@ -861,6 +865,120 @@ class GraphLabelTest(unittest.TestCase):
         ra = rect_of(node(root, "a"))
         self.assertLess(float(circle.get("cy")), ra[1])
         self.assertTrue(ra[0] < float(circle.get("cx")) < ra[2])
+
+
+def chain(n: int, direction: str = "LR") -> dict:
+    return {"type": "flow", "direction": direction, "nodes": [{"id": f"n{i}"} for i in range(n)],
+            "edges": [{"from": f"n{i}", "to": f"n{i + 1}"} for i in range(n - 1)]}
+
+
+def shape_warns(out: list[str], fragment: str) -> list[str]:
+    return [w.split("\t", 1)[1] for w in out if w.startswith("warn=") and fragment in w]
+
+
+X_NODES = [{"id": "a", "pos": [0, 0]}, {"id": "d", "pos": [1, 0]}, {"id": "c", "pos": [0, 1]}, {"id": "b", "pos": [1, 1]}]
+
+
+class LayoutShapeTest(unittest.TestCase):
+    """縦横比・線どうしの交差・線と枠の見出しの重なり（GitHub issue #452）."""
+
+    def test_tall_graph_warns_only_past_400px(self):
+        # 縦 4 段は高さ 359 で下限 400 に届かない。5 段で 450 を超え、幅 144 より高い
+        root, out = render(chain(5, "TB"))
+        self.assertGreater(int(root.get("height")), 400)
+        self.assertEqual(shape_warns(out, "縦長"),
+                         [f"高さ {root.get('height')}px が幅 144px を超えた縦長の図（direction を LR にするか、"
+                          "pos で横に並べる）"])
+        root, out = render(chain(4, "TB"))
+        self.assertGreater(int(root.get("height")), int(root.get("width")))
+        self.assertEqual(shape_warns(out, "縦長"), [])
+
+    def test_wide_graph_warns_only_past_880px(self):
+        # 横 5 個は幅 816 で、比率が 9 を超えても本文の幅 880 に収まるので縮まない。6 個で 984 になる
+        root, out = render(chain(6))
+        self.assertEqual(shape_warns(out, "横長"),
+                         [f"幅 {root.get('width')}px が高さ 84px の 3.5 倍を超えた横長の図（PR の本文の幅 880 に"
+                          "縮むと文字が小さくなる。direction を TB にするか、pos で 2 段に折り返す）"])
+        root, out = render(chain(5))
+        self.assertLess(int(root.get("width")), 880)
+        self.assertEqual(shape_warns(out, "横長"), [])
+
+    def test_wide_graph_within_ratio_does_not_warn(self):
+        # 幅 880 超でも高さが幅の 1/3.5 以上あれば出さない（横 6 個の 3 行下にもう 1 個）
+        nodes = [{"id": f"n{i}", "pos": [i % 6, 0 if i < 6 else 3]} for i in range(7)]
+        root, out = render({"type": "flow", "nodes": nodes, "edges": []})
+        width, height = int(root.get("width")), int(root.get("height"))
+        self.assertGreater(width, 880)
+        self.assertLessEqual(width, 3.5 * height)
+        self.assertEqual(shape_warns(out, "横長"), [])
+
+    def test_suggested_direction_is_the_opposite_and_dropped_with_pos(self):
+        # LR のまま 1 つの層に 6 個並ぶと縦長になる。勧めるのは今の LR ではなく TB
+        fan = {"type": "flow", "nodes": [{"id": "a"}] + [{"id": f"c{i}"} for i in range(6)],
+               "edges": [{"from": "a", "to": f"c{i}"} for i in range(6)]}
+        _, out = render(fan)
+        self.assertEqual(len(shape_warns(out, "縦長")), 1, out)
+        self.assertIn("（direction を TB にするか、pos で横に並べる）", shape_warns(out, "縦長")[0])
+        # pos を全部に付けると direction は効かないので、pos だけを挙げる
+        _, out = render({"type": "flow", "direction": "LR", "nodes": [{"id": f"n{i}", "pos": [0, i]} for i in range(5)],
+                         "edges": []})
+        self.assertEqual(len(shape_warns(out, "縦長")), 1, out)
+        self.assertIn("（pos で横に並べる）", shape_warns(out, "縦長")[0])
+
+    def test_state_is_checked_but_sequence_is_not(self):
+        root, out = render({"type": "state", "states": [{"id": f"s{i}", "pos": [0, i]} for i in range(5)],
+                            "transitions": [{"from": f"s{i}", "to": f"s{i + 1}"} for i in range(4)]})
+        # state は direction を持たない（書くと failed=）ので、直し方に pos だけを挙げる
+        self.assertEqual(shape_warns(out, "縦長"),
+                         [f"高さ {root.get('height')}px が幅 {root.get('width')}px を超えた縦長の図（pos で横に並べる）"])
+        root, out = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}],
+                            "steps": [{"from": "a", "to": "b", "label": "x"}] * 12})
+        self.assertGreater(int(root.get("height")), max(int(root.get("width")), 400))
+        self.assertEqual(out[1:], [])
+
+    def test_crossing_edges_warn(self):
+        _, out = render({"type": "flow", "nodes": X_NODES,
+                         "edges": [{"from": "a", "to": "b"}, {"from": "c", "to": "d"}]})
+        self.assertEqual(shape_warns(out, "交差"),
+                         ["edges の 'a' → 'b' と edges の 'c' → 'd' が交差する（pos で並べ直す）"])
+
+    def test_same_crossing_is_reported_once(self):
+        # a → b が 2 本あっても、c → d との交差の理由は同じ文言なので 1 行にまとめる
+        _, out = render({"type": "flow", "nodes": X_NODES,
+                         "edges": [{"from": "a", "to": "b"}, {"from": "a", "to": "b"}, {"from": "c", "to": "d"}]})
+        self.assertEqual(len(shape_warns(out, "交差")), 1, out)
+
+    def test_crossing_off_the_sample_points_also_warns(self):
+        # 上の X 字は 2 本が中央の標本点で交わる。こちらは標本点の間で交わる
+        nodes = [{"id": "a", "pos": [0, 0]}, {"id": "d", "pos": [2, 0]}, {"id": "c", "pos": [0, 2]},
+                 {"id": "b", "pos": [3, 1]}]
+        _, out = render({"type": "flow", "nodes": nodes, "edges": [{"from": "a", "to": "b"}, {"from": "c", "to": "d"}]})
+        self.assertEqual(len(shape_warns(out, "交差")), 1, out)
+
+    def test_parallel_edges_and_edges_sharing_a_box_do_not_warn(self):
+        _, out = render({"type": "flow", "nodes": X_NODES,
+                         "edges": [{"from": "a", "to": "d"}, {"from": "c", "to": "b"}, {"from": "a", "to": "b"},
+                                   {"from": "b", "to": "a"}]})
+        self.assertEqual(shape_warns(out, "交差"), [])
+
+    def test_edge_under_group_heading_warns_and_short_heading_does_not(self):
+        def spec(label):
+            return {"type": "flow", "direction": "TB", "nodes": [{"id": "src"}, {"id": "f"}],
+                    "edges": [{"from": "src", "to": "f"}], "groups": [{"label": label, "nodes": ["f"]}]}
+
+        _, out = render(spec("レビューで見てほしい範囲"))
+        self.assertEqual(shape_warns(out, "見出し"),
+                         ["edges の 'src' → 'f' が groups[0] の見出しの下を通る（pos で並べ直すか、見出しを短くする）"])
+        _, out = render(spec("範囲"))
+        self.assertEqual(out[1:], [])
+
+    def test_self_loop_under_group_heading_warns(self):
+        # 2 本目の輪は 60px 張り出し、長い見出しの白地に届く
+        _, out = render({"type": "flow", "nodes": [{"id": "x"}],
+                         "edges": [{"from": "x", "to": "x"}, {"from": "x", "to": "x"}],
+                         "groups": [{"label": "レビューで見てほしい範囲とその周辺", "nodes": ["x"]}]})
+        self.assertEqual(shape_warns(out, "見出し"),
+                         ["edges の 'x' → 'x' が groups[0] の見出しの下を通る（pos で並べ直すか、見出しを短くする）"])
 
 
 class GeometryBoundaryTest(unittest.TestCase):

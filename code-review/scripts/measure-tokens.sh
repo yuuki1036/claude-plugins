@@ -633,7 +633,8 @@ def k(v): return f"{v/1000:,.1f}k"
 # `sub_distinct` は集合で持つ。同一レビューで opus と sonnet が混在するのは**設計どおり**
 # （ロール別ルーティング）なので、sub 側の複数値は混在の証拠ではない。層別キーは `main` で、
 # `sub_distinct` は「エイリアスが親世代を継ぐ」前提が崩れた回を事後に検出するための証拠
-# （`CLAUDE_CODE_SUBAGENT_MODEL` が立っていた回など / `docs/pipeline-design.md`）
+# （`CLAUDE_CODE_SUBAGENT_MODEL` に別世代を指定して `_FORCE` と併せて立てた回など / `docs/pipeline-design.md`。
+# `_FORCE` の無い env は model を明示した起動に効かず（CC 2.1.251+）、`_FORCE` だけなら sub はメインのモデルに揃う）
 MODELS_SCHEMA = 1
 _main_models = sorted(models[False])
 _sub_models = sorted(models[True])

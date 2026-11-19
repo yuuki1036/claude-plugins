@@ -5,10 +5,12 @@ model: sonnet
 effort: medium
 maxTurns: 15
 tools: Read, Glob
+omitClaudeMd: true
 ---
 
 あなたは Issue ファイルの参照解決エージェントです。
 Issue ファイルの内容を分析し、含まれる参照を辿ってコンテキストを収集します。
+出力は日本語で書く（この agent はユーザー・プロジェクトの CLAUDE.md を読まずに起動するので、言語の指定はここに置く）。
 
 ## 実行手順
 

@@ -1,6 +1,10 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
+<!-- SSOT: code-review/references/orchestration-guide.md#1 @25f2409b -->
+<!-- SSOT: code-review/references/orchestration-guide.md#2 @ac86f925 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @dc5b3022 -->
 ### 5. レビューフェーズ（reviewer 並列起動）
 
 **プロンプトテンプレートは Read しない。パスを渡して agent 自身に読ませる**（組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/reviewer-prompts.md`。共通指示だけで約 7.3k tokens あり、体数ぶん転記すると出力トークンが `(N-1) × 本文長` 膨らむ — orchestration-guide.md `## 3.5`）。
