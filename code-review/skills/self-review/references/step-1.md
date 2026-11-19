@@ -1,5 +1,10 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @dc5b3022 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.1 @d6a3bd92 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.2 @e7e6031a -->
+<!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @f7cc13cc -->
 ### 1. diff 収集とコンテキスト準備
 
 **Step 1 と 1.4 は 1 つの Bash 呼び出しにまとめる**（GitHub issue #147）。間に LLM の判断が挟まらない — 後段は前段の**出力を読んで決める**のではなく、同じシェルの変数とファイルを使うだけなので、分けると往復ぶんの `cache_read` を払うだけになる。**1.7 の機械層はここに含めない**（理由は 1.7 側に記載）。

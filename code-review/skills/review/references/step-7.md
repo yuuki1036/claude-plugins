@@ -1,6 +1,10 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @0d0d4681 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @b7079976 -->
+<!-- SSOT: code-review/references/triage-guide.md#2.5 @e6cc50ef -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @dc5b3022 -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @21cb0843 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.2 @e7e6031a -->
 ### 7. レポート出力
 
 `missing_coverage` リストが空でない場合は「⚠️ 欠損観点」セクションを追加する（空なら省略）。**理由・補足はこのセクション本文に書き、payload の `missing_coverage` 配列には識別子のみを入れる**（語彙は orchestration-measurement.md `## 16`。自由文を入れると綴りが割れて集計不能になる）。

@@ -1,5 +1,11 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @0d0d4681 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#8a @a5f9c77b -->
+<!-- SSOT: code-review/references/triage-guide.md#2.5 @e6cc50ef -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @dc5b3022 -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @21cb0843 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.3 @e63a77af -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @f7cc13cc -->
 ### 3. Phase 0: トリアージ
 
 `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。
@@ -17,7 +23,7 @@ triage-guide.md `## 2.5 PR 種別分岐ルール` を **Stage 1 より先に** �
 #### 3.1 Stage 1: タイプ判定
 
 diff の特性を分析し、必要なエージェントタイプを判定する:
-- **explorer**: 巨大ファイル、複数関数、条件分岐追加、共通モジュール変更のいずれかに該当するか
+- **explorer**: 巨大ファイル、複数関数、条件分岐追加、共通モジュール変更、複数ファイル間の値の流れ（層をまたぐなら `value-flow-trace` の focus を優先して割り当てる）のいずれかに該当するか。共通モジュール変更は規模下限に当たれば起動しない（条件と下限の正本: triage-guide.md `## 3` の「explorer の必要性判定」）
 - **reviewer**: 常に必要。diff パターンマッチでどの観点が必要かを判定
 - **spec-compliance**: 自分で判定しない。Step 3.2 の plan が仕様ソースから決める（`--activated` に入れると plan が exit 2 で止まる / GitHub issue #351）。repo の仕様書は、diff が触ったものと session-context・Issue ファイル・PR 本文・PR に紐づく GitHub Issue の本文が言及したものを plan が自分で探す（GitHub issue #352 / #391。PR 本文は `--pr` を渡せば plan が Step 1 の PR コンテキストから読む。紐づく Issue の本文は `--pr-issue-body` で渡したものを読む）
 
