@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.8] - 2026-11-20
+
+### Fixed
+
+- **`measure-tokens.sh` のコメントと `orchestration-measurement.md` の `models` の説明が、`sub_distinct` で検出する回の例に CC 2.1.251 より前の `CLAUDE_CODE_SUBAGENT_MODEL` の挙動を挙げていた**（GitHub issue #481）。2.1.251 からこの環境変数は model を明示していない sub の既定を決めるだけで、code-review の起動はすべて model を明示しているので効かない。全 sub に一律にかかるのは 2.1.257 で入った `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` を立てたときで、`_FORCE` だけなら sub はメインのモデルに揃い世代は崩れない。例を「`CLAUDE_CODE_SUBAGENT_MODEL` に別世代を指定して `_FORCE` と併せて立てた回」に直した。挙動は変わらない
+
 ## [2.168.7] - 2026-11-20
 
 ### Fixed
