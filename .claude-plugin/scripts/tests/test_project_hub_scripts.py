@@ -5460,5 +5460,31 @@ class RepoHubTextTest(unittest.TestCase):
         self.assertLessEqual(len(desc), 600)
 
 
+class PrNumberTest(unittest.TestCase):
+    """pr_number は journal を手で直した行も読むので、PR の形でない値を None にする（#470）."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("project_hub_hub", HUB)
+        cls.hub = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.hub)
+
+    def test_accepts_pr_forms(self):
+        for value in (12, "12", "#12", "#012", "owner/name#12"):
+            with self.subTest(value=value):
+                self.assertEqual(self.hub.pr_number(value), 12)
+
+    def test_bool_is_not_a_pr(self):
+        # bool は int の部分型なので、先に弾かないと True が番号 1 として通る
+        self.assertIsNone(self.hub.pr_number(True))
+        self.assertIsNone(self.hub.pr_number(False))
+
+    def test_non_positive_int_is_not_a_pr(self):
+        self.assertIsNone(self.hub.pr_number(0))
+        self.assertIsNone(self.hub.pr_number(-1))
+
+
 if __name__ == "__main__":
     unittest.main()
