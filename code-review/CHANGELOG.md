@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.4] - 2026-11-19
+
+### Changed
+
+- **review の SKILL.md の本文を Step ごとに `skills/review/references/step-<番号>.md` へ分けた**（GitHub issue #447）。SKILL.md（84 KB → 約 9 KB）は Read 1 回で読み切れる大きさになり、全 Step に効く節（前提・パイプライン設計・実行手順の冒頭）と、Step の見出し・「入ったら最初に Read する」の 1 行だけを残した。各 Step ファイルは末尾の「次は」で次の Step を指し、上限と鎖は `validate_plugin_quality.py` の検査（split-skill）が守る。Step 5.5 の後は実行の順（5.8 → 5.6 + 5.9 → 5.7）に見出しを並べた。手順の中身は変えていない
+- **command の Read の案内を新しい構成に合わせた**（`offset` / `limit` で分けて読む指示をやめ、Step ごとにファイルを読む形にした）
+- **review の Step 7 のテンプレートの所在を書いた箇所を Step ファイルへ向け直した**（scoring-guide.md・`publish-review-event.sh` の WARN・`review-retro.sh` の `report-template` のヒント・`scripts/lib/report_template.py` と同梱スクリプトのコメント）。`review-retro.sh` のヒントは、SKILL.md を Bash で読んで切り詰める失敗の案内をやめ、Step 7 の見出しで step-7.md を Read したかを見る形にした
+- **review の本文が SKILL.md にある前提で書いていた共通の references・hook のコメントを Step ファイルの構成に合わせた**（orchestration-guide.md・orchestration-dynamic-rounds.md・orchestration-measurement.md・closing-flow-guide.md・`hooks/scripts/publish-guard.sh`）。meta-reviewer（5.6）は起動を決めたら 5.9 へ進み、反証と同じメッセージで発行すると明記した（5.6 を読んだ時点では 5.9 の本文をまだ読んでいないため。self-review の 4.6 と同じ）
+
 ## [2.168.3] - 2026-11-09
 
 ### Changed
