@@ -11,7 +11,7 @@
 各定義の隣に拡張子を .svg に替えたファイルを書き、1 ファイルにつき 1 行（警告があればその後に続けて）出す:
   svg=<svg のパス>                 書けた
   warn=<svg のパス>\t<理由>         書けたが直したほうがよい（幅が 1200 を超えた・線が箱を横切る・
-                                   ラベルや箱が重なるなど）
+                                   ラベルや箱が重なる・縦長や横長・線どうしが交差するなど）
   failed=<定義のパス>\t<理由>       書けなかった（JSON が壊れている・id の参照先が無い・値の型が違う・
                                    想定外のエラーなど）。前回書いた .svg はそのまま残る
 exit 0 = 全件書けた / 1 = 1 件以上失敗 / 2 = 引数なし
@@ -65,6 +65,12 @@ MAX_NODES = 9
 MAX_EDGES = 12
 MAX_PARTICIPANTS = 5
 MAX_ALT_BRANCHES = 2
+# flow / state の縦横比（#452）。GitHub の PR 本文は幅およそ 880px で表示され、それより広い画像は縮む。
+# 縦長は片側に余白が残り、横長の帯は縮むと文字が読めなくなる。小さい図はどちらでも読めるので、下限の
+# 400 / 880 を超えたときだけ比率を見る（下限なしだと、テストと diagram-guide の例で描ける 73 図のうち、箱 2〜3 個の図 10 件以上に出た）
+GITHUB_WIDTH = 880
+TALL_MIN = 400
+WIDE_RATIO = 3.5
 COMMON_KEYS = {"type", "title", "legend", "legend_labels"}
 # XML 1.0 に書けない文字（タブ・改行・復帰以外の制御文字、サロゲート、U+FFFE / U+FFFF）。
 # 通すと svg= を出したのに読めない SVG ができ、Chrome で PNG にするとパースエラーの画面が写る
@@ -113,6 +119,8 @@ class Canvas:
         self.x1 = self.y1 = -math.inf
         self.markers: set[str] = set()
         self.warnings: list[str] = []
+        # 縦長・横長の warn に添える直し方。並べ方（direction・pos）を知っている render_graph が決める
+        self.fix_tall = self.fix_wide = ""
 
     def add(self, layer: str, svg: str, bbox: tuple[float, float, float, float] | None = None) -> None:
         self.layers[layer].append(svg)
@@ -551,12 +559,40 @@ def quad(p0, c1, p1, t):
             (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * c1[1] + t * t * p1[1])
 
 
+def cubic(ps, t):
+    (x0, y0), (x1, y1), (x2, y2), (x3, y3) = ps
+    u = 1 - t
+    return (u ** 3 * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t ** 3 * x3,
+            u ** 3 * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t ** 3 * y3)
+
+
 def inside(p, r, grow: float = 0.0) -> bool:
     return r[0] - grow < p[0] < r[2] + grow and r[1] - grow < p[1] < r[3] + grow
 
 
 def overlap(r, s) -> bool:
     return r[0] < s[2] and s[0] < r[2] and r[1] < s[3] and s[1] < r[3]
+
+
+def crosses(p, q, r, s) -> bool:
+    """線分 pq と rs が交わるか. 端が相手の線上に乗るのも数える（線は標本点を結んだ折れ線なので、対称な 2 本は
+    中央の標本点どうしで交わり、端の乗り合いを外すと見落とす）. 同じ直線の上に並ぶ 2 本は数えない."""
+    def orient(a, b, c):
+        v = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        return (v > 0) - (v < 0)
+
+    o1, o2, o3, o4 = orient(p, q, r), orient(p, q, s), orient(r, s, p), orient(r, s, q)
+    if o1 == o2 == 0:
+        return False
+    return o1 * o2 <= 0 and o3 * o4 <= 0
+
+
+def through(pts, r) -> bool:
+    """折れ線 pts が矩形 r の内側を通るか（頂点が内側にあるか、辺を横切るか）."""
+    corners = [(r[0], r[1]), (r[2], r[1]), (r[2], r[3]), (r[0], r[3])]
+    sides = list(zip(corners, corners[1:] + corners[:1]))
+    return (any(inside(p, r) for p in pts)
+            or any(crosses(p, q, a, b) for p, q in zip(pts, pts[1:]) for a, b in sides))
 
 
 def loop_size(i: int) -> float:
@@ -640,6 +676,14 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
     # pos は全部に付けるかどれにも付けない（assign_grid が混在を弾く）ので、先頭の 1 つで分かる
     if direction == "TB" and "pos" not in nodes[0]:
         grid = {i: (r, lv) for i, (lv, r) in grid.items()}
+    # 勧める direction は今と逆の値（LR で縦長なら層の中の箱が縦に多いので、TB で横に並べ替える）。
+    # pos を付けた図と state（direction を持たず、書くと failed=）は direction が効かないので pos だけを挙げる
+    if kind == "flow" and "pos" not in nodes[0]:
+        other = "TB" if direction == "LR" else "LR"
+        c.fix_tall = f"direction を {other} にするか、pos で横に並べる"
+        c.fix_wide = f"direction を {other} にするか、pos で 2 段に折り返す"
+    else:
+        c.fix_tall, c.fix_wide = "pos で横に並べる", "pos で 2 段に折り返す"
     size = {nd["id"]: box_size(nd["label"]) for nd in nodes}
     maxw = max(w for w, _ in size.values())
     maxh = max(h for _, h in size.values())
@@ -676,6 +720,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
 
     # 箱・範囲の枠の見出し・置いたラベルの矩形。ラベルと始まりの黒丸はこれを避けて置く
     placed: list[tuple[float, float, float, float]] = list(rect.values())
+    headings: list[tuple[int, tuple[float, float, float, float]]] = []
     for gi, g in enumerate(groups):
         members, label, status = g["nodes"], g["label"], g["status"]
         x0 = min(rect[m][0] for m in members) - 16
@@ -695,6 +740,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
                           f'width="{fmt(hx1 - x0 - 6)}" height="20" fill="#ffffff"/>'
                           + text_svg(x0 + 10, y0 + 14, label, FS_SMALL, "start", bold=True))
             placed.append((x0 + 6, y0 + 4, hx1, y0 + 24))
+            headings.append((gi, (x0 + 6, y0 + 4, hx1, y0 + 24)))
         outsiders = [i for i in by_id if i not in members and overlap(rect[i], (x0, y0, x1, y1))]
         if outsiders:
             c.warnings.append(f"groups[{gi}] の枠に、メンバーでない {', '.join(map(repr, outsiders))} が入った"
@@ -710,6 +756,9 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
     loops: dict[str, int] = {}
     # 描いた線の上の点。始まりの黒丸を線に乗せないために使う
     line_pts: list[tuple[float, float]] = []
+    # 自己ループ以外の線の (from, to, 何の線か, 折れ線)。線どうしの交差と見出しの重なりを調べる
+    drawn: list[tuple[str, str, str, list[tuple[float, float]]]] = []
+    loop_pts: list[tuple[str, list[tuple[float, float]]]] = []
 
     def put_label(s: str, at, strike: bool, what: str, anchor: str = "middle") -> None:
         """候補の位置のうち、箱・枠の見出し・先に置いたラベルに重ならない最初の位置に置く.
@@ -749,6 +798,9 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
                            f'{fmt(top - size_l)} {fmt(right + size_l)} {fmt(ey)} {fmt(right)} {fmt(ey)}" '
                            f'{line_attrs(c, e["status"])}/></g>',
                   (sx, top - size_l * 0.45, right + size_l * 0.45, ey))
+            # 見出しの判定にだけ渡す（輪は自分の箱に戻るので、他の線との交差は数えない）
+            ctrl_pts = ((sx, top), (sx, top - size_l), (right + size_l, ey), (right, ey))
+            loop_pts.append((what, [cubic(ctrl_pts, s / 24) for s in range(25)]))
             if e["label"]:
                 lh = text_h(e["label"], FS_LABEL) + 4
 
@@ -785,6 +837,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
         t1 = border_t(p0, ctrl, p1, rect[b], 1.0, 0.5)
         pts = [quad(p0, ctrl, p1, t0 + (t1 - t0) * s / 24) for s in range(25)]
         line_pts.extend(pts)
+        drawn.append((a, b, what, pts))
         if route == "straight":
             d = f"M {fmt(pts[0][0])} {fmt(pts[0][1])} L {fmt(pts[-1][0])} {fmt(pts[-1][1])}"
         else:
@@ -802,6 +855,19 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
                 return px + nx * push, py + ny * push
 
             put_label(e["label"], at, strike, what)
+
+    # 箱を共有する 2 本は箱の縁で接するだけなので数えない（同じ 2 つの箱をつなぐ往復の線もここで外れる）
+    for k, (a, b, what, pts) in enumerate(drawn):
+        for a2, b2, what2, pts2 in drawn[k + 1:]:
+            if {a, b} & {a2, b2}:
+                continue
+            if any(crosses(p, q, r, s) for p, q in zip(pts, pts[1:]) for r, s in zip(pts2, pts2[1:])):
+                c.warnings.append(f"{what} と {what2} が交差する（pos で並べ直す）")
+    # 見出しは白地で前面に置くので、下を通る線はそこで途切れて見える
+    for what, pts in [(w, p) for _, _, w, p in drawn] + loop_pts:
+        for gi, hr in headings:
+            if through(pts, hr):
+                c.warnings.append(f"{what} が groups[{gi}] の見出しの下を通る（pos で並べ直すか、見出しを短くする）")
 
     if initial:
         r = rect[initial]
@@ -900,9 +966,17 @@ def render(spec: object) -> tuple[str, int, list[str]]:
            f'<rect class="background" width="{width}" height="{height}" fill="#ffffff"/>'
            f'<defs>{markers}</defs>'
            f'<g transform="translate({fmt(MARGIN - c.x0)} {fmt(MARGIN - c.y0)})">{body}</g></svg>\n')
-    warnings = list(c.warnings)
+    # 同じ 2 つの箱をつなぐ線が何本あっても、同じ理由は 1 行にする（同じ向きの線は文言が同じになる）
+    warnings = list(dict.fromkeys(c.warnings))
     if width > MAX_WIDTH:
         warnings.insert(0, f"幅が {width}px で {MAX_WIDTH} を超えた（主題を分けるか、ラベルを短くする）")
+    # sequence は参加者を横・呼び出しを縦に並べる形が決まっていて、比率を並べ方で直せないので見ない
+    if kind != "sequence":
+        if height > max(width, TALL_MIN):
+            warnings.append(f"高さ {height}px が幅 {width}px を超えた縦長の図（{c.fix_tall}）")
+        elif width > max(WIDE_RATIO * height, GITHUB_WIDTH):
+            warnings.append(f"幅 {width}px が高さ {height}px の {WIDE_RATIO} 倍を超えた横長の図（PR の本文の幅 "
+                            f"{GITHUB_WIDTH} に縮むと文字が小さくなる。{c.fix_wide}）")
     return svg, width, warnings
 
 
