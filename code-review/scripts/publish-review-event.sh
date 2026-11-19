@@ -130,7 +130,7 @@ case "$PLUGIN" in
         MEASUREMENT_GAPS="${MEASUREMENT_GAPS:+$MEASUREMENT_GAPS }report-template"
         echo "WARN: レポート出力の定型（self-review Step 6 / review Step 7。\`**指摘件数**: BLOCKER …\`" \
           "の行を含む）が、計測開始（review-timing.sh start）から publish までの出力に見当たらない。" \
-          "**今からでも定型どおりに出す**（review は SKILL.md の Step 7、self-review は Step 6 の見出しの Read 先 step-6.md のテンプレート。行を省かない）。進捗報告や 1 行の要約で" \
+          "**今からでも定型どおりに出す**（review は Step 7 の見出しの Read 先 step-7.md、self-review は Step 6 の見出しの Read 先 step-6.md のテンプレート。行を省かない）。進捗報告や 1 行の要約で" \
           "置き換えない — 他 skill から回した場合も同じ（GitHub issue #250 / #232）" >&2
       fi
     else
@@ -872,7 +872,7 @@ if _kv.get("scope_mode") in ("delta", "full"):
 # 毎回の冒頭で消すので、ここで無ければその回は `plan-reviewers.sh plan` を呼んでいない（check だけ呼んだ回も
 # check が古い plan で通らないので同じ）。呼ぶはずの回は self-review が「delta が空でない回」（full か、
 # delta で `delta_files` が 1 以上）、review が default-mode の回（payload の `review_mode`）。default 以外でも
-# spec-compliance を起動するモードは仕様ソースを得るために plan を呼ぶが（review SKILL.md Step 3.2 の但し書き /
+# spec-compliance を起動するモードは仕様ソースを得るために plan を呼ぶが（review の Step 3.2（skills/review/references/step-3.md）の但し書き /
 # GitHub issue #389）、構成の手順ではないので呼ぶはずの回に数えない（plan ファイルが残っていても gap は立たない）。
 # 判定の結果は `plan_expected`（True / False / 判定できない回は None）に載せる。retro は `plan` gap の率を
 # True の回だけを分母に出す（判定できない回・呼ばない回を分母に入れると率が薄まる）。呼び出し側が書いた値は捨てる。

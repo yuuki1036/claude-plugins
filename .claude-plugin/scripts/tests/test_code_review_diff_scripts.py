@@ -1102,7 +1102,7 @@ class TriageSignalTest(DiffScriptTestBase):
         self.assertNotIn("api-design", got)
 
     # 表の観点のうち、diff からは決まらないもの（常時必須・仕様ソースの有無）。
-    # ここに足すときは review SKILL.md `### 2` の「スクリプトが見ない条件」も直す
+    # ここに足すときは review の `skills/review/references/step-2.md`（`### 2`）の「スクリプトが見ない条件」も直す
     NOT_FROM_DIFF = {"bug-detection", "claude-md-compliance", "spec-compliance"}
 
     def _table_focus_keys(self) -> set[str]:
