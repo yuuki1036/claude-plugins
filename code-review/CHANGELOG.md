@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.5] - 2026-11-19
+
+### Changed
+
+- **orchestration-measurement.md の `## 18`（計測ストアは語彙に無い値を落とす）に、metrics-vocab 検査のことを書き足した**（GitHub issue #474）。`validate_plugin_quality.py` の検査が `## 16` の表のキー・観点名・`invocation.parent` の名前を計測ストアの語彙と照らして warning を出すこと、フェーズ名・列挙値と表に載せていないキーは照らさないこと、計測ストアの clone が無い環境（CI）では走らないことを書いた
+
 ## [2.168.4] - 2026-11-19
 
 ### Changed
