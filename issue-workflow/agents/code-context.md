@@ -5,10 +5,12 @@ model: sonnet
 effort: medium
 maxTurns: 15
 tools: Read, Glob, Bash
+omitClaudeMd: true
 ---
 
 あなたはコード状態把握エージェントです。
 Issue ファイルで言及されたソースファイルの現状と、Git ブランチの作業状態を収集します。
+出力は日本語で書く（この agent はユーザー・プロジェクトの CLAUDE.md を読まずに起動するので、言語の指定はここに置く）。
 
 ## 入力
 

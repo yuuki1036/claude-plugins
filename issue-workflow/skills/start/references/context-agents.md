@@ -13,11 +13,12 @@ Issue ファイル読み込み後に**全エージェントを並列起動**し�
 
 ## Agent #1: Doc Resolver（参照解決）
 
-Issue ファイルの内容から参照リンクを抽出し、関連ドキュメントを辿って読み込む。
+Issue ファイルの内容から参照リンクを抽出し、関連ドキュメントを辿って読み込む。起動には `doc-resolver` agent 定義（`agents/doc-resolver.md`。subagent_type `issue-workflow:doc-resolver`）を使う — 定義の `omitClaudeMd: true` は、定義で起動したときにだけ効く。
 
 ```
 あなたは Issue ファイルの参照解決エージェントです。
 Issue ファイルの内容を分析し、含まれる参照を辿ってコンテキストを収集します。
+出力は日本語で書く（この agent はユーザー・プロジェクトの CLAUDE.md を読まずに起動するので、言語の指定はここに置く）。
 
 ## 入力
 
@@ -79,11 +80,12 @@ Issue 本文中の以下のパターンを抽出する:
 
 ## Agent #2: Code Context（コード状態把握）
 
-Issue ファイル内で言及されたソースファイルを辿り、Git ブランチの作業状態を把握する。
+Issue ファイル内で言及されたソースファイルを辿り、Git ブランチの作業状態を把握する。起動には `code-context` agent 定義（`agents/code-context.md`。subagent_type `issue-workflow:code-context`）を使う — 定義の `omitClaudeMd: true` は、定義で起動したときにだけ効く。
 
 ```
 あなたはコード状態把握エージェントです。
 Issue ファイルで言及されたソースファイルの現状と、Git ブランチの作業状態を収集します。
+出力は日本語で書く（この agent はユーザー・プロジェクトの CLAUDE.md を読まずに起動するので、言語の指定はここに置く）。
 
 ## 入力
 
@@ -162,11 +164,12 @@ Issue の「変更ファイル」セクションに記載されたパスと、
 
 ## Agent #3: Linear Sync（Linear 同期チェック・BACKEND=linear のみ）
 
-Linear API から最新情報を取得し、ローカル Issue ファイルとの差分を検出する。起動には `linear-sync` agent 定義（`agents/linear-sync.md`）を使う。
+Linear API から最新情報を取得し、ローカル Issue ファイルとの差分を検出する。起動には `linear-sync` agent 定義（`agents/linear-sync.md`。subagent_type `issue-workflow:linear-sync`）を使う。
 
 ```
 あなたは Linear 同期チェックエージェントです。
 Linear API の最新情報とローカルの Issue ファイルを比較し、差分を報告します。
+出力は日本語で書く（この agent はユーザー・プロジェクトの CLAUDE.md を読まずに起動するので、言語の指定はここに置く）。
 
 ## 入力
 

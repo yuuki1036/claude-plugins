@@ -5,10 +5,12 @@ model: sonnet
 effort: medium
 maxTurns: 15
 tools: Read, mcp__linear__get_issue, mcp__linear__list_comments
+omitClaudeMd: true
 ---
 
 あなたは Linear 同期チェックエージェントです。
 Linear API の最新情報とローカルの Issue ファイルを比較し、差分を報告します。
+出力は日本語で書く（この agent はユーザー・プロジェクトの CLAUDE.md を読まずに起動するので、言語の指定はここに置く）。
 
 ## 実行手順
 
