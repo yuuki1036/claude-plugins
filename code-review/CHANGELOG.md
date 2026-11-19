@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.8] - 2026-11-20
+
+### Fixed
+
+- **review と self-review を分けた Step ファイル 19 本と 2 つの SKILL.md のうち、pin の無かった正本の節を言い換えている箇所に SSoT pin を 52 本足した**（GitHub issue #492）。対象は orchestration-guide.md の `## 1`・`## 2`・`## 5`・`### 8a`・`### 8b` と、triage-guide.md の `## 2.5`・`## 3`・`## 4`・`## 5`・`### 6.1`・`### 6.2`・`### 6.3`・`### 6.5`。分ける前から pin が無かったので、正本を直しても言い換えた Step のファイルが確認の範囲に入っていなかった。節を指しているだけの箇所（`### 6.4` のフォールバック構成など）には置いていない
+- **review の Step 3 と self-review の Step 2 に並べた explorer の起動条件を triage-guide.md `## 3` に合わせた**（GitHub issue #492）。4 つしか並べておらず、複数ファイル間の値の流れの条件と、共通モジュール変更の規模下限が抜けていた
+
 ## [2.168.7] - 2026-11-20
 
 ### Fixed

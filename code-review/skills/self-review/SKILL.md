@@ -16,6 +16,9 @@ allowed-tools:
   - Skill
 ---
 
+<!-- 正本依存（SSoT pin）。「前提」の節の effort の 2 つのつまみ（frontmatter の effort と実行時の `${CLAUDE_EFFORT}`）の説明は orchestration-guide.md `## 5` の effort 設計意図を要約したもの。正本が変わったら「前提」を確認して pin を打ち直す -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
+
 # Self Review
 
 > **各 Step の手順は Step ごとのファイルにある**（`skills/self-review/references/step-<番号>.md`）。Step の見出しに来たら Read の行が指すファイルを最初に読み、スキップの条件もそのファイルで判定する。読んだら手順を終え、SKILL.md に戻ってファイル末尾の「次は」が指す Step の見出しへ進む（本文の分岐が戻り先を書いている回はそちらに従う）。見出しだけを見て、本文を読まずに進めない（Step 6 の定型と 6.4 の publish を読まずに締めた回は定型を出さなかった / GitHub issue #250・#426）。Step ファイルの中の `${CLAUDE_PLUGIN_ROOT}` は、この SKILL.md を Read したパスのプラグインのルートに読み替える

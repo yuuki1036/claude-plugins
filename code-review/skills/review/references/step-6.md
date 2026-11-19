@@ -1,6 +1,8 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @b7079976 -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @2a27f9ea -->
+<!-- SSOT: code-review/references/orchestration-guide.md#2 @ac86f925 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
 ### 6. スコアリングとフィルタリング（2軸: confidence × severity）
 
 全 reviewer の指摘を統合し、`${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` を Read で読み込んでスコアリングを実施する。
