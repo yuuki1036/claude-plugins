@@ -85,7 +85,7 @@ allowed-tools:
 
 ## Phase 3: レビュー実行
 
-**agent 構成の場合**: 各 design-reviewer agent を **perspective mode** で並列起動する（全 Agent call を同一メッセージで出す）。起動は常に非同期で、findings は体ごとの完了通知で届く。**全 perspective の findings が届くまで Phase 4 へ進まない**。プロンプトに以下を含める:
+**agent 構成の場合**: 各 design-reviewer agent を **perspective mode** で並列起動する（全 Agent call を同一メッセージで出す）。起動は常に非同期で、findings は体ごとの完了通知で届く。**全 perspective の findings が届くまで Phase 4 へ進まない**。各 Agent call には、プロンプトとは別に Agent tool の引数 `effort` を渡す: 実行時 effort が `low` / `medium` / `high` なら `high`、`xhigh` / `max` なら `xhigh`（`--embed` の回は `--effort` の値で同じ対応）。frontmatter の `effort: high` は session の effort より優先し、main と別のモデルで動く回は frontmatter が無くても session の effort を継がない（CC 2.1.317）。実行時の effort に連動させられるのは spawn ごとの指定だけなので、省かない。プロンプトに以下を含める:
 
 1. `Mode: perspective` を明示
 2. 担当 Perspective 名 + `review-perspectives.md` から該当視点のチェックリスト全文
@@ -129,7 +129,7 @@ allowed-tools:
 
 **手順**:
 
-1. BLOCKER / MAJOR の finding を対象に、`Agent`（`design-reviewer`、`model: opus`）を **verification mode** で 1 体起動し、結果が届くまで待つ。プロンプトに `Mode: verification` を明示し、**元 reviewer の suggestion / rationale は渡さず**、finding の `section` と `evidence`（file:line）と「この指摘は本当に妥当か？ 反論を組め」という中立な問いだけを渡す（アンカリング防止）。perspective は割り当てない。
+1. BLOCKER / MAJOR の finding を対象に、`Agent`（`design-reviewer`、`model: opus`、`effort: high`。実行時 effort に連動させない）を **verification mode** で 1 体起動し、結果が届くまで待つ。プロンプトに `Mode: verification` を明示し、**元 reviewer の suggestion / rationale は渡さず**、finding の `section` と `evidence`（file:line）と「この指摘は本当に妥当か？ 反論を組め」という中立な問いだけを渡す（アンカリング防止）。perspective は割り当てない。
 2. agent は doc とコードを独立に読み直し、各 finding を verification mode の Output format（**支持 / 反証 / 保留** + basis）で返す（根拠は file:line か doc 引用）。
 3. 判定を集約表の「反証」列に反映する:
    - **反証**（別 agent が明確に否定）→ その finding は severity を 1 段下げるか、レポートで「反証あり」と明示し Phase 5 の反映候補から外す
