@@ -5,7 +5,7 @@
 <!-- SSOT: code-review/references/triage-guide.md#5 @21cb0843 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.3 @e63a77af -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @f7cc13cc -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @48a827bc -->
 ### 2. Phase 0: トリアージ
 
 `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。

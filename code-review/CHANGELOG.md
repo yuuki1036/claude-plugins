@@ -2,6 +2,14 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.10] - 2026-11-20
+
+### Fixed
+
+- **triage-guide.md `## 3` の共通モジュールの規模下限が、ほかの explorer 起動条件の 1 つを「層跨ぎ値フロー」と書いていた**（GitHub issue #500）。同じ節の起動条件は「複数ファイル間でデータが流れる変更パターン」で、層をまたぐ値の流れは focus の割り当ての注記にすぎない。規模下限の側を「複数ファイル間の値の流れ」に揃えた
+- **self-review の Step 4.5（Round 2）と Step 4.6（meta-reviewer）が、`--since` の回は帯を `delta_size_tier` で判定することを書いていなかった**（GitHub issue #500）。正本は triage-guide.md `### 6.5`。Step 4.5 は、規模キャップが effort 上限を下回る帯では effort に関わらず 1 段圧縮にすること（`### 6.3`）も書いていなかった。この判断は Step 2.2 の plan の `cap_source=size` が持つので、Step 4.5 では帯を判定し直さずにそれを参照する形で足した（`--since` の回は plan に `delta_size_tier` を渡すので、`cap_source` が delta の帯で決まる）
+- **review の SKILL.md が、「規模キャップが先に効くと体数が変わらない」の正本を orchestration-guide.md `## 5` だけにしていた**（GitHub issue #500）。effort の役割の正本は `## 5` のままで、実効上限が effort 上限と規模キャップの小さい方になることの正本は triage-guide.md `## 7`。指し先を分け、`## 7` の pin を足した
+
 ## [2.168.9] - 2026-11-20
 
 ### Fixed
