@@ -2,14 +2,14 @@
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
 <!-- SSOT: code-review/references/orchestration-guide.md#1 @25f2409b -->
-<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @ad2cb12f -->
 ### 4. 探索フェーズ（explorer 並列起動）
 
 Phase 0 が explorer を 1 体以上配置した場合のみ実行。explorer が不要と判断された場合はスキップして Step 4.9 へ。
 
 **プロンプトテンプレートは Read しない。パスを渡して agent 自身に読ませる**（組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md`。本文の転記は体数ぶんの複製になる — orchestration-guide.md `## 3.5`）。
 
-Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並列起動する:
+Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet`・`effort: medium` で並列起動する（層ごとの effort の正本は orchestration-guide.md `## 5`）:
 - プロンプト冒頭で次の **2 パスを Read せよ**と指示する（本文は書かない。パスの渡し方は Step 5 の冒頭と同じ）:
   - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md`
   - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/<focus>.md`

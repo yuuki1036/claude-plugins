@@ -17,7 +17,7 @@ allowed-tools:
 ---
 
 <!-- 正本依存（SSoT pin）。「前提」の節の effort の 2 つのつまみ（frontmatter の effort と実行時の `${CLAUDE_EFFORT}`）の説明は orchestration-guide.md `## 5` の effort 設計意図を要約したもの。正本が変わったら「前提」を確認して pin を打ち直す -->
-<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @ad2cb12f -->
 
 # Self Review
 

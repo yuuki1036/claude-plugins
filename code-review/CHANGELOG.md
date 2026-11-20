@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.11] - 2026-11-20
+
+### Fixed
+
+- **review / self-review の explorer（初回と Round 2 の追加分）と review-guide の explorer を `model: sonnet` に加えて `effort: medium` で、review-triage の反証 agent を `opus` に加えて `effort: high` で起動するようにした**（GitHub issue #483）。explorer の値は orchestration-guide.md `## 5` の層ごとの effort の表に行を足して正本にした。どれも agent frontmatter を持たず skill 本文から起動するので、spawn で指定しないと effort の書き場所が無い。Claude Code 2.1.317 から、main と別のモデルで動く sub は session の effort を継がず、そのモデルに保存された effort か既定値で動くため、main が Opus の日は explorer が `${CLAUDE_EFFORT}` と無関係の effort で走っていた。収集の層なので実行時 effort には連動させない
+
 ## [2.168.10] - 2026-11-20
 
 ### Fixed

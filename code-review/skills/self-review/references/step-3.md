@@ -1,11 +1,11 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
-<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @ad2cb12f -->
 ### 3. 探索フェーズ（explorer 並列起動）
 
 Phase 0 が explorer を 1 体以上配置した場合のみ実行。explorer が不要と判断された場合はスキップして Step 3.9 へ。
 
-Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet` で並列起動する:
+Phase 0 の構成テーブルに従い、各 explorer を `model: sonnet`・`effort: medium` で並列起動する（層ごとの effort の正本は orchestration-guide.md `## 5`）:
 - プロンプト冒頭で次の **2 パスを Read せよ**と指示する（本文は書かない。組み立て方の正本: `${CLAUDE_PLUGIN_ROOT}/references/explorer-prompts.md`。パスの渡し方は Step 4 の冒頭と同じ）:
   - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md`
   - `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/<focus>.md`

@@ -161,6 +161,7 @@ reviewer の effort は実行時 `${CLAUDE_EFFORT}` に連動させる: **low/me
 
 | 層 | 体数 | effort | 既定 high で起動するか |
 |---|---|---|---|
+| explorer（初回・Round 2 の追加分。review-guide の explorer も） | 構成テーブルどおり | `medium`（**実行時 effort に連動させない**。収集の層。frontmatter を持たない起動なので spawn ごとに渡さないと、main と別のモデルの回に session の effort を継がない / CC 2.1.317・GitHub issue #483） | する |
 | meta-reviewer | 1 体・1 round（triage-dynamic-gates.md `## 8`） | `max` | しない（xhigh/max 起点） |
 | 冷や読み skeptic | PR あたり 1 体・1 round（triage-dynamic-gates.md `## 8.5`） | `max` | しない（xhigh/max 起点 / surface=true のときだけ。v2.52.0 で high 起点に昇格し、v2.136.0 で戻した / #264） |
 | 反証エージェント | **5 件ごと 1 体・本体上限 3 体 ＋ meta 由来の追加バッチ 1 体**（計 4 体 20 件 / v2.61.0。triage-dynamic-gates.md `## 9`）＝唯一の変動費 | **`high`**（v2.41.0 で `max` から引き下げ） | **する**（非対称ゾーンに限定） |
