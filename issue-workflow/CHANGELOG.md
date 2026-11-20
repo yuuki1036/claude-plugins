@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.13] - 2026-11-20
+
+### Fixed
+
+- **discover の並列スキャンと doc-sync の xhigh / max の探索 agent を、`model: sonnet` に加えて `effort: medium` で起動するようにした**（GitHub issue #483）。どちらも agent frontmatter を持たず skill 本文から起動するので、spawn で指定しないと effort の書き場所が無い。Claude Code 2.1.317 から、main と別のモデルで動く sub は session の effort を継がず、そのモデルに保存された effort か既定値で動く。収集の層なので実行時 effort には連動させない
+
 ## [1.19.12] - 2026-11-20
 
 ### Changed
