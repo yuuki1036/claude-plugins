@@ -86,7 +86,7 @@ Repeat the following until `action=stop`:
 4. **Fix** (Phase 5 Fix Mode): `target` の行だけを直す
    - 各 target の file:line を読み、JSON findings の `suggested_fix`（無ければ markdown の影響説明から推定）を Edit で適用
    - `deferred` の行と、対象外の指摘（MAJOR / MINOR・CRITICAL < 90）は、同じファイルの近くにあっても直さない
-   - 設計レベル変更が必要なら `code-architect` を `delta-proposal` focus で起動（1 iteration 消費）
+   - 設計レベル変更が必要なら `code-architect` を `delta-proposal` focus で起動（1 iteration 消費。`effort` は phase-4.md の Effort per spawn と同じ値を spawn ごとに渡す）
    - 修正不能と判断したら `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gv-loop.py" finish --reason manual` を実行して Step 4 へ
 5. **Re-review**: `Skill code-review:self-review` を再呼び出し。引数:
    - `--since=<since>`（`review` が出した `since=` の値。直前の修正の前の tree で、self-review はその後の変更（delta）を主に見る / GitHub issue #313）

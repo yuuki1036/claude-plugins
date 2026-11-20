@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.29.5] - 2026-11-20
+
+### Fixed
+
+- **`code-explorer` に `effort: medium`、`code-architect` に `effort: high` を指定し、Phase 4・Phase 5 の architect の起動で実行時 effort に連動した `effort`（low〜high → `high`、xhigh / max → `xhigh`）を spawn ごとに渡すようにした**（GitHub issue #483）。Claude Code 2.1.317 から、main と別のモデルで動く sub は session の effort を継がず、そのモデルに保存された effort か既定値で動く。main が Opus の日は explorer が、main を Sonnet にした日は architect が、そのモデルに保存された effort か既定値で走っていた。explorer は収集の層なので実行時 effort に連動させず `medium` に固定する（main と同じモデルで動く日も frontmatter が session の effort より優先する）
+
 ## [2.29.4] - 2026-11-20
 
 ### Fixed

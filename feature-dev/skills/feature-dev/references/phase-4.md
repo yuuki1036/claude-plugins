@@ -10,6 +10,8 @@
    - `migration-strategy`: phased migration steps with rollback points (migration tasks only)
    - `delta-proposal`: when Issue context provides existing `feature_dev_plan:` or `design=` passed a design doc — propose deltas only, do not redesign
 
+   **Effort per spawn**: pass the Agent tool's `effort` parameter on every architect spawn, mapped from the Current effort in SKILL.md: `low` / `medium` / `high` → `high`, `xhigh` / `max` → `xhigh`. frontmatter の `effort: high` は session の effort より優先し、main と別のモデルで動く回は frontmatter が無くても session の effort を継がない（CC 2.1.317）。実行時の effort に連動させられるのは spawn ごとの指定だけなので、省かない。Phase 5 の `delta-proposal` と、案の作り直しで起動し直す回も同じ値を渡す
+
    **BDD spec injection**: Phase 1.3 で `BDD_SPEC_PATH` が設定された場合、各 architect の prompt に以下を追加する:
    - `BDD spec path: <BDD_SPEC_PATH>` — architect は冒頭でこのファイルを Read し、Feature / Scenario / Examples / 同値分割表を **authoritative requirements** として扱う
    - 設計は spec.md の AC ↔ Scenario マッピングを保つこと（架空の Scenario を増やさない、削らない）
