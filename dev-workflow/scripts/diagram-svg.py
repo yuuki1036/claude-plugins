@@ -591,7 +591,7 @@ def through(pts, r) -> bool:
     """折れ線 pts が矩形 r の内側を通るか（頂点が内側にあるか、辺を横切るか）."""
     corners = [(r[0], r[1]), (r[2], r[1]), (r[2], r[3]), (r[0], r[3])]
     sides = list(zip(corners, corners[1:] + corners[:1]))
-    return (any(inside(p, r) for p in pts)
+    return (any(inside(p, r) for p in pts)  # mutation-ok: 内側と外側の頂点が混ざれば間の線分が辺を横切り、2 つ目の条件が真になる。all と違うのは空の折れ線だけで、呼び出し元は 2 点以上を渡す
             or any(crosses(p, q, a, b) for p, q in zip(pts, pts[1:]) for a, b in sides))
 
 
