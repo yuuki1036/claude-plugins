@@ -2,6 +2,7 @@
 name: design-reviewer
 description: Reviews a design doc in one of two modes — perspective mode (minimal / clean / pragmatic / risk) producing findings, or verification mode adversarially re-checking existing findings as 支持 / 反証 / 保留. Verifies all claims against the actual codebase with evidence. Spawned by the design-review skill (one agent per perspective in parallel, or a single independent verifier for Phase 4.5).
 model: opus
+effort: high
 tools: Glob, Grep, Read
 color: blue
 ---

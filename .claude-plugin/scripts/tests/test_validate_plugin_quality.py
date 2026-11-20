@@ -1563,6 +1563,117 @@ class PluginEnabledKeyOnlyTest(unittest.TestCase):
         self.assertEqual(offenders, [], "キーの有無だけで判定する行が残っている")
 
 
+class AgentEffortTest(unittest.TestCase):
+    """model を指定して effort を指定していない agent の検出（GitHub issue #483）.
+
+    main と別のモデルの sub は session の effort を継がない（CC 2.1.317）。
+    鳴る条件より黙る条件を厚くする.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        self.addCleanup(self._tmp.cleanup)
+        self._orig = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig))
+        self.plugin = self.root / "demo"
+        (self.plugin / ".claude-plugin").mkdir(parents=True)
+
+    def _scan(self, frontmatter: str, rel: str = "agents/a.md") -> list[str]:
+        path = self.plugin / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"---\n{frontmatter}\n---\n\n# body\n", encoding="utf-8")
+        warnings: list[str] = []
+        v.check_agent_effort(self.plugin, warnings)
+        return warnings
+
+    def test_model_without_effort_warns(self):
+        warnings = self._scan("name: a\nmodel: opus\ntools: Read")
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("[agent-effort:demo]", warnings[0])
+        self.assertIn("demo/agents/a.md", warnings[0])
+        self.assertIn("model: opus", warnings[0])
+
+    def test_quoted_model_warns_with_unquoted_value(self):
+        warnings = self._scan('name: a\nmodel: "sonnet"')
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("model: sonnet ", warnings[0])
+
+    def test_model_with_effort_is_silent(self):
+        self.assertEqual(self._scan("name: a\nmodel: opus\neffort: high"), [])
+
+    def test_effort_before_model_is_silent(self):
+        self.assertEqual(self._scan("name: a\neffort: medium\nmodel: sonnet"), [])
+
+    def test_no_model_is_silent(self):
+        self.assertEqual(self._scan("name: a\ntools: Read"), [])
+
+    def test_inherit_is_silent(self):
+        """inherit は main と同じモデルで動き session の effort を継ぐ."""
+        self.assertEqual(self._scan("name: a\nmodel: inherit"), [])
+
+    def test_empty_effort_value_still_warns(self):
+        self.assertEqual(len(self._scan("name: a\nmodel: opus\neffort:")), 1)
+
+    def test_keys_in_description_do_not_count(self):
+        """行頭のキーだけを見る（description の中の model: / effort: の字面は数えない）."""
+        fm = "name: a\ndescription: uses effort: high\nmodel: opus"
+        self.assertEqual(len(self._scan(fm)), 1)
+        self.assertEqual(self._scan("name: a\ndescription: model: opus を使う"), [])
+
+    def test_body_effort_does_not_count(self):
+        path = self.plugin / "agents" / "a.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("---\nname: a\nmodel: opus\n---\n\neffort: high\n", encoding="utf-8")
+        warnings: list[str] = []
+        v.check_agent_effort(self.plugin, warnings)
+        self.assertEqual(len(warnings), 1)
+
+    def test_outside_agents_dir_is_silent(self):
+        self.assertEqual(self._scan("name: a\nmodel: opus", rel="skills/x/SKILL.md"), [])
+
+    def test_file_without_frontmatter_is_silent(self):
+        path = self.plugin / "agents" / "a.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("# no frontmatter\nmodel: opus\n", encoding="utf-8")
+        warnings: list[str] = []
+        v.check_agent_effort(self.plugin, warnings)
+        self.assertEqual(warnings, [])
+
+    def test_each_offending_agent_warns_once(self):
+        (self.plugin / "agents").mkdir(parents=True)
+        for n in ("a", "b"):
+            (self.plugin / "agents" / f"{n}.md").write_text(f"---\nname: {n}\nmodel: opus\n---\n", encoding="utf-8")
+        (self.plugin / "agents" / "c.md").write_text("---\nname: c\nmodel: opus\neffort: high\n---\n", encoding="utf-8")
+        warnings: list[str] = []
+        v.check_agent_effort(self.plugin, warnings)
+        self.assertEqual(len(warnings), 2)
+        self.assertIn("agents/a.md", warnings[0])
+        self.assertIn("agents/b.md", warnings[1])
+
+    def test_the_check_is_registered(self):
+        """直接呼ぶテストだけでは, main() から外れて検査が丸ごと黙っても気づけない."""
+        with unittest.mock.patch.object(v, "check_agent_effort") as check, \
+                unittest.mock.patch.object(sys, "argv", ["validate_plugin_quality.py", str(SCRIPT.parents[2] / "feature-dev")]), \
+                unittest.mock.patch("sys.stdout"), unittest.mock.patch("sys.stderr"):
+            v.ROOT = SCRIPT.parents[2]
+            v.main()
+        check.assert_called_once()
+
+    def test_the_repository_itself_has_no_agent_without_effort(self):
+        """この検査を入れた時点で全プラグインが 0 件であること（以後は新しく書かれた agent だけが鳴る）."""
+        v.ROOT = self._orig
+        plugins = sorted(self._orig.glob("*/.claude-plugin/plugin.json"))
+        self.assertGreater(len(plugins), 0, "プラグインの走査が空振りしている")
+        offenders = []
+        for pj in plugins:
+            warnings: list[str] = []
+            v.check_agent_effort(pj.parent.parent, warnings)
+            offenders += warnings
+        self.assertEqual(offenders, [], "effort を指定していない agent が残っている")
+
+
 class WarningChannelTest(unittest.TestCase):
     """warning の出し分け（GitHub issue #182）.
 

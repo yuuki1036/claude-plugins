@@ -106,6 +106,11 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     local の settings だけで有効化したものを取りこぼす（GitHub issue #423）. 同梱の
     scripts/plugin-enabled.sh に寄せる. md は行内コードを除いて照合し, sh はコメント行を飛ばす.
     CHANGELOG.md・scripts/plugin-enabled.sh・evals/results/ は対象外.
+  - agent-effort: agents/*.md の frontmatter が `model`（`inherit` 以外）を持ち `effort` を持たないもの.
+    main と別のモデルで動く sub は session の effort を継がず, そのモデルに保存された effort か
+    既定値で動く（CC 2.1.317）. 指定が無いと sub の effort が, そのモデルに保存された値か既定値という
+    プラグイン側で決められない値になる（GitHub issue #483. 入れた時点の検出は 3 件で, 同じ変更で全件直した）.
+    実行時の effort に連動させたい agent も frontmatter に既定値を書き, 呼び出し側が spawn ごとに渡す
   - plugin description サイズ: `plugin.json` の description 上限（400 字）. 「これは何の
     プラグインか」を伝える 1〜2 文にバージョンアップごとの機能詳細が積層してリリースノート化
     する（実測: code-review が 915 → 2177 字）. 閾値は実測の分布から導く
@@ -1639,6 +1644,30 @@ def check_plugin_enabled_key_only(plugin_dir: Path, warnings: list[str]) -> None
             )
 
 
+AGENT_MODEL_RE = re.compile(r"^model:[ \t]*['\"]?([^'\"\s]+)", re.MULTILINE)
+AGENT_EFFORT_RE = re.compile(r"^effort:[ \t]*\S", re.MULTILINE)
+
+
+def check_agent_effort(plugin_dir: Path, warnings: list[str]) -> None:
+    """model を指定して effort を指定していない agent を拾う（非ブロッキング warning / GitHub issue #483）.
+
+    `model: inherit` は main と同じモデルで動き session の effort を継ぐので外す.
+    """
+    name = plugin_dir.name
+    for path in sorted((plugin_dir / "agents").glob("*.md")):
+        fm = parse_frontmatter(path)
+        if fm is None:
+            continue
+        model = AGENT_MODEL_RE.search(fm)
+        if model is None or model.group(1) == "inherit" or AGENT_EFFORT_RE.search(fm):
+            continue
+        warnings.append(
+            f"[agent-effort:{name}] {path.relative_to(ROOT)} が model: {model.group(1)} を指定して effort を指定していない"
+            "（main と別のモデルで動くと session の effort を継がない / CC 2.1.317）。"
+            "frontmatter に effort を書き、実行時の effort に連動させるなら呼び出し側が spawn ごとに渡す"
+        )
+
+
 def check_hook_self_judgement(plugin_dir: Path, warnings: list[str]) -> None:
     """PreToolUse/PostToolUse hook スクリプトの stdin 自己判定を検証する（非ブロッキング warning）.
 
@@ -2558,6 +2587,7 @@ def main() -> int:
             check(plugin_dir, errors)
         check_allowed_tools_minimality(plugin_dir, warnings)
         check_hook_self_judgement(plugin_dir, warnings)
+        check_agent_effort(plugin_dir, warnings)
         check_plugin_enabled_key_only(plugin_dir, warnings)
         check_plugin_description_size(plugin_dir, warnings)
 

@@ -45,7 +45,7 @@ Phase 5 has two modes — check the invocation context:
 **Actions**:
 1. Read each flagged file at the indicated line range（Phase 5.3 から来た回はエラー出力が指す行）
 2. Apply the reviewer's suggested fix (or a minimal equivalent that resolves the issue)（Phase 5.3 から来た回はエラーを解消する最小の修正）
-3. If the fix requires design-level changes, escalate by launching `code-architect` with focus `delta-proposal` (wait for its result before applying) and **consume 1 loop iteration**（G-V ループから来た回だけ）. Otherwise apply directly with Edit. 適用範囲で足切りした回は architect を起動しない（基準にする設計が無い）。停止点で承認した方針と別の手段が要るなら、Normal Mode の 4. と同じく止まって確かめ直す（ループの状態はそのまま残し、返信の後に修正して 4. の戻り先へ戻る）
+3. If the fix requires design-level changes, escalate by launching `code-architect` with focus `delta-proposal` and the same `effort` as Phase 4 (phase-4.md の Effort per spawn; wait for its result before applying) and **consume 1 loop iteration**（G-V ループから来た回だけ）. Otherwise apply directly with Edit. 適用範囲で足切りした回は architect を起動しない（基準にする設計が無い）。停止点で承認した方針と別の手段が要るなら、Normal Mode の 4. と同じく止まって確かめ直す（ループの状態はそのまま残し、返信の後に修正して 4. の戻り先へ戻る）
 4. 戻り先は入口で決まる: G-V ループ（Phase 6 Step 3）から来た回は Phase 6 Step 3 へ戻る (do NOT re-run Phase 5.5 unless the fix is runtime-sensitive and effort ≥ `medium`)。ループの状態は書かない（次の `gv-loop.py review` が記録する）。Phase 5.3 の赤（静的オラクルのエラー出力）から来た回は Phase 5.3 へ戻ってゲートを再実行する（緑の行き先は phase-5.3.md の Step 3 が持つ。Phase 6 Step 3 には進まない）
 
 **次は Phase 5.3**（SKILL.md に戻り、その見出しの入口の条件を見る。Normal Mode の終わり。Fix Mode から来た回は Fix Mode の 4. の戻り先に従う）

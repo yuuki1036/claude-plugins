@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.7.3] - 2026-11-20
+
+### Fixed
+
+- **`design-reviewer` に `effort: high` を指定し、design-review の perspective mode の起動で実行時 effort に連動した `effort`（low〜high → `high`、xhigh / max → `xhigh`）を、verification mode では `high` を spawn ごとに渡すようにした**（GitHub issue #483）。Claude Code 2.1.317 から、main と別のモデルで動く sub は session の effort を継がず、そのモデルに保存された effort か既定値で動く。main を Sonnet にした日は reviewer が `${CLAUDE_EFFORT}` と無関係の effort で走っていた
+
 ## [0.7.2] - 2026-11-08
 
 ### Fixed

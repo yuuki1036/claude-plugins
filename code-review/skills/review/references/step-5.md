@@ -3,7 +3,7 @@
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
 <!-- SSOT: code-review/references/orchestration-guide.md#1 @25f2409b -->
 <!-- SSOT: code-review/references/orchestration-guide.md#2 @ac86f925 -->
-<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @ad2cb12f -->
 <!-- SSOT: code-review/references/triage-guide.md#4 @dc5b3022 -->
 ### 5. レビューフェーズ（reviewer 並列起動）
 

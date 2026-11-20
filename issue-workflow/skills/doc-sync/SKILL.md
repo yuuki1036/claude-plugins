@@ -54,7 +54,7 @@ diff（`git diff "$(git merge-base <base> HEAD)"` と未追跡のファイル）
 
 - `low` / `medium`: 挙動は変更行の多い順に 10 件まで。探す先は `touched` / `ref` の文書と、Phase 2 の Grep に当たった文書だけ
 - `high`（既定）: 挙動は全件。`doc` の一覧全体を Grep の対象にする
-- `xhigh` / `max`: `high` と同じ範囲で、Phase 2 の探索を挙動のまとまりごとに `model: sonnet` の agent に分ける（**最大 3 体**。全 Agent call を同じメッセージで発行し、全員の結果が届くまで Phase 3 へ進まない）。agent には挙動の行・文書の一覧・Grep のキーを渡し、当たった file:line と該当行を返させる。照合はメインが判定する
+- `xhigh` / `max`: `high` と同じ範囲で、Phase 2 の探索を挙動のまとまりごとに `model: sonnet`・`effort: medium` の agent に分ける（**最大 3 体**。収集の層なので effort は実行時 effort に連動させず spawn ごとに渡す / GitHub issue #483。全 Agent call を同じメッセージで発行し、全員の結果が届くまで Phase 3 へ進まない）。agent には挙動の行・文書の一覧・Grep のキーを渡し、当たった file:line と該当行を返させる。照合はメインが判定する
 
 **完了基準**: 挙動の一覧（件数つき）と、決めたことの一覧がある。
 

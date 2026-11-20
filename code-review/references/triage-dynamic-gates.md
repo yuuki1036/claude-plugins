@@ -1,9 +1,9 @@
 # 動的ラウンドの起動ゲート（triage-guide 分冊）
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @ea9cbe3a -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @d39fb753 -->
 <!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @0ea1c3d4 -->
-<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @ad2cb12f -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
 

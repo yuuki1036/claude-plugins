@@ -2,7 +2,7 @@
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @b7079976 -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @0d0d4681 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#2 @ac86f925 -->
-<!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#5 @ad2cb12f -->
 ### 5. スコアリングとフィルタリング（2軸: confidence × severity）
 
 全 reviewer の指摘を統合し、`${CLAUDE_PLUGIN_ROOT}/references/scoring-guide.md` を Read で読み込んでスコアリングを実施する。

@@ -24,12 +24,21 @@ agent / サブタスクのロールに応じて既定モデルを出し分ける
 | ロール | 既定モデル | 理由 |
 |--------|-----------|------|
 | 探索・収集・機械的サマリ（read-only fan-out。code-context / explorer 等） | `sonnet` | 事実収集は弱モデルで足り、体数を稼げる |
-| 判断・検証・レビュー（load-bearing な結論。reviewer 等） | `opus`（effort は実行時連動: 既定 `high`、明示 escalation 時 `xhigh`） | 誤判定コストが高い段は精度優先。Opus 5 はレビュー・判断系が `high` で精度を保つため、常時レイヤーの effort 引き上げは escalation 時のみに縮小（旧規約「opus + effort 引き上げ」は Opus 4.x 世代の前提） |
+| 判断・検証・レビュー（load-bearing な結論。reviewer 等） | `opus`（effort は実行時連動: 既定 `high`、明示 escalation 時 `xhigh`。連動は呼び出し側が spawn ごとに `effort` を渡して作る — 下の effort の項） | 誤判定コストが高い段は精度優先。Opus 5 はレビュー・判断系が `high` で精度を保つため、常時レイヤーの effort 引き上げは escalation 時のみに縮小（旧規約「opus + effort 引き上げ」は Opus 4.x 世代の前提） |
 | 敵対的独立検証（発見者と別コンテキストで反証。code-review 反証 / discover-verifier / design-review 反証） | `opus` | 検証は精度が命なので強モデル。独立性は「発見者の推論を渡さない」+ 別コンテキストで担保する（モデルを弱める必要はない） |
 | 統合・メタレビュー・設計 blueprint（meta-reviewer / architect 等） | `opus` | load-bearing な統合・設計判断は強モデルで質を担保する |
 
 - **`fable` は使用しない**（プロジェクト方針）。従来 fable が担っていた「別系統モデルで相関を切る」decorrelation は行わず、統合・メタレビュー・設計 blueprint も `opus` に寄せる。独立性が要る局面（meta-reviewer / 敵対的独立検証）は**別コンテキスト起動 + 発見者の推論を渡さない**ことで担保し、モデル多様性には依存しない。
 - agent frontmatter か skill 本文で **明示指定**する（親からの継承任せにしない。指定漏れは `validate_plugin_quality.py` の warning で拾えるようにするのが望ましい）。
+- **effort も明示する。main と別のモデルで動く sub は session の effort を継がない**（Claude Code 2.1.317 から。そのモデルに保存された effort か既定値で動く）。ロールでモデルを分けるこの規約の下では、ほとんどの agent がどこかのセッションで「別のモデル」になる（main が Opus なら `sonnet` の収集役が、main を Sonnet にした日は `opus` の判断役が）。公式 docs（sub-agents の「Choose an effort level」）の優先順位は次のとおりで、上から最初に当てはまるものが効く:
+  1. 環境変数 `CLAUDE_CODE_EFFORT_LEVEL`（spawn の指定も frontmatter も上書きする）
+  2. spawn ごとの `effort`（Agent tool の引数。CC 2.1.292+）
+  3. agent frontmatter の `effort`（session の effort より優先する）
+  4. 生成元の subagent の `effort`、または skill の `effort` のようにそのターンだけ立てた effort
+  5. 環境変数 `CLAUDE_CODE_SUBAGENT_EFFORT`（CC 2.1.316+）
+  6. main と同じモデルなら session の effort。別のモデルなら session の effort は効かない
+
+  したがって **frontmatter には必ず既定値を書く**。実行時の `${CLAUDE_EFFORT}` に連動させたい agent（判断・設計の層）は、それに加えて**呼び出し側が spawn ごとに `effort` を渡す**（frontmatter を書いた時点で session の effort には連動しなくなるので、連動は spawn ごとの指定でしか作れない）。手本は code-review の reviewer（`orchestration-guide.md ## 5`）と feature-dev の architect（`phase-4.md`）。frontmatter を持たない agent を skill 本文で `model` を指定して起動するときは、書く場所が spawn しかないので、spawn ごとに `effort` も渡す（`agent-effort` は `agents/*.md` しか見ないので、この書き漏れは拾わない）。`CLAUDE_CODE_SUBAGENT_EFFORT` は利用者の環境の設定なので、プラグインの既定には当てにしない。`model` を書いて `effort` を書かない agent は `validate_plugin_quality.py` の `agent-effort` が warning で拾う（`model: inherit` は main と同じモデルなので対象外。GitHub issue #483）。
 - 1 呼び出し内は単一モデル。ステージ間での切り替えは可。
 - **エイリアスは「最新世代」ではなく「親（＝実行時に選択したメインモデル）の世代」に解決される**。`opus` を指定した sub は、メインが Opus 4.8 なら Opus 4.8 で起動する。tier ladder は `haiku` → `sonnet` → `opus` で、**親世代にその tier が存在しなければ最新へ落ちる**（親 4.8 で `sonnet` 指定 → Sonnet 5）。根拠は 2026-08-24 の 2 セッション実測（GitHub issue #170）と、Claude Code v2.1.241 のモデル解決関数（family step-down。テレメトリのイベント名が `family_alias_stepped_down` / `parent_inherit`）。
 - **この踏み下げは望ましい挙動として扱う。** 実行時にコスト都合でメインモデルを下げれば判断層もそれに従う＝**セッション単位でパイプライン全体の重さを選べる**制御点になる。したがって agent / skill の**モデル指定**（frontmatter の `model:`・起動時指定・例示）に具体世代 ID をピン留めしない規約は維持する。理由は「世代が上がったとき追随不要」だけでなく、**ピン留めすると実行時の選択を無視してしまう**から。ただし**世代の同定自体が目的の値**は対象外で具体 ID を使う（cc-catch-up の `lastCatchUpModel` は世代差分でトリガーが発火するため、evals の `--models` は世代を固定して比較するため。エイリアス化するとどちらも機能しない）。
@@ -105,4 +114,4 @@ Opus 5 節が適用除外として明記している「根拠強制の手順」�
 
 - **70/25/5 の予算配分＋繰越**: Claude Code は直列トークン予算でなく並列 agent＋体数上限モデル。effort→体数マッピングで十分。繰越は管理コストに見合わない。
 - **finding schema の全面統一**: 共通化はコア 3 点（severity 語彙 / confidence 0-100 / evidence 必須）に留め、報告マトリクスは scoring-guide.md を soft 参照。ドメイン粒度を壊さない。
-- **暴走ガード・モデルルーティングの hook 強制**: effort やループ回数は LLM の文脈判断で決まり決定的検証できない。意思決定フロー②（`docs/rule-placement.md`）に従い CLAUDE.md 規約止まりが正解。
+- **暴走ガード・モデルルーティングの hook 強制**: effort やループ回数は LLM の文脈判断で決まり決定的検証できない。意思決定フロー②（`docs/rule-placement.md`）に従い CLAUDE.md 規約止まりが正解。agent frontmatter に `effort` が書いてあるかだけを見る `agent-effort`（`validate_plugin_quality.py` の warning）はこれと別物で、値が妥当かは見ない。

@@ -174,13 +174,13 @@ code-review が無効・呼び出しの失敗のときは、従来のサマリ�
 
 ## Agents
 
-### `code-explorer`（model: sonnet）
+### `code-explorer`（model: sonnet / effort: medium）
 
 既存のコードベース機能を、実行パスを entry point からデータ保存まで追跡し、抽象層・パターン・依存関係をマッピングして分析する。Phase 2 で並列起動される。出力は entry point の file:line 参照、ステップごとの実行フロー、主要コンポーネントの責務、アーキテクチャの知見、読むべき必須ファイルのリスト。
 
-### `code-architect`（model: opus）
+### `code-architect`（model: opus / effort: high）
 
-既存パターンを分析し、実装 blueprint を設計する。Phase 4 で起動される。BDD Spec Injection / Issue Context Injection / Vault Knowledge Injection / Hook-First Rule Placement の各セクションを持つ。出力は発見したパターン、アーキテクチャ決定と根拠、コンポーネント設計、実装マップ、データフロー、build sequence、critical details、Runtime Smoke Test Targets（Phase 5.5 が叩く URL / route）。
+既存パターンを分析し、実装 blueprint を設計する。Phase 4 で起動される。Phase 4 と Phase 5 の `delta-proposal` は、起動ごとに実行時 effort に連動した `effort` を渡す（対応表は `skills/feature-dev/references/phase-4.md` の Effort per spawn）。BDD Spec Injection / Issue Context Injection / Vault Knowledge Injection / Hook-First Rule Placement の各セクションを持つ。出力は発見したパターン、アーキテクチャ決定と根拠、コンポーネント設計、実装マップ、データフロー、build sequence、critical details、Runtime Smoke Test Targets（Phase 5.5 が叩く URL / route）。
 
 > v2.0.0 で `code-reviewer` agent は削除。Phase 6 のレビューは `code-review:self-review` skill に委譲され、品質基準が一本化された。詳細は code-review プラグインの README 参照。
 
