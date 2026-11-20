@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.11.1] - 2026-11-20
+
+### Fixed
+
+- **retro の並列分類と tag 正規化で起動する agent に model（`opus`）を明示した**（GitHub issue #495）。`references/transcript-salvage.md` の並列分類の手順に model の記述が無く、分類の agent はメインのモデルを継承して動いていた。`docs/pipeline-design.md` のモデルルーティング規約は model を skill 本文で明示するとしている。REAL / NOISE の判定は journal に入る失敗と閾値に届く tag を決めるので「判断・検証・レビュー」の行に、独立コンテキストでの tag 正規化は「統合」の行に当てた。SKILL.md の effort 表の後にも同じ指定を書いた
+
 ## [0.11.0] - 2026-11-10
 
 ### Added
