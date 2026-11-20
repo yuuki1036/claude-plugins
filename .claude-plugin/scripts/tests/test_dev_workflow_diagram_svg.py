@@ -15,8 +15,9 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
 - state / flow: 往復の辺のラベルが向き（横・縦）に関わらず重ならない・自己ループのラベルが入ってくる辺の
   ラベルと重ならない・間の箱を横切る辺を曲げる・線の端が箱の境界に乗る・範囲の枠がメンバーだけを囲む
 - 凡例: 使った status（箱・線・枠）だけを出し、legend_labels で文言を差し替えられる
-- 境界ちょうどの点・矩形の判定（inside / overlap）は CLI から配置を作れないため、GeometryBoundaryTest だけ
-  関数を直接読み込んで呼ぶ
+- 境界ちょうどの点・矩形の判定（inside / overlap）、線分の接触と同じ直線上の 2 本（crosses）、折れ線が矩形を
+  通るか（through）、縦長・横長の上限ちょうどは CLI から配置を作れないため、GeometryBoundaryTest だけ関数を直接
+  読み込んで呼ぶ（上限ちょうどは定数を図の寸法に差し替えて測る）
 
 描画は決定的なので、同じ定義の描画は 1 回だけ回して結果を使い回す（起動の回数を減らす）。
 
@@ -34,6 +35,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -961,6 +963,15 @@ class LayoutShapeTest(unittest.TestCase):
                                    {"from": "b", "to": "a"}]})
         self.assertEqual(shape_warns(out, "交差"), [])
 
+    def test_curved_edge_meeting_another_edge_at_their_shared_box_does_not_warn(self):
+        # a → c は間の b を避けて d の側へ曲がり、c の手前で d → c と交わる。どちらも c に入る線なので数えない
+        nodes = [{"id": "a", "pos": [0, 0]}, {"id": "b", "pos": [1, 0]}, {"id": "c", "pos": [2, 0]},
+                 {"id": "d", "pos": [1, 1]}]
+        root, out = render({"type": "flow", "nodes": nodes,
+                            "edges": [{"from": "a", "to": "c"}, {"from": "d", "to": "c"}]})
+        self.assertNotEqual(edge(root, "a", "c").get("data-route"), "straight")
+        self.assertEqual(shape_warns(out, "交差"), [])
+
     def test_edge_under_group_heading_warns_and_short_heading_does_not(self):
         def spec(label):
             return {"type": "flow", "direction": "TB", "nodes": [{"id": "src"}, {"id": "f"}],
@@ -983,6 +994,7 @@ class LayoutShapeTest(unittest.TestCase):
 
 class GeometryBoundaryTest(unittest.TestCase):
     """点・矩形の判定は境界ちょうどを含めない（辺上の点は内側でない・辺が接するだけの箱は重ならない）.
+    線分は端が相手の線に乗っても交わるとし、同じ直線の上に並ぶ 2 本は交わらないとする.
 
     境界ちょうどの配置は定義（CLI）から作れないので、このクラスだけ関数を直接読み込んで呼ぶ.
     """
@@ -1002,6 +1014,40 @@ class GeometryBoundaryTest(unittest.TestCase):
         self.assertFalse(self.mod.overlap((10, 0, 20, 10), (0, 0, 10, 10)))
         self.assertFalse(self.mod.overlap((0, 0, 10, 10), (10, 0, 20, 10)))
         self.assertTrue(self.mod.overlap((9.9, 0, 20, 10), (0, 0, 10, 10)))
+
+    def test_segment_ending_on_another_line_crosses_it_from_either_side(self):
+        # T 字の接触: 縦の線の端が横の線の上に乗る。残りの端が横の線の上側・下側のどちらでも交わる
+        self.assertTrue(self.mod.crosses((0, 0), (10, 0), (5, 0), (5, 5)))
+        self.assertTrue(self.mod.crosses((0, 0), (10, 0), (5, 0), (5, -5)))
+        self.assertTrue(self.mod.crosses((0, 0), (10, 0), (5, 5), (5, 0)))
+        self.assertFalse(self.mod.crosses((0, 0), (10, 0), (5, 1), (5, 5)))
+
+    def test_segments_on_the_same_line_do_not_cross(self):
+        self.assertFalse(self.mod.crosses((0, 0), (10, 0), (5, 0), (15, 0)))
+        self.assertFalse(self.mod.crosses((0, 0), (1, 0), (5, 0), (6, 0)))
+
+    def test_polyline_through_rect_by_vertex_or_by_crossing(self):
+        r = (0, 0, 10, 10)
+        # 頂点がすべて内側で、辺は横切らない
+        self.assertTrue(self.mod.through([(2, 2), (8, 8)], r))
+        # 両端は外で、途中で矩形を突き抜ける
+        self.assertTrue(self.mod.through([(-5, 5), (15, 5)], r))
+        self.assertFalse(self.mod.through([(-5, -5), (15, -5)], r))
+
+    def test_shape_warns_only_past_the_limit(self):
+        # 上限を図の寸法ちょうどに置くと黙り、1 つ下げると出す
+        svg, width, _ = self.mod.render(chain(5, "TB"))
+        height = int(re.search(r'height="(\d+)"', svg).group(1))
+        self.assertGreater(height, width)
+        with mock.patch.object(self.mod, "TALL_MIN", height):
+            self.assertEqual([w for w in self.mod.render(chain(5, "TB"))[2] if "縦長" in w], [])
+        with mock.patch.object(self.mod, "TALL_MIN", height - 1):
+            self.assertEqual(len([w for w in self.mod.render(chain(5, "TB"))[2] if "縦長" in w]), 1)
+        _, width, _ = self.mod.render(chain(6))
+        with mock.patch.object(self.mod, "GITHUB_WIDTH", width):
+            self.assertEqual([w for w in self.mod.render(chain(6))[2] if "横長" in w], [])
+        with mock.patch.object(self.mod, "GITHUB_WIDTH", width - 1):
+            self.assertEqual(len([w for w in self.mod.render(chain(6))[2] if "横長" in w]), 1)
 
 
 if __name__ == "__main__":
