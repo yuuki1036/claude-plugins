@@ -17,8 +17,10 @@ allowed-tools:
   - Skill
 ---
 
-<!-- 正本依存（SSoT pin）。「前提」の節の effort の 2 つのつまみ（frontmatter の effort と実行時の `${CLAUDE_EFFORT}`）の説明は orchestration-guide.md `## 5` の effort 設計意図を要約したもの。正本が変わったら「前提」を確認して pin を打ち直す -->
+<!-- 正本依存（SSoT pin）。「前提」の節の effort の 2 つのつまみ（frontmatter の effort と実行時の `${CLAUDE_EFFORT}`）の説明は orchestration-guide.md `## 5` の effort 設計意図を要約したもの。正本が変わったら「前提」を確認して pin を打ち直す。
+同じ箇所の「規模キャップが先に効くと体数が変わらない」は triage-guide.md `## 7` の実効上限（effort 上限と規模キャップの小さい方）を言い換えたもの -->
 <!-- SSOT: code-review/references/orchestration-guide.md#5 @88f608c4 -->
+<!-- SSOT: code-review/references/triage-guide.md#7 @d465ee72 -->
 
 # Review
 
@@ -31,7 +33,8 @@ allowed-tools:
 - **effort のつまみは 2 つあり、別物**（GitHub issue #106）:
   - **skill frontmatter の `effort`** — オーケストレーター（メインループ）専用。**reviewer にも動的ラウンドにも効かない**
   - **実行時 `${CLAUDE_EFFORT}`** — reviewer / specialist の effort と、動的ラウンド（meta-reviewer / 冷や読み skeptic / 反証ゲート / Round 2 の段数）の**起動条件を支配する**
-  - frontmatter を見て「high 運用のつもり」でいると、セッション effort が xhigh のときに meta-reviewer・skeptic・反証の拡大が全部走ってコストが想定と食い違う。**規模キャップが先に効くケースでは体数が変わらないぶん気づきにくい**（正本: orchestration-guide.md `## 5`）
+  - frontmatter を見て「high 運用のつもり」でいると、セッション effort が xhigh のときに meta-reviewer・skeptic・反証の拡大が全部走ってコストが想定と食い違う。**規模キャップが先に効くケースでは体数が変わらないぶん気づきにくい**（正本: effort の役割は orchestration-guide.md `## 5`、
+    実効上限が effort 上限と規模キャップの小さい方になることは triage-guide.md `## 7`）
 
 ## コスト×精度パイプライン設計（採用/不採用）
 
