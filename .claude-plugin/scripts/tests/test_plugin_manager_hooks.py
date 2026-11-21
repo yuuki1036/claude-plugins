@@ -588,6 +588,208 @@ class StaleSkillTest(HookTestCase):
         self.prompt()
         self.assertGreater(self.state_file().stat().st_mtime, past + 86400)
 
+    # --- fork（GitHub issue #487） ---
+
+    def transcript(self, *paths, extra_lines=()) -> Path:
+        """親の会話で paths を Read した transcript（fork 先に写った形）."""
+        tp = self.home / "fork.jsonl"
+        lines = list(extra_lines)
+        for p in paths:
+            lines.append(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "text", "text": "読む"},
+                {"type": "tool_use", "id": "t", "name": "Read", "input": {"file_path": str(p)}}]}}))
+        tp.write_text("\n".join(lines) + "\n")
+        return tp
+
+    def fork_start(self, tp=None, sid="fork-1", source="fork"):
+        payload = {"session_id": sid, "hook_event_name": "SessionStart", "source": source}
+        if tp is not None:
+            payload["transcript_path"] = str(tp)
+        return self.run_hook(payload, env_extra=self.env(), args=("session-start",))
+
+    def fork_prompt(self, tp, sid="fork-1"):
+        return self.run_hook({"session_id": sid, "hook_event_name": "UserPromptSubmit", "prompt": "hi",
+                              "transcript_path": str(tp)}, env_extra=self.env(), args=("prompt",))
+
+    def fork_setup(self):
+        old = self.version_dir("p", "1.0.0")
+        self.version_dir("p", "1.1.0")
+        self.install({"p": "1.1.0"})
+        return old / "skills" / "s" / "SKILL.md"
+
+    def test_fork_notifies_from_parent_transcript(self):
+        """fork 先には状態ファイルが無い。transcript に写った親の Read の版で知らせる."""
+        tp = self.transcript(self.fork_setup())
+        out = self.fork_start(tp).stdout
+        self.assertIn("p: 1.0.0 → 1.1.0", out)
+        self.assertIn("p:s", out)
+        self.assertNotIn("fork_pending", self.state_file("fork-1").read_text())
+
+    def test_fork_waits_for_transcript(self):
+        """SessionStart の時点で transcript が無ければ黙り、書かれた後の発言で知らせる."""
+        old = self.fork_setup()
+        tp = self.home / "fork.jsonl"
+        self.assertQuiet(self.fork_start(tp))
+        self.assertQuiet(self.fork_prompt(tp))
+        self.transcript(old)
+        self.assertIn("p: 1.0.0 → 1.1.0", self.fork_prompt(tp).stdout)
+        self.assertQuiet(self.fork_prompt(tp))
+
+    def test_fork_waits_without_transcript_path(self):
+        old = self.fork_setup()
+        self.assertQuiet(self.fork_start())
+        self.assertIn("p: 1.0.0 → 1.1.0", self.fork_prompt(self.transcript(old)).stdout)
+
+    def test_fork_last_read_wins(self):
+        """親が旧版の後で新しい版を読み直していれば知らせない."""
+        old = self.fork_setup()
+        tp = self.transcript(old, self.cache / "p" / "1.1.0" / "skills" / "s" / "SKILL.md")
+        self.assertQuiet(self.fork_start(tp))
+        self.assertQuiet(self.fork_prompt(tp))
+
+    def test_fork_own_read_beats_transcript(self):
+        """fork した後に自分で新しい版を読んだ記録は、transcript の旧版より優先する."""
+        old = self.fork_setup()
+        tp = self.home / "fork.jsonl"
+        self.assertQuiet(self.fork_start(tp))
+        self.assertSilent(self.read(self.cache / "p" / "1.1.0" / "skills" / "s" / "SKILL.md", sid="fork-1"))
+        self.transcript(old)
+        self.assertQuiet(self.fork_prompt(tp))
+
+    def test_fork_adopts_transcript_once(self):
+        """取り込んだ後に transcript が旧版の Read に変わっても、もう一度は読まない."""
+        new = self.fork_setup().parents[3] / "1.1.0" / "skills" / "s" / "SKILL.md"
+        tp = self.transcript(new)
+        self.assertQuiet(self.fork_start(tp))
+        self.transcript(self.cache / "p" / "1.0.0" / "skills" / "s" / "SKILL.md")
+        self.assertQuiet(self.fork_prompt(tp))
+
+    def test_fork_ignores_lines_that_are_not_parent_reads(self):
+        """Read 以外・assistant 以外・キャッシュ外・壊れた行は拾わず、例外にもしない."""
+        old = self.fork_setup()
+        tool_use = {"type": "tool_use", "id": "t", "name": "Read", "input": {"file_path": str(old)}}
+        noise = [
+            "{broken /plugins/cache/ \"tool_use\"",
+            json.dumps(["/plugins/cache/", "tool_use"]),
+            json.dumps({"type": "user", "message": {"content": [tool_use]}}),
+            json.dumps({"type": "assistant", "message": "/plugins/cache/ tool_use"}),
+            json.dumps({"type": "assistant", "message": {"content": "/plugins/cache/ \"tool_use\""}}),
+            json.dumps({"type": "assistant", "message": {"content": [
+                "/plugins/cache/", {"type": "tool_use", "name": "Skill", "input": {"skill": "p:s"},
+                                    "note": "/plugins/cache/"},
+                {"type": "tool_use", "name": "Edit", "input": {"file_path": str(old)}},
+                {"type": "tool_use", "name": "Read", "input": {"file_path": "/tmp/plugins/cache/x"}},
+                {"type": "tool_use", "name": "Read", "input": "/plugins/cache/mp/p/1.0.0/skills/s/SKILL.md"}]}}),
+        ]
+        tp = self.transcript(extra_lines=noise)
+        self.assertQuiet(self.fork_start(tp))
+        self.assertQuiet(self.fork_prompt(tp))
+        self.assertFalse(self.state_file("fork-1").exists())
+
+    def test_fork_without_parent_reads_removes_state(self):
+        """記録の無い状態ファイルを残さない（前段はファイルの有無だけで python を起動する）."""
+        self.fork_setup()
+        tp = self.transcript(extra_lines=[json.dumps({"type": "user", "message": {"content": "hi"}})])
+        self.assertQuiet(self.fork_start(tp))
+        self.assertFalse(self.state_file("fork-1").exists())
+        self.assertQuiet(self.fork_prompt(tp))
+
+    def skill_line(self, path, meta=True) -> str:
+        entry = {"type": "user", "message": {"role": "user", "content": [
+            {"type": "text", "text": f"Base directory for this skill: {path}\n\n# 手順"}]}}
+        if meta:
+            entry["isMeta"] = True
+        return json.dumps(entry)
+
+    def test_fork_notifies_from_parent_skill_injection(self):
+        """親が Skill tool で使った skill は、注入された行のパスの版で知らせる."""
+        old = self.fork_setup()
+        tp = self.transcript(extra_lines=[self.skill_line(old.parent)])
+        out = self.fork_start(tp).stdout
+        self.assertIn("p: 1.0.0 → 1.1.0", out)
+        self.assertIn("p:s", out)
+
+    def test_fork_ignores_quoted_skill_line(self):
+        """利用者の発言に同じ字面が引用されていても（isMeta でない行）拾わない."""
+        old = self.fork_setup()
+        tp = self.transcript(extra_lines=[self.skill_line(old.parent, meta=False),
+                                          json.dumps({"type": "user", "isMeta": True, "message": {"content": [
+                                              {"type": "text", "text": f"前置き Base directory for this skill: {old.parent}"}]}})])
+        self.assertQuiet(self.fork_start(tp))
+        self.assertFalse(self.state_file("fork-1").exists())
+
+    def test_fork_skill_after_fork_does_not_hide_parent_read(self):
+        """fork の後の Skill の記録（呼んだ時点の installed の版）は、transcript の旧版の Read より優先しない."""
+        old = self.version_dir("p", "1.0.0")
+        (old / "references").mkdir()
+        (old / "references" / "r.md").write_text("r")
+        self.version_dir("p", "1.1.0")
+        self.install({"p": "1.1.0"})
+        tp = self.home / "fork.jsonl"
+        self.assertQuiet(self.fork_start(tp))
+        self.assertSilent(self.skill("p:s", sid="fork-1"))
+        self.transcript(old / "references" / "r.md")
+        self.assertIn("p: 1.0.0 → 1.1.0", self.fork_prompt(tp).stdout)
+
+    def test_fork_read_after_skill_beats_transcript(self):
+        """fork の後に Skill で呼んでから新しい版を Read し直したなら、transcript の旧版より Read を勝たせる."""
+        old = self.fork_setup()
+        tp = self.home / "fork.jsonl"
+        self.assertQuiet(self.fork_start(tp))
+        self.assertSilent(self.skill("p:s", sid="fork-1"))
+        self.assertSilent(self.read(self.cache / "p" / "1.1.0" / "skills" / "s" / "SKILL.md", sid="fork-1"))
+        self.transcript(old)
+        self.assertQuiet(self.fork_prompt(tp))
+
+    def test_fork_skill_after_fork_keeps_parent_skill_version(self):
+        """fork の後の Skill の記録は、transcript にある同じ skill の旧版を上書きしない（skill を名指しで知らせる）."""
+        old = self.version_dir("p", "1.0.0", skills=("s", "t"))
+        self.version_dir("p", "1.1.0", skills=("s", "t"))
+        self.install({"p": "1.1.0"})
+        tp = self.home / "fork.jsonl"
+        self.assertQuiet(self.fork_start(tp))
+        self.assertSilent(self.skill("p:s", sid="fork-1"))
+        self.transcript(extra_lines=[self.skill_line(old / "skills" / "s"), self.skill_line(old / "skills" / "t")])
+        out = self.fork_prompt(tp).stdout
+        self.assertIn("p:s →", out)
+        self.assertIn("p:t →", out)
+
+    def test_skill_outside_fork_has_no_fork_marks(self):
+        """fork の取り込みを待っていないセッションの記録には、取り込み用の印を書かない."""
+        self.version_dir("p", "1.0.0")
+        self.install({"p": "1.0.0"})
+        self.assertSilent(self.skill("p:s"))
+        rec = json.loads(self.state_file().read_text())["plugins"][f"p@{MP}"]
+        self.assertNotIn("version_from", rec)
+        self.assertNotIn("skills_from_skill", rec)
+
+    def test_fork_skill_line_with_spaces_in_path(self):
+        """CLAUDE_CONFIG_DIR に空白があっても、行末の空白があっても、注入行のパスを取る."""
+        self.fork_setup()
+        spaced = f"/home/a b/.claude/plugins/cache/{MP}/p/1.0.0/skills/s"
+        line = json.dumps({"type": "user", "isMeta": True, "message": {"content": [
+            {"type": "text", "text": f"Base directory for this skill: {spaced}  \n\n# 手順"}]}})
+        out = self.fork_start(self.transcript(extra_lines=[line])).stdout
+        self.assertIn("p: 1.0.0 → 1.1.0", out)
+        self.assertIn("p:s →", out)
+
+    def test_fork_last_read_wins_even_if_older(self):
+        """版の大小ではなく、最後に読んだ版で判定する（新版の後で旧版を読み直せば知らせる）."""
+        old = self.fork_setup()
+        tp = self.transcript(self.cache / "p" / "1.1.0" / "skills" / "s" / "SKILL.md", old)
+        self.assertIn("p: 1.0.0 → 1.1.0", self.fork_start(tp).stdout)
+
+    def test_non_fork_start_does_not_create_state(self):
+        """startup の payload の入れ子に `"source": "fork"` があっても、状態ファイルを作らない."""
+        tp = self.transcript(self.fork_setup())
+        res = self.run_hook({"session_id": "fork-1", "hook_event_name": "SessionStart", "source": "startup",
+                             "transcript_path": str(tp), "extra": {"source": "fork"}},
+                            env_extra=self.env(), args=("session-start",))
+        self.assertQuiet(res)
+        self.assertFalse(self.state_file("fork-1").exists())
+        self.assertQuiet(self.fork_start(tp, source="resume"))
+        self.assertFalse(self.state_file("fork-1").exists())
+
     # --- 置き場所・前段 ---
 
     def test_config_dir_follows_claude_config_dir(self):
