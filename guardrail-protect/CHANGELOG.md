@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.10.2] - 2026-11-21
+
+### Changed
+
+- `pre-config-guard.sh` のコメントの「matcher が評価されない環境（実測あり）」を、matcher が想定外のツールに合ったときに備える多層防御の話に直した（GitHub issue #485。matcher が評価されないことの実測は無かった）。挙動は変えていない
+
 ## [0.10.1] - 2026-11-08
 
 ### Fixed

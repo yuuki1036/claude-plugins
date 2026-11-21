@@ -2,15 +2,15 @@
 """hook スクリプトを CLI 境界越しに叩く共通ハーネス.
 
 **なぜ必要か**: hook は blast radius が最大のコンポーネントで、暴発すると
-**すべてのツール呼び出し**に影響する（2026-07 の push-reminder が
-`if: "Bash(git push *)"` の不発で全 Bash 呼び出しに additionalContext を注入した実績）。
+**関係ないツール呼び出しにまで**影響する（2026-07 の push-reminder が
+`if: "Bash(git push *)"` が `$()`・`$VAR` を含む push 以外のコマンドにも合い、additionalContext を注入した実績）。
 それなのにリポジトリ内 38 本の hook スクリプトにテストが 1 本も無かった。
 
 `validate_plugin_quality.py` の hook-self-judge チェックは「`safe_hook_input` を
 参照しているか」しか見ない。**その自己判定が実際に効くか**は実行しないと分からない。
 
-ここでは hooks.json を経由せず**スクリプトを直接叩く**。hooks.json の matcher / if:
-が評価されない環境が実在する以上、**スクリプト単体で正しく黙る**ことが要求仕様だから。
+ここでは hooks.json を経由せず**スクリプトを直接叩く**。hooks.json の if: は仕様で
+関係ないコマンドにも合い、matcher も想定外のツールに合ったときに備える（多層防御）以上、**スクリプト単体で正しく黙る**ことが要求仕様だから。
 """
 
 from __future__ import annotations

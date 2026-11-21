@@ -7,8 +7,8 @@
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "code-review:external-id-reminder"
 
-# hooks.json の if: は実行環境によって評価されないことがある（dev-workflow で実測）。
-# スクリプト内でも command を自己判定する二重ゲート。
+# hooks.json の if: は `$()`・`$VAR` を含むコマンドなどで commit でなくても合う
+# （CC の仕様。dev-workflow で暴発を実測）ので、スクリプト内でも command を自己判定する二重ゲート。
 INPUT=$(safe_hook_input)
 if command -v jq &>/dev/null; then
   TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)

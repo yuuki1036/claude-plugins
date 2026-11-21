@@ -5,9 +5,10 @@
 # 注意: PreToolUse の plain stdout は Claude への到達保証が弱いため、
 # additionalContext（safe_hook_emit_context）で確実に注入する（block しない）。
 #
-# hooks.json の `if: "Bash(git push *)"` は実行環境によって評価されない
-# ことが実測されている（全 Bash 呼び出しで発火する暴発）。if:/matcher に
-# 単独依存せず、スクリプト内で command を自己判定する（二重ゲート）。
+# hooks.json の `if: "Bash(git push *)"` は best-effort のフィルタで、`$()`・
+# バッククォート・`$VAR` を含むコマンドと分解できないコマンドでは push でなくても
+# 合う（CC の仕様。2026-07 に push 以外の複合コマンドで発火する暴発を実測）。
+# if:/matcher に単独依存せず、スクリプト内で command を自己判定する（二重ゲート）。
 
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "dev-workflow:push-reminder"
@@ -20,7 +21,7 @@ else
 fi
 [ -z "$COMMAND" ] && safe_hook_error Validation "empty command"
 
-# git push が**コマンドの位置**に出現する場合のみ通す（if: 不発時の暴発防止）。
+# git push が**コマンドの位置**に出現する場合のみ通す（if: が push 以外のコマンドに合ったときの暴発防止）。
 # 1. heredoc の本文を除く（`git commit -F - <<'EOF'` の本文に書いた "git push" で鳴らさない。`<<<` は here-string なので除外）
 # 2. クオート内文字列を除く（コミットメッセージ中の "git push" 等）
 # 3. 行頭か区切り（; & | ( { ` $( と then/do/else）の直後に、環境変数の代入・env/command/exec/time/nohup

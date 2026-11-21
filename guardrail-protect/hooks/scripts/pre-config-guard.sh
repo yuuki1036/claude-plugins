@@ -30,8 +30,8 @@ target_path=$(jq -r '.tool_input.file_path // empty' <<< "$input" 2>/dev/null ||
 
 # **tool_name を判定に使う**（GitHub issue #178）: 以前は取得するだけでエラー文面にしか
 # 使っておらず、ブロック判定は file_path だけだった。hooks.json の matcher が唯一の
-# ツール種別フィルタになっており、matcher が評価されない環境（実測あり）では
-# **保護対象ファイルの Read まで「Refusing to edit」でブロック**される。
+# ツール種別フィルタになっており、matcher が想定外のツールに合うと
+# **保護対象ファイルの Read まで「Refusing to edit」でブロック**される構造だった（#178 はスクリプトの直接実行で再現。matcher での実例は無く、多層防御として備える）。
 # tool_name が無いときは弾かない（載せない CC 版でガードを殺さないため）
 case "$tool_name" in
   ""|Edit|Write|MultiEdit) ;;

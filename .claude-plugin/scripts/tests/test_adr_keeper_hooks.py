@@ -118,7 +118,7 @@ class AdrWriteGuardTest(HookTestCase):
             self.assertPassed(self._write(root, ".claude/adr/20200101000000-old.md", "# 古い ADR（改）\n"))
 
     def test_silent_for_edit_tools(self):
-        """supersede の旧 ADR 更新は既存ファイルへの Edit。matcher が評価されない環境でも自己判定で黙る."""
+        """supersede の旧 ADR 更新は既存ファイルへの Edit。Edit は matcher に合うので、自己判定だけで黙る."""
         with TempGitRepo() as root:
             p = root / ".claude/adr/20200101000000-x.md"
             p.parent.mkdir(parents=True)

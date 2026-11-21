@@ -238,7 +238,7 @@ class PreCommitGuardTest(HookTestCase):
                          "ERR trap で落ちている（明示的に通したのではない）")
 
     def test_a_non_bash_tool_is_not_inspected(self):
-        """matcher が評価されない環境への二重ゲート（CLAUDE.md Gotchas）."""
+        """matcher が想定外のツールに合ったときの二重ゲート（CLAUDE.md Gotchas）."""
         res = self.run_hook({"tool_name": "Read",
                              "tool_input": {"command": "git commit --no-verify -m x"}})
         self.assertEqual(res.returncode, 0, "Bash 以外のツールを検査している")
@@ -253,8 +253,8 @@ class PreConfigGuardTest(HookTestCase):
     """lint / hook 設定ファイルの編集ブロック（GitHub issue #178）.
 
     **判定に tool_name を使う**ことをここで固定する。以前は取得するだけで
-    ブロック判定は file_path のみだったため、matcher が評価されない環境では
-    保護対象ファイルの **Read まで**「Refusing to edit」で止まっていた。
+    ブロック判定は file_path のみだったため、matcher が想定外のツールに合えば
+    保護対象ファイルの **Read まで**「Refusing to edit」で止まる構造だった（スクリプトの直接実行で再現）。
     """
 
     PLUGIN = "guardrail-protect"
