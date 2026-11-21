@@ -2,10 +2,10 @@
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @305aaaa7 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#8a @a5f9c77b -->
 <!-- SSOT: code-review/references/triage-guide.md#2.5 @e6cc50ef -->
-<!-- SSOT: code-review/references/triage-guide.md#4 @7f788688 -->
-<!-- SSOT: code-review/references/triage-guide.md#5 @10e6b48c -->
-<!-- SSOT: code-review/references/triage-guide.md#6.3 @e63a77af -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @4ee372d0 -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @bf441ebd -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @a2dc3482 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.3 @2ad575e6 -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @5e9f7b4c -->
 ### 3. Phase 0: トリアージ
 
 `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。
@@ -46,7 +46,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --pr <PR番号> --ef
 
 数値を含まない規則は従来どおり:
 - explorer は独立した探索対象の数に比例させる。冗長ペア（x2）を組むのは `redundant_pairs=allowed`（xhigh / max）の回だけで、high 以下でペア条件が成立したら Angle A/B を 1 体に内挿する
-- `cap_source=size`（規模キャップが effort 上限を下回った）の回は、Round 2（Step 5.5）を effort に関わらず 1 段圧縮経路にする。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（規模キャップが削るのは breadth のみ。triage-guide.md `### 6.3`）
+- `cap_source=size`（規模キャップが effort 上限を下回った）の回は、Round 2（Step 5.5）を effort に関わらず 1 段圧縮経路にする（plan を呼ばないモードは、同じ条件を帯で当てる。条件の正本は triage-guide.md `### 6.3`）。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（規模キャップが削るのは breadth のみ。triage-guide.md `### 6.3`）
 
 #### 3.3 観点カバレッジ検算と構成テーブル出力
 
@@ -64,7 +64,7 @@ TABLE
 
 **決定系 doc の design-review 委譲**: `## decision-docs` に doc の行（`<数>\t<path>`）があれば `design-review-guide.md` を Read し、1 節で起動するかを決めて構成テーブルに `design-review` の行を足す（**体数の上限の外**。呼ぶのは締めフロー 4 の後）。起動するなら、委譲する doc を doc-substance のプロンプトの可変部に「design-review に渡す doc: <path>」と書く。
 
-検算後、triage-guide.md の出力フォーマット（`## 5`）に従い、エージェント構成テーブルを出力する。**「直列 wave」行を必ず含める**（見積もり方は triage-guide.md `## 5.1`）— 体数はトークンコストのレバー、wave 数は壁時計のレバーで、後者だけが従来ユーザーから見えなかった（GitHub issue #100 B）。
+検算後、triage-guide.md の出力フォーマット（`## 5`）に従い、エージェント構成テーブルを出力する。**「直列 wave」行を必ず含める**（見積もり方は triage-guide.md `### 5.1`）— 体数はトークンコストのレバー、wave 数は壁時計のレバーで、後者だけが従来ユーザーから見えなかった（GitHub issue #100 B）。
 
 #### 3.4 high-risk surface 判定（冷や読み skeptic の相乗り判断 / 常時実行）
 

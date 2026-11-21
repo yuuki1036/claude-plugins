@@ -1,7 +1,7 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @305aaaa7 -->
-<!-- SSOT: code-review/references/triage-guide.md#6.3 @e63a77af -->
-<!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
+<!-- SSOT: code-review/references/triage-guide.md#6.3 @2ad575e6 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.5 @b5edb48b -->
 ### 4.6 Meta-reviewer ラウンド（v2.12.0 / 動的・**4.9 反証と同一 wave**。実行順は `4.5 → 4.8 の skeptic 統合 → 4.6 meta + 4.9 反証を同一メッセージで一括発行 → mark wave → [meta 由来の追加反証バッチ] → 4.7 → Step 5`。両者は互いの出力に依存しないので直列に置かない / **片方がスキップでも他方はそのまま発行する** / #122）
 
 **スキップ条件**（いずれか満たせばスキップし、同一 wave の 4.9 だけを発行する）:

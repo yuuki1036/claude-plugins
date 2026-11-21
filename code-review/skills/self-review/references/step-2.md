@@ -1,11 +1,11 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @305aaaa7 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#8a @a5f9c77b -->
-<!-- SSOT: code-review/references/triage-guide.md#4 @7f788688 -->
-<!-- SSOT: code-review/references/triage-guide.md#5 @10e6b48c -->
-<!-- SSOT: code-review/references/triage-guide.md#6.3 @e63a77af -->
-<!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @4ee372d0 -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @bf441ebd -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @a2dc3482 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.3 @2ad575e6 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.5 @b5edb48b -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @5e9f7b4c -->
 ### 2. Phase 0: トリアージ
 
 `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。
@@ -36,12 +36,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --effort "${CLAUDE_E
 - `## prior-fixes` が出た回は `--prior <行の観点をカンマ区切り>` を渡す（`--focus` の回も。前回の対象は絞り込みの外に置き、上限に収まらなければ落とさず相乗りにする / prior-fixes-guide.md の 1 節）。`--since` の回（`scope_mode=delta`）はさらに `--size-tier` に `delta_size_tier` を渡して `--delta` を足す（前回の対象は規模キャップの外の専任になり、effort 上限を超える分は相乗りになる / triage-guide.md `### 6.5`）
 - **delta が空（`delta_files=0`）の回は plan も check も呼ばない**。triage-guide.md `### 6.5` のとおり、前回の対象の観点の reviewer だけで直ったかを確かめる（前回の対象も無ければ agent を起動しない）。plan は最小保証と仕様ソースの spec-compliance を必ず足すので、この回の構成を表せない
 - 出力の読み方（kind・`piggyback`・`dropped` の理由・`excluded`・`spare`）と check の規則の一覧は triage-guide.md `## 4` 末尾の「plan の出力の読み方」。`dropped` の観点は `missing_coverage` に識別子で記録し、理由をレポートの「⚠️ 欠損観点」に写す
-- explorer と specialist の体数は従来どおり triage-guide で決める。上限は出力の `explorer_cap` / `specialist_cap`（effort 上限と規模キャップの min）
+- explorer と specialist の体数は従来どおり triage-guide で決める。上限は出力の `explorer_cap` / `specialist_cap`（effort 上限と規模キャップの min。`--focus` / `--exclude` の回は effort 上限だけ）
 - exit 2 は引数の誤り（理由は stderr）。直して呼び直す
 
 数値を含まない規則は従来どおり:
 - explorer は独立した探索対象の数に比例させる。冗長ペア（x2）を組むのは `redundant_pairs=allowed`（xhigh / max）の回だけで、high 以下でペア条件が成立したら Angle A/B を 1 体に内挿する
-- `cap_source=size`（規模キャップが effort 上限を下回った）の回は、Round 2（Phase 4.5）を effort に関わらず 1 段圧縮経路にする。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（削るのは breadth のみ。triage-guide.md `### 6.3`）
+- `cap_source=size`（規模キャップが effort 上限を下回った）の回は、Round 2（Phase 4.5）を effort に関わらず 1 段圧縮経路にする（plan を呼ばない回は、同じ条件を帯で当てる。条件の正本は triage-guide.md `### 6.3`）。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（削るのは breadth のみ。triage-guide.md `### 6.3`）
 
 #### 2.3 観点カバレッジ検算と構成テーブル出力
 
@@ -57,7 +57,7 @@ TABLE
 
 `ok`（exit 0）なら確定。exit 1 なら `NG	<規則>	<詳細>	<直し方>` の行に従って直し、もう一度 check する（`spec-missing` = 仕様ソースがあるのに spec-compliance の単独の行が無い / `over-cap` = 上限超過 / `wrong-reason` = 落とした理由が plan と違う、など）。上限を超えたか・spec-compliance が欠けたかを自分で判定して check を飛ばさない。exit 2 は plan が無い（Step 1 の triage-signals.sh が前の回の plan を消す）か、テーブルの形が違う。
 
-検算後、triage-guide.md の出力フォーマット（`## 5`）に従い、エージェント構成テーブルを出力する。**「直列 wave」行を必ず含める**（見積もり方は triage-guide.md `## 5.1`）— 体数はトークンコストのレバー、wave 数は壁時計のレバーで、後者だけが従来ユーザーから見えなかった（GitHub issue #100 B）。
+検算後、triage-guide.md の出力フォーマット（`## 5`）に従い、エージェント構成テーブルを出力する。**「直列 wave」行を必ず含める**（見積もり方は triage-guide.md `### 5.1`）— 体数はトークンコストのレバー、wave 数は壁時計のレバーで、後者だけが従来ユーザーから見えなかった（GitHub issue #100 B）。
 
 #### 2.4 high-risk surface 判定（冷や読み skeptic の相乗り判断 / 常時実行）
 

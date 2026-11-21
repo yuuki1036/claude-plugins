@@ -3,7 +3,7 @@
 <!-- SSOT: code-review/references/prior-fixes-guide.md#4 @f5c76a67 -->
 <!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review の Step 1（`skills/self-review/references/step-1.md`）「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
 <!-- SSOT: code-review/skills/self-review/references/step-1.md#1 @a8330ddc -->
-<!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
+<!-- SSOT: code-review/references/triage-guide.md#6.5 @b5edb48b -->
 <!-- 正本依存（SSoT pin）。Phase 6.9 の推奨の決め方は code-review の review-guide-format.md「回し直すかの判断」の `あり` の条件 3 を要約したもの（条件 1・2 は check / diff の出力で満たされる）。正本が変わったら Phase 6.9 を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @bc251143 -->
 ## Phase 6.9: レビュー後の変更の確認

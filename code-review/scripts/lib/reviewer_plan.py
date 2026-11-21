@@ -250,9 +250,11 @@ def compute_plan(effort, size_tier, activated=(), prior=(), delta=False, focus=(
         min_guarantee = not any(k in excluded for k in MIN_GUARANTEE)
 
     effort_cap = EFFORT_CAP["reviewer"][effort]
-    # `--focus` / `--exclude` の回は規模キャップを掛けない（triage-guide `## 4` 末尾の plan の節）。
+    # `--focus` / `--exclude` の回は reviewer・explorer・specialist のどれにも規模キャップを掛けない
+    # （triage-guide `## 4` 末尾の plan の節 / GitHub issue #509）。
     # unknown の帯もキャップなし — small に倒すと大きな diff が最小構成で黙って処理される
-    size_cap = SIZE_CAP["reviewer"].get(size_tier) if scope == "full" else None
+    size_tier_capped = size_tier if scope == "full" else None
+    size_cap = SIZE_CAP["reviewer"].get(size_tier_capped)
     reviewer_cap = effort_cap if size_cap is None else min(effort_cap, size_cap)
     # 前回の対象の専任は規模キャップの外・effort 上限の内（triage-guide `### 6.5`）
     total_cap = effort_cap if delta else reviewer_cap
@@ -274,8 +276,8 @@ def compute_plan(effort, size_tier, activated=(), prior=(), delta=False, focus=(
 
     cap_source = "scope" if scope != "full" else (
         "size" if size_cap is not None and size_cap < effort_cap else "effort")  # mutation-ok: < を <= にしても同じ。規模キャップ（3 / 5）と effort 上限（4 / 6 / 10）に等しくなる組が無い
-    explorer_size = SIZE_CAP["explorer"].get(size_tier)
-    specialist_size = SIZE_CAP["specialist"].get(size_tier)
+    explorer_size = SIZE_CAP["explorer"].get(size_tier_capped)
+    specialist_size = SIZE_CAP["specialist"].get(size_tier_capped)
 
     def _min(a, b):
         return a if b is None else min(a, b)

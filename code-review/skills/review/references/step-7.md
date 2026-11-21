@@ -2,9 +2,9 @@
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @305aaaa7 -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @b7079976 -->
 <!-- SSOT: code-review/references/triage-guide.md#2.5 @e6cc50ef -->
-<!-- SSOT: code-review/references/triage-guide.md#4 @7f788688 -->
-<!-- SSOT: code-review/references/triage-guide.md#5 @10e6b48c -->
-<!-- SSOT: code-review/references/triage-guide.md#6.2 @e7e6031a -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @bf441ebd -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @a2dc3482 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.2 @81106eca -->
 ### 7. レポート出力
 
 `missing_coverage` リストが空でない場合は「⚠️ 欠損観点」セクションを追加する（空なら省略）。**理由・補足はこのセクション本文に書き、payload の `missing_coverage` 配列には識別子のみを入れる**（語彙は orchestration-measurement.md `## 16`。自由文を入れると綴りが割れて集計不能になる）。

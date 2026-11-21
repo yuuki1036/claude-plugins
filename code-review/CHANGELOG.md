@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.14] - 2026-11-21
+
+### Fixed
+
+- **`--focus` / `--exclude` の回は、explorer と specialist の上限にも規模キャップを掛けないようにした**（GitHub issue #509）。これまで `reviewer_plan.py` が規模キャップを外していたのは reviewer だけで、explorer と specialist の上限は規模キャップとの min を取っていた。triage-guide は「この回は規模キャップを掛けない」と reviewer に限らず書いていたので、small 帯の `--focus` の回は、文書では effort 上限まで起動できる explorer を plan が 0 体で返していた。2026-11-21 決定で文書に合わせ、effort 上限だけを掛ける
+- **Round 2 を 1 段に圧縮する条件を 1 つにそろえた**（GitHub issue #515）。条件は「規模キャップを掛ける回（`--focus` / `--exclude` でなく、帯が `unknown` でない回）で、帯の reviewer の規模キャップが effort 上限を下回るとき」で、正本は triage-guide の `### 6.3`（2026-11-21 決定）。plan を呼ぶ回はこれが `cap_source=size` と同じになる。これまで orchestration-dynamic-rounds.md の `## 6` は `cap_source` の無い回を effort で分け、triage-guide の `### 6.3` と triage-dynamic-gates.md の `## 8` は帯で決めていたので、plan を呼ばないモード（review の default-mode 以外）の扱いが文書ごとに違った。`--since` で delta が空の回の決め方も、根拠として挙げていた triage-guide の `### 6.5` に書いた。review の Step 3・Step 5.5 と self-review の Step 2・Step 4.5 の要約も同じ条件に合わせた
+- **triage-guide の `### 5.1` を `## 5.1` と書いていた参照 10 か所を、見出しどおりの `### 5.1` にそろえた**（GitHub issue #515）。同じ行の `## 5.2` の参照は、引いている実測値（報告 0 件率 42% → 91%）の出典である GitHub issue #191 に差し替えた
+- triage-guide の explorer・specialist・reviewer の上限と Phase 0 の出力フォーマット、`### 6.5` の体数、self-review の Step 2 に、`--focus` / `--exclude` の回は規模キャップを掛けず effort 上限だけになることを書き足した（GitHub issue #509）。`### 5.1` の直列 wave の例は、Round 2 が 2 段になる large 帯に直した（medium 帯は 1 段圧縮になるので、上限 6 の例と合わなかった）。規模キャップと実効上限を定義する `## 6` 冒頭・`### 6.2`・`## 7` にも同じ例外を書いた。orchestration-dynamic-rounds.md と triage-dynamic-gates.md は `### 6.3` の条件を言い換えているので、`triage-guide.md#6.3` の SSoT pin を足した
+
 ## [2.168.13] - 2026-11-21
 
 ### Fixed

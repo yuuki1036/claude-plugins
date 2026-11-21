@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.29.7] - 2026-11-21
+
+### Changed
+
+- code-review の triage-guide の `### 6.5` に、`--since` で delta が空の回の Round 2 の圧縮の決め方と、`--focus` / `--exclude` と一緒の回は体数に規模キャップを掛けないことを足したのに合わせて、review-loop.md と phase-6 / phase-6.9 / phase-7 の SSoT pin を打ち直した（GitHub issue #515）。feature-dev が要約している観点・体数の規則は変わっていないので、本文は直していない
+
 ## [2.29.6] - 2026-11-21
 
 ### Changed
