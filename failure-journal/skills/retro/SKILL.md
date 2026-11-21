@@ -78,7 +78,7 @@ log-failure は手動起票のため、**Claude が自己訂正した失敗は�
 | high（既定） | 集計窓どおり（既定 30 日） | 候補 30 件超で Agent 並列分類 + tag 正規化 |
 | xhigh / max | 集計窓どおり | 全件を Agent 並列分類。バッチを細かく割り、tag 正規化を独立コンテキストで実行する |
 
-> 分類の agent と、独立コンテキストで回す tag 正規化の agent は、どちらも model に `opus` を指定して起動する（親からの継承に任せない）。理由は `references/transcript-salvage.md` の 3 と 3.5。
+> 分類の agent と、独立コンテキストで回す tag 正規化の agent は、どちらも model に `opus` を指定し、spawn ごとに effort も渡して起動する（親からの継承に任せない。分類は実行時の effort が `high` なら `high`・`xhigh` / `max` なら `xhigh`、tag 正規化は実行時の effort をそのまま）。理由と値の決め方は `references/transcript-salvage.md` の 3 と 3.5。
 >
 > Agent を並列起動したら、**全 agent の分類結果が届くまで tag 正規化・承認フェーズへ進まない**。起動は常に非同期（CC 2.1.302+）で、結果は体ごとの完了通知で後から届く。
 
