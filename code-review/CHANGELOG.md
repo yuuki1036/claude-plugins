@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.168.12] - 2026-11-21
+
+### Changed
+
+- `external-id-reminder.sh` と `publish-guard.sh` のコメントの、hooks.json の `if:` / matcher が「実行環境によって評価されない」という記述を直した（GitHub issue #485）。`if:` は `$()`・`$VAR` を含むコマンドなどで仕様として合う。matcher が評価されないことの実測は無かった。publish-guard の自己判定は、Stop と PreToolUse の両方から呼ばれるので経路を見分ける理由として書き直した。自己判定（二重ゲート）は残す。挙動は変えていない
+
 ## [2.168.11] - 2026-11-20
 
 ### Fixed
