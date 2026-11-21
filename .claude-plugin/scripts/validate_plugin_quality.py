@@ -107,6 +107,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     scripts/plugin-enabled.sh に寄せる. md は行内コードを除いて照合し, sh はコメント行を飛ばす.
     CHANGELOG.md・scripts/plugin-enabled.sh・evals/results/ は対象外.
   - agent-effort: agents/*.md の frontmatter が `model`（`inherit` 以外）を持ち `effort` を持たないもの.
+    `effort: ''` / `null` / `~` / コメントだけの値も持たない扱い（GitHub issue #510. 入れた時点の検出は 0 件）.
     main と別のモデルで動く sub は session の effort を継がず, そのモデルに保存された effort か
     既定値で動く（CC 2.1.317）. 指定が無いと sub の effort が, そのモデルに保存された値か既定値という
     プラグイン側で決められない値になる（GitHub issue #483. 入れた時点の検出は 3 件で, 同じ変更で全件直した）.
@@ -1645,7 +1646,18 @@ def check_plugin_enabled_key_only(plugin_dir: Path, warnings: list[str]) -> None
 
 
 AGENT_MODEL_RE = re.compile(r"^model:[ \t]*['\"]?([^'\"\s]+)", re.MULTILINE)
-AGENT_EFFORT_RE = re.compile(r"^effort:[ \t]*\S", re.MULTILINE)
+AGENT_EFFORT_RE = re.compile(r"^effort:(.*)$", re.MULTILINE)
+#: YAML で値が無いことを表す書き方. `effort:` の後がこれだけなら書いていないのと同じ
+YAML_EMPTY_VALUES = {"", "null", "Null", "NULL", "~", "''", '""'}
+
+
+def _has_effort_value(frontmatter: str) -> bool:
+    """frontmatter の `effort:` が値を持つか. 行末コメント（空白 + #）とコメントだけの値は値に数えない."""
+    match = AGENT_EFFORT_RE.search(frontmatter)
+    if match is None:
+        return False
+    value = re.sub(r"(^|[ \t])#.*$", "", match.group(1)).strip()
+    return value not in YAML_EMPTY_VALUES
 
 
 def check_agent_effort(plugin_dir: Path, warnings: list[str]) -> None:
@@ -1659,7 +1671,7 @@ def check_agent_effort(plugin_dir: Path, warnings: list[str]) -> None:
         if fm is None:
             continue
         model = AGENT_MODEL_RE.search(fm)
-        if model is None or model.group(1) == "inherit" or AGENT_EFFORT_RE.search(fm):
+        if model is None or model.group(1) == "inherit" or _has_effort_value(fm):
             continue
         warnings.append(
             f"[agent-effort:{name}] {path.relative_to(ROOT)} が model: {model.group(1)} を指定して effort を指定していない"
