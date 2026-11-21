@@ -1616,6 +1616,28 @@ class AgentEffortTest(unittest.TestCase):
     def test_empty_effort_value_still_warns(self):
         self.assertEqual(len(self._scan("name: a\nmodel: opus\neffort:")), 1)
 
+    def test_yaml_empty_effort_values_warn(self):
+        """YAML で値が無い書き方は effort を書いていないのと同じ（GitHub issue #510）."""
+        for value in ("''", '""', "null", "Null", "NULL", "~", "# TODO", "  # TODO", "''  # 後で"):
+            with self.subTest(value=value):
+                self.assertEqual(len(self._scan(f"name: a\nmodel: opus\neffort: {value}")), 1)
+
+    def test_comment_right_after_colon_warns(self):
+        """`effort:` の直後に空白なしで # が来ても, 値の先頭の # はコメント."""
+        self.assertEqual(len(self._scan("name: a\nmodel: opus\neffort:# TODO")), 1)
+
+    def test_effort_with_trailing_comment_is_silent(self):
+        self.assertEqual(self._scan("name: a\nmodel: opus\neffort: high  # 判断の層"), [])
+
+    def test_quoted_effort_is_silent(self):
+        for value in ("'high'", '"medium"'):
+            with self.subTest(value=value):
+                self.assertEqual(self._scan(f"name: a\nmodel: opus\neffort: {value}"), [])
+
+    def test_hash_inside_value_is_not_a_comment(self):
+        """YAML のコメントは空白の後の # だけ. 値に続く # はコメントではない."""
+        self.assertEqual(self._scan("name: a\nmodel: opus\neffort: high#x"), [])
+
     def test_keys_in_description_do_not_count(self):
         """行頭のキーだけを見る（description の中の model: / effort: の字面は数えない）."""
         fm = "name: a\ndescription: uses effort: high\nmodel: opus"

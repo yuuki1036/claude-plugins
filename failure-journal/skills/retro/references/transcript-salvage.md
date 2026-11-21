@@ -100,7 +100,7 @@ REAL の条件は log-failure と同じ **「同じ状況で再発しうるか�
 
 件数が多い場合（目安 30 件超）は Agent tool で分割して並列分類してよい。その際は全 agent の結果が届くまで次フェーズへ進まない（起動は常に非同期で、結果は完了通知で届く）。
 
-分類の agent は model に `opus` を指定して起動する（親からの継承に任せない）。REAL / NOISE の判定は、どの失敗を journal に入れ、どの tag が閾値に届いて還流提案になるかを決めるので、`docs/pipeline-design.md` のモデルルーティング表の「判断・検証・レビュー」の行に当たる。
+分類の agent は model に `opus` を指定して起動する（親からの継承に任せない）。REAL / NOISE の判定は、どの失敗を journal に入れ、どの tag が閾値に届いて還流提案になるかを決めるので、`docs/pipeline-design.md` のモデルルーティング表の「判断・検証・レビュー」の行に当たる。effort も spawn ごとに渡す: 実行時の effort が `high` なら `high`、`xhigh` / `max` なら `xhigh`（同じ行の既定と escalation 時の値）。この agent は frontmatter を持たないので、渡さないと main と別のモデルで動く回に session の effort を継がない（CC 2.1.317・GitHub issue #510）。
 
 **並列分類には既知の失敗モードが 2 つある**（2026-07-21 の実運用で両方発生）。以下のガードを必ず入れる:
 
@@ -109,7 +109,7 @@ REAL の条件は log-failure と同じ **「同じ状況で再発しうるか�
 
 ### 3.5. tag 正規化（並列分類時は必須）
 
-並列分類の直後、**tag 語彙を単一コンテキストで統合する**。正規化を独立コンテキストの agent で回すとき（effort が xhigh / max）も model に `opus` を指定する（ルーティング表の「統合」の行）。
+並列分類の直後、**tag 語彙を単一コンテキストで統合する**。正規化を独立コンテキストの agent で回すとき（effort が xhigh / max）も model に `opus` を指定する（ルーティング表の「統合」の行）。effort は実行時の effort（`xhigh` / `max`）をそのまま spawn に渡す。表の「統合」の行は effort を定めていないので、ここで決めた値である（独立コンテキストで回すのはこの 2 つの回だけなので、深さを実行時に合わせる）。
 
 実運用の例（2026-07-21、claude-plugins 単独・シグナル 94 件を 5 バッチに分けて**全件**分類。上の「なぜ必要か」の表は 9 プロジェクト横断・1/3 抽出なので別の試行）: REAL 36 件に対し約 20 個の tag が付き、`assumed-fact-without-verifying` / `assumed-root-cause-unverified` / `concluded-without-checking-timeline` のように**同一の失敗が別 tag に分散**した。
 

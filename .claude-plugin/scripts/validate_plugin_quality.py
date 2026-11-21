@@ -98,15 +98,16 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     Read/Write/Edit/Glob/Grep/Bash や MCP ツールは日本語表現・記述的言及の偽陽性が
     あるため『要確認』に留め, LLM/人手の最終判断を残す (#14b の偽陽性除外規約に準拠).
   - hook 自己判定: PreToolUse/PostToolUse の hook スクリプトが stdin（safe_hook_input）
-    を参照しているか. hooks.json の if:/matcher は実行環境で評価されないことが実測
-    されており（2026-07 push-reminder 暴発）, フィルタ単独依存の注入 hook は全ツール
-    呼び出しへの暴発リスクになる.
+    を参照しているか. hooks.json の if: は best-effort のフィルタで `$()`・`$VAR` を含む
+    コマンドなどでは関係なくても合う（CC の仕様。2026-07 push-reminder 暴発）ので,
+    フィルタ単独依存の注入 hook は関係ないツール呼び出しへの暴発リスクになる.
   - plugin-enabled key-only: 他プラグインの有効判定を `"<name>@` の直後で引用を閉じる grep
     （キーの有無だけを見る判定）で書いていないか. `false` で無効化したものを有効と誤り, project /
     local の settings だけで有効化したものを取りこぼす（GitHub issue #423）. 同梱の
     scripts/plugin-enabled.sh に寄せる. md は行内コードを除いて照合し, sh はコメント行を飛ばす.
     CHANGELOG.md・scripts/plugin-enabled.sh・evals/results/ は対象外.
   - agent-effort: agents/*.md の frontmatter が `model`（`inherit` 以外）を持ち `effort` を持たないもの.
+    `effort: ''` / `null` / `~` / コメントだけの値も持たない扱い（GitHub issue #510. 入れた時点の検出は 0 件）.
     main と別のモデルで動く sub は session の effort を継がず, そのモデルに保存された effort か
     既定値で動く（CC 2.1.317）. 指定が無いと sub の effort が, そのモデルに保存された値か既定値という
     プラグイン側で決められない値になる（GitHub issue #483. 入れた時点の検出は 3 件で, 同じ変更で全件直した）.
@@ -1645,7 +1646,18 @@ def check_plugin_enabled_key_only(plugin_dir: Path, warnings: list[str]) -> None
 
 
 AGENT_MODEL_RE = re.compile(r"^model:[ \t]*['\"]?([^'\"\s]+)", re.MULTILINE)
-AGENT_EFFORT_RE = re.compile(r"^effort:[ \t]*\S", re.MULTILINE)
+AGENT_EFFORT_RE = re.compile(r"^effort:(.*)$", re.MULTILINE)
+#: YAML で値が無いことを表す書き方. `effort:` の後がこれだけなら書いていないのと同じ
+YAML_EMPTY_VALUES = {"", "null", "Null", "NULL", "~", "''", '""'}
+
+
+def _has_effort_value(frontmatter: str) -> bool:
+    """frontmatter の `effort:` が値を持つか. 行末コメント（空白 + #）とコメントだけの値は値に数えない."""
+    match = AGENT_EFFORT_RE.search(frontmatter)
+    if match is None:
+        return False
+    value = re.sub(r"(^|[ \t])#.*$", "", match.group(1)).strip()
+    return value not in YAML_EMPTY_VALUES
 
 
 def check_agent_effort(plugin_dir: Path, warnings: list[str]) -> None:
@@ -1659,7 +1671,7 @@ def check_agent_effort(plugin_dir: Path, warnings: list[str]) -> None:
         if fm is None:
             continue
         model = AGENT_MODEL_RE.search(fm)
-        if model is None or model.group(1) == "inherit" or AGENT_EFFORT_RE.search(fm):
+        if model is None or model.group(1) == "inherit" or _has_effort_value(fm):
             continue
         warnings.append(
             f"[agent-effort:{name}] {path.relative_to(ROOT)} が model: {model.group(1)} を指定して effort を指定していない"
@@ -1671,11 +1683,12 @@ def check_agent_effort(plugin_dir: Path, warnings: list[str]) -> None:
 def check_hook_self_judgement(plugin_dir: Path, warnings: list[str]) -> None:
     """PreToolUse/PostToolUse hook スクリプトの stdin 自己判定を検証する（非ブロッキング warning）.
 
-    hooks.json の `if:`（CC 2.1.85+）や matcher によるフィルタは実行環境によって
-    評価されないことが実測されている（2026-07: `if: "Bash(git push *)"` の
-    push-reminder が全 Bash 呼び出しで発火）. tool イベントの hook は
+    hooks.json の `if:`（CC 2.1.85+）は best-effort のフィルタで, `$()`・バッククォート・
+    `$VAR` を含むコマンドや分解できないコマンドでは関係なくても合う（CC の仕様。
+    2026-07: `if: "Bash(git push *)"` の push-reminder が push 以外の複合コマンドで発火）.
+    matcher が想定外のツールに合ったときにも備える（多層防御）. tool イベントの hook は
     `safe_hook_input` で tool_input を取得し発火条件を自己判定しなければ,
-    フィルタ不発時に全ツール呼び出しへの注入・誤 block になる.
+    フィルタが関係ない呼び出しに合ったときに注入・誤 block になる.
     SessionStart / FileChanged 等は対象外（tool_input が無い・低頻度）.
     スキーマ検証は `if` を正当なフィールドとして通すため, この暴発モードは
     本チェックでしか拾えない.
