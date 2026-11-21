@@ -320,7 +320,7 @@ self-review 用（`--plugin code-review:self-review`）— **`pr` は `"local"` 
 |---|---|
 | `pr` | PR 番号の文字列。self-review と PR 番号取得失敗時は `"local"` |
 | `effort` | 実行時 `${CLAUDE_EFFORT}` の実値（`low`〜`max`。装飾を付けない）。体数上限と動的ラウンドの起動を左右する条件変数なので、下流の集計は必ずこれで層別する（v2.39.0） |
-| `size_tier` | Phase 0 が判定した規模帯（`small` / `medium` / `large`。triage-guide.md `## 6.1` の core 基準）。所要時間は規模と体数の両方に効かれるため、帯を混ぜた比較は規模キャップの効果を検出できない（v2.40.0） |
+| `size_tier` | Phase 0 が判定した規模帯（`small` / `medium` / `large`。triage-guide.md `### 6.1` の core 基準）。所要時間には規模と体数の両方が効くため、帯を混ぜた比較は規模キャップの効果を検出できない（v2.40.0） |
 | `reviewer_effort_profile` | **廃止**（v2.89.0 / GitHub issue #171）。v2.51.0〜v2.88.2 のサンプルにのみ載る （`uniform` / `differentiated`）。**旧サンプルの層別のために語彙を残す** — フィールドの不在が v2.89.0 以降の版マーカーになる。A/B は実測して**不採用**で決着した（high 群 中央値 201,532 tok / 9.7 分 vs medium 群 197,907 tok / 10.4 分 で差なし。effort が削るのは output/thinking ＝ コスト内訳の 17% の一部という事前見積もりと整合）。経緯は `design-notes/pending-optimizations.md ## 5` |
 | `duration_min` ほか `duration_*` | 区間分割の意味・欠測時の扱い・「混ぜて比較しない」理由は `## 14` が正本。`TS_FILE` のパス導出は `## 13.1` |
 | `head_verified` | `{ok, mismatch, unknown}`（review のみ。v2.43.0）。各 agent の `HEAD 検証:` 行の集計で、`unknown` は行が無かった agent 数。`mismatch + unknown > 0` のレビューは指摘の信頼度が落ちる（orchestration-guide.md `## 5`） |
@@ -440,7 +440,7 @@ grep '"event":"review:completed"' .claude/events.jsonl | \
 - `calibration_schema`: **上流 severity 較正ガードの版**（v2.62.0 / `pre_adjust_counts.schema` と同じ流儀）。**`publish-review-event.sh` が注入する**（1 = base 状態の確認だけを課していた v2.55.0〜v2.61.x / 2 = `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` に「降格される典型パターン」の 4 型を明示した v2.62.0〜v2.89.x / **3 = 同じ 4 型のまま `カテゴリの取り違え` の判別条件を変え、「実行時挙動が変わらない指摘は MINOR 既定・MAJOR を主張するなら発現経路を `file:line` まで書く」を課した v2.90.0 以降**）。**これが無いと A の効果を測れない** — `severity_inflated` 比率は累計で読むと施策前サンプルに薄められ、上流ガードが効いたかどうかが判定できなくなる（issue #123 A）。日付では切らない（配布ラグ）
   - **型の語彙が同じでも版を上げる**（v2.90.0 / #150）。3 は 2 とキー（`base_derived` / `misread` / `overstated_impact` / `miscategorized` / `unknown`）が同一なので**層を跨いで足し合わせたくなる**が、`miscategorized` の判別条件そのものを変えているため**同じキーの意味が違う**。プロンプトの手順追加はゲート変更ではないと読んで版を据え置き、後から差分を切り出せなくなったのが #123 A の失敗（同じ節の `## 16` 冒頭「ゲートを動かす変更には必ず版マーカーを足す」）。**語彙の同一性は合算してよい根拠にならない**
 
-**`meta_reviewer`** — meta-reviewer ラウンドの実行記録（GitHub issue #121）。**帯連動ゲート（`triage-guide.md ## 6.3` の「削らない」判断）を再評価するための計測**で、これが無いと価値率を出せず `## 7` の流儀（「サンプルが無いうちは判断しない」）に従うと永久に判断できない:
+**`meta_reviewer`** — meta-reviewer ラウンドの実行記録（GitHub issue #121）。**帯連動ゲート（`triage-guide.md ### 6.3` の「削らない」判断）を再評価するための計測**で、これが無いと価値率を出せず `## 7` の流儀（「サンプルが無いうちは判断しない」）に従うと永久に判断できない:
 
 - `fired`: meta-reviewer agent が実際に起動したか（bool）
 - `skip_reason`: `fired=false` のときの理由。`"effort"`（high 以下）/ `"config"`（`enable_meta_reviewer: false`）/ `"no-high-severity"`（**起動条件の severity 側を満たさない**。`gate_schema: 3` では「BLOCKER / CRITICAL 不在**かつ**報告見込み MAJOR が 3 件未満」を指す）/ `"size-tier"`（`small` 帯かつ BLOCKER 不在 / v2.60.0〜）/ `"emergency"`。`fired=true` なら `null`
@@ -556,7 +556,7 @@ Claude Code の transcript（`~/.claude/projects/<slug>/*.jsonl`）は各アシ�
 > - **`main.output` を一次指標にする** — パス渡し化（`orchestration-guide.md ## 3.5`）の効果は output 側に出るので、多くの場合これで足りる
 > - **agent を起動しない経路で測る** — Phase 0 までで中断、または `skip-mode` のサンプルなら取り込みが混ざらない
 >
-> 「同じ PR / 同じ diff で比較する」だけでは交絡は消えない。**体数は effort と規模キャップで変わる**（`triage-guide.md ## 7` / `## 6.2`）ため、**effort を変える A/B ではこの交絡が直接効く**。
+> 「同じ PR / 同じ diff で比較する」だけでは交絡は消えない。**体数は effort と規模キャップで変わる**（`triage-guide.md ## 7` / `### 6.2`）ため、**effort を変える A/B ではこの交絡が直接効く**。
 
 - **比較は同じ PR / 同じ diff で行う**（規模が変われば当然変わる）。`size_tier` を揃えるのは `duration_fleet_min` と同じ流儀
 - **`duration_*` と混ぜて 1 つの結論を出さない**。体数削減が確実に効くのはトークンであって壁時計ではない（triage-guide.md `## 7`「体数を壁時計のレバーとして扱わない」）

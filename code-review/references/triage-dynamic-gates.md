@@ -1,8 +1,8 @@
 # 動的ラウンドの起動ゲート（triage-guide 分冊）
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @d39fb753 -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @0ea1c3d4 -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @32613055 -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @9f4ea1e1 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#5 @ad2cb12f -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
@@ -99,7 +99,7 @@
 | xhigh | 起動（2 段。**規模キャップが effort 上限を下回る帯は 1 段圧縮**） | 起動（BLOCKER / CRITICAL / **報告見込み MAJOR 3 件以上**。**`small` 帯は BLOCKER 有りのみ**） |
 | max | 起動（2 段。**規模キャップが effort 上限を下回る帯は 1 段圧縮**） | 同上 |
 
-**「起動するか否か」が規模帯に連動するのは Phase 5.6 だけ（v2.60.0）**。5.8 / 5.9 は帯に連動せず、**Phase 5.5 は起動可否こそ帯非連動だが段数は従来から帯連動する**（規模キャップが effort 上限を下回る帯では追加 explorer なしの 1 段圧縮経路 — triage-guide.md `## 6.3` / 同 `## 5.1` の wave 表）。5.6 のスキップは triage-guide.md `## 6.3` の「規模キャップが削るのは breadth だけ」という原則に対する**唯一の例外**（＝ depth 層を帯で止める唯一の例）で、根拠が n=1 と弱いため**ロールバック条件つきの暫定措置**として入れてある（`design-notes/triage-rationale.md`）。他の depth 層（5.8 / 5.9）へ同じ帯連動を横展開しないこと。self-review の `--since` の回は、帯を `delta_size_tier` で判定する（triage-guide.md `### 6.5` / #313）。
+**「起動するか否か」が規模帯に連動するのは Phase 5.6 だけ（v2.60.0）**。5.8 / 5.9 は帯に連動せず、**Phase 5.5 は起動可否こそ帯非連動だが段数は従来から帯連動する**（規模キャップが effort 上限を下回る帯では追加 explorer なしの 1 段圧縮経路 — triage-guide.md `### 6.3` / 同 `## 5.1` の wave 表）。5.6 のスキップは triage-guide.md `### 6.3` の「規模キャップが削るのは breadth だけ」という原則に対する**唯一の例外**（＝ depth 層を帯で止める唯一の例）で、根拠が n=1 と弱いため**ロールバック条件つきの暫定措置**として入れてある（`design-notes/triage-rationale.md`）。他の depth 層（5.8 / 5.9）へ同じ帯連動を横展開しないこと。self-review の `--since` の回は、帯を `delta_size_tier` で判定する（triage-guide.md `### 6.5` / #313）。
 
 ### userConfig による無効化
 

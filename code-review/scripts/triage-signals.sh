@@ -4,7 +4,7 @@
 # 目的: オーケストレーター（メインコンテキスト）に diff 全文を載せずに Phase 0 を回す。
 # diff はファイルへ保存し、本スクリプトは「事実」だけを compact に出力する。
 # モード決定・体数決定は triage-guide.md が行う。**ただし `size_tier` の帯境界だけは
-# 本スクリプトに複製されている**（正本は triage-guide.md `## 6.2`。変更時は両方直すこと）。
+# 本スクリプトに複製されている**（正本は triage-guide.md `### 6.2`。変更時は両方直すこと）。
 # 語彙は triage-guide.md `## 3`（観点判定表 / red-flag）と
 # triage-dynamic-gates.md `## 8.5`（surface 判定）に一致させること。
 # 一時ファイルのパス導出は lib/review-paths.sh が正本（式をここに複製しない）。
@@ -256,7 +256,7 @@ print(m["main"] if m.get("main") else "混在（%s）" % "/".join(d))') || MODEL
 fi
 
 # ---- ファイル分類と規模 ---------------------------------------------------
-# 分類: gen（lock・生成物）/ test / doc / core。core の定義は triage-guide `## 6.1`
+# 分類: gen（lock・生成物）/ test / doc / core。core の定義は triage-guide `### 6.1`
 if [ -n "$PR" ]; then
   NUMSTAT=$(git $QP diff --numstat "origin/${BASE}...HEAD" 2>/dev/null)
   [ -n "$NUMSTAT" ] || NUMSTAT=$(git $QP diff --numstat "${BASE}...HEAD" 2>/dev/null)
@@ -282,7 +282,7 @@ classify() { # classify <numstat>
   }' | sort -k4
 }
 CLASSIFIED=$(classify "$NUMSTAT")
-# size_tier は triage-guide.md `## 6.2` の帯定義を機械適用する（stdin は CLASSIFIED の形）。
+# size_tier は triage-guide.md `### 6.2` の帯定義を機械適用する（stdin は CLASSIFIED の形）。
 # **判定は large → medium → small の順**（条件が重なる場合は大きい帯が勝つ）。
 # large = ファイル > 10 **または** 行数 > 500。ここを OR で書かないと
 # 「15 ファイル / 50 行」「2 ファイル / 600 行」が medium へ落ち、規模キャップで

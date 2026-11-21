@@ -1,10 +1,10 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/triage-guide.md#4 @dc5b3022 -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @7f788688 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.1 @d6a3bd92 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.2 @e7e6031a -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @48a827bc -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @4ee372d0 -->
 ### 1. diff 収集とコンテキスト準備
 
 **Step 1 と 1.4 は 1 つの Bash 呼び出しにまとめる**（GitHub issue #147）。間に LLM の判断が挟まらない — 後段は前段の**出力を読んで決める**のではなく、同じシェルの変数とファイルを使うだけなので、分けると往復ぶんの `cache_read` を払うだけになる。**1.7 の機械層はここに含めない**（理由は 1.7 側に記載）。
@@ -69,12 +69,12 @@ fi
 
 出力セクション（`## meta` / `## size` / `## files` / `## hunks` / `## focus-signals` / `## red-flags` / `## surface` / `## explorer-signals` / `## agents-md` / `## issue-ids`）の意味と使い道の正本 → `${CLAUDE_PLUGIN_ROOT}/skills/review/references/step-2.md`。self-review では `## issue-ids` はブランチ名から抽出され、`## meta` の `base` は指定した base branch になる（ローカルの base が origin より遅れていれば `origin/<base>`）。あわせて出る **`diff_base=`**（diff の起点のコミット）を、共通ブロックの base ref と base 検算に使う（`git show <diff_base>:<path>` が diff の変更前と一致する。`base` の ref の先端は、ブランチを切った後に base が進むとずれる / orchestration-guide.md `## 3.5`）。**`## md-polish`**（`md_prose_lines=` / `writing_polish=`）は self-review だけにあり、Markdown 推敲の起動判定（Step 2.1）に使う。**`## decision-docs`**（`design_doc=` と決定系 doc の一覧）は決定系 doc の design-review 委譲の起動判定（Step 2.1）に使う。**`## delta`** は `--since` の回だけに最後の節として出る（読み方は下の `--since` の節）。
 
-- **`size_tier`** はスクリプトが triage-guide.md `## 6.2` の帯定義を機械適用した値をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。GitHub issue #96）。Phase 0 の構成テーブル・Step 6 レポート冒頭・Step 6.4 の `size_tier` に記録する
+- **`size_tier`** はスクリプトが triage-guide.md `### 6.2` の帯定義を機械適用した値をそのまま使う（core = lock・生成物・テスト・doc を除いた実質規模。GitHub issue #96）。Phase 0 の構成テーブル・Step 6 レポート冒頭・Step 6.4 の `size_tier` に記録する
 - **シグナルは事実であって判定ではない**。観点採否・体数は triage-guide が決める。ヒット数 0 の観点は出力に現れない＝条件不成立、と読む
 - **`diff_file=` と `agent_ctx_file=` の値はパス文字列そのものを控えておく**（後者は Step 4 の共通ブロック書き出し先。**slug は不透明な cksum 値なので、控え損ねると復元できない**）（シェル変数は Bash 呼び出し間で消えるため、`$DIFF_FILE` として引き回さず実パスを毎回書く）
 - **判断が付かない場合のみ** `bash "${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh" "<diff_file の実パス>" <path>` で必要なファイルの diff だけを読む（全文 Read はしない）
 - **diff の起点は base branch の先端ではなく HEAD との分岐点**で、ローカルの base と `origin/<base>` のうち HEAD に近い方から取る（正本: `scripts/lib/diff-base.sh` / GitHub issue #253）。ローカルの base が遅れていて origin 側を使った回は stderr に `WARN: ⚠️ base:` が出る。止めずに続け、Phase 0 の出力にその 1 行を載せる
-- **スクリプトが失敗した場合**は `git diff "origin/${BASE}...HEAD" --name-only`（取れなければ `"${BASE}...HEAD"`）と `--stat` でファイル一覧と規模を取り、triage-guide.md `## 6.4` のフォールバック構成に落とす。**diff 全文の Read はこの経路でも行わない**
+- **スクリプトが失敗した場合**は `git diff "origin/${BASE}...HEAD" --name-only`（取れなければ `"${BASE}...HEAD"`）と `--stat` でファイル一覧と規模を取り、triage-guide.md `### 6.4` のフォールバック構成に落とす。**diff 全文の Read はこの経路でも行わない**
 
 `## size` の `total_files` が 0 なら変更なしとして終了。
 

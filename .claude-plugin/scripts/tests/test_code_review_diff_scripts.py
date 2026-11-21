@@ -7,7 +7,7 @@
   「レビュー済み」になる**。空出力 + exit 0 を避ける設計（exit 3）は入っているが、
   **`--list` と切り出し本体が別実装**なので両者が食い違うと誰も気づけない。
 - `triage-signals.sh` は Phase 0 の体数・観点・予算の入力。誤ると全体の配分が狂う。
-  `size_tier` の帯境界は triage-guide.md `## 6.2` の複製なので**両側から測る**
+  `size_tier` の帯境界は triage-guide.md `### 6.2` の複製なので**両側から測る**
   （片側だけだと `>` / `>=` の取り違えが素通りする）。
 
 方針: 実際の git リポジトリ + 実際の diff を通す（awk の分岐は入力の形に強く依存するため、
@@ -628,7 +628,7 @@ class TriageSinceTreeTest(DiffScriptTestBase):
         self.assertFalse(patch.exists())
 
     def test_delta_size_tier_boundaries(self):
-        """delta の帯も diff 全体と同じ境界（triage-guide `## 6.2`）で決める."""
+        """delta の帯も diff 全体と同じ境界（triage-guide `### 6.2`）で決める."""
         for files, lines, want in ((3, 1, "small"), (4, 1, "medium"), (1, 100, "small"), (1, 101, "medium"),
                                    (11, 1, "large")):
             with self.subTest(files=files, lines=lines):
@@ -692,7 +692,7 @@ class TriageSinceTreeTest(DiffScriptTestBase):
 
 
 class TriageSizeTierTest(DiffScriptTestBase):
-    """`size_tier` の帯境界（正本: triage-guide.md `## 6.2` / ここは機械適用の複製）.
+    """`size_tier` の帯境界（正本: triage-guide.md `### 6.2` / ここは機械適用の複製）.
 
     large = core ファイル > 10 **または** core 行数 > 500、medium = >= 4 または >= 101。
     **両側から測る**: 片側だけだと `>` と `>=` の取り違えが素通りする。
@@ -755,14 +755,14 @@ class TriageSizeTierTest(DiffScriptTestBase):
         self.assertEqual(files["src/a.test.ts"], "test")
         self.assertEqual(files["docs/g.md"], "doc")
         self.assertEqual(files["src/real.ts"], "core")
-        # **core は帯の判定に使う数**なので test / doc / gen を除く（triage-guide `## 6.1`）。
+        # **core は帯の判定に使う数**なので test / doc / gen を除く（triage-guide `### 6.1`）。
         # テスト・doc は観点判定の起動根拠にはなるが体数を押し上げる根拠にはしない
         size = self.kv(res.stdout, "## size")
         self.assertEqual(size["core_files"], "1")
         self.assertEqual(size["total_files"], "5")
 
     def test_many_test_files_do_not_push_the_tier(self):
-        """テストのみの PR は core=0 → small（triage-guide `## 6.1` 末尾）."""
+        """テストのみの PR は core=0 → small（triage-guide `### 6.1` 末尾）."""
         for i in range(12):
             self.write("src/f%d.test.ts" % i, "".join("expect(%d)\n" % n for n in range(60)))
         self.add()

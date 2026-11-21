@@ -1,11 +1,11 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @0d0d4681 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @305aaaa7 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#8a @a5f9c77b -->
 <!-- SSOT: code-review/references/triage-guide.md#2.5 @e6cc50ef -->
-<!-- SSOT: code-review/references/triage-guide.md#4 @dc5b3022 -->
-<!-- SSOT: code-review/references/triage-guide.md#5 @21cb0843 -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @7f788688 -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @10e6b48c -->
 <!-- SSOT: code-review/references/triage-guide.md#6.3 @e63a77af -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @48a827bc -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @4ee372d0 -->
 ### 3. Phase 0: トリアージ
 
 `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。
@@ -46,7 +46,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --pr <PR番号> --ef
 
 数値を含まない規則は従来どおり:
 - explorer は独立した探索対象の数に比例させる。冗長ペア（x2）を組むのは `redundant_pairs=allowed`（xhigh / max）の回だけで、high 以下でペア条件が成立したら Angle A/B を 1 体に内挿する
-- `cap_source=size`（規模キャップが effort 上限を下回った）回は、Round 2（Step 5.5）を effort に関わらず 1 段圧縮経路にする。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（規模キャップが削るのは breadth のみ。triage-guide.md `## 6.3`）
+- `cap_source=size`（規模キャップが effort 上限を下回った）の回は、Round 2（Step 5.5）を effort に関わらず 1 段圧縮経路にする。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（規模キャップが削るのは breadth のみ。triage-guide.md `### 6.3`）
 
 #### 3.3 観点カバレッジ検算と構成テーブル出力
 

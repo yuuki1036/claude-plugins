@@ -1,7 +1,8 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @0d0d4681 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @305aaaa7 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.3 @e63a77af -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @82b2674b -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @32613055 -->
 ### 4.5 Adaptive deepening: Round 2（unmet_information 起点 / 動的）
 
 **スキップ条件**（いずれか満たせばこのフェーズ全体をスキップして Step 4.8 の skeptic 統合へ）:

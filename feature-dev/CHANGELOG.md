@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.29.6] - 2026-11-21
+
+### Changed
+
+- code-review の triage-guide の節の参照を `### 6.x` にそろえたのに合わせて、review-loop.md と phase-6 / phase-6.9 / phase-7 の SSoT pin を打ち直した（GitHub issue #508）。正本の中身は変わっていない
+
 ## [2.29.5] - 2026-11-20
 
 ### Fixed

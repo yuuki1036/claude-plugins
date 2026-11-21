@@ -36,7 +36,7 @@ GitHub #351。self-review が triage-guide の reviewer 構成の規則を守ら
 
 ## 確定した前提
 
-- 上限の正本は triage-guide `## 7`（reviewer 4 / 6 / 10）と `## 6.2`（small 3 / medium 5 / large 上限なし）。数値は self-review / review の SKILL.md の 2 本に複製されているが、一致を見るテストは無い
+- 上限の正本は triage-guide `## 7`（reviewer 4 / 6 / 10）と `### 6.2`（small 3 / medium 5 / large 上限なし）。数値は self-review / review の SKILL.md の 2 本に複製されているが、一致を見るテストは無い
 - 仕様ソースを検出している script は無い（triage-signals.sh は `## issue-ids` だけ）。session-context の branch 一致・Issue ファイル・`--spec` の判定は LLM の手作業（self-review SKILL.md の Step 1、review SKILL.md のコンテキスト収集）
 - `### 8a` は LLM がメインコンテキストで再評価するだけで、機械的に止める処理は無い
 - triage-guide `### 6.5` は feature-dev が SSoT pin しているので、今回は触らない
