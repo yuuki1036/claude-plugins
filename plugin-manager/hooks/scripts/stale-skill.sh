@@ -8,7 +8,8 @@
 #   record         PostToolUse(Read|Skill)。読んだ版を記録する。何も出力しない
 #   prompt         UserPromptSubmit。まだ知らせていない更新を知らせる
 #   compact        PostCompact。compaction で消えた通知をもう一度出す
-#   session-start  SessionStart。古い状態ファイルを消し、resume / compact のときだけ知らせる
+#   session-start  SessionStart。古い状態ファイルを消し、resume / compact / fork のときに知らせる。
+#                  fork のときは状態ファイルを作って印を立て、transcript が既にあればその場で親の会話から版を拾う
 #
 # 状態: ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugin-manager/sessions/<session_id>.json
 # UserPromptSubmit は毎回の発言で走るので、このセッションの状態ファイルが無ければ python を起動しない。
@@ -35,7 +36,13 @@ case "$MODE" in
     fi
     ;;
   prompt|compact|session-start)
-    [ -d "$DIR" ] || safe_hook_error NotFound "no sessions dir"
+    # fork 先は状態ファイルがまだ無いので、ここで止めずに python に作らせる（GitHub issue #487）。
+    # 入れ子のオブジェクトの source に当たっても、python が payload の source で判定し直す
+    FORK=0
+    if [ "$MODE" = "session-start" ] && [[ "$INPUT" =~ \"source\"[[:space:]]*:[[:space:]]*\"fork\" ]]; then
+      FORK=1
+    fi
+    [ "$FORK" = 1 ] || [ -d "$DIR" ] || safe_hook_error NotFound "no sessions dir"
     # payload の入れ子のオブジェクトにも session_id のキーがありうるので、出現をすべて候補にする
     # （最初の 1 件だけだと、自分より先に置かれた入れ子の id と取り違える）。発言の本文の字面は
     # JSON で `\"` にエスケープされるので当たらない（GitHub issue #465）。
@@ -51,7 +58,7 @@ case "$MODE" in
       # （14 日ぶりに resume したセッションの記録を、通知する前に消さない）。書きかけの tmp も消す
       find "$DIR" -maxdepth 1 -type f \( -name '*.json' -o -name '.*.tmp' \) -mtime +13 ${KEEP[@]+"${KEEP[@]}"} -delete 2>/dev/null || true
     fi
-    [ "${#KEEP[@]}" -gt 0 ] || safe_hook_error NotFound "no record for this session"
+    [ "$FORK" = 1 ] || [ "${#KEEP[@]}" -gt 0 ] || safe_hook_error NotFound "no record for this session"
     ;;
   *)
     safe_hook_error Validation "unknown mode: ${MODE}"

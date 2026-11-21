@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.2] - 2026-11-21
+
+### Fixed
+
+- **fork したセッションで stale-skill が読み直しの通知を出さなかったのを直した**（GitHub issue #487）。CC 2.1.214 から fork で始まったセッションの SessionStart は `source: "fork"` で届き、hook はそこで return していた。状態ファイルは session_id ごとなので、fork 先には親が読んだ版の記録も無かった。SessionStart(`fork`) で状態ファイルを作って印を立てる。transcript が書かれた後の hook で、transcript に写った親の会話から版を拾って記録し、通知を判定する。拾うのはプラグインのキャッシュのファイルへの Read と、Skill tool が注入した skill の行（`Base directory for this skill:` のパスに版が入っている）。SessionStart と最初の UserPromptSubmit の時点では fork 先の transcript がまだ無い（CC 2.1.328 の `claude -p --resume --fork-session` で実測）ので、拾うのはその後の発言の時点になる。fork した後に自分で Read した記録は transcript の分より優先する（Skill の呼び出しで入る版は、呼んだ時点のインストール済みの版なので、plugin 単位でも skill 単位でも優先しない）。同名の command の本文として注入された分はパスが残らないので拾わない。親がプラグインのファイルを読んでいなければ状態ファイルを消す（前段がファイルの有無で python を起動するため）。53 MB の transcript で hook 全体が約 0.14 秒（timeout は 5 秒）
+
 ## [1.11.1] - 2026-11-20
 
 ### Fixed
