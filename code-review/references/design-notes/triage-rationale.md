@@ -24,7 +24,7 @@ v2.12.0 は「共通モジュールの変更は**行数や関数数に関わら�
 - **数えられない場合（`?`・basename が 3 文字未満）は起動する**。欠測を「少ない」と読まない
 - **撤回条件**: 下限で explorer を見送った回に、共通モジュール起因の指摘を後から人間が見つけた事例が出たら、下限（5 件）を下げるか条件 2（破壊的変更でない）を厳しくする。**下限そのものを撤去する前に閾値を動かす**
 
-## `## 5.1` wave 数を Phase 0 出力に出した理由（GitHub issue #100 B）
+## `### 5.1` wave 数を Phase 0 出力に出した理由（GitHub issue #100 B）
 
 **体数はトークンコストのレバー、wave 数は壁時計のレバー**。並列発行が効いている限り 1 wave の実時間は「wave 内最長の 1 体」で決まるので、壁時計は体数ではなく**直列に積み上がる wave の本数**で決まる。ところが従来ユーザーに見えるのは体数だけで、wave 数は最後まで見えなかった。
 
@@ -50,7 +50,7 @@ v2.12.0 は「共通モジュールの変更は**行数や関数数に関わら�
 
 **所要時間は `duration_fleet_min` で見る**（v2.41.0 で payload に追加。正本: orchestration-measurement.md `## 14`）。`duration_min`（全体）は締めフローの人間待ちを含み（かつ publisher 間で意味が非対称）、人間の都合で 10 倍振れるため体数調整の効果測定には使えない。体数が効くのは fleet 区間だけ。**比較は `size_tier` を揃えて行う**（v2.40.0 追加）— 所要時間は規模と体数の両方に効かれるため、帯を混ぜた中央値は規模キャップの効果と PR 規模の分布変化を分離できない。
 
-**体数を壁時計のレバーとして扱わない（v2.41.0）**: 並列発行が効いている限り fleet 区間の実時間は「wave 内最長の 1 体」で決まるため、**体数削減の効果は線形ではない**。そして**体数削減が壁時計に効いた証拠は現時点で存在しない** — v2.39.0 / v2.40.0 の縮小を評価できる区間別サンプルが無く、唯一あった 210 分のサンプルも `duration_min`（内訳不明）だったため判定不能だった。`duration_fleet_min` が貯まるまでは、**体数を壁時計の打ち手として動かさない**（体数削減が確実に効くのはトークンコスト）。壁時計を縮めたい場合にまず触るのは ①1 体あたりの探索量（`prompts/reviewer-common.md` の探索予算）②直列 wave 数（`## 5.1` で可視化・skeptic 相乗り triage-dynamic-gates.md `## 8.5`・Round 2 の repo 外スキップ triage-dynamic-gates.md `## 8`。実測は `duration_explore_min` が wave 単価を示す）③メインコンテキストのプロンプト複製量（PR コンテキスト等のファイル経由渡し・orchestration-guide.md `## 3.5`）。**③は `duration_triage_min` では観測できない** — プロンプトを書く行為と Agent call の発行が同一なのでマーカーで分離できず、コストは `duration_fleet_min` に含まれる（orchestration-measurement.md `## 14`）。③の効果は `duration_fleet_min` を `size_tier` × `agents.reviewer` × `effort` で層別して見る。recall だけ落ちて時間が変わらない改悪を避けるため、**この節のロールバック判断に「時間が長いから体数を減らす」を混ぜない**。
+**体数を壁時計のレバーとして扱わない（v2.41.0）**: 並列発行が効いている限り fleet 区間の実時間は「wave 内最長の 1 体」で決まるため、**体数削減の効果は線形ではない**。そして**体数削減が壁時計に効いた証拠は現時点で存在しない** — v2.39.0 / v2.40.0 の縮小を評価できる区間別サンプルが無く、唯一あった 210 分のサンプルも `duration_min`（内訳不明）だったため判定不能だった。`duration_fleet_min` が貯まるまでは、**体数を壁時計の打ち手として動かさない**（体数削減が確実に効くのはトークンコスト）。壁時計を縮めたい場合にまず触るのは ①1 体あたりの探索量（`prompts/reviewer-common.md` の探索予算）②直列 wave 数（`### 5.1` で可視化・skeptic 相乗り triage-dynamic-gates.md `## 8.5`・Round 2 の repo 外スキップ triage-dynamic-gates.md `## 8`。実測は `duration_explore_min` が wave 単価を示す）③メインコンテキストのプロンプト複製量（PR コンテキスト等のファイル経由渡し・orchestration-guide.md `## 3.5`）。**③は `duration_triage_min` では観測できない** — プロンプトを書く行為と Agent call の発行が同一なのでマーカーで分離できず、コストは `duration_fleet_min` に含まれる（orchestration-measurement.md `## 14`）。③の効果は `duration_fleet_min` を `size_tier` × `agents.reviewer` × `effort` で層別して見る。recall だけ落ちて時間が変わらない改悪を避けるため、**この節のロールバック判断に「時間が長いから体数を減らす」を混ぜない**。
 
 **`review` 由来サンプルは v2.40.0 より前は 1 件も存在しない**（GitHub issue #96 B）。publish が EnterWorktree 配下の cwd 相対パスで行われていたため、`review:completed` は worktree 側の `.claude/events.jsonl` に書かれ、直後の `ExitWorktree(remove)` で worktree ごと消えていた。v2.40.0 で publish 先をメインリポジトリのルートに固定（orchestration-measurement.md `## 13`）するまで、蓄積されていたのは worktree を使わない self-review 由来のみ。**したがって v2.39.0 の high 既定縮小は review 経路については測定できていない** — 判断は v2.40.0 以降のサンプルが貯まってから行う
 
@@ -95,7 +95,7 @@ v2.12.0 は「共通モジュールの変更は**行数や関数数に関わら�
 
 **昇格コストが小さい理由**: skeptic は v2.41.0 で reviewer wave への相乗りになっており、**直列 wave を増やさない**（壁時計への影響は wave 内最長を更新したときだけ）。増えるのは opus 1 体ぶんのトークンで、しかも surface=true のときだけ（33 件中 24 件 = 73%）。
 
-**meta-reviewer を昇格しなかった理由（v2.52.0 当時）**: meta は reviewer 全結果に依存するため相乗りできず、**直列 wave を 1 本足す**。壁時計が wave 数に支配される以上（`## 5.1`）、skeptic と同じ扱いにはできなかった。
+**meta-reviewer を昇格しなかった理由（v2.52.0 当時）**: meta は reviewer 全結果に依存するため相乗りできず、**直列 wave を 1 本足す**。壁時計が wave 数に支配される以上（`### 5.1`）、skeptic と同じ扱いにはできなかった。
 
 > **この理由は v2.61.0 で失効した**（`orchestration-rationale.md`「meta-reviewer と反証レイヤーを同一 wave にした経緯」）。meta は反証レイヤーと同一 wave になり、反証が走る帯（effort ≥ high）では**追加の直列 wave が 0 本**になる。**昇格の可否は wave コストではなく `meta_reviewer.findings_added` の価値率で判断する**（skeptic と同じ流儀。サンプルは `gate_schema >= 2` で絞る）。「相乗りできないから無理」を据え置き理由に使わないこと。
 

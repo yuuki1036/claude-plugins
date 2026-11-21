@@ -3,9 +3,11 @@
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#0 @d7242421 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @6d97790e -->
+<!-- SSOT: code-review/references/triage-dynamic-gates.md#8 @f84281df -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#8.5 @75db4464 -->
 <!-- SSOT: code-review/references/triage-dynamic-gates.md#9 @22f4abc9 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.3 @2ad575e6 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.5 @b5edb48b -->
 
 **このファイルは、対応するフェーズを実行すると決まってから Read する。** スキップ条件は Step ファイル（review は `skills/review/references/step-5.*.md`、self-review は `skills/self-review/references/step-4.*.md`）にあり、全フェーズがスキップされるなら読む必要はない。中核（常時必要）は `orchestration-guide.md`、起動ゲートと選定ルールは `triage-dynamic-gates.md`。
 
@@ -33,7 +35,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark wave [--pr N]
    - **1 件でも repo 内 / 未解決のセッション到達可能があれば通常どおり続行する**（迷う target は到達可能側に倒す）
 2. **repo 内 + 未解決のセッション到達可能**の target から **最大 3 件** の追加探索ターゲットを選ぶ（多すぎる場合は BLOCKER 候補に関わる unmet を優先）
 3. **経路分岐**（実行時 effort = `${CLAUDE_EFFORT}`。triage-dynamic-gates.md `## 8` Phase 5.5）:
-   - **plan が `cap_source=size` を出した回（規模キャップが effort 上限を下回った）は、effort に関わらず下の 1 段圧縮にする**（帯で判定し直さない。triage-guide.md `### 6.3`）。self-review の `--since` の回は plan に `delta_size_tier` を渡すので、`cap_source` は delta の帯で決まる。delta が空で plan を呼ばない回は、`delta_size_tier` の帯の規模キャップが effort 上限を下回るかで決める（triage-guide.md `### 6.5`）。それ以外の回は effort で分ける
+   - **規模キャップを掛ける回で、帯の reviewer の規模キャップが effort 上限を下回るときは、effort に関わらず下の 1 段圧縮にする**（条件の正本は triage-guide.md `### 6.3`）。規模キャップを掛ける回は `--focus` / `--exclude` でなく、帯が `unknown` でない回。plan を呼ぶ回はこの条件が plan の `cap_source=size` と同じになるので、`cap_source` を見ればよい。plan を呼ばない回（review の default-mode 以外のモードと、self-review の `--since` で delta が空の回）は、同じ条件を帯で当てる。self-review の `--since` の回の帯は `delta_size_tier`（triage-guide.md `### 6.5`）。条件に当たらない回は effort で分ける
    - **high（既定）— 1 段圧縮**: 追加 explorer は起動しない。unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、**初回 reviewer と同じ effort**（orchestration-guide.md `## 5` の連動表）で再起動する（全 call を同一メッセージ内で一括発行 — orchestration-guide.md `## 0` 並列発行の明示）。プロンプトには**初回に渡した Read パスをすべて**（`${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` / `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<focus>.md`、review では `${CLAUDE_PLUGIN_ROOT}/references/prompts/pr-context-rules.md`、初回に条件付きで加えたもの。渡し方は orchestration-guide.md `## 3.5`）列挙したうえで、①初回指摘②担当分の unmet_information（focus, target, why, related_finding）を渡し、「**まず unmet ターゲットを自分で Read / Grep / Glob で探索し、取得した事実に基づいて初回 confidence を再評価せよ**」と指示する
    - **xhigh / max — 2 段**: `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer-common.md` と `${CLAUDE_PLUGIN_ROOT}/references/prompts/explorer/re-explore.md` の 2 パスを Read させる追加 explorer（最大 3 体）を `model: sonnet`・`effort: medium`（初回の explorer と同じ。orchestration-guide.md `## 5`）で並列起動し（一括発行 — orchestration-guide.md `## 0`）、各 explorer に対応する unmet_information を渡す。完了後、unmet を申告した reviewer のみ（最大 3 体）を `model: opus`、初回と同じ effort で再起動し、初回に渡した Read パスをすべて列挙したうえで初回指摘 + 追加 explorer 結果を context として渡して「初回 confidence を再評価せよ」と指示する
    - いずれの経路も isolation は orchestration-guide.md `## 0` に従う（review は `isolation: "worktree"`（PR ブランチ）、self-review は使用しない）

@@ -1,9 +1,9 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @4ee372d0 -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @5e9f7b4c -->
 <!-- SSOT: code-review/references/triage-guide.md#6.1 @d6a3bd92 -->
-<!-- SSOT: code-review/references/triage-guide.md#6.2 @e7e6031a -->
-<!-- SSOT: code-review/references/triage-guide.md#5 @10e6b48c -->
+<!-- SSOT: code-review/references/triage-guide.md#6.2 @81106eca -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @a2dc3482 -->
 ### 2. diff の保存とシグナルダイジェストの取得
 
 **diff 全文をメインコンテキストに載せない。** `triage-signals.sh` が diff をファイルへ保存し、Phase 0 に必要な**事実だけ**を compact に出力する。diff は reviewer / explorer へ**パスで渡す**（本文を転記しない。orchestration-guide.md `## 3.5`）。
