@@ -39,7 +39,7 @@ marketplace エントリに `_superseded_by: "<後継名>"` を持つ deprecated
 
 黙る条件: このセッションでプラグインのファイルを読んでいない（fork したセッションは、transcript に写った親の会話の分も数える）・版が同じ・アンインストール済み・`installed_plugins.json` が無いか壊れている・状態ファイルが壊れているか形式（`schema_version`）が違う（次の Read で記録し直す）・`python3` が無い。新しいセッション（SessionStart の startup / clear）では知らせない。
 
-状態は `${CLAUDE_CONFIG_DIR:-~/.claude}/plugin-manager/sessions/<session_id>.json`。発言のたびに更新し、14 日以上触れられていないもの（書きかけの一時ファイルを含む）は SessionStart で消す。ただし resume したセッション自身の記録は、通知を出す前には消さない。この版を入れる前から動いているセッションには、記録が無いので届かない。resume で session_id が変わる環境では記録を引き継げず、通知は出ない。fork したセッションは自分の記録を持たないので、transcript に写った親の会話の Read と Skill の呼び出しから版を拾って知らせる（fork 先の transcript が書かれた後の発言から。同名の command の本文として注入された分はパスが残らないので拾わない）。
+状態は `${CLAUDE_CONFIG_DIR:-~/.claude}/plugin-manager/sessions/<session_id>.json`。発言のたびに更新し、14 日以上触れられていないもの（書きかけの一時ファイルを含む）は SessionStart で消す。ただし resume したセッション自身の記録は、通知を出す前には消さない。この版を入れる前から動いているセッションには、記録が無いので届かない。resume で session_id が変わる環境では記録を引き継げず、通知は出ない（transcript が親から写され、先頭の行の `sessionId` が親のまま残る形なら、下の fork と同じように拾う）。fork したセッションは自分の記録を持たないので、transcript に写った親の会話の Read と Skill の呼び出しから版を拾って知らせる（fork 先の transcript が書かれた後の発言から。同名の command の本文として注入された分はパスが残らないので拾わない）。CLI の `--fork-session` は SessionStart の `source: "fork"` で届く。デスクトップアプリの fork は `resume` として届くので、状態ファイルが無く transcript の先頭 5 行の `sessionId` が自分の id と違うことで見分ける。
 
 ### hub 系セッションへの読み直し依頼
 
