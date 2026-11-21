@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.3] - 2026-11-21
+
+### Fixed
+
+- **デスクトップアプリで fork したセッションで、stale-skill が親の読んだ版を取り込んでいなかったのを直した**（GitHub issue #517）。アプリは fork した時点で親の transcript を丸ごと新しいファイルへ写し（1 回で書き終わる。写した行の `sessionId` は親のまま）、最初の発言で CLI を `--resume=<fork 先の id>` で起動する。`--fork-session` が付かないので SessionStart は `source: "resume"` で届く。fork 先には状態ファイルも無いので、#487 で入れた取り込み（SessionStart(`fork`) で印を立てる）を通らなかった（CC 2.1.330 のデスクトップアプリで実測）。状態ファイルが無い UserPromptSubmit と SessionStart(`resume`) で、transcript の先頭 5 行の `sessionId` が自分の id と違えば（親から写された transcript）、同じ取り込みを通す。前段（`stale-skill.sh`）も先頭の数行だけで見分けるので、写されていない transcript では毎回の発言で python を起動しない設計は変わらない。親の Read が 1 件も出なかった fork でも記録の無い状態ファイルを残し、次の発言で transcript を読み直さない。compaction の後の fork も、それより前の行まで写るので、今の拾い方で compaction の前の Read まで届く（同じ実測）
+
 ## [1.11.2] - 2026-11-21
 
 ### Fixed

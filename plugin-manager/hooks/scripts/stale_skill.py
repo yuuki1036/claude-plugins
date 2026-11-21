@@ -8,7 +8,8 @@
 - prompt / compact / session-start: 記録とインストール済みの版を比べ、違うものを plain stdout で知らせる。
   同じ (プラグイン, 新しい版) は 1 回だけ。compaction の後は通知も消えているので、もう一度出す
 - session-start が fork で届いたら状態ファイルを作り、親が読んだ版を、transcript が書かれた後の hook で拾う
-  （adopt_fork_transcript）
+  （adopt_fork_transcript）。デスクトップアプリの fork は resume として届くので、状態ファイルが無く
+  transcript が別のセッションから写されたもの（copied_transcript）なら、同じ取り込みを通す
 
 どの失敗も黙って exit 0 にする（hook の失敗でセッションを止めない）。
 """
@@ -38,6 +39,9 @@ SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 # 通知済みを消し直さない（消し直すと同じ通知が 2 回出る）
 REARM_WINDOW = 120
 CHANGELOG_LIMIT = 5
+# 写された transcript かを見るのは先頭のこの行数まで（sessionId の無い行が先頭に並ぶことがある）。
+# stale-skill.sh の前段の head -n と揃える
+COPIED_HEAD_LINES = 5
 SCHEMA_VERSION = 1
 
 GUIDE = (
@@ -197,6 +201,8 @@ def adopt_fork_transcript(payload: dict, state: dict) -> bool:
     には親の会話が写っているが、SessionStart と最初の UserPromptSubmit の時点ではまだ書かれていない
     （CC 2.1.328 の `claude -p --resume --fork-session` で実測）。そこで SessionStart(fork) で
     `fork_pending` を立て、transcript が現れた hook（SessionStart の時点で既にあればその場）でここを 1 回通す。
+    デスクトップアプリの fork は SessionStart(fork) を通らず、main が copied_transcript で見分けて
+    fork_pending を立てる。
     拾うのは、プラグインのキャッシュのファイルへの Read と、Skill tool が注入した skill の
     `Base directory for this skill: <パス>` の行（パスに版が入っている）。同名の command の本文の注入には
     パスが残らないので拾えない（今の installed で埋めると、更新後に fork した回の旧版を新しい版と取り違えて黙る）。
@@ -237,6 +243,29 @@ def adopt_fork_transcript(payload: dict, state: dict) -> bool:
     state["plugins"] = found
     del state["fork_pending"]
     return True
+
+
+def copied_transcript(payload: dict) -> bool:
+    """transcript が別のセッションから写されたものか（先頭の行の sessionId が自分のものでない）.
+
+    デスクトップアプリの fork は、fork した時点で親の transcript を丸ごと新しいファイルへ写し（1 回で
+    書き終わる。写した行の sessionId は親のまま）、最初の発言で CLI を `--resume=<fork 先の id>` で
+    起動する（`--fork-session` は付かない）。SessionStart の source は fork にならず、fork 先には状態
+    ファイルも無いので、ここで見分けて adopt_fork_transcript に回す（CC 2.1.330 のデスクトップアプリで
+    実測。compaction の後の fork も、compaction の前の行まで写る / GitHub issue #517）
+    """
+    tp = payload.get("transcript_path")
+    if not isinstance(tp, str) or not os.path.isfile(tp):
+        return False
+    with open(tp, encoding="utf-8", errors="replace") as fh:
+        for _, line in zip(range(COPIED_HEAD_LINES), fh):
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(entry, dict) and isinstance(entry.get("sessionId"), str):
+                return entry["sessionId"] != payload.get("session_id")
+    return False
 
 
 def transcript_reads(entry: object) -> list[str]:
@@ -367,7 +396,8 @@ def notify(payload: dict, mode: str, path: Path, state: dict) -> None:
             return
     changed = adopt_fork_transcript(payload, state)
     if changed and not state["plugins"]:
-        # 前段（stale-skill.sh）は状態ファイルがあるかだけで python を起動するので、記録の無いファイルを残さない
+        # 前段（stale-skill.sh）は状態ファイルがあれば python を起動するので、記録の無いファイルを残さない
+        # （写された transcript の経路だけは main が残し直す。理由はそちら）
         path.unlink(missing_ok=True)
         return
     now = int(time.time())
@@ -411,7 +441,11 @@ def main(argv: list[str]) -> int:
                     save_state(path, state)
             finally:
                 os.close(fd)
-        elif mode == "session-start" and payload.get("source") == "fork":
+        elif (forked := mode == "session-start" and payload.get("source") == "fork") or (
+            (mode == "prompt" or (mode == "session-start" and payload.get("source") == "resume"))
+            and not path.exists()
+            and copied_transcript(payload)
+        ):
             # fork 先は session_id が新しく、状態ファイルがまだ無い。親の記録は adopt_fork_transcript が拾う
             fd = lock(path)
             try:
@@ -419,6 +453,11 @@ def main(argv: list[str]) -> int:
                 state["fork_pending"] = True
                 save_state(path, state)
                 notify(payload, mode, path, state)
+                # 写された transcript から親の Read が 1 件も出なくても、記録の無い状態ファイルを残す。
+                # 消すと前段は次の発言でもまた写された transcript と判定し、そのたびに transcript を
+                # 最後まで読み直す。残せば次からは取り込み済みの経路を通る
+                if not forked and not path.exists():
+                    save_state(path, state)
             finally:
                 os.close(fd)
         elif mode in ("prompt", "compact", "session-start") and path.exists():
