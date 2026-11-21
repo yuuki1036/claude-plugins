@@ -4,7 +4,7 @@
 **通す条件より、黙る条件を厚く**書く。hook の失敗様式は「鳴らない」より
 「鳴りすぎる」方が高コストで（全ツール呼び出しに影響する）、実際に踏んだのもそちら。
 
-- `push-reminder.sh` — 暴発の当事者（`if: "Bash(git push *)"` が評価されず全 Bash 呼び出しに注入した）
+- `push-reminder.sh` — 暴発の当事者（`if: "Bash(git push *)"` が `$()`・`$VAR` を含む push 以外のコマンドにも合い、注入した）
 - `on-commit.sh` — Event Bus の `commit:created` publisher。誤発火すると subscriber が空振りする
 - `detect-web-project.sh` — フラグの**立て方だけでなく消し方**（Web でなくなった時）
 - `ui-verify-gate.sh` / `ui-change-reminder.sh` — 3 値フラグ（unverified / verified-local / verified-snap）
