@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.11.2] - 2026-11-21
+
+### Fixed
+
+- **retro の並列分類と tag 正規化で起動する agent に effort を渡すようにした**（GitHub issue #510）。どちらも frontmatter を持たない agent を skill 本文で `opus` を指定して起動しており、effort を渡していなかった。main と別のモデルで動く sub は session の effort を継がない（CC 2.1.317）ので、spawn ごとに渡す。分類は `docs/pipeline-design.md` のルーティング表の「判断・検証・レビュー」の行に合わせ、実行時の effort が `high` なら `high`、`xhigh` / `max` なら `xhigh`。tag 正規化（「統合」の行）は独立コンテキストで回す `xhigh` / `max` の回に限られるので、実行時の effort をそのまま渡す
+
 ## [0.11.1] - 2026-11-20
 
 ### Fixed
