@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.14] - 2026-11-21
+
+### Changed
+
+- **start の Context Recovery の 3 agent（doc-resolver / code-context / linear-sync）を、spawn で `model: "opus"` に上書きせず、frontmatter どおり `sonnet` / `effort: medium` で起動するようにした**（GitHub issue #516）。`context-agents.md` が「`model: "opus"` を明示指定して起動」と書き、3 つの frontmatter（どれも `sonnet`）と食い違っていた。3 つとも参照を辿って状態を集めるだけの探索・収集の層で、repo のルーティング表でも `sonnet` に当たる（2026-11-21 決定）
+
 ## [1.19.13] - 2026-11-20
 
 ### Fixed
