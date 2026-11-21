@@ -7,6 +7,8 @@
   （PostToolUse の stdout が漏れると、プラグインのファイルを Read するたびに注入される）
 - prompt / compact / session-start: 記録とインストール済みの版を比べ、違うものを plain stdout で知らせる。
   同じ (プラグイン, 新しい版) は 1 回だけ。compaction の後は通知も消えているので、もう一度出す
+- session-start が fork で届いたら状態ファイルを作り、親が読んだ版を、transcript が書かれた後の hook で拾う
+  （adopt_fork_transcript）
 
 どの失敗も黙って exit 0 にする（hook の失敗でセッションを止めない）。
 """
@@ -26,6 +28,10 @@ SID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 # .../plugins/cache/<marketplace>/<plugin>/<version>/<版の中のファイル>
 CACHE_RE = re.compile(r"/plugins/cache/([^/]+)/([^/]+)/([^/]+)/(.+)$")
 SKILL_RE = re.compile(r"^skills/([^/]+)/SKILL\.md$")
+# Skill tool が skill の本文を注入した transcript の行の先頭（パスは .../skills/<name> まで。
+# CLAUDE_CONFIG_DIR に空白があってもよいよう、パスは行末まで取る）
+SKILL_BASE = "Base directory for this skill: "
+SKILL_BASE_RE = re.compile(re.escape(SKILL_BASE) + r"([^\n]*/skills/[^/\n]+?)[ \t]*(?:\n|$)")
 HEADING_RE = re.compile(r"^## \[([^\]]+)\]")
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 # compaction の後は SessionStart(compact) と PostCompact の両方が来る版がある。この秒数の中の 2 回目は
@@ -74,6 +80,9 @@ def load_state(path: Path) -> dict | None:
         if "skills" in rec:
             skills = rec["skills"] if isinstance(rec["skills"], dict) else {}
             rec["skills"] = {k: v for k, v in skills.items() if isinstance(v, str)}
+        if "skills_from_skill" in rec:
+            names = rec["skills_from_skill"] if isinstance(rec["skills_from_skill"], list) else []
+            rec["skills_from_skill"] = [n for n in names if isinstance(n, str)]
     data["plugins"] = plugins
     if not isinstance(data.get("notified"), dict):
         data["notified"] = {}
@@ -141,9 +150,12 @@ def record(payload: dict, state: dict, installed: dict | None) -> bool:
         mp, plugin, ver, rest = m.groups()
         rec = plugins.setdefault(f"{plugin}@{mp}", {})
         rec["version"] = ver
+        rec.pop("version_from", None)
         sm = SKILL_RE.match(rest)
         if sm:
             rec.setdefault("skills", {})[sm.group(1)] = ver
+            if sm.group(1) in rec.get("skills_from_skill", []):
+                rec["skills_from_skill"].remove(sm.group(1))
         return True
     if tool == "Skill":
         name = tin.get("skill")
@@ -159,14 +171,96 @@ def record(payload: dict, state: dict, installed: dict | None) -> bool:
         rec = plugins.setdefault(keys[0], {})
         # Read で記録した版を上書きしない。Skill の時点の installed は、更新済み・未再起動の
         # セッションでは実際に注入された版より新しいことがある
-        rec.setdefault("version", ver)
+        # fork の取り込み（adopt_fork_transcript）が transcript の版より優先しないよう、取り込み前の記録にだけ印を付ける
+        pending = bool(state.get("fork_pending"))
+        if "version" not in rec:
+            rec["version"] = ver
+            if pending:
+                rec["version_from"] = "skill"
         # command だけの名前（SKILL.md が無い）は skills に入れない。入れると読み直す先の無い
         # skill として外され、プラグイン単位の判定まで止まる
         install_path = entry.get("installPath")
         if isinstance(install_path, str) and (Path(install_path) / "skills" / skill / "SKILL.md").is_file():
-            rec.setdefault("skills", {}).setdefault(skill, ver)
+            skills = rec.setdefault("skills", {})
+            if skill not in skills:
+                skills[skill] = ver
+                if pending:
+                    rec.setdefault("skills_from_skill", []).append(skill)
         return True
     return False
+
+
+def adopt_fork_transcript(payload: dict, state: dict) -> bool:
+    """fork したセッションの transcript に写った親の会話から、親が読んだ版を記録する（GitHub issue #487）.
+
+    SessionStart の入力に親の session_id は無いので、親の状態ファイルは引けない。fork 先の transcript
+    には親の会話が写っているが、SessionStart と最初の UserPromptSubmit の時点ではまだ書かれていない
+    （CC 2.1.328 の `claude -p --resume --fork-session` で実測）。そこで SessionStart(fork) で
+    `fork_pending` を立て、transcript が現れた hook（SessionStart の時点で既にあればその場）でここを 1 回通す。
+    拾うのは、プラグインのキャッシュのファイルへの Read と、Skill tool が注入した skill の
+    `Base directory for this skill: <パス>` の行（パスに版が入っている）。同名の command の本文の注入には
+    パスが残らないので拾えない（今の installed で埋めると、更新後に fork した回の旧版を新しい版と取り違えて黙る）。
+    返り値は state を書き換えたか。transcript がまだ無ければ何もせず、次の hook で試し直す
+    """
+    if not state.get("fork_pending"):
+        return False
+    tp = payload.get("transcript_path")
+    if not isinstance(tp, str) or not os.path.isfile(tp):
+        return False
+    found: dict = {}
+    with open(tp, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            # json.loads は該当しうる行にだけかける（数十 MB の transcript を 5 秒の timeout に収める）
+            if "/plugins/cache/" not in line or ('"tool_use"' not in line and SKILL_BASE not in line):  # mutation-ok: 速さのための前段。外しても後段の判定で同じ結果になる
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            for path in transcript_reads(entry):
+                # 順に上書きするので、同じプラグインを何度か読んでいれば最後に読んだ版が残る
+                record({"tool_name": "Read", "tool_input": {"file_path": path}}, {"plugins": found}, None)
+    # fork した後に PostToolUse が記録した分は transcript の分より新しいので、そちらを勝たせる。
+    # ただし Skill の記録の版は呼んだ時点の installed の値で、読み直した証拠ではないので、
+    # transcript に版があればそちらを残す（plugin 単位の version も skill 単位も同じ）
+    for key, rec in state["plugins"].items():
+        base = found.setdefault(key, {})
+        if "version" in rec and (rec.get("version_from") != "skill" or "version" not in base):
+            base["version"] = rec["version"]
+        from_skill = set(rec.get("skills_from_skill", []))
+        skills = base.setdefault("skills", {})
+        for name, ver in rec.get("skills", {}).items():
+            if name not in from_skill or name not in skills:
+                skills[name] = ver
+        if not skills:
+            del base["skills"]
+    state["plugins"] = found
+    del state["fork_pending"]
+    return True
+
+
+def transcript_reads(entry: object) -> list[str]:
+    """transcript の 1 行から、読んだファイルのパスを返す（assistant の Read と、Skill が注入した行）."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("message"), dict):
+        return []
+    content = entry["message"].get("content")
+    if not isinstance(content, list):
+        return []
+    out = []
+    if entry.get("type") == "assistant":
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "Read":
+                tin = block.get("input")
+                if isinstance(tin, dict) and isinstance(tin.get("file_path"), str):
+                    out.append(tin["file_path"])
+    # 利用者の発言に同じ字面が引用されても拾わないよう、CC が注入した行（isMeta）の先頭だけを見る
+    elif entry.get("type") == "user" and entry.get("isMeta") is True:
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                m = SKILL_BASE_RE.match(block["text"])
+                if m:
+                    out.append(f"{m.group(1)}/SKILL.md")
+    return out
 
 
 def semver(ver: str) -> tuple[int, int, int] | None:
@@ -269,9 +363,13 @@ def notify(payload: dict, mode: str, path: Path, state: dict) -> None:
         source = payload.get("source")
         if source == "compact":
             rearm = True
-        elif source != "resume":
+        elif source not in ("resume", "fork"):
             return
-    changed = False
+    changed = adopt_fork_transcript(payload, state)
+    if changed and not state["plugins"]:
+        # 前段（stale-skill.sh）は状態ファイルがあるかだけで python を起動するので、記録の無いファイルを残さない
+        path.unlink(missing_ok=True)
+        return
     now = int(time.time())
     if rearm:
         last = state.get("rearm_at")
@@ -311,6 +409,16 @@ def main(argv: list[str]) -> int:
                 installed = load_installed() if payload.get("tool_name") == "Skill" else None
                 if record(payload, state, installed):
                     save_state(path, state)
+            finally:
+                os.close(fd)
+        elif mode == "session-start" and payload.get("source") == "fork":
+            # fork 先は session_id が新しく、状態ファイルがまだ無い。親の記録は adopt_fork_transcript が拾う
+            fd = lock(path)
+            try:
+                state = load_state(path) or new_state(payload["session_id"])
+                state["fork_pending"] = True
+                save_state(path, state)
+                notify(payload, mode, path, state)
             finally:
                 os.close(fd)
         elif mode in ("prompt", "compact", "session-start") and path.exists():
