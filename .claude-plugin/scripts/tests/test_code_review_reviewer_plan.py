@@ -271,6 +271,20 @@ class ComputePlanTest(unittest.TestCase):
         self.assertEqual(p["cap_source"], "scope")
         self.assertNotIn(("bug-detection",), rows(p))
 
+    def test_focus_and_exclude_scope_skip_size_cap_for_explorer_and_specialist(self):
+        """--focus / --exclude の回は explorer / specialist にも規模キャップを掛けない（GitHub issue #509）."""
+        for scope in ({"focus": ["security"]}, {"exclude": ["config"]}):
+            for effort in ("high", "xhigh"):
+                p = plan(effort, "small", **scope)
+                self.assertEqual(p["explorer_cap"], rp.EFFORT_CAP["explorer"][effort], (scope, effort))
+                self.assertEqual(p["specialist_cap"], rp.EFFORT_CAP["specialist"][effort], (scope, effort))
+
+    def test_full_scope_keeps_size_cap_for_explorer_and_specialist(self):
+        p = plan("xhigh", "small")
+        self.assertEqual((p["explorer_cap"], p["specialist_cap"]), (0, 1))
+        p = plan("xhigh", "medium")
+        self.assertEqual((p["explorer_cap"], p["specialist_cap"]), (2, 2))
+
     def test_exclude_scope_keeps_prior(self):
         p = plan("high", "large", activated=["security"], exclude=["security", "error-handling"], prior=["error-handling"])
         self.assertEqual(p["excluded"], ["security"])
