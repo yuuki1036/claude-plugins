@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.44.2] - 2026-11-21
+
+### Changed
+
+- `push-reminder.sh` と `ui-verify-gate.sh` のコメントの、hooks.json の `if:` が「実行環境によって評価されない」という記述を直した（GitHub issue #485）。当時の transcript を見ると `if:` は評価されていて、`$()`・バッククォート・`$VAR` を含むコマンドと、分解できないコマンドで合うという Claude Code の仕様で発火していた。スクリプト内の自己判定（二重ゲート）は残す。挙動は変えていない
+
 ## [1.44.1] - 2026-11-20
 
 ### Changed

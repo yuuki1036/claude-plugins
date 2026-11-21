@@ -2,12 +2,18 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
-## [2.168.12] - 2026-11-21
+## [2.168.13] - 2026-11-21
 
 ### Fixed
 
 - **review / self-review の Round 2 の手順の正本（orchestration-dynamic-rounds.md `## 6` の手順 3）に、plan が `cap_source=size`（規模キャップが effort 上限を下回った）を出した回は effort に関わらず 1 段圧縮にする条件を書いた**（GitHub issue #508）。これまで手順 3 は effort だけで経路を分けていて、この条件は review の Step 3 と self-review の Step 2・Step 4.5 の側にしか無かった。self-review の `--since` で delta が空の回の決め方（step-4.5.md にしか無かった）も正本に移した。review の Step 5.5 にある `## 6` の要約にも、self-review の Step 4.5 と同じ例外を足した。この 2 つの要約に正本 `## 6` の SSoT pin を足し、正本が変わったら見直す経路を作った。あわせて、`## 6` の「共通ブロック（`agent_ctx_file`）のパスを渡す」の項に残っていた前の版の文（PR 番号や HEAD SHA を prompt 冒頭に明記して置換する指示）を消した。その文は同じ項の「プロンプトに再掲しない」と逆を向いていた。`## 7`・`## 9`・`## 10` の同じ項に残っていた「に従う」の断片も消した
 - **triage-guide の節の参照を、見出しどおりの `### 6.1`〜`### 6.5` にそろえた**（GitHub issue #508）。見出しは `###` なのに、参照の側は `## 6.x` と `### 6.x` が混ざっていた
+
+## [2.168.12] - 2026-11-21
+
+### Changed
+
+- `external-id-reminder.sh` と `publish-guard.sh` のコメントの、hooks.json の `if:` / matcher が「実行環境によって評価されない」という記述を直した（GitHub issue #485）。`if:` は `$()`・`$VAR` を含むコマンドなどで仕様として合う。matcher が評価されないことの実測は無かった。publish-guard の自己判定は、Stop と PreToolUse の両方から呼ばれるので経路を見分ける理由として書き直した。自己判定（二重ゲート）は残す。挙動は変えていない
 
 ## [2.168.11] - 2026-11-20
 

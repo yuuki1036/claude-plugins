@@ -23,8 +23,8 @@
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "code-review:publish-guard"
 
-# hooks.json の matcher は実行環境によって評価されないことがある（dev-workflow で実測）ので
-# tool_name を自己判定する。取れなければ Stop 経路として扱う（従来挙動）
+# Stop と PreToolUse の両方から呼ばれるので、tool_name で経路を見分ける（matcher には頼らず自己判定する）。
+# 取れなければ Stop 経路として扱う（従来挙動）
 INPUT=$(safe_hook_input)
 TOOL_NAME=""
 if command -v jq &>/dev/null; then

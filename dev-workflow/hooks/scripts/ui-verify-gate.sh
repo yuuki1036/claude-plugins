@@ -5,8 +5,8 @@
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "dev-workflow:ui-verify-gate"
 
-# hooks.json の `if:` は実行環境によって評価されないことがある（push-reminder で実測）。
-# 同型リスクの予防として、スクリプト内でも command を自己判定する（二重ゲート）
+# hooks.json の `if:` は `$()`・`$VAR` を含むコマンドなどで commit でなくても合う
+# （CC の仕様。push-reminder で暴発を実測）ので、スクリプト内でも command を自己判定する（二重ゲート）
 INPUT=$(safe_hook_input)
 if command -v jq &>/dev/null; then
   COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
