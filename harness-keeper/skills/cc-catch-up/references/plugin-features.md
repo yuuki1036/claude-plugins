@@ -6,7 +6,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 > **メンテナンス**: CC の新バージョンリリース時にこのファイルを更新する。
 > キャッチアップ実行時に新機能が発見された場合、Phase 7 でこのカタログにも追記する。
 >
-> **カバー範囲**: v2.1.163（2026-06-15 時点）。
+> **カバー範囲**: v2.1.328（2026-11-21 時点）。v2.1.164〜v2.1.328 の分は、#488 で挙げた項目に絞って CHANGELOG の版の節で照合して足した（範囲の全機能を網羅してはいない）。
 
 ---
 
@@ -40,6 +40,8 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `SubagentStop` | v1.0.41+ | サブエージェント停止時 | 完了時処理 | エージェント完了後のクリーンアップ |
 | `PermissionRequest` | v2.0.45+ | 権限リクエスト時 | カスタム承認フロー | 承認フロー制御プラグイン |
 | `UserPromptSubmit` | v2.1.69+ | ユーザープロンプト送信時 | プロンプト前処理、セッションタイトル設定 | セッション初期化、入力バリデーション |
+| `DirectoryAdded` | v2.1.219 | `/add-dir` などで作業ディレクトリが加わった後 | 追加ディレクトリの初期化 | 作業ディレクトリ単位で状態を持つプラグイン |
+| `PreModelSwitch` / `PostModelSwitch` | v2.1.251 | モデル切り替えの前 / 後 | 切り替えのブロック・確認・注記 | モデル世代でルーティングを変えるプラグイン |
 
 ### 1.2 Hook Handler Types
 
@@ -60,6 +62,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `matcher` | v2.1.83 | FileChanged イベントのファイル名パターン | 特定ファイル監視 |
 | `timeout` | 初期 | タイムアウト(ms) | 外部コマンド実行 |
 | `model` | v2.1.92 | prompt タイプ hook の評価モデル指定 | hook 判定の精度調整 |
+| `onFailure: "block"` | v2.1.295 | hook が起動できない・timeout・想定外の exit code のとき、通さずに止める（command / http。`mcp_tool` は v2.1.328） | 失敗時に素通しすると危ない block 系 hook。exit 0 と 2 以外の終了コードはすべて止めるので、`set -u` の未定義変数で exit 1 に落ちる hook も action を止める（付ける前に、hook が異常終了したときに止まる範囲を確かめる） |
 
 ### 1.4 Hook Capabilities
 
@@ -76,6 +79,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `args[]` exec 形式 | v2.1.139 | `command: "bash", args: ["<path>"]` でシェル解釈を経ず直接 spawn。新規 hook は `command: "bash <path>"` より推奨 | 全 hook 定義（安全・高速） |
 | `terminalSequence` helpers | v2.1.141 | `safe_hook_emit_bell` / `safe_hook_emit_window_title` で端末ベル・ウィンドウタイトルを JSON 出力で送る（plain text の `safe_hook_emit` とは混在不可） | 長時間処理の完了通知・警告アラート |
 | `hookSpecificOutput.additionalContext` | v2.1.163 | Stop hook 等で stderr（ユーザー向け）と並行して Claude のコンテキストへ注入する | 警告を Claude に確実に届けたいフック |
+| SessionStart の `source: "fork"` | v2.1.214 | fork で始まったセッションは `"resume"` ではなく `"fork"` を返す | resume と fork で注入内容を分けたい SessionStart hook |
 
 ---
 
@@ -100,6 +104,16 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `initialPrompt` | v2.1.83 | `--agent` 起動時の自動送信プロンプト | スタンドアロンエージェント |
 | `permissionMode` | v2.0.43 | エージェントの権限モード指定 | エージェントの自律度制御 |
 | `hooks` | v2.1.0 | エージェント固有フック定義（Stop → SubagentStop 自動変換） | エージェント固有の後処理 |
+| `experimental.cacheTtl` | v2.1.248 | agent ごとのプロンプトキャッシュ TTL（`"5m"` / `"1h"`）。subagent の TTL 設定が無いときに使われる | 繰り返し起動する agent のコスト調整 |
+| `omitClaudeMd` | v2.1.271 | user / project / local の CLAUDE.md を読まずに動かす（managed policy は読む） | CLAUDE.md の規約が判断を歪める独立検証役 |
+| `autoCompactWindow` | v2.1.296 | subagent をメインより早く auto-compact させる。v2.1.312 から `CLAUDE_CODE_AUTO_COMPACT_WINDOW` より下げる向きにも効く（上げはしない） | 長く走る探索 agent |
+
+### 2.2 Agent の起動と effort
+
+| 機能 | Since | 説明 | 適用シグナル |
+|------|-------|------|------------|
+| Agent tool の `effort` | v2.1.292 | spawn ごとに sub の effort を指定する | 実行時の effort に連動させたい層 |
+| 別モデルの sub の effort | v2.1.317 | メインと別のモデルの sub / teammate は session の effort を継がず、そのモデルの保存値か既定値で動く | `model` を明示した agent は frontmatter に `effort` も書く |
 
 ---
 
@@ -170,6 +184,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `source: 'settings'` | v2.1.80 | settings.json 内インライン定義 | git 不要のプラグイン定義 |
 | `git-subdir` | v2.1.84 | git リポジトリのサブディレクトリ指定 | モノレポ内プラグイン参照 |
 | `monitors` | v2.1.105 | バックグラウンドモニター定義。セッション開始 or スキル invoke 時に自動起動 | 継続的なバックグラウンド監視が必要なプラグイン |
+| `engines["claude-code"]` | v2.1.323 | 対応する CC の版の範囲。範囲外のクライアントは install / update / load しない（install と update は範囲に合う最新版を選ぶ） | 新しい CC の機能に依存するプラグイン。v2.1.323 より前のクライアントは無視するので、それより低い下限を書いても効かない。manifest をスキーマで検証している repo はスキーマにも足す |
 
 ### 5.1 userConfig
 
@@ -223,6 +238,10 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | Built-in slash via Skill tool | v2.1.108 | `/init`, `/review`, `/security-review` をモデルが Skill tool 経由で起動可能 | 組込コマンドとの名前重複時は独自価値を明示 |
 | subagent stall fail | v2.1.113 | サブエージェントが 10 分ストールすると無応答ではなく明示的エラーで失敗 | 長時間実行エージェントの安全性自動強化 |
 | plugin install range-conflict | v2.1.113 | 既存プラグインと依存バージョンが衝突すると `range-conflict` 報告 | プラグイン依存宣言の精度向上 |
+| `claude plugin validate --json` | v2.1.259 | 検証結果を機械可読の JSON で出す | 検証結果をスクリプトで判定する品質ゲート |
+| `--plugin-dir` に複数プラグインのフォルダ | v2.1.265 | 子フォルダのうち manifest を持つものを全部読む。実行中の追加・削除も拾う | marketplace repo 全体の手元読み込み |
+| `claude plugin eval` | v2.1.269 | プラグインの eval スイートを回し、採点つきの結果（JSON + HTML）を出す | 出力品質の回帰を測りたいプラグイン |
+| `/doctor prompt-audit` | v2.1.283 | CLAUDE.md・skills・agents・commands から古いモデル向けの書き方を洗い出す（`/checkup prompt-audit` も同じ） | Phase P（剪定）の下調べ。headless で動くかは未確認 |
 
 ---
 
@@ -238,3 +257,7 @@ CC Catch-Up スキルが Gap 分析で使用する、プラグイン開発に関
 | `FORCE_PROMPT_CACHING_5M` | v2.1.108 | プロンプトキャッシュを 5 分 TTL に固定 | 短時間セッションのキャッシュ制御 |
 | `OTEL_LOG_RAW_API_BODIES` | v2.1.111 | OpenTelemetry に API リクエスト/レスポンスの raw body を出力 | プラグインの API 呼び出しデバッグ |
 | `CLAUDE_CODE_USE_POWERSHELL_TOOL` | v2.1.111 | Linux/macOS で PowerShell tool を有効化（`pwsh` 必須） | クロスプラットフォーム Bash 代替 |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | v2.1.251 で意味が変化 | 全 sub の上書きではなく、`model` を明示していない sub の既定値になった（agent 定義の `model:` と spawn ごとの指定が優先） | ロール別ルーティングを持つプラグイン |
+| `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` | v2.1.257 | `CLAUDE_CODE_SUBAGENT_MODEL`（無ければメインモデル）を全 sub に強制し、agent 定義と spawn の指定を無視する | ロール別ルーティングを潰すので既定では使わない |
+| `CLAUDE_CODE_SUBAGENT_EFFORT` | v2.1.316 | effort を指定していない sub の effort を決める（session の effort を継ぐ代わり） | sub の effort を一律に揃えたい運用 |
+

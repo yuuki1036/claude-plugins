@@ -2,6 +2,22 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.0.3] - 2026-11-21
+
+### Changed
+
+- **cc-catch-up の機能カタログ（`references/plugin-features.md`）を CC 2.1.328 まで更新した**（GitHub issue #488）。
+  カバー範囲が 2.1.163 のままだった。足したのは issue で挙げた項目で、どれも CC の CHANGELOG の版の節で照合した: hook の
+  `onFailure: "block"`・`PreModelSwitch` / `PostModelSwitch`・`DirectoryAdded`・SessionStart の `source: "fork"`、agent の
+  `omitClaudeMd`・`autoCompactWindow`・`experimental.cacheTtl`・spawn ごとの `effort`・別モデルの sub が session の effort を
+  継がない変更、環境変数 `CLAUDE_CODE_SUBAGENT_EFFORT`・`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` と、
+  `CLAUDE_CODE_SUBAGENT_MODEL` が既定値の扱いになった変更、manifest の `engines["claude-code"]`、CLI の
+  `plugin validate --json`・`plugin eval`・複数プラグインのフォルダを指す `--plugin-dir`・`/doctor prompt-audit`
+- **Gap 分析（Phase 4）が、作業 repo で前に見送った機能を照合するようにした**。state file の `skippedFeatures` か作業 repo の
+  ADR などに見送りの記録があれば、見直す条件が満たされたかだけを判定する。Phase 7 には、見送りの理由と条件を作業 repo の記録に
+  残し、プラグイン同梱の `references/` には書かないことを足した（配布物に書くと、他の repo の提案まで抑えてしまう）
+- **剪定（Phase P）の判定フローに、`/doctor prompt-audit` を下調べの入力に使う案を書いた**。headless で動くかは未確認
+
 ## [2.0.2] - 2026-10-31
 
 ### Changed
