@@ -108,6 +108,8 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     CHANGELOG.md・scripts/plugin-enabled.sh・evals/results/ は対象外.
   - agent-effort: agents/*.md の frontmatter が `model`（`inherit` 以外）を持ち `effort` を持たないもの.
     `effort: ''` / `null` / `~` / コメントだけの値も持たない扱い（GitHub issue #510. 入れた時点の検出は 0 件）.
+    `model` の側も同じ値は持たない扱い（`model: null` は model を書いていないのと同じで, 既定のモデルで動く.
+    GitHub issue #516. 入れた時点の検出は 0 件）.
     main と別のモデルで動く sub は session の effort を継がず, そのモデルに保存された effort か
     既定値で動く（CC 2.1.317）. 指定が無いと sub の effort が, そのモデルに保存された値か既定値という
     プラグイン側で決められない値になる（GitHub issue #483. 入れた時点の検出は 3 件で, 同じ変更で全件直した）.
@@ -1645,19 +1647,26 @@ def check_plugin_enabled_key_only(plugin_dir: Path, warnings: list[str]) -> None
             )
 
 
-AGENT_MODEL_RE = re.compile(r"^model:[ \t]*['\"]?([^'\"\s]+)", re.MULTILINE)
+AGENT_MODEL_RE = re.compile(r"^model:(.*)$", re.MULTILINE)
 AGENT_EFFORT_RE = re.compile(r"^effort:(.*)$", re.MULTILINE)
-#: YAML で値が無いことを表す書き方. `effort:` の後がこれだけなら書いていないのと同じ
+#: YAML で値が無いことを表す書き方. キーの後がこれだけなら書いていないのと同じ
 YAML_EMPTY_VALUES = {"", "null", "Null", "NULL", "~", "''", '""'}
 
 
-def _has_effort_value(frontmatter: str) -> bool:
-    """frontmatter の `effort:` が値を持つか. 行末コメント（空白 + #）とコメントだけの値は値に数えない."""
-    match = AGENT_EFFORT_RE.search(frontmatter)
+def _frontmatter_value(frontmatter: str, key_re: re.Pattern[str]) -> str | None:
+    """行頭のキーの値を返す. 行末コメント（空白 + #）を外し, 値が無い書き方は None にする."""
+    match = key_re.search(frontmatter)
     if match is None:
-        return False
+        return None
     value = re.sub(r"(^|[ \t])#.*$", "", match.group(1)).strip()
-    return value not in YAML_EMPTY_VALUES
+    if value in YAML_EMPTY_VALUES:
+        return None
+    return value.strip("'\"")
+
+
+def _has_effort_value(frontmatter: str) -> bool:
+    """frontmatter の `effort:` が値を持つか. 行末コメントとコメントだけの値は値に数えない."""
+    return _frontmatter_value(frontmatter, AGENT_EFFORT_RE) is not None
 
 
 def check_agent_effort(plugin_dir: Path, warnings: list[str]) -> None:
@@ -1670,11 +1679,11 @@ def check_agent_effort(plugin_dir: Path, warnings: list[str]) -> None:
         fm = parse_frontmatter(path)
         if fm is None:
             continue
-        model = AGENT_MODEL_RE.search(fm)
-        if model is None or model.group(1) == "inherit" or _has_effort_value(fm):
+        model = _frontmatter_value(fm, AGENT_MODEL_RE)
+        if model is None or model == "inherit" or _has_effort_value(fm):
             continue
         warnings.append(
-            f"[agent-effort:{name}] {path.relative_to(ROOT)} が model: {model.group(1)} を指定して effort を指定していない"
+            f"[agent-effort:{name}] {path.relative_to(ROOT)} が model: {model} を指定して effort を指定していない"
             "（main と別のモデルで動くと session の effort を継がない / CC 2.1.317）。"
             "frontmatter に effort を書き、実行時の effort に連動させるなら呼び出し側が spawn ごとに渡す"
         )

@@ -14,7 +14,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 |-----------|---------|----:|------:|-------|-------|-----|------|
 | [adr-keeper](#adr-keeper) | 0.4.3 | 1 | 1 | - | PreToolUse, SessionStart | - | 設計判断 (ADR) を append-only 蓄積 |
 | [bdd-spec](#bdd-spec) | 0.3.7 | 2 | 2 | - | - | - | BDD spec 駆動の scaffold + 5 観点評価 |
-| [harness-keeper](#harness-keeper) | 2.0.2 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
+| [harness-keeper](#harness-keeper) | 2.0.3 | 2 | 5 | - | - | - | CC 設定管理・CLAUDE.md 監査・eval 回帰 |
 | [code-review](#code-review) | 2.168.14 | 5 | 5 | - | SessionStart, Stop, PreToolUse | - | Phase 0 トリアージ + 動的構成コードレビュー |
 | [design-doc](#design-doc) | 0.7.3 | 2 | 2 | 1 | - | - | 技術設計書を実装に入らず作成・永続化 + 4視点レビュー |
 | [dev-workflow](#dev-workflow) | 1.44.2 | 4 | 7 | - | Pre/PostToolUse, SessionStart | ✓ | Git コミット・PR・UI 確認・バグ診断・worktree |
@@ -22,7 +22,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [failure-journal](#failure-journal) | 0.11.2 | 2 | 2 | - | SessionStart, PostCompact, SubagentStart | - | 再発失敗の fingerprint 集計・retro 還流 |
 | [feature-dev](#feature-dev) | 2.29.7 | 1 | 1 | 2 | SessionStart | - | 8 phase 機能開発ワークフロー |
 | [guardrail-protect](#guardrail-protect) | 0.10.2 | - | - | - | PreToolUse, PostToolUse | - | 設定骨抜き・--no-verify・実在しない見出し参照・隔離なしの hook 実行・公開先への業務情報送信・zsh で壊れる書き方・gh run list --commit への短縮 SHA・知らない間のブランチ切り替え後の git 書き込みを機械ブロック |
-| [issue-workflow](#issue-workflow) | 1.19.13 | 14 | 14 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
+| [issue-workflow](#issue-workflow) | 1.19.14 | 14 | 14 | 4 | 5 events | - | Issue 管理（linear/indie 統合後継・backend 自動判定） |
 | [living-spec-workflow](#living-spec-workflow) | 0.7.3 | 2 | 2 | - | - | - | **deprecated → project-hub** |
 | [notebooklm-workflow](#notebooklm-workflow) | 0.2.10 | 2 | 2 | - | SessionStart | ✓ | NotebookLM 連携（ソース追加・Q&A） |
 | [plugin-feedback](#plugin-feedback) | 1.4.0 | 1 | 1 | - | SessionStart | - | プラグイン改善要望を GitHub Issue 化 |

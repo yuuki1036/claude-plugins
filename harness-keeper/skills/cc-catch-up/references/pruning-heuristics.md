@@ -122,6 +122,8 @@ CC Catch-Up の **Phase P（剪定モード）** が使用する判定基準。
 
 **重要**: 「剪定候補」になっても自動削除しない。必ずユーザーに AskUserQuestion で確認する。
 
+**下調べの候補**: CC 2.1.283 の `/doctor prompt-audit`（`/checkup prompt-audit`）は、CLAUDE.md・skills・agents・commands のうち古いモデル向けに書かれた指示の型を一覧にする。C-1 / C-5 の候補探しの入力に使える見込みがある。ただし、headless（`claude -p '/doctor prompt-audit'`）で動くかは確かめられていない。使うときは対話セッションで回し、その出力を P.1 の走査に足す。判定は上のフローで行い、prompt-audit の指摘だけを根拠に剪定しない
+
 ---
 
 ## レポート形式（Phase P 出力）
