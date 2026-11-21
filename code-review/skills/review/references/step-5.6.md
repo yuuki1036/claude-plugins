@@ -1,5 +1,5 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @0d0d4681 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @305aaaa7 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.3 @e63a77af -->
 ### 5.6 Meta-reviewer ラウンド（v2.12.0 / 動的・**5.9 反証と同一 wave**。実行順は `5.5 → 5.8 の skeptic 統合 → 5.6 meta + 5.9 反証を同一メッセージで一括発行 → mark wave → [meta 由来の追加反証バッチ] → 5.7 → Step 6`。両者は互いの出力に依存しないので直列に置かない / **片方がスキップでも他方はそのまま発行する** / #122）
 
@@ -7,7 +7,7 @@
 - userConfig `enable_meta_reviewer` が `false`
 - 実行時 effort = `${CLAUDE_EFFORT}` が `xhigh` または `max` **でない**
 - **severity 側の起動条件を満たさない**（`skip_reason: "no-high-severity"` / `gate_schema: 3`）。起動条件は「Step 5.5 後の全指摘（フィルタリング前）に **BLOCKER** が 1 件以上」∨「**CRITICAL** が 1 件以上」∨「**報告マトリクス通過見込みの MAJOR が 3 件以上**」。MAJOR 経路は v2.62.0 で追加した（旧ゲートは高 severity の存在だけを条件にしていたため実測 14 件中 `fired=1` とほぼ常時不発だった / GitHub issue #123 C）
-- **`size_tier` が `small` かつ BLOCKER が 1 件もない**（v2.60.0 / `skip_reason: "size-tier"`。BLOCKER があれば帯に関わらず起動する。**規模帯に連動する唯一の例外**で triage-guide.md `## 6.3`、根拠が n=1 のため**ロールバック条件つきの暫定ゲート** → `design-notes/triage-rationale.md`）
+- **`size_tier` が `small` かつ BLOCKER が 1 件もない**（v2.60.0 / `skip_reason: "size-tier"`。BLOCKER があれば帯に関わらず起動する。**規模帯に連動する唯一の例外**で triage-guide.md `### 6.3`、根拠が n=1 のため**ロールバック条件つきの暫定ゲート** → `design-notes/triage-rationale.md`）
 
 **実行する場合**: **Read** `orchestration-dynamic-rounds.md` してその `## 7` の手順に従う（meta-reviewer を 1 体 `model: opus`, `effort: max` で **Step 5.9 の反証バッチと同一メッセージ内で**起動 → 追加指摘を dedup して統合。失敗時は missing_coverage に追記して続行）。**回収した直後に `mark wave` を記録する**（Step 5 と同じ呼び出し。後勝ち。反証と同一 wave なので打点は 1 回で足りる）。
 

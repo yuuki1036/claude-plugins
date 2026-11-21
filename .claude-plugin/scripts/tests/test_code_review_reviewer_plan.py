@@ -66,7 +66,7 @@ class GuideTableTest(unittest.TestCase):
 
     def test_effort_caps_match_section_7_table(self):
         rows = {}
-        for line in _section("## 7. 最小保証とフェーズ上限（effort 適応 / effort 側上限の正本。実効上限は `## 6.2` との min）"):
+        for line in _section("## 7. 最小保証とフェーズ上限（effort 適応 / effort 側上限の正本。実効上限は `### 6.2` との min）"):
             cols = [c.strip() for c in line.strip().strip("|").split("|")]
             if len(cols) == 4 and cols[0] in ("explorer", "reviewer", "specialist"):
                 rows[cols[0]] = [int(re.match(r"\d+", c).group(0)) for c in cols[1:]]

@@ -1,6 +1,6 @@
 {
   "name": "code-review",
-  "version": "2.168.11",
+  "version": "2.168.12",
   "description": "Phase 0 トリアージ + 動的エージェント構成のコードレビュー。confidence × severity の 2 軸で報告閾値を制御し、diff の性質と effort に応じて explorer → reviewer → 反証レイヤーを構成する。PR レビュー（/review）とコミット前セルフレビュー（/self-review。--embed で他プラグインから委譲可）に対応。",
   "author": {
     "name": "yuki"
@@ -64,7 +64,7 @@
     },
     "enable_adaptive_rounds": {
       "title": "Enable Adaptive Deepening Round",
-      "description": "reviewer の unmet_information をトリガーに Round 2（high: reviewer 再起動の 1 段圧縮 / xhigh・max: 追加 explorer 2 段）を実行するか (デフォルト: true)。false にするとトークンコストとレイテンシを抑制",
+      "description": "reviewer の unmet_information をトリガーに Round 2（high: reviewer 再起動の 1 段圧縮 / xhigh・max: 追加 explorer 2 段。規模キャップが effort 上限を下回った回は effort に関わらず 1 段圧縮）を実行するか (デフォルト: true)。false にするとトークンコストとレイテンシを抑制",
       "type": "boolean",
       "sensitive": false
     },

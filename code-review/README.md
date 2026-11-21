@@ -174,7 +174,7 @@ React/Next.js プロジェクトでは ui-quality に modern-web-checklist の�
 
 ### 動的ラウンド（effort 適応）
 
-- **Phase 5.5 Adaptive deepening**: reviewer の `unmet_information` 申告をトリガーに Round 2 を 1 回実行（high 既定は該当 reviewer 再起動のみの 1 段圧縮・再起動 reviewer が自力探索 / xhigh・max は追加 explorer → reviewer 再起動の 2 段）
+- **Phase 5.5 Adaptive deepening**: reviewer の `unmet_information` 申告をトリガーに Round 2 を 1 回実行（high 既定は該当 reviewer 再起動のみの 1 段圧縮・再起動 reviewer が自力探索 / xhigh・max は追加 explorer → reviewer 再起動の 2 段。規模キャップが effort 上限を下回った回は effort に関わらず 1 段圧縮）
 - **Phase 5.6 Meta-reviewer**: BLOCKER / CRITICAL 検出時、または報告見込みの MAJOR が 3 件以上あるときに、他 reviewer の見落とし観点を探すメタレビューを 1 ラウンド実行（effort xhigh/max のみ）。**反証レイヤー (Phase 5.9) と同一 wave で発行**し、meta が足した指摘だけを上限 5 件の追加反証バッチに回す（v2.61.0）。MAJOR 経路は v2.62.0 で追加 — 高 severity の存在だけを条件にしていた旧ゲートは実測 14 件中 1 回しか起動せず、価値率を測るサンプルすら貯まらなかった
 
 - **Phase 5.8 冷や読み skeptic**: high-risk surface（DB 書込 / 金銭・数量 / 認可）を含む変更に限り、findings を渡さない独立 reviewer を 1 体起動して fleet 共通の盲点を探す（effort xhigh/max）。reviewer wave に相乗りで発火する（findings 非注入なので reviewer 出力に依存しない）

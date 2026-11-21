@@ -1,6 +1,6 @@
 """reviewer の構成を決め（`plan`）、確定したテーブルを検算する（`check`）。GitHub issue #351。
 
-**数値と順の正本は triage-guide.md**（`## 7` の effort 表・`## 6.2` の規模キャップ・`## 4` 末尾の
+**数値と順の正本は triage-guide.md**（`## 7` の effort 表・`### 6.2` の規模キャップ・`## 4` 末尾の
 単独維持の順・`## 7` の単独維持の観点と設計バンドル）。ここにあるのはその複製で、
 `test_code_review_reviewer_plan.py` が表を読んで突き合わせる（#295 の `PATTERN_MIN_FILES` と同じ扱い）。
 
@@ -56,7 +56,7 @@ EFFORT_CAP = {
     "explorer": {"low": 2, "medium": 2, "high": 4, "xhigh": 6, "max": 6},
     "specialist": {"low": 3, "medium": 3, "high": 3, "xhigh": 6, "max": 6},
 }
-# `## 6.2` の規模キャップ（None = キャップなし）
+# `### 6.2` の規模キャップ（None = キャップなし）
 SIZE_CAP = {
     "reviewer": {"small": 3, "medium": 5, "large": None},
     "explorer": {"small": 0, "medium": 2, "large": None},

@@ -188,7 +188,7 @@ review 18 件のうち `duration_fleet_min` が**非 `-1`（有効）だった 1
 
 ## meta-reviewer の `small` 帯スキップ（v2.60.0 / **n=1 の暫定ゲート**）
 
-`## 6.3` の「規模キャップが削るのは breadth だけ」に対する**唯一の例外**を入れた: **`size_tier: small` かつ BLOCKER 不在なら meta-reviewer（Phase 5.6）をスキップする**（`skip_reason: "size-tier"` / `meta_reviewer.gate_schema: 2`）。
+`### 6.3` の「規模キャップが削るのは breadth だけ」に対する**唯一の例外**を入れた: **`size_tier: small` かつ BLOCKER 不在なら meta-reviewer（Phase 5.6）をスキップする**（`skip_reason: "size-tier"` / `meta_reviewer.gate_schema: 2`）。
 
 **この判断は n=1 で、このリポジトリの通常の基準を下回る。** `## 8.5` の skeptic 昇格は n=8 で判断し n=15 でロールバック判定、`## 9` の反証縮小は n=19 で判定している。上の「fleet 実測 13 件」の記録にも **「本記録をもって帯連動ゲートを入れないこと」** と明記してあり、それを一部踏み越えている。**根拠の弱さを承知の上での暫定措置**として扱うこと。
 
@@ -208,7 +208,7 @@ review / `size_tier: small`（doc 1 ファイル `+75 -22`）/ `effort: xhigh` /
 
 ### なぜ `small` 帯に限るのか（仮説）
 
-meta の役目は「他の reviewer の見落とし」を探すこと。ところが `small` 帯は規模キャップで **reviewer が 3 体**まで絞られる（`## 6.2`）。**探す相手（fleet の出力）そのものが小さく、fleet 共通盲点が生まれる余地も小さい**。逆に BLOCKER が出ている変更は帯に関わらずリスクが高いので、そこは残す。
+meta の役目は「他の reviewer の見落とし」を探すこと。ところが `small` 帯は規模キャップで **reviewer が 3 体**まで絞られる（`### 6.2`）。**探す相手（fleet の出力）そのものが小さく、fleet 共通盲点が生まれる余地も小さい**。逆に BLOCKER が出ている変更は帯に関わらずリスクが高いので、そこは残す。
 
 ### ロールバック / 再評価条件
 

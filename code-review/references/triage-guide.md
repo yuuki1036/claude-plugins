@@ -188,7 +188,7 @@ diff に以下の **危険パターン** が検出された場合、対応する
 - 文字列マッチは false positive を伴うが、specialist の役割は「人間判断を促す」ことなので積極的に起動して問題ない。**トリガー感度（検出正規表現）は effort に関わらず変更しない**（recall 直撃のため）
 - specialist には `${CLAUDE_PLUGIN_ROOT}/references/prompts/reviewer-common.md` と、対応する Focus テンプレート `${CLAUDE_PLUGIN_ROOT}/references/prompts/specialist/<key>.md` を Read させる（reviewer の Focus テンプレートの位置に specialist のテンプレートが入る。渡し方は orchestration-guide.md `## 3.5`）
 - specialist の指摘は **大半が BLOCKER または CRITICAL** になるため、低 confidence でも報告マトリクスで人間に届く
-- specialist は reviewer 枠とは別カウント（specialist 起動で reviewer 枠を圧迫しない）。**体数は `## 7` の effort 適応表と `## 6.2` の規模キャップの min**（規模側は small 1 体 / medium 2 体）: high 以下では複数 red-flag ヒット時に 1〜2 体へ束ねて該当テンプレートを連結注入する（specialist-guardrail-bypass のみ単独 1 体を維持）。xhigh / max は個別起動・上限 6 体。束ね時の出力規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/bundle-rules.md`を参照
+- specialist は reviewer 枠とは別カウント（specialist 起動で reviewer 枠を圧迫しない）。**体数は `## 7` の effort 適応表と `### 6.2` の規模キャップの min**（規模側は small 1 体 / medium 2 体）: high 以下では複数 red-flag ヒット時に 1〜2 体へ束ねて該当テンプレートを連結注入する（specialist-guardrail-bypass のみ単独 1 体を維持）。xhigh / max は個別起動・上限 6 体。束ね時の出力規約は `${CLAUDE_PLUGIN_ROOT}/references/prompts/bundle-rules.md` を参照
 
 ### PR コンテキストによる観点追加・冗長化（review skill のみ）
 
@@ -213,7 +213,7 @@ SKILL.md Step 1 が保存した PR コンテキスト（`$PR_CTX_FILE`）の内�
 | 大規模リファクタ（10+ファイル） | 3-5 | アーキテクチャレイヤー単位 |
 | 共通モジュールの変更 | +1 | 呼び出し元の影響範囲調査 |
 
-- **上限**: `## 7` の effort 適応表と `## 6.2` の規模キャップの **min**（effort 側は high 4 体 / xhigh・max 6 体、規模側は small 0 体 / medium 2 体）
+- **上限**: `## 7` の effort 適応表と `### 6.2` の規模キャップの **min**（effort 側は high 4 体 / xhigh・max 6 体、規模側は small 0 体 / medium 2 体）
 
 ### reviewer の冗長度判定
 
@@ -239,9 +239,9 @@ SKILL.md Step 1 が保存した PR コンテキスト（`$PR_CTX_FILE`）の内�
 
 他の観点も必要に応じて angle を設定する。
 
-- **reviewer 上限**: `## 7` の effort 適応表と `## 6.2` の規模キャップの **min**（effort 側は high 6 体 / xhigh・max 10 体、規模側は small 3 体 / medium 5 体。最小保証の 2 体は規模キャップより優先）
+- **reviewer 上限**: `## 7` の effort 適応表と `### 6.2` の規模キャップの **min**（effort 側は high 6 体 / xhigh・max 10 体、規模側は small 3 体 / medium 5 体。最小保証の 2 体は規模キャップより優先）
 - **単独維持の観点が上限に収まらないときの順**（small の 3 体など）: 最小保証の 2 体（bug-detection・claude-md-compliance）→ **仕様ソースがあれば spec-compliance** → security → layer-responsibility（low / medium では単独ではなく設計バンドル）→ 残りは束ねる。仕様ソースのある回で spec-compliance を落とすと、Issue や spec との照合がその回まるごと起きない。落ちた観点は従来どおり `missing_coverage` に記録する
-- **この順・上限・束ねは `scripts/plan-reviewers.sh plan` が適用する**（self-review Step 2.2 / review Step 3.2。GitHub issue #351 — 表を読んで数えた回に high の上限 6 を 5 と数え、spec-compliance より security を先に取った）。オーケストレーターは数え直さず plan の行に従い、起動前に `check` で突き合わせる（orchestration-guide.md `### 8a`）。順・単独維持の観点・設計バンドル・`## 7` / `## 6.2` の表は `scripts/lib/reviewer_plan.py` に複製してあり、テストが本ファイルと突き合わせる（変えるときは両方直す）
+- **この順・上限・束ねは `scripts/plan-reviewers.sh plan` が適用する**（self-review Step 2.2 / review Step 3.2。GitHub issue #351 — 表を読んで数えた回に high の上限 6 を 5 と数え、spec-compliance より security を先に取った）。オーケストレーターは数え直さず plan の行に従い、起動前に `check` で突き合わせる（orchestration-guide.md `### 8a`）。順・単独維持の観点・設計バンドル・`## 7` / `### 6.2` の表は `scripts/lib/reviewer_plan.py` に複製してあり、テストが本ファイルと突き合わせる（変えるときは両方直す）
 - **plan の出力の読み方**（self-review / review 共通）:
   - `reviewer	R<n>	<kind>	<観点>` が reviewer の構成。kind は `solo`（1 観点）/ `bundle`（束ね）/ `design`（low・medium の設計バンドル）/ `prior`（`--since` の回の前回の対象の専任。規模キャップの外）。`piggyback	R<n>	<観点>` はその行への相乗り
   - `dropped	<観点>	<理由>` は起動しない観点。`missing_coverage` に識別子で記録し、理由をレポートの「⚠️ 欠損観点」に写す: `size-cap` = 規模キャップで未起動 / `effort-cap` = effort 上限で未起動（単独維持の観点・low・medium の設計バンドル）/ `overflow` = 束ねても reviewer 上限を超えた
@@ -260,7 +260,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 
 ### 変更特性
 - 規模: {small|medium|large}（core {N} ファイル / {N} 行、全体 {N} ファイル / {N} 行）
-- 実効上限: explorer {N} / reviewer {N} / specialist {N}（effort {値} 上限 {N}/{N}/{N} と規模キャップ {N}/{N}/{N} の min。`## 6.2`。plan の `explorer_cap` / `reviewer_cap` / `specialist_cap` と `cap_source` を写す）
+- 実効上限: explorer {N} / reviewer {N} / specialist {N}（effort {値} 上限 {N}/{N}/{N} と規模キャップ {N}/{N}/{N} の min。`### 6.2`。plan の `explorer_cap` / `reviewer_cap` / `specialist_cap` と `cap_source` を写す）
 - 直列 wave: {下限}〜{上限}（{explorer → }reviewer+skeptic{ → [Round 2 ×{1|2}]}{ → [meta+反証]}{ → [追加反証]}）／目安 explorer wave 約 2 min・以降の wave 約 2〜5 min（xhigh 以上は explorer 約 8 min・以降 約 5〜50 min、中央値 約 20 min）
 - Markdown 推敲（self-review のみ）: {reviewer wave に相乗り | skip（理由: `no-md-prose` / `embed` / `scope` / `not-installed`）}（`md-polish-guide.md` の 1 節。直列 wave の本数は変えない）
 - リスク因子: [巨大ファイル, 条件分岐追加, 共通モジュール変更, ...]
@@ -292,7 +292,7 @@ Phase 0 の出力はエージェント構成テーブルとして表示する。
 | explorer | explorer を 1 体以上配置した場合 | 0 / 1 |
 | reviewer（+ 冷や読み skeptic の相乗り・triage-dynamic-gates.md `## 8.5` / self-review は + Markdown 推敲 agent の相乗り・`md-polish-guide.md`） | 常時 | 1 |
 | Round 2（triage-dynamic-gates.md `## 8` Phase 5.5） | effort ≥ high かつ unmet_information あり | 0 / 1（high・規模キャップ帯）/ 2（xhigh・max の 2 段） |
-| **meta-reviewer + 反証（Phase 5.6 / 5.9 を同一 wave で一括発行**・v2.61.0） | いずれかが起動条件を満たす（meta: effort が xhigh / max かつ BLOCKER/CRITICAL あり（**`small` 帯は BLOCKER 有りのみ**・`## 6.3`）／反証: effort ≥ high かつ対象指摘あり） | 0 / 1 |
+| **meta-reviewer + 反証（Phase 5.6 / 5.9 を同一 wave で一括発行**・v2.61.0） | いずれかが起動条件を満たす（meta: effort が xhigh / max かつ BLOCKER/CRITICAL あり（**`small` 帯は BLOCKER 有りのみ**・`### 6.3`）／反証: effort ≥ high かつ対象指摘あり） | 0 / 1 |
 | 追加反証バッチ（meta 由来指摘が反証ゲートに該当したときのみ・triage-dynamic-gates.md `## 9`） | meta が起動し、かつ meta 単独由来の指摘が反証ゲートに該当 | 0 / 1 |
 
 - **下限 = Phase 0 で確定している wave**（explorer の有無 + reviewer の 1 本）。**上限 = 上表の各行の最大値の総和**（例に依存せずこの算式で出す）
@@ -414,10 +414,10 @@ self-review に `--since=<tree>` が渡され、`## delta` が `scope_mode=delta
   - `--focus`: 指定した観点と前回の対象の観点を規模キャップの外で起動し、それ以外は起動しない
   - `--exclude`: 指定した観点を構成から外し、残りは上の規則（delta のシグナル・最小保証・前回の対象）で決める。前回の対象の観点は外さない（prior-fixes-guide.md の 1 節）
 
-## 7. 最小保証とフェーズ上限（effort 適応 / effort 側上限の正本。実効上限は `## 6.2` との min）
+## 7. 最小保証とフェーズ上限（effort 適応 / effort 側上限の正本。実効上限は `### 6.2` との min）
 
 - **最小保証**: reviewer-bugs（focus: bug-detection）+ reviewer-claude-md（focus: claude-md-compliance）の2体は Phase 0 の判断・規模キャップに関わらず常に起動
-- **実効上限 = min(effort 上限（本表）, 規模キャップ（`## 6.2`))**。effort 上限は「深さの予算」、規模キャップは「広さの上限」で、両者は独立に効く。どちらか小さい方を採る（GitHub issue #96。effort 上限だけを見ると小 PR に上限いっぱいの体数が張り付く）
+- **実効上限 = min(effort 上限（本表）, 規模キャップ（`### 6.2`))**。effort 上限は「深さの予算」、規模キャップは「広さの上限」で、両者は独立に効く。どちらか小さい方を採る（GitHub issue #96。effort 上限だけを見ると小 PR に上限いっぱいの体数が張り付く）
 - effort 上限は実行時 effort = `${CLAUDE_EFFORT}` で決まる。**本表が effort 側上限の正本**（SKILL.md・他節の上限言及はここを参照する）:
 
 | 枠 | low / medium | high（既定） | xhigh / max |
