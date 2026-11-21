@@ -1613,6 +1613,25 @@ class AgentEffortTest(unittest.TestCase):
         """inherit は main と同じモデルで動き session の effort を継ぐ."""
         self.assertEqual(self._scan("name: a\nmodel: inherit"), [])
 
+    def test_quoted_inherit_is_silent(self):
+        for value in ("'inherit'", '"inherit"', "inherit  # main と同じ"):
+            with self.subTest(value=value):
+                self.assertEqual(self._scan(f"name: a\nmodel: {value}"), [])
+
+    def test_yaml_empty_model_values_are_silent(self):
+        """model の値が無い書き方は model を書いていないのと同じ（GitHub issue #516）."""
+        for value in ("", "''", '""', "null", "Null", "NULL", "~", "# TODO", "  # TODO", "''  # 後で"):
+            with self.subTest(value=value):
+                self.assertEqual(self._scan(f"name: a\nmodel: {value}"), [])
+
+    def test_model_comment_right_after_colon_is_silent(self):
+        self.assertEqual(self._scan("name: a\nmodel:# TODO"), [])
+
+    def test_model_with_trailing_comment_warns_with_bare_name(self):
+        warnings = self._scan("name: a\nmodel: opus  # 判断の層")
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("model: opus ", warnings[0])
+
     def test_empty_effort_value_still_warns(self):
         self.assertEqual(len(self._scan("name: a\nmodel: opus\neffort:")), 1)
 
