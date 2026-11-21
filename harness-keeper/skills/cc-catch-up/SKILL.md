@@ -95,7 +95,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/scan-frontmatter.sh" . > 
 Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを突合する。**この Phase は設計判断を含むため段階的に検討すること:**
 
 1. まず Phase 2 × Phase 3 のマトリクスを構築（新機能 × プラグイン数）
-2. `references/improvement-patterns.md` のデシジョンツリーを機械的に適用
+2. `references/improvement-patterns.md` のデシジョンツリーを機械的に適用。ただし、作業 repo で前に見送った機能（state file の `skippedFeatures`、または作業 repo の ADR などに見送りの記録があるもの。プラグインを限った見送りはそのプラグインだけ）は、記録にある見直す条件が満たされたかだけを判定し、満たされていなければ対象外として見送りの理由を引く（同じ検討を繰り返さない）
 3. 各改善提案について根拠を 1 文で書けるか確認（書けなければ判定を見直す）
 4. 各プラグイン × 各新機能について **適用可能性** を判定:
    - **適用推奨** — 明確なメリットがある
@@ -221,6 +221,8 @@ Phase 2 の新機能リストと Phase 3 のプラグインプロファイルを
 }
 ```
 
+見送った機能は `skippedFeatures` に ID を入れる。理由と見直す条件は、作業 repo の設計判断の記録（ADR など）に残す（state file は commit しないのでマシン間で共有されず、ID だけでは条件を残せない。プラグイン同梱の `references/` には書かない — 他の repo の提案まで抑えてしまう）。
+
 **書き込み後は必ず決定的バリデータで schema 準拠を確認する**（structure drift を機械的に弾く）。バリデータは state file パスを引数で受け取れる（引数省略時は `${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json` を既定で解決）:
 
 ```bash
@@ -232,8 +234,7 @@ exit 1（schema 違反）の場合は state file を修正してから完了と�
 
 ## Reference Files
 
-- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/plugin-features.md`** — CC のプラグイン関連機能カタログ（カテゴリ別・バージョン付き）。フルスキャン時のベースライン、および changelog 解析時の分類基準として使用
-- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/improvement-patterns.md`** — 機能→改善のデシジョンツリーと before/after パターン集。Gap 分析（Phase 4）の判定ロジックとして使用
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/plugin-features.md`** — CC のプラグイン関連機能カタログ（カテゴリ別・バージョン付き）。フルスキャン時のベースライン、および changelog 解析時の分類基準として使用- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/improvement-patterns.md`** — 機能→改善のデシジョンツリーと before/after パターン集。Gap 分析（Phase 4）の判定ロジックとして使用
 - **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/pruning-heuristics.md`** — モデル世代ごとの制約棚卸し基準（C-1〜C-5 カテゴリ、判定フロー、レポート/対話仕様）。Phase P（剪定モード）で使用
 - **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/state-schema.json`** — state file の JSON Schema（draft-07）。run 間差分照合に使う状態構造の single source。Phase 7 の書き込み後に `scripts/validate-state.py` が照合。schema はプラグイン同梱（state file 本体はプロジェクト/ユーザー配下）
 - **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/validate-state.py`** — state file を state-schema.json に照合する決定的バリデータ（標準ライブラリのみ）。Phase 7 末尾で実行。引数省略時は `${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json` を既定で解決
