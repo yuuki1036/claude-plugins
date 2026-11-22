@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.15] - 2026-11-22
+
+### Changed
+
+- start の軽量フロー（`references/lightweight-flow.md`）の、code-review の review-guide-format.md「変異テストの提案」への SSoT pin を打ち直した（GitHub issue #505・#444）。正本が、文字列の中にだけある分岐を「要るか」に数えないことと、回すかの決め方を呼び出し元ごとに書き分けたこと（feature-dev は聞かずに回す）を足した。この skill の手順（回すかを聞く）は変えていない
+
 ## [1.19.14] - 2026-11-21
 
 ### Changed
