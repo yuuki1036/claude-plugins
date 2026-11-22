@@ -12,7 +12,8 @@
 #                  fork のときは状態ファイルを作って印を立て、transcript が既にあればその場で親の会話から版を拾う
 #
 # 状態: ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugin-manager/sessions/<session_id>.json
-# UserPromptSubmit は毎回の発言で走るので、このセッションの状態ファイルが無ければ python を起動しない。
+# UserPromptSubmit は毎回の発言で走るので、このセッションの状態ファイルが無ければ python を起動しない
+# （transcript が親から写された fork 先だけは起動する）。
 # SessionStart では 14 日以上触れられていない状態ファイルを消す
 
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
@@ -41,6 +42,22 @@ case "$MODE" in
     FORK=0
     if [ "$MODE" = "session-start" ] && [[ "$INPUT" =~ \"source\"[[:space:]]*:[[:space:]]*\"fork\" ]]; then
       FORK=1
+    fi
+    # デスクトップアプリの fork は resume として届き、状態ファイルも無い。transcript の先頭の行の
+    # sessionId がファイル名の id と違えば（親から写された transcript）、python に見分けさせる
+    # （判定し直しは stale_skill.py の copied_transcript。先頭の数行しか読まない / GitHub issue #517）。
+    # transcript のファイル名は session_id と同じ前提（python は payload の session_id で判定し直す）。
+    # 行数は stale_skill.py の COPIED_HEAD_LINES と揃える
+    if [ "$FORK" = 0 ] && [ "$MODE" != "compact" ] \
+      && [[ "$INPUT" =~ \"transcript_path\"[[:space:]]*:[[:space:]]*\"([^\"]+\.jsonl)\" ]]; then
+      TP="${BASH_REMATCH[1]}"
+      if [ -f "$TP" ]; then
+        HEAD=$(head -n 5 "$TP" 2>/dev/null || true)
+        if [[ "$HEAD" =~ \"sessionId\"[[:space:]]*:[[:space:]]*\"([A-Za-z0-9_-]+)\" ]] \
+          && [ "${BASH_REMATCH[1]}" != "$(basename "$TP" .jsonl)" ]; then
+          FORK=1
+        fi
+      fi
     fi
     [ "$FORK" = 1 ] || [ -d "$DIR" ] || safe_hook_error NotFound "no sessions dir"
     # payload の入れ子のオブジェクトにも session_id のキーがありうるので、出現をすべて候補にする

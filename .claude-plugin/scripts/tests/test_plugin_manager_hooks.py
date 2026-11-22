@@ -687,12 +687,166 @@ class StaleSkillTest(HookTestCase):
         self.assertFalse(self.state_file("fork-1").exists())
 
     def test_fork_without_parent_reads_removes_state(self):
-        """記録の無い状態ファイルを残さない（前段はファイルの有無だけで python を起動する）."""
+        """CLI の fork では記録の無い状態ファイルを残さない（前段は状態ファイルがあれば python を起動する）."""
         self.fork_setup()
         tp = self.transcript(extra_lines=[json.dumps({"type": "user", "message": {"content": "hi"}})])
         self.assertQuiet(self.fork_start(tp))
         self.assertFalse(self.state_file("fork-1").exists())
         self.assertQuiet(self.fork_prompt(tp))
+
+    # --- デスクトップアプリの fork（GitHub issue #517） ---
+    # アプリが親の transcript を丸ごと写し（写した行の sessionId は親のまま）、CLI を --resume で起動する。
+    # SessionStart の source は resume で、fork 先には状態ファイルが無い
+
+    def copied(self, *paths, sid="fork-1", head_sid="parent-1", head_lines=None) -> Path:
+        """親から写された fork 先の transcript（ファイル名は fork 先の id）."""
+        if head_lines is None:
+            head_lines = [json.dumps({"type": "queue-operation", "operation": "enqueue", "sessionId": head_sid})]
+        src = self.transcript(*paths, extra_lines=head_lines)
+        tp = self.home / f"{sid}.jsonl"
+        src.rename(tp)
+        return tp
+
+    def test_desktop_fork_notifies_on_resume(self):
+        tp = self.copied(self.fork_setup())
+        out = self.fork_start(tp, source="resume").stdout
+        self.assertIn("p: 1.0.0 → 1.1.0", out)
+        self.assertIn("p:s", out)
+        self.assertNotIn("fork_pending", self.state_file("fork-1").read_text())
+
+    def test_desktop_fork_notifies_on_first_prompt(self):
+        """SessionStart が届かなくても、最初の発言で取り込む（sessions dir がまだ無くてもよい）."""
+        tp = self.copied(self.fork_setup())
+        self.assertIn("p: 1.0.0 → 1.1.0", self.fork_prompt(tp).stdout)
+        self.assertQuiet(self.fork_prompt(tp))
+
+    def test_desktop_fork_skips_lines_without_session_id(self):
+        head = [json.dumps({"type": "file-history-snapshot"}), "{broken",
+                json.dumps({"type": "queue-operation", "sessionId": "parent-1"})]
+        tp = self.copied(self.fork_setup(), head_lines=head)
+        self.assertIn("p: 1.0.0 → 1.1.0", self.fork_prompt(tp).stdout)
+
+    def test_desktop_fork_own_record_is_not_replaced(self):
+        """状態ファイルが既にあれば（自分で読んだ）transcript を読み直さない.
+
+        fork 先では別のプラグイン q だけを読む。読み直せば transcript の p の旧版で通知が出る
+        """
+        old = self.fork_setup()
+        q = self.version_dir("q", "1.0.0")
+        self.install({"p": "1.1.0", "q": "1.0.0"})
+        tp = self.copied(old)
+        self.assertSilent(self.read(q / "skills" / "s" / "SKILL.md", sid="fork-1"))
+        self.assertQuiet(self.fork_prompt(tp))
+        self.assertQuiet(self.fork_start(tp, source="resume"))
+
+    def test_desktop_fork_session_id_on_fifth_line(self):
+        """sessionId を見るのは先頭の 5 行まで（5 行目は含む。6 行目のテストと対）."""
+        head = [json.dumps({"type": "summary"})] * 4 + [json.dumps({"type": "x", "sessionId": "parent-1"})]
+        tp = self.copied(self.fork_setup(), head_lines=head)
+        self.assertIn("p: 1.0.0 → 1.1.0", self.fork_prompt(tp).stdout)
+
+    def test_own_transcript_with_other_record_is_silent(self):
+        """前段を別のセッションの記録で通っても、python が transcript を自分のものと見分けて何もしない."""
+        sessions = self.cfg / "plugin-manager" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / "other.json").write_text("{}")
+        tp = self.copied(self.fork_setup(), head_sid="fork-1")
+        res = self.run_hook({"session_id": "fork-1", "hook_event_name": "UserPromptSubmit", "prompt": "hi",
+                             "transcript_path": str(tp), "x": {"session_id": "other"}},
+                            env_extra=self.env(), args=("prompt",))
+        self.assertQuiet(res)
+        self.assertEqual(sorted(p.name for p in sessions.iterdir()), ["other.json"])
+
+    def test_own_transcript_is_silent(self):
+        """先頭の行の sessionId が自分のもの（写されていない）なら、旧版の Read が残っていても取り込まない."""
+        tp = self.copied(self.fork_setup(), head_sid="fork-1")
+        self.assertQuiet(self.fork_prompt(tp))
+        self.assertQuiet(self.fork_start(tp, source="resume"))
+        self.assertFalse(self.state_file("fork-1").exists())
+
+    def test_own_transcript_does_not_start_python(self):
+        """前段で見分け、写されていない transcript では毎回の発言で python を起動しない."""
+        path, marker = self.python_stub_path()
+        env = {**self.env(), "PATH": path}
+        old = self.fork_setup()
+        payload = {"session_id": "fork-1", "hook_event_name": "UserPromptSubmit", "prompt": "hi"}
+        own = self.copied(old, head_sid="fork-1")
+        self.assertQuiet(self.run_hook({**payload, "transcript_path": str(own)}, env_extra=env, args=("prompt",)))
+        self.assertFalse(marker.exists())
+        # 写された transcript なら起動する（上の不在が stub の不発でないこと）
+        tp = self.copied(old)
+        self.run_hook({**payload, "transcript_path": str(tp)}, env_extra=env, args=("prompt",))
+        self.assertTrue(marker.exists())
+
+    def test_copied_transcript_without_session_id_is_silent(self):
+        tp = self.copied(self.fork_setup(), head_lines=[json.dumps({"type": "summary"})])
+        self.assertQuiet(self.fork_prompt(tp))
+        self.assertFalse(self.state_file("fork-1").exists())
+
+    def test_copied_transcript_session_id_beyond_head_is_silent(self):
+        """sessionId を見るのは先頭の 5 行まで."""
+        head = [json.dumps({"type": "summary"})] * 5 + [json.dumps({"type": "x", "sessionId": "parent-1"})]
+        tp = self.copied(self.fork_setup(), head_lines=head)
+        self.assertQuiet(self.fork_prompt(tp))
+        self.assertFalse(self.state_file("fork-1").exists())
+
+    def sixth_line_copied(self) -> Path:
+        head = [json.dumps({"type": "summary"})] * 5 + [json.dumps({"type": "x", "sessionId": "parent-1"})]
+        return self.copied(self.fork_setup(), head_lines=head)
+
+    def test_sixth_line_does_not_start_python(self):
+        """前段は先頭の 5 行しか見ない（python 側の上限とは別に、前段の上限を確かめる）."""
+        path, marker = self.python_stub_path()
+        tp = self.sixth_line_copied()
+        self.run_hook({"session_id": "fork-1", "hook_event_name": "UserPromptSubmit", "prompt": "hi",
+                       "transcript_path": str(tp)}, env_extra={**self.env(), "PATH": path}, args=("prompt",))
+        self.assertFalse(marker.exists())
+
+    def test_sixth_line_is_not_copied_in_python(self):
+        """前段を別のセッションの記録で通っても、python も先頭の 5 行しか見ない."""
+        sessions = self.cfg / "plugin-manager" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / "other.json").write_text("{}")
+        tp = self.sixth_line_copied()
+        self.assertQuiet(self.run_hook({"session_id": "fork-1", "hook_event_name": "UserPromptSubmit", "prompt": "hi",
+                                        "transcript_path": str(tp), "x": {"session_id": "other"}},
+                                       env_extra=self.env(), args=("prompt",)))
+        self.assertEqual(sorted(p.name for p in sessions.iterdir()), ["other.json"])
+
+    def test_copied_transcript_on_compact_does_not_start_python(self):
+        """PostCompact では前段で止め、写された transcript でも python を起動しない."""
+        path, marker = self.python_stub_path()
+        tp = self.copied(self.fork_setup())
+        self.run_hook({"session_id": "fork-1", "hook_event_name": "PostCompact", "transcript_path": str(tp)},
+                      env_extra={**self.env(), "PATH": path}, args=("compact",))
+        self.assertFalse(marker.exists())
+
+    def test_copied_transcript_missing_is_silent(self):
+        self.fork_setup()
+        self.assertQuiet(self.fork_prompt(self.home / "fork-1.jsonl"))
+        self.assertFalse(self.state_file("fork-1").exists())
+
+    def test_copied_transcript_on_other_sources_is_silent(self):
+        """startup / clear / compact の SessionStart と PostCompact では取り込まない."""
+        tp = self.copied(self.fork_setup())
+        for source in ("startup", "clear", "compact"):
+            self.assertQuiet(self.fork_start(tp, source=source), source)
+        self.assertQuiet(self.run_hook({"session_id": "fork-1", "hook_event_name": "PostCompact",
+                                        "transcript_path": str(tp)}, env_extra=self.env(), args=("compact",)))
+        self.assertFalse(self.state_file("fork-1").exists())
+
+    def test_copied_transcript_without_parent_reads_is_read_once(self):
+        """親の Read が無くても記録の無い状態ファイルを残し、次の発言で transcript を読み直さない."""
+        old = self.fork_setup()
+        tp = self.copied()
+        self.assertQuiet(self.fork_prompt(tp))
+        state = json.loads(self.state_file("fork-1").read_text())
+        self.assertEqual(state["plugins"], {})
+        self.assertNotIn("fork_pending", state)
+        # 読み直せば旧版の Read で通知が出る
+        self.copied(old)
+        self.assertQuiet(self.fork_prompt(tp))
+        self.assertQuiet(self.fork_start(tp, source="resume"))
 
     def skill_line(self, path, meta=True) -> str:
         entry = {"type": "user", "message": {"role": "user", "content": [
