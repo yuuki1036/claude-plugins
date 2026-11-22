@@ -264,6 +264,30 @@ class ClosingTest(unittest.TestCase):
         self.assertIn("`baseRefName` と `headRefOid` の実値を控えている", step0,
                       "Step 7 まで値が残らない（シェル変数は Bash 呼び出し間で消える）")
 
+    def test_branches_inside_strings_do_not_make_it_needed(self):
+        """「要るか」の 1 は、道具が変異できる行（ソースの式・文）の分岐だけを数える（GitHub issue #505）.
+
+        SQL・正規表現などの文字列の中の分岐で 1 を満たすと、言語から選んだ道具（Stryker 等）が
+        その分岐を 1 つも壊さないのに `提案する` になり、理由（対象外）と結論が食い違った.
+        """
+        section = mutation_section()
+        needed = between(section, "### 要るか", "### 道具")
+        cond1 = next(l for l in needed.splitlines() if l.startswith("1. "))
+        self.assertIn("ソースの言語の式・文として書かれている行", cond1)
+        for kind in ("SQL", "設定値"):
+            self.assertIn(kind, cond1, f"数えない文字列の例から {kind} が消えた")
+        # 道具が変異させる文字列まで外すと、測れる変異テストが黙って抜ける（偽陰性）
+        exceptions = cond1[cond1.index("例外が 2 つある"):]
+        self.assertIn("正規表現のリテラル", exceptions, "Stryker が変異させる正規表現まで数えない側に入っている")
+        self.assertIn("`.claude/mutation-test.sh`", exceptions, "宣言の回も文字列の中の分岐を数えない")
+        self.assertIn("判定を宣言に任せる", exceptions)
+        self.assertIn("文字列の外の変更だけでこの条件を見直す", cond1, "文字列の中の分岐がある hunk の見直し方が無い")
+        examples = needed[needed.index("当たらなければ `不要`"):]
+        bullet = next((l for l in examples.splitlines() if "文字列の中にだけあり" in l), None)
+        self.assertIsNotNone(bullet, "`不要` の例に、分岐が文字列の中にだけある回が無い")
+        self.assertIn("結論と理由を食い違わせない", bullet)
+        self.assertLess(needed.index("1. "), needed.index("当たらなければ"))
+
     def test_unresolvable_ref_is_not_proposed(self):
         """`<ref>` が求まらない回に `提案する` を出すと、`<ref>` が残った回し方を呼び出し元が承認後にそのまま回して必ず失敗する.
 

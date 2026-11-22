@@ -518,14 +518,48 @@ class SummaryReadingGuideTest(unittest.TestCase):
         for value in self.MUTATION_VALUES:
             self.assertIn(value, line, f"締めの `{self.MUTATION}` の値から {value} が消えた")
             self.assertIn(f"`{value}`", block, f"{value} の分岐が無い")
-        self.assertIn("承認の返信が無ければ回さない", block)
         self.assertIn("run_in_background", block)
-        mentions = [s for s in block.split("。") if "AskUserQuestion" in s]
-        self.assertTrue(mentions, "AskUserQuestion にしないことが書かれていない")
-        for s in mentions:
-            self.assertIn("しない", s, f"変異テストの承認を AskUserQuestion で取っている: {s}")
         p7 = self.phase7()
         self.assertLess(p7.index("締めにこの行が無い"), p7.index(f"締めの `{self.MUTATION}` の行で"))
+
+    def test_proposed_mutation_runs_without_asking(self):
+        """`提案する` の回は聞かずに回す（2026-11-22 決定 / GitHub issue #444）。推測した道具の回し方も同じ.
+
+        聞いてターンを終える手順が残ると、提案のたびに確認の往復が戻る.
+        """
+        block = self.mutation_block()
+        proposed = block[block.index("先頭が `提案する`"):block.index("先頭が `不要`")]
+        self.assertIn("利用者に聞かずに回す", proposed)
+        self.assertIn("推測した道具のコマンドでも同じ", proposed, "自動で回す範囲が宣言の回だけに読める")
+        for asking in ("承認の返信が無ければ回さない", "承認されたら", "回さないと返されたら"):
+            self.assertNotIn(asking, proposed, f"回すかを聞く手順が残っている: {asking}")
+        # 回すまでの部分（決定の宣言）に「聞いて」があれば、回すかを聞く手順が戻っている
+        before_run = proposed[:proposed.index("回す前に")]
+        self.assertNotIn("聞いて", before_run.replace("回すかを聞いてターンを終えると", ""), "回すかを聞く手順が残っている")
+        mentions = [s for s in proposed.split("。") if "AskUserQuestion" in s]
+        self.assertTrue(mentions, "AskUserQuestion で聞かないことが書かれていない")
+        for s in mentions:
+            self.assertIn("聞かない", s, f"変異テストを回すかを AskUserQuestion で聞いている: {s}")
+        self.assertIn("作業ツリーを編集しない", proposed, "自動で回す回にも残す制約が消えた")
+        self.assertIn("回し方（回すコマンド）", proposed, "聞かずに回すコマンドを利用者に見せていない")
+        self.assertIn("回したコマンドを添えて", proposed, "結果の報告に、どのコマンドで測ったかが無い")
+        # 聞かずに回すので、生存を見てテストを足すかは結果の後で聞くしかない
+        survived = block[block.index("テストを足すかは利用者が決める"):]
+        self.assertIn("`生存 N 件`（N が 1 以上）の回だけ", survived, "生存の回に止まって聞く手順が無い")
+        self.assertIn("ターンを終える", survived)
+        self.assertIn("テストを足すかを聞かない", survived, "生存の無い回まで止まる")
+        # 判定不能のうち途中で止まった回は、変異が残ったツリーのまま進ませない
+        self.assertIn("途中で止まった回は、上のとおり元に戻したと返されるまで次の一手へ進まない", survived)
+
+    def test_canonical_names_feature_dev_as_the_caller_that_runs_without_asking(self):
+        """正本の契約も呼び出し元ごとに書き分ける。正本が「承認を得てから回す」のままだと Phase 7 と食い違う."""
+        fmt = self.FORMAT.read_text()
+        closing = fmt[fmt.index("## 読み合わせの締め"):fmt.index("## 回し直すかの判断")]
+        bullet = next(l for l in closing.splitlines() if l.startswith("- `変異テスト:` の行も呼び出し元"))
+        self.assertIn("feature-dev の Phase 7 は聞かずにそのまま回し", bullet)
+        self.assertIn("軽量フローは回すかを聞いて承認を得てから回す", bullet)
+        self.assertIn("git-commit-helper は回すかを聞き", bullet)
+        self.assertNotIn("呼び出し元はそれをそのまま回すかの問いに使い", bullet)
 
     def test_mutation_runs_regardless_of_snapshot(self):
         """snapshot が無い回だけの分岐（`self-review 以降の変更:` の箇条）に入れない。読み合わせた回はすべて通る."""
