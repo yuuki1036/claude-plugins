@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # review-guide（code-review プラグイン）の読み合わせの締めが `変異テスト: 提案する` を出すときに、
-# 呼び出し元（issue-workflow の軽量フロー・feature-dev の Phase 7）が利用者の承認を得てから回す変異テストの宣言。
+# 呼び出し元（issue-workflow の軽量フローは利用者の承認を得てから、feature-dev の Phase 7 は聞かずに）が回す変異テストの宣言。
 #
 # **このファイルの存在自体が宣言**（GitHub issue #307。`.claude/review-oracles.sh` と同じ流儀）。
 # code-review 側はこれがあれば推測しない。契約の正本は code-review/references/review-guide-format.md の

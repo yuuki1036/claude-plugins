@@ -75,7 +75,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。
                                  #   （存在自体が opt-in。中身は machine-layer.sh --no-tests を呼ぶだけ）
   mutation-test.sh               # review-guide の締めが変異テストを提案するときの宣言
                                  #   （存在自体が opt-in。mutation-test.py を --strict --related-first で呼ぶだけ。
-                                 #   回すのは軽量フロー・feature-dev が利用者の承認を得てから / #307）
+                                 #   回すのは軽量フロー（利用者の承認を得てから / #307）と feature-dev の Phase 7（聞かずに / #444））
   commands/ skills/              # /quality-check の実体（マーケットプレイスに配布しない自前コマンド）
   adr/ designs/                  # 本リポジトリ自身の設計判断・設計書
 docs/                            # 横断設計指針（pipeline-design / rule-placement / skill-writing / event-bus /
