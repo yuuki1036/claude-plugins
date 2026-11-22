@@ -36,6 +36,8 @@ TESTS_DIR = Path(__file__).resolve().parent
 #: git を直接叩くファイル → その経路を通す代表テスト
 #: （`hook_harness` は基底なので、それを使うテストモジュール側で代表する）
 REPRESENTATIVES = {
+    "test_code_review_metrics_update.py":
+        "test_code_review_metrics_update.StateTest.test_commits_since_previous_main_touching_code_review_only",
     "test_doc_locate.py":
         "test_doc_locate.ListAndBaseTest.test_base_collects_committed_staged_unstaged_and_untracked",
     "test_code_review_scripts.py":
