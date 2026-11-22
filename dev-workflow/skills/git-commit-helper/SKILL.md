@@ -15,7 +15,7 @@ allowed-tools:
 
 <!-- 正本依存（SSoT pin）。1.5 の締めの分岐（`次の一手:` の値・`変異テスト: 提案する` の扱い）は code-review の review-guide-format.md「回し直すかの判断」「変異テストの提案」を要約したもの（プラグイン間依存禁止のため要約で持つ）。正本が変わったら 1.5 を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @bc251143 -->
-<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @3c9ee376 -->
+<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @7be3a9e1 -->
 
 # Git Commit Helper
 

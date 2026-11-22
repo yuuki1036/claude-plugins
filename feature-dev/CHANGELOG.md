@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.30.0] - 2026-11-22
+
+### Changed
+
+- **Phase 7 で、読み合わせの締めが `変異テスト: 提案する` の回は、回すかを聞かずに変異テストを回すようにした**（GitHub issue #444）。提案が出る回はたいてい回すので、毎回の確認が手間になっていた。回し方が宣言の `.claude/mutation-test.sh` でも推測した道具（Stryker / mutmut / cargo-mutants）のコマンドでも同じ（2026-11-22 決定）。回す順序は今どおり、2 回目の self-review か Phase 5.3 を回した回はその後。回す前に理由・回し方・所要の目安を示し、回しているあいだは作業ツリーを編集しない。結果の 4 区分・前後の `git status --porcelain` の突き合わせ・途中で止まったときの扱いは変えていない。結果が `生存 N 件`（N が 1 以上）の回だけ、テストを足すかを聞いてターンを終える（それ以外の結果ではテストを足すかを聞かない。途中で止まった回は今どおり、元に戻したと返されるまで進まない）。`.claude/mutation-test.sh` を置いた repo では、締めが `提案する` の回に変異テストが自動で走る（1 変異ごとにフルスイートを回すので長い）
+
 ## [2.29.7] - 2026-11-21
 
 ### Changed
