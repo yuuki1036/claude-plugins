@@ -43,6 +43,20 @@ PR に既に付いているレビューコメント（AI レビュー bot・人�
 **引数**:
 - `[PR番号]` — 省略時は現在のブランチに紐づく PR を自動取得
 
+### metrics-update
+
+code-review の計測結果（`review:completed` の蓄積）を更新し、関連 issue へのコメントと改善案の起票までを固定の手順で回す。集計は `scripts/metrics-update.sh` が出し、skill はどの issue にコメントするか・起票するか・`orchestration-measurement.md ## 15` のベースラインを取り直すかを決める。
+
+- 集計（`metrics-update.sh`）: 見た範囲（計測ストアと手元のログの件数・main の commit・版）、前回の記録からの差分（マシン別・plugin 別・版別の新しい回と、`code-review/` を触った commit）、世代 × effort × size_tier × delta / full で割った比較表（区間・トークン・報告件数・dispatch の欠測率。再レビューを除く。`--split-version` で版の前後に割る）、`## 15` の更新条件、計測ストアの同期で落とした語彙
+- 計測ストア（`REVIEW_METRICS_DIR`、既定 `~/.claude/review-metrics`）は任意。無ければ手元の `events.jsonl` だけで回す
+- 既定は読むだけで、`--record` を付けたときだけ前回の実行時点を `~/.claude/code-review/metrics-update-state.json` に書く
+- コメントと起票は、本文ファイルを書いてから承認を得て投稿する。本文には retro の「集計」行と「マシン / 版」行を付け、業務情報を置き換える
+
+**トリガー**: 「計測を更新」「計測結果を更新して」「metrics update」「/metrics-update」
+
+**引数**:
+- `--split-version <版>` — 比較表をその版の前後に割る（打ち手の効果を見るとき）
+
 ## mod: `/guide-diff`（review-guide の読み順で diff を送る）
 
 review-guide を base モード（PR を作る前）で回すと、読み順と比較先（base branch との分岐点のコミット）が git dir に記録される。`/guide-diff` はそれを読み、**分岐点からの diff を読み順どおりに 1 ファイルずつ**ペインに出す（`n` 次へ / `p` 前へ / `c` 比較先の commit をコピー）。`/guide-diff N` で N 番目から開く。組み込みの `/diff` は比較先を default branch までしか選べないので、統合ブランチから切ったブランチでも統合ブランチの他の変更が混ざらない。
