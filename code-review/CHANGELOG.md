@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.169.0] - 2026-11-21
+
+### Added
+
+- **`/code-review:metrics-update` を追加した**（GitHub issue #480）。計測結果を更新し、関連する issue にコメントし、改善案があれば起票する作業を、固定の手順で回す skill（command と対）。この作業はこれまで 2026-10-16〜11-08 に 6 回手で回していて、集計スクリプトを毎回その場で書き直していた。そのため、フィルタ（世代・再レビューの除外・transcript の取り違えが直った版）・前回からの差分・コメント先の選び方が回ごとにぶれた
+  - **集計は新しいスクリプト `scripts/metrics-update.sh`（本体は `scripts/lib/metrics_update.py`）が出す**。出すもの:
+    - 見た範囲（計測ストアと手元のログの件数・main の commit・版）
+    - 前回の記録からの差分（マシン別・plugin 別・版別の新しい回と、`code-review/` を触った commit）
+    - 世代 × effort × size_tier × delta / full で割った比較表（区間・トークン・報告件数・dispatch の欠測率の中央値。再レビューは除き、その件数を出す。dispatch とトークンは 2.130.6 以上に絞る。`--split-version` で版の前後に割り、`--generation` で 1 世代に絞る）
+    - `orchestration-measurement.md ## 15` の更新条件の判定
+    - 計測ストアの同期で落とした語彙（手元に同じ `(ts, plugin)` の生の行があれば、落ちたキーと置き換わる前の値まで出す。手元表示のみ）
+
+    既定は読むだけで、`--record` を付けたときだけ前回の実行時点を `~/.claude/code-review/metrics-update-state.json` に書く。計測ストア（`REVIEW_METRICS_DIR`、既定 `~/.claude/review-metrics`）は任意で、無ければ手元の `events.jsonl` だけで回る。`metrics-update.sh retro` は同じ母集団を `review-retro.sh --logs` に渡す。`metrics-update.sh workdir` は本文ファイルと `--json` の出力を置く作業用 dir を毎回新しい名前の 0700 で作る（固定の名前だと、共有の `/tmp` で先に置かれた symlink の先へ書きうる）。状態ファイルの形が違えば書き換えずに exit 2 で止まり、`--state` で渡したパスは出力に出さない
+  - **skill が決めるのは 3 つ**（コメントする issue・起票するか・ベースラインを取り直すか）。コメント先の候補は固定の 2 本で出す（open の `[code-review]` の issue と、前回の記録以降に close したもの）。候補は全件、本文とコメントを読んでから判定する。コメントと起票は、本文ファイルを書く呼び出しと投稿する呼び出しを分け、その間に承認を取る。本文には retro の「集計」行と「マシン / 版」行を付け、業務情報を置き換える（`skills/metrics-update/references/comment-template.md`）。effort が xhigh / max のときは、投稿の前に独立した opus agent 1 体が本文の数値と重複を照合する
+  - 世代・再レビュー・delta の判定は `review-retro.sh` と同じ式で、retro の本文から関数を切り出して突き合わせるテストで縛る。retro の出力は変えていない
+  - blocker: 既存の 5 skill はどれも「1 回のレビュー / 1 PR」を単位にしていて、この作業と重ならない。`review-retro.sh` は publish 直後に毎回出す 40 行・⚠️ のときだけ行動する、という出力の契約を持つので、比較表と状態の記録は別のスクリプトに分けた。fallback: skill が読み込まれない環境でも、`scripts/metrics-update.sh` を直接回せば集計は出る
+- `orchestration-measurement.md ## 15` の先頭に、機械可読の印 `METRICS-BASELINE`（世代・取り直した日・xhigh の review の件数の条件）を置いた。`metrics-update.sh` がこれを読んで更新条件を判定する。世代の変化は、`taken`（表に入れた最後の回の翌日）以降で世代の分かる直近 4 回に印の世代が 1 回も無いかで見る（比べるために別のモデルで 1 回回しただけでは変わらず、マシンごとに世代が違う時期に判定が行き来しない）。xhigh の条件は 2026-10-25 の取り直しで消化済みなので、件数の条件は 0（無効）にし、次の取り直しは世代が変わったときにした。`## 18` の対応表と、語彙落ちの項にも metrics-update を書き足した
+
 ## [2.168.14] - 2026-11-21
 
 ### Fixed

@@ -31,6 +31,11 @@ cases:
     prompt: 追加したコード内コメントを精査して直して
     expected_skill: code-review:comment-polish
     k: 3
+  # metrics-update の起動（計測結果の更新と issue への返却）。retro の mod（/review-retro）とは別
+  - id: metrics-update-ja
+    prompt: code-review の計測結果を更新して、関連する issue に結果をコメントしたい
+    expected_skill: code-review:metrics-update
+    k: 3
   # review-guide の起動（PR を理解するための読み順）
   - id: review-guide-ja
     prompt: この PR を後から理解したいので読み順を教えて
