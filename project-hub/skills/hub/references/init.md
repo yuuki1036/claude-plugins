@@ -1,0 +1,16 @@
+## init `<PJ>`
+
+1. `hub.py projects` で同名の PJ が無いことを確かめる。あれば init せず、その行が `repo_hub: true` なら別の名前を付けるよう伝える（takeover も reopen も案内しない。通常の PJ を作るつもりで repo hub を引き継がない）。それ以外は active なら `takeover`、closed なら `reopen` を案内して終える。PJ を定義せずに repo 全体を束ねたいと言われたら、init ではなく下の `repo` を案内する
+2. 設定を決める。利用者の言葉と環境から埋め、埋まらないものだけを 1 つずつ聞く:
+   - tracker: `github`（`--tracker-repo <owner/name>`。cwd の repo なら `gh repo view --json nameWithOwner`）か `linear`（`--tracker-team` / `--tracker-project`）か `local`（issue-workflow の local backend。`--tracker-dir <{DATA_DIR}/<slug>>`。repo の `.claude/indie/<slug>/` で、cwd が worktree ならメインのチェックアウト側のパス。slug が 1 つだけならそれ、複数なら利用者に聞く）。任意で `--milestone`（github / linear。linear の repo hub との重なりは project で決まり、milestone では範囲を切れない）
+   - repos: `--repo <path>[=<base>]`（複数可）。既定は cwd の repo の toplevel。base を省くと `origin/HEAD` が指すブランチ（無ければ `origin/main` → `origin/master`）。どれも無ければ止まるので、利用者に base を聞いて `=<base>` で渡す。repo に実在しない base は弾かれる
+   - 前置き・締め（`--approval-prefix` / `--approval-suffix`）: 送る本文の前後に付ける定型文。言われなければ空でよい（後から config.json で直せる）
+   - トラッカーへの書き込み（`--tracker-write`）: `with_approval`（既定。lead の承認を取って、起票・本文の直しをする。tracker `local` では使えず `never` が既定）/ `never`（hub はトラッカーに書かない）。lead が hub に書かせたくないと言ったときだけ `never` にする。聞かなくてよい（後から `tracker-write` で直せる）
+   - サイドバーのグループ（`--sidebar-group`）: `on`（Desktop の hub の既定。後から sub にしたセッションを hub と一緒に PJ 名のグループにまとめる）/ `off`（CLI の hub の既定。サイドバーを動かさない）。lead がまとめたくないと言ったときだけ `off` にする。聞かなくてよい（後から `sidebar-group` で直せる）
+   - 送る前の承認の方式（`--approval-mode`）: `auto`（既定。「自動の連絡」の範囲は承認なしに送る）/ `number`（4 桁の番号を打ち返す）/ `phrase`（本文を見せた後に lead が「送って」と言えば送る）。lead が送る前に毎回見たいと言ったときだけ `number` か `phrase` にする。聞かなくてよい（後から `mode` で直せる）
+   - living spec（`--living-spec <path>`）: PJ の repo に `.claude/living-specs/*.md` があれば、そのパスを渡す（1 本なら聞かずに、複数なら利用者に聞く）。config の repos のどれかの `.claude/living-specs/` の下に限る（cwd が worktree ならメインのチェックアウト側のパス。worktree の複製を結ぶと、worktree を消したときに切れる）。無ければ渡さない（後から `living-spec` で結べる）
+3. 会話の題（＝ListAgents の名前）が `hub <英語の短い名前>`（例 `hub audit-log`）の形でなければ、その形を 1 つ提案する。lead が良いと言ったら `mcp__ccd_session_mgmt__set_session_title` に `session_id: "self"` と題を渡して付ける（Desktop だけ。ツールが無い・断られたらそのまま進める）。そのうえで ListAgents から自分の名前を取り、`hub.py init --project '<PJ>' --name '<名前>' ...` を実行する。exit 3 なら stdout の `status` で分ける: `tracker_write_local`（tracker `local` に `with_approval`）/ `sidebar_not_desktop`（Desktop でない hub に `on`）→ `reason` を lead に伝え、その引数を外して実行し直す。`already_initialized` / `already_closed`（PJ が init 済み）→ 実行し直さず、`reason` の案内（takeover / reopen）を伝える。`scope_conflict`（同じ repo の repo hub と範囲が重なる）→ 範囲を切るか（github は `--milestone`、linear は `--tracker-project`。local は切れないので別の slug にする）、repo hub で進めるかを lead に聞く。`name_taken`（PJ 名が repo hub と同じ）→ `--project` を変えて実行し直す（takeover しない）
+4. 出力を伝える。`mode_notice`（自動の連絡が有効かと、その止め方）と、`sidebar_notice`（出たとき。サイドバーの表示が変わることと、その止め方）は**必ずそのまま**伝える（lead が知らないまま auto で動かさない・サイドバーを動かさない）:
+   - `gitignored`: `true` は同期の対象から外れている / `false` は `~/.claude` 等の git リポジトリで追跡されうる（`<root>/.gitignore` の中身 `*` を確かめるよう伝える）/ `null` は git の外
+   - `warning`（hub の名前が既定名）: sub は既定名の hub へ通知せず、既定名の hub からの連絡も受けないので、会話の題を付けてから `status` を回すよう頼む（`status` が名前の変化を反映する）
+5. sub は `start <Issue>` で起動できる（Desktop）と伝えて終える。`sidebar_group` が `on` なら、続けて「サイドバーのグループ」の手順を回す（hub 自身をグループに入れる）

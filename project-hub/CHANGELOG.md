@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.18.1] - 2026-11-23
+
+### Changed
+
+- **hub の SKILL.md をサブコマンドの節ごとに分けた**（GitHub issue #447）: 81,085 B あり、Read 1 回で返る範囲（約 42 KB）を status の節がまたいでいた。どのサブコマンドでも要る「hub の役割」「共通」「自動の連絡」だけを SKILL.md に残し、ほかの 19 節（init / repo / status / start / brief / relay / todo / close-sub / サイドバーのグループ / トラッカーへの書き込み / Issue の保守 / tracker-write / sidebar-group / mode / fact / takeover / living-spec / close / reopen）を `skills/hub/references/<節>.md` へ 1 節 1 ファイルで移した（SKILL.md は約 27 KB）。SKILL.md には各節の見出しと「入ったら最初に Read する」の 1 行を残し、冒頭に、本文がほかの節を番号で引くとき（`relay の 2〜6` など）はその節のファイルも読む決まりを書いた。手順の中身は変えていない（移した本文で直したのは、`references/list-agents.md` をプラグインのルートから書く形に揃えたことと、start の節と command 本文が start の手順の置き場所を「SKILL.md」と呼んでいた 2 か所だけ）。hook と state.md が名指しする「自動の連絡」「他のセッションから届いたメッセージ」は SKILL.md に残る
+
 ## [0.18.0] - 2026-11-18
 
 ### Added
