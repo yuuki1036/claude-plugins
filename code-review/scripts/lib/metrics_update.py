@@ -132,8 +132,9 @@ def read_events(path):
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
-            if not line or '"review:completed"' not in line:
-                continue
+            # JSON を読む前に行を減らす近道（空行もここで落ちる）
+            if '"review:completed"' not in line:
+                continue  # mutation-ok: 読み進めても、空行は json.loads が、他の event は下の判定が落とす（違うのは event 名を \u でエスケープした行だけ）
             try:
                 ev = json.loads(line)
             except ValueError:
@@ -230,7 +231,7 @@ def save_state(path, st):
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".metrics-update-", suffix=".json")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(st, f, ensure_ascii=False, indent=2, sort_keys=True)
+            json.dump(st, f, ensure_ascii=False, indent=2, sort_keys=True)  # mutation-ok: 書式だけの違いで、load_state が読み戻す値は同じ
             f.write("\n")
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
@@ -263,7 +264,7 @@ def git_log_since(repo, prev, cur):
     if not (prev and cur):
         return {"reason": "no-previous" if not prev else "no-main", "commits": [], "total": 0}
     if prev == cur:
-        return {"reason": None, "commits": [], "total": 0}
+        return {"reason": None, "commits": [], "total": 0}  # mutation-ok: 外しても下の git log の範囲 prev..prev が空で、同じ値を返す
     if git(repo, "cat-file", "-e", prev + "^{commit}") is None:
         return {"reason": "prev-unreachable", "commits": [], "total": 0}
     out = git(repo, "log", "--format=%h %cs %s", "%s..%s" % (prev, cur), "--", "code-review/")
@@ -378,7 +379,9 @@ def parse_baseline_marker(text):
     if start < 0:
         return {"status": "no-section"}
     end = text.find("\n## ", start + 1)
-    m = BASELINE_RE.search(text[start:end if end >= 0 else len(text)])
+    if end == -1:
+        end = len(text)
+    m = BASELINE_RE.search(text[start:end])
     if not m:
         return {"status": "no-marker"}
     kv = {}

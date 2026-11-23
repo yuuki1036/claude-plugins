@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.169.2] - 2026-11-23
+
+### Changed
+
+- **`metrics-update.sh` と `lib/metrics_update.py` の生存した変異を解消した**（GitHub issue #522）。挙動は変えていない。検証していなかった挙動にテストを足した: 値の無い `--logs` と末尾の `--store`、ログもストアも無い retro、`num` と `median`、`read_events` の読み飛ばし（壊れた JSON・dict でない行・別の event・payload が dict でない行）、状態ファイルの形の誤り・ts の無い回・版別の件数・同じログを 2 回渡した回、`git_info` と `git_log_since` の失敗の理由、比較表の並び順と中央値（0 は残し、負の値は捨てる）と報告件数、`## 15` の印の読み方、`DENY_KEYS` の読み方と `sanitize_diff` の再帰。等価変異の 3 行には理由つきで `# mutation-ok:` を付けた。等価でない変異と同じ行にあった 3 か所は、行を分けるか条件を外して印を要らなくした（`read_events` の空行の判定・`parse_baseline_marker` の節の終わり・`metrics-update.sh` の `LOG_ARGS`。`LOG_ARGS` は空でも `--logs` を付けるようにしたが、python 側は空の `--logs` を `[]` と読むので結果は変わらない）
+
 ## [2.169.1] - 2026-11-22
 
 ### Fixed
