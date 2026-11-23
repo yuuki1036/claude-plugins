@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import importlib.util
 import sys
@@ -3543,6 +3544,53 @@ class SplitSkillTest(unittest.TestCase):
         self.assertLess(text.index(body), text.index("## Phase 5.5: "))
         other = repo / "code-review" / "skills" / "review-guide" / "SKILL.md"
         self.assertEqual(flow_text(other), other.read_text(encoding="utf-8"))
+
+    def _unchained(self) -> None:
+        self.addCleanup(lambda o=v.UNCHAINED_SPLIT_SKILLS: setattr(v, "UNCHAINED_SPLIT_SKILLS", o))
+        v.UNCHAINED_SPLIT_SKILLS = frozenset({self.REL})
+
+    def test_unchained_skill_does_not_need_the_next_line(self):
+        """節を順に踏まない skill（hub のサブコマンド / #447）は, 節のファイルの末尾に「次は」を求めない."""
+        self._skill([("1", "phase-1.md"), ("2", "phase-2.md")])
+        self._phase("1", "末尾は本文のまま")
+        self._phase("2", "**次は Phase 9**")   # 鎖を見ないので, 並びと合わない「次は」も止めない
+        self.assertEqual(len(self._run()), 2)   # 一覧に無ければ, 同じファイルが鎖の error を 2 件出す
+        self._unchained()
+        self.assertEqual(self._run(), [])
+
+    def test_unchained_skill_still_checks_the_rest(self):
+        """鎖だけを外す. 上限・最初の見出し・孤立ファイルの検査は同じに掛ける."""
+        self._unchained()
+        self._skill([("1", "phase-1.md"), ("2", "phase-2.md")])
+        self._phase("1", "本文", head="## Phase 1: 別の名前")
+        self._phase("2", "本文", body="x" * 2_001 + "\n")
+        _write(self.root, f"demo/{self.REF}/note.md", "## メモ\n")
+        errors = self._run()
+        self.assertEqual(len(errors), 3, errors)
+        self.assertIn("最初の見出し「## Phase 1: 別の名前」が SKILL.md の「## Phase 1: 段 1」と違う", errors[0])
+        self.assertIn("phase のファイル", errors[1])
+        self.assertIn("note.md はどの phase の見出しからも Read されない", errors[2])
+
+    def test_hub_heading_regex_takes_every_section_but_the_three_kept(self):
+        """hub の一覧の正規表現は, SKILL.md に残す 3 節を除く `## ` 見出しを節にし, 名前を見出しの語で取る."""
+        rel = "project-hub/skills/hub/SKILL.md"
+        heading_re = next(h for r, h, _l in _load_module().SPLIT_SKILLS if r == rel)
+        self.assertIn(rel, _load_module().UNCHAINED_SPLIT_SKILLS)
+        pat = re.compile(heading_re)
+        for line in ("## hub の役割", "## 共通", "## 自動の連絡（`approval_mode` が `auto` の PJ）", "### status", "# hub"):
+            self.assertIsNone(pat.match(line), line)
+        cases = {
+            "## init `<PJ>`": "init",
+            "## status": "status",
+            "## close-sub `<Issue>`": "close-sub",
+            "## サイドバーのグループ（`sidebar_group` が `on` の PJ）": "サイドバーのグループ",
+            "## Issue の保守（repo hub だけ）": "Issue の保守",
+            "## 共通の追記": "共通の追記",   # 残す節の名前で始まるだけの節は除外しない
+        }
+        for line, name in cases.items():
+            m = pat.match(line)
+            self.assertIsNotNone(m, line)
+            self.assertEqual(m.group("num"), name)
 
     def test_real_repo_has_no_error(self):
         """本物の repo と既定の一覧・上限で error が出ない."""
