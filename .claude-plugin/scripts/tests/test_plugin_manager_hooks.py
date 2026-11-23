@@ -140,13 +140,19 @@ class StaleSkillTest(HookTestCase):
         self.install({"p": "1.0.0"})
         self.assertSilent(self.skill("p:s"))
         self.install({"p": "1.1.0"})
-        self.assertIn("p: 1.0.0 → 1.1.0", self.prompt().stdout)
+        out = self.prompt().stdout
+        self.assertIn("p: 1.0.0 → 1.1.0", out)
+        # skill 単位で記録していれば skill を名指しで知らせる（プラグイン単位の案内に落ちない）
+        self.assertIn("p:s →", out)
 
     def test_skill_does_not_overwrite_read_record(self):
         """Skill の時点の installed は新版でも、Read で記録した旧版を残す（通知漏れを防ぐ）."""
         self.stale_setup()
         self.assertSilent(self.skill("p:s"))
-        self.assertIn("p: 1.0.0 → 1.1.0", self.prompt().stdout)
+        out = self.prompt().stdout
+        self.assertIn("p: 1.0.0 → 1.1.0", out)
+        # skill 単位の旧版も残る（新版で上書きすると skill の名指しが消え、プラグイン単位の案内に落ちる）
+        self.assertIn("p:s →", out)
 
     def test_notifies_only_once_per_version(self):
         self.stale_setup()
@@ -932,6 +938,36 @@ class StaleSkillTest(HookTestCase):
         old = self.fork_setup()
         tp = self.transcript(self.cache / "p" / "1.1.0" / "skills" / "s" / "SKILL.md", old)
         self.assertIn("p: 1.0.0 → 1.1.0", self.fork_start(tp).stdout)
+
+    # 壊れた行・想定外の形の行があっても、例外にせず後ろの行を拾う（GitHub issue #522）。
+    # 壊れた行を最初に置くのは、読み飛ばしを外すと未定義の entry を使って例外になる形を作るため
+
+    def test_desktop_fork_broken_first_line_is_skipped(self):
+        """写された transcript の 1 行目が JSON でなくても、次の行の sessionId で見分ける."""
+        head = ["{broken", json.dumps({"type": "queue-operation", "sessionId": "parent-1"})]
+        tp = self.copied(self.fork_setup(), head_lines=head)
+        res = self.fork_prompt(tp)
+        self.assertIn("p: 1.0.0 → 1.1.0", res.stdout)
+        self.assertNotIn(PY_ERROR, res.stderr)
+
+    def test_fork_null_content_is_skipped(self):
+        """message.content が null の行（前段の字面は通る）は拾わず、例外にもしない."""
+        old = self.fork_setup()
+        null = json.dumps({"type": "assistant", "tool_use": "/plugins/cache/", "message": {"content": None}})
+        self.assertQuiet(self.fork_start(self.transcript(extra_lines=[null])))
+        res = self.fork_start(self.transcript(old, extra_lines=[null]), sid="fork-2")
+        self.assertIn("p: 1.0.0 → 1.1.0", res.stdout)
+        self.assertNotIn(PY_ERROR, res.stderr)
+
+    def test_fork_skill_line_with_odd_blocks(self):
+        """注入行の content に text を持たない dict・dict でない要素が混ざっても、例外にせず text の行を拾う."""
+        old = self.fork_setup()
+        odd = ["/plugins/cache/", {"type": "image", "source": "/plugins/cache/"}, {"type": "text", "text": 1}]
+        line = json.dumps({"type": "user", "isMeta": True, "message": {"content": odd + [
+            {"type": "text", "text": f"Base directory for this skill: {old.parent}\n\n# 手順"}]}})
+        res = self.fork_start(self.transcript(extra_lines=[line]))
+        self.assertIn("p:s →", res.stdout)
+        self.assertNotIn(PY_ERROR, res.stderr)
 
     def test_non_fork_start_does_not_create_state(self):
         """startup の payload の入れ子に `"source": "fork"` があっても、状態ファイルを作らない."""

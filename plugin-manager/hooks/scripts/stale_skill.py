@@ -218,7 +218,7 @@ def adopt_fork_transcript(payload: dict, state: dict) -> bool:
         for line in fh:
             # json.loads は該当しうる行にだけかける（数十 MB の transcript を 5 秒の timeout に収める）
             if "/plugins/cache/" not in line or ('"tool_use"' not in line and SKILL_BASE not in line):  # mutation-ok: 速さのための前段。外しても後段の判定で同じ結果になる
-                continue
+                continue  # mutation-ok: 上の行と同じ前段の読み飛ばし
             try:
                 entry = json.loads(line)
             except ValueError:
@@ -398,7 +398,7 @@ def notify(payload: dict, mode: str, path: Path, state: dict) -> None:
     if changed and not state["plugins"]:
         # 前段（stale-skill.sh）は状態ファイルがあれば python を起動するので、記録の無いファイルを残さない
         # （写された transcript の経路だけは main が残し直す。理由はそちら）
-        path.unlink(missing_ok=True)
+        path.unlink(missing_ok=True)  # mutation-ok: 冒頭の os.utime(path) がファイルの無い回を例外で先に止めるので、ここでは必ずある
         return
     now = int(time.time())
     if rearm:
