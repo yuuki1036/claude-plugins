@@ -2748,7 +2748,7 @@ def render_state(pdir: Path) -> tuple[str, int]:
 
     todos = [t for t in load_todos(pdir) if not t["done"]]
     out += ["", "## hub の残作業", ""]
-    # hub が自分の言葉で書いたものなので本文を載せる（sub の文面をそのまま写さない。SKILL.md の todo）
+    # hub が自分の言葉で書いたものなので本文を載せる（sub の文面をそのまま写さない。hub の skill の todo の節 = skills/hub/references/todo.md）
     out += [f"- {cell(t['id'])} {cell(t['text'], None)}" for t in todos[:TABLE_MAX]] or ["（なし）"]
     out += more_rows(todos, "`hub.py todo`")
     rows_waiting = [(sid, pr) for sid, _, pr, _ in waiting_prs(rows)]

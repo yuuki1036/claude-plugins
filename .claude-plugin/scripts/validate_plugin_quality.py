@@ -85,7 +85,8 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     SKILL.md（SPLIT_SKILLS）の上限と phase の鎖. SKILL.md と phase ファイルが SPLIT_SKILL_MAX_BYTES 以下か /
     phase 見出しごとに Read の行がちょうど 1 本か / Read 先がその skill の references/ に実在し,
     2 つの phase で同じファイルを読んでいないか / ファイルの最初の見出しが SKILL.md の見出しと同じか /
-    末尾の「**次は <phase>**」が SKILL.md の並びの次を指すか（最後は「**ここで終わり**」）/
+    末尾の「**次は <phase>**」が SKILL.md の並びの次を指すか（最後は「**ここで終わり**」。節を順に踏まない
+    UNCHAINED_SPLIT_SKILLS（hub のサブコマンド）はこの鎖を見ない）/
     その skill の references/ の md がどれかの phase の見出しから Read されているか（孤立ファイルは error）.
     Read 1 回で読み切れない SKILL.md は続きを読まずに phase を飛ばした（#350 / #250）. 鎖が表すのは
     既定の並びだけで, skip は次の見出しの入口の条件, 後戻りは本文の分岐で表す（#426）.
@@ -1880,7 +1881,17 @@ SPLIT_SKILLS: tuple[tuple[str, str, str], ...] = (
     ("feature-dev/skills/feature-dev/SKILL.md", r"^## Phase (?P<num>\d+(?:\.\d+)?): ", "Phase {num}"),
     ("code-review/skills/self-review/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
     ("code-review/skills/review/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
+    # 番号の無いサブコマンド・手順の節. SKILL.md に残す 3 節を除く `## ` 見出しがすべて分けた節になる
+    # （残す節を足すなら除外に足す. 足さずに見出しだけ置くと Read の行が無い error になる）
+    (
+        "project-hub/skills/hub/SKILL.md",
+        r"^## (?!hub の役割$|共通$|自動の連絡（)(?P<num>[^（`]+?)\s*(?:[（`]|$)",
+        "{num}",
+    ),
 )
+#: SPLIT_SKILLS のうち, 節を順に踏まない skill（呼ばれたサブコマンドの節だけを読む）. 節のファイルの末尾の
+#: 「次は」を求めない（鎖の検査を外す）. 上限・Read の行・最初の見出し・孤立ファイルの検査は同じに掛ける
+UNCHAINED_SPLIT_SKILLS: frozenset[str] = frozenset({"project-hub/skills/hub/SKILL.md"})
 #: SKILL.md と phase ファイルの上限. Read 1 回で返る範囲の切れ目は実測 42,129 byte（#350 の旧版）と
 #: 42,448 byte（2026-11-05 の版）. token と byte の比は字種で揺れるので切れ目の手前に余白を取り,
 #: 分ける前の 3 分の 1（feature-dev 31 KB / self-review 34 KB）より少し下に置く
@@ -2061,6 +2072,8 @@ def check_split_skills(errors: list[str]) -> None:
                     f"[{tag}] {frel} の最初の見出し「{first}」が SKILL.md の「{heading}」と違う"
                     f"（Read の行の張り替え漏れか, 見出しの直し漏れ）"
                 )
+            if rel in UNCHAINED_SPLIT_SKILLS:
+                continue
             want = phases[i + 1][0] if i + 1 < len(phases) else None
             m = SPLIT_NEXT_RE.match(_last_line(target))
             if m is None:

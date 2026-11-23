@@ -32,6 +32,7 @@ from pathlib import Path
 
 from git_env import scrub
 from hook_harness import TempGitRepo
+from skill_flow import flow_text
 
 ROOT = Path(__file__).resolve().parents[3]
 HUB = ROOT / "project-hub" / "scripts" / "hub.py"
@@ -4146,7 +4147,7 @@ class FollowUpFilingTextTest(unittest.TestCase):
     """
 
     def skill(self) -> str:
-        return (ROOT / "project-hub" / "skills" / "hub" / "SKILL.md").read_text(encoding="utf-8")
+        return flow_text(ROOT / "project-hub" / "skills" / "hub" / "SKILL.md")   # 節ごとに分けた本文を戻す（#447）
 
     def section(self, start: str, end: str) -> str:
         s = self.skill()
@@ -4179,7 +4180,7 @@ class CrossProjectTextTest(unittest.TestCase):
     """別の PJ の重なり・決定を hub の手順に載せる文言契約（ADR-20261029233229 / ADR-20261029233251）."""
 
     def skill(self) -> str:
-        return (ROOT / "project-hub" / "skills" / "hub" / "SKILL.md").read_text(encoding="utf-8")
+        return flow_text(ROOT / "project-hub" / "skills" / "hub" / "SKILL.md")   # 節ごとに分けた本文を戻す（#447）
 
     def test_cross_overlaps_are_not_routine_relays(self):
         s = self.skill()
@@ -5373,7 +5374,7 @@ class RepoHubTextTest(unittest.TestCase):
     """repo hub と reopen を hub の手順に載せる文言契約（ADR-20261102144843 / ADR-20261102144922 / GitHub issue #356）."""
 
     def skill(self) -> str:
-        return (ROOT / "project-hub" / "skills" / "hub" / "SKILL.md").read_text(encoding="utf-8")
+        return flow_text(ROOT / "project-hub" / "skills" / "hub" / "SKILL.md")   # 節ごとに分けた本文を戻す（#447）
 
     def section(self, start: str, end: str) -> str:
         s = self.skill()
