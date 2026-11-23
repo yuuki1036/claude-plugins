@@ -56,8 +56,8 @@ done
 if [ "$LOGS_GIVEN" = "0" ] && review_event_logs; then
   LOGS=("${REVIEW_EVENT_LOGS[@]}")
 fi
-LOG_ARGS=()
-[ ${#LOGS[@]} -gt 0 ] && LOG_ARGS=(--logs "${LOGS[@]}")
+# 空の --logs は argparse の nargs='*' が [] にする。空配列の展開は bash 3.2 の set -u で落ちるので + の形で書く
+LOG_ARGS=(--logs ${LOGS[@]+"${LOGS[@]}"})
 
 REPO=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 
