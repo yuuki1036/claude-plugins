@@ -3,7 +3,7 @@ id: 20261109-split-skill-phases
 title: feature-dev と self-review の SKILL.md を phase ごとに分ける
 status: draft
 phase: current
-last-validated: 2026-11-09
+last-validated: 2026-11-23
 supersedes: []
 superseded-by: null
 issue: "GitHub #426"
@@ -51,7 +51,7 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 **phase ファイルの型**:
 
 - 先頭の見出しは SKILL.md の見出しと同じにする
-- 末尾は `**次は Phase X**`（self-review は `**次は Step X**`）にし、最後の phase だけ `**ここで終わり**` にする。括弧で注記を添えてよい
+- 末尾は `**次は Phase X**`（self-review は `**次は Step X**`）にし、最後の phase だけ `**ここで終わり**` にする。括弧で注記を添えてよい。節を順に踏まない skill（`UNCHAINED_SPLIT_SKILLS`。今は hub だけ）は末尾の「次は」を置かない
 - 鎖が表すのは既定の並び（線形）だけにする。skip は次の見出しの入口の条件で表し、後戻り（Fix Mode・5.3 が赤・5.5 が fail・doc-sync）は本文の分岐で表す
 
 **検査**（`validate_plugin_quality.py`）: 一覧 `SPLIT_SKILLS` に、SKILL.md・phase 見出しの正規表現・次の名前の書式を並べ、`check_split_skills` で次のどれかに当たれば `[split-skill]` の error にする。
@@ -61,7 +61,7 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 - Read 先が、その skill の `references/` の外にあるか、実在しない
 - 2 つの phase が同じファイルを Read している
 - ファイルの最初の見出しが SKILL.md の見出しと違う
-- 末尾の「次は」が、SKILL.md の並びの次と一致しない
+- 末尾の「次は」が、SKILL.md の並びの次と一致しない（`UNCHAINED_SPLIT_SKILLS` の skill は見ない）
 - その skill の `references/` に、どの見出しからも Read されない md がある（他の検査に渡す phase ファイルの集合は Read 先から作る）
 
 あわせて次のように直す:
@@ -100,12 +100,14 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 - [local] self-review は `step-<番号>.md` を 19 本作り、入口の条件を SKILL.md に上げず、スキップの条件は Step ファイルで判定する（Step の見出しが条件を括弧書きで持ち、前の Step の値だけで決まる条件が少ないため / 2026-11-09）
 - [local] self-review の SSoT pin（orchestration-guide `0`・`3.5`、orchestration-measurement `16`、scoring-guide の報告閾値の節）は、要約している本文と一緒に Step 3・4・5・6・6.4 のファイルへ移す。COMMENT-POLISH マーカーの検査は phase ファイルを含めた本文で数える
 - [local] review（84 KB）も self-review と同じ形で `step-<番号>.md` を 17 本作り、`SPLIT_SKILLS` に足した（GitHub #447 / 2026-11-19）。5.5〜5.9 は self-review の 4.5〜4.9 と同じく実行の順（5.5 → 5.8 → 5.6 + 5.9 → 5.7）に並べた。Step 3 の `#### 3.0`〜`3.4` は Step 3 のファイルにまとめ、レポートの定型と締めフローを持つ Step 7 は分けずに 1 ファイルにした（22 KB で上限に収まり、7 の中に `###` の見出しが無い）。SSoT pin は要約している Step 1・4・5・6・7 のファイルへ移した
+- [local] project-hub の hub（81 KB）も分けた（GitHub #447 / 2026-11-23）。#447 は「段の区切りがはっきりしない skill（段を順に踏まない作り）は、分けない理由を残す」としていたが、hub は段を順に踏まない一方で、節の区切り（サブコマンドの見出し）ははっきりしており、呼ばれたサブコマンドの節しか使わないので、使わない節の本文を毎回読ませない分割の効き目がむしろ大きい。そこで分けない側には入れず、どのサブコマンドでも要る「hub の役割」「共通」「自動の連絡」を SKILL.md に残して、ほかの 19 節を 1 節 1 ファイル（`skills/hub/references/<節>.md`）にした。並びに意味が無いので末尾の「次は」は置かず、`UNCHAINED_SPLIT_SKILLS` に載せて鎖の検査だけを外した（上限・Read の行・最初の見出し・孤立ファイルの検査は掛かる）。本文がほかの節を番号で引くときは、その節のファイルも読むよう SKILL.md の冒頭に書いた。残りの skill も、区切りがはっきりしていれば順に踏むかどうかに関わらず分けられる
 - [→ADR候補] 大きい SKILL.md は phase ごとに references へ分け、`SPLIT_SKILLS` に載せて上限と鎖を強制する（他の skill を分けるときもこの形に揃える）
 
 ## 未解決事項 (open)
 
 - 残りの大きい SKILL.md（42 KB 超の 7 本）を分けるか。(a) 1 本ずつ分けて `SPLIT_SKILLS` に足す: 読み切れない問題が消えるが作業量が大きい / (b) 上限だけ緩く全体に掛ける: 分けなくても通る。方向性は (a)。確定タイミング: #426 の 2 本目のマージ後に follow-up の Issue で決める
   - 2026-11-19: follow-up は GitHub #447。(a) で 1 本ずつ別の PR にして進め、1 本目の review は分けた（設計判断ログの review の行）。残りの 6 本は #447 で 1 本ずつ決める
+  - 2026-11-23: 2 本目の hub を分けた（設計判断ログの hub の行）。残りは 5 本
 
 ## 実装ブリッジ (Implementation Bridge)
 

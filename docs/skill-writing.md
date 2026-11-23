@@ -33,7 +33,7 @@ SKILL.md の内容は「エージェントがどれだけ即時に必要とす�
 
 **押し出しの判定は branch**: 全 branch が必要とするものは inline、一部の branch しか到達しないものは references へ。押し出しすぎると必要な材料が隠れ、押し出さないと SKILL.md が肥大する — この緊張が判断のすべて。押し出すべき reference を inline に残すと step が埋もれ、注意が向くかどうかが回ごとにばらつく（読みやすさだけでなく、ばらつきの問題）。規模の目安（100 行未満は既存 skill へ追記 / 500 行以上は references 分割）は `component-addition-advisor` の表が正本。本文 500 行以上は `validate_plugin_quality.py` が warning を出す。
 
-**phase ごとに分ける**: 全 phase を順に通す大きい skill（feature-dev・self-review・review）は、Read 1 回（約 42 KB で切れる）で読み切れないと、続きを読まずに後ろの phase を飛ばす（#350）。phase ごとの本文を `skills/<skill>/references/` の 1 ファイルずつに分け、SKILL.md には、全 phase に効く節（適用範囲・原則など）と、phase の見出し・入口の条件・「入ったら最初に X を Read する」の 1 行を残す（入口の条件は前の phase の値だけで決まるものに限って上げる。self-review は上げず Step ファイルで判定する）。各 phase ファイルは SKILL.md と同じ見出しで始め、末尾の「**次は <phase>**」（最後は「**ここで終わり**」）で SKILL.md の並びに戻す。実行の順が番号の順と違う phase は、SKILL.md の見出しを実行の順に並べ、そう並べたことを 1 行添える（鎖は SKILL.md の並びを辿るので、番号の順に並べると先に読ませたい phase を飛ばす。self-review の 4.5 → 4.8 → 4.6 + 4.9 → 4.7、review の 5.5 → 5.8 → 5.6 + 5.9 → 5.7）。分けた skill は `validate_plugin_quality.py` の `SPLIT_SKILLS` に載せ、上限（30,000 B）と phase の鎖（見出し・Read の行・ファイル・末尾の次）と、どこからも Read されない references/ の md が無いことを error で守る（#426）。分けても後続の見出しは隠れない（下の premature completion）ので、目的は読み切らせることと、各 phase の始めに本文を読ませることに限る。
+**phase ごとに分ける**: 全 phase を順に通す大きい skill（feature-dev・self-review・review）は、Read 1 回（約 42 KB で切れる）で読み切れないと、続きを読まずに後ろの phase を飛ばす（#350）。phase ごとの本文を `skills/<skill>/references/` の 1 ファイルずつに分け、SKILL.md には、全 phase に効く節（適用範囲・原則など）と、phase の見出し・入口の条件・「入ったら最初に X を Read する」の 1 行を残す（入口の条件は前の phase の値だけで決まるものに限って上げる。self-review は上げず Step ファイルで判定する）。各 phase ファイルは SKILL.md と同じ見出しで始め、末尾の「**次は <phase>**」（最後は「**ここで終わり**」）で SKILL.md の並びに戻す。実行の順が番号の順と違う phase は、SKILL.md の見出しを実行の順に並べ、そう並べたことを 1 行添える（鎖は SKILL.md の並びを辿るので、番号の順に並べると先に読ませたい phase を飛ばす。self-review の 4.5 → 4.8 → 4.6 + 4.9 → 4.7、review の 5.5 → 5.8 → 5.6 + 5.9 → 5.7）。分けた skill は `validate_plugin_quality.py` の `SPLIT_SKILLS` に載せ、上限（30,000 B）と phase の鎖（見出し・Read の行・ファイル・末尾の次）と、どこからも Read されない references/ の md が無いことを error で守る（#426）。分けても後続の見出しは隠れない（下の premature completion）ので、目的は読み切らせることと、各 phase の始めに本文を読ませることに限る。段を順に踏まず、呼ばれたサブコマンドの節だけを使う skill（project-hub の hub）も同じ形で分ける。どのサブコマンドでも要る節だけを SKILL.md に残し、ほかの節を 1 節 1 ファイルにする。並びに意味が無いので末尾の「次は」は置かず、`SPLIT_SKILLS` に載せたうえで `UNCHAINED_SPLIT_SKILLS` にも載せて鎖の検査だけを外す。本文がほかの節を番号で引く（`relay の 2〜6` など）ときはその節のファイルも読むよう、SKILL.md の冒頭に書く（#447）。
 
 **co-location**: 1 つの概念の定義・規則・注意は 1 つの見出しの下にまとめる。duplication（同じ意味を 2 か所に書く）とは別の問題で、こちらは 1 つの意味を複数の場所に散らすこと。大きな SKILL.md（feature-dev・code-review 系）をレビューするときの観点にもなる。
 
@@ -79,7 +79,7 @@ Opus 5 世代で逆効果になる足場 3 種（委譲促進 / 自己ダブル�
 | description に `トリガー:` が存在 | `validate_plugin_quality.py` | error |
 | description 単体 600 字 / 合計 15,000 字 | 同上（context-budget）。**数えるのは常駐する側**＝ commands 全部と、同名 command を持たない skill | warning |
 | SKILL.md 本文 500 行以上 | 同上（skill-size） | warning |
-| phase ごとに分けた SKILL.md（`SPLIT_SKILLS`）の上限 30,000 B・phase の鎖・孤立ファイル | 同上（split-skill） | error |
+| phase ごとに分けた SKILL.md（`SPLIT_SKILLS`）の上限 30,000 B・phase の鎖（`UNCHAINED_SPLIT_SKILLS` は見ない）・孤立ファイル | 同上（split-skill） | error |
 | 分けた skill で、別のファイルが pin している正本の節を引くのに、その pin を持たないファイル | 同上（split-skill-pin。字面で判定するので、指しているだけの参照にも出る。置くかの判定は `docs/ssot-pin.md`） | warning |
 | 同名・別名ペアの command 本文に、対の SKILL.md を Read する誘導がある | 同上（skill-hop-cmd。独自の手順を持つ command は `ALIAS_COMMANDS_WITH_OWN_PROCEDURE` で外す） | error |
 | トリガーフレーズ → 期待スキル起動の回帰 | `evals/runner.py`（pass^k=3） | 手動実行 |
