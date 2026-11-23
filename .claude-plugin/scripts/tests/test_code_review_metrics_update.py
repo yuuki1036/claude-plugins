@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -527,6 +528,196 @@ class RetroParityTest(unittest.TestCase):
                 self.assertEqual(ns["gen_of"](p), mu.gen_of(p))
                 self.assertEqual(ns["is_rereview"](p), mu.is_rereview(p))
                 self.assertEqual(ns["scope_mode_of"](p), mu.scope_mode_of(p))
+
+
+class WrapperArgsTest(Env):
+    """metrics-update.sh の引数の境界（GitHub issue #522）。`--state` を後ろに足さずに叩く（末尾の引数を見るため）."""
+
+    def run_raw(self, *args):
+        return subprocess.run(["bash", str(WRAPPER), *args], cwd=self.repo, env=self.env,
+                              capture_output=True, text=True)
+
+    def test_logs_without_paths_is_fatal(self):
+        for args in (("--logs",), ("--logs", "--no-store")):
+            with self.subTest(args=args):
+                r = self.run_raw(*args)
+                self.assertEqual(r.returncode, 2, r.stderr)
+                self.assertIn("--logs にパスが必要", r.stderr)
+
+    def test_store_as_the_last_pair_is_accepted(self):
+        store = self.store({"m1": [ev("2026-11-01T00:00:00Z", payload())]})
+        r = self.run_raw("--json", "--store", str(store))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["scope"]["n"], 1)
+
+    def test_store_without_value_is_fatal(self):
+        r = self.run_raw("--store")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--store に値が必要", r.stderr)
+
+    def test_retro_without_any_source_does_not_pass_an_empty_logs(self):
+        r = self.run_raw("retro", "--no-store")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("--logs にパスが必要", r.stderr)
+
+
+class SmallFunctionsTest(unittest.TestCase):
+    def test_num_takes_only_real_numbers(self):
+        self.assertEqual((mu.num(3), mu.num(2.5), mu.num(0)), (3, 2.5, 0))
+        for v in (True, False, "3", None, [1]):
+            with self.subTest(v=v):
+                self.assertIsNone(mu.num(v))
+
+    def test_median_of_odd_and_even_lengths(self):
+        self.assertEqual(mu.median([3, 1, 2]), 2)
+        self.assertEqual(mu.median([4, 1, 3, 2]), 2.5)
+        self.assertIsNone(mu.median([]))
+
+    def test_state_display_shows_only_the_default_path(self):
+        self.assertEqual(mu.state_display(mu.DEFAULT_STATE), "~/.claude/code-review/metrics-update-state.json")
+        self.assertEqual(mu.state_display("/elsewhere/state.json"), "--state のファイル")
+
+    def test_store_files_without_events_dir_is_empty(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(mu.store_files(d), [])
+
+
+class ReadEventsTest(unittest.TestCase):
+    def test_only_review_completed_dicts_with_dict_payload_are_read(self):
+        lines = [
+            '{"event": "review:completed", "ts": ',                          # 壊れた JSON（先頭）
+            json.dumps(ev("2026-11-01T00:00:00Z", payload())),
+            '{"event": "review:completed", "payload": ',                     # 壊れた JSON（有効な行の後）
+            json.dumps(["review:completed"]),                                # dict でない
+            json.dumps({"event": "x", "note": "review:completed", "payload": {}}),  # 別の event
+            json.dumps({"event": "review:completed", "payload": "x"}),     # payload が dict でない
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "e.jsonl"
+            f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            evs = mu.read_events(str(f))
+        self.assertEqual([e["ts"] for e in evs], ["2026-11-01T00:00:00Z"])
+
+
+class GitTest(Env):
+    def call(self, fn, *args):
+        env = dict(self.env, GIT_CEILING_DIRECTORIES=str(self.tmp))
+        with unittest.mock.patch.dict(os.environ, env, clear=True):
+            return fn(*args)
+
+    def test_git_info(self):
+        sha = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.call(mu.git_info, str(self.repo)),
+                         {"present": True, "main_commit": sha, "ref": "main"})
+        plain = self.tmp / "plain"
+        plain.mkdir()
+        self.assertEqual(self.call(mu.git_info, str(plain)), {"present": False, "main_commit": None, "ref": None})
+        self.git("branch", "-m", "main", "other")
+        self.assertEqual(self.call(mu.git_info, str(self.repo)), {"present": True, "main_commit": None, "ref": None})
+
+    def test_git_log_since_failure_reasons(self):
+        sha = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.call(mu.git_log_since, str(self.repo), "1" * 40, sha)["reason"], "prev-unreachable")
+        self.assertEqual(self.call(mu.git_log_since, str(self.repo), sha, "0" * 40)["reason"], "log-failed")
+
+
+class StateMoreTest(Env):
+    def test_wrong_shape_state_names_the_shape(self):
+        for st in ([1], {"schema_version": 99}):
+            with self.subTest(st=st):
+                self.state.write_text(json.dumps(st), encoding="utf-8")
+                r = self.run_cli()
+                self.assertEqual(r.returncode, 2)
+                self.assertIn("状態ファイルの形が違う", r.stderr)
+
+    def test_rows_without_ts_are_not_recorded_as_the_machine_latest(self):
+        store = self.store({"m1": [ev("", payload())]})
+        r = self.run_cli("--store", str(store), "--record")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["last_ts_by_machine"], {})
+
+    def test_new_rows_are_counted_by_version(self):
+        store = self.store({"m1": [ev("2026-11-01T00:00:00Z", payload())]})
+        self.assertEqual(self.run_cli("--store", str(store), "--record").returncode, 0)
+        self.store({"m1": [ev("2026-11-01T00:00:00Z", payload()),
+                           ev("2026-11-02T00:00:00Z", payload()),
+                           ev("2026-11-03T00:00:00Z", payload(plugin_version=None))]})
+        sp = self.run_json("--store", str(store))["since_previous"]
+        self.assertEqual(sp["by_version"], {"2.168.0": 1, "未記録": 1})
+
+    def test_same_log_given_twice_is_read_once(self):
+        log = write_jsonl(self.tmp / "e.jsonl", [ev("2026-11-01T00:00:00Z", payload())])
+        sc = self.run_json("--no-store", "--logs", str(log), str(log))["scope"]
+        self.assertEqual((sc["n"], sc["dedup_dropped"]), (1, 0))
+
+
+class ComparisonMoreTest(unittest.TestCase):
+    rows = staticmethod(ComparisonTest.rows)
+
+    def test_split_version_boundary_is_inclusive(self):
+        cp = mu.comparison(self.rows(payload(plugin_version="2.158.0")), split="2.158.0")
+        self.assertEqual(cp["rows"][0]["version_group"], "2.158.0 以上")
+
+    def test_rows_are_sorted_by_key(self):
+        cp = mu.comparison(self.rows(payload(), payload(models={"main": "claude-opus-4-8"})))
+        self.assertEqual([r["generation"] for r in cp["rows"]], ["opus-4-8", "opus-5-5"])
+
+    def test_medians_keep_zero_and_drop_negative(self):
+        for vals, want in (((0, 4, 5), 4), ((-1, 4, 5), 4.5)):
+            with self.subTest(vals=vals):
+                r = mu.comparison(self.rows(*[payload(duration_fleet_min=v) for v in vals]))["rows"][0]
+                self.assertEqual(r["fleet_min"], want)
+                r = mu.comparison(self.rows(*[payload(dispatch={"max_inter_wave_sec": v * 30})
+                                              for v in vals]))["rows"][0]
+                self.assertEqual(r["max_inter_wave_sec"], want * 30)
+
+    def test_reported_skips_a_run_missing_one_count(self):
+        p = payload()
+        p.pop("major_count")
+        r = mu.comparison(self.rows(p, payload()))["rows"][0]
+        self.assertEqual((r["reported_n"], r["reported"]), (1, 3))
+
+
+class BaselineMoreTest(unittest.TestCase):
+    def test_section_at_the_very_start_is_found(self):
+        m = mu.parse_baseline_marker("\n## 15. a\n<!-- METRICS-BASELINE: generation=g taken=2026-01-01 -->\n")
+        self.assertEqual(m["status"], "ok")
+
+    def test_malformed_tokens(self):
+        for body in ("generation=g taken=2026-01-01 extra=", "generation=g taken=2026-01-01 junk",
+                     "taken=2026-01-01"):
+            with self.subTest(body=body):
+                m = mu.parse_baseline_marker("x\n## 15. a\n<!-- METRICS-BASELINE: %s -->\n" % body)
+                self.assertEqual(m["status"], "malformed")
+
+    def test_due_is_none_without_a_marker(self):
+        marker = {"status": "no-marker"}
+        self.assertEqual(mu.baseline_due([], marker), {"marker": marker, "due": None})
+
+
+class DenyKeysAndDiffTest(unittest.TestCase):
+    def deny(self, src):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "bin").mkdir()
+            (Path(d) / "bin" / "sanitize.py").write_text(src, encoding="utf-8")
+            return mu.deny_keys(d)
+
+    def test_deny_keys_reads_only_the_deny_keys_assignment(self):
+        self.assertEqual(self.deny("import os\nALLOW = {'pr'}\nDENY_KEYS = {'base'}\n"), frozenset({"base"}))
+        self.assertEqual(self.deny("DENY_KEYS = frozenset({'pr'})\n"), frozenset({"pr"}))
+
+    def test_deny_keys_rejects_non_string_collections(self):
+        for src in ("DENY_KEYS = 'pr'\n", "DENY_KEYS = frozenset({'pr', 1})\n"):
+            with self.subTest(src=src):
+                self.assertEqual(self.deny(src), frozenset())
+
+    def test_sanitize_diff_skips_rewritten_keys_only_at_top(self):
+        d = mu.sanitize_diff({"machine_id": "h", "x": {"machine_id": "h"}}, {"x": {}}, frozenset())
+        self.assertEqual(d["keys"], ["x.machine_id"])
+
+    def test_sanitize_diff_does_not_descend_into_mismatched_types(self):
+        d = mu.sanitize_diff({"a": {"b": 1}}, {"a": "other"}, frozenset())
+        self.assertEqual(d["keys"], [])
 
 
 if __name__ == "__main__":
