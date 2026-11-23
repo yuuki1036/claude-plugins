@@ -76,6 +76,18 @@ case "$RC" in
   1) add "$OUT" ;;
   *) UNKNOWN=1; add "[machine-layer] 品質検査が判定不能（exit ${RC}）:"$'\n'"$OUT" ;;
 esac
+# **計測ストアの語彙の足し忘れは warning（exit 0）で出る**ので、rc だけ見ていると捨てられ、
+# Stop hook にも self-review 前段にも届かない（#478）。exit 0 の回に `[metrics-vocab]` の行だけを拾う
+# （語彙を読めず照合を飛ばした通知も同じ前置きで出るので一緒に拾う。どちらも計測ストア側で直す）。
+# 要対応の warning を節ごと拾わないのは、ほかの要対応 warning まで毎回出すと
+# 「⚠️ が出たときだけ行動する」契約を崩しうるため（2026-11-23 決定）。
+# exit 1 の回は出力を丸ごと載せているので、拾い直すと同じ行が 2 回出る
+if [ "$RC" -eq 0 ]; then
+  VOCAB="$(printf '%s' "$OUT" | grep -F '[metrics-vocab]' || true)"
+  if [ -n "$VOCAB" ]; then
+    add "$VOCAB"
+  fi
+fi
 
 # 3. 回帰テスト（検証スクリプト自身 + 同梱スクリプトの CLI テスト + hook テスト）。
 #    **起動は run-tests.py に寄せる**: テストが起動したプロセスの残留をそこで回収する

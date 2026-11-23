@@ -185,6 +185,14 @@ if [ "$quality_rc" != "0" ]; then
   echo "  validate_plugin_quality.py の errors を解消してください"
   exit 1
 fi
+# 計測ストアの語彙の足し忘れ（warning なので exit 0 で来る）だけは表示する。止めはしない —
+# 語彙はこの repo の外（計測ストア）で足すもので、commit を止めても直せない（#478 / 2026-11-23 決定）
+vocab_out=$(printf '%s\n' "$quality_out" | grep -F '[metrics-vocab]' || true)
+if [ -n "$vocab_out" ]; then
+  echo ""
+  echo "  計測ストアの語彙の検査（metrics-vocab）の warning（commit は止めない。直すのは計測ストア側）:"
+  printf '%s\n' "$vocab_out"
+fi
 
 # **回帰テストはここでは回さない**（2026-11-08 決定 / GitHub issue #436）。CI の validate が
 # ubuntu と macOS の両方で回す。main は PR 必須なので、テストが落ちる変更はマージ前に CI が止める。
