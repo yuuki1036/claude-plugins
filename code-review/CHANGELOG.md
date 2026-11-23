@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.169.3] - 2026-11-23
+
+### Changed
+
+- **orchestration-measurement.md の `## 18` に、metrics-vocab の warning が Stop hook と pre-commit にも出るようになったことを書いた**（GitHub issue #478）。repo 直下の `machine-layer.sh` が errors の無い回も `[metrics-vocab]` の行を拾って検出に載せ、pre-commit は表示だけして commit を止めない。これまでは「Stop hook と pre-commit は errors が無い回の warning を表示しない」と書いていた
+
 ## [2.169.2] - 2026-11-23
 
 ### Changed

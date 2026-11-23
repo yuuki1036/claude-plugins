@@ -265,6 +265,42 @@ class MachineLayerTest(unittest.TestCase):
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("残っている", res.stdout)
 
+    VOCAB_LINE = ("  - [metrics-vocab] 計測ストアの invocation.parent に無い名前 1 件"
+                  "（publish 後に other へ置き換わる）: demo:skill")
+
+    def write_quality_warnings(self, *lines: str, code: int = 0) -> None:
+        """要対応の warning を stderr に出す品質検査の stub（本物の `_print_warnings` と同じ節の形）."""
+        body = ["Plugin quality warnings (非ブロッキング / 要対応):", ""] + list(lines)
+        body += ["", "Plugin quality validation passed (1 plugins, %d warning(s))" % len(lines)]
+        self.write_stub("validate_plugin_quality.py",
+                        "import sys\nprint(%r, file=sys.stderr)\nsys.exit(%d)\n"
+                        % ("\n".join(body), code))
+
+    def test_a_metrics_vocab_warning_is_not_swallowed(self):
+        """語彙の足し忘れの warning は **rc=0 でも捨てない**（#478）.
+
+        rc だけ見ていると Stop hook にも self-review 前段にも届かない。
+        """
+        self.write_quality_warnings(self.VOCAB_LINE)
+        res = self.run_layer(args=("--no-tests",))
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("[metrics-vocab]", res.stdout)
+        self.assertIn("demo:skill", res.stdout)
+
+    def test_other_actionable_warnings_stay_silent(self):
+        """拾うのは `[metrics-vocab]` の行だけ。ほかの要対応 warning では緑のまま黙る（2026-11-23 決定）."""
+        self.write_quality_warnings("  - [agent-effort] demo/agents/a.md: effort が無い")
+        res = self.run_layer(args=("--no-tests",))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(res.stdout, "")
+
+    def test_a_metrics_vocab_warning_is_not_doubled_on_failure(self):
+        """exit 1 の回は出力を丸ごと載せるので、語彙の行を拾い直して 2 回出さない."""
+        self.write_quality_warnings(self.VOCAB_LINE, code=1)
+        res = self.run_layer(args=("--no-tests",))
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertEqual(res.stdout.count("[metrics-vocab]"), 1, res.stdout)
+
     def test_missing_python_exits_2_not_0(self):
         """**「判定不能」を「通過」に倒さない.**
 

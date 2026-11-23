@@ -211,6 +211,27 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(res.returncode, 1)
         self.assertIn("validate_plugin_quality.py の errors", res.stdout)
 
+    def test_a_metrics_vocab_warning_is_shown_but_does_not_block(self):
+        """語彙の足し忘れは表示するが止めない（#478。語彙はこの repo の外で足す）."""
+        self.stage("src/note.txt")
+        self.write(".claude-plugin/scripts/validate_plugin_quality.py",
+                   "import sys\n"
+                   "print('  - [metrics-vocab] 計測ストアの invocation.parent に無い名前 1 件: demo:skill',"
+                   " file=sys.stderr)\n"
+                   "print('  - [agent-effort] demo/agents/a.md: effort が無い', file=sys.stderr)\n"
+                   "sys.exit(0)\n")
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("demo:skill", res.stdout)
+        self.assertIn("commit は止めない", res.stdout)
+        self.assertNotIn("[agent-effort]", res.stdout, "拾うのは metrics-vocab の行だけ")
+
+    def test_no_vocab_notice_without_a_metrics_vocab_warning(self):
+        self.stage("src/note.txt")
+        res = self.run_hook()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertNotIn("metrics-vocab", res.stdout)
+
     # ---- plugin eval の鮮度 ---------------------------------------------------
     def test_an_eval_input_change_without_a_matching_eval_blocks(self):
         """スキル本文を変えたのに、その内容で `claude plugin eval` を回していない."""
