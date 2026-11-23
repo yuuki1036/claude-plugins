@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.4] - 2026-11-23
+
+### Changed
+
+- **stale-skill の回帰テストを足し、nightly の変異テストで生存した 6 件を解消した**（GitHub issue #522）。挙動は変えていない。4 件はテストで検知する: Skill で呼んだ skill を skill 単位で記録し、Read で記録した旧版を上書きしないこと（通知が skill を名指しすること）/ 写された transcript の 1 行目が JSON でなくても次の行の `sessionId` で見分けること / `message.content` が null の行 / 注入行の content に `text` を持たない要素が混ざる行で例外にならないこと。残る 2 件は等価変異なので、理由を書いた `# mutation-ok:` で外した: transcript の前段の読み飛ばし（外しても後段の判定で同じ結果になる）と、記録の無い状態ファイルを消す `unlink` の `missing_ok`（同じ関数の冒頭の `os.utime` が、ファイルの無い回を例外で先に止める）
+
 ## [1.11.3] - 2026-11-21
 
 ### Fixed
