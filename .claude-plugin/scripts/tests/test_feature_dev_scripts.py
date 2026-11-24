@@ -389,7 +389,7 @@ class SummaryReadingGuideTest(unittest.TestCase):
         self.assertEqual(len(sentences), 2, f"base 付き・base なしの呼び方を拾えていない: {sentences}")
         for sentence in sentences:
             self.assertIn("`--hide-guide`", sentence, f"表示しない回に --hide-guide を渡さない呼び方がある: {sentence}")
-        guide = self.GUIDE.read_text()
+        guide = flow_text(self.GUIDE)  # 分けた SKILL.md は Step の本文を差し込んで読む（#447）
         self.assertIn("`HIDE_GUIDE`（1 なら `WALKTHROUGH` も 1 にする）", guide, "--hide-guide が WALKTHROUGH を立てない")
         self.assertIn("省くのは**表示とターンの区切りだけ**", guide, "--hide-guide が工程を省いてよいことになっている")
         self.assertIn("1.〜4. はすべて同じに行い", guide, "--hide-guide の回に精読の読解・答え・修正を省いてよいことになっている")

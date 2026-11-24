@@ -4,7 +4,7 @@
 読み合わせは難点とレビュー観点を作った本人がその場で答えるので、手元で決まらない問いまで「問題なし」で
 閉じ、読解だけの答えを実行したかのように書き、本命を直しても確かめ方を渡さない回があった
 （recall fixture での再現: 設計書 `.claude/designs/20260916-code-review-review-guide-skill.md` の追記 (g)）。
-手順（SKILL.md Step 6・7）と書式（review-guide-format.md）の両方にその出口があることを見る。
+手順（Step 6・7。分けた SKILL.md は flow_text で 1 本に戻して読む）と書式（review-guide-format.md）の両方にその出口があることを見る。
 締めの契約行（`変異テスト:` / `self-review 以降の変更:` / `次の一手:`）の並びと、変異テストを提案するかの
 判断（「変異テストの提案」の節 / GitHub issue #307）もここで見る。
 
@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+
+from skill_flow import flow_text
 
 REPO = Path(__file__).resolve().parents[3]
 SKILL = REPO / "code-review" / "skills" / "review-guide" / "SKILL.md"
@@ -27,11 +29,11 @@ def between(text: str, start: str, end: str) -> str:
 
 
 def step6() -> str:
-    return between(SKILL.read_text(encoding="utf-8"), "### 6. 精読の解説", "### 7. 読み合わせの締め")
+    return between(flow_text(SKILL), "### 6. 精読の解説", "### 7. 読み合わせの締め")
 
 
 def step7() -> str:
-    return between(SKILL.read_text(encoding="utf-8"), "### 7. 読み合わせの締め", "## Additional Resources")
+    return between(flow_text(SKILL), "### 7. 読み合わせの締め", "## Additional Resources")
 
 
 def explain_template() -> str:
@@ -253,7 +255,7 @@ class ClosingTest(unittest.TestCase):
                       "手元が PR head と違う回に checkout を促す規則が消えた（起点が正しくても別のコードを測る）")
         self.assertIn("merge-base が失敗する", bullet, "手元に PR head のコミットが無い回の扱いが無い")
         self.assertIn("`HEAD` で代えない", bullet, "式が失敗した回に手元の HEAD へ戻る余地が残っている")
-        skill = SKILL.read_text(encoding="utf-8")
+        skill = flow_text(SKILL)
         meta = next((l for l in skill.splitlines() if "gh pr view" in l and "--json" in l), None)
         self.assertIsNotNone(meta, "Step 0 に META を取る行が無い")
         fields = meta.split("--json", 1)[1].split()[0].split(",")
@@ -335,7 +337,7 @@ class ClosingTest(unittest.TestCase):
         done = s7[s7.index("**完了基準**"):]
         self.assertIn("決定的な検証も変異テストも commit も起動していない", done)
         self.assertIn("`変異テスト:` が `提案する` / `不要` / `道具なし` のどれかで始まり", done)
-        skill = SKILL.read_text(encoding="utf-8")
+        skill = flow_text(SKILL)
         cost = between(skill, "## コスト×精度パイプライン設計", "## 実行手順")
         self.assertIn("提案だけで回すのは呼び出し元なので捨てたまま", cost,
                       "原則 8（外部オラクル）の扱いを書いていない")

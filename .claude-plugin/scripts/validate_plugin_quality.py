@@ -81,7 +81,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     UTF-8 ロケールの bash が非 ASCII の 1 バイト目まで変数名に取り込むため, `set -u`
     下では診断を出さず exit 1 する. **C ロケールでは再現しない**ので開発機のシェル設定
     次第で見えなくなる（実測: detect-recent-review.sh の WARN が丸ごと死んでいた / #138）.
-  - split-skill: phase（self-review は Step）ごとに本文を `skills/<skill>/references/` へ分けた
+  - split-skill: phase（self-review・review・review-guide は Step）ごとに本文を `skills/<skill>/references/` へ分けた
     SKILL.md（SPLIT_SKILLS）の上限と phase の鎖. SKILL.md と phase ファイルが SPLIT_SKILL_MAX_BYTES 以下か /
     phase 見出しごとに Read の行がちょうど 1 本か / Read 先がその skill の references/ に実在し,
     2 つの phase で同じファイルを読んでいないか / ファイルの最初の見出しが SKILL.md の見出しと同じか /
@@ -1874,13 +1874,14 @@ def check_skill_body_size(warnings: list[str]) -> None:
             )
 
 
-#: phase（self-review・review は Step）ごとに本文を `skills/<skill>/references/` へ分けた SKILL.md（GitHub issue #426 / #447）.
+#: phase（self-review・review・review-guide は Step）ごとに本文を `skills/<skill>/references/` へ分けた SKILL.md（GitHub issue #426 / #447）.
 #: 一覧に載せることが「分けた skill である」宣言で, 上限と phase の鎖の検査はここから決まる.
 #: (SKILL.md, phase 見出しの正規表現（番号を group "num" に取る）, 末尾の「次は」に書く名前の書式)
 SPLIT_SKILLS: tuple[tuple[str, str, str], ...] = (
     ("feature-dev/skills/feature-dev/SKILL.md", r"^## Phase (?P<num>\d+(?:\.\d+)?): ", "Phase {num}"),
     ("code-review/skills/self-review/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
     ("code-review/skills/review/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
+    ("code-review/skills/review-guide/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
     # 番号の無いサブコマンド・手順の節. SKILL.md に残す 3 節を除く `## ` 見出しがすべて分けた節になる
     # （残す節を足すなら除外に足す. 足さずに見出しだけ置くと Read の行が無い error になる）
     (

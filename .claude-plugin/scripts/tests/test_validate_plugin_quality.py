@@ -3542,7 +3542,7 @@ class SplitSkillTest(unittest.TestCase):
         self.assertEqual(text.count(body), 1)
         self.assertLess(text.index("## Phase 5.3: "), text.index(body))
         self.assertLess(text.index(body), text.index("## Phase 5.5: "))
-        other = repo / "code-review" / "skills" / "review-guide" / "SKILL.md"
+        other = repo / "code-review" / "skills" / "review-triage" / "SKILL.md"
         self.assertEqual(flow_text(other), other.read_text(encoding="utf-8"))
 
     def _unchained(self) -> None:
