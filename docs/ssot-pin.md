@@ -40,6 +40,7 @@ python3 .claude-plugin/scripts/validate_plugin_quality.py --update-ssot-pins
 
 - **新規 pin は hash を手計算しない**。`@00000000` のダミーで宣言し `--update-ssot-pins` で
   確定させる（初期値も検証も同じ切り出しを通るので、これが正規経路）。確定は版上げ（`bump-version.sh`）の**後に**行う。`vNEXT` の解決で正本の節の digest が変わることがある
+- **anchor で引けない見出しがある**。anchor には空白も行内コードも書けない（行内コードは検査が取り除く）。空白の前で切った anchor は、直後が数字なら当たらない（`精読の解説（Step 6 / …）` は `精読の解説（Step` で引けない）。フェンスの中の見出しは見出しに数えない。引けない節を言い換えている消費サイトは、子の見出しで pin するか、anchor を省いて正本のファイル全体を pin する
 - **hash は 8 桁の小文字 hex**。外すと `pin 記法が不正で検証されない` の Critical になる
   （黙って無効化はしない）
 - **pin 宣言はファイル冒頭＝最初の見出しより前**に置く。pin した節の中に pin があると

@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.169.4] - 2026-11-24
+
+### Changed
+
+- **review-guide の SKILL.md（47 KB）を Step ごとに `skills/review-guide/references/step-<番号>.md` の 9 本へ分けた**（GitHub issue #447）。Read 1 回で返る範囲（約 42 KB）をもう超えていて、Step 7 の後半が範囲の外にあったため。SKILL.md には違い・絶対厳守ルール・パイプライン設計・Additional Resources と、各 Step の見出しと Read の 1 行を残し、Step 6 の入口の条件（`WALKTHROUGH=1` の回か、利用者が精読の解説を頼んだ回）を見出しの下に上げた。各 Step ファイルの末尾は次の Step を指し、Step 7 で終わる。Step の本文と番号は変えていない。正本の節を言い換えている Step 0・2〜7 には SSoT pin を置いた（orchestration-guide.md の `## 0`・`## 3.5`・`## 5`、review-guide-format.md の `## 4 項目の書き方`・「レビュー観点（確かめた結果）」「修正」「置き場所」「関連ファイル」「コード」「回し直すかの判断」「変異テストの提案」、見出しで引けない節を言い換えている Step 5・7 には review-guide-format.md の全体、explorer-common.md の「diff の取得」、explorer-prompts.md の「プロンプトの組み立て方」）。Step 5 の末尾には、Step 6 へ同じターンで進む回（`--hide-guide`）と利用者の返信の後に進む回を書き分けた。同名の command（`commands/review-guide.md`）の本文にも、review と同じく、各 Step の手順は Step ごとのファイルにあり Step に入るたびに読む旨を足した
+
 ## [2.169.3] - 2026-11-23
 
 ### Changed
