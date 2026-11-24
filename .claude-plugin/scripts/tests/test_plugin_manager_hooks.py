@@ -179,6 +179,34 @@ class StaleSkillTest(HookTestCase):
         self.prompt()
         self.assertIn("1.0.0 → 1.1.0", self.session_start("compact").stdout)
 
+    def sub_compaction(self, mode: str, sid=SID):
+        event = {"compact": "PostCompact", "session-start": "SessionStart"}[mode]
+        return self.run_hook({"session_id": sid, "hook_event_name": event, "source": "compact",
+                              "agent_id": "a1b2", "agent_type": "Explore"},
+                             env_extra=self.env(), args=(mode,))
+
+    def test_subagent_compaction_is_silent_and_keeps_main_notice(self):
+        """sub の compaction（session_id は main と同じ）では黙り、main の状態にも触らない（GitHub issue #486）."""
+        self.stale_setup()
+        self.prompt()
+        before = self.state_file().read_text()
+        for mode in ("compact", "session-start"):
+            with self.subTest(mode=mode):
+                self.assertQuiet(self.sub_compaction(mode))
+                self.assertEqual(self.state_file().read_text(), before)
+        self.assertIn("1.0.0 → 1.1.0", self.compact().stdout, "main の compaction では今までどおり出す")
+
+    def test_subagent_session_start_does_not_sweep(self):
+        """sub の SessionStart で古い状態ファイルの掃除を走らせない."""
+        self.stale_setup()
+        old = self.state_file("old-sess")
+        old.write_text("{}")
+        os.utime(old, (0, 0))
+        self.assertQuiet(self.sub_compaction("session-start"))
+        self.assertTrue(old.exists())
+        self.session_start("startup")
+        self.assertFalse(old.exists(), "main の SessionStart では消す（前提の確認）")
+
     def test_session_start_resume_notifies_pending(self):
         self.stale_setup()
         self.assertIn("1.0.0 → 1.1.0", self.session_start("resume").stdout)

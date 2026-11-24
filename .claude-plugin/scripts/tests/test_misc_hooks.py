@@ -267,6 +267,25 @@ class FailureJournalInitTest(HookTestCase):
                                 env_extra={"CLAUDE_PROJECT_DIR": str(root)})
             self.assertIn(self.CONCRETE_VALUE, res.stdout)
 
+    # --- subagent の compaction（GitHub issue #486）---
+
+    def test_subagent_compaction_is_silent_and_writes_nothing(self):
+        for event in ("SessionStart", "PostCompact"):
+            with self.subTest(event=event), TempGitRepo() as root:
+                res = self.run_hook({"hook_event_name": event, "source": "compact",
+                                     "agent_id": "a1b2", "agent_type": "Explore"},
+                                    cwd=root, env_extra={"CLAUDE_PROJECT_DIR": str(root)})
+                self.assertSilent(res)
+                self.assertIn(":NotFound] subagent compaction", res.stderr, "agent_id の判定で黙った（ERR trap や後段の判定ではない）")
+                self.assertFalse((root / ".claude" / "failure-journal").exists(),
+                                 "sub の compaction で journal dir を作らない")
+
+    def test_empty_agent_id_still_injects(self):
+        with TempGitRepo() as root:
+            res = self.run_hook({"hook_event_name": "PostCompact", "agent_id": ""}, cwd=root,
+                                env_extra={"CLAUDE_PROJECT_DIR": str(root)})
+            self.assertIn(self.CONCRETE_VALUE, res.stdout)
+
     def test_does_not_truncate_existing_journal(self):
         """**既存の記録を消さない**（消すと失敗履歴が毎セッション消える）."""
         with TempGitRepo() as root:

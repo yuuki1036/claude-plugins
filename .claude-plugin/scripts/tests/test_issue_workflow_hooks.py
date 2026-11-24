@@ -309,6 +309,45 @@ class InjectRulesTest(HookTestCase):
             self.assertIn(f"python3 {script} count", res.stdout)
             self.assertTrue(script.is_file())
 
+    # --- subagent の compaction（GitHub issue #486）---
+
+    def _sub(self, root: Path, event: str, **extra):
+        payload = {"hook_event_name": event, "session_id": "s", **extra}
+        if event == "SessionStart":
+            payload.setdefault("source", "compact")
+        return self.run_hook(payload, cwd=root)
+
+    def _data_root(self):
+        repo = TempGitRepo()
+        root = repo.__enter__()
+        self.addCleanup(repo.__exit__, None, None, None)
+        (root / ".claude" / "indie" / "demo").mkdir(parents=True)
+        return root
+
+    def test_subagent_compaction_is_silent(self):
+        """sub の compaction でも agent_id 付きで走る。main 向けの規約を sub に入れない."""
+        root = self._data_root()
+        for event in ("SessionStart", "PostCompact"):
+            with self.subTest(event=event):
+                res = self._sub(root, event, agent_id="a1b2", agent_type="Explore")
+                self.assertSilent(res)
+                self.assertEqual(res.returncode, 0)
+                self.assertIn(":NotFound] subagent compaction", res.stderr, "agent_id の判定で黙った（ERR trap や後段の判定ではない）")
+
+    def test_main_compaction_still_injects(self):
+        root = self._data_root()
+        self.assertIn("backend: local", self._sub(root, "SessionStart").stdout)
+
+    def test_empty_agent_id_still_injects(self):
+        root = self._data_root()
+        self.assertIn("backend: local", self._sub(root, "SessionStart", agent_id="").stdout)
+
+    def test_agent_id_only_in_text_still_injects(self):
+        """本文に字面として出る agent_id（JSON では \\" にエスケープされる）では黙らない."""
+        root = self._data_root()
+        res = self._sub(root, "SessionStart", compact_summary='"agent_id": "x" を調べた')
+        self.assertIn("backend: local", res.stdout)
+
     def test_worktree_without_a_data_dir_reads_the_main_checkout(self):
         """gitignore された Issue データは worktree に無いので、メインのチェックアウトを見る（GitHub issue #280）."""
         repo = TempGitRepo()

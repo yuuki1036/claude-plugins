@@ -92,6 +92,23 @@ class InjectStateTest(HookTestCase):
         self.assertIn("- 表の本文", res.stdout)
         self.assertIn("増えた journal（kind 別）: なし", res.stdout)
 
+    def test_subagent_compaction_in_the_hub_is_silent(self):
+        """sub の payload の session_id は hub と同じ。agent_id があれば hub の状態を入れない（GitHub issue #486）."""
+        self.make_project(state=self.STATE)
+        for event in ("SessionStart", "PostCompact"):
+            with self.subTest(event=event):
+                payload = {"hook_event_name": event, "source": "compact", "session_id": SID_HUB,
+                           "agent_id": "a1b2", "agent_type": "Explore"}
+                res = self.fire(raw=json.dumps(payload))
+                self.assertQuiet(res)
+                self.assertIn(":NotFound] subagent compaction", res.stderr)
+
+    def test_empty_agent_id_in_the_hub_still_injects(self):
+        self.make_project(state=self.STATE)
+        payload = {"hook_event_name": "SessionStart", "source": "compact", "session_id": SID_HUB,
+                   "agent_id": ""}
+        self.assertIn("- 表の本文", self.fire(raw=json.dumps(payload)).stdout)
+
     def test_a_hub_without_state_md_is_told_to_run_status(self):
         self.make_project(journal=self.JOURNAL)
         res = self.fire()
