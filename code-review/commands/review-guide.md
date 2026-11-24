@@ -11,7 +11,7 @@ allowed-tools:
 argument-hint: "[PR番号 | --base <ref>] [--top N] [--walkthrough] [--hide-guide]"
 ---
 
-**まず `${CLAUDE_PLUGIN_ROOT}/skills/review-guide/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `code-review@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+**まず `${CLAUDE_PLUGIN_ROOT}/skills/review-guide/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `code-review@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。**SKILL.md が持つのは、全 Step に効く節（違い・絶対厳守ルール・パイプライン設計など）と、Step の並び・Read の行だけで、各 Step の手順は `${CLAUDE_PLUGIN_ROOT}/skills/review-guide/references/step-<番号>.md` にある。Step に入るたびに、その見出しの下の Read の行が指すファイルを読んでから進む**（GitHub issue #447）。
 
 review-guide スキルを使用して、対象 PR（または `--base <ref>` のローカル diff）の読み順ガイドをセッションに出力してください。ファイル作成・コメント投稿・push・commit・Issue 起票は行いません。書き込みは base モードの読み順の記録 1 件（SKILL.md Step 5）と、読み合わせ（`--walkthrough` / `--hide-guide` の回か、解説の途中で直すよう言われた回）で入れるコードの修正（SKILL.md Step 6・7。作業ツリーが diff の対象そのものの回だけ）だけです。
 
