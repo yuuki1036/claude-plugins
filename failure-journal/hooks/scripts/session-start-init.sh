@@ -13,6 +13,13 @@ safe_hook_init "failure-journal:session-start-init"
 
 INPUT=$(safe_hook_input)
 
+# subagent が compaction したときも、この hook は agent_id 付きで走る（CC 2.1.323+ / GitHub issue #486）。
+# main 向けの規約を sub の文脈に入れないよう、agent_id があれば黙る（journal ディレクトリも作らない）。
+# payload の文字列値に出る "agent_id" は JSON で `\"` にエスケープされるので当たらない
+if [[ "$INPUT" =~ \"agent_id\"[[:space:]]*:[[:space:]]*\"[^\"]+\" ]]; then
+  safe_hook_error NotFound "subagent compaction"
+fi
+
 # journal ディレクトリと jsonl を用意（無ければ作成）
 # Event Bus 正本（events.jsonl）と基準を揃えるため CLAUDE_PROJECT_DIR を優先
 journal_dir="${CLAUDE_PROJECT_DIR:-$PWD}/.claude/failure-journal"

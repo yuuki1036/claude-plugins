@@ -36,7 +36,7 @@
     {
       "name": "issue-workflow",
       "description": "Issue 管理ワークフロー（旧 linear-workflow / indie-workflow の統合後継）。backend（local / linear）をデータディレクトリから自動判定し、Issue 作成・セッション開始・棚卸し・knowledge 蓄積・課題自動発見（discover）・振り返りまで一貫サポート。issue 作業の全散文成果物に writing-polish 推敲を必須連携。却下記録（kind: rejected）で見送り提案の再提案を discover が概念類似照合で抑止。",
-      "version": "1.19.15",
+      "version": "1.19.16",
       "author": {
         "name": "yuki"
       },
@@ -45,7 +45,7 @@
     {
       "name": "plugin-manager",
       "description": "インストール済みプラグインの一括更新と、ほぼ全部 install しているマーケットプレイスの後発追加プラグイン取りこぼし通知（SessionStart hook）、動いているセッションへの更新通知（読んだ skill より新しい版が入ったら SKILL.md の読み直しを促す）",
-      "version": "1.11.4",
+      "version": "1.11.5",
       "author": {
         "name": "yuki"
       },
@@ -117,7 +117,7 @@
     {
       "name": "failure-journal",
       "description": "再発する失敗を JSON Lines に append し、30日×3回閾値超えのパターンを retro で抽出して AGENTS.md/hook/skill へ還流。retro は transcript を走査して未起票の失敗もサルベージする。SessionStart で journal 初期化、SubagentStart で事実主張の規約を subagent に注入、failure:logged を event bus に publish",
-      "version": "0.11.2",
+      "version": "0.11.3",
       "author": {
         "name": "yuki"
       },
@@ -163,7 +163,7 @@
     {
       "name": "project-hub",
       "description": "1 つの PJ の決定と段取りを 1 つのプラグインで持つ。決定は living spec（repo の .claude/living-specs/。OQ 台帳と Decision log を append-only で持ち、確度ラベル・phase・先送りで収束を追い、maintain が 8 段で検証する）、段取りは hub（1 つのセッションを hub にして、複数の sub で進める PJ の状態をコンテキストの外のファイルで持つ。sub を起動でき、lead の確認が要らない連絡は承認なしに送り、宛先は送る直前に引き直す）。hub のセッションには SessionStart / PostCompact で状態の表を、UserPromptSubmit で未取り込みの知らせを注入する。living spec だけ・hub だけでも使える",
-      "version": "0.18.1",
+      "version": "0.18.2",
       "author": {
         "name": "yuki"
       },

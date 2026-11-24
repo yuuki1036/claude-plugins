@@ -37,7 +37,7 @@ marketplace エントリに `_superseded_by: "<後継名>"` を持つ deprecated
 2. **通知**（UserPromptSubmit・PostCompact・SessionStart の resume / compact / fork）: 記録した版と `installed_plugins.json` の版が違えば、新しい版の SKILL.md のパスと、旧版より新しい CHANGELOG の見出し（最大 5 行）を注入する。読み直したら、新しい版で足された手順のうち今の作業に効くものは利用者に確かめずに済ませ、後から戻しにくい変更だけ聞くよう添える（常設のセッションが自分で追従できるように）
 3. 同じプラグインの同じ新版は 1 回だけ知らせる。compaction の後は通知も会話から消えるので、もう一度出す。新しい版の SKILL.md を Read すれば記録が新しくなり、通知は止まる
 
-黙る条件: このセッションでプラグインのファイルを読んでいない（fork したセッションは、transcript に写った親の会話の分も数える）・版が同じ・アンインストール済み・`installed_plugins.json` が無いか壊れている・状態ファイルが壊れているか形式（`schema_version`）が違う（次の Read で記録し直す）・`python3` が無い。新しいセッション（SessionStart の startup / clear）では知らせない。
+黙る条件: このセッションでプラグインのファイルを読んでいない（fork したセッションは、transcript に写った親の会話の分も数える）・版が同じ・アンインストール済み・`installed_plugins.json` が無いか壊れている・状態ファイルが壊れているか形式（`schema_version`）が違う（次の Read で記録し直す）・`python3` が無い・subagent の compaction（SessionStart / PostCompact の stdin に `agent_id` がある。sub の `session_id` は main と同じなので、main の通知を sub に出さず、main の状態ファイルにも触らない / GitHub issue #486）。新しいセッション（SessionStart の startup / clear）では知らせない。
 
 状態は `${CLAUDE_CONFIG_DIR:-~/.claude}/plugin-manager/sessions/<session_id>.json`。発言のたびに更新し、14 日以上触れられていないもの（書きかけの一時ファイルを含む）は SessionStart で消す。ただし resume したセッション自身の記録は、通知を出す前には消さない。この版を入れる前から動いているセッションには、記録が無いので届かない。resume で session_id が変わる環境では記録を引き継げず、通知は出ない（transcript が親から写され、先頭の行の `sessionId` が親のまま残る形なら、下の fork と同じように拾う）。fork したセッションは自分の記録を持たないので、transcript に写った親の会話の Read と Skill の呼び出しから版を拾って知らせる（fork 先の transcript が書かれた後の発言から。同名の command の本文として注入された分はパスが残らないので拾わない）。CLI の `--fork-session` は SessionStart の `source: "fork"` で届く。デスクトップアプリの fork は `resume` として届くので、状態ファイルが無く transcript の先頭 5 行の `sessionId` が自分の id と違うことで見分ける。
 

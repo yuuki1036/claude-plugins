@@ -270,7 +270,7 @@ sub・ListAgents・トラッカー由来の文面（report の本文・fact の�
 - **hub のセッションの発言ごと**（UserPromptSubmit）: inbox に未取り込みの report があるときだけ、取り込みのコマンドを注入する。sub の通知でも lead の発言でも発火するので、通知が届かなかった回も次の発言で拾う。hook は件数を見るだけで、report の文面は読まない
 - **sub**（SessionStart / PostCompact）: cwd の repo が active な PJ に入っていて、このセッションがまだ登録されていないときだけ、Issue の作業を始めたら `report hello` を置くよう案内する
 
-ほかのセッションでは何も出さない。
+ほかのセッションでは何も出さない。subagent が compaction したときも SessionStart / PostCompact は走るが、stdin に `agent_id` があれば何も出さない（sub の `session_id` は main と同じなので、hub のセッションの sub に hub の状態を入れないため / GitHub issue #486）。
 
 ## 入っている範囲
 

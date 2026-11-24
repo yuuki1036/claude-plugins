@@ -60,6 +60,12 @@ case "$MODE" in
       fi
     fi
     [ "$FORK" = 1 ] || [ -d "$DIR" ] || safe_hook_error NotFound "no sessions dir"
+    # subagent が compaction したときも、この hook は agent_id 付きで走る（CC 2.1.323+ / GitHub issue #486）。
+    # main 向けの通知を sub の文脈に入れないよう、agent_id があれば黙る（sub の payload の session_id は main と同じなので、main の状態ファイルにも触らない）。
+    # payload の文字列値に出る "agent_id" は JSON で `\"` にエスケープされるので当たらない
+    if [[ "$INPUT" =~ \"agent_id\"[[:space:]]*:[[:space:]]*\"[^\"]+\" ]]; then
+      safe_hook_error NotFound "subagent compaction"
+    fi
     # payload の入れ子のオブジェクトにも session_id のキーがありうるので、出現をすべて候補にする
     # （最初の 1 件だけだと、自分より先に置かれた入れ子の id と取り違える）。発言の本文の字面は
     # JSON で `\"` にエスケープされるので当たらない（GitHub issue #465）。
