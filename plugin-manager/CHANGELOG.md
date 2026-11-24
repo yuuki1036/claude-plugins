@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.5] - 2026-11-24
+
+### Fixed
+
+- **subagent の compaction では stale-skill.sh が黙るようにした**（GitHub issue #486）。subagent が compaction したときも SessionStart（source: compact）と PostCompact の hook は `agent_id` 付きで走る（CC 2.1.323 で `agent_id` / `agent_type` が渡るようになった）。sub の payload の session_id は main と同じなので、そのまま進むと main の更新通知を sub に出し、main の状態ファイルにある通知済みの印も動かしうる。stdin に空でない `agent_id` の値があれば、状態ファイルの掃除も python の起動もせずに終える
+
 ## [1.11.4] - 2026-11-23
 
 ### Changed

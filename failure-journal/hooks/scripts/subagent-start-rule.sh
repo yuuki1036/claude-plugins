@@ -3,7 +3,8 @@
 # 永続成果物に書く具体値の規約（concrete-value-rule.md）を subagent の文脈へ注入する（GitHub issue #428）
 #
 # 設計方針:
-#   - subagent は SessionStart / PostCompact の注入を受けない。認識系の失敗（出典なき主張・
+#   - subagent は起動時に SessionStart の注入を受けない（compaction 後の SessionStart / PostCompact は
+#     agent_id 付きで走るが、session-start-init.sh は agent_id を見て黙る / GitHub issue #486）。認識系の失敗（出典なき主張・
 #     API の形の推測・CLI の読み違い）の多くは explorer / reviewer が返す事実主張から入るので、
 #     SubagentStart の additionalContext で同じ規約を届ける
 #   - self-report-rule.md（candidates.jsonl への自己申告）は注入しない。subagent に journal を

@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.18.2] - 2026-11-24
+
+### Fixed
+
+- **subagent の compaction では inject-state.sh が黙るようにした**（GitHub issue #486）。subagent が compaction したときも SessionStart（source: compact）と PostCompact の hook は `agent_id` 付きで走る（CC 2.1.323 で `agent_id` / `agent_type` が渡るようになった）。sub の payload の session_id は main と同じなので、hub のセッションの sub が compaction すると hub の状態が sub に入りうる。stdin に空でない `agent_id` の値があれば何も出さずに終える
+
 ## [0.18.1] - 2026-11-23
 
 ### Changed

@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.16] - 2026-11-24
+
+### Fixed
+
+- **subagent の compaction では inject-rules.sh が黙るようにした**（GitHub issue #486）。subagent が compaction したときも SessionStart（source: compact）と PostCompact の hook は `agent_id` 付きで走る（CC 2.1.323 で `agent_id` / `agent_type` が渡るようになった）。stdin に空でない `agent_id` の値があれば、main 向けの規約・knowledge・放置 Issue を出さずに終える
+
 ## [1.19.15] - 2026-11-22
 
 ### Changed

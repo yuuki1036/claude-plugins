@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.11.3] - 2026-11-24
+
+### Fixed
+
+- **subagent の compaction では session-start-init.sh が黙るようにした**（GitHub issue #486）。subagent が compaction したときも SessionStart（source: compact）と PostCompact の hook は `agent_id` 付きで走る（CC 2.1.323 で `agent_id` / `agent_type` が渡るようになった）。stdin に空でない `agent_id` の値があれば、自己申告と具体値の規約を出さず、journal ディレクトリも作らずに終える。subagent-start-rule.sh の「subagent は SessionStart / PostCompact の注入を受けない」というコメントを事実に合わせて直した
+
 ## [0.11.2] - 2026-11-21
 
 ### Fixed

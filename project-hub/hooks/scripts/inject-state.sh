@@ -7,6 +7,13 @@ source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "project-hub:inject-state"
 
 INPUT=$(safe_hook_input)
+# subagent が compaction したときも、この hook は agent_id 付きで走る（CC 2.1.323+ / GitHub issue #486）。
+# main 向けの hub の状態を sub の文脈に入れないよう、agent_id があれば黙る。
+# payload の文字列値に出る "agent_id" は JSON で `\"` にエスケープされるので当たらない
+if [[ "$INPUT" =~ \"agent_id\"[[:space:]]*:[[:space:]]*\"[^\"]+\" ]]; then
+  safe_hook_error NotFound "subagent compaction"
+fi
+
 ROOT="${PROJECT_HUB_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/project-hub}"
 [ -d "$ROOT" ] || safe_hook_error NotFound "no project-hub root"
 
