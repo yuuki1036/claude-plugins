@@ -21,6 +21,7 @@ import unittest
 from pathlib import Path
 
 from git_env import scrub
+from skill_flow import flow_text
 
 REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "dev-workflow" / "scripts" / "pick-screenshot-dir.sh"
@@ -199,7 +200,7 @@ class CallerContractTest(unittest.TestCase):
     """撮影の選び方を書く 3 か所が、最新をそのまま使う形に戻らない."""
 
     def test_pr_creator_picks_through_the_script(self):
-        text = PR_CREATOR.read_text(encoding="utf-8")
+        text = flow_text(PR_CREATOR)  # 分けた SKILL.md は Step の本文を差し込んで読む（#447）
         flow = section(text, "#### 撮影フローと PR body 添付", "#### 機密 UI チェックリスト")
         self.assertIn('scripts/pick-screenshot-dir.sh"', flow)
         self.assertNotIn("ls -1dt", text)
