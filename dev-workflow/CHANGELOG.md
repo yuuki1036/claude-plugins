@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.44.4] - 2026-11-25
+
+### Changed
+
+- **pr-creator の SKILL.md（45 KB）を Step ごとに `skills/pr-creator/references/steps/step-<番号>.md` の 12 本へ分けた**（GitHub issue #447）。Read 1 回で返る範囲（約 42 KB）を超えていて、Step 5 と厳守ルールが範囲の外にあったため。SKILL.md には厳守ルールと、各 Step の見出しと Read の 1 行を残した。Step の番号は変えていない。4.3（writing-polish）は本文が「4.7 の後・4.9 の前に行う」と書いていたので、見出しを実行の順（4.7 → 4.3 → 4.9）に並べ、4.7 の下にそう並べたことを 1 行添えた。本文はそのまま移し、直したのは次の 6 か所だけ: 4.93・4.95 のやり直しの順を 4.3 → 4.7 → 4.9 から 4.7 → 4.3 → 4.9 にした（4.3 の本文が求める順と逆を指していた）、4.3 の位置の説明の 1 文、Step 1 の「後述『上書き不可の floor』」を「前述」にした、4.93・Step 5 が Step 1 の手順 4 を「Step 1.4」と呼んでいたのを「Step 1 の 4.」にした（分けた後は「Step X」が見出しの名前になり、`### 1.4` を探させるため）、4.9 の違反を直した後の行き先を「Step 5」から次（4.93）にした、Step 5 の添付失敗で作り直す経路に 4.93 のゲート再出力を足した（どちらも 4.93・4.95 を飛ばす向きの古い文言だった）。`diagram-guide.md` の、判定の置き場を指す文も Step 4.6 のファイルに合わせた。各 Step ファイルの末尾は次の Step を指し、Step 5 で終わる。既存の参照文書（`description-guide.md`・`diagram-guide.md`・`linear-integration.md`）は `references/` に残し、Step のファイルから `${CLAUDE_PLUGIN_ROOT}` のパスで引くようにした。別名の command（`commands/pr.md`）の本文にも、各 Step の手順は Step ごとのファイルにあり Step に入るたびに読む旨を足した
+
 ## [1.44.3] - 2026-11-22
 
 ### Changed
