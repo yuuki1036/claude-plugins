@@ -1,6 +1,6 @@
 # 説明図の型と描き方（pr-creator Step 4.6 / GitHub issue #349）
 
-Step 4.6 で「作る」と決めた後に読む。作るかどうかの判定は SKILL.md の Step 4.6 のまま。
+Step 4.6 で「作る」と決めた後に読む。作るかどうかの判定は Step 4.6 のファイル（`references/steps/step-4.6.md`）のまま。
 
 ## 1. 型を選ぶ
 

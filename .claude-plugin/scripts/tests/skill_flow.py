@@ -1,7 +1,7 @@
 """分けた SKILL.md（validate_plugin_quality.py の SPLIT_SKILLS）を、分ける前の 1 本の本文に戻す.
 
 本文の文言を見るテストは SKILL.md を ``read_text`` して見出しで切り出す。phase の本文を
-``skills/<skill>/references/`` へ分けた後は、SKILL.md には見出しと Read の行しか残らない。
+``skills/<skill>/references/``（``SPLIT_SKILL_PHASE_DIRS`` に載せた skill はその下）へ分けた後は、SKILL.md には見出しと Read の行しか残らない。
 ``flow_text`` は Read の行の位置にそのファイルの本文を差し込むので、切り出しはそのまま動く
 （phase ファイルの先頭の見出しは SKILL.md の見出しと同じなので、差し込むときに落とし、見出しが
 2 回並ばないようにする）。分けた skill か・どれが Read の行か・どれが最初の見出しかは、検査と同じ

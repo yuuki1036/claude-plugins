@@ -3260,10 +3260,11 @@ class SplitSkillTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
-        for name in ("ROOT", "SPLIT_SKILLS", "SPLIT_SKILL_MAX_BYTES"):
+        for name in ("ROOT", "SPLIT_SKILLS", "SPLIT_SKILL_MAX_BYTES", "SPLIT_SKILL_PHASE_DIRS"):
             self.addCleanup(lambda n=name, o=getattr(v, name): setattr(v, n, o))
         v.ROOT = self.root
         v.SPLIT_SKILLS = ((self.REL, self.HEADING, "Phase {num}"),)
+        v.SPLIT_SKILL_PHASE_DIRS = {}
         v.SPLIT_SKILL_MAX_BYTES = 2_000
         (self.root / "demo" / ".claude-plugin").mkdir(parents=True)
         (self.root / "demo" / ".claude-plugin" / "plugin.json").write_text("{}")
@@ -3371,6 +3372,43 @@ class SplitSkillTest(unittest.TestCase):
         errors = self._run()
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("demo/skills/demo/references/sub/note.md はどの phase の見出しからも Read されない", errors[0])
+
+    def _three_in_steps(self) -> None:
+        """phase ファイルを references/steps/ に置き, references/ の直下に phase でない参照文書を 1 本置く."""
+        v.SPLIT_SKILL_PHASE_DIRS = {self.REL: "references/steps"}
+        self.REF = "skills/demo/references/steps"
+        self._three()
+        _write(self.root, "demo/skills/demo/references/guide.md", "## 書き方\n")
+
+    def test_reference_doc_outside_the_phase_dir_is_not_an_orphan(self):
+        """phase の置き場を references/steps にした skill では, references/ 直下の参照文書を孤立に数えない."""
+        self._three_in_steps()
+        self.assertEqual(self._run(), [])
+
+    def test_reference_doc_is_an_orphan_when_the_phase_dir_is_the_default(self):
+        """置き場の一覧に載せなければ references/ 全体を見るので, 同じ参照文書が孤立になる."""
+        self._three_in_steps()
+        v.SPLIT_SKILL_PHASE_DIRS = {}
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("demo/skills/demo/references/guide.md はどの phase の見出しからも Read されない", errors[0])
+
+    def test_orphan_inside_the_phase_dir_is_an_error(self):
+        self._three_in_steps()
+        _write(self.root, f"demo/{self.REF}/phase-9.md", "## Phase 9: 段 9\n")
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("demo/skills/demo/references/steps/phase-9.md はどの phase の見出しからも Read されない", errors[0])
+
+    def test_read_target_outside_the_phase_dir_is_an_error(self):
+        """references/ の中でも, 置き場（references/steps）の外の Read 先は phase ファイルにしない."""
+        self._three_in_steps()
+        path = self.root / self.REL
+        path.write_text(path.read_text().replace(f"{self.REF}/phase-2.md", "skills/demo/references/guide.md"))
+        (self.root / "demo" / self.REF / "phase-2.md").unlink()
+        errors = self._run()
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("demo/skills/demo/references/steps/ の外にある", errors[0])
 
     def test_split_skill_files_are_the_read_targets_only(self):
         """他の検査に渡す phase ファイルの集合は Read 先から作る（references/ 全体ではない）."""
@@ -3594,7 +3632,7 @@ class SplitSkillTest(unittest.TestCase):
 
     def test_real_repo_has_no_error(self):
         """本物の repo と既定の一覧・上限で error が出ない."""
-        for name in ("ROOT", "SPLIT_SKILLS", "SPLIT_SKILL_MAX_BYTES"):
+        for name in ("ROOT", "SPLIT_SKILLS", "SPLIT_SKILL_MAX_BYTES", "SPLIT_SKILL_PHASE_DIRS"):
             setattr(v, name, getattr(_load_module(), name))
         v.ROOT = SCRIPT.parents[2]
         self.assertEqual(self._run(), [])

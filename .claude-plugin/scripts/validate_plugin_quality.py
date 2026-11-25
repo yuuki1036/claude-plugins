@@ -81,13 +81,13 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     UTF-8 ロケールの bash が非 ASCII の 1 バイト目まで変数名に取り込むため, `set -u`
     下では診断を出さず exit 1 する. **C ロケールでは再現しない**ので開発機のシェル設定
     次第で見えなくなる（実測: detect-recent-review.sh の WARN が丸ごと死んでいた / #138）.
-  - split-skill: phase（self-review・review・review-guide は Step）ごとに本文を `skills/<skill>/references/` へ分けた
-    SKILL.md（SPLIT_SKILLS）の上限と phase の鎖. SKILL.md と phase ファイルが SPLIT_SKILL_MAX_BYTES 以下か /
-    phase 見出しごとに Read の行がちょうど 1 本か / Read 先がその skill の references/ に実在し,
+  - split-skill: phase（self-review・review・review-guide・pr-creator は Step）ごとに本文を `skills/<skill>/references/`
+    （SPLIT_SKILL_PHASE_DIRS に載せた skill はその下のディレクトリ）へ分けた SKILL.md（SPLIT_SKILLS）の上限と phase の鎖. SKILL.md と phase ファイルが SPLIT_SKILL_MAX_BYTES 以下か /
+    phase 見出しごとに Read の行がちょうど 1 本か / Read 先がその skill の phase の置き場に実在し,
     2 つの phase で同じファイルを読んでいないか / ファイルの最初の見出しが SKILL.md の見出しと同じか /
     末尾の「**次は <phase>**」が SKILL.md の並びの次を指すか（最後は「**ここで終わり**」。節を順に踏まない
     UNCHAINED_SPLIT_SKILLS（hub のサブコマンド）はこの鎖を見ない）/
-    その skill の references/ の md がどれかの phase の見出しから Read されているか（孤立ファイルは error）.
+    その skill の phase の置き場の md がどれかの phase の見出しから Read されているか（孤立ファイルは error）.
     Read 1 回で読み切れない SKILL.md は続きを読まずに phase を飛ばした（#350 / #250）. 鎖が表すのは
     既定の並びだけで, skip は次の見出しの入口の条件, 後戻りは本文の分岐で表す（#426）.
     references 参照整合性・doc-anchor・prompt-path・allowed-tools 最小性・Event Bus の publisher・
@@ -1874,7 +1874,7 @@ def check_skill_body_size(warnings: list[str]) -> None:
             )
 
 
-#: phase（self-review・review・review-guide は Step）ごとに本文を `skills/<skill>/references/` へ分けた SKILL.md（GitHub issue #426 / #447）.
+#: phase（self-review・review・review-guide・pr-creator は Step）ごとに本文を `skills/<skill>/references/` へ分けた SKILL.md（GitHub issue #426 / #447）.
 #: 一覧に載せることが「分けた skill である」宣言で, 上限と phase の鎖の検査はここから決まる.
 #: (SKILL.md, phase 見出しの正規表現（番号を group "num" に取る）, 末尾の「次は」に書く名前の書式)
 SPLIT_SKILLS: tuple[tuple[str, str, str], ...] = (
@@ -1882,6 +1882,7 @@ SPLIT_SKILLS: tuple[tuple[str, str, str], ...] = (
     ("code-review/skills/self-review/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
     ("code-review/skills/review/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
     ("code-review/skills/review-guide/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
+    ("dev-workflow/skills/pr-creator/SKILL.md", r"^### (?P<num>\d+(?:\.\d+)?)\.?\s", "Step {num}"),
     # 番号の無いサブコマンド・手順の節. SKILL.md に残す 3 節を除く `## ` 見出しがすべて分けた節になる
     # （残す節を足すなら除外に足す. 足さずに見出しだけ置くと Read の行が無い error になる）
     (
@@ -1893,6 +1894,10 @@ SPLIT_SKILLS: tuple[tuple[str, str, str], ...] = (
 #: SPLIT_SKILLS のうち, 節を順に踏まない skill（呼ばれたサブコマンドの節だけを読む）. 節のファイルの末尾の
 #: 「次は」を求めない（鎖の検査を外す）. 上限・Read の行・最初の見出し・孤立ファイルの検査は同じに掛ける
 UNCHAINED_SPLIT_SKILLS: frozenset[str] = frozenset({"project-hub/skills/hub/SKILL.md"})
+#: SPLIT_SKILLS のうち, phase ファイルを `references/` の直下でなく下のディレクトリに置く skill（SKILL.md のディレクトリ起点）.
+#: references/ に phase でない参照文書を分ける前から持つ skill 向け. Read 先の内外と孤立ファイルの検査はこの置き場で見るので,
+#: 置き場の外の参照文書は孤立に数えない（置き場を references/ のままにすると pr-creator の 3 本が error になる / GitHub issue #447）
+SPLIT_SKILL_PHASE_DIRS: dict[str, str] = {"dev-workflow/skills/pr-creator/SKILL.md": "references/steps"}
 #: SKILL.md と phase ファイルの上限. Read 1 回で返る範囲の切れ目は実測 42,129 byte（#350 の旧版）と
 #: 42,448 byte（2026-11-05 の版）. token と byte の比は字種で揺れるので切れ目の手前に余白を取り,
 #: 分ける前の 3 分の 1（feature-dev 31 KB / self-review 34 KB）より少し下に置く
@@ -1944,14 +1949,14 @@ def split_skill_entry(skill_md: Path) -> tuple[str, str, str] | None:
 
 
 def split_skill_ref_dir(rel: str) -> Path:
-    """分けた skill の phase ファイルを置く references/ の実パス."""
-    return ((ROOT / rel).parent / "references").resolve()
+    """分けた skill の phase ファイルの置き場（既定は references/. SPLIT_SKILL_PHASE_DIRS に載せた skill はそこ）の実パス."""
+    return ((ROOT / rel).parent / SPLIT_SKILL_PHASE_DIRS.get(rel, "references")).resolve()
 
 
 def split_read_target(rel: str, path: str) -> tuple[Path, str | None]:
     """Read の行の Read 先を解決し, (実パス, 不合格の理由) を返す. 理由は "outside" / "missing" / None.
 
-    有効な Read 先 = その skill の references/ の内側にあり, 実在する md. check_split_skills と
+    有効な Read 先 = その skill の phase の置き場（split_skill_ref_dir）の内側にあり, 実在する md. check_split_skills と
     split_skill_files がこの 1 か所を使う（判定基準の持ち主を 1 つにする / docs/rule-placement.md）.
     """
     target = (split_skill_plugin_dir(rel) / path).resolve()
@@ -2094,7 +2099,7 @@ def check_split_skills(errors: list[str]) -> None:
             if orphan not in named:
                 errors.append(
                     f"[{tag}] {orphan.relative_to(ROOT.resolve())} はどの phase の見出しからも Read されない"
-                    f"（phase の見出しと Read の行を足すか, references/ の外へ移す）"
+                    f"（phase の見出しと Read の行を足すか, phase の置き場の外へ移す）"
                 )
 
 
