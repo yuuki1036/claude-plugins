@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -718,6 +720,141 @@ class DenyKeysAndDiffTest(unittest.TestCase):
     def test_sanitize_diff_does_not_descend_into_mismatched_types(self):
         d = mu.sanitize_diff({"a": {"b": 1}}, {"a": "other"}, frozenset())
         self.assertEqual(d["keys"], [])
+        d = mu.sanitize_diff({"a": ["x"]}, {"a": None}, frozenset())
+        self.assertEqual(d, {"keys": [], "denied_keys": [], "values": [], "coverage": []})
+
+    def test_sanitize_diff_inside_a_list_is_not_top(self):
+        d = mu.sanitize_diff({"a": [{"machine_id": "h"}]}, {"a": [{}]}, frozenset())
+        self.assertEqual(d["keys"], ["a[0].machine_id"])
+
+    def test_sanitize_diff_lists_only_values_replaced_by_the_sanitizer(self):
+        s = mu.SANITIZED
+        d = mu.sanitize_diff({"same": s, "changed": "a"}, {"same": s, "changed": "b"}, frozenset())
+        self.assertEqual(d["values"], [], "同じ値・置き換えでない違いは数えない")
+
+
+class PluginVersionTest(unittest.TestCase):
+    def test_only_string_versions_are_returned(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "plugin.json"
+            for doc, want in (({"version": "1.2.3"}, "1.2.3"), ({"version": 1}, None), ({}, None)):
+                with self.subTest(doc=doc):
+                    f.write_text(json.dumps(doc), encoding="utf-8")
+                    self.assertEqual(mu.plugin_version(str(f)), want)
+
+
+class FormatTest(unittest.TestCase):
+    def test_fmt(self):
+        self.assertEqual([mu.fmt(None), mu.fmt(2.0), mu.fmt(2.5), mu.fmt(3)], ["-", "2", "2.5", "3"])
+
+    def test_short(self):
+        self.assertEqual((mu.short("0123456789abcdef"), mu.short(None)), ("0123456", "未取得"))
+
+
+def base_res(scope=None, commits=None, comparison=None, baseline=None, runs=None) -> dict:
+    """render_text に渡す最小の結果（既定はどの値も「無い」側）."""
+    sc = {"store": None, "store_files": [], "local_logs": [], "n": 0, "dedup_dropped": 0, "dedup_conflicts": 0,
+          "main_commit": None, "main_ref": None, "plugin_version": None, "previous": None}
+    sc.update(scope or {})
+    cm = {"reason": None, "commits": [], "total": 0}
+    cm.update(commits or {})
+    cp = {"generation": None, "rereview_excluded": 0, "split_version": None, "rows": []}
+    cp.update(comparison or {})
+    return {"scope": sc, "since_previous": {"first_run": True, "n": 0}, "commits": cm, "comparison": cp,
+            "baseline": baseline or {"marker": {"status": "no-marker"}, "due": None},
+            "vocab_drops": {"local_only": True, "runs": runs or []}}
+
+
+def drop_run(i=0, version="2.0.0", raw_found=True) -> dict:
+    return {"ts": "2026-11-%02dT00:00:00Z" % (i % 28 + 1), "plugin": SELF, "version": version,
+            "counts": {"keys": 1, "coverage": 0, "values": 0}, "raw_found": raw_found, "diff": None}
+
+
+class RenderTextTest(unittest.TestCase):
+    def lines(self, **kw):
+        return mu.render_text(base_res(**kw)).split("\n")
+
+    def line(self, prefix, **kw):
+        found = [l for l in self.lines(**kw) if l.startswith(prefix)]
+        self.assertEqual(len(found), 1, (prefix, found))
+        return found[0]
+
+    def test_scope_defaults(self):
+        self.assertEqual(self.line("- ストア:"), "- ストア: なし（手元のログだけで集計）")
+        self.assertEqual(self.line("- ストア:", scope={"store": "~/s"}), "- ストア: ~/s（events なし）")
+        self.assertEqual(self.line("- ストア:", scope={"store": "~/s", "store_files": [{"path": "p", "rows": 3}]}),
+                         "- ストア: ~/s（p 3 行）")
+        self.assertEqual(self.line("- 手元のログ:"), "- 手元のログ: なし")
+        self.assertEqual(self.line("- 手元のログ:", scope={"local_logs": [{"path": "l", "rows": 2}]}),
+                         "- 手元のログ: l 2 行")
+        self.assertEqual(self.line("- main:"), "- main: 未取得（-）/ code-review 未取得")
+        self.assertEqual(self.line("- main:", scope={"main_commit": "0123456789", "main_ref": "main",
+                                                     "plugin_version": "2.1.0"}),
+                         "- main: 0123456（main）/ code-review 2.1.0")
+
+    def test_more_commits_line_only_when_some_are_hidden(self):
+        lines = self.lines(commits={"total": 1, "commits": ["abc x"]})
+        self.assertFalse([l for l in lines if "ほか" in l])
+        self.assertIn("  - ほか 1 件", self.lines(commits={"total": 2, "commits": ["abc x"]}))
+
+    def test_comparison_heading_and_version_column(self):
+        self.assertEqual(self.line("### 比較表"), "### 比較表（再レビューを除く。除いた回 0 件）")
+        self.assertEqual(self.line("### 比較表", comparison={"generation": "opus-5-5"}),
+                         "### 比較表（世代 opus-5-5・再レビューを除く。除いた回 0 件）")
+        self.assertNotIn("| 版 |", self.line("| 世代"))
+        self.assertIn("| 範囲 | 版 | n |", self.line("| 世代", comparison={"split_version": "2.1.0"}))
+
+    def test_baseline_lines(self):
+        self.assertTrue(self.line("- 判定できない").startswith("- 判定できない（印: no-marker）"))
+        bl = {"marker": {"status": "ok", "generation": "opus-5-5", "taken": "2026-10-25"}, "due": False,
+              "xhigh_review_n": 0, "xhigh_need": 0, "window_generations": [], "generation_changed": False}
+        self.assertEqual(self.line("- 印:", baseline=bl), "- 印: 世代 opus-5-5・取り直し 2026-10-25")
+        self.assertEqual(self.line("- 判定:", baseline=bl),
+                         "- 判定: まだ（直近 4 回の世代 -・xhigh の条件は消化済み（取り直し以降の xhigh 以上の review 0 件））")
+        bl.update(due=True, xhigh_review_n=1, xhigh_need=2, window_generations=["a", "b"], generation_changed=True)
+        self.assertEqual(self.line("- 判定:", baseline=bl),
+                         "- 判定: 更新の時期（直近 4 回の世代 a → b（変わった）・取り直し以降の xhigh 以上の review 1/2 件）")
+
+    def test_vocab_drop_lines(self):
+        lines = self.lines(runs=[drop_run(0, version=None, raw_found=False), drop_run(1)])
+        drops = [l for l in lines if l.startswith("- 2026-11-")]
+        self.assertEqual(drops, [
+            "- 2026-11-01T00:00:00Z %s（版 未記録）キー 1・観点 0・値 0 — 手元に生の行なし（publish したマシンで回す）" % SELF,
+            "- 2026-11-02T00:00:00Z %s（版 2.0.0）キー 1・観点 0・値 0" % SELF,
+        ])
+
+    def test_more_drops_line_only_past_the_limit(self):
+        n = mu.DROPS_LIMIT
+        self.assertFalse([l for l in self.lines(runs=[drop_run(i) for i in range(n)]) if "ほか" in l])
+        self.assertIn("- ほか 1 件（古い順に省略）", self.lines(runs=[drop_run(i) for i in range(n + 1)]))
+
+
+class MainOutputTest(Env):
+    def test_json_output_keeps_non_ascii(self):
+        store = self.store({"m1": [ev("2026-11-01T00:00:00Z", payload(plugin_version="2.150.0"))]})
+        r = self.run_cli("--store", str(store), "--split-version", "2.158.0", "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("2.158.0 より前", r.stdout)
+
+    def test_record_line_without_plugin_version(self):
+        pj = self.tmp / "plugin.json"
+        pj.write_text("{}", encoding="utf-8")
+        r = self.run_cli("--no-store", "--plugin-json", str(pj), "--record")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("版 未取得", r.stderr)
+
+    def test_unexpected_error_names_the_file_and_line(self):
+        # side_effect に例外を渡すと mock.py の中で投げられる。ここで投げて、最後のフレーム（tb[-1]）を出すことまで見る
+        def boom(*_args, **_kwargs):
+            raise RuntimeError("boom")
+
+        err = io.StringIO()
+        with unittest.mock.patch.dict(os.environ, self.env, clear=True), \
+                unittest.mock.patch.object(mu, "build", boom), \
+                contextlib.redirect_stderr(err):
+            rc = mu.main(["--no-store", "--state", str(self.state)])
+        self.assertEqual(rc, 2)
+        self.assertRegex(err.getvalue(), r"RuntimeError at %s:\d+）" % re.escape(Path(__file__).name))
 
 
 if __name__ == "__main__":
