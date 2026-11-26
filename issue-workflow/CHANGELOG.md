@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.17] - 2026-11-26
+
+### Changed
+
+- **start の SKILL.md をモードごとのファイルに分けた**（GitHub issue #447）。42,760 byte あり、Read 1 回で返る範囲の切れ目（実測 42,448 byte）を超えて、後ろのモードを読まないまま進めうるため。SKILL.md にはどのモードでも通る「ワークフロー」（Phase 0〜1.5）と、各モードの見出しと Read の行だけを残し、Quick Pick・親 Issue 軽量サマリー・ダッシュボード・Feature ブランチ・セッションコンテキスト書き出しの 5 つの本文を `skills/start/references/modes/` に移した。手順と分岐は変えていない。Feature ブランチモードの見出しには、F7 に入る前に Phase CTX のファイルも読むよう 1 文を添えた（F7 は feature-dev・軽量フローに処理を渡して start に戻らない）。existing-work.md を言い換えている 2 本には SSoT pin を置き、`/start` の command の「SKILL.md の F2.5・F7」は Feature ブランチモードのファイルを指すように直した
+
 ## [1.19.16] - 2026-11-24
 
 ### Fixed

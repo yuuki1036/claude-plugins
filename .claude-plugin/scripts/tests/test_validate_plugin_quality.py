@@ -3630,6 +3630,29 @@ class SplitSkillTest(unittest.TestCase):
             self.assertIsNotNone(m, line)
             self.assertEqual(m.group("num"), name)
 
+    def test_start_heading_regex_takes_every_mode_but_the_workflow(self):
+        """start の一覧の正規表現は, SKILL.md に残す「ワークフロー」を除く `## ` 見出しをモードの節にする（#447）."""
+        rel = "issue-workflow/skills/start/SKILL.md"
+        mod = _load_module()
+        heading_re = next(h for r, h, _l in mod.SPLIT_SKILLS if r == rel)
+        self.assertIn(rel, mod.UNCHAINED_SPLIT_SKILLS)
+        self.assertEqual(mod.SPLIT_SKILL_PHASE_DIRS[rel], "references/modes")
+        pat = re.compile(heading_re)
+        for line in ("## ワークフロー", "### Phase F7: 進め方の確認", "# Session Start"):
+            self.assertIsNone(pat.match(line), line)
+        cases = {
+            "## Quick Pick モード（BACKEND=linear・Issue ID なしブランチ）": "Quick Pick モード",
+            "## 親 Issue 軽量サマリーモード（BACKEND=linear・子 Issue あり）": "親 Issue 軽量サマリーモード",
+            "## ダッシュボードモード（BACKEND=local・main/master ブランチ時）": "ダッシュボードモード",
+            "## Feature ブランチモード": "Feature ブランチモード",
+            "## セッションコンテキスト書き出し（Feature ブランチモード共通）": "セッションコンテキスト書き出し",
+            "## ワークフローの補足": "ワークフローの補足",   # 残す節の名前で始まるだけの節は除外しない
+        }
+        for line, name in cases.items():
+            m = pat.match(line)
+            self.assertIsNotNone(m, line)
+            self.assertEqual(m.group("num"), name)
+
     def test_real_repo_has_no_error(self):
         """本物の repo と既定の一覧・上限で error が出ない."""
         for name in ("ROOT", "SPLIT_SKILLS", "SPLIT_SKILL_MAX_BYTES", "SPLIT_SKILL_PHASE_DIRS"):

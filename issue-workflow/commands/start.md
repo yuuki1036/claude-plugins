@@ -25,7 +25,7 @@ start スキルを使って、セッション開始時の作業準備をして�
 
 引数は `{Issue ID} [今回の意図（自由記述）]` の形で解釈してください。
 
-- 第 1 トークンが Issue ID（`[A-Z]+-\d+` 形式）なら、**ブランチ名より優先**してその Issue を対象にしてください（ブランチが main のままでも Feature ブランチモードで読み込む）。その Issue の作業が別の worktree やブランチに既にあるか、そこへ移るかは Phase F2.5 が決めます（session-context だけで結び付いた（Claude アプリが作る）detached HEAD の worktree には移らず案内だけする。判定の細部は SKILL.md の F2.5 に従い、ここから推測しない）。
+- 第 1 トークンが Issue ID（`[A-Z]+-\d+` 形式）なら、**ブランチ名より優先**してその Issue を対象にしてください（ブランチが main のままでも Feature ブランチモードで読み込む）。その Issue の作業が別の worktree やブランチに既にあるか、そこへ移るかは Phase F2.5 が決めます（session-context だけで結び付いた（Claude アプリが作る）detached HEAD の worktree には移らず案内だけする。判定の細部は Feature ブランチモードのファイル（`${CLAUDE_PLUGIN_ROOT}/skills/start/references/modes/feature-branch.md`）の F2.5 に従い、ここから推測しない）。
 - 残りの文字列は「今回の意図」です。**やることの中身が書かれていなければ新規着手**（例: `TEAM-123 新規タスク`）、**書かれていれば継続作業**（例: `TEAM-123 ログイン画面のバリデーション直す`）として Phase 1 の `TASK_INTENT` に分類してください。
-- 新規着手の場合、Phase F2.5 でその Issue の既存の作業が見つからなければ（`none` / `fresh`）、Phase F7 で **進め方の確認（feature-dev / 軽量フロー / 自分で進める の AskUserQuestion）を必ず出す**こと。`feature_dev_plan:` を理由にスキップしないでください。既存の作業（既定ブランチに無いコミットか未コミットの変更）が見つかったら（`here` / `moved` / `branch`）、**確認を出さずブランチも作らず、続きとして扱う**（判定行に「続き（引数は新規）」と書く。GitHub issue #305。既存を捨てて新しく始めたいと言われたら、こちらでは消さずに手順を案内する）。ほかに確認を出さずに報告・案内だけする回 — Issue が completed / canceled、作業が session-context だけで結び付いた detached HEAD の worktree にしか無い、など — は SKILL.md の F7 に従う。
+- 新規着手の場合、Phase F2.5 でその Issue の既存の作業が見つからなければ（`none` / `fresh`）、Phase F7 で **進め方の確認（feature-dev / 軽量フロー / 自分で進める の AskUserQuestion）を必ず出す**こと。`feature_dev_plan:` を理由にスキップしないでください。既存の作業（既定ブランチに無いコミットか未コミットの変更）が見つかったら（`here` / `moved` / `branch`）、**確認を出さずブランチも作らず、続きとして扱う**（判定行に「続き（引数は新規）」と書く。GitHub issue #305。既存を捨てて新しく始めたいと言われたら、こちらでは消さずに手順を案内する）。ほかに確認を出さずに報告・案内だけする回 — Issue が completed / canceled、作業が session-context だけで結び付いた detached HEAD の worktree にしか無い、など — は同じファイルの F7 に従う。
 - 引数が空なら従来どおりブランチ名から判定してください。
