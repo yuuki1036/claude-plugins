@@ -50,7 +50,7 @@ docs・設定・依存の更新だけの PR、typo や rename、1 つの関数�
 
    - `png=<パス>` の行のファイルを `ATTACH` に足す。足す前に PNG を Read で開き、文字の欠け・重なりが無いかを見る（warn= が拾わない崩れもある）
    - `failed=` の行や exit 2（変換の手段が無い）の図は、SVG のまま `ATTACH` に足す（gh は SVG も受け付ける）。PNG にできなかった理由を Step 5 のレポートに一言添える
-5. 図の機密チェック: 図は PR を閲覧できる人全員に見える（public repo なら誰でも）。図に描かれる文字すべて（定義の `label`・`title`・`legend_labels` の値、`label` を省いた部品の `id`）を「機密 UI チェックリスト」（Step 4.5）と同じ基準で見直し、社内 URL・社内サービス名・顧客名・実データが入っていれば汎用の名前に置き換えて作り直す。リポジトリが public（`gh repo view --json visibility -q .visibility` が `PUBLIC`）なら、業務の識別子（業務リポジトリ名・画面名・ドメイン用語）も汎用の名前にする。SVG のまま添付する図は `id` が属性にも残るので、`id` も同じ基準で見直す
+5. 図の機密チェック: 図は PR を閲覧できる人全員に見える（public repo なら誰でも）。図に描かれる文字すべて（定義の `label`・`title`・`legend_labels` の値、sequence の `note`・`sublabel`・区間の枠の `cond`、`label` を省いた部品の `id`）を「機密 UI チェックリスト」（Step 4.5）と同じ基準で見直し、社内 URL・社内サービス名・顧客名・実データが入っていれば汎用の名前に置き換えて作り直す。リポジトリが public（`gh repo view --json visibility -q .visibility` が `PUBLIC`）なら、業務の識別子（業務リポジトリ名・画面名・ドメイン用語）も汎用の名前にする。SVG のまま添付する図は `id` が属性にも残るので、`id` も同じ基準で見直す
 6. PR body に節を足す。置き場所は「変更点」の直後（テンプレートがあるときはテンプレートの末尾、Screenshots 節の前）。各図の前には「何についての図か」を 1 行だけ置く（中身の説明は図と本文の他の節に任せ、長い解説を書かない）。画像の参照先は Step 4.5 と同じく `ATTACH` に入れたローカルパスをそのまま書く:
 
    ```markdown
