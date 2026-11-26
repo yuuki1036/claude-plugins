@@ -593,11 +593,12 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
                 sub=p.get("sublabel", ""))
     if right_extra:
         c.add("under", "", (cx[-1], 0, cx[-1] + right_extra, 0))
-    # 凡例は「部品」（箱）と「呼び出し」（線）の 2 段に分けるので、どちらに出るかを添えて返す
+    # 凡例は「部品」（箱）と「呼び出し」（線）の 2 段に分けるので、どちらに出るかを添えて返す。
+    # 返り値の線は status の色の破線で描くので、凡例も status ごとの破線の見本にする（"reply" は既存、
+    # 他は "reply:<status>"）。status を実線の見本として数えると、図に無い実線が凡例に出る
     used = ([(p["status"], "box") for p in parts] + [(nt["status"], "box") for nt in notes]
-            + [(m["status"], "line") for m in msgs if not m["error"]])
-    if any(m["reply"] and not m["error"] for m in msgs):
-        used.append(("reply", "line"))
+            + [(m["status"], "line") for m in msgs if not m["error"] and not m["reply"]]
+            + [(reply_key(m["status"]), "line") for m in msgs if m["reply"] and not m["error"]])
     if any(m["error"] for m in msgs):
         used.append(("error", "line"))
     return used
@@ -1044,9 +1045,13 @@ def legend(c: Canvas, used: list[tuple[str, str]], labels: dict) -> None:
     c.add("over", "".join(svg), (c.x0, y - 8, x - 20, y + 8))
 
 
+def reply_key(status: str) -> str:
+    return "reply" if status == "existing" else f"reply:{status}"
+
+
 def legend_sequence(c: Canvas, used: list[tuple[str, str]], labels: dict) -> None:
     """sequence の凡例. 枠で囲み、部品（参加者・注記）と呼び出し（線）を段に分けて見本を並べる."""
-    order = list(STATUSES) + list(LEGEND_EXTRA)
+    order = list(STATUSES) + ["reply"] + [reply_key(s) for s in STATUSES if s != "existing"] + ["error"]
     rows = []
     for row, name, head in (("box", "boxes", "部品"), ("line", "lines", "呼び出し")):
         items = [s for s in order if (s, row) in used]
@@ -1064,7 +1069,13 @@ def legend_sequence(c: Canvas, used: list[tuple[str, str]], labels: dict) -> Non
                    + text_svg(x0 + LEG_PAD, cy, head, FS_SMALL, "start", fill=SUB_FILL))
         x = x0 + LEG_PAD + head_w + LEG_HEAD_GAP
         for s in items:
-            text = labels.get(s) or STATUSES.get(s, {}).get("label") or LEGEND_EXTRA[s]
+            # 返り値の項目は "reply"（既存）か "reply:<status>"。見本はその status の破線で描く
+            reply_status = "existing" if s == "reply" else s.split(":", 1)[1] if s.startswith("reply:") else None
+            if reply_status and reply_status != "existing":
+                text = (f'{labels.get("reply") or LEGEND_EXTRA["reply"]}'
+                        f'（{labels.get(reply_status) or STATUSES[reply_status]["label"]}）')
+            else:
+                text = labels.get(s) or STATUSES.get(s, {}).get("label") or LEGEND_EXTRA[s]
             svg.append(f'<g class="legend-item" data-status="{s}">')
             if row == "box":
                 st = STATUSES[s]
@@ -1073,7 +1084,7 @@ def legend_sequence(c: Canvas, used: list[tuple[str, str]], labels: dict) -> Non
                            f'stroke="{st["stroke"]}" stroke-width="1.5"{dash}/>')
             else:
                 # 線の見本は図の中の呼び出しと同じ line_attrs で描く（色・破線・矢印の先が図と食い違わない）
-                look = {"reply": ("existing", True, False), "error": ("existing", False, True)}.get(s, (s, False, False))
+                look = (reply_status, True, False) if reply_status else (s, False, s == "error")
                 svg.append(f'<path d="M {fmt(x)} {fmt(cy)} H {fmt(x + 22)}" {line_attrs(c, *look)}/>')
             svg.append(text_svg(x + 28, cy, text, FS_SMALL, "start") + "</g>")
             x += 28 + text_w(text, FS_SMALL) + 20

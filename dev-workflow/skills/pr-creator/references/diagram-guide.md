@@ -59,8 +59,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/diagram-svg.py" '<控えたパス>/<名�
 |---|---|---|
 | `type` | 必須 | `flow` / `sequence` / `state` |
 | `title` | 無し | 図の上に出す題（太字の 1 行）。`sequence` では付ける（参加者を横に並べた図は、箱を見ても何の流れかが分からないため）。`flow` / `state` は、PR 本文の「何についての図か」と同じ文になるなら省いてよい（本文と図で 2 回言うことになる） |
-| `legend` | `true` | 凡例を出すか。使った status の見本だけが並ぶ（箱・線。`flow` は範囲の枠も、`sequence` は返り値・エラーで戻る線も）。全部 `existing` で返り値もエラーで戻る線も無ければ出ない。`sequence` は枠で囲み、部品（参加者・注記）と呼び出し（線）の 2 段に分ける |
-| `legend_labels` | 無し | 凡例の文言の差し替え。例: `{"later": "PR-2 で足す"}`（キーは status 名か `reply` / `error`（`reply` / `error` は `sequence` だけで使われる）。値は空にできない。凡例を消すなら `legend: false`） |
+| `legend` | `true` | 凡例を出すか。使った status の見本だけが並ぶ（箱・線。`flow` は範囲の枠も、`sequence` は返り値・エラーで戻る線も。返り値は図と同じ破線の見本で、既存でない status の返り値は「返り値（この PR で変えた）」のように status ごとに並ぶ）。全部 `existing` で返り値もエラーで戻る線も無ければ出ない。`sequence` は枠で囲み、部品（参加者・注記）と呼び出し（線）の 2 段に分ける |
+| `legend_labels` | 無し | 凡例の文言の差し替え。例: `{"later": "PR-2 で足す"}`（キーは status 名か `reply` / `error`（`reply` / `error` は `sequence` だけで使われる。既存でない status の返り値は `reply` と status の文言をつないで「返り値（PR-2 で足す）」のように出し、返り値の項目だけを差し替えるキーは無い）。値は空にできない。凡例を消すなら `legend: false`） |
 
 ### status（箱・線・参加者・状態に付ける）
 
