@@ -14,7 +14,11 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
   外の枠の内側に収まる
 - state / flow: 往復の辺のラベルが向き（横・縦）に関わらず重ならない・自己ループのラベルが入ってくる辺の
   ラベルと重ならない・間の箱を横切る辺を曲げる・線の端が箱の境界に乗る・範囲の枠がメンバーだけを囲む
-- 凡例: 使った status（箱・線・枠）だけを出し、legend_labels で文言を差し替えられる
+- sequence の注記・区間の枠・エラーで戻る線・参加者の 2 行目（#533）: 注記は生存線の右で次の生存線に届かず、
+  前後の呼び出しと縦に重ならない。区間の枠は札に名前、右に説明を括弧なしで出し、枠の予算に数えない。
+  エラーで戻る線は赤の破線。2 行目は見出しの箱に収まる。新しいキーを使わない図は前の版と同じバイト列を出す（枠が次の生存線を越えていた図は列の間隔が広がる）
+- 凡例: 使った status（箱・線・枠）だけを出し、legend_labels で文言を差し替えられる。sequence は枠で囲み、
+  部品（参加者・注記）と呼び出し（線）を段に分ける
 - 境界ちょうどの点・矩形の判定（inside / overlap）、線分の接触と同じ直線上の 2 本（crosses）、折れ線が矩形を
   通るか（through）、縦長・横長の上限ちょうどは CLI から配置を作れないため、GeometryBoundaryTest だけ関数を直接
   読み込んで呼ぶ（上限ちょうどは定数を図の寸法に差し替えて測る）
@@ -27,6 +31,7 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import re
@@ -251,6 +256,22 @@ class OutputContractTest(unittest.TestCase):
             ({**SEQ, "legend_labels": {"new": "x"}}, "legend_labels のキー"),
             ({**SEQ, "legend_labels": {"added": ""}}, "legend_labels の値は空でない文字列"),
             ({**SEQ, "legend": "no"}, "legend は true / false"),
+            ({**SEQ, "steps": [{"note": "", "at": "ui"}]}, "note は空でない文字列"),
+            ({**SEQ, "steps": [{"note": "x", "at": "z"}]}, "at 'z' が定義に無い"),
+            ({**SEQ, "steps": [{"note": "x", "at": "ui", "label": "y"}]}, "知らないキー 'label'"),
+            ({**SEQ, "steps": [{"frame": "opt", "label": "x", "cond": "y", "steps": [{"from": "ui", "to": "act"}]}]},
+             "cond は section の枠だけに書ける"),
+            ({**SEQ, "steps": [{"frame": "section", "steps": [{"from": "ui", "to": "act"}]}]}, "label は空でない文字列"),
+            ({**SEQ, "steps": [{"frame": "section", "label": "1.\n受付", "steps": [{"from": "ui", "to": "act"}]}]},
+             "label と cond は 1 行で書く"),
+            ({**SEQ, "steps": [{"frame": "section", "label": "1", "cond": "a\nb", "steps": [{"from": "ui", "to": "act"}]}]},
+             "label と cond は 1 行で書く"),
+            ({**SEQ, "steps": [{"frame": "section", "label": "1", "branches": []}]}, "branches は alt の枠だけ"),
+            ({**SEQ, "steps": [{"from": "ui", "to": "act", "error": 1}]}, "error は true / false"),
+            ({**SEQ, "steps": [{"from": "ui", "to": "act", "error": True, "status": "added"}]},
+             "error と status を一緒に書けない"),
+            ({**SEQ, "participants": [{"id": "a", "sublabel": 1}]}, "participants[0] の sublabel は文字列で書く"),
+            ({"type": "flow", "nodes": [{"id": "a", "sublabel": "x"}]}, "知らないキー 'sublabel'"),
         ]
         rc, out, _, tmp = run(*[c for c, _ in cases])
         self.assertEqual(rc, 1)
@@ -363,6 +384,16 @@ class ComplexityBudgetTest(unittest.TestCase):
                                                {"label": "b1", "steps": [{"from": "p0", "to": "p1"}]}]}
         self.assert_budget(seq_of(2, 1, [nested]), "枠 2")
 
+    def test_sections_and_notes_are_not_counted(self):
+        def section(i: int) -> dict:
+            return {"frame": "section", "label": f"{i}", "steps": [{"from": "p0", "to": "p1"}]}
+
+        # 区間の枠は分岐を持たないので、分岐のある枠と並べても数えない。注記は呼び出しに数えない
+        self.assert_budget(seq_of(2, 1, [section(1), section(2), section(3), frame("alt", 2)]), None)
+        notes = [{"note": "n", "at": "p0"} for _ in range(3)]
+        self.assert_budget(seq_of(5, 12, notes), None)
+        self.assert_budget(seq_of(2, 1, [section(1), frame("alt", 2), frame("opt")]), "枠 2")
+
 
 class CommonRenderingTest(unittest.TestCase):
     def test_root_has_pixel_size_and_white_background(self):
@@ -381,11 +412,35 @@ class CommonRenderingTest(unittest.TestCase):
         for m in markers:
             self.assertEqual(m.get("markerUnits"), "userSpaceOnUse")
 
-    def test_legend_lists_only_used_statuses_in_fixed_order(self):
+    def test_sequence_legend_splits_boxes_and_lines_into_framed_rows(self):
         root, _ = render(SEQ)
-        items = groups(root, "legend-item")
-        self.assertEqual([i.get("data-status") for i in items], ["added", "changed", "existing", "reply"])
-        self.assertEqual([text_of(i) for i in items], ["この PR で足した", "この PR で変えた", "既存", "返り値"])
+        rows = groups(root, "legend-row")
+        self.assertEqual([r.get("data-row") for r in rows], ["boxes", "lines"])
+        self.assertEqual([text_of(r.find(f"{NS}text")) for r in rows], ["部品", "呼び出し"])
+        boxes, lines = (groups(r, "legend-item") for r in rows)
+        self.assertEqual([i.get("data-status") for i in boxes], ["added", "changed", "existing"])
+        # 呼び出しの段に changed は無い（SEQ で changed なのは参加者だけ）
+        self.assertEqual([i.get("data-status") for i in lines], ["added", "existing", "reply"])
+        self.assertEqual([text_of(i) for i in lines], ["この PR で足した", "既存", "返り値"])
+        self.assertIsNotNone(boxes[0].find(f"{NS}rect"))
+        self.assertIsNone(lines[0].find(f"{NS}rect"))
+        self.assertEqual(lines[2].find(f"{NS}path").get("stroke-dasharray"), "6 4")
+        frame = next(r for r in root.iter(f"{NS}rect") if r.get("class") == "legend-frame")
+        fr = rect_of(frame)
+        for item in boxes + lines:
+            sample = item.find(f"{NS}rect") if item.find(f"{NS}rect") is not None else item.find(f"{NS}path")
+            x = float(sample.get("x")) if sample.tag == f"{NS}rect" else path_points(sample.get("d"))[0][0]
+            self.assertTrue(fr[0] < x < fr[2], (fr, x))
+        lowest = max(path_points(p.get("d"))[-1][1] for p in root.iter(f"{NS}path") if p.get("class") == "lifeline")
+        self.assertGreater(fr[1], lowest)
+
+    def test_sequence_legend_without_boxes_other_than_existing_still_shows_reply(self):
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}],
+                          "steps": [{"from": "a", "to": "b"}, {"from": "b", "to": "a", "reply": True}]})
+        self.assertEqual([r.get("data-row") for r in groups(root, "legend-row")], ["boxes", "lines"])
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}],
+                          "steps": [{"from": "a", "to": "b"}, {"note": "説明", "at": "a"}]})
+        self.assertEqual(groups(root, "legend"), [])
 
     def test_legend_of_graphs_includes_box_line_and_group_statuses(self):
         root, _ = render({"type": "flow", "nodes": [{"id": "a", "status": "removed"}, {"id": "b"}],
@@ -400,6 +455,9 @@ class CommonRenderingTest(unittest.TestCase):
     def test_legend_labels_override_and_legend_can_be_turned_off(self):
         root, _ = render({**SEQ, "legend_labels": {"added": "PR-1 で足す"}})
         self.assertEqual(text_of(groups(root, "legend-item")[0]), "PR-1 で足す")
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}],
+                          "steps": [{"from": "b", "to": "a", "error": True}], "legend_labels": {"error": "例外"}})
+        self.assertEqual(text_of(groups(root, "legend-item")[-1]), "例外")
         root, _ = render({**SEQ, "legend": False})
         self.assertEqual(groups(root, "legend"), [])
 
@@ -603,6 +661,226 @@ class SequenceTest(unittest.TestCase):
             y1 = float(re.search(r"V ([-\d.]+)", d).group(1))
             self.assertEqual(y0, head_bottom)
             self.assertGreater(y1, last_y)
+
+
+def note(root: ET.Element, nth: int = 0) -> ET.Element:
+    return groups(root, "note")[nth]
+
+
+def arrow_ys(root: ET.Element) -> list[float]:
+    return [path_points(m.find(f"{NS}path").get("d"))[0][1] for m in groups(root, "message")]
+
+
+# 前の版（#533 より前）が出したバイト列の sha256。新しいキーを使わない図の描画が変わらないことを押さえる。
+# 凡例の無い sequence と、凡例が前の形のままの flow / state を選んだ（sequence の凡例は #533 で形が変わる）
+UNCHANGED = {
+    "b207327ba6141ad89c878b6cef5d3480626790f1d941310e95218816a020b6ab": {**SEQ, "legend": False, "title": "削除の流れ"},
+    "597feb475e97d0d0aa884d0478c38cc321599b707d3a3bf24a9431160abb60fd": {
+        "type": "sequence", "participants": [{"id": "a", "label": "画面"}, {"id": "b", "label": "API"}],
+        "steps": [{"from": "a", "to": "b", "label": "取得"}, {"frame": "opt", "label": "キャッシュが無い", "steps": [
+            {"from": "b", "to": "b", "label": "組み立てる"},
+            {"frame": "loop", "label": "各行", "steps": [{"from": "b", "to": "a", "label": "行\n2 行目"}]}]}]},
+    "76d4b28dd2d32e3e6b602c84fa768d87b07b6c406315a2c69eaab145da698af4": {
+        "type": "flow", "nodes": [{"id": "a", "status": "removed"}, {"id": "b"}],
+        "edges": [{"from": "a", "to": "b", "status": "added", "label": "呼ぶ"}],
+        "groups": [{"nodes": ["b"], "status": "later", "label": "範囲"}]},
+    "1ce0e8d56750a86517326251a109a5f68b08f549d474c0a1dab518e547a85f44": {
+        "type": "state", "initial": "a", "states": [{"id": "a"}, {"id": "b", "status": "changed", "final": True}],
+        "transitions": [{"from": "a", "to": "b", "label": "閉じる"}, {"from": "b", "to": "b", "label": "再送"}]},
+}
+
+
+class SequenceAnnotationTest(unittest.TestCase):
+    """注記・区間の枠・エラーで戻る線・参加者の 2 行目（#533）."""
+
+    def test_definitions_without_new_keys_render_the_same_bytes_as_before(self):
+        specs = list(UNCHANGED.values())
+        rc, out, _, tmp = run(*specs)
+        self.assertEqual(rc, 0, out)
+        for i, expected in enumerate(UNCHANGED):
+            with self.subTest(type=specs[i]["type"]):
+                self.assertEqual(hashlib.sha256((tmp / f"d{i}.svg").read_bytes()).hexdigest(), expected)
+
+    def test_note_sits_right_of_its_lifeline_without_reaching_the_next(self):
+        text = "権限を確かめてから\nユースケースへ渡す"
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+                          "steps": [{"from": "a", "to": "b"}, {"note": text, "at": "b"}, {"from": "b", "to": "c"}]})
+        n = note(root)
+        self.assertEqual(n.get("data-at"), "b")
+        x0, _, x1, _ = rect_of(n)
+        self.assertGreater(x0, center(root, "b")[0])
+        self.assertLess(x1, center(root, "c")[0])
+        # 全角 9 文字の行が収まる（1 文字 13px を下限に置く）
+        self.assertGreaterEqual(x1 - x0, 9 * 13)
+        self.assertEqual(text_of(n), text)
+
+    def test_note_is_drawn_between_the_calls_around_it(self):
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}], "steps": [
+            {"from": "a", "to": "b", "label": "前"}, {"note": "1 行目\n2 行目\n3 行目", "at": "a"},
+            {"from": "b", "to": "a", "label": "後"}]})
+        _, y0, _, y1 = rect_of(note(root))
+        before, after = arrow_ys(root)
+        self.assertGreater(y0, before)
+        self.assertLess(y1, label_bg(root, "後")[1])
+        self.assertLess(y1, after)
+
+    def test_note_on_last_lifeline_stays_on_canvas(self):
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}],
+                          "steps": [{"from": "a", "to": "b"}, {"note": "最後の参加者に付けた長い注記", "at": "b"}]})
+        tx, _ = translate(root)
+        self.assertLessEqual(rect_of(note(root))[2] + tx, float(root.get("width")))
+
+    def test_frame_with_a_note_stops_before_the_next_lifeline(self):
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}, {"id": "c"}], "steps": [
+            {"frame": "opt", "label": "c", "steps": [{"from": "a", "to": "b"},
+                                                     {"note": "b の位置に置いた長い注記", "at": "b"}]},
+            {"from": "b", "to": "c"}]})
+        fr, nr = rect_of(groups(root, "frame")[0]), rect_of(note(root))
+        lifelines = [p for p in root.iter(f"{NS}path") if p.get("class") == "lifeline"]
+        life_c = path_points(lifelines[2].get("d"))[0][0]
+        self.assertLess(nr[2], fr[2])
+        self.assertLess(fr[2], life_c)
+
+    def test_nested_frames_with_a_note_stop_before_the_next_lifeline(self):
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}, {"id": "c"}], "steps": [
+            {"frame": "section", "label": "1. 受け付け", "steps": [
+                {"frame": "opt", "label": "c", "steps": [{"from": "a", "to": "b"},
+                                                         {"note": "b の位置に置いた長い注記", "at": "b"}]}]},
+            {"from": "b", "to": "c"}]})
+        lifelines = [p for p in root.iter(f"{NS}path") if p.get("class") == "lifeline"]
+        life_c = path_points(lifelines[2].get("d"))[0][0]
+        for frame in groups(root, "frame"):
+            self.assertLess(rect_of(frame)[2], life_c, frame.get("data-kind"))
+
+    def test_frames_widened_by_self_calls_or_long_text_stop_before_the_next_lifeline(self):
+        cases = {
+            "入れ子の自己呼び出し": [{"frame": "section", "label": "1. 受け付け", "steps": [
+                {"frame": "opt", "label": "c", "steps": [
+                    {"from": "a", "to": "b"}, {"from": "b", "to": "b", "label": "自分を呼ぶ長いラベルの処理"}]}]}],
+            "長い cond": [{"frame": "section", "label": "1. 受け付け",
+                           "cond": "利用者が送った申請を受け取り内容を確かめる", "steps": [{"from": "a", "to": "b"}]}],
+            "長い label": [{"frame": "opt", "label": "利用者が送った申請を受け取ったときだけ",
+                            "steps": [{"from": "a", "to": "b"}]}],
+        }
+        for name, steps in cases.items():
+            with self.subTest(name):
+                root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+                                  "steps": steps + [{"from": "b", "to": "c"}]})
+                lifelines = [p for p in root.iter(f"{NS}path") if p.get("class") == "lifeline"]
+                life_c = path_points(lifelines[2].get("d"))[0][0]
+                for frame in groups(root, "frame"):
+                    self.assertLess(rect_of(frame)[2], life_c, frame.get("data-kind"))
+
+    def test_frames_widening_two_columns_stop_before_the_next_lifelines(self):
+        # 2 列を順に広げる回。広げた直後の丸めで同じ列を 2 度越えたと読むと、最後の列を広げた後に測り直さずに抜けていた
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}, {"id": "c"}], "steps": [
+            {"frame": "opt", "label": "あ申WixiWx1申W申申ix1iabxababmabm申i申", "steps": [{"from": "b", "to": "b"}]},
+            {"frame": "opt", "label": "x申abxab1mmmmiああmi", "steps": [{"from": "a", "to": "a"}]},
+            {"from": "b", "to": "c"}]})
+        lifelines = [path_points(p.get("d"))[0][0] for p in root.iter(f"{NS}path") if p.get("class") == "lifeline"]
+        frames = groups(root, "frame")
+        self.assertLess(rect_of(frames[0])[2], lifelines[2])
+        self.assertLess(rect_of(frames[1])[2], lifelines[1])
+
+    def test_widening_for_frames_leaves_exactly_the_margin(self):
+        # 越えた枠ごとに足し合わせると、入れ子の外側の枠と次の生存線の間が必要以上に空く
+        cases = {
+            "入れ子": [{"frame": "section", "label": "1", "steps": [
+                {"frame": "opt", "label": "利用者が送った申請を受け取ったときだけ", "steps": [{"from": "a", "to": "b"}]}]}],
+            "続けて 2 つ": [
+                {"frame": "opt", "label": "利用者が送った申請を受け取ったときだけ", "steps": [{"from": "a", "to": "b"}]},
+                {"frame": "loop", "label": "申請に添付されたファイルの数だけ繰り返す", "steps": [{"from": "a", "to": "b"}]}],
+        }
+        for name, steps in cases.items():
+            with self.subTest(name):
+                root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+                                  "steps": steps + [{"from": "b", "to": "c"}]})
+                lifelines = [p for p in root.iter(f"{NS}path") if p.get("class") == "lifeline"]
+                life_c = path_points(lifelines[2].get("d"))[0][0]
+                right = max(rect_of(f)[2] for f in groups(root, "frame"))
+                self.assertAlmostEqual(life_c - right, 4, delta=0.2)
+
+    def test_frame_encloses_its_note(self):
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}], "steps": [
+            {"frame": "opt", "label": "c", "steps": [{"from": "a", "to": "b"}, {"note": "枠の中の長い注記", "at": "b"}]}]})
+        fr, nr = rect_of(groups(root, "frame")[0]), rect_of(note(root))
+        self.assertTrue(fr[0] < nr[0] and nr[2] < fr[2] and fr[1] < nr[1] and nr[3] < fr[3], (fr, nr))
+
+    def test_note_takes_status_colors_and_strikes_when_removed(self):
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}], "steps": [
+            {"from": "a", "to": "b"}, {"note": "足した", "at": "a", "status": "added"},
+            {"note": "消した", "at": "a", "status": "removed"}]})
+        added, removed = note(root, 0), note(root, 1)
+        self.assertEqual(added.find(f"{NS}rect").get("stroke"), "#1e8e3e")
+        self.assertIsNone(added.find(f"{NS}text").get("text-decoration"))
+        self.assertEqual(removed.find(f"{NS}text").get("text-decoration"), "line-through")
+
+    def test_section_shows_its_label_on_the_tab_and_cond_without_brackets(self):
+        cond = "画面から呼ぶときだけ通る"
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}], "steps": [
+            {"frame": "section", "label": "1. 受け付け", "cond": cond, "steps": [{"from": "a", "to": "b"}]}]})
+        frame = groups(root, "frame")[0]
+        self.assertEqual(frame.get("data-kind"), "section")
+        self.assertEqual(frame.get("data-label"), "1. 受け付け")
+        texts = [text_of(t) for t in root.iter(f"{NS}text")]
+        self.assertIn("1. 受け付け", texts)
+        self.assertNotIn("section", texts)
+        self.assertNotIn(f"[{cond}]", texts)
+        bg = label_bg(root, cond)
+        tab = next(p for p in root.iter(f"{NS}path") if p.get("class") == "frame-tab")
+        self.assertGreater(bg[0], max(x for x, _ in path_points(tab.get("d"))))
+        self.assertLessEqual(bg[2], rect_of(frame)[2])
+
+    def test_error_return_is_a_red_dashed_line(self):
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}], "steps": [
+            {"from": "a", "to": "b"}, {"from": "b", "to": "a", "label": "NotFound", "error": True}]})
+        call, err = groups(root, "message")
+        self.assertIsNone(call.get("data-error"))
+        self.assertEqual(err.get("data-error"), "true")
+        path = err.find(f"{NS}path")
+        self.assertEqual(path.get("stroke"), "#d93025")
+        self.assertEqual(path.get("stroke-dasharray"), "3 3")
+        self.assertEqual(path.get("marker-end"), "url(#arrow-removed)")
+        # 消した呼び出しと違い、ラベルに取り消し線を引かない
+        label = next(t for t in root.iter(f"{NS}text") if text_of(t) == "NotFound")
+        self.assertIsNone(label.get("text-decoration"))
+        lines = groups(groups(root, "legend-row")[1], "legend-item")
+        self.assertEqual([i.get("data-status") for i in lines], ["existing", "error"])
+        self.assertEqual(text_of(lines[1]), "エラーで戻る")
+        # 凡例の見本は図の中のエラーの線と同じ描き方
+        sample = lines[1].find(f"{NS}path")
+        self.assertEqual({k: sample.get(k) for k in ("stroke", "stroke-dasharray", "marker-end")},
+                         {k: path.get(k) for k in ("stroke", "stroke-dasharray", "marker-end")})
+
+    def test_error_return_differs_from_a_removed_reply(self):
+        root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}], "steps": [
+            {"from": "a", "to": "b"}, {"from": "b", "to": "a", "reply": True, "status": "removed"},
+            {"from": "b", "to": "a", "error": True}]})
+        removed_reply, err = (m.find(f"{NS}path") for m in groups(root, "message")[1:])
+        self.assertEqual(removed_reply.get("stroke"), err.get("stroke"))
+        self.assertNotEqual(removed_reply.get("stroke-dasharray"), err.get("stroke-dasharray"))
+
+    def test_sublabel_is_a_smaller_grey_second_line_inside_the_header(self):
+        root, _ = render({"type": "sequence", "participants": [
+            {"id": "a", "label": "一覧画面", "sublabel": "app/items/page.tsx"}, {"id": "b", "label": "API"},
+            {"id": "c", "label": "消す", "sublabel": "旧実装", "status": "removed"}],
+            "steps": [{"from": "a", "to": "b"}, {"from": "b", "to": "c"}]})
+        head = node(root, "a")
+        x0, y0, x1, y1 = rect_of(head)
+        name, sub = head.findall(f"{NS}text")
+        self.assertEqual((text_of(name), text_of(sub)), ("一覧画面", "app/items/page.tsx"))
+        # 2 行目があるときは 1 行目（役割）を太字にし、2 行目は太字にしない
+        self.assertEqual((name.get("font-weight"), sub.get("font-weight")), ("bold", None))
+        self.assertEqual(sub.get("font-size"), "12")
+        self.assertEqual(sub.get("fill"), "#5f6368")
+        sub_y, name_y = (float(t.find(f"{NS}tspan").get("y")) for t in (sub, name))
+        self.assertTrue(y0 < name_y < sub_y < y1)
+        self.assertGreaterEqual(x1 - x0, len("app/items/page.tsx") * 12 * 0.62)
+        # 見出しの高さは揃い、2 行目の無い参加者は 1 行のまま
+        self.assertEqual(rect_of(node(root, "b"))[3] - rect_of(node(root, "b"))[1], y1 - y0)
+        self.assertEqual(len(node(root, "b").findall(f"{NS}text")), 1)
+        self.assertEqual([t.get("text-decoration") for t in node(root, "c").findall(f"{NS}text")],
+                         ["line-through", "line-through"])
 
 
 CHAIN = {"type": "state", "initial": "a",
