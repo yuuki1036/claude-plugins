@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.6] - 2026-11-26
+
+### Fixed
+
+- **subagent の Read が、main の記録済みの版を上書きしないようにした**（GitHub issue #542）。subagent・in-process teammate の Read も PostToolUse の hook を `agent_id` 付きで走らせ、`session_id` は main と同じなので、main の状態ファイルに記録される（m1 の状態ファイル 35 本で、main が読んでいない skill の記録が subagent の Read から入っていた）。記録は続ける（2026-11-26 決定）。プロンプトに本文を貼らずパスだけ渡して agent に読ませる使い方では、`agent_id` で外すと agent が読んだ skill の記録が抜けるため。そのうえで、空でない `agent_id` のある Read は Skill の呼び出しと同じ扱いにし、記録済みの版は上書きせず、まだ記録の無いプラグイン・skill だけ書く。更新の後に起動した subagent が新しい版を読んでも、main の古い版の記録が消えず、読み直しの通知が出る。fork の取り込み前に書いた分には Skill と同じ印を付け、transcript に写った親の Read の版を優先する
+- **stale-skill.sh の前段が、状態ファイルのあるセッションでも発言のたびに `head` と `basename` を起動していたのを直した**（GitHub issue #542）。写された transcript かの見分けは、状態ファイルの候補が無いとき（KEEP が空）にだけ走らせる。候補があれば前段は見分けの結果に関わらず python を起動し、自分の状態ファイルが無い回は python が見分け直すので、前段では見分けなくてよい。ファイル名は `basename` を起動せずにパラメータ展開で取る。sessions dir が無ければ、状態ファイルの候補を探す `grep` / `sed` も起動しない
+
 ## [1.11.5] - 2026-11-24
 
 ### Fixed
