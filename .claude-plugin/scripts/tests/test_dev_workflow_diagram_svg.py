@@ -434,6 +434,25 @@ class CommonRenderingTest(unittest.TestCase):
         lowest = max(path_points(p.get("d"))[-1][1] for p in root.iter(f"{NS}path") if p.get("class") == "lifeline")
         self.assertGreater(fr[1], lowest)
 
+    def test_sequence_legend_shows_replies_as_dashed_samples_of_their_status(self):
+        # 返り値の線は status の色の破線で描くので、凡例も同じ破線の見本にする。status を実線の見本として出すと
+        # 図に無い線になり、返り値の見本を灰色に決め打ちすると返り値にしか使っていない色の説明が消える
+        for reply_status, key, text in (("existing", "reply", "返り値"),
+                                        ("added", "reply:added", "返り値（この PR で足した）"),
+                                        ("changed", "reply:changed", "返り値（この PR で変えた）"),
+                                        ("removed", "reply:removed", "返り値（この PR で消した）"),
+                                        ("later", "reply:later", "返り値（後続の PR）")):
+            with self.subTest(reply_status):
+                root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}], "steps": [
+                    {"from": "a", "to": "b"}, {"from": "b", "to": "a", "reply": True, "status": reply_status}]})
+                lines = groups(groups(root, "legend-row")[1], "legend-item")
+                self.assertEqual([i.get("data-status") for i in lines], ["existing", key])
+                self.assertEqual(text_of(lines[1]), text)
+                drawn = groups(root, "message")[1].find(f"{NS}path")
+                sample = lines[1].find(f"{NS}path")
+                self.assertEqual({k: sample.get(k) for k in ("stroke", "stroke-dasharray", "marker-end")},
+                                 {k: drawn.get(k) for k in ("stroke", "stroke-dasharray", "marker-end")})
+
     def test_sequence_legend_without_boxes_other_than_existing_still_shows_reply(self):
         root, _ = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}],
                           "steps": [{"from": "a", "to": "b"}, {"from": "b", "to": "a", "reply": True}]})
