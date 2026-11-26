@@ -86,7 +86,7 @@ validate_ssot.py がカバーする項目（SSoT 同期、schema、_requirements
     phase 見出しごとに Read の行がちょうど 1 本か / Read 先がその skill の phase の置き場に実在し,
     2 つの phase で同じファイルを読んでいないか / ファイルの最初の見出しが SKILL.md の見出しと同じか /
     末尾の「**次は <phase>**」が SKILL.md の並びの次を指すか（最後は「**ここで終わり**」。節を順に踏まない
-    UNCHAINED_SPLIT_SKILLS（hub のサブコマンド・start のモード）はこの鎖を見ない）/
+    UNCHAINED_SPLIT_SKILLS（hub と living-spec のサブコマンド・start のモード）はこの鎖を見ない）/
     その skill の phase の置き場の md がどれかの phase の見出しから Read されているか（孤立ファイルは error）.
     Read 1 回で読み切れない SKILL.md は続きを読まずに phase を飛ばした（#350 / #250）. 鎖が表すのは
     既定の並びだけで, skip は次の見出しの入口の条件, 後戻りは本文の分岐で表す（#426）.
@@ -1893,19 +1893,27 @@ SPLIT_SKILLS: tuple[tuple[str, str, str], ...] = (
     # 番号の無いモードの節. SKILL.md に残す `## ワークフロー`（Phase 0〜1.5）を除く `## ` 見出しがすべて分けた節になる
     # （残す節を足すなら除外に足す. 足さずに見出しだけ置くと Read の行が無い error になる）
     ("issue-workflow/skills/start/SKILL.md", r"^## (?!ワークフロー$)(?P<num>[^（`]+?)\s*(?:[（`]|$)", "{num}"),
+    # サブコマンドの Phase の節. SKILL.md に残す Phase 0（保存先確認 + サブコマンド判定）を番号で外す.
+    # init の Phase 2・3 は init のファイルの中に置く（SKILL.md に見出しを残すと Read の行が無い error になる）
+    ("project-hub/skills/living-spec/SKILL.md", r"^## Phase (?P<num>[1-9]\d*): ", "Phase {num}"),
 )
 #: SPLIT_SKILLS のうち, 節を順に踏まない skill（呼ばれたサブコマンド・入ったモードの節だけを読む）. 節のファイルの末尾の
 #: 「次は」を求めない（鎖の検査を外す）. 上限・Read の行・最初の見出し・孤立ファイルの検査は同じに掛ける
 UNCHAINED_SPLIT_SKILLS: frozenset[str] = frozenset(
-    {"project-hub/skills/hub/SKILL.md", "issue-workflow/skills/start/SKILL.md"}
+    {
+        "project-hub/skills/hub/SKILL.md",
+        "issue-workflow/skills/start/SKILL.md",
+        "project-hub/skills/living-spec/SKILL.md",
+    }
 )
 #: SPLIT_SKILLS のうち, phase ファイルを `references/` の直下でなく下のディレクトリに置く skill（SKILL.md のディレクトリ起点）.
 #: references/ に phase でない参照文書を分ける前から持つ skill 向け. Read 先の内外と孤立ファイルの検査はこの置き場で見るので,
 #: 置き場の外の参照文書は孤立に数えない（置き場を references/ のままにすると pr-creator の 3 本・start の 3 本
-#: （context-agents / existing-work / lightweight-flow）が error になる / GitHub issue #447）
+#: （context-agents / existing-work / lightweight-flow）・living-spec の 2 本（format-spec / template）が error になる / GitHub issue #447）
 SPLIT_SKILL_PHASE_DIRS: dict[str, str] = {
     "dev-workflow/skills/pr-creator/SKILL.md": "references/steps",
     "issue-workflow/skills/start/SKILL.md": "references/modes",
+    "project-hub/skills/living-spec/SKILL.md": "references/subcommands",
 }
 #: SKILL.md と phase ファイルの上限. Read 1 回で返る範囲の切れ目は実測 42,129 byte（#350 の旧版）と
 #: 42,448 byte（2026-11-05 の版）. token と byte の比は字種で揺れるので切れ目の手前に余白を取り,
