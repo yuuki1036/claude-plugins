@@ -20,6 +20,8 @@ MP = "mp"
 SID = "sess-1"
 # stale_skill.py が stderr へ出す行の頭（例外を握りつぶしたとき・stdin が JSON でないとき）
 PY_ERROR = "[plugin-manager:stale-skill] "
+# subagent・in-process teammate の hook の stdin に付く（session_id は main と同じ）
+SUB = {"agent_id": "a1b2", "agent_type": "Explore"}
 
 
 class StaleSkillTest(HookTestCase):
@@ -64,9 +66,9 @@ class StaleSkillTest(HookTestCase):
     def state_file(self, sid: str = SID) -> Path:
         return self.cfg / "plugin-manager" / "sessions" / f"{sid}.json"
 
-    def read(self, path, sid=SID, response="x"):
+    def read(self, path, sid=SID, response="x", extra=None):
         return self.run_hook({"session_id": sid, "hook_event_name": "PostToolUse", "tool_name": "Read",
-                              "tool_input": {"file_path": str(path)}, "tool_response": response},
+                              "tool_input": {"file_path": str(path)}, "tool_response": response, **(extra or {})},
                              env_extra=self.env(), args=("record",))
 
     def skill(self, name, sid=SID):
@@ -94,19 +96,22 @@ class StaleSkillTest(HookTestCase):
         self.assertSilent(self.read(old / "skills" / "s" / "SKILL.md"))
         self.install({"p": "1.1.0"})
 
-    def python_stub_path(self) -> tuple[str, Path]:
-        """呼ばれたら印のファイルを作るだけの python3 を先頭に置いた PATH.
+    def stub_path(self, name: str, *real: str) -> tuple[str, Path]:
+        """呼ばれたら印のファイルを作るだけの name を先頭に置き、real を本物で引ける PATH.
 
         stub は path_with_only の dir（本物への symlink が並ぶ）に書かない。同名の symlink があると
-        write_text がたどって本物の python3 を上書きする
+        write_text がたどって本物を上書きする
         """
         stub_dir = tempfile.TemporaryDirectory()
         self.addCleanup(stub_dir.cleanup)
-        marker = self.home / "python-called"
-        stub = Path(stub_dir.name) / "python3"
+        marker = self.home / f"{name}-called"
+        stub = Path(stub_dir.name) / name
         stub.write_text(f"#!/bin/bash\n: > '{marker}'\n")
         stub.chmod(0o755)
-        return f"{stub_dir.name}:{self.path_with_only('find')}", marker
+        return f"{stub_dir.name}:{self.path_with_only(*real)}", marker
+
+    def python_stub_path(self) -> tuple[str, Path]:
+        return self.stub_path("python3", "find")
 
     def assertQuiet(self, res, msg=""):
         """黙ったうえで、ERR trap にも python の例外にも落ちていない.
@@ -791,6 +796,21 @@ class StaleSkillTest(HookTestCase):
         self.assertQuiet(res)
         self.assertEqual(sorted(p.name for p in sessions.iterdir()), ["other.json"])
 
+    def test_copied_transcript_with_other_record_notifies(self):
+        """入れ子の別の id で KEEP が埋まり前段が transcript を開かなくても、python が写された transcript を見分ける.
+
+        上の test_own_transcript_with_other_record_is_silent の対（GitHub issue #542 で前段の見分けを KEEP が空の回に絞った）
+        """
+        sessions = self.cfg / "plugin-manager" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / "other.json").write_text("{}")
+        tp = self.copied(self.fork_setup())
+        res = self.run_hook({"session_id": "fork-1", "hook_event_name": "UserPromptSubmit", "prompt": "hi",
+                             "transcript_path": str(tp), "x": {"session_id": "other"}},
+                            env_extra=self.env(), args=("prompt",))
+        self.assertIn("p: 1.0.0 → 1.1.0", res.stdout)
+        self.assertTrue(self.state_file("fork-1").exists())
+
     def test_own_transcript_is_silent(self):
         """先頭の行の sessionId が自分のもの（写されていない）なら、旧版の Read が残っていても取り込まない."""
         tp = self.copied(self.fork_setup(), head_sid="fork-1")
@@ -811,6 +831,57 @@ class StaleSkillTest(HookTestCase):
         tp = self.copied(old)
         self.run_hook({**payload, "transcript_path": str(tp)}, env_extra=env, args=("prompt",))
         self.assertTrue(marker.exists())
+
+    def test_own_record_does_not_start_head(self):
+        """状態ファイルがあれば transcript の先頭を読まない（どのみち python を起動する / GitHub issue #542）."""
+        self.stale_setup()
+        path, marker = self.stub_path("head", "find", "python3")
+        tp = self.copied(sid=SID)
+        env = {**self.env(), "PATH": path}
+        payload = {"hook_event_name": "UserPromptSubmit", "prompt": "hi", "transcript_path": str(tp)}
+        res = self.run_hook({**payload, "session_id": SID}, env_extra=env, args=("prompt",))
+        self.assertIn("p: 1.0.0 → 1.1.0", res.stdout)
+        self.assertFalse(marker.exists())
+        # 状態ファイルの無いセッションでは開く（上の不在が stub の不発でないこと）
+        self.assertQuiet(self.run_hook({**payload, "session_id": "sess-2"}, env_extra=env, args=("prompt",)))
+        self.assertTrue(marker.exists())
+
+    def test_own_record_session_start_does_not_start_head(self):
+        self.stale_setup()
+        self.prompt()
+        path, marker = self.stub_path("head", "find", "python3")
+        tp = self.copied(sid=SID)
+        res = self.run_hook({"session_id": SID, "hook_event_name": "SessionStart", "source": "resume",
+                             "transcript_path": str(tp)}, env_extra={**self.env(), "PATH": path}, args=("session-start",))
+        self.assertQuiet(res)
+        self.assertFalse(marker.exists())
+
+    def test_subagent_session_start_does_not_start_head(self):
+        """sub の SessionStart では transcript を開く前に黙る."""
+        (self.cfg / "plugin-manager" / "sessions").mkdir(parents=True)
+        path, marker = self.stub_path("head", "find", "python3")
+        tp = self.copied(sid=SID)
+        env = {**self.env(), "PATH": path}
+        payload = {"session_id": SID, "hook_event_name": "SessionStart", "source": "compact",
+                   "transcript_path": str(tp)}
+        self.assertQuiet(self.run_hook({**payload, **SUB}, env_extra=env, args=("session-start",)))
+        self.assertFalse(marker.exists())
+        self.run_hook(payload, env_extra=env, args=("session-start",))
+        self.assertTrue(marker.exists())
+
+    def test_copied_check_does_not_start_basename(self):
+        """写された transcript の見分けに basename を起動しない（ファイル名はパラメータ展開で取る）."""
+        path, marker = self.stub_path("basename", "find", "python3")
+        env = {**self.env(), "PATH": path}
+        old = self.fork_setup()
+        payload = {"session_id": "fork-1", "hook_event_name": "UserPromptSubmit", "prompt": "hi"}
+        own = self.copied(old, head_sid="fork-1")
+        self.assertQuiet(self.run_hook({**payload, "transcript_path": str(own)}, env_extra=env, args=("prompt",)))
+        self.assertFalse(self.state_file("fork-1").exists())
+        tp = self.copied(old)
+        res = self.run_hook({**payload, "transcript_path": str(tp)}, env_extra=env, args=("prompt",))
+        self.assertIn("p: 1.0.0 → 1.1.0", res.stdout)
+        self.assertFalse(marker.exists())
 
     def test_copied_transcript_without_session_id_is_silent(self):
         tp = self.copied(self.fork_setup(), head_lines=[json.dumps({"type": "summary"})])
@@ -919,6 +990,32 @@ class StaleSkillTest(HookTestCase):
         self.transcript(old / "references" / "r.md")
         self.assertIn("p: 1.0.0 → 1.1.0", self.fork_prompt(tp).stdout)
 
+    def test_fork_subagent_read_does_not_hide_parent_read(self):
+        """fork の後の sub の Read（初めての記録）は、transcript の旧版の Read より優先しない（plugin 単位）."""
+        old = self.version_dir("p", "1.0.0")
+        (old / "references").mkdir()
+        (old / "references" / "r.md").write_text("r")
+        new = self.version_dir("p", "1.1.0")
+        (new / "references").mkdir()
+        (new / "references" / "r.md").write_text("r")
+        self.install({"p": "1.1.0"})
+        tp = self.home / "fork.jsonl"
+        self.assertQuiet(self.fork_start(tp))
+        self.assertQuiet(self.read(new / "references" / "r.md", sid="fork-1", extra=SUB))
+        self.transcript(old / "references" / "r.md")
+        self.assertIn("p: 1.0.0 → 1.1.0", self.fork_prompt(tp).stdout)
+
+    def test_fork_subagent_read_keeps_parent_skill_version(self):
+        """fork の後の sub の Read は、transcript にある同じ skill の旧版を上書きしない（skill を名指しで知らせる）."""
+        old = self.fork_setup()
+        tp = self.home / "fork.jsonl"
+        self.assertQuiet(self.fork_start(tp))
+        self.assertQuiet(self.read(self.cache / "p" / "1.1.0" / "skills" / "s" / "SKILL.md", sid="fork-1", extra=SUB))
+        self.transcript(old)
+        out = self.fork_prompt(tp).stdout
+        self.assertIn("p: 1.0.0 → 1.1.0", out)
+        self.assertIn("p:s", out)
+
     def test_fork_read_after_skill_beats_transcript(self):
         """fork の後に Skill で呼んでから新しい版を Read し直したなら、transcript の旧版より Read を勝たせる."""
         old = self.fork_setup()
@@ -1018,6 +1115,60 @@ class StaleSkillTest(HookTestCase):
         self.assertTrue(self.state_file().exists())
         self.assertFalse((self.home / ".claude").exists())
         self.assertIn("p: 1.0.0 → 1.1.0", self.prompt().stdout)
+
+    # --- subagent の Read（GitHub issue #542） ---
+    # sub の Read も main と同じ session_id で届く。記録は続けるが、記録済みの版は上書きしない
+
+    def plugin_rec(self, sid=SID) -> dict:
+        return json.loads(self.state_file(sid).read_text())["plugins"][f"p@{MP}"]
+
+    def test_subagent_read_keeps_recorded_versions(self):
+        """main が旧版を読んだ後に sub が新しい版を読んでも、main の記録は旧版のまま（通知が消えない）."""
+        self.stale_setup()
+        self.assertQuiet(self.read(self.cache / "p" / "1.1.0" / "skills" / "s" / "SKILL.md", extra=SUB))
+        self.assertEqual(self.plugin_rec(), {"version": "1.0.0", "skills": {"s": "1.0.0"}})
+        out = self.prompt().stdout
+        self.assertIn("p: 1.0.0 → 1.1.0", out)
+        self.assertIn("p:s", out)
+
+    def test_subagent_read_adds_missing_skill(self):
+        """記録の無い skill だけは sub の Read でも書く（plugin の版は main の記録のまま）."""
+        old = self.version_dir("p", "1.0.0", skills=("s", "t"))
+        self.version_dir("p", "1.1.0", skills=("s", "t"))
+        self.install({"p": "1.0.0"})
+        self.assertSilent(self.read(old / "skills" / "s" / "SKILL.md"))
+        self.install({"p": "1.1.0"})
+        self.assertQuiet(self.read(self.cache / "p" / "1.1.0" / "skills" / "t" / "SKILL.md", extra=SUB))
+        self.assertEqual(self.plugin_rec(), {"version": "1.0.0", "skills": {"s": "1.0.0", "t": "1.1.0"}})
+
+    def test_subagent_read_records_when_nothing_recorded(self):
+        """記録が無ければ sub の Read も記録する（agent_id で黙らせない）."""
+        old = self.version_dir("p", "1.0.0")
+        self.version_dir("p", "1.1.0")
+        self.install({"p": "1.0.0"})
+        self.assertQuiet(self.read(old / "skills" / "s" / "SKILL.md", extra=SUB))
+        self.assertEqual(self.plugin_rec(), {"version": "1.0.0", "skills": {"s": "1.0.0"}})
+        self.install({"p": "1.1.0"})
+        self.assertIn("p: 1.0.0 → 1.1.0", self.prompt().stdout)
+
+    def test_empty_or_non_string_agent_id_is_main_read(self):
+        """agent_id が空・文字列でない・入れ子・本文の字面だけなら main の Read として上書きする."""
+        new = self.cache / "p" / "1.1.0" / "skills" / "s" / "SKILL.md"
+        cases = {
+            "empty": {"agent_id": ""},
+            "none": {"agent_id": None},
+            "number": {"agent_id": 1},
+            "nested": {"x": {"agent_id": "a1b2"}},
+        }
+        self.stale_setup()
+        old = self.cache / "p" / "1.0.0" / "skills" / "s" / "SKILL.md"
+        for name, extra in [*cases.items(), ("response", {})]:
+            with self.subTest(case=name):
+                self.assertSilent(self.read(old))
+                response = '{"agent_id": "a1b2"}' if name == "response" else "x"
+                self.assertQuiet(self.read(new, extra=extra, response=response))
+                self.assertEqual(self.plugin_rec(), {"version": "1.1.0", "skills": {"s": "1.1.0"}})
+        self.assertQuiet(self.prompt())
 
     def test_prompt_does_not_start_python_without_own_state(self):
         """発言のたびに走るので、自分の状態ファイルが無ければ python を起動しない."""
