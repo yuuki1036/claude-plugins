@@ -22,6 +22,8 @@ import re
 import unittest
 from pathlib import Path
 
+from skill_flow import flow_text
+
 REPO = Path(__file__).resolve().parents[3]
 SKILLS = REPO / "issue-workflow" / "skills"
 START = SKILLS / "start" / "SKILL.md"
@@ -36,7 +38,7 @@ NOT_STARTED = ("closed", "detached", "prunable")
 
 def phases(path: Path) -> list[tuple[str, str]]:
     """`### Phase <記号><番号>: <名前>` の見出しごとに (名前, 節の本文) を文書の順で返す."""
-    text = path.read_text(encoding="utf-8")
+    text = flow_text(path)  # 分けた SKILL.md（start）はモードの本文を差し込んで読む（#447）
     heads = list(re.finditer(r"(?m)^### Phase [A-Z]*[0-9.]+: (.+)$", text))
     return [(m.group(1), text[m.start():(heads[i + 1].start() if i + 1 < len(heads) else len(text))])
             for i, m in enumerate(heads)]

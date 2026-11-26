@@ -318,8 +318,8 @@ class StepCountTest(unittest.TestCase):
         declared = int(re.search(r"以下 (\d+) Step", flow).group(1))
         headings = [int(n) for n in re.findall(r"(?m)^### Step (\d+):", flow)]
         self.assertEqual(headings, list(range(1, declared + 1)))
-        m = re.search(r"その (\d+) Step（([^）]+)）", START.read_text(encoding="utf-8"))
-        self.assertIsNotNone(m, "start SKILL.md に「その N Step（…）」が無い")
+        m = re.search(r"その (\d+) Step（([^）]+)）", flow_text(START))
+        self.assertIsNotNone(m, "start の F7（skills/start/references/modes/feature-branch.md）に「その N Step（…）」が無い")
         self.assertEqual(int(m.group(1)), declared)
         self.assertEqual(len(m.group(2).split("→")), declared, m.group(2))
 

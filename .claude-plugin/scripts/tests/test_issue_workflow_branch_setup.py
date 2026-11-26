@@ -26,6 +26,7 @@ import unittest
 from pathlib import Path
 
 from git_env import scrub
+from skill_flow import flow_text
 
 REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "issue-workflow" / "scripts" / "branch-setup.sh"
@@ -834,7 +835,7 @@ class StartSkillContractTest(RepoTestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         keys = set(parse(res.stdout))
         self.assertEqual(keys, {"id", "branch", "worktree"})
-        d2 = section(START.read_text(encoding="utf-8"), "### Phase D2:", "### Phase D2.5")
+        d2 = section(flow_text(START), "### Phase D2:", "### Phase D2.5")
         self.assertIn('branch-setup.sh" worktrees', d2)
         self.assertNotIn("git worktree list", d2)
         for k in sorted(keys):
@@ -845,7 +846,7 @@ class StartSkillContractTest(RepoTestCase):
         git(self.root, "branch", "feat/TEAM-1-x")
         keys = set(self.existing())
         self.assertEqual(keys, {"found", *KEYS})
-        f25 = section(START.read_text(encoding="utf-8"), "### Phase F2.5", "### Phase F3:")
+        f25 = section(flow_text(START), "### Phase F2.5", "### Phase F3:")
         doc = EXISTING_DOC.read_text(encoding="utf-8")
         self.assertIn('branch-setup.sh" existing', f25)
         self.assertIn("skills/start/references/existing-work.md", f25)
@@ -855,7 +856,7 @@ class StartSkillContractTest(RepoTestCase):
                 self.assertIn(f"`{k}=`", doc)
 
     def test_every_work_state_is_defined_and_handled_by_f7(self):
-        skill = START.read_text(encoding="utf-8")
+        skill = flow_text(START)
         f7 = section(skill, "### Phase F7", "\n---\n")
         table = section(EXISTING_DOC.read_text(encoding="utf-8"), "## 2.", "## 3.")
         for st in self.STATES:
@@ -865,8 +866,11 @@ class StartSkillContractTest(RepoTestCase):
                 self.assertRegex(f7, rf"`(WORK_STATE = )?{st}`")
                 # F2.5 の要点の一覧にも並べる（F7 と表にだけ足して F2.5 から漏れた値を拾う）
                 self.assertIn(f"`{st}`", section(skill, "### Phase F2.5", "### Phase F3:"))
+        # F7 の節は Feature ブランチモードの終わりで閉じる（区切りの `---` を落とすと Phase CTX まで F7 に数え、F7 から漏れた値を拾えない）
+        self.assertNotIn("### Phase CTX", f7)
+        self.assertNotIn("## セッションコンテキスト書き出し", f7)
 
-    #: Phase CTX が session-context を書かない WORK_STATE（start SKILL.md の Phase CTX と existing-work.md の表）
+    #: Phase CTX が session-context を書かない WORK_STATE（start の Phase CTX（skills/start/references/modes/session-context-write.md）と existing-work.md の表）
     NO_CTX = ("detached", "closed", "prunable")
 
     def test_phase_ctx_is_skipped_where_writing_would_make_this_checkout_current(self):
@@ -890,14 +894,14 @@ class StartSkillContractTest(RepoTestCase):
         self.assertEqual(sorted(tuple(r[k] for k in cols) for r in self.records(self.existing(cwd=here))),
                          sorted([(str(other), "0", "1"), (str(here), "1", "0")]))
 
-        ctx = section(START.read_text(encoding="utf-8"), "### Phase CTX", "1. 以下の情報")
+        ctx = section(flow_text(START), "### Phase CTX", "1. 以下の情報")
         m = re.search(r"`WORK_STATE`[^。\n]*?が ((?:`[a-z]+` / )*`[a-z]+`) の回もスキップする", ctx)
         self.assertIsNotNone(m, "Phase CTX のスキップ条件に WORK_STATE が無い")
         self.assertEqual(set(re.findall(r"`([a-z]+)`", m.group(1))), set(self.NO_CTX))
         self.assertIn("決め直した後の値", ctx, "F7 で決め直した回にどの値で判断するかが無い")
         self.assertIn("`current=1`", ctx, "スキップする理由が無い")
         # F7 の冒頭（closed / detached / prunable で黙る段落）も同じことを言う
-        f7_head = section(START.read_text(encoding="utf-8"), "### Phase F7", "**`TASK_INTENT = new`")
+        f7_head = section(flow_text(START), "### Phase F7", "**`TASK_INTENT = new`")
         self.assertIn("Phase CTX も書かない", f7_head)
 
     def test_existing_work_rows_say_where_phase_ctx_is_not_written(self):
@@ -995,7 +999,7 @@ class StartNewIntentContractTest(unittest.TestCase):
     LIST = r"((?:`[a-z]+` / )*`[a-z]+`)"
 
     def new_section(self) -> str:
-        return section(START.read_text(encoding="utf-8"), "**`TASK_INTENT = new` のとき", "```")
+        return section(flow_text(START), "**`TASK_INTENT = new` のとき", "```")
 
     def test_f7_asks_only_when_there_is_no_existing_work(self):
         s = self.new_section()
@@ -1009,7 +1013,7 @@ class StartNewIntentContractTest(unittest.TestCase):
         self.assertIn("続き（引数は新規）", s)
         self.assertIn("既存は捨てて新しく始めたい", s)
         self.assertNotIn("この選択は出す", s)
-        skill = START.read_text(encoding="utf-8")
+        skill = flow_text(START)
         # new + branch でも選択を出す前提だった旧い文（選択より先にブランチへ移る）が残っていない
         self.assertNotIn("進め方の選択より先に行う", skill)
         # 続きとして扱う new の案内も、auto の 2 と同じく F6 の冒頭に置く
