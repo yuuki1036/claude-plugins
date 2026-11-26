@@ -33,7 +33,7 @@ marketplace エントリに `_superseded_by: "<後継名>"` を持つ deprecated
 
 1 つのセッションを何日も動かし続けると、プラグインを更新した後も、最初に Read した版の SKILL.md の手順で進み続ける（`/update-all` の後も再起動しない限り、会話の中の手順は古いまま）。`stale-skill.sh` hook がこれを知らせる:
 
-1. **記録**（PostToolUse の Read / Skill）: `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` の下のファイルを Read したら、その版を記録する（`skills/<name>/SKILL.md` なら skill ごとに）。Skill で呼んだ skill は、呼んだ時点のインストール済みの版を記録する（Read で記録した版は上書きしない）
+1. **記録**（PostToolUse の Read / Skill）: `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` の下のファイルを Read したら、その版を記録する（`skills/<name>/SKILL.md` なら skill ごとに）。Skill で呼んだ skill は、呼んだ時点のインストール済みの版を記録する（Read で記録した版は上書きしない）。subagent・in-process teammate の Read（stdin に `agent_id` があり、`session_id` は main と同じ）も記録するが、Skill と同じく記録済みの版は上書きせず、まだ記録の無いプラグイン・skill だけ書く（fork の取り込み前の分は、Skill と同じく transcript に写った親の Read の版を優先する）。`agent_id` で外さないのは、プロンプトに本文を貼らずパスだけ渡して agent に読ませる使い方で、agent が読んだ skill の記録が抜けるため。記録はセッション単位で agent ごとには持たないので、sub が先に読んだ版は main が読んでいなくても main の記録になり、記録済みの後に sub だけが新しい版を読んでも main の記録は古いまま残る（GitHub issue #542）
 2. **通知**（UserPromptSubmit・PostCompact・SessionStart の resume / compact / fork）: 記録した版と `installed_plugins.json` の版が違えば、新しい版の SKILL.md のパスと、旧版より新しい CHANGELOG の見出し（最大 5 行）を注入する。読み直したら、新しい版で足された手順のうち今の作業に効くものは利用者に確かめずに済ませ、後から戻しにくい変更だけ聞くよう添える（常設のセッションが自分で追従できるように）
 3. 同じプラグインの同じ新版は 1 回だけ知らせる。compaction の後は通知も会話から消えるので、もう一度出す。新しい版の SKILL.md を Read すれば記録が新しくなり、通知は止まる
 

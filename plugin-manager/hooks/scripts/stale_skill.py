@@ -138,6 +138,25 @@ def pick_entry(entries: list[dict]) -> dict:
     return entries[0]
 
 
+def keep_recorded(rec: dict, ver: str, skill: str | None, pending: bool) -> None:
+    """記録済みの版は上書きせず、まだ無いものだけ書く（Skill の呼び出しと subagent の Read）.
+
+    どちらも main がその版を読んだ証拠ではない。fork の取り込み（adopt_fork_transcript）が transcript の版より
+    優先しないよう、取り込み前（pending）の記録にだけ印を付ける（印の名前は Skill 由来だが、状態ファイルの形を
+    変えないので改名しない）
+    """
+    if "version" not in rec:
+        rec["version"] = ver
+        if pending:
+            rec["version_from"] = "skill"
+    if skill is not None:
+        skills = rec.setdefault("skills", {})
+        if skill not in skills:
+            skills[skill] = ver
+            if pending:
+                rec.setdefault("skills_from_skill", []).append(skill)
+
+
 def record(payload: dict, state: dict, installed: dict | None) -> bool:
     tool = payload.get("tool_name")
     tin = payload.get("tool_input")
@@ -153,13 +172,21 @@ def record(payload: dict, state: dict, installed: dict | None) -> bool:
             return False
         mp, plugin, ver, rest = m.groups()
         rec = plugins.setdefault(f"{plugin}@{mp}", {})
+        sm = SKILL_RE.match(rest)
+        skill = sm.group(1) if sm else None
+        # subagent・in-process teammate の Read も main と同じ session_id で届く（GitHub issue #542）。
+        # 記録は続ける（パスだけ渡されて agent が読んだ skill の記録が抜けないように）が、main が読んだ版は上書きしない。
+        # payload を JSON として読むので、読んだファイルの中身に出る "agent_id" の字面には当たらない
+        agent = payload.get("agent_id")
+        if isinstance(agent, str) and agent:
+            keep_recorded(rec, ver, skill, bool(state.get("fork_pending")))
+            return True
         rec["version"] = ver
         rec.pop("version_from", None)
-        sm = SKILL_RE.match(rest)
-        if sm:
-            rec.setdefault("skills", {})[sm.group(1)] = ver
-            if sm.group(1) in rec.get("skills_from_skill", []):
-                rec["skills_from_skill"].remove(sm.group(1))
+        if skill is not None:
+            rec.setdefault("skills", {})[skill] = ver
+            if skill in rec.get("skills_from_skill", []):
+                rec["skills_from_skill"].remove(skill)
         return True
     if tool == "Skill":
         name = tin.get("skill")
@@ -175,21 +202,11 @@ def record(payload: dict, state: dict, installed: dict | None) -> bool:
         rec = plugins.setdefault(keys[0], {})
         # Read で記録した版を上書きしない。Skill の時点の installed は、更新済み・未再起動の
         # セッションでは実際に注入された版より新しいことがある
-        # fork の取り込み（adopt_fork_transcript）が transcript の版より優先しないよう、取り込み前の記録にだけ印を付ける
-        pending = bool(state.get("fork_pending"))
-        if "version" not in rec:
-            rec["version"] = ver
-            if pending:
-                rec["version_from"] = "skill"
         # command だけの名前（SKILL.md が無い）は skills に入れない。入れると読み直す先の無い
         # skill として外され、プラグイン単位の判定まで止まる
         install_path = entry.get("installPath")
-        if isinstance(install_path, str) and (Path(install_path) / "skills" / skill / "SKILL.md").is_file():
-            skills = rec.setdefault("skills", {})
-            if skill not in skills:
-                skills[skill] = ver
-                if pending:
-                    rec.setdefault("skills_from_skill", []).append(skill)
+        has_md = isinstance(install_path, str) and (Path(install_path) / "skills" / skill / "SKILL.md").is_file()
+        keep_recorded(rec, ver, skill if has_md else None, bool(state.get("fork_pending")))
         return True
     return False
 
