@@ -93,7 +93,7 @@ max を消すと、次の `oq` / `decision` が `max+1` で**同じ ID を再採
 - **削除された ID を参照する Decision / OQ があれば段 3 が拾う**（「D1 が参照する OQ2 が存在しない」→ Critical）。再採番後も、新しい OQ2 は `open` / `関連 D#: -` なので段 3 が「片方向」として拾い続ける
 - **どこからも参照されていない ID を max で消した場合は、ファイル内の情報だけでは検出できない**。次の 2 つが該当する（実測で確認）:
   - **`関連 D#: -` の open な OQ**（まだ決定に紐づいていない問い）
-  - **`関連 OQ: -` の Decision**（既存の問いに対応しない決定）。`oq` を経由せず下された決定は普通に起こる（SKILL.md の Phase 5.3 が選択肢の先頭に「なし（OQ を close しない）」を置いているのはそのため）。**Decision log は append-only の履歴なので、消えたときに失われる情報は OQ より重い**
+  - **`関連 OQ: -` の Decision**（既存の問いに対応しない決定）。`oq` を経由せず下された決定は普通に起こる（`/living-spec decision` の Phase 5.3（`skills/living-spec/references/subcommands/decision.md`）が選択肢の先頭に「なし（OQ を close しない）」を置いているのはそのため）。**Decision log は append-only の履歴なので、消えたときに失われる情報は OQ より重い**
 
   どちらも `git log -p` で確認するしかない。
 
