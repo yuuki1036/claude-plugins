@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.18.3] - 2026-11-26
+
+### Changed
+
+- **living-spec の SKILL.md をサブコマンドごとに分けた**（GitHub issue #447）: 43,087 B あり、Read 1 回で返る範囲（約 42 KB）を超えていた。Phase 0・共通手順（W1〜W5）・maintain の案内・処理フロー・注意事項だけを SKILL.md に残し、init（Phase 1〜3）・oq・decision・spec・status・timeline の 6 本を `skills/living-spec/references/subcommands/<サブコマンド>.md` へ移した（SKILL.md は約 16 KB。timeline は `references/timeline.md` から移した）。SKILL.md には各 Phase の見出しと「入ったら最初に Read する」の 1 行を残し、冒頭に、本文がほかのサブコマンドの節を引くとき（Phase 6 冒頭の凍結の判定など）はそのファイルも読む決まりを書いた。手順の中身は変えていない（直したのは、template.md をプラグインのルートから書く形に揃えたこと・decision が凍結の判定の置き場所を指す句を足したこと・living-spec-maintain の check-rules.md が decision の手順の置き場所を「SKILL.md」と呼んでいた 1 か所だけ）
+
 ## [0.18.2] - 2026-11-24
 
 ### Fixed

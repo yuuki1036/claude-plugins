@@ -20,6 +20,8 @@ allowed-tools:
 
 Issue 化する前段の「設計収束ドキュメント」(living spec) を `.claude/living-specs/<slug>.md` で運用するスキル。**未確定を抱えていることが正常状態**の文書を、採番・書式・相互参照を機械化しながら「仮 → 確定」へ収束させる。
 
+> **サブコマンドの本文は、サブコマンドごとのファイルにある**（`skills/living-spec/references/subcommands/<サブコマンド>.md`）。この SKILL.md に残すのは、いつ使うか・参照する規範・どのサブコマンドでも通る Phase 0・書き込みの規律（共通手順の W1〜W5）・maintain の案内・処理フロー・注意事項と、各 Phase の見出しと Read の行だけ（init の Phase 2・3 は init のファイルの中にある）。Phase 0 で決まった Phase の見出しに来たら、Read の行が指すファイルを最初に読む。見出しだけを見て、本文を読まずに進めない（1 本のままだと Read 1 回で読み切れず、後ろの Phase を読まないまま進めうる / GitHub issue #447）。本文がほかのサブコマンドの節を引くとき（Phase 5・7 が使う Phase 6 冒頭の「凍結の判定」「壊れた宣言」、6a の報告が引く Phase 7 の収束率の数え方など）は、その Phase の見出しの Read の行のファイルも読んでから従う。本文の W1〜W5 は、この SKILL.md の「共通手順」の節を指す。サブコマンドのファイルの中の `${CLAUDE_PLUGIN_ROOT}` は、この SKILL.md を Read したパスのプラグインのルートに読み替える
+
 ## いつ使う / いつ使わない
 
 | 状況 | 使うスキル |
@@ -40,7 +42,6 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 
 - `${CLAUDE_SKILL_DIR}/references/format-spec.md` — 表スキーマ・確度ラベル・採番規約・frontmatter の**正本**
 - `${CLAUDE_SKILL_DIR}/references/template.md` — scaffold テンプレ（プレースホルダ方式）
-- `${CLAUDE_SKILL_DIR}/references/timeline.md` — `timeline` の手順（Phase 8 でだけ読む）
 
 ---
 
@@ -79,58 +80,7 @@ living spec は**決める場所で、実装はしない**。実装に手を付�
 
 ## Phase 1: init — 引数解析と slug / タイトルの確定
 
-異常系はすべてこの Phase で落とす。
-
-1. **slug の命名規則**: kebab-case `^[a-z0-9]+(-[a-z0-9]+)*$`。日本語は不可（ファイル名の可搬性）。日本語のプロジェクト名から作る場合は **romaji 化せず英語の要約 slug** にする（`kessai-kiban` ではなく `payment-platform`）。design-doc / adr-keeper の命名規約と同流儀
-2. **init は slug とプロジェクト名の 2 つを必要とする**。frontmatter に `title` フィールドが無く、`# <プロジェクト名>` 見出しが唯一のタイトル源のため
-3. 異常系の扱い:
-
-| 状況 | 挙動 |
-|---|---|
-| slug 未指定 | 会話文脈から英語要約 kebab slug とプロジェクト名を推定し、**AskUserQuestion で 1 度だけ確認**する。文脈が皆無なら「slug を指定してください」と報告して終了 |
-| slug が命名規則違反 | 勝手に書き換えない。正規化案を提示して上記と同じ 1 回の AskUserQuestion に畳む |
-| `<slug>.md` が既存 | **中止**。「既存の living spec があります: `<path>`。編集は直接 Edit するか、別 slug で init してください」と報告して終了 |
-
-   slug / タイトルを確認する AskUserQuestion の仕様:
-   - question: 「living spec を作成します。この内容でよいですか？」
-   - header: 「slug 確認」
-   - options:
-     1. label: 「この内容で作成 (Recommended)」 / description: 「slug: `<推定 slug>` / タイトル: `<推定タイトル>` で `.claude/living-specs/<slug>.md` を作成する」。会話から見て未確定が 1 セッションで片付きそうなら、「1 セッションで決まりそうなら design-doc / feature-dev の grill で足ります」と 1 文だけ添える（止めない。選ばれればそのまま作る）
-     2. label: 「slug を指定する」 / description: 「別の slug / タイトルをチャットで指定する」
-
-> **既存時に上書き / 改訂 / supersede を問わない**のは design-doc Phase 1 との**意図的な非対称**。living spec は 1 プロジェクト = 1 ファイルで、supersede の概念を持たない（収束の履歴は Decision log が線形に持つ）。誤って別プロジェクトの living spec を潰す事故のほうが重いので、中止に倒す。
-
----
-
-## Phase 2: scaffold 生成
-
-1. **日付取得**（必ず Bash で取る。擬似日付を作らない）:
-   ```bash
-   date +%Y-%m-%d
-   ```
-2. **衝突確認**: Glob で `.claude/living-specs/<slug>.md` の不在を確認する（Phase 1 で確認済みでも、Write の直前にもう一度見る）
-3. `${CLAUDE_SKILL_DIR}/references/template.md` を Read し、プレースホルダを置換する:
-   - `{TITLE}` → プロジェクト名（原文ママ）
-   - `{TODAY}` → `date +%Y-%m-%d` の結果。`last-validated` と `last_updated` の**両方**に入れる
-4. 置換した本文を `.claude/living-specs/<slug>.md` に Write する
-
-> frontmatter の `phase: target` / `notion_page_id: null` / `sync: null` はテンプレの固定値。`append_only: true` は**付けない**（living spec は鮮度を測る対象そのもの。理由は `format-spec.md` の 10 節）。
-
----
-
-## Phase 3: init の完了報告
-
-```
-✅ living spec を作成しました
-
-📄 .claude/living-specs/<slug>.md
-  phase: target / last-validated: <TODAY>
-
-次のアクション:
-- 「## 現在地サマリ」を埋める
-- 仕様項目を立てる: /living-spec spec <項目> 未定
-- 未確定の論点を起票する: /living-spec oq <問い>
-```
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/living-spec/references/subcommands/init.md` を Read する（手順・分岐はそのファイルにある。見出しだけで進めない）。
 
 ---
 
@@ -177,293 +127,31 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 
 ## Phase 4: oq — OQ 台帳への追加 / 一覧
 
-### 4a. `oq <text>` — 追加
-
-1. 対象ファイルを Read する
-2. W2 で `OQ<max+1>` を採番する
-3. OQ 台帳の表に 1 行 append する（W5）:
-   ```
-   | OQ<n> | <text> | open | - | <TODAY> |
-   ```
-   - `関連 D#` は `-`（8 節: 空セルは半角ハイフン 1 文字）
-   - `<text>` に `|` が含まれる場合は **`\|` にエスケープする**（8 節。9 節の正規表現はエスケープを許容する。生の `|` はセルを分割して段 1 の Critical になる）
-4. W4 で `last_updated` を更新する
-5. 報告:
-   ```
-   ✅ OQ<n> を追加しました（.claude/living-specs/<slug>.md）
-     <text>
-
-   open な OQ: <残数> 件
-   ```
-
-### 4b. `oq list` — 一覧
-
-1. 対象ファイルを Read し、コメント除去後に OQ 行をパースする（9 節の正規表現）
-2. **既定は `open` のみ**表示する。`--all` 指定時は `closed` も含める（closed 行は台帳に残っているので、フィルタは表示だけの話）
-3. 0 件なら「open な OQ はありません」と報告する
-4. 表で出す:
-   ```
-   ## Open Questions（open <n> 件 / 全 <m> 件）
-
-   | OQ# | 問い | since | 経過 |
-   |-----|------|-------|------|
-   | OQ1 | ... | 2026-07-10 | 5 日 |
-   ```
-   `--all` のときは `status` と `関連 D#` の列を足す
-
-> `oq list` は**読むだけ**。W1-W5 の書き込み規律は適用しない（`last_updated` も更新しない）。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/living-spec/references/subcommands/oq.md` を Read する（手順・分岐はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 5: decision — Decision log への append と関連 OQ の close
 
-**このサブコマンドが双方向参照を成立させる唯一の場所**。ここが片方向で止まると maintain 段 3 が Critical を出す。
-
-1. 対象ファイルを Read する
-2. W2 で `D<max+1>` を採番する。**採番した番号が frontmatter の `spec_table_frozen_by` と同じなら、書き込まずに報告して終了する**（凍結の宣言が、まだ無い Decision を指していた＝手編集の誤記。このまま書くと、この Decision が凍結の根拠として読まれる）:
-   ```
-   frontmatter の凍結の宣言が、まだ無い D<n> を指しています（壊れた宣言）。先に /living-spec spec --unfreeze を D# なしで実行して消してください。凍結し直すなら、そのあと --freeze D<凍結の経緯を書いた Decision> を実行します（無ければ先に /living-spec decision で残す）。
-   ```
-3. **関連 OQ を選ばせる**。コメント除去後に `status: open` の OQ を列挙し、AskUserQuestion で確認する（multiSelect）:
-   - question: 「この決定が close する OQ を選んでください」
-   - header: 「関連 OQ」
-   - options: open な OQ ごとに「`OQ<n>`: <問いの先頭 40 字>」（**先頭に「なし（OQ を close しない）」を置く**。決定が既存の問いに対応しないことは普通にあるため）
-   - open な OQ が 0 件なら**この確認を飛ばす**（選択肢が無いのに問わない）
-3.5. **覆す確定の項目を選ばせる**（GitHub issue #320）。仕様表に `確定` の行が 1 つ以上あり、凍結していなければ、AskUserQuestion で確認する（multiSelect。3 の確認と同じ呼び出しにまとめてよい）:
-   - question: 「この決定が覆す確定の項目を選んでください」
-   - header: 「覆す項目」
-   - options: `確定` の行ごとに「<項目>（関連 Issue: <関連 Issue>）」（**先頭に「なし（確定を覆さない）」**。多くの決定は新しいことを決めるだけなので）
-   - `確定` の行が 0 件か凍結中なら**この確認を飛ばす**
-4. **Decision log に append する**（4 節の形式。bullet のキーと順序は固定）:
-   ```
-   ### D<n>: <text を要約した見出し>
-   - 日付: <TODAY>
-   - 確信度: <高|中|低>
-   - 根拠: <なぜこう決めたか>
-   - 出典: <ファイルパス / URL / 会話。無ければ ->
-   - 残: <この決定で残った未確定。無ければ ->
-   - 関連 OQ: <OQ1, OQ3 形式。close しないなら ->
-   - 関連 Issue: <ABC-12, #308 形式>
-   ```
-   - **`関連 Issue` の行は任意**（7 番目。4 節）。3.5 で選んだ項目の `関連 Issue` の和集合（`-` を除く）と、ユーザーが挙げた Issue を書く。どちらも無ければ**行ごと書かない**（`- 関連 Issue: -` を書かない）
-   - `確信度` / `根拠` / `残` はユーザーの入力から埋める。読み取れなければ**推測で埋めず**、`確信度: 中` を既定にして `根拠` に与えられた文言をそのまま置く
-   - 補足・内訳・但し書きは、該当する bullet の下にインデントした子 bullet で書いてよい（4 節）。散文の段落・引用ブロックは置かない
-   - 既存エントリは**絶対に編集しない**（append-only。4 節）
-5. **選ばれた OQ を close する**（同じファイルへの in-place 更新）。各 OQ 行を次のように Edit する（**セル区切りは単一スペース。カラム整列のパディングを入れない**。Edit は完全一致置換なので、見た目を整えると `old_string` が一致しなくなる）:
-   ```
-   | OQ<n> | <問い> | open | - | <since> |
-   →
-   | OQ<n> | <問い> | closed | D<新番> | <TODAY> |
-   ```
-   - `status` を `closed` に、`関連 D#` を新しい `D<n>` に、`since` を `<TODAY>` に更新する
-   - **行は消さない**（W3）。`status` の書き換えだけで表現する
-   - 既に `関連 D#` が入っている場合はカンマ + 半角空白で追記する（`D1, D3`。8 節）
-6. **双方向参照を Read で検証する**（adr-keeper の supersede が新旧を Read で相互参照確認するのと同じ規律）: 書き込み後にファイルを Read し直し、**両方向を**確認する:
-   - **Decision → OQ**: Decision の `関連 OQ` に挙げた各 `OQ<n>` が、OQ 台帳で `closed` かつ `関連 D#` に当該 `D<n>` を含むこと
-   - **OQ → Decision**: 今 `closed` にした各 OQ の `関連 D#` に入れた `D<n>` が、Decision 側の `関連 OQ` にその `OQ<n>` を含むこと（step 5 で close したのに Decision の `関連 OQ` に載せ忘れた経路を捕まえる）
-   - 片方向になっていたら**その場で直す**（maintain の事後検知に回さない。ここで直せる）。ファイルは既に Read 済みなので追加コストはない
-7. W4 で `last_updated` を更新する
-8. 報告:
-   ```
-   ✅ D<n> を追加しました（.claude/living-specs/<slug>.md）
-     <見出し>
-
-   close した OQ: OQ1（<問いの先頭 20 字程度>）, OQ3（<同>）（双方向参照を検証済み）
-   残る open な OQ: <残数> 件
-   ```
-   OQ は番号だけでは読めないので、問いの先頭を添える。
-   3.5 で項目を選んだときは、続けて次を出す（Issue の状態（仕掛中・未着手・完了）で分けるのは、トラッカーを読む側の仕事。living spec はトラッカーを読まない）:
-   ```
-   覆した確定の項目:
-   - <項目>（関連 Issue: <ID, …> / 無ければ「関連 Issue なし」）
-   これらの Issue は、覆す前の決定に沿って書かれています。Issue の本文・作業中の実装を直すかを確かめてください。
-   仕様表の行は /living-spec spec <項目> <確度> で更新してください（内容は直接 Edit で直す）。
-   ```
-
-> **スコープ外と分かった OQ**も decision で閉じる。見出しを `### D<n>: スコープ外: <要約>` にし、`根拠` に到達点の外だと判断した理由を書く。あわせて「進め方フェーズ」の「スコープ外」小見出しに 1 行残す（template.md のコメント参照）。
-
-> **OQ の reopen は許容しない**（`format-spec.md` 3 節）。close 後に議論が再燃したら、`/living-spec oq` で**新しい OQ を起票**し、その問いの中で旧 OQ / D# を参照する。決定の履歴を線形に保つため。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/living-spec/references/subcommands/decision.md` を Read する（手順・分岐はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 6: spec — 仕様表の確度更新 / 凍結
 
-`since` の発生源を機械に寄せるためのサブコマンド。手編集に委ねると「確度だけ変えて `since` を据え置く」（実際は動いているのに stale 警告）と「`since` だけ触る」（塩漬けなのに沈黙）が両方起こる。仕様表の凍結（`format-spec.md` 2.1 節）の宣言と解除も、同じ理由でここから書く。
-
-**`spec` に続く引数で分岐する**（`--spec <slug>` は位置を問わず先に取り除く）: `--freeze` があれば 6b、`--unfreeze` があれば 6c、`--upgrade` があれば 6d、`--phase-advance` があれば 6e、`<項目>` の後ろに `--phase` か `--issue` があれば 6f、どれも無ければ 6a。
-
-**表の形**: 仕様表のヘッダが 6 列（`| 項目 | 内容 | 確度 | phase | 関連 Issue | since |`）か旧 4 列かを先に見る（`format-spec.md` 2 節）。行を書くときはヘッダの形に合わせる。6d の他は、表の形を変えない。
-
-**凍結の判定**: frontmatter に `spec_table:` か `spec_table_frozen_by:` の行が 1 つでもあれば「凍結している」と扱う（6a の拒否・6b の二重宣言の拒否・6c・Phase 5 の歯止め・Phase 7 のすべてで同じ判定を使う）。
-
-**壊れた宣言**: 凍結しているが、次のどれかに当たるもの — 2 行の片方しか無い / どちらかが `format-spec.md` 10 節の正規表現に一致しない / `spec_table_frozen_by` の `D<n>` が Decision log に無い（maintain の段 1・段 3 が Critical にするものと同じ）。壊れた宣言は `spec --unfreeze` を **D# なしで**実行すると消せる（6c）。解除ではなく書き損じの修正なので Decision を要さない（Decision を書いて番号を合わせると、無関係な Decision が凍結の根拠として読まれる）。
-
-### 6a. `spec <項目> <確度>` — 確度の更新
-
-0. **凍結の確認**: 対象ファイルを Read し、frontmatter と Decision log の見出しを見る。凍結していれば、**更新せず報告して終了する**（追加も同じ）:
-   ```
-   仕様表は凍結されています（D<n>: <凍結の Decision の見出し>）。正本は別の文書にあるため、ここでは追加・更新しません。
-   表を再び使うなら、経緯を /living-spec decision で残してから /living-spec spec --unfreeze D<新しい番号> を実行してください。
-   ```
-   壊れた宣言なら、代わりに「凍結の宣言が壊れています（<当たった条件>）。/living-spec spec --unfreeze を D# なしで実行して消してください。正本が別の文書のままなら、そのあと --freeze D<凍結の経緯を書いた Decision> で凍結し直します（無ければ先に /living-spec decision で残す）」と報告して終了する
-1. **確度の検証**: `<確度>` が `確定` / `方向性(仮)` / `未定` の 3 値でなければ、報告して終了する（**勝手に正規化しない**）。括弧は**半角**（5 節）
-   ```
-   `<確度>` は不正な確度ラベルです。確定 / 方向性(仮) / 未定 のいずれかを指定してください（括弧は半角）。
-   ```
-2. step 0 で Read したファイルから、コメント除去後に仕様表を 9 節の正規表現でパースする
-3. `<項目>` に**完全一致**する行を探す:
-
-| 一致数 | 挙動 |
-|---|---|
-| 1 件 | その行の `確度` と `since` を in-place 更新する |
-| 0 件 | **新規行として append する**（W5）: 6 列の表は `\| <項目> \| - \| <確度> \| - \| - \| <TODAY> \|`、旧 4 列の表は `\| <項目> \| - \| <確度> \| <TODAY> \|`。`内容` は `-`（8 節。決まってから `spec` で更新するのではなく直接 Edit で埋める）。phase・関連 Issue は 6f で入れる |
-| 2 件以上 | **更新せず報告して終了**。「`<項目>` が N 行あります。`format-spec.md` 2 節により項目はファイル内で一意である必要があります。重複を解消してください」（2 節の一意性違反。どちらを更新したかが非決定になるため倒す） |
-
-4. 更新時は `確度` と `since` の**両方**を書く。`since` は必ず `<TODAY>`（W1）
-   - **確度が変わらない場合も `since` を更新する**（「今日この確度で確認した」という意味になり、段 6 の塩漬け検出が正しく動く）
-5. W4 で `last_updated` を更新する
-6. 報告:
-   ```
-   ✅ 「<項目>」の確度を <旧確度> → <確度> に更新しました（.claude/living-specs/<slug>.md）
-     since: <TODAY>
-
-   収束率: <確定数>/<全項目数>（先送りの行を除く。Phase 7 と同じ数え方）
-   ```
-   新規行なら「新しい仕様項目「<項目>」を <確度> で追加しました」
-
-> **確度の逆行（`確定` → `方向性(仮)`）は許容し、警告しない**（3 節）。決定が覆るのは正常な事象。ただし対応する Decision が既にある場合は、報告の末尾に「この項目に関する決定を覆すなら `/living-spec decision` で経緯を残してください」と 1 行添える。
-
-### 6b. `spec --freeze D<n>` — 仕様表の凍結
-
-1. `D<n>` が `D<数値>` の形でなければ報告して終了する
-2. 対象ファイルを Read し、コメント除去後に frontmatter・仕様表・Decision log をパースする
-3. **既に凍結していれば**、上書きせず報告して終了する。宣言が有効なら「仕様表は既に凍結されています（D<n>）」、壊れた宣言なら「凍結の宣言が壊れています（<当たった条件>）。/living-spec spec --unfreeze を D# なしで実行して消してから凍結し直してください」
-4. `### D<n>: ` の見出しが Decision log に無ければ、報告して終了する:
-   ```
-   D<n> が Decision log にありません。先に /living-spec decision で凍結の経緯（なぜ表を使わなくなるか・正本はどこか）を残し、その番号を渡してください。
-   ```
-5. **D<n> の `日付` が仕様表の最新の `since` より古ければ**、報告して終了する（2.1 節。凍結後に手で触った行を `since` で見分けるため）。`日付` が `YYYY-MM-DD` として読めないときも比較できないので、凍結せずに報告して終了する（/living-spec-maintain の段 1 で確認できる）:
-   ```
-   D<n>（<日付>）より後に仕様表が更新されています（<項目>: <since>）。凍結の経緯を新しい Decision で残してから凍結してください。
-   ```
-6. frontmatter の `sync` の行の直後に 2 行を足す（10 節。引用符で囲まない）:
-   ```yaml
-   spec_table: frozen
-   spec_table_frozen_by: D<n>
-   ```
-7. W4 で `last_updated` を更新する
-8. 報告:
-   ```
-   ✅ 仕様表を凍結しました（D<n>: <見出し>）（.claude/living-specs/<slug>.md）
-     /living-spec-maintain の段 6 は塩漬けを判定しなくなり、/living-spec spec は追加・更新を拒否します。
-     凍結時点の内訳: <確定> 確定 / <仮> 方向性(仮) / <未定> 未定
-     解除: 経緯を /living-spec decision で残してから /living-spec spec --unfreeze D<新しい番号>
-   ```
-
-### 6c. `spec --unfreeze [D<m>]` — 凍結の解除 / 壊れた宣言の除去
-
-1. 対象ファイルを Read し、コメント除去後に frontmatter と Decision log をパースする
-2. 凍結していなければ「仕様表は凍結されていません」と報告して終了する
-3. **壊れた宣言なら、D# の有無にかかわらず消す**（Phase 6 冒頭の定義。書き損じの修正なので Decision を要さない）: frontmatter から `spec_table:` と `spec_table_frozen_by:` の行を**あるだけ**消し（W3 の対象外）、W4 で `last_updated` を更新して報告し、終了する:
-   ```
-   ✅ 壊れた凍結の宣言を消しました（<当たった条件>）（.claude/living-specs/<slug>.md）
-     仕様表は凍結していない状態に戻りました。正本が別の文書のままなら、/living-spec spec --freeze D<凍結の経緯を書いた Decision> で凍結し直してください（無ければ先に /living-spec decision で残す）。
-   ```
-4. 宣言が有効（`spec_table_frozen_by: D<n>` の `D<n>` が Decision log にある）なら、**解除には D<m> が要る**。無い・`D<数値>` の形でなければ報告して終了する:
-   ```
-   解除には、解除の経緯（なぜ表を再び使うか）を書いた Decision の番号が要ります。/living-spec decision で残してから /living-spec spec --unfreeze D<その番号> を実行してください。
-   ```
-5. `### D<m>: ` の見出しが Decision log に無ければ、報告して終了する:
-   ```
-   D<m> が Decision log にありません。先に /living-spec decision で解除の経緯（なぜ表を再び使うか）を残し、その番号を渡してください。
-   ```
-6. **m が n 以下なら**、報告して終了する（2.1 節。凍結と解除を同じ Decision で説明しない）:
-   ```
-   解除には、凍結の Decision（D<n>）より後の Decision が要ります。解除の経緯を新しい Decision で残してください。
-   ```
-7. frontmatter から `spec_table:` と `spec_table_frozen_by:` の 2 行を消す（W3 の対象外）
-8. W4 で `last_updated` を更新する
-9. 報告:
-   ```
-   ✅ 仕様表の凍結を解除しました（D<m>: <見出し>）（.claude/living-specs/<slug>.md）
-     /living-spec-maintain の段 6 が塩漬けの判定を再開します。
-     未確定の行（<方向性(仮) と 未定 の数> 件）は since が凍結の前のままなら塩漬けとして出ます。/living-spec spec <項目> <確度> で見直してください。
-   ```
-
-### 6d. `spec --upgrade` — 旧 4 列の表を 6 列にする
-
-1. 対象ファイルを Read する。凍結していれば 6a の step 0 と同じく報告して終了する（凍結した表は凍結した時点の記録なので形も変えない）
-2. ヘッダが既に 6 列なら「仕様表は既に 6 列です」と報告して終了する
-3. ヘッダと区切り行を 6 列にし、各行の `確度` と `since` の間に `- | - |` を挿す（`| <項目> | <内容> | <確度> | - | - | <since> |`）。**`since` は変えない**（形を変えただけで、確度を確かめたわけではない）
-4. frontmatter に `current_phase` が無ければ、足すかを聞かずに足さない（無くても動く。phase を分けるときに 6e か手で足す）
-5. W4 で `last_updated` を更新し、「仕様表を 6 列にしました（<n> 行。phase と関連 Issue は - で入れました）。/living-spec spec <項目> --phase / --issue で埋めてください」と報告する
-
-### 6e. `spec --phase-advance D<n>` — 次の phase へ進む
-
-1. `D<n>` が `D<数値>` の形でなければ報告して終了する
-2. 対象ファイルを Read する。`### D<n>: ` の見出しが Decision log に無ければ「D<n> が Decision log にありません。先に /living-spec decision で今の phase の到達点に着いた経緯を残し、その番号を渡してください」と報告して終了する
-3. frontmatter の `current_phase: P<k>` を `P<k+1>` に書き換える。無ければ `P2` にはせず、`current_phase: P1` を足したうえで「今の phase が宣言されていなかったので P1 にしました。進めるなら、もう一度実行してください」と報告して終了する（どの phase にいたかを推測しない）
-4. W4 で `last_updated` を更新する
-5. 報告: 「今の phase を P<k> → P<k+1> にしました（D<n>: <見出し>）」に続けて、P<k+1> の行のうち `未定` / `方向性(仮)` の項目と、P<k> に残っている未確定の項目（あれば。先送りにするか決めるよう添える）を並べる。現在地サマリの 1 行目（今の phase の到達点）を書き直すよう案内する
-
-### 6f. `spec <項目> --phase <値> [D<n>]` / `spec <項目> --issue <値>` — phase と関連 Issue
-
-1. 対象ファイルを Read する。凍結していれば 6a の step 0 と同じく報告して終了する。ヘッダが旧 4 列なら「仕様表が旧 4 列です。/living-spec spec --upgrade で 6 列にしてから実行してください」と報告して終了する
-2. 値を検証する（勝手に正規化しない）:
-   - `--phase`: `-` / `P<n>`（n は 1 以上）/ `先送り`
-   - `--issue`: `-` か Issue ID のカンマ区切り（`format-spec.md` 9 節の `ISSUES`）。置き換えであって追記ではない（表は現在値の一覧）
-3. `<項目>` に完全一致する行を 6a の表と同じ規則で引き当てる。**0 件なら追加しない**（「`<項目>` が仕様表にありません。先に /living-spec spec <項目> <確度> で追加してください」）
-4. **先送りの行になる `--phase` には D# が要る**（`format-spec.md` 2.2 節）: 新しい値が `先送り`、または frontmatter の `current_phase` より大きい `P<n>` なら、`D<n>` が無い・Decision log に無いとき「先送りは Decision で残します。/living-spec decision で経緯（なぜ後へ回すか）を残し、その番号を渡してください。Decision の見出しには項目名を入れてください（例: `D<n>: 「通知」を P2 へ先送り`。表に D# を残さないので、見出しから辿ります）」と報告して終了する。今の phase 以前へ戻す・`-` にする変更は D# なしでよい。D# は表に書かない
-5. その行の `phase` か `関連 Issue` と、`since` を `<TODAY>` に更新する（確度を確かめ直したのではないが、行を触った日として残す。6a と同じく `since` は機械が書く）
-6. W4 で `last_updated` を更新し、「「<項目>」の phase を <旧> → <新> にしました」（`--issue` なら関連 Issue）と報告する。先送りにしたなら「maintain 段 6 は、この行を塩漬けとして数えません」と添える
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/living-spec/references/subcommands/spec.md` を Read する（手順・分岐はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 7: status — 進捗ビュー
 
-**読むだけ**（W1-W5 の書き込み規律は適用しない）。
-
-1. 対象ファイルを Read し、コメント除去後に frontmatter・仕様表・OQ 台帳をパースする
-2. 集計する:
-   - **収束率 = `確定` の数 ÷ 全項目数**（`format-spec.md` の重み付けはしない。単純な比）。項目 0 件なら「項目なし」と表示し、0 除算しない
-   - **先送りの行（`format-spec.md` 2.2 節）は全体の収束率の分母から外し**、「先送り N 件（先送り a / P<n> 以降 b）」として別に数える。行はあるが全部が先送りなら、収束率の代わりに「今の phase の項目なし（先送り N 件）」と出す（0 除算しない）
-   - 6 列の表で `P<n>` の行があれば、**phase ごとの収束率**（その phase の `確定` ÷ その phase の行数）も出す。`-` の行は今の phase（`current_phase`。無ければ「phase なし」）に入れる
-   - 確度ラベル別の内訳（`確定` / `方向性(仮)` / `未定`）
-   - **open OQ 残数**
-   - **仕様表が凍結されていれば（Phase 6 冒頭の「凍結の判定」）収束率を出さない**（`format-spec.md` 2.1 節）。正本が別の文書に移った表の確定率は、収束の度合いを表さない。下の「収束率」の行を次に置き換え、内訳は参考として残す:
-     ```
-     仕様表: 凍結済み（D<n>: <凍結の Decision の見出し>）。収束率は数えない
-       表の内訳（参考）: <確定> 確定 / <仮> 方向性(仮) / <未定> 未定
-     ```
-     内訳は今の表から数える（凍結後に表が手で触られていれば、凍結した時点の値とは限らない）。壊れた宣言（Phase 6 冒頭の定義）のときは、括弧の中を「凍結の宣言が壊れています。/living-spec spec --unfreeze を D# なしで実行して消せます」にする
-3. 出す:
-   ```
-   ## <プロジェクト名> の現在地
-
-   収束率: <確定>/<全> （<確定> 確定 / <仮> 方向性(仮) / <未定> 未定）
-   今の phase: <current_phase か「宣言なし」>  phase ごと: P1 <確定>/<行数> / P2 <確定>/<行数>（P<n> の行があるときだけ）
-   先送り: <N> 件（先送り <a> / P<n> 以降 <b>）（0 件なら行ごと省く）
-   open な OQ: <n> 件
-   last_updated: <日付> / last-validated: <日付>
-
-   ### 次に決めるもの
-   - OQ1: <問い>（<経過> 日）
-   - 未定の項目: <項目名>, <項目名>
-
-   ### 現在地サマリ
-   <「## 現在地サマリ」セクションの本文>
-   ```
-4. **セッション再開の導線**として、open な OQ と `未定` / `方向性(仮)` の項目を提示する。ここが「新規セッションで living spec の未確定から再開する」ゴールの実装
-   - 仕様表が凍結されていれば、「次に決めるもの」には open な OQ だけを挙げる（凍結した表の項目はここで決めない）
-   - 先送りの行は「次に決めるもの」に挙げない（後の phase で決める）
-
-> 確定した塊ができていたら（仕様表が凍結されていれば、この案内は出さない）、報告の末尾に「確定した項目が <n> 件あります」と添え、次の渡し先を 1 行で示す: 実装方式（HOW）を詰めるなら `design-doc`、振る舞い（WHAT）を固めるなら `bdd-spec`、作業に落とすなら `/issue-create`（issue-workflow）。**living spec 側からプラグインは呼ばない**（疎結合）。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/living-spec/references/subcommands/status.md` を Read する（手順・分岐はそのファイルにある。見出しだけで進めない）。
 
 ---
 
 ## Phase 8: timeline — タイムラインへの 1 項目の append
 
-起きたこと（進捗）と期日を、`format-spec.md` 1.1 節の形で「## タイムライン」の末尾に 1 行足す（GitHub issue #333）。**決定は書かない**。手順（引数の検証・挿入位置・報告）は `${CLAUDE_SKILL_DIR}/references/timeline.md` を Read して従う。W1・W4 の規律はここでも守る。
+入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/living-spec/references/subcommands/timeline.md` を Read する（手順・分岐はそのファイルにある。見出しだけで進めない）。
 
 ---
 

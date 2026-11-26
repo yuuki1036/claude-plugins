@@ -1,4 +1,4 @@
-# timeline — タイムラインへの 1 項目の append（living-spec Phase 8）
+## Phase 8: timeline — タイムラインへの 1 項目の append
 
 起きたこと（進捗）と期日を、`format-spec.md` 1.1 節の形で「## タイムライン」の末尾に 1 行足す（GitHub issue #333）。**決定は書かない**（`decision` の領分。「〜にする」「〜を採用」のような決定の文が渡されたら、書かずに `/living-spec decision` を案内して終了する）。仕様表の凍結とは関係なく書ける。対象ファイルは SKILL.md の Phase 0 で決めたもの、W1・W4 は SKILL.md の「共通手順」。
 
