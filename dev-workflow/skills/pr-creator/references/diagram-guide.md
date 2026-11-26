@@ -29,7 +29,7 @@ Step 4.6 で「作る」と決めた後に読む。作るかどうかの判定�
 | 箱・状態 | 9 |
 | 線・遷移・呼び出し（返り値も 1 本と数える） | 12 |
 | `sequence` の参加者 | 5 |
-| `sequence` の枠 | 1 つ（分岐の無い枠だけなら 2 つ） |
+| `sequence` の枠 | 1 つ（分岐の無い枠だけなら 2 つ。区間の枠 `section` と注記は数えない） |
 | `alt` の分岐 | 2 |
 | `state` の遷移 | 状態の数の 2 倍（超えるなら 2 つの状態機械に分ける） |
 
@@ -58,9 +58,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/diagram-svg.py" '<控えたパス>/<名�
 | キー | 既定 | 意味 |
 |---|---|---|
 | `type` | 必須 | `flow` / `sequence` / `state` |
-| `title` | 無し | 図の上に出す題。PR 本文の「何についての図か」と同じ文になるなら省いてよい（本文と図で 2 回言うことになる） |
-| `legend` | `true` | 凡例を出すか。使った status（箱・線・範囲の枠）と返り値だけが並ぶ。全部 `existing` で返り値も無ければ出ない |
-| `legend_labels` | 無し | 凡例の文言の差し替え。例: `{"later": "PR-2 で足す"}`（キーは status 名か `reply`。値は空にできない。凡例を消すなら `legend: false`） |
+| `title` | 無し | 図の上に出す題（太字の 1 行）。`sequence` では付ける（参加者を横に並べた図は、箱を見ても何の流れかが分からないため）。`flow` / `state` は、PR 本文の「何についての図か」と同じ文になるなら省いてよい（本文と図で 2 回言うことになる） |
+| `legend` | `true` | 凡例を出すか。使った status の見本だけが並ぶ（箱・線。`flow` は範囲の枠も、`sequence` は返り値・エラーで戻る線も）。全部 `existing` で返り値もエラーで戻る線も無ければ出ない。`sequence` は枠で囲み、部品（参加者・注記）と呼び出し（線）の 2 段に分ける |
+| `legend_labels` | 無し | 凡例の文言の差し替え。例: `{"later": "PR-2 で足す"}`（キーは status 名か `reply` / `error`（`reply` / `error` は `sequence` だけで使われる）。値は空にできない。凡例を消すなら `legend: false`） |
 
 ### status（箱・線・参加者・状態に付ける）
 
@@ -72,7 +72,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/diagram-svg.py" '<控えたパス>/<名�
 | `existing` | 灰（既定） | 既存。触っていない |
 | `later` | 灰の破線の箱・点線の線（返り値は一点鎖線） | 後続の PR で足す・変える部品。PR を分けたときの全体像を見せる |
 
-ラベルは 1 つの箱で 1〜2 行（`\n` で改行。線のラベル・枠の条件も改行できる）。名前は diff に出てくる関数・画面・テーブルの名前に合わせ、本文に無い用語を図だけに持ち込まない。`label` を省くと `id` がそのまま描かれる。
+ラベルは 1 つの箱で 1〜2 行（`\n` で改行。線のラベル・枠の条件も改行できる。区間の枠 `section` の `label` と `cond` は 1 行、`sequence` の注記は 3 行以上も書ける）。名前は diff に出てくる関数・画面・テーブルの名前に合わせ、本文に無い用語を図だけに持ち込まない。`label` を省くと `id` がそのまま描かれる。
 
 ## 3. 型ごとの定義
 
@@ -81,24 +81,27 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/diagram-svg.py" '<控えたパス>/<名�
 ```json
 {
   "type": "sequence",
+  "title": "商品を消す流れ",
   "participants": [
     {"id": "ui", "label": "一覧画面"},
-    {"id": "act", "label": "Server Action", "status": "added"},
-    {"id": "uc", "label": "DeleteItemUseCase", "status": "added"},
-    {"id": "repo", "label": "ItemRepository", "status": "changed"},
+    {"id": "act", "label": "削除の受け付け", "sublabel": "deleteItem (actions.ts)", "status": "added"},
+    {"id": "uc", "label": "削除の判断", "sublabel": "DeleteItemUseCase", "status": "added"},
+    {"id": "repo", "label": "商品の保存", "sublabel": "ItemRepository", "status": "changed"},
     {"id": "audit", "label": "監査ログ", "status": "later"}
   ],
   "steps": [
     {"from": "ui", "to": "act", "label": "deleteItem(id)", "status": "added"},
+    {"note": "権限を確かめてから\nユースケースへ渡す", "at": "act", "status": "added"},
     {"from": "act", "to": "uc", "label": "execute(id)", "status": "added"},
     {"from": "uc", "to": "repo", "label": "findById(id)"},
     {"frame": "alt", "branches": [
       {"label": "見つからない", "steps": [
         {"from": "repo", "to": "uc", "label": "null", "reply": true},
-        {"from": "uc", "to": "act", "label": "NotFound", "reply": true, "status": "added"}
+        {"from": "uc", "to": "act", "label": "NotFound", "error": true}
       ]},
       {"label": "見つかった", "steps": [
         {"from": "uc", "to": "repo", "label": "softDelete(id)", "status": "changed"},
+        {"note": "行は消さずに\ndeleted_at を入れる", "at": "repo", "status": "changed"},
         {"from": "uc", "to": "audit", "label": "record(削除)", "status": "later"}
       ]}
     ]},
@@ -108,8 +111,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/diagram-svg.py" '<控えたパス>/<名�
 ```
 
 - 参加者は、最初に呼ばれる順に左から並べる（矢印が左から右へ流れる）
-- 呼び出しは `from` / `to` / `label`。返り値は `"reply": true`（破線）。`from` と `to` が同じなら自分を呼ぶ矢印になる
-- 枠（`frame`）は `alt`（条件で分かれる。`branches` に分岐ごとの `label` と `steps`）/ `opt`（条件を満たすときだけ）/ `loop`（繰り返し）の 3 つ。並行や途中で抜ける経路を描きたいときは、枠を足さずに図を分ける。分岐の無い枠は `{"frame": "opt", "label": "<条件>", "steps": [...]}`。`branches` を使う枠には枠直下の `label` を書けない（条件は各分岐の `label` に書く）。枠は入れ子にできるが、数は §1 の予算に収める
+- 参加者は `label` に役割（「削除の受け付け」）、`sublabel` に実体の名前（関数・コンポーネント・クラス。ファイル名を添えてもよい）を書く。`sublabel` は見出しの 2 行目に小さい灰色の文字で出て、そのとき 1 行目は太字になる
+- 呼び出しは `from` / `to` / `label`。返り値は `"reply": true`（破線）。エラーで戻る線は `"error": true`（赤の細かい破線。消した返り値の赤の破線とは刻みが違う。`status` と一緒に書けない）。`from` と `to` が同じなら自分を呼ぶ矢印になる
+- **呼び出しごとに何が起きるかを注記に書く**（推奨）。`{"note": "<説明>", "at": "<参加者の id>"}` を steps に並べると、その位置で生存線の右に角丸の箱が出る。ラベルには関数名だけを書き、中で何を確かめ・何を書き換えるかは注記に書く。改行は `\n` で入れる（自動では折り返さない。長いと幅 1200 の warn= が出る）。`status` も付けられる
+- 処理の段階を分けて見せたいときは区間の枠 `{"frame": "section", "label": "1. 受け付け", "cond": "<説明>", "steps": [...]}` で囲む。札に `label`、その右に `cond` を括弧なしで出す。どちらも 1 行で書く。分岐ではないので枠の予算に数えない
+- 分岐の枠（`frame`）は `alt`（条件で分かれる。`branches` に分岐ごとの `label` と `steps`）/ `opt`（条件を満たすときだけ）/ `loop`（繰り返し）の 3 つ。並行や途中で抜ける経路を描きたいときは、枠を足さずに図を分ける。分岐の無い枠は `{"frame": "opt", "label": "<条件>", "steps": [...]}`。`branches` を使う枠には枠直下の `label` を書けない（条件は各分岐の `label` に書く）。枠は入れ子にできるが、数は §1 の予算に収める
 - 全部の呼び出しを描かない。主題（分岐・抜ける経路・この PR で足した呼び出し）に関わる呼び出しだけを残す
 
 ### `state`
@@ -212,6 +218,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/diagram-svg.py" '<控えたパス>/<名�
 - 文字の幅は全角と曖昧幅（`→` `①` `×` など）を 1 文字 = 1em で見積もる。英字の幅で見積もると日本語が箱や枠の見出しからはみ出す
 - 矢印の先は `<marker markerUnits="userSpaceOnUse">` で大きさを固定する。既定（`strokeWidth`）だと線の太さに比例して膨らむ
 - ライフラインの見出しの箱は、見出しの幅から列の間隔を決めて並べる。間隔を固定すると、長い見出しが隣と重なる
+- `sequence` の注記は、右隣の生存線に届かないよう列の間隔を広げる。枠（自己呼び出し・注記・札と条件の文字・入れ子の枠で右へ張り出す）は、枠に入っていない次の生存線の 4px 手前で止まるよう列の間隔を広げる。越えると、その参加者も枠の範囲に見える
 - ルートの `<svg>` に `width` / `height`（px の数値）を書き、最初に白い背景の `<rect>` を置く（svg-to-png.sh の撮影範囲になり、GitHub のダークテーマでも読める）
 - 線のラベルは白地を付けて前面に置き、箱・範囲の枠の見出し・他のラベルと重ならない位置を座標で確かめる。縦の線のラベルは線の横に出す。置き場が無ければ warn= を出す（画像を見ない手順では、これが重なりを知る合図になる）
 
