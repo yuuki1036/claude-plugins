@@ -18,7 +18,7 @@
     {
       "name": "dev-workflow",
       "description": "Git 操作・PR 作成・UI 動作確認・バグ診断・worktree 並列環境セットアップの開発ワークフロー。原子性重視のコミット、承認ゲート付き PR 作成、chrome-devtools MCP による UI 自動化、feedback loop 駆動の 6 Phase バグ診断、worktree 単位の DB / port 分離を提供する。",
-      "version": "1.44.4",
+      "version": "1.45.0",
       "author": {
         "name": "yuki"
       },
@@ -163,7 +163,7 @@
     {
       "name": "project-hub",
       "description": "1 つの PJ の決定と段取りを 1 つのプラグインで持つ。決定は living spec（repo の .claude/living-specs/。OQ 台帳と Decision log を append-only で持ち、確度ラベル・phase・先送りで収束を追い、maintain が 8 段で検証する）、段取りは hub（1 つのセッションを hub にして、複数の sub で進める PJ の状態をコンテキストの外のファイルで持つ。sub を起動でき、lead の確認が要らない連絡は承認なしに送り、宛先は送る直前に引き直す）。hub のセッションには SessionStart / PostCompact で状態の表を、UserPromptSubmit で未取り込みの知らせを注入する。living spec だけ・hub だけでも使える",
-      "version": "0.18.2",
+      "version": "0.18.3",
       "author": {
         "name": "yuki"
       },

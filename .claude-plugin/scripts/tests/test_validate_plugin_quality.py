@@ -3653,6 +3653,51 @@ class SplitSkillTest(unittest.TestCase):
             self.assertIsNotNone(m, line)
             self.assertEqual(m.group("num"), name)
 
+    def test_living_spec_heading_regex_takes_every_phase_but_phase_0(self):
+        """living-spec の一覧の正規表現は, SKILL.md に残す Phase 0 を除く `## Phase N: ` をサブコマンドの節にする（#447）."""
+        rel = "project-hub/skills/living-spec/SKILL.md"
+        mod = _load_module()
+        heading_re = next(h for r, h, _l in mod.SPLIT_SKILLS if r == rel)
+        self.assertIn(rel, mod.UNCHAINED_SPLIT_SKILLS)
+        self.assertEqual(mod.SPLIT_SKILL_PHASE_DIRS[rel], "references/subcommands")
+        pat = re.compile(heading_re)
+        for line in (
+            "## Phase 0: 保存先確認 + サブコマンド判定",
+            "## 共通手順: 書き込み前後の規律（Phase 4-6・8 が従う）",
+            "### 6a. `spec <項目> <確度>` — 確度の更新",
+            "### W1. 日付は Bash で取る",
+            "## 処理フロー",
+            "# Living Spec",
+        ):
+            self.assertIsNone(pat.match(line), line)
+        cases = {
+            "## Phase 1: init — 引数解析と slug / タイトルの確定": "1",
+            "## Phase 4: oq — OQ 台帳への追加 / 一覧": "4",
+            "## Phase 8: timeline — タイムラインへの 1 項目の append": "8",
+            "## Phase 10: 後から足す節": "10",   # 0 で始まらない 2 桁は節にする
+        }
+        for line, num in cases.items():
+            m = pat.match(line)
+            self.assertIsNotNone(m, line)
+            self.assertEqual(m.group("num"), num)
+
+    def test_living_spec_reads_one_file_per_subcommand(self):
+        """本物の living-spec の SKILL.md は, Phase 1・4〜8 の見出しごとにサブコマンドのファイルを 1 本ずつ読む（#447）."""
+        rel = "project-hub/skills/living-spec/SKILL.md"
+        mod = _load_module()
+        entry = next(e for e in mod.SPLIT_SKILLS if e[0] == rel)
+        base = "skills/living-spec/references/subcommands/"
+        expected = [
+            ("Phase 1", base + "init.md"),
+            ("Phase 4", base + "oq.md"),
+            ("Phase 5", base + "decision.md"),
+            ("Phase 6", base + "spec.md"),
+            ("Phase 7", base + "status.md"),
+            ("Phase 8", base + "timeline.md"),
+        ]
+        got = [(name, [p for _i, p in reads]) for name, _h, reads in mod.split_skill_phases(mod.ROOT / entry[0], entry[1], entry[2])]
+        self.assertEqual(got, [(name, [path]) for name, path in expected])
+
     def test_real_repo_has_no_error(self):
         """本物の repo と既定の一覧・上限で error が出ない."""
         for name in ("ROOT", "SPLIT_SKILLS", "SPLIT_SKILL_MAX_BYTES", "SPLIT_SKILL_PHASE_DIRS"):

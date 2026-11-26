@@ -3,7 +3,8 @@
 
 型は 3 つ。どれを選ぶかと定義の書き方は skills/pr-creator/references/diagram-guide.md:
   flow      箱と矢印（流れ・範囲）。groups で「この PR のレビュー範囲」などを枠で囲む
-  sequence  ライフラインと alt / opt / loop の枠（層をまたぐ呼び出しの順と分岐）
+  sequence  ライフラインと alt / opt / loop の枠（層をまたぐ呼び出しの順と分岐）。注記・区間の枠（section）・
+            エラーで戻る線・参加者の 2 行目も描ける（#533）
   state     状態を節・操作を辺にした状態遷移図
 
 使い方:
@@ -57,9 +58,25 @@ BOX_DASH = {"later": "6 4"}
 REPLY_DASH = "6 4"
 LATER_DASH = "2 4"
 LATER_REPLY_DASH = "8 3 2 3"
+# エラーで戻る線は消した線と同じ赤だが、消した返り値（赤の 6 4）と見分けるため細かい破線にする
+ERROR_DASH = "3 3"
 
-# par / break / critical は持たない。枠が 1〜2 つまでの図では使い分けが読み手に伝わらず、要るなら図を分ける
-FRAME_KINDS = ("alt", "opt", "loop")
+# par / break / critical は持たない。枠が 1〜2 つまでの図では使い分けが読み手に伝わらず、要るなら図を分ける。
+# section は分岐ではなく「ここからここまでが 1 つの段階」を囲む区間の枠で、札に label、その右に cond を括弧なしで出す
+FRAME_KINDS = ("alt", "opt", "loop", "section")
+SUB_FILL = "#5f6368"  # 参加者の 2 行目と凡例の段見出し
+LEGEND_EXTRA = {"reply": "返り値", "error": "エラーで戻る"}
+# 注記は生存線の右に置く。生存線からの距離・内側の余白・前の行との間隔・角の丸み
+NOTE_DX = 8
+NOTE_PAD_X = 8
+NOTE_PAD_Y = 6
+NOTE_GAP = 12
+NOTE_RX = 6
+# sequence の凡例の枠。内側の余白・段見出しと見本の間・段の高さ・段の間
+LEG_PAD = 10
+LEG_HEAD_GAP = 12
+LEG_ROW_H = 18
+LEG_ROW_GAP = 6
 # 複雑さの予算（cathrynlavery/diagram-design の complexity budget に合わせた）。超えたら warn= で 2 枚に分けるよう促す
 MAX_NODES = 9
 MAX_EDGES = 12
@@ -132,7 +149,7 @@ class Canvas:
 
 
 def text_svg(x: float, cy: float, s: str, fs: float, anchor: str = "middle",
-             bold: bool = False, strike: bool = False) -> str:
+             bold: bool = False, strike: bool = False, fill: str = TEXT) -> str:
     rows = s.split("\n")
     lh = fs * LINE_H
     # dominant-baseline は rsvg-convert が解釈しないことがあるので、中心から基線を計算する
@@ -140,7 +157,7 @@ def text_svg(x: float, cy: float, s: str, fs: float, anchor: str = "middle",
     extra = (' font-weight="bold"' if bold else "") + (' text-decoration="line-through"' if strike else "")
     spans = "".join(f'<tspan x="{fmt(x)}" y="{fmt(first + i * lh)}">{escape(r)}</tspan>'
                     for i, r in enumerate(rows))
-    return f'<text font-size="{fs}" text-anchor="{anchor}" fill="{TEXT}"{extra}>{spans}</text>'
+    return f'<text font-size="{fs}" text-anchor="{anchor}" fill="{fill}"{extra}>{spans}</text>'
 
 
 def label_svg(c: Canvas, x: float, cy: float, s: str, anchor: str = "middle", strike: bool = False) -> None:
@@ -153,12 +170,15 @@ def label_svg(c: Canvas, x: float, cy: float, s: str, anchor: str = "middle", st
           (left, cy - h / 2, left + w, cy + h / 2))
 
 
-def box_size(label: str) -> tuple[float, float]:
-    return max(text_w(label, FS) + 2 * PAD_X, BOX_MIN_W), text_h(label, FS) + 2 * PAD_Y
+def box_size(label: str, sub: str = "") -> tuple[float, float]:
+    if not sub:
+        return max(text_w(label, FS) + 2 * PAD_X, BOX_MIN_W), text_h(label, FS) + 2 * PAD_Y
+    w = max(text_w(label, FS), text_w(sub, FS_SMALL)) + 2 * PAD_X
+    return max(w, BOX_MIN_W), text_h(label, FS) + text_h(sub, FS_SMALL) + 2 * PAD_Y
 
 
 def box_svg(c: Canvas, cls: str, ident: str, x: float, y: float, w: float, h: float,
-            status: str, label: str, rx: float, double: bool = False) -> None:
+            status: str, label: str, rx: float, double: bool = False, sub: str = "") -> None:
     st = STATUSES[status]
     dash = f' stroke-dasharray="{BOX_DASH[status]}"' if status in BOX_DASH else ""
     parts = [f'<g class="{cls}" data-id="{attr(ident)}" data-status="{status}">',
@@ -167,14 +187,25 @@ def box_svg(c: Canvas, cls: str, ident: str, x: float, y: float, w: float, h: fl
     if double:
         parts.append(f'<rect x="{fmt(x + 4)}" y="{fmt(y + 4)}" width="{fmt(w - 8)}" height="{fmt(h - 8)}" '
                      f'rx="{fmt(max(rx - 4, 0))}" fill="none" stroke="{st["stroke"]}" stroke-width="1"/>')
-    parts.append(text_svg(x + w / 2, y + h / 2, label, FS, strike=status == "removed"))
+    strike = status == "removed"
+    if sub:
+        # 見出しの高さは参加者のうち最も高いものに揃うので、名前は上の余白から、2 行目は下の余白から置く
+        parts.append(text_svg(x + w / 2, y + PAD_Y + text_h(label, FS) / 2, label, FS, bold=True, strike=strike))
+        parts.append(text_svg(x + w / 2, y + h - PAD_Y - text_h(sub, FS_SMALL) / 2, sub, FS_SMALL,
+                              strike=strike, fill=SUB_FILL))
+    else:
+        parts.append(text_svg(x + w / 2, y + h / 2, label, FS, strike=strike))
     parts.append("</g>")
     c.add("boxes", "".join(parts), (x, y, x + w, y + h))
 
 
-def line_attrs(c: Canvas, status: str, dashed: bool = False) -> str:
+def line_attrs(c: Canvas, status: str, dashed: bool = False, error: bool = False) -> str:
+    if error:
+        status = "removed"
     c.markers.add(status)
-    if status == "later":
+    if error:
+        dash = ERROR_DASH
+    elif status == "later":
         dash = LATER_REPLY_DASH if dashed else LATER_DASH
     else:
         dash = REPLY_DASH if dashed else ""
@@ -251,6 +282,8 @@ def parse_items(items: object, key: str, where: str, allowed: set[str]) -> list[
         for extra in ("pos", "final"):
             if extra in obj:
                 item[extra] = obj[extra]
+        if "sublabel" in obj:
+            item["sublabel"] = opt_str(obj, "sublabel", f"{key}[{i}]")
         out.append(item)
     return out
 
@@ -270,6 +303,8 @@ SELF_W = 36
 SELF_H = 22
 FRAME_BASE = 20
 FRAME_INSET = 10
+# 枠の右辺と、枠に入っていない次の生存線の間に残す余白
+FRAME_GAP = 4
 FRAME_HEAD = 24
 
 
@@ -279,14 +314,29 @@ def parse_steps(steps: object, pids: dict, where: str) -> list[dict]:
     out: list[dict] = []
     for i, raw in enumerate(steps):
         w = f"{where}[{i}]"
-        if isinstance(raw, dict) and "frame" in raw:
-            obj = check_keys(raw, {"frame", "label", "steps", "branches"}, w)
+        if isinstance(raw, dict) and "note" in raw:
+            obj = check_keys(raw, {"note", "at", "status"}, w)
+            out.append({"kind": "note", "text": get_label(obj, "note", "", w), "at": ref(obj, "at", pids, w),
+                        "status": get_status(obj, w)})
+        elif isinstance(raw, dict) and "frame" in raw:
+            obj = check_keys(raw, {"frame", "label", "cond", "steps", "branches"}, w)
             kind = obj["frame"]
-            if kind not in FRAME_KINDS:
+            if not isinstance(kind, str) or kind not in FRAME_KINDS:
                 raise SpecError(f"{w} の frame {kind!r} は使えない（{' / '.join(FRAME_KINDS)}）")
+            if "branches" in obj and kind != "alt":
+                raise SpecError(f"{w} の branches は alt の枠だけに書ける（{kind} は label と steps で書く）")
+            if "cond" in obj and kind != "section":
+                raise SpecError(f"{w} の cond は section の枠だけに書ける（{kind} の条件は label に書く）")
+            if kind == "section":
+                # 札は 1 行の高さしか持たないので、名前と説明の改行は止める（札からはみ出して下の呼び出しに重なる）
+                label = get_label(obj, "label", "", w)
+                cond = opt_str(obj, "cond", w)
+                if "\n" in label or "\n" in cond:
+                    raise SpecError(f"{w} の section の label と cond は 1 行で書く")
+                out.append({"kind": "frame", "op": kind, "tab": label,
+                            "branches": [(cond, parse_steps(obj.get("steps"), pids, f"{w}.steps"))]})
+                continue
             if "branches" in obj:
-                if kind != "alt":
-                    raise SpecError(f"{w} の branches は alt の枠だけに書ける（{kind} は label と steps で書く）")
                 if "steps" in obj:
                     raise SpecError(f"{w} は steps と branches のどちらかで書く")
                 if "label" in obj:
@@ -300,14 +350,18 @@ def parse_steps(steps: object, pids: dict, where: str) -> list[dict]:
                                      parse_steps(bobj.get("steps"), pids, f"{w}.branches[{j}].steps")))
             else:
                 branches = [(opt_str(obj, "label", w), parse_steps(obj.get("steps"), pids, f"{w}.steps"))]
-            out.append({"kind": "frame", "op": kind, "branches": branches})
+            out.append({"kind": "frame", "op": kind, "tab": kind, "branches": branches})
         else:
-            obj = check_keys(raw, {"from", "to", "label", "status", "reply"}, w)
-            if "reply" in obj and not isinstance(obj["reply"], bool):
-                raise SpecError(f"{w} の reply は true / false で書く")
+            obj = check_keys(raw, {"from", "to", "label", "status", "reply", "error"}, w)
+            for flag in ("reply", "error"):
+                if flag in obj and not isinstance(obj[flag], bool):
+                    raise SpecError(f"{w} の {flag} は true / false で書く")
+            # エラーで戻る線は赤の破線で描くので、status の色と両立しない
+            if obj.get("error") is True and "status" in obj:
+                raise SpecError(f"{w} は error と status を一緒に書けない（エラーで戻る線は赤の破線で描く）")
             out.append({"kind": "msg", "from": ref(obj, "from", pids, w), "to": ref(obj, "to", pids, w),
                         "label": opt_str(obj, "label", w), "status": get_status(obj, w),
-                        "reply": obj.get("reply") is True})
+                        "reply": obj.get("reply") is True, "error": obj.get("error") is True})
     return out
 
 
@@ -324,13 +378,28 @@ def walk_frames(nodes: list[dict]):
                 yield from walk_frames(sub)
 
 
-def walk_msgs(nodes: list[dict]):
+def walk_msgs(nodes: list[dict], kind: str = "msg"):
+    """枠の中まで降りて、kind（msg か note）の step を順に返す."""
     for n in nodes:
-        if n["kind"] == "msg":
+        if n["kind"] == kind:
             yield n
-        else:
+        elif n["kind"] == "frame":
             for _, sub in n["branches"]:
-                yield from walk_msgs(sub)
+                yield from walk_msgs(sub, kind)
+
+
+def note_size(text: str) -> tuple[float, float]:
+    return text_w(text, FS_LABEL) + 2 * NOTE_PAD_X, text_h(text, FS_LABEL) + 2 * NOTE_PAD_Y
+
+
+def note_need(text: str) -> float:
+    """注記が生存線の右に張り出す幅."""
+    return NOTE_DX + note_size(text)[0]
+
+
+def guard(frame: dict, s: str) -> str:
+    """枠の条件の表示. section の cond は条件ではなく説明なので括弧で囲まない."""
+    return s if frame["op"] == "section" else f"[{s}]"
 
 
 def self_need(label: str) -> float:
@@ -344,17 +413,20 @@ def extra_rows(label: str) -> float:
 
 def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
     check_keys(spec, COMMON_KEYS | {"participants", "steps"}, "定義")
-    parts = parse_items(spec.get("participants"), "participants", "participants", {"id", "label", "status"})
+    parts = parse_items(spec.get("participants"), "participants", "participants",
+                        {"id", "label", "status", "sublabel"})
     col = {p["id"]: i for i, p in enumerate(parts)}
     steps = parse_steps(spec.get("steps"), col, "steps")
     n = len(parts)
 
-    hw = [box_size(p["label"])[0] for p in parts]
-    head_h = max(box_size(p["label"])[1] for p in parts)
+    hw = [box_size(p["label"], p.get("sublabel", ""))[0] for p in parts]
+    head_h = max(box_size(p["label"], p.get("sublabel", ""))[1] for p in parts)
     gaps = [(hw[i] + hw[i + 1]) / 2 + SEQ_HEAD_GAP for i in range(n - 1)]
     right_extra = 0.0
     msgs = list(walk_msgs(steps))
-    frames = list(walk_frames(steps))
+    notes = list(walk_msgs(steps, "note"))
+    # 区間の枠は分岐を持たず読む順を変えないので、枠の予算に数えない（注記も数えない）
+    frames = [f for f in walk_frames(steps) if f["op"] != "section"]
     budget = []
     if n > MAX_PARTICIPANTS:
         budget.append(f"参加者 {n} > {MAX_PARTICIPANTS}")
@@ -367,6 +439,12 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
         if len(f["branches"]) > MAX_ALT_BRANCHES:
             budget.append(f"alt の分岐 {len(f['branches'])} > {MAX_ALT_BRANCHES}")
     over_budget(c, budget)
+    for nt in notes:
+        a = col[nt["at"]]
+        if a < n - 1:
+            gaps[a] = max(gaps[a], note_need(nt["text"]) + 8)
+        else:
+            right_extra = max(right_extra, note_need(nt["text"]))
     for m in sorted(msgs, key=lambda m: abs(col[m["from"]] - col[m["to"]])):
         a, b = col[m["from"]], col[m["to"]]
         if a == b:
@@ -380,49 +458,84 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
         if short > 0:  # mutation-ok: short が 0 なら足す量も 0
             for i in range(lo, hi):
                 gaps[i] += short / (hi - lo)
-    cx = [hw[0] / 2]
-    for g in gaps:
-        cx.append(cx[-1] + g)
-
     def extent(frame: dict) -> tuple[float, float]:
         inner = [n2 for _, sub in frame["branches"] for n2 in sub if n2["kind"] == "frame"]
-        cols = [col[e] for m in walk_msgs([frame]) for e in (m["from"], m["to"])]
+        cols = ([col[e] for m in walk_msgs([frame]) for e in (m["from"], m["to"])]
+                + [col[nt["at"]] for nt in walk_msgs([frame], "note")])
         x0, x1 = cx[min(cols)] - FRAME_BASE, cx[max(cols)] + FRAME_BASE
         for m in walk_msgs([frame]):
             if m["from"] == m["to"]:
                 x1 = max(x1, cx[col[m["from"]]] + self_need(m["label"]) + 4)
+        for nt in walk_msgs([frame], "note"):
+            x1 = max(x1, cx[col[nt["at"]]] + note_need(nt["text"]) + 4)
         for f in inner:
             ix0, ix1 = extent(f)
             x0, x1 = min(x0, ix0 - FRAME_INSET), max(x1, ix1 + FRAME_INSET)
-        tab_w = text_w(frame["op"], FS_SMALL) + 16
+        tab_w = text_w(frame["tab"], FS_SMALL) + 16
         first = frame["branches"][0][0]
-        need = tab_w + (8 + text_w(f"[{first}]", FS_LABEL) + 12 if first else 0)
+        need = tab_w + (8 + text_w(guard(frame, first), FS_LABEL) + 12 if first else 0)
         for blabel, _ in frame["branches"][1:]:
             if blabel:
                 need = max(need, text_w(f"[{blabel}]", FS_LABEL) + 20)
         x1 = max(x1, x0 + need)
-        frame["x0"], frame["x1"], frame["tab_w"] = x0, x1, tab_w
+        frame["x0"], frame["x1"], frame["tab_w"], frame["last"] = x0, x1, tab_w, max(cols)
         return x0, x1
 
-    for top in steps:
-        if top["kind"] == "frame":
-            extent(top)
+    # 枠の右辺は、自己呼び出し・注記・札と条件の文字・入れ子の枠の分だけ最右列の生存線から張り出す。
+    # 枠に入っていない次の生存線を越えると、その参加者も枠の範囲に見えるので、列の間隔を広げて測り直す。
+    # 1 回に広げるのは、越えた枠の最右列のうち最も左の列 k だけで、量は k を最右列に持つ枠の越えの最大値。
+    # k より右の列はまとめて右へずれるので、越えていた右側の枠の越えは同じかそれより小さくなり、広げ過ぎない。
+    # 広げた列は以後越えないので、広げる列は左から順に決まり、参加者の数だけ測れば最後の回は越えが無く抜ける。
+    # 比較には 1e-6 の許容を置く。広げた直後の累積和の丸めで 1ulp 越えたと読むと、同じ列に 1 回を使って
+    # 回数が足りなくなり、最後に広げた列を測り直さないまま描いてしまう
+    for _ in range(n):
+        cx = [hw[0] / 2]
+        for g in gaps:
+            cx.append(cx[-1] + g)
+        for top in steps:
+            if top["kind"] == "frame":
+                extent(top)
+        over = {}
+        for f in walk_frames(steps):
+            k = f["last"]
+            if k < n - 1 and f["x1"] > cx[k + 1] - FRAME_GAP + 1e-6:
+                over[k] = max(over.get(k, 0.0), f["x1"] - (cx[k + 1] - FRAME_GAP))
+        if not over:
+            break
+        k = min(over)
+        gaps[k] += over[k]
 
     y = head_h + 20
 
     def emit(nodes: list[dict]) -> None:
         nonlocal y
         for node in nodes:
+            if node["kind"] == "note":
+                y += NOTE_GAP
+                w, h = note_size(node["text"])
+                x = cx[col[node["at"]]] + NOTE_DX
+                st = STATUSES[node["status"]]
+                dash = f' stroke-dasharray="{BOX_DASH[node["status"]]}"' if node["status"] in BOX_DASH else ""
+                c.add("boxes", f'<g class="note" data-at="{attr(node["at"])}" data-status="{node["status"]}">'
+                               f'<rect x="{fmt(x)}" y="{fmt(y)}" width="{fmt(w)}" height="{fmt(h)}" '
+                               f'rx="{NOTE_RX}" fill="{st["fill"]}" stroke="{st["stroke"]}" stroke-width="1"{dash}/>'
+                               + text_svg(x + NOTE_PAD_X, y + h / 2, node["text"], FS_LABEL, "start",
+                                          strike=node["status"] == "removed") + "</g>",
+                      (x, y, x + w, y + h))
+                y += h
+                continue
             if node["kind"] == "msg":
                 a, b = col[node["from"]], col[node["to"]]
                 strike = node["status"] == "removed"
-                group = f'<g class="message" data-from="{attr(node["from"])}" data-to="{attr(node["to"])}">'
+                group = (f'<g class="message" data-from="{attr(node["from"])}" data-to="{attr(node["to"])}"'
+                         + (' data-error="true">' if node["error"] else ">"))
+                look = (node["status"], node["reply"], node["error"])
                 extra = extra_rows(node["label"])
                 if a == b:
                     y += SEQ_ROW - 8 + extra / 2
                     x = cx[a]
                     c.add("lines", f'{group}<path d="M {fmt(x)} {fmt(y)} H {fmt(x + SELF_W)} V {fmt(y + SELF_H)} '
-                                   f'H {fmt(x)}" {line_attrs(c, node["status"], node["reply"])}/></g>',
+                                   f'H {fmt(x)}" {line_attrs(c, *look)}/></g>',
                           (x, y, x + SELF_W, y + SELF_H))
                     if node["label"]:
                         label_svg(c, x + SELF_W + 8, y + SELF_H / 2, node["label"], "start", strike)
@@ -430,7 +543,7 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
                 else:
                     y += SEQ_ROW + extra
                     c.add("lines", f'{group}<path d="M {fmt(cx[a])} {fmt(y)} H {fmt(cx[b])}" '
-                                   f'{line_attrs(c, node["status"], node["reply"])}/></g>',
+                                   f'{line_attrs(c, *look)}/></g>',
                           (min(cx[a], cx[b]), y, max(cx[a], cx[b]), y))
                     if node["label"]:
                         # 白地の下端を矢印の 3px 上に揃える（行数に依らず矢印を隠さない）
@@ -449,7 +562,8 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
                 emit(sub)
             y += 14
             x0, x1, tab_w = node["x0"], node["x1"], node["tab_w"]
-            svg = [f'<g class="frame" data-kind="{node["op"]}">',
+            svg = [f'<g class="frame" data-kind="{node["op"]}"' + (f' data-label="{attr(node["tab"])}"'
+                                                                   if node["op"] == "section" else "") + ">",
                    f'<rect x="{fmt(x0)}" y="{fmt(top)}" width="{fmt(x1 - x0)}" height="{fmt(y - top)}" '
                    f'fill="none" stroke="#5f6368" stroke-width="1"/>']
             for dy, _ in dividers:
@@ -460,11 +574,11 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
             # 種類の札と条件の文字は、上を通るライフラインに消されないよう前面に置く
             c.add("over", f'<path class="frame-tab" d="M {fmt(x0)} {fmt(top)} H {fmt(x0 + tab_w)} V {fmt(top + 14)} '
                           f'L {fmt(x0 + tab_w - 8)} {fmt(top + 20)} H {fmt(x0)} Z" fill="#f1f3f4" stroke="#5f6368" '
-                          f'stroke-width="1"/>' + text_svg(x0 + 8, top + 10, node["op"], FS_SMALL, "start", bold=True))
+                          f'stroke-width="1"/>' + text_svg(x0 + 8, top + 10, node["tab"], FS_SMALL, "start", bold=True))
             # 条件の白地は上端を枠の上辺・区切り線の 1px 下に揃え、行が増えたら下へ伸ばす（上へ伸ばすと前の分岐の矢印を隠す）
             first = node["branches"][0][0]
             if first:
-                label_svg(c, x0 + tab_w + 8, top + (text_h(first, FS_LABEL) + 2) / 2 + 1, f"[{first}]", "start")
+                label_svg(c, x0 + tab_w + 8, top + (text_h(first, FS_LABEL) + 2) / 2 + 1, guard(node, first), "start")
             for dy, blabel in dividers:
                 if blabel:
                     label_svg(c, x0 + 8, dy + (text_h(blabel, FS_LABEL) + 2) / 2 + 1, f"[{blabel}]", "start")
@@ -475,12 +589,18 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
         st = STATUSES[p["status"]]
         c.add("under", f'<path class="lifeline" d="M {fmt(cx[i])} {fmt(head_h)} V {fmt(y)}" '
                        f'stroke="{st["stroke"]}" stroke-width="1" stroke-dasharray="4 4"/>', (cx[i], 0, cx[i], y))
-        box_svg(c, "participant", p["id"], cx[i] - hw[i] / 2, 0, hw[i], head_h, p["status"], p["label"], 4)
+        box_svg(c, "participant", p["id"], cx[i] - hw[i] / 2, 0, hw[i], head_h, p["status"], p["label"], 4,
+                sub=p.get("sublabel", ""))
     if right_extra:
         c.add("under", "", (cx[-1], 0, cx[-1] + right_extra, 0))
-    used = [p["status"] for p in parts] + [m["status"] for m in msgs]
-    extra = [("reply", "返り値")] if any(m["reply"] for m in msgs) else []
-    return [(s, "") for s in used] + extra
+    # 凡例は「部品」（箱）と「呼び出し」（線）の 2 段に分けるので、どちらに出るかを添えて返す
+    used = ([(p["status"], "box") for p in parts] + [(nt["status"], "box") for nt in notes]
+            + [(m["status"], "line") for m in msgs if not m["error"]])
+    if any(m["reply"] and not m["error"] for m in msgs):
+        used.append(("reply", "line"))
+    if any(m["error"] for m in msgs):
+        used.append(("error", "line"))
+    return used
 
 
 # ---------------------------------------------------------------- flow / state
@@ -901,30 +1021,69 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
 
 
 def legend(c: Canvas, used: list[tuple[str, str]], labels: dict) -> None:
+    """flow / state の凡例（sequence は legend_sequence）. status ごとの箱の見本を 1 行に並べる."""
     seen: list[str] = []
     for s, _ in used:
         if s not in seen:
             seen.append(s)
-    items = [s for s in STATUSES if s in seen] + [s for s in seen if s not in STATUSES]
+    items = [s for s in STATUSES if s in seen]
     if items == ["existing"]:
         return
     x, y = c.x0, c.y1 + 28
     svg = ['<g class="legend">']
     for s in items:
-        text = labels.get(s) or STATUSES.get(s, {}).get("label") or "返り値"
-        svg.append(f'<g class="legend-item" data-status="{s}">')
-        if s == "reply":
-            svg.append(f'<path d="M {fmt(x)} {fmt(y)} H {fmt(x + 22)}" stroke="#5f6368" stroke-width="1.5" '
-                       f'stroke-dasharray="6 4"/>')
-        else:
-            st = STATUSES[s]
-            dash = f' stroke-dasharray="{BOX_DASH[s]}"' if s in BOX_DASH else ""
-            svg.append(f'<rect x="{fmt(x)}" y="{fmt(y - 6)}" width="22" height="12" rx="2" fill="{st["fill"]}" '
-                       f'stroke="{st["stroke"]}" stroke-width="1.5"{dash}/>')
+        text = labels.get(s) or STATUSES[s]["label"]
+        st = STATUSES[s]
+        dash = f' stroke-dasharray="{BOX_DASH[s]}"' if s in BOX_DASH else ""
+        svg.append(f'<g class="legend-item" data-status="{s}">'
+                   f'<rect x="{fmt(x)}" y="{fmt(y - 6)}" width="22" height="12" rx="2" fill="{st["fill"]}" '
+                   f'stroke="{st["stroke"]}" stroke-width="1.5"{dash}/>')
         svg.append(text_svg(x + 28, y, text, FS_SMALL, "start") + "</g>")
         x += 28 + text_w(text, FS_SMALL) + 20
     svg.append("</g>")
     c.add("over", "".join(svg), (c.x0, y - 8, x - 20, y + 8))
+
+
+def legend_sequence(c: Canvas, used: list[tuple[str, str]], labels: dict) -> None:
+    """sequence の凡例. 枠で囲み、部品（参加者・注記）と呼び出し（線）を段に分けて見本を並べる."""
+    order = list(STATUSES) + list(LEGEND_EXTRA)
+    rows = []
+    for row, name, head in (("box", "boxes", "部品"), ("line", "lines", "呼び出し")):
+        items = [s for s in order if (s, row) in used]
+        if items:
+            rows.append((row, name, head, items))
+    if all(items == ["existing"] for *_, items in rows):
+        return
+    x0, y0 = c.x0, c.y1 + 20
+    head_w = max(text_w(head, FS_SMALL) for _, _, head, _ in rows)
+    svg = ['<g class="legend">']
+    right = x0
+    for k, (row, name, head, items) in enumerate(rows):
+        cy = y0 + LEG_PAD + k * (LEG_ROW_H + LEG_ROW_GAP) + LEG_ROW_H / 2
+        svg.append(f'<g class="legend-row" data-row="{name}">'
+                   + text_svg(x0 + LEG_PAD, cy, head, FS_SMALL, "start", fill=SUB_FILL))
+        x = x0 + LEG_PAD + head_w + LEG_HEAD_GAP
+        for s in items:
+            text = labels.get(s) or STATUSES.get(s, {}).get("label") or LEGEND_EXTRA[s]
+            svg.append(f'<g class="legend-item" data-status="{s}">')
+            if row == "box":
+                st = STATUSES[s]
+                dash = f' stroke-dasharray="{BOX_DASH[s]}"' if s in BOX_DASH else ""
+                svg.append(f'<rect x="{fmt(x)}" y="{fmt(cy - 6)}" width="22" height="12" rx="2" fill="{st["fill"]}" '
+                           f'stroke="{st["stroke"]}" stroke-width="1.5"{dash}/>')
+            else:
+                # 線の見本は図の中の呼び出しと同じ line_attrs で描く（色・破線・矢印の先が図と食い違わない）
+                look = {"reply": ("existing", True, False), "error": ("existing", False, True)}.get(s, (s, False, False))
+                svg.append(f'<path d="M {fmt(x)} {fmt(cy)} H {fmt(x + 22)}" {line_attrs(c, *look)}/>')
+            svg.append(text_svg(x + 28, cy, text, FS_SMALL, "start") + "</g>")
+            x += 28 + text_w(text, FS_SMALL) + 20
+        svg.append("</g>")
+        right = max(right, x - 20 + LEG_PAD)
+    bottom = y0 + 2 * LEG_PAD + len(rows) * LEG_ROW_H + (len(rows) - 1) * LEG_ROW_GAP
+    svg.insert(1, f'<rect class="legend-frame" x="{fmt(x0)}" y="{fmt(y0)}" width="{fmt(right - x0)}" '
+                  f'height="{fmt(bottom - y0)}" rx="4" fill="#ffffff" stroke="#dadce0" stroke-width="1"/>')
+    svg.append("</g>")
+    c.add("over", "".join(svg), (x0, y0, right, bottom))
 
 
 def render(spec: object) -> tuple[str, int, list[str]]:
@@ -938,8 +1097,8 @@ def render(spec: object) -> tuple[str, int, list[str]]:
     if not isinstance(title, str):
         raise SpecError("title は文字列で書く")
     labels = spec.get("legend_labels", {})
-    if not isinstance(labels, dict) or not all(k in STATUSES or k == "reply" for k in labels):
-        raise SpecError(f"legend_labels のキーは {' / '.join(STATUSES)} / reply")
+    if not isinstance(labels, dict) or not all(k in STATUSES or k in LEGEND_EXTRA for k in labels):
+        raise SpecError(f"legend_labels のキーは {' / '.join([*STATUSES, *LEGEND_EXTRA])}")
     if not all(isinstance(v, str) and v for v in labels.values()):
         raise SpecError("legend_labels の値は空でない文字列で書く（凡例を消すなら legend: false）")
     show_legend = spec.get("legend", True)
@@ -949,7 +1108,7 @@ def render(spec: object) -> tuple[str, int, list[str]]:
     c = Canvas()
     used = render_sequence(spec, c) if kind == "sequence" else render_graph(spec, c, kind)
     if show_legend:
-        legend(c, used, labels)
+        (legend_sequence if kind == "sequence" else legend)(c, used, labels)
     if title:
         c.add("over", f'<g class="title">{text_svg(c.x0, c.y0 - 22, title, 16, "start", bold=True)}</g>',
               (c.x0, c.y0 - 22 - 12, c.x0 + text_w(title, 16), c.y0))
