@@ -39,7 +39,7 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 
 ## 採用案
 
-**置き場と粒度**: `<plugin>/skills/<skill>/references/` に、1 phase（self-review・review・review-guide・pr-creator は 1 Step）につき 1 ファイルを置く。references/ に phase でない参照文書を前から持つ skill（pr-creator・start）は下のディレクトリ（pr-creator は `references/steps/`、start は `references/modes/`）に置き、`SPLIT_SKILL_PHASE_DIRS` に載せる。feature-dev は `phase-<番号>.md` を 19 本作る。参照は `${CLAUDE_PLUGIN_ROOT}/skills/<skill>/references/<file>.md` の形で書く。
+**置き場と粒度**: `<plugin>/skills/<skill>/references/` に、1 phase（self-review・review・review-guide・pr-creator は 1 Step）につき 1 ファイルを置く。references/ に phase でない参照文書を前から持つ skill（pr-creator・start・living-spec）は下のディレクトリ（pr-creator は `references/steps/`、start は `references/modes/`、living-spec は `references/subcommands/`）に置き、`SPLIT_SKILL_PHASE_DIRS` に載せる。feature-dev は `phase-<番号>.md` を 19 本作る。参照は `${CLAUDE_PLUGIN_ROOT}/skills/<skill>/references/<file>.md` の形で書く。
 
 **SKILL.md に残すもの**（feature-dev の見積もりは 16〜18 KB）:
 
@@ -51,7 +51,7 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 **phase ファイルの型**:
 
 - 先頭の見出しは SKILL.md の見出しと同じにする
-- 末尾は `**次は Phase X**`（self-review・review・review-guide・pr-creator は `**次は Step X**`）にし、最後の phase だけ `**ここで終わり**` にする。括弧で注記を添えてよい。節を順に踏まない skill（`UNCHAINED_SPLIT_SKILLS`。今は hub と start）は末尾の「次は」を置かない
+- 末尾は `**次は Phase X**`（self-review・review・review-guide・pr-creator は `**次は Step X**`）にし、最後の phase だけ `**ここで終わり**` にする。括弧で注記を添えてよい。節を順に踏まない skill（`UNCHAINED_SPLIT_SKILLS`。今は hub・start・living-spec）は末尾の「次は」を置かない
 - 鎖が表すのは既定の並び（線形）だけにする。skip は次の見出しの入口の条件で表し、後戻り（Fix Mode・5.3 が赤・5.5 が fail・doc-sync）は本文の分岐で表す
 
 **検査**（`validate_plugin_quality.py`）: 一覧 `SPLIT_SKILLS` に、SKILL.md・phase 見出しの正規表現・次の名前の書式を並べ、`check_split_skills` で次のどれかに当たれば `[split-skill]` の error にする。
@@ -104,6 +104,7 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
 - [local] code-review の review-guide（47 KB）も review と同じ形で `step-<番号>.md` を 9 本作り、`SPLIT_SKILLS` に足した（GitHub #447 / 2026-11-24）。Step 6 の入口の条件（`WALKTHROUGH=1` の回か、利用者がレポートの後に精読の解説を頼んだ回）は Step 0 の値と利用者の依頼だけで決まるので SKILL.md に上げ、Step 5 の末尾の「次は Step 6」に同じ条件を添えた。分ける前の SKILL.md は pin を持たなかったので、分けたファイルが引く正本の節を pin の有無に関わらず洗い、言い換えている Step に pin を置いた。orchestration-guide の `0`（Step 3）・`3.5`（Step 0・3）・`5`（Step 3）、review-guide-format の `4`（Step 4・6）・「レビュー観点（確かめた結果）」「修正」「置き場所」「関連ファイル」「コード」（Step 6）・「回し直すかの判断」（Step 7）・「変異テストの提案」（Step 0・7）、explorer-common の「diff の取得」（Step 2・3・5・6）、explorer-prompts の「プロンプトの組み立て方」（Step 3）。review-guide-format の「ガイド非表示の開始行」「精読の解説」「読み合わせの締め」「ガイド非表示の締めの前置き」も Step 5〜7 が言い換えているが、見出しの anchor では引けない。anchor には空白も行内コードも書けない（行内コードは pin の検査が取り除く）。「精読の解説（Step 6 / …）」「読み合わせの締め（Step 7）」は空白の前で切ると直後が数字になり、番号の anchor の吸着を防ぐ規則で当たらない。ほかの 2 つは見出しに行内コードがある。代わりに、開始行と締めの 2 節を言い換えている Step 5・7 には review-guide-format の全体（anchor なし）を pin し、精読の解説は子の見出し（「置き場所」「関連ファイル」「コード」）で Step 6 に pin した
 - [local] dev-workflow の pr-creator（45 KB）も review-guide と同じ形で `step-<番号>.md` を 12 本作り、`SPLIT_SKILLS` に足した（GitHub #447 / 2026-11-25）。`references/` には phase でない参照文書が 3 本（`description-guide.md`・`diagram-guide.md`・`linear-integration.md`）あり、そのまま載せると孤立の検査に当たるので、Step のファイルは `references/steps/` に置き、`SPLIT_SKILL_PHASE_DIRS` に置き場を持たせて、Read 先の内外と孤立の検査をその置き場で見るようにした（参照文書を references/ の外へ移す案は、この repo の references/ の慣例から外れるので採らなかった / 利用者の決定 2026-11-25）。4.3（writing-polish）は本文が「4.7 の後・4.9 の前に行う」と書いていたので、self-review の 4.5〜4.9 と同じく見出しを実行の順（4.7 → 4.3 → 4.9）に並べ、4.7 の下にそう並べたことを 1 行添えた。4.5（Screenshots）・4.6（説明図）の入口の条件は bash の判定（`--attach` の対応・権限）が要るので SKILL.md に上げず Step のファイルに残した。分ける前の SKILL.md は pin を持たなかった。Step 4・4.5 は ui-verify の本文（verification.md の形・「PR タイプ別ガイドライン」の表）を言い換えているが、分ける前から pin が無い。表は見出しでなく太字の行の下にあって anchor で引けず、ui-verify も #447 の分割の対象に残っているので、pin を置くかはこの PR の外で決める
 - [local] issue-workflow の start（42,760 B）を、モードごとに 5 本のファイルへ分け、`SPLIT_SKILLS` と `UNCHAINED_SPLIT_SKILLS` に足した（GitHub #447 / 2026-11-26）。start は Phase 0〜1.5 でモードを 1 つ決め、そのモードの節だけを通すので、hub と同じく鎖を見ない型にした。SKILL.md には「ワークフロー」（Phase 0〜1.5。BACKEND-DETECT の区間は検査が SKILL.md から探すので動かせない）と各モードの見出し・Read の行を残し、本文は `references/modes/` に置いた（references/ には context-agents.md・existing-work.md・lightweight-flow.md があり、直下に置くと孤立の検査に当たる）。Feature ブランチモード（25 KB）は上限に収まるので Phase ごとには分けなかった（利用者の決定 2026-11-26）。Phase CTX は Feature ブランチモードの F7 より前に要る（F7 は feature-dev・軽量フローに処理を渡して start に戻らない）ので、Feature ブランチモードの見出しに「F7 に入る前に Phase CTX のファイルも読む」と 1 文添えた。分ける前の SKILL.md は pin を持たなかったので、分けたファイルが引く正本の節を洗い、existing-work.md の `1`〜`5` を言い換えている Feature ブランチモードと、`2` を言い換えている Phase CTX に pin を置いた。Phase CTX は shared-state の frontmatter の形、F3.5 は orchestration-guide の `## 0`（code-review 側）も言い換えているが、プラグインをまたぐ正本で、分ける前から pin が無く、今回の分割で確認の範囲から外れたものではないので、pin を置くかはこの PR の外で決める
+- [local] project-hub の living-spec（43,087 B）を、サブコマンドごとに 6 本のファイル（init・oq・decision・spec・status・timeline）へ分け、`SPLIT_SKILLS`・`UNCHAINED_SPLIT_SKILLS`・`SPLIT_SKILL_PHASE_DIRS` に足した（GitHub #447 / 2026-11-26）。Phase 0 でサブコマンドを 1 つ決め、その節だけを通すので、hub・start と同じく鎖を見ない型にした。SKILL.md には Phase 0・共通手順（W1〜W5。書き込む 4 つのサブコマンドが毎回従う）・maintain の案内・処理フロー・注意事項と、各 Phase の見出しと Read の行を残した（共通手順を SKILL.md に残すのは利用者の決定 2026-11-26）。init は Phase 1〜3 を 1 本にまとめ、SKILL.md には Phase 1 の見出しだけを残して、Phase 2・3 の見出しは init のファイルの中に置いた（見出しを SKILL.md に残すと Read の行が無い error になる。サブコマンド単位にするのも利用者の決定 2026-11-26）。references/ には format-spec.md と template.md があり直下に置くと孤立の検査に当たるので `references/subcommands/` に置き、前から Phase 8 の手順を持っていた timeline.md もここへ移して最初の見出しを SKILL.md の Phase 8 の見出しに揃えた。凍結の判定と壊れた宣言の定義は spec のファイルの冒頭に残し、decision と status が引くときは spec のファイルも読むよう SKILL.md の冒頭に書いた。分ける前の SKILL.md は pin を持たなかった。移した本文は format-spec.md の節を言い換えているが、同じ言い換えは SKILL.md に残した W2 と living-spec-maintain の check-rules.md にもあり、project-hub は `docs/ssot-pin.md` の適用範囲の外なので、pin を置くかはこの PR の外で決める（未解決事項に残した）
 - [→ADR候補] 大きい SKILL.md は phase ごとに references へ分け、`SPLIT_SKILLS` に載せて上限と鎖を強制する（他の skill を分けるときもこの形に揃える）
 
 ## 未解決事項 (open)
@@ -114,6 +115,8 @@ feature-dev（93 KB）と self-review（103 KB）の SKILL.md は Read 1 回（�
   - 2026-11-24: 3 本目の review-guide を分けた（設計判断ログの review-guide の行）。残りは 4 本
   - 2026-11-25: 4 本目の pr-creator を分けた（設計判断ログの pr-creator の行）。残りは 3 本
   - 2026-11-26: 5 本目の start を分けた（設計判断ログの start の行）。残りは 2 本
+  - 2026-11-26: 6 本目の living-spec を分けた（設計判断ログの living-spec の行）。残りは ui-verify の 1 本
+- living-spec の `references/subcommands/*.md` と SKILL.md の W2・Phase 0、living-spec-maintain の check-rules.md が言い換えている format-spec.md の節に SSoT pin を置くか（project-hub を `docs/ssot-pin.md` の適用範囲に入れるかも含む）。分ける前から pin は 0 本で、分割で確認の範囲から外れた言い換えは無い。確定タイミング: 未定（GitHub #447 の PR では決めない / 2026-11-26）
 
 ## 実装ブリッジ (Implementation Bridge)
 
