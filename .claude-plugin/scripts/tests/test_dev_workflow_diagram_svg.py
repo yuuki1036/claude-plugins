@@ -14,6 +14,7 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
   外の枠の内側に収まる
 - state / flow: 往復の辺のラベルが向き（横・縦）に関わらず重ならない・自己ループのラベルが入ってくる辺の
   ラベルと重ならない・間の箱を横切る辺を曲げる・線の端が箱の境界に乗る・範囲の枠がメンバーだけを囲む
+- flow の自動配置: groups の枠ごとに行（TB は列）の帯を取り、枠の外の箱は帯の行を避ける（#499）
 - sequence の注記・区間の枠・エラーで戻る線・参加者の 2 行目（#533）: 注記は生存線の右で次の生存線に届かず、
   前後の呼び出しと縦に重ならない。区間の枠は札に名前、右に説明を括弧なしで出し、枠の予算に数えない。
   エラーで戻る線は赤の破線。2 行目は見出しの箱に収まる。新しいキーを使わない図は前の版と同じバイト列を出す（枠が次の生存線を越えていた図は列の間隔が広がる）
@@ -1006,6 +1007,90 @@ class GraphLayoutTest(unittest.TestCase):
         _, out = render(spec)
         self.assertEqual(len(out), 2)
         self.assertTrue(out[1].endswith("\tgroups[0] の枠に、メンバーでない 'b' が入った（pos で並べ直す）"), out)
+
+
+def lane(root: ET.Element, ident: str, direction: str) -> float:
+    """層の中の位置（LR は箱の中心の y、TB は x）. 同じ行（TB は列）の箱は同じ値になる."""
+    x, y = center(root, ident)
+    return y if direction == "LR" else x
+
+
+def banded(nodes: list[str], edges: list[tuple[str, str]], members: list[list[str]], direction: str = "LR") -> dict:
+    return {"type": "flow", "direction": direction, "nodes": [{"id": i} for i in nodes],
+            "edges": [{"from": a, "to": b} for a, b in edges],
+            "groups": [{"nodes": m} for m in members]}
+
+
+class GroupBandLayoutTest(unittest.TestCase):
+    """自動配置で groups の枠ごとに行（TB は列）の帯を取る（#499）. 期待する行の関係は図ごとに手で決めた."""
+
+    def assert_frames_hold_only_members(self, root: ET.Element, out: list[str], spec: dict) -> None:
+        for gi, g in enumerate(spec["groups"]):
+            frame_rect = rect_of(groups(root, "group")[gi])
+            for nd in spec["nodes"]:
+                if nd["id"] not in g["nodes"]:
+                    self.assertFalse(overlap(rect_of(node(root, nd["id"])), frame_rect), (gi, nd["id"]))
+        self.assertFalse([w for w in out if "メンバーでない" in w or "\t箱 " in w], out)
+
+    def test_two_groups_sharing_a_layer_get_their_own_rows(self):
+        nodes, edges = ["a0", "a1", "b1", "b2"], [("a0", "a1"), ("a0", "b1"), ("b1", "b2")]
+        for direction in ("LR", "TB"):
+            for first, second in ((["a0", "a1"], ["b1", "b2"]), (["b1", "b2"], ["a0", "a1"])):
+                with self.subTest(direction=direction, first=first):
+                    spec = banded(nodes, edges, [first, second], direction)
+                    root, out = render(spec)
+                    at = {i: lane(root, i, direction) for i in nodes}
+                    self.assertAlmostEqual(at[first[0]], at[first[1]], delta=0.15)
+                    self.assertAlmostEqual(at[second[0]], at[second[1]], delta=0.15)
+                    # 先に書いた枠が上（TB は左）
+                    self.assertLess(at[first[0]], at[second[0]])
+                    self.assert_frames_hold_only_members(root, out, spec)
+
+    def test_outsiders_keep_out_of_the_band_across_its_layers(self):
+        # a0（層 0）と a2（層 2）の枠。w は層 0、x は層 1、z は層 2 にいる枠の外の箱
+        nodes = ["a0", "w", "x", "a2", "z"]
+        edges = [("a0", "x"), ("w", "x"), ("x", "a2"), ("x", "z")]
+        for direction in ("LR", "TB"):
+            with self.subTest(direction=direction):
+                spec = banded(nodes, edges, [["a0", "a2"]], direction)
+                root, out = render(spec)
+                at = {i: lane(root, i, direction) for i in nodes}
+                self.assertAlmostEqual(at["a0"], at["a2"], delta=0.15)
+                for i in ("w", "x", "z"):
+                    self.assertGreater(at[i], at["a0"], i)
+                self.assert_frames_hold_only_members(root, out, spec)
+
+    def test_later_group_moves_back_up_where_the_rows_are_free(self):
+        # A は層 0、B は層 0〜1 で A の下。C は層 1 だけなので、A と同じ行に戻れる
+        spec = banded(["a", "b0", "b1", "c"], [("a", "c"), ("b0", "b1")], [["a"], ["b0", "b1"], ["c"]])
+        root, out = render(spec)
+        at = {i: lane(root, i, "LR") for i in ("a", "b0", "b1", "c")}
+        self.assertAlmostEqual(at["c"], at["a"], delta=0.15)
+        self.assertAlmostEqual(at["b1"], at["b0"], delta=0.15)
+        self.assertGreater(at["b0"], at["a"])
+        self.assert_frames_hold_only_members(root, out, spec)
+
+    def test_bands_leave_no_empty_row_between_them(self):
+        spec = banded(["a0", "a1", "b"], [], [["a0", "a1"], ["b"]])
+        root, out = render(spec)
+        at = {i: lane(root, i, "LR") for i in ("a0", "a1", "b")}
+        self.assertGreater(at["a1"], at["a0"])
+        self.assertAlmostEqual(at["b"] - at["a1"], at["a1"] - at["a0"], delta=0.15)
+        self.assert_frames_hold_only_members(root, out, spec)
+
+    def test_groups_on_separate_layers_share_a_row(self):
+        spec = banded(["a", "x", "b"], [("a", "x"), ("x", "b")], [["a"], ["b"]])
+        root, out = render(spec)
+        self.assertAlmostEqual(lane(root, "a", "LR"), lane(root, "b", "LR"), delta=0.15)
+        self.assert_frames_hold_only_members(root, out, spec)
+
+    def test_third_group_goes_below_both_bands(self):
+        spec = banded(["a", "b", "c"], [], [["a"], ["b"], ["c"]])
+        root, out = render(spec)
+        at = [lane(root, i, "LR") for i in ("a", "b", "c")]
+        self.assertLess(at[0], at[1])
+        self.assertLess(at[1], at[2])
+        self.assert_frames_hold_only_members(root, out, spec)
 
 
 class GraphEdgeTest(unittest.TestCase):
