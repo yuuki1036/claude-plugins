@@ -1,3 +1,6 @@
+<!-- 正本依存（SSoT pin）。この Step が言い換えている ui-verify の節。正本が変わったら本ファイルへの伝播を確認して pin を書き換える -->
+<!-- SSOT: dev-workflow/skills/ui-verify/references/modes/verify.md#(e) @c1dc7450 -->
+
 ### 4. PR情報を生成
 
 - タイトル: Linear Issue があればそのタイトル本文のみを使う（Issue ID prefix の `TEAM-123:` 等は含めない）。なければ変更の要約（50 文字以内）

@@ -41,7 +41,7 @@ allowed-tools:
   - mcp__claude-in-chrome__tabs_create_mcp
 ---
 
-**モードが `verify` で引数に `--caller=` もあるときは、SKILL.md を Read する前に下の「呼び出し元からの早期終了」を先に見る**（verify 以外のモードの `--caller` は SKILL.md の定義どおり無視し、早期終了しない）。それ以外は（早期終了しなかった回も）**まず `${CLAUDE_PLUGIN_ROOT}/skills/ui-verify/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `dev-workflow@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
+**モードが `verify` で引数に `--caller=` もあるときは、SKILL.md を Read する前に下の「呼び出し元からの早期終了」を先に見る**（verify 以外のモードの `--caller` は SKILL.md の定義どおり無視し、早期終了しない）。それ以外は（早期終了しなかった回も）**まず `${CLAUDE_PLUGIN_ROOT}/skills/ui-verify/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `dev-workflow@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。**SKILL.md が持つのは、どのモードでも通る節と、Step 3 の各モードの見出しと Read の行だけで、モードごとの手順は `${CLAUDE_PLUGIN_ROOT}/skills/ui-verify/references/modes/<モード>.md` にある。Step 3 で呼ばれたモードの見出しに来たら、その下の Read の行のファイルを読んでから進む**（1 本のままだと Read 1 回で読み切れず、後ろの節を読まないまま進めうる / GitHub issue #447）。
 
 ui-verify スキルを使用して、Web UI の動作確認・スタイル調整・スクリーンショット取得を実行してください。
 

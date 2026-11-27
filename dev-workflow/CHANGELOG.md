@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.45.2] - 2026-11-27
+
+### Changed
+
+- **ui-verify の SKILL.md を Step 3 のモードごとに分けた**（GitHub issue #447）。42,673 B あり、Read 1 回で読み切れず後ろの節を読まないまま進めうるため。Step 3 の verify / tune / snap の本文を `skills/ui-verify/references/modes/` の 3 本に移し、SKILL.md には、どのモードでも通る節（3 つのモード・事前判定・Step 0〜2・Step 4・MCP Tool の使い方・絶対厳守ルール）と、各モードの見出しと Read の行を残した（26,216 B）。手順の文言は、移した先に合わせた参照の書き換えのほかは変えていない。SKILL.md の冒頭には、Step 3 より前に verify の (a)〜(f) を使う回（`--caller` で dev server の起動を断られて (f) を返す回など）も verify のファイルを読むと書いた。snap の「PR タイプ別ガイドライン」「手順」「テーマ撮影」は太字の行から見出しにした
+- **pr-creator の Step 4・4.5 に、言い換えている ui-verify の節の SSoT pin を置いた**（GitHub issue #539）。Step 4 は verify モードの (e)（verification.md の形）、Step 4.5 は snap モードの「PR タイプ別ガイドライン」の表を言い換えているのに pin が無く、ui-verify 側が変わっても確認の対象に上がらなかった。Step 4.5 が表の置き場を `ui-verify/SKILL.md` と書いていた行も、移った先に直した
+
 ## [1.45.1] - 2026-11-26
 
 ### Fixed
