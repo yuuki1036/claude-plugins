@@ -243,6 +243,88 @@ class SliceSectionTest(unittest.TestCase):
         self.assertIsNone(v._slice_section(doc, "99"))
 
 
+class FullWidthParenAnchorTest(unittest.TestCase):
+    """全角括弧 `（` も前方一致の区切りにする（GitHub issue #538）.
+
+    `（Step 6 / …）` や行内コードを括弧書きに含む見出しは, anchor に空白を書けず行内コードも
+    pin の走査で消えるため, 括弧の前で切った anchor でしか引けない. 期待値はテスト側で組む.
+    """
+
+    CANON = textwrap.dedent(
+        """\
+        # 正本
+
+        ## 精読の解説（Step 6 / 読み合わせ）
+
+        解説の冒頭。
+
+        ### 置き場所
+
+        置き場所の本文。
+
+        ## 読み合わせの締め（Step 7）
+
+        締めの本文。
+
+        ### 読み合わせの締め
+
+        同じ文言の子。
+
+        ## 精読の解説書
+
+        別の節。
+        """
+    )
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self._orig_root = v.ROOT
+        v.ROOT = self.root
+        self.addCleanup(lambda: setattr(v, "ROOT", self._orig_root))
+        self.canon = _write(self.root, "canon.md", self.CANON)
+
+    def test_anchor_before_full_width_paren_slices_the_section(self):
+        expected_section = "\n".join(
+            ["## 精読の解説（Step 6 / 読み合わせ）", "", "解説の冒頭。", "", "### 置き場所", "", "置き場所の本文。"]
+        )
+        self.assertEqual(v._slice_section(self.canon, "精読の解説"), expected_section)
+
+    def test_pin_with_paren_anchor_is_checked_against_an_independent_digest(self):
+        section = "## 精読の解説（Step 6 / 読み合わせ）\n\n解説の冒頭。\n\n### 置き場所\n\n置き場所の本文。"
+        digest = hashlib.sha256(section.encode("utf-8")).hexdigest()[: v.SSOT_PIN_LEN]
+        _write(self.root, "consumer.md", f"# 消費サイト\n\n<!-- SSOT: canon.md#精読の解説 @{digest} -->\n")
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertEqual(errors, [])
+
+    def test_text_continuing_without_a_delimiter_does_not_match(self):
+        """`精読の解説` は `精読の解説書` に当たらない（括弧の前で切れていない）."""
+        self.assertFalse(v._anchor_matches("精読の解説", "精読の解説書"))
+        self.assertEqual(v._anchor_hit_count(self.canon, "精読の解説"), 1)
+
+    def test_same_text_child_heading_makes_the_paren_anchor_ambiguous(self):
+        """括弧の前で切った anchor が同じ文言の見出しにも当たれば曖昧として扱う（先頭を黙って採らない）."""
+        self.assertEqual(v._anchor_hit_count(self.canon, "読み合わせの締め"), 2)
+        self.assertIsNone(v._slice_section(self.canon, "読み合わせの締め"))
+        _write(self.root, "consumer.md", "# 消費サイト\n\n<!-- SSOT: canon.md#読み合わせの締め @00000000 -->\n")
+        errors: list[str] = []
+        v.check_ssot_pins(errors)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("見出し 2 件に一致（曖昧）", errors[0])
+
+    def test_section_contains_uses_the_same_rule(self):
+        """split-skill-pin の包含判定も同じ区切りで外側の節を引く."""
+        self.assertTrue(v._section_contains(self.canon, "精読の解説", "置き場所"))
+        self.assertFalse(v._section_contains(self.canon, "精読の解説書", "置き場所"))
+
+    def test_digit_after_the_paren_is_still_excluded(self):
+        """数字の除外は区切りの種類によらない（`8` が `8（…` の続きの番号に吸着しない規則と同じ扱い）."""
+        self.assertFalse(v._anchor_matches("8", "8（2）補足"))
+        self.assertTrue(v._anchor_matches("8", "8（補足）"))
+
+
 class NormalizeSectionTest(unittest.TestCase):
     def test_absorbs_trailing_whitespace_and_edge_blank_lines(self):
         self.assertEqual(

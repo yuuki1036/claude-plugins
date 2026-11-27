@@ -506,20 +506,24 @@ def _markdown_headings(lines: list[str]) -> list[tuple[int, int, str]]:
 def _anchor_matches(anchor: str, htext: str) -> bool:
     """見出しテキストが anchor に一致するか（番号 anchor の前方一致の暴発を両側から塞ぐ）.
 
-    anchor の直後に区切り（`.` / 空白）を要求し, **さらにその次が数字でないこと**を求める:
+    anchor の直後に区切り（`.` / 半角空白 / 全角括弧 `（`）を要求し, **さらにその次が数字でないこと**を求める:
 
     - `1` は `13. …` に当たらない（区切り要求。従来から）
     - `8` は `8.5. …` に当たらない（数字の除外。`8. …` にだけ当たる）
+    - `精読の解説` は `精読の解説（Step 6 / 読み合わせ）` に当たる（全角括弧. GitHub issue #538）
 
-    後者が無いと, 正本から `## 8.` が消えた・節を並べ替えたといった通常の編集で
+    数字の除外が無いと, 正本から `## 8.` が消えた・節を並べ替えたといった通常の編集で
     `#8` の pin が黙って `## 8.5` へ吸着し, 「pin は ok なのに本体は無保護」になる.
+
+    全角括弧が無いと, `（Step 6 / …）` や行内コードを括弧書きに含む見出しはどの anchor でも引けない
+    （anchor に空白を書けず, 行内コードは pin の走査で取り除かれ, 空白の次の数字は除外される）.
     """
     if htext == anchor:
         return True
     if not htext.startswith(anchor):
         return False
     rest = htext[len(anchor) :]
-    if rest[0] not in ". ":
+    if rest[0] not in ". （":
         return False
     return not (len(rest) > 1 and rest[1].isdigit())
 

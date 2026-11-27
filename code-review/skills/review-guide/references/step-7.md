@@ -1,7 +1,7 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @bc251143 -->
 <!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @7be3a9e1 -->
-<!-- SSOT: code-review/references/review-guide-format.md @d04866a2 -->
+<!-- SSOT: code-review/references/review-guide-format.md#読み合わせの締め @f5b2cd7d -->
 ### 7. 読み合わせの締め（最後の精読の後）
 
 **`HIDE_GUIDE=1` の回は、1. より先に** `review-guide-format.md` の「ガイド非表示の締めの前置き」（精読ごとに何をして何で確かめたか・入れた修正の要旨と確かめ方・副作用）を出す。利用者は解説を見ていないので、1. の「まだ答えの無い確認」の各行には根拠 `file:line` と選択肢の要旨（`このまま` を含む）を添え、聞く 1 問には選択肢ごとの帰結を添える（聞かれずに「残った確認」へ回った問いも、中身が利用者に届くように）。1.〜5. の進め方は同じ。
