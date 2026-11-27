@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.19.0] - 2026-11-27
+
+### Changed
+
+- **init の `sidebar_group` の既定を、Desktop の hub でも `off` にした**（GitHub issue #545）: これまでは `--sidebar-group` を渡さないと Desktop の hub は `on` になり、init の最後に hub 自身を PJ 名のグループへ移して、サイドバーの表示をグループの表示に切り替えていた。init.md は sidebar_group を「聞かなくてよい」としていたので、サイドバーをプロジェクトごとの表示にしている利用者は、init のたびに表示を手で戻していた。今は `--sidebar-group on` を渡したとき（lead がまとめたいと言ったとき）だけ `on` にする。repo hub（`hub repo`）も同じ init の経路を通るので、同じく既定は `off` になる。`on` の PJ の動き（#339）と、既に init した PJ の config は変えていない（まとめたい PJ は後から `hub sidebar-group on`）。init.md・sidebar.md・README の既定の記述も合わせた
+
 ## [0.18.3] - 2026-11-26
 
 ### Changed
