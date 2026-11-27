@@ -2,6 +2,15 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.12.0] - 2026-11-27
+
+### Changed
+
+- **注入ルール（`rules/concrete-value-rule.md`）の対象を、出典と範囲の断定に広げた**（GitHub issue #552）。retro で閾値を超えた失敗の型のうち、2 つが今のルールの対象外で起きていた（`cited-passage-not-verified` と `proxy-evidence-generalized`）。新しい節は足さず、既存の 2 節を広げた
+  - 「永続成果物に書く具体値」に出典（file:line・資料の節）を足した。行番号は書く直前に `grep -n` で引き直し、論拠として引く項目は全文を読む
+  - 「コードの所在・構造の断定」の後に、コード以外にも当てる段を足した。「だけ」「すべて」「無い」と書く前に母集団を全部見たかを確かめ、grep の 0 件で「無い」と書く前に語を変えて探す
+  - 注入される文は 2,360 B から 2,991 B になった（SessionStart・PostCompact と SubagentStart の両方で毎回入る）
+
 ## [0.11.3] - 2026-11-24
 
 ### Fixed
