@@ -105,7 +105,7 @@ skill に `repo` サブコマンドを足す。引数なしの `init` を repo h
   - 一意性: 同じ git の共通ディレクトリを持つ repo hub があれば exit 3。相手が active なら takeover、closed なら reopen を案内する。同じ名前の PJ があり、共通ディレクトリが違う（同じ basename の別の repo）なら、takeover を案内せず exit 3 にして、`--project` で別の名前を付けるよう案内する
   - 共存の検査（下の「共存の検査」）
   - tracker local では、`.claude/indie` が gitignore されているかを確かめる（`git check-ignore`）。されていなければ exit 3（未解決事項 7）
-  - 既定値: `approval.mode` は `auto`、`tracker_write` は今と同じ（github / linear は `with_approval`、local は `never`）、`sidebar_group` は Desktop で `on`（グループ名は PJ 名なので `repo-<名前>`）、living spec は結ばない
+  - 既定値: `approval.mode` は `auto`、`tracker_write` は今と同じ（github / linear は `with_approval`、local は `never`）、`sidebar_group` は `off`（通常の PJ と同じ。まとめたい repo hub だけ `--sidebar-group on`。グループ名は PJ 名なので `repo-<名前>` / GitHub issue #545）、living spec は結ばない
 - 会話の題は `hub repo-<名前>` を提案する（通常の PJ の hub と名前がぶつかって、sub の通知先が 2 件に当たるのを避ける）
 - start の background には、PJ の目的の代わりに決まった文（「repo <名前> の常設の hub。範囲はどの PJ にも入らない open Issue」）を入れる
 
@@ -239,6 +239,7 @@ skill に `repo` サブコマンドを足す。引数なしの `init` を repo h
 - [local] 既定値は auto / `tracker_write` は今と同じ / Desktop で sidebar on / living spec は結ばない / base は今のまま
 - [local] issue-create の「起票だけ」は終わり方で契約し、承認は Phase 6 の 1 回にする。`hub.py` が Issue ファイルを書く案は、採番とテンプレートの複製になるので採らない
 - [local] Issue の保守は issue-maintain を Issue 単位で回すだけにする
+- [local] 2026-11-27 決定: 上の既定値のうち「Desktop で sidebar on」を `off` に変えた（通常の PJ の init と同じ。まとめたい repo hub だけ `--sidebar-group on` / GitHub issue #545）
 
 ## 未解決事項 (open)
 
