@@ -654,7 +654,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
 
     @staticmethod
     def result_values() -> list[str]:
-        line = next((l.strip() for l in UI_VERIFY.read_text().splitlines()
+        line = next((l.strip() for l in flow_text(UI_VERIFY).splitlines()
                      if l.strip().startswith("UI_VERIFY_RESULT=") and "|" in l), None)
         if line is None:
             raise AssertionError("ui-verify の SKILL.md から `UI_VERIFY_RESULT=` の定義行が消えた")
@@ -670,7 +670,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
             m = re.search(r"引数: ([^\n\"]+)", path.read_text())
             self.assertIsNotNone(m, f"{path.name} に `引数:` が無い")
             self.assertIn("--caller", m.group(1), f"{path.name} の引数から --caller が消えた")
-        caller_lines = [l for l in UI_VERIFY.read_text().splitlines() if "--caller" in l]
+        caller_lines = [l for l in flow_text(UI_VERIFY).splitlines() if "--caller" in l]
         self.assertTrue([l for l in caller_lines if "feature-dev" in l],
                         "ui-verify の --caller の値に feature-dev が無い")
 
@@ -714,7 +714,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
             self.assertRegex(s, rf"(?m)^- `{value}`", f"Step 4 に {value} の分岐が無い")
 
     def test_keys_used_are_declared_by_ui_verify(self):
-        declared = set(re.findall(r"(?m)^\s*(UI_VERIFY_[A-Z]+)=", UI_VERIFY.read_text()))
+        declared = set(re.findall(r"(?m)^\s*(UI_VERIFY_[A-Z]+)=", flow_text(UI_VERIFY)))
         used = set(re.findall(r"(UI_VERIFY_[A-Z]+)", flow_text(self.SKILL)))
         self.assertTrue(used, "Phase 5.5 が `UI_VERIFY_*` の行を読んでいない")
         self.assertLessEqual(used, declared, f"ui-verify が出さないキーを読んでいる: {used - declared}")
@@ -747,7 +747,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
 
     def test_browser_values_used_are_declared_by_ui_verify(self):
         """分岐に使う `UI_VERIFY_BROWSER=` の値は、ui-verify が出す値に限る."""
-        line = next((l.strip() for l in UI_VERIFY.read_text().splitlines()
+        line = next((l.strip() for l in flow_text(UI_VERIFY).splitlines()
                      if l.strip().startswith("UI_VERIFY_BROWSER=") and "|" in l), None)
         self.assertIsNotNone(line, "ui-verify の SKILL.md から `UI_VERIFY_BROWSER=` の定義行が消えた")
         declared = {v.strip(" <>`") for v in line.split("=", 1)[1].split("|")}
@@ -766,7 +766,7 @@ class RuntimeSmokeAndUiVerifyTest(unittest.TestCase):
         line = next((l for l in self.step(3).splitlines() if "`--screenshot=need`" in l), None)
         self.assertIsNotNone(line, "Step 3 に --screenshot が無い")
         self.assertIn("省くと ui-verify が依頼・Issue から決める", line)
-        decl = next((l for l in UI_VERIFY.read_text().splitlines() if l.startswith("| `--screenshot=")), None)
+        decl = next((l for l in flow_text(UI_VERIFY).splitlines() if l.startswith("| `--screenshot=")), None)
         self.assertIsNotNone(decl, "ui-verify の引数の表から --screenshot が消えた")
         self.assertIn("省くと依頼から決める", decl)
 

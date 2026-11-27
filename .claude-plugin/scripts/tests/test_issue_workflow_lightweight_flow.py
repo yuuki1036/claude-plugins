@@ -69,7 +69,7 @@ def format_closing() -> str:
 
 def ui_verify_result_values() -> list[str]:
     """ui-verify の SKILL.md にある `UI_VERIFY_RESULT=` の定義行（値を `|` で並べた行）から値を独立に読む."""
-    line = next((ln.strip() for ln in UI_VERIFY.read_text(encoding="utf-8").splitlines()
+    line = next((ln.strip() for ln in flow_text(UI_VERIFY).splitlines()
                  if ln.strip().startswith("UI_VERIFY_RESULT=") and "|" in ln), None)
     if line is None:
         raise AssertionError("ui-verify の SKILL.md から `UI_VERIFY_RESULT=` の定義行が消えた")
@@ -78,7 +78,7 @@ def ui_verify_result_values() -> list[str]:
 
 def ui_verify_browser_values() -> list[str]:
     """ui-verify の SKILL.md にある `UI_VERIFY_BROWSER=` の定義行から値を独立に読む."""
-    line = next((ln.strip() for ln in UI_VERIFY.read_text(encoding="utf-8").splitlines()
+    line = next((ln.strip() for ln in flow_text(UI_VERIFY).splitlines()
                  if ln.strip().startswith("UI_VERIFY_BROWSER=") and "|" in ln), None)
     if line is None:
         raise AssertionError("ui-verify の SKILL.md から `UI_VERIFY_BROWSER=` の定義行が消えた")
@@ -358,7 +358,7 @@ class UiVerifyStepTest(unittest.TestCase):
             m = re.search(r"引数: ([^\n\"]+)", path.read_text(encoding="utf-8"))
             self.assertIsNotNone(m, f"{path.name} に `引数:` が無い")
             self.assertIn("--caller", m.group(1), f"{path.name} の引数から --caller が消えた")
-        caller_lines = [ln for ln in UI_VERIFY.read_text(encoding="utf-8").splitlines() if "--caller" in ln]
+        caller_lines = [ln for ln in flow_text(UI_VERIFY).splitlines() if "--caller" in ln]
         self.assertTrue([ln for ln in caller_lines if "lightweight-flow" in ln],
                         "ui-verify の --caller の値に lightweight-flow が無い")
 
@@ -371,7 +371,7 @@ class UiVerifyStepTest(unittest.TestCase):
 
     def test_keys_used_are_declared_by_ui_verify(self):
         """呼び出し元が読む `UI_VERIFY_*` のキーは、ui-verify が出すキーに限る（綴りのずれで黙って読み落とさない）."""
-        declared = set(re.findall(r"(?m)^\s*(UI_VERIFY_[A-Z]+)=", UI_VERIFY.read_text(encoding="utf-8")))
+        declared = set(re.findall(r"(?m)^\s*(UI_VERIFY_[A-Z]+)=", flow_text(UI_VERIFY)))
         used = set(re.findall(r"(UI_VERIFY_[A-Z]+)=", FLOW.read_text(encoding="utf-8")))
         self.assertTrue(used, "軽量フローが `UI_VERIFY_*` の行を読んでいない")
         self.assertLessEqual(used, declared, f"ui-verify が出さないキーを読んでいる: {used - declared}")
