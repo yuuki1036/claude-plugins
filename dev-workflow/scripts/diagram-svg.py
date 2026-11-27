@@ -609,12 +609,32 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------- flow / state
 
 
+def group_bands(layer: dict[str, int], clusters: dict[str, int]) -> dict[int, tuple[int, int, range]]:
+    """枠ごとの帯 (最初の層, 最後の層, 行). 帯の高さは、1 つの層に入るメンバーの最大数.
+
+    層の範囲が重なる枠どうしは行を重ねず、groups の順に上（TB なら左）から空いている行へ置く.
+    """
+    lvs: dict[int, list[int]] = {}
+    for i, g in clusters.items():
+        lvs.setdefault(g, []).append(layer[i])
+    bands: dict[int, tuple[int, int, range]] = {}
+    for g in sorted(lvs):
+        lo, hi, h = min(lvs[g]), max(lvs[g]), max(map(lvs[g].count, lvs[g]))
+        k = 0
+        while any(lo <= b_hi and b_lo <= hi and k < rows.stop and rows.start < k + h
+                  for b_lo, b_hi, rows in bands.values()):
+            k += 1
+        bands[g] = (lo, hi, range(k, k + h))
+    return bands
+
+
 def assign_grid(nodes: list[dict], edges: list[tuple[str, str]], roots: list[str],
                 clusters: dict[str, int]) -> dict[str, tuple[float, float]]:
     """(層, 層の中の順番) を返す. 閉路は戻る辺を外して層を決め、層の中は前の層の位置の平均で並べる.
 
-    clusters（groups の番号）を持つ箱は各層の先頭に寄せ、層の中央寄せもしない。寄せないと、範囲の枠が
-    別の行に並んだ範囲外の箱まで囲ってしまう.
+    clusters（箱 → 最初に入っている groups の番号）があるときは、枠ごとに行の帯を取り（group_bands）、枠の
+    外の箱は、その層を範囲に含む帯の行を避けて上から詰める。帯から外さないと、範囲の枠が範囲外の箱まで
+    囲ってしまう。2 つの枠に入る箱は先の枠の帯に置く。層の中央寄せもしない（層ごとに行がずれ、帯が揃わなくなる）.
     """
     ids = [nd["id"] for nd in nodes]
     if all("pos" in nd for nd in nodes):
@@ -656,6 +676,7 @@ def assign_grid(nodes: list[dict], edges: list[tuple[str, str]], roots: list[str
         for a, b in forward:
             layer[b] = max(layer[b], layer[a] + 1)
     order = {i: k for k, i in enumerate(ids)}
+    bands = group_bands(layer, clusters)
     row: dict[str, float] = {}
     for lv in range(max(layer.values()) + 1):
         members = [i for i in ids if layer[i] == lv]
@@ -664,9 +685,20 @@ def assign_grid(nodes: list[dict], edges: list[tuple[str, str]], roots: list[str
             prev = [row[a] for a, b in forward if b == i and a in row]
             return sum(prev) / len(prev) if prev else math.inf
 
-        members.sort(key=lambda i: (clusters.get(i, math.inf), bary(i), order[i]))
-        for k, i in enumerate(members):
-            row[i] = k
+        members.sort(key=lambda i: (bary(i), order[i]))
+        taken = {r for lo, hi, rows in bands.values() if lo <= lv <= hi for r in rows}
+        filled: dict[int, int] = {}
+        free = 0
+        for i in members:
+            g = clusters.get(i)
+            if g is None:
+                while free in taken:
+                    free += 1
+                row[i] = free
+                free += 1
+            else:
+                row[i] = bands[g][2][filled.get(g, 0)]
+                filled[g] = filled.get(g, 0) + 1
     if clusters:
         return {i: (layer[i], row[i]) for i in ids}
     tallest = max(sum(1 for i in ids if layer[i] == lv) for lv in set(layer.values()))  # mutation-ok: tallest が変わると全箱が同じ量だけずれるだけで、render が原点へ寄せ直すので描かれる図は変わらない

@@ -21,7 +21,7 @@ allowed-tools:
 - `init [slug]` → `.claude/living-specs/<slug>.md` を scaffold（既存なら中止）
 - `oq <text>` → OQ 台帳に append（`OQ<max+1>` を機械採番 / `status: open` / `since` を機械付与）
 - `oq list [--all]` → OQ 一覧（既定は open のみ。`--all` で closed 込み）
-- `decision <text>` → Decision log に append（`D<max+1>` を機械採番）し、関連 OQ を close して双方向参照を成立させる。覆した確定の項目があれば、その項目の関連 Issue を出す
+- `decision <text>` → Decision log に append（`D<max+1>` を機械採番）し、関連 OQ を close して双方向参照を成立させる。覆した確定の項目があれば、その項目の関連 Issue を出す。同じ対象を決めた既存の Decision があれば、見直すかを選ばせる
 - `spec <項目> <確度>` → 仕様表の確度ラベル（`確定` / `方向性(仮)` / `未定`）を更新し `since` を機械付与
 - `spec <項目> --phase <P<n>|先送り|-> [D<n>]` / `spec <項目> --issue <ID,…|->` → 仕様表の行の phase（先送りになる変更は D# が要る）と関連 Issue を更新
 - `spec --upgrade` → 旧 4 列の仕様表を 6 列（phase・関連 Issue を足す）にする / `spec --phase-advance D<n>` → 今の phase（`current_phase`）を次へ進める
@@ -40,7 +40,7 @@ allowed-tools:
 1. Phase 0: 保存先確認（`.claude/living-specs/`、無ければ作成）+ サブコマンド判定 + 対象ファイル特定
 2. Phase 1-3: init（slug の命名規則検証 / 既存なら中止 → `date` 取得 → 衝突確認 → template 置換 → Write）
 3. Phase 4: oq（採番 → append）/ oq list（読むだけ）
-4. Phase 5: decision（採番（その番号を壊れた凍結の宣言が指していたら止める）→ 関連 OQ と覆す確定の項目を選ばせる → append → OQ を close → 双方向参照を Read で検証）
+4. Phase 5: decision（採番（その番号を壊れた凍結の宣言が指していたら止める）→ 関連 OQ と覆す確定の項目を選ばせる → 同じ対象を決めた既存の Decision を探して見直すかを選ばせる → append → OQ を close → 双方向参照を Read で検証）
 5. Phase 6: spec（凍結中なら拒否 → 確度の 3 値検証 → 項目で引き当て → 確度と since を更新）/ `--freeze`・`--unfreeze`（D# の実在と順序を確かめて frontmatter の凍結の 2 行を書く・消す。壊れた宣言は `--unfreeze` が D# なしで消す）/ `--upgrade`・`--phase-advance`・`<項目> --phase`・`--issue`
 6. Phase 7: status（収束率（先送りを除く）・phase ごとの収束率・先送りの件数と open OQ 残数を集計。仕様表が凍結されていれば収束率は数えない）
 7. Phase 8: timeline（1 行・日付の検証 → 「## タイムライン」の末尾に append。形は format-spec.md 1.1 節）
