@@ -3698,6 +3698,47 @@ class SplitSkillTest(unittest.TestCase):
         got = [(name, [p for _i, p in reads]) for name, _h, reads in mod.split_skill_phases(mod.ROOT / entry[0], entry[1], entry[2])]
         self.assertEqual(got, [(name, [path]) for name, path in expected])
 
+    def test_ui_verify_heading_regex_takes_only_step_3_modes(self):
+        """ui-verify の一覧の正規表現は, Step 3 の `#### <モード> モード` だけを節にする（#447）."""
+        rel = "dev-workflow/skills/ui-verify/SKILL.md"
+        mod = _load_module()
+        heading_re = next(h for r, h, _l in mod.SPLIT_SKILLS if r == rel)
+        self.assertIn(rel, mod.UNCHAINED_SPLIT_SKILLS)
+        self.assertEqual(mod.SPLIT_SKILL_PHASE_DIRS[rel], "references/modes")
+        pat = re.compile(heading_re)
+        for line in (
+            "## 3つのモード",
+            "### Step 3: モード別の実行",
+            "### verify は実機 E2E（役割分担）",
+            "#### dev server ライフサイクル（セッション中は保持する）",
+            "##### (a) ブラウザ基盤の選択",
+            "####verify モード",
+        ):
+            self.assertIsNone(pat.match(line), line)
+        cases = {
+            "#### verify モード（実機 E2E）": "verify",
+            "#### tune モード": "tune",
+            "#### snap モード": "snap",
+        }
+        for line, num in cases.items():
+            m = pat.match(line)
+            self.assertIsNotNone(m, line)
+            self.assertEqual(m.group("num"), num)
+
+    def test_ui_verify_reads_one_file_per_mode(self):
+        """本物の ui-verify の SKILL.md は, Step 3 のモードの見出しごとにモードのファイルを 1 本ずつ読む（#447）."""
+        rel = "dev-workflow/skills/ui-verify/SKILL.md"
+        mod = _load_module()
+        entry = next(e for e in mod.SPLIT_SKILLS if e[0] == rel)
+        base = "skills/ui-verify/references/modes/"
+        expected = [
+            ("verify モード", base + "verify.md"),
+            ("tune モード", base + "tune.md"),
+            ("snap モード", base + "snap.md"),
+        ]
+        got = [(name, [p for _i, p in reads]) for name, _h, reads in mod.split_skill_phases(mod.ROOT / entry[0], entry[1], entry[2])]
+        self.assertEqual(got, [(name, [path]) for name, path in expected])
+
     def test_real_repo_has_no_error(self):
         """本物の repo と既定の一覧・上限で error が出ない."""
         for name in ("ROOT", "SPLIT_SKILLS", "SPLIT_SKILL_MAX_BYTES", "SPLIT_SKILL_PHASE_DIRS"):

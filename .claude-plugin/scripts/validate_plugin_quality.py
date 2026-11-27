@@ -1896,6 +1896,8 @@ SPLIT_SKILLS: tuple[tuple[str, str, str], ...] = (
     # サブコマンドの Phase の節. SKILL.md に残す Phase 0（保存先確認 + サブコマンド判定）を番号で外す.
     # init の Phase 2・3 は init のファイルの中に置く（SKILL.md に見出しを残すと Read の行が無い error になる）
     ("project-hub/skills/living-spec/SKILL.md", r"^## Phase (?P<num>[1-9]\d*): ", "Phase {num}"),
+    # Step 3 のモードの節（`#### verify モード` など）. どのモードでも通る Step 0〜2・4 は SKILL.md に残す
+    ("dev-workflow/skills/ui-verify/SKILL.md", r"^#### (?P<num>\S+) モード", "{num} モード"),
 )
 #: SPLIT_SKILLS のうち, 節を順に踏まない skill（呼ばれたサブコマンド・入ったモードの節だけを読む）. 節のファイルの末尾の
 #: 「次は」を求めない（鎖の検査を外す）. 上限・Read の行・最初の見出し・孤立ファイルの検査は同じに掛ける
@@ -1904,16 +1906,18 @@ UNCHAINED_SPLIT_SKILLS: frozenset[str] = frozenset(
         "project-hub/skills/hub/SKILL.md",
         "issue-workflow/skills/start/SKILL.md",
         "project-hub/skills/living-spec/SKILL.md",
+        "dev-workflow/skills/ui-verify/SKILL.md",
     }
 )
 #: SPLIT_SKILLS のうち, phase ファイルを `references/` の直下でなく下のディレクトリに置く skill（SKILL.md のディレクトリ起点）.
 #: references/ に phase でない参照文書を分ける前から持つ skill 向け. Read 先の内外と孤立ファイルの検査はこの置き場で見るので,
 #: 置き場の外の参照文書は孤立に数えない（置き場を references/ のままにすると pr-creator の 3 本・start の 3 本
-#: （context-agents / existing-work / lightweight-flow）・living-spec の 2 本（format-spec / template）が error になる / GitHub issue #447）
+#: （context-agents / existing-work / lightweight-flow）・living-spec の 2 本（format-spec / template）・ui-verify の 1 本（chrome-devtools-cheatsheet）が error になる / GitHub issue #447）
 SPLIT_SKILL_PHASE_DIRS: dict[str, str] = {
     "dev-workflow/skills/pr-creator/SKILL.md": "references/steps",
     "issue-workflow/skills/start/SKILL.md": "references/modes",
     "project-hub/skills/living-spec/SKILL.md": "references/subcommands",
+    "dev-workflow/skills/ui-verify/SKILL.md": "references/modes",
 }
 #: SKILL.md と phase ファイルの上限. Read 1 回で返る範囲の切れ目は実測 42,129 byte（#350 の旧版）と
 #: 42,448 byte（2026-11-05 の版）. token と byte の比は字種で揺れるので切れ目の手前に余白を取り,

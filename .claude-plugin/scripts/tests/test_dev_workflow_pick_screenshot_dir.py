@@ -212,7 +212,7 @@ class CallerContractTest(unittest.TestCase):
 
     def test_ui_verify_and_adr_describe_the_condition(self):
         for path in (UI_VERIFY, ADR):
-            text = path.read_text(encoding="utf-8")
+            text = flow_text(path)  # ui-verify はモードの本文を差し込んで読む（#447）
             with self.subTest(path=path.name):
                 self.assertNotIn("従来どおり pr-creator の Step 4.5 が snap で撮る", text)
                 self.assertNotIn("snap 経路に寄る", text)

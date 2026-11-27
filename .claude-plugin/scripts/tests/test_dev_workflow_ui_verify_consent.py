@@ -17,6 +17,8 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from skill_flow import flow_text
+
 REPO = Path(__file__).resolve().parents[3]
 UI_VERIFY = REPO / "dev-workflow" / "skills" / "ui-verify" / "SKILL.md"
 AUTO = "askUserQuestionTimeout"
@@ -36,7 +38,7 @@ def line_starting(text: str, prefix: str) -> str:
 
 class AutoContinueIsNotConsentTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.text = UI_VERIFY.read_text(encoding="utf-8")
+        self.text = flow_text(UI_VERIFY)
 
     def test_dev_server_start_needs_an_explicit_answer(self):
         step0 = section(self.text, "### Step 0:", "### Step 1:")

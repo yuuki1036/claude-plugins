@@ -1,3 +1,6 @@
+<!-- 正本依存（SSoT pin）。この Step が言い換えている ui-verify の節。正本が変わったら本ファイルへの伝播を確認して pin を書き換える -->
+<!-- SSOT: dev-workflow/skills/ui-verify/references/modes/snap.md#PR @99f5f200 -->
+
 ### 4.5 Screenshots 添付（UI PR のみ）
 
 以下すべてを満たす場合のみ実行する:
@@ -22,7 +25,7 @@
 
 #### PR タイプ判定（撮影枚数の調整）
 
-ブランチ名・コミットメッセージ・差分内容から PR タイプを推定し、`ui-verify/SKILL.md` の「PR タイプ別ガイドライン」表に従って撮影枚数を決定する。
+ブランチ名・コミットメッセージ・差分内容から PR タイプを推定し、ui-verify の snap モード（`${CLAUDE_PLUGIN_ROOT}/skills/ui-verify/references/modes/snap.md`）の「PR タイプ別ガイドライン」表に従って撮影枚数を決定する。
 
 | PR タイプ | 判定シグナル | 撮影方針 |
 |-----------|------------|---------|
