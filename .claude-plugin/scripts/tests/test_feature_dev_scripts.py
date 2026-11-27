@@ -551,15 +551,23 @@ class SummaryReadingGuideTest(unittest.TestCase):
         # 判定不能のうち途中で止まった回は、変異が残ったツリーのまま進ませない
         self.assertIn("途中で止まった回は、上のとおり元に戻したと返されるまで次の一手へ進まない", survived)
 
-    def test_canonical_names_feature_dev_as_the_caller_that_runs_without_asking(self):
-        """正本の契約も呼び出し元ごとに書き分ける。正本が「承認を得てから回す」のままだと Phase 7 と食い違う."""
+    def test_canonical_leaves_how_to_run_to_callers_by_role(self):
+        """正本は呼び出し元の名前を残し、回すかの決め方は役割の語で書く（GitHub issue #537）.
+
+        名指しで書き分けると、呼び出し元が決め方を変えても SSoT pin は正本を確認に上げない。
+        `回し方:` は正本が出すコマンドの欄なので、呼び出し元が決めるものに数えない。
+        """
         fmt = self.FORMAT.read_text()
         closing = fmt[fmt.index("## 読み合わせの締め"):fmt.index("## 回し直すかの判断")]
         bullet = next(l for l in closing.splitlines() if l.startswith("- `変異テスト:` の行も呼び出し元"))
-        self.assertIn("feature-dev の Phase 7 は聞かずにそのまま回し", bullet)
-        self.assertIn("軽量フローは回すかを聞いて承認を得てから回す", bullet)
-        self.assertIn("git-commit-helper は回すかを聞き", bullet)
-        self.assertNotIn("呼び出し元はそれをそのまま回すかの問いに使い", bullet)
+        for caller in ("issue-workflow の軽量フロー", "feature-dev の Phase 7", "git-commit-helper"):
+            self.assertIn(caller, bullet)
+        self.assertIn("回すかと、回す前に聞くかは呼び出し元が決める", bullet)
+        for role in ("聞かずにそのまま回す呼び出し元", "承認を得てから回す呼び出し元",
+                     "回すかを聞くだけで自分では回さない呼び出し元"):
+            self.assertIn(role, bullet)
+        self.assertNotIn("feature-dev の Phase 7 は聞かずに", bullet)
+        self.assertNotIn("回し方は呼び出し元", bullet)
 
     def test_mutation_runs_regardless_of_snapshot(self):
         """snapshot が無い回だけの分岐（`self-review 以降の変更:` の箇条）に入れない。読み合わせた回はすべて通る."""
