@@ -178,7 +178,7 @@ frontmatter の `last_updated` を W1 の日付に Edit する。**`last-validat
 3. Phase 2: date 取得 → 衝突確認 → template 置換 → Write
 4. Phase 3: init の完了報告
 5. Phase 4: oq → 採番（コメント除去 → max+1）→ append / oq list は読むだけ
-6. Phase 5: decision → 採番（その番号を壊れた凍結の宣言が指していたら止める）→ 関連 OQ と覆す確定の項目を選ばせる → append（覆した項目の関連 Issue を報告） → OQ を close → 双方向参照を Read で検証
+6. Phase 5: decision → 採番（その番号を壊れた凍結の宣言が指していたら止める）→ 関連 OQ と覆す確定の項目を選ばせる → 同じ対象を決めた既存の Decision を探して見直すかを選ばせる → append（覆した項目の関連 Issue を報告） → OQ を close → 双方向参照を Read で検証
 7. Phase 6: spec → 凍結中なら拒否 → 確度の 3 値検証 → 項目で引き当て（重複は倒す）→ 確度と since を更新
    / --freeze・--unfreeze → D# の実在と順序を確かめて frontmatter の凍結の 2 行を書く・消す（壊れた宣言は --unfreeze が D# なしで消す）
    / --upgrade → 旧 4 列の表を 6 列に / --phase-advance → D# を確かめて current_phase を進める

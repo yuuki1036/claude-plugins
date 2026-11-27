@@ -88,7 +88,7 @@ brief を経ずに始めた sub（issue-workflow の `start` など）も、cwd 
 
 Issue 化する前段から実行中まで、PJ の決定を「設計収束ドキュメント」(living spec) で持つ。**未確定を抱えていることが正常状態**の文書を、採番・書式・相互参照を機械化しながら「仮 → 確定」へ収束させる。living spec は repo の `.claude/living-specs/<slug>.md` に置いて commit する（1 PJ に 1 本）。hub は使わなくてよい — 設計だけを詰める段階は living spec だけで使い、sub を起動するときに hub を init する（旧 living-spec-workflow を吸収した / ADR-20261026090521・GitHub issue #322）。
 
-hub と併用するときは、hub の `living-spec` サブコマンド（`hub.py set-living-spec`）でその PJ の living spec を結ぶ（state.md にパスが出る）。決定と段取りの間の決まりは `hub-living-spec` skill に従う: 決定を書くのは lead が決めたときだけ、進捗（PR のマージ・sub の done・確かめた事実）は lead に聞かずに出典つきでタイムラインへ書く、確定を覆した決定の関連 Issue を仕掛中・未着手・完了に分けて lead に出す、sub の report のうち設計に関わるものを OQ の候補にする、自動の連絡の出典に使ってよいのは Decision と確定の行だけ、など。
+hub と併用するときは、hub の `living-spec` サブコマンド（`hub.py set-living-spec`）でその PJ の living spec を結ぶ（state.md にパスが出る）。決定と段取りの間の決まりは `hub-living-spec` skill に従う: 決定を書くのは lead が決めたときだけ、進捗（PR のマージ・sub の done・確かめた事実）は lead に聞かずに出典つきでタイムラインへ書く、確定を覆した決定の関連 Issue を仕掛中・未着手・完了に分けて lead に出す、sub の report のうち設計に関わるものを OQ の候補にする、自動の連絡の出典に使ってよいのは Decision と確定の行だけ、OQ を閉じる案・OQ の候補・未定 / 方向性(仮) の説明・sub の質問を lead に回す前に Decision log を探す、など。
 
 コマンドは `/project-hub:living-spec` と `/project-hub:living-spec-maintain`（他のプラグインと名前がぶつからなければ `/living-spec` でも呼べる）。
 
@@ -171,6 +171,7 @@ living spec は phase ごとに到達点を持ち、実行に入ったあとも�
 - **先送り** = phase が `先送り` か今の phase より後の行。確度とは別の軸で、スコープ外（やらない）とも違う。先送りにする変更は Decision で残す（`spec <項目> --phase <値> D<n>`）
 - `status` は先送りを全体の収束率から外し、phase ごとの収束率と先送りの件数を出す。maintain 段 6 は先送りの行を塩漬けとして数えない
 - `decision` で確定の項目を覆したら、その項目の関連 Issue を出す（Issue を直すかの確認用。Issue の状態で分けるのはトラッカーを読む側）
+- `decision` は先に、同じ対象を決めた既存の Decision を Decision log から探す。見つかれば見直すかを選ばせ、見直すなら見出しを `D<m> の見直し: <要約>` にする
 
 ### 仕様表の凍結
 
