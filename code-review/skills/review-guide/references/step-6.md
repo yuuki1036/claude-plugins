@@ -1,6 +1,6 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/review-guide-format.md#4 @2eacd59a -->
-<!-- SSOT: code-review/references/review-guide-format.md#精読の解説 @2f2d516d -->
+<!-- SSOT: code-review/references/review-guide-format.md#4 @756b7676 -->
+<!-- SSOT: code-review/references/review-guide-format.md#精読の解説 @1587b39b -->
 <!-- SSOT: code-review/references/prompts/explorer-common.md#diff @6e10af97 -->
 ### 6. 精読の解説（読み合わせ / レポートの後 / GitHub issue #291）
 

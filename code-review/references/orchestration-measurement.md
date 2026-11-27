@@ -205,7 +205,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/review-timing.sh" mark t2 [--pr N]          
 
 ## 16. `review:completed` payload 契約（review 締めフロー 4・self-review Step 6.4 共通 / 正本）
 
-**両 skill で同一フィールド名を使う**（subscriber が publisher を区別せず集計できるようにするため）。skill 固有の差分だけを各 SKILL.md に書き、フィールドの意味はここを正本とする。
+**両 skill で同一フィールド名を使う**（subscriber が publisher を区別せず集計できるようにするため）。skill 固有の差分だけを各 skill の publish の Step（review の Step 7 の締めフロー 4 = `skills/review/references/step-7.md`、self-review の Step 6.4 = `skills/self-review/references/step-6.4.md`）に書き、フィールドの意味はここを正本とする。
 
 ### payload テンプレート（v2.62.0 で SKILL から移設）
 

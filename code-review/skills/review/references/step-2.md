@@ -1,6 +1,6 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @5e9f7b4c -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @0c50d7a9 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.1 @d6a3bd92 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.2 @81106eca -->
 <!-- SSOT: code-review/references/triage-guide.md#5 @a2dc3482 -->

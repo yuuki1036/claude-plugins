@@ -4,7 +4,7 @@
 <!-- SSOT: code-review/references/triage-guide.md#6.1 @d6a3bd92 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.2 @81106eca -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @b5edb48b -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @5e9f7b4c -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @0c50d7a9 -->
 ### 1. diff 収集とコンテキスト準備
 
 **Step 1 と 1.4 は 1 つの Bash 呼び出しにまとめる**（GitHub issue #147）。間に LLM の判断が挟まらない — 後段は前段の**出力を読んで決める**のではなく、同じシェルの変数とファイルを使うだけなので、分けると往復ぶんの `cache_read` を払うだけになる。**1.7 の機械層はここに含めない**（理由は 1.7 側に記載）。

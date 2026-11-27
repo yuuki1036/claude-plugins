@@ -107,7 +107,7 @@ npm run lint && npm run typecheck && npm test
 
 ## 読み合わせの後の変異テスト（review-guide / opt-in）
 
-review-guide の読み合わせ（`--walkthrough`）は、締めに `変異テスト: <提案する / 不要 / 道具なし> — <理由>` の 1 行を出す。変更が分岐・境界・検証ロジックを（SQL・設定値などの文字列の中でなく、ソースの式・文として。正規表現のリテラルと宣言のある回は例外）触り、その振る舞いにテストがあるときだけ `提案する` になり、回し方と所要の目安が付く。review-guide は回さない。feature-dev の Phase 7 は `提案する` のとき聞かずに回し、issue-workflow の軽量フローは利用者に回すかを聞き、承認されたら回す。回した回は生存した変異を報告する。
+review-guide の読み合わせ（`--walkthrough`）は、締めに `変異テスト: <提案する / 不要 / 道具なし> — <理由>` の 1 行を出す。変更が分岐・境界・検証ロジックを（SQL・設定値などの文字列の中でなく、ソースの式・文として。正規表現のリテラルと宣言のある回は例外）触り、その振る舞いにテストがあるときだけ `提案する` になり、回し方と所要の目安が付く。review-guide は回さない。回すかと、回す前に聞くかは締めを読む呼び出し元（feature-dev の Phase 7・issue-workflow の軽量フロー・dev-workflow の git-commit-helper）が決める（聞かずに回す呼び出し元も、回すかを聞いて承認を得てから回す呼び出し元も、回すかを聞くだけで自分では回さない呼び出し元もある）。回した呼び出し元は生存した変異を報告する。
 
 道具は、リポジトリのルートに `.claude/mutation-test.sh` があればそれを使う（存在自体が宣言）。無ければルートの設定ファイル（Stryker の `stryker.config.*` 等か `package.json` の `@stryker-mutator/*`、`pyproject.toml` の `[tool.mutmut]` / `setup.cfg` の `[mutmut]`、`.cargo/mutants.toml`）から推測する。どれも無ければ `道具なし` で、導入は提案しない。
 

@@ -2,7 +2,7 @@
 <!-- SSOT: code-review/skills/self-review/references/step-1.md#1 @a8330ddc -->
 <!-- SSOT: code-review/references/triage-guide.md#6.5 @b5edb48b -->
 <!-- 正本依存（SSoT pin）。Phase 7 の 4. の変異テストの分岐（回し方・結果の 4 区分・前後の git status の突き合わせ）は code-review の review-guide-format.md「変異テストの提案」を要約したもの（聞かずに回すことは Phase 7 自身の決定 / GitHub issue #444）。正本が変わったら Phase 7 の 4. を確認して pin を打ち直す -->
-<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @7be3a9e1 -->
+<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @89619304 -->
 <!-- 正本依存（SSoT pin）。Phase 7 の 2 回目の self-review を回すかの分岐（`次の一手:` が `決定的な検証` の回・`不明（…）` の扱い）は code-review の review-guide-format.md「回し直すかの判断」を要約したもの。正本が変わったら Phase 7 のその分岐を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @bc251143 -->
 ## Phase 7: Summary

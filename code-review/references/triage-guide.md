@@ -19,7 +19,7 @@ Phase 0 実行前に以下の情報を収集する:
 | **シグナルダイジェスト** | `scripts/triage-signals.sh --pr <N>` / `--base <ref>`。規模・ファイル分類・hunk ヘッダ・観点判定シグナル・red-flag・surface・explorer シグナル・AGENTS.md・Issue ID を 1 回の Bash で取得 | Yes |
 | `## delta`（self-review の `--since` の回だけ / #313） | ダイジェストの末尾。`scope_mode=` / `delta_file=` / delta の規模（`delta_files=` / `delta_lines=` / `delta_core_*` / `delta_size_tier=`）と、delta だけで数えた `### focus-signals` / `### red-flags` / `### surface` / `### explorer-signals`。縮退した回は `scope_mode=full` と `fallback=<理由>` だけ（`### 6.5`） | `--since` の回 |
 | diff 全文 | **メインコンテキストでは読まない**。ダイジェストの `## meta` の `diff_file=` に保存済みで、agent へはパスで渡す。Phase 0 で個別に必要になったときだけ `${CLAUDE_PLUGIN_ROOT}/scripts/diff-slice.sh "$DIFF_FILE" <path>` で該当ファイルぶんを読む | No（原則読まない） |
-| PR コンテキスト（review skill のみ） | SKILL.md Step 1 が `$PR_CTX_FILE` に保存した原本（説明・issue コメント・レビューサマリ・行単位 review comment）。Phase 0 はメインコンテキストが Read した内容を使う | review skill で PR ありの場合 |
+| PR コンテキスト（review skill のみ） | review の Step 1（`skills/review/references/step-1.md`）が `$PR_CTX_FILE` に保存した原本（説明・issue コメント・レビューサマリ・行単位 review comment）。Phase 0 はメインコンテキストが Read した内容を使う | review skill で PR ありの場合 |
 | CLAUDE.md | プロジェクトルートから読み込み | 存在する場合 |
 | session-context.md | 存在チェック + ブランチ一致チェック | 存在する場合 |
 | Issue/knowledge ファイルの有無 | ファイル存在チェック | 存在する場合 |
@@ -48,7 +48,7 @@ Phase 0 の本判定（Stage 1 / Stage 2）に入る前に、**diff の構成か
 
 ### 適用モードの透明性
 
-決定したモードは Phase 0 構成テーブル出力に必ず含めること（SKILL.md Step 3.3 / 7）:
+決定したモードは Phase 0 構成テーブル出力に必ず含めること（review の Step 3.3・7。`skills/review/references/step-3.md`・`step-7.md`）:
 
 ```
 ## Phase 0 トリアージ結果
@@ -192,7 +192,7 @@ diff に以下の **危険パターン** が検出された場合、対応する
 
 ### PR コンテキストによる観点追加・冗長化（review skill のみ）
 
-SKILL.md Step 1 が保存した PR コンテキスト（`$PR_CTX_FILE`）の内容も判定シグナルとして使う:
+review の Step 1（`skills/review/references/step-1.md`）が保存した PR コンテキスト（`$PR_CTX_FILE`）の内容も判定シグナルとして使う:
 
 - PR 説明に「セキュリティ修正」「認可」「脆弱性」等の言及 → security 観点を追加
 - PR 説明に「パフォーマンス改善」「最適化」「N+1」等の言及 → performance 観点を追加・冗長化

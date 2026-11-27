@@ -1,11 +1,11 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @305aaaa7 -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @c0aa9e2d -->
 <!-- SSOT: code-review/references/orchestration-guide.md#8a @a5f9c77b -->
-<!-- SSOT: code-review/references/triage-guide.md#2.5 @e6cc50ef -->
+<!-- SSOT: code-review/references/triage-guide.md#2.5 @b0730968 -->
 <!-- SSOT: code-review/references/triage-guide.md#4 @bf441ebd -->
 <!-- SSOT: code-review/references/triage-guide.md#5 @a2dc3482 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.3 @2ad575e6 -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @5e9f7b4c -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @0c50d7a9 -->
 ### 3. Phase 0: トリアージ
 
 `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。

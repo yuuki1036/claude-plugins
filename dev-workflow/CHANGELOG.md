@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.45.4] - 2026-11-27
+
+### Changed
+
+- git-commit-helper の SSoT pin（code-review の review-guide-format.md「変異テストの提案」）を打ち直した（GitHub issue #537）。正本の変更は Step 0 の置き場所の書き方だけで、1.5 の手順は変えていない
+
 ## [1.45.3] - 2026-11-27
 
 ### Changed

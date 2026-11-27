@@ -1,6 +1,6 @@
 ## 2.5. PR コンテキスト注入テンプレート（review skill のみ）
 
-review skill から呼び出される reviewer には、SKILL.md Step 1 が保存した PR コンテキストファイルの**パス**を以下の形式で末尾に追加する（本文は転記しない。理由と例外は orchestration-guide.md `## 3.5`）。self-review skill では PR が存在しないため注入しない。
+review skill から呼び出される reviewer には、review の Step 1（`skills/review/references/step-1.md`）が保存した PR コンテキストファイルの**パス**を以下の形式で末尾に追加する（本文は転記しない。理由と例外は orchestration-guide.md `## 3.5`）。self-review skill では PR が存在しないため注入しない。
 
 ```
 ---
