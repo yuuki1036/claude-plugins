@@ -1,11 +1,7 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/review-guide-format.md#4 @2eacd59a -->
-<!-- SSOT: code-review/references/review-guide-format.md#レビュー観点（確かめた結果） @eef9697c -->
-<!-- SSOT: code-review/references/review-guide-format.md#修正 @7b8ecfce -->
+<!-- SSOT: code-review/references/review-guide-format.md#精読の解説 @2f2d516d -->
 <!-- SSOT: code-review/references/prompts/explorer-common.md#diff @6e10af97 -->
-<!-- SSOT: code-review/references/review-guide-format.md#置き場所 @194d1701 -->
-<!-- SSOT: code-review/references/review-guide-format.md#関連ファイル @0228dffd -->
-<!-- SSOT: code-review/references/review-guide-format.md#コード @8ffabe93 -->
 ### 6. 精読の解説（読み合わせ / レポートの後 / GitHub issue #291）
 
 **解説は editor を開かなくても読めるように書く**: そのファイルがなぜそこにあるか・関係するファイル・変更したコードの引用を解説の中に入れ、`file:line` だけを指して読み手に開かせない。形式は `review-guide-format.md` の「精読の解説」。

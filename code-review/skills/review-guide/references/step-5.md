@@ -1,6 +1,7 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/prompts/explorer-common.md#diff @6e10af97 -->
-<!-- SSOT: code-review/references/review-guide-format.md @d04866a2 -->
+<!-- SSOT: code-review/references/review-guide-format.md#レポートテンプレート @f185e107 -->
+<!-- SSOT: code-review/references/review-guide-format.md#ガイド非表示の開始行 @29da011f -->
 ### 5. レポート出力
 
 `review-guide-format.md` のテンプレートで出力する。**ファイルは書かない**（セッション出力のみ）。base モードでは「主張 vs diff」「人間の判断が効く箇所」を「対象なし（ローカル diff）」と明記する。
