@@ -498,10 +498,12 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
         over = {}
         for f in walk_frames(steps):
             k = f["last"]
-            if k < n - 1 and f["x1"] > cx[k + 1] - FRAME_GAP + 1e-6:
+            # 印は行ごとに効くので、等価な比較だけを 2 行目に分ける（1 行目の k の範囲の判定はテストが守る）
+            if k < n - 1 and (
+                    f["x1"] > cx[k + 1] - FRAME_GAP + 1e-6):  # mutation-ok: 境界を含めて変わるのは、越えが閾値と浮動小数で厳密に一致する回だけで、文字幅から作る座標ではその一致は起きない
                 over[k] = max(over.get(k, 0.0), f["x1"] - (cx[k + 1] - FRAME_GAP))
         if not over:
-            break
+            break  # mutation-ok: 越えが無ければ gaps は変わらず、残りの回は同じ cx と枠の座標を計算し直すだけ
         k = min(over)
         gaps[k] += over[k]
 
