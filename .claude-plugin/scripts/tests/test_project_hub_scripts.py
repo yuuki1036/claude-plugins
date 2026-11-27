@@ -3968,8 +3968,17 @@ class SidebarGroupTest(HubTestBase):
                             env_extra={"CLAUDE_CODE_SESSION_ID": "sid-hub-2",
                                        "CLAUDE_CODE_HOST_SESSION_ID": "local_cccccccc-cccc-4ccc-8ccc-cccccccccccc"})
 
-    def test_init_turns_it_on_for_a_desktop_hub_and_says_so(self):
+    def test_init_keeps_it_off_for_a_desktop_hub_unless_asked(self):
         res = self.init_on_desktop()
+        self.assertEqual(res.returncode, 0, res)
+        out = json.loads(res.stdout)
+        self.assertEqual(out["sidebar_group"], "off", "Desktop の hub でも既定でサイドバーを動かさない（#545）")
+        self.assertNotIn("sidebar_notice", out)
+        config = json.loads((self.root / "pj2" / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["sidebar_group"], "off")
+
+    def test_init_turns_it_on_for_a_desktop_hub_when_asked_and_says_so(self):
+        res = self.init_on_desktop("--sidebar-group", "on")
         self.assertEqual(res.returncode, 0, res)
         out = json.loads(res.stdout)
         self.assertEqual(out["sidebar_group"], "on")

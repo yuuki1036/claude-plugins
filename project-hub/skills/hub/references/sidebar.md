@@ -1,6 +1,6 @@
 ## サイドバーのグループ（`sidebar_group` が `on` の PJ）
 
-Desktop のサイドバーでは、hub から起動した sub は hub の下に並ぶ。hub の外で始めて後から sub にしたセッション（貼った brief・hello で登録したもの）は、独立のセッションのまま並ぶ。既にあるセッションを別のセッションの下に結び付けるツールは無い（`detach_session` は外すだけ）ので、代わりに PJ ごとのサイドバーのグループに hub とそのセッションをまとめる（GitHub issue #339）。`sidebar_group` が `off` の PJ（CLI で作った hub・lead が off にした PJ・v0.11.0 より前に作って `sidebar-group on` にしていない PJ）ではこの手順を回さない。
+Desktop のサイドバーでは、hub から起動した sub は hub の下に並ぶ。hub の外で始めて後から sub にしたセッション（貼った brief・hello で登録したもの）は、独立のセッションのまま並ぶ。既にあるセッションを別のセッションの下に結び付けるツールは無い（`detach_session` は外すだけ）ので、代わりに PJ ごとのサイドバーのグループに hub とそのセッションをまとめる（GitHub issue #339）。`sidebar_group` が `off` の PJ（init で `on` を選ばなかった PJ・CLI で作った hub・lead が off にした PJ・v0.11.0 より前に作って `sidebar-group on` にしていない PJ）ではこの手順を回さない。
 
 1. `hub.py sidebar --project '<PJ>'`。`note` があれば（hub が Desktop でない）何もしない。`hub.filed` が true で `pending` が空なら終える。`no_host`（会話の ID を確かめられない登録。CLI・0.6.4 までの登録）は動かせない（lead に出すのは `sidebar-group on` の直後だけ）
 2. `pending` の各行の `host` を `mcp__ccd_session_mgmt__get_session` に渡す。`parentSessionId` があって `detached` が true でなければ、起動したセッション（hub か、別のセッション）の下に並んでいるので動かさず nested にする。取れなければ failed（`error` に理由）

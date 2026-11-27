@@ -81,7 +81,8 @@ REPORT_FIELDS = ("name", "issue", "state", "pr", "needs_lead", "questions", "fol
 TRACKER_WRITE_MODES = ("never", "with_approval")
 # Desktop のサイドバーで hub と sub を PJ のグループにまとめるか。既にあるセッションを別のセッションの下に結び付ける
 # ツールは無い（detach_session は外すだけ）ので、hub の外で始めて後から sub にしたセッションはグループで代える。
-# off は利用者のサイドバーを動かさない（GitHub issue #339）。init の既定は Desktop の hub なら on、それ以外は off。
+# off は利用者のサイドバーを動かさない（GitHub issue #339）。init の既定は Desktop の hub でも off（on にすると hub 自身を
+# グループへ移し、サイドバーの表示をグループの表示に切り替えるので、まとめたい人だけが選ぶ / GitHub issue #545）。
 # config に無い・読めない値は off に倒す（sidebar_group()）
 SIDEBAR_GROUP_MODES = ("off", "on")
 # filed: グループに入れた / nested: 起動したセッションの下に並んでいるので動かさない / declined: 移動の確認を断られた /
@@ -1071,7 +1072,7 @@ def cmd_init(args) -> int:
         raise HubError(3, "tracker local の PJ では hub はトラッカーに書かない（Issue ファイルは issue-workflow の持ち物 / "
                           "ADR-20261027014506 の決定 5）", "tracker_write_local")
     host = verified_host(sid)
-    group_mode = args.sidebar_group or ("on" if host else "off")
+    group_mode = args.sidebar_group or "off"
     if group_mode == "on" and host is None:
         raise HubError(3, "hub の会話の ID を確かめられない（Desktop のセッションでない）。サイドバーのグループは"
                           "Desktop の hub だけで使える", "sidebar_not_desktop")
@@ -3646,7 +3647,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="hub がトラッカーに書いてよいか（never: 書かない / with_approval: lead の承認を取って書く。"
                         "既定は with_approval、tracker local は never）")
     p.add_argument("--sidebar-group", choices=SIDEBAR_GROUP_MODES,
-                   help="後から sub にしたセッションを hub とサイドバーのグループにまとめるか（既定は Desktop の hub なら on）")
+                   help="後から sub にしたセッションを hub とサイドバーのグループにまとめるか（既定は off。on は Desktop の hub だけ）")
     p.add_argument("--approval-mode", choices=APPROVAL_MODES, default="auto",
                    help="送る前の承認の取り方（auto: lead の確認が要る事柄を含まない連絡は承認なしに送る / "
                         "number: 4 桁の番号の打ち返し / phrase: 本文の提示より後の lead の「送って」）")

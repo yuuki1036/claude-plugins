@@ -420,6 +420,14 @@ self-review（medium・reviewer 4 体）で MAJOR 4 件が出た。どれも、�
 - **done が来ない sub は lead が閉じる**（2026-11-18 決定）: 自分の PR のマージを知らせたのに done が来ない sub（`waiting` で `own: true` かつ知らせ済み。知らせた時刻は `notified_at`）を status の止まっている箇所に出し、lead が閉じると決めたら `close-sub --force` で閉じる。`--force` が通すのはこの条件の sub だけで、それ以外は exit 3。一定期間で黙って外す案と、知らせた時点で外す案は採らなかった（前者は done が来ないことに気づきにくく、後者は #443 の締めの依頼が 1 回きりになる）
 - **送れなかった連絡**: relay が失敗した回は知らせ済みに数えず、次の status で送り直す（#329 からの挙動のまま）
 
+## 実装で決めたこと（init の sidebar_group の既定・2026-11-27 / GitHub issue #545）
+
+上の 2026-10-29 の「サイドバーのグループの既定」のうち、Desktop の hub の既定を置き換えた。
+
+- **既定は Desktop の hub でも `off`**（2026-11-27 決定）: Desktop の hub の既定が `on` だと、init の最後に hub 自身を PJ 名のグループへ移し、サイドバーの表示がグループを見せる表示に切り替わる。サイドバーをプロジェクトごとの表示にしている利用者は、init のたびに表示を手で戻していた。`--sidebar-group on` を渡したとき（lead がまとめたいと言ったとき）だけ `on` にする。repo hub（`hub repo`）も同じ init の経路なので同じく `off`
+- **採らなかった案**: init で聞く案（init の確認を 1 問増やす）と、利用者ごとの既定値を持つ案（project-hub の外に永続ファイルが 1 つ増える）
+- **変えないもの**: `on` の PJ の動き（#339）と、既に init した PJ の config（まとめたくない PJ は `hub sidebar-group off`）
+
 ## 未解決事項 (open)
 
 - **3 回目の self-review（2026-10-21・security / bug-detection）で残した指摘**（G-V ループの上限に達し、BLOCKER だけ直す方針にしたため未修正）。確定タイミング: 段階 ① を 1 PJ で使う前
