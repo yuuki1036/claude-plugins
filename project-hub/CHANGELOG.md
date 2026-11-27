@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.20.0] - 2026-11-27
+
+### Added
+
+- **living-spec の decision で、同じ対象を決めた既存の Decision を探して見せるようにした**（GitHub issue #553）: これまでの decision は、関連 OQ と覆す確定の項目は選ばせたが、Decision log の既存の Decision と食い違っていないかを見る段が無かった。同じ対象を決めた Decision を確かめずに逆向きの決定を新しい Decision として記録した例と、後の Decision で決まっていた項目を「未定」と説明した例があった。decision.md の 3.5 の後に 3.6 を足し、decision の text（とユーザーが挙げた根拠）から取った語で Decision log の見出しと `根拠`（子 bullet を含む）を検索する（語を変えて 2〜3 回引く）。1 件以上見つかれば、見直す Decision を選ばせる（先頭は「なし（対象が別なので関係ない）」。3・3.5 と同じ AskUserQuestion にまとめてよい）。決定の text が名指しした D# は検索の結果に関わらず候補に入れ、options に並べきれない分は question の文に並べる。選んだときは見出しを `D<m> の見直し: <要約>` にし、報告に見直した Decision を出す。見つからなければ確認を出さない。hub-living-spec にも、決まっていないと扱う前に同じ検索をする節を足した（失敗は decision を呼ぶ前の、案を出す段で起きていたため）。きっかけは、OQ を閉じる案を出すとき・仕様表の項目を `未定` / `方向性(仮)` と説明するとき・sub の report から OQ の候補を出すとき・`方向性(仮)` / `未定` の行を理由に sub の質問を lead に回すときの 4 つ。後の 2 つの節にも、見つけた D# を添えて lead に出す一文を足した。見つけた Decision が今の決定かは hub が決めず、後の見直し（続く限り辿る）や、仕様表の行の `since` が Decision 以降（Decision の後に行が更新された）なら、それも並べて lead に出す。自動の連絡で Decision を出典にする前にも同じ探し方で引き、後の Decision・見直し・Decision の後に更新された行のどれかがあれば、自動で答えず lead に回す。decision の 3.6 も、候補の Decision を見直した後の Decision を辿って候補に入れる。複数を見直すときの見出しは `D2 の見直し, D5 の見直し` と D# ごとに書く。commands/living-spec.md・README・hub の SKILL.md の要約と一覧も合わせた
+
 ## [0.19.0] - 2026-11-27
 
 ### Changed
