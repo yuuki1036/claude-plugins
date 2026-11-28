@@ -1086,6 +1086,59 @@ class BudgetMainTest(unittest.TestCase):
         _, out = self._main()
         self.assertNotIn("印（", out)
 
+    # 1 行から 2 個（`<` → `<=` と `and` → `or`）出る行。期待する WARN の文面はテスト側で組む（#569）
+    TWO = "y = 3 < 4 and w"
+
+    def _marked_out(self, mark: str) -> str:
+        (self.root / "t.py").write_text(f"x = 1 > 2\n{self.TWO}  {mark}\n", encoding="utf-8")
+        rc, out = self._main()
+        self.assertEqual(rc, 0)
+        self.assertIn("  t.py:2  2 個（", out, "2 個外す行になっていない（テストの前提が崩れた）")
+        return out
+
+    def test_two_mutants_without_a_count_warn(self):
+        """数を書かない印が 2 個以上外したら WARN を添える（#569）."""
+        out = self._marked_out("# mutation-ok: 等価")
+        self.assertIn("    WARN: 1 行の印で 2 個を外した。全部等価と確かめたら印を "
+                      "`# mutation-ok(2): ` と書く。等価でない変異があれば行を分ける\n", out)
+
+    def test_matching_count_silences_the_warning(self):
+        """印に書いた数が外した数と同じなら黙る。数を書いた印も変異を外す."""
+        out = self._marked_out("# mutation-ok(2): 等価")
+        self.assertNotIn("WARN", out)
+        self.assertIn("印（# mutation-ok:）で外した: 2 個（1 行）\n", out)
+        self.assertIn("生存 1 /", out, "数を書いた印の行の変異を実行している")
+
+    def test_count_that_differs_from_the_mutants_warns(self):
+        """印に書いた数と外した数が違えば、多くても少なくても WARN を出す."""
+        for want in (1, 3):
+            with self.subTest(want=want):
+                out = self._marked_out(f"# mutation-ok({want}): 等価")
+                self.assertIn(f"    WARN: 印に書いた数は {want} 個だが、外したのは 2 個。"
+                              "外した変異が全部等価かを確かめ直し、数を書き直す\n", out)
+
+    def test_count_on_a_line_with_no_mutants_warns(self):
+        """数を書いた印の行がコードの変更で変異を出さなくなったら WARN を出す（0 個の行も比べる）."""
+        (self.root / "t.py").write_text("x = 1 > 2\nz = 5  # mutation-ok(2): 理由\n", encoding="utf-8")
+        _, out = self._main()
+        self.assertIn("  t.py:2  0 個\n    WARN: 印に書いた数は 2 個だが、外したのは 0 個。", out)
+
+    def test_count_is_read_on_the_zero_mutant_return(self):
+        """全行に印があって変異 0 個で早期に終わる回も、印に書いた数で黙る / 数が無ければ鳴る."""
+        for mark, warns in (("# mutation-ok(2): 等価", False), ("# mutation-ok: 等価", True)):
+            with self.subTest(mark=mark):
+                (self.root / "t.py").write_text(f"{self.TWO}  {mark}\n", encoding="utf-8")
+                _, out = self._main()
+                self.assertIn("変異 0 個: 対象の行はあるが、当たった変異はすべて印で外した", out)
+                self.assertEqual("WARN: 1 行の印で 2 個を外した。" in out, warns)
+
+    def test_single_mutant_without_a_count_is_silent(self):
+        """1 個だけ外す印は数を書かなくても黙る（今ある印の 92 行はこの形）."""
+        (self.root / "t.py").write_text("x = 1 > 2\ny = 3 < 4  # mutation-ok: 等価\n", encoding="utf-8")
+        _, out = self._main()
+        self.assertIn("  t.py:2  1 個（", out)
+        self.assertNotIn("WARN", out)
+
     def test_marked_lines_are_listed_on_the_zero_mutant_return(self):
         """変異 0 個で早期に終わる回も、印で外した数を出す（全行に印があると変異 0 個になる）."""
         (self.root / "t.py").write_text("x = 1 > 2  # mutation-ok: 等価\n", encoding="utf-8")
@@ -1243,6 +1296,19 @@ class SkipKeysTest(unittest.TestCase):
         self.assertIn("未実行の変異は無い", out)
         self.assertIn("印（# mutation-ok:）で外した: 1 個（1 行）\n"
                       "  t.py:3  1 個（>= を > に（境界を 1 つ狭める））\n", out)
+
+    def test_count_is_read_when_everything_is_done(self):
+        """済みで全件除外して早期に終わる回も、印に書いた数で黙る / 数が無ければ鳴る（#569）."""
+        keys = self._keys()
+        for mark, warns in (("# mutation-ok(2): 等価", False), ("# mutation-ok: 等価", True)):
+            with self.subTest(mark=mark):
+                (self.root / "t.py").write_text(
+                    f"x = 1 > 2\ny = 3 < 4\nw = 5 < 6 and v  {mark}\n", encoding="utf-8")
+                (self.root / "done.txt").write_text("\n".join(keys), encoding="utf-8")
+                _, out = self._main("--skip-keys", str(self.root / "done.txt"))
+                self.assertIn("未実行の変異は無い", out)
+                self.assertIn("  t.py:3  2 個（", out)
+                self.assertEqual("WARN: 1 行の印で 2 個を外した。" in out, warns)
 
     def test_done_keys_are_skipped(self):
         keys = self._keys()
