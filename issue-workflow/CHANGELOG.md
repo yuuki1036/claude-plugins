@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.19] - 2026-11-28
+
+### Fixed
+
+- start の Phase CTX（session-context.md の書き出し）を行う時機を本文で決めた（GitHub issue #566）。書く条件と書かない条件はあったが、いつ書くかが無かった。F7 は feature-dev・軽量フローに処理を渡して start に戻らない。時機は Phase F3.2 の後回しの回と同じ F7 の締めにした。feature-dev・軽量フローを起動する回はその直前に、起動しない回は F7 を終える時点に書く。F6 の後・F7 の前には書かない（F7 で `WORK_STATE` を決め直さなかった回も同じ）。`none` / `fresh` / `branch` は F7 でブランチを作るかブランチへ移ることがあるので、先に書くと `branch:` が移る前の値になり、ブランチの一致を見る読む側（code-review・issue-band）が session-context を使わないため。時機は Phase CTX の本文・SKILL.md の Feature ブランチモードの見出し・F7 の節（起動する 2 つの選択肢の行を含む）のどれからも引ける
+- start の `WORK_STATE = branch` で、F7 のブランチ作成を「スキップ」して作業のあるブランチへ移らなかった回は、Phase CTX を書かないようにした（GitHub issue #566 の読み合わせで見つけた）。作業の無い今のチェックアウトが detached HEAD の worktree なら、そこに `issue_id` を書くと、`detached` の回に書かない理由と同じく、次の /start でここが `current=1` の候補になって `fresh` に決まる。Phase CTX の本文・F7 の締めの節・existing-work.md の表に書いた
+
 ## [1.19.18] - 2026-11-27
 
 ### Changed

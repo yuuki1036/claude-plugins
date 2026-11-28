@@ -117,7 +117,7 @@ feature ブランチではブランチ名から Issue を特定して関連フ�
 
 ## Feature ブランチモード
 
-このモードの回は、F7 に入る前に「セッションコンテキスト書き出し」の見出しの Read の行のファイルも読む（F7 は feature-dev・軽量フローへ処理を渡して start に戻らない）。
+このモードの回は、F7 に入る前に「セッションコンテキスト書き出し」の見出しにある Read の行が指すファイルも読む（F7 は feature-dev・軽量フローへ処理を渡して start に戻らない）。書くのは F7 の締め（feature-dev・軽量フローを起動する回はその直前、起動しない回は F7 を終える時点。F6 の後・F7 の前には書かない）。
 
 入ったら最初に `${CLAUDE_PLUGIN_ROOT}/skills/start/references/modes/feature-branch.md` を Read する（手順・分岐はそのファイルにある。見出しだけで進めない）。
 
