@@ -2,6 +2,24 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.0.4] - 2026-11-28
+
+### Fixed
+
+- **cc-catch-up の state file が作業 repo で未追跡のファイルとして残っていた**（GitHub issue #540）。SKILL.md は state file を
+  commit しないと書くが、置き場所の `.claude/harness-keeper/` を ignore する手順が無く、`.claude/` を追跡する repo ではキャッチアップの
+  たびに未追跡として残っていた。Phase 0 で dir を用意する `scripts/init-state-dir.sh` を足し、中身が `*` の `.gitignore` を dir に
+  置くようにした。repo の `.gitignore` は書き換えない。`$HOME/.claude` を git で同期している環境でも効く。既に commit した state
+  file は `.gitignore` では追跡から外れないので、スクリプトが新旧のパスの追跡を確かめて `tracked=` で報告し、`git rm --cached` で
+  外すよう案内する
+- **SKILL.md の Reference Files で、`plugin-features.md` と `improvement-patterns.md` の 2 項目が 1 行につながっていた**のを分けた
+
+### Changed
+
+- **機能カタログ（`references/plugin-features.md`）の更新は harness-keeper の版上げで行う、と注記を書き直した**。注記は
+  「Phase 7 でこのカタログにも追記する」としていたが、Phase 7 にその手順は無かった。インストール先のカタログに書いても
+  プラグインの更新で消えるので、キャッチアップの実行中には追記しない。Phase 2 にも、新規の機能はレポートに出すだけだと書いた
+
 ## [2.0.3] - 2026-11-21
 
 ### Changed

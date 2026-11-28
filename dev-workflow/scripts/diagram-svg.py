@@ -12,14 +12,17 @@
 各定義の隣に拡張子を .svg に替えたファイルを書き、1 ファイルにつき 1 行（警告があればその後に続けて）出す:
   svg=<svg のパス>                 書けた
   warn=<svg のパス>\t<理由>         書けたが直したほうがよい（幅が 1200 を超えた・線が箱を横切る・
-                                   ラベルや箱が重なる・縦長や横長・線どうしが交差するなど）
+                                   ラベルや箱が重なる・縦長や横長・線どうしが交差する・sequence に
+                                   title が無いなど）
   failed=<定義のパス>\t<理由>       書けなかった（JSON が壊れている・id の参照先が無い・値の型が違う・
-                                   想定外のエラーなど）。前回書いた .svg はそのまま残る
+                                   その型で使えない legend_labels のキー・想定外のエラーなど）。
+                                   前回書いた .svg はそのまま残る
 exit 0 = 全件書けた / 1 = 1 件以上失敗 / 2 = 引数なし
 1 件が失敗しても残りの定義は処理する。
 
 手で座標を組んだときに踏んだ点（#349）をここで固定している:
-- 文字の幅は全角と曖昧幅を 1 文字 = 1em で見積もる（英字の幅で見積もると日本語が枠からはみ出す）
+- 文字の幅は全角と曖昧幅を 1 文字 = 1em で見積もる（英字の幅で見積もると日本語が枠からはみ出す）。
+  太字で描く文字は、半角の文字だけを広めに見積もる（#567）
 - 矢印の先は markerUnits="userSpaceOnUse" で大きさを固定する（既定の strokeWidth だと線の太さに比例して膨らむ）
 - ライフラインの見出しの箱は、見出しの幅から列の間隔を決めて隣と重ならないように並べる
 """
@@ -39,6 +42,9 @@ FS = 14  # 箱・見出し
 FS_LABEL = 13  # 線のラベル・枠の条件
 FS_SMALL = 12  # 凡例・枠の種類・範囲の枠の見出し
 LINE_H = 1.4
+# 太字で広がるのは半角の文字だけ。Hiragino Sans を Chrome で測ると、和文は太字でも幅が変わらず、英字は
+# 1.06〜1.14 倍になった（#567）。最大の 1.14 倍を少し上回る値にする
+BOLD_HALF = 1.15
 MAX_WIDTH = 1200
 MARGIN = 24
 PAD_X = 12
@@ -112,15 +118,15 @@ def attr(s: str) -> str:
     return escape(s).replace('"', "&quot;")
 
 
-def char_em(ch: str) -> float:
+def char_em(ch: str, bold: bool = False) -> float:
     # 曖昧幅（A）も 1em に数える。日本語のフォントでは「→」「①」「×」が全角で描かれる
     if unicodedata.east_asian_width(ch) in ("W", "F", "A"):
         return 1.0
-    return 0.72 if ch.isupper() else 0.62
+    return (0.72 if ch.isupper() else 0.62) * (BOLD_HALF if bold else 1.0)
 
 
-def text_w(s: str, fs: float) -> float:
-    return max(sum(char_em(c) for c in row) for row in s.split("\n")) * fs
+def text_w(s: str, fs: float, bold: bool = False) -> float:
+    return max(sum(char_em(c, bold) for c in row) for row in s.split("\n")) * fs
 
 
 def text_h(s: str, fs: float) -> float:
@@ -173,7 +179,8 @@ def label_svg(c: Canvas, x: float, cy: float, s: str, anchor: str = "middle", st
 def box_size(label: str, sub: str = "") -> tuple[float, float]:
     if not sub:
         return max(text_w(label, FS) + 2 * PAD_X, BOX_MIN_W), text_h(label, FS) + 2 * PAD_Y
-    w = max(text_w(label, FS), text_w(sub, FS_SMALL)) + 2 * PAD_X
+    # 2 行目があるとき 1 行目は太字で描く（box_svg）
+    w = max(text_w(label, FS, bold=True), text_w(sub, FS_SMALL)) + 2 * PAD_X
     return max(w, BOX_MIN_W), text_h(label, FS) + text_h(sub, FS_SMALL) + 2 * PAD_Y
 
 
@@ -471,7 +478,7 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
         for f in inner:
             ix0, ix1 = extent(f)
             x0, x1 = min(x0, ix0 - FRAME_INSET), max(x1, ix1 + FRAME_INSET)
-        tab_w = text_w(frame["tab"], FS_SMALL) + 16
+        tab_w = text_w(frame["tab"], FS_SMALL, bold=True) + 16
         first = frame["branches"][0][0]
         need = tab_w + (8 + text_w(guard(frame, first), FS_LABEL) + 12 if first else 0)
         for blabel, _ in frame["branches"][1:]:
@@ -882,7 +889,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
         x1 = max(rect[m][2] for m in members) + 16
         y0 = min(rect[m][1] for m in members) - 16 - (24 if label else 0)
         y1 = max(rect[m][3] for m in members) + 16
-        x1 = max(x1, x0 + text_w(label, FS_SMALL) + 20)
+        x1 = max(x1, x0 + text_w(label, FS_SMALL, bold=True) + 20)
         st = STATUSES[status]
         svg = (f'<g class="group" data-status="{status}"><rect x="{fmt(x0)}" y="{fmt(y0)}" width="{fmt(x1 - x0)}" '
                f'height="{fmt(y1 - y0)}" rx="8" fill="none" stroke="{st["stroke"]}" stroke-width="1.5" '
@@ -890,7 +897,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
         c.add("under", svg + "</g>", (x0, y0, x1, y1))
         if label:
             # 見出しは白地を付けて前面に置く（枠に入ってくる辺の線が見出しの文字を貫かないように）
-            hx1 = x0 + 14 + text_w(label, FS_SMALL)
+            hx1 = x0 + 14 + text_w(label, FS_SMALL, bold=True)
             c.add("over", f'<rect class="group-heading" x="{fmt(x0 + 6)}" y="{fmt(y0 + 4)}" '
                           f'width="{fmt(hx1 - x0 - 6)}" height="20" fill="#ffffff"/>'
                           + text_svg(x0 + 10, y0 + 14, label, FS_SMALL, "start", bold=True))
@@ -1141,9 +1148,13 @@ def render(spec: object) -> tuple[str, int, list[str]]:
     title = spec.get("title", "")
     if not isinstance(title, str):
         raise SpecError("title は文字列で書く")
+    # 空白だけの title は無いものとして扱う（描くと中身の無い行が出て、sequence の warn= もすり抜ける）
+    title = title.strip()
     labels = spec.get("legend_labels", {})
-    if not isinstance(labels, dict) or not all(k in STATUSES or k in LEGEND_EXTRA for k in labels):
-        raise SpecError(f"legend_labels のキーは {' / '.join([*STATUSES, *LEGEND_EXTRA])}")
+    # reply / error の項目を描くのは sequence の凡例だけ。flow / state で通すと、そのラベルは黙って捨てられる
+    keys = [*STATUSES, *LEGEND_EXTRA] if kind == "sequence" else list(STATUSES)
+    if not isinstance(labels, dict) or not all(k in keys for k in labels):
+        raise SpecError(f"{kind} の legend_labels のキーは {' / '.join(keys)}")
     if not all(isinstance(v, str) and v for v in labels.values()):
         raise SpecError("legend_labels の値は空でない文字列で書く（凡例を消すなら legend: false）")
     show_legend = spec.get("legend", True)
@@ -1156,7 +1167,7 @@ def render(spec: object) -> tuple[str, int, list[str]]:
         (legend_sequence if kind == "sequence" else legend)(c, used, labels)
     if title:
         c.add("over", f'<g class="title">{text_svg(c.x0, c.y0 - 22, title, 16, "start", bold=True)}</g>',
-              (c.x0, c.y0 - 22 - 12, c.x0 + text_w(title, 16), c.y0))
+              (c.x0, c.y0 - 22 - 12, c.x0 + text_w(title, 16, bold=True), c.y0))
 
     width = math.ceil(c.x1 - c.x0 + 2 * MARGIN)
     height = math.ceil(c.y1 - c.y0 + 2 * MARGIN)
@@ -1174,6 +1185,9 @@ def render(spec: object) -> tuple[str, int, list[str]]:
     warnings = list(dict.fromkeys(c.warnings))
     if width > MAX_WIDTH:
         warnings.insert(0, f"幅が {width}px で {MAX_WIDTH} を超えた（主題を分けるか、ラベルを短くする）")
+    # 参加者を横に並べた図は、箱を見ても何の流れかが分からない（diagram-guide の title の行）
+    if kind == "sequence" and not title:
+        warnings.append("sequence に title が無い（何の流れかを title に書く）")
     # sequence は参加者を横・呼び出しを縦に並べる形が決まっていて、比率を並べ方で直せないので見ない
     if kind != "sequence":
         if height > max(width, TALL_MIN):
