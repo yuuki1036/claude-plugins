@@ -6,7 +6,7 @@
 
 決定的に拾える観点（表記・文法・二重否定・助詞連続・確実な冗長構文「〜を行う→する」・文長/読点しきい値）は linter に委譲する。誤検知が少なく再現性が高い領域は機械判定が LLM 判定より ROI が高い。
 
-linter が未導入の環境では LLM 判定にフォールバックする（同じ観点を LLM が判定する。決定性・再現性は劣るが検出は試みる）。導入済みなら linter の決定的判定を優先し、LLM はそれに乗らない指摘（名詞化の良性/悪性・衒学語の言い換え・density 判断）に集中する。
+linter が未導入の環境では LLM 判定にフォールバックする（同じ観点を LLM が判定する。決定性・再現性は劣るが検出は試みる）。textlint 本体はあるがルールパッケージを解決できない環境では、フォールバックせずに推敲を止める（「ルール解決失敗の検出」）。導入済みなら linter の決定的判定を優先し、LLM はそれに乗らない指摘（名詞化の良性/悪性・衒学語の言い換え・density 判断）に集中する。
 
 ## textlint（日本語）
 
@@ -16,7 +16,7 @@ linter が未導入の環境では LLM 判定にフォールバックする（�
 command -v textlint >/dev/null 2>&1
 ```
 
-未導入なら、silent に skip せず後述の「未導入時の確認フロー」に従う（fail はさせない）。
+未導入なら、silent に skip せず後述の「未導入時の確認フロー」に従う（fail はさせない。ルール解決の失敗は扱いが違い、止める。後述の「ルール解決失敗の検出」）。
 
 ### 未導入時の確認フロー
 
@@ -47,7 +47,7 @@ printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
 
 ### ルール解決失敗の検出（導入済みだがルールパッケージ欠落）
 
-`command -v textlint` は通るが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` / `preset-ai-words-ja` 等）が global install されていないと、textlint はルール解決に失敗し JSON を返さない。**失敗形は複数ある**: 旧来はルール解決エラーを stderr に出すが、**textlint v15 は欠落時に全ルールを黙って drop し、stdout に `== No rules found, textlint hasn't done anything ==`（非 JSON）を出して stderr は空**になる（1 ルールでも解決不能だと全ルールが drop されるため、preset 1 つの欠落で全決定的チェックが無効化される）。黙ってフォールバックすると決定的チェックが落ちたことに気づけないので、検出して一度だけ警告する（「未導入時の確認フロー」と同じ思想で、textlint 本体はあるがルールが欠けるケースをカバーする）。
+`command -v textlint` は通るが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` / `preset-ai-words-ja` 等）が global install されていないと、textlint はルール解決に失敗し JSON を返さない。**失敗形は複数ある**: 旧来はルール解決エラーを stderr に出すが、**textlint v15 は欠落時に全ルールを黙って drop し、stdout に `== No rules found, textlint hasn't done anything ==`（非 JSON）を出して stderr は空**になる（1 ルールでも解決不能だと全ルールが drop されるため、preset 1 つの欠落で全決定的チェックが無効化される）。
 
 判定は **stdout が valid JSON かどうかに一本化**する（exit code は lint 指摘ありでも非 0 になるため単独では使えず、stderr 文字列マッチは v15 の `No rules found` 失敗形〔stderr 空〕を取りこぼすため使わない）。`--format json` 成功時は必ず JSON（指摘ゼロでも `[]` 相当）を返すので、**JSON でなければ＝ルール解決失敗**と決定的に判定できる。
 
@@ -60,25 +60,45 @@ if printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' >/dev
   :  # 正常: $out を「出力の読み方」に従ってマップする
 else
   # stdout が valid JSON でない＝ルール解決失敗等で決定的チェックが効いていない。
-  # stderr 文字列に依存せず「JSON でない＝失敗」で一括検出する（v15 はルール欠落時 stdout に
-  # "== No rules found, textlint hasn't done anything ==" を出し stderr が空になるため、
-  # 旧来の stderr マッチ方式だと素通りしていた）。
-  # 下記の警告を一度だけ出して LLM フォールバック（fail させない）。
-  # $err / stdout の "No rules found" は原因切り分けの手掛かりに使ってよい（判定の gate にはしない）。
+  # 下の「失敗したときの止め方」に従う。$err / stdout の "No rules found" は原因切り分けの手掛かりに使ってよい（判定の gate にはしない）
   :
 fi
 rm -f "$err"
 ```
 
-未解決時の警告（一度だけ出し、その後は LLM フォールバックで続行する。fail させない）:
+#### 失敗したときの止め方
 
-> textlint は導入済みですが、config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が未解決です。決定的チェックの一部が効いていません。`npm i -g @textlint-ja/textlint-rule-preset-ai-writing textlint-rule-preset-ai-words-ja` で導入してください（mise 環境は install 後に `mise reshim`）。今回は LLM 判定で続行します。
+**推敲を続けずに止める**（2026-11-28 決定 / GitHub issue #559）。以前は警告を 1 度出して LLM 判定だけで続けていたが、警告は推敲結果の前に 1 行出るだけで見落としやすく、決定的チェックが効いていない推敲結果がそのまま採否に回っていた。未導入時の確認（#72）とルール解決失敗の検出（#73）は「fail させない」前提で入れたもので、ルール解決の失敗についてはこの前提を改める（textlint 本体が無い回は上の「未導入時の確認フロー」のまま変えない）。
 
-警告を出さず silent フォールバックする退路（「未導入時の確認フロー」と共通）:
+1. 未解決のルールを調べる:
 
-- embed モード（`--embed`）
-- 環境変数 `WRITING_POLISH_SKIP_LINTER_PROMPT` が設定済み
-- 同一セッションで既にこの警告を出した（セッション内は再警告しない）
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/textlint-unresolved.sh"
+   ```
+
+   出力の `status=` で分ける。`unresolved` → `missing=` の行が未解決のパッケージ名（空白区切り）/ `config-error` → ルールは個別には解決できるのに config 全体で JSON が返らない（同梱 config の問題で、導入案内は出せない）/ `unavailable` で `reason=textlint-not-runnable` → textlint 本体が起動しない（`detail=` が `textlint --version` の出力の 1 行目。mise の shim が node の版を決められない等で、ルールを入れても直らない）/ `ok` とそれ以外の `unavailable` → 未解決のルールを特定できなかった（textlint を 2 回走らせた間に直った等）。どれでも推敲は止める
+
+2. 止めるときの文面（通常モード）。推敲の候補・差分・採否の確認は出さない:
+
+   > textlint は導入済みですが、同梱 textlintrc が参照するルールパッケージが未解決のため、決定的チェックが効きません。推敲を止めました。
+   > 未解決: `<missing= の値>`
+   > 導入: `npm i -g <missing= の値>`（mise 環境は続けて `mise reshim`）
+   > LLM 判定だけで続けるときは、環境変数 `WRITING_POLISH_ALLOW_LLM_ONLY=1` を設定して呼び直してください。
+
+   `config-error` は「未解決」「導入」の行の代わりに「同梱 textlintrc（`${CLAUDE_PLUGIN_ROOT}/skills/writing-polish/references/textlintrc.json`）が JSON を返しません。config を確認してください」と書く。`textlint-not-runnable` は「textlint は PATH にありますが起動しません（`<detail= の値>`）。mise / nvm 環境は node の版の設定と shim（`mise reshim`）を確認してください」と書く（ルールの導入コマンドは示さない）。`ok` とそれ以外の `unavailable` は「未解決のルールを特定できませんでした（`status=` の値）」と書き、導入コマンドは textlint の「導入方法」のものを示す
+
+3. **embed モード**: 推敲結果を返さず、上の文面を失敗の形で返す（返す形と呼び出し元での扱いは SKILL.md「embed モード」と `references/presentation-guide.md` 節 10）
+
+#### LLM 判定だけで続ける opt-out
+
+環境変数 `WRITING_POLISH_ALLOW_LLM_ONLY` が設定されていれば（値は問わない）、止めずに続ける: 通常モードは下の警告を 1 度出して LLM 判定で推敲する。embed モードは警告を出さずに LLM 判定で推敲し、いつもの形（末尾 `polish-only`）で返す。
+
+> textlint の決定的チェックが効いていません（未解決: `<missing= の値>`。導入: `npm i -g <missing= の値>`。mise 環境は続けて `mise reshim`）。`WRITING_POLISH_ALLOW_LLM_ONLY` が設定されているので、今回は LLM 判定で続行します。
+
+括弧の中は止めるときの文面と同じく `status=` で書き分ける（`config-error` は config の確認、`textlint-not-runnable` は起動しない理由と node の版・shim の確認）。
+
+- 同一セッションで既にこの警告を出したら再警告しない
+- `WRITING_POLISH_SKIP_LINTER_PROMPT` は「未導入時の確認フロー」を飛ばす opt-out で、ルール解決の失敗には効かない（設定していても止まる）
 
 ### 出力の読み方
 

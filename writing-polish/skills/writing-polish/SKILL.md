@@ -84,12 +84,13 @@ printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
 ```
 
   - 実行結果の **stdout が valid JSON なら**正常。指摘をマップする。
-  - **stdout が valid JSON でなければ**（ルール解決失敗。stderr のエラー文字列だけでなく、textlint v15 が欠落時に出す `== No rules found ==`＝stdout 非 JSON・stderr 空も含む）、textlint 本体はあるが config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が未解決で決定的チェックの一部が効いていない。**警告を一度出して** LLM フォールバックする（fail させない）。判定は **JSON 妥当性に一本化**する（stderr 文字列マッチは v15 の失敗形を取りこぼす）。判定手順・警告文・導入コマンド・退路は `references/linter-integration.md`「ルール解決失敗の検出」を参照する。
+  - **stdout が valid JSON でなければ**（ルール解決失敗。stderr のエラー文字列だけでなく、textlint v15 が欠落時に出す `== No rules found ==`＝stdout 非 JSON・stderr 空も含む）、textlint 本体はあるが config が参照するルールパッケージ（`@textlint-ja/preset-ai-writing` 等）が未解決で決定的チェックが効いていない。**推敲を続けずに止める**（2026-11-28 決定。以前は警告を 1 度出して LLM 判定で続けていた）。`bash "${CLAUDE_PLUGIN_ROOT}/scripts/textlint-unresolved.sh"` で未解決のパッケージを調べ、未解決のルールと導入コマンド（mise 環境は `mise reshim` も）を示して終える（textlint 本体が起動しないと分かった回は、ルールではなく起動の問題として示す）。候補・差分・採否の確認は出さない。**embed モードでも黙って LLM 判定に倒さない** — 推敲結果を返さず、末尾を `[embed-mode: polish-failed, linter-unresolved]` にした失敗の形で返す（下の「embed モード」）。判定は **JSON 妥当性に一本化**する（stderr 文字列マッチは v15 の失敗形を取りこぼす）。判定手順・文面・`status=` ごとの書き分けは `references/linter-integration.md`「ルール解決失敗の検出」を参照する
+  - 環境変数 `WRITING_POLISH_ALLOW_LLM_ONLY` が設定されていれば止めず、通常は警告を 1 度出して LLM 判定、embed は警告なしで LLM 判定で続ける。下の `WRITING_POLISH_SKIP_LINTER_PROMPT` は未導入時の確認の opt-out で、ルール解決の失敗には効かない
 
 - **未導入なら**、silent に skip せず一度だけユーザーへ確認する（通知なしに決定的レイヤーが落ちたまま推敲が走るのを防ぐ）。`AskUserQuestion` で「導入する」／「LLM 判定のみで続行」を提示し、導入コマンドと mise/nvm 環境向けの PATH/shim 注意を併記する。
   - 「導入する」→ 導入コマンドと注意を案内する。今回の推敲は LLM フォールバックで続行し（install 完了はブロックして待たない）、次回実行から決定的チェックが効く。
   - 「LLM 判定のみで続行」→ skip して LLM 判定のみで続行する（fail させない）。
-- 以下のいずれかでは確認を出さず即 skip する（退路確保）:
+- 以下のいずれかでは確認を出さず即 skip する（退路確保。未導入の回の話で、ルール解決の失敗はこれらに当たっても止める。コードコメント種別だけは textlint を走らせないので止まらない）:
   - **コードコメント種別**: textlint は散文向けで、コメント断片には誤検知が多い。linter チェックは skip し、`code-comment-guide.md` による LLM 判定のみで進む。
   - **embed モード（`--embed`）**: 終端 prompt を出さない原則を優先し、silent に LLM フォールバックする（採否は呼び出し元が集約するため）。
   - 環境変数 `WRITING_POLISH_SKIP_LINTER_PROMPT` が設定されている（「毎回聞かれるのは煩わしい」向けの恒久 opt-out）。
@@ -151,8 +152,9 @@ printf '%s' "$TARGET_TEXT" | textlint --stdin --stdin-filename target.md \
 ```
 
 - 変更が 0 件なら推敲済みテキストに原文をそのまま入れ、「変更点: なし」を返す（呼び出し元が空 diff を skip 判定できる）。
+- **textlint のルール解決に失敗した回**（ステップ 2.5。`WRITING_POLISH_ALLOW_LLM_ONLY` が無いとき）は推敲結果を返さない。`POLISH_RESULT_START`〜`END` を出さず、未解決のルールと導入コマンドを書いて、末尾を `[embed-mode: polish-failed, linter-unresolved]` にする（形は `references/presentation-guide.md` 節 10）。`POLISH_RESULT` を抜き出す呼び出し元は抜き出すものが無いので推敲前の本文を使い、末尾のマーカーで成否を見る呼び出し元（code-review の Markdown 推敲）は `polish-only` が無いので推敲できなかったものに数える
 - 呼び出し元の厳守ルール（コミットの prefix・PR の文体・Issue の構造）を壊す修正は**自分で破棄**し、結果に含めない。
-- **返却フォーマットを書いてもターンを終えない**（変更が 0 件の回も同じ）。同じターンのまま、呼び出し元の手順の続き（writing-polish を呼んだ次の手順。ファイルの書き込み・ユーザーへの提示・コミットなど）を実行する。Skill tool で呼ばれたスキルは subagent ではなく同じ会話の中で動くので、ここで本文だけ書いてツールを呼ばずに止まると、呼び出し元の手順ごとターンが終わる（実測: follow-up が推敲結果を出したところで止まり、Issue ファイルを書かないまま終わった）。末尾のマーカーは呼び出し元が戻りを確かめるためのもので、完了の合図ではない
+- **返却フォーマットを書いてもターンを終えない**（変更が 0 件の回と、失敗の形で返した回も同じ）。同じターンのまま、呼び出し元の手順の続き（writing-polish を呼んだ次の手順。ファイルの書き込み・ユーザーへの提示・コミットなど）を実行する。Skill tool で呼ばれたスキルは subagent ではなく同じ会話の中で動くので、ここで本文だけ書いてツールを呼ばずに止まると、呼び出し元の手順ごとターンが終わる（実測: follow-up が推敲結果を出したところで止まり、Issue ファイルを書かないまま終わった）。末尾のマーカーは呼び出し元が戻りを確かめるためのもので、完了の合図ではない
 
 ## effort による深さの調整
 

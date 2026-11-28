@@ -138,7 +138,7 @@ diff 列挙の前に必ず 1 行で全体像を出す。指摘が多いとき、
 `--embed`（他プラグインからの soft 委譲）では:
 
 - **節 7 の終端 `AskUserQuestion` は出さない**（採否は呼び出し元が集約）。
-- **推敲結果を書いてもターンを終えない**（変更が 0 件の回も同じ）。同じターンのまま呼び出し元の手順の続きを実行する（SKILL.md「embed モード」）。
+- **推敲結果を書いてもターンを終えない**（変更が 0 件の回と、下の失敗の形で返した回も同じ）。同じターンのまま呼び出し元の手順の続きを実行する（SKILL.md「embed モード」）。
 - サマリ行（節 2）・確信度マーカー（節 3）・要確認（節 4）・保全（節 6）は「変更点」セクションに含めてよい。これらは prompt ではなく**記法**なので embed 制約と両立する。呼び出し元はマーカーを見て採否を集約できる。
 
 ```
@@ -155,6 +155,17 @@ diff 列挙の前に必ず 1 行で全体像を出す。指摘が多いとき、
 - 「冪等性」: ドメイン用語。読者が開発者なので温存
 
 [embed-mode: polish-only, no-prompt]
+```
+
+textlint のルール解決に失敗した回（`SKILL.md` ステップ 2.5。`WRITING_POLISH_ALLOW_LLM_ONLY` が無いとき）は、推敲結果を返さずに次の形で返す。`POLISH_RESULT_START`〜`END` は出さない。`POLISH_RESULT` を抜き出す呼び出し元は抜き出すものが無いので推敲前の本文を使い、末尾のマーカーで成否を見る呼び出し元（code-review の Markdown 推敲）は推敲できなかったものに数える。1 行目からの文面は `references/linter-integration.md`「失敗したときの止め方」の手順 2 のもの（下は未解決の回の例）:
+
+```
+textlint は導入済みですが、同梱 textlintrc が参照するルールパッケージが未解決のため、決定的チェックが効きません。推敲を止めました。
+未解決: textlint-rule-preset-ai-words-ja
+導入: npm i -g textlint-rule-preset-ai-words-ja（mise 環境は続けて mise reshim）
+LLM 判定だけで続けるときは、環境変数 WRITING_POLISH_ALLOW_LLM_ONLY=1 を設定して呼び直してください。
+
+[embed-mode: polish-failed, linter-unresolved]
 ```
 
 ## effort 連動

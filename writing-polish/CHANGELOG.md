@@ -5,6 +5,39 @@
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に準拠し、
 [Semantic Versioning](https://semver.org/lang/ja/) に従う。
 
+## [0.11.0] - 2026-11-28
+
+### Changed
+
+- **textlint のルールパッケージを解決できないときは、LLM 判定で続けずに推敲を止める**（2026-11-28 決定 / GitHub issue #559）。
+  これまでは警告を 1 度出して LLM 判定だけで推敲を続けていた。警告は推敲結果の前に 1 行出るだけで見落としやすく、
+  決定的チェックが効いていない推敲結果がそのまま採否に回っていた。#72（未導入時の確認）と #73（v15 の
+  `No rules found` の検出）は「fail させない」前提で入れたもので、ルール解決の失敗についてはこの前提を改めた
+  （textlint 本体が無い回の確認フローは変えていない）。止めるときは、未解決のルールパッケージと導入コマンド
+  （mise 環境は `mise reshim` も）を示す。textlint が PATH にあっても起動しない回（`textlint --version` が失敗する）も
+  同じく止め、ルールではなく起動の問題として示す
+- **embed モードでも黙って LLM 判定に倒さない**。推敲結果（`POLISH_RESULT_START`〜`END`）を返さず、未解決のルールと
+  導入コマンドを書いて、末尾を `[embed-mode: polish-failed, linter-unresolved]` にする。`POLISH_RESULT` を抜き出す
+  呼び出し元は抜き出すものが無いので推敲前の本文を使い、末尾のマーカーで成否を見る呼び出し元（code-review の Markdown 推敲）は
+  推敲できなかったものに数える。呼び出し元の手順は変えていない
+
+### Fixed
+
+- **textlint 本体が起動しない環境で、SessionStart の依存チェックが「ルールパッケージが全部未解決」と出していた**。
+  本体が起動しないとルールごとの確かめも全部失敗するので、全ルールを未解決として数え、入れても直らない
+  `npm i -g` を案内していた（実測: m1 で mise の shim が node の版を決められず `textlint --version` が失敗する状態）。
+  ルールを確かめる前に本体が起動するかを見て、起動しなければその旨と出力の 1 行目を出す。python3 が PATH にあっても
+  起動しない回も、`config-error`（同梱 textlintrc の問題）に化けずに判定できないものとして扱う
+
+### Added
+
+- **環境変数 `WRITING_POLISH_ALLOW_LLM_ONLY`**: 設定すると、ルール解決に失敗しても止めずに続ける
+  （通常は警告を 1 度出して LLM 判定、embed は警告なしで LLM 判定）。未導入時の確認を飛ばす
+  `WRITING_POLISH_SKIP_LINTER_PROMPT` とは別物で、そちらはルール解決の失敗には効かない（設定していても止まる。
+  以前はこの変数でルール解決の失敗の警告も消えていたので、警告を消していた環境では止まるようになる）
+- **`scripts/textlint-unresolved.sh`**: 同梱 textlintrc のルールパッケージのうち解決できないものを `status=` / `missing=`
+  の行で出す。SessionStart の依存チェック（`check-deps.sh`）にあった切り分けを移し、skill の手順と hook の両方から呼ぶ
+
 ## [0.10.2] - 2026-10-15
 
 ### Fixed
