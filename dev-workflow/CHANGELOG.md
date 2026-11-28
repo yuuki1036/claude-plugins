@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.46.2] - 2026-11-28
+
+### Changed
+
+- `scripts/chrome-profile-lock.sh` の挙動は変えていない。祖先を辿るループの条件行の印を `# mutation-ok(3):` にして、外す変異の数を書いた（GitHub issue #569）。この行は 3 個の変異を外し、3 個とも等価と確かめてある。変異テストは、数を書かずに 2 個以上外す印と、書いた数が外した数と違う印に WARN を出すようになった
+
 ## [1.46.1] - 2026-11-28
 
 ### Changed
