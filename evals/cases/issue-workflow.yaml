@@ -98,3 +98,29 @@ cases:
     prompt: Linear のステータスをまとめて反映して、ローカルのプロジェクト doc を全部更新して
     expected_skill: issue-workflow:linear-maintain
     k: 3
+  # #394: doc-sync は同名の command を持つので、選択に使われるのは commands/doc-sync.md の description。
+  # 下の 2 件はそのトリガー行の逐語、残りの 3 件は取り違えやすい隣のスキルとの境界を測る
+  - id: doc-sync-ja
+    prompt: 仕様書とコードコメントの整合性を確認して
+    expected_skill: issue-workflow:doc-sync
+    k: 3
+    tags: [smoke]
+  - id: doc-sync-reflected
+    prompt: さっき決めた挙動が仕様書に反映されているか確かめて
+    expected_skill: issue-workflow:doc-sync
+    k: 3
+  # issue-maintain-ja と同じ「セッション終了前に」で始めても、文書との食い違いを見る依頼なら issue-maintain に流れないか
+  - id: doc-sync-vs-maintain
+    prompt: セッション終了前に、今回の変更が仕様書や規約の文書と食い違っていないか確かめて
+    expected_skill: issue-workflow:doc-sync
+    k: 3
+  # コードコメントが主語でも、文書との食い違いを見る依頼なら comment-polish に流れないか
+  - id: doc-sync-vs-comment
+    prompt: コードコメントが ADR や仕様書と食い違っていないか確認して、文書の側を直して
+    expected_skill: issue-workflow:doc-sync
+    k: 3
+  # 「この PR の変更」を主語にしても、文書への反映を見る依頼なら review-guide に流れないか
+  - id: doc-sync-vs-review-guide
+    prompt: この PR の変更が仕様書や ADR に反映されているか見て、文書の側を直して
+    expected_skill: issue-workflow:doc-sync
+    k: 3
