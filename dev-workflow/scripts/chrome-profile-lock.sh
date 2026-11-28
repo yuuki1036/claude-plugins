@@ -143,7 +143,7 @@ judge_session() {
     claude_ok=1
   fi
   p=$(proc_ppid "$HOLDER_PID")
-  while [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" -gt 1 ] && [ "$n" -lt 64 ]; do  # mutation-ok: 打ち切り（pid 1 以下・64 段）をどれだけ緩めても、pid 0 / 1 は MCP にも有効な CLAUDE_PID にもならず結果は同じ（64 段の祖先を作るテストは置かない）
+  while [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" -gt 1 ] && [ "$n" -lt 64 ]; do  # mutation-ok(3): 打ち切り（pid 1 以下・64 段）をどれだけ緩めても、pid 0 / 1 は MCP にも有効な CLAUDE_PID にもならず結果は同じ（64 段の祖先を作るテストは置かない）
     if [ "$claude_ok" = 1 ] && [ "$p" -eq "$claude" ]; then
       self=1
     fi
