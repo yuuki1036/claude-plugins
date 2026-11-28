@@ -2,8 +2,8 @@
 """計測の更新（`code-review/scripts/metrics-update.sh` / `lib/metrics_update.py`）のテスト. GitHub issue #480.
 
 使い捨てのストア・手元のログ・状態ファイル・git リポジトリを立て、CLI 境界越しに叩く。判定の小関数は
-純関数として見る。世代・再レビュー・delta の判定は `review-retro.sh` の本文から関数を切り出して突き合わせる
-（retro のヒアドキュメントの中にあって import できないので、metrics_update.py は同じ式を複製している）。
+純関数として見る。世代・再レビュー・delta の判定は retro と共有の `lib/payload_judge.py` にあり、
+`test_code_review_payload_judge.py` が見る。
 
 実行:
   python3 .claude-plugin/scripts/run-tests.py
@@ -29,7 +29,6 @@ import git_env  # noqa: E402
 REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / "code-review" / "scripts"
 WRAPPER = SCRIPTS / "metrics-update.sh"
-RETRO = SCRIPTS / "review-retro.sh"
 DOC = REPO / "code-review" / "references" / "orchestration-measurement.md"
 sys.path.insert(0, str(SCRIPTS / "lib"))
 
@@ -502,36 +501,6 @@ class RetroModeTest(Env):
         self.assertEqual(r.returncode, 2)
 
 
-def retro_function(name: str) -> str:
-    """`review-retro.sh` の本文から top-level の関数 1 つを切り出す（見つからなければ fail）."""
-    text = RETRO.read_text(encoding="utf-8")
-    m = re.search(r"^def %s\(.*?(?=^\S)" % re.escape(name), text, re.S | re.M)
-    if not m:
-        raise AssertionError("review-retro.sh に def %s が見つからない" % name)
-    return m.group(0)
-
-
-class RetroParityTest(unittest.TestCase):
-    """世代・再レビュー・delta の判定が retro と一致する（metrics_update.py は同じ式を複製している）."""
-
-    CASES = [
-        {}, {"models": None}, {"models": {"main": ""}}, {"models": {"main": "claude-opus-5-5"}},
-        {"models": {"main": "sonnet-5-5"}}, {"models": {"main": 3}},
-        {"invocation": {"rereview": True}}, {"invocation": {"rereview": "true"}}, {"invocation": []},
-        {"review_scope": {"mode": "delta"}}, {"review_scope": {"mode": "x"}}, {"review_scope": "delta"},
-    ]
-
-    def test_parity(self):
-        ns: dict = {}
-        for name in ("gen_of", "is_rereview", "scope_mode_of"):
-            exec(retro_function(name), ns)
-        for p in self.CASES:
-            with self.subTest(p=p):
-                self.assertEqual(ns["gen_of"](p), mu.gen_of(p))
-                self.assertEqual(ns["is_rereview"](p), mu.is_rereview(p))
-                self.assertEqual(ns["scope_mode_of"](p), mu.scope_mode_of(p))
-
-
 class WrapperArgsTest(Env):
     """metrics-update.sh の引数の境界（GitHub issue #522）。`--state` を後ろに足さずに叩く（末尾の引数を見るため）."""
 
@@ -564,12 +533,6 @@ class WrapperArgsTest(Env):
 
 
 class SmallFunctionsTest(unittest.TestCase):
-    def test_num_takes_only_real_numbers(self):
-        self.assertEqual((mu.num(3), mu.num(2.5), mu.num(0)), (3, 2.5, 0))
-        for v in (True, False, "3", None, [1]):
-            with self.subTest(v=v):
-                self.assertIsNone(mu.num(v))
-
     def test_median_of_odd_and_even_lengths(self):
         self.assertEqual(mu.median([3, 1, 2]), 2)
         self.assertEqual(mu.median([4, 1, 3, 2]), 2.5)
