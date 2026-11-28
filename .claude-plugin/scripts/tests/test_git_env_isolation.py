@@ -90,6 +90,8 @@ REPRESENTATIVES = {
     "test_issue_workflow_branch_setup.py":
         "test_issue_workflow_branch_setup.WorktreeCreateTest."
         "test_branches_from_the_default_branch_not_from_the_current_one",
+    "test_harness_keeper_scripts.py":
+        "test_harness_keeper_scripts.InitStateDirTest.test_a_tracked_state_file_is_reported",
 }
 
 #: 直接 git を叩くファイルの検出（この 2 ファイル自身は対象外）
