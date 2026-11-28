@@ -17,7 +17,7 @@ allowed-tools:
 
 - 引数がテキストならそれを、ファイルパスなら読み込んだ内容を、省略なら直近の自分の生成テキストを対象にする。
 - `--embed` 指定時は採否確認を出さず推敲結果のみ返す（他プラグインからの呼び出し用）。**推敲結果を書いてもターンを終えない** — embed は別のスキルの手順の途中から呼ばれており、結果は呼び出し元へ渡す途中経過であって最終回答ではない。返却フォーマットを書いたら、同じターンのまま呼び出し元の手順の続き（writing-polish を呼んだ次の手順）を実行する。
-- `--tone <種別>` で文書種別（commit / pr / issue / rfc / review / code-comment 等）を明示できる。`code-comment` はコードコメント校正（別正本 `code-comment-guide.md`。what 削除・subtype 別保全）に分岐する。
+- `--tone <種別>` で文書種別（commit / pr / issue / rfc / review / report / code-comment 等）を明示できる。`code-comment` はコードコメント校正（別正本 `code-comment-guide.md`。what 削除・subtype 別保全）に分岐する。`report` は経営層向けの計画書・報告書（内容からは自動で選ばない）。
 - `--aggressive` で任意の言い換え提案まで広く出す。
 
 中核原則（最小差分・過剰修正の抑制・原文の声の保持・構造の不変更）を必ず守る。

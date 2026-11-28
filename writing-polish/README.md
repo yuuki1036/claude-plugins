@@ -1,6 +1,6 @@
 # writing-polish
 
-文章を語句レベルで推敲・添削する Claude Code プラグイン。RFC / Issue / PR 本文 / コミットメッセージ / レビューコメントを対象に、冗長・曖昧・トーンのぶれを直す。日英両対応。
+文章を語句レベルで推敲・添削する Claude Code プラグイン。RFC / Issue / PR 本文 / コミットメッセージ / レビューコメント / 経営層向けの計画書・報告書を対象に、冗長・曖昧・トーンのぶれを直す。日英両対応。
 
 ## できること
 
@@ -27,7 +27,7 @@
 
 オプション:
 
-- `--tone <種別>`: 文書種別を明示（commit / pr / issue / rfc / review / code-comment）。`code-comment` は別正本 `code-comment-guide.md` に分岐し、コードから自明な what コメントの削除・docstring/TODO 保全・code-review との責務分離で処理する（削除提案は不可逆度が高いため常に任意/要確認）
+- `--tone <種別>`: 文書種別を明示（commit / pr / issue / rfc / review / report / code-comment）。`report` は経営層向けの計画書・報告書で、日付の書式・読点の数・（）書き・書き言葉への寄せ・どの画面の話か分からない文の指摘を effort に関わらず当てる（内容からは自動で選ばない）。`code-comment` は別正本 `code-comment-guide.md` に分岐し、コードから自明な what コメントの削除・docstring/TODO 保全・code-review との責務分離で処理する（削除提案は不可逆度が高いため常に任意/要確認）
 - `--aggressive`: 任意の言い換え提案まで広く出す
 - `--embed`: 採否確認を出さず推敲結果のみ返す（他プラグインからの呼び出し用）。textlint のルール解決に失敗した回は推敲結果を返さず、末尾を `[embed-mode: polish-failed, linter-unresolved]` にした失敗の形で返す
 
