@@ -7,7 +7,10 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
   （exit 1）。型の違う値・UTF-8 でない定義・想定外の例外も failed= に落とす。幅が 1200 を超えた・線が箱を
   避けられない・ラベルや箱が重なった・範囲の枠に範囲外の箱が入った・複雑さの予算（箱 9・線 12・参加者 5・
   枠 1（分岐の無い枠だけなら 2）・alt の分岐 2・遷移は状態の 2 倍まで）を超えたときは warn= を足す。上限ちょうどでは黙る。
-  flow / state は縦長・横長・線どうしの交差・線が枠の見出しの下を通るときも warn= を足す（#452）
+  flow / state は縦長・横長・線どうしの交差・線が枠の見出しの下を通るときも warn= を足す（#452）。
+  sequence は title が無いときも warn= を足し、flow / state の legend_labels に reply / error を書くと failed=（#567）
+- 太字で描く文字（2 行目のある参加者の 1 行目・区間の枠の札・範囲の枠の見出し・図の title）は、英字なら実測の
+  太字の比で広げた幅に収まり、和文は太字でない幅のまま（#567）
 - 手で描いたときに踏んだ 3 点（全角と曖昧幅の見出しが箱に収まる / 矢印の先が markerUnits="userSpaceOnUse" /
   ライフラインの見出しの箱が隣と重ならない）。1 点目はスクリプトの見積もりを使わず、1 文字 14px を下限に置く
 - sequence: 呼び出しのラベルが両端のライフラインの間に収まる・複数行のラベルが矢印を隠さない・入れ子の枠が
@@ -169,6 +172,8 @@ SEQ = {
         ]},
     ],
 }
+# 出力の行を丸ごと比べるテストに使う。title の無い sequence は warn= が付く（#567）
+SEQ_TITLED = {**SEQ, "title": "削除の流れ"}
 
 
 class OutputContractTest(unittest.TestCase):
@@ -178,14 +183,14 @@ class OutputContractTest(unittest.TestCase):
         self.assertIn("usage", proc.stderr)
 
     def test_writes_svg_next_to_definition(self):
-        rc, out, _, tmp = run(SEQ)
+        rc, out, _, tmp = run(SEQ_TITLED)
         self.assertEqual(rc, 0)
         self.assertEqual(out, [f"svg={tmp / 'd0.svg'}"])
         self.assertTrue((tmp / "d0.svg").read_text(encoding="utf-8").startswith("<svg "))
         self.assertEqual(sorted(p.name for p in tmp.iterdir()), ["d0.json", "d0.svg"])
 
     def test_failures_are_reported_per_file_and_others_still_render(self):
-        rc, out, _, tmp = run("{broken", SEQ, None, SEQ, names=["a.json", "b.json", "c.json", "d.txt"])
+        rc, out, _, tmp = run("{broken", SEQ_TITLED, None, SEQ_TITLED, names=["a.json", "b.json", "c.json", "d.txt"])
         self.assertEqual(rc, 1)
         self.assertTrue(out[0].startswith(f"failed={tmp / 'a.json'}\tJSON として読めない（1 行"))
         self.assertEqual(out[1], f"svg={tmp / 'b.svg'}")
@@ -206,7 +211,7 @@ class OutputContractTest(unittest.TestCase):
             ("{\"type\": \"flow\", \"nodes\": [{\"id\": \"注文\"}]}".encode("shift_jis"), "UTF-8 として読めない"),
             (DIRECTORY, "想定外のエラー（IsADirectoryError"),
         ]
-        rc, out, _, tmp = run(*[c for c, _ in cases], SEQ)
+        rc, out, _, tmp = run(*[c for c, _ in cases], SEQ_TITLED)
         self.assertEqual(rc, 1)
         self.assertEqual(len(out), len(cases) + 1, out)
         for i, (_, fragment) in enumerate(cases):
@@ -692,10 +697,12 @@ def arrow_ys(root: ET.Element) -> list[float]:
 
 
 # 前の版（#533 より前）が出したバイト列の sha256。新しいキーを使わない図の描画が変わらないことを押さえる。
-# 凡例の無い sequence と、凡例が前の形のままの flow / state を選んだ（sequence の凡例は #533 で形が変わる）
+# 凡例の無い sequence と、凡例が前の形のままの flow / state を選んだ（sequence の凡例は #533 で形が変わる）。
+# sequence の 2 つは #567 で打ち直した。太字の見積もりで alt / opt / loop の札が広がり、変わったのは札の幅と、
+# その右の条件の位置だけ（前後の SVG を比べて確かめた）
 UNCHANGED = {
-    "b207327ba6141ad89c878b6cef5d3480626790f1d941310e95218816a020b6ab": {**SEQ, "legend": False, "title": "削除の流れ"},
-    "597feb475e97d0d0aa884d0478c38cc321599b707d3a3bf24a9431160abb60fd": {
+    "0b2d7c6abdaa4dfe95ac40b9b3ac48c2a4806a41aae2a84d58661f789580416e": {**SEQ, "legend": False, "title": "削除の流れ"},
+    "8bacff933e419e7a12f136c80f2ee46a3ec7b1666769cfafd810fdc525bc7a45": {
         "type": "sequence", "participants": [{"id": "a", "label": "画面"}, {"id": "b", "label": "API"}],
         "steps": [{"from": "a", "to": "b", "label": "取得"}, {"frame": "opt", "label": "キャッシュが無い", "steps": [
             {"from": "b", "to": "b", "label": "組み立てる"},
@@ -907,6 +914,100 @@ CHAIN = {"type": "state", "initial": "a",
          "states": [{"id": "a", "label": "閉じている"}, {"id": "b", "label": "確認中"}, {"id": "c", "label": "送信中"}],
          "transitions": [{"from": "a", "to": "b", "label": "削除を押す"}, {"from": "b", "to": "a", "label": "キャンセル"},
                          {"from": "b", "to": "c", "label": "削除する"}, {"from": "c", "to": "a", "label": "閉じる"}]}
+
+
+# 太字の幅の下限に使う。Hiragino Sans を Chrome で測った、太字と細字の幅の比の最大（英字。#567）
+BOLD_MEASURED = 1.136
+
+
+def tab_width(root: ET.Element, nth: int = 0) -> float:
+    tabs = [p for p in root.iter(f"{NS}path") if p.get("class") == "frame-tab"]
+    (x0, _), (x1, _) = path_points(tabs[nth].get("d"))[:2]
+    return x1 - x0
+
+
+class TitleAndLegendKeyTest(unittest.TestCase):
+    """sequence の title の warn= と、型ごとに許す legend_labels のキー（#567）."""
+
+    TITLE_WARN = "sequence に title が無い（何の流れかを title に書く）"
+
+    def test_sequence_without_title_warns(self):
+        for spec in (SEQ, {**SEQ, "title": ""}, {**SEQ, "title": " \u3000"}):
+            with self.subTest(title=spec.get("title")):
+                _, out = render(spec)
+                self.assertEqual([w.split("\t", 1)[1] for w in out[1:] if "title" in w], [self.TITLE_WARN])
+
+    def test_blank_title_is_not_drawn(self):
+        root, _ = render({**SEQ, "title": " "})
+        self.assertEqual(groups(root, "title"), [])
+
+    def test_titled_sequence_and_untitled_flow_state_stay_quiet(self):
+        for spec in (SEQ_TITLED,
+                     {"type": "flow", "nodes": [{"id": "a"}, {"id": "b"}], "edges": [{"from": "a", "to": "b"}]},
+                     {"type": "state", "states": [{"id": "a"}, {"id": "b"}],
+                      "transitions": [{"from": "a", "to": "b"}]}):
+            with self.subTest(type=spec["type"]):
+                _, out = render(spec)
+                self.assertEqual(out[1:], [])
+
+    def test_reply_and_error_labels_fail_on_flow_and_state(self):
+        flow = {"type": "flow", "nodes": [{"id": "a"}]}
+        state = {"type": "state", "states": [{"id": "a"}]}
+        statuses = "added / changed / removed / existing / later"
+        cases = [({**flow, "legend_labels": {"reply": "返す"}}, f"flow の legend_labels のキーは {statuses}"),
+                 ({**state, "legend_labels": {"error": "例外"}}, f"state の legend_labels のキーは {statuses}")]
+        rc, out, _, tmp = run(*[c for c, _ in cases])
+        self.assertEqual(rc, 1)
+        for i, (_, message) in enumerate(cases):
+            self.assertEqual(out[i], f"failed={tmp / f'd{i}.json'}\t{message}")
+            self.assertFalse((tmp / f"d{i}.svg").exists())
+
+    def test_sequence_keeps_reply_and_error_and_flow_keeps_statuses(self):
+        rc, out, _, _ = run({**SEQ_TITLED, "legend_labels": {"reply": "返す", "error": "例外", "added": "足す"}},
+                            {"type": "flow", "nodes": [{"id": "a", "status": "added"}],
+                             "legend_labels": {"added": "足す"}})
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([o.split("=", 1)[0] for o in out], ["svg", "svg"])
+
+
+class BoldWidthTest(unittest.TestCase):
+    """太字で描く文字の幅を、太字の見積もりで取る（#567）. 下限は細字の字幅 0.62em に実測の太字の比を掛けて組み、スクリプトの係数 BOLD_HALF は使わない."""
+
+    LATIN = "abcdefghijklmn"  # 英小文字 14 字
+
+    def test_participant_with_sublabel_widens_for_latin_bold(self):
+        root, _ = render({"type": "sequence", "title": "t", "participants": [
+            {"id": "a", "label": self.LATIN, "sublabel": "x"}, {"id": "b"}],
+            "steps": [{"from": "a", "to": "b"}]})
+        x0, _, x1, _ = rect_of(node(root, "a"))
+        self.assertGreaterEqual(x1 - x0, len(self.LATIN) * 0.62 * 14 * BOLD_MEASURED + 2 * 12)
+
+    def test_japanese_bold_keeps_its_width(self):
+        # 和文は太字でも幅が変わらない。全角 9 字 × 14px と左右の余白 12px ちょうど
+        root, _ = render({"type": "sequence", "title": "t", "participants": [
+            {"id": "a", "label": "削除の受け付けの係", "sublabel": "x"}, {"id": "b"}],
+            "steps": [{"from": "a", "to": "b"}]})
+        x0, _, x1, _ = rect_of(node(root, "a"))
+        self.assertAlmostEqual(x1 - x0, 9 * 14 + 2 * 12, delta=0.1)
+
+    def test_frame_tab_widens_for_latin_and_not_for_japanese(self):
+        root, _ = render({"type": "sequence", "title": "t", "participants": [{"id": "a"}, {"id": "b"}], "steps": [
+            {"frame": "section", "label": self.LATIN, "steps": [{"from": "a", "to": "b"}]},
+            {"frame": "section", "label": "入力の確認", "steps": [{"from": "b", "to": "a"}]}]})
+        # 札は文字の左右に 8px ずつ
+        self.assertGreaterEqual(tab_width(root, 0), len(self.LATIN) * 0.62 * 12 * BOLD_MEASURED + 16)
+        self.assertAlmostEqual(tab_width(root, 1), 5 * 12 + 16, delta=0.1)
+
+    def test_group_heading_widens_for_latin_bold(self):
+        root, _ = render({"type": "flow", "nodes": [{"id": "a"}], "groups": [{"label": self.LATIN, "nodes": ["a"]}]})
+        x0, _, x1, _ = rect_of(next(r for r in root.iter(f"{NS}rect") if r.get("class") == "group-heading"))
+        # 白地は文字の左 4px から右 4px まで
+        self.assertGreaterEqual(x1 - x0, len(self.LATIN) * 0.62 * 12 * BOLD_MEASURED + 8)
+
+    def test_title_widens_the_canvas_for_latin_bold(self):
+        title = "abcdefghij" * 6
+        root, _ = render({"type": "flow", "title": title, "nodes": [{"id": "a"}]})
+        self.assertGreaterEqual(int(root.get("width")), len(title) * 0.62 * 16 * BOLD_MEASURED + 2 * 24)
 
 
 class GraphLayoutTest(unittest.TestCase):
@@ -1315,7 +1416,7 @@ class LayoutShapeTest(unittest.TestCase):
         # state は direction を持たない（書くと failed=）ので、直し方に pos だけを挙げる
         self.assertEqual(shape_warns(out, "縦長"),
                          [f"高さ {root.get('height')}px が幅 {root.get('width')}px を超えた縦長の図（pos で横に並べる）"])
-        root, out = render({"type": "sequence", "participants": [{"id": "a"}, {"id": "b"}],
+        root, out = render({"type": "sequence", "title": "縦に長い流れ", "participants": [{"id": "a"}, {"id": "b"}],
                             "steps": [{"from": "a", "to": "b", "label": "x"}] * 12})
         self.assertGreater(int(root.get("height")), max(int(root.get("width")), 400))
         self.assertEqual(out[1:], [])
