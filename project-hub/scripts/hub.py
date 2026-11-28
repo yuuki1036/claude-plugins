@@ -1570,8 +1570,9 @@ def cmd_record(args) -> int:
                    - dt.datetime.strptime(str(last.get("ts")), "%Y-%m-%dT%H:%M:%SZ").replace(
                        tzinfo=dt.timezone.utc)).total_seconds()
         except ValueError:
-            age = None
-        if age is None or age > RESOLVE_TTL:  # mutation-ok: ts は秒単位で age は小数を持つので、ちょうど TTL に一致する回は作れない
+            # 読めない ts は古いものとして扱う
+            age = float("inf")
+        if age > RESOLVE_TTL:  # mutation-ok(1): ts は秒単位で age は小数を持つので、ちょうど TTL に一致する回は作れない
             raise HubError(2, f"引き継ぐ resolve の結果が古い（{RESOLVE_TTL // 60} 分を超えた）。宛先を引き直してから送る")
         body["to"], body["session"] = last.get("to"), last.get("session")
     subject, text, to, error = body.get("subject"), body.get("text"), body.get("to"), body.get("error")
@@ -3212,8 +3213,11 @@ def branch_check(cwd: Path, config: dict) -> tuple[str | None, str | None]:
         return None, None
     # untracked のファイルも数える（新しいファイルを足す編集も base のブランチの上での編集）
     dirty = uncommitted_files(str(cwd))
-    # `-` で始まる値は git のオプションとして読まれる
-    against = base if base and not base.startswith("-") else None  # mutation-ok: 空の base は against が空文字でも None でも偽で同じ。`-` で始まる base は rev-list が未知のオプションとして弾き、ahead が None になる（test_a_base_that_cannot_be_compared_warns）
+    # `-` で始まる値は git のオプションとして読まれる。この if を外しても rev-list が未知のオプションとして弾き、ahead は None になる
+    # （test_a_base_that_cannot_be_compared_warns）。空の base は against が空文字のまま残り、下の判定では None と同じく偽
+    against = base
+    if against.startswith("-"):
+        against = None
     remote = (name != base and not base.startswith("refs/heads/")) \
         or git(cwd, "rev-parse", "--verify", "--quiet", f"refs/remotes/{base}") is not None
     if against and not remote:
@@ -3572,8 +3576,10 @@ def cmd_pending_hint(args) -> int:
     except ValueError:
         return 0
     sid = payload.get("session_id") if isinstance(payload, dict) else None
-    if not isinstance(sid, str) or not sid:  # mutation-ok: None は isinstance で必ず返る。空文字・None 以外の非文字列は hub.json とも Desktop の記録とも一致せず、先へ進んでも何も出さない
-        return 0
+    if not isinstance(sid, str):
+        sid = ""
+    if not sid:
+        return 0  # mutation-ok(1): 空文字は hub.json とも Desktop の記録とも一致せず、先へ進んでも何も出さない
     lines, modes, notices = [], set(), []
     projects = hub_projects(sid)
     shim = write_shim() if projects else None
