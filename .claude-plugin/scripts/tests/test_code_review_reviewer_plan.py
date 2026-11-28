@@ -304,6 +304,23 @@ class ComputePlanTest(unittest.TestCase):
         p = plan("high", "small", focus=["migration-safety"], prior=["security"], delta=True)
         self.assertEqual(rows(p), [("security",)])
 
+    def test_out_of_vocab_only_exclude_stays_full(self):
+        """語彙外の値だけの --exclude は外す観点が無いので、引数なしと同じ全体の回（規模キャップあり / GitHub issue #535）.
+
+        --focus（#388）と逆の扱い。self-review step-1.md の絞り込みの定義と triage-guide `### 6.3` の
+        「cap_source=size なら Round 2 を 1 段」がこの値を前提にしている。
+        """
+        for effort in ("high", "xhigh"):
+            p = plan(effort, "small", exclude=["migration-safety"])
+            base = plan(effort, "small")
+            self.assertEqual((p["scope"], p["cap_source"], p["reviewer_cap"], p["explorer_cap"]),
+                             ("full", "size", 3, 0), effort)
+            self.assertEqual(rows(p), rows(base), effort)
+            self.assertEqual((p["out_of_vocab"], p["excluded"]), (["migration-safety"], []), effort)
+        # 語彙内の観点が 1 つでも残れば絞り込み（規模キャップの外）
+        p = plan("xhigh", "small", exclude=["migration-safety", "security"])
+        self.assertEqual((p["scope"], p["cap_source"], p["reviewer_cap"]), ("exclude", "scope", 10))
+
     def test_non_focus_values_alone_are_not_a_narrowing(self):
         """md-polish / design-review だけの --focus は観点の指定ではないので、引数なしと同じ全体レビュー."""
         p = plan("high", "small", focus=["md-polish", "design-review"])
