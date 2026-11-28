@@ -23,6 +23,8 @@ pr-creator Step 4.6 が PR に添付する図を、JSON の定義から SVG に�
   エラーで戻る線は赤の破線。2 行目は見出しの箱に収まる。新しいキーを使わない図は前の版と同じバイト列を出す（枠が次の生存線を越えていた図は列の間隔が広がる）
 - 凡例: 使った status（箱・線・枠）だけを出し、legend_labels で文言を差し替えられる。sequence は枠で囲み、
   部品（参加者・注記）と呼び出し（線）を段に分ける
+- --texts（#568）: .svg を書かずに、図に描く文字列を定義の中の場所つきで 1 件 1 行出す。期待する一覧はテストに
+  手で書き、同じ定義で描いた SVG の <text> の中身と data-* の属性の値が、固定の語を除いて一覧の値と一致することも見る
 - 境界ちょうどの点・矩形の判定（inside / overlap）、線分の接触と同じ直線上の 2 本（crosses）、折れ線が矩形を
   通るか（through）、縦長・横長の上限ちょうどは CLI から配置を作れないため、GeometryBoundaryTest だけ関数を直接
   読み込んで呼ぶ（上限ちょうどは定数を図の寸法に差し替えて測る）
@@ -66,7 +68,8 @@ def tearDownModule() -> None:
     shutil.rmtree(_ROOT, ignore_errors=True)
 
 
-def run(*specs: object, names: list[str] | None = None) -> tuple[int, list[str], str, Path]:
+def run(*specs: object, names: list[str] | None = None,
+        flags: tuple[str, ...] = ()) -> tuple[int, list[str], str, Path]:
     tmp = Path(tempfile.mkdtemp(dir=_ROOT))
     args = []
     for i, spec in enumerate(specs):
@@ -78,7 +81,7 @@ def run(*specs: object, names: list[str] | None = None) -> tuple[int, list[str],
         elif spec is not None:
             p.write_text(spec if isinstance(spec, str) else json.dumps(spec, ensure_ascii=False), encoding="utf-8")
         args.append(str(p))
-    proc = subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True, text=True, timeout=60)
+    proc = subprocess.run([sys.executable, str(SCRIPT), *flags, *args], capture_output=True, text=True, timeout=60)
     return proc.returncode, proc.stdout.splitlines(), proc.stderr, tmp
 
 
@@ -1531,6 +1534,147 @@ class GeometryBoundaryTest(unittest.TestCase):
             self.assertEqual([w for w in self.mod.render(chain(6))[2] if "横長" in w], [])
         with mock.patch.object(self.mod, "GITHUB_WIDTH", width - 1):
             self.assertEqual(len([w for w in self.mod.render(chain(6))[2] if "横長" in w]), 1)
+
+
+# スクリプトが定義に依らず描く語（既定の凡例名・凡例の段見出し・枠の種類の札）。スクリプトの定数を読まずに書く
+FIXED_TEXTS = {"この PR で足した", "この PR で変えた", "この PR で消した", "既存", "後続の PR", "返り値", "エラーで戻る",
+               "部品", "呼び出し", "alt", "opt", "loop"}
+# 値が定義から来ない data-* の属性（status・枠の種類・凡例の段・エラーの印・線の引き方）
+ENUM_ATTRS = {"data-status", "data-kind", "data-row", "data-error", "data-route"}
+
+TEXTS_FLOW = {
+    "type": "flow", "title": "注文の集計",
+    "legend_labels": {"added": "足した処理", "removed": "使わない凡例"},
+    "nodes": [{"id": "src", "label": "注文テーブル"}, {"id": "agg", "label": "今月に絞る\n集計", "status": "added"},
+              {"id": "out"}],
+    "edges": [{"from": "src", "to": "agg", "label": "読む"}, {"from": "agg", "to": "out"}],
+    "groups": [{"label": "レビュー範囲", "nodes": ["agg"], "status": "added"}, {"nodes": ["out"]}],
+}
+TEXTS_FLOW_EXPECTED = [
+    ("groups[0].label", "レビュー範囲"),
+    ("nodes[0].id", "src"), ("nodes[0].label", "注文テーブル"),
+    ("nodes[1].id", "agg"), ("nodes[1].label", "今月に絞る\\n集計"),
+    ("nodes[2].id", "out"),
+    ("edges[0].label", "読む"),
+    ("legend_labels.added", "足した処理"),
+    ("title", "注文の集計"),
+]
+TEXTS_STATE = {
+    "type": "state", "initial": "closed",
+    "states": [{"id": "closed", "label": "閉じている"}, {"id": "open", "label": "確認中", "status": "changed"},
+               {"id": "done", "label": "完了", "final": True}],
+    "transitions": [{"from": "closed", "to": "open", "label": "開く"}, {"from": "open", "to": "open", "label": "待つ"},
+                    {"from": "open", "to": "done", "label": "送る", "status": "added"}],
+}
+TEXTS_STATE_EXPECTED = [
+    ("states[0].id", "closed"), ("states[0].label", "閉じている"),
+    ("states[1].id", "open"), ("states[1].label", "確認中"),
+    ("states[2].id", "done"), ("states[2].label", "完了"),
+    ("transitions[1].label", "待つ"),
+    ("transitions[0].label", "開く"), ("transitions[2].label", "送る"),
+]
+TEXTS_SEQ = {
+    "type": "sequence", "title": "削除の流れ",
+    "legend_labels": {"reply": "戻り", "changed": "直した", "error": "失敗で戻る"},
+    "participants": [{"id": "ui", "label": "画面", "sublabel": "ItemPage"}, {"id": "api", "status": "changed"},
+                     {"id": "db", "label": "保存先", "sublabel": ""}],
+    "steps": [
+        {"from": "ui", "to": "api", "label": "del(id)"},
+        {"note": "権限を\n確かめる", "at": "api"},
+        {"frame": "alt", "branches": [
+            {"label": "ある", "steps": [{"from": "api", "to": "db", "label": "softDelete"},
+                                       {"from": "api", "to": "ui", "label": "ok", "reply": True, "status": "changed"}]},
+            {"label": "ない", "steps": [{"from": "api", "to": "ui", "error": True}]}]},
+        {"frame": "opt", "label": "一覧を開いている", "steps": [{"from": "ui", "to": "ui", "label": "再読込"}]},
+        {"frame": "section", "label": "後片付け", "cond": "毎回", "steps": [{"from": "api", "to": "db", "label": ""}]},
+    ],
+}
+TEXTS_SEQ_EXPECTED = [
+    ("steps[0].label", "del(id)"),
+    ("steps[1].note", "権限を\\n確かめる"),
+    ("steps[2].branches[0].steps[0].label", "softDelete"),
+    ("steps[2].branches[0].steps[1].label", "ok"),
+    ("steps[2].branches[0].label", "ある"), ("steps[2].branches[1].label", "ない"),
+    ("steps[3].steps[0].label", "再読込"),
+    ("steps[3].label", "一覧を開いている"),
+    ("steps[4].label", "後片付け"), ("steps[4].cond", "毎回"),
+    ("participants[0].id", "ui"), ("participants[0].label", "画面"), ("participants[0].sublabel", "ItemPage"),
+    ("participants[1].id", "api"),
+    ("participants[2].id", "db"), ("participants[2].label", "保存先"),
+    ("legend_labels.changed", "直した"), ("legend_labels.reply", "戻り"), ("legend_labels.error", "失敗で戻る"),
+    ("title", "削除の流れ"),
+]
+
+
+def svg_strings(root: ET.Element) -> set[str]:
+    """描いた SVG に出る、定義から来うる文字（枠の条件の [ ] と、凡例の「返り値（status）」は分けて数える）."""
+    found: set[str] = set()
+    legend_texts = {id(t) for g in groups(root, "legend-item") for t in g.iter(f"{NS}text")}
+    for t in root.iter(f"{NS}text"):
+        s = text_of(t)
+        m = re.fullmatch(r"\[(.*)\]", s, re.S)
+        if m:
+            found.add(m.group(1))
+            continue
+        m = re.fullmatch(r"(.+)（(.+)）", s, re.S)
+        if m and id(t) in legend_texts:
+            found.update(m.groups())
+            continue
+        found.add(s)
+    for el in root.iter():
+        for k, v in el.attrib.items():
+            if k.startswith("data-") and k not in ENUM_ATTRS:
+                found.add(v)
+    return found - FIXED_TEXTS
+
+
+class TextsListTest(unittest.TestCase):
+    def texts(self, spec: dict) -> list[tuple[str, str]]:
+        rc, out, err, tmp = run(spec, flags=("--texts",))
+        self.assertEqual(rc, 0, f"out={out} err={err}")
+        self.assertEqual(sorted(p.name for p in tmp.iterdir()), ["d0.json"])  # .svg を書かない
+        rows = []
+        for line in out:
+            head, where, s = line.split("\t")
+            self.assertEqual(head, f"text={tmp / 'd0.json'}")
+            rows.append((where, s))
+        return rows
+
+    def assert_matches_svg(self, spec: dict, expected: list[tuple[str, str]]) -> None:
+        # 並びは描いた順で、定義の順とは限らない（state の自己ループのラベルは他の線より先に描く）
+        self.assertCountEqual(self.texts(spec), expected)
+        root, _ = render(spec)
+        self.assertEqual(svg_strings(root), {s.replace("\\n", "\n") for _, s in expected})
+
+    def test_flow_lists_labels_ids_group_heading_used_legend_label_and_title(self):
+        # 使わない status の legend_labels（removed）・ラベルの無い線・見出しの無い枠は描かないので出さない
+        self.assert_matches_svg(TEXTS_FLOW, TEXTS_FLOW_EXPECTED)
+
+    def test_state_lists_states_and_transition_labels(self):
+        self.assert_matches_svg(TEXTS_STATE, TEXTS_STATE_EXPECTED)
+
+    def test_sequence_lists_notes_sublabels_frame_conditions_and_legend_labels(self):
+        # 空の sublabel と空の label は描かないので出さない。枠の種類（alt / opt）は定義の値ではないので出さない
+        self.assert_matches_svg(TEXTS_SEQ, TEXTS_SEQ_EXPECTED)
+
+    def test_legend_off_drops_legend_labels(self):
+        spec = {**TEXTS_FLOW, "legend": False}
+        self.assert_matches_svg(spec, [r for r in TEXTS_FLOW_EXPECTED if not r[0].startswith("legend_labels.")])
+
+    def test_tab_and_carriage_return_in_value_stay_on_one_line(self):
+        rows = self.texts({"type": "flow", "nodes": [{"id": "a", "label": "x\ty"}, {"id": "b", "label": "p\rq"}]})
+        self.assertEqual(rows, [("nodes[0].id", "a"), ("nodes[0].label", "x\\ty"),
+                                ("nodes[1].id", "b"), ("nodes[1].label", "p\\rq")])
+
+    def test_failures_and_usage_follow_the_normal_contract(self):
+        rc, out, _, tmp = run("{broken", TEXTS_STATE, flags=("--texts",))
+        self.assertEqual(rc, 1)
+        self.assertTrue(out[0].startswith(f"failed={tmp / 'd0.json'}\tJSON として読めない"))
+        self.assertTrue(all(line.startswith(f"text={tmp / 'd1.json'}\t") for line in out[1:]))
+        self.assertFalse(list(tmp.glob("*.svg")))
+        proc = subprocess.run([sys.executable, str(SCRIPT), "--texts"], capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("usage", proc.stderr)
 
 
 if __name__ == "__main__":
