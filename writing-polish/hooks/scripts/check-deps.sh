@@ -7,7 +7,8 @@
 # exit 0 する（stderr は空）。writing-polish の決定的チェックは「stdout が valid JSON か」で
 # 成否を判定するので、この状態は skill 実行時まで気づけない（実測: 開発機で
 # ja-no-redundant-expression 1 つの欠落により 4 preset 全部が数か月効いていなかった）。
-# ここで config 全体を 1 回 probe し、失敗したらルールごとに切り分けて欠落パッケージ名を出す。
+# ここで config 全体を 1 回 probe し、失敗したらルールごとに切り分けて欠落パッケージ名を出す
+# （probe と切り分けは scripts/textlint-unresolved.sh。skill の手順も同じスクリプトを呼ぶ）。
 
 source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/safe-hook.sh"
 safe_hook_init "writing-polish:check-deps"
@@ -26,49 +27,26 @@ check_cli() {
   fi
 }
 
-# 空 stdin だと textlint は usage を出すので 1 文字流す
-probe() {
-  # 引数: textlint に渡す追加オプション（--config <path> か --rule <key>）
-  # lint 指摘があると exit 1 になるが、ここで見るのは stdout の形だけ
-  printf '。' | textlint --stdin --stdin-filename probe.md "$@" --format json 2>/dev/null || true
-}
-
-is_json() {
-  printf '%s' "$1" | python3 -c 'import json,sys; json.load(sys.stdin)' >/dev/null 2>&1
-}
-
-# ルールキー → npm パッケージ名（textlint の解決規則）
-#   preset-foo          → textlint-rule-preset-foo
-#   @scope/preset-foo   → @scope/textlint-rule-preset-foo
-pkg_name() {
-  case "$1" in
-    @*/*) printf '%s/textlint-rule-%s' "${1%%/*}" "${1#*/}" ;;
-    *)    printf 'textlint-rule-%s' "$1" ;;
-  esac
-}
-
 check_textlint_rules() {
   command -v textlint &>/dev/null || return 0
-  command -v python3 &>/dev/null || return 0
-  [ -f "$CONFIG" ] || return 0
-  local out
-  out="$(probe --config "$CONFIG")"
-  if is_json "$out"; then
+  local out rc missing detail
+  out="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/textlint-unresolved.sh" "$CONFIG")" && rc=0 || rc=$?
+  if printf '%s\n' "$out" | grep -qx 'reason=textlint-not-runnable'; then
+    detail="$(printf '%s\n' "$out" | sed -n 's/^detail=//p')"
+    # 外部コマンドの出力なので、下の echo -e にエスケープとして解釈させない（\c で以降が消える）
+    detail="${detail//\\/\\\\}"
+    warnings="${warnings}\n- [WARN] textlint は PATH にありますが起動しません（${detail}）。決定的チェックが効いていません。mise / nvm 環境は node の版の設定と shim（mise reshim）を確認してください（推敲はこの状態だと止まります。LLM 判定だけで続けるなら WRITING_POLISH_ALLOW_LLM_ONLY=1）"
     return 0
   fi
-  local missing="" key
-  for key in $(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["rules"].keys()))' "$CONFIG"); do
-    out="$(probe --rule "$key")"
-    if ! is_json "$out"; then
-      missing="${missing} $(pkg_name "$key")"
-    fi
-  done
-  if [ -z "$missing" ]; then
-    # 個別には解決できるのに config 全体で失敗 = config 側の問題（構文等）。導入案内は出せない
-    warnings="${warnings}\n- [WARN] textlint は導入済みですが同梱 textlintrc（${CONFIG}）が JSON を返しません。config を確認してください"
+  if [ "$rc" -ne 1 ]; then
     return 0
   fi
-  warnings="${warnings}\n- [WARN] textlint は導入済みですが、同梱 textlintrc が参照するルールパッケージが未解決です（textlint v15 は 1 つ欠けると全ルールを drop するため、決定的チェックが丸ごと効いていません）。未解決:${missing}\n  導入: npm i -g${missing}（mise 環境は続けて mise reshim）"
+  if printf '%s\n' "$out" | grep -qx 'status=config-error'; then
+    warnings="${warnings}\n- [WARN] textlint は導入済みですが同梱 textlintrc（${CONFIG}）が JSON を返しません。config を確認してください（推敲はこの状態だと止まります。LLM 判定だけで続けるなら WRITING_POLISH_ALLOW_LLM_ONLY=1）"
+    return 0
+  fi
+  missing="$(printf '%s\n' "$out" | sed -n 's/^missing=//p')"
+  warnings="${warnings}\n- [WARN] textlint は導入済みですが、同梱 textlintrc が参照するルールパッケージが未解決です（textlint v15 は 1 つ欠けると全ルールを drop するため、決定的チェックが丸ごと効いていません。推敲はこの状態だと止まります。LLM 判定だけで続けるなら WRITING_POLISH_ALLOW_LLM_ONLY=1）。未解決: ${missing}\n  導入: npm i -g ${missing}（mise 環境は続けて mise reshim）"
 }
 
 # --- チェック実行 ---

@@ -29,7 +29,7 @@ Claude Code プラグインのマーケットプレイスリポジトリ。各�
 | [plugin-manager](#plugin-manager) | 1.11.7 | 1 | - | - | SessionStart, PostToolUse, UserPromptSubmit, PostCompact | - | プラグイン一括更新・deprecated 自動移行・後発追加通知・動いているセッションへの更新通知 |
 | [project-hub](#project-hub) | 0.20.2 | 4 | 5 | - | SessionStart, PostCompact, UserPromptSubmit | - | PJ の決定（living spec）と、複数の sub を 1 つの hub で束ねる段取り |
 | [spec-advisor](#spec-advisor) | 0.1.9 | 1 | 1 | - | SessionStart | - | 開発タスクから設計・計画系 spec をルーティング提案 |
-| [writing-polish](#writing-polish) | 0.10.2 | 1 | 1 | - | SessionStart | - | 文章を語句レベルで推敲・添削 |
+| [writing-polish](#writing-polish) | 0.11.0 | 1 | 1 | - | SessionStart | - | 文章を語句レベルで推敲・添削 |
 
 旧 `indie-workflow` / `linear-workflow` は `issue-workflow` に統合され、2026-08-17 にリポジトリから削除した（移行の経緯: `docs/issue-workflow-migration.md`）。
 
