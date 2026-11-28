@@ -278,10 +278,12 @@ for _e in events:
 for _rows in _by_session.values():
     for _i, (_f1, _e1, _est1) in enumerate(_rows):
         for _f2, _e2, _est2 in _rows[_i + 1:]:
-            if _f1 <= _e2["when"] and _f2 <= _e1["when"]:  # mutation-ok: 左辺の等号が効くのは `_f1` と 2 回の publish 時刻がすべて一致するときだけ（`_e2` は時刻順で `_e1` 以降、`_f1` は `_e1` の publish 以前）
-                for _e, _est in ((_e1, _est1), (_e2, _est2)):
-                    if _est:
-                        _e.setdefault("session_suspect", "overlap")
+            # and で結ばず if を重ねるのは、and を or にする変異（等価でない）を無くし、等価な外側の等号の変異だけを印の行に残すため
+            if _f1 <= _e2["when"]:  # mutation-ok(1): 等号が効くのは `_f1` と 2 回の publish 時刻がすべて一致するときだけ（`_e2` は時刻順で `_e1` 以降、`_f1` は `_e1` の publish 以前）
+                if _f2 <= _e1["when"]:
+                    for _e, _est in ((_e1, _est1), (_e2, _est2)):
+                        if _est:
+                            _e.setdefault("session_suspect", "overlap")
 for _e in events:
     if not _e.get("session_suspect"):
         continue
@@ -3157,7 +3159,8 @@ if apx_rows:
     # 世代が 1 種しか無い母集団では表を割らない（`with_gen` と同じ方針）。ただし判定から外した行
     # （閾値・effort・再レビュー・delta）だけの母集団では出す — 表が無いと ⚠️ が黙っている理由が見えない
     # 下の `or` の右辺でしか効かず、そこではキーが 1 個なので all と any は同値
-    _all_main = all(is_main_threshold_key(_k) and is_main_effort_key(_k)  # mutation-ok: 上の注記
+    _all_main = all(  # mutation-ok(1): 上の注記
+                    is_main_threshold_key(_k) and is_main_effort_key(_k)
                     and is_main_rereview_key(_k) and is_main_delta_key(_k)
                     for _k in apx_stats["by_gen"])
     if len(apx_stats["by_gen"]) > 1 or not _all_main:

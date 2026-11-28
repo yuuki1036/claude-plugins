@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.11.7] - 2026-11-28
+
+### Changed
+
+- **stale_skill.py の `# mutation-ok:` で 2 個以上の変異を数なしで外していた 2 行を直した**（GitHub issue #579）。transcript の行を読み飛ばす前段の判定は if を 2 つに分けて等価な読み飛ばしだけを印の行に残し、argv の長さは「2 以上」で比べて境界の変異がテストで落ちるようにした。挙動は変えていない
+
 ## [1.11.6] - 2026-11-26
 
 ### Fixed

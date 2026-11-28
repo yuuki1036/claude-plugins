@@ -195,7 +195,7 @@ def save_state(path, st):
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".metrics-update-", suffix=".json")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(st, f, ensure_ascii=False, indent=2, sort_keys=True)  # mutation-ok: 書式だけの違いで、load_state が読み戻す値は同じ
+            json.dump(st, f, ensure_ascii=False, indent=2, sort_keys=True)  # mutation-ok(2): 書式だけの違いで、load_state が読み戻す値は同じ
             f.write("\n")
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
