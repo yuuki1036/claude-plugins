@@ -741,6 +741,44 @@ class WritingPolishCheckDepsTest(HookTestCase):
         self.assertIn("依存チェック", res.stdout)
         self.assertIn("textlint-rule-preset-ai-words-ja", res.stdout)
         self.assertIn("npm i -g", res.stdout)
+        self.assertIn("WRITING_POLISH_ALLOW_LLM_ONLY", res.stdout)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_not_runnable_textlint_warns_without_install_command(self):
+        """本体が起動しない回は、ルールの導入ではなく起動の問題として案内する."""
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        (d / "textlint").write_text('#!/bin/bash\necho "mise ERROR No version is set for shim: textlint" >&2\nexit 1\n')
+        (d / "textlint").chmod(0o755)
+        res = self._run(str(d))
+        self.assertIn("起動しません", res.stdout)
+        self.assertIn("No version is set for shim", res.stdout)
+        self.assertNotIn("npm i -g", res.stdout)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_backslash_in_detail_does_not_truncate_warning(self):
+        """detail は外部コマンドの出力。echo -e に \\c を解釈させると以降の通知が消える."""
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        (d / "textlint").write_text("#!/bin/bash\necho 'Error: cannot load C:\\cache\\node' >&2\nexit 1\n")
+        (d / "textlint").chmod(0o755)
+        res = self._run(str(d))
+        self.assertIn("C:\\cache\\node", res.stdout)
+        self.assertIn("WRITING_POLISH_ALLOW_LLM_ONLY", res.stdout)
+        self.assertNotIn("Unexpected", res.stderr)
+
+    def test_config_error_when_rules_resolve_alone(self):
+        """ルールは個別に解決できるのに config 全体で JSON が返らない = config 側の問題."""
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        (d / "textlint").write_text(
+            '#!/bin/bash\ncase "$*" in\n'
+            '  *--config*) echo "== No rules found, textlint hasn\'t done anything =="; exit 0;;\n'
+            '  *) echo \'[{"messages":[],"filePath":"probe.md"}]\';;\nesac\n')
+        (d / "textlint").chmod(0o755)
+        res = self._run(str(d))
+        self.assertIn("JSON を返しません", res.stdout)
+        self.assertNotIn("npm i -g", res.stdout)
         self.assertNotIn("Unexpected", res.stderr)
 
     def test_scoped_rule_maps_to_scoped_package(self):
