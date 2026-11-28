@@ -881,8 +881,9 @@ if _kv.get("scope_mode") in ("delta", "full"):
 # 毎回の冒頭で消すので、ここで無ければその回は `plan-reviewers.sh plan` を呼んでいない（check だけ呼んだ回も
 # check が古い plan で通らないので同じ）。呼ぶはずの回は self-review が「delta が空でない回」（full か、
 # delta で `delta_files` が 1 以上）、review が default-mode の回（payload の `review_mode`）。default 以外でも
-# spec-compliance を起動するモードは仕様ソースを得るために plan を呼ぶが（review の Step 3.2（skills/review/references/step-3.md）の但し書き /
-# GitHub issue #389）、構成の手順ではないので呼ぶはずの回に数えない（plan ファイルが残っていても gap は立たない）。
+# spec-compliance を起動するモードが仕様ソースを得るために呼ぶ回と、Round 2 の圧縮を決める `cap_source` を
+# 得るために呼ぶ回（self-review の delta が空の回も / GitHub issue #535）があるが（review の Step 3.2
+# （skills/review/references/step-3.md）の但し書き / GitHub issue #389）、構成の手順ではないので呼ぶはずの回に数えない（plan ファイルが残っていても gap は立たない）。
 # 判定の結果は `plan_expected`（True / False / 判定できない回は None）に載せる。retro は `plan` gap の率を
 # True の回だけを分母に出す（判定できない回・呼ばない回を分母に入れると率が薄まる）。呼び出し側が書いた値は捨てる。
 # **判定できない回は立てない** — size ファイルに `scope_mode=` が無い（triage を経ていない回。`review_scope` と

@@ -2454,7 +2454,7 @@ class PlanGapPublishTest(ScriptTestBase):
         self.assertNotIn("plan", self._gaps("doc_only=0\nscope_mode=full\n", plan=True))
 
     def test_self_review_runs_that_skip_the_plan_or_cannot_be_judged_stay_silent(self):
-        """delta が空の回は plan を呼ばない契約。旧版の size ファイル（行が無い）は判定しない."""
+        """delta が空の回は構成を plan で決めないので、呼ぶはずの回に数えない（`cap_source` のためだけに呼ぶことはある / #535）。旧版の size ファイル（行が無い）は判定しない."""
         for size in ("doc_only=0\nscope_mode=delta\ndelta_files=0\ndelta_lines=0\ndelta_size_tier=small\n",
                      "doc_only=0\nscope_mode=delta\ndelta_lines=3\ndelta_size_tier=small\n",
                      "doc_only=0\nscope_mode=delta\ndelta_files=x\n",

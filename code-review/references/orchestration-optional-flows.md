@@ -16,7 +16,7 @@
 **探さない。plan の `spec_source	issue-file	<path>` の行を使う**（GitHub issue #389）。Issue ファイルの探索は `plan-reviewers.sh plan` に一本化してある — `--issue-id` で渡した ID（`## issue-ids` の PR head / base のブランチ名から取ったもの）・作業ツリーのブランチ名の ID・ブランチ名が一致した session-context の `issue_id` から、作業ツリーとメインのチェックアウトの `.claude/{indie,linear}/<slug>/issues/<ID>.md` をファイル名で引く。本文に ID を含む md を grep で拾う探し方はしない（knowledge・follow-up など Issue ファイルでないものまで当たる）。ID 抽出の正規表現は `reviewer_plan.py` の `ISSUE_ID_RE` が正本で、`triage-signals.sh` の `## issue-ids` はテストで同じ集合に縛ってある。
 
 - plan の `issue-file` の行のファイルを Read し、spec-compliance reviewer の prompt に `## Issue ファイル` セクションとして同梱する（`${CLAUDE_PLUGIN_ROOT}/references/prompts/session-context.md` と同じ要領）
-- 構成を決めるために plan を呼ばないモード（triage-guide `## 2.5` で default-mode 以外。skip-mode の spec-compliance など）でも Issue ファイルを同梱するなら、`plan-reviewers.sh plan` を `--pr` / `--size-tier` と仕様ソースの引数（`--issue-id` / `--spec-source` / `--pr-issue-body`）で呼び（`--activated` は空でよい）、`spec_source` の行だけを使う（構成の行は読まず、check も呼ばない）
+- 構成を決めるために plan を呼ばないモード（triage-guide `## 2.5` で default-mode 以外。skip-mode の spec-compliance など）でも Issue ファイルを同梱するなら、`plan-reviewers.sh plan` を `--pr` / `--effort "${CLAUDE_EFFORT}"` / `--size-tier` と仕様ソースの引数（`--issue-id` / `--spec-source` / `--pr-issue-body`）で呼び（`--activated` は空でよい）、`spec_source` の行（と Round 2 の圧縮を決める `cap_source` の行）だけを使う（構成の行は読まず、check も呼ばない。`--effort` を省くと plan は high として数え、`cap_source` が実行時の effort とずれる / GitHub issue #535）
 - Issue 本文内に「親 Issue: [FOO-1234](...)」「Parent: FOO-1234」のような親リンクがあれば **1 段だけ追跡** （深い再帰は禁止：トークン爆発防止）
 - `issue-file` の行が無ければ本フローをスキップ（best-effort）
 

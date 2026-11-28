@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.30.3] - 2026-11-28
+
+### Changed
+
+- code-review の triage-guide.md `### 6.5` が変わった（delta が空の回も、Round 2 の圧縮を plan の `cap_source` で決める / GitHub issue #535）ので、`### 6.5` と、self-review の `step-1.md` の `1.`・`step-6.md` の `6.` を指す SSoT pin を打ち直した。feature-dev の手順は変えていない
+
 ## [2.30.2] - 2026-11-28
 
 ### Changed

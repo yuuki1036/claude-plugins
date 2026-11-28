@@ -1,10 +1,10 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/triage-guide.md#4 @bf441ebd -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @9c827464 -->
 <!-- SSOT: code-review/references/triage-guide.md#6.1 @d6a3bd92 -->
-<!-- SSOT: code-review/references/triage-guide.md#6.2 @81106eca -->
-<!-- SSOT: code-review/references/triage-guide.md#6.5 @b5edb48b -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @0c50d7a9 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.2 @f3e171ae -->
+<!-- SSOT: code-review/references/triage-guide.md#6.5 @371d6649 -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @2ed7bbac -->
 ### 1. diff 収集とコンテキスト準備
 
 **Step 1 と 1.4 は 1 つの Bash 呼び出しにまとめる**（GitHub issue #147）。間に LLM の判断が挟まらない — 後段は前段の**出力を読んで決める**のではなく、同じシェルの変数とファイルを使うだけなので、分けると往復ぶんの `cache_read` を払うだけになる。**1.7 の機械層はここに含めない**（理由は 1.7 側に記載）。
@@ -99,7 +99,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 直前の修正の前（feature-dev の G-V ループ）やレビューした時点（Phase 6.9）の作業ツリーの tree を受け、その後に変えた分（delta）を主な対象にする。delta は Step 1 の triage-signals.sh が作る。対象のファイルは、diff 全体に入るファイルと、起点の tree から変わったファイル（base の状態へ戻したファイルを含む。いま未追跡のものは除く）。`--prior-findings` は前回の対象（`[{file, line, focus, title}]`。形の正本は prior-fixes-guide.md の 4 節）で、`## prior-fixes` に合流する。**付けるのは利用者か呼び出し元 skill の手順だけ**で、利用者が「self-review 回して」としか言っていない回にモデルが推して足さない（`--rereview` と同じ / #300）。
 
 - Step 1 の `## delta` が `scope_mode=delta` なら → Read `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` の `### 6.5`（観点・体数・空の delta の扱い）。`scope_mode=full` と `fallback=` が出た回は、理由を Step 6 の **範囲** の行に書いて diff 全体で続ける（`pr` / `staged` / `bad-tree-id` / `tree-not-found` / `prior-findings-unreadable` / `delta-diff-failed`）
-- `--focus` / `--exclude` と一緒に渡されたら: 読む範囲は delta、skeptic と反証は従来どおり `scope` でスキップする。`--focus` は指定した観点と前回の対象の観点だけを規模キャップの外で起動し、`--exclude` は指定した観点を外して残りを 6.5 の規則で決める
+- `--focus` / `--exclude` と一緒に渡されたら: 読む範囲は delta、skeptic と反証は従来どおり `scope` でスキップする（`--exclude` の値が語彙外だけの回は絞り込みに数えないので、スキップしない。下の `--focus` / `--exclude` の節）。`--focus` は指定した観点と前回の対象の観点だけを規模キャップの外で起動し、`--exclude` は指定した観点を外して残りを 6.5 の規則で決める
 
 **`--focus` / `--exclude`（同一セッションでの重複レビュー回避）:**
 
@@ -107,7 +107,7 @@ return 仕様（**dual format**: 人間可読 markdown ＋ 機械可読 JSON、m
 
 - `--focus <観点>`: レビュー対象を特定の観点に絞る（例: `--focus "comment-accuracy"`, `--focus "type-design"`）。複数指定はカンマ区切り
 - `--exclude <観点1,観点2>`: 既に他 agent でカバー済みの観点をスキップする
-- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` と `--exclude design-review` で、それぞれ Markdown 推敲と決定系 doc の design-review 委譲を止める。観点ではないので `--focus` には書けない）。**`md-polish` と `design-review` はスコープの絞り込みに数えない** — self-review の各 Step ファイル（1・2・4.7・4.8・4.9）と参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、この 2 つ以外の値を 1 つ以上指定した場合だけを指す。この 2 つだけを `--exclude` した回は、それを止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える。**`--focus` の値が語彙外だけのとき**（`md-polish` / `design-review` を除いて語彙内の観点が 1 つも残らない）も絞り込みとして扱い、全体レビューに倒さない — plan は `scope=focus` で reviewer の行を出さず（前回の対象の行だけは残る）、レポートは「⚠️ 欠損観点」の `語彙外の focus` だけになる。全体に倒すと、名前を書き違えた呼び出しが規模で絞った全体レビューになり、頼んだ観点を見ていないことが見えなくなる（GitHub issue #388）
+- **値は triage-guide.md `## 3` の観点判定表のキー（＝ `${CLAUDE_PLUGIN_ROOT}/references/prompts/focus/<key>.md` のファイル名）に限る**（例外は `--exclude md-polish` と `--exclude design-review` で、それぞれ Markdown 推敲と決定系 doc の design-review 委譲を止める。観点ではないので `--focus` には書けない）。**`md-polish` と `design-review` はスコープの絞り込みに数えない** — self-review の各 Step ファイル（1・2・4.7・4.8・4.9）と参照先で「`--focus` / `--exclude` でスコープを絞った・絞り込んでいる」と書く条件（規模キャップの除外・skeptic と反証の `scope` skip・4.7）は、この 2 つ以外の値を 1 つ以上指定した場合だけを指す。`--exclude` はさらに、その値に語彙内の観点が 1 つ以上ある場合に限る（下の語彙外だけの `--exclude`）。この 2 つだけを `--exclude` した回は、それを止める以外は引数なしと同じに扱う。語彙外の値（例: `migration-safety`）はその reviewer を起動せず、レポートの「⚠️ 欠損観点」に `語彙外の focus: <値>` と書く（payload の `missing_coverage` には入れない。識別子の語彙検証で publish が落ちる）。黙って捨てると、呼び出し側の名前違いが「その観点は問題なし」に見える。**`--focus` の値が語彙外だけのとき**（`md-polish` / `design-review` を除いて語彙内の観点が 1 つも残らない）も絞り込みとして扱い、全体レビューに倒さない — plan は `scope=focus` で reviewer の行を出さず（前回の対象の行だけは残る）、レポートは「⚠️ 欠損観点」の `語彙外の focus` だけになる。全体に倒すと、名前を書き違えた呼び出しが規模で絞った全体レビューになり、頼んだ観点を見ていないことが見えなくなる（GitHub issue #388）。**`--exclude` の値が語彙外だけのとき**は逆に絞り込みに数えず、引数なしと同じに扱う — plan は `scope=full` で規模キャップを掛け（`cap_source` は `size` か `effort`）、skeptic と反証は `scope` でスキップしない。外す観点が 1 つも残らないので、構成は全体レビューと同じになる。語彙外の値はレポートの「⚠️ 欠損観点」に `語彙外の focus` として出るので、書き違いはそこで分かる（2026-11-28 決定 / GitHub issue #535）
 
 適用先:
 - **Phase 0 (Step 2)**: `--focus` 指定時は該当観点の reviewer のみ構成する（最小保証の reviewer-bugs / reviewer-claude-md も `--focus` に含まれない限り起動しない）。`--exclude` 指定時は該当観点の reviewer を構成から外す。**例外は Step 1 の `## prior-fixes` の行**（前回の指摘への修正。`--prior-findings` の分を含む）で、絞り込みの外に置く

@@ -1,9 +1,9 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/scoring-guide.md#報告閾値を割った指摘の記録 @b298b210 -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @c0aa9e2d -->
-<!-- SSOT: code-review/references/triage-guide.md#4 @bf441ebd -->
-<!-- SSOT: code-review/references/triage-guide.md#5 @a2dc3482 -->
-<!-- SSOT: code-review/references/triage-guide.md#6.2 @81106eca -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @9c827464 -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @0b306f42 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.2 @f3e171ae -->
 ### 6. レポート出力
 
 **他 skill からオーケストレーションされても定型と publish は省かない**（GitHub issue #232）: feature-dev 等の親 skill が self-review を呼び、手順を親のコンテキストで回す場合でも、**下のテンプレートどおりのレポート → `mark t2` → 6.4 の publish** は self-review の手順として踏む（`--embed` の有無を問わない）。親の集約・要約はこの定型レポートを**出した後に**足すもので、置き換えない。publish を踏まずに Edit / Write / Skill / Agent を呼ぶと publish-guard hook（PreToolUse）が鳴る。
@@ -26,7 +26,7 @@
 **総合評価**: X/10 点
 **レビュー構成**: Phase 0 (triage) → 探索 (N 起動 / M 成功) → レビュー (N 起動 / M 成功)
 **範囲**: {`--since` を渡した回だけ: `delta（N ファイル・M 行 / 起点 <tree の先頭 8 桁>）` | `diff 全体（<縮退の理由>）`。渡していない回はこの行を省く}（GitHub issue #313。理由は `fallback=` の値を `--staged と併用` / `起点が tree の ID でない` / `起点の tree を引けない` / `--prior-findings を読めない` / `delta を取れない` / `PR のレビュー` と書く。呼び出し元はこの行の有無で code-review が `--since` を知る版かを見分ける）
-**実効上限**: explorer N / reviewer N / specialist N（Step 2.2 の plan の `explorer_cap` / `reviewer_cap` / `specialist_cap` を写す。効いた側は `cap_source` で、`effort` = **実行時** effort `{値}` の上限 / `size` = 規模キャップ `{帯}`（core N files / N lines）/ `scope` = `--focus` / `--exclude`）
+**実効上限**: explorer N / reviewer N / specialist N（Step 2.2 の plan の `explorer_cap` / `reviewer_cap` / `specialist_cap` を写す。効いた側は `cap_source` で、`effort` = **実行時** effort `{値}` の上限 / `size` = 規模キャップ `{帯}`（core N files / N lines）/ `scope` = `--focus` / `--exclude`。語彙外の値だけの `--exclude` は `scope` にならない / GitHub issue #535）
   ※ reviewer の effort と動的ラウンド（meta / skeptic / 反証ゲート）は**実行時 effort に連動**する。skill frontmatter の effort はオーケストレーター用で別枠
 **動的ラウンド**: Round 2 {未実行 | スキップ（unmet 全件が到達不能）| スキップ（unmet をメインで直接照会して解決）| 実行（再起動 reviewer N 体 / 追加 explorer M 体）} / Meta-reviewer {実行（N 件追加）| スキップ理由（`effort` / `config` / `no-high-severity` / `size-tier`）} / 冷や読み skeptic {実行（N 件追加）| skip（理由: effort/config/scope）| 非該当（surface なし）**← payload の `recall_skeptic.skip_reason` は `"no-surface"`。`fired=false` なので `null` にしない**} / 反証 {対象 N 件（うち meta 由来の追加バッチ M 件）| スキップ理由}
 **指摘件数**: BLOCKER N 件 / CRITICAL N 件 / MAJOR N 件 / MINOR N 件

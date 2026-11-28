@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.169.9] - 2026-11-28
+
+### Changed
+
+- **語彙外の値だけを渡した `--exclude` を、引数なしと同じ全体の回として扱うことを文書に書いた**（GitHub issue #535 / 2026-11-28 決定）。plan はもともと `scope=full` にして規模キャップを掛けていたが、self-review の `step-1.md` の絞り込みの定義は字面ではこの回も含み、skeptic と反証を `scope` で飛ばす読み方ができた。外す観点が 1 つも残らないので構成は全体レビューと同じにし、skeptic と反証も動かす。`--focus`（#388）は語彙外の値だけでも絞り込みのまま。triage-guide の `## 3`・`## 4`・`### 6.2`・`### 6.5`（`--since` と一緒の回）・`## 7`、triage-dynamic-gates.md、self-review の `step-1.md`（`--since` の節）・`step-2.md`・`step-6.md`、reviewer_plan.py のコメントにも同じ但し書きを入れ、plan がこの回に `scope=full`・`cap_source=size` を出すことをテストで固定した
+- **Round 2 の圧縮を、どの回も plan の `cap_source=size` だけで決めるようにした**（GitHub issue #535 / 2026-11-28 決定）。構成を plan で決めない回（review の default-mode 以外のモード、self-review の `--since` で delta が空の回）は、これまで帯に条件を手で当てていた。この回も `cap_source` を得るために plan を `--effort` と帯（self-review は `delta_size_tier`）つきで呼び、`cap_source` の行だけを使う（構成の行は読まず、check も呼ばない）。`orchestration-dynamic-rounds.md`・triage-guide の `### 6.3`・`### 6.5`・review の `step-3.md`・`step-5.5.md`・self-review の `step-2.md`・`step-4.5.md` と、triage-dynamic-gates.md `## 8` の表をこの書き方にそろえた。仕様ソースを得るために plan を呼ぶ 2 か所（review の `step-3.md` と `orchestration-optional-flows.md`）にも `--effort` を足した（省くと plan は high として数える）。default-mode 以外で plan を呼ぶ例外の説明（review の `step-3.md`・`orchestration-guide.md` の `### 8a`）と、publish の `plan_expected` のコメント・そのテストの docstring にも `cap_source` の用途を足した。消費サイトの SSoT pin を打ち直した
+
 ## [2.169.8] - 2026-11-28
 
 ### Changed

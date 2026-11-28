@@ -1,11 +1,11 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @c0aa9e2d -->
-<!-- SSOT: code-review/references/orchestration-guide.md#8a @a5f9c77b -->
-<!-- SSOT: code-review/references/triage-guide.md#4 @bf441ebd -->
-<!-- SSOT: code-review/references/triage-guide.md#5 @a2dc3482 -->
-<!-- SSOT: code-review/references/triage-guide.md#6.3 @2ad575e6 -->
-<!-- SSOT: code-review/references/triage-guide.md#6.5 @b5edb48b -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @0c50d7a9 -->
+<!-- SSOT: code-review/references/orchestration-guide.md#8a @4886881f -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @9c827464 -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @0b306f42 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.3 @2847e600 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.5 @371d6649 -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @2ed7bbac -->
 ### 2. Phase 0: トリアージ
 
 `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。
@@ -34,18 +34,18 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --effort "${CLAUDE_E
 - `--activated` には最小保証の 2 体と spec-compliance を入れない（前者は plan が足す。後者は入れると exit 2 — 仕様ソースから plan が決める）
 - `spec_source` の `repo-spec-touched`（diff が触った仕様書）/ `repo-spec-ref`（session-context・Issue ファイルが言及した仕様書）は plan が Step 1 の diff と参照から見つける。引数では渡さない
 - `## prior-fixes` が出た回は `--prior <行の観点をカンマ区切り>` を渡す（`--focus` の回も。前回の対象は絞り込みの外に置き、上限に収まらなければ落とさず相乗りにする / prior-fixes-guide.md の 1 節）。`--since` の回（`scope_mode=delta`）はさらに `--size-tier` に `delta_size_tier` を渡して `--delta` を足す（前回の対象は規模キャップの外の専任になり、effort 上限を超える分は相乗りになる / triage-guide.md `### 6.5`）
-- **delta が空（`delta_files=0`）の回は plan も check も呼ばない**。triage-guide.md `### 6.5` のとおり、前回の対象の観点の reviewer だけで直ったかを確かめる（前回の対象も無ければ agent を起動しない）。plan は最小保証と仕様ソースの spec-compliance を必ず足すので、この回の構成を表せない
+- **delta が空（`delta_files=0`）の回は、構成を plan で決めず、check も呼ばない**。triage-guide.md `### 6.5` のとおり、前回の対象の観点の reviewer だけで直ったかを確かめる（前回の対象も無ければ agent を起動しない）。plan は最小保証と仕様ソースの spec-compliance を必ず足すので、この回の構成を表せない。前回の対象を確かめる回だけ、Round 2（Phase 4.5）の圧縮を決める `cap_source` を得るために plan を呼ぶ: `--effort "${CLAUDE_EFFORT}"` / `--size-tier <delta_size_tier>` と、渡されていれば `--focus` / `--exclude` を付け（`--activated` は空でよい）、`cap_source` の行だけを使う（構成の行は読まない。帯を手で当てて決めない / 2026-11-28 決定・GitHub issue #535）
 - 出力の読み方（kind・`piggyback`・`dropped` の理由・`excluded`・`spare`）と check の規則の一覧は triage-guide.md `## 4` 末尾の「plan の出力の読み方」。`dropped` の観点は `missing_coverage` に識別子で記録し、理由をレポートの「⚠️ 欠損観点」に写す
-- explorer と specialist の体数は従来どおり triage-guide で決める。上限は出力の `explorer_cap` / `specialist_cap`（effort 上限と規模キャップの min。`--focus` / `--exclude` の回は effort 上限だけ）
+- explorer と specialist の体数は従来どおり triage-guide で決める。上限は出力の `explorer_cap` / `specialist_cap`（effort 上限と規模キャップの min。`--focus` の回と、語彙内の観点が残る `--exclude` の回は effort 上限だけ）
 - exit 2 は引数の誤り（理由は stderr）。直して呼び直す
 
 数値を含まない規則は従来どおり:
 - explorer は独立した探索対象の数に比例させる。冗長ペア（x2）を組むのは `redundant_pairs=allowed`（xhigh / max）の回だけで、high 以下でペア条件が成立したら Angle A/B を 1 体に内挿する
-- `cap_source=size`（規模キャップが effort 上限を下回った）の回は、Round 2（Phase 4.5）を effort に関わらず 1 段圧縮経路にする（plan を呼ばない回は、同じ条件を帯で当てる。条件の正本は triage-guide.md `### 6.3`）。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（削るのは breadth のみ。triage-guide.md `### 6.3`）
+- `cap_source=size`（規模キャップが effort 上限を下回った）の回は、Round 2（Phase 4.5）を effort に関わらず 1 段圧縮経路にする（delta が空の回も、上で `cap_source` を得るために呼んだ plan の値で決める。条件の正本は triage-guide.md `### 6.3`）。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（削るのは breadth のみ。triage-guide.md `### 6.3`）
 
 #### 2.3 観点カバレッジ検算と構成テーブル出力
 
-**構成テーブルを確定する前に、起動前検算をする（orchestration-guide `### 8a`・毎回。delta が空で plan を呼ばない回（Step 2.2）だけは検算せず、レポートの「実効上限」「仕様整合」には `delta が空・前回の対象のみ` と書く）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば、`--activated` に足して plan を引き直してから確定する（テーブルに直接書き足さない。spec-compliance は足さない — plan が仕様ソースから決める）。v2.39.0 で旧 Phase 4.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。`--focus` / `--exclude` を指定した回は、指定した範囲の観点だけを検算する。
+**構成テーブルを確定する前に、起動前検算をする（orchestration-guide `### 8a`・毎回。delta が空で構成を plan で決めない回（Step 2.2）だけは検算せず、レポートの「実効上限」「仕様整合」には `delta が空・前回の対象のみ` と書く）**: 観点判定表の各条件を diff シグナルに対して再評価し、条件を満たすのに構成に入っていない focus があれば、`--activated` に足して plan を引き直してから確定する（テーブルに直接書き足さない。spec-compliance は足さない — plan が仕様ソースから決める）。v2.39.0 で旧 Phase 4.7 の補完起動から前倒し（起動後の直列 wave を無くすため。検算内容は同一）。`--focus` / `--exclude` を指定した回は、指定した範囲の観点だけを検算する。
 
 確定したテーブル（plan の `reviewer` / `piggyback` / `dropped` の行。xhigh / max で冗長ペアを組んだらその行も足す）を `check` に流してから起動する:
 
