@@ -904,6 +904,50 @@ class StartSkillContractTest(RepoTestCase):
         f7_head = section(flow_text(START), "### Phase F7", "**`TASK_INTENT = new`")
         self.assertIn("Phase CTX も書かない", f7_head)
 
+    def test_phase_ctx_timing_is_the_f7_close_from_every_entry(self):
+        """Phase CTX を書く時機（F7 の締め。F6 の後には書かない）を、Phase CTX・SKILL.md の Feature ブランチモード・F7 の節のどれからも引ける（#566）.
+
+        F7 は feature-dev・軽量フローへ処理を渡して start に戻らないので、時機が F7 の側に無いと起動した後に書く
+        (= 書かない) か、ブランチを作る前に書いて `branch:` が古くなる。起動する 2 つの選択肢の行にも置く.
+        """
+        skill_raw = START.read_text(encoding="utf-8")
+        mode = section(skill_raw, "## Feature ブランチモード", "入ったら最初に")
+        self.assertIn("F7 の締め", mode)
+        self.assertIn("F6 の後・F7 の前には書かない", mode)
+
+        flow = flow_text(START)
+        ctx = section(flow, "### Phase CTX", "1. 以下の情報")
+        self.assertIn("F7 の締め", ctx)
+        self.assertIn("F6 の後・F7 の前には書かない", ctx)
+        self.assertIn("決め直さなかった回も同じ", ctx)
+
+        f7 = section(flow, "### Phase F7", "\n---\n")
+        block = section(f7, "**Phase CTX の書き出し**", "\n\n")
+        self.assertIn("F7 の締め", block)
+        self.assertIn("F6 の後", block)
+        for option in ("「feature-dev」→", "「軽量フロー」→"):
+            with self.subTest(option=option):
+                line = next(ln for ln in f7.splitlines() if ln.startswith(f"- {option}"))
+                self.assertIn("「Phase CTX の書き出し」を行う", line)
+                # 「ブランチ未作成なら」の条件の外に置く（worktree へ移り済みの fresh でも書く）
+                self.assertIn("ブランチの有無に関わらず", line)
+
+    def test_phase_ctx_skips_branch_left_unswitched(self):
+        """`branch` でブランチ作成を「スキップ」して移らなかった回も Phase CTX を書かない（#566）.
+
+        作業はそのブランチにあり今のチェックアウトには無い。今のチェックアウトが detached HEAD の worktree なら、書くと `detached` と同じく次の /start で
+        ここが current=1 の候補になって `fresh` に決まる。Phase CTX・F7 の締めの節・existing-work.md の表の 3 か所で揃える.
+        """
+        flow = flow_text(START)
+        ctx = section(flow, "### Phase CTX", "1. 以下の情報")
+        self.assertIn("`branch` で作業のあるブランチへ移らなかった回", ctx)
+        f7 = section(flow, "### Phase F7", "\n---\n")
+        block = section(f7, "**Phase CTX の書き出し**", "\n\n")
+        self.assertIn("`branch` で移らなかった回", block)
+        table = section(EXISTING_DOC.read_text(encoding="utf-8"), "## 2.", "## 3.")
+        row = next(ln for ln in table.splitlines() if "`branch` は F7 でそのブランチへ移る" in ln)
+        self.assertIn("移らなかった回は Phase CTX を書かない", row)
+
     def test_existing_work_rows_say_where_phase_ctx_is_not_written(self):
         """表の行のうち NO_CTX に決まりうる行だけが「Phase CTX は書かない」と書く（here / fresh / none の行は書く側）."""
         table = section(EXISTING_DOC.read_text(encoding="utf-8"), "## 2.", "## 3.")

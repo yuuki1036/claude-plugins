@@ -31,7 +31,7 @@ start の Phase F2.5 が読む。`branch-setup.sh existing {ISSUE-ID}` の出力
 |---|---|---|
 | Issue ファイル（F3 で読む `{DATA_DIR}/{slug}/issues/{ISSUE-ID}.md`。無ければこの行は当たらない）の `status` が `completed` / `canceled` | `closed` | 移動もブランチ作成もしない。判定行で報告だけする。Phase CTX は書かない |
 | `current=1` の候補がある（session-context だけの候補も含む） | その `current=1` の候補に作業があれば `here`、無ければ `fresh` | 作業の有無に関わらず今のチェックアウトに残る。ほかの候補は F6 に並べるだけ |
-| 移れる候補（`matched` に `branch` か `path` を含む）のどれかに作業がある | 下の順で先頭の候補が worktree を持てば `moved`、`prunable=` にパスがあれば `prunable`、ブランチだけ（`worktree=-`）なら `branch` | `moved` はその worktree へ移る（3）。確認は出さない。`branch` は F7 でそのブランチへ移る。どちらも新しいブランチは作らない。`prunable` は移動もブランチ作成もせず（Phase CTX は書かない）、判定行で登録の消し方（下の `prunable` の項）を案内する |
+| 移れる候補（`matched` に `branch` か `path` を含む）のどれかに作業がある | 下の順で先頭の候補が worktree を持てば `moved`、`prunable=` にパスがあれば `prunable`、ブランチだけ（`worktree=-`）なら `branch` | `moved` はその worktree へ移る（3）。確認は出さない。`branch` は F7 でそのブランチへ移る（F7 のブランチ作成で「スキップ」して移らなかった回は Phase CTX を書かない。作業の無い今のチェックアウトが detached HEAD の worktree なら、書くと下の `detached` の行と同じく次の /start でここが `current=1` の候補になる）。どちらも新しいブランチは作らない。`prunable` は移動もブランチ作成もせず（Phase CTX は書かない）、判定行で登録の消し方（下の `prunable` の項）を案内する |
 | 作業のある session-context だけの候補がある | `detached` | 移動もブランチ作成もしない。判定行で、その worktree のセッションで続けるよう案内する。Phase CTX は書かない（今のチェックアウトが detached HEAD の worktree なら、書くと次の /start でここが `current=1` の候補になり、上の行が先に当たってこの判定が効かなくなる） |
 | 移れる候補がある（どれも作業なし） | 下の順で先頭の候補の `prunable=` にパスがあれば `prunable`、無ければ `fresh` | `fresh` は、先頭の候補が worktree を持てばそこへ移る（3）。ブランチだけなら移らず、F7 の「ブランチ未作成のとき」でそのブランチを使う（新しい名前を作らない）。`prunable` は移動もブランチ作成もせず（Phase CTX は書かない）、登録の消し方（下の `prunable` の項）を案内する |
 | それ以外（0 件、または作業の無い session-context だけの候補） | `none` | これまでどおり新規（F7 でブランチを作る） |
