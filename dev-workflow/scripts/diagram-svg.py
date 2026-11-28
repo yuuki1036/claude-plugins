@@ -20,6 +20,13 @@
 exit 0 = 全件書けた / 1 = 1 件以上失敗 / 2 = 引数なし
 1 件が失敗しても残りの定義は処理する。
 
+  diagram-svg.py --texts <定義.json>...
+.svg を書かずに、図に描く文字列を 1 件 1 行、描いた順に出す（pr-creator Step 4.6 の図の機密チェック / #568）:
+  text=<定義のパス>\t<定義の中の場所>\t<文字列>
+場所は nodes[0].label・steps[2].branches[0].label・legend_labels.added のように書く。id は data-id の属性に
+残るので label があっても出す。legend_labels は凡例に描いたものだけを出す。文字列の改行・復帰・タブは \\n / \\r / \\t と書く。
+失敗の行と exit code は上と同じ。
+
 手で座標を組んだときに踏んだ点（#349）をここで固定している:
 - 文字の幅は全角と曖昧幅を 1 文字 = 1em で見積もる（英字の幅で見積もると日本語が枠からはみ出す）。
   太字で描く文字は、半角の文字だけを広めに見積もる（#567）
@@ -144,6 +151,8 @@ class Canvas:
         self.warnings: list[str] = []
         # 縦長・横長の warn に添える直し方。並べ方（direction・pos）を知っている render_graph が決める
         self.fix_tall = self.fix_wide = ""
+        # 定義から取って描いた文字列と、その定義の中の場所（--texts が出す。id は data-id の属性に残るので数える）
+        self.texts: list[tuple[str, str]] = []
 
     def add(self, layer: str, svg: str, bbox: tuple[float, float, float, float] | None = None) -> None:
         self.layers[layer].append(svg)
@@ -285,12 +294,16 @@ def parse_items(items: object, key: str, where: str, allowed: set[str]) -> list[
             raise SpecError(f"{where} の id {ident!r} が重複している")
         seen.add(ident)
         item = {"id": ident, "label": get_label(obj, "label", ident, f"{key}[{i}]"),
-                "status": get_status(obj, f"{key}[{i}]")}
+                "status": get_status(obj, f"{key}[{i}]"), "texts": [(f"{key}[{i}].id", ident)]}
+        if "label" in obj:
+            item["texts"].append((f"{key}[{i}].label", item["label"]))
         for extra in ("pos", "final"):
             if extra in obj:
                 item[extra] = obj[extra]
         if "sublabel" in obj:
             item["sublabel"] = opt_str(obj, "sublabel", f"{key}[{i}]")
+            if item["sublabel"]:
+                item["texts"].append((f"{key}[{i}].sublabel", item["sublabel"]))
         out.append(item)
     return out
 
@@ -324,7 +337,7 @@ def parse_steps(steps: object, pids: dict, where: str) -> list[dict]:
         if isinstance(raw, dict) and "note" in raw:
             obj = check_keys(raw, {"note", "at", "status"}, w)
             out.append({"kind": "note", "text": get_label(obj, "note", "", w), "at": ref(obj, "at", pids, w),
-                        "status": get_status(obj, w)})
+                        "status": get_status(obj, w), "where": f"{w}.note"})
         elif isinstance(raw, dict) and "frame" in raw:
             obj = check_keys(raw, {"frame", "label", "cond", "steps", "branches"}, w)
             kind = obj["frame"]
@@ -340,8 +353,9 @@ def parse_steps(steps: object, pids: dict, where: str) -> list[dict]:
                 cond = opt_str(obj, "cond", w)
                 if "\n" in label or "\n" in cond:
                     raise SpecError(f"{w} の section の label と cond は 1 行で書く")
-                out.append({"kind": "frame", "op": kind, "tab": label,
-                            "branches": [(cond, parse_steps(obj.get("steps"), pids, f"{w}.steps"))]})
+                out.append({"kind": "frame", "op": kind, "tab": label, "tab_where": f"{w}.label",
+                            "branches": [(cond, parse_steps(obj.get("steps"), pids, f"{w}.steps"))],
+                            "where": [f"{w}.cond"]})
                 continue
             if "branches" in obj:
                 if "steps" in obj:
@@ -351,13 +365,15 @@ def parse_steps(steps: object, pids: dict, where: str) -> list[dict]:
                 if not isinstance(obj["branches"], list) or not obj["branches"]:
                     raise SpecError(f"{w} の branches を 1 つ以上書く")
                 branches = []
+                paths = [f"{w}.branches[{j}].label" for j in range(len(obj["branches"]))]
                 for j, b in enumerate(obj["branches"]):
                     bobj = check_keys(b, {"label", "steps"}, f"{w}.branches[{j}]")
                     branches.append((opt_str(bobj, "label", f"{w}.branches[{j}]"),
                                      parse_steps(bobj.get("steps"), pids, f"{w}.branches[{j}].steps")))
             else:
                 branches = [(opt_str(obj, "label", w), parse_steps(obj.get("steps"), pids, f"{w}.steps"))]
-            out.append({"kind": "frame", "op": kind, "tab": kind, "branches": branches})
+                paths = [f"{w}.label"]
+            out.append({"kind": "frame", "op": kind, "tab": kind, "branches": branches, "where": paths})
         else:
             obj = check_keys(raw, {"from", "to", "label", "status", "reply", "error"}, w)
             for flag in ("reply", "error"):
@@ -368,7 +384,8 @@ def parse_steps(steps: object, pids: dict, where: str) -> list[dict]:
                 raise SpecError(f"{w} は error と status を一緒に書けない（エラーで戻る線は赤の破線で描く）")
             out.append({"kind": "msg", "from": ref(obj, "from", pids, w), "to": ref(obj, "to", pids, w),
                         "label": opt_str(obj, "label", w), "status": get_status(obj, w),
-                        "reply": obj.get("reply") is True, "error": obj.get("error") is True})
+                        "reply": obj.get("reply") is True, "error": obj.get("error") is True,
+                        "where": f"{w}.label"})
     return out
 
 
@@ -531,6 +548,7 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
                                + text_svg(x + NOTE_PAD_X, y + h / 2, node["text"], FS_LABEL, "start",
                                           strike=node["status"] == "removed") + "</g>",
                       (x, y, x + w, y + h))
+                c.texts.append((node["where"], node["text"]))
                 y += h
                 continue
             if node["kind"] == "msg":
@@ -548,6 +566,7 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
                           (x, y, x + SELF_W, y + SELF_H))
                     if node["label"]:
                         label_svg(c, x + SELF_W + 8, y + SELF_H / 2, node["label"], "start", strike)
+                        c.texts.append((node["where"], node["label"]))
                     y += SELF_H + extra / 2
                 else:
                     y += SEQ_ROW + extra
@@ -558,6 +577,7 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
                         # 白地の下端を矢印の 3px 上に揃える（行数に依らず矢印を隠さない）
                         h = text_h(node["label"], FS_LABEL) + 2
                         label_svg(c, (cx[a] + cx[b]) / 2, y - 3 - h / 2, node["label"], strike=strike)
+                        c.texts.append((node["where"], node["label"]))
                 continue
             y += 12
             top = y
@@ -584,13 +604,17 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
             c.add("over", f'<path class="frame-tab" d="M {fmt(x0)} {fmt(top)} H {fmt(x0 + tab_w)} V {fmt(top + 14)} '
                           f'L {fmt(x0 + tab_w - 8)} {fmt(top + 20)} H {fmt(x0)} Z" fill="#f1f3f4" stroke="#5f6368" '
                           f'stroke-width="1"/>' + text_svg(x0 + 8, top + 10, node["tab"], FS_SMALL, "start", bold=True))
+            if node["op"] == "section":
+                c.texts.append((node["tab_where"], node["tab"]))
             # 条件の白地は上端を枠の上辺・区切り線の 1px 下に揃え、行が増えたら下へ伸ばす（上へ伸ばすと前の分岐の矢印を隠す）
             first = node["branches"][0][0]
             if first:
                 label_svg(c, x0 + tab_w + 8, top + (text_h(first, FS_LABEL) + 2) / 2 + 1, guard(node, first), "start")
-            for dy, blabel in dividers:
+                c.texts.append((node["where"][0], first))
+            for (dy, blabel), where in zip(dividers, node["where"][1:]):
                 if blabel:
                     label_svg(c, x0 + 8, dy + (text_h(blabel, FS_LABEL) + 2) / 2 + 1, f"[{blabel}]", "start")
+                    c.texts.append((where, blabel))
 
     emit(steps)
     y += 24
@@ -600,6 +624,7 @@ def render_sequence(spec: dict, c: Canvas) -> list[tuple[str, str]]:
                        f'stroke="{st["stroke"]}" stroke-width="1" stroke-dasharray="4 4"/>', (cx[i], 0, cx[i], y))
         box_svg(c, "participant", p["id"], cx[i] - hw[i] / 2, 0, hw[i], head_h, p["status"], p["label"], 4,
                 sub=p.get("sublabel", ""))
+        c.texts.extend(p["texts"])
     if right_extra:
         c.add("under", "", (cx[-1], 0, cx[-1] + right_extra, 0))
     # 凡例は「部品」（箱）と「呼び出し」（線）の 2 段に分けるので、どちらに出るかを添えて返す。
@@ -791,7 +816,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
         if not isinstance(label, str):
             raise SpecError(f"{ekey}[{i}] の label は文字列で書く")
         edges.append({"from": ref(obj, "from", by_id, f"{ekey}[{i}]"), "to": ref(obj, "to", by_id, f"{ekey}[{i}]"),
-                      "label": label, "status": get_status(obj, f"{ekey}[{i}]")})
+                      "label": label, "status": get_status(obj, f"{ekey}[{i}]"), "where": f"{ekey}[{i}].label"})
     initial = spec.get("initial")
     if initial is not None and (not isinstance(initial, str) or initial not in by_id):
         raise SpecError(f"initial {initial!r} が states に無い（id の文字列で書く）")
@@ -901,6 +926,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
             c.add("over", f'<rect class="group-heading" x="{fmt(x0 + 6)}" y="{fmt(y0 + 4)}" '
                           f'width="{fmt(hx1 - x0 - 6)}" height="20" fill="#ffffff"/>'
                           + text_svg(x0 + 10, y0 + 14, label, FS_SMALL, "start", bold=True))
+            c.texts.append((f"groups[{gi}].label", label))
             placed.append((x0 + 6, y0 + 4, hx1, y0 + 24))
             headings.append((gi, (x0 + 6, y0 + 4, hx1, y0 + 24)))
         outsiders = [i for i in by_id if i not in members and overlap(rect[i], (x0, y0, x1, y1))]
@@ -912,6 +938,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
         r = rect[nd["id"]]
         box_svg(c, "node", nd["id"], r[0], r[1], r[2] - r[0], r[3] - r[1], nd["status"], nd["label"], rx,
                 double=nd.get("final") is True)
+        c.texts.extend(nd["texts"])
 
     order = {nd["id"]: k for k, nd in enumerate(nodes)}
     bundles: dict[tuple[str, str], list[int]] = {}
@@ -971,6 +998,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
                     return x, y + round((f - 0.5) * 10) * lh
 
                 put_label(e["label"], at_loop, strike, what, "start")
+                c.texts.append((e["where"], e["label"]))
             continue
         canon = tuple(sorted((a, b), key=order.get))
         siblings = bundles[canon]
@@ -1017,6 +1045,7 @@ def render_graph(spec: dict, c: Canvas, kind: str) -> list[tuple[str, str]]:
                 return px + nx * push, py + ny * push
 
             put_label(e["label"], at, strike, what)
+            c.texts.append((e["where"], e["label"]))
 
     # 箱を共有する 2 本は箱の縁で接するだけなので数えない（同じ 2 つの箱をつなぐ往復の線もここで外れる）
     for k, (a, b, what, pts) in enumerate(drawn):
@@ -1075,6 +1104,8 @@ def legend(c: Canvas, used: list[tuple[str, str]], labels: dict) -> None:
     svg = ['<g class="legend">']
     for s in items:
         text = labels.get(s) or STATUSES[s]["label"]
+        if s in labels:
+            c.texts.append((f"legend_labels.{s}", labels[s]))
         st = STATUSES[s]
         dash = f' stroke-dasharray="{BOX_DASH[s]}"' if s in BOX_DASH else ""
         svg.append(f'<g class="legend-item" data-status="{s}">'
@@ -1117,6 +1148,10 @@ def legend_sequence(c: Canvas, used: list[tuple[str, str]], labels: dict) -> Non
                         f'（{labels.get(reply_status) or STATUSES[reply_status]["label"]}）')
             else:
                 text = labels.get(s) or STATUSES.get(s, {}).get("label") or LEGEND_EXTRA[s]
+            # 返り値の項目は reply と status の 2 つの値を 1 つの文字に組むので、どちらも数える
+            for k in ("reply", reply_status) if reply_status and reply_status != "existing" else (s,):
+                if k in labels:
+                    c.texts.append((f"legend_labels.{k}", labels[k]))
             svg.append(f'<g class="legend-item" data-status="{s}">')
             if row == "box":
                 st = STATUSES[s]
@@ -1138,7 +1173,7 @@ def legend_sequence(c: Canvas, used: list[tuple[str, str]], labels: dict) -> Non
     c.add("over", "".join(svg), (x0, y0, right, bottom))
 
 
-def render(spec: object) -> tuple[str, int, list[str]]:
+def render(spec: object, texts: list[tuple[str, str]] | None = None) -> tuple[str, int, list[str]]:
     if not isinstance(spec, dict):
         raise SpecError("定義はオブジェクトで書く")
     check_chars(spec, "定義")
@@ -1168,6 +1203,7 @@ def render(spec: object) -> tuple[str, int, list[str]]:
     if title:
         c.add("over", f'<g class="title">{text_svg(c.x0, c.y0 - 22, title, 16, "start", bold=True)}</g>',
               (c.x0, c.y0 - 22 - 12, c.x0 + text_w(title, 16, bold=True), c.y0))
+        c.texts.append(("title", title))
 
     width = math.ceil(c.x1 - c.x0 + 2 * MARGIN)
     height = math.ceil(c.y1 - c.y0 + 2 * MARGIN)
@@ -1195,12 +1231,23 @@ def render(spec: object) -> tuple[str, int, list[str]]:
         elif width > max(WIDE_RATIO * height, GITHUB_WIDTH):
             warnings.append(f"幅 {width}px が高さ {height}px の {WIDE_RATIO} 倍を超えた横長の図（PR の本文の幅 "
                             f"{GITHUB_WIDTH} に縮むと文字が小さくなる。{c.fix_wide}）")
+    if texts is not None:
+        texts.extend(c.texts)
     return svg, width, warnings
 
 
+def one_line(s: str) -> str:
+    """改行・復帰・タブを \\n / \\r / \\t と書いて、出力の 1 件を 1 行に保つ（復帰は XML に書けるので定義に残りうる）."""
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
 def main(argv: list[str]) -> int:
+    # --texts は図に描く文字列を場所つきで出すだけで、.svg を書かない（pr-creator Step 4.6 の図の機密チェック / #568）
+    list_texts = bool(argv) and argv[0] == "--texts"
+    if list_texts:
+        argv = argv[1:]
     if not argv:
-        print("usage: diagram-svg.py <定義.json>...", file=sys.stderr)
+        print("usage: diagram-svg.py [--texts] <定義.json>...", file=sys.stderr)
         return 2
     rc = 0
     for arg in argv:
@@ -1212,7 +1259,13 @@ def main(argv: list[str]) -> int:
         out = path.with_suffix(".svg")
         try:
             spec = json.loads(path.read_text(encoding="utf-8"))
-            svg, _, warnings = render(spec)
+            texts: list[tuple[str, str]] = []
+            svg, _, warnings = render(spec, texts)
+            if list_texts:
+                # 凡例は同じ値を部品と返り値の 2 か所に描くことがあるので、同じ場所と文字の組は 1 行にする
+                for where, s in dict.fromkeys(texts):
+                    print(f"text={arg}\t{where}\t{one_line(s)}")
+                continue
             # 一時ファイルに書いてから差し替える（書き込みの途中で落ちても、空や書きかけの .svg を残さない）
             tmp = out.with_name(f".{out.name}.tmp")
             tmp.write_text(svg, encoding="utf-8")
@@ -1234,8 +1287,8 @@ def main(argv: list[str]) -> int:
             for w in warnings:
                 print(f"warn={out}\t{w}")
             continue
-        # 理由に id などの改行・タブが混ざっても 1 定義 1 行を保つ
-        print(f"failed={arg}\t" + reason.replace("\n", "\\n").replace("\t", "\\t"))
+        # 理由に id などの改行・復帰・タブが混ざっても 1 定義 1 行を保つ
+        print(f"failed={arg}\t" + one_line(reason))
         rc = 1
     return rc
 
