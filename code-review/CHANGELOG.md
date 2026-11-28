@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.169.7] - 2026-11-28
+
+### Changed
+
+- **review-retro.sh と lib/metrics_update.py が別々に持っていた payload の判定を、`scripts/lib/payload_judge.py` に移して両方から import するようにした**（GitHub issue #536）。移したのは、世代の `gen_of`・再レビューの `is_rereview`・delta の `scope_mode_of` と、数値を読む `num`・版マーカーを読む `schema_of`・tokens のスケールの下限 `TOK_SCALE_MIN_SCHEMA` の 6 つ。後の 3 つは parity テストの対象外だったので、retro と式がずれても気づけなかった。判定の理由を書いた retro の docstring とコメントは移した先に残した。metrics_update.py にあった複製と、retro の本文から関数を切り出して突き合わせる parity テスト（`RetroParityTest`）は消し、移した関数を lib の単体テスト（`test_code_review_payload_judge.py`）で見るようにした。手元の計測ストアで、移す前と後の retro と metrics-update の出力（テキスト・`--json`）が同じことを確かめた
+
 ## [2.169.6] - 2026-11-27
 
 ### Changed

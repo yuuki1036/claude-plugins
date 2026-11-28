@@ -6,12 +6,11 @@ python で書き直し、フィルタ（世代・再レビューの除外・tran
 件数と比率で決まるので、ここに閉じる。どの issue にコメントするか・起票するか・ベースラインを
 書き換えるかは SKILL.md の手順に残す。
 
-入口は `metrics-update.sh`（手元のログを `review_event_logs` で解決して渡す）。`review-retro.sh` は変えない
+入口は `metrics-update.sh`（手元のログを `review_event_logs` で解決して渡す）。`review-retro.sh` の出力は変えない
 （publish 直後に毎回出す 40 行・⚠️ のときだけ行動する、の出力契約を崩さない）。
 
-判定は retro と揃える: 世代（`gen_of`）・再レビュー（`is_rereview`）・delta（`scope_mode_of`）の正本は
-`review-retro.sh` のヒアドキュメントの中にあって import できないので、同じ式をここに書く。
-`test_code_review_metrics_update.py` が retro の本文から関数を切り出して突き合わせる。
+判定は retro と揃える: 世代（`gen_of`）・再レビュー（`is_rereview`）・delta（`scope_mode_of`）と版マーカー・数値の
+読み方は、retro と同じ `lib/payload_judge.py` から import する（GitHub issue #536）。
 
 出力にマシンの生の名前とリポジトリのパスを出さない（retro と同じく `lib/machine_label.py` で伏せる）。
 語彙落ちの差分（生の値を含みうる）は手元表示用で、公開先に貼らない。
@@ -38,6 +37,7 @@ sys.dont_write_bytecode = True    # mutation-ok: 配布物の `lib/` に `__pyca
 # 上の行より後に import する（前に置くと、この import で `lib/__pycache__` が作られる）
 from event_dedup import EventDeduper, SANITIZED, REWRITTEN_TOP_KEYS  # noqa: E402
 from machine_label import STORE_DIR, Aliaser, hmac8, tilde  # noqa: E402
+from payload_judge import TOK_SCALE_MIN_SCHEMA, gen_of, is_rereview, num, schema_of, scope_mode_of  # noqa: E402
 from report_counts import REPORT_KEYS, lift_nested_report_counts  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -49,8 +49,6 @@ DEFAULT_STATE = os.path.join(os.path.expanduser("~"), ".claude", "code-review", 
 STATE_SCHEMA = 1
 #: dispatch と tokens を読んでよい最小の版。transcript の取り違え（#246）が直った版（`## 15` の注記）
 RELIABLE_SINCE = "2.130.6"
-#: tokens.schema 3 で usage の算法が変わり、スケールがおよそ半分になった（retro の `TOK_SCALE_MIN_SCHEMA`）
-TOK_SCALE_MIN_SCHEMA = 3
 #: `## 15` の更新条件の既定（xhigh 以上の review の件数）
 DEFAULT_XHIGH_NEED = 5
 BASELINE_SECTION = "## 15."
@@ -62,40 +60,6 @@ ABSENT_WINDOW = 4
 LOG_LIMIT = 30
 #: 語彙落ちの回を列挙する上限
 DROPS_LIMIT = 20
-
-
-# ---- retro と同じ判定（正本は review-retro.sh。parity テストで縛る） ------------------
-
-def gen_of(p):
-    m = p.get("models")
-    if not isinstance(m, dict):
-        return "unrecorded"
-    v = m.get("main")
-    if not isinstance(v, str) or not v:
-        return "mixed"
-    return v[len("claude-"):] if v.startswith("claude-") else v
-
-
-def is_rereview(p):
-    inv = p.get("invocation")
-    return isinstance(inv, dict) and inv.get("rereview") is True
-
-
-def scope_mode_of(p):
-    sc = p.get("review_scope")
-    mode = sc.get("mode") if isinstance(sc, dict) else None
-    return mode if mode in ("delta", "full") else "full"
-
-
-def num(v):
-    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
-
-
-def schema_of(d, key):
-    try:
-        return int(d.get(key) or 1)
-    except (TypeError, ValueError):
-        return 1
 
 
 def median(xs):
