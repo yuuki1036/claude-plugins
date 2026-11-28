@@ -1,3 +1,6 @@
+<!-- 正本依存（SSoT pin）。Step 3・Step 4 の `UI_VERIFY_*` の値ごとの扱いは ui-verify の verify.md の (f) を要約したもの（プラグイン間依存禁止のため要約で持つ）。正本が変わったら Step 3・Step 4 を確認して pin を打ち直す -->
+<!-- SSOT: dev-workflow/skills/ui-verify/references/modes/verify.md#(f) @eb4430a9 -->
+
 ## Phase 5.5: Runtime Smoke Test と動作確認
 
 **Goal**: 静的チェック（tsc / lint / build）で取れない runtime 初期化のバグと、画面の挙動の食い違いを、Quality Review の前に実機ブラウザで捕まえる。UI に影響する変更なら既定で動作確認を行い、行わなかった回は理由を Phase 7 に残す。

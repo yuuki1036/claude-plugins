@@ -1,6 +1,6 @@
 <!-- 正本依存（SSoT pin）。このモードの本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: issue-workflow/skills/start/references/existing-work.md#1 @78ac144e -->
-<!-- SSOT: issue-workflow/skills/start/references/existing-work.md#2 @0c501c26 -->
+<!-- SSOT: issue-workflow/skills/start/references/existing-work.md#2 @de800e2d -->
 <!-- SSOT: issue-workflow/skills/start/references/existing-work.md#3 @9d4a088e -->
 <!-- SSOT: issue-workflow/skills/start/references/existing-work.md#4 @3ddb48fe -->
 <!-- SSOT: issue-workflow/skills/start/references/existing-work.md#5 @39d5a687 -->
@@ -184,8 +184,8 @@ AskUserQuestion(
 )
 ```
 
-- 「feature-dev」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**起動する前に**下の「ブランチ未作成のとき」に従ってブランチを作る。ブランチの有無に関わらず、起動の直前に下の「Phase CTX の書き出し」を行う（後回しの回は F3.2 の書き換えの後）。**feature-dev が有効でない**（`bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" feature-dev` が `0`。無効化した・未導入のどちらも）**なら、この選択肢を option から外す**（dormant。使えないプラグインを提案肢に出さない）
-- 「軽量フロー」→ ブランチ未作成なら先に下の「ブランチ未作成のとき」に従ってブランチを作る。ブランチの有無に関わらず、次に下の「Phase CTX の書き出し」を行う（後回しの回は F3.2 の書き換えの後）。そのうえで `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 8 Step（実装 → 検証 → 動作確認 → self-review → 読み合わせ・文書整合 → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、動作確認 / self-review / 読み合わせ / commit の委譲先（dev-workflow / code-review）は有効なら委譲し（文書整合は同じ issue-workflow の doc-sync）、無効か未導入なら手動手順にフォールバックする（読み合わせは手動の代わりが無いので skip。この選択肢自体は委譲先の有無に関わらず提示する）
+- 「feature-dev」→ `Skill` tool で `feature-dev:feature-dev` を起動する。引数には `{ISSUE-ID}` を渡す（feature-dev の Phase 1.5 が Issue ファイルを読んで要件の出発点にする）。ブランチ未作成なら**起動する前に**下の「ブランチ未作成のとき」に従ってブランチを作る。今のチェックアウトや移り先がもうこの Issue のブランチだった回も、作った・移った回も、起動の直前に下の「Phase CTX の書き出し」を行う（後回しの回は F3.2 の書き換えの後。ブランチ作成を「スキップ」した回は書かない）。**feature-dev が有効でない**（`bash "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-enabled.sh" feature-dev` が `0`。無効化した・未導入のどちらも）**なら、この選択肢を option から外す**（dormant。使えないプラグインを提案肢に出さない）
+- 「軽量フロー」→ ブランチ未作成なら先に下の「ブランチ未作成のとき」に従ってブランチを作る。今のチェックアウトや移り先がもうこの Issue のブランチだった回も、作った・移った回も、次に下の「Phase CTX の書き出し」を行う（後回しの回は F3.2 の書き換えの後。ブランチ作成を「スキップ」した回は書かない）。そのうえで `${CLAUDE_PLUGIN_ROOT}/skills/start/references/lightweight-flow.md` を Read し、その 8 Step（実装 → 検証 → 動作確認 → self-review → 読み合わせ・文書整合 → commit → push + CI → Issue 更新）に従って最後まで通す。feature-dev 非依存で、動作確認 / self-review / 読み合わせ / commit の委譲先（dev-workflow / code-review）は有効なら委譲し（文書整合は同じ issue-workflow の doc-sync）、無効か未導入なら手動手順にフォールバックする（読み合わせは手動の代わりが無いので skip。この選択肢自体は委譲先の有無に関わらず提示する）
 - 「自分で進める」→ 何も起動せず通常の作業に入る。同一セッションで再提案しない
 - feature-dev 起動後は、`feature_dev_plan:` frontmatter への記載をユーザーに案内する（手動更新、または `/issue-maintain` で反映）
 
@@ -198,7 +198,7 @@ AskUserQuestion(
 - 選んだ候補がブランチだけの `fresh` で、移らなかった回（「自分で進める」・ブランチ作成の「スキップ」・`continue`・選択を省いた回）→ 今のチェックアウトの Issue ファイル（作業の無いブランチなので、後で移るときも衝突しにくい）
 - `branch` で移らなかった回（ブランチ作成の「スキップ」）→ 書き換えず、「そのブランチへ移った後に `/start {ISSUE-ID}` し直すと in-progress に移る」と 1 行で案内する（Phase CTX も書かない。下の「Phase CTX の書き出し」）。今のチェックアウトを書き換えると、利用者がそのブランチへ移るときに未コミットの変更が `git switch` を止める
 
-**Phase CTX の書き出し**（F7 の冒頭で黙る `closed` / `detached` / `prunable` の回と、`branch` で移らなかった回（上の「`WORK_STATE = branch` のとき」でブランチ作成を「スキップ」した回）を除く。`detached` を決め直した回は、決め直した後の `WORK_STATE` で判断する）: 上の F3.2 の後回しの回と同じ F7 の締めで 1 回だけ、「セッションコンテキスト書き出し」の Phase CTX を行う（`session-context-write.md`。時機と理由もそこにある）。feature-dev・軽量フローを起動する回はその直前、どちらも起動しない回は F7 を終える時点。後回しの回の書き換えと重なるときは、その後に書く。F6 の後、ブランチを作る・移る前には書かない（`branch:` が移る前のブランチになり、読む側が session-context を使わない）
+**Phase CTX の書き出し**（F7 の冒頭で黙る `closed` / `detached` / `prunable` の回と、`branch` で移らなかった回（上の「`WORK_STATE = branch` のとき」でブランチ作成を「スキップ」した回）と、`none` か、選んだ候補がブランチだけの `fresh` で、feature-dev・軽量フローの前の「ブランチ未作成のとき」でブランチ作成を「スキップ」した回を除く。`detached` を決め直した回は、決め直した後の `WORK_STATE` で判断する）: 上の F3.2 の後回しの回と同じ F7 の締めで 1 回だけ、「セッションコンテキスト書き出し」の Phase CTX を行う（`session-context-write.md`。時機と理由もそこにある）。feature-dev・軽量フローを起動する回はその直前、どちらも起動しない回は F7 を終える時点。後回しの回の書き換えと重なるときは、その後に書く。F6 の後、ブランチを作る・移る前には書かない（`branch:` が移る前のブランチになり、読む側が session-context を使わない）
 
 **`TASK_INTENT = continue` のとき**: feature-dev の案内は出さない（やることが決まっているので選択 UI で止めるのは邪魔）。Phase F6 で「今回のセッションでやること」として意図を再掲するに留める。
 

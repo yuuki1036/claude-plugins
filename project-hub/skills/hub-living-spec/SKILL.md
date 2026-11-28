@@ -10,6 +10,12 @@ allowed-tools:
   - Read
 ---
 
+<!-- 正本依存（SSoT pin）。本ファイルは format-spec.md の、続く pin の節を言い換えている。正本の節が変わったら、その節を言い換えている箇所を確認して pin を打ち直す（`--update-ssot-pins` は repo 全体を一括で打ち直す） -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#1 @650fbc07 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#2 @b8e511ac -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#4 @0375a0e6 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#5 @74977fc6 -->
+
 # hub と living spec の併用
 
 living spec を持つ PJ で、1 つのセッションが **決定**（living spec: 仕様表・OQ・Decision log）と **段取り**（project-hub の hub: sub・report・relay）の両方を受け持つときの決まり。living spec（このプラグインの `living-spec` / `living-spec-maintain` skill）と hub（`hub` skill）の手順はそれぞれの skill のまま使い、この skill は **2 つの間の決まりだけ**を持つ。PJ に living spec が無いなら、この skill は使わない

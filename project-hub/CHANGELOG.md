@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [0.20.2] - 2026-11-28
+
+### Changed
+
+- living-spec・living-spec-maintain・hub-living-spec と living-spec の command の 12 ファイルに、format-spec.md の節ごとの SSoT pin を置いた（GitHub issue #565）。SKILL.md・subcommands・template.md・check-rules.md・command の本文は format-spec.md の表スキーマ・採番・日付・frontmatter などの節を言い換えている。project-hub には pin が 1 本も無く、format-spec.md を直しても言い換えた側の確認を求められなかった。pin を置いたのは節の中身を書いているファイルだけで、節を指しているだけの行には置いていない。spec.md で、確度の逆行の出典が 3 節になっていたのを、5 節に直した（変更前からの誤り）。`docs/ssot-pin.md` の適用範囲にも project-hub を足した
+
 ## [0.20.1] - 2026-11-28
 
 ### Fixed
