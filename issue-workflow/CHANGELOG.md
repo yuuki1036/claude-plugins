@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.18] - 2026-11-27
+
+### Changed
+
+- 軽量フローの SSoT pin（code-review の review-guide-format.md「変異テストの提案」）を打ち直した（GitHub issue #537）。正本の変更は Step 0 の置き場所の書き方だけで、Step 5 の手順は変えていない
+
 ## [1.19.17] - 2026-11-26
 
 ### Changed

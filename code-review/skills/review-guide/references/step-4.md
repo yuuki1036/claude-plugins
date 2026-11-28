@@ -1,5 +1,5 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/review-guide-format.md#4 @2eacd59a -->
+<!-- SSOT: code-review/references/review-guide-format.md#4 @756b7676 -->
 ### 4. 統合・執筆（メインコンテキスト）
 
 `${CLAUDE_PLUGIN_ROOT}/references/review-guide-format.md` を Read し、その形式で各項目を書く:

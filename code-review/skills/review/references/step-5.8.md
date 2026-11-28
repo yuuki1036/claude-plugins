@@ -1,6 +1,6 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-measurement.md#16 @305aaaa7 -->
-<!-- SSOT: code-review/references/triage-guide.md#2.5 @e6cc50ef -->
+<!-- SSOT: code-review/references/orchestration-measurement.md#16 @c0aa9e2d -->
+<!-- SSOT: code-review/references/triage-guide.md#2.5 @b0730968 -->
 ### 5.8 冷や読み skeptic ラウンド（recall 補強 / 動的）
 
 reviewer wave への相乗りで起動し、5.6 + 5.9 の一括発行より前に統合する。**high-risk surface を含む変更に限り**、他 reviewer の findings も推論も渡さない独立 skeptic を 1 体起動し、fleet 共通の盲点（層跨ぎ値フロー等）を冷や読みで探す（`${CLAUDE_PLUGIN_ROOT}/references/triage-dynamic-gates.md` `## 8.5 冷や読み skeptic ラウンド`）。反証レイヤー(5.9)が偽陽性を潰す係なのに対し、本フェーズは見落とし（false negative）を独立読み直しで足す係。meta-reviewer(5.6)が findings 注入で非独立なため fleet 共通盲点を引きずるのを、独立性で補う。

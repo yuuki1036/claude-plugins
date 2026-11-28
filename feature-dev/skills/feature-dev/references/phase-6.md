@@ -52,9 +52,9 @@ git diff --name-only HEAD 2>/dev/null > /tmp/feature-dev-final-files.txt
 - base branch は省略（self-review が `git remote show origin | grep "HEAD branch"` で自動検出）
 - 未コミット diff は self-review 側で `git diff` / `git diff --cached` を併用して取得
 
-self-review 内部の動き（詳細は `code-review:self-review` skill の SKILL.md 参照）:
+self-review 内部の動き（詳細は `code-review:self-review` skill の Step ごとのファイル `skills/self-review/references/step-<番号>.md` 参照）:
 
-- Phase 0 triage で reviewer 体数を `${CLAUDE_EFFORT}` 連動で決定（feature-dev の effort をそのまま継承）
+- Phase 0 triage（Step 2）で reviewer 体数を `${CLAUDE_EFFORT}` 連動で決定（feature-dev の effort をそのまま継承）
 - Phase 3/4 で explorer + reviewer 並列起動
 - Phase 4.5 adaptive deepening（reviewer が unmet_information を申告した場合、追加 explorer 最大 3 体 + 再起動 reviewer 最大 3 体）
 - Phase 4.6 meta-reviewer ラウンド（BLOCKER/CRITICAL 検出時、`${CLAUDE_EFFORT}` が xhigh/max のとき動作）

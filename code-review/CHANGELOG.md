@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [2.169.6] - 2026-11-27
+
+### Changed
+
+- **review-guide-format.md の「読み合わせの締め」と README の変異テストの節で、呼び出し元が回すかの決め方を役割の語で書くようにした**（GitHub issue #537）。`変異テスト:` の行を読む呼び出し元（issue-workflow の軽量フロー・feature-dev の Phase 7・dev-workflow の git-commit-helper）の名前は残し、回すかと、回す前に聞くかは呼び出し元が決める、とだけ書き、聞かずに回す・承認を得てから回す・聞くだけで自分では回さない、の 3 つの役割を並べる。`回し方:` の欄は正本が出すコマンドなので、呼び出し元が決めるものに含めない。SSoT pin は正本から消費サイトへの向きしか見ないので、呼び出し元が回すかの決め方を変えても名指しの行は確認の対象に上がらなかった。README で抜けていた git-commit-helper も足した（2026-11-27 決定）
+- **分けた skill の手順の置き場所を「SKILL.md Step N」と呼んでいた 13 行と、番号の無い 2 行を、Step ごとのファイルを指すように直した**（GitHub issue #537）。review-guide-format.md・commands/review-guide.md・triage-guide.md・prompts/pr-context-rules.md・reply-tone-guide.md・triage-dynamic-gates.md・orchestration-measurement.md の `## 16`。形は「<skill> の Step N（`skills/<skill>/references/step-<番号>.md`）」（2026-11-27 決定）。消費サイトの SSoT pin を打ち直した
+
 ## [2.169.5] - 2026-11-27
 
 ### Changed

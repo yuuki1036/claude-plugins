@@ -1,6 +1,6 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-guide.md#3.5 @22cde26f -->
-<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @7be3a9e1 -->
+<!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @89619304 -->
 ### 0. 入力確定と diff 収集
 
 引数を解析する。**`--base <ref>` の値を `BASE_REF`、`--top N` の値を精読の上限 N（省略時 5）、`--walkthrough` の有無を `WALKTHROUGH`、`--hide-guide` の有無を `HIDE_GUIDE`（1 なら `WALKTHROUGH` も 1 にする）、残りの非オプション引数（PR 番号）を `PR_ARG` に入れる**。`--base` があれば base モード、無ければ PR モードに入る。N は 1〜5 に収める（範囲の外なら近い方の端に寄せ、数でなければ 5 に戻す。寄せたときはレポート冒頭に 1 行で書く）。
