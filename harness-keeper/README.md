@@ -20,7 +20,7 @@ Claude Code の最新アップデートからプラグイン開発に関連す�
 
 ### cc-catch-up
 
-Claude Code の最新アップデートをキャッチアップし、既存プラグインへの改善を提案・適用する。`references/plugin-features.md`（プラグイン関連機能カタログ）と `references/improvement-patterns.md`（機能 → 改善のデシジョンツリー）を参照し、`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json` で前回キャッチアップ状態を追跡する（プラグイン本体には置かず、marketplace 更新で消えない場所に保存）。`catch-up` コマンドとペア。
+Claude Code の最新アップデートをキャッチアップし、既存プラグインへの改善を提案・適用する。`references/plugin-features.md`（プラグイン関連機能カタログ）と `references/improvement-patterns.md`（機能 → 改善のデシジョンツリー）を参照し、`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json` で前回キャッチアップ状態を追跡する（プラグイン本体には置かず、marketplace 更新で消えない場所に保存。置き場所の dir には中身が `*` の `.gitignore` を置き、作業 repo の追跡から外す）。`catch-up` コマンドとペア。
 
 **トリガー例**: 「キャッチアップ」「CC更新確認」「プラグイン改善」「新機能適用」「リリースノート確認」
 

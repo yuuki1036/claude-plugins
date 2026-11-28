@@ -24,13 +24,18 @@ Claude Code の最新リリースからプラグイン開発に関連する新�
 ## 前提
 
 - 作業ディレクトリがプラグインリポジトリ（marketplace 構成）であること
-- `${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json` で前回キャッチアップ状態を追跡（以降 **state file** と呼ぶ）。プラグイン本体ディレクトリには置かない（marketplace 更新でキャッシュごと消えるのを防ぎ、個人の実行状態を git commit しないため）
+- `${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json` で前回キャッチアップ状態を追跡（以降 **state file** と呼ぶ）。プラグイン本体ディレクトリには置かない（marketplace 更新でキャッシュごと消えるのを防ぐため）。個人の実行状態なので git commit しない。Phase 0 が置く `.gitignore` で、作業 repo の追跡から外す
 
 ## ワークフロー
 
 ### Phase 0: スコープ決定
 
-1. state file（`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json`）を読み込む（存在しなければ初回。親ディレクトリが無ければ `mkdir -p` で作成）。**無くて旧パス（`.claude/claude-meta/cc-catch-up-state.json`）にあれば、新パスへ `mv` してから読む**（プラグイン名を claude-meta から改名した。移さないと前回の状態を失い、全範囲を初回として扱ってしまう）
+1. state file（`${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json`）を読み込む（存在しなければ初回）。読む前に、置き場所の dir を次のスクリプトで用意する。dir が無ければ作り、中身が `*` の 1 行の `.gitignore` が無ければ置く（dir を新しく作った回も、既にあった回も）。repo の `.gitignore` を書き換えずに、state file と `.gitignore` 自身を git の追跡から外せる。`$HOME/.claude` を git で同期している環境でも効く:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/init-state-dir.sh"
+   ```
+   `.gitignore` は既に commit した state file を追跡から外さない。出力に `tracked=<パス>` の行があれば、そのパスを `git rm --cached <パス>` で外すよう利用者に伝える（旧パスの行は、下の `mv` の後に残る旧パスの削除と合わせて commit してもらう）。`tracked=` の行が無ければ何も伝えない
+   **state file が無くて旧パス（`.claude/claude-meta/cc-catch-up-state.json`）にあれば、新パスへ `mv` してから読む**（プラグイン名を claude-meta から改名した。移さないと前回の状態を失い、全範囲を初回として扱ってしまう）
 2. 現在の Claude Code バージョンを取得: `claude --version` (Bash)
 3. 現在のモデル family ID を取得（環境変数 or `claude config` から。失敗時はユーザーに確認）
 4. 前回のキャッチアップバージョンとの差分範囲を特定
@@ -69,7 +74,7 @@ Claude Code の最新リリースからプラグイン開発に関連する新�
 | **MCP** | 統合機能、エリシテーション、サーバー設定 |
 | **Runtime** | CLI フラグ、実行モード |
 
-抽出基準: `references/plugin-features.md` のカテゴリ構造に照合し、既知の機能は差分のみ、未知の機能は新規としてマーク。
+抽出基準: `references/plugin-features.md` のカテゴリ構造に照合し、既知の機能は差分のみ、未知の機能は新規としてマーク。新規の機能はレポートに出すだけで、カタログには書き足さない（カタログは harness-keeper の版上げで更新する。カタログの冒頭の注記を参照）。
 
 ### Phase 3: プラグインスキャン（決定的 pre-pass）
 
@@ -234,10 +239,12 @@ exit 1（schema 違反）の場合は state file を修正してから完了と�
 
 ## Reference Files
 
-- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/plugin-features.md`** — CC のプラグイン関連機能カタログ（カテゴリ別・バージョン付き）。フルスキャン時のベースライン、および changelog 解析時の分類基準として使用- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/improvement-patterns.md`** — 機能→改善のデシジョンツリーと before/after パターン集。Gap 分析（Phase 4）の判定ロジックとして使用
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/plugin-features.md`** — CC のプラグイン関連機能カタログ（カテゴリ別・バージョン付き）。フルスキャン時のベースライン、および changelog 解析時の分類基準として使用
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/improvement-patterns.md`** — 機能→改善のデシジョンツリーと before/after パターン集。Gap 分析（Phase 4）の判定ロジックとして使用
 - **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/pruning-heuristics.md`** — モデル世代ごとの制約棚卸し基準（C-1〜C-5 カテゴリ、判定フロー、レポート/対話仕様）。Phase P（剪定モード）で使用
 - **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/references/state-schema.json`** — state file の JSON Schema（draft-07）。run 間差分照合に使う状態構造の single source。Phase 7 の書き込み後に `scripts/validate-state.py` が照合。schema はプラグイン同梱（state file 本体はプロジェクト/ユーザー配下）
 - **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/validate-state.py`** — state file を state-schema.json に照合する決定的バリデータ（標準ライブラリのみ）。Phase 7 末尾で実行。引数省略時は `${CLAUDE_PROJECT_DIR:-$HOME}/.claude/harness-keeper/cc-catch-up-state.json` を既定で解決
+- **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/init-state-dir.sh`** — state file の dir を用意し、中身が `*` の `.gitignore` を置く。新旧どちらかのパスの state file が既に追跡されていれば `tracked=` で報告する。Phase 0 の 1 で実行。引数省略時は `${CLAUDE_PROJECT_DIR:-$HOME}` を root にする
 - **`${CLAUDE_PLUGIN_ROOT}/skills/cc-catch-up/scripts/scan-frontmatter.sh`** — 全プラグインの manifest/hooks/skills/agents/commands の使用フィールドを grep/jq で機械抽出する Phase 3 の決定的 pre-pass（jq 依存）
 
 ## 注意事項
