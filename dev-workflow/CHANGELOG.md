@@ -2,6 +2,17 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.47.0] - 2026-11-28
+
+### Added
+
+- `scripts/diagram-svg.py` は、`title` の無い sequence に warn= を出すようになった（GitHub issue #567）。diagram-guide は sequence に title を付けるよう書いていたが、スクリプトは確かめていなかった。空白だけの title は無いものとして扱い、描かない
+
+### Changed
+
+- `scripts/diagram-svg.py` は、`flow` / `state` の `legend_labels` に `reply` / `error` を書くと failed= にするようになった（これまで通っていた定義が通らなくなる）。この 2 つのキーの項目を描くのは sequence の凡例だけで、これまでは flow / state に書いたラベルが黙って捨てられていた
+- `scripts/diagram-svg.py` は、太字で描く文字の幅を、半角の文字だけ 1.15 倍で見積もるようになった。対象は 2 行目のある参加者の 1 行目・区間の枠の札・範囲の枠の見出し・図の title。Hiragino Sans を Chrome で測ると、和文は太字でも幅が変わらず、英字は 1.06〜1.14 倍に広がった。テストと diagram-guide の例の 133 図では、はみ出した図は無かった。ただし前の見積もりでは、英字が 40 字ほどの名前ではみ出す計算だった。alt / opt / loop の札は 3.3〜4.5px 広がる
+
 ## [1.46.2] - 2026-11-28
 
 ### Changed
