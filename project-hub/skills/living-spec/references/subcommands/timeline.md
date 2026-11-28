@@ -1,3 +1,7 @@
+<!-- 正本依存（SSoT pin）。本ファイルは format-spec.md の、続く pin の節を言い換えている。正本の節が変わったら、その節を言い換えている箇所を確認して pin を打ち直す（`--update-ssot-pins` は repo 全体を一括で打ち直す） -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#1 @650fbc07 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#7 @e4e38744 -->
+
 ## Phase 8: timeline — タイムラインへの 1 項目の append
 
 起きたこと（進捗）と期日を、`format-spec.md` 1.1 節の形で「## タイムライン」の末尾に 1 行足す（GitHub issue #333）。**決定は書かない**（`decision` の領分。「〜にする」「〜を採用」のような決定の文が渡されたら、書かずに `/living-spec decision` を案内して終了する）。仕様表の凍結とは関係なく書ける。対象ファイルは SKILL.md の Phase 0 で決めたもの、W1・W4 は SKILL.md の「共通手順」。

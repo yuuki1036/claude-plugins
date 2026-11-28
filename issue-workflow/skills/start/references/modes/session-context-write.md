@@ -1,5 +1,7 @@
 <!-- 正本依存（SSoT pin）。このモードの本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: issue-workflow/skills/start/references/existing-work.md#2 @0c501c26 -->
+<!-- SSOT: issue-workflow/skills/start/references/existing-work.md#2 @de800e2d -->
+<!-- SSOT: docs/shared-state.md#frontmatter @1743b1a0 -->
+<!-- SSOT: docs/shared-state.md#type @576e90f1 -->
 
 ## セッションコンテキスト書き出し（Feature ブランチモード共通）
 
@@ -9,6 +11,7 @@ Feature ブランチモードで Issue ファイルの読み込みに成功し�
 ダッシュボードモード・Quick Pick モード・親 Issue 軽量サマリーモード、および Issue ファイルが存在しない場合はスキップする。
 F2.5 の `WORK_STATE`（F7 で決め直した回は決め直した後の値）が `detached` / `closed` / `prunable` の回もスキップする（session-context を書かない）。
 `branch` で作業のあるブランチへ移らなかった回（F7 のブランチ作成の「スキップ」）もスキップする。作業はそのブランチにあり、今のチェックアウトには無い。
+`none` と、選んだ候補がブランチだけの `fresh` で、feature-dev・軽量フローを選んだのに F7 のブランチ作成を「スキップ」した回もスキップする（2026-11-28 決定 / GitHub issue #580）。ブランチは利用者が後で自分で作るので、今のチェックアウトに書くと `branch:` が後で作るブランチと合わない。「自分で進める」・`continue` の回・`feature_dev_plan:` で選択を省いた回はブランチを作る手順を通らないが、書く（利用者が今のチェックアウトで作業することがあり、Claude アプリが作る detached HEAD の worktree では、session-context がその worktree を Issue に結び付ける唯一の手がかりになる。`scripts/branch-setup.sh` の `sc_has_id`）。
 この Issue の作業が無い今のチェックアウトに `issue_id` を書くと、そこが detached HEAD の worktree なら、同じチェックアウトでの次の /start でここが session-context の候補（`current=1`）になって `fresh` に決まり、`detached` の歯止めが判定行の注記だけに弱まる（`closed` の status を戻した後・`prunable` を prune した後の /start も、作業のある候補より先にここへ決まる）。
 
 **書く時機は F7 の締め**（2026-11-28 決定 / GitHub issue #566）。Phase F3.2 の後回しの回と同じ時点で 1 回だけ書く:

@@ -1,3 +1,14 @@
+<!-- 正本依存（SSoT pin）。本ファイルは format-spec.md の、続く pin の節を言い換えている。正本の節が変わったら、その節を言い換えている箇所を確認して pin を打ち直す（`--update-ssot-pins` は repo 全体を一括で打ち直す） -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#2 @b8e511ac -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#3 @d620c24e -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#4 @0375a0e6 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#5 @74977fc6 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#6 @afdfb988 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#7 @e4e38744 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#8 @bec4708d -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#9 @3d83e7f4 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#10 @fe9a7606 -->
+
 # maintain 検証ルール（正本 / SSoT）
 
 `/living-spec-maintain` の段 1-8 の判定内容・severity・修正方針の**正本**。

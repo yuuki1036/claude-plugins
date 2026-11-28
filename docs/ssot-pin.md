@@ -63,6 +63,9 @@ pin が守るのは**正本の節の中身を自分の文で書いている箇�
 - **その節の pin は置かない**: 書いている規則の正本が別の doc にある。同じ語が出てきても、その節の言い換えとは数えない。
   例: 動的ラウンドの meta-reviewer と反証を同じメッセージで発行する手順は、`orchestration-dynamic-rounds.md` と `triage-dynamic-gates.md` が正本。一括発行の一般則（`orchestration-guide.md` の `## 0`）の言い換えではない。
   別の doc の節を言い換えているなら、その節の pin を検討する
+- **言い換えていても置かない（2026-11-28 決定 / GitHub #565）**: `orchestration-guide.md` の `## 0` にある、一括発行と完了待ちの一般則を code-review の外で言い換えている箇所。決めた時点で当たるのは、issue-workflow の start の F3.5・discover・doc-sync、feature-dev の Phase 2、design-doc の design-review、failure-journal の retro（SKILL.md と transcript-salvage.md）、harness-keeper の cc-catch-up。
+  `## 0` の大半は review / self-review 専用の取り決め（skill 間の差分の表・wave の事後計測・発行直前チェックポイント）で、よく変わる。pin を置くと、review だけの変更のたびに外のプラグインで打ち直しが要る。
+  一般則は Claude Code の挙動で、CLAUDE.md の Gotchas（Agent の結果は完了通知で届く）にも書いてある。一般則が変わったら、code-review の外の md を語を変えて grep し（`CC 2.1.302`・`非同期`・`同一メッセージ`・`同じメッセージ`）、当たりをすべて確かめる。上の列挙は決めた時点の当たりで、全部であることは保証しない（1 語だけでは漏れる。たとえば feature-dev の Phase 2 は英文で `非同期` を含まない）
 
 迷ったら置く側に倒す。置きすぎても、正本が変わったときに確認するファイルが増えるだけで済む。置き漏らすと、古い言い換えがそのまま残る。
 
@@ -80,4 +83,4 @@ pin が守るのは**正本の節の中身を自分の文で書いている箇�
 
 ## 適用範囲
 
-code-review・feature-dev・issue-workflow・dev-workflow・design-doc の md。引くときは行頭に限って md だけを grep する（`git grep -l '^<!-- SSOT:' -- '*.md'`）。行頭に限らないと、テストや CLAUDE.md・ADR の行内コードに書いた記法の例も当たる。行頭に限っても、この doc の「記法」の節の例が 1 件残る（フェンスの中なので `check_ssot_pins` は数えない）
+code-review・feature-dev・issue-workflow・dev-workflow・design-doc・project-hub の md。正本は消費サイトと同じプラグインの中に限らず、別のプラグインや repo 直下の `docs/` の md でもよい（`check_ssot_pins` は repo ルート相対の md なら引ける。`docs/` を正本にした最初の pin は issue-workflow の Phase CTX から `docs/shared-state.md` へのもの / GitHub #565）。引くときは行頭に限って md だけを grep する（`git grep -l '^<!-- SSOT:' -- '*.md'`）。行頭に限らないと、テストや CLAUDE.md・ADR の行内コードに書いた記法の例も当たる。行頭に限っても、この doc の「記法」の節の例が 1 件残る（フェンスの中なので `check_ssot_pins` は数えない）

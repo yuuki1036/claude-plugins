@@ -5,6 +5,8 @@
 <!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @89619304 -->
 <!-- 正本依存（SSoT pin）。Phase 7 の 2 回目の self-review を回すかの分岐（`次の一手:` が `決定的な検証` の回・`不明（…）` の扱い）は code-review の review-guide-format.md「回し直すかの判断」を要約したもの。正本が変わったら Phase 7 のその分岐を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/review-guide-format.md#回し直すかの判断 @bc251143 -->
+<!-- 正本依存（SSoT pin）。ui-verify の結果の報告（`UI_VERIFY_RESULT` / `UI_VERIFY_REASON` / `UI_VERIFY_UNCOVERED` の値ごとに残すもの）は dev-workflow の ui-verify の verify.md の (f) を要約したもの。正本が変わったら Phase 7 の報告を確認して pin を打ち直す -->
+<!-- SSOT: dev-workflow/skills/ui-verify/references/modes/verify.md#(f) @eb4430a9 -->
 ## Phase 7: Summary
 
 **Goal**: 人間が変更を自分で読み、コミットや PR に進めるかを判断できる状態で渡す（GitHub issue #290）。この時点で要るのは要約ではなく読み順なので、読み順と読み合わせ（精読を 1 件ずつ解説し、見つけた修正をその場で入れる）は `code-review:review-guide` に任せ（読み合わせは必須。利用者が選ぶのはガイドを表示するかだけ）、feature-dev からは review-guide が diff から知りえない申し送りだけを短く添える。読み合わせで入った修正は Phase 6 の self-review も Phase 6.9 の確認も通らないので、締めの判定で self-review にもう一度通してから終える。変更ファイルを列挙するだけの独自サマリは、どこから読むか・どこが難所かを伝えない。

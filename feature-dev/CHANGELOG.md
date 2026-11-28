@@ -5,6 +5,12 @@ All notable changes to feature-dev plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.30.2] - 2026-11-28
+
+### Changed
+
+- Phase 5.5（`phase-5.5.md`）と Phase 7（`phase-7.md`。ui-verify の結果の報告）に、dev-workflow の ui-verify の verify.md にある `(f) 呼び出し元への結果` を指す SSoT pin を置いた（GitHub issue #565）。Step 3・Step 4 の `UI_VERIFY_*` の値ごとの扱いを言い換えているのに pin が無く、ui-verify の条件が変わっても確認の範囲に入らなかった。キーと値の綴りは回帰テストが守るが、値ごとの扱いはテストでも pin でも守られていなかった。Phase 2 は code-review の orchestration-guide.md の `## 0` を言い換えているが、pin は置かない（理由は `docs/ssot-pin.md`）
+
 ## [2.30.1] - 2026-11-27
 
 ### Changed

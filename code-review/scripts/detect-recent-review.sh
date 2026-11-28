@@ -91,8 +91,8 @@ for path in sys.argv[1:]:
     # 直近から遡る。events.jsonl は追記のみなので後ろが新しい
     for line in reversed(lines[-2000:]):
         line = line.strip()
-        if not line or '"review:completed"' not in line:  # mutation-ok: 事前判定は高速化で、外しても下の event 名比較が同じ結果になる
-            continue
+        if '"review:completed"' not in line:
+            continue  # mutation-ok(1): 高速化のための事前判定（空行もここで落ちる）。外しても下の event 名比較が同じ結果になる
         try:
             ev = json.loads(line)
         except ValueError:

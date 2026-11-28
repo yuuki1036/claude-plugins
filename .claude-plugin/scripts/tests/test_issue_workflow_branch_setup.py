@@ -930,7 +930,34 @@ class StartSkillContractTest(RepoTestCase):
                 line = next(ln for ln in f7.splitlines() if ln.startswith(f"- {option}"))
                 self.assertIn("「Phase CTX の書き出し」を行う", line)
                 # 「ブランチ未作成なら」の条件の外に置く（worktree へ移り済みの fresh でも書く）
-                self.assertIn("ブランチの有無に関わらず", line)
+                self.assertIn("作った・移った回も", line)
+                # ブランチ作成を「スキップ」した回は書かない（#580）
+                self.assertIn("ブランチ作成を「スキップ」した回は書かない", line)
+
+    def test_phase_ctx_skips_branch_creation_skipped_before_launch(self):
+        """`none` / ブランチだけの `fresh` で、feature-dev・軽量フローの前のブランチ作成を「スキップ」した回は Phase CTX を書かない（#580）.
+
+        ブランチは利用者が後で自分で作るので、今のチェックアウトに書くと `branch:` が後で作るブランチと合わない。
+        Phase CTX の書かない条件・F7 の締めの節・existing-work.md の表の `none` / `fresh` の行の 3 か所で揃える。
+        黙る側の対: 「自分で進める」・`continue`・`feature_dev_plan:` の回は書く側に残す（detached HEAD の worktree を
+        Issue に結び付ける手がかりが session-context だけのため）.
+        """
+        flow = flow_text(START)
+        ctx = section(flow, "### Phase CTX", "1. 以下の情報")
+        line = next(ln for ln in ctx.splitlines() if "#580" in ln)
+        self.assertIn("`none`", line)
+        self.assertIn("ブランチだけの `fresh`", line)
+        self.assertIn("「スキップ」した回もスキップする", line)
+        self.assertIn("書く（", line)
+        f7 = section(flow, "### Phase F7", "\n---\n")
+        block = section(f7, "**Phase CTX の書き出し**", "\n\n")
+        self.assertIn("「ブランチ未作成のとき」でブランチ作成を「スキップ」した回", block)
+        self.assertNotIn("「自分で進める」", block)
+        table = section(EXISTING_DOC.read_text(encoding="utf-8"), "## 2.", "## 3.")
+        for marker in ("| `none` |", "ブランチだけなら移らず"):
+            with self.subTest(row=marker):
+                row = next(ln for ln in table.splitlines() if marker in ln)
+                self.assertIn("「スキップ」した回は Phase CTX を書かない / GitHub issue #580", row)
 
     def test_phase_ctx_skips_branch_left_unswitched(self):
         """`branch` でブランチ作成を「スキップ」して移らなかった回も Phase CTX を書かない（#566）.
@@ -949,7 +976,7 @@ class StartSkillContractTest(RepoTestCase):
         self.assertIn("移らなかった回は Phase CTX を書かない", row)
 
     def test_existing_work_rows_say_where_phase_ctx_is_not_written(self):
-        """表の行のうち NO_CTX に決まりうる行だけが「Phase CTX は書かない」と書く（here / fresh / none の行は書く側）."""
+        """表の行のうち NO_CTX に決まりうる行だけが「Phase CTX は書かない」と無条件に書く（here / fresh / none の行は既定で書く側。#580 の条件付きの除外は「を書かない」と書き分ける）."""
         table = section(EXISTING_DOC.read_text(encoding="utf-8"), "## 2.", "## 3.")
         rows = []
         for ln in table.splitlines():
