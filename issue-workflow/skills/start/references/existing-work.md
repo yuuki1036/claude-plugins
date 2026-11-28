@@ -33,8 +33,8 @@ start の Phase F2.5 が読む。`branch-setup.sh existing {ISSUE-ID}` の出力
 | `current=1` の候補がある（session-context だけの候補も含む） | その `current=1` の候補に作業があれば `here`、無ければ `fresh` | 作業の有無に関わらず今のチェックアウトに残る。ほかの候補は F6 に並べるだけ |
 | 移れる候補（`matched` に `branch` か `path` を含む）のどれかに作業がある | 下の順で先頭の候補が worktree を持てば `moved`、`prunable=` にパスがあれば `prunable`、ブランチだけ（`worktree=-`）なら `branch` | `moved` はその worktree へ移る（3）。確認は出さない。`branch` は F7 でそのブランチへ移る（F7 のブランチ作成で「スキップ」して移らなかった回は Phase CTX を書かない。作業の無い今のチェックアウトが detached HEAD の worktree なら、書くと下の `detached` の行と同じく次の /start でここが `current=1` の候補になる）。どちらも新しいブランチは作らない。`prunable` は移動もブランチ作成もせず（Phase CTX は書かない）、判定行で登録の消し方（下の `prunable` の項）を案内する |
 | 作業のある session-context だけの候補がある | `detached` | 移動もブランチ作成もしない。判定行で、その worktree のセッションで続けるよう案内する。Phase CTX は書かない（今のチェックアウトが detached HEAD の worktree なら、書くと次の /start でここが `current=1` の候補になり、上の行が先に当たってこの判定が効かなくなる） |
-| 移れる候補がある（どれも作業なし） | 下の順で先頭の候補の `prunable=` にパスがあれば `prunable`、無ければ `fresh` | `fresh` は、先頭の候補が worktree を持てばそこへ移る（3）。ブランチだけなら移らず、F7 の「ブランチ未作成のとき」でそのブランチを使う（新しい名前を作らない）。`prunable` は移動もブランチ作成もせず（Phase CTX は書かない）、登録の消し方（下の `prunable` の項）を案内する |
-| それ以外（0 件、または作業の無い session-context だけの候補） | `none` | これまでどおり新規（F7 でブランチを作る） |
+| 移れる候補がある（どれも作業なし） | 下の順で先頭の候補の `prunable=` にパスがあれば `prunable`、無ければ `fresh` | `fresh` は、先頭の候補が worktree を持てばそこへ移る（3）。ブランチだけなら移らず、F7 の「ブランチ未作成のとき」でそのブランチを使う（新しい名前を作らない。feature-dev・軽量フローの前のブランチ作成で「スキップ」した回は Phase CTX を書かない / GitHub issue #580）。`prunable` は移動もブランチ作成もせず（Phase CTX は書かない）、登録の消し方（下の `prunable` の項）を案内する |
+| それ以外（0 件、または作業の無い session-context だけの候補） | `none` | これまでどおり新規（F7 でブランチを作る。feature-dev・軽量フローの前のブランチ作成で「スキップ」した回は Phase CTX を書かない / GitHub issue #580） |
 
 - **選ぶ順**: `ahead` が多い順 → 同じなら `dirty` が多い順 → それも同じなら出力の順。`-` は 0 として比べる（既定ブランチが分からない回は `ahead=-` が全候補に出るので、`dirty` と出力の順で決まる）
 - **`prunable`**: worktree のディレクトリ（または中の `.git`）を `git worktree remove` / `move` を通さずに消した・動かした跡。`git worktree prune` が消すのはその登録で、ブランチは残る。prune の後の /start では、そのブランチは `branch` / `fresh` の候補になる。prune はこちらで打たない（外付けのディスクなどで一時的に見えないだけの worktree の登録も消える）。判定行の案内は `git worktree prune` の後の /start が基本で、次の 2 つは書き足す:

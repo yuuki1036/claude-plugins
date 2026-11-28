@@ -1,5 +1,6 @@
-<!-- 正本依存（SSoT pin）。Step 5 の変異テストの分岐（承認の取り方・回し方・結果の 4 区分・前後の git status の突き合わせ）は code-review の review-guide-format.md「変異テストの提案」を要約したもの（プラグイン間依存禁止のため要約で持つ）。正本が変わったら Step 5 と「報告」を確認して pin を打ち直す -->
+<!-- 正本依存（SSoT pin）。Step 5 の変異テストの分岐（承認の取り方・回し方・結果の 4 区分・前後の git status の突き合わせ）は code-review の review-guide-format.md「変異テストの提案」を要約したもの（プラグイン間依存禁止のため要約で持つ）。Step 3 の `UI_VERIFY_*` の値ごとの分岐は dev-workflow の ui-verify の verify.md の (f) を要約したもの。正本が変わったら、変わった方の Step（Step 5 と「報告」/ Step 3 と「報告」）を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @89619304 -->
+<!-- SSOT: dev-workflow/skills/ui-verify/references/modes/verify.md#(f) @eb4430a9 -->
 
 # 軽量フロー（feature-dev を使わない一連のワークフロー）
 

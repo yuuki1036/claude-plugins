@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づく。
 
+## [1.19.20] - 2026-11-28
+
+### Fixed
+
+- start の F7 で feature-dev・軽量フローを選び、ブランチ作成を「スキップ」した回（`none` と、選んだ候補がブランチだけの `fresh`）は、Phase CTX を書かないようにした（2026-11-28 決定 / GitHub issue #580）。今のチェックアウトに書くと、 `branch:` が後で作るブランチと合わない。今のチェックアウトが detached HEAD の worktree なら、次の /start でここが `current=1` の候補になって `fresh` に決まる。Phase CTX の書かない条件・F7 の 2 つの選択肢の行・F7 の締めの節・existing-work.md の表をそろえた。「自分で進める」・`continue`・`feature_dev_plan:` で選択を省いた回はこれまでどおり書く（Claude アプリが作る detached HEAD の worktree を Issue に結び付ける手がかりを消さないため）
+
+### Changed
+
+- 正本を言い換えているのに SSoT pin の無かった箇所に pin を置いた（GitHub issue #565）。start の Phase CTX（`session-context-write.md`）に `docs/shared-state.md` の frontmatter フォーマットの pin を、軽量フロー（`lightweight-flow.md`）に dev-workflow の ui-verify の verify.md にある `(f)` を指す pin を足した。Phase CTX には `docs/shared-state.md` の type 一覧の pin も足した（session の producer と consumers の値はこの節から来る）。start の F3.5・discover・doc-sync は code-review の orchestration-guide.md の `## 0` を言い換えているが、pin は置かない（理由は `docs/ssot-pin.md`）
+
 ## [1.19.19] - 2026-11-28
 
 ### Fixed
