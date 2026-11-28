@@ -25,7 +25,9 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$HERE/lib/review-paths.sh"
 
 CMD="${1:-}"
-[ $# -gt 0 ] && shift  # mutation-ok: -gt を -ge にしても同じ。set -e を張っていないので、引数が 0 個で shift が失敗しても先へ進む
+if [ $# -gt 0 ]; then  # mutation-ok(1): -gt を -ge にしても同じ。set -e を張っていないので、引数が 0 個で shift が失敗しても先へ進む
+  shift
+fi
 PR=""; ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in

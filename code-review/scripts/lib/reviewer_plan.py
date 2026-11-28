@@ -176,7 +176,9 @@ def _assign(cands, prior, effort, main_cap, total_cap, delta):
             else:
                 dropped.append(k)
     taken = {k for _, keys in rows for k in keys} | set(dropped)
-    rest = [k for k in pool if k not in taken and k not in SOLO  # mutation-ok: and を or にしても同じ。pool の単独維持の観点は上のループで必ず taken に入り、taken の非単独維持は設計バンドルの観点だけで次行が外す
+    # 2 つの条件を and で結ばず if を重ねるのは、and を or にする変異が等価になるため（pool の単独維持の
+    # 観点は上のループで必ず taken に入り、taken の非単独維持は設計バンドルの観点だけで次行が外す）
+    rest = [k for k in pool if k not in taken if k not in SOLO
             and not (design_effort and k in DESIGN)]
 
     for k in held:
@@ -274,8 +276,10 @@ def compute_plan(effort, size_tier, activated=(), prior=(), delta=False, focus=(
             else:
                 reasons[k] = "overflow"
 
+    size_binds = (size_cap is not None and
+                  size_cap < effort_cap)  # mutation-ok(1): < を <= にしても同じ。規模キャップ（3 / 5）と effort 上限（4 / 6 / 10）に等しくなる組が無い
     cap_source = "scope" if scope != "full" else (
-        "size" if size_cap is not None and size_cap < effort_cap else "effort")  # mutation-ok: < を <= にしても同じ。規模キャップ（3 / 5）と effort 上限（4 / 6 / 10）に等しくなる組が無い
+        "size" if size_binds else "effort")
     explorer_size = SIZE_CAP["explorer"].get(size_tier_capped)
     specialist_size = SIZE_CAP["specialist"].get(size_tier_capped)
 
@@ -404,7 +408,8 @@ def check_table(plan, rows, piggyback, dropped):
 
     for r in rows:
         keys = set(r["keys"])
-        is_design = design_effort and len(keys) > 1 and keys <= DESIGN  # mutation-ok: > を >= にしても同じ。1 観点の行は solo-bundled にも over-bundled にも当たらず、is_design の値が結果に効かない
+        is_design = (design_effort and keys <= DESIGN and
+                     len(keys) > 1)  # mutation-ok(1): > を >= にしても同じ。1 観点の行は solo-bundled にも over-bundled にも当たらず、is_design の値が結果に効かない
         if len(keys) > 1 and keys & SOLO and not is_design:
             ng.append(("solo-bundled", "%s: %s" % (r["id"], ",".join(r["keys"]))))
         limit = DESIGN_BUNDLE_MAX if is_design else BUNDLE_MAX

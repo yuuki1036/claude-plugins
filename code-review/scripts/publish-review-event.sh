@@ -202,7 +202,8 @@ except ValueError:
     tok = None
 clock = tok.get("wave_clock") if isinstance(tok, dict) else None
 # `wave_clock` は **`unresolved` が無い回にだけ**入る（wave 構成が信用できない回は出ない）
-if not isinstance(clock, list) or not clock:  # mutation-ok: `wave_clock` は `None` か非空リストしか来ない（`measure-tokens.sh` は `waves_by_msg` が空なら `None` を出す）ので and/or の差が観測できない
+if not (isinstance(clock, list)
+        and clock):  # mutation-ok(1): `wave_clock` は `None` か非空リストしか来ない（`measure-tokens.sh` は `waves_by_msg` が空なら `None` を出す）ので and/or の差が観測できない
     _emit()
 
 raw = ((os.environ.get("REVIEW_EPOCHS") or "").split() + ["-"] * 5)[:5]
@@ -237,10 +238,18 @@ def ok(v, lo):
     欠けうる）。`t0` が欠ける回そのものは呼び出し側が窓で弾いているので、ここに来る時点で
     `t0` は在る。実効条件は「`v` が `max(t0, lo)` 以上、かつ `t2` 以下」。
     """
-    if v is None:
-        return False  # mutation-ok: 呼び出し側は `ok(X)` が真のとき同じ `X` を代入するので、`None` を通しても代入されるのは `None`（出力が変わらない）
-    if t0 is not None and v < t0:  # mutation-ok: 窓を `since-t0` に限定したので publish 経路からは到達しない防御（`wave_clock` の agent は必ず t0 以降に起動している）
-        return False  # mutation-ok: 上の行と同じ理由で到達しない
+    # `if v is None: return False` と書くと、`False` を `True` にする変異が等価になる（呼び出し側は
+    # `ok(X)` が真のとき同じ `X` を代入するので、`None` を通しても代入されるのは `None`）
+    return v is not None and _bounded(v, lo)
+
+
+def _bounded(v, lo):
+    """`ok` の本体。`v` は `None` ではない."""
+    if t0 is not None:  # mutation-ok(1): `is` にしても結果は同じ（`t0` はここに来る時点で必ず在り（`ok` の docstring）、下の比較は真にならない）
+        # 窓を `since-t0` に限定したので publish 経路からは到達しない防御（`wave_clock` の agent は必ず
+        # t0 以降に起動している）。この比較に等号は足せない（`start` は秒に丸めるので t0 と一致しうる）
+        if v < t0:
+            return False  # mutation-ok(2): 上の注記のとおり到達しない
     if t2 is not None and v > t2:
         return False
     return not (lo is not None and v < lo)

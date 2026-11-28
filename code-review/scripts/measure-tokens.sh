@@ -318,7 +318,8 @@ for fpath, side in targets:
                             continue
                         if blk.get("type") == "tool_use" and blk.get("name") == "Agent":
                             agent_dispatch[blk.get("id")] = (_wave_key(e), ts)
-            elif side and e.get("type") == "user":  # mutation-ok: main 側の tool_result は上のブロックで記録済みなので or でも結果は同じ
+            elif (side and  # mutation-ok(1): ここに来るのは sub 側だけ（main は上の `if not side` が持つ）。or にすると user 以外の行も入るが、`tool_result` は user の行にしか載らないので拾う行は同じ
+                  e.get("type") == "user"):
                 # **孫 agent の結果は親の sub transcript 側にある**ので、そこからも
                 # 到達を拾う（main 限定だと孫が全部「捨てられた」に落ちる）。
                 # `tool_result` は **`user` メッセージ**に載る（`assistant` ではない）

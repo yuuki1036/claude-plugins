@@ -234,8 +234,11 @@ def adopt_fork_transcript(payload: dict, state: dict) -> bool:
     with open(tp, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             # json.loads は該当しうる行にだけかける（数十 MB の transcript を 5 秒の timeout に収める）
-            if "/plugins/cache/" not in line or ('"tool_use"' not in line and SKILL_BASE not in line):  # mutation-ok: 速さのための前段。外しても後段の判定で同じ結果になる
-                continue  # mutation-ok: 上の行と同じ前段の読み飛ばし
+            # 2 つの if に分けるのは、or を and にする変異（等価）を無くし、等価でない変異を印の無い行に置くため
+            if "/plugins/cache/" not in line:
+                continue  # mutation-ok(1): 速さのための前段。外しても後段の判定で同じ結果になる
+            if '"tool_use"' not in line and SKILL_BASE not in line:
+                continue  # mutation-ok(1): 上と同じ前段の読み飛ばし
             try:
                 entry = json.loads(line)
             except ValueError:
@@ -437,7 +440,9 @@ def notify(payload: dict, mode: str, path: Path, state: dict) -> None:
 
 
 def main(argv: list[str]) -> int:
-    mode = argv[1] if len(argv) > 1 else ""  # mutation-ok: stale-skill.sh は既知の mode だけを "$MODE" で 1 個渡すので argv は常に 2 要素
+    # 長さは「2 以上」で比べる。stale-skill.sh は mode を 1 個だけ渡すので argv は常に 2 要素で、「1 より大きい」と
+    # 書くと境界を広げる変異が等価になる（「2 以上」なら境界を狭める変異がテストで落ちる）
+    mode = argv[1] if len(argv) >= 2 else ""
     try:
         payload = json.loads(sys.stdin.read())
     except ValueError:

@@ -2947,6 +2947,18 @@ class DerivedMarkerTest(TranscriptFixture):
         self.assertEqual(p["duration_fleet_min"], 20, "最初の agent 起動 → t2 = 1200 秒")
         self.assertIn("t1", p["derived_markers"])
 
+    def test_t1_is_derived_when_the_first_agent_starts_in_the_t0_second(self):
+        """`start` は秒に丸めるので、`t0` 打点と同じ秒に起動した agent は `t0` と一致する.
+
+        `ok()` の下限は「`t0` より前なら採らない」で、一致は採る。比較に等号を足す変異
+        （一致も弾く）を殺すために、一致の回を表明する（#579）。
+        """
+        self.two_waves()
+        self.timeline(t0=self.epoch(0), t2=self.epoch(1200))
+        p = self.run_publish()
+        self.assertIn("t1", p["derived_markers"], "t0 と同じ秒に起動した agent を下限で弾いている")
+        self.assertEqual(p["duration_triage_min"], 0)
+
     def test_marker_wins_over_the_derived_value(self):
         """**補完は上書きではない**。打点が有る区間には触らない."""
         self.two_waves()
