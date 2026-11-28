@@ -21,10 +21,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+from git_env import scrub
+
+ROOT =Path(__file__).resolve().parents[3]
 SCRIPTS = ROOT / "harness-keeper" / "skills" / "cc-catch-up" / "scripts"
 VALIDATE = SCRIPTS / "validate-state.py"
 SCAN = SCRIPTS / "scan-frontmatter.sh"
+INIT = SCRIPTS / "init-state-dir.sh"
 SCHEMA = ROOT / "harness-keeper" / "skills" / "cc-catch-up" / "references" / "state-schema.json"
 
 
@@ -156,6 +159,103 @@ class ScanFrontmatterTest(unittest.TestCase):
                     (bin_dir / name).symlink_to(real)
             r = self._run(str(ROOT), env={"PATH": str(bin_dir)})
             self.assertEqual(r.returncode, 2, "jq 不在を緑で返している: " + r.stdout[:200])
+
+
+class InitStateDirTest(unittest.TestCase):
+    """`init-state-dir.sh`: state dir の用意と、追跡済みの state file の報告（GitHub issue #540）."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.state_dir = self.root / ".claude" / "harness-keeper"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _env(self, **extra: str) -> dict[str, str]:
+        # 作業中のセッションの CLAUDE_PROJECT_DIR を継承させない（既定の root が実 repo を指す）
+        env = {k: v for k, v in scrub().items() if k != "CLAUDE_PROJECT_DIR"}
+        env["HOME"] = str(self.root / "home")
+        env.update(extra)
+        return env
+
+    def _run(self, *args: str, env: dict[str, str] | None = None):
+        return subprocess.run(["bash", str(INIT), *args], capture_output=True, text=True,
+                              env=env if env is not None else self._env(), timeout=30)
+
+    def _git(self, *args: str):
+        subprocess.run(["git", *args], cwd=self.root, env=self._env(), check=True,
+                       capture_output=True, text=True)
+
+    def _init_repo(self):
+        self._git("init", "-q")
+        self._git("config", "user.email", "t@example.com")
+        self._git("config", "user.name", "t")
+
+    def _tracked(self, out: str) -> list[str]:
+        return [line.split("=", 1)[1] for line in out.splitlines() if line.startswith("tracked=")]
+
+    def test_it_creates_the_dir_and_an_ignore_all_gitignore(self):
+        r = self._run(str(self.root))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.state_dir / ".gitignore").read_text(), "*\n")
+        self.assertIn(f"state_dir={self.state_dir}", r.stdout.splitlines())
+
+    def test_an_existing_gitignore_is_left_as_is(self):
+        self.state_dir.mkdir(parents=True)
+        (self.state_dir / ".gitignore").write_text("own-rule\n")
+        r = self._run(str(self.root))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.state_dir / ".gitignore").read_text(), "own-rule\n")
+
+    def test_an_untracked_state_file_stays_out_of_git_status_and_is_not_reported(self):
+        self._init_repo()
+        r = self._run(str(self.root))
+        (self.state_dir / "cc-catch-up-state.json").write_text("{}\n")
+        status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"],
+                                cwd=self.root, env=self._env(), capture_output=True, text=True)
+        self.assertEqual(status.stdout, "", "state file か .gitignore が未追跡として出ている")
+        self.assertEqual(self._tracked(r.stdout), [])
+
+    def test_a_tracked_state_file_is_reported(self):
+        self._init_repo()
+        self.state_dir.mkdir(parents=True)
+        (self.state_dir / "cc-catch-up-state.json").write_text("{}\n")
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "init")
+        r = self._run(str(self.root))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self._tracked(r.stdout), [".claude/harness-keeper/cc-catch-up-state.json"])
+
+    def test_a_tracked_state_file_at_the_old_path_is_reported(self):
+        self._init_repo()
+        old = self.root / ".claude" / "claude-meta"
+        old.mkdir(parents=True)
+        (old / "cc-catch-up-state.json").write_text("{}\n")
+        self._git("add", ".")
+        self._git("commit", "-q", "-m", "init")
+        r = self._run(str(self.root))
+        self.assertEqual(self._tracked(r.stdout), [".claude/claude-meta/cc-catch-up-state.json"])
+
+    def test_a_root_outside_git_reports_nothing_and_succeeds(self):
+        r = self._run(str(self.root))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self._tracked(r.stdout), [])
+        self.assertEqual(r.stderr, "")
+
+    def test_without_an_argument_it_uses_claude_project_dir(self):
+        project = self.root / "project"
+        project.mkdir()
+        r = self._run(env=self._env(CLAUDE_PROJECT_DIR=str(project)))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((project / ".claude" / "harness-keeper" / ".gitignore").is_file())
+        self.assertFalse((self.root / "home" / ".claude").exists(), "HOME 側にも書いている")
+
+    def test_an_uncreatable_dir_fails_with_exit_1(self):
+        (self.root / ".claude").write_text("not a dir\n")
+        r = self._run(str(self.root))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("FATAL", r.stderr)
 
 
 if __name__ == "__main__":
