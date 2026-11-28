@@ -170,7 +170,7 @@ living spec は phase ごとに到達点を持ち、実行に入ったあとも�
 - 今の phase は frontmatter の `current_phase: P<n>`（init は `P1`）。`spec --phase-advance D<n>` で次へ進める
 - **先送り** = phase が `先送り` か今の phase より後の行。確度とは別の軸で、スコープ外（やらない）とも違う。先送りにする変更は Decision で残す（`spec <項目> --phase <値> D<n>`）
 - `status` は先送りを全体の収束率から外し、phase ごとの収束率と先送りの件数を出す。maintain 段 6 は先送りの行を塩漬けとして数えない
-- `decision` で確定の項目を覆したら、その項目の関連 Issue を出す（Issue を直すかの確認用。Issue の状態で分けるのはトラッカーを読む側）
+- `decision` で確定の項目を覆したら、その項目の関連 Issue を出す（Issue を直すかの確認用。Issue の状態で分けるのはトラッカーを読む側）。覆した項目名は Decision の `根拠` の子 bullet に `覆した確定: <項目>` と残す（hub は仕様表の行を出典にする前に、この文字列で覆した Decision を探す）
 - `decision` は先に、同じ対象を決めた既存の Decision を Decision log から探す。見つかれば見直すかを選ばせ、見直すなら見出しを `D<m> の見直し: <要約>` にする
 
 ### 仕様表の凍結

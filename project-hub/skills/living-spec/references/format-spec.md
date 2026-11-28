@@ -147,6 +147,7 @@ living spec は phase ごとに到達点を持ち、実行に入ったあとも�
 
   - 子 bullet にも append-only が掛かる。**決定を書いた時点で書く**もので、既存エントリへ後から子 bullet を足すのは編集にあたる（覆すなら新しい Decision を書く）
   - 子 bullet の中の `OQ<n>` / `D<n>` は相互参照（段 3）の対象にならない。close する OQ は必ず親の `関連 OQ` に書く
+  - `/living-spec decision` の 3.5 で確定の項目を覆した Decision は、`根拠` の下に `  - 覆した確定: <項目>, <項目>` の子 bullet を持つ（GitHub issue #571）。機械パースは読まないが、hub-living-spec がこの文字列で、覆された仕様表の行を探す
 
 ---
 
