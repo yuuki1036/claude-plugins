@@ -1,10 +1,10 @@
 # 動的ラウンドの起動ゲート（triage-guide 分冊）
 
 <!-- 正本依存（SSoT pin）。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
-<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @fa6a9563 -->
+<!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#6 @d8b24aeb -->
 <!-- SSOT: code-review/references/orchestration-dynamic-rounds.md#10 @9f4ea1e1 -->
 <!-- SSOT: code-review/references/orchestration-guide.md#5 @ad2cb12f -->
-<!-- SSOT: code-review/references/triage-guide.md#6.3 @2ad575e6 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.3 @2847e600 -->
 
 **このファイルは、対応するフェーズの起動可否を判断する段になってから Read する。** Phase 0 のエージェント構成決定（Stage 0〜2）には不要 — そちらは `triage-guide.md` だけで完結する。実行手順は `orchestration-dynamic-rounds.md`。
 
@@ -97,10 +97,10 @@
 | low | スキップ | スキップ |
 | medium | スキップ | スキップ |
 | high (default) | unmet_information があれば起動（1 段圧縮） | スキップ |
-| xhigh | 起動（2 段。**規模キャップを掛ける回で、帯の reviewer の規模キャップが effort 上限を下回るときは 1 段圧縮** — triage-guide.md `### 6.3`） | 起動（BLOCKER / CRITICAL / **報告見込み MAJOR 3 件以上**。**`small` 帯は BLOCKER 有りのみ**） |
-| max | 起動（2 段。**規模キャップを掛ける回で、帯の reviewer の規模キャップが effort 上限を下回るときは 1 段圧縮** — triage-guide.md `### 6.3`） | 同上 |
+| xhigh | 起動（2 段。**plan が `cap_source=size` を出した回は 1 段圧縮** — triage-guide.md `### 6.3`） | 起動（BLOCKER / CRITICAL / **報告見込み MAJOR 3 件以上**。**`small` 帯は BLOCKER 有りのみ**） |
+| max | 起動（2 段。**plan が `cap_source=size` を出した回は 1 段圧縮** — triage-guide.md `### 6.3`） | 同上 |
 
-**「起動するか否か」が規模帯に連動するのは Phase 5.6 だけ（v2.60.0）**。5.8 / 5.9 は帯に連動せず、**Phase 5.5 は起動可否こそ帯非連動だが段数は従来から帯連動する**（規模キャップを掛ける回で、帯の reviewer の規模キャップが effort 上限を下回るときは追加 explorer なしの 1 段圧縮経路 — triage-guide.md `### 6.3` / 同 `### 5.1` の wave 表）。5.6 のスキップは triage-guide.md `### 6.3` の「規模キャップが削るのは breadth だけ」という原則に対する**唯一の例外**（＝ depth 層を帯で止める唯一の例）で、根拠が n=1 と弱いため**ロールバック条件つきの暫定措置**として入れてある（`design-notes/triage-rationale.md`）。他の depth 層（5.8 / 5.9）へ同じ帯連動を横展開しないこと。self-review の `--since` の回は、帯を `delta_size_tier` で判定する（triage-guide.md `### 6.5` / #313）。
+**「起動するか否か」が規模帯に連動するのは Phase 5.6 だけ（v2.60.0）**。5.8 / 5.9 は帯に連動せず、**Phase 5.5 は起動可否こそ帯非連動だが段数は従来から帯連動する**（plan が `cap_source=size`（帯の reviewer の規模キャップが effort 上限を下回った）を出した回は追加 explorer なしの 1 段圧縮経路 — triage-guide.md `### 6.3` / 同 `### 5.1` の wave 表）。5.6 のスキップは triage-guide.md `### 6.3` の「規模キャップが削るのは breadth だけ」という原則に対する**唯一の例外**（＝ depth 層を帯で止める唯一の例）で、根拠が n=1 と弱いため**ロールバック条件つきの暫定措置**として入れてある（`design-notes/triage-rationale.md`）。他の depth 層（5.8 / 5.9）へ同じ帯連動を横展開しないこと。self-review の `--since` の回は、帯を `delta_size_tier` で判定する（triage-guide.md `### 6.5` / #313）。
 
 ### userConfig による無効化
 
@@ -299,7 +299,7 @@ surface-aware 報告閾値（scoring-guide.md `## 報告マトリクス`）が h
 5. 1 体が複数 verdict を返す（バッチ）。**全 finding_id 分の verdict が揃っているか突合し、欠落は verdict なし扱い**にする（欠落を confirmed とも refuted とも解釈しない）
 6. **`severity-inflated` は `axis`（降格の型）まで数えて payload に載せる**（`adversarial_verify.inflated_axes` / GitHub issue #150）。件数だけでは**上流較正の型が的外れなのか、そもそも上流で直せないのか**を切り分けられない
 
-**self-review の `--since` の回（GitHub issue #313）**: `scope` のスキップに入れない（`--focus` / `--exclude` が無い限り）。上表のゲートを範囲で絞らず全指摘に当てる — delta の中に限ると、self-review の delta（直前の修正の前から）と feature-dev の G-V ループの delta（ループの起点から ±5 行）が 2 回目以降ずれ、反証を通らない指摘が auto-fix に入る。G-V ループが auto-fix に入れうる指摘が水増しのまま通ると、修正と再レビューが丸ごと 1 回増える
+**self-review の `--since` の回（GitHub issue #313）**: `scope` のスキップに入れない（`--focus` か、語彙内の観点が残る `--exclude` が無い限り）。上表のゲートを範囲で絞らず全指摘に当てる — delta の中に限ると、self-review の delta（直前の修正の前から）と feature-dev の G-V ループの delta（ループの起点から ±5 行）が 2 回目以降ずれ、反証を通らない指摘が auto-fix に入る。G-V ループが auto-fix に入れうる指摘が水増しのまま通ると、修正と再レビューが丸ごと 1 回増える
 
 ### effort 適応（5.5/5.6 とは別ゲート）
 

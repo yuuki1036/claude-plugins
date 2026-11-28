@@ -252,7 +252,9 @@ def compute_plan(effort, size_tier, activated=(), prior=(), delta=False, focus=(
         min_guarantee = not any(k in excluded for k in MIN_GUARANTEE)
 
     effort_cap = EFFORT_CAP["reviewer"][effort]
-    # `--focus` / `--exclude` の回は reviewer・explorer・specialist のどれにも規模キャップを掛けない
+    # `--focus` の回と、語彙内の観点が残る `--exclude` の回（scope が full でない回）は
+    # reviewer・explorer・specialist のどれにも規模キャップを掛けない。語彙外の値だけの `--exclude` は
+    # 上で空になり scope=full のまま掛かる（GitHub issue #535）
     # （triage-guide `## 4` 末尾の plan の節 / GitHub issue #509）。
     # unknown の帯もキャップなし — small に倒すと大きな diff が最小構成で黙って処理される
     size_tier_capped = size_tier if scope == "full" else None

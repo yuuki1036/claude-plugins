@@ -1,11 +1,11 @@
 <!-- 正本依存（SSoT pin）。この Step の本文が要約している正本。正本が変わったら本ファイルへの伝播を確認して pin を書き換える。`--update-ssot-pins` は repo 全体の pin を一括で打ち直すので、全消費サイトを確認したときだけ使う -->
 <!-- SSOT: code-review/references/orchestration-measurement.md#16 @c0aa9e2d -->
-<!-- SSOT: code-review/references/orchestration-guide.md#8a @a5f9c77b -->
+<!-- SSOT: code-review/references/orchestration-guide.md#8a @4886881f -->
 <!-- SSOT: code-review/references/triage-guide.md#2.5 @b0730968 -->
-<!-- SSOT: code-review/references/triage-guide.md#4 @bf441ebd -->
-<!-- SSOT: code-review/references/triage-guide.md#5 @a2dc3482 -->
-<!-- SSOT: code-review/references/triage-guide.md#6.3 @2ad575e6 -->
-<!-- SSOT: code-review/references/triage-guide.md#3 @0c50d7a9 -->
+<!-- SSOT: code-review/references/triage-guide.md#4 @9c827464 -->
+<!-- SSOT: code-review/references/triage-guide.md#5 @0b306f42 -->
+<!-- SSOT: code-review/references/triage-guide.md#6.3 @2847e600 -->
+<!-- SSOT: code-review/references/triage-guide.md#3 @2ed7bbac -->
 ### 3. Phase 0: トリアージ
 
 `${CLAUDE_PLUGIN_ROOT}/references/triage-guide.md` を Read で読み込み、そのロジックに従ってエージェント構成を決定する。
@@ -31,7 +31,7 @@ Step 1 で Read した PR コンテキスト（説明・issue コメント・レ
 
 #### 3.2 Stage 2: 体数・フォーカス・冗長度決定
 
-**default-mode の回だけ**、reviewer の体数・単独か束ねか・落とす観点を**自分で数えず** `plan-reviewers.sh plan` に決めさせる（GitHub issue #351。triage-guide の表を読んで数えた回に、high の上限 6 を 5 と数え、仕様ソースがあるのに spec-compliance より security を先に取った）。それ以外のモードはモードの推奨構成に従い、構成を決めるためには plan も check も呼ばない。ただし spec-compliance を起動するモード（skip-mode など）は、仕様ソース（Issue ファイル・紐づく Issue の本文が言及した仕様書）を得るために plan を呼び（`--pr` / `--size-tier` と、仕様ソースの引数 `--issue-id` / `--spec-source` / `--pr-issue-body`。`--activated` は空でよい）、`spec_source` の行だけを使う（構成の行は読まず、check も呼ばない / orchestration-optional-flows.md `## 2`）:
+**default-mode の回だけ**、reviewer の体数・単独か束ねか・落とす観点を**自分で数えず** `plan-reviewers.sh plan` に決めさせる（GitHub issue #351。triage-guide の表を読んで数えた回に、high の上限 6 を 5 と数え、仕様ソースがあるのに spec-compliance より security を先に取った）。それ以外のモードはモードの推奨構成に従い、構成を決めるためには plan も check も呼ばない。ただし Round 2（Step 5.5）を通るモードは、圧縮するかを決める `cap_source` を得るために plan を呼ぶ（`--pr` / `--effort "${CLAUDE_EFFORT}"` / `--size-tier`。`--activated` は空でよい。`cap_source` の行だけを使い、構成の行は読まず、check も呼ばない。帯を手で当てて決めない / 2026-11-28 決定・GitHub issue #535）。spec-compliance を起動するモード（skip-mode など）は、同じ呼び出しに仕様ソースの引数 `--issue-id` / `--spec-source` / `--pr-issue-body` を足し、仕様ソース（Issue ファイル・紐づく Issue の本文が言及した仕様書）の `spec_source` の行も使う（orchestration-optional-flows.md `## 2`）。`--effort` を省くと plan は high として数えるので、どちらの用途でも渡す:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --pr <PR番号> --effort "${CLAUDE_EFFORT}" --size-tier <Step 2 の size_tier> \
@@ -46,7 +46,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/plan-reviewers.sh" plan --pr <PR番号> --ef
 
 数値を含まない規則は従来どおり:
 - explorer は独立した探索対象の数に比例させる。冗長ペア（x2）を組むのは `redundant_pairs=allowed`（xhigh / max）の回だけで、high 以下でペア条件が成立したら Angle A/B を 1 体に内挿する
-- `cap_source=size`（規模キャップが effort 上限を下回った）の回は、Round 2（Step 5.5）を effort に関わらず 1 段圧縮経路にする（plan を呼ばないモードは、同じ条件を帯で当てる。条件の正本は triage-guide.md `### 6.3`）。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（規模キャップが削るのは breadth のみ。triage-guide.md `### 6.3`）
+- `cap_source=size`（規模キャップが effort 上限を下回った）の回は、Round 2（Step 5.5）を effort に関わらず 1 段圧縮経路にする（default-mode 以外のモードも、上で呼んだ plan の `cap_source` で決める。条件の正本は triage-guide.md `### 6.3`）。reviewer 個々の effort・meta-reviewer・skeptic・反証レイヤーは削らない（規模キャップが削るのは breadth のみ。triage-guide.md `### 6.3`）
 
 #### 3.3 観点カバレッジ検算と構成テーブル出力
 
@@ -60,7 +60,7 @@ TABLE
 
 `ok`（exit 0）なら確定。exit 1 なら `NG	<規則>	<詳細>	<直し方>` の行に従って直し、もう一度 check する。上限を超えたか・spec-compliance が欠けたかを自分で判定して check を飛ばさない。exit 2 は plan が無い（Step 2 の triage-signals.sh が前の回の plan を消す）か、テーブルの形が違う。
 
-**非 default-mode の回**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した回は、モードの推奨構成が観点判定表より優先するため、**構成を決めるためには plan も check も呼ばず、検算で構成も足さない**（spec-compliance を起動するモードが仕様ソースを得るために plan を呼ぶのは別。Step 3.2 の但し書き / GitHub issue #389）。検出した focus は `missing_coverage` に識別子 `<focus>` だけを記録する（**mode による意図的な縮退である旨はレポート本文へ**）。
+**非 default-mode の回**: Stage 0 で `default-mode` 以外（`--emergency` / `doc-review-mode` / `dba-mode` / `supply-chain-mode` / `skip-mode`）に確定した回は、モードの推奨構成が観点判定表より優先するため、**構成を決めるためには plan も check も呼ばず、検算で構成も足さない**（Round 2 の圧縮を決める `cap_source` を得るために plan を呼ぶのと、spec-compliance を起動するモードが仕様ソースを得るために plan を呼ぶのは別。Step 3.2 の但し書き / GitHub issue #389・#535）。検出した focus は `missing_coverage` に識別子 `<focus>` だけを記録する（**mode による意図的な縮退である旨はレポート本文へ**）。
 
 **決定系 doc の design-review 委譲**: `## decision-docs` に doc の行（`<数>\t<path>`）があれば `design-review-guide.md` を Read し、1 節で起動するかを決めて構成テーブルに `design-review` の行を足す（**体数の上限の外**。呼ぶのは締めフロー 4 の後）。起動するなら、委譲する doc を doc-substance のプロンプトの可変部に「design-review に渡す doc: <path>」と書く。
 

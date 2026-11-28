@@ -1,6 +1,6 @@
 <!-- 正本依存（SSoT pin）。`--since` / `--prior-findings` の効き方（delta を主に見る・前回の対象を戻す・`--focus` と併用したときのスキップ）と、delta が未追跡を含まないこと・観点を delta で選び直すことは、self-review の Step 1（`skills/self-review/references/step-1.md`）「1.」と triage-guide.md「6.5」が正本。正本が変わったら Step 3.2 / Step 4 / 6.9 / Phase 7 の未追跡の扱いを確認して pin を打ち直す -->
-<!-- SSOT: code-review/skills/self-review/references/step-1.md#1 @a8330ddc -->
-<!-- SSOT: code-review/references/triage-guide.md#6.5 @b5edb48b -->
+<!-- SSOT: code-review/skills/self-review/references/step-1.md#1 @3c6a4c9d -->
+<!-- SSOT: code-review/references/triage-guide.md#6.5 @371d6649 -->
 <!-- 正本依存（SSoT pin）。Phase 7 の 4. の変異テストの分岐（回し方・結果の 4 区分・前後の git status の突き合わせ）は code-review の review-guide-format.md「変異テストの提案」を要約したもの（聞かずに回すことは Phase 7 自身の決定 / GitHub issue #444）。正本が変わったら Phase 7 の 4. を確認して pin を打ち直す -->
 <!-- SSOT: code-review/references/review-guide-format.md#変異テストの提案 @89619304 -->
 <!-- 正本依存（SSoT pin）。Phase 7 の 2 回目の self-review を回すかの分岐（`次の一手:` が `決定的な検証` の回・`不明（…）` の扱い）は code-review の review-guide-format.md「回し直すかの判断」を要約したもの。正本が変わったら Phase 7 のその分岐を確認して pin を打ち直す -->
