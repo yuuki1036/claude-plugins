@@ -10,6 +10,17 @@ allowed-tools:
   - Write
 ---
 
+<!-- 正本依存（SSoT pin）。本ファイルは format-spec.md の、続く pin の節を言い換えている。正本の節が変わったら、その節を言い換えている箇所を確認して pin を打ち直す（`--update-ssot-pins` は repo 全体を一括で打ち直す） -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#0 @74e61f65 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#1 @650fbc07 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#2 @b8e511ac -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#3 @d620c24e -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#5 @74977fc6 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#6 @afdfb988 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#7 @e4e38744 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#9 @3d83e7f4 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#10 @fe9a7606 -->
+
 **まず `${CLAUDE_PLUGIN_ROOT}/skills/living-spec/SKILL.md` を Read し、その手順に従う**（同名の command と skill は `Skill` tool で呼んでもこの本文が返り、SKILL.md には到達しない。`${CLAUDE_PLUGIN_ROOT}` が展開されていなければ `~/.claude/plugins/installed_plugins.json` の `project-hub@…` の `installPath` を使う — cache を `ls` して選ばない（辞書順で旧版を掴む）。記憶から手順を再現しない / GitHub issue #219）。
 
 `living-spec` スキルを使って、Issue 化前の設計収束ドキュメント (living spec) を管理してください。

@@ -1,3 +1,10 @@
+<!-- 正本依存（SSoT pin）。本ファイルは format-spec.md の、続く pin の節を言い換えている。正本の節が変わったら、その節を言い換えている箇所を確認して pin を打ち直す（`--update-ssot-pins` は repo 全体を一括で打ち直す） -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#2 @b8e511ac -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#5 @74977fc6 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#8 @bec4708d -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#9 @3d83e7f4 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#10 @fe9a7606 -->
+
 ## Phase 6: spec — 仕様表の確度更新 / 凍結
 
 `since` の発生源を機械に寄せるためのサブコマンド。手編集に委ねると「確度だけ変えて `since` を据え置く」（実際は動いているのに stale 警告）と「`since` だけ触る」（塩漬けなのに沈黙）が両方起こる。仕様表の凍結（`format-spec.md` 2.1 節）の宣言と解除も、同じ理由でここから書く。
@@ -43,7 +50,7 @@
    ```
    新規行なら「新しい仕様項目「<項目>」を <確度> で追加しました」
 
-> **確度の逆行（`確定` → `方向性(仮)`）は許容し、警告しない**（3 節）。決定が覆るのは正常な事象。ただし対応する Decision が既にある場合は、報告の末尾に「この項目に関する決定を覆すなら `/living-spec decision` で経緯を残してください」と 1 行添える。
+> **確度の逆行（`確定` → `方向性(仮)`）は許容し、警告しない**（5 節）。決定が覆るのは正常な事象。ただし対応する Decision が既にある場合は、報告の末尾に「この項目に関する決定を覆すなら `/living-spec decision` で経緯を残してください」と 1 行添える。
 
 ### 6b. `spec --freeze D<n>` — 仕様表の凍結
 

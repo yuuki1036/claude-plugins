@@ -1,3 +1,11 @@
+<!-- 正本依存（SSoT pin）。本ファイルは format-spec.md の、続く pin の節を言い換えている。正本の節が変わったら、その節を言い換えている箇所を確認して pin を打ち直す（`--update-ssot-pins` は repo 全体を一括で打ち直す） -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#2.1 @8de17e9c -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#3 @d620c24e -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#4 @0375a0e6 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#8 @bec4708d -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#9 @3d83e7f4 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#10 @fe9a7606 -->
+
 ## Phase 5: decision — Decision log への append と関連 OQ の close
 
 **このサブコマンドが双方向参照を成立させる唯一の場所**。ここが片方向で止まると maintain 段 3 が Critical を出す。

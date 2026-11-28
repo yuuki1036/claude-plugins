@@ -1,3 +1,9 @@
+<!-- 正本依存（SSoT pin）。本ファイルは format-spec.md の、続く pin の節を言い換えている。正本の節が変わったら、その節を言い換えている箇所を確認して pin を打ち直す（`--update-ssot-pins` は repo 全体を一括で打ち直す） -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#2.1 @8de17e9c -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#2.2 @e218d4ce -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#5 @74977fc6 -->
+<!-- SSOT: project-hub/skills/living-spec/references/format-spec.md#9 @3d83e7f4 -->
+
 ## Phase 7: status — 進捗ビュー
 
 **読むだけ**（W1-W5 の書き込み規律は適用しない）。
