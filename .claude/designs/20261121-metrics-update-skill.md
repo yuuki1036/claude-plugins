@@ -3,7 +3,7 @@ id: 20261121-metrics-update-skill
 title: code-review metrics-update（計測の更新と issue へのコメント・起票の skill）
 status: approved
 phase: current
-last-validated: 2026-11-21
+last-validated: 2026-11-28
 supersedes: []
 superseded-by: null
 issue: "GitHub #480"
@@ -53,7 +53,9 @@ tags: [code-review, metrics, skill]
 | `code-review/skills/metrics-update/references/comment-template.md` | コメント・起票の本文の型、業務情報の置き換え表、貼る行の規則 |
 | `code-review/scripts/metrics-update.sh` | 薄いラッパ。`report`（既定）・`retro`（同じ母集団で `review-retro.sh` を回す）・`workdir`（本文と `--json` を置く作業用 dir を毎回新しい名前の 0700 で作る。`mktemp -d`）。ログとストアの解決はここ |
 | `code-review/scripts/lib/metrics_update.py` | 本体（状態・差分・比較表・`## 15` の判定・語彙落ち・出力） |
+| `code-review/scripts/lib/payload_judge.py` | retro と共有する判定（世代・再レビュー・delta）と版マーカー・数値の読み方（GitHub #536 で追加） |
 | `.claude-plugin/scripts/tests/test_code_review_metrics_update.py` | 回帰テスト（使い捨てのストア・状態ファイル・git リポジトリ） |
+| `.claude-plugin/scripts/tests/test_code_review_payload_judge.py` | `payload_judge.py` の単体テスト（GitHub #536 で追加） |
 
 ### スクリプト
 
@@ -62,7 +64,7 @@ tags: [code-review, metrics, skill]
 - 比較表: 世代 × effort × size_tier × delta / full で、区間・トークン・報告件数・dispatch の欠測率の中央値と n。再レビューは除き、除いた件数を出す。`--split-version` でその版の前後に割る。dispatch とトークンは 2.130.6 以上に絞る
 - `## 15` の判定: 節に機械可読の印（`<!-- METRICS-BASELINE: generation=... taken=... review_xhigh_need=<件数> -->`）を置き、`taken`（表に入れた最後の回の翌日）以降で世代の分かる直近 4 回に印の世代が 1 回も無いか（最新の 1 回では決めず、件数の多さでも、新しい世代の連続でも決めない）と、xhigh 以上の review の件数を判定する。件数 0 は xhigh の条件を消化済みの意味で、2026-11-21 時点の印は 0（2026-10-25 に xhigh 列を取り直したので、次は世代が変わったとき）
 - 語彙落ち: `sanitize_drops` を持つストアの行を列挙し、手元に同じ `(ts, plugin)` の生の行があれば差（落ちたキーのパス・`other` になった値・`missing_coverage` の落ちた語）を出す。ストアが意図して落とすキー（`bin/sanitize.py` の `DENY_KEYS`）は印を付ける。手元表示のみ
-- 判定関数（世代・再レビュー・delta）は retro のヒアドキュメントの中にあって import できないので、同じ式を書き、retro の本文から切り出して突き合わせるテストで縛る
+- 判定関数（世代・再レビュー・delta）と版マーカー・数値の読み方は `lib/payload_judge.py` に置き、retro と同じものを import する（GitHub #536。当初は複製して parity テストで縛っていた）
 - 終了コード: 0 正常（0 件・ストアなしでも `--json` は必ず JSON）/ 2 判定不能（引数の誤り・明示したパスが読めない・状態ファイルが壊れている・書き込み失敗・workdir で dir を作れない・未捕捉の例外）
 
 ### skill の手順
@@ -86,6 +88,7 @@ main の fetch とストアの pull・同期 → 作業用 dir（`metrics-update
 - [local] 状態ファイルは計測ストアにもリポジトリにも置かず、マシンの `~/.claude/code-review/` に置く（ストアは同期の対象で、リポジトリは public）
 - [local] `## 15` の更新条件の入力は doc の機械可読の印から読む（doc が条件の正本であり続ける）
 - [local] 判定関数は lib へ抽出せず複製し、parity テストで縛る（retro を変えない契約のため。抽出は別 issue の候補）
+- [local] 判定関数と版マーカー・数値の読み方を `lib/payload_judge.py` へ抽出し、複製と parity テストをやめて lib の単体テストで見る（GitHub #536。2026-11-28 決定。retro の出力は変えない）
 - [local] 計測ストアの同期（`bin/sync`）はスクリプトに入れず skill の手順に置く（スクリプトはネットワーク越しの push を持たない。書くのは `--record` の状態ファイルと `workdir` の一時 dir だけ）。確認を取らずに回す（送り先は利用者自身の private リポジトリで、追記だけの定常の同期）
 - [local] 前回からの差分はマシンごとの最新の `ts` で切る（後から同期された別のマシンの回を落とさない）
 - [local] `## 15` の世代の判定は、世代の分かる直近 4 回に印の世代が 1 回も無いかで決める（比べるために別のモデルで 1 回回しただけでは変わらないように。件数の多さで決めると旧世代の累計を新しい世代が上回るまで数百件ぶん遅れ、「新しい世代が 2 回続いた」で決めるとマシンごとに世代が違う時期に判定が行き来する）
@@ -97,7 +100,7 @@ main の fetch とストアの pull・同期 → 作業用 dir（`metrics-update
 ## 実装ブリッジ (Implementation Bridge)
 
 1. 実装着手の単位: GitHub #480 を 1 つの PR で実装する（feature-dev の流れの中で継続する）
-2. 検証方法: `test_code_review_metrics_update.py`（0 件・dedup・状態の記録と差分・比較表の除外規則・`## 15` の印の 4 状態・語彙落ち・伏せ字・retro との判定の一致）と、使い捨てのストアでのスモーク
+2. 検証方法: `test_code_review_metrics_update.py`（0 件・dedup・状態の記録と差分・比較表の除外規則・`## 15` の印の 4 状態・語彙落ち・伏せ字）・`test_code_review_payload_judge.py`（retro と共有する判定。GitHub #536 で retro との突き合わせから置き換えた）と、使い捨てのストアでのスモーク
 3. 実装完了時の doc 更新手順: frontmatter の `phase: target` → `current`、`last-validated` を更新。実装と乖離した箇所は追記する
 
 ## 関連
