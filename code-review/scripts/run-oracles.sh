@@ -63,7 +63,8 @@ pid=$!
 waited=0
 # **条件は while の見出しに置く**（`|| break` で抜ける形にすると、打ち切りを外す変異が
 # 「`$waited` が増えないまま回り続ける」無限ループになり、テストで殺せなくなる）。
-while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$LIMIT" ]; do  # mutation-ok: 境界を広げても待ちが 1 秒延びるだけ（秒単位の実時間はテストで固定しない）
+while kill -0 "$pid" 2>/dev/null &&
+    [ "$waited" -lt "$LIMIT" ]; do  # mutation-ok(1): 境界を広げても待ちが 1 秒延びるだけ（秒単位の実時間はテストで固定しない）
   sleep 1
   waited=$((waited+1))
 done

@@ -243,7 +243,8 @@ try:
     m = (json.load(sys.stdin) or {}).get("models") or {}
 except Exception:
     sys.exit(0)
-d = sorted(x for x in (m.get("main_distinct") or []) if isinstance(x, str) and x)  # mutation-ok: 上流（measure-tokens.sh）が空文字と非 str を既に落としているので、and/or の差を観測できる入力を作れない
+d = sorted(x for x in (m.get("main_distinct") or [])
+           if isinstance(x, str) and x)  # mutation-ok(1): 上流（measure-tokens.sh）が空文字と非 str を既に落としているので、and/or の差を観測できる入力を作れない
 if not d:
     sys.exit(0)
 print(m["main"] if m.get("main") else "混在（%s）" % "/".join(d))') || MODELS_VAL=""
@@ -426,7 +427,10 @@ agents_md_list() {
 printf '%s\n' "$CLASSIFIED" | cut -f4 | while IFS= read -r p; do
   [ -n "$p" ] && dirname -- "$p"
 done | sort -u | while read -r d; do
-  while [ "$d" != "." ] && [ "$d" != "/" ]; do  # mutation-ok: どちらを崩しても `dirname .` が `.` を返し続けて無限ループになる
+  # 終わりの判定は until の条件に「`.` か `/` になったら」と書く。while の条件に `!=` と `&&` で書くと
+  # `&&` を `||` にする変異が、case で break すると `break` を `continue` にする変異が、どちらも
+  # `d` を `.` のまま回し続けて無限ループになり、時間切れでしか落とせない（`=` と `||` には変異の規則が無い）
+  until [ "$d" = . ] || [ "$d" = / ]; do
     [ -f "$WT/$d/AGENTS.md" ] && echo "$d/AGENTS.md"
     [ -f "$WT/$d/CLAUDE.md" ] && echo "$d/CLAUDE.md"
     d=$(dirname "$d")

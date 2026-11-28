@@ -112,7 +112,8 @@ def judge_lines(lines, now: float | None = None) -> tuple[bool | None, bool]:
     text, verdict = [], None
     for entry in entries[start + 1:]:
         for b in _blocks(entry):
-            if b.get("type") == "text" and isinstance(b.get("text"), str):  # mutation-ok: `text` キーを持つのは text ブロックだけ（thinking は `thinking`、tool_use は `input`）で、and と or を分ける入力が実 transcript に無い
+            if (b.get("type") == "text"
+                    and isinstance(b.get("text"), str)):  # mutation-ok(1): `text` キーを持つのは text ブロックだけ（thinking は `thinking`、tool_use は `input`）で、and と or を分ける入力が実 transcript に無い
                 text.append(b["text"])
             cmd = _command(b)
             if cmd is not None and PUBLISH_RE.search(cmd):
@@ -132,7 +133,8 @@ def judge(path: str, wait_sec: float, now: float | None = None) -> bool | None:
                 verdict, worth_waiting = judge_lines(f, now)
         except OSError:
             return None
-        if not worth_waiting or time.monotonic() >= deadline:  # mutation-ok: 単調時計の値が deadline と一致する瞬間は観測できない（>= と > で結果が変わらない）
+        if (not worth_waiting or
+                time.monotonic() >= deadline):  # mutation-ok(1): 単調時計の値が deadline と一致する瞬間は観測できない（>= と > で結果が変わらない）
             return verdict
         time.sleep(0.05)
 
